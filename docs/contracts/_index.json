@@ -1,85 +1,37 @@
 {
   "version": "1.0.0",
-  "description": "篝火智答平台全局契约索引",
-  "last_updated": "2026-05-26T17:20:59+08:00",
+  "description": "全局契约索引",
+  "last_updated": "2026-05-26T17:20:00+08:00",
   "contracts": {
-    "hash_password": {
-      "file": "docs/contracts/SEC-01/hash_password.json",
-      "defined_by": "SEC-01",
+    "DATABASE_URL": {
+      "file": "docs/contracts/DEPLOY-04/DATABASE_URL.json",
+      "defined_by": "DEPLOY-04",
       "maturity": "draft",
-      "consumers": ["AUTH-02"]
+      "consumers": ["DEPLOY-01", "DEPLOY-03", "DEPLOY-05"]
     },
-    "verify_password": {
-      "file": "docs/contracts/SEC-01/verify_password.json",
-      "defined_by": "SEC-01",
+    "MigrationState": {
+      "file": "docs/contracts/DEPLOY-04/MigrationState.json",
+      "defined_by": "DEPLOY-04",
       "maturity": "draft",
-      "consumers": ["AUTH-02"]
+      "consumers": ["DEPLOY-01"]
     },
-    "create_access_token": {
-      "file": "docs/contracts/SEC-01/create_access_token.json",
-      "defined_by": "SEC-01",
+    "MigrationErrorCode": {
+      "file": "docs/contracts/DEPLOY-04/MigrationErrorCode.json",
+      "defined_by": "DEPLOY-04",
       "maturity": "draft",
-      "consumers": ["AUTH-02"]
+      "consumers": ["DEPLOY-01", "DEPLOY-03"]
     },
-    "verify_token": {
-      "file": "docs/contracts/SEC-01/verify_token.json",
-      "defined_by": "SEC-01",
+    "MigrationScript": {
+      "file": "docs/contracts/DEPLOY-04/MigrationScript.json",
+      "defined_by": "DEPLOY-04",
       "maturity": "draft",
-      "consumers": ["AUTH-02"]
+      "consumers": ["DEPLOY-01", "DEPLOY-03"]
     },
-    "check_rate_limit": {
-      "file": "docs/contracts/SEC-01/check_rate_limit.json",
-      "defined_by": "SEC-01",
+    "MigrationTarget": {
+      "file": "docs/contracts/DEPLOY-04/MigrationTarget.json",
+      "defined_by": "DEPLOY-04",
       "maturity": "draft",
-      "consumers": ["SEC-04"]
-    },
-    "validate_file": {
-      "file": "docs/contracts/SEC-01/validate_file.json",
-      "defined_by": "SEC-01",
-      "maturity": "draft",
-      "consumers": []
-    },
-    "TokenPayload": {
-      "file": "docs/contracts/SEC-01/TokenPayload.json",
-      "defined_by": "SEC-01",
-      "maturity": "draft",
-      "consumers": ["AUTH-02"]
-    },
-    "FileValidationResult": {
-      "file": "docs/contracts/SEC-01/FileValidationResult.json",
-      "defined_by": "SEC-01",
-      "maturity": "draft",
-      "consumers": []
-    },
-    "RateLimitConfig": {
-      "file": "docs/contracts/SEC-01/RateLimitConfig.json",
-      "defined_by": "SEC-01",
-      "maturity": "draft",
-      "consumers": ["SEC-04"]
-    },
-    "SecurityConfig": {
-      "file": "docs/contracts/SEC-01/SecurityConfig.json",
-      "defined_by": "SEC-01",
-      "maturity": "draft",
-      "consumers": []
-    },
-    "AuditLogEvent": {
-      "file": "docs/contracts/SEC-01/AuditLogEvent.json",
-      "defined_by": "SEC-01",
-      "maturity": "draft",
-      "consumers": []
-    },
-    "RateLimitExceededResponse": {
-      "file": "docs/contracts/SEC-01/RateLimitExceededResponse.json",
-      "defined_by": "SEC-01",
-      "maturity": "draft",
-      "consumers": ["SEC-04"]
-    },
-    "PhoneMaskedString": {
-      "file": "docs/contracts/SEC-01/PhoneMaskedString.json",
-      "defined_by": "SEC-01",
-      "maturity": "draft",
-      "consumers": ["SEC-03"]
+      "consumers": ["DEPLOY-01"]
     }
   }
 }

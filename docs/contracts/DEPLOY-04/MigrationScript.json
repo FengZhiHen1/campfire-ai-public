@@ -1,0 +1,50 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "docs/contracts/DEPLOY-04/MigrationScript.json",
+  "title": "MigrationScript",
+  "description": "单份 Alembic 迁移脚本的结构约束。每份脚本必须同时包含 upgrade() 和 downgrade() 函数，以时间戳前缀命名，存储在 packages/py-db/migrations/versions/ 目录下。",
+  "type": "object",
+  "x-defined-by": "DEPLOY-04",
+  "x-consumers": ["DEPLOY-01", "DEPLOY-03"],
+  "x-maturity": "draft",
+  "x-contract-type": "interface",
+  "x-version": "1.0.0",
+  "properties": {
+    "revision": {
+      "type": "string",
+      "description": "迁移版本标识，格式 YYYYMMDD_HHMMSS",
+      "pattern": "^\\d{8}_\\d{6}$",
+      "examples": ["20260526_143021"]
+    },
+    "down_revision": {
+      "type": ["string", "null"],
+      "description": "上一个迁移版本的 revision 标识。若为首个迁移脚本则为 null",
+      "examples": ["20260520_091500", null]
+    },
+    "description": {
+      "type": "string",
+      "description": "迁移脚本的语义化描述，与文件名后半部分一致",
+      "minLength": 1,
+      "maxLength": 128,
+      "examples": ["add_user_nickname"]
+    },
+    "has_upgrade": {
+      "type": "boolean",
+      "const": true,
+      "description": "必须包含 upgrade() 函数"
+    },
+    "has_downgrade": {
+      "type": "boolean",
+      "const": true,
+      "description": "必须包含 downgrade() 函数"
+    },
+    "file_path": {
+      "type": "string",
+      "description": "迁移脚本在项目中的相对路径",
+      "pattern": "^packages/py-db/migrations/versions/\\d{8}_\\d{6}_.+\\.py$",
+      "examples": ["packages/py-db/migrations/versions/20260526_143021_add_user_nickname.py"]
+    }
+  },
+  "required": ["revision", "down_revision", "description", "has_upgrade", "has_downgrade", "file_path"],
+  "additionalProperties": false
+}

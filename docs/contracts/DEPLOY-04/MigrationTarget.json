@@ -1,0 +1,18 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "docs/contracts/DEPLOY-04/MigrationTarget.json",
+  "title": "MigrationTarget",
+  "description": "数据库迁移的目标版本标识。可指定具体 revision hash、特殊值 head（最新版本）或相对标记（如 -1 表示回滚一个版本）。",
+  "type": "string",
+  "x-defined-by": "DEPLOY-04",
+  "x-consumers": ["DEPLOY-01"],
+  "x-maturity": "draft",
+  "x-contract-type": "input",
+  "x-version": "1.0.0",
+  "anyOf": [
+    { "const": "head", "description": "迁移到最新版本" },
+    { "pattern": "^\\d{8}_\\d{6}$", "description": "具体 revision hash" },
+    { "pattern": "^-\\d+$", "description": "相对标记，如 -1 回滚一个版本" }
+  ],
+  "examples": ["head", "20260520_091500", "-1"]
+}
