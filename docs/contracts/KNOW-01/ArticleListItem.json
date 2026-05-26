@@ -1,0 +1,42 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "docs/contracts/KNOW-01/ArticleListItem.json",
+  "title": "ArticleListItem",
+  "description": "科普文章列表条目，用于分类列表和搜索结果的分页展示",
+  "type": "object",
+  "x-defined-by": "KNOW-01",
+  "x-consumers": ["KNOW-03", "KNOW-06", "KNOW-07"],
+  "x-maturity": "draft",
+  "x-contract-type": "output",
+  "x-version": "1.0.0",
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "文章唯一标识，UUID v4 格式",
+      "format": "uuid"
+    },
+    "title": {
+      "type": "string",
+      "description": "文章标题，在列表卡片中展示",
+      "maxLength": 200
+    },
+    "category": {
+      "$ref": "./ArticleCategory.json"
+    },
+    "status": {
+      "$ref": "./ArticleStatus.json"
+    },
+    "published_at": {
+      "type": "string",
+      "description": "首次发布时间，未发布时为 null",
+      "format": "date-time"
+    },
+    "created_at": {
+      "type": "string",
+      "description": "文章创建时间",
+      "format": "date-time"
+    }
+  },
+  "required": ["id", "title", "category", "status", "created_at"],
+  "additionalProperties": false
+}

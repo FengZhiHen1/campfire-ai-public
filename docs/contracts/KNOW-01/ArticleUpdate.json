@@ -1,0 +1,35 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "docs/contracts/KNOW-01/ArticleUpdate.json",
+  "title": "ArticleUpdate",
+  "description": "更新科普文章的请求体，所有字段可选，仅更新提供的字段",
+  "type": "object",
+  "x-defined-by": "KNOW-01",
+  "x-consumers": [],
+  "x-maturity": "draft",
+  "x-contract-type": "input",
+  "x-version": "1.0.0",
+  "properties": {
+    "title": {
+      "type": "string",
+      "description": "文章标题（可选更新）",
+      "minLength": 1,
+      "maxLength": 200
+    },
+    "category": {
+      "$ref": "./ArticleCategory.json"
+    },
+    "content": {
+      "type": "string",
+      "description": "文章正文内容（可选更新）",
+      "minLength": 1
+    },
+    "related_case_ids": {
+      "type": "array",
+      "items": { "type": "string", "pattern": "^CASE-\\d{3}$" },
+      "description": "关联案例编号列表（可选更新）",
+      "maxItems": 5
+    }
+  },
+  "additionalProperties": false
+}

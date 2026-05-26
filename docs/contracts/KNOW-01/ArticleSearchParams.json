@@ -1,0 +1,39 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "docs/contracts/KNOW-01/ArticleSearchParams.json",
+  "title": "ArticleSearchParams",
+  "description": "全文检索查询参数，支持关键词搜索、分类过滤和分页",
+  "type": "object",
+  "x-defined-by": "KNOW-01",
+  "x-consumers": ["KNOW-03", "KNOW-06", "KNOW-07"],
+  "x-maturity": "draft",
+  "x-contract-type": "input",
+  "x-version": "1.0.0",
+  "properties": {
+    "q": {
+      "type": "string",
+      "description": "中文搜索关键词",
+      "minLength": 1,
+      "maxLength": 200,
+      "examples": ["刻板行为"]
+    },
+    "category": {
+      "$ref": "./ArticleCategory.json"
+    },
+    "page": {
+      "type": "integer",
+      "description": "页码，从 1 开始",
+      "minimum": 1,
+      "default": 1
+    },
+    "page_size": {
+      "type": "integer",
+      "description": "每页返回条数",
+      "minimum": 1,
+      "maximum": 100,
+      "default": 20
+    }
+  },
+  "required": ["q"],
+  "additionalProperties": false
+}

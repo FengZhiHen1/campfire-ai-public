@@ -1,37 +1,63 @@
 {
   "version": "1.0.0",
-  "description": "全局契约索引",
-  "last_updated": "2026-05-26T17:20:00+08:00",
+  "description": "全局契约索引 — 篝火智答项目",
+  "last_updated": "2026-05-26T17:21:27+08:00",
   "contracts": {
-    "DATABASE_URL": {
-      "file": "docs/contracts/DEPLOY-04/DATABASE_URL.json",
-      "defined_by": "DEPLOY-04",
+    "ArticleCategory": {
+      "file": "docs/contracts/KNOW-01/ArticleCategory.json",
+      "defined_by": "KNOW-01",
       "maturity": "draft",
-      "consumers": ["DEPLOY-01", "DEPLOY-03", "DEPLOY-05"]
+      "x-contract-type": "shared-enum",
+      "consumers": ["KNOW-03", "KNOW-06", "KNOW-07"]
     },
-    "MigrationState": {
-      "file": "docs/contracts/DEPLOY-04/MigrationState.json",
-      "defined_by": "DEPLOY-04",
+    "ArticleStatus": {
+      "file": "docs/contracts/KNOW-01/ArticleStatus.json",
+      "defined_by": "KNOW-01",
       "maturity": "draft",
-      "consumers": ["DEPLOY-01"]
+      "x-contract-type": "shared-enum",
+      "consumers": ["KNOW-03", "KNOW-06", "KNOW-07"]
     },
-    "MigrationErrorCode": {
-      "file": "docs/contracts/DEPLOY-04/MigrationErrorCode.json",
-      "defined_by": "DEPLOY-04",
+    "ArticleCreate": {
+      "file": "docs/contracts/KNOW-01/ArticleCreate.json",
+      "defined_by": "KNOW-01",
       "maturity": "draft",
-      "consumers": ["DEPLOY-01", "DEPLOY-03"]
+      "x-contract-type": "input",
+      "consumers": []
     },
-    "MigrationScript": {
-      "file": "docs/contracts/DEPLOY-04/MigrationScript.json",
-      "defined_by": "DEPLOY-04",
+    "ArticleUpdate": {
+      "file": "docs/contracts/KNOW-01/ArticleUpdate.json",
+      "defined_by": "KNOW-01",
       "maturity": "draft",
-      "consumers": ["DEPLOY-01", "DEPLOY-03"]
+      "x-contract-type": "input",
+      "consumers": []
     },
-    "MigrationTarget": {
-      "file": "docs/contracts/DEPLOY-04/MigrationTarget.json",
-      "defined_by": "DEPLOY-04",
+    "ArticleSearchParams": {
+      "file": "docs/contracts/KNOW-01/ArticleSearchParams.json",
+      "defined_by": "KNOW-01",
       "maturity": "draft",
-      "consumers": ["DEPLOY-01"]
+      "x-contract-type": "input",
+      "consumers": ["KNOW-03", "KNOW-06", "KNOW-07"]
+    },
+    "ArticleResponse": {
+      "file": "docs/contracts/KNOW-01/ArticleResponse.json",
+      "defined_by": "KNOW-01",
+      "maturity": "draft",
+      "x-contract-type": "output",
+      "consumers": ["KNOW-04", "KNOW-06", "KNOW-07"]
+    },
+    "ArticleListItem": {
+      "file": "docs/contracts/KNOW-01/ArticleListItem.json",
+      "defined_by": "KNOW-01",
+      "maturity": "draft",
+      "x-contract-type": "output",
+      "consumers": ["KNOW-03", "KNOW-06", "KNOW-07"]
+    },
+    "ArticleSearchResult": {
+      "file": "docs/contracts/KNOW-01/ArticleSearchResult.json",
+      "defined_by": "KNOW-01",
+      "maturity": "draft",
+      "x-contract-type": "output",
+      "consumers": ["KNOW-03", "KNOW-06", "KNOW-07"]
     }
   }
 }
