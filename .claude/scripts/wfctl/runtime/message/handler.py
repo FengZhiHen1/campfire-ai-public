@@ -63,6 +63,16 @@ def write_message(
     # 自动清理空文件（SubAgent 经常产出无意义的空占位文件）
     _cleanup_empty_files(worktree, modified_files)
 
+    # 防线前移：拒绝修改 worktree 外文件的写入
+    if worktree and worktree.exists() and modified_files:
+        escaped = _find_escaped_files(worktree, modified_files)
+        if escaped:
+            raise ValidationError(
+                f"禁止修改 worktree 外的文件，请删除以下文件后重新上报：\n"
+                + "\n".join(f"  - {f}" for f in escaped),
+                code="ACCESS_VIOLATION",
+            )
+
     # 防线前移：status 必须为合法 StageStatus 枚举值
     from domain.workflow.spec import StageStatus as _StageStatus
     _valid_statuses = {s.value for s in _StageStatus}
@@ -222,6 +232,20 @@ def inject_modified_files(msg: dict, worktree: Path) -> dict:
 
     msg["modified_files"] = modified_files
     return msg
+
+
+def _find_escaped_files(worktree: Path, modified_files: list[dict]) -> list[str]:
+    """检测 modified_files 中逃逸到 worktree 外的文件路径，返回违规路径列表。"""
+    escaped: list[str] = []
+    wt_resolved = worktree.resolve()
+    for entry in modified_files:
+        fpath = entry["path"]
+        try:
+            abs_path = (worktree / fpath).resolve()
+            abs_path.relative_to(wt_resolved)
+        except ValueError:
+            escaped.append(fpath)
+    return escaped
 
 
 def _cleanup_empty_files(worktree: Path, modified_files: list[dict]) -> None:

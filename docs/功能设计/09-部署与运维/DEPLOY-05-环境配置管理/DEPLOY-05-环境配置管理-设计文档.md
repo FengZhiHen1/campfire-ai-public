@@ -14,7 +14,7 @@
 
 本模块采用 pydantic-settings v2 的 `BaseSettings` 作为配置加载核心，而非手写 `os.environ` 解析。选择 pydantic-settings 的理由有三：
 
-**类型驱动校验取代布尔守卫**：意图文档 §1.6 定义了 14 个配置字段，每个字段都有格式约束（连接串须含端口、密钥须长度为 32 字符、限流阈值为正整数等）。若采用 `os.getenv("KEY") or raise` 模式，需手写 14 条 if 分支和格式校验逻辑，代码膨胀且容易遗漏。pydantic-settings 的 `PostgresDsn`、`RedisDsn`、`AnyHttpUrl`、`SecretStr` 等专用类型由 Pydantic 内置校验器在构造时自动执行，零手工校验代码量。
+**类型驱动校验取代布尔守卫**：意图文档 §1.6 定义了 18 个配置字段（含本次新增的 DASHSCOPE_API_KEY、DASHSCOPE_BASE_URL、EMBEDDING_MODEL、EMBEDDING_DIMENSION 四个嵌入模型字段），每个字段都有格式约束（连接串须含端口、密钥须长度为 32 字符、限流阈值为正整数等）。若采用 `os.getenv("KEY") or raise` 模式，需手写 18 条 if 分支和格式校验逻辑，代码膨胀且容易遗漏。pydantic-settings 的 `PostgresDsn`、`RedisDsn`、`AnyHttpUrl`、`SecretStr` 等专用类型由 Pydantic 内置校验器在构造时自动执行，零手工校验代码量。
 
 **fail-fast 启动阻断**：`BaseSettings.__init__` 在构造时同步执行全部字段校验。若任何必填字段缺失或格式不合法，Pydantic 抛 `ValidationError`，由 FastAPI 的 `lifespan` startup 阶段的 `try/except` 捕获后以 `sys.exit(1)` 终止进程。这一设计确保服务不会在"半配置"状态下启动——要么全部校验通过，要么进程直接退出。此策略与意图文档 AC-01、AC-02 的启动阻断要求严格对齐。
 
@@ -26,7 +26,7 @@
 
 - **已审查的相关文档**：`docs/篝火智答-技术栈设计.md` §2（数据校验 Pydantic 2.x）、§6.2（关键配置 14 项清单）；`docs/篝火智答-项目结构.md` §6.1（`packages/py-config/` 目录骨架）；`docs/功能设计/模块依赖关系分析.md`（DEPLOY-05 依赖分析）；`docs/功能设计/` 下全部已有规格文档（扫描结果：无其他模块的落地规范）
 
-- **兼容性结论**：**无冲突**。本模块为项目 L1 基础层首批模块，不存在已有规格的兼容性冲突。14 项环境变量定义与技术栈设计 §6.2 的 `.env` 清单完全对齐——DATABASE_URL、REDIS_URL、DEEPSEEK_API_KEY、DEEPSEEK_BASE_URL、MINIO_ENDPOINT、MINIO_ACCESS_KEY、MINIO_SECRET_KEY、JWT_SECRET_KEY、JWT_ALGORITHM、ACCESS_TOKEN_EXPIRE_MINUTES、REFRESH_TOKEN_EXPIRE_DAYS、RATE_LIMIT_USER_PER_MINUTE、RATE_LIMIT_IP_PER_MINUTE、ENVIRONMENT。
+- **兼容性结论**：**无冲突**。本模块为项目 L1 基础层首批模块，不存在已有规格的兼容性冲突。18 项环境变量定义与技术栈设计 §6.2 的 `.env` 清单及通义 API 文档完全对齐——DATABASE_URL、REDIS_URL、DEEPSEEK_API_KEY、DEEPSEEK_BASE_URL、DASHSCOPE_API_KEY、DASHSCOPE_BASE_URL、EMBEDDING_MODEL、EMBEDDING_DIMENSION、MINIO_ENDPOINT、MINIO_ACCESS_KEY、MINIO_SECRET_KEY、JWT_SECRET_KEY、JWT_ALGORITHM、ACCESS_TOKEN_EXPIRE_MINUTES、REFRESH_TOKEN_EXPIRE_DAYS、RATE_LIMIT_USER_PER_MINUTE、RATE_LIMIT_IP_PER_MINUTE、ENVIRONMENT。
 
 - **复用的已有设计**：技术栈设计 §6.2 的 14 项环境变量清单作为本模块的唯一字段来源；项目结构设计 §6.1 `packages/py-config/` 目录树（`config.py`、`exceptions.py`、`__init__.py`）作为文件归属的直接依据。
 
@@ -45,6 +45,7 @@
 | 告警通知（OBS-03） | 间接消费 | Webhook 地址来自环境配置（部署层处理） |
 | 健康检查（OBS-04） | 下游消费 | 健康检查端点通过 py-config 获取 DATABASE_URL / REDIS_URL / MINIO_ENDPOINT 以验证外部服务连通性 |
 | 数据备份恢复（QUAL-05） | 间接消费 | 备份策略参数（频率、保留天数）来自环境配置 |
+| RAG 检索与向量化（后续模块） | 下游消费 | 嵌入模型 API 密钥（DASHSCOPE_API_KEY, SecretStr）、服务端点（DASHSCOPE_BASE_URL）、模型名称（EMBEDDING_MODEL）、向量维度（EMBEDDING_DIMENSION）从 py-config 读取 |
 
 > 精确的函数签名、类名、Cypher 查询模板见落地规范。本模块作为 L2 共享能力层公共包，可被任意上层模块引用，不形成循环依赖（项目结构 §5.3 第 5 条：`py-config` 为公共层，无反向依赖）。
 
@@ -64,7 +65,7 @@
 
 | 决策点 | 最终方案 | 备选方案 | 选择理由 |
 |--------|---------|---------|---------|
-| 配置加载框架 | pydantic-settings BaseSettings | 手写 `os.environ` + if-else 校验 | pydantic-settings 内置类型校验（`PostgresDsn`、`RedisDsn` 等），将 14 项字段的格式校验从手写代码转为声明式类型注解，代码量减少约 60%。Pydantic 的 `ValidationError` 天然支持一次收集全部错误字段，满足 AC-01 的"多项缺失一次性列出"要求。 |
+| 配置加载框架 | pydantic-settings BaseSettings | 手写 `os.environ` + if-else 校验 | pydantic-settings 内置类型校验（`PostgresDsn`、`RedisDsn` 等），将 18 项字段的格式校验从手写代码转为声明式类型注解，代码量减少约 60%。Pydantic 的 `ValidationError` 天然支持一次收集全部错误字段，满足 AC-01 的"多项缺失一次性列出"要求。 |
 | 密钥内存保护 | `pydantic.SecretStr`（脱敏 repr + 显式获取） | 自定义加密类（Fernet/AES 内存加密） | `SecretStr` 是 Python 标准级解决方案，零额外依赖，在 `repr()`/`str()` 输出时自动脱敏为 `'**********'`。MVP 阶段云服务器进程内存攻击面极小，引入内存加密的密钥管理（加密密钥本身也需要保护）会形成密钥递归问题，ROI 低。后续若安全合规要求提升，可替换 `get_secret_value()` 内部实现为 KMS 实时解密而不影响调用方。 |
 | 启动策略 | fail-fast 校验失败立即 `sys.exit(1)` | 降级启动（警告后继续运行） | 意图文档 §1.11 业务约束 3 明确要求"任何必填配置项缺失或格式不合法均须阻断启动，不得以降级模式运行"。带病运行会增加事故排查成本。 |
 | 多环境配置管理 | 单 `AppSettings` 类 + Docker Compose `env_file` 多文件切换 | (A) 单个 .env + CI/CD 变量替换；(B) pydantic-settings 嵌套多环境类 | 方案 (C) Docker Compose `env_file` 与项目已有的 DEPLOY-01 容器编排模块完全契合——`docker-compose.yml` 各服务的 `env_file` 指令直接指定 `.env.dev` / `.env.prod`，py-config 无需感知环境切换逻辑，真正做到"代码零修改"。方案 (B) 需要 py-config 类层级里维护多环境差异，增加维护成本。 |
@@ -90,4 +91,4 @@
 
 - **意图文档**：`DEPLOY-05-环境配置管理-意图文档.md`
 - **冻结时间**：2026-05-26 16:54:49
-- **一致性声明**：本设计文档的技术实现与上述意图文档中的业务定义一致。所有 14 项配置字段均直接映射到 pydantic-settings 的类型注解，三种异常场景均通过异常层级设计精确对应，启动阻断策略严格满足 AC-01、AC-02 验收标准。多环境管理、KMS 集成、热重载策略、默认值等项均基于技术预研报告 (2026-05-26 17:00) 的建议方案推断，以意图文档的业务约束为最高优先级。如有歧义，以意图文档为准。
+- **一致性声明**：本设计文档的技术实现与上述意图文档中的业务定义一致。所有 18 项配置字段均直接映射到 pydantic-settings 的类型注解，新增的 4 个嵌入模型字段（DASHSCOPE_API_KEY、DASHSCOPE_BASE_URL、EMBEDDING_MODEL、EMBEDDING_DIMENSION）与通义 API 文档中 text-embedding-v4 的推荐配置对齐。三种异常场景均通过异常层级设计精确对应，启动阻断策略严格满足 AC-01、AC-02 验收标准。多环境管理、KMS 集成、热重载策略、默认值等项均基于技术预研报告 (2026-05-26 17:00) 的建议方案推断，以意图文档的业务约束为最高优先级。如有歧义，以意图文档为准。

@@ -3,11 +3,13 @@
 import json
 import shutil
 import time
+import uuid
 from pathlib import Path
 
 from compat import CURRENT
 from domain.dag.graph import collect_ancestors
 from infrastructure.errors import InputError
+from infrastructure.timestamp import iso_timestamp
 from runtime.worktree.git import git_rev_parse
 from infrastructure.project import find_root
 from domain.workflow.spec import InstanceStatus, StageStatus, StageTargetType
@@ -45,6 +47,39 @@ def _ensure_wfctl_gitignore(worktree: Path) -> None:
         with gitignore.open("a", encoding="utf-8") as f:
             for rule in sorted(missing):
                 f.write(f"{rule}\n")
+
+
+def _write_synthetic_messages(
+    instance_id: str, stage_ids: list[str], inst_dir: Path
+) -> frozenset[str]:
+    """为 fast-forward DONE stage 写入合成消息，使其在 DAG 重评估时不被视为不一致。"""
+    messages_dir = inst_dir / "messages"
+    messages_dir.mkdir(parents=True, exist_ok=True)
+    msg_ids: list[str] = []
+
+    for sid in stage_ids:
+        msg_id = f"msg-ff-{uuid.uuid4().hex[:8]}"
+        msg = {
+            "schema_version": CURRENT.value,
+            "message_id": msg_id,
+            "instance_id": instance_id,
+            "stage_id": sid,
+            "stage_instance_id": sid,
+            "status": "DONE",
+            "report": f"[fast-forward] Stage {sid} 自动标记为 DONE",
+            "checkpoint_summary": "",
+            "confirm_questions": [],
+            "parallel_targets": None,
+            "routing_choice": None,
+            "modified_files": [],
+            "timestamp": iso_timestamp(),
+        }
+        msg_path = messages_dir / f"{msg_id}.json"
+        from infrastructure.io import atomic_write_json
+        atomic_write_json(msg_path, msg)
+        msg_ids.append(msg_id)
+
+    return frozenset(msg_ids)
 
 
 def _generate_instance_id(root: Path) -> str:
@@ -184,6 +219,7 @@ def create_instance(
 
         # ── fast-forward：将目标 stage 的拓扑前驱标为 DONE ──
         fast_forwarded: list[str] = []
+        ff_consumed: frozenset[str] = frozenset()
         if fast_forward_to:
             from domain.dag.graph import build_adjacency as _build_adj
             adj = _build_adj(spec)
@@ -200,6 +236,11 @@ def create_instance(
                         continue
                     stages[i] = s.replace(status=StageStatus.DONE)
                     fast_forwarded.append(s.stage_id)
+            # 为 fast-forward DONE stage 写入合成消息，避免 DAG 重评估时被重置
+            if fast_forwarded:
+                ff_consumed = _write_synthetic_messages(
+                    instance_id, fast_forwarded, inst_dir,
+                )
 
         instance_state = InstanceState(
             schema_version=CURRENT.value,
@@ -208,7 +249,7 @@ def create_instance(
             version=spec.version,
             goal=goal,
             parent_instance_id=parent_instance_id,
-            consumed_message_ids=frozenset(),
+            consumed_message_ids=ff_consumed,
             stages=stages,
         )
 

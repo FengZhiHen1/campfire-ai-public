@@ -19,6 +19,7 @@ from state.model import (
     StageStatus,
     StateDelta,
 )
+from infrastructure.errors import ValidationError
 from scheduler.processors.base import ProcessorResult, SideEffect
 from services.state_manager import append_deviation as _append_deviation
 from state.timeline import append_timeline as _append_timeline
@@ -73,6 +74,31 @@ class ConsumeMessagesProcessor:
                     ))
             except Exception as e:
                 import traceback
+
+                # ACCESS_VIOLATION: 软处理 — 记录偏差、置为 PENDING 重试，
+                # 让 SubAgent 有机会修正，而非直接 ERROR 终止。
+                if isinstance(e, ValidationError) and e.code == "ACCESS_VIOLATION":
+                    delta.stage_updates[st.stage_instance_id] = {
+                        "status": StageStatus.PENDING,
+                        "attempt_count": st.attempt_count + 1,
+                    }
+                    _append_deviation(
+                        ctx.instance_id,
+                        "ACCESS_VIOLATION",
+                        f"{st.stage_id}: {e}",
+                        stage_id=st.stage_id,
+                    )
+                    side_effects.append(SideEffect(
+                        kind="file_write",
+                        description=f"Timeline running→pending (access violation) for {st.stage_id}",
+                        execute=lambda iid=ctx.instance_id, sid=st.stage_id, r=str(e): _append_timeline(
+                            iid, sid, "running→pending",
+                            {"reason": r, "action": "retry"},
+                        ),
+                    ))
+                    new_consumed.add(msg_id)
+                    continue
+
                 delta.stage_updates[st.stage_instance_id] = {}
                 side_effects.append(SideEffect(
                     kind="file_write",

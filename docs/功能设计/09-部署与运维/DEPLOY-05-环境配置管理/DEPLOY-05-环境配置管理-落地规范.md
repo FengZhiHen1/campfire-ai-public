@@ -29,7 +29,7 @@
 
 | 文件类型 | 路径 | 说明 |
 |---------|------|------|
-| 配置模型 | `packages/py-config/py_config/config.py` | AppSettings 类定义，包含 BaseSettings 子类和全部 14 个字段的类型注解 |
+| 配置模型 | `packages/py-config/py_config/config.py` | AppSettings 类定义，包含 BaseSettings 子类和全部 18 个字段的类型注解 |
 | 异常定义 | `packages/py-config/py_config/exceptions.py` | ConfigError、MissingRequiredFieldError、ConfigFormatError（三级异常层次）+ ConfigWarning 工厂函数 |
 | 包入口 | `packages/py-config/py_config/__init__.py` | get_settings() 工厂函数（@lru_cache 单例）、统一导出 |
 | 包描述 | `packages/py-config/pyproject.toml` | uv workspace 成员，声明依赖 pydantic>=2.0 和 pydantic-settings>=2.0 |
@@ -43,7 +43,7 @@
 - **来源 2**：`.env` 文件——开发/测试环境使用，位于项目根目录。生产环境不使用 .env 文件（密钥通过 KMS → 部署脚本注入环境变量）
 - **优先级**：环境变量 > `.env` 文件（pydantic-settings 默认行为）
 
-输入字段定义见契约文件：`docs/contracts/DEPLOY-05/AppSettings.json`（properties 节定义了全部 14 个字段的类型、约束和默认值）。
+输入字段定义见契约文件：`docs/contracts/DEPLOY-05/AppSettings.json`（properties 节定义了全部 18 个字段的类型、约束和默认值）。
 
 ### 1.4 输出定义 【已锁定】
 
@@ -270,11 +270,13 @@ deepseek_key = settings.DEEPSEEK_API_KEY.get_secret_value()
   - REDIS_URL="redis://redis:6379/0"
   - DEEPSEEK_API_KEY="REDACTED-SET-VIA-ENV"
   - DEEPSEEK_BASE_URL="https://api.deepseek.com/v1"
+  - DASHSCOPE_API_KEY="sk-dashscope-test-key"
+  - DASHSCOPE_BASE_URL="https://dashscope.aliyuncs.com/compatible-mode/v1"
   - MINIO_ENDPOINT="minio:9000"
   - MINIO_ACCESS_KEY="minioadmin"
   - MINIO_SECRET_KEY="minioadmin-secret"
   - JWT_SECRET_KEY="REDACTED-SET-VIA-ENV"
-  - （以下使用默认值，不设置）JWT_ALGORITHM、ACCESS_TOKEN_EXPIRE_MINUTES、REFRESH_TOKEN_EXPIRE_DAYS、RATE_LIMIT_USER_PER_MINUTE、RATE_LIMIT_IP_PER_MINUTE、ENVIRONMENT
+  - （以下使用默认值，不设置）JWT_ALGORITHM、ACCESS_TOKEN_EXPIRE_MINUTES、REFRESH_TOKEN_EXPIRE_DAYS、RATE_LIMIT_USER_PER_MINUTE、RATE_LIMIT_IP_PER_MINUTE、ENVIRONMENT、EMBEDDING_MODEL、EMBEDDING_DIMENSION
 - **When**: 调用 `get_settings()`
 - **Then**:
   - 返回 AppSettings 实例，所有字段可访问
@@ -349,13 +351,13 @@ deepseek_key = settings.DEEPSEEK_API_KEY.get_secret_value()
 
 5. **[禁止行为 2]** 禁止在 py-config 的 `__init__.py` 的模块顶层（import 时）调用 `get_settings()` 触发配置加载。配置加载必须延迟到 FastAPI lifespan startup 阶段（或应用的显式初始化入口），避免 import 时因缺少环境变量导致单元测试无法加载模块。
 
-6. **[偷懒红线]** 绝对禁止在配置变更后不重启服务就期待新配置生效。本模块 MVP 阶段不实现热重载。绝对禁止用 `"..."` 或 `"其他配置项"` 省略字段定义——14 个字段必须全部显式写出。
+6. **[偷懒红线]** 绝对禁止在配置变更后不重启服务就期待新配置生效。本模块 MVP 阶段不实现热重载。绝对禁止用 `"..."` 或 `"其他配置项"` 省略字段定义——18 个字段必须全部显式写出。
 
 ### 1.12 文档详细度自检清单 【对内实现】
 
 - [x] 文档自包含：一位不了解本项目代码的 Agent，仅凭此文档即可完成编码
 - [x] 无偷懒表述：全文搜索无 `"等等"`、`"..."`、`"其他字段"`、`"类似"`、`"同上"`、`"参考其他模块"`、`"请根据实际情况补充"`、`"开发者自行决定"`
-- [x] 类型定义完整：AppSettings 14 个字段在契约文件 `AppSettings.json` 中全部有 `description`、`examples`、约束（`minimum`/`minLength`/`enum`/`default`）
+- [x] 类型定义完整：AppSettings 18 个字段在契约文件 `AppSettings.json` 中全部有 `description`、`examples`、约束（`minimum`/`minLength`/`enum`/`default`）
 - [x] 逻辑步骤完整：5 个步骤均含操作对象、具体操作、输入来源、输出去向、失败行为
 - [x] 异常处理完整：3 种异常 + 2 种边界条件，各有精确触发阈值、逐步处理策略、精确重试参数
 - [x] 无隐藏假设：所有默认值来源（pydantic Field default）已显式说明；条件分支（生产环境检测逻辑）已写出
@@ -378,7 +380,7 @@ deepseek_key = settings.DEEPSEEK_API_KEY.get_secret_value()
 - **配套意图文档**：`DEPLOY-05-环境配置管理-意图文档.md`
 - **冻结时间**：2026-05-26 16:54:49
 - **一致性确认**：
-  - [x] 本落地规范中的输入/输出类型定义与意图文档中的业务字段定义一致（14 项配置字段完整覆盖 §1.6 的输入定义和输出定义）
+  - [x] 本落地规范中的输入/输出类型定义与意图文档中的业务字段定义一致（18 项配置字段完整覆盖 §1.6 的输入定义和输出定义，含新增的 4 项嵌入模型字段）
   - [x] 本落地规范中的状态机实现与意图文档中的状态业务定义一致（§1.7 确认无需状态机）
   - [x] 本落地规范中的异常处理策略与意图文档中的异常业务策略一致（§1.8 三种异常场景精确对应：必填缺失→MissingRequiredFieldError、格式错误→ConfigFormatError、生产密钥泄露→ConfigWarning）
   - [x] 本落地规范中的验收测试场景覆盖意图文档中的所有验收标准（5 个测试场景覆盖 AC-01~AC-07 全部 7 条验收标准：AC-01→正向测试 1、AC-02→异常测试 1+2、AC-03→正向测试 2、AC-04→代码生成时 .env.example 文件、AC-05→代码生成时 .gitignore、AC-06→异常测试 3、AC-07→正向测试 1 包含全部 14 字段）
