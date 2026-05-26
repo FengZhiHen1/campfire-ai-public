@@ -459,10 +459,16 @@ def migrate_up(
             current_rev = (
                 migration_ctx.get_current_revision()  # type: ignore[union-attr]
             )
-    except Exception as exc:
+    except ProgrammingError as exc:
         # alembic_version 表不存在 → 视为全新数据库
         _logger.info(
             "alembic_version_not_found_treating_as_new_database",
+            extra={"error": str(exc)},
+        )
+        current_rev = None
+    except OperationalError as exc:
+        _logger.info(
+            "alembic_version_unreachable_treating_as_new_database",
             extra={"error": str(exc)},
         )
         current_rev = None
