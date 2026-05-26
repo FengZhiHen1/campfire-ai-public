@@ -16,7 +16,6 @@ Redis 故障时 fail-open（放行所有请求 + CRITICAL 日志告警）。
 from __future__ import annotations
 
 import asyncio
-import logging
 import time
 
 import redis.asyncio as aioredis
@@ -24,8 +23,7 @@ from redis.exceptions import RedisError
 
 from py_config import get_settings
 from py_config.security import get_security_config
-
-logger = logging.getLogger("py_cache.rate_limit")
+from py_logger import logger
 
 # 模块级 Redis 客户端（惰性初始化）
 _redis_client: aioredis.Redis | None = None
@@ -81,7 +79,7 @@ async def check_rate_limit(
     Side Effects:
         - 向 Redis 写入 INCR + EXPIRE（TTL = WINDOW_SECONDS + 60）
         - Redis 不可用时记录 CRITICAL 日志：
-          ``logger.critical("rate_limit_redis_unavailable", ...)``
+          ``logger.critical("py-cache", "rate_limit_redis_unavailable", op_type="rate_limit_degraded", ...)``
     """
     config = get_security_config()
     window = config.RATE_LIMIT_WINDOW_SECONDS
@@ -92,7 +90,9 @@ async def check_rate_limit(
         redis_client = await _get_redis()
     except Exception as exc:
         logger.critical(
+            "py-cache",
             "rate_limit_redis_unavailable",
+            op_type="rate_limit_degraded",
             extra={
                 "event": "rate_limit_redis_unavailable",
                 "ip": ip,
@@ -129,7 +129,9 @@ async def check_rate_limit(
 
     except RedisError as exc:
         logger.critical(
+            "py-cache",
             "rate_limit_redis_unavailable",
+            op_type="rate_limit_degraded",
             extra={
                 "event": "rate_limit_redis_unavailable",
                 "ip": ip,
