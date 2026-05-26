@@ -3,8 +3,14 @@ name = "py-config"
 version = "0.1.0"
 description = "Campfire-AI shared package: py-config"
 requires-python = ">=3.12"
-dependencies = []
+dependencies = [
+    "pydantic>=2.0",
+    "pydantic-settings>=2.0",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["py_config"]
 
 [build-system]
-requires = ["uv_build>=0.9.21,<0.10.0"]
-build-backend = "uv_build"
+requires = ["hatchling>=1.26"]
+build-backend = "hatchling.build"
