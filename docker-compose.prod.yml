@@ -1,0 +1,119 @@
+# ============================================================
+# 篝火智答 (Campfire-AI) — 生产环境编排
+# 启动: docker compose -f docker-compose.prod.yml up -d
+# ============================================================
+
+services:
+  # --- PostgreSQL 17 + pgvector ---
+  postgres:
+    image: pgvector/pgvector:pg17
+    container_name: campfire-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - campfire-net
+
+  # --- Redis 7 ---
+  redis:
+    image: redis:7-alpine
+    container_name: campfire-redis
+    restart: unless-stopped
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - campfire-net
+
+  # --- MinIO ---
+  minio:
+    image: minio/minio:latest
+    container_name: campfire-minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ACCESS_KEY}
+      MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY}
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - campfire-net
+
+  # --- FastAPI API Server ---
+  api-server:
+    build:
+      context: .
+      dockerfile: apps/api-server/Dockerfile.api
+    container_name: campfire-api
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    env_file:
+      - .env
+    networks:
+      - campfire-net
+
+  # --- Worker ---
+  worker:
+    build:
+      context: .
+      dockerfile: apps/worker/Dockerfile.worker
+    container_name: campfire-worker
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    env_file:
+      - .env
+    networks:
+      - campfire-net
+
+  # --- Nginx 反向代理 ---
+  nginx:
+    image: nginx:1.26-alpine
+    container_name: campfire-nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./infrastructure/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./infrastructure/nginx/conf.d:/etc/nginx/conf.d:ro
+    depends_on:
+      - api-server
+    networks:
+      - campfire-net
+
+volumes:
+  postgres_data:
+  redis_data:
+  minio_data:
+
+networks:
+  campfire-net:
+    driver: bridge
