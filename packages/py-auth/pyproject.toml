@@ -3,7 +3,11 @@ name = "py-auth"
 version = "0.1.0"
 description = "Campfire-AI shared package: py-auth"
 requires-python = ">=3.12"
-dependencies = []
+dependencies = [
+    "py-config",
+    "passlib[bcrypt]>=1.7.4",
+    "python-jose[cryptography]>=3.3.0",
+]
 
 [build-system]
 requires = ["uv_build>=0.9.21,<0.10.0"]
