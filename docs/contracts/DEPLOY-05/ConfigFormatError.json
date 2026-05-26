@@ -1,0 +1,32 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "docs/contracts/DEPLOY-05/ConfigFormatError.json",
+  "title": "ConfigFormatError",
+  "description": "配置项格式错误异常（继承自 ConfigError）。配置项已设置但值格式不合法时触发（如数据库连接串缺少端口、API 地址不是合法 URL、过期时间不是正整数等）。触发后立即阻断服务启动。与 MissingRequiredFieldError 的区别：本异常针对"已设置但格式错误"的场景，错误提示中区分"缺失"与"格式错误"两种类型。",
+  "type": "object",
+  "x-defined-by": "DEPLOY-05",
+  "x-consumers": [],
+  "x-maturity": "draft",
+  "x-contract-type": "error-code",
+  "x-version": "1.0.0",
+  "properties": {
+    "message": {
+      "type": "string",
+      "description": "异常描述信息，格式：'配置项格式错误: FIELD_NAME=当前值，期望格式: EXPECTED_FORMAT'"
+    },
+    "field_name": {
+      "type": "string",
+      "description": "格式错误的配置字段名称"
+    },
+    "received_value": {
+      "type": "string",
+      "description": "实际接收到的值（脱敏后）"
+    },
+    "expected_format": {
+      "type": "string",
+      "description": "期望的格式描述，如 '合法的 HTTPS URL'、'正整数'"
+    }
+  },
+  "required": ["message", "field_name", "expected_format"],
+  "additionalProperties": false
+}
