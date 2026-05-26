@@ -1,9 +1,14 @@
 [project]
 name = "py-db"
 version = "0.1.0"
-description = "Campfire-AI shared package: py-db"
+description = "Campfire-AI shared package: py-db (ORM, migrations, repositories)"
 requires-python = ">=3.12"
-dependencies = []
+dependencies = [
+    "sqlalchemy>=2.0",
+    "alembic>=1.13.0",
+    "psycopg2-binary>=2.9",
+    "psycopg>=3.2",
+]
 
 [build-system]
 requires = ["uv_build>=0.9.21,<0.10.0"]
