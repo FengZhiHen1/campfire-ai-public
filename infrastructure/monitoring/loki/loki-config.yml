@@ -1,0 +1,26 @@
+# Loki 日志聚合配置（可选）
+# 生产环境中启用日志聚合时取消注释并配置
+
+# auth_enabled: false
+#
+# server:
+#   http_listen_port: 3100
+#
+# ingester:
+#   lifecycler:
+#     ring:
+#       kvstore:
+#         store: inmemory
+#       replication_factor: 1
+#   chunk_idle_period: 5m
+#   max_chunk_age: 1h
+#
+# schema_config:
+#   configs:
+#     - from: 2024-01-01
+#       store: boltdb-shipper
+#       object_store: filesystem
+#       schema: v13
+#       index:
+#         prefix: index_
+#         period: 24h

@@ -1,0 +1,3 @@
+packages:
+  - "apps/mini-program"
+  - "packages/ts-shared"
