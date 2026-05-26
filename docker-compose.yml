@@ -1,65 +1,81 @@
 # ============================================================
-# 篝火智答 (Campfire-AI) — 本地开发基础设施编排
-# 启动: docker compose up -d
-# 停止: docker compose down
+#  (Campfire-AI) — local development infrastructure orchestration
+# Start: docker compose up -d
+# Stop:  docker compose down
+#
+# dev environment only orchestrates 3 data containers (postgres/redis/minio).
+# api-server, worker, and nginx run directly on the host.
 # ============================================================
 
 services:
-  # --- PostgreSQL 17 + pgvector ---
+  # --- PostgreSQL 17 ---
   postgres:
-    image: pgvector/pgvector:pg17
+    image: postgres:17
     container_name: campfire-postgres
     restart: unless-stopped
+    env_file: .env
     environment:
-      POSTGRES_USER: ${POSTGRES_USER:-campfire}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
-      POSTGRES_DB: ${POSTGRES_DB:-campfire}
+      POSTGRES_USER: campfire
     ports:
       - "5432:5432"
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - pgdata_dev:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-campfire} -d ${POSTGRES_DB:-campfire}"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
+      test: ["CMD-SHELL", "pg_isready -U campfire"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
 
   # --- Redis 7 ---
   redis:
     image: redis:7-alpine
     container_name: campfire-redis
     restart: unless-stopped
+    env_file: .env
     ports:
       - "6379:6379"
     volumes:
-      - redis_data:/data
+      - redis_data_dev:/data
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
 
-  # --- MinIO 对象存储 ---
+  # --- MinIO ---
   minio:
-    image: minio/minio:latest
+    image: minio/minio
     container_name: campfire-minio
     restart: unless-stopped
     command: server /data --console-address ":9001"
-    environment:
-      MINIO_ROOT_USER: ${MINIO_ACCESS_KEY:-minioadmin}
-      MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY:-minioadmin}
+    env_file: .env
     ports:
       - "9000:9000"
       - "9001:9001"
     volumes:
-      - minio_data:/data
+      - minio_data_dev:/data
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
 
 volumes:
-  postgres_data:
-  redis_data:
-  minio_data:
+  pgdata_dev:
+  redis_data_dev:
+  minio_data_dev:
