@@ -1,0 +1,16 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "docs/contracts/DEPLOY-01/NamedVolume.json",
+  "title": "NamedVolume",
+  "description": "Docker 命名卷枚举，用于数据容器的持久化存储。dev 和 prod 环境使用不同卷名以防止数据串写。QUAL-05 通过 docker volume inspect 获取挂载点或通过 docker cp 访问数据。",
+  "type": "string",
+  "x-defined-by": "DEPLOY-01",
+  "x-consumers": ["QUAL-05"],
+  "x-maturity": "draft",
+  "x-contract-type": "shared-enum",
+  "x-version": "1.0.0",
+  "enum": ["pgdata", "redis_data", "minio_data"],
+  "description": "Docker 命名卷由 Docker 引擎统一管理，跨平台路径一致。dev 环境卷名分别为 pgdata_dev、redis_data_dev、minio_data_dev。prod 环境使用基本卷名（pgdata、redis_data、minio_data）。",
+  "examples": ["pgdata", "redis_data"],
+  "note": "qual-05 备份流程: docker volume inspect <volume_name> -> Mountpoint 字段获取宿主路径 -> 使用 rsync 或 tar 备份数据。"
+}

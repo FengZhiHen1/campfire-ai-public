@@ -1,0 +1,13 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "docs/contracts/AUTH-04/UserRole.json",
+  "title": "UserRole",
+  "description": "五级RBAC角色枚举，定义全平台五种用户角色及其层级关系。枚举值统一使用英文小写；JWT payload、数据库、Python 代码中统一使用英文枚举值。\n角色层级映射：family=1(家属), teacher=2(老师), expert=3(专家), admin=4(管理员), maintainer=5(维护人员)。数值越大权限越高。\nPython 实现为 str + Enum，通过 property 获取 level(层级数值) 和 display_name(中文显示名)。",
+  "type": "string",
+  "x-defined-by": "AUTH-04",
+  "x-consumers": ["KNOW-01", "SEC-01", "CSLT-01", "CASE-01", "TICK-01", "PROF-05", "AUTH-02"],
+  "x-maturity": "draft",
+  "x-contract-type": "shared-enum",
+  "x-version": "1.0.0",
+  "enum": ["family", "teacher", "expert", "admin", "maintainer"]
+}

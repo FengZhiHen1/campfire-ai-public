@@ -1,0 +1,43 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "docs/contracts/DEPLOY-01/ComposeFileReference.json",
+  "title": "ComposeFileReference",
+  "description": "Docker Compose 编排文件的引用信息，用于环境切换和 CI/CD 流水线（DEPLOY-03）选择正确的编排文件。dev 环境仅编排 3 个数据容器（postgres/redis/minio）；prod 环境完整编排全部 6 个服务。",
+  "type": "object",
+  "x-defined-by": "DEPLOY-01",
+  "x-consumers": ["DEPLOY-03"],
+  "x-maturity": "draft",
+  "x-contract-type": "shared-model",
+  "x-version": "1.0.0",
+  "properties": {
+    "environment": {
+      "type": "string",
+      "enum": ["dev", "prod"],
+      "description": "运行环境标识，决定使用哪个编排文件"
+    },
+    "file_path": {
+      "type": "string",
+      "description": "Compose 文件的相对路径（相对于项目根目录）",
+      "examples": ["docker-compose.yml", "docker-compose.prod.yml"]
+    },
+    "orchestration_scope": {
+      "type": "string",
+      "enum": ["3_data_containers", "6_services"],
+      "description": "编排范围。dev=3_data_containers 仅编排 postgres/redis/minio；prod=6_services 完整编排全部服务。"
+    }
+  },
+  "required": ["environment", "file_path", "orchestration_scope"],
+  "additionalProperties": false,
+  "examples": [
+    {
+      "environment": "dev",
+      "file_path": "docker-compose.yml",
+      "orchestration_scope": "3_data_containers"
+    },
+    {
+      "environment": "prod",
+      "file_path": "docker-compose.prod.yml",
+      "orchestration_scope": "6_services"
+    }
+  ]
+}

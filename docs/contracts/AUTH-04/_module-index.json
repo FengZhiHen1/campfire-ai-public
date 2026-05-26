@@ -1,0 +1,46 @@
+{
+  "module_id": "AUTH-04",
+  "module_name": "五级RBAC鉴权",
+  "contracts": [
+    {
+      "title": "UserRole",
+      "file": "UserRole.json",
+      "type": "shared-enum",
+      "maturity": "draft",
+      "defined_by": "AUTH-04",
+      "consumers": ["KNOW-01", "SEC-01", "CSLT-01", "CASE-01", "TICK-01", "PROF-05", "AUTH-02"]
+    },
+    {
+      "title": "require_role",
+      "file": "require_role.json",
+      "type": "input",
+      "maturity": "draft",
+      "defined_by": "AUTH-04",
+      "consumers": ["CSLT-01", "CASE-01", "TICK-01", "PROF-05", "KNOW-01"]
+    },
+    {
+      "title": "get_masked_phone",
+      "file": "get_masked_phone.json",
+      "type": "input",
+      "maturity": "draft",
+      "defined_by": "AUTH-04",
+      "consumers": ["SEC-01"]
+    },
+    {
+      "title": "TokenBlacklistKey",
+      "file": "TokenBlacklistKey.json",
+      "type": "shared-model",
+      "maturity": "draft",
+      "defined_by": "AUTH-04",
+      "consumers": ["AUTH-02"]
+    },
+    {
+      "title": "PermissionDeniedResponse",
+      "file": "PermissionDeniedResponse.json",
+      "type": "error-code",
+      "maturity": "draft",
+      "defined_by": "AUTH-04",
+      "consumers": ["CSLT-01", "CASE-01", "TICK-01", "PROF-05", "KNOW-01"]
+    }
+  ]
+}

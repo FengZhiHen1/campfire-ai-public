@@ -1,0 +1,43 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "docs/contracts/DEPLOY-01/LogDriverConfig.json",
+  "title": "LogDriverConfig",
+  "description": "所有业务容器的 Docker 日志驱动配置。stdout/stderr 通过 json-file 驱动统一收集，OBS-01 从 Docker 日志中提取并结构化。dev 和 prod 使用不同的日志保留策略。",
+  "type": "object",
+  "x-defined-by": "DEPLOY-01",
+  "x-consumers": ["OBS-01"],
+  "x-maturity": "draft",
+  "x-contract-type": "shared-model",
+  "x-version": "1.0.0",
+  "properties": {
+    "driver": {
+      "type": "string",
+      "const": "json-file",
+      "description": "Docker 日志驱动类型，固定为 json-file"
+    },
+    "max_size": {
+      "type": "string",
+      "description": "每个日志文件的最大大小。dev 环境 10m，prod 环境 20m。",
+      "examples": ["10m", "20m"]
+    },
+    "max_file": {
+      "type": "integer",
+      "description": "保留的日志文件最大数量。dev 环境 3 个，prod 环境 5 个。",
+      "examples": [3, 5]
+    },
+    "retention_days": {
+      "type": "integer",
+      "description": "日志保留天数。dev 环境 7 天；prod 环境约束为总容量不超过 100MB（通过 max_size * max_file 间接控制）。",
+      "examples": [7]
+    }
+  },
+  "required": ["driver", "max_size", "max_file"],
+  "additionalProperties": false,
+  "examples": [
+    {
+      "driver": "json-file",
+      "max_size": "20m",
+      "max_file": 5
+    }
+  ]
+}

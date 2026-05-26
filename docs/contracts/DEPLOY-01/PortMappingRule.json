@@ -1,0 +1,49 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "docs/contracts/DEPLOY-01/PortMappingRule.json",
+  "title": "PortMappingRule",
+  "description": "容器端口与宿主机端口的映射规则。dev 和 prod 环境使用不同的端口暴露策略：dev 暴露全部端口便于调试，prod 仅暴露 Nginx 80/443。数据容器端口在 prod 中不可暴露或仅为 127.0.0.1 绑定。",
+  "type": "object",
+  "x-defined-by": "DEPLOY-01",
+  "x-consumers": ["DEPLOY-02", "SEC-01"],
+  "x-maturity": "draft",
+  "x-contract-type": "shared-model",
+  "x-version": "1.0.0",
+  "properties": {
+    "environment": {
+      "type": "string",
+      "enum": ["dev", "prod"],
+      "description": "环境标识，dev=开发环境端口暴露，prod=生产环境端口暴露"
+    },
+    "service": {
+      "$ref": "./ContainerServiceName.json",
+      "description": "所属服务名称"
+    },
+    "host_port": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 65535,
+      "description": "宿主机监听端口。dev Nginx 使用 8080/8443（避免端口冲突）；prod Nginx 使用 80/443；prod 数据容器端口不暴露。",
+      "examples": [8000, 8080, 80, 5432, 6379, 9000]
+    },
+    "container_port": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 65535,
+      "description": "容器内部监听端口",
+      "examples": [8000, 5432, 6379, 9000, 80]
+    },
+    "protocol": {
+      "type": "string",
+      "default": "tcp",
+      "enum": ["tcp", "udp"],
+      "description": "传输层协议，默认为 tcp"
+    }
+  },
+  "required": ["environment", "service", "host_port", "container_port"],
+  "additionalProperties": false,
+  "examples": [
+    {"environment": "dev", "service": "campfire-api-server", "host_port": 8000, "container_port": 8000},
+    {"environment": "prod", "service": "campfire-nginx", "host_port": 80, "container_port": 80}
+  ]
+}

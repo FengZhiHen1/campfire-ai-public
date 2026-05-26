@@ -1,0 +1,15 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "docs/contracts/DEPLOY-01/ContainerServiceName.json",
+  "title": "ContainerServiceName",
+  "description": "篝火智答项目编排的 6 个容器服务名称枚举。作为容器命名、内部 DNS 解析、服务发现的基础标识符，所有依赖容器化服务的模块（DEPLOY-02/DEPLOY-04/DEPLOY-03/DEPLOY-05/OBS-04/QUAL-05）均使用此枚举引用具体服务。",
+  "type": "string",
+  "x-defined-by": "DEPLOY-01",
+  "x-consumers": ["DEPLOY-02", "DEPLOY-03", "DEPLOY-04", "DEPLOY-05", "OBS-04", "QUAL-05"],
+  "x-maturity": "draft",
+  "x-contract-type": "shared-enum",
+  "x-version": "1.0.0",
+  "enum": ["campfire-api-server", "campfire-worker", "campfire-postgres", "campfire-redis", "campfire-minio", "campfire-nginx"],
+  "description": "统一前缀 campfire-{service} 避免宿主机多项目命名冲突。服务名直接映射为内部 DNS 名（自定义桥接网络 campfire-net 中解析）。",
+  "examples": ["campfire-api-server", "campfire-postgres", "campfire-nginx"]
+}

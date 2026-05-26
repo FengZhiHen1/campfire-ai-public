@@ -1,0 +1,15 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "docs/contracts/DEPLOY-01/InternalDnsName.json",
+  "title": "InternalDnsName",
+  "description": "容器在自定义桥接网络 campfire-net 中的内部 DNS 名称和端口映射。服务名直接解析为容器 IP，格式为 {service_name}:{port}。DEPLOY-02 将 api-server 配置为 Nginx upstream；DEPLOY-04 使用 postgres:5432 执行数据库迁移。",
+  "type": "string",
+  "x-defined-by": "DEPLOY-01",
+  "x-consumers": ["DEPLOY-02", "DEPLOY-04"],
+  "x-maturity": "draft",
+  "x-contract-type": "shared-enum",
+  "x-version": "1.0.0",
+  "enum": ["api-server:8000", "worker:8000", "postgres:5432", "redis:6379", "minio:9000", "nginx:80"],
+  "examples": ["api-server:8000", "postgres:5432"],
+  "description": "内部 DNS 名仅在 prod 环境的 campfire-net 网络中解析。dev 环境 api-server/worker 在宿主机运行，通过 localhost 连接数据容器。"
+}
