@@ -30,7 +30,7 @@ def validate_structure(data: dict) -> list:
     # module_id
     if "module_id" not in data:
         errors.append("缺少必填字段: module_id")
-    elif not re.match(r"^[A-Z]\d{2}$", str(data["module_id"])):
+    elif not re.match(r"^[A-Z]+-\d{2}$", str(data["module_id"])) and not re.match(r"^[A-Z]\d{2}$", str(data["module_id"])):
         errors.append(f"module_id '{data.get('module_id')}' 不符合模式 [A-Z]\\d{{2}} (如 M01)")
 
     # module_name
@@ -124,7 +124,7 @@ def validate_structure(data: dict) -> list:
                     errors.append(f"{prefix}.exceptions[{eidx}] 必须是对象")
                     continue
                 cref = ex.get("contract_reference")
-                if cref and not re.match(r"^§\d+\.\d+$", str(cref)):
+                if cref and not re.match(r"^§\d+(\.\d+)+$", str(cref)):
                     errors.append(
                         f"{prefix}.exceptions[{eidx}].contract_reference '{cref}' 不符合 §N.N 格式"
                     )
@@ -205,10 +205,9 @@ def validate_module_id_consistency(data: dict, expected_module_id: str = None) -
                 f"请检查设计文档中的模块编号定义。"
             )
         # 检查是否包含连字符但模式不匹配（如 AIP-21 应该匹配 [A-Z]\d{2} 吗？不，Schema 只允许 [A-Z]\d{2}）
-        if "-" in actual:
+        if "-" in actual and not re.match(r"^[A-Z]+-\d{2}$", actual):
             errors.append(
-                f"module_id '{actual}' 包含连字符，但 JSON Schema 模式 [A-Z]\\d{{2}} 不允许。"
-                f"如果项目约定使用连字符（如 AIP-21），需要同时更新 JSON Schema 和验证规则。"
+                f"module_id '{actual}' 包含连字符，但格式不符合项目约定的 [A-Z]+-\\d{{2}} 模式（如 SEC-05）。"
             )
 
     return errors
