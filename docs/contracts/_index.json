@@ -1,35 +1,53 @@
 {
   "version": "1.0.0",
   "description": "全局契约索引",
-  "last_updated": "2026-05-26T17:22:10+08:00",
+  "last_updated": "2026-05-26T17:21:10+08:00",
   "contracts": {
-    "AppSettings": {
-      "file": "docs/contracts/DEPLOY-05/AppSettings.json",
-      "defined_by": "DEPLOY-05",
-      "maturity": "draft",
-      "consumers": ["DEPLOY-01", "DEPLOY-02", "DEPLOY-04", "OBS-01", "OBS-02", "OBS-03", "OBS-04", "QUAL-05"]
-    },
-    "ConfigError": {
-      "file": "docs/contracts/DEPLOY-05/ConfigError.json",
-      "defined_by": "DEPLOY-05",
+    "ValidationErrorResponse": {
+      "file": "docs/contracts/SEC-05/ValidationErrorResponse.json",
+      "defined_by": "SEC-05",
       "maturity": "draft",
       "consumers": []
     },
-    "MissingRequiredFieldError": {
-      "file": "docs/contracts/DEPLOY-05/MissingRequiredFieldError.json",
-      "defined_by": "DEPLOY-05",
+    "ValidationErrorItem": {
+      "file": "docs/contracts/SEC-05/ValidationErrorItem.json",
+      "defined_by": "SEC-05",
       "maturity": "draft",
       "consumers": []
     },
-    "ConfigFormatError": {
-      "file": "docs/contracts/DEPLOY-05/ConfigFormatError.json",
-      "defined_by": "DEPLOY-05",
+    "FileValidationRule": {
+      "file": "docs/contracts/SEC-05/FileValidationRule.json",
+      "defined_by": "SEC-05",
       "maturity": "draft",
       "consumers": []
     },
-    "ConfigWarning": {
-      "file": "docs/contracts/DEPLOY-05/ConfigWarning.json",
-      "defined_by": "DEPLOY-05",
+    "FileValidationResult": {
+      "file": "docs/contracts/SEC-05/FileValidationResult.json",
+      "defined_by": "SEC-05",
+      "maturity": "draft",
+      "consumers": []
+    },
+    "SecurityAuditLogEntry": {
+      "file": "docs/contracts/SEC-05/SecurityAuditLogEntry.json",
+      "defined_by": "SEC-05",
+      "maturity": "draft",
+      "consumers": []
+    },
+    "sanitize_html": {
+      "file": "docs/contracts/SEC-05/sanitize_html.json",
+      "defined_by": "SEC-05",
+      "maturity": "draft",
+      "consumers": []
+    },
+    "validate_file": {
+      "file": "docs/contracts/SEC-05/validate_file.json",
+      "defined_by": "SEC-05",
+      "maturity": "draft",
+      "consumers": []
+    },
+    "SecurityDetectionType": {
+      "file": "docs/contracts/SEC-05/SecurityDetectionType.json",
+      "defined_by": "SEC-05",
       "maturity": "draft",
       "consumers": []
     }

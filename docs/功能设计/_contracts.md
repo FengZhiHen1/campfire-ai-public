@@ -1,11 +1,11 @@
 # 模块接口契约索引
 
-## DEPLOY-05 - 环境配置管理
-- **输入**: 环境变量 / .env 文件（操作系统级，无类型化入参）
-- **输出**: `AppSettings {DATABASE_URL, REDIS_URL, DEEPSEEK_API_KEY, DEEPSEEK_BASE_URL, MINIO_ENDPOINT, MINIO_ACCESS_KEY, MINIO_SECRET_KEY, JWT_SECRET_KEY, JWT_ALGORITHM, ACCESS_TOKEN_EXPIRE_MINUTES, REFRESH_TOKEN_EXPIRE_DAYS, RATE_LIMIT_USER_PER_MINUTE, RATE_LIMIT_IP_PER_MINUTE, ENVIRONMENT}`
-- **状态机**: 无
-- **模块依赖**: 无（L1 基础层无上游业务依赖）
-- **外部依赖**: pydantic-settings >= 2.0（环境变量加载与校验），pydantic >= 2.0（类型校验与 SecretStr 脱敏），Python 3.12+ 运行时
-- **技术栈**: pydantic-settings>=2.0, pydantic>=2.0, Python 3.12+
-- **契约文件**: `docs/contracts/DEPLOY-05/AppSettings.json`, `docs/contracts/DEPLOY-05/ConfigError.json`, `docs/contracts/DEPLOY-05/MissingRequiredFieldError.json`, `docs/contracts/DEPLOY-05/ConfigFormatError.json`, `docs/contracts/DEPLOY-05/ConfigWarning.json`
-- **更新时间**: 2026-05-26 17:22:10
+## SEC-05 - 输入校验防护
+- **输入**: 请求体`dict | None`（由各接口 Pydantic Schema 定义）、查询参数`dict[str,str]`、路径参数`dict[str,str]`、上传文件 `UploadedFile | None`
+- **输出**: `ValidationResult {is_valid: bool, validated_data: T | None, errors: list[FieldError] | None, sanitized_content: str | None, secure_query: str}`
+- **状态机**: 无（同步无状态操作）
+- **模块依赖**: AUTH-04 (JWT认证上下文, Depends链上游)
+- **外部依赖**: FastAPI (依赖注入), Pydantic v2 (Schema校验), SQLAlchemy 2.0 async (参数化查询), Python html (实体转义), py-logger (安全审计日志)
+- **技术栈**: pydantic>=2.0, fastapi>=0.115, sqlalchemy>=2.0, html (stdlib)
+- **契约文件**: `docs/contracts/SEC-05/ValidationErrorResponse.json`, `docs/contracts/SEC-05/ValidationErrorItem.json`, `docs/contracts/SEC-05/FileValidationRule.json`, `docs/contracts/SEC-05/FileValidationResult.json`, `docs/contracts/SEC-05/SecurityAuditLogEntry.json`, `docs/contracts/SEC-05/sanitize_html.json`, `docs/contracts/SEC-05/validate_file.json`, `docs/contracts/SEC-05/SecurityDetectionType.json`
+- **更新时间**: `2026-05-26 17:21:10`
