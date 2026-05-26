@@ -1,0 +1,132 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "function-signatures.schema.json",
+  "title": "Function Signatures Schema",
+  "description": "Defines the structure for function signature lists passed between orchestrator phases. Enforced by scripts/validate_function_signatures.py.",
+  "type": "object",
+  "required": ["module_id", "module_name", "functions"],
+  "additionalProperties": false,
+  "properties": {
+    "module_id": {
+      "type": "string",
+      "pattern": "^[A-Z]\\d{2}$",
+      "description": "Module identifier, e.g. M01, M02. Must match the module-id pattern used throughout the project."
+    },
+    "module_name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 100,
+      "description": "Human-readable module name in the project's language."
+    },
+    "functions": {
+      "type": "array",
+      "minItems": 1,
+      "description": "All public functions/methods exposed by this module. Private helpers must NOT be listed.",
+      "items": {
+        "type": "object",
+        "required": ["name", "signature", "parameters", "return_type"],
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "type": "string",
+            "pattern": "^[a-zA-Z_][a-zA-Z0-9_]*$",
+            "description": "Function identifier. Must be a valid identifier in the target language."
+          },
+          "signature": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Full function signature as it appears in source code. Used by the test generator to determine call syntax."
+          },
+          "parameters": {
+            "type": "array",
+            "description": "Ordered list of parameters. Order must match the signature string.",
+            "items": {
+              "type": "object",
+              "required": ["name", "type"],
+              "additionalProperties": false,
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "pattern": "^[a-zA-Z_][a-zA-Z0-9_]*$"
+                },
+                "type": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "Type annotation as declared in the source. E.g. 'str', 'int', 'List[User]', 'Optional[dict]'."
+                },
+                "required": {
+                  "type": "boolean",
+                  "default": true,
+                  "description": "If false, the parameter has a default value and may be omitted."
+                },
+                "default": {
+                  "description": "The default value expression. Only present when required=false."
+                },
+                "constraints": {
+                  "type": "array",
+                  "items": { "type": "string" },
+                  "description": "Human-readable constraint descriptions extracted from the spec. E.g. 'non-empty', 'positive integer', 'valid email'."
+                },
+                "bounds": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "min": { "description": "Minimum value or length." },
+                    "max": { "description": "Maximum value or length." },
+                    "regex": {
+                      "type": "string",
+                      "description": "Pattern the value must match."
+                    },
+                    "allowed_values": {
+                      "type": "array",
+                      "items": { "type": "string" },
+                      "description": "Explicit list of allowed values (for enums / literals)."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "return_type": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Return type annotation. Use 'None' / 'void' for procedures."
+          },
+          "exceptions": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["type"],
+              "additionalProperties": false,
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "description": "Exception / error class name."
+                },
+                "trigger": {
+                  "type": "string",
+                  "description": "Condition that causes this exception. Must reference a contract clause."
+                },
+                "contract_reference": {
+                  "type": "string",
+                  "pattern": "^§[0-9]+\\.[0-9]+$",
+                  "description": "Clause reference in the spec, e.g. §3.2"
+                }
+              }
+            }
+          },
+          "preconditions": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Conditions that must be true before calling this function."
+          },
+          "side_effects": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Observable side effects (file writes, network calls, state mutations)."
+          }
+        }
+      }
+    }
+  }
+}
