@@ -183,12 +183,12 @@ flowchart TD
 
 ### s08-dispatch-modules -- 模块设计子工作流调度
 
-- **类型**：子工作流（`workflow: module-design-pipeline@1.0.0`）+ 并行扇出（`parallel: {source: s07}`）
+- **类型**：子工作流（`workflow: module-design-pipeline@1.1.0`）+ 并行扇出（`parallel: {source: s07}`）
 - **确认行为**：无确认点
 - **重试**：1 次
 - **描述**：wfctl 读取 s07 上报的 `parallel_targets`（选定模块清单），为每个模块：
   1. 创建独立 git worktree
-  2. 启动 `module-design-pipeline@1.0.0` 子工作流实例，注入模块标识和增量场景参数
+  2. 启动 `module-design-pipeline@1.1.0` 子工作流实例，注入模块标识和增量场景参数
   3. 等待所有子工作流实例完成
   4. 将各 worktree 变更合并回实例 worktree
   5. 全部成功 → 解锁 s09；任一失败 → 回 s07 让用户重新选择

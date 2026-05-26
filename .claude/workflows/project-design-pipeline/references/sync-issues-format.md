@@ -1,6 +1,6 @@
 # 同步矛盾上报格式
 
-> 本文件为工作流级共享规范。父工作流 `project-design-pipeline@3.0.0` 和子工作流 `module-design-pipeline@1.0.0` 均需遵守。
+> 本文件为工作流级共享规范。父工作流 `project-design-pipeline@3.0.0` 和子工作流 `module-design-pipeline@1.1.0` 均需遵守。
 > 子工作流 s12（module-sync-reporter）按此格式**追加**写入，父工作流 s08（project-sync-aggregator）按此格式**解析**。
 
 ---

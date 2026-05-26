@@ -64,7 +64,7 @@ stages:
   # ==================== 阶段四：模块调度（s07-s08）====================
   #
   # s07: 项目状态汇报 + 用户选择模块 → 输出 parallel_targets
-  # s08: wfctl 为 s07 选定的模块并行启动 module-design-pipeline@1.0.0 子工作流
+  # s08: wfctl 为 s07 选定的模块并行启动 module-design-pipeline@1.1.0 子工作流
 
   - stage_id: s07-project-sync-and-dispatch
     name: "项目同步与模块调度"
@@ -75,7 +75,7 @@ stages:
 
   - stage_id: s08-dispatch-modules
     name: "模块设计子工作流调度"
-    workflow: module-design-pipeline@1.0.0
+    workflow: module-design-pipeline@1.1.0
     model: light
     retry: 1
     parallel:
@@ -226,7 +226,7 @@ edges:
 
   # -- s08 调度子工作流（非确认点）--
   # wfctl 按 parallel 声明为 s07 选定的每个模块创建独立 worktree，
-  # 启动 module-design-pipeline@1.0.0 子工作流实例，等待全部完成后合并变更
+  # 启动 module-design-pipeline@1.1.0 子工作流实例，等待全部完成后合并变更
   - from: s08-dispatch-modules
     to: s09-project-sync-check
     condition: success
