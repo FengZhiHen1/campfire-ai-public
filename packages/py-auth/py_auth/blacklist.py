@@ -1,19 +1,11 @@
-"""AUTH-04 Token 黑名单 — Redis 操作模块。
+"""Token 失效管理 — Redis 操作模块。
 
-提供角色变更后 Token 实时失效所需的 Redis 黑名单操作：
-- add_to_blacklist(jti): 将 jti 写入 Redis 黑名单，TTL=900s
-- is_blacklisted(jti) -> bool: 查询 jti 是否在黑名单中
-
-Key 模式：token_blacklist:{jti}
-TTL：900 秒（15 分钟，与 Access Token 有效期一致）
+两层防护：
+1. 角色变更撤销：add_to_blacklist / is_blacklisted，Key 模式 token_blacklist:{jti}，TTL=900s
+2. Refresh Token 单次使用：mark_refresh_used / is_refresh_used，Key 模式 refresh_used:{jti}，TTL=7d
 
 降级策略（fail-open）：
-Redis 不可用时 is_blacklisted 返回 False（放行），旧角色 Token 继续有效
-直到自然过期（最多 15 分钟）。add_to_blacklist 在 Redis 不可用时不写入，
-仅记录 warning 日志。
-
-契约引用：
-- TokenBlacklistKey: docs/contracts/AUTH-04/TokenBlacklistKey.json
+Redis 不可用时放行，仅记录 warning 日志。
 """
 
 from __future__ import annotations
@@ -152,7 +144,53 @@ async def is_blacklisted(jti: str) -> bool:
         return False
 
 
+async def mark_refresh_used(jti: str) -> None:
+    """将续期令牌标记为已使用（防止重放攻击）。
+
+    Key 格式：refresh_used:{jti}
+    TTL：7 天（与 Refresh Token 有效期一致）
+
+    Args:
+        jti: 续期令牌的 jti claim。
+    """
+    try:
+        client = await _get_redis()
+        key = f"refresh_used:{jti}"
+        await client.setex(key, _REFRESH_USED_TTL, "1")
+    except (RedisError, ConnectionError, OSError) as exc:
+        logger.warning(
+            "py-auth",
+            "Refresh 标记写入失败（fail-open）",
+            op_type="认证",
+            extra={"jti": jti, "strategy": "fail_open", "error": str(exc)},
+        )
+
+
+async def is_refresh_used(jti: str) -> bool:
+    """查询续期令牌是否已被使用过。
+
+    Redis 不可用时返回 False（fail-open 放行）。
+    """
+    try:
+        client = await _get_redis()
+        key = f"refresh_used:{jti}"
+        return await client.exists(key) > 0
+    except (RedisError, ConnectionError, OSError) as exc:
+        logger.warning(
+            "py-auth",
+            "Refresh 查询失败（fail-open）",
+            op_type="认证",
+            extra={"jti": jti, "strategy": "fail_open", "error": str(exc)},
+        )
+        return False
+
+
+_REFRESH_USED_TTL: int = 7 * 24 * 3600  # 7 天
+
+
 __all__ = [
     "add_to_blacklist",
     "is_blacklisted",
+    "mark_refresh_used",
+    "is_refresh_used",
 ]

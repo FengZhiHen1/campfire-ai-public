@@ -202,8 +202,54 @@ class PermissionDeniedResponse(BaseModel):
     model_config = {"extra": "forbid"}
 
 
+# ===========================================================================
+# AUTH-02/03 — 登录/续期请求响应模型
+# ===========================================================================
+
+
+class LoginRequest(BaseModel):
+    """登录请求体。
+
+    username: 登录名称，4-32 字符。
+    password: 登录凭证，至少 8 位。
+    """
+
+    username: str = Field(..., min_length=4, max_length=32)
+    password: str = Field(..., min_length=8)
+
+    model_config = {"extra": "forbid"}
+
+
+class TokenResponse(BaseModel):
+    """认证令牌响应体。
+
+    登录成功或续期成功时返回。
+    access_token 有效期 15 分钟，refresh_token 有效期 7 天。
+    """
+
+    access_token: str = Field(..., description="JWT 访问令牌，15 分钟有效")
+    refresh_token: str = Field(..., description="JWT 续期令牌，7 天有效")
+    token_type: Literal["Bearer"] = Field(default="Bearer")
+
+    model_config = {"extra": "forbid"}
+
+
+class RefreshRequest(BaseModel):
+    """续期请求体。
+
+    携带当前 Refresh Token 以换取新的 Token 对。
+    """
+
+    refresh_token: str = Field(..., description="当前的续期令牌")
+
+    model_config = {"extra": "forbid"}
+
+
 __all__ = [
     "UserRole",
+    "LoginRequest",
+    "TokenResponse",
+    "RefreshRequest",
     "RegisterRequest",
     "RegisterResponse",
     "PermissionDeniedResponse",
