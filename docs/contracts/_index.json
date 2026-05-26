@@ -1,53 +1,35 @@
 {
   "version": "1.0.0",
   "description": "全局契约索引",
-  "last_updated": "2026-05-26T17:21:10+08:00",
+  "last_updated": "2026-05-26 17:21:02",
   "contracts": {
-    "ValidationErrorResponse": {
-      "file": "docs/contracts/SEC-05/ValidationErrorResponse.json",
-      "defined_by": "SEC-05",
+    "LogLevel": {
+      "file": "docs/contracts/OBS-01/LogLevel.json",
+      "defined_by": "OBS-01",
       "maturity": "draft",
       "consumers": []
     },
-    "ValidationErrorItem": {
-      "file": "docs/contracts/SEC-05/ValidationErrorItem.json",
-      "defined_by": "SEC-05",
+    "LogInput": {
+      "file": "docs/contracts/OBS-01/LogInput.json",
+      "defined_by": "OBS-01",
       "maturity": "draft",
       "consumers": []
     },
-    "FileValidationRule": {
-      "file": "docs/contracts/SEC-05/FileValidationRule.json",
-      "defined_by": "SEC-05",
+    "LogEntry": {
+      "file": "docs/contracts/OBS-01/LogEntry.json",
+      "defined_by": "OBS-01",
       "maturity": "draft",
       "consumers": []
     },
-    "FileValidationResult": {
-      "file": "docs/contracts/SEC-05/FileValidationResult.json",
-      "defined_by": "SEC-05",
+    "FastAPIRequestLog": {
+      "file": "docs/contracts/OBS-01/FastAPIRequestLog.json",
+      "defined_by": "OBS-01",
       "maturity": "draft",
       "consumers": []
     },
-    "SecurityAuditLogEntry": {
-      "file": "docs/contracts/SEC-05/SecurityAuditLogEntry.json",
-      "defined_by": "SEC-05",
-      "maturity": "draft",
-      "consumers": []
-    },
-    "sanitize_html": {
-      "file": "docs/contracts/SEC-05/sanitize_html.json",
-      "defined_by": "SEC-05",
-      "maturity": "draft",
-      "consumers": []
-    },
-    "validate_file": {
-      "file": "docs/contracts/SEC-05/validate_file.json",
-      "defined_by": "SEC-05",
-      "maturity": "draft",
-      "consumers": []
-    },
-    "SecurityDetectionType": {
-      "file": "docs/contracts/SEC-05/SecurityDetectionType.json",
-      "defined_by": "SEC-05",
+    "Logger": {
+      "file": "docs/contracts/OBS-01/Logger-interface.json",
+      "defined_by": "OBS-01",
       "maturity": "draft",
       "consumers": []
     }
