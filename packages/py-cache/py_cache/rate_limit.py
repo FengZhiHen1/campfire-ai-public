@@ -184,6 +184,22 @@ async def _check_sliding_window(
     return total <= threshold
 
 
+async def get_redis_client() -> aioredis.Redis:
+    """获取 Redis 异步客户端实例（惰性初始化，异步线程安全）。
+
+    基于 _get_redis() 的内部逻辑，提供公开访问入口。
+    返回的客户端实例具备 eval() 方法，可用于执行 LUA 原子脚本。
+
+    Returns:
+        Redis 异步客户端实例。
+
+    Raises:
+        ConnectionError: 仅在显式 PING 验证时抛出；惰性初始化不主动连接。
+    """
+    return await _get_redis()
+
+
 __all__ = [
     "check_rate_limit",
+    "get_redis_client",
 ]
