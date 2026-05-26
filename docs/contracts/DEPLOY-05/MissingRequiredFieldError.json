@@ -1,0 +1,27 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "docs/contracts/DEPLOY-05/MissingRequiredFieldError.json",
+  "title": "MissingRequiredFieldError",
+  "description": "必填配置字段缺失异常（继承自 ConfigError）。系统启动时环境变量未设置或值为空时触发。触发后立即阻断服务启动（fail-fast），一次性收集全部缺失字段名称并输出，避免逐个报错导致反复重启。输出信息包含缺失字段列表和引导操作建议（检查 .env 文件或 KMS 注入状态）。",
+  "type": "object",
+  "x-defined-by": "DEPLOY-05",
+  "x-consumers": [],
+  "x-maturity": "draft",
+  "x-contract-type": "error-code",
+  "x-version": "1.0.0",
+  "properties": {
+    "message": {
+      "type": "string",
+      "description": "异常描述信息，格式：'缺少必填配置项: FIELD_A, FIELD_B。请检查 .env 文件或 KMS 注入'"
+    },
+    "missing_fields": {
+      "type": "array",
+      "description": "全部缺失的配置字段名称列表",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "required": ["message", "missing_fields"],
+  "additionalProperties": false
+}
