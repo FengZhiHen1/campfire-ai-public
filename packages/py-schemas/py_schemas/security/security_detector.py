@@ -6,10 +6,13 @@
 
 from __future__ import annotations
 
+import logging
 import re
 from typing import Any
 
 from py_schemas.security.validation_schemas import SecurityDetectionType
+
+_logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # 预编译正则模式（不区分大小写）
@@ -126,5 +129,8 @@ def detect_security_threat(
     try:
         return _traverse_and_detect(validated_data)
     except Exception:
-        # 函数内捕获所有异常，异常时返回 None 放行
+        _logger.warning(
+            "security_detection_internal_error",
+            exc_info=True,
+        )
         return None
