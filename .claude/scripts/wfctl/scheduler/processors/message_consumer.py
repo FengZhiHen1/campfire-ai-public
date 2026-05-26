@@ -138,17 +138,27 @@ class ConsumeMessagesProcessor:
                 routing_choice = msg.get("routing_choice")
                 if routing_choice:
                     valid = st.valid_routing_choices
-                    if valid and routing_choice not in valid:
-                        cycle_meta = cycle_meta.with_error(st.stage_instance_id)
-                        side_effects.append(SideEffect(
-                            kind="file_write",
-                            description=f"Timeline invalid routing_choice for {st.stage_id}",
-                            execute=lambda iid=ctx.instance_id, sid=st.stage_id, mid=msg_id, rc=routing_choice, v=valid: _append_timeline(
-                                iid, sid, "running→error", {"message_id": mid, "reason": f"非法 routing_choice: '{rc}'，合法值: {v}"},
-                            ),
-                        ))
-                        new_consumed.add(msg_id)
-                        continue
+                    if valid:
+                        matched = _match_routing_choice(routing_choice, valid)
+                        if matched is None:
+                            # 不匹配也不 ERROR——置 PENDING 让 SubAgent 修正后重试
+                            delta.stage_updates[st.stage_instance_id] = {
+                                "status": StageStatus.PENDING,
+                                "attempt_count": st.attempt_count + 1,
+                            }
+                            side_effects.append(SideEffect(
+                                kind="deviation_write",
+                                description=f"Invalid routing_choice for {st.stage_id}",
+                                execute=lambda iid=ctx.instance_id, sid=st.stage_id, mid=msg_id, rc=routing_choice, v=valid: _append_deviation(
+                                    iid, "INVALID_ROUTING_CHOICE",
+                                    f"消息 {mid} routing_choice='{rc}' 不在合法值 {v} 中，"
+                                    f"stage 已重置为 PENDING 等待 SubAgent 修正",
+                                    stage_id=sid,
+                                ),
+                            ))
+                            new_consumed.add(msg_id)
+                            continue
+                        routing_choice = matched
                     delta.stage_updates[st.stage_instance_id] = {
                         "exit_condition": "success",
                         "output_message_id": msg_id,
@@ -228,9 +238,19 @@ class ConsumeMessagesProcessor:
                 state, st.stage_id, matched.to_stage, stage_order,
             )
             if cascade.removed_stage_instance_ids or cascade.reset_stage_instance_ids:
-                delta.remove_stage_instance_ids.extend(cascade.removed_stage_instance_ids)
                 spec_stage_map = {s.stage_id: s for s in ctx.spec.stages}
+                wf_stage_ids = {
+                    sid for sid, spec in spec_stage_map.items()
+                    if spec.target_type == "workflow"
+                }
+                # WORKFLOW stage 是子实例容器——重置父引用不撤销子实例
+                delta.remove_stage_instance_ids.extend(
+                    iid for iid in cascade.removed_stage_instance_ids
+                    if iid not in wf_stage_ids
+                )
                 for reset_sid in cascade.reset_stage_instance_ids:
+                    if reset_sid in wf_stage_ids:
+                        continue
                     stage_spec = spec_stage_map.get(reset_sid)
                     delta.append_stages.append(StageState(
                         stage_id=reset_sid,
@@ -238,9 +258,6 @@ class ConsumeMessagesProcessor:
                         status=StageStatus.PENDING,
                         model=stage_spec.model if stage_spec else None,
                     ))
-                if cascade.cleanup_running_agent_stage_ids:
-                    # stage state 中的 system_agent_id 随 stage 重置自然失效，无需额外清理
-                    pass
 
         # 更新 consumed_message_ids
         delta.instance_updates["consumed_message_ids"] = frozenset(new_consumed)
@@ -273,3 +290,17 @@ class ConsumeMessagesProcessor:
             if s.status in (StageStatus.RUNNING, StageStatus.PENDING, StageStatus.ERROR, StageStatus.AWAITING_CONFIRM):
                 return s
         return candidates[0] if candidates else None
+
+
+def _match_routing_choice(raw: str, valid: list[str]) -> str | None:
+    """将 SubAgent 上报的 routing_choice 匹配到合法值。
+
+    支持精确匹配和前缀匹配（SubAgent 可能在 choice key 后追加 `：描述`）。
+    如 raw='通过：确认设计文档' 且 valid=['通过', ...] → 返回 '通过'。
+    """
+    if raw in valid:
+        return raw
+    for v in valid:
+        if raw.startswith(v) and len(raw) > len(v) and raw[len(v)] in ("：", ":"):
+            return v
+    return None

@@ -94,10 +94,12 @@ def write_message(
                         f"合法选项：{st.valid_routing_choices}",
                         code="ROUTING_CHOICE_REQUIRED",
                     )
-                if routing_choice not in st.valid_routing_choices:
+                matched = _match_routing_choice(routing_choice, st.valid_routing_choices)
+                if matched is None:
                     raise ValidationError(
                         f"非法的 routing_choice: '{routing_choice}'。"
-                        f"合法选项：{st.valid_routing_choices}",
+                        f"合法选项：{st.valid_routing_choices}\n"
+                        f"请使用精确的选项值重新上报（如 --choice \"通过\"）",
                         code="INVALID_ROUTING_CHOICE",
                     )
         except ValidationError:
@@ -264,6 +266,20 @@ def _cleanup_empty_files(worktree: Path, modified_files: list[dict]) -> None:
         except OSError:
             pass
         i += 1
+
+
+def _match_routing_choice(raw: str, valid: list[str]) -> str | None:
+    """将 SubAgent 上报的 routing_choice 匹配到合法值。
+
+    支持精确匹配和前缀匹配（SubAgent 可能在 choice key 后追加 `：描述`）。
+    如 raw='通过：确认设计文档' 且 valid=['通过', ...] → 返回 '通过'。
+    """
+    if raw in valid:
+        return raw
+    for v in valid:
+        if raw.startswith(v) and len(raw) > len(v) and raw[len(v)] in ("：", ":"):
+            return v
+    return None
 
 
 def _map_git_status_xy(xy: str) -> str:

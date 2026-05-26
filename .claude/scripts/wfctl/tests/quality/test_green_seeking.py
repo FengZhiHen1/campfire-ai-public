@@ -93,7 +93,7 @@ def test_green_seeking_all_files():
                  wfctl_root / "tests" / "domain", wfctl_root / "tests" / "domain" / "dag",
                  wfctl_root / "tests" / "domain" / "transition",
                  wfctl_root / "tests" / "state", wfctl_root / "tests" / "runtime",
-                 wfctl_root / "tests" / "runtime" / "agent"]
+                 wfctl_root / "tests" / "runtime"]
     _ensure_init_py(test_dirs)
 
     test_files = _find_test_files()
@@ -138,7 +138,7 @@ def test_green_seeking_no_empty_tests():
                  wfctl_root / "tests" / "domain", wfctl_root / "tests" / "domain" / "dag",
                  wfctl_root / "tests" / "domain" / "transition",
                  wfctl_root / "tests" / "state", wfctl_root / "tests" / "runtime",
-                 wfctl_root / "tests" / "runtime" / "agent"]
+                 wfctl_root / "tests" / "runtime"]
     _ensure_init_py(test_dirs)
 
     test_files = _find_test_files()
