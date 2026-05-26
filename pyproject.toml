@@ -1,0 +1,28 @@
+[project]
+name = "campfire-ai"
+version = "0.1.0"
+description = "篝火智答 - 孤独症家属智能应急咨询平台"
+requires-python = ">=3.12"
+dependencies = []
+
+[tool.uv.workspace]
+members = [
+    "packages/py-config",
+    "packages/py-db",
+    "packages/py-schemas",
+    "packages/py-rag",
+    "packages/py-llm",
+    "packages/py-cache",
+    "packages/py-storage",
+    "packages/py-auth",
+    "packages/py-logger",
+    "apps/api-server",
+    "apps/worker",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.24",
+    "ruff>=0.8",
+]

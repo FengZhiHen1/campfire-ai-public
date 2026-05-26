@@ -1,0 +1,10 @@
+[project]
+name = "py-auth"
+version = "0.1.0"
+description = "Campfire-AI shared package: py-auth"
+requires-python = ">=3.12"
+dependencies = []
+
+[build-system]
+requires = ["uv_build>=0.9.21,<0.10.0"]
+build-backend = "uv_build"

@@ -1,0 +1,11 @@
+{
+  "name": "@campfire/ts-shared",
+  "version": "0.1.0",
+  "description": "Campfire-AI shared TypeScript types and enums",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "scripts": {},
+  "keywords": [],
+  "author": "",
+  "license": "ISC"
+}

@@ -1,0 +1,12 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: "campfire-api"
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["api-server:8000"]
+        labels:
+          service: "api-server"
+          env: "${APP_ENV:-development}"
