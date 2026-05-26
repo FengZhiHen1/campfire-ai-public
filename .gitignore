@@ -1,6 +1,7 @@
 .agent/
 .tmp/
 __pycache__/*.pyc
+__pycache__/
 *.pyo
 .mypy_cache/
 .pytest_cache/
