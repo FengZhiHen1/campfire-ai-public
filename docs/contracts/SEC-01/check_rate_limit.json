@@ -1,0 +1,30 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "docs/contracts/SEC-01/check_rate_limit.json",
+  "title": "check_rate_limit",
+  "description": "Redis 滑动窗口限流检查，支持用户级和 IP 级双重限流",
+  "type": "object",
+  "x-defined-by": "SEC-01",
+  "x-consumers": ["SEC-04"],
+  "x-maturity": "draft",
+  "x-contract-type": "input",
+  "x-version": "1.0.0",
+  "properties": {
+    "user_id": {
+      "description": "已登录用户的 ID；None 则仅基于 IP 限流",
+      "oneOf": [
+        {"type": "string", "format": "uuid", "examples": ["550e8400-e29b-41d4-a716-446655440000"]},
+        {"type": "null"}
+      ],
+      "default": null
+    },
+    "ip": {
+      "type": "string",
+      "description": "客户端 IP 地址",
+      "format": "ipv4",
+      "examples": ["192.168.1.100"]
+    }
+  },
+  "required": ["ip"],
+  "additionalProperties": false
+}

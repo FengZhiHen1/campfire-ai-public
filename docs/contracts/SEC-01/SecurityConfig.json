@@ -1,0 +1,77 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "docs/contracts/SEC-01/SecurityConfig.json",
+  "title": "SecurityConfig",
+  "description": "SEC-01 传输存储安全模块的全量安全配置，通过 pydantic-settings 从环境变量加载",
+  "type": "object",
+  "x-defined-by": "SEC-01",
+  "x-consumers": [],
+  "x-maturity": "draft",
+  "x-contract-type": "shared-model",
+  "x-version": "1.0.0",
+  "properties": {
+    "BCRYPT_ROUNDS": {
+      "type": "integer",
+      "description": "bcrypt 哈希 salt 加固轮次",
+      "default": 12,
+      "minimum": 12,
+      "examples": [12]
+    },
+    "JWT_SECRET_KEY": {
+      "type": "string",
+      "description": "当前 JWT 签名密钥，长度 ≥ 256 位（32 字符 base64）",
+      "minLength": 32,
+      "examples": ["your-secret-key-at-least-256-bits-long"]
+    },
+    "JWT_PREVIOUS_SECRET_KEY": {
+      "type": "string",
+      "description": "上一个 JWT 签名密钥，密钥轮换共栖期使用",
+      "minLength": 32,
+      "examples": ["previous-secret-key-for-transition"]
+    },
+    "JWT_ALGORITHM": {
+      "type": "string",
+      "description": "JWT 签名算法",
+      "default": "HS256",
+      "enum": ["HS256"],
+      "examples": ["HS256"]
+    },
+    "RATE_LIMIT_USER_PER_MINUTE": {
+      "type": "integer",
+      "description": "每个用户每分钟最大请求数",
+      "default": 30,
+      "minimum": 1,
+      "examples": [30]
+    },
+    "RATE_LIMIT_IP_PER_MINUTE": {
+      "type": "integer",
+      "description": "每个 IP 每分钟最大请求数",
+      "default": 100,
+      "minimum": 1,
+      "examples": [100]
+    },
+    "RATE_LIMIT_WINDOW_SECONDS": {
+      "type": "integer",
+      "description": "限流滑动窗口大小（秒）",
+      "default": 60,
+      "minimum": 1,
+      "examples": [60]
+    },
+    "MINIO_PRESIGNED_URL_EXPIRY_SECONDS": {
+      "type": "integer",
+      "description": "MinIO 预签名 URL 默认过期时间（秒）",
+      "default": 3600,
+      "minimum": 60,
+      "examples": [3600]
+    },
+    "ALLOWED_FILE_EXTENSIONS": {
+      "type": "array",
+      "items": {"type": "string"},
+      "description": "允许上传的文件扩展名白名单，不含前导点",
+      "default": ["pdf", "jpg", "jpeg", "png", "docx"],
+      "examples": [["pdf", "jpg", "jpeg", "png", "docx"]]
+    }
+  },
+  "required": ["JWT_SECRET_KEY", "JWT_PREVIOUS_SECRET_KEY"],
+  "additionalProperties": false
+}

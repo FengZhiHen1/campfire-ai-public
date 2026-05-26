@@ -1,37 +1,85 @@
 {
   "version": "1.0.0",
-  "description": "全局契约索引",
-  "last_updated": "2026-05-26 17:21:02",
+  "description": "篝火智答平台全局契约索引",
+  "last_updated": "2026-05-26T17:20:59+08:00",
   "contracts": {
-    "LogLevel": {
-      "file": "docs/contracts/OBS-01/LogLevel.json",
-      "defined_by": "OBS-01",
+    "hash_password": {
+      "file": "docs/contracts/SEC-01/hash_password.json",
+      "defined_by": "SEC-01",
+      "maturity": "draft",
+      "consumers": ["AUTH-02"]
+    },
+    "verify_password": {
+      "file": "docs/contracts/SEC-01/verify_password.json",
+      "defined_by": "SEC-01",
+      "maturity": "draft",
+      "consumers": ["AUTH-02"]
+    },
+    "create_access_token": {
+      "file": "docs/contracts/SEC-01/create_access_token.json",
+      "defined_by": "SEC-01",
+      "maturity": "draft",
+      "consumers": ["AUTH-02"]
+    },
+    "verify_token": {
+      "file": "docs/contracts/SEC-01/verify_token.json",
+      "defined_by": "SEC-01",
+      "maturity": "draft",
+      "consumers": ["AUTH-02"]
+    },
+    "check_rate_limit": {
+      "file": "docs/contracts/SEC-01/check_rate_limit.json",
+      "defined_by": "SEC-01",
+      "maturity": "draft",
+      "consumers": ["SEC-04"]
+    },
+    "validate_file": {
+      "file": "docs/contracts/SEC-01/validate_file.json",
+      "defined_by": "SEC-01",
       "maturity": "draft",
       "consumers": []
     },
-    "LogInput": {
-      "file": "docs/contracts/OBS-01/LogInput.json",
-      "defined_by": "OBS-01",
+    "TokenPayload": {
+      "file": "docs/contracts/SEC-01/TokenPayload.json",
+      "defined_by": "SEC-01",
+      "maturity": "draft",
+      "consumers": ["AUTH-02"]
+    },
+    "FileValidationResult": {
+      "file": "docs/contracts/SEC-01/FileValidationResult.json",
+      "defined_by": "SEC-01",
       "maturity": "draft",
       "consumers": []
     },
-    "LogEntry": {
-      "file": "docs/contracts/OBS-01/LogEntry.json",
-      "defined_by": "OBS-01",
+    "RateLimitConfig": {
+      "file": "docs/contracts/SEC-01/RateLimitConfig.json",
+      "defined_by": "SEC-01",
+      "maturity": "draft",
+      "consumers": ["SEC-04"]
+    },
+    "SecurityConfig": {
+      "file": "docs/contracts/SEC-01/SecurityConfig.json",
+      "defined_by": "SEC-01",
       "maturity": "draft",
       "consumers": []
     },
-    "FastAPIRequestLog": {
-      "file": "docs/contracts/OBS-01/FastAPIRequestLog.json",
-      "defined_by": "OBS-01",
+    "AuditLogEvent": {
+      "file": "docs/contracts/SEC-01/AuditLogEvent.json",
+      "defined_by": "SEC-01",
       "maturity": "draft",
       "consumers": []
     },
-    "Logger": {
-      "file": "docs/contracts/OBS-01/Logger-interface.json",
-      "defined_by": "OBS-01",
+    "RateLimitExceededResponse": {
+      "file": "docs/contracts/SEC-01/RateLimitExceededResponse.json",
+      "defined_by": "SEC-01",
       "maturity": "draft",
-      "consumers": []
+      "consumers": ["SEC-04"]
+    },
+    "PhoneMaskedString": {
+      "file": "docs/contracts/SEC-01/PhoneMaskedString.json",
+      "defined_by": "SEC-01",
+      "maturity": "draft",
+      "consumers": ["SEC-03"]
     }
   }
 }

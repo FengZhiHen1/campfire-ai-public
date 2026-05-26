@@ -1,0 +1,28 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "docs/contracts/SEC-01/validate_file.json",
+  "title": "validate_file",
+  "description": "三层递进文件安全校验：扩展名 → MIME 类型 → 文件头魔数",
+  "type": "object",
+  "x-defined-by": "SEC-01",
+  "x-consumers": [],
+  "x-maturity": "draft",
+  "x-contract-type": "input",
+  "x-version": "1.0.0",
+  "properties": {
+    "filename": {
+      "type": "string",
+      "description": "上传文件的原始文件名（含扩展名）",
+      "minLength": 1,
+      "maxLength": 255,
+      "examples": ["case_attachment_001.pdf"]
+    },
+    "content": {
+      "type": "object",
+      "description": "上传文件的原始字节内容（bytes）",
+      "examples": ["b'%PDF-1.4...'"]
+    }
+  },
+  "required": ["filename", "content"],
+  "additionalProperties": false
+}
