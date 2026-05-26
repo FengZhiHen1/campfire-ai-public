@@ -1,69 +1,111 @@
 # ============================================================
-# 篝火智答 (Campfire-AI) — 生产环境编排
-# 启动: docker compose -f docker-compose.prod.yml up -d
+#  (Campfire-AI) — production environment orchestration
+# Start: docker compose -f docker-compose.prod.yml up -d
+# Stop:  docker compose -f docker-compose.prod.yml down
 # ============================================================
 
 services:
-  # --- PostgreSQL 17 + pgvector ---
+  # --- PostgreSQL 17 ---
   postgres:
-    image: pgvector/pgvector:pg17
+    image: postgres:17
     container_name: campfire-postgres
     restart: unless-stopped
-    environment:
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      POSTGRES_DB: ${POSTGRES_DB}
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
+      test: ["CMD-SHELL", "pg_isready -U campfire"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    env_file: .env
+    environment:
+      POSTGRES_USER: campfire
+    volumes:
+      - pgdata:/var/lib/postgresql/data
     networks:
       - campfire-net
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "5"
 
   # --- Redis 7 ---
   redis:
     image: redis:7-alpine
     container_name: campfire-redis
     restart: unless-stopped
-    volumes:
-      - redis_data:/data
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    env_file: .env
+    volumes:
+      - redis_data:/data
     networks:
       - campfire-net
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "5"
 
   # --- MinIO ---
   minio:
-    image: minio/minio:latest
+    image: minio/minio:RELEASE.2024-11-07T00-52-20Z
     container_name: campfire-minio
     restart: unless-stopped
     command: server /data --console-address ":9001"
-    environment:
-      MINIO_ROOT_USER: ${MINIO_ACCESS_KEY}
-      MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY}
-    volumes:
-      - minio_data:/data
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    env_file: .env
+    volumes:
+      - minio_data:/data
     networks:
       - campfire-net
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "5"
+
+  # --- Database migration (one-shot service) ---
+  migration:
+    container_name: campfire-migration
+    build:
+      context: .
+      dockerfile: apps/api-server/Dockerfile.api
+    depends_on:
+      postgres:
+        condition: service_healthy
+    env_file: .env
+    command: ["alembic", "upgrade", "head"]
+    networks:
+      - campfire-net
+    profiles:
+      - migration
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "5"
 
   # --- FastAPI API Server ---
   api-server:
     build:
       context: .
       dockerfile: apps/api-server/Dockerfile.api
-    container_name: campfire-api
+    image: campfire-api-server:${VERSION_TAG:-latest}
+    container_name: campfire-api-server
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
     depends_on:
       postgres:
         condition: service_healthy
@@ -71,46 +113,91 @@ services:
         condition: service_healthy
       minio:
         condition: service_healthy
-    env_file:
-      - .env
+      migration:
+        condition: service_completed_successfully
+    env_file: .env
     networks:
       - campfire-net
+    deploy:
+      resources:
+        limits:
+          cpus: "1"
+          memory: "2G"
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "5"
 
   # --- Worker ---
   worker:
     build:
       context: .
       dockerfile: apps/worker/Dockerfile.worker
+    image: campfire-worker:${VERSION_TAG:-latest}
     container_name: campfire-worker
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
-    env_file:
-      - .env
+      minio:
+        condition: service_healthy
+    env_file: .env
     networks:
       - campfire-net
+    deploy:
+      resources:
+        limits:
+          cpus: "1"
+          memory: "1G"
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "5"
 
-  # --- Nginx 反向代理 ---
+  # --- Nginx reverse proxy ---
   nginx:
     image: nginx:1.26-alpine
     container_name: campfire-nginx
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "nginx", "-t"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    depends_on:
+      api-server:
+        condition: service_healthy
     ports:
       - "80:80"
       - "443:443"
     volumes:
       - ./infrastructure/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
-      - ./infrastructure/nginx/conf.d:/etc/nginx/conf.d:ro
-    depends_on:
-      - api-server
+      - ./infrastructure/nginx/ssl/:/etc/nginx/ssl/:ro
     networks:
       - campfire-net
+    deploy:
+      resources:
+        limits:
+          cpus: "0.25"
+          memory: "256M"
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "5"
 
 volumes:
-  postgres_data:
+  pgdata:
   redis_data:
   minio_data:
 

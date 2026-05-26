@@ -1,0 +1,44 @@
+# ============================================================
+# worker — multi-stage Dockerfile
+# Stage 1: python:3.12 + uv sync (full build environment)
+# Stage 2: python:3.12-slim (minimal runtime: .venv + src only)
+# ============================================================
+
+# Stage 1: Builder
+FROM python:3.12 AS builder
+
+WORKDIR /build
+
+# Install uv package manager
+COPY --from=ghcr.io/astral-sh/uv:0.6.14 /uv /usr/local/bin/uv
+
+# Enable uv bytecode compilation for faster startup
+ENV UV_COMPILE_BYTECODE=1
+# Link venv to a known path
+ENV UV_LINK_MODE=copy
+
+# Copy workspace definition and dependency manifests
+COPY pyproject.toml ./
+COPY packages/ ./packages/
+COPY apps/worker/ ./apps/worker/
+
+# Install dependencies (without dev deps; use --frozen when uv.lock is available)
+RUN uv sync --no-dev --package worker
+
+# Stage 2: Runtime
+FROM python:3.12-slim
+
+WORKDIR /app
+
+# Copy virtual environment from builder
+COPY --from=builder /build/.venv /app/.venv
+
+# Copy application source code
+COPY apps/worker/src/worker/ /app/worker/
+
+# Configure runtime environment
+ENV PATH="/app/.venv/bin:$PATH"
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONDONTWRITEBYTECODE=1
+
+CMD ["python", "-m", "worker.main"]
