@@ -100,6 +100,21 @@ wfctl restore --instance <id>
 
 ---
 
+## 卡住/死掉的 SubAgent 恢复
+
+SubAgent 因崩溃、超时、平台回收等原因死亡后，对应 stage 永久卡在 RUNNING。编排器应在检测到后主动恢复，而非无限等待。
+
+**检测时机**：
+- `wfctl next` 连续多轮只返回 `await`（无就绪 stage）
+- `wfctl status --instance <id>` 显示有 RUNNING stage，且 `started_at` 距今 > 10 分钟
+
+**恢复优先级**：
+1. **回退重试**（首选）：`wfctl rollback --instance <id> --stage <stage_id>` → `wfctl next`
+2. **跳过**（最后手段）：`wfctl skip --instance <id> --stage <stage_id> --force` → `wfctl next`
+3. **禁止**无限等待 `await`，连续 3 轮无进展必须主动介入
+
+---
+
 ## worktree 自动同步
 
 wfctl 在每次 `next` 时自动同步 worktree 与上游：

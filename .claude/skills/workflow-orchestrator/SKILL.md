@@ -148,6 +148,35 @@ wfctl next --instance <instance_id>
 
 **为什么这样设计**：多个 SubAgent 的完成通知可能同时抵达，顺序不可预测。如果编排器每次收到通知都立即响应，会导致 confirm/spawn/通知三股乱流。`wfctl next` 已递归处理整棵实例树的消息池，是进度状态的**唯一权威来源**——编排器用它作为时钟，SubAgent 通知只是敲门声。
 
+### 卡住/死掉 SubAgent 的检测与恢复
+
+SubAgent 可能因崩溃、超时、平台回收等原因死亡，导致 stage 永久卡在 RUNNING。
+此时 `wfctl next` 返回 `await`（无就绪 stage），编排器不应无限等待。
+
+**检测方法**：
+- 通过 `wfctl status --instance <id>` 查看 RUNNING stage 的 `started_at` 时间
+- 若 `started_at` 距今超过 **10 分钟** 且无任何进度消息（`output_message_id` 为空），判定 SubAgent 可能已死
+
+**恢复策略（优先级从高到低）**：
+1. **continue 失败自动降级**：`continue` action 的 `SendMessage` 返回 agent 失效时，降级为 `spawn`——这是已有的自动恢复机制，无需额外操作。
+2. **回退重试**（卡住 stage 的首选方案）：
+   ```
+   wfctl rollback --instance <id> --stage <卡住的stage_id>
+   ```
+   回退将卡住的 RUNNING stage 及下游全部重置为 PENDING。随后调 `wfctl next` 重新 spawn。
+   **优于 skip**：回退保留 worktree 文件，重试时 SubAgent 可基于已有工作继续，而非从零开始。
+
+3. **仅在前两者不可用时才考虑 skip**：
+   ```
+   wfctl skip --instance <id> --stage <卡住的stage_id> --force
+   ```
+   `skip --force` 跳过该 stage（标记 DONE），解锁下游。仅在回退无效（如 stage 本身有不可恢复的 worktree 损坏）时使用。
+   跳过意味着该 stage 的产出永久缺失，下游 stage 需自行弥补。
+
+**原则**：回退重试 > 跳过。跳过是最后手段，只在确认回退无法解决问题时使用。
+
+**禁止**：无限等待 `await`——如果连续 3 轮 `next` 都只返回 `await` 且存在长期 RUNNING 的 stage，必须主动介入。编排器的职责是推进进度，不是挂起等待。
+
 ---
 
 ## Action 速查
