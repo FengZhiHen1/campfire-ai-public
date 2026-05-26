@@ -15,11 +15,10 @@ import redis.exceptions
 from fastapi import Request, Response
 from fastapi.responses import JSONResponse
 from prometheus_client import Counter, Gauge
-from pydantic import Field
-from pydantic_settings import BaseSettings, SettingsConfigDict
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from py_cache import get_redis_client
+from py_config.security import get_security_config
 from py_logger import logger
 
 # ============================================================================
@@ -78,43 +77,6 @@ RATE_LIMIT_REDIS_HEALTH = Gauge(
 )
 # Initialize as healthy
 RATE_LIMIT_REDIS_HEALTH.set(1)
-
-
-# ============================================================================
-# 配置模型
-# ============================================================================
-
-
-class RateLimitSettings(BaseSettings):
-    """限流配置参数，从环境变量加载。
-
-    SEC-01 RateLimitConfig 契约对应的 Python 实现类。
-    通过 pydantic-settings 在应用启动时加载，运行时只读。
-    """
-
-    RATE_LIMIT_USER_PER_MINUTE: int = Field(
-        default=30,
-        ge=1,
-        le=300,
-        description="每个用户每分钟最大请求数",
-    )
-    RATE_LIMIT_IP_PER_MINUTE: int = Field(
-        default=100,
-        ge=1,
-        le=1000,
-        description="每个 IP 每分钟最大请求数",
-    )
-    RATE_LIMIT_WINDOW_SECONDS: int = Field(
-        default=60,
-        ge=1,
-        le=3600,
-        description="限流滑动窗口大小（秒）",
-    )
-
-    model_config = SettingsConfigDict(
-        env_prefix="",
-        case_sensitive=True,
-    )
 
 
 # ============================================================================
@@ -222,13 +184,8 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
     The middleware MUST be registered via ``app.add_middleware(RateLimitMiddleware)``.
     """
 
-    def __init__(
-        self,
-        app,
-        settings: RateLimitSettings | None = None,
-    ) -> None:
+    def __init__(self, app) -> None:
         super().__init__(app)
-        self._settings = settings or RateLimitSettings()
 
     async def dispatch(
         self,
@@ -257,7 +214,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             return await call_next(request)
 
         now_ts = int(time.time())
-        window = self._settings.RATE_LIMIT_WINDOW_SECONDS
+        window = get_security_config().RATE_LIMIT_WINDOW_SECONDS
 
         # 安全获取 user_id（未登录场景下 request.state 无 user 属性；
         # 最外层 getattr 防御 request 对象自身可能无 state 属性的极端场景）
@@ -287,19 +244,20 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
                     window,
                     now_ts,
                 )
-                user_count = int(result[0])
-                if user_count >= self._settings.RATE_LIMIT_USER_PER_MINUTE:
-                    return await self._build_429(
-                        redis_client,
-                        ip,
-                        user_id,
-                        "user",
-                        user_count,
-                        self._settings.RATE_LIMIT_USER_PER_MINUTE,
-                    )
-            except (redis.exceptions.RedisError, ValueError, TypeError, IndexError) as exc:
+            except redis.exceptions.RedisError as exc:
                 _handle_redis_degraded(ip, exc)
                 return await call_next(request)
+
+            user_count = int(result[0])
+            if user_count >= get_security_config().RATE_LIMIT_USER_PER_MINUTE:
+                return await self._build_429(
+                    redis_client,
+                    ip,
+                    user_id,
+                    "user",
+                    user_count,
+                    get_security_config().RATE_LIMIT_USER_PER_MINUTE,
+                )
 
         # ---- 步骤 4：IP 级限流 ----
         ip_key = f"ratelimit:ip:{ip}"
@@ -311,19 +269,20 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
                 window,
                 now_ts,
             )
-            ip_count = int(result[0])
-            if ip_count >= self._settings.RATE_LIMIT_IP_PER_MINUTE:
-                return await self._build_429(
-                    redis_client,
-                    ip,
-                    user_id,
-                    "ip",
-                    ip_count,
-                    self._settings.RATE_LIMIT_IP_PER_MINUTE,
-                )
-        except (redis.exceptions.RedisError, ValueError, TypeError, IndexError) as exc:
+        except redis.exceptions.RedisError as exc:
             _handle_redis_degraded(ip, exc)
             return await call_next(request)
+
+        ip_count = int(result[0])
+        if ip_count >= get_security_config().RATE_LIMIT_IP_PER_MINUTE:
+            return await self._build_429(
+                redis_client,
+                ip,
+                user_id,
+                "ip",
+                ip_count,
+                get_security_config().RATE_LIMIT_IP_PER_MINUTE,
+            )
 
         # ---- 步骤 5：正常通过 ----
         # Redis 健康状态恢复
@@ -357,7 +316,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         Returns:
             JSONResponse: HTTP 429，响应体遵循 RateLimitExceededResponse 契约。
         """
-        window = self._settings.RATE_LIMIT_WINDOW_SECONDS
+        window = get_security_config().RATE_LIMIT_WINDOW_SECONDS
 
         # 记录 WARNING 结构化日志
         extra: dict[str, object] = {
