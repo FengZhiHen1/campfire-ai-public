@@ -1,0 +1,41 @@
+{
+  "module_id": "OBS-01",
+  "module_name": "结构化日志",
+  "contracts": [
+    {
+      "title": "LogLevel",
+      "file": "LogLevel.json",
+      "type": "shared-enum",
+      "maturity": "draft",
+      "defined_by": "OBS-01"
+    },
+    {
+      "title": "LogInput",
+      "file": "LogInput.json",
+      "type": "input",
+      "maturity": "draft",
+      "defined_by": "OBS-01"
+    },
+    {
+      "title": "LogEntry",
+      "file": "LogEntry.json",
+      "type": "output",
+      "maturity": "draft",
+      "defined_by": "OBS-01"
+    },
+    {
+      "title": "FastAPIRequestLog",
+      "file": "FastAPIRequestLog.json",
+      "type": "output",
+      "maturity": "draft",
+      "defined_by": "OBS-01"
+    },
+    {
+      "title": "Logger",
+      "file": "Logger-interface.json",
+      "type": "shared-model",
+      "maturity": "draft",
+      "defined_by": "OBS-01"
+    }
+  ]
+}

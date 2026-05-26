@@ -1,0 +1,21 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "docs/contracts/SEC-01/verify_token.json",
+  "title": "verify_token",
+  "description": "校验 JWT Token 签名和有效期，根据 header 的 kid 选择对应密钥",
+  "type": "object",
+  "x-defined-by": "SEC-01",
+  "x-consumers": ["AUTH-02"],
+  "x-maturity": "draft",
+  "x-contract-type": "input",
+  "x-version": "1.0.0",
+  "properties": {
+    "token": {
+      "type": "string",
+      "description": "待校验的 JWT token 字符串",
+      "examples": ["eyJhbGciOiJIUzI1NiIsImtpZCI6InYxIiwidHlwIjoiSldUIn0..."]
+    }
+  },
+  "required": ["token"],
+  "additionalProperties": false
+}

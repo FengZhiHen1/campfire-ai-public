@@ -1,0 +1,74 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "docs/contracts/OBS-01/FastAPIRequestLog.json",
+  "title": "FastAPIRequestLog",
+  "description": "FastAPI 请求日志中间件输出的日志条目扩展字段，继承 LogEntry 基础结构并追加 HTTP 请求上下文",
+  "type": "object",
+  "required": ["timestamp", "severity", "service", "trace_id", "message", "method", "path", "status_code", "duration_ms"],
+  "properties": {
+    "timestamp": {
+      "$ref": "./LogEntry.json#/properties/timestamp"
+    },
+    "severity": {
+      "$ref": "./LogLevel.json"
+    },
+    "service": {
+      "$ref": "./LogEntry.json#/properties/service"
+    },
+    "trace_id": {
+      "$ref": "./LogEntry.json#/properties/trace_id"
+    },
+    "message": {
+      "type": "string",
+      "description": "请求摘要信息，格式如 GET /api/v1/consult 200 45ms",
+      "examples": ["GET /api/v1/consult 200 45ms"]
+    },
+    "method": {
+      "type": "string",
+      "enum": ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"],
+      "description": "HTTP 请求方法",
+      "examples": ["GET"]
+    },
+    "path": {
+      "type": "string",
+      "minLength": 1,
+      "description": "请求路径",
+      "examples": ["/api/v1/consult"]
+    },
+    "status_code": {
+      "type": "integer",
+      "minimum": 100,
+      "maximum": 599,
+      "description": "HTTP 响应状态码",
+      "examples": [200]
+    },
+    "duration_ms": {
+      "type": "number",
+      "minimum": 0,
+      "description": "请求处理耗时，单位毫秒",
+      "examples": [45.2]
+    },
+    "client_ip": {
+      "type": "string",
+      "format": "ipv4",
+      "description": "客户端 IP 地址",
+      "examples": ["192.168.1.100"]
+    },
+    "user_id": {
+      "type": "string",
+      "description": "已认证用户的唯一标识，未认证时为空",
+      "examples": ["u_123"]
+    },
+    "error_type": {
+      "type": "string",
+      "description": "异常类型名称，仅在请求处理异常时填写",
+      "examples": ["ValidationError"]
+    }
+  },
+  "additionalProperties": false,
+  "x-defined-by": "OBS-01",
+  "x-consumers": [],
+  "x-maturity": "draft",
+  "x-contract-type": "output",
+  "x-version": "1.0.0"
+}

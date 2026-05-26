@@ -1,0 +1,73 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "docs/contracts/KNOW-01/ArticleResponse.json",
+  "title": "ArticleResponse",
+  "description": "科普文章详情响应体，包含文章的完整字段信息",
+  "type": "object",
+  "x-defined-by": "KNOW-01",
+  "x-consumers": ["KNOW-04", "KNOW-06", "KNOW-07"],
+  "x-maturity": "draft",
+  "x-contract-type": "output",
+  "x-version": "1.0.0",
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "文章唯一标识，UUID v4 格式",
+      "format": "uuid",
+      "examples": ["a1b2c3d4-e5f6-7890-abcd-ef1234567890"]
+    },
+    "title": {
+      "type": "string",
+      "description": "文章标题",
+      "maxLength": 200,
+      "examples": ["什么是孤独症的刻板行为"]
+    },
+    "category": {
+      "$ref": "./ArticleCategory.json"
+    },
+    "content": {
+      "type": "string",
+      "description": "文章完整正文文本",
+      "examples": ["刻板行为是孤独症谱系障碍的核心症状之一..."]
+    },
+    "related_case_ids": {
+      "type": "array",
+      "items": {
+        "anyOf": [
+          { "type": "string", "pattern": "^CASE-\\d{3}$" },
+          {
+            "type": "object",
+            "properties": {
+              "id": { "type": "string" },
+              "_stale": { "type": "boolean", "const": true }
+            },
+            "required": ["id", "_stale"]
+          }
+        ]
+      },
+      "description": "关联案例编号列表。正常关联的案例为字符串；已失效关联标注 _stale:true",
+      "maxItems": 5
+    },
+    "status": {
+      "$ref": "./ArticleStatus.json"
+    },
+    "published_at": {
+      "type": "string",
+      "description": "首次发布时间，ISO 8601 格式带时区。未发布时为 null",
+      "format": "date-time",
+      "examples": ["2026-06-15T10:30:00+08:00"]
+    },
+    "created_at": {
+      "type": "string",
+      "description": "文章创建时间",
+      "format": "date-time"
+    },
+    "updated_at": {
+      "type": "string",
+      "description": "文章最近更新时间",
+      "format": "date-time"
+    }
+  },
+  "required": ["id", "title", "category", "content", "related_case_ids", "status", "created_at", "updated_at"],
+  "additionalProperties": false
+}

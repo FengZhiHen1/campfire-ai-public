@@ -1,0 +1,13 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "docs/contracts/DEPLOY-04/MigrationErrorCode.json",
+  "title": "MigrationErrorCode",
+  "description": "数据库迁移的三级错误码枚举，用于结构化错误输出。",
+  "type": "string",
+  "x-defined-by": "DEPLOY-04",
+  "x-consumers": ["DEPLOY-01", "DEPLOY-03"],
+  "x-maturity": "draft",
+  "x-contract-type": "error-code",
+  "x-version": "1.0.0",
+  "enum": ["MIG-ERR-001", "MIG-ERR-002", "MIG-ERR-003"]
+}

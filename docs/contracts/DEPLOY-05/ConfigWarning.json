@@ -1,0 +1,27 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "docs/contracts/DEPLOY-05/ConfigWarning.json",
+  "title": "ConfigWarning",
+  "description": "生产环境安全告警（使用 Python warnings.warn() 机制输出，不阻断启动）。在生产环境（ENVIRONMENT=production）中检测到密钥类配置项来源于本地 .env 文件而非 KMS 注入时触发。输出严重级别安全告警日志（通过 py-logger，WARNING 级别，event='production_secret_leak' 结构化字段），服务继续启动但提示运维迁移密钥至云厂商 KMS。与异常的区別：本警告不引发异常，不阻断启动，仅作为运维安全提醒。",
+  "type": "object",
+  "x-defined-by": "DEPLOY-05",
+  "x-consumers": [],
+  "x-maturity": "draft",
+  "x-contract-type": "error-code",
+  "x-version": "1.0.0",
+  "properties": {
+    "message": {
+      "type": "string",
+      "description": "安全告警描述信息，格式：'生产环境中检测到密钥来源于本地 .env 文件（非 KMS 注入），存在安全隐患。'"
+    },
+    "affected_fields": {
+      "type": "array",
+      "description": "受影响的敏感字段名称列表（DEEPSEEK_API_KEY、JWT_SECRET_KEY、MINIO_ACCESS_KEY、MINIO_SECRET_KEY 等）",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "required": ["message"],
+  "additionalProperties": false
+}

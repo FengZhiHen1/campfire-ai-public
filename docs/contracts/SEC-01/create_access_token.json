@@ -1,0 +1,49 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "docs/contracts/SEC-01/create_access_token.json",
+  "title": "create_access_token",
+  "description": "签发 JWT 访问令牌，HS256 算法，header 中嵌入 kid 字段标识密钥版本",
+  "type": "object",
+  "x-defined-by": "SEC-01",
+  "x-consumers": ["AUTH-02"],
+  "x-maturity": "draft",
+  "x-contract-type": "output",
+  "x-version": "1.0.0",
+  "properties": {
+    "data": {
+      "type": "object",
+      "description": "JWT payload 数据，须包含 sub(user_id)、roles 字段",
+      "required": ["sub", "roles"],
+      "properties": {
+        "sub": {
+          "type": "string",
+          "description": "用户 ID，对应 JWT 标准声明 sub",
+          "format": "uuid",
+          "examples": ["550e8400-e29b-41d4-a716-446655440000"]
+        },
+        "roles": {
+          "type": "array",
+          "description": "RBAC 角色列表",
+          "items": {"type": "string"},
+          "examples": [["家属"], ["管理员"]]
+        }
+      }
+    },
+    "expires_delta": {
+      "description": "访问令牌过期时间偏移量，None 默认使用 15 分钟",
+      "oneOf": [
+        {
+          "type": "object",
+          "description": "timedelta 对象，指定自定义过期时长",
+          "properties": {
+            "minutes": {"type": "number", "examples": [30]}
+          }
+        },
+        {"type": "null"}
+      ],
+      "default": null
+    }
+  },
+  "required": ["data"],
+  "additionalProperties": false
+}

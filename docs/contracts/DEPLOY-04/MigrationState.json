@@ -1,0 +1,13 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "docs/contracts/DEPLOY-04/MigrationState.json",
+  "title": "MigrationState",
+  "description": "数据库迁移的三态线性状态枚举。从 Alembic 的 alembic_version 表派生，无需额外持久化。",
+  "type": "string",
+  "x-defined-by": "DEPLOY-04",
+  "x-consumers": ["DEPLOY-01"],
+  "x-maturity": "draft",
+  "x-contract-type": "shared-enum",
+  "x-version": "1.0.0",
+  "enum": ["pending", "migrating", "ready"]
+}

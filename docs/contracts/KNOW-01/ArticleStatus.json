@@ -1,0 +1,13 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "docs/contracts/KNOW-01/ArticleStatus.json",
+  "title": "ArticleStatus",
+  "description": "科普文章的发布状态。published 对全部用户可见，unpublished 仅管理员可见",
+  "type": "string",
+  "enum": ["published", "unpublished"],
+  "x-defined-by": "KNOW-01",
+  "x-consumers": ["KNOW-03", "KNOW-06", "KNOW-07"],
+  "x-maturity": "draft",
+  "x-contract-type": "shared-enum",
+  "x-version": "1.0.0"
+}

@@ -1,0 +1,63 @@
+{
+  "version": "1.0.0",
+  "description": "全局契约索引 — 篝火智答项目",
+  "last_updated": "2026-05-26T17:21:27+08:00",
+  "contracts": {
+    "ArticleCategory": {
+      "file": "docs/contracts/KNOW-01/ArticleCategory.json",
+      "defined_by": "KNOW-01",
+      "maturity": "draft",
+      "x-contract-type": "shared-enum",
+      "consumers": ["KNOW-03", "KNOW-06", "KNOW-07"]
+    },
+    "ArticleStatus": {
+      "file": "docs/contracts/KNOW-01/ArticleStatus.json",
+      "defined_by": "KNOW-01",
+      "maturity": "draft",
+      "x-contract-type": "shared-enum",
+      "consumers": ["KNOW-03", "KNOW-06", "KNOW-07"]
+    },
+    "ArticleCreate": {
+      "file": "docs/contracts/KNOW-01/ArticleCreate.json",
+      "defined_by": "KNOW-01",
+      "maturity": "draft",
+      "x-contract-type": "input",
+      "consumers": []
+    },
+    "ArticleUpdate": {
+      "file": "docs/contracts/KNOW-01/ArticleUpdate.json",
+      "defined_by": "KNOW-01",
+      "maturity": "draft",
+      "x-contract-type": "input",
+      "consumers": []
+    },
+    "ArticleSearchParams": {
+      "file": "docs/contracts/KNOW-01/ArticleSearchParams.json",
+      "defined_by": "KNOW-01",
+      "maturity": "draft",
+      "x-contract-type": "input",
+      "consumers": ["KNOW-03", "KNOW-06", "KNOW-07"]
+    },
+    "ArticleResponse": {
+      "file": "docs/contracts/KNOW-01/ArticleResponse.json",
+      "defined_by": "KNOW-01",
+      "maturity": "draft",
+      "x-contract-type": "output",
+      "consumers": ["KNOW-04", "KNOW-06", "KNOW-07"]
+    },
+    "ArticleListItem": {
+      "file": "docs/contracts/KNOW-01/ArticleListItem.json",
+      "defined_by": "KNOW-01",
+      "maturity": "draft",
+      "x-contract-type": "output",
+      "consumers": ["KNOW-03", "KNOW-06", "KNOW-07"]
+    },
+    "ArticleSearchResult": {
+      "file": "docs/contracts/KNOW-01/ArticleSearchResult.json",
+      "defined_by": "KNOW-01",
+      "maturity": "draft",
+      "x-contract-type": "output",
+      "consumers": ["KNOW-03", "KNOW-06", "KNOW-07"]
+    }
+  }
+}

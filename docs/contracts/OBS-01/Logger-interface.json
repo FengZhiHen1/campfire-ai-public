@@ -1,0 +1,31 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "docs/contracts/OBS-01/Logger-interface.json",
+  "title": "Logger",
+  "description": "结构化日志模块的公共接口定义。提供4个日志等级对应的写入方法和1个审计日志强制方法。调用方通过 from py_logger import logger 导入单例使用。",
+  "type": "object",
+  "properties": {
+    "debug": {
+      "description": "写入 DEBUG 级别日志"
+    },
+    "info": {
+      "description": "写入 INFO 级别日志，用于正常业务事件"
+    },
+    "warning": {
+      "description": "写入 WARNING 级别日志，用于非错误但需关注的事件"
+    },
+    "error": {
+      "description": "写入 ERROR 级别日志，用于业务异常"
+    },
+    "critical": {
+      "description": "写入 INFO 级别审计日志。op_type 为必填参数，调用方不得省略。用于 AI 调用、权限拒绝、工单创建三个关键动作的强制审计记录"
+    }
+  },
+  "required": ["debug", "info", "warning", "error", "critical"],
+  "additionalProperties": false,
+  "x-defined-by": "OBS-01",
+  "x-consumers": [],
+  "x-maturity": "draft",
+  "x-contract-type": "shared-model",
+  "x-version": "1.0.0"
+}
