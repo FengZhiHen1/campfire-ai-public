@@ -5,7 +5,7 @@
   "description": "用户身份角色枚举。五级角色层级（家属<老师<专家<管理员<维护人员）中，注册阶段仅开放前三级。后续角色变更由 AUTH-04 管理。对应 PostgreSQL ENUM 类型 user_role。",
   "type": "string",
   "x-defined-by": "AUTH-01",
-  "x-consumers": ["AUTH-02", "AUTH-04"],
+  "x-consumers": ["AUTH-02", "AUTH-04", "AUTH-05"],
   "x-maturity": "draft",
   "x-contract-type": "shared-enum",
   "x-version": "1.0.0",

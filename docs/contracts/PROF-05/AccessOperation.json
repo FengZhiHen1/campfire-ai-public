@@ -1,0 +1,39 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "docs/contracts/PROF-05/AccessOperation.json",
+  "title": "AccessOperation",
+  "description": "个人档案操作类型枚举。定义可对个人档案执行的全部操作种类，被下游模块（PROF-01/03/04）消费——下游模块在发起访问请求时必须指定操作类型。",
+  "type": "string",
+  "enum": ["view", "create", "update", "delete", "supplement_assessment", "unlink"],
+  "x-defined-by": "PROF-05",
+  "x-consumers": ["PROF-01", "PROF-03", "PROF-04"],
+  "x-maturity": "draft",
+  "x-contract-type": "shared-enum",
+  "x-version": "1.0.0",
+  "definitions": {
+    "view": {
+      "description": "查看档案内容——家属、关联老师/专家可使用",
+      "allowed_roles": ["family", "teacher", "expert"]
+    },
+    "create": {
+      "description": "新增档案数据——仅家属使用（如新增事件记录）",
+      "allowed_roles": ["family"]
+    },
+    "update": {
+      "description": "修改档案数据——仅家属使用（如修改自己创建的事件记录）",
+      "allowed_roles": ["family"]
+    },
+    "delete": {
+      "description": "删除档案数据——仅家属使用（如删除自己创建的事件记录）",
+      "allowed_roles": ["family"]
+    },
+    "supplement_assessment": {
+      "description": "补充专业评估——关联老师/专家可使用",
+      "allowed_roles": ["teacher", "expert"]
+    },
+    "unlink": {
+      "description": "解除老师关联——仅家属可使用，被解除者立即失去访问权",
+      "allowed_roles": ["family"]
+    }
+  }
+}

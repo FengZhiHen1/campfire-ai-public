@@ -1,0 +1,34 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "docs/contracts/AUTH-03/TokenRefreshResponse.json",
+  "title": "TokenRefreshResponse",
+  "description": "Token 续期成功响应体。客户端收到后应将本地存储的 Access Token 和 Refresh Token 替换为本次返回的新值。旧 Refresh Token 在续期成功后已即时失效（服务器端写入轮换黑名单），不可再次使用。旧 Access Token 可继续使用至其自然过期（最多 15 分钟）。",
+  "type": "object",
+  "x-defined-by": "AUTH-03",
+  "x-consumers": ["AUTH-06"],
+  "x-maturity": "draft",
+  "x-contract-type": "output",
+  "x-version": "1.0.0",
+  "properties": {
+    "access_token": {
+      "type": "string",
+      "description": "新签发的 Access Token（JWT 格式），有效期 15 分钟。payload 含 sub（用户UUID）、roles（当前角色列表）、jti（唯一标识）、exp、type=\"access\"。供后续 API 请求的 Authorization: Bearer 头使用。",
+      "minLength": 1,
+      "examples": ["REDACTED-SET-VIA-ENVeyJzdWIiOiI1NTBlODQwMC1lMjliLTQxZDQtYTcxNi00NDY2NTU0NDAwMDAiLCJyb2xlcyI6WyJmYW1pbHkiXSwianRpIjoiYzlmOGUzYjQtNWI2Ny00ZGE5LWIyM2YtOTg3NjU0MzIxMGFiYyIsImV4cCI6MTcxNjgwNzMwMCwidHlwZSI6ImFjY2VzcyJ9.signature"]
+    },
+    "refresh_token": {
+      "type": "string",
+      "description": "新签发的 Refresh Token（JWT 格式），有效期 7 天。payload 含 sub、jti、exp、type=\"refresh\"。客户端应安全存储并用于下次续期。旧 Refresh Token 已被轮换，即时失效。",
+      "minLength": 1,
+      "examples": ["REDACTED-SET-VIA-ENVeyJzdWIiOiI1NTBlODQwMC1lMjliLTQxZDQtYTcxNi00NDY2NTU0NDAwMDAiLCJqdGkiOiJkMGU5ZjRhNS02Yzg5LTQzZWItOTNhMC0yMzQ1Njc4OTAxYmNkIiwiZXhwIjoxNzE3NDExMjAwLCJ0eXBlIjoicmVmcmVzaCJ9.signature"]
+    },
+    "token_type": {
+      "type": "string",
+      "description": "Token 类型标识，固定值 \"Bearer\"，与 OAuth 2.0 Bearer Token 使用规范一致。",
+      "const": "Bearer",
+      "examples": ["Bearer"]
+    }
+  },
+  "required": ["access_token", "refresh_token", "token_type"],
+  "additionalProperties": false
+}

@@ -1,0 +1,15 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "docs/contracts/OBS-04/ComponentStatus.json",
+  "title": "ComponentStatus",
+  "description": "单个基础组件的连通性状态枚举。用于表示 PostgreSQL、Redis、MinIO 三个组件的各自健康检查结果。",
+  "type": "string",
+  "x-defined-by": "OBS-04",
+  "x-consumers": [],
+  "x-maturity": "draft",
+  "x-contract-type": "shared-enum",
+  "x-version": "1.0.0",
+  "enum": ["connected", "disconnected"],
+  "description": "connected=组件连通性检查通过；disconnected=组件连通性检查失败。",
+  "examples": ["connected", "disconnected"]
+}

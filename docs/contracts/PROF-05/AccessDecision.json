@@ -1,0 +1,33 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "docs/contracts/PROF-05/AccessDecision.json",
+  "title": "AccessDecision",
+  "description": "档案访问裁决输出模型。封装 PrivacyGuard.check_access() 对一次档案访问请求的裁决结论。被下游模块（PROF-01/03/04）消费以决定是否继续执行数据库操作。",
+  "type": "object",
+  "x-defined-by": "PROF-05",
+  "x-consumers": ["PROF-01", "PROF-03", "PROF-04"],
+  "x-maturity": "draft",
+  "x-contract-type": "output",
+  "x-version": "1.0.0",
+  "properties": {
+    "allowed": {
+      "type": "boolean",
+      "description": "访问许可结果。true 表示允许执行所请求的操作，false 表示拒绝",
+      "examples": [true, false]
+    },
+    "visible_scope": {
+      "type": "string",
+      "description": "可见数据范围。当 allowed=true 时，值取决于角色和访问矩阵（all_fields/metadata_only）；当 allowed=false 时，值固定为 none",
+      "enum": ["all_fields", "metadata_only", "none"],
+      "examples": ["all_fields"]
+    },
+    "denial_reason": {
+      "type": "string",
+      "description": "拒绝原因。当 allowed=false 时必填，值必须为泛化消息（如'数据不存在'），禁止泄露权限细节或档案存在性信息。当 allowed=true 时为 null",
+      "examples": ["数据不存在"],
+      "maxLength": 100
+    }
+  },
+  "required": ["allowed", "visible_scope"],
+  "additionalProperties": false
+}

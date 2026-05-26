@@ -1,0 +1,46 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "docs/contracts/PROF-05/AccessRequest.json",
+  "title": "AccessRequest",
+  "description": "档案访问请求输入模型。封装一次档案访问请求的全部上下文信息，由下游模块（PROF-01/03/04）在执行档案操作前构造并传递给 PrivacyGuard.check_access() 进行权限校验。",
+  "type": "object",
+  "x-defined-by": "PROF-05",
+  "x-consumers": ["PROF-01", "PROF-03", "PROF-04"],
+  "x-maturity": "draft",
+  "x-contract-type": "input",
+  "x-version": "1.0.0",
+  "properties": {
+    "operation": {
+      "type": "string",
+      "description": "请求执行的操作类型，必须在 AccessOperation 枚举值范围内",
+      "enum": ["view", "create", "update", "delete", "supplement_assessment", "unlink"],
+      "examples": ["view", "unlink"]
+    },
+    "target_profile_id": {
+      "type": "string",
+      "format": "uuid",
+      "description": "目标个人档案的唯一标识，必须对应 profiles 表中的有效记录",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+      "examples": ["550e8400-e29b-41d4-a716-446655440000"]
+    },
+    "requester_id": {
+      "type": "string",
+      "format": "uuid",
+      "description": "请求发起人的用户唯一标识，必须是已通过 AUTH-04 鉴权的有效用户",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+      "examples": ["660e8400-e29b-41d4-a716-446655440001"]
+    },
+    "requester_role": {
+      "$ref": "./UserRole.json",
+      "description": "请求发起人的角色枚举值，引用 AUTH-04/UserRole，必须是五级角色之一（family/teacher/expert/admin/maintainer）"
+    },
+    "relation_type": {
+      "type": "string",
+      "description": "请求人与目标档案的关联关系类型。当 requester_role 为 teacher 或 expert 时建议填写，用于辅助细粒度权限判定",
+      "enum": ["linked_teacher", "linked_expert", "family_member", "none"],
+      "examples": ["linked_teacher"]
+    }
+  },
+  "required": ["operation", "target_profile_id", "requester_id", "requester_role"],
+  "additionalProperties": false
+}

@@ -1,0 +1,30 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "docs/contracts/AUTH-06/TokenPair.json",
+  "title": "TokenPair",
+  "description": "认证令牌对——包含访问令牌和刷新令牌，由 AUTH-02 登录接口返回，经 AUTH-06 持久化到 Taro Storage 并在 401 续期时更新",
+  "type": "object",
+  "x-defined-by": "AUTH-06",
+  "x-consumers": ["AUTH-05", "CSLT-08", "PROF-07", "CASE-09", "TICK-09", "KNOW-07"],
+  "x-maturity": "draft",
+  "x-contract-type": "shared-model",
+  "x-version": "1.0.0",
+  "properties": {
+    "accessToken": {
+      "type": "string",
+      "description": "JWT 访问令牌，有效期 15 分钟，格式为 header.payload.signature 三段式，算法 HS256，请求头 Bearer 前缀注入",
+      "minLength": 20,
+      "pattern": "^[A-Za-z0-9\\-_]+\\.[A-Za-z0-9\\-_]+\\.[A-Za-z0-9\\-_]+$",
+      "examples": ["eyJhbGciOiJIUzI1NiIsImtpZCI6InYxIiwidHlwIjoiSldUIn0.eyJzdWIiOiI1NTBlODQwMC1lMjliLTQxZDQtYTcxNi00NDY2NTU0NDAwMDAiLCJyb2xlcyI6WyLlrZPlsZ4iXSwiZXhwIjoxNzE2MjAwMDAwfQ.signature"]
+    },
+    "refreshToken": {
+      "type": "string",
+      "description": "JWT 刷新令牌，有效期 7 天，每次成功续期后由 AUTH-03 服务端轮换为新值，旧值即失效",
+      "minLength": 20,
+      "pattern": "^[A-Za-z0-9\\-_]+\\.[A-Za-z0-9\\-_]+\\.[A-Za-z0-9\\-_]+$",
+      "examples": ["eyJhbGciOiJIUzI1NiIsImtpZCI6InYxIiwidHlwIjoiSldUIn0.eyJzdWIiOiI1NTBlODQwMC1lMjliLTQxZDQtYTcxNi00NDY2NTU0NDAwMDAiLCJ0eXBlIjoicmVmcmVzaCIsImV4cCI6MTcxNjgwMDAwMH0.signature"]
+    }
+  },
+  "required": ["accessToken", "refreshToken"],
+  "additionalProperties": false
+}

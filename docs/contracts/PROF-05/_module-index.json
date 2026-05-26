@@ -1,0 +1,54 @@
+{
+  "module_id": "PROF-05",
+  "module_name": "档案隐私控制",
+  "contracts": [
+    {
+      "title": "AccessOperation",
+      "file": "AccessOperation.json",
+      "type": "shared-enum",
+      "maturity": "draft",
+      "defined_by": "PROF-05",
+      "consumers": ["PROF-01", "PROF-03", "PROF-04"]
+    },
+    {
+      "title": "VisibleScope",
+      "file": "VisibleScope.json",
+      "type": "shared-enum",
+      "maturity": "draft",
+      "defined_by": "PROF-05",
+      "consumers": ["PROF-01", "PROF-03", "PROF-04"]
+    },
+    {
+      "title": "AccessRequest",
+      "file": "AccessRequest.json",
+      "type": "input",
+      "maturity": "draft",
+      "defined_by": "PROF-05",
+      "consumers": ["PROF-01", "PROF-03", "PROF-04"]
+    },
+    {
+      "title": "AccessDecision",
+      "file": "AccessDecision.json",
+      "type": "output",
+      "maturity": "draft",
+      "defined_by": "PROF-05",
+      "consumers": ["PROF-01", "PROF-03", "PROF-04"]
+    },
+    {
+      "title": "UserRole",
+      "file": "../AUTH-04/UserRole.json",
+      "type": "shared-enum",
+      "maturity": "stable",
+      "defined_by": "AUTH-04",
+      "reference_only": true
+    },
+    {
+      "title": "require_role",
+      "file": "../AUTH-04/require_role.json",
+      "type": "input",
+      "maturity": "stable",
+      "defined_by": "AUTH-04",
+      "reference_only": true
+    }
+  ]
+}

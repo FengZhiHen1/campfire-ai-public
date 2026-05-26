@@ -1,0 +1,42 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "docs/contracts/AUTH-02/LoginResponse.json",
+  "title": "LoginResponse",
+  "description": "用户登录成功响应体。登录验证通过后返回短期有效的访问令牌和长期有效的续期令牌，以及令牌类型和过期时间。令牌中的 roles 字段包含用户的角色身份信息，供下游鉴权模块使用。",
+  "type": "object",
+  "x-defined-by": "AUTH-02",
+  "x-consumers": [
+    "AUTH-05",
+    "AUTH-06"
+  ],
+  "x-maturity": "draft",
+  "x-contract-type": "output",
+  "x-version": "1.0.0",
+  "properties": {
+    "access_token": {
+      "type": "string",
+      "description": "访问令牌（JWT 格式）。用于后续 API 请求的身份凭证，有效期不超过 15 分钟（900 秒）。payload 包含 sub（用户 UUID）、roles（角色列表）、jti（令牌唯一标识）、exp（过期时间）、iat（签发时间）。签名算法 HS256。",
+      "examples": ["REDACTED-SET-VIA-ENVeyJzdWIiOiI1NTBlODQwMC1lMjliLTQxZDQtYTcxNi00NDY2NTU0NDAwMDAiLCJyb2xlcyI6WyJmYW1pbHkiXSwianRpIjoiYTFiMmMzZDQtZTJmNi00Nzg5LWFiY2QtZWYxMjM0NTY3ODkwIiwiZXhwIjoxNzc1NTIwOTAwLCJpYXQiOjE3NzU1MjAwMDB9.signature"]
+    },
+    "refresh_token": {
+      "type": "string",
+      "description": "续期令牌（JWT 格式）。用于在访问令牌过期后获取新的访问令牌，有效期不超过 7 天（604800 秒）。payload 包含 sub（用户 UUID）、roles（空列表）、jti（令牌唯一标识）、type（固定为 refresh）、exp（过期时间）、iat（签发时间）。使用一次后作废（轮换机制归属 AUTH-03）。",
+      "examples": ["REDACTED-SET-VIA-ENVeyJzdWIiOiI1NTBlODQwMC1lMjliLTQxZDQtYTcxNi00NDY2NTU0NDAwMDAiLCJyb2xlcyI6W10sImpxaSI6ImI3ZThkMmYzLTRhNTYtNDNjNy04ZTlhLTEyMzQ1Njc4OWFiYyIsInR5cGUiOiJyZWZyZXNoIiwiZXhwIjoxNzc2MTI0ODAwLCJpYXQiOjE3NzU1MjAwMDB9.signature"]
+    },
+    "token_type": {
+      "type": "string",
+      "description": "令牌类型。固定值 'Bearer'，标识访问令牌在 HTTP 请求头中的传输方式。客户端在后续请求的 Authorization 头中使用此值：'Authorization: Bearer <access_token>'。",
+      "const": "Bearer",
+      "examples": ["Bearer"]
+    },
+    "expires_in": {
+      "type": "integer",
+      "description": "访问令牌的有效期（秒）。从签发时刻开始计算，默认 900 秒（15 分钟）。客户端可使用此值在令牌过期前主动续期，减少 401 响应。",
+      "minimum": 1,
+      "maximum": 900,
+      "examples": [900]
+    }
+  },
+  "required": ["access_token", "refresh_token", "token_type", "expires_in"],
+  "additionalProperties": false
+}

@@ -1,0 +1,27 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "docs/contracts/PROF-05/VisibleScope.json",
+  "title": "VisibleScope",
+  "description": "档案数据可见范围枚举。定义访问被允许时请求人可查看的数据范围，直接映射五类角色访问矩阵。被下游模块（PROF-01/03/04）消费以决定返回给用户的数据字段集合。",
+  "type": "string",
+  "enum": ["all_fields", "metadata_only", "none"],
+  "x-defined-by": "PROF-05",
+  "x-consumers": ["PROF-01", "PROF-03", "PROF-04"],
+  "x-maturity": "draft",
+  "x-contract-type": "shared-enum",
+  "x-version": "1.0.0",
+  "definitions": {
+    "all_fields": {
+      "description": "全部字段可见——家属本人和关联老师/专家可查看档案完整内容（基础档案、事件记录、专业评估）",
+      "applicable_to": ["family", "teacher", "expert"]
+    },
+    "metadata_only": {
+      "description": "仅元数据可见——管理员仅可查看聚合统计数据（档案数量、存储大小、创建时间等），不可查看任何业务内容字段",
+      "applicable_to": ["admin"]
+    },
+    "none": {
+      "description": "无可见内容——非关联用户被拒绝后适用，不泄露任何数据",
+      "applicable_to": ["unrelated_user"]
+    }
+  }
+}
