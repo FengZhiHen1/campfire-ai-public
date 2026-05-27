@@ -21,6 +21,7 @@ from py_config.exceptions import (
     ConfigError,
     ConfigFormatError,
     ConfigWarning,
+    ForbiddenAccess,
     MissingRequiredFieldError,
 )
 from py_config.security import (
@@ -42,6 +43,7 @@ __all__ = [
     "MissingRequiredFieldError",
     "ConfigFormatError",
     "ConfigWarning",
+    "ForbiddenAccess",
 ]
 
 _logger = logging.getLogger("py_config")
