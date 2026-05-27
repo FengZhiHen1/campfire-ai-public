@@ -218,3 +218,15 @@
 - **契约文件**: `docs/contracts/CASE-09/_module-index.json` (reference_only)
 - **复用契约**: CASE-01 全部 13 份 + AUTH-06 全部 4 份
 - **更新时间**: `2026-05-27 17:58:00`
+
+## CSLT-08 - 咨询编排逻辑
+- **类型**: 前端 L1b 纯消费者模块，不定义新的后端 API 契约
+- **输入**: 消费 CSLT-01 4 份契约 (BehaviorTypeCategory, CrisisLevel, CrisisJudgmentRequest, CrisisJudgmentResult) + CSLT-04 5 份契约 (ChunkEvent, DoneEvent, ErrorEvent, HeartbeatEvent, StreamErrorCode) + CSLT-05 3 份契约 (ConfidenceValidationInput, ConfidenceValidationOutput, ValidationVerdict) + CSLT-06 3 份契约 (ConsultationHistoryCreate, ConsultationHistoryListItem, ConsultationHistoryDetail) + CSLT-03 3 份契约 (GenerationResult, GenerationStatus, BlockVariant) + AUTH-06 4 份契约 (httpClient, SessionState, useAuthReturn, TokenPair)
+- **输出**: `useConsult()` Hook 返回 `UseConsultReturn`（含只读状态和操作方法，供 CSLT-07 消费）
+- **状态机**: 8 态前端咨询会话（idle → selecting_behavior → submitting → streaming → completed → ticket_guide / submit_failed / stream_failed），12 条法定转换路径
+- **模块依赖**: CSLT-07 (通过 useConsult Hook 消费状态), CSLT-04 (SSE 事件流消费), CSLT-06 (咨询历史读写), TICK-09 (前端路由跳转), AUTH-06 (httpClient + useAuth 认证), PROF-07 (冷启动引导与微问卷)
+- **技术栈**: TypeScript 5, Taro 4, Zustand 5 (persist 中间件), React 18, fetch streaming SSE 自解析
+- **契约文件**: `docs/contracts/CSLT-08/_module-index.json` (reference_only)
+- **自产类型** (前端 TypeScript，不涉及 JSON Schema): ConsultSessionState, ConsultErrorCode, PlanSection, TicketGuide, ConsultSubmitRequest, StateTransitionError, LEGAL_TRANSITIONS
+- **复用契约**: CSLT-01 (4 份), CSLT-04 (5 份), CSLT-05 (3 份), CSLT-06 (3 份), CSLT-03 (3 份), AUTH-06 (4 份) — 合计 22 份
+- **更新时间**: `2026-05-27 21:50:00`
