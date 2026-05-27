@@ -218,3 +218,17 @@
 - **契约文件**: `docs/contracts/CASE-09/_module-index.json` (reference_only)
 - **复用契约**: CASE-01 全部 13 份 + AUTH-06 全部 4 份
 - **更新时间**: `2026-05-27 17:58:00`
+
+## PROF-07 - 档案数据逻辑
+- **类型**: 前端 L1b 纯消费者模块，不定义新的后端 API 契约
+- **输入**: 消费 PROF-01 全部 12 份契约 (ProfileListItem, ProfileResponse, ProfileCreate, ProfileUpdate, DiagnosisType, LanguageLevel, SensoryFeature, Trigger, AgeRange, ProfileBehaviorType, ProfileLimitExceededError, ProfileConflictError) + AUTH-06 的 4 份契约 (TokenPair, SessionState, useAuthReturn, httpClient) + PROF-03 的 1 份契约 (EventCreate)
+- **状态机**: 3 个前端交互态 — 档案列表加载 (idle→loading→ready/error)、档案提交 (idle→submitting→success/idle/error)、微问卷弹出 (hidden→showing→answering→submitted→hidden)
+- **输出**: `UseProfileReturn {profiles: ProfileListItem[], isLoading: boolean, error: Error|null, fetchProfiles, getProfile, createProfile, updateProfile, deleteProfile, setDefault}` — useProfile() Hook 返回值（供 PROF-06 消费）
+- **输出**: `ProfileCoordination {checkProfileExists(), triggerMicroSurvey(consultationId), onProfileChanged(callback)}` — 供 CSLT-08 消费的横向协作接口（前端 TypeScript 内部类型，不创建 JSON Schema）
+- **输出**: `UseMicroSurveyReturn {state: MicroSurveyState, questions: MicroSurveyQuestion[], submit, skip}` — useMicroSurvey() Hook 返回值
+- **模块依赖**: PROF-01 (档案 CRUD API), PROF-02 (缓存失效 API — 依赖缺口 GAP-01), PROF-03 (事件记录 API), AUTH-06 (httpClient + useAuth), CSLT-08 (ProfileCoordination 调用方 — 依赖缺口 GAP-02)
+- **技术栈**: TypeScript 5, Taro 4, React 18, Zustand 5
+- **契约文件**: `docs/contracts/PROF-07/_module-index.json` (reference_only)
+- **复用契约**: PROF-01 全部 12 份 + AUTH-06 全部 4 份 + PROF-03 EventCreate
+- **依赖缺口**: GAP-01 — PROF-02 缓存失效 API 未定义（降级 console.warn）；GAP-02 — CSLT-08 ProfileCoordination 接口未正式定义（当前约定可独立开发）
+- **更新时间**: `2026-05-27 21:48:26`
