@@ -141,6 +141,37 @@ class ProfileConflictError(Exception):
         super().__init__(self.detail)
 
 
+class EventLimitExceededError(Exception):
+    """事件记录容量超限异常（PROF-03）。
+
+    当目标档案下的事件记录数达到 500 条上限时，
+    创建新事件的请求抛出此异常。
+    全局异常处理器捕获后返回 HTTP 409 Conflict。
+
+    Attributes:
+        status_code: HTTP 状态码，固定为 409。
+        error_code: 机器可读的错误码，固定为 "EVENT_LIMIT_EXCEEDED"。
+        detail: 错误提示信息，含已达上限说明和引导文案。
+        current_count: 当前档案下的事件记录数量。
+        max_allowed: 允许的事件记录数量上限（固定 500）。
+    """
+
+    def __init__(
+        self,
+        detail: str = (
+            "事件记录已达上限（500 条），请删除不再需要的历史事件后重试"
+        ),
+        current_count: int = 500,
+        max_allowed: int = 500,
+    ) -> None:
+        self.status_code: int = 409
+        self.error_code: str = "EVENT_LIMIT_EXCEEDED"
+        self.detail: str = detail
+        self.current_count: int = current_count
+        self.max_allowed: int = max_allowed
+        super().__init__(self.detail)
+
+
 class ConfigWarning(UserWarning):
     """生产环境安全告警。
 

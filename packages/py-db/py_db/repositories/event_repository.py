@@ -1,0 +1,257 @@
+"""PROF-03 事件记录管理 — Repository 层。
+
+提供 EventLog 实体的所有数据库操作封装。
+所有方法必须通过 AsyncSession 参数化查询执行，
+禁止 SQL 字符串拼接。
+
+方法清单：
+- create() — INSERT 新事件
+- get_by_id() — 按 event_id + profile_id 查询单条
+- update() — UPDATE 事件字段
+- delete() — 硬删除（DELETE）
+- list_by_profile() — 按 profile_id 分页查询，event_time DESC
+- count_active_by_profile() — 统计某档案下事件总数
+- delete_by_profile() — 级联删除某档案下所有事件（供 PROF-01 调用）
+"""
+
+from __future__ import annotations
+
+from datetime import datetime
+from typing import Any
+from uuid import UUID
+
+from sqlalchemy import delete, func, select, update
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from py_db.models.profiles import EventLog
+
+
+class EventRepository:
+    """事件记录数据库操作封装。
+
+    所有方法接收 AsyncSession 作为参数，支持跨方法的事务编排。
+    不持有 session 状态，无状态设计。
+    所有查询必须包含 WHERE profile_id = :pid 条件。
+    """
+
+    def __init__(self, session_factory: Any) -> None:
+        """初始化 Repository 实例。
+
+        Args:
+            session_factory: 异步会话工厂（遵循项目 Repository 接口约定）。
+        """
+        self._session_factory = session_factory
+
+    async def create(
+        self,
+        session: AsyncSession,
+        event: EventLog,
+    ) -> EventLog:
+        """创建新事件记录。
+
+        Args:
+            session: 活动数据库会话。
+            event: 待创建的 EventLog ORM 实例。
+
+        Returns:
+            EventLog: 创建成功的实体（含数据库生成的时间戳）。
+        """
+        session.add(event)
+        await session.flush()
+        await session.refresh(event)
+        return event
+
+    async def get_by_id(
+        self,
+        session: AsyncSession,
+        event_id: UUID,
+        profile_id: UUID,
+    ) -> EventLog | None:
+        """按 event_id 和 profile_id 查询单条记录。
+
+        必须同时提供 profile_id 以确保数据隔离。
+
+        Args:
+            session: 活动数据库会话。
+            event_id: 目标事件 UUID。
+            profile_id: 所属档案 UUID。
+
+        Returns:
+            EventLog | None: 匹配的事件，不存在时返回 None。
+        """
+        stmt = select(EventLog).where(
+            EventLog.event_id == event_id,
+            EventLog.profile_id == profile_id,
+        )
+        result = await session.execute(stmt)
+        return result.scalars().first()
+
+    async def update(
+        self,
+        session: AsyncSession,
+        event_id: UUID,
+        profile_id: UUID,
+        update_data: dict[str, Any],
+    ) -> EventLog | None:
+        """更新事件记录的部分字段。
+
+        Args:
+            session: 活动数据库会话。
+            event_id: 目标事件 UUID。
+            profile_id: 所属档案 UUID。
+            update_data: 需要更新的字段字典。
+
+        Returns:
+            EventLog | None: 更新后的事件，不存在时返回 None。
+        """
+        stmt = (
+            update(EventLog)
+            .where(
+                EventLog.event_id == event_id,
+                EventLog.profile_id == profile_id,
+            )
+            .values(**update_data)
+            .returning(EventLog)
+        )
+        result = await session.execute(stmt)
+        await session.flush()
+        return result.scalars().first()
+
+    async def delete(
+        self,
+        session: AsyncSession,
+        event_id: UUID,
+        profile_id: UUID,
+    ) -> bool:
+        """硬删除指定事件记录。
+
+        Args:
+            session: 活动数据库会话。
+            event_id: 目标事件 UUID。
+            profile_id: 所属档案 UUID。
+
+        Returns:
+            bool: 是否成功删除（True 表示有记录被删除）。
+        """
+        stmt = (
+            delete(EventLog)
+            .where(
+                EventLog.event_id == event_id,
+                EventLog.profile_id == profile_id,
+            )
+            .returning(EventLog.event_id)
+        )
+        result = await session.execute(stmt)
+        await session.flush()
+        return result.scalars().first() is not None
+
+    async def list_by_profile(
+        self,
+        session: AsyncSession,
+        profile_id: UUID,
+        page: int = 1,
+        page_size: int = 20,
+        behavior_type: str | None = None,
+    ) -> tuple[list[EventLog], int]:
+        """按 profile_id 分页查询事件列表。
+
+        按 event_time DESC 排序，支持按行为类型筛选。
+
+        Args:
+            session: 活动数据库会话。
+            profile_id: 所属档案 UUID。
+            page: 页码（从 1 开始）。
+            page_size: 每页条数（默认 20，上限 100）。
+            behavior_type: 可选行为类型筛选。
+
+        Returns:
+            tuple[list[EventLog], int]: (事件列表, 总记录数)。
+        """
+        # 构建基础 WHERE 条件
+        conditions = [EventLog.profile_id == profile_id]
+        if behavior_type is not None:
+            conditions.append(EventLog.behavior_type == behavior_type)
+
+        # 查询总记录数
+        count_stmt = (
+            select(func.count())
+            .select_from(EventLog)
+            .where(*conditions)
+        )
+        total_result = await session.execute(count_stmt)
+        total: int = total_result.scalar() or 0
+
+        # 分页查询
+        offset = (page - 1) * page_size
+        query_stmt = (
+            select(EventLog)
+            .where(*conditions)
+            .order_by(EventLog.event_time.desc())
+            .offset(offset)
+            .limit(page_size)
+        )
+        result = await session.execute(query_stmt)
+        events = list(result.scalars().all())
+
+        return events, total
+
+    async def count_active_by_profile(
+        self,
+        session: AsyncSession,
+        profile_id: UUID,
+    ) -> int:
+        """统计某档案下所有事件记录总数。
+
+        Args:
+            session: 活动数据库会话。
+            profile_id: 所属档案 UUID。
+
+        Returns:
+            int: 事件记录总数。
+        """
+        stmt = (
+            select(func.count())
+            .select_from(EventLog)
+            .where(EventLog.profile_id == profile_id)
+        )
+        result = await session.execute(stmt)
+        return result.scalar() or 0
+
+    async def delete_by_profile(
+        self,
+        session: AsyncSession,
+        profile_id: UUID,
+    ) -> int:
+        """级联删除指定档案下所有事件记录。
+
+        供 PROF-01 的级联删除路径调用，不执行权限校验。
+        调用方（PROF-01）已在调用前完成权限校验，
+        且在共享事务上下文中调用。
+
+        Args:
+            session: 活动数据库会话（由 PROF-01 传入）。
+            profile_id: 目标档案 UUID。
+
+        Returns:
+            int: 被删除的事件记录数。
+        """
+        # 先计数用于日志
+        count_stmt = (
+            select(func.count())
+            .select_from(EventLog)
+            .where(EventLog.profile_id == profile_id)
+        )
+        count_result = await session.execute(count_stmt)
+        deleted_count: int = count_result.scalar() or 0
+
+        # 执行删除
+        stmt = delete(EventLog).where(EventLog.profile_id == profile_id)
+        await session.execute(stmt)
+        await session.flush()
+
+        return deleted_count
+
+
+__all__ = [
+    "EventRepository",
+]
