@@ -1,0 +1,93 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "docs/contracts/PROF-03/EventResponse.json",
+  "title": "EventResponse",
+  "description": "事件记录完整详情输出模型。包含 16 个字段，覆盖意图文档 §1.6.2 全部输出字段。recorded_by 和 recorded_by_role 由系统从 JWT 获取（不可由客户端传入）。is_professional 默认为 false，仅 PROF-04 补充评估后设置为 true。输出时 behavior_type 和 severity_level 以字符串形式呈现（非枚举对象）。",
+  "type": "object",
+  "x-defined-by": "PROF-03",
+  "x-consumers": ["PROF-02", "PROF-04", "PROF-07"],
+  "x-maturity": "draft",
+  "x-contract-type": "output",
+  "x-version": "1.0.0",
+  "properties": {
+    "event_id": {
+      "type": "string",
+      "format": "uuid",
+      "description": "事件唯一标识，系统通过 uuid.uuid4() 生成，全局不可重复"
+    },
+    "profile_id": {
+      "type": "string",
+      "format": "uuid",
+      "description": "所属档案标识，对应有效的个人档案"
+    },
+    "recorded_by": {
+      "type": "string",
+      "format": "uuid",
+      "description": "记录人标识，创建时从 JWT payload 获取，创建后不可修改"
+    },
+    "recorded_by_role": {
+      "type": "string",
+      "description": "记录人角色，创建时固定为 'parent'（对应 UserRole.family），不从客户端传入"
+    },
+    "event_time": {
+      "type": "string",
+      "format": "date-time",
+      "description": "事件实际发生时间（UTC）"
+    },
+    "behavior_type": {
+      "type": "string",
+      "description": "行为类型（字符串形式），对应 ProfileBehaviorType 枚举值"
+    },
+    "severity_level": {
+      "type": "string",
+      "description": "家属自评严重程度（字符串形式），对应 SeverityLevel 枚举值"
+    },
+    "setting": {
+      "oneOf": [
+        {"type": "string"},
+        {"type": "null"}
+      ],
+      "description": "发生场景，未填写时为 null"
+    },
+    "trigger_description": {
+      "type": "string",
+      "description": "触发因素描述"
+    },
+    "manifestation": {
+      "type": "string",
+      "description": "具体行为与情绪表现细节"
+    },
+    "intervention_tried": {
+      "type": "string",
+      "description": "尝试的干预措施"
+    },
+    "intervention_result": {
+      "type": "string",
+      "description": "干预措施的效果"
+    },
+    "is_professional": {
+      "type": "boolean",
+      "default": false,
+      "description": "是否有专业评估补充。创建时默认为 false，仅 PROF-04 补充评估后设为 true。PROF-03 不自行修改此值"
+    },
+    "tags": {
+      "oneOf": [
+        {"type": "array", "items": {"type": "string"}},
+        {"type": "null"}
+      ],
+      "description": "自定义标签列表，未填写时为 null"
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "记录创建时间（UTC），服务端自动生成，不可修改"
+    },
+    "updated_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "最后更新时间（UTC），每次修改后自动刷新"
+    }
+  },
+  "required": ["event_id", "profile_id", "recorded_by", "recorded_by_role", "event_time", "behavior_type", "severity_level", "trigger_description", "manifestation", "intervention_tried", "intervention_result", "is_professional", "created_at", "updated_at"],
+  "additionalProperties": false
+}

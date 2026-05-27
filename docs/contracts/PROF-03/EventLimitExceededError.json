@@ -1,0 +1,36 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "docs/contracts/PROF-03/EventLimitExceededError.json",
+  "title": "EventLimitExceededError",
+  "description": "事件记录容量超限错误响应体（HTTP 409）。当目标档案下的事件记录数达到 500 条上限时，创建新事件的请求被拒绝，返回此错误。结构模式与 PROF-01 ProfileLimitExceededError 一致（detail + error_code + current_count + max_allowed），业务语义不同（事件容量 vs 档案容量），保持独立契约。",
+  "type": "object",
+  "x-defined-by": "PROF-03",
+  "x-consumers": ["PROF-07"],
+  "x-maturity": "draft",
+  "x-contract-type": "error-code",
+  "x-version": "1.0.0",
+  "properties": {
+    "detail": {
+      "type": "string",
+      "description": "面向用户的错误提示文案",
+      "examples": ["事件记录已达上限（500 条），请删除不再需要的历史事件后重试"]
+    },
+    "error_code": {
+      "type": "string",
+      "description": "错误码标识，固定值",
+      "examples": ["EVENT_LIMIT_EXCEEDED"]
+    },
+    "current_count": {
+      "type": "integer",
+      "minimum": 500,
+      "description": "当前档案下的事件记录数量"
+    },
+    "max_allowed": {
+      "type": "integer",
+      "description": "事件记录上限，固定值 500",
+      "default": 500
+    }
+  },
+  "required": ["detail", "error_code", "current_count", "max_allowed"],
+  "additionalProperties": false
+}

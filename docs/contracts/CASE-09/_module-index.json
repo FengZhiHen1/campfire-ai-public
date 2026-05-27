@@ -1,0 +1,28 @@
+{
+  "module_id": "CASE-09",
+  "module_name": "案例管理逻辑",
+  "reference_only": true,
+  "description": "CASE-09 为前端 L1b 纯消费者模块，不定义新的后端 API 契约。所有对外类型引用自 CASE-01 和 AUTH-06 的已发布契约。",
+  "consumed_contracts": {
+    "CASE-01": [
+      "BehaviorType",
+      "CaseCreateRequest",
+      "CaseListItem",
+      "CaseResponse",
+      "CaseStatus",
+      "CaseUpdate",
+      "EvidenceLevel",
+      "FamilyDisplayCategory",
+      "PiiDetectionResult",
+      "PiiWarning",
+      "SceneType",
+      "SeverityLevel",
+      "SourceType"
+    ],
+    "AUTH-06": [
+      "httpClient",
+      "SessionState",
+      "TokenPair"
+    ]
+  }
+}

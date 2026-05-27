@@ -1,0 +1,75 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "docs/contracts/PROF-03/EventCreate.json",
+  "title": "EventCreate",
+  "description": "创建事件记录的输入模型。家属填写事件结构化表单后提交，Service 层校验 30 天追溯期、档案存在性、权限、容量上限后写入 event_logs 表。behavior_type 引用 PROF-01 的 ProfileBehaviorType 枚举，severity_level 引用本模块 SeverityLevel 枚举，setting 引用本模块 EventSetting 枚举。",
+  "type": "object",
+  "x-defined-by": "PROF-03",
+  "x-consumers": ["PROF-07"],
+  "x-maturity": "draft",
+  "x-contract-type": "input",
+  "x-version": "1.0.0",
+  "properties": {
+    "event_time": {
+      "type": "string",
+      "format": "date-time",
+      "description": "事件实际发生时间（UTC），支持补录历史事件，可追溯至 30 天前。Service 层校验 event_time >= utcnow - 30d"
+    },
+    "behavior_type": {
+      "type": "string",
+      "description": "行为类型分类，引用 PROF-01 ProfileBehaviorType 枚举值（刻板行为/情绪崩溃/自伤行为/攻击行为/社交退缩/多动）",
+      "enum": ["刻板行为", "情绪崩溃", "自伤行为", "攻击行为", "社交退缩", "多动"]
+    },
+    "severity_level": {
+      "type": "string",
+      "description": "家属自评严重程度，引用本模块 SeverityLevel 枚举值（轻/中/重）",
+      "enum": ["轻", "中", "重"]
+    },
+    "setting": {
+      "oneOf": [
+        {"type": "string", "enum": ["家庭", "学校", "公共场合", "机构"]},
+        {"type": "null"}
+      ],
+      "default": null,
+      "description": "行为事件发生场景，可选字段（四值枚举）。传入 null 等价于不填写"
+    },
+    "trigger_description": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 2000,
+      "description": "触发因素描述，自由文本。家属认为引发该行为/情绪的具体前因事件或环境刺激"
+    },
+    "manifestation": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 2000,
+      "description": "具体表现描述，自由文本。患者在被触发后的行为与情绪表现细节"
+    },
+    "intervention_tried": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 2000,
+      "description": "尝试干预措施，自由文本。家属或在场人员尝试了哪些干预动作"
+    },
+    "intervention_result": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 2000,
+      "description": "干预结果，自由文本。采取的干预措施的最终效果"
+    },
+    "tags": {
+      "oneOf": [
+        {
+          "type": "array",
+          "items": {"type": "string", "maxLength": 10},
+          "maxItems": 5
+        },
+        {"type": "null"}
+      ],
+      "default": null,
+      "description": "自定义标签列表，可选，最多 5 个，每个标签经归一处理后不超过 10 字"
+    }
+  },
+  "required": ["event_time", "behavior_type", "severity_level", "trigger_description", "manifestation", "intervention_tried", "intervention_result"],
+  "additionalProperties": false
+}

@@ -1,0 +1,13 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "docs/contracts/PROF-03/EventSetting.json",
+  "title": "EventSetting",
+  "description": "事件发生时所在环境场景枚举，四值可选字段。用于事件记录的 setting 字段。与个人档案库设计 §2.2 定义一致。",
+  "type": "string",
+  "x-defined-by": "PROF-03",
+  "x-consumers": ["PROF-02"],
+  "x-maturity": "draft",
+  "x-contract-type": "shared-enum",
+  "x-version": "1.0.0",
+  "enum": ["家庭", "学校", "公共场合", "机构"]
+}

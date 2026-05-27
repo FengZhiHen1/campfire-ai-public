@@ -1,0 +1,43 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "docs/contracts/PROF-03/EventListItem.json",
+  "title": "EventListItem",
+  "description": "事件记录列表精简条目输出模型。用于 GET /api/v1/profiles/{profile_id}/events 列表接口，仅包含列表中展示所需的核心字段，不包含完整描述文本。has_professional_note 字段语义与 EventResponse.is_professional 对应但字段命名不同，用于列表视图的可读性表达。",
+  "type": "object",
+  "x-defined-by": "PROF-03",
+  "x-consumers": ["PROF-07"],
+  "x-maturity": "draft",
+  "x-contract-type": "output",
+  "x-version": "1.0.0",
+  "properties": {
+    "event_id": {
+      "type": "string",
+      "format": "uuid",
+      "description": "事件唯一标识"
+    },
+    "event_time": {
+      "type": "string",
+      "format": "date-time",
+      "description": "事件实际发生时间（UTC）"
+    },
+    "behavior_type": {
+      "type": "string",
+      "description": "行为类型（字符串形式）"
+    },
+    "severity_level": {
+      "type": "string",
+      "description": "严重程度（字符串形式）"
+    },
+    "has_professional_note": {
+      "type": "boolean",
+      "description": "是否有专业评估补充。与 EventResponse.is_professional 语义对应，字段名用于列表视图的可读性"
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "记录创建时间（UTC）"
+    }
+  },
+  "required": ["event_id", "event_time", "behavior_type", "severity_level", "has_professional_note", "created_at"],
+  "additionalProperties": false
+}

@@ -171,3 +171,50 @@
 - **契约文件**: `docs/contracts/CSLT-04/ChunkEvent.json`, `docs/contracts/CSLT-04/DoneEvent.json`, `docs/contracts/CSLT-04/HeartbeatEvent.json`, `docs/contracts/CSLT-04/ErrorEvent.json`, `docs/contracts/CSLT-04/StreamErrorCode.json`
 - **复用契约**: CSLT-03/GenerationChunk, CSLT-03/GenerationStatus, DEPLOY-05/AppSettings, OBS-01/LogEntry
 - **更新时间**: `2026-05-27 17:45:12`
+
+## CSLT-05 - 置信度后校验
+- **输出**: `ConfidenceValidationOutput {confidence_score: float, verdict: ValidationVerdict, modified_plan_text?: str, ticket_triggered: bool, ticket_creation_failed?: bool, degradation_note?: str, validation_time_ms: int}` — 校验结果输出，含置信度分数、判定结论、工单触发状态
+- **输入**: `ConfidenceValidationInput {plan_text: str, source_list: list, disclaimer: str, crisis_level: CrisisLevel, high_risk_keyword_hit: bool, judgment_layer_results: list, emergency_scene: EmergencyScene, generation_id: str}` — 校验输入参数，由 CSLT-08 编排层组装
+- **枚举**: `ValidationVerdict` = PASS | APPEND_WARNING | FORCE_BLOCK
+- **状态机**: 5 阶段内部流程（输入校验→关键词检测→LLM 自评估→降级规则评分→复合评分与判定）
+- **模块依赖**: CSLT-01 (CrisisJudgmentResult/CrisisLevel 上游), CSLT-03 (GenerationResult 上游), CSLT-08 (编排层调用方), CSLT-06 (ConfidenceValidationOutput 持久化消费方), TICK-01 (工单触发消费方)
+- **技术栈**: FastAPI, Pydantic>=2.0, AC 自动机 (pyahocorasick), BackgroundTasks (工单重试)
+- **契约文件**: `docs/contracts/CSLT-05/ConfidenceValidationInput.json`, `docs/contracts/CSLT-05/ConfidenceValidationOutput.json`, `docs/contracts/CSLT-05/ValidationVerdict.json`
+- **复用契约**: CSLT-01/CrisisLevel, CSLT-01/CrisisJudgmentResult, CSLT-03/GenerationResult
+- **更新时间**: `2026-05-27 17:55:00`
+
+## CSLT-06 - 咨询历史管理
+- **输入**: `ConsultationHistoryCreate {user_id: str, consultation_time: str, crisis_level: CrisisLevel, user_input: str, retrieved_cases: list, generated_plan_text: str, disclaimer: str, generation_id: str, confidence_score?: float, validation_verdict?: ValidationVerdict, request_id: str}` — 归档写入模型，由 CSLT-08 组装
+- **输出**: `ConsultationHistoryListItem {id: str, consultation_time: str, crisis_level: CrisisLevel, summary_text: str}` — 列表摘要条目
+- **输出**: `ConsultationHistoryDetail {id, user_id, consultation_time, crisis_level, user_input, retrieved_cases, generated_plan_text, disclaimer, generation_id, confidence_score, validation_verdict, feedback_collected, request_id, created_at}` — 单次咨询完整详情
+- **状态机**: 无（纯 CRUD 归档模块，即时同步操作）
+- **模块依赖**: CSLT-03 (GenerationResult/GenerationStatus 上游数据源), CSLT-08 (触发归档写入), CSLT-05 (confidence_score 字段来源), TICK-01 (列表查询消费方), QUAL-03 (feedback 回填), QUAL-04 (列表查询消费方)
+- **技术栈**: FastAPI, SQLAlchemy, PostgreSQL (consultations 表), PaginatedResponse 项目级分页
+- **契约文件**: `docs/contracts/CSLT-06/ConsultationHistoryCreate.json`, `docs/contracts/CSLT-06/ConsultationHistoryListItem.json`, `docs/contracts/CSLT-06/ConsultationHistoryDetail.json`
+- **复用契约**: CSLT-01/CrisisLevel, CSLT-03/GenerationResult, CSLT-03/GenerationStatus, AUTH-04/UserRole, PROJECT/PaginatedResponse
+- **更新时间**: `2026-05-27 17:56:00`
+
+## PROF-03 - 事件记录管理
+- **输入**: `EventCreate {behavior_type: ProfileBehaviorType, event_time: str, setting?: EventSetting, severity?: SeverityLevel, description: str, response?: str, result?: str, tags?: list}` — 创建事件记录
+- **输入**: `EventUpdate {behavior_type?: ProfileBehaviorType, event_time?: str, setting?: EventSetting, severity?: SeverityLevel, description?: str, response?: str, result?: str, tags?: list}` — 更新事件记录 (Merge Patch)
+- **输出**: `EventResponse {id, profile_id, behavior_type, event_time, setting, severity, description, response, result, tags, recorded_by, recorded_by_role, created_at, updated_at}` — 事件完整详情
+- **输出**: `EventListItem {id, behavior_type, event_time, severity, description, created_at}` — 列表精简条目
+- **枚举**: `EventSetting` = 家庭 | 学校 | 社区 | 机构 | 其他
+- **枚举**: `SeverityLevel` = 轻 | 中 | 重（注意：CASE-01 存在同名异构枚举 ['轻度','中度','重度']，域不同保持独立）
+- **错误**: `EventLimitExceededError` — 容量超限错误 (HTTP 409，500 条上限)
+- **状态机**: 无（即时同步 CRUD，无中间状态流转）
+- **模块依赖**: PROF-01 (ProfileResponse/ProfileBehaviorType 上游), PROF-05 (隐私权限校验 AccessOperation/AccessRequest/AccessDecision/VisibleScope), AUTH-04 (角色鉴权 UserRole/require_role)
+- **技术栈**: FastAPI, SQLAlchemy, PostgreSQL (event_logs 表, 16 字段), 三层权限校验链 (路由→档案→创建者)
+- **契约文件**: `docs/contracts/PROF-03/EventCreate.json`, `docs/contracts/PROF-03/EventUpdate.json`, `docs/contracts/PROF-03/EventResponse.json`, `docs/contracts/PROF-03/EventListItem.json`, `docs/contracts/PROF-03/EventSetting.json`, `docs/contracts/PROF-03/SeverityLevel.json`, `docs/contracts/PROF-03/EventLimitExceededError.json`
+- **复用契约**: PROF-01/ProfileBehaviorType, PROF-01/ProfileResponse, PROF-05/AccessOperation, PROF-05/AccessRequest, PROF-05/AccessDecision, PROF-05/VisibleScope, AUTH-04/UserRole, AUTH-04/require_role
+- **更新时间**: `2026-05-27 17:57:00`
+
+## CASE-09 - 案例管理逻辑
+- **类型**: 前端 L1b 纯消费者模块，不定义新的后端 API 契约
+- **输入**: 消费 CASE-01 全部 13 份契约 (CaseCreateRequest, CaseUpdate, CaseResponse, CaseListItem, CaseStatus, SceneType, SeverityLevel, BehaviorType, FamilyDisplayCategory, SourceType, EvidenceLevel, PiiDetectionResult, PiiWarning) + AUTH-06 的 4 份契约 (TokenPair, SessionState, useAuthReturn, httpClient)
+- **状态机**: 5 态前端表单 (IDLE→DIRTY→SUBMITTING→SUBMIT_SUCCESS→SUBMIT_ERROR) + 案例只读展示
+- **模块依赖**: CASE-01 (案例数据契约全部复用), AUTH-06 (认证前端契约)
+- **技术栈**: TypeScript 5, Taro 4, Zustand 5, AbortController (超时/竞态)
+- **契约文件**: `docs/contracts/CASE-09/_module-index.json` (reference_only)
+- **复用契约**: CASE-01 全部 13 份 + AUTH-06 全部 4 份
+- **更新时间**: `2026-05-27 17:58:00`

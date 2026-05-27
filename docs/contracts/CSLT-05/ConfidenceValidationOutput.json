@@ -1,0 +1,56 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "docs/contracts/CSLT-05/ConfidenceValidationOutput.json",
+  "title": "ConfidenceValidationOutput",
+  "description": "CSLT-05 置信度后校验的输出结果。包含置信度分数、判定结论、处理后的方案全文、工单触发状态和降级信息。由 CSLT-08 编排层消费用于前端 UI 展示决策，由 CSLT-06 消费用于持久化到咨询历史。",
+  "type": "object",
+  "x-defined-by": "CSLT-05",
+  "x-consumers": ["CSLT-08", "CSLT-06", "TICK-01"],
+  "x-maturity": "draft",
+  "x-contract-type": "output",
+  "x-version": "1.0.0",
+  "properties": {
+    "confidence_score": {
+      "type": "number",
+      "description": "对方案内容可信度的综合评估结果。0.00-1.00 区间，两位小数精度。LLM 自评估 50% + 规则校验 50% 加权计算。LLM 自评估不可用时为纯规则评分（标注 degradation_note）。持久化到 consultations.confidence_score DECIMAL(3,2)。",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "verdict": {
+      "$ref": "./ValidationVerdict.json",
+      "description": "置信度后校验的最终判定结论。PASS=方案可信直接交付；APPEND_WARNING=置信度不足追加提示并触发工单；FORCE_BLOCK=高危关键词命中强制阻断替换方案。"
+    },
+    "modified_plan_text": {
+      "type": "string",
+      "description": "经 CSLT-05 处理后的完整方案文本，可直接交付给前端展示。PASS 时与原 plan_text 完全一致；APPEND_WARNING 时在原文末尾追加一段加粗的警示文本；FORCE_BLOCK 时整体替换为预设的安全提示文本。"
+    },
+    "ticket_triggered": {
+      "type": "boolean",
+      "description": "是否应触发人工工单创建。verdict 为 APPEND_WARNING 或 FORCE_BLOCK 时为 true；PASS 时为 false。CSLT-08 编排层据此决定是否展示工单入口。"
+    },
+    "ticket_creation_failed": {
+      "type": "boolean",
+      "default": false,
+      "description": "TICK-01 工单创建接口调用失败时为 true（正常为 false）。CSLT-08 编排层据此在前端展示'工单创建失败，请手动联系专家'提示。"
+    },
+    "degradation_note": {
+      "description": "降级原因说明。LLM 自评估不可用时值为 'llm_unavailable'（纯规则评分）；整体超时兜底时值为 'timeout_fallback'（默认按置信度不足处理）。正常复合评分时为 null。",
+      "anyOf": [
+        {
+          "type": "string",
+          "enum": ["llm_unavailable", "timeout_fallback"]
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "validation_time_ms": {
+      "type": "number",
+      "description": "校验流程总耗时，从接收完整输入到产出判定结果。以毫秒为单位，供下游模块了解校验性能和做业务决策。目标 P95 <= 3000ms。",
+      "minimum": 0
+    }
+  },
+  "required": ["confidence_score", "verdict", "modified_plan_text", "ticket_triggered", "validation_time_ms"],
+  "additionalProperties": false
+}
