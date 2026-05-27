@@ -22,6 +22,7 @@ from __future__ import annotations
 import time
 from typing import Any
 
+from pydantic import ValidationError
 from py_logger import logger
 
 from ._metrics import GENERATION_DURATION, GENERATION_REQUESTS, GENERATION_TTFT
@@ -110,6 +111,20 @@ async def generate_emergency_plan(
     if not isinstance(input_data, EmergencyPlanInput):
         try:
             input_data = EmergencyPlanInput(**input_data)  # type: ignore[arg-type]
+        except ValidationError as exc:
+            first = exc.errors()[0]
+            field = ".".join(str(loc) for loc in first["loc"])
+            logger.warning(
+                service="emergency_plan_generation",
+                message="Generation input validation failed",
+                op_type="input_validation",
+                extra={**log_extra, "field": field, "msg": first["msg"]},
+            )
+            raise GenerationInputError(
+                detail={"field": field, "msg": first["msg"], "received": str(first.get("input", ""))},
+                message="输入数据校验失败",
+                original_error=exc,
+            ) from exc
         except Exception as exc:
             logger.warning(
                 service="emergency_plan_generation",
@@ -120,7 +135,7 @@ async def generate_emergency_plan(
             raise GenerationInputError(
                 detail={"field": "input_data", "msg": str(exc)},
                 message="输入数据校验失败",
-                original_error=exc if isinstance(exc, Exception) else None,
+                original_error=exc,
             ) from exc
 
     # ==========================================================================
