@@ -139,6 +139,75 @@ class AppSettings(BaseSettings):
         ge=1,
     )
 
+    DEEPSEEK_MODEL: str = Field(
+        default="deepseek-v4-pro",
+        description="DeepSeek 对话模型名称。用于 CSLT-03 应急方案生成的 LLM 调用。",
+    )
+
+    GENERATION_TEMPERATURE: float = Field(
+        default=0.3,
+        ge=0.0,
+        le=2.0,
+        description="LLM 生成温度参数（意图文档约束 ≤ 0.3）。CSLT-03 使用。",
+    )
+
+    GENERATION_MAX_TOKENS: int = Field(
+        default=8192,
+        ge=1,
+        le=32768,
+        description="LLM 单次生成的最大 Token 数。CSLT-03 使用。",
+    )
+
+    GENERATION_TIMEOUT_S: float = Field(
+        default=15.0,
+        ge=1.0,
+        le=120.0,
+        description="LLM 全流程超时秒数。CSLT-03 全流程硬超时。",
+    )
+
+    # ===== SSE 流式推送配置 (5) — CSLT-04 =====
+
+    SSE_MAX_CONCURRENT_CONNECTIONS: int = Field(
+        default=500,
+        ge=1,
+        le=10000,
+        description="每个 Uvicorn worker 进程的最大并发 SSE 连接数。"
+        "达到上限时新连接返回 HTTP 429。4 workers × 500 = 2000 全局上限。",
+    )
+
+    SSE_SESSION_TTL_SECONDS: int = Field(
+        default=300,
+        ge=30,
+        le=3600,
+        description="流式推送会话过期时间（秒）。连接断开后会话保留此时间"
+        "供重连续传，超时后自动清理释放内存。默认 300 秒（5 分钟）。",
+    )
+
+    SSE_HEARTBEAT_INTERVAL_SECONDS: int = Field(
+        default=15,
+        ge=1,
+        le=120,
+        description="SSE 心跳保活事件发送间隔（秒）。默认 15 秒。"
+        "用于防止移动端网络或中间代理因长时间无数据而断开 SSE 连接。",
+    )
+
+    SSE_FIRST_CHUNK_TIMEOUT_SECONDS: int = Field(
+        default=5,
+        ge=1,
+        le=60,
+        description="首 chunk 软超时阈值（秒）。超过此时间未收到上游 CSLT-03 "
+        "的第一个 chunk 时，发送进度提示事件但不终止流。默认 5 秒。",
+    )
+
+    SSE_FULL_TIMEOUT_SECONDS: int = Field(
+        default=20,
+        ge=5,
+        le=120,
+        description="全流程硬超时阈值（秒）。从会话创建起超过此时间尚未完成"
+        "全部推送时，强制关闭上游 Generator 并发送 DoneEvent(finish_reason=TIMEOUT)。"
+        "默认 20 秒。",
+    )
+
     @model_validator(mode="after")
     def _check_production_secrets(self) -> "AppSettings":
         """生产环境安全检测。
