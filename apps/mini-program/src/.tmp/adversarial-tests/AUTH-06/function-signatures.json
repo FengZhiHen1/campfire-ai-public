@@ -1,0 +1,233 @@
+{
+  "module_id": "AUTH-06",
+  "module_name": "认证会话管理",
+  "functions": [
+    {
+      "name": "safeGetStorage",
+      "signature": "<T = unknown>(key: string) => T | null",
+      "parameters": [
+        {
+          "name": "key",
+          "type": "string",
+          "description": "存储键名",
+          "constraints": [
+            "non-empty string"
+          ]
+        }
+      ],
+      "return_type": "T | null",
+      "exceptions": [],
+      "preconditions": [],
+      "side_effects": []
+    },
+    {
+      "name": "safeSetStorage",
+      "signature": "(key: string, data: unknown) => boolean",
+      "parameters": [
+        {
+          "name": "key",
+          "type": "string",
+          "description": "存储键名",
+          "constraints": [
+            "non-empty string"
+          ]
+        },
+        {
+          "name": "data",
+          "type": "unknown",
+          "description": "待写入数据（自动 JSON.stringify）",
+          "constraints": [
+            "non-null"
+          ]
+        }
+      ],
+      "return_type": "boolean",
+      "exceptions": [],
+      "preconditions": [],
+      "side_effects": []
+    },
+    {
+      "name": "safeRemoveStorage",
+      "signature": "(key: string) => boolean",
+      "parameters": [
+        {
+          "name": "key",
+          "type": "string",
+          "description": "存储键名",
+          "constraints": [
+            "non-empty string"
+          ]
+        }
+      ],
+      "return_type": "boolean",
+      "exceptions": [],
+      "preconditions": [],
+      "side_effects": []
+    },
+    {
+      "name": "validateTokenPairFormat",
+      "signature": "(value: unknown) => value is { accessToken: string; refreshToken: string }",
+      "parameters": [
+        {
+          "name": "value",
+          "type": "unknown",
+          "description": "待校验的值",
+          "constraints": [
+            "non-null"
+          ]
+        }
+      ],
+      "return_type": "type predicate: value is TokenPair",
+      "exceptions": [],
+      "preconditions": [],
+      "side_effects": []
+    },
+    {
+      "name": "validateJWTFormat",
+      "signature": "(token: string) => boolean",
+      "parameters": [
+        {
+          "name": "token",
+          "type": "string",
+          "description": "待校验 token 字符串",
+          "constraints": [
+            "non-empty string"
+          ]
+        }
+      ],
+      "return_type": "boolean",
+      "exceptions": [],
+      "preconditions": [],
+      "side_effects": []
+    },
+    {
+      "name": "base64UrlEncode",
+      "signature": "(str: string) => string",
+      "parameters": [
+        {
+          "name": "str",
+          "type": "string",
+          "description": "待编码字符串",
+          "constraints": [
+            "non-empty string"
+          ]
+        }
+      ],
+      "return_type": "string",
+      "exceptions": [],
+      "preconditions": [],
+      "side_effects": []
+    },
+    {
+      "name": "parseJWTPayload",
+      "signature": "(token: string) => JWTPayload | null",
+      "parameters": [
+        {
+          "name": "token",
+          "type": "string",
+          "description": "JWT token 字符串",
+          "constraints": [
+            "non-empty string"
+          ]
+        }
+      ],
+      "return_type": "JWTPayload | null",
+      "exceptions": [],
+      "preconditions": [],
+      "side_effects": []
+    },
+    {
+      "name": "isTokenExpired",
+      "signature": "(token: string) => boolean",
+      "parameters": [
+        {
+          "name": "token",
+          "type": "string",
+          "description": "JWT token 字符串",
+          "constraints": [
+            "non-empty string"
+          ]
+        }
+      ],
+      "return_type": "boolean",
+      "exceptions": [],
+      "preconditions": [],
+      "side_effects": []
+    },
+    {
+      "name": "validateTokenPair",
+      "signature": "(tokenPair: unknown) => tokenPair is { accessToken: string; refreshToken: string }",
+      "parameters": [
+        {
+          "name": "tokenPair",
+          "type": "unknown",
+          "description": "待验证的 TokenPair",
+          "constraints": [
+            "non-null"
+          ]
+        }
+      ],
+      "return_type": "type predicate: tokenPair is TokenPair",
+      "exceptions": [],
+      "preconditions": [],
+      "side_effects": []
+    },
+    {
+      "name": "initSession",
+      "signature": "() => void",
+      "parameters": [],
+      "return_type": "void",
+      "exceptions": [
+        {
+          "type": "捕获所有异常，优雅降级为 unauthenticated",
+          "trigger": "",
+          "contract_reference": "§1.9"
+        }
+      ],
+      "preconditions": [],
+      "side_effects": []
+    },
+    {
+      "name": "buildMockLoginResponse",
+      "signature": "(username: string, password: string) => { access_token: string; refresh_token: string; token_type: 'Bearer' }",
+      "parameters": [
+        {
+          "name": "username",
+          "type": "string",
+          "description": "用户名（mock 中忽略）",
+          "constraints": [
+            "non-empty string"
+          ]
+        },
+        {
+          "name": "password",
+          "type": "string",
+          "description": "密码（mock 中忽略）",
+          "constraints": [
+            "non-empty string"
+          ]
+        }
+      ],
+      "return_type": "{ access_token: string; refresh_token: string; token_type: 'Bearer' }",
+      "exceptions": [],
+      "preconditions": [],
+      "side_effects": []
+    },
+    {
+      "name": "useAuth",
+      "signature": "() => UseAuthReturn",
+      "parameters": [],
+      "return_type": "UseAuthReturn",
+      "exceptions": [
+        {
+          "type": "LoginError",
+          "condition": "login() 调用失败（网络错误、凭证无效、服务端错误）",
+          "trigger": "",
+          "contract_reference": "§1.9"
+        }
+      ],
+      "preconditions": [],
+      "side_effects": []
+    }
+  ]
+}
