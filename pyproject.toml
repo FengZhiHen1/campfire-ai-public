@@ -17,6 +17,7 @@ members = [
     "packages/py-auth",
     "packages/py-logger",
     "packages/py-infra",
+    "packages/py-health",
     "apps/api-server",
     "apps/worker",
 ]
