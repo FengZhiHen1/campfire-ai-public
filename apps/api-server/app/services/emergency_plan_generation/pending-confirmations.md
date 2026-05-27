@@ -40,13 +40,9 @@
 
 `service.py` 现在捕获 `ValidationError` 并提取 `error.errors()[0]` 的 `loc`（字段路径）、`msg`（失败原因）、`input`（实际值），组装为契约要求的 `detail={"field": "behavior_description", "msg": "...", "received": ""}` 格式。非 `ValidationError` 的异常用通用格式兜底。
 
-### 5. [CONFIRM-05] PII 二次扫描的日志方法
+### 5. [CONFIRM-05] ~~PII 二次扫描的日志方法~~ ✅ 已修复
 
-**描述**：`prompt_builder.py` 中调用了 `logger.alert()` 方法记录 PII 检测事件。`py-logger` 的 `logger` 实例是否支持 `.alert()` 级别需确认。
-
-**当前处理**：`py-logger/core.py` 的 structlog 配置未在本次实现范围内确认。若不存在 `.alert()` 方法，可使用 `.critical()` 替代或自定义级别。
-
-**风险等级**：低 — 编译时不会报错（Python 动态属性），运行时若方法不存在会抛出 `AttributeError`，但 PII 扫描为二次保障，不会阻断核心流程。
+`py-logger` 不支持 `logger.alert()`（仅有 debug/info/warning/error/critical）。已将 `prompt_builder.py` 中的 `logger.alert()` 改为 `logger.critical()`，语义一致——PII 检测是需立即关注的安全事件。
 
 ### 6. [CONFIRM-06] `py_logger` 的 import 路径和 API 确认
 
