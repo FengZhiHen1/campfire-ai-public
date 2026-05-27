@@ -85,6 +85,62 @@ class ForbiddenAccess(Exception):
         super().__init__(self.detail)
 
 
+class ProfileLimitExceededError(Exception):
+    """档案数量超限异常。
+
+    当家属账号下 active 状态的档案数量已达到上限（默认 5 个）时，
+    创建新档案的请求抛出此异常。
+    全局异常处理器捕获后返回 HTTP 409 Conflict。
+
+    Attributes:
+        status_code: HTTP 状态码，固定为 409。
+        error_code: 机器可读的错误码，固定为 "PROFILE_LIMIT_EXCEEDED"。
+        detail: 错误提示信息，包含已达上限说明和引导文案。
+        current_count: 当前账号下的档案数量。
+        max_allowed: 允许的档案数量上限。
+    """
+
+    def __init__(
+        self,
+        detail: str = (
+            "您已达到单个账号最多 5 个档案的上限。"
+            "如需为新的患者建档，可先删除一个不再需要的旧档案"
+            "（删除操作不可恢复），或使用另一个家属账号创建。"
+        ),
+        current_count: int = 5,
+        max_allowed: int = 5,
+    ) -> None:
+        self.status_code: int = 409
+        self.error_code: str = "PROFILE_LIMIT_EXCEEDED"
+        self.detail: str = detail
+        self.current_count: int = current_count
+        self.max_allowed: int = max_allowed
+        super().__init__(self.detail)
+
+
+class ProfileConflictError(Exception):
+    """档案并发冲突异常。
+
+    当乐观锁检测到 updated_at 时间戳不匹配时（即另一设备在当前请求
+    读取后修改了同一档案），更新或删除操作抛出此异常。
+    全局异常处理器捕获后返回 HTTP 409 Conflict。
+
+    Attributes:
+        status_code: HTTP 状态码，固定为 409。
+        error_code: 机器可读的错误码，固定为 "PROFILE_CONFLICT"。
+        detail: 错误提示信息，引导用户刷新后重试。
+    """
+
+    def __init__(
+        self,
+        detail: str = "档案数据已被其他设备修改，请刷新页面后重新操作。",
+    ) -> None:
+        self.status_code: int = 409
+        self.error_code: str = "PROFILE_CONFLICT"
+        self.detail: str = detail
+        super().__init__(self.detail)
+
+
 class ConfigWarning(UserWarning):
     """生产环境安全告警。
 

@@ -1,0 +1,91 @@
+{
+  "module": "CSLT-03 应急方案生成",
+  "module_path": "apps/api-server/app/services/emergency_plan_generation",
+  "generated_at": "2026-05-27T15:06:00+08:00",
+  "functions": [
+    {
+      "name": "generate_emergency_plan",
+      "file": "service.py",
+      "signature": "async def generate_emergency_plan(input_data: EmergencyPlanInput, config: Any | None = None) -> GenerationResult",
+      "description": "接收应急咨询的上游结果（危机等级、案例切片、患者档案），组装 Prompt 并调用大模型生成四段式应急方案。阻断场景下完全跳过 LLM 调用，直接返回硬编码安全提示文本。",
+      "args": {
+        "input_data": "EmergencyPlanInput — 完整的生成输入，包含 CSLT-01 危机判定结果、CSLT-02 检索结果、患者档案摘要和行为描述",
+        "config": "Any | None — 可选配置注入，支持字段：DEEPSEEK_MODEL, GENERATION_TEMPERATURE, GENERATION_MAX_TOKENS, GENERATION_TIMEOUT_S"
+      },
+      "returns": "GenerationResult — 生成结果，包含完整文本、来源引用清单、免责声明、耗时、状态等",
+      "raises": ["GenerationInputError", "LLMUnavailableError", "GenerationTimeoutError"]
+    },
+    {
+      "name": "stream_generate",
+      "file": "streaming.py",
+      "signature": "async def stream_generate(input_data: EmergencyPlanInput, messages: list[dict[str, str]], prenumbered_slices: list[tuple[str, str]], llm_client: LLMClient | None = None, config: Any | None = None) -> AsyncGenerator[GenerationChunk, None]",
+      "description": "流式生成应急方案 — 将 LLM 返回的每个 Token 增量通过 AsyncGenerator 实时产出。调用方使用 async for 消费。last chunk 的 is_final=True。",
+      "args": {
+        "input_data": "EmergencyPlanInput — 校验通过的用户输入",
+        "messages": "list[dict[str, str]] — 由 PromptBuilder.build() 产出的 messages 列表",
+        "prenumbered_slices": "list[tuple[str, str]] — 预编号切片映射表 [(编号, slice_id), ...]",
+        "llm_client": "LLMClient | None — LLM 客户端，为 None 时创建默认实例",
+        "config": "Any | None — 可选配置",
+        "yields": "GenerationChunk — 每个 LLM Token 增量块。最后一个 chunk is_final=True"
+      },
+      "raises": ["LLMUnavailableError", "GenerationTimeoutError"]
+    },
+    {
+      "name": "build_generation_result",
+      "file": "streaming.py",
+      "signature": "def build_generation_result(input_data: EmergencyPlanInput, accumulated_text: str, ttft_ms: float | None, t_start: float, prenumbered_slices: list[tuple[str, str]], is_partial: bool, finish_reason: GenerationStatus) -> GenerationResult",
+      "description": "从流式生成的累积文本构建完整的 GenerationResult。负责免责声明存在性检查、引用反查、source_list 格式化。",
+      "args": {
+        "input_data": "EmergencyPlanInput",
+        "accumulated_text": "str — 流式生成累积的完整文本",
+        "ttft_ms": "float | None — 首字延迟（毫秒）",
+        "t_start": "float — time.monotonic() 起始时间戳",
+        "prenumbered_slices": "list[tuple[str, str]] — 预编号切片映射表",
+        "is_partial": "bool — 是否为部分生成",
+        "finish_reason": "GenerationStatus — 生成结束原因"
+      },
+      "returns": "GenerationResult"
+    },
+    {
+      "name": "PromptBuilder.build",
+      "file": "prompt_builder.py",
+      "signature": "def build(self, input_data: EmergencyPlanInput) -> tuple[list[dict[str, str]], PromptBuildContext]",
+      "description": "构建完整的 Prompt messages 列表（System Prompt + User Message）。组装参考案例 Markdown 区域（预编号、降序排列），执行 PII 二次扫描。",
+      "args": {
+        "input_data": "EmergencyPlanInput — 校验通过的用户输入"
+      },
+      "returns": "tuple[list[dict[str, str]], PromptBuildContext] — (messages, ctx) messages 含 system 和 user 两条消息"
+    }
+  ],
+  "classes": [
+    {
+      "name": "PromptBuilder",
+      "file": "prompt_builder.py",
+      "methods": ["build()", "_build_case_reference()", "_build_user_message()", "_build_degradation_note()", "_scan_pii()"]
+    },
+    {
+      "name": "LLMClient",
+      "file": "packages/py-llm/py_llm/client.py",
+      "methods": ["async_chat_stream()"],
+      "status": "stub"
+    }
+  ],
+  "models": [
+    {"name": "EmergencyPlanInput", "file": "models.py", "contract": "docs/contracts/CSLT-03/EmergencyPlanInput.json"},
+    {"name": "GenerationResult", "file": "models.py", "contract": "docs/contracts/CSLT-03/GenerationResult.json"},
+    {"name": "GenerationChunk", "file": "models.py", "contract": "docs/contracts/CSLT-03/GenerationChunk.json"},
+    {"name": "PromptBuildContext", "file": "models.py", "contract": null},
+    {"name": "GenerationStatus", "file": "enums.py", "contract": "docs/contracts/CSLT-03/GenerationStatus.json"},
+    {"name": "BlockVariant", "file": "enums.py", "contract": "docs/contracts/CSLT-03/BlockVariant.json"}
+  ],
+  "enums": [
+    {"name": "GenerationStatus", "values": ["COMPLETE", "PARTIAL", "BLOCKED", "TIMEOUT", "ERROR"]},
+    {"name": "BlockVariant", "values": ["SELF_INJURY", "AGGRESSION", "ELOPEMENT", "MEDICATION"]}
+  ],
+  "exceptions": [
+    {"name": "GenerationInputError", "status_code": 422, "description": "输入校验失败"},
+    {"name": "LLMUnavailableError", "status_code": 503, "description": "LLM API 不可用"},
+    {"name": "GenerationTimeoutError", "status_code": 504, "description": "全流程超时"}
+  ],
+  "pending_confirmations": "pending-confirmations.md"
+}

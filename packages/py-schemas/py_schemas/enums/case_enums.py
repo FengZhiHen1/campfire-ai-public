@@ -21,16 +21,18 @@ from enum import Enum
 class CaseStatus(str, Enum):
     """案例生命周期中的持久化状态。
 
-    三个状态：
+    四个状态：
     - draft: 草稿（仅作者可见）
     - pending_review: 提交后进入审核流程
+    - approved: 审核通过终态（由 CASE-03 管理）
     - rejected: 被审核驳回后可编辑重新提交
 
-    已通过状态(approved)归属 CASE-03 管理。
+    approved 为 CASE-03 扩展的状态，CASE-01 设计文档 §1.4 已明确预留。
     """
 
     DRAFT = "draft"
     PENDING_REVIEW = "pending_review"
+    APPROVED = "approved"
     REJECTED = "rejected"
 
 

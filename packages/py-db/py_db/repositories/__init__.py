@@ -5,9 +5,17 @@
 """
 
 from py_db.repositories.case_repository import CaseRepository
+from py_db.repositories.profile_repository import ProfileRepository
+from py_db.repositories.review_repository import (  # noqa: F401
+    ReviewAuditLogRepository,
+    ReviewRepository,
+)
 from py_db.repositories.teacher_link_repository import TeacherLinkRepository
 
 __all__ = [
     "CaseRepository",
+    "ProfileRepository",
+    "ReviewRepository",
+    "ReviewAuditLogRepository",
     "TeacherLinkRepository",
 ]

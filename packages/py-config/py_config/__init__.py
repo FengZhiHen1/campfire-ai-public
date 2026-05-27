@@ -23,6 +23,8 @@ from py_config.exceptions import (
     ConfigWarning,
     ForbiddenAccess,
     MissingRequiredFieldError,
+    ProfileConflictError,
+    ProfileLimitExceededError,
 )
 from py_config.security import (
     RateLimitConfig,
@@ -44,6 +46,8 @@ __all__ = [
     "ConfigFormatError",
     "ConfigWarning",
     "ForbiddenAccess",
+    "ProfileLimitExceededError",
+    "ProfileConflictError",
 ]
 
 _logger = logging.getLogger("py_config")
