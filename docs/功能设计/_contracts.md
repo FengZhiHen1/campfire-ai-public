@@ -27,6 +27,26 @@
 - **复用契约**: AUTH-04/UserRole, AUTH-04/require_role
 - **更新时间**: `2026-05-26 23:02:40`
 
+## PROF-01 - 个人档案管理
+- **输入**: `ProfileCreate {nickname?: str, birth_date: date, diagnosis_type: DiagnosisType, primary_behavior: ProfileBehaviorType, language_level?: LanguageLevel, sensory_features?: list[SensoryFeature], triggers?: list[Trigger], medication_notes?: str}` — POST /api/v1/profiles 档案创建请求体，3 项必填 + 5 项可选
+- **输入**: `ProfileUpdate {nickname?: str, birth_date?: date, diagnosis_type?: DiagnosisType, primary_behavior?: ProfileBehaviorType, language_level?: LanguageLevel, sensory_features?: list[SensoryFeature], triggers?: list[Trigger], medication_notes?: str}` — PUT /api/v1/profiles/{profile_id} 档案更新请求体，全部可选
+- **输出**: `ProfileResponse {profile_id: UUID, nickname?: str, birth_date: date, age_range: AgeRange, diagnosis_type: DiagnosisType, primary_behavior: ProfileBehaviorType, language_level?: LanguageLevel, sensory_features: list[SensoryFeature], triggers: list[Trigger], medication_notes?: str, is_default: bool, caregiver_id: UUID, created_at: datetime, updated_at: datetime}` — 档案完整详情
+- **输出**: `ProfileListItem {profile_id: UUID, nickname?: str, age_range: AgeRange, diagnosis_type: DiagnosisType, primary_behavior: ProfileBehaviorType, is_default: bool}` — 档案列表条目（精简版）
+- **枚举**: `DiagnosisType` = ASD | 疑似ASD | 其他发育障碍
+- **枚举**: `ProfileBehaviorType` = 刻板行为 | 情绪崩溃 | 自伤行为 | 攻击行为 | 社交退缩 | 多动（与 CASE-01/BehaviorType 同名异构，经契约协调确认保持独立——PROF-01 面向个体患者特征分类，CASE-01 面向案例审核筛选）
+- **枚举**: `LanguageLevel` = 无语言 | 单字词 | 短句 | 可对话
+- **枚举**: `SensoryFeature` = 听觉敏感 | 触觉敏感 | 味觉敏感 | 视觉敏感 | 前庭寻求 | 本体觉寻求
+- **枚举**: `Trigger` = 噪音 | 环境变化 | 陌生人 | 任务中断 | 社交压力 | 感官过载 | 身体不适
+- **枚举**: `AgeRange` = 0-3岁 | 4-6岁 | 7-12岁 | 13-18岁 | 18岁以上
+- **错误码**: `ProfileLimitExceededError`（409 档案数量超限）、`ProfileConflictError`（409 乐观锁并发冲突）
+- **状态机**: 无（档案为即时同步操作，无中间状态或异步流程）
+- **模块依赖**: PROF-05 (AccessOperation/VisibleScope/AccessRequest/AccessDecision 权限校验), AUTH-04 (require_role 路由角色校验、UserRole 枚举), SEC-03 (预留 _pii_check 扩展点，当前 No-op)
+- **外部依赖**: PostgreSQL 17.x (profiles 表 UUID PK + JSONB GIN 索引), Redis 7.x (可选默认档案缓存), Alembic (数据库迁移), packages/py-db/py-schemas/py-auth/py-config/py-logger
+- **技术栈**: FastAPI>=0.115, SQLAlchemy>=2.0 async, Pydantic>=2.0, uuid, python-dateutil
+- **契约文件**: `docs/contracts/PROF-01/DiagnosisType.json`, `docs/contracts/PROF-01/LanguageLevel.json`, `docs/contracts/PROF-01/SensoryFeature.json`, `docs/contracts/PROF-01/Trigger.json`, `docs/contracts/PROF-01/AgeRange.json`, `docs/contracts/PROF-01/ProfileBehaviorType.json`, `docs/contracts/PROF-01/ProfileCreate.json`, `docs/contracts/PROF-01/ProfileUpdate.json`, `docs/contracts/PROF-01/ProfileResponse.json`, `docs/contracts/PROF-01/ProfileListItem.json`, `docs/contracts/PROF-01/ProfileLimitExceededError.json`, `docs/contracts/PROF-01/ProfileConflictError.json`
+- **复用契约**: PROF-05/AccessOperation, PROF-05/VisibleScope, PROF-05/AccessRequest, PROF-05/AccessDecision, AUTH-04/UserRole, AUTH-04/require_role, PaginatedResponse（项目级共享分页类型）
+- **更新时间**: `2026-05-27 14:37:41`
+
 ## KNOW-01 - 科普内容管理
 - **输入**: `ArticleCreate {title: str, category: ArticleCategory, content: str, related_case_ids: list[str]}` — 文章创建请求
 - **输入**: `ArticleUpdate {title?: str, category?: ArticleCategory, content?: str, related_case_ids?: list[str]}` — 文章更新请求（全部可选）
