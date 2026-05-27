@@ -17,6 +17,7 @@ from sqlalchemy.ext.asyncio import (
 
 from py_auth.hashing import hash_password
 from py_config import get_settings
+from py_db.repositories.case_repository import CaseRepository
 from py_db.repositories.user_repository import UserRepository
 from py_logger import logger
 
@@ -157,6 +158,18 @@ def get_user_repository() -> UserRepository:
     return UserRepository(session_factory=_get_session_factory())
 
 
+def get_case_repository() -> CaseRepository:
+    """FastAPI Depends 工厂：构造 CaseRepository 实例。
+
+    注入 async_session_factory 供 Repository 内部使用。
+    每次请求调用时返回新实例。
+
+    Returns:
+        CaseRepository: 已配置会话工厂的 Repository 实例。
+    """
+    return CaseRepository(session_factory=_get_session_factory())
+
+
 def get_password_hasher() -> PasswordHasher:
     """FastAPI Depends 工厂：构造 PasswordHasher 适配器实例。
 
@@ -178,6 +191,7 @@ def get_audit_logger() -> AuditLogger:
 __all__ = [
     "get_db_session",
     "get_user_repository",
+    "get_case_repository",
     "get_password_hasher",
     "get_audit_logger",
     "PasswordHasher",
