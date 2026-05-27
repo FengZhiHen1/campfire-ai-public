@@ -303,3 +303,43 @@
 - 篝火智答-技术栈设计.md
 
 **结论**：✅ 无冲突。CSLT-02 的技术方案（pgvector HNSW 混合检索、text-embedding-v4 语义嵌入）与全部已有规格文档和技术栈设计兼容。嵌入配置可通过 DEPLOY-05 消费，无需自行定义。当前项目尚无与向量语义检索领域重叠的已有契约类型。CSLT-02 在规范阶段首次定义本模块的向量检索接口类型时，需注意与未来 CASE-04 的向量索引契约对齐。
+
+---
+
+## 2026-05-27 14:22 — PROF-01 个人档案管理 — 规格准备一致性检查
+
+**检查范围**：模块 PROF-01 规格准备阶段（s05），全量扫描已有规格文档和契约文件，核对依赖接口对齐与类型冲突。
+
+**扫描检查项**：
+- 模块编号冲突：无。PROF-01 编号唯一（03-个性化档案分组首个进入设计流程的模块）。
+- 状态定义冲突：无。PROF-01 意图文档 §1.7 明确声明"本功能点不涉及状态流转，故无需状态机"，与已有模块状态定义（ArticleStatus、HealthStatus、DeploymentState、MigrationState 等）无交集。
+- 接口命名冲突：无。PROF-01 尚未定义对外接口（本阶段仅准备材料），已有模块的接口类型（PROF-05/AccessOperation、AUTH-04/UserRole、CSLT-01/CrisisLevel 等）均与个人档案管理领域无命名交集。
+- 同名异构类型：无。PROF-01 尚无已注册的契约类型，在规范阶段定义 Profile 相关类型时需注意不与已有契约命名冲突。
+- 循环依赖迹象：无。PROF-01 入度 3（PROF-02/PROF-03/PROF-07 消费 — 均为 PROF 域内下游），出度 3（PROF-05 调用访问门控、AUTH-04 调用角色校验、SEC-03 调用 PII 检测 — 不确定性见注），全部为单向合理依赖。模块依赖关系分析确认为零循环依赖。
+
+**依赖接口对齐**：
+- PROF-01 → PROF-05：PROF-05 契约中 AccessOperation 枚举的 view/create/update/delete 值与 PROF-01 的 CRUD 操作一一对应。PROF-05 访问矩阵中"家属本人全权"已覆盖 PROF-01 所有操作权限需求。✅ 已对齐
+- PROF-01 → AUTH-04：family 角色标识已在 AUTH-04 契约中定义，PROF-01 作为消费者可直接复用。✅ 已对齐
+- PROF-01 → SEC-03：PII 检测的调用方式（是否实时调用 SEC-03 的检测接口，还是仅在 UI 层提示用户避免填写敏感信息）为不确定性项（依赖关系分析标记为 ⚠️），需在规范阶段确认。不影响本阶段。
+
+**审查的相关文档**：
+- PROF-05 档案隐私控制-落地规范.md（已冻结）
+- PROF-05 档案隐私控制-设计文档.md（已冻结）
+- KNOW-01 科普内容管理-落地规范.md（已冻结）
+- AUTH-01～06 用户注册/登录/Token续期/RBAC鉴权/UI/会话管理-落地规范.md（已冻结）
+- CSLT-01/02 危机分级判定/RAG语义检索-落地规范.md（已冻结）
+- OBS-01/04 结构化日志/健康检查-落地规范.md（已冻结）
+- SEC-01/04/05 传输存储安全/防刷限流/输入校验防护-落地规范.md（已冻结）
+- DEPLOY-01～05 容器编排/反向代理/CI_CD/数据库迁移/环境配置-落地规范.md（已冻结）
+- CASE-01/04 案例录入管理/案例向量化入库-落地规范.md（已冻结）
+- docs/contracts/PROF-05/AccessOperation.json（maturity: draft）
+- docs/contracts/PROF-05/AccessRequest.json（maturity: draft）
+- docs/contracts/PROF-05/AccessDecision.json（maturity: draft）
+- docs/contracts/PROF-05/VisibleScope.json（maturity: draft）
+- docs/contracts/AUTH-04/UserRole.json（maturity: draft）
+- docs/功能设计/_contracts.md
+- docs/功能设计/功能模块全拆解.md
+- docs/功能设计/模块依赖关系分析.md
+- docs/篝火智答-技术栈设计.md
+
+**结论**：✅ 无冲突。PROF-01 作为 03-个性化档案分组首个进入设计流程的模块，其 CRUD 语义与已有 PROF-05 契约完全对齐。依赖方向均为单向合理依赖，无循环依赖迹象。与 SEC-03 的 PII 检测调用方式将在规范阶段确认（非阻塞性）。建议在规范阶段首先定义 Profile 数据模型契约，为 PROF 域下游模块（PROF-02/PROF-03/PROF-07）提供稳定的消费接口。
