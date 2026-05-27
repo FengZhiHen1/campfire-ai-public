@@ -116,10 +116,11 @@ class AllocateSpawnProcessor:
                     })
                     continue
 
-                # 同 Skill 延续：标记前一 stage 的 continued_to
-                prev_st = state.first_stage_by_id(matched_stage_id) if matched_stage_id else None
-                if prev_st:
-                    delta.stage_updates[prev_st.stage_instance_id] = {"continued_to": st.stage_id}
+                # 同 Skill 延续：标记前一 stage 的 continued_to（跳过自引用）
+                if matched_stage_id != stage_id:
+                    prev_st = state.first_stage_by_id(matched_stage_id)
+                    if prev_st:
+                        delta.stage_updates[prev_st.stage_instance_id] = {"continued_to": st.stage_id}
 
                 updates["system_agent_id"] = matched_sys_id
                 delta.stage_updates[st.stage_instance_id] = updates
@@ -214,8 +215,8 @@ def _find_agent_by_skill(
 ) -> tuple[str | None, str | None]:
     """扫描当前实例的 stage state，查找同 skill 且有 system_agent_id 的记录。
 
-    优先 RUNNING（agent 正在执行当前 stage），其次 DONE（agent 刚完成前一 stage，
-    可被 continue 复用）。并行 stage 已在外层短路，此处不处理。
+    优先级：RUNNING > PENDING（含 confirm 后等待 continue）> DONE。
+    并行 stage 已在外层短路，此处不处理。
 
     Returns:
         (system_agent_id, stage_id) 或 (None, None)
@@ -225,13 +226,18 @@ def _find_agent_by_skill(
         if spec.target_type == StageTargetType.SKILL and spec.target == skill_id
     }
     done_match: tuple[str, str] | None = None
+    pending_match: tuple[str, str] | None = None
     for st in state.stages:
         if st.stage_id not in target_stage_ids or not st.system_agent_id:
             continue
         if st.status == StageStatus.RUNNING:
             return st.system_agent_id, st.stage_id
+        if st.status == StageStatus.PENDING and pending_match is None:
+            pending_match = (st.system_agent_id, st.stage_id)
         if st.status == StageStatus.DONE and done_match is None:
             done_match = (st.system_agent_id, st.stage_id)
+    if pending_match:
+        return pending_match
     if done_match:
         return done_match
     return None, None
