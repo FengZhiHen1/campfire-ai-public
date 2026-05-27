@@ -12,10 +12,6 @@ Service 编排（检索执行）后返回排序后的案例切片列表。
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, status
-from sqlalchemy.ext.asyncio import AsyncSession
-
-from app.dependencies.auth_dependencies import get_db_session
-from app.services.consult_service import search_cases
 from py_schemas.consult import SemanticSearchInput, SemanticSearchResult
 from py_schemas.security.validation_schemas import ValidationErrorResponse
 
@@ -58,25 +54,26 @@ router = APIRouter(prefix="/api/v1/consult", tags=["consult"])
 )
 async def search(
     request: SemanticSearchInput = Depends(),
-    session: AsyncSession = Depends(get_db_session),
 ) -> SemanticSearchResult:
     """语义检索端点。
 
     依赖注入链：
     1. SemanticSearchInput — FastAPI Body 依赖，自动触发 Pydantic 校验
-    2. AsyncSession — 数据库异步会话，请求结束时自动关闭
 
     Args:
         request: Pydantic 校验通过的语义检索请求。
-        session: 活动数据库异步会话。
 
     Returns:
         SemanticSearchResult: 排序后的案例切片列表及检索状态。
     """
-    return await search_cases(
-        request=request,
-        db=session,
-    )
+    from app.dependencies.auth_dependencies import get_db_session
+    from app.services.consult_service import search_cases
+
+    async for session in get_db_session():
+        return await search_cases(
+            request=request,
+            db=session,
+        )
 
 
 __all__ = ["router"]
