@@ -48,6 +48,14 @@ from py_schemas.profiles import (
     Trigger,
     VisibleScope,
 )
+from py_schemas.streaming import (
+    ChunkEvent,
+    DoneEvent,
+    ErrorEvent,
+    HeartbeatEvent,
+    StreamErrorCode,
+    StreamSession,
+)
 
 __all__ = [
     # AUTH — 用户认证与授权
@@ -90,4 +98,11 @@ __all__ = [
     "PaginatedResponse",
     "PiiWarning",
     "PiiDetectionResult",
+    # CSLT-04 — 流式应答推送 SSE 事件模型
+    "ChunkEvent",
+    "DoneEvent",
+    "HeartbeatEvent",
+    "ErrorEvent",
+    "StreamErrorCode",
+    "StreamSession",
 ]

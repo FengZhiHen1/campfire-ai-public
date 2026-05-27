@@ -62,6 +62,29 @@ class ProfileRepository:
         await session.refresh(profile)
         return profile
 
+    async def exists(
+        self,
+        session: AsyncSession,
+        profile_id: UUID,
+    ) -> bool:
+        """检查指定 profile_id 的档案是否存在。
+
+        仅判断行存在性，不校验归属关系（供 PROF-03 在权限校验前
+        独立判断档案存在性使用）。
+
+        Args:
+            session: 活动数据库会话。
+            profile_id: 目标档案 UUID。
+
+        Returns:
+            bool: 档案存在时返回 True。
+        """
+        from sqlalchemy import exists as sa_exists
+
+        stmt = sa_exists().where(Profile.profile_id == profile_id).select()
+        result = await session.execute(stmt)
+        return result.scalar() or False
+
     async def get_by_id(
         self,
         session: AsyncSession,

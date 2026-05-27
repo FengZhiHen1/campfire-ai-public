@@ -1,7 +1,9 @@
-"""PROF-05 档案隐私控制 + PROF-01 个人档案管理 — Pydantic Schema 定义。
+"""PROF-05 档案隐私控制 + PROF-01 个人档案管理 + PROF-03 事件记录管理 — Pydantic Schema 定义。
 
 PROF-05 部分：提供档案操作类型枚举、可见范围枚举、访问请求和裁决模型。
 PROF-01 部分：提供个人档案管理的 DTO 和枚举类型。
+PROF-03 部分：提供事件记录管理的 DTO（EventCreate/EventUpdate/EventResponse/
+EventListItem）和枚举（SeverityLevel/EventSetting）。
 
 对外接口类型定义与 docs/contracts/ 下的 JSON Schema 契约一致。
 
@@ -22,11 +24,19 @@ PROF-01 部分：提供个人档案管理的 DTO 和枚举类型。
 - ProfileUpdate: docs/contracts/PROF-01/ProfileUpdate.json
 - ProfileResponse: docs/contracts/PROF-01/ProfileResponse.json
 - ProfileListItem: docs/contracts/PROF-01/ProfileListItem.json
+
+契约引用（PROF-03）：
+- SeverityLevel: docs/contracts/PROF-03/SeverityLevel.json
+- EventSetting: docs/contracts/PROF-03/EventSetting.json
+- EventCreate: docs/contracts/PROF-03/EventCreate.json
+- EventUpdate: docs/contracts/PROF-03/EventUpdate.json
+- EventResponse: docs/contracts/PROF-03/EventResponse.json
+- EventListItem: docs/contracts/PROF-03/EventListItem.json
 """
 
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from enum import StrEnum
 from uuid import UUID
 
@@ -530,6 +540,333 @@ def calculate_age_range(birth_date: date) -> AgeRange:
 
 
 # ===========================================================================
+# PROF-03 — 枚举类型
+# ===========================================================================
+
+
+class SeverityLevel(StrEnum):
+    """家属自评事件严重程度枚举。
+
+    面向家属对单次事件的即时主观评估，三值短形式适配移动端快速选择。
+    与 CASE-01 的 SeverityLevel（轻度/中度/重度）业务域不同——
+    PROF-03 面向家属即时评估，CASE-01 面向案例审核的结构化标准。
+
+    与 docs/contracts/PROF-03/SeverityLevel.json 契约一致。
+    """
+
+    MILD = "轻"
+    MODERATE = "中"
+    SEVERE = "重"
+
+
+class EventSetting(StrEnum):
+    """事件发生场景枚举。
+
+    定义行为/情绪事件发生时所处的环境类型，四值可选字段。
+    用于事件记录的 setting 字段。
+
+    与 docs/contracts/PROF-03/EventSetting.json 契约一致。
+    """
+
+    HOME = "家庭"
+    SCHOOL = "学校"
+    PUBLIC = "公共场合"
+    INSTITUTION = "机构"
+
+
+# ===========================================================================
+# PROF-03 — DTO
+# ===========================================================================
+
+
+class EventCreate(BaseModel):
+    """创建事件记录的输入模型。
+
+    家属填写事件结构化表单后提交。Service 层校验 30 天追溯期、
+    档案存在性、权限、容量上限后写入 event_logs 表。
+
+    与 docs/contracts/PROF-03/EventCreate.json 契约一致。
+    """
+
+    event_time: datetime = Field(
+        ...,
+        description="事件实际发生时间（UTC），支持补录历史事件。Service 层校验 >= utcnow - 30d",
+    )
+    behavior_type: ProfileBehaviorType = Field(
+        ...,
+        description="行为类型分类，复用 PROF-01 的 ProfileBehaviorType 枚举",
+    )
+    severity_level: SeverityLevel = Field(
+        ...,
+        description="家属自评严重程度，三值枚举（轻/中/重）",
+    )
+    setting: EventSetting | None = Field(
+        default=None,
+        description="行为事件发生场景，可选字段。不填写时为 null",
+    )
+    trigger_description: str = Field(
+        ...,
+        min_length=1,
+        max_length=2000,
+        description="触发因素描述，自由文本",
+    )
+    manifestation: str = Field(
+        ...,
+        min_length=1,
+        max_length=2000,
+        description="具体表现描述，自由文本",
+    )
+    intervention_tried: str = Field(
+        ...,
+        min_length=1,
+        max_length=2000,
+        description="尝试干预措施，自由文本",
+    )
+    intervention_result: str = Field(
+        ...,
+        min_length=1,
+        max_length=2000,
+        description="干预结果，自由文本",
+    )
+    tags: list[str] | None = Field(
+        default=None,
+        max_length=5,
+        description="自定义标签列表，可选，最多 5 个。每个标签经归一处理后不超过 10 字",
+    )
+
+    @field_validator("event_time")
+    @classmethod
+    def event_time_not_future(cls, v: datetime) -> datetime:
+        """校验事件时间不能晚于当前时间（防止未来时间戳）。
+
+        Pydantic 解析不带时区的 ISO 8601 字符串（如 "2026-05-20T14:30:00"）时
+        产生 naive datetime，无法直接与时区感知型 datetime.now(timezone.utc)
+        比较。因此先统一规范化为 timezone-aware datetime。
+        """
+        if v.tzinfo is None:
+            v = v.replace(tzinfo=timezone.utc)
+        if v > datetime.now(timezone.utc):
+            raise ValueError("事件时间不能晚于当前时间")
+        return v
+
+    @field_validator("tags")
+    @classmethod
+    def validate_tags_items(cls, v: list[str] | None) -> list[str] | None:
+        """校验每个标签非空且不超过 10 字符（pre-normalization check）。"""
+        if v is not None:
+            for tag in v:
+                if not tag or not tag.strip():
+                    raise ValueError("标签不能为空字符串")
+                if len(tag) > 10:
+                    raise ValueError(f"单个标签不能超过 10 个字符，当前: {tag!r}")
+        return v
+
+    model_config = {"extra": "forbid"}
+
+
+class EventUpdate(BaseModel):
+    """更新事件记录的输入模型（Merge Patch 语义）。
+
+    所有字段默认为 None（表示不修改此字段）。仅用户显式提供的
+    非 None 字段写入数据库。setting 字段传入显式 None 表示清除
+    已设置的发生场景。
+
+    与 docs/contracts/PROF-03/EventUpdate.json 契约一致。
+    """
+
+    event_time: datetime | None = Field(
+        default=None,
+        description="修改后的事件实际发生时间，null 表示不修改此字段",
+    )
+    behavior_type: ProfileBehaviorType | None = Field(
+        default=None,
+        description="修改后的行为类型，null 表示不修改此字段",
+    )
+    severity_level: SeverityLevel | None = Field(
+        default=None,
+        description="修改后的严重程度，null 表示不修改此字段",
+    )
+    setting: EventSetting | None = Field(
+        default=None,
+        description="修改后的发生场景。传入 null（显式）表示清除已设置的发生场景",
+    )
+    trigger_description: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=2000,
+        description="修改后的触发因素描述，null 表示不修改此字段",
+    )
+    manifestation: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=2000,
+        description="修改后的具体表现描述，null 表示不修改此字段",
+    )
+    intervention_tried: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=2000,
+        description="修改后的尝试干预措施，null 表示不修改此字段",
+    )
+    intervention_result: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=2000,
+        description="修改后的干预结果，null 表示不修改此字段",
+    )
+    tags: list[str] | None = Field(
+        default=None,
+        max_length=5,
+        description="修改后的自定义标签列表，null 表示不修改此字段",
+    )
+
+    @field_validator("event_time")
+    @classmethod
+    def event_time_not_future(cls, v: datetime | None) -> datetime | None:
+        """校验事件时间不能晚于当前时间。
+
+        Pydantic 解析不带时区的 ISO 8601 字符串时产生 naive datetime，
+        无法直接与 timezone-aware datetime 比较。先统一规范化。
+        """
+        if v is not None:
+            if v.tzinfo is None:
+                v = v.replace(tzinfo=timezone.utc)
+            if v > datetime.now(timezone.utc):
+                raise ValueError("事件时间不能晚于当前时间")
+        return v
+
+    @field_validator("tags")
+    @classmethod
+    def validate_tags_items(cls, v: list[str] | None) -> list[str] | None:
+        """校验每个标签非空且不超过 10 字符。"""
+        if v is not None:
+            for tag in v:
+                if not tag or not tag.strip():
+                    raise ValueError("标签不能为空字符串")
+                if len(tag) > 10:
+                    raise ValueError(f"单个标签不能超过 10 个字符，当前: {tag!r}")
+        return v
+
+    model_config = {"extra": "forbid"}
+
+
+class EventResponse(BaseModel):
+    """事件记录完整详情输出模型。
+
+    包含 16 个字段，覆盖意图文档全部输出字段。
+    recorded_by 和 recorded_by_role 由系统从 JWT 获取。
+    is_professional 默认为 false，仅 PROF-04 补充评估后设置为 true。
+
+    与 docs/contracts/PROF-03/EventResponse.json 契约一致。
+    """
+
+    event_id: UUID = Field(
+        ...,
+        description="事件唯一标识，系统通过 uuid.uuid4() 生成",
+    )
+    profile_id: UUID = Field(
+        ...,
+        description="所属档案标识",
+    )
+    recorded_by: UUID = Field(
+        ...,
+        description="记录人标识，创建时从 JWT payload 获取",
+    )
+    recorded_by_role: str = Field(
+        ...,
+        description="记录人角色，创建时固定为 'parent'",
+    )
+    event_time: datetime = Field(
+        ...,
+        description="事件实际发生时间（UTC）",
+    )
+    behavior_type: str = Field(
+        ...,
+        description="行为类型（字符串形式），对应 ProfileBehaviorType 枚举值",
+    )
+    severity_level: str = Field(
+        ...,
+        description="家属自评严重程度（字符串形式）",
+    )
+    setting: str | None = Field(
+        default=None,
+        description="发生场景，未填写时为 null",
+    )
+    trigger_description: str = Field(
+        ...,
+        description="触发因素描述",
+    )
+    manifestation: str = Field(
+        ...,
+        description="具体行为与情绪表现细节",
+    )
+    intervention_tried: str = Field(
+        ...,
+        description="尝试的干预措施",
+    )
+    intervention_result: str = Field(
+        ...,
+        description="干预措施的效果",
+    )
+    is_professional: bool = Field(
+        default=False,
+        description="是否有专业评估补充",
+    )
+    tags: list[str] | None = Field(
+        default=None,
+        description="自定义标签列表，未填写时为 null",
+    )
+    created_at: datetime = Field(
+        ...,
+        description="记录创建时间（UTC），服务端自动生成",
+    )
+    updated_at: datetime = Field(
+        ...,
+        description="最后更新时间（UTC），每次修改后自动刷新",
+    )
+
+    model_config = {"extra": "forbid"}
+
+
+class EventListItem(BaseModel):
+    """事件记录列表精简条目输出模型。
+
+    用于 GET /api/v1/profiles/{profile_id}/events 列表接口，
+    仅包含列表展示所需的核心字段。
+    has_professional_note 语义与 EventResponse.is_professional 对应。
+
+    与 docs/contracts/PROF-03/EventListItem.json 契约一致。
+    """
+
+    event_id: UUID = Field(
+        ...,
+        description="事件唯一标识",
+    )
+    event_time: datetime = Field(
+        ...,
+        description="事件实际发生时间（UTC）",
+    )
+    behavior_type: str = Field(
+        ...,
+        description="行为类型（字符串形式）",
+    )
+    severity_level: str = Field(
+        ...,
+        description="严重程度（字符串形式）",
+    )
+    has_professional_note: bool = Field(
+        ...,
+        description="是否有专业评估补充。与 EventResponse.is_professional 语义对应",
+    )
+    created_at: datetime = Field(
+        ...,
+        description="记录创建时间（UTC）",
+    )
+
+    model_config = {"extra": "forbid"}
+
+
+# ===========================================================================
 # 模块导出
 # ===========================================================================
 
@@ -552,6 +889,14 @@ __all__ = [
     "ProfileUpdate",
     "ProfileResponse",
     "ProfileListItem",
+    # PROF-03 枚举
+    "SeverityLevel",
+    "EventSetting",
+    # PROF-03 DTO
+    "EventCreate",
+    "EventUpdate",
+    "EventResponse",
+    "EventListItem",
     # 工具函数
     "calculate_age_range",
 ]

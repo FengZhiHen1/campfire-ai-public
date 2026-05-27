@@ -1,7 +1,8 @@
-"""PROF-05 档案隐私控制 + PROF-01 个人档案管理 — ORM 模型定义。
+"""PROF-05 档案隐私控制 + PROF-01 个人档案管理 + PROF-03 事件记录管理 — ORM 模型定义。
 
 PROF-05 部分：teacher_links 表（家属-老师关联关系表）。
 PROF-01 部分：profiles 表（个人档案主表）。
+PROF-03 部分：event_logs 表（事件记录表，16 列）。
 
 teacher_links 表用于存储家属（profile owner）与老师/专家之间的
 关联关系。每次档案访问请求到达时，PrivacyGuard 通过实时查询此表
@@ -10,6 +11,10 @@ teacher_links 表用于存储家属（profile owner）与老师/专家之间的
 profiles 表是 PROF-01 的核心数据表，存储每个患者的个人档案信息。
 使用 JSONB 存储多选标签字段（sensory_features、triggers），
 利用 GIN 索引支持下游 PROF-02 的标签过滤查询。
+
+event_logs 表存储家属为关联患者记录的行为/情绪事件。每条事件属于
+一个档案，按 profile_id 物理隔离。不设 ON DELETE CASCADE 外键，
+级联删除由 PROF-01 应用层编排。
 """
 
 from __future__ import annotations
@@ -17,7 +22,7 @@ from __future__ import annotations
 import uuid
 from datetime import date, datetime
 
-from sqlalchemy import Boolean, Date, DateTime, Integer, String, Text
+from sqlalchemy import Boolean, Date, DateTime, Index, Integer, String, Text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
@@ -208,7 +213,145 @@ class TeacherLink(Base, UUIDPrimaryKeyMixin, TimestampMixin):
         )
 
 
+# ===========================================================================
+# PROF-03 — EventLog ORM 模型
+# ===========================================================================
+
+
+class EventLog(Base):
+    """事件记录 ORM 模型。
+
+    映射 event_logs 表，存储家属为关联患者记录的行为/情绪事件。
+    每条事件属于一个档案（profile_id），按 profile_id 物理隔离。
+    所有查询必须含 WHERE profile_id = :pid 条件。
+
+    不设 ON DELETE CASCADE 外键——级联删除由 PROF-01
+    应用层通过 EventRepository.delete_by_profile() 编排。
+
+    Attributes:
+        event_id: UUID v4 主键，由服务端 uuid.uuid4() 生成。
+        profile_id: 所属档案 UUID，建立单列索引和复合索引。
+        recorded_by: 记录人用户 UUID（创建时从 JWT 获取，不可修改）。
+        recorded_by_role: 记录人角色，固定值 'parent'。
+        event_time: 事件实际发生时间（UTC），支持 30 天内的补录。
+        behavior_type: 行为类型（ProfileBehaviorType 枚举字符串值）。
+        severity_level: 家属自评严重程度（SeverityLevel 枚举字符串值）。
+        setting: 事件发生场景（EventSetting 枚举字符串值），可选。
+        trigger_description: 触发因素描述，自由文本。
+        manifestation: 具体表现描述，自由文本。
+        intervention_tried: 尝试干预措施，自由文本。
+        intervention_result: 干预结果，自由文本。
+        is_professional: 是否有专业评估补充，默认为 false。
+        tags: 自定义标签列表，JSONB 数组，可选。
+        created_at: 记录创建时间。
+        updated_at: 记录最后更新时间。
+    """
+
+    __tablename__ = "event_logs"
+
+    # 复合索引: (profile_id, event_time DESC) — 列表查询
+    __table_args__ = (
+        Index("ix_event_logs_profile_event_time", "profile_id", "event_time"),
+    )
+
+    event_id: Mapped[uuid.UUID] = mapped_column(
+        primary_key=True,
+        default=uuid.uuid4,
+        comment="UUID v4 主键",
+    )
+    profile_id: Mapped[uuid.UUID] = mapped_column(
+        nullable=False,
+        index=True,
+        comment="所属档案 UUID",
+    )
+    recorded_by: Mapped[uuid.UUID] = mapped_column(
+        nullable=False,
+        comment="记录人用户 UUID",
+    )
+    recorded_by_role: Mapped[str] = mapped_column(
+        String(20),
+        nullable=False,
+        default="parent",
+        comment="记录人角色，固定为 'parent'",
+    )
+    event_time: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        comment="事件实际发生时间（UTC）",
+    )
+    behavior_type: Mapped[str] = mapped_column(
+        String(20),
+        nullable=False,
+        comment="行为类型",
+    )
+    severity_level: Mapped[str] = mapped_column(
+        String(10),
+        nullable=False,
+        comment="家属自评严重程度",
+    )
+    setting: Mapped[str | None] = mapped_column(
+        String(20),
+        nullable=True,
+        default=None,
+        comment="事件发生场景",
+    )
+    trigger_description: Mapped[str] = mapped_column(
+        Text,
+        nullable=False,
+        comment="触发因素描述",
+    )
+    manifestation: Mapped[str] = mapped_column(
+        Text,
+        nullable=False,
+        comment="具体表现描述",
+    )
+    intervention_tried: Mapped[str] = mapped_column(
+        Text,
+        nullable=False,
+        comment="尝试干预措施",
+    )
+    intervention_result: Mapped[str] = mapped_column(
+        Text,
+        nullable=False,
+        comment="干预结果",
+    )
+    is_professional: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+        comment="是否有专业评估补充",
+    )
+    tags: Mapped[list | None] = mapped_column(
+        JSONB,
+        nullable=True,
+        default=None,
+        comment="自定义标签列表（JSONB 数组）",
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
+        comment="记录创建时间",
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+        comment="记录最后更新时间",
+    )
+
+    def __repr__(self) -> str:
+        return (
+            f"<EventLog(event_id={self.event_id!r}, "
+            f"profile_id={self.profile_id!r}, "
+            f"behavior_type={self.behavior_type!r}, "
+            f"event_time={self.event_time!r})>"
+        )
+
+
 __all__ = [
     "Profile",
     "TeacherLink",
+    "EventLog",
 ]
