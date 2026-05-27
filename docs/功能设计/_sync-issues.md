@@ -457,3 +457,92 @@
 - docs/篝火智答-项目结构.md
 
 **结论**：✅ 无冲突。PROF-07 作为前端 L1b 纯消费者模块（类似 CASE-09），不定义与已有模块冲突的类型或接口。其上游依赖 PROF-01/AUTH-06 的契约已就绪且枚举值对齐。与 PROF-02 的通知机制和与 CSLT-08 的协作模式委托给规范阶段决策（非阻塞性）。建议在规范阶段复用 PROF-01 的档案类型定义，避免前端侧重新定义后端模型。
+
+---
+
+## 2026-05-27 21:37:16 — CSLT-08 咨询编排逻辑 — 材料准备一致性检查
+
+**检查范围**：模块 CSLT-08 规格准备阶段（s05），全量扫描已有规格文档和契约文件，核对依赖接口对齐与类型冲突。
+
+**扫描检查项**：
+- 模块编号冲突：无。CSLT-08 编号唯一（02-智能应急咨询分组），与已有模块无冲突。
+- 状态定义冲突：无。CSLT-08 定义的 8 种前端业务状态（空闲、选择行为类型、提交中、流式接收中、已完成、工单引导、提交失败、流传输失败）为前端编排领域专有状态机，与已有模块的状态定义（KNOW-01 ArticleStatus、DEPLOY-01 DeploymentState、OBS-04 HealthStatus、PROF-03 SeverityLevel 等）领域隔离，无交集。
+- 接口命名冲突：无。CSLT-08 为前端 L1b 逻辑层模块（位于 `logics/consult/`），不定义新的后端 API 端点或 Service 接口。其消费类型（BehaviorTypeCategory、CrisisLevel、ChunkEvent/DoneEvent/ErrorEvent/HeartbeatEvent、ValidationVerdict 等）全部来自已有 CSLT-01/03/04/05/06 的已发布契约，无新增接口命名冲突。
+- 同名异构类型：无。CSLT-08 复用已有契约类型的同名定义（CrisisLevel/BehaviorTypeCategory/ValidationVerdict 等），保持同名同构。已有模块间的同名异构（PROF-03 SeverityLevel vs CASE-01 SeverityLevel）与 CSLT-08 无关。
+- 循环依赖迹象：无。CSLT-08 出度 7（CSLT-01~06 + AUTH-06 + PROF-07，全部单向调用），入度 2（CSLT-07 + KNOW-05）。模块依赖关系分析确认零循环依赖。CSLT-07→CSLT-08 为前端 L1a→L1b 标准分层调用，非循环依赖。
+
+**上游接口兼容性审查**：
+- CSLT-01 → CSLT-08：`CrisisJudgmentResult`（含 `final_level: CrisisLevel`、`block_deep_response: bool`、`manual_review_flag: bool`）— CSLT-08 意图文档 §1.6.1 输入字段「危机判定结果」精确接收。字段类型和枚举值完全对齐。✅
+- CSLT-04 → CSLT-08：SSE 四类事件（ChunkEvent/DoneEvent/ErrorEvent/HeartbeatEvent）— CSLT-08 作为下游消费者直接消费，CSLT-04 契约中 `x-consumers` 已登记含 CSLT-08。✅
+- CSLT-05 → CSLT-08：`ConfidenceValidationOutput`（含 `confidence_score: float`、`verdict: ValidationVerdict`、`ticket_triggered: bool`）— CSLT-08 意图文档 §1.6.1 输入字段「置信度校验结论」精确接收。✅
+- CSLT-06 → CSLT-08：`ConsultationHistoryListItem`/`ConsultationHistoryDetail` — 历史查询接口完全兼容。✅
+
+**依赖接口对齐**：
+- CSLT-08 → CSLT-04：SSE 事件流消费方 — 依赖关系分析标记为 ✅ 确定，CSLT-04 契约已登记 CSLT-08 为消费者。✅ 已对齐
+- CSLT-08 → CSLT-01：危机等级消费方 — 依赖关系分析标记为 ✅ 确定，CSLT-01 契约已登记 CSLT-08 为消费者。✅ 已对齐
+- CSLT-08 → CSLT-05：置信度校验结论消费方 — 依赖关系分析标记为 ✅ 确定，CSLT-05 契约已登记 CSLT-08 为消费者。✅ 已对齐
+- CSLT-08 → CSLT-06：归档触发 + 历史查询 — 依赖关系分析标记为 ✅ 确定。✅ 已对齐
+- CSLT-08 → TICK-09：工单跳转 — CSLT-08 通过"联系专家"按钮移交控制权至 TICK-09，依赖方向明确。CSLT-08 不调用 TICK-09 后端 API，仅进行前端路由跳转。✅ 已对齐
+- CSLT-08 → AUTH-06：前端 httpClient Token 自动注入 — 前端标准依赖。✅ 已对齐
+
+**技术栈对齐**：CSLT-08 技术栈（Taro 4.x / React 18.x / Zustand 5.x / TypeScript 5.x）与 `docs/篝火智答-项目结构.md` §6.1 声明的 L1b 前端逻辑层技术栈完全一致。无技术栈根本性冲突。
+
+**意图缺陷结论**：无。意图文档完整定义了 8 种业务状态与法定转换路径、5 输入 + 5 输出业务定义、3 种异常策略、7 条验收标准、10 项技术决策留白。无性能指标不可达成、无技术栈冲突、无业务规则自相矛盾。
+
+**审查的相关文档**：
+- CSLT-01 危机分级判定-落地规范.md（已冻结）
+- CSLT-02 RAG语义检索-落地规范.md（已冻结）
+- CSLT-03 应急方案生成-落地规范.md（已冻结）
+- CSLT-04 流式应答推送-落地规范.md（已冻结）
+- CSLT-05 置信度后校验-落地规范.md（已冻结）
+- CSLT-06 咨询历史管理-落地规范.md（已冻结）
+- AUTH-01~06 用户认证系列-落地规范.md（已冻结）
+- PROF-01/03/05 个人档案/事件记录/隐私控制-落地规范.md（已冻结）
+- KNOW-01 科普内容管理-落地规范.md（已冻结）
+- CASE-01/04/09 案例录入/向量化入库/管理逻辑-落地规范.md（已冻结）
+- OBS-01/04 结构化日志/健康检查-落地规范.md（已冻结）
+- SEC-01/04/05 安全合规系列-落地规范.md（已冻结）
+- DEPLOY-01~05 部署运维系列-落地规范.md（已冻结）
+- docs/contracts/CSLT-01/CrisisJudgmentResult.json（maturity: draft）
+- docs/contracts/CSLT-01/CrisisLevel.json（maturity: draft）
+- docs/contracts/CSLT-01/BehaviorTypeCategory.json（maturity: draft）
+- docs/contracts/CSLT-04/ChunkEvent.json（maturity: draft）
+- docs/contracts/CSLT-04/DoneEvent.json（maturity: draft）
+- docs/contracts/CSLT-04/ErrorEvent.json（maturity: draft）
+- docs/contracts/CSLT-04/HeartbeatEvent.json（maturity: draft）
+- docs/contracts/CSLT-05/ConfidenceValidationOutput.json（maturity: draft）
+- docs/contracts/CSLT-05/ValidationVerdict.json（maturity: draft）
+- docs/contracts/CSLT-06/ConsultationHistoryCreate.json（maturity: draft）
+- docs/contracts/CSLT-06/ConsultationHistoryListItem.json（maturity: draft）
+- docs/contracts/CSLT-06/ConsultationHistoryDetail.json（maturity: draft）
+- docs/功能设计/_contracts.md
+- docs/功能设计/功能模块全拆解.md
+- docs/功能设计/模块依赖关系分析.md
+- docs/篝火智答-技术栈设计.md
+- docs/篝火智答-项目结构.md
+
+**结论**：✅ 无冲突。CSLT-08 作为前端 L1b 逻辑层模块，不定义新的后端 API 契约，仅消费已有模块的已锁定接口。其 8 状态机在项目中唯一，依赖方向全部单向，零循环依赖。上游 6 个模块（CSLT-01/03/04/05/06 + AUTH-06）的接口契约均已对齐。10 项技术决策归入规范阶段处理，不阻塞 s05 阶段进展。
+
+---
+
+## 2026-05-27 21:47:34 — CSLT-08 咨询编排逻辑 — 设计文档生成阶段一致性复查
+
+**复查范围**：模块 CSLT-08 设计文档生成阶段（s07），第二次全量扫描已有规格文档和设计文档，核对生成的设计决策是否与已有模块产生新增冲突。
+
+**扫描检查项**：
+- 新增模块冲突：无。自 s05 材料准备以来，无新模块落地。
+- 新增接口命名冲突：CSLT-08 设计文档中定义的前端内部类型（`ConsultSessionState`、`ConsultSessionStateData`、`MessageItem`、`PlanSection`、`StructuredPlan`、`ConsultErrorCode` 等）均为前端 L1b 层内部类型，不暴露给后端。与已有模块的接口命名空间不重叠。✅
+- 新增状态定义冲突：无。`ConsultSessionState` 的 8 枚举值（idle/selecting_behavior/submitting/streaming/completed/ticket_guide/submit_failed/stream_failed）在项目中唯一。✅
+- SSE 事件消费方式：CSLT-08 通过 fetch streaming + 自实现 SSE 解析器消费 CSLT-04 的四种事件（chunk/done/error/heartbeat），与 CSLT-04 契约一致。✅
+- 段落边界检测依赖：CSLT-08 的正则解析依赖 CSLT-03 Prompt 模板的固定四段标题（即时安全干预动作/情绪安抚话术/后续观察指标/就医判断标准）。CSLT-03 设计文档 §1.6 决策 3 确认标题为固定字符串。此依赖关系已在设计文档 §1.6 的风险说明中标注——CSLT-03 Prompt 变更时需同步更新正则。✅ 无冲突，但存在低风险耦合。
+- 消息持久化：Zustand persist 中间件 + Taro Storage 适配器，为纯前端技术实现，不涉及后端。✅
+- 工单引导触发：通过 CSLT-05 `ConfidenceValidationOutput.ticket_triggered` 字段驱动，不直接调用 TICK-01。与 CSLT-05 契约和模块依赖关系分析一致。✅
+- 循环依赖再验证：CSLT-07（L1a views）→ CSLT-08（L1b logics）→ CSLT-04（后端 SSE），全部单向。CSLT-07 通过 `useConsult()` Hook 桥接 CSLT-08，不反向依赖。✅ 零循环依赖
+
+**审查的相关文档**：
+- CSLT-01～06 设计文档与落地规范（全部已冻结，无变更）
+- AUTH-06 已实现 httpClient/tokenManager 模块
+- TICK-09 意图文档（未开始，不影响 CSLT-08 设计）
+- KNOW-05 意图文档（未开始，CSLT-08 无直接依赖）
+
+**结论**：✅ 无新增冲突。CSLT-08 的 7 项技术决策（Zustand store slice、fetch streaming SSE、正则段落检测、TypeScript 类型定义、LEGAL_TRANSITIONS 状态机、工单去重、Zustand persist 持久化）均与已有模块兼容。段落边界检测与 CSLT-03 Prompt 模板的耦合为低风险依赖（固定字符串，非协议级耦合），已在设计文档中标注。
