@@ -209,3 +209,78 @@ class LLMClient:
 
             delay = min(base_delay * (2 ** attempt) + random.uniform(0, 1), max_delay)
             time.sleep(delay)
+
+    async def async_chat(
+        self,
+        messages: list[dict[str, str]],
+        model: str = "deepseek-v4-pro",
+        temperature: float = 0.3,
+        max_tokens: int = 8192,
+        timeout: float = 5.0,
+        max_retries: int = 3,
+    ) -> str:
+        """Non-streaming chat completion from DeepSeek API with retry.
+
+        Uses POST /v1/chat/completions with stream=false via OpenAI SDK.
+        Retries on transient failures (429, 5xx, timeout) with exponential backoff.
+
+        Args:
+            messages: Chat messages in OpenAI format.
+            model: Model identifier, default "deepseek-v4-pro".
+            temperature: Sampling temperature, default 0.3.
+            max_tokens: Maximum tokens to generate, default 8192.
+            timeout: HTTP-level timeout in seconds, default 5.0.
+            max_retries: Maximum retry attempts on transient failures, default 3.
+
+        Returns:
+            str: The complete response text from the LLM.
+
+        Raises:
+            LLMClientError: After all retries exhausted.
+        """
+        base_delay: float = 3.0
+        max_delay: float = 120.0
+
+        for attempt in range(max_retries + 1):
+            try:
+                response = await self._client.chat.completions.create(
+                    model=model,
+                    messages=messages,  # type: ignore[arg-type]
+                    temperature=temperature,
+                    max_tokens=max_tokens,
+                    stream=False,
+                    timeout=timeout,
+                )
+                if response.choices and len(response.choices) > 0:
+                    return response.choices[0].message.content or ""
+                return ""
+
+            except RateLimitError as exc:
+                if attempt == max_retries:
+                    raise LLMClientError(
+                        message="LLM API 速率限制，已重试耗尽",
+                        status_code=429,
+                        original_error=exc,
+                    ) from exc
+
+            except APITimeoutError as exc:
+                if attempt == max_retries:
+                    raise LLMClientError(
+                        message="LLM API 请求超时，已重试耗尽",
+                        status_code=504,
+                        original_error=exc,
+                    ) from exc
+
+            except APIStatusError as exc:
+                if attempt == max_retries:
+                    raise LLMClientError(
+                        message=f"LLM API 返回错误 (HTTP {exc.status_code})",
+                        status_code=exc.status_code,
+                        original_error=exc,
+                    ) from exc
+
+            delay = min(base_delay * (2 ** attempt) + random.uniform(0, 1), max_delay)
+            time.sleep(delay)
+
+        # Should never reach here, but satisfy type checker
+        raise LLMClientError(message="LLM API 调用失败，未知错误")
