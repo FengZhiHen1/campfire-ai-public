@@ -1,0 +1,13 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "docs/contracts/PROF-01/DiagnosisType.json",
+  "title": "DiagnosisType",
+  "description": "患者诊断类型枚举，定义孤独症谱系障碍的专业诊断分类。用于个人档案的必填字段 diagnosis_type。下游模块 PROF-02 消费此类型用于检索过滤。",
+  "type": "string",
+  "x-defined-by": "PROF-01",
+  "x-consumers": ["PROF-02", "PROF-07"],
+  "x-maturity": "draft",
+  "x-contract-type": "shared-enum",
+  "x-version": "1.0.0",
+  "enum": ["ASD", "疑似ASD", "其他发育障碍"]
+}

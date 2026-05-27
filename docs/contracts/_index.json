@@ -1,7 +1,7 @@
 {
   "version": "1.0.0",
   "description": "全局契约索引 — 篝火智答项目",
-  "last_updated": "2026-05-27T09:30:29+08:00",
+  "last_updated": "2026-05-27T14:37:41+08:00",
   "contracts": {
     "AccessOperation": {
       "file": "docs/contracts/PROF-05/AccessOperation.json",
@@ -418,7 +418,90 @@
         "CSLT-03",
         "OBS-01"
       ]
-    }
+    },
+    "DiagnosisType": {
+      "file": "docs/contracts/PROF-01/DiagnosisType.json",
+      "defined_by": "PROF-01",
+      "maturity": "draft",
+      "x-contract-type": "shared-enum",
+      "consumers": ["PROF-02", "PROF-07"]
+    },
+    "LanguageLevel": {
+      "file": "docs/contracts/PROF-01/LanguageLevel.json",
+      "defined_by": "PROF-01",
+      "maturity": "draft",
+      "x-contract-type": "shared-enum",
+      "consumers": ["PROF-02", "PROF-07"]
+    },
+    "SensoryFeature": {
+      "file": "docs/contracts/PROF-01/SensoryFeature.json",
+      "defined_by": "PROF-01",
+      "maturity": "draft",
+      "x-contract-type": "shared-enum",
+      "consumers": ["PROF-02", "PROF-07"]
+    },
+    "Trigger": {
+      "file": "docs/contracts/PROF-01/Trigger.json",
+      "defined_by": "PROF-01",
+      "maturity": "draft",
+      "x-contract-type": "shared-enum",
+      "consumers": ["PROF-02", "PROF-07"]
+    },
+    "AgeRange": {
+      "file": "docs/contracts/PROF-01/AgeRange.json",
+      "defined_by": "PROF-01",
+      "maturity": "draft",
+      "x-contract-type": "shared-enum",
+      "consumers": ["PROF-02", "PROF-07"]
+    },
+    "ProfileBehaviorType": {
+      "file": "docs/contracts/PROF-01/ProfileBehaviorType.json",
+      "defined_by": "PROF-01",
+      "maturity": "draft",
+      "x-contract-type": "shared-enum",
+      "consumers": ["PROF-02", "PROF-07"]
+    },
+    "ProfileCreate": {
+      "file": "docs/contracts/PROF-01/ProfileCreate.json",
+      "defined_by": "PROF-01",
+      "maturity": "draft",
+      "x-contract-type": "input",
+      "consumers": ["PROF-07"]
+    },
+    "ProfileUpdate": {
+      "file": "docs/contracts/PROF-01/ProfileUpdate.json",
+      "defined_by": "PROF-01",
+      "maturity": "draft",
+      "x-contract-type": "input",
+      "consumers": ["PROF-07"]
+    },
+    "ProfileResponse": {
+      "file": "docs/contracts/PROF-01/ProfileResponse.json",
+      "defined_by": "PROF-01",
+      "maturity": "draft",
+      "x-contract-type": "output",
+      "consumers": ["PROF-02", "PROF-03", "PROF-07"]
+    },
+    "ProfileListItem": {
+      "file": "docs/contracts/PROF-01/ProfileListItem.json",
+      "defined_by": "PROF-01",
+      "maturity": "draft",
+      "x-contract-type": "output",
+      "consumers": ["PROF-07"]
+    },
+    "ProfileLimitExceededError": {
+      "file": "docs/contracts/PROF-01/ProfileLimitExceededError.json",
+      "defined_by": "PROF-01",
+      "maturity": "draft",
+      "x-contract-type": "error-code",
+      "consumers": ["PROF-07"]
+    },
+    "ProfileConflictError": {
+      "file": "docs/contracts/PROF-01/ProfileConflictError.json",
+      "defined_by": "PROF-01",
+      "maturity": "draft",
+      "x-contract-type": "error-code",
+      "consumers": ["PROF-07"]
     }
   }
 }

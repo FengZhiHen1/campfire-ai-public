@@ -1,0 +1,46 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "docs/contracts/PROF-01/ProfileListItem.json",
+  "title": "ProfileListItem",
+  "description": "个人档案列表条目响应体。GET /api/v1/profiles 返回的档案列表中的每个条目，为 ProfileResponse 的精简版（仅保留列表展示所需的关键字段）。列表使用项目级共享分页类型 PaginatedResponse[ProfileListItem]。",
+  "type": "object",
+  "x-defined-by": "PROF-01",
+  "x-consumers": ["PROF-07"],
+  "x-maturity": "draft",
+  "x-contract-type": "output",
+  "x-version": "1.0.0",
+  "properties": {
+    "profile_id": {
+      "type": "string",
+      "format": "uuid",
+      "description": "档案唯一标识",
+      "examples": ["550e8400-e29b-41d4-a716-446655440000"]
+    },
+    "nickname": {
+      "type": ["string", "null"],
+      "description": "档案昵称",
+      "maxLength": 10
+    },
+    "age_range": {
+      "type": "string",
+      "enum": ["0-3岁", "4-6岁", "7-12岁", "13-18岁", "18岁以上"],
+      "description": "年龄区间（实时计算）"
+    },
+    "diagnosis_type": {
+      "type": "string",
+      "enum": ["ASD", "疑似ASD", "其他发育障碍"],
+      "description": "诊断类型"
+    },
+    "primary_behavior": {
+      "type": "string",
+      "enum": ["刻板行为", "情绪崩溃", "自伤行为", "攻击行为", "社交退缩", "多动"],
+      "description": "主要行为类型"
+    },
+    "is_default": {
+      "type": "boolean",
+      "description": "是否为当前家属账号的默认档案"
+    }
+  },
+  "required": ["profile_id", "age_range", "diagnosis_type", "primary_behavior", "is_default"],
+  "additionalProperties": false
+}

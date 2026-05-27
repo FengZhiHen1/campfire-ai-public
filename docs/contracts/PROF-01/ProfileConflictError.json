@@ -1,0 +1,26 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "docs/contracts/PROF-01/ProfileConflictError.json",
+  "title": "ProfileConflictError",
+  "description": "档案并发冲突错误。当乐观锁检测到 updated_at 时间戳不匹配时（即另一设备在当前请求读取后修改了同一档案），更新或删除操作返回此错误。HTTP 409 Conflict。",
+  "type": "object",
+  "x-defined-by": "PROF-01",
+  "x-consumers": ["PROF-07"],
+  "x-maturity": "draft",
+  "x-contract-type": "error-code",
+  "x-version": "1.0.0",
+  "properties": {
+    "detail": {
+      "type": "string",
+      "description": "错误提示信息，引导用户刷新后重试",
+      "examples": ["档案数据已被其他设备修改，请刷新页面后重新操作。"]
+    },
+    "error_code": {
+      "type": "string",
+      "const": "PROFILE_CONFLICT",
+      "description": "机器可读的错误码"
+    }
+  },
+  "required": ["detail", "error_code"],
+  "additionalProperties": false
+}
