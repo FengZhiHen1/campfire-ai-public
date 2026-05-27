@@ -303,3 +303,44 @@
 - 篝火智答-技术栈设计.md
 
 **结论**：✅ 无冲突。CSLT-02 的技术方案（pgvector HNSW 混合检索、text-embedding-v4 语义嵌入）与全部已有规格文档和技术栈设计兼容。嵌入配置可通过 DEPLOY-05 消费，无需自行定义。当前项目尚无与向量语义检索领域重叠的已有契约类型。CSLT-02 在规范阶段首次定义本模块的向量检索接口类型时，需注意与未来 CASE-04 的向量索引契约对齐。
+
+---
+
+## 2026-05-27 14:31 — CSLT-03 应急方案生成 — 材料准备一致性检查
+
+**检查范围**：模块 CSLT-03 规格准备阶段（s05），全量扫描已有规格文档和契约文件，核对上游接口对齐与类型冲突。
+
+**扫描检查项**：
+- 模块编号冲突：无。CSLT-03 编号唯一（02-智能应急咨询分组）。
+- 状态定义冲突：无。CSLT-03 意图文档 §1.7 明确声明本模块为"无状态生成服务——每次应急咨询独立执行 Prompt 组装与 LLM 调用，不维护跨咨询会话的持久状态"；内部处理阶段（等待输入→组装中→生成中→已完成→阻断输出）为运行时内存阶段，不持久化。与已有模块状态定义（ArticleStatus、DeploymentState、MigrationState、CrisisLevel 等无状态枚举）无交集。
+- 接口命名冲突：无。CSLT-03 尚无已定义的对外接口（将在规范阶段定义），已有模块的接口命名（judge_crisis、hybrid_search、require_role、ArticleSearchParams、AccessRequest 等）均与本模块待定义的生成接口无命名交集。
+- 同名异构类型：无。CSLT-03 的业务类型（Prompt 结构、四段式输出、来源引用清单）为 Prompt 工程领域专有，与已有 40+ 份契约类型的领域隔离，无同名异构风险。
+- 循环依赖迹象：无。CSLT-03 依赖链为 CSLT-01→CSLT-02→CSLT-03→CSLT-04/CSLT-05，为单向数据管道。模块依赖关系分析确认 CSLT-03 入度 2（CSLT-01 危机等级 + 阻断标记、CSLT-02 案例切片列表）、出度 2（CSLT-04 流式推送、CSLT-05 置信度校验），全部为单向依赖。
+
+**上游接口兼容性审查**：
+- **CSLT-01 → CSLT-03**：CSLT-01 输出 `CrisisJudgmentResult`（含 `final_level: CrisisLevel`、`block_deep_response: bool`、`judgment_sources`、`degradation_note`）→ CSLT-03 意图文档 §1.6.1 输入字段「危机等级与阻断标记」精确接收。字段类型和枚举值完全对齐，无契约间隙。
+- **CSLT-02 → CSLT-03**：CSLT-02 输出 `SemanticSearchResult`（含 `results: list[CaseSliceDto]`）→ CSLT-03 意图文档 §1.6.1 输入字段「案例切片列表」精确接收。`CaseSliceDto` 包含的 `slice_text`、`case_id`、`evidence_level`、`similarity_score` 字段与 CSLT-03 意图文档中的业务约束描述完全一致。
+
+**审查的相关文档**：
+- CSLT-01 危机分级判定-落地规范.md（已冻结）
+- CSLT-02 RAG语义检索-落地规范.md（已冻结）
+- AUTH-01~06 用户认证系列-落地规范.md（已冻结）
+- PROF-05 档案隐私控制-落地规范.md（已冻结）
+- KNOW-01 科普内容管理-落地规范.md（已冻结）
+- OBS-01/04 结构化日志/健康检查-落地规范.md（已冻结）
+- SEC-01/04/05 安全合规系列-落地规范.md（已冻结）
+- DEPLOY-01~05 部署运维系列-落地规范.md（已冻结）
+- CASE-01/04 真实案例库管理-落地规范.md（已冻结）
+- docs/contracts/CSLT-01/CrisisJudgmentResult.json（maturity: draft）
+- docs/contracts/CSLT-01/CrisisLevel.json（maturity: draft）
+- docs/contracts/CSLT-02/SemanticSearchResult.json（maturity: draft）
+- docs/contracts/CSLT-02/CaseSliceDto.json（maturity: draft）
+- docs/contracts/CSLT-01/JudgmentLayerResult.json（maturity: draft）
+- docs/功能设计/功能模块全拆解.md
+- 模块依赖关系分析.md
+- 篝火智答-技术栈设计.md
+- docs/功能设计/_contracts.md
+
+**业务矛盾裁决**：未发现业务矛盾。意图文档 §1.12 列出的 8 项技术决策（Prompt 模板设计、LLM 调用参数精确值、冷却期实现机制、数据模型技术类型、异常处理技术实现、档案上下文格式化方式、生成超时精确阈值、安全提示文本预设内容）均在留给规范阶段的合理范围内，无业务矛盾标记。
+
+**结论**：✅ 无冲突。CSLT-03 作为 CSLT-01 和 CSLT-02 的下游纯消费者，其输入类型与上游已锁定契约完全对齐。本模块不定义新类型与已有契约冲突，依赖方向全部单向。下游模块 CSLT-04、CSLT-05 尚未设计，不存在反向依赖冲突。8 项技术决策归入规范阶段处理，不阻塞 s05 阶段进展。
