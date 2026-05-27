@@ -1,0 +1,27 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "docs/contracts/CSLT-04/DoneEvent.json",
+  "title": "DoneEvent",
+  "description": "SSE done 事件的 data 字段载荷。标记流式推送的终止，并在 finish_reason 字段中说明终止原因。无论流正常结束、上游异常中止还是超时截断，try/finally 块必须保证发送此事件后再关闭 SSE 连接（满足 AC-04 流结束信号可靠）。finish_reason 枚举值直接复用 CSLT-03/GenerationStatus 的五种状态值，不做额外映射。",
+  "type": "object",
+  "x-defined-by": "CSLT-04",
+  "x-consumers": ["CSLT-08"],
+  "x-maturity": "draft",
+  "x-contract-type": "event",
+  "x-version": "1.0.0",
+  "properties": {
+    "finish_reason": {
+      "type": "string",
+      "description": "流式推送的终止原因，值直接映射自 CSLT-03/GenerationStatus 枚举：COMPLETE=正常完成、PARTIAL=部分生成（超时截断但已产出至少一个完整段落）、BLOCKED=安全阻断（输出预设安全文本，未调用 LLM）、TIMEOUT=完全超时（无任何文本产出）、ERROR=不可恢复错误（API 不可用、网络断开等）",
+      "enum": ["COMPLETE", "PARTIAL", "BLOCKED", "TIMEOUT", "ERROR"],
+      "examples": ["COMPLETE"]
+    },
+    "sequence": {
+      "type": "integer",
+      "description": "最后的 sequence 号（可选）。当 finish_reason 为非 COMPLETE 状态时，告知前端已成功推送的最后一个 chunk 的序列号，便于前端确认已接收内容的范围。",
+      "minimum": 1
+    }
+  },
+  "required": ["finish_reason"],
+  "additionalProperties": false
+}
