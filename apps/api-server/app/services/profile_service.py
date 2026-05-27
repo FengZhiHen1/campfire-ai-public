@@ -1,12 +1,13 @@
-"""PROF-01 个人档案管理 — Service 层编排。
+"""PROF-01 个人档案管理 + PROF-03 事件记录管理 — Service 层编排。
 
-个人档案管理的核心业务编排层。每个方法的第一步行都是隐私权限校验（list_profiles 除外）。
-实现档案 CRUD、默认档案管理、乐观锁并发控制、年龄区间实时计算等业务逻辑。
+PROF-01 部分：档案 CRUD、默认档案管理、乐观锁并发控制、年龄区间实时计算。
+PROF-03 部分：事件记录 CRUD、30 天追溯期校验、容量管控、标签归一化、
+级联删除编排。
 
 三层鉴权流水线：
 1. 路由层角色校验 — require_role(["family"]) Depends
 2. Service 层权限校验 — PrivacyGuard.check_access()
-3. 业务层规则校验 — 数量上限、Pydantic 输入校验
+3. 业务层规则校验 — 数量上限、事件容量上限、追溯期、Pydantic 输入校验
 
 依赖 Prof-05（PrivacyGuard）、AUTH-04（角色校验）、
 PROF-03/PROF-04（级联删除，待实现后对接）。
@@ -14,21 +15,32 @@ PROF-03/PROF-04（级联删除，待实现后对接）。
 
 from __future__ import annotations
 
+import re
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from typing import Any
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from py_auth.rbac import PrivacyGuard
-from py_config.exceptions import ForbiddenAccess, ProfileConflictError, ProfileLimitExceededError
+from py_config.exceptions import (
+    EventLimitExceededError,
+    ForbiddenAccess,
+    ProfileConflictError,
+    ProfileLimitExceededError,
+)
+from py_db.repositories.event_repository import EventRepository
 from py_db.repositories.profile_repository import ProfileRepository
 from py_logger import logger
 from py_schemas.profiles import (
     AccessDecision,
     AccessOperation,
     AccessRequest,
+    EventCreate,
+    EventListItem,
+    EventResponse,
+    EventUpdate,
     ProfileCreate,
     ProfileListItem,
     ProfileResponse,
@@ -42,6 +54,15 @@ from py_schemas.profiles import (
 
 MAX_PROFILES_PER_USER: int = 5
 """单个家属账号下允许的最大档案数量。"""
+
+MAX_EVENTS_PER_PROFILE: int = 500
+"""单个档案下允许的最大事件记录数量。"""
+
+EVENT_RECENCY_DAYS: int = 30
+"""事件记录可追溯的最大天数。"""
+
+_TAG_STRIP_PATTERN: re.Pattern[str] = re.compile(r"[^\w一-鿿]")
+"""标签归一化正则：保留字母/数字/下划线/中文字符，去除特殊符号。"""
 
 
 # ===========================================================================
@@ -59,13 +80,19 @@ class ProfileService:
     Service 层不持有 session 状态，session 由调用方传入。
     """
 
-    def __init__(self, repository: ProfileRepository | None = None) -> None:
+    def __init__(
+        self,
+        repository: ProfileRepository | None = None,
+        event_repository: EventRepository | None = None,
+    ) -> None:
         """初始化 ProfileService。
 
         Args:
             repository: ProfileRepository 实例。未传入时自动创建。
+            event_repository: EventRepository 实例。未传入时自动创建。
         """
         self._repository = repository or ProfileRepository(session_factory=None)
+        self._event_repository = event_repository or EventRepository(session_factory=None)
 
     # ------------------------------------------------------------------
     # 公开方法
@@ -591,14 +618,27 @@ class ProfileService:
     ) -> None:
         """级联删除档案关联的事件记录。
 
-        当前为 No-op 空实现。待 PROF-03 事件记录管理模块就绪后，
-        替换为实际的 event_service.delete_by_profile() 调用。
+        委托给 EventRepository.delete_by_profile() 在同一事务中执行。
+        本方法不执行权限校验——调用方（delete_profile）已在调用前完成权限校验。
 
         Args:
             profile_id: 目标档案 UUID。
-            session: 异步数据库会话。
+            session: 异步数据库会话（与 delete_profile 共享）。
         """
-        pass
+        deleted_count = await self._event_repository.delete_by_profile(
+            session=session,
+            profile_id=profile_id,
+        )
+        if deleted_count > 0:
+            logger.info(
+                "api-server",
+                "events_cascade_deleted",
+                extra={
+                    "event_type": "events_cascade_deleted",
+                    "profile_id": str(profile_id),
+                    "deleted_count": deleted_count,
+                },
+            )
 
     async def _cascade_delete_assessments(
         self,
@@ -642,6 +682,555 @@ class ProfileService:
             caregiver_id=profile.caregiver_id,
             created_at=profile.created_at,
             updated_at=profile.updated_at,
+        )
+
+
+    # ------------------------------------------------------------------
+    # PROF-03 — 事件记录管理
+    # ------------------------------------------------------------------
+
+    async def create_event(
+        self,
+        profile_id: UUID,
+        user_id: UUID,
+        data: EventCreate,
+        session: AsyncSession,
+    ) -> EventResponse:
+        """为指定档案创建一条新的事件记录。
+
+        执行顺序：
+        1. 档案存在性校验
+        2. 档案级权限校验
+        3. 事件时间 30 天追溯期校验
+        4. 事件容量上限校验（>= 500 拒绝）
+        5. 标签归一化
+        6. 入库并返回完整响应
+
+        Args:
+            profile_id: 目标档案标识（URL 路径参数）。
+            user_id: 当前请求人标识（来自 JWT payload）。
+            data: 事件创建请求体（已通过 Pydantic 校验）。
+            session: 异步数据库会话。
+
+        Returns:
+            EventResponse: 创建成功的事件完整详情（16 字段）。
+
+        Raises:
+            ForbiddenAccess: 权限校验不通过（403）。
+            EventLimitExceededError: 事件记录数已达上限（409）。
+            Exception: 档案不存在（404）、事件时间超追溯期（422）。
+        """
+        # ---- 步骤 1: 档案存在性校验 ----
+        profile_exists = await self._repository.exists(
+            session=session,
+            profile_id=profile_id,
+        )
+        if not profile_exists:
+            raise Exception("数据不存在")
+
+        # ---- 步骤 2: 档案级权限校验 ----
+        await self._check_access(
+            operation=AccessOperation.CREATE,
+            target_profile_id=profile_id,
+            requester_id=user_id,
+            requester_role="family",
+            db_session=session,
+        )
+
+        # ---- 步骤 3: 事件时间 30 天追溯期校验 ----
+        now = datetime.now(timezone.utc)
+        earliest_allowed = now - timedelta(days=EVENT_RECENCY_DAYS)
+        if data.event_time < earliest_allowed:
+            raise Exception(
+                f"事件时间超出可追溯范围，最早允许日期为 "
+                f"{earliest_allowed.strftime('%Y-%m-%d')}"
+            )
+
+        # ---- 步骤 4: 容量上限校验 ----
+        current_count = await self._event_repository.count_active_by_profile(
+            session=session,
+            profile_id=profile_id,
+        )
+        if current_count >= MAX_EVENTS_PER_PROFILE:
+            logger.warning(
+                "api-server",
+                "event_limit_exceeded",
+                extra={
+                    "event_type": "event_limit_exceeded",
+                    "profile_id": str(profile_id),
+                    "current_count": current_count,
+                    "max_allowed": MAX_EVENTS_PER_PROFILE,
+                },
+            )
+            raise EventLimitExceededError(
+                current_count=current_count,
+                max_allowed=MAX_EVENTS_PER_PROFILE,
+            )
+
+        # ---- 步骤 5: 标签归一化 ----
+        normalized_tags = self._normalize_tags(data.tags)
+
+        # ---- 步骤 6: 入库 ----
+        from py_db.models.profiles import EventLog
+
+        event = EventLog(
+            event_id=uuid.uuid4(),
+            profile_id=profile_id,
+            recorded_by=user_id,
+            recorded_by_role="parent",
+            event_time=data.event_time,
+            behavior_type=data.behavior_type.value,
+            severity_level=data.severity_level.value,
+            setting=data.setting.value if data.setting else None,
+            trigger_description=data.trigger_description,
+            manifestation=data.manifestation,
+            intervention_tried=data.intervention_tried,
+            intervention_result=data.intervention_result,
+            is_professional=False,
+            tags=normalized_tags,
+        )
+        created = await self._event_repository.create(session=session, event=event)
+
+        # ---- 步骤 7: 结构化日志 ----
+        logger.info(
+            "api-server",
+            "event_created",
+            extra={
+                "event_type": "event_created",
+                "event_id": str(created.event_id),
+                "profile_id": str(profile_id),
+                "user_id": str(user_id),
+                "behavior_type": created.behavior_type,
+            },
+        )
+
+        return self._to_event_response(created)
+
+    async def update_event(
+        self,
+        profile_id: UUID,
+        event_id: UUID,
+        user_id: UUID,
+        data: EventUpdate,
+        session: AsyncSession,
+    ) -> EventResponse:
+        """更新指定事件的字段（Merge Patch 语义）。
+
+        仅更新 data 中非 None 的字段。setting 传入显式 None
+        表示清除已设置的发生场景。
+
+        执行顺序：
+        1. 档案存在性校验
+        2. 档案级权限校验
+        3. 事件存在性 + 创建者校验
+        4. 追溯期校验（如提供新 event_time）
+        5. 合并更新
+
+        Args:
+            profile_id: 目标档案标识。
+            event_id: 目标事件标识。
+            user_id: 当前请求人标识。
+            data: 事件更新请求体（所有字段可选）。
+            session: 异步数据库会话。
+
+        Returns:
+            EventResponse: 更新后的事件完整详情。
+
+        Raises:
+            ForbiddenAccess: 权限校验不通过（403）。
+            Exception: 事件不存在（404）、非创建者（403）、
+                      事件时间超追溯期（422）。
+        """
+        # ---- 步骤 1: 档案存在性校验 ----
+        profile_exists = await self._repository.exists(
+            session=session,
+            profile_id=profile_id,
+        )
+        if not profile_exists:
+            raise Exception("数据不存在")
+
+        # ---- 步骤 2: 档案级权限校验 ----
+        await self._check_access(
+            operation=AccessOperation.UPDATE,
+            target_profile_id=profile_id,
+            requester_id=user_id,
+            requester_role="family",
+            db_session=session,
+        )
+
+        # ---- 步骤 3: 事件存在性 + 创建者校验 ----
+        existing = await self._event_repository.get_by_id(
+            session=session,
+            event_id=event_id,
+            profile_id=profile_id,
+        )
+        if existing is None:
+            raise Exception("数据不存在")
+
+        if existing.recorded_by != user_id:
+            logger.warning(
+                "api-server",
+                "event_ownership_mismatch",
+                extra={
+                    "event_type": "event_ownership_mismatch",
+                    "event_id": str(event_id),
+                    "recorded_by": str(existing.recorded_by),
+                    "attempted_by": str(user_id),
+                },
+            )
+            raise ForbiddenAccess(detail="数据不存在")
+
+        # ---- 步骤 4: 追溯期校验（如提供新 event_time） ----
+        if data.event_time is not None:
+            now = datetime.now(timezone.utc)
+            earliest_allowed = now - timedelta(days=EVENT_RECENCY_DAYS)
+            if data.event_time < earliest_allowed:
+                raise Exception(
+                    f"事件时间超出可追溯范围，最早允许日期为 "
+                    f"{earliest_allowed.strftime('%Y-%m-%d')}"
+                )
+
+        # ---- 步骤 5: 合并更新 ----
+        update_data: dict[str, Any] = {"updated_at": datetime.now(timezone.utc)}
+
+        if data.event_time is not None:
+            update_data["event_time"] = data.event_time
+        if data.behavior_type is not None:
+            update_data["behavior_type"] = data.behavior_type.value
+        if data.severity_level is not None:
+            update_data["severity_level"] = data.severity_level.value
+        # setting: 显式 None 表示清除
+        if "setting" in data.model_fields_set:
+            update_data["setting"] = data.setting.value if data.setting else None
+        if data.trigger_description is not None:
+            update_data["trigger_description"] = data.trigger_description
+        if data.manifestation is not None:
+            update_data["manifestation"] = data.manifestation
+        if data.intervention_tried is not None:
+            update_data["intervention_tried"] = data.intervention_tried
+        if data.intervention_result is not None:
+            update_data["intervention_result"] = data.intervention_result
+        if data.tags is not None:
+            update_data["tags"] = self._normalize_tags(data.tags)
+
+        updated = await self._event_repository.update(
+            session=session,
+            event_id=event_id,
+            profile_id=profile_id,
+            update_data=update_data,
+        )
+
+        if updated is None:
+            raise Exception("数据不存在")
+
+        # ---- 结构化日志 ----
+        logger.info(
+            "api-server",
+            "event_updated",
+            extra={
+                "event_type": "event_updated",
+                "event_id": str(event_id),
+                "profile_id": str(profile_id),
+                "updated_fields": list(update_data.keys()),
+            },
+        )
+
+        return self._to_event_response(updated)
+
+    async def get_event(
+        self,
+        profile_id: UUID,
+        event_id: UUID,
+        user_id: UUID,
+        session: AsyncSession,
+    ) -> EventResponse:
+        """获取单个事件的完整详情。
+
+        Args:
+            profile_id: 目标档案标识。
+            event_id: 目标事件标识。
+            user_id: 当前请求人标识。
+            session: 异步数据库会话。
+
+        Returns:
+            EventResponse: 事件完整详情。
+
+        Raises:
+            ForbiddenAccess: 权限校验不通过（403）。
+            Exception: 事件不存在（404）。
+        """
+        # ---- 步骤 1: 档案存在性校验 ----
+        profile_exists = await self._repository.exists(
+            session=session,
+            profile_id=profile_id,
+        )
+        if not profile_exists:
+            raise Exception("数据不存在")
+
+        # ---- 步骤 2: 档案级权限校验 ----
+        await self._check_access(
+            operation=AccessOperation.VIEW,
+            target_profile_id=profile_id,
+            requester_id=user_id,
+            requester_role="family",
+            db_session=session,
+        )
+
+        # ---- 步骤 3: 查询事件 ----
+        event = await self._event_repository.get_by_id(
+            session=session,
+            event_id=event_id,
+            profile_id=profile_id,
+        )
+        if event is None:
+            raise Exception("数据不存在")
+
+        return self._to_event_response(event)
+
+    async def delete_event(
+        self,
+        profile_id: UUID,
+        event_id: UUID,
+        user_id: UUID,
+        session: AsyncSession,
+    ) -> None:
+        """硬删除指定事件记录。删除后不可恢复。
+
+        执行顺序：
+        1. 档案存在性校验
+        2. 档案级权限校验
+        3. 事件存在性 + 创建者校验
+        4. 硬删除
+
+        Args:
+            profile_id: 目标档案标识。
+            event_id: 目标事件标识。
+            user_id: 当前请求人标识。
+            session: 异步数据库会话。
+
+        Raises:
+            ForbiddenAccess: 权限校验不通过（403）。
+            Exception: 事件不存在（404）、非创建者（403）。
+        """
+        # ---- 步骤 1: 档案存在性校验 ----
+        profile_exists = await self._repository.exists(
+            session=session,
+            profile_id=profile_id,
+        )
+        if not profile_exists:
+            raise Exception("数据不存在")
+
+        # ---- 步骤 2: 档案级权限校验 ----
+        await self._check_access(
+            operation=AccessOperation.DELETE,
+            target_profile_id=profile_id,
+            requester_id=user_id,
+            requester_role="family",
+            db_session=session,
+        )
+
+        # ---- 步骤 3: 事件存在性 + 创建者校验 ----
+        existing = await self._event_repository.get_by_id(
+            session=session,
+            event_id=event_id,
+            profile_id=profile_id,
+        )
+        if existing is None:
+            raise Exception("数据不存在")
+
+        if existing.recorded_by != user_id:
+            logger.warning(
+                "api-server",
+                "event_ownership_mismatch",
+                extra={
+                    "event_type": "event_ownership_mismatch",
+                    "event_id": str(event_id),
+                    "recorded_by": str(existing.recorded_by),
+                    "attempted_by": str(user_id),
+                },
+            )
+            raise ForbiddenAccess(detail="数据不存在")
+
+        # ---- 步骤 4: 硬删除 ----
+        deleted = await self._event_repository.delete(
+            session=session,
+            event_id=event_id,
+            profile_id=profile_id,
+        )
+
+        if not deleted:
+            raise Exception("数据不存在")
+
+        # ---- 结构化日志 ----
+        logger.info(
+            "api-server",
+            "event_deleted",
+            extra={
+                "event_type": "event_deleted",
+                "event_id": str(event_id),
+                "profile_id": str(profile_id),
+            },
+        )
+
+    async def list_events(
+        self,
+        profile_id: UUID,
+        user_id: UUID,
+        page: int = 1,
+        page_size: int = 20,
+        behavior_type: str | None = None,
+        session: AsyncSession | None = None,
+    ) -> dict[str, Any]:
+        """查询指定档案下的事件记录列表。
+
+        支持按行为类型筛选和分页。按 event_time DESC 排序。
+
+        Args:
+            profile_id: 目标档案标识。
+            user_id: 当前请求人标识。
+            page: 页码（从 1 开始，默认 1）。
+            page_size: 每页条数（默认 20，最大 100）。
+            behavior_type: 可选行为类型筛选。
+            session: 异步数据库会话。
+
+        Returns:
+            dict: 分页列表，包含 items（EventListItem 列表）、
+                  total、page、page_size、total_pages。
+        """
+        if page_size > 100:
+            page_size = 100
+        if page < 1:
+            page = 1
+
+        # ---- 步骤 1: 档案存在性校验 ----
+        profile_exists = await self._repository.exists(
+            session=session,
+            profile_id=profile_id,
+        )
+        if not profile_exists:
+            raise Exception("数据不存在")
+
+        # ---- 步骤 2: 档案级权限校验 ----
+        await self._check_access(
+            operation=AccessOperation.VIEW,
+            target_profile_id=profile_id,
+            requester_id=user_id,
+            requester_role="family",
+            db_session=session,
+        )
+
+        # ---- 步骤 3: 分页查询 ----
+        events, total = await self._event_repository.list_by_profile(
+            session=session,
+            profile_id=profile_id,
+            page=page,
+            page_size=page_size,
+            behavior_type=behavior_type,
+        )
+
+        items = [
+            EventListItem(
+                event_id=e.event_id,
+                event_time=e.event_time,
+                behavior_type=e.behavior_type,
+                severity_level=e.severity_level,
+                has_professional_note=e.is_professional,
+                created_at=e.created_at,
+            )
+            for e in events
+        ]
+
+        total_pages = (total + page_size - 1) // page_size if total > 0 else 0
+
+        return {
+            "items": [item.model_dump() for item in items],
+            "total": total,
+            "page": page,
+            "page_size": page_size,
+            "total_pages": total_pages,
+        }
+
+    async def delete_by_profile(
+        self,
+        profile_id: UUID,
+        session: AsyncSession,
+    ) -> int:
+        """级联删除指定档案下所有事件记录（供 PROF-01 调用）。
+
+        本方法不执行权限校验——调用方 PROF-01 已在调用前完成权限校验。
+        本方法不提交事务——由调用方统一提交或回滚。
+
+        Args:
+            profile_id: 目标档案标识。
+            session: 异步数据库会话（与 PROF-01 共享）。
+
+        Returns:
+            int: 被删除的事件记录数。
+        """
+        return await self._event_repository.delete_by_profile(
+            session=session,
+            profile_id=profile_id,
+        )
+
+    # ------------------------------------------------------------------
+    # PROF-03 — 内部辅助方法
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _normalize_tags(tags: list[str] | None) -> list[str] | None:
+        """对标签列表执行归一化处理。
+
+        每个标签依次执行：
+        1. strip() 去首尾空格
+        2. re.sub(r'[^\\w一-鿿]', '', tag) 去特殊符号
+        3. 截断至 10 字
+        4. 归一后为空的标签被丢弃
+
+        Args:
+            tags: 原始标签列表，可为 None。
+
+        Returns:
+            归一化后的标签列表。若全部归一后为空，返回 None。
+        """
+        if tags is None:
+            return None
+
+        result: list[str] = []
+        for tag in tags:
+            cleaned = tag.strip()
+            cleaned = _TAG_STRIP_PATTERN.sub("", cleaned)
+            cleaned = cleaned[:10]
+            if cleaned:
+                result.append(cleaned)
+
+        return result if result else None
+
+    def _to_event_response(self, event: Any) -> EventResponse:
+        """将 EventLog ORM 实体转换为 EventResponse DTO。
+
+        Args:
+            event: EventLog ORM 实例。
+
+        Returns:
+            EventResponse: 事件响应 DTO。
+        """
+        return EventResponse(
+            event_id=event.event_id,
+            profile_id=event.profile_id,
+            recorded_by=event.recorded_by,
+            recorded_by_role=event.recorded_by_role,
+            event_time=event.event_time,
+            behavior_type=event.behavior_type,
+            severity_level=event.severity_level,
+            setting=event.setting,
+            trigger_description=event.trigger_description,
+            manifestation=event.manifestation,
+            intervention_tried=event.intervention_tried,
+            intervention_result=event.intervention_result,
+            is_professional=event.is_professional,
+            tags=event.tags,
+            created_at=event.created_at,
+            updated_at=event.updated_at,
         )
 
 
