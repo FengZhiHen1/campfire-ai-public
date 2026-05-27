@@ -482,3 +482,27 @@
 - docs/篝火智答-项目结构.md
 
 **结论**：✅ 无冲突。CSLT-08 作为前端 L1b 逻辑层模块，不定义新的后端 API 契约，仅消费已有模块的已锁定接口。其 8 状态机在项目中唯一，依赖方向全部单向，零循环依赖。上游 6 个模块（CSLT-01/03/04/05/06 + AUTH-06）的接口契约均已对齐。10 项技术决策归入规范阶段处理，不阻塞 s05 阶段进展。
+
+---
+
+## 2026-05-27 21:47:34 — CSLT-08 咨询编排逻辑 — 设计文档生成阶段一致性复查
+
+**复查范围**：模块 CSLT-08 设计文档生成阶段（s07），第二次全量扫描已有规格文档和设计文档，核对生成的设计决策是否与已有模块产生新增冲突。
+
+**扫描检查项**：
+- 新增模块冲突：无。自 s05 材料准备以来，无新模块落地。
+- 新增接口命名冲突：CSLT-08 设计文档中定义的前端内部类型（`ConsultSessionState`、`ConsultSessionStateData`、`MessageItem`、`PlanSection`、`StructuredPlan`、`ConsultErrorCode` 等）均为前端 L1b 层内部类型，不暴露给后端。与已有模块的接口命名空间不重叠。✅
+- 新增状态定义冲突：无。`ConsultSessionState` 的 8 枚举值（idle/selecting_behavior/submitting/streaming/completed/ticket_guide/submit_failed/stream_failed）在项目中唯一。✅
+- SSE 事件消费方式：CSLT-08 通过 fetch streaming + 自实现 SSE 解析器消费 CSLT-04 的四种事件（chunk/done/error/heartbeat），与 CSLT-04 契约一致。✅
+- 段落边界检测依赖：CSLT-08 的正则解析依赖 CSLT-03 Prompt 模板的固定四段标题（即时安全干预动作/情绪安抚话术/后续观察指标/就医判断标准）。CSLT-03 设计文档 §1.6 决策 3 确认标题为固定字符串。此依赖关系已在设计文档 §1.6 的风险说明中标注——CSLT-03 Prompt 变更时需同步更新正则。✅ 无冲突，但存在低风险耦合。
+- 消息持久化：Zustand persist 中间件 + Taro Storage 适配器，为纯前端技术实现，不涉及后端。✅
+- 工单引导触发：通过 CSLT-05 `ConfidenceValidationOutput.ticket_triggered` 字段驱动，不直接调用 TICK-01。与 CSLT-05 契约和模块依赖关系分析一致。✅
+- 循环依赖再验证：CSLT-07（L1a views）→ CSLT-08（L1b logics）→ CSLT-04（后端 SSE），全部单向。CSLT-07 通过 `useConsult()` Hook 桥接 CSLT-08，不反向依赖。✅ 零循环依赖
+
+**审查的相关文档**：
+- CSLT-01～06 设计文档与落地规范（全部已冻结，无变更）
+- AUTH-06 已实现 httpClient/tokenManager 模块
+- TICK-09 意图文档（未开始，不影响 CSLT-08 设计）
+- KNOW-05 意图文档（未开始，CSLT-08 无直接依赖）
+
+**结论**：✅ 无新增冲突。CSLT-08 的 7 项技术决策（Zustand store slice、fetch streaming SSE、正则段落检测、TypeScript 类型定义、LEGAL_TRANSITIONS 状态机、工单去重、Zustand persist 持久化）均与已有模块兼容。段落边界检测与 CSLT-03 Prompt 模板的耦合为低风险依赖（固定字符串，非协议级耦合），已在设计文档中标注。
