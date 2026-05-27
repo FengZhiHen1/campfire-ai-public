@@ -71,7 +71,7 @@ class AutoCommitProcessor:
                 msg_file.unlink(missing_ok=True)
                 raise GitError(f"auto-commit add failed for stage {st.stage_id}: {stderr}")
 
-            rc, _, stderr = git_commit_file(worktree, msg_file)
+            rc, _, stderr = git_commit_file(worktree, msg_file, allow_empty=True)
             msg_file.unlink(missing_ok=True)
             if rc != 0:
                 raise GitError(f"auto-commit failed for stage {st.stage_id}: {stderr}")
@@ -130,7 +130,7 @@ class AutoCommitProcessor:
                     msg_file.unlink(missing_ok=True)
                     continue
 
-                rc_commit, _, _ = git_commit_file(worktree, msg_file)
+                rc_commit, _, _ = git_commit_file(worktree, msg_file, allow_empty=True)
                 msg_file.unlink(missing_ok=True)
                 if rc_commit != 0:
                     continue

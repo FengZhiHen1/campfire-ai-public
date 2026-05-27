@@ -95,14 +95,20 @@ def git_add_all(repo: Path) -> tuple[int, str, str]:
     return _git(repo, "add", "-A")
 
 
-def git_commit(repo: Path, message: str) -> tuple[int, str, str]:
-    """git -C <repo> commit -m <message>"""
-    return _git(repo, "commit", "-m", message)
+def git_commit(repo: Path, message: str, allow_empty: bool = False) -> tuple[int, str, str]:
+    """git -C <repo> commit -m <message> [--allow-empty]"""
+    args = ["commit", "-m", message]
+    if allow_empty:
+        args.insert(1, "--allow-empty")
+    return _git(repo, *args)
 
 
-def git_commit_file(repo: Path, message_file: Path) -> tuple[int, str, str]:
-    """git -C <repo> commit -F <message_file>"""
-    return _git(repo, "commit", "-F", str(message_file))
+def git_commit_file(repo: Path, message_file: Path, allow_empty: bool = False) -> tuple[int, str, str]:
+    """git -C <repo> commit -F <message_file> [--allow-empty]"""
+    args = ["commit", "-F", str(message_file)]
+    if allow_empty:
+        args.insert(1, "--allow-empty")
+    return _git(repo, *args)
 
 
 def git_merge_abort(repo: Path) -> tuple[int, str, str]:

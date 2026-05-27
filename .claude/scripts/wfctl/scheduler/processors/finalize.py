@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from infrastructure.errors import GitError
 from domain.workflow.spec import StageTargetType
 from scheduler.context import ExecutionContext
-from state.model import InstanceState, StageStatus, InstanceStatus, StateDelta
+from state.model import InstanceState, StageStatus, InstanceStatus, StateDelta, StageState
 from scheduler.processors.base import ProcessorResult, SideEffect
 from runtime.worktree.manager import merge_instance_to_main, tag_anchor as _tag_anchor
 

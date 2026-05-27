@@ -26,7 +26,7 @@ class ConfirmAggregateProcessor:
         if state.cycle_meta.ready_candidates:
             return ProcessorResult()
 
-        local_pending = self._collect_confirm_pending(state) or []
+        local_pending = self._collect_confirm_pending(ctx, state) or []
         child_pending = state.cycle_meta.child_confirm_pending
         all_pending = local_pending + child_pending
         if all_pending:
@@ -34,19 +34,27 @@ class ConfirmAggregateProcessor:
         return ProcessorResult()
 
     def _collect_confirm_pending(
-        self, state: InstanceState
+        self, ctx: ExecutionContext, state: InstanceState
     ) -> list[dict] | None:
         pending: list[dict] = []
         for st in state.stages:
             if st.status != StageStatus.AWAITING_CONFIRM:
                 continue
-            options = _parse_questions(st.confirm_questions)
-            if not options:
+            choices = _parse_questions(st.confirm_questions)
+            if not choices:
                 continue
+            # 从 workflow spec 获取 stage 名称
+            stage_name = ""
+            for spec_stage in ctx.spec.stages:
+                if spec_stage.stage_id == st.stage_id:
+                    stage_name = spec_stage.name
+                    break
             pending.append({
                 "stage_id": st.stage_id,
+                "stage_name": stage_name,
                 "instance_id": state.instance_id,
-                "options": options,
+                "questions": st.confirm_questions,
+                "choices": choices,
             })
         return pending if pending else None
 
@@ -54,7 +62,7 @@ class ConfirmAggregateProcessor:
 def _parse_questions(questions: list[str]) -> list[dict]:
     """将问题列表预解析为结构化选项。
 
-    选项文本即 key——SubAgent 传入的每项直接作为 choice_key 和 label，
+    选项文本即 key——SubAgent 传入的每项直接作为 id 和 label，
     不再要求 "choice_key：描述" 两段式格式。
     """
     result: list[dict] = []
@@ -62,5 +70,5 @@ def _parse_questions(questions: list[str]) -> list[dict]:
         q = q.strip()
         if not q:
             continue
-        result.append({"choice_key": q, "description": ""})
+        result.append({"id": q, "label": q, "description": ""})
     return result
