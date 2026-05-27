@@ -117,7 +117,7 @@ Worker 协程 BRPOP 取出任务
 
 | 原则编号 | 原则名称 | 技术响应 |
 |----------|----------|----------|
-| ADR-004 | 模块化单体 | 索引逻辑封装在独立 package `packages/py-indexing/` 中，通过明确的函数签名（`enqueue()`、`process_task()`、`build_chunk_text()`、`generate_embedding()`、`write_index()`）与 API 层解耦，后续可独立拆出为微服务 |
+| ADR-004 | 模块化单体 | 索引逻辑封装在 `packages/py-rag/py_rag/indexing/` 子包中，通过明确的函数签名（`enqueue()`、`process_task()`、`build_chunk_text()`、`generate_embedding()`、`write_index()`）与 API 层解耦，后续可独立拆出为微服务 |
 | ADR-003 | pgvector 统一数据层 | 不引入独立向量数据库，索引写入与 CSLT-02 检索共享同一 pgvector 实例，利用 SQL + 向量混合查询能力 |
 | 1.1 意图对齐 | 四要素完整性 | 采用规则拼接策略，通过 `build_chunk_text()` 函数硬编码拼接模板，确保场景-行为-干预-结果永远在同一文本块中，不受 Splitter 策略或模型行为影响 |
 | 2.1 单一职责 | 仅负责索引入库 | 本模块不包含以下职责：案例审核判断、RAG 检索策略调优、案例淘汰标记管理、PII 主动脱敏（仅做最终防线校验） |

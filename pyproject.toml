@@ -17,7 +17,6 @@ members = [
     "packages/py-auth",
     "packages/py-logger",
     "packages/py-security",
-    "packages/py-indexing",
     "packages/py-infra",
     "packages/py-health",
     "apps/api-server",
