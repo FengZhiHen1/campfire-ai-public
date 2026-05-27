@@ -31,7 +31,8 @@ class TransitionResult:
 class ConfirmResult:
     """确认操作的纯决策结果。
 
-    正常情况返回 PENDING + continue，将用户选择传回 SubAgent。
+    正常情况返回 PENDING + continue，保留 system_agent_id
+    以便调度器将用户选择传回同一 SubAgent。
     唯一例外：loop_counter ≥ 自环边 max_loop 时返回 DONE + spawn，
     触发 loop_exceeded 逃生路径。
     """
