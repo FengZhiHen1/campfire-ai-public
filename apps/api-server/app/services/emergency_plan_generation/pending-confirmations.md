@@ -27,15 +27,10 @@
 - `openai>=1.0` 已声明为 `packages/py-llm` 依赖
 - `streaming.py` 区分捕获 `LLMClientError`（已知）和 `Exception`（兜底）
 
-### 3. [CONFIRM-03] prometheus_client 未声明为项目依赖
+### 3. [CONFIRM-03] ~~prometheus_client 未声明为项目依赖~~ ✅ 已修复
 
-**描述**：`_metrics.py` 使用 `try/except ImportError` 优雅降级处理 `prometheus_client` 缺失的情况，No-op 桩会导致指标静默丢失。
-
-**影响**：若 `prometheus_client` 未安装，所有 Prometheus 指标均不会被记录，但业务逻辑正常运行（不会报错）。运维时可能难以发现指标缺失原因。
-
-**建议处理方式**：
-- 在 `apps/api-server/pyproject.toml` 中添加 `prometheus-client` 依赖
-- 或统一在根 `pyproject.toml` 的 workspace 级依赖中声明
+已在 `apps/api-server/pyproject.toml` 声明 `prometheus-client>=0.20` 为硬依赖。
+同步移除 `_metrics.py` 中的 `try/except ImportError` 降级逻辑，改为直接 import。
 
 ---
 
