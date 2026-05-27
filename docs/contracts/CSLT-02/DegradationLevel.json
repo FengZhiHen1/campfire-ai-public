@@ -1,0 +1,19 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "docs/contracts/CSLT-02/DegradationLevel.json",
+  "title": "DegradationLevel",
+  "description": "检索降级放宽层级枚举。当精确标签过滤结果不足期望数量时，按此枚举顺序逐层放宽过滤条件。每层放宽后重新检索并计数，达到目标即停止。",
+  "type": "string",
+  "x-defined-by": "CSLT-02",
+  "x-consumers": ["CSLT-03", "OBS-01"],
+  "x-maturity": "draft",
+  "x-contract-type": "shared-enum",
+  "x-version": "1.0.0",
+  "enum": ["NONE", "EMOTION_RELAXED", "BEHAVIOR_RELAXED", "ALL_TAGS_REMOVED"],
+  "enumDescriptions": {
+    "NONE": "未触发降级——精确标签过滤结果已达到期望数量",
+    "EMOTION_RELAXED": "情绪等级放宽——移除了emotion_level过滤条件，仍保留age_range和behavior_type和失效排除",
+    "BEHAVIOR_RELAXED": "行为类型放宽——进一步移除了behavior_type过滤条件，仅保留age_range和失效排除",
+    "ALL_TAGS_REMOVED": "全部标签移除——移除了所有标签过滤条件，仅保留已审核状态和失效排除，执行纯语义检索"
+  }
+}

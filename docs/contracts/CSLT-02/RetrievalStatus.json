@@ -1,0 +1,19 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "docs/contracts/CSLT-02/RetrievalStatus.json",
+  "title": "RetrievalStatus",
+  "description": "检索执行状态枚举。标识一次检索操作的整体执行结果，供下游CSLT-03和可观测性模块OBS-01使用。",
+  "type": "string",
+  "x-defined-by": "CSLT-02",
+  "x-consumers": ["CSLT-03", "OBS-01"],
+  "x-maturity": "draft",
+  "x-contract-type": "shared-enum",
+  "x-version": "1.0.0",
+  "enum": ["COMPLETE", "PARTIAL", "TIMEOUT", "EMPTY"],
+  "enumDescriptions": {
+    "COMPLETE": "检索完整完成——在500ms内检索到期望数量的结果并返回",
+    "PARTIAL": "部分完成——检索超时但返回了部分结果（结果数>0，但可能少于期望数量）",
+    "TIMEOUT": "检索超时——500ms内未检索到任何结果，返回空列表",
+    "EMPTY": "案例库为空——确认案例库中无可检索的已审核切片，返回空列表"
+  }
+}

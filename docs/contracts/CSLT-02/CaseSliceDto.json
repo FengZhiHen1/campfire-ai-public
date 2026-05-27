@@ -1,0 +1,85 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "docs/contracts/CSLT-02/CaseSliceDto.json",
+  "title": "CaseSliceDto",
+  "description": "案例切片的数据传输对象，包含切片的文本内容、语义相似度分数、综合排序分数和来源案例元数据。下游CSLT-03将此注入Prompt模板作为参考案例上下文。",
+  "type": "object",
+  "x-defined-by": "CSLT-02",
+  "x-consumers": ["CSLT-03"],
+  "x-maturity": "draft",
+  "x-contract-type": "output",
+  "x-version": "1.0.0",
+  "properties": {
+    "slice_id": {
+      "type": "string",
+      "description": "案例切片的唯一标识，对应case_chunks表的主键UUID",
+      "format": "uuid",
+      "examples": ["a1b2c3d4-e5f6-7890-abcd-ef1234567890"]
+    },
+    "case_id": {
+      "type": "string",
+      "description": "切片所属源案例的编号标识，格式为CASE-后接三位数字",
+      "pattern": "^CASE-\\d{3}$",
+      "examples": ["CASE-042"]
+    },
+    "slice_text": {
+      "type": "string",
+      "description": "案例中某个要素（场景描述/行为表现/干预动作/结果反馈）的原文片段。已在上游CASE-04入库时脱敏PII。",
+      "maxLength": 8000,
+      "examples": ["在嘈杂商场环境中，ASD儿童出现听觉感官过载反应，捂耳朵蹲下拒绝移动"]
+    },
+    "chunk_type": {
+      "type": "string",
+      "description": "该切片所属的案例四要素类型",
+      "enum": ["scene", "behavior", "intervention", "result"],
+      "examples": ["scene"]
+    },
+    "similarity_score": {
+      "type": "number",
+      "description": "切片与用户行为描述之间的余弦语义相似度。取值范围0.00-1.00，保留4位小数。",
+      "minimum": 0.0,
+      "maximum": 1.0,
+      "examples": [0.92]
+    },
+    "composite_score": {
+      "type": "number",
+      "description": "综合排序分数，公式：similarity×0.5 + time_decay×0.25 + evidence_weight×0.25。取值0.00-1.00，保留4位小数。",
+      "minimum": 0.0,
+      "maximum": 1.0,
+      "examples": [0.88]
+    },
+    "evidence_level": {
+      "$ref": "./EvidenceLevel.json",
+      "description": "该案例所依据的证据强度等级"
+    },
+    "case_title": {
+      "type": "string",
+      "description": "源案例的标题，供下游在Prompt中引用时展示",
+      "maxLength": 200,
+      "examples": ["ASD商场感官过载干预案例"]
+    },
+    "source": {
+      "type": "string",
+      "description": "案例来源类型：expert（专家撰写）、institution（机构合作脱敏）、ticket_converted（工单沉淀转化）",
+      "enum": ["expert", "institution", "ticket_converted"],
+      "examples": ["expert"]
+    },
+    "case_created_at": {
+      "type": "string",
+      "description": "案例首次审核通过的日期，用于时效权重计算",
+      "format": "date",
+      "examples": ["2025-11-03"]
+    },
+    "applicable_tags": {
+      "type": "object",
+      "description": "该案例适用的人群标签维度，包含年龄段区间、诊断类型、行为类型等",
+      "properties": {
+        "age_range": { "type": "string", "examples": ["学龄儿童(6-12岁)"] },
+        "diagnosis_type": { "type": "string", "examples": ["ASD"] },
+        "behavior_type": { "type": "string", "examples": ["情绪崩溃"] }
+      }
+    }
+  },
+  "required": ["slice_id", "case_id", "slice_text", "similarity_score", "composite_score", "evidence_level", "case_created_at"],
+  "additionalProperties": false
+}
