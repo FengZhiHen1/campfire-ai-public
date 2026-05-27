@@ -89,3 +89,16 @@
 - **契约文件**: 无（纯 UI 模块，不定义后端 API 契约）
 - **复用契约**: AUTH-01/RegisterRequest, AUTH-01/RegisterResponse, AUTH-01/UserRole
 - **更新时间**: `2026-05-26 22:59:07`
+
+## CASE-04 - 案例向量化入库
+- **输入**: `enqueue(case_id: UUID) -> dict` — CASE-03 审核通过后调用，将案例投递到索引异步队列
+- **输入**: `IndexTaskEnvelope {case_id: UUID, trace_id: str, enqueued_at: datetime}` — Redis List 任务载荷
+- **输出**: `ChunkMetadata {behavior_type: str, age_range: str, severity: str, evidence_level: str}` — case_chunks.metadata JSONB 字段
+- **枚举**: `IndexStatus` = pending | processing | indexed | indexing_failed
+- **模型**: `INDEX_METADATA_KEYS` = ["behavior_type", "age_range", "severity", "evidence_level"] — JSONB 键名常量
+- **状态机**: pending→processing→indexed|indexing_failed, indexing_failed→pending（手动重试）
+- **模块依赖**: CASE-01 (数据依赖，案例四段式文本), CASE-03 (时序依赖，审核通过触发)
+- **外部依赖**: PostgreSQL 17.x + pgvector 0.7+ (HNSW 索引), Redis 7.x (List 异步队列), 阿里 text-embedding-v4 (1024 维向量嵌入)
+- **技术栈**: FastAPI>=0.115, Pydantic>=2.0, SQLAlchemy>=2.0 async, httpx>=0.27, redis>=5.0, asyncio
+- **契约文件**: `docs/contracts/CASE-04/IndexStatus.json`, `docs/contracts/CASE-04/IndexTaskEnvelope.json`, `docs/contracts/CASE-04/ChunkMetadata.json`, `docs/contracts/CASE-04/INDEX_METADATA_KEYS.json`, `docs/contracts/CASE-04/enqueue.json`
+- **更新时间**: `2026-05-27 09:32:11`

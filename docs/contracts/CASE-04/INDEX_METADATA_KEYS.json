@@ -1,0 +1,16 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "docs/contracts/CASE-04/INDEX_METADATA_KEYS.json",
+  "title": "INDEX_METADATA_KEYS",
+  "description": "case_chunks.metadata JSONB 键名常量列表。CSLT-02 检索过滤时必须使用完全一致的键名（behavior_type, age_range, severity, evidence_level）。任何键名变更需同步通知 CSLT-02 模块维护者。",
+  "type": "array",
+  "x-defined-by": "CASE-04",
+  "x-consumers": ["CSLT-02"],
+  "x-maturity": "draft",
+  "x-contract-type": "shared-model",
+  "x-version": "1.0.0",
+  "items": {
+    "type": "string"
+  },
+  "default": ["behavior_type", "age_range", "severity", "evidence_level"]
+}

@@ -1,7 +1,7 @@
 {
   "version": "1.0.0",
   "description": "全局契约索引 — 篝火智答项目",
-  "last_updated": "2026-05-26T23:29:26+08:00",
+  "last_updated": "2026-05-27T09:32:11+08:00",
   "contracts": {
     "AccessOperation": {
       "file": "docs/contracts/PROF-05/AccessOperation.json",
@@ -317,6 +317,41 @@
       "consumers": [
         "AUTH-05"
       ]
+    },
+    "IndexStatus": {
+      "file": "docs/contracts/CASE-04/IndexStatus.json",
+      "defined_by": "CASE-04",
+      "maturity": "draft",
+      "x-contract-type": "shared-enum",
+      "consumers": ["CASE-05", "CASE-06", "CSLT-02"]
+    },
+    "IndexTaskEnvelope": {
+      "file": "docs/contracts/CASE-04/IndexTaskEnvelope.json",
+      "defined_by": "CASE-04",
+      "maturity": "draft",
+      "x-contract-type": "input",
+      "consumers": ["CASE-03"]
+    },
+    "ChunkMetadata": {
+      "file": "docs/contracts/CASE-04/ChunkMetadata.json",
+      "defined_by": "CASE-04",
+      "maturity": "draft",
+      "x-contract-type": "output",
+      "consumers": ["CSLT-02"]
+    },
+    "INDEX_METADATA_KEYS": {
+      "file": "docs/contracts/CASE-04/INDEX_METADATA_KEYS.json",
+      "defined_by": "CASE-04",
+      "maturity": "draft",
+      "x-contract-type": "shared-model",
+      "consumers": ["CSLT-02"]
+    },
+    "enqueue": {
+      "file": "docs/contracts/CASE-04/enqueue.json",
+      "defined_by": "CASE-04",
+      "maturity": "draft",
+      "x-contract-type": "input",
+      "consumers": ["CASE-03"]
     }
   }
 }

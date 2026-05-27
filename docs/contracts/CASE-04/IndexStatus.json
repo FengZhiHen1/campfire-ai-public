@@ -1,0 +1,13 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "docs/contracts/CASE-04/IndexStatus.json",
+  "title": "IndexStatus",
+  "description": "案例向量化索引状态枚举，持久化于 cases.index_status 列。由 CASE-04 定义，CASE-05/CASE-06/CSLT-02 作为下游消费。取值：pending=队列等待, processing=处理中, indexed=已入库, indexing_failed=索引异常。",
+  "type": "string",
+  "enum": ["pending", "processing", "indexed", "indexing_failed"],
+  "x-defined-by": "CASE-04",
+  "x-consumers": ["CASE-05", "CASE-06", "CSLT-02"],
+  "x-maturity": "draft",
+  "x-contract-type": "shared-enum",
+  "x-version": "1.0.0"
+}
