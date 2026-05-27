@@ -2,7 +2,7 @@
 
 > **生成时间**：2026-05-27
 > **模块 ID**：CASE-04
-> **实现代码目录**：`packages/py-indexing/py_indexing/`
+> **实现代码目录**：`packages/py-rag/py_rag/`（embedding.py + indexing/ 子包）
 > **设计文档来源**：`docs/功能设计/04-真实案例库管理/CASE-04-案例向量化入库/`
 
 ---
@@ -23,20 +23,20 @@
 
 | 文件 | 路径 | 说明 |
 |:---|:---|:---|
-| service.py | `packages/py-indexing/py_indexing/service.py` | 公开接口：enqueue_index_task, manual_retry_index |
-| chunk_builder.py | `packages/py-indexing/py_indexing/chunk_builder.py` | 文本组装 + PII 防线 + disclaimer 追加 |
-| embedding_client.py | `packages/py-indexing/py_indexing/embedding_client.py` | 阿里 text-embedding-v4 调用 + 熔断器 |
-| index_writer.py | `packages/py-indexing/py_indexing/index_writer.py` | pgvector INSERT + 重试 |
-| worker.py | `packages/py-indexing/py_indexing/worker.py` | Worker 协程（lifespan 启停） |
-| models.py | `packages/py-indexing/py_indexing/models.py` | Pydantic 模型（5 个，对齐契约） |
-| exceptions.py | `packages/py-indexing/py_indexing/exceptions.py` | 4 个自定义异常 |
+| service.py | `packages/py-rag/py_rag/indexing/service.py` | 公开接口：enqueue_index_task, manual_retry_index |
+| chunk_builder.py | `packages/py-rag/py_rag/indexing/chunk_builder.py` | 文本组装 + PII 防线 + disclaimer 追加 |
+| index_writer.py | `packages/py-rag/py_rag/indexing/index_writer.py` | pgvector INSERT + 重试 |
+| worker.py | `packages/py-rag/py_rag/indexing/worker.py` | Worker 协程（lifespan 启停） |
+| embedding.py | `packages/py-rag/py_rag/embedding.py` | 统一嵌入编码（DashScope 原生 API + 熔断器） |
+| models.py | `packages/py-rag/py_rag/models.py` | Pydantic 模型（合并检索+索引） |
+| exceptions.py | `packages/py-rag/py_rag/exceptions.py` | 异常类（合并检索+索引） |
 | case_chunks.py | `packages/py-db/py_db/models/case_chunks.py` | CaseChunk ORM 模型 |
 | migration | `packages/py-db/migrations/versions/20260527_093200_create_case_chunks.py` | Alembic 迁移脚本 |
 
 ## 3. 迭代收敛记录
 
 ### Round 1: 25 pass / 65 fail
-- **40 个 mock 路径错误**：`patch("py_indexing.service.redis.asyncio.Redis")` 路径不存在（实现使用 `from py_cache import get_redis_client`）
+- **40 个 mock 路径错误**：`patch("py_rag.indexing.service.get_redis_client")` 路径不存在（实现使用 `from py_cache import get_redis_client`）
 - **23 个 disclaimer 未追加**：`build_chunk_text` 未将 disclaimer 追加到 chunk_text，导致完整性检查失败
 - **判定**：40 个测试缺陷 → Phase 4.5.2；1 个实现缺陷 → Phase 5
 

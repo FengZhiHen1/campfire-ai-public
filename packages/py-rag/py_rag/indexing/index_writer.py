@@ -1,9 +1,6 @@
-"""CASE-04 索引写入模块。
+"""CASE-04 索引写入模块（索引管线步骤 8）。
 
 负责将已生成的 chunk_text + embedding + metadata 写入 pgvector 的 case_chunks 表。
-
-对外接口：
-    - write_index_to_pgvector(case_id, chunk_text, embedding, metadata_dict, db_session) -> None
 """
 
 from __future__ import annotations
@@ -12,24 +9,20 @@ import asyncio
 import json
 import uuid
 from datetime import datetime, timezone
-from typing import Any
 
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from py_logger import logger
 
-from py_indexing.models import ChunkMetadata
+from py_rag.models import ChunkMetadata
 
 # ============================================================================
 # 常量
 # ============================================================================
 
 RETRY_INTERVAL: float = 1.0
-"""pgvector INSERT 重试间隔（秒）。"""
-
-MAX_RETRY_COUNT: int = 2
-"""最大重试次数（共 3 次尝试：1 主 + 2 重试）。"""
+MAX_RETRY_COUNT: int = 2  # 共 3 次尝试（1 主 + 2 重试）
 
 
 # ============================================================================
@@ -46,7 +39,7 @@ async def write_index_to_pgvector(
 ) -> None:
     """将文本切片和向量写入 pgvector 的 case_chunks 表。
 
-    本函数内嵌最多 2 次重试（线性间隔 1s）。
+    内嵌最多 2 次重试（间隔 1s）。
 
     Args:
         case_id: 案例 UUID 字符串。
@@ -59,11 +52,10 @@ async def write_index_to_pgvector(
         sqlalchemy.exc.IntegrityError: 唯一约束或外键冲突。
         sqlalchemy.exc.OperationalError: 数据库连接或磁盘问题。
     """
-    metadata_dict: dict[str, str] = metadata.model_dump()
-    chunk_id: str = str(uuid.uuid4())
-    now_iso: str = datetime.now(timezone.utc).isoformat()
+    metadata_dict = metadata.model_dump()
+    chunk_id = str(uuid.uuid4())
+    now_iso = datetime.now(timezone.utc).isoformat()
 
-    # 构造原生 INSERT 语句（使用 pgvector 的 ::vector 类型转换）
     insert_sql = text("""
         INSERT INTO case_chunks (id, case_id, chunk_text, embedding, metadata, created_at)
         VALUES (:id, :case_id, :chunk_text, :embedding::vector(1024), :metadata::jsonb, :created_at)
@@ -85,7 +77,7 @@ async def write_index_to_pgvector(
             await db_session.execute(insert_sql, params)
             await db_session.commit()
             logger.info(
-                "py-indexing",
+                "py-rag",
                 "pgvector 索引写入成功",
                 op_type="index_write",
                 extra={
@@ -102,7 +94,7 @@ async def write_index_to_pgvector(
 
             if attempt < MAX_RETRY_COUNT:
                 logger.warning(
-                    "py-indexing",
+                    "py-rag",
                     f"pgvector 写入失败，{RETRY_INTERVAL}s 后重试",
                     op_type="index_write_retry",
                     extra={
@@ -116,7 +108,7 @@ async def write_index_to_pgvector(
                 await asyncio.sleep(RETRY_INTERVAL)
             else:
                 logger.error(
-                    "py-indexing",
+                    "py-rag",
                     "pgvector 索引写入重试耗尽",
                     op_type="index_write_exhausted",
                     extra={

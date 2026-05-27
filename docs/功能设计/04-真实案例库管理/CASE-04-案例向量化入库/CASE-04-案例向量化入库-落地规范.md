@@ -33,12 +33,12 @@
 
 | 文件类型 | 路径 | 说明 |
 |---------|------|------|
-| 索引服务入口 | `packages/py-indexing/py_indexing/service.py` | `enqueue()`、`process_index_task()`、`manual_retry()` |
-| 文本组装模块 | `packages/py-indexing/py_indexing/chunk_builder.py` | `build_chunk_text()` — 四要素拼接 + PII 最终防线校验 |
-| 嵌入服务客户端 | `packages/py-indexing/py_indexing/embedding_client.py` | `generate_embedding()` — 阿里 text-embedding-v4 HTTP 调用 + 熔断器 |
-| 索引写入模块 | `packages/py-indexing/py_indexing/index_writer.py` | `write_index_to_pgvector()` — pgvector INSERT |
-| Worker 协程 | `packages/py-indexing/py_indexing/worker.py` | `start_worker()` — lifespan 启动的单例 Worker 协程 |
-| Pydantic 模型 | `packages/py-indexing/py_indexing/models.py` | `IndexTaskEnvelope`、`ChunkMetadata`、内部模型 |
+| 索引服务入口 | `packages/py-rag/py_rag/indexing/service.py` | `enqueue()`、`process_index_task()`、`manual_retry()` |
+| 文本组装模块 | `packages/py-rag/py_rag/indexing/chunk_builder.py` | `build_chunk_text()` — 四要素拼接 + PII 最终防线校验 |
+| 嵌入服务客户端 | `packages/py-rag/py_rag/indexing/embedding_client.py` | `generate_embedding()` — 阿里 text-embedding-v4 HTTP 调用 + 熔断器 |
+| 索引写入模块 | `packages/py-rag/py_rag/indexing/index_writer.py` | `write_index_to_pgvector()` — pgvector INSERT |
+| Worker 协程 | `packages/py-rag/py_rag/indexing/worker.py` | `start_worker()` — lifespan 启动的单例 Worker 协程 |
+| Pydantic 模型 | `packages/py-rag/py_rag/indexing/models.py` | `IndexTaskEnvelope`、`ChunkMetadata`、内部模型 |
 | ORM 扩展 | `packages/py-db/py_db/models/case_chunks.py` | `CaseChunk` ORM 模型（case_chunks 表） |
 | 数据库迁移 | `packages/py-db/migrations/versions/xxx_create_case_chunks.py` | Alembic 迁移脚本：创建 case_chunks 表 + HNSW 索引 |
 | 测试文件 | `apps/api-server/tests/api/v1/test_case_indexing.py` | enqueue/process/manual_retry 单元及集成测试 |
