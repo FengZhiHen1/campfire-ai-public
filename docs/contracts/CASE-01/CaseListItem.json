@@ -1,0 +1,26 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "docs/contracts/CASE-01/CaseListItem.json",
+  "title": "CaseListItem",
+  "description": "案例列表条目，用于案例管理列表展示。仅包含摘要字段以支持高效列表查询。列表查询支持按status和behavior_type筛选，按created_at倒序排序。",
+  "type": "object",
+  "x-defined-by": "CASE-01",
+  "x-consumers": ["CASE-03", "CASE-09", "TICK-07"],
+  "x-maturity": "draft",
+  "x-contract-type": "output",
+  "x-version": "1.0.0",
+  "required": ["case_id", "title", "status", "source_type", "behavior_type", "severity", "scene", "author_id", "is_template", "created_at", "updated_at"],
+  "properties": {
+    "case_id": { "type": "string", "description": "案例唯一标识" },
+    "title": { "type": "string", "description": "案例标题" },
+    "status": { "type": "string", "enum": ["draft", "pending_review", "rejected"], "description": "案例状态" },
+    "source_type": { "type": "string", "description": "案例来源类型" },
+    "behavior_type": { "type": "string", "description": "行为类型" },
+    "severity": { "type": "string", "description": "严重程度" },
+    "scene": { "type": "string", "description": "发生场景" },
+    "author_id": { "type": "string", "description": "撰写专家标识" },
+    "is_template": { "type": "boolean", "description": "是否模板" },
+    "created_at": { "type": "string", "format": "date-time", "description": "创建时间" },
+    "updated_at": { "type": "string", "format": "date-time", "description": "最后编辑时间" }
+  }
+}

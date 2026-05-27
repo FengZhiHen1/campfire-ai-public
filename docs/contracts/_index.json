@@ -1,7 +1,7 @@
 {
   "version": "1.0.0",
   "description": "全局契约索引 — 篝火智答项目",
-  "last_updated": "2026-05-26T23:29:26+08:00",
+  "last_updated": "2026-05-27T09:30:27+08:00",
   "contracts": {
     "AccessOperation": {
       "file": "docs/contracts/PROF-05/AccessOperation.json",
@@ -317,6 +317,97 @@
       "consumers": [
         "AUTH-05"
       ]
+    },
+    "CaseStatus": {
+      "file": "docs/contracts/CASE-01/CaseStatus.json",
+      "defined_by": "CASE-01",
+      "maturity": "draft",
+      "x-contract-type": "shared-enum",
+      "consumers": ["CASE-02", "CASE-03", "CASE-04", "CASE-05", "CASE-07"]
+    },
+    "SourceType": {
+      "file": "docs/contracts/CASE-01/SourceType.json",
+      "defined_by": "CASE-01",
+      "maturity": "draft",
+      "x-contract-type": "shared-enum",
+      "consumers": ["CASE-03", "TICK-07"]
+    },
+    "BehaviorType": {
+      "file": "docs/contracts/CASE-01/BehaviorType.json",
+      "defined_by": "CASE-01",
+      "maturity": "draft",
+      "x-contract-type": "shared-enum",
+      "consumers": ["CASE-03", "CASE-07", "CASE-09"]
+    },
+    "SeverityLevel": {
+      "file": "docs/contracts/CASE-01/SeverityLevel.json",
+      "defined_by": "CASE-01",
+      "maturity": "draft",
+      "x-contract-type": "shared-enum",
+      "consumers": ["CASE-03", "CASE-09"]
+    },
+    "SceneType": {
+      "file": "docs/contracts/CASE-01/SceneType.json",
+      "defined_by": "CASE-01",
+      "maturity": "draft",
+      "x-contract-type": "shared-enum",
+      "consumers": ["CASE-03", "CASE-09", "CSLT-02"]
+    },
+    "EvidenceLevel": {
+      "file": "docs/contracts/CASE-01/EvidenceLevel.json",
+      "defined_by": "CASE-01",
+      "maturity": "draft",
+      "x-contract-type": "shared-enum",
+      "consumers": ["CASE-03", "CASE-07", "KNOW-04"]
+    },
+    "FamilyDisplayCategory": {
+      "file": "docs/contracts/CASE-01/FamilyDisplayCategory.json",
+      "defined_by": "CASE-01",
+      "maturity": "draft",
+      "x-contract-type": "shared-enum",
+      "consumers": ["CASE-09"]
+    },
+    "CaseCreateRequest": {
+      "file": "docs/contracts/CASE-01/CaseCreateRequest.json",
+      "defined_by": "CASE-01",
+      "maturity": "draft",
+      "x-contract-type": "input",
+      "consumers": ["CASE-09"]
+    },
+    "CaseUpdate": {
+      "file": "docs/contracts/CASE-01/CaseUpdate.json",
+      "defined_by": "CASE-01",
+      "maturity": "draft",
+      "x-contract-type": "input",
+      "consumers": ["CASE-09"]
+    },
+    "CaseResponse": {
+      "file": "docs/contracts/CASE-01/CaseResponse.json",
+      "defined_by": "CASE-01",
+      "maturity": "draft",
+      "x-contract-type": "output",
+      "consumers": ["CASE-03", "CASE-04", "CASE-05", "CASE-07", "KNOW-04"]
+    },
+    "CaseListItem": {
+      "file": "docs/contracts/CASE-01/CaseListItem.json",
+      "defined_by": "CASE-01",
+      "maturity": "draft",
+      "x-contract-type": "output",
+      "consumers": ["CASE-03", "CASE-09", "TICK-07"]
+    },
+    "PiiWarning": {
+      "file": "docs/contracts/CASE-01/PiiWarning.json",
+      "defined_by": "CASE-01",
+      "maturity": "draft",
+      "x-contract-type": "output",
+      "consumers": []
+    },
+    "PiiDetectionResult": {
+      "file": "docs/contracts/CASE-01/PiiDetectionResult.json",
+      "defined_by": "CASE-01",
+      "maturity": "draft",
+      "x-contract-type": "output",
+      "consumers": []
     }
   }
 }

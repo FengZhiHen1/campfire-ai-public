@@ -1,0 +1,17 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "docs/contracts/CASE-01/PiiDetectionResult.json",
+  "title": "PiiDetectionResult",
+  "description": "PII检测的完整输出结果。对叙事文本执行5类PII正则匹配检测（真实姓名/手机号码/身份证号/家庭住址/学校名称），返回检测到的警告列表。检测为提示性辅助检测，不强制阻断提交。",
+  "type": "object",
+  "x-defined-by": "CASE-01",
+  "x-consumers": [],
+  "x-maturity": "draft",
+  "x-contract-type": "output",
+  "x-version": "1.0.0",
+  "required": ["has_pii", "warnings"],
+  "properties": {
+    "has_pii": { "type": "boolean", "description": "是否检测到疑似PII" },
+    "warnings": { "type": "array", "items": { "$ref": "./PiiWarning.json" }, "description": "PII警告列表，has_pii为false时为空列表" }
+  }
+}

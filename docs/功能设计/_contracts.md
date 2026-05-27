@@ -89,3 +89,28 @@
 - **契约文件**: 无（纯 UI 模块，不定义后端 API 契约）
 - **复用契约**: AUTH-01/RegisterRequest, AUTH-01/RegisterResponse, AUTH-01/UserRole
 - **更新时间**: `2026-05-26 22:59:07`
+
+---
+
+## CASE-01 - 案例录入管理
+
+- **输入**: `CaseCreateRequest` — POST `/api/v1/cases` 请求体，含L1原始叙事层4字段+L2结构化卡片层13必填字段+2选填字段
+- **输入**: `CaseUpdate` — PUT `/api/v1/cases/{id}` 请求体，所有字段可选（partial update），含乐观锁`updated_at`字段
+- **输出**: `CaseResponse {case_id: str, status: CaseStatus, title: str, narrative: str, source_type: SourceType, author_id: str, behavior_type: BehaviorType, age_range: list[int], severity: SeverityLevel, scene: SceneType, ebp_labels: list[str], family_category: FamilyDisplayCategory, immediate_action: str, comforting_phrase: str, observation_metrics: str, medical_criteria: str, evidence_level: EvidenceLevel, contraindications: str, is_template: bool, excluded_population: str?, attachment_refs: list?, review_comment: str?, created_at: datetime, updated_at: datetime}` — 案例详情响应体
+- **输出**: `CaseListItem {case_id: str, title: str, status: CaseStatus, source_type: SourceType, behavior_type: BehaviorType, severity: SeverityLevel, scene: SceneType, author_id: str, is_template: bool, created_at: datetime, updated_at: datetime}` — 案例列表条目
+- **输出**: `PiiDetectionResult {has_pii: bool, warnings: list[PiiWarning]}` — PII检测完整结果
+- **输出**: `PiiWarning {pii_type: str, detected_text: str, position_start: int, position_end: int}` — PII单条警告
+- **枚举**: `CaseStatus` = draft | pending_review | rejected
+- **枚举**: `SourceType` = 专家撰写 | 机构脱敏 | 工单沉淀
+- **枚举**: `BehaviorType` = 自伤 | 攻击 | 刻板 | 逃跑 | 情绪崩溃 | 其他
+- **枚举**: `SeverityLevel` = 轻度 | 中度 | 重度
+- **枚举**: `SceneType` = 家庭 | 学校 | 公共场合 | 机构 | 不限
+- **枚举**: `EvidenceLevel` = NCAEP循证实践 | 机构经验总结 | 个案观察记录
+- **枚举**: `FamilyDisplayCategory` = 环境调整 | 沟通替代 | 行为塑造 | 危机安全 | 社交引导 | 自我管理
+- **状态机**: draft → [submit] → pending_review → [CASE-03 reject] → rejected；pending_review/rejected → [edit] → draft（编辑即重置）
+- **模块依赖**: AUTH-04 (require_role角色校验, UserRole枚举), SEC-03 (PII检测，当前本地实现), CASE-02 (附件引用AttachmentRef结构, 待落地), CASE-03 (下游审核消费pending_review案例)
+- **外部依赖**: PostgreSQL 17.x (cases表, 单表原生列), packages/py-logger (审计日志), packages/py-config (环境配置)
+- **技术栈**: FastAPI>=0.115, Pydantic>=2.0, SQLAlchemy>=2.0 async
+- **契约文件**: `docs/contracts/CASE-01/CaseStatus.json`, `docs/contracts/CASE-01/SourceType.json`, `docs/contracts/CASE-01/BehaviorType.json`, `docs/contracts/CASE-01/SeverityLevel.json`, `docs/contracts/CASE-01/SceneType.json`, `docs/contracts/CASE-01/EvidenceLevel.json`, `docs/contracts/CASE-01/FamilyDisplayCategory.json`, `docs/contracts/CASE-01/CaseCreateRequest.json`, `docs/contracts/CASE-01/CaseUpdate.json`, `docs/contracts/CASE-01/CaseResponse.json`, `docs/contracts/CASE-01/CaseListItem.json`, `docs/contracts/CASE-01/PiiWarning.json`, `docs/contracts/CASE-01/PiiDetectionResult.json`
+- **复用契约**: AUTH-04/UserRole, AUTH-04/require_role, AUTH-04/PermissionDeniedResponse, SEC-05/ValidationErrorResponse, DEPLOY-05/AppSettings, OBS-01/LogLevel, AUTH-06/httpClient, AUTH-06/SessionState, AUTH-06/TokenPair
+- **更新时间**: `2026-05-27 09:30:27`

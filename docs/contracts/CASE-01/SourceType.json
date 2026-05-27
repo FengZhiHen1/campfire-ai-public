@@ -1,0 +1,13 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "docs/contracts/CASE-01/SourceType.json",
+  "title": "SourceType",
+  "description": "案例的获取渠道标识。专家撰写为老师/专家自行撰写，机构脱敏为合作机构脱敏后提供，工单沉淀为日常工单中沉淀的案例。",
+  "type": "string",
+  "x-defined-by": "CASE-01",
+  "x-consumers": ["CASE-03", "TICK-07"],
+  "x-maturity": "draft",
+  "x-contract-type": "shared-enum",
+  "x-version": "1.0.0",
+  "enum": ["专家撰写", "机构脱敏", "工单沉淀"]
+}
