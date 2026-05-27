@@ -279,7 +279,7 @@ class PromptBuilder:
         id_matches = _ID_CARD_PATTERN.findall(full_text)
 
         if phone_matches or id_matches:
-            logger.alert(
+            logger.critical(
                 service="emergency_plan_generation",
                 message="PII detected in prompt text (secondary scan)",
                 op_type="pii_scan",
