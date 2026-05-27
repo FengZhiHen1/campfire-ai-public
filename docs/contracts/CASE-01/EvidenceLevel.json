@@ -1,0 +1,13 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "docs/contracts/CASE-01/EvidenceLevel.json",
+  "title": "EvidenceLevel",
+  "description": "案例干预方法的证据强度等级，三级分类。NCAEP循证实践为最高等级，表示该案例的干预方法属于NCAEP 2020确认的28种循证实践之一。机构经验总结为合作机构的长期实践经验。个案观察记录为单一案例的观察总结。",
+  "type": "string",
+  "x-defined-by": "CASE-01",
+  "x-consumers": ["CASE-03", "CASE-07", "KNOW-04"],
+  "x-maturity": "draft",
+  "x-contract-type": "shared-enum",
+  "x-version": "1.0.0",
+  "enum": ["NCAEP循证实践", "机构经验总结", "个案观察记录"]
+}

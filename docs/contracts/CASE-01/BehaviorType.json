@@ -1,0 +1,13 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "docs/contracts/CASE-01/BehaviorType.json",
+  "title": "BehaviorType",
+  "description": "案例所涉及的核心行为问题分类，共六类。此枚举被下游模块消费用于审核筛选(CASE-03)、模板聚类(CASE-07)等场景。",
+  "type": "string",
+  "x-defined-by": "CASE-01",
+  "x-consumers": ["CASE-03", "CASE-07", "CASE-09"],
+  "x-maturity": "draft",
+  "x-contract-type": "shared-enum",
+  "x-version": "1.0.0",
+  "enum": ["自伤", "攻击", "刻板", "逃跑", "情绪崩溃", "其他"]
+}

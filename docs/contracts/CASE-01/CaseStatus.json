@@ -1,0 +1,13 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "docs/contracts/CASE-01/CaseStatus.json",
+  "title": "CaseStatus",
+  "description": "案例生命周期中的持久化状态。draft为草稿（仅作者可见），pending_review为提交后进入审核流程，rejected为被审核驳回后可编辑重新提交。已通过状态(approved)归属CASE-03管理，不属于本模块状态机范围。",
+  "type": "string",
+  "x-defined-by": "CASE-01",
+  "x-consumers": ["CASE-02", "CASE-03", "CASE-04", "CASE-05", "CASE-07"],
+  "x-maturity": "draft",
+  "x-contract-type": "shared-enum",
+  "x-version": "1.0.0",
+  "enum": ["draft", "pending_review", "rejected"]
+}
