@@ -2,6 +2,43 @@
 
 ---
 
+## 2026-05-27 15:26:30 — CSLT-04 流式应答推送 — 一致性检查
+
+**检查范围**：模块 CSLT-04 首次进入设计流程（s05-spec-prepare），全量扫描已有规格文档和契约文件。
+
+**扫描检查项**：
+- 模块编号冲突：无。CSLT-04 编号唯一，与已有模块无冲突。
+- SSE 事件类型冲突：无。已有模块未定义 SSE 事件/流式推送相关类型。CSLT-04 将定义的 StreamEvent、StreamEventType、StreamIdentifier 等类型与已有契约无命名交集。
+- 接口命名冲突：无。CSLT-04 的 SSE 端点路由（如 /api/v1/consult/stream/{session_id}）与已有模块的路由前缀（/api/v1/auth/、/api/v1/profiles/、/api/v1/cases/、/api/v1/knowledge/、/api/v1/health/ 等）不冲突，无重叠。
+- 同名异构类型：无。CSLT-04 的业务领域（SSE 流式事件传输）是项目内首个涉及该领域的模块，无同名异构风险。
+- 循环依赖迹象：无。CSLT-04 依赖链为 CSLT-03（上游数据来源）→ CSLT-04（流式推送）→ CSLT-08（下游消费方），全部为单向数据管道。模块依赖关系分析确认零循环依赖。
+- 上游合约对齐：CSLT-03/GenerationChunk 的 x-consumers 已包含 ["CSLT-04"]，CSLT-03/GenerationStatus 的 x-consumers 同样包含 ["CSLT-04"]，两方契约对齐。✅
+- 依赖关系对齐：
+  - CSLT-04 → CSLT-03：GenerationChunk（AsyncGenerator 产出）、GenerationStatus（finish_reason/GenerationStatus 枚举）— 上游已定义，CSLT-04 作为消费者直接消费。✅ 已对齐
+  - CSLT-04 → DEPLOY-02：SSE 长连接需 Nginx 代理配置就绪（依赖关系分析标记为 ⚠️ 推断），将在设计文档阶段确认。不影响本阶段。
+  - CSLT-08 → CSLT-04：下游消费方尚未设计，不存在反向依赖冲突。
+
+**审查的相关文档**：
+- CSLT-03 应急方案生成-落地规范.md（已冻结）
+- CSLT-01/02 危机分级判定/RAG语义检索-落地规范.md（已冻结）
+- KNOW-01 科普内容管理-落地规范.md（已冻结）
+- AUTH-01～06 用户注册/登录/Token续期/RBAC鉴权/UI/会话管理-落地规范.md（已冻结）
+- PROF-01/05 个人档案管理/档案隐私控制-落地规范.md（已冻结）
+- OBS-01/04 结构化日志/健康检查-落地规范.md（已冻结）
+- SEC-01/04/05 传输存储安全/防刷限流/输入校验防护-落地规范.md（已冻结）
+- DEPLOY-01～05 容器编排/反向代理/CI_CD/数据库迁移/环境配置-落地规范.md（已冻结）
+- CASE-01/04 案例录入管理/案例向量化入库-落地规范.md（已冻结）
+- docs/contracts/CSLT-03/GenerationChunk.json（maturity: draft）
+- docs/contracts/CSLT-03/GenerationStatus.json（maturity: draft）
+- docs/功能设计/_contracts.md
+- docs/功能设计/功能模块全拆解.md
+- docs/功能设计/模块依赖关系分析.md
+- docs/篝火智答-技术栈设计.md
+
+**结论**：✅ 无冲突。CSLT-04 是纯数据推送通道模块，不定义持久化状态、不引入新数据源、不修改上游 CSLT-03 产出内容。与已有模块的接口边界清晰（仅消费 CSLT-03 的 GenerationChunk 和 GenerationStatus），无反向依赖冲突。CSLT-08 尚未设计，不存在反向依赖冲突。与 DEPLOY-02 的 Nginx SSE 配置依赖将在设计文档阶段确认（非阻塞性）。
+
+---
+
 ## 2026-05-26 16:56 — KNOW-01 科普内容管理 — 一致性检查
 
 **检查范围**：模块 KNOW-01 首次进入设计流程，项目内尚无已落地的规格文档（*-落地规范.md）。
