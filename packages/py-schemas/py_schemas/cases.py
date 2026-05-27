@@ -15,7 +15,8 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Generic, List, Optional, TypeVar
+from enum import Enum
+from typing import Generic, List, Literal, Optional, TypeVar
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -411,6 +412,146 @@ class PaginatedResponse(BaseModel, Generic[T]):
     model_config = {"extra": "forbid"}
 
 
+# ---------------------------------------------------------------------------
+# CASE-03 案例审核工作流 — 审核相关模型
+# ---------------------------------------------------------------------------
+
+
+class ReviewAuditAction(str, Enum):
+    """审核审计动作类型枚举。
+
+    记录审核流程中所有可审计的操作类型。
+    持久化到 review_audit_logs 表的 action 列。
+    """
+
+    SUBMITTED = "submitted"
+    AI_REVIEW_COMPLETED = "ai_review_completed"
+    AI_REVIEW_HARD_BLOCKED = "ai_review_hard_blocked"
+    EXPERT_REVIEW_STARTED = "expert_review_started"
+    APPROVED = "approved"
+    REJECTED = "rejected"
+    TIMEOUT_REMINDED = "timeout_reminded"
+    TIMEOUT_REASSIGNED = "timeout_reassigned"
+    EXPERT_OVERRIDE = "expert_override"
+    EXPERT_OVERRIDE_PII_BLOCKED = "expert_override_pii_blocked"
+
+
+class ReviewRequest(BaseModel):
+    """专家终审裁决请求体。
+
+    约束：
+    - decision=rejected 时 review_comment 不可为空，>=10 字
+    - decision=approved 时 AI 预审硬门槛不通过 => pii_override_confirmed=false 则拒绝
+    - PII 零容忍：pii_override_confirmed=true 也会被拒绝（PII 硬门槛不可覆盖）
+    """
+
+    decision: Literal["approved", "rejected"] = Field(
+        ..., description="专家裁决（approved/rejected）"
+    )
+    review_comment: Optional[str] = Field(
+        default=None,
+        description="审核意见（驳回时必填，>=10 字，逐项列出修改建议）",
+    )
+    override_reason: Optional[str] = Field(
+        default=None,
+        description="覆盖 AI 预审理由（覆盖时必填）",
+    )
+    pii_override_confirmed: bool = Field(
+        default=False,
+        description="是否确认覆盖 PII 硬门槛（默认 false，设为 true 也会被拒绝——PII 零容忍）",
+    )
+
+    model_config = {"extra": "forbid"}
+
+
+class CheckItem(BaseModel):
+    """单条 AI 预审检查结果。
+
+    每条检查包含状态（通过/不通过/标注）、详情说明和是否硬门槛。
+    硬门槛检查不通过时将整体标记为 hard_block，不可进入专家终审。
+    """
+
+    status: Literal["pass", "fail", "annotated"] = Field(
+        ..., description="检查状态：pass=通过 / fail=不通过 / annotated=标注"
+    )
+    details: Optional[List[str]] = Field(
+        default=None, description="具体不合格项或标注说明"
+    )
+    is_hard_gate: bool = Field(
+        ..., description="true=硬门槛（拦截），false=软检查（仅标注）"
+    )
+
+    model_config = {"extra": "forbid"}
+
+
+class AiReviewSummary(BaseModel):
+    """AI 预审结果摘要。
+
+    包含 4 项规则引擎检查结果和 overall 总体结论。
+    overall 由各单项的 is_hard_gate 状态推导：
+    - 任一硬门槛 fail → hard_block
+    - 无硬门槛 fail 但有软检查 fail/annotated → annotated
+    - 全部 pass → pass
+    """
+
+    format_check: CheckItem = Field(..., description="格式完整性检查（硬门槛）")
+    pii_check: CheckItem = Field(..., description="PII 脱敏检查（硬门槛）")
+    required_fields_check: CheckItem = Field(
+        ..., description="必填字段存在性检查（软检查）"
+    )
+    ebp_consistency_check: CheckItem = Field(
+        ..., description="EBP 一致性检查（软检查）"
+    )
+    overall: Literal["pass", "hard_block", "annotated"] = Field(
+        ..., description="总体结论"
+    )
+
+    model_config = {"extra": "forbid"}
+
+
+class CaseReviewResponse(BaseModel):
+    """审核裁决响应。
+
+    包含案例最终状态、AI 预审摘要、专家裁决和审核人信息。
+    """
+
+    case_id: str = Field(..., description="案例唯一标识")
+    new_status: Literal["approved", "rejected"] = Field(
+        ..., description="审核后的案例状态"
+    )
+    ai_review_summary: AiReviewSummary = Field(
+        ..., description="AI 预审结果摘要"
+    )
+    expert_decision: str = Field(..., description="专家裁决描述")
+    review_comment: Optional[str] = Field(
+        default=None, description="审核意见"
+    )
+    reviewer_id: str = Field(..., description="审核人标识")
+    reviewed_at: datetime = Field(..., description="审核完成时间")
+
+    model_config = {"extra": "forbid"}
+
+
+class ReviewQueueItem(BaseModel):
+    """待审核队列条目。
+
+    用于前端审核列表展示，包含案例摘要信息和审核队列特有字段。
+    """
+
+    case_id: str = Field(..., description="案例唯一标识")
+    title: str = Field(..., description="案例标题")
+    author_name: str = Field(..., description="提交者名称")
+    behavior_type: str = Field(..., description="行为类型")
+    submitted_at: datetime = Field(..., description="提交审核时间")
+    ai_review_overall: str = Field(..., description="AI 预审总体结论")
+    deadline: datetime = Field(..., description="审核截止时间（AI 预审完成 + 2 工作日）")
+    timeout_status: Literal["normal", "warning", "overdue"] = Field(
+        ..., description="超时状态"
+    )
+
+    model_config = {"extra": "forbid"}
+
+
 __all__ = [
     "AttachmentRef",
     "CaseCreateRequest",
@@ -421,4 +562,10 @@ __all__ = [
     "PiiDetectionResult",
     "PaginatedResponse",
     "NCAEP_EBP_LABELS",
+    "ReviewAuditAction",
+    "ReviewRequest",
+    "CheckItem",
+    "AiReviewSummary",
+    "CaseReviewResponse",
+    "ReviewQueueItem",
 ]

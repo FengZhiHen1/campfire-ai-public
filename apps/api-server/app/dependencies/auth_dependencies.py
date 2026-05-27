@@ -18,6 +18,10 @@ from sqlalchemy.ext.asyncio import (
 from py_auth.hashing import hash_password
 from py_config import get_settings
 from py_db.repositories.case_repository import CaseRepository
+from py_db.repositories.review_repository import (
+    ReviewAuditLogRepository,
+    ReviewRepository,
+)
 from py_db.repositories.user_repository import UserRepository
 from py_logger import logger
 
@@ -188,10 +192,36 @@ def get_audit_logger() -> AuditLogger:
     return AuditLogger()
 
 
+def get_review_repository() -> ReviewRepository:
+    """FastAPI Depends 工厂：构造 ReviewRepository 实例。
+
+    注入 async_session_factory 供 Repository 内部使用。
+    每次请求调用时返回新实例（无状态，创建成本可忽略）。
+
+    Returns:
+        ReviewRepository: 已配置会话工厂的 Repository 实例。
+    """
+    return ReviewRepository(session_factory=_get_session_factory())
+
+
+def get_review_audit_log_repository() -> ReviewAuditLogRepository:
+    """FastAPI Depends 工厂：构造 ReviewAuditLogRepository 实例。
+
+    注入 async_session_factory 供 Repository 内部使用（虽然 AuditLogRepository
+    不使用会话工厂——它直接接收已开启的 session 作为参数）。
+
+    Returns:
+        ReviewAuditLogRepository: 已配置的审计日志 Repository 实例。
+    """
+    return ReviewAuditLogRepository(session_factory=_get_session_factory())
+
+
 __all__ = [
     "get_db_session",
     "get_user_repository",
     "get_case_repository",
+    "get_review_repository",
+    "get_review_audit_log_repository",
     "get_password_hasher",
     "get_audit_logger",
     "PasswordHasher",
