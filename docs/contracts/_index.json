@@ -317,6 +317,41 @@
       "consumers": [
         "AUTH-05"
       ]
+    },
+    "CrisisLevel": {
+      "file": "docs/contracts/CSLT-01/CrisisLevel.json",
+      "defined_by": "CSLT-01",
+      "maturity": "draft",
+      "x-contract-type": "shared-enum",
+      "consumers": ["CSLT-03", "CSLT-05", "TICK-01", "TICK-02"]
+    },
+    "BehaviorTypeCategory": {
+      "file": "docs/contracts/CSLT-01/BehaviorTypeCategory.json",
+      "defined_by": "CSLT-01",
+      "maturity": "draft",
+      "x-contract-type": "shared-enum",
+      "consumers": ["CSLT-07"]
+    },
+    "JudgmentLayerResult": {
+      "file": "docs/contracts/CSLT-01/JudgmentLayerResult.json",
+      "defined_by": "CSLT-01",
+      "maturity": "draft",
+      "x-contract-type": "shared-model",
+      "consumers": ["CSLT-03", "CSLT-05"]
+    },
+    "CrisisJudgmentRequest": {
+      "file": "docs/contracts/CSLT-01/CrisisJudgmentRequest.json",
+      "defined_by": "CSLT-01",
+      "maturity": "draft",
+      "x-contract-type": "input",
+      "consumers": []
+    },
+    "CrisisJudgmentResult": {
+      "file": "docs/contracts/CSLT-01/CrisisJudgmentResult.json",
+      "defined_by": "CSLT-01",
+      "maturity": "draft",
+      "x-contract-type": "output",
+      "consumers": ["CSLT-03", "CSLT-05", "TICK-01", "TICK-02"]
     }
   }
 }

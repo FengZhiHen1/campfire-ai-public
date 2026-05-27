@@ -89,3 +89,19 @@
 - **契约文件**: 无（纯 UI 模块，不定义后端 API 契约）
 - **复用契约**: AUTH-01/RegisterRequest, AUTH-01/RegisterResponse, AUTH-01/UserRole
 - **更新时间**: `2026-05-26 22:59:07`
+
+---
+
+## CSLT-01 - 危机分级判定
+- **输入**: `CrisisJudgmentRequest {patient_profile: PatientProfileSnapshot?, behavior_type_selection: list[BehaviorTypeCategory], behavior_description: str}` — 危机分级判定请求，由 CSLT-08 编排层组装后传入 JudgmentPipeline
+- **输出**: `CrisisJudgmentResult {final_level: CrisisLevel, block_deep_response: bool, manual_review_flag: bool, review_confidence: float?, judgment_sources: list[JudgmentLayerResult], degradation_note: str?}` — 危机分级判定最终结果
+- **枚举**: `CrisisLevel` = mild | moderate | severe（三级危机等级，宁升勿降合并策略）
+- **枚举**: `BehaviorTypeCategory` = SELF_INJURY | AGGRESSION | ELOPEMENT | MEDICATION | EMOTIONAL_MELTDOWN | STEREOTYPY | OTHER（7 类前置行为类型，前 4 类为高危）
+- **模型**: `JudgmentLayerResult {layer_name: str, level: CrisisLevel, trigger_rule_id: str?, details: dict}` — 单判定层裁决记录，供审计追溯
+- **状态机**: 无（无状态判定，每次咨询独立执行三层递进判定）
+- **模块依赖**: CSLT-07 (上游数据来源：行为类型勾选+行为描述文本), PROF-02 (上游数据来源：患者档案快照 PatientProfileSnapshot), CSLT-03 (下游数据消费：危机等级+阻断标记), CSLT-05 (下游数据消费：复核标记+置信度), TICK-01 (下游数据消费：危机等级驱动工单生成), TICK-02 (下游数据消费：危机等级映射工单优先级), SEC-02 (共享资源：CRISIS_KEYWORDS 高危关键词库), KNOW-05 (共享资源：CRISIS_KEYWORDS 高危关键词库)
+- **外部依赖**: PostgreSQL 17.x (crisis_keywords 表), Redis 7.x (keyword_dict:updates Pub/Sub channel), DeepSeek API (LLM 精调复审), packages/py-llm (DeepSeek API 客户端), packages/py-cache (Redis 客户端), packages/py-db (SQLAlchemy ORM), packages/py-config (环境配置), packages/py-logger (结构化日志)
+- **技术栈**: FastAPI>=0.115, Pydantic>=2.0, SQLAlchemy>=2.0 async, Redis>=5.0 async, ahocorasick>=2.0
+- **契约文件**: `docs/contracts/CSLT-01/CrisisLevel.json`, `docs/contracts/CSLT-01/BehaviorTypeCategory.json`, `docs/contracts/CSLT-01/JudgmentLayerResult.json`, `docs/contracts/CSLT-01/CrisisJudgmentRequest.json`, `docs/contracts/CSLT-01/CrisisJudgmentResult.json`
+- **复用契约**: 无（CSLT-01 为全新模块，所有对外类型均自建契约）
+- **更新时间**: `2026-05-27 09:23:20`

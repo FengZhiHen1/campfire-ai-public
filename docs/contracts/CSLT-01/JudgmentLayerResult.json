@@ -1,0 +1,44 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "docs/contracts/CSLT-01/JudgmentLayerResult.json",
+  "title": "JudgmentLayerResult",
+  "description": "单层判定层的结果记录。每个判定层（PreSelectionLayer / RuleEngineLayer / LLMReviewLayer）执行后输出该结构，汇集到 CrisisJudgmentResult.judgment_sources 列表中供审计追溯。",
+  "type": "object",
+  "x-defined-by": "CSLT-01",
+  "x-consumers": ["CSLT-03", "CSLT-05"],
+  "x-maturity": "draft",
+  "x-contract-type": "shared-model",
+  "x-version": "1.0.0",
+  "properties": {
+    "layer_name": {
+      "type": "string",
+      "description": "判定层标识：'PreSelectionLayer' | 'RuleEngineLayer' | 'LLMReviewLayer'",
+      "examples": ["PreSelectionLayer", "RuleEngineLayer", "LLMReviewLayer"]
+    },
+    "level": {
+      "$ref": "./CrisisLevel.json",
+      "description": "该判定层输出的危机等级",
+      "examples": ["mild", "severe"]
+    },
+    "trigger_rule_id": {
+      "anyOf": [
+        {"type": "string"},
+        {"type": "null"}
+      ],
+      "description": "触发的规则编号（如 'KW_SELF_HARM_001'），RuleEngineLayer 命中时必填",
+      "examples": ["KW_SELF_HARM_001", "PROFILE_OVERLAP_001"]
+    },
+    "details": {
+      "type": "object",
+      "description": "判定详情，key-value 格式。内容因层而异：PreSelectionLayer 含 checked_types；RuleEngineLayer 含 matched_keywords、negation_filtered、profile_overlap_triggered；LLMReviewLayer 含 raw_response、prompt_version",
+      "default": {},
+      "examples": [
+        {"matched_keywords": ["撞墙", "撞头"], "negation_filtered": false},
+        {"checked_types": ["SELF_INJURY", "AGGRESSION"]}
+      ],
+      "additionalProperties": true
+    }
+  },
+  "required": ["layer_name", "level"],
+  "additionalProperties": false
+}

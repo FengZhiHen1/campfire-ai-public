@@ -1,0 +1,57 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "docs/contracts/CSLT-01/CrisisJudgmentResult.json",
+  "title": "CrisisJudgmentResult",
+  "description": "危机分级判定服务的最终输出结果。由 JudgmentPipeline.merge() 合并各判定层结果后输出，消费方包括 CSLT-03（应急方案生成）、CSLT-05（置信度后校验）、TICK-01（工单自动生成）、TICK-02（工单紧急分级）。",
+  "type": "object",
+  "x-defined-by": "CSLT-01",
+  "x-consumers": ["CSLT-03", "CSLT-05", "TICK-01", "TICK-02"],
+  "x-maturity": "draft",
+  "x-contract-type": "output",
+  "x-version": "1.0.0",
+  "properties": {
+    "final_level": {
+      "$ref": "./CrisisLevel.json",
+      "description": "最终危机等级。由 merge() 按'宁升勿降'策略合并各判定层结果——任一层判 severe 即为 severe。"
+    },
+    "block_deep_response": {
+      "type": "boolean",
+      "description": "阻断深度回答标记。final_level=severe 时为 true，AI 仅输出安全提示模板，不生成深度应急建议。mild/moderate 时为 false。"
+    },
+    "manual_review_flag": {
+      "type": "boolean",
+      "description": "是否需要人工复核标记。仅档案叠加规则命中时为 true（患者历史行为标签含自伤/攻击且文本含触发词'又'/'再次'/'还是'），建议下游触发人工审核。"
+    },
+    "review_confidence": {
+      "anyOf": [
+        {
+          "type": "number",
+          "minimum": 0.0,
+          "maximum": 1.0,
+          "description": "LLM 复审置信度分数（0~1 区间）。规则引擎直接判定 severe 时跳过了 LLM 复审，此字段为 null。"
+        },
+        {"type": "null"}
+      ]
+    },
+    "judgment_sources": {
+      "type": "array",
+      "description": "各判定层的裁决结论，记录决策依据供审计追溯。至少包含前置选择层的判定结果；规则引擎直接判定重度时后续层不记录；LLM 超时时该层标记 timeouts。",
+      "items": {
+        "$ref": "./JudgmentLayerResult.json"
+      },
+      "minItems": 1
+    },
+    "degradation_note": {
+      "anyOf": [
+        {
+          "type": "string",
+          "description": "降级标注。rule_engine_degraded=关键词词库加载失败，仅前置选择层可用；profile_missing=患者档案缺失，档案叠加规则跳过。正常运行时为 null。",
+          "enum": ["rule_engine_degraded", "profile_missing"]
+        },
+        {"type": "null"}
+      ]
+    }
+  },
+  "required": ["final_level", "block_deep_response", "manual_review_flag", "judgment_sources"],
+  "additionalProperties": false
+}

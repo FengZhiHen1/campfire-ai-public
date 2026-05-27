@@ -1,0 +1,44 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "docs/contracts/CSLT-01/CrisisJudgmentRequest.json",
+  "title": "CrisisJudgmentRequest",
+  "description": "危机分级判定服务的输入请求。由 CSLT-08（咨询编排逻辑）组装，包含患者档案快照、前置行为类型选择和自然语言行为描述。CSLT-01 的 JudgmentPipeline 消费此输入执行三层递进判定。",
+  "type": "object",
+  "x-defined-by": "CSLT-01",
+  "x-consumers": [],
+  "x-maturity": "draft",
+  "x-contract-type": "input",
+  "x-version": "1.0.0",
+  "properties": {
+    "patient_profile": {
+      "description": "当前咨询关联的患者档案快照。由 PROF-02 在咨询编排阶段获取并注入。若 PROF-02 返回 None（患者未创建档案），本字段为 null，档案叠加规则自动跳过。类型 PatientProfileSnapshot 由 PROF-02 定义，当前尚未落地。",
+      "anyOf": [
+        {"type": "object", "description": "PROF-02/PatientProfileSnapshot — 待 PROF-02 定义完整 Schema，当前引用悬空"},
+        {"type": "null"}
+      ],
+      "default": null
+    },
+    "behavior_type_selection": {
+      "type": "array",
+      "description": "前置行为类型勾选（必填，支持多选）。家属在 CSLT-07 应急咨询界面勾选后传入。可多选任意 7 类预设选项的组合。",
+      "items": {
+        "$ref": "./BehaviorTypeCategory.json"
+      },
+      "minItems": 1,
+      "uniqueItems": true,
+      "examples": [["SELF_INJURY", "EMOTIONAL_MELTDOWN"]]
+    },
+    "behavior_description": {
+      "type": "string",
+      "description": "家属自由输入的患者当前行为表现文本描述",
+      "maxLength": 2000,
+      "minLength": 0,
+      "examples": [
+        "患者从下午3点开始持续撞头，已经撞了十几次，劝阻无效",
+        "孩子在商场突然捂住耳朵蹲在地上，怎么拉都不走"
+      ]
+    }
+  },
+  "required": ["behavior_type_selection", "behavior_description"],
+  "additionalProperties": false
+}

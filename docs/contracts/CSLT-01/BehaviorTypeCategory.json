@@ -1,0 +1,13 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "docs/contracts/CSLT-01/BehaviorTypeCategory.json",
+  "title": "BehaviorTypeCategory",
+  "description": "行为类型分类枚举。用于前置行为类型选择（多选），7 类预设选项。高危类型包括 SELF_INJURY（自伤）、AGGRESSION（攻击）、ELOPEMENT（走失）、MEDICATION（用药）——勾选任意高危类型即直接判定为重度。使用 Python StrEnum 实现，支持未来扩展新增枚举值。",
+  "type": "string",
+  "x-defined-by": "CSLT-01",
+  "x-consumers": ["CSLT-07"],
+  "x-maturity": "draft",
+  "x-contract-type": "shared-enum",
+  "x-version": "1.0.0",
+  "enum": ["SELF_INJURY", "AGGRESSION", "ELOPEMENT", "MEDICATION", "EMOTIONAL_MELTDOWN", "STEREOTYPY", "OTHER"]
+}
