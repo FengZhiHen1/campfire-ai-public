@@ -1,10 +1,13 @@
-"""DEPLOY-05 环境配置管理的自定义异常层次。
+"""DEPLOY-05 环境配置管理的自定义异常层次 + PROF-05 ForbiddenAccess。
 
-三级异常层次：
+异常层次（配置相关）：
 - ConfigError: 配置异常基类
 - MissingRequiredFieldError: 必填配置项缺失
 - ConfigFormatError: 配置项格式错误
 - ConfigWarning: 生产环境安全告警（非阻断）
+
+异常层次（鉴权相关）：
+- ForbiddenAccess: 档案级访问权限拒绝异常（HTTP 403）
 """
 
 from typing import Optional
@@ -51,6 +54,35 @@ class ConfigFormatError(ConfigError):
         self.field_name: str = field_name
         self.expected_format: str = expected_format
         self.received_value: Optional[str] = received_value
+
+
+# ===========================================================================
+# PROF-05 档案隐私控制 — ForbiddenAccess 异常
+# ===========================================================================
+
+
+class ForbiddenAccess(Exception):
+    """档案级访问权限拒绝异常。
+
+    当 PrivacyGuard.check_access() 返回 AccessDecision(allowed=False) 时，
+    由 profile_service 抛出此异常。全局异常处理器捕获后返回 HTTP 403，
+    响应体为 {"detail": "数据不存在"}。
+
+    异常设计遵循静默拒绝策略——detail 使用泛化消息"数据不存在"，
+    避免泄露档案存在性或权限结构信息。
+
+    Attributes:
+        status_code: HTTP 状态码，固定为 403。
+        detail: 拒绝说明文案，固定为"数据不存在"。
+    """
+
+    def __init__(
+        self,
+        detail: str = "数据不存在",
+    ) -> None:
+        self.status_code: int = 403
+        self.detail: str = detail
+        super().__init__(self.detail)
 
 
 class ConfigWarning(UserWarning):

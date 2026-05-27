@@ -24,8 +24,11 @@ from typing import Any, Callable, Sequence
 from fastapi import HTTPException, Request
 from fastapi.datastructures import State
 
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from py_logger import logger
 from py_schemas.auth import UserRole
+from py_schemas.profiles import AccessDecision, AccessRequest, VisibleScope
 
 # ---------------------------------------------------------------------------
 # 常量
@@ -372,8 +375,211 @@ def _log_and_raise_403(
     )
 
 
+# ===========================================================================
+# PROF-05 档案隐私控制 — PrivacyGuard
+# ===========================================================================
+
+
+class PrivacyGuard:
+    """档案隐私控制守卫。
+
+    在 Service 层执行档案级细粒度权限校验——双层鉴权架构的第二层。
+    第一层（路由层 require_role()）校验通过后，PrivacyGuard 对具体档案
+    的访问请求进行基于业务规则的权限判定。
+
+    访问矩阵：
+    | 角色        | 查看     | 新增   | 修改   | 删除   | 补充评估        | 解除关联 |
+    |------------|----------|--------|--------|--------|----------------|---------|
+    | family     | ALL_FIELDS | 允许  | 允许  | 允许  | —              | 允许    |
+    | teacher    | ALL_FIELDS*| —     | —     | —     | ALL_FIELDS*     | —       |
+    | expert     | ALL_FIELDS*| —     | —     | —     | ALL_FIELDS*     | —       |
+    | admin      | METADATA_ONLY | — | —     | —     | —              | —       |
+    | maintainer | —          | —     | —     | —     | —              | —       |
+    * = 仅当与目标档案存在有效关联关系（teacher_links.unlinked_at IS NULL）时允许
+    """
+
+    @staticmethod
+    async def check_access(
+        request: AccessRequest,
+        db_session: AsyncSession,
+    ) -> AccessDecision:
+        """对一次档案访问请求进行权限校验，返回允许或拒绝的裁决。
+
+        执行流程：
+        1. 校验 requester_role 的合法性（必须为五级 UserRole 之一）
+        2. 按访问矩阵匹配规则判定权限
+        3. 对 teacher/expert 角色，实时查询 teacher_links 表确认关联关系
+
+        Args:
+            request: 访问请求上下文，包含操作类型、目标档案ID、请求人ID、
+                     角色、关联类型。
+            db_session: 异步数据库会话，用于查询 teacher_links 关联关系。
+
+        Returns:
+            AccessDecision: 裁决结论。allowed=true 表示允许，同时指定可见范围；
+                           allowed=false 表示拒绝，denial_reason 为"数据不存在"。
+
+        Raises:
+            ValueError: request.requester_role 不在五级角色枚举中。
+            SQLAlchemyError: 数据库查询失败（向上层传播）。
+        """
+        # ---------- 步骤 1：校验 requester_role 合法性 ----------
+        _validate_role(request.requester_role)
+
+        # ---------- 步骤 2：按角色判定权限 ----------
+        role = request.requester_role
+
+        # maintainer — 无任何操作权限
+        if role == "maintainer":
+            return AccessDecision(
+                allowed=False,
+                visible_scope=VisibleScope.NOTHING,
+                denial_reason="数据不存在",
+            )
+
+        # admin — 仅具有 VIEW 权限（返回 metadata_only）
+        if role == "admin":
+            if request.operation.value == "view":
+                return AccessDecision(
+                    allowed=True,
+                    visible_scope=VisibleScope.METADATA_ONLY,
+                    denial_reason=None,
+                )
+            return AccessDecision(
+                allowed=False,
+                visible_scope=VisibleScope.NOTHING,
+                denial_reason="数据不存在",
+            )
+
+        # family — 全部家属职能操作均允许
+        if role == "family":
+            return _family_access(request.operation)
+
+        # teacher / expert — 需要关联关系校验
+        if role in ("teacher", "expert"):
+            return await _teacher_expert_access(
+                request=request,
+                db_session=db_session,
+                expected_role=role,
+            )
+
+        # 不应到达此处（_validate_role 已确保角色合法性）
+        return AccessDecision(
+            allowed=False,
+            visible_scope=VisibleScope.NOTHING,
+            denial_reason="数据不存在",
+        )
+
+
+def _validate_role(role: str) -> None:
+    """校验角色字符串是否为合法的五级 UserRole 值。
+
+    Args:
+        role: 角色字符串。
+
+    Raises:
+        ValueError: 角色不在五级枚举值范围内。
+    """
+    valid_roles = {"family", "teacher", "expert", "admin", "maintainer"}
+    if role not in valid_roles:
+        raise ValueError(
+            f"非法的角色值 '{role}'，"
+            f"必须是以下之一：{', '.join(sorted(valid_roles))}"
+        )
+
+
+def _family_access(operation: AccessRequest) -> AccessDecision:
+    """处理 family 角色的访问权限判定。
+
+    家属允许的操作：
+    - VIEW, CREATE, UPDATE, DELETE, UNLINK → 全部允许（ALL_FIELDS）
+    - SUPPLEMENT_ASSESSMENT → 不允许
+
+    Args:
+        operation: 访问请求中的操作类型。
+
+    Returns:
+        AccessDecision: 允许或拒绝的裁决。
+    """
+    allowed_operations = {
+        "view",
+        "create",
+        "update",
+        "delete",
+        "unlink",
+    }
+    if operation.value in allowed_operations:
+        return AccessDecision(
+            allowed=True,
+            visible_scope=VisibleScope.ALL_FIELDS,
+            denial_reason=None,
+        )
+    return AccessDecision(
+        allowed=False,
+        visible_scope=VisibleScope.NOTHING,
+        denial_reason="数据不存在",
+    )
+
+
+async def _teacher_expert_access(
+    request: AccessRequest,
+    db_session: AsyncSession,
+    expected_role: str,
+) -> AccessDecision:
+    """处理 teacher/expert 角色的访问权限判定。
+
+    老师/专家的权限判定需要实时查询 teacher_links 表确认关联关系：
+    - 有关联：VIEW（ALL_FIELDS）、SUPPLEMENT_ASSESSMENT（ALL_FIELDS）
+    - 无关联：全部操作拒绝
+
+    Args:
+        request: 访问请求上下文。
+        db_session: 异步数据库会话。
+        expected_role: 期望角色（"teacher" 或 "expert"）。
+
+    Returns:
+        AccessDecision: 允许或拒绝的裁决。
+    """
+    # --- 步骤 1：检查非关联也可用的操作 ---
+    # 老师/专家允许的操作（仅当有关联关系时）
+    allowed_if_linked = {"view", "supplement_assessment"}
+
+    if request.operation.value not in allowed_if_linked:
+        return AccessDecision(
+            allowed=False,
+            visible_scope=VisibleScope.NOTHING,
+            denial_reason="数据不存在",
+        )
+
+    # --- 步骤 2：查询 teacher_links 确认关联关系 ---
+    from py_db.repositories.teacher_link_repository import TeacherLinkRepository
+
+    repo = TeacherLinkRepository(session_factory=None)  # type: ignore[arg-type]
+    # 直接使用传入的 db_session，绕过 session_factory
+    active_link = await repo.find_active_links(
+        session=db_session,
+        profile_id=request.target_profile_id,
+        teacher_id=request.requester_id,
+    )
+
+    # --- 步骤 3：根据关联关系裁决 ---
+    if active_link is not None and active_link.role == expected_role:
+        return AccessDecision(
+            allowed=True,
+            visible_scope=VisibleScope.ALL_FIELDS,
+            denial_reason=None,
+        )
+
+    return AccessDecision(
+        allowed=False,
+        visible_scope=VisibleScope.NOTHING,
+        denial_reason="数据不存在",
+    )
+
+
 __all__ = [
     "require_role",
     "get_masked_phone",
+    "PrivacyGuard",
     "UserRole",
 ]

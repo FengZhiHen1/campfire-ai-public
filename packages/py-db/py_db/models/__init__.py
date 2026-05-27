@@ -10,10 +10,18 @@ Usage:
 
 from py_db.models.auth import User
 from py_db.models.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
+from py_db.models.case_chunks import CaseChunk
+from py_db.models.case_model import Case
+from py_db.models.crisis_keyword import CrisisKeyword
+from py_db.models.profiles import TeacherLink
 
 __all__ = [
     "Base",
     "User",
+    "Case",
+    "CaseChunk",
+    "CrisisKeyword",
+    "TeacherLink",
     "TimestampMixin",
     "UUIDPrimaryKeyMixin",
 ]
