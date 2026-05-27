@@ -26,7 +26,7 @@ from py_auth.jwt_utils import (
     verify_refresh_token,
     verify_token,
 )
-from py_auth.rbac import get_masked_phone, require_role
+from py_auth.rbac import PrivacyGuard, get_masked_phone, require_role
 from py_schemas.auth import UserRole
 
 __all__ = [
@@ -46,6 +46,7 @@ __all__ = [
     # RBAC
     "require_role",
     "get_masked_phone",
+    "PrivacyGuard",
     "UserRole",
     # Blacklist
     "add_to_blacklist",
