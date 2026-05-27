@@ -108,6 +108,20 @@
 
 ---
 
+## CSLT-03 - 应急方案生成
+- **输入**: `EmergencyPlanInput {crisis_result: CrisisJudgmentResult, search_result: SemanticSearchResult, profile_summary: str, behavior_description: str, request_id: str, block_variant?: BlockVariant}` — 生成输入，由 CSLT-08 编排层组装后传入
+- **输出**: `GenerationResult {text: str, source_list: list[str], disclaimer: str, generation_time_ms: float, is_partial: bool, referenced_slice_ids: list[str], finish_reason: GenerationStatus, ttft_ms: float}` — 生成完成后的完整结果
+- **输出**: `GenerationChunk {text: str, is_final: bool, finish_reason?: str}` — 流式生成的增量块，下游 CSLT-04 消费后封装为 SSE
+- **枚举**: `BlockVariant` = SELF_INJURY | AGGRESSION | ELOPEMENT | MEDICATION — 阻断场景的高危行为类型变体
+- **枚举**: `GenerationStatus` = COMPLETE | PARTIAL | BLOCKED | TIMEOUT | ERROR — 生成执行状态（与 CSLT-02/RetrievalStatus 语义域不同，不可混用）
+- **状态机**: 无（无状态生成服务，每次咨询独立执行）
+- **模块依赖**: CSLT-01 (crisis_result CrisisJudgmentResult 消费方), CSLT-02 (search_result SemanticSearchResult/CaseSliceDto 消费方), CSLT-04 (GenerationChunk 流式输出消费方), CSLT-05 (GenerationResult 置信度后校验消费方), CSLT-06 (GenerationResult 历史持久化消费方), CSLT-08 (EmergencyPlanInput 组装输入、block_variant 选择), QUAL-02 (GenerationResult 质量评估消费方)
+- **外部依赖**: DeepSeek API (LLM 流式生成), packages/py-llm (DeepSeek API 统一客户端), packages/py-logger (结构化日志), packages/py-config (环境配置), Prometheus (可观测性指标)
+- **技术栈**: FastAPI>=0.115, Pydantic>=2.0, asyncio
+- **契约文件**: `docs/contracts/CSLT-03/EmergencyPlanInput.json`, `docs/contracts/CSLT-03/GenerationResult.json`, `docs/contracts/CSLT-03/GenerationChunk.json`, `docs/contracts/CSLT-03/BlockVariant.json`, `docs/contracts/CSLT-03/GenerationStatus.json`
+- **复用契约**: CSLT-01/CrisisJudgmentResult, CSLT-01/CrisisLevel, CSLT-02/SemanticSearchResult, CSLT-02/CaseSliceDto, CSLT-02/EvidenceLevel, CSLT-02/DegradationLevel
+- **更新时间**: `2026-05-27 14:45:00`
+
 ## CSLT-02 - RAG语义检索
 - **输入**: `SemanticSearchInput {query_text: str, tag_filters: TagFilterDto, top_k?: int, request_id?: str}` — 检索请求，包含查询文本、标签过滤条件和期望返回数量
 - **输入**: `TagFilterDto {age_range: str, behavior_type: str, emotion_level?: str, sensory_features?: str}` — 档案标签过滤条件（临时自包含定义，待 PROF-02 落地后改为引用）

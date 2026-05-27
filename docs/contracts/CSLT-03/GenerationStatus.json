@@ -1,0 +1,20 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "docs/contracts/CSLT-03/GenerationStatus.json",
+  "title": "GenerationStatus",
+  "description": "应急方案生成的执行状态枚举。描述单次生成请求的最终结果状态。与 CSLT-02/RetrievalStatus（检索状态）语义域不同——GenerationStatus 包含 BLOCKED 和 ERROR 两个生成场景专用状态，两者不可混用。",
+  "type": "string",
+  "x-defined-by": "CSLT-03",
+  "x-consumers": ["CSLT-04", "CSLT-05", "CSLT-06", "CSLT-08", "QUAL-02"],
+  "x-maturity": "draft",
+  "x-contract-type": "shared-enum",
+  "x-version": "1.0.0",
+  "enum": ["COMPLETE", "PARTIAL", "BLOCKED", "TIMEOUT", "ERROR"],
+  "description_zh": {
+    "COMPLETE": "正常完成——LLM 返回完整四段式应急方案，finish_reason='stop'",
+    "PARTIAL": "部分生成——LLM 调用超时但已生成至少一个完整段落，is_partial=true",
+    "BLOCKED": "危机阻断——block_deep_response=true，直接输出预设安全提示文本，未调用 LLM",
+    "TIMEOUT": "完全超时——LLM 调用超时且无任何文本产出，用户需重试或等待",
+    "ERROR": "不可恢复错误——LLM API 不可用、网络断开、Prompt 构建异常等非预期故障"
+  }
+}

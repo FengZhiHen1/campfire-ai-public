@@ -1,0 +1,37 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "docs/contracts/CSLT-03/GenerationChunk.json",
+  "title": "GenerationChunk",
+  "description": "应急方案流式生成过程中的单个 Token 增量块。由 LLM API 的流式响应逐 chunk 拆包后通过 AsyncGenerator 产出，下游 CSLT-04 用 async for 消费后封装为 SSE 事件推送给前端。",
+  "type": "object",
+  "x-defined-by": "CSLT-03",
+  "x-consumers": ["CSLT-04"],
+  "x-maturity": "draft",
+  "x-contract-type": "output",
+  "x-version": "1.0.0",
+  "properties": {
+    "text": {
+      "type": "string",
+      "description": "当前 chunk 的文本增量（delta），即 DeepSeek API 流式响应 choice.delta.content 的值。下游 CSLT-04 直接拼接后封装为 SSE text 事件。最后一个 chunk 可能为空字符串。",
+      "minLength": 0,
+      "maxLength": 4096,
+      "examples": ["## 一、即时安全干预动作\n"]
+    },
+    "is_final": {
+      "type": "boolean",
+      "description": "是否为流式输出的最后一个 chunk。true 表示流式输出结束，下游 CSLT-04 应发送 SSE done 事件并关闭连接。rest 模式下 false 表示仍有后续 chunk。"
+    },
+    "finish_reason": {
+      "anyOf": [
+        {
+          "type": "string",
+          "description": "流式输出结束原因。仅在 is_final=true 时有值。stop=正常结束（LLM 返回 finish_reason='stop'），length=达到 max_tokens 上限被截断，timeout=本模块全流程超时（15s）触发强制截断。",
+          "enum": ["stop", "length", "timeout"]
+        },
+        { "type": "null" }
+      ]
+    }
+  },
+  "required": ["text", "is_final"],
+  "additionalProperties": false
+}

@@ -1,0 +1,50 @@
+{
+  "module_id": "CSLT-03",
+  "module_name": "应急方案生成",
+  "generated_at": "2026-05-27T14:45:00+08:00",
+  "contracts_defined": [
+    {
+      "file": "EmergencyPlanInput.json",
+      "title": "EmergencyPlanInput",
+      "contract_type": "input",
+      "maturity": "draft",
+      "consumers": []
+    },
+    {
+      "file": "GenerationResult.json",
+      "title": "GenerationResult",
+      "contract_type": "output",
+      "maturity": "draft",
+      "consumers": ["CSLT-05", "CSLT-06", "CSLT-08", "QUAL-02"]
+    },
+    {
+      "file": "GenerationChunk.json",
+      "title": "GenerationChunk",
+      "contract_type": "output",
+      "maturity": "draft",
+      "consumers": ["CSLT-04"]
+    },
+    {
+      "file": "BlockVariant.json",
+      "title": "BlockVariant",
+      "contract_type": "shared-enum",
+      "maturity": "draft",
+      "consumers": ["CSLT-08"]
+    },
+    {
+      "file": "GenerationStatus.json",
+      "title": "GenerationStatus",
+      "contract_type": "shared-enum",
+      "maturity": "draft",
+      "consumers": ["CSLT-04", "CSLT-05", "CSLT-06", "CSLT-08", "QUAL-02"]
+    }
+  ],
+  "contracts_referenced": [
+    { "from": "CSLT-01", "file": "CrisisJudgmentResult.json", "reference_only": true },
+    { "from": "CSLT-01", "file": "CrisisLevel.json", "reference_only": true },
+    { "from": "CSLT-02", "file": "SemanticSearchResult.json", "reference_only": true },
+    { "from": "CSLT-02", "file": "CaseSliceDto.json", "reference_only": true },
+    { "from": "CSLT-02", "file": "EvidenceLevel.json", "reference_only": true },
+    { "from": "CSLT-02", "file": "DegradationLevel.json", "reference_only": true }
+  ]
+}

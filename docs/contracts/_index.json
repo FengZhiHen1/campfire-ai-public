@@ -1,73 +1,49 @@
 {
   "version": "1.0.0",
   "description": "全局契约索引 — 篝火智答项目",
-  "last_updated": "2026-05-27T09:30:29+08:00",
+  "last_updated": "2026-05-27T14:45:00+08:00",
   "contracts": {
     "AccessOperation": {
       "file": "docs/contracts/PROF-05/AccessOperation.json",
       "defined_by": "PROF-05",
       "maturity": "draft",
       "x-contract-type": "shared-enum",
-      "consumers": [
-        "PROF-01",
-        "PROF-03",
-        "PROF-04"
-      ]
+      "consumers": ["PROF-01", "PROF-03", "PROF-04"]
     },
     "VisibleScope": {
       "file": "docs/contracts/PROF-05/VisibleScope.json",
       "defined_by": "PROF-05",
       "maturity": "draft",
       "x-contract-type": "shared-enum",
-      "consumers": [
-        "PROF-01",
-        "PROF-03",
-        "PROF-04"
-      ]
+      "consumers": ["PROF-01", "PROF-03", "PROF-04"]
     },
     "AccessRequest": {
       "file": "docs/contracts/PROF-05/AccessRequest.json",
       "defined_by": "PROF-05",
       "maturity": "draft",
       "x-contract-type": "input",
-      "consumers": [
-        "PROF-01",
-        "PROF-03",
-        "PROF-04"
-      ]
+      "consumers": ["PROF-01", "PROF-03", "PROF-04"]
     },
     "AccessDecision": {
       "file": "docs/contracts/PROF-05/AccessDecision.json",
       "defined_by": "PROF-05",
       "maturity": "draft",
       "x-contract-type": "output",
-      "consumers": [
-        "PROF-01",
-        "PROF-03",
-        "PROF-04"
-      ]
+      "consumers": ["PROF-01", "PROF-03", "PROF-04"]
     },
     "ArticleCategory": {
       "file": "docs/contracts/KNOW-01/ArticleCategory.json",
       "defined_by": "KNOW-01",
       "maturity": "draft",
       "x-contract-type": "shared-enum",
-      "consumers": [
-        "KNOW-03",
-        "KNOW-06",
-        "KNOW-07"
-      ]
+      "consumers": ["KNOW-03", "KNOW-06", "KNOW-07"]
     },
     "ArticleStatus": {
       "file": "docs/contracts/KNOW-01/ArticleStatus.json",
       "defined_by": "KNOW-01",
       "maturity": "draft",
       "x-contract-type": "shared-enum",
-      "consumers": [
-        "KNOW-03",
-        "KNOW-06",
-        "KNOW-07"
-      ]
+      "consumers": ["KNOW-03", "KNOW-06", "KNOW-07"]
     },
     "ArticleCreate": {
       "file": "docs/contracts/KNOW-01/ArticleCreate.json",
@@ -88,44 +64,28 @@
       "defined_by": "KNOW-01",
       "maturity": "draft",
       "x-contract-type": "input",
-      "consumers": [
-        "KNOW-03",
-        "KNOW-06",
-        "KNOW-07"
-      ]
+      "consumers": ["KNOW-03", "KNOW-06", "KNOW-07"]
     },
     "ArticleResponse": {
       "file": "docs/contracts/KNOW-01/ArticleResponse.json",
       "defined_by": "KNOW-01",
       "maturity": "draft",
       "x-contract-type": "output",
-      "consumers": [
-        "KNOW-04",
-        "KNOW-06",
-        "KNOW-07"
-      ]
+      "consumers": ["KNOW-04", "KNOW-06", "KNOW-07"]
     },
     "ArticleListItem": {
       "file": "docs/contracts/KNOW-01/ArticleListItem.json",
       "defined_by": "KNOW-01",
       "maturity": "draft",
       "x-contract-type": "output",
-      "consumers": [
-        "KNOW-03",
-        "KNOW-06",
-        "KNOW-07"
-      ]
+      "consumers": ["KNOW-03", "KNOW-06", "KNOW-07"]
     },
     "ArticleSearchResult": {
       "file": "docs/contracts/KNOW-01/ArticleSearchResult.json",
       "defined_by": "KNOW-01",
       "maturity": "draft",
       "x-contract-type": "output",
-      "consumers": [
-        "KNOW-03",
-        "KNOW-06",
-        "KNOW-07"
-      ]
+      "consumers": ["KNOW-03", "KNOW-06", "KNOW-07"]
     },
     "ComponentStatus": {
       "file": "docs/contracts/OBS-04/ComponentStatus.json",
@@ -139,9 +99,7 @@
       "defined_by": "OBS-04",
       "maturity": "draft",
       "x-contract-type": "shared-enum",
-      "consumers": [
-        "OBS-03"
-      ]
+      "consumers": ["OBS-03"]
     },
     "ComponentHealth": {
       "file": "docs/contracts/OBS-04/ComponentHealth.json",
@@ -155,168 +113,105 @@
       "defined_by": "OBS-04",
       "maturity": "draft",
       "x-contract-type": "output",
-      "consumers": [
-        "DEPLOY-01",
-        "OBS-03"
-      ]
+      "consumers": ["DEPLOY-01", "OBS-03"]
     },
     "ReadinessResponse": {
       "file": "docs/contracts/OBS-04/ReadinessResponse.json",
       "defined_by": "OBS-04",
       "maturity": "draft",
       "x-contract-type": "output",
-      "consumers": [
-        "DEPLOY-01"
-      ]
+      "consumers": ["DEPLOY-01"]
     },
     "TokenRefreshRequest": {
       "file": "docs/contracts/AUTH-03/TokenRefreshRequest.json",
       "defined_by": "AUTH-03",
       "maturity": "draft",
       "x-contract-type": "input",
-      "consumers": [
-        "AUTH-06"
-      ]
+      "consumers": ["AUTH-06"]
     },
     "TokenRefreshResponse": {
       "file": "docs/contracts/AUTH-03/TokenRefreshResponse.json",
       "defined_by": "AUTH-03",
       "maturity": "draft",
       "x-contract-type": "output",
-      "consumers": [
-        "AUTH-06"
-      ]
+      "consumers": ["AUTH-06"]
     },
     "TokenBlacklistRotatedKey": {
       "file": "docs/contracts/AUTH-03/TokenBlacklistRotatedKey.json",
       "defined_by": "AUTH-03",
       "maturity": "draft",
       "x-contract-type": "shared-model",
-      "consumers": [
-        "AUTH-06"
-      ]
+      "consumers": ["AUTH-06"]
     },
     "RegisterRequest": {
       "file": "docs/contracts/AUTH-01/RegisterRequest.json",
       "defined_by": "AUTH-01",
       "maturity": "draft",
       "x-contract-type": "input",
-      "consumers": [
-        "AUTH-05"
-      ]
+      "consumers": ["AUTH-05"]
     },
     "RegisterResponse": {
       "file": "docs/contracts/AUTH-01/RegisterResponse.json",
       "defined_by": "AUTH-01",
       "maturity": "draft",
       "x-contract-type": "output",
-      "consumers": [
-        "AUTH-05"
-      ]
+      "consumers": ["AUTH-05"]
     },
     "UserRole": {
       "file": "docs/contracts/AUTH-01/UserRole.json",
       "defined_by": "AUTH-01",
       "maturity": "draft",
       "x-contract-type": "shared-enum",
-      "consumers": [
-        "AUTH-02",
-        "AUTH-04",
-        "AUTH-05"
-      ]
+      "consumers": ["AUTH-02", "AUTH-04", "AUTH-05"]
     },
     "TokenPair": {
       "file": "docs/contracts/AUTH-06/TokenPair.json",
       "defined_by": "AUTH-06",
       "maturity": "draft",
       "x-contract-type": "shared-model",
-      "consumers": [
-        "AUTH-05",
-        "CSLT-08",
-        "PROF-07",
-        "CASE-09",
-        "TICK-09",
-        "KNOW-07"
-      ]
+      "consumers": ["AUTH-05", "CSLT-08", "PROF-07", "CASE-09", "TICK-09", "KNOW-07"]
     },
     "SessionState": {
       "file": "docs/contracts/AUTH-06/SessionState.json",
       "defined_by": "AUTH-06",
       "maturity": "draft",
       "x-contract-type": "shared-enum",
-      "consumers": [
-        "AUTH-05",
-        "CSLT-07",
-        "CSLT-08",
-        "PROF-06",
-        "PROF-07",
-        "CASE-08",
-        "CASE-09",
-        "TICK-08",
-        "TICK-09",
-        "KNOW-06",
-        "KNOW-07"
-      ]
+      "consumers": ["AUTH-05", "CSLT-07", "CSLT-08", "PROF-06", "PROF-07", "CASE-08", "CASE-09", "TICK-08", "TICK-09", "KNOW-06", "KNOW-07"]
     },
     "useAuthReturn": {
       "file": "docs/contracts/AUTH-06/useAuthReturn.json",
       "defined_by": "AUTH-06",
       "maturity": "draft",
       "x-contract-type": "output",
-      "consumers": [
-        "AUTH-05",
-        "CSLT-07",
-        "CSLT-08",
-        "PROF-06",
-        "PROF-07",
-        "CASE-08",
-        "CASE-09",
-        "TICK-08",
-        "TICK-09",
-        "KNOW-06",
-        "KNOW-07"
-      ]
+      "consumers": ["AUTH-05", "CSLT-07", "CSLT-08", "PROF-06", "PROF-07", "CASE-08", "CASE-09", "TICK-08", "TICK-09", "KNOW-06", "KNOW-07"]
     },
     "httpClient": {
       "file": "docs/contracts/AUTH-06/httpClient.json",
       "defined_by": "AUTH-06",
       "maturity": "draft",
       "x-contract-type": "output",
-      "consumers": [
-        "CSLT-08",
-        "PROF-07",
-        "CASE-09",
-        "TICK-09",
-        "KNOW-07"
-      ]
+      "consumers": ["CSLT-08", "PROF-07", "CASE-09", "TICK-09", "KNOW-07"]
     },
     "LoginRequest": {
       "file": "docs/contracts/AUTH-02/LoginRequest.json",
       "defined_by": "AUTH-02",
       "maturity": "draft",
       "x-contract-type": "input",
-      "consumers": [
-        "AUTH-05"
-      ]
+      "consumers": ["AUTH-05"]
     },
     "LoginResponse": {
       "file": "docs/contracts/AUTH-02/LoginResponse.json",
       "defined_by": "AUTH-02",
       "maturity": "draft",
       "x-contract-type": "output",
-      "consumers": [
-        "AUTH-05",
-        "AUTH-06"
-      ]
+      "consumers": ["AUTH-05", "AUTH-06"]
     },
     "LoginErrorResponse": {
       "file": "docs/contracts/AUTH-02/LoginErrorResponse.json",
       "defined_by": "AUTH-02",
       "maturity": "draft",
       "x-contract-type": "output",
-      "consumers": [
-        "AUTH-05"
-      ]
+      "consumers": ["AUTH-05"]
     },
     "CrisisLevel": {
       "file": "docs/contracts/CSLT-01/CrisisLevel.json",
@@ -358,10 +253,7 @@
       "defined_by": "CSLT-02",
       "maturity": "draft",
       "x-contract-type": "input",
-      "consumers": [
-        "CSLT-03",
-        "CSLT-08"
-      ]
+      "consumers": ["CSLT-03", "CSLT-08"]
     },
     "TagFilterDto": {
       "file": "docs/contracts/CSLT-02/TagFilterDto.json",
@@ -375,50 +267,70 @@
       "defined_by": "CSLT-02",
       "maturity": "draft",
       "x-contract-type": "output",
-      "consumers": [
-        "CSLT-03"
-      ]
+      "consumers": ["CSLT-03"]
     },
     "SemanticSearchResult": {
       "file": "docs/contracts/CSLT-02/SemanticSearchResult.json",
       "defined_by": "CSLT-02",
       "maturity": "draft",
       "x-contract-type": "output",
-      "consumers": [
-        "CSLT-03",
-        "CSLT-08"
-      ]
+      "consumers": ["CSLT-03", "CSLT-08"]
     },
     "EvidenceLevel": {
       "file": "docs/contracts/CSLT-02/EvidenceLevel.json",
       "defined_by": "CSLT-02",
       "maturity": "draft",
       "x-contract-type": "shared-enum",
-      "consumers": [
-        "CSLT-03",
-        "QUAL-02"
-      ]
+      "consumers": ["CSLT-03", "QUAL-02"]
     },
     "DegradationLevel": {
       "file": "docs/contracts/CSLT-02/DegradationLevel.json",
       "defined_by": "CSLT-02",
       "maturity": "draft",
       "x-contract-type": "shared-enum",
-      "consumers": [
-        "CSLT-03",
-        "OBS-01"
-      ]
+      "consumers": ["CSLT-03", "OBS-01"]
     },
     "RetrievalStatus": {
       "file": "docs/contracts/CSLT-02/RetrievalStatus.json",
       "defined_by": "CSLT-02",
       "maturity": "draft",
       "x-contract-type": "shared-enum",
-      "consumers": [
-        "CSLT-03",
-        "OBS-01"
-      ]
-    }
+      "consumers": ["CSLT-03", "OBS-01"]
+    },
+    "EmergencyPlanInput": {
+      "file": "docs/contracts/CSLT-03/EmergencyPlanInput.json",
+      "defined_by": "CSLT-03",
+      "maturity": "draft",
+      "x-contract-type": "input",
+      "consumers": []
+    },
+    "GenerationResult": {
+      "file": "docs/contracts/CSLT-03/GenerationResult.json",
+      "defined_by": "CSLT-03",
+      "maturity": "draft",
+      "x-contract-type": "output",
+      "consumers": ["CSLT-05", "CSLT-06", "CSLT-08", "QUAL-02"]
+    },
+    "GenerationChunk": {
+      "file": "docs/contracts/CSLT-03/GenerationChunk.json",
+      "defined_by": "CSLT-03",
+      "maturity": "draft",
+      "x-contract-type": "output",
+      "consumers": ["CSLT-04"]
+    },
+    "BlockVariant": {
+      "file": "docs/contracts/CSLT-03/BlockVariant.json",
+      "defined_by": "CSLT-03",
+      "maturity": "draft",
+      "x-contract-type": "shared-enum",
+      "consumers": ["CSLT-08"]
+    },
+    "GenerationStatus": {
+      "file": "docs/contracts/CSLT-03/GenerationStatus.json",
+      "defined_by": "CSLT-03",
+      "maturity": "draft",
+      "x-contract-type": "shared-enum",
+      "consumers": ["CSLT-04", "CSLT-05", "CSLT-06", "CSLT-08", "QUAL-02"]
     }
   }
 }

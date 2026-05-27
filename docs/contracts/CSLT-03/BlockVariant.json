@@ -1,0 +1,19 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "docs/contracts/CSLT-03/BlockVariant.json",
+  "title": "BlockVariant",
+  "description": "危机阻断场景下的高危行为类型变体枚举。对应 CSLT-01 BehaviorTypeCategory 中的四种高危类型。本模块为每种变体提供不同的安全提示文本模板，由 CSLT-08 编排层根据判定结果选择后传入 EmergencyPlanInput.block_variant。",
+  "type": "string",
+  "x-defined-by": "CSLT-03",
+  "x-consumers": ["CSLT-08"],
+  "x-maturity": "draft",
+  "x-contract-type": "shared-enum",
+  "x-version": "1.0.0",
+  "enum": ["SELF_INJURY", "AGGRESSION", "ELOPEMENT", "MEDICATION"],
+  "description_zh": {
+    "SELF_INJURY": "自伤行为——安全提示强调移除危险物品、保持监护、立即寻求专业介入",
+    "AGGRESSION": "攻击行为——安全提示强调确保他人安全、隔离冷静、避免正面冲突",
+    "ELOPEMENT": "逃跑/走失行为——安全提示强调立即报警、描述特征、封锁周边区域",
+    "MEDICATION": "误用药/过量用药——安全提示强调立即拨打急救电话、不要催吐、保留药品包装"
+  }
+}
