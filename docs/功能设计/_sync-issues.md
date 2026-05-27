@@ -213,45 +213,47 @@
 - OBS-01 结构化日志-落地规范.md（已冻结）
 - DEPLOY-01～05 系列设计文档（已冻结）
 **结论**：✅ 无冲突。AUTH-03 的技术实现方案与全部已有规格文档兼容。JWT payload 扩展通过现有声明字段实现，不违反 SEC-01 契约。Redis key 前缀建议已记录，留待 AUTH-04 后续迭代调整。依赖方向单向，无循环依赖迹象。
-- OBS-01 结构化日志-落地规范.md（已冻结）
-- DEPLOY-04 数据库迁移-落地规范.md（已冻结）
-- DEPLOY-05 环境配置管理-落地规范.md（已冻结）
-- 循环依赖迹象：无。SEC-04 → SEC-01（共享 Redis 基础设施）、SEC-04 → AUTH-02（用户身份标识获取）、SEC-04 → DEPLOY-02（Nginx X-Forwarded-For 协同），均为合理单向依赖。
-- OBS-01 结构化日志-落地规范.md（已冻结）
-- DEPLOY-04 数据库迁移-落地规范.md（已冻结）
-- DEPLOY-05 环境配置管理-落地规范.md（已冻结）
-- OBS-01 结构化日志-落地规范.md（已冻结）
-- DEPLOY-04 数据库迁移-落地规范.md（已冻结）
-- DEPLOY-05 环境配置管理-落地规范.md（已冻结）
-- 循环依赖迹象：无。SEC-04 → SEC-01（共享 Redis 基础设施）、SEC-04 → AUTH-02（用户身份标识获取）、SEC-04 → DEPLOY-02（Nginx X-Forwarded-For 协同），均为合理单向依赖。
-- OBS-01 结构化日志-落地规范.md（已冻结）
-- DEPLOY-04 数据库迁移-落地规范.md（已冻结）
-- DEPLOY-05 环境配置管理-落地规范.md（已冻结）
-- OBS-01 结构化日志-落地规范.md（已冻结）
-- DEPLOY-04 数据库迁移-落地规范.md（已冻结）
-- DEPLOY-05 环境配置管理-落地规范.md（已冻结）
-- 循环依赖迹象：无。SEC-04 → SEC-01（共享 Redis 基础设施）、SEC-04 → AUTH-02（用户身份标识获取）、SEC-04 → DEPLOY-02（Nginx X-Forwarded-For 协同），均为合理单向依赖。
-- OBS-01 结构化日志-落地规范.md（已冻结）
-- DEPLOY-04 数据库迁移-落地规范.md（已冻结）
-- DEPLOY-05 环境配置管理-落地规范.md（已冻结）
-- OBS-01 结构化日志-落地规范.md（已冻结）
-- DEPLOY-04 数据库迁移-落地规范.md（已冻结）
-- DEPLOY-05 环境配置管理-落地规范.md（已冻结）
-- 循环依赖迹象：无。SEC-04 → SEC-01（共享 Redis 基础设施）、SEC-04 → AUTH-02（用户身份标识获取）、SEC-04 → DEPLOY-02（Nginx X-Forwarded-For 协同），均为合理单向依赖。
-- OBS-01 结构化日志-落地规范.md（已冻结）
-- DEPLOY-04 数据库迁移-落地规范.md（已冻结）
-- DEPLOY-05 环境配置管理-落地规范.md（已冻结）
-- OBS-01 结构化日志-落地规范.md（已冻结）
-- DEPLOY-04 数据库迁移-落地规范.md（已冻结）
-- DEPLOY-05 环境配置管理-落地规范.md（已冻结）
-- 循环依赖迹象：无。SEC-04 → SEC-01（共享 Redis 基础设施）、SEC-04 → AUTH-02（用户身份标识获取）、SEC-04 → DEPLOY-02（Nginx X-Forwarded-For 协同），均为合理单向依赖。
-- OBS-01 结构化日志-落地规范.md（已冻结）
-- DEPLOY-04 数据库迁移-落地规范.md（已冻结）
-- DEPLOY-05 环境配置管理-落地规范.md（已冻结）
-- OBS-01 结构化日志-落地规范.md（已冻结）
-- DEPLOY-04 数据库迁移-落地规范.md（已冻结）
-- DEPLOY-05 环境配置管理-落地规范.md（已冻结）
-- 循环依赖迹象：无。SEC-04 → SEC-01（共享 Redis 基础设施）、SEC-04 → AUTH-02（用户身份标识获取）、SEC-04 → DEPLOY-02（Nginx X-Forwarded-For 协同），均为合理单向依赖。
-- OBS-01 结构化日志-落地规范.md（已冻结）
-- DEPLOY-04 数据库迁移-落地规范.md（已冻结）
-- DEPLOY-05 环境配置管理-落地规范.md（已冻结）
+
+---
+
+## 2026-05-27 09:12 — CASE-01 案例录入管理 — 规格准备一致性检查
+
+**检查范围**：模块 CASE-01 规格准备阶段（s05），全量扫描已有 18 份规格文档（AUTH-01~06、PROF-05、KNOW-01、OBS-01/04、SEC-01/04/05、DEPLOY-01~05）。
+
+**扫描检查项**：
+
+- **模块编号冲突**：无。CASE-01 编号唯一（04-真实案例库管理分组），与已有模块无编号重叠。
+
+- **状态定义冲突**：无。CASE-01 定义的业务状态（draft → pending_review → rejected）为案例录入模块独有，与下述已有状态定义无交集：
+  - KNOW-01 ArticleStatus（published/unpublished）— 科普文章发布状态
+  - DEPLOY-01 DeploymentState（STARTING/RUNNING/ERROR/STOPPED）— 容器生命周期
+  - DEPLOY-04 MigrationState — 数据库迁移执行状态
+  - OBS-04 ComponentStatus（connected/disconnected）/ HealthStatus（healthy/degraded/unhealthy）— 运行时组件连通性
+  - AUTH-03 Refresh Token 二态（valid/invalid）— Token 生命周期
+  - PROF-05、AUTH-01/02/04、SEC-01/04/05 均无状态机
+
+- **接口命名冲突**：无。CASE-01 预期 REST 端点前缀 `/api/v1/cases` 与已有端点路径不重叠。
+
+- **同名异构类型**：无。CASE-01 将定义的类型（CaseCreate、CaseResponse、CaseStatus、BehaviorType、EvidenceLevel 等）为案例管理域独有，与已有契约类型（UserRole、ArticleStatus 等）无命名冲突。
+
+- **循环依赖迹象**：无。CASE-01 出度 3（→ CASE-02、→ SEC-03、→ AUTH-04），入度 7（被 CASE-03/04/05/06/07、KNOW-04、TICK-07 依赖），全部为单向调用/数据依赖，与模块依赖关系分析一致，零循环依赖。
+
+- **依赖接口对齐**：
+  - AUTH-04：CASE-01 已预登记为 `require_role` 契约的消费者。角色范围：老师/专家，使用 `require_role(min_level=UserRole.TEACHER)`。
+  - SEC-03：尚无落地规范，接口待后续阶段对齐。意图文档 §1.12 第 3 项已标记此决策项。
+  - CASE-02：尚无落地规范，附件引用格式待规范阶段确定。意图文档 §1.12 第 5 项已标记此决策项。
+
+- **角色兼容性**：CASE-01 意图定义的角色准入（老师/专家）与 AUTH-04 `UserRole` 枚举值（family/teacher/expert/admin/maintainer）兼容——`require_role(min_level=UserRole.TEACHER)` 覆盖层级 2+3。
+
+**审查的相关文档**：
+- AUTH-01~06 系列落地规范（已冻结）
+- PROF-05 档案隐私控制-落地规范.md（已冻结）
+- KNOW-01 科普内容管理-落地规范.md（已冻结）
+- OBS-01/04 可观测性落地规范（已冻结）
+- SEC-01/04/05 安全合规落地规范（已冻结）
+- DEPLOY-01~05 部署运维落地规范（已冻结）
+- docs/contracts/AUTH-04/UserRole.json
+- docs/contracts/AUTH-04/require_role.json
+- 功能模块全拆解.md、模块依赖关系分析.md、_contracts.md
+
+**结论**：✅ 无冲突。CASE-01 属于全新业务域（04-真实案例库管理），与已有 6 个域的 18 份规格文档均无业务规则重叠或技术冲突。依赖接口中 AUTH-04 已预登记，SEC-03/CASE-02 接口需在后续阶段对齐，已在意图文档中标记为规范阶段决策事项。
