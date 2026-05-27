@@ -1,9 +1,11 @@
 [project]
 name = "py-rag"
 version = "0.1.0"
-description = "Campfire-AI shared package: py-rag"
+description = "Campfire-AI shared package: py-rag (embedding, retrieval, indexing pipeline)"
 requires-python = ">=3.12"
-dependencies = []
+dependencies = [
+    "redis>=5.0",
+]
 
 [build-system]
 requires = ["uv_build>=0.9.21,<0.10.0"]
