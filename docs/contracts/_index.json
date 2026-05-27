@@ -1,7 +1,7 @@
 {
   "version": "1.0.0",
   "description": "全局契约索引 — 篝火智答项目",
-  "last_updated": "2026-05-26T23:29:26+08:00",
+  "last_updated": "2026-05-27T09:30:29+08:00",
   "contracts": {
     "AccessOperation": {
       "file": "docs/contracts/PROF-05/AccessOperation.json",
@@ -352,6 +352,73 @@
       "maturity": "draft",
       "x-contract-type": "output",
       "consumers": ["CSLT-03", "CSLT-05", "TICK-01", "TICK-02"]
+    },
+    "SemanticSearchInput": {
+      "file": "docs/contracts/CSLT-02/SemanticSearchInput.json",
+      "defined_by": "CSLT-02",
+      "maturity": "draft",
+      "x-contract-type": "input",
+      "consumers": [
+        "CSLT-03",
+        "CSLT-08"
+      ]
+    },
+    "TagFilterDto": {
+      "file": "docs/contracts/CSLT-02/TagFilterDto.json",
+      "defined_by": "CSLT-02",
+      "maturity": "draft",
+      "x-contract-type": "shared-model",
+      "consumers": []
+    },
+    "CaseSliceDto": {
+      "file": "docs/contracts/CSLT-02/CaseSliceDto.json",
+      "defined_by": "CSLT-02",
+      "maturity": "draft",
+      "x-contract-type": "output",
+      "consumers": [
+        "CSLT-03"
+      ]
+    },
+    "SemanticSearchResult": {
+      "file": "docs/contracts/CSLT-02/SemanticSearchResult.json",
+      "defined_by": "CSLT-02",
+      "maturity": "draft",
+      "x-contract-type": "output",
+      "consumers": [
+        "CSLT-03",
+        "CSLT-08"
+      ]
+    },
+    "EvidenceLevel": {
+      "file": "docs/contracts/CSLT-02/EvidenceLevel.json",
+      "defined_by": "CSLT-02",
+      "maturity": "draft",
+      "x-contract-type": "shared-enum",
+      "consumers": [
+        "CSLT-03",
+        "QUAL-02"
+      ]
+    },
+    "DegradationLevel": {
+      "file": "docs/contracts/CSLT-02/DegradationLevel.json",
+      "defined_by": "CSLT-02",
+      "maturity": "draft",
+      "x-contract-type": "shared-enum",
+      "consumers": [
+        "CSLT-03",
+        "OBS-01"
+      ]
+    },
+    "RetrievalStatus": {
+      "file": "docs/contracts/CSLT-02/RetrievalStatus.json",
+      "defined_by": "CSLT-02",
+      "maturity": "draft",
+      "x-contract-type": "shared-enum",
+      "consumers": [
+        "CSLT-03",
+        "OBS-01"
+      ]
+    }
     }
   }
 }

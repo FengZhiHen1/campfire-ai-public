@@ -1,0 +1,77 @@
+{
+  "module_id": "CSLT-02",
+  "module_name": "RAG语义检索",
+  "contracts": [
+    {
+      "title": "SemanticSearchInput",
+      "file": "SemanticSearchInput.json",
+      "type": "input",
+      "maturity": "draft",
+      "defined_by": "CSLT-02",
+      "consumers": ["CSLT-03", "CSLT-08"]
+    },
+    {
+      "title": "TagFilterDto",
+      "file": "TagFilterDto.json",
+      "type": "shared-model",
+      "maturity": "draft",
+      "defined_by": "CSLT-02"
+    },
+    {
+      "title": "CaseSliceDto",
+      "file": "CaseSliceDto.json",
+      "type": "output",
+      "maturity": "draft",
+      "defined_by": "CSLT-02",
+      "consumers": ["CSLT-03"]
+    },
+    {
+      "title": "SemanticSearchResult",
+      "file": "SemanticSearchResult.json",
+      "type": "output",
+      "maturity": "draft",
+      "defined_by": "CSLT-02",
+      "consumers": ["CSLT-03", "CSLT-08"]
+    },
+    {
+      "title": "EvidenceLevel",
+      "file": "EvidenceLevel.json",
+      "type": "shared-enum",
+      "maturity": "draft",
+      "defined_by": "CSLT-02",
+      "consumers": ["CSLT-03", "QUAL-02"]
+    },
+    {
+      "title": "DegradationLevel",
+      "file": "DegradationLevel.json",
+      "type": "shared-enum",
+      "maturity": "draft",
+      "defined_by": "CSLT-02",
+      "consumers": ["CSLT-03", "OBS-01"]
+    },
+    {
+      "title": "RetrievalStatus",
+      "file": "RetrievalStatus.json",
+      "type": "shared-enum",
+      "maturity": "draft",
+      "defined_by": "CSLT-02",
+      "consumers": ["CSLT-03", "OBS-01"]
+    },
+    {
+      "title": "AppSettings",
+      "file": "../DEPLOY-05/AppSettings.json",
+      "type": "output",
+      "maturity": "draft",
+      "defined_by": "DEPLOY-05",
+      "reference_only": true
+    },
+    {
+      "title": "BehaviorTypeCategory",
+      "file": "../CSLT-01/BehaviorTypeCategory.json",
+      "type": "shared-enum",
+      "maturity": "draft",
+      "defined_by": "CSLT-01",
+      "reference_only": true
+    }
+  ]
+}

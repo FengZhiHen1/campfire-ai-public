@@ -105,3 +105,21 @@
 - **契约文件**: `docs/contracts/CSLT-01/CrisisLevel.json`, `docs/contracts/CSLT-01/BehaviorTypeCategory.json`, `docs/contracts/CSLT-01/JudgmentLayerResult.json`, `docs/contracts/CSLT-01/CrisisJudgmentRequest.json`, `docs/contracts/CSLT-01/CrisisJudgmentResult.json`
 - **复用契约**: 无（CSLT-01 为全新模块，所有对外类型均自建契约）
 - **更新时间**: `2026-05-27 09:23:20`
+
+---
+
+## CSLT-02 - RAG语义检索
+- **输入**: `SemanticSearchInput {query_text: str, tag_filters: TagFilterDto, top_k?: int, request_id?: str}` — 检索请求，包含查询文本、标签过滤条件和期望返回数量
+- **输入**: `TagFilterDto {age_range: str, behavior_type: str, emotion_level?: str, sensory_features?: str}` — 档案标签过滤条件（临时自包含定义，待 PROF-02 落地后改为引用）
+- **输出**: `SemanticSearchResult {results: list[CaseSliceDto], total_count: int, is_complete: bool, reason?: str, query_fingerprint: str, degradation_applied: bool, degradation_level: DegradationLevel, elapsed_ms: float}` — 检索结果，包含排序后的案例切片列表和状态标记
+- **输出**: `CaseSliceDto {slice_id: UUID, case_id: str, slice_text: str, chunk_type: str, similarity_score: float, composite_score: float, evidence_level: EvidenceLevel, case_title?: str, source?: str, case_created_at: date, applicable_tags?: dict}` — 单条案例切片详情
+- **枚举**: `EvidenceLevel` = NCAEP | INSTITUTIONAL_EXPERIENCE | CASE_OBSERVATION — 案例循证等级，用于综合排序加权
+- **枚举**: `DegradationLevel` = NONE | EMOTION_RELAXED | BEHAVIOR_RELAXED | ALL_TAGS_REMOVED — 检索降级放宽层级
+- **枚举**: `RetrievalStatus` = COMPLETE | PARTIAL | TIMEOUT | EMPTY — 检索执行状态
+- **状态机**: 无（每次检索为独立同步请求-响应操作）
+- **模块依赖**: PROF-02 (档案驱动检索过滤，上游提供标签条件), CASE-04 (案例向量化入库，上游提供向量索引), CASE-06 (案例淘汰管理，上游标记失效状态), CSLT-03 (应急方案生成，下游消费检索结果)
+- **外部依赖**: PostgreSQL 17.x + pgvector (HNSW 向量索引混合检索), 阿里云 DashScope (text-embedding-v4 文本向量化，1024 维), DEPLOY-05/AppSettings (嵌入模型和 API 配置)
+- **技术栈**: FastAPI>=0.115, SQLAlchemy>=2.0 async, Pydantic>=2.0, LangChain>=0.3, pgvector>=0.7, asyncio
+- **契约文件**: `docs/contracts/CSLT-02/SemanticSearchInput.json`, `docs/contracts/CSLT-02/TagFilterDto.json`, `docs/contracts/CSLT-02/CaseSliceDto.json`, `docs/contracts/CSLT-02/SemanticSearchResult.json`, `docs/contracts/CSLT-02/EvidenceLevel.json`, `docs/contracts/CSLT-02/DegradationLevel.json`, `docs/contracts/CSLT-02/RetrievalStatus.json`
+- **复用契约**: DEPLOY-05/AppSettings, CSLT-01/BehaviorTypeCategory
+- **更新时间**: `2026-05-27 09:30:29`

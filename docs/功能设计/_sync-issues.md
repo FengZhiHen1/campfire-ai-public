@@ -261,3 +261,45 @@
 - OBS-01 结构化日志-落地规范.md（已冻结）
 - DEPLOY-04 数据库迁移-落地规范.md（已冻结）
 - DEPLOY-05 环境配置管理-落地规范.md（已冻结）
+---
+
+## 2026-05-27 09:30 — CSLT-02 RAG语义检索 — 材料准备一致性检查
+
+**检查范围**：模块 CSLT-02 规格准备阶段（s05），全量扫描已有规格文档和契约文件，核对依赖接口对齐。
+
+**扫描检查项**：
+- 模块编号冲突：无。CSLT-02 编号唯一（02-智能应急咨询分组）。
+- 状态定义冲突：无。CSLT-02 意图文档 §1.7 明确声明无状态流转，每次检索为独立同步请求-响应操作。其他模块的状态定义（ArticleStatus、DeploymentState、MigrationState、UserRole 等）与本模块无交集。
+- 接口命名冲突：无。CSLT-02 尚未定义对外接口类型。已有模块的接口类型（ArticleSearchParams、ArticleSearchResult 等 KNOW-01 全文检索类型、PROF-05 隐私控制类型、AUTH/OBS/DEPLOY/SEC 系列接口）均与向量语义检索领域无命名交集。
+- 同名异构类型：无。KNOW-01 的 ArticleSearchParams/ArticleSearchResult（PostgreSQL ts_vector 全文检索）与 CSLT-02 将定义的向量检索类型分属不同领域（全文检索 vs 语义检索），不存在同名异构风险。
+- 循环依赖迹象：无。CSLT-02 出度 4（PROF-02 接收过滤条件、CASE-04 依赖向量索引、CASE-06 感知淘汰状态、向下游 CSLT-03 输出结果），入度 5（CSLT-03/CSLT-05/CSLT-08/PROF-02/QUAL-02 依赖本模块）。全部为单向依赖或合理的数据供应链关系，模块依赖关系分析确认零循环依赖。
+- 嵌入模型配置对齐：DEPLOY-05/AppSettings.json 已定义 EMBEDDING_MODEL（默认 text-embedding-v4）和 EMBEDDING_DIMENSION（默认 1024），CSLT-02 应消费该配置而非硬编码。与项目技术栈设计（ADR-003 pgvector 方案）完全一致。
+- 技术栈对齐：CSLT-02 使用 pgvector HNSW 索引、text-embedding-v4（1024 维）、LangChain 0.3+、FastAPI 0.115+，与 docs/篝火智答-技术栈设计.md 声明的技术栈一致。无技术栈根本性冲突。
+- CSLT-02 位于分层架构 L5（业务能力层），依赖方（CASE-04、CASE-06、PROF-02）尚未进入设计流程，被依赖方（CSLT-03、CSLT-08 等）同样未启动。CSLT-02 需在自身规范阶段首先锁定对外接口契约，为上下游提供稳定的消费接口。
+
+**审查的相关文档**：
+- KNOW-01 科普内容管理-落地规范.md（已冻结）
+- AUTH-01 用户注册-落地规范.md（已冻结）
+- AUTH-02 用户登录-落地规范.md（已冻结）
+- AUTH-03 Token续期-落地规范.md（已冻结）
+- AUTH-04 五级RBAC鉴权-落地规范.md（已冻结）
+- AUTH-05 登录注册界面-落地规范.md（已冻结）
+- AUTH-06 认证会话管理-落地规范.md（已冻结）
+- PROF-05 档案隐私控制-落地规范.md（已冻结）
+- OBS-01 结构化日志-落地规范.md（已冻结）
+- OBS-04 健康检查-落地规范.md（已冻结）
+- SEC-01 传输存储安全-落地规范.md（已冻结）
+- SEC-04 防刷限流-落地规范.md（已冻结）
+- SEC-05 输入校验防护-落地规范.md（已冻结）
+- DEPLOY-01 容器编排-落地规范.md（已冻结）
+- DEPLOY-02 反向代理路由-落地规范.md（已冻结）
+- DEPLOY-03 CI/CD流水线-落地规范.md（已冻结）
+- DEPLOY-04 数据库迁移-落地规范.md（已冻结）
+- DEPLOY-05 环境配置管理-落地规范.md（已冻结）
+- docs/contracts/DEPLOY-05/AppSettings.json（maturity: draft）
+- docs/contracts/_index.json
+- 功能模块全拆解.md
+- 模块依赖关系分析.md
+- 篝火智答-技术栈设计.md
+
+**结论**：✅ 无冲突。CSLT-02 的技术方案（pgvector HNSW 混合检索、text-embedding-v4 语义嵌入）与全部已有规格文档和技术栈设计兼容。嵌入配置可通过 DEPLOY-05 消费，无需自行定义。当前项目尚无与向量语义检索领域重叠的已有契约类型。CSLT-02 在规范阶段首次定义本模块的向量检索接口类型时，需注意与未来 CASE-04 的向量索引契约对齐。

@@ -1,0 +1,57 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "docs/contracts/CSLT-02/SemanticSearchResult.json",
+  "title": "SemanticSearchResult",
+  "description": "RAG语义检索的输出结果，包含排序后的案例切片列表、检索状态标记和查询指纹",
+  "type": "object",
+  "x-defined-by": "CSLT-02",
+  "x-consumers": ["CSLT-03", "CSLT-08"],
+  "x-maturity": "draft",
+  "x-contract-type": "output",
+  "x-version": "1.0.0",
+  "properties": {
+    "results": {
+      "type": "array",
+      "items": { "$ref": "./CaseSliceDto.json" },
+      "description": "按综合排序分数从高到低排列的案例切片列表。长度不超过top_k，可能因降级放宽或超时截断而少于期望数量。可能为空列表。"
+    },
+    "total_count": {
+      "type": "integer",
+      "description": "实际返回的结果数量。范围0至top_k。",
+      "minimum": 0,
+      "examples": [8]
+    },
+    "is_complete": {
+      "type": "boolean",
+      "description": "标记本次检索是否完整完成。true=检索完整完成（未触发超时或空库）。false=检索被截断（超时或部分完成）。"
+    },
+    "reason": {
+      "type": "string",
+      "description": "当is_complete=false时的原因标记。case_library_empty=案例库无可检索案例；timeout=检索超时返回部分结果；embedding_unavailable=嵌入编码服务不可用。is_complete=true时此字段为null。",
+      "enum": ["case_library_empty", "timeout", "embedding_unavailable"],
+      "examples": ["timeout"]
+    },
+    "query_fingerprint": {
+      "type": "string",
+      "description": "查询文本的SHA256十六进制指纹，用于问题排查和去重，不包含原始查询内容。",
+      "pattern": "^[a-f0-9]{64}$",
+      "examples": ["e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"]
+    },
+    "degradation_applied": {
+      "type": "boolean",
+      "description": "是否触发了降级放宽策略。true=至少触发了一层标签条件放宽。"
+    },
+    "degradation_level": {
+      "$ref": "./DegradationLevel.json",
+      "description": "触发的降级放宽层级。degradation_applied=false时恒为NONE。"
+    },
+    "elapsed_ms": {
+      "type": "number",
+      "description": "检索耗时，从接受到返回的总时长，以毫秒为单位。用于下游业务决策和性能监控。",
+      "minimum": 0,
+      "examples": [320.5]
+    }
+  },
+  "required": ["results", "total_count", "is_complete", "query_fingerprint", "degradation_applied", "degradation_level", "elapsed_ms"],
+  "additionalProperties": false
+}
