@@ -1,0 +1,41 @@
+{
+  "module_id": "PROF-07",
+  "module_name": "档案数据逻辑",
+  "reference_only": true,
+  "description": "PROF-07 为前端 L1b 纯消费者模块，不定义新的后端 API 契约。所有对外类型引用自 PROF-01、PROF-03 和 AUTH-06 的已发布契约。7 项前端 TypeScript 类型（UseProfileReturn、ProfileCoordination、MicroSurveyState、ProfileListState、ProfileSubmitState、InterventionFeedback、InvalidatCacheRequest）为模块内部类型，不写入 JSON Schema。",
+  "consumed_contracts": {
+    "PROF-01": [
+      "ProfileListItem",
+      "ProfileResponse",
+      "ProfileCreate",
+      "ProfileUpdate",
+      "DiagnosisType",
+      "LanguageLevel",
+      "SensoryFeature",
+      "Trigger",
+      "AgeRange",
+      "ProfileBehaviorType",
+      "ProfileLimitExceededError",
+      "ProfileConflictError"
+    ],
+    "AUTH-06": [
+      "httpClient",
+      "SessionState",
+      "TokenPair",
+      "useAuthReturn"
+    ],
+    "PROF-03": [
+      "EventCreate"
+    ]
+  },
+  "dependency_gaps": [
+    {
+      "gap_id": "GAP-01",
+      "description": "PROF-02 缓存失效 API 尚未设计，本模块预留 POST /api/v1/profiles/{profileId}/invalidate-cache 通知接口，实现时带 null-guard 降级"
+    },
+    {
+      "gap_id": "GAP-02",
+      "description": "CSLT-08 ProfileCoordination 接口尚未正式定义，本模块约定 checkProfileExists / triggerMicroSurvey / onProfileChanged 三个方法"
+    }
+  ]
+}
