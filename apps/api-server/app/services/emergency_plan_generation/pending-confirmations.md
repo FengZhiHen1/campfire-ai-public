@@ -7,34 +7,25 @@
 
 ## 一、重大风险项（需上游确认后方可继续）
 
-### 1. [CONFIRM-01] py-config/AppSettings 缺少生成专用配置字段
+### 1. [CONFIRM-01] ~~py-config/AppSettings 缺少生成专用配置字段~~ ✅ 已修复
 
-**描述**：`packages/py-config/py_config/config.py` 中的 `AppSettings` 类当前不包含以下字段：
+已在 `AppSettings` 中添加 4 个可选字段（均含默认值）：
+- `DEEPSEEK_MODEL` = `"deepseek-chat"`
+- `GENERATION_TEMPERATURE` = `0.3` (ge=0.0, le=2.0)
+- `GENERATION_MAX_TOKENS` = `4096` (ge=1, le=32768)
+- `GENERATION_TIMEOUT_S` = `15.0` (ge=1.0, le=120.0)
 
-| 字段名 | 默认值 | 用途 |
-|--------|--------|------|
-| `DEEPSEEK_MODEL` | `"deepseek-chat"` | LLM 模型名称 |
-| `GENERATION_MAX_TOKENS` | `4096` | 最大生成 Token 数 |
-| `GENERATION_TEMPERATURE` | `0.3` | 采样温度（意图文档约束 ≤ 0.3） |
-| `GENERATION_TIMEOUT_S` | `15.0` | 全流程超时秒数 |
+`streaming.py` 已改为直接属性访问（`config.DEEPSEEK_MODEL`），移除了 `getattr` 回退和硬编码默认常量。
 
-**影响**：当前 `service.py` 和 `streaming.py` 通过 `getattr(config, field, default)` 在运行时动态读取这些字段。若 `py-config` 后续添加了这些字段但未在 `.env` 中配置，Pydantic BaseSettings 会因缺少必填字段而抛出 `ValidationError`。
+### 2. [CONFIRM-02] ~~py-llm/client.py 的 async_chat_stream() 为 Stub 实现~~ ✅ 已修复
 
-**建议处理方式**：
-- 在 `AppSettings` 中添加上述四个字段（均为可选，含默认值）
-- 或在 `.env.example` 中添加对应注释
-
-### 2. [CONFIRM-02] py-llm/client.py 的 async_chat_stream() 为 Stub 实现
-
-**描述**：`packages/py-llm/py_llm/client.py` 中的 `LLMClient.async_chat_stream()` 当前仅是一个代码骨架（返回空 chunk），未包含真实的 `httpx.AsyncClient` HTTP 调用逻辑和 DeepSeek API 请求格式。
-
-**影响**：在真实运行环境下，`stream_generate()` 将无法从 LLM API 获取实际内容。
-
-**建议处理方式**：
-- 使用 `httpx.AsyncClient` 实现 `POST /v1/chat/completions` 请求（stream=True）
-- 注入 `DEEPSEEK_API_KEY` 和 `DEEPSEEK_BASE_URL` 配置
-- 实现 `response.raise_for_status()` 错误处理
-- 实现重试和熔断机制
+已重写 `py_llm/client.py`：
+- 底层使用 `openai.AsyncOpenAI`（DeepSeek 兼容 OpenAI SDK）
+- 模型默认值更新为 `deepseek-v4-pro`，max_tokens 默认 8192
+- 内置指数退避重试：RateLimitError/APITimeoutError/APIStatusError → 最多 3 次，延迟 3s→120s jitter
+- 新增 `LLMClientError` 异常类，重试耗尽后抛出
+- `openai>=1.0` 已声明为 `packages/py-llm` 依赖
+- `streaming.py` 区分捕获 `LLMClientError`（已知）和 `Exception`（兜底）
 
 ### 3. [CONFIRM-03] prometheus_client 未声明为项目依赖
 
