@@ -44,26 +44,14 @@
 
 `py-logger` 不支持 `logger.alert()`（仅有 debug/info/warning/error/critical）。已将 `prompt_builder.py` 中的 `logger.alert()` 改为 `logger.critical()`，语义一致——PII 检测是需立即关注的安全事件。
 
-### 6. [CONFIRM-06] `py_logger` 的 import 路径和 API 确认
+### 6. [CONFIRM-06] ~~py_logger 的 import 路径和 API 确认~~ ✅ 已确认（无需修改）
 
-**描述**：`prompt_builder.py` 和 `streaming.py` 中使用 `from py_logger import logger`，与 `crisis_judgment` 模块的导入模式一致。但 `py-logger` 包的 `__init__.py` 导出内容需确认是否包含全局 `logger` 实例。
+`py_logger.__init__.py` 明确导出 `logger` 全局单例（`from .core import logger`），文档注释写明 `from py_logger import logger`。与 CSLT-01 和本模块的导入方式完全一致，无问题。
 
-**当前处理**：沿用 `crisis_judgment` 模块的导入模式。若 `py_logger` 的 API 不同，需调整导入方式。
+### 7. [CONFIRM-07] ~~GenerationChunk.finish_reason 枚举值范围~~ ✅ 已确认（无需修改）
 
-**风险等级**：低 — 与已落地的 CSLT-01 模块使用相同的导入方式，已验证可行。
+设计如此——`GenerationChunk.finish_reason` 使用 OpenAI 兼容字符串 (`stop`/`length`/`timeout`)，`GenerationResult.finish_reason` 使用模块业务枚举 (`COMPLETE`/`PARTIAL`/`BLOCKED`/`TIMEOUT`/`ERROR`)。落地规范 §1.4 和两份契约文件已明确区分。
 
-### 7. [CONFIRM-07] `GenerationChunk` 的 `finish_reason` 枚举值范围
+### 8. [CONFIRM-08] ~~_SECTION_HEADER_PATTERN 匹配四段式标题的完整性~~ ✅ 已确认（无需修改）
 
-**描述**：`GenerationChunk.finish_reason` 字段在契约中定义为 `"stop" | "length" | "timeout"` 字符串枚举，而在 `streaming.py` 的 `build_generation_result()` 返回的 `GenerationResult.finish_reason` 使用的是 `GenerationStatus` 枚举（`COMPLETE`/`PARTIAL`/`BLOCKED`/`TIMEOUT`/`ERROR`）。
-
-**当前处理**：`GenerationChunk.finish_reason` 使用字符串 `"stop"`/`"timeout"`/`"length"`（与 OpenAI 兼容格式），`GenerationResult.finish_reason` 使用 `GenerationStatus` 枚举。两者语义不同，当前实现已区分。
-
-**风险等级**：低 — 设计文档和契约明确了两种 finish_reason 的语义域不同。
-
-### 8. [CONFIRM-08] `_SECTION_HEADER_PATTERN` 匹配四段式标题的完整性
-
-**描述**：流式超时检测中使用 `##\s[一二三四]、` 正则检测是否包含完整段落标题。若 LLM 输出格式与预期偏离（如使用 `## 1.` 代替 `## 一、`），则部分生成结果可能被误判为完全超时。
-
-**当前处理**：在 System Prompt 中明确要求四段式使用 `## 一、` — `## 四、` 格式。若 LLM 违反格式约束，降级为完全超时处理。
-
-**风险等级**：低 — 格式约束在 System Prompt 中清晰写明，且全流程超时场景本身应属于少数异常情况。
+设计合理——System Prompt 强制要求 `## 一、` 至 `## 四、` 格式，正则严格匹配此约束。LLM 偏离格式时保守降级为完全超时，在应急响应场景中是安全的兜底策略。
