@@ -1,12 +1,16 @@
-"""PROF-05 档案隐私控制 — FastAPI 路由注册。
+"""PROF-01 个人档案管理 — FastAPI 路由注册。
 
-档案相关 API 路由，实现双层鉴权架构的第一层（路由级角色校验）。
-所有涉及档案操作的路由通过 require_role() Depends 进行角色存在性检查，
-再调用 profile_service 对应方法进行第二层档案级权限校验。
+个人档案管理的 RESTful 路由层，6 个端点：
+- GET  /api/v1/profiles            — 档案列表（分页）
+- POST /api/v1/profiles            — 创建档案
+- GET  /api/v1/profiles/me/default — 获取默认档案（须在 /{profile_id} 前注册）
+- GET  /api/v1/profiles/{profile_id}    — 档案详情
+- PUT  /api/v1/profiles/{profile_id}    — 更新档案
+- DELETE /api/v1/profiles/{profile_id}  — 删除档案
 
-路由设计原则（接口层极简化）：
+路由设计原则：
 - 路由层仅处理请求解析、校验分发与响应封装
-- 所有业务逻辑（含 PrivacyGuard 调用）委托给 profile_service
+- 所有业务逻辑委托给 ProfileService
 - 角色校验由 require_role() Depends 自动完成
 """
 
@@ -14,275 +18,377 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.dependencies.auth_dependencies import get_db_session
-from app.services import profile_service
+from app.services.profile_service import ProfileService
 from py_auth.dependencies import get_current_user
 from py_auth.rbac import require_role
+from py_config.exceptions import (
+    ForbiddenAccess,
+    ProfileConflictError,
+    ProfileLimitExceededError,
+)
+from py_schemas.auth import UserRole
+from py_schemas.profiles import ProfileCreate, ProfileResponse, ProfileUpdate
 
 router = APIRouter(prefix="/api/v1/profiles", tags=["profiles"])
 
+# Service 实例（无状态，可复用）
+_profile_service = ProfileService()
+
+
+def _extract_caregiver_id(current_user: dict) -> UUID:
+    """从 JWT payload 中提取家属用户 UUID。
+
+    Args:
+        current_user: get_current_user 返回的 JWT payload 字典。
+
+    Returns:
+        UUID: 家属用户标识。
+
+    Raises:
+        HTTPException(401): user_id 不存在或格式无效。
+    """
+    user_id_str: str = current_user.get("sub", current_user.get("user_id", ""))
+    if not user_id_str:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="无法从令牌中解析用户标识",
+        )
+    try:
+        return UUID(user_id_str)
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="用户标识格式无效",
+        )
+
+
+def _handle_service_error(exc: Exception) -> None:
+    """将 Service 层异常转换为 HTTP 异常。
+
+    Args:
+        exc: Service 层抛出的异常。
+
+    Raises:
+        HTTPException: 转换后的 HTTP 异常。
+    """
+    if isinstance(exc, ForbiddenAccess):
+        raise HTTPException(
+            status_code=exc.status_code,
+            detail=exc.detail,
+        )
+    if isinstance(exc, ProfileLimitExceededError):
+        raise HTTPException(
+            status_code=exc.status_code,
+            detail={
+                "detail": exc.detail,
+                "error_code": exc.error_code,
+                "current_count": exc.current_count,
+                "max_allowed": exc.max_allowed,
+            },
+        )
+    if isinstance(exc, ProfileConflictError):
+        raise HTTPException(
+            status_code=exc.status_code,
+            detail={
+                "detail": exc.detail,
+                "error_code": exc.error_code,
+            },
+        )
+    # 未知异常或 404
+    raise HTTPException(
+        status_code=status.HTTP_404_NOT_FOUND
+        if "不存在" in str(exc)
+        else status.HTTP_500_INTERNAL_SERVER_ERROR,
+        detail=str(exc) if "不存在" in str(exc) else "服务器内部错误",
+    )
+
 
 # ===========================================================================
-# 档案查看
+# 注意：/me/default 路由必须在 /{profile_id} 之前注册，
+# 否则 "me" 会被 FastAPI 捕获为 profile_id 路径参数。
+# ===========================================================================
+
+
+@router.get(
+    "/me/default",
+    status_code=status.HTTP_200_OK,
+    summary="获取默认档案",
+    description=(
+        "获取当前家属账号下的默认档案。"
+        "用于应急咨询等需要默认关联的场景。"
+        "冷启动状态下（无档案）返回 404。"
+    ),
+    response_model=ProfileResponse,
+    responses={
+        200: {"description": "成功返回默认档案详情"},
+        404: {"description": "账号下无档案（冷启动状态）"},
+    },
+)
+async def get_default_profile(
+    current_user: dict = Depends(get_current_user),
+    _: None = Depends(require_role(exact_roles=[UserRole.FAMILY])),
+    session: AsyncSession = Depends(get_db_session),
+) -> ProfileResponse:
+    """获取当前账号默认档案端点。
+
+    Args:
+        current_user: 当前用户 JWT payload。
+        session: 异步数据库会话。
+
+    Returns:
+        ProfileResponse: 默认档案完整详情。
+    """
+    caregiver_id = _extract_caregiver_id(current_user)
+    try:
+        return await _profile_service.get_default_profile(
+            caregiver_id=caregiver_id,
+            session=session,
+        )
+    except Exception as exc:
+        _handle_service_error(exc)
+        raise  # unreachable
+
+
+# ===========================================================================
+# 档案列表（分页）
+# ===========================================================================
+
+
+@router.get(
+    "",
+    status_code=status.HTTP_200_OK,
+    summary="获取档案列表",
+    description=(
+        "获取当前家属账号下所有档案的分页列表。"
+        "每个条目为 ProfileListItem 精简版。"
+    ),
+    responses={
+        200: {"description": "成功返回分页档案列表"},
+        422: {"description": "查询参数格式错误"},
+    },
+)
+async def list_profiles(
+    page: int = 1,
+    page_size: int = 10,
+    current_user: dict = Depends(get_current_user),
+    _: None = Depends(require_role(exact_roles=[UserRole.FAMILY])),
+    session: AsyncSession = Depends(get_db_session),
+) -> dict:
+    """获取档案列表端点。
+
+    Args:
+        page: 页码（从 1 开始）。
+        page_size: 每页条数。
+        current_user: 当前用户 JWT payload。
+        session: 异步数据库会话。
+
+    Returns:
+        dict: 分页列表。
+    """
+    caregiver_id = _extract_caregiver_id(current_user)
+    return await _profile_service.list_profiles(
+        caregiver_id=caregiver_id,
+        page=page,
+        page_size=page_size,
+        session=session,
+    )
+
+
+# ===========================================================================
+# 创建档案
+# ===========================================================================
+
+
+@router.post(
+    "",
+    status_code=status.HTTP_201_CREATED,
+    summary="创建个人档案",
+    description=(
+        "为当前家属创建新患者档案。"
+        "必填字段为 birth_date、diagnosis_type、primary_behavior 共 3 项。"
+        "若为第一份档案，自动设为默认档案。"
+    ),
+    response_model=ProfileResponse,
+    responses={
+        201: {"description": "档案创建成功"},
+        409: {"description": "档案数量已达上限或并发冲突"},
+        422: {"description": "请求体校验失败"},
+    },
+)
+async def create_profile(
+    input_data: ProfileCreate,
+    current_user: dict = Depends(get_current_user),
+    _: None = Depends(require_role(exact_roles=[UserRole.FAMILY])),
+    session: AsyncSession = Depends(get_db_session),
+) -> ProfileResponse:
+    """创建个人档案端点。
+
+    Args:
+        input_data: 档案创建请求体（Pydantic 自动校验）。
+        current_user: 当前用户 JWT payload。
+        session: 异步数据库会话。
+
+    Returns:
+        ProfileResponse: 创建成功的档案完整数据。
+    """
+    caregiver_id = _extract_caregiver_id(current_user)
+    try:
+        return await _profile_service.create_profile(
+            caregiver_id=caregiver_id,
+            input_data=input_data,
+            session=session,
+        )
+    except Exception as exc:
+        _handle_service_error(exc)
+        raise  # unreachable
+
+
+# ===========================================================================
+# 档案详情
 # ===========================================================================
 
 
 @router.get(
     "/{profile_id}",
     status_code=status.HTTP_200_OK,
-    summary="查看个人档案",
-    description=(
-        "查看指定个人档案的完整内容或元数据（取决于角色权限）。"
-        "路由层 require_role() 校验角色存在性，"
-        "Service 层 PrivacyGuard 执行档案级细粒度权限判定。"
-    ),
+    summary="获取档案详情",
+    description="获取指定档案的完整详情。需通过 PrivacyGuard 权限校验。",
+    response_model=ProfileResponse,
     responses={
-        200: {"description": "成功返回档案数据（字段集取决于角色权限）"},
-        403: {"description": "当前角色无权访问此档案"},
-        422: {"description": "路径参数格式错误"},
+        200: {"description": "成功返回档案详情"},
+        403: {"description": "无权限访问此档案"},
+        404: {"description": "档案不存在"},
     },
 )
 async def get_profile(
     profile_id: UUID,
     current_user: dict = Depends(get_current_user),
-    _: None = Depends(require_role()),
+    _: None = Depends(require_role(exact_roles=[UserRole.FAMILY])),
     session: AsyncSession = Depends(get_db_session),
-) -> dict:
-    """查看个人档案端点。
+) -> ProfileResponse:
+    """获取档案详情端点。
 
     Args:
-        profile_id: 目标个人档案 UUID（路径参数）。
-        current_user: 当前用户 JWT payload（由 get_current_user 注入）。
-        session: 数据库异步会话（请求结束时自动关闭）。
-
-    Returns:
-        dict: 档案数据（字段集取决于 PrivacyGuard 裁定的 visible_scope）。
-    """
-    # 从 JWT payload 中提取用户信息
-    requester_id_str: str = current_user.get("sub", current_user.get("user_id", ""))
-    roles: list[str] = current_user.get("roles", [])
-    requester_role: str = roles[0] if roles else ""
-
-    return await profile_service.view_profile(
-        target_profile_id=profile_id,
-        requester_id=UUID(requester_id_str) if requester_id_str else UUID(int=0),
-        requester_role=requester_role,
-        db_session=session,
-    )
-
-
-# ===========================================================================
-# 事件记录
-# ===========================================================================
-
-
-@router.post(
-    "/{profile_id}/events",
-    status_code=status.HTTP_201_CREATED,
-    summary="新增事件记录",
-    description="为目标档案新增一条事件记录。仅家属角色可执行此操作。",
-    responses={
-        201: {"description": "事件记录创建成功"},
-        403: {"description": "当前角色无权新增事件记录"},
-    },
-)
-async def create_event(
-    profile_id: UUID,
-    current_user: dict = Depends(get_current_user),
-    _: None = Depends(require_role()),
-    session: AsyncSession = Depends(get_db_session),
-) -> dict:
-    """新增事件记录端点。
-
-    Args:
-        profile_id: 目标个人档案 UUID。
+        profile_id: 目标档案 UUID（路径参数）。
         current_user: 当前用户 JWT payload。
-        session: 数据库异步会话。
+        session: 异步数据库会话。
 
     Returns:
-        dict: 事件创建结果。
+        ProfileResponse: 档案完整详情。
     """
-    requester_id_str: str = current_user.get("sub", current_user.get("user_id", ""))
-    roles: list[str] = current_user.get("roles", [])
-    requester_role: str = roles[0] if roles else ""
+    caregiver_id = _extract_caregiver_id(current_user)
+    try:
+        return await _profile_service.get_profile(
+            caregiver_id=caregiver_id,
+            profile_id=profile_id,
+            session=session,
+        )
+    except Exception as exc:
+        _handle_service_error(exc)
+        raise  # unreachable
 
-    return await profile_service.create_event(
-        target_profile_id=profile_id,
-        requester_id=UUID(requester_id_str) if requester_id_str else UUID(int=0),
-        requester_role=requester_role,
-        db_session=session,
-    )
+
+# ===========================================================================
+# 更新档案
+# ===========================================================================
 
 
 @router.put(
-    "/{profile_id}/events/{event_id}",
+    "/{profile_id}",
     status_code=status.HTTP_200_OK,
-    summary="修改事件记录",
-    description="修改指定事件记录的内容。仅家属角色可执行此操作。",
+    summary="更新个人档案",
+    description=(
+        "更新已有档案的部分字段。所有字段均为可选（partial update）。"
+        "使用乐观锁防止并发冲突。"
+    ),
+    response_model=ProfileResponse,
     responses={
-        200: {"description": "事件记录修改成功"},
-        403: {"description": "当前角色无权修改事件记录"},
+        200: {"description": "档案更新成功"},
+        403: {"description": "无权限更新此档案"},
+        409: {"description": "乐观锁冲突，数据已被其他设备修改"},
+        422: {"description": "请求体校验失败"},
     },
 )
-async def update_event(
+async def update_profile(
     profile_id: UUID,
-    event_id: str,
+    input_data: ProfileUpdate,
     current_user: dict = Depends(get_current_user),
-    _: None = Depends(require_role()),
+    _: None = Depends(require_role(exact_roles=[UserRole.FAMILY])),
     session: AsyncSession = Depends(get_db_session),
-) -> dict:
-    """修改事件记录端点。
+) -> ProfileResponse:
+    """更新档案端点。
 
     Args:
-        profile_id: 目标个人档案 UUID。
-        event_id: 事件记录标识。
+        profile_id: 目标档案 UUID（路径参数）。
+        input_data: 更新字段请求体（Pydantic 自动校验）。
         current_user: 当前用户 JWT payload。
-        session: 数据库异步会话。
+        session: 异步数据库会话。
 
     Returns:
-        dict: 事件更新结果。
+        ProfileResponse: 更新后的档案完整数据。
     """
-    requester_id_str: str = current_user.get("sub", current_user.get("user_id", ""))
-    roles: list[str] = current_user.get("roles", [])
-    requester_role: str = roles[0] if roles else ""
+    caregiver_id = _extract_caregiver_id(current_user)
+    try:
+        return await _profile_service.update_profile(
+            caregiver_id=caregiver_id,
+            profile_id=profile_id,
+            input_data=input_data,
+            session=session,
+        )
+    except Exception as exc:
+        _handle_service_error(exc)
+        raise  # unreachable
 
-    return await profile_service.update_event(
-        target_profile_id=profile_id,
-        requester_id=UUID(requester_id_str) if requester_id_str else UUID(int=0),
-        requester_role=requester_role,
-        db_session=session,
-        event_id=event_id,
-    )
+
+# ===========================================================================
+# 删除档案
+# ===========================================================================
 
 
 @router.delete(
-    "/{profile_id}/events/{event_id}",
-    status_code=status.HTTP_200_OK,
-    summary="删除事件记录",
-    description="删除指定事件记录。仅家属角色可执行此操作。",
+    "/{profile_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="删除档案",
+    description=(
+        "删除指定档案及关联数据。硬删除不可恢复。"
+        "若删除的是默认档案，自动提升另一档案为默认。"
+    ),
     responses={
-        200: {"description": "事件记录删除成功"},
-        403: {"description": "当前角色无权删除事件记录"},
+        204: {"description": "档案删除成功（无响应体）"},
+        403: {"description": "无权限删除此档案"},
+        404: {"description": "档案不存在"},
     },
 )
-async def delete_event(
-    profile_id: UUID,
-    event_id: str,
-    current_user: dict = Depends(get_current_user),
-    _: None = Depends(require_role()),
-    session: AsyncSession = Depends(get_db_session),
-) -> dict:
-    """删除事件记录端点。
-
-    Args:
-        profile_id: 目标个人档案 UUID。
-        event_id: 事件记录标识。
-        current_user: 当前用户 JWT payload。
-        session: 数据库异步会话。
-
-    Returns:
-        dict: 事件删除结果。
-    """
-    requester_id_str: str = current_user.get("sub", current_user.get("user_id", ""))
-    roles: list[str] = current_user.get("roles", [])
-    requester_role: str = roles[0] if roles else ""
-
-    return await profile_service.delete_event(
-        target_profile_id=profile_id,
-        requester_id=UUID(requester_id_str) if requester_id_str else UUID(int=0),
-        requester_role=requester_role,
-        db_session=session,
-        event_id=event_id,
-    )
-
-
-# ===========================================================================
-# 专业评估补充
-# ===========================================================================
-
-
-@router.post(
-    "/{profile_id}/assessments",
-    status_code=status.HTTP_201_CREATED,
-    summary="补充专业评估",
-    description="为指定档案补充专业评估记录。仅关联老师/专家可执行此操作。",
-    responses={
-        201: {"description": "专业评估提交成功"},
-        403: {"description": "当前角色无权补充专业评估"},
-    },
-)
-async def supplement_assessment(
+async def delete_profile(
     profile_id: UUID,
     current_user: dict = Depends(get_current_user),
-    _: None = Depends(require_role()),
+    _: None = Depends(require_role(exact_roles=[UserRole.FAMILY])),
     session: AsyncSession = Depends(get_db_session),
-) -> dict:
-    """补充专业评估端点。
+) -> None:
+    """删除档案端点。
 
     Args:
-        profile_id: 目标个人档案 UUID。
+        profile_id: 目标档案 UUID（路径参数）。
         current_user: 当前用户 JWT payload。
-        session: 数据库异步会话。
+        session: 异步数据库会话。
 
     Returns:
-        dict: 评估提交结果。
+        None（HTTP 204 No Content）。
     """
-    requester_id_str: str = current_user.get("sub", current_user.get("user_id", ""))
-    roles: list[str] = current_user.get("roles", [])
-    requester_role: str = roles[0] if roles else ""
-
-    return await profile_service.supplement_assessment(
-        target_profile_id=profile_id,
-        requester_id=UUID(requester_id_str) if requester_id_str else UUID(int=0),
-        requester_role=requester_role,
-        db_session=session,
-    )
-
-
-# ===========================================================================
-# 解除老师关联
-# ===========================================================================
-
-
-@router.post(
-    "/{profile_id}/unlink",
-    status_code=status.HTTP_200_OK,
-    summary="解除老师关联",
-    description="解除指定老师与目标档案的关联关系。仅家属角色可执行此操作。",
-    responses={
-        200: {"description": "关联关系解除成功"},
-        403: {"description": "当前角色无权解除关联"},
-    },
-)
-async def unlink_teacher(
-    profile_id: UUID,
-    current_user: dict = Depends(get_current_user),
-    _: None = Depends(require_role()),
-    session: AsyncSession = Depends(get_db_session),
-) -> dict:
-    """解除老师关联端点。
-
-    Args:
-        profile_id: 目标个人档案 UUID。
-        current_user: 当前用户 JWT payload。
-        session: 数据库异步会话。
-
-    Returns:
-        dict: 解除关联操作结果。
-    """
-    requester_id_str: str = current_user.get("sub", current_user.get("user_id", ""))
-    roles: list[str] = current_user.get("roles", [])
-    requester_role: str = roles[0] if roles else ""
-
-    return await profile_service.unlink_teacher(
-        target_profile_id=profile_id,
-        requester_id=UUID(requester_id_str) if requester_id_str else UUID(int=0),
-        requester_role=requester_role,
-        db_session=session,
-    )
+    caregiver_id = _extract_caregiver_id(current_user)
+    try:
+        await _profile_service.delete_profile(
+            caregiver_id=caregiver_id,
+            profile_id=profile_id,
+            session=session,
+        )
+    except Exception as exc:
+        _handle_service_error(exc)
+        raise  # unreachable
 
 
 __all__ = ["router"]
