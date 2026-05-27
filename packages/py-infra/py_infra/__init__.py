@@ -1,8 +1,10 @@
-"""py-infra: Infrastructure contract models for Campfire-AI deployment orchestration.
+"""py-infra: Infrastructure contract models and exceptions for Campfire-AI.
 
-Exposes Pydantic models and enums corresponding to DEPLOY-01 JSON Schema contracts.
+Exposes Pydantic models and enums corresponding to DEPLOY-01 JSON Schema contracts,
+and CSLT-02 retrieval exception classes.
 """
 
+from py_infra.exceptions import EmbeddingUnavailableError, RetrievalTimeoutError
 from py_infra.models import (
     # Enums
     ContainerServiceName,
@@ -29,4 +31,6 @@ __all__ = [
     "HealthCheckProbe",
     "LogDriverConfig",
     "PortMappingRule",
+    "RetrievalTimeoutError",
+    "EmbeddingUnavailableError",
 ]
