@@ -217,8 +217,6 @@ class TransitionPolicy:
             choice=choice,
             updates={
                 "loop_counter": loop_counter + 1,
-                "system_agent_id": None,
-                "continued_to": None,
                 "pending_choice": choice,
             },
             requires_feedback=has_feedback,

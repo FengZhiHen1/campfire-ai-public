@@ -1,6 +1,7 @@
 """confirm 命令——处理用户确认 AWAITING_CONFIRM 的 stage。
 
-confirm 永远返回 PENDING + continue，将用户选择传回 SubAgent。
+confirm 将 stage 重置为 PENDING 并保留 system_agent_id，
+调度器随后通过 continue action 将用户选择传回同一 SubAgent。
 DONE 由 SubAgent 通过 routing_choice 上报驱动流转。
 """
 
