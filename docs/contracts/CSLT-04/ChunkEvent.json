@@ -1,0 +1,29 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "docs/contracts/CSLT-04/ChunkEvent.json",
+  "title": "ChunkEvent",
+  "description": "SSE chunk 事件的 data 字段载荷。承载上游 CSLT-03 产出的每段文本增量（delta）及递增序列号。每个 chunk 事件对应 SSE 协议中一个 event: chunk 帧，前端通过 EventSource.onmessage 回调接收后逐句拼接渲染。",
+  "type": "object",
+  "x-defined-by": "CSLT-04",
+  "x-consumers": ["CSLT-08"],
+  "x-maturity": "draft",
+  "x-contract-type": "event",
+  "x-version": "1.0.0",
+  "properties": {
+    "text": {
+      "type": "string",
+      "description": "当前 chunk 的文本增量。原样透传自 CSLT-03/GenerationChunk.text，不做任何修改、截断或格式转换。CSLT-08 前端逐段拼接后渲染。",
+      "minLength": 0,
+      "maxLength": 4096,
+      "examples": ["请保持冷静，先将孩子带离当前环境"]
+    },
+    "sequence": {
+      "type": "integer",
+      "description": "单调递增的序列号，从 1 开始计数。用于：(1) 前端检测丢帧（比对相邻 sequence 是否连续）；(2) 断点续传定位（重连时 Last-Event-Id 携带最后成功接收的 sequence，CSLT-04 从中断位置续传）；(3) SSE id: 字段值与 sequence 保持一致。",
+      "minimum": 1,
+      "examples": [1, 2, 3]
+    }
+  },
+  "required": ["text", "sequence"],
+  "additionalProperties": false
+}

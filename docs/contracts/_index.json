@@ -1,7 +1,7 @@
 {
   "version": "1.0.0",
   "description": "全局契约索引 — 篝火智答项目",
-  "last_updated": "2026-05-27T14:37:41+08:00",
+  "last_updated": "2026-05-27T17:45:12+08:00",
   "contracts": {
     "AccessOperation": {
       "file": "docs/contracts/PROF-05/AccessOperation.json",
@@ -502,6 +502,41 @@
       "maturity": "draft",
       "x-contract-type": "error-code",
       "consumers": ["PROF-07"]
+    },
+    "ChunkEvent": {
+      "file": "docs/contracts/CSLT-04/ChunkEvent.json",
+      "defined_by": "CSLT-04",
+      "maturity": "draft",
+      "x-contract-type": "event",
+      "consumers": ["CSLT-08"]
+    },
+    "DoneEvent": {
+      "file": "docs/contracts/CSLT-04/DoneEvent.json",
+      "defined_by": "CSLT-04",
+      "maturity": "draft",
+      "x-contract-type": "event",
+      "consumers": ["CSLT-08"]
+    },
+    "HeartbeatEvent": {
+      "file": "docs/contracts/CSLT-04/HeartbeatEvent.json",
+      "defined_by": "CSLT-04",
+      "maturity": "draft",
+      "x-contract-type": "event",
+      "consumers": ["CSLT-08"]
+    },
+    "ErrorEvent": {
+      "file": "docs/contracts/CSLT-04/ErrorEvent.json",
+      "defined_by": "CSLT-04",
+      "maturity": "draft",
+      "x-contract-type": "event",
+      "consumers": ["CSLT-08"]
+    },
+    "StreamErrorCode": {
+      "file": "docs/contracts/CSLT-04/StreamErrorCode.json",
+      "defined_by": "CSLT-04",
+      "maturity": "draft",
+      "x-contract-type": "shared-enum",
+      "consumers": ["CSLT-08"]
     }
   }
 }

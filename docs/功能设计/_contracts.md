@@ -157,3 +157,17 @@
 - **契约文件**: `docs/contracts/CSLT-02/SemanticSearchInput.json`, `docs/contracts/CSLT-02/TagFilterDto.json`, `docs/contracts/CSLT-02/CaseSliceDto.json`, `docs/contracts/CSLT-02/SemanticSearchResult.json`, `docs/contracts/CSLT-02/EvidenceLevel.json`, `docs/contracts/CSLT-02/DegradationLevel.json`, `docs/contracts/CSLT-02/RetrievalStatus.json`
 - **复用契约**: DEPLOY-05/AppSettings, CSLT-01/BehaviorTypeCategory
 - **更新时间**: `2026-05-27 09:30:29`
+
+## CSLT-04 - 流式应答推送
+- **输出**: `ChunkEvent {text: str, sequence: int}` — SSE chunk 事件 data 载荷，承载文本增量与递增序列号
+- **输出**: `DoneEvent {finish_reason: str, sequence?: int}` — SSE done 事件 data 载荷，标记流终止及原因
+- **输出**: `ErrorEvent {error_code: str, detail: str}` — SSE error 事件 data 载荷，携带错误码与说明
+- **输出**: `HeartbeatEvent {}` — SSE 心跳保活事件标记，15 秒间隔无 data 负载
+- **枚举**: `StreamErrorCode` = SESSION_NOT_FOUND | GENERATION_FAILED | STREAM_TIMEOUT | CONCURRENCY_LIMIT_EXCEEDED | INTERNAL_ERROR
+- **状态机**: 无（纯数据推送通道，内部 5 态生命周期纯内存不持久化）
+- **模块依赖**: CSLT-03 (GenerationChunk AsyncGenerator 上游数据来源), CSLT-08 (SSE 事件流下游消费方), DEPLOY-02 (Nginx SSE 路由预配置), AUTH-04 (JWT 认证中间件)
+- **外部依赖**: FastAPI StreamingResponse (SSE 封装), Uvicorn (ASGI 运行时), Nginx proxy_buffering off (实时透传)
+- **技术栈**: FastAPI>=0.115, Pydantic>=2.0, asyncio
+- **契约文件**: `docs/contracts/CSLT-04/ChunkEvent.json`, `docs/contracts/CSLT-04/DoneEvent.json`, `docs/contracts/CSLT-04/HeartbeatEvent.json`, `docs/contracts/CSLT-04/ErrorEvent.json`, `docs/contracts/CSLT-04/StreamErrorCode.json`
+- **复用契约**: CSLT-03/GenerationChunk, CSLT-03/GenerationStatus, DEPLOY-05/AppSettings, OBS-01/LogEntry
+- **更新时间**: `2026-05-27 17:45:12`
