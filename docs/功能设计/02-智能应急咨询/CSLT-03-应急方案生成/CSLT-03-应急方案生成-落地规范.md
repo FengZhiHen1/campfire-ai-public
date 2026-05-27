@@ -154,14 +154,14 @@ class PromptBuildContext(BaseModel):
    > 7. 温度/确定性约束：生成内容保持高度确定性，避免模棱两可的建议
 
 4. **步骤 4：LLM 流式调用**
-   - **操作对象**：DeepSeek API chat completion stream 请求
+   - **操作对象**：DeepSeek API chat completion stream 请求（通过 OpenAI SDK `AsyncOpenAI`）
    - **具体操作**：
-     1. 从 `packages/py-config` 读取 `DEEPSEEK_MODEL`（默认 `deepseek-chat`）、`GENERATION_TEMPERATURE`（默认 `0.3`）、`GENERATION_MAX_TOKENS`（默认 `4096`）、`GENERATION_TIMEOUT_S`（默认 `15.0`）
+     1. 从 `packages/py-config` 读取 `DEEPSEEK_MODEL`（默认 `deepseek-v4-pro`）、`GENERATION_TEMPERATURE`（默认 `0.3`）、`GENERATION_MAX_TOKENS`（默认 `8192`）、`GENERATION_TIMEOUT_S`（默认 `15.0`）
      2. 调用 `LLMClient.async_chat_stream(messages=messages, model=config.DEEPSEEK_MODEL, temperature=config.GENERATION_TEMPERATURE, max_tokens=config.GENERATION_MAX_TOKENS, timeout=config.GENERATION_TIMEOUT_S)`
      3. 返回 `AsyncGenerator[ChatCompletionChunk, None]` 迭代器
    - **输入来源**：步骤 3 的 `messages` 列表
    - **输出去向**：`AsyncGenerator` 迭代器进入步骤 5 的流式消耗循环
-   - **失败行为**：LLM API 返回 HTTP 非 200 或连接超时（>`GENERATION_TIMEOUT_S` 秒未建立连接）→ 抛出 `LLMUnavailableError`（继承 AppException），status_code=503，`detail="LLM 生成服务暂时不可用，请稍后重试"`。记录 CRITICAL 日志含 API 状态码和耗时。不重试——单次调用失败即终止
+   - **失败行为**：LLM API 返回 HTTP 非 200 或超时 → `LLMClient.async_chat_stream()` 内置重试（指数退避 3s→120s，最多 3 次），重试耗尽后抛出 `LLMClientError` → `streaming.py` 包装为 `LLMUnavailableError`（继承 AppException），status_code=503，`detail="LLM 生成服务暂时不可用，请稍后重试"`。记录 CRITICAL 日志含 API 状态码和耗时
 
 5. **步骤 5：流式 chunk 生产**
    - **操作对象**：步骤 4 的 `AsyncGenerator[ChatCompletionChunk, None]`

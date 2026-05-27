@@ -239,12 +239,23 @@ async def generate_emergency_plan(
         GENERATION_REQUESTS.labels(status="timeout").inc()
         raise
 
-    except Exception as exc:
-        # LLM API 不可用等
+    except LLMUnavailableError:
+        # 已在 streaming 层包装，直接传播
         logger.critical(
             service="emergency_plan_generation",
             message="LLM API unavailable",
             op_type="llm_error",
+            extra={**log_extra},
+        )
+        GENERATION_REQUESTS.labels(status="error").inc()
+        raise
+
+    except Exception as exc:
+        # 未预期的异常 → 统一包装为 LLMUnavailableError
+        logger.critical(
+            service="emergency_plan_generation",
+            message="Unexpected error during generation",
+            op_type="unexpected_error",
             extra={**log_extra, "error": str(exc)},
         )
         GENERATION_REQUESTS.labels(status="error").inc()

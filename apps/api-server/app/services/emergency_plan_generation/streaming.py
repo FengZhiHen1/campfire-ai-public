@@ -32,6 +32,7 @@ from typing import Any, AsyncGenerator
 from py_logger import logger
 
 from py_llm import LLMClient
+from py_llm.client import LLMClientError
 
 from .blocked_outputs import DISCLAIMER_TEXT
 from .enums import GenerationStatus
@@ -56,13 +57,6 @@ _DISCLAIMER_CHECK_PATTERN: re.Pattern[str] = re.compile(r"不构成医疗诊断|
 # 引用标记提取正则
 _REFERENCE_TAG_PATTERN: re.Pattern[str] = re.compile(r"\[(\d+)\]")
 
-# 默认配置（在 py-config 添加字段前使用）
-_DEFAULT_MODEL: str = "deepseek-chat"
-_DEFAULT_MAX_TOKENS: int = 4096
-_DEFAULT_TEMPERATURE: float = 0.3
-_DEFAULT_TIMEOUT_S: float = 15.0
-
-
 # ============================================================================
 # stream_generate — 流式生成主协程
 # ============================================================================
@@ -85,9 +79,7 @@ async def stream_generate(
         messages: 由 PromptBuilder.build() 产出的 messages 列表。
         prenumbered_slices: 预编号切片映射表 [(编号, slice_id), ...]。
         llm_client: LLMClient 实例。为 None 时创建默认实例。
-        config: 可选配置对象（含 DEEPSEEK_MODEL, GENERATION_TEMPERATURE,
-                GENERATION_MAX_TOKENS, GENERATION_TIMEOUT_S 字段）。
-                为 None 时使用默认值。
+        config: 可选 AppSettings 配置实例。为 None 时从 py_config 加载默认值。
 
     Yields:
         GenerationChunk: 每个 LLM Token 增量块。
@@ -97,16 +89,10 @@ async def stream_generate(
         GenerationTimeoutError: 全流程超时且无任何文本产出（在 yield 前抛出）。
     """
     # === 读取配置 ===
-    model: str = getattr(config, "DEEPSEEK_MODEL", _DEFAULT_MODEL) if config else _DEFAULT_MODEL
-    temperature: float = (
-        getattr(config, "GENERATION_TEMPERATURE", _DEFAULT_TEMPERATURE) if config else _DEFAULT_TEMPERATURE
-    )
-    max_tokens: int = (
-        getattr(config, "GENERATION_MAX_TOKENS", _DEFAULT_MAX_TOKENS) if config else _DEFAULT_MAX_TOKENS
-    )
-    timeout_s: float = (
-        getattr(config, "GENERATION_TIMEOUT_S", _DEFAULT_TIMEOUT_S) if config else _DEFAULT_TIMEOUT_S
-    )
+    model: str = config.DEEPSEEK_MODEL if config else "deepseek-v4-pro"
+    temperature: float = config.GENERATION_TEMPERATURE if config else 0.3
+    max_tokens: int = config.GENERATION_MAX_TOKENS if config else 8192
+    timeout_s: float = config.GENERATION_TIMEOUT_S if config else 15.0
 
     # === 初始化 LLM 客户端 ===
     client = llm_client or LLMClient()
@@ -197,8 +183,12 @@ async def stream_generate(
                 accumulated_text="",
             )
 
+    except LLMClientError as exc:
+        # LLM API 不可用（含重试耗尽）— 包装为模块异常后传播
+        raise LLMUnavailableError(detail="LLM 生成服务暂时不可用，请稍后重试", original_error=exc) from exc
+
     except Exception as exc:
-        # LLM API 不可用等异常 — 包装为 LLMUnavailableError 后传播
+        # 非预期异常（网络中断、JSON 解析失败等）— 包装为模块异常
         raise LLMUnavailableError(detail="LLM 生成服务暂时不可用，请稍后重试", original_error=exc) from exc
 
     else:
