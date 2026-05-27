@@ -3,7 +3,7 @@ name = "api-server"
 version = "0.1.0"
 description = "Campfire-AI FastAPI API gateway"
 requires-python = ">=3.12"
-dependencies = []
+dependencies = ["prometheus-client>=0.20"]
 
 [project.scripts]
 api-server = "app.main:main"
