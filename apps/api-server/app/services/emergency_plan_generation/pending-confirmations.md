@@ -36,13 +36,9 @@
 
 ## 二、风险可控项（实施时已做防御处理，可按当前实现继续）
 
-### 4. [CONFIRM-04] `GenerationInputError` 在 Pydantic 校验失败时的包装格式
+### 4. [CONFIRM-04] ~~GenerationInputError 包装格式~~ ✅ 已修复
 
-**描述**：`service.py` 中当直接传入 dict 时的 Pydantic 校验失败使用了 `GenerationInputError(detail={"field": "input_data", "msg": str(exc)})`，未精确提取 Pydantic 的逐字段错误信息（如 `error.errors()[0]`）。
-
-**当前处理**：捕获所有 `Exception` 并包装为 `GenerationInputError`。上层调用方（CSLT-08）通常会在调用本模块前自行完成 Pydantic 校验，因此此处的校验兜底很少触发。
-
-**风险等级**：低 — 兜底路径非主流程，错误信息已包含原始异常文本。
+`service.py` 现在捕获 `ValidationError` 并提取 `error.errors()[0]` 的 `loc`（字段路径）、`msg`（失败原因）、`input`（实际值），组装为契约要求的 `detail={"field": "behavior_description", "msg": "...", "received": ""}` 格式。非 `ValidationError` 的异常用通用格式兜底。
 
 ### 5. [CONFIRM-05] PII 二次扫描的日志方法
 
