@@ -417,3 +417,68 @@
 - docs/篝火智答-技术栈设计.md
 
 **结论**：✅ 无冲突。PROF-01 作为 03-个性化档案分组首个进入设计流程的模块，其 CRUD 语义与已有 PROF-05 契约完全对齐。依赖方向均为单向合理依赖，无循环依赖迹象。与 SEC-03 的 PII 检测调用方式将在规范阶段确认（非阻塞性）。建议在规范阶段首先定义 Profile 数据模型契约，为 PROF 域下游模块（PROF-02/PROF-03/PROF-07）提供稳定的消费接口。
+
+---
+
+## 2026-05-27 21:37:16 — CSLT-08 咨询编排逻辑 — 材料准备一致性检查
+
+**检查范围**：模块 CSLT-08 规格准备阶段（s05），全量扫描已有规格文档和契约文件，核对依赖接口对齐与类型冲突。
+
+**扫描检查项**：
+- 模块编号冲突：无。CSLT-08 编号唯一（02-智能应急咨询分组），与已有模块无冲突。
+- 状态定义冲突：无。CSLT-08 定义的 8 种前端业务状态（空闲、选择行为类型、提交中、流式接收中、已完成、工单引导、提交失败、流传输失败）为前端编排领域专有状态机，与已有模块的状态定义（KNOW-01 ArticleStatus、DEPLOY-01 DeploymentState、OBS-04 HealthStatus、PROF-03 SeverityLevel 等）领域隔离，无交集。
+- 接口命名冲突：无。CSLT-08 为前端 L1b 逻辑层模块（位于 `logics/consult/`），不定义新的后端 API 端点或 Service 接口。其消费类型（BehaviorTypeCategory、CrisisLevel、ChunkEvent/DoneEvent/ErrorEvent/HeartbeatEvent、ValidationVerdict 等）全部来自已有 CSLT-01/03/04/05/06 的已发布契约，无新增接口命名冲突。
+- 同名异构类型：无。CSLT-08 复用已有契约类型的同名定义（CrisisLevel/BehaviorTypeCategory/ValidationVerdict 等），保持同名同构。已有模块间的同名异构（PROF-03 SeverityLevel vs CASE-01 SeverityLevel）与 CSLT-08 无关。
+- 循环依赖迹象：无。CSLT-08 出度 7（CSLT-01~06 + AUTH-06 + PROF-07，全部单向调用），入度 2（CSLT-07 + KNOW-05）。模块依赖关系分析确认零循环依赖。CSLT-07→CSLT-08 为前端 L1a→L1b 标准分层调用，非循环依赖。
+
+**上游接口兼容性审查**：
+- CSLT-01 → CSLT-08：`CrisisJudgmentResult`（含 `final_level: CrisisLevel`、`block_deep_response: bool`、`manual_review_flag: bool`）— CSLT-08 意图文档 §1.6.1 输入字段「危机判定结果」精确接收。字段类型和枚举值完全对齐。✅
+- CSLT-04 → CSLT-08：SSE 四类事件（ChunkEvent/DoneEvent/ErrorEvent/HeartbeatEvent）— CSLT-08 作为下游消费者直接消费，CSLT-04 契约中 `x-consumers` 已登记含 CSLT-08。✅
+- CSLT-05 → CSLT-08：`ConfidenceValidationOutput`（含 `confidence_score: float`、`verdict: ValidationVerdict`、`ticket_triggered: bool`）— CSLT-08 意图文档 §1.6.1 输入字段「置信度校验结论」精确接收。✅
+- CSLT-06 → CSLT-08：`ConsultationHistoryListItem`/`ConsultationHistoryDetail` — 历史查询接口完全兼容。✅
+
+**依赖接口对齐**：
+- CSLT-08 → CSLT-04：SSE 事件流消费方 — 依赖关系分析标记为 ✅ 确定，CSLT-04 契约已登记 CSLT-08 为消费者。✅ 已对齐
+- CSLT-08 → CSLT-01：危机等级消费方 — 依赖关系分析标记为 ✅ 确定，CSLT-01 契约已登记 CSLT-08 为消费者。✅ 已对齐
+- CSLT-08 → CSLT-05：置信度校验结论消费方 — 依赖关系分析标记为 ✅ 确定，CSLT-05 契约已登记 CSLT-08 为消费者。✅ 已对齐
+- CSLT-08 → CSLT-06：归档触发 + 历史查询 — 依赖关系分析标记为 ✅ 确定。✅ 已对齐
+- CSLT-08 → TICK-09：工单跳转 — CSLT-08 通过"联系专家"按钮移交控制权至 TICK-09，依赖方向明确。CSLT-08 不调用 TICK-09 后端 API，仅进行前端路由跳转。✅ 已对齐
+- CSLT-08 → AUTH-06：前端 httpClient Token 自动注入 — 前端标准依赖。✅ 已对齐
+
+**技术栈对齐**：CSLT-08 技术栈（Taro 4.x / React 18.x / Zustand 5.x / TypeScript 5.x）与 `docs/篝火智答-项目结构.md` §6.1 声明的 L1b 前端逻辑层技术栈完全一致。无技术栈根本性冲突。
+
+**意图缺陷结论**：无。意图文档完整定义了 8 种业务状态与法定转换路径、5 输入 + 5 输出业务定义、3 种异常策略、7 条验收标准、10 项技术决策留白。无性能指标不可达成、无技术栈冲突、无业务规则自相矛盾。
+
+**审查的相关文档**：
+- CSLT-01 危机分级判定-落地规范.md（已冻结）
+- CSLT-02 RAG语义检索-落地规范.md（已冻结）
+- CSLT-03 应急方案生成-落地规范.md（已冻结）
+- CSLT-04 流式应答推送-落地规范.md（已冻结）
+- CSLT-05 置信度后校验-落地规范.md（已冻结）
+- CSLT-06 咨询历史管理-落地规范.md（已冻结）
+- AUTH-01~06 用户认证系列-落地规范.md（已冻结）
+- PROF-01/03/05 个人档案/事件记录/隐私控制-落地规范.md（已冻结）
+- KNOW-01 科普内容管理-落地规范.md（已冻结）
+- CASE-01/04/09 案例录入/向量化入库/管理逻辑-落地规范.md（已冻结）
+- OBS-01/04 结构化日志/健康检查-落地规范.md（已冻结）
+- SEC-01/04/05 安全合规系列-落地规范.md（已冻结）
+- DEPLOY-01~05 部署运维系列-落地规范.md（已冻结）
+- docs/contracts/CSLT-01/CrisisJudgmentResult.json（maturity: draft）
+- docs/contracts/CSLT-01/CrisisLevel.json（maturity: draft）
+- docs/contracts/CSLT-01/BehaviorTypeCategory.json（maturity: draft）
+- docs/contracts/CSLT-04/ChunkEvent.json（maturity: draft）
+- docs/contracts/CSLT-04/DoneEvent.json（maturity: draft）
+- docs/contracts/CSLT-04/ErrorEvent.json（maturity: draft）
+- docs/contracts/CSLT-04/HeartbeatEvent.json（maturity: draft）
+- docs/contracts/CSLT-05/ConfidenceValidationOutput.json（maturity: draft）
+- docs/contracts/CSLT-05/ValidationVerdict.json（maturity: draft）
+- docs/contracts/CSLT-06/ConsultationHistoryCreate.json（maturity: draft）
+- docs/contracts/CSLT-06/ConsultationHistoryListItem.json（maturity: draft）
+- docs/contracts/CSLT-06/ConsultationHistoryDetail.json（maturity: draft）
+- docs/功能设计/_contracts.md
+- docs/功能设计/功能模块全拆解.md
+- docs/功能设计/模块依赖关系分析.md
+- docs/篝火智答-技术栈设计.md
+- docs/篝火智答-项目结构.md
+
+**结论**：✅ 无冲突。CSLT-08 作为前端 L1b 逻辑层模块，不定义新的后端 API 契约，仅消费已有模块的已锁定接口。其 8 状态机在项目中唯一，依赖方向全部单向，零循环依赖。上游 6 个模块（CSLT-01/03/04/05/06 + AUTH-06）的接口契约均已对齐。10 项技术决策归入规范阶段处理，不阻塞 s05 阶段进展。
