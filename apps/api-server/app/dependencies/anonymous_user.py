@@ -82,6 +82,7 @@ async def get_anonymous_user(
     factory = _get_session_factory()
     async with factory() as session:
         user = await _get_or_create_anonymous_user(session, device_id)
+        await session.commit()
 
     return {
         "sub": str(user.id),
