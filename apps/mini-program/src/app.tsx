@@ -1,3 +1,5 @@
+import './polyfills'
+
 import { useEffect } from 'react'
 import Taro from '@tarojs/taro'
 
