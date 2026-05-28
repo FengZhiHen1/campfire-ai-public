@@ -2,7 +2,6 @@
 
 /* ========== 页面外壳 ========== */
 .cases-page {
-  box-sizing: border-box;
   min-height: 100vh;
   background-color: $cf-background;
   display: flex;
@@ -19,6 +18,7 @@
   justify-content: center;
   position: relative;
   padding: 0 $cf-spacing-md;
+  z-index: 50;
 
   &__back {
     position: absolute;
@@ -47,6 +47,76 @@
     font-size: 36px;
     font-weight: 600;
     color: $cf-on-background;
+  }
+
+  &__review {
+    position: absolute;
+    right: 96px;
+    font-size: 28px;
+    color: $cf-primary;
+    background: none;
+    border: none;
+    min-width: 88px;
+    height: 88px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+
+    &:active {
+      opacity: 0.7;
+    }
+
+    &::after {
+      border: none;
+    }
+  }
+
+  &__menu-btn {
+    position: absolute;
+    right: $cf-spacing-md;
+    font-size: 32px;
+    color: $cf-on-background;
+    background: none;
+    border: none;
+    min-width: 88px;
+    height: 88px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+
+    &:active {
+      opacity: 0.7;
+    }
+
+    &::after {
+      border: none;
+    }
+  }
+
+  /* 下拉菜单 */
+  &__menu {
+    position: absolute;
+    top: 100%;
+    right: $cf-spacing-md;
+    background-color: $cf-surface;
+    border-radius: 24px;
+    box-shadow: $cf-shadow-deep;
+    width: 320px;
+    padding: 16px 0;
+    z-index: 60;
+    animation: cf-fade-in-up 150ms ease-out;
+  }
+
+  &__menu-item {
+    padding: 20px 32px;
+    font-size: 28px;
+    color: $cf-on-background;
+
+    &:active {
+      background-color: $cf-surface-variant;
+    }
   }
 }
 
@@ -116,6 +186,14 @@
     }
   }
 
+  &__clear {
+    font-size: 32px;
+    color: $cf-on-surface-variant;
+    margin-left: $cf-spacing-sm;
+    min-width: 44px;
+    text-align: center;
+  }
+
   /* 清除 Taro Input 默认样式 */
   input.cases-search__input {
     outline: none;
@@ -130,6 +208,8 @@
   padding: $cf-spacing-sm $cf-spacing-md;
   background-color: $cf-background;
   overflow-x: auto;
+  position: relative;
+  z-index: 40;
 
   &__picker {
     flex-shrink: 0;
@@ -146,12 +226,17 @@
     &--active {
       background-color: $cf-primary-container;
     }
+
+    &:active {
+      transform: scale(0.97);
+    }
   }
 
   &__picker-text {
     font-size: 24px;
     font-weight: 500;
     color: $cf-on-background;
+    white-space: nowrap;
 
     .cases-filters__picker--active & {
       color: $cf-on-primary-container;
@@ -162,6 +247,46 @@
     font-size: 20px;
     color: $cf-on-surface-variant;
   }
+}
+
+/* ========== 筛选下拉面板 ========== */
+.cases-filter-panel {
+  background-color: $cf-surface;
+  border-radius: 24px;
+  box-shadow: $cf-shadow-deep;
+  margin: 0 $cf-spacing-md;
+  padding: 16px 0;
+  position: relative;
+  z-index: 45;
+  animation: cf-fade-in-up 150ms ease-out;
+
+  &__item {
+    padding: 20px 32px;
+    font-size: 24px;
+    color: $cf-on-background;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+
+    &--active {
+      background-color: $cf-primary-container;
+      color: $cf-on-primary-container;
+    }
+
+    &:active {
+      background-color: $cf-surface-variant;
+    }
+  }
+}
+
+/* ========== 遮罩层 ========== */
+.cases-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 30;
 }
 
 /* ========== 案例卡片 ========== */
@@ -226,6 +351,7 @@
     height: 64px;
     border-radius: $cf-radius-full;
     display: flex;
+    flex-direction: column;
     align-items: center;
     justify-content: center;
     flex-shrink: 0;
@@ -262,7 +388,7 @@
   &__badge-level {
     font-size: 20px;
     line-height: 1;
-    margin-top: 4px;
+    margin-top: 2px;
   }
 
   /* 标签行 */
@@ -289,6 +415,13 @@
       background-color: $cf-surface-variant;
       color: $cf-on-surface-variant;
     }
+
+    &--mine {
+      background-color: $cf-primary-container;
+      color: $cf-on-primary-container;
+      font-size: 20px;
+      padding: 4px 12px;
+    }
   }
 
   /* 底部信息行 */
@@ -303,6 +436,7 @@
     width: 16px;
     height: 16px;
     border-radius: $cf-radius-full;
+    flex-shrink: 0;
 
     &--approved { background-color: $cf-tertiary; }
     &--pending { background-color: $cf-primary; }
@@ -340,6 +474,7 @@
   border: none;
   z-index: 100;
   box-shadow: 0 4px 16px rgba(245, 158, 11, 0.35);
+  animation: cf-fab-enter 300ms ease-out 200ms both;
 
   &:active {
     transform: scale(0.95);
@@ -360,7 +495,7 @@
 
 .cases-loading__skeleton {
   width: 100%;
-  height: 480px;
+  height: 240px;
   background-color: $cf-surface-variant;
   border-radius: $cf-radius-lg;
   border: 2px solid rgba($cf-primary, 0.2);
@@ -371,15 +506,18 @@
 .cases-empty__icon {
   width: 240px;
   height: 240px;
-  background-color: $cf-primary-container;
-  border-radius: $cf-radius-full;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 96px;
   margin-bottom: $cf-spacing-md;
-  opacity: 0;
-  animation: cf-fade-in-scale 400ms ease-out forwards;
+}
+
+.cases-empty__illustration {
+  width: 120px;
+  height: 120px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba($cf-primary, 0.3) 0%, rgba($cf-primary, 0.1) 50%, transparent 70%);
+  animation: cf-fade-in-scale 400ms ease-out;
 }
 
 .cases-empty__title {
@@ -396,8 +534,7 @@
   margin-bottom: $cf-spacing-lg;
 }
 
-.cases-empty__btn,
-.cases-error__retry-btn {
+.cases-empty__btn {
   width: 480px;
   height: 96px;
   background-color: $cf-primary;
@@ -410,7 +547,58 @@
   justify-content: center;
   border: none;
 
+  &--text {
+    background: none;
+    color: $cf-primary;
+    font-size: 28px;
+    height: 64px;
+    width: auto;
+    padding: 0 $cf-spacing-md;
+  }
+
   &:active {
     opacity: 0.9;
+  }
+}
+
+/* ========== 加载更多 ========== */
+.cases-load-more {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: $cf-spacing-sm;
+  padding: $cf-spacing-md 0;
+
+  &__spinner {
+    width: 40px;
+    height: 40px;
+    border: 3px solid rgba($cf-primary, 0.2);
+    border-top-color: $cf-primary;
+    border-radius: 50%;
+    animation: cf-spin 1s linear infinite;
+  }
+
+  &__text {
+    font-size: 28px;
+    color: $cf-on-surface-variant;
+  }
+}
+
+.cases-no-more {
+  text-align: center;
+  padding: $cf-spacing-lg 0;
+  font-size: 24px;
+  color: rgba($cf-on-surface-variant, 0.5);
+}
+
+/* ========== 新增动画 ========== */
+@keyframes cf-fab-enter {
+  from {
+    opacity: 0;
+    transform: scale(0.8);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
   }
 }
