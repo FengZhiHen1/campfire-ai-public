@@ -9,10 +9,10 @@
 from __future__ import annotations
 
 import secrets
-from typing import AsyncGenerator
 
 from fastapi import Request
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from py_db.models.auth import User
@@ -28,16 +28,12 @@ async def _get_or_create_anonymous_user(
     session: AsyncSession,
     device_id: str,
 ) -> User:
-    """根据 device_id 查找或创建匿名用户记录。
+    """根据 device_id 查找或创建匿名用户记录（处理并发竞态）。
 
-    Args:
-        session: 数据库异步会话。
-        device_id: 设备匿名标识。
-
-    Returns:
-        User: 已存在的或新创建的匿名用户。
+    当两个并发请求携带相同 X-Device-Id 同时到达时，两者的 SELECT
+    都可能返回空，导致第二个 INSERT 触发用户名唯一约束冲突。
+    捕获该冲突后回退到重新 SELECT，此时并发赢家的记录已可见。
     """
-    # 1. 尝试查找已有记录
     result = await session.execute(
         select(User).where(User.device_id == device_id)
     )
@@ -45,7 +41,6 @@ async def _get_or_create_anonymous_user(
     if existing is not None:
         return existing
 
-    # 2. 创建新的匿名用户（填充占位值以满足非空约束）
     user = User(
         username=device_id,
         password_hash=_ANON_PASSWORD_HASH,
@@ -54,7 +49,18 @@ async def _get_or_create_anonymous_user(
         device_id=device_id,
     )
     session.add(user)
-    await session.flush()
+    try:
+        await session.flush()
+    except IntegrityError:
+        await session.rollback()
+        result = await session.execute(
+            select(User).where(User.device_id == device_id)
+        )
+        existing = result.scalars().first()
+        if existing is not None:
+            return existing
+        raise
+
     await session.refresh(user)
     return user
 
