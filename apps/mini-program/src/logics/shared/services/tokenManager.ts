@@ -4,8 +4,9 @@
  * 职责：
  * - 生成并持久化匿名设备 ID（16 位随机字符串）
  * - 提供 getDeviceId() 供 httpClient 注入 X-Device-Id 请求头
+ * - 提供 Token 管理 stub（MVP 阶段不持久化 JWT，仅用于兼容已编译的 useAuth Hook）
  *
- * MVP 阶段：完全移除 JWT Token 管理逻辑。
+ * MVP 阶段：Token 相关为存根实现，不涉及真实 JWT 逻辑。
  */
 
 import Taro from '@tarojs/taro';
@@ -69,5 +70,45 @@ export const deviceManager = {
       // ignore
     }
     return newId;
+  },
+};
+
+// ============================================================================
+// Token 管理存根（MVP 匿名版 — 兼容 useAuth Hook 编译）
+// ============================================================================
+
+export class LoginError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'LoginError';
+  }
+}
+
+export class SessionExpiredError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'SessionExpiredError';
+  }
+}
+
+export function buildMockLoginResponse(
+  _username: string,
+  _password: string,
+): { access_token: string; refresh_token: string; token_type: 'Bearer' } {
+  return {
+    access_token: 'mock-jwt-header.' +
+      Buffer.from(JSON.stringify({ sub: 'mock-user', roles: [] })).toString('base64url') +
+      '.mock-signature',
+    refresh_token: 'mock-refresh-token',
+    token_type: 'Bearer',
+  };
+}
+
+export const tokenManager = {
+  setTokens(_tokens: { accessToken: string; refreshToken: string }): void {
+    // MVP: no-op
+  },
+  clearTokens(): void {
+    // MVP: no-op
   },
 };
