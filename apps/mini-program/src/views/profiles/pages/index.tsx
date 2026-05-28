@@ -55,6 +55,15 @@ function formatEventTime(iso: string): string {
   return `${d.getMonth() + 1}月${d.getDate()}日 ${timeStr}`;
 }
 
+/** 根据行为类型获取 accent 颜色 */
+function getEventAccent(behaviorType: string): 'error' | 'secondary' | 'tertiary' {
+  const highRisk = ['自伤行为', '攻击行为', '逃跑/走失'];
+  const mediumRisk = ['情绪爆发', '拒绝服药'];
+  if (highRisk.includes(behaviorType)) return 'error';
+  if (mediumRisk.includes(behaviorType)) return 'secondary';
+  return 'tertiary';
+}
+
 // ============================================================================
 // 组件
 // ============================================================================
@@ -144,7 +153,10 @@ export default function ProfileIndex() {
     return (
       <View className="profile-index-page">
         <View className="profile-index-navbar">
-          <Text className="profile-index-navbar__title">个人档案</Text>
+          <View className="profile-index-navbar__brand">
+            <Text className="profile-index-navbar__icon">🔥</Text>
+            <Text className="profile-index-navbar__title">个人档案</Text>
+          </View>
         </View>
         <View className="profile-cold-start">
           <View className="profile-cold-start__illustration" />
@@ -167,7 +179,10 @@ export default function ProfileIndex() {
     return (
       <View className="profile-index-page">
         <View className="profile-index-navbar">
-          <Text className="profile-index-navbar__title">个人档案</Text>
+          <View className="profile-index-navbar__brand">
+            <Text className="profile-index-navbar__icon">🔥</Text>
+            <Text className="profile-index-navbar__title">个人档案</Text>
+          </View>
         </View>
         <View className="profile-index-loading">
           <View className="profile-index-loading__skeleton" />
@@ -184,7 +199,10 @@ export default function ProfileIndex() {
     <View className="profile-index-page">
       {/* 导航栏 */}
       <View className="profile-index-navbar">
-        <Text className="profile-index-navbar__title">个人档案</Text>
+        <View className="profile-index-navbar__brand">
+          <Text className="profile-index-navbar__icon">🔥</Text>
+          <Text className="profile-index-navbar__title">个人档案</Text>
+        </View>
         {selectedProfile && (
           <Button className="profile-index-navbar__edit" onClick={goEdit}>
             编辑
@@ -201,21 +219,25 @@ export default function ProfileIndex() {
               className={`profile-switcher__item ${idx === selectedIdx ? 'profile-switcher__item--active' : ''}`}
               onClick={() => setSelectedIdx(idx)}
             >
-              <View className="profile-switcher__avatar">
-                <Text className="profile-switcher__avatar-icon">👤</Text>
+              <View className="profile-switcher__avatar-wrap">
+                <View className="profile-switcher__avatar">
+                  <Text className="profile-switcher__avatar-icon">👤</Text>
+                </View>
+                {idx === selectedIdx && <View className="profile-switcher__indicator" />}
               </View>
               <Text className="profile-switcher__name">{p.nickname || '未命名'}</Text>
-              {idx === selectedIdx && <View className="profile-switcher__indicator" />}
             </View>
           ))}
 
           {/* 新建档案卡片 */}
           {profiles.length < 5 && (
             <View className="profile-switcher__item profile-switcher__item--add" onClick={goCreate}>
-              <View className="profile-switcher__avatar profile-switcher__avatar--add">
-                <Text className="profile-switcher__add-icon">+</Text>
+              <View className="profile-switcher__avatar-wrap">
+                <View className="profile-switcher__avatar profile-switcher__avatar--add">
+                  <Text className="profile-switcher__add-icon">+</Text>
+                </View>
               </View>
-              <Text className="profile-switcher__name">新建</Text>
+              <Text className="profile-switcher__name">添加</Text>
             </View>
           )}
         </View>
@@ -228,12 +250,15 @@ export default function ProfileIndex() {
             <View className="profile-info-card__avatar">
               <Text className="profile-info-card__avatar-icon">👤</Text>
             </View>
-            <Text className="profile-info-card__name">
-              {selectedDetail.nickname || '未命名'}
-            </Text>
+            <View className="profile-info-card__meta">
+              <Text className="profile-info-card__name">
+                {selectedDetail.nickname || '未命名'}
+              </Text>
+              <Text className="profile-info-card__age">
+                {selectedDetail.age_range}
+              </Text>
+            </View>
           </View>
-
-          <View className="profile-info-card__divider" />
 
           <View className="profile-info-card__tags">
             <View className="profile-info-card__tag profile-info-card__tag--default">
@@ -249,23 +274,20 @@ export default function ProfileIndex() {
               <Text>{selectedDetail.primary_behavior}</Text>
             </View>
           </View>
-
-          <Text className="profile-info-card__created">
-            创建于 {selectedDetail.created_at?.slice(0, 10)}
-          </Text>
         </View>
       )}
 
       {/* 时间线标题区 */}
       <View className="profile-timeline-header">
         <Text className="profile-timeline-header__title">
-          📋 事件记录（共 {events.length} 条）
+          <Text className="profile-timeline-header__icon">📋</Text>
+          事件记录（共 {events.length} 条）
         </Text>
         <Button
           className="profile-timeline-header__add"
           onClick={() => setShowQuickRecord(true)}
         >
-          + 记录
+          +
         </Button>
       </View>
 
@@ -290,39 +312,44 @@ export default function ProfileIndex() {
             {/* 轴线 */}
             <View className="profile-timeline__axis" />
 
-            {events.map((event, idx) => (
-              <View key={event.event_id} className="profile-timeline__row">
-                {/* 节点 */}
-                <View className={`profile-timeline__dot ${idx === 0 ? 'profile-timeline__dot--latest' : ''}`} />
+            {events.map((event, idx) => {
+              const accent = getEventAccent(event.behavior_type);
+              return (
+                <View key={event.event_id} className="profile-timeline__row">
+                  {/* 节点 */}
+                  <View className={`profile-timeline__dot ${idx === 0 ? 'profile-timeline__dot--latest' : ''}`} />
 
-                {/* 事件卡片 */}
-                <View className="profile-event-card">
-                  <View className="profile-event-card__header">
-                    <Text className="profile-event-card__time">
-                      {formatEventTime(event.event_time)}
+                  {/* 事件卡片 */}
+                  <View className={`profile-event-card profile-event-card--${accent}`}>
+                    <View className="profile-event-card__header">
+                      <Text className="profile-event-card__time">
+                        {formatEventTime(event.event_time)}
+                      </Text>
+                      <View className="profile-event-card__badges">
+                        {event.has_evaluation && (
+                          <Text className="profile-event-card__eval">
+                            已评估
+                          </Text>
+                        )}
+                        {!event.is_complete && (
+                          <Text className="profile-event-card__incomplete">
+                            待补全
+                          </Text>
+                        )}
+                      </View>
+                    </View>
+
+                    <View className="profile-event-card__tag">
+                      <Text>{event.behavior_type}</Text>
+                    </View>
+
+                    <Text className="profile-event-card__summary">
+                      {event.summary}
                     </Text>
-                    {event.has_evaluation && (
-                      <Text className="profile-event-card__eval">
-                        已评估 <Text className="profile-event-card__eval-dot">●</Text>
-                      </Text>
-                    )}
-                    {!event.is_complete && (
-                      <Text className="profile-event-card__incomplete">
-                        ⚠ 待补全
-                      </Text>
-                    )}
                   </View>
-
-                  <View className="profile-event-card__tag">
-                    <Text>{event.behavior_type}</Text>
-                  </View>
-
-                  <Text className="profile-event-card__summary">
-                    {event.summary}
-                  </Text>
                 </View>
-              </View>
-            ))}
+              );
+            })}
           </>
         )}
       </View>
