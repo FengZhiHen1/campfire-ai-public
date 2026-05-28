@@ -1,17 +1,8 @@
 import { useState, useEffect } from 'react';
-import { View, Text, Button, Picker } from '@tarojs/components';
+import { View, Text, Button } from '@tarojs/components';
 import Taro from '@tarojs/taro';
-import { listCases } from '../../../logics/cases/services/caseApi';
+import { listNarratives, type NarrativeListItem } from '../../../logics/cases/services/narrativeApi';
 import './index.scss';
-
-interface CaseItem {
-  case_id: string;
-  title: string;
-  status: string;
-  behavior_type?: string;
-  evidence_level?: string;
-  created_at?: string;
-}
 
 const statusOptions = [
   { label: '全部状态', value: '' },
@@ -21,15 +12,11 @@ const statusOptions = [
   { label: '已驳回', value: 'rejected' },
 ];
 
-const behaviorTypeOptions = [
-  { label: '全部类型', value: '' },
-  { label: '自伤', value: '自伤' },
-  { label: '攻击', value: '攻击' },
-  { label: '刻板', value: '刻板' },
-  { label: '逃跑', value: '逃跑' },
-  { label: '情绪崩溃', value: '情绪崩溃' },
-  { label: '其他', value: '其他' },
-];
+const sourceTypeLabel: Record<string, string> = {
+  '专家撰写': '专家',
+  '机构脱敏': '机构',
+  '工单沉淀': '工单',
+};
 
 const statusTextMap: Record<string, string> = {
   draft: '草稿',
@@ -46,20 +33,16 @@ const statusClassMap: Record<string, string> = {
 };
 
 export default function CasesIndex() {
-  const [items, setItems] = useState<CaseItem[]>([]);
+  const [items, setItems] = useState<NarrativeListItem[]>([]);
   const [loading, setLoading] = useState(false);
-  const [statusIdx, setStatusIdx] = useState(0);
-  const [behaviorTypeIdx, setBehaviorTypeIdx] = useState(0);
   const [activeTab, setActiveTab] = useState<'public' | 'my'>('public');
 
   const load = async () => {
     setLoading(true);
     try {
       const scope = activeTab === 'public' ? 'public' : 'my';
-      const status = activeTab === 'my' && statusIdx > 0 ? statusOptions[statusIdx].value || undefined : undefined;
-      const behaviorType = behaviorTypeOptions[behaviorTypeIdx].value || undefined;
-      const res = await listCases(status, behaviorType, 1, 20, scope);
-      setItems(res.items as CaseItem[]);
+      const res = await listNarratives(scope, 1, 20);
+      setItems(res.items);
     } catch {
       Taro.showToast({ title: '加载失败', icon: 'none' });
     } finally {
@@ -73,22 +56,14 @@ export default function CasesIndex() {
 
   useEffect(() => {
     load();
-  }, [activeTab, statusIdx, behaviorTypeIdx]);
+  }, [activeTab]);
 
-  const goDetail = (caseId: string) => {
-    Taro.navigateTo({ url: `/views/cases/pages/detail?caseId=${caseId}` });
+  const goDetail = (narrativeId: string) => {
+    Taro.navigateTo({ url: `/views/cases/pages/detail?caseId=${narrativeId}` });
   };
 
   const goSubmit = () => {
-    Taro.navigateTo({ url: '/views/cases/pages/submit' });
-  };
-
-  const getEvidenceClass = (level?: string) => {
-    const first = (level || 'D').charAt(0).toUpperCase();
-    if (first === 'A') return 'a';
-    if (first === 'B') return 'b';
-    if (first === 'C') return 'c';
-    return 'd';
+    Taro.navigateTo({ url: '/views/cases/pages/narrative-submit' });
   };
 
   return (
@@ -122,34 +97,6 @@ export default function CasesIndex() {
         </View>
       </View>
 
-      {/* 筛选栏 */}
-      <View className="cases-filters">
-        <Picker
-          mode="selector"
-          range={behaviorTypeOptions.map((o) => o.label)}
-          value={behaviorTypeIdx}
-          onChange={(e) => setBehaviorTypeIdx(Number(e.detail.value))}
-        >
-          <Button className={`cases-filters__picker ${behaviorTypeIdx > 0 ? 'cases-filters__picker--active' : ''}`}>
-            <Text className="cases-filters__picker-text">{behaviorTypeOptions[behaviorTypeIdx].label}</Text>
-            <Text className="cases-filters__picker-chevron">▼</Text>
-          </Button>
-        </Picker>
-        {activeTab === 'my' && (
-          <Picker
-            mode="selector"
-            range={statusOptions.map((o) => o.label)}
-            value={statusIdx}
-            onChange={(e) => setStatusIdx(Number(e.detail.value))}
-          >
-            <Button className={`cases-filters__picker ${statusIdx > 0 ? 'cases-filters__picker--active' : ''}`}>
-              <Text className="cases-filters__picker-text">{statusOptions[statusIdx].label}</Text>
-              <Text className="cases-filters__picker-chevron">▼</Text>
-            </Button>
-          </Picker>
-        )}
-      </View>
-
       {/* 列表区域 */}
       <View className="cases-list">
         {loading && items.length === 0 && (
@@ -164,7 +111,9 @@ export default function CasesIndex() {
           <View className="cases-empty">
             <View className="cases-empty__icon">📚</View>
             <Text className="cases-empty__title">暂无案例</Text>
-            <Text className="cases-empty__subtitle">案例库正在建设中，敬请期待</Text>
+            <Text className="cases-empty__subtitle">
+              {activeTab === 'public' ? '案例库正在建设中，敬请期待' : '你还没有提交过案例'}
+            </Text>
             <Button className="cases-empty__btn" onClick={load}>
               刷新
             </Button>
@@ -172,35 +121,31 @@ export default function CasesIndex() {
         )}
 
         {items.map((item) => {
-          const evClass = getEvidenceClass(item.evidence_level);
-          const evLetter = (item.evidence_level || 'D').charAt(0).toUpperCase();
           const stClass = statusClassMap[item.status] || 'draft';
           const stText = statusTextMap[item.status] || item.status;
+          const srcLabel = sourceTypeLabel[item.source_type] || item.source_type;
           return (
             <View
-              key={item.case_id}
+              key={item.narrative_id}
               className="case-card"
-              onClick={() => goDetail(item.case_id)}
+              onClick={() => goDetail(item.narrative_id)}
             >
-              <View className={`case-card__accent case-card__accent--${evClass}`} />
+              <View className={`case-card__accent case-card__accent--${stClass}`} />
               <View className="case-card__body">
                 <View className="case-card__header">
                   <Text className="case-card__title">{item.title}</Text>
-                  <View className={`case-card__badge case-card__badge--${evClass}`}>
-                    <Text className="case-card__badge-letter">{evLetter}</Text>
-                    <Text className="case-card__badge-level">级</Text>
+                  <View className="case-card__badge">
+                    <Text className="case-card__badge-text">{item.card_count} 卡片</Text>
                   </View>
                 </View>
                 <View className="case-card__tags">
-                  {item.behavior_type && (
-                    <Text className="case-card__tag case-card__tag--primary">{item.behavior_type}</Text>
-                  )}
+                  <Text className="case-card__tag case-card__tag--source">{srcLabel}</Text>
                 </View>
                 <View className="case-card__footer">
                   <View className={`case-card__status-dot case-card__status-dot--${stClass}`} />
                   <Text className="case-card__status-text">{stText}</Text>
                   {item.created_at && (
-                    <Text className="case-card__time">{item.created_at}</Text>
+                    <Text className="case-card__time">{item.created_at?.slice(0, 10)}</Text>
                   )}
                 </View>
               </View>
