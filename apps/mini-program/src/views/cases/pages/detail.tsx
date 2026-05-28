@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { View, Text, Button, Input } from '@tarojs/components';
 import Taro from '@tarojs/taro';
 import { getCase, submitCase, reviewCase } from '../../../logics/cases/services/caseApi';
+import './detail.scss';
 
 interface CaseDetail {
   case_id: string;
@@ -16,6 +17,47 @@ interface CaseDetail {
   medical_criteria?: string;
   evidence_level?: string;
 }
+
+const statusTextMap: Record<string, string> = {
+  draft: '草稿',
+  pending_review: '待审核',
+  approved: '已通过',
+  rejected: '已驳回',
+};
+
+const statusClassMap: Record<string, string> = {
+  draft: 'draft',
+  pending_review: 'pending',
+  approved: 'approved',
+  rejected: 'rejected',
+};
+
+const quartetConfig = [
+  {
+    key: 'scene' as const,
+    title: '场景描述',
+    accent: 'scene',
+    color: 'scene',
+  },
+  {
+    key: 'comforting_phrase' as const,
+    title: '行为表现',
+    accent: 'behavior',
+    color: 'behavior',
+  },
+  {
+    key: 'immediate_action' as const,
+    title: '干预动作',
+    accent: 'action',
+    color: 'action',
+  },
+  {
+    key: 'result' as const,
+    title: '结果反馈',
+    accent: 'result',
+    color: 'result',
+  },
+];
 
 export default function CasesDetail() {
   const [data, setData] = useState<CaseDetail | null>(null);
@@ -77,48 +119,169 @@ export default function CasesDetail() {
     }
   };
 
+  const getEvidenceClass = (level?: string) => {
+    const first = (level || 'D').charAt(0).toUpperCase();
+    if (first === 'A') return 'a';
+    if (first === 'B') return 'b';
+    if (first === 'C') return 'c';
+    return 'd';
+  };
+
+  const getEvidenceLetter = (level?: string) => {
+    return (level || 'D').charAt(0).toUpperCase();
+  };
+
+  const getSectionValue = (key: string) => {
+    if (!data) return '';
+    if (key === 'scene') return data.scene || '';
+    if (key === 'result') {
+      const parts = [data.observation_metrics, data.medical_criteria].filter(Boolean);
+      return parts.join('\n\n') || '';
+    }
+    return (data as any)[key] || '';
+  };
+
+  if (loading) {
+    return (
+      <View className="detail-page">
+        <View className="detail-navbar">
+          <Button className="detail-navbar__back" onClick={() => Taro.navigateBack()}>←</Button>
+          <Text className="detail-navbar__title">案例详情</Text>
+        </View>
+        <View className="detail-loading">
+          <View className="detail-loading__skeleton" />
+          <Text className="detail-loading__text">加载中...</Text>
+        </View>
+      </View>
+    );
+  }
+
+  if (!data) {
+    return (
+      <View className="detail-page">
+        <View className="detail-navbar">
+          <Button className="detail-navbar__back" onClick={() => Taro.navigateBack()}>←</Button>
+          <Text className="detail-navbar__title">案例详情</Text>
+        </View>
+        <View className="detail-loading">
+          <Text className="detail-loading__text">未找到案例</Text>
+        </View>
+      </View>
+    );
+  }
+
+  const evClass = getEvidenceClass(data.evidence_level);
+  const evLetter = getEvidenceLetter(data.evidence_level);
+  const stClass = statusClassMap[data.status] || 'draft';
+  const stText = statusTextMap[data.status] || data.status;
+
   return (
-    <View>
-      <Text>案例详情</Text>
-      {loading && <Text>加载中...</Text>}
-      {data && (
-        <View>
-          <Text>标题: {data.title}</Text>
-          <Text>状态: {data.status}</Text>
-          <Text>行为类型: {data.behavior_type || '无'}</Text>
-          <Text>严重程度: {data.severity || '无'}</Text>
-          <Text>场景: {data.scene || '无'}</Text>
-          <Text>循证等级: {data.evidence_level || '无'}</Text>
-          <Text>即时干预: {data.immediate_action || '无'}</Text>
-          <Text>安抚话术: {data.comforting_phrase || '无'}</Text>
-          <Text>观察指标: {data.observation_metrics || '无'}</Text>
-          <Text>就医标准: {data.medical_criteria || '无'}</Text>
+    <View className="detail-page">
+      {/* 顶部导航栏 */}
+      <View className="detail-navbar">
+        <Button className="detail-navbar__back" onClick={() => Taro.navigateBack()}>←</Button>
+        <Text className="detail-navbar__title">案例详情</Text>
+      </View>
 
-          {data.status === 'draft' && (
-            <Button onClick={handleSubmit}>提交审核</Button>
+      {/* 封面图占位 */}
+      <View className="detail-cover">
+        <Text className="detail-cover__icon">🖼️</Text>
+        <Text className="detail-cover__text">本案例未上传封面图</Text>
+      </View>
+
+      {/* 概览信息 */}
+      <View className="detail-overview">
+        <Text className="detail-overview__title">{data.title}</Text>
+        <View className="detail-overview__tags">
+          {data.behavior_type && (
+            <Text className="detail-overview__tag detail-overview__tag--primary">{data.behavior_type}</Text>
           )}
-
-          {data.status === 'pending_review' && (
-            <View>
-              <Button onClick={handleApprove}>审核通过</Button>
-              {!showRejectInput && (
-                <Button onClick={() => setShowRejectInput(true)}>驳回</Button>
-              )}
-              {showRejectInput && (
-                <View>
-                  <Input
-                    value={reviewComment}
-                    onInput={(e) => setReviewComment(e.detail.value)}
-                    placeholder="请输入驳回意见（至少10字）"
-                  />
-                  <Button onClick={handleReject}>确认驳回</Button>
-                  <Button onClick={() => setShowRejectInput(false)}>取消</Button>
-                </View>
-              )}
-            </View>
+          {data.severity && (
+            <Text className="detail-overview__tag detail-overview__tag--default">{data.severity}</Text>
+          )}
+          {data.scene && (
+            <Text className="detail-overview__tag detail-overview__tag--default">{data.scene}</Text>
           )}
         </View>
-      )}
+        <View className="detail-overview__meta">
+          <View className={`detail-overview__badge detail-overview__badge--${evClass}`}>
+            <Text className="detail-overview__badge-letter">{evLetter}</Text>
+            <Text className="detail-overview__badge-level">级</Text>
+          </View>
+          <View className="detail-overview__status">
+            <View className={`detail-overview__status-dot detail-overview__status-dot--${stClass}`} />
+            <Text className="detail-overview__status-text">{stText}</Text>
+          </View>
+        </View>
+      </View>
+
+      {/* 四段式内容 */}
+      <View className="detail-quartet">
+        {quartetConfig.map((cfg) => {
+          const value = getSectionValue(cfg.key);
+          return (
+            <View key={cfg.key} className="detail-card">
+              <View className={`detail-card__accent detail-card__accent--${cfg.accent}`} />
+              <View className="detail-card__body">
+                <Text className={`detail-card__title detail-card__title--${cfg.color}`}>
+                  {cfg.title}
+                </Text>
+                {value ? (
+                  <Text className="detail-card__content">{value}</Text>
+                ) : (
+                  <Text className="detail-card__empty">（暂无内容）</Text>
+                )}
+              </View>
+            </View>
+          );
+        })}
+      </View>
+
+      {/* 审核操作 */}
+      <View className="detail-actions">
+        {data.status === 'draft' && (
+          <View className="detail-actions__panel">
+            <Text className="detail-actions__panel-title">审核操作</Text>
+            <Button className="detail-actions__btn detail-actions__btn--primary" onClick={handleSubmit}>
+              提交审核
+            </Button>
+          </View>
+        )}
+
+        {data.status === 'pending_review' && (
+          <View className="detail-actions__panel">
+            <Text className="detail-actions__panel-title">审核操作</Text>
+            <View className="detail-actions__row">
+              <Button className="detail-actions__btn detail-actions__btn--tertiary" onClick={handleApprove}>
+                审核通过
+              </Button>
+              {!showRejectInput && (
+                <Button className="detail-actions__btn detail-actions__btn--error" onClick={() => setShowRejectInput(true)}>
+                  驳回
+                </Button>
+              )}
+            </View>
+            {showRejectInput && (
+              <>
+                <Input
+                  className="detail-actions__input"
+                  value={reviewComment}
+                  onInput={(e) => setReviewComment(e.detail.value)}
+                  placeholder="请输入驳回意见（至少10字）"
+                />
+                <View className="detail-actions__row">
+                  <Button className="detail-actions__btn detail-actions__btn--error" onClick={handleReject}>
+                    确认驳回
+                  </Button>
+                  <Button className="detail-actions__btn detail-actions__btn--secondary" onClick={() => setShowRejectInput(false)}>
+                    取消
+                  </Button>
+                </View>
+              </>
+            )}
+          </View>
+        )}
+      </View>
     </View>
   );
 }
