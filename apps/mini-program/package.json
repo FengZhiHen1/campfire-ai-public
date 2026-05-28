@@ -5,6 +5,7 @@
   "main": "index.js",
   "scripts": {
     "dev:weapp": "taro build --type weapp --watch",
+    "dev:h5": "taro build --type h5 --watch",
     "build:weapp": "taro build --type weapp",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
@@ -15,14 +16,17 @@
   "devDependencies": {
     "@babel/preset-react": "^7.24.0",
     "@babel/preset-typescript": "^7.24.0",
+    "@pmmmwh/react-refresh-webpack-plugin": "^0.6.2",
     "@tarojs/cli": "^4.2.0",
+    "@tarojs/plugin-platform-h5": "^4.2.0",
     "@types/node": "^25.9.1",
     "@types/react": "^18.3.18",
+    "less": "^4.2.0",
     "react": "^18.3.1",
+    "react-refresh": "^0.18.0",
     "typescript": "^6.0.3",
     "vitest": "^4.1.7",
-    "zustand": "^5.0.13",
-    "less": "^4.2.0"
+    "zustand": "^5.0.13"
   },
   "dependencies": {
     "@tarojs/components": "^4.2.0",
