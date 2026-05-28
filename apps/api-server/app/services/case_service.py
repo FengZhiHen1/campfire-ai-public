@@ -286,17 +286,22 @@ async def create_case(
     # --- 步骤 A3：四段式字段完整性校验 ---
     _validate_four_stage_fields(request)
 
-    # --- 步骤 A4：PII 检测 ---
-    pii_result = pii_detect(request.narrative)
+    # --- 步骤 A4：PII 检测（MVP 简化：narrative 为空时跳过） ---
+    narrative_text: str = request.narrative or ""
+    pii_result = pii_detect(narrative_text)
     pii_warnings: list[PiiWarning] = _convert_pii_warnings(pii_result.warnings)
 
     # --- 步骤 A5 + A6：构建 ORM、生成 case_id、写入数据库 ---
-    # 解析 age_range
-    age_range_min: int = request.age_range[0]
-    age_range_max: int = request.age_range[1]
+    # MVP 默认值填充
+    age_range_val: list[int] = request.age_range or [0, 18]
+    age_range_min: int = age_range_val[0]
+    age_range_max: int = age_range_val[1]
 
-    # 获取 author_id
-    author_id: str = current_user.get("sub", "")
+    author_id: str = request.author_id or current_user.get("sub", "")
+    source_type_val: str = request.source_type.value if request.source_type else "专家撰写"
+    ebp_labels_val: list[str] = list(request.ebp_labels) if request.ebp_labels else []
+    family_category_val: str = request.family_category.value if request.family_category else "危机安全"
+    contraindications_val: str = request.contraindications or "暂无"
 
     # 处理附件引用
     attachment_refs_data: list[dict[str, Any]] = []
@@ -306,22 +311,22 @@ async def create_case(
     case = Case(
         case_id="__PENDING__",  # 临时占位，case_id 在下面生成
         title=request.title,
-        narrative=request.narrative,
-        source_type=request.source_type.value,
+        narrative=narrative_text or "待补充",
+        source_type=source_type_val,
         author_id=author_id,
         behavior_type=request.behavior_type.value,
         age_range_min=age_range_min,
         age_range_max=age_range_max,
         severity=request.severity.value,
         scene=request.scene.value,
-        ebp_labels=list(request.ebp_labels),
-        family_category=request.family_category.value,
+        ebp_labels=ebp_labels_val,
+        family_category=family_category_val,
         immediate_action=request.immediate_action,
         comforting_phrase=request.comforting_phrase,
         observation_metrics=request.observation_metrics,
         medical_criteria=request.medical_criteria,
         evidence_level=request.evidence_level.value,
-        contraindications=request.contraindications,
+        contraindications=contraindications_val,
         is_template=request.is_template,
         excluded_population=request.excluded_population,
         attachment_refs=attachment_refs_data if attachment_refs_data else None,
@@ -656,18 +661,20 @@ async def get_case(
 
 async def list_cases(
     status_filter: Optional[str],
+    behavior_type_filter: Optional[str],
     page: int,
     page_size: int,
     current_user: Dict[str, Any],
     session: AsyncSession,
     case_repo: CaseRepository,
 ) -> PaginatedResponse[CaseListItem]:
-    """按状态和作者查询案例列表。
+    """按状态和行为类型查询案例列表。
 
-    默认返回当前用户的所有案例，按 created_at 倒序。
+    MVP 简化：开放全量查询，不按 author_id 过滤。
 
     Args:
         status_filter: 可选状态筛选（draft/pending_review/rejected）。
+        behavior_type_filter: 可选行为类型筛选。
         page: 页码，从 1 开始。
         page_size: 每页条数。
         current_user: 当前用户 JWT payload。
@@ -677,8 +684,7 @@ async def list_cases(
     Returns:
         PaginatedResponse[CaseListItem]: 分页列表响应。
     """
-    author_id: str = current_user.get("sub", "")
-
+    # MVP 简化：开放全量查询，不按 author_id 过滤
     # 解析状态枚举
     status_enum: CaseStatus | None = None
     if status_filter:
@@ -691,7 +697,8 @@ async def list_cases(
     cases, total_count = await case_repo.find_by_filters(
         session,
         status=status_enum,
-        author_id=author_id,
+        author_id=None,
+        behavior_type=behavior_type_filter,
         page=page,
         page_size=page_size,
     )

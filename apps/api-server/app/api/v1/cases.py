@@ -178,6 +178,11 @@ async def list_cases_endpoint(
         alias="status",
         description="状态筛选（draft/pending_review/approved/rejected）",
     ),
+    behavior_type_filter: Optional[str] = Query(
+        default=None,
+        alias="behavior_type",
+        description="行为类型筛选（自伤/攻击/刻板/逃跑/情绪崩溃/其他）",
+    ),
     page: int = Query(default=1, ge=1, description="页码，从 1 开始"),
     page_size: int = Query(default=15, ge=1, le=100, description="每页条数"),
     anonymous_user: Dict[str, Any] = Depends(get_anonymous_user),
@@ -187,6 +192,7 @@ async def list_cases_endpoint(
     """案例列表查询端点。"""
     return await list_cases(
         status_filter=status_filter,
+        behavior_type_filter=behavior_type_filter,
         page=page,
         page_size=page_size,
         current_user=anonymous_user,

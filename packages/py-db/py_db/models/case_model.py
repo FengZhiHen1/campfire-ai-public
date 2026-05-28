@@ -168,6 +168,20 @@ class Case(Base, TimestampMixin):
         comment="审核驳回意见，由 CASE-03 填写",
     )
 
+    # ---- 索引状态（由 CASE-04 Worker 更新） ----
+    index_status: Mapped[str | None] = mapped_column(
+        String(20),
+        nullable=True,
+        default=None,
+        comment="向量化索引状态（pending/processing/indexed/indexing_failed）",
+    )
+    indexed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+        default=None,
+        comment="索引完成时间，仅 index_status='indexed' 时有值",
+    )
+
     def __repr__(self) -> str:
         return (
             f"<Case(case_id={self.case_id!r}, title={self.title!r}, "

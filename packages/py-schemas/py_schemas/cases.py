@@ -144,45 +144,18 @@ class CaseCreateRequest(BaseModel):
     在创建时仅校验非空，提交时执行完整性校验。
     """
 
-    # L1 字段
+    # MVP 核心必填字段
     title: str = Field(
         ..., max_length=100, description="案例标题（L1），去个性化后的简短名称"
     )
-    narrative: str = Field(
-        ...,
-        min_length=100,
-        description="原始叙事文本（L1），以自然语言撰写的完整干预故事，必须完成 PII 脱敏",
-    )
-    source_type: SourceType = Field(
-        ..., description="案例来源类型（L1）"
-    )
-    author_id: str = Field(
-        ..., description="撰写专家标识（L1），必须为已认证老师或专家账号"
-    )
-
-    # L2 字段
     behavior_type: BehaviorType = Field(
         ..., description="行为类型（L2）"
-    )
-    age_range: List[int] = Field(
-        ...,
-        min_length=2,
-        max_length=2,
-        description="适用年龄区间（L2），[起始岁, 结束岁]",
     )
     severity: SeverityLevel = Field(
         ..., description="适用严重程度（L2）"
     )
     scene: SceneType = Field(
         ..., description="发生场景（L2）"
-    )
-    ebp_labels: List[str] = Field(
-        ...,
-        min_length=1,
-        description="循证实践标签（L2），从 NCAEP EBP 标签中选取至少一项",
-    )
-    family_category: FamilyDisplayCategory = Field(
-        ..., description="家属端展示大类（L2）"
     )
     immediate_action: str = Field(
         ..., min_length=1, description="即时安全干预动作（L2），四段式第一段"
@@ -199,8 +172,33 @@ class CaseCreateRequest(BaseModel):
     evidence_level: EvidenceLevel = Field(
         ..., description="循证等级（L2）"
     )
-    contraindications: str = Field(
-        ..., min_length=1, description="禁忌与注意事项（L2），必须具体明确"
+
+    # MVP 简化：非核心字段改为 Optional，由 Service 层填充默认值
+    narrative: Optional[str] = Field(
+        default="",
+        description="原始叙事文本（L1），以自然语言撰写的完整干预故事，必须完成 PII 脱敏",
+    )
+    source_type: Optional[SourceType] = Field(
+        default=None, description="案例来源类型（L1）"
+    )
+    author_id: Optional[str] = Field(
+        default=None, description="撰写专家标识（L1），后端从 current_user 填充"
+    )
+    age_range: Optional[List[int]] = Field(
+        default=None,
+        min_length=2,
+        max_length=2,
+        description="适用年龄区间（L2），[起始岁, 结束岁]",
+    )
+    ebp_labels: Optional[List[str]] = Field(
+        default=None,
+        description="循证实践标签（L2），从 NCAEP EBP 标签中选取至少一项",
+    )
+    family_category: Optional[FamilyDisplayCategory] = Field(
+        default=None, description="家属端展示大类（L2）"
+    )
+    contraindications: Optional[str] = Field(
+        default=None, description="禁忌与注意事项（L2），必须具体明确"
     )
     is_template: bool = Field(
         default=False, description="是否模板（L2），普通录入默认为 false"

@@ -26,25 +26,27 @@ export interface PiiDetectionResult {
 
 /** 案例创建请求 */
 export interface CaseCreateRequest {
-  // L1 字段
+  // MVP 核心必填字段
   title: string;
-  narrative: string;
-  source_type: string;
-  author_id: string;
-  // L2 字段
   behavior_type: string;
-  age_range: [number, number];
   severity: string;
   scene: string;
-  ebp_labels: string[];
-  family_category: string;
   immediate_action: string;
   comforting_phrase: string;
   observation_metrics: string;
   medical_criteria: string;
   evidence_level: string;
-  contraindications: string;
-  is_template: boolean;
+
+  // MVP 简化：非核心字段可选，由后端填充默认值
+  narrative?: string;
+  source_type?: string;
+  author_id?: string;
+  age_range?: [number, number];
+  ebp_labels?: string[];
+  family_category?: string;
+  contraindications?: string;
+  is_template?: boolean;
+
   // 选填字段
   excluded_population?: string;
   attachment_refs?: AttachmentRef[];
@@ -116,6 +118,23 @@ export interface CaseListItem {
   is_template: boolean;
   created_at: string; // ISO datetime
   updated_at: string; // ISO datetime
+}
+
+/** 审核裁决请求 */
+export interface ReviewRequest {
+  decision: 'approved' | 'rejected';
+  review_comment?: string;
+  override_reason?: string;
+}
+
+/** 审核裁决响应 */
+export interface CaseReviewResponse {
+  case_id: string;
+  new_status: 'approved' | 'rejected';
+  expert_decision: string;
+  review_comment?: string;
+  reviewer_id: string;
+  reviewed_at: string;
 }
 
 /** 泛型分页响应 */

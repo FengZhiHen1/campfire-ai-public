@@ -128,10 +128,11 @@ class CaseRepository(BaseRepository[Case]):
         session: AsyncSession,
         status: CaseStatus | None = None,
         author_id: str | None = None,
+        behavior_type: str | None = None,
         page: int = 1,
         page_size: int = 15,
     ) -> tuple[list[Case], int]:
-        """按状态和作者筛选案例，支持分页。
+        """按状态、作者和行为类型筛选案例，支持分页。
 
         查询结果按 created_at 倒序排列。
         同时返回匹配总数用于分页计算。
@@ -140,6 +141,7 @@ class CaseRepository(BaseRepository[Case]):
             session: 活动数据库会话。
             status: 可选状态筛选（draft/pending_review/rejected）。
             author_id: 可选作者筛选。
+            behavior_type: 可选行为类型筛选。
             page: 页码，从 1 开始。
             page_size: 每页条数，默认 15。
 
@@ -155,6 +157,8 @@ class CaseRepository(BaseRepository[Case]):
                 conditions.append(self.model.status == status)
             if author_id is not None:
                 conditions.append(self.model.author_id == author_id)
+            if behavior_type is not None:
+                conditions.append(self.model.behavior_type == behavior_type)
 
             # 总数查询
             count_stmt: Select = select(sa_func.count()).select_from(self.model)
