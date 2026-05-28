@@ -150,7 +150,7 @@ export default function HomePage() {
       </View>
 
       {loading ? (
-        <View className="home-skeleton" style={{ height: '100px' }} />
+        <View className="home-skeleton" style={{ height: '200px' }} />
       ) : latestProfile ? (
         <View className="home-profile-card" onClick={goProfile}>
           <View className="home-profile-card__avatar">

@@ -6,12 +6,12 @@
   background-color: $cf-background;
   display: flex;
   flex-direction: column;
-  padding-bottom: calc(96px + env(safe-area-inset-bottom));
+  padding-bottom: calc(192px + env(safe-area-inset-bottom));
 }
 
 /* ========== 顶部导航栏 ========== */
 .submit-navbar {
-  height: 112px;
+  height: 224px;
   background-color: $cf-surface-dim;
   display: flex;
   align-items: center;
@@ -22,12 +22,12 @@
   &__back {
     position: absolute;
     left: $cf-spacing-md;
-    width: 88px;
-    height: 88px;
+    width: 176px;
+    height: 176px;
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 20px;
+    font-size: 40px;
     color: $cf-on-background;
     background: none;
     border: none;
@@ -38,7 +38,7 @@
   }
 
   &__title {
-    font-size: 18px;
+    font-size: 36px;
     font-weight: 600;
     color: $cf-on-background;
   }
@@ -46,7 +46,7 @@
 
 /* ========== 封面图占位区 ========== */
 .submit-cover {
-  height: 320px;
+  height: 640px;
   background-color: $cf-surface-variant;
   display: flex;
   flex-direction: column;
@@ -56,21 +56,21 @@
   border-radius: 0 0 $cf-radius-lg $cf-radius-lg;
 
   &__icon {
-    font-size: 48px;
+    font-size: 96px;
     margin-bottom: $cf-spacing-sm;
     opacity: 0.4;
   }
 
   &__text {
-    font-size: 16px;
+    font-size: 32px;
     font-weight: 500;
     color: $cf-on-surface-variant;
   }
 
   &__hint {
-    font-size: 12px;
+    font-size: 24px;
     color: rgba($cf-on-surface-variant, 0.6);
-    margin-top: 4px;
+    margin-top: 8px;
   }
 }
 
@@ -78,9 +78,9 @@
 .submit-section-title {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 8px;
   padding: $cf-spacing-md $cf-spacing-md $cf-spacing-sm;
-  font-size: 16px;
+  font-size: 32px;
   font-weight: 600;
   color: $cf-on-background;
 
@@ -89,10 +89,10 @@
   }
 
   &__hint {
-    font-size: 12px;
+    font-size: 24px;
     font-weight: 400;
     color: $cf-on-surface-variant;
-    margin-left: 4px;
+    margin-left: 8px;
   }
 }
 
@@ -106,7 +106,7 @@
 
   &__label {
     display: block;
-    font-size: 14px;
+    font-size: 28px;
     font-weight: 500;
     color: $cf-on-background;
     margin-bottom: $cf-spacing-xs;
@@ -119,36 +119,36 @@
 
   &__input {
     width: 100%;
-    height: 88px;
+    height: 176px;
     background-color: $cf-surface;
     border-radius: $cf-radius-md;
     padding: 0 $cf-spacing-md;
-    font-size: 16px;
+    font-size: 32px;
     color: $cf-on-background;
     box-sizing: border-box;
   }
 
   &__picker {
     width: 100%;
-    height: 88px;
+    height: 176px;
     background-color: $cf-surface;
     border-radius: $cf-radius-md;
     padding: 0 $cf-spacing-md;
     display: flex;
     align-items: center;
     justify-content: space-between;
-    font-size: 16px;
+    font-size: 32px;
     color: $cf-on-background;
     border: none;
   }
 
   &__picker-text {
-    font-size: 16px;
+    font-size: 32px;
     color: $cf-on-background;
   }
 
   &__picker-chevron {
-    font-size: 12px;
+    font-size: 24px;
     color: $cf-on-surface-variant;
   }
 }
@@ -180,7 +180,7 @@
     position: absolute;
     top: 0;
     left: 0;
-    width: 4px;
+    width: 8px;
     height: 100%;
 
     &--scene { background-color: $cf-secondary; }
@@ -190,13 +190,13 @@
   }
 
   &__body {
-    padding-left: 12px;
+    padding-left: 24px;
   }
 
   &__title {
-    font-size: 14px;
+    font-size: 28px;
     font-weight: 600;
-    margin-bottom: 4px;
+    margin-bottom: 8px;
 
     &--scene { color: $cf-secondary; }
     &--behavior { color: $cf-primary; }
@@ -209,18 +209,18 @@
   }
 
   &__hint {
-    font-size: 12px;
+    font-size: 24px;
     color: rgba($cf-on-surface-variant, 0.7);
     margin-bottom: $cf-spacing-sm;
   }
 
   &__textarea {
     width: 100%;
-    min-height: 160px;
+    min-height: 320px;
     background-color: $cf-surface-variant;
     border-radius: $cf-radius-md;
     padding: $cf-spacing-md;
-    font-size: 16px;
+    font-size: 32px;
     line-height: 1.75;
     color: $cf-on-background;
     box-sizing: border-box;
@@ -237,16 +237,16 @@
   border-radius: $cf-radius-lg $cf-radius-lg 0 0;
   box-shadow: $cf-shadow-input-top;
   padding: $cf-spacing-sm $cf-spacing-md;
-  padding-bottom: calc(12px + env(safe-area-inset-bottom));
+  padding-bottom: calc(24px + env(safe-area-inset-bottom));
   z-index: 100;
 
   &__btn {
     width: 100%;
-    height: 96px;
+    height: 192px;
     background-color: $cf-primary;
     color: $cf-on-primary;
     border-radius: $cf-radius-lg;
-    font-size: 16px;
+    font-size: 32px;
     font-weight: 600;
     display: flex;
     align-items: center;
