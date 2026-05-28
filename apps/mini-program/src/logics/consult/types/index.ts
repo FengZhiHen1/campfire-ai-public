@@ -155,10 +155,12 @@ export interface ConsultationHistoryCreate {
 
 /** ChunkEvent 的 data 字段载荷（CSLT-04 契约） */
 export interface ChunkEventPayload {
-  /** 当前 chunk 的文本增量 */
+  /** 当前 chunk 的文本增量（仅内容文本，JSON 语法已剥离） */
   text: string;
   /** 单调递增序列号，从 1 开始 */
   sequence: number;
+  /** 所属段落标题，前端据此增量追加到对应 planSections。null 表示非内容文本 */
+  section?: string | null;
 }
 
 /** DoneEvent 的 data 字段载荷（CSLT-04 契约） */
@@ -390,6 +392,10 @@ export interface UseConsultReturn {
   // ---------- 只读状态（CSLT-07 渲染用） ----------
   /** 当前会话业务状态 */
   sessionState: ConsultSessionState;
+  /** 当前勾选的行为类型列表 */
+  behaviorTypeSelection: BehaviorTypeCategory[];
+  /** 当前输入的行为描述文本 */
+  behaviorDescription: string;
   /** 消息列表 */
   messages: MessageItem[];
   /** 四段式方案段落（流式接收中实时更新） */
@@ -430,8 +436,8 @@ export interface UseConsultReturn {
   cancelSelection: () => void;
   /** 重试提交：submit_failed -> submitting */
   retrySubmit: () => Promise<void>;
-  /** 返回空闲：submit_failed | stream_failed -> idle */
-  goBackToIdle: () => void;
+  /** 返回修改：submit_failed | stream_failed -> selecting_behavior */
+  goBackToSelecting: () => void;
   /** 重试流式接收：stream_failed -> submitting（重新生成） */
   retryStream: () => Promise<void>;
   /** 开始新一轮咨询：completed | ticket_guide -> selecting_behavior */
