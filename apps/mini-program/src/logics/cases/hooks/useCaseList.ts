@@ -26,6 +26,10 @@ import { listCases } from '../services/caseApi';
 export interface UseCaseListParams {
   /** 可选状态筛选 */
   status?: string;
+  /** 可选行为类型筛选 */
+  behaviorType?: string;
+  /** 可选查询范围（public / my） */
+  scope?: string;
   /** 页码（从 1 开始） */
   page?: number;
   /** 每页条数 */
@@ -74,7 +78,13 @@ export function useCaseList(params?: UseCaseListParams): UseCaseListReturn {
    * 每次调用前取消上一个未完成的请求。
    */
   const fetchData = useCallback(
-    async (status?: string, page?: number, pageSize?: number): Promise<void> => {
+    async (
+      status?: string,
+      behaviorType?: string,
+      page?: number,
+      pageSize?: number,
+      scope?: string,
+    ): Promise<void> => {
       // 取消上一个未完成的请求
       if (abortRef.current) {
         abortRef.current.abort();
@@ -87,7 +97,7 @@ export function useCaseList(params?: UseCaseListParams): UseCaseListReturn {
       setError(null);
 
       try {
-        const result = await listCases(status, page, pageSize, controller.signal);
+        const result = await listCases(status, behaviorType, page, pageSize, scope, controller.signal);
         // 仅当本请求仍为活跃请求时才更新状态
         if (!controller.signal.aborted) {
           setData(result);
@@ -111,7 +121,7 @@ export function useCaseList(params?: UseCaseListParams): UseCaseListReturn {
 
   // 参数变化或手动刷新时重新请求
   useEffect(() => {
-    fetchData(params?.status, params?.page, params?.pageSize);
+    fetchData(params?.status, params?.behaviorType, params?.page, params?.pageSize, params?.scope);
 
     return () => {
       // 组件卸载时取消进行中的请求
@@ -119,7 +129,7 @@ export function useCaseList(params?: UseCaseListParams): UseCaseListReturn {
         abortRef.current.abort();
       }
     };
-  }, [params?.status, params?.page, params?.pageSize, refreshKey, fetchData]);
+  }, [params?.status, params?.behaviorType, params?.scope, params?.page, params?.pageSize, refreshKey, fetchData]);
 
   /**
    * 手动刷新（保持当前查询参数，重新请求）。
