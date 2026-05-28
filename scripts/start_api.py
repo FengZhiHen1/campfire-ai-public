@@ -23,9 +23,8 @@ def start() -> tuple:
     """
     proc = start_process(
         [
-            "uv", "run",
-            "--directory", "apps/api-server",
-            "python", "-m", "app.main",
+            "uv", "run", "python", "-c",
+            "import sys; sys.path.insert(0, 'apps/api-server'); from app.main import main; main()",
         ],
         cwd=PROJECT_ROOT,
     )
