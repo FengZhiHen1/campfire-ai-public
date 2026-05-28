@@ -184,6 +184,18 @@ async def list_cases_endpoint(
         alias="behavior_type",
         description="行为类型筛选（自伤/攻击/刻板/逃跑/情绪崩溃/其他）",
     ),
+    evidence_level: Optional[str] = Query(
+        default=None,
+        description="循证等级筛选（A/B/C/D）",
+    ),
+    sort_by: Optional[str] = Query(
+        default="latest",
+        description="排序方式：latest/evidence/cited/updated",
+    ),
+    keyword: Optional[str] = Query(
+        default=None,
+        description="搜索关键词（模糊匹配标题/行为类型/场景）",
+    ),
     scope: Optional[str] = Query(
         default="public",
         description="查询范围：public=仅已审核案例，my=当前用户的全部案例",
@@ -198,6 +210,9 @@ async def list_cases_endpoint(
     return await list_cases(
         status_filter=status_filter,
         behavior_type_filter=behavior_type_filter,
+        evidence_level=evidence_level,
+        sort_by=sort_by,
+        keyword=keyword,
         page=page,
         page_size=page_size,
         scope=scope,

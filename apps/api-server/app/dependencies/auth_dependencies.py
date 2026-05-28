@@ -18,10 +18,13 @@ from sqlalchemy.ext.asyncio import (
 from py_auth.hashing import hash_password
 from py_config import get_settings
 from py_db.repositories.case_repository import CaseRepository
+from py_db.repositories.event_repository import EventRepository
+from py_db.repositories.profile_repository import ProfileRepository
 from py_db.repositories.review_repository import (
     ReviewAuditLogRepository,
     ReviewRepository,
 )
+from py_db.repositories.teacher_link_repository import TeacherLinkRepository
 from py_db.repositories.user_repository import UserRepository
 from py_logger import logger
 
@@ -216,12 +219,30 @@ def get_review_audit_log_repository() -> ReviewAuditLogRepository:
     return ReviewAuditLogRepository(session_factory=_get_session_factory())
 
 
+def get_event_repository() -> EventRepository:
+    """FastAPI Depends 工厂：构造 EventRepository 实例。"""
+    return EventRepository(session_factory=_get_session_factory())
+
+
+def get_profile_repository() -> ProfileRepository:
+    """FastAPI Depends 工厂：构造 ProfileRepository 实例。"""
+    return ProfileRepository(session_factory=_get_session_factory())
+
+
+def get_teacher_link_repository() -> TeacherLinkRepository:
+    """FastAPI Depends 工厂：构造 TeacherLinkRepository 实例。"""
+    return TeacherLinkRepository(session_factory=_get_session_factory())
+
+
 __all__ = [
     "get_db_session",
     "get_user_repository",
     "get_case_repository",
     "get_review_repository",
     "get_review_audit_log_repository",
+    "get_event_repository",
+    "get_profile_repository",
+    "get_teacher_link_repository",
     "get_password_hasher",
     "get_audit_logger",
     "PasswordHasher",
