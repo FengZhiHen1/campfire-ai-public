@@ -1,17 +1,17 @@
-"""CSLT-02 RAG语义检索 — search_cases() 服务编排。
+"""CSLT-02/03/04/08 应急咨询编排 — consult_service。
 
-编排请求校验 → 检索引擎调用 → 结果包装的完整用例流程。
+MVP Phase 1 精简版：
+- search_cases() — 语义检索（保留）
+- start_consultation() — 端到端咨询触发编排（新增）
 
-本 Service 是 consult 模块的业务编排入口，组合 py-rag 的检索引擎
-和 py-schemas 的 DTO 来完成一次完整的语义检索。
-
-调用路径：
-  api/v1/consult.py → consult_service.search_cases() → py_rag.retrieval.hybrid_search()
+编排流程：
+  档案标签读取 → RAG 检索 → Prompt 构建 → LLM 流式生成 → SSE 注册 → 返回 session_id
 """
 
 from __future__ import annotations
 
 import logging
+import uuid
 from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -20,42 +20,39 @@ from py_rag.retrieval import hybrid_search
 from py_schemas.consult import (
     SemanticSearchInput,
     SemanticSearchResult,
+    TagFilterDto,
 )
 
+from app.services.crisis_judgment.enums import CrisisLevel
+from app.services.crisis_judgment.models import (
+    CrisisJudgmentResult,
+    JudgmentLayerResult,
+)
+from app.services.emergency_plan_generation.models import (
+    EmergencyPlanInput,
+    GenerationChunk,
+)
+from app.services.emergency_plan_generation.prompt_builder import PromptBuilder
+from app.services.emergency_plan_generation.streaming import stream_generate
+from app.services.streaming.sse_service import SseStreamingService
+
 _logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# 公开接口
+# ---------------------------------------------------------------------------
 
 
 async def search_cases(
     request: SemanticSearchInput,
     db: AsyncSession,
 ) -> SemanticSearchResult:
-    """RAG 语义检索用例编排。
-
-    按以下步骤执行一次完整的语义检索：
-    1. 二次校验：Top-K 边界钳位（由 hybrid_search 内部处理）
-    2. 调用 hybrid_search 执行混合检索
-    3. 返回 SemanticSearchResult 给 API 层
-
-    Args:
-        request: Pydantic 校验通过的语义检索请求（含 query_text、tag_filters、top_k、request_id）。
-        db: 活动数据库异步会话（由依赖注入提供）。
-
-    Returns:
-        SemanticSearchResult: 排序后的案例切片列表及检索状态。
-
-    Raises:
-        异常向上传播给 FastAPI 全局异常处理器：
-        - EmbeddingUnavailableError → 503
-        - DependencyCommunicationError → 503
-        - 其他未预期异常 → 500
-    """
-    # --- 入口参数校验 ---
+    """RAG 语义检索用例编排。（保留原有实现）"""
     if request is None:
         raise ValueError("request must not be None")
     if db is None:
         raise ValueError("db must not be None")
 
-    # 提取请求参数
     query_text: str = request.query_text
     tag_filters = request.tag_filters
     top_k: int = request.top_k
@@ -75,7 +72,6 @@ async def search_cases(
         },
     )
 
-    # Step: 调用检索引擎
     result: SemanticSearchResult = await hybrid_search(
         query_text=query_text,
         tag_filters=tag_filters,
@@ -98,4 +94,186 @@ async def search_cases(
     return result
 
 
-__all__ = ["search_cases"]
+async def start_consultation(
+    behavior_description: str,
+    profile_id: str | None,
+    behavior_type: str | None,
+    emotion_level: str | None,
+    user_id: str,
+    db: AsyncSession,
+) -> str:
+    """启动一次完整的应急咨询流程，返回 SSE session_id。
+
+    编排步骤：
+    1. 若提供 profile_id，读取档案并提取标签构建 TagFilterDto
+    2. 调用 hybrid_search 执行 RAG 检索
+    3. 构建 EmergencyPlanInput（MVP 跳过危机分级，使用默认 mild）
+    4. PromptBuilder 组装 messages
+    5. stream_generate 产出 AsyncGenerator
+    6. 注册 generator 到 SseStreamingService
+    7. 返回 session_id
+
+    Args:
+        behavior_description: 家属输入的行为描述。
+        profile_id: 关联档案 ID（可选）。
+        behavior_type: 前置行为类型（可选）。
+        emotion_level: 情绪等级（可选）。
+        user_id: 当前匿名用户 UUID 字符串。
+        db: 数据库异步会话。
+
+    Returns:
+        str: SSE 会话标识符，格式 stream-{uuid4}。
+    """
+    request_id = str(uuid.uuid4())
+    session_id = f"stream-{uuid.uuid4()}"
+
+    # ------------------------------------------------------------------
+    # 步骤 1：读取档案并构建标签过滤条件
+    # ------------------------------------------------------------------
+    tag_filters: TagFilterDto
+    profile_summary: str = "（未关联档案）"
+
+    if profile_id:
+        from py_db.models.profiles import Profile
+        from sqlalchemy import select
+
+        result = await db.execute(
+            select(Profile).where(Profile.profile_id == profile_id)
+        )
+        profile: Profile | None = result.scalars().first()
+        if profile:
+            # 构建档案摘要 Markdown
+            profile_parts: list[str] = []
+            if profile.diagnosis_type:
+                profile_parts.append(f"- **诊断类型**：{profile.diagnosis_type}")
+            if profile.primary_behavior:
+                profile_parts.append(f"- **主要行为类型**：{profile.primary_behavior}")
+            if profile.birth_date:
+                from datetime import date
+                age = (date.today() - profile.birth_date).days // 365
+                profile_parts.append(f"- **年龄**：约 {age} 岁")
+            profile_summary = "\n".join(profile_parts) if profile_parts else "（档案信息有限）"
+
+            # 构建 tag_filters
+            # age_range 需要映射为字符串，简单处理：根据年龄推断
+            age_range_str = _map_age_to_range(profile.birth_date)
+            tag_filters = TagFilterDto(
+                age_range=age_range_str,
+                behavior_type=profile.primary_behavior or behavior_type or "OTHER",
+                emotion_level=emotion_level,
+            )
+        else:
+            tag_filters = _build_default_tag_filters(behavior_type, emotion_level)
+    else:
+        tag_filters = _build_default_tag_filters(behavior_type, emotion_level)
+
+    _logger.info(
+        "consultation_started",
+        extra={
+            "request_id": request_id,
+            "session_id": session_id,
+            "user_id": user_id,
+            "profile_id": profile_id,
+            "has_profile": profile_id is not None,
+        },
+    )
+
+    # ------------------------------------------------------------------
+    # 步骤 2：RAG 语义检索
+    # ------------------------------------------------------------------
+    search_input = SemanticSearchInput(
+        query_text=behavior_description,
+        tag_filters=tag_filters,
+        top_k=10,
+        request_id=request_id,
+    )
+    search_result: SemanticSearchResult = await search_cases(search_input, db)
+
+    # ------------------------------------------------------------------
+    # 步骤 3：构建 EmergencyPlanInput（MVP 跳过危机分级）
+    # ------------------------------------------------------------------
+    crisis_result = CrisisJudgmentResult(
+        final_level=CrisisLevel.MILD,
+        block_deep_response=False,
+        judgment_sources=[
+            JudgmentLayerResult(
+                layer_name="MVP_Default",
+                level=CrisisLevel.MILD,
+            )
+        ],
+    )
+
+    plan_input = EmergencyPlanInput(
+        crisis_result=crisis_result,
+        search_result=search_result,
+        profile_summary=profile_summary,
+        behavior_description=behavior_description,
+        request_id=request_id,
+    )
+
+    # ------------------------------------------------------------------
+    # 步骤 4：Prompt 构建
+    # ------------------------------------------------------------------
+    builder = PromptBuilder()
+    messages, ctx = builder.build(plan_input)
+
+    # ------------------------------------------------------------------
+    # 步骤 5：流式生成器 + SSE 注册
+    # ------------------------------------------------------------------
+    generator = stream_generate(
+        input_data=plan_input,
+        messages=messages,
+        prenumbered_slices=ctx.prenumbered_slices,
+    )
+
+    streaming_service = SseStreamingService()
+    streaming_service.register_generator(session_id, generator)
+
+    _logger.info(
+        "consultation_generator_registered",
+        extra={
+            "request_id": request_id,
+            "session_id": session_id,
+        },
+    )
+
+    return session_id
+
+
+# ---------------------------------------------------------------------------
+# 内部辅助
+# ---------------------------------------------------------------------------
+
+
+def _build_default_tag_filters(
+    behavior_type: str | None,
+    emotion_level: str | None,
+) -> TagFilterDto:
+    """构建默认标签过滤条件（无档案时）。"""
+    return TagFilterDto(
+        age_range="未知年龄段",
+        behavior_type=behavior_type or "OTHER",
+        emotion_level=emotion_level,
+    )
+
+
+def _map_age_to_range(birth_date: Any) -> str:
+    """根据出生日期映射为年龄段字符串（简化版）。"""
+    if not birth_date:
+        return "未知年龄段"
+    from datetime import date
+
+    age = (date.today() - birth_date).days // 365
+    if age < 3:
+        return "婴幼儿(0-2岁)"
+    elif age < 6:
+        return "学龄前(3-5岁)"
+    elif age < 13:
+        return "学龄儿童(6-12岁)"
+    elif age < 18:
+        return "青少年(13-17岁)"
+    else:
+        return "成年(18岁+)"
+
+
+__all__ = ["search_cases", "start_consultation"]

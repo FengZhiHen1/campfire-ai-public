@@ -70,6 +70,13 @@ class User(Base, UUIDPrimaryKeyMixin, TimestampMixin):
         nullable=True,
         comment="真实姓名，家属和老师可选填",
     )
+    device_id: Mapped[str | None] = mapped_column(
+        String(32),
+        nullable=True,
+        unique=True,
+        index=True,
+        comment="小程序匿名设备标识，MVP 阶段替代认证",
+    )
 
     def __repr__(self) -> str:
         return (

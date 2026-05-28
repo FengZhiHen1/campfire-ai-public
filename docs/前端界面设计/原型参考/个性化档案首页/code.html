@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+
+<html class="light" lang="zh-CN"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" name="viewport"/>
+<title>CareProfile - 个人档案</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "outline-variant": "#d8c3ad",
+                        "primary-container": "#f59e0b",
+                        "secondary-fixed": "#d3e4fe",
+                        "secondary": "#505f76",
+                        "on-secondary-fixed": "#0b1c30",
+                        "tertiary-fixed": "#85f8c4",
+                        "surface-bright": "#fff8f5",
+                        "surface-variant": "#eae1da",
+                        "inverse-on-surface": "#f9efe8",
+                        "background": "#fff8f5",
+                        "inverse-primary": "#ffb95f",
+                        "on-primary": "#ffffff",
+                        "surface-container-lowest": "#ffffff",
+                        "tertiary-container": "#50c594",
+                        "surface-tint": "#855300",
+                        "error-container": "#ffdad6",
+                        "on-error": "#ffffff",
+                        "surface-dim": "#e2d8d2",
+                        "surface-container-low": "#fcf2eb",
+                        "secondary-container": "#d0e1fb",
+                        "on-tertiary-fixed-variant": "#005137",
+                        "on-tertiary": "#ffffff",
+                        "on-primary-fixed": "#2a1700",
+                        "on-tertiary-container": "#004e35",
+                        "on-primary-container": "#613b00",
+                        "surface": "#fff8f5",
+                        "on-secondary-container": "#54647a",
+                        "tertiary": "#006c4a",
+                        "on-surface-variant": "#534434",
+                        "outline": "#867461",
+                        "on-primary-fixed-variant": "#653e00",
+                        "on-background": "#1f1b17",
+                        "tertiary-fixed-dim": "#68dba9",
+                        "on-error-container": "#93000a",
+                        "error": "#ba1a1a",
+                        "surface-container": "#f6ece6",
+                        "primary": "#855300",
+                        "on-secondary-fixed-variant": "#38485d",
+                        "surface-container-high": "#f0e6e0",
+                        "on-surface": "#1f1b17",
+                        "primary-fixed-dim": "#ffb95f",
+                        "inverse-surface": "#342f2b",
+                        "surface-container-highest": "#eae1da",
+                        "primary-fixed": "#ffddb8",
+                        "on-tertiary-fixed": "#002114",
+                        "on-secondary": "#ffffff",
+                        "secondary-fixed-dim": "#b7c8e1"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "full": "9999px"
+                    },
+                    "spacing": {
+                        "xs": "4px",
+                        "xl": "32px",
+                        "margin-mobile": "16px",
+                        "base": "8px",
+                        "sm": "8px",
+                        "md": "16px",
+                        "margin-desktop": "24px",
+                        "gutter": "16px",
+                        "lg": "24px"
+                    },
+                    "fontFamily": {
+                        "body-lg": ["system-ui", "-apple-system", "'PingFang SC'", "'Noto Sans SC'", "'Helvetica Neue'", "sans-serif"],
+                        "body-md": ["system-ui", "-apple-system", "'PingFang SC'", "'Noto Sans SC'", "'Helvetica Neue'", "sans-serif"],
+                        "footnote": ["system-ui", "-apple-system", "'PingFang SC'", "'Noto Sans SC'", "'Helvetica Neue'", "sans-serif"],
+                        "headline-lg": ["system-ui", "-apple-system", "'PingFang SC'", "'Noto Sans SC'", "'Helvetica Neue'", "sans-serif"],
+                        "label-md": ["system-ui", "-apple-system", "'PingFang SC'", "'Noto Sans SC'", "'Helvetica Neue'", "sans-serif"],
+                        "headline-md": ["system-ui", "-apple-system", "'PingFang SC'", "'Noto Sans SC'", "'Helvetica Neue'", "sans-serif"]
+                    },
+                    "fontSize": {
+                        "body-lg": ["18px", {"lineHeight": "32px", "fontWeight": "400"}],
+                        "body-md": ["16px", {"lineHeight": "28px", "fontWeight": "400"}],
+                        "footnote": ["11px", {"lineHeight": "15px", "letterSpacing": "0px", "fontWeight": "400"}],
+                        "headline-lg": ["24px", {"lineHeight": "38px", "fontWeight": "600"}],
+                        "label-md": ["14px", {"lineHeight": "21px", "letterSpacing": "0px", "fontWeight": "400"}],
+                        "headline-md": ["20px", {"lineHeight": "32px", "fontWeight": "600"}]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+        body {
+            -webkit-tap-highlight-color: transparent;
+            background-color: theme('colors.background');
+        }
+        .hide-scrollbar::-webkit-scrollbar {
+            display: none;
+        }
+        .hide-scrollbar {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="text-on-background font-body-md antialiased pb-[env(safe-area-inset-bottom)] md:pb-0">
+<!-- TopAppBar -->
+<header class="fixed top-0 w-full z-50 bg-surface dark:bg-surface-dim flat no shadows flex justify-between items-center h-16 px-margin-mobile">
+<div class="flex items-center gap-2 text-primary dark:text-primary-fixed-dim hover:opacity-80 transition-opacity active:scale-95">
+<span class="material-symbols-outlined font-headline-md text-headline-md" data-icon="local_fire_department">local_fire_department</span>
+<h1 class="font-headline-md text-headline-md font-bold">CareProfile</h1>
+</div>
+<button class="font-label-md text-label-md text-primary dark:text-primary-fixed-dim hover:opacity-80 transition-opacity active:scale-95">
+            Edit
+        </button>
+</header>
+<!-- Main Canvas -->
+<main class="pt-20 pb-32 px-margin-mobile flex flex-col gap-lg max-w-2xl mx-auto">
+<!-- Profile Switcher -->
+<section class="w-full">
+<div class="flex overflow-x-auto hide-scrollbar gap-md pb-2 snap-x">
+<!-- Active Profile -->
+<div class="snap-start shrink-0 flex flex-col items-center gap-2 cursor-pointer active:scale-95 transition-transform">
+<div class="w-16 h-16 rounded-xl bg-primary-container flex items-center justify-center shadow-[0_4px_24px_rgba(28,25,23,0.06)] relative border border-outline/15">
+<img alt="Avatar" class="w-full h-full object-cover rounded-xl" data-alt="A warm, bright portrait of a smiling child in a sunlit room, representing a care profile avatar. The lighting is soft and natural, emphasizing a sense of trust and safety. The color palette is dominated by warm earth tones and soft whites, fitting a modern, empathetic UI aesthetic. The mood is hopeful and serene." src="https://lh3.googleusercontent.com/aida-public/AB6AXuD6aysJ3CxdYekqvcZrA5vav4fLr2N-fmb7zgSu9z-abMI3uAY6qGXbiGaXAmaho5fwzZ2NlrHjiBw4oLCzWGD66TNSlGke3NSDlGsoHdONiCe_44tn0CObJVoYiSCrptWtcUWWpAF4qPE7Gtzi8QYyGKpr0l42HxXIUqsTD9m3RtBQH0QHkz1FpzrdKyKT3oZOxay8JOIxMO8vlK_4HDhm11KEIuxy3KNiQmkbVg4Pr-eAWVFR6m6O1xjmd-SzGppz9pEp5zrtXVk"/>
+<!-- Indicator -->
+<div class="absolute -bottom-2 w-8 h-1 bg-primary rounded-full"></div>
+</div>
+<span class="font-label-md text-label-md text-on-surface">小明</span>
+</div>
+<!-- Inactive Profile -->
+<div class="snap-start shrink-0 flex flex-col items-center gap-2 opacity-60 hover:opacity-100 transition-opacity cursor-pointer active:scale-95">
+<div class="w-16 h-16 rounded-xl bg-surface-variant flex items-center justify-center border border-outline/15">
+<span class="material-symbols-outlined text-secondary" data-icon="person" style="font-variation-settings: 'FILL' 1;">person</span>
+</div>
+<span class="font-label-md text-label-md text-secondary">妹妹</span>
+</div>
+<!-- Add Profile -->
+<div class="snap-start shrink-0 flex flex-col items-center gap-2 cursor-pointer active:scale-95 transition-transform">
+<div class="w-16 h-16 rounded-xl bg-surface-container-low flex items-center justify-center border border-dashed border-outline/30 hover:bg-surface-variant transition-colors">
+<span class="material-symbols-outlined text-primary" data-icon="add">add</span>
+</div>
+<span class="font-label-md text-label-md text-primary">添加</span>
+</div>
+</div>
+</section>
+<!-- Main Profile Card -->
+<section class="bg-surface rounded-xl p-md shadow-[0_4px_24px_rgba(28,25,23,0.06)] border border-outline/15 relative overflow-hidden flex flex-col gap-md">
+<div class="flex items-center gap-md">
+<div class="w-20 h-20 rounded-full bg-surface-variant overflow-hidden shrink-0 border-2 border-surface">
+<img alt="Avatar Large" class="w-full h-full object-cover" data-alt="A warm, bright portrait of a smiling child in a sunlit room, representing a care profile avatar. The lighting is soft and natural, emphasizing a sense of trust and safety. The color palette is dominated by warm earth tones and soft whites, fitting a modern, empathetic UI aesthetic. The mood is hopeful and serene." src="https://lh3.googleusercontent.com/aida-public/AB6AXuAwJnSNQOUHxHYYkOlOXhwILIXKPs-C5benXoPHL0B9cmM3wb1_A9B3g_xifRww0XM6bi_a5iP3ZrNmkIvwCOUv7E_UyRWAdXnSIab9bOg3f9UMhEXYmA_Ym_QarCZiGf9dwICZnp6HE6eryYB8V8wLWDqJQC89es5PkKECp0hQKIkfYyqOyFnFYvv6zfgv7zRNc0FGbfkrJQACDkyEGl-678gOsjLkoK2MJQlB4Z9mku-pnHI9GsrILZW096a7d4l-uYqtrfqfD2M"/>
+</div>
+<div class="flex flex-col gap-1">
+<h2 class="font-headline-lg text-headline-lg text-on-surface">小明</h2>
+<p class="font-body-md text-body-md text-secondary">男 • 6岁</p>
+</div>
+</div>
+<div class="flex flex-wrap gap-2">
+<span class="bg-surface-variant text-on-surface-variant px-3 py-1 rounded-full font-label-md text-label-md flex items-center gap-1">
+<span class="material-symbols-outlined text-[16px]" data-icon="calendar_month">calendar_month</span>
+                    2018-03-12
+                </span>
+<span class="bg-primary-container text-on-primary-container px-3 py-1 rounded-full font-label-md text-label-md flex items-center gap-1 font-medium">
+<span class="material-symbols-outlined text-[16px]" data-icon="neurology">neurology</span>
+                    ASD
+                </span>
+<span class="bg-error-container text-on-error-container px-3 py-1 rounded-full font-label-md text-label-md flex items-center gap-1">
+<span class="material-symbols-outlined text-[16px]" data-icon="warning">warning</span>
+                    自伤行为
+                </span>
+</div>
+</section>
+<!-- Timeline Section -->
+<section class="flex flex-col gap-md">
+<div class="flex justify-between items-center px-2">
+<h3 class="font-headline-md text-headline-md text-on-surface flex items-center gap-2">
+<span class="material-symbols-outlined text-primary" data-icon="history">history</span>
+                    事件记录 <span class="text-secondary font-body-md text-body-md">（共 12 条）</span>
+</h3>
+<button class="bg-primary text-on-primary w-10 h-10 rounded-full flex items-center justify-center shadow-[0_4px_24px_rgba(28,25,23,0.06)] active:scale-90 transition-transform">
+<span class="material-symbols-outlined" data-icon="add">add</span>
+</button>
+</div>
+<!-- Vertical Timeline -->
+<div class="relative pl-6 flex flex-col gap-lg before:absolute before:inset-y-0 before:left-[11px] before:w-[2px] before:bg-surface-variant">
+<!-- Timeline Item 1 -->
+<div class="relative flex flex-col gap-2">
+<div class="absolute -left-6 top-1 w-3 h-3 bg-primary rounded-full ring-4 ring-surface"></div>
+<span class="font-label-md text-label-md text-secondary">今天 14:32</span>
+<div class="bg-surface rounded-xl p-md shadow-[0_4px_24px_rgba(28,25,23,0.06)] border border-outline/15 relative overflow-hidden pl-xs">
+<div class="absolute left-0 top-0 bottom-0 w-1 bg-error"></div>
+<div class="pl-3 flex flex-col gap-2">
+<div class="flex justify-between items-start">
+<span class="bg-error-container text-on-error-container px-2 py-0.5 rounded text-[12px] font-medium inline-block">情绪爆发</span>
+</div>
+<p class="font-body-md text-body-md text-on-surface">在超市排队时因为想买玩具被拒绝，突然倒地大哭并伴随轻微自伤倾向。持续约15分钟后安抚平静。</p>
+</div>
+</div>
+</div>
+<!-- Timeline Item 2 -->
+<div class="relative flex flex-col gap-2">
+<div class="absolute -left-6 top-1 w-3 h-3 bg-surface-dim rounded-full ring-4 ring-surface"></div>
+<span class="font-label-md text-label-md text-secondary">昨天 09:15</span>
+<div class="bg-surface rounded-xl p-md shadow-[0_4px_24px_rgba(28,25,23,0.06)] border border-outline/15 relative overflow-hidden pl-xs">
+<div class="absolute left-0 top-0 bottom-0 w-1 bg-secondary"></div>
+<div class="pl-3 flex flex-col gap-2">
+<div class="flex justify-between items-start">
+<span class="bg-secondary-container text-on-secondary-container px-2 py-0.5 rounded text-[12px] font-medium inline-block">日常观察</span>
+</div>
+<p class="font-body-md text-body-md text-on-surface">早晨起床后主动完成洗漱，心情平静。对新准备的早餐麦片表示了抗拒，但最终接受了替换的面包。</p>
+</div>
+</div>
+</div>
+</div>
+</section>
+</main>
+<!-- BottomNavBar -->
+<nav class="fixed bottom-0 w-full z-50 rounded-t-xl bg-surface dark:bg-surface-container shadow-[0_-4px_24px_rgba(28,25,23,0.06)] md:hidden">
+<div class="fixed bottom-0 left-0 w-full flex justify-around items-center pt-2 pb-[env(safe-area-inset-bottom)] px-4 bg-surface dark:bg-surface-container">
+<button class="flex flex-col items-center justify-center bg-primary-container dark:bg-primary text-on-primary-container dark:text-on-primary rounded-xl px-4 py-1 hover:bg-surface-variant dark:hover:bg-surface-container-highest transition-colors active:scale-90 duration-150">
+<span class="material-symbols-outlined" data-icon="person_search" style="font-variation-settings: 'FILL' 1;">person_search</span>
+<span class="font-label-md text-label-md mt-1 font-bold">Profiles</span>
+</button>
+<button class="flex flex-col items-center justify-center text-secondary dark:text-secondary-fixed-dim px-4 py-1 hover:bg-surface-variant dark:hover:bg-surface-container-highest transition-colors active:scale-90 duration-150">
+<span class="material-symbols-outlined" data-icon="analytics">analytics</span>
+<span class="font-label-md text-label-md mt-1">Insights</span>
+</button>
+<button class="flex flex-col items-center justify-center text-secondary dark:text-secondary-fixed-dim px-4 py-1 hover:bg-surface-variant dark:hover:bg-surface-container-highest transition-colors active:scale-90 duration-150">
+<span class="material-symbols-outlined" data-icon="emergency_share">emergency_share</span>
+<span class="font-label-md text-label-md mt-1">Crisis</span>
+</button>
+<button class="flex flex-col items-center justify-center text-secondary dark:text-secondary-fixed-dim px-4 py-1 hover:bg-surface-variant dark:hover:bg-surface-container-highest transition-colors active:scale-90 duration-150">
+<span class="material-symbols-outlined" data-icon="settings">settings</span>
+<span class="font-label-md text-label-md mt-1">Settings</span>
+</button>
+</div>
+</nav>
+<!-- Desktop SideNav (Hidden on Mobile) -->
+<nav class="hidden md:flex fixed left-0 top-16 bottom-0 w-64 bg-surface dark:bg-surface-container flex-col py-lg px-4 border-r border-outline/15 z-40">
+<div class="flex flex-col gap-2">
+<button class="flex items-center gap-3 bg-primary-container dark:bg-primary text-on-primary-container dark:text-on-primary rounded-xl px-4 py-3 hover:bg-surface-variant transition-colors active:scale-95">
+<span class="material-symbols-outlined" data-icon="person_search" style="font-variation-settings: 'FILL' 1;">person_search</span>
+<span class="font-label-md text-label-md font-bold">Profiles</span>
+</button>
+<button class="flex items-center gap-3 text-secondary dark:text-secondary-fixed-dim rounded-xl px-4 py-3 hover:bg-surface-variant transition-colors active:scale-95">
+<span class="material-symbols-outlined" data-icon="analytics">analytics</span>
+<span class="font-label-md text-label-md">Insights</span>
+</button>
+<button class="flex items-center gap-3 text-secondary dark:text-secondary-fixed-dim rounded-xl px-4 py-3 hover:bg-surface-variant transition-colors active:scale-95">
+<span class="material-symbols-outlined" data-icon="emergency_share">emergency_share</span>
+<span class="font-label-md text-label-md">Crisis</span>
+</button>
+<button class="flex items-center gap-3 text-secondary dark:text-secondary-fixed-dim rounded-xl px-4 py-3 hover:bg-surface-variant transition-colors active:scale-95">
+<span class="material-symbols-outlined" data-icon="settings">settings</span>
+<span class="font-label-md text-label-md">Settings</span>
+</button>
+</div>
+</nav>
+</body></html>

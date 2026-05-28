@@ -50,22 +50,34 @@ _SENTINEL: object = object()
 class SseStreamingService:
     """SSE 流式推送服务。
 
-    单例服务，通过 ``__init__`` 注入 ``StreamSessionManager`` 和 ``AppSettings``。
+    单例服务，通过 ``__new__`` 确保全局唯一实例。
     使用 ``asyncio.Semaphore`` 控制全局并发连接数（每个 Uvicorn worker 进程独立）。
 
     核心入口为 ``stream_response()``，返回 ``FastAPI StreamingResponse``。
     """
 
+    _instance: SseStreamingService | None = None
     _semaphore: ClassVar[asyncio.Semaphore] = asyncio.Semaphore(1)
     """模块级信号量，所有实例共享。实际容量由 _init_semaphore 在 __init__ 中设置。"""
 
     _semaphore_initialized: ClassVar[bool] = False
+
+    def __new__(cls, *args, **kwargs) -> SseStreamingService:
+        """确保全局只有一个 SseStreamingService 实例。"""
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+            cls._instance._generators: dict[str, AsyncGenerator[GenerationChunk, None]] = {}
+        return cls._instance
 
     def __init__(
         self,
         settings: AppSettings | None = None,
         session_manager: StreamSessionManager | None = None,
     ) -> None:
+        # 避免重复初始化
+        if hasattr(self, "_initialized") and self._initialized:
+            return
+
         self._settings = settings or AppSettings()
         self._session_manager = session_manager or StreamSessionManager()
 
@@ -75,8 +87,7 @@ class SseStreamingService:
             SseStreamingService._semaphore = asyncio.Semaphore(max_connections)
             SseStreamingService._semaphore_initialized = True
 
-        # session_id -> generator 的映射，由 register_generator() 注册
-        self._generators: dict[str, AsyncGenerator[GenerationChunk, None]] = {}
+        self._initialized = True
 
     # ------------------------------------------------------------------
     # Generator 注册（由 CSLT-08 编排层调用）
@@ -152,6 +163,21 @@ class SseStreamingService:
 
         if session is None:
             # ==== 新会话 ====
+            if last_event_id is not None:
+                # 仅当 last_event_id 是合法正整数格式时才视为重连
+                if (
+                    last_event_id.isdigit()
+                    and 0 < int(last_event_id) <= 2_147_483_647
+                ):
+                    SseStreamingService._semaphore.release()
+                    raise HTTPException(
+                        status_code=status.HTTP_404_NOT_FOUND,
+                        detail={
+                            "error_code": "SESSION_NOT_FOUND",
+                            "detail": "当前推送会话不存在或已过期",
+                        },
+                    )
+                # 非法格式的 last_event_id：忽略，视为新连接
             try:
                 session = self._session_manager.create_session(session_id)
             except ValueError:
@@ -191,6 +217,14 @@ class SseStreamingService:
                     "error_code": "GENERATION_FAILED",
                     "detail": "未找到对应的上游生成器",
                 },
+            )
+
+        # 类型检查：必须是 AsyncGenerator
+        if not hasattr(generator, "__aiter__"):
+            SseStreamingService._semaphore.release()
+            raise TypeError(
+                "chunk_generator 必须是异步生成器 (AsyncGenerator)，"
+                f"实际类型为 {type(generator).__name__}"
             )
 
         # ==================================================================

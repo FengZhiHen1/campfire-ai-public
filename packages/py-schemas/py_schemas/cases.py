@@ -18,7 +18,7 @@ from datetime import datetime
 from enum import Enum
 from typing import Generic, List, Literal, Optional, TypeVar
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, StrictBool, field_validator
 
 from py_schemas.enums.case_enums import (
     BehaviorType,
@@ -456,7 +456,7 @@ class ReviewRequest(BaseModel):
         default=None,
         description="覆盖 AI 预审理由（覆盖时必填）",
     )
-    pii_override_confirmed: bool = Field(
+    pii_override_confirmed: StrictBool = Field(
         default=False,
         description="是否确认覆盖 PII 硬门槛（默认 false，设为 true 也会被拒绝——PII 零容忍）",
     )

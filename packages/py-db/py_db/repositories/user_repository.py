@@ -81,5 +81,26 @@ class UserRepository(BaseRepository[User]):
 
         return await self._execute_with_retry(session, "find_by_phone", _query)
 
+    async def find_by_device_id(
+        self,
+        session: AsyncSession,
+        device_id: str,
+    ) -> User | None:
+        """设备 ID 精确匹配查询（MVP 匿名用户）。
+
+        Args:
+            session: 活动数据库会话。
+            device_id: 设备匿名标识。
+
+        Returns:
+            匹配的 User 实例，不存在时返回 None。
+        """
+        async def _query() -> User | None:
+            stmt: Select = select(self.model).where(self.model.device_id == device_id)
+            result = await session.execute(stmt)
+            return result.scalars().first()
+
+        return await self._execute_with_retry(session, "find_by_device_id", _query)
+
 
 __all__ = ["UserRepository"]

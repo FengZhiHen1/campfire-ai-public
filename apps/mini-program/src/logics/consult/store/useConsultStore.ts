@@ -37,7 +37,6 @@ import {
 import { SseStreamParser } from '../services/sseParser';
 import { consultApi } from '../services/consultApi';
 import type { ConsultSubmitResponse } from '../services/consultApi';
-import { useSessionStore } from '../../shared/store/userStore';
 
 // ============================================================================
 // 常量定义
@@ -365,15 +364,15 @@ export const useConsultStore = create<ConsultStore>()(
 
         // ----- 组装请求体 -----
         const { behaviorTypeSelection, behaviorDescription } = get();
-        const requestBody = {
-          behavior_type_selection: behaviorTypeSelection,
-          behavior_description: behaviorDescription,
-        };
+        const behaviorType = behaviorTypeSelection[0];
 
         try {
           // ----- 发起 HTTP POST 请求 -----
           const response: ConsultSubmitResponse = await consultApi.submitConsult(
-            requestBody,
+            behaviorDescription,
+            behaviorType,
+            undefined,   // profileId — MVP 暂不关联档案
+            undefined,   // emotionLevel — MVP 暂不选择
             requestId,
           );
 
@@ -453,40 +452,24 @@ export const useConsultStore = create<ConsultStore>()(
                   return msg;
                 });
 
-                // 检查工单引导条件
-                const shouldShowTicket =
-                  (state.confidenceScore !== undefined && state.confidenceScore < 0.7) ||
-                  state.validationVerdict === 'FORCE_BLOCK';
-
-                const showTicketGuide = shouldShowTicket && !state.ticketGuideShown;
-
+                // MVP 阶段：跳过置信度校验和工单引导（暂不需要）
                 set({
                   sessionState: next,
                   messages: updatedMessages,
-                  ...(showTicketGuide
-                    ? {
-                        ticketGuide: {
-                          show: true,
-                          riskLevel: state.validationVerdict === 'FORCE_BLOCK' ? 'high_risk' : 'normal',
-                        } as TicketGuide,
-                        ticketGuideShown: true,
-                      }
-                    : {}),
                 });
 
                 // ----- 步骤 6：归档（非阻塞）-----
-                // 使用 userStore 获取当前用户 ID
-                const authState = useSessionStore.getState();
-
+                // user_id 由后端从 X-Device-Id 提取，前端传占位值即可
                 const archiveData: Record<string, unknown> = {
                   request_id: state._requestId || requestId,
-                  user_id: authState.user?.userId ?? '',
-                  crisis_level: state.crisisLevel ?? null,
+                  user_id: '00000000-0000-0000-0000-000000000000',
+                  crisis_level: state.crisisLevel ?? 'mild',
                   behavior_description: state.behaviorDescription,
                   consultation_time: new Date().toISOString(),
                   generated_plan: state.accumulatedText,
                   source_list: referenced_slice_ids ?? [],
-                  disclaimer: disclaimer ?? '',
+                  disclaimer:
+                    '以上建议由 AI 生成，仅供参考，不构成医疗诊断或治疗建议。如情况紧急，请立即联系专业医疗机构。',
                   generation_time_ms: generation_time_ms ?? 0,
                   is_partial: is_partial ?? false,
                   referenced_slice_ids: referenced_slice_ids ?? [],
@@ -500,17 +483,6 @@ export const useConsultStore = create<ConsultStore>()(
                 consultApi.archiveConsultation(archiveData).catch(() => {
                   // 归档失败为降级场景，不阻塞用户
                 });
-
-                // 若工单引导触发，再转至 ticket_guide 状态
-                if (showTicketGuide) {
-                  try {
-                    const current = get().sessionState;
-                    const tNext = transitionTo(current, 'ticket_guide');
-                    set({ sessionState: tNext });
-                  } catch {
-                    // 静默忽略
-                  }
-                }
               },
 
               // ---- onError ----
