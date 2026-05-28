@@ -1,19 +1,21 @@
 /**
- * CSLT-08 咨询 API 服务层。
+ * CSLT-08 咨询 API 服务层 — MVP Phase 1 匿名适配版。
  *
  * 职责：
  * - 封装咨询相关全部 HTTP 请求
- * - 通过 httpClient.request() 发送（已注入 Token + 401 续期）
- * - 包含 submitConsult、fetchHistoryList、fetchHistoryDetail
+ * - 通过 httpClient.request() 发送（自动注入 X-Device-Id）
+ * - 适配后端 POST /api/v1/consult 的 ConsultStartRequest/ConsultStartResponse 契约
  *
- * 设计依据：CSLT-08 落地规范 §1.7 步骤 3-6
- * 契约对齐：AUTH-06 httpClient、CSLT-06 ConsultationHistoryList/Detail
+ * 契约对齐：
+ *   POST /api/v1/consult 请求体 = { behavior_description, profile_id?, behavior_type?, emotion_level? }
+ *   POST /api/v1/consult 响应体 = { session_id }
+ *   SSE 端点 = GET /api/v1/consult/stream/{session_id}
  */
 
 import { httpClient } from '../../shared/services/httpClient';
 import type { IRequestResponse } from '../../shared/services/httpClient';
 import type {
-  ConsultSubmitRequest,
+  BehaviorTypeCategory,
   ConsultationHistoryListItem,
   ConsultationHistoryDetail,
   ConfidenceValidationOutput,
@@ -30,36 +32,37 @@ const CONSULT_API_PATH = '/api/v1/consult';
 const HISTORY_API_PATH = '/api/v1/consultations';
 
 // ============================================================================
-// 类型：咨询提交响应
+// 类型：咨询提交响应（前端内部使用，由 session_id 扩展而来）
 // ============================================================================
 
 /**
  * POST /api/v1/consult 的响应类型。
+ * 后端仅返回 { session_id }，前端据此构建 stream_url 并填充 MVP 默认值。
  */
 export interface ConsultSubmitResponse {
   /** SSE 流式推送端点 URL */
   stream_url: string;
   /** 会话 ID（用于重连） */
   session_id: string;
-  /** 置信度校验输出 */
-  confidence_output?: ConfidenceValidationOutput;
-  /** 幂等请求 ID */
+  /** 置信度校验输出（MVP 暂不启用，固定为 null） */
+  confidence_output?: ConfidenceValidationOutput | null;
+  /** 幂等请求 ID（前端生成） */
   request_id: string;
-  /** 被引用案例 ID 列表 */
+  /** 被引用案例 ID 列表（MVP 暂不填充） */
   referenced_slice_ids: string[];
   /** 法律合规声明 */
   disclaimer: string;
-  /** 生成耗时毫秒 */
+  /** 生成耗时毫秒（MVP 占位） */
   generation_time_ms: number;
-  /** 是否为部分生成 */
+  /** 是否为部分生成（MVP 占位） */
   is_partial: boolean;
-  /** 完成原因 */
+  /** 完成原因（MVP 占位） */
   finish_reason: string;
-  /** 首字延迟毫秒 */
+  /** 首字延迟毫秒（MVP 占位） */
   ttft_ms: number;
-  /** LLM 输入 Token 数 */
+  /** LLM 输入 Token 数（MVP 占位） */
   token_input?: number | null;
-  /** LLM 输出 Token 数 */
+  /** LLM 输出 Token 数（MVP 占位） */
   token_output?: number | null;
 }
 
@@ -80,37 +83,68 @@ export interface HistoryListResponse {
 /**
  * 咨询 API 服务。
  * 封装咨询提交、历史列表查询、历史详情查询。
- * 所有请求通过 httpClient.request() 发送，Token 注入和 401 续期由 httpClient 自动处理。
+ * 所有请求通过 httpClient.request() 发送，X-Device-Id 由 httpClient 自动注入。
  */
 export const consultApi = {
   /**
    * 提交咨询请求（步骤 3）。
    * POST /api/v1/consult
    *
-   * 请求成功时返回 SSE 流端点 URL 和置信度校验输出。
+   * MVP 适配：
+   * - 请求体对齐后端 ConsultStartRequest（含 behavior_description / behavior_type / profile_id / emotion_level）
+   * - 响应中仅 session_id 为后端真实返回，其余字段由前端填充默认值
    *
-   * @param request - 咨询请求体（行为类型 + 行为描述）
-   * @param requestId - 幂等请求 ID（UUID v4）
-   * @returns 提交响应（含 stream_url 和 confidence_output）
+   * @param behaviorDescription - 行为描述文本
+   * @param behaviorType - 行为类型（取用户多选的第一项，或 undefined）
+   * @param profileId - 关联档案 ID（可选）
+   * @param emotionLevel - 情绪等级（可选）
+   * @param requestId - 幂等请求 ID（前端生成，仅本地使用）
+   * @returns 提交响应（含 stream_url 和 session_id）
    * @throws 网络异常或 HTTP 5xx 时抛出
    */
   async submitConsult(
-    request: ConsultSubmitRequest,
+    behaviorDescription: string,
+    behaviorType: BehaviorTypeCategory | undefined,
+    profileId: string | undefined,
+    emotionLevel: string | undefined,
     requestId: string,
   ): Promise<ConsultSubmitResponse> {
-    const res = await httpClient.request<ConsultSubmitResponse>({
+    const res = await httpClient.request<{ session_id: string }>({
       url: CONSULT_API_PATH,
       method: 'POST',
       data: {
-        ...request,
-        request_id: requestId,
+        behavior_description: behaviorDescription,
+        behavior_type: behaviorType,
+        profile_id: profileId,
+        emotion_level: emotionLevel,
       },
-      timeout: 10000,
+      timeout: 30000,
       header: {
         'Content-Type': 'application/json',
       },
     });
-    return res.data;
+
+    const { session_id } = res.data;
+
+    // 由 session_id 构建 SSE stream_url（相对路径，与页面同源）
+    const stream_url = `${CONSULT_API_PATH}/stream/${session_id}`;
+
+    // MVP 阶段：后端仅返回 session_id，其余字段填充占位值
+    return {
+      stream_url,
+      session_id,
+      request_id: requestId,
+      confidence_output: null,
+      referenced_slice_ids: [],
+      disclaimer:
+        '以上建议由 AI 生成，仅供参考，不构成医疗诊断或治疗建议。如情况紧急，请立即联系专业医疗机构。',
+      generation_time_ms: 0,
+      is_partial: false,
+      finish_reason: 'COMPLETE',
+      ttft_ms: 0,
+      token_input: null,
+      token_output: null,
+    };
   },
 
   /**

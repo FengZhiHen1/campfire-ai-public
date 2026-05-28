@@ -48,7 +48,7 @@ class StreamSessionManager:
         """
         _SESSION_ID_PATTERN = (
             r"^stream-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}"
-            r"-[0-9a-f]{4}-[0-9a-f]{12}$"
+            r"-[0-9a-f]{4}-[0-9a-f]{12}\Z"
         )
         if not re.match(_SESSION_ID_PATTERN, session_id):
             raise ValueError(

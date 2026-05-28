@@ -5,10 +5,7 @@
 - GET  /api/v1/consultations         — 历史列表（分页）
 - GET  /api/v1/consultations/{id}    — 详情查询
 
-路由设计原则：
-- 路由层仅处理请求解析、校验分发与响应封装
-- 所有业务逻辑委托给 consultation_history/service.py
-- user_id 从 JWT Token 提取，不接受前端传入
+MVP Phase 1：去除 JWT 认证，改用匿名用户（X-Device-Id）。
 """
 
 from __future__ import annotations
@@ -18,6 +15,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.dependencies.anonymous_user import get_anonymous_user
 from app.dependencies.auth_dependencies import get_db_session
 from app.services.consultation_history.service import (
     ConsultationHistoryIncompleteDataError,
@@ -25,7 +23,6 @@ from app.services.consultation_history.service import (
     get_detail,
     list_history,
 )
-from py_auth.dependencies import get_current_user
 from py_schemas.consultation_history import ConsultationHistoryCreate
 
 router = APIRouter(prefix="/api/v1/consultations", tags=["consultations"])
@@ -53,14 +50,14 @@ router = APIRouter(prefix="/api/v1/consultations", tags=["consultations"])
 )
 async def create_consultation(
     data: ConsultationHistoryCreate,
-    current_user: dict = Depends(get_current_user),
+    anonymous_user: dict = Depends(get_anonymous_user),
     db: AsyncSession = Depends(get_db_session),
 ) -> dict:
     """归档写入端点。
 
     Args:
         data: 归档数据（Pydantic 自动校验）。
-        current_user: 当前用户 JWT payload。
+        anonymous_user: 当前匿名用户字典。
         db: 异步数据库会话。
 
     Returns:
@@ -69,7 +66,7 @@ async def create_consultation(
     try:
         result = await archive_consultation(
             data=data,
-            current_user=current_user,
+            current_user=anonymous_user,
             db=db,
         )
         return result.model_dump(mode="json")
@@ -103,7 +100,7 @@ async def create_consultation(
 async def list_consultations(
     page: int = Query(default=1, ge=1, description="页码（1-based）"),
     page_size: int = Query(default=20, ge=1, le=100, description="每页记录数"),
-    current_user: dict = Depends(get_current_user),
+    anonymous_user: dict = Depends(get_anonymous_user),
     db: AsyncSession = Depends(get_db_session),
 ) -> dict:
     """历史列表查询端点。
@@ -111,7 +108,7 @@ async def list_consultations(
     Args:
         page: 页码（从 1 开始）。
         page_size: 每页条数。
-        current_user: 当前用户 JWT payload。
+        anonymous_user: 当前匿名用户字典。
         db: 异步数据库会话。
 
     Returns:
@@ -120,7 +117,7 @@ async def list_consultations(
     result = await list_history(
         page=page,
         page_size=page_size,
-        current_user=current_user,
+        current_user=anonymous_user,
         db=db,
     )
     return result.model_dump(mode="json")
@@ -147,14 +144,14 @@ async def list_consultations(
 )
 async def get_consultation(
     consultation_id: UUID,
-    current_user: dict = Depends(get_current_user),
+    anonymous_user: dict = Depends(get_anonymous_user),
     db: AsyncSession = Depends(get_db_session),
 ) -> dict:
     """详情查询端点。
 
     Args:
         consultation_id: 咨询记录 UUID（路径参数）。
-        current_user: 当前用户 JWT payload。
+        anonymous_user: 当前匿名用户字典。
         db: 异步数据库会话。
 
     Returns:
@@ -162,7 +159,7 @@ async def get_consultation(
     """
     result = await get_detail(
         consultation_id=consultation_id,
-        current_user=current_user,
+        current_user=anonymous_user,
         db=db,
     )
     return result.model_dump(mode="json")
