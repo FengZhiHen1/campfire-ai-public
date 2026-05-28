@@ -126,8 +126,12 @@ export const consultApi = {
 
     const { session_id } = res.data;
 
-    // 由 session_id 构建 SSE stream_url（相对路径，与页面同源）
-    const stream_url = `${CONSULT_API_PATH}/stream/${session_id}`;
+    // 由 session_id 构建 SSE stream_url。小程序不走 webpack proxy，
+    // 必须拼接完整的 API base URL（本地或 ngrok 公网地址）
+    const API_BASE: string = process.env.TARO_APP_API_BASE || '';
+    const stream_url = API_BASE
+      ? `${API_BASE}${CONSULT_API_PATH}/stream/${session_id}`
+      : `${CONSULT_API_PATH}/stream/${session_id}`;
 
     // MVP 阶段：后端仅返回 session_id，其余字段填充占位值
     return {
