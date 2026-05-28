@@ -9,6 +9,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+from utils.process_utils import resolve_exe, start_process
+
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 
@@ -18,19 +20,17 @@ def start_infra() -> subprocess.Popen:
     Returns:
         A completed Popen (the up -d command exits immediately after starting containers).
     """
-    return subprocess.Popen(
+    return start_process(
         ["docker", "compose", "up", "-d"],
-        cwd=str(PROJECT_ROOT),
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        text=True,
+        cwd=PROJECT_ROOT,
     )
 
 
 def stop_infra() -> None:
     """Stop infrastructure containers via docker compose down."""
+    docker = resolve_exe("docker")
     subprocess.run(
-        ["docker", "compose", "down"],
+        [docker, "compose", "down"],
         cwd=str(PROJECT_ROOT),
         capture_output=True,
         timeout=30,
