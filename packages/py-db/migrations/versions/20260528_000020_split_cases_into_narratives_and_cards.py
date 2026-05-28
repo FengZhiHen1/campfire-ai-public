@@ -12,7 +12,7 @@ import sqlalchemy as sa
 from sqlalchemy.dialects.postgresql import JSON, JSONB, UUID
 
 revision: str = "20260528_000020"
-down_revision: Union[str, None] = "20260528_000010"
+down_revision: Union[str, None] = "20260527_211308"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
@@ -107,8 +107,8 @@ def upgrade() -> None:
     op.execute("""
         INSERT INTO case_narratives (narrative_id, title, narrative, source_type,
             author_id, status, review_comment, created_at, updated_at)
-        SELECT gen_random_uuid(), title, narrative, source_type, author_id, status,
-            review_comment, created_at, updated_at
+        SELECT gen_random_uuid(), title, narrative, source_type, author_id,
+            status::text::narrative_status, review_comment, created_at, updated_at
         FROM cases
     """)
 
@@ -124,7 +124,8 @@ def upgrade() -> None:
             c.family_category, c.immediate_action, c.comforting_phrase,
             c.observation_metrics, c.medical_criteria, c.evidence_level,
             c.contraindications, c.is_template, c.excluded_population,
-            c.attachment_refs, c.status, c.review_comment, c.index_status, c.indexed_at,
+            c.attachment_refs, c.status::text::card_review_status, c.review_comment,
+            c.index_status::text::card_index_status_enum, c.indexed_at,
             c.created_at, c.updated_at
         FROM cases c
         JOIN case_narratives n ON n.title = c.title AND n.author_id = c.author_id
