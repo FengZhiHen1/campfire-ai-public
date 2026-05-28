@@ -87,7 +87,13 @@ export default function CasesSubmit() {
         medical_criteria: medicalCriteria,
       } as any);
       await submitCase(draft.case_id);
-      Taro.showToast({ title: '提交成功' });
+      Taro.showToast({ title: '案例已提交审核' });
+      Taro.showModal({
+        title: '提交成功',
+        content: '案例已提交审核，审核通过后将出现在公共案例库中。',
+        showCancel: false,
+        confirmText: '知道了',
+      });
       setTitle('');
       setImmediateAction('');
       setComfortingPhrase('');

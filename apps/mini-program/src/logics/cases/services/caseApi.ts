@@ -252,6 +252,7 @@ export async function listCases(
   behaviorType?: string,
   page: number = 1,
   pageSize: number = 15,
+  scope?: string,
   signal?: AbortSignal,
 ): Promise<PaginatedResponse<CaseListItem>> {
   if (signal?.aborted) {
@@ -269,6 +270,7 @@ export async function listCases(
             behavior_type: behaviorType,
             page,
             page_size: pageSize,
+            scope,
           },
         },
         requestSignal,

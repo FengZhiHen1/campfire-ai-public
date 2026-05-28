@@ -53,6 +53,10 @@ export function useConsult(): UseConsultReturn {
   const errorCode = useConsultStore((s) => s.errorCode);
   const behaviorTypeSelection = useConsultStore((s) => s.behaviorTypeSelection);
   const behaviorDescription = useConsultStore((s) => s.behaviorDescription);
+  const emotionLevel = useConsultStore((s) => s.emotionLevel);
+  const selectedProfileId = useConsultStore((s) => s.selectedProfileId);
+  const referencedCases = useConsultStore((s) => s.referencedCases);
+  const crisisLevel = useConsultStore((s) => s.crisisLevel);
 
   // ==========================================================================
   // Actions（直接从 Store 获取引用）
@@ -91,6 +95,10 @@ export function useConsult(): UseConsultReturn {
       errorCode,
       isInputValid,
       isConsultActive,
+      emotionLevel,
+      selectedProfileId,
+      referencedCases,
+      crisisLevel: crisisLevel as UseConsultReturn['crisisLevel'],
 
       // 操作方法（直接绑定 Store action）
       startConsult: store.getState().startConsult,
@@ -98,6 +106,10 @@ export function useConsult(): UseConsultReturn {
         store.getState().setBehaviorTypes(types),
       setBehaviorDescription: (desc: string) =>
         store.getState().setBehaviorDescription(desc),
+      setEmotionLevel: (level) =>
+        store.getState().setEmotionLevel(level),
+      setSelectedProfile: (profileId) =>
+        store.getState().setSelectedProfile(profileId),
       submitConsult: () => store.getState().submitConsult(),
       cancelSelection: () => store.getState().cancelSelection(),
       retrySubmit: () => store.getState().retrySubmit(),
@@ -120,6 +132,10 @@ export function useConsult(): UseConsultReturn {
       errorCode,
       isInputValid,
       isConsultActive,
+      emotionLevel,
+      selectedProfileId,
+      referencedCases,
+      crisisLevel,
     ],
   );
 }

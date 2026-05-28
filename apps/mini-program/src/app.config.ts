@@ -7,6 +7,8 @@ export default defineAppConfig({
     'views/cases/pages/submit',
     'views/cases/pages/detail',
     'views/consult/pages/history',
+    'views/consult/pages/detail',
+    'views/tickets/pages/detail',
   ],
   window: {
     backgroundTextStyle: 'light',

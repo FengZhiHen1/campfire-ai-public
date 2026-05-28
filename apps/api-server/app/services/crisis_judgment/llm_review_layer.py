@@ -2,9 +2,6 @@
 
 调用 DeepSeek API 对规则引擎结果进行精调复审。
 包含超时降级机制：超时后不重试，降级为规则引擎结果。
-
-LLMClient 接口定义（因为 packages/py-llm 是 stub）：
-    async_chat(messages, model, temperature, max_tokens, timeout) -> LLMResponse
 """
 
 from __future__ import annotations
@@ -13,6 +10,8 @@ import asyncio
 import json
 import time
 from typing import Any
+
+from py_llm import LLMClient
 
 from .enums import CrisisLevel
 from .layer import JudgmentLayer
@@ -30,51 +29,6 @@ _PROMPT_VERSION: str = "v1"
 
 # LLM 复审结果中合法的 level 值
 _VALID_LLM_LEVELS: frozenset[str] = frozenset({"mild", "moderate", "severe"})
-
-
-class LLMClient:
-    """LLM 客户端接口。
-
-    因为 packages/py-llm 是 stub（只有 "Hello from py-llm!"），
-    本模块临时定义 LLMClient 接口，允许调用方通过依赖注入传入实际实现。
-
-    实际 DeepSeek API 调用通过 async_chat 方法实现。
-    当前使用 asyncio.sleep + mock 返回值作为占位。
-    """
-
-    async def async_chat(
-        self,
-        messages: list[dict[str, str]],
-        model: str = "deepseek-chat",
-        temperature: float = 0.1,
-        max_tokens: int = 512,
-        timeout: float = 5.0,
-    ) -> dict[str, Any]:
-        """执行 LLM Chat 调用（占位实现）。
-
-        Args:
-            messages: 消息列表，格式为 [{"role": "system", "content": "..."}, ...]。
-            model: 模型名称。
-            temperature: 温度参数。
-            max_tokens: 最大输出 token 数。
-            timeout: 超时时间（秒）。
-
-        Returns:
-            包含 content 字段的响应字典。
-
-        Raises:
-            asyncio.TimeoutError: 超时。
-            Exception: API 调用异常。
-        """
-        # 占位实现：模拟 API 延迟后返回 mock 结果
-        await asyncio.sleep(0.1)
-        return {
-            "content": json.dumps({
-                "level": "mild",
-                "confidence": 0.95,
-                "reasoning": "Normal behavior description, no crisis detected.",
-            }),
-        }
 
 
 class LLMReviewLayer(JudgmentLayer):
@@ -107,21 +61,19 @@ class LLMReviewLayer(JudgmentLayer):
         Returns:
             LLM 复审层的判定结果。
         """
-        # 步骤 1：组装 System Prompt
         system_prompt = self._build_system_prompt(request)
 
-        # 步骤 2：执行 LLM 调用（带超时）
         timeout_seconds: float = self._timeout_ms / 1000.0
         start_time: float = time.time()
 
         try:
-            response = await asyncio.wait_for(
+            response_text: str = await asyncio.wait_for(
                 self._llm_client.async_chat(
                     messages=[
                         {"role": "system", "content": system_prompt},
                         {"role": "user", "content": request.behavior_description},
                     ],
-                    model="deepseek-chat",
+                    model="deepseek-v4-pro",
                     temperature=0.1,
                     max_tokens=512,
                     timeout=timeout_seconds,
@@ -150,16 +102,13 @@ class LLMReviewLayer(JudgmentLayer):
                 },
             )
 
-        # 步骤 3：解析响应
         elapsed_ms = int((time.time() - start_time) * 1000)
 
         try:
-            content: str = response.get("content", "")
-            parsed: dict[str, Any] = json.loads(content)
+            parsed: dict[str, Any] = json.loads(response_text)
             level_str: str = parsed.get("level", "")
             confidence: float | None = parsed.get("confidence")
 
-            # 步骤 4：校验返回值
             if level_str not in _VALID_LLM_LEVELS:
                 logger.error(
                     service="crisis_judgment",
@@ -167,7 +116,7 @@ class LLMReviewLayer(JudgmentLayer):
                     op_type=None,
                     extra={
                         "level": level_str,
-                        "raw_response": content[:500],
+                        "raw_response": response_text[:500],
                     },
                 )
                 return JudgmentLayerResult(
@@ -176,7 +125,7 @@ class LLMReviewLayer(JudgmentLayer):
                     trigger_rule_id=None,
                     details={
                         "parse_error": True,
-                        "raw_response": content[:500],
+                        "raw_response": response_text[:500],
                         "prompt_version": _PROMPT_VERSION,
                     },
                 )
@@ -189,21 +138,20 @@ class LLMReviewLayer(JudgmentLayer):
                 level=CrisisLevel(level_str),
                 trigger_rule_id=None,
                 details={
-                    "raw_response": content[:500],
+                    "raw_response": response_text[:500],
                     "prompt_version": _PROMPT_VERSION,
                     "elapsed_ms": elapsed_ms,
                 },
             )
 
         except (json.JSONDecodeError, KeyError, ValueError) as exc:
-            content_preview = response.get("content", "")[:500]
             logger.error(
                 service="crisis_judgment",
                 message="LLM review response parse failed",
                 op_type=None,
                 extra={
                     "error": str(exc),
-                    "raw_response": content_preview,
+                    "raw_response": response_text[:500],
                 },
             )
             return JudgmentLayerResult(
@@ -212,7 +160,7 @@ class LLMReviewLayer(JudgmentLayer):
                 trigger_rule_id=None,
                 details={
                     "parse_error": True,
-                    "raw_response": content_preview,
+                    "raw_response": response_text[:500],
                     "prompt_version": _PROMPT_VERSION,
                 },
             )

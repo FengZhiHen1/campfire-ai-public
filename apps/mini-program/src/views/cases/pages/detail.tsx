@@ -16,6 +16,7 @@ interface CaseDetail {
   observation_metrics?: string;
   medical_criteria?: string;
   evidence_level?: string;
+  is_owner?: boolean;
 }
 
 const statusTextMap: Record<string, string> = {
@@ -241,16 +242,16 @@ export default function CasesDetail() {
 
       {/* 审核操作 */}
       <View className="detail-actions">
-        {data.status === 'draft' && (
+        {data.status === 'draft' && data.is_owner && (
           <View className="detail-actions__panel">
-            <Text className="detail-actions__panel-title">审核操作</Text>
+            <Text className="detail-actions__panel-title">操作</Text>
             <Button className="detail-actions__btn detail-actions__btn--primary" onClick={handleSubmit}>
               提交审核
             </Button>
           </View>
         )}
 
-        {data.status === 'pending_review' && (
+        {data.status === 'pending_review' && !data.is_owner && (
           <View className="detail-actions__panel">
             <Text className="detail-actions__panel-title">审核操作</Text>
             {!showRejectInput && (

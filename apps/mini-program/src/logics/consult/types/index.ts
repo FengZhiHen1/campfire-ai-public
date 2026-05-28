@@ -167,6 +167,18 @@ export interface DoneEventPayload {
   finish_reason: 'COMPLETE' | 'PARTIAL' | 'BLOCKED' | 'TIMEOUT' | 'ERROR';
   /** 最后成功推送的 sequence 号（可选） */
   sequence?: number;
+  /** 被引用案例切片 ID 列表 */
+  referenced_slice_ids?: string[];
+  /** 危机分级结果 */
+  crisis_level?: string;
+  /** 参考案例简要信息 */
+  referenced_cases?: ReferencedCase[];
+  /** 置信度评分 */
+  confidence_score?: number;
+  /** 校验判定结论 */
+  verdict?: string;
+  /** 是否触发工单 */
+  ticket_triggered?: boolean;
 }
 
 /** ErrorEvent 的 data 字段载荷（CSLT-04 契约） */
@@ -180,6 +192,20 @@ export interface ErrorEventPayload {
 // ============================================================================
 // CSLT-08 自产前端类型
 // ============================================================================
+
+/** 情绪等级 */
+export type EmotionLevel = '轻' | '中' | '重';
+
+/** 参考案例简要信息 */
+export interface ReferencedCase {
+  slice_id: string;
+  case_id: string;
+  case_title: string;
+  slice_text: string;
+}
+
+/** 危机等级（来自 SSE done 事件） */
+export type ConsultCrisisLevel = 'mild' | 'moderate' | 'severe';
 
 /**
  * 咨询会话业务状态（8 状态联合类型）。
@@ -301,6 +327,14 @@ export interface ConsultSessionStateData {
   errorCode?: ConsultErrorCode;
   /** 工单引导是否已展示过（去重标记） */
   ticketGuideShown: boolean;
+  /** 情绪等级选择 */
+  emotionLevel?: EmotionLevel;
+  /** 关联档案 ID */
+  selectedProfileId?: string;
+  /** 参考案例切片 ID 列表（SSE done 事件回传） */
+  referencedSliceIds: string[];
+  /** 参考案例简要信息 */
+  referencedCases: ReferencedCase[];
 }
 
 /**
@@ -368,6 +402,14 @@ export interface UseConsultReturn {
   isInputValid: boolean;
   /** 是否处于活跃咨询中（禁止新提交） */
   isConsultActive: boolean;
+  /** 情绪等级选择 */
+  emotionLevel?: EmotionLevel;
+  /** 关联档案 ID */
+  selectedProfileId?: string;
+  /** 参考案例列表 */
+  referencedCases: ReferencedCase[];
+  /** 危机等级 */
+  crisisLevel?: ConsultCrisisLevel;
 
   // ---------- 操作方法（CSLT-07 绑定到按钮/事件） ----------
   /** 开始新咨询：idle -> selecting_behavior */
@@ -376,6 +418,10 @@ export interface UseConsultReturn {
   setBehaviorTypes: (types: BehaviorTypeCategory[]) => void;
   /** 更新行为描述文本 */
   setBehaviorDescription: (desc: string) => void;
+  /** 设置情绪等级 */
+  setEmotionLevel: (level: EmotionLevel) => void;
+  /** 设置关联档案 */
+  setSelectedProfile: (profileId: string | undefined) => void;
   /** 提交咨询：selecting_behavior -> submitting */
   submitConsult: () => Promise<void>;
   /** 取消行为选择：selecting_behavior -> idle */

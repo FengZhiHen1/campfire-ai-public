@@ -1,7 +1,9 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { View, Text, Button, Textarea } from '@tarojs/components';
 import { useConsult } from '../../../logics/consult/hooks/useConsult';
-import type { BehaviorTypeCategory } from '../../../logics/consult/types';
+import { listProfiles } from '../../../logics/profiles/services/profileApi';
+import type { BehaviorTypeCategory, EmotionLevel } from '../../../logics/consult/types';
+import type { ProfileListItem } from '@campfire/ts-shared';
 import './index.scss';
 
 const BEHAVIOR_OPTIONS: { value: BehaviorTypeCategory; label: string }[] = [
@@ -14,6 +16,18 @@ const BEHAVIOR_OPTIONS: { value: BehaviorTypeCategory; label: string }[] = [
   { value: 'OTHER', label: '其他' },
 ];
 
+const EMOTION_OPTIONS: { value: EmotionLevel; label: string }[] = [
+  { value: '轻', label: '轻度' },
+  { value: '中', label: '中度' },
+  { value: '重', label: '重度' },
+];
+
+const CRISIS_LABEL_MAP: Record<string, { text: string; className: string }> = {
+  mild: { text: '风险较低', className: 'mild' },
+  moderate: { text: '需关注', className: 'moderate' },
+  severe: { text: '高风险', className: 'severe' },
+};
+
 export default function ConsultIndex() {
   const {
     sessionState,
@@ -23,20 +37,34 @@ export default function ConsultIndex() {
     accumulatedText,
     isInputValid,
     isConsultActive,
+    emotionLevel,
+    referencedCases: refCases,
+    crisisLevel,
     startConsult,
     setBehaviorTypes,
     setBehaviorDescription,
+    setEmotionLevel,
     submitConsult,
     cancelSelection,
     retrySubmit,
     goBackToIdle,
     retryStream,
     startNewConsult,
+    goToTicket,
     getErrorMessage,
     errorCode,
+    selectedProfileId,
+    setSelectedProfile,
   } = useConsult();
 
   const [inputText, setInputText] = useState(behaviorDescription);
+  const [profiles, setProfiles] = useState<ProfileListItem[]>([]);
+
+  useEffect(() => {
+    listProfiles()
+      .then((data) => setProfiles(data as ProfileListItem[]))
+      .catch(() => {});
+  }, []);
 
   const toggleType = (type: BehaviorTypeCategory) => {
     const next = behaviorTypeSelection.includes(type)
@@ -72,6 +100,30 @@ export default function ConsultIndex() {
   if (sessionState === 'selecting_behavior') {
     return (
       <View className="consult-page consult-selecting">
+        {/* 档案选择 */}
+        {profiles.length > 0 && (
+          <View className="consult-selecting__profile-section">
+            <Text className="consult-selecting__label">关联档案（可选）</Text>
+            <View className="consult-selecting__profile-list">
+              <Button
+                className={`consult-selecting__profile-btn ${!selectedProfileId ? 'consult-selecting__profile-btn--active' : ''}`}
+                onClick={() => setSelectedProfile(undefined)}
+              >
+                不关联
+              </Button>
+              {profiles.map((p) => (
+                <Button
+                  key={p.profile_id}
+                  className={`consult-selecting__profile-btn ${selectedProfileId === p.profile_id ? 'consult-selecting__profile-btn--active' : ''}`}
+                  onClick={() => setSelectedProfile(p.profile_id)}
+                >
+                  {p.nickname || '未命名'}
+                </Button>
+              ))}
+            </View>
+          </View>
+        )}
+
         <Text className="consult-selecting__label">选择行为类型（可多选）</Text>
         <View className="consult-selecting__grid">
           {BEHAVIOR_OPTIONS.map((opt) => {
@@ -86,6 +138,22 @@ export default function ConsultIndex() {
                   <View className="consult-selecting__check">✓</View>
                 )}
                 <Text className="consult-selecting__option-text">{opt.label}</Text>
+              </Button>
+            );
+          })}
+        </View>
+
+        <Text className="consult-selecting__label">情绪等级</Text>
+        <View className="consult-selecting__emotion-row">
+          {EMOTION_OPTIONS.map((opt) => {
+            const active = emotionLevel === opt.value;
+            return (
+              <Button
+                key={opt.value}
+                className={`consult-selecting__emotion-btn ${active ? 'consult-selecting__emotion-btn--active' : ''}`}
+                onClick={() => setEmotionLevel(opt.value)}
+              >
+                {opt.label}
               </Button>
             );
           })}
@@ -128,10 +196,19 @@ export default function ConsultIndex() {
 
   // ----- streaming / completed: 结果展示 -----
   if (sessionState === 'streaming' || sessionState === 'completed') {
+    const crisisInfo = crisisLevel ? CRISIS_LABEL_MAP[crisisLevel] : null;
+
     return (
       <View className="consult-page consult-streaming">
         {sessionState === 'streaming' && (
           <Text className="consult-streaming__status">正在生成建议...</Text>
+        )}
+
+        {/* 危机等级标识 */}
+        {crisisInfo && (
+          <View className={`consult-streaming__crisis-badge consult-streaming__crisis-badge--${crisisInfo.className}`}>
+            <Text className="consult-streaming__crisis-text">{crisisInfo.text}</Text>
+          </View>
         )}
 
         {/* 实时文本展示 */}
@@ -178,6 +255,19 @@ export default function ConsultIndex() {
           </View>
         )}
 
+        {/* 参考案例溯源 */}
+        {refCases.length > 0 && (
+          <View className="consult-streaming__refs">
+            <Text className="consult-streaming__refs-title">参考案例</Text>
+            {refCases.map((rc) => (
+              <View key={rc.slice_id} className="consult-streaming__ref-card">
+                <Text className="consult-streaming__ref-card-title">{rc.case_title}</Text>
+                <Text className="consult-streaming__ref-card-text">{rc.slice_text}</Text>
+              </View>
+            ))}
+          </View>
+        )}
+
         {sessionState === 'completed' && (
           <View className="consult-streaming__done">
             <Text className="consult-streaming__done-text">生成完毕</Text>
@@ -186,6 +276,27 @@ export default function ConsultIndex() {
             </Button>
           </View>
         )}
+      </View>
+    );
+  }
+
+  // ----- ticket_guide: 工单引导 -----
+  if (sessionState === 'ticket_guide') {
+    return (
+      <View className="consult-page consult-ticket-guide">
+        <View className="consult-ticket-guide__icon">🆘</View>
+        <Text className="consult-ticket-guide__title">建议联系专家</Text>
+        <Text className="consult-ticket-guide__desc">
+          AI 对当前情况的置信度较低，建议通过人工咨询获取更准确的建议。
+        </Text>
+        <View className="consult-ticket-guide__actions">
+          <Button className="consult-ticket-guide__expert-btn" onClick={goToTicket}>
+            联系专家
+          </Button>
+          <Button className="consult-ticket-guide__new-btn" onClick={startNewConsult}>
+            开始新咨询
+          </Button>
+        </View>
       </View>
     );
   }
