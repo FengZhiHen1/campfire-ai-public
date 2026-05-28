@@ -1,0 +1,50 @@
+@use '../views/shared/styles/tokens' as *;
+
+.custom-tab-bar {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  display: flex;
+  align-items: stretch;
+  height: calc(48px + env(safe-area-inset-bottom));
+  padding-bottom: env(safe-area-inset-bottom);
+  background-color: $cf-surface;
+  border-top: 1px solid $cf-outline-variant;
+  z-index: 999;
+}
+
+.custom-tab-bar__item {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  padding: 4px 0;
+  transition: opacity 0.2s;
+}
+
+.custom-tab-bar__icon {
+  font-size: 22px;
+  line-height: 1;
+  opacity: 0.45;
+  transition: opacity 0.2s, transform 0.2s;
+}
+
+.custom-tab-bar__item--active .custom-tab-bar__icon {
+  opacity: 1;
+  transform: scale(1.1);
+}
+
+.custom-tab-bar__label {
+  font-size: 10px;
+  line-height: 1;
+  color: $cf-on-surface-variant;
+  transition: color 0.2s;
+}
+
+.custom-tab-bar__item--active .custom-tab-bar__label {
+  color: $cf-primary;
+  font-weight: 500;
+}
