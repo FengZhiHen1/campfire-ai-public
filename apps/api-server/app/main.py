@@ -43,6 +43,24 @@ async def lifespan(app: FastAPI):
             "redis_url": str(settings.REDIS_URL),
         },
     )
+
+    # 自动初始化 MinIO bucket（若不存在则创建，失败不阻塞启动）
+    try:
+        from minio import Minio
+
+        minio_client = Minio(
+            settings.MINIO_ENDPOINT,
+            access_key=settings.MINIO_ACCESS_KEY.get_secret_value(),
+            secret_key=settings.MINIO_SECRET_KEY.get_secret_value(),
+            secure=False,
+        )
+        if not minio_client.bucket_exists("campfire"):
+            minio_client.make_bucket("campfire")
+            logger.info("api-server", "MinIO bucket 'campfire' 已自动创建")
+    except Exception:
+        # 开发环境 MinIO 可能未运行，失败不影响主流程
+        pass
+
     yield
     logger.info("api-server", "Campfire-AI API Server 关闭中")
 
