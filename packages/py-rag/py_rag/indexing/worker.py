@@ -177,7 +177,7 @@ async def _process_task(
     # 步骤 5：更新状态为 processing + 读取案例数据
     update_sql = text("""
         UPDATE cases SET index_status = 'processing'
-        WHERE id = :case_id AND index_status = 'pending'
+        WHERE case_id = :case_id AND index_status = 'pending'
     """)
     result = await session.execute(update_sql, {"case_id": case_id})
     if result.rowcount == 0:
@@ -191,10 +191,10 @@ async def _process_task(
         return
 
     query_case_sql = text("""
-        SELECT id, title, scene_description, behavior_manifestation,
-               intervention_action, result_feedback, behavior_type,
-               emotion_level, applicable_population, evidence_level, disclaimer
-        FROM cases WHERE id = :case_id
+        SELECT case_id, title, immediate_action, comforting_phrase,
+               observation_metrics, medical_criteria, behavior_type,
+               severity, age_range_min, age_range_max, evidence_level, scene, narrative
+        FROM cases WHERE case_id = :case_id
     """)
     case_result = await session.execute(query_case_sql, {"case_id": case_id})
     case_row = case_result.fetchone()
@@ -288,7 +288,7 @@ async def _mark_indexing_failed(
 ) -> None:
     """将案例索引状态更新为 indexing_failed。"""
     update_sql = text("""
-        UPDATE cases SET index_status = 'indexing_failed' WHERE id = :case_id
+        UPDATE cases SET index_status = 'indexing_failed' WHERE case_id = :case_id
     """)
     await session.execute(update_sql, {"case_id": case_id})
     await session.commit()
@@ -317,7 +317,7 @@ async def _mark_indexed(
     update_sql = text("""
         UPDATE cases
         SET index_status = 'indexed', indexed_at = :indexed_at
-        WHERE id = :case_id AND index_status = 'processing'
+        WHERE case_id = :case_id AND index_status = 'processing'
     """)
     result = await session.execute(
         update_sql, {"case_id": case_id, "indexed_at": now_iso}

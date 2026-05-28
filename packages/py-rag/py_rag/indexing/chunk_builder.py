@@ -28,17 +28,11 @@ _PII_PATTERNS: dict[str, re.Pattern[str]] = {
 }
 
 _REQUIRED_FIELDS: list[str] = [
-    "scene_description",
-    "behavior_manifestation",
-    "intervention_action",
-    "result_feedback",
+    "immediate_action",
+    "comforting_phrase",
+    "observation_metrics",
+    "medical_criteria",
 ]
-
-_SEVERITY_MAP: dict[str, str] = {
-    "mild": "轻度",
-    "moderate": "中度",
-    "severe": "重度",
-}
 
 _MIN_FIELD_LENGTH: int = 10
 
@@ -68,7 +62,7 @@ def build_chunk_text(case_data: dict) -> tuple[str, ChunkMetadata]:
         ChunkBuildError: 四段式字段不完整或免责声明丢失。
         PIIRejectionError: PII 最终防线检测到未脱敏的个人信息。
     """
-    case_id: str = str(case_data.get("id", ""))
+    case_id: str = str(case_data.get("case_id", ""))
 
     # ------------------------------------------------------------------
     # 步骤 1：四要素字段非空校验
@@ -104,13 +98,18 @@ def build_chunk_text(case_data: dict) -> tuple[str, ChunkMetadata]:
     # ------------------------------------------------------------------
     # 步骤 2：模板拼接
     # ------------------------------------------------------------------
-    scene = case_data["scene_description"].strip()
-    behavior = case_data["behavior_manifestation"].strip()
-    intervention = case_data["intervention_action"].strip()
-    result = case_data["result_feedback"].strip()
+    scene = case_data.get("scene", "")
+    intervention = case_data["immediate_action"].strip()
+    behavior = case_data["comforting_phrase"].strip()
+    result = case_data["observation_metrics"].strip()
+    medical = case_data["medical_criteria"].strip()
 
     chunk_text = (
-        f"场景：{scene}\n行为：{behavior}\n干预：{intervention}\n结果：{result}"
+        f"场景：{scene}\n"
+        f"行为：{behavior}\n"
+        f"干预：{intervention}\n"
+        f"结果：{result}\n"
+        f"就医判断：{medical}"
     )
 
     # ------------------------------------------------------------------
@@ -190,8 +189,10 @@ def build_chunk_text(case_data: dict) -> tuple[str, ChunkMetadata]:
 
 def _build_metadata(case_data: dict) -> ChunkMetadata:
     behavior_type = str(case_data.get("behavior_type", ""))
-    age_range = _extract_age_range(case_data.get("applicable_population"))
-    severity = _map_severity(case_data.get("emotion_level"))
+    age_min = case_data.get("age_range_min")
+    age_max = case_data.get("age_range_max")
+    age_range = f"{age_min}-{age_max}" if (age_min is not None and age_max is not None) else ""
+    severity = str(case_data.get("severity", ""))
     evidence_level = str(case_data.get("evidence_level", ""))
 
     return ChunkMetadata(
@@ -200,33 +201,3 @@ def _build_metadata(case_data: dict) -> ChunkMetadata:
         severity=severity,
         evidence_level=evidence_level,
     )
-
-
-def _extract_age_range(applicable_population: object) -> str:
-    if not isinstance(applicable_population, dict):
-        return ""
-
-    min_age = applicable_population.get("min_age")
-    max_age = applicable_population.get("max_age")
-
-    if min_age is not None and max_age is not None:
-        return f"{min_age}-{max_age}"
-    if min_age is not None:
-        return str(min_age)
-    if max_age is not None:
-        return f"0-{max_age}"
-
-    return ""
-
-
-def _map_severity(emotion_level: object) -> str:
-    if emotion_level is None:
-        return ""
-
-    emo_str = str(emotion_level).strip().lower()
-    if emo_str in _SEVERITY_MAP:
-        return _SEVERITY_MAP[emo_str]
-    if emo_str in ("轻度", "中度", "重度"):
-        return emo_str
-
-    return emo_str

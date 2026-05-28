@@ -21,10 +21,12 @@ from app.api.v1.consultations import router as consultations_router
 from app.api.v1.health import router as health_router
 from app.api.v1.profiles import router as profiles_router
 from app.api.v1.reviews import router as reviews_router
+from app.dependencies.auth_dependencies import _get_session_factory
 from app.middleware.rate_limit import RateLimitMiddleware
 from app.middleware.validation_handler import register_validation_handler
 from py_config import get_settings
 from py_logger import logger
+from py_rag.indexing.worker import start_worker, stop_worker
 
 
 @asynccontextmanager
@@ -61,7 +63,16 @@ async def lifespan(app: FastAPI):
         # 开发环境 MinIO 可能未运行，失败不影响主流程
         pass
 
+    # 设置数据库会话工厂（Worker 消费任务时创建独立会话）
+    app.state.db_session_factory = _get_session_factory()
+
+    # 启动索引 Worker 协程（监听 Redis 队列，消费案例索引任务）
+    start_worker(app)
+
     yield
+
+    # 优雅停止 Worker
+    stop_worker(app)
     logger.info("api-server", "Campfire-AI API Server 关闭中")
 
 
