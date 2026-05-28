@@ -439,13 +439,19 @@ async def update_case(
     # --- 步骤 B4：编辑即重置状态检查 ---
     _check_edit_reset(case)
 
-    # --- 步骤 B5：字段更新与写入 ---
+    # --- 步骤 B5：字段更新与原子写入（乐观锁） ---
     _apply_update_fields(case, update)
 
     try:
-        updated_case: Case = await case_repo.update(session, case)
+        updated_case: Case = await case_repo.update_case_with_version(
+            session, case, update.updated_at
+        )
         await session.commit()
-        await session.refresh(updated_case)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(exc),
+        ) from exc
     except Exception as exc:
         await session.rollback()
         _logger.error(

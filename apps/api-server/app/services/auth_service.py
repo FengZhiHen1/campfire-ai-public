@@ -113,7 +113,11 @@ def _parse_integrity_error(exc: IntegrityError) -> tuple[str, str]:
                 return ("DUPLICATE_PHONE", "该手机号已被注册")
         # 无法精确区分时返回通用错误码
         return ("DUPLICATE_FIELD", "用户名或手机号已被注册")
-    except Exception:
+    except Exception as parse_exc:
+        _logger.warning(
+            "integrity_error_parse_failed",
+            extra={"parse_error": str(parse_exc), "original_error": str(exc)},
+        )
         return ("DUPLICATE_FIELD", "用户名或手机号已被注册")
 
 
