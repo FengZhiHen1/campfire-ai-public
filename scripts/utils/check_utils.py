@@ -47,12 +47,18 @@ def check_env_file() -> tuple[bool, str]:
 # ---------------------------------------------------------------------------
 
 
+def _run_cmd(cmd: list[str], timeout: float) -> subprocess.CompletedProcess:
+    """Run a command after resolving the executable via process_utils."""
+    from utils.process_utils import resolve_exe
+
+    resolved = [resolve_exe(cmd[0])] + cmd[1:]
+    return subprocess.run(resolved, capture_output=True, text=True, timeout=timeout)
+
+
 def check_uv_available() -> tuple[bool, str]:
     """Verify uv package manager is installed."""
     try:
-        result = subprocess.run(
-            ["uv", "--version"], capture_output=True, text=True, timeout=10
-        )
+        result = _run_cmd(["uv", "--version"], timeout=10)
         if result.returncode == 0:
             return True, result.stdout.strip()
         return False, "uv 未正确安装"
@@ -65,9 +71,7 @@ def check_uv_available() -> tuple[bool, str]:
 def check_pnpm_available() -> tuple[bool, str]:
     """Verify pnpm package manager is installed."""
     try:
-        result = subprocess.run(
-            ["pnpm", "--version"], capture_output=True, text=True, timeout=10
-        )
+        result = _run_cmd(["pnpm", "--version"], timeout=10)
         if result.returncode == 0:
             return True, f"v{result.stdout.strip()}"
         return False, "pnpm 未正确安装"
@@ -80,9 +84,7 @@ def check_pnpm_available() -> tuple[bool, str]:
 def check_docker_available() -> tuple[bool, str]:
     """Verify Docker daemon is reachable."""
     try:
-        result = subprocess.run(
-            ["docker", "info"], capture_output=True, text=True, timeout=15
-        )
+        result = _run_cmd(["docker", "info"], timeout=15)
         if result.returncode == 0:
             return True, "已就绪"
         return False, "Docker 未运行或权限不足 — 请启动 Docker Desktop"
