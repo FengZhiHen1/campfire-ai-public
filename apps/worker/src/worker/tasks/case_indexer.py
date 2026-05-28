@@ -197,27 +197,37 @@ async def _write_chunk(
 async def _mark_indexed(session: AsyncSession, case_id: str) -> None:
     """更新 cases 表状态为 indexed。"""
 
-    stmt = (
-        update(text("cases"))
-        .where(text("cases.case_id = :case_id"))
-        .values(
-            index_status="indexed",
-            indexed_at=datetime.now(timezone.utc),
-        )
+    stmt = text("""
+        UPDATE cases
+        SET index_status = :index_status, indexed_at = :indexed_at
+        WHERE case_id = :case_id
+    """)
+    await session.execute(
+        stmt,
+        {
+            "index_status": "indexed",
+            "indexed_at": datetime.now(timezone.utc).isoformat(),
+            "case_id": case_id,
+        },
     )
-    await session.execute(stmt, {"case_id": case_id})
     await session.commit()
 
 
 async def _mark_failed(session: AsyncSession, case_id: str, reason: str) -> None:
     """更新 cases 表状态为 indexing_failed。"""
 
-    stmt = (
-        update(text("cases"))
-        .where(text("cases.case_id = :case_id"))
-        .values(index_status="indexing_failed")
+    stmt = text("""
+        UPDATE cases
+        SET index_status = :index_status
+        WHERE case_id = :case_id
+    """)
+    await session.execute(
+        stmt,
+        {
+            "index_status": "indexing_failed",
+            "case_id": case_id,
+        },
     )
-    await session.execute(stmt, {"case_id": case_id})
     await session.commit()
     logger.error(
         "worker",

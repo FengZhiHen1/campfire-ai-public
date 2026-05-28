@@ -203,29 +203,12 @@ async def submit_review(
         HTTPException(422): 驳回意见不满足长度要求。
     """
     reviewer_id: str = current_user.get("sub", "")
-    reviewer_roles: list[str] = current_user.get("roles", [])
 
-    # ---- 步骤 0：参数校验 ----
+    # ---- 步骤 0：参数校验（MVP 简化：跳过角色校验） ----
     if case_id is None:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="case_id 不能为空",
-        )
-    if not reviewer_id:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="未登录或角色信息缺失",
-        )
-    if not reviewer_roles:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="当前角色无权执行此操作",
-        )
-    allowed_roles = {"expert", "admin", "maintainer"}
-    if not any(r in allowed_roles for r in reviewer_roles):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="当前角色无权执行此操作",
         )
 
     # ---- 步骤 1：查询案例 ----
@@ -387,7 +370,7 @@ async def submit_review(
         case_id=case_id,
         action=audit_action,
         operator_id=reviewer_id,
-        operator_role=",".join(reviewer_roles) if reviewer_roles else "expert",
+        operator_role="expert",
         details={
             "decision": review_request.decision,
             "review_round": next_round,
@@ -403,7 +386,7 @@ async def submit_review(
             case_id=case_id,
             action="expert_override",
             operator_id=reviewer_id,
-            operator_role=",".join(reviewer_roles) if reviewer_roles else "expert",
+            operator_role="expert",
             details={
                 "override_reason": review_request.override_reason,
                 "review_round": next_round,

@@ -249,6 +249,7 @@ export async function getCase(
  */
 export async function listCases(
   status?: string,
+  behaviorType?: string,
   page: number = 1,
   pageSize: number = 15,
   signal?: AbortSignal,
@@ -265,9 +266,49 @@ export async function listCases(
           method: 'GET',
           data: {
             status,
+            behavior_type: behaviorType,
             page,
             page_size: pageSize,
           },
+        },
+        requestSignal,
+      ),
+    );
+    return res.data;
+  } finally {
+    cleanup();
+  }
+}
+
+/**
+ * 提交审核裁决（approve / reject）。
+ *
+ * @param caseId - 案例唯一标识
+ * @param decision - 裁决结果
+ * @param reviewComment - 审核意见（驳回时必填）
+ * @param signal - 可选外部 AbortSignal
+ * @returns 审核裁决响应
+ */
+export async function reviewCase(
+  caseId: string,
+  decision: 'approved' | 'rejected',
+  reviewComment?: string,
+  signal?: AbortSignal,
+): Promise<import('@campfire/ts-shared').CaseReviewResponse> {
+  if (signal?.aborted) {
+    return Promise.reject(new DOMException('The operation was aborted', 'AbortError'));
+  }
+  if (caseId === null || caseId === undefined) {
+    return Promise.reject(new TypeError('caseId is required'));
+  }
+  const { signal: requestSignal, cleanup } = createRequestSignal(signal);
+  try {
+    const res = await httpClient.request<import('@campfire/ts-shared').CaseReviewResponse>(
+      withSignal(
+        {
+          url: `${BASE_PATH}/${caseId}/review`,
+          method: 'POST',
+          data: { decision, review_comment: reviewComment },
         },
         requestSignal,
       ),
