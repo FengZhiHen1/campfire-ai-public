@@ -6,7 +6,7 @@
   background-color: $cf-background;
   display: flex;
   flex-direction: column;
-  padding-bottom: calc(48px + env(safe-area-inset-bottom));
+  padding-bottom: calc(100px + env(safe-area-inset-bottom));
 }
 
 /* ========== 顶部问候区 ========== */
