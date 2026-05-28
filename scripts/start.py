@@ -37,7 +37,8 @@ PROJECT_NAME = "篝火智答 (Campfire-AI)"
 AVAILABLE_SERVICES: dict[str, str] = {
     "api": "API 服务 (FastAPI, port 8000)",
     "worker": "Worker 服务 (Redis 消费者)",
-    "web": "Web 服务 (Taro H5 dev, port 5173)",
+    "web-h5": "Web-H5 服务 (Taro H5 dev, port 5173)",
+    "web-weapp": "Web-小程序 服务 (Taro 微信小程序 dev)",
 }
 
 MAX_NAME_WIDTH = 8
@@ -117,7 +118,7 @@ def run_preflight_checks(
             all_ok = False
 
     # --- Node.js toolchain ---
-    if "web" in services:
+    if "web-h5" in services or "web-weapp" in services:
         ok, msg = check_pnpm_available()
         if ok:
             print_check_ok("pnpm 包管理器", msg)
@@ -141,7 +142,7 @@ def run_preflight_checks(
             print_check_fail("端口 8000 (API)", msg)
             all_ok = False
 
-    if "web" in services:
+    if "web-h5" in services:
         ok, msg = check_port_available(5173)
         if ok:
             print_check_ok("端口 5173 (H5)", msg)
@@ -251,8 +252,8 @@ def start_services(
             _cleanup_procs(procs)
             return []
 
-    # --- Web (H5 dev server) ---
-    if "web" in services:
+    # --- Web-H5 ---
+    if "web-h5" in services:
         try:
             from start_web import start as start_web
 
@@ -260,7 +261,20 @@ def start_services(
             procs.append((proc, name))
             print_service_starting(name, proc.pid)
         except Exception as exc:
-            print_service_failed("Web", str(exc))
+            print_service_failed("Web-H5", str(exc))
+            _cleanup_procs(procs)
+            return []
+
+    # --- Web-Weapp (小程序) ---
+    if "web-weapp" in services:
+        try:
+            from start_web import start as start_web
+
+            proc, name = start_web(mode="weapp")
+            procs.append((proc, name))
+            print_service_starting(name, proc.pid)
+        except Exception as exc:
+            print_service_failed("Web-Weapp", str(exc))
             _cleanup_procs(procs)
             return []
 
@@ -391,7 +405,7 @@ def _parse_args() -> argparse.Namespace:
         "--services",
         type=str,
         default=None,
-        help="要启动的服务，逗号分隔 (api,worker,web)",
+        help="要启动的服务，逗号分隔 (api,worker,web-h5,web-weapp)",
     )
     group.add_argument(
         "--all",
