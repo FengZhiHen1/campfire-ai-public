@@ -127,13 +127,29 @@ async def submit_narrative(
     session: AsyncSession,
 ) -> CaseNarrative:
     """提交 L1 叙事审核（draft → pending_review）。"""
+    from sqlalchemy import update as sa_update
+
     entity = await get_narrative(narrative_id, current_user, session)
     if entity.status != CaseStatus.DRAFT:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="仅草稿状态的叙事可提交审核",
         )
-    entity.status = CaseStatus.PENDING_REVIEW
+
+    result = await session.execute(
+        sa_update(CaseNarrative)
+        .where(
+            CaseNarrative.narrative_id == entity.narrative_id,
+            CaseNarrative.status == CaseStatus.DRAFT,
+        )
+        .values(status=CaseStatus.PENDING_REVIEW)
+    )
+    if result.rowcount == 0:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="叙事状态已变更，请刷新后重试",
+        )
+
     await session.commit()
     await session.refresh(entity)
     return entity
@@ -205,13 +221,29 @@ async def submit_card(
     session: AsyncSession,
 ) -> CaseCard:
     """提交单张 L2 卡片审核。"""
+    from sqlalchemy import update as sa_update
+
     entity = await get_card(card_id, session)
     if entity.review_status != CaseStatus.DRAFT:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="仅草稿状态的卡片可提交审核",
         )
-    entity.review_status = CaseStatus.PENDING_REVIEW
+
+    result = await session.execute(
+        sa_update(CaseCard)
+        .where(
+            CaseCard.card_id == entity.card_id,
+            CaseCard.review_status == CaseStatus.DRAFT,
+        )
+        .values(review_status=CaseStatus.PENDING_REVIEW)
+    )
+    if result.rowcount == 0:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="卡片状态已变更，请刷新后重试",
+        )
+
     await session.commit()
     await session.refresh(entity)
     return entity
@@ -223,6 +255,8 @@ async def approve_card(
     session: AsyncSession,
 ) -> CaseCard:
     """审核通过 L2 卡片（触发向量索引）。"""
+    from sqlalchemy import update as sa_update
+
     entity = await get_card(card_id, session)
     if entity.review_status != CaseStatus.PENDING_REVIEW:
         raise HTTPException(
@@ -235,8 +269,19 @@ async def approve_card(
             detail="不能审核自己创建的卡片",
         )
 
-    entity.review_status = CaseStatus.APPROVED
-    entity.index_status = "pending"
+    result = await session.execute(
+        sa_update(CaseCard)
+        .where(
+            CaseCard.card_id == entity.card_id,
+            CaseCard.review_status == CaseStatus.PENDING_REVIEW,
+        )
+        .values(review_status=CaseStatus.APPROVED, index_status="pending")
+    )
+    if result.rowcount == 0:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="卡片状态已变更，请刷新后重试",
+        )
 
     # 触发索引
     from py_rag.indexing.service import enqueue_index_task

@@ -16,8 +16,9 @@ import logging
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import func, select, text
+from sqlalchemy import and_, func, select, text, update as sa_update
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.inspection import inspect as sa_inspect
 from sqlalchemy.sql import Select, func as sa_func
 
 from py_db.models.case_model import Case
@@ -232,39 +233,102 @@ class CaseRepository(BaseRepository[Case]):
         session: AsyncSession,
         case_id: str,
         new_status: CaseStatus,
+        expected_status: CaseStatus | None = None,
         review_comment: str | None = None,
     ) -> Case:
-        """更新案例状态。
+        """原子性更新案例状态。
 
-        状态转换的统一入口，使用 WHERE case_id=$1 AND status=$current 实现原子性。
+        若提供 expected_status，使用 UPDATE ... WHERE case_id=$1 AND status=$current
+        实现乐观锁，仅当案例仍处于预期状态时才执行更新。
 
         Args:
             session: 活动数据库会话。
             case_id: 案例唯一标识。
             new_status: 目标状态。
+            expected_status: 预期当前状态（乐观锁）。为 None 则跳过 CAS 检查。
             review_comment: 可选的审核驳回意见。
 
         Returns:
             更新状态后的 Case 实例。
 
         Raises:
-            ValueError: 案例不存在或状态不匹配。
+            ValueError: 案例不存在或状态不匹配（CAS 冲突）。
         """
+
         async def _update() -> Case:
-            case = await self.find_by_case_id(session, case_id)
-            if case is None:
-                raise ValueError(f"案例 {case_id} 不存在")
+            conditions = [Case.case_id == case_id]
+            if expected_status is not None:
+                conditions.append(Case.status == expected_status)
 
-            case.status = new_status
+            values: dict[str, object] = {"status": new_status}
             if review_comment is not None:
-                case.review_comment = review_comment
+                values["review_comment"] = review_comment
 
-            session.add(case)
-            await session.flush()
+            result = await session.execute(
+                sa_update(Case).where(and_(*conditions)).values(**values)
+            )
+            if result.rowcount == 0:
+                raise ValueError(
+                    f"案例 {case_id} 不存在或状态已变更（预期 {expected_status}）"
+                )
+
+            case = await self.find_by_case_id(session, case_id)
+            assert case is not None
             await session.refresh(case)
             return case
 
         return await self._execute_with_retry(session, "update_status", _update)
+
+    async def update_case_with_version(
+        self,
+        session: AsyncSession,
+        case: Case,
+        expected_updated_at: datetime,
+    ) -> Case:
+        """原子性更新案例，带乐观锁检测。
+
+        使用 UPDATE ... WHERE case_id=$1 AND updated_at=$2，
+        确保在读取版本检查与写入之间无其他事务修改该记录。
+
+        Args:
+            session: 活动数据库会话。
+            case: 已在内存中修改过的 Case ORM 实例。
+            expected_updated_at: 读操作时记录的时间戳。
+
+        Returns:
+            更新后的 Case 实例。
+
+        Raises:
+            ValueError: 乐观锁冲突（updated_at 已变化）。
+        """
+
+        async def _update() -> Case:
+            insp = sa_inspect(case)
+            dirty = {attr.key for attr in insp.attrs if attr.history.has_changes()}
+            if not dirty:
+                await session.refresh(case)
+                return case
+
+            values = {col: getattr(case, col) for col in dirty}
+            result = await session.execute(
+                sa_update(Case)
+                .where(
+                    and_(
+                        Case.case_id == case.case_id,
+                        Case.updated_at == expected_updated_at,
+                    )
+                )
+                .values(**values)
+            )
+            if result.rowcount == 0:
+                raise ValueError(
+                    f"案例 {case.case_id} 已被其他用户修改，请刷新后重试"
+                )
+
+            await session.refresh(case)
+            return case
+
+        return await self._execute_with_retry(session, "update_case_with_version", _update)
 
 
 __all__ = ["CaseRepository"]

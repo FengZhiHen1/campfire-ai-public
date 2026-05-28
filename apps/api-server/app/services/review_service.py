@@ -315,7 +315,7 @@ async def submit_review(
                 },
             )
 
-    # ---- 步骤 7：乐观 CAS 更新状态 ----
+    # ---- 步骤 7：原子 CAS 更新状态 ----
     new_status: CaseStatus = (
         CaseStatus.APPROVED
         if review_request.decision == "approved"
@@ -324,20 +324,17 @@ async def submit_review(
 
     try:
         updated_case: Case = await case_repo.update_status(
-            session, case_id, new_status
+            session,
+            case_id,
+            new_status,
+            expected_status=CaseStatus.PENDING_REVIEW,
+            review_comment=review_request.review_comment,
         )
     except ValueError as exc:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=str(exc),
         ) from exc
-
-    # CAS 冲突检测：update_status 返回 0 或 None 表示影响 0 行
-    if updated_case is None or updated_case == 0:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="该案例已被其他审核人处理，请刷新后重试",
-        )
 
     # ---- 步骤 8：写入审核记录 ----
     # 计算 review_round
@@ -411,10 +408,6 @@ async def submit_review(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="服务暂时不可用，请稍后重试",
         ) from exc
-
-    # ---- 更新 review_comment 快照（审核通过或驳回均更新） ----
-    if review_request.review_comment is not None:
-        case.review_comment = review_request.review_comment
 
     # ---- 步骤 10：审核通过时异步触发索引入队 ----
     if review_request.decision == "approved":

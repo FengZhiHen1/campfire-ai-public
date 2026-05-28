@@ -89,7 +89,8 @@ class ProfileService:
     ) -> ProfileResponse:
         """创建新档案。
 
-        若用户当前没有任何档案，自动将新档案设为默认。
+        若用户当前没有任何档案，通过 set_default 原子操作将新档案设为默认，
+        避免并发创建时出现多个 is_default=true 的档案。
         """
         count = await self._repository.count_active_by_caregiver(session, caregiver_id)
 
@@ -104,9 +105,15 @@ class ProfileService:
             sensory_features=input_data.sensory_features or [],
             triggers=input_data.triggers or [],
             medication_notes=input_data.medication_notes,
-            is_default=(count == 0),
+            is_default=False,
         )
         created = await self._repository.create(session, profile)
+
+        if count == 0:
+            created = await self._repository.set_default(
+                session, created.profile_id, caregiver_id
+            ) or created
+
         await session.commit()
         logger.info(
             service="api-server",
