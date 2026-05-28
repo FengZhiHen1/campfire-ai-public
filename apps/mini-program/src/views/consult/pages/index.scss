@@ -79,6 +79,10 @@
     justify-content: center;
     border: none;
 
+    &::after {
+      border: none;
+    }
+
     &:active {
       opacity: 0.9;
       transform: scale(0.98);
@@ -125,6 +129,10 @@
     position: relative;
     border: none;
     text-align: center;
+
+    &::after {
+      border: none;
+    }
 
     &:active {
       transform: scale(0.97);
@@ -199,6 +207,10 @@
     justify-content: center;
     border: none;
 
+    &::after {
+      border: none;
+    }
+
     &:disabled {
       background-color: $cf-surface-dim;
       color: $cf-on-surface-variant;
@@ -220,6 +232,10 @@
     align-items: center;
     justify-content: center;
     border: none;
+
+    &::after {
+      border: none;
+    }
 
     &:active {
       background-color: $cf-surface-variant;
@@ -244,6 +260,10 @@
     padding: $cf-spacing-xs $cf-spacing-sm;
     font-size: 24px;
     border: none;
+
+    &::after {
+      border: none;
+    }
 
     &--active {
       background-color: $cf-primary-container;
@@ -274,6 +294,10 @@
     align-items: center;
     justify-content: center;
     border: none;
+
+    &::after {
+      border: none;
+    }
 
     &--active {
       background-color: $cf-primary;
@@ -478,6 +502,10 @@
     border: none;
     margin: 0 auto;
 
+    &::after {
+      border: none;
+    }
+
     &:active {
       opacity: 0.9;
     }
@@ -541,6 +569,10 @@
     justify-content: center;
     border: none;
 
+    &::after {
+      border: none;
+    }
+
     &:active {
       opacity: 0.9;
     }
@@ -557,6 +589,10 @@
     align-items: center;
     justify-content: center;
     border: none;
+
+    &::after {
+      border: none;
+    }
 
     &:active {
       background-color: $cf-surface-variant;
