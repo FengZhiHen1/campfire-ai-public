@@ -260,18 +260,18 @@ export async function listCases(
   }
   const { signal: requestSignal, cleanup } = createRequestSignal(signal);
   try {
+    // 过滤 undefined 值，防止序列化为 "undefined" 字符串发送到后端
+    const queryData: Record<string, unknown> = { page, page_size: pageSize };
+    if (status !== undefined) queryData.status = status;
+    if (behaviorType !== undefined) queryData.behavior_type = behaviorType;
+    if (scope !== undefined) queryData.scope = scope;
+
     const res = await httpClient.request<PaginatedResponse<CaseListItem>>(
       withSignal(
         {
           url: BASE_PATH,
           method: 'GET',
-          data: {
-            status,
-            behavior_type: behaviorType,
-            page,
-            page_size: pageSize,
-            scope,
-          },
+          data: queryData,
         },
         requestSignal,
       ),
