@@ -56,7 +56,7 @@ router = APIRouter(prefix="/api/v1/auth", tags=["auth"])
     ),
 )
 async def register(
-    request: RegisterRequest = Depends(),
+    request: RegisterRequest,
     session: AsyncSession = Depends(get_db_session),
     user_repo: UserRepository = Depends(get_user_repository),
     password_hasher: PasswordHasher = Depends(get_password_hasher),

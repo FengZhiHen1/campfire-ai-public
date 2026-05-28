@@ -4,6 +4,8 @@
   "description": "",
   "main": "index.js",
   "scripts": {
+    "dev:weapp": "taro build --type weapp --watch",
+    "build:weapp": "taro build --type weapp",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
@@ -13,9 +15,18 @@
   "devDependencies": {
     "@types/node": "^25.9.1",
     "@types/react": "^19.2.15",
-    "react": "^19.2.6",
+    "react": "^18.3.1",
     "typescript": "^6.0.3",
     "vitest": "^4.1.7",
     "zustand": "^5.0.13"
+  },
+  "dependencies": {
+    "@tarojs/components": "^4.2.0",
+    "@tarojs/plugin-platform-weapp": "^4.2.0",
+    "@tarojs/react": "^4.2.0",
+    "@tarojs/runtime": "^4.2.0",
+    "@tarojs/taro": "^4.2.0",
+    "@tarojs/webpack5-runner": "^4.2.0",
+    "react-dom": "^18.3.1"
   }
 }
