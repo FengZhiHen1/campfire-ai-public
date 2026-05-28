@@ -1,20 +1,19 @@
 /**
- * CSLT-08 SSE 流解析器 —— SseStreamParser 类。
+ * CSLT-08 SSE 流解析器 —— SseStreamParser 类（小程序 enableChunked 版）。
  *
  * 职责：
- * - 通过 fetch streaming API 连接 SSE 端点
+ * - 通过 Taro.request({ enableChunked: true }) 连接 SSE 端点
+ * - 监听 onChunkReceived 回调接收二进制 chunk，TextDecoder 解码为文本
  * - 手动解析 SSE 协议（支持 \r\n\r\n 和 \n\n 双换行分隔）
  * - 跨 chunk 边界事件拼接
  * - 心跳监控（15s 无事件判定僵死）
  * - 指数退避重连（1s/2s/5s，3 次上限）
  *
  * 设计依据：CSLT-08 落地规范 §1.7 步骤 4、§1.9 异常 3
- * 兼容性：同时支持 \r\n 和 \n 作为行分隔符
- *
- * 注意：Taro 微信小程序环境可能不支持 response.body.getReader()，
- * 降级方案为 Taro.request 的 enableChunked 回调——见 §1.11 强制约束 2。
+ * 兼容性：微信小程序基础库 2.18.0+（支持 enableChunked / onChunkReceived）
  */
 
+import Taro from '@tarojs/taro';
 import type { ChunkEventPayload, DoneEventPayload, ErrorEventPayload } from '../types/index';
 
 // ============================================================================
@@ -84,8 +83,8 @@ export class SseStreamParser {
   private config: SseStreamParserConfig;
   private callbacks: SseStreamParserCallbacks;
 
-  private abortController: AbortController | null = null;
-  private reader: ReadableStreamDefaultReader<Uint8Array> | null = null;
+  /** Taro 请求任务（用于 abort 和 onChunkReceived） */
+  private task: Taro.RequestTask<unknown> | null = null;
   private isActive: boolean = false;
 
   // 事件拼接缓冲区
@@ -129,83 +128,99 @@ export class SseStreamParser {
 
   /**
    * 连接到 SSE 端点并开始消费流。
-   * 使用 fetch streaming API 读取 response.body 的 ReadableStream。
+   * 使用 Taro.request({ enableChunked: true }) 获取 chunk 数据。
    *
    * @param url - SSE 端点 URL
    * @param headers - 额外请求头（如 Last-Event-Id）
-   * @returns Promise<void> 连接关闭时 resolve，异常时 reject
+   * @returns Promise<void> 连接关闭时 resolve，异常时内部自动重连
    */
   async connect(url: string, headers?: Record<string, string>): Promise<void> {
-    this.cleanup(); // 清理上一次连接残留
+    this.cleanup();
 
     this.isActive = true;
     this.reconnectAttempt = 0;
     this.lastEventTime = Date.now();
 
-    // 创建 AbortController
-    this.abortController = new AbortController();
-
-    // 启动连接超时定时器（超时时 abort controller → fetch 抛 AbortError）
-    this.startConnectTimer();
-
     try {
-      const response = await fetch(url, {
+      await this._doConnect(url, headers);
+    } catch {
+      // 首次连接失败 → 触发重连
+      if (this.isActive && !this.isReconnecting) {
+        await this.attemptReconnect(url, headers);
+      }
+    }
+  }
+
+  /**
+   * 执行一次 SSE 连接。
+   * 内部通过 Promise 包装 Taro.request，解耦回调与 async/await。
+   */
+  private _doConnect(url: string, headers?: Record<string, string>): Promise<void> {
+    return new Promise((resolve, reject) => {
+      this.startConnectTimer();
+
+      const task = Taro.request({
+        url,
         method: 'GET',
-        headers: {
+        header: {
           Accept: 'text/event-stream',
           'Cache-Control': 'no-cache',
           ...(this.lastEventId ? { 'Last-Event-Id': this.lastEventId } : {}),
           ...headers,
         },
-        signal: this.abortController.signal,
-      });
+        enableChunked: true,
+        success: (res) => {
+          this.clearConnectTimer();
+          this.stopAllMonitors();
 
-      this.clearConnectTimer();
+          if (!this.isActive) {
+            resolve();
+            return;
+          }
 
-      if (!response.ok) {
-        // HTTP 非 2xx → 触发错误回调
-        this.callbacks.onError?.({
-          error_code: 'GENERATION_FAILED',
-          detail: `SSE 连接失败: HTTP ${response.status}`,
+          if (res.statusCode && (res.statusCode < 200 || res.statusCode >= 300)) {
+            this.callbacks.onError?.({
+              error_code: 'GENERATION_FAILED',
+              detail: `SSE 连接失败: HTTP ${res.statusCode}`,
+            });
+            reject(new Error(`HTTP ${res.statusCode}`));
+            return;
+          }
+
+          resolve();
+        },
+        fail: (err) => {
+          this.clearConnectTimer();
+          this.stopAllMonitors();
+
+          if (!this.isActive) {
+            resolve();
+            return;
+          }
+
+          reject(err);
+        },
+      }) as unknown as Taro.RequestTask<unknown>;
+
+      this.task = task;
+
+      // ---- 注册 onChunkReceived（微信小程序 2.18.0+）----
+      if (task.onChunkReceived) {
+        task.onChunkReceived((res) => {
+          this.clearConnectTimer();
+
+          const chunk = new TextDecoder().decode(new Uint8Array(res.data));
+          this.processChunk(chunk);
+
+          this.lastEventTime = Date.now();
+          this.resetHeartbeatMonitor();
+          this.resetNoDataMonitor();
         });
-        // 尝试重连（连接时错误也算）
-        await this.attemptReconnect(url, headers);
-        return;
       }
 
-      const body = response.body;
-      if (!body) {
-        this.callbacks.onError?.({
-          error_code: 'GENERATION_FAILED',
-          detail: 'SSE 响应体为空',
-        });
-        await this.attemptReconnect(url, headers);
-        return;
-      }
-
-      this.reader = body.getReader();
       this.startHeartbeatMonitor();
       this.startNoDataMonitor();
-
-      // 消费流
-      await this.readLoop();
-
-      // 流正常结束（reader 返回 done）
-      this.stopAllMonitors();
-    } catch (error: unknown) {
-      this.clearConnectTimer();
-      this.stopAllMonitors();
-
-      // 非活跃状态（手动 disconnect）→ 不重连
-      if (!this.isActive) {
-        return;
-      }
-
-      // 若处于活跃状态但出错（含超时 AbortError、网络错误等）→ 触发重连
-      if (!this.isReconnecting) {
-        await this.attemptReconnect(url, headers);
-      }
-    }
+    });
   }
 
   // ============================================================================
@@ -214,34 +229,20 @@ export class SseStreamParser {
 
   /**
    * 主动断开 SSE 连接。
-   * 清理所有定时器、关闭 reader、中止 fetch。
+   * 清理所有定时器、中止 Taro 请求。
    */
   disconnect(): void {
     this.isActive = false;
     this.isReconnecting = false;
-    this.cleanup();
-  }
-
-  // ============================================================================
-  // 读取循环
-  // ============================================================================
-
-  private async readLoop(): Promise<void> {
-    if (!this.reader) return;
-
-    const decoder = new TextDecoder();
-
-    while (this.isActive && this.reader) {
-      const { done, value } = await this.reader.read();
-
-      if (done) {
-        break;
+    if (this.task) {
+      try {
+        this.task.abort();
+      } catch {
+        // 忽略
       }
-
-      // 解码并处理 chunk
-      const chunk = decoder.decode(value, { stream: true });
-      this.processChunk(chunk);
+      this.task = null;
     }
+    this.cleanup();
   }
 
   // ============================================================================
@@ -249,7 +250,7 @@ export class SseStreamParser {
   // ============================================================================
 
   /**
-   * 处理每个读取到的二进制 chunk。
+   * 处理每个读取到的文本 chunk。
    * 支持 \r\n\r\n 和 \n\n 作为事件分隔符。
    * 处理跨 chunk 边界的事件拼接。
    */
@@ -258,14 +259,15 @@ export class SseStreamParser {
     this.buffer += chunk;
 
     // 尝试从缓冲区中提取完整事件
-    // SSE 事件分隔符：\r\n\r\n 或 \n\n
     let separatorIndex: number;
     while ((separatorIndex = this.findEventSeparator(this.buffer)) !== -1) {
       // 提取完整事件文本（到第一个分隔符之前）
       const eventText = this.buffer.substring(0, separatorIndex);
 
       // 移除已处理部分（包括分隔符）
-      this.buffer = this.buffer.substring(separatorIndex + this.getSeparatorLength(this.buffer, separatorIndex));
+      this.buffer = this.buffer.substring(
+        separatorIndex + this.getSeparatorLength(this.buffer, separatorIndex),
+      );
 
       // 跳过空事件
       if (eventText.trim().length === 0) {
@@ -444,55 +446,27 @@ export class SseStreamParser {
 
       await this.sleep(delay);
 
-      if (!this.isActive) return;
+      if (!this.isActive) {
+        this.isReconnecting = false;
+        return;
+      }
 
       try {
-        // 关闭旧 reader
-        if (this.reader) {
+        // 关闭旧 task
+        if (this.task) {
           try {
-            await this.reader.cancel();
+            this.task.abort();
           } catch {
-            // reader cancel 忽略
+            // 忽略
           }
-          this.reader = null;
+          this.task = null;
         }
-
-        // 创建新的 AbortController（原 controller 可能已被超时 abort）
-        this.abortController = new AbortController();
 
         // 重新连接
-        const response = await fetch(url, {
-          method: 'GET',
-          headers: {
-            Accept: 'text/event-stream',
-            'Cache-Control': 'no-cache',
-            'Last-Event-Id': String(this.lastSequence || ''),
-            ...headers,
-          },
-          signal: this.abortController.signal,
-        });
+        await this._doConnect(url, headers);
 
-        if (!response.ok) {
-          continue; // 重试下一次
-        }
-
-        const body = response.body;
-        if (!body) {
-          continue; // 重试下一次
-        }
-
-        // 重连成功
+        // 重连成功且流正常结束
         this.isReconnecting = false;
-        this.lastEventTime = Date.now();
-        this.reader = body.getReader();
-        this.startHeartbeatMonitor();
-        this.startNoDataMonitor();
-
-        // 继续读取
-        await this.readLoop();
-
-        // 流正常结束
-        this.stopAllMonitors();
         return;
       } catch (error: unknown) {
         // 手动断开连接时不重试
@@ -525,8 +499,7 @@ export class SseStreamParser {
     this.heartbeatTimer = setTimeout(() => {
       const elapsed = Date.now() - this.lastEventTime;
       if (elapsed >= this.config.heartbeatTimeout && this.isActive) {
-        // 心跳超时，不触发回调，等待下次事件或断开
-        // 实际心跳超时不触发外部回调——程序需等待无数据超时或连接断开
+        // 心跳超时，不触发外部回调，等待无数据超时或连接断开
       }
     }, this.config.heartbeatTimeout + 1000);
   }
@@ -584,14 +557,17 @@ export class SseStreamParser {
 
   /**
    * 启动连接超时定时器。
-   * 超时后 abort controller → fetch 抛 AbortError → 被 connect() 的 catch 捕获。
-   * 返回 void（不再返回 Promise，通过 fetch 的 signal 实现超时信号）。
+   * 超时后 task.abort() → Taro.request fail 回调 → Promise reject。
    */
   private startConnectTimer(): void {
     this.clearConnectTimer();
     this.connectTimer = setTimeout(() => {
-      if (this.abortController) {
-        this.abortController.abort();
+      if (this.task) {
+        try {
+          this.task.abort();
+        } catch {
+          // 忽略
+        }
       }
     }, this.config.connectTimeout);
   }
@@ -608,28 +584,19 @@ export class SseStreamParser {
   // ============================================================================
 
   /**
-   * 清理所有资源：取消 reader、中止 fetch、清除定时器。
+   * 清理所有资源：中止 Taro 请求、清除定时器、清空缓冲区。
    */
   private cleanup(): void {
     this.clearConnectTimer();
     this.stopAllMonitors();
 
-    if (this.reader) {
+    if (this.task) {
       try {
-        this.reader.cancel();
+        this.task.abort();
       } catch {
         // 忽略
       }
-      this.reader = null;
-    }
-
-    if (this.abortController) {
-      try {
-        this.abortController.abort();
-      } catch {
-        // 忽略
-      }
-      this.abortController = null;
+      this.task = null;
     }
 
     this.buffer = '';
