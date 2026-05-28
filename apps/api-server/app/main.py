@@ -15,6 +15,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.v1.auth import router as auth_router
 from app.api.v1.cases import router as cases_router
+from app.api.v1.narratives import router as narratives_router
 from app.api.v1.consult import router as consult_router
 from app.api.v1.consult.stream import router as stream_router
 from app.api.v1.consultations import router as consultations_router
@@ -121,6 +122,7 @@ def create_app() -> FastAPI:
     app.include_router(auth_router)
     app.include_router(reviews_router)
     app.include_router(cases_router)
+    app.include_router(narratives_router)
     app.include_router(consult_router)
     app.include_router(stream_router)
     app.include_router(consultations_router)

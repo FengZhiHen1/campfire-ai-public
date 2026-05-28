@@ -9,6 +9,8 @@ export default defineAppConfig({
     'views/consult/pages/history',
     'views/consult/pages/detail',
     'views/tickets/pages/detail',
+    'views/cases/pages/narrative-submit',
+    'views/cases/pages/extraction-result',
   ],
   window: {
     backgroundTextStyle: 'light',

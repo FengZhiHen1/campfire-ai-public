@@ -218,6 +218,7 @@ class LLMClient:
         max_tokens: int = 8192,
         timeout: float = 5.0,
         max_retries: int = 3,
+        response_format: dict | None = None,
     ) -> str:
         """Non-streaming chat completion from DeepSeek API with retry.
 
@@ -231,6 +232,7 @@ class LLMClient:
             max_tokens: Maximum tokens to generate, default 8192.
             timeout: HTTP-level timeout in seconds, default 5.0.
             max_retries: Maximum retry attempts on transient failures, default 3.
+            response_format: Optional response format dict (e.g. {"type": "json_object"}).
 
         Returns:
             str: The complete response text from the LLM.
@@ -243,14 +245,17 @@ class LLMClient:
 
         for attempt in range(max_retries + 1):
             try:
-                response = await self._client.chat.completions.create(
-                    model=model,
-                    messages=messages,  # type: ignore[arg-type]
-                    temperature=temperature,
-                    max_tokens=max_tokens,
-                    stream=False,
-                    timeout=timeout,
-                )
+                create_kwargs: dict = {
+                    "model": model,
+                    "messages": messages,  # type: ignore[arg-type]
+                    "temperature": temperature,
+                    "max_tokens": max_tokens,
+                    "stream": False,
+                    "timeout": timeout,
+                }
+                if response_format is not None:
+                    create_kwargs["response_format"] = response_format
+                response = await self._client.chat.completions.create(**create_kwargs)
                 if response.choices and len(response.choices) > 0:
                     return response.choices[0].message.content or ""
                 return ""

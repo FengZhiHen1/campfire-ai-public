@@ -195,6 +195,66 @@ class EventRepository:
 
         return events, total
 
+    async def list_recent_by_profile(
+        self,
+        session: AsyncSession,
+        profile_id: UUID,
+        limit: int = 5,
+        behavior_type: str | None = None,
+        days: int = 30,
+    ) -> list[EventLog]:
+        """查询指定档案最近 N 天的事件记录。
+
+        按 event_time DESC 排序，优先返回 is_professional=true 的事件。
+        若同行为类型不足 2 条，补充其他类型至 limit。
+
+        Args:
+            session: 活动数据库会话。
+            profile_id: 所属档案 UUID。
+            limit: 返回上限（默认 5）。
+            behavior_type: 可选行为类型筛选。
+            days: 时间范围（天，默认 30）。
+
+        Returns:
+            list[EventLog]: 事件列表。
+        """
+        from datetime import timedelta, timezone
+
+        cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+        conditions = [
+            EventLog.profile_id == profile_id,
+            EventLog.event_time >= cutoff,
+        ]
+        if behavior_type is not None:
+            conditions.append(EventLog.behavior_type == behavior_type)
+
+        stmt = (
+            select(EventLog)
+            .where(*conditions)
+            .order_by(EventLog.is_professional.desc(), EventLog.event_time.desc())
+            .limit(limit)
+        )
+        result = await session.execute(stmt)
+        events = list(result.scalars().all())
+
+        # 若同类型不足，补充其他类型
+        if behavior_type and len(events) < limit:
+            remaining = limit - len(events)
+            supplement_stmt = (
+                select(EventLog)
+                .where(
+                    EventLog.profile_id == profile_id,
+                    EventLog.event_time >= cutoff,
+                    EventLog.behavior_type != behavior_type,
+                )
+                .order_by(EventLog.is_professional.desc(), EventLog.event_time.desc())
+                .limit(remaining)
+            )
+            supp = await session.execute(supplement_stmt)
+            events.extend(list(supp.scalars().all()))
+
+        return events
+
     async def count_active_by_profile(
         self,
         session: AsyncSession,

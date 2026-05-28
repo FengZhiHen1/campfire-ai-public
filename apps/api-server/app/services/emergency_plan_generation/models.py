@@ -51,7 +51,7 @@ class EmergencyPlanInput(BaseModel):
     profile_summary: str = Field(
         ...,
         min_length=1,
-        max_length=2000,
+        max_length=3000,
         description="Markdown 格式的患者档案摘要，由 CSLT-08 编排层从 PROF-02 获取并格式化。"
         "包含 diagnosis_type、behavior_tags、recent_events（最近5条事件摘要）等字段。",
         examples=[
