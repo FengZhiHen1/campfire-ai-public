@@ -88,6 +88,8 @@ export function useConsult(): UseConsultReturn {
     () => ({
       // 只读状态
       sessionState,
+      behaviorTypeSelection,
+      behaviorDescription,
       messages,
       planSections,
       accumulatedText,
@@ -113,7 +115,7 @@ export function useConsult(): UseConsultReturn {
       submitConsult: () => store.getState().submitConsult(),
       cancelSelection: () => store.getState().cancelSelection(),
       retrySubmit: () => store.getState().retrySubmit(),
-      goBackToIdle: () => store.getState().goBackToIdle(),
+      goBackToSelecting: () => store.getState().goBackToSelecting(),
       retryStream: () => store.getState().retryStream(),
       startNewConsult: () => store.getState().startNewConsult(),
       goToTicket: () => store.getState().goToTicket(),
@@ -125,6 +127,8 @@ export function useConsult(): UseConsultReturn {
     }),
     [
       sessionState,
+      behaviorTypeSelection,
+      behaviorDescription,
       messages,
       planSections,
       accumulatedText,

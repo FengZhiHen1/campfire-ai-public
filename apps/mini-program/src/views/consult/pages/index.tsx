@@ -47,7 +47,7 @@ export default function ConsultIndex() {
     submitConsult,
     cancelSelection,
     retrySubmit,
-    goBackToIdle,
+    goBackToSelecting,
     retryStream,
     startNewConsult,
     goToTicket,
@@ -324,8 +324,8 @@ export default function ConsultIndex() {
               重新生成
             </Button>
           )}
-          <Button className="consult-error__back-btn" onClick={goBackToIdle}>
-            返回首页
+          <Button className="consult-error__back-btn" onClick={goBackToSelecting}>
+            返回修改
           </Button>
         </View>
       </View>

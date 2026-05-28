@@ -78,8 +78,8 @@ export interface ConsultStore extends ConsultSessionStoreState {
   cancelSelection: () => void;
   /** 重试提交：submit_failed -> submitting */
   retrySubmit: () => Promise<void>;
-  /** 返回空闲：submit_failed | stream_failed -> idle */
-  goBackToIdle: () => void;
+  /** 返回修改：submit_failed | stream_failed -> selecting_behavior，保留表单数据 */
+  goBackToSelecting: () => void;
   /** 重试流式接收：stream_failed -> submitting（重新生成） */
   retryStream: () => Promise<void>;
   /** 开始新一轮咨询：completed | ticket_guide -> selecting_behavior */
@@ -160,6 +160,34 @@ function createEmptySections(): PlanSection[] {
     contents: [],
     isCompleted: false,
   }));
+}
+
+/**
+ * 增量追加文本到 planSections 中对应段落的末尾。
+ * 用于流式渲染中按 section 标记实时更新结构化卡片。
+ *
+ * @param sections - 当前的 PlanSection 数组
+ * @param sectionTitle - chunk 所属的段落标题，null 表示 JSON 语法字符（仅计入 accumulatedText）
+ * @param text - 要追加的文本
+ */
+function appendToPlanSections(
+  sections: PlanSection[],
+  sectionTitle: string | null,
+  text: string,
+): PlanSection[] {
+  if (!sectionTitle || !text) return sections;
+  return sections.map((sec) => {
+    if (sec.title !== sectionTitle) return sec;
+    const lastIdx = sec.contents.length - 1;
+    if (lastIdx >= 0 && !sec.isCompleted) {
+      // 追加到最后一个条目（流式渲染中同一条建议可能跨多个 chunk）
+      const updated = [...sec.contents];
+      updated[lastIdx] = updated[lastIdx] + text;
+      return { ...sec, contents: updated };
+    }
+    // 新条目或已完成段落
+    return { ...sec, contents: [...sec.contents, text] };
+  });
 }
 
 /**
@@ -340,31 +368,42 @@ export const useConsultStore = create<ConsultStore>()(
             },
             {
               // ---- onChunk ----
-              onChunk: (chunkData: { text: string; sequence: number }): void => {
+              onChunk: (chunkData: { text: string; sequence: number; section?: string | null }): void => {
                 const state = get();
-                const newText = state.accumulatedText + chunkData.text;
                 const newSeq = chunkData.sequence;
+                const chunkSection = chunkData.section ?? null;
 
-                // 首个 chunk → 触发 streaming 状态转换 + 初始化 system_plan 消息
+                // 首个内容 chunk → 触发 streaming 状态转换
                 const isFirstChunk = state.lastSequence === 0;
 
                 if (isFirstChunk) {
-                  // 状态转换：submitting -> streaming
                   const sNext = transitionTo(state.sessionState, 'streaming');
                   const initMsg = createMessageItem('system', '', 'system_plan', {
                     isOriginal: true,
                   });
+                  // 增量更新：有 section 标记时追加到对应段落，否则累积到 accumulatedText
+                  const updatedSections = appendToPlanSections(
+                    state.planSections,
+                    chunkSection,
+                    chunkData.text,
+                  );
                   set({
                     sessionState: sNext,
-                    accumulatedText: newText,
+                    accumulatedText: state.accumulatedText + chunkData.text,
                     lastSequence: newSeq,
+                    planSections: updatedSections,
                     messages: [...state.messages, initMsg],
                   });
                 } else {
-                  // 累积文本（段落解析在 done 事件中由后端 sections 数据完成）
+                  const updatedSections = appendToPlanSections(
+                    state.planSections,
+                    chunkSection,
+                    chunkData.text,
+                  );
                   set({
-                    accumulatedText: newText,
+                    accumulatedText: state.accumulatedText + chunkData.text,
                     lastSequence: newSeq,
+                    planSections: updatedSections,
                   });
                 }
               },
@@ -627,16 +666,21 @@ export const useConsultStore = create<ConsultStore>()(
         await get().submitConsult();
       },
 
-      // ===== goBackToIdle =====
-      goBackToIdle: (): void => {
+      // ===== goBackToSelecting =====
+      goBackToSelecting: (): void => {
         const { sessionState } = get();
         if (sessionState !== 'submit_failed' && sessionState !== 'stream_failed') {
           return;
         }
-        const next = transitionTo(sessionState, 'idle');
-        set({ sessionState: next, errorCode: undefined });
-        // 从 submit_failed 回来：保留 behaviorTypeSelection 和 behaviorDescription
-        // 从 stream_failed 回来：保留消息列表
+        const next = transitionTo(sessionState, 'selecting_behavior');
+        set({
+          sessionState: next,
+          errorCode: undefined,
+          // 仅清空流式相关状态，保留 behaviorTypeSelection 和 behaviorDescription
+          accumulatedText: '',
+          planSections: createEmptySections(),
+          lastSequence: 0,
+        });
       },
 
       // ===== retryStream =====

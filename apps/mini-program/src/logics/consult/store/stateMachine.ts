@@ -41,8 +41,8 @@ export const LEGAL_TRANSITIONS: Record<ConsultSessionState, ConsultSessionState[
   streaming: ['completed', 'stream_failed'],
   completed: ['ticket_guide', 'selecting_behavior'],
   ticket_guide: ['selecting_behavior'],
-  submit_failed: ['submitting', 'idle'],
-  stream_failed: ['submitting', 'idle'],
+  submit_failed: ['submitting', 'idle', 'selecting_behavior'],
+  stream_failed: ['submitting', 'idle', 'selecting_behavior'],
 };
 
 // ============================================================================
