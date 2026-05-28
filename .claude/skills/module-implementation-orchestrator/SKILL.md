@@ -22,7 +22,7 @@ description: |
 | 进入 plan 模式重新规划 | 本 skill 已提供完整流水线，直接执行 |
 | 在 Phase 4 修改 `.tmp/adversarial-tests/` 下的测试文件 | 对抗性验证的客观性依赖测试代码不被 orchestrator 污染 |
 
-**你必须做的**：运行命令、检查结果、协调流程、验证格式、调度 SubAgent。SubAgent 调用统一使用 `model: "opus"`。
+**你必须做的**：运行命令、检查结果、协调流程、验证格式、调度 SubAgent。SubAgent 调用统一使用 `model: "haiku"`。
 
 **Phase 4 文件写权限**：orchestrator 只能写 `failure-summary-round-*.md` 和 `test-defects-round-*.md`。测试代码文件（`*.py`/`*.ts`/`*.js`/`*.go`）**绝对禁止写入**。违规即意味着信息隔离崩溃、流程产出不可信，必须中止并报告用户。
 
@@ -144,7 +144,7 @@ python scripts/validate_contract_expectations.py \
 调用 `Agent` 工具，使用 `references/subagent-prompts.md` 中的**模板 1**，替换占位符后发送。
 
 关键约束：
-- `subagent_type`: `"coder"`，`model`: `"opus"`
+- `subagent_type`: `"coder"`，`model`: `"haiku"`
 - 工作目录排除 `{module_code_dir}/.tmp/adversarial-tests/`
 - 实现代码的外部接口类型必须与契约文件一致，但不得 import 契约文件本身
 

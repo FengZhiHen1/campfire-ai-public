@@ -9,7 +9,7 @@
 
 **目标 Skill**: `adversarial-implementation-executor`
 **SubAgent 类型**: `coder`
-**模型**: `opus`
+**模型**: `haiku`
 
 ```
 【你被 module-implementation-orchestrator 调度执行 adversarial-implementation-executor skill】
@@ -46,7 +46,7 @@
 
 **目标 Skill**: `adversarial-test-generator`
 **SubAgent 类型**: `coder`
-**模型**: `opus`
+**模型**: `haiku`
 
 ```
 【你被 module-implementation-orchestrator 调度执行 adversarial-test-generator skill】
@@ -72,7 +72,7 @@
 
 **目标 Skill**: `adversarial-test-generator`
 **SubAgent 类型**: `coder`
-**模型**: `opus`
+**模型**: `haiku`
 
 ```
 【你被 module-implementation-orchestrator 调度执行 adversarial-test-generator skill】
@@ -105,7 +105,7 @@
 
 **目标 Skill**: `adversarial-implementation-executor`
 **SubAgent 类型**: `coder`
-**模型**: `opus`
+**模型**: `haiku`
 
 ```
 【你被 module-implementation-orchestrator 调度执行 adversarial-implementation-executor skill】
@@ -143,7 +143,7 @@
 | 参数 | 值 |
 |:---|:---|
 | `subagent_type` | `"coder"` |
-| `model` | `"opus"` |
+| `model` | `"haiku"` |
 
 信息隔离方向：
 

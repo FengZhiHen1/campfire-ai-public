@@ -1,8 +1,7 @@
 """SEC-01 密码哈希与校验。
 
-使用 bcrypt（passlib 库）对明文密码进行不可逆哈希和校验。
+使用 bcrypt 库直接对明文密码进行不可逆哈希和校验。
 每次哈希使用随机 salt，相同输入产生不同输出。
-校验时直接从哈希串中提取 rounds 参数，无需额外配置。
 
 公开函数：
   - hash_password: bcrypt 密码哈希（不幂等，随机 salt）
@@ -11,7 +10,7 @@
 
 from __future__ import annotations
 
-from passlib.context import CryptContext
+import bcrypt
 
 from py_auth.exceptions import HashingError
 from py_config.security import get_security_config
@@ -31,7 +30,7 @@ def hash_password(plain_password: str) -> str:
 
     Raises:
         ValueError: plain_password 长度不在 [8, 64] 范围内。
-        HashingError: bcrypt 引擎内部错误（如 passlib 库不可用）。
+        HashingError: bcrypt 引擎内部错误。
 
     Side Effects:
         无。纯函数，无 I/O 操作。
@@ -42,14 +41,11 @@ def hash_password(plain_password: str) -> str:
             f"密码长度必须在 8-64 之间，当前长度为 {length}"
         )
 
-    config = get_security_config()
-
     try:
-        crypt_ctx = CryptContext(
-            schemes=["bcrypt"],
-            bcrypt__rounds=config.BCRYPT_ROUNDS,
-        )
-        return crypt_ctx.hash(plain_password)
+        rounds = get_security_config().BCRYPT_ROUNDS
+        salt = bcrypt.gensalt(rounds=rounds)
+        hashed = bcrypt.hashpw(plain_password.encode("utf-8"), salt)
+        return hashed.decode("utf-8")
     except Exception as exc:
         raise HashingError(f"bcrypt 哈希计算失败: {exc}") from exc
 
@@ -91,9 +87,10 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
         )
 
     try:
-        crypt_ctx = CryptContext(schemes=["bcrypt"])
-        result: bool = crypt_ctx.verify(plain_password, hashed_password)
-        return result
+        return bcrypt.checkpw(
+            plain_password.encode("utf-8"),
+            hashed_password.encode("utf-8"),
+        )
     except Exception as exc:
         raise HashingError(f"bcrypt 密码校验失败: {exc}") from exc
 

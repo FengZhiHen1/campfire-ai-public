@@ -148,7 +148,12 @@ class Case(Base, TimestampMixin):
 
     # ---- 状态 ----
     status: Mapped[CaseStatus] = mapped_column(
-        sa_Enum(CaseStatus, name="case_status", create_constraint=True),
+        sa_Enum(
+            CaseStatus,
+            name="case_status",
+            create_constraint=True,
+            values_callable=lambda obj: [e.value for e in obj],
+        ),
         nullable=False,
         default=CaseStatus.DRAFT,
         index=True,

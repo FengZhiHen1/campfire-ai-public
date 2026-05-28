@@ -15,7 +15,7 @@ from py_auth.blacklist import (
     is_refresh_used,
     mark_refresh_used,
 )
-from py_auth.dependencies import get_current_user, oauth2_scheme
+from py_auth.dependencies import get_current_user
 from py_auth.exceptions import HashingError, TokenCreationError, TokenDecodeError
 from py_auth.hashing import hash_password, verify_password
 from py_auth.jwt_utils import (
@@ -26,7 +26,7 @@ from py_auth.jwt_utils import (
     verify_refresh_token,
     verify_token,
 )
-from py_auth.rbac import PrivacyGuard, get_masked_phone, require_role
+from py_auth.rbac import get_masked_phone, require_role
 from py_schemas.auth import UserRole
 
 __all__ = [
@@ -41,12 +41,10 @@ __all__ = [
     "hash_password",
     "verify_password",
     # Dependencies
-    "oauth2_scheme",
     "get_current_user",
     # RBAC
     "require_role",
     "get_masked_phone",
-    "PrivacyGuard",
     "UserRole",
     # Blacklist
     "add_to_blacklist",

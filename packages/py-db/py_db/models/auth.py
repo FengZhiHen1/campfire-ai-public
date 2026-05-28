@@ -50,7 +50,11 @@ class User(Base, UUIDPrimaryKeyMixin, TimestampMixin):
         comment="bcrypt 哈希值，以 $2b$ 或 $2a$ 开头",
     )
     role: Mapped[UserRole] = mapped_column(
-        sa_Enum(UserRole, name="user_role"),
+        sa_Enum(
+            UserRole,
+            name="user_role",
+            values_callable=lambda obj: [e.value for e in obj],
+        ),
         nullable=False,
         comment="用户角色（family/teacher/expert/admin/maintainer）",
     )

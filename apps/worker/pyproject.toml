@@ -3,7 +3,15 @@ name = "worker"
 version = "0.1.0"
 description = "Campfire-AI background worker"
 requires-python = ">=3.12"
-dependencies = []
+dependencies = [
+    "redis>=5.0",
+    "py-config",
+    "py-db",
+    "py-rag",
+    "py-llm",
+    "py-logger",
+    "py-infra",
+]
 
 [project.scripts]
 worker = "worker.main:main"

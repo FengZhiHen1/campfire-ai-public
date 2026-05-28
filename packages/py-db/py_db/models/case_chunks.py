@@ -12,7 +12,7 @@ SQL 层面的类型转换和读写均通过原生 SQL 完成：
 from __future__ import annotations
 
 from sqlalchemy import ForeignKey, String, Text
-from sqlalchemy.dialects.postgresql import JSONB, UUID
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from py_db.models.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
@@ -40,11 +40,11 @@ class CaseChunk(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     __tablename__ = "case_chunks"
 
     case_id: Mapped[str] = mapped_column(
-        UUID(as_uuid=False),
-        ForeignKey("cases.id", ondelete="CASCADE"),
+        String(20),
+        ForeignKey("cases.case_id", ondelete="CASCADE"),
         nullable=False,
         index=True,
-        comment="关联的案例标识，FK → cases.id",
+        comment="关联的案例标识，FK → cases.case_id",
     )
     chunk_text: Mapped[str] = mapped_column(
         Text,

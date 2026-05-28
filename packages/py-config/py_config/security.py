@@ -20,10 +20,22 @@ SecurityConfig 从环境变量加载，字段名大写且带 SECURITY_ 前缀：
 from __future__ import annotations
 
 import functools
+import os
 from typing import Literal
 
 from pydantic import Field, BaseModel
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# MVP 兼容：SecurityConfig 需要 SECURITY_ 前缀的环境变量，但项目 .env 使用无前缀的变量名。
+# 若 SECURITY_ 前缀变量缺失，自动回退到普通变量名。
+if not os.environ.get("SECURITY_JWT_SECRET_KEY"):
+    fallback = os.environ.get("JWT_SECRET_KEY", "")
+    if fallback:
+        os.environ.setdefault("SECURITY_JWT_SECRET_KEY", fallback)
+if not os.environ.get("SECURITY_JWT_PREVIOUS_SECRET_KEY"):
+    fallback = os.environ.get("JWT_SECRET_KEY", "")
+    if fallback:
+        os.environ.setdefault("SECURITY_JWT_PREVIOUS_SECRET_KEY", fallback)
 
 
 class RateLimitConfig(BaseModel):

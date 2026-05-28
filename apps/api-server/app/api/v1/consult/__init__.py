@@ -53,7 +53,7 @@ router = APIRouter(prefix="/api/v1/consult", tags=["consult"])
     ),
 )
 async def search(
-    request: SemanticSearchInput = Depends(),
+    request: SemanticSearchInput,
 ) -> SemanticSearchResult:
     """语义检索端点。
 

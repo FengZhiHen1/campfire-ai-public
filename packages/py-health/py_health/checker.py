@@ -139,7 +139,7 @@ async def _check_postgresql() -> ComponentHealth:
             nonlocal conn
             conn = await engine.connect()
             result = await conn.execute(text("SELECT 1"))
-            await result.fetchone()
+            result.fetchone()  # SQLAlchemy 2.0 Result.fetchone() 是同步方法
 
         await asyncio.wait_for(_do_check(), timeout=PG_TIMEOUT)
 

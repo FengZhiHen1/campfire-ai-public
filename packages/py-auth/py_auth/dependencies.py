@@ -1,55 +1,58 @@
-"""FastAPI 认证依赖注入。
+"""FastAPI 认证依赖注入（MVP 匿名绕过版）。
 
-提供 Bearer Token 提取和当前用户解析，供路由层 Depends 注入。
+MVP 阶段完全绕过 JWT 认证：
+- 从请求头读取 X-Device-Id 作为匿名身份标识
+- 若缺失则生成随机设备 ID
+- 将设备 ID 确定性映射为 UUID，确保与后端各模块的 UUID 类型兼容
+- 返回兼容现有路由的 payload 字典（sub, roles, jti）
 
-用法:
-    from py_auth.dependencies import get_current_user
-    from fastapi import Depends
-
-    @router.get("/me")
-    async def me(user: dict = Depends(get_current_user)):
-        return {"user_id": user["sub"], "roles": user["roles"]}
+所有路由中的 Depends(get_current_user) 和 Depends(require_role(...))
+无需任何修改即可正常工作。
 """
 
 from __future__ import annotations
 
-from fastapi import Depends, HTTPException, Request
-from fastapi.security import OAuth2PasswordBearer
+import secrets
+import uuid
 
-from py_auth.blacklist import is_blacklisted
-from py_auth.jwt_utils import verify_access_token
-
-oauth2_scheme = OAuth2PasswordBearer(
-    tokenUrl="/api/v1/auth/login",
-    scheme_name="Bearer",
-    description="在 /api/v1/auth/login 获取 Token，后续请求携带 Authorization: Bearer <token>",
-)
+from fastapi import HTTPException, Request
 
 
 async def get_current_user(
-    token: str = Depends(oauth2_scheme),
+    request: Request,
 ) -> dict:
-    """从 Bearer Token 解析当前用户。
+    """从 X-Device-Id 请求头提取匿名用户身份。
 
-    校验链路：Bearer 提取 → JWT 校验 → 黑名单检查 → 返回 payload。
+    MVP 阶段不进行 JWT 校验，直接信任前端传入的设备匿名 ID。
+    若请求头中无 X-Device-Id，则生成一个随机设备 ID。
+    设备 ID 通过 uuid5 确定性映射为 UUID，确保与后端 repository 层的
+    UUID 类型约束兼容，且同一设备始终得到同一 UUID。
 
     Returns:
-        dict: 含 sub, roles, jti, exp 等字段的 JWT payload。
+        dict: 含 sub（UUID 字符串）、roles（固定 ["family"]）、
+              jti（固定 "anonymous"）、exp（固定远期时间戳）的 payload 字典，
+              与原有 JWT payload 结构完全兼容。
 
     Raises:
-        HTTPException(401): Token 无效、过期、已被撤销或类型错误。
+        HTTPException(401): 极少场景下（请求对象缺失）返回 401。
     """
-    payload = verify_access_token(token)
-    if payload is None:
-        raise HTTPException(status_code=401, detail="未登录或 Token 已过期")
+    device_id = request.headers.get("X-Device-Id", "")
+    if not device_id:
+        # 生成一个 16 字符的 URL-safe 随机字符串作为匿名设备 ID
+        device_id = secrets.token_urlsafe(12)
 
-    if await is_blacklisted(payload["jti"]):
-        raise HTTPException(status_code=401, detail="Token 已被撤销")
+    # 将设备 ID 确定性映射为 UUID，兼容后端 repository 的 UUID 类型约束
+    user_uuid = uuid.uuid5(uuid.NAMESPACE_DNS, device_id)
 
-    return payload
+    return {
+        "sub": str(user_uuid),
+        "roles": ["family"],
+        "jti": "anonymous",
+        "exp": 9999999999,
+        "type": "access",
+    }
 
 
 __all__ = [
-    "oauth2_scheme",
     "get_current_user",
 ]

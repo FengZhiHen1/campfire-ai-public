@@ -10,6 +10,6 @@ export default defineConfig({
   test: {
     globals: true,
     environment: 'node',
-    include: ['src/.tmp/adversarial-tests/**/*.test.ts', 'src/logics/cases/.tmp/adversarial-tests/**/test_*.ts'],
+    include: ['src/.tmp/adversarial-tests/**/*.test.ts', 'src/logics/cases/.tmp/adversarial-tests/**/test_*.ts', 'src/logics/consult/.tmp/adversarial-tests/**/test_*.ts'],
   },
 });
