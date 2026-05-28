@@ -156,6 +156,14 @@ async def start_consultation(
                 profile_parts.append(f"- **年龄**：约 {age} 岁")
             profile_summary = "\n".join(profile_parts) if profile_parts else "（档案信息有限）"
 
+            # 查询近期事件日志，注入个性化历史
+            profile_summary = await _inject_event_history(
+                db=db,
+                profile_id=profile_id,
+                behavior_type=behavior_type[0] if behavior_type else None,
+                profile_summary=profile_summary,
+            )
+
             # 构建 PatientProfileSnapshot（供危机分级使用）
             patient_profile = PatientProfileSnapshot(
                 diagnosis_type=profile.diagnosis_type,
@@ -306,6 +314,60 @@ def _extract_behavior_tags(profile: Any) -> list[str]:
             if isinstance(sf, str):
                 tags.append(sf)
     return tags
+
+
+async def _inject_event_history(
+    db: Any,
+    profile_id: str,
+    behavior_type: str | None,
+    profile_summary: str,
+) -> str:
+    """查询患者近期事件日志，追加到档案摘要末尾。
+
+    Args:
+        db: 数据库会话。
+        profile_id: 档案 UUID 字符串。
+        behavior_type: 当前咨询的行为类型（可选，用于筛选同类事件）。
+        profile_summary: 当前已构建的档案摘要 Markdown。
+
+    Returns:
+        追加了事件历史的档案摘要字符串。
+    """
+    import uuid as _uuid
+    from py_db.repositories.event_repository import EventRepository
+
+    try:
+        pid = _uuid.UUID(profile_id)
+    except (ValueError, TypeError):
+        return profile_summary
+
+    event_repo = EventRepository()
+    events = await event_repo.list_recent_by_profile(
+        session=db,
+        profile_id=pid,
+        limit=5,
+        behavior_type=behavior_type,
+        days=30,
+    )
+
+    if not events:
+        return profile_summary
+
+    lines: list[str] = ["\n## 近期相关事件"]
+    for i, evt in enumerate(events, 1):
+        date_str = evt.event_time.strftime("%Y-%m-%d") if evt.event_time else "未知日期"
+        setting = evt.setting or "未知场景"
+        manifest = (evt.manifestation or "")[:80]
+        intervention = (evt.intervention_tried or "")[:80]
+        result = (evt.intervention_result or "")[:60]
+        prof_mark = "（老师评估）" if evt.is_professional else "（家属记录）"
+
+        lines.append(
+            f"{i}. [{date_str} {setting}] {manifest}。"
+            f"尝试：{intervention}。结果：{result}。{prof_mark}"
+        )
+
+    return profile_summary + "\n" + "\n".join(lines)
 
 
 async def _run_crisis_judgment(
