@@ -6,6 +6,7 @@
   background-color: $cf-background;
   display: flex;
   flex-direction: column;
+  padding-bottom: calc(144px + env(safe-area-inset-bottom));
 }
 
 /* ========== 顶部导航栏 ========== */
@@ -96,7 +97,6 @@
   display: flex;
   flex-direction: column;
   padding: $cf-spacing-md;
-  padding-bottom: calc(144px + env(safe-area-inset-bottom));
 
   &__label {
     font-size: 28px;
