@@ -34,16 +34,34 @@ $cf-surface: #FFFFFF;
 $cf-surface-variant: #F5F0EB;
 $cf-surface-dim: #EBE5DE;
 $cf-surface-bright: #FFFFFF;
+$cf-surface-container: #F5F0EB;
+$cf-surface-container-low: #F5F0EB;
+$cf-surface-container-lowest: #FFFFFF;
+$cf-surface-container-high: #EBE5DE;
+$cf-surface-container-highest: #EBE5DE;
 $cf-on-surface: #1C1917;
 $cf-on-surface-variant: #78716C;
 $cf-outline: #78716C;
 $cf-outline-variant: #EBE5DE;
+$cf-surface-tint: #F59E0B;
+$cf-inverse-surface: #1C1917;
+$cf-inverse-on-surface: #FDF8F3;
 
 // ===== Fixed =====
 $cf-primary-fixed: #FEF3C7;
 $cf-primary-fixed-dim: #FDE68A;
 $cf-on-primary-fixed: #92400E;
 $cf-on-primary-fixed-variant: #B45309;
+
+$cf-secondary-fixed: #E2E8F0;
+$cf-secondary-fixed-dim: #CBD5E1;
+$cf-on-secondary-fixed: #1E293B;
+$cf-on-secondary-fixed-variant: #64748B;
+
+$cf-tertiary-fixed: #D1FAE5;
+$cf-tertiary-fixed-dim: #A7F3D0;
+$cf-on-tertiary-fixed: #065F46;
+$cf-on-tertiary-fixed-variant: #059669;
 
 // ===== Spacing =====
 $cf-spacing-xs: 8px;
@@ -64,39 +82,47 @@ $cf-shadow-diffuse: 0 4px 24px rgba(28, 25, 23, 0.06);
 $cf-shadow-deep: 0 8px 40px rgba(28, 25, 23, 0.08);
 $cf-shadow-input-top: 0 -2px 12px rgba(28, 25, 23, 0.04);
 
+// ===== Typography Font-Size Variables =====
+$cf-headline-md: 40px;
+$cf-headline-sm: 36px;
+$cf-body-md: 32px;
+$cf-body-sm: 28px;
+$cf-label-md: 28px;
+$cf-footnote: 22px;
+
 // ===== Typography Mixins =====
 @mixin cf-headline-md {
-  font-size: 40px;
+  font-size: $cf-headline-md;
   font-weight: 600;
   line-height: 64px;
 }
 
 @mixin cf-headline-sm {
-  font-size: 36px;
+  font-size: $cf-headline-sm;
   font-weight: 600;
   line-height: 56px;
 }
 
 @mixin cf-body-md {
-  font-size: 32px;
+  font-size: $cf-body-md;
   font-weight: 400;
   line-height: 56px;
 }
 
 @mixin cf-body-sm {
-  font-size: 28px;
+  font-size: $cf-body-sm;
   font-weight: 400;
   line-height: 42px;
 }
 
 @mixin cf-label-md {
-  font-size: 28px;
+  font-size: $cf-label-md;
   font-weight: 500;
   line-height: 42px;
 }
 
 @mixin cf-footnote {
-  font-size: 22px;
+  font-size: $cf-footnote;
   font-weight: 400;
   line-height: 30px;
 }
