@@ -11,40 +11,45 @@
 
 /* ========== 顶部导航栏 ========== */
 .profile-index-navbar {
-  height: 112px;
-  background-color: $cf-surface-dim;
   display: flex;
   align-items: center;
-  justify-content: center;
-  position: relative;
-  padding: 0 $cf-spacing-md;
+  justify-content: space-between;
+  padding: $cf-spacing-sm $cf-spacing-md;
+  background-color: $cf-surface;
+  box-shadow: $cf-shadow-diffuse;
+  position: sticky;
+  top: 0;
+  z-index: 50;
+
+  &__brand {
+    display: flex;
+    align-items: center;
+    gap: $cf-spacing-xs;
+  }
+
+  &__icon {
+    font-size: $cf-body-md;
+  }
 
   &__title {
-    font-size: 36px;
+    font-size: $cf-headline-sm;
     font-weight: 600;
-    color: $cf-on-background;
+    color: $cf-primary;
   }
 
   &__edit {
-    position: absolute;
-    right: $cf-spacing-md;
-    font-size: 28px;
+    font-size: $cf-label-md;
     color: $cf-primary;
     background: none;
     border: none;
-    min-width: 88px;
-    height: 88px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 0;
-
-    &:active {
-      opacity: 0.7;
-    }
+    padding: $cf-spacing-xs;
 
     &::after {
       border: none;
+    }
+
+    &:active {
+      opacity: 0.7;
     }
   }
 }
@@ -52,11 +57,11 @@
 /* ========== 横向档案切换条 ========== */
 .profile-switcher {
   background-color: $cf-background;
-  padding: 24px 0;
+  padding: $cf-spacing-md 0;
 
   &__scroll {
     display: flex;
-    gap: 24px;
+    gap: $cf-spacing-md;
     padding: 0 $cf-spacing-md;
     overflow-x: auto;
     scrollbar-width: none;
@@ -69,40 +74,61 @@
 
   &__item {
     flex-shrink: 0;
-    width: 128px;
-    height: 128px;
-    border-radius: 32px;
-    background-color: $cf-surface-variant;
     display: flex;
     flex-direction: column;
     align-items: center;
-    justify-content: center;
-    position: relative;
-    transition: background-color 150ms ease-out;
-
-    &--active {
-      background-color: $cf-primary-container;
-    }
-
-    &--add {
-      background-color: $cf-surface;
-      border: 1px dashed rgba($cf-outline, 0.3);
-    }
+    gap: $cf-spacing-xs;
+    cursor: pointer;
 
     &:active {
       transform: scale(0.95);
     }
+
+    &--active {
+      .profile-switcher__avatar-wrap {
+        background-color: $cf-primary-container;
+        box-shadow: $cf-shadow-diffuse;
+        border-color: transparent;
+      }
+
+      .profile-switcher__name {
+        color: $cf-on-background;
+      }
+    }
+
+    &--add {
+      .profile-switcher__avatar-wrap {
+        background-color: $cf-surface-container-low;
+        border: 1px dashed rgba($cf-outline, 0.3);
+      }
+
+      .profile-switcher__name {
+        color: $cf-primary;
+      }
+    }
   }
 
-  &__avatar {
+  &__avatar-wrap {
     width: 64px;
     height: 64px;
-    border-radius: $cf-radius-full;
-    background-color: $cf-surface;
+    border-radius: $cf-radius-md;
+    background-color: $cf-surface-variant;
     display: flex;
     align-items: center;
     justify-content: center;
-    margin-bottom: 4px;
+    position: relative;
+    border: 1px solid transparent;
+    transition: background-color 150ms ease-out;
+  }
+
+  &__avatar {
+    width: 100%;
+    height: 100%;
+    border-radius: $cf-radius-md;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
 
     &--add {
       background-color: transparent;
@@ -115,97 +141,95 @@
   }
 
   &__add-icon {
-    font-size: 48px;
+    font-size: 36px;
     color: $cf-primary;
   }
 
   &__name {
-    font-size: 22px;
+    font-size: $cf-footnote;
     color: $cf-on-surface-variant;
-    max-width: 100%;
+    max-width: 64px;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    padding: 0 8px;
-
-    .profile-switcher__item--active & {
-      color: $cf-on-primary-container;
-    }
-
-    .profile-switcher__item--add & {
-      color: $cf-primary;
-    }
+    text-align: center;
   }
 
   &__indicator {
     position: absolute;
-    bottom: 8px;
+    bottom: -2px;
     left: 50%;
     transform: translateX(-50%);
     width: 32px;
-    height: 8px;
+    height: 4px;
     background-color: $cf-primary;
-    border-radius: 4px;
+    border-radius: $cf-radius-full;
   }
 }
 
 /* ========== 档案信息卡片 ========== */
 .profile-info-card {
   background-color: $cf-surface;
-  border-radius: 32px;
-  margin: 0 $cf-spacing-md 24px;
-  padding: 40px;
+  border-radius: $cf-radius-lg;
+  margin: 0 $cf-spacing-md $cf-spacing-md;
+  padding: $cf-spacing-md;
   box-shadow: $cf-shadow-diffuse;
 
   &__header {
     display: flex;
     align-items: center;
-    margin-bottom: 24px;
+    gap: $cf-spacing-sm;
+    margin-bottom: $cf-spacing-sm;
   }
 
   &__avatar {
-    width: 112px;
-    height: 112px;
+    width: 160px;
+    height: 160px;
     border-radius: $cf-radius-full;
     background-color: $cf-surface-variant;
     display: flex;
     align-items: center;
     justify-content: center;
-    margin-right: 32px;
+    overflow: hidden;
+    flex-shrink: 0;
   }
 
   &__avatar-icon {
-    font-size: 56px;
+    font-size: 80px;
     opacity: 0.5;
   }
 
+  &__meta {
+    display: flex;
+    flex-direction: column;
+    gap: $cf-spacing-xs;
+  }
+
   &__name {
-    font-size: 40px;
+    font-size: $cf-headline-md;
     font-weight: 600;
     color: $cf-on-background;
   }
 
-  &__divider {
-    height: 2px;
-    background-color: rgba($cf-outline, 0.15);
-    margin-bottom: 24px;
+  &__age {
+    font-size: $cf-body-sm;
+    color: $cf-secondary;
   }
 
   &__tags {
     display: flex;
     flex-wrap: wrap;
-    gap: 16px;
-    margin-bottom: 24px;
+    gap: $cf-spacing-xs;
   }
 
   &__tag {
     display: inline-flex;
     align-items: center;
-    gap: 8px;
-    font-size: 24px;
+    gap: $cf-spacing-xs;
+    font-size: $cf-label-md;
     font-weight: 500;
-    padding: 16px 24px;
-    border-radius: 16px;
+    padding: $cf-spacing-xs $cf-spacing-sm;
+    border-radius: $cf-radius-full;
 
     &--default {
       background-color: $cf-surface-variant;
@@ -224,12 +248,7 @@
   }
 
   &__tag-icon {
-    font-size: 24px;
-  }
-
-  &__created {
-    font-size: 24px;
-    color: rgba($cf-on-surface-variant, 0.7);
+    font-size: $cf-label-md;
   }
 }
 
@@ -238,33 +257,41 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 24px $cf-spacing-md;
+  padding: $cf-spacing-sm $cf-spacing-md;
   background-color: $cf-background;
 
   &__title {
-    font-size: 32px;
+    display: flex;
+    align-items: center;
+    gap: $cf-spacing-xs;
+    font-size: $cf-body-sm;
     font-weight: 600;
     color: $cf-on-background;
   }
 
+  &__icon {
+    font-size: $cf-body-sm;
+  }
+
   &__add {
-    font-size: 28px;
-    color: $cf-primary;
-    background: none;
+    width: 80px;
+    height: 80px;
+    font-size: $cf-headline-sm;
+    color: $cf-on-primary;
+    background-color: $cf-primary;
+    border-radius: $cf-radius-full;
     border: none;
-    min-width: 88px;
-    height: 88px;
     display: flex;
     align-items: center;
     justify-content: center;
-    padding: 0;
-
-    &:active {
-      opacity: 0.7;
-    }
+    box-shadow: $cf-shadow-diffuse;
 
     &::after {
       border: none;
+    }
+
+    &:active {
+      transform: scale(0.9);
     }
   }
 }
@@ -272,33 +299,32 @@
 /* ========== 事件时间线 ========== */
 .profile-timeline {
   flex: 1;
-  padding: 0 $cf-spacing-md 48px;
+  padding: 0 $cf-spacing-md calc(48px + env(safe-area-inset-bottom));
   background-color: $cf-background;
   position: relative;
 
   &__axis {
     position: absolute;
-    left: 80px;
+    left: 44px;
     top: 20px;
     bottom: 48px;
     width: 4px;
-    background-color: rgba($cf-outline, 0.15);
+    background-color: $cf-surface-variant;
   }
 
   &__row {
     display: flex;
     align-items: flex-start;
-    margin-bottom: 24px;
+    margin-bottom: $cf-spacing-md;
     position: relative;
   }
 
   &__dot {
-    width: 20px;
-    height: 20px;
+    width: 24px;
+    height: 24px;
     border-radius: 50%;
-    background-color: $cf-surface;
-    border: 4px solid rgba($cf-outline, 0.3);
-    margin-right: 32px;
+    background-color: $cf-surface-dim;
+    margin-right: 24px;
     margin-top: 20px;
     flex-shrink: 0;
     position: relative;
@@ -306,8 +332,7 @@
 
     &--latest {
       background-color: $cf-primary;
-      border-color: $cf-primary;
-      box-shadow: 0 0 0 4px rgba($cf-primary, 0.2);
+      box-shadow: 0 0 0 8px rgba($cf-primary, 0.15);
       animation: cf-dot-pulse 2s ease-in-out infinite;
     }
   }
@@ -317,9 +342,32 @@
 .profile-event-card {
   flex: 1;
   background-color: $cf-surface;
-  border-radius: 24px;
-  padding: 24px 32px;
-  min-height: 120px;
+  border-radius: $cf-radius-lg;
+  padding: $cf-spacing-sm $cf-spacing-md;
+  position: relative;
+  overflow: hidden;
+  box-shadow: $cf-shadow-diffuse;
+
+  &::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 8px;
+  }
+
+  &--error::before {
+    background-color: $cf-error;
+  }
+
+  &--secondary::before {
+    background-color: $cf-secondary;
+  }
+
+  &--tertiary::before {
+    background-color: $cf-tertiary;
+  }
 
   &:active {
     transform: scale(0.98);
@@ -329,49 +377,45 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    margin-bottom: 16px;
+    margin-bottom: $cf-spacing-xs;
   }
 
   &__time {
-    font-size: 24px;
-    color: $cf-on-surface-variant;
+    font-size: $cf-label-md;
+    color: $cf-secondary;
+  }
+
+  &__badges {
+    display: flex;
+    align-items: center;
+    gap: $cf-spacing-xs;
   }
 
   &__eval {
-    font-size: 22px;
+    font-size: $cf-footnote;
     color: $cf-tertiary;
-    display: flex;
-    align-items: center;
-    gap: 4px;
-  }
-
-  &__eval-dot {
-    font-size: 16px;
   }
 
   &__incomplete {
-    font-size: 22px;
+    font-size: $cf-footnote;
     color: $cf-error;
   }
 
   &__tag {
-    display: inline-block;
+    display: inline-flex;
     background-color: $cf-primary-container;
     color: $cf-on-primary-container;
-    font-size: 22px;
+    font-size: 24px;
     font-weight: 500;
-    padding: 8px 20px;
-    border-radius: 16px;
-    margin-bottom: 12px;
+    padding: 4px 16px;
+    border-radius: 8px;
+    margin-bottom: $cf-spacing-xs;
   }
 
   &__summary {
-    font-size: 28px;
+    font-size: $cf-body-sm;
     color: $cf-on-background;
     line-height: 1.5;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
   }
 }
 
@@ -384,30 +428,30 @@
   position: relative;
 
   &__dot {
-    width: 20px;
-    height: 20px;
+    width: 24px;
+    height: 24px;
     border-radius: 50%;
     background-color: $cf-surface;
-    border: 4px solid rgba($cf-outline, 0.3);
+    border: 4px solid $cf-surface-variant;
     position: absolute;
     left: 0;
     top: 4px;
   }
 
   &__text {
-    font-size: 28px;
+    font-size: $cf-body-sm;
     color: $cf-on-surface-variant;
-    margin-bottom: 8px;
+    margin-bottom: $cf-spacing-xs;
   }
 
   &__hint {
-    font-size: 24px;
+    font-size: $cf-label-md;
     color: rgba($cf-on-surface-variant, 0.6);
-    margin-bottom: 24px;
+    margin-bottom: $cf-spacing-sm;
   }
 
   &__btn {
-    font-size: 28px;
+    font-size: $cf-label-md;
     color: $cf-primary;
     background: none;
     border: none;
@@ -438,9 +482,9 @@
   right: 0;
   bottom: 0;
   background-color: $cf-surface;
-  border-radius: 32px 32px 0 0;
+  border-radius: $cf-radius-lg $cf-radius-lg 0 0;
   box-shadow: $cf-shadow-deep;
-  padding: 24px 32px calc(48px + env(safe-area-inset-bottom));
+  padding: $cf-spacing-sm $cf-spacing-md calc(48px + env(safe-area-inset-bottom));
   z-index: 210;
   animation: cf-sheet-enter 300ms ease-out;
   max-height: 55vh;
@@ -451,46 +495,46 @@
     height: 8px;
     background-color: $cf-surface-dim;
     border-radius: 4px;
-    margin: 0 auto 24px;
+    margin: 0 auto $cf-spacing-sm;
   }
 
   &__title {
-    font-size: 36px;
+    font-size: $cf-headline-sm;
     font-weight: 600;
     color: $cf-on-background;
-    margin-bottom: 8px;
+    margin-bottom: $cf-spacing-xs;
   }
 
   &__subtitle {
-    font-size: 24px;
+    font-size: $cf-label-md;
     color: $cf-on-surface-variant;
-    margin-bottom: 32px;
+    margin-bottom: $cf-spacing-md;
   }
 
   &__field {
-    margin-bottom: 24px;
+    margin-bottom: $cf-spacing-sm;
   }
 
   &__label {
-    font-size: 28px;
+    font-size: $cf-label-md;
     font-weight: 500;
     color: $cf-on-background;
-    margin-bottom: 12px;
+    margin-bottom: $cf-spacing-xs;
     display: block;
   }
 
   &__required {
     color: $cf-error;
-    margin-right: 8px;
+    margin-right: $cf-spacing-xs;
   }
 
   &__input {
     width: 100%;
     min-height: 128px;
     background-color: $cf-surface-variant;
-    border-radius: 16px;
-    padding: 16px 24px;
-    font-size: 28px;
+    border-radius: $cf-radius-md;
+    padding: $cf-spacing-sm $cf-spacing-md;
+    font-size: $cf-label-md;
     color: $cf-on-background;
     box-sizing: border-box;
 
@@ -504,14 +548,14 @@
     height: 96px;
     background-color: $cf-primary;
     color: $cf-on-primary;
-    border-radius: 24px;
-    font-size: 32px;
+    border-radius: $cf-radius-lg;
+    font-size: $cf-body-sm;
     font-weight: 600;
     display: flex;
     align-items: center;
     justify-content: center;
     border: none;
-    margin-top: 16px;
+    margin-top: $cf-spacing-xs;
 
     &:active {
       opacity: 0.9;
@@ -543,19 +587,19 @@
   }
 
   &__title {
-    font-size: 40px;
+    font-size: $cf-headline-md;
     font-weight: 600;
     color: $cf-on-background;
-    margin-bottom: 24px;
+    margin-bottom: $cf-spacing-sm;
     text-align: center;
   }
 
   &__subtitle {
-    font-size: 28px;
+    font-size: $cf-body-sm;
     color: $cf-on-surface-variant;
     text-align: center;
     line-height: 1.75;
-    margin-bottom: 64px;
+    margin-bottom: $cf-spacing-lg;
     max-width: 80%;
   }
 
@@ -564,8 +608,8 @@
     height: 96px;
     background-color: $cf-primary;
     color: $cf-on-primary;
-    border-radius: 32px;
-    font-size: 32px;
+    border-radius: $cf-radius-lg;
+    font-size: $cf-body-sm;
     font-weight: 600;
     display: flex;
     align-items: center;
@@ -604,18 +648,18 @@
   }
 
   &__text {
-    font-size: 28px;
+    font-size: $cf-body-sm;
     color: $cf-on-surface-variant;
   }
 }
 
-/* ========== 新增动画 ========== */
+/* ========== 新增/覆盖动画 ========== */
 @keyframes cf-dot-pulse {
   0%, 100% {
-    box-shadow: 0 0 0 4px rgba($cf-primary, 0.2);
+    box-shadow: 0 0 0 8px rgba($cf-primary, 0.15);
   }
   50% {
-    box-shadow: 0 0 0 8px rgba($cf-primary, 0.1);
+    box-shadow: 0 0 0 16px rgba($cf-primary, 0.05);
   }
 }
 
