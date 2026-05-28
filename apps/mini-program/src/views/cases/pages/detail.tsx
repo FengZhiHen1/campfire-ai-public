@@ -1,159 +1,88 @@
 import { useState, useEffect } from 'react';
-import { View, Text, Button, Input } from '@tarojs/components';
+import { View, Text, Button } from '@tarojs/components';
 import Taro from '@tarojs/taro';
-import { getCase, submitCase, reviewCase } from '../../../logics/cases/services/caseApi';
+import { getNarrative, type NarrativeDetail, type CardSummary } from '../../../logics/cases/services/narrativeApi';
 import './detail.scss';
 
-interface CaseDetail {
-  case_id: string;
-  title: string;
-  status: string;
-  behavior_type?: string;
-  severity?: string;
-  scene?: string;
-  immediate_action?: string;
-  comforting_phrase?: string;
-  observation_metrics?: string;
-  medical_criteria?: string;
-  evidence_level?: string;
-  is_owner?: boolean;
-}
+// ============================================================================
+// 常量
+// ============================================================================
 
-const statusTextMap: Record<string, string> = {
+const STATUS_TEXT_MAP: Record<string, string> = {
   draft: '草稿',
   pending_review: '待审核',
   approved: '已通过',
   rejected: '已驳回',
 };
 
-const statusClassMap: Record<string, string> = {
+const STATUS_CLASS_MAP: Record<string, string> = {
   draft: 'draft',
   pending_review: 'pending',
   approved: 'approved',
   rejected: 'rejected',
 };
 
-const quartetConfig = [
-  {
-    key: 'scene' as const,
-    title: '场景描述',
-    accent: 'scene',
-    color: 'scene',
-  },
-  {
-    key: 'comforting_phrase' as const,
-    title: '行为表现',
-    accent: 'behavior',
-    color: 'behavior',
-  },
-  {
-    key: 'immediate_action' as const,
-    title: '干预动作',
-    accent: 'action',
-    color: 'action',
-  },
-  {
-    key: 'result' as const,
-    title: '结果反馈',
-    accent: 'result',
-    color: 'result',
-  },
-];
+const SOURCE_LABEL_MAP: Record<string, string> = {
+  '专家撰写': '专家',
+  '机构脱敏': '机构',
+  '工单沉淀': '工单',
+  '家属分享': '家属',
+};
+
+const CARD_STATUS_MAP: Record<string, { text: string; cls: string }> = {
+  draft: { text: '草稿', cls: 'draft' },
+  pending_review: { text: '待审核', cls: 'pending' },
+  approved: { text: '已通过', cls: 'approved' },
+  rejected: { text: '已驳回', cls: 'rejected' },
+};
+
+// ============================================================================
+// 组件
+// ============================================================================
 
 export default function CasesDetail() {
-  const [data, setData] = useState<CaseDetail | null>(null);
+  const [data, setData] = useState<NarrativeDetail | null>(null);
   const [loading, setLoading] = useState(false);
-  const [reviewComment, setReviewComment] = useState('');
-  const [showRejectInput, setShowRejectInput] = useState(false);
 
   useEffect(() => {
     const params = Taro.getCurrentInstance().router?.params;
-    const caseId = params?.caseId;
-    if (!caseId) return;
+    const narrativeId = params?.narrativeId;
+    if (!narrativeId) return;
 
     setLoading(true);
-    getCase(caseId)
-      .then((res) => setData(res as unknown as CaseDetail))
+    getNarrative(narrativeId)
+      .then((res) => setData(res))
       .catch(() => Taro.showToast({ title: '加载失败', icon: 'none' }))
       .finally(() => setLoading(false));
   }, []);
 
-  const handleSubmit = async () => {
+  const handleGoExtract = () => {
     if (!data) return;
-    try {
-      await submitCase(data.case_id);
-      Taro.showToast({ title: '提交审核成功' });
-      const res = await getCase(data.case_id);
-      setData(res as unknown as CaseDetail);
-    } catch {
-      Taro.showToast({ title: '提交失败', icon: 'none' });
-    }
+    Taro.navigateTo({ url: `/views/cases/pages/extraction-result?narrativeId=${data.narrative_id}` });
   };
 
-  const handleApprove = async () => {
+  const handleEditNarrative = () => {
     if (!data) return;
-    try {
-      await reviewCase(data.case_id, 'approved');
-      Taro.showToast({ title: '审核通过' });
-      const res = await getCase(data.case_id);
-      setData(res as unknown as CaseDetail);
-    } catch {
-      Taro.showToast({ title: '审核失败', icon: 'none' });
-    }
+    Taro.navigateTo({ url: `/views/cases/pages/narrative-submit?mode=edit&narrativeId=${data.narrative_id}` });
   };
 
-  const reviewCommentLength = reviewComment.trim().length;
-
-  const handleReject = async () => {
-    if (!data) return;
-    if (reviewCommentLength < 5) {
-      Taro.showToast({ title: '驳回意见至少5字', icon: 'none' });
-      return;
-    }
-    try {
-      await reviewCase(data.case_id, 'rejected', reviewComment.trim());
-      Taro.showToast({ title: '已驳回' });
-      setShowRejectInput(false);
-      setReviewComment('');
-      const res = await getCase(data.case_id);
-      setData(res as unknown as CaseDetail);
-    } catch {
-      Taro.showToast({ title: '驳回失败', icon: 'none' });
-    }
+  const handleCardClick = (cardId: string) => {
+    Taro.navigateTo({ url: `/views/cases/pages/extraction-result?narrativeId=${data?.narrative_id}&cardId=${cardId}` });
   };
 
-  const getEvidenceClass = (level?: string) => {
-    const first = (level || 'D').charAt(0).toUpperCase();
-    if (first === 'A') return 'a';
-    if (first === 'B') return 'b';
-    if (first === 'C') return 'c';
-    return 'd';
-  };
-
-  const getEvidenceLetter = (level?: string) => {
-    return (level || 'D').charAt(0).toUpperCase();
-  };
-
-  const getSectionValue = (key: string) => {
-    if (!data) return '';
-    if (key === 'scene') return data.scene || '';
-    if (key === 'result') {
-      const parts = [data.observation_metrics, data.medical_criteria].filter(Boolean);
-      return parts.join('\n\n') || '';
-    }
-    return (data as any)[key] || '';
-  };
-
+  // --------------------------------------------------------------------------
+  // 加载态
+  // --------------------------------------------------------------------------
   if (loading) {
     return (
       <View className="detail-page">
         <View className="detail-navbar">
-          <Button className="detail-navbar__back" onClick={() => Taro.navigateBack()}>←</Button>
+          <Button className="detail-navbar__back" onClick={() => Taro.navigateBack()}>&larr;</Button>
           <Text className="detail-navbar__title">案例详情</Text>
         </View>
         <View className="detail-loading">
           <View className="detail-loading__skeleton" />
-          <Text className="detail-loading__text">加载中...</Text>
+          <Text className="detail-loading__text">加载中…</Text>
         </View>
       </View>
     );
@@ -163,7 +92,7 @@ export default function CasesDetail() {
     return (
       <View className="detail-page">
         <View className="detail-navbar">
-          <Button className="detail-navbar__back" onClick={() => Taro.navigateBack()}>←</Button>
+          <Button className="detail-navbar__back" onClick={() => Taro.navigateBack()}>&larr;</Button>
           <Text className="detail-navbar__title">案例详情</Text>
         </View>
         <View className="detail-loading">
@@ -173,140 +102,101 @@ export default function CasesDetail() {
     );
   }
 
-  const evClass = getEvidenceClass(data.evidence_level);
-  const evLetter = getEvidenceLetter(data.evidence_level);
-  const stClass = statusClassMap[data.status] || 'draft';
-  const stText = statusTextMap[data.status] || data.status;
+  // --------------------------------------------------------------------------
+  // 正常态
+  // --------------------------------------------------------------------------
+  const stClass = STATUS_CLASS_MAP[data.status] || 'draft';
+  const stText = STATUS_TEXT_MAP[data.status] || data.status;
+  const sourceLabel = SOURCE_LABEL_MAP[data.source_type] || data.source_type;
+  const isOwner = data.author_id === 'current'; // simplified: narrative detail doesn't expose is_owner
+  const isDraft = data.status === 'draft';
 
   return (
     <View className="detail-page">
-      {/* 顶部导航栏 */}
+      {/* 导航栏 */}
       <View className="detail-navbar">
-        <Button className="detail-navbar__back" onClick={() => Taro.navigateBack()}>←</Button>
+        <Button className="detail-navbar__back" onClick={() => Taro.navigateBack()}>&larr;</Button>
         <Text className="detail-navbar__title">案例详情</Text>
-      </View>
-
-      {/* 封面图占位 */}
-      <View className="detail-cover">
-        <Text className="detail-cover__icon">🖼️</Text>
-        <Text className="detail-cover__text">本案例未上传封面图</Text>
       </View>
 
       {/* 概览信息 */}
       <View className="detail-overview">
         <Text className="detail-overview__title">{data.title}</Text>
         <View className="detail-overview__tags">
-          {data.behavior_type && (
-            <Text className="detail-overview__tag detail-overview__tag--primary">{data.behavior_type}</Text>
-          )}
-          {data.severity && (
-            <Text className="detail-overview__tag detail-overview__tag--default">{data.severity}</Text>
-          )}
-          {data.scene && (
-            <Text className="detail-overview__tag detail-overview__tag--default">{data.scene}</Text>
-          )}
+          <Text className="detail-overview__tag detail-overview__tag--primary">{sourceLabel}</Text>
         </View>
         <View className="detail-overview__meta">
-          <View className={`detail-overview__badge detail-overview__badge--${evClass}`}>
-            <Text className="detail-overview__badge-letter">{evLetter}</Text>
-            <Text className="detail-overview__badge-level">级</Text>
-          </View>
           <View className="detail-overview__status">
             <View className={`detail-overview__status-dot detail-overview__status-dot--${stClass}`} />
             <Text className="detail-overview__status-text">{stText}</Text>
           </View>
+          {data.card_count > 0 && (
+            <Text className="detail-overview__card-count">{data.card_count} 张卡片</Text>
+          )}
         </View>
       </View>
 
-      {/* 四段式内容 */}
-      <View className="detail-quartet">
-        {quartetConfig.map((cfg) => {
-          const value = getSectionValue(cfg.key);
-          return (
-            <View key={cfg.key} className="detail-card">
-              <View className={`detail-card__accent detail-card__accent--${cfg.accent}`} />
-              <View className="detail-card__body">
-                <Text className={`detail-card__title detail-card__title--${cfg.color}`}>
-                  {cfg.title}
-                </Text>
-                {value ? (
-                  <Text className="detail-card__content">{value}</Text>
-                ) : (
-                  <Text className="detail-card__empty">（暂无内容）</Text>
-                )}
-              </View>
-            </View>
-          );
-        })}
+      {/* 叙事原文 */}
+      <View className="detail-section">
+        <Text className="detail-section__title">叙事原文</Text>
+        <View className="detail-section__content">
+          <Text className="detail-section__text">{data.narrative}</Text>
+        </View>
       </View>
 
-      {/* 审核操作 */}
+      {/* 关联卡片 */}
+      {data.cards && data.cards.length > 0 && (
+        <View className="detail-section">
+          <Text className="detail-section__title">关联卡片 ({data.cards.length})</Text>
+          {data.cards.map((card: CardSummary) => {
+            const cardStatus = CARD_STATUS_MAP[card.review_status] || CARD_STATUS_MAP.draft;
+            return (
+              <View
+                key={card.card_id}
+                className="detail-card-item"
+                onClick={() => handleCardClick(card.card_id)}
+              >
+                <View className="detail-card-item__header">
+                  <Text className="detail-card-item__title">{card.title}</Text>
+                  <View className={`detail-card-item__status detail-card-item__status--${cardStatus.cls}`}>
+                    <Text className="detail-card-item__status-text">{cardStatus.text}</Text>
+                  </View>
+                </View>
+                <View className="detail-card-item__tags">
+                  {card.behavior_type && (
+                    <Text className="detail-card-item__tag">{card.behavior_type}</Text>
+                  )}
+                  {card.severity && (
+                    <Text className="detail-card-item__tag">{card.severity}</Text>
+                  )}
+                  {card.scene && (
+                    <Text className="detail-card-item__tag">{card.scene}</Text>
+                  )}
+                </View>
+              </View>
+            );
+          })}
+        </View>
+      )}
+
+      {/* 操作区 */}
       <View className="detail-actions">
-        {data.status === 'draft' && data.is_owner && (
+        {isDraft && (
           <View className="detail-actions__panel">
             <Text className="detail-actions__panel-title">操作</Text>
-            <Button className="detail-actions__btn detail-actions__btn--primary" onClick={handleSubmit}>
-              提交审核
+            <Button className="detail-actions__btn detail-actions__btn--primary" onClick={handleGoExtract}>
+              提取卡片
             </Button>
-          </View>
-        )}
-
-        {data.status === 'pending_review' && !data.is_owner && (
-          <View className="detail-actions__panel">
-            <Text className="detail-actions__panel-title">审核操作</Text>
-            {!showRejectInput && (
-              <View className="detail-actions__row">
-                <Button className="detail-actions__btn detail-actions__btn--tertiary" onClick={handleApprove}>
-                  <Text className="detail-actions__btn-icon">✓</Text>
-                  <Text>审核通过</Text>
-                </Button>
-                <Button className="detail-actions__btn detail-actions__btn--error" onClick={() => setShowRejectInput(true)}>
-                  <Text className="detail-actions__btn-icon">✗</Text>
-                  <Text>驳回</Text>
-                </Button>
-              </View>
-            )}
-            {showRejectInput && (
-              <>
-                <View className="detail-actions__input-wrap">
-                  <Input
-                    className="detail-actions__input"
-                    value={reviewComment}
-                    onInput={(e) => setReviewComment(e.detail.value)}
-                    placeholder="请输入驳回原因，将反馈给作者…"
-                  />
-                  <Text className={`detail-actions__char-count ${reviewCommentLength < 5 ? 'detail-actions__char-count--error' : ''}`}>
-                    {reviewCommentLength}/200
-                  </Text>
-                </View>
-                <View className="detail-actions__row">
-                  <Button
-                    className={`detail-actions__btn detail-actions__btn--error ${reviewCommentLength < 5 ? 'detail-actions__btn--disabled' : ''}`}
-                    onClick={handleReject}
-                    disabled={reviewCommentLength < 5}
-                  >
-                    确认驳回
-                  </Button>
-                  <Button className="detail-actions__btn detail-actions__btn--secondary" onClick={() => { setShowRejectInput(false); setReviewComment(''); }}>
-                    取消
-                  </Button>
-                </View>
-              </>
-            )}
+            <Button className="detail-actions__btn detail-actions__btn--secondary" onClick={handleEditNarrative}>
+              编辑原文
+            </Button>
           </View>
         )}
 
         {data.status === 'approved' && (
           <View className="detail-actions__result detail-actions__result--approved">
-            <Text className="detail-actions__result-icon">✓</Text>
+            <Text className="detail-actions__result-icon">&#10003;</Text>
             <Text className="detail-actions__result-text detail-actions__result-text--approved">该案例已通过审核</Text>
-          </View>
-        )}
-
-        {data.status === 'rejected' && (
-          <View className="detail-actions__result detail-actions__result--rejected">
-            <Text className="detail-actions__result-icon">✗</Text>
-            <Text className="detail-actions__result-text detail-actions__result-text--rejected">该案例已被驳回</Text>
           </View>
         )}
       </View>
