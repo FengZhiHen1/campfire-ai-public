@@ -1,0 +1,334 @@
+@use '../../shared/styles/tokens' as *;
+
+/* ========== 页面外壳 ========== */
+.history-page {
+  min-height: 100vh;
+  background-color: $cf-background;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ========== 顶部导航栏 ========== */
+.history-navbar {
+  height: 112px;
+  background-color: $cf-surface-dim;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  padding: 0 $cf-spacing-md;
+
+  &__back {
+    position: absolute;
+    left: $cf-spacing-md;
+    width: 88px;
+    height: 88px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 20px;
+    color: $cf-on-background;
+    background: none;
+    border: none;
+
+    &:active {
+      opacity: 0.7;
+    }
+  }
+
+  &__title {
+    font-size: 18px;
+    font-weight: 600;
+    color: $cf-on-background;
+  }
+}
+
+/* ========== 搜索栏 ========== */
+.history-search {
+  padding: $cf-spacing-sm $cf-spacing-md;
+  background-color: $cf-background;
+
+  &__input-wrap {
+    position: relative;
+    display: flex;
+    align-items: center;
+    background-color: $cf-surface-variant;
+    border-radius: $cf-radius-md;
+    height: 64px;
+    padding: 0 $cf-spacing-md;
+  }
+
+  &__icon {
+    font-size: 16px;
+    color: $cf-on-surface-variant;
+    margin-right: $cf-spacing-sm;
+  }
+
+  &__input {
+    flex: 1;
+    font-size: 14px;
+    color: $cf-on-background;
+    background: transparent;
+    border: none;
+    height: 100%;
+
+    &::placeholder {
+      color: rgba($cf-on-surface-variant, 0.6);
+    }
+  }
+}
+
+/* ========== 列表区域 ========== */
+.history-list {
+  flex: 1;
+  padding: $cf-spacing-sm $cf-spacing-md $cf-spacing-lg;
+
+  &__empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding-top: 160px;
+  }
+
+  &__empty-icon {
+    width: 120px;
+    height: 120px;
+    background-color: $cf-primary-container;
+    border-radius: $cf-radius-full;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 48px;
+    margin-bottom: $cf-spacing-md;
+  }
+
+  &__empty-title {
+    font-size: 18px;
+    font-weight: 600;
+    color: $cf-on-background;
+    margin-bottom: $cf-spacing-sm;
+  }
+
+  &__empty-subtitle {
+    font-size: 14px;
+    color: $cf-on-surface-variant;
+    text-align: center;
+    margin-bottom: $cf-spacing-lg;
+    padding: 0 $cf-spacing-md;
+  }
+
+  &__empty-btn {
+    width: 240px;
+    height: 96px;
+    background-color: $cf-primary;
+    color: $cf-on-primary;
+    border-radius: $cf-radius-lg;
+    font-size: 16px;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: none;
+
+    &:active {
+      opacity: 0.9;
+    }
+  }
+}
+
+/* ========== 历史记录卡片 ========== */
+.history-card {
+  background-color: $cf-surface;
+  border-radius: $cf-radius-lg;
+  padding: $cf-spacing-md;
+  margin-bottom: $cf-spacing-sm;
+  box-shadow: $cf-shadow-diffuse;
+  position: relative;
+
+  &:active {
+    transform: scale(0.98);
+  }
+
+  /* 第一行：危机等级 + 置信度 + 时间 */
+  &__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: $cf-spacing-sm;
+  }
+
+  &__level {
+    display: flex;
+    align-items: center;
+    gap: $cf-spacing-xs;
+  }
+
+  &__level-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: $cf-radius-full;
+
+    &--low { background-color: $cf-tertiary; }
+    &--medium { background-color: $cf-primary; }
+    &--high { background-color: $cf-error; }
+  }
+
+  &__level-text {
+    font-size: 14px;
+    font-weight: 600;
+
+    &--low { color: $cf-tertiary; }
+    &--medium { color: $cf-primary; }
+    &--high { color: $cf-error; }
+  }
+
+  &__badge {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    border-radius: $cf-radius-md;
+    padding: 4px 10px;
+    font-size: 11px;
+    font-weight: 500;
+
+    &--high {
+      background-color: $cf-tertiary;
+      color: $cf-on-tertiary;
+    }
+
+    &--medium {
+      background-color: $cf-primary-container;
+      color: $cf-on-primary-container;
+    }
+
+    &--low {
+      background-color: $cf-surface-variant;
+      color: $cf-error;
+    }
+
+    &::after {
+      content: '●';
+      font-size: 8px;
+    }
+  }
+
+  &__time {
+    font-size: 11px;
+    color: $cf-on-surface-variant;
+    margin-left: 8px;
+  }
+
+  /* 第二行：行为类型标签 */
+  &__tag {
+    display: inline-block;
+    background-color: $cf-primary-container;
+    color: $cf-on-primary-container;
+    font-size: 11px;
+    font-weight: 500;
+    padding: 4px 10px;
+    border-radius: $cf-radius-md;
+    margin-bottom: $cf-spacing-sm;
+  }
+
+  /* 第三行：摘要 */
+  &__summary {
+    font-size: 14px;
+    color: $cf-on-surface-variant;
+    line-height: 1.5;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
+
+/* ========== 加载状态 ========== */
+.history-loading {
+  padding: $cf-spacing-md;
+
+  &__skeleton {
+    width: 100%;
+    height: 200px;
+    background-color: $cf-surface-variant;
+    border-radius: $cf-radius-lg;
+    border: 2px solid rgba($cf-primary, 0.2);
+    animation: cf-pulse-border 2s ease-in-out infinite;
+    margin-bottom: $cf-spacing-sm;
+  }
+
+  &__text {
+    text-align: center;
+    font-size: 14px;
+    color: $cf-on-surface-variant;
+    margin-top: $cf-spacing-md;
+  }
+}
+
+/* ========== 错误状态 ========== */
+.history-error {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: $cf-spacing-md;
+
+  &__icon {
+    font-size: 48px;
+    margin-bottom: $cf-spacing-md;
+  }
+
+  &__title {
+    font-size: 16px;
+    font-weight: 600;
+    color: $cf-on-background;
+    margin-bottom: $cf-spacing-sm;
+  }
+
+  &__subtitle {
+    font-size: 14px;
+    color: $cf-on-surface-variant;
+    margin-bottom: $cf-spacing-lg;
+  }
+
+  &__retry-btn {
+    width: 240px;
+    height: 96px;
+    background-color: $cf-primary;
+    color: $cf-on-primary;
+    border-radius: $cf-radius-lg;
+    font-size: 16px;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: none;
+
+    &:active {
+      opacity: 0.9;
+    }
+  }
+}
+
+/* ========== 底部加载指示器 ========== */
+.history-loadmore {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: $cf-spacing-sm;
+  padding: $cf-spacing-md 0;
+
+  &__spinner {
+    width: 20px;
+    height: 20px;
+    border: 2px solid $cf-primary;
+    border-top-color: transparent;
+    border-radius: $cf-radius-full;
+    animation: cf-spin 1s linear infinite;
+  }
+
+  &__text {
+    font-size: 14px;
+    color: $cf-on-surface-variant;
+  }
+}
