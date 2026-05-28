@@ -1,0 +1,493 @@
+@use '../../shared/styles/tokens' as *;
+
+/* ========== 页面外壳 ========== */
+.consult-page {
+  min-height: 100vh;
+  background-color: $cf-background;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ========== 顶部导航栏 ========== */
+.consult-navbar {
+  height: 112px;
+  background-color: $cf-surface-dim;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  padding: 0 $cf-spacing-md;
+
+  &__title {
+    font-size: 18px;
+    font-weight: 600;
+    color: $cf-on-background;
+  }
+}
+
+/* ========== idle 状态 ========== */
+.consult-idle {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: $cf-spacing-md;
+
+  &__hero {
+    width: 120px;
+    height: 120px;
+    background-color: $cf-primary-container;
+    border-radius: $cf-radius-lg;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: $cf-spacing-lg;
+  }
+
+  &__hero-icon {
+    font-size: 48px;
+  }
+
+  &__title {
+    font-size: 20px;
+    font-weight: 600;
+    color: $cf-on-background;
+    margin-bottom: $cf-spacing-sm;
+  }
+
+  &__subtitle {
+    font-size: 14px;
+    color: $cf-on-surface-variant;
+    line-height: 1.5;
+    text-align: center;
+    margin-bottom: $cf-spacing-xl;
+    padding: 0 $cf-spacing-md;
+  }
+
+  &__start-btn {
+    width: calc(100% - 32px);
+    max-width: 400px;
+    height: 96px;
+    background-color: $cf-primary;
+    color: $cf-on-primary;
+    border-radius: $cf-radius-lg;
+    font-size: 16px;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: none;
+
+    &:active {
+      opacity: 0.9;
+      transform: scale(0.98);
+    }
+  }
+}
+
+/* ========== selecting_behavior 状态 ========== */
+.consult-selecting {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  padding: $cf-spacing-md;
+  padding-bottom: calc(24px + env(safe-area-inset-bottom));
+
+  &__label {
+    font-size: 14px;
+    font-weight: 600;
+    color: $cf-on-background;
+    margin-bottom: $cf-spacing-sm;
+    margin-top: $cf-spacing-md;
+
+    &:first-child {
+      margin-top: 0;
+    }
+  }
+
+  &__grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: $cf-spacing-sm;
+    margin-bottom: $cf-spacing-md;
+  }
+
+  &__option {
+    background-color: $cf-surface-variant;
+    border-radius: $cf-radius-lg;
+    padding: $cf-spacing-md;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 120px;
+    position: relative;
+    border: none;
+    text-align: center;
+
+    &:active {
+      transform: scale(0.97);
+    }
+
+    &--selected {
+      background-color: $cf-primary-container;
+    }
+  }
+
+  &__option-icon {
+    font-size: 28px;
+    margin-bottom: $cf-spacing-xs;
+  }
+
+  &__option-text {
+    font-size: 14px;
+    font-weight: 600;
+    color: $cf-on-background;
+
+    .consult-selecting__option--selected & {
+      color: $cf-on-primary-container;
+    }
+  }
+
+  &__check {
+    position: absolute;
+    top: $cf-spacing-sm;
+    right: $cf-spacing-sm;
+    width: 32px;
+    height: 32px;
+    background-color: $cf-primary;
+    color: $cf-on-primary;
+    border-radius: $cf-radius-full;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+    font-weight: 700;
+  }
+
+  &__textarea {
+    background-color: $cf-surface-variant;
+    border-radius: $cf-radius-md;
+    padding: $cf-spacing-md;
+    font-size: 16px;
+    line-height: 1.75;
+    color: $cf-on-background;
+    min-height: 160px;
+    width: 100%;
+    box-sizing: border-box;
+    margin-bottom: $cf-spacing-md;
+  }
+
+  &__actions {
+    display: flex;
+    flex-direction: column;
+    gap: $cf-spacing-sm;
+    margin-top: auto;
+  }
+
+  &__submit-btn {
+    width: 100%;
+    height: 96px;
+    background-color: $cf-primary;
+    color: $cf-on-primary;
+    border-radius: $cf-radius-lg;
+    font-size: 16px;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: none;
+
+    &:disabled {
+      background-color: $cf-surface-dim;
+      color: $cf-on-surface-variant;
+    }
+
+    &:active:not(:disabled) {
+      opacity: 0.9;
+    }
+  }
+
+  &__cancel-btn {
+    width: 100%;
+    height: 72px;
+    background-color: transparent;
+    color: $cf-secondary;
+    border-radius: $cf-radius-lg;
+    font-size: 14px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: none;
+
+    &:active {
+      background-color: $cf-surface-variant;
+    }
+  }
+}
+
+/* ========== submitting 状态 ========== */
+.consult-submitting {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: $cf-spacing-md;
+
+  &__skeleton {
+    width: 240px;
+    height: 48px;
+    background-color: $cf-surface-variant;
+    border-radius: $cf-radius-md;
+    border: 2px solid rgba($cf-primary, 0.3);
+    animation: cf-pulse-border 2s ease-in-out infinite;
+    margin-bottom: $cf-spacing-md;
+  }
+
+  &__text {
+    font-size: 14px;
+    color: $cf-on-surface-variant;
+  }
+}
+
+/* ========== streaming / completed 状态 ========== */
+.consult-streaming {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  padding: $cf-spacing-md;
+  overflow-y: auto;
+
+  &__status {
+    font-size: 14px;
+    color: $cf-on-surface-variant;
+    text-align: center;
+    margin-bottom: $cf-spacing-md;
+    padding: $cf-spacing-sm $cf-spacing-md;
+    background-color: $cf-surface-variant;
+    border-radius: $cf-radius-md;
+  }
+
+  /* AI 消息气泡 */
+  &__ai-bubble {
+    background-color: $cf-surface;
+    border-radius: $cf-radius-lg $cf-radius-lg $cf-radius-lg $cf-radius-sm;
+    padding: $cf-spacing-md;
+    margin-bottom: $cf-spacing-md;
+    max-width: 85%;
+    box-shadow: $cf-shadow-diffuse;
+    align-self: flex-start;
+  }
+
+  &__ai-text {
+    font-size: 16px;
+    line-height: 1.75;
+    color: $cf-on-background;
+    word-break: break-all;
+  }
+
+  &__cursor {
+    display: inline-block;
+    width: 2px;
+    height: 1em;
+    background-color: $cf-primary;
+    margin-left: 2px;
+    vertical-align: middle;
+    animation: cf-cursor-pulse 1.5s ease-in-out infinite;
+  }
+
+  /* 方案卡片 */
+  &__plan-card {
+    background-color: $cf-surface;
+    border-radius: $cf-radius-lg;
+    padding: $cf-spacing-md;
+    margin: $cf-spacing-sm $cf-spacing-md;
+    box-shadow: $cf-shadow-diffuse;
+  }
+
+  &__plan-section {
+    margin-bottom: $cf-spacing-md;
+
+    &:last-child {
+      margin-bottom: 0;
+    }
+  }
+
+  &__plan-header {
+    display: flex;
+    align-items: center;
+    margin-bottom: $cf-spacing-sm;
+  }
+
+  &__plan-bar {
+    width: 4px;
+    height: 20px;
+    border-radius: $cf-radius-full;
+    margin-right: $cf-spacing-sm;
+    flex-shrink: 0;
+
+    &--tertiary { background-color: $cf-tertiary; }
+    &--primary { background-color: $cf-primary; }
+    &--secondary { background-color: $cf-secondary; }
+    &--error { background-color: $cf-error; }
+  }
+
+  &__plan-title {
+    font-size: 14px;
+    font-weight: 600;
+    color: $cf-on-background;
+
+    &--tertiary { color: $cf-tertiary; }
+    &--primary { color: $cf-primary; }
+    &--secondary { color: $cf-secondary; }
+    &--error { color: $cf-error; }
+  }
+
+  &__plan-body {
+    font-size: 18px;
+    line-height: 1.8;
+    color: $cf-on-background;
+    padding-left: 12px;
+  }
+
+  &__plan-line {
+    font-size: 16px;
+    line-height: 1.75;
+    color: $cf-on-background;
+    margin-bottom: 4px;
+    display: block;
+  }
+
+  /* 用户消息气泡 */
+  &__user-bubble {
+    background-color: $cf-primary-container;
+    border-radius: $cf-radius-lg $cf-radius-lg $cf-radius-sm $cf-radius-lg;
+    padding: $cf-spacing-md;
+    margin-bottom: $cf-spacing-md;
+    max-width: 75%;
+    align-self: flex-end;
+    margin-left: auto;
+  }
+
+  &__user-text {
+    font-size: 16px;
+    line-height: 1.75;
+    color: $cf-on-primary-container;
+    word-break: break-all;
+  }
+
+  /* 完成操作区 */
+  &__done {
+    text-align: center;
+    padding: $cf-spacing-md 0;
+    margin-top: $cf-spacing-md;
+  }
+
+  &__done-text {
+    font-size: 14px;
+    color: $cf-on-surface-variant;
+    margin-bottom: $cf-spacing-md;
+  }
+
+  &__new-btn {
+    width: calc(100% - 32px);
+    max-width: 400px;
+    height: 96px;
+    background-color: $cf-secondary;
+    color: $cf-on-secondary;
+    border-radius: $cf-radius-lg;
+    font-size: 16px;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: none;
+    margin: 0 auto;
+
+    &:active {
+      opacity: 0.9;
+    }
+  }
+}
+
+/* ========== error 状态 ========== */
+.consult-error {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: $cf-spacing-md;
+
+  &__icon {
+    width: 80px;
+    height: 80px;
+    background-color: $cf-error-container;
+    border-radius: $cf-radius-full;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 36px;
+    margin-bottom: $cf-spacing-md;
+  }
+
+  &__title {
+    font-size: 18px;
+    font-weight: 600;
+    color: $cf-on-background;
+    margin-bottom: $cf-spacing-sm;
+  }
+
+  &__message {
+    font-size: 14px;
+    color: $cf-error;
+    text-align: center;
+    margin-bottom: $cf-spacing-lg;
+    padding: 0 $cf-spacing-md;
+  }
+
+  &__actions {
+    display: flex;
+    flex-direction: column;
+    gap: $cf-spacing-sm;
+    width: calc(100% - 32px);
+    max-width: 400px;
+  }
+
+  &__retry-btn {
+    width: 100%;
+    height: 96px;
+    background-color: $cf-primary;
+    color: $cf-on-primary;
+    border-radius: $cf-radius-lg;
+    font-size: 16px;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: none;
+
+    &:active {
+      opacity: 0.9;
+    }
+  }
+
+  &__back-btn {
+    width: 100%;
+    height: 72px;
+    background-color: transparent;
+    color: $cf-secondary;
+    border-radius: $cf-radius-lg;
+    font-size: 14px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: none;
+
+    &:active {
+      background-color: $cf-surface-variant;
+    }
+  }
+}

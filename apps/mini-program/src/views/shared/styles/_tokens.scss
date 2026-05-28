@@ -1,0 +1,102 @@
+// Campfire-AI Design Tokens — SCSS Variables
+// 权威来源：项目根目录 DESIGN.md
+// 当微信小程序 CSS 自定义属性支持不佳时，使用本文件作为后备
+
+// ===== Primary =====
+$cf-primary: #F59E0B;
+$cf-on-primary: #431407;
+$cf-primary-container: #FEF3C7;
+$cf-on-primary-container: #92400E;
+$cf-inverse-primary: #FBBF24;
+
+// ===== Secondary =====
+$cf-secondary: #64748B;
+$cf-on-secondary: #FFFFFF;
+$cf-secondary-container: #E2E8F0;
+$cf-on-secondary-container: #334155;
+
+// ===== Tertiary =====
+$cf-tertiary: #059669;
+$cf-on-tertiary: #FFFFFF;
+$cf-tertiary-container: #D1FAE5;
+$cf-on-tertiary-container: #065F46;
+
+// ===== Error =====
+$cf-error: #DC2626;
+$cf-on-error: #FFFFFF;
+$cf-error-container: #FEE2E2;
+$cf-on-error-container: #991B1B;
+
+// ===== Surface & Background =====
+$cf-background: #FDF8F3;
+$cf-on-background: #1C1917;
+$cf-surface: #FFFFFF;
+$cf-surface-variant: #F5F0EB;
+$cf-surface-dim: #EBE5DE;
+$cf-surface-bright: #FFFFFF;
+$cf-on-surface: #1C1917;
+$cf-on-surface-variant: #78716C;
+$cf-outline: #78716C;
+$cf-outline-variant: #EBE5DE;
+
+// ===== Fixed =====
+$cf-primary-fixed: #FEF3C7;
+$cf-primary-fixed-dim: #FDE68A;
+$cf-on-primary-fixed: #92400E;
+$cf-on-primary-fixed-variant: #B45309;
+
+// ===== Spacing =====
+$cf-spacing-xs: 4px;
+$cf-spacing-sm: 8px;
+$cf-spacing-md: 16px;
+$cf-spacing-lg: 24px;
+$cf-spacing-xl: 32px;
+$cf-gutter: 16px;
+
+// ===== Radius =====
+$cf-radius-sm: 4px;
+$cf-radius-md: 8px;
+$cf-radius-lg: 16px;
+$cf-radius-full: 9999px;
+
+// ===== Shadows =====
+$cf-shadow-diffuse: 0 4px 24px rgba(28, 25, 23, 0.06);
+$cf-shadow-deep: 0 8px 40px rgba(28, 25, 23, 0.08);
+$cf-shadow-input-top: 0 -2px 12px rgba(28, 25, 23, 0.04);
+
+// ===== Typography Mixins =====
+@mixin cf-headline-md {
+  font-size: 20px;
+  font-weight: 600;
+  line-height: 32px;
+}
+
+@mixin cf-headline-sm {
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 28px;
+}
+
+@mixin cf-body-md {
+  font-size: 16px;
+  font-weight: 400;
+  line-height: 28px;
+}
+
+@mixin cf-body-sm {
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 21px;
+}
+
+@mixin cf-label-md {
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 21px;
+}
+
+@mixin cf-footnote {
+  font-size: 11px;
+  font-weight: 400;
+  line-height: 15px;
+}
