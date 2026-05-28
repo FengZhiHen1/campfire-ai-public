@@ -569,7 +569,7 @@ async def submit_case(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail={
                 "message": "叙事文本中包含疑似 PII，请确认已脱敏后重试",
-                "pii_warnings": [w.to_dict() for w in pii_warnings],
+                "pii_warnings": [w.model_dump() for w in pii_warnings],
             },
         )
 

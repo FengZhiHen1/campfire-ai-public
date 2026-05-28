@@ -60,9 +60,11 @@ class ProfileService:
                 if hasattr(existing, key):
                     setattr(existing, key, value)
             await session.flush()
+            await session.commit()
             await session.refresh(existing)
             logger.info(
-                "profile_updated",
+                service="api-server",
+                message="profile_updated",
                 extra={"profile_id": str(existing.profile_id), "caregiver_id": str(caregiver_id)},
             )
             return self._to_response(existing)
@@ -82,8 +84,10 @@ class ProfileService:
             is_default=True,
         )
         created = await self._repository.create(session, profile)
+        await session.commit()
         logger.info(
-            "profile_created",
+            service="api-server",
+            message="profile_created",
             extra={"profile_id": str(created.profile_id), "caregiver_id": str(caregiver_id)},
         )
         return self._to_response(created)
@@ -122,7 +126,6 @@ class ProfileService:
             caregiver_id=profile.caregiver_id,
             nickname=profile.nickname,
             birth_date=profile.birth_date,
-            age=age,
             age_range=self._calc_age_range(age),
             diagnosis_type=profile.diagnosis_type,
             primary_behavior=profile.primary_behavior,
