@@ -20,6 +20,9 @@ dist/
 *.egg-info/
 .python-version
 
+# ngrok 公网地址（自动生成，每次启动不同）
+.ngrok-url
+
 # 运行时数据
 data/
 logs/
