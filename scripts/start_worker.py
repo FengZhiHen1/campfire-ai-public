@@ -24,8 +24,9 @@ def start() -> tuple:
     proc = start_process(
         [
             "uv", "run",
-            "--package", "worker",
-            "worker",
+            "--directory", "apps/worker",
+            "python", "-c",
+            "import sys; sys.path.insert(0, 'src'); from worker.main import main; main()",
         ],
         cwd=PROJECT_ROOT,
     )
