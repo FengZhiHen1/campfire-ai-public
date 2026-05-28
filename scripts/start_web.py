@@ -15,7 +15,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 SERVICE_NAME = "Web"
 MAX_NAME_WIDTH = 8
-H5_DEFAULT_PORT = 10086
+H5_DEFAULT_PORT = 5173
 
 
 def start(*, mode: str = "h5") -> tuple:

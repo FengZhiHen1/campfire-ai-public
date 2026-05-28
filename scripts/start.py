@@ -37,7 +37,7 @@ PROJECT_NAME = "篝火智答 (Campfire-AI)"
 AVAILABLE_SERVICES: dict[str, str] = {
     "api": "API 服务 (FastAPI, port 8000)",
     "worker": "Worker 服务 (Redis 消费者)",
-    "web": "Web 服务 (Taro H5 dev, port 10086)",
+    "web": "Web 服务 (Taro H5 dev, port 5173)",
 }
 
 MAX_NAME_WIDTH = 8
@@ -142,11 +142,11 @@ def run_preflight_checks(
             all_ok = False
 
     if "web" in services:
-        ok, msg = check_port_available(10086)
+        ok, msg = check_port_available(5173)
         if ok:
-            print_check_ok("端口 10086 (H5)", msg)
+            print_check_ok("端口 5173 (H5)", msg)
         else:
-            print_check_fail("端口 10086 (H5)", msg)
+            print_check_fail("端口 5173 (H5)", msg)
             all_ok = False
 
     # --- Infrastructure connectivity (only if not skipped) ---
