@@ -73,7 +73,7 @@ wheels = [
 [[package]]
 name = "api-server"
 version = "0.1.0"
-source = { editable = "apps/api-server" }
+source = { virtual = "apps/api-server" }
 dependencies = [
     { name = "prometheus-client" },
 ]
@@ -1328,4 +1328,24 @@ wheels = [
 [[package]]
 name = "worker"
 version = "0.1.0"
-source = { editable = "apps/worker" }
+source = { virtual = "apps/worker" }
+dependencies = [
+    { name = "py-config" },
+    { name = "py-db" },
+    { name = "py-infra" },
+    { name = "py-llm" },
+    { name = "py-logger" },
+    { name = "py-rag" },
+    { name = "redis" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "py-config", editable = "packages/py-config" },
+    { name = "py-db", editable = "packages/py-db" },
+    { name = "py-infra", editable = "packages/py-infra" },
+    { name = "py-llm", editable = "packages/py-llm" },
+    { name = "py-logger", editable = "packages/py-logger" },
+    { name = "py-rag", editable = "packages/py-rag" },
+    { name = "redis", specifier = ">=5.0" },
+]
