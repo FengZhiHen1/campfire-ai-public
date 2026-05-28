@@ -559,19 +559,9 @@ async def submit_case(
     # 四段式校验
     _validate_four_stage_fields(case)
 
-    # PII 检测
+    # PII 检测（MVP：仅生成警告提示，不阻断提交）
     pii_result = pii_detect(case.narrative)
     pii_warnings: list[PiiWarning] = _convert_pii_warnings(pii_result.warnings)
-
-    # PII 确认检查
-    if pii_result.has_pii and not pii_confirmed:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail={
-                "message": "叙事文本中包含疑似 PII，请确认已脱敏后重试",
-                "pii_warnings": [w.model_dump() for w in pii_warnings],
-            },
-        )
 
     # EBP 一致性检测
     ebp_warning: str | None = check_ebp_consistency(

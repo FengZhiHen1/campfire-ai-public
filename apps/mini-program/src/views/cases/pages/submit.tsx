@@ -1,13 +1,13 @@
 import { useState } from 'react';
 import { View, Text, Button, Input, Textarea, Picker } from '@tarojs/components';
 import Taro from '@tarojs/taro';
-import { createCase } from '../../../logics/cases/services/caseApi';
+import { createCase, submitCase } from '../../../logics/cases/services/caseApi';
 import './submit.scss';
 
 const behaviorTypes = ['自伤', '攻击', '刻板', '逃跑', '情绪崩溃', '其他'];
 const severityLevels = ['轻度', '中度', '重度'];
 const scenes = ['家庭', '学校', '公共场合', '机构', '不限'];
-const evidenceLevels = ['A级', 'B级', 'C级', 'D级'];
+const evidenceLevels = ['NCAEP循证实践', '机构经验总结', '个案观察记录'];
 
 const quartetConfig = [
   {
@@ -75,7 +75,7 @@ export default function CasesSubmit() {
       return;
     }
     try {
-      await createCase({
+      const draft = await createCase({
         title,
         behavior_type: behaviorTypes[behaviorTypeIdx],
         severity: severityLevels[severityIdx],
@@ -86,12 +86,14 @@ export default function CasesSubmit() {
         observation_metrics: observationMetrics,
         medical_criteria: medicalCriteria,
       } as any);
+      await submitCase(draft.case_id);
       Taro.showToast({ title: '提交成功' });
       setTitle('');
       setImmediateAction('');
       setComfortingPhrase('');
       setObservationMetrics('');
       setMedicalCriteria('');
+      Taro.navigateBack();
     } catch {
       Taro.showToast({ title: '提交失败', icon: 'none' });
     }
