@@ -2,11 +2,43 @@ import { useState } from 'react';
 import { View, Text, Button, Input, Textarea, Picker } from '@tarojs/components';
 import Taro from '@tarojs/taro';
 import { createCase } from '../../../logics/cases/services/caseApi';
+import './submit.scss';
 
 const behaviorTypes = ['自伤', '攻击', '刻板', '逃跑', '情绪崩溃', '其他'];
 const severityLevels = ['轻度', '中度', '重度'];
 const scenes = ['家庭', '学校', '公共场合', '机构', '不限'];
-const evidenceLevels = ['NCAEP循证实践', '机构经验总结', '个案观察记录'];
+const evidenceLevels = ['A级', 'B级', 'C级', 'D级'];
+
+const quartetConfig = [
+  {
+    key: 'immediate_action' as const,
+    title: '即时干预动作',
+    accent: 'action',
+    color: 'action',
+    hint: '描述采取的具体干预措施、执行者、持续时间',
+  },
+  {
+    key: 'comforting_phrase' as const,
+    title: '安抚话术',
+    accent: 'behavior',
+    color: 'behavior',
+    hint: '描述孩子的具体行为、持续时间、严重程度',
+  },
+  {
+    key: 'observation_metrics' as const,
+    title: '观察指标',
+    accent: 'result',
+    color: 'result',
+    hint: '描述干预后的效果、后续观察建议',
+  },
+  {
+    key: 'medical_criteria' as const,
+    title: '就医判断标准',
+    accent: 'result',
+    color: 'result',
+    hint: '描述是否需要就医及判断依据',
+  },
+];
 
 export default function CasesSubmit() {
   const [title, setTitle] = useState('');
@@ -18,6 +50,20 @@ export default function CasesSubmit() {
   const [comfortingPhrase, setComfortingPhrase] = useState('');
   const [observationMetrics, setObservationMetrics] = useState('');
   const [medicalCriteria, setMedicalCriteria] = useState('');
+
+  const values = {
+    immediate_action: immediateAction,
+    comforting_phrase: comfortingPhrase,
+    observation_metrics: observationMetrics,
+    medical_criteria: medicalCriteria,
+  };
+
+  const setters: Record<string, (v: string) => void> = {
+    immediate_action: setImmediateAction,
+    comforting_phrase: setComfortingPhrase,
+    observation_metrics: setObservationMetrics,
+    medical_criteria: setMedicalCriteria,
+  };
 
   const handleSubmit = async () => {
     if (!title.trim()) {
@@ -52,65 +98,117 @@ export default function CasesSubmit() {
   };
 
   return (
-    <View>
-      <Text>提交案例</Text>
+    <View className="submit-page">
+      {/* 顶部导航栏 */}
+      <View className="submit-navbar">
+        <Button className="submit-navbar__back" onClick={() => Taro.navigateBack()}>
+          ←
+        </Button>
+        <Text className="submit-navbar__title">提交案例</Text>
+      </View>
 
-      <Text>标题</Text>
-      <Input value={title} onInput={(e) => setTitle(e.detail.value)} placeholder="案例标题" />
+      {/* 封面图占位 */}
+      <View className="submit-cover">
+        <Text className="submit-cover__icon">📷</Text>
+        <Text className="submit-cover__text">点击上传封面图</Text>
+        <Text className="submit-cover__hint">建议上传现场环境照，帮助读者理解情境</Text>
+      </View>
 
-      <Text>行为类型</Text>
-      <Picker mode="selector" range={behaviorTypes} value={behaviorTypeIdx} onChange={(e) => setBehaviorTypeIdx(Number(e.detail.value))}>
-        <View>{behaviorTypes[behaviorTypeIdx]}</View>
-      </Picker>
+      {/* 基础信息 */}
+      <View className="submit-section-title">
+        <Text className="submit-section-title__required">*</Text>
+        <Text>基本信息</Text>
+      </View>
 
-      <Text>严重程度</Text>
-      <Picker mode="selector" range={severityLevels} value={severityIdx} onChange={(e) => setSeverityIdx(Number(e.detail.value))}>
-        <View>{severityLevels[severityIdx]}</View>
-      </Picker>
+      <View className="submit-section">
+        <View className="submit-field">
+          <Text className="submit-field__label submit-field__label--required">案例标题</Text>
+          <Input
+            className="submit-field__input"
+            value={title}
+            onInput={(e) => setTitle(e.detail.value)}
+            placeholder="请输入案例标题"
+          />
+        </View>
 
-      <Text>场景</Text>
-      <Picker mode="selector" range={scenes} value={sceneIdx} onChange={(e) => setSceneIdx(Number(e.detail.value))}>
-        <View>{scenes[sceneIdx]}</View>
-      </Picker>
+        <View className="submit-row">
+          <View className="submit-field">
+            <Text className="submit-field__label submit-field__label--required">行为类型</Text>
+            <Picker mode="selector" range={behaviorTypes} value={behaviorTypeIdx} onChange={(e) => setBehaviorTypeIdx(Number(e.detail.value))}>
+              <Button className="submit-field__picker">
+                <Text className="submit-field__picker-text">{behaviorTypes[behaviorTypeIdx]}</Text>
+                <Text className="submit-field__picker-chevron">▼</Text>
+              </Button>
+            </Picker>
+          </View>
+          <View className="submit-field">
+            <Text className="submit-field__label submit-field__label--required">严重程度</Text>
+            <Picker mode="selector" range={severityLevels} value={severityIdx} onChange={(e) => setSeverityIdx(Number(e.detail.value))}>
+              <Button className="submit-field__picker">
+                <Text className="submit-field__picker-text">{severityLevels[severityIdx]}</Text>
+                <Text className="submit-field__picker-chevron">▼</Text>
+              </Button>
+            </Picker>
+          </View>
+        </View>
 
-      <Text>循证等级</Text>
-      <Picker mode="selector" range={evidenceLevels} value={evidenceLevelIdx} onChange={(e) => setEvidenceLevelIdx(Number(e.detail.value))}>
-        <View>{evidenceLevels[evidenceLevelIdx]}</View>
-      </Picker>
+        <View className="submit-row">
+          <View className="submit-field">
+            <Text className="submit-field__label submit-field__label--required">场景</Text>
+            <Picker mode="selector" range={scenes} value={sceneIdx} onChange={(e) => setSceneIdx(Number(e.detail.value))}>
+              <Button className="submit-field__picker">
+                <Text className="submit-field__picker-text">{scenes[sceneIdx]}</Text>
+                <Text className="submit-field__picker-chevron">▼</Text>
+              </Button>
+            </Picker>
+          </View>
+          <View className="submit-field">
+            <Text className="submit-field__label submit-field__label--required">循证等级</Text>
+            <Picker mode="selector" range={evidenceLevels} value={evidenceLevelIdx} onChange={(e) => setEvidenceLevelIdx(Number(e.detail.value))}>
+              <Button className="submit-field__picker">
+                <Text className="submit-field__picker-text">{evidenceLevels[evidenceLevelIdx]}</Text>
+                <Text className="submit-field__picker-chevron">▼</Text>
+              </Button>
+            </Picker>
+          </View>
+        </View>
+      </View>
 
-      <Text>即时干预动作</Text>
-      <Textarea
-        value={immediateAction}
-        onInput={(e) => setImmediateAction(e.detail.value)}
-        placeholder="描述即时安全干预动作..."
-        maxlength={2000}
-      />
+      {/* 四段式内容 */}
+      <View className="submit-section-title">
+        <Text className="submit-section-title__required">*</Text>
+        <Text>案例内容</Text>
+        <Text className="submit-section-title__hint">请按四段式结构填写</Text>
+      </View>
 
-      <Text>安抚话术</Text>
-      <Textarea
-        value={comfortingPhrase}
-        onInput={(e) => setComfortingPhrase(e.detail.value)}
-        placeholder="描述情绪安抚话术..."
-        maxlength={2000}
-      />
+      <View className="submit-quartet">
+        {quartetConfig.map((cfg) => (
+          <View key={cfg.key} className="submit-card">
+            <View className={`submit-card__accent submit-card__accent--${cfg.accent}`} />
+            <View className="submit-card__body">
+              <Text className={`submit-card__title submit-card__title--${cfg.color}`}>
+                <Text className="submit-card__required">*</Text>
+                {cfg.title}
+              </Text>
+              <Text className="submit-card__hint">{cfg.hint}</Text>
+              <Textarea
+                className="submit-card__textarea"
+                value={values[cfg.key]}
+                onInput={(e) => setters[cfg.key](e.detail.value)}
+                placeholder={cfg.hint}
+                maxlength={2000}
+              />
+            </View>
+          </View>
+        ))}
+      </View>
 
-      <Text>观察指标</Text>
-      <Textarea
-        value={observationMetrics}
-        onInput={(e) => setObservationMetrics(e.detail.value)}
-        placeholder="描述后续观察指标..."
-        maxlength={2000}
-      />
-
-      <Text>就医判断标准</Text>
-      <Textarea
-        value={medicalCriteria}
-        onInput={(e) => setMedicalCriteria(e.detail.value)}
-        placeholder="描述就医判断标准..."
-        maxlength={2000}
-      />
-
-      <Button onClick={handleSubmit}>提交案例</Button>
+      {/* 底部操作栏 */}
+      <View className="submit-actions">
+        <Button className="submit-actions__btn" onClick={handleSubmit}>
+          提交案例
+        </Button>
+      </View>
     </View>
   );
 }

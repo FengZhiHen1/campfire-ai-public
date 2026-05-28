@@ -2,12 +2,15 @@ import { useState, useEffect } from 'react';
 import { View, Text, Button, Picker } from '@tarojs/components';
 import Taro from '@tarojs/taro';
 import { listCases } from '../../../logics/cases/services/caseApi';
+import './index.scss';
 
 interface CaseItem {
   case_id: string;
   title: string;
   status: string;
   behavior_type?: string;
+  evidence_level?: string;
+  created_at?: string;
 }
 
 const statusOptions = [
@@ -27,6 +30,20 @@ const behaviorTypeOptions = [
   { label: '情绪崩溃', value: '情绪崩溃' },
   { label: '其他', value: '其他' },
 ];
+
+const statusTextMap: Record<string, string> = {
+  draft: '草稿',
+  pending_review: '待审核',
+  approved: '已通过',
+  rejected: '已驳回',
+};
+
+const statusClassMap: Record<string, string> = {
+  draft: 'draft',
+  pending_review: 'pending',
+  approved: 'approved',
+  rejected: 'rejected',
+};
 
 export default function CasesIndex() {
   const [items, setItems] = useState<CaseItem[]>([]);
@@ -52,7 +69,6 @@ export default function CasesIndex() {
     load();
   }, []);
 
-  // 筛选条件变化时自动刷新
   useEffect(() => {
     load();
   }, [statusIdx, behaviorTypeIdx]);
@@ -65,41 +81,116 @@ export default function CasesIndex() {
     Taro.navigateTo({ url: '/views/cases/pages/submit' });
   };
 
+  const getEvidenceClass = (level?: string) => {
+    const first = (level || 'D').charAt(0).toUpperCase();
+    if (first === 'A') return 'a';
+    if (first === 'B') return 'b';
+    if (first === 'C') return 'c';
+    return 'd';
+  };
+
   return (
-    <View>
-      <Text>案例库</Text>
+    <View className="cases-page">
+      {/* 顶部导航栏 */}
+      <View className="cases-navbar">
+        <Text className="cases-navbar__title">真实案例库</Text>
+      </View>
 
-      <Text>状态筛选</Text>
-      <Picker
-        mode="selector"
-        range={statusOptions.map((o) => o.label)}
-        value={statusIdx}
-        onChange={(e) => setStatusIdx(Number(e.detail.value))}
-      >
-        <View>{statusOptions[statusIdx].label}</View>
-      </Picker>
-
-      <Text>行为类型筛选</Text>
-      <Picker
-        mode="selector"
-        range={behaviorTypeOptions.map((o) => o.label)}
-        value={behaviorTypeIdx}
-        onChange={(e) => setBehaviorTypeIdx(Number(e.detail.value))}
-      >
-        <View>{behaviorTypeOptions[behaviorTypeIdx].label}</View>
-      </Picker>
-
-      {loading && <Text>加载中...</Text>}
-      {items.length === 0 && !loading && <Text>暂无案例</Text>}
-      {items.map((item) => (
-        <View key={item.case_id} onClick={() => goDetail(item.case_id)}>
-          <Text>{item.title}</Text>
-          <Text>状态: {item.status}</Text>
-          {item.behavior_type && <Text>类型: {item.behavior_type}</Text>}
+      {/* 搜索栏 */}
+      <View className="cases-search">
+        <View className="cases-search__input-wrap">
+          <Text className="cases-search__icon">🔍</Text>
+          <Text className="cases-search__input">搜索案例库…</Text>
         </View>
-      ))}
-      <Button onClick={goSubmit}>提交新案例</Button>
-      <Button onClick={load}>刷新</Button>
+      </View>
+
+      {/* 筛选栏 */}
+      <View className="cases-filters">
+        <Picker
+          mode="selector"
+          range={behaviorTypeOptions.map((o) => o.label)}
+          value={behaviorTypeIdx}
+          onChange={(e) => setBehaviorTypeIdx(Number(e.detail.value))}
+        >
+          <Button className={`cases-filters__picker ${behaviorTypeIdx > 0 ? 'cases-filters__picker--active' : ''}`}>
+            <Text className="cases-filters__picker-text">{behaviorTypeOptions[behaviorTypeIdx].label}</Text>
+            <Text className="cases-filters__picker-chevron">▼</Text>
+          </Button>
+        </Picker>
+        <Picker
+          mode="selector"
+          range={statusOptions.map((o) => o.label)}
+          value={statusIdx}
+          onChange={(e) => setStatusIdx(Number(e.detail.value))}
+        >
+          <Button className={`cases-filters__picker ${statusIdx > 0 ? 'cases-filters__picker--active' : ''}`}>
+            <Text className="cases-filters__picker-text">{statusOptions[statusIdx].label}</Text>
+            <Text className="cases-filters__picker-chevron">▼</Text>
+          </Button>
+        </Picker>
+      </View>
+
+      {/* 列表区域 */}
+      <View className="cases-list">
+        {loading && items.length === 0 && (
+          <View className="cases-loading">
+            <View className="cases-loading__skeleton" />
+            <View className="cases-loading__skeleton" />
+            <View className="cases-loading__skeleton" />
+          </View>
+        )}
+
+        {!loading && items.length === 0 && (
+          <View className="cases-empty">
+            <View className="cases-empty__icon">📚</View>
+            <Text className="cases-empty__title">暂无案例</Text>
+            <Text className="cases-empty__subtitle">案例库正在建设中，敬请期待</Text>
+            <Button className="cases-empty__btn" onClick={load}>
+              刷新
+            </Button>
+          </View>
+        )}
+
+        {items.map((item) => {
+          const evClass = getEvidenceClass(item.evidence_level);
+          const evLetter = (item.evidence_level || 'D').charAt(0).toUpperCase();
+          const stClass = statusClassMap[item.status] || 'draft';
+          const stText = statusTextMap[item.status] || item.status;
+          return (
+            <View
+              key={item.case_id}
+              className="case-card"
+              onClick={() => goDetail(item.case_id)}
+            >
+              <View className={`case-card__accent case-card__accent--${evClass}`} />
+              <View className="case-card__body">
+                <View className="case-card__header">
+                  <Text className="case-card__title">{item.title}</Text>
+                  <View className={`case-card__badge case-card__badge--${evClass}`}>
+                    <Text className="case-card__badge-letter">{evLetter}</Text>
+                    <Text className="case-card__badge-level">级</Text>
+                  </View>
+                </View>
+                <View className="case-card__tags">
+                  {item.behavior_type && (
+                    <Text className="case-card__tag case-card__tag--primary">{item.behavior_type}</Text>
+                  )}
+                </View>
+                <View className="case-card__footer">
+                  <View className={`case-card__status-dot case-card__status-dot--${stClass}`} />
+                  <Text className="case-card__status-text">{stText}</Text>
+                  {item.created_at && (
+                    <Text className="case-card__time">{item.created_at}</Text>
+                  )}
+                </View>
+              </View>
+            </View>
+          );
+        })}
+      </View>
+
+      {/* FAB */}
+      <Button className="cases-fab" onClick={goSubmit}>+</Button>
     </View>
   );
 }

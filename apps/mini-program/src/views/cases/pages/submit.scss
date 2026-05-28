@@ -1,0 +1,260 @@
+@use '../../shared/styles/tokens' as *;
+
+/* ========== 页面外壳 ========== */
+.submit-page {
+  min-height: 100vh;
+  background-color: $cf-background;
+  display: flex;
+  flex-direction: column;
+  padding-bottom: calc(96px + env(safe-area-inset-bottom));
+}
+
+/* ========== 顶部导航栏 ========== */
+.submit-navbar {
+  height: 112px;
+  background-color: $cf-surface-dim;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  padding: 0 $cf-spacing-md;
+
+  &__back {
+    position: absolute;
+    left: $cf-spacing-md;
+    width: 88px;
+    height: 88px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 20px;
+    color: $cf-on-background;
+    background: none;
+    border: none;
+
+    &:active {
+      opacity: 0.7;
+    }
+  }
+
+  &__title {
+    font-size: 18px;
+    font-weight: 600;
+    color: $cf-on-background;
+  }
+}
+
+/* ========== 封面图占位区 ========== */
+.submit-cover {
+  height: 320px;
+  background-color: $cf-surface-variant;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  margin: 0 $cf-spacing-md $cf-spacing-md;
+  border-radius: 0 0 $cf-radius-lg $cf-radius-lg;
+
+  &__icon {
+    font-size: 48px;
+    margin-bottom: $cf-spacing-sm;
+    opacity: 0.4;
+  }
+
+  &__text {
+    font-size: 16px;
+    font-weight: 500;
+    color: $cf-on-surface-variant;
+  }
+
+  &__hint {
+    font-size: 12px;
+    color: rgba($cf-on-surface-variant, 0.6);
+    margin-top: 4px;
+  }
+}
+
+/* ========== 分组标题 ========== */
+.submit-section-title {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: $cf-spacing-md $cf-spacing-md $cf-spacing-sm;
+  font-size: 16px;
+  font-weight: 600;
+  color: $cf-on-background;
+
+  &__required {
+    color: $cf-error;
+  }
+
+  &__hint {
+    font-size: 12px;
+    font-weight: 400;
+    color: $cf-on-surface-variant;
+    margin-left: 4px;
+  }
+}
+
+/* ========== 基础信息区 ========== */
+.submit-section {
+  padding: 0 $cf-spacing-md $cf-spacing-md;
+}
+
+.submit-field {
+  margin-bottom: $cf-spacing-md;
+
+  &__label {
+    display: block;
+    font-size: 14px;
+    font-weight: 500;
+    color: $cf-on-background;
+    margin-bottom: $cf-spacing-xs;
+
+    &--required::before {
+      content: '* ';
+      color: $cf-error;
+    }
+  }
+
+  &__input {
+    width: 100%;
+    height: 88px;
+    background-color: $cf-surface;
+    border-radius: $cf-radius-md;
+    padding: 0 $cf-spacing-md;
+    font-size: 16px;
+    color: $cf-on-background;
+    box-sizing: border-box;
+  }
+
+  &__picker {
+    width: 100%;
+    height: 88px;
+    background-color: $cf-surface;
+    border-radius: $cf-radius-md;
+    padding: 0 $cf-spacing-md;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 16px;
+    color: $cf-on-background;
+    border: none;
+  }
+
+  &__picker-text {
+    font-size: 16px;
+    color: $cf-on-background;
+  }
+
+  &__picker-chevron {
+    font-size: 12px;
+    color: $cf-on-surface-variant;
+  }
+}
+
+.submit-row {
+  display: flex;
+  gap: 4%;
+
+  .submit-field {
+    flex: 1;
+  }
+}
+
+/* ========== 四段式内容区 ========== */
+.submit-quartet {
+  padding: 0 $cf-spacing-md;
+}
+
+.submit-card {
+  background-color: $cf-surface;
+  border-radius: $cf-radius-lg;
+  padding: $cf-spacing-md;
+  margin-bottom: $cf-spacing-sm;
+  box-shadow: $cf-shadow-diffuse;
+  position: relative;
+  overflow: hidden;
+
+  &__accent {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 4px;
+    height: 100%;
+
+    &--scene { background-color: $cf-secondary; }
+    &--behavior { background-color: $cf-primary; }
+    &--action { background-color: $cf-tertiary; }
+    &--result { background-color: $cf-tertiary; }
+  }
+
+  &__body {
+    padding-left: 12px;
+  }
+
+  &__title {
+    font-size: 14px;
+    font-weight: 600;
+    margin-bottom: 4px;
+
+    &--scene { color: $cf-secondary; }
+    &--behavior { color: $cf-primary; }
+    &--action { color: $cf-tertiary; }
+    &--result { color: $cf-tertiary; }
+  }
+
+  &__required {
+    color: $cf-error;
+  }
+
+  &__hint {
+    font-size: 12px;
+    color: rgba($cf-on-surface-variant, 0.7);
+    margin-bottom: $cf-spacing-sm;
+  }
+
+  &__textarea {
+    width: 100%;
+    min-height: 160px;
+    background-color: $cf-surface-variant;
+    border-radius: $cf-radius-md;
+    padding: $cf-spacing-md;
+    font-size: 16px;
+    line-height: 1.75;
+    color: $cf-on-background;
+    box-sizing: border-box;
+  }
+}
+
+/* ========== 底部操作栏 ========== */
+.submit-actions {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background-color: $cf-surface;
+  border-radius: $cf-radius-lg $cf-radius-lg 0 0;
+  box-shadow: $cf-shadow-input-top;
+  padding: $cf-spacing-sm $cf-spacing-md;
+  padding-bottom: calc(12px + env(safe-area-inset-bottom));
+  z-index: 100;
+
+  &__btn {
+    width: 100%;
+    height: 96px;
+    background-color: $cf-primary;
+    color: $cf-on-primary;
+    border-radius: $cf-radius-lg;
+    font-size: 16px;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: none;
+
+    &:active {
+      opacity: 0.9;
+    }
+  }
+}
