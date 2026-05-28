@@ -2,6 +2,7 @@
 
 /* ========== 页面外壳 ========== */
 .consult-page {
+  box-sizing: border-box;
   min-height: 100vh;
   background-color: $cf-background;
   display: flex;

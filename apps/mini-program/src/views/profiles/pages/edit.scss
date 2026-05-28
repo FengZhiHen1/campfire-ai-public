@@ -2,6 +2,7 @@
 
 /* ========== 页面外壳 ========== */
 .profile-edit-page {
+  box-sizing: border-box;
   min-height: 100vh;
   background-color: $cf-background;
   display: flex;
@@ -10,7 +11,7 @@
 
 /* ========== 顶部导航栏 ========== */
 .profile-edit-navbar {
-  height: 224px;
+  height: 112px;
   background-color: $cf-surface-dim;
   display: flex;
   align-items: center;
@@ -25,8 +26,8 @@
     color: $cf-on-background;
     background: none;
     border: none;
-    min-width: 176px;
-    height: 176px;
+    min-width: 88px;
+    height: 88px;
     display: flex;
     align-items: center;
     justify-content: flex-start;
@@ -50,8 +51,8 @@
   &__save {
     position: absolute;
     right: $cf-spacing-md;
-    min-width: 176px;
-    height: 176px;
+    min-width: 88px;
+    height: 88px;
     display: flex;
     align-items: center;
     justify-content: flex-end;
@@ -165,13 +166,13 @@
 
   &__wrapper {
     position: relative;
-    width: 288px;
-    height: 288px;
+    width: 144px;
+    height: 144px;
   }
 
   &__circle {
-    width: 288px;
-    height: 288px;
+    width: 144px;
+    height: 144px;
     border-radius: $cf-radius-full;
     background-color: $cf-surface-variant;
     display: flex;
@@ -180,7 +181,7 @@
   }
 
   &__icon {
-    font-size: 144px;
+    font-size: 72px;
     opacity: 0.5;
   }
 
@@ -188,8 +189,8 @@
     position: absolute;
     bottom: 0;
     right: 0;
-    width: 96px;
-    height: 96px;
+    width: 48px;
+    height: 48px;
     border-radius: $cf-radius-full;
     background-color: $cf-primary;
     display: flex;
@@ -198,7 +199,7 @@
     border: 2px solid $cf-surface;
 
     &-icon {
-      font-size: 40px;
+      font-size: 24px;
       color: $cf-on-primary;
     }
   }
@@ -223,7 +224,7 @@
 
   &__input {
     width: 100%;
-    height: 192px;
+    height: 64px;
     background-color: $cf-surface;
     border-radius: $cf-radius-md;
     padding: 0 $cf-spacing-md;
@@ -257,7 +258,7 @@
 
   &__btn {
     width: 100%;
-    height: 192px;
+    height: 96px;
     background-color: $cf-primary;
     color: $cf-on-primary;
     border-radius: $cf-radius-lg;
@@ -328,9 +329,9 @@
   }
 
   &__action-btn {
-    min-width: 176px;
-    height: 128px;
-    font-size: 26px;
+    min-width: 96px;
+    height: 64px;
+    font-size: 24px;
     border-radius: $cf-radius-md;
     display: flex;
     align-items: center;
