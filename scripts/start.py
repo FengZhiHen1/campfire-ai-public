@@ -37,7 +37,7 @@ PROJECT_NAME = "篝火智答 (Campfire-AI)"
 AVAILABLE_SERVICES: dict[str, str] = {
     "api": "API 服务 (FastAPI, port 8000)",
     "worker": "Worker 服务 (Redis 消费者)",
-    "web": "Web 服务 (小程序 Taro dev)",
+    "web": "Web 服务 (Taro H5 dev, port 10086)",
 }
 
 MAX_NAME_WIDTH = 8
@@ -139,6 +139,14 @@ def run_preflight_checks(
             print_check_ok("端口 8000 (API)", msg)
         else:
             print_check_fail("端口 8000 (API)", msg)
+            all_ok = False
+
+    if "web" in services:
+        ok, msg = check_port_available(10086)
+        if ok:
+            print_check_ok("端口 10086 (H5)", msg)
+        else:
+            print_check_fail("端口 10086 (H5)", msg)
             all_ok = False
 
     # --- Infrastructure connectivity (only if not skipped) ---
@@ -243,12 +251,12 @@ def start_services(
             _cleanup_procs(procs)
             return []
 
-    # --- Web (mini-program) ---
+    # --- Web (H5 dev server) ---
     if "web" in services:
         try:
             from start_web import start as start_web
 
-            proc, name = start_web()
+            proc, name = start_web(mode="h5")
             procs.append((proc, name))
             print_service_starting(name, proc.pid)
         except Exception as exc:
