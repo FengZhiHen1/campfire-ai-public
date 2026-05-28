@@ -10,7 +10,7 @@
 services:
   # --- PostgreSQL 17 ---
   postgres:
-    image: postgres:17
+    image: pgvector/pgvector:pg17
     container_name: campfire-postgres
     restart: unless-stopped
     env_file: .env
@@ -59,6 +59,11 @@ services:
     restart: unless-stopped
     command: server /data --console-address ":9001"
     env_file: .env
+    environment:
+      # MinIO Docker 镜像使用 MINIO_ROOT_USER/PASSWORD，
+      # 映射 .env 中的 MINIO_ACCESS_KEY/SECRET_KEY
+      MINIO_ROOT_USER: ${MINIO_ACCESS_KEY:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY:-minioadmin}
     ports:
       - "9000:9000"
       - "9001:9001"

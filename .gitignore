@@ -24,6 +24,7 @@ dist/
 data/
 logs/
 tmp/
+_tmp_test/
 
 # IDE
 .vscode/

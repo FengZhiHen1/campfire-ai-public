@@ -23,6 +23,22 @@ members = [
     "apps/worker",
 ]
 
+[tool.uv.sources]
+py-config = { workspace = true }
+py-db = { workspace = true }
+py-schemas = { workspace = true }
+py-rag = { workspace = true }
+py-llm = { workspace = true }
+py-cache = { workspace = true }
+py-storage = { workspace = true }
+py-auth = { workspace = true }
+py-logger = { workspace = true }
+py-security = { workspace = true }
+py-infra = { workspace = true }
+py-health = { workspace = true }
+api-server = { workspace = true }
+worker = { workspace = true }
+
 [dependency-groups]
 dev = [
     "pytest>=8.0",
