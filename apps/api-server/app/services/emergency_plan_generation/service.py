@@ -32,12 +32,12 @@ from .exceptions import GenerationInputError, GenerationTimeoutError, LLMUnavail
 from .models import EmergencyPlanInput, GenerationResult
 from .prompt_builder import PromptBuilder
 from .streaming import (
-    _REFERENCE_TAG_PATTERN,
-    _SECTION_HEADER_PATTERN,
-    _SOURCE_LINE_PATTERN,
     build_generation_result,
     stream_generate,
 )
+
+# JSON 模式下判定为"有效内容"的最低字符数
+_MIN_JSON_CONTENT_LENGTH: int = 100
 
 
 async def generate_emergency_plan(
@@ -229,7 +229,7 @@ async def generate_emergency_plan(
                 # 最后一个 chunk 的 finish_reason 指示完成状态
                 if chunk.finish_reason == "timeout":
                     # 检查 accumulated_text 是否包含完整段落来判断 PARTIAL/TIMEOUT
-                    if accumulated_text and _SECTION_HEADER_PATTERN.search(accumulated_text):
+                    if accumulated_text and len(accumulated_text) >= _MIN_JSON_CONTENT_LENGTH:
                         finish_reason = GenerationStatus.PARTIAL
                     else:
                         finish_reason = GenerationStatus.TIMEOUT

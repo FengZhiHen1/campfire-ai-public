@@ -5,7 +5,7 @@
 
 核心流程：
 1. 读取配置（model, temperature, max_tokens, timeout）
-2. 调用 LLMClient.async_chat_stream() 获取 LLM 流式迭代器
+2. 调用 LLMClient.async_chat_stream() 获取 LLM 流式迭代器（JSON mode）
 3. 使用 asyncio.timeout_at() 全流程超时保护
 4. 逐 chunk yield GenerationChunk
 5. 免责声明存在性检查（finally 块）
@@ -14,17 +14,15 @@
 TTFT（首字延迟）由调用方在 service 层追踪，本函数不负责。
 
 超时降级策略：
-- 已有至少一个完整段落（含 ## 标题）→ finish_reason="timeout", 不抛异常
-- 有文本但不含完整段落 → 视为无有效内容, finish_reason="timeout", accumulated_text 置空
+- 已产出 >= MIN_JSON_CONTENT_LENGTH 字符文本 → finish_reason="timeout", 不抛异常
+- 有文本但不足最低长度 → 视为无有效内容, finish_reason="timeout", accumulated_text 置空
 - 无文本 → 抛出 GenerationTimeoutError
-
-注意：finish_reason 为 "timeout" 时，调用方需根据 accumulated_text 是否含有
-完整段落标题来判断 PARTIAL 或 TIMEOUT。
 """
 
 from __future__ import annotations
 
 import asyncio
+import json
 import re
 import time
 from typing import Any, AsyncGenerator
@@ -43,19 +41,62 @@ from .models import EmergencyPlanInput, GenerationChunk, GenerationResult
 # 常量
 # ============================================================================
 
-# 完整段落标题的正则检测 — 匹配四段式结构中的标题行
-_SECTION_HEADER_PATTERN: re.Pattern[str] = re.compile(r"^##\s[一二三四]、")
-
-# 来源引用行正则 — 用于提取 source_list
-_SOURCE_LINE_PATTERN: re.Pattern[str] = re.compile(
-    r"^\[(\d+)\] CASE-(\d{3}) .+（(\d{4}-\d{2}-\d{2})）$", re.MULTILINE
-)
+# JSON 模式下判定为"有效内容"的最低字符数
+_MIN_JSON_CONTENT_LENGTH: int = 100
 
 # 免责声明检测正则（末尾 200 字符）
 _DISCLAIMER_CHECK_PATTERN: re.Pattern[str] = re.compile(r"不构成医疗诊断|以上建议由 AI 生成")
 
 # 引用标记提取正则
 _REFERENCE_TAG_PATTERN: re.Pattern[str] = re.compile(r"\[(\d+)\]")
+
+# JSON 四段式 section key 列表
+_SECTION_KEYS: list[str] = [
+    "即时安全干预动作",
+    "情绪安抚话术",
+    "后续观察指标",
+    "就医判断标准",
+]
+
+# ============================================================================
+# parse_json_sections —— 从 JSON 文本提取四段式结构化数据
+# ============================================================================
+
+
+def parse_json_sections(text: str) -> dict[str, list[str]]:
+    """从 LLM JSON 输出中提取四个 section 的内容。
+
+    Args:
+        text: LLM 输出的完整 JSON 文本。
+
+    Returns:
+        dict[str, list[str]]: section 标题 → 内容列表的映射。
+        解析失败时返回全空列表的 dict。
+    """
+    try:
+        data = json.loads(text)
+    except (json.JSONDecodeError, TypeError):
+        logger.warning(
+            service="emergency_plan_generation",
+            message="Failed to parse JSON from LLM output",
+            op_type="json_parse",
+            extra={"text_preview": text[:200]},
+        )
+        return {key: [] for key in _SECTION_KEYS}
+
+    if not isinstance(data, dict):
+        return {key: [] for key in _SECTION_KEYS}
+
+    sections: dict[str, list[str]] = {}
+    for key in _SECTION_KEYS:
+        value = data.get(key, [])
+        if isinstance(value, list):
+            sections[key] = [str(item) for item in value]
+        else:
+            sections[key] = []
+
+    return sections
+
 
 # ============================================================================
 # stream_generate — 流式生成主协程
@@ -70,6 +111,9 @@ async def stream_generate(
     config: Any | None = None,
 ) -> AsyncGenerator[GenerationChunk, None]:
     """流式生成应急方案 —— 将 LLM 返回的每个 Token 增量通过 AsyncGenerator 实时产出。
+
+    LLM 使用 JSON mode (response_format={"type": "json_object"})，
+    输出为结构化 JSON 文本。流结束后由下游解析 sections。
 
     调用方使用 async for chunk in stream_generate(...) 消费。
     最后一个 chunk 的 is_final=True 表示流式输出结束。
@@ -108,6 +152,7 @@ async def stream_generate(
         temperature=temperature,
         max_tokens=max_tokens,
         timeout=timeout_s,
+        response_format={"type": "json_object"},
     )
 
     deadline: float = t_start + timeout_s
@@ -133,8 +178,7 @@ async def stream_generate(
         elapsed_ms: float = (time.monotonic() - t_start) * 1000
 
         if accumulated_text:
-            # 检查是否包含至少一个完整段落标题
-            if _SECTION_HEADER_PATTERN.search(accumulated_text):
+            if len(accumulated_text) >= _MIN_JSON_CONTENT_LENGTH:
                 finish_reason = "timeout"
                 logger.warning(
                     service="emergency_plan_generation",
@@ -148,11 +192,11 @@ async def stream_generate(
                     },
                 )
             else:
-                # 有文本但不含完整段落 → 视为无有效内容，抛出异常
+                # 文本不足最低长度 → 视为无有效内容
                 accumulated_text = ""
                 logger.warning(
                     service="emergency_plan_generation",
-                    message="Generation timed out with no complete section",
+                    message="Generation timed out with insufficient content",
                     op_type="stream_timeout",
                     extra={
                         "request_id": input_data.request_id,
@@ -204,7 +248,7 @@ async def stream_generate(
 
 
 # ============================================================================
-# 辅助函数：从 accumulated_text 构建 GenerationResult
+# build_generation_result —— 从 accumulated_text 构建 GenerationResult
 # ============================================================================
 
 
@@ -220,9 +264,10 @@ def build_generation_result(
     """从流式生成的累积文本构建完整的 GenerationResult。
 
     负责：
-    1. 免责声明存在性检查（缺失时强制追加）
-    2. 引用反查（从 LLM 文本提取 [N] 并匹配 prenumbered_slices）
-    3. source_list 格式化
+    1. JSON 解析提取四段式 sections
+    2. 免责声明存在性检查（缺失时强制追加）
+    3. 引用反查（从 LLM 文本提取 [N] 并匹配 prenumbered_slices）
+    4. source_list 格式化
 
     Args:
         input_data: EmergencyPlanInput 实例。
@@ -237,6 +282,9 @@ def build_generation_result(
         组装后的 GenerationResult 实例。
     """
     generation_time_ms: float = (time.monotonic() - t_start) * 1000
+
+    # === 解析 JSON sections ===
+    sections = parse_json_sections(accumulated_text) if accumulated_text else {}
 
     # === 免责声明存在性检查 ===
     if accumulated_text:
@@ -273,14 +321,10 @@ def build_generation_result(
                 },
             )
 
-    # === 构建 source_list ===
-    formatted_sources: list[str] = []
-    for match in _SOURCE_LINE_PATTERN.finditer(accumulated_text):
-        formatted_sources.append(match.group(0))
-
     return GenerationResult(
         text=accumulated_text,
-        source_list=formatted_sources,
+        sections=sections,
+        source_list=[],
         disclaimer=DISCLAIMER_TEXT,
         generation_time_ms=generation_time_ms,
         is_partial=is_partial,

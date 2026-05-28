@@ -33,6 +33,7 @@ from py_schemas.streaming import (
 )
 
 from app.services.emergency_plan_generation.models import GenerationChunk
+from app.services.emergency_plan_generation.streaming import parse_json_sections
 
 from .session_manager import StreamSessionManager
 
@@ -425,6 +426,7 @@ class SseStreamingService:
                                 confidence_score=done_meta.get("confidence_score"),
                                 verdict=done_meta.get("verdict"),
                                 ticket_triggered=done_meta.get("ticket_triggered", False),
+                                sections=done_meta.get("sections", {}),
                             )
                             sse_frame = (
                                 f"event: done\n"
@@ -497,6 +499,7 @@ class SseStreamingService:
                             confidence_score=done_meta.get("confidence_score"),
                             verdict=done_meta.get("verdict"),
                             ticket_triggered=done_meta.get("ticket_triggered", False),
+                            sections=done_meta.get("sections", {}),
                         )
                         sse_frame = (
                             f"event: done\n"
@@ -762,9 +765,13 @@ class SseStreamingService:
                 referenced_slice_ids.append(prenumbered_slices[tag])
                 seen.add(prenumbered_slices[tag])
 
+        # === 从 JSON 文本解析四段式 sections ===
+        sections = parse_json_sections(full_text) if full_text else {}
+
         result: dict = {
             "referenced_slice_ids": referenced_slice_ids,
             "crisis_level": crisis_level,
+            "sections": sections,
             "referenced_cases": self._build_referenced_cases(
                 referenced_slice_ids, meta.get("search_result")
             ),

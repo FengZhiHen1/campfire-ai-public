@@ -46,22 +46,14 @@ import type { ConsultSubmitResponse } from '../services/consultApi';
 
 /**
  * 四段式方案标题常量列表。
- * 与 CSLT-03 Prompt 模板标题一致，若 CSLT-03 修改标题文案必须同步更新。
+ * 与后端 CSLT-03 解析的 JSON key 保持一致。
  */
-const SECTION_TITLES: readonly string[] = [
+const SECTION_KEYS: readonly string[] = [
   '即时安全干预动作',
   '情绪安抚话术',
   '后续观察指标',
   '就医判断标准',
 ] as const;
-
-/**
- * 段落边界检测正则。
- * 匹配 Markdown 标题（#/##/###）后跟四段标题之一。
- * 依赖 CSLT-03 Prompt 模板的固定标题格式，同步标注。
- */
-const SECTION_TITLE_REGEX: RegExp =
-  /#{1,3}\s*(即时安全干预动作|情绪安抚话术|后续观察指标|就医判断标准)/g;
 
 // ============================================================================
 // Store 类型定义
@@ -163,97 +155,26 @@ function createInitialState(): ConsultSessionStoreState {
  * 创建四个空的 PlanSection。
  */
 function createEmptySections(): PlanSection[] {
-  return SECTION_TITLES.map((title) => ({
+  return SECTION_KEYS.map((title) => ({
     title,
     contents: [],
     isCompleted: false,
   }));
 }
 
-// ============================================================================
-// parseSections —— 段落解析
-// ============================================================================
-
 /**
- * 从 accumulatedText 中解析四段式方案段落。
- * 使用正则检测标题行，将累积文本按标题切分为四段。
- *
- * @param text - 已累积的原始文本
- * @returns 更新后的 PlanSection 数组（始终返回 4 个段落）
+ * 将后端下发的 sections dict 转换为前端 PlanSection 数组。
+ * sections 由后端从 LLM JSON 输出解析，无需前端正则处理。
  */
-function parseSections(text: string): PlanSection[] {
-  if (!text || text.trim().length === 0) {
-    return createEmptySections();
-  }
-
-  // 查找所有标题匹配项
-  const matches: Array<{ title: string; index: number }> = [];
-  let match: RegExpExecArray | null;
-  // 重置正则 lastIndex（全局匹配需手动重置）
-  SECTION_TITLE_REGEX.lastIndex = 0;
-
-  while ((match = SECTION_TITLE_REGEX.exec(text)) !== null) {
-    matches.push({
-      title: match[1]!,
-      index: match.index,
-    });
-  }
-
-  // 无任何标题匹配 → 返回空段落
-  if (matches.length === 0) {
-    return createEmptySections();
-  }
-
-  // 为每个已知标题构建 PlanSection
-  const result: PlanSection[] = [];
-
-  for (let i = 0; i < SECTION_TITLES.length; i++) {
-    const title = SECTION_TITLES[i];
-    const currentMatch = matches.find((m) => m.title === title);
-
-    if (currentMatch) {
-      // 找到此段落在文本中的结束位置（下一个标题的位置，或文本末尾）
-      const currentMatchIndex = matches.indexOf(currentMatch);
-      const nextMatch = currentMatchIndex + 1 < matches.length
-        ? matches[currentMatchIndex + 1]
-        : null;
-      const endIndex = nextMatch ? nextMatch.index : text.length;
-
-      // 提取段落文本（标题之后的内容）
-      const sectionText = text.substring(currentMatch.index, endIndex);
-      const lines = sectionText.split('\n');
-
-      // 跳过标题行，提取内容行
-      const contentLines: string[] = [];
-      for (let j = 1; j < lines.length; j++) {
-        const trimmed = lines[j].trim();
-        if (trimmed.length > 0 && !SECTION_TITLE_REGEX.test(lines[j])) {
-          // 移除列表标记（-、*、数字.）
-          contentLines.push(trimmed.replace(/^[-*\d.]+\s*/, '').trim());
-        }
-      }
-
-      // 判断段落是否已完成：有内容且（下一标题也已出现，或是最后一段，或非最后一段但有内容）
-      const isCompleted = contentLines.length > 0 && (
-        nextMatch !== null || i === SECTION_TITLES.length - 1
-      );
-
-      result.push({
-        title,
-        contents: contentLines,
-        isCompleted,
-      });
-    } else {
-      // 此标题未在文本中出现 → 空段落
-      result.push({
-        title,
-        contents: [],
-        isCompleted: false,
-      });
-    }
-  }
-
-  return result;
+function sectionsToPlanSections(sections: Record<string, string[]>): PlanSection[] {
+  return SECTION_KEYS.map((title) => {
+    const contents = sections[title] ?? [];
+    return {
+      title,
+      contents: Array.isArray(contents) ? contents : [],
+      isCompleted: contents.length > 0,
+    };
+  });
 }
 
 // ============================================================================
@@ -427,8 +348,6 @@ export const useConsultStore = create<ConsultStore>()(
                 // 首个 chunk → 触发 streaming 状态转换 + 初始化 system_plan 消息
                 const isFirstChunk = state.lastSequence === 0;
 
-                const newSections = parseSections(newText);
-
                 if (isFirstChunk) {
                   // 状态转换：submitting -> streaming
                   const sNext = transitionTo(state.sessionState, 'streaming');
@@ -439,15 +358,13 @@ export const useConsultStore = create<ConsultStore>()(
                     sessionState: sNext,
                     accumulatedText: newText,
                     lastSequence: newSeq,
-                    planSections: newSections,
                     messages: [...state.messages, initMsg],
                   });
                 } else {
-                  // 更新累积文本和段落
+                  // 累积文本（段落解析在 done 事件中由后端 sections 数据完成）
                   set({
                     accumulatedText: newText,
                     lastSequence: newSeq,
-                    planSections: newSections,
                   });
                 }
               },
@@ -466,6 +383,10 @@ export const useConsultStore = create<ConsultStore>()(
                 const referencedSliceIds: string[] = doneData?.referenced_slice_ids ?? [];
                 const referencedCases: ReferencedCase[] = doneData?.referenced_cases ?? [];
                 const verdict = doneData?.verdict || 'PASS';
+
+                // 从后端 sections 数据构建结构化段落（替代前端正则解析）
+                const doneSections = doneData?.sections ?? {};
+                const planSections = sectionsToPlanSections(doneSections);
 
                 // 判决是否触发工单引导
                 const shouldShowTicket = verdict === 'FORCE_BLOCK' || verdict === 'APPEND_WARNING';
@@ -489,6 +410,7 @@ export const useConsultStore = create<ConsultStore>()(
                   crisisLevel: crisisLevel as CrisisLevel,
                   referencedSliceIds,
                   referencedCases,
+                  planSections,
                   ticketGuide: shouldShowTicket
                     ? { show: true, riskLevel: verdict === 'FORCE_BLOCK' ? 'high_risk' : 'normal' }
                     : state.ticketGuide,
@@ -800,4 +722,4 @@ export const useConsultStore = create<ConsultStore>()(
 /**
  * 获取错误提示文案（导出到 stateMachine 的 getErrorMessage）。
  */
-export { getErrorMessage, parseSections, createEmptySections, createMessageItem, SECTION_TITLES };
+export { getErrorMessage, sectionsToPlanSections, createEmptySections, createMessageItem, SECTION_KEYS };
