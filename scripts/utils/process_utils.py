@@ -11,11 +11,11 @@ Windows: CREATE_NEW_PROCESS_GROUP + taskkill /F /T (spec 3.2.2)
 from __future__ import annotations
 
 import os
+import shutil
 import signal
 import subprocess
 import sys
 import threading
-import time
 from typing import IO
 
 # ---------------------------------------------------------------------------
@@ -29,30 +29,44 @@ _IS_WINDOWS: bool = sys.platform == "win32"
 # ---------------------------------------------------------------------------
 
 
+def resolve_exe(name: str) -> str:
+    """Resolve an executable name to a runnable path.
+
+    On Windows, this handles the case where a tool is installed as a .CMD
+    wrapper (e.g. pnpm.cmd) rather than a native .exe.  shutil.which()
+    respects PATHEXT and returns the actual runnable file.
+    """
+    resolved = shutil.which(name)
+    if resolved is None:
+        raise FileNotFoundError(f"未找到可执行文件: {name}")
+    return resolved
+
+
 def start_process(
     cmd: list[str],
     *,
     cwd: str | os.PathLike[str] | None = None,
     env: dict[str, str] | None = None,
-    log_file: str | None = None,
 ) -> subprocess.Popen:
     """Start a subprocess with platform-appropriate process-group settings.
 
     On Unix, the process becomes a new session leader (os.setsid).
     On Windows, a new process group is created (CREATE_NEW_PROCESS_GROUP).
+    The executable is resolved via shutil.which() so that .CMD wrappers
+    on Windows are handled correctly.
 
     stdout/stderr are captured via PIPE for the controller to read and prefix.
-    If log_file is provided, output is also tee'd to that file.
 
     Args:
         cmd: Command and arguments as a list.
         cwd: Working directory for the subprocess.
         env: Environment variables to merge with os.environ.
-        log_file: Optional path to tee output to.
 
     Returns:
         A subprocess.Popen instance with stdout=PIPE, stderr=STDOUT.
     """
+    resolved_cmd = [resolve_exe(cmd[0])] + cmd[1:]
+
     kwargs: dict = {
         "stdout": subprocess.PIPE,
         "stderr": subprocess.STDOUT,
@@ -67,7 +81,7 @@ def start_process(
     else:
         kwargs["preexec_fn"] = os.setsid
 
-    return subprocess.Popen(cmd, **kwargs)
+    return subprocess.Popen(resolved_cmd, **kwargs)
 
 
 def terminate_process(proc: subprocess.Popen, timeout: float = 10.0) -> bool:
