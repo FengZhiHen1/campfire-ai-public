@@ -1,5 +1,6 @@
 export default defineAppConfig({
   pages: [
+    'views/shared/pages/home',
     'views/consult/pages/index',
     'views/profiles/pages/edit',
     'views/cases/pages/index',
@@ -19,6 +20,10 @@ export default defineAppConfig({
     backgroundColor: '#ffffff',
     borderStyle: 'black',
     list: [
+      {
+        pagePath: 'views/shared/pages/home',
+        text: '首页',
+      },
       {
         pagePath: 'views/consult/pages/index',
         text: '咨询',

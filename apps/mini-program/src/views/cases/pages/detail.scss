@@ -255,27 +255,37 @@
     font-size: 14px;
     font-weight: 600;
     color: $cf-on-background;
-    margin-bottom: $cf-spacing-sm;
+    margin-bottom: $cf-spacing-md;
   }
 
   &__row {
     display: flex;
     gap: $cf-spacing-sm;
+    margin-bottom: $cf-spacing-sm;
+
+    &:last-child {
+      margin-bottom: 0;
+    }
   }
 
   &__btn {
     flex: 1;
     height: 88px;
     border-radius: $cf-radius-md;
-    font-size: 14px;
+    font-size: 16px;
     font-weight: 600;
     display: flex;
     align-items: center;
     justify-content: center;
     border: none;
+    gap: $cf-spacing-xs;
 
     &:active {
-      opacity: 0.9;
+      transform: scale(0.98);
+    }
+
+    &::after {
+      border: none;
     }
 
     &--primary {
@@ -294,20 +304,89 @@
     }
 
     &--secondary {
-      background-color: $cf-secondary;
-      color: $cf-on-secondary;
+      background-color: transparent;
+      color: $cf-secondary;
+      font-size: 14px;
+      font-weight: 500;
+
+      &:active {
+        background-color: $cf-surface-variant;
+      }
     }
+
+    &--disabled {
+      background-color: $cf-surface-dim !important;
+      color: $cf-on-surface-variant !important;
+    }
+  }
+
+  &__btn-icon {
+    font-size: 18px;
+  }
+
+  &__input-wrap {
+    position: relative;
+    margin-bottom: $cf-spacing-sm;
   }
 
   &__input {
     width: 100%;
-    height: 88px;
+    min-height: 160px;
     background-color: $cf-surface-variant;
     border-radius: $cf-radius-md;
-    padding: 0 $cf-spacing-md;
+    padding: $cf-spacing-md;
+    padding-bottom: 32px;
     font-size: 14px;
+    line-height: 1.5;
     color: $cf-on-background;
+    box-sizing: border-box;
+  }
+
+  &__char-count {
+    position: absolute;
+    bottom: 8px;
+    right: 12px;
+    font-size: 11px;
+    color: $cf-on-surface-variant;
+  }
+
+  &__char-count--error {
+    color: $cf-error;
+  }
+
+  /* 审核结果展示 */
+  &__result {
+    display: flex;
+    align-items: center;
+    gap: $cf-spacing-sm;
+    padding: $cf-spacing-md;
+    border-radius: $cf-radius-md;
     margin-bottom: $cf-spacing-sm;
+
+    &--approved {
+      background-color: $cf-tertiary-container;
+    }
+
+    &--rejected {
+      background-color: $cf-error-container;
+    }
+
+    &-icon {
+      font-size: 24px;
+    }
+
+    &-text {
+      font-size: 14px;
+      font-weight: 600;
+
+      &--approved {
+        color: $cf-on-tertiary-container;
+      }
+
+      &--rejected {
+        color: $cf-on-error-container;
+      }
+    }
   }
 }
 

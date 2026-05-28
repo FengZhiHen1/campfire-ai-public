@@ -101,10 +101,12 @@ export default function CasesDetail() {
     }
   };
 
+  const reviewCommentLength = reviewComment.trim().length;
+
   const handleReject = async () => {
     if (!data) return;
-    if (!reviewComment.trim() || reviewComment.trim().length < 10) {
-      Taro.showToast({ title: '驳回意见至少10字', icon: 'none' });
+    if (reviewCommentLength < 5) {
+      Taro.showToast({ title: '驳回意见至少5字', icon: 'none' });
       return;
     }
     try {
@@ -251,34 +253,59 @@ export default function CasesDetail() {
         {data.status === 'pending_review' && (
           <View className="detail-actions__panel">
             <Text className="detail-actions__panel-title">审核操作</Text>
-            <View className="detail-actions__row">
-              <Button className="detail-actions__btn detail-actions__btn--tertiary" onClick={handleApprove}>
-                审核通过
-              </Button>
-              {!showRejectInput && (
-                <Button className="detail-actions__btn detail-actions__btn--error" onClick={() => setShowRejectInput(true)}>
-                  驳回
+            {!showRejectInput && (
+              <View className="detail-actions__row">
+                <Button className="detail-actions__btn detail-actions__btn--tertiary" onClick={handleApprove}>
+                  <Text className="detail-actions__btn-icon">✓</Text>
+                  <Text>审核通过</Text>
                 </Button>
-              )}
-            </View>
+                <Button className="detail-actions__btn detail-actions__btn--error" onClick={() => setShowRejectInput(true)}>
+                  <Text className="detail-actions__btn-icon">✗</Text>
+                  <Text>驳回</Text>
+                </Button>
+              </View>
+            )}
             {showRejectInput && (
               <>
-                <Input
-                  className="detail-actions__input"
-                  value={reviewComment}
-                  onInput={(e) => setReviewComment(e.detail.value)}
-                  placeholder="请输入驳回意见（至少10字）"
-                />
+                <View className="detail-actions__input-wrap">
+                  <Input
+                    className="detail-actions__input"
+                    value={reviewComment}
+                    onInput={(e) => setReviewComment(e.detail.value)}
+                    placeholder="请输入驳回原因，将反馈给作者…"
+                  />
+                  <Text className={`detail-actions__char-count ${reviewCommentLength < 5 ? 'detail-actions__char-count--error' : ''}`}>
+                    {reviewCommentLength}/200
+                  </Text>
+                </View>
                 <View className="detail-actions__row">
-                  <Button className="detail-actions__btn detail-actions__btn--error" onClick={handleReject}>
+                  <Button
+                    className={`detail-actions__btn detail-actions__btn--error ${reviewCommentLength < 5 ? 'detail-actions__btn--disabled' : ''}`}
+                    onClick={handleReject}
+                    disabled={reviewCommentLength < 5}
+                  >
                     确认驳回
                   </Button>
-                  <Button className="detail-actions__btn detail-actions__btn--secondary" onClick={() => setShowRejectInput(false)}>
+                  <Button className="detail-actions__btn detail-actions__btn--secondary" onClick={() => { setShowRejectInput(false); setReviewComment(''); }}>
                     取消
                   </Button>
                 </View>
               </>
             )}
+          </View>
+        )}
+
+        {data.status === 'approved' && (
+          <View className="detail-actions__result detail-actions__result--approved">
+            <Text className="detail-actions__result-icon">✓</Text>
+            <Text className="detail-actions__result-text detail-actions__result-text--approved">该案例已通过审核</Text>
+          </View>
+        )}
+
+        {data.status === 'rejected' && (
+          <View className="detail-actions__result detail-actions__result--rejected">
+            <Text className="detail-actions__result-icon">✗</Text>
+            <Text className="detail-actions__result-text detail-actions__result-text--rejected">该案例已被驳回</Text>
           </View>
         )}
       </View>
