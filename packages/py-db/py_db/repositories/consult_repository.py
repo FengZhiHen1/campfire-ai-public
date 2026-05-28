@@ -127,7 +127,7 @@ class ConsultRepository:
         sql = text(f"""
             SELECT
                 cc.id::text AS id,
-                cc.case_id,
+                cc.card_id AS case_id,
                 cc.chunk_text,
                 cc.chunk_type,
                 1 - (cc.embedding <=> CAST(:query_vector AS vector(1024))) AS similarity,
