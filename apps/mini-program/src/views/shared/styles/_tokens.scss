@@ -46,17 +46,17 @@ $cf-on-primary-fixed: #92400E;
 $cf-on-primary-fixed-variant: #B45309;
 
 // ===== Spacing =====
-$cf-spacing-xs: 4px;
-$cf-spacing-sm: 8px;
-$cf-spacing-md: 16px;
-$cf-spacing-lg: 24px;
-$cf-spacing-xl: 32px;
-$cf-gutter: 16px;
+$cf-spacing-xs: 8px;
+$cf-spacing-sm: 16px;
+$cf-spacing-md: 32px;
+$cf-spacing-lg: 48px;
+$cf-spacing-xl: 64px;
+$cf-gutter: 32px;
 
 // ===== Radius =====
-$cf-radius-sm: 4px;
-$cf-radius-md: 8px;
-$cf-radius-lg: 16px;
+$cf-radius-sm: 8px;
+$cf-radius-md: 16px;
+$cf-radius-lg: 32px;
 $cf-radius-full: 9999px;
 
 // ===== Shadows =====
@@ -66,37 +66,37 @@ $cf-shadow-input-top: 0 -2px 12px rgba(28, 25, 23, 0.04);
 
 // ===== Typography Mixins =====
 @mixin cf-headline-md {
-  font-size: 20px;
+  font-size: 40px;
   font-weight: 600;
-  line-height: 32px;
+  line-height: 64px;
 }
 
 @mixin cf-headline-sm {
-  font-size: 18px;
+  font-size: 36px;
   font-weight: 600;
-  line-height: 28px;
+  line-height: 56px;
 }
 
 @mixin cf-body-md {
-  font-size: 16px;
+  font-size: 32px;
   font-weight: 400;
-  line-height: 28px;
+  line-height: 56px;
 }
 
 @mixin cf-body-sm {
-  font-size: 14px;
+  font-size: 28px;
   font-weight: 400;
-  line-height: 21px;
+  line-height: 42px;
 }
 
 @mixin cf-label-md {
-  font-size: 14px;
+  font-size: 28px;
   font-weight: 500;
-  line-height: 21px;
+  line-height: 42px;
 }
 
 @mixin cf-footnote {
-  font-size: 11px;
+  font-size: 22px;
   font-weight: 400;
-  line-height: 15px;
+  line-height: 30px;
 }

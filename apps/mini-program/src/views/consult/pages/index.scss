@@ -10,7 +10,7 @@
 
 /* ========== 顶部导航栏 ========== */
 .consult-navbar {
-  height: 112px;
+  height: 224px;
   background-color: $cf-surface-dim;
   display: flex;
   align-items: center;
@@ -19,7 +19,7 @@
   padding: 0 $cf-spacing-md;
 
   &__title {
-    font-size: 18px;
+    font-size: 36px;
     font-weight: 600;
     color: $cf-on-background;
   }
@@ -35,8 +35,8 @@
   padding: $cf-spacing-md;
 
   &__hero {
-    width: 120px;
-    height: 120px;
+    width: 240px;
+    height: 240px;
     background-color: $cf-primary-container;
     border-radius: $cf-radius-lg;
     display: flex;
@@ -46,18 +46,18 @@
   }
 
   &__hero-icon {
-    font-size: 48px;
+    font-size: 96px;
   }
 
   &__title {
-    font-size: 20px;
+    font-size: 40px;
     font-weight: 600;
     color: $cf-on-background;
     margin-bottom: $cf-spacing-sm;
   }
 
   &__subtitle {
-    font-size: 14px;
+    font-size: 28px;
     color: $cf-on-surface-variant;
     line-height: 1.5;
     text-align: center;
@@ -66,13 +66,13 @@
   }
 
   &__start-btn {
-    width: calc(100% - 32px);
-    max-width: 400px;
-    height: 48px;
+    width: calc(100% - 64px);
+    max-width: 800px;
+    height: 96px;
     background-color: $cf-primary;
     color: $cf-on-primary;
     border-radius: $cf-radius-lg;
-    font-size: 16px;
+    font-size: 32px;
     font-weight: 600;
     display: flex;
     align-items: center;
@@ -92,10 +92,10 @@
   display: flex;
   flex-direction: column;
   padding: $cf-spacing-md;
-  padding-bottom: calc(24px + env(safe-area-inset-bottom));
+  padding-bottom: calc(48px + env(safe-area-inset-bottom));
 
   &__label {
-    font-size: 14px;
+    font-size: 28px;
     font-weight: 600;
     color: $cf-on-background;
     margin-bottom: $cf-spacing-sm;
@@ -121,7 +121,7 @@
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    min-height: 140px;
+    min-height: 280px;
     position: relative;
     border: none;
     text-align: center;
@@ -136,12 +136,12 @@
   }
 
   &__option-icon {
-    font-size: 32px;
+    font-size: 64px;
     margin-bottom: $cf-spacing-xs;
   }
 
   &__option-text {
-    font-size: 14px;
+    font-size: 28px;
     font-weight: 600;
     color: $cf-on-background;
 
@@ -154,15 +154,15 @@
     position: absolute;
     top: $cf-spacing-sm;
     right: $cf-spacing-sm;
-    width: 32px;
-    height: 32px;
+    width: 64px;
+    height: 64px;
     background-color: $cf-primary;
     color: $cf-on-primary;
     border-radius: $cf-radius-full;
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 14px;
+    font-size: 28px;
     font-weight: 700;
   }
 
@@ -170,10 +170,10 @@
     background-color: $cf-surface-variant;
     border-radius: $cf-radius-md;
     padding: $cf-spacing-md;
-    font-size: 16px;
+    font-size: 32px;
     line-height: 1.75;
     color: $cf-on-background;
-    min-height: 160px;
+    min-height: 320px;
     width: 100%;
     box-sizing: border-box;
     margin-bottom: $cf-spacing-md;
@@ -188,11 +188,11 @@
 
   &__submit-btn {
     width: 100%;
-    height: 48px;
+    height: 96px;
     background-color: $cf-primary;
     color: $cf-on-primary;
     border-radius: $cf-radius-lg;
-    font-size: 16px;
+    font-size: 32px;
     font-weight: 600;
     display: flex;
     align-items: center;
@@ -211,11 +211,11 @@
 
   &__cancel-btn {
     width: 100%;
-    height: 48px;
+    height: 96px;
     background-color: transparent;
     color: $cf-secondary;
     border-radius: $cf-radius-lg;
-    font-size: 14px;
+    font-size: 28px;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -242,7 +242,7 @@
     color: $cf-on-surface-variant;
     border-radius: $cf-radius-md;
     padding: $cf-spacing-xs $cf-spacing-sm;
-    font-size: 12px;
+    font-size: 24px;
     border: none;
 
     &--active {
@@ -264,11 +264,11 @@
 
   &__emotion-btn {
     flex: 1;
-    height: 48px;
+    height: 96px;
     background-color: $cf-surface-variant;
     color: $cf-on-background;
     border-radius: $cf-radius-lg;
-    font-size: 16px;
+    font-size: 32px;
     font-weight: 500;
     display: flex;
     align-items: center;
@@ -287,9 +287,9 @@
 
   /* 选项描述 */
   &__option-desc {
-    font-size: 12px;
+    font-size: 24px;
     color: $cf-on-surface-variant;
-    margin-top: 4px;
+    margin-top: 8px;
     opacity: 0.8;
 
     .consult-selecting__option--selected & {
@@ -309,8 +309,8 @@
   padding: $cf-spacing-md;
 
   &__skeleton {
-    width: 240px;
-    height: 48px;
+    width: 480px;
+    height: 96px;
     background-color: $cf-surface-variant;
     border-radius: $cf-radius-md;
     border: 2px solid rgba($cf-primary, 0.3);
@@ -319,7 +319,7 @@
   }
 
   &__text {
-    font-size: 14px;
+    font-size: 28px;
     color: $cf-on-surface-variant;
   }
 }
@@ -333,7 +333,7 @@
   overflow-y: auto;
 
   &__status {
-    font-size: 14px;
+    font-size: 28px;
     color: $cf-on-surface-variant;
     text-align: center;
     margin-bottom: $cf-spacing-md;
@@ -354,7 +354,7 @@
   }
 
   &__ai-text {
-    font-size: 16px;
+    font-size: 32px;
     line-height: 1.75;
     color: $cf-on-background;
     word-break: break-all;
@@ -362,10 +362,10 @@
 
   &__cursor {
     display: inline-block;
-    width: 2px;
+    width: 4px;
     height: 1em;
     background-color: $cf-primary;
-    margin-left: 2px;
+    margin-left: 4px;
     vertical-align: middle;
     animation: cf-cursor-pulse 1.5s ease-in-out infinite;
   }
@@ -394,8 +394,8 @@
   }
 
   &__plan-bar {
-    width: 4px;
-    height: 20px;
+    width: 8px;
+    height: 40px;
     border-radius: $cf-radius-full;
     margin-right: $cf-spacing-sm;
     flex-shrink: 0;
@@ -407,7 +407,7 @@
   }
 
   &__plan-title {
-    font-size: 14px;
+    font-size: 28px;
     font-weight: 600;
     color: $cf-on-background;
 
@@ -418,17 +418,17 @@
   }
 
   &__plan-body {
-    font-size: 18px;
+    font-size: 36px;
     line-height: 1.8;
     color: $cf-on-background;
-    padding-left: 12px;
+    padding-left: 24px;
   }
 
   &__plan-line {
-    font-size: 16px;
+    font-size: 32px;
     line-height: 1.75;
     color: $cf-on-background;
-    margin-bottom: 4px;
+    margin-bottom: 8px;
     display: block;
   }
 
@@ -444,7 +444,7 @@
   }
 
   &__user-text {
-    font-size: 16px;
+    font-size: 32px;
     line-height: 1.75;
     color: $cf-on-primary-container;
     word-break: break-all;
@@ -458,19 +458,19 @@
   }
 
   &__done-text {
-    font-size: 14px;
+    font-size: 28px;
     color: $cf-on-surface-variant;
     margin-bottom: $cf-spacing-md;
   }
 
   &__new-btn {
-    width: calc(100% - 32px);
-    max-width: 400px;
-    height: 48px;
+    width: calc(100% - 64px);
+    max-width: 800px;
+    height: 96px;
     background-color: $cf-secondary;
     color: $cf-on-secondary;
     border-radius: $cf-radius-lg;
-    font-size: 16px;
+    font-size: 32px;
     font-weight: 600;
     display: flex;
     align-items: center;
@@ -494,26 +494,26 @@
   padding: $cf-spacing-md;
 
   &__icon {
-    width: 80px;
-    height: 80px;
+    width: 160px;
+    height: 160px;
     background-color: $cf-error-container;
     border-radius: $cf-radius-full;
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 36px;
+    font-size: 72px;
     margin-bottom: $cf-spacing-md;
   }
 
   &__title {
-    font-size: 18px;
+    font-size: 36px;
     font-weight: 600;
     color: $cf-on-background;
     margin-bottom: $cf-spacing-sm;
   }
 
   &__message {
-    font-size: 14px;
+    font-size: 28px;
     color: $cf-error;
     text-align: center;
     margin-bottom: $cf-spacing-lg;
@@ -524,17 +524,17 @@
     display: flex;
     flex-direction: column;
     gap: $cf-spacing-sm;
-    width: calc(100% - 32px);
-    max-width: 400px;
+    width: calc(100% - 64px);
+    max-width: 800px;
   }
 
   &__retry-btn {
     width: 100%;
-    height: 48px;
+    height: 96px;
     background-color: $cf-primary;
     color: $cf-on-primary;
     border-radius: $cf-radius-lg;
-    font-size: 16px;
+    font-size: 32px;
     font-weight: 600;
     display: flex;
     align-items: center;
@@ -548,11 +548,11 @@
 
   &__back-btn {
     width: 100%;
-    height: 48px;
+    height: 96px;
     background-color: transparent;
     color: $cf-secondary;
     border-radius: $cf-radius-lg;
-    font-size: 14px;
+    font-size: 28px;
     display: flex;
     align-items: center;
     justify-content: center;

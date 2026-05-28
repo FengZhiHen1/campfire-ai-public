@@ -8,7 +8,7 @@
 
 /* ========== 导航栏 ========== */
 .detail-navbar {
-  height: 112px;
+  height: 224px;
   background-color: $cf-surface-dim;
   display: flex;
   align-items: center;
@@ -19,12 +19,12 @@
   &__back {
     position: absolute;
     left: $cf-spacing-md;
-    width: 88px;
-    height: 88px;
+    width: 176px;
+    height: 176px;
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 20px;
+    font-size: 40px;
     color: $cf-on-background;
     background: none;
     border: none;
@@ -35,7 +35,7 @@
   }
 
   &__title {
-    font-size: 18px;
+    font-size: 36px;
     font-weight: 600;
     color: $cf-on-background;
   }
@@ -47,7 +47,7 @@
 
   &__skeleton {
     width: 100%;
-    height: 120px;
+    height: 240px;
     background-color: $cf-surface-variant;
     border-radius: $cf-radius-lg;
     border: 2px solid rgba($cf-primary, 0.2);
@@ -62,33 +62,33 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  padding-top: 160px;
+  padding-top: 320px;
 
   &__icon {
-    font-size: 48px;
+    font-size: 96px;
     margin-bottom: $cf-spacing-md;
   }
 
   &__title {
-    font-size: 16px;
+    font-size: 32px;
     font-weight: 600;
     color: $cf-on-background;
     margin-bottom: $cf-spacing-sm;
   }
 
   &__subtitle {
-    font-size: 14px;
+    font-size: 28px;
     color: $cf-on-surface-variant;
     margin-bottom: $cf-spacing-lg;
   }
 
   &__btn {
-    width: 240px;
-    height: 96px;
+    width: 480px;
+    height: 192px;
     background-color: $cf-primary;
     color: $cf-on-primary;
     border-radius: $cf-radius-lg;
-    font-size: 16px;
+    font-size: 32px;
     font-weight: 600;
     display: flex;
     align-items: center;
@@ -121,8 +121,8 @@
   }
 
   &__level-dot {
-    width: 8px;
-    height: 8px;
+    width: 16px;
+    height: 16px;
     border-radius: $cf-radius-full;
 
     &--low { background-color: $cf-tertiary; }
@@ -131,7 +131,7 @@
   }
 
   &__level-text {
-    font-size: 14px;
+    font-size: 28px;
     font-weight: 600;
 
     &--low { color: $cf-tertiary; }
@@ -140,12 +140,12 @@
   }
 
   &__time {
-    font-size: 11px;
+    font-size: 22px;
     color: $cf-on-surface-variant;
   }
 
   &__behavior {
-    font-size: 15px;
+    font-size: 30px;
     color: $cf-on-background;
     line-height: 1.6;
   }
@@ -158,7 +158,7 @@
   margin-bottom: $cf-spacing-sm;
 
   &__title {
-    font-size: 16px;
+    font-size: 32px;
     font-weight: 600;
     color: $cf-on-background;
     margin-bottom: $cf-spacing-md;
@@ -166,7 +166,7 @@
   }
 
   &__para {
-    font-size: 14px;
+    font-size: 28px;
     color: $cf-on-surface;
     line-height: 1.7;
     margin-bottom: $cf-spacing-md;
@@ -178,7 +178,7 @@
   }
 
   &__empty {
-    font-size: 14px;
+    font-size: 28px;
     color: $cf-on-surface-variant;
   }
 }
@@ -194,13 +194,13 @@
   gap: $cf-spacing-sm;
 
   &__icon {
-    font-size: 14px;
+    font-size: 28px;
     flex-shrink: 0;
-    margin-top: 2px;
+    margin-top: 4px;
   }
 
   &__text {
-    font-size: 12px;
+    font-size: 24px;
     color: $cf-on-primary-container;
     line-height: 1.6;
   }
@@ -214,10 +214,10 @@
   gap: $cf-spacing-sm;
 
   &__item {
-    font-size: 11px;
+    font-size: 22px;
     color: $cf-on-surface-variant;
     background-color: $cf-surface-variant;
-    padding: 4px 10px;
+    padding: 8px 20px;
     border-radius: $cf-radius-sm;
 
     &--warn {

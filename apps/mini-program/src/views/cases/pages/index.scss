@@ -6,12 +6,12 @@
   background-color: $cf-background;
   display: flex;
   flex-direction: column;
-  padding-bottom: calc(96px + env(safe-area-inset-bottom));
+  padding-bottom: calc(192px + env(safe-area-inset-bottom));
 }
 
 /* ========== 顶部导航栏 ========== */
 .cases-navbar {
-  height: 112px;
+  height: 224px;
   background-color: $cf-surface-dim;
   display: flex;
   align-items: center;
@@ -20,7 +20,7 @@
   padding: 0 $cf-spacing-md;
 
   &__title {
-    font-size: 18px;
+    font-size: 36px;
     font-weight: 600;
     color: $cf-on-background;
   }
@@ -35,11 +35,11 @@
 
   &__btn {
     flex: 1;
-    height: 40px;
+    height: 80px;
     background-color: $cf-surface-variant;
     color: $cf-on-surface-variant;
     border-radius: $cf-radius-md;
-    font-size: 14px;
+    font-size: 28px;
     font-weight: 500;
     display: flex;
     align-items: center;
@@ -68,19 +68,19 @@
     align-items: center;
     background-color: $cf-surface-variant;
     border-radius: $cf-radius-md;
-    height: 48px;
+    height: 96px;
     padding: 0 $cf-spacing-md;
   }
 
   &__icon {
-    font-size: 16px;
+    font-size: 32px;
     color: $cf-on-surface-variant;
     margin-right: $cf-spacing-sm;
   }
 
   &__input {
     flex: 1;
-    font-size: 14px;
+    font-size: 28px;
     color: $cf-on-background;
     background: transparent;
     border: none;
@@ -111,11 +111,11 @@
     background-color: $cf-surface;
     border-radius: $cf-radius-md;
     padding: $cf-spacing-xs $cf-spacing-md;
-    min-height: 32px;
+    min-height: 64px;
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 4px;
+    gap: 8px;
     border: none;
 
     &--active {
@@ -124,7 +124,7 @@
   }
 
   &__picker-text {
-    font-size: 12px;
+    font-size: 24px;
     font-weight: 500;
     color: $cf-on-background;
 
@@ -134,7 +134,7 @@
   }
 
   &__picker-chevron {
-    font-size: 10px;
+    font-size: 20px;
     color: $cf-on-surface-variant;
   }
 }
@@ -158,7 +158,7 @@
     position: absolute;
     top: 0;
     left: 0;
-    width: 4px;
+    width: 8px;
     height: 100%;
 
     &--a { background-color: $cf-tertiary; }
@@ -172,7 +172,7 @@
   }
 
   &__body {
-    padding-left: 12px;
+    padding-left: 24px;
   }
 
   &__header {
@@ -184,7 +184,7 @@
 
   &__title {
     flex: 1;
-    font-size: 16px;
+    font-size: 32px;
     font-weight: 600;
     color: $cf-on-background;
     line-height: 1.5;
@@ -197,8 +197,8 @@
 
   /* 循证等级徽章 */
   &__badge {
-    width: 32px;
-    height: 32px;
+    width: 64px;
+    height: 64px;
     border-radius: $cf-radius-full;
     display: flex;
     align-items: center;
@@ -229,15 +229,15 @@
   }
 
   &__badge-letter {
-    font-size: 14px;
+    font-size: 28px;
     font-weight: 700;
     line-height: 1;
   }
 
   &__badge-level {
-    font-size: 10px;
+    font-size: 20px;
     line-height: 1;
-    margin-top: 2px;
+    margin-top: 4px;
   }
 
   /* 标签行 */
@@ -250,9 +250,9 @@
 
   &__tag {
     display: inline-block;
-    font-size: 11px;
+    font-size: 22px;
     font-weight: 500;
-    padding: 4px 10px;
+    padding: 8px 20px;
     border-radius: $cf-radius-md;
 
     &--primary {
@@ -276,8 +276,8 @@
   }
 
   &__status-dot {
-    width: 8px;
-    height: 8px;
+    width: 16px;
+    height: 16px;
     border-radius: $cf-radius-full;
 
     &--approved { background-color: $cf-tertiary; }
@@ -287,12 +287,12 @@
   }
 
   &__status-text {
-    font-size: 12px;
+    font-size: 24px;
     color: $cf-on-surface-variant;
   }
 
   &__time {
-    font-size: 12px;
+    font-size: 24px;
     color: rgba($cf-on-surface-variant, 0.5);
     margin-left: auto;
   }
@@ -301,17 +301,17 @@
 /* ========== FAB 按钮 ========== */
 .cases-fab {
   position: fixed;
-  right: 24px;
-  bottom: calc(96px + env(safe-area-inset-bottom));
-  width: 56px;
-  height: 56px;
+  right: 48px;
+  bottom: calc(192px + env(safe-area-inset-bottom));
+  width: 112px;
+  height: 112px;
   background-color: $cf-primary;
   color: $cf-on-primary;
   border-radius: $cf-radius-full;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 24px;
+  font-size: 48px;
   font-weight: 300;
   border: none;
   z-index: 100;
@@ -336,7 +336,7 @@
 
 .cases-loading__skeleton {
   width: 100%;
-  height: 240px;
+  height: 480px;
   background-color: $cf-surface-variant;
   border-radius: $cf-radius-lg;
   border: 2px solid rgba($cf-primary, 0.2);
@@ -345,26 +345,26 @@
 }
 
 .cases-empty__icon {
-  width: 120px;
-  height: 120px;
+  width: 240px;
+  height: 240px;
   background-color: $cf-primary-container;
   border-radius: $cf-radius-full;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 48px;
+  font-size: 96px;
   margin-bottom: $cf-spacing-md;
 }
 
 .cases-empty__title {
-  font-size: 18px;
+  font-size: 36px;
   font-weight: 600;
   color: $cf-on-background;
   margin-bottom: $cf-spacing-sm;
 }
 
 .cases-empty__subtitle {
-  font-size: 14px;
+  font-size: 28px;
   color: $cf-on-surface-variant;
   text-align: center;
   margin-bottom: $cf-spacing-lg;
@@ -372,12 +372,12 @@
 
 .cases-empty__btn,
 .cases-error__retry-btn {
-  width: 240px;
-  height: 48px;
+  width: 480px;
+  height: 96px;
   background-color: $cf-primary;
   color: $cf-on-primary;
   border-radius: $cf-radius-lg;
-  font-size: 16px;
+  font-size: 32px;
   font-weight: 600;
   display: flex;
   align-items: center;
