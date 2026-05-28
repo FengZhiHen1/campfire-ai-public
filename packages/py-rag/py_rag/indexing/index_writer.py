@@ -31,7 +31,7 @@ MAX_RETRY_COUNT: int = 2  # 共 3 次尝试（1 主 + 2 重试）
 
 
 async def write_index_to_pgvector(
-    case_id: str,
+    card_id: str,
     chunk_text: str,
     embedding: list[float],
     metadata: ChunkMetadata,
@@ -42,7 +42,7 @@ async def write_index_to_pgvector(
     内嵌最多 2 次重试（间隔 1s）。
 
     Args:
-        case_id: 案例 UUID 字符串。
+        card_id: L2 卡片 UUID 字符串。
         chunk_text: 拼接后的四要素文本。
         embedding: 1024 维嵌入向量列表。
         metadata: ChunkMetadata 对象（序列化为 JSONB）。
@@ -57,13 +57,13 @@ async def write_index_to_pgvector(
     now_iso = datetime.now(timezone.utc).isoformat()
 
     insert_sql = text("""
-        INSERT INTO case_chunks (id, case_id, chunk_text, embedding, metadata, created_at)
-        VALUES (:id, :case_id, :chunk_text, :embedding::vector(1024), :metadata::jsonb, :created_at)
+        INSERT INTO case_chunks (id, card_id, chunk_text, embedding, metadata, created_at)
+        VALUES (:id, :card_id, :chunk_text, :embedding::vector(1024), :metadata::jsonb, :created_at)
     """)
 
     params: dict[str, object] = {
         "id": chunk_id,
-        "case_id": case_id,
+        "card_id": card_id,
         "chunk_text": chunk_text,
         "embedding": json.dumps(embedding),
         "metadata": json.dumps(metadata_dict, ensure_ascii=False),
@@ -81,7 +81,7 @@ async def write_index_to_pgvector(
                 "pgvector 索引写入成功",
                 op_type="index_write",
                 extra={
-                    "case_id": case_id,
+                    "card_id": case_id,
                     "chunk_id": chunk_id,
                     "phase": "write_index",
                 },
@@ -98,7 +98,7 @@ async def write_index_to_pgvector(
                     f"pgvector 写入失败，{RETRY_INTERVAL}s 后重试",
                     op_type="index_write_retry",
                     extra={
-                        "case_id": case_id,
+                        "card_id": case_id,
                         "attempt": attempt + 1,
                         "max_attempts": MAX_RETRY_COUNT + 1,
                         "error": str(exc),
@@ -112,7 +112,7 @@ async def write_index_to_pgvector(
                     "pgvector 索引写入重试耗尽",
                     op_type="index_write_exhausted",
                     extra={
-                        "case_id": case_id,
+                        "card_id": case_id,
                         "retry_count": MAX_RETRY_COUNT,
                         "error": str(last_error),
                         "phase": "write_index",

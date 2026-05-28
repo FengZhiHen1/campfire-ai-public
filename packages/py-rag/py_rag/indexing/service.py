@@ -68,20 +68,20 @@ async def enqueue_index_task(
 
     # 步骤 1：输入校验与状态查询
     query_sql = text(
-        """SELECT id, status, index_status FROM cases WHERE id = :case_id"""
+        """SELECT card_id, review_status, index_status FROM case_cards WHERE card_id = :card_id"""
     )
-    result = await db_session.execute(query_sql, {"case_id": case_id_str})
+    result = await db_session.execute(query_sql, {"card_id": case_id_str})
     row = result.fetchone()
 
     if row is None:
         raise ValueError(f"案例 {case_id_str} 不存在")
 
     row_dict: dict[str, Any] = dict(row._mapping)
-    case_status: str | None = row_dict.get("status")
+    review_status: str | None = row_dict.get("review_status")
     index_status: str | None = row_dict.get("index_status")
 
     # 步骤 2：状态分支判断
-    if case_status != "approved":
+    if review_status != "approved":
         raise ValueError(
             f"案例 {case_id_str} 未审核通过，当前状态: {case_status}"
         )
@@ -145,16 +145,16 @@ async def enqueue_index_task(
                     "索引队列不可用，案例索引入库暂时中断"
                 ) from exc
 
-    # UPDATE cases SET index_status = 'pending'（CAS 原子更新）
+    # UPDATE case_cards SET index_status = 'pending'（CAS 原子更新）
     update_sql = text("""
-        UPDATE cases
+        UPDATE case_cards
         SET index_status = 'pending'
-        WHERE id = :case_id
+        WHERE card_id = :card_id
           AND (index_status IS NULL
                OR index_status = 'indexing_failed'
                OR index_status NOT IN ('pending', 'processing', 'indexed'))
     """)
-    update_result = await db_session.execute(update_sql, {"case_id": case_id_str})
+    update_result = await db_session.execute(update_sql, {"card_id": case_id_str})
     await db_session.commit()
 
     if update_result.rowcount == 0:
@@ -199,8 +199,8 @@ async def manual_retry_index(
 
     case_id_str = str(case_id)
 
-    query_sql = text("SELECT index_status FROM cases WHERE id = :case_id")
-    result = await db_session.execute(query_sql, {"case_id": case_id_str})
+    query_sql = text("SELECT index_status FROM case_cards WHERE card_id = :card_id")
+    result = await db_session.execute(query_sql, {"card_id": case_id_str})
     row = result.fetchone()
 
     if row is None:

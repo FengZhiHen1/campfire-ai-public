@@ -174,12 +174,12 @@ async def _process_task(
 ) -> None:
     """处理单个索引任务（步骤 5-9）。"""
 
-    # 步骤 5：更新状态为 processing + 读取案例数据
+    # 步骤 5：更新状态为 processing（case_cards 表）
     update_sql = text("""
-        UPDATE cases SET index_status = 'processing'
-        WHERE case_id = :case_id AND index_status = 'pending'
+        UPDATE case_cards SET index_status = 'processing'
+        WHERE card_id = :card_id AND index_status = 'pending'
     """)
-    result = await session.execute(update_sql, {"case_id": case_id})
+    result = await session.execute(update_sql, {"card_id": case_id})
     if result.rowcount == 0:
         logger.info(
             "py-rag",
@@ -190,13 +190,17 @@ async def _process_task(
         await session.commit()
         return
 
+    # 查询 case_cards 表（L2 结构化卡片）
     query_case_sql = text("""
-        SELECT case_id, title, immediate_action, comforting_phrase,
-               observation_metrics, medical_criteria, behavior_type,
-               severity, age_range_min, age_range_max, evidence_level, scene, narrative
-        FROM cases WHERE case_id = :case_id
+        SELECT cd.card_id, cd.title, cd.immediate_action, cd.comforting_phrase,
+               cd.observation_metrics, cd.medical_criteria, cd.behavior_type,
+               cd.severity, cd.age_range_min, cd.age_range_max, cd.evidence_level,
+               cd.scene, cn.narrative
+        FROM case_cards cd
+        JOIN case_narratives cn ON cn.narrative_id = cd.narrative_id
+        WHERE cd.card_id = :card_id
     """)
-    case_result = await session.execute(query_case_sql, {"case_id": case_id})
+    case_result = await session.execute(query_case_sql, {"card_id": case_id})
     case_row = case_result.fetchone()
 
     if case_row is None:
@@ -204,12 +208,14 @@ async def _process_task(
             "py-rag",
             "案例数据读取失败：行不存在",
             op_type="worker_error",
-            extra={"case_id": case_id, "trace_id": trace_id, "phase": "read_case"},
+            extra={"card_id": case_id, "trace_id": trace_id, "phase": "read_case"},
         )
-        await _mark_indexing_failed(session, case_id, trace_id, "案例不存在", "read_case")
+        await _mark_indexing_failed(session, case_id, trace_id, "卡片不存在", "read_case")
         return
 
     case_data: dict[str, Any] = dict(case_row._mapping)
+    # 兼容 chunk_builder 期望的字段名
+    case_data["case_id"] = case_data.get("card_id", case_id)
     await session.commit()
 
     # 步骤 6：文本组装与 PII 最终防线校验
@@ -259,7 +265,7 @@ async def _process_task(
     # 步骤 8：写入 pgvector 索引
     try:
         await write_index_to_pgvector(
-            case_id=case_id,
+            card_id=case_id,
             chunk_text=chunk_text,
             embedding=embedding,
             metadata=metadata,
@@ -286,11 +292,11 @@ async def _mark_indexing_failed(
     error: str,
     phase: str,
 ) -> None:
-    """将案例索引状态更新为 indexing_failed。"""
+    """将卡片索引状态更新为 indexing_failed。"""
     update_sql = text("""
-        UPDATE cases SET index_status = 'indexing_failed' WHERE case_id = :case_id
+        UPDATE case_cards SET index_status = 'indexing_failed' WHERE card_id = :card_id
     """)
-    await session.execute(update_sql, {"case_id": case_id})
+    await session.execute(update_sql, {"card_id": case_id})
     await session.commit()
 
     logger.error(
@@ -311,16 +317,16 @@ async def _mark_indexed(
     case_id: str,
     trace_id: str,
 ) -> None:
-    """更新案例索引状态为 indexed。"""
+    """更新卡片索引状态为 indexed。"""
     now_iso = datetime.now(timezone.utc).isoformat()
 
     update_sql = text("""
-        UPDATE cases
+        UPDATE case_cards
         SET index_status = 'indexed', indexed_at = :indexed_at
-        WHERE case_id = :case_id AND index_status = 'processing'
+        WHERE card_id = :card_id AND index_status = 'processing'
     """)
     result = await session.execute(
-        update_sql, {"case_id": case_id, "indexed_at": now_iso}
+        update_sql, {"card_id": case_id, "indexed_at": now_iso}
     )
     await session.commit()
 
