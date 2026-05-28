@@ -34,6 +34,48 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 PROJECT_NAME = "篝火智答 (Campfire-AI)"
 
+# Preset startup modes (spec: 避免 h5/weapp 同时启动导致 dist/ 目录竞态)
+PRESET_MODES: dict[str, dict] = {
+    "1": {
+        "key": "fullstack-h5",
+        "name": "全栈 H5 开发",
+        "desc": "API + Worker + H5 (port 5173)",
+        "services": ["api", "worker", "web-h5"],
+    },
+    "2": {
+        "key": "fullstack-weapp",
+        "name": "全栈小程序开发",
+        "desc": "API + Worker + 微信小程序",
+        "services": ["api", "worker", "web-weapp"],
+    },
+    "3": {
+        "key": "backend",
+        "name": "仅后端",
+        "desc": "API + Worker",
+        "services": ["api", "worker"],
+    },
+    "4": {
+        "key": "frontend-h5",
+        "name": "仅前端 H5",
+        "desc": "H5 only (port 5173)",
+        "services": ["web-h5"],
+    },
+    "5": {
+        "key": "frontend-weapp",
+        "name": "仅前端小程序",
+        "desc": "微信小程序 only",
+        "services": ["web-weapp"],
+    },
+    "6": {
+        "key": "custom",
+        "name": "自定义",
+        "desc": "逐个选择服务",
+        "services": [],  # resolved via sub-menu
+    },
+}
+
+MODE_BY_KEY: dict[str, str] = {m["key"]: num for num, m in PRESET_MODES.items()}
+
 AVAILABLE_SERVICES: dict[str, str] = {
     "api": "API 服务 (FastAPI, port 8000)",
     "worker": "Worker 服务 (Redis 消费者)",
@@ -67,6 +109,7 @@ from utils.log_utils import (  # noqa: E402
     print_warning,
 )
 from utils.process_utils import read_output, terminate_process  # noqa: E402
+from start_ngrok import start_ngrok, cleanup_ngrok_url_file  # noqa: E402
 from utils.check_utils import (  # noqa: E402
     check_docker_available,
     check_env_file,
@@ -202,6 +245,9 @@ def start_services(
 ) -> list[tuple]:
     """Start selected services and return list of (proc, name, module).
 
+    When both API and weapp are selected, automatically starts ngrok tunnel
+    and writes the public URL to .ngrok-url for the mini-program build.
+
     Returns empty list if any service fails to start.
     """
     print_separator()
@@ -209,6 +255,7 @@ def start_services(
     print_stage("阶段二：服务启动")
 
     procs: list[tuple] = []
+    ngrok_proc = None
 
     # --- Infrastructure (Docker compose up) ---
     if not skip_infra:
@@ -267,6 +314,19 @@ def start_services(
 
     # --- Web-Weapp (小程序) ---
     if "web-weapp" in services:
+        # Start ngrok tunnel if API is also running (auto-detect)
+        if "api" in services:
+            try:
+                print()
+                print_info("正在启动 ngrok 内网穿透...")
+                ngrok_proc, ngrok_url = start_ngrok(port=8000)
+                procs.append((ngrok_proc, "ngrok"))
+                print_check_ok("ngrok", f"公网地址: {ngrok_url}")
+                print()
+            except Exception as exc:
+                print_warning(f"ngrok 启动失败: {exc}")
+                print_warning("小程序将使用本地地址 http://127.0.0.1:8000")
+
         try:
             from start_web import start as start_web
 
@@ -333,6 +393,9 @@ def shutdown(procs: list[tuple], stop_event: threading.Event) -> None:
         else:
             print_service_terminated_forced()
 
+    # Clean up ngrok URL file
+    cleanup_ngrok_url_file()
+
     print()
     print_exit_footer()
 
@@ -342,15 +405,14 @@ def shutdown(procs: list[tuple], stop_event: threading.Event) -> None:
 # ====================================================================
 
 
-def _interactive_menu() -> list[str]:
-    """Display interactive service selection menu. Returns list of service keys."""
-    print_info("请选择要启动的服务（输入编号，多个以逗号分隔，回车=全部）:")
+def _custom_service_menu() -> list[str]:
+    """Individual service selection with mutual exclusion for h5/weapp."""
+    print()
+    print_info("选择要启动的服务（多选，逗号分隔，回车=全部）:")
     print()
     items = list(AVAILABLE_SERVICES.items())
     for i, (key, desc) in enumerate(items, 1):
         print(f"  {i}. {desc}")
-    print()
-    print("  0. 仅启动基础设施 (Docker 容器)")
     print()
 
     try:
@@ -362,7 +424,6 @@ def _interactive_menu() -> list[str]:
     if not raw:
         return list(AVAILABLE_SERVICES.keys())
 
-    # Parse comma-separated numbers
     selected: list[str] = []
     for part in raw.split(","):
         part = part.strip()
@@ -373,12 +434,45 @@ def _interactive_menu() -> list[str]:
         except ValueError:
             print_warning(f"忽略无效输入: {part}")
             continue
-        if idx == 0:
-            return []  # infrastructure only
         if 1 <= idx <= len(items):
             selected.append(items[idx - 1][0])
 
+    # h5 和 weapp 共享 dist/ 构建目录，同时启动会产生竞态导致 ENOENT
+    if "web-h5" in selected and "web-weapp" in selected:
+        print_warning("H5 和小程序共享构建目录，不能同时启动。请只选择其中一个。")
+        return []
+
     return selected
+
+
+def _interactive_menu() -> list[str]:
+    """Two-stage menu: preset mode → (if custom) individual service selection."""
+    print_info("请选择启动模式:")
+    print()
+    for num in ["1", "2", "3", "4", "5", "6"]:
+        m = PRESET_MODES[num]
+        print(f"  {num}. {m['name']:<18s} {m['desc']}")
+    print()
+    print("  0. 仅启动基础设施 (Docker 容器)")
+    print()
+
+    try:
+        raw = input("请输入: ").strip()
+    except (EOFError, KeyboardInterrupt):
+        print()
+        return []
+
+    if raw == "0":
+        return []  # infrastructure only
+    if raw == "":
+        return PRESET_MODES["1"]["services"]  # default: fullstack-h5
+    if raw in PRESET_MODES:
+        if raw == "6":
+            return _custom_service_menu()
+        return PRESET_MODES[raw]["services"]
+
+    print_warning(f"无效选项: {raw}，使用默认模式 (全栈 H5)")
+    return PRESET_MODES["1"]["services"]
 
 
 # ====================================================================
@@ -392,15 +486,24 @@ def _parse_args() -> argparse.Namespace:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=(
             "示例:\n"
-            "  python scripts/start.py                       交互式菜单\n"
-            "  python scripts/start.py --services api,worker  启动 API + Worker\n"
-            "  python scripts/start.py --all                   启动全部服务\n"
-            "  python scripts/start.py --all --skip-infra      跳过 Docker，直接启动应用\n"
-            "  python scripts/start.py --all --skip-checks     跳过前置检查\n"
+            "  python scripts/start.py                                交互式菜单\n"
+            "  python scripts/start.py --mode fullstack-h5             全栈 H5 开发\n"
+            "  python scripts/start.py --mode backend                  仅后端\n"
+            "  python scripts/start.py --services api,worker           自定义组合\n"
+            "  python scripts/start.py --all --skip-infra              跳过 Docker\n"
+            "  python scripts/start.py --all --skip-checks             跳过前置检查\n"
+            "\n"
+            "可用模式: fullstack-h5, fullstack-weapp, backend, frontend-h5, frontend-weapp, custom"
         ),
     )
 
     group = parser.add_mutually_exclusive_group()
+    group.add_argument(
+        "--mode",
+        type=str,
+        default=None,
+        help="预设启动模式",
+    )
     group.add_argument(
         "--services",
         type=str,
@@ -411,7 +514,7 @@ def _parse_args() -> argparse.Namespace:
         "--all",
         action="store_true",
         default=False,
-        help="启动全部服务",
+        help="启动全部服务（不含 web-weapp，避免 dist/ 竞态）",
     )
 
     parser.add_argument(
@@ -439,14 +542,34 @@ def main() -> None:
     args = _parse_args()
 
     # --- Determine target services ---
-    if args.all:
-        services = list(AVAILABLE_SERVICES.keys())
+    if args.mode:
+        # Resolve preset mode key → service list
+        if args.mode == "custom":
+            services = _custom_service_menu()
+            if not services:
+                print_error("未选择任何服务。")
+                sys.exit(1)
+        elif args.mode in MODE_BY_KEY:
+            services = list(PRESET_MODES[MODE_BY_KEY[args.mode]]["services"])
+        else:
+            print_error(f"未知模式: {args.mode}")
+            print_info(
+                f"可用模式: {', '.join(MODE_BY_KEY.keys())}"
+            )
+            sys.exit(1)
+    elif args.all:
+        # --all 不再包含 web-weapp，避免 dist/ 竞态
+        services = ["api", "worker", "web-h5"]
     elif args.services:
         services = [s.strip() for s in args.services.split(",") if s.strip()]
         invalid = [s for s in services if s not in AVAILABLE_SERVICES]
         if invalid:
             print_error(f"未知服务: {', '.join(invalid)}")
             print_info(f"可用服务: {', '.join(AVAILABLE_SERVICES.keys())}")
+            sys.exit(1)
+        # 自定义模式也做互斥保护
+        if "web-h5" in services and "web-weapp" in services:
+            print_error("H5 和小程序共享构建目录，不能同时启动。请只选择其中一个。")
             sys.exit(1)
     else:
         services = _interactive_menu()
