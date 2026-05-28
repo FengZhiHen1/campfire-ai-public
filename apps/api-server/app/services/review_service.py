@@ -137,11 +137,11 @@ async def _enqueue_index_async(case_id: str) -> None:
         settings = get_settings()
         redis_client = redis.from_url(str(settings.REDIS_URL), decode_responses=True)
         payload = json.dumps({"task": "index_case", "case_id": case_id})
-        redis_client.lpush("campfire:case_index", payload)
+        redis_client.lpush("index:queue:case_chunks", payload)
         redis_client.close()
         _logger.info(
             "index_enqueue_success",
-            extra={"case_id": case_id, "queue": "campfire:case_index"},
+            extra={"case_id": case_id, "queue": "index:queue:case_chunks"},
         )
     except SystemExit:
         # 配置加载失败时不应导致后台任务崩溃
