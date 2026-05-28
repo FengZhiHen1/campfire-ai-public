@@ -6,6 +6,7 @@ module.exports = {
   mini: {},
   h5: {
     devServer: {
+      port: 5173,
       proxy: {
         '/api': {
           target: 'http://localhost:8000',
