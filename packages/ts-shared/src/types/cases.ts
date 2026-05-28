@@ -117,6 +117,9 @@ export interface CaseListItem {
   scene: string;
   author_id: string;
   is_template: boolean;
+  evidence_level: string;
+  age_range: string;
+  citation_count: number;
   created_at: string; // ISO datetime
   updated_at: string; // ISO datetime
 }

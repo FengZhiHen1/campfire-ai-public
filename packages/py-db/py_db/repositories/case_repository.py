@@ -16,7 +16,7 @@ import logging
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import and_, func, select, text, update as sa_update
+from sqlalchemy import and_, func, or_, select, text, update as sa_update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.inspection import inspect as sa_inspect
 from sqlalchemy.sql import Select, func as sa_func
@@ -130,29 +130,29 @@ class CaseRepository(BaseRepository[Case]):
         status: CaseStatus | None = None,
         author_id: str | None = None,
         behavior_type: str | None = None,
+        evidence_level: str | None = None,
+        keyword: str | None = None,
+        sort_by: str | None = None,
         page: int = 1,
         page_size: int = 15,
     ) -> tuple[list[Case], int]:
-        """按状态、作者和行为类型筛选案例，支持分页。
-
-        查询结果按 created_at 倒序排列。
-        同时返回匹配总数用于分页计算。
+        """按多条件筛选案例，支持分页、搜索和动态排序。
 
         Args:
             session: 活动数据库会话。
             status: 可选状态筛选（draft/pending_review/rejected）。
             author_id: 可选作者筛选。
             behavior_type: 可选行为类型筛选。
+            evidence_level: 可选循证等级筛选（A/B/C/D）。
+            keyword: 可选关键词（模糊匹配 title/behavior_type/scene）。
+            sort_by: 可选排序方式（latest/evidence/cited/updated）。
             page: 页码，从 1 开始。
             page_size: 每页条数，默认 15。
 
         Returns:
-            (cases, total_count) 元组：
-            - cases: 当前页的案例列表。
-            - total_count: 匹配条件的总记录数。
+            (cases, total_count) 元组。
         """
         async def _query() -> tuple[list[Case], int]:
-            # 构建基础查询条件
             conditions: list[Any] = []
             if status is not None:
                 conditions.append(self.model.status == status)
@@ -160,6 +160,17 @@ class CaseRepository(BaseRepository[Case]):
                 conditions.append(self.model.author_id == author_id)
             if behavior_type is not None:
                 conditions.append(self.model.behavior_type == behavior_type)
+            if evidence_level is not None:
+                conditions.append(self.model.evidence_level == evidence_level)
+            if keyword is not None:
+                kw = f"%{keyword}%"
+                conditions.append(
+                    or_(
+                        self.model.title.ilike(kw),
+                        self.model.behavior_type.ilike(kw),
+                        self.model.scene.ilike(kw),
+                    )
+                )
 
             # 总数查询
             count_stmt: Select = select(sa_func.count()).select_from(self.model)
@@ -168,12 +179,19 @@ class CaseRepository(BaseRepository[Case]):
             count_result = await session.execute(count_stmt)
             total_count: int = count_result.scalar() or 0
 
+            # 排序字段映射
+            sort_column = {
+                "evidence": self.model.evidence_level,
+                "cited": self.model.citation_count,
+                "updated": self.model.updated_at,
+            }.get(sort_by or "", self.model.created_at)
+
             # 分页查询
             offset: int = (page - 1) * page_size
             data_stmt: Select = (
                 select(self.model)
                 .where(*conditions if conditions else [True])
-                .order_by(self.model.created_at.desc())
+                .order_by(sort_column.desc())
                 .offset(offset)
                 .limit(page_size)
             )

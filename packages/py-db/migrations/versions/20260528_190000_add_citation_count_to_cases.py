@@ -1,0 +1,34 @@
+"""为 cases 表添加 citation_count 列以支持案例引用计数排序。
+
+Revision ID: 20260528_190000
+Create Date: 2026-05-28 19:00:00
+"""
+
+from __future__ import annotations
+
+from typing import Sequence, Union
+
+from alembic import op
+import sqlalchemy as sa
+
+revision: str = "20260528_190000"
+down_revision: Union[str, None] = "811914200e96"
+branch_labels: Union[str, Sequence[str], None] = None
+depends_on: Union[str, Sequence[str], None] = None
+
+
+def upgrade() -> None:
+    op.add_column(
+        "cases",
+        sa.Column(
+            "citation_count",
+            sa.Integer(),
+            nullable=False,
+            server_default=sa.text("0"),
+            comment="被引用次数",
+        ),
+    )
+
+
+def downgrade() -> None:
+    op.drop_column("cases", "citation_count")

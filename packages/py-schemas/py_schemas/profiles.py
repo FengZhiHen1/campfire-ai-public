@@ -867,6 +867,23 @@ class EventListItem(BaseModel):
 
 
 # ===========================================================================
+# PROF-05 — 专家信息 DTO
+# ===========================================================================
+
+
+class ExpertInfo(BaseModel):
+    """关联专家信息条目。"""
+
+    expert_id: str = Field(..., description="专家用户 UUID")
+    link_id: str = Field(..., description="关联记录 UUID")
+    name: str = Field(..., description="专家姓名")
+    role: str = Field(..., description="关联角色（teacher/expert）")
+    created_at: datetime = Field(..., description="关联创建时间")
+
+    model_config = {"extra": "forbid"}
+
+
+# ===========================================================================
 # 模块导出
 # ===========================================================================
 
@@ -877,6 +894,7 @@ __all__ = [
     "VisibleScope",
     "AccessRequest",
     "AccessDecision",
+    "ExpertInfo",
     # PROF-01 枚举
     "DiagnosisType",
     "ProfileBehaviorType",

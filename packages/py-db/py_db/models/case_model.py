@@ -131,6 +131,12 @@ class Case(Base, TimestampMixin):
         default=False,
         comment="是否模板",
     )
+    citation_count: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=0,
+        comment="被引用次数",
+    )
 
     # ---- 选填字段 ----
     excluded_population: Mapped[str | None] = mapped_column(

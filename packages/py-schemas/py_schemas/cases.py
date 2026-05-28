@@ -392,6 +392,9 @@ class CaseListItem(BaseModel):
     scene: str = Field(..., description="发生场景")
     author_id: str = Field(..., description="撰写专家标识")
     is_template: bool = Field(..., description="是否模板")
+    evidence_level: str = Field(..., description="循证等级（A/B/C/D）")
+    age_range: str = Field(..., description="适用年龄范围（如 3-6岁）")
+    citation_count: int = Field(default=0, description="被引用次数")
     created_at: datetime = Field(..., description="创建时间")
     updated_at: datetime = Field(..., description="最后编辑时间")
 

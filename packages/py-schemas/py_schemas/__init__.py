@@ -38,6 +38,12 @@ from py_schemas.profiles import (
     AccessRequest,
     AgeRange,
     DiagnosisType,
+    EventCreate,
+    EventListItem,
+    EventResponse,
+    EventSetting,
+    EventUpdate,
+    ExpertInfo,
     LanguageLevel,
     ProfileBehaviorType,
     ProfileCreate,
@@ -48,6 +54,7 @@ from py_schemas.profiles import (
     Trigger,
     VisibleScope,
 )
+from py_schemas.profiles import SeverityLevel as EventSeverityLevel
 from py_schemas.streaming import (
     ChunkEvent,
     DoneEvent,
@@ -71,6 +78,7 @@ __all__ = [
     "VisibleScope",
     "AccessRequest",
     "AccessDecision",
+    "ExpertInfo",
     # PROF-01 — 个人档案管理
     "DiagnosisType",
     "ProfileBehaviorType",
@@ -82,6 +90,13 @@ __all__ = [
     "ProfileUpdate",
     "ProfileResponse",
     "ProfileListItem",
+    # PROF-03 — 事件记录管理
+    "EventSeverityLevel",
+    "EventSetting",
+    "EventCreate",
+    "EventUpdate",
+    "EventResponse",
+    "EventListItem",
     # CASE-01 — 案例录入管理
     "CaseStatus",
     "SourceType",

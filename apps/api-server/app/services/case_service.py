@@ -157,9 +157,19 @@ def _orm_to_case_list_item(case: Case) -> CaseListItem:
         scene=case.scene,
         author_id=case.author_id,
         is_template=case.is_template,
+        evidence_level=case.evidence_level,
+        age_range=_format_age_range(case.age_range_min, case.age_range_max),
+        citation_count=case.citation_count,
         created_at=case.created_at,
         updated_at=case.updated_at,
     )
+
+
+def _format_age_range(min_val: int, max_val: int) -> str:
+    """将年龄区间整数转换为展示字符串。"""
+    if max_val >= 18:
+        return f"{min_val}岁以上"
+    return f"{min_val}-{max_val}岁"
 
 
 def _convert_pii_warnings(
@@ -672,6 +682,9 @@ async def get_case(
 async def list_cases(
     status_filter: Optional[str],
     behavior_type_filter: Optional[str],
+    evidence_level: Optional[str],
+    sort_by: Optional[str],
+    keyword: Optional[str],
     page: int,
     page_size: int,
     scope: Optional[str],
@@ -684,6 +697,9 @@ async def list_cases(
     Args:
         status_filter: 可选状态筛选（draft/pending_review/rejected）。
         behavior_type_filter: 可选行为类型筛选。
+        evidence_level: 可选循证等级筛选（A/B/C/D）。
+        sort_by: 排序方式（latest/evidence/cited/updated）。
+        keyword: 搜索关键词（模糊匹配标题/行为类型/场景）。
         page: 页码，从 1 开始。
         page_size: 每页条数。
         scope: 查询范围，public=仅已审核，my=当前用户案例。
@@ -717,6 +733,9 @@ async def list_cases(
         status=status_enum,
         author_id=author_id,
         behavior_type=behavior_type_filter,
+        evidence_level=evidence_level,
+        keyword=keyword,
+        sort_by=sort_by,
         page=page,
         page_size=page_size,
     )
