@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { View, Text, Button } from '@tarojs/components';
+import { View, Text, Button, Input } from '@tarojs/components';
 import Taro from '@tarojs/taro';
 import { listNarratives, type NarrativeListItem } from '../../../logics/cases/services/narrativeApi';
 import './index.scss';
@@ -36,6 +36,7 @@ export default function CasesIndex() {
   const [items, setItems] = useState<NarrativeListItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [activeTab, setActiveTab] = useState<'public' | 'my'>('public');
+  const [searchKeyword, setSearchKeyword] = useState('');
 
   const load = async () => {
     setLoading(true);
@@ -77,7 +78,7 @@ export default function CasesIndex() {
       <View className="cases-tabs">
         <Button
           className={`cases-tabs__btn ${activeTab === 'public' ? 'cases-tabs__btn--active' : ''}`}
-          onClick={() => { setActiveTab('public'); setStatusIdx(0); }}
+          onClick={() => { setActiveTab('public'); }}
         >
           公共案例库
         </Button>
@@ -93,7 +94,13 @@ export default function CasesIndex() {
       <View className="cases-search">
         <View className="cases-search__input-wrap">
           <Text className="cases-search__icon">🔍</Text>
-          <Text className="cases-search__input">搜索案例库…</Text>
+          <Input
+            className="cases-search__input"
+            type="text"
+            placeholder="搜索案例库…"
+            value={searchKeyword}
+            onInput={(e) => setSearchKeyword(e.detail.value)}
+          />
         </View>
       </View>
 
@@ -134,12 +141,12 @@ export default function CasesIndex() {
               <View className="case-card__body">
                 <View className="case-card__header">
                   <Text className="case-card__title">{item.title}</Text>
-                  <View className="case-card__badge">
-                    <Text className="case-card__badge-text">{item.card_count} 卡片</Text>
+                  <View className={`case-card__badge case-card__badge--d`}>
+                    <Text className="case-card__badge-letter">D</Text>
                   </View>
                 </View>
                 <View className="case-card__tags">
-                  <Text className="case-card__tag case-card__tag--source">{srcLabel}</Text>
+                  <Text className="case-card__tag case-card__tag--primary">{srcLabel}</Text>
                 </View>
                 <View className="case-card__footer">
                   <View className={`case-card__status-dot case-card__status-dot--${stClass}`} />

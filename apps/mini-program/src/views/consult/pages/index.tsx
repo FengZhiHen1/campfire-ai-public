@@ -6,14 +6,14 @@ import type { BehaviorTypeCategory, EmotionLevel } from '../../../logics/consult
 import type { ProfileListItem } from '@campfire/ts-shared';
 import './index.scss';
 
-const BEHAVIOR_OPTIONS: { value: BehaviorTypeCategory; label: string }[] = [
-  { value: 'SELF_INJURY', label: '自伤行为' },
-  { value: 'AGGRESSION', label: '攻击行为' },
-  { value: 'ELOPEMENT', label: '出走/逃跑' },
-  { value: 'MEDICATION', label: '用药相关' },
-  { value: 'EMOTIONAL_MELTDOWN', label: '情绪崩溃' },
-  { value: 'STEREOTYPY', label: '刻板行为' },
-  { value: 'OTHER', label: '其他' },
+const BEHAVIOR_OPTIONS: { value: BehaviorTypeCategory; label: string; icon: string; desc: string }[] = [
+  { value: 'SELF_INJURY', label: '自伤行为', icon: '🩹', desc: '咬手、撞头、抓挠自己等' },
+  { value: 'AGGRESSION', label: '攻击行为', icon: '👊', desc: '打人、摔东西、破坏物品等' },
+  { value: 'ELOPEMENT', label: '出走/逃跑', icon: '🏃', desc: '试图离开安全区域、走失等' },
+  { value: 'MEDICATION', label: '用药相关', icon: '💊', desc: '拒绝服药、误服、过量等' },
+  { value: 'EMOTIONAL_MELTDOWN', label: '情绪崩溃', icon: '💢', desc: '大哭、尖叫、无法安抚等' },
+  { value: 'STEREOTYPY', label: '刻板行为', icon: '🔄', desc: '重复动作、摇晃、排列物品等' },
+  { value: 'OTHER', label: '其他', icon: '❓', desc: '以上都不是，请在下方描述' },
 ];
 
 const EMOTION_OPTIONS: { value: EmotionLevel; label: string }[] = [
@@ -138,7 +138,9 @@ export default function ConsultIndex() {
                 {selected && (
                   <View className="consult-selecting__check">✓</View>
                 )}
+                <Text className="consult-selecting__option-icon">{opt.icon}</Text>
                 <Text className="consult-selecting__option-text">{opt.label}</Text>
+                <Text className="consult-selecting__option-desc">{opt.desc}</Text>
               </Button>
             );
           })}

@@ -26,6 +26,37 @@
   }
 }
 
+/* ========== Tab 切换 ========== */
+.cases-tabs {
+  display: flex;
+  background-color: $cf-surface;
+  padding: $cf-spacing-xs $cf-spacing-md;
+  gap: $cf-spacing-sm;
+
+  &__btn {
+    flex: 1;
+    height: 40px;
+    background-color: $cf-surface-variant;
+    color: $cf-on-surface-variant;
+    border-radius: $cf-radius-md;
+    font-size: 14px;
+    font-weight: 500;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: none;
+
+    &--active {
+      background-color: $cf-primary;
+      color: $cf-on-primary;
+    }
+
+    &:active {
+      opacity: 0.9;
+    }
+  }
+}
+
 /* ========== 搜索栏 ========== */
 .cases-search {
   padding: $cf-spacing-sm $cf-spacing-md;
@@ -37,7 +68,7 @@
     align-items: center;
     background-color: $cf-surface-variant;
     border-radius: $cf-radius-md;
-    height: 64px;
+    height: 48px;
     padding: 0 $cf-spacing-md;
   }
 
@@ -59,6 +90,12 @@
       color: rgba($cf-on-surface-variant, 0.6);
     }
   }
+
+  /* 清除 Taro Input 默认样式 */
+  input.cases-search__input {
+    outline: none;
+    -webkit-appearance: none;
+  }
 }
 
 /* ========== 筛选栏 ========== */
@@ -74,7 +111,7 @@
     background-color: $cf-surface;
     border-radius: $cf-radius-md;
     padding: $cf-spacing-xs $cf-spacing-md;
-    min-height: 64px;
+    min-height: 32px;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -128,6 +165,10 @@
     &--b { background-color: $cf-primary; }
     &--c { background-color: $cf-secondary; }
     &--d { background-color: $cf-surface-variant; }
+    &--approved { background-color: $cf-tertiary; }
+    &--pending { background-color: $cf-primary; }
+    &--draft { background-color: $cf-surface-variant; }
+    &--rejected { background-color: $cf-error; }
   }
 
   &__body {
@@ -156,11 +197,10 @@
 
   /* 循证等级徽章 */
   &__badge {
-    width: 64px;
-    height: 64px;
+    width: 32px;
+    height: 32px;
     border-radius: $cf-radius-full;
     display: flex;
-    flex-direction: column;
     align-items: center;
     justify-content: center;
     flex-shrink: 0;
@@ -189,7 +229,7 @@
   }
 
   &__badge-letter {
-    font-size: 20px;
+    font-size: 14px;
     font-weight: 700;
     line-height: 1;
   }
@@ -263,15 +303,15 @@
   position: fixed;
   right: 24px;
   bottom: calc(96px + env(safe-area-inset-bottom));
-  width: 112px;
-  height: 112px;
+  width: 56px;
+  height: 56px;
   background-color: $cf-primary;
   color: $cf-on-primary;
   border-radius: $cf-radius-full;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 32px;
+  font-size: 24px;
   font-weight: 300;
   border: none;
   z-index: 100;
@@ -333,7 +373,7 @@
 .cases-empty__btn,
 .cases-error__retry-btn {
   width: 240px;
-  height: 96px;
+  height: 48px;
   background-color: $cf-primary;
   color: $cf-on-primary;
   border-radius: $cf-radius-lg;
