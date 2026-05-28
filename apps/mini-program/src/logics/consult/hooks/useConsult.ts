@@ -70,7 +70,7 @@ export function useConsult(): UseConsultReturn {
 
   /** 输入是否有效：行为类型 ≥1 且描述去除首尾空白后非空 */
   const isInputValid: boolean = useMemo(
-    () => behaviorTypeSelection.length >= 1 && behaviorDescription.trim() !== '',
+    () => (behaviorTypeSelection ?? []).length >= 1 && (behaviorDescription ?? '').trim() !== '',
     [behaviorTypeSelection, behaviorDescription],
   );
 

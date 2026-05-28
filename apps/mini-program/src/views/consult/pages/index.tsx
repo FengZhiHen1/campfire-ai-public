@@ -67,9 +67,10 @@ export default function ConsultIndex() {
   }, []);
 
   const toggleType = (type: BehaviorTypeCategory) => {
-    const next = behaviorTypeSelection.includes(type)
-      ? behaviorTypeSelection.filter((t) => t !== type)
-      : [...behaviorTypeSelection, type];
+    const selection = behaviorTypeSelection ?? [];
+    const next = selection.includes(type)
+      ? selection.filter((t) => t !== type)
+      : [...selection, type];
     setBehaviorTypes(next);
   };
 
@@ -127,7 +128,7 @@ export default function ConsultIndex() {
         <Text className="consult-selecting__label">选择行为类型（可多选）</Text>
         <View className="consult-selecting__grid">
           {BEHAVIOR_OPTIONS.map((opt) => {
-            const selected = behaviorTypeSelection.includes(opt.value);
+            const selected = (behaviorTypeSelection ?? []).includes(opt.value);
             return (
               <Button
                 key={opt.value}
