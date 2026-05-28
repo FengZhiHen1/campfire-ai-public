@@ -120,6 +120,12 @@ class DoneEvent(BaseModel):
         default=False,
         description="是否已触发人工工单创建",
     )
+    sections: dict[str, list[str]] = Field(
+        default_factory=dict,
+        description="从 LLM JSON 输出解析出的四段式结构化数据。"
+        "key 为段落标题（即时安全干预动作/情绪安抚话术/后续观察指标/就医判断标准），"
+        "value 为该段落的建议文本列表。JSON 解析失败时各段落为空列表。",
+    )
 
     model_config = {"extra": "forbid"}
 

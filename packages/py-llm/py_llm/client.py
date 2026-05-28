@@ -129,6 +129,7 @@ class LLMClient:
         max_tokens: int = 8192,
         timeout: float = 90.0,
         max_retries: int = 3,
+        response_format: dict | None = None,
     ) -> AsyncGenerator[ChatCompletionChunk, None]:
         """Stream chat completion from DeepSeek API with retry.
 
@@ -142,6 +143,7 @@ class LLMClient:
             max_tokens: Maximum tokens to generate, default 8192.
             timeout: HTTP-level timeout in seconds per chunk, default 90.0.
             max_retries: Maximum retry attempts on transient failures, default 3.
+            response_format: Optional response format dict (e.g. {"type": "json_object"}).
 
         Yields:
             ChatCompletionChunk: Each streaming chunk from the API.
@@ -154,14 +156,17 @@ class LLMClient:
 
         for attempt in range(max_retries + 1):
             try:
-                stream = await self._client.chat.completions.create(
-                    model=model,
-                    messages=messages,  # type: ignore[arg-type]
-                    temperature=temperature,
-                    max_tokens=max_tokens,
-                    stream=True,
-                    timeout=timeout,
-                )
+                create_kwargs: dict = {
+                    "model": model,
+                    "messages": messages,  # type: ignore[arg-type]
+                    "temperature": temperature,
+                    "max_tokens": max_tokens,
+                    "stream": True,
+                    "timeout": timeout,
+                }
+                if response_format is not None:
+                    create_kwargs["response_format"] = response_format
+                stream = await self._client.chat.completions.create(**create_kwargs)
                 async for chunk in stream:
                     if chunk.choices and len(chunk.choices) > 0:
                         choice = chunk.choices[0]

@@ -98,14 +98,18 @@ class GenerationResult(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     text: str = Field(
-        description="LLM 生成的完整四段式应急方案全文，为 Markdown 格式文本。"
-        "包含即时安全干预动作、情绪安抚话术、后续观察指标、就医判断标准四个段落，"
+        description="LLM 生成的完整应急方案全文，为 JSON 格式文本。"
+        "包含即时安全干预动作、情绪安抚话术、后续观察指标、就医判断标准四个字段，"
         "以及预编号的来源引用标记如 [1][2]。阻断场景下为空字符串。",
         max_length=65536,
         examples=[
-            "## 一、即时安全干预动作\n"
-            "1. 立即将孩子带离嘈杂环境，寻找安静角落[1]..."
+            '{"即时安全干预动作":["将孩子带离嘈杂环境[1]"],"情绪安抚话术":["没关系，妈妈在这里"]}'
         ],
+    )
+    sections: dict[str, list[str]] = Field(
+        default_factory=dict,
+        description="从 JSON 文本解析出的四段式结构化数据。"
+        "key 为段落标题，value 为该段落的建议列表。JSON 解析失败时各段落为空列表。",
     )
     source_list: list[str] = Field(
         default_factory=list,

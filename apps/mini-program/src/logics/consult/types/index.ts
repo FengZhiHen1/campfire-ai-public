@@ -179,6 +179,8 @@ export interface DoneEventPayload {
   verdict?: string;
   /** 是否触发工单 */
   ticket_triggered?: boolean;
+  /** 四段式结构化数据（后端 JSON 解析后下发） */
+  sections?: Record<string, string[]>;
 }
 
 /** ErrorEvent 的 data 字段载荷（CSLT-04 契约） */
@@ -276,7 +278,7 @@ export interface PlanSection {
 
 /**
  * 四段式结构化方案。
- * 由 parseSections() 从 accumulatedText 正则解析而来。
+ * 由后端从 LLM JSON 输出解析后通过 SSE done 事件下发。
  */
 export interface StructuredPlan {
   sections: PlanSection[];
