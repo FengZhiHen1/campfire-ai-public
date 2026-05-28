@@ -155,7 +155,7 @@
 /* ========== 表单内容区 ========== */
 .profile-edit-form {
   padding: $cf-spacing-md;
-  padding-bottom: calc(144px + env(safe-area-inset-bottom));
+  padding-bottom: calc(96px + env(safe-area-inset-bottom));
 }
 
 /* 头像区域 */
@@ -247,13 +247,14 @@
 /* 保存按钮（底部固定） */
 .profile-edit-submit {
   position: fixed;
-  bottom: calc(144px + env(safe-area-inset-bottom));
+  bottom: 0;
   left: 0;
   right: 0;
   background-color: $cf-surface;
   border-radius: $cf-radius-lg $cf-radius-lg 0 0;
   box-shadow: $cf-shadow-input-top;
   padding: $cf-spacing-sm $cf-spacing-md;
+  padding-bottom: calc(24px + env(safe-area-inset-bottom));
   z-index: 100;
 
   &__btn {
