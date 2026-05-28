@@ -24,8 +24,8 @@ def start() -> tuple:
     proc = start_process(
         [
             "uv", "run",
-            "--package", "api-server",
-            "api-server",
+            "--directory", "apps/api-server",
+            "python", "-m", "app.main",
         ],
         cwd=PROJECT_ROOT,
     )
