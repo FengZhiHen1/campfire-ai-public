@@ -171,12 +171,14 @@ export default function HomePage() {
               )}
             </View>
             {latestProfile.primary_behavior && (
-              <Text className="home-profile-card__behavior">
-                {latestProfile.primary_behavior}
-              </Text>
+              <View className="home-profile-card__name-row">
+                <Text className="home-profile-card__tag home-profile-card__tag--behavior">
+                  {latestProfile.primary_behavior}
+                </Text>
+              </View>
             )}
           </View>
-          <Text className="home-profile-card__link">→ 查看</Text>
+          <Text className="home-profile-card__link">→ 查看档案</Text>
         </View>
       ) : (
         <View className="home-profile-create" onClick={goProfile}>
