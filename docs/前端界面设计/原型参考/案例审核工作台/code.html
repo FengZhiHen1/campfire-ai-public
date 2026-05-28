@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+
+<html lang="zh-CN"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0, viewport-fit=cover" name="viewport"/>
+<title>案例审核工作台</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            "colors": {
+                    "surface-container-highest": "#eae1da",
+                    "inverse-primary": "#ffb95f",
+                    "surface-container-lowest": "#ffffff",
+                    "error-container": "#ffdad6",
+                    "background": "#fff8f5",
+                    "error": "#ba1a1a",
+                    "primary-fixed-dim": "#ffb95f",
+                    "surface-dim": "#e2d8d2",
+                    "on-primary-fixed-variant": "#653e00",
+                    "on-primary": "#ffffff",
+                    "on-secondary-fixed": "#0b1c30",
+                    "surface-container-high": "#f0e6e0",
+                    "on-surface-variant": "#534434",
+                    "on-secondary-container": "#54647a",
+                    "surface-tint": "#855300",
+                    "surface-container-low": "#fcf2eb",
+                    "on-tertiary": "#ffffff",
+                    "on-secondary": "#ffffff",
+                    "on-primary-container": "#613b00",
+                    "inverse-on-surface": "#f9efe8",
+                    "primary-fixed": "#ffddb8",
+                    "inverse-surface": "#342f2b",
+                    "on-tertiary-fixed": "#002114",
+                    "primary": "#855300",
+                    "outline-variant": "#d8c3ad",
+                    "secondary-fixed-dim": "#b7c8e1",
+                    "on-secondary-fixed-variant": "#38485d",
+                    "on-background": "#1f1b17",
+                    "on-tertiary-fixed-variant": "#005137",
+                    "on-primary-fixed": "#2a1700",
+                    "on-surface": "#1f1b17",
+                    "tertiary-fixed-dim": "#68dba9",
+                    "surface-variant": "#eae1da",
+                    "surface-container": "#f6ece6",
+                    "tertiary": "#006c4a",
+                    "tertiary-container": "#50c594",
+                    "on-error-container": "#93000a",
+                    "secondary-container": "#d0e1fb",
+                    "secondary-fixed": "#d3e4fe",
+                    "secondary": "#505f76",
+                    "on-error": "#ffffff",
+                    "surface": "#fff8f5",
+                    "tertiary-fixed": "#85f8c4",
+                    "surface-bright": "#fff8f5",
+                    "on-tertiary-container": "#004e35",
+                    "outline": "#867461",
+                    "primary-container": "#f59e0b"
+            },
+            "borderRadius": {
+                    "DEFAULT": "0.25rem",
+                    "lg": "0.5rem",
+                    "xl": "0.75rem",
+                    "full": "9999px"
+            },
+            "spacing": {
+                    "xl": "32px",
+                    "margin-mobile": "16px",
+                    "base": "8px",
+                    "md": "16px",
+                    "sm": "8px",
+                    "gutter": "16px",
+                    "xs": "4px",
+                    "lg": "24px",
+                    "margin-desktop": "24px"
+            },
+            "fontFamily": {
+                    "headline-lg": [
+                            "system-ui, -apple-system, 'PingFang SC', 'Noto Sans SC', 'Helvetica Neue', sans-serif"
+                    ],
+                    "headline-md": [
+                            "system-ui, -apple-system, 'PingFang SC', 'Noto Sans SC', 'Helvetica Neue', sans-serif"
+                    ],
+                    "body-md": [
+                            "system-ui, -apple-system, 'PingFang SC', 'Noto Sans SC', 'Helvetica Neue', sans-serif"
+                    ],
+                    "footnote": [
+                            "system-ui, -apple-system, 'PingFang SC', 'Noto Sans SC', 'Helvetica Neue', sans-serif"
+                    ],
+                    "label-md": [
+                            "system-ui, -apple-system, 'PingFang SC', 'Noto Sans SC', 'Helvetica Neue', sans-serif"
+                    ],
+                    "body-lg": [
+                            "system-ui, -apple-system, 'PingFang SC', 'Noto Sans SC', 'Helvetica Neue', sans-serif"
+                    ]
+            },
+            "fontSize": {
+                    "headline-lg": [
+                            "24px",
+                            {
+                                    "lineHeight": "38px",
+                                    "fontWeight": "600"
+                            }
+                    ],
+                    "headline-md": [
+                            "20px",
+                            {
+                                    "lineHeight": "32px",
+                                    "fontWeight": "600"
+                            }
+                    ],
+                    "body-md": [
+                            "16px",
+                            {
+                                    "lineHeight": "28px",
+                                    "fontWeight": "400"
+                            }
+                    ],
+                    "footnote": [
+                            "11px",
+                            {
+                                    "lineHeight": "15px",
+                                    "letterSpacing": "0px",
+                                    "fontWeight": "400"
+                            }
+                    ],
+                    "label-md": [
+                            "14px",
+                            {
+                                    "lineHeight": "21px",
+                                    "letterSpacing": "0px",
+                                    "fontWeight": "400"
+                            }
+                    ],
+                    "body-lg": [
+                            "18px",
+                            {
+                                    "lineHeight": "32px",
+                                    "fontWeight": "400"
+                            }
+                    ]
+            }
+          },
+        },
+      }
+    </script>
+<style>
+        body {
+            -webkit-tap-highlight-color: transparent;
+        }
+        .pb-safe {
+            padding-bottom: env(safe-area-inset-bottom);
+        }
+        .hide-scrollbar::-webkit-scrollbar {
+            display: none;
+        }
+        .hide-scrollbar {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-background text-on-background antialiased min-h-screen flex flex-col pb-[90px]">
+<!-- TopAppBar -->
+<header class="bg-surface dark:bg-inverse-surface flex justify-between items-center w-full px-margin-mobile h-14 sticky top-0 z-40">
+<button class="text-primary dark:text-primary-fixed-dim hover:bg-surface-variant dark:hover:bg-on-surface-variant transition-colors p-2 rounded-full active:opacity-70 transition-opacity">
+<span class="material-symbols-outlined" data-icon="arrow_back">arrow_back</span>
+</button>
+<h1 class="font-headline-md text-headline-md font-bold text-primary dark:text-primary-fixed-dim">案例审核</h1>
+<button class="text-primary dark:text-primary-fixed-dim hover:bg-surface-variant dark:hover:bg-on-surface-variant transition-colors p-2 rounded-full active:opacity-70 transition-opacity">
+<span class="material-symbols-outlined" data-icon="query_stats">query_stats</span>
+</button>
+</header>
+<!-- Content Canvas -->
+<main class="flex-1 flex flex-col w-full max-w-3xl mx-auto">
+<!-- Stats Overview -->
+<section class="px-margin-mobile py-lg flex gap-md">
+<div class="flex-1 bg-surface-container-lowest rounded-xl p-md shadow-[0_4px_24px_rgba(28,25,23,0.06)] flex flex-col items-center justify-center border border-outline/15">
+<span class="font-label-md text-label-md text-on-surface-variant mb-xs">待审核</span>
+<span class="font-headline-lg text-headline-lg text-error">12</span>
+</div>
+<div class="flex-1 bg-surface-container-lowest rounded-xl p-md shadow-[0_4px_24px_rgba(28,25,23,0.06)] flex flex-col items-center justify-center border border-outline/15">
+<span class="font-label-md text-label-md text-on-surface-variant mb-xs">今日已处理</span>
+<span class="font-headline-lg text-headline-lg text-tertiary">5</span>
+</div>
+</section>
+<!-- Filter Tabs -->
+<section class="px-margin-mobile mb-lg">
+<div class="flex gap-sm overflow-x-auto hide-scrollbar pb-xs">
+<button class="whitespace-nowrap px-md py-sm rounded-full bg-primary-container text-on-primary-container font-label-md text-label-md font-bold">全部</button>
+<button class="whitespace-nowrap px-md py-sm rounded-full bg-surface-variant text-on-surface-variant font-label-md text-label-md">情绪崩溃</button>
+<button class="whitespace-nowrap px-md py-sm rounded-full bg-surface-variant text-on-surface-variant font-label-md text-label-md">自伤行为</button>
+<button class="whitespace-nowrap px-md py-sm rounded-full bg-surface-variant text-on-surface-variant font-label-md text-label-md">攻击行为</button>
+<button class="whitespace-nowrap px-md py-sm rounded-full bg-surface-variant text-on-surface-variant font-label-md text-label-md">刻板行为</button>
+</div>
+</section>
+<!-- Case List -->
+<section class="px-margin-mobile flex flex-col gap-md">
+<!-- Case Card 1 -->
+<div class="bg-surface-container-lowest rounded-xl p-md shadow-[0_4px_24px_rgba(28,25,23,0.06)] flex gap-md items-start relative overflow-hidden group">
+<div class="absolute left-0 top-0 bottom-0 w-1 bg-primary"></div>
+<div class="pt-sm">
+<input class="w-5 h-5 rounded border-outline text-primary focus:ring-primary focus:ring-offset-surface" type="checkbox"/>
+</div>
+<div class="flex-1 flex flex-col gap-sm">
+<h3 class="font-body-lg text-body-lg text-on-surface leading-tight">超市噪音环境下的情绪崩溃干预</h3>
+<div class="flex items-center gap-xs flex-wrap">
+<span class="px-2 py-0.5 rounded text-xs bg-surface-variant text-on-surface-variant font-footnote">情绪崩溃</span>
+<span class="px-2 py-0.5 rounded text-xs bg-surface-variant text-on-surface-variant font-footnote">提交者: 王医生</span>
+</div>
+<!-- AI Pre-screen Progress -->
+<div class="mt-xs bg-surface-container rounded-lg p-sm flex items-center justify-between">
+<div class="flex flex-col gap-1 w-full max-w-[200px]">
+<div class="flex justify-between items-center">
+<span class="font-footnote text-footnote text-on-surface-variant">AI 预审通过项</span>
+<span class="font-footnote text-footnote font-bold text-tertiary">3/4</span>
+</div>
+<div class="w-full h-1.5 bg-surface-variant rounded-full overflow-hidden">
+<div class="h-full bg-tertiary rounded-full" style="width: 75%;"></div>
+</div>
+</div>
+</div>
+</div>
+<div class="self-stretch flex items-center">
+<button class="px-md py-sm bg-primary text-on-primary rounded-lg font-label-md text-label-md whitespace-nowrap shadow-sm hover:bg-primary-fixed-dim transition-colors">审核</button>
+</div>
+</div>
+<!-- Case Card 2 -->
+<div class="bg-surface-container-lowest rounded-xl p-md shadow-[0_4px_24px_rgba(28,25,23,0.06)] flex gap-md items-start relative overflow-hidden group">
+<div class="absolute left-0 top-0 bottom-0 w-1 bg-primary"></div>
+<div class="pt-sm">
+<input class="w-5 h-5 rounded border-outline text-primary focus:ring-primary focus:ring-offset-surface" type="checkbox"/>
+</div>
+<div class="flex-1 flex flex-col gap-sm">
+<h3 class="font-body-lg text-body-lg text-on-surface leading-tight">睡前刻板行为引发的自伤倾向防范</h3>
+<div class="flex items-center gap-xs flex-wrap">
+<span class="px-2 py-0.5 rounded text-xs bg-surface-variant text-on-surface-variant font-footnote">自伤行为</span>
+<span class="px-2 py-0.5 rounded text-xs bg-surface-variant text-on-surface-variant font-footnote">提交者: 李老师</span>
+</div>
+<!-- AI Pre-screen Progress -->
+<div class="mt-xs bg-surface-container rounded-lg p-sm flex items-center justify-between">
+<div class="flex flex-col gap-1 w-full max-w-[200px]">
+<div class="flex justify-between items-center">
+<span class="font-footnote text-footnote text-on-surface-variant">AI 预审通过项</span>
+<span class="font-footnote text-footnote font-bold text-error">1/4</span>
+</div>
+<div class="w-full h-1.5 bg-surface-variant rounded-full overflow-hidden">
+<div class="h-full bg-error rounded-full" style="width: 25%;"></div>
+</div>
+</div>
+</div>
+</div>
+<div class="self-stretch flex items-center">
+<button class="px-md py-sm bg-primary text-on-primary rounded-lg font-label-md text-label-md whitespace-nowrap shadow-sm hover:bg-primary-fixed-dim transition-colors">审核</button>
+</div>
+</div>
+<!-- Case Card 3 -->
+<div class="bg-surface-container-lowest rounded-xl p-md shadow-[0_4px_24px_rgba(28,25,23,0.06)] flex gap-md items-start relative overflow-hidden group">
+<div class="absolute left-0 top-0 bottom-0 w-1 bg-primary"></div>
+<div class="pt-sm">
+<input class="w-5 h-5 rounded border-outline text-primary focus:ring-primary focus:ring-offset-surface" type="checkbox"/>
+</div>
+<div class="flex-1 flex flex-col gap-sm">
+<h3 class="font-body-lg text-body-lg text-on-surface leading-tight">突发性攻击行为的快速物理隔离记录</h3>
+<div class="flex items-center gap-xs flex-wrap">
+<span class="px-2 py-0.5 rounded text-xs bg-surface-variant text-on-surface-variant font-footnote">攻击行为</span>
+<span class="px-2 py-0.5 rounded text-xs bg-surface-variant text-on-surface-variant font-footnote">提交者: 张社工</span>
+</div>
+<!-- AI Pre-screen Progress -->
+<div class="mt-xs bg-surface-container rounded-lg p-sm flex items-center justify-between">
+<div class="flex flex-col gap-1 w-full max-w-[200px]">
+<div class="flex justify-between items-center">
+<span class="font-footnote text-footnote text-on-surface-variant">AI 预审通过项</span>
+<span class="font-footnote text-footnote font-bold text-primary">2/4</span>
+</div>
+<div class="w-full h-1.5 bg-surface-variant rounded-full overflow-hidden">
+<div class="h-full bg-primary rounded-full" style="width: 50%;"></div>
+</div>
+</div>
+</div>
+</div>
+<div class="self-stretch flex items-center">
+<button class="px-md py-sm bg-primary text-on-primary rounded-lg font-label-md text-label-md whitespace-nowrap shadow-sm hover:bg-primary-fixed-dim transition-colors">审核</button>
+</div>
+</div>
+</section>
+</main>
+<!-- BottomNavBar -->
+<nav class="fixed bottom-0 left-0 w-full z-50 flex justify-around items-center px-4 pb-safe pt-2 bg-surface-container-high dark:bg-inverse-surface shadow-[0_-4px_24px_rgba(28,25,23,0.06)] rounded-t-xl">
+<button class="flex flex-col items-center justify-center text-on-secondary-container dark:text-secondary-fixed-dim px-4 py-1 hover:bg-primary-fixed dark:hover:bg-on-primary-fixed-variant rounded-xl transition-colors">
+<span class="material-symbols-outlined mb-1" data-icon="select_all">select_all</span>
+<span class="font-label-md text-label-md">全选</span>
+</button>
+<button class="flex flex-col items-center justify-center text-on-secondary-container dark:text-secondary-fixed-dim px-4 py-1 hover:bg-primary-fixed dark:hover:bg-on-primary-fixed-variant rounded-xl transition-colors">
+<span class="material-symbols-outlined mb-1 text-tertiary" data-icon="check_circle">check_circle</span>
+<span class="font-label-md text-label-md">批量通过</span>
+</button>
+<button class="flex flex-col items-center justify-center text-on-secondary-container dark:text-secondary-fixed-dim px-4 py-1 hover:bg-primary-fixed dark:hover:bg-on-primary-fixed-variant rounded-xl transition-colors">
+<span class="material-symbols-outlined mb-1 text-error" data-icon="cancel">cancel</span>
+<span class="font-label-md text-label-md">批量驳回</span>
+</button>
+</nav>
+</body></html>
