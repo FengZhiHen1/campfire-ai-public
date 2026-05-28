@@ -1,6 +1,6 @@
 @use '../views/shared/styles/tokens' as *;
 
-$tab-bar-height: 120px;
+$tab-bar-height: 144px;
 
 .custom-tab-bar {
   position: fixed;
@@ -22,13 +22,13 @@ $tab-bar-height: 120px;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 12px;
-  padding: 16px 0;
+  gap: 16px;
+  padding: 20px 0;
   transition: opacity 0.2s;
 }
 
 .custom-tab-bar__icon {
-  font-size: 56px;
+  font-size: 64px;
   line-height: 1;
   opacity: 0.45;
   transition: opacity 0.2s, transform 0.2s;
@@ -40,7 +40,7 @@ $tab-bar-height: 120px;
 }
 
 .custom-tab-bar__label {
-  font-size: 24px;
+  font-size: 28px;
   line-height: 1;
   color: $cf-on-surface-variant;
   transition: color 0.2s;
