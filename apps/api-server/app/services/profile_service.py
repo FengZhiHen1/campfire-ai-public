@@ -1,75 +1,98 @@
-"""PROF-01 个人档案管理 — MVP Phase 1 简化版 Service。
+"""PROF-01 个人档案管理 — MVP Phase 1 多档案版 Service。
 
-去除 RBAC、隐私控制、档案数量上限、事件管理等非核心逻辑。
-保留：档案创建/更新/查询（单条，按 caregiver_id = user_id）。
+去除 RBAC、隐私控制、事件管理等非核心逻辑。
+保留：档案创建/列表/详情/更新/删除/设默认。
 """
 
 from __future__ import annotations
 
+import math
 import uuid
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import select
+from fastapi import HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from py_db.models.profiles import Profile
 from py_db.repositories.profile_repository import ProfileRepository
 from py_logger import logger
-from py_schemas.profiles import AgeRange, ProfileCreate, ProfileResponse, ProfileUpdate
+from py_schemas.profiles import AgeRange, ProfileCreate, ProfileListItem, ProfileResponse, ProfileUpdate
 
 
 class ProfileService:
-    """MVP 简化版档案管理 Service。"""
+    """MVP 多档案版档案管理 Service。"""
 
     def __init__(self, repository: ProfileRepository | None = None) -> None:
         self._repository = repository or ProfileRepository(session_factory=None)
 
     # ------------------------------------------------------------------
-    # 公开方法
+    # 列表
     # ------------------------------------------------------------------
 
-    async def get_or_create_profile(
+    async def list_profiles(
         self,
         caregiver_id: UUID,
-        input_data: ProfileCreate,
         session: AsyncSession,
-    ) -> ProfileResponse:
-        """创建或更新档案（MVP 单档案模式）。
+        page: int = 1,
+        page_size: int = 10,
+    ) -> tuple[list[ProfileListItem], int]:
+        """查询当前用户的档案列表。"""
+        profiles, total = await self._repository.list_by_caregiver(
+            session, caregiver_id, page=page, page_size=page_size
+        )
+        items = [self._to_list_item(p) for p in profiles]
+        return items, total
 
-        若该 caregiver_id 下已有档案，则更新；否则创建新档案。
-        """
+    # ------------------------------------------------------------------
+    # 详情
+    # ------------------------------------------------------------------
+
+    async def get_profile(
+        self,
+        profile_id: UUID,
+        caregiver_id: UUID,
+        session: AsyncSession,
+    ) -> ProfileResponse | None:
+        """按 ID 查询单条档案（带归属校验）。"""
+        profile = await self._repository.get_by_id(session, profile_id, caregiver_id)
+        if profile is None:
+            return None
+        return self._to_response(profile)
+
+    async def get_my_profile(
+        self,
+        caregiver_id: UUID,
+        session: AsyncSession,
+    ) -> ProfileResponse | None:
+        """查询当前用户的默认档案（/me 快捷端点）。"""
         existing = await self._repository.get_default(session, caregiver_id)
         if existing is None:
-            # 兜底：查找任意一条记录
             profiles, _ = await self._repository.list_by_caregiver(
                 session, caregiver_id, page=1, page_size=1
             )
             existing = profiles[0] if profiles else None
 
-        if existing:
-            # 更新现有档案
-            update_data: dict[str, Any] = input_data.model_dump(exclude_unset=True)
-            # 处理 tags 字段（JSONB 列表）
-            if "tags" in update_data and isinstance(update_data["tags"], str):
-                update_data["tags"] = [
-                    t.strip() for t in update_data["tags"].split(",") if t.strip()
-                ]
-            # 直接用 SQLAlchemy ORM 更新
-            for key, value in update_data.items():
-                if hasattr(existing, key):
-                    setattr(existing, key, value)
-            await session.flush()
-            await session.commit()
-            await session.refresh(existing)
-            logger.info(
-                service="api-server",
-                message="profile_updated",
-                extra={"profile_id": str(existing.profile_id), "caregiver_id": str(caregiver_id)},
-            )
-            return self._to_response(existing)
+        if existing is None:
+            return None
+        return self._to_response(existing)
 
-        # 创建新档案
+    # ------------------------------------------------------------------
+    # 创建
+    # ------------------------------------------------------------------
+
+    async def create_profile(
+        self,
+        caregiver_id: UUID,
+        input_data: ProfileCreate,
+        session: AsyncSession,
+    ) -> ProfileResponse:
+        """创建新档案。
+
+        若用户当前没有任何档案，自动将新档案设为默认。
+        """
+        count = await self._repository.count_active_by_caregiver(session, caregiver_id)
+
         profile = Profile(
             profile_id=uuid.uuid4(),
             caregiver_id=caregiver_id,
@@ -81,7 +104,7 @@ class ProfileService:
             sensory_features=input_data.sensory_features or [],
             triggers=input_data.triggers or [],
             medication_notes=input_data.medication_notes,
-            is_default=True,
+            is_default=(count == 0),
         )
         created = await self._repository.create(session, profile)
         await session.commit()
@@ -92,22 +115,118 @@ class ProfileService:
         )
         return self._to_response(created)
 
-    async def get_my_profile(
+    # ------------------------------------------------------------------
+    # 更新
+    # ------------------------------------------------------------------
+
+    async def update_profile(
         self,
+        profile_id: UUID,
+        caregiver_id: UUID,
+        input_data: ProfileUpdate,
+        session: AsyncSession,
+    ) -> ProfileResponse:
+        """更新档案（Merge Patch）。"""
+        profile = await self._repository.get_by_id(session, profile_id, caregiver_id)
+        if profile is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="档案不存在",
+            )
+
+        update_data: dict[str, Any] = input_data.model_dump(exclude_unset=True)
+        for key, value in update_data.items():
+            if hasattr(profile, key):
+                setattr(profile, key, value)
+
+        await session.flush()
+        await session.commit()
+        await session.refresh(profile)
+        logger.info(
+            service="api-server",
+            message="profile_updated",
+            extra={"profile_id": str(profile_id), "caregiver_id": str(caregiver_id)},
+        )
+        return self._to_response(profile)
+
+    # ------------------------------------------------------------------
+    # 删除
+    # ------------------------------------------------------------------
+
+    async def delete_profile(
+        self,
+        profile_id: UUID,
         caregiver_id: UUID,
         session: AsyncSession,
-    ) -> ProfileResponse | None:
-        """查询当前用户的档案（单条）。"""
-        existing = await self._repository.get_default(session, caregiver_id)
-        if existing is None:
-            profiles, _ = await self._repository.list_by_caregiver(
-                session, caregiver_id, page=1, page_size=1
-            )
-            existing = profiles[0] if profiles else None
+    ) -> None:
+        """删除档案。
 
-        if existing is None:
-            return None
-        return self._to_response(existing)
+        若删除的是默认档案，自动将最新更新的剩余档案提升为默认。
+        """
+        profile = await self._repository.get_by_id(session, profile_id, caregiver_id)
+        if profile is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="档案不存在",
+            )
+
+        was_default = profile.is_default
+        deleted = await self._repository.delete(session, profile_id, caregiver_id)
+        if not deleted:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="档案不存在",
+            )
+
+        await session.commit()
+        logger.info(
+            service="api-server",
+            message="profile_deleted",
+            extra={"profile_id": str(profile_id), "caregiver_id": str(caregiver_id)},
+        )
+
+        # 若删除的是默认档案，自动提升下一候选
+        if was_default:
+            candidate = await self._repository.find_next_default_candidate(
+                session, caregiver_id, profile_id
+            )
+            if candidate:
+                await self._repository.set_default(session, candidate.profile_id, caregiver_id)
+                await session.commit()
+                logger.info(
+                    service="api-server",
+                    message="default_profile_promoted",
+                    extra={
+                        "profile_id": str(candidate.profile_id),
+                        "caregiver_id": str(caregiver_id),
+                    },
+                )
+
+    # ------------------------------------------------------------------
+    # 设默认
+    # ------------------------------------------------------------------
+
+    async def set_default_profile(
+        self,
+        profile_id: UUID,
+        caregiver_id: UUID,
+        session: AsyncSession,
+    ) -> ProfileResponse:
+        """将指定档案设为默认。"""
+        profile = await self._repository.set_default(session, profile_id, caregiver_id)
+        if profile is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="档案不存在",
+            )
+        await session.commit()
+        await session.refresh(profile)
+        logger.info(
+            service="api-server",
+            message="profile_set_default",
+            extra={"profile_id": str(profile_id), "caregiver_id": str(caregiver_id)},
+        )
+        return self._to_response(profile)
 
     # ------------------------------------------------------------------
     # 内部辅助
@@ -136,6 +255,23 @@ class ProfileService:
             is_default=profile.is_default,
             created_at=profile.created_at,
             updated_at=profile.updated_at,
+        )
+
+    def _to_list_item(self, profile: Profile) -> ProfileListItem:
+        """将 ORM 实例转为列表项模型。"""
+        from datetime import date
+
+        age = None
+        if profile.birth_date:
+            age = (date.today() - profile.birth_date).days // 365
+
+        return ProfileListItem(
+            profile_id=profile.profile_id,
+            nickname=profile.nickname,
+            age_range=self._calc_age_range(age),
+            diagnosis_type=profile.diagnosis_type,
+            primary_behavior=profile.primary_behavior,
+            is_default=profile.is_default,
         )
 
     @staticmethod
