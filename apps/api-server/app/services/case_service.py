@@ -623,21 +623,23 @@ async def submit_case(
 
 async def get_case(
     case_id: str,
+    current_user: Dict[str, Any],
     session: AsyncSession,
     case_repo: CaseRepository,
 ) -> CaseResponse:
-    """获取案例完整详情。
+    """获取案例完整详情，含所有权检查。
 
     Args:
         case_id: 案例唯一标识。
+        current_user: 当前用户 payload。
         session: 活动数据库异步会话。
         case_repo: CaseRepository 实例。
 
     Returns:
-        CaseResponse: 案例完整详情。
+        CaseResponse: 案例完整详情（含 is_owner 标记）。
 
     Raises:
-        HTTPException(404): 案例不存在。
+        HTTPException(404): 案例不存在或无权限访问。
     """
     case: Case | None = await case_repo.find_by_case_id(session, case_id)
     if case is None:
@@ -646,7 +648,19 @@ async def get_case(
             detail=f"案例 {case_id} 不存在",
         )
 
-    return _orm_to_case_response(case)
+    author_id = str(case.author_id) if case.author_id else ""
+    current_id = current_user.get("sub", "")
+    is_owner = author_id == current_id
+
+    if case.status != CaseStatus.APPROVED and not is_owner:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"案例 {case_id} 不存在",
+        )
+
+    response = _orm_to_case_response(case)
+    response.is_owner = is_owner
+    return response
 
 
 async def list_cases(
@@ -654,40 +668,48 @@ async def list_cases(
     behavior_type_filter: Optional[str],
     page: int,
     page_size: int,
+    scope: Optional[str],
     current_user: Dict[str, Any],
     session: AsyncSession,
     case_repo: CaseRepository,
 ) -> PaginatedResponse[CaseListItem]:
     """按状态和行为类型查询案例列表。
 
-    MVP 简化：开放全量查询，不按 author_id 过滤。
-
     Args:
         status_filter: 可选状态筛选（draft/pending_review/rejected）。
         behavior_type_filter: 可选行为类型筛选。
         page: 页码，从 1 开始。
         page_size: 每页条数。
-        current_user: 当前用户 JWT payload。
+        scope: 查询范围，public=仅已审核，my=当前用户案例。
+        current_user: 当前用户 payload。
         session: 活动数据库异步会话。
         case_repo: CaseRepository 实例。
 
     Returns:
         PaginatedResponse[CaseListItem]: 分页列表响应。
     """
-    # MVP 简化：开放全量查询，不按 author_id 过滤
-    # 解析状态枚举
     status_enum: CaseStatus | None = None
-    if status_filter:
+    author_id: str | None = None
+
+    if scope == "public":
+        status_enum = CaseStatus.APPROVED
+    elif scope == "my":
+        author_id = current_user.get("sub", "")
+        if status_filter:
+            try:
+                status_enum = CaseStatus(status_filter)
+            except ValueError:
+                pass
+    elif status_filter:
         try:
             status_enum = CaseStatus(status_filter)
         except ValueError:
-            # 无效状态值则忽略筛选
             pass
 
     cases, total_count = await case_repo.find_by_filters(
         session,
         status=status_enum,
-        author_id=None,
+        author_id=author_id,
         behavior_type=behavior_type_filter,
         page=page,
         page_size=page_size,

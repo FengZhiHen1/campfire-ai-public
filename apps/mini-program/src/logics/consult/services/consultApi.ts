@@ -95,7 +95,7 @@ export const consultApi = {
    * - 响应中仅 session_id 为后端真实返回，其余字段由前端填充默认值
    *
    * @param behaviorDescription - 行为描述文本
-   * @param behaviorType - 行为类型（取用户多选的第一项，或 undefined）
+   * @param behaviorTypes - 行为类型列表（用户多选）
    * @param profileId - 关联档案 ID（可选）
    * @param emotionLevel - 情绪等级（可选）
    * @param requestId - 幂等请求 ID（前端生成，仅本地使用）
@@ -104,7 +104,7 @@ export const consultApi = {
    */
   async submitConsult(
     behaviorDescription: string,
-    behaviorType: BehaviorTypeCategory | undefined,
+    behaviorTypes: BehaviorTypeCategory[],
     profileId: string | undefined,
     emotionLevel: string | undefined,
     requestId: string,
@@ -114,7 +114,7 @@ export const consultApi = {
       method: 'POST',
       data: {
         behavior_description: behaviorDescription,
-        behavior_type: behaviorType,
+        behavior_type: behaviorTypes.length > 0 ? behaviorTypes : undefined,
         profile_id: profileId,
         emotion_level: emotionLevel,
       },

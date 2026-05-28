@@ -43,6 +43,8 @@ class ChunkMetadata(BaseModel):
     age_range: str = Field(description="年龄区间，格式为 'min-max'")
     severity: str = Field(description="严重程度枚举值")
     evidence_level: str = Field(description="循证等级枚举值")
+    case_title: str | None = Field(default=None, description="源案例标题")
+    source: str | None = Field(default=None, description="案例来源类型（专家撰写/机构脱敏/工单沉淀）")
 
 
 class InternalIndexContext(BaseModel):
@@ -80,6 +82,6 @@ EnqueueResult = dict[
 """enqueue_index_task() 返回字典结构。"""
 
 INDEX_METADATA_KEYS: frozenset[str] = frozenset(
-    {"behavior_type", "age_range", "severity", "evidence_level"}
+    {"behavior_type", "age_range", "severity", "evidence_level", "case_title", "source"}
 )
 """case_chunks.metadata JSONB 键名常量，供 CSLT-02 检索过滤时引用。"""

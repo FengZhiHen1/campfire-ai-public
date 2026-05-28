@@ -67,6 +67,7 @@ class SseStreamingService:
         if cls._instance is None:
             cls._instance = super().__new__(cls)
             cls._instance._generators: dict[str, AsyncGenerator[GenerationChunk, None]] = {}
+            cls._instance._generation_meta: dict[str, dict] = {}
         return cls._instance
 
     def __init__(
@@ -107,6 +108,39 @@ class SseStreamingService:
             generator: 上游 CSLT-03 产出的 ``AsyncGenerator[GenerationChunk, None]``。
         """
         self._generators[session_id] = generator
+
+    def store_generation_meta(
+        self,
+        session_id: str,
+        prenumbered_slices: dict[str, str],
+        crisis_level: str,
+        search_result: Any = None,
+        plan_input: Any = None,
+        block_deep_response: bool = False,
+        behavior_description: str = "",
+        request_id: str = "",
+    ) -> None:
+        """存储生成元数据，供 SSE DoneEvent 构造时注入。
+
+        Args:
+            session_id: 流标识符。
+            prenumbered_slices: 预编号切片映射 {编号: slice_id}。
+            crisis_level: 危机分级结果字符串。
+            search_result: RAG 检索结果（可选）。
+            plan_input: EmergencyPlanInput（可选）。
+            block_deep_response: 是否阻断深度回答。
+            behavior_description: 用户行为描述。
+            request_id: 追踪 ID。
+        """
+        self._generation_meta[session_id] = {
+            "prenumbered_slices": prenumbered_slices,
+            "crisis_level": crisis_level,
+            "search_result": search_result,
+            "plan_input": plan_input,
+            "block_deep_response": block_deep_response,
+            "behavior_description": behavior_description,
+            "request_id": request_id,
+        }
 
     # ------------------------------------------------------------------
     # 外部公共接口
@@ -382,9 +416,15 @@ class SseStreamingService:
                         else:
                             # 已推送部分内容但缺少最终标记，视为正常完成
                             session.finish_reason = "COMPLETE"
+                            done_meta = await self._build_done_meta(session)
                             done_event = DoneEvent(
                                 finish_reason="COMPLETE",
                                 sequence=session.sequence,
+                                referenced_slice_ids=done_meta.get("referenced_slice_ids", []),
+                                crisis_level=done_meta.get("crisis_level"),
+                                confidence_score=done_meta.get("confidence_score"),
+                                verdict=done_meta.get("verdict"),
+                                ticket_triggered=done_meta.get("ticket_triggered", False),
                             )
                             sse_frame = (
                                 f"event: done\n"
@@ -447,9 +487,16 @@ class SseStreamingService:
                         session.status = "COMPLETED"
                         session.finish_reason = finish_reason
 
+                        done_meta = await self._build_done_meta(session)
                         done_event = DoneEvent(
                             finish_reason=finish_reason,
                             sequence=session.sequence,
+                            referenced_slice_ids=done_meta.get("referenced_slice_ids", []),
+                            crisis_level=done_meta.get("crisis_level"),
+                            referenced_cases=done_meta.get("referenced_cases", []),
+                            confidence_score=done_meta.get("confidence_score"),
+                            verdict=done_meta.get("verdict"),
+                            ticket_triggered=done_meta.get("ticket_triggered", False),
                         )
                         sse_frame = (
                             f"event: done\n"
@@ -618,6 +665,43 @@ class SseStreamingService:
         )
 
     @staticmethod
+    def _build_referenced_cases(
+        referenced_slice_ids: list[str],
+        search_result: Any,
+    ) -> list[dict[str, str]]:
+        """根据 referenced_slice_ids 从 RAG 检索结果中提取可读的案例摘要。"""
+        if not referenced_slice_ids or search_result is None:
+            return []
+
+        slice_map: dict[str, dict[str, str]] = {}
+        try:
+            results = getattr(search_result, "results", []) or []
+            for item in results:
+                sid = getattr(item, "slice_id", "")
+                if sid:
+                    text = getattr(item, "slice_text", "") or ""
+                    slice_map[sid] = {
+                        "case_id": getattr(item, "case_id", ""),
+                        "slice_text": text[:200],
+                    }
+        except Exception:
+            return []
+
+        cases: list[dict[str, str]] = []
+        seen: set[str] = set()
+        for sid in referenced_slice_ids:
+            if sid in slice_map and sid not in seen:
+                info = slice_map[sid]
+                cases.append({
+                    "slice_id": sid,
+                    "case_id": info["case_id"],
+                    "case_title": info["case_id"],
+                    "slice_text": info["slice_text"],
+                })
+                seen.add(sid)
+        return cases
+
+    @staticmethod
     def _map_finish_reason(reason: str | None) -> str:
         """将 CSLT-03 GenerationChunk.finish_reason 映射为 GenerationStatus 枚举值。
 
@@ -642,3 +726,76 @@ class SseStreamingService:
             None: "COMPLETE",
         }
         return mapping.get(reason, "COMPLETE")
+
+    async def _build_done_meta(self, session: StreamSession) -> dict:
+        """从 generation_meta 和 chunk_buffer 提取 DoneEvent 扩展元数据。
+
+        包含置信度校验调用（非阻塞——失败时降级）。
+
+        Args:
+            session: 当前 StreamSession。
+
+        Returns:
+            包含 referenced_slice_ids, crisis_level, confidence 等字段的 dict。
+        """
+        import re
+        meta = self._generation_meta.pop(session.stream_id, None)
+        if meta is None:
+            return {}
+
+        prenumbered_slices: dict[str, str] = meta.get("prenumbered_slices", {})
+        crisis_level: str = meta.get("crisis_level", "mild")
+        block_deep_response: bool = meta.get("block_deep_response", False)
+
+        # 从 chunk_buffer 拼接完整文本
+        full_text = "".join(
+            session.chunk_buffer[i]
+            for i in sorted(session.chunk_buffer.keys())
+        )
+
+        # 提取 [N] 引用标记
+        ref_pattern = re.compile(r"\[(\d+)\]")
+        referenced_slice_ids: list[str] = []
+        seen: set[str] = set()
+        for tag in ref_pattern.findall(full_text):
+            if tag in prenumbered_slices and prenumbered_slices[tag] not in seen:
+                referenced_slice_ids.append(prenumbered_slices[tag])
+                seen.add(prenumbered_slices[tag])
+
+        result: dict = {
+            "referenced_slice_ids": referenced_slice_ids,
+            "crisis_level": crisis_level,
+            "referenced_cases": self._build_referenced_cases(
+                referenced_slice_ids, meta.get("search_result")
+            ),
+        }
+
+        # === 置信度校验（仅在正常生成时执行） ===
+        if full_text and not block_deep_response:
+            try:
+                from py_schemas.consult.confidence import ConfidenceValidationInput
+                from app.services.consult.confidence_validator import validate_confidence
+
+                validation_input = ConfidenceValidationInput(
+                    plan_text=full_text,
+                    source_list=[],
+                    disclaimer=(
+                        "以上建议由 AI 生成，仅供参考，不构成医疗诊断或治疗建议。"
+                        "如情况紧急，请立即联系专业医疗机构。"
+                    ),
+                    crisis_level=crisis_level,
+                    block_deep_response=block_deep_response,
+                    behavior_description=meta.get("behavior_description", ""),
+                    request_id=meta.get("request_id", ""),
+                )
+                validation_output = await validate_confidence(validation_input, None)
+                result["confidence_score"] = validation_output.confidence_score
+                result["verdict"] = validation_output.verdict.value if hasattr(validation_output.verdict, "value") else str(validation_output.verdict)
+                result["ticket_triggered"] = validation_output.ticket_triggered
+            except Exception:
+                logger.warning(
+                    "confidence_validation_failed_in_sse",
+                    extra={"stream_id": session.stream_id},
+                )
+
+        return result

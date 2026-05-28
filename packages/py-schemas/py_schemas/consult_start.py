@@ -25,13 +25,16 @@ class ConsultStartRequest(BaseModel):
         description="关联的患者档案 ID（可选）。若提供，将提取档案标签注入检索",
     )
     behavior_type: Optional[
-        Literal[
-            "SELF_INJURY", "AGGRESSION", "ELOPEMENT", "MEDICATION",
-            "EMOTIONAL_MELTDOWN", "STEREOTYPY", "OTHER",
+        list[
+            Literal[
+                "SELF_INJURY", "AGGRESSION", "ELOPEMENT", "MEDICATION",
+                "EMOTIONAL_MELTDOWN", "STEREOTYPY", "OTHER",
+            ]
         ]
     ] = Field(
         default=None,
-        description="前置行为类型选择（可选）",
+        min_length=1,
+        description="前置行为类型选择（可选，可多选）",
     )
     emotion_level: Optional[Literal["轻", "中", "重"]] = Field(
         default=None,

@@ -103,6 +103,7 @@ export interface CaseResponse {
   updated_at: string; // ISO datetime
   pii_warnings?: PiiWarning[];
   ebp_inconsistency_warning?: string;
+  is_owner?: boolean;
 }
 
 /** 案例列表条目 */

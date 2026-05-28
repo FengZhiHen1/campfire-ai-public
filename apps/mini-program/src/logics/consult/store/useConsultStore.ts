@@ -27,6 +27,8 @@ import {
   type PlanSection,
   type TicketGuide,
   type MessageItem,
+  type ReferencedCase,
+  type DoneEventPayload,
   ConsultErrorCode,
 } from '../types/index';
 import {
@@ -74,6 +76,10 @@ export interface ConsultStore extends ConsultSessionStoreState {
   setBehaviorTypes: (types: BehaviorTypeCategory[]) => void;
   /** 更新行为描述文本 */
   setBehaviorDescription: (desc: string) => void;
+  /** 设置情绪等级 */
+  setEmotionLevel: (level: '轻' | '中' | '重') => void;
+  /** 设置关联档案 */
+  setSelectedProfile: (profileId: string | undefined) => void;
   /** 提交咨询：selecting_behavior -> submitting */
   submitConsult: () => Promise<void>;
   /** 取消行为选择：selecting_behavior -> idle */
@@ -107,6 +113,14 @@ interface ConsultSessionStoreState {
   messages: MessageItem[];
   errorCode?: ConsultErrorCode;
   ticketGuideShown: boolean;
+  /** 情绪等级选择 */
+  emotionLevel?: '轻' | '中' | '重';
+  /** 关联档案 ID */
+  selectedProfileId?: string;
+  /** 参考案例切片 ID 列表 */
+  referencedSliceIds: string[];
+  /** 参考案例简要信息 */
+  referencedCases: ReferencedCase[];
   /** 幂等请求 ID（运行时，不持久化） */
   _requestId: string;
   /** SSE 重连计数器（运行时，不持久化） */
@@ -136,6 +150,10 @@ function createInitialState(): ConsultSessionStoreState {
     messages: [],
     errorCode: undefined,
     ticketGuideShown: false,
+    emotionLevel: undefined,
+    selectedProfileId: undefined,
+    referencedSliceIds: [],
+    referencedCases: [],
     _requestId: '',
     _reconnectAttempt: 0,
   };
@@ -326,6 +344,12 @@ export const useConsultStore = create<ConsultStore>()(
       setBehaviorDescription: (desc: string): void => {
         set({ behaviorDescription: desc });
       },
+      setEmotionLevel: (level: '轻' | '中' | '重'): void => {
+        set({ emotionLevel: level });
+      },
+      setSelectedProfile: (profileId: string | undefined): void => {
+        set({ selectedProfileId: profileId });
+      },
 
       // ===== submitConsult =====
       submitConsult: async (): Promise<void> => {
@@ -363,16 +387,15 @@ export const useConsultStore = create<ConsultStore>()(
         set({ _requestId: requestId });
 
         // ----- 组装请求体 -----
-        const { behaviorTypeSelection, behaviorDescription } = get();
-        const behaviorType = behaviorTypeSelection[0];
+        const { behaviorTypeSelection, behaviorDescription, emotionLevel, selectedProfileId } = get();
 
         try {
           // ----- 发起 HTTP POST 请求 -----
           const response: ConsultSubmitResponse = await consultApi.submitConsult(
             behaviorDescription,
-            behaviorType,
-            undefined,   // profileId — MVP 暂不关联档案
-            undefined,   // emotionLevel — MVP 暂不选择
+            behaviorTypeSelection,
+            selectedProfileId,
+            emotionLevel,
             requestId,
           );
 
@@ -430,7 +453,7 @@ export const useConsultStore = create<ConsultStore>()(
               },
 
               // ---- onDone ----
-              onDone: (): void => {
+              onDone: (doneData: DoneEventPayload): void => {
                 const state = get();
 
                 // 只在 streaming 状态下处理 done 事件（error 已转换的忽略）
@@ -438,8 +461,16 @@ export const useConsultStore = create<ConsultStore>()(
                   return;
                 }
 
-                // 状态转换：streaming -> completed
-                const next = transitionTo(state.sessionState, 'completed');
+                // 提取 SSE done 事件元数据
+                const crisisLevel = doneData?.crisis_level || 'mild';
+                const referencedSliceIds: string[] = doneData?.referenced_slice_ids ?? [];
+                const referencedCases: ReferencedCase[] = doneData?.referenced_cases ?? [];
+                const verdict = doneData?.verdict || 'PASS';
+
+                // 判决是否触发工单引导
+                const shouldShowTicket = verdict === 'FORCE_BLOCK' || verdict === 'APPEND_WARNING';
+                const nextState = shouldShowTicket ? 'ticket_guide' : 'completed';
+                const next = transitionTo(state.sessionState, nextState);
 
                 // 更新 system_plan 消息：标记为已完成
                 const updatedMessages = state.messages.map((msg) => {
@@ -452,10 +483,15 @@ export const useConsultStore = create<ConsultStore>()(
                   return msg;
                 });
 
-                // MVP 阶段：跳过置信度校验和工单引导（暂不需要）
                 set({
                   sessionState: next,
                   messages: updatedMessages,
+                  crisisLevel: crisisLevel as CrisisLevel,
+                  referencedSliceIds,
+                  referencedCases,
+                  ticketGuide: shouldShowTicket
+                    ? { show: true, riskLevel: verdict === 'FORCE_BLOCK' ? 'high_risk' : 'normal' }
+                    : state.ticketGuide,
                 });
 
                 // ----- 步骤 6：归档（非阻塞）-----
@@ -728,7 +764,7 @@ export const useConsultStore = create<ConsultStore>()(
 
       // ===== goToTicket =====
       goToTicket: (): void => {
-        Taro.navigateTo({ url: '/pages/tickets/detail' });
+        Taro.navigateTo({ url: '/views/tickets/pages/detail' });
       },
 
       // ===== addMessage =====

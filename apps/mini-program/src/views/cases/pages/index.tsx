@@ -50,13 +50,15 @@ export default function CasesIndex() {
   const [loading, setLoading] = useState(false);
   const [statusIdx, setStatusIdx] = useState(0);
   const [behaviorTypeIdx, setBehaviorTypeIdx] = useState(0);
+  const [activeTab, setActiveTab] = useState<'public' | 'my'>('public');
 
   const load = async () => {
     setLoading(true);
     try {
-      const status = statusOptions[statusIdx].value || undefined;
+      const scope = activeTab === 'public' ? 'public' : 'my';
+      const status = activeTab === 'my' && statusIdx > 0 ? statusOptions[statusIdx].value || undefined : undefined;
       const behaviorType = behaviorTypeOptions[behaviorTypeIdx].value || undefined;
-      const res = await listCases(status, behaviorType, 1, 20);
+      const res = await listCases(status, behaviorType, 1, 20, scope);
       setItems(res.items as CaseItem[]);
     } catch {
       Taro.showToast({ title: '加载失败', icon: 'none' });
@@ -71,7 +73,7 @@ export default function CasesIndex() {
 
   useEffect(() => {
     load();
-  }, [statusIdx, behaviorTypeIdx]);
+  }, [activeTab, statusIdx, behaviorTypeIdx]);
 
   const goDetail = (caseId: string) => {
     Taro.navigateTo({ url: `/views/cases/pages/detail?caseId=${caseId}` });
@@ -93,7 +95,23 @@ export default function CasesIndex() {
     <View className="cases-page">
       {/* 顶部导航栏 */}
       <View className="cases-navbar">
-        <Text className="cases-navbar__title">真实案例库</Text>
+        <Text className="cases-navbar__title">{activeTab === 'public' ? '公共案例库' : '我的提交'}</Text>
+      </View>
+
+      {/* Tab 切换 */}
+      <View className="cases-tabs">
+        <Button
+          className={`cases-tabs__btn ${activeTab === 'public' ? 'cases-tabs__btn--active' : ''}`}
+          onClick={() => { setActiveTab('public'); setStatusIdx(0); }}
+        >
+          公共案例库
+        </Button>
+        <Button
+          className={`cases-tabs__btn ${activeTab === 'my' ? 'cases-tabs__btn--active' : ''}`}
+          onClick={() => setActiveTab('my')}
+        >
+          我的提交
+        </Button>
       </View>
 
       {/* 搜索栏 */}
@@ -117,17 +135,19 @@ export default function CasesIndex() {
             <Text className="cases-filters__picker-chevron">▼</Text>
           </Button>
         </Picker>
-        <Picker
-          mode="selector"
-          range={statusOptions.map((o) => o.label)}
-          value={statusIdx}
-          onChange={(e) => setStatusIdx(Number(e.detail.value))}
-        >
-          <Button className={`cases-filters__picker ${statusIdx > 0 ? 'cases-filters__picker--active' : ''}`}>
-            <Text className="cases-filters__picker-text">{statusOptions[statusIdx].label}</Text>
-            <Text className="cases-filters__picker-chevron">▼</Text>
-          </Button>
-        </Picker>
+        {activeTab === 'my' && (
+          <Picker
+            mode="selector"
+            range={statusOptions.map((o) => o.label)}
+            value={statusIdx}
+            onChange={(e) => setStatusIdx(Number(e.detail.value))}
+          >
+            <Button className={`cases-filters__picker ${statusIdx > 0 ? 'cases-filters__picker--active' : ''}`}>
+              <Text className="cases-filters__picker-text">{statusOptions[statusIdx].label}</Text>
+              <Text className="cases-filters__picker-chevron">▼</Text>
+            </Button>
+          </Picker>
+        )}
       </View>
 
       {/* 列表区域 */}

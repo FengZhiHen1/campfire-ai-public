@@ -154,6 +154,7 @@ async def get_case_endpoint(
     """获取案例详情端点。"""
     return await get_case(
         case_id=case_id,
+        current_user=anonymous_user,
         session=session,
         case_repo=case_repo,
     )
@@ -183,6 +184,10 @@ async def list_cases_endpoint(
         alias="behavior_type",
         description="行为类型筛选（自伤/攻击/刻板/逃跑/情绪崩溃/其他）",
     ),
+    scope: Optional[str] = Query(
+        default="public",
+        description="查询范围：public=仅已审核案例，my=当前用户的全部案例",
+    ),
     page: int = Query(default=1, ge=1, description="页码，从 1 开始"),
     page_size: int = Query(default=15, ge=1, le=100, description="每页条数"),
     anonymous_user: Dict[str, Any] = Depends(get_anonymous_user),
@@ -195,6 +200,7 @@ async def list_cases_endpoint(
         behavior_type_filter=behavior_type_filter,
         page=page,
         page_size=page_size,
+        scope=scope,
         current_user=anonymous_user,
         session=session,
         case_repo=case_repo,

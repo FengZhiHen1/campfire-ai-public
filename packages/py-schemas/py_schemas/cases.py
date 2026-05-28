@@ -370,6 +370,9 @@ class CaseResponse(BaseModel):
     ebp_inconsistency_warning: Optional[str] = Field(
         default=None, description="EBP 标签一致性警告（仅提交时返回）"
     )
+    is_owner: Optional[bool] = Field(
+        default=None, description="当前用户是否为案例作者"
+    )
 
     model_config = {"extra": "forbid"}
 

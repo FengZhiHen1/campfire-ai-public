@@ -194,10 +194,14 @@ def _build_metadata(case_data: dict) -> ChunkMetadata:
     age_range = f"{age_min}-{age_max}" if (age_min is not None and age_max is not None) else ""
     severity = str(case_data.get("severity", ""))
     evidence_level = str(case_data.get("evidence_level", ""))
+    case_title = str(case_data.get("title", "")) or None
+    source = str(case_data.get("source_type", "")) or None
 
     return ChunkMetadata(
         behavior_type=behavior_type,
         age_range=age_range,
         severity=severity,
         evidence_level=evidence_level,
+        case_title=case_title,
+        source=source,
     )

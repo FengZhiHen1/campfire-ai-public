@@ -23,10 +23,12 @@ from py_schemas.consult import (
     TagFilterDto,
 )
 
-from app.services.crisis_judgment.enums import CrisisLevel
+from app.services.crisis_judgment.enums import CrisisLevel, BehaviorTypeCategory
 from app.services.crisis_judgment.models import (
     CrisisJudgmentResult,
+    CrisisJudgmentRequest,
     JudgmentLayerResult,
+    PatientProfileSnapshot,
 )
 from app.services.emergency_plan_generation.models import (
     EmergencyPlanInput,
@@ -97,7 +99,7 @@ async def search_cases(
 async def start_consultation(
     behavior_description: str,
     profile_id: str | None,
-    behavior_type: str | None,
+    behavior_type: list[str] | None,
     emotion_level: str | None,
     user_id: str,
     db: AsyncSession,
@@ -154,17 +156,25 @@ async def start_consultation(
                 profile_parts.append(f"- **年龄**：约 {age} 岁")
             profile_summary = "\n".join(profile_parts) if profile_parts else "（档案信息有限）"
 
+            # 构建 PatientProfileSnapshot（供危机分级使用）
+            patient_profile = PatientProfileSnapshot(
+                diagnosis_type=profile.diagnosis_type,
+                historical_behavior_tags=_extract_behavior_tags(profile),
+            )
+
             # 构建 tag_filters
-            # age_range 需要映射为字符串，简单处理：根据年龄推断
             age_range_str = _map_age_to_range(profile.birth_date)
+            primary_bt = profile.primary_behavior or (behavior_type[0] if behavior_type else "OTHER")
             tag_filters = TagFilterDto(
                 age_range=age_range_str,
-                behavior_type=profile.primary_behavior or behavior_type or "OTHER",
+                behavior_type=primary_bt,
                 emotion_level=emotion_level,
             )
         else:
+            patient_profile = None
             tag_filters = _build_default_tag_filters(behavior_type, emotion_level)
     else:
+        patient_profile = None
         tag_filters = _build_default_tag_filters(behavior_type, emotion_level)
 
     _logger.info(
@@ -190,17 +200,12 @@ async def start_consultation(
     search_result: SemanticSearchResult = await search_cases(search_input, db)
 
     # ------------------------------------------------------------------
-    # 步骤 3：构建 EmergencyPlanInput（MVP 跳过危机分级）
+    # 步骤 3：危机分级判定
     # ------------------------------------------------------------------
-    crisis_result = CrisisJudgmentResult(
-        final_level=CrisisLevel.MILD,
-        block_deep_response=False,
-        judgment_sources=[
-            JudgmentLayerResult(
-                layer_name="MVP_Default",
-                level=CrisisLevel.MILD,
-            )
-        ],
+    crisis_result = await _run_crisis_judgment(
+        behavior_description=behavior_description,
+        behavior_type=behavior_type,
+        patient_profile=patient_profile,
     )
 
     plan_input = EmergencyPlanInput(
@@ -229,6 +234,20 @@ async def start_consultation(
     streaming_service = SseStreamingService()
     streaming_service.register_generator(session_id, generator)
 
+    # 存储生成元数据供 SSE DoneEvent 使用
+    streaming_service.store_generation_meta(
+        session_id=session_id,
+        prenumbered_slices={
+            num: sid for num, sid in ctx.prenumbered_slices
+        },
+        crisis_level=crisis_result.final_level.value,
+        block_deep_response=crisis_result.block_deep_response,
+        behavior_description=behavior_description,
+        request_id=request_id,
+        search_result=search_result,
+        plan_input=plan_input,
+    )
+
     _logger.info(
         "consultation_generator_registered",
         extra={
@@ -246,13 +265,14 @@ async def start_consultation(
 
 
 def _build_default_tag_filters(
-    behavior_type: str | None,
+    behavior_type: list[str] | None,
     emotion_level: str | None,
 ) -> TagFilterDto:
     """构建默认标签过滤条件（无档案时）。"""
+    primary_behavior = behavior_type[0] if behavior_type else "OTHER"
     return TagFilterDto(
         age_range="未知年龄段",
-        behavior_type=behavior_type or "OTHER",
+        behavior_type=primary_behavior,
         emotion_level=emotion_level,
     )
 
@@ -274,6 +294,59 @@ def _map_age_to_range(birth_date: Any) -> str:
         return "青少年(13-17岁)"
     else:
         return "成年(18岁+)"
+
+
+def _extract_behavior_tags(profile: Any) -> list[str]:
+    """从 Profile ORM 对象提取历史行为标签列表。"""
+    tags: list[str] = []
+    if hasattr(profile, "primary_behavior") and profile.primary_behavior:
+        tags.append(profile.primary_behavior)
+    if hasattr(profile, "sensory_features") and profile.sensory_features:
+        for sf in profile.sensory_features:
+            if isinstance(sf, str):
+                tags.append(sf)
+    return tags
+
+
+async def _run_crisis_judgment(
+    behavior_description: str,
+    behavior_type: list[str] | None,
+    patient_profile: PatientProfileSnapshot | None,
+) -> CrisisJudgmentResult:
+    """执行危机分级判定，失败时 fallback 到 mild。"""
+    try:
+        from app.services.crisis_judgment import judge_crisis
+
+        behavior_type_selection: list[BehaviorTypeCategory] = []
+        if behavior_type:
+            for bt in behavior_type:
+                try:
+                    behavior_type_selection.append(BehaviorTypeCategory(bt))
+                except ValueError:
+                    _logger.warning("invalid_behavior_type", extra={"value": bt})
+
+        if not behavior_type_selection:
+            behavior_type_selection = [BehaviorTypeCategory.OTHER]
+
+        crisis_request = CrisisJudgmentRequest(
+            patient_profile=patient_profile,
+            behavior_type_selection=behavior_type_selection,
+            behavior_description=behavior_description,
+        )
+        return await judge_crisis(crisis_request)
+    except Exception:
+        _logger.exception("crisis_judgment_failed_fallback_to_mild")
+        return CrisisJudgmentResult(
+            final_level=CrisisLevel.MILD,
+            block_deep_response=False,
+            judgment_sources=[
+                JudgmentLayerResult(
+                    layer_name="Fallback",
+                    level=CrisisLevel.MILD,
+                )
+            ],
+            degradation_note="crisis_judgment_failed",
+        )
 
 
 __all__ = ["search_cases", "start_consultation"]

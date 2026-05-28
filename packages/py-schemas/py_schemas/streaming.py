@@ -94,6 +94,32 @@ class DoneEvent(BaseModel):
         "状态时，告知前端已成功推送的最后一个 chunk 的序列号，便于前端确认"
         "已接收内容的范围。",
     )
+    referenced_slice_ids: list[str] = Field(
+        default_factory=list,
+        description="LLM 输出中实际引用的案例切片 ID 列表（从 [N] 标记反向查找得到）",
+    )
+    crisis_level: str | None = Field(
+        default=None,
+        description="危机分级结果（mild/moderate/severe）",
+    )
+    referenced_cases: list[dict[str, str]] = Field(
+        default_factory=list,
+        description="被引用案例的简要信息列表，每条含 slice_id、case_id、case_title、slice_text(前200字)",
+    )
+    confidence_score: float | None = Field(
+        default=None,
+        ge=0.0,
+        le=1.0,
+        description="置信度评分（0~1），来自后校验管线",
+    )
+    verdict: str | None = Field(
+        default=None,
+        description="置信度校验判定结论（PASS/APPEND_WARNING/FORCE_BLOCK）",
+    )
+    ticket_triggered: bool = Field(
+        default=False,
+        description="是否已触发人工工单创建",
+    )
 
     model_config = {"extra": "forbid"}
 
