@@ -96,7 +96,7 @@
   display: flex;
   flex-direction: column;
   padding: $cf-spacing-md;
-  padding-bottom: calc(48px + env(safe-area-inset-bottom));
+  padding-bottom: calc(100px + env(safe-area-inset-bottom));
 
   &__label {
     font-size: 28px;
@@ -120,12 +120,12 @@
   &__option {
     background-color: $cf-surface-variant;
     border-radius: $cf-radius-lg;
-    padding: $cf-spacing-md;
+    padding: $cf-spacing-sm;
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    min-height: 280px;
+    min-height: 200px;
     position: relative;
     border: none;
     text-align: center;
