@@ -132,55 +132,11 @@ async def start_consultation(
     tag_filters: TagFilterDto
     profile_summary: str = "（未关联档案）"
 
-    if profile_id:
-        from py_db.models.profiles import Profile
-        from sqlalchemy import select
-
-        result = await db.execute(
-            select(Profile).where(Profile.profile_id == profile_id)
-        )
-        profile: Profile | None = result.scalars().first()
-        if profile:
-            # 构建档案摘要 Markdown
-            profile_parts: list[str] = []
-            if profile.diagnosis_type:
-                profile_parts.append(f"- **诊断类型**：{profile.diagnosis_type}")
-            if profile.primary_behavior:
-                profile_parts.append(f"- **主要行为类型**：{profile.primary_behavior}")
-            if profile.birth_date:
-                from datetime import date
-                age = (date.today() - profile.birth_date).days // 365
-                profile_parts.append(f"- **年龄**：约 {age} 岁")
-            profile_summary = "\n".join(profile_parts) if profile_parts else "（档案信息有限）"
-
-            # 查询近期事件日志，注入个性化历史
-            profile_summary = await _inject_event_history(
-                db=db,
-                profile_id=profile_id,
-                behavior_type=behavior_type[0] if behavior_type else None,
-                profile_summary=profile_summary,
-            )
-
-            # 构建 PatientProfileSnapshot（供危机分级使用）
-            patient_profile = PatientProfileSnapshot(
-                diagnosis_type=profile.diagnosis_type,
-                historical_behavior_tags=_extract_behavior_tags(profile),
-            )
-
-            # 构建 tag_filters
-            age_range_str = _map_age_to_range(profile.birth_date)
-            primary_bt = profile.primary_behavior or (behavior_type[0] if behavior_type else "OTHER")
-            tag_filters = TagFilterDto(
-                age_range=age_range_str,
-                behavior_type=primary_bt,
-                emotion_level=emotion_level,
-            )
-        else:
-            patient_profile = None
-            tag_filters = _build_default_tag_filters(behavior_type, emotion_level)
-    else:
-        patient_profile = None
-        tag_filters = _build_default_tag_filters(behavior_type, emotion_level)
+    # TODO: 档案关联逻辑暂时关闭，待调试通过后恢复
+    # if profile_id:
+    #     ...
+    patient_profile = None
+    tag_filters = _build_default_tag_filters(behavior_type, emotion_level)
 
     _logger.info(
         "consultation_started",
