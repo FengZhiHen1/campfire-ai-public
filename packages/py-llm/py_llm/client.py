@@ -9,6 +9,7 @@ from __future__ import annotations
 from typing import AsyncGenerator
 
 from openai import AsyncOpenAI
+from py_logger import logger
 
 from py_llm.llm_contract import LLMClientContract, LLMClientError  # noqa: F401  由 __init__.py 重导出
 from py_llm.types import ChatCompletionChunk, Choice, Delta, RetryConfig  # noqa: F401  由 __init__.py 重导出
@@ -55,12 +56,34 @@ class DeepSeekLLMClient(LLMClientContract):
                 resolved_base_url = (
                     str(settings.DEEPSEEK_BASE_URL).rstrip("/v1").rstrip("/")
                 )
+                _api_key_source = "py_config"
             except (ImportError, AttributeError):
                 resolved_api_key = ""  # 降级模式——测试中可 mock async_chat_stream
                 resolved_base_url = base_url.rstrip("/")
+                _api_key_source = "degraded"
         else:
             resolved_api_key = api_key
             resolved_base_url = base_url.rstrip("/")
+            _api_key_source = "explicit"
+
+        if _api_key_source == "degraded":
+            logger.warning(
+                service="py-llm",
+                message="DeepSeekLLMClient 以降级模式初始化（py_config 不可用，API Key 为空）",
+                op_type="init",
+                extra={"api_key_source": _api_key_source, "base_url": resolved_base_url},
+            )
+        else:
+            logger.info(
+                service="py-llm",
+                message=f"DeepSeekLLMClient 初始化完成（API Key 来源: {_api_key_source}）",
+                op_type="init",
+                extra={
+                    "api_key_source": _api_key_source,
+                    "base_url": resolved_base_url,
+                    "retry_max_retries": (retry_config or RetryConfig()).max_retries,
+                },
+            )
 
         super().__init__(
             api_key=resolved_api_key,

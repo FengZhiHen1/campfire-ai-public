@@ -17,6 +17,7 @@ from abc import ABC, abstractmethod
 from typing import AsyncGenerator, final
 
 from openai import APIStatusError, APITimeoutError, RateLimitError
+from py_logger import logger
 
 from py_llm.types import ChatCompletionChunk, RetryConfig
 
@@ -137,8 +138,11 @@ class LLMClientContract(ABC):
                 return
             except Exception as exc:
                 if not self._should_retry(exc, attempt, cfg.max_retries):
+                    self._log_exhausted(exc, cfg.max_retries)
                     raise self._map_error(exc) from exc
-                await asyncio.sleep(self._calculate_delay(attempt, cfg))
+                delay = self._calculate_delay(attempt, cfg)
+                self._log_retry(attempt, exc, delay, cfg.max_retries)
+                await asyncio.sleep(delay)
         # 理论上不可达——最后一次 attempt 必定触发 _should_retry=False
         raise self._map_error(RuntimeError("重试循环异常退出"))
 
@@ -187,8 +191,11 @@ class LLMClientContract(ABC):
                 return result
             except Exception as exc:
                 if not self._should_retry(exc, attempt, cfg.max_retries):
+                    self._log_exhausted(exc, cfg.max_retries)
                     raise self._map_error(exc) from exc
-                await asyncio.sleep(self._calculate_delay(attempt, cfg))
+                delay = self._calculate_delay(attempt, cfg)
+                self._log_retry(attempt, exc, delay, cfg.max_retries)
+                await asyncio.sleep(delay)
         raise self._map_error(RuntimeError("重试循环异常退出"))
 
     # ========================================================================
@@ -275,6 +282,40 @@ class LLMClientContract(ABC):
         """
         if result is None:  # 防御性检查——str 类型保证不应为 None
             raise RuntimeError(f"{self.__class__.__name__}._do_create_completion 返回了 None")
+
+    # ========================================================================
+    # 日志 —— 可选依赖 py-logger，不可用时静默降级
+    # ========================================================================
+
+    @staticmethod
+    def _log_retry(attempt: int, exc: Exception, delay: float, max_retries: int) -> None:
+        """记录重试事件。"""
+        logger.warning(
+            service="py-llm",
+            message=f"LLM API 调用失败，第 {attempt + 1}/{max_retries + 1} 次重试",
+            op_type="retry",
+            extra={
+                "attempt": attempt + 1,
+                "max_attempts": max_retries + 1,
+                "error_type": type(exc).__name__,
+                "error_message": str(exc)[:200],
+                "delay_seconds": round(delay, 3),
+            },
+        )
+
+    @staticmethod
+    def _log_exhausted(exc: Exception, max_retries: int) -> None:
+        """记录重试耗尽事件。"""
+        logger.error(
+            service="py-llm",
+            message=f"LLM API 调用失败，{max_retries + 1} 次尝试全部失败",
+            op_type="retry_exhausted",
+            extra={
+                "max_attempts": max_retries + 1,
+                "final_error_type": type(exc).__name__,
+                "final_error_message": str(exc)[:200],
+            },
+        )
 
     # ========================================================================
     # 决策扩展点 —— 模板提供基线实现，子类可覆写
