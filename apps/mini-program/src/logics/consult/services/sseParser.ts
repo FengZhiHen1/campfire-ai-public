@@ -374,8 +374,8 @@ export class SseStreamParser {
         try {
           const payload: ChunkEventPayload = JSON.parse(sseEvent.data);
           this.callbacks.onChunk?.(payload);
-        } catch {
-          // JSON 解析失败时忽略
+        } catch (err: unknown) {
+          console.debug('[sse] chunk dispatch failed:', err instanceof Error ? err.message : String(err));
         }
         break;
       }
@@ -384,11 +384,10 @@ export class SseStreamParser {
         try {
           const payload: DoneEventPayload = JSON.parse(sseEvent.data);
           this.callbacks.onDone?.(payload);
-        } catch {
-          // JSON 解析失败仍触发 done（无载荷）
+        } catch (err: unknown) {
+          console.debug('[sse] done dispatch failed:', err instanceof Error ? err.message : String(err));
           this.callbacks.onDone?.({ finish_reason: 'COMPLETE' });
         }
-        // done 后不再重连
         this.isActive = false;
         break;
       }
@@ -397,8 +396,8 @@ export class SseStreamParser {
         try {
           const payload: ErrorEventPayload = JSON.parse(sseEvent.data);
           this.callbacks.onError?.(payload);
-        } catch {
-          // JSON 解析失败时忽略
+        } catch (err: unknown) {
+          console.debug('[sse] error dispatch failed:', err instanceof Error ? err.message : String(err));
         }
         break;
       }
