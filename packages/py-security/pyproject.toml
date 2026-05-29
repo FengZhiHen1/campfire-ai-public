@@ -3,7 +3,9 @@ name = "py-security"
 version = "0.1.0"
 description = "Campfire-AI shared package: py-security - PII detection, security utilities"
 requires-python = ">=3.12"
-dependencies = []
+dependencies = [
+    "py-logger",
+]
 
 [build-system]
 requires = ["hatchling"]

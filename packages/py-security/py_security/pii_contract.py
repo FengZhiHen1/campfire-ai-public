@@ -16,10 +16,19 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import final
+from typing import TYPE_CHECKING, final
+
+if TYPE_CHECKING:
+    from py_logger import StructuredLogger
 
 from py_security.exceptions import PiiDetectionError, PiiInputValidationError
 from py_security.types import PiiDetectionResult
+
+
+def _get_logger() -> StructuredLogger:
+    from py_logger import logger
+
+    return logger
 
 
 class BasePiiDetector(ABC):
@@ -50,6 +59,20 @@ class BasePiiDetector(ABC):
         self._validate_input(text)
         result = self._do_detect(text)
         self._validate_result(text, result)
+
+        if result.has_pii:
+            types_found = list({w.pii_type.value for w in result.warnings})
+            _get_logger().warning(
+                "py-security",
+                f"检测到 {len(result.warnings)} 处疑似 PII",
+                op_type="pii_detect",
+                extra={
+                    "pii_count": len(result.warnings),
+                    "pii_types": types_found,
+                    "text_length": len(text),
+                },
+            )
+
         return result
 
     # === @abstractmethod 钩子：实现者必填 ===

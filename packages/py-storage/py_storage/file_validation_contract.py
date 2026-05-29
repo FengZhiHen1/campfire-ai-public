@@ -20,10 +20,19 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import final
+from typing import TYPE_CHECKING, final
+
+if TYPE_CHECKING:
+    from py_logger import StructuredLogger
 
 from py_storage.exceptions import FileInputValidationError, FileValidationError
 from py_storage.types import FileValidationInput, FileValidationResult
+
+
+def _get_logger() -> StructuredLogger:
+    from py_logger import logger
+
+    return logger
 
 
 class BaseFileValidator(ABC):
@@ -69,6 +78,18 @@ class BaseFileValidator(ABC):
 
         result = FileValidationResult(is_valid=True)
         self._validate_result(file_input, result)
+
+        _get_logger().info(
+            "py-storage",
+            f"文件校验通过: {file_input.filename}",
+            op_type="file_validate",
+            extra={
+                "filename": file_input.filename,
+                "file_size": len(file_input.content),
+                "extension": ext,
+            },
+        )
+
         return result
 
     # === 钩子方法：子类必须覆写 ===

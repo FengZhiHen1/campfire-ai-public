@@ -20,8 +20,18 @@
 from __future__ import annotations
 
 import re
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from py_logger import StructuredLogger
 
 from py_security.exceptions import PiiPatternCompileError
+
+
+def _get_logger() -> StructuredLogger:
+    from py_logger import logger
+
+    return logger
 from py_security.pii_contract import BasePiiDetector
 from py_security.pii_patterns import PII_PATTERNS
 from py_security.types import (
@@ -53,6 +63,16 @@ class RegexPiiDetector(BasePiiDetector):
             try:
                 pattern: re.Pattern[str] = re.compile(pattern_str)
             except re.error as exc:
+                _get_logger().error(
+                    "py-security",
+                    f"PII 正则模式编译失败: {pii_type.value}",
+                    op_type="pii_pattern_compile",
+                    extra={
+                        "pii_type": pii_type.value,
+                        "pattern_preview": pattern_str[:80],
+                        "error": str(exc),
+                    },
+                )
                 raise PiiPatternCompileError(pattern_str, str(exc)) from exc
 
             for match in pattern.finditer(text):

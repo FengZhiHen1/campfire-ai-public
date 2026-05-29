@@ -18,6 +18,11 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from py_logger import StructuredLogger
+
 from py_storage.exceptions import (
     FileContentTooShortError,
     FileExtensionNotAllowedError,
@@ -28,6 +33,12 @@ from py_storage.exceptions import (
 )
 from py_storage.file_validation_contract import BaseFileValidator
 from py_storage.types import FileCategory
+
+
+def _get_logger() -> StructuredLogger:
+    from py_logger import logger
+
+    return logger
 
 # ---------------------------------------------------------------------------
 # 文件大小上限（字节）
@@ -85,6 +96,16 @@ class DefaultFileValidator(BaseFileValidator):
         config = get_security_config()
         allowed = frozenset(config.ALLOWED_FILE_EXTENSIONS)
         if ext not in allowed:
+            _get_logger().warning(
+                "py-storage",
+                f"文件扩展名被拒: .{ext}",
+                op_type="file_validate_blocked",
+                extra={
+                    "step": "extension",
+                    "extension": ext,
+                    "allowed": sorted(allowed),
+                },
+            )
             raise FileExtensionNotAllowedError(ext, allowed)
 
     # === 第 2 层：文件大小上限 ===
@@ -103,6 +124,17 @@ class DefaultFileValidator(BaseFileValidator):
             category = "文件"
 
         if content_size > size_limit:
+            _get_logger().warning(
+                "py-storage",
+                f"文件大小超限: {content_size} > {size_limit} ({category})",
+                op_type="file_validate_blocked",
+                extra={
+                    "step": "size",
+                    "actual_bytes": content_size,
+                    "limit_bytes": size_limit,
+                    "category": category,
+                },
+            )
             raise FileTooLargeError(content_size, size_limit, category)
 
     # === 第 3 层：MIME 类型检测 ===
@@ -113,9 +145,25 @@ class DefaultFileValidator(BaseFileValidator):
         try:
             detected_mime = magic.from_buffer(content[:1024], mime=True)
         except Exception as exc:
+            _get_logger().error(
+                "py-storage",
+                f"MIME 类型检测失败: {exc}",
+                op_type="file_validate_error",
+                extra={"step": "mime_type", "error": str(exc)},
+            )
             raise FileMimeDetectionError(str(exc)) from exc
 
         if detected_mime not in _ALLOWED_MIME_TYPES:
+            _get_logger().warning(
+                "py-storage",
+                f"MIME 类型被拒: {detected_mime}",
+                op_type="file_validate_blocked",
+                extra={
+                    "step": "mime_type",
+                    "detected_mime": detected_mime,
+                    "allowed_mimes": sorted(_ALLOWED_MIME_TYPES),
+                },
+            )
             raise FileMimeTypeNotAllowedError(detected_mime, _ALLOWED_MIME_TYPES)
 
     # === 第 4 层：文件头魔数 ===
@@ -123,6 +171,16 @@ class DefaultFileValidator(BaseFileValidator):
     def _verify_magic_bytes(self, ext: str, content: bytes) -> None:
         min_header = 4
         if len(content) < min_header:
+            _get_logger().warning(
+                "py-storage",
+                f"文件内容过短，无法校验魔数: {len(content)} < {min_header}",
+                op_type="file_validate_blocked",
+                extra={
+                    "step": "magic_bytes",
+                    "actual_bytes": len(content),
+                    "min_required": min_header,
+                },
+            )
             raise FileContentTooShortError(len(content), min_header)
 
         expected_magic = _MAGIC_SIGNATURES.get(ext)
@@ -133,6 +191,18 @@ class DefaultFileValidator(BaseFileValidator):
         actual_header = content[:len(expected_magic)]
         if actual_header != expected_magic:
             actual_hex = " ".join(f"{b:02x}" for b in actual_header)
+            expected_hex = " ".join(f"{b:02x}" for b in expected_magic)
+            _get_logger().warning(
+                "py-storage",
+                f"文件头魔数不匹配: .{ext}",
+                op_type="file_validate_blocked",
+                extra={
+                    "step": "magic_bytes",
+                    "extension": ext,
+                    "actual_hex": actual_hex,
+                    "expected_hex": expected_hex,
+                },
+            )
             raise FileMagicSignatureMismatchError(ext, actual_hex)
 
 

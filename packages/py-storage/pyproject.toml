@@ -5,6 +5,7 @@ description = "Campfire-AI shared package: py-storage"
 requires-python = ">=3.12"
 dependencies = [
     "py-config",
+    "py-logger",
     "python-magic>=0.4.27",
 ]
 
