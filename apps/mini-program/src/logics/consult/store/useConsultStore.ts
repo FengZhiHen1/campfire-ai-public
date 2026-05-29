@@ -348,12 +348,8 @@ export const useConsultStore = create<ConsultStore>()(
 
           const { stream_url, confidence_output, session_id, referenced_slice_ids, disclaimer, generation_time_ms, is_partial, finish_reason, ttft_ms, token_input, token_output } = response;
 
-          // ----- 存储置信度数据（供 done 事件后使用）-----
-          const updates: Partial<ConsultSessionStoreState> = {};
-          if (confidence_output) {
-            updates.confidenceScore = confidence_output.confidence_score;
-            updates.validationVerdict = confidence_output.verdict;
-          }
+          // ----- HTTP 成功 → 直接进入 streaming -----
+          set({ sessionState: transitionTo('submitting', 'streaming') });
 
           // ----- 创建 SSE 解析器并连接 -----
           const parser = new SseStreamParser(
@@ -368,42 +364,17 @@ export const useConsultStore = create<ConsultStore>()(
               // ---- onChunk ----
               onChunk: (chunkData: { text: string; sequence: number; section?: string | null }): void => {
                 const state = get();
-                const newSeq = chunkData.sequence;
                 const chunkSection = chunkData.section ?? null;
-
-                // 首个内容 chunk → 触发 streaming 状态转换
-                const isFirstChunk = state.lastSequence === 0;
-
-                if (isFirstChunk) {
-                  const sNext = transitionTo(state.sessionState, 'streaming');
-                  const initMsg = createMessageItem('system', '', 'system_plan', {
-                    isOriginal: true,
-                  });
-                  // 增量更新：有 section 标记时追加到对应段落，否则累积到 accumulatedText
-                  const updatedSections = appendToPlanSections(
-                    state.planSections,
-                    chunkSection,
-                    chunkData.text,
-                  );
-                  set({
-                    sessionState: sNext,
-                    accumulatedText: state.accumulatedText + chunkData.text,
-                    lastSequence: newSeq,
-                    planSections: updatedSections,
-                    messages: [...state.messages, initMsg],
-                  });
-                } else {
-                  const updatedSections = appendToPlanSections(
-                    state.planSections,
-                    chunkSection,
-                    chunkData.text,
-                  );
-                  set({
-                    accumulatedText: state.accumulatedText + chunkData.text,
-                    lastSequence: newSeq,
-                    planSections: updatedSections,
-                  });
-                }
+                const updatedSections = appendToPlanSections(
+                  state.planSections,
+                  chunkSection,
+                  chunkData.text,
+                );
+                set({
+                  accumulatedText: state.accumulatedText + chunkData.text,
+                  lastSequence: chunkData.sequence,
+                  planSections: updatedSections,
+                });
               },
 
               // ---- onDone ----
