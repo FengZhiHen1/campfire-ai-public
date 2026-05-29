@@ -36,7 +36,7 @@ import {
  */
 export const LEGAL_TRANSITIONS: Record<ConsultSessionState, ConsultSessionState[]> = {
   idle: ['selecting_behavior'],
-  selecting_behavior: ['idle', 'submitting'],
+  selecting_behavior: ['idle', 'submitting', 'streaming'],
   submitting: ['streaming', 'submit_failed'],
   streaming: ['completed', 'stream_failed'],
   completed: ['ticket_guide', 'selecting_behavior'],
