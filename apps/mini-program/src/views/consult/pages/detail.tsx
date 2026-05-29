@@ -138,6 +138,16 @@ export default function ConsultDetail() {
           </Text>
         )}
       </View>
+
+      {/* 新建会话 */}
+      <View className="detail-new-session">
+        <Button
+          className="detail-new-session__btn"
+          onClick={() => Taro.redirectTo({ url: '/views/consult/pages/index' })}
+        >
+          ✨ 开始新咨询
+        </Button>
+      </View>
     </View>
   );
 }

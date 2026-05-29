@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { View, Text, Button, Textarea } from '@tarojs/components';
+import { View, Text, Button, Textarea, ScrollView } from '@tarojs/components';
 import { useConsult } from '../../../logics/consult/hooks/useConsult';
 import { listProfiles } from '../../../logics/profiles/services/profileApi';
 import type { BehaviorTypeCategory, EmotionLevel } from '../../../logics/consult/types';
@@ -23,9 +23,23 @@ const EMOTION_OPTIONS: { value: EmotionLevel; label: string }[] = [
 ];
 
 const CRISIS_LABEL_MAP: Record<string, { text: string; className: string }> = {
-  mild: { text: '风险较低', className: 'mild' },
-  moderate: { text: '需关注', className: 'moderate' },
-  severe: { text: '高风险', className: 'severe' },
+  mild: { text: '轻度', className: 'mild' },
+  moderate: { text: '中度', className: 'moderate' },
+  severe: { text: '重度', className: 'severe' },
+};
+
+const SECTION_COLOR_MAP: Record<string, string> = {
+  '即时安全干预': 'tertiary',
+  '情绪安抚话术': 'primary',
+  '后续观察指标': 'secondary',
+  '就医判断标准': 'error',
+};
+
+const SECTION_ICON_MAP: Record<string, string> = {
+  '即时安全干预': '🛡️',
+  '情绪安抚话术': '💬',
+  '后续观察指标': '👁️',
+  '就医判断标准': '🏥',
 };
 
 export default function ConsultIndex() {
@@ -79,109 +93,120 @@ export default function ConsultIndex() {
     setBehaviorDescription(val);
   };
 
+  const crisisInfo = crisisLevel ? CRISIS_LABEL_MAP[crisisLevel] : null;
+  const showEscalation = crisisLevel === 'severe' || (refCases.length > 0 && refCases.length < 2);
+
   // ----- idle: 入口 -----
   if (sessionState === 'idle') {
     return (
-      <View className="consult-page consult-idle">
-        <View className="consult-idle__hero">
-          <Text className="consult-idle__hero-icon">🔥</Text>
+      <View className="consult-page">
+        <View className="consult-idle">
+          <View className="consult-idle__hero">
+            <Text className="consult-idle__hero-icon">🔥</Text>
+          </View>
+          <Text className="consult-idle__title">应急咨询</Text>
+          <Text className="consult-idle__subtitle">
+            描述孩子当前的行为表现，获取应急干预建议
+          </Text>
+          <Button className="consult-idle__start-btn" onClick={startConsult}>
+            开始咨询
+          </Button>
         </View>
-        <Text className="consult-idle__title">应急咨询</Text>
-        <Text className="consult-idle__subtitle">
-          描述孩子当前的行为表现，获取应急干预建议
-        </Text>
-        <Button className="consult-idle__start-btn" onClick={startConsult}>
-          开始咨询
-        </Button>
       </View>
     );
   }
 
-  // ----- selecting_behavior: 输入表单 -----
+  // ----- selecting_behavior: 行为选择弹窗 -----
   if (sessionState === 'selecting_behavior') {
     return (
-      <View className="consult-page consult-selecting">
-        {/* 档案选择 */}
-        {profiles.length > 0 && (
-          <View className="consult-selecting__profile-section">
-            <Text className="consult-selecting__label">关联档案（可选）</Text>
-            <View className="consult-selecting__profile-list">
+      <View className="consult-page">
+        <View className="consult-modal-overlay">
+          <View className="consult-modal">
+            <Text className="consult-modal__title">请选择当前行为类型</Text>
+            <Text className="consult-modal__subtitle">这将帮助我们更准确地匹配案例</Text>
+
+            {/* 档案选择 */}
+            {profiles.length > 0 && (
+              <>
+                <Text className="consult-modal__label">关联档案（可选）</Text>
+                <View className="consult-modal__profile-list">
+                  <Button
+                    className={`consult-modal__profile-btn ${!selectedProfileId ? 'consult-modal__profile-btn--active' : ''}`}
+                    onClick={() => setSelectedProfile(undefined)}
+                  >
+                    不关联
+                  </Button>
+                  {profiles.map((p) => (
+                    <Button
+                      key={p.profile_id}
+                      className={`consult-modal__profile-btn ${selectedProfileId === p.profile_id ? 'consult-modal__profile-btn--active' : ''}`}
+                      onClick={() => setSelectedProfile(p.profile_id)}
+                    >
+                      {p.nickname || '未命名'}
+                    </Button>
+                  ))}
+                </View>
+              </>
+            )}
+
+            <View className="consult-modal__grid">
+              {BEHAVIOR_OPTIONS.map((opt) => {
+                const selected = (behaviorTypeSelection ?? []).includes(opt.value);
+                return (
+                  <Button
+                    key={opt.value}
+                    className={`consult-modal__option ${selected ? 'consult-modal__option--selected' : ''}`}
+                    onClick={() => toggleType(opt.value)}
+                  >
+                    {selected && (
+                      <View className="consult-modal__check">✓</View>
+                    )}
+                    <Text className="consult-modal__option-icon">{opt.icon}</Text>
+                    <Text className="consult-modal__option-text">{opt.label}</Text>
+                    <Text className="consult-modal__option-desc">{opt.desc}</Text>
+                  </Button>
+                );
+              })}
+            </View>
+
+            <Text className="consult-modal__label">情绪等级</Text>
+            <View className="consult-modal__emotion-row">
+              {EMOTION_OPTIONS.map((opt) => {
+                const active = emotionLevel === opt.value;
+                return (
+                  <Button
+                    key={opt.value}
+                    className={`consult-modal__emotion-btn ${active ? 'consult-modal__emotion-btn--active' : ''}`}
+                    onClick={() => setEmotionLevel(opt.value)}
+                  >
+                    {opt.label}
+                  </Button>
+                );
+              })}
+            </View>
+
+            <Text className="consult-modal__label">描述当前行为表现</Text>
+            <Textarea
+              className="consult-modal__textarea"
+              value={inputText}
+              onInput={(e) => handleInputChange(e.detail.value)}
+              placeholder="例如：孩子在商场突然捂住耳朵蹲下尖叫..."
+              maxlength={2000}
+            />
+
+            <View className="consult-modal__actions">
               <Button
-                className={`consult-selecting__profile-btn ${!selectedProfileId ? 'consult-selecting__profile-btn--active' : ''}`}
-                onClick={() => setSelectedProfile(undefined)}
+                className="consult-modal__submit-btn"
+                onClick={submitConsult}
+                disabled={!isInputValid}
               >
-                不关联
+                获取应急建议
               </Button>
-              {profiles.map((p) => (
-                <Button
-                  key={p.profile_id}
-                  className={`consult-selecting__profile-btn ${selectedProfileId === p.profile_id ? 'consult-selecting__profile-btn--active' : ''}`}
-                  onClick={() => setSelectedProfile(p.profile_id)}
-                >
-                  {p.nickname || '未命名'}
-                </Button>
-              ))}
+              <Button className="consult-modal__skip-btn" onClick={cancelSelection}>
+                以上都不是，直接描述
+              </Button>
             </View>
           </View>
-        )}
-
-        <Text className="consult-selecting__label">选择行为类型（可多选）</Text>
-        <View className="consult-selecting__grid">
-          {BEHAVIOR_OPTIONS.map((opt) => {
-            const selected = (behaviorTypeSelection ?? []).includes(opt.value);
-            return (
-              <Button
-                key={opt.value}
-                className={`consult-selecting__option ${selected ? 'consult-selecting__option--selected' : ''}`}
-                onClick={() => toggleType(opt.value)}
-              >
-                {selected && (
-                  <View className="consult-selecting__check">✓</View>
-                )}
-                <Text className="consult-selecting__option-icon">{opt.icon}</Text>
-                <Text className="consult-selecting__option-text">{opt.label}</Text>
-                <Text className="consult-selecting__option-desc">{opt.desc}</Text>
-              </Button>
-            );
-          })}
-        </View>
-
-        <Text className="consult-selecting__label">情绪等级</Text>
-        <View className="consult-selecting__emotion-row">
-          {EMOTION_OPTIONS.map((opt) => {
-            const active = emotionLevel === opt.value;
-            return (
-              <Button
-                key={opt.value}
-                className={`consult-selecting__emotion-btn ${active ? 'consult-selecting__emotion-btn--active' : ''}`}
-                onClick={() => setEmotionLevel(opt.value)}
-              >
-                {opt.label}
-              </Button>
-            );
-          })}
-        </View>
-
-        <Text className="consult-selecting__label">描述当前行为表现</Text>
-        <Textarea
-          className="consult-selecting__textarea"
-          value={inputText}
-          onInput={(e) => handleInputChange(e.detail.value)}
-          placeholder="例如：孩子在商场突然捂住耳朵蹲下尖叫..."
-          maxlength={2000}
-        />
-
-        <View className="consult-selecting__actions">
-          <Button
-            className="consult-selecting__submit-btn"
-            onClick={submitConsult}
-            disabled={!isInputValid}
-          >
-            获取应急建议
-          </Button>
-          <Button className="consult-selecting__cancel-btn" onClick={cancelSelection}>
-            取消
-          </Button>
         </View>
       </View>
     );
@@ -190,95 +215,157 @@ export default function ConsultIndex() {
   // ----- submitting: 提交中 -----
   if (sessionState === 'submitting') {
     return (
-      <View className="consult-page consult-submitting">
-        <View className="consult-submitting__skeleton" />
-        <Text className="consult-submitting__text">正在分析并生成建议...</Text>
+      <View className="consult-page">
+        <View className="consult-navbar">
+          <Text className="consult-navbar__title">应急咨询</Text>
+        </View>
+        <View className="consult-submitting">
+          <View className="consult-submitting__skeleton" />
+          <Text className="consult-submitting__text">正在分析案例库…</Text>
+        </View>
       </View>
     );
   }
 
   // ----- streaming / completed: 结果展示 -----
   if (sessionState === 'streaming' || sessionState === 'completed') {
-    const crisisInfo = crisisLevel ? CRISIS_LABEL_MAP[crisisLevel] : null;
-
     return (
-      <View className="consult-page consult-streaming">
-        {sessionState === 'streaming' && (
-          <Text className="consult-streaming__status">正在生成建议...</Text>
-        )}
+      <View className="consult-page">
+        {/* 导航栏 */}
+        <View className="consult-navbar">
+          <Text className="consult-navbar__title">应急咨询</Text>
+          {crisisInfo && (
+            <View className={`consult-navbar__badge consult-navbar__badge--${crisisInfo.className}`}>
+              <Text className="consult-navbar__badge-text">等级：{crisisInfo.text}</Text>
+            </View>
+          )}
+        </View>
 
-        {/* 危机等级标识 */}
-        {crisisInfo && (
-          <View className={`consult-streaming__crisis-badge consult-streaming__crisis-badge--${crisisInfo.className}`}>
-            <Text className="consult-streaming__crisis-text">{crisisInfo.text}</Text>
-          </View>
-        )}
+        {/* 聊天滚动区 */}
+        <ScrollView className="consult-chat" scrollY>
+          {/* 用户消息气泡 */}
+          {behaviorDescription && (
+            <View className="consult-user-bubble">
+              <Text className="consult-user-bubble__text">{behaviorDescription}</Text>
+            </View>
+          )}
 
-        {/* 实时文本展示 */}
-        {accumulatedText && (
-          <View className="consult-streaming__ai-bubble">
-            <Text className="consult-streaming__ai-text">
-              {accumulatedText}
-              {sessionState === 'streaming' && (
-                <Text className="consult-streaming__cursor" />
-              )}
-            </Text>
-          </View>
-        )}
+          {/* 流式文本气泡（在结构化卡片出现前） */}
+          {accumulatedText && planSections.length === 0 && (
+            <View className="consult-ai-bubble">
+              <Text className="consult-ai-bubble__text">
+                {accumulatedText}
+                {sessionState === 'streaming' && <Text className="consult-cursor" />}
+              </Text>
+            </View>
+          )}
 
-        {/* 结构化段落展示 */}
-        {planSections.length > 0 && (
-          <View className="consult-streaming__plan-card">
-            {planSections.map((section) => {
-              const barMap: Record<string, string> = {
-                '即时安全干预': 'tertiary',
-                '情绪安抚话术': 'primary',
-                '后续观察指标': 'secondary',
-                '就医判断标准': 'error',
-              };
-              const colorKey = barMap[section.title] || 'secondary';
-              return (
-                <View key={section.title} className="consult-streaming__plan-section">
-                  <View className="consult-streaming__plan-header">
-                    <View className={`consult-streaming__plan-bar consult-streaming__plan-bar--${colorKey}`} />
-                    <Text className={`consult-streaming__plan-title consult-streaming__plan-title--${colorKey}`}>
-                      {section.title}
-                    </Text>
-                  </View>
-                  {section.contents.length === 0 ? (
-                    <Text className="consult-streaming__plan-line">（等待内容...）</Text>
-                  ) : (
-                    section.contents.map((line, idx) => (
-                      <Text key={idx} className="consult-streaming__plan-line">• {line}</Text>
-                    ))
-                  )}
-                </View>
-              );
-            })}
-          </View>
-        )}
-
-        {/* 参考案例溯源 */}
-        {refCases.length > 0 && (
-          <View className="consult-streaming__refs">
-            <Text className="consult-streaming__refs-title">参考案例</Text>
-            {refCases.map((rc) => (
-              <View key={rc.slice_id} className="consult-streaming__ref-card">
-                <Text className="consult-streaming__ref-card-title">{rc.case_title}</Text>
-                <Text className="consult-streaming__ref-card-text">{rc.slice_text}</Text>
+          {/* 结构化方案卡片 */}
+          {planSections.length > 0 && (
+            <View className="consult-plan-card">
+              <View className="consult-plan-card__header">
+                <Text className="consult-plan-card__header-icon">🛡️</Text>
+                <Text className="consult-plan-card__header-title">干预建议大纲</Text>
               </View>
-            ))}
+
+              {planSections.map((section) => {
+                const colorKey = SECTION_COLOR_MAP[section.title] || 'secondary';
+                const icon = SECTION_ICON_MAP[section.title] || '•';
+                const isComforting = section.title === '情绪安抚话术';
+
+                return (
+                  <View key={section.title} className="consult-plan-section">
+                    <View className={`consult-plan-section__accent consult-plan-section__accent--${colorKey}`} />
+                    <View className="consult-plan-section__body">
+                      <View className="consult-plan-section__header">
+                        <Text className="consult-plan-section__icon">{icon}</Text>
+                        <Text className={`consult-plan-section__title consult-plan-section__title--${colorKey}`}>
+                          {section.title}
+                        </Text>
+                      </View>
+                      <View className="consult-plan-section__content">
+                        {isComforting && section.contents.length > 0 ? (
+                          <>
+                            <Text className="consult-plan-section__quote">"{section.contents[0]}"</Text>
+                            {section.contents.slice(1).map((line, idx) => (
+                              <Text key={idx} className="consult-plan-section__line">{line}</Text>
+                            ))}
+                          </>
+                        ) : (
+                          section.contents.map((line, idx) => (
+                            <Text key={idx} className="consult-plan-section__line">• {line}</Text>
+                          ))
+                        )}
+                      </View>
+                    </View>
+                  </View>
+                );
+              })}
+
+              {/* 卡片底部信息栏 */}
+              <View className="consult-plan-footer">
+                <Text className="consult-plan-footer__cases">基于 {refCases.length} 个相似案例</Text>
+                {crisisInfo && (
+                  <View className={`consult-confidence consult-confidence--${crisisInfo.className}`}>
+                    <Text className="consult-confidence__dot">●</Text>
+                    <Text className="consult-confidence__text">{crisisInfo.text}</Text>
+                  </View>
+                )}
+              </View>
+            </View>
+          )}
+
+          {/* 参考案例 */}
+          {refCases.length > 0 && (
+            <View className="consult-refs">
+              <Text className="consult-refs__title">参考案例</Text>
+              {refCases.map((rc) => (
+                <View key={rc.slice_id} className="consult-ref-card">
+                  <Text className="consult-ref-card__title">{rc.case_title}</Text>
+                  <Text className="consult-ref-card__text">{rc.slice_text}</Text>
+                </View>
+              ))}
+            </View>
+          )}
+
+          {/* 完成状态 */}
+          {sessionState === 'completed' && (
+            <View className="consult-done">
+              <Text className="consult-done__text">生成完毕</Text>
+              <Button className="consult-done__new-btn" onClick={startNewConsult}>
+                ✨ 开始新咨询
+              </Button>
+            </View>
+          )}
+        </ScrollView>
+
+        {/* 人工兜底条 */}
+        {showEscalation && (
+          <View className="consult-escalation" onClick={goToTicket}>
+            <Text className="consult-escalation__icon">🚨</Text>
+            <Text className="consult-escalation__text">立即联系人工专家</Text>
           </View>
         )}
 
-        {sessionState === 'completed' && (
-          <View className="consult-streaming__done">
-            <Text className="consult-streaming__done-text">生成完毕</Text>
-            <Button className="consult-streaming__new-btn" onClick={startNewConsult}>
-              新的咨询
-            </Button>
+        {/* 底部输入区 */}
+        <View className="consult-input-bar">
+          <View className="consult-input-bar__container">
+            <Textarea
+              className="consult-input-bar__textarea"
+              value={inputText}
+              onInput={(e) => handleInputChange(e.detail.value)}
+              placeholder="请描述当前正在发生什么…"
+            />
+            <View className="consult-input-bar__voice-btn">🎤</View>
           </View>
-        )}
+        </View>
+
+        {/* 免责声明 */}
+        <View className="consult-disclaimer">
+          <Text className="consult-disclaimer__text">
+            基于归档案例的 AI 生成建议，不构成医疗诊断。严重情况请咨询专业医生。
+          </Text>
+        </View>
       </View>
     );
   }
@@ -286,19 +373,24 @@ export default function ConsultIndex() {
   // ----- ticket_guide: 工单引导 -----
   if (sessionState === 'ticket_guide') {
     return (
-      <View className="consult-page consult-ticket-guide">
-        <View className="consult-ticket-guide__icon">🆘</View>
-        <Text className="consult-ticket-guide__title">建议联系专家</Text>
-        <Text className="consult-ticket-guide__desc">
-          AI 对当前情况的置信度较低，建议通过人工咨询获取更准确的建议。
-        </Text>
-        <View className="consult-ticket-guide__actions">
-          <Button className="consult-ticket-guide__expert-btn" onClick={goToTicket}>
-            联系专家
-          </Button>
-          <Button className="consult-ticket-guide__new-btn" onClick={startNewConsult}>
-            开始新咨询
-          </Button>
+      <View className="consult-page">
+        <View className="consult-navbar">
+          <Text className="consult-navbar__title">应急咨询</Text>
+        </View>
+        <View className="consult-ticket-guide">
+          <View className="consult-ticket-guide__icon">🆘</View>
+          <Text className="consult-ticket-guide__title">建议联系专家</Text>
+          <Text className="consult-ticket-guide__desc">
+            AI 对当前情况的置信度较低，建议通过人工咨询获取更准确的建议。
+          </Text>
+          <View className="consult-ticket-guide__actions">
+            <Button className="consult-ticket-guide__expert-btn" onClick={goToTicket}>
+              联系专家
+            </Button>
+            <Button className="consult-ticket-guide__new-btn" onClick={startNewConsult}>
+              开始新咨询
+            </Button>
+          </View>
         </View>
       </View>
     );
@@ -307,26 +399,31 @@ export default function ConsultIndex() {
   // ----- submit_failed / stream_failed: 错误重试 -----
   if (sessionState === 'submit_failed' || sessionState === 'stream_failed') {
     return (
-      <View className="consult-page consult-error">
-        <View className="consult-error__icon">⚠️</View>
-        <Text className="consult-error__title">出错了</Text>
-        <Text className="consult-error__message">
-          {errorCode ? getErrorMessage(errorCode) : '未知错误'}
-        </Text>
-        <View className="consult-error__actions">
-          {sessionState === 'submit_failed' && (
-            <Button className="consult-error__retry-btn" onClick={retrySubmit}>
-              重试提交
+      <View className="consult-page">
+        <View className="consult-navbar">
+          <Text className="consult-navbar__title">应急咨询</Text>
+        </View>
+        <View className="consult-error">
+          <View className="consult-error__icon">⚠️</View>
+          <Text className="consult-error__title">出错了</Text>
+          <Text className="consult-error__message">
+            {errorCode ? getErrorMessage(errorCode) : '未知错误'}
+          </Text>
+          <View className="consult-error__actions">
+            {sessionState === 'submit_failed' && (
+              <Button className="consult-error__retry-btn" onClick={retrySubmit}>
+                重试提交
+              </Button>
+            )}
+            {sessionState === 'stream_failed' && (
+              <Button className="consult-error__retry-btn" onClick={retryStream}>
+                重新生成
+              </Button>
+            )}
+            <Button className="consult-error__back-btn" onClick={goBackToSelecting}>
+              返回修改
             </Button>
-          )}
-          {sessionState === 'stream_failed' && (
-            <Button className="consult-error__retry-btn" onClick={retryStream}>
-              重新生成
-            </Button>
-          )}
-          <Button className="consult-error__back-btn" onClick={goBackToSelecting}>
-            返回修改
-          </Button>
+          </View>
         </View>
       </View>
     );
@@ -334,13 +431,18 @@ export default function ConsultIndex() {
 
   // fallback
   return (
-    <View className="consult-page consult-error">
-      <View className="consult-error__icon">❓</View>
-      <Text className="consult-error__title">未知状态</Text>
-      <Text className="consult-error__message">{sessionState}</Text>
-      <Button className="consult-error__back-btn" onClick={goBackToIdle}>
-        返回首页
-      </Button>
+    <View className="consult-page">
+      <View className="consult-navbar">
+        <Text className="consult-navbar__title">应急咨询</Text>
+      </View>
+      <View className="consult-error">
+        <View className="consult-error__icon">❓</View>
+        <Text className="consult-error__title">未知状态</Text>
+        <Text className="consult-error__message">{sessionState}</Text>
+        <Button className="consult-error__back-btn" onClick={startNewConsult}>
+          返回首页
+        </Button>
+      </View>
     </View>
   );
 }

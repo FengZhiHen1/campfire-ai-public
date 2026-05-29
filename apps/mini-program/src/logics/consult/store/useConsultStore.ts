@@ -267,8 +267,6 @@ export const useConsultStore = create<ConsultStore>()(
         const next = transitionTo(sessionState, 'selecting_behavior');
         set({
           sessionState: next,
-          behaviorTypeSelection: [],
-          behaviorDescription: '',
           messages: [],
           accumulatedText: '',
           planSections: createEmptySections(),
@@ -412,7 +410,22 @@ export const useConsultStore = create<ConsultStore>()(
               onDone: (doneData: DoneEventPayload): void => {
                 const state = get();
 
-                // 只在 streaming 状态下处理 done 事件（error 已转换的忽略）
+                // 仍在 submitting：上游生成器未产出任何 chunk 即结束（超时/LLM 不可用）
+                // 转为 submit_failed 让用户看到错误提示并可以重试
+                if (state.sessionState === 'submitting') {
+                  try {
+                    const next = transitionTo(state.sessionState, 'submit_failed');
+                    set({
+                      sessionState: next,
+                      errorCode: ConsultErrorCode.SUBMIT_SERVER_ERROR,
+                    });
+                  } catch {
+                    // 状态已变更，不覆盖
+                  }
+                  return;
+                }
+
+                // 不在 streaming 状态（已完成转换或已进入其他终态）→ 忽略
                 if (state.sessionState !== 'streaming') {
                   return;
                 }
@@ -557,31 +570,41 @@ export const useConsultStore = create<ConsultStore>()(
               onReconnectFailed: (): void => {
                 const state = get();
                 try {
-                  const next = transitionTo(state.sessionState, 'stream_failed');
-                  set({
-                    sessionState: next,
-                    errorCode: ConsultErrorCode.SSE_CONNECTION_BROKEN,
-                  });
+                  if (state.lastSequence === 0) {
+                    // 尚未收到任何 chunk → 视为提交失败
+                    const next = transitionTo(state.sessionState, 'submit_failed');
+                    set({
+                      sessionState: next,
+                      errorCode: ConsultErrorCode.SUBMIT_NETWORK_ERROR,
+                    });
+                  } else {
+                    // 已收到 chunk → 流传输失败
+                    const next = transitionTo(state.sessionState, 'stream_failed');
+                    set({
+                      sessionState: next,
+                      errorCode: ConsultErrorCode.SSE_CONNECTION_BROKEN,
+                    });
 
-                  // 标记未完成段落
-                  const partialSections = get().planSections.map((sec) => {
-                    if (!sec.isCompleted) {
-                      return { ...sec, isPartial: true };
-                    }
-                    return sec;
-                  });
+                    // 标记未完成段落
+                    const partialSections = get().planSections.map((sec) => {
+                      if (!sec.isCompleted) {
+                        return { ...sec, isPartial: true };
+                      }
+                      return sec;
+                    });
 
-                  // 追加不完整提示消息
-                  const promptMsg = createMessageItem(
-                    'system',
-                    '生成中断，以下为不完整建议，可能缺失部分段落',
-                    'system_prompt',
-                  );
+                    // 追加不完整提示消息
+                    const promptMsg = createMessageItem(
+                      'system',
+                      '生成中断，以下为不完整建议，可能缺失部分段落',
+                      'system_prompt',
+                    );
 
-                  set({
-                    planSections: partialSections,
-                    messages: [...get().messages, promptMsg],
-                  });
+                    set({
+                      planSections: partialSections,
+                      messages: [...get().messages, promptMsg],
+                    });
+                  }
                 } catch {
                   // 静默
                 }
@@ -596,7 +619,9 @@ export const useConsultStore = create<ConsultStore>()(
           );
 
           // 发起 SSE 连接
-          const extraHeaders: Record<string, string> = {};
+          const extraHeaders: Record<string, string> = {
+            'ngrok-skip-browser-warning': '1',
+          };
           if (session_id) {
             extraHeaders['X-Session-Id'] = session_id;
           }
@@ -749,6 +774,13 @@ export const useConsultStore = create<ConsultStore>()(
       // persist 中间件配置
       name: 'consult-session',
       storage: createJSONStorage(() => taroStorageAdapter),
+      // 防御：storage 中可能残留旧版完整 state（含非 idle 的 sessionState），
+      // 合并时强制覆盖为 idle，确保每次重开页面都从入口开始。
+      merge: (persisted, current) => ({
+        ...current,
+        ...(persisted as object),
+        sessionState: 'idle' as const,
+      }),
       // 仅持久化 messages 和输入状态
       partialize: (state) => ({
         messages: state.messages,
