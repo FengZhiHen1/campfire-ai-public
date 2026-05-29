@@ -371,13 +371,11 @@ export const useConsultStore = create<ConsultStore>()(
                 const newSeq = chunkData.sequence;
                 const chunkSection = chunkData.section ?? null;
 
+                // 首个内容 chunk → 触发 streaming 状态转换
                 const isFirstChunk = state.lastSequence === 0;
 
-                console.warn('[consult] onChunk seq=', newSeq, 'text_len=', chunkData.text.length,
-                  'section=', chunkSection, 'currentState=', state.sessionState,
-                  'lastSeq=', state.lastSequence, 'isFirst=', isFirstChunk);
-
                 if (isFirstChunk) {
+                  // 无论当前什么状态，首个 chunk 到达时都尝试切到 streaming
                   if (state.sessionState !== 'streaming') {
                     try {
                       const sNext = transitionTo(state.sessionState, 'streaming');
@@ -396,7 +394,6 @@ export const useConsultStore = create<ConsultStore>()(
                         planSections: updatedSections,
                         messages: [...state.messages, initMsg],
                       });
-                      console.warn('[consult] transition OK, store state=', get().sessionState);
                     } catch (err: unknown) {
                       console.warn('[consult] first chunk transition failed:',
                         state.sessionState, '-> streaming',
