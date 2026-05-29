@@ -364,6 +364,7 @@ async def validate_confidence(
         response_text: str = await llm_client.async_chat(
             messages=assessment_messages,
             timeout=_LLM_ASSESSMENT_TIMEOUT_S,
+            response_format={"type": "json_object"},
         )
 
         # 解析 LLM 返回的 JSON

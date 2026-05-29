@@ -172,9 +172,16 @@ class GenerationChunk(BaseModel):
 
     text: str = Field(
         description="当前 chunk 的文本增量（delta），即 DeepSeek API 流式响应 choice.delta.content 的值。"
-        "下游 CSLT-04 直接拼接后封装为 SSE text 事件。最后一个 chunk 可能为空字符串。",
+        "仅包含 section 内容文本，JSON 语法字符已被剥离。最后一个 chunk 可能为空字符串。",
         max_length=4096,
-        examples=["## 一、即时安全干预动作\n"],
+        examples=["引导孩子离开嘈杂环境，寻找安静角落"],
+    )
+    section: str | None = Field(
+        default=None,
+        description="当前 chunk 所属的四段式段落标题。"
+        "值为 即时安全干预动作/情绪安抚话术/后续观察指标/就医判断标准 之一，"
+        "或 None 表示 JSON 语法字符（花括号、引号等）或尚未进入任何段落。"
+        "前端据此增量追加到对应的 planSections 卡片。",
     )
     is_final: bool = Field(
         ...,

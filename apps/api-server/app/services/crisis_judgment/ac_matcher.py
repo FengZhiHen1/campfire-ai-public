@@ -156,38 +156,48 @@ class AhoCorasickMatcher:
     async def _load_keywords_from_db(self) -> None:
         """从 PostgreSQL crisis_keywords 表加载关键词并编译 AC 自动机。
 
-        执行 SELECT keyword, category, trigger_rule_id FROM crisis_keywords
-        WHERE is_active = true 全量查询。
+        执行 SELECT keyword, id, category, trigger_rule_id FROM crisis_keywords
+        WHERE is_active = true 全量查询，将结果编译为 AC 自动机。
 
         Raises:
-            KeywordDictLoadError: PostgreSQL 连接失败或查询失败。
+            KeywordDictLoadError: 数据库连接失败、查询失败或词库为空。
         """
         try:
-            # ===== 占位实现 =====
-            # 实际执行时应通过 py-db 的 async_session 查询：
-            #
-            # async with async_session() as session:
-            #     rows = await session.execute(
-            #         select(CrisisKeyword).where(CrisisKeyword.is_active == True)
-            #     )
-            #     keywords = []
-            #     for row in rows.scalars():
-            #         keywords.append((
-            #             row.keyword,           # 关键词原文
-            #             row.id,                # 关键词 ID
-            #             row.category,          # severe/moderate/mild
-            #             row.trigger_rule_id,   # 规则编号
-            #         ))
-            #     await self.load_from_data(keywords)
+            from py_config import get_settings
+            from sqlalchemy import select
+            from sqlalchemy.ext.asyncio import (
+                AsyncSession,
+                async_sessionmaker,
+                create_async_engine,
+            )
+            from py_db.models.crisis_keyword import CrisisKeyword
 
-            automaton = ahocorasick.Automaton()
-            automaton.make_automaton()
+            settings = get_settings()
+            engine = create_async_engine(str(settings.DATABASE_URL), echo=False)
+            session_factory = async_sessionmaker(
+                engine, class_=AsyncSession, expire_on_commit=False,
+            )
 
-            self._automaton = automaton
-            self._is_loaded = True
-            self._load_error = None
-            self._last_load_time = time.time()
+            try:
+                async with session_factory() as session:
+                    result = await session.execute(
+                        select(CrisisKeyword).where(CrisisKeyword.is_active == True),
+                    )
+                    rows = result.scalars().all()
+                    keywords: list[tuple[str, int, str, str]] = []
+                    for row in rows:
+                        keywords.append((
+                            row.keyword,
+                            row.id,
+                            row.category,
+                            row.trigger_rule_id,
+                        ))
+                    await self.load_from_data(keywords)
+            finally:
+                await engine.dispose()
 
+        except KeywordDictLoadError:
+            raise
         except Exception as exc:
             raise KeywordDictLoadError(
                 detail=str(exc),
@@ -203,12 +213,19 @@ class AhoCorasickMatcher:
         AC 自动机输出值格式：(keyword, keyword_id, category, trigger_rule_id) ——
         关键词原文存储在 value 中以供 iter() 直接返回，避免逆向查找。
 
+        关键词列表为空时标记为未加载（降级为纯前置选择 + LLM 模式）。
+
         Args:
             keywords: 关键词列表，每项为 (keyword, keyword_id, category, trigger_rule_id) 元组。
 
         Raises:
             KeywordDictLoadError: 编译失败。
         """
+        if not keywords:
+            self._is_loaded = False
+            self._load_error = "empty_keyword_dict"
+            return
+
         try:
             automaton = ahocorasick.Automaton()
 

@@ -62,6 +62,7 @@ def _orm_to_event_list_item(event: EventLog) -> EventListItem:
 
 async def list_events(
     profile_id: UUID,
+    caregiver_id: UUID,
     page: int,
     page_size: int,
     session: AsyncSession,
@@ -72,6 +73,7 @@ async def list_events(
 
     Args:
         profile_id: 所属档案 UUID。
+        caregiver_id: 当前用户 UUID（用于档案权限校验）。
         page: 页码（从 1 开始）。
         page_size: 每页条数。
         session: 活动数据库会话。
@@ -84,7 +86,7 @@ async def list_events(
     Raises:
         HTTPException(404): 档案不存在。
     """
-    profile = await profile_repo.get_by_id(session, profile_id)
+    profile = await profile_repo.get_by_id(session, profile_id, caregiver_id)
     if profile is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -135,7 +137,7 @@ async def create_event(
         HTTPException(404): 档案不存在。
         HTTPException(400): 事件时间超出 30 天追溯期。
     """
-    profile = await profile_repo.get_by_id(session, profile_id)
+    profile = await profile_repo.get_by_id(session, profile_id, user_id)
     if profile is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
