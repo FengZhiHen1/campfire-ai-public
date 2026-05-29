@@ -371,35 +371,27 @@ export const useConsultStore = create<ConsultStore>()(
                 const newSeq = chunkData.sequence;
                 const chunkSection = chunkData.section ?? null;
 
-                // 仅在 submitting 或 streaming 状态下处理 chunk
-                if (state.sessionState !== 'submitting' && state.sessionState !== 'streaming') {
-                  return;
-                }
-
                 // 首个内容 chunk → 触发 streaming 状态转换
                 const isFirstChunk = state.lastSequence === 0;
 
                 if (isFirstChunk) {
-                  try {
-                    const sNext = transitionTo(state.sessionState, 'streaming');
-                    const initMsg = createMessageItem('system', '', 'system_plan', {
-                      isOriginal: true,
-                    });
-                    const updatedSections = appendToPlanSections(
-                      state.planSections,
-                      chunkSection,
-                      chunkData.text,
-                    );
-                    set({
-                      sessionState: sNext,
-                      accumulatedText: state.accumulatedText + chunkData.text,
-                      lastSequence: newSeq,
-                      planSections: updatedSections,
-                      messages: [...state.messages, initMsg],
-                    });
-                  } catch {
-                    // 状态已被其他事件改变（如 done 先到达），静默忽略
-                  }
+                  const sNext = transitionTo(state.sessionState, 'streaming');
+                  const initMsg = createMessageItem('system', '', 'system_plan', {
+                    isOriginal: true,
+                  });
+                  // 增量更新：有 section 标记时追加到对应段落，否则累积到 accumulatedText
+                  const updatedSections = appendToPlanSections(
+                    state.planSections,
+                    chunkSection,
+                    chunkData.text,
+                  );
+                  set({
+                    sessionState: sNext,
+                    accumulatedText: state.accumulatedText + chunkData.text,
+                    lastSequence: newSeq,
+                    planSections: updatedSections,
+                    messages: [...state.messages, initMsg],
+                  });
                 } else {
                   const updatedSections = appendToPlanSections(
                     state.planSections,
