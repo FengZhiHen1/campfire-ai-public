@@ -1,4 +1,3 @@
-# @contract
 """OBS-01 Trace ID 上下文管理 — TraceContext 实现。
 
 通过 contextvars.ContextVar 在 asyncio 协程间自动传播 trace_id。

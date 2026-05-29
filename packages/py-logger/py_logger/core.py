@@ -1,4 +1,3 @@
-# @contract
 """OBS-01 结构化日志核心模块 — StructuredLogger 实现。
 
 实现 BaseStructuredLogger 契约：
