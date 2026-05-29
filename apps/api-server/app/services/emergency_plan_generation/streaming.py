@@ -301,6 +301,8 @@ async def stream_generate(
         response_format={"type": "json_object"},
     )
 
+    tracker_yield_count: int = 0
+
     try:
         async for chunk in llm_stream:
             # 提取 delta text
@@ -313,6 +315,7 @@ async def stream_generate(
 
             # 通过状态机剥离 JSON 语法，产出带 section 标记的内容文本
             for section, content_text in tracker.feed(delta_text):
+                tracker_yield_count += 1
                 yield GenerationChunk(
                     text=content_text,
                     section=section,
@@ -328,19 +331,36 @@ async def stream_generate(
 
     else:
         finish_reason = "stop"
+        raw_len = len(accumulated_text)
         logger.info(
             service="emergency_plan_generation",
             message="LLM stream completed normally",
             op_type="llm_stream_done",
             extra={
                 "chunk_count": chunk_count,
-                "accumulated_len": len(accumulated_text),
+                "accumulated_len": raw_len,
+                "raw_text_preview": accumulated_text[:2000] if raw_len > 0 else "(empty)",
+                "tracker_yield_count": tracker_yield_count,
                 "elapsed_ms": (time.monotonic() - t_start) * 1000,
                 "trace_id": input_data.request_id,
             },
         )
 
     finally:
+        # 有原始 LLM 输出但 tracker 零产出 → 格式异常告警
+        if accumulated_text and tracker_yield_count == 0:
+            logger.warning(
+                service="emergency_plan_generation",
+                message="LLM returned text but tracker yielded zero chunks — possible format mismatch",
+                op_type="tracker_empty",
+                extra={
+                    "raw_len": len(accumulated_text),
+                    "raw_text_preview": accumulated_text[:2000],
+                    "chunk_count": chunk_count,
+                    "trace_id": input_data.request_id,
+                },
+            )
+
         yield GenerationChunk(
             text="",
             section=None,
