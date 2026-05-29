@@ -8,10 +8,58 @@ MVP Phase 0 精简版：
 
 from __future__ import annotations
 
+import logging
+import time
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.types import ASGIApp, Receive, Scope, Send, Message
+
+# 确保 root logger 有 stdout handler，uvicorn access log 依赖此配置
+logging.basicConfig(format="%(message)s", stream=sys.stdout, force=True)
+
+
+class AccessLogMiddleware:
+    """ASGI 中间件，通过 py_logger 输出结构化 access log。"""
+
+    def __init__(self, app: ASGIApp) -> None:
+        self.app = app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        start = time.monotonic()
+        status_code: int = 0
+
+        async def send_wrapper(message: Message) -> None:
+            nonlocal status_code
+            if message["type"] == "http.response.start":
+                status_code = message["status"]
+            await send(message)
+
+        await self.app(scope, receive, send_wrapper)
+
+        method = scope.get("method", "UNKNOWN")
+        path = scope.get("path", "/")
+        client = scope.get("client")
+        addr = f"{client[0]}:{client[1]}" if client else "-"
+        duration_ms = (time.monotonic() - start) * 1000
+
+        logger.info(
+            "api-server",
+            f"{addr} - \"{method} {path}\" {status_code}",
+            op_type="access",
+            extra={
+                "method": method,
+                "path": path,
+                "status_code": status_code,
+                "client_addr": addr,
+                "duration_ms": round(duration_ms, 2),
+            },
+        )
 
 from app.api.v1.auth import router as auth_router
 from app.api.v1.cases import router as cases_router
@@ -102,6 +150,9 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
+    # access log 中间件（uvicorn 原生格式）
+    app.add_middleware(AccessLogMiddleware)
+
     # ------------------------------------------------------------------
     # 限流中间件（Redis ZSET 滑动窗口）
     # ------------------------------------------------------------------
@@ -148,6 +199,7 @@ def main() -> None:
         host="0.0.0.0",
         port=8000,
         reload=True,
+        access_log=True,
         log_level="info",
     )
 
