@@ -1,101 +1,32 @@
-"""LLM API client — DeepSeek API via OpenAI SDK with retry.
+"""LLM API 客户端 —— 通过 OpenAI SDK 调用 DeepSeek API。
 
-Uses openai.AsyncOpenAI for streaming chat completion over DeepSeek's
-OpenAI-compatible endpoint.
-
-Retry strategy on transient failures:
-  - RateLimitError (429), APITimeoutError, APIStatusError (5xx) → retry
-  - Max 3 retries, exponential backoff 3s→120s with jitter
-  - Exhausted → LLMClientError
+LLMClientContract 的具体实现，适配 DeepSeek 的 OpenAI 兼容端点。
+重试逻辑和错误映射由契约 ABC 继承而来——本文件仅实现 API 调用钩子。
 """
 
 from __future__ import annotations
 
-import random
-import time
 from typing import AsyncGenerator
 
-from openai import APIStatusError, APITimeoutError, AsyncOpenAI, RateLimitError
-from pydantic import BaseModel, Field
+from openai import AsyncOpenAI
+
+from py_llm.llm_contract import LLMClientContract, LLMClientError  # noqa: F401  由 __init__.py 重导出
+from py_llm.types import ChatCompletionChunk, Choice, Delta, RetryConfig  # noqa: F401  由 __init__.py 重导出
 
 
 # ============================================================================
-# Streaming models (OpenAI-compatible SSE chunk representation)
+# DeepSeekLLMClient —— LLMClientContract 的具体实现
 # ============================================================================
 
 
-class Delta(BaseModel):
-    """Streaming delta content — maps to choice.delta in OpenAI streaming format."""
+class DeepSeekLLMClient(LLMClientContract):
+    """DeepSeek API 流式/非流式聊天客户端。
 
-    content: str = Field(default="", description="Text delta for this chunk")
-    role: str | None = Field(default=None, description="Role indicator, only present on first chunk")
+    实现 LLMClientContract 定义的两个抽象钩子：_do_create_stream 和 _do_create_completion。
+    所有重试循环、指数退避和错误映射逻辑由契约的 @final 公共入口（chat_stream / chat）处理。
 
-
-class Choice(BaseModel):
-    """A single streaming choice — maps to choices[0] in OpenAI streaming format."""
-
-    delta: Delta = Field(default_factory=Delta, description="Delta content for this choice")
-    index: int = Field(default=0, description="Choice index")
-    finish_reason: str | None = Field(default=None, description="Finish reason: stop|length|content_filter|null")
-
-
-class ChatCompletionChunk(BaseModel):
-    """Streaming chat completion chunk — maps to OpenAI streaming response chunk."""
-
-    id: str = Field(default="", description="Chunk ID")
-    object: str = Field(default="chat.completion.chunk", description="Object type")
-    created: int = Field(default=0, description="Unix timestamp")
-    model: str = Field(default="deepseek-v4-pro", description="Model name")
-    choices: list[Choice] = Field(default_factory=list, description="Streaming choices")
-
-
-# ============================================================================
-# Exceptions
-# ============================================================================
-
-
-class LLMClientError(Exception):
-    """LLM API client error after retries exhausted.
-
-    Wraps underlying OpenAI SDK exceptions after all retry attempts fail.
-
-    Attributes:
-        status_code: HTTP status code (if available from APIStatusError).
-        original_error: The last underlying exception that caused the failure.
-    """
-
-    status_code: int = 503
-
-    def __init__(
-        self,
-        message: str = "LLM API 调用失败，已重试 3 次仍未恢复",
-        status_code: int = 503,
-        original_error: Exception | None = None,
-    ) -> None:
-        self.message: str = message
-        self.status_code: int = status_code
-        self.original_error: Exception | None = original_error
-        super().__init__(self.message)
-
-    def __str__(self) -> str:
-        if self.original_error:
-            return f"{self.message} (caused by: {self.original_error})"
-        return self.message
-
-
-# ============================================================================
-# LLMClient
-# ============================================================================
-
-
-class LLMClient:
-    """DeepSeek API streaming chat client via OpenAI SDK.
-
-    Unified interface for LLM streaming calls with retry, timeout control,
-    and circuit breaker awareness.
-
-    Usage:
-        client = LLMClient()
+    用法:
+        client = DeepSeekLLMClient()
         async for chunk in client.async_chat_stream(messages=[...]):
             print(chunk.choices[0].delta.content)
     """
@@ -104,24 +35,124 @@ class LLMClient:
         self,
         api_key: str | None = None,
         base_url: str = "https://api.deepseek.com",
+        retry_config: RetryConfig | None = None,
     ) -> None:
-        """Initialize LLM client.
+        """初始化 DeepSeek 客户端。
 
         Args:
-            api_key: DeepSeek API key. If None, reads from AppSettings.
-            base_url: DeepSeek API base URL, default https://api.deepseek.com.
+            api_key: DeepSeek API 密钥。为 None 时自动从 py_config 的
+                     AppSettings 中读取（DEEPSEEK_API_KEY / DEEPSEEK_BASE_URL）。
+            base_url: DeepSeek API 基地址。当 api_key 为 None 且 py_config
+                      可用时，会被 AppSettings 中的值覆盖。
+            retry_config: 可选的重试行为配置。
         """
         if api_key is None:
             try:
                 from py_config import get_settings
 
                 settings = get_settings()
-                api_key = settings.DEEPSEEK_API_KEY.get_secret_value()
-                base_url = str(settings.DEEPSEEK_BASE_URL).rstrip("/v1").rstrip("/")
+                resolved_api_key = settings.DEEPSEEK_API_KEY.get_secret_value()
+                resolved_base_url = (
+                    str(settings.DEEPSEEK_BASE_URL).rstrip("/v1").rstrip("/")
+                )
             except (ImportError, AttributeError):
-                api_key = ""  # Degraded mode — tests mock async_chat_stream
+                resolved_api_key = ""  # 降级模式——测试中可 mock async_chat_stream
+                resolved_base_url = base_url.rstrip("/")
+        else:
+            resolved_api_key = api_key
+            resolved_base_url = base_url.rstrip("/")
 
-        self._client = AsyncOpenAI(api_key=api_key, base_url=base_url)
+        super().__init__(
+            api_key=resolved_api_key,
+            base_url=resolved_base_url,
+            retry_config=retry_config,
+        )
+        self._client = AsyncOpenAI(
+            api_key=resolved_api_key,
+            base_url=resolved_base_url,
+        )
+
+    # ========================================================================
+    # 抽象钩子实现
+    # ========================================================================
+
+    async def _do_create_stream(
+        self,
+        messages: list[dict[str, str]],
+        model: str,
+        temperature: float,
+        max_tokens: int,
+        timeout: float,
+        response_format: dict[str, str] | None,
+    ) -> AsyncGenerator[ChatCompletionChunk, None]:
+        """执行流式 API 调用并 yield 转换后的 chunk。
+
+        由契约的 @final chat_stream() 在其重试循环中调用。
+        """
+        create_kwargs: dict[str, object] = {
+            "model": model,
+            "messages": messages,
+            "temperature": temperature,
+            "max_tokens": max_tokens,
+            "stream": True,
+            "timeout": timeout,
+        }
+        if response_format is not None:
+            create_kwargs["response_format"] = response_format
+
+        stream = await self._client.chat.completions.create(**create_kwargs)  # type: ignore[call-overload]
+        async for chunk in stream:
+            if chunk.choices and len(chunk.choices) > 0:
+                choice = chunk.choices[0]
+                yield ChatCompletionChunk(
+                    id=chunk.id,
+                    object=chunk.object or "chat.completion.chunk",
+                    created=chunk.created,
+                    model=chunk.model,
+                    choices=[
+                        Choice(
+                            delta=Delta(
+                                content=choice.delta.content or "",
+                                role=choice.delta.role,
+                            ),
+                            index=choice.index,
+                            finish_reason=choice.finish_reason,
+                        )
+                    ],
+                )
+
+    async def _do_create_completion(
+        self,
+        messages: list[dict[str, str]],
+        model: str,
+        temperature: float,
+        max_tokens: int,
+        timeout: float,
+        response_format: dict[str, str] | None,
+    ) -> str:
+        """执行非流式 API 调用并返回响应文本。
+
+        由契约的 @final chat() 在其重试循环中调用。
+        """
+        create_kwargs: dict[str, object] = {
+            "model": model,
+            "messages": messages,
+            "temperature": temperature,
+            "max_tokens": max_tokens,
+            "stream": False,
+            "timeout": timeout,
+        }
+        if response_format is not None:
+            create_kwargs["response_format"] = response_format
+
+        response = await self._client.chat.completions.create(**create_kwargs)  # type: ignore[call-overload]
+        if response.choices and len(response.choices) > 0:
+            return response.choices[0].message.content or ""
+        return ""
+
+    # ========================================================================
+    # 向后兼容包装（旧 API: async_chat_stream / async_chat）
+    # ========================================================================
 
     async def async_chat_stream(
         self,
@@ -129,93 +160,24 @@ class LLMClient:
         model: str = "deepseek-v4-pro",
         temperature: float = 0.3,
         max_tokens: int = 8192,
-        timeout: float = 90.0,
+        timeout: float = 310.0,
         max_retries: int = 3,
-        response_format: dict | None = None,
+        response_format: dict[str, str] | None = None,
     ) -> AsyncGenerator[ChatCompletionChunk, None]:
-        """Stream chat completion from DeepSeek API with retry.
+        """chat_stream() 的向后兼容别名。
 
-        Uses POST /v1/chat/completions with stream=true via OpenAI SDK.
-        Retries on transient failures (429, 5xx, timeout) with exponential backoff.
-
-        Args:
-            messages: Chat messages in OpenAI format.
-            model: Model identifier, default "deepseek-v4-pro".
-            temperature: Sampling temperature, default 0.3.
-            max_tokens: Maximum tokens to generate, default 8192.
-            timeout: HTTP-level timeout in seconds per chunk, default 90.0.
-            max_retries: Maximum retry attempts on transient failures, default 3.
-            response_format: Optional response format dict (e.g. {"type": "json_object"}).
-
-        Yields:
-            ChatCompletionChunk: Each streaming chunk from the API.
-
-        Raises:
-            LLMClientError: After all retries exhausted.
+        委托给契约的 @final chat_stream()。max_retries 参数仅为调用端兼容而保留，
+        实际重试行为由构造时传入的 RetryConfig 统一控制。
         """
-        base_delay: float = 3.0
-        max_delay: float = 120.0
-
-        for attempt in range(max_retries + 1):
-            try:
-                create_kwargs: dict = {
-                    "model": model,
-                    "messages": messages,  # type: ignore[arg-type]
-                    "temperature": temperature,
-                    "max_tokens": max_tokens,
-                    "stream": True,
-                    "timeout": timeout,
-                }
-                if response_format is not None:
-                    create_kwargs["response_format"] = response_format
-                stream = await self._client.chat.completions.create(**create_kwargs)
-                async for chunk in stream:
-                    if chunk.choices and len(chunk.choices) > 0:
-                        choice = chunk.choices[0]
-                        yield ChatCompletionChunk(
-                            id=chunk.id,
-                            object=chunk.object or "chat.completion.chunk",
-                            created=chunk.created,
-                            model=chunk.model,
-                            choices=[
-                                Choice(
-                                    delta=Delta(
-                                        content=choice.delta.content or "",
-                                        role=choice.delta.role,
-                                    ),
-                                    index=choice.index,
-                                    finish_reason=choice.finish_reason,
-                                )
-                            ],
-                        )
-                return
-
-            except RateLimitError as exc:
-                if attempt == max_retries:
-                    raise LLMClientError(
-                        message="LLM API 速率限制，已重试耗尽",
-                        status_code=429,
-                        original_error=exc,
-                    ) from exc
-
-            except APITimeoutError as exc:
-                if attempt == max_retries:
-                    raise LLMClientError(
-                        message="LLM API 请求超时，已重试耗尽",
-                        status_code=504,
-                        original_error=exc,
-                    ) from exc
-
-            except APIStatusError as exc:
-                if attempt == max_retries:
-                    raise LLMClientError(
-                        message=f"LLM API 返回错误 (HTTP {exc.status_code})",
-                        status_code=exc.status_code,
-                        original_error=exc,
-                    ) from exc
-
-            delay = min(base_delay * (2 ** attempt) + random.uniform(0, 1), max_delay)
-            time.sleep(delay)
+        async for chunk in self.chat_stream(
+            messages=messages,
+            model=model,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            timeout=timeout,
+            response_format=response_format,
+        ):
+            yield chunk
 
     async def async_chat(
         self,
@@ -225,74 +187,21 @@ class LLMClient:
         max_tokens: int = 8192,
         timeout: float = 5.0,
         max_retries: int = 3,
-        response_format: dict | None = None,
+        response_format: dict[str, str] | None = None,
     ) -> str:
-        """Non-streaming chat completion from DeepSeek API with retry.
+        """chat() 的向后兼容别名。
 
-        Uses POST /v1/chat/completions with stream=false via OpenAI SDK.
-        Retries on transient failures (429, 5xx, timeout) with exponential backoff.
-
-        Args:
-            messages: Chat messages in OpenAI format.
-            model: Model identifier, default "deepseek-v4-pro".
-            temperature: Sampling temperature, default 0.3.
-            max_tokens: Maximum tokens to generate, default 8192.
-            timeout: HTTP-level timeout in seconds, default 5.0.
-            max_retries: Maximum retry attempts on transient failures, default 3.
-            response_format: Optional response format dict (e.g. {"type": "json_object"}).
-
-        Returns:
-            str: The complete response text from the LLM.
-
-        Raises:
-            LLMClientError: After all retries exhausted.
+        委托给契约的 @final chat()。max_retries 参数仅为调用端兼容而保留。
         """
-        base_delay: float = 3.0
-        max_delay: float = 120.0
+        return await self.chat(
+            messages=messages,
+            model=model,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            timeout=timeout,
+            response_format=response_format,
+        )
 
-        for attempt in range(max_retries + 1):
-            try:
-                create_kwargs: dict = {
-                    "model": model,
-                    "messages": messages,  # type: ignore[arg-type]
-                    "temperature": temperature,
-                    "max_tokens": max_tokens,
-                    "stream": False,
-                    "timeout": timeout,
-                }
-                if response_format is not None:
-                    create_kwargs["response_format"] = response_format
-                response = await self._client.chat.completions.create(**create_kwargs)
-                if response.choices and len(response.choices) > 0:
-                    return response.choices[0].message.content or ""
-                return ""
 
-            except RateLimitError as exc:
-                if attempt == max_retries:
-                    raise LLMClientError(
-                        message="LLM API 速率限制，已重试耗尽",
-                        status_code=429,
-                        original_error=exc,
-                    ) from exc
-
-            except APITimeoutError as exc:
-                if attempt == max_retries:
-                    raise LLMClientError(
-                        message="LLM API 请求超时，已重试耗尽",
-                        status_code=504,
-                        original_error=exc,
-                    ) from exc
-
-            except APIStatusError as exc:
-                if attempt == max_retries:
-                    raise LLMClientError(
-                        message=f"LLM API 返回错误 (HTTP {exc.status_code})",
-                        status_code=exc.status_code,
-                        original_error=exc,
-                    ) from exc
-
-            delay = min(base_delay * (2 ** attempt) + random.uniform(0, 1), max_delay)
-            time.sleep(delay)
-
-        # Should never reach here, but satisfy type checker
-        raise LLMClientError(message="LLM API 调用失败，未知错误")
+# 向后兼容别名
+LLMClient = DeepSeekLLMClient
