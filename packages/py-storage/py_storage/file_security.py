@@ -1,37 +1,52 @@
-"""SEC-01 文件上传安全校验。
+"""py-storage 文件安全校验 — 默认实现。
 
-三层递进校验：扩展名 → 文件大小 → MIME 类型 → 文件头魔数。
-任一层失败即短路返回，不执行后续校验。
-
-校验层级：
-1. 扩展名白名单校验（最轻量，最早拦截）
-2. 文件大小校验（按文件类型区分上限）
-3. MIME 类型检测（python-magic，读取前 1024 字节）
-4. 文件头魔数校验（读取前 4 字节比对已知签名）
-
-公开函数：
-  - validate_file: 三层递进文件安全校验（幂等）
-  - FileValidationResult: 校验结果数据类
+模块: py_storage.file_security
+职责: 基于 BaseFileValidator 契约，实现四层递进文件安全校验：
+      扩展名白名单 → 文件大小上限 → MIME 类型检测 → 文件头魔数。
+      扩展名白名单从 py-config 安全配置读取，其余规则在模块内定义。
+数据来源:
+  - py_config.security.get_security_config(): MUST — 允许的文件扩展名白名单
+  - python-magic: MUST — MIME 类型检测
+边界:
+  - 依赖: py_storage.types、py_storage.file_validation_contract、py_storage.exceptions、py-config
+  - 被依赖: api-server 文件上传路由（通过 BaseFileValidator 契约调用）
+禁止行为:
+  - 禁止覆盖 @final validate() 方法
+  - 禁止跳过 _validate_* 校验器
+  - 禁止以 return FileValidationResult(is_valid=False) 替代抛异常
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from py_storage.exceptions import (
+    FileContentTooShortError,
+    FileExtensionNotAllowedError,
+    FileMagicSignatureMismatchError,
+    FileMimeDetectionError,
+    FileMimeTypeNotAllowedError,
+    FileTooLargeError,
+)
+from py_storage.file_validation_contract import BaseFileValidator
+from py_storage.types import FileCategory
 
-import magic
-
-from py_config.security import get_security_config
-from py_storage.exceptions import FileTooLargeError
-
+# ---------------------------------------------------------------------------
 # 文件大小上限（字节）
+# ---------------------------------------------------------------------------
+
 _SIZE_LIMIT_IMAGE = 5 * 1024 * 1024       # 5 MB
 _SIZE_LIMIT_DOCUMENT = 10 * 1024 * 1024    # 10 MB
 
-# 文件扩展名资源类型映射
-_IMAGE_EXTENSIONS = frozenset({"jpg", "jpeg", "png"})
-_DOCUMENT_EXTENSIONS = frozenset({"pdf", "docx"})
+# ---------------------------------------------------------------------------
+# 文件类别 → 扩展名映射
+# ---------------------------------------------------------------------------
 
-# 允许的 MIME 类型集合
+_IMAGE_EXTENSIONS: frozenset[str] = frozenset({"jpg", "jpeg", "png"})
+_DOCUMENT_EXTENSIONS: frozenset[str] = frozenset({"pdf", "docx"})
+
+# ---------------------------------------------------------------------------
+# 允许的 MIME 类型
+# ---------------------------------------------------------------------------
+
 _ALLOWED_MIME_TYPES: frozenset[str] = frozenset({
     "application/pdf",
     "image/jpeg",
@@ -39,7 +54,10 @@ _ALLOWED_MIME_TYPES: frozenset[str] = frozenset({
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
 })
 
-# 文件头魔数签名表（前 4 字节）
+# ---------------------------------------------------------------------------
+# 文件头魔数签名表
+# ---------------------------------------------------------------------------
+
 _MAGIC_SIGNATURES: dict[str, bytes] = {
     "pdf": b"%PDF",
     "jpg": b"\xff\xd8\xff",
@@ -49,137 +67,75 @@ _MAGIC_SIGNATURES: dict[str, bytes] = {
 }
 
 
-@dataclass
-class FileValidationResult:
-    """文件安全校验结果。
+class DefaultFileValidator(BaseFileValidator):
+    """默认文件安全校验器。
 
-    Attributes:
-        is_valid: 文件是否通过三层递进校验。
-        reason: 校验失败时的原因说明；通过时为 None。
+    实现 BaseFileValidator 契约的四层递进校验：
+    1. 扩展名白名单（从 py-config 安全配置读取）
+    2. 文件大小上限（图片 5MB / 文档 10MB）
+    3. MIME 类型检测（python-magic）
+    4. 文件头魔数校验
     """
 
-    is_valid: bool
-    reason: str | None = None
+    # === 第 1 层：扩展名白名单 ===
 
+    def _verify_extension(self, ext: str) -> None:
+        from py_config.security import get_security_config
 
-def validate_file(filename: str, content: bytes) -> FileValidationResult:
-    """三层递进文件安全校验：扩展名 → MIME 类型 → 文件头魔数。
+        config = get_security_config()
+        allowed = frozenset(config.ALLOWED_FILE_EXTENSIONS)
+        if ext not in allowed:
+            raise FileExtensionNotAllowedError(ext, allowed)
 
-    任一层校验失败 → 立即返回 FileValidationResult(is_valid=False, reason=...)
-    不再执行后续层。
+    # === 第 2 层：文件大小上限 ===
 
-    Args:
-        filename: 上传文件的原始文件名（含扩展名）。
-        content: 上传文件的原始字节内容。
+    def _verify_size(self, ext: str, content: bytes) -> None:
+        content_size = len(content)
 
-    Returns:
-        FileValidationResult: 校验结果，含 ``is_valid`` 和失败时的 ``reason``。
+        if ext in _IMAGE_EXTENSIONS:
+            size_limit = _SIZE_LIMIT_IMAGE
+            category = FileCategory.IMAGE.value
+        elif ext in _DOCUMENT_EXTENSIONS:
+            size_limit = _SIZE_LIMIT_DOCUMENT
+            category = FileCategory.DOCUMENT.value
+        else:
+            size_limit = _SIZE_LIMIT_DOCUMENT
+            category = "文件"
 
-    Raises:
-        ValueError: filename 为空字符串。
-        FileTooLargeError: 文件字节数超过类型大小上限。
+        if content_size > size_limit:
+            raise FileTooLargeError(content_size, size_limit, category)
 
-    Side Effects:
-        无。纯函数，不写数据库、不写文件系统。
-    """
-    # 前置：参数类型校验
-    if not isinstance(content, bytes):
-        raise TypeError(
-            f"content 必须是 bytes 类型，实际为 {type(content).__name__}"
-        )
+    # === 第 3 层：MIME 类型检测 ===
 
-    # 前置：空文件名检查
-    if not filename or len(filename) == 0:
-        raise ValueError("filename 不能为空")
+    def _verify_mime_type(self, content: bytes) -> None:
+        import magic
 
-    config = get_security_config()
-    allowed_extensions = set(config.ALLOWED_FILE_EXTENSIONS)
+        try:
+            detected_mime = magic.from_buffer(content[:1024], mime=True)
+        except Exception as exc:
+            raise FileMimeDetectionError(str(exc)) from exc
 
-    # ===== 第 1 层：扩展名校验 =====
-    if "." not in filename:
-        return FileValidationResult(
-            is_valid=False,
-            reason="无法识别文件扩展名",
-        )
+        if detected_mime not in _ALLOWED_MIME_TYPES:
+            raise FileMimeTypeNotAllowedError(detected_mime, _ALLOWED_MIME_TYPES)
 
-    ext = filename.rsplit(".", 1)[-1].lower()
-    if ext == "":
-        return FileValidationResult(
-            is_valid=False,
-            reason="无法识别文件扩展名",
-        )
+    # === 第 4 层：文件头魔数 ===
 
-    if ext not in allowed_extensions:
-        allowed_str = ", ".join(sorted(allowed_extensions))
-        return FileValidationResult(
-            is_valid=False,
-            reason=f"文件扩展名 .{ext} 不在允许白名单中。允许的类型：{allowed_str}",
-        )
+    def _verify_magic_bytes(self, ext: str, content: bytes) -> None:
+        min_header = 4
+        if len(content) < min_header:
+            raise FileContentTooShortError(len(content), min_header)
 
-    # ===== 第 2 层：文件大小校验 =====
-    content_size = len(content)
+        expected_magic = _MAGIC_SIGNATURES.get(ext)
+        if expected_magic is None:
+            # 扩展名在白名单但无对应魔数签名 → 跳过魔数校验
+            return
 
-    if ext in _IMAGE_EXTENSIONS:
-        size_limit = _SIZE_LIMIT_IMAGE
-        category = "图片"
-    elif ext in _DOCUMENT_EXTENSIONS:
-        size_limit = _SIZE_LIMIT_DOCUMENT
-        category = "文档"
-    else:
-        # 理论上不会到达此处（扩展名已通过白名单校验）
-        size_limit = _SIZE_LIMIT_DOCUMENT
-        category = "文件"
-
-    if content_size > size_limit:
-        actual_mb = content_size / (1024 * 1024)
-        limit_mb = size_limit / (1024 * 1024)
-        raise FileTooLargeError(
-            f"{category}大小 {actual_mb:.1f}MB 超过上限 {limit_mb:.0f}MB"
-        )
-
-    # ===== 第 3 层：MIME 类型检测 =====
-    try:
-        detected_mime = magic.from_buffer(content[:1024], mime=True)
-    except Exception:
-        return FileValidationResult(
-            is_valid=False,
-            reason="无法检测文件 MIME 类型",
-        )
-
-    if detected_mime not in _ALLOWED_MIME_TYPES:
-        return FileValidationResult(
-            is_valid=False,
-            reason=f"文件类型 {detected_mime} 不在允许列表中。"
-                   f"允许的类型：{', '.join(sorted(_ALLOWED_MIME_TYPES))}",
-        )
-
-    # ===== 第 4 层：文件头魔数校验 =====
-    if len(content) < 4:
-        return FileValidationResult(
-            is_valid=False,
-            reason="文件内容过短，无法校验文件头",
-        )
-
-    expected_magic = _MAGIC_SIGNATURES.get(ext)
-    if expected_magic is None:
-        return FileValidationResult(
-            is_valid=False,
-            reason=f"未知的文件类型 .{ext}，无法校验文件头",
-        )
-
-    actual_header = content[: len(expected_magic)]
-    if actual_header != expected_magic:
-        actual_hex = " ".join(f"{b:02x}" for b in actual_header)
-        return FileValidationResult(
-            is_valid=False,
-            reason=f"文件头签名不匹配，实际为 {actual_hex}",
-        )
-
-    # 全部通过
-    return FileValidationResult(is_valid=True, reason=None)
+        actual_header = content[:len(expected_magic)]
+        if actual_header != expected_magic:
+            actual_hex = " ".join(f"{b:02x}" for b in actual_header)
+            raise FileMagicSignatureMismatchError(ext, actual_hex)
 
 
 __all__ = [
-    "FileValidationResult",
-    "validate_file",
+    "DefaultFileValidator",
 ]
