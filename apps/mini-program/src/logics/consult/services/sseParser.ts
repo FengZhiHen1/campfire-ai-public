@@ -210,8 +210,11 @@ export class SseStreamParser {
         task.onChunkReceived((res) => {
           this.clearConnectTimer();
 
-          // responseType: 'text' 下微信小程序直接返回字符串
-          const chunk = typeof res.data === 'string' ? res.data : '';
+          const rawType = typeof res.data;
+          const rawLen = rawType === 'string' ? (res.data as string).length : -1;
+          console.warn('[sse] onChunkReceived type=', rawType, 'len=', rawLen);
+
+          const chunk = rawType === 'string' ? res.data as string : '';
           if (chunk) {
             this.processChunk(chunk);
           }
@@ -259,29 +262,27 @@ export class SseStreamParser {
    * 处理跨 chunk 边界的事件拼接。
    */
   private processChunk(chunk: string): void {
-    // 追加到缓冲区
     this.buffer += chunk;
 
-    // 尝试从缓冲区中提取完整事件
     let separatorIndex: number;
     while ((separatorIndex = this.findEventSeparator(this.buffer)) !== -1) {
-      // 提取完整事件文本（到第一个分隔符之前）
       const eventText = this.buffer.substring(0, separatorIndex);
 
-      // 移除已处理部分（包括分隔符）
       this.buffer = this.buffer.substring(
         separatorIndex + this.getSeparatorLength(this.buffer, separatorIndex),
       );
 
-      // 跳过空事件
       if (eventText.trim().length === 0) {
         continue;
       }
 
-      // 解析事件
       const parsedEvent = this.parseSseEvent(eventText);
       if (parsedEvent) {
+        console.warn('[sse] dispatch event=', parsedEvent.event, 'id=', parsedEvent.id,
+          'data_len=', parsedEvent.data.length);
         this.dispatchEvent(parsedEvent);
+      } else {
+        console.warn('[sse] parseSseEvent returned null, text=', eventText.substring(0, 100));
       }
     }
   }
