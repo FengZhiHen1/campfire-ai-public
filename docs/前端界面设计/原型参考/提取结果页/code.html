@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+
+<html class="light" lang="zh-CN"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>提取结果</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "on-tertiary-fixed": "#002114",
+                        "on-primary-fixed-variant": "#653e00",
+                        "on-background": "#1f1b17",
+                        "primary": "#855300",
+                        "outline": "#867461",
+                        "on-primary-container": "#613b00",
+                        "surface-variant": "#eae1da",
+                        "primary-fixed-dim": "#ffb95f",
+                        "on-surface-variant": "#534434",
+                        "on-tertiary": "#ffffff",
+                        "error-container": "#ffdad6",
+                        "on-primary": "#ffffff",
+                        "inverse-primary": "#ffb95f",
+                        "secondary-fixed": "#d3e4fe",
+                        "secondary": "#505f76",
+                        "on-secondary-fixed": "#0b1c30",
+                        "on-secondary-container": "#54647a",
+                        "error": "#ba1a1a",
+                        "background": "#fff8f5",
+                        "tertiary-fixed": "#85f8c4",
+                        "surface-container-lowest": "#ffffff",
+                        "surface-bright": "#fff8f5",
+                        "on-error": "#ffffff",
+                        "secondary-fixed-dim": "#b7c8e1",
+                        "primary-container": "#f59e0b",
+                        "inverse-on-surface": "#f9efe8",
+                        "inverse-surface": "#342f2b",
+                        "on-secondary-fixed-variant": "#38485d",
+                        "on-surface": "#1f1b17",
+                        "surface-tint": "#855300",
+                        "on-tertiary-fixed-variant": "#005137",
+                        "on-secondary": "#ffffff",
+                        "surface-container-low": "#fcf2eb",
+                        "surface-container-highest": "#eae1da",
+                        "tertiary-container": "#50c594",
+                        "tertiary-fixed-dim": "#68dba9",
+                        "on-primary-fixed": "#2a1700",
+                        "on-error-container": "#93000a",
+                        "surface": "#fff8f5",
+                        "surface-dim": "#e2d8d2",
+                        "surface-container": "#f6ece6",
+                        "tertiary": "#006c4a",
+                        "secondary-container": "#d0e1fb",
+                        "primary-fixed": "#ffddb8",
+                        "outline-variant": "#d8c3ad",
+                        "on-tertiary-container": "#004e35",
+                        "surface-container-high": "#f0e6e0"
+                    },
+                    borderRadius: {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "full": "9999px"
+                    },
+                    spacing: {
+                        "xl": "32px",
+                        "xs": "4px",
+                        "margin-mobile": "16px",
+                        "margin-desktop": "24px",
+                        "lg": "24px",
+                        "base": "8px",
+                        "md": "16px",
+                        "sm": "8px",
+                        "gutter": "16px"
+                    },
+                    fontFamily: {
+                        "headline-md": ["system-ui", "-apple-system", "'PingFang SC'", "'Noto Sans SC'", "'Helvetica Neue'", "sans-serif"],
+                        "headline-lg": ["system-ui", "-apple-system", "'PingFang SC'", "'Noto Sans SC'", "'Helvetica Neue'", "sans-serif"],
+                        "footnote": ["system-ui", "-apple-system", "'PingFang SC'", "'Noto Sans SC'", "'Helvetica Neue'", "sans-serif"],
+                        "body-lg": ["system-ui", "-apple-system", "'PingFang SC'", "'Noto Sans SC'", "'Helvetica Neue'", "sans-serif"],
+                        "label-md": ["system-ui", "-apple-system", "'PingFang SC'", "'Noto Sans SC'", "'Helvetica Neue'", "sans-serif"],
+                        "body-md": ["system-ui", "-apple-system", "'PingFang SC'", "'Noto Sans SC'", "'Helvetica Neue'", "sans-serif"]
+                    },
+                    fontSize: {
+                        "headline-md": ["20px", { "lineHeight": "32px", "fontWeight": "600" }],
+                        "headline-lg": ["24px", { "lineHeight": "38px", "fontWeight": "600" }],
+                        "footnote": ["11px", { "lineHeight": "15px", "letterSpacing": "0px", "fontWeight": "400" }],
+                        "body-lg": ["18px", { "lineHeight": "32px", "fontWeight": "400" }],
+                        "label-md": ["14px", { "lineHeight": "21px", "letterSpacing": "0px", "fontWeight": "400" }],
+                        "body-md": ["16px", { "lineHeight": "28px", "fontWeight": "400" }]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        .fill-icon {
+            font-variation-settings: 'FILL' 1;
+        }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-background text-on-surface min-h-screen flex flex-col font-body-md text-body-md overflow-x-hidden antialiased">
+<!-- Top Navigation Bar -->
+<header class="bg-surface dark:bg-surface-dim fixed top-0 w-full z-50 flex justify-between items-center px-margin-mobile h-16 shadow-sm">
+<button class="text-primary dark:text-primary-fixed-dim hover:bg-surface-variant transition-colors p-2 rounded-full active:opacity-80">
+<span class="material-symbols-outlined">arrow_back</span>
+</button>
+<h1 class="font-headline-md text-headline-md text-on-surface">提取结果 (3 张卡片)</h1>
+<button class="text-primary dark:text-primary-fixed-dim hover:bg-surface-variant transition-colors px-3 py-2 rounded-lg font-label-md text-label-md active:opacity-80" id="toggleNarrativeBtn">
+            原文
+        </button>
+</header>
+<!-- Main Content Canvas -->
+<main class="flex-1 mt-16 pb-[100px] flex flex-col gap-lg px-margin-mobile">
+<!-- Narrative Collapse Area -->
+<div class="hidden bg-surface-container-low rounded-xl p-md mt-md shadow-[0_4px_24px_rgba(28,25,23,0.06)] border border-outline/15 transition-all duration-300" id="narrativeCollapse">
+<h2 class="font-label-md text-label-md text-on-surface-variant mb-xs">原始描述</h2>
+<p class="font-body-md text-body-md text-on-surface leading-relaxed">
+                7 岁 ASD 男孩在商场因吹风机噪音干扰导致情绪失控...
+            </p>
+</div>
+<!-- Overview Layer (Horizontal Scroll) -->
+<div class="flex overflow-x-auto gap-md py-sm snap-x hide-scrollbar -mx-margin-mobile px-margin-mobile">
+<!-- Card 1 (Selected) -->
+<div class="snap-start flex-shrink-0 w-64 bg-surface rounded-xl shadow-[0_4px_24px_rgba(28,25,23,0.06)] overflow-hidden relative border border-primary">
+<div class="absolute left-0 top-0 bottom-0 w-1 bg-primary"></div>
+<div class="p-md pl-lg">
+<h3 class="font-label-md text-label-md text-on-surface font-bold truncate">感官过载环境调整</h3>
+<div class="mt-xs flex items-center gap-xs">
+<span class="material-symbols-outlined text-[14px] text-tertiary">check_circle</span>
+<span class="font-footnote text-footnote text-tertiary">已确认</span>
+</div>
+</div>
+</div>
+<!-- Card 2 -->
+<div class="snap-start flex-shrink-0 w-64 bg-surface rounded-xl shadow-[0_4px_24px_rgba(28,25,23,0.06)] overflow-hidden relative border border-outline/15 opacity-80">
+<div class="absolute left-0 top-0 bottom-0 w-1 bg-surface-variant"></div>
+<div class="p-md pl-lg">
+<h3 class="font-label-md text-label-md text-on-surface font-bold truncate">情绪安抚互动</h3>
+<div class="mt-xs flex items-center gap-xs">
+<span class="material-symbols-outlined text-[14px] text-primary-container">warning</span>
+<span class="font-footnote text-footnote text-primary-container">2 字段推断</span>
+</div>
+</div>
+</div>
+</div>
+<!-- Horizontal Tab Bar -->
+<div class="border-b border-outline/15 pb-2">
+<h2 class="font-headline-md text-headline-md text-on-surface">感官过载环境调整 · 情绪崩溃</h2>
+</div>
+<!-- Scrollable Edit Area -->
+<div class="flex flex-col gap-lg">
+<!-- Basic Info -->
+<div class="bg-surface rounded-xl p-md shadow-[0_4px_24px_rgba(28,25,23,0.06)] border border-outline/15 flex flex-col gap-md">
+<div>
+<label class="block font-label-md text-label-md text-on-surface-variant mb-xs">Card Title</label>
+<input class="w-full bg-surface-container-lowest border border-outline/30 rounded-lg p-sm font-body-md text-body-md text-on-surface focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-colors" type="text" value="感官过载环境调整"/>
+</div>
+<div>
+<label class="block font-label-md text-label-md text-on-surface-variant mb-xs">Applicable Scenario</label>
+<input class="w-full bg-surface-container-lowest border border-outline/30 rounded-lg p-sm font-body-md text-body-md text-on-surface focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-colors" type="text" value="商场/嘈杂公共环境"/>
+</div>
+</div>
+<!-- Four-Section Content -->
+<div class="flex flex-col gap-md">
+<!-- Section 1: Immediate Safety (Tertiary/Green) -->
+<div class="bg-surface rounded-xl p-md shadow-[0_4px_24px_rgba(28,25,23,0.06)] relative overflow-hidden border border-outline/15">
+<div class="absolute left-0 top-0 bottom-0 w-1 bg-tertiary"></div>
+<div class="pl-sm">
+<div class="flex justify-between items-start mb-sm">
+<h4 class="font-label-md text-label-md text-on-surface font-bold">即时安全干预动作</h4>
+<span class="bg-surface-variant text-on-surface-variant px-2 py-1 rounded font-footnote text-footnote">提取</span>
+</div>
+<textarea class="w-full bg-surface-container-lowest border border-outline/30 rounded-lg p-sm font-body-md text-body-md text-on-surface focus:border-primary outline-none min-h-[80px]">迅速带离声源区域，寻找相对安静的角落（如楼梯间、母婴室外围）。</textarea>
+</div>
+</div>
+<!-- Section 2: Emotional Comfort (Primary/Amber) -->
+<div class="bg-surface rounded-xl p-md shadow-[0_4px_24px_rgba(28,25,23,0.06)] relative overflow-hidden border border-outline/15">
+<div class="absolute left-0 top-0 bottom-0 w-1 bg-primary"></div>
+<div class="pl-sm">
+<div class="flex justify-between items-start mb-sm">
+<h4 class="font-label-md text-label-md text-on-surface font-bold">情绪安抚话术</h4>
+<span class="bg-primary-container/20 text-primary-container px-2 py-1 rounded font-footnote text-footnote flex items-center gap-1">
+<span class="material-symbols-outlined text-[12px]">warning</span> 推断
+                            </span>
+</div>
+<textarea class="w-full bg-surface-container-lowest border border-outline/30 rounded-lg p-sm font-body-md text-body-md text-on-surface focus:border-primary outline-none min-h-[80px]">"安全了，我们现在很安全。" 保持低沉平缓的语调。</textarea>
+</div>
+</div>
+</div>
+<!-- AI Inference Explanation Panel -->
+<div class="bg-primary-container/10 rounded-xl p-md border border-primary-container/30">
+<div class="flex items-start gap-sm">
+<span class="material-symbols-outlined text-primary-container fill-icon mt-1">info</span>
+<div>
+<h4 class="font-label-md text-label-md text-on-surface font-bold mb-xs">AI 推断说明</h4>
+<p class="font-body-md text-body-md text-on-surface-variant">
+                            基于相似案例历史数据，当遭遇突发性高分贝噪音引起的崩溃时，简短且重复的安全确认话术通常最为有效。原文未提及具体话术，故补充。
+                        </p>
+</div>
+</div>
+</div>
+</div>
+</main>
+<!-- Bottom Action Bar -->
+<div class="fixed bottom-0 w-full z-50 pb-safe bg-surface border-t border-outline/15 shadow-[0_-4px_24px_rgba(28,25,23,0.06)] p-margin-mobile">
+<button class="w-full bg-primary text-on-primary font-headline-md text-headline-md py-3 rounded-xl shadow-md active:scale-[0.98] transition-transform flex items-center justify-center gap-sm">
+            提交全部卡片审核
+        </button>
+</div>
+<style>
+        .pb-safe { padding-bottom: env(safe-area-inset-bottom); }
+        .hide-scrollbar::-webkit-scrollbar { display: none; }
+        .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+    </style>
+<script>
+        document.getElementById('toggleNarrativeBtn').addEventListener('click', function() {
+            const collapse = document.getElementById('narrativeCollapse');
+            if (collapse.classList.contains('hidden')) {
+                collapse.classList.remove('hidden');
+                this.textContent = '收起';
+            } else {
+                collapse.classList.add('hidden');
+                this.textContent = '原文';
+            }
+        });
+    </script>
+</body></html>

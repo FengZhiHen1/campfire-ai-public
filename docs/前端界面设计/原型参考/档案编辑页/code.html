@@ -1,63 +1,68 @@
 <!DOCTYPE html>
 
-<html class="light" lang="zh-CN"><head>
+<html lang="zh-CN"><head>
 <meta charset="utf-8"/>
 <meta content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" name="viewport"/>
-<title>CareProfile - 编辑档案</title>
-<!-- Tailwind CSS Config & Script -->
+<title>编辑档案 - 篝火智答</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
 <script id="tailwind-config">
         tailwind.config = {
             darkMode: "class",
             theme: {
                 extend: {
                     "colors": {
-                        "secondary": "#505f76",
-                        "on-primary-fixed": "#2a1700",
-                        "secondary-container": "#d0e1fb",
-                        "surface-container-highest": "#eae1da",
-                        "on-surface-variant": "#534434",
-                        "on-tertiary-fixed-variant": "#005137",
-                        "primary-fixed": "#ffddb8",
-                        "secondary-fixed-dim": "#b7c8e1",
-                        "on-tertiary": "#ffffff",
-                        "surface-container": "#f6ece6",
-                        "on-primary": "#ffffff",
+                        "primary-container": "#f59e0b",
+                        "outline-variant": "#d8c3ad",
                         "error-container": "#ffdad6",
-                        "secondary-fixed": "#d3e4fe",
+                        "on-secondary-fixed-variant": "#38485d",
+                        "on-error": "#ffffff",
+                        "inverse-primary": "#ffb95f",
+                        "on-tertiary-fixed": "#002114",
+                        "on-secondary-fixed": "#0b1c30",
+                        "on-background": "#1f1b17",
+                        "surface-container-lowest": "#ffffff",
                         "error": "#ba1a1a",
                         "surface-variant": "#eae1da",
-                        "on-secondary-container": "#54647a",
-                        "tertiary-container": "#50c594",
-                        "surface-container-lowest": "#ffffff",
-                        "on-secondary-fixed-variant": "#38485d",
-                        "inverse-on-surface": "#f9efe8",
-                        "on-surface": "#1f1b17",
                         "on-error-container": "#93000a",
-                        "outline-variant": "#d8c3ad",
-                        "primary-fixed-dim": "#ffb95f",
-                        "on-secondary": "#ffffff",
-                        "inverse-primary": "#ffb95f",
-                        "primary-container": "#f59e0b",
-                        "surface-dim": "#e2d8d2",
-                        "inverse-surface": "#342f2b",
-                        "background": "#fff8f5",
-                        "surface-tint": "#f59e0b",
-                        "primary": "#f59e0b",
-                        "surface-bright": "#fff8f5",
-                        "on-background": "#1f1b17",
-                        "tertiary-fixed": "#85f8c4",
-                        "on-tertiary-fixed": "#002114",
-                        "surface": "#fff8f5",
-                        "outline": "#867461",
-                        "on-primary-container": "#613b00",
+                        "surface-tint": "#855300",
                         "on-primary-fixed-variant": "#653e00",
-                        "tertiary": "#006c4a",
+                        "inverse-surface": "#342f2b",
+                        "tertiary-fixed": "#85f8c4",
+                        "on-tertiary": "#ffffff",
+                        "tertiary-fixed-dim": "#68dba9",
+                        "surface-bright": "#fff8f5",
+                        "surface": "#fff8f5",
+                        "secondary": "#505f76",
+                        "secondary-fixed": "#d3e4fe",
+                        "background": "#fff8f5",
+                        "surface-dim": "#e2d8d2",
+                        "inverse-on-surface": "#f9efe8",
+                        "outline": "#867461",
+                        "surface-container-highest": "#eae1da",
+                        "on-tertiary-fixed-variant": "#005137",
+                        "on-primary-container": "#613b00",
+                        "on-surface-variant": "#534434",
+                        "on-surface": "#1f1b17",
+                        "on-secondary-container": "#54647a",
                         "surface-container-low": "#fcf2eb",
-                        "on-error": "#ffffff",
-                        "surface-container-high": "#f0e6e0",
-                        "on-secondary-fixed": "#0b1c30",
+                        "on-primary-fixed": "#2a1700",
+                        "surface-container": "#f6ece6",
+                        "primary": "#855300",
+                        "secondary-fixed-dim": "#b7c8e1",
+                        "secondary-container": "#d0e1fb",
+                        "primary-fixed": "#ffddb8",
                         "on-tertiary-container": "#004e35",
-                        "tertiary-fixed-dim": "#68dba9"
+                        "tertiary-container": "#50c594",
+                        "surface-container-high": "#f0e6e0",
+                        "on-secondary": "#ffffff",
+                        "on-primary": "#ffffff",
+                        "tertiary": "#006c4a",
+                        "primary-fixed-dim": "#ffb95f"
                     },
                     "borderRadius": {
                         "DEFAULT": "0.25rem",
@@ -66,241 +71,251 @@
                         "full": "9999px"
                     },
                     "spacing": {
-                        "gutter": "16px",
+                        "base": "8px",
                         "xl": "32px",
                         "margin-mobile": "16px",
-                        "margin-desktop": "24px",
-                        "lg": "24px",
-                        "md": "16px",
-                        "base": "8px",
                         "xs": "4px",
-                        "sm": "8px"
+                        "sm": "8px",
+                        "md": "16px",
+                        "lg": "24px",
+                        "gutter": "16px",
+                        "margin-desktop": "24px"
                     },
                     "fontFamily": {
-                        "label-md": ["system-ui", "-apple-system", "'PingFang SC'", "'Noto Sans SC'", "'Helvetica Neue'", "sans-serif"],
-                        "footnote": ["system-ui", "-apple-system", "'PingFang SC'", "'Noto Sans SC'", "'Helvetica Neue'", "sans-serif"],
-                        "headline-lg": ["system-ui", "-apple-system", "'PingFang SC'", "'Noto Sans SC'", "'Helvetica Neue'", "sans-serif"],
-                        "body-md": ["system-ui", "-apple-system", "'PingFang SC'", "'Noto Sans SC'", "'Helvetica Neue'", "sans-serif"],
-                        "headline-md": ["system-ui", "-apple-system", "'PingFang SC'", "'Noto Sans SC'", "'Helvetica Neue'", "sans-serif"],
-                        "body-lg": ["system-ui", "-apple-system", "'PingFang SC'", "'Noto Sans SC'", "'Helvetica Neue'", "sans-serif"]
+                        "body-lg": ["Inter", "system-ui", "-apple-system", "'PingFang SC'", "'Noto Sans SC'", "'Helvetica Neue'", "sans-serif"],
+                        "label-md": ["Inter", "system-ui", "-apple-system", "'PingFang SC'", "'Noto Sans SC'", "'Helvetica Neue'", "sans-serif"],
+                        "footnote": ["Inter", "system-ui", "-apple-system", "'PingFang SC'", "'Noto Sans SC'", "'Helvetica Neue'", "sans-serif"],
+                        "headline-md": ["Inter", "system-ui", "-apple-system", "'PingFang SC'", "'Noto Sans SC'", "'Helvetica Neue'", "sans-serif"],
+                        "body-md": ["Inter", "system-ui", "-apple-system", "'PingFang SC'", "'Noto Sans SC'", "'Helvetica Neue'", "sans-serif"],
+                        "headline-lg": ["Inter", "system-ui", "-apple-system", "'PingFang SC'", "'Noto Sans SC'", "'Helvetica Neue'", "sans-serif"]
                     },
                     "fontSize": {
-                        "label-md": ["14px", { "lineHeight": "21px", "letterSpacing": "0px", "fontWeight": "400" }],
-                        "footnote": ["11px", { "lineHeight": "15px", "letterSpacing": "0px", "fontWeight": "400" }],
-                        "headline-lg": ["24px", { "lineHeight": "38px", "fontWeight": "600" }],
-                        "body-md": ["16px", { "lineHeight": "28px", "fontWeight": "400" }],
-                        "headline-md": ["20px", { "lineHeight": "32px", "fontWeight": "600" }],
-                        "body-lg": ["18px", { "lineHeight": "32px", "fontWeight": "400" }]
+                        "body-lg": ["18px", {"lineHeight": "32px", "fontWeight": "400"}],
+                        "label-md": ["14px", {"lineHeight": "21px", "letterSpacing": "0px", "fontWeight": "400"}],
+                        "footnote": ["11px", {"lineHeight": "15px", "letterSpacing": "0px", "fontWeight": "400"}],
+                        "headline-md": ["20px", {"lineHeight": "32px", "fontWeight": "600"}],
+                        "body-md": ["16px", {"lineHeight": "28px", "fontWeight": "400"}],
+                        "headline-lg": ["24px", {"lineHeight": "38px", "fontWeight": "600"}]
+                    },
+                    "boxShadow": {
+                        "diffuse": "0 4px 24px rgba(28, 25, 23, 0.06)",
+                        "deep": "0 8px 40px rgba(28, 25, 23, 0.08)"
                     }
                 }
             }
         }
     </script>
-<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/>
-<!-- Material Symbols -->
-<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
 <style>
-        body { font-family: 'Inter', system-ui, sans-serif; }
-        .material-symbols-outlined {
-            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
-        }
-        .material-symbols-outlined.fill {
-            font-variation-settings: 'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 24;
-        }
-        /* Custom scrollbar for webkit */
-        ::-webkit-scrollbar { width: 6px; height: 6px; }
-        ::-webkit-scrollbar-track { background: transparent; }
-        ::-webkit-scrollbar-thumb { background: #d8c3ad; border-radius: 3px; }
+        body { background-color: #fff8f5; } /* Using surface/background token approximation */
+        .safe-pb { padding-bottom: calc(24px + env(safe-area-inset-bottom)); }
         
-        /* Smooth interactions */
-        .interactive-scale { transition: transform 0.15s ease-out; }
-        .interactive-scale:active { transform: scale(0.96); }
-        
-        /* Form inputs custom styling */
-        .care-input {
-            width: 100%;
-            border: none;
-            background-color: transparent;
-            padding: 12px 0;
+        /* Custom form styling to match the brand */
+        input[type="text"], input[type="date"], select {
+            background-color: theme('colors.surface-container-lowest');
+            border: 1px solid theme('colors.outline-variant');
+            color: theme('colors.on-surface');
+            transition: all 0.2s ease;
+        }
+        input[type="text"]:focus, input[type="date"]:focus, select:focus {
+            border-color: theme('colors.primary');
+            box-shadow: 0 0 0 2px theme('colors.primary-container');
             outline: none;
-            box-shadow: none !important;
-            border-bottom: 1px solid #d8c3ad;
-            transition: border-color 0.2s;
-        }
-        .care-input:focus {
-            border-bottom-color: #f59e0b;
-        }
-        .care-select {
-            appearance: none;
-            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' height='24' viewBox='0 -960 960 960' width='24'%3E%3Cpath d='M480-360 280-560h400L480-360Z' fill='%23534434'/%3E%3C/svg%3E");
-            background-repeat: no-repeat;
-            background-position: right center;
         }
     </style>
 <style>
-        body {
-            min-height: max(884px, 100dvh);
-        }
-    </style>
-</head>
-<body class="bg-surface text-on-background min-h-screen pb-[env(safe-area-inset-bottom)] antialiased">
-<!-- TopAppBar -->
-<header class="fixed top-0 w-full z-50 bg-surface-dim flex justify-between items-center h-16 px-margin-mobile shadow-sm">
-<!-- Leading Action: Cancel -->
-<button aria-label="取消" class="text-on-surface-variant font-label-md text-label-md interactive-scale p-2 -ml-2 hover:bg-surface-variant rounded-full transition-colors">
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="font-body-md text-on-surface antialiased safe-pb">
+<!-- Top Navigation (Shared Component Style) -->
+<header class="fixed top-0 w-full z-50 bg-surface h-16 flex justify-between items-center px-margin-mobile">
+<button class="font-label-md text-label-md text-secondary hover:opacity-80 transition-opacity active:scale-95 px-2 py-1">
             取消
         </button>
-<!-- Headline -->
-<h1 class="font-headline-md text-headline-md text-on-surface flex-1 text-center font-semibold tracking-tight">
-            编辑档案
-        </h1>
-<!-- Trailing Actions -->
+<h1 class="font-headline-md text-headline-md font-bold text-primary">编辑档案</h1>
 <div class="flex items-center gap-2">
-<button aria-label="More" class="text-on-surface-variant interactive-scale p-2 hover:bg-surface-variant rounded-full transition-colors">
-<span class="material-symbols-outlined">more_horiz</span>
+<button aria-label="保存" class="text-primary hover:opacity-80 transition-opacity active:scale-95 p-1 rounded-full bg-primary-container/20">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">check</span>
 </button>
-<button aria-label="Save" class="text-primary font-label-md text-label-md flex items-center gap-1 interactive-scale p-2 hover:bg-primary/10 rounded-full transition-colors font-medium">
-<span class="material-symbols-outlined" style="font-size: 20px;">check</span>
-<span>保存</span>
+<button aria-label="更多" class="text-secondary hover:opacity-80 transition-opacity active:scale-95 p-1">
+<span class="material-symbols-outlined">more_vert</span>
 </button>
 </div>
 </header>
 <!-- Main Content Canvas -->
-<main class="pt-[88px] px-margin-mobile pb-32 max-w-2xl mx-auto space-y-lg">
-<!-- Profile Info Section -->
-<section class="bg-surface-container rounded-xl p-lg shadow-sm border border-outline-variant/30">
-<!-- Avatar Edit -->
-<div class="flex flex-col items-center mb-xl">
-<div class="relative inline-block interactive-scale cursor-pointer group">
-<img alt="Avatar" class="w-24 h-24 rounded-full object-cover border-4 border-surface shadow-sm" data-alt="A portrait photograph of a young person with a calm, neutral expression. The image is brightly lit, reflecting a warm, trusting, and modern aesthetic. The background is soft and slightly blurred, focusing entirely on the individual's face. The overall mood is peaceful and professional, suitable for a caregiver profile." src="https://lh3.googleusercontent.com/aida-public/AB6AXuCbAb78ODtS0t6qtMczt7PbVErD6i94VDLehN6LvKYICh_qh307daV8cvJjVwRFZmVVsve-gHSqBg5iMS_y6dVcxkeuM987pykepgbzdDBXshGKxhMEjFNpCkk_p8HkJB3SxlDWd3gwrMdR7GYHU4E8NBJ9ftqZK9xQM4L2liULoAn2ecSwVde02-z13Z2v2GTbTjg9l2EBCDyRRnGH1VFnkRQrKdL6RV2CpTzCJhsDIn7I2RbBPBbVMSZCm3Gfka_dzCFW_h4oTXg"/>
-<div class="absolute bottom-0 right-0 bg-primary text-on-primary rounded-full p-2 shadow-md hover:bg-primary/90 transition-colors">
-<span class="material-symbols-outlined" style="font-size: 16px;">photo_camera</span>
+<main class="mt-16 px-margin-mobile pt-lg flex flex-col gap-xl">
+<!-- Basic Info Section -->
+<section class="flex flex-col gap-md">
+<h2 class="font-headline-md text-headline-md text-on-surface flex items-center gap-2">
+<span class="material-symbols-outlined text-primary" style="font-variation-settings: 'FILL' 1;">badge</span>
+                基础信息
+            </h2>
+<div class="bg-surface-container-lowest rounded-xl p-md shadow-diffuse border border-outline-variant/30 flex flex-col items-center gap-lg">
+<!-- Avatar -->
+<div class="relative group cursor-pointer active:scale-95 transition-transform mt-sm">
+<div class="w-24 h-24 rounded-full bg-surface-container-highest overflow-hidden border-2 border-primary-container flex items-center justify-center">
+<span class="material-symbols-outlined text-4xl text-secondary">person</span>
 </div>
+<div class="absolute bottom-0 right-0 bg-primary text-on-primary rounded-full p-1.5 shadow-md border-2 border-surface-container-lowest">
+<span class="material-symbols-outlined text-sm" style="font-variation-settings: 'FILL' 1;">edit</span>
 </div>
 </div>
 <!-- Form Fields -->
-<div class="space-y-lg">
-<!-- Name -->
-<div>
-<label class="block font-label-md text-label-md text-on-surface-variant mb-xs font-medium"><span class="text-error mr-1">*</span>档案昵称</label>
-<input class="care-input font-body-md text-body-md text-on-surface" type="text" value="小明 (Ming)"/>
+<div class="w-full flex flex-col gap-md">
+<div class="flex flex-col gap-xs">
+<label class="font-label-md text-label-md text-on-surface-variant flex items-center">
+                            档案昵称 <span class="text-error ml-1">*</span>
+</label>
+<input class="w-full rounded-lg px-3 py-2 font-body-md text-body-md h-12" placeholder="请输入昵称" type="text" value="小明"/>
 </div>
-<!-- Date of Birth -->
-<div>
-<label class="block font-label-md text-label-md text-on-surface-variant mb-xs font-medium"><span class="text-error mr-1">*</span>出生日期</label>
+<div class="flex flex-col gap-xs">
+<label class="font-label-md text-label-md text-on-surface-variant flex items-center">
+                            出生日期 <span class="text-error ml-1">*</span>
+</label>
+<input class="w-full rounded-lg px-3 py-2 font-body-md text-body-md h-12 text-on-surface" type="date" value="2015-06-12"/>
+</div>
+<div class="flex flex-col gap-xs">
+<label class="font-label-md text-label-md text-on-surface-variant flex items-center">
+                            诊断类型 <span class="text-error ml-1">*</span>
+</label>
 <div class="relative">
-<input class="care-input font-body-md text-body-md text-on-surface" type="date" value="2010-05-12"/>
-<span class="material-symbols-outlined absolute right-0 top-3 text-on-surface-variant pointer-events-none">calendar_month</span>
-</div>
-</div>
-<!-- Diagnosis -->
-<div>
-<label class="block font-label-md text-label-md text-on-surface-variant mb-xs font-medium"><span class="text-error mr-1">*</span>诊断类型</label>
-<select class="care-input care-select font-body-md text-body-md text-on-surface bg-transparent">
-<option>ASD (自闭症谱系障碍)</option>
-<option>ADHD (注意力缺陷多动障碍)</option>
+<select class="w-full rounded-lg px-3 py-2 font-body-md text-body-md h-12 appearance-none pr-10">
+<option>自闭症谱系障碍 (ASD)</option>
+<option>ADHD</option>
+<option>发育迟缓</option>
 <option>其他</option>
 </select>
+<span class="material-symbols-outlined absolute right-3 top-1/2 -translate-y-1/2 text-secondary pointer-events-none">expand_more</span>
 </div>
-<!-- Primary Behavior -->
-<div>
-<label class="block font-label-md text-label-md text-on-surface-variant mb-xs font-medium"><span class="text-error mr-1">*</span>主要行为类型</label>
-<select class="care-input care-select font-body-md text-body-md text-on-surface bg-transparent">
-<option>情绪爆发 (Meltdowns)</option>
-<option>自伤行为 (SIB)</option>
-<option>逃跑/游荡 (Elopement)</option>
+</div>
+<div class="flex flex-col gap-xs">
+<label class="font-label-md text-label-md text-on-surface-variant flex items-center">
+                            主要行为类型 <span class="text-error ml-1">*</span>
+</label>
+<div class="relative">
+<select class="w-full rounded-lg px-3 py-2 font-body-md text-body-md h-12 appearance-none pr-10">
+<option>情绪调节困难</option>
+<option>刻板行为</option>
+<option>社交退缩</option>
+<option>攻击性行为</option>
 </select>
+<span class="material-symbols-outlined absolute right-3 top-1/2 -translate-y-1/2 text-secondary pointer-events-none">expand_more</span>
+</div>
+</div>
 </div>
 </div>
 </section>
 <!-- Tags Section -->
-<section class="space-y-md">
-<h2 class="font-headline-md text-headline-md text-on-surface font-semibold px-2">档案标签</h2>
-<div class="bg-surface-container rounded-xl p-lg shadow-sm border border-outline-variant/30 space-y-md">
+<section class="flex flex-col gap-md">
+<h2 class="font-headline-md text-headline-md text-on-surface flex items-center gap-2">
+<span class="material-symbols-outlined text-primary" style="font-variation-settings: 'FILL' 1;">sell</span>
+                标签体系
+            </h2>
+<div class="bg-surface-container-lowest rounded-xl p-md shadow-diffuse border border-outline-variant/30 flex flex-col gap-lg">
 <!-- Preset Tags -->
-<div>
-<h3 class="font-label-md text-label-md text-on-surface-variant mb-sm font-medium">预设标签</h3>
-<div class="flex flex-wrap gap-sm">
-<button class="px-4 py-2 rounded-full font-label-md text-label-md bg-primary text-on-primary border border-primary interactive-scale shadow-sm">高敏听觉</button>
-<button class="px-4 py-2 rounded-full font-label-md text-label-md bg-surface text-on-surface border border-outline-variant interactive-scale hover:bg-surface-variant transition-colors">非语言</button>
-<button class="px-4 py-2 rounded-full font-label-md text-label-md bg-primary text-on-primary border border-primary interactive-scale shadow-sm">需要视觉提示</button>
-<button class="px-4 py-2 rounded-full font-label-md text-label-md bg-surface text-on-surface border border-outline-variant interactive-scale hover:bg-surface-variant transition-colors">触觉防御</button>
+<div class="flex flex-col gap-sm">
+<label class="font-label-md text-label-md text-on-surface-variant">预设标签</label>
+<div class="flex flex-wrap gap-2">
+<button class="px-4 py-1.5 rounded-full font-label-md text-label-md bg-primary-container text-on-primary-container border border-primary/20 transition-colors active:scale-95">感官敏感</button>
+<button class="px-4 py-1.5 rounded-full font-label-md text-label-md bg-surface-container text-on-surface-variant border border-outline-variant hover:bg-surface-variant transition-colors active:scale-95">睡眠障碍</button>
+<button class="px-4 py-1.5 rounded-full font-label-md text-label-md bg-primary-container text-on-primary-container border border-primary/20 transition-colors active:scale-95">社交回避</button>
+<button class="px-4 py-1.5 rounded-full font-label-md text-label-md bg-surface-container text-on-surface-variant border border-outline-variant hover:bg-surface-variant transition-colors active:scale-95">挑食</button>
+<button class="px-4 py-1.5 rounded-full font-label-md text-label-md bg-surface-container text-on-surface-variant border border-outline-variant hover:bg-surface-variant transition-colors active:scale-95">转换困难</button>
 </div>
 </div>
+<hr class="border-outline-variant/30"/>
 <!-- Custom Tags -->
-<div>
-<h3 class="font-label-md text-label-md text-on-surface-variant mb-sm font-medium mt-md">自定义标签</h3>
-<!-- Added Custom Tags -->
-<div class="flex flex-wrap gap-sm mb-md">
-<div class="flex items-center gap-2 px-4 py-2 rounded-full bg-surface border border-outline-variant hover:bg-surface-variant transition-colors">
-<span class="font-label-md text-label-md text-on-surface">喜欢火车模型</span>
-<button class="text-on-surface-variant hover:text-error interactive-scale flex items-center justify-center">
-<span class="material-symbols-outlined" style="font-size: 18px;">close</span>
-</button>
-</div>
-</div>
-<!-- Add Tag Input -->
-<div class="flex gap-3 items-end">
-<div class="flex-1">
-<input class="care-input font-body-md text-body-md text-on-surface" placeholder="输入自定义标签..." type="text"/>
-</div>
-<button aria-label="Add Tag" class="w-12 h-12 rounded-full bg-primary text-on-primary flex items-center justify-center interactive-scale shadow-sm hover:bg-primary/90 transition-colors flex-shrink-0">
+<div class="flex flex-col gap-sm">
+<label class="font-label-md text-label-md text-on-surface-variant">自定义标签</label>
+<div class="flex gap-2">
+<input class="flex-1 rounded-lg px-3 py-2 font-body-md text-body-md h-12" placeholder="输入新标签..." type="text"/>
+<button class="h-12 px-4 rounded-lg bg-primary text-on-primary flex items-center justify-center hover:opacity-90 active:scale-95 transition-all shadow-sm">
 <span class="material-symbols-outlined">add</span>
 </button>
 </div>
+<div class="flex flex-wrap gap-2 mt-2">
+<div class="inline-flex items-center gap-1 px-3 py-1.5 rounded-full font-label-md text-label-md bg-secondary-container text-on-secondary-container">
+                            喜欢恐龙
+                            <button class="text-on-secondary-container/70 hover:text-on-secondary-container rounded-full p-0.5"><span class="material-symbols-outlined text-[16px]">close</span></button>
+</div>
+<div class="inline-flex items-center gap-1 px-3 py-1.5 rounded-full font-label-md text-label-md bg-secondary-container text-on-secondary-container">
+                            害怕吸尘器
+                            <button class="text-on-secondary-container/70 hover:text-on-secondary-container rounded-full p-0.5"><span class="material-symbols-outlined text-[16px]">close</span></button>
+</div>
+</div>
 </div>
 </div>
 </section>
-<!-- Event History Section -->
-<section class="space-y-md">
-<div class="flex justify-between items-center px-2">
-<h2 class="font-headline-md text-headline-md text-on-surface font-semibold flex items-center gap-2">
-                    事件记录
-                    <span class="bg-surface-variant text-on-surface-variant font-label-md text-label-md px-2.5 py-0.5 rounded-full font-medium">3</span>
+<!-- Events Record Section -->
+<section class="flex flex-col gap-md">
+<div class="flex justify-between items-end">
+<h2 class="font-headline-md text-headline-md text-on-surface flex items-center gap-2">
+<span>📋</span> 事件记录
+                    <span class="font-label-md text-label-md text-secondary font-normal ml-1">(共 3 条)</span>
 </h2>
-<button class="text-primary font-label-md text-label-md flex items-center interactive-scale hover:bg-primary/10 px-2 py-1 rounded-md transition-colors font-medium" onclick="document.getElementById('event-list').classList.toggle('hidden')">
-                    展开/收起 <span class="material-symbols-outlined ml-1" style="font-size: 20px;">expand_more</span>
-</button>
+<button class="font-label-md text-label-md text-primary font-medium hover:opacity-80 active:scale-95">查看全部</button>
 </div>
-<div class="space-y-md" id="event-list">
-<!-- Event Card 1 (Complete) -->
-<div class="bg-surface rounded-xl p-md shadow-sm border border-outline-variant/30 relative overflow-hidden">
-<div class="absolute left-0 top-0 bottom-0 w-1.5 bg-tertiary"></div>
-<div class="flex justify-between items-start mb-3 pl-2">
-<div class="flex items-center gap-2 flex-wrap">
-<span class="bg-tertiary/10 text-tertiary font-label-md text-label-md px-2.5 py-1 rounded-md font-medium">情绪爆发</span>
-<span class="text-on-surface-variant font-label-md text-label-md">2023-10-25 14:30</span>
+<div class="bg-surface-container-lowest rounded-xl p-md shadow-diffuse border border-outline-variant/30 relative">
+<!-- Timeline Line -->
+<div class="absolute left-[35px] top-lg bottom-lg w-[2px] border-l-2 border-dashed border-outline-variant/50"></div>
+<div class="flex flex-col gap-lg relative z-10">
+<!-- Event Card 1 (Incomplete) -->
+<div class="flex gap-md group">
+<!-- Timeline Node -->
+<div class="w-10 flex-shrink-0 flex justify-center mt-1">
+<div class="w-4 h-4 rounded-full bg-error-container border-2 border-error z-10 relative"></div>
 </div>
-<div class="flex gap-1">
-<button class="text-on-surface-variant hover:text-primary p-1.5 interactive-scale rounded-full hover:bg-surface-variant transition-colors"><span class="material-symbols-outlined" style="font-size: 20px;">edit</span></button>
-<button class="text-on-surface-variant hover:text-error p-1.5 interactive-scale rounded-full hover:bg-error/10 transition-colors"><span class="material-symbols-outlined" style="font-size: 20px;">delete</span></button>
+<!-- Card Content -->
+<div class="flex-1 bg-surface-container hover:bg-surface-container-high transition-colors rounded-lg p-3 border border-error-container">
+<div class="flex justify-between items-start mb-2">
+<div class="flex items-center gap-2">
+<span class="font-footnote text-footnote text-secondary">今天 14:30</span>
+<span class="px-1.5 py-0.5 rounded text-[10px] font-medium bg-error/10 text-error inline-flex items-center gap-0.5">
+                                        待补全 <span class="material-symbols-outlined text-[12px]">warning</span>
+</span>
 </div>
-</div>
-<p class="font-body-md text-body-md text-on-surface line-clamp-2 pl-2">在超市听到警报声后表现出极度焦虑，捂住耳朵尖叫。使用了降噪耳机后逐渐平复。</p>
-</div>
-<!-- Event Card 2 (Incomplete) -->
-<div class="bg-surface rounded-xl p-md shadow-sm border border-outline-variant/30 relative overflow-hidden">
-<div class="absolute left-0 top-0 bottom-0 w-1.5 bg-error"></div>
-<div class="flex justify-between items-start mb-3 pl-2">
-<div class="flex items-center gap-2 flex-wrap">
-<span class="bg-error/10 text-error font-label-md text-label-md px-2.5 py-1 rounded-md font-medium">自伤行为</span>
-<span class="text-on-surface-variant font-label-md text-label-md">2023-10-20 09:15</span>
-<span class="bg-error text-on-error font-footnote text-footnote px-2 py-1 rounded-md flex items-center gap-1 font-medium shadow-sm">
-<span class="material-symbols-outlined" style="font-size: 14px;">warning</span>待补全
-                            </span>
-</div>
-<div class="flex gap-1">
-<button class="text-on-surface-variant hover:text-primary p-1.5 interactive-scale rounded-full hover:bg-surface-variant transition-colors"><span class="material-symbols-outlined" style="font-size: 20px;">edit</span></button>
-<button class="text-on-surface-variant hover:text-error p-1.5 interactive-scale rounded-full hover:bg-error/10 transition-colors"><span class="material-symbols-outlined" style="font-size: 20px;">delete</span></button>
+<div class="flex gap-1 text-secondary">
+<button class="p-1 hover:text-primary active:scale-90 transition-transform"><span class="material-symbols-outlined text-[18px]">edit</span></button>
 </div>
 </div>
-<p class="font-body-md text-body-md text-on-surface-variant italic pl-2">记录未完成，点击编辑继续填写详情...</p>
+<div class="flex items-center gap-2 mb-1">
+<span class="px-2 py-0.5 rounded-full bg-primary-container/20 text-on-primary-container font-label-md text-[12px]">情绪爆发</span>
+</div>
+<p class="font-body-md text-body-md text-on-surface line-clamp-2">
+                                在超市排队时突然开始尖叫并试图跑开，可能因为环境太吵闹。记录不完整，需要补充前因后果。
+                            </p>
 </div>
 </div>
-<button class="w-full py-3.5 mt-4 rounded-xl border-2 border-dashed border-primary/50 text-primary font-label-md text-label-md flex justify-center items-center gap-2 hover:bg-primary/5 transition-colors interactive-scale font-medium">
-<span class="material-symbols-outlined">add</span> 添加新事件
-            </button>
+<!-- Event Card 2 -->
+<div class="flex gap-md group">
+<div class="w-10 flex-shrink-0 flex justify-center mt-1">
+<div class="w-4 h-4 rounded-full bg-surface-container-lowest border-2 border-tertiary z-10 relative"></div>
+</div>
+<div class="flex-1 bg-surface-container hover:bg-surface-container-high transition-colors rounded-lg p-3 border border-outline-variant/20">
+<div class="flex justify-between items-start mb-2">
+<div class="flex items-center gap-2">
+<span class="font-footnote text-footnote text-secondary">昨天 09:15</span>
+</div>
+<div class="flex gap-1 text-secondary opacity-0 group-hover:opacity-100 transition-opacity md:opacity-100">
+<button class="p-1 hover:text-primary active:scale-90 transition-transform"><span class="material-symbols-outlined text-[18px]">edit</span></button>
+<button class="p-1 hover:text-error active:scale-90 transition-transform"><span class="material-symbols-outlined text-[18px]">delete</span></button>
+</div>
+</div>
+<div class="flex items-center gap-2 mb-1">
+<span class="px-2 py-0.5 rounded-full bg-primary-container/20 text-on-primary-container font-label-md text-[12px]">常规记录</span>
+</div>
+<p class="font-body-md text-body-md text-on-surface line-clamp-2">
+                                早上起床流程顺利，成功使用视觉提示卡完成了洗漱。
+                            </p>
+</div>
+</div>
+</div>
+</div>
 </section>
+<!-- Bottom spacing for FAB/Scrolling -->
+<div class="h-8"></div>
 </main>
+<!-- Bottom Navigation Component from JSON (Semantic Shell Mandate: Edit Profile screen implies focus, but requirements don't explicitly forbid. Given 'Settings' tab exists in JSON, we'll map Profiles -> active if needed. However, since this is a specific *edit* sub-page with Cancel/Save top actions, the UX Goal rule: "If designing a user settings page... Task-Focused: Any sub-page featuring a Close or Back action... suppress navigation" applies. So BottomNav is suppressed here to prioritize the canvas.) -->
 </body></html>

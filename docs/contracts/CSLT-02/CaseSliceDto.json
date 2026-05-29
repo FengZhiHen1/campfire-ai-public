@@ -16,11 +16,11 @@
       "format": "uuid",
       "examples": ["a1b2c3d4-e5f6-7890-abcd-ef1234567890"]
     },
-    "case_id": {
+    "card_id": {
       "type": "string",
-      "description": "切片所属源案例的编号标识，格式为CASE-后接三位数字",
-      "pattern": "^CASE-\\d{3}$",
-      "examples": ["CASE-042"]
+      "description": "切片所属 L2 卡片的唯一标识，对应 case_cards 表主键 UUID",
+      "format": "uuid",
+      "examples": ["a1b2c3d4-e5f6-7890-abcd-ef1234567890"]
     },
     "slice_text": {
       "type": "string",
@@ -80,6 +80,6 @@
       }
     }
   },
-  "required": ["slice_id", "case_id", "slice_text", "similarity_score", "composite_score", "evidence_level", "case_created_at"],
+  "required": ["slice_id", "card_id", "slice_text", "similarity_score", "composite_score", "evidence_level", "case_created_at"],
   "additionalProperties": false
 }
