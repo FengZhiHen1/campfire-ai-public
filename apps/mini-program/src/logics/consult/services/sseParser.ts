@@ -3,7 +3,7 @@
  *
  * 职责：
  * - 通过 Taro.request({ enableChunked: true }) 连接 SSE 端点
- * - 监听 onChunkReceived 回调接收二进制 chunk，TextDecoder 解码为文本
+ * - 监听 onChunkReceived 回调接收 chunk（responseType: 'text'，直接拿到字符串）
  * - 手动解析 SSE 协议（支持 \r\n\r\n 和 \n\n 双换行分隔）
  * - 跨 chunk 边界事件拼接
  * - 心跳监控（15s 无事件判定僵死）
@@ -168,6 +168,7 @@ export class SseStreamParser {
           ...(this.lastEventId ? { 'Last-Event-Id': this.lastEventId } : {}),
           ...headers,
         },
+        responseType: 'text',
         enableChunked: true,
         success: (res) => {
           this.clearConnectTimer();
@@ -209,8 +210,11 @@ export class SseStreamParser {
         task.onChunkReceived((res) => {
           this.clearConnectTimer();
 
-          const chunk = new TextDecoder().decode(new Uint8Array(res.data));
-          this.processChunk(chunk);
+          // responseType: 'text' 下微信小程序直接返回字符串
+          const chunk = typeof res.data === 'string' ? res.data : '';
+          if (chunk) {
+            this.processChunk(chunk);
+          }
 
           this.lastEventTime = Date.now();
           this.resetHeartbeatMonitor();
