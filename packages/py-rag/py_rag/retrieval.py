@@ -1,211 +1,93 @@
-"""CSLT-02 RAG语义检索 — 混合检索引擎。
+"""CSLT-02 RAG语义检索 — 纯语义检索引擎。
 
-提供 hybrid_search() 函数，对用户行为描述文本执行混合检索——
-先按档案标签精确过滤候选集（SQL WHERE），再按语义相似度 + 时效衰减 +
-循证加权的综合分数排序。
+提供 PgVectorSearch 类和 hybrid_search() 模块级便捷函数。
+PgVectorSearch 实现 BaseSemanticSearch 契约，通过 @final search() 获得
+统一的输入校验、超时保护和结果组装逻辑。
 
-核心设计（对应落地规范 §1.5）：
-1. 输入校验与预处理 — Top-K 边界钳位、查询指纹计算
-2. 编码查询向量 — 调用 DashScope text-embedding-v4
-3. 混合检索（精确过滤 + 向量排序）— pgvector HNSW
-4. 结果不足时触发降级放宽 — 逐层放宽标签条件
-5. 超时保护包装 — asyncio.wait_for 500ms
-6. 结果组装与排序 — 综合排序分数计算
-7. 输出包装与日志记录 — SemanticSearchResult 组装
+核心设计：
+1. 输入校验与预处理 — Top-K 边界钳位、查询指纹计算（契约统一处理）
+2. 编码查询向量 — 通过注入的 BaseEmbeddingEncoder 编码（契约统一处理）
+3. 纯语义检索 — pgvector HNSW（实现者填充 _do_search 钩子）
+4. 超时保护包装 — asyncio.wait_for（契约统一处理）
+5. 结果组装与排序 — SemanticSearchResult（契约统一处理）
 """
 
 from __future__ import annotations
 
-import asyncio
-import hashlib
-import logging
-import time
-from datetime import datetime, timezone
 from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from py_db.repositories.base_repository import DependencyCommunicationError
 from py_db.repositories.consult_repository import ConsultRepository
-from py_infra.exceptions import EmbeddingUnavailableError, RetrievalTimeoutError
-from py_rag.embedding import encode_text
-from py_schemas.consult import (
-    CaseSliceDto,
-    DegradationLevel,
-    EvidenceLevel,
-    SemanticSearchResult,
-)
-
-_logger = logging.getLogger(__name__)
+from py_logger import logger
+from py_rag.embedding_contract import BaseEmbeddingEncoder
+from py_rag.retrieval_contract import BaseSemanticSearch
+from py_rag.types import EmbeddingVector
+from py_schemas.consult import SemanticSearchResult
 
 # ---------------------------------------------------------------------------
-# 常量
+# 模块级单例
 # ---------------------------------------------------------------------------
 
-# Top-K 边界
-_TOP_K_MIN: int = 1
-_TOP_K_MAX: int = 50
+_search_engine: PgVectorSearch | None = None
 
-# 超时阈值（秒）
-_TOTAL_TIMEOUT_SECONDS: float = 5.0
+
+def _get_search_engine() -> PgVectorSearch:
+    """获取全局检索引擎单例。"""
+    global _search_engine
+    if _search_engine is None:
+        from py_rag.embedding import _get_encoder
+
+        _search_engine = PgVectorSearch(embedding_encoder=_get_encoder())
+    return _search_engine
 
 
 # ---------------------------------------------------------------------------
-# 内部辅助函数
+# PgVectorSearch — 契约实现类
 # ---------------------------------------------------------------------------
 
 
-def _compute_query_fingerprint(query_text: str) -> str:
-    """计算查询文本的 SHA256 指纹。
+class PgVectorSearch(BaseSemanticSearch):
+    """pgvector 语义检索引擎。
 
-    使用 SHA256 算法计算查询文本的十六进制哈希值，
-    用于日志记录和问题排查，不暴露原始查询内容。
-
-    Args:
-        query_text: 用户查询文本。
-
-    Returns:
-        64 字符的 SHA256 十六进制指纹字符串。
+    实现 BaseSemanticSearch 契约的 _do_search() 钩子，
+    委托 ConsultRepository.search_similar_chunks() 执行 pgvector HNSW 查询。
     """
-    return hashlib.sha256(query_text.encode("utf-8")).hexdigest()
 
+    def __init__(self, embedding_encoder: BaseEmbeddingEncoder) -> None:
+        super().__init__(embedding_encoder)
 
-def _clamp_top_k(top_k: int) -> int:
-    """将 Top-K 钳位到合法范围 [1, 50]。
+    # === _do_search 钩子实现 ===
 
-    Args:
-        top_k: 原始期望返回数量。
+    async def _do_search(
+        self,
+        query_vector: EmbeddingVector,
+        top_k: int,
+        db: AsyncSession,
+    ) -> list[dict[str, Any]]:
+        """执行 pgvector HNSW 语义检索。
 
-    Returns:
-        钳位后的值（1-50 之间）。
-    """
-    original = top_k
-    clamped = max(_TOP_K_MIN, min(_TOP_K_MAX, top_k))
-    if clamped != original:
-        _logger.info(
-            "top_k_clamped",
-            extra={"original": original, "clamped": clamped},
+        委托 ConsultRepository.search_similar_chunks()。
+        不需要关心编码和校验——@final search 已处理。
+
+        Args:
+            query_vector: 已通过维度校验的 1024 维向量。
+            top_k: 已钳位到 [1, 50] 的结果数量。
+            db: 有效异步会话。
+
+        Returns:
+            原始数据库行字典列表，由 search() 组装为 SemanticSearchResult。
+        """
+        repo = ConsultRepository()
+        return await repo.search_similar_chunks(  # type: ignore[no-any-return]
+            session=db,
+            query_vector=query_vector,
+            top_k=top_k,
         )
-    return clamped
-
-
-def _compute_time_decay(case_created_at_str: str) -> float:
-    """根据案例录入时间计算时效衰减权重。
-
-    采用阶梯函数（triple-step），而非连续衰减函数：
-    - 距今 < 1 年 → 权重 1.0
-    - 距今 1-3 年 → 权重 0.7
-    - 距今 > 3 年 → 权重 0.5
-
-    Args:
-        case_created_at_str: 案例审核通过日期字符串（YYYY-MM-DD）。
-
-    Returns:
-        时效衰减权重（1.0 / 0.7 / 0.5）。
-    """
-    try:
-        created_at = datetime.strptime(case_created_at_str, "%Y-%m-%d").replace(
-            tzinfo=timezone.utc
-        )
-        now = datetime.now(timezone.utc)
-        years_since = (now - created_at).total_seconds() / (365.25 * 24 * 3600)
-
-        for threshold, weight in _TIME_DECAY_MAP:
-            if threshold == _TIME_DECAY_MAP[-1][0]:
-                # 最后一项是兜底（> 3 年）
-                return weight
-            next_threshold = _TIME_DECAY_MAP[_TIME_DECAY_MAP.index((threshold, weight)) + 1][0]
-            if years_since < next_threshold:
-                return weight
-        return _TIME_DECAY_MAP[-1][1]  # 0.5
-    except (ValueError, IndexError):
-        # 日期解析失败时取保守值（最高衰减）
-        _logger.warning(
-            "time_decay_parse_failed",
-            extra={"case_created_at": case_created_at_str},
-        )
-        return 0.5
-
-
-def _compute_evidence_weight(evidence_level: str | None) -> float:
-    """根据循证等级计算加权权重。
-
-    Args:
-        evidence_level: 循证等级字符串（NCAEP / INSTITUTIONAL_EXPERIENCE / CASE_OBSERVATION）。
-
-    Returns:
-        循证加权权重（1.0 / 0.8 / 0.6），未知等级返回 0.6。
-    """
-    if evidence_level is None:
-        return 0.6
-    return _EVIDENCE_WEIGHT_MAP.get(evidence_level, 0.6)
-
-
-def _compute_composite_score(
-    similarity: float,
-    case_created_at: str,
-    evidence_level: str | None,
-) -> float:
-    """返回语义相似度作为排序分数。
-
-    公式：composite = similarity（纯语义相似度，无时效/循证加权）。
-
-    Args:
-        similarity: 余弦语义相似度（0.0-1.0）。
-
-    Returns:
-        排序分数，保留 4 位小数。
-    """
-    return round(similarity, 4)
-
-
-def _build_case_slice_dto(row: dict[str, Any]) -> CaseSliceDto:
-    """将数据库结果行组装为 CaseSliceDto。
-
-    从行数据和 metadata JSONB 中提取字段，
-    计算综合排序分数。
-
-    Args:
-        row: search_similar_chunks 返回的结果字典。
-
-    Returns:
-        CaseSliceDto 实例。
-    """
-    metadata: dict[str, Any] = row.get("metadata", {})
-    case_created_at: str = metadata.get("case_created_at", "2020-01-01")
-    evidence_level_str: str | None = metadata.get("evidence_level")
-    similarity: float = row.get("similarity", 0.0)
-    composite_score: float = _compute_composite_score(
-        similarity=similarity,
-        case_created_at=case_created_at,
-        evidence_level=evidence_level_str,
-    )
-
-    # 解析证据等级枚举
-    evidence_level: EvidenceLevel = EvidenceLevel.NCAEP
-    if evidence_level_str:
-        try:
-            evidence_level = EvidenceLevel(evidence_level_str)
-        except ValueError:
-            evidence_level = EvidenceLevel.CASE_OBSERVATION
-
-    return CaseSliceDto(
-        slice_id=row.get("id", ""),
-        card_id=row.get("card_id", ""),
-        slice_text=row.get("chunk_text", ""),
-        chunk_type=row.get("chunk_type"),
-        similarity_score=round(similarity, 4),
-        composite_score=composite_score,
-        evidence_level=evidence_level,
-        case_title=metadata.get("case_title"),
-        source=metadata.get("source"),
-        case_created_at=case_created_at,
-        applicable_tags=metadata.get("applicable_tags"),
-    )
 
 
 # ---------------------------------------------------------------------------
-# 公共接口
+# 模块级便捷函数（向后兼容）
 # ---------------------------------------------------------------------------
 
 
@@ -217,8 +99,8 @@ async def hybrid_search(
 ) -> SemanticSearchResult:
     """对用户行为描述文本执行纯语义检索。
 
-    编码查询向量后按余弦距离排序返回最相似的案例切片。
-    无标签过滤，完全依赖 pgvector 语义相似度。
+    委托 PgVectorSearch.search()，走完整契约管线：
+    输入校验 → 编码查询向量 → 检索相似切片 → 结果组装排序。
 
     Args:
         query_text: 用户行为描述文本（1-2000 字符，上游已脱敏 PII）。
@@ -231,149 +113,15 @@ async def hybrid_search(
 
     Raises:
         EmbeddingUnavailableError: DashScope 编码服务不可用（重试耗尽）。
-        RetrievalTimeoutError: 整体检索超过 500ms 且无任何结果。
-        DependencyCommunicationError: PostgreSQL 连接失败（重试耗尽）。
-
-    Side Effects:
-        - 记录结构化日志（含 query_fingerprint，不含完整查询文本）。
-        - 不执行任何写操作（纯只读）。
+        RetrievalTimeoutError: 整体检索超时且无任何结果。
+        ValueError: 参数校验失败（query_text 空、db 为 None 等）。
     """
-    # --- 入口参数校验 ---
-    if not isinstance(query_text, str):
-        raise ValueError(
-            f"query_text must be a string, got {type(query_text).__name__}"
-        )
-
-    # --- 步骤 1：输入预处理（top_k clamping 必须在 query_text 长度校验之前执行）---
-    query_fingerprint: str = _compute_query_fingerprint(query_text)
-    actual_top_k: int = _clamp_top_k(top_k)
-
-    if not query_text:
-        raise ValueError("query_text must not be empty")
-    if len(query_text) > 2000:
-        raise ValueError("query_text must not exceed 2000 characters")
-    if db is None:
-        raise ValueError("db must not be None")
-
-    query_vector: list[float] | None = None
-    embedding_successful: bool = False
-
-    start_time: float = time.monotonic()
-
-    # --- 内部搜索管道（包装在 asyncio.wait_for 中） ---
-    async def _search_pipeline() -> list[dict[str, Any]]:
-        """内部搜索管道协程：向量编码 → 纯语义检索。"""
-        nonlocal query_vector, embedding_successful
-
-        query_vector = await encode_text(query_text, text_type="query")
-        embedding_successful = True
-
-        repo = ConsultRepository()
-        return await repo.search_similar_chunks(
-            session=db,
-            query_vector=query_vector,
-            top_k=actual_top_k,
-        )
-
-    # --- 超时保护包装 ---
-    try:
-        final_rows: list[dict[str, Any]] = await asyncio.wait_for(
-            _search_pipeline(), timeout=_TOTAL_TIMEOUT_SECONDS
-        )
-    except asyncio.TimeoutError:
-        elapsed_ms: float = (time.monotonic() - start_time) * 1000
-
-        if not embedding_successful:
-            _logger.warning(
-                "search_timeout_embedding_unavailable",
-                extra={
-                    "request_id": request_id,
-                    "query_fingerprint": query_fingerprint,
-                    "elapsed_ms": round(elapsed_ms, 1),
-                },
-            )
-            return SemanticSearchResult(
-                results=[],
-                total_count=0,
-                is_complete=False,
-                reason="embedding_unavailable",
-                query_fingerprint=query_fingerprint,
-                degradation_applied=False,
-                degradation_level=DegradationLevel.NONE,
-                elapsed_ms=round(elapsed_ms, 1),
-            )
-
-        _logger.warning(
-            "search_timeout_no_results",
-            extra={
-                "request_id": request_id,
-                "query_fingerprint": query_fingerprint,
-                "elapsed_ms": round(elapsed_ms, 1),
-            },
-        )
-        return SemanticSearchResult(
-            results=[],
-            total_count=0,
-            is_complete=False,
-            reason="timeout",
-            query_fingerprint=query_fingerprint,
-            degradation_applied=False,
-            degradation_level=DegradationLevel.NONE,
-            elapsed_ms=round(elapsed_ms, 1),
-        )
-
-    # --- 正常完成：结果组装与排序 ---
-    elapsed_total: float = (time.monotonic() - start_time) * 1000
-
-    case_slices: list[CaseSliceDto] = []
-    for row in final_rows:
-        slice_dto = _build_case_slice_dto(row)
-        case_slices.append(slice_dto)
-
-    case_slices.sort(
-        key=lambda s: (s.composite_score, s.case_created_at or ""),
-        reverse=True,
-    )
-    case_slices = case_slices[:actual_top_k]
-
-    reason: str | None = None
-    if len(case_slices) == 0 and embedding_successful:
-        reason = "case_library_empty"
-        _logger.info(
-            "case_library_empty",
-            extra={
-                "request_id": request_id,
-                "query_fingerprint": query_fingerprint,
-            },
-        )
-
-    result = SemanticSearchResult(
-        results=case_slices,
-        total_count=len(case_slices),
-        is_complete=True,
-        reason=reason,
-        query_fingerprint=query_fingerprint,
-        degradation_applied=False,
-        degradation_level=DegradationLevel.NONE,
-        elapsed_ms=round(elapsed_total, 1),
+    return await _get_search_engine().search(
+        query_text=query_text,
+        top_k=top_k,
+        request_id=request_id,
+        db=db,
     )
 
-    # 结构化日志记录（不包含完整查询文本）
-    _logger.info(
-        "semantic_search_completed",
-        extra={
-            "trace_id": request_id,
-            "query_len": len(query_text),
-            "result_count": result.total_count,
-            "elapsed_ms": result.elapsed_ms,
-            "degradation_level": result.degradation_level.value,
-            "degradation_applied": result.degradation_applied,
-            "is_complete": result.is_complete,
-            "query_fingerprint": result.query_fingerprint,
-        },
-    )
 
-    return result
-
-
-__all__ = ["hybrid_search"]
+__all__ = ["PgVectorSearch", "hybrid_search"]

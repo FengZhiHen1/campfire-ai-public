@@ -81,7 +81,7 @@ async def write_index_to_pgvector(
                 "pgvector 索引写入成功",
                 op_type="index_write",
                 extra={
-                    "card_id": case_id,
+                    "card_id": card_id,
                     "chunk_id": chunk_id,
                     "phase": "write_index",
                 },
@@ -98,7 +98,7 @@ async def write_index_to_pgvector(
                     f"pgvector 写入失败，{RETRY_INTERVAL}s 后重试",
                     op_type="index_write_retry",
                     extra={
-                        "card_id": case_id,
+                        "card_id": card_id,
                         "attempt": attempt + 1,
                         "max_attempts": MAX_RETRY_COUNT + 1,
                         "error": str(exc),
@@ -112,7 +112,7 @@ async def write_index_to_pgvector(
                     "pgvector 索引写入重试耗尽",
                     op_type="index_write_exhausted",
                     extra={
-                        "card_id": case_id,
+                        "card_id": card_id,
                         "retry_count": MAX_RETRY_COUNT,
                         "error": str(last_error),
                         "phase": "write_index",

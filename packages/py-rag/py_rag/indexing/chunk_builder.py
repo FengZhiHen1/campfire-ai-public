@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import re
 
+from typing import Any
+
 from py_logger import logger
 
 from py_rag.exceptions import ChunkBuildError, PIIRejectionError
@@ -42,7 +44,7 @@ _MIN_FIELD_LENGTH: int = 10
 # ============================================================================
 
 
-def build_chunk_text(case_data: dict) -> tuple[str, ChunkMetadata]:
+def build_chunk_text(case_data: dict[str, Any]) -> tuple[str, ChunkMetadata]:
     """将审核通过案例的四段式文本拼接为向量切片的 chunk_text。
 
     执行顺序：
@@ -187,7 +189,7 @@ def build_chunk_text(case_data: dict) -> tuple[str, ChunkMetadata]:
 # ============================================================================
 
 
-def _build_metadata(case_data: dict) -> ChunkMetadata:
+def _build_metadata(case_data: dict[str, Any]) -> ChunkMetadata:
     behavior_type = str(case_data.get("behavior_type", ""))
     age_min = case_data.get("age_range_min")
     age_max = case_data.get("age_range_max")
