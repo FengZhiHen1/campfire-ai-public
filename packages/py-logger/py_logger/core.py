@@ -15,9 +15,11 @@ from __future__ import annotations
 import collections
 import json
 import logging
+import os
 import sys
 import uuid
 from datetime import datetime, timezone
+from pathlib import Path
 
 from .context import get_trace_id
 
@@ -39,8 +41,38 @@ SEVERITY_EVICTION_ORDER: list[str] = ["DEBUG", "INFO"]
 WARNING 和 ERROR 永不被淘汰。"""
 
 # ============================================================================
-# 环形缓冲区（模块级状态）
+# 文件日志路径
 # ============================================================================
+
+def _get_log_file_path() -> Path | None:
+    """获取日志文件路径。
+
+    从环境变量 LOG_FILE_DIR 读取目录，默认 logs/，
+    文件名为 app-YYYY-MM-DD.log（按天自动轮转）。
+    若目录不可写则返回 None，文件日志静默降级。
+    """
+    log_dir = os.environ.get("LOG_FILE_DIR", "logs")
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    log_path = Path(log_dir) / f"app-{today}.log"
+    try:
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        return log_path
+    except OSError:
+        return None
+
+
+def _write_file_line(log_path: Path | None, json_str: str) -> None:
+    """向日志文件追加一行 JSON。
+
+    若 log_path 为 None 或写入失败则静默降级，不阻塞主流程。
+    """
+    if log_path is None:
+        return
+    try:
+        with open(log_path, "a", encoding="utf-8") as f:
+            f.write(json_str + "\n")
+    except OSError:
+        pass
 
 _buffer: collections.deque[tuple[str, str, str]] = collections.deque()
 """环形缓冲区：存储 (timestamp, severity, json_str) 元组"""
@@ -354,7 +386,8 @@ class _Logger:
         timestamp: str,
     ) -> None:
         """
-        向 stdout 写入一行 JSON 日志。若 stdout 不可用则进入环形缓冲区。
+        向 stdout 和本地日志文件写入一行 JSON 日志。
+        若 stdout 不可用则进入环形缓冲区。
 
         Args:
             json_str: JSON 字符串（不含末尾换行符）。
@@ -362,6 +395,9 @@ class _Logger:
             timestamp: 日志时间戳（用于缓冲时排序刷出）。
         """
         global _buffer_warning_issued
+
+        # 本地文件日志（静默降级，不阻塞主流程）
+        _write_file_line(_get_log_file_path(), json_str)
 
         try:
             # 优先尝试刷出缓冲区中的积压日志
