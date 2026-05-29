@@ -34,7 +34,6 @@ from py_schemas.consult import (
     DegradationLevel,
     EvidenceLevel,
     SemanticSearchResult,
-    TagFilterDto,
 )
 
 _logger = logging.getLogger(__name__)
@@ -48,26 +47,8 @@ _TOP_K_MIN: int = 1
 _TOP_K_MAX: int = 50
 
 # 超时阈值（秒）
-_TOTAL_TIMEOUT_SECONDS: float = 0.5
+_TOTAL_TIMEOUT_SECONDS: float = 5.0
 
-# 综合排序权重
-_SIMILARITY_WEIGHT: float = 0.5
-_TIME_DECAY_WEIGHT: float = 0.25
-_EVIDENCE_WEIGHT: float = 0.25
-
-# 时效衰减阶梯（基于案例审核通过距今的年数）
-_TIME_DECAY_MAP: list[tuple[float, float]] = [
-    (0.0, 1.0),    # < 1 年 → 权重 1.0
-    (1.0, 0.7),    # 1-3 年 → 权重 0.7
-    (3.0, 0.5),    # > 3 年 → 权重 0.5
-]
-
-# 循证等级加权映射
-_EVIDENCE_WEIGHT_MAP: dict[str, float] = {
-    "NCAEP": 1.0,
-    "INSTITUTIONAL_EXPERIENCE": 0.8,
-    "CASE_OBSERVATION": 0.6,
-}
 
 # ---------------------------------------------------------------------------
 # 内部辅助函数
@@ -165,29 +146,17 @@ def _compute_composite_score(
     case_created_at: str,
     evidence_level: str | None,
 ) -> float:
-    """计算综合排序分数。
+    """返回语义相似度作为排序分数。
 
-    公式：composite = similarity * 0.5 + time_decay * 0.25 + evidence_weight * 0.25
-
-    所有分数保留 4 位小数，防止浮点累加误差导致排序不稳定。
+    公式：composite = similarity（纯语义相似度，无时效/循证加权）。
 
     Args:
         similarity: 余弦语义相似度（0.0-1.0）。
-        case_created_at: 案例审核通过日期（YYYY-MM-DD）。
-        evidence_level: 循证等级。
 
     Returns:
-        综合排序分数（0.0-1.0），保留 4 位小数。
+        排序分数，保留 4 位小数。
     """
-    time_decay = _compute_time_decay(case_created_at)
-    ev_weight = _compute_evidence_weight(evidence_level)
-
-    composite = (
-        similarity * _SIMILARITY_WEIGHT
-        + time_decay * _TIME_DECAY_WEIGHT
-        + ev_weight * _EVIDENCE_WEIGHT
-    )
-    return round(composite, 4)
+    return round(similarity, 4)
 
 
 def _build_case_slice_dto(row: dict[str, Any]) -> CaseSliceDto:
@@ -222,7 +191,7 @@ def _build_case_slice_dto(row: dict[str, Any]) -> CaseSliceDto:
 
     return CaseSliceDto(
         slice_id=row.get("id", ""),
-        case_id=row.get("case_id", ""),
+        card_id=row.get("card_id", ""),
         slice_text=row.get("chunk_text", ""),
         chunk_type=row.get("chunk_type"),
         similarity_score=round(similarity, 4),
@@ -242,19 +211,17 @@ def _build_case_slice_dto(row: dict[str, Any]) -> CaseSliceDto:
 
 async def hybrid_search(
     query_text: str,
-    tag_filters: TagFilterDto,
     top_k: int = 10,
     request_id: str | None = None,
     db: AsyncSession = None,  # type: ignore[assignment]
 ) -> SemanticSearchResult:
-    """对用户行为描述文本执行混合检索。
+    """对用户行为描述文本执行纯语义检索。
 
-    先按档案标签精确过滤候选集（SQL WHERE），再按语义相似度 + 时效衰减 +
-    循证加权的综合分数排序。支持降级放宽和超时保护。
+    编码查询向量后按余弦距离排序返回最相似的案例切片。
+    无标签过滤，完全依赖 pgvector 语义相似度。
 
     Args:
         query_text: 用户行为描述文本（1-2000 字符，上游已脱敏 PII）。
-        tag_filters: 档案标签过滤条件（年龄段、行为类型、情绪等级等）。
         top_k: 期望返回的结果数量（默认 10，范围 1-50）。
         request_id: 全链路追踪 ID（可选，由上游生成）。
         db: 异步数据库会话（由调用方注入）。
@@ -285,99 +252,38 @@ async def hybrid_search(
         raise ValueError("query_text must not be empty")
     if len(query_text) > 2000:
         raise ValueError("query_text must not exceed 2000 characters")
-    if tag_filters is None:
-        raise ValueError("tag_filters must not be None")
     if db is None:
         raise ValueError("db must not be None")
 
-    # 降级层级执行顺序（从严格到宽松）
-    degradation_levels: list[DegradationLevel] = [
-        DegradationLevel.NONE,
-        DegradationLevel.EMOTION_RELAXED,
-        DegradationLevel.BEHAVIOR_RELAXED,
-        DegradationLevel.ALL_TAGS_REMOVED,
-    ]
-
-    # 可变容器，用于在超时时捕获部分结果
-    partial_results: list[dict[str, Any]] = []
     query_vector: list[float] | None = None
     embedding_successful: bool = False
-    final_degradation: DegradationLevel = DegradationLevel.NONE
 
     start_time: float = time.monotonic()
 
     # --- 内部搜索管道（包装在 asyncio.wait_for 中） ---
     async def _search_pipeline() -> list[dict[str, Any]]:
-        """内部搜索管道协程。
+        """内部搜索管道协程：向量编码 → 纯语义检索。"""
+        nonlocal query_vector, embedding_successful
 
-        依次执行：向量编码 → 逐层检索 → 降级放宽。
-        结果逐步追加到 partial_results 列表，超时时可返回部分结果。
-        """
-        nonlocal query_vector, embedding_successful, final_degradation
-
-        # 步骤 2：编码查询向量
         query_vector = await encode_text(query_text, text_type="query")
         embedding_successful = True
 
-        # 步骤 3+4：执行混合检索（精确过滤 + 向量排序），结果不足时触发降级放宽
         repo = ConsultRepository()
+        return await repo.search_similar_chunks(
+            session=db,
+            query_vector=query_vector,
+            top_k=actual_top_k,
+        )
 
-        for level in degradation_levels:
-            # 根据当前降级层级执行查询
-            emotion_level_param: str | None = (
-                tag_filters.emotion_level
-                if level == DegradationLevel.NONE
-                else None
-            )
-            behavior_type_param: str = (
-                tag_filters.behavior_type
-                if level in (DegradationLevel.NONE, DegradationLevel.EMOTION_RELAXED)
-                else ""
-            )
-            age_range_param: str = (
-                tag_filters.age_range
-                if level
-                in (
-                    DegradationLevel.NONE,
-                    DegradationLevel.EMOTION_RELAXED,
-                    DegradationLevel.BEHAVIOR_RELAXED,
-                )
-                else ""
-            )
-
-            rows = await repo.search_similar_chunks(
-                session=db,
-                query_vector=query_vector,
-                age_range=age_range_param,
-                behavior_type=behavior_type_param,
-                emotion_level=emotion_level_param,
-                top_k=actual_top_k,
-                degradation_level=level,
-            )
-
-            partial_results.extend(rows)
-            final_degradation = level
-
-            # 达到目标数量即停止降级
-            if len(partial_results) >= actual_top_k:
-                # 截断到 top_k
-                del partial_results[actual_top_k:]
-                break
-
-        return partial_results[:actual_top_k]
-
-    # --- 步骤 5：超时保护包装 ---
+    # --- 超时保护包装 ---
     try:
         final_rows: list[dict[str, Any]] = await asyncio.wait_for(
             _search_pipeline(), timeout=_TOTAL_TIMEOUT_SECONDS
         )
     except asyncio.TimeoutError:
-        # 超时触发：返回已有部分结果
         elapsed_ms: float = (time.monotonic() - start_time) * 1000
-        final_rows = list(partial_results)  # 复制当前部分结果
 
         if not embedding_successful:
-            # 编码阶段本身超时（无任何数据库结果）
             _logger.warning(
                 "search_timeout_embedding_unavailable",
                 extra={
@@ -392,75 +298,46 @@ async def hybrid_search(
                 is_complete=False,
                 reason="embedding_unavailable",
                 query_fingerprint=query_fingerprint,
-                degradation_applied=True,
-                degradation_level=final_degradation,
+                degradation_applied=False,
+                degradation_level=DegradationLevel.NONE,
                 elapsed_ms=round(elapsed_ms, 1),
             )
 
-        if len(final_rows) == 0:
-            # 超时且无任何结果
-            _logger.warning(
-                "search_timeout_no_results",
-                extra={
-                    "request_id": request_id,
-                    "query_fingerprint": query_fingerprint,
-                    "elapsed_ms": round(elapsed_ms, 1),
-                },
-            )
-            return SemanticSearchResult(
-                results=[],
-                total_count=0,
-                is_complete=False,
-                reason="timeout",
-                query_fingerprint=query_fingerprint,
-                degradation_applied=True,
-                degradation_level=final_degradation,
-                elapsed_ms=round(elapsed_ms, 1),
-            )
-
-        # 超时但有部分结果
         _logger.warning(
-            "search_timeout_partial",
+            "search_timeout_no_results",
             extra={
                 "request_id": request_id,
-                "partial_count": len(final_rows),
+                "query_fingerprint": query_fingerprint,
                 "elapsed_ms": round(elapsed_ms, 1),
             },
         )
-        # 继续到步骤 6（组装排序），标记 is_complete=False, degradation_applied=True
-        elapsed_total: float = elapsed_ms
-        _timeout_partial: bool = True  # 标记供后续步骤使用
-    else:
-        # 正常完成（未超时）
-        elapsed_total: float = (time.monotonic() - start_time) * 1000
-        _timeout_partial = False
+        return SemanticSearchResult(
+            results=[],
+            total_count=0,
+            is_complete=False,
+            reason="timeout",
+            query_fingerprint=query_fingerprint,
+            degradation_applied=False,
+            degradation_level=DegradationLevel.NONE,
+            elapsed_ms=round(elapsed_ms, 1),
+        )
 
-    # --- 步骤 6：结果组装与排序 ---
-    # 计算综合排序分数
+    # --- 正常完成：结果组装与排序 ---
+    elapsed_total: float = (time.monotonic() - start_time) * 1000
+
     case_slices: list[CaseSliceDto] = []
     for row in final_rows:
         slice_dto = _build_case_slice_dto(row)
         case_slices.append(slice_dto)
 
-    # 按 composite_score 降序排序（分数相同时按 case_created_at 降序）
     case_slices.sort(
         key=lambda s: (s.composite_score, s.case_created_at or ""),
         reverse=True,
     )
-
-    # 再次截断确保不超过 top_k
     case_slices = case_slices[:actual_top_k]
 
-    # 判断是否触发降级
-    degradation_applied: bool = (
-        final_degradation != DegradationLevel.NONE or _timeout_partial
-    )
-    is_complete: bool = not _timeout_partial
     reason: str | None = None
-
-    # 空库检测（如果三层降级后仍为 0 条）
     if len(case_slices) == 0 and embedding_successful:
-        is_complete = True
         reason = "case_library_empty"
         _logger.info(
             "case_library_empty",
@@ -470,15 +347,14 @@ async def hybrid_search(
             },
         )
 
-    # --- 步骤 7：输出包装与日志记录 ---
     result = SemanticSearchResult(
         results=case_slices,
         total_count=len(case_slices),
-        is_complete=is_complete,
+        is_complete=True,
         reason=reason,
         query_fingerprint=query_fingerprint,
-        degradation_applied=degradation_applied,
-        degradation_level=final_degradation,
+        degradation_applied=False,
+        degradation_level=DegradationLevel.NONE,
         elapsed_ms=round(elapsed_total, 1),
     )
 
@@ -488,11 +364,6 @@ async def hybrid_search(
         extra={
             "trace_id": request_id,
             "query_len": len(query_text),
-            "filters": {
-                "age_range": tag_filters.age_range,
-                "behavior_type": tag_filters.behavior_type,
-                "emotion_level": tag_filters.emotion_level,
-            },
             "result_count": result.total_count,
             "elapsed_ms": result.elapsed_ms,
             "degradation_level": result.degradation_level.value,

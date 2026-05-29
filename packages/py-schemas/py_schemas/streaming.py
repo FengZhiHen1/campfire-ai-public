@@ -52,8 +52,7 @@ class ChunkEvent(BaseModel):
     text: str = Field(
         ...,
         max_length=4096,
-        description="当前 chunk 的文本增量。原样透传自 CSLT-03/GenerationChunk.text，"
-        "不做任何修改、截断或格式转换。CSLT-08 前端逐段拼接后渲染。",
+        description="当前 chunk 的文本增量，仅包含段落内容文本（JSON 语法字符已剥离）。",
         examples=["请保持冷静，先将孩子带离当前环境"],
     )
     sequence: int = Field(
@@ -63,6 +62,11 @@ class ChunkEvent(BaseModel):
         "是否连续）；(2) 断点续传定位（重连时 Last-Event-Id 携带最后成功接收的 sequence，"
         "CSLT-04 从中断位置续传）；(3) SSE id: 字段值与 sequence 保持一致。",
         examples=[1, 2, 3],
+    )
+    section: str | None = Field(
+        default=None,
+        description="当前 chunk 所属的段落标题，前端据此增量追加到对应 planSections 卡片。"
+        "None 表示非内容文本。",
     )
 
     model_config = {"extra": "forbid"}

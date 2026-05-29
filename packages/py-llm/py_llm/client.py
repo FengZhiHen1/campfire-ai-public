@@ -113,9 +113,11 @@ class LLMClient:
         """
         if api_key is None:
             try:
-                from py_config import config
+                from py_config import get_settings
 
-                api_key = config.DEEPSEEK_API_KEY.get_secret_value()
+                settings = get_settings()
+                api_key = settings.DEEPSEEK_API_KEY.get_secret_value()
+                base_url = str(settings.DEEPSEEK_BASE_URL).rstrip("/v1").rstrip("/")
             except (ImportError, AttributeError):
                 api_key = ""  # Degraded mode — tests mock async_chat_stream
 

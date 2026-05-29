@@ -21,10 +21,18 @@ from __future__ import annotations
 
 import functools
 import os
+from pathlib import Path
 from typing import Literal
 
+from dotenv import load_dotenv
 from pydantic import Field, BaseModel
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# 将项目根目录的 .env 加载到 os.environ，确保 SECURITY_ 前缀变量能回退到无前缀变量名。
+# SecurityConfig 使用 env_prefix="SECURITY_" 但 .env 中是无前缀的 JWT_SECRET_KEY，
+# 此处预先加载使得下方的 fallback 代码能在 os.environ 中查找到无前缀变量。
+_ENV_FILE = Path(__file__).resolve().parents[3] / ".env"
+load_dotenv(_ENV_FILE)
 
 # MVP 兼容：SecurityConfig 需要 SECURITY_ 前缀的环境变量，但项目 .env 使用无前缀的变量名。
 # 若 SECURITY_ 前缀变量缺失，自动回退到普通变量名。

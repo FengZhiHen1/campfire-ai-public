@@ -19,7 +19,6 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from py_db.repositories.base_repository import DependencyCommunicationError
-from py_schemas.consult import DegradationLevel
 
 _logger = logging.getLogger(__name__)
 
@@ -40,30 +39,21 @@ class ConsultRepository:
         self,
         session: AsyncSession,
         query_vector: list[float],
-        age_range: str,
-        behavior_type: str,
-        emotion_level: str | None,
         top_k: int,
-        degradation_level: DegradationLevel = DegradationLevel.NONE,
     ) -> list[dict[str, Any]]:
-        """执行 pgvector HNSW 混合检索。
+        """执行 pgvector 纯语义检索，无标签过滤。
 
-        根据指定降级层级构建动态 WHERE 条件，执行参数化 SQL 查询，
-        返回按余弦距离升序排列的案例切片结果列表。
+        仅按余弦距离排序返回最相似的案例切片。
 
         Args:
             session: 活动数据库异步会话。
             query_vector: 1024 维查询向量（由 encode_query() 编码）。
-            age_range: 患者年龄段过滤条件。
-            behavior_type: 行为类型过滤条件。
-            emotion_level: 情绪等级过滤条件（为 None 时不应用）。
             top_k: 期望返回的结果数量（上限 50）。
-            degradation_level: 降级放宽层级，控制 WHERE 条件的严格程度。
 
         Returns:
             查询结果字典列表，每项包含：
             - id (str): 切片 UUID
-            - case_id (str): 案例编号
+            - card_id (str): L2 卡片 UUID
             - chunk_text (str): 切片文本
             - chunk_type (str | None): 切片类型
             - similarity (float): 余弦相似度（0.0-1.0）
@@ -81,59 +71,20 @@ class ConsultRepository:
             raise ValueError(
                 f"query_vector must be 1024 dimensions, got {len(query_vector)}"
             )
-        # 注意：age_range 和 behavior_type 在降级流程中可能为空字符串
-        # （degradation_level=ALL_TAGS_REMOVED 或 BEHAVIOR_RELAXED 时合法），故不做非空校验
-
-        # 基础过滤条件（始终生效）
-        base_conditions: list[str] = [
-            "cc.metadata->>'status' = 'approved'",
-            "cc.metadata->>'vectorized' = 'true'",
-            "cc.metadata->>'status' NOT IN ('obsolete', 'erroneous', 'disputed', 'force_removed')",
-        ]
-
-        # 根据降级层级动态添加标签过滤条件
         bind_params: dict[str, Any] = {
-            "query_vector": str(query_vector),  # pgvector 接受字符串表示的向量
+            "query_vector": str(query_vector),
             "top_k": top_k,
         }
 
-        if degradation_level == DegradationLevel.ALL_TAGS_REMOVED:
-            # 层级 3：移除全部标签条件，仅保留基础过滤
-            pass
-        elif degradation_level == DegradationLevel.BEHAVIOR_RELAXED:
-            # 层级 2：仅保留 age_range
-            base_conditions.append("cc.metadata->>'age_range' = :age_range")
-            bind_params["age_range"] = age_range
-        elif degradation_level == DegradationLevel.EMOTION_RELAXED:
-            # 层级 1：保留 age_range + behavior_type
-            base_conditions.append("cc.metadata->>'age_range' = :age_range")
-            base_conditions.append("cc.metadata->>'behavior_type' = :behavior_type")
-            bind_params["age_range"] = age_range
-            bind_params["behavior_type"] = behavior_type
-        else:
-            # 层级 0（NONE）：全部标签条件
-            base_conditions.append("cc.metadata->>'age_range' = :age_range")
-            base_conditions.append("cc.metadata->>'behavior_type' = :behavior_type")
-            bind_params["age_range"] = age_range
-            bind_params["behavior_type"] = behavior_type
-            if emotion_level is not None:
-                base_conditions.append(
-                    "cc.metadata->>'emotion_level' = :emotion_level"
-                )
-                bind_params["emotion_level"] = emotion_level
-
-        where_clause = " AND ".join(base_conditions)
-
-        sql = text(f"""
+        sql = text("""
             SELECT
                 cc.id::text AS id,
-                cc.card_id AS case_id,
+                cc.card_id,
                 cc.chunk_text,
                 cc.chunk_type,
                 1 - (cc.embedding <=> CAST(:query_vector AS vector(1024))) AS similarity,
                 cc.metadata
             FROM case_chunks cc
-            WHERE {where_clause}
             ORDER BY cc.embedding <=> CAST(:query_vector AS vector(1024))
             LIMIT :top_k
         """)
@@ -157,7 +108,7 @@ class ConsultRepository:
         return [
             {
                 "id": str(row[0]),
-                "case_id": str(row[1]),
+                "card_id": str(row[1]),
                 "chunk_text": str(row[2]),
                 "chunk_type": str(row[3]) if row[3] is not None else None,
                 "similarity": float(row[4]) if row[4] is not None else 0.0,

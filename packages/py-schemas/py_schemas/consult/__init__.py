@@ -170,11 +170,10 @@ class CaseSliceDto(BaseModel):
         description="案例切片的唯一标识，对应 case_chunks 表的主键 UUID",
         examples=["a1b2c3d4-e5f6-7890-abcd-ef1234567890"],
     )
-    case_id: str = Field(
+    card_id: str = Field(
         ...,
-        pattern=r"^CASE-\d{3}$",
-        description="切片所属源案例的编号标识，格式为 CASE- 后接三位数字",
-        examples=["CASE-042"],
+        description="切片所属 L2 卡片的唯一标识，对应 case_cards 表主键 UUID",
+        examples=["a1b2c3d4-e5f6-7890-abcd-ef1234567890"],
     )
     slice_text: str = Field(
         ...,

@@ -64,3 +64,46 @@ export interface EventCreate {
   intervention_result: string;
   tags?: string[] | null;
 }
+
+/** 事件更新请求（Merge Patch，全部字段可选） */
+export interface EventUpdate {
+  event_time?: string;
+  behavior_type?: string;
+  severity_level?: string;
+  setting?: string | null;
+  trigger_description?: string;
+  manifestation?: string;
+  intervention_tried?: string;
+  intervention_result?: string;
+  tags?: string[] | null;
+}
+
+/** 事件详情响应 */
+export interface EventResponse {
+  event_id: string;
+  profile_id: string;
+  recorded_by: string;
+  recorded_by_role: string;
+  event_time: string;           // ISO datetime
+  behavior_type: string;
+  severity_level: string;
+  setting: string | null;
+  trigger_description: string;
+  manifestation: string;
+  intervention_tried: string;
+  intervention_result: string;
+  is_professional: boolean;
+  tags: string[] | null;
+  created_at: string;           // ISO datetime
+  updated_at: string;           // ISO datetime
+}
+
+/** 事件列表条目 */
+export interface EventListItem {
+  event_id: string;
+  event_time: string;           // ISO datetime
+  behavior_type: string;
+  severity_level: string;
+  has_professional_note: boolean;
+  created_at: string;           // ISO datetime
+}
