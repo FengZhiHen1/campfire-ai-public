@@ -42,15 +42,24 @@ class LLMReviewLayer(JudgmentLayer):
         self,
         llm_client: LLMClient | None = None,
         timeout_ms: int = _DEFAULT_LLM_TIMEOUT_MS,
+        model: str | None = None,
     ) -> None:
         """初始化 LLM 复审层。
 
         Args:
             llm_client: LLM 客户端实例。为 None 时创建默认实例。
             timeout_ms: LLM 调用超时时间（毫秒）。
+            model: 模型名称。为 None 时从 AppSettings.DEEPSEEK_MODEL 读取。
         """
         self._llm_client = llm_client or LLMClient()
         self._timeout_ms = timeout_ms
+        if model is None:
+            try:
+                from py_config import get_settings
+                model = get_settings().DEEPSEEK_MODEL
+            except (ImportError, AttributeError):
+                model = "deepseek-v4-pro"
+        self._model = model
 
     async def judge(self, request: CrisisJudgmentRequest) -> JudgmentLayerResult:
         """执行 LLM 精调复审。
@@ -73,10 +82,11 @@ class LLMReviewLayer(JudgmentLayer):
                         {"role": "system", "content": system_prompt},
                         {"role": "user", "content": request.behavior_description},
                     ],
-                    model="deepseek-v4-pro",
+                    model=self._model,
                     temperature=0.1,
                     max_tokens=512,
                     timeout=timeout_seconds,
+                    response_format={"type": "json_object"},
                 ),
                 timeout=timeout_seconds,
             )

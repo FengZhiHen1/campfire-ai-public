@@ -142,7 +142,7 @@ class AppSettings(BaseSettings):
 
     DEEPSEEK_MODEL: str = Field(
         default="deepseek-v4-pro",
-        description="DeepSeek 对话模型名称。用于 CSLT-03 应急方案生成的 LLM 调用。",
+        description="DeepSeek 对话模型名称。用于应急咨询（危机分级复审 + 方案生成）的 LLM 调用。",
     )
 
     GENERATION_TEMPERATURE: float = Field(
@@ -160,7 +160,7 @@ class AppSettings(BaseSettings):
     )
 
     GENERATION_TIMEOUT_S: float = Field(
-        default=15.0,
+        default=30.0,
         ge=1.0,
         le=120.0,
         description="LLM 全流程超时秒数。CSLT-03 全流程硬超时。",
@@ -193,11 +193,11 @@ class AppSettings(BaseSettings):
     )
 
     SSE_FIRST_CHUNK_TIMEOUT_SECONDS: int = Field(
-        default=5,
+        default=30,
         ge=1,
-        le=60,
+        le=120,
         description="首 chunk 软超时阈值（秒）。超过此时间未收到上游 CSLT-03 "
-        "的第一个 chunk 时，发送进度提示事件但不终止流。默认 5 秒。",
+        "的第一个 chunk 时，发送进度提示事件但不终止流。默认 30 秒。",
     )
 
     SSE_FULL_TIMEOUT_SECONDS: int = Field(
