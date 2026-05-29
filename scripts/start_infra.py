@@ -1,55 +1,81 @@
-"""Infrastructure service launcher — Docker Compose (PostgreSQL, Redis, MinIO).
+"""基础设施服务启动器 — Docker Compose (PostgreSQL, Redis, MinIO).
 
-Starts the dev data containers defined in docker-compose.yml.
+Usage:
+    from start_infra import InfraLauncher
+    launcher = InfraLauncher()
+    proc = launcher.start()
+    proc.communicate(timeout=60)  # 等待容器启动完成
 """
 
 from __future__ import annotations
 
 import subprocess
-import sys
 from pathlib import Path
 
+from launcher_contract import ServiceLauncher
 from utils.process_utils import resolve_exe, start_process
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 
-def start_infra() -> subprocess.Popen:
-    """Start infrastructure containers via docker compose up -d.
+class InfraLauncher(ServiceLauncher):
+    name = "infra"
+    display_name = "Infra"
 
-    Returns:
-        A completed Popen (the up -d command exits immediately after starting containers).
-    """
-    return start_process(
-        ["docker", "compose", "up", "-d"],
-        cwd=PROJECT_ROOT,
-    )
+    def __init__(self, project_root: Path | None = None) -> None:
+        self._project_root = project_root or PROJECT_ROOT
+
+    def _do_start(self) -> subprocess.Popen:
+        return start_process(
+            ["docker", "compose", "up", "-d"],
+            cwd=self._project_root,
+        )
+
+    def stop(self) -> None:
+        """停止所有 Docker 容器（docker compose down）。"""
+        docker = resolve_exe("docker")
+        subprocess.run(
+            [docker, "compose", "down"],
+            cwd=str(self._project_root),
+            capture_output=True,
+            timeout=30,
+        )
+
+
+# ---------------------------------------------------------------------------
+# 向后兼容：保留函数式接口
+# ---------------------------------------------------------------------------
+
+def start_infra() -> subprocess.Popen:
+    """启动基础设施容器。返回已完成的 Popen。"""
+    return InfraLauncher().start()
 
 
 def stop_infra() -> None:
-    """Stop infrastructure containers via docker compose down."""
-    docker = resolve_exe("docker")
-    subprocess.run(
-        [docker, "compose", "down"],
-        cwd=str(PROJECT_ROOT),
-        capture_output=True,
-        timeout=30,
-    )
+    """停止基础设施容器。"""
+    InfraLauncher().stop()
 
+
+# ---------------------------------------------------------------------------
+# 独立运行入口
+# ---------------------------------------------------------------------------
 
 def main() -> None:
-    """CLI entry point for standalone use."""
-    print("Starting infrastructure containers...")
-    proc = start_infra()
+    from utils.log_utils import print_info, print_error
+
+    print_info("正在启动基础设施容器...")
+    launcher = InfraLauncher()
+    proc = launcher.start()
     stdout, _ = proc.communicate(timeout=60)
     if proc.returncode == 0:
-        print("Infrastructure containers started successfully.")
+        print_info("基础设施容器已启动。")
         if stdout:
             print(stdout)
     else:
-        print(f"Failed to start infrastructure (exit code {proc.returncode})")
+        print_error(f"基础设施启动失败 (exit code {proc.returncode})")
         if stdout:
             print(stdout)
+        import sys
         sys.exit(proc.returncode)
 
 

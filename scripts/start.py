@@ -1,15 +1,13 @@
 #!/usr/bin/env python3
-"""Campfire-AI 统一启动控制台 (spec: 单体仓库全栈项目启动脚本规范).
-
-Main orchestrator — CLI argument parsing, interactive menu, pre-flight checks,
-parallel service startup, unified log output, and graceful process-tree shutdown.
+"""Campfire-AI 统一启动控制台。
 
 Usage:
-  python scripts/start.py                        # interactive menu
-  python scripts/start.py --services api,worker  # start specific services
-  python scripts/start.py --all                  # start all services
-  python scripts/start.py --skip-infra           # skip docker compose
-  python scripts/start.py --skip-checks          # skip pre-flight checks
+  python scripts/start.py                        # 交互式菜单
+  python scripts/start.py --mode fullstack-h5     # 预设模式
+  python scripts/start.py --services api,worker   # 自定义组合
+  python scripts/start.py --all                   # 启动全部
+  python scripts/start.py --skip-infra            # 跳过 Docker
+  python scripts/start.py --skip-checks           # 跳过前置检查
 """
 
 from __future__ import annotations
@@ -17,24 +15,19 @@ from __future__ import annotations
 import argparse
 import signal
 import sys
-import threading
 import time
 from pathlib import Path
-
-# ---------------------------------------------------------------------------
-# Project root (scripts/ → project root)
-# ---------------------------------------------------------------------------
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 # ---------------------------------------------------------------------------
-# Constants
+# 常量
 # ---------------------------------------------------------------------------
 
 PROJECT_NAME = "篝火智答 (Campfire-AI)"
+MAX_NAME_WIDTH = 8
 
-# Preset startup modes (spec: 避免 h5/weapp 同时启动导致 dist/ 目录竞态)
 PRESET_MODES: dict[str, dict] = {
     "1": {
         "key": "fullstack-h5",
@@ -70,7 +63,7 @@ PRESET_MODES: dict[str, dict] = {
         "key": "custom",
         "name": "自定义",
         "desc": "逐个选择服务",
-        "services": [],  # resolved via sub-menu
+        "services": [],
     },
 }
 
@@ -83,10 +76,8 @@ AVAILABLE_SERVICES: dict[str, str] = {
     "web-weapp": "Web-小程序 服务 (Taro 微信小程序 dev)",
 }
 
-MAX_NAME_WIDTH = 8
-
 # ---------------------------------------------------------------------------
-# Imports (after sys.path setup)
+# 日志导入（sys.path 设置后）
 # ---------------------------------------------------------------------------
 
 from utils.log_utils import (  # noqa: E402
@@ -94,22 +85,14 @@ from utils.log_utils import (  # noqa: E402
     print_check_fail,
     print_check_ok,
     print_error,
-    print_exit_footer,
-    print_exit_header,
     print_info,
     print_running_status,
     print_separator,
     print_service_failed,
-    print_service_log,
     print_service_starting,
-    print_service_terminated_forced,
-    print_service_terminated_ok,
-    print_service_terminating,
     print_stage,
     print_warning,
 )
-from utils.process_utils import read_output, terminate_process  # noqa: E402
-from start_ngrok import start_ngrok, cleanup_ngrok_url_file  # noqa: E402
 from utils.check_utils import (  # noqa: E402
     check_docker_available,
     check_env_file,
@@ -122,147 +105,115 @@ from utils.check_utils import (  # noqa: E402
     check_redis_connectivity,
     check_uv_available,
 )
+from utils.launcher_utils import (  # noqa: E402
+    run_standalone,
+    shutdown_services,
+    start_log_readers,
+)
 
 
 # ====================================================================
-# Pre-flight checks
+# 启动器工厂
 # ====================================================================
 
 
-def run_preflight_checks(
-    services: list[str], *, skip_infra: bool
-) -> bool:
-    """Execute all pre-flight checks (spec 3.1). Returns True if all pass."""
+def _create_launcher(service_key: str, project_root: Path = PROJECT_ROOT):
+    """根据服务标识创建对应的启动器实例。"""
+    if service_key == "api":
+        from start_api import ApiLauncher
+        return ApiLauncher(project_root=project_root)
+    elif service_key == "worker":
+        from start_worker import WorkerLauncher
+        return WorkerLauncher(project_root=project_root)
+    elif service_key == "web-h5":
+        from start_web import WebLauncher
+        return WebLauncher(mode="h5", project_root=project_root)
+    elif service_key == "web-weapp":
+        from start_web import WebLauncher
+        return WebLauncher(mode="weapp", project_root=project_root)
+    raise ValueError(f"未知服务: {service_key}")
+
+
+# ====================================================================
+# 前置检查
+# ====================================================================
+
+
+def run_preflight_checks(services: list[str], *, skip_infra: bool) -> bool:
+    """执行所有前置检查。全部通过返回 True。"""
     print_stage("阶段一：前置检查")
     all_ok = True
 
-    # --- .env check (always required) ---
-    ok, msg = check_env_file()
-    if ok:
-        print_check_ok(".env 配置文件", msg)
-    else:
-        print_check_fail(".env 配置文件", msg)
-        all_ok = False
+    checks: list[tuple[str, tuple[bool, str]]] = []
 
-    # --- Python toolchain ---
+    # .env 检查
+    checks.append((".env 配置文件", check_env_file()))
+
+    # Python 工具链
     if "api" in services or "worker" in services:
-        ok, msg = check_uv_available()
-        if ok:
-            print_check_ok("uv 包管理器", msg)
-        else:
-            print_check_fail("uv 包管理器", msg)
-            all_ok = False
+        checks.append(("uv 包管理器", check_uv_available()))
+        checks.append(("Python 依赖", check_python_deps_installed()))
 
-        ok, msg = check_python_deps_installed()
-        if ok:
-            print_check_ok("Python 依赖", msg)
-        else:
-            print_check_fail("Python 依赖", msg)
-            all_ok = False
-
-    # --- Node.js toolchain ---
+    # Node.js 工具链
     if "web-h5" in services or "web-weapp" in services:
-        ok, msg = check_pnpm_available()
-        if ok:
-            print_check_ok("pnpm 包管理器", msg)
-        else:
-            print_check_fail("pnpm 包管理器", msg)
-            all_ok = False
+        checks.append(("pnpm 包管理器", check_pnpm_available()))
+        checks.append(("Node.js 依赖", check_node_deps_installed()))
 
-        ok, msg = check_node_deps_installed()
-        if ok:
-            print_check_ok("Node.js 依赖", msg)
-        else:
-            print_check_fail("Node.js 依赖", msg)
-            all_ok = False
-
-    # --- Port checks ---
+    # 端口
     if "api" in services:
-        ok, msg = check_port_available(8000)
-        if ok:
-            print_check_ok("端口 8000 (API)", msg)
-        else:
-            print_check_fail("端口 8000 (API)", msg)
-            all_ok = False
-
+        checks.append(("端口 8000 (API)", check_port_available(8000)))
     if "web-h5" in services:
-        ok, msg = check_port_available(5173)
-        if ok:
-            print_check_ok("端口 5173 (H5)", msg)
-        else:
-            print_check_fail("端口 5173 (H5)", msg)
-            all_ok = False
+        checks.append(("端口 5173 (H5)", check_port_available(5173)))
 
-    # --- Infrastructure connectivity (only if not skipped) ---
+    # 基础设施
     if not skip_infra:
-        ok, msg = check_docker_available()
+        docker_ok, docker_msg = check_docker_available()
+        checks.append(("Docker", (docker_ok, docker_msg)))
+        if docker_ok:
+            checks.append(("数据库 (PostgreSQL)", check_postgres_connectivity()))
+            checks.append(("Redis", check_redis_connectivity()))
+            checks.append(("MinIO", check_minio_connectivity()))
+
+    for name, (ok, msg) in checks:
         if ok:
-            print_check_ok("Docker", msg)
+            print_check_ok(name, msg)
         else:
-            print_check_fail("Docker", msg)
+            print_check_fail(name, msg)
             all_ok = False
-
-        if ok:  # only probe if Docker is available
-            ok, msg = check_postgres_connectivity()
-            if ok:
-                print_check_ok("数据库 (PostgreSQL)", msg)
-            else:
-                print_check_fail("数据库 (PostgreSQL)", msg)
-                all_ok = False
-
-            ok, msg = check_redis_connectivity()
-            if ok:
-                print_check_ok("Redis", msg)
-            else:
-                print_check_fail("Redis", msg)
-                all_ok = False
-
-            ok, msg = check_minio_connectivity()
-            if ok:
-                print_check_ok("MinIO", msg)
-            else:
-                print_check_fail("MinIO", msg)
-                all_ok = False
 
     print()
     return all_ok
 
 
 # ====================================================================
-# Service startup
+# 服务启动编排
 # ====================================================================
 
 
-def _cleanup_procs(procs: list[tuple]) -> None:
-    """Terminate all processes in the list (rollback on partial start failure)."""
-    for proc, name in procs:
-        if proc.poll() is None:
-            terminate_process(proc, timeout=5.0)
+def start_services(services: list[str], *, skip_infra: bool) -> list[tuple]:
+    """按序启动所有选中服务。返回 [(进程, 服务名), ...] 列表。
 
-
-def start_services(
-    services: list[str], *, skip_infra: bool
-) -> list[tuple]:
-    """Start selected services and return list of (proc, name, module).
-
-    When both API and weapp are selected, automatically starts ngrok tunnel
-    and writes the public URL to .ngrok-url for the mini-program build.
-
-    Returns empty list if any service fails to start.
+    微信小程序 + API 同时启动时自动开启 ngrok 隧道。
+    任一服务启动失败则回滚已启动的进程。
     """
     print_separator()
     print()
     print_stage("阶段二：服务启动")
 
     procs: list[tuple] = []
-    ngrok_proc = None
 
-    # --- Infrastructure (Docker compose up) ---
+    def _cleanup() -> None:
+        from utils.process_utils import terminate_process
+        for proc, _name in procs:
+            if proc.poll() is None:
+                terminate_process(proc, timeout=5.0)
+
+    # --- 基础设施 ---
     if not skip_infra:
-        from start_infra import start_infra
-
+        from start_infra import InfraLauncher
         print(f"  ● {'Infra':<20s} 正在启动 Docker 容器...", flush=True)
-        infra_proc = start_infra()
+        infra = InfraLauncher()
+        infra_proc = infra.start()
         stdout, _ = infra_proc.communicate(timeout=60)
         if infra_proc.returncode == 0:
             print_check_ok("Infra", "Docker 容器已就绪")
@@ -273,69 +224,32 @@ def start_services(
                 print(f"     {stdout}")
             return []
 
-    # --- API server ---
-    if "api" in services:
+    # --- Ngrok（weapp + api 同时启动时） ---
+    ngrok_url: str | None = None
+    if "web-weapp" in services and "api" in services:
         try:
-            from start_api import start as start_api
-
-            proc, name = start_api()
-            procs.append((proc, name))
-            print_service_starting(name, proc.pid)
+            from start_ngrok import NgrokLauncher
+            print()
+            print_info("正在启动 ngrok 内网穿透...")
+            ngrok = NgrokLauncher(port=8000)
+            ngrok_proc = ngrok.start()
+            ngrok_url = ngrok.url
+            procs.append((ngrok_proc, "ngrok"))
+            print_check_ok("ngrok", f"公网地址: {ngrok_url}")
+            print()
         except Exception as exc:
-            print_service_failed("API", str(exc))
-            _cleanup_procs(procs)
-            return []
+            print_warning(f"ngrok 启动失败: {exc}")
 
-    # --- Worker ---
-    if "worker" in services:
+    # --- 业务服务 ---
+    for key in services:
         try:
-            from start_worker import start as start_worker
-
-            proc, name = start_worker()
-            procs.append((proc, name))
-            print_service_starting(name, proc.pid)
+            launcher = _create_launcher(key)
+            proc = launcher.start()
+            procs.append((proc, launcher.display_name))
+            print_service_starting(launcher.display_name, proc.pid)
         except Exception as exc:
-            print_service_failed("Worker", str(exc))
-            _cleanup_procs(procs)
-            return []
-
-    # --- Web-H5 ---
-    if "web-h5" in services:
-        try:
-            from start_web import start as start_web
-
-            proc, name = start_web(mode="h5")
-            procs.append((proc, name))
-            print_service_starting(name, proc.pid)
-        except Exception as exc:
-            print_service_failed("Web-H5", str(exc))
-            _cleanup_procs(procs)
-            return []
-
-    # --- Web-Weapp (小程序) ---
-    if "web-weapp" in services:
-        # Start ngrok tunnel if API is also running (auto-detect)
-        if "api" in services:
-            try:
-                print()
-                print_info("正在启动 ngrok 内网穿透...")
-                ngrok_proc, ngrok_url = start_ngrok(port=8000)
-                procs.append((ngrok_proc, "ngrok"))
-                print_check_ok("ngrok", f"公网地址: {ngrok_url}")
-                print()
-            except Exception as exc:
-                print_warning(f"ngrok 启动失败: {exc}")
-                print_warning("小程序将使用本地地址 http://127.0.0.1:8000")
-
-        try:
-            from start_web import start as start_web
-
-            proc, name = start_web(mode="weapp")
-            procs.append((proc, name))
-            print_service_starting(name, proc.pid)
-        except Exception as exc:
-            print_service_failed("Web-Weapp", str(exc))
-            _cleanup_procs(procs)
+            print_service_failed(launcher.display_name if 'launcher' in dir() else key, str(exc))
+            _cleanup()
             return []
 
     print()
@@ -348,65 +262,12 @@ def start_services(
 
 
 # ====================================================================
-# Log reader threads
-# ====================================================================
-
-
-def start_log_readers(procs: list[tuple]) -> tuple:
-    """Start a reader thread per service. Returns (threads, stop_event)."""
-    stop_event = threading.Event()
-    threads: list[threading.Thread] = []
-
-    for proc, name in procs:
-        t = threading.Thread(
-            target=read_output,
-            args=(proc, lambda line, n=name: print_service_log(n, line, MAX_NAME_WIDTH)),
-            kwargs={"stop_event": stop_event},
-            daemon=True,
-        )
-        t.start()
-        threads.append(t)
-
-    return threads, stop_event
-
-
-# ====================================================================
-# Shutdown
-# ====================================================================
-
-
-def shutdown(procs: list[tuple], stop_event: threading.Event) -> None:
-    """Gracefully shut down all services (spec 3.6.5)."""
-    print()
-    print_exit_header()
-
-    # Signal log reader threads to stop
-    stop_event.set()
-
-    for proc, name in procs:
-        if proc.poll() is not None:
-            continue
-        print_service_terminating(name, proc.pid)
-        exited_gracefully = terminate_process(proc, timeout=10.0)
-        if exited_gracefully:
-            print_service_terminated_ok()
-        else:
-            print_service_terminated_forced()
-
-    # Clean up ngrok URL file
-    cleanup_ngrok_url_file()
-
-    print()
-    print_exit_footer()
-
-
-# ====================================================================
-# Interactive menu (spec 3.5)
+# 交互式菜单
 # ====================================================================
 
 
 def _custom_service_menu() -> list[str]:
-    """Individual service selection with mutual exclusion for h5/weapp."""
+    """逐个选择服务。"""
     print()
     print_info("选择要启动的服务（多选，逗号分隔，回车=全部）:")
     print()
@@ -437,7 +298,6 @@ def _custom_service_menu() -> list[str]:
         if 1 <= idx <= len(items):
             selected.append(items[idx - 1][0])
 
-    # h5 和 weapp 共享 dist/ 构建目录，同时启动会产生竞态导致 ENOENT
     if "web-h5" in selected and "web-weapp" in selected:
         print_warning("H5 和小程序共享构建目录，不能同时启动。请只选择其中一个。")
         return []
@@ -446,7 +306,7 @@ def _custom_service_menu() -> list[str]:
 
 
 def _interactive_menu() -> list[str]:
-    """Two-stage menu: preset mode → (if custom) individual service selection."""
+    """两级菜单：预设模式 → 自定义服务选择。"""
     print_info("请选择启动模式:")
     print()
     for num in ["1", "2", "3", "4", "5", "6"]:
@@ -463,9 +323,9 @@ def _interactive_menu() -> list[str]:
         return []
 
     if raw == "0":
-        return []  # infrastructure only
+        return []
     if raw == "":
-        return PRESET_MODES["1"]["services"]  # default: fullstack-h5
+        return PRESET_MODES["1"]["services"]
     if raw in PRESET_MODES:
         if raw == "6":
             return _custom_service_menu()
@@ -476,7 +336,7 @@ def _interactive_menu() -> list[str]:
 
 
 # ====================================================================
-# CLI argument parsing (spec 3.5)
+# CLI 参数解析
 # ====================================================================
 
 
@@ -498,122 +358,99 @@ def _parse_args() -> argparse.Namespace:
     )
 
     group = parser.add_mutually_exclusive_group()
-    group.add_argument(
-        "--mode",
-        type=str,
-        default=None,
-        help="预设启动模式",
-    )
-    group.add_argument(
-        "--services",
-        type=str,
-        default=None,
-        help="要启动的服务，逗号分隔 (api,worker,web-h5,web-weapp)",
-    )
-    group.add_argument(
-        "--all",
-        action="store_true",
-        default=False,
-        help="启动全部服务（不含 web-weapp，避免 dist/ 竞态）",
-    )
+    group.add_argument("--mode", type=str, default=None, help="预设启动模式")
+    group.add_argument("--services", type=str, default=None, help="服务列表，逗号分隔")
+    group.add_argument("--all", action="store_true", default=False, help="启动全部服务")
 
-    parser.add_argument(
-        "--skip-infra",
-        action="store_true",
-        default=False,
-        help="跳过 Docker 基础设施启动（容器已运行时使用）",
-    )
-    parser.add_argument(
-        "--skip-checks",
-        action="store_true",
-        default=False,
-        help="跳过前置检查（加快重复启动）",
-    )
+    parser.add_argument("--skip-infra", action="store_true", default=False, help="跳过 Docker")
+    parser.add_argument("--skip-checks", action="store_true", default=False, help="跳过前置检查")
 
     return parser.parse_args()
 
 
-# ====================================================================
-# Main
-# ====================================================================
-
-
-def main() -> None:
-    args = _parse_args()
-
-    # --- Determine target services ---
+def _resolve_services(args: argparse.Namespace) -> list[str]:
+    """根据 CLI 参数解析目标服务列表。"""
     if args.mode:
-        # Resolve preset mode key → service list
         if args.mode == "custom":
             services = _custom_service_menu()
             if not services:
                 print_error("未选择任何服务。")
                 sys.exit(1)
-        elif args.mode in MODE_BY_KEY:
-            services = list(PRESET_MODES[MODE_BY_KEY[args.mode]]["services"])
-        else:
-            print_error(f"未知模式: {args.mode}")
-            print_info(
-                f"可用模式: {', '.join(MODE_BY_KEY.keys())}"
-            )
-            sys.exit(1)
-    elif args.all:
-        # --all 不再包含 web-weapp，避免 dist/ 竞态
-        services = ["api", "worker", "web-h5"]
-    elif args.services:
+            return services
+        if args.mode in MODE_BY_KEY:
+            return list(PRESET_MODES[MODE_BY_KEY[args.mode]]["services"])
+        print_error(f"未知模式: {args.mode}")
+        print_info(f"可用模式: {', '.join(MODE_BY_KEY.keys())}")
+        sys.exit(1)
+
+    if args.all:
+        return ["api", "worker", "web-h5"]
+
+    if args.services:
         services = [s.strip() for s in args.services.split(",") if s.strip()]
         invalid = [s for s in services if s not in AVAILABLE_SERVICES]
         if invalid:
             print_error(f"未知服务: {', '.join(invalid)}")
             print_info(f"可用服务: {', '.join(AVAILABLE_SERVICES.keys())}")
             sys.exit(1)
-        # 自定义模式也做互斥保护
         if "web-h5" in services and "web-weapp" in services:
             print_error("H5 和小程序共享构建目录，不能同时启动。请只选择其中一个。")
             sys.exit(1)
-    else:
-        services = _interactive_menu()
-        if not services:
-            # Infrastructure only mode
-            print()
-            print_stage("阶段二：服务启动")
-            from start_infra import start_infra
-            infra_proc = start_infra()
-            stdout, _ = infra_proc.communicate(timeout=60)
-            if infra_proc.returncode == 0:
-                print_info("Docker 容器已启动（仅基础设施模式）")
-            else:
-                print_error("Docker 容器启动失败")
-                if stdout:
-                    print(stdout)
-            return
+        return services
+
+    return _interactive_menu()
+
+
+# ====================================================================
+# 主入口
+# ====================================================================
+
+
+def main() -> None:
+    args = _parse_args()
+    services = _resolve_services(args)
+
+    # 仅基础设施模式
+    if not services:
+        from start_infra import InfraLauncher
+        print()
+        print_stage("阶段二：服务启动")
+        infra = InfraLauncher()
+        infra_proc = infra.start()
+        stdout, _ = infra_proc.communicate(timeout=60)
+        if infra_proc.returncode == 0:
+            print_info("Docker 容器已启动（仅基础设施模式）")
+        else:
+            print_error("Docker 容器启动失败")
+            if stdout:
+                print(stdout)
+        return
 
     print_banner(PROJECT_NAME)
 
-    # --- Phase 1: Pre-flight checks ---
+    # 阶段一：前置检查
     if not args.skip_checks:
-        all_ok = run_preflight_checks(services, skip_infra=args.skip_infra)
-        if not all_ok:
+        if not run_preflight_checks(services, skip_infra=args.skip_infra):
             print_error("前置检查未通过，启动已中止。请修复上述问题后重试。")
             sys.exit(1)
     else:
         print_warning("已跳过前置检查 (--skip-checks)")
 
-    # --- Phase 2: Start services ---
+    # 阶段二：启动服务
     procs = start_services(services, skip_infra=args.skip_infra)
     if not procs:
         print_error("没有服务需要启动。")
         sys.exit(0)
 
-    # --- Phase 3: Running (log monitoring) ---
-    threads, stop_event = start_log_readers(procs)
+    # 阶段三：运行监控
+    threads, stop_event = start_log_readers(procs, MAX_NAME_WIDTH)
     _shutdown_done = False
 
     def _do_shutdown() -> None:
         nonlocal _shutdown_done
         if not _shutdown_done:
             _shutdown_done = True
-            shutdown(procs, stop_event)
+            shutdown_services(procs, stop_event)
 
     def _on_signal(signum: int, frame) -> None:
         _do_shutdown()
@@ -629,9 +466,7 @@ def main() -> None:
                 if exit_code is not None:
                     if exit_code != 0 and exit_code != -signal.SIGINT:
                         print()
-                        print_service_failed(
-                            name, f"意外退出 (exit code: {exit_code})"
-                        )
+                        print_service_failed(name, f"意外退出 (exit code: {exit_code})")
                     _do_shutdown()
                     sys.exit(exit_code if exit_code > 0 else 0)
             time.sleep(1)
