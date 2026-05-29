@@ -67,13 +67,16 @@ def start_process(
     """
     resolved_cmd = [resolve_exe(cmd[0])] + cmd[1:]
 
+    merged_env: dict[str, str] = {**os.environ, **(env or {})}
+    merged_env.setdefault("PYTHONUNBUFFERED", "1")
+
     kwargs: dict = {
         "stdout": subprocess.PIPE,
         "stderr": subprocess.STDOUT,
         "text": True,
         "bufsize": 1,
         "cwd": str(cwd) if cwd else None,
-        "env": {**os.environ, **(env or {})},
+        "env": merged_env,
     }
 
     if _IS_WINDOWS:

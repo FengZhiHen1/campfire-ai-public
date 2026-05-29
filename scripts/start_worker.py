@@ -22,10 +22,7 @@ def start() -> tuple:
         (subprocess.Popen, service_name: str)
     """
     proc = start_process(
-        [
-            "uv", "run", "python", "-c",
-            "import sys; sys.path.insert(0, 'apps/worker/src'); from worker.main import main; main()",
-        ],
+        ["uv", "run", "--package", "worker", "worker"],
         cwd=PROJECT_ROOT,
     )
     return proc, SERVICE_NAME
