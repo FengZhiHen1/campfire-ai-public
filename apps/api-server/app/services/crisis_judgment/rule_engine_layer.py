@@ -83,7 +83,7 @@ class RuleEngineLayer(JudgmentLayer):
         text: str = request.behavior_description
         try:
             matches = self._matcher.search(text)
-        except RuntimeError:
+        except (RuntimeError, AttributeError):
             return JudgmentLayerResult(
                 layer_name="RuleEngineLayer",
                 level=None,

@@ -16,6 +16,7 @@ from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from py_logger import logger
 from py_rag.retrieval import hybrid_search
 from py_schemas.consult import (
     SemanticSearchInput,
@@ -56,40 +57,36 @@ async def search_cases(
         raise ValueError("db must not be None")
 
     query_text: str = request.query_text
-    tag_filters = request.tag_filters
     top_k: int = request.top_k
     request_id: str | None = request.request_id
 
-    _logger.info(
-        "search_cases_started",
+    logger.info(
+        service="api-server",
+        message="search_cases_started",
+        op_type=None,
         extra={
             "request_id": request_id,
             "query_len": len(query_text),
             "top_k": top_k,
-            "tag_filters": {
-                "age_range": tag_filters.age_range,
-                "behavior_type": tag_filters.behavior_type,
-                "emotion_level": tag_filters.emotion_level,
-            },
         },
     )
 
     result: SemanticSearchResult = await hybrid_search(
         query_text=query_text,
-        tag_filters=tag_filters,
         top_k=top_k,
         request_id=request_id,
         db=db,
     )
 
-    _logger.info(
-        "search_cases_completed",
+    logger.info(
+        service="api-server",
+        message="search_cases_done",
+        op_type=None,
         extra={
-            "request_id": request_id,
             "result_count": result.total_count,
-            "elapsed_ms": result.elapsed_ms,
             "is_complete": result.is_complete,
-            "degradation_level": result.degradation_level.value,
+            "reason": result.reason,
+            "elapsed_ms": result.elapsed_ms,
         },
     )
 

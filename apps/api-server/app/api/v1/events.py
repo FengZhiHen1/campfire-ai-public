@@ -76,8 +76,10 @@ async def list_events_endpoint(
     profile_repo: ProfileRepository = Depends(get_profile_repository),
 ) -> PaginatedResponse[EventListItem]:
     """事件列表端点。"""
+    caregiver_id = _extract_user_id(anonymous_user)
     return await list_events(
         profile_id=profile_id,
+        caregiver_id=caregiver_id,
         page=page,
         page_size=page_size,
         session=session,

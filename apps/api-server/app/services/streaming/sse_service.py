@@ -346,6 +346,9 @@ class SseStreamingService:
 
                 # 记录当前已跳过的 chunk 数，用于 continue 场景
                 skipped = 0
+                # 首 chunk 超时已触发过的标记——避免循环重试 wait_for 导致
+                # __anext__ 被反复取消、chunk 计数错乱
+                first_chunk_timeout_fired = False
 
                 while True:
                     # ==================================================
@@ -354,6 +357,7 @@ class SseStreamingService:
                     elapsed = time.monotonic() - session.created_at
                     if elapsed >= full_timeout:
                         await chunk_generator.aclose()
+                        session.status = "COMPLETED"
                         session.finish_reason = "TIMEOUT"
                         done_event = DoneEvent(
                             finish_reason="TIMEOUT",
@@ -380,15 +384,16 @@ class SseStreamingService:
                     # 获取下一个 chunk
                     # ==================================================
                     try:
-                        if session.first_chunk_sent_at is None:
-                            # 首 chunk 软超时检测（步骤 4 第 2 项）
+                        if session.first_chunk_sent_at is None and not first_chunk_timeout_fired:
+                            # 首 chunk 软超时检测：shield 防止取消破坏 generator 内部状态
                             chunk = await asyncio.wait_for(
-                                it.__anext__(),
+                                asyncio.shield(it.__anext__()),
                                 timeout=first_chunk_timeout,
                             )
                         else:
                             chunk = await it.__anext__()
                     except asyncio.TimeoutError:
+                        first_chunk_timeout_fired = True
                         # 软超时：发送进度提示，不终止流
                         error_event = ErrorEvent(
                             error_code=StreamErrorCode.STREAM_TIMEOUT,
@@ -404,6 +409,8 @@ class SseStreamingService:
                         # Generator 正常结束但未产出 is_final=True 的 chunk
                         if session.total_chunks == 0:
                             # 从未收到任何 chunk，视为异常
+                            session.status = "ABORTED"
+                            session.finish_reason = "ERROR"
                             error_event = ErrorEvent(
                                 error_code=StreamErrorCode.GENERATION_FAILED,
                                 detail="方案生成失败，请稍后重试",
@@ -413,9 +420,9 @@ class SseStreamingService:
                                 f"data: {error_event.model_dump_json()}\n\n"
                             )
                             await queue.put(sse_frame)
-                            session.finish_reason = "ERROR"
                         else:
                             # 已推送部分内容但缺少最终标记，视为正常完成
+                            session.status = "COMPLETED"
                             session.finish_reason = "COMPLETE"
                             done_meta = await self._build_done_meta(session)
                             done_event = DoneEvent(
@@ -468,6 +475,7 @@ class SseStreamingService:
                     chunk_event = ChunkEvent(
                         text=chunk.text,
                         sequence=session.sequence,
+                        section=chunk.section,
                     )
 
                     # 写入 SSE 帧（步骤 4 第 5 项）
@@ -684,7 +692,8 @@ class SseStreamingService:
                 if sid:
                     text = getattr(item, "slice_text", "") or ""
                     slice_map[sid] = {
-                        "case_id": getattr(item, "case_id", ""),
+                        "card_id": getattr(item, "card_id", ""),
+                        "case_title": getattr(item, "case_title", ""),
                         "slice_text": text[:200],
                     }
         except Exception:
@@ -697,8 +706,8 @@ class SseStreamingService:
                 info = slice_map[sid]
                 cases.append({
                     "slice_id": sid,
-                    "case_id": info["case_id"],
-                    "case_title": info["case_id"],
+                    "case_id": info["card_id"],
+                    "case_title": info["case_title"] or "无标题",
                     "slice_text": info["slice_text"],
                 })
                 seen.add(sid)
@@ -761,9 +770,24 @@ class SseStreamingService:
         referenced_slice_ids: list[str] = []
         seen: set[str] = set()
         for tag in ref_pattern.findall(full_text):
-            if tag in prenumbered_slices and prenumbered_slices[tag] not in seen:
-                referenced_slice_ids.append(prenumbered_slices[tag])
-                seen.add(prenumbered_slices[tag])
+            key = f"[{tag}]"
+            if key in prenumbered_slices and prenumbered_slices[key] not in seen:
+                referenced_slice_ids.append(prenumbered_slices[key])
+                seen.add(prenumbered_slices[key])
+
+        logger.info(
+            service="streaming",
+            message="done_meta_built",
+            op_type=None,
+            extra={
+                "stream_id": session.stream_id,
+                "prenumbered_keys": list(prenumbered_slices.keys()),
+                "tags_found": ref_pattern.findall(full_text),
+                "referenced_slice_ids": referenced_slice_ids,
+                "full_text_len": len(full_text),
+                "has_search_result": meta.get("search_result") is not None,
+            },
+        )
 
         # === 从 JSON 文本解析四段式 sections ===
         sections = parse_json_sections(full_text) if full_text else {}

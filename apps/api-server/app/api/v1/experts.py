@@ -30,6 +30,23 @@ from py_schemas.profiles import ExpertInfo
 router = APIRouter(prefix="/api/v1/profiles", tags=["experts"])
 
 
+def _extract_user_id(anonymous_user: dict) -> UUID:
+    """从匿名用户字典中提取用户 UUID。"""
+    user_id_str: str = anonymous_user.get("sub", anonymous_user.get("user_id", ""))
+    if not user_id_str:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="无法解析用户标识",
+        )
+    try:
+        return UUID(user_id_str)
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="用户标识格式无效",
+        )
+
+
 # ===========================================================================
 # GET /{profile_id}/experts — 关联专家列表
 # ===========================================================================
@@ -47,14 +64,17 @@ router = APIRouter(prefix="/api/v1/profiles", tags=["experts"])
 )
 async def list_experts_endpoint(
     profile_id: UUID,
+    anonymous_user: dict = Depends(get_anonymous_user),
     session: AsyncSession = Depends(get_db_session),
     link_repo: TeacherLinkRepository = Depends(get_teacher_link_repository),
     profile_repo: ProfileRepository = Depends(get_profile_repository),
     user_repo: UserRepository = Depends(get_user_repository),
 ) -> list[ExpertInfo]:
     """关联专家列表端点。"""
+    caregiver_id = _extract_user_id(anonymous_user)
     return await list_experts(
         profile_id=profile_id,
+        caregiver_id=caregiver_id,
         session=session,
         link_repo=link_repo,
         profile_repo=profile_repo,
@@ -80,14 +100,17 @@ async def list_experts_endpoint(
 async def unlink_expert_endpoint(
     profile_id: UUID,
     link_id: UUID,
+    anonymous_user: dict = Depends(get_anonymous_user),
     session: AsyncSession = Depends(get_db_session),
     link_repo: TeacherLinkRepository = Depends(get_teacher_link_repository),
     profile_repo: ProfileRepository = Depends(get_profile_repository),
 ) -> None:
     """解除专家关联端点。"""
+    caregiver_id = _extract_user_id(anonymous_user)
     await unlink_expert(
         profile_id=profile_id,
         link_id=link_id,
+        caregiver_id=caregiver_id,
         session=session,
         link_repo=link_repo,
         profile_repo=profile_repo,

@@ -18,6 +18,7 @@ from py_schemas.profiles import ExpertInfo
 
 async def list_experts(
     profile_id: UUID,
+    caregiver_id: UUID,
     session: AsyncSession,
     link_repo: TeacherLinkRepository,
     profile_repo: ProfileRepository,
@@ -27,6 +28,7 @@ async def list_experts(
 
     Args:
         profile_id: 目标档案 UUID。
+        caregiver_id: 当前用户 UUID（用于档案权限校验）。
         session: 活动数据库会话。
         link_repo: TeacherLinkRepository 实例。
         profile_repo: ProfileRepository 实例。
@@ -38,7 +40,7 @@ async def list_experts(
     Raises:
         HTTPException(404): 档案不存在。
     """
-    profile = await profile_repo.get_by_id(session, profile_id)
+    profile = await profile_repo.get_by_id(session, profile_id, caregiver_id)
     if profile is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -69,6 +71,7 @@ async def list_experts(
 async def unlink_expert(
     profile_id: UUID,
     link_id: UUID,
+    caregiver_id: UUID,
     session: AsyncSession,
     link_repo: TeacherLinkRepository,
     profile_repo: ProfileRepository,
@@ -78,6 +81,7 @@ async def unlink_expert(
     Args:
         profile_id: 目标档案 UUID。
         link_id: 关联记录 UUID。
+        caregiver_id: 当前用户 UUID（用于档案权限校验）。
         session: 活动数据库会话。
         link_repo: TeacherLinkRepository 实例。
         profile_repo: ProfileRepository 实例。
@@ -85,7 +89,7 @@ async def unlink_expert(
     Raises:
         HTTPException(404): 档案不存在或关联不存在。
     """
-    profile = await profile_repo.get_by_id(session, profile_id)
+    profile = await profile_repo.get_by_id(session, profile_id, caregiver_id)
     if profile is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

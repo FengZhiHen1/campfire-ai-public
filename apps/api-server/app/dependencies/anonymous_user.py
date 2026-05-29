@@ -23,16 +23,24 @@ _ANON_PASSWORD_HASH: str = (
     "$2b$12$xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
 )
 
+_MAX_RETRIES = 3
+
+
+def _generate_anon_phone() -> str:
+    """生成随机 11 位数字作为匿名用户手机号。"""
+    return f"{secrets.randbelow(10 ** 11):011d}"
+
 
 async def _get_or_create_anonymous_user(
     session: AsyncSession,
     device_id: str,
 ) -> User:
-    """根据 device_id 查找或创建匿名用户记录（处理并发竞态）。
+    """根据 device_id 查找或创建匿名用户记录。
 
-    当两个并发请求携带相同 X-Device-Id 同时到达时，两者的 SELECT
-    都可能返回空，导致第二个 INSERT 触发用户名唯一约束冲突。
-    捕获该冲突后回退到重新 SELECT，此时并发赢家的记录已可见。
+    处理两类唯一约束冲突：
+    1. username 冲突 — 并发请求携带相同 device_id 同时到达，
+       第二个 INSERT 因 username 已存在而失败。回退到重新 SELECT。
+    2. phone 冲突 — 随机生成的手机号小概率碰撞。重新生成 phone 并重试。
     """
     result = await session.execute(
         select(User).where(User.device_id == device_id)
@@ -41,28 +49,33 @@ async def _get_or_create_anonymous_user(
     if existing is not None:
         return existing
 
-    user = User(
-        username=device_id,
-        password_hash=_ANON_PASSWORD_HASH,
-        role=UserRole.FAMILY,
-        phone=device_id[:11].ljust(11, "0"),
-        device_id=device_id,
-    )
-    session.add(user)
-    try:
-        await session.flush()
-    except IntegrityError:
-        await session.rollback()
-        result = await session.execute(
-            select(User).where(User.device_id == device_id)
+    for attempt in range(1, _MAX_RETRIES + 1):
+        user = User(
+            username=device_id,
+            password_hash=_ANON_PASSWORD_HASH,
+            role=UserRole.FAMILY,
+            phone=_generate_anon_phone(),
+            device_id=device_id,
         )
-        existing = result.scalars().first()
-        if existing is not None:
-            return existing
-        raise
+        session.add(user)
+        try:
+            await session.flush()
+            await session.refresh(user)
+            return user
+        except IntegrityError:
+            await session.rollback()
+            # 检查是否为 username 冲突（并发同 device_id 插入）
+            result = await session.execute(
+                select(User).where(User.device_id == device_id)
+            )
+            existing = result.scalars().first()
+            if existing is not None:
+                return existing
+            # phone 冲突：重试下一次循环（重新生成 phone）
+            if attempt == _MAX_RETRIES:
+                raise
 
-    await session.refresh(user)
-    return user
+    raise RuntimeError("unreachable")
 
 
 async def get_anonymous_user(
