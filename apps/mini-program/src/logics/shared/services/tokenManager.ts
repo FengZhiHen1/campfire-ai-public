@@ -26,8 +26,15 @@ function generateDeviceId(): string {
 
 /**
  * 从 Storage 读取设备 ID，不存在则生成并持久化。
+ *
+ * MVP 开发阶段：固定返回 mock device_id，直接绑定后端 mock 档案。
+ * 生产环境应恢复为随机生成逻辑。
  */
 function getOrCreateDeviceId(): string {
+  // 固定 mock device_id，与 scripts/seed_mock_profile.py 保持一致
+  return 'campfire-mock-device';
+
+  /* 生产环境逻辑（恢复时取消下方注释，删除上方 return）
   let deviceId: string | null = null;
   try {
     deviceId = Taro.getStorageSync(DEVICE_ID_KEY) as string | null;
@@ -45,6 +52,7 @@ function getOrCreateDeviceId(): string {
   }
 
   return deviceId;
+  */
 }
 
 /**

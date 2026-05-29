@@ -6,6 +6,8 @@
  * 禁止：裸调 Taro.request()、fetch()。
  */
 
+import type { PaginatedResponse } from '@campfire/ts-shared';
+
 import { httpClient } from '../../shared/services/httpClient';
 import type { IRequestResponse } from '../../shared/services/httpClient';
 import type {
@@ -29,11 +31,11 @@ function pickData<T>(res: IRequestResponse<T>): T {
 
 /** GET /api/v1/profiles — 获取档案列表 */
 export async function listProfiles(): Promise<ProfileListItem[]> {
-  const res = await httpClient.request<ProfileListItem[]>({
+  const res = await httpClient.request<PaginatedResponse<ProfileListItem>>({
     url: '/api/v1/profiles',
     method: 'GET',
   });
-  return pickData(res);
+  return pickData(res).items;
 }
 
 /** GET /api/v1/profiles/{profileId} — 获取档案详情 */
