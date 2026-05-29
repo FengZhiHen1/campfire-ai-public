@@ -76,12 +76,13 @@ def start_ngrok(port: int = 8000) -> tuple[subprocess.Popen, str]:
     """
     ngrok_bin = _find_ngrok()
 
-    # Start ngrok
+    # Start ngrok — capture both stdout and stderr for diagnostics on failure
     try:
         proc = subprocess.Popen(
-            [ngrok_bin, "http", str(port), "--log", "stdout", "--log-level", "info"],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
+            [ngrok_bin, "http", str(port)],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
             creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0,
         )
     except OSError as exc:
@@ -96,9 +97,17 @@ def start_ngrok(port: int = 8000) -> tuple[subprocess.Popen, str]:
         time.sleep(interval)
         # Check if process is still alive
         if proc.poll() is not None:
+            out = ""
+            if proc.stdout is not None:
+                out += proc.stdout.read()
+            if proc.stderr is not None:
+                out += proc.stderr.read()
+            hint = ""
+            if "authtoken" in out.lower() or "forbidden" in out.lower():
+                hint = " 请先配置 authtoken: ngrok config add-authtoken <token>"
             raise RuntimeError(
-                f"ngrok 进程意外退出 (exit code: {proc.returncode})。"
-                " 请检查是否已配置 authtoken: ngrok config add-authtoken <token>"
+                f"ngrok 进程意外退出 (exit code: {proc.returncode})。{hint}\n"
+                f"输出: {out.strip()[:800]}"
             )
 
         try:
@@ -115,10 +124,16 @@ def start_ngrok(port: int = 8000) -> tuple[subprocess.Popen, str]:
             continue
 
     # Timed out
+    out = ""
+    if proc.stdout is not None:
+        out += proc.stdout.read()
+    if proc.stderr is not None:
+        out += proc.stderr.read()
     proc.kill()
     proc.wait()
     raise RuntimeError(
-        "ngrok 隧道获取超时（15s）。请检查网络连接或 ngrok 服务状态。"
+        "ngrok 隧道获取超时（15s）。请检查网络连接或 ngrok 服务状态。\n"
+        f"输出: {out.strip()[:800]}"
     )
 
 

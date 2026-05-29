@@ -342,7 +342,7 @@ def start_services(
     print_separator()
     print()
     print_stage("阶段三：运行中")
-    print_running_status()
+    print_running_status(services)
 
     return procs
 
