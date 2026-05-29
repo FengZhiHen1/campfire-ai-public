@@ -212,23 +212,8 @@ export default function ConsultIndex() {
     );
   }
 
-  // ----- submitting: 提交中 -----
-  if (sessionState === 'submitting') {
-    return (
-      <View className="consult-page">
-        <View className="consult-navbar">
-          <Text className="consult-navbar__title">应急咨询</Text>
-        </View>
-        <View className="consult-submitting">
-          <View className="consult-submitting__skeleton" />
-          <Text className="consult-submitting__text">正在分析案例库…</Text>
-        </View>
-      </View>
-    );
-  }
-
-  // ----- streaming / completed: 结果展示 -----
-  if (sessionState === 'streaming' || sessionState === 'completed') {
+  // ----- submitting / streaming / completed: 结果展示 -----
+  if (sessionState === 'submitting' || sessionState === 'streaming' || sessionState === 'completed') {
     return (
       <View className="consult-page">
         {/* 导航栏 */}
