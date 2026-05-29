@@ -29,14 +29,14 @@ const CRISIS_LABEL_MAP: Record<string, { text: string; className: string }> = {
 };
 
 const SECTION_COLOR_MAP: Record<string, string> = {
-  '即时安全干预': 'tertiary',
+  '即时安全干预动作': 'tertiary',
   '情绪安抚话术': 'primary',
   '后续观察指标': 'secondary',
   '就医判断标准': 'error',
 };
 
 const SECTION_ICON_MAP: Record<string, string> = {
-  '即时安全干预': '🛡️',
+  '即时安全干预动作': '🛡️',
   '情绪安抚话术': '💬',
   '后续观察指标': '👁️',
   '就医判断标准': '🏥',
@@ -95,6 +95,7 @@ export default function ConsultIndex() {
 
   const crisisInfo = crisisLevel ? CRISIS_LABEL_MAP[crisisLevel] : null;
   const showEscalation = crisisLevel === 'severe' || (refCases.length > 0 && refCases.length < 2);
+  const hasPlanContent = planSections.some((s) => s.contents.length > 0);
 
   // ----- idle: 入口 -----
   if (sessionState === 'idle') {
@@ -251,7 +252,7 @@ export default function ConsultIndex() {
           )}
 
           {/* 流式文本气泡（在结构化卡片出现前） */}
-          {accumulatedText && planSections.length === 0 && (
+          {accumulatedText && !hasPlanContent && (
             <View className="consult-ai-bubble">
               <Text className="consult-ai-bubble__text">
                 {accumulatedText}
@@ -261,7 +262,7 @@ export default function ConsultIndex() {
           )}
 
           {/* 结构化方案卡片 */}
-          {planSections.length > 0 && (
+          {hasPlanContent && (
             <View className="consult-plan-card">
               <View className="consult-plan-card__header">
                 <Text className="consult-plan-card__header-icon">🛡️</Text>
