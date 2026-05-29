@@ -3,7 +3,9 @@ name = "campfire-ai"
 version = "0.1.0"
 description = "篝火智答 - 孤独症家属智能应急咨询平台"
 requires-python = ">=3.12"
-dependencies = []
+dependencies = [
+    "python-dotenv>=1.2.2",
+]
 
 [tool.uv.workspace]
 members = [
@@ -43,5 +45,6 @@ worker = { workspace = true }
 dev = [
     "pytest>=8.0",
     "pytest-asyncio>=0.24",
+    "python-dateutil>=2.9.0.post0",
     "ruff>=0.8",
 ]
