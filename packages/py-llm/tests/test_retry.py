@@ -119,11 +119,12 @@ class TestCalculateDelay:
             assert delay <= 15.0, f"delay={delay} 超过 max_delay=15.0"
 
     def test_delay_increases_with_attempt(self):
-        """更高 attempt 应产生统计上更大的延迟。"""
+        """更高 attempt 应产生严格更大的延迟（区间不重叠）。"""
         cfg = RetryConfig(base_delay=5.0, max_delay=200.0)
-        delays_0 = [LLMClientContract._calculate_delay(0, cfg) for _ in range(30)]
-        delays_3 = [LLMClientContract._calculate_delay(3, cfg) for _ in range(30)]
-        assert sum(delays_3) / len(delays_3) > sum(delays_0) / len(delays_0)
+        # attempt=0: [5.0, 6.0], attempt=3: [40.0, 41.0] — 区间无交集
+        delays_0 = [LLMClientContract._calculate_delay(0, cfg) for _ in range(100)]
+        delays_3 = [LLMClientContract._calculate_delay(3, cfg) for _ in range(100)]
+        assert min(delays_3) > max(delays_0)
 
 
 # ============================================================================

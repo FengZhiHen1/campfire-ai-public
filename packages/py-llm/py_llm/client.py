@@ -6,13 +6,14 @@ LLMClientContract 的具体实现，适配 DeepSeek 的 OpenAI 兼容端点。
 
 from __future__ import annotations
 
+import warnings
 from typing import AsyncGenerator
 
 from openai import AsyncOpenAI
 from py_logger import logger
 
-from py_llm.llm_contract import LLMClientContract, LLMClientError  # noqa: F401  由 __init__.py 重导出
-from py_llm.types import ChatCompletionChunk, Choice, Delta, RetryConfig  # noqa: F401  由 __init__.py 重导出
+from py_llm.llm_contract import LLMClientContract, LLMClientError  # LLMClientError 仅由 __init__.py 重导出  # noqa: F401
+from py_llm.types import ChatCompletionChunk, Choice, Delta, RetryConfig
 
 
 # ============================================================================
@@ -192,6 +193,11 @@ class DeepSeekLLMClient(LLMClientContract):
         委托给契约的 @final chat_stream()。max_retries 参数仅为调用端兼容而保留，
         实际重试行为由构造时传入的 RetryConfig 统一控制。
         """
+        warnings.warn(
+            "async_chat_stream is deprecated, use chat_stream instead",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         async for chunk in self.chat_stream(
             messages=messages,
             model=model,
@@ -216,6 +222,11 @@ class DeepSeekLLMClient(LLMClientContract):
 
         委托给契约的 @final chat()。max_retries 参数仅为调用端兼容而保留。
         """
+        warnings.warn(
+            "async_chat is deprecated, use chat instead",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         return await self.chat(
             messages=messages,
             model=model,

@@ -187,22 +187,28 @@ class ErrorSequenceClient(LLMClientContract):
             stream_chunks if stream_chunks is not None else make_default_chunks()
         )
         self._completion_result: str = completion_result
-        self._attempt_count: int = -1
+        self._stream_attempt_count: int = -1
+        self._completion_attempt_count: int = -1
 
     async def _do_create_stream(self, **kwargs):
-        self._attempt_count += 1
-        exc = self._errors.get(self._attempt_count)
+        self._stream_attempt_count += 1
+        exc = self._errors.get(self._stream_attempt_count)
         if exc is not None:
             raise exc
         for chunk in self._stream_chunks:
             yield chunk
 
     async def _do_create_completion(self, **kwargs):
-        self._attempt_count += 1
-        exc = self._errors.get(self._attempt_count)
+        self._completion_attempt_count += 1
+        exc = self._errors.get(self._completion_attempt_count)
         if exc is not None:
             raise exc
         return self._completion_result
+
+    @property
+    def _attempt_count(self) -> int:
+        """向后兼容——返回最近一次尝试的索引（流式或非流式）。"""
+        return max(self._stream_attempt_count, self._completion_attempt_count)
 
 
 # ============================================================================

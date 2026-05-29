@@ -40,7 +40,7 @@ class LLMClientError(Exception):
 
     def __init__(
         self,
-        message: str = "LLM API 调用失败，已重试 3 次仍未恢复",
+        message: str = "LLM API 调用失败，已重试耗尽",
         status_code: int = 503,
         original_error: Exception | None = None,
     ) -> None:
@@ -105,6 +105,11 @@ class LLMClientContract(ABC):
         """流式聊天补全——带指数退避重试。
 
         前置校验 → 重试循环（调用钩子 → 错误判定） → yield chunks。
+
+        .. warning::
+           流式重试存在数据重复风险：若流已 yield 部分 chunk 后中途失败，
+           重试会从头重新 yield 全部 chunk，调用者可能收到重复数据。
+           建议调用方在 UI 层做幂等去重，或对流式场景设置 max_retries=0。
 
         Args:
             messages: OpenAI 格式的对话消息列表。
@@ -274,14 +279,18 @@ class LLMClientContract(ABC):
 
         子类可覆写并通过 super() 叠加（如校验至少 yield 了若干 chunk）。
         """
+        # 基线：不做额外校验。子类可通过 super() 叠加业务级 post-hoc 检查。
 
     def _validate_chat_postconditions(self, result: str) -> None:
         """非流式后置校验：返回值非 None、类型正确。
 
         子类可覆写并通过 super() 叠加业务级校验（如最小长度、格式约束等）。
         """
-        if result is None:  # 防御性检查——str 类型保证不应为 None
-            raise RuntimeError(f"{self.__class__.__name__}._do_create_completion 返回了 None")
+        if result is None:
+            raise LLMClientError(
+                message=f"{self.__class__.__name__}._do_create_completion 返回了 None（实现 bug）",
+                status_code=500,
+            )
 
     # ========================================================================
     # 日志 —— 可选依赖 py-logger，不可用时静默降级
@@ -351,6 +360,8 @@ class LLMClientContract(ABC):
         基线实现：按异常类型生成对应的中文错误消息与 HTTP 状态码。
         子类可覆写以自定义错误消息或添加额外上下文。
         """
+        if isinstance(exc, LLMClientError):
+            return exc  # 已是终态错误，不要二次包装
         if isinstance(exc, RateLimitError):
             return LLMClientError(
                 message="LLM API 速率限制，已重试耗尽",
