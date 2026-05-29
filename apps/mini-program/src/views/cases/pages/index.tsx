@@ -222,9 +222,6 @@ export default function CasesIndex() {
     <View className="cases-page">
       {/* ========== 顶部导航栏 ========== */}
       <View className="cases-navbar">
-        <Button className="cases-navbar__back" onClick={() => Taro.navigateBack()}>
-          &lt;
-        </Button>
         <Text className="cases-navbar__title">真实案例库</Text>
         {canSeeReviewBtn && (
           <Button className="cases-navbar__review" onClick={goReview}>

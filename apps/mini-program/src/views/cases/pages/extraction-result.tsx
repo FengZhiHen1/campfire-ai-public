@@ -104,7 +104,6 @@ export default function ExtractionResult() {
     return (
       <View className="er-page">
         <View className="er-navbar">
-          <Button className="er-navbar__back" onClick={() => Taro.navigateBack()}>←</Button>
           <Text className="er-navbar__title">提取结果</Text>
         </View>
         <View className="er-empty">AI 未能识别到干预场景，请检查叙事内容后重试</View>
@@ -115,7 +114,6 @@ export default function ExtractionResult() {
   return (
     <View className="er-page">
       <View className="er-navbar">
-        <Button className="er-navbar__back" onClick={() => Taro.navigateBack()}>←</Button>
         <Text className="er-navbar__title">提取结果 ({cards.length} 张卡片)</Text>
       </View>
 
@@ -127,7 +125,7 @@ export default function ExtractionResult() {
             className={`er-tabs__btn ${idx === activeTab ? 'er-tabs__btn--active' : ''}`}
             onClick={() => switchTab(idx)}
           >
-            卡片 {idx + 1}
+            {card.title || `卡片 ${idx + 1}`}
           </Button>
         ))}
       </ScrollView>
@@ -198,25 +196,29 @@ export default function ExtractionResult() {
           {/* 四段式 */}
           <View className="er-group">
             <Text className="er-group__title">四段式内容</Text>
+            <Text className="er-group__subtitle">请确认 AI 提取的四段式内容是否准确</Text>
             {[
-              { key: 'immediate_action', label: '即时安全干预动作' },
-              { key: 'comforting_phrase', label: '情绪安抚话术' },
-              { key: 'observation_metrics', label: '后续观察指标' },
-              { key: 'medical_criteria', label: '就医判断标准' },
-            ].map(({ key, label }) => (
-              <View key={key} className={`er-field ${editing.inferred_fields?.[key] ? 'er-field--inferred' : ''}`}>
-                <Text className="er-field__label">
-                  {label}
+              { key: 'immediate_action', label: '即时安全干预动作', accent: 'immediate' },
+              { key: 'comforting_phrase', label: '情绪安抚话术', accent: 'comforting' },
+              { key: 'observation_metrics', label: '后续观察指标', accent: 'observation' },
+              { key: 'medical_criteria', label: '就医判断标准', accent: 'medical' },
+            ].map(({ key, label, accent }) => (
+              <View key={key} className="er-quartet-card">
+                <View className={`er-quartet-card__accent er-quartet-card__accent--${accent}`} />
+                <View className="er-quartet-card__body">
+                  <Text className={`er-quartet-card__title er-quartet-card__title--${accent}`}>
+                    {label}
+                    {editing.inferred_fields?.[key] && (
+                      <Text className="er-field__inferred-badge">推断</Text>
+                    )}
+                  </Text>
                   {editing.inferred_fields?.[key] && (
-                    <Text className="er-field__inferred-badge">推断</Text>
+                    <Text className="er-field__inferred-hint">{editing.inferred_fields[key]}</Text>
                   )}
-                </Text>
-                {editing.inferred_fields?.[key] && (
-                  <Text className="er-field__inferred-hint">{editing.inferred_fields[key]}</Text>
-                )}
-                <Textarea className="er-field__textarea er-field__textarea--tall"
-                  value={(editing as Record<string, string>)[key] || ''}
-                  onInput={(e) => updateField(key, e.detail.value)} />
+                  <Textarea className="er-quartet-card__textarea"
+                    value={(editing as Record<string, string>)[key] || ''}
+                    onInput={(e) => updateField(key, e.detail.value)} />
+                </View>
               </View>
             ))}
           </View>
