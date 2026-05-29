@@ -1,73 +1,53 @@
-"""Worker launcher — Redis BLPOP consumer for background tasks.
+"""Worker 服务启动器 — Redis BLPOP consumer for background tasks.
 
-Starts the Campfire-AI background worker that listens on campfire:case_index queue.
+Usage:
+    from start_worker import WorkerLauncher
+    launcher = WorkerLauncher()
+    proc = launcher.start()
 """
 
 from __future__ import annotations
 
+import subprocess
 from pathlib import Path
 
+from launcher_contract import ServiceLauncher
 from utils.process_utils import start_process
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
-SERVICE_NAME = "Worker"
-MAX_NAME_WIDTH = 8
+
+class WorkerLauncher(ServiceLauncher):
+    name = "worker"
+    display_name = "Worker"
+
+    def __init__(self, project_root: Path | None = None) -> None:
+        self._project_root = project_root or PROJECT_ROOT
+
+    def _do_start(self) -> subprocess.Popen:
+        return start_process(
+            ["uv", "run", "--package", "worker", "worker"],
+            cwd=self._project_root,
+        )
 
 
-def start() -> tuple:
-    """Start the worker subprocess.
+# ---------------------------------------------------------------------------
+# 向后兼容：保留函数式接口
+# ---------------------------------------------------------------------------
 
-    Returns:
-        (subprocess.Popen, service_name: str)
-    """
-    proc = start_process(
-        ["uv", "run", "--package", "worker", "worker"],
-        cwd=PROJECT_ROOT,
-    )
-    return proc, SERVICE_NAME
+def start() -> tuple[subprocess.Popen, str]:
+    """启动 Worker 服务。返回 (进程, 展示名称)。"""
+    launcher = WorkerLauncher()
+    return launcher.start(), launcher.display_name
 
+
+# ---------------------------------------------------------------------------
+# 独立运行入口
+# ---------------------------------------------------------------------------
 
 def main() -> None:
-    """CLI entry point for standalone use."""
-    import signal
-    import sys
-
-    from utils.log_utils import (
-        print_running_status,
-        print_separator,
-        print_service_log,
-        print_service_starting,
-        print_stage,
-        print_exit_header,
-        print_service_terminating,
-        print_service_terminated_ok,
-    )
-    from utils.process_utils import read_output, terminate_process
-
-    proc, name = start()
-    print_separator()
-    print_stage("阶段二：服务启动")
-    print_service_starting(name, proc.pid)
-    print_separator()
-    print_stage("阶段三：运行中")
-    print_running_status()
-
-    def _on_shutdown(signum, frame):
-        print_exit_header()
-        print_service_terminating(name, proc.pid)
-        ok = terminate_process(proc)
-        if ok:
-            print_service_terminated_ok()
-        else:
-            from utils.log_utils import print_service_terminated_forced
-            print_service_terminated_forced()
-        sys.exit(0)
-
-    signal.signal(signal.SIGINT, _on_shutdown)
-    signal.signal(signal.SIGTERM, _on_shutdown)
-
-    read_output(proc, lambda line: print_service_log(name, line, MAX_NAME_WIDTH))
+    from utils.launcher_utils import run_standalone
+    run_standalone(WorkerLauncher())
 
 
 if __name__ == "__main__":
