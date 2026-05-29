@@ -12,7 +12,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from typing import final
 
-from py_logger.types import LogSeverity
+from py_logger.types import LogSeverity, ServiceName
 
 
 class BaseStructuredLogger(ABC):
@@ -26,6 +26,7 @@ class BaseStructuredLogger(ABC):
     """
 
     # === @final 公共方法：外部唯一入口 ===
+    # 所有方法委托到 _emit()，确保校验逻辑单一变更点。
 
     @final
     def debug(
@@ -36,8 +37,7 @@ class BaseStructuredLogger(ABC):
         extra: dict[str, object] | None = None,
     ) -> None:
         """写入 DEBUG 级别日志。"""
-        self._validate_entry("DEBUG", service, message)
-        self._do_emit("DEBUG", service, message, op_type, extra)
+        self._emit("DEBUG", service, message, op_type, extra)
 
     @final
     def info(
@@ -48,8 +48,7 @@ class BaseStructuredLogger(ABC):
         extra: dict[str, object] | None = None,
     ) -> None:
         """写入 INFO 级别日志。"""
-        self._validate_entry("INFO", service, message)
-        self._do_emit("INFO", service, message, op_type, extra)
+        self._emit("INFO", service, message, op_type, extra)
 
     @final
     def warning(
@@ -60,8 +59,7 @@ class BaseStructuredLogger(ABC):
         extra: dict[str, object] | None = None,
     ) -> None:
         """写入 WARNING 级别日志。"""
-        self._validate_entry("WARNING", service, message)
-        self._do_emit("WARNING", service, message, op_type, extra)
+        self._emit("WARNING", service, message, op_type, extra)
 
     @final
     def error(
@@ -72,8 +70,7 @@ class BaseStructuredLogger(ABC):
         extra: dict[str, object] | None = None,
     ) -> None:
         """写入 ERROR 级别日志。"""
-        self._validate_entry("ERROR", service, message)
-        self._do_emit("ERROR", service, message, op_type, extra)
+        self._emit("ERROR", service, message, op_type, extra)
 
     @final
     def critical(
@@ -90,8 +87,23 @@ class BaseStructuredLogger(ABC):
         """
         if not op_type or not op_type.strip():
             raise ValueError("op_type is required for critical audit log")
-        self._validate_entry("CRITICAL", service, message)
-        self._do_emit("CRITICAL", service, message, op_type, extra)
+        self._emit("CRITICAL", service, message, op_type, extra)
+
+    # === 内部转发（不可覆写） ===
+
+    @final
+    def _emit(
+        self,
+        severity: LogSeverity,
+        service: str,
+        message: str,
+        op_type: str | None,
+        extra: dict[str, object] | None,
+    ) -> None:
+        """校验 → 输出的统一入口。所有 @final 公共方法委托到此。"""
+        svc = ServiceName(service)
+        self._validate_entry(severity, svc, message)
+        self._do_emit(severity, svc, message, op_type, extra)
 
     # === @abstractmethod 钩子：实现者必填 ===
 
@@ -99,7 +111,7 @@ class BaseStructuredLogger(ABC):
     def _do_emit(
         self,
         severity: LogSeverity,
-        service: str,
+        service: ServiceName,
         message: str,
         op_type: str | None,
         extra: dict[str, object] | None,
@@ -123,7 +135,7 @@ class BaseStructuredLogger(ABC):
     def _validate_entry(
         self,
         severity: LogSeverity,
-        service: str,
+        service: ServiceName,
         message: str,
     ) -> None:
         """基线日志条目校验。

@@ -24,7 +24,7 @@ from pathlib import Path
 
 from py_logger.context import get_trace_id
 from py_logger.logger_contract import BaseStructuredLogger
-from py_logger.types import LogSeverity, TraceId
+from py_logger.types import LogSeverity, ServiceName, TraceId
 
 # ============================================================================
 # 常量
@@ -114,7 +114,7 @@ class JSONFormatter(logging.Formatter):
 
     def format(self, record: logging.LogRecord) -> str:
         log_entry: dict[str, object] = {
-            "timestamp": _make_timestamp(),
+            "timestamp": getattr(record, "timestamp", None) or _make_timestamp(),
             "severity": record.levelname,
             "service": getattr(record, "service", "unknown"),
             "trace_id": getattr(record, "trace_id", ""),
@@ -182,7 +182,7 @@ class StructuredLogger(BaseStructuredLogger):
     def _do_emit(
         self,
         severity: LogSeverity,
-        service: str,
+        service: ServiceName,
         message: str,
         op_type: str | None,
         extra: dict[str, object] | None,
@@ -321,24 +321,38 @@ class StructuredLogger(BaseStructuredLogger):
             self._evict_buffer()
 
     def _evict_buffer(self) -> None:
-        """按等级淘汰缓冲区条目（保留高优先级）。"""
+        """按 SEVERITY_EVICTION_ORDER 优先级逐级淘汰缓冲区条目。
+
+        第一级全部移除，后续级别逐个移除至 BUFFER_LOW_WATERMARK。
+        """
         global _buffer
         target = BUFFER_LOW_WATERMARK
 
-        new_buffer: collections.deque[tuple[str, str, str]] = collections.deque()
+        # 第一级：全部移除该等级条目
+        evict_severity = SEVERITY_EVICTION_ORDER[0]
+        result: collections.deque[tuple[str, str, str]] = collections.deque()
         for ts, sev, js in _buffer:
-            if sev == "DEBUG":
-                print(f"[py-logger] buffer evicted DEBUG at {ts}", file=sys.stderr)
+            if sev == evict_severity:
+                print(
+                    f"[py-logger] buffer evicted {evict_severity} at {ts}",
+                    file=sys.stderr,
+                )
             else:
-                new_buffer.append((ts, sev, js))
-        _buffer = new_buffer
+                result.append((ts, sev, js))
+        _buffer = result
 
-        if len(_buffer) > target:
+        # 后续级别：逐个移除直到低于 target
+        for evict_severity in SEVERITY_EVICTION_ORDER[1:]:
+            if len(_buffer) <= target:
+                break
             to_remove = len(_buffer) - target
-            result: collections.deque[tuple[str, str, str]] = collections.deque()
+            result = collections.deque()
             for ts, sev, js in _buffer:
-                if sev == "INFO" and to_remove > 0:
-                    print(f"[py-logger] buffer evicted INFO at {ts}", file=sys.stderr)
+                if sev == evict_severity and to_remove > 0:
+                    print(
+                        f"[py-logger] buffer evicted {evict_severity} at {ts}",
+                        file=sys.stderr,
+                    )
                     to_remove -= 1
                 else:
                     result.append((ts, sev, js))

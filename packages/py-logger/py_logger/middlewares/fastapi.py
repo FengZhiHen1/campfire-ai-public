@@ -22,7 +22,7 @@ from typing import Any, Awaitable, Callable
 
 from ..context import set_trace_id
 from ..core import logger
-from ..types import TraceId
+from ..types import ServiceName, TraceId
 
 
 # W3C traceparent 格式: version-trace_id-span_id-flags
@@ -72,8 +72,10 @@ class RequestLoggingMiddleware:
     def __init__(
         self,
         app: Callable[[dict[str, Any], Callable[[], Awaitable[dict[str, Any]]], Callable[[dict[str, Any]], Awaitable[None]]], Awaitable[None]],
+        service_name: str = "api-server",
     ) -> None:
         self.app = app
+        self._service_name: ServiceName = ServiceName(service_name)
 
     async def __call__(
         self,
@@ -188,7 +190,6 @@ class RequestLoggingMiddleware:
         if error_type is not None:
             extra["error_type"] = error_type
 
-        # 确定 service —— 默认使用 "api-server"
-        service = "api-server"
+        service = self._service_name
 
         logger.info(service=service, message=message, extra=extra)
