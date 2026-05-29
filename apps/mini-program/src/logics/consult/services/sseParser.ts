@@ -210,8 +210,13 @@ export class SseStreamParser {
         task.onChunkReceived((res) => {
           this.clearConnectTimer();
 
-          // responseType: 'text' 下微信小程序直接返回字符串
-          const chunk = typeof res.data === 'string' ? res.data : '';
+          let chunk = '';
+          if (typeof res.data === 'string') {
+            chunk = res.data;
+          } else if (res.data instanceof ArrayBuffer) {
+            const bytes = new Uint8Array(res.data);
+            chunk = String.fromCharCode(...bytes);
+          }
           if (chunk) {
             this.processChunk(chunk);
           }
