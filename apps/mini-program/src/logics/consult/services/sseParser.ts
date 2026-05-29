@@ -375,7 +375,7 @@ export class SseStreamParser {
           const payload: ChunkEventPayload = JSON.parse(sseEvent.data);
           this.callbacks.onChunk?.(payload);
         } catch (err: unknown) {
-          console.debug('[sse] chunk dispatch failed:', err instanceof Error ? err.message : String(err));
+          console.warn('[sse] chunk dispatch failed:', err instanceof Error ? err.message : String(err));
         }
         break;
       }
@@ -385,7 +385,7 @@ export class SseStreamParser {
           const payload: DoneEventPayload = JSON.parse(sseEvent.data);
           this.callbacks.onDone?.(payload);
         } catch (err: unknown) {
-          console.debug('[sse] done dispatch failed:', err instanceof Error ? err.message : String(err));
+          console.warn('[sse] done dispatch failed:', err instanceof Error ? err.message : String(err));
           this.callbacks.onDone?.({ finish_reason: 'COMPLETE' });
         }
         this.isActive = false;
@@ -397,7 +397,7 @@ export class SseStreamParser {
           const payload: ErrorEventPayload = JSON.parse(sseEvent.data);
           this.callbacks.onError?.(payload);
         } catch (err: unknown) {
-          console.debug('[sse] error dispatch failed:', err instanceof Error ? err.message : String(err));
+          console.warn('[sse] error dispatch failed:', err instanceof Error ? err.message : String(err));
         }
         break;
       }

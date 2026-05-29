@@ -371,34 +371,44 @@ export const useConsultStore = create<ConsultStore>()(
                 const newSeq = chunkData.sequence;
                 const chunkSection = chunkData.section ?? null;
 
-                // 仅在 submitting 或 streaming 状态下处理 chunk
-                if (state.sessionState !== 'submitting' && state.sessionState !== 'streaming') {
-                  return;
-                }
-
                 // 首个内容 chunk → 触发 streaming 状态转换
                 const isFirstChunk = state.lastSequence === 0;
 
                 if (isFirstChunk) {
-                  try {
-                    const sNext = transitionTo(state.sessionState, 'streaming');
-                    const initMsg = createMessageItem('system', '', 'system_plan', {
-                      isOriginal: true,
-                    });
+                  // 无论当前什么状态，首个 chunk 到达时都尝试切到 streaming
+                  if (state.sessionState !== 'streaming') {
+                    try {
+                      const sNext = transitionTo(state.sessionState, 'streaming');
+                      const initMsg = createMessageItem('system', '', 'system_plan', {
+                        isOriginal: true,
+                      });
+                      const updatedSections = appendToPlanSections(
+                        state.planSections,
+                        chunkSection,
+                        chunkData.text,
+                      );
+                      set({
+                        sessionState: sNext,
+                        accumulatedText: state.accumulatedText + chunkData.text,
+                        lastSequence: newSeq,
+                        planSections: updatedSections,
+                        messages: [...state.messages, initMsg],
+                      });
+                    } catch (err: unknown) {
+                      console.warn('[consult] first chunk transition failed:',
+                        state.sessionState, '-> streaming',
+                        err instanceof Error ? err.message : String(err));
+                    }
+                  } else {
+                    // 已在 streaming，直接追加内容
                     const updatedSections = appendToPlanSections(
-                      state.planSections,
-                      chunkSection,
-                      chunkData.text,
+                      state.planSections, chunkSection, chunkData.text,
                     );
                     set({
-                      sessionState: sNext,
                       accumulatedText: state.accumulatedText + chunkData.text,
                       lastSequence: newSeq,
                       planSections: updatedSections,
-                      messages: [...state.messages, initMsg],
                     });
-                  } catch {
-                    // 状态已被其他事件改变（如 done 先到达），静默忽略
                   }
                 } else {
                   const updatedSections = appendToPlanSections(
