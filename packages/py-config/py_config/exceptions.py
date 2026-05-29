@@ -1,3 +1,4 @@
+# @contract
 """DEPLOY-05 环境配置管理的自定义异常层次 + PROF-05 ForbiddenAccess。
 
 异常层次（配置相关）：
@@ -6,11 +7,22 @@
 - ConfigFormatError: 配置项格式错误
 - ConfigWarning: 生产环境安全告警（非阻断）
 
-异常层次（鉴权相关）：
+=== 以下异常不属于配置域，待迁移至对应包 ===
+
+异常层次（鉴权相关 — 待迁移至 py-auth）：
 - ForbiddenAccess: 档案级访问权限拒绝异常（HTTP 403）
+
+异常层次（档案相关 — 待迁移至 api-server）：
+- ProfileLimitExceededError: 档案数量超限异常（HTTP 409）
+- ProfileConflictError: 档案并发冲突异常（HTTP 409）
+
+异常层次（事件相关 — 待迁移至 api-server）：
+- EventLimitExceededError: 事件记录容量超限异常（HTTP 409）
 """
 
 from typing import Optional
+
+from py_config.types import ConfigFieldName
 
 
 class ConfigError(Exception):
@@ -32,9 +44,9 @@ class MissingRequiredFieldError(ConfigError):
     一次性收集全部缺失字段名称并输出，触发后立即阻断服务启动（fail-fast）。
     """
 
-    def __init__(self, message: str, missing_fields: list[str]) -> None:
+    def __init__(self, message: str, missing_fields: list[ConfigFieldName]) -> None:
         super().__init__(message)
-        self.missing_fields: list[str] = missing_fields
+        self.missing_fields: list[ConfigFieldName] = missing_fields
 
 
 class ConfigFormatError(ConfigError):
@@ -51,7 +63,7 @@ class ConfigFormatError(ConfigError):
         received_value: Optional[str] = None,
     ) -> None:
         super().__init__(message)
-        self.field_name: str = field_name
+        self.field_name: ConfigFieldName = ConfigFieldName(field_name)
         self.expected_format: str = expected_format
         self.received_value: Optional[str] = received_value
 

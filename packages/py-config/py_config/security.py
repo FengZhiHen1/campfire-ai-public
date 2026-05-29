@@ -1,20 +1,11 @@
-"""SEC-01 传输存储安全 — 安全配置模型。
+# @contract
+"""SEC-01 传输存储安全 — 安全配置模型与加载器。
 
-提供 SecurityConfig（全量安全配置，18 字段，env_prefix=SECURITY_）
+提供 SecurityConfig（全量安全配置，env_prefix=SECURITY_）
 和 RateLimitConfig（限流配置子集，纯数据模型）。
 
-SecurityConfig 从环境变量加载，字段名大写且带 SECURITY_ 前缀：
-  - SECURITY_BCRYPT_ROUNDS (默认 12)
-  - SECURITY_JWT_SECRET_KEY (必填, >=32 字符)
-  - SECURITY_JWT_PREVIOUS_SECRET_KEY (必填, >=32 字符)
-  - SECURITY_JWT_ALGORITHM (默认 HS256)
-  - SECURITY_JWT_KEY_VERSION (默认 v1)
-  - SECURITY_JWT_PREVIOUS_KEY_VERSION (默认空字符串)
-  - SECURITY_RATE_LIMIT_USER_PER_MINUTE (默认 30)
-  - SECURITY_RATE_LIMIT_IP_PER_MINUTE (默认 100)
-  - SECURITY_RATE_LIMIT_WINDOW_SECONDS (默认 60)
-  - SECURITY_MINIO_PRESIGNED_URL_EXPIRY_SECONDS (默认 3600)
-  - SECURITY_ALLOWED_FILE_EXTENSIONS (默认 ["pdf","jpg","jpeg","png","docx"])
+SecurityConfigLoader 实现 BaseConfigLoader 契约，
+将环境变量回退逻辑封装在 _validate_preconditions 中。
 """
 
 from __future__ import annotations
@@ -25,25 +16,10 @@ from pathlib import Path
 from typing import Literal
 
 from dotenv import load_dotenv
-from pydantic import Field, BaseModel
+from pydantic import BaseModel, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-# 将项目根目录的 .env 加载到 os.environ，确保 SECURITY_ 前缀变量能回退到无前缀变量名。
-# SecurityConfig 使用 env_prefix="SECURITY_" 但 .env 中是无前缀的 JWT_SECRET_KEY，
-# 此处预先加载使得下方的 fallback 代码能在 os.environ 中查找到无前缀变量。
-_ENV_FILE = Path(__file__).resolve().parents[3] / ".env"
-load_dotenv(_ENV_FILE)
-
-# MVP 兼容：SecurityConfig 需要 SECURITY_ 前缀的环境变量，但项目 .env 使用无前缀的变量名。
-# 若 SECURITY_ 前缀变量缺失，自动回退到普通变量名。
-if not os.environ.get("SECURITY_JWT_SECRET_KEY"):
-    fallback = os.environ.get("JWT_SECRET_KEY", "")
-    if fallback:
-        os.environ.setdefault("SECURITY_JWT_SECRET_KEY", fallback)
-if not os.environ.get("SECURITY_JWT_PREVIOUS_SECRET_KEY"):
-    fallback = os.environ.get("JWT_SECRET_KEY", "")
-    if fallback:
-        os.environ.setdefault("SECURITY_JWT_PREVIOUS_SECRET_KEY", fallback)
+from py_config.config_contract import BaseConfigLoader
 
 
 class RateLimitConfig(BaseModel):
@@ -76,8 +52,8 @@ class SecurityConfig(BaseSettings):
     JWT_SECRET_KEY 和 JWT_PREVIOUS_SECRET_KEY 为必填字段，
     其余字段均有默认值。
 
-    注意：JWT_KEY_VERSION 和 JWT_PREVIOUS_KEY_VERSION 为契约外补充字段，
-    用于 JWT kid 密钥选择机制。详见 pending-confirmations.md。
+    JWT_KEY_VERSION 和 JWT_PREVIOUS_KEY_VERSION 为契约外补充字段，
+    用于 JWT kid 密钥选择机制。
     """
 
     model_config = SettingsConfigDict(
@@ -108,8 +84,6 @@ class SecurityConfig(BaseSettings):
         description="JWT 签名算法，仅支持 HS256",
     )
 
-    # 以下两个字段不在 SecurityConfig 契约中，属实现所需的补充字段
-    # 详见 packages/py-auth/py_auth/pending-confirmations.md
     JWT_KEY_VERSION: str = Field(
         default="v1",
         description="当前密钥版本标识（kid），签发时写入 JWT header",
@@ -153,6 +127,43 @@ class SecurityConfig(BaseSettings):
     )
 
 
+class SecurityConfigLoader(BaseConfigLoader[SecurityConfig]):
+    """SecurityConfig 加载器 —— 实现 BaseConfigLoader 契约。
+
+    在 _validate_preconditions 中处理 MVP 兼容逻辑：
+    将项目 .env 中的无前缀变量名回退映射到 SECURITY_ 前缀变量。
+    """
+
+    def _validate_preconditions(self) -> None:
+        """加载 .env 并回退无前缀环境变量到 SECURITY_ 前缀。
+
+        MVP 兼容：项目 .env 使用无前缀的变量名（如 JWT_SECRET_KEY），
+        但 SecurityConfig 需要 SECURITY_ 前缀（如 SECURITY_JWT_SECRET_KEY）。
+        若 SECURITY_ 前缀变量缺失，自动回退到普通变量名。
+        """
+        super()._validate_preconditions()
+
+        env_file = Path(__file__).resolve().parents[3] / ".env"
+        load_dotenv(env_file)
+
+        if not os.environ.get("SECURITY_JWT_SECRET_KEY"):
+            fallback = os.environ.get("JWT_SECRET_KEY", "")
+            if fallback:
+                os.environ.setdefault("SECURITY_JWT_SECRET_KEY", fallback)
+        if not os.environ.get("SECURITY_JWT_PREVIOUS_SECRET_KEY"):
+            fallback = os.environ.get("JWT_SECRET_KEY", "")
+            if fallback:
+                os.environ.setdefault("SECURITY_JWT_PREVIOUS_SECRET_KEY", fallback)
+
+    def _do_load(self) -> SecurityConfig:
+        """通过 pydantic-settings BaseSettings 构造加载安全配置。
+
+        Returns:
+            SecurityConfig: 校验通过的安全配置实例。
+        """
+        return SecurityConfig()  # type: ignore[call-arg]
+
+
 @functools.lru_cache(maxsize=1)
 def get_security_config() -> SecurityConfig:
     """获取 SecurityConfig 单例（线程安全，惰性初始化）。
@@ -166,11 +177,13 @@ def get_security_config() -> SecurityConfig:
     Raises:
         pydantic.ValidationError: 环境变量校验失败时向上传播。
     """
-    return SecurityConfig()  # type: ignore[call-arg]
+    loader = SecurityConfigLoader()
+    return loader.load()
 
 
 __all__ = [
     "SecurityConfig",
     "RateLimitConfig",
+    "SecurityConfigLoader",
     "get_security_config",
 ]

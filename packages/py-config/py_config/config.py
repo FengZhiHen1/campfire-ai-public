@@ -1,3 +1,4 @@
+# @contract
 """DEPLOY-05 环境配置管理 — AppSettings 配置模型。
 
 基于 pydantic-settings BaseSettings 实现环境变量加载与校验。
@@ -160,9 +161,9 @@ class AppSettings(BaseSettings):
     )
 
     GENERATION_TIMEOUT_S: float = Field(
-        default=30.0,
+        default=300.0,
         ge=1.0,
-        le=120.0,
+        le=600.0,
         description="LLM 全流程超时秒数。CSLT-03 全流程硬超时。",
     )
 
@@ -193,20 +194,20 @@ class AppSettings(BaseSettings):
     )
 
     SSE_FIRST_CHUNK_TIMEOUT_SECONDS: int = Field(
-        default=30,
+        default=60,
         ge=1,
-        le=120,
+        le=300,
         description="首 chunk 软超时阈值（秒）。超过此时间未收到上游 CSLT-03 "
-        "的第一个 chunk 时，发送进度提示事件但不终止流。默认 30 秒。",
+        "的第一个 chunk 时，发送进度提示事件但不终止流。默认 60 秒。",
     )
 
     SSE_FULL_TIMEOUT_SECONDS: int = Field(
-        default=20,
+        default=300,
         ge=5,
-        le=120,
+        le=600,
         description="全流程硬超时阈值（秒）。从会话创建起超过此时间尚未完成"
         "全部推送时，强制关闭上游 Generator 并发送 DoneEvent(finish_reason=TIMEOUT)。"
-        "默认 20 秒。",
+        "默认 300 秒（5 分钟）。",
     )
 
     @model_validator(mode="after")

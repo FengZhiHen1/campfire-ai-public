@@ -22,6 +22,7 @@ from typing import Any, Awaitable, Callable
 
 from ..context import set_trace_id
 from ..core import logger
+from ..types import TraceId
 
 
 # W3C traceparent 格式: version-trace_id-span_id-flags
@@ -140,7 +141,7 @@ class RequestLoggingMiddleware:
         if trace_id is None:
             trace_id = uuid.uuid4().hex
 
-        set_trace_id(trace_id)
+        set_trace_id(TraceId(trace_id))
 
     def _log_request(
         self,

@@ -1,8 +1,9 @@
-"""
-结构化日志核心模块。
+# @contract
+"""OBS-01 结构化日志核心模块 — StructuredLogger 实现。
 
-提供 JSONFormatter、Logger 单例及 5 个公共日志方法：
-debug / info / warning / error / critical。
+实现 BaseStructuredLogger 契约：
+- @final debug/info/warning/error/critical → 公共入口（不可覆写）
+- _do_emit() → 实现者填写的日志输出钩子
 
 日志输出链路：调用方传入参数 → contextvars 自动注入 trace_id →
 组装 LogEntry dict → json.dumps 序列化 → stdout + 本地文件双通道输出。
@@ -21,7 +22,9 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
-from .context import get_trace_id
+from py_logger.context import get_trace_id
+from py_logger.logger_contract import BaseStructuredLogger
+from py_logger.types import LogSeverity, TraceId
 
 # ============================================================================
 # 常量
@@ -58,7 +61,6 @@ def _init_log_file_path() -> None:
     """初始化日志文件路径（模块导入时调用一次）。
 
     默认目录 logs/，文件名 app-YYYY-MM-DD.log（按天轮转）。
-    将绝对路径输出到 stderr 以便定位。
     """
     global _log_file_path
     log_dir = os.environ.get("LOG_FILE_DIR", "logs")
@@ -91,6 +93,7 @@ def _write_file_line(json_str: str) -> None:
 # 工具函数
 # ============================================================================
 
+
 def _make_timestamp() -> str:
     now = datetime.now(timezone.utc)
     ms = now.microsecond // 1000
@@ -104,6 +107,7 @@ def _default_handler(obj: object) -> str:
 # ============================================================================
 # JSONFormatter
 # ============================================================================
+
 
 class JSONFormatter(logging.Formatter):
     """自定义 JSON 格式化器，将 LogRecord 格式化为单行 JSON 字符串。"""
@@ -122,65 +126,82 @@ class JSONFormatter(logging.Formatter):
 
 
 # ============================================================================
-# Logger 单例
+# DynamicStreamHandler
 # ============================================================================
 
-class _Logger:
-    """结构化日志记录器单例。
 
-    通过 ``from py_logger import logger`` 导入全局唯一实例。
+class _DynamicStreamHandler(logging.StreamHandler):  # type: ignore[type-arg]
+    """动态追踪 sys.stdout 的 StreamHandler。
+
+    uvicorn/gunicorn 等 ASGI 服务器可能在启动时替换 sys.stdout。
+    标准 StreamHandler 在构造时捕获 stream 引用，后续不再更新。
+    本 Handler 重写 emit() 直接使用当前的 sys.stdout。
+    """
+
+    def emit(self, record: logging.LogRecord) -> None:
+        try:
+            msg = self.format(record)
+            sys.stdout.write(msg + self.terminator)
+            self.flush()
+        except (OSError, BrokenPipeError):
+            raise
+        except RecursionError:
+            raise
+        except Exception:
+            self.handleError(record)
+
+
+# ============================================================================
+# StructuredLogger — 实现 BaseStructuredLogger 契约
+# ============================================================================
+
+
+class StructuredLogger(BaseStructuredLogger):
+    """结构化日志记录器 —— 实现 BaseStructuredLogger 契约。
+
+    通过 ``from py_logger import logger`` 导入全局单例。
     """
 
     def __init__(self) -> None:
         self._logging_logger = logging.getLogger("py-logger")
         self._logging_logger.setLevel(logging.DEBUG)
+        self._logging_logger.propagate = False
+        self._ensure_handler()
+
+    def _ensure_handler(self) -> None:
+        """确保 logger 已配置 stdout handler（幂等）。"""
+        if not self._logging_logger.handlers:
+            handler = _DynamicStreamHandler()
+            handler.setFormatter(JSONFormatter())
+            self._logging_logger.addHandler(handler)
 
     # ------------------------------------------------------------------
-    # 公共接口
+    # 契约钩子：_do_emit
     # ------------------------------------------------------------------
 
-    def debug(self, service: str, message: str,
-              op_type: str | None = None,
-              extra: dict[str, object] | None = None) -> None:
-        self._write("DEBUG", service, message, op_type, extra)
+    def _do_emit(
+        self,
+        severity: LogSeverity,
+        service: str,
+        message: str,
+        op_type: str | None,
+        extra: dict[str, object] | None,
+    ) -> None:
+        """将日志条目序列化并输出到 stdout + 文件。
 
-    def info(self, service: str, message: str,
-             op_type: str | None = None,
-             extra: dict[str, object] | None = None) -> None:
-        self._write("INFO", service, message, op_type, extra)
-
-    def warning(self, service: str, message: str,
-                op_type: str | None = None,
-                extra: dict[str, object] | None = None) -> None:
-        self._write("WARNING", service, message, op_type, extra)
-
-    def error(self, service: str, message: str,
-              op_type: str | None = None,
-              extra: dict[str, object] | None = None) -> None:
-        self._write("ERROR", service, message, op_type, extra)
-
-    def critical(self, service: str, message: str,
-                 op_type: str,
-                 extra: dict[str, object] | None = None) -> None:
-        if not op_type or not op_type.strip():
-            raise ValueError("op_type is required for critical audit log")
-        self._write("INFO", service, message, op_type, extra)
-
-    # ------------------------------------------------------------------
-    # 内部实现
-    # ------------------------------------------------------------------
-
-    def _write(self, severity: str, service: str, message: str,
-               op_type: str | None, extra: dict[str, object] | None) -> None:
+        此方法实现 BaseStructuredLogger 契约的 _do_emit 钩子。
+        包含：trace_id 注入 → 序列化 → 双通道输出。
+        内部异常永不外溢（日志可用性优先原则）。
+        """
         try:
-            trace_id = get_trace_id()
+            trace_id_val = get_trace_id()
             extra_dict: dict[str, object] = {}
 
             if extra is not None:
                 extra_dict = dict(extra)
 
-            if not trace_id:
-                trace_id = uuid.uuid4().hex
+            if not trace_id_val:
+                trace_id_val = TraceId(uuid.uuid4().hex)
                 extra_dict["_trace_missing"] = True
 
             timestamp = _make_timestamp()
@@ -188,25 +209,56 @@ class _Logger:
                 "timestamp": timestamp,
                 "severity": severity,
                 "service": service,
-                "trace_id": trace_id,
+                "trace_id": trace_id_val,
                 "message": message,
                 "op_type": op_type,
-                "extra": extra_dict if extra_dict else ({} if extra is not None else None),
+                "extra": (
+                    extra_dict if extra_dict else ({} if extra is not None else None)
+                ),
             }
 
             try:
-                json_str = json.dumps(log_entry, default=_default_handler, ensure_ascii=False)
+                json_str = json.dumps(
+                    log_entry, default=_default_handler, ensure_ascii=False
+                )
             except (TypeError, ValueError):
-                json_str = self._build_fallback(service, trace_id, message, extra_dict)
-                print(f"[py-logger] serialization failed: {message[:200]}", file=sys.stderr)
+                json_str = self._build_fallback(
+                    service, trace_id_val, message, extra_dict
+                )
+                print(
+                    f"[py-logger] serialization failed: {message[:200]}",
+                    file=sys.stderr,
+                )
 
-            self._write_stdout(json_str, severity, timestamp)
+            level = getattr(logging, severity, logging.INFO)
+            record = logging.LogRecord(
+                name=self._logging_logger.name,
+                level=level,
+                pathname="",
+                lineno=0,
+                msg=log_entry["message"],
+                args=(),
+                exc_info=None,
+            )
+            record.timestamp = log_entry["timestamp"]
+            record.service = log_entry["service"]
+            record.trace_id = log_entry["trace_id"]
+            record.op_type = log_entry["op_type"]
+            record.extra = log_entry["extra"]
+
+            self._write_stdout(record, json_str, severity, timestamp)
 
         except Exception as exc:
-            print(f"[py-logger] _write crashed: {exc}", file=sys.stderr)
+            print(f"[py-logger] _do_emit crashed: {exc}", file=sys.stderr)
 
-    def _build_fallback(self, service: str, trace_id: str,
-                        message: str, extra: dict[str, object]) -> str:
+    def _build_fallback(
+        self,
+        service: str,
+        trace_id: TraceId,
+        message: str,
+        extra: dict[str, object],
+    ) -> str:
+        """序列化失败时的降级 JSON 构造。"""
         original_keys = list(extra.keys())[:20]
         original_types: dict[str, str] = {}
         for k in original_keys:
@@ -231,34 +283,45 @@ class _Logger:
     # stdout + 文件双通道输出
     # ------------------------------------------------------------------
 
-    def _write_stdout(self, json_str: str, severity: str, timestamp: str) -> None:
+    def _write_stdout(
+        self,
+        record: logging.LogRecord,
+        json_str: str,
+        severity: LogSeverity,
+        timestamp: str,
+    ) -> None:
+        """stdout + 文件双通道输出。"""
         global _buffer_warning_issued
 
         # 本地文件
         _write_file_line(json_str)
 
-        # stdout
+        # stdout（通过 stdlib logging 体系输出）
         try:
             self._flush_buffer()
-            sys.stdout.write(json_str + "\n")
-            sys.stdout.flush()
+            self._logging_logger.handle(record)
         except (OSError, BrokenPipeError):
             self._buffer_log(timestamp, severity, json_str)
 
-    def _buffer_log(self, timestamp: str, severity: str, json_str: str) -> None:
+    def _buffer_log(self, timestamp: str, severity: LogSeverity, json_str: str) -> None:
+        """stdout 不可用时暂存到环形缓冲区。"""
         global _buffer, _buffer_warning_issued
 
         _buffer.append((timestamp, severity, json_str))
         current_count = len(_buffer)
 
         if not _buffer_warning_issued:
-            print(f"[py-logger] stdout unavailable, buffering ({current_count} items)", file=sys.stderr)
+            print(
+                f"[py-logger] stdout unavailable, buffering ({current_count} items)",
+                file=sys.stderr,
+            )
             _buffer_warning_issued = True
 
         if current_count >= BUFFER_HIGH_WATERMARK:
             self._evict_buffer()
 
     def _evict_buffer(self) -> None:
+        """按等级淘汰缓冲区条目（保留高优先级）。"""
         global _buffer
         target = BUFFER_LOW_WATERMARK
 
@@ -282,6 +345,7 @@ class _Logger:
             _buffer = result
 
     def _flush_buffer(self) -> None:
+        """stdout 恢复后将缓冲区日志刷出。"""
         global _buffer, _buffer_warning_issued
 
         if not _buffer:
@@ -295,7 +359,10 @@ class _Logger:
             sys.stdout.flush()
             _buffer.clear()
             _buffer_warning_issued = False
-            print(f"[py-logger] stdout recovered, flushed {count} logs", file=sys.stderr)
+            print(
+                f"[py-logger] stdout recovered, flushed {count} logs",
+                file=sys.stderr,
+            )
         except (OSError, BrokenPipeError):
             pass
 
@@ -306,5 +373,21 @@ class _Logger:
 
 _init_log_file_path()
 
-logger = _Logger()
+logger = StructuredLogger()
 """全局日志记录器单例。"""
+
+
+def setup_logging() -> None:
+    """显式初始化 py-logger 的日志输出配置。
+
+    应在应用启动最早期调用（在 uvicorn 等框架接管 stdout 之前），
+    确保 logging 体系正确注册 stdout handler。
+    本函数幂等，重复调用安全。
+    """
+    logging.basicConfig(
+        format="%(message)s",
+        stream=sys.stdout,
+        level=logging.DEBUG,
+        force=True,
+    )
+    logger._ensure_handler()
