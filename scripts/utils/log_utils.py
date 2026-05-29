@@ -130,8 +130,22 @@ def print_service_failed(name: str, reason: str) -> None:
     print(f"  {_colored(_CHECK_FAIL, 'red')} {name:<20s} {_colored(reason, 'red')}")
 
 
-def print_running_status() -> None:
-    """Print the 'all services ready' message."""
+_SERVICE_PORT_INFO: dict[str, str] = {
+    "api": "http://localhost:8000  (Swagger: http://localhost:8000/docs)",
+    "worker": "Redis 消费者 — 监听队列 campfire:case_index",
+    "web-h5": "http://localhost:5173",
+    "web-weapp": "微信小程序 — 请用开发者工具导入 dist/ 目录",
+}
+
+
+def print_running_status(services: list[str] | None = None) -> None:
+    """Print service access URLs and the 'all services ready' message."""
+    if services:
+        print("  服务访问入口:")
+        for s in services:
+            info = _SERVICE_PORT_INFO.get(s, s)
+            print(f"    {_colored('→', 'green')} {info}")
+        print()
     print(f"  所有服务已就绪。按下 {_colored('Ctrl+C', 'cyan')} 可安全终止所有服务。")
     print()
 
