@@ -16,7 +16,9 @@ from __future__ import annotations
 
 from enum import StrEnum
 
-from pydantic import BaseModel, Field
+from pydantic import Field
+
+from py_schemas.base import CampfireBaseModel
 
 
 class StreamErrorCode(StrEnum):
@@ -39,7 +41,7 @@ class StreamErrorCode(StrEnum):
     INTERNAL_ERROR = "INTERNAL_ERROR"
 
 
-class ChunkEvent(BaseModel):
+class ChunkEvent(CampfireBaseModel):
     """SSE chunk 事件的 data 字段载荷。
 
     Contract: docs/contracts/CSLT-04/ChunkEvent.json
@@ -69,10 +71,8 @@ class ChunkEvent(BaseModel):
         "None 表示非内容文本。",
     )
 
-    model_config = {"extra": "forbid"}
 
-
-class DoneEvent(BaseModel):
+class DoneEvent(CampfireBaseModel):
     """SSE done 事件的 data 字段载荷。
 
     Contract: docs/contracts/CSLT-04/DoneEvent.json
@@ -131,10 +131,8 @@ class DoneEvent(BaseModel):
         "value 为该段落的建议文本列表。JSON 解析失败时各段落为空列表。",
     )
 
-    model_config = {"extra": "forbid"}
 
-
-class HeartbeatEvent(BaseModel):
+class HeartbeatEvent(CampfireBaseModel):
     """SSE 心跳保活事件的 data 载荷。
 
     Contract: docs/contracts/CSLT-04/HeartbeatEvent.json
@@ -143,10 +141,8 @@ class HeartbeatEvent(BaseModel):
     SSE 连接处于活跃状态，用于防止移动端网络或中间代理因长时间无数据而断开连接。
     """
 
-    model_config = {"extra": "forbid"}
 
-
-class ErrorEvent(BaseModel):
+class ErrorEvent(CampfireBaseModel):
     """SSE error 事件的 data 字段载荷。
 
     Contract: docs/contracts/CSLT-04/ErrorEvent.json
@@ -174,10 +170,8 @@ class ErrorEvent(BaseModel):
         examples=["当前推送会话不存在或已过期，请重新发起咨询"],
     )
 
-    model_config = {"extra": "forbid"}
 
-
-class StreamSession(BaseModel):
+class StreamSession(CampfireBaseModel):
     """推送会话的完整上下文，纯内存存储，不持久化到数据库。
 
     每个会话使用 stream-{uuid4} 格式的 stream_id 标识。
@@ -227,8 +221,6 @@ class StreamSession(BaseModel):
         ge=0,
         description="累计推送的 chunk 数量。",
     )
-
-    model_config = {"extra": "forbid"}
 
 
 __all__ = [

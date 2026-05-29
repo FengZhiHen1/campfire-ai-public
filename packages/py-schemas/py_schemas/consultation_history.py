@@ -1,7 +1,7 @@
 """CSLT-06 咨询历史管理 — Pydantic Schema 定义。
 
 提供咨询历史归档写入和查询输出的输入/输出模型。
-所有模型设置 model_config = {"extra": "forbid"} 以防止未声明字段。
+所有模型继承 CampfireBaseModel（统一 extra='forbid'）。
 
 契约引用：
 - ConsultationHistoryCreate: docs/contracts/CSLT-06/ConsultationHistoryCreate.json
@@ -14,10 +14,12 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Annotated, Literal, Optional
+from typing import Annotated, Literal
 from uuid import UUID
 
-from pydantic import AfterValidator, BaseModel, Field
+from pydantic import AfterValidator, Field
+
+from py_schemas.base import CampfireBaseModel
 
 
 # ===========================================================================
@@ -46,7 +48,7 @@ def _validate_disclaimer(v: str) -> str:
 # ===========================================================================
 
 
-class ConsultationHistoryCreate(BaseModel):
+class ConsultationHistoryCreate(CampfireBaseModel):
     """咨询历史归档写入的输入模型。
 
     由 CSLT-08 编排层在每次咨询流程完成后组装并传入。
@@ -119,22 +121,20 @@ class ConsultationHistoryCreate(BaseModel):
         default=False,
         description="反馈标记。默认 false。由 QUAL-03 在用户提交反馈后通过 PATCH 回调更新为 true。",
     )
-    token_input: Optional[int] = Field(
+    token_input: int | None = Field(
         default=None,
         ge=0,
         description="LLM 输入 Token 数量。阻断场景下为 null。",
     )
-    token_output: Optional[int] = Field(
+    token_output: int | None = Field(
         default=None,
         ge=0,
         description="LLM 输出 Token 数量。阻断场景下为 null。",
     )
-    device_info: Optional[dict] = Field(
+    device_info: dict | None = Field(
         default=None,
         description="设备与平台信息。全字段 nullable。用于运维排查。",
     )
-
-    model_config = {"extra": "forbid"}
 
 
 # ===========================================================================
@@ -142,7 +142,7 @@ class ConsultationHistoryCreate(BaseModel):
 # ===========================================================================
 
 
-class ConsultationHistoryListItem(BaseModel):
+class ConsultationHistoryListItem(CampfireBaseModel):
     """咨询历史列表摘要条目。
 
     仅包含列表展示所需的 5 个字段，禁止携带 generated_plan 等大字段。
@@ -172,10 +172,8 @@ class ConsultationHistoryListItem(BaseModel):
         description="反馈标记。true 表示用户已为此咨询提交反馈。",
     )
 
-    model_config = {"extra": "forbid"}
 
-
-class ConsultationHistoryDetail(BaseModel):
+class ConsultationHistoryDetail(CampfireBaseModel):
     """单次咨询的完整详情。
 
     包含归档时的全部字段。generated_plan 原样返回完整 Markdown 全文（禁止截断或二次加工）。
@@ -248,20 +246,18 @@ class ConsultationHistoryDetail(BaseModel):
         ...,
         description="反馈标记。true 表示用户已为此咨询提交反馈。",
     )
-    token_input: Optional[int] = Field(
+    token_input: int | None = Field(
         default=None,
         description="LLM 输入 Token 数量。阻断场景下为 null。",
     )
-    token_output: Optional[int] = Field(
+    token_output: int | None = Field(
         default=None,
         description="LLM 输出 Token 数量。阻断场景下为 null。",
     )
-    device_info: Optional[dict] = Field(
+    device_info: dict | None = Field(
         default=None,
         description="设备与平台信息。用于运维排查。",
     )
-
-    model_config = {"extra": "forbid"}
 
 
 __all__ = [

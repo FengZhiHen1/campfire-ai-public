@@ -15,10 +15,10 @@
 
 from __future__ import annotations
 
-from enum import Enum
+from enum import StrEnum
 
 
-class CaseStatus(str, Enum):
+class CaseStatus(StrEnum):
     """案例生命周期中的持久化状态。
 
     四个状态：
@@ -36,7 +36,7 @@ class CaseStatus(str, Enum):
     REJECTED = "rejected"
 
 
-class SourceType(str, Enum):
+class SourceType(StrEnum):
     """案例的获取渠道标识。"""
 
     EXPERT_WRITTEN = "专家撰写"
@@ -44,7 +44,7 @@ class SourceType(str, Enum):
     TICKET_DEPOSIT = "工单沉淀"
 
 
-class BehaviorType(str, Enum):
+class BehaviorType(StrEnum):
     """案例所涉及的核心行为问题分类。"""
 
     SELF_INJURY = "自伤"
@@ -55,7 +55,7 @@ class BehaviorType(str, Enum):
     OTHER = "其他"
 
 
-class SeverityLevel(str, Enum):
+class SeverityLevel(StrEnum):
     """案例对应的行为严重程度等级。"""
 
     MILD = "轻度"
@@ -63,7 +63,7 @@ class SeverityLevel(str, Enum):
     SEVERE = "重度"
 
 
-class SceneType(str, Enum):
+class SceneType(StrEnum):
     """干预事件发生的环境场所分类。"""
 
     HOME = "家庭"
@@ -73,7 +73,7 @@ class SceneType(str, Enum):
     ANY = "不限"
 
 
-class EvidenceLevel(str, Enum):
+class EvidenceLevel(StrEnum):
     """案例干预方法的证据强度等级。"""
 
     NCAEP = "NCAEP循证实践"
@@ -81,7 +81,7 @@ class EvidenceLevel(str, Enum):
     CASE_OBSERVATION = "个案观察记录"
 
 
-class FamilyDisplayCategory(str, Enum):
+class FamilyDisplayCategory(StrEnum):
     """家属端展示大类枚举。"""
 
     ENVIRONMENT_ADJUSTMENT = "环境调整"

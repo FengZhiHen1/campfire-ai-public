@@ -40,7 +40,9 @@ from datetime import date, datetime, timezone
 from enum import StrEnum
 from uuid import UUID
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import Field, field_validator
+
+from py_schemas.base import CampfireBaseModel
 
 
 # ===========================================================================
@@ -86,7 +88,7 @@ class VisibleScope(StrEnum):
     NOTHING = "none"
 
 
-class AccessRequest(BaseModel):
+class AccessRequest(CampfireBaseModel):
     """档案访问请求输入模型。
 
     封装一次档案访问请求的全部上下文信息，由下游模块（PROF-01/03/04）
@@ -128,10 +130,8 @@ class AccessRequest(BaseModel):
         ),
     )
 
-    model_config = {"extra": "forbid"}
 
-
-class AccessDecision(BaseModel):
+class AccessDecision(CampfireBaseModel):
     """档案访问裁决输出模型。
 
     封装 PrivacyGuard.check_access() 对一次档案访问请求的裁决结论。
@@ -164,8 +164,6 @@ class AccessDecision(BaseModel):
             "allowed=true 时为 null"
         ),
     )
-
-    model_config = {"extra": "forbid"}
 
 
 # ===========================================================================
@@ -275,7 +273,7 @@ class AgeRange(StrEnum):
 # ===========================================================================
 
 
-class ProfileCreate(BaseModel):
+class ProfileCreate(CampfireBaseModel):
     """个人档案创建请求体。
 
     家属通过 POST /api/v1/profiles 创建新患者档案时提交的输入模型。
@@ -335,10 +333,8 @@ class ProfileCreate(BaseModel):
             raise ValueError("出生日期不能晚于当前日期")
         return v
 
-    model_config = {"extra": "forbid"}
 
-
-class ProfileUpdate(BaseModel):
+class ProfileUpdate(CampfireBaseModel):
     """个人档案更新请求体。
 
     家属通过 PUT /api/v1/profiles/{profile_id} 修改已有档案时提交的输入模型。
@@ -392,10 +388,8 @@ class ProfileUpdate(BaseModel):
             raise ValueError("出生日期不能晚于当前日期")
         return v
 
-    model_config = {"extra": "forbid"}
 
-
-class ProfileResponse(BaseModel):
+class ProfileResponse(CampfireBaseModel):
     """个人档案详情响应体。
 
     GET /api/v1/profiles/{profile_id} 和 POST/PUT 操作成功后返回的完整档案数据。
@@ -464,10 +458,8 @@ class ProfileResponse(BaseModel):
         description="档案最近一次被修改的日期与时刻，每次修改后自动刷新",
     )
 
-    model_config = {"extra": "forbid"}
 
-
-class ProfileListItem(BaseModel):
+class ProfileListItem(CampfireBaseModel):
     """个人档案列表条目响应体。
 
     GET /api/v1/profiles 返回的档案列表中的每个条目，
@@ -503,40 +495,26 @@ class ProfileListItem(BaseModel):
         description="是否为当前家属账号的默认档案",
     )
 
-    model_config = {"extra": "forbid"}
-
 
 # ===========================================================================
-# 年龄区间计算工具函数
+# 年龄区间计算工具函数（已迁移至 py_schemas.utils.profiles）
 # ===========================================================================
+
+
+import warnings
+
+from py_schemas.utils.profiles import calculate_age_range as _calculate_age_range
 
 
 def calculate_age_range(birth_date: date) -> AgeRange:
-    """根据出生日期实时计算年龄区间。
-
-    使用 dateutil.relativedelta 计算精确年龄（考虑闰年），
-    然后映射到 AgeRange 枚举值。
-
-    Args:
-        birth_date: 患者的出生日期。
-
-    Returns:
-        AgeRange: 对应的年龄区间枚举值。
-    """
-    from dateutil.relativedelta import relativedelta
-
-    age_years = relativedelta(date.today(), birth_date).years
-
-    if age_years <= 3:
-        return AgeRange.AGE_0_3
-    elif age_years <= 6:
-        return AgeRange.AGE_4_6
-    elif age_years <= 12:
-        return AgeRange.AGE_7_12
-    elif age_years <= 18:
-        return AgeRange.AGE_13_18
-    else:
-        return AgeRange.AGE_18_PLUS
+    """已弃用：请使用 py_schemas.utils.profiles.calculate_age_range。"""
+    warnings.warn(
+        "py_schemas.profiles.calculate_age_range is deprecated. "
+        "Import from py_schemas.utils.profiles instead.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    return _calculate_age_range(birth_date)
 
 
 # ===========================================================================
@@ -579,7 +557,7 @@ class EventSetting(StrEnum):
 # ===========================================================================
 
 
-class EventCreate(BaseModel):
+class EventCreate(CampfireBaseModel):
     """创建事件记录的输入模型。
 
     家属填写事件结构化表单后提交。Service 层校验 30 天追溯期、
@@ -661,10 +639,8 @@ class EventCreate(BaseModel):
                     raise ValueError(f"单个标签不能超过 10 个字符，当前: {tag!r}")
         return v
 
-    model_config = {"extra": "forbid"}
 
-
-class EventUpdate(BaseModel):
+class EventUpdate(CampfireBaseModel):
     """更新事件记录的输入模型（Merge Patch 语义）。
 
     所有字段默认为 None（表示不修改此字段）。仅用户显式提供的
@@ -747,10 +723,8 @@ class EventUpdate(BaseModel):
                     raise ValueError(f"单个标签不能超过 10 个字符，当前: {tag!r}")
         return v
 
-    model_config = {"extra": "forbid"}
 
-
-class EventResponse(BaseModel):
+class EventResponse(CampfireBaseModel):
     """事件记录完整详情输出模型。
 
     包含 16 个字段，覆盖意图文档全部输出字段。
@@ -825,10 +799,8 @@ class EventResponse(BaseModel):
         description="最后更新时间（UTC），每次修改后自动刷新",
     )
 
-    model_config = {"extra": "forbid"}
 
-
-class EventListItem(BaseModel):
+class EventListItem(CampfireBaseModel):
     """事件记录列表精简条目输出模型。
 
     用于 GET /api/v1/profiles/{profile_id}/events 列表接口，
@@ -863,15 +835,13 @@ class EventListItem(BaseModel):
         description="记录创建时间（UTC）",
     )
 
-    model_config = {"extra": "forbid"}
-
 
 # ===========================================================================
 # PROF-05 — 专家信息 DTO
 # ===========================================================================
 
 
-class ExpertInfo(BaseModel):
+class ExpertInfo(CampfireBaseModel):
     """关联专家信息条目。"""
 
     expert_id: str = Field(..., description="专家用户 UUID")
@@ -879,8 +849,6 @@ class ExpertInfo(BaseModel):
     name: str = Field(..., description="专家姓名")
     role: str = Field(..., description="关联角色（teacher/expert）")
     created_at: datetime = Field(..., description="关联创建时间")
-
-    model_config = {"extra": "forbid"}
 
 
 # ===========================================================================

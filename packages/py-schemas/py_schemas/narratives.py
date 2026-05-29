@@ -13,14 +13,13 @@ Narratives 是案例系统的第一层：原始干预故事的通用化叙事。
 from __future__ import annotations
 
 from datetime import datetime
-from typing import List, Optional
+from pydantic import Field
 
-from pydantic import BaseModel, Field
-
+from py_schemas.base import CampfireBaseModel
 from py_schemas.enums.case_enums import CaseStatus
 
 
-class NarrativeCreateRequest(BaseModel):
+class NarrativeCreateRequest(CampfireBaseModel):
     """L1 叙事创建请求。
 
     提交一个去个性化的原始干预故事，作为后续提取 L2 卡片的素材。
@@ -30,10 +29,8 @@ class NarrativeCreateRequest(BaseModel):
     narrative: str = Field(..., min_length=1, max_length=5000)
     source_type: str = Field(..., description="专家撰写/机构脱敏/工单沉淀")
 
-    model_config = {"extra": "forbid"}
 
-
-class NarrativeResponse(BaseModel):
+class NarrativeResponse(CampfireBaseModel):
     """L1 叙事详情响应。
 
     包含叙事全量字段以及衍生卡片引用列表。
@@ -45,15 +42,13 @@ class NarrativeResponse(BaseModel):
     source_type: str
     author_id: str
     status: CaseStatus
-    review_comment: Optional[str] = None
-    derived_card_ids: Optional[List[str]] = None
+    review_comment: str | None = None
+    derived_card_ids: list[str] | None = None
     created_at: datetime
     updated_at: datetime
 
-    model_config = {"extra": "forbid"}
 
-
-class NarrativeListItem(BaseModel):
+class NarrativeListItem(CampfireBaseModel):
     """L1 叙事列表条目。
 
     用于叙事管理列表展示，仅包含摘要字段以支持高效列表查询。
@@ -67,19 +62,15 @@ class NarrativeListItem(BaseModel):
     card_count: int = 0
     created_at: datetime
 
-    model_config = {"extra": "forbid"}
 
-
-class NarrativeUpdate(BaseModel):
+class NarrativeUpdate(CampfireBaseModel):
     """L1 叙事部分更新请求。
 
     所有业务字段均为可选（partial update）。
     """
 
-    title: Optional[str] = None
-    narrative: Optional[str] = None
-
-    model_config = {"extra": "forbid"}
+    title: str | None = None
+    narrative: str | None = None
 
 
 __all__ = [

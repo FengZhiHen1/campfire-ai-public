@@ -17,9 +17,11 @@
 from __future__ import annotations
 
 from enum import StrEnum
-from typing import Literal, Optional
+from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import Field
+
+from py_schemas.base import CampfireBaseModel
 
 
 # ===========================================================================
@@ -71,7 +73,7 @@ class RetrievalStatus(StrEnum):
 # ===========================================================================
 
 
-class TagFilterDto(BaseModel):
+class TagFilterDto(CampfireBaseModel):
     """档案标签过滤条件数据传输对象。
 
     契约: TagFilterDto.json
@@ -97,23 +99,19 @@ class TagFilterDto(BaseModel):
         description="主要行为类型。枚举值引用 CSLT-01/BehaviorTypeCategory。",
         examples=["EMOTIONAL_MELTDOWN"],
     )
-    emotion_level: Optional[
-        Literal["轻", "中", "重"]
-    ] = Field(
+    emotion_level: Literal["轻", "中", "重"] | None = Field(
         default=None,
         description="情绪等级（可选）。枚举值：轻、中、重。为 null 时不应用此过滤条件。",
         examples=["重"],
     )
-    sensory_features: Optional[str] = Field(
+    sensory_features: str | None = Field(
         default=None,
         description="感官特征标签（可选）。如听觉敏感、触觉敏感、视觉敏感等。",
         examples=["听觉敏感"],
     )
 
-    model_config = {"extra": "forbid"}
 
-
-class SemanticSearchInput(BaseModel):
+class SemanticSearchInput(CampfireBaseModel):
     """RAG 语义检索的输入参数。
 
     契约: SemanticSearchInput.json
@@ -143,13 +141,11 @@ class SemanticSearchInput(BaseModel):
         description="检索期望返回的案例切片条目数量。默认10条，范围1-50。超出范围时自动修正为边界值。",
         examples=[10, 20],
     )
-    request_id: Optional[str] = Field(
+    request_id: str | None = Field(
         default=None,
         description="全链路追踪ID。上游调用方生成UUID v4格式字符串。可选，缺失时检索引擎自动生成。",
         examples=["550e8400-e29b-41d4-a716-446655440000"],
     )
-
-    model_config = {"extra": "forbid"}
 
 
 # ===========================================================================
@@ -157,7 +153,7 @@ class SemanticSearchInput(BaseModel):
 # ===========================================================================
 
 
-class CaseSliceDto(BaseModel):
+class CaseSliceDto(CampfireBaseModel):
     """案例切片的数据传输对象。
 
     契约: CaseSliceDto.json
@@ -181,7 +177,7 @@ class CaseSliceDto(BaseModel):
         description="案例中某个要素的原文片段。已在上游 CASE-04 入库时脱敏 PII。",
         examples=["在嘈杂商场环境中，ASD儿童出现听觉感官过载反应，捂耳朵蹲下拒绝移动"],
     )
-    chunk_type: Optional[str] = Field(
+    chunk_type: str | None = Field(
         default=None,
         description="该切片所属的案例四要素类型",
         examples=["scene"],
@@ -204,13 +200,13 @@ class CaseSliceDto(BaseModel):
         ...,
         description="该案例所依据的证据强度等级",
     )
-    case_title: Optional[str] = Field(
+    case_title: str | None = Field(
         default=None,
         max_length=200,
         description="源案例的标题，供下游在 Prompt 中引用时展示",
         examples=["ASD商场感官过载干预案例"],
     )
-    source: Optional[str] = Field(
+    source: str | None = Field(
         default=None,
         description="案例来源类型",
         examples=["expert"],
@@ -220,16 +216,14 @@ class CaseSliceDto(BaseModel):
         description="案例首次审核通过的日期，用于时效权重计算",
         examples=["2025-11-03"],
     )
-    applicable_tags: Optional[dict[str, str]] = Field(
+    applicable_tags: dict[str, str] | None = Field(
         default=None,
         description="该案例适用的人群标签维度，包含年龄段区间、诊断类型、行为类型等",
         examples=[{"age_range": "学龄儿童(6-12岁)", "diagnosis_type": "ASD", "behavior_type": "情绪崩溃"}],
     )
 
-    model_config = {"extra": "forbid"}
 
-
-class SemanticSearchResult(BaseModel):
+class SemanticSearchResult(CampfireBaseModel):
     """RAG 语义检索的输出结果。
 
     契约: SemanticSearchResult.json
@@ -250,7 +244,7 @@ class SemanticSearchResult(BaseModel):
         ...,
         description="标记本次检索是否完整完成。true=检索完整完成（未触发超时或空库）。false=检索被截断（超时或部分完成）。",
     )
-    reason: Optional[str] = Field(
+    reason: str | None = Field(
         default=None,
         description="当 is_complete=false 时的原因标记。枚举值：case_library_empty, timeout, embedding_unavailable。is_complete=true 时此字段为 null。",
         examples=["timeout"],
@@ -275,8 +269,6 @@ class SemanticSearchResult(BaseModel):
         description="检索耗时，从接受到返回的总时长，以毫秒为单位。",
         examples=[320.5],
     )
-
-    model_config = {"extra": "forbid"}
 
 
 __all__ = [

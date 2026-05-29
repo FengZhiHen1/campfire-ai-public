@@ -6,12 +6,14 @@
 
 from __future__ import annotations
 
-from enum import Enum
+from enum import StrEnum
 
-from pydantic import BaseModel, Field
+from pydantic import Field
+
+from py_schemas.base import CampfireBaseModel
 
 
-class SecurityDetectionType(str, Enum):
+class SecurityDetectionType(StrEnum):
     """安全检测事件类型枚举。
 
     与 docs/contracts/SEC-05/SecurityDetectionType.json 契约一致。
@@ -22,7 +24,7 @@ class SecurityDetectionType(str, Enum):
     malformed_request = "malformed_request"
 
 
-class ValidationErrorItem(BaseModel):
+class ValidationErrorItem(CampfireBaseModel):
     """字段级校验错误明细。
 
     与 docs/contracts/SEC-05/ValidationErrorItem.json 契约一致。
@@ -33,10 +35,8 @@ class ValidationErrorItem(BaseModel):
     reason: str = Field(..., min_length=1, description="不通过原因的机器可读标识")
     constraint: str = Field(..., min_length=1, description="期望的约束条件，面向调用方的可读说明")
 
-    model_config = {"extra": "forbid"}
 
-
-class ValidationErrorResponse(BaseModel):
+class ValidationErrorResponse(CampfireBaseModel):
     """校验失败时的 HTTP 响应体。
 
     与 docs/contracts/SEC-05/ValidationErrorResponse.json 契约一致。
@@ -47,10 +47,8 @@ class ValidationErrorResponse(BaseModel):
         ..., min_length=1, description="校验失败的错误明细列表，至少包含 1 项"
     )
 
-    model_config = {"extra": "forbid"}
 
-
-class FileValidationRule(BaseModel):
+class FileValidationRule(CampfireBaseModel):
     """文件校验规则配置。
 
     与 docs/contracts/SEC-05/FileValidationRule.json 契约一致。
@@ -67,10 +65,8 @@ class FileValidationRule(BaseModel):
         ..., ge=1, description="文件大小上限（字节）"
     )
 
-    model_config = {"extra": "forbid"}
 
-
-class FileValidationResult(BaseModel):
+class FileValidationResult(CampfireBaseModel):
     """文件校验结果。
 
     与 docs/contracts/SEC-05/FileValidationResult.json 契约一致。
@@ -88,10 +84,8 @@ class FileValidationResult(BaseModel):
         ..., ge=1, description="文件大小（字节）"
     )
 
-    model_config = {"extra": "forbid"}
 
-
-class SecurityAuditLogEntry(BaseModel):
+class SecurityAuditLogEntry(CampfireBaseModel):
     """安全审计日志条目。
 
     与 docs/contracts/SEC-05/SecurityAuditLogEntry.json 契约一致。
@@ -106,5 +100,3 @@ class SecurityAuditLogEntry(BaseModel):
         ..., min_length=1, description="检测详情，不得包含用户原始输入全文"
     )
     timestamp: str = Field(..., description="事件发生时间（ISO 8601 格式）")
-
-    model_config = {"extra": "forbid"}

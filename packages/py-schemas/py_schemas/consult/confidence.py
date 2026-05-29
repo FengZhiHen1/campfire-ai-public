@@ -16,9 +16,11 @@ LLMAssessmentResult 为内部类型，用于 Pydantic 强校验 LLM 返回的 JS
 from __future__ import annotations
 
 from enum import StrEnum
-from typing import Literal, Optional
+from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import Field
+
+from py_schemas.base import CampfireBaseModel
 
 
 # ===========================================================================
@@ -50,7 +52,7 @@ class ValidationVerdict(StrEnum):
 # ===========================================================================
 
 
-class LLMAssessmentResult(BaseModel):
+class LLMAssessmentResult(CampfireBaseModel):
     """LLM 自评估返回的 JSON 结构化评估结果。
 
     用于 Pydantic 强校验，校验失败时走降级纯规则评分路径。
@@ -89,15 +91,13 @@ class LLMAssessmentResult(BaseModel):
         ),
     )
 
-    model_config = {"extra": "forbid"}
-
 
 # ===========================================================================
 # 输入模型
 # ===========================================================================
 
 
-class ConfidenceValidationInput(BaseModel):
+class ConfidenceValidationInput(CampfireBaseModel):
     """置信度后校验的输入参数。
 
     契约: ConfidenceValidationInput.json
@@ -179,15 +179,13 @@ class ConfidenceValidationInput(BaseModel):
         ),
     )
 
-    model_config = {"extra": "forbid"}
-
 
 # ===========================================================================
 # 输出模型
 # ===========================================================================
 
 
-class ConfidenceValidationOutput(BaseModel):
+class ConfidenceValidationOutput(CampfireBaseModel):
     """置信度后校验的输出结果。
 
     契约: ConfidenceValidationOutput.json
@@ -248,9 +246,7 @@ class ConfidenceValidationOutput(BaseModel):
             "'工单创建失败，请手动联系专家'提示。"
         ),
     )
-    degradation_note: Optional[
-        Literal["llm_unavailable", "timeout_fallback"]
-    ] = Field(
+    degradation_note: Literal["llm_unavailable", "timeout_fallback"] | None = Field(
         default=None,
         description=(
             "降级原因说明。"
@@ -267,8 +263,6 @@ class ConfidenceValidationOutput(BaseModel):
             "目标 P95 <= 3000ms。"
         ),
     )
-
-    model_config = {"extra": "forbid"}
 
 
 __all__ = [
