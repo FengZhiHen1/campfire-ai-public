@@ -77,7 +77,6 @@ export default function CasesDetail() {
     return (
       <View className="detail-page">
         <View className="detail-navbar">
-          <Button className="detail-navbar__back" onClick={() => Taro.navigateBack()}>&larr;</Button>
           <Text className="detail-navbar__title">案例详情</Text>
         </View>
         <View className="detail-loading">
@@ -115,7 +114,6 @@ export default function CasesDetail() {
     <View className="detail-page">
       {/* 导航栏 */}
       <View className="detail-navbar">
-        <Button className="detail-navbar__back" onClick={() => Taro.navigateBack()}>&larr;</Button>
         <Text className="detail-navbar__title">案例详情</Text>
       </View>
 
