@@ -19,6 +19,9 @@ export type {
   ProfileCreate,
   ProfileUpdate,
   EventCreate,
+  EventUpdate,
+  EventResponse,
+  EventListItem,
 } from '@campfire/ts-shared';
 
 // ============================================================================

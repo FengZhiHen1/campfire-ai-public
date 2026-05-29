@@ -1,46 +1,18 @@
 import { useState, useEffect, useCallback } from 'react';
-import { View, Text, Button, Input } from '@tarojs/components';
+import { View, Text, Button, Input, Picker } from '@tarojs/components';
 import Taro from '@tarojs/taro';
 import { useProfile } from '../../../logics/profiles/hooks/useProfile';
-import type { ProfileListItem, ProfileResponse } from '../../../logics/profiles/types';
+import { listEvents, createEvent } from '../../../logics/profiles/services/eventApi';
+import type { ProfileListItem, ProfileResponse, EventListItem, EventCreate } from '../../../logics/profiles/types';
 import './index.scss';
 
 // ============================================================================
-// Mock 数据与常量
+// 常量
 // ============================================================================
 
-interface MockEvent {
-  event_id: string;
-  event_time: string;
-  behavior_type: string;
-  summary: string;
-  has_evaluation: boolean;
-  is_complete: boolean;
-}
-
-/** 生成 Mock 事件数据 */
-function generateMockEvents(profileId: string): MockEvent[] {
-  const types = ['情绪爆发', '自伤行为', '攻击行为', '拒绝服药', '逃跑/走失'];
-  const summaries = [
-    '在超市因噪音突然捂耳蹲下',
-    '咬手背至泛红，持续约3分钟',
-    '用力推搡同伴，被制止后哭泣',
-    '不肯吞服医生新开的助眠药',
-    '在公园独自跑向马路方向',
-  ];
-  const now = new Date();
-  return Array.from({ length: 5 }).map((_, i) => {
-    const t = new Date(now.getTime() - i * 86400000 * (i + 1));
-    return {
-      event_id: `${profileId}-event-${i}`,
-      event_time: t.toISOString(),
-      behavior_type: types[i % types.length],
-      summary: summaries[i % summaries.length],
-      has_evaluation: i === 1,
-      is_complete: i !== 0,
-    };
-  });
-}
+const BEHAVIOR_OPTIONS = ['刻板行为', '情绪崩溃', '自伤行为', '攻击行为', '社交退缩', '多动'];
+const SEVERITY_OPTIONS = ['轻', '中', '重'];
+const SETTING_OPTIONS = ['家庭', '学校', '公共场合', '机构'];
 
 /** 格式化时间戳 */
 function formatEventTime(iso: string): string {
@@ -55,10 +27,10 @@ function formatEventTime(iso: string): string {
   return `${d.getMonth() + 1}月${d.getDate()}日 ${timeStr}`;
 }
 
-/** 根据行为类型获取 accent 颜色 */
+/** 根据行为类型获取 accent 颜色（对齐后端 ProfileBehaviorType 枚举） */
 function getEventAccent(behaviorType: string): 'error' | 'secondary' | 'tertiary' {
-  const highRisk = ['自伤行为', '攻击行为', '逃跑/走失'];
-  const mediumRisk = ['情绪爆发', '拒绝服药'];
+  const highRisk = ['自伤行为', '攻击行为'];
+  const mediumRisk = ['情绪崩溃'];
   if (highRisk.includes(behaviorType)) return 'error';
   if (mediumRisk.includes(behaviorType)) return 'secondary';
   return 'tertiary';
@@ -83,10 +55,20 @@ export default function ProfileIndex() {
   // --------------------------------------------------------------------------
   const [selectedIdx, setSelectedIdx] = useState(0);
   const [selectedDetail, setSelectedDetail] = useState<ProfileResponse | null>(null);
-  const [events, setEvents] = useState<MockEvent[]>([]);
+  const [events, setEvents] = useState<EventListItem[]>([]);
+  const [eventsLoading, setEventsLoading] = useState(false);
   const [showQuickRecord, setShowQuickRecord] = useState(false);
+
+  // 快速记录表单（A 方案：扩展为完整事件字段，部分可选）
+  const [quickEventTime, setQuickEventTime] = useState('');
+  const [quickBehaviorType, setQuickBehaviorType] = useState('');
+  const [quickSeverity, setQuickSeverity] = useState('');
+  const [quickSetting, setQuickSetting] = useState('');
   const [quickTrigger, setQuickTrigger] = useState('');
   const [quickManifest, setQuickManifest] = useState('');
+  const [quickIntervention, setQuickIntervention] = useState('');
+  const [quickResult, setQuickResult] = useState('');
+  const [quickSubmitting, setQuickSubmitting] = useState(false);
 
   // --------------------------------------------------------------------------
   // 加载选中档案详情
@@ -97,12 +79,22 @@ export default function ProfileIndex() {
     if (selectedProfile) {
       getProfile(selectedProfile.profile_id).then((detail) => {
         setSelectedDetail(detail);
-        // Mock 事件数据
-        setEvents(generateMockEvents(selectedProfile.profile_id));
       }).catch(() => {
         setSelectedDetail(null);
-        setEvents([]);
       });
+
+      // 加载真实事件列表
+      setEventsLoading(true);
+      listEvents(selectedProfile.profile_id)
+        .then((data) => {
+          setEvents(data);
+        })
+        .catch(() => {
+          setEvents([]);
+        })
+        .finally(() => {
+          setEventsLoading(false);
+        });
     } else {
       setSelectedDetail(null);
       setEvents([]);
@@ -125,25 +117,50 @@ export default function ProfileIndex() {
     });
   }, []);
 
-  const handleQuickRecord = () => {
-    if (!quickTrigger.trim()) return;
-    const newEvent: MockEvent = {
-      event_id: `temp-${Date.now()}`,
-      event_time: new Date().toISOString(),
-      behavior_type: '待分类',
-      summary: quickTrigger,
-      has_evaluation: false,
-      is_complete: false,
-    };
-    setEvents((prev) => [newEvent, ...prev]);
-    setQuickTrigger('');
-    setQuickManifest('');
-    setShowQuickRecord(false);
-    Taro.showToast({
-      title: '记录已保存，建议补充干预措施',
-      icon: 'none',
-      duration: 3000,
-    });
+  const handleQuickRecord = async () => {
+    if (!selectedProfile) return;
+    if (!quickTrigger.trim() || !quickManifest.trim() || !quickBehaviorType || !quickSeverity) {
+      Taro.showToast({ title: '请填写必填项', icon: 'none' });
+      return;
+    }
+
+    setQuickSubmitting(true);
+    try {
+      const payload: EventCreate = {
+        event_time: quickEventTime || new Date().toISOString(),
+        behavior_type: quickBehaviorType,
+        severity_level: quickSeverity,
+        setting: quickSetting || null,
+        trigger_description: quickTrigger.trim(),
+        manifestation: quickManifest.trim(),
+        // 可选字段：用户未填时传占位值，待后端放宽约束后可移除
+        intervention_tried: quickIntervention.trim() || '（未记录）',
+        intervention_result: quickResult.trim() || '（未记录）',
+        tags: null,
+      };
+
+      await createEvent(selectedProfile.profile_id, payload);
+      Taro.showToast({ title: '记录已保存', icon: 'success' });
+
+      // 刷新事件列表
+      const refreshed = await listEvents(selectedProfile.profile_id);
+      setEvents(refreshed);
+
+      // 重置表单
+      setQuickEventTime('');
+      setQuickBehaviorType('');
+      setQuickSeverity('');
+      setQuickSetting('');
+      setQuickTrigger('');
+      setQuickManifest('');
+      setQuickIntervention('');
+      setQuickResult('');
+      setShowQuickRecord(false);
+    } catch {
+      Taro.showToast({ title: '保存失败，请重试', icon: 'none' });
+    } finally {
+      setQuickSubmitting(false);
+    }
   };
 
   // --------------------------------------------------------------------------
@@ -326,26 +343,20 @@ export default function ProfileIndex() {
                         {formatEventTime(event.event_time)}
                       </Text>
                       <View className="profile-event-card__badges">
-                        {event.has_evaluation && (
+                        {event.has_professional_note && (
                           <Text className="profile-event-card__eval">
                             已评估
                           </Text>
                         )}
-                        {!event.is_complete && (
-                          <Text className="profile-event-card__incomplete">
-                            待补全
-                          </Text>
-                        )}
+                        <Text className="profile-event-card__severity">
+                          {event.severity_level}
+                        </Text>
                       </View>
                     </View>
 
                     <View className="profile-event-card__tag">
                       <Text>{event.behavior_type}</Text>
                     </View>
-
-                    <Text className="profile-event-card__summary">
-                      {event.summary}
-                    </Text>
                   </View>
                 </View>
               );
@@ -354,21 +365,76 @@ export default function ProfileIndex() {
         )}
       </View>
 
-      {/* 快速录入 Bottom Sheet */}
+      {/* 快速录入 Bottom Sheet（A 方案：扩展为完整事件字段） */}
       {showQuickRecord && (
         <>
           <View className="profile-sheet-overlay" onClick={() => setShowQuickRecord(false)} />
           <View className="profile-quick-sheet">
             <View className="profile-quick-sheet__handle" />
-            <Text className="profile-quick-sheet__title">快速记录事件</Text>
+            <Text className="profile-quick-sheet__title">记录行为事件</Text>
             <Text className="profile-quick-sheet__subtitle">
-              先记录关键信息，稍后可在档案中补全
+              完整记录有助于 AI 更精准地匹配干预案例
             </Text>
 
+            {/* 行为类型 */}
             <View className="profile-quick-sheet__field">
               <Text className="profile-quick-sheet__label">
                 <Text className="profile-quick-sheet__required">*</Text>
-                发生了什么？（触发因素）
+                行为类型
+              </Text>
+              <Picker
+                mode="selector"
+                range={BEHAVIOR_OPTIONS}
+                value={BEHAVIOR_OPTIONS.indexOf(quickBehaviorType)}
+                onChange={(e) => setQuickBehaviorType(BEHAVIOR_OPTIONS[e.detail.value])}
+              >
+                <View className={`profile-quick-sheet__picker ${!quickBehaviorType ? 'profile-quick-sheet__picker--placeholder' : ''}`}>
+                  <Text>{quickBehaviorType || '请选择行为类型'}</Text>
+                  <Text className="profile-quick-sheet__picker-arrow">▼</Text>
+                </View>
+              </Picker>
+            </View>
+
+            {/* 严重程度 */}
+            <View className="profile-quick-sheet__field">
+              <Text className="profile-quick-sheet__label">
+                <Text className="profile-quick-sheet__required">*</Text>
+                严重程度
+              </Text>
+              <Picker
+                mode="selector"
+                range={SEVERITY_OPTIONS}
+                value={SEVERITY_OPTIONS.indexOf(quickSeverity)}
+                onChange={(e) => setQuickSeverity(SEVERITY_OPTIONS[e.detail.value])}
+              >
+                <View className={`profile-quick-sheet__picker ${!quickSeverity ? 'profile-quick-sheet__picker--placeholder' : ''}`}>
+                  <Text>{quickSeverity || '请选择严重程度'}</Text>
+                  <Text className="profile-quick-sheet__picker-arrow">▼</Text>
+                </View>
+              </Picker>
+            </View>
+
+            {/* 发生场景（可选） */}
+            <View className="profile-quick-sheet__field">
+              <Text className="profile-quick-sheet__label">发生场景（可选）</Text>
+              <Picker
+                mode="selector"
+                range={SETTING_OPTIONS}
+                value={SETTING_OPTIONS.indexOf(quickSetting)}
+                onChange={(e) => setQuickSetting(SETTING_OPTIONS[e.detail.value])}
+              >
+                <View className={`profile-quick-sheet__picker ${!quickSetting ? 'profile-quick-sheet__picker--placeholder' : ''}`}>
+                  <Text>{quickSetting || '请选择场景'}</Text>
+                  <Text className="profile-quick-sheet__picker-arrow">▼</Text>
+                </View>
+              </Picker>
+            </View>
+
+            {/* 触发因素 */}
+            <View className="profile-quick-sheet__field">
+              <Text className="profile-quick-sheet__label">
+                <Text className="profile-quick-sheet__required">*</Text>
+                触发因素
               </Text>
               <Input
                 className="profile-quick-sheet__input"
@@ -379,10 +445,11 @@ export default function ProfileIndex() {
               />
             </View>
 
+            {/* 具体表现 */}
             <View className="profile-quick-sheet__field">
               <Text className="profile-quick-sheet__label">
                 <Text className="profile-quick-sheet__required">*</Text>
-                孩子的表现？（具体行为）
+                具体表现
               </Text>
               <Input
                 className="profile-quick-sheet__input"
@@ -393,11 +460,36 @@ export default function ProfileIndex() {
               />
             </View>
 
+            {/* 干预措施（可选） */}
+            <View className="profile-quick-sheet__field">
+              <Text className="profile-quick-sheet__label">尝试的干预措施（可选）</Text>
+              <Input
+                className="profile-quick-sheet__input"
+                type="text"
+                placeholder="如：带离现场，使用降噪耳机…"
+                value={quickIntervention}
+                onInput={(e) => setQuickIntervention(e.detail.value)}
+              />
+            </View>
+
+            {/* 干预结果（可选） */}
+            <View className="profile-quick-sheet__field">
+              <Text className="profile-quick-sheet__label">干预结果（可选）</Text>
+              <Input
+                className="profile-quick-sheet__input"
+                type="text"
+                placeholder="如：情绪逐渐平复…"
+                value={quickResult}
+                onInput={(e) => setQuickResult(e.detail.value)}
+              />
+            </View>
+
             <Button
               className="profile-quick-sheet__submit"
               onClick={handleQuickRecord}
+              disabled={quickSubmitting}
             >
-              保存记录
+              {quickSubmitting ? '保存中…' : '保存记录'}
             </Button>
           </View>
         </>

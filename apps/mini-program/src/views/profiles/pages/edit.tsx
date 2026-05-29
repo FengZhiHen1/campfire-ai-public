@@ -7,15 +7,19 @@ import {
   updateProfile,
   deleteProfile,
 } from '../../../logics/profiles/services/profileApi';
-import type { ProfileResponse } from '../../../logics/profiles/types';
+import {
+  listEvents,
+  deleteEvent as deleteEventApi,
+} from '../../../logics/profiles/services/eventApi';
+import type { ProfileResponse, EventListItem } from '../../../logics/profiles/types';
 import './edit.scss';
 
 // ============================================================================
 // 常量定义
 // ============================================================================
 
-const DIAGNOSIS_OPTIONS = ['ASD', 'ADHD', '发育迟缓', '其他'];
-const BEHAVIOR_OPTIONS = ['自伤行为', '攻击行为', '逃跑/走失', '拒绝服药', '情绪爆发', '其他'];
+const DIAGNOSIS_OPTIONS = ['ASD', '疑似ASD', '其他发育障碍'];
+const BEHAVIOR_OPTIONS = ['刻板行为', '情绪崩溃', '自伤行为', '攻击行为', '社交退缩', '多动'];
 
 const PRESET_TAGS = [
   '感官敏感', '睡眠障碍', '社交回避', '语言发育迟缓',
@@ -23,20 +27,8 @@ const PRESET_TAGS = [
 ];
 
 // ============================================================================
-// Mock 事件类型
+// 事件类型（已由后端真实接口提供，本地 Mock 类型已移除）
 // ============================================================================
-
-interface MockEvent {
-  event_id: string;
-  event_time: string;
-  behavior_type: string;
-  summary: string;
-  trigger?: string;
-  manifestation?: string;
-  intervention?: string;
-  result?: string;
-  is_complete: boolean;
-}
 
 // ============================================================================
 // 辅助函数
@@ -112,12 +104,11 @@ export default function ProfileEdit() {
   const [customTags, setCustomTags] = useState<string[]>([]);
 
   // --------------------------------------------------------------------------
-  // 事件状态（Mock）
+  // 事件状态（真实数据）
   // --------------------------------------------------------------------------
-  const [events, setEvents] = useState<MockEvent[]>([]);
+  const [events, setEvents] = useState<EventListItem[]>([]);
+  const [eventsLoading, setEventsLoading] = useState(false);
   const [eventsExpanded, setEventsExpanded] = useState(true);
-  const [editingEventId, setEditingEventId] = useState<string | null>(null);
-  const [shakingEventId, setShakingEventId] = useState<string | null>(null);
 
   // --------------------------------------------------------------------------
   // UI 状态
@@ -147,30 +138,22 @@ export default function ProfileEdit() {
             diagnosisType: data.diagnosis_type || '',
             primaryBehavior: data.primary_behavior || '',
           });
-          // Mock: 从后端标签映射到前端标签
+          // 从后端标签映射到前端标签
           setSelectedTags(data.sensory_features || []);
           setCustomTags(data.triggers || []);
-          // Mock 事件
-          setEvents([
-            {
-              event_id: '1',
-              event_time: new Date().toISOString(),
-              behavior_type: '情绪爆发',
-              summary: '在超市因噪音突然捂耳蹲下',
-              trigger: '超市噪音刺激',
-              manifestation: '捂耳蹲下，持续约5分钟',
-              intervention: '带离现场，使用降噪耳机',
-              result: '情绪逐渐平复',
-              is_complete: true,
-            },
-            {
-              event_id: '2',
-              event_time: new Date(Date.now() - 86400000).toISOString(),
-              behavior_type: '自伤行为',
-              summary: '咬手背至泛红',
-              is_complete: false,
-            },
-          ]);
+
+          // 加载真实事件列表
+          setEventsLoading(true);
+          listEvents(profileId)
+            .then((items) => {
+              setEvents(items);
+            })
+            .catch(() => {
+              setEvents([]);
+            })
+            .finally(() => {
+              setEventsLoading(false);
+            });
         })
         .catch(() => {
           Taro.showToast({ title: '加载失败', icon: 'none' });
@@ -276,27 +259,17 @@ export default function ProfileEdit() {
   };
 
   // --------------------------------------------------------------------------
-  // 事件操作（Mock）
+  // 事件操作（真实 API）
   // --------------------------------------------------------------------------
-  const toggleEventExpand = (eventId: string) => {
-    setEditingEventId((prev) => (prev === eventId ? null : eventId));
-  };
-
-  const updateEventField = (eventId: string, field: string, value: string) => {
-    setEvents((prev) =>
-      prev.map((e) =>
-        e.event_id === eventId ? { ...e, [field]: value, is_complete: true } : e,
-      ),
-    );
-  };
-
-  const deleteEvent = (eventId: string) => {
-    setShakingEventId(eventId);
-    setTimeout(() => {
+  const handleDeleteEvent = async (eventId: string) => {
+    if (!profileId) return;
+    try {
+      await deleteEventApi(profileId, eventId);
       setEvents((prev) => prev.filter((e) => e.event_id !== eventId));
-      setEditingEventId(null);
-      setShakingEventId(null);
-    }, 300);
+      Taro.showToast({ title: '已删除', icon: 'success' });
+    } catch {
+      Taro.showToast({ title: '删除失败', icon: 'none' });
+    }
   };
 
   // --------------------------------------------------------------------------
@@ -542,69 +515,38 @@ export default function ProfileEdit() {
             </Text>
           </View>
 
-          {eventsExpanded && (
-            <View className="profile-event-list">
-              {events.map((event) => {
-                const isEditing = editingEventId === event.event_id;
-                return (
-                  <View key={event.event_id} className={`profile-event-list__item ${shakingEventId === event.event_id ? 'profile-event-list__item--shake' : ''}`}>
-                    <View className="profile-event-list__summary">
-                      <View className="profile-event-list__summary-header">
-                        <Text className="profile-event-list__time">
-                          {new Date(event.event_time).toLocaleString('zh-CN', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
-                        </Text>
-                        {!event.is_complete && (
-                          <Text className="profile-event-list__incomplete">⚠ 待补全</Text>
-                        )}
-                        <View className="profile-event-list__actions">
-                          <Text onClick={() => toggleEventExpand(event.event_id)}>✎</Text>
-                          <Text onClick={() => deleteEvent(event.event_id)}>🗑</Text>
-                        </View>
-                      </View>
-                      <View className="profile-event-list__tag">
-                        <Text>{event.behavior_type}</Text>
-                      </View>
-                      <Text className="profile-event-list__desc">{event.summary}</Text>
-                    </View>
+          {eventsLoading && (
+            <Text className="profile-event-list__loading">加载中…</Text>
+          )}
 
-                    {isEditing && (
-                      <View className="profile-event-list__detail">
-                        {[
-                          { key: 'trigger', label: '触发因素' },
-                          { key: 'manifestation', label: '具体表现' },
-                          { key: 'intervention', label: '干预措施' },
-                          { key: 'result', label: '结果反馈' },
-                        ].map((field) => (
-                          <View key={field.key} className="profile-event-list__detail-field">
-                            <Text className="profile-event-list__detail-label">{field.label}</Text>
-                            <Input
-                              className="profile-event-list__detail-input"
-                              type="text"
-                              value={(event as any)[field.key] || ''}
-                              onInput={(e) => updateEventField(event.event_id, field.key, e.detail.value)}
-                              placeholder={`请补充${field.label}…`}
-                            />
-                          </View>
-                        ))}
-                        <View className="profile-event-list__detail-actions">
-                          <Button
-                            className="profile-event-list__detail-save"
-                            onClick={() => setEditingEventId(null)}
-                          >
-                            保存修改
-                          </Button>
-                          <Button
-                            className="profile-event-list__detail-cancel"
-                            onClick={() => setEditingEventId(null)}
-                          >
-                            取消
-                          </Button>
-                        </View>
+          {eventsExpanded && !eventsLoading && (
+            <View className="profile-event-list">
+              {events.length === 0 && (
+                <Text className="profile-event-list__empty">暂无事件记录</Text>
+              )}
+              {events.map((event) => (
+                <View key={event.event_id} className="profile-event-list__item">
+                  <View className="profile-event-list__summary">
+                    <View className="profile-event-list__summary-header">
+                      <Text className="profile-event-list__time">
+                        {new Date(event.event_time).toLocaleString('zh-CN', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                      </Text>
+                      <View className="profile-event-list__badges">
+                        {event.has_professional_note && (
+                          <Text className="profile-event-list__eval">已评估</Text>
+                        )}
+                        <Text className="profile-event-list__severity">{event.severity_level}</Text>
                       </View>
-                    )}
+                      <View className="profile-event-list__actions">
+                        <Text onClick={() => handleDeleteEvent(event.event_id)}>🗑</Text>
+                      </View>
+                    </View>
+                    <View className="profile-event-list__tag">
+                      <Text>{event.behavior_type}</Text>
+                    </View>
                   </View>
-                );
-              })}
+                </View>
+              ))}
             </View>
           )}
         </View>
