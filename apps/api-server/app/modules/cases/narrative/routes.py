@@ -25,7 +25,7 @@ from app.core.dependencies.anonymous_user import get_anonymous_user
 from app.core.dependencies.auth_dependencies import _get_session_factory, get_db_session
 from py_db.models.case_narrative import CaseNarrative
 from py_logger import logger
-from ..exceptions import NarrativeNotFoundError, CardNotFoundError
+from ..exceptions import NarrativeNotFoundError
 from .service import (
     NarrativeManagementService,
     ExtractionResponse,
@@ -34,7 +34,7 @@ from .service import (
     narrative_to_list_item,
     narrative_to_response,
 )
-from ..types import NarrativeId, CardId
+from ..types import NarrativeId
 from py_schemas.narratives import (
     NarrativeCreateRequest,
     NarrativeUpdate,
@@ -259,24 +259,6 @@ async def _run_extraction_background(
                 message="extraction_background_failed",
                 extra={"narrative_id": narrative_id},
             )
-
-
-# ===========================================================================
-# L2 卡片路由
-# ===========================================================================
-
-
-@router.get("/cards/{card_id}")
-async def get_card_endpoint(
-    card_id: str,
-    db: AsyncSession = Depends(get_db_session),
-):
-    """获取单张 L2 卡片详情。"""
-    try:
-        card = await _narrative_service.get_card(CardId(card_id), db)
-    except CardNotFoundError as exc:
-        raise HTTPException(status_code=404, detail={"code": "CARD_NOT_FOUND", "message": str(exc)})
-    return card_to_response(card)
 
 
 __all__ = ["router"]

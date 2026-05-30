@@ -1,55 +1,59 @@
-.card-detail-page {
+@use '../../shared/styles/tokens' as *;
+
+// 页面
+.cd-page {
   min-height: 100vh;
-  background-color: #fafaf9;
+  background-color: $cf-background;
+  display: flex;
+  flex-direction: column;
 }
 
-.card-detail-navbar {
+// 导航栏
+.cd-navbar {
   display: flex;
   align-items: center;
   height: 96px;
   padding: 0 24px;
-  background-color: #fff;
-  border-bottom: 1px solid #f0f0f0;
-  position: sticky;
-  top: 0;
-  z-index: 10;
+  background-color: $cf-surface;
+  flex-shrink: 0;
 
   &__back {
     font-size: 32px;
     padding: 0;
     background: none;
     border: none;
-    color: #333;
+    color: $cf-on-surface;
     margin-right: 16px;
     line-height: 1;
-
     &::after { border: none; }
   }
 
   &__title {
     font-size: 32px;
     font-weight: 600;
-    color: #1a1a1a;
+    color: $cf-on-surface;
   }
 }
 
-.card-detail-scroll {
-  padding: 24px;
+// 滚动区
+.cd-scroll {
+  flex: 1;
+  padding: $cf-gutter;
   padding-bottom: 48px;
 }
 
 // 概览
-.card-detail-overview {
-  background: #fff;
+.cd-overview {
+  background-color: $cf-surface;
   border-radius: 24px;
-  padding: 28px;
+  padding: $cf-spacing-md;
   margin-bottom: 20px;
-  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.06);
+  box-shadow: 0 4px 24px rgba($cf-on-background, 0.06);
 
   &__title {
     font-size: 34px;
     font-weight: 700;
-    color: #1a1a1a;
+    color: $cf-on-surface;
     line-height: 1.4;
     margin-bottom: 16px;
   }
@@ -63,14 +67,14 @@
 
   &__tag {
     font-size: 22px;
-    color: #d97706;
-    background: #fef3c7;
+    color: $cf-on-primary-container;
+    background: $cf-primary-container;
     border-radius: 8px;
     padding: 4px 12px;
 
     &--category {
-      color: #059669;
-      background: #d1fae5;
+      color: $cf-on-tertiary-container;
+      background: $cf-tertiary-container;
     }
   }
 
@@ -82,54 +86,111 @@
 
   &__meta-item {
     font-size: 24px;
-    color: #78716c;
+    color: $cf-on-surface-variant;
   }
 }
 
-// 内容区块
-.card-detail-section {
+.cd-scenario {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid $cf-outline-variant;
+
+  &__text {
+    font-size: 28px;
+    line-height: 1.6;
+    color: $cf-on-surface-variant;
+  }
+}
+
+// 四段式卡片（同 er-quartet-card 风格）
+.cd-quartet-card {
+  background-color: $cf-surface;
+  border-radius: 24px;
+  padding: $cf-spacing-md;
+  margin-bottom: 24px;
+  box-shadow: 0 4px 24px rgba($cf-on-background, 0.06);
+  position: relative;
+  overflow: hidden;
+
+  &__accent {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 4px;
+    height: 100%;
+
+    &--immediate { background-color: $cf-tertiary; }
+    &--comforting { background-color: $cf-primary; }
+    &--observation { background-color: $cf-secondary; }
+    &--medical { background-color: $cf-tertiary; }
+  }
+
+  &__body {
+    padding-left: 24px;
+  }
+
+  &__title {
+    font-size: 28px;
+    font-weight: 600;
+    margin-bottom: $cf-spacing-sm;
+
+    &--immediate { color: $cf-tertiary; }
+    &--comforting { color: $cf-primary; }
+    &--observation { color: $cf-secondary; }
+    &--medical { color: $cf-tertiary; }
+  }
+
+  &__content {
+    font-size: 28px;
+    line-height: 1.6;
+    color: $cf-on-background;
+  }
+}
+
+// 通用段落
+.cd-section {
   margin-bottom: 20px;
 
   &__title {
     font-size: 26px;
     font-weight: 600;
-    color: #44403c;
+    color: $cf-on-surface-variant;
     margin-bottom: 12px;
     padding-left: 8px;
-    border-left: 4px solid #f59e0b;
+    border-left: 4px solid $cf-primary;
   }
 
   &__content {
-    background: #fff;
+    background: $cf-surface;
     border-radius: 20px;
     padding: 24px;
-    box-shadow: 0 2px 16px rgba(0, 0, 0, 0.04);
+    box-shadow: 0 2px 16px rgba($cf-on-background, 0.04);
   }
 
   &__text {
     font-size: 28px;
     line-height: 1.75;
-    color: #333;
+    color: $cf-on-background;
   }
 }
 
 // 标签列表
-.card-detail-tags {
+.cd-tags {
   display: flex;
   flex-wrap: wrap;
   gap: 12px;
 
   &__item {
     font-size: 24px;
-    color: #6d28d9;
-    background: #ede9fe;
+    color: $cf-on-secondary-container;
+    background: $cf-secondary-container;
     border-radius: 8px;
     padding: 8px 16px;
   }
 }
 
 // 加载
-.card-detail-loading {
+.cd-loading {
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -139,25 +200,24 @@
   &__skeleton {
     width: 200px;
     height: 16px;
-    background: #e7e5e4;
+    background: $cf-surface-dim;
     border-radius: 8px;
     margin-bottom: 16px;
   }
 
   &__text {
     font-size: 28px;
-    color: #78716c;
+    color: $cf-on-surface-variant;
     margin-bottom: 24px;
   }
 }
 
-.card-detail-retry-btn {
-  background: #f59e0b;
-  color: #fff;
+.cd-retry-btn {
+  background: $cf-primary;
+  color: $cf-on-primary;
   border-radius: 12px;
   padding: 12px 40px;
   font-size: 28px;
   border: none;
-
   &::after { border: none; }
 }
