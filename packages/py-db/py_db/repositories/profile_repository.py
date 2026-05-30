@@ -5,12 +5,12 @@
 禁止 SQL 字符串拼接。
 
 方法清单：
-- create() — INSERT 新档案
+- create() — [继承] @final INSERT，含重试保护
 - get_by_id() — 按 profile_id + caregiver_id 查询单条
 - list_by_caregiver() — 按 caregiver_id 分页查询
 - count_active_by_caregiver() — 统计某家属账号下档案总数
 - update_with_optimistic_lock() — 带乐观锁的 UPDATE（比较 updated_at）
-- delete() — 硬删除（DELETE）
+- delete_profile() — 硬删除（DELETE，双 ID WHERE）
 - get_default() — 查询某家属的默认档案
 - set_default() — 设置指定档案为默认（原子操作）
 - unset_default_for_caregiver() — 取消某家属的所有默认标记
@@ -25,42 +25,27 @@ from uuid import UUID
 from sqlalchemy import delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from py_db.base_repository import BaseRepository
 from py_db.models.profiles import Profile
 
 
-class ProfileRepository:
+class ProfileRepository(BaseRepository[Profile]):
     """个人档案数据库操作封装。
 
-    所有方法接收 AsyncSession 作为参数，支持跨方法的事务编排。
-    不持有 session 状态，无状态设计。
+    继承 BaseRepository[Profile] 获得 @final 保护的 create / find_by_id /
+    find_all / update / delete 方法及连接失败重试机制。
+    自定义方法接收 AsyncSession 作为参数，支持跨方法的事务编排。
     """
+
+    model = Profile
 
     def __init__(self, session_factory: Any) -> None:
         """初始化 Repository 实例。
 
         Args:
-            session_factory: 异步会话工厂（当前未使用，保留兼容 BaseRepository 接口）。
+            session_factory: 异步会话工厂。
         """
-        self._session_factory = session_factory
-
-    async def create(
-        self,
-        session: AsyncSession,
-        profile: Profile,
-    ) -> Profile:
-        """创建新档案记录。
-
-        Args:
-            session: 活动数据库会话。
-            profile: 待创建的 Profile ORM 实例。
-
-        Returns:
-            Profile: 创建成功的实体（含数据库生成的时间戳）。
-        """
-        session.add(profile)
-        await session.flush()
-        await session.refresh(profile)
-        return profile
+        super().__init__(session_factory)
 
     async def exists(
         self,
@@ -204,7 +189,7 @@ class ProfileRepository:
         await session.flush()
         return result.scalars().first()
 
-    async def delete(
+    async def delete_profile(
         self,
         session: AsyncSession,
         profile_id: UUID,

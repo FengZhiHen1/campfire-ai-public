@@ -1,14 +1,14 @@
 """PROF-03 事件记录管理 — Repository 层。
 
 提供 EventLog 实体的所有数据库操作封装。
-所有方法必须通过 AsyncSession 参数化查询执行，
-禁止 SQL 字符串拼接。
+继承 BaseRepository[EventLog] 获得 @final CRUD + 连接失败重试能力。
+自定义方法必须通过 AsyncSession 参数化查询执行，禁止 SQL 字符串拼接。
 
 方法清单：
-- create() — INSERT 新事件
+- create() — [继承] @final INSERT，含重试保护
 - get_by_id() — 按 event_id + profile_id 查询单条
-- update() — UPDATE 事件字段
-- delete() — 硬删除（DELETE）
+- update_event() — UPDATE 事件部分字段（双 ID WHERE）
+- delete_event() — 硬删除（DELETE，双 ID WHERE）
 - list_by_profile() — 按 profile_id 分页查询，event_time DESC
 - count_active_by_profile() — 统计某档案下事件总数
 - delete_by_profile() — 级联删除某档案下所有事件（供 PROF-01 调用）
@@ -23,16 +23,20 @@ from uuid import UUID
 from sqlalchemy import delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from py_db.base_repository import BaseRepository
 from py_db.models.profiles import EventLog
 
 
-class EventRepository:
+class EventRepository(BaseRepository[EventLog]):
     """事件记录数据库操作封装。
 
-    所有方法接收 AsyncSession 作为参数，支持跨方法的事务编排。
-    不持有 session 状态，无状态设计。
+    继承 BaseRepository[EventLog] 获得 @final 保护的 create / find_by_id /
+    find_all / update / delete 方法及连接失败重试机制。
+    自定义方法接收 AsyncSession 作为参数，支持跨方法的事务编排。
     所有查询必须包含 WHERE profile_id = :pid 条件。
     """
+
+    model = EventLog
 
     def __init__(self, session_factory: Any) -> None:
         """初始化 Repository 实例。
@@ -40,26 +44,7 @@ class EventRepository:
         Args:
             session_factory: 异步会话工厂（遵循项目 Repository 接口约定）。
         """
-        self._session_factory = session_factory
-
-    async def create(
-        self,
-        session: AsyncSession,
-        event: EventLog,
-    ) -> EventLog:
-        """创建新事件记录。
-
-        Args:
-            session: 活动数据库会话。
-            event: 待创建的 EventLog ORM 实例。
-
-        Returns:
-            EventLog: 创建成功的实体（含数据库生成的时间戳）。
-        """
-        session.add(event)
-        await session.flush()
-        await session.refresh(event)
-        return event
+        super().__init__(session_factory)
 
     async def get_by_id(
         self,
@@ -86,7 +71,7 @@ class EventRepository:
         result = await session.execute(stmt)
         return result.scalars().first()
 
-    async def update(
+    async def update_event(
         self,
         session: AsyncSession,
         event_id: UUID,
@@ -117,7 +102,7 @@ class EventRepository:
         await session.flush()
         return result.scalars().first()
 
-    async def delete(
+    async def delete_event(
         self,
         session: AsyncSession,
         event_id: UUID,

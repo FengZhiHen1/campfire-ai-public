@@ -26,8 +26,8 @@ class ConsultRepository:
     """应急咨询数据访问仓储。
 
     封装 case_chunks 表的 pgvector 混合检索操作。
-    继承 BaseRepository 的通用 CRUD 能力（通过 session_factory），
-    本类专注于向量检索特有的查询方法。
+    纯向量检索仓库——不继承 BaseRepository（无需通用 CRUD），
+    专注 pgvector HNSW 混合检索（标签精确过滤 + 向量余弦排序）。
     """
 
     # ------------------------------------------------------------------
