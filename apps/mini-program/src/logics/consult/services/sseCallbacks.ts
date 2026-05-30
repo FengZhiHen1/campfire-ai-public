@@ -72,14 +72,6 @@ export function createSseCallbacks(
         chunkSection,
         chunkData.text,
       );
-      // DEBUG: 诊断流式渲染
-      console.debug('[sse] onChunk', {
-        seq: chunkData.sequence,
-        section: chunkSection,
-        textLen: chunkData.text?.length ?? 0,
-        textPreview: chunkData.text?.slice(0, 20) ?? '',
-        planSectionsLen: updatedSections.length,
-      });
       set({
         accumulatedText: state.accumulatedText + chunkData.text,
         lastSequence: chunkData.sequence,
@@ -110,13 +102,6 @@ export function createSseCallbacks(
 
       const doneSections = doneData?.sections ?? {};
       const planSections = sectionsToPlanSections(doneSections);
-      console.debug('[sse] onDone', {
-        finish_reason: doneData?.finish_reason,
-        sectionsKeys: Object.keys(doneSections),
-        sectionsSizes: Object.fromEntries(
-          Object.entries(doneSections).map(([k, v]) => [k, Array.isArray(v) ? v.length : 0]),
-        ),
-      });
 
       const shouldShowTicket = verdict === 'FORCE_BLOCK' || verdict === 'APPEND_WARNING';
       const nextState = shouldShowTicket ? 'ticket_guide' : 'completed';
