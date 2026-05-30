@@ -1,8 +1,10 @@
-"""CSLT-01 危机分级判定 — JudgmentPipeline Pipeline 管道。
+"""CSLT-01 危机分级判定管线实现（管线步骤 4-6）。
 
-顺序执行三层判定（PreSelectionLayer -> RuleEngineLayer -> LLMReviewLayer），
-根据各层结果支持短路跳转（重度直接输出）和降级回退（LLM 超时降级规则引擎），
-最终通过 merge() 合并各层结果输出 CrisisJudgmentResult。
+继承 CrisisJudgmentPipeline 契约 ABC，填写 4 个 _do_ 钩子。
+复用 PreSelectionLayer、RuleEngineLayer、LLMReviewLayer 三层判定组件，
+以及 merge_matrix "宁升勿降"合并策略。
+
+负责将三层递进判定结果合并为最终 CrisisJudgmentResult。
 """
 
 from __future__ import annotations
@@ -10,9 +12,9 @@ from __future__ import annotations
 from typing import Any
 
 from . import merge_matrix
+from .crisis_contract import CrisisJudgmentPipeline
 from .enums import CrisisLevel
 from .exceptions import CrisisJudgmentError, KeywordDictLoadError
-from .layer import JudgmentLayer
 from .llm_review_layer import LLMReviewLayer
 from .models import (
     CrisisJudgmentRequest,
@@ -25,78 +27,51 @@ from .rule_engine_layer import RuleEngineLayer
 from py_logger import logger
 
 
-class JudgmentPipeline:
-    """危机分级判定 Pipeline。
+class CrisisJudgmentPipelineImpl(CrisisJudgmentPipeline):
+    """危机分级判定管线实现。
 
-    顺序执行三层判定，支持短路跳转和降级回退。
-    线程安全：每次调用 run() 创建独立的 JudgmentContext。
+    继承 CrisisJudgmentPipeline 契约 ABC，实现全部 4 个 _do_ 钩子。
+    外部调用者通过 @final run() 进入，无法绕过前置校验和后置处理。
 
     Usage:
-        pipeline = JudgmentPipeline()
+        pipeline = CrisisJudgmentPipelineImpl()
         result = await pipeline.run(request)
     """
 
     def __init__(
         self,
-        pre_selection: JudgmentLayer | None = None,
-        rule_engine: JudgmentLayer | None = None,
-        llm_review: JudgmentLayer | None = None,
+        llm_client: Any = None,
+        keyword_loader: Any = None,
     ) -> None:
-        """初始化 Pipeline。
+        """初始化管线实现。
+
+        创建三层判定组件实例。LLM 复审层接收注入的 llm_client。
 
         Args:
-            pre_selection: 前置选择层实例（默认创建 PreSelectionLayer）。
-            rule_engine: 规则引擎层实例（默认创建 RuleEngineLayer）。
-            llm_review: LLM 复审层实例（默认创建 LLMReviewLayer）。
+            llm_client: LLM 客户端实例（py_llm），传递给 LLMReviewLayer。
+            keyword_loader: 关键词加载可调用对象（保留接口，当前未使用）。
         """
-        self._pre_selection = pre_selection or PreSelectionLayer()
-        self._rule_engine = rule_engine or RuleEngineLayer()
-        self._llm_review = llm_review or LLMReviewLayer()
+        super().__init__(llm_client=llm_client, keyword_loader=keyword_loader)
+        self._pre_selection = PreSelectionLayer()
+        self._rule_engine = RuleEngineLayer()
+        self._llm_review = LLMReviewLayer(llm_client=self._llm_client)
 
-    async def run(self, request: CrisisJudgmentRequest) -> CrisisJudgmentResult:
-        """执行完整的三层递进危机分级判定。
+    # ======================================================================
+    # _do_ 钩子实现
+    # ======================================================================
 
-        Args:
-            request: 危机分级判定请求。
-
-        Returns:
-            合并后的最终判定结果。
-
-        Raises:
-            CrisisJudgmentError: 不可恢复的判定错误。
-        """
-        # 初始化上下文
-        context = JudgmentContext(request=request)
-
-        # ===== 步骤 1：前置行为类型判定 =====
-        await self._run_pre_selection(context)
-
-        # ===== 步骤 1.5：患者档案缺失检查 =====
-        # 在前置选择之后、规则引擎之前检查。若 profile_missing 与
-        # rule_engine_degraded 共存，后者覆盖前者（安全性更高的降级）。
-        if request.patient_profile is None:
-            context.degradation_note = "profile_missing"
-
-        # ===== 步骤 2（条件）：规则引擎关键词匹配 =====
-        if not context.skip_remaining:
-            await self._run_rule_engine(context)
-
-        # ===== 步骤 3（条件）：LLM 精调复审 =====
-        if not context.skip_remaining:
-            await self._run_llm_review(context)
-
-        # ===== 步骤 4：合并输出 =====
-        return self._merge(context)
-
-    # ------------------------------------------------------------------
-    # 各层执行
-    # ------------------------------------------------------------------
-
-    async def _run_pre_selection(self, context: JudgmentContext) -> None:
+    async def _do_pre_select(self, context: JudgmentContext) -> None:
         """执行前置行为类型判定。
+
+        调用 PreSelectionLayer.judge() 检查 behavior_type_selection 中
+        是否包含高危类型。命中高危时设置 context.skip_remaining=True
+        以触发 @final run() 的短路逻辑。
 
         Args:
             context: Pipeline 运行时上下文。
+
+        Raises:
+            CrisisJudgmentError: 前置选择层内部不可恢复错误。
         """
         try:
             result: JudgmentLayerResult = await self._pre_selection.judge(
@@ -111,7 +86,7 @@ class JudgmentPipeline:
             )
             raise CrisisJudgmentError(
                 "PreSelectionLayer failed unexpectedly",
-                original_error=exc if isinstance(exc, Exception) else None,
+                original_error=exc,
             ) from exc
 
         context.sources.append(result)
@@ -131,18 +106,25 @@ class JudgmentPipeline:
             },
         )
 
-    async def _run_rule_engine(self, context: JudgmentContext) -> None:
+    async def _do_rule_engine_match(self, context: JudgmentContext) -> None:
         """执行规则引擎关键词匹配。
+
+        调用 RuleEngineLayer.judge() 完成 AC 自动机扫描 + 否定词过滤 +
+        档案叠加规则。关键词词库加载失败时降级为 degraded 结果。
+        命中 severe 时设置 context.skip_remaining=True 以跳过 LLM 复审。
 
         Args:
             context: Pipeline 运行时上下文。
+
+        Raises:
+            CrisisJudgmentError: 规则引擎内部不可恢复错误。
         """
         try:
             result: JudgmentLayerResult = await self._rule_engine.judge(
                 context.request,
             )
         except KeywordDictLoadError:
-            # 关键词词库加载失败 —— 降级
+            # 关键词词库加载失败 —— 降级，不阻断流程
             context.degradation_note = "rule_engine_degraded"
             result = JudgmentLayerResult(
                 layer_name="RuleEngineLayer",
@@ -164,7 +146,7 @@ class JudgmentPipeline:
 
         context.sources.append(result)
 
-        # Bug 4b: 从规则引擎结果传播 manual_review_flag
+        # 传播 manual_review_flag
         if result.details.get("manual_review_recommended") or result.details.get(
             "profile_overlap_triggered"
         ):
@@ -187,8 +169,11 @@ class JudgmentPipeline:
             },
         )
 
-    async def _run_llm_review(self, context: JudgmentContext) -> None:
+    async def _do_llm_review(self, context: JudgmentContext) -> None:
         """执行 LLM 精调复审。
+
+        调用 LLMReviewLayer.judge() 发送 DeepSeek API 请求进行精调复审。
+        超时和解析失败均不抛异常（fail-open 策略），降级为无 LLM 判定结果。
 
         Args:
             context: Pipeline 运行时上下文。
@@ -204,7 +189,7 @@ class JudgmentPipeline:
                 op_type=None,
                 extra={"error": str(exc)},
             )
-            # LLM 异常不阻断流程 —— 降级为无 LLM 判定
+            # fail-open: LLM 异常不阻断流程
             result = JudgmentLayerResult(
                 layer_name="LLMReviewLayer",
                 level=None,
@@ -240,21 +225,14 @@ class JudgmentPipeline:
             },
         )
 
-    # ------------------------------------------------------------------
-    # 合并策略
-    # ------------------------------------------------------------------
-
-    @staticmethod
-    def _merge(context: JudgmentContext) -> CrisisJudgmentResult:
+    def _do_merge(self, context: JudgmentContext) -> CrisisJudgmentResult:
         """执行"宁升勿降"合并策略。
 
-        使用 MERGE_MATRIX 二维查找表合并各层判定结果。
-
-        合并规则：
-            - 前置选择已判 severe -> 直接输出 severe（跳过矩阵查找）
-            - severe + any = severe（宁升勿降）
-            - llm_timed_out = True -> 采用规则引擎等级为 final_level
-            - 未定义组合 -> 回退到 max(rule, llm)
+        按优先级合并各层判定结果：
+          1. 前置选择 severe → 直接输出 severe
+          2. LLM 超时 → 采用规则引擎等级
+          3. 规则引擎 severe → 直接输出 severe
+          4. 正常合并 → merge_matrix 二维查找表取最大值
 
         Args:
             context: Pipeline 运行时上下文。
@@ -275,18 +253,18 @@ class JudgmentPipeline:
             elif source.layer_name == "LLMReviewLayer":
                 llm_result = source
 
-        # 情况 1：前置选择命中 severe -> 直接输出
+        # 情况 1：前置选择命中 severe → 直接输出
         if pre_result and pre_result.level == CrisisLevel.SEVERE:
             return CrisisJudgmentResult(
                 final_level=CrisisLevel.SEVERE,
                 block_deep_response=True,
                 manual_review_flag=False,
                 review_confidence=None,
-                judgment_sources=context.sources,
+                judgment_sources=list(context.sources),
                 degradation_note=context.degradation_note,
             )
 
-        # 情况 2：LLM 超时 -> 采用规则引擎结果
+        # 情况 2：LLM 超时 → 采用规则引擎结果
         if context.llm_timed_out:
             final_level: CrisisLevel = (
                 rule_result.level if rule_result and rule_result.level
@@ -297,22 +275,22 @@ class JudgmentPipeline:
                 block_deep_response=(final_level == CrisisLevel.SEVERE),
                 manual_review_flag=context.manual_review_flag,
                 review_confidence=None,
-                judgment_sources=context.sources,
+                judgment_sources=list(context.sources),
                 degradation_note=context.degradation_note,
             )
 
-        # 情况 3：规则引擎命中 severe -> 直接输出
+        # 情况 3：规则引擎命中 severe → 直接输出
         if rule_result and rule_result.level == CrisisLevel.SEVERE:
             return CrisisJudgmentResult(
                 final_level=CrisisLevel.SEVERE,
                 block_deep_response=True,
                 manual_review_flag=context.manual_review_flag,
                 review_confidence=None,
-                judgment_sources=context.sources,
+                judgment_sources=list(context.sources),
                 degradation_note=context.degradation_note,
             )
 
-        # 情况 4：正常合并（使用 MERGE_MATRIX）
+        # 情况 4：正常合并（使用 MERGE_MATRIX 二维查找表）
         rule_level: CrisisLevel | None = rule_result.level if rule_result else None
         llm_level: CrisisLevel | None = llm_result.level if llm_result else None
 
@@ -331,13 +309,20 @@ class JudgmentPipeline:
                 if llm_result and not context.llm_timed_out
                 else None
             ),
-            judgment_sources=context.sources,
+            judgment_sources=list(context.sources),
             degradation_note=context.degradation_note,
         )
 
 
+# ============================================================================
+# 内部辅助函数
+# ============================================================================
+
+
 def _max_level(a: CrisisLevel | None, b: CrisisLevel | None) -> CrisisLevel:
     """取两个等级中较高的一个（severe > moderate > mild）。
+
+    merge_matrix.lookup() 回退策略：当二维查找表无法处理该组合时使用。
 
     Args:
         a: 等级 A。

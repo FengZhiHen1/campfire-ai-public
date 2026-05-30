@@ -1,3 +1,4 @@
+# @contract
 """CSLT-01 危机分级判定 — 枚举类型定义。
 
 本模块定义 CrisisLevel 和 BehaviorTypeCategory 两个 StrEnum。
