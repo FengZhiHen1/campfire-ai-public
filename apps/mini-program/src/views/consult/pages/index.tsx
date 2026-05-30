@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { View, Text, Button, Textarea, ScrollView } from '@tarojs/components';
 import { useConsult } from '../../../logics/consult';
 import type { BehaviorTypeCategory, EmotionLevel } from '../../../logics/consult';
@@ -43,6 +43,8 @@ const SECTION_ICON_MAP: Record<string, string> = {
 };
 
 export default function ConsultIndex() {
+  const renderCount = useRef(0);
+  renderCount.current += 1;
   const {
     sessionState,
     behaviorTypeSelection,
@@ -73,6 +75,21 @@ export default function ConsultIndex() {
 
   const [inputText, setInputText] = useState(behaviorDescription);
   const [profiles, setProfiles] = useState<ProfileListItem[]>([]);
+
+  // DEBUG: 确认组件是否重渲染及 planSections 状态
+  useEffect(() => {
+    console.debug('[render] ConsultIndex', {
+      render: renderCount.current,
+      sessionState,
+      planSectionsLen: planSections.length,
+      planSectionsContent: planSections.map((s) => ({
+        title: s.title,
+        contentsLen: s.contents.length,
+        isCompleted: s.isCompleted,
+        firstItem: s.contents[0]?.slice(0, 30) ?? '',
+      })),
+    });
+  });
 
   useEffect(() => {
     listProfiles()
