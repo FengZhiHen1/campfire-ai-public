@@ -324,7 +324,11 @@ export default function ConsultIndex() {
             <View className="consult-refs">
               <Text className="consult-refs__title">参考案例</Text>
               {refCases.map((rc) => (
-                <View key={rc.slice_id} className="consult-ref-card">
+                <View
+                  key={rc.slice_id}
+                  className="consult-ref-card"
+                  onClick={() => Taro.navigateTo({ url: `/views/cases/pages/detail?narrativeId=${rc.case_id}` })}
+                >
                   <Text className="consult-ref-card__title">{rc.case_title}</Text>
                   <Text className="consult-ref-card__text">{rc.slice_text}</Text>
                 </View>
