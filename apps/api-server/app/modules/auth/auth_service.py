@@ -15,9 +15,9 @@ import logging
 import traceback
 from typing import TYPE_CHECKING, Any
 
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
-from py_auth.exceptions import HashingError
+from py_auth.exceptions import HashingError, TokenCreationError
 from py_db.models.auth import User
 from py_schemas.auth import RegisterRequest, RegisterResponse, TokenResponse, UserRole
 
@@ -64,22 +64,14 @@ def _parse_integrity_error(exc: IntegrityError) -> tuple[str, str]:
         - ("DUPLICATE_PHONE", "该手机号已被注册")
         - ("DUPLICATE_FIELD", "用户名或手机号已被注册")  # 回退
     """
-    try:
-        orig = exc.orig
-        if orig is not None and getattr(orig, "pgcode", None) == "23505":
-            constraint_name = getattr(getattr(orig, "diag", None), "constraint_name", "")
-            if "username" in constraint_name:
-                return ("DUPLICATE_USERNAME", "该用户名已被注册")
-            if "phone" in constraint_name:
-                return ("DUPLICATE_PHONE", "该手机号已被注册")
-        # 无法精确区分时返回通用错误码
-        return ("DUPLICATE_FIELD", "用户名或手机号已被注册")
-    except Exception as parse_exc:
-        _logger.warning(
-            "integrity_error_parse_failed",
-            extra={"parse_error": str(parse_exc), "original_error": str(exc)},
-        )
-        return ("DUPLICATE_FIELD", "用户名或手机号已被注册")
+    orig = exc.orig
+    if orig is not None and getattr(orig, "pgcode", None) == "23505":
+        constraint_name = getattr(getattr(orig, "diag", None), "constraint_name", "")
+        if "username" in constraint_name:
+            return ("DUPLICATE_USERNAME", "该用户名已被注册")
+        if "phone" in constraint_name:
+            return ("DUPLICATE_PHONE", "该手机号已被注册")
+    return ("DUPLICATE_FIELD", "用户名或手机号已被注册")
 
 
 def _audit_log_task(
@@ -148,26 +140,6 @@ class AuthServiceImpl(AuthService):
         self._audit_logger: AuditLogger | None = audit_logger
 
     # ======================================================================
-    # 公共钩子覆写
-    # ======================================================================
-
-    async def _fetch_user(self, username: str, session: Any) -> Any | None:
-        """查询用户——大小写不敏感用户名匹配。
-
-        委托给注入的 self._user_repo.find_by_username_lower()。
-        覆写基类的 @abstractmethod 以消除抽象类约束，
-        实际行为与基类默认实现一致。
-
-        Args:
-            username: 已通过 Pydantic 校验的用户名。
-            session: 活动数据库异步会话。
-
-        Returns:
-            User ORM 实例或 None。
-        """
-        return await self._user_repo.find_by_username_lower(session, username)
-
-    # ======================================================================
     # AUTH-01 _do_ 钩子 — 密码哈希 + 数据持久化
     # ======================================================================
 
@@ -233,7 +205,7 @@ class AuthServiceImpl(AuthService):
         except IntegrityError as exc:
             code, message = _parse_integrity_error(exc)
             raise DuplicateUserError(code=code, message=message) from exc
-        except Exception as exc:
+        except SQLAlchemyError as exc:
             _logger.critical(
                 "database_insert_failed",
                 extra={
@@ -282,7 +254,7 @@ class AuthServiceImpl(AuthService):
         try:
             access_token = self._token_manager.create_access_token(payload)
             refresh_token = self._token_manager.create_refresh_token(payload)
-        except Exception as exc:
+        except TokenCreationError as exc:
             _logger.error(
                 "token_creation_failed",
                 extra={"user_id": user_id_str, "error": str(exc)},
@@ -332,7 +304,7 @@ class AuthServiceImpl(AuthService):
         try:
             access_token = self._token_manager.create_access_token(new_payload)
             refresh_token = self._token_manager.create_refresh_token(new_payload)
-        except Exception as exc:
+        except TokenCreationError as exc:
             _logger.error(
                 "token_refresh_failed",
                 extra={
@@ -376,7 +348,7 @@ class AuthServiceImpl(AuthService):
     # 覆写审计日志钩子 — 异步投递不阻塞注册响应
     # ======================================================================
 
-    def _do_audit_log_async(
+    def _audit_log_async(
         self,
         user_id: str,
         username: str,

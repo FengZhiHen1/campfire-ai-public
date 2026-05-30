@@ -128,19 +128,19 @@ class AuthService(ABC):
           - 写入 users 表（同步等待）
           - 异步投递审计日志（不阻塞响应）
         """
-        # 步骤 2: 密码复杂度校验（步骤 1 Pydantic 校验在路由层完成）
+        # 步骤 1: 密码复杂度校验（Pydantic Field 校验由路由层完成）
         self._validate_password_complexity(request.password)
-        # 步骤 3: 专家角色 real_name 必填校验
+        # 步骤 2: 专家角色 real_name 必填校验
         self._validate_expert_real_name(request.role, request.real_name)
-        # 步骤 4-5: 唯一性校验
+        # 步骤 3: 用户名 + 手机号唯一性校验
         await self._validate_uniqueness(request.username, request.phone, session)
-        # 步骤 6: 密码哈希
+        # 步骤 4: 密码哈希
         hashed = self._do_hash_password(request.password)
-        # 步骤 7: 数据写入
+        # 步骤 5: 数据写入
         result = await self._do_register(request, hashed, session)
         # 后置: 结果校验 + 审计日志异步投递
         self._validate_register_result(result)
-        self._do_audit_log_async(result.user_id, request.username, request.role)
+        self._audit_log_async(result.user_id, request.username, request.role)
         return result
 
     # ======================================================================
@@ -236,11 +236,9 @@ class AuthService(ABC):
         Side Effects:
           - Redis 写入（黑名单 + refresh 标记）
         """
-        self._validate_logout_input(access_token, refresh_token)
         access_jti = self._extract_jti_unsafe(access_token)
         refresh_jti = self._extract_jti_unsafe(refresh_token)
         await self._do_logout(access_jti, refresh_jti)
-        self._validate_logout_result()
 
     # ======================================================================
     # @abstractmethod 钩子 — 实现者填以下方法
@@ -282,12 +280,11 @@ class AuthService(ABC):
         """
         ...
 
-    @abstractmethod
     async def _fetch_user(self, username: str, session: Any) -> Any | None:
         """查询用户——大小写不敏感用户名匹配。
 
         调用注入的 self._user_repo.find_by_username_lower()。
-        不需要覆写——UserRepository 已在 __init__ 注入。
+        子类可覆写以自定义查询逻辑。
 
         输入约束:
           - username 已通过 Pydantic 校验
@@ -460,16 +457,16 @@ class AuthService(ABC):
         Raises:
             AuthInternalError: 登录返回结果异常。
         """
-        if result is None or not getattr(result, "access_token", None):
+        if result is None or not result.access_token:
             raise AuthInternalError("登录返回结果异常")
 
     def _validate_register_result(self, result: Any) -> None:
-        """后置校验——确保注册结果包含 user_id。
+        """后置校验——确保注册结果包含非空 user_id。
 
         Raises:
             AuthInternalError: 注册返回结果缺少 user_id。
         """
-        if result is None or not getattr(result, "user_id", None):
+        if result is None or not result.user_id:
             raise AuthInternalError("注册返回结果异常")
 
     def _validate_refresh_output(self, result: Any) -> None:
@@ -480,23 +477,6 @@ class AuthService(ABC):
         """
         if result is None:
             raise AuthInternalError("Token 续期返回异常")
-
-    @staticmethod
-    def _validate_logout_result() -> None:
-        """后置校验——登出完成。
-
-        登出采用 fail-open 策略，此方法为占位校验，
-        确保三明治结构完整但不阻断流程。
-        """
-        pass
-
-    @staticmethod
-    def _validate_logout_input(access_token: str, refresh_token: str) -> None:
-        """前置校验——确保登出时 token 参数非空。
-
-        使用卫语句而非抛异常：空 token 可安全跳过，不阻断登出流程。
-        """
-        pass  # 登出为 fail-open：空 token 静默跳过，由 _do_logout 处理
 
     # ======================================================================
     # 辅助方法
@@ -523,20 +503,20 @@ class AuthService(ABC):
             if len(parts) != 3:
                 return None
             # 解码 payload 段（不校验签名）
-            payload_bytes = base64.urlsafe_b64decode(parts[1] + "==")
+            payload_bytes = base64.urlsafe_b64decode(parts[1] + "=" * (-len(parts[1]) % 4))
             payload: dict[str, Any] = json.loads(payload_bytes)
             return payload.get("jti")
         except Exception:
             return None
 
-    def _do_audit_log_async(self, user_id: str, username: str, role: UserRole) -> None:
+    def _audit_log_async(self, user_id: str, username: str, role: UserRole) -> None:
         """异步投递审计日志——不阻塞注册响应。
 
-        使用 asyncio.create_task + asyncio.to_thread 将日志写入
-        投递到事件循环，失败时静默记录 warning，不中断用户响应。
+        基类默认实现为空操作。子类可覆写以注入实际的 audit_logger 实例。
+        注意：不是 _do_ 前缀——这不是抽象钩子，是可选的覆写点。
 
-        实现者应覆写此方法以注入实际的 audit_logger 实例。
-        基类默认实现为空操作（登录等不需要日志的场景可复用）。
+        实现者应使用 asyncio.create_task + asyncio.to_thread 投递日志，
+        失败时静默记录 warning，不中断用户响应。
         """
         pass
 
