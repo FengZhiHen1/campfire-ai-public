@@ -17,7 +17,7 @@
 import { View, Text, Input, Textarea, Picker, Switch, Button } from '@tarojs/components';
 import type { FC } from 'react';
 
-import type { CaseFormFields, FormErrors } from '../../logics/cases/store/caseFormStore';
+import type { CaseFormFields, FormErrors } from '../../logics/cases/types';
 
 // ============================================================================
 // Props 类型定义

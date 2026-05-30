@@ -1,78 +1,24 @@
-import { useState, useEffect } from 'react';
 import { View, Text, Button } from '@tarojs/components';
 import Taro from '@tarojs/taro';
-import { getNarrative, type NarrativeDetail, type CardSummary } from '../../../logics/cases/services/narrativeApi';
+import { useCaseDetailPage } from '../../../logics/cases';
+import type { CardSummary } from '../../../logics/cases';
 import './detail.scss';
 
 // ============================================================================
-// 常量
-// ============================================================================
-
-const STATUS_TEXT_MAP: Record<string, string> = {
-  draft: '草稿',
-  pending_review: '待审核',
-  approved: '已通过',
-  rejected: '已驳回',
-};
-
-const STATUS_CLASS_MAP: Record<string, string> = {
-  draft: 'draft',
-  pending_review: 'pending',
-  approved: 'approved',
-  rejected: 'rejected',
-};
-
-const SOURCE_LABEL_MAP: Record<string, string> = {
-  '专家撰写': '专家',
-  '机构脱敏': '机构',
-  '工单沉淀': '工单',
-  '家属分享': '家属',
-};
-
-const CARD_STATUS_MAP: Record<string, { text: string; cls: string }> = {
-  draft: { text: '草稿', cls: 'draft' },
-  pending_review: { text: '待审核', cls: 'pending' },
-  approved: { text: '已通过', cls: 'approved' },
-  rejected: { text: '已驳回', cls: 'rejected' },
-};
-
-// ============================================================================
-// 组件
+// 组件：案例详情页（纯渲染层）
+//
+// 所有业务逻辑在 useCaseDetailPage Hook 中。
+// 本组件只负责 JSX 渲染和事件绑定。
 // ============================================================================
 
 export default function CasesDetail() {
-  const [data, setData] = useState<NarrativeDetail | null>(null);
-  const [loading, setLoading] = useState(false);
+  const {
+    data, loading,
+    handleGoExtract, handleEditNarrative, handleCardClick,
+    statusTextMap, statusClassMap, sourceLabelMap, cardStatusMap,
+  } = useCaseDetailPage();
 
-  useEffect(() => {
-    const params = Taro.getCurrentInstance().router?.params;
-    const narrativeId = params?.narrativeId;
-    if (!narrativeId) return;
-
-    setLoading(true);
-    getNarrative(narrativeId)
-      .then((res) => setData(res))
-      .catch(() => Taro.showToast({ title: '加载失败', icon: 'none' }))
-      .finally(() => setLoading(false));
-  }, []);
-
-  const handleGoExtract = () => {
-    if (!data) return;
-    Taro.navigateTo({ url: `/views/cases/pages/extraction-result?narrativeId=${data.narrative_id}` });
-  };
-
-  const handleEditNarrative = () => {
-    if (!data) return;
-    Taro.navigateTo({ url: `/views/cases/pages/narrative-submit?mode=edit&narrativeId=${data.narrative_id}` });
-  };
-
-  const handleCardClick = (cardId: string) => {
-    Taro.navigateTo({ url: `/views/cases/pages/extraction-result?narrativeId=${data?.narrative_id}&cardId=${cardId}` });
-  };
-
-  // --------------------------------------------------------------------------
-  // 加载态
-  // --------------------------------------------------------------------------
+  // ---- 加载态 ----
   if (loading) {
     return (
       <View className="detail-page">
@@ -87,6 +33,7 @@ export default function CasesDetail() {
     );
   }
 
+  // ---- 空数据态 ----
   if (!data) {
     return (
       <View className="detail-page">
@@ -101,13 +48,10 @@ export default function CasesDetail() {
     );
   }
 
-  // --------------------------------------------------------------------------
-  // 正常态
-  // --------------------------------------------------------------------------
-  const stClass = STATUS_CLASS_MAP[data.status] || 'draft';
-  const stText = STATUS_TEXT_MAP[data.status] || data.status;
-  const sourceLabel = SOURCE_LABEL_MAP[data.source_type] || data.source_type;
-  const isOwner = data.author_id === 'current'; // simplified: narrative detail doesn't expose is_owner
+  // ---- 正常态 ----
+  const stClass = statusClassMap[data.status] || 'draft';
+  const stText = statusTextMap[data.status] || data.status;
+  const sourceLabel = sourceLabelMap[data.source_type] || data.source_type;
   const isDraft = data.status === 'draft';
 
   return (
@@ -147,7 +91,7 @@ export default function CasesDetail() {
         <View className="detail-section">
           <Text className="detail-section__title">关联卡片 ({data.cards.length})</Text>
           {data.cards.map((card: CardSummary) => {
-            const cardStatus = CARD_STATUS_MAP[card.review_status] || CARD_STATUS_MAP.draft;
+            const cardStatus = cardStatusMap[card.review_status] || cardStatusMap.draft;
             return (
               <View
                 key={card.card_id}
@@ -161,15 +105,9 @@ export default function CasesDetail() {
                   </View>
                 </View>
                 <View className="detail-card-item__tags">
-                  {card.behavior_type && (
-                    <Text className="detail-card-item__tag">{card.behavior_type}</Text>
-                  )}
-                  {card.severity && (
-                    <Text className="detail-card-item__tag">{card.severity}</Text>
-                  )}
-                  {card.scene && (
-                    <Text className="detail-card-item__tag">{card.scene}</Text>
-                  )}
+                  {card.behavior_type && <Text className="detail-card-item__tag">{card.behavior_type}</Text>}
+                  {card.severity && <Text className="detail-card-item__tag">{card.severity}</Text>}
+                  {card.scene && <Text className="detail-card-item__tag">{card.scene}</Text>}
                 </View>
               </View>
             );
@@ -190,7 +128,6 @@ export default function CasesDetail() {
             </Button>
           </View>
         )}
-
         {data.status === 'approved' && (
           <View className="detail-actions__result detail-actions__result--approved">
             <Text className="detail-actions__result-icon">&#10003;</Text>
