@@ -17,10 +17,10 @@
 import type { MicroSurveyQuestion } from './types/contracts';
 
 /** 干预有效性反馈选项 */
-export const INTERVENTION_FEEDBACK_OPTIONS: string[] = ['有帮助', '一般', '无帮助'];
+export const INTERVENTION_FEEDBACK_OPTIONS: readonly string[] = ['有帮助', '一般', '无帮助'];
 
 /** 微问卷默认题目（固定 2 题，每次相同） */
-export const DEFAULT_QUESTIONS: MicroSurveyQuestion[] = [
+export const DEFAULT_QUESTIONS: readonly MicroSurveyQuestion[] = [
   {
     id: 'trigger',
     text: '本次触发了什么因素？',
@@ -30,12 +30,12 @@ export const DEFAULT_QUESTIONS: MicroSurveyQuestion[] = [
     id: 'effectiveness',
     text: '刚才的建议是否有帮助？',
     type: 'single-choice',
-    options: INTERVENTION_FEEDBACK_OPTIONS,
+    options: [...INTERVENTION_FEEDBACK_OPTIONS],
   },
 ];
 
 /** 预设触发因素枚举值（用于判断是否为自定义文本） */
-export const PRESET_TRIGGERS: string[] = [
+export const PRESET_TRIGGERS: readonly string[] = [
   '噪音', '环境变化', '陌生人', '任务中断', '社交压力', '感官过载', '身体不适',
 ];
 

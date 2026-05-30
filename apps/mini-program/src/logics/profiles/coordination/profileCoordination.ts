@@ -22,6 +22,7 @@ import { useSessionStore } from '../../shared/store/userStore';
 import { useProfileStore } from '../store/profileStore';
 import { useMicroSurveyStore } from '../store/microSurveyStore';
 import * as profileApi from '../services/profileApi';
+import { DEFAULT_QUESTIONS } from '../constants';
 import type { ProfileCoordination } from '../types';
 
 // ============================================================================
@@ -83,7 +84,9 @@ export const profileCoordination: ProfileCoordination = {
     }
 
     markAsDisplayed(consultationId);
-    useMicroSurveyStore.getState().setState('showing');
+    const microStore = useMicroSurveyStore.getState();
+    microStore.setQuestions([...DEFAULT_QUESTIONS]);
+    microStore.setState('showing');
   },
 
   /**

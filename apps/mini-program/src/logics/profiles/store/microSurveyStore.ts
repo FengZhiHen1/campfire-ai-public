@@ -43,7 +43,7 @@ export type MicroSurveyStore = MicroSurveyStoreState & MicroSurveyStoreActions;
 
 const initialState: MicroSurveyStoreState = {
   state: 'hidden',
-  questions: DEFAULT_QUESTIONS,
+  questions: [...DEFAULT_QUESTIONS],
 };
 
 // ============================================================================
