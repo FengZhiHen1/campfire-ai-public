@@ -1,13 +1,14 @@
-"""AUTH-01 用户注册 — FastAPI 依赖注入工厂。
+"""api-server 认证模块 — FastAPI 依赖注入工厂。
 
-提供 UserRepository、PasswordHasher、AuditLogger 的依赖注入工厂函数，
+提供 UserRepository、PasswordHasher、AuditLogger、TokenManager、
+TokenBlacklist 和 AuthService 的依赖注入工厂函数，
 以及数据库异步会话的请求级依赖。
 所有工厂函数均可在 FastAPI Depends() 中直接使用。
 """
 
 from __future__ import annotations
 
-from typing import AsyncGenerator
+from typing import TYPE_CHECKING, AsyncGenerator
 
 from sqlalchemy.ext.asyncio import (
     AsyncSession,
@@ -15,7 +16,9 @@ from sqlalchemy.ext.asyncio import (
     create_async_engine,
 )
 
-from py_auth.hashing import hash_password
+from py_auth.blacklist import RedisBlacklist
+from py_auth.hashing import hash_password, verify_password
+from py_auth.jwt_utils import JoseTokenManager
 from py_config import get_settings
 from py_db.repositories.case_repository import CaseRepository
 from py_db.repositories.event_repository import EventRepository
@@ -27,6 +30,9 @@ from py_db.repositories.review_repository import (
 from py_db.repositories.teacher_link_repository import TeacherLinkRepository
 from py_db.repositories.user_repository import UserRepository
 from py_logger import logger
+
+if TYPE_CHECKING:
+    from app.modules.auth.auth_contract import AuthService
 
 
 # ---------------------------------------------------------------------------
@@ -81,15 +87,17 @@ async def get_db_session() -> AsyncGenerator[AsyncSession, None]:
 class PasswordHasher:
     """bcrypt 密码哈希适配器。
 
-    封装 py_auth.hashing.hash_password() 调用，
+    封装 py_auth.hashing 的 hash_password() / verify_password() 调用，
     提供干净的依赖注入边界，便于 Service 层单元测试时 mock。
+    实现 py_auth.auth_contract.PasswordHasher 的接口语义。
 
     Usage:
         hasher = PasswordHasher()
-        hashed = hasher.hash("Abc12345")
+        hashed = hasher.hash_password("Abc12345")
+        is_valid = hasher.verify_password("Abc12345", hashed)
     """
 
-    def hash(self, plain_password: str) -> str:
+    def hash_password(self, plain_password: str) -> str:
         """对明文密码执行 bcrypt 不可逆哈希。
 
         Args:
@@ -99,9 +107,30 @@ class PasswordHasher:
             bcrypt 哈希字符串，格式 $2b$12$...。
 
         Raises:
-            HashingError: bcrypt 引擎内部错误（passlib 不可用、OOM 等）。
+            HashingError: bcrypt 引擎内部错误。
         """
-        return hash_password(plain_password)
+        result: str = hash_password(plain_password)
+        return result
+
+    def verify_password(
+        self, plain_password: str, hashed_password: str
+    ) -> bool:
+        """验证明文密码是否匹配已存储的哈希值。
+
+        Args:
+            plain_password: 待验证的明文密码。
+            hashed_password: 已存储的 bcrypt 哈希值。
+
+        Returns:
+            True 匹配，False 不匹配。
+        """
+        result: bool = verify_password(plain_password, hashed_password)
+        return result
+
+    # 保留旧 API 以兼容可能存在的外部调用
+    def hash(self, plain_password: str) -> str:
+        """【已废弃】使用 hash_password 替代。"""
+        return self.hash_password(plain_password)
 
 
 # ---------------------------------------------------------------------------
@@ -181,7 +210,7 @@ def get_password_hasher() -> PasswordHasher:
     """FastAPI Depends 工厂：构造 PasswordHasher 适配器实例。
 
     Returns:
-        PasswordHasher: 封装 hash_password() 的适配器。
+        PasswordHasher: 封装 hash_password() / verify_password() 的适配器。
     """
     return PasswordHasher()
 
@@ -193,6 +222,52 @@ def get_audit_logger() -> AuditLogger:
         AuditLogger: 封装 logger.critical() 的适配器。
     """
     return AuditLogger()
+
+
+def get_token_manager() -> JoseTokenManager:
+    """FastAPI Depends 工厂：构造 JoseTokenManager 实例。
+
+    从 py_auth.jwt_utils 导入，惰性初始化密钥配置。
+
+    Returns:
+        JoseTokenManager: JWT 签发与校验管理器。
+    """
+    return JoseTokenManager()
+
+
+def get_token_blacklist() -> RedisBlacklist:
+    """FastAPI Depends 工厂：构造 RedisBlacklist 实例。
+
+    从 py_auth.blacklist 导入，惰性初始化 Redis 连接。
+
+    Returns:
+        RedisBlacklist: Token 黑名单管理器。
+    """
+    return RedisBlacklist()
+
+
+def get_auth_service() -> "AuthService":
+    """FastAPI Depends 工厂：组装 AuthServiceImpl 并注入所有依赖。
+
+    注入链：
+      - PasswordHasher() — 本地适配器（封装 py_auth.hashing）
+      - JoseTokenManager() — JWT 签发与校验
+      - RedisBlacklist() — Token 失效管理
+      - UserRepository — 用户持久化查询
+      - AuditLogger() — 审计日志写入
+
+    Returns:
+        AuthServiceImpl: 认证服务契约实现（返回类型标注为 ABC 以解耦路由层）。
+    """
+    from app.modules.auth.auth_service import AuthServiceImpl
+
+    return AuthServiceImpl(
+        password_hasher=PasswordHasher(),
+        token_manager=JoseTokenManager(),
+        token_blacklist=RedisBlacklist(),
+        user_repo=UserRepository(session_factory=_get_session_factory()),
+        audit_logger=AuditLogger(),
+    )
 
 
 def get_review_repository() -> ReviewRepository:
@@ -245,6 +320,9 @@ __all__ = [
     "get_teacher_link_repository",
     "get_password_hasher",
     "get_audit_logger",
+    "get_token_manager",
+    "get_token_blacklist",
+    "get_auth_service",
     "PasswordHasher",
     "AuditLogger",
 ]
