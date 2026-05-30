@@ -10,7 +10,7 @@
 
 from __future__ import annotations
 
-from typing import NewType
+from typing import Any, NewType, Protocol, Sequence
 
 # ============================================================================
 # 用户标识
@@ -58,10 +58,30 @@ JtiToken = NewType("JtiToken", str)
 # 输出约束: 仅供 MVP 阶段使用，正式上线后移除
 DeviceID = NewType("DeviceID", str)
 
+# ============================================================================
+# 接口协议
+# ============================================================================
+
+
+class HasRoles(Protocol):
+    """角色承载协议——任何拥有 id 和 roles 属性的对象都满足此接口。
+
+    用于 RBACGuard.authorize() 的类型标注，保持对具体 User 模型的解耦，
+    同时恢复类型检查器对 user 参数的基本类型安全。
+
+    Usage:
+        def authorize(self, user: HasRoles, ...) -> None: ...
+    """
+
+    id: Any
+    roles: Sequence[Any]
+
+
 __all__ = [
     "UserID",
     "PlainPassword",
     "TokenHash",
     "JtiToken",
     "DeviceID",
+    "HasRoles",
 ]

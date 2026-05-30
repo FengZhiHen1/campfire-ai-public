@@ -91,11 +91,6 @@ class JoseTokenManager(TokenManager):
                 f"Token 格式无效: {exc}",
                 detail={"error_type": type(exc).__name__},
             ) from exc
-        except Exception as exc:
-            raise TokenDecodeError(
-                f"Token header 解析失败: {exc}",
-                detail={"error_type": type(exc).__name__},
-            ) from exc
 
         kid = unverified_headers.get("kid")
 
@@ -130,36 +125,48 @@ class JoseTokenManager(TokenManager):
 
 
 # ============================================================================
-# 模块级便捷函数（兼容旧 API）
+# 惰性初始化（避免 import 时触发 get_security_config）
 # ============================================================================
 
-_default_manager = JoseTokenManager()
-"""模块级默认实例，供便捷函数使用。"""
+_manager_instance: JoseTokenManager | None = None
+
+
+def _get_manager() -> JoseTokenManager:
+    """获取 JoseTokenManager 单例（惰性初始化）。"""
+    global _manager_instance
+    if _manager_instance is None:
+        _manager_instance = JoseTokenManager()
+    return _manager_instance
+
+
+# ============================================================================
+# 便捷函数（兼容旧 API）
+# ============================================================================
 
 
 def create_access_token(data: dict[str, Any]) -> str:
     """便捷函数——签发访问令牌。"""
-    return _default_manager.create_access_token(data)
+    return _get_manager().create_access_token(data)
 
 
 def create_refresh_token(data: dict[str, Any]) -> str:
     """便捷函数——签发续期令牌。"""
-    return _default_manager.create_refresh_token(data)
+    return _get_manager().create_refresh_token(data)
 
 
 def verify_token(token: str) -> dict[str, Any] | None:
     """便捷函数——校验 Token 签名和有效期。"""
-    return _default_manager.verify_token(token)
+    return _get_manager().verify_token(token)
 
 
 def verify_access_token(token: str) -> dict[str, Any] | None:
     """便捷函数——校验访问令牌。"""
-    return _default_manager.verify_access_token(token)
+    return _get_manager().verify_access_token(token)
 
 
 def verify_refresh_token(token: str) -> dict[str, Any] | None:
     """便捷函数——校验续期令牌。"""
-    return _default_manager.verify_refresh_token(token)
+    return _get_manager().verify_refresh_token(token)
 
 
 __all__ = [

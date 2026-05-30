@@ -16,6 +16,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from typing import Any, final
 
+from py_auth.types import HasRoles
 from py_logger import logger
 
 
@@ -558,7 +559,7 @@ class RBACGuard(ABC):
     @final
     def authorize(
         self,
-        user: Any,
+        user: HasRoles,
         min_level: Any | None = None,
         exact_roles: list[Any] | None = None,
     ) -> None:
@@ -606,7 +607,7 @@ class RBACGuard(ABC):
     @abstractmethod
     def _do_authorize(
         self,
-        user: Any,
+        user: HasRoles,
         min_level: Any | None,
         exact_roles: list[Any] | None,
     ) -> bool:
@@ -627,15 +628,27 @@ class RBACGuard(ABC):
 
     def _validate_authorize_input(
         self,
-        user: Any,
+        user: HasRoles,
         min_level: Any | None,
         exact_roles: list[Any] | None,
     ) -> None:
         """基线授权输入校验。
 
         Raises:
+            PermissionDeniedError: user 为 None、无 roles 属性或 roles 为空。
             ValueError: min_level 和 exact_roles 同时非空。
         """
+        if user is None:
+            raise PermissionDeniedError(
+                "未登录或用户信息缺失",
+                reason="user_missing",
+            )
+        roles = getattr(user, "roles", None)
+        if roles is None or len(roles) == 0:
+            raise PermissionDeniedError(
+                "角色信息缺失",
+                reason="no_roles",
+            )
         if min_level is not None and exact_roles is not None:
             raise ValueError("min_level 和 exact_roles 参数不能同时使用")
 
@@ -643,7 +656,7 @@ class RBACGuard(ABC):
 
     def _log_denial(
         self,
-        user: Any,
+        user: HasRoles,
         min_level: Any | None,
         exact_roles: list[Any] | None,
     ) -> None:

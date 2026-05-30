@@ -79,24 +79,36 @@ class BcryptHasher(PasswordHasher):
 
 
 # ============================================================================
-# 模块级便捷函数（兼容旧 API）
+# 惰性初始化（避免 import 时触发 get_security_config）
 # ============================================================================
 
-_default_hasher = BcryptHasher()
-"""模块级默认实例，供 hash_password / verify_password 便捷函数使用。"""
+_hasher_instance: BcryptHasher | None = None
+
+
+def _get_hasher() -> BcryptHasher:
+    """获取 BcryptHasher 单例（惰性初始化）。"""
+    global _hasher_instance
+    if _hasher_instance is None:
+        _hasher_instance = BcryptHasher()
+    return _hasher_instance
+
+
+# ============================================================================
+# 便捷函数（兼容旧 API）
+# ============================================================================
 
 
 def hash_password(plain_password: str) -> str:
-    """便捷函数——使用模块级 BcryptHasher 实例执行哈希。
+    """便捷函数——使用 BcryptHasher 实例执行哈希。
 
     推荐在新代码中直接实例化 BcryptHasher 使用。
     """
-    return _default_hasher.hash_password(plain_password)
+    return _get_hasher().hash_password(plain_password)
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
-    """便捷函数——使用模块级 BcryptHasher 实例校验密码。"""
-    return _default_hasher.verify_password(plain_password, hashed_password)
+    """便捷函数——使用 BcryptHasher 实例校验密码。"""
+    return _get_hasher().verify_password(plain_password, hashed_password)
 
 
 __all__ = [

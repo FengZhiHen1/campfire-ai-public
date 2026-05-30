@@ -93,33 +93,70 @@ class RedisBlacklist(TokenBlacklist):
         result: bool = await client.exists(key) > 0
         return result
 
+    # ------------------------------------------------------------------
+    # 连接生命周期管理
+    # ------------------------------------------------------------------
+
+    async def close(self) -> None:
+        """关闭 Redis 连接，释放资源。
+
+        幂等——重复调用安全。关闭后再次调用 _get_client 会重新创建连接。
+        """
+        if self._client is not None:
+            client = self._client
+            self._client = None
+            await client.aclose()
+
+    async def __aenter__(self) -> "RedisBlacklist":
+        return self
+
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: object,
+    ) -> None:
+        await self.close()
+
 
 # ============================================================================
-# 模块级便捷函数（兼容旧 API）
+# 惰性初始化（避免 import 时触发 Redis 连接池创建）
 # ============================================================================
 
-_default_blacklist = RedisBlacklist()
-"""模块级默认实例，供便捷函数使用。"""
+_blacklist_instance: RedisBlacklist | None = None
+
+
+def _get_blacklist() -> RedisBlacklist:
+    """获取 RedisBlacklist 单例（惰性初始化）。"""
+    global _blacklist_instance
+    if _blacklist_instance is None:
+        _blacklist_instance = RedisBlacklist()
+    return _blacklist_instance
+
+
+# ============================================================================
+# 便捷函数（兼容旧 API）
+# ============================================================================
 
 
 async def add_to_blacklist(jti: str) -> None:
     """便捷函数——将 Token jti 加入黑名单。"""
-    await _default_blacklist.add_to_blacklist(jti)
+    await _get_blacklist().add_to_blacklist(jti)
 
 
 async def is_blacklisted(jti: str) -> bool:
     """便捷函数——查询 jti 是否在黑名单中。"""
-    return await _default_blacklist.is_blacklisted(jti)
+    return await _get_blacklist().is_blacklisted(jti)
 
 
 async def mark_refresh_used(jti: str) -> None:
     """便捷函数——标记 Refresh Token 已使用。"""
-    await _default_blacklist.mark_refresh_used(jti)
+    await _get_blacklist().mark_refresh_used(jti)
 
 
 async def is_refresh_used(jti: str) -> bool:
     """便捷函数——查询 Refresh Token 是否已使用。"""
-    return await _default_blacklist.is_refresh_used(jti)
+    return await _get_blacklist().is_refresh_used(jti)
 
 
 __all__ = [

@@ -10,14 +10,15 @@
   - get_masked_phone: 手机号字段级脱敏
 
 Usage:
-    from py_auth.rbac import DefaultRBACGuard, require_role
-    guard = DefaultRBACGuard()
+    from py_auth.rbac import DefaultRBACGuard, require_role, get_guard
+    guard = get_guard()
     guard.authorize(user, min_level=UserRole.ADMIN)
 """
 
 from __future__ import annotations
 
 import re
+import traceback
 from typing import TYPE_CHECKING, Any, Callable, Sequence, cast
 
 if TYPE_CHECKING:
@@ -26,6 +27,8 @@ if TYPE_CHECKING:
 from fastapi import HTTPException, Request
 
 from py_auth.auth_contract import RBACGuard
+from py_auth.exceptions import PermissionDeniedError
+from py_auth.types import HasRoles
 from py_logger import logger
 from py_schemas.auth import UserRole
 
@@ -45,11 +48,15 @@ _FALLBACK_MASK: str = "****"
 
 
 class DefaultRBACGuard(RBACGuard):
-    """五级 RBAC 权限判定，继承 RBACGuard 契约。"""
+    """五级 RBAC 权限判定，继承 RBACGuard 契约。
+
+    前置校验（用户存在性、角色非空、参数互斥）由 @final authorize 处理，
+    实现者只需关心角色层级比较逻辑。
+    """
 
     def _do_authorize(
         self,
-        user: Any,
+        user: HasRoles,
         min_level: Any | None,
         exact_roles: list[Any] | None,
     ) -> bool:
@@ -59,6 +66,11 @@ class DefaultRBACGuard(RBACGuard):
             True 表示应拒绝（权限不足），False 表示放行。
         """
         user_roles: list[UserRole] = list(getattr(user, "roles", []))
+
+        # 防御：虽然 _validate_authorize_input 已校验 roles 非空，
+        # 但这里仍做一次防御，避免非正常调用路径触发 max([]) 崩溃
+        if not user_roles:
+            return True  # 拒绝——无角色不可访问
 
         if min_level is not None:
             max_level = max(role.level for role in user_roles)
@@ -74,10 +86,23 @@ class DefaultRBACGuard(RBACGuard):
 
 
 # ============================================================================
-# 模块级实例
+# 惰性初始化（避免 import 时触发配置读取）
 # ============================================================================
 
-_default_guard = DefaultRBACGuard()
+_guard_instance: DefaultRBACGuard | None = None
+
+
+def get_guard() -> DefaultRBACGuard:
+    """获取 DefaultRBACGuard 模块级单例（惰性初始化）。
+
+    首次调用时创建实例，后续调用返回同一实例。
+    避免在模块 import 阶段触发配置读取（get_security_config）。
+    """
+    global _guard_instance
+    if _guard_instance is None:
+        _guard_instance = DefaultRBACGuard()
+    return _guard_instance
+
 
 # ============================================================================
 # FastAPI Depends 工厂
@@ -89,6 +114,9 @@ def require_role(
     exact_roles: Sequence[UserRole] | None = None,
 ) -> Callable[[Request], Any]:
     """路由级权限校验 FastAPI Depends 工厂。
+
+    通过调用 DefaultRBACGuard.authorize() 进入契约路径：
+    前置校验（用户存在性、角色非空）→ _do_authorize 判定 → 后置日志。
 
     在路由中使用:
         @router.get("/admin")
@@ -110,26 +138,26 @@ def require_role(
             raise HTTPException(status_code=401, detail=_AUTH_MISSING_DETAIL)
 
         user = getattr(request.state, "user", None)
-        if user is None:
-            raise HTTPException(status_code=401, detail=_AUTH_MISSING_DETAIL)
 
-        roles = getattr(user, "roles", None)
-        if roles is None or len(roles) == 0:
-            raise HTTPException(status_code=401, detail=_AUTH_MISSING_DETAIL)
-
-        # 委派给 DefaultRBACGuard 判定
-        denied = _default_guard._do_authorize(
-            user, min_level, cast("list[Any] | None", exact_roles)
-        )
-
-        if denied:
-            _default_guard._log_denial(
-                user, min_level, cast("list[Any] | None", exact_roles)
+        # 通过契约公共入口 authorize 进行判定
+        # authorize 的 _validate_authorize_input 会处理 user=None → PermissionDeniedError
+        guard = get_guard()
+        try:
+            guard.authorize(
+                cast(HasRoles, user),
+                min_level=min_level,
+                exact_roles=list(exact_roles) if exact_roles else None,
             )
+        except PermissionDeniedError as e:
+            if e.reason in ("user_missing", "no_roles"):
+                raise HTTPException(
+                    status_code=401,
+                    detail=_AUTH_MISSING_DETAIL,
+                ) from e
             raise HTTPException(
                 status_code=403,
                 detail=_PERMISSION_DENIED_DETAIL,
-            )
+            ) from e
 
         return None
 
@@ -145,7 +173,7 @@ def get_masked_phone(phone: str | None, user_roles: Sequence[UserRole]) -> str:
     """手机号字段级脱敏判定。
 
     admin(level>=4) / maintainer(5) 返回完整号码，其他角色返回脱敏格式。
-    异常格式号码降级为 "****"，永不抛异常。
+    任何意外异常降级为 "****" 并记录 warning 日志。
 
     Args:
         phone: 原始手机号字符串（可为 None）。
@@ -184,6 +212,12 @@ def get_masked_phone(phone: str | None, user_roles: Sequence[UserRole]) -> str:
 
         return cleaned[:3] + "****" + cleaned[-4:]
     except Exception:
+        logger.warning(
+            "py-auth",
+            "手机号脱敏过程发生意外异常",
+            op_type="权限拒绝",
+            extra={"stacktrace": traceback.format_exc()},
+        )
         return _FALLBACK_MASK
 
 
@@ -197,6 +231,8 @@ class PrivacyGuard:
 
     所有访问请求直接放行，返回 allowed=True。
     正式上线后替换为基于 RBAC 的真实实现。
+
+    # TODO: 正式版替换为 call RBAC guard 的真实实现（deadline: 上线前）
     """
 
     @staticmethod
@@ -210,6 +246,7 @@ class PrivacyGuard:
 
 __all__ = [
     "DefaultRBACGuard",
+    "get_guard",
     "require_role",
     "get_masked_phone",
     "PrivacyGuard",

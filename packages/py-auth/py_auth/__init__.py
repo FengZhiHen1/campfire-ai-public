@@ -43,7 +43,7 @@ from py_auth.auth_contract import (
 )
 
 # ── 语法契约（语义类型）─────────────────────────────────────────────────────
-from py_auth.types import DeviceID, JtiToken, PlainPassword, TokenHash, UserID
+from py_auth.types import DeviceID, HasRoles, JtiToken, PlainPassword, TokenHash, UserID
 
 # ── 异常 ────────────────────────────────────────────────────────────────────
 from py_auth.exceptions import (
@@ -77,6 +77,7 @@ from py_auth.jwt_utils import (
 from py_auth.rbac import (
     DefaultRBACGuard,
     PrivacyGuard,
+    get_guard,
     get_masked_phone,
     require_role,
 )
@@ -94,6 +95,7 @@ __all__ = [
     "TokenHash",
     "JtiToken",
     "DeviceID",
+    "HasRoles",
     # ── 异常 ──
     "AuthError",
     "HashingError",
@@ -123,6 +125,7 @@ __all__ = [
     "is_refresh_used",
     "get_current_user",
     "require_role",
+    "get_guard",
     "get_masked_phone",
     "PrivacyGuard",
 ]

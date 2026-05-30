@@ -101,19 +101,35 @@ class TokenDecodeError(AuthError):
 
 
 class PermissionDeniedError(AuthError):
-    """RBAC 权限不足。
+    """RBAC 权限不足或认证缺失。
 
     触发条件:
+      - 用户对象为 None 或缺少 roles 属性
+      - 用户角色列表为空
       - 用户角色层级低于 min_level
       - 用户角色不在 exact_roles 白名单中
-      - 请求对象缺少 user 属性
 
-    诊断字段（继承自 AuthError）:
-      - message: 权限判断摘要
-      - detail: {"user_roles": [...], "required": ..., "route": "/api/..."}
+    诊断字段:
+      - message: 人类可读的错误描述
+      - reason: 机器可读的原因码 ("user_missing" | "no_roles" | "permission_denied")
+      - detail: {"user_roles": [...], "required": ...}
+
+    调用方可根据 reason 码将异常映射为恰当的 HTTP 状态码：
+      - user_missing / no_roles → 401
+      - permission_denied → 403
     """
 
-    pass
+    def __init__(
+        self,
+        message: str,
+        *,
+        reason: str = "permission_denied",
+        detail: dict[str, Any] | None = None,
+    ) -> None:
+        self.reason: str = reason
+        merged = detail or {}
+        merged["reason"] = reason
+        super().__init__(message, merged)
 
 
 class BlacklistError(AuthError):
