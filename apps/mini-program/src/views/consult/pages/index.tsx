@@ -351,19 +351,6 @@ export default function ConsultIndex() {
           </View>
         )}
 
-        {/* 底部输入区 */}
-        <View className="consult-input-bar">
-          <View className="consult-input-bar__container">
-            <Textarea
-              className="consult-input-bar__textarea"
-              value={inputText}
-              onInput={(e) => handleInputChange(e.detail.value)}
-              placeholder="请描述当前正在发生什么…"
-            />
-            <View className="consult-input-bar__voice-btn">🎤</View>
-          </View>
-        </View>
-
         {/* 免责声明 */}
         <View className="consult-disclaimer">
           <Text className="consult-disclaimer__text">
