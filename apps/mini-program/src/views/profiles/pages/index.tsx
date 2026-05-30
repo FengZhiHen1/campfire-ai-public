@@ -30,6 +30,11 @@ export default function ProfileIndex() {
     handleEventsRefresh,
   );
 
+  // 首次挂载时拉取档案列表
+  useEffect(() => {
+    fetchProfiles();
+  }, [fetchProfiles]);
+
   // 加载选中档案详情和事件列表
   useEffect(() => {
     if (selectedProfile) {

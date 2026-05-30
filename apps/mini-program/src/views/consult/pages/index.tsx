@@ -2,8 +2,8 @@ import { useState, useEffect } from 'react';
 import { View, Text, Button, Textarea, ScrollView } from '@tarojs/components';
 import { useConsult } from '../../../logics/consult';
 import type { BehaviorTypeCategory, EmotionLevel } from '../../../logics/consult';
-import { listProfiles } from '../../../logics/profiles/services/profileApi';
-import type { ProfileListItem } from '@campfire/ts-shared';
+import { useProfileStore } from '../../../logics/profiles/store/profileStore';
+import { useProfile } from '../../../logics/profiles/hooks/useProfile';
 import './index.scss';
 
 const BEHAVIOR_OPTIONS: { value: BehaviorTypeCategory; label: string; icon: string; desc: string }[] = [
@@ -72,13 +72,16 @@ export default function ConsultIndex() {
   } = useConsult();
 
   const [inputText, setInputText] = useState(behaviorDescription);
-  const [profiles, setProfiles] = useState<ProfileListItem[]>([]);
+
+  const profiles = useProfileStore((s) => s.list);
+  const listState = useProfileStore((s) => s.listState);
+  const { fetchProfiles } = useProfile();
 
   useEffect(() => {
-    listProfiles()
-      .then((data) => setProfiles(data as ProfileListItem[]))
-      .catch(() => {});
-  }, []);
+    if (listState === 'idle' && profiles.length === 0) {
+      fetchProfiles();
+    }
+  }, [listState, profiles.length, fetchProfiles]);
 
   const toggleType = (type: BehaviorTypeCategory) => {
     const selection = behaviorTypeSelection ?? [];

@@ -17,7 +17,7 @@ function getGreeting(): string {
 }
 
 export default function HomePage() {
-  const { loading, hasError, consultHistory, profiles, load } = useHomePage();
+  const { loading, hasError, consultHistory, profiles, profilesLoading, load } = useHomePage();
 
   const greeting = getGreeting();
   const latestConsult = consultHistory[0];
@@ -112,7 +112,7 @@ export default function HomePage() {
         </Button>
       </View>
 
-      {loading ? (
+      {profilesLoading ? (
         <View className="home-skeleton home-skeleton--profile" />
       ) : latestProfile ? (
         <View className="home-profile-card" onClick={goProfile}>
