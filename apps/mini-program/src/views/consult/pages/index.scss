@@ -454,26 +454,58 @@
     width: 240px;
     height: 240px;
     background-color: $cf-primary-container;
-    border-radius: 48px;
+    border-radius: $cf-radius-full;
     display: flex;
     align-items: center;
     justify-content: center;
     margin-bottom: $cf-spacing-lg;
+    position: relative;
+    overflow: hidden;
   }
 
-  &__hero-icon {
-    font-size: 96px;
+  /* 外层暖光呼吸 */
+  &__hero-glow {
+    position: absolute;
+    width: 200px;
+    height: 200px;
+    border-radius: $cf-radius-full;
+    background: radial-gradient(circle, rgba($cf-primary, 0.22) 0%, rgba($cf-primary, 0.06) 50%, transparent 70%);
+    animation: consult-warm-glow 3s ease-in-out infinite;
+  }
+
+  /* 火焰核心 */
+  &__hero-core {
+    position: relative;
+    width: 56px;
+    height: 72px;
+    background: linear-gradient(180deg, $cf-inverse-primary 0%, $cf-primary 100%);
+    border-radius: 50% 50% 50% 50% / 60% 60% 40% 40%;
+    box-shadow: 0 0 32px rgba($cf-primary, 0.35);
+    animation: consult-warm-pulse 3s ease-in-out infinite;
+
+    /* 内层高亮 */
+    &::after {
+      content: '';
+      position: absolute;
+      top: 8px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 20px;
+      height: 28px;
+      background: linear-gradient(180deg, rgba($cf-surface, 0.5) 0%, transparent 100%);
+      border-radius: 50% 50% 50% 50% / 60% 60% 40% 40%;
+    }
   }
 
   &__title {
-    font-size: 40px;
+    font-size: $cf-headline-sm;
     font-weight: 600;
     color: $cf-on-background;
-    margin-bottom: 24px;
+    margin-bottom: $cf-spacing-sm;
   }
 
   &__subtitle {
-    font-size: 28px;
+    font-size: $cf-body-sm;
     color: $cf-on-surface-variant;
     line-height: 1.5;
     text-align: center;
@@ -482,12 +514,12 @@
   }
 
   &__start-btn {
-    width: calc(100% - $cf-spacing-xl);
+    width: calc(100% - 128px);
     max-width: 600px;
     height: 96px;
     background-color: $cf-primary;
     color: $cf-on-primary;
-    border-radius: 24px;
+    border-radius: $cf-radius-lg;
     font-size: 32px;
     font-weight: 600;
     display: flex;
@@ -1003,6 +1035,29 @@
   to {
     opacity: 1;
     transform: translateY(0);
+  }
+}
+
+/* idle 暖光呼吸 */
+@keyframes consult-warm-glow {
+  0%, 100% {
+    transform: scale(0.92);
+    opacity: 0.6;
+  }
+  50% {
+    transform: scale(1.08);
+    opacity: 1;
+  }
+}
+
+@keyframes consult-warm-pulse {
+  0%, 100% {
+    transform: scale(0.95) translateY(2px);
+    opacity: 0.85;
+  }
+  50% {
+    transform: scale(1.05) translateY(-2px);
+    opacity: 1;
   }
 }
 
