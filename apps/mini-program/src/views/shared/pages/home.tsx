@@ -1,6 +1,7 @@
 import { View, Text, Button } from '@tarojs/components';
 import Taro from '@tarojs/taro';
 import { useHomePage } from '../../../logics/shared/hooks/useHomePage';
+import { formatRelativeTime } from '../../../logics/shared/utils/timeFormat';
 import './home.scss';
 
 const GREETING_MORNING = '早上好';
@@ -13,24 +14,6 @@ function getGreeting(): string {
   if (hour >= 5 && hour < 12) return GREETING_MORNING;
   if (hour >= 12 && hour < 18) return GREETING_AFTERNOON;
   return GREETING_EVENING;
-}
-
-function formatTime(dateStr?: string): string {
-  if (!dateStr) return '';
-  const date = new Date(dateStr);
-  const now = new Date();
-  const diff = now.getTime() - date.getTime();
-  const oneDay = 24 * 60 * 60 * 1000;
-
-  const hm = `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
-
-  if (diff < oneDay && now.getDate() === date.getDate()) {
-    return `今天 ${hm}`;
-  }
-  if (diff < oneDay * 2 && now.getDate() - date.getDate() === 1) {
-    return `昨天 ${hm}`;
-  }
-  return `${date.getMonth() + 1}月${date.getDate()}日 ${hm}`;
 }
 
 export default function HomePage() {
@@ -105,7 +88,7 @@ export default function HomePage() {
               <Text>咨询记录</Text>
             </View>
             <Text className="home-consult-card__time">
-              {formatTime(latestConsult.created_at)}
+              {formatRelativeTime(latestConsult.consultation_time)}
             </Text>
           </View>
           <Text className="home-consult-card__summary">
@@ -130,7 +113,7 @@ export default function HomePage() {
       </View>
 
       {loading ? (
-        <View className="home-skeleton" style={{ height: '200px' }} />
+        <View className="home-skeleton home-skeleton--profile" />
       ) : latestProfile ? (
         <View className="home-profile-card" onClick={goProfile}>
           <View className="home-profile-card__avatar">
@@ -139,11 +122,9 @@ export default function HomePage() {
           <View className="home-profile-card__info">
             <View className="home-profile-card__name-row">
               <Text className="home-profile-card__name">{latestProfile.nickname}</Text>
-              {latestProfile.age !== undefined && (
-                <Text className="home-profile-card__tag home-profile-card__tag--age">
-                  {latestProfile.age}岁
-                </Text>
-              )}
+              <Text className="home-profile-card__tag home-profile-card__tag--age">
+                {latestProfile.age_range}
+              </Text>
               {latestProfile.diagnosis_type && (
                 <Text className="home-profile-card__tag home-profile-card__tag--diagnosis">
                   {latestProfile.diagnosis_type}
