@@ -8,22 +8,22 @@
  *   views/ → hooks/ → store/ (Zustand) / services/ (API + SSE)
  */
 
-// ---- Hook（View 层唯一合法通道）----
+// ---- Hook（View 层主通道）----
 export { useConsult } from './hooks/useConsult';
+
+// ---- API 服务（历史/详情页独立使用）----
+export { consultApi } from './services/consultApi';
 
 // ---- 类型 ----
 export type {
   UseConsultReturn,
   ConsultSessionState,
-  ConsultSessionStateData,
   ConsultErrorCode,
-  ConsultInputState,
   ConsultSubmitRequest,
   BehaviorTypeCategory,
   CrisisLevel,
   EmotionLevel,
   PlanSection,
-  StructuredPlan,
   TicketGuide,
   TicketRiskLevel,
   MessageItem,
@@ -48,4 +48,4 @@ export { StateTransitionError } from './types';
 export type { SessionId, RequestId } from './consult.contract';
 
 // ---- 类型守卫 ----
-export { isValidConsultSubmitRequest, isValidBehaviorDescription } from './consult.contract';
+export { isValidConsultSubmitRequest } from './consult.contract';

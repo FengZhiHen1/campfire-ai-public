@@ -59,29 +59,23 @@ export function isValidConsultSubmitRequest(data: unknown): boolean {
   );
 }
 
-/**
- * 校验行为描述文本有效性。
- * 前置: desc 为可能的行为描述字符串。
- * 后置: 返回 true 表示去除首尾空白后非空。
- * 异常: 无。
- * Side Effects: 无。
- */
-export function isValidBehaviorDescription(desc: unknown): desc is string {
-  return typeof desc === 'string' && desc.trim().length > 0;
-}
+// TODO: 待 Hook 层复用后启用
+// /**
+//  * 校验行为描述文本有效性。
+//  */
+// export function isValidBehaviorDescription(desc: unknown): desc is string {
+//   return typeof desc === 'string' && desc.trim().length > 0;
+// }
 
-/**
- * 校验行为类型列表有效性。
- * 前置: types 为可能的行为类型数组。
- * 后置: 返回 true 表示至少包含 1 项有效类型。
- * 异常: 无。
- * Side Effects: 无。
- */
-export function isValidBehaviorTypes(types: unknown): types is BehaviorTypeCategory[] {
-  if (!Array.isArray(types) || types.length === 0) return false;
-  const validCategories: BehaviorTypeCategory[] = [
-    'SELF_INJURY', 'AGGRESSION', 'ELOPEMENT', 'MEDICATION',
-    'EMOTIONAL_MELTDOWN', 'STEREOTYPY', 'OTHER',
-  ];
-  return types.every((t: unknown) => validCategories.includes(t as BehaviorTypeCategory));
-}
+// TODO: 待外部消费启用
+// /**
+//  * 校验行为类型列表有效性。
+//  */
+// export function isValidBehaviorTypes(types: unknown): types is BehaviorTypeCategory[] {
+//   if (!Array.isArray(types) || types.length === 0) return false;
+//   const validCategories: BehaviorTypeCategory[] = [
+//     'SELF_INJURY', 'AGGRESSION', 'ELOPEMENT', 'MEDICATION',
+//     'EMOTIONAL_MELTDOWN', 'STEREOTYPY', 'OTHER',
+//   ];
+//   return types.every((t: unknown) => validCategories.includes(t as BehaviorTypeCategory));
+// }

@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react';
 import { View, Text, Button } from '@tarojs/components';
 import Taro from '@tarojs/taro';
-import { consultApi } from '../../../logics/consult/services/consultApi';
-import type { ConsultationHistoryListItem } from '../../../logics/consult/types';
+import { consultApi } from '../../../logics/consult';
+import type { ConsultationHistoryListItem } from '../../../logics/consult';
 import './history.scss';
 
 export default function ConsultHistory() {

@@ -14,6 +14,7 @@
 
 import { httpClient } from '../../shared/services/httpClient';
 import type { IRequestResponse } from '../../shared/services/httpClient';
+import type { RequestId, SessionId } from '../consult.contract';
 import type {
   BehaviorTypeCategory,
   ConsultationHistoryListItem,
@@ -43,11 +44,11 @@ export interface ConsultSubmitResponse {
   /** SSE 流式推送端点 URL */
   stream_url: string;
   /** 会话 ID（用于重连） */
-  session_id: string;
+  session_id: SessionId;
   /** 置信度校验输出（MVP 暂不启用，固定为 null） */
   confidence_output?: ConfidenceValidationOutput | null;
   /** 幂等请求 ID（前端生成） */
-  request_id: string;
+  request_id: RequestId;
   /** 被引用案例 ID 列表（MVP 暂不填充） */
   referenced_slice_ids: string[];
   /** 法律合规声明 */
@@ -107,7 +108,7 @@ export const consultApi = {
     behaviorTypes: BehaviorTypeCategory[],
     profileId: string | undefined,
     emotionLevel: string | undefined,
-    requestId: string,
+    requestId: RequestId,
   ): Promise<ConsultSubmitResponse> {
     const res = await httpClient.request<{ session_id: string }>({
       url: CONSULT_API_PATH,
@@ -125,18 +126,19 @@ export const consultApi = {
     });
 
     const { session_id } = res.data;
+    const sessionId = session_id as SessionId;
 
     // 由 session_id 构建 SSE stream_url。小程序不走 webpack proxy，
     // 必须拼接完整的 API base URL（本地或 ngrok 公网地址）
     const API_BASE: string = process.env.TARO_APP_API_BASE || '';
     const stream_url = API_BASE
-      ? `${API_BASE}${CONSULT_API_PATH}/stream/${session_id}`
-      : `${CONSULT_API_PATH}/stream/${session_id}`;
+      ? `${API_BASE}${CONSULT_API_PATH}/stream/${sessionId}`
+      : `${CONSULT_API_PATH}/stream/${sessionId}`;
 
     // MVP 阶段：后端仅返回 session_id，其余字段填充占位值
     return {
       stream_url,
-      session_id,
+      session_id: sessionId,
       request_id: requestId,
       confidence_output: null,
       referenced_slice_ids: [],

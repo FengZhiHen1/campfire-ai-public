@@ -42,6 +42,7 @@ import { consultApi } from '../services/consultApi';
 import { createSseCallbacks } from '../services/sseCallbacks';
 import type { ConsultSubmitResponse } from '../services/consultApi';
 import { isValidConsultSubmitRequest } from '../consult.contract';
+import type { RequestId } from '../consult.contract';
 
 // ============================================================================
 // Store 类型定义
@@ -66,7 +67,7 @@ export interface ConsultStore extends ConsultSessionStoreState {
 }
 
 /** Store 状态部分（不含 Actions） */
-export interface ConsultSessionStoreState {
+interface ConsultSessionStoreState {
   sessionState: ConsultSessionState;
   behaviorTypeSelection: BehaviorTypeCategory[];
   behaviorDescription: string;
@@ -84,7 +85,7 @@ export interface ConsultSessionStoreState {
   selectedProfileId?: string;
   referencedSliceIds: string[];
   referencedCases: ReferencedCase[];
-  _requestId: string;
+  _requestId: RequestId;
   _reconnectAttempt: number;
 }
 
@@ -111,7 +112,7 @@ function createInitialState(): ConsultSessionStoreState {
     selectedProfileId: undefined,
     referencedSliceIds: [],
     referencedCases: [],
-    _requestId: '',
+    _requestId: '' as RequestId,
     _reconnectAttempt: 0,
   };
 }
@@ -146,11 +147,11 @@ const taroStorageAdapter = {
 // 请求 ID 生成
 // ============================================================================
 
-function generateRequestId(): string {
+function generateRequestId(): RequestId {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
-    return crypto.randomUUID();
+    return crypto.randomUUID() as RequestId;
   }
-  return `req-${Math.random().toString(36).substring(2)}-${Date.now().toString(36)}`;
+  return `req-${Math.random().toString(36).substring(2)}-${Date.now().toString(36)}` as RequestId;
 }
 
 // ============================================================================
@@ -179,7 +180,7 @@ export const useConsultStore = create<ConsultStore>()(
           crisisLevel: undefined,
           confidenceScore: undefined,
           validationVerdict: undefined,
-          _requestId: '',
+          _requestId: '' as RequestId,
           _reconnectAttempt: 0,
         });
       },
@@ -213,7 +214,7 @@ export const useConsultStore = create<ConsultStore>()(
         set({
           sessionState: transitionTo(state.sessionState, 'submitting'),
           errorCode: undefined,
-          _requestId: '',
+          _requestId: '' as RequestId,
           _reconnectAttempt: 0,
         });
 

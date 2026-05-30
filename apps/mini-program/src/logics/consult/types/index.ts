@@ -282,13 +282,7 @@ export interface PlanSection {
   isPartial?: boolean;
 }
 
-/**
- * 四段式结构化方案。
- * 由后端从 LLM JSON 输出解析后通过 SSE done 事件下发。
- */
-export interface StructuredPlan {
-  sections: PlanSection[];
-}
+// TODO: StructuredPlan 已移除——无外部消费，待实际使用时恢复
 
 /** 工单引导风险等级 */
 export type TicketRiskLevel = 'normal' | 'high_risk';
@@ -304,46 +298,7 @@ export interface TicketGuide {
   riskLevel: TicketRiskLevel;
 }
 
-/**
- * 咨询会话完整状态（驱动 UI 的数据结构）。
- * 此类型同时作为 Zustand Store 的完整状态类型。
- */
-export interface ConsultSessionStateData {
-  /** 当前会话业务状态 */
-  sessionState: ConsultSessionState;
-  /** 当前勾选的行为类型（跨步骤保持） */
-  behaviorTypeSelection: BehaviorTypeCategory[];
-  /** 当前输入的行为描述（跨步骤保持） */
-  behaviorDescription: string;
-  /** 已接收的完整文本（SSE 累积） */
-  accumulatedText: string;
-  /** 已解析的四段式方案段落 */
-  planSections: PlanSection[];
-  /** SSE 流最后接收的 sequence 号，初始 0 */
-  lastSequence: number;
-  /** 危机等级（API 响应后填充） */
-  crisisLevel?: CrisisLevel;
-  /** 置信度分数（API 响应后填充） */
-  confidenceScore?: number;
-  /** 校验结论（API 响应后填充） */
-  validationVerdict?: ValidationVerdict;
-  /** 工单引导状态 */
-  ticketGuide: TicketGuide;
-  /** 整个会话的消息列表 */
-  messages: MessageItem[];
-  /** 当前错误码（有错误时填充） */
-  errorCode?: ConsultErrorCode;
-  /** 工单引导是否已展示过（去重标记） */
-  ticketGuideShown: boolean;
-  /** 情绪等级选择 */
-  emotionLevel?: EmotionLevel;
-  /** 关联档案 ID */
-  selectedProfileId?: string;
-  /** 参考案例切片 ID 列表（SSE done 事件回传） */
-  referencedSliceIds: string[];
-  /** 参考案例简要信息 */
-  referencedCases: ReferencedCase[];
-}
+// TODO: ConsultSessionStateData 已移除——结构重复于 useConsultStore.ConsultSessionStoreState，待外部消费时恢复
 
 /**
  * 前端异常错误码枚举（7 个错误码）。
@@ -460,15 +415,7 @@ export interface UseConsultReturn {
 // 内部输入类型（不对外暴露）
 // ============================================================================
 
-/**
- * 咨询输入表单状态。
- */
-export interface ConsultInputState {
-  /** 家属勾选的行为类型列表，至少 1 项 */
-  behaviorTypeSelection: BehaviorTypeCategory[];
-  /** 家属输入的行为描述文本，去除首尾空白后非空 */
-  behaviorDescription: string;
-}
+// TODO: ConsultInputState 已移除——无外部消费，待实际使用时恢复
 
 /**
  * 提交给后端 API 的咨询请求体。
