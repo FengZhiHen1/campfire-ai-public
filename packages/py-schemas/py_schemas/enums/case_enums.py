@@ -93,6 +93,22 @@ class FamilyDisplayCategory(StrEnum):
     SELF_MANAGEMENT = "自我管理"
 
 
+class ExtractionStatus(StrEnum):
+    """LLM 提取 L2 卡片的处理状态。
+
+    四种状态：
+    - pending: 尚未触发提取
+    - extracting: LLM 处理中
+    - extracted: 卡片已就绪
+    - failed: 提取失败，可重试
+    """
+
+    PENDING = "pending"
+    EXTRACTING = "extracting"
+    EXTRACTED = "extracted"
+    FAILED = "failed"
+
+
 __all__ = [
     "CaseStatus",
     "SourceType",
@@ -101,4 +117,5 @@ __all__ = [
     "SceneType",
     "EvidenceLevel",
     "FamilyDisplayCategory",
+    "ExtractionStatus",
 ]

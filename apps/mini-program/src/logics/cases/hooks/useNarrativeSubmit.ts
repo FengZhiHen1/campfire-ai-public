@@ -102,17 +102,16 @@ export function useNarrativeSubmit(): UseNarrativeSubmitReturn {
   const triggerExtraction = useCallback(async (narrativeId: string) => {
     setExtracting(true);
     try {
+      // 火后不理：触发后台提取后立即跳转结果页，不等待 LLM 完成
       await extractNarrative(narrativeId);
-      setSubmitting(false);
-      setExtracting(false);
-      Taro.redirectTo({
-        url: `/views/cases/pages/extraction-result?narrativeId=${narrativeId}`,
-      });
     } catch {
-      setSubmitting(false);
-      setExtracting(false);
-      Taro.showToast({ title: '提取失败，请稍后重试', icon: 'none' });
+      // 即使请求中断（用户退出等），仍然跳转——结果页会轮询状态
     }
+    setSubmitting(false);
+    setExtracting(false);
+    Taro.redirectTo({
+      url: `/views/cases/pages/extraction-result?narrativeId=${narrativeId}`,
+    });
   }, []);
 
   return {

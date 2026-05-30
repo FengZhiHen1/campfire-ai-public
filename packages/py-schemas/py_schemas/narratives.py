@@ -43,6 +43,7 @@ class NarrativeResponse(CampfireBaseModel):
     source_type: str
     author_id: str
     status: CaseStatus
+    extraction_status: str = "pending"
     review_comment: str | None = None
     derived_card_ids: list[str] | None = None
     created_at: datetime

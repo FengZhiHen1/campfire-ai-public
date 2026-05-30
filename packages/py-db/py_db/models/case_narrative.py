@@ -91,6 +91,15 @@ class CaseNarrative(Base, TimestampMixin):
         comment="衍生的 L2 卡片 card_id 列表（JSON 数组）",
     )
 
+    # ---- 提取状态 ----
+    extraction_status: Mapped[str] = mapped_column(
+        String(20),
+        nullable=False,
+        default="pending",
+        index=True,
+        comment="LLM 提取状态（pending/extracting/extracted/failed）",
+    )
+
     def __repr__(self) -> str:
         return (
             f"<CaseNarrative(narrative_id={self.narrative_id!r}, "

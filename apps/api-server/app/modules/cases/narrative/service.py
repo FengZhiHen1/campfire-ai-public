@@ -369,6 +369,7 @@ def narrative_to_response(n: CaseNarrative) -> dict:
         "source_type": n.source_type,
         "author_id": n.author_id,
         "status": n.status,
+        "extraction_status": n.extraction_status,
         "review_comment": n.review_comment,
         "derived_card_ids": n.derived_card_ids,
         "created_at": n.created_at,
