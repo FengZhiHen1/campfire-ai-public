@@ -6,30 +6,36 @@
   background-color: $cf-background;
   display: flex;
   flex-direction: column;
+  padding-top: 112px;
+  padding-bottom: $cf-spacing-xl;
 }
 
 /* ========== 顶部导航栏 ========== */
 .history-navbar {
-  height: 224px;
-  background-color: $cf-surface-dim;
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 50;
+  height: 112px;
+  background-color: $cf-surface;
+  box-shadow: $cf-shadow-diffuse;
   display: flex;
   align-items: center;
-  justify-content: center;
-  position: relative;
+  justify-content: space-between;
   padding: 0 $cf-spacing-md;
 
   &__back {
-    position: absolute;
-    left: $cf-spacing-md;
-    width: 176px;
-    height: 176px;
+    width: 80px;
+    height: 80px;
     display: flex;
     align-items: center;
     justify-content: center;
     font-size: 40px;
-    color: $cf-on-background;
+    color: $cf-on-surface-variant;
     background: none;
     border: none;
+    padding: 0;
 
     &::after {
       border: none;
@@ -41,40 +47,53 @@
   }
 
   &__title {
-    font-size: 36px;
-    font-weight: 600;
+    @include cf-headline-sm;
     color: $cf-on-background;
+  }
+
+  &__search-btn {
+    width: 80px;
+    height: 80px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 36px;
+    color: $cf-on-surface-variant;
   }
 }
 
 /* ========== 搜索栏 ========== */
 .history-search {
-  padding: $cf-spacing-sm $cf-spacing-md;
+  position: sticky;
+  top: 112px;
+  z-index: 40;
   background-color: $cf-background;
+  padding: $cf-spacing-sm $cf-spacing-md;
 
   &__input-wrap {
     position: relative;
     display: flex;
     align-items: center;
-    background-color: $cf-surface-variant;
+    background-color: $cf-surface-container-high;
     border-radius: $cf-radius-md;
-    height: 128px;
+    height: 96px;
     padding: 0 $cf-spacing-md;
+    box-shadow: 0 2px 16px rgba(28, 25, 23, 0.04);
   }
 
   &__icon {
     font-size: 32px;
     color: $cf-on-surface-variant;
-    margin-right: $cf-spacing-sm;
+    margin-right: $cf-spacing-xs;
   }
 
   &__input {
     flex: 1;
-    font-size: 28px;
-    color: $cf-on-background;
+    height: 100%;
+    font-size: $cf-body-sm;
+    color: $cf-on-surface;
     background: transparent;
     border: none;
-    height: 100%;
 
     &::placeholder {
       color: rgba($cf-on-surface-variant, 0.6);
@@ -86,6 +105,9 @@
 .history-list {
   flex: 1;
   padding: $cf-spacing-sm $cf-spacing-md $cf-spacing-lg;
+  display: flex;
+  flex-direction: column;
+  gap: $cf-spacing-sm;
 
   &__empty {
     display: flex;
@@ -122,9 +144,10 @@
     padding: 0 $cf-spacing-md;
   }
 
-  &__empty-btn {
+  &__empty-btn,
+  &__refresh-btn {
     width: 480px;
-    height: 192px;
+    height: 96px;
     background-color: $cf-primary;
     color: $cf-on-primary;
     border-radius: $cf-radius-lg;
@@ -134,6 +157,7 @@
     align-items: center;
     justify-content: center;
     border: none;
+    margin: 0 auto;
 
     &::after {
       border: none;
@@ -143,6 +167,10 @@
       opacity: 0.9;
     }
   }
+
+  &__refresh-btn {
+    margin-top: $cf-spacing-md;
+  }
 }
 
 /* ========== 历史记录卡片 ========== */
@@ -150,20 +178,20 @@
   background-color: $cf-surface;
   border-radius: $cf-radius-lg;
   padding: $cf-spacing-md;
-  margin-bottom: $cf-spacing-sm;
   box-shadow: $cf-shadow-diffuse;
   position: relative;
+  transition: transform 150ms ease;
 
   &:active {
     transform: scale(0.98);
   }
 
-  /* 第一行：危机等级 + 置信度 + 时间 */
+  /* 第一行：危机等级 + 时间 + 可信标签 */
   &__header {
     display: flex;
-    align-items: center;
+    align-items: flex-start;
     justify-content: space-between;
-    margin-bottom: $cf-spacing-sm;
+    margin-bottom: $cf-spacing-xs;
   }
 
   &__level {
@@ -183,7 +211,7 @@
   }
 
   &__level-text {
-    font-size: 28px;
+    font-size: $cf-label-md;
     font-weight: 600;
 
     &--low { color: $cf-tertiary; }
@@ -192,19 +220,76 @@
   }
 
   &__time {
-    font-size: 22px;
+    font-size: $cf-footnote;
     color: $cf-on-surface-variant;
-    margin-left: 16px;
+    margin-left: $cf-spacing-xs;
   }
 
-  /* 第三行：摘要 */
+  /* 可信标签 —— 对齐 DESIGN.md Confidence Badge 规范 */
+  &__trust {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 12px;
+    border-radius: $cf-radius-full;
+    flex-shrink: 0;
+
+    &--trust-high {
+      background-color: $cf-tertiary;
+      color: $cf-on-tertiary;
+    }
+
+    &--trust-medium {
+      background-color: $cf-primary-container;
+      color: $cf-on-primary-container;
+    }
+
+    &--trust-low {
+      background-color: $cf-surface-variant;
+      color: $cf-error;
+    }
+
+    &-text {
+      font-size: $cf-footnote;
+      font-weight: 600;
+    }
+
+    &-dot {
+      font-size: 16px;
+      line-height: 1;
+    }
+  }
+
+  /* 行为标签 —— 对齐 DESIGN.md Tag/Badge Active 状态 */
+  &__tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: $cf-spacing-xs;
+    margin-bottom: $cf-spacing-xs;
+  }
+
+  &__tag {
+    background-color: $cf-primary-container;
+    border-radius: $cf-radius-md;
+    padding: $cf-spacing-xs $cf-spacing-sm;
+  }
+
+  &__tag-text {
+    font-size: $cf-label-md;
+    font-weight: 500;
+    color: $cf-on-primary-container;
+  }
+
+  /* 摘要 */
   &__summary {
-    font-size: 28px;
+    font-size: $cf-body-sm;
     color: $cf-on-surface-variant;
-    line-height: 1.5;
+    line-height: 1.6;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
     overflow: hidden;
     text-overflow: ellipsis;
-    white-space: nowrap;
   }
 }
 
@@ -214,7 +299,7 @@
 
   &__skeleton {
     width: 100%;
-    height: 400px;
+    height: 200px;
     background-color: $cf-surface-variant;
     border-radius: $cf-radius-lg;
     border: 2px solid rgba($cf-primary, 0.2);
@@ -224,7 +309,7 @@
 
   &__text {
     text-align: center;
-    font-size: 28px;
+    font-size: $cf-body-sm;
     color: $cf-on-surface-variant;
     margin-top: $cf-spacing-md;
   }
@@ -259,7 +344,7 @@
 
   &__retry-btn {
     width: 480px;
-    height: 192px;
+    height: 96px;
     background-color: $cf-primary;
     color: $cf-on-primary;
     border-radius: $cf-radius-lg;
@@ -280,3 +365,7 @@
   }
 }
 
+@keyframes cf-pulse-border {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
