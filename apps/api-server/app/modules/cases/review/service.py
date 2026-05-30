@@ -16,7 +16,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import logging
 from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 
@@ -41,8 +40,6 @@ from py_schemas.enums.case_enums import CaseStatus
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .contract import ReviewWorkflowContract
-
-_logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # 常量
@@ -137,14 +134,14 @@ async def _enqueue_index_async(case_id: str) -> None:
         payload = json.dumps({"task": "index_case", "case_id": case_id})
         await redis_client.lpush("index:queue:case_chunks", payload)  # type: ignore[misc]  # redis.asyncio 类型桩返回 int|Awaitable[int] 的已知误报
         await redis_client.close()
-        _logger.info(
+        logger.info(
             "index_enqueue_success",
             extra={"case_id": case_id, "queue": "index:queue:case_chunks"},
         )
     except (SystemExit, KeyboardInterrupt):
         raise
     except Exception as exc:
-        _logger.error(
+        logger.error(
             "index_enqueue_failed",
             extra={"case_id": case_id, "error": str(exc)},
         )
@@ -269,7 +266,7 @@ class ReviewWorkflowService(ReviewWorkflowContract):
             await session.refresh(updated_case)
         except Exception as exc:
             await session.rollback()
-            _logger.error(
+            logger.error(
                 "review_commit_failed",
                 extra={"case_id": case_id, "error": str(exc)},
             )
@@ -283,7 +280,7 @@ class ReviewWorkflowService(ReviewWorkflowContract):
             asyncio.create_task(_enqueue_index_async(case_id))
 
         # ---- 日志 ----
-        _logger.info(
+        logger.info(
             "review_completed",
             extra={
                 "case_id": case_id,

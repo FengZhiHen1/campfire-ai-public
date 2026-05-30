@@ -5,7 +5,6 @@
 
 from __future__ import annotations
 
-import logging
 import uuid
 from typing import Any
 
@@ -26,9 +25,6 @@ from ..exceptions import (
     SelfReviewForbiddenError,
 )
 from ..types import CardId, NarrativeId
-
-_logger = logging.getLogger(__name__)
-
 
 class NarrativeManagementService(NarrativeManagementContract):
     """叙事管理服务实现。实现 NarrativeManagementContract 契约的全部 _do_ 钩子。"""

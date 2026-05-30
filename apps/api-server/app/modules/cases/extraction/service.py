@@ -11,11 +11,8 @@ import re
 import uuid
 from typing import Any
 
-import logging
-
+from py_logger import logger
 from sqlalchemy.ext.asyncio import AsyncSession
-
-_logger = logging.getLogger(__name__)
 
 from py_llm import LLMClient
 from py_db.models.case_card import CaseCard
@@ -186,7 +183,7 @@ class ExtractionService(ExtractionServiceContract):
                 response_format={"type": "json_object"},
             )
         except Exception as exc:
-            _logger.exception("llm_extraction_failed")
+            logger.exception("llm_extraction_failed")
             raise ExtractionError(str(exc)) from exc
 
         # 解析 JSON
@@ -199,7 +196,7 @@ class ExtractionService(ExtractionServiceContract):
             result = json.loads(cleaned)
             cards_data = result.get("cards", [])
         except (json.JSONDecodeError, KeyError) as exc:
-            _logger.error(
+            logger.error(
                 "extraction_parse_failed", extra={"raw": response_text[:500]},
             )
             raise ExtractionError(f"JSON 解析失败: {exc}") from exc
@@ -245,7 +242,7 @@ class ExtractionService(ExtractionServiceContract):
         for c in cards:
             await db.refresh(c)
 
-        _logger.info("extraction_completed", extra={
+        logger.info("extraction_completed", extra={
             "narrative_id": narrative_id, "card_count": len(cards),
         })
         return cards

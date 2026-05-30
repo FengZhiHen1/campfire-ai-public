@@ -12,15 +12,12 @@
 
 from __future__ import annotations
 
-import logging
 from typing import Any
 
 from py_logger import logger
 from py_schemas.cases import AiReviewSummary, CheckItem
 from py_security import RegexPiiDetector
 from .ebp_validator import check_ebp_consistency  # EBP 一致性校验（单一真相源）
-
-_logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # 常量：必填字段列表
@@ -295,7 +292,7 @@ def run_ai_pre_review(
         overall=overall,  # type: ignore[arg-type]
     )
 
-    _logger.info(
+    logger.info(
         "ai_pre_review_completed",
         extra={
             "overall": overall,

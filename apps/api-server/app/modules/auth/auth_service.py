@@ -11,10 +11,10 @@
 from __future__ import annotations
 
 import asyncio
-import logging
 import traceback
 from typing import TYPE_CHECKING, Any
 
+from py_logger import logger
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
 from py_auth.exceptions import HashingError, TokenCreationError
@@ -36,13 +36,6 @@ if TYPE_CHECKING:
     from py_db.repositories.user_repository import UserRepository
 
     from app.core.dependencies.auth_dependencies import AuditLogger
-
-# ---------------------------------------------------------------------------
-# 模块级 logger
-# ---------------------------------------------------------------------------
-
-_logger = logging.getLogger(__name__)
-
 
 # ---------------------------------------------------------------------------
 # 内部辅助函数
@@ -98,8 +91,9 @@ def _audit_log_task(
             role=role,
         )
     except Exception:
-        _logger.warning(
-            "audit_log_write_failed",
+        logger.warning(
+            service="api-server",
+            message="audit_log_write_failed",
             extra={
                 "user_id": user_id,
                 "username": username,
@@ -162,8 +156,9 @@ class AuthServiceImpl(AuthService):
             hashed: str = self._password_hasher.hash_password(plain_password)
             return hashed
         except HashingError as exc:
-            _logger.error(
-                "hash_password_failed",
+            logger.error(
+                service="api-server",
+                message="hash_password_failed",
                 extra={"error": str(exc)},
             )
             raise AuthInternalError("密码哈希失败") from exc
@@ -206,8 +201,9 @@ class AuthServiceImpl(AuthService):
             code, message = _parse_integrity_error(exc)
             raise DuplicateUserError(code=code, message=message) from exc
         except SQLAlchemyError as exc:
-            _logger.critical(
-                "database_insert_failed",
+            logger.critical(
+                service="api-server",
+                message="database_insert_failed",
                 extra={
                     "username": request.username,
                     "error": str(exc),
@@ -255,8 +251,9 @@ class AuthServiceImpl(AuthService):
             access_token = self._token_manager.create_access_token(payload)
             refresh_token = self._token_manager.create_refresh_token(payload)
         except TokenCreationError as exc:
-            _logger.error(
-                "token_creation_failed",
+            logger.error(
+                service="api-server",
+                message="token_creation_failed",
                 extra={"user_id": user_id_str, "error": str(exc)},
             )
             raise AuthInternalError("Token 签发失败") from exc
@@ -305,8 +302,9 @@ class AuthServiceImpl(AuthService):
             access_token = self._token_manager.create_access_token(new_payload)
             refresh_token = self._token_manager.create_refresh_token(new_payload)
         except TokenCreationError as exc:
-            _logger.error(
-                "token_refresh_failed",
+            logger.error(
+                service="api-server",
+                message="token_refresh_failed",
                 extra={
                     "sub": str(payload.get("sub", ""))[:8] + "...",
                     "error": str(exc),
