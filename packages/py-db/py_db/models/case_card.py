@@ -4,6 +4,8 @@
 每张卡片对应一个独立的干预场景，是 RAG 检索的主数据源。
 """
 
+# @contract — case_cards 表 Schema 契约
+
 from __future__ import annotations
 
 from datetime import datetime

@@ -14,6 +14,8 @@
   - 禁止在包外定义 py-db 相关异常——统一由此文件管理
 """
 
+# @contract — py-db 异常层次契约（DbError → MigrationError / RepositoryError）
+
 from __future__ import annotations
 
 

@@ -9,6 +9,8 @@ SQL 层面的类型转换和读写均通过原生 SQL 完成：
   - 读取：由 CSLT-02 模块通过原生 SQL 或自定义 TypeDecorator 处理
 """
 
+# @contract — case_chunks 表 Schema 契约
+
 from __future__ import annotations
 
 import uuid

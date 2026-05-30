@@ -10,6 +10,8 @@
     is_active:        是否启用（软删除支持，仅加载 is_active=true 的记录）
 """
 
+# @contract — crisis_keywords 表 Schema 契约
+
 from __future__ import annotations
 
 from sqlalchemy import Boolean, Integer, String, Text

@@ -11,6 +11,9 @@ Usage:
         ...
 """
 
+# @contract — ORM 基类 + Mixin 定义（命名约定 + 时间戳 + UUID 主键），
+# 所有模型文件的 Schema 契约基础。
+
 from __future__ import annotations
 
 import uuid

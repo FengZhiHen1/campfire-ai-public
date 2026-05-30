@@ -9,6 +9,8 @@ UUID 主键由 PostgreSQL gen_random_uuid() 在数据库层面生成——
 实际部署时通过 Alembic 迁移覆盖 server_default。
 """
 
+# @contract — users 表 Schema 契约
+
 from __future__ import annotations
 
 from sqlalchemy import Enum as sa_Enum, String

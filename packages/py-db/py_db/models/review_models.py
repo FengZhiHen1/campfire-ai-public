@@ -8,6 +8,8 @@ case_reviews 表存储 AI 预审报告、专家裁决、审核时间和审核人
 review_audit_logs 表存储不可篡改的审计记录，使用自增 BIGSERIAL 主键。
 """
 
+# @contract — case_reviews / review_audit_logs 表 Schema 契约
+
 from __future__ import annotations
 
 import uuid

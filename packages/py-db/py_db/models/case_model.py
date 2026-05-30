@@ -6,6 +6,8 @@ age_range 在表中拆分为 age_range_min 和 age_range_max 两个 INT 列。
 ebp_labels 和 attachment_refs 以 JSON 列存储。
 """
 
+# @contract — cases 表 Schema 契约
+
 from __future__ import annotations
 
 from datetime import datetime

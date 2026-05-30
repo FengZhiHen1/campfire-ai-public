@@ -8,6 +8,8 @@ UUID 主键由 UUIDPrimaryKeyMixin 提供（Python uuid.uuid4 作为应用层后
 幂等键 request_id 由 CSLT-08 编排层生成并传入，本模块仅做存储和冲突检测。
 """
 
+# @contract — consultations 表 Schema 契约
+
 from __future__ import annotations
 
 import uuid

@@ -4,6 +4,8 @@
 与 case_cards（L2 结构化卡片）构成一对多关系。
 """
 
+# @contract — case_narratives 表 Schema 契约
+
 from __future__ import annotations
 
 from datetime import datetime
