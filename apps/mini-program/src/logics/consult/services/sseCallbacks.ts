@@ -190,8 +190,15 @@ function appendToPlanSections(
   text: string,
 ): PlanSection[] {
   if (!sectionTitle || !text) return sections;
-  return sections.map((sec) => {
-    if (sec.title !== sectionTitle) return sec;
+
+  const existingIdx = sections.findIndex((sec) => sec.title === sectionTitle);
+
+  if (existingIdx === -1) {
+    return [...sections, { title: sectionTitle, contents: [text], isCompleted: false }];
+  }
+
+  return sections.map((sec, idx) => {
+    if (idx !== existingIdx) return sec;
     const lastIdx = sec.contents.length - 1;
     if (lastIdx >= 0 && !sec.isCompleted) {
       const updated = [...sec.contents];
