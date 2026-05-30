@@ -14,9 +14,10 @@ from __future__ import annotations
 import logging
 from typing import Any, List, Optional
 
-from py_schemas.cases import AiReviewSummary, CheckItem
-from py_security.pii_detector import detect_pii as pii_detect
-from py_schemas.cases import NCAEP_EBP_LABELS
+from py_schemas.cases import AiReviewSummary, CheckItem, NCAEP_EBP_LABELS
+from py_security import RegexPiiDetector
+
+_pii_detector = RegexPiiDetector()
 
 _logger = logging.getLogger(__name__)
 
@@ -112,7 +113,7 @@ def _check_pii(case_data: dict[str, Any]) -> CheckItem:
             is_hard_gate=True,
         )
 
-    result = pii_detect(narrative)
+    result = _pii_detector.detect(narrative)
 
     if result.has_pii:
         pii_types: set[str] = {w.pii_type for w in result.warnings}

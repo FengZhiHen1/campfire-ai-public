@@ -28,14 +28,12 @@ from py_schemas.cases import (
     PiiWarning,
 )
 from py_schemas.enums.case_enums import CaseStatus
-from py_security.pii_detector import (
-    PiiWarning as PiiWarningInternal,
-)
-from py_security.pii_detector import (
-    detect_pii as pii_detect,
-)
+from py_security import RegexPiiDetector
+from py_security.types import PiiWarning as PiiWarningInternal
 
 from app.modules.cases.ebp_validator import check_ebp_consistency
+
+_pii_detector = RegexPiiDetector()
 
 _logger = logging.getLogger(__name__)
 
@@ -173,7 +171,7 @@ def _format_age_range(min_val: int, max_val: int) -> str:
 
 
 def _convert_pii_warnings(
-    internal_warnings: list[PiiWarningInternal],
+    internal_warnings: tuple[PiiWarningInternal, ...] | list[PiiWarningInternal],
 ) -> list[PiiWarning]:
     """将内部 PiiWarning 转换为 Pydantic PiiWarning。
 
@@ -298,7 +296,7 @@ async def create_case(
 
     # --- 步骤 A4：PII 检测（MVP 简化：narrative 为空时跳过） ---
     narrative_text: str = request.narrative or ""
-    pii_result = pii_detect(narrative_text)
+    pii_result = _pii_detector.detect(narrative_text)
     pii_warnings: list[PiiWarning] = _convert_pii_warnings(pii_result.warnings)
 
     # --- 步骤 A5 + A6：构建 ORM、生成 case_id、写入数据库 ---
@@ -576,7 +574,7 @@ async def submit_case(
     _validate_four_stage_fields(case)
 
     # PII 检测（MVP：仅生成警告提示，不阻断提交）
-    pii_result = pii_detect(case.narrative)
+    pii_result = _pii_detector.detect(case.narrative)
     pii_warnings: list[PiiWarning] = _convert_pii_warnings(pii_result.warnings)
 
     # EBP 一致性检测
@@ -765,7 +763,7 @@ async def detect_pii_endpoint(
     Returns:
         PiiDetectionResult: 检测结果。
     """
-    internal_result = pii_detect(narrative)
+    internal_result = _pii_detector.detect(narrative)
     return _build_pii_detection_result(internal_result)
 
 

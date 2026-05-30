@@ -5,6 +5,7 @@ description = "Campfire-AI FastAPI API gateway"
 requires-python = ">=3.12"
 dependencies = [
     "prometheus-client>=0.20",
+    "pyahocorasick>=2.0",
     "uvicorn>=0.48.0",
 ]
 
