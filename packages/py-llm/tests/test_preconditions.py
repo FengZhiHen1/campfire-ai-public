@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import pytest
 
-from conftest import NormalClient
+from helpers import NormalClient
 
 VALID_MESSAGES: list[dict[str, str]] = [{"role": "user", "content": "Hi"}]
 

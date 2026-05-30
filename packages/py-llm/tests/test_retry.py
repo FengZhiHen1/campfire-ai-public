@@ -13,7 +13,7 @@ import pytest
 
 from py_llm.llm_contract import LLMClientContract, LLMClientError
 from py_llm.types import RetryConfig
-from conftest import (
+from helpers import (
     ErrorSequenceClient,
     NormalClient,
     make_4xx_error,

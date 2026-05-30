@@ -5,6 +5,7 @@ description = "Campfire-AI shared package: py-cache"
 requires-python = ">=3.12"
 dependencies = [
     "py-config",
+    "py-logger",
     "redis>=5.0",
 ]
 

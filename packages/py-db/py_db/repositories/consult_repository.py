@@ -95,7 +95,6 @@ class ConsultRepository:
             logger.error(
                 "search_similar_chunks_failed",
                 extra={
-                    "degradation_level": degradation_level.value,
                     "top_k": top_k,
                     "error": str(exc),
                 },

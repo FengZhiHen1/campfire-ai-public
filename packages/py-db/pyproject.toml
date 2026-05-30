@@ -9,6 +9,7 @@ dependencies = [
     "psycopg2-binary>=2.9",
     "psycopg>=3.2",
     "py-logger",
+    "py-schemas",
 ]
 
 [build-system]

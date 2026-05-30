@@ -17,7 +17,7 @@ import asyncio
 import pytest
 
 from py_llm.llm_contract import LLMClientError
-from conftest import (
+from helpers import (
     NormalClient,
     SpyClient,
     make_chunk,

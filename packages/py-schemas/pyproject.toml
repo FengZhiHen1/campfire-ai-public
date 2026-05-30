@@ -5,7 +5,6 @@ description = "Campfire-AI shared package: py-schemas"
 requires-python = ">=3.12"
 dependencies = [
     "pydantic>=2.0",
-    "python-dateutil>=2.9.0.post0",
 ]
 
 [build-system]
