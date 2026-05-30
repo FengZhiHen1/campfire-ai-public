@@ -22,10 +22,10 @@ import uuid
 from datetime import date
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from py_db.models.profiles import Profile
+from py_db.models.profiles import EventLog, Profile
 from py_logger import logger
 from py_rag.retrieval import hybrid_search
 from py_schemas.consult import (
@@ -107,10 +107,28 @@ class ConsultationOrchestratorImpl(BaseConsultationOrchestrator):
         if profile.medication_notes:
             parts.append(f"- **用药备注**：{profile.medication_notes}")
 
+        # 最近事件（最多 5 条）
+        events_result = await db.execute(
+            select(EventLog)
+            .where(EventLog.profile_id == pid)
+            .order_by(desc(EventLog.event_time))
+            .limit(5)
+        )
+        events = events_result.scalars().all()
+        if events:
+            parts.append("")
+            parts.append("- **最近事件**：")
+            for i, ev in enumerate(events, start=1):
+                parts.append(
+                    f"  {i}. {ev.event_time.strftime('%Y-%m-%d')}"
+                    f" | {ev.behavior_type}（{ev.severity_level}）"
+                    f" — {ev.manifestation[:80]}"
+                )
+
         logger.info(
             service="api-server",
             message="profile_loaded",
-            extra={"profile_id": profile_id, "age": age},
+            extra={"profile_id": profile_id, "age": age, "event_count": len(events)},
         )
         return ProfileSummary("\n".join(parts))
 
