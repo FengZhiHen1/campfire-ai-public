@@ -1,50 +1,45 @@
-"""AUTH-01 用户注册 — register_user() 核心编排。
+"""api-server 认证服务 — AuthServiceImpl 实现。
 
-本模块是用户注册流程的唯一业务编排入口，按落地规范 §1.5 的 7 步流程
-顺序执行：Pydantic 校验 → 密码复杂度 → 专家 real_name 必填 →
-用户名唯一性 → 手机号唯一性 → 密码哈希 → 数据写入与审计日志。
+本模块是 AuthService 契约的唯一实现，注入 py_auth 契约实例
+（PasswordHasher, TokenManager, TokenBlacklist）和 UserRepository，
+通过覆写 _do_ 钩子完成 AUTH-01~03 及登出的核心执行步骤。
 
-每步失败即中断流程，返回对应 HTTP 错误响应，不进入后续步骤。
+每个 _do_ 钩子只包含具体执行逻辑——前置校验、后置校验和异常映射
+由 @final 父类方法统一负责。
 """
 
 from __future__ import annotations
 
 import asyncio
 import logging
-import re
 import traceback
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
-from fastapi import HTTPException, status
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from py_auth.exceptions import HashingError
 from py_db.models.auth import User
-from py_db.repositories.user_repository import UserRepository
-from py_schemas.auth import RegisterRequest, RegisterResponse, UserRole
+from py_schemas.auth import RegisterRequest, RegisterResponse, TokenResponse, UserRole
+
+from app.modules.auth.auth_contract import AuthService
+from app.modules.auth.exceptions import (
+    AuthInternalError,
+    DuplicateUserError,
+)
 
 if TYPE_CHECKING:
-    from app.core.dependencies.auth_dependencies import (
-        AuditLogger,
-        PasswordHasher,
+    from py_auth.auth_contract import (
+        PasswordHasher as PasswordHasherContract,
+        TokenBlacklist as TokenBlacklistContract,
+        TokenManager as TokenManagerContract,
     )
+    from py_db.repositories.user_repository import UserRepository
+
+    from app.core.dependencies.auth_dependencies import AuditLogger
 
 # ---------------------------------------------------------------------------
-# 常量
+# 模块级 logger
 # ---------------------------------------------------------------------------
-
-_PASSWORD_COMPLEXITY_REGEX: re.Pattern = re.compile(
-    r"^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{8,}$"
-)
-r"""密码复杂度正则：至少包含一个小写字母、一个大写字母、一个数字，且至少 8 位。
-
-使用正向前瞻断言实现：
-- (?=.*[a-z]) — 至少一个小写字母
-- (?=.*[A-Z]) — 至少一个大写字母
-- (?=.*\d) — 至少一个数字
-- .{8,} — 至少 8 个字符
-"""
 
 _logger = logging.getLogger(__name__)
 
@@ -52,6 +47,39 @@ _logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 # 内部辅助函数
 # ---------------------------------------------------------------------------
+
+
+def _parse_integrity_error(exc: IntegrityError) -> tuple[str, str]:
+    """解析 IntegrityError 的 PostgreSQL 约束名，映射为精确错误码。
+
+    仅处理 pgcode == "23505"（唯一约束违反），其他 pgcode 返回通用错误码。
+    提取 diag.constraint_name 区分 unique_username 和 unique_phone。
+
+    Args:
+        exc: SQLAlchemy IntegrityError 异常。
+
+    Returns:
+        (code, message) 元组：
+        - ("DUPLICATE_USERNAME", "该用户名已被注册")
+        - ("DUPLICATE_PHONE", "该手机号已被注册")
+        - ("DUPLICATE_FIELD", "用户名或手机号已被注册")  # 回退
+    """
+    try:
+        orig = exc.orig
+        if orig is not None and getattr(orig, "pgcode", None) == "23505":
+            constraint_name = getattr(getattr(orig, "diag", None), "constraint_name", "")
+            if "username" in constraint_name:
+                return ("DUPLICATE_USERNAME", "该用户名已被注册")
+            if "phone" in constraint_name:
+                return ("DUPLICATE_PHONE", "该手机号已被注册")
+        # 无法精确区分时返回通用错误码
+        return ("DUPLICATE_FIELD", "用户名或手机号已被注册")
+    except Exception as parse_exc:
+        _logger.warning(
+            "integrity_error_parse_failed",
+            extra={"parse_error": str(parse_exc), "original_error": str(exc)},
+        )
+        return ("DUPLICATE_FIELD", "用户名或手机号已被注册")
 
 
 def _audit_log_task(
@@ -88,192 +116,298 @@ def _audit_log_task(
         )
 
 
-def _parse_integrity_error(exc: IntegrityError) -> tuple[str, str]:
-    """解析 IntegrityError 的 PostgreSQL 约束名，映射为精确错误码。
+# ============================================================================
+# AuthServiceImpl — AuthService 契约实现
+# ============================================================================
 
-    仅处理 pgcode == "23505"（唯一约束违反），其他 pgcode 返回通用错误码。
-    提取 diag.constraint_name 区分 unique_username 和 unique_phone。
 
-    Args:
-        exc: SQLAlchemy IntegrityError 异常。
+class AuthServiceImpl(AuthService):
+    """认证服务实现。
 
-    Returns:
-        (code, message) 元组：
-        - ("DUPLICATE_USERNAME", "该用户名已被注册")
-        - ("DUPLICATE_PHONE", "该手机号已被注册")
-        - ("DUPLICATE_FIELD", "用户名或手机号已被注册")  # 回退
+    继承 AuthService 契约骨架，注入 py_auth 的 PasswordHasher / TokenManager /
+    TokenBlacklist 契约实例和 py_db 的 UserRepository，通过覆写 _do_ 钩子
+    完成 AUTH-01~03 和登出流程的核心执行步骤。
+
+    依赖注入（通过 __init__ 传入）:
+      - password_hasher: PasswordHasher 契约实现
+      - token_manager: TokenManager 契约实现
+      - token_blacklist: TokenBlacklist 契约实现
+      - user_repo: UserRepository 实例
+      - audit_logger: 可选的 AuditLogger 适配器实例
     """
-    try:
-        orig = exc.orig
-        if orig is not None and getattr(orig, "pgcode", None) == "23505":
-            constraint_name = getattr(getattr(orig, "diag", None), "constraint_name", "")
-            if "username" in constraint_name:
-                return ("DUPLICATE_USERNAME", "该用户名已被注册")
-            if "phone" in constraint_name:
-                return ("DUPLICATE_PHONE", "该手机号已被注册")
-        # 无法精确区分时返回通用错误码
-        return ("DUPLICATE_FIELD", "用户名或手机号已被注册")
-    except Exception as parse_exc:
-        _logger.warning(
-            "integrity_error_parse_failed",
-            extra={"parse_error": str(parse_exc), "original_error": str(exc)},
-        )
-        return ("DUPLICATE_FIELD", "用户名或手机号已被注册")
 
+    def __init__(
+        self,
+        password_hasher: "PasswordHasherContract",
+        token_manager: "TokenManagerContract",
+        token_blacklist: "TokenBlacklistContract",
+        user_repo: "UserRepository",
+        audit_logger: "AuditLogger | None" = None,
+    ) -> None:
+        super().__init__(password_hasher, token_manager, token_blacklist, user_repo)
+        self._audit_logger: AuditLogger | None = audit_logger
 
-# ---------------------------------------------------------------------------
-# 公共接口
-# ---------------------------------------------------------------------------
+    # ======================================================================
+    # 公共钩子覆写
+    # ======================================================================
 
+    async def _fetch_user(self, username: str, session: Any) -> Any | None:
+        """查询用户——大小写不敏感用户名匹配。
 
-async def register_user(
-    request: RegisterRequest,
-    session: AsyncSession,
-    user_repo: UserRepository,
-    password_hasher: "PasswordHasher",
-    audit_logger: "AuditLogger",
-) -> RegisterResponse:
-    """用户注册核心编排。
+        委托给注入的 self._user_repo.find_by_username_lower()。
+        覆写基类的 @abstractmethod 以消除抽象类约束，
+        实际行为与基类默认实现一致。
 
-    按落地规范 §1.5 的 7 步流程顺序执行注册逻辑。
-    步骤 1（Pydantic 输入校验）由 FastAPI Depends() 在路由层完成，
-    本函数从步骤 2 开始执行。
+        Args:
+            username: 已通过 Pydantic 校验的用户名。
+            session: 活动数据库异步会话。
 
-    Args:
-        request: Pydantic 校验通过的注册请求。
-        session: 活动数据库异步会话。
-        user_repo: UserRepository 实例，封装 users 表 CRUD 操作。
-        password_hasher: PasswordHasher 适配器，封装 bcrypt 哈希调用。
-        audit_logger: AuditLogger 适配器，封装审计日志写入。
+        Returns:
+            User ORM 实例或 None。
+        """
+        return await self._user_repo.find_by_username_lower(session, username)
 
-    Returns:
-        RegisterResponse: 注册成功响应（result="success", user_id=str).
+    # ======================================================================
+    # AUTH-01 _do_ 钩子 — 密码哈希 + 数据持久化
+    # ======================================================================
 
-    Raises:
-        HTTPException(422): 密码复杂度不足或专家角色缺少 real_name。
-        HTTPException(409): 用户名或手机号已被注册。
-        HTTPException(500): 密码哈希失败、数据库操作失败或其他内部错误。
-    """
-    # --- 步骤 2：密码强度校验 ---
-    if not _PASSWORD_COMPLEXITY_REGEX.match(request.password):
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail={
-                "errors": [
-                    {
-                        "field": "password",
-                        "reason": "密码必须同时包含大写字母、小写字母和数字",
-                        "constraint": "password_complexity",
-                    }
-                ]
-            },
-        )
+    def _do_hash_password(self, plain_password: str) -> str:
+        """执行 bcrypt 密码哈希。
 
-    # --- 步骤 3：真实姓名条件必填校验 ---
-    if request.role == UserRole.EXPERT and request.real_name is None:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail={
-                "errors": [
-                    {
-                        "field": "real_name",
-                        "reason": "专家角色必须填写真实姓名",
-                        "constraint": "required_for_expert",
-                    }
-                ]
-            },
-        )
+        调用注入的 self._password_hasher.hash_password()，
+        捕获 HashingError 转换为 AuthInternalError。
 
-    # --- 步骤 4：用户名唯一性检查 ---
-    existing_user = await user_repo.find_by_username_lower(
-        session, request.username
-    )
-    if existing_user is not None:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail={
-                "code": "DUPLICATE_USERNAME",
-                "message": "该用户名已被注册",
-            },
-        )
+        Args:
+            plain_password: 已通过复杂度校验的明文密码。
 
-    # --- 步骤 5：手机号唯一性检查 ---
-    existing_phone = await user_repo.find_by_phone(session, request.phone)
-    if existing_phone is not None:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail={
-                "code": "DUPLICATE_PHONE",
-                "message": "该手机号已被注册",
-            },
+        Returns:
+            bcrypt 哈希字符串。
+
+        Raises:
+            AuthInternalError: bcrypt 引擎内部错误。
+        """
+        try:
+            hashed: str = self._password_hasher.hash_password(plain_password)
+            return hashed
+        except HashingError as exc:
+            _logger.error(
+                "hash_password_failed",
+                extra={"error": str(exc)},
+            )
+            raise AuthInternalError("密码哈希失败") from exc
+
+    async def _do_register(
+        self,
+        request: RegisterRequest,
+        hashed_password: str,
+        session: Any,
+    ) -> RegisterResponse:
+        """执行用户数据持久化。
+
+        构造 User ORM 对象，调用 self._user_repo.create() 写入数据库。
+        捕获 IntegrityError 并解析约束名，精确区分 DUPLICATE_USERNAME /
+        DUPLICATE_PHONE。
+
+        Args:
+            request: 已通过全部校验的注册请求。
+            hashed_password: bcrypt 哈希后的密码串。
+            session: 活动数据库异步会话。
+
+        Returns:
+            RegisterResponse: 注册成功响应。
+
+        Raises:
+            DuplicateUserError: 用户名或手机号重复（code 精确区分）。
+            AuthInternalError: 数据库写入异常。
+        """
+        user = User(
+            username=request.username,
+            password_hash=hashed_password,
+            role=request.role,
+            phone=request.phone,
+            real_name=request.real_name,
         )
 
-    # --- 步骤 6：密码哈希 ---
-    try:
-        hashed: str = password_hasher.hash(request.password)
-    except HashingError as exc:
-        _logger.error(
-            "hash_password_failed",
-            extra={"error": str(exc)},
+        try:
+            created_user = await self._user_repo.create(session, user)
+        except IntegrityError as exc:
+            code, message = _parse_integrity_error(exc)
+            raise DuplicateUserError(code=code, message=message) from exc
+        except Exception as exc:
+            _logger.critical(
+                "database_insert_failed",
+                extra={
+                    "username": request.username,
+                    "error": str(exc),
+                    "traceback": traceback.format_exc(),
+                },
+            )
+            raise AuthInternalError("数据库写入失败") from exc
+
+        return RegisterResponse(
+            result="success",
+            user_id=str(created_user.id),
+            message="注册成功",
         )
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="系统繁忙，请稍后重试",
-        ) from exc
 
-    # --- 步骤 7：数据写入与审计日志 ---
-    user = User(
-        username=request.username,
-        password_hash=hashed,
-        role=request.role,
-        phone=request.phone,
-        real_name=request.real_name,
-    )
+    # ======================================================================
+    # AUTH-02 _do_ 钩子 — JWT 签发
+    # ======================================================================
 
-    try:
-        created_user = await user_repo.create(session, user)
-    except IntegrityError as exc:
-        code, message = _parse_integrity_error(exc)
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail={
-                "code": code,
-                "message": message,
-            },
-        ) from exc
-    except Exception as exc:
-        _logger.critical(
-            "database_insert_failed",
-            extra={
-                "username": request.username,
-                "error": str(exc),
-                "traceback": traceback.format_exc(),
-            },
+    def _do_login(self, user: Any) -> TokenResponse:
+        """执行 JWT Token 对签发。
+
+        从已认证的 User ORM 实例提取 id(转 str)、role.value，
+        构造包含 sub 和 roles 的 JWT payload，调用 token_manager
+        签发 access_token 和 refresh_token。
+
+        不需要关心用户存在性和密码正确性——@final login 已校验。
+
+        Args:
+            user: 已通过认证的 User ORM 实例（id, role 均非空）。
+
+        Returns:
+            TokenResponse: 包含 access_token 和 refresh_token。
+
+        Raises:
+            AuthInternalError: JWT 签发失败。
+        """
+        user_id_str = str(user.id)
+        role_value = user.role.value if hasattr(user.role, "value") else str(user.role)
+        payload: dict[str, Any] = {
+            "sub": user_id_str,
+            "roles": [role_value],
+        }
+
+        try:
+            access_token = self._token_manager.create_access_token(payload)
+            refresh_token = self._token_manager.create_refresh_token(payload)
+        except Exception as exc:
+            _logger.error(
+                "token_creation_failed",
+                extra={"user_id": user_id_str, "error": str(exc)},
+            )
+            raise AuthInternalError("Token 签发失败") from exc
+
+        return TokenResponse(
+            access_token=access_token,
+            refresh_token=refresh_token,
         )
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="系统繁忙，请稍后重试",
-        ) from exc
 
-    # 异步投递审计日志
-    user_id_str: str = str(created_user.id)
-    asyncio.create_task(
-        asyncio.to_thread(
-            _audit_log_task,
-            user_id_str,
-            created_user.username,
-            created_user.role.value,
-            audit_logger,
+    # ======================================================================
+    # AUTH-03 _do_ 钩子 — Token 轮换
+    # ======================================================================
+
+    async def _do_refresh(
+        self,
+        payload: dict[str, Any],
+        old_refresh_token: str,
+    ) -> TokenResponse:
+        """执行 Token 轮换——标记旧 token + 签发新 token 对。
+
+        1. 调用 self._token_blacklist.mark_refresh_used() 标记旧 jti 已使用
+        2. 构造新 payload（sub + roles），签发新的 access_token + refresh_token
+
+        不需要关心 refresh token 有效性校验和重放检测——@final refresh_token 已处理。
+
+        Args:
+            payload: 已通过校验的旧 refresh token payload（含 sub, roles, jti）。
+            old_refresh_token: 旧 refresh token 字符串（未使用，保留参数一致性）。
+
+        Returns:
+            TokenResponse: 新的 access_token + refresh_token。
+
+        Raises:
+            AuthInternalError: JWT 签发失败。
+        """
+        # 标记旧 token 已使用（防重放攻击）
+        await self._token_blacklist.mark_refresh_used(payload["jti"])
+
+        # 构造新 payload，签发新 token 对
+        new_payload: dict[str, Any] = {
+            "sub": payload["sub"],
+            "roles": payload["roles"],
+        }
+
+        try:
+            access_token = self._token_manager.create_access_token(new_payload)
+            refresh_token = self._token_manager.create_refresh_token(new_payload)
+        except Exception as exc:
+            _logger.error(
+                "token_refresh_failed",
+                extra={
+                    "sub": str(payload.get("sub", ""))[:8] + "...",
+                    "error": str(exc),
+                },
+            )
+            raise AuthInternalError("Token 续期失败") from exc
+
+        return TokenResponse(
+            access_token=access_token,
+            refresh_token=refresh_token,
         )
-    )
 
-    return RegisterResponse(
-        result="success",
-        user_id=user_id_str,
-        message="注册成功",
-    )
+    # ======================================================================
+    # 登出 _do_ 钩子 — Token 失效
+    # ======================================================================
+
+    async def _do_logout(
+        self,
+        access_jti: str | None,
+        refresh_jti: str | None,
+    ) -> None:
+        """执行 Token 失效操作。
+
+        - 若 access_jti 非空 → 调用 self._token_blacklist.add_to_blacklist()
+        - 若 refresh_jti 非空 → 调用 self._token_blacklist.mark_refresh_used()
+
+        契约内置 fail-open 降级策略，写入失败不抛异常。
+
+        Args:
+            access_jti: access token 的 jti claim（可能为 None）。
+            refresh_jti: refresh token 的 jti claim（可能为 None）。
+        """
+        if access_jti:
+            await self._token_blacklist.add_to_blacklist(access_jti)
+        if refresh_jti:
+            await self._token_blacklist.mark_refresh_used(refresh_jti)
+
+    # ======================================================================
+    # 覆写审计日志钩子 — 异步投递不阻塞注册响应
+    # ======================================================================
+
+    def _do_audit_log_async(
+        self,
+        user_id: str,
+        username: str,
+        role: UserRole,
+    ) -> None:
+        """异步投递审计日志——不阻塞注册响应。
+
+        覆写基类的空操作实现。使用 asyncio.create_task + asyncio.to_thread
+        将日志写入投递到事件循环。若 audit_logger 未注入则静默跳过。
+        失败时由 _audit_log_task 内部记录 warning，不影响用户响应。
+
+        Args:
+            user_id: 新注册用户 UUID 字符串。
+            username: 注册用户名。
+            role: 注册角色枚举值。
+        """
+        if self._audit_logger is None:
+            return
+        role_str = role.value if hasattr(role, "value") else str(role)
+        asyncio.create_task(
+            asyncio.to_thread(
+                _audit_log_task,
+                user_id,
+                username,
+                role_str,
+                self._audit_logger,
+            )
+        )
 
 
 __all__ = [
-    "register_user",
+    "AuthServiceImpl",
+    "_parse_integrity_error",
 ]
