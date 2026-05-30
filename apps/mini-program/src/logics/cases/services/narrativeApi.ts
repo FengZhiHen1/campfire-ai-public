@@ -8,7 +8,8 @@
  */
 
 import { httpClient } from '../../shared/services/httpClient';
-import type { NarrativeListItem, NarrativeDetail, NarrativeListResponse } from '../types';
+import type { NarrativeListItem, NarrativeDetail } from '../types';
+import type { PaginatedResponse } from '@campfire/ts-shared';
 
 const BASE_PATH: string = '/api/v1/narratives';
 
@@ -48,14 +49,11 @@ function createRequestSignal(
   };
 }
 
-function withSignal<T extends Record<string, unknown>>(
+function withSignal<T>(
   options: T,
   signal?: AbortSignal,
 ): T & { signal?: AbortSignal } {
-  if (signal) {
-    return { ...options, signal };
-  }
-  return options;
+  return { ...options, signal };
 }
 
 // ============================================================================
@@ -78,7 +76,7 @@ export async function listNarratives(
   pageSize: number = 20,
   keyword?: string,
   signal?: AbortSignal,
-): Promise<NarrativeListResponse> {
+): Promise<PaginatedResponse<NarrativeListItem>> {
   if (signal?.aborted) {
     return Promise.reject(new DOMException('The operation was aborted', 'AbortError'));
   }
@@ -90,7 +88,7 @@ export async function listNarratives(
 
   const { signal: requestSignal, cleanup } = createRequestSignal(signal);
   try {
-    const res = await httpClient.request<NarrativeListResponse>(
+    const res = await httpClient.request<PaginatedResponse<NarrativeListItem>>(
       withSignal(
         {
           url: BASE_PATH,
