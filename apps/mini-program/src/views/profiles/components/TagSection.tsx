@@ -1,0 +1,79 @@
+import { View, Text, Button, Input } from '@tarojs/components';
+import { PRESET_TAGS, CUSTOM_TAG_MAX_LENGTH } from '../../../logics/profiles/constants';
+
+interface TagSectionProps {
+  isEdit: boolean;
+  selectedTags: string[];
+  customTags: string[];
+  customTagInput: string;
+  onToggleTag: (tag: string) => void;
+  onCustomTagInputChange: (value: string) => void;
+  onAddCustomTag: () => void;
+  onRemoveCustomTag: (tag: string) => void;
+}
+
+export default function TagSection({
+  isEdit,
+  selectedTags,
+  customTags,
+  customTagInput,
+  onToggleTag,
+  onCustomTagInputChange,
+  onAddCustomTag,
+  onRemoveCustomTag,
+}: TagSectionProps) {
+  return (
+    <View className={`profile-tag-section ${!isEdit ? 'profile-tag-section--disabled' : ''}`}>
+      <Text className="profile-tag-section__title">标签体系</Text>
+      <Text className="profile-tag-section__subtitle">帮助孩子获得更精准的案例匹配</Text>
+
+      {!isEdit && (
+        <Text className="profile-tag-section__hint">创建档案后可添加标签和事件记录</Text>
+      )}
+
+      {isEdit && (
+        <>
+          {/* 预设标签 */}
+          <View className="profile-tag-grid">
+            {PRESET_TAGS.map((tag) => (
+              <View
+                key={tag}
+                className={`profile-tag-grid__item ${selectedTags.includes(tag) ? 'profile-tag-grid__item--active' : ''}`}
+                onClick={() => onToggleTag(tag)}
+              >
+                <Text>{tag}</Text>
+                {selectedTags.includes(tag) && <Text className="profile-tag-grid__check">✓</Text>}
+              </View>
+            ))}
+          </View>
+
+          {/* 自定义标签 */}
+          <Text className="profile-tag-section__sub-title">自定义标签</Text>
+          <View className="profile-custom-tag">
+            <Input
+              className="profile-custom-tag__input"
+              value={customTagInput}
+              onInput={(e) => onCustomTagInputChange(e.detail.value)}
+              placeholder="输入自定义标签（最多10个字）"
+              maxlength={CUSTOM_TAG_MAX_LENGTH}
+            />
+            <Button className="profile-custom-tag__add" onClick={onAddCustomTag}>
+              +
+            </Button>
+          </View>
+          <Text className="profile-custom-tag__count">{customTagInput.length}/{CUSTOM_TAG_MAX_LENGTH}</Text>
+
+          {/* 已添加自定义标签 */}
+          <View className="profile-custom-tag__list">
+            {customTags.map((tag) => (
+              <View key={tag} className="profile-custom-tag__pill">
+                <Text>{tag}</Text>
+                <Text className="profile-custom-tag__remove" onClick={() => onRemoveCustomTag(tag)}>✕</Text>
+              </View>
+            ))}
+          </View>
+        </>
+      )}
+    </View>
+  );
+}

@@ -1,21 +1,14 @@
 import { useState, useEffect, useCallback } from 'react';
 import { consultApi } from '../../consult';
 import type { ConsultationHistoryListItem } from '../../consult';
+import type { ProfileListItem } from '../../profiles/types';
 import { listProfiles } from '../../profiles/services/profileApi';
-
-export interface ProfileItem {
-  profile_id: string;
-  nickname: string;
-  age?: number;
-  diagnosis_type?: string;
-  primary_behavior?: string;
-}
 
 export function useHomePage() {
   const [loading, setLoading] = useState(true);
   const [hasError, setHasError] = useState(false);
   const [consultHistory, setConsultHistory] = useState<ConsultationHistoryListItem[]>([]);
-  const [profiles, setProfiles] = useState<ProfileItem[]>([]);
+  const [profiles, setProfiles] = useState<ProfileListItem[]>([]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -26,7 +19,7 @@ export function useHomePage() {
         listProfiles().catch(() => []),
       ]);
       setConsultHistory(historyRes.items ?? []);
-      setProfiles(profileRes as ProfileItem[]);
+      setProfiles(profileRes);
     } catch {
       setHasError(true);
     } finally {

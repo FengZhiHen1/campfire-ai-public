@@ -66,3 +66,15 @@ export const MAX_PROFILE_COUNT = 5;
 
 /** 微问卷提交成功后自动关闭延迟（毫秒） */
 export const MICRO_SURVEY_AUTO_CLOSE_DELAY = 2000;
+
+/** 档案昵称最小长度 */
+export const NICKNAME_MIN_LENGTH = 2;
+
+/** 档案昵称最大长度 */
+export const NICKNAME_MAX_LENGTH = 20;
+
+/** 自定义标签最大长度 */
+export const CUSTOM_TAG_MAX_LENGTH = 10;
+
+/** 保存失败通知自动消失延迟（毫秒） */
+export const ERROR_AUTO_DISMISS_MS = 3000;
