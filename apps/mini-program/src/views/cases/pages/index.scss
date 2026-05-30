@@ -1,7 +1,9 @@
+@use '../../shared/styles/tokens' as *;
+
 /* ========== 页面外壳 ========== */
 .cases-page {
   min-height: 100vh;
-  background-color: #FDF8F3;
+  background-color: $cf-background;
   display: flex;
   flex-direction: column;
   padding-bottom: calc(128px + env(safe-area-inset-bottom));
@@ -10,25 +12,25 @@
 /* ========== 顶部导航栏 ========== */
 .cases-navbar {
   height: 88px;
-  background-color: #EBE5DE;
+  background-color: $cf-surface-dim;
   display: flex;
   align-items: center;
   justify-content: center;
   position: relative;
-  padding: 0 32px;
+  padding: 0 $cf-spacing-md;
   z-index: 50;
 
   &__title {
     font-size: 36px;
     font-weight: 600;
-    color: #1C1917;
+    color: $cf-on-background;
   }
 
   &__review {
     position: absolute;
     right: 96px;
     font-size: 28px;
-    color: #F59E0B;
+    color: $cf-primary;
     background: none;
     border: none;
     min-width: 88px;
@@ -49,9 +51,9 @@
 
   &__menu-btn {
     position: absolute;
-    right: 32px;
+    right: $cf-spacing-md;
     font-size: 32px;
-    color: #1C1917;
+    color: $cf-on-background;
     background: none;
     border: none;
     min-width: 88px;
@@ -74,23 +76,23 @@
   &__menu {
     position: absolute;
     top: 100%;
-    right: 32px;
-    background-color: #FFFFFF;
+    right: $cf-spacing-md;
+    background-color: $cf-surface;
     border-radius: 24px;
-    box-shadow: 0 8px 40px rgba(28, 25, 23, 0.08);
+    box-shadow: 0 8px 40px rgba($cf-on-background, 0.08);
     width: 320px;
-    padding: 16px 0;
+    padding: $cf-spacing-sm 0;
     z-index: 60;
     animation: er-fade-in-up 150ms ease-out;
   }
 
   &__menu-item {
-    padding: 20px 32px;
+    padding: 20px $cf-spacing-md;
     font-size: 28px;
-    color: #1C1917;
+    color: $cf-on-background;
 
     &:active {
-      background-color: #F5F0EB;
+      background-color: $cf-surface-variant;
     }
   }
 }
@@ -98,28 +100,28 @@
 /* ========== Tab 切换 ========== */
 .cases-tabs {
   display: flex;
-  background-color: #FDF8F3;
-  padding: 16px 32px;
-  gap: 16px;
+  background-color: $cf-background;
+  padding: $cf-spacing-sm $cf-spacing-md;
+  gap: $cf-spacing-sm;
 
   &__btn {
     flex: 1;
     height: 64px;
-    background-color: #FFFFFF;
-    color: #78716C;
-    border-radius: 16px;
+    background-color: $cf-surface;
+    color: $cf-on-surface-variant;
+    border-radius: $cf-radius-md;
     font-size: 28px;
     font-weight: 500;
     display: flex;
     align-items: center;
     justify-content: center;
     border: none;
-    box-shadow: 0 2px 8px rgba(28, 25, 23, 0.04);
+    box-shadow: 0 2px 8px rgba($cf-on-background, 0.04);
 
     &--active {
-      background-color: #FEF3C7;
-      color: #92400E;
-      box-shadow: inset 0 0 0 2px rgba(245, 158, 11, 0.3);
+      background-color: $cf-primary-container;
+      color: $cf-on-primary-container;
+      box-shadow: inset 0 0 0 2px rgba($cf-primary, 0.3);
     }
 
     &:active {
@@ -135,43 +137,43 @@
 
 /* ========== 搜索栏 ========== */
 .cases-search {
-  padding: 16px 32px;
-  background-color: #FDF8F3;
+  padding: $cf-spacing-sm $cf-spacing-md;
+  background-color: $cf-background;
 
   &__input-wrap {
     position: relative;
     display: flex;
     align-items: center;
-    background-color: #F5F0EB;
-    border-radius: 16px;
+    background-color: $cf-surface-variant;
+    border-radius: $cf-radius-md;
     height: 64px;
     padding: 0 24px;
   }
 
   &__icon {
     font-size: 28px;
-    color: #78716C;
-    margin-right: 16px;
+    color: $cf-on-surface-variant;
+    margin-right: $cf-spacing-sm;
     line-height: 1;
   }
 
   &__input {
     flex: 1;
     font-size: 28px;
-    color: #1C1917;
+    color: $cf-on-background;
     background: transparent;
     border: none;
     height: 100%;
 
     &::placeholder {
-      color: rgba(120, 113, 108, 0.6);
+      color: rgba($cf-on-surface-variant, 0.6);
     }
   }
 
   &__clear {
     font-size: 32px;
-    color: #78716C;
-    margin-left: 16px;
+    color: $cf-on-surface-variant;
+    margin-left: $cf-spacing-sm;
     min-width: 44px;
     text-align: center;
     line-height: 1;
@@ -181,17 +183,17 @@
 /* ========== 列表区域 ========== */
 .cases-list {
   flex: 1;
-  background-color: #FDF8F3;
-  padding: 24px 32px 48px;
+  background-color: $cf-background;
+  padding: 24px $cf-spacing-md $cf-spacing-lg;
 }
 
 /* ========== 案例卡片 ========== */
 .case-card {
-  background-color: #FFFFFF;
+  background-color: $cf-surface;
   border-radius: 24px;
-  padding: 32px;
+  padding: $cf-spacing-md;
   margin-bottom: 24px;
-  box-shadow: 0 4px 24px rgba(28, 25, 23, 0.06);
+  box-shadow: 0 4px 24px rgba($cf-on-background, 0.06);
   position: relative;
   overflow: hidden;
 
@@ -207,10 +209,10 @@
     width: 4px;
     height: 100%;
 
-    &--approved { background-color: #059669; }
-    &--pending { background-color: #F59E0B; }
-    &--draft { background-color: #F5F0EB; border-right: 1px solid rgba(120, 113, 108, 0.15); }
-    &--rejected { background-color: #DC2626; }
+    &--approved { background-color: $cf-tertiary; }
+    &--pending { background-color: $cf-primary; }
+    &--draft { background-color: $cf-surface-variant; border-right: 1px solid rgba($cf-on-surface-variant, 0.15); }
+    &--rejected { background-color: $cf-error; }
   }
 
   &__body {
@@ -228,7 +230,7 @@
     flex: 1;
     font-size: 32px;
     font-weight: 600;
-    color: #1C1917;
+    color: $cf-on-background;
     line-height: 1.5;
     padding-right: 24px;
     display: -webkit-box;
@@ -241,7 +243,7 @@
   &__badge {
     width: 64px;
     height: 64px;
-    border-radius: 9999px;
+    border-radius: $cf-radius-full;
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -249,24 +251,24 @@
     flex-shrink: 0;
 
     &--a {
-      background-color: #059669;
-      color: #FFFFFF;
+      background-color: $cf-tertiary;
+      color: $cf-on-tertiary;
     }
 
     &--b {
-      background-color: #F59E0B;
-      color: #431407;
+      background-color: $cf-primary;
+      color: $cf-on-primary;
     }
 
     &--c {
-      background-color: #64748B;
-      color: #FFFFFF;
+      background-color: $cf-secondary;
+      color: $cf-on-secondary;
     }
 
     &--d {
-      background-color: #F5F0EB;
-      color: #78716C;
-      border: 1px solid rgba(120, 113, 108, 0.15);
+      background-color: $cf-surface-variant;
+      color: $cf-on-surface-variant;
+      border: 1px solid rgba($cf-on-surface-variant, 0.15);
     }
   }
 
@@ -286,7 +288,7 @@
   &__tags {
     display: flex;
     flex-wrap: wrap;
-    gap: 16px;
+    gap: $cf-spacing-sm;
     margin-bottom: 24px;
   }
 
@@ -294,23 +296,23 @@
     display: inline-block;
     font-size: 22px;
     font-weight: 500;
-    padding: 8px 16px;
-    border-radius: 16px;
+    padding: $cf-spacing-xs $cf-spacing-sm;
+    border-radius: $cf-radius-md;
     line-height: 1;
 
     &--primary {
-      background-color: #FEF3C7;
-      color: #92400E;
+      background-color: $cf-primary-container;
+      color: $cf-on-primary-container;
     }
 
     &--default {
-      background-color: #F5F0EB;
-      color: #78716C;
+      background-color: $cf-surface-variant;
+      color: $cf-on-surface-variant;
     }
 
     &--mine {
-      background-color: #FEF3C7;
-      color: #92400E;
+      background-color: $cf-primary-container;
+      color: $cf-on-primary-container;
       font-size: 20px;
       padding: 4px 12px;
     }
@@ -320,31 +322,31 @@
   &__footer {
     display: flex;
     align-items: center;
-    gap: 16px;
-    padding-top: 16px;
-    border-top: 1px solid rgba(120, 113, 108, 0.08);
+    gap: $cf-spacing-sm;
+    padding-top: $cf-spacing-sm;
+    border-top: 1px solid rgba($cf-on-surface-variant, 0.08);
   }
 
   &__status-dot {
     width: 16px;
     height: 16px;
-    border-radius: 9999px;
+    border-radius: $cf-radius-full;
     flex-shrink: 0;
 
-    &--approved { background-color: #059669; }
-    &--pending { background-color: #F59E0B; }
-    &--draft { background-color: #F5F0EB; border: 1px solid rgba(120, 113, 108, 0.3); }
-    &--rejected { background-color: #DC2626; }
+    &--approved { background-color: $cf-tertiary; }
+    &--pending { background-color: $cf-primary; }
+    &--draft { background-color: $cf-surface-variant; border: 1px solid rgba($cf-on-surface-variant, 0.3); }
+    &--rejected { background-color: $cf-error; }
   }
 
   &__status-text {
     font-size: 24px;
-    color: #78716C;
+    color: $cf-on-surface-variant;
   }
 
   &__time {
     font-size: 24px;
-    color: rgba(120, 113, 108, 0.5);
+    color: rgba($cf-on-surface-variant, 0.5);
     margin-left: auto;
   }
 }
@@ -352,13 +354,13 @@
 /* ========== FAB 按钮 ========== */
 .cases-fab {
   position: fixed;
-  right: 48px;
+  right: $cf-spacing-lg;
   bottom: calc(48px + env(safe-area-inset-bottom));
   width: 96px;
   height: 96px;
-  background-color: #F59E0B;
-  color: #431407;
-  border-radius: 9999px;
+  background-color: $cf-primary;
+  color: $cf-on-primary;
+  border-radius: $cf-radius-full;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -366,7 +368,7 @@
   font-weight: 300;
   border: none;
   z-index: 100;
-  box-shadow: 0 4px 16px rgba(245, 158, 11, 0.35);
+  box-shadow: 0 4px 16px rgba($cf-primary, 0.35);
   animation: er-fab-enter 300ms ease-out 200ms both;
 
   &:active {
@@ -384,15 +386,15 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: 48px 32px;
+  padding: $cf-spacing-lg $cf-spacing-md;
 }
 
 .cases-loading__skeleton {
   width: 100%;
   height: 240px;
-  background-color: #F5F0EB;
+  background-color: $cf-surface-variant;
   border-radius: 24px;
-  border: 2px solid rgba(245, 158, 11, 0.2);
+  border: 2px solid rgba($cf-primary, 0.2);
   animation: er-pulse-border 2s ease-in-out infinite;
   margin-bottom: 24px;
 }
@@ -403,39 +405,39 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  margin-bottom: 32px;
+  margin-bottom: $cf-spacing-md;
 }
 
 .cases-empty__illustration {
   width: 120px;
   height: 120px;
   border-radius: 50%;
-  background: radial-gradient(circle, rgba(245, 158, 11, 0.3) 0%, rgba(245, 158, 11, 0.1) 50%, transparent 70%);
+  background: radial-gradient(circle, rgba($cf-primary, 0.3) 0%, rgba($cf-primary, 0.1) 50%, transparent 70%);
   animation: er-fade-in-scale 400ms ease-out;
 }
 
 .cases-empty__title {
   font-size: 36px;
   font-weight: 600;
-  color: #1C1917;
-  margin-bottom: 16px;
+  color: $cf-on-background;
+  margin-bottom: $cf-spacing-sm;
   text-align: center;
 }
 
 .cases-empty__subtitle {
   font-size: 28px;
-  color: #78716C;
+  color: $cf-on-surface-variant;
   text-align: center;
-  margin-bottom: 48px;
+  margin-bottom: $cf-spacing-lg;
   line-height: 1.5;
 }
 
 .cases-empty__btn {
   width: 400px;
   height: 88px;
-  background-color: #F59E0B;
-  color: #431407;
-  border-radius: 16px;
+  background-color: $cf-primary;
+  color: $cf-on-primary;
+  border-radius: $cf-radius-md;
   font-size: 28px;
   font-weight: 600;
   display: flex;
@@ -445,11 +447,11 @@
 
   &--text {
     background: none;
-    color: #F59E0B;
+    color: $cf-primary;
     font-size: 28px;
     height: 64px;
     width: auto;
-    padding: 0 32px;
+    padding: 0 $cf-spacing-md;
   }
 
   &:active {
@@ -466,29 +468,29 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 16px;
-  padding: 32px 0;
+  gap: $cf-spacing-sm;
+  padding: $cf-spacing-md 0;
 
   &__spinner {
     width: 40px;
     height: 40px;
-    border: 3px solid rgba(245, 158, 11, 0.2);
-    border-top-color: #F59E0B;
+    border: 3px solid rgba($cf-primary, 0.2);
+    border-top-color: $cf-primary;
     border-radius: 50%;
     animation: er-spin 1s linear infinite;
   }
 
   &__text {
     font-size: 28px;
-    color: #78716C;
+    color: $cf-on-surface-variant;
   }
 }
 
 .cases-no-more {
   text-align: center;
-  padding: 48px 0;
+  padding: $cf-spacing-lg 0;
   font-size: 24px;
-  color: rgba(120, 113, 108, 0.5);
+  color: rgba($cf-on-surface-variant, 0.5);
 }
 
 /* ========== 遮罩层 ========== */
@@ -525,8 +527,8 @@
 }
 
 @keyframes er-pulse-border {
-  0%, 100% { border-color: rgba(245, 158, 11, 0.2); }
-  50% { border-color: rgba(245, 158, 11, 0.5); }
+  0%, 100% { border-color: rgba($cf-primary, 0.2); }
+  50% { border-color: rgba($cf-primary, 0.5); }
 }
 
 @keyframes er-spin {

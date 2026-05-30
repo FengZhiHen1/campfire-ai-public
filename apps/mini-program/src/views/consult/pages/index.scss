@@ -1,7 +1,9 @@
+@use '../../shared/styles/tokens' as *;
+
 /* ========== 页面外壳 ========== */
 .consult-page {
   min-height: 100vh;
-  background-color: #FDF8F3;
+  background-color: $cf-background;
   display: flex;
   flex-direction: column;
 }
@@ -9,47 +11,47 @@
 /* ========== 顶部导航栏 ========== */
 .consult-navbar {
   height: 88px;
-  background-color: #EBE5DE;
+  background-color: $cf-surface-dim;
   display: flex;
   align-items: center;
   justify-content: center;
   position: relative;
-  padding: 0 32px;
+  padding: 0 $cf-spacing-md;
   z-index: 50;
   flex-shrink: 0;
 
   &__title {
     font-size: 36px;
     font-weight: 600;
-    color: #1C1917;
+    color: $cf-on-background;
   }
 
   &__badge {
     position: absolute;
-    right: 32px;
+    right: $cf-spacing-md;
     display: flex;
     align-items: center;
-    padding: 8px 20px;
-    border-radius: 16px;
+    padding: $cf-spacing-xs 20px;
+    border-radius: $cf-radius-md;
     height: 56px;
 
     &--mild {
-      background-color: #059669;
+      background-color: $cf-tertiary;
     }
 
     &--moderate {
-      background-color: #F59E0B;
+      background-color: $cf-primary;
     }
 
     &--severe {
-      background-color: #DC2626;
+      background-color: $cf-error;
       animation: consult-pulse-opacity 2s ease-in-out infinite;
     }
 
     &-text {
       font-size: 24px;
       font-weight: 500;
-      color: #FFFFFF;
+      color: $cf-surface;
     }
   }
 }
@@ -57,15 +59,15 @@
 /* ========== 聊天滚动区 ========== */
 .consult-chat {
   flex: 1;
-  padding: 24px 32px;
+  padding: 24px $cf-spacing-md;
   overflow-y: auto;
 }
 
 /* ========== 用户消息气泡 ========== */
 .consult-user-bubble {
-  background-color: #FEF3C7;
-  border-radius: 32px 32px 8px 32px;
-  padding: 24px 32px;
+  background-color: $cf-primary-container;
+  border-radius: $cf-radius-lg $cf-radius-lg $cf-radius-sm $cf-radius-lg;
+  padding: 24px $cf-spacing-md;
   margin-bottom: 24px;
   margin-left: auto;
   max-width: 75%;
@@ -74,25 +76,25 @@
   &__text {
     font-size: 28px;
     line-height: 1.75;
-    color: #92400E;
+    color: $cf-on-primary-container;
     word-break: break-all;
   }
 }
 
 /* ========== AI 消息气泡 ========== */
 .consult-ai-bubble {
-  background-color: #FFFFFF;
-  border-radius: 32px 32px 32px 8px;
-  padding: 32px;
+  background-color: $cf-surface;
+  border-radius: $cf-radius-lg $cf-radius-lg $cf-radius-lg $cf-radius-sm;
+  padding: $cf-spacing-md;
   margin-bottom: 24px;
   max-width: 85%;
-  box-shadow: 0 4px 24px rgba(28, 25, 23, 0.06);
+  box-shadow: 0 4px 24px rgba($cf-on-background, 0.06);
   align-self: flex-start;
 
   &__text {
     font-size: 28px;
     line-height: 1.75;
-    color: #1C1917;
+    color: $cf-on-background;
     word-break: break-all;
   }
 }
@@ -102,7 +104,7 @@
   display: inline-block;
   width: 4px;
   height: 1em;
-  background-color: #F59E0B;
+  background-color: $cf-primary;
   margin-left: 4px;
   vertical-align: middle;
   animation: consult-cursor-pulse 1.5s ease-in-out infinite;
@@ -110,19 +112,19 @@
 
 /* ========== 方案卡片 ========== */
 .consult-plan-card {
-  background-color: #FFFFFF;
-  border-radius: 32px;
-  padding: 32px;
+  background-color: $cf-surface;
+  border-radius: $cf-radius-lg;
+  padding: $cf-spacing-md;
   margin: 24px 0;
-  box-shadow: 0 4px 24px rgba(28, 25, 23, 0.06);
+  box-shadow: 0 4px 24px rgba($cf-on-background, 0.06);
 
   &__header {
     display: flex;
     align-items: center;
-    gap: 16px;
-    margin-bottom: 32px;
+    gap: $cf-spacing-sm;
+    margin-bottom: $cf-spacing-md;
     padding-bottom: 24px;
-    border-bottom: 1px solid rgba(120, 113, 108, 0.08);
+    border-bottom: 1px solid rgba($cf-on-surface-variant, 0.08);
   }
 
   &__header-icon {
@@ -132,14 +134,14 @@
   &__header-title {
     font-size: 32px;
     font-weight: 600;
-    color: #1C1917;
+    color: $cf-on-background;
   }
 }
 
 /* ========== 四段式段落 ========== */
 .consult-plan-section {
   position: relative;
-  margin-bottom: 32px;
+  margin-bottom: $cf-spacing-md;
   overflow: hidden;
 
   &:last-child {
@@ -154,10 +156,10 @@
     height: 100%;
     border-radius: 4px;
 
-    &--tertiary { background-color: #059669; }
-    &--primary { background-color: #F59E0B; }
-    &--secondary { background-color: #64748B; }
-    &--error { background-color: #DC2626; }
+    &--tertiary { background-color: $cf-tertiary; }
+    &--primary { background-color: $cf-primary; }
+    &--secondary { background-color: $cf-secondary; }
+    &--error { background-color: $cf-error; }
   }
 
   &__body {
@@ -168,7 +170,7 @@
     display: flex;
     align-items: center;
     gap: 12px;
-    margin-bottom: 16px;
+    margin-bottom: $cf-spacing-sm;
   }
 
   &__icon {
@@ -180,35 +182,35 @@
     font-size: 28px;
     font-weight: 600;
 
-    &--tertiary { color: #059669; }
-    &--primary { color: #F59E0B; }
-    &--secondary { color: #64748B; }
-    &--error { color: #DC2626; }
+    &--tertiary { color: $cf-tertiary; }
+    &--primary { color: $cf-primary; }
+    &--secondary { color: $cf-secondary; }
+    &--error { color: $cf-error; }
   }
 
   &__content {
     font-size: 28px;
     line-height: 1.8;
-    color: #1C1917;
+    color: $cf-on-background;
   }
 
   &__quote {
     font-size: 28px;
     line-height: 1.8;
-    color: #1C1917;
+    color: $cf-on-background;
     font-style: italic;
-    margin-bottom: 16px;
-    padding: 16px 24px;
-    background-color: #F5F0EB;
-    border-radius: 16px;
-    border-left: 4px solid #F59E0B;
+    margin-bottom: $cf-spacing-sm;
+    padding: $cf-spacing-sm 24px;
+    background-color: $cf-surface-variant;
+    border-radius: $cf-radius-md;
+    border-left: 4px solid $cf-primary;
   }
 
   &__line {
     font-size: 28px;
     line-height: 1.75;
-    color: #1C1917;
-    margin-bottom: 8px;
+    color: $cf-on-background;
+    margin-bottom: $cf-spacing-xs;
     display: block;
 
     &:last-child {
@@ -221,18 +223,18 @@
 .consult-plan-footer {
   display: flex;
   align-items: center;
-  gap: 16px;
-  margin-top: 32px;
+  gap: $cf-spacing-sm;
+  margin-top: $cf-spacing-md;
   padding-top: 24px;
-  border-top: 1px solid rgba(120, 113, 108, 0.08);
+  border-top: 1px solid rgba($cf-on-surface-variant, 0.08);
   flex-wrap: wrap;
 
   &__cases {
     font-size: 22px;
-    color: #059669;
-    background-color: #D1FAE5;
-    padding: 8px 16px;
-    border-radius: 16px;
+    color: $cf-tertiary;
+    background-color: $cf-tertiary-container;
+    padding: $cf-spacing-xs $cf-spacing-sm;
+    border-radius: $cf-radius-md;
     font-weight: 500;
   }
 }
@@ -240,25 +242,25 @@
 .consult-confidence {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 8px 16px;
-  border-radius: 16px;
+  gap: $cf-spacing-xs;
+  padding: $cf-spacing-xs $cf-spacing-sm;
+  border-radius: $cf-radius-md;
   font-size: 22px;
   font-weight: 500;
 
   &--high {
-    background-color: #059669;
-    color: #FFFFFF;
+    background-color: $cf-tertiary;
+    color: $cf-surface;
   }
 
   &--medium {
-    background-color: #FEF3C7;
-    color: #92400E;
+    background-color: $cf-primary-container;
+    color: $cf-on-primary-container;
   }
 
   &--low {
-    background-color: #F5F0EB;
-    color: #DC2626;
+    background-color: $cf-surface-variant;
+    color: $cf-error;
   }
 
   &__dot {
@@ -274,38 +276,38 @@
   &__title {
     font-size: 28px;
     font-weight: 600;
-    color: #1C1917;
-    margin-bottom: 16px;
+    color: $cf-on-background;
+    margin-bottom: $cf-spacing-sm;
   }
 }
 
 .consult-ref-card {
-  background-color: #FFFFFF;
+  background-color: $cf-surface;
   border-radius: 24px;
   padding: 24px;
-  margin-bottom: 16px;
-  box-shadow: 0 4px 24px rgba(28, 25, 23, 0.06);
+  margin-bottom: $cf-spacing-sm;
+  box-shadow: 0 4px 24px rgba($cf-on-background, 0.06);
 
   &__title {
     font-size: 28px;
     font-weight: 600;
-    color: #1C1917;
-    margin-bottom: 8px;
+    color: $cf-on-background;
+    margin-bottom: $cf-spacing-xs;
   }
 
   &__text {
     font-size: 24px;
     line-height: 1.6;
-    color: #78716C;
+    color: $cf-on-surface-variant;
   }
 }
 
 /* ========== 底部输入区 ========== */
 .consult-input-bar {
-  background-color: #FFFFFF;
-  border-radius: 32px 32px 0 0;
-  box-shadow: 0 -2px 12px rgba(28, 25, 23, 0.04);
-  padding: 24px 32px;
+  background-color: $cf-surface;
+  border-radius: $cf-radius-lg $cf-radius-lg 0 0;
+  box-shadow: 0 -2px 12px rgba($cf-on-background, 0.04);
+  padding: 24px $cf-spacing-md;
   padding-bottom: calc(24px + env(safe-area-inset-bottom));
   flex-shrink: 0;
 
@@ -313,39 +315,39 @@
     position: relative;
     display: flex;
     align-items: flex-end;
-    gap: 16px;
+    gap: $cf-spacing-sm;
   }
 
   &__textarea {
     flex: 1;
     min-height: 64px;
     max-height: 240px;
-    background-color: #F5F0EB;
-    border-radius: 16px;
-    padding: 16px 120px 16px 24px;
+    background-color: $cf-surface-variant;
+    border-radius: $cf-radius-md;
+    padding: $cf-spacing-sm 120px $cf-spacing-sm 24px;
     font-size: 28px;
     line-height: 1.75;
-    color: #1C1917;
+    color: $cf-on-background;
     border: none;
 
     &::placeholder {
-      color: rgba(120, 113, 108, 0.6);
+      color: rgba($cf-on-surface-variant, 0.6);
     }
   }
 
   &__voice-btn {
     position: absolute;
-    right: 16px;
-    bottom: 8px;
+    right: $cf-spacing-sm;
+    bottom: $cf-spacing-xs;
     width: 96px;
     height: 96px;
-    background-color: #F59E0B;
-    border-radius: 9999px;
+    background-color: $cf-primary;
+    border-radius: $cf-radius-full;
     display: flex;
     align-items: center;
     justify-content: center;
     font-size: 40px;
-    color: #431407;
+    color: $cf-on-primary;
     flex-shrink: 0;
 
     &:active {
@@ -356,13 +358,13 @@
 
 /* ========== 人工兜底条 ========== */
 .consult-escalation {
-  background-color: #DC2626;
+  background-color: $cf-error;
   height: 112px;
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 16px;
-  border-radius: 32px 32px 0 0;
+  gap: $cf-spacing-sm;
+  border-radius: $cf-radius-lg $cf-radius-lg 0 0;
   animation: consult-slide-up 300ms ease-out;
   flex-shrink: 0;
 
@@ -377,20 +379,20 @@
   &__text {
     font-size: 32px;
     font-weight: 600;
-    color: #FFFFFF;
+    color: $cf-surface;
   }
 }
 
 /* ========== 免责声明 ========== */
 .consult-disclaimer {
-  background-color: #EBE5DE;
-  padding: 24px 32px;
+  background-color: $cf-surface-dim;
+  padding: 24px $cf-spacing-md;
   text-align: center;
   flex-shrink: 0;
 
   &__text {
     font-size: 22px;
-    color: rgba(120, 113, 108, 0.8);
+    color: rgba($cf-on-surface-variant, 0.8);
     line-height: 1.4;
   }
 }
@@ -399,29 +401,29 @@
 .consult-timestamp {
   text-align: center;
   font-size: 22px;
-  color: #78716C;
-  margin: 16px 0;
+  color: $cf-on-surface-variant;
+  margin: $cf-spacing-sm 0;
 }
 
 /* ========== 完成状态 ========== */
 .consult-done {
   text-align: center;
-  padding: 32px 0;
+  padding: $cf-spacing-md 0;
   margin-top: 24px;
 
   &__text {
     font-size: 28px;
-    color: #78716C;
+    color: $cf-on-surface-variant;
     margin-bottom: 24px;
     display: block;
   }
 
   &__new-btn {
-    width: calc(100% - 64px);
+    width: calc(100% - $cf-spacing-xl);
     max-width: 480px;
     height: 88px;
-    background-color: #F59E0B;
-    color: #431407;
+    background-color: $cf-primary;
+    color: $cf-on-primary;
     border-radius: 24px;
     font-size: 30px;
     font-weight: 600;
@@ -449,17 +451,17 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  padding: 32px;
+  padding: $cf-spacing-md;
 
   &__hero {
     width: 240px;
     height: 240px;
-    background-color: #FEF3C7;
+    background-color: $cf-primary-container;
     border-radius: 48px;
     display: flex;
     align-items: center;
     justify-content: center;
-    margin-bottom: 48px;
+    margin-bottom: $cf-spacing-lg;
   }
 
   &__hero-icon {
@@ -469,25 +471,25 @@
   &__title {
     font-size: 40px;
     font-weight: 600;
-    color: #1C1917;
+    color: $cf-on-background;
     margin-bottom: 24px;
   }
 
   &__subtitle {
     font-size: 28px;
-    color: #78716C;
+    color: $cf-on-surface-variant;
     line-height: 1.5;
     text-align: center;
-    margin-bottom: 64px;
-    padding: 0 32px;
+    margin-bottom: $cf-spacing-xl;
+    padding: 0 $cf-spacing-md;
   }
 
   &__start-btn {
-    width: calc(100% - 64px);
+    width: calc(100% - $cf-spacing-xl);
     max-width: 600px;
     height: 96px;
-    background-color: #F59E0B;
-    color: #431407;
+    background-color: $cf-primary;
+    color: $cf-on-primary;
     border-radius: 24px;
     font-size: 32px;
     font-weight: 600;
@@ -514,7 +516,7 @@
   left: 0;
   right: 0;
   bottom: 0;
-  background-color: rgba(28, 25, 23, 0.6);
+  background-color: rgba($cf-on-background, 0.6);
   z-index: 100;
   display: flex;
   align-items: flex-end;
@@ -523,11 +525,11 @@
 
 .consult-modal {
   width: 100%;
-  background-color: #FFFFFF;
-  border-radius: 32px 32px 0 0;
-  padding: 48px 32px;
-  padding-bottom: calc(48px + env(safe-area-inset-bottom));
-  box-shadow: 0 -8px 40px rgba(28, 25, 23, 0.08);
+  background-color: $cf-surface;
+  border-radius: $cf-radius-lg $cf-radius-lg 0 0;
+  padding: $cf-spacing-lg $cf-spacing-md;
+  padding-bottom: calc($cf-spacing-lg + env(safe-area-inset-bottom));
+  box-shadow: 0 -$cf-spacing-xs 40px rgba($cf-on-background, 0.08);
   animation: consult-slide-up 300ms ease-out;
   max-height: 85vh;
   overflow-y: auto;
@@ -535,29 +537,29 @@
   &__title {
     font-size: 40px;
     font-weight: 600;
-    color: #1C1917;
+    color: $cf-on-background;
     text-align: center;
-    margin-bottom: 16px;
+    margin-bottom: $cf-spacing-sm;
   }
 
   &__subtitle {
     font-size: 28px;
-    color: #78716C;
+    color: $cf-on-surface-variant;
     text-align: center;
-    margin-bottom: 48px;
+    margin-bottom: $cf-spacing-lg;
   }
 
   &__grid {
     display: grid;
     grid-template-columns: repeat(2, 1fr);
     gap: 24px;
-    margin-bottom: 48px;
+    margin-bottom: $cf-spacing-lg;
   }
 
   &__option {
-    background-color: #F5F0EB;
+    background-color: $cf-surface-variant;
     border-radius: 24px;
-    padding: 32px;
+    padding: $cf-spacing-md;
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -576,46 +578,46 @@
     }
 
     &--selected {
-      background-color: #FEF3C7;
+      background-color: $cf-primary-container;
     }
   }
 
   &__option-icon {
     font-size: 64px;
-    margin-bottom: 16px;
+    margin-bottom: $cf-spacing-sm;
   }
 
   &__option-text {
     font-size: 32px;
     font-weight: 600;
-    color: #1C1917;
+    color: $cf-on-background;
 
     .consult-modal__option--selected & {
-      color: #92400E;
+      color: $cf-on-primary-container;
     }
   }
 
   &__option-desc {
     font-size: 24px;
-    color: #78716C;
-    margin-top: 8px;
+    color: $cf-on-surface-variant;
+    margin-top: $cf-spacing-xs;
     opacity: 0.8;
 
     .consult-modal__option--selected & {
-      color: #92400E;
+      color: $cf-on-primary-container;
       opacity: 0.7;
     }
   }
 
   &__check {
     position: absolute;
-    top: 16px;
-    right: 16px;
+    top: $cf-spacing-sm;
+    right: $cf-spacing-sm;
     width: 40px;
     height: 40px;
-    background-color: #F59E0B;
-    color: #431407;
-    border-radius: 9999px;
+    background-color: $cf-primary;
+    color: $cf-on-primary;
+    border-radius: $cf-radius-full;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -626,21 +628,21 @@
   &__label {
     font-size: 28px;
     font-weight: 600;
-    color: #1C1917;
-    margin-bottom: 16px;
+    color: $cf-on-background;
+    margin-bottom: $cf-spacing-sm;
   }
 
   &__emotion-row {
     display: flex;
     gap: 24px;
-    margin-bottom: 32px;
+    margin-bottom: $cf-spacing-md;
   }
 
   &__emotion-btn {
     flex: 1;
     height: 96px;
-    background-color: #F5F0EB;
-    color: #1C1917;
+    background-color: $cf-surface-variant;
+    color: $cf-on-background;
     border-radius: 24px;
     font-size: 32px;
     font-weight: 500;
@@ -654,8 +656,8 @@
     }
 
     &--active {
-      background-color: #F59E0B;
-      color: #431407;
+      background-color: $cf-primary;
+      color: $cf-on-primary;
     }
 
     &:active {
@@ -664,16 +666,16 @@
   }
 
   &__textarea {
-    background-color: #F5F0EB;
+    background-color: $cf-surface-variant;
     border-radius: 24px;
-    padding: 32px;
+    padding: $cf-spacing-md;
     font-size: 28px;
     line-height: 1.75;
-    color: #1C1917;
+    color: $cf-on-background;
     min-height: 240px;
     width: 100%;
     box-sizing: border-box;
-    margin-bottom: 32px;
+    margin-bottom: $cf-spacing-md;
     border: none;
   }
 
@@ -686,8 +688,8 @@
   &__submit-btn {
     width: 100%;
     height: 96px;
-    background-color: #F59E0B;
-    color: #431407;
+    background-color: $cf-primary;
+    color: $cf-on-primary;
     border-radius: 24px;
     font-size: 32px;
     font-weight: 600;
@@ -701,8 +703,8 @@
     }
 
     &:disabled {
-      background-color: #EBE5DE;
-      color: #78716C;
+      background-color: $cf-surface-dim;
+      color: $cf-on-surface-variant;
     }
 
     &:active:not(:disabled) {
@@ -714,7 +716,7 @@
     width: 100%;
     height: 80px;
     background-color: transparent;
-    color: #64748B;
+    color: $cf-secondary;
     border-radius: 24px;
     font-size: 28px;
     display: flex;
@@ -727,7 +729,7 @@
     }
 
     &:active {
-      background-color: #F5F0EB;
+      background-color: $cf-surface-variant;
     }
   }
 
@@ -735,14 +737,14 @@
   &__profile-list {
     display: flex;
     flex-wrap: wrap;
-    gap: 16px;
-    margin-bottom: 32px;
+    gap: $cf-spacing-sm;
+    margin-bottom: $cf-spacing-md;
   }
 
   &__profile-btn {
-    background-color: #F5F0EB;
-    color: #78716C;
-    border-radius: 16px;
+    background-color: $cf-surface-variant;
+    color: $cf-on-surface-variant;
+    border-radius: $cf-radius-md;
     padding: 12px 24px;
     font-size: 24px;
     border: none;
@@ -752,8 +754,8 @@
     }
 
     &--active {
-      background-color: #FEF3C7;
-      color: #92400E;
+      background-color: $cf-primary-container;
+      color: $cf-on-primary-container;
     }
 
     &:active {
@@ -769,21 +771,21 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  padding: 32px;
+  padding: $cf-spacing-md;
 
   &__skeleton {
     width: 240px;
     height: 48px;
-    background-color: #F5F0EB;
-    border-radius: 16px;
-    border: 2px solid rgba(245, 158, 11, 0.3);
+    background-color: $cf-surface-variant;
+    border-radius: $cf-radius-md;
+    border: 2px solid rgba($cf-primary, 0.3);
     animation: consult-pulse-border 2s ease-in-out infinite;
     margin-bottom: 24px;
   }
 
   &__text {
     font-size: 28px;
-    color: #78716C;
+    color: $cf-on-surface-variant;
   }
 }
 
@@ -794,49 +796,49 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  padding: 32px;
+  padding: $cf-spacing-md;
 
   &__icon {
     width: 160px;
     height: 160px;
-    background-color: #FEE2E2;
-    border-radius: 9999px;
+    background-color: $cf-error-container;
+    border-radius: $cf-radius-full;
     display: flex;
     align-items: center;
     justify-content: center;
     font-size: 72px;
-    margin-bottom: 32px;
+    margin-bottom: $cf-spacing-md;
   }
 
   &__title {
     font-size: 36px;
     font-weight: 600;
-    color: #1C1917;
-    margin-bottom: 16px;
+    color: $cf-on-background;
+    margin-bottom: $cf-spacing-sm;
   }
 
   &__desc {
     font-size: 28px;
-    color: #78716C;
+    color: $cf-on-surface-variant;
     text-align: center;
     line-height: 1.5;
-    margin-bottom: 48px;
-    padding: 0 32px;
+    margin-bottom: $cf-spacing-lg;
+    padding: 0 $cf-spacing-md;
   }
 
   &__actions {
     display: flex;
     flex-direction: column;
     gap: 24px;
-    width: calc(100% - 64px);
+    width: calc(100% - $cf-spacing-xl);
     max-width: 600px;
   }
 
   &__expert-btn {
     width: 100%;
     height: 96px;
-    background-color: #DC2626;
-    color: #FFFFFF;
+    background-color: $cf-error;
+    color: $cf-surface;
     border-radius: 24px;
     font-size: 32px;
     font-weight: 600;
@@ -858,7 +860,7 @@
     width: 100%;
     height: 96px;
     background-color: transparent;
-    color: #64748B;
+    color: $cf-secondary;
     border-radius: 24px;
     font-size: 28px;
     display: flex;
@@ -871,7 +873,7 @@
     }
 
     &:active {
-      background-color: #F5F0EB;
+      background-color: $cf-surface-variant;
     }
   }
 }
@@ -883,48 +885,48 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  padding: 32px;
+  padding: $cf-spacing-md;
 
   &__icon {
     width: 160px;
     height: 160px;
-    background-color: #FEE2E2;
-    border-radius: 9999px;
+    background-color: $cf-error-container;
+    border-radius: $cf-radius-full;
     display: flex;
     align-items: center;
     justify-content: center;
     font-size: 72px;
-    margin-bottom: 32px;
+    margin-bottom: $cf-spacing-md;
   }
 
   &__title {
     font-size: 36px;
     font-weight: 600;
-    color: #1C1917;
-    margin-bottom: 16px;
+    color: $cf-on-background;
+    margin-bottom: $cf-spacing-sm;
   }
 
   &__message {
     font-size: 28px;
-    color: #DC2626;
+    color: $cf-error;
     text-align: center;
-    margin-bottom: 48px;
-    padding: 0 32px;
+    margin-bottom: $cf-spacing-lg;
+    padding: 0 $cf-spacing-md;
   }
 
   &__actions {
     display: flex;
     flex-direction: column;
     gap: 24px;
-    width: calc(100% - 64px);
+    width: calc(100% - $cf-spacing-xl);
     max-width: 600px;
   }
 
   &__retry-btn {
     width: 100%;
     height: 96px;
-    background-color: #F59E0B;
-    color: #431407;
+    background-color: $cf-primary;
+    color: $cf-on-primary;
     border-radius: 24px;
     font-size: 32px;
     font-weight: 600;
@@ -946,7 +948,7 @@
     width: 100%;
     height: 96px;
     background-color: transparent;
-    color: #64748B;
+    color: $cf-secondary;
     border-radius: 24px;
     font-size: 28px;
     display: flex;
@@ -959,7 +961,7 @@
     }
 
     &:active {
-      background-color: #F5F0EB;
+      background-color: $cf-surface-variant;
     }
   }
 }
@@ -976,8 +978,8 @@
 }
 
 @keyframes consult-pulse-border {
-  0%, 100% { border-color: rgba(245, 158, 11, 0.3); }
-  50% { border-color: rgba(245, 158, 11, 0.6); }
+  0%, 100% { border-color: rgba($cf-primary, 0.3); }
+  50% { border-color: rgba($cf-primary, 0.6); }
 }
 
 @keyframes consult-fade-in {
