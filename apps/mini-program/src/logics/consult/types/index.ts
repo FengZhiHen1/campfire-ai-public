@@ -1,9 +1,13 @@
+// @contract
 /**
  * CSLT-08 咨询编排逻辑 —— 全部前端 TypeScript 类型定义。
  *
- * 本文件是 CSLT-08 自产的 7 个前端类型（ConsultSessionState, ConsultErrorCode,
- * PlanSection, TicketGuide, ConsultSubmitRequest, StateTransitionError, LEGAL_TRANSITIONS）
- * 的集中定义文件，也包含对外部契约类型的本地 type alias 映射。
+ * 本文件是 CSLT-08 自产的类型定义集中文件，包含：
+ * - 外部契约类型的本地 type alias 映射（CSLT-01/04/05/06）
+ * - SSE 事件载荷类型
+ * - 咨询会话状态与消息类型
+ * - 异常错误码枚举与异常类
+ * - useConsult Hook 的完整返回值接口
  *
  * 设计依据：CSLT-08 落地规范 §1.3 §1.4
  * 契约对齐：docs/contracts/CSLT-08/_module-index.json（reference_only）

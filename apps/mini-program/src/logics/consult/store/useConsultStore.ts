@@ -11,6 +11,7 @@
  * - submitConsult() 入口有并发防护（submitting/streaming 阻止）
  * - addMessage() 有消息裁剪逻辑（>= 200 → slice(50)）
  * - 所有中文文案通过 getErrorMessage() 映射表管理
+ * - SSE 事件处理委托给 services/sseCallbacks.ts
  *
  * 设计依据：CSLT-08 落地规范 §1.4 §1.5 §1.7 §1.8 §1.9
  */
@@ -28,32 +29,19 @@ import {
   type TicketGuide,
   type MessageItem,
   type ReferencedCase,
-  type DoneEventPayload,
   ConsultErrorCode,
 } from '../types/index';
 import {
   transitionTo,
   createMessageItem,
   getErrorMessage,
+  createEmptySections,
 } from './stateMachine';
 import { SseStreamParser } from '../services/sseParser';
 import { consultApi } from '../services/consultApi';
+import { createSseCallbacks } from '../services/sseCallbacks';
 import type { ConsultSubmitResponse } from '../services/consultApi';
-
-// ============================================================================
-// 常量定义
-// ============================================================================
-
-/**
- * 四段式方案标题常量列表。
- * 与后端 CSLT-03 解析的 JSON key 保持一致。
- */
-const SECTION_KEYS: readonly string[] = [
-  '即时安全干预动作',
-  '情绪安抚话术',
-  '后续观察指标',
-  '就医判断标准',
-] as const;
+import { isValidConsultSubmitRequest } from '../consult.contract';
 
 // ============================================================================
 // Store 类型定义
@@ -62,36 +50,23 @@ const SECTION_KEYS: readonly string[] = [
 /** Store 状态 + Actions 的合并类型 */
 export interface ConsultStore extends ConsultSessionStoreState {
   // ---------- Actions ----------
-  /** 开始新咨询：idle -> selecting_behavior */
   startConsult: () => void;
-  /** 更新行为类型选择 */
   setBehaviorTypes: (types: BehaviorTypeCategory[]) => void;
-  /** 更新行为描述文本 */
   setBehaviorDescription: (desc: string) => void;
-  /** 设置情绪等级 */
   setEmotionLevel: (level: '轻' | '中' | '重') => void;
-  /** 设置关联档案 */
   setSelectedProfile: (profileId: string | undefined) => void;
-  /** 提交咨询：selecting_behavior -> submitting */
   submitConsult: () => Promise<void>;
-  /** 取消行为选择：selecting_behavior -> idle */
   cancelSelection: () => void;
-  /** 重试提交：submit_failed -> submitting */
   retrySubmit: () => Promise<void>;
-  /** 返回修改：submit_failed | stream_failed -> selecting_behavior，保留表单数据 */
   goBackToSelecting: () => void;
-  /** 重试流式接收：stream_failed -> submitting（重新生成） */
   retryStream: () => Promise<void>;
-  /** 开始新一轮咨询：completed | ticket_guide -> selecting_behavior */
   startNewConsult: () => void;
-  /** 跳转工单模块 */
   goToTicket: () => void;
-  /** 添加消息（含裁剪逻辑） */
   addMessage: (msg: MessageItem) => void;
 }
 
 /** Store 状态部分（不含 Actions） */
-interface ConsultSessionStoreState {
+export interface ConsultSessionStoreState {
   sessionState: ConsultSessionState;
   behaviorTypeSelection: BehaviorTypeCategory[];
   behaviorDescription: string;
@@ -105,17 +80,11 @@ interface ConsultSessionStoreState {
   messages: MessageItem[];
   errorCode?: ConsultErrorCode;
   ticketGuideShown: boolean;
-  /** 情绪等级选择 */
   emotionLevel?: '轻' | '中' | '重';
-  /** 关联档案 ID */
   selectedProfileId?: string;
-  /** 参考案例切片 ID 列表 */
   referencedSliceIds: string[];
-  /** 参考案例简要信息 */
   referencedCases: ReferencedCase[];
-  /** 幂等请求 ID（运行时，不持久化） */
   _requestId: string;
-  /** SSE 重连计数器（运行时，不持久化） */
   _reconnectAttempt: number;
 }
 
@@ -123,10 +92,6 @@ interface ConsultSessionStoreState {
 // 初始状态工厂
 // ============================================================================
 
-/**
- * 创建初始状态。
- * 用于 store 初始化和 startNewConsult 重置。
- */
 function createInitialState(): ConsultSessionStoreState {
   return {
     sessionState: 'idle',
@@ -151,73 +116,14 @@ function createInitialState(): ConsultSessionStoreState {
   };
 }
 
-/**
- * 创建四个空的 PlanSection。
- */
-function createEmptySections(): PlanSection[] {
-  return SECTION_KEYS.map((title) => ({
-    title,
-    contents: [],
-    isCompleted: false,
-  }));
-}
-
-/**
- * 增量追加文本到 planSections 中对应段落的末尾。
- * 用于流式渲染中按 section 标记实时更新结构化卡片。
- *
- * @param sections - 当前的 PlanSection 数组
- * @param sectionTitle - chunk 所属的段落标题，null 表示 JSON 语法字符（仅计入 accumulatedText）
- * @param text - 要追加的文本
- */
-function appendToPlanSections(
-  sections: PlanSection[],
-  sectionTitle: string | null,
-  text: string,
-): PlanSection[] {
-  if (!sectionTitle || !text) return sections;
-  return sections.map((sec) => {
-    if (sec.title !== sectionTitle) return sec;
-    const lastIdx = sec.contents.length - 1;
-    if (lastIdx >= 0 && !sec.isCompleted) {
-      // 追加到最后一个条目（流式渲染中同一条建议可能跨多个 chunk）
-      const updated = [...sec.contents];
-      updated[lastIdx] = updated[lastIdx] + text;
-      return { ...sec, contents: updated };
-    }
-    // 新条目或已完成段落
-    return { ...sec, contents: [...sec.contents, text] };
-  });
-}
-
-/**
- * 将后端下发的 sections dict 转换为前端 PlanSection 数组。
- * sections 由后端从 LLM JSON 输出解析，无需前端正则处理。
- */
-function sectionsToPlanSections(sections: Record<string, string[]>): PlanSection[] {
-  return SECTION_KEYS.map((title) => {
-    const contents = sections[title] ?? [];
-    return {
-      title,
-      contents: Array.isArray(contents) ? contents : [],
-      isCompleted: contents.length > 0,
-    };
-  });
-}
-
 // ============================================================================
-// Taro Storage 适配器（用于 Zustand persist 中间件）
+// Taro Storage 适配器
 // ============================================================================
 
-/**
- * Zustand persist 中间件的 Taro Storage 适配器。
- * 使用 Taro 同步 Storage API（getStorageSync/setStorageSync/removeStorageSync）。
- */
 const taroStorageAdapter = {
   getItem: (name: string): string | null => {
     try {
-      const value = Taro.getStorageSync(name);
-      return value ?? null;
+      return Taro.getStorageSync(name) ?? null;
     } catch {
       return null;
     }
@@ -226,44 +132,40 @@ const taroStorageAdapter = {
     try {
       Taro.setStorageSync(name, value);
     } catch {
-      // 写入失败仅记录日志，不抛异常
       console.debug('persist_write_failed', { key: name });
     }
   },
   removeItem: (name: string): void => {
     try {
       Taro.removeStorageSync(name);
-    } catch {
-      // 删除失败忽略
-    }
+    } catch { /* 删除失败忽略 */ }
   },
 };
+
+// ============================================================================
+// 请求 ID 生成
+// ============================================================================
+
+function generateRequestId(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+  return `req-${Math.random().toString(36).substring(2)}-${Date.now().toString(36)}`;
+}
 
 // ============================================================================
 // Store 创建
 // ============================================================================
 
-/**
- * 全局咨询编排 Store。
- * 所有组件通过 useConsult() Hook 间接访问，禁止直接 import 本 Store。
- *
- * 持久化策略：
- *   - 仅持久化 messages 和输入状态（跨会话恢复）
- *   - sessionState 不持久化（会话状态时效性强）
- */
 export const useConsultStore = create<ConsultStore>()(
   persist(
     (set, get) => ({
-      // ===== 初始状态 =====
       ...createInitialState(),
 
       // ===== startConsult =====
       startConsult: (): void => {
         const { sessionState } = get();
-        if (sessionState !== 'idle') {
-          // 非 idle 状态静默忽略
-          return;
-        }
+        if (sessionState !== 'idle') return;
         const next = transitionTo(sessionState, 'selecting_behavior');
         set({
           sessionState: next,
@@ -282,62 +184,45 @@ export const useConsultStore = create<ConsultStore>()(
         });
       },
 
-      // ===== setBehaviorTypes =====
-      setBehaviorTypes: (types: BehaviorTypeCategory[]): void => {
-        set({ behaviorTypeSelection: types });
-      },
-
-      // ===== setBehaviorDescription =====
-      setBehaviorDescription: (desc: string): void => {
-        set({ behaviorDescription: desc });
-      },
-      setEmotionLevel: (level: '轻' | '中' | '重'): void => {
-        set({ emotionLevel: level });
-      },
-      setSelectedProfile: (profileId: string | undefined): void => {
-        set({ selectedProfileId: profileId });
-      },
+      // ===== 输入 setter =====
+      setBehaviorTypes: (types) => set({ behaviorTypeSelection: types }),
+      setBehaviorDescription: (desc) => set({ behaviorDescription: desc }),
+      setEmotionLevel: (level) => set({ emotionLevel: level }),
+      setSelectedProfile: (profileId) => set({ selectedProfileId: profileId }),
 
       // ===== submitConsult =====
       submitConsult: async (): Promise<void> => {
-        const currentState = get();
+        const state = get();
 
-        // ----- 并发防护 -----
-        if (currentState.sessionState === 'submitting' || currentState.sessionState === 'streaming') {
+        // 并发防护
+        if (state.sessionState === 'submitting' || state.sessionState === 'streaming') {
           set({ errorCode: ConsultErrorCode.CONCURRENT_SUBMIT_BLOCKED });
           return;
         }
 
-        // ----- 输入校验（防御性，Hook 层 isInputValid 已拦截按钮）-----
-        if (
-          currentState.behaviorTypeSelection.length === 0 ||
-          currentState.behaviorDescription.trim() === ''
-        ) {
+        // 输入校验（契约守卫）
+        if (!isValidConsultSubmitRequest({
+          behavior_description: state.behaviorDescription,
+          behavior_type_selection: state.behaviorTypeSelection,
+        })) {
           set({ errorCode: ConsultErrorCode.INPUT_VALIDATION_FAILED });
           return;
         }
 
-        // ----- 状态转换：selecting_behavior -> submitting -----
-        const next = transitionTo(currentState.sessionState, 'submitting');
+        // 状态转换：selecting_behavior → submitting
         set({
-          sessionState: next,
+          sessionState: transitionTo(state.sessionState, 'submitting'),
           errorCode: undefined,
           _requestId: '',
           _reconnectAttempt: 0,
         });
 
-        // ----- 生成幂等请求 ID -----
-        const requestId: string =
-          typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
-            ? crypto.randomUUID()
-            : `req-${Math.random().toString(36).substring(2)}-${Date.now().toString(36)}`;
+        const requestId = generateRequestId();
         set({ _requestId: requestId });
 
-        // ----- 组装请求体 -----
         const { behaviorTypeSelection, behaviorDescription, emotionLevel, selectedProfileId } = get();
 
         try {
-          // ----- 发起 HTTP POST 请求 -----
           const response: ConsultSubmitResponse = await consultApi.submitConsult(
             behaviorDescription,
             behaviorTypeSelection,
@@ -346,12 +231,12 @@ export const useConsultStore = create<ConsultStore>()(
             requestId,
           );
 
-          const { stream_url, confidence_output, session_id, referenced_slice_ids, disclaimer, generation_time_ms, is_partial, finish_reason, ttft_ms, token_input, token_output } = response;
+          const { stream_url, session_id } = response;
 
-          // ----- HTTP 成功 → 直接进入 streaming -----
+          // HTTP 成功 → 进入 streaming
           set({ sessionState: transitionTo('submitting', 'streaming') });
 
-          // ----- 创建 SSE 解析器并连接 -----
+          // 创建 SSE 解析器（SSE 事件回调委托给 sseCallbacks 工厂）
           const parser = new SseStreamParser(
             {
               reconnectMaxRetries: 3,
@@ -360,236 +245,9 @@ export const useConsultStore = create<ConsultStore>()(
               connectTimeout: 10000,
               streamNoDataTimeout: 20000,
             },
-            {
-              // ---- onChunk ----
-              onChunk: (chunkData: { text: string; sequence: number; section?: string | null }): void => {
-                const state = get();
-                const chunkSection = chunkData.section ?? null;
-                const updatedSections = appendToPlanSections(
-                  state.planSections,
-                  chunkSection,
-                  chunkData.text,
-                );
-                set({
-                  accumulatedText: state.accumulatedText + chunkData.text,
-                  lastSequence: chunkData.sequence,
-                  planSections: updatedSections,
-                });
-              },
-
-              // ---- onDone ----
-              onDone: (doneData: DoneEventPayload): void => {
-                const state = get();
-
-                // 仍在 submitting：上游生成器未产出任何 chunk 即结束（超时/LLM 不可用）
-                // 转为 submit_failed 让用户看到错误提示并可以重试
-                if (state.sessionState === 'submitting') {
-                  try {
-                    const next = transitionTo(state.sessionState, 'submit_failed');
-                    set({
-                      sessionState: next,
-                      errorCode: ConsultErrorCode.SUBMIT_SERVER_ERROR,
-                    });
-                  } catch {
-                    // 状态已变更，不覆盖
-                  }
-                  return;
-                }
-
-                // 不在 streaming 状态（已完成转换或已进入其他终态）→ 忽略
-                if (state.sessionState !== 'streaming') {
-                  return;
-                }
-
-                // 提取 SSE done 事件元数据
-                const crisisLevel = doneData?.crisis_level || 'mild';
-                const referencedSliceIds: string[] = doneData?.referenced_slice_ids ?? [];
-                const referencedCases: ReferencedCase[] = doneData?.referenced_cases ?? [];
-                const verdict = doneData?.verdict || 'PASS';
-
-                // 从后端 sections 数据构建结构化段落（替代前端正则解析）
-                const doneSections = doneData?.sections ?? {};
-                const planSections = sectionsToPlanSections(doneSections);
-
-                // 判决是否触发工单引导
-                const shouldShowTicket = verdict === 'FORCE_BLOCK' || verdict === 'APPEND_WARNING';
-                const nextState = shouldShowTicket ? 'ticket_guide' : 'completed';
-                const next = transitionTo(state.sessionState, nextState);
-
-                // 更新 system_plan 消息：标记为已完成
-                const updatedMessages = state.messages.map((msg) => {
-                  if (msg.messageType === 'system_plan' && !msg.metadata?.isCompleted) {
-                    return {
-                      ...msg,
-                      metadata: { ...msg.metadata, isCompleted: true },
-                    };
-                  }
-                  return msg;
-                });
-
-                set({
-                  sessionState: next,
-                  messages: updatedMessages,
-                  crisisLevel: crisisLevel as CrisisLevel,
-                  referencedSliceIds,
-                  referencedCases,
-                  planSections,
-                  ticketGuide: shouldShowTicket
-                    ? { show: true, riskLevel: verdict === 'FORCE_BLOCK' ? 'high_risk' : 'normal' }
-                    : state.ticketGuide,
-                });
-
-                // ----- 步骤 6：归档（非阻塞）-----
-                // user_id 由后端从 X-Device-Id 提取，前端传占位值即可
-                const archiveData: Record<string, unknown> = {
-                  request_id: state._requestId || requestId,
-                  user_id: '00000000-0000-0000-0000-000000000000',
-                  crisis_level: state.crisisLevel ?? 'mild',
-                  behavior_description: state.behaviorDescription,
-                  consultation_time: new Date().toISOString(),
-                  generated_plan: state.accumulatedText,
-                  source_list: referenced_slice_ids ?? [],
-                  disclaimer:
-                    '以上建议由 AI 生成，仅供参考，不构成医疗诊断或治疗建议。如情况紧急，请立即联系专业医疗机构。',
-                  generation_time_ms: generation_time_ms ?? 0,
-                  is_partial: is_partial ?? false,
-                  referenced_slice_ids: referenced_slice_ids ?? [],
-                  finish_reason: finish_reason ?? 'COMPLETE',
-                  ttft_ms: ttft_ms ?? 0,
-                  has_feedback: false,
-                  token_input: token_input ?? null,
-                  token_output: token_output ?? null,
-                };
-
-                consultApi.archiveConsultation(archiveData).catch(() => {
-                  // 归档失败为降级场景，不阻塞用户
-                });
-              },
-
-              // ---- onError ----
-              onError: (errorData: { error_code: string }): void => {
-                const state = get();
-                const isFatal =
-                  errorData.error_code === 'GENERATION_FAILED' ||
-                  errorData.error_code === 'SESSION_NOT_FOUND';
-
-                if (isFatal) {
-                  if (state.lastSequence === 0) {
-                    // 尚未收到任何 chunk → 视为提交失败
-                    try {
-                      const next = transitionTo(state.sessionState, 'submit_failed');
-                      set({
-                        sessionState: next,
-                        errorCode: ConsultErrorCode.SUBMIT_SERVER_ERROR,
-                      });
-                    } catch {
-                      // 静默
-                    }
-                  } else {
-                    // 已收到 chunk → 流传输失败
-                    try {
-                      const next = transitionTo(state.sessionState, 'stream_failed');
-                      set({
-                        sessionState: next,
-                        errorCode: ConsultErrorCode.SSE_CONNECTION_BROKEN,
-                      });
-
-                      // 标记未完成段落为 isPartial
-                      const partialSections = get().planSections.map((sec) => {
-                        if (!sec.isCompleted) {
-                          return { ...sec, isPartial: true };
-                        }
-                        return sec;
-                      });
-
-                      // 追加不完整提示消息
-                      const promptMsg = createMessageItem(
-                        'system',
-                        '生成中断，以下为不完整建议，可能缺失部分段落',
-                        'system_prompt',
-                      );
-
-                      set({
-                        planSections: partialSections,
-                        messages: [...get().messages, promptMsg],
-                      });
-                    } catch {
-                      // 静默
-                    }
-                  }
-                } else {
-                  // 非致命错误仅记录日志
-                  console.debug('sse_non_fatal_error', {
-                    errorCode: errorData.error_code,
-                    timestamp: Date.now(),
-                  });
-                }
-              },
-
-              // ---- onHeartbeat ----
-              onHeartbeat: (): void => {
-                // 心跳事件重置无数据计时器（由 parser 内部处理）
-                // 可通过设置 lastEventTime 刷新监控
-              },
-
-              // ---- onReconnect ----
-              onReconnect: (attempt: number): void => {
-                set({ _reconnectAttempt: attempt });
-              },
-
-              // ---- onReconnectFailed ----
-              onReconnectFailed: (): void => {
-                const state = get();
-                try {
-                  if (state.lastSequence === 0) {
-                    // 尚未收到任何 chunk → 视为提交失败
-                    const next = transitionTo(state.sessionState, 'submit_failed');
-                    set({
-                      sessionState: next,
-                      errorCode: ConsultErrorCode.SUBMIT_NETWORK_ERROR,
-                    });
-                  } else {
-                    // 已收到 chunk → 流传输失败
-                    const next = transitionTo(state.sessionState, 'stream_failed');
-                    set({
-                      sessionState: next,
-                      errorCode: ConsultErrorCode.SSE_CONNECTION_BROKEN,
-                    });
-
-                    // 标记未完成段落
-                    const partialSections = get().planSections.map((sec) => {
-                      if (!sec.isCompleted) {
-                        return { ...sec, isPartial: true };
-                      }
-                      return sec;
-                    });
-
-                    // 追加不完整提示消息
-                    const promptMsg = createMessageItem(
-                      'system',
-                      '生成中断，以下为不完整建议，可能缺失部分段落',
-                      'system_prompt',
-                    );
-
-                    set({
-                      planSections: partialSections,
-                      messages: [...get().messages, promptMsg],
-                    });
-                  }
-                } catch {
-                  // 静默
-                }
-              },
-
-              // ---- onNoDataTimeout ----
-              onNoDataTimeout: (): void => {
-                // 软超时：仅设置 errorCode，不改变状态，不终止连接
-                set({ errorCode: ConsultErrorCode.SSE_NO_DATA_TIMEOUT });
-              },
-            },
+            createSseCallbacks(get, set, requestId),
           );
 
-          // 发起 SSE 连接
           const extraHeaders: Record<string, string> = {
             'ngrok-skip-browser-warning': '1',
           };
@@ -599,15 +257,9 @@ export const useConsultStore = create<ConsultStore>()(
 
           await parser.connect(stream_url, extraHeaders);
         } catch (error: unknown) {
-          // ----- 请求失败处理 -----
-          const state = get();
+          const currentState = get();
+          if (currentState.sessionState !== 'submitting') return;
 
-          // 若状态已不是 submitting（可能已被其他逻辑修改），不覆盖
-          if (state.sessionState !== 'submitting') {
-            return;
-          }
-
-          // 分类错误类型
           const isNetworkError =
             error instanceof TypeError ||
             (error instanceof Error &&
@@ -621,14 +273,11 @@ export const useConsultStore = create<ConsultStore>()(
             : ConsultErrorCode.SUBMIT_SERVER_ERROR;
 
           try {
-            const next = transitionTo(state.sessionState, 'submit_failed');
             set({
-              sessionState: next,
+              sessionState: transitionTo(currentState.sessionState, 'submit_failed'),
               errorCode,
             });
-          } catch {
-            // 状态已变更，不覆盖
-          }
+          } catch { /* 状态已变更 */ }
 
           console.debug('submit_failed', {
             errorCode,
@@ -641,38 +290,25 @@ export const useConsultStore = create<ConsultStore>()(
       // ===== cancelSelection =====
       cancelSelection: (): void => {
         const { sessionState } = get();
-        // 仅在 selecting_behavior 状态下执行
-        if (sessionState !== 'selecting_behavior') {
-          return;
-        }
-        const next = transitionTo(sessionState, 'idle');
-        set({ sessionState: next });
-        // 保留 behaviorTypeSelection 和 behaviorDescription（不丢失）
+        if (sessionState !== 'selecting_behavior') return;
+        set({ sessionState: transitionTo(sessionState, 'idle') });
       },
 
       // ===== retrySubmit =====
       retrySubmit: async (): Promise<void> => {
         const { sessionState } = get();
-        if (sessionState !== 'submit_failed') {
-          return;
-        }
-        const next = transitionTo(sessionState, 'submitting');
-        set({ sessionState: next, errorCode: undefined });
-        // 重用 submitConsult 逻辑
+        if (sessionState !== 'submit_failed') return;
+        set({ sessionState: transitionTo(sessionState, 'submitting'), errorCode: undefined });
         await get().submitConsult();
       },
 
       // ===== goBackToSelecting =====
       goBackToSelecting: (): void => {
         const { sessionState } = get();
-        if (sessionState !== 'submit_failed' && sessionState !== 'stream_failed') {
-          return;
-        }
-        const next = transitionTo(sessionState, 'selecting_behavior');
+        if (sessionState !== 'submit_failed' && sessionState !== 'stream_failed') return;
         set({
-          sessionState: next,
+          sessionState: transitionTo(sessionState, 'selecting_behavior'),
           errorCode: undefined,
-          // 仅清空流式相关状态，保留 behaviorTypeSelection 和 behaviorDescription
           accumulatedText: '',
           planSections: createEmptySections(),
           lastSequence: 0,
@@ -682,45 +318,24 @@ export const useConsultStore = create<ConsultStore>()(
       // ===== retryStream =====
       retryStream: async (): Promise<void> => {
         const { sessionState } = get();
-        if (sessionState !== 'stream_failed') {
-          return;
-        }
-        const next = transitionTo(sessionState, 'submitting');
+        if (sessionState !== 'stream_failed') return;
         set({
-          sessionState: next,
+          sessionState: transitionTo(sessionState, 'submitting'),
           errorCode: undefined,
           accumulatedText: '',
           planSections: createEmptySections(),
           lastSequence: 0,
         });
-        // 注意：保留现有 messages（不覆盖历史）
         await get().submitConsult();
       },
 
       // ===== startNewConsult =====
       startNewConsult: (): void => {
         const { sessionState } = get();
-        if (sessionState !== 'completed' && sessionState !== 'ticket_guide') {
-          return;
-        }
-        const next = transitionTo(sessionState, 'selecting_behavior');
-        // 清空所有会话数据
+        if (sessionState !== 'completed' && sessionState !== 'ticket_guide') return;
         set({
-          sessionState: next,
-          behaviorTypeSelection: [],
-          behaviorDescription: '',
-          messages: [],
-          accumulatedText: '',
-          planSections: createEmptySections(),
-          lastSequence: 0,
-          errorCode: undefined,
-          ticketGuide: { show: false, riskLevel: 'normal' },
-          ticketGuideShown: false,
-          crisisLevel: undefined,
-          confidenceScore: undefined,
-          validationVerdict: undefined,
-          _requestId: '',
-          _reconnectAttempt: 0,
+          ...createInitialState(),
+          sessionState: transitionTo(sessionState, 'selecting_behavior'),
         });
       },
 
@@ -733,7 +348,6 @@ export const useConsultStore = create<ConsultStore>()(
       addMessage: (msg: MessageItem): void => {
         set((state) => {
           const newMessages = [...state.messages, msg];
-          // 消息裁剪：>= 200 条时截断前 50 条
           if (newMessages.length >= 200) {
             return { messages: newMessages.slice(50) };
           }
@@ -742,17 +356,13 @@ export const useConsultStore = create<ConsultStore>()(
       },
     }),
     {
-      // persist 中间件配置
       name: 'consult-session',
       storage: createJSONStorage(() => taroStorageAdapter),
-      // 防御：storage 中可能残留旧版完整 state（含非 idle 的 sessionState），
-      // 合并时强制覆盖为 idle，确保每次重开页面都从入口开始。
       merge: (persisted, current) => ({
         ...current,
         ...(persisted as object),
         sessionState: 'idle' as const,
       }),
-      // 仅持久化 messages 和输入状态
       partialize: (state) => ({
         messages: state.messages,
         behaviorTypeSelection: state.behaviorTypeSelection,
@@ -766,7 +376,5 @@ export const useConsultStore = create<ConsultStore>()(
 // 工具函数导出（供 useConsult Hook 使用）
 // ============================================================================
 
-/**
- * 获取错误提示文案（导出到 stateMachine 的 getErrorMessage）。
- */
-export { getErrorMessage, sectionsToPlanSections, createEmptySections, createMessageItem, SECTION_KEYS };
+export { getErrorMessage, createEmptySections, createMessageItem };
+export { sectionsToPlanSections } from './stateMachine';
