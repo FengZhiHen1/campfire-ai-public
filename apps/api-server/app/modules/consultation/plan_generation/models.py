@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.modules.crisis.models import CrisisJudgmentResult
+from py_schemas.crisis import CrisisJudgmentResult
 from py_schemas.consult import SemanticSearchResult
 
 from .enums import BlockVariant, GenerationStatus

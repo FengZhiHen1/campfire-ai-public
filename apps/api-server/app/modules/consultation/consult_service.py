@@ -31,12 +31,12 @@ from py_schemas.consult import (
     TagFilterDto,
 )
 
-from app.modules.crisis.enums import CrisisLevel, BehaviorTypeCategory
-from app.modules.crisis.models import (
+from py_schemas.crisis import (
     CrisisJudgmentResult,
     CrisisJudgmentRequest,
     JudgmentLayerResult,
 )
+from py_schemas.enums.crisis_enums import CrisisLevel, BehaviorTypeCategory
 from app.modules.consultation.plan_generation.models import (
     EmergencyPlanInput,
 )

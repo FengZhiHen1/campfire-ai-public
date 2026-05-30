@@ -12,6 +12,10 @@ from py_schemas.enums.case_enums import (
     SeverityLevel,
     SourceType,
 )
+from py_schemas.enums.crisis_enums import (
+    BehaviorTypeCategory,
+    CrisisLevel,
+)
 
 __all__ = [
     "CaseStatus",
@@ -21,4 +25,6 @@ __all__ = [
     "SceneType",
     "EvidenceLevel",
     "FamilyDisplayCategory",
+    "CrisisLevel",
+    "BehaviorTypeCategory",
 ]

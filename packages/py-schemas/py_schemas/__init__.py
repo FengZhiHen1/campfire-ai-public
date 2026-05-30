@@ -74,9 +74,16 @@ from py_schemas.consultation_history import (
     ConsultationHistoryDetail,
     ConsultationHistoryListItem,
 )
+from py_schemas.crisis import (
+    CrisisJudgmentRequest,
+    CrisisJudgmentResult,
+    JudgmentLayerResult,
+)
 from py_schemas.enums import (
     BehaviorType,
+    BehaviorTypeCategory,
     CaseStatus,
+    CrisisLevel,
     EvidenceLevel,
     FamilyDisplayCategory,
     SceneType,
@@ -228,6 +235,12 @@ __all__ = [
     "FileValidationRule",
     "FileValidationResult",
     "SecurityAuditLogEntry",
+    # CSLT-01 — 危机分级判定
+    "CrisisLevel",
+    "BehaviorTypeCategory",
+    "CrisisJudgmentRequest",
+    "CrisisJudgmentResult",
+    "JudgmentLayerResult",
 ]
 # 注意: consult.EvidenceLevel 与 case_enums.EvidenceLevel 冲突，
 # 顶层仅导出 case_enums 版本。consult 版本请通过 py_schemas.consult.EvidenceLevel 访问。
