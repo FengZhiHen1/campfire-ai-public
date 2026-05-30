@@ -1,12 +1,7 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { View, Text, Button, Input, Picker } from '@tarojs/components';
 import Taro from '@tarojs/taro';
-import {
-  getProfile,
-  createProfile,
-  updateProfile,
-  deleteProfile,
-} from '../../../logics/profiles/services/profileApi';
+import { useProfile } from '../../../logics/profiles';
 import {
   listEvents,
   deleteEvent as deleteEventApi,
@@ -69,6 +64,8 @@ function validateForm(values: {
 // ============================================================================
 
 export default function ProfileEdit() {
+  const { getProfile, createProfile, updateProfile, deleteProfile } = useProfile();
+
   // --------------------------------------------------------------------------
   // 路由参数
   // --------------------------------------------------------------------------

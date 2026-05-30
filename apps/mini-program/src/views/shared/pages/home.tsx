@@ -77,7 +77,7 @@ export default function HomePage() {
   };
 
   const goProfile = () => {
-    Taro.switchTab({ url: '/views/profiles/pages/edit' });
+    Taro.navigateTo({ url: '/views/profiles/pages/edit' });
   };
 
   return (
