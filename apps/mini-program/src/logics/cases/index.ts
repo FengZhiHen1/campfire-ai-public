@@ -29,13 +29,6 @@ export type {
   CardSummary,
 } from './types';
 
-export type { UseCaseListParams, UseCaseListReturn } from './hooks/useCaseList';
-export type { UseCaseDetailReturn } from './hooks/useCaseDetail';
-export type { UseCaseListPageReturn } from './hooks/useCaseListPage';
-export type { UseCaseDetailPageReturn } from './hooks/useCaseDetailPage';
-export type { UseCaseSubmitReturn } from './hooks/useCaseSubmit';
-export type { UseNarrativeSubmitReturn } from './hooks/useNarrativeSubmit';
-export type { UseExtractionResultReturn } from './hooks/useExtractionResult';
 
 // ---- 常量 ----
 export {
@@ -44,9 +37,13 @@ export {
   SOURCE_LABEL_MAP,
   CARD_STATUS_MAP,
   BEHAVIOR_TYPE_OPTIONS,
+  BEHAVIOR_TYPE_VALUES,
   SEVERITY_OPTIONS,
+  SEVERITY_VALUES,
   SCENE_OPTIONS,
+  SCENE_VALUES,
   EVIDENCE_LEVEL_OPTIONS,
+  EVIDENCE_LEVEL_VALUES,
   FAMILY_CATEGORY_OPTIONS,
   SOURCE_TYPE_OPTIONS,
 } from './types/constants';

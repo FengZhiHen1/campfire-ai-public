@@ -51,140 +51,98 @@ const DEFAULT_FIELDS: CaseFormFields = {
 };
 
 // ============================================================================
-// 自动保存防抖 Timer
-// ============================================================================
-
-let autoSaveTimer: ReturnType<typeof setTimeout> | null = null;
-
-// ============================================================================
 // Store
 // ============================================================================
 
-/**
- * 案例表单 Store。
- * 管理所有表单字段、校验错误和自动保存状态。
- */
-export const useCaseStore = create<CaseFormState>((set, get) => ({
-  fields: { ...DEFAULT_FIELDS },
-  errors: {},
-  isSubmitting: false,
-  lastSavedAt: null,
-  isDirty: false,
+export const useCaseStore = create<CaseFormState>((set, get) => {
+  let autoSaveTimer: ReturnType<typeof setTimeout> | null = null;
 
-  /**
-   * 更新单个字段值，标记 dirty 并触发防抖自动保存。
-   */
-  setField: (name, value) => {
-    set((state) => ({
-      fields: { ...state.fields, [name]: value },
-      isDirty: true,
-    }));
-    scheduleAutoSave();
-  },
-
-  /**
-   * 批量更新字段值。
-   */
-  setFields: (partial) => {
-    set((state) => ({
-      fields: { ...state.fields, ...partial },
-      isDirty: true,
-    }));
-    scheduleAutoSave();
-  },
-
-  /**
-   * 重置表单为默认值。
-   */
-  resetForm: () => {
+  function scheduleAutoSave(): void {
     if (autoSaveTimer !== null) {
       clearTimeout(autoSaveTimer);
-      autoSaveTimer = null;
     }
-    set({
-      fields: { ...DEFAULT_FIELDS },
-      errors: {},
-      isSubmitting: false,
-      lastSavedAt: null,
-      isDirty: false,
-    });
-    Taro.removeStorageSync(DRAFT_STORAGE_KEY);
-  },
-
-  /**
-   * 从本地存储加载草稿。
-   *
-   * @returns 是否存在草稿
-   */
-  loadDraft: (): boolean => {
-    try {
-      const saved: string | null = Taro.getStorageSync(DRAFT_STORAGE_KEY);
-      if (saved) {
-        const parsed: CaseFormFields = JSON.parse(saved);
-        set({
-          fields: { ...DEFAULT_FIELDS, ...parsed },
-          lastSavedAt: new Date().toISOString(),
-          isDirty: false,
-        });
-        return true;
+    autoSaveTimer = setTimeout(() => {
+      const state = get();
+      if (state.isDirty) {
+        state.saveDraft();
       }
-    } catch {
-      // 解析失败则忽略
-    }
-    return false;
-  },
-
-  /**
-   * 将当前字段保存到本地存储。
-   */
-  saveDraft: () => {
-    const { fields } = get();
-    try {
-      Taro.setStorageSync(DRAFT_STORAGE_KEY, JSON.stringify(fields));
-      set({ lastSavedAt: new Date().toISOString(), isDirty: false });
-    } catch {
-      // 存储失败不阻断主流程
-    }
-  },
-
-  /**
-   * 设置校验错误。
-   */
-  setErrors: (errors) => set({ errors }),
-
-  /**
-   * 清除校验错误。
-   */
-  clearErrors: () => set({ errors: {} }),
-
-  /**
-   * 设置提交状态（防重入保护）。
-   * 重复调用 setSubmitting(true) 在 isSubmitting 已为 true 时无操作。
-   */
-  setSubmitting: (value) => {
-    if (get().isSubmitting === value) return;
-    set({ isSubmitting: value });
-  },
-}));
-
-// ============================================================================
-// 自动保存调度
-// ============================================================================
-
-/**
- * 调度自动保存（30 秒防抖）。
- * 每次字段变更时调用，重置 30 秒计时器。
- * 30 秒无变更后自动保存到 Taro.Storage。
- */
-function scheduleAutoSave(): void {
-  if (autoSaveTimer !== null) {
-    clearTimeout(autoSaveTimer);
+      autoSaveTimer = null;
+    }, AUTO_SAVE_DEBOUNCE_MS);
   }
-  autoSaveTimer = setTimeout(() => {
-    const state = useCaseStore.getState();
-    if (state.isDirty) {
-      state.saveDraft();
-    }
-    autoSaveTimer = null;
-  }, AUTO_SAVE_DEBOUNCE_MS);
-}
+
+  return {
+    fields: { ...DEFAULT_FIELDS },
+    errors: {},
+    isSubmitting: false,
+    lastSavedAt: null,
+    isDirty: false,
+
+    setField: (name, value) => {
+      set((state) => ({
+        fields: { ...state.fields, [name]: value },
+        isDirty: true,
+      }));
+      scheduleAutoSave();
+    },
+
+    setFields: (partial) => {
+      set((state) => ({
+        fields: { ...state.fields, ...partial },
+        isDirty: true,
+      }));
+      scheduleAutoSave();
+    },
+
+    resetForm: () => {
+      if (autoSaveTimer !== null) {
+        clearTimeout(autoSaveTimer);
+        autoSaveTimer = null;
+      }
+      set({
+        fields: { ...DEFAULT_FIELDS },
+        errors: {},
+        isSubmitting: false,
+        lastSavedAt: null,
+        isDirty: false,
+      });
+      Taro.removeStorageSync(DRAFT_STORAGE_KEY);
+    },
+
+    loadDraft: (): boolean => {
+      try {
+        const saved: string | null = Taro.getStorageSync(DRAFT_STORAGE_KEY);
+        if (saved) {
+          const parsed: CaseFormFields = JSON.parse(saved);
+          set({
+            fields: { ...DEFAULT_FIELDS, ...parsed },
+            lastSavedAt: new Date().toISOString(),
+            isDirty: false,
+          });
+          return true;
+        }
+      } catch {
+        // 解析失败则忽略
+      }
+      return false;
+    },
+
+    saveDraft: () => {
+      const { fields } = get();
+      try {
+        Taro.setStorageSync(DRAFT_STORAGE_KEY, JSON.stringify(fields));
+        set({ lastSavedAt: new Date().toISOString(), isDirty: false });
+      } catch {
+        // 存储失败不阻断主流程
+      }
+    },
+
+    setErrors: (errors) => set({ errors }),
+
+    clearErrors: () => set({ errors: {} }),
+
+    setSubmitting: (value) => {
+      if (get().isSubmitting === value) return;
+      set({ isSubmitting: value });
+    },
+  };
+});

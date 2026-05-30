@@ -45,20 +45,36 @@ export const CARD_STATUS_MAP: Record<string, { text: string; cls: string }> = {
 // 选项列表
 // ============================================================================
 
-/** 行为类型选项 */
+/** 行为类型选项（展示用） */
 export const BEHAVIOR_TYPE_OPTIONS: readonly string[] = [
   '自伤', '攻击', '刻板', '逃跑', '情绪崩溃', '其他',
 ];
 
-/** 严重程度选项 */
+/** 行为类型后端枚举值（与 SeverityLevel 枚举对齐，按索引对应 BEHAVIOR_TYPE_OPTIONS） */
+export const BEHAVIOR_TYPE_VALUES: readonly string[] = [
+  'self_injury', 'aggression', 'stereotypy', 'elopement', 'meltdown', 'other',
+];
+
+/** 严重程度选项（展示用） */
 export const SEVERITY_OPTIONS: readonly string[] = ['轻度', '中度', '重度'];
 
-/** 场景选项 */
+/** 严重程度后端枚举值（与 BehaviorType 枚举对齐，按索引对应 SEVERITY_OPTIONS） */
+export const SEVERITY_VALUES: readonly string[] = ['mild', 'moderate', 'severe'];
+
+/** 场景选项（展示用） */
 export const SCENE_OPTIONS: readonly string[] = ['家庭', '学校', '公共场合', '机构', '不限'];
 
-/** 循证等级选项 */
+/** 场景后端枚举值（与 SceneType 枚举对齐，按索引对应 SCENE_OPTIONS） */
+export const SCENE_VALUES: readonly string[] = ['home', 'school', 'public', 'institution', 'any'];
+
+/** 循证等级选项（展示用） */
 export const EVIDENCE_LEVEL_OPTIONS: readonly string[] = [
   'NCAEP循证实践', '机构经验总结', '个案观察记录',
+];
+
+/** 循证等级后端枚举值（与 EvidenceLevel 枚举对齐，按索引对应 EVIDENCE_LEVEL_OPTIONS） */
+export const EVIDENCE_LEVEL_VALUES: readonly string[] = [
+  'ncaep', 'institution_experience', 'case_observation',
 ];
 
 /** 家属展示大类选项 */
