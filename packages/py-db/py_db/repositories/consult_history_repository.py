@@ -17,7 +17,8 @@ import uuid
 from typing import Any
 
 from py_logger import logger
-from sqlalchemy import func, insert, select
+from sqlalchemy import func, select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from py_db.models.consultation import ConsultationHistory
@@ -61,7 +62,7 @@ class ConsultHistoryRepository:
             raise ValueError("data must not be empty")
 
         stmt = (
-            insert(ConsultationHistory)
+            pg_insert(ConsultationHistory)
             .values(
                 id=data["id"],
                 request_id=data["request_id"],
