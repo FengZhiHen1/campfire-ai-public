@@ -1,3 +1,4 @@
+# @contract
 """CSLT-01 危机分级判定 — Pydantic 数据模型定义。
 
 所有模型使用 ConfigDict(extra="forbid") 严格校验，

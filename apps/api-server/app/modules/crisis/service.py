@@ -2,6 +2,7 @@
 
 对外暴露 judge_crisis() 异步函数，作为模块的唯一公共接口。
 CSLT-08（咨询编排逻辑）通过此接口触发三层递进危机等级判定。
+内部使用 CrisisJudgmentPipelineImpl 继承 CrisisJudgmentPipeline 契约 ABC 执行判定。
 
 Usage:
     from app.modules.crisis import judge_crisis
@@ -14,9 +15,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from .exceptions import CrisisJudgmentError, KeywordDictLoadError
 from .models import CrisisJudgmentRequest, CrisisJudgmentResult
-from .pipeline import JudgmentPipeline
+from .pipeline import CrisisJudgmentPipelineImpl
 from py_logger import logger
 
 
@@ -60,8 +60,8 @@ async def judge_crisis(
     # 步骤 1：输入校验 —— Pydantic 在校验失败时自动抛出 ValidationError
     # CrisisJudgmentRequest validation happens at call site
 
-    # 步骤 2：构建 Pipeline 并执行
-    pipeline = JudgmentPipeline()
+    # 步骤 2：实例化契约实现并执行
+    pipeline = CrisisJudgmentPipelineImpl()
 
     logger.info(
         service="crisis_judgment",
@@ -74,14 +74,7 @@ async def judge_crisis(
         },
     )
 
-    try:
-        result: CrisisJudgmentResult = await pipeline.run(request)
-    except KeywordDictLoadError:
-        # 关键词词库加载失败 —— 日志已在 Pipeline 中记录
-        raise
-    except CrisisJudgmentError:
-        # 不可恢复的判定错误
-        raise
+    result: CrisisJudgmentResult = await pipeline.run(request)
 
     # 记录判定完成日志
     logger.info(

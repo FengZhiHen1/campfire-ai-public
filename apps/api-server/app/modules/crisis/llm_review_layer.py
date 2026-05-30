@@ -151,6 +151,7 @@ class LLMReviewLayer(JudgmentLayer):
                     "raw_response": response_text[:500],
                     "prompt_version": _PROMPT_VERSION,
                     "elapsed_ms": elapsed_ms,
+                    "confidence": confidence,
                 },
             )
 
