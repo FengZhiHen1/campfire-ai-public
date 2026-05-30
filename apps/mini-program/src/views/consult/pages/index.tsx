@@ -78,17 +78,8 @@ export default function ConsultIndex() {
 
   // DEBUG: 确认组件是否重渲染及 planSections 状态
   useEffect(() => {
-    console.debug('[render] ConsultIndex', {
-      render: renderCount.current,
-      sessionState,
-      planSectionsLen: planSections.length,
-      planSectionsContent: planSections.map((s) => ({
-        title: s.title,
-        contentsLen: s.contents.length,
-        isCompleted: s.isCompleted,
-        firstItem: s.contents[0]?.slice(0, 30) ?? '',
-      })),
-    });
+    const items = planSections.map((s) => `${s.title.slice(0, 4)}:${s.contents.length}${s.isCompleted ? '✓' : ''}`);
+    console.debug('[render]', renderCount.current, sessionState, items.join(' | '), 'accText:', accumulatedText.length);
   });
 
   useEffect(() => {
