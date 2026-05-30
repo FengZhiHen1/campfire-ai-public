@@ -50,10 +50,10 @@ from .history_contract import BaseHistoryManager
 
 
 class ConsultationHistoryIncompleteDataError(ConsultationArchiveError):
-    """归档写入数据不完整异常（兼容旧引用，继承自 ConsultationArchiveError）。"""
+    """归档写入数据不完整异常（兼容旧引用，继承自 ConsultationArchiveError）。
 
-    def __init__(self, detail: str = "归档数据不完整", field: str | None = None) -> None:
-        super().__init__(message=detail, field=field)
+    路由层应使用 exc.message（str）而非 exc.detail（dict）。"""
+    pass
 
 
 # ============================================================================

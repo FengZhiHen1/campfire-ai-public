@@ -19,6 +19,7 @@
 
 from __future__ import annotations
 
+import time
 from abc import ABC, abstractmethod
 from typing import Any, final
 
@@ -60,6 +61,8 @@ class BaseConfidenceValidator(ABC):
           - 高危场景通过 trigger_ticket_with_retry 创建工单
           - 记录结构化日志（含 request_id + verdict + elapsed_ms）
         """
+        start_time = time.perf_counter()
+
         self._validate_confidence_preconditions(input=input)
 
         # 阻断场景短路
@@ -69,7 +72,11 @@ class BaseConfidenceValidator(ABC):
         # 阶段一：关键词安检
         keyword_hit = await self._do_scan_keywords(input=input)
         if keyword_hit:
-            return self._do_build_blocked_result(input=input)
+            result = self._do_build_blocked_result(input=input)
+            ticket_failed = await self._do_trigger_ticket(input=input, verdict=result.verdict)
+            result.ticket_creation_failed = ticket_failed
+            self._validate_confidence_postconditions(result=result)
+            return result
 
         # 阶段二：LLM 自评估
         llm_score, degradation_note = await self._do_llm_assessment(input=input)
@@ -102,6 +109,7 @@ class BaseConfidenceValidator(ABC):
             )
 
         # 超时安全兜底 + 结果组装
+        elapsed_ms = (time.perf_counter() - start_time) * 1000
         result = self._do_assemble_result(
             input=input,
             confidence_score=confidence_score,
@@ -110,6 +118,7 @@ class BaseConfidenceValidator(ABC):
             ticket_triggered=ticket_triggered,
             ticket_creation_failed=ticket_creation_failed,
             degradation_note=degradation_note,
+            elapsed_ms=elapsed_ms,
             background_tasks=background_tasks,
         )
 
@@ -227,6 +236,7 @@ class BaseConfidenceValidator(ABC):
         ticket_triggered: bool,
         ticket_creation_failed: bool,
         degradation_note: str | None,
+        elapsed_ms: float,
         background_tasks: Any,
     ) -> Any:
         """组装校验输出 + 超时安全兜底 + 异步持久化。

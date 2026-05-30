@@ -71,7 +71,7 @@ async def create_consultation(
         )
         return result.model_dump(mode="json")
     except ConsultationHistoryIncompleteDataError as exc:
-        detail = [{"field": exc.field, "msg": exc.detail}] if exc.field else exc.detail
+        detail = [{"field": exc.field, "msg": exc.message}] if exc.field else exc.message
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=detail,

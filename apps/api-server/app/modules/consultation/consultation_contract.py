@@ -24,6 +24,7 @@
 
 from __future__ import annotations
 
+import uuid
 from abc import ABC, abstractmethod
 from typing import Any, final
 
@@ -40,7 +41,7 @@ class BaseConsultationOrchestrator(ABC):
     # ==========================================================================
 
     @final
-    def start_consultation(
+    async def start_consultation(
         self,
         behavior_description: str,
         profile_id: str | None,
@@ -75,8 +76,8 @@ class BaseConsultationOrchestrator(ABC):
           - 注册 AsyncGenerator 到 SseStreamingService 单例
           - 存储生成元数据供 SSE DoneEvent 使用
         """
-        request_id = RequestId(f"req-{__import__('uuid').uuid4()}")
-        session_id_raw = f"stream-{__import__('uuid').uuid4()}"
+        request_id = RequestId(f"req-{uuid.uuid4()}")
+        session_id_raw = f"stream-{uuid.uuid4()}"
         session_id = SessionId(session_id_raw)
 
         self._validate_start_preconditions(
@@ -92,7 +93,7 @@ class BaseConsultationOrchestrator(ABC):
         )
 
         # 步骤 2：RAG 语义检索
-        search_result = self._do_search_cases(
+        search_result = await self._do_search_cases(
             query_text=behavior_description,
             behavior_type=behavior_type,
             emotion_level=emotion_level,
@@ -101,13 +102,13 @@ class BaseConsultationOrchestrator(ABC):
         )
 
         # 步骤 3：危机分级判定
-        crisis_result = self._do_judge_crisis(
+        crisis_result = await self._do_judge_crisis(
             behavior_description=behavior_description,
             behavior_type=behavior_type,
             profile_summary=profile_summary,
         )
 
-        # 步骤 4：构建 Prompt + 流式生成
+        # 步骤 4：构建 EmergencyPlanInput
         plan_input = self._do_build_plan_input(
             behavior_description=BehaviorDescription(behavior_description),
             profile_summary=profile_summary,
@@ -116,8 +117,8 @@ class BaseConsultationOrchestrator(ABC):
             request_id=request_id,
         )
 
-        # 步骤 5：流式生成 + SSE 注册
-        generator = self._do_generate_stream(plan_input)
+        # 步骤 5：流式生成 + SSE 注册（共享 ctx 避免重复 PromptBuilder.build()）
+        generator, prompt_ctx = self._do_generate_stream(plan_input)
         self._do_register_sse(
             session_id=session_id,
             generator=generator,
@@ -126,6 +127,7 @@ class BaseConsultationOrchestrator(ABC):
             crisis_result=crisis_result,
             behavior_description=behavior_description,
             request_id=request_id,
+            prompt_ctx=prompt_ctx,
         )
 
         self._validate_start_postconditions(session_id=session_id)
@@ -147,19 +149,11 @@ class BaseConsultationOrchestrator(ABC):
         实现者在此填写档案查询和格式化逻辑。
         不需要关心 profile_id 为 None 的情况——start_consultation 已允许 None。
         不需要关心 profile_id 格式校验——_validate_start_preconditions 已处理。
-
-        输入约束:
-          - profile_id: 可为 None（匿名咨询），非 None 时已通过格式校验
-          - db: 有效的 AsyncSession
-        输出约束:
-          - 返回 ProfileSummary，无档案时返回 "(未关联档案)"
-        异常:
-          - 无（档案查询失败不应阻断咨询，降级为空摘要）
         """
         ...
 
     @abstractmethod
-    def _do_search_cases(
+    async def _do_search_cases(
         self,
         query_text: str,
         behavior_type: list[str] | None,
@@ -171,19 +165,11 @@ class BaseConsultationOrchestrator(ABC):
 
         实现者在此填写检索引擎调用逻辑。
         不需要关心 query_text 为空的校验——_validate_start_preconditions 已处理。
-
-        输入约束:
-          - query_text: 非空，已通过 PII 脱敏
-          - db: 有效的 AsyncSession
-        输出约束:
-          - 返回 SemanticSearchResult 实例（含 results 列表）
-        异常:
-          - ConsultationSearchError: 检索引擎不可达
         """
         ...
 
     @abstractmethod
-    def _do_judge_crisis(
+    async def _do_judge_crisis(
         self,
         behavior_description: str,
         behavior_type: list[str] | None,
@@ -193,13 +179,6 @@ class BaseConsultationOrchestrator(ABC):
 
         实现者在此填写危机判定调用逻辑。
         不需要关心判定失败的处理——实现者应捕获异常并 fallback 到 mild。
-
-        输入约束:
-          - behavior_description: 非空
-        输出约束:
-          - 返回 CrisisJudgmentResult 实例
-        异常:
-          - 无（内部 catch 并 fallback 到 MILD）
         """
         ...
 
@@ -216,25 +195,18 @@ class BaseConsultationOrchestrator(ABC):
 
         实现者在此填写数据组装逻辑。
         不需要关心各字段的必填校验——Pydantic 模型自动处理。
-
-        输入约束:
-          - 所有参数非空
-        输出约束:
-          - 返回 EmergencyPlanInput 实例
         """
         ...
 
     @abstractmethod
-    def _do_generate_stream(self, plan_input: Any) -> Any:
-        """调用流式生成并返回 AsyncGenerator。
+    def _do_generate_stream(self, plan_input: Any) -> tuple[Any, Any]:
+        """调用流式生成并返回 AsyncGenerator 和 PromptBuildContext。
 
         实现者在此填写 generation service 调用逻辑。
         不需要关心 SSE 注册——_do_register_sse 独立处理。
 
-        输入约束:
-          - plan_input: 已校验的 EmergencyPlanInput 实例
         输出约束:
-          - 返回 AsyncGenerator[GenerationChunk, None]
+          - 返回 (generator, prompt_ctx) 元组，prompt_ctx 传递给 _do_register_sse 复用
         """
         ...
 
@@ -248,15 +220,14 @@ class BaseConsultationOrchestrator(ABC):
         crisis_result: Any,
         behavior_description: str,
         request_id: RequestId,
+        prompt_ctx: Any,
     ) -> None:
         """注册流式生成器到 SSE 服务并存储元数据。
 
         实现者在此填写 SSE 注册逻辑。
         不需要关心 session_id 格式校验——start_consultation 内部生成。
+        prompt_ctx 由 _do_generate_stream 产出，避免重复 PromptBuilder.build()。
 
-        输入约束:
-          - session_id: 有效的 SessionId
-          - generator: 非空 AsyncGenerator
         Side Effects:
           - SseStreamingService.register_generator() 写入内存缓存
           - SseStreamingService.store_generation_meta() 写入元数据
@@ -268,7 +239,7 @@ class BaseConsultationOrchestrator(ABC):
     # ==========================================================================
 
     @final
-    def search_cases(
+    async def search_cases(
         self,
         request: Any,
         db: AsyncSession,
@@ -283,11 +254,6 @@ class BaseConsultationOrchestrator(ABC):
           - db 为有效的 AsyncSession
         后置:
           - 返回 SemanticSearchResult（含 is_complete 标记）
-        输入约束:
-          - request.query_text: 非空
-          - request.top_k: 正整数
-        输出约束:
-          - SemanticSearchResult.results 按 composite_score 降序
         异常:
           - ConsultationInputError: request 或 db 为 None
           - ConsultationSearchError: 检索引擎不可达
@@ -296,23 +262,17 @@ class BaseConsultationOrchestrator(ABC):
         """
         self._validate_search_preconditions(request=request, db=db)
 
-        result = self._do_execute_search(request=request, db=db)
+        result = await self._do_execute_search(request=request, db=db)
 
         self._validate_search_postconditions(result=result)
         return result
 
     @abstractmethod
-    def _do_execute_search(self, request: Any, db: AsyncSession) -> Any:
+    async def _do_execute_search(self, request: Any, db: AsyncSession) -> Any:
         """执行实际的 RAG 检索调用。
 
         实现者在此填写 hybrid_search 调用逻辑。
         不需要关心 request/db 的 None 校验——_validate_search_preconditions 已处理。
-
-        输入约束:
-          - request: 已校验的 SemanticSearchInput
-          - db: 有效的 AsyncSession
-        输出约束:
-          - 返回 SemanticSearchResult 实例
         """
         ...
 
