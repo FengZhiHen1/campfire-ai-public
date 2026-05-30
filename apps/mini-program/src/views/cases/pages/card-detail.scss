@@ -1,0 +1,163 @@
+.card-detail-page {
+  min-height: 100vh;
+  background-color: #fafaf9;
+}
+
+.card-detail-navbar {
+  display: flex;
+  align-items: center;
+  height: 96px;
+  padding: 0 24px;
+  background-color: #fff;
+  border-bottom: 1px solid #f0f0f0;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+
+  &__back {
+    font-size: 32px;
+    padding: 0;
+    background: none;
+    border: none;
+    color: #333;
+    margin-right: 16px;
+    line-height: 1;
+
+    &::after { border: none; }
+  }
+
+  &__title {
+    font-size: 32px;
+    font-weight: 600;
+    color: #1a1a1a;
+  }
+}
+
+.card-detail-scroll {
+  padding: 24px;
+  padding-bottom: 48px;
+}
+
+// 概览
+.card-detail-overview {
+  background: #fff;
+  border-radius: 24px;
+  padding: 28px;
+  margin-bottom: 20px;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.06);
+
+  &__title {
+    font-size: 34px;
+    font-weight: 700;
+    color: #1a1a1a;
+    line-height: 1.4;
+    margin-bottom: 16px;
+  }
+
+  &__tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin-bottom: 16px;
+  }
+
+  &__tag {
+    font-size: 22px;
+    color: #d97706;
+    background: #fef3c7;
+    border-radius: 8px;
+    padding: 4px 12px;
+
+    &--category {
+      color: #059669;
+      background: #d1fae5;
+    }
+  }
+
+  &__meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 16px;
+  }
+
+  &__meta-item {
+    font-size: 24px;
+    color: #78716c;
+  }
+}
+
+// 内容区块
+.card-detail-section {
+  margin-bottom: 20px;
+
+  &__title {
+    font-size: 26px;
+    font-weight: 600;
+    color: #44403c;
+    margin-bottom: 12px;
+    padding-left: 8px;
+    border-left: 4px solid #f59e0b;
+  }
+
+  &__content {
+    background: #fff;
+    border-radius: 20px;
+    padding: 24px;
+    box-shadow: 0 2px 16px rgba(0, 0, 0, 0.04);
+  }
+
+  &__text {
+    font-size: 28px;
+    line-height: 1.75;
+    color: #333;
+  }
+}
+
+// 标签列表
+.card-detail-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+
+  &__item {
+    font-size: 24px;
+    color: #6d28d9;
+    background: #ede9fe;
+    border-radius: 8px;
+    padding: 8px 16px;
+  }
+}
+
+// 加载
+.card-detail-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding-top: 120px;
+
+  &__skeleton {
+    width: 200px;
+    height: 16px;
+    background: #e7e5e4;
+    border-radius: 8px;
+    margin-bottom: 16px;
+  }
+
+  &__text {
+    font-size: 28px;
+    color: #78716c;
+    margin-bottom: 24px;
+  }
+}
+
+.card-detail-retry-btn {
+  background: #f59e0b;
+  color: #fff;
+  border-radius: 12px;
+  padding: 12px 40px;
+  font-size: 28px;
+  border: none;
+
+  &::after { border: none; }
+}
