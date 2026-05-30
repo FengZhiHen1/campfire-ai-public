@@ -13,12 +13,11 @@
 
 from __future__ import annotations
 
-import json
 import uuid
 from typing import Any
 
 from py_logger import logger
-from sqlalchemy import func, select, text
+from sqlalchemy import func, insert, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from py_db.models.consultation import ConsultationHistory
@@ -44,13 +43,14 @@ class ConsultHistoryRepository:
     ) -> ConsultationHistory | None:
         """幂等归档写入。
 
-        使用 INSERT ... ON CONFLICT (request_id) DO NOTHING RETURNING * 实现幂等。
+        使用 SQLAlchemy insert() + on_conflict_do_nothing() + RETURNING 实现幂等。
+        ORM 表达式层自动处理 JSONB 列序列化，无需手动 json.dumps。
         若 RETURNING 返回空行（已存在），返回 None，调用方需执行 SELECT 获取已有记录。
-        consultation_time 使用 NOW() 覆盖，忽略 data 中的值。
+        consultation_time / created_at / updated_at 由数据库 NOW() 生成。
 
         Args:
             session: 活动数据库异步会话。
-            data: 待归档的字段字典（不含 consultation_time，由 NOW() 生成）。
+            data: 待归档的字段字典。
 
         Returns:
             插入成功的 ConsultationHistory ORM 实例，或 None（重复归档）。
@@ -60,53 +60,37 @@ class ConsultHistoryRepository:
         if not data:
             raise ValueError("data must not be empty")
 
-        stmt = text("""
-            INSERT INTO consultations (
-                id, request_id, user_id, crisis_level, behavior_description,
-                consultation_time, generated_plan, source_list, disclaimer,
-                generation_time_ms, is_partial, referenced_slice_ids, finish_reason,
-                ttft_ms, has_feedback, token_input, token_output, device_info,
-                created_at, updated_at
-            ) VALUES (
-                :id, :request_id, :user_id, :crisis_level, :behavior_description,
-                NOW(), :generated_plan, :source_list, :disclaimer,
-                :generation_time_ms, :is_partial, :referenced_slice_ids, :finish_reason,
-                :ttft_ms, :has_feedback, :token_input, :token_output, :device_info,
-                NOW(), NOW()
+        stmt = (
+            insert(ConsultationHistory)
+            .values(
+                id=data["id"],
+                request_id=data["request_id"],
+                user_id=data["user_id"],
+                crisis_level=data["crisis_level"],
+                behavior_description=data["behavior_description"],
+                generated_plan=data["generated_plan"],
+                source_list=data.get("source_list", []),
+                disclaimer=data["disclaimer"],
+                generation_time_ms=data["generation_time_ms"],
+                is_partial=data["is_partial"],
+                referenced_slice_ids=data.get("referenced_slice_ids", []),
+                finish_reason=data["finish_reason"],
+                ttft_ms=data["ttft_ms"],
+                has_feedback=data.get("has_feedback", False),
+                token_input=data.get("token_input"),
+                token_output=data.get("token_output"),
+                device_info=data.get("device_info"),
             )
-            ON CONFLICT (request_id) DO NOTHING
-            RETURNING *
-        """)
+            .on_conflict_do_nothing(index_elements=["request_id"])
+            .returning(ConsultationHistory)
+        )
 
-        # 将 Python 对象转为 SQL 兼容绑定参数
-        # 原始 SQL 模式下 asyncpg 不会自动序列化 JSONB 列，需手动 json.dumps
-        bind_params = {
-            "id": data["id"],
-            "request_id": data["request_id"],
-            "user_id": data["user_id"],
-            "crisis_level": data["crisis_level"],
-            "behavior_description": data["behavior_description"],
-            "generated_plan": data["generated_plan"],
-            "source_list": json.dumps(data.get("source_list", [])),
-            "disclaimer": data["disclaimer"],
-            "generation_time_ms": data["generation_time_ms"],
-            "is_partial": data["is_partial"],
-            "referenced_slice_ids": json.dumps(data.get("referenced_slice_ids", [])),
-            "finish_reason": data["finish_reason"],
-            "ttft_ms": data["ttft_ms"],
-            "has_feedback": data.get("has_feedback", False),
-            "token_input": data.get("token_input"),
-            "token_output": data.get("token_output"),
-            "device_info": json.dumps(data["device_info"]) if data.get("device_info") else None,
-        }
-
-        result = await session.execute(stmt, bind_params)
+        result = await session.execute(stmt)
         row = result.fetchone()
         if row is None:
             return None
 
-        # 将 Row 映射为 ORM 实例
-        return ConsultationHistory(**row._mapping)
+        return row[0]
 
     # ------------------------------------------------------------------
     # 查询方法
