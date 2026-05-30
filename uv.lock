@@ -1121,10 +1121,14 @@ version = "0.1.0"
 source = { editable = "packages/py-security" }
 dependencies = [
     { name = "py-logger" },
+    { name = "py-schemas" },
 ]
 
 [package.metadata]
-requires-dist = [{ name = "py-logger", editable = "packages/py-logger" }]
+requires-dist = [
+    { name = "py-logger", editable = "packages/py-logger" },
+    { name = "py-schemas", editable = "packages/py-schemas" },
+]
 
 [[package]]
 name = "py-storage"
