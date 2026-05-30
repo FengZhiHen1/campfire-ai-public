@@ -47,14 +47,11 @@ function createRequestSignal(
   };
 }
 
-function withSignal<T extends Record<string, unknown>>(
+function withSignal<T>(
   options: T,
   signal?: AbortSignal,
 ): T & { signal?: AbortSignal } {
-  if (signal) {
-    return { ...options, signal };
-  }
-  return options;
+  return { ...options, signal };
 }
 
 // ============================================================================

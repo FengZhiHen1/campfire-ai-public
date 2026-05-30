@@ -1,7 +1,7 @@
 /**
  * CASE-09 案例管理逻辑 — 前端 API Service。
  *
- * 封装 6 个 API 调用函数，使用 httpClient 统一发送请求。
+ * 封装 5 个 API 调用函数，使用 httpClient 统一发送请求。
  * 所有函数通过 httpClient.request 路由，追加 AbortController 超时逻辑（默认 15 秒）。
  * 接受外部 AbortSignal 以支持调用方（Hooks 层）的请求取消。
  *
@@ -24,7 +24,6 @@ import type {
   CaseReviewResponse,
   CaseUpdate,
   PaginatedResponse,
-  PiiDetectionResult,
 } from '@campfire/ts-shared';
 
 const BASE_PATH: string = '/api/v1/cases';
@@ -79,14 +78,11 @@ function createRequestSignal(
  * 将 AbortSignal 合并到 httpClient 请求选项中。
  * 使用类型断言确保 signal 字段能被传递到底层 Taro.request。
  */
-function withSignal<T extends Record<string, unknown>>(
+function withSignal<T>(
   options: T,
   signal?: AbortSignal,
 ): T & { signal?: AbortSignal } {
-  if (signal) {
-    return { ...options, signal };
-  }
-  return options;
+  return { ...options, signal };
 }
 
 // ============================================================================
@@ -312,41 +308,6 @@ export async function reviewCase(
           url: `${BASE_PATH}/${caseId}/review`,
           method: 'POST',
           data: { decision, review_comment: reviewComment },
-        },
-        requestSignal,
-      ),
-    );
-    return res.data;
-  } finally {
-    cleanup();
-  }
-}
-
-/**
- * PII 检测（独立检测端点）。
- *
- * @param narrative - 待检测的叙事文本
- * @param signal - 可选外部 AbortSignal，用于请求取消
- * @returns 检测结果（has_pii + warnings 列表）
- */
-export async function detectPii(
-  narrative: string,
-  signal?: AbortSignal,
-): Promise<PiiDetectionResult> {
-  if (signal?.aborted) {
-    return Promise.reject(new DOMException('The operation was aborted', 'AbortError'));
-  }
-  if (narrative === null || narrative === undefined) {
-    return Promise.reject(new TypeError('narrative is required'));
-  }
-  const { signal: requestSignal, cleanup } = createRequestSignal(signal);
-  try {
-    const res = await httpClient.request<PiiDetectionResult>(
-      withSignal(
-        {
-          url: `${BASE_PATH}/pii-check`,
-          method: 'POST',
-          data: { narrative },
         },
         requestSignal,
       ),
