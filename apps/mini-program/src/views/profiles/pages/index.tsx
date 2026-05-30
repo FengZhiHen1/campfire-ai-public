@@ -22,6 +22,7 @@ export default function ProfileIndex() {
   const selectedProfile = profiles[selectedIdx] ?? null;
 
   const handleEventsRefresh = useCallback((refreshed: EventListItem[]) => {
+    console.debug('[profile] handleEventsRefresh', { count: refreshed.length, items: refreshed.map((e) => e.event_id?.slice(0, 8)) });
     setEvents(refreshed);
   }, []);
 
@@ -38,10 +39,11 @@ export default function ProfileIndex() {
   // 加载选中档案详情和事件列表
   useEffect(() => {
     if (selectedProfile) {
+      console.debug('[profile] useEffect loadEvents', { profileId: selectedProfile.profile_id });
       getProfile(selectedProfile.profile_id);
       setEventsLoading(true);
       listEvents(selectedProfile.profile_id)
-        .then(setEvents)
+        .then((data) => { console.debug('[profile] listEvents done', { count: data.length }); setEvents(data); })
         .catch(() => setEvents([]))
         .finally(() => setEventsLoading(false));
     } else {
