@@ -29,7 +29,6 @@ from py_schemas.cases import (
     CaseResponse,
     CaseUpdate,
     PaginatedResponse,
-    PiiDetectionResult,
     PiiWarning,
 )
 from py_schemas.enums.case_enums import CaseStatus
@@ -194,23 +193,6 @@ def _convert_pii_warnings(
         )
         for w in internal_warnings
     ]
-
-
-def _build_pii_detection_result(
-    internal_result: Any,
-) -> PiiDetectionResult:
-    """将内部 PII 检测结果转换为 Pydantic PiiDetectionResult。
-
-    Args:
-        internal_result: py_security 的 PiiDetectionResult 实例。
-
-    Returns:
-        Pydantic PiiDetectionResult 实例。
-    """
-    return PiiDetectionResult(
-        has_pii=internal_result.has_pii,
-        warnings=_convert_pii_warnings(internal_result.warnings),
-    )
 
 
 def _apply_update_fields(case: Case, update: CaseUpdate) -> None:
@@ -813,143 +795,6 @@ class CaseManagementService(CaseManagementContract):
         )
 
 
-# ---------------------------------------------------------------------------
-# 独立内部端点（不在契约中，模块级函数）
-# ---------------------------------------------------------------------------
-
-
-async def get_case_raw(
-    case_id: str,
-    session: AsyncSession,
-    case_repo: CaseRepository,
-) -> Case | None:
-    """获取 Case ORM 原始实例（供内部使用）。
-
-    此函数绕过 CaseResponse 包装，直接返回 ORM 实例。
-    仅限 Service 层内部调用，不对外暴露。
-
-    Args:
-        case_id: 案例唯一标识。
-        session: 活动数据库异步会话。
-        case_repo: CaseRepository 实例。
-
-    Returns:
-        Case ORM 实例，不存在时返回 None。
-    """
-    return await case_repo.find_by_case_id(session, case_id)
-
-
-async def detect_pii_endpoint(
-    narrative: str,
-) -> PiiDetectionResult:
-    """对叙事文本执行 PII 检测。
-
-    独立检测端点，供前端实时检测使用。
-
-    Args:
-        narrative: 待检测的叙事文本。
-
-    Returns:
-        PiiDetectionResult: 检测结果。
-    """
-    internal_result = _default_service._pii_detector.detect(narrative)
-    return _build_pii_detection_result(internal_result)
-
-
-# ---------------------------------------------------------------------------
-# 模块级便捷函数（过渡兼容：创建默认实例委托调用）
-# 现有 routes.py 无须修改 import 路径即可继续工作。
-# ---------------------------------------------------------------------------
-
-_default_service = CaseManagementService()
-
-
-async def create_case(
-    request: CaseCreateRequest,
-    current_user: Dict[str, Any],
-    session: AsyncSession,
-    case_repo: CaseRepository,
-) -> CaseResponse:
-    """创建案例草稿（委托给 CaseManagementService）。"""
-    return await _default_service.create_case(
-        request, current_user, session, case_repo
-    )
-
-
-async def update_case(
-    case_id: str,
-    update: CaseUpdate,
-    current_user: Dict[str, Any],
-    session: AsyncSession,
-    case_repo: CaseRepository,
-) -> CaseResponse:
-    """更新案例（委托给 CaseManagementService）。"""
-    return await _default_service.update_case(
-        case_id, update, current_user, session, case_repo
-    )
-
-
-async def submit_case(
-    case_id: str,
-    current_user: Dict[str, Any],
-    session: AsyncSession,
-    case_repo: CaseRepository,
-    pii_confirmed: bool = False,
-) -> CaseResponse:
-    """提交案例审核（委托给 CaseManagementService）。"""
-    return await _default_service.submit_case(
-        case_id, current_user, session, case_repo, pii_confirmed
-    )
-
-
-async def get_case(
-    case_id: str,
-    current_user: Dict[str, Any],
-    session: AsyncSession,
-    case_repo: CaseRepository,
-) -> CaseResponse:
-    """获取案例详情（委托给 CaseManagementService）。"""
-    return await _default_service.get_case(
-        case_id, current_user, session, case_repo
-    )
-
-
-async def list_cases(
-    status_filter: Optional[str],
-    behavior_type_filter: Optional[str],
-    evidence_level: Optional[str],
-    sort_by: Optional[str],
-    keyword: Optional[str],
-    page: int,
-    page_size: int,
-    scope: Optional[str],
-    current_user: Dict[str, Any],
-    session: AsyncSession,
-    case_repo: CaseRepository,
-) -> PaginatedResponse[CaseListItem]:
-    """案例列表查询（委托给 CaseManagementService）。"""
-    return await _default_service.list_cases(
-        status_filter=status_filter,
-        behavior_type_filter=behavior_type_filter,
-        evidence_level=evidence_level,
-        sort_by=sort_by,
-        keyword=keyword,
-        page=page,
-        page_size=page_size,
-        scope=scope,
-        current_user=current_user,
-        session=session,
-        case_repo=case_repo,
-    )
-
-
 __all__ = [
     "CaseManagementService",
-    "get_case_raw",
-    "detect_pii_endpoint",
-    "create_case",
-    "update_case",
-    "submit_case",
-    "get_case",
-    "list_cases",
 ]
