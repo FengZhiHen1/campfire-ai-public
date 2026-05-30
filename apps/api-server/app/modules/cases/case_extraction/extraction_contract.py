@@ -20,15 +20,23 @@ from typing import Any, final
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.modules.cases.exceptions import ExtractionError
+from app.modules.cases.types import NarrativeId
+
 
 class ExtractionServiceContract(ABC):
-    """LLM 提取服务契约。实现者只能覆写 _do_ 前缀的钩子方法。"""
+    """LLM 提取服务契约。实现者只能覆写 _do_ 前缀的钩子方法。
+
+    异常策略: 契约基类校验器抛出域异常（exceptions.py 中定义）。
+    Service 实现可按需包装为 HTTPException。契约层（框架无关）
+    与服务层（FastAPI 适配）的异常体系是有意分离的。
+    """
 
     @final
     async def extract_cards_from_narrative(
         self,
         narrative_text: str,
-        narrative_id: str,
+        narrative_id: NarrativeId,
         db: AsyncSession,
     ) -> list[Any]:
         """从 L1 叙事文本提取 L2 结构化卡片。
@@ -60,7 +68,7 @@ class ExtractionServiceContract(ABC):
     async def _do_extract(
         self,
         narrative_text: str,
-        narrative_id: str,
+        narrative_id: NarrativeId,
         db: AsyncSession,
     ) -> list[Any]:
         """执行 LLM 提取的核心逻辑。
@@ -92,5 +100,4 @@ class ExtractionServiceContract(ABC):
                 f"ExtractionServiceContract.extract({narrative_id}) 返回了 None"
             )
         if len(cards) == 0:
-            from app.modules.cases.exceptions import ExtractionError
             raise ExtractionError("LLM 未识别到任何干预场景")

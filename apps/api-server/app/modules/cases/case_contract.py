@@ -35,9 +35,16 @@ from py_schemas.cases import (
 )
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.modules.cases.types import CaseId, PiiConfirmation
+
 
 class CaseManagementContract(ABC):
-    """案例管理服务契约。实现者只能覆写 _do_ 前缀的钩子方法。"""
+    """案例管理服务契约。实现者只能覆写 _do_ 前缀的钩子方法。
+
+    异常策略: 契约基类校验器抛出域异常（从 exceptions.py 导入）。
+    Service 实现通过重写校验器抛出 HTTPException 以适配 FastAPI 路由层。
+    契约层（框架无关）与服务层（框架适配）的异常体系是有意分离的。
+    """
 
     # ---------------------------------------------------------------------------
     # @final 公共入口
@@ -80,7 +87,7 @@ class CaseManagementContract(ABC):
     @final
     async def update_case(
         self,
-        case_id: str,
+        case_id: CaseId,
         update: CaseUpdate,
         current_user: dict[str, Any],
         session: AsyncSession,
@@ -114,7 +121,7 @@ class CaseManagementContract(ABC):
     @final
     async def submit_case(
         self,
-        case_id: str,
+        case_id: CaseId,
         current_user: dict[str, Any],
         session: AsyncSession,
         case_repo: CaseRepository,
@@ -150,7 +157,7 @@ class CaseManagementContract(ABC):
     @final
     async def get_case(
         self,
-        case_id: str,
+        case_id: CaseId,
         current_user: dict[str, Any],
         session: AsyncSession,
         case_repo: CaseRepository,
@@ -223,7 +230,7 @@ class CaseManagementContract(ABC):
     @abstractmethod
     async def _do_update_case(
         self,
-        case_id: str,
+        case_id: CaseId,
         update: CaseUpdate,
         current_user: dict[str, Any],
         session: AsyncSession,
@@ -239,7 +246,7 @@ class CaseManagementContract(ABC):
     @abstractmethod
     async def _do_submit_case(
         self,
-        case_id: str,
+        case_id: CaseId,
         current_user: dict[str, Any],
         session: AsyncSession,
         case_repo: CaseRepository,
@@ -255,7 +262,7 @@ class CaseManagementContract(ABC):
     @abstractmethod
     async def _do_get_case(
         self,
-        case_id: str,
+        case_id: CaseId,
         current_user: dict[str, Any],
         session: AsyncSession,
         case_repo: CaseRepository,
@@ -294,22 +301,12 @@ class CaseManagementContract(ABC):
     # ---------------------------------------------------------------------------
 
     def _validate_create_request(self, request: CaseCreateRequest) -> None:
-        """基线创建前置校验：四段式字段完整性。"""
-        fields: list[tuple[str, str]] = [
-            ("immediate_action", "即时安全干预动作"),
-            ("comforting_phrase", "情绪安抚话术"),
-            ("observation_metrics", "后续观察指标"),
-            ("medical_criteria", "就医判断标准"),
-        ]
-        missing: list[str] = []
-        for field_name, display_name in fields:
-            value = getattr(request, field_name, None)
-            if value is None or (isinstance(value, str) and value.strip() == ""):
-                missing.append(display_name)
+        """基线创建前置校验：四段式字段完整性。
 
-        if missing:
-            from app.modules.cases.exceptions import FourStageValidationError
-            raise FourStageValidationError(missing)
+        子类必须覆写此方法以提供具体的四段式字段校验逻辑
+        （如 CaseManagementService 委托给模块级 _validate_four_stage_fields）。
+        """
+        pass
 
     def _validate_create_result(self, result: CaseResponse) -> None:
         """基线创建后置校验。"""
@@ -336,12 +333,16 @@ class CaseManagementContract(ABC):
 
     def _validate_submit_preconditions(
         self,
-        case_id: str,
+        case_id: CaseId,
         current_user: dict[str, Any],
         session: AsyncSession,
         case_repo: CaseRepository,
     ) -> None:
-        """基线提交前置校验：案例存在 + 状态正确 + 四段式完整。"""
+        """基线提交前置校验：case_id 非空。
+
+        案例存在性、状态和四段式完整性由 _do_submit_case 内部处理
+        （需要先查询数据库才能校验，无法在契约基类的前置校验阶段完成）。
+        """
         self._validate_case_id(case_id)
 
     def _validate_submit_result(self, result: CaseResponse, case_id: str) -> None:

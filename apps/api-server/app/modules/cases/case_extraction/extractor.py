@@ -19,6 +19,7 @@ from py_db.models.case_card import CaseCard
 
 from app.modules.cases.case_extraction.extraction_contract import ExtractionServiceContract
 from app.modules.cases.exceptions import ExtractionError
+from app.modules.cases.types import NarrativeId
 
 _logger = logging.getLogger(__name__)
 
@@ -159,7 +160,7 @@ class ExtractionService(ExtractionServiceContract):
     async def _do_extract(
         self,
         narrative_text: str,
-        narrative_id: str,
+        narrative_id: NarrativeId,
         db: AsyncSession,
     ) -> list[Any]:
         """执行 LLM 提取的核心逻辑。

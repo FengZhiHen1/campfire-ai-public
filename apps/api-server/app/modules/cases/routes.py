@@ -23,6 +23,7 @@ from app.core.dependencies.auth_dependencies import (
     get_db_session,
 )
 from app.modules.cases.case_service import CaseManagementService
+from app.modules.cases.types import CaseId
 from py_db.repositories.case_repository import CaseRepository
 from py_schemas.cases import (
     CaseCreateRequest,
@@ -91,7 +92,7 @@ async def update_case_endpoint(
 ) -> CaseResponse:
     """更新案例端点。"""
     return await _case_service.update_case(
-        case_id=case_id,
+        case_id=CaseId(case_id),
         update=update,
         current_user=anonymous_user,
         session=session,
@@ -125,7 +126,7 @@ async def submit_case_endpoint(
 ) -> CaseResponse:
     """提交审核端点。"""
     return await _case_service.submit_case(
-        case_id=case_id,
+        case_id=CaseId(case_id),
         pii_confirmed=pii_confirmed,
         current_user=anonymous_user,
         session=session,
@@ -152,7 +153,7 @@ async def get_case_endpoint(
 ) -> CaseResponse:
     """获取案例详情端点。"""
     return await _case_service.get_case(
-        case_id=case_id,
+        case_id=CaseId(case_id),
         current_user=anonymous_user,
         session=session,
         case_repo=case_repo,
