@@ -239,7 +239,7 @@ async def update_event(
     if "setting" in update_dict and update_dict["setting"] is not None:
         update_dict["setting"] = update_dict["setting"].value
 
-    updated = await event_repo.update(session, event_id, profile_id, update_dict)
+    updated = await event_repo.update_event(session, event_id, profile_id, update_dict)
     if updated is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -265,7 +265,7 @@ async def delete_event(
     Raises:
         HTTPException(404): 事件不存在。
     """
-    deleted = await event_repo.delete(session, event_id, profile_id)
+    deleted = await event_repo.delete_event(session, event_id, profile_id)
     if not deleted:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
