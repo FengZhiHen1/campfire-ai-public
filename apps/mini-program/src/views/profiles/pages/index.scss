@@ -467,7 +467,7 @@
   left: 0;
   right: 0;
   bottom: 0;
-  background-color: rgba($cf-on-background, 0.5);
+  background-color: rgba($cf-on-background, 0.4);
   z-index: 200;
 }
 
@@ -479,107 +479,371 @@
   background-color: $cf-surface;
   border-radius: $cf-radius-lg $cf-radius-lg 0 0;
   box-shadow: $cf-shadow-deep;
-  padding: $cf-spacing-sm $cf-spacing-md calc(48px + env(safe-area-inset-bottom));
   z-index: 210;
-  animation: cf-sheet-enter 300ms ease-out;
-  max-height: 55vh;
-  overflow-y: auto;
+  animation: cf-sheet-enter 300ms cubic-bezier(0.2, 0, 0, 1) forwards;
+  max-height: 85vh;
+  display: flex;
+  flex-direction: column;
+
+  /* ===== Header ===== */
+  &__header {
+    padding: $cf-spacing-sm $cf-spacing-md;
+    background-color: rgba($cf-surface, 0.95);
+    border-bottom: 1px solid rgba($cf-outline-variant, 0.5);
+    border-radius: $cf-radius-lg $cf-radius-lg 0 0;
+    flex-shrink: 0;
+  }
 
   &__handle {
-    width: 72px;
-    height: 8px;
-    background-color: $cf-surface-dim;
-    border-radius: 4px;
+    width: 48px;
+    height: 4px;
+    background-color: $cf-outline-variant;
+    border-radius: $cf-radius-full;
     margin: 0 auto $cf-spacing-sm;
   }
 
+  &__header-row {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+  }
+
+  &__header-text {
+    display: flex;
+    flex-direction: column;
+  }
+
   &__title {
-    font-size: $cf-headline-sm;
-    font-weight: 600;
+    @include cf-headline-sm;
     color: $cf-on-background;
-    margin-bottom: $cf-spacing-xs;
   }
 
   &__subtitle {
+    @include cf-label-md;
+    color: $cf-on-surface-variant;
+    margin-top: $cf-spacing-xs;
+  }
+
+  &__close {
+    width: 32px;
+    height: 32px;
+    border-radius: $cf-radius-full;
+    background-color: $cf-surface-variant;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    margin-left: $cf-spacing-sm;
+    transition: all 150ms ease-out;
+
+    &:active {
+      transform: scale(0.92);
+      background-color: $cf-surface-dim;
+    }
+  }
+
+  &__close-icon {
     font-size: $cf-label-md;
     color: $cf-on-surface-variant;
-    margin-bottom: $cf-spacing-md;
+    line-height: 1;
+  }
+
+  /* ===== Scrollable Content ===== */
+  &__scroll {
+    flex: 1;
+    overflow-y: auto;
+    padding: $cf-spacing-md;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+
+    &::-webkit-scrollbar {
+      display: none;
+    }
+  }
+
+  &__section {
+    margin-bottom: $cf-spacing-sm;
+    padding-bottom: $cf-spacing-sm;
+    border-bottom: 1px solid $cf-surface-variant;
+
+    &:last-child {
+      border-bottom: none;
+      margin-bottom: 0;
+      padding-bottom: 0;
+    }
   }
 
   &__field {
     margin-bottom: $cf-spacing-sm;
+
+    &:last-child {
+      margin-bottom: 0;
+    }
   }
 
   &__label {
-    font-size: $cf-label-md;
+    @include cf-body-sm;
     font-weight: 500;
     color: $cf-on-background;
     margin-bottom: $cf-spacing-xs;
-    display: block;
+    display: flex;
+    align-items: center;
+    gap: $cf-spacing-xs;
   }
 
   &__required {
     color: $cf-error;
-    margin-right: $cf-spacing-xs;
   }
 
-  &__input {
-    width: 100%;
-    min-height: 128px;
-    background-color: $cf-surface-variant;
-    border-radius: $cf-radius-md;
-    padding: $cf-spacing-sm $cf-spacing-md;
-    font-size: $cf-label-md;
-    color: $cf-on-background;
-    box-sizing: border-box;
+  &__label-note {
+    @include cf-label-md;
+    color: rgba($cf-on-surface-variant, 0.6);
+    font-weight: 400;
+  }
 
-    &::placeholder {
-      color: rgba($cf-on-surface-variant, 0.6);
+  /* ===== Chip Grid — 行为类型 (2×3) ===== */
+  &__chip-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: $cf-spacing-xs;
+  }
+
+  &__chip {
+    height: 36px;
+    border-radius: $cf-radius-sm;
+    background-color: $cf-surface-variant;
+    color: $cf-on-surface-variant;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    padding: 0 6px;
+    transition: all 150ms ease-out;
+
+    &:active {
+      transform: scale(0.96);
+    }
+
+    &--active {
+      background-color: $cf-primary-container;
+      color: $cf-on-primary-container;
+      border: 1px solid rgba($cf-primary, 0.3);
     }
   }
 
-  &__picker {
-    width: 100%;
+  &__chip-check {
+    font-size: $cf-label-md;
+    font-weight: 600;
+    line-height: 1;
+  }
+
+  &__chip-text {
+    font-size: $cf-label-md;
+    font-weight: 500;
+    line-height: 1;
+    white-space: nowrap;
+  }
+
+  /* ===== Segment Control — 严重程度 ===== */
+  &__segment {
+    display: flex;
+    height: 40px;
     background-color: $cf-surface-variant;
     border-radius: $cf-radius-sm;
-    padding: 12px;
+    padding: 2px;
+  }
+
+  &__segment-item {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: $cf-radius-sm;
+    position: relative;
+    z-index: 1;
+    transition: all 200ms ease-out;
+
+    &:active {
+      transform: scale(0.97);
+    }
+
+    &--active {
+      background-color: $cf-primary;
+      box-shadow: 0 2px 8px rgba(28, 25, 23, 0.08);
+    }
+  }
+
+  &__segment-text {
+    font-size: $cf-body-sm;
+    font-weight: 500;
+    color: $cf-on-surface-variant;
+
+    .profile-quick-sheet__segment-item--active & {
+      color: $cf-on-primary;
+    }
+  }
+
+  /* ===== Chip Row — 发生场景 ===== */
+  &__chip-row {
+    display: flex;
+    gap: $cf-spacing-xs;
+  }
+
+  &__chip-row-item {
+    flex: 1;
+    height: 32px;
+    border-radius: $cf-radius-sm;
+    background-color: $cf-surface-variant;
+    color: $cf-on-surface-variant;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid rgba($cf-outline, 0.15);
+    transition: all 150ms ease-out;
+
+    &:active {
+      transform: scale(0.97);
+      background-color: $cf-surface-dim;
+    }
+
+    &--active {
+      background-color: $cf-primary-container;
+      color: $cf-on-primary-container;
+      border-color: rgba($cf-primary, 0.3);
+    }
+  }
+
+  &__chip-row-text {
+    font-size: $cf-label-md;
+    font-weight: 500;
+    line-height: 1;
+  }
+
+  /* ===== Text Input ===== */
+  &__text-input {
+    width: 100%;
+    height: 40px;
+    background-color: $cf-surface-variant;
+    border-radius: $cf-radius-sm;
+    padding: 0 $cf-spacing-sm;
+    font-size: $cf-label-md;
+    color: $cf-on-background;
+    box-sizing: border-box;
+    border: 1px solid transparent;
+    transition: border-color 150ms ease-out;
+
+    &::placeholder {
+      color: rgba($cf-on-surface-variant, 0.5);
+    }
+  }
+
+  /* ===== Textarea ===== */
+  &__textarea {
+    width: 100%;
+    min-height: 80px;
+    background-color: $cf-surface-variant;
+    border-radius: $cf-radius-sm;
+    padding: $cf-spacing-sm;
+    font-size: $cf-label-md;
+    color: $cf-on-background;
+    box-sizing: border-box;
+    border: 1px solid transparent;
+    line-height: 1.6;
+    transition: border-color 150ms ease-out;
+
+    &::placeholder {
+      color: rgba($cf-on-surface-variant, 0.5);
+    }
+  }
+
+  /* ===== Collapse — 干预记录 ===== */
+  &__collapse {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    box-sizing: border-box;
+    padding: $cf-spacing-sm;
+    background-color: $cf-surface-variant;
+    border-radius: $cf-radius-sm;
+    transition: all 150ms ease-out;
+
+    &:active {
+      transform: scale(0.99);
+    }
   }
 
-  &__picker--placeholder {
+  &__collapse-label {
+    @include cf-body-sm;
+    font-weight: 500;
+    color: $cf-on-background;
+  }
+
+  &__collapse-icon {
+    font-size: $cf-body-sm;
     color: $cf-on-surface-variant;
+    line-height: 1;
+    transition: transform 200ms ease-out;
   }
 
-  &__picker-arrow {
-    margin-left: auto;
-    font-size: 12px;
+  &__collapse-body {
+    margin-top: $cf-spacing-sm;
+    animation: cf-collapse-expand 200ms ease-out;
+  }
+
+  /* ===== Footer ===== */
+  &__footer {
+    padding: $cf-spacing-sm $cf-spacing-md;
+    padding-bottom: calc(16px + env(safe-area-inset-bottom));
+    background-color: $cf-surface;
+    border-top: 1px solid rgba($cf-outline-variant, 0.5);
+    box-shadow: $cf-shadow-input-top;
+    flex-shrink: 0;
   }
 
   &__submit {
     width: 100%;
-    height: 96px;
+    height: 48px;
     background-color: $cf-primary;
     color: $cf-on-primary;
-    border-radius: $cf-radius-lg;
+    border-radius: $cf-radius-sm;
     font-size: $cf-body-sm;
     font-weight: 600;
     display: flex;
     align-items: center;
     justify-content: center;
     border: none;
-    margin-top: $cf-spacing-xs;
+    transition: all 150ms ease-out;
 
     &:active {
-      opacity: 0.9;
       transform: scale(0.98);
+      opacity: 0.9;
     }
 
     &::after {
       border: none;
     }
+
+    &--disabled {
+      background-color: $cf-surface-dim;
+      color: $cf-on-surface-variant;
+    }
+  }
+
+  &__submit-text {
+    font-size: $cf-body-sm;
+    font-weight: 600;
+    line-height: 1;
+  }
+}
+
+@keyframes cf-collapse-expand {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
   }
 }
 
