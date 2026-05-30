@@ -783,6 +783,9 @@ class SseStreamingService:
                 referenced_slice_ids.append(prenumbered_slices[key])
                 seen.add(prenumbered_slices[key])
 
+        # === 从 JSON 文本解析四段式 sections ===
+        sections = parse_json_sections(full_text) if full_text else {}
+
         logger.info(
             service="streaming",
             message="done_meta_built",
@@ -794,11 +797,11 @@ class SseStreamingService:
                 "referenced_slice_ids": referenced_slice_ids,
                 "full_text_len": len(full_text),
                 "has_search_result": meta.get("search_result") is not None,
+                "sections_keys": list(sections.keys()),
+                "sections_sizes": {k: len(v) for k, v in sections.items()},
+                "raw_text_preview": full_text[:200] if full_text else "",
             },
         )
-
-        # === 从 JSON 文本解析四段式 sections ===
-        sections = parse_json_sections(full_text) if full_text else {}
 
         result: dict = {
             "referenced_slice_ids": referenced_slice_ids,

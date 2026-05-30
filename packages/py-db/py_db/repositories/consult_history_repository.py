@@ -13,10 +13,11 @@
 
 from __future__ import annotations
 
-from py_logger import logger
+import json
 import uuid
 from typing import Any
 
+from py_logger import logger
 from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -78,6 +79,7 @@ class ConsultHistoryRepository:
         """)
 
         # 将 Python 对象转为 SQL 兼容绑定参数
+        # 原始 SQL 模式下 asyncpg 不会自动序列化 JSONB 列，需手动 json.dumps
         bind_params = {
             "id": data["id"],
             "request_id": data["request_id"],
@@ -85,17 +87,17 @@ class ConsultHistoryRepository:
             "crisis_level": data["crisis_level"],
             "behavior_description": data["behavior_description"],
             "generated_plan": data["generated_plan"],
-            "source_list": data.get("source_list", []),
+            "source_list": json.dumps(data.get("source_list", [])),
             "disclaimer": data["disclaimer"],
             "generation_time_ms": data["generation_time_ms"],
             "is_partial": data["is_partial"],
-            "referenced_slice_ids": data.get("referenced_slice_ids", []),
+            "referenced_slice_ids": json.dumps(data.get("referenced_slice_ids", [])),
             "finish_reason": data["finish_reason"],
             "ttft_ms": data["ttft_ms"],
             "has_feedback": data.get("has_feedback", False),
             "token_input": data.get("token_input"),
             "token_output": data.get("token_output"),
-            "device_info": data.get("device_info"),
+            "device_info": json.dumps(data["device_info"]) if data.get("device_info") else None,
         }
 
         result = await session.execute(stmt, bind_params)
