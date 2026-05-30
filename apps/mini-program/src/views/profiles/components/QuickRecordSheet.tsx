@@ -3,6 +3,13 @@ import { View, Text, Button, Input, Textarea } from '@tarojs/components';
 import { BEHAVIOR_OPTIONS, SEVERITY_OPTIONS, SETTING_OPTIONS } from '../../../logics/profiles/constants';
 import type { QuickRecordFormData } from '../../../logics/profiles/hooks/useQuickRecord';
 
+/** 严重程度展示映射（业务值 → 展示文案） */
+const SEVERITY_DISPLAY_MAP: Record<string, string> = {
+  '轻': '轻度',
+  '中': '中度',
+  '重': '重度',
+};
+
 interface QuickRecordSheetProps {
   visible: boolean;
   form: QuickRecordFormData;
@@ -92,7 +99,7 @@ export default function QuickRecordSheet({
                       className={`profile-quick-sheet__segment-item ${active ? 'profile-quick-sheet__segment-item--active' : ''}`}
                       onClick={() => onFieldChange('severity', active ? '' : opt)}
                     >
-                      <Text className="profile-quick-sheet__segment-text">{opt}</Text>
+                      <Text className="profile-quick-sheet__segment-text">{SEVERITY_DISPLAY_MAP[opt] ?? opt}</Text>
                     </View>
                   );
                 })}
