@@ -289,38 +289,6 @@ class ExtractionService(ExtractionServiceContract):
 
         return errors
 
-
-# ============================================================================
-# 模块级便捷函数（过渡兼容：创建默认实例委托调用）
-# ============================================================================
-
-_default_service = ExtractionService()
-
-
-async def extract_cards_from_narrative(
-    narrative_text: str,
-    narrative_id: str,
-    db: AsyncSession,
-) -> list[Any]:
-    """从 L1 叙事文本中提取 L2 结构化卡片（模块级委托）。
-
-    Args:
-        narrative_text: L1 自然语言叙事全文。
-        narrative_id: 关联的 L1 叙事 UUID 字符串。
-        db: 数据库异步会话。
-
-    Returns:
-        已写入数据库的 CaseCard 列表（status=draft）。
-
-    Raises:
-        ExtractionError: LLM 调用失败或输出校验失败。
-    """
-    return await _default_service.extract_cards_from_narrative(
-        narrative_text, narrative_id, db,
-    )
-
-
 __all__ = [
     "ExtractionService",
-    "extract_cards_from_narrative",
 ]

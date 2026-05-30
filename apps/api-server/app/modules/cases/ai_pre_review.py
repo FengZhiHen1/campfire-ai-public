@@ -13,12 +13,10 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, List, Optional
+from typing import Any
 
 from py_schemas.cases import AiReviewSummary, CheckItem, NCAEP_EBP_LABELS
 from py_security import RegexPiiDetector
-
-_pii_detector = RegexPiiDetector()
 
 _logger = logging.getLogger(__name__)
 
@@ -93,7 +91,10 @@ def _check_format_completeness(case_data: dict[str, Any]) -> CheckItem:
     )
 
 
-def _check_pii(case_data: dict[str, Any]) -> CheckItem:
+def _check_pii(
+    case_data: dict[str, Any],
+    pii_detector: RegexPiiDetector | None = None,
+) -> CheckItem:
     """PII 脱敏检查：检测叙事文本中的 5 类 PII。
 
     复用 py_security.pii_detector.detect_pii() 正则匹配检测。
@@ -101,6 +102,7 @@ def _check_pii(case_data: dict[str, Any]) -> CheckItem:
 
     Args:
         case_data: 案例数据字典（含 narrative 字段）。
+        pii_detector: 可选 PII 检测器实例，为 None 时使用默认 RegexPiiDetector。
 
     Returns:
         CheckItem: 检查结果（status + details + is_hard_gate=True）。
@@ -114,7 +116,9 @@ def _check_pii(case_data: dict[str, Any]) -> CheckItem:
             is_hard_gate=True,
         )
 
-    result = _pii_detector.detect(narrative)
+    if pii_detector is None:
+        pii_detector = RegexPiiDetector()
+    result = pii_detector.detect(narrative)
 
     if result.has_pii:
         pii_types: set[str] = {w.pii_type for w in result.warnings}
@@ -266,7 +270,10 @@ def _compute_overall(
 # ---------------------------------------------------------------------------
 
 
-def run_ai_pre_review(case_data: dict[str, Any]) -> AiReviewSummary:
+def run_ai_pre_review(
+    case_data: dict[str, Any],
+    pii_detector: RegexPiiDetector | None = None,
+) -> AiReviewSummary:
     """对案例执行 AI 预审。
 
     使用规则引擎执行 4 项确定性检查，所有检查 <5ms，不使用 LLM。
@@ -280,12 +287,13 @@ def run_ai_pre_review(case_data: dict[str, Any]) -> AiReviewSummary:
     Args:
         case_data: 案例全量数据字典。
             必须包含四段式字段、narrative、evidence_level、ebp_labels 等字段。
+        pii_detector: 可选 PII 检测器实例，为 None 时使用默认 RegexPiiDetector。
 
     Returns:
         AiReviewSummary: AI 预审结果摘要，含 4 项检查和 overall 结论。
     """
     format_check: CheckItem = _check_format_completeness(case_data)
-    pii_check: CheckItem = _check_pii(case_data)
+    pii_check: CheckItem = _check_pii(case_data, pii_detector=pii_detector)
     required_fields_check: CheckItem = _check_required_fields(case_data)
     ebp_consistency_check: CheckItem = _check_ebp_consistency(case_data)
 

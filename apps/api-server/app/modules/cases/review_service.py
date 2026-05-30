@@ -9,8 +9,7 @@
 2. 专家终审裁决 → 写入审核记录 + 审计日志
 3. 审核通过 → 异步触发 CASE-04 索引入队
 
-本模块提供 ReviewWorkflowService 类（继承 ReviewWorkflowContract 契约 ABC），
-以及模块级便捷函数用于向后兼容。
+本模块提供 ReviewWorkflowService 类（继承 ReviewWorkflowContract 契约 ABC）。
 """
 
 from __future__ import annotations
@@ -367,92 +366,6 @@ class ReviewWorkflowService(ReviewWorkflowContract):
         )
 
 
-# ---------------------------------------------------------------------------
-# 模块级便捷函数（向后兼容：现有 review_routes.py 无需修改 import 路径）
-# ---------------------------------------------------------------------------
-
-_default_service = ReviewWorkflowService()
-
-
-async def submit_review(
-    case_id: str,
-    review_request: ReviewRequest,
-    current_user: dict[str, Any],
-    session: AsyncSession,
-    case_repo: CaseRepository,
-    review_repo: ReviewRepository,
-    audit_repo: ReviewAuditLogRepository,
-) -> CaseReviewResponse:
-    """专家终审——提交审核裁决（模块级便捷函数，委托给 ReviewWorkflowService）。
-
-    执行完整的审核流程：
-    1. 查询案例是否存在
-    2. 校验状态是否为 pending_review
-    3. 校验审核人 != 提交者
-    4. 执行 AI 预审
-    5. 校验 PII 硬门槛
-    6. 校验驳回意见长度
-    7. 乐观 CAS 更新状态
-    8. 写入审核记录
-    9. 写入审计日志
-    10. 审核通过则异步入队
-
-    Args:
-        case_id: 案例唯一标识。
-        review_request: 专家裁决请求体。
-        current_user: 当前用户 JWT payload。
-        session: 活动数据库异步会话。
-        case_repo: CaseRepository 实例。
-        review_repo: ReviewRepository 实例。
-        audit_repo: ReviewAuditLogRepository 实例。
-
-    Returns:
-        CaseReviewResponse: 审核裁决响应。
-
-    Raises:
-        CaseNotFoundError: 案例不存在。
-        CaseStatusError: 状态不是 pending_review。
-        PiiHardBlockError: PII 硬门槛拦截。
-        SelfReviewForbiddenError: 审核人不能是提交者。
-        RejectCommentTooShortError: 驳回意见不满足长度要求。
-    """
-    return await _default_service.submit_review(
-        case_id, review_request, current_user, session,
-        case_repo, review_repo, audit_repo,
-    )
-
-
-async def list_review_queue(
-    status_filter: Optional[str],
-    page: int,
-    page_size: int,
-    session: AsyncSession,
-    case_repo: CaseRepository,
-    review_repo: ReviewRepository,
-) -> PaginatedResponse[ReviewQueueItem]:
-    """查看待审核队列（模块级便捷函数，委托给 ReviewWorkflowService）。
-
-    查询所有 status=pending_review 的案例，对每个案例计算或获取
-    AI 预审结果，计算审核截止时间和超时状态。
-
-    Args:
-        status_filter: 可选状态筛选（仅支持 pending_review）。
-        page: 页码，从 1 开始。
-        page_size: 每页条数。
-        session: 活动数据库异步会话。
-        case_repo: CaseRepository 实例。
-        review_repo: ReviewRepository 实例。
-
-    Returns:
-        PaginatedResponse[ReviewQueueItem]: 分页审核队列。
-    """
-    return await _default_service.list_review_queue(
-        status_filter, page, page_size, session, case_repo, review_repo,
-    )
-
-
 __all__ = [
     "ReviewWorkflowService",
-    "submit_review",
-    "list_review_queue",
 ]

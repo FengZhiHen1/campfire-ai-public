@@ -12,7 +12,6 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict, Optional
 import math
 
 from fastapi import APIRouter, Depends, Query, status
@@ -27,11 +26,8 @@ from app.modules.cases.narrative_service import (
 )
 from py_schemas.narratives import (
     NarrativeCreateRequest,
-    NarrativeResponse,
-    NarrativeListItem,
     NarrativeUpdate,
 )
-from py_schemas.cards import CardResponse
 
 router = APIRouter(prefix="/api/v1/narratives", tags=["narratives"])
 
