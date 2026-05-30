@@ -777,16 +777,16 @@
     background-color: $cf-surface-variant;
     border-radius: $cf-radius-md;
     border: 2px solid rgba($cf-primary, 0.3);
-    animation: consult-pulse-border 2s ease-in-out infinite;
+    animation: consult-skel-pulse 1.5s ease-in-out infinite;
 
     &:nth-child(2) {
       width: 280px;
-      animation-delay: 0.3s;
+      animation-delay: 0.2s;
     }
 
     &:nth-child(3) {
       width: 200px;
-      animation-delay: 0.6s;
+      animation-delay: 0.4s;
     }
   }
 
@@ -985,9 +985,9 @@
   50% { opacity: 0.85; }
 }
 
-@keyframes consult-pulse-border {
-  0%, 100% { border-color: rgba($cf-primary, 0.3); }
-  50% { border-color: rgba($cf-primary, 0.6); }
+@keyframes consult-skel-pulse {
+  0%, 100% { opacity: 0.35; }
+  50% { opacity: 1.0; }
 }
 
 @keyframes consult-fade-in {
