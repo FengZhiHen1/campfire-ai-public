@@ -1,9 +1,15 @@
 /* 全局样式 */
-page {
+*,
+*::before,
+*::after {
   box-sizing: border-box;
+}
+
+page {
   font-family: system-ui, -apple-system, 'PingFang SC', 'Noto Sans SC', 'Helvetica Neue', sans-serif;
   background-color: #FDF8F3;
   color: #1C1917;
+  overflow-x: hidden;
 }
 
 /* ========== 设计令牌（CSS 自定义属性）========== */
