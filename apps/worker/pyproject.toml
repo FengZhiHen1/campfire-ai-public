@@ -10,7 +10,6 @@ dependencies = [
     "py-rag",
     "py-llm",
     "py-logger",
-    "py-infra",
 ]
 
 [project.scripts]
