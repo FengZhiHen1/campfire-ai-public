@@ -1,14 +1,14 @@
-"""PROF-01 个人档案管理 — MVP Phase 1 多档案版路由。
+"""PROF-01 个人档案管理 — API 路由。
 
-- GET  /api/v1/profiles           — 查询当前用户的档案列表
-- GET  /api/v1/profiles/me        — 查询当前用户的默认档案（快捷端点）
-- GET  /api/v1/profiles/{id}      — 查询指定档案详情
-- POST /api/v1/profiles           — 创建新档案
-- PUT  /api/v1/profiles/{id}      — 更新档案
-- DELETE /api/v1/profiles/{id}    — 删除档案
-- PUT  /api/v1/profiles/{id}/default — 设为默认档案
-
-去除 JWT、RBAC、隐私控制。
+端点:
+- GET    /api/v1/profiles                — 查询当前用户的档案列表
+- GET    /api/v1/profiles/me             — 查询当前用户的默认档案
+- GET    /api/v1/profiles/tags/preset    — 预设标签池
+- GET    /api/v1/profiles/{profile_id}    — 查询指定档案详情
+- POST   /api/v1/profiles                — 创建新档案
+- PUT    /api/v1/profiles/{profile_id}    — 更新档案
+- DELETE /api/v1/profiles/{profile_id}    — 删除档案
+- PUT    /api/v1/profiles/{profile_id}/default — 设为默认档案
 """
 
 from __future__ import annotations
@@ -16,34 +16,21 @@ from __future__ import annotations
 import math
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.dependencies.anonymous_user import get_anonymous_user
 from app.core.dependencies.auth_dependencies import get_db_session
-from app.modules.profiles.profile_service import ProfileService
+from app.modules.profiles._constants import PRESET_TAGS
+from app.modules.profiles._exception_mapping import map_domain_error
+from app.modules.profiles._user_utils import extract_user_id
+from app.modules.profiles.exceptions import ProfileDomainError
+from app.modules.profiles.profile_service import ProfileServiceImpl
 from py_schemas.cases import PaginatedResponse
 from py_schemas.profiles import ProfileCreate, ProfileListItem, ProfileResponse, ProfileUpdate
 
 router = APIRouter(prefix="/api/v1/profiles", tags=["profiles"])
-_profile_service = ProfileService()
-
-
-def _extract_user_id(anonymous_user: dict) -> UUID:
-    """从匿名用户字典中提取用户 UUID。"""
-    user_id_str: str = anonymous_user.get("sub", anonymous_user.get("user_id", ""))
-    if not user_id_str:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="无法解析用户标识",
-        )
-    try:
-        return UUID(user_id_str)
-    except ValueError:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="用户标识格式无效",
-        )
+_profile_service = ProfileServiceImpl()
 
 
 # ===========================================================================
@@ -55,7 +42,6 @@ def _extract_user_id(anonymous_user: dict) -> UUID:
     "",
     status_code=status.HTTP_200_OK,
     summary="获取档案列表",
-    description="查询当前匿名用户的所有档案列表，按创建时间倒序排列。",
     response_model=PaginatedResponse[ProfileListItem],
 )
 async def list_profiles_endpoint(
@@ -64,14 +50,17 @@ async def list_profiles_endpoint(
     anonymous_user: dict = Depends(get_anonymous_user),
     session: AsyncSession = Depends(get_db_session),
 ) -> PaginatedResponse[ProfileListItem]:
-    """档案列表端点。"""
-    caregiver_id = _extract_user_id(anonymous_user)
-    items, total = await _profile_service.list_profiles(
-        caregiver_id=caregiver_id,
-        session=session,
-        page=page,
-        page_size=page_size,
-    )
+    caregiver_id = extract_user_id(anonymous_user)
+    try:
+        items, total = await _profile_service.list_profiles(
+            caregiver_id=caregiver_id,
+            session=session,
+            page=page,
+            page_size=page_size,
+        )
+    except ProfileDomainError as exc:
+        raise map_domain_error(exc)
+
     total_pages = math.ceil(total / page_size) if total > 0 else 0
     return PaginatedResponse[ProfileListItem](
         items=items,
@@ -83,7 +72,7 @@ async def list_profiles_endpoint(
 
 
 # ===========================================================================
-# GET /api/v1/profiles/me — 默认档案（快捷端点）
+# GET /api/v1/profiles/me — 默认档案
 # ===========================================================================
 
 
@@ -91,7 +80,6 @@ async def list_profiles_endpoint(
     "/me",
     status_code=status.HTTP_200_OK,
     summary="获取我的默认档案",
-    description="查询当前匿名用户的默认档案。若无档案返回 404。",
     response_model=ProfileResponse,
     responses={
         200: {"description": "成功返回档案详情"},
@@ -102,18 +90,14 @@ async def get_my_profile_endpoint(
     anonymous_user: dict = Depends(get_anonymous_user),
     session: AsyncSession = Depends(get_db_session),
 ) -> ProfileResponse:
-    """获取当前用户默认档案端点。"""
-    caregiver_id = _extract_user_id(anonymous_user)
-    result = await _profile_service.get_my_profile(
-        caregiver_id=caregiver_id,
-        session=session,
-    )
-    if result is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="暂无档案，请先创建",
+    caregiver_id = extract_user_id(anonymous_user)
+    try:
+        return await _profile_service.get_my_profile(
+            caregiver_id=caregiver_id,
+            session=session,
         )
-    return result
+    except ProfileDomainError as exc:
+        raise map_domain_error(exc)
 
 
 # ===========================================================================
@@ -121,28 +105,12 @@ async def get_my_profile_endpoint(
 # ===========================================================================
 
 
-PRESET_TAGS = [
-    "感官敏感",
-    "睡眠障碍",
-    "社交回避",
-    "情绪调节困难",
-    "语言发育迟缓",
-    "注意缺陷",
-    "刻板行为",
-    "饮食问题",
-    "攻击行为",
-    "自伤行为",
-]
-
-
 @router.get(
     "/tags/preset",
     status_code=status.HTTP_200_OK,
     summary="获取预设标签池",
-    description="返回事件记录的预设标签列表，供前端标签选择器使用。",
 )
 async def get_preset_tags_endpoint() -> dict[str, list[str]]:
-    """预设标签端点。"""
     return {"tags": PRESET_TAGS}
 
 
@@ -155,7 +123,6 @@ async def get_preset_tags_endpoint() -> dict[str, list[str]]:
     "/{profile_id}",
     status_code=status.HTTP_200_OK,
     summary="获取档案详情",
-    description="按 ID 查询指定档案详情。仅返回当前用户自己的档案。",
     response_model=ProfileResponse,
     responses={
         200: {"description": "成功返回档案详情"},
@@ -167,19 +134,15 @@ async def get_profile_endpoint(
     anonymous_user: dict = Depends(get_anonymous_user),
     session: AsyncSession = Depends(get_db_session),
 ) -> ProfileResponse:
-    """档案详情端点。"""
-    caregiver_id = _extract_user_id(anonymous_user)
-    result = await _profile_service.get_profile(
-        profile_id=profile_id,
-        caregiver_id=caregiver_id,
-        session=session,
-    )
-    if result is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="档案不存在",
+    caregiver_id = extract_user_id(anonymous_user)
+    try:
+        return await _profile_service.get_profile(
+            profile_id=profile_id,
+            caregiver_id=caregiver_id,
+            session=session,
         )
-    return result
+    except ProfileDomainError as exc:
+        raise map_domain_error(exc)
 
 
 # ===========================================================================
@@ -191,10 +154,10 @@ async def get_profile_endpoint(
     "",
     status_code=status.HTTP_201_CREATED,
     summary="创建档案",
-    description="为当前匿名用户创建新档案。若用户尚无档案，自动设为默认。",
     response_model=ProfileResponse,
     responses={
         201: {"description": "档案创建成功"},
+        409: {"description": "档案数量已达上限"},
         422: {"description": "请求体校验失败"},
     },
 )
@@ -203,13 +166,15 @@ async def create_profile_endpoint(
     anonymous_user: dict = Depends(get_anonymous_user),
     session: AsyncSession = Depends(get_db_session),
 ) -> ProfileResponse:
-    """创建档案端点。"""
-    caregiver_id = _extract_user_id(anonymous_user)
-    return await _profile_service.create_profile(
-        caregiver_id=caregiver_id,
-        input_data=input_data,
-        session=session,
-    )
+    caregiver_id = extract_user_id(anonymous_user)
+    try:
+        return await _profile_service.create_profile(
+            caregiver_id=caregiver_id,
+            input_data=input_data,
+            session=session,
+        )
+    except ProfileDomainError as exc:
+        raise map_domain_error(exc)
 
 
 # ===========================================================================
@@ -221,7 +186,6 @@ async def create_profile_endpoint(
     "/{profile_id}",
     status_code=status.HTTP_200_OK,
     summary="更新档案",
-    description="部分更新指定档案。仅更新提供的字段，未提供的字段保持原值。",
     response_model=ProfileResponse,
     responses={
         200: {"description": "档案更新成功"},
@@ -235,14 +199,16 @@ async def update_profile_endpoint(
     anonymous_user: dict = Depends(get_anonymous_user),
     session: AsyncSession = Depends(get_db_session),
 ) -> ProfileResponse:
-    """更新档案端点。"""
-    caregiver_id = _extract_user_id(anonymous_user)
-    return await _profile_service.update_profile(
-        profile_id=profile_id,
-        caregiver_id=caregiver_id,
-        input_data=input_data,
-        session=session,
-    )
+    caregiver_id = extract_user_id(anonymous_user)
+    try:
+        return await _profile_service.update_profile(
+            profile_id=profile_id,
+            caregiver_id=caregiver_id,
+            input_data=input_data,
+            session=session,
+        )
+    except ProfileDomainError as exc:
+        raise map_domain_error(exc)
 
 
 # ===========================================================================
@@ -254,7 +220,6 @@ async def update_profile_endpoint(
     "/{profile_id}",
     status_code=status.HTTP_204_NO_CONTENT,
     summary="删除档案",
-    description="删除指定档案。若删除的是默认档案，自动将最新更新的剩余档案提升为默认。",
     responses={
         204: {"description": "删除成功"},
         404: {"description": "档案不存在"},
@@ -265,13 +230,15 @@ async def delete_profile_endpoint(
     anonymous_user: dict = Depends(get_anonymous_user),
     session: AsyncSession = Depends(get_db_session),
 ) -> None:
-    """删除档案端点。"""
-    caregiver_id = _extract_user_id(anonymous_user)
-    await _profile_service.delete_profile(
-        profile_id=profile_id,
-        caregiver_id=caregiver_id,
-        session=session,
-    )
+    caregiver_id = extract_user_id(anonymous_user)
+    try:
+        await _profile_service.delete_profile(
+            profile_id=profile_id,
+            caregiver_id=caregiver_id,
+            session=session,
+        )
+    except ProfileDomainError as exc:
+        raise map_domain_error(exc)
 
 
 # ===========================================================================
@@ -283,7 +250,6 @@ async def delete_profile_endpoint(
     "/{profile_id}/default",
     status_code=status.HTTP_200_OK,
     summary="设为默认档案",
-    description="将指定档案设为默认，同时取消该用户其他档案的默认标记。",
     response_model=ProfileResponse,
     responses={
         200: {"description": "设置成功"},
@@ -295,13 +261,15 @@ async def set_default_profile_endpoint(
     anonymous_user: dict = Depends(get_anonymous_user),
     session: AsyncSession = Depends(get_db_session),
 ) -> ProfileResponse:
-    """设为默认档案端点。"""
-    caregiver_id = _extract_user_id(anonymous_user)
-    return await _profile_service.set_default_profile(
-        profile_id=profile_id,
-        caregiver_id=caregiver_id,
-        session=session,
-    )
+    caregiver_id = extract_user_id(anonymous_user)
+    try:
+        return await _profile_service.set_default_profile(
+            profile_id=profile_id,
+            caregiver_id=caregiver_id,
+            session=session,
+        )
+    except ProfileDomainError as exc:
+        raise map_domain_error(exc)
 
 
 __all__ = ["router"]
