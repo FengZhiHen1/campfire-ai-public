@@ -1,6 +1,6 @@
-"""CASE-01 案例服务 — create_case / submit_case / get_case / detect_pii 单元测试。
+"""CASE-01 案例服务 — create_case / submit_case / get_case / PII 检测 单元测试。
 
-使用 mock Repository + AsyncSession 验证业务编排逻辑。
+使用 mock Repository + AsyncSession 验证 CaseManagementService 业务编排逻辑。
 """
 
 from __future__ import annotations
@@ -12,16 +12,12 @@ import pytest
 from fastapi import HTTPException
 
 from py_db.models.case_model import Case
+from py_security import RegexPiiDetector
 from py_schemas.cases import CaseCreateRequest, CaseUpdate
 from py_schemas.enums.case_enums import CaseStatus
 
-from app.services.case_service import (
-    create_case,
-    detect_pii_endpoint,
-    get_case,
-    submit_case,
-    update_case,
-)
+from app.modules.cases.case_mgmt.service import CaseManagementService
+from app.modules.cases.types import CaseId
 
 
 def _mock_case(**overrides) -> mock.MagicMock:
@@ -95,31 +91,42 @@ def user():
     return {"sub": "user-1", "roles": ["expert"]}
 
 
+@pytest.fixture
+def svc():
+    return CaseManagementService()
+
+
 # ---- create_case ----
 
 
 class TestCreateCase:
     @pytest.mark.asyncio
-    async def test_create_success(self, session, repo, user):
+    async def test_create_success(self, svc, session, repo, user):
         request = _valid_create_data()
-        response = await create_case(request, user, session, repo)
+        response = await svc.create_case(
+            request=request, current_user=user, session=session, case_repo=repo,
+        )
         assert response.case_id == "CASE-2026-0042"
         assert response.status == "draft"
 
     @pytest.mark.asyncio
-    async def test_create_missing_four_stage_field(self, session, repo, user):
+    async def test_create_missing_four_stage_field(self, svc, session, repo, user):
         request = _valid_create_data()
         request.medical_criteria = ""
         with pytest.raises(HTTPException) as exc:
-            await create_case(request, user, session, repo)
+            await svc.create_case(
+                request=request, current_user=user, session=session, case_repo=repo,
+            )
         assert exc.value.status_code == 422
 
     @pytest.mark.asyncio
-    async def test_create_db_failure(self, session, repo, user):
+    async def test_create_db_failure(self, svc, session, repo, user):
         repo.create.side_effect = RuntimeError("DB down")
         request = _valid_create_data()
         with pytest.raises(HTTPException) as exc:
-            await create_case(request, user, session, repo)
+            await svc.create_case(
+                request=request, current_user=user, session=session, case_repo=repo,
+            )
         assert exc.value.status_code == 503
 
 
@@ -128,32 +135,44 @@ class TestCreateCase:
 
 class TestGetCase:
     @pytest.mark.asyncio
-    async def test_get_own_draft(self, session, repo, user):
+    async def test_get_own_draft(self, svc, session, repo, user):
         case = _mock_case(status=CaseStatus.DRAFT, author_id="user-1")
         repo.find_by_case_id.return_value = case
-        response = await get_case("CASE-2026-0001", user, session, repo)
+        response = await svc.get_case(
+            case_id=CaseId("CASE-2026-0001"), current_user=user,
+            session=session, case_repo=repo,
+        )
         assert response.is_owner is True
 
     @pytest.mark.asyncio
-    async def test_get_other_draft_returns_404(self, session, repo, user):
+    async def test_get_other_draft_returns_404(self, svc, session, repo, user):
         case = _mock_case(status=CaseStatus.DRAFT, author_id="other-user")
         repo.find_by_case_id.return_value = case
         with pytest.raises(HTTPException) as exc:
-            await get_case("CASE-2026-0001", user, session, repo)
+            await svc.get_case(
+                case_id=CaseId("CASE-2026-0001"), current_user=user,
+                session=session, case_repo=repo,
+            )
         assert exc.value.status_code == 404
 
     @pytest.mark.asyncio
-    async def test_get_approved_by_anyone(self, session, repo, user):
+    async def test_get_approved_by_anyone(self, svc, session, repo, user):
         case = _mock_case(status=CaseStatus.APPROVED, author_id="other-user")
         repo.find_by_case_id.return_value = case
-        response = await get_case("CASE-2026-0001", user, session, repo)
+        response = await svc.get_case(
+            case_id=CaseId("CASE-2026-0001"), current_user=user,
+            session=session, case_repo=repo,
+        )
         assert response.is_owner is False
 
     @pytest.mark.asyncio
-    async def test_not_found(self, session, repo, user):
+    async def test_not_found(self, svc, session, repo, user):
         repo.find_by_case_id.return_value = None
         with pytest.raises(HTTPException) as exc:
-            await get_case("CASE-2026-9999", user, session, repo)
+            await svc.get_case(
+                case_id=CaseId("CASE-2026-9999"), current_user=user,
+                session=session, case_repo=repo,
+            )
         assert exc.value.status_code == 404
 
 
@@ -162,40 +181,49 @@ class TestGetCase:
 
 class TestSubmitCase:
     @pytest.mark.asyncio
-    async def test_submit_success(self, session, repo, user):
+    async def test_submit_success(self, svc, session, repo, user):
         case = _mock_case(status=CaseStatus.DRAFT)
         repo.find_by_case_id.return_value = case
         updated = _mock_case(status=CaseStatus.PENDING_REVIEW)
         repo.update_status.return_value = updated
-        response = await submit_case("CASE-2026-0001", user, session, repo)
+        response = await svc.submit_case(
+            case_id=CaseId("CASE-2026-0001"), current_user=user,
+            session=session, case_repo=repo,
+        )
         assert response.status == "pending_review"
 
     @pytest.mark.asyncio
-    async def test_submit_not_draft(self, session, repo, user):
+    async def test_submit_not_draft(self, svc, session, repo, user):
         case = _mock_case(status=CaseStatus.APPROVED)
         repo.find_by_case_id.return_value = case
         with pytest.raises(HTTPException) as exc:
-            await submit_case("CASE-2026-0001", user, session, repo)
+            await svc.submit_case(
+                case_id=CaseId("CASE-2026-0001"), current_user=user,
+                session=session, case_repo=repo,
+            )
         assert exc.value.status_code == 409
 
     @pytest.mark.asyncio
-    async def test_submit_not_found(self, session, repo, user):
+    async def test_submit_not_found(self, svc, session, repo, user):
         repo.find_by_case_id.return_value = None
         with pytest.raises(HTTPException) as exc:
-            await submit_case("CASE-2026-9999", user, session, repo)
+            await svc.submit_case(
+                case_id=CaseId("CASE-2026-9999"), current_user=user,
+                session=session, case_repo=repo,
+            )
         assert exc.value.status_code == 404
 
 
-# ---- detect_pii_endpoint ----
+# ---- PII 检测 ----
 
 
-class TestDetectPiiEndpoint:
-    @pytest.mark.asyncio
-    async def test_no_pii(self):
-        result = await detect_pii_endpoint("abc 123 !@#")
+class TestDetectPii:
+    def test_no_pii(self):
+        detector = RegexPiiDetector()
+        result = detector.detect("abc 123 !@#")
         assert result.has_pii is False
 
-    @pytest.mark.asyncio
-    async def test_has_pii(self):
-        result = await detect_pii_endpoint("联系13800138000")
+    def test_has_pii(self):
+        detector = RegexPiiDetector()
+        result = detector.detect("联系13800138000")
         assert result.has_pii is True

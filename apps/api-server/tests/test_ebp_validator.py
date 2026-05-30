@@ -3,7 +3,7 @@
 
 from __future__ import annotations
 
-from app.services.ebp_validator import check_ebp_consistency
+from app.modules.cases.review.ebp_validator import check_ebp_consistency
 
 
 class TestCheckEbpConsistency:

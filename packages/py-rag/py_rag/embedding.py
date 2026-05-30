@@ -40,6 +40,8 @@ EMBEDDING_URL: str = (
 )
 EMBEDDING_MODEL: str = "text-embedding-v4"
 EMBEDDING_TIMEOUT: int = 5
+EMBEDDING_MAX_CONNECTIONS: int = 5
+EMBEDDING_MAX_KEEPALIVE: int = 2
 
 
 # ---------------------------------------------------------------------------
@@ -144,7 +146,11 @@ class DashScopeEncoder(BaseEmbeddingEncoder):
     def _get_client(self) -> httpx.AsyncClient:
         """获取 httpx 异步客户端单例（带连接池）。"""
         if self._http_client is None:
-            self._http_client = httpx.AsyncClient()
+            limits = httpx.Limits(
+                max_connections=EMBEDDING_MAX_CONNECTIONS,
+                max_keepalive_connections=EMBEDDING_MAX_KEEPALIVE,
+            )
+            self._http_client = httpx.AsyncClient(limits=limits)
         return self._http_client
 
     async def close(self) -> None:

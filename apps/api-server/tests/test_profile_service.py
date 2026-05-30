@@ -1,6 +1,6 @@
 """PROF-01 档案管理 Service — 单元测试。
 
-使用 mock ProfileRepository + AsyncSession 验证业务逻辑。
+使用 mock ProfileRepository + AsyncSession 验证 ProfileServiceImpl 业务逻辑。
 """
 
 from __future__ import annotations
@@ -10,12 +10,15 @@ from unittest import mock
 from uuid import uuid4
 
 import pytest
-from fastapi import HTTPException
 
 from py_db.models.profiles import Profile
 from py_schemas.profiles import DiagnosisType, ProfileBehaviorType, ProfileCreate, ProfileUpdate
 
-from app.services.profile_service import ProfileService
+from app.modules.profiles.exceptions import (
+    ProfileLimitExceededError,
+    ProfileNotFoundError,
+)
+from app.modules.profiles.profile_service import ProfileServiceImpl
 
 
 def _mock_profile(**overrides) -> mock.MagicMock:
@@ -64,8 +67,8 @@ def session():
 
 
 @pytest.fixture
-def svc(repo) -> ProfileService:
-    return ProfileService(repository=repo)
+def svc(repo) -> ProfileServiceImpl:
+    return ProfileServiceImpl(repository=repo)
 
 
 @pytest.fixture
@@ -97,8 +100,8 @@ class TestGetProfile:
     @pytest.mark.asyncio
     async def test_not_found(self, svc, caregiver_id, session, repo):
         repo.get_by_id.return_value = None
-        result = await svc.get_profile(uuid4(), caregiver_id, session)
-        assert result is None
+        with pytest.raises(ProfileNotFoundError):
+            await svc.get_profile(uuid4(), caregiver_id, session)
 
 
 class TestCreateProfile:
@@ -136,9 +139,8 @@ class TestUpdateProfile:
     async def test_not_found(self, svc, caregiver_id, session, repo):
         repo.get_by_id.return_value = None
         data = ProfileUpdate(nickname="新昵称")
-        with pytest.raises(HTTPException) as exc:
+        with pytest.raises(ProfileNotFoundError):
             await svc.update_profile(uuid4(), caregiver_id, data, session)
-        assert exc.value.status_code == 404
 
 
 class TestDeleteProfile:
@@ -156,13 +158,15 @@ class TestDeleteProfile:
 
 class TestCalcAgeRange:
     def test_null_returns_18_plus(self):
-        result = ProfileService._calc_age_range(None)
+        result = ProfileServiceImpl._calc_age_range(None)
         assert result == "18岁以上"
 
     def test_age_5_returns_4_6(self):
-        result = ProfileService._calc_age_range(5)
+        birth = date.today().replace(year=date.today().year - 5)
+        result = ProfileServiceImpl._calc_age_range(birth)
         assert result == "4-6岁"
 
     def test_age_0_returns_0_3(self):
-        result = ProfileService._calc_age_range(0)
+        birth = date.today()
+        result = ProfileServiceImpl._calc_age_range(birth)
         assert result == "0-3岁"

@@ -201,7 +201,20 @@ async def get_redis_client() -> aioredis.Redis:
     return await _get_redis()
 
 
+async def close_redis_client() -> None:
+    """关闭 Redis 客户端连接池。
+
+    应在进程优雅关闭时调用。关闭后再次调用 get_redis_client()
+    会重新创建客户端。
+    """
+    global _redis_client
+    if _redis_client is not None:
+        await _redis_client.aclose()
+        _redis_client = None
+
+
 __all__ = [
     "check_rate_limit",
+    "close_redis_client",
     "get_redis_client",
 ]

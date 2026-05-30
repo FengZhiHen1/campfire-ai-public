@@ -1,236 +1,68 @@
 """Worker 任务：案例卡片向量化索引入库。
 
-消费 Redis 队列中的卡片 ID (UUID)，执行：
-1. 读取 case_cards（L2）数据
-2. 拼接四段式文本
-3. 调用 DashScope 嵌入编码
-4. 写入 case_chunks 表（pgvector）
-5. 更新 case_cards.index_status
+委托 py_rag.indexing.IndexPipeline 处理完整索引管线（CASE-04 契约）：
+文本组装 → PII 校验 → 嵌入编码 → pgvector 写入 → 状态标记。
 
-失败策略：重试 3 次（指数退避），最终失败标记 indexing_failed。
+本模块作为向后兼容的薄层——实际索引逻辑全部在 py-rag 中。
 """
 
 from __future__ import annotations
 
-import asyncio
-import json
-import logging
-import uuid
-from datetime import datetime, timezone
-
-from sqlalchemy import text
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
-
-from py_config import get_settings
 from py_logger import logger
-from py_rag.embedding import encode_text
-from py_rag.models import ChunkMetadata
-
-_logger = logging.getLogger(__name__)
-
-# ---------------------------------------------------------------------------
-# 常量
-# ---------------------------------------------------------------------------
-
-_MAX_RETRIES: int = 3
-_RETRY_BACKOFF: list[float] = [1.0, 2.0, 4.0]
-
-_CARD_QUERY_SQL = text("""
-    SELECT
-        card_id,
-        narrative_id,
-        title,
-        scenario,
-        behavior_type,
-        age_range_min,
-        age_range_max,
-        severity,
-        scene,
-        immediate_action,
-        comforting_phrase,
-        observation_metrics,
-        medical_criteria,
-        evidence_level
-    FROM case_cards
-    WHERE card_id = :card_id
-""")
+from py_rag.indexing import IndexPipeline
+from py_rag.indexing_contract import INDEX_QUEUE_KEY
 
 
-# ---------------------------------------------------------------------------
-# 公开接口
-# ---------------------------------------------------------------------------
+async def index_case(case_id: str, trace_id: str = "") -> None:
+    """对单个案例卡片执行向量化索引入库（ad-hoc 调试用）。
 
+    委托 IndexPipeline.process_task() 走完整契约管线。
+    每次调用创建独立的数据库引擎和会话，完成后自动释放。
 
-async def index_case(card_id: str) -> None:
-    """对单个案例卡片执行向量化索引入库。
+    注意：本函数每次调用重建连接池，不适合生产循环调用。
+    生产路径请走 main.py 的 _get_session_factory() 单例。
 
     Args:
-        card_id: 卡片 UUID 字符串。
+        case_id: 卡片 UUID 字符串。
+        trace_id: 全链路追踪标识（32 位十六进制），为空时由管线内部生成。
     """
+    logger.info(
+        "worker",
+        f"开始处理案例索引: {case_id}",
+        op_type="index_case_start",
+        extra={"case_id": case_id, "trace_id": trace_id},
+    )
+
+    from py_rag.embedding import _get_encoder
+    from py_rag.indexing.chunk_builder import build_chunk_text
+    from py_rag.indexing.index_writer import write_index_to_pgvector
+
+    pipeline = IndexPipeline(
+        embedding_encoder=_get_encoder(),
+        chunk_builder=build_chunk_text,
+        index_writer=write_index_to_pgvector,
+    )
+
+    from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+
+    from py_config import get_settings
+
     settings = get_settings()
     database_url = str(settings.DATABASE_URL)
-    engine = create_async_engine(database_url, echo=False)
-    session_factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
-    async with session_factory() as session:
-        await _do_index_card(card_id, session)
-
-    await engine.dispose()
-
-
-async def _do_index_card(card_id: str, session: AsyncSession) -> None:
-    """在已有数据库会话中执行索引逻辑。"""
-
-    # ---- 1. 读取卡片 ----
-    result = await session.execute(_CARD_QUERY_SQL, {"card_id": uuid.UUID(card_id)})
-    row = result.mappings().first()
-    if row is None:
-        logger.error(
-            "worker",
-            f"卡片不存在: {card_id}",
-            extra={"card_id": card_id, "task": "index_case"},
-        )
-        return
-
-    card_data = dict(row)
-
-    # ---- 2. 拼接 chunk_text ----
-    chunk_text = (
-        f"场景：{card_data['scene']}\n"
-        f"行为：{card_data['immediate_action']} {card_data['comforting_phrase']}\n"
-        f"干预：{card_data['observation_metrics']}\n"
-        f"结果：{card_data['medical_criteria']}"
-    )
-
-    # ---- 3. 构造 metadata ----
-    metadata = ChunkMetadata(
-        case_id=card_id,
-        case_title=card_data["title"],
-        behavior_type=card_data["behavior_type"],
-        age_range=f"{card_data['age_range_min']}-{card_data['age_range_max']}",
-        severity=card_data["severity"],
-        evidence_level=card_data["evidence_level"],
-        source="case_library",
-        status="approved",
-        vectorized=True,
-    )
-
-    # ---- 4. 编码 + 写入（带重试）----
-    last_error: Exception | None = None
-    for attempt in range(_MAX_RETRIES + 1):
-        try:
-            embedding = await encode_text(chunk_text, text_type="document")
-            await _write_chunk(session, card_id, chunk_text, embedding, metadata)
-            await _mark_indexed(session, card_id)
-            logger.info(
-                "worker",
-                f"卡片索引入库成功: {card_id}",
-                extra={"card_id": card_id, "task": "index_case", "attempt": attempt},
+    engine = None
+    try:
+        engine = create_async_engine(database_url, echo=False)
+        session_factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+        async with session_factory() as session:
+            await pipeline.process_task(
+                case_id=case_id,
+                trace_id=trace_id,
+                db_session=session,
             )
-            return
-        except Exception as exc:
-            last_error = exc
-            logger.warning(
-                "worker",
-                f"卡片索引失败（尝试 {attempt + 1}/{_MAX_RETRIES + 1}）: {card_id}",
-                extra={
-                    "card_id": card_id,
-                    "task": "index_case",
-                    "attempt": attempt,
-                    "error": str(exc),
-                },
-            )
-            if attempt < _MAX_RETRIES:
-                await asyncio.sleep(_RETRY_BACKOFF[attempt])
-
-    # 重试耗尽
-    logger.error(
-        "worker",
-        f"卡片索引最终失败: {card_id}",
-        extra={
-            "card_id": card_id,
-            "task": "index_case",
-            "error": str(last_error),
-        },
-    )
-    await _mark_failed(session, card_id, str(last_error))
+    finally:
+        if engine is not None:
+            await engine.dispose()
 
 
-async def _write_chunk(
-    session: AsyncSession,
-    card_id: str,
-    chunk_text: str,
-    embedding: list[float],
-    metadata: ChunkMetadata,
-) -> None:
-    """写入 case_chunks 表。"""
-
-    metadata_dict = metadata.model_dump()
-    chunk_id = str(uuid.uuid4())
-    now_iso = datetime.now(timezone.utc).isoformat()
-
-    insert_sql = text("""
-        INSERT INTO case_chunks (id, card_id, chunk_text, embedding, metadata, created_at)
-        VALUES (
-            :id,
-            :card_id,
-            :chunk_text,
-            :embedding::vector(1024),
-            :metadata::jsonb,
-            :created_at
-        )
-    """)
-
-    await session.execute(
-        insert_sql,
-        {
-            "id": chunk_id,
-            "card_id": uuid.UUID(card_id),
-            "chunk_text": chunk_text,
-            "embedding": json.dumps(embedding),
-            "metadata": json.dumps(metadata_dict, ensure_ascii=False),
-            "created_at": now_iso,
-        },
-    )
-    await session.commit()
-
-
-async def _mark_indexed(session: AsyncSession, card_id: str) -> None:
-    """更新 case_cards 表状态为 indexed。"""
-
-    stmt = text("""
-        UPDATE case_cards
-        SET index_status = 'indexed', indexed_at = :indexed_at
-        WHERE card_id = :card_id
-    """)
-    await session.execute(
-        stmt,
-        {
-            "indexed_at": datetime.now(timezone.utc),
-            "card_id": uuid.UUID(card_id),
-        },
-    )
-    await session.commit()
-
-
-async def _mark_failed(session: AsyncSession, card_id: str, reason: str) -> None:
-    """更新 case_cards 表状态为 indexing_failed。"""
-
-    stmt = text("""
-        UPDATE case_cards
-        SET index_status = 'indexing_failed'
-        WHERE card_id = :card_id
-    """)
-    await session.execute(
-        stmt,
-        {"card_id": uuid.UUID(card_id)},
-    )
-    await session.commit()
-    logger.error(
-        "worker",
-        f"卡片索引标记为失败: {card_id}",
-        extra={"card_id": card_id, "reason": reason, "task": "index_case"},
-    )
-
-
-__all__ = ["index_case"]
+__all__ = ["index_case", "INDEX_QUEUE_KEY"]
