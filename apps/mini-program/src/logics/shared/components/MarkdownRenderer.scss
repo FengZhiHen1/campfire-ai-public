@@ -1,0 +1,104 @@
+.md-root {
+  word-break: break-all;
+}
+
+// ---- 标题 ----
+.md-h1 {
+  font-size: 36px;
+  font-weight: 700;
+  line-height: 1.4;
+  color: #1a1a1a;
+  margin-bottom: 24px;
+}
+
+.md-h2 {
+  font-size: 32px;
+  font-weight: 700;
+  line-height: 1.4;
+  color: #1a1a1a;
+  margin-bottom: 20px;
+}
+
+.md-h3 {
+  font-size: 28px;
+  font-weight: 600;
+  line-height: 1.45;
+  color: #1a1a1a;
+  margin-bottom: 16px;
+}
+
+.md-h4, .md-h5, .md-h6 {
+  font-size: 26px;
+  font-weight: 600;
+  line-height: 1.5;
+  color: #333;
+  margin-bottom: 14px;
+}
+
+// ---- 段落 ----
+.md-paragraph {
+  font-size: 28px;
+  line-height: 1.75;
+  color: #333;
+  margin-bottom: 16px;
+}
+
+// ---- 列表 ----
+.md-list-item {
+  display: flex;
+  flex-direction: row;
+  margin-bottom: 8px;
+  padding-left: 8px;
+
+  &__bullet {
+    font-size: 28px;
+    line-height: 1.75;
+    color: #666;
+    margin-right: 12px;
+    flex-shrink: 0;
+  }
+
+  &__body {
+    flex: 1;
+    font-size: 28px;
+    line-height: 1.75;
+    color: #333;
+  }
+}
+
+// ---- 代码块 ----
+.md-code-block {
+  background-color: #f5f5f5;
+  border-radius: 12px;
+  padding: 20px 24px;
+  margin-bottom: 16px;
+  overflow-x: auto;
+
+  &__text {
+    font-family: 'Courier New', Courier, monospace;
+    font-size: 24px;
+    line-height: 1.6;
+    color: #333;
+    white-space: pre-wrap;
+  }
+}
+
+// ---- 行内格式 ----
+.md-bold {
+  font-weight: 700;
+  color: #1a1a1a;
+}
+
+.md-italic {
+  font-style: italic;
+  color: #555;
+}
+
+.md-inline-code {
+  font-family: 'Courier New', Courier, monospace;
+  font-size: 24px;
+  background-color: #f0f0f0;
+  border-radius: 4px;
+  padding: 2px 8px;
+  color: #c7254e;
+}
