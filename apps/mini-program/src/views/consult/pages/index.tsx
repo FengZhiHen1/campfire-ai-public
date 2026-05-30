@@ -119,22 +119,35 @@ export default function ConsultIndex() {
     );
   }
 
-  // ----- selecting_behavior: 行为选择弹窗 -----
+  // ----- selecting_behavior: 行为选择页（独立全屏页面）-----
   if (sessionState === 'selecting_behavior') {
     return (
       <View className="consult-page">
-        <View className="consult-modal-overlay">
-          <View className="consult-modal">
-            <Text className="consult-modal__title">请选择当前行为类型</Text>
-            <Text className="consult-modal__subtitle">这将帮助我们更准确地匹配案例</Text>
+        {/* 顶部导航栏 */}
+        <View className="consult-selection-navbar">
+          <Button className="consult-selection-navbar__back" onClick={cancelSelection}>
+            ←
+          </Button>
+          <Text className="consult-selection-navbar__title">应急咨询</Text>
+        </View>
 
-            {/* 档案选择 */}
-            {profiles.length > 0 && (
-              <>
-                <Text className="consult-modal__label">关联档案（可选）</Text>
-                <View className="consult-modal__profile-list">
+        {/* 主内容区 */}
+        <ScrollView className="consult-selection-scroll" scrollY>
+          {/* 区块A — 页头 */}
+          <View className="consult-selection-header">
+            <Text className="consult-selection-header__title">描述当前行为</Text>
+            <Text className="consult-selection-header__subtitle">
+              选择行为类型，以便匹配最相似的案例
+            </Text>
+          </View>
+
+          {/* 区块B — 关联档案 */}
+          {profiles.length > 0 && (
+            <View className="consult-selection-profiles">
+              <ScrollView className="consult-selection-profiles__scroll" scrollX>
+                <View className="consult-selection-profiles__list">
                   <Button
-                    className={`consult-modal__profile-btn ${!selectedProfileId ? 'consult-modal__profile-btn--active' : ''}`}
+                    className={`consult-selection-profiles__chip ${!selectedProfileId ? 'consult-selection-profiles__chip--active' : ''}`}
                     onClick={() => setSelectedProfile(undefined)}
                   >
                     不关联
@@ -142,44 +155,50 @@ export default function ConsultIndex() {
                   {profiles.map((p) => (
                     <Button
                       key={p.profile_id}
-                      className={`consult-modal__profile-btn ${selectedProfileId === p.profile_id ? 'consult-modal__profile-btn--active' : ''}`}
+                      className={`consult-selection-profiles__chip ${selectedProfileId === p.profile_id ? 'consult-selection-profiles__chip--active' : ''}`}
                       onClick={() => setSelectedProfile(p.profile_id)}
                     >
                       {p.nickname || '未命名'}
                     </Button>
                   ))}
                 </View>
-              </>
-            )}
-
-            <View className="consult-modal__grid">
-              {BEHAVIOR_OPTIONS.map((opt) => {
-                const selected = (behaviorTypeSelection ?? []).includes(opt.value);
-                return (
-                  <Button
-                    key={opt.value}
-                    className={`consult-modal__option ${selected ? 'consult-modal__option--selected' : ''}`}
-                    onClick={() => toggleType(opt.value)}
-                  >
-                    {selected && (
-                      <View className="consult-modal__check">✓</View>
-                    )}
-                    <Text className="consult-modal__option-icon">{opt.icon}</Text>
-                    <Text className="consult-modal__option-text">{opt.label}</Text>
-                    <Text className="consult-modal__option-desc">{opt.desc}</Text>
-                  </Button>
-                );
-              })}
+              </ScrollView>
             </View>
+          )}
 
-            <Text className="consult-modal__label">情绪等级</Text>
-            <View className="consult-modal__emotion-row">
+          {/* 区块C — 行为类型列表 */}
+          <View className="consult-selection-types">
+            {BEHAVIOR_OPTIONS.map((opt) => {
+              const selected = (behaviorTypeSelection ?? []).includes(opt.value);
+              return (
+                <View
+                  key={opt.value}
+                  className={`consult-selection-type ${selected ? 'consult-selection-type--selected' : ''}`}
+                  onClick={() => toggleType(opt.value)}
+                >
+                  <View className="consult-selection-type__main">
+                    <Text className="consult-selection-type__icon">{opt.icon}</Text>
+                    <View className="consult-selection-type__text">
+                      <Text className="consult-selection-type__label">{opt.label}</Text>
+                      <Text className="consult-selection-type__desc">{opt.desc}</Text>
+                    </View>
+                  </View>
+                  <View className={`consult-selection-type__indicator ${selected ? 'consult-selection-type__indicator--selected' : ''}`} />
+                </View>
+              );
+            })}
+          </View>
+
+          {/* 区块D — 情绪等级 */}
+          <View className="consult-selection-emotion">
+            <Text className="consult-selection-emotion__label">紧急/严重程度</Text>
+            <View className="consult-selection-emotion__row">
               {EMOTION_OPTIONS.map((opt) => {
                 const active = emotionLevel === opt.value;
                 return (
                   <Button
                     key={opt.value}
-                    className={`consult-modal__emotion-btn ${active ? 'consult-modal__emotion-btn--active' : ''}`}
+                    className={`consult-selection-emotion__btn ${active ? 'consult-selection-emotion__btn--active' : ''}`}
                     onClick={() => setEmotionLevel(opt.value)}
                   >
                     {opt.label}
@@ -187,29 +206,44 @@ export default function ConsultIndex() {
                 );
               })}
             </View>
+          </View>
 
-            <Text className="consult-modal__label">描述当前行为表现</Text>
+          {/* 区块E — 补充描述 */}
+          <View className="consult-selection-desc">
+            <Text className="consult-selection-desc__label">补充细节 (可选)</Text>
             <Textarea
-              className="consult-modal__textarea"
+              className="consult-selection-desc__textarea"
               value={inputText}
               onInput={(e) => handleInputChange(e.detail.value)}
-              placeholder="例如：孩子在商场突然捂住耳朵蹲下尖叫..."
+              placeholder="例如：孩子在商场突然捂住耳朵蹲下尖叫，持续了约5分钟…"
               maxlength={2000}
             />
-
-            <View className="consult-modal__actions">
-              <Button
-                className="consult-modal__submit-btn"
-                onClick={submitConsult}
-                disabled={!isInputValid}
-              >
-                获取应急建议
-              </Button>
-              <Button className="consult-modal__skip-btn" onClick={cancelSelection}>
-                以上都不是，直接描述
-              </Button>
-            </View>
           </View>
+
+          <View className="consult-selection-scroll__spacer" />
+        </ScrollView>
+
+        {/* 区块F — 底部操作栏 */}
+        <View className="consult-selection-footer">
+          <Button
+            className="consult-selection-footer__submit"
+            onClick={submitConsult}
+            disabled={!isInputValid}
+          >
+            获取应急建议
+          </Button>
+          <Button
+            className="consult-selection-footer__skip"
+            onClick={() => {
+              const hasOther = (behaviorTypeSelection ?? []).includes('OTHER');
+              if (!hasOther) {
+                setBehaviorTypes([...(behaviorTypeSelection ?? []), 'OTHER']);
+              }
+              submitConsult();
+            }}
+          >
+            直接描述，不选择分类
+          </Button>
         </View>
       </View>
     );
