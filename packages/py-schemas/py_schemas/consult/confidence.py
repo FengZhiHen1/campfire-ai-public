@@ -1,3 +1,4 @@
+# @contract
 """CSLT-05 置信度后校验 — Pydantic Schema 定义。
 
 提供置信度校验的输入/输出模型、判定枚举和 LLM 自评估结果模型。

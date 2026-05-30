@@ -1,3 +1,4 @@
+# @contract
 """CASE-01 案例录入管理 — 枚举定义。
 
 所有枚举值与 docs/contracts/CASE-01/ 下的 JSON Schema 契约一致。

@@ -1,3 +1,4 @@
+# @contract
 """CASE-01 案例录入管理 — Pydantic Schema 定义。
 
 对外接口的类型定义必须与 docs/contracts/CASE-01/ 下的 JSON 契约一致。

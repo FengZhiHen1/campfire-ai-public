@@ -1,3 +1,4 @@
+# @contract
 """用户认证与授权 — Pydantic Schema 定义。
 
 提供全平台共享的 UserRole 枚举（含 level/display_name 属性）、

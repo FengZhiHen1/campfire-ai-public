@@ -1,3 +1,4 @@
+# @contract
 """CSLT-02 RAG语义检索 — Pydantic Schema 定义。
 
 提供全平台共享的检索输入/输出模型和枚举定义。

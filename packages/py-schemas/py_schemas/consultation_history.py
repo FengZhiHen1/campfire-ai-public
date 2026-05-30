@@ -1,3 +1,4 @@
+# @contract
 """CSLT-06 咨询历史管理 — Pydantic Schema 定义。
 
 提供咨询历史归档写入和查询输出的输入/输出模型。

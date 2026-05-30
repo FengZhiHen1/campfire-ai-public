@@ -1,3 +1,4 @@
+# @contract
 """CSLT-04 流式应答推送 — Pydantic 数据模型定义。
 
 提供 SSE 事件载荷的 Pydantic 模型和流式推送相关枚举。

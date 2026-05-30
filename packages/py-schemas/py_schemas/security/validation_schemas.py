@@ -1,3 +1,4 @@
+# @contract
 """SEC-05 输入校验防护 — Pydantic v2 数据模型。
 
 本模块定义输入校验防护所需的全部 Pydantic v2 数据模型，

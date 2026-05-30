@@ -1,3 +1,4 @@
+# @contract
 """PROF-05 档案隐私控制 + PROF-01 个人档案管理 + PROF-03 事件记录管理 — Pydantic Schema 定义。
 
 PROF-05 部分：提供档案操作类型枚举、可见范围枚举、访问请求和裁决模型。

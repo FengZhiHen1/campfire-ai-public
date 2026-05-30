@@ -1,3 +1,4 @@
+# @contract
 """L1 原始叙事层 — Pydantic 数据模型。
 
 Narratives 是案例系统的第一层：原始干预故事的通用化叙事。

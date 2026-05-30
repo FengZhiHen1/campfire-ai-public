@@ -1,3 +1,4 @@
+# @contract
 """MVP Phase 1: 应急咨询触发端点 Schema。
 
 提供 POST /api/v1/consult 的输入/输出模型。

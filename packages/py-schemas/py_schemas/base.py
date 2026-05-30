@@ -1,3 +1,4 @@
+# @contract
 """py-schemas 共享基类。
 
 提供 CampfireBaseModel —— 全平台 Pydantic 模型的统一基类，
