@@ -1,7 +1,12 @@
 /* 全局样式 */
-*,
-*::before,
-*::after {
+view,
+text,
+button,
+input,
+textarea,
+scroll-view,
+image,
+navigator {
   box-sizing: border-box;
 }
 
