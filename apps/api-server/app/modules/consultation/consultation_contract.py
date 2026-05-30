@@ -87,7 +87,7 @@ class BaseConsultationOrchestrator(ABC):
         )
 
         # 步骤 1：加载档案
-        profile_summary = self._do_load_profile(
+        profile_summary = await self._do_load_profile(
             profile_id=profile_id,
             db=db,
         )
@@ -139,7 +139,7 @@ class BaseConsultationOrchestrator(ABC):
     # ==========================================================================
 
     @abstractmethod
-    def _do_load_profile(
+    async def _do_load_profile(
         self,
         profile_id: str | None,
         db: AsyncSession,
