@@ -179,3 +179,15 @@ export interface CaseReviewResponse {
   reviewer_id: string;
   reviewed_at: string;  // ISO 8601 datetime
 }
+
+/** 待审核队列条目 */
+export interface ReviewQueueItem {
+  case_id: string;
+  title: string;
+  author_name: string;
+  behavior_type: string;
+  submitted_at: string;       // ISO 8601 datetime
+  ai_review_overall: string;  // pass | hard_block | annotated
+  deadline: string;           // ISO 8601 datetime
+  timeout_status: 'normal' | 'warning' | 'overdue';
+}
