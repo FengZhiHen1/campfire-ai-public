@@ -7,6 +7,17 @@
  * - 列表采用 SWR 策略（先返回缓存，后台刷新）
  * - 禁止在 useEffect 中自动调用 fetchProfiles()
  * - 禁止直接操作 DOM 或调用 Taro.navigateTo()
+ *
+ * 数据来源:
+ *   - useAuth: MUST — 认证状态校验
+ *   - profileStore: MUST — 档案列表/详情/错误缓存
+ *   - profileApi: MUST — 档案 CRUD HTTP 接口
+ * 边界:
+ *   - 依赖: ../store/profileStore, ../services/profileApi, ../../shared/hooks/useAuth
+ *   - 被依赖: PROF-06 views/profiles/
+ * 禁止行为:
+ *   - 禁止在 useEffect 中自动触发 fetchProfiles()
+ *   - 禁止直接 import views/ 下的任何文件
  */
 
 import { useCallback, useMemo } from 'react';
@@ -17,10 +28,12 @@ import {
   AuthRequiredError,
   NetworkError,
   ServerError,
-  type UseProfileReturn,
-  type ProfileCreate,
-  type ProfileUpdate,
-  type ProfileResponse,
+} from '../types';
+import type {
+  UseProfileReturn,
+  ProfileCreate,
+  ProfileUpdate,
+  ProfileResponse,
 } from '../types';
 
 // ============================================================================
@@ -40,6 +53,18 @@ function classifyError(err: unknown, fallback: Error): Error {
   return fallback;
 }
 
+/**
+ * Fire-and-forget 缓存失效通知。
+ * PROF-02 未就绪时 404 为预期行为，静默忽略。
+ */
+async function invalidateCacheSafe(profileId: string): Promise<void> {
+  try {
+    await profileApi.invalidateCache(profileId, ['all']);
+  } catch (e: unknown) {
+    console.warn('[PROF-07] invalidate cache failed, PROF-02 may not be ready', e);
+  }
+}
+
 // ============================================================================
 // useProfile Hook
 // ============================================================================
@@ -47,7 +72,6 @@ function classifyError(err: unknown, fallback: Error): Error {
 export function useProfile(): UseProfileReturn {
   const { sessionState } = useAuth();
 
-  // 订阅 Store（选择器优化：仅订阅需要的字段，减少不必要的 re-render）
   const profiles = useProfileStore((s) => s.list);
   const listState = useProfileStore((s) => s.listState);
   const error = useProfileStore((s) => s.error);
@@ -59,7 +83,6 @@ export function useProfile(): UseProfileReturn {
   // ==========================================================================
 
   const fetchProfiles = useCallback(async (): Promise<void> => {
-    // 步骤 1.1：认证状态前置校验
     if (sessionState !== 'authenticated') {
       const err = new AuthRequiredError('请先登录');
       useProfileStore.getState().setError(err);
@@ -67,7 +90,6 @@ export function useProfile(): UseProfileReturn {
       throw err;
     }
 
-    // 步骤 1.2：幂等保护
     const store = useProfileStore.getState();
     if (store.listState === 'loading') {
       return;
@@ -77,13 +99,10 @@ export function useProfile(): UseProfileReturn {
     store.clearError();
 
     try {
-      // 步骤 1.3：HTTP 请求
       const data = await profileApi.listProfiles();
-      // 步骤 1.5：更新缓存
       useProfileStore.getState().setList(data);
       useProfileStore.getState().setListState('ready');
     } catch (err: unknown) {
-      // 步骤 1.4：失败处理
       const httpErr = err as { statusCode?: number };
       const store2 = useProfileStore.getState();
 
@@ -131,29 +150,23 @@ export function useProfile(): UseProfileReturn {
     store.setSubmitState('submitting');
 
     try {
-      // 步骤 2.2 + 2.3
       const response = await profileApi.createProfile(data);
 
-      // 步骤 2.3：更新 Store + 通知
       store.addToList(response);
       store.setListState('ready');
       store.setSubmitState('idle');
       store.notifyChangeListeners(response.profile_id);
 
-      // fire-and-forget 缓存失效
       invalidateCacheSafe(response.profile_id);
 
       return response;
     } catch (err: unknown) {
-      // 步骤 2.4：失败处理
       const httpErr = err as { statusCode?: number; data?: { detail?: Record<string, string> } };
 
       if (httpErr.statusCode === 422) {
         store.setSubmitState('idle');
-        // 422 详情由 views 层通过 httpClient 的错误响应解析
       } else if (httpErr.statusCode === 409) {
         store.setSubmitState('idle');
-        // 409 由 views 层根据错误消息判断 ProfileLimitExceeded vs ProfileConflict
       } else {
         store.setSubmitState('error');
       }
@@ -185,7 +198,6 @@ export function useProfile(): UseProfileReturn {
     try {
       const response = await profileApi.updateProfile(profileId, data);
 
-      // 更新列表缓存中的对应条目
       store.updateInList(profileId, {
         nickname: response.nickname,
         age_range: response.age_range,
@@ -196,7 +208,6 @@ export function useProfile(): UseProfileReturn {
       store.setCurrentDetail(response);
       store.setSubmitState('idle');
 
-      // 步骤 4.3：变更通知
       store.notifyChangeListeners(profileId);
       invalidateCacheSafe(profileId);
 
@@ -235,7 +246,6 @@ export function useProfile(): UseProfileReturn {
 
       store.removeFromList(profileId);
 
-      // 若删除的是默认档案且列表非空，将第一个设为默认
       if (wasDefault) {
         const remaining = useProfileStore.getState().list;
         if (remaining.length > 0) {
@@ -248,7 +258,6 @@ export function useProfile(): UseProfileReturn {
         }
       }
 
-      // 变更通知
       store.notifyChangeListeners(profileId);
       invalidateCacheSafe(profileId);
     } catch (err: unknown) {
@@ -269,7 +278,6 @@ export function useProfile(): UseProfileReturn {
       throw new AuthRequiredError('请先登录');
     }
 
-    // 幂等：已经是默认
     const store = useProfileStore.getState();
     const current = store.list.find((p) => p.profile_id === profileId);
     if (current?.is_default) {
@@ -279,14 +287,12 @@ export function useProfile(): UseProfileReturn {
     try {
       await profileApi.setDefaultProfile(profileId);
 
-      // 更新列表：新默认 true，旧默认 false
       const updatedList = store.list.map((p) => ({
         ...p,
         is_default: p.profile_id === profileId,
       }));
       useProfileStore.getState().setList(updatedList);
 
-      // 变更通知
       store.notifyChangeListeners(profileId);
       invalidateCacheSafe(profileId);
     } catch (err: unknown) {
@@ -316,16 +322,4 @@ export function useProfile(): UseProfileReturn {
     }),
     [profiles, isLoading, error, fetchProfiles, getProfile, createProfile, updateProfile, deleteProfile, setDefault],
   );
-}
-
-// ============================================================================
-// 内部工具：fire-and-forget 缓存失效
-// ============================================================================
-
-async function invalidateCacheSafe(profileId: string): Promise<void> {
-  try {
-    await profileApi.invalidateCache(profileId, ['all']);
-  } catch (e: unknown) {
-    console.warn('[PROF-07] invalidate cache failed, PROF-02 may not be ready', e);
-  }
 }

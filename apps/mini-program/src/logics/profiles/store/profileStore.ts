@@ -1,8 +1,18 @@
 /**
  * PROF-07 Zustand ProfileStore — 档案数据状态管理
  *
- * 管理：档案列表缓存、详情缓存、加载/提交状态、微问卷状态、变更监听器。
+ * 管理：档案列表缓存、详情缓存、加载/提交状态、变更监听器。
  * 会话级缓存（页面关闭即清空），不持久化到 Taro Storage。
+ *
+ * 数据来源:
+ *   - profileApi: MUST — HTTP 响应数据
+ *   - useAuth.sessionState: MUST — 认证状态校验
+ * 边界:
+ *   - 依赖: ../types, ../services/profileApi
+ *   - 被依赖: hooks/useProfile.ts, coordination/profileCoordination.ts
+ * 禁止行为:
+ *   - 禁止在 Store 中发起 HTTP 请求——那是 API 层和 Hook 层的职责
+ *   - 禁止持久化到 localStorage——档案数据为会话级缓存
  */
 
 import { create } from 'zustand';
@@ -10,36 +20,10 @@ import type {
   ProfileListItem,
   ProfileResponse,
 } from '../types';
-
-import {
-  type ProfileListState,
-  type ProfileSubmitState,
-  type MicroSurveyState,
-  type MicroSurveyQuestion,
-} from '../types';
+import type { ProfileListState, ProfileSubmitState } from '../types';
 
 // ============================================================================
-// 微问卷题目常量
-// ============================================================================
-
-const INTERVENTION_FEEDBACK_OPTIONS: string[] = ['有帮助', '一般', '无帮助'];
-
-const DEFAULT_QUESTIONS: MicroSurveyQuestion[] = [
-  {
-    id: 'trigger',
-    text: '本次触发了什么因素？',
-    type: 'single-choice-with-custom',
-  },
-  {
-    id: 'effectiveness',
-    text: '刚才的建议是否有帮助？',
-    type: 'single-choice',
-    options: INTERVENTION_FEEDBACK_OPTIONS,
-  },
-];
-
-// ============================================================================
-// 变更监听器类型
+// 变更监听器
 // ============================================================================
 
 type ChangeListener = (profileId: string) => void;
@@ -49,26 +33,17 @@ type ChangeListener = (profileId: string) => void;
 // ============================================================================
 
 export interface ProfileStoreState {
-  // 档案列表
+  /** 档案列表 */
   list: ProfileListItem[];
+  /** 列表加载状态 */
   listState: ProfileListState;
-
-  // 当前查看的档案详情（会话级缓存）
+  /** 当前查看的档案详情（会话级缓存） */
   currentDetail: ProfileResponse | null;
-
-  // 最近错误
+  /** 最近错误 */
   error: Error | null;
-
-  // 提交状态
+  /** 提交状态 */
   submitState: ProfileSubmitState;
-
-  // 微问卷
-  microSurvey: {
-    state: MicroSurveyState;
-    questions: MicroSurveyQuestion[];
-  };
-
-  // 变更监听器（模块作用域，不通过 React 订阅）
+  /** 变更监听器（不通过 React 订阅，仅通过 getState() 操作） */
   changeListeners: Set<ChangeListener>;
 }
 
@@ -90,10 +65,6 @@ export interface ProfileStoreActions {
   // 提交
   setSubmitState: (state: ProfileSubmitState) => void;
 
-  // 微问卷
-  setMicroSurveyState: (state: MicroSurveyState) => void;
-  setMicroSurveyQuestions: (questions: MicroSurveyQuestion[]) => void;
-
   // 变更监听器
   addChangeListener: (listener: ChangeListener) => void;
   removeChangeListener: (listener: ChangeListener) => void;
@@ -113,10 +84,6 @@ export const useProfileStore = create<ProfileStore>()((set, get) => ({
   currentDetail: null,
   error: null,
   submitState: 'idle',
-  microSurvey: {
-    state: 'hidden',
-    questions: DEFAULT_QUESTIONS,
-  },
   changeListeners: new Set<ChangeListener>(),
 
   // --- 列表操作 ---
@@ -177,20 +144,6 @@ export const useProfileStore = create<ProfileStore>()((set, get) => ({
 
   setSubmitState: (submitState: ProfileSubmitState): void => {
     set({ submitState });
-  },
-
-  // --- 微问卷 ---
-
-  setMicroSurveyState: (state: MicroSurveyState): void => {
-    set((prev) => ({
-      microSurvey: { ...prev.microSurvey, state },
-    }));
-  },
-
-  setMicroSurveyQuestions: (questions: MicroSurveyQuestion[]): void => {
-    set((prev) => ({
-      microSurvey: { ...prev.microSurvey, questions },
-    }));
   },
 
   // --- 变更监听器 ---
