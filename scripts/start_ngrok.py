@@ -19,6 +19,7 @@ import urllib.request
 import urllib.error
 
 from launcher_contract import ServiceLauncher
+from utils.logger import logger
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 NGROK_URL_FILE = PROJECT_ROOT / ".ngrok-url"
@@ -87,6 +88,8 @@ class NgrokLauncher(ServiceLauncher):
                 creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0,
             )
         except OSError as exc:
+            logger.error(service="scripts", message=f"无法启动 ngrok: {exc}",
+                         op_type="ngrok_start")
             raise RuntimeError(f"无法启动 ngrok: {exc}") from exc
 
         self._url = self._poll_for_url(proc)
@@ -107,6 +110,8 @@ class NgrokLauncher(ServiceLauncher):
                 hint = ""
                 if "authtoken" in out.lower() or "forbidden" in out.lower():
                     hint = " 请先配置 authtoken: ngrok config add-authtoken <token>"
+                logger.error(service="scripts", message="ngrok 进程意外退出",
+                             op_type="ngrok_start", extra={"exit_code": proc.returncode})
                 raise RuntimeError(
                     f"ngrok 进程意外退出 (exit code: {proc.returncode})。{hint}\n"
                     f"输出: {out.strip()[:800]}"
@@ -125,6 +130,7 @@ class NgrokLauncher(ServiceLauncher):
         out = self._read_process_output(proc)
         proc.kill()
         proc.wait()
+        logger.error(service="scripts", message="ngrok 隧道获取超时", op_type="ngrok_start")
         raise RuntimeError(
             "ngrok 隧道获取超时（15s）。请检查网络连接或 ngrok 服务状态。\n"
             f"输出: {out.strip()[:800]}"
