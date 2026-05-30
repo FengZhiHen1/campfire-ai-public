@@ -4,8 +4,21 @@
   "description": "Campfire-AI shared TypeScript types and enums",
   "main": "src/index.ts",
   "types": "src/index.ts",
-  "scripts": {},
+  "exports": {
+    ".": "./src/index.ts",
+    "./cases": "./src/cases/index.ts",
+    "./profiles": "./src/profiles/index.ts",
+    "./common": "./src/common/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
   "keywords": [],
   "author": "",
-  "license": "ISC"
+  "license": "ISC",
+  "devDependencies": {
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.7"
+  }
 }
