@@ -1,16 +1,23 @@
-"""CSLT-02/03/04/08 应急咨询编排 — consult_service。
+"""CSLT-02/08 应急咨询编排 — consult_service。
 
-MVP Phase 1 精简版：
-- search_cases() — 语义检索（保留）
-- start_consultation() — 端到端咨询触发编排（新增）
-
-编排流程：
-  档案标签读取 → RAG 检索 → Prompt 构建 → LLM 流式生成 → SSE 注册 → 返回 session_id
+模块: app.modules.consultation.consult_service
+职责: 应急咨询编排实现。ConsultationOrchestratorImpl 继承 BaseConsultationOrchestrator ABC，
+      @final 公共入口 start_consultation/search_cases 强制执行前置→执行→后置三步流程。
+      模块级便捷函数委托给单例实例，保持 routes.py 的导入兼容。
+数据来源:
+  - py_rag.hybrid_search: MUST — RAG 语义检索引擎
+  - app.modules.crisis: MUST — 危机分级判定
+  - app.core.streaming.SseStreamingService: MUST — SSE 流式推送
+边界:
+  - 依赖: py_rag, py_logger, py_schemas, app.modules.crisis, app.core.streaming
+  - 被依赖: routes.py
+禁止行为:
+  - 禁止在 _do_ 钩子中调用 super()
+  - 禁止绕过 @final 方法直接调用 _do_ 钩子
 """
 
 from __future__ import annotations
 
-import logging
 import uuid
 from typing import Any
 
@@ -33,64 +40,203 @@ from app.modules.crisis.models import (
 )
 from app.modules.consultation.plan_generation.models import (
     EmergencyPlanInput,
-    GenerationChunk,
 )
 from app.modules.consultation.plan_generation.prompt_builder import PromptBuilder
 from app.modules.consultation.plan_generation.streaming import stream_generate
 from app.core.streaming.sse_service import SseStreamingService
 
-_logger = logging.getLogger(__name__)
-
-# ---------------------------------------------------------------------------
-# 公开接口
-# ---------------------------------------------------------------------------
+from .consultation_contract import BaseConsultationOrchestrator
+from .types import BehaviorDescription, ProfileSummary, RequestId, SessionId
 
 
-async def search_cases(
-    request: SemanticSearchInput,
-    db: AsyncSession,
-) -> SemanticSearchResult:
-    """RAG 语义检索用例编排。（保留原有实现）"""
-    if request is None:
-        raise ValueError("request must not be None")
-    if db is None:
-        raise ValueError("db must not be None")
+# ============================================================================
+# ConsultationOrchestratorImpl — 实现 BaseConsultationOrchestrator ABC
+# ============================================================================
 
-    query_text: str = request.query_text
-    top_k: int = request.top_k
-    request_id: str | None = request.request_id
 
-    logger.info(
-        service="api-server",
-        message="search_cases_started",
-        op_type=None,
-        extra={
-            "request_id": request_id,
-            "query_len": len(query_text),
-            "top_k": top_k,
-        },
-    )
+class ConsultationOrchestratorImpl(BaseConsultationOrchestrator):
+    """应急咨询编排实现。继承 BaseConsultationOrchestrator ABC，仅覆写 _do_ 钩子。"""
 
-    result: SemanticSearchResult = await hybrid_search(
-        query_text=query_text,
-        top_k=top_k,
-        request_id=request_id,
-        db=db,
-    )
+    # ========================================================================
+    # _do_ 钩子
+    # ========================================================================
 
-    logger.info(
-        service="api-server",
-        message="search_cases_done",
-        op_type=None,
-        extra={
-            "result_count": result.total_count,
-            "is_complete": result.is_complete,
-            "reason": result.reason,
-            "elapsed_ms": result.elapsed_ms,
-        },
-    )
+    def _do_load_profile(
+        self,
+        profile_id: str | None,
+        db: AsyncSession,
+    ) -> ProfileSummary:
+        if not profile_id:
+            return ProfileSummary("（未关联档案）")
+        # TODO: 档案关联逻辑待调试通过后恢复
+        return ProfileSummary("（未关联档案）")
 
-    return result
+    async def _do_search_cases(
+        self,
+        query_text: str,
+        behavior_type: list[str] | None,
+        emotion_level: str | None,
+        request_id: RequestId,
+        db: AsyncSession,
+    ) -> Any:
+        tag_filters = _build_default_tag_filters(behavior_type, emotion_level)
+
+        search_input = SemanticSearchInput(
+            query_text=query_text,
+            tag_filters=tag_filters,
+            top_k=10,
+            request_id=str(request_id),
+        )
+
+        logger.info(
+            service="api-server",
+            message="search_cases_started",
+            op_type=None,
+            extra={"request_id": str(request_id), "query_len": len(query_text), "top_k": 10},
+        )
+
+        result: SemanticSearchResult = await hybrid_search(
+            query_text=query_text,
+            top_k=10,
+            request_id=str(request_id),
+            db=db,
+        )
+
+        logger.info(
+            service="api-server",
+            message="search_cases_done",
+            op_type=None,
+            extra={
+                "result_count": result.total_count,
+                "is_complete": result.is_complete,
+                "reason": result.reason,
+                "elapsed_ms": result.elapsed_ms,
+            },
+        )
+        return result
+
+    async def _do_judge_crisis(
+        self,
+        behavior_description: str,
+        behavior_type: list[str] | None,
+        profile_summary: ProfileSummary,
+    ) -> Any:
+        try:
+            from app.modules.crisis import judge_crisis
+
+            behavior_type_selection: list[BehaviorTypeCategory] = []
+            if behavior_type:
+                for bt in behavior_type:
+                    try:
+                        behavior_type_selection.append(BehaviorTypeCategory(bt))
+                    except ValueError:
+                        logger.warning("invalid_behavior_type", extra={"value": bt})
+
+            if not behavior_type_selection:
+                behavior_type_selection = [BehaviorTypeCategory.OTHER]
+
+            crisis_request = CrisisJudgmentRequest(
+                patient_profile=None,
+                behavior_type_selection=behavior_type_selection,
+                behavior_description=behavior_description,
+            )
+            return await judge_crisis(crisis_request)
+        except Exception:
+            logger.exception("crisis_judgment_failed_fallback_to_mild")
+            return CrisisJudgmentResult(
+                final_level=CrisisLevel.MILD,
+                block_deep_response=False,
+                judgment_sources=[
+                    JudgmentLayerResult(layer_name="Fallback", level=CrisisLevel.MILD)
+                ],
+                degradation_note="crisis_judgment_failed",
+            )
+
+    def _do_build_plan_input(
+        self,
+        behavior_description: BehaviorDescription,
+        profile_summary: ProfileSummary,
+        search_result: Any,
+        crisis_result: Any,
+        request_id: RequestId,
+    ) -> Any:
+        return EmergencyPlanInput(
+            crisis_result=crisis_result,
+            search_result=search_result,
+            profile_summary=str(profile_summary),
+            behavior_description=str(behavior_description),
+            request_id=str(request_id),
+        )
+
+    def _do_generate_stream(self, plan_input: Any) -> Any:
+        builder = PromptBuilder()
+        messages, ctx = builder.build(plan_input)
+        return stream_generate(
+            input_data=plan_input,
+            messages=messages,
+            prenumbered_slices=ctx.prenumbered_slices,
+        )
+
+    def _do_register_sse(
+        self,
+        session_id: SessionId,
+        generator: Any,
+        plan_input: Any,
+        search_result: Any,
+        crisis_result: Any,
+        behavior_description: str,
+        request_id: RequestId,
+    ) -> None:
+        builder = PromptBuilder()
+        _messages, ctx = builder.build(plan_input)
+
+        streaming_service = SseStreamingService()
+        streaming_service.register_generator(str(session_id), generator)
+        streaming_service.store_generation_meta(
+            session_id=str(session_id),
+            prenumbered_slices={num: sid for num, sid in ctx.prenumbered_slices},
+            crisis_level=crisis_result.final_level.value,
+            block_deep_response=crisis_result.block_deep_response,
+            behavior_description=behavior_description,
+            request_id=str(request_id),
+            search_result=search_result,
+            plan_input=plan_input,
+        )
+
+    async def _do_execute_search(self, request: Any, db: AsyncSession) -> Any:
+        logger.info(
+            service="api-server",
+            message="search_cases_started",
+            op_type=None,
+            extra={"request_id": request.request_id, "query_len": len(request.query_text), "top_k": request.top_k},
+        )
+
+        result: SemanticSearchResult = await hybrid_search(
+            query_text=request.query_text,
+            top_k=request.top_k,
+            request_id=request.request_id,
+            db=db,
+        )
+
+        logger.info(
+            service="api-server",
+            message="search_cases_done",
+            op_type=None,
+            extra={
+                "result_count": result.total_count,
+                "is_complete": result.is_complete,
+                "reason": result.reason,
+                "elapsed_ms": result.elapsed_ms,
+            },
+        )
+        return result
+
+
+# ============================================================================
+# 模块级单例 + 便捷函数（routes.py 导入入口）
+# ============================================================================
+
+_orchestrator = ConsultationOrchestratorImpl()
 
 
 async def start_consultation(
@@ -101,135 +247,35 @@ async def start_consultation(
     user_id: str,
     db: AsyncSession,
 ) -> str:
-    """启动一次完整的应急咨询流程，返回 SSE session_id。
-
-    编排步骤：
-    1. 若提供 profile_id，读取档案并提取标签构建 TagFilterDto
-    2. 调用 hybrid_search 执行 RAG 检索
-    3. 构建 EmergencyPlanInput（MVP 跳过危机分级，使用默认 mild）
-    4. PromptBuilder 组装 messages
-    5. stream_generate 产出 AsyncGenerator
-    6. 注册 generator 到 SseStreamingService
-    7. 返回 session_id
-
-    Args:
-        behavior_description: 家属输入的行为描述。
-        profile_id: 关联档案 ID（可选）。
-        behavior_type: 前置行为类型（可选）。
-        emotion_level: 情绪等级（可选）。
-        user_id: 当前匿名用户 UUID 字符串。
-        db: 数据库异步会话。
-
-    Returns:
-        str: SSE 会话标识符，格式 stream-{uuid4}。
-    """
-    request_id = str(uuid.uuid4())
-    session_id = f"stream-{uuid.uuid4()}"
-
-    # ------------------------------------------------------------------
-    # 步骤 1：读取档案并构建标签过滤条件
-    # ------------------------------------------------------------------
-    tag_filters: TagFilterDto
-    profile_summary: str = "（未关联档案）"
-
-    # TODO: 档案关联逻辑暂时关闭，待调试通过后恢复
-    # if profile_id:
-    #     ...
-    patient_profile = None
-    tag_filters = _build_default_tag_filters(behavior_type, emotion_level)
-
-    _logger.info(
-        "consultation_started",
-        extra={
-            "request_id": request_id,
-            "session_id": session_id,
-            "user_id": user_id,
-            "profile_id": profile_id,
-            "has_profile": profile_id is not None,
-        },
-    )
-
-    # ------------------------------------------------------------------
-    # 步骤 2：RAG 语义检索
-    # ------------------------------------------------------------------
-    search_input = SemanticSearchInput(
-        query_text=behavior_description,
-        tag_filters=tag_filters,
-        top_k=10,
-        request_id=request_id,
-    )
-    search_result: SemanticSearchResult = await search_cases(search_input, db)
-
-    # ------------------------------------------------------------------
-    # 步骤 3：危机分级判定
-    # ------------------------------------------------------------------
-    crisis_result = await _run_crisis_judgment(
+    """启动应急咨询（委托给 ConsultationOrchestratorImpl ABC 单例）。"""
+    result = _orchestrator.start_consultation(
         behavior_description=behavior_description,
+        profile_id=profile_id,
         behavior_type=behavior_type,
-        patient_profile=patient_profile,
+        emotion_level=emotion_level,
+        user_id=user_id,
+        db=db,
     )
-
-    plan_input = EmergencyPlanInput(
-        crisis_result=crisis_result,
-        search_result=search_result,
-        profile_summary=profile_summary,
-        behavior_description=behavior_description,
-        request_id=request_id,
-    )
-
-    # ------------------------------------------------------------------
-    # 步骤 4：Prompt 构建
-    # ------------------------------------------------------------------
-    builder = PromptBuilder()
-    messages, ctx = builder.build(plan_input)
-
-    # ------------------------------------------------------------------
-    # 步骤 5：流式生成器 + SSE 注册
-    # ------------------------------------------------------------------
-    generator = stream_generate(
-        input_data=plan_input,
-        messages=messages,
-        prenumbered_slices=ctx.prenumbered_slices,
-    )
-
-    streaming_service = SseStreamingService()
-    streaming_service.register_generator(session_id, generator)
-
-    # 存储生成元数据供 SSE DoneEvent 使用
-    streaming_service.store_generation_meta(
-        session_id=session_id,
-        prenumbered_slices={
-            num: sid for num, sid in ctx.prenumbered_slices
-        },
-        crisis_level=crisis_result.final_level.value,
-        block_deep_response=crisis_result.block_deep_response,
-        behavior_description=behavior_description,
-        request_id=request_id,
-        search_result=search_result,
-        plan_input=plan_input,
-    )
-
-    _logger.info(
-        "consultation_generator_registered",
-        extra={
-            "request_id": request_id,
-            "session_id": session_id,
-        },
-    )
-
-    return session_id
+    return str(result)
 
 
-# ---------------------------------------------------------------------------
+async def search_cases(
+    request: SemanticSearchInput,
+    db: AsyncSession,
+) -> SemanticSearchResult:
+    """语义检索（委托给 ConsultationOrchestratorImpl ABC 单例）。"""
+    return await _orchestrator.search_cases(request=request, db=db)
+
+
+# ============================================================================
 # 内部辅助
-# ---------------------------------------------------------------------------
+# ============================================================================
 
 
 def _build_default_tag_filters(
     behavior_type: list[str] | None,
     emotion_level: str | None,
 ) -> TagFilterDto:
-    """构建默认标签过滤条件（无档案时）。"""
     primary_behavior = behavior_type[0] if behavior_type else "OTHER"
     return TagFilterDto(
         age_range="未知年龄段",
@@ -238,130 +284,8 @@ def _build_default_tag_filters(
     )
 
 
-def _map_age_to_range(birth_date: Any) -> str:
-    """根据出生日期映射为年龄段字符串（简化版）。"""
-    if not birth_date:
-        return "未知年龄段"
-    from datetime import date
-
-    age = (date.today() - birth_date).days // 365
-    if age < 3:
-        return "婴幼儿(0-2岁)"
-    elif age < 6:
-        return "学龄前(3-5岁)"
-    elif age < 13:
-        return "学龄儿童(6-12岁)"
-    elif age < 18:
-        return "青少年(13-17岁)"
-    else:
-        return "成年(18岁+)"
-
-
-def _extract_behavior_tags(profile: Any) -> list[str]:
-    """从 Profile ORM 对象提取历史行为标签列表。"""
-    tags: list[str] = []
-    if hasattr(profile, "primary_behavior") and profile.primary_behavior:
-        tags.append(profile.primary_behavior)
-    if hasattr(profile, "sensory_features") and profile.sensory_features:
-        for sf in profile.sensory_features:
-            if isinstance(sf, str):
-                tags.append(sf)
-    return tags
-
-
-async def _inject_event_history(
-    db: Any,
-    profile_id: str,
-    behavior_type: str | None,
-    profile_summary: str,
-) -> str:
-    """查询患者近期事件日志，追加到档案摘要末尾。
-
-    Args:
-        db: 数据库会话。
-        profile_id: 档案 UUID 字符串。
-        behavior_type: 当前咨询的行为类型（可选，用于筛选同类事件）。
-        profile_summary: 当前已构建的档案摘要 Markdown。
-
-    Returns:
-        追加了事件历史的档案摘要字符串。
-    """
-    import uuid as _uuid
-    from py_db.repositories.event_repository import EventRepository
-
-    try:
-        pid = _uuid.UUID(profile_id)
-    except (ValueError, TypeError):
-        return profile_summary
-
-    event_repo = EventRepository()
-    events = await event_repo.list_recent_by_profile(
-        session=db,
-        profile_id=pid,
-        limit=5,
-        behavior_type=behavior_type,
-        days=30,
-    )
-
-    if not events:
-        return profile_summary
-
-    lines: list[str] = ["\n## 近期相关事件"]
-    for i, evt in enumerate(events, 1):
-        date_str = evt.event_time.strftime("%Y-%m-%d") if evt.event_time else "未知日期"
-        setting = evt.setting or "未知场景"
-        manifest = (evt.manifestation or "")[:80]
-        intervention = (evt.intervention_tried or "")[:80]
-        result = (evt.intervention_result or "")[:60]
-        prof_mark = "（老师评估）" if evt.is_professional else "（家属记录）"
-
-        lines.append(
-            f"{i}. [{date_str} {setting}] {manifest}。"
-            f"尝试：{intervention}。结果：{result}。{prof_mark}"
-        )
-
-    return profile_summary + "\n" + "\n".join(lines)
-
-
-async def _run_crisis_judgment(
-    behavior_description: str,
-    behavior_type: list[str] | None,
-    patient_profile: PatientProfileSnapshot | None,
-) -> CrisisJudgmentResult:
-    """执行危机分级判定，失败时 fallback 到 mild。"""
-    try:
-        from app.modules.crisis import judge_crisis
-
-        behavior_type_selection: list[BehaviorTypeCategory] = []
-        if behavior_type:
-            for bt in behavior_type:
-                try:
-                    behavior_type_selection.append(BehaviorTypeCategory(bt))
-                except ValueError:
-                    _logger.warning("invalid_behavior_type", extra={"value": bt})
-
-        if not behavior_type_selection:
-            behavior_type_selection = [BehaviorTypeCategory.OTHER]
-
-        crisis_request = CrisisJudgmentRequest(
-            patient_profile=patient_profile,
-            behavior_type_selection=behavior_type_selection,
-            behavior_description=behavior_description,
-        )
-        return await judge_crisis(crisis_request)
-    except Exception:
-        _logger.exception("crisis_judgment_failed_fallback_to_mild")
-        return CrisisJudgmentResult(
-            final_level=CrisisLevel.MILD,
-            block_deep_response=False,
-            judgment_sources=[
-                JudgmentLayerResult(
-                    layer_name="Fallback",
-                    level=CrisisLevel.MILD,
-                )
-            ],
-            degradation_note="crisis_judgment_failed",
-        )
-
-
-__all__ = ["search_cases", "start_consultation"]
+__all__ = [
+    "ConsultationOrchestratorImpl",
+    "search_cases",
+    "start_consultation",
+]
