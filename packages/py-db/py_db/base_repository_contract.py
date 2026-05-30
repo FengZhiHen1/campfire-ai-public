@@ -112,7 +112,8 @@ class BaseRepository(ABC, Generic[ModelT]):
             except (OperationalError, SQLAlchemyTimeoutError) as exc:
                 last_exception = exc
                 logger.warning(
-                    "database_operation_failure",
+                    service="py-db",
+                    message="database_operation_failure",
                     extra={
                         "operation": operation_name,
                         "attempt": attempt,

@@ -220,7 +220,7 @@ class TestCaseListItem:
             scene="学校",
             author_id="user-1",
             evidence_level="NCAEP循证实践",
-            age_range="3-6岁",
+            age_range=[3, 6],
             is_template=False,
             created_at=now,
             updated_at=now,

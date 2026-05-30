@@ -31,9 +31,14 @@ def _mock_native_deps(monkeypatch):
 
     # 注入到 sys.modules（惰性 import 会在 sys.modules 中查找）
     sys.modules["magic"] = fake_magic
-    if "py_config.security" not in sys.modules:
-        sys.modules["py_config.security"] = fake_security
+    _prev_security = sys.modules.get("py_config.security")
+    sys.modules["py_config.security"] = fake_security
 
     yield
 
-    # 清理（可选——autouse fixture 会在模块 scope 共享 mock）
+    # 恢复原始模块，避免污染其他测试模块
+    del sys.modules["magic"]
+    if _prev_security is not None:
+        sys.modules["py_config.security"] = _prev_security
+    else:
+        del sys.modules["py_config.security"]
