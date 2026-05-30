@@ -1,7 +1,7 @@
 # ============================================================
 # worker — multi-stage Dockerfile
 # Stage 1: python:3.12 + uv sync (full build environment)
-# Stage 2: python:3.12-slim (minimal runtime: .venv + src only)
+# Stage 2: python:3.12-slim (minimal runtime: .venv only)
 # ============================================================
 
 # Stage 1: Builder
@@ -17,13 +17,13 @@ ENV UV_COMPILE_BYTECODE=1
 # Link venv to a known path
 ENV UV_LINK_MODE=copy
 
-# Copy workspace definition and dependency manifests
-COPY pyproject.toml ./
+# Copy workspace definition, lockfile and dependency manifests
+COPY pyproject.toml uv.lock ./
 COPY packages/ ./packages/
 COPY apps/worker/ ./apps/worker/
 
-# Install dependencies (without dev deps; use --frozen when uv.lock is available)
-RUN uv sync --no-dev --package worker
+# Install dependencies (pinned by uv.lock for reproducible builds)
+RUN uv sync --no-dev --package worker --frozen
 
 # Stage 2: Runtime
 FROM python:3.12-slim
@@ -32,9 +32,6 @@ WORKDIR /app
 
 # Copy virtual environment from builder
 COPY --from=builder /build/.venv /app/.venv
-
-# Copy application source code
-COPY apps/worker/src/worker/ /app/worker/
 
 # Configure runtime environment
 ENV PATH="/app/.venv/bin:$PATH"

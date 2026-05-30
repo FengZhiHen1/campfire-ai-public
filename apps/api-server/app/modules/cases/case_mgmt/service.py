@@ -253,7 +253,8 @@ def _check_edit_reset(case: Case) -> bool:
         old_status: str = case.status.value if hasattr(case.status, "value") else str(case.status)
         case.status = CaseStatus.DRAFT
         logger.info(
-            "edit_reset_status",
+            service="api-server",
+            message="edit_reset_status",
             extra={
                 "case_id": case.case_id,
                 "old_status": old_status,
@@ -352,10 +353,15 @@ class CaseManagementService(CaseManagementContract):
         Raises:
             HTTPException(503): 数据库写入失败。
         """
-        # --- PII 检测（MVP 简化：narrative 为空时跳过） ---
+        # --- PII 检测（narrative 为空时跳过） ---
         narrative_text: str = request.narrative or ""
-        pii_result = self._pii_detector.detect(narrative_text)
-        pii_warnings: list[PiiWarning] = _convert_pii_warnings(pii_result.warnings)
+        if narrative_text.strip():
+            pii_result = self._pii_detector.detect(narrative_text)
+            pii_warnings: list[PiiWarning] = _convert_pii_warnings(pii_result.warnings)
+            has_pii = pii_result.has_pii
+        else:
+            pii_warnings = []
+            has_pii = False
 
         # --- 构建 ORM、生成 case_id、写入数据库 ---
         # MVP 默认值填充
@@ -409,7 +415,8 @@ class CaseManagementService(CaseManagementContract):
         except Exception as exc:
             await session.rollback()
             logger.error(
-                "case_create_failed",
+                service="api-server",
+                message="case_create_failed",
                 extra={
                     "case_id": generated_case_id,
                     "author_id": author_id,
@@ -422,11 +429,12 @@ class CaseManagementService(CaseManagementContract):
             ) from exc
 
         logger.info(
-            "case_created",
+            service="api-server",
+            message="case_created",
             extra={
                 "case_id": created_case.case_id,
                 "author_id": author_id,
-                "has_pii": pii_result.has_pii,
+                "has_pii": has_pii,
             },
         )
 
@@ -481,7 +489,8 @@ class CaseManagementService(CaseManagementContract):
             )
             if existing_case is None:
                 logger.warning(
-                    "case_not_found",
+                    service="api-server",
+                    message="case_not_found",
                     extra={"case_id": case_id, "user_id": user_id},
                 )
                 raise HTTPException(
@@ -491,7 +500,8 @@ class CaseManagementService(CaseManagementContract):
 
             # 乐观锁冲突
             logger.warning(
-                "optimistic_lock_conflict",
+                service="api-server",
+                message="optimistic_lock_conflict",
                 extra={
                     "case_id": case_id,
                     "expected_ts": update.updated_at.isoformat(),
@@ -525,7 +535,8 @@ class CaseManagementService(CaseManagementContract):
         except Exception as exc:
             await session.rollback()
             logger.error(
-                "case_update_failed",
+                service="api-server",
+                message="case_update_failed",
                 extra={"case_id": case_id, "error": str(exc)},
             )
             raise HTTPException(
@@ -578,7 +589,8 @@ class CaseManagementService(CaseManagementContract):
         case: Case | None = await case_repo.find_by_case_id(session, case_id)
         if case is None:
             logger.warning(
-                "case_not_found",
+                service="api-server",
+                message="case_not_found",
                 extra={"case_id": case_id, "user_id": user_id},
             )
             raise HTTPException(
@@ -588,7 +600,8 @@ class CaseManagementService(CaseManagementContract):
 
         if case.status != CaseStatus.DRAFT:
             logger.warning(
-                "submit_invalid_status",
+                service="api-server",
+                message="submit_invalid_status",
                 extra={
                     "case_id": case_id,
                     "current_status": case.status.value if hasattr(case.status, "value") else str(case.status),
@@ -644,7 +657,8 @@ class CaseManagementService(CaseManagementContract):
         except Exception as exc:
             await session.rollback()
             logger.error(
-                "case_submit_failed",
+                service="api-server",
+                message="case_submit_failed",
                 extra={"case_id": case_id, "error": str(exc)},
             )
             raise HTTPException(
@@ -654,7 +668,8 @@ class CaseManagementService(CaseManagementContract):
 
         # --- 审计日志 ---
         logger.info(
-            "case_submitted",
+            service="api-server",
+            message="case_submitted",
             extra={
                 "case_id": case_id,
                 "submitted_by": user_id,
@@ -666,7 +681,8 @@ class CaseManagementService(CaseManagementContract):
 
         if pii_confirmed:
             logger.info(
-                "pii_confirmed",
+                service="api-server",
+                message="pii_confirmed",
                 extra={
                     "case_id": case_id,
                     "confirmed_by": user_id,

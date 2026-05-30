@@ -204,6 +204,7 @@ class AuthServiceImpl(AuthService):
             logger.critical(
                 service="api-server",
                 message="database_insert_failed",
+                op_type="database_error",
                 extra={
                     "username": request.username,
                     "error": str(exc),

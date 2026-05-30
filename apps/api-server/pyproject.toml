@@ -4,8 +4,25 @@ version = "0.1.0"
 description = "Campfire-AI FastAPI API gateway"
 requires-python = ">=3.12"
 dependencies = [
+    # Workspace packages
+    "py-auth",
+    "py-cache",
+    "py-config",
+    "py-db",
+    "py-health",
+    "py-llm",
+    "py-logger",
+    "py-rag",
+    "py-schemas",
+    "py-security",
+    "py-storage",
+    # Third-party
+    "fastapi[standard]>=0.115.0",
+    "minio>=7.0",
     "prometheus-client>=0.20",
     "pyahocorasick>=2.0",
+    "redis>=5.0",
+    "sqlalchemy[asyncio]>=2.0",
     "uvicorn>=0.48.0",
 ]
 

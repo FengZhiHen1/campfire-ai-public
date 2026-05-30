@@ -13,7 +13,7 @@ from py_db.models.case_model import Case
 from py_schemas.cases import CaseUpdate, PiiWarning
 from py_schemas.enums.case_enums import CaseStatus
 
-from app.services.case_service import (
+from app.modules.cases.case_mgmt.service import (
     _apply_update_fields,
     _check_edit_reset,
     _orm_to_case_list_item,
