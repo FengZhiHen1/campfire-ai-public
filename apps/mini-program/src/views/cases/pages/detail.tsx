@@ -90,8 +90,8 @@ export default function CasesDetail() {
             <View className={`detail-overview__status-dot detail-overview__status-dot--${stClass}`} />
             <Text className="detail-overview__status-text">{stText}</Text>
           </View>
-          {data.card_count > 0 && (
-            <Text className="detail-overview__card-count">{data.card_count} 张卡片</Text>
+          {data.cards.length > 0 && (
+            <Text className="detail-overview__card-count">{data.cards.length} 张卡片</Text>
           )}
         </View>
       </View>

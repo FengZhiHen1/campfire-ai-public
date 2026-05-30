@@ -134,7 +134,7 @@ export default function ExtractionResult() {
                     <Text className="er-field__inferred-hint">{editing.inferred_fields[key]}</Text>
                   )}
                   <Textarea className="er-quartet-card__textarea"
-                    value={(editing as Record<string, string>)[key] || ''}
+                    value={(editing as unknown as Record<string, string>)[key] || ''}
                     onInput={(e) => updateField(key, e.detail.value)} />
                 </View>
               </View>
