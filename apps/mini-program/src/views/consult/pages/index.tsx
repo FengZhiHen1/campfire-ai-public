@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { View, Text, Button, Textarea, ScrollView } from '@tarojs/components';
+import Taro from '@tarojs/taro';
 import { useConsult } from '../../../logics/consult';
 import type { BehaviorTypeCategory, EmotionLevel } from '../../../logics/consult';
 import { useProfileStore } from '../../../logics/profiles/store/profileStore';
