@@ -474,7 +474,8 @@ class TestAuthServiceImplRegister:
 
     @pytest.mark.asyncio
     async def test_db_error_mapped_to_internal(self, impl_svc, mock_repo, mock_session):
-        mock_repo.create = AsyncMock(side_effect=RuntimeError("connection lost"))
+        from sqlalchemy.exc import SQLAlchemyError
+        mock_repo.create = AsyncMock(side_effect=SQLAlchemyError("connection lost"))
 
         request = RegisterRequest(
             username="newuser", password="Abc12345",

@@ -12,6 +12,8 @@
 
 from __future__ import annotations
 
+from typing import NoReturn
+
 from fastapi import APIRouter, Body, Depends, Header, Response, status
 from fastapi.exceptions import HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -23,6 +25,7 @@ from app.core.dependencies.auth_dependencies import (
 from app.modules.auth.auth_contract import AuthService
 from app.modules.auth.exceptions import (
     AuthInternalError,
+    AuthServiceError,
     DuplicateUserError,
     InvalidCredentialsError,
     PasswordComplexityError,
@@ -39,6 +42,38 @@ from py_schemas.auth import (
 from py_schemas.security.validation_schemas import ValidationErrorResponse
 
 router = APIRouter(prefix="/api/v1/auth", tags=["auth"])
+
+# ---------------------------------------------------------------------------
+# 业务异常 → HTTP 状态码映射表
+# ---------------------------------------------------------------------------
+
+_EXCEPTION_STATUS_MAP: dict[type[AuthServiceError], int] = {
+    PasswordComplexityError: status.HTTP_422_UNPROCESSABLE_ENTITY,
+    RealNameRequiredError: status.HTTP_422_UNPROCESSABLE_ENTITY,
+    DuplicateUserError: status.HTTP_409_CONFLICT,
+    InvalidCredentialsError: status.HTTP_401_UNAUTHORIZED,
+    TokenInvalidError: status.HTTP_401_UNAUTHORIZED,
+    AuthInternalError: status.HTTP_500_INTERNAL_SERVER_ERROR,
+}
+
+
+def _build_error_detail(exc: AuthServiceError) -> dict[str, object]:
+    """从业务异常构建 HTTP 响应 detail 字典。"""
+    result: dict[str, object] = {"code": exc.code, "message": exc.message}
+    if exc.detail:
+        result.update(exc.detail)
+    return result
+
+
+def _raise_http(exc: AuthServiceError) -> NoReturn:
+    """将 AuthServiceError 子类映射为 HTTPException 并抛出。
+
+    集中管理异常 → HTTP 状态码映射，各路由处理函数只需一行：
+        except AuthServiceError as exc:
+            _raise_http(exc)
+    """
+    http_status = _EXCEPTION_STATUS_MAP.get(type(exc), status.HTTP_500_INTERNAL_SERVER_ERROR)
+    raise HTTPException(status_code=http_status, detail=_build_error_detail(exc))
 
 
 # ============================================================================
@@ -85,26 +120,8 @@ async def register(
     """
     try:
         return await auth_service.register(request, session)
-    except PasswordComplexityError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=exc.detail,
-        ) from exc
-    except RealNameRequiredError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=exc.detail,
-        ) from exc
-    except DuplicateUserError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail={"code": exc.code, "message": exc.message},
-        ) from exc
-    except AuthInternalError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=exc.message,
-        ) from exc
+    except AuthServiceError as exc:
+        _raise_http(exc)
 
 
 # ============================================================================
@@ -143,16 +160,8 @@ async def login(
     """
     try:
         return await auth_service.login(request, session)
-    except InvalidCredentialsError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail={"code": exc.code, "message": exc.message},
-        ) from exc
-    except AuthInternalError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=exc.message,
-        ) from exc
+    except AuthServiceError as exc:
+        _raise_http(exc)
 
 
 # ============================================================================
@@ -178,28 +187,17 @@ async def login(
 )
 async def refresh_token_endpoint(
     request: RefreshRequest,
-    session: AsyncSession = Depends(get_db_session),
     auth_service: AuthService = Depends(get_auth_service),
 ) -> TokenResponse:
     """Token 续期端点。
 
-    依赖注入链：
-    1. RefreshRequest — FastAPI Body 依赖
-    2. AsyncSession — 数据库异步会话
-    3. AuthService — 认证服务契约实现
+    refresh_token 流程仅涉及 JWT 签名校验 + Redis 黑名单操作，
+    不需要数据库连接——不注入 AsyncSession。
     """
     try:
-        return await auth_service.refresh_token(request, session)
-    except TokenInvalidError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail={"code": exc.code, "message": exc.message},
-        ) from exc
-    except AuthInternalError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=exc.message,
-        ) from exc
+        return await auth_service.refresh_token(request, None)
+    except AuthServiceError as exc:
+        _raise_http(exc)
 
 
 # ============================================================================
@@ -226,9 +224,10 @@ async def logout(
         default=None,
         description="Bearer <access_token>",
     ),
-    refresh_token: str = Body(
+    refresh_token_body: str = Body(
         default="",
         embed=True,
+        alias="refresh_token",
         description="需要失效的 refresh token",
     ),
     auth_service: AuthService = Depends(get_auth_service),
@@ -238,21 +237,12 @@ async def logout(
     接受 Authorization header 中的 access token 和请求体中的 refresh token，
     将两者的 jti 写入黑名单 / 标记已使用。
     采用 fail-open 策略——即使提取 jti 失败或 Redis 写入失败也返回 204。
-
-    Args:
-        authorization: Authorization header 值（Bearer <token> 格式）。
-        refresh_token: 请求体中的 refresh_token 字段。
-        auth_service: 认证服务契约实现。
-
-    Returns:
-        204 No Content 空响应。
     """
-    # 提取 access token（去除 Bearer 前缀）
     access_token = ""
     if authorization and authorization.startswith("Bearer "):
         access_token = authorization.replace("Bearer ", "", 1)
 
-    await auth_service.logout(access_token, refresh_token)
+    await auth_service.logout(access_token, refresh_token_body)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
