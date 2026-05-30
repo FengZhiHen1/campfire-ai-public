@@ -1,0 +1,12 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "types": ["node"]
+  },
+  "include": [
+    "vitest.config.ts",
+    "src/.tmp/adversarial-tests/**/*.test.ts",
+    "src/logics/cases/.tmp/adversarial-tests/**/test_*.ts",
+    "src/logics/consult/.tmp/adversarial-tests/**/test_*.ts"
+  ]
+}
