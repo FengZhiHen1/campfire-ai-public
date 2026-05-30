@@ -22,6 +22,7 @@ from app.core.dependencies.auth_dependencies import (
     get_auth_service,
     get_db_session,
 )
+from app.core.dependencies.anonymous_user import get_anonymous_user
 from app.modules.auth.auth_contract import AuthService
 from app.modules.auth.exceptions import (
     AuthInternalError,
@@ -244,6 +245,38 @@ async def logout(
 
     await auth_service.logout(access_token, refresh_token_body)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+# ============================================================================
+# GET /api/v1/auth/me — 当前用户信息
+# ============================================================================
+
+
+@router.get(
+    "/me",
+    status_code=status.HTTP_200_OK,
+    summary="获取当前用户信息",
+    description=(
+        "返回当前认证用户的 user_id、role 和 device_id。"
+        "MVP 阶段基于 X-Device-Id 匿名认证，返回匿名用户的信息。"
+    ),
+    responses={
+        200: {"description": "成功返回当前用户信息"},
+    },
+)
+async def get_current_user_info(
+    anonymous_user: dict = Depends(get_anonymous_user),
+) -> dict:
+    """当前用户信息端点。
+
+    用于前端在 App 启动时获取并缓存用户身份标识，
+    后续请求（如咨询归档）可直接使用缓存的 user_id。
+    """
+    return {
+        "user_id": anonymous_user.get("sub", anonymous_user.get("user_id", "")),
+        "role": anonymous_user.get("role", ""),
+        "device_id": anonymous_user.get("device_id", ""),
+    }
 
 
 __all__ = ["router"]

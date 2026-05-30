@@ -23,6 +23,7 @@ import {
   sectionsToPlanSections,
 } from '../store/stateMachine';
 import { consultApi } from './consultApi';
+import { useSessionStore } from '../../shared/store/userStore';
 import type { SseStreamParserCallbacks } from './sseParser';
 
 // ============================================================================
@@ -236,7 +237,7 @@ function archiveConsultation(
 ): void {
   const archiveData: Record<string, unknown> = {
     request_id: state._requestId || requestId,
-    user_id: '00000000-0000-0000-0000-000000000000',
+    user_id: useSessionStore.getState().user?.userId || '00000000-0000-0000-0000-000000000000',
     crisis_level: crisisLevel,
     behavior_description: state.behaviorDescription,
     consultation_time: new Date().toISOString(),

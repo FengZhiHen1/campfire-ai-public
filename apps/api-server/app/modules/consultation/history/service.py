@@ -93,7 +93,7 @@ class HistoryManagerImpl(BaseHistoryManager):
         archive_data: dict[str, Any] = {
             "id": record_id,
             "request_id": data.request_id,
-            "user_id": data.user_id,
+            "user_id": current_user.get("user_id", data.user_id),
             "crisis_level": data.crisis_level,
             "behavior_description": data.behavior_description,
             "generated_plan": data.generated_plan,
