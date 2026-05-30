@@ -29,14 +29,14 @@ const CRISIS_LABEL_MAP: Record<string, { text: string; className: string }> = {
 };
 
 const SECTION_COLOR_MAP: Record<string, string> = {
-  '即时安全干预': 'tertiary',
+  '即时安全干预动作': 'tertiary',
   '情绪安抚话术': 'primary',
   '后续观察指标': 'secondary',
   '就医判断标准': 'error',
 };
 
 const SECTION_ICON_MAP: Record<string, string> = {
-  '即时安全干预': '🛡️',
+  '即时安全干预动作': '🛡️',
   '情绪安抚话术': '💬',
   '后续观察指标': '👁️',
   '就医判断标准': '🏥',

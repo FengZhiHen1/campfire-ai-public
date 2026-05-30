@@ -3,17 +3,16 @@ import './polyfills'
 import { useEffect } from 'react';
 import type { ReactNode } from 'react';
 import Taro from '@tarojs/taro';
+import { ErrorBoundary } from './views/shared/components/ErrorBoundary';
 
 import './app.scss';
-// 静态导入以确保 HTTP 拦截器在应用启动时立即注册
-import './logics/shared/services/httpClient';
 
 function App(props: { children?: ReactNode }) {
   useEffect(() => {
     ensureDeviceId()
   }, [])
 
-  return props.children
+  return <ErrorBoundary>{props.children}</ErrorBoundary>
 }
 
 function ensureDeviceId() {
