@@ -25,6 +25,7 @@ from app.core.dependencies.anonymous_user import get_anonymous_user
 from app.core.dependencies.auth_dependencies import _get_session_factory, get_db_session
 from py_db.models.case_narrative import CaseNarrative
 from py_logger import logger
+from ..exceptions import NarrativeNotFoundError
 from .service import (
     NarrativeManagementService,
     ExtractionResponse,
@@ -45,6 +46,11 @@ from py_schemas.cases import PaginatedResponse
 router = APIRouter(prefix="/api/v1/narratives", tags=["narratives"])
 
 _narrative_service = NarrativeManagementService()
+
+
+def _handle_narrative_error(exc: NarrativeNotFoundError) -> None:
+    """将叙事业务异常映射为 HTTPException。"""
+    raise HTTPException(status_code=404, detail={"code": "NARRATIVE_NOT_FOUND", "message": str(exc)})
 
 
 @router.post("", response_model=NarrativeResponse, status_code=status.HTTP_201_CREATED)
@@ -89,9 +95,12 @@ async def get_narrative_endpoint(
     anonymous_user: dict = Depends(get_anonymous_user),
     db: AsyncSession = Depends(get_db_session),
 ):
-    entity = await _narrative_service.get_narrative(
-        NarrativeId(narrative_id), anonymous_user, db,
-    )
+    try:
+        entity = await _narrative_service.get_narrative(
+            NarrativeId(narrative_id), anonymous_user, db,
+        )
+    except NarrativeNotFoundError as exc:
+        _handle_narrative_error(exc)
     cards = await _narrative_service.get_cards_by_narrative(NarrativeId(narrative_id), db)
 
     # 通过 narrative_to_response 转换，避免路由层直接访问 ORM 属性
@@ -115,9 +124,12 @@ async def update_narrative_endpoint(
     anonymous_user: dict = Depends(get_anonymous_user),
     db: AsyncSession = Depends(get_db_session),
 ):
-    entity = await _narrative_service.update_narrative(
-        NarrativeId(narrative_id), request.title, request.narrative, anonymous_user, db,
-    )
+    try:
+        entity = await _narrative_service.update_narrative(
+            NarrativeId(narrative_id), request.title, request.narrative, anonymous_user, db,
+        )
+    except NarrativeNotFoundError as exc:
+        _handle_narrative_error(exc)
     return narrative_to_response(entity)
 
 
@@ -127,9 +139,12 @@ async def submit_narrative_endpoint(
     anonymous_user: dict = Depends(get_anonymous_user),
     db: AsyncSession = Depends(get_db_session),
 ):
-    entity = await _narrative_service.submit_narrative(
-        NarrativeId(narrative_id), anonymous_user, db,
-    )
+    try:
+        entity = await _narrative_service.submit_narrative(
+            NarrativeId(narrative_id), anonymous_user, db,
+        )
+    except NarrativeNotFoundError as exc:
+        _handle_narrative_error(exc)
     return narrative_to_response(entity)
 
 
@@ -147,9 +162,12 @@ async def extract_narrative_endpoint(
     - extracted → 返回 200 + 已有卡片（秒返）
     - failed → 重试提取，返回 202
     """
-    entity = await _narrative_service.get_narrative(
-        NarrativeId(narrative_id), anonymous_user, db,
-    )
+    try:
+        entity = await _narrative_service.get_narrative(
+            NarrativeId(narrative_id), anonymous_user, db,
+        )
+    except NarrativeNotFoundError as exc:
+        _handle_narrative_error(exc)
 
     current_status = entity.extraction_status
 
