@@ -218,6 +218,7 @@ export class SseStreamParser {
             chunk = String.fromCharCode(...bytes);
           }
           if (chunk) {
+            console.debug('[sse] onChunkReceived', { len: chunk.length, preview: chunk.slice(0, 80) });
             this.processChunk(chunk);
           }
 
@@ -225,6 +226,8 @@ export class SseStreamParser {
           this.resetHeartbeatMonitor();
           this.resetNoDataMonitor();
         });
+      } else {
+        console.warn('[sse] onChunkReceived not available — SSE streaming will not work');
       }
 
       this.startHeartbeatMonitor();
@@ -364,6 +367,9 @@ export class SseStreamParser {
     this.lastEventTime = Date.now();
     this.resetHeartbeatMonitor();
     this.resetNoDataMonitor();
+
+    // DEBUG: 诊断 SSE 事件分发
+    console.debug('[sse] dispatchEvent', { event: sseEvent.event, dataLen: sseEvent.data?.length ?? 0, id: sseEvent.id });
 
     // 更新 lastEventId
     if (sseEvent.id !== null) {
