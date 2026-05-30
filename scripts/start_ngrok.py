@@ -77,7 +77,28 @@ class NgrokLauncher(ServiceLauncher):
     def _pre_check(self) -> None:
         _find_ngrok()  # 提前验证，失败则不给实现者机会
 
+    @staticmethod
+    def _kill_existing_ngrok() -> None:
+        """终止已存在的 ngrok 进程。"""
+        if sys.platform == "win32":
+            try:
+                subprocess.run(
+                    ["taskkill", "/f", "/im", "ngrok.exe"],
+                    capture_output=True, timeout=5,
+                )
+            except (subprocess.TimeoutExpired, OSError):
+                pass
+        else:
+            try:
+                subprocess.run(
+                    ["pkill", "-f", "ngrok http"],
+                    capture_output=True, timeout=5,
+                )
+            except (subprocess.TimeoutExpired, OSError):
+                pass
+
     def _do_start(self) -> subprocess.Popen:
+        self._kill_existing_ngrok()
         ngrok_bin = _find_ngrok()
         try:
             proc = subprocess.Popen(
