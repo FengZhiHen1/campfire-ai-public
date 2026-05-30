@@ -18,6 +18,8 @@ from py_schemas.enums.case_enums import CaseStatus
 from py_schemas.narratives import NarrativeResponse
 from py_schemas.cards import CardResponse
 
+from py_logger import logger
+
 from .contract import NarrativeManagementContract
 from ..exceptions import (
     NarrativeNotFoundError,
@@ -53,6 +55,14 @@ class NarrativeManagementService(NarrativeManagementContract):
         session.add(entity)
         await session.commit()
         await session.refresh(entity)
+        logger.info(
+            "narrative_created",
+            extra={
+                "narrative_id": str(entity.narrative_id),
+                "author_id": current_user.get("sub", ""),
+                "source_type": source_type,
+            },
+        )
         return entity
 
     async def _do_get_narrative(
@@ -124,6 +134,13 @@ class NarrativeManagementService(NarrativeManagementContract):
             entity.narrative = narrative
         await session.commit()
         await session.refresh(entity)
+        logger.info(
+            "narrative_updated",
+            extra={
+                "narrative_id": narrative_id,
+                "author_id": current_user.get("sub", ""),
+            },
+        )
         return entity
 
     async def _do_submit_narrative(
@@ -162,6 +179,13 @@ class NarrativeManagementService(NarrativeManagementContract):
 
         await session.commit()
         await session.refresh(entity)
+        logger.info(
+            "narrative_submitted",
+            extra={
+                "narrative_id": narrative_id,
+                "author_id": current_user.get("sub", ""),
+            },
+        )
         return entity
 
     # ========================================================================
@@ -247,6 +271,10 @@ class NarrativeManagementService(NarrativeManagementContract):
 
         await session.commit()
         await session.refresh(entity)
+        logger.info(
+            "card_submitted",
+            extra={"card_id": card_id},
+        )
         return entity
 
     async def _do_approve_card(
@@ -294,6 +322,13 @@ class NarrativeManagementService(NarrativeManagementContract):
         from py_rag.indexing.service import enqueue_index_task
         await enqueue_index_task(str(entity.card_id))
 
+        logger.info(
+            "card_approved",
+            extra={
+                "card_id": card_id,
+                "reviewer_id": current_user.get("sub", ""),
+            },
+        )
         return entity
 
     # ========================================================================

@@ -14,7 +14,7 @@
   - py_schemas.profiles.ExpertInfo: MUST — 数据契约
 
 边界:
-  - 依赖: py_db, py_schemas, sqlalchemy (AsyncSession)
+  - 依赖: py_db, py_schemas, py_logger, sqlalchemy (AsyncSession)
   - 被依赖: expert_routes.py (FastAPI 路由层)
 
 禁止行为:

@@ -11,7 +11,7 @@
   - SQLAlchemy AsyncSession: MUST — 数据库操作（无独立 Repository，直接使用 ORM Session）
   - CaseNarrative / CaseCard (py_db): MUST — ORM 模型
 边界:
-  - 依赖: py_db, py_schemas
+  - 依赖: py_db, py_schemas, py_logger
   - 被依赖: narrative_routes.py（路由层委托）
   - 不负责: LLM 提取（归属 extraction/ 子模块）、向量化入库（归属 CASE-04）
 """

@@ -17,6 +17,8 @@ from py_db.repositories.profile_repository import ProfileRepository
 from py_db.repositories.teacher_link_repository import TeacherLinkRepository, StaleDataError
 from py_db.repositories.user_repository import UserRepository
 
+from py_logger import logger
+
 from app.modules.profiles.exceptions import ExpertLinkConflictError
 from app.modules.profiles.experts_contract import BaseExpertService
 
@@ -75,6 +77,10 @@ class ExpertServiceImpl(BaseExpertService):
                 )
             )
 
+        logger.info(
+            "expert_list",
+            extra={"profile_id": str(profile_id), "count": len(experts)},
+        )
         return experts
 
     # ------------------------------------------------------------------
@@ -97,8 +103,16 @@ class ExpertServiceImpl(BaseExpertService):
                 session, link_id, expected_version=target_link.version
             )
         except StaleDataError:
+            logger.warning(
+                "expert_unlink_conflict",
+                extra={"link_id": str(link_id), "profile_id": str(profile_id)},
+            )
             raise ExpertLinkConflictError(str(link_id))
 
+        logger.info(
+            "expert_unlinked",
+            extra={"profile_id": str(profile_id), "link_id": str(link_id)},
+        )
         return True
 
 
