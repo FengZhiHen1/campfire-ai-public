@@ -6,66 +6,13 @@
   background-color: $cf-background;
   display: flex;
   flex-direction: column;
-  padding-top: 112px;
   padding-bottom: $cf-spacing-xl;
-}
-
-/* ========== 顶部导航栏 ========== */
-.history-navbar {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  z-index: 50;
-  height: 112px;
-  background-color: $cf-surface;
-  box-shadow: $cf-shadow-diffuse;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0 $cf-spacing-md;
-
-  &__back {
-    width: 80px;
-    height: 80px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 40px;
-    color: $cf-on-surface-variant;
-    background: none;
-    border: none;
-    padding: 0;
-
-    &::after {
-      border: none;
-    }
-
-    &:active {
-      opacity: 0.7;
-    }
-  }
-
-  &__title {
-    @include cf-headline-sm;
-    color: $cf-on-background;
-  }
-
-  &__search-btn {
-    width: 80px;
-    height: 80px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 36px;
-    color: $cf-on-surface-variant;
-  }
 }
 
 /* ========== 搜索栏 ========== */
 .history-search {
   position: sticky;
-  top: 112px;
+  top: 0;
   z-index: 40;
   background-color: $cf-background;
   padding: $cf-spacing-sm $cf-spacing-md;
