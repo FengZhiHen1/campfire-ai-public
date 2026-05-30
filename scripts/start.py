@@ -80,6 +80,7 @@ AVAILABLE_SERVICES: dict[str, str] = {
 # 日志导入（sys.path 设置后）
 # ---------------------------------------------------------------------------
 
+from utils.logger import logger  # noqa: E402
 from utils.log_utils import (  # noqa: E402
     print_banner,
     print_check_fail,
@@ -179,6 +180,8 @@ def run_preflight_checks(services: list[str], *, skip_infra: bool) -> bool:
             print_check_ok(name, msg)
         else:
             print_check_fail(name, msg)
+            logger.warning(service="scripts", message=f"前置检查失败: {name}",
+                           op_type="preflight_check", extra={"detail": msg})
             all_ok = False
 
     print()
@@ -217,9 +220,12 @@ def start_services(services: list[str], *, skip_infra: bool) -> list[tuple]:
         stdout, _ = infra_proc.communicate(timeout=60)
         if infra_proc.returncode == 0:
             print_check_ok("Infra", "Docker 容器已就绪")
+            logger.info(service="scripts", message="Docker 容器已启动", op_type="infra_start")
             time.sleep(2)
         else:
             print_check_fail("Infra", "Docker 启动失败")
+            logger.error(service="scripts", message="Docker 容器启动失败",
+                         op_type="infra_start", extra={"exit_code": infra_proc.returncode})
             if stdout:
                 print(f"     {stdout}")
             return []
@@ -239,6 +245,8 @@ def start_services(services: list[str], *, skip_infra: bool) -> list[tuple]:
             print()
         except Exception as exc:
             print_warning(f"ngrok 启动失败: {exc}")
+            logger.warning(service="scripts", message=f"ngrok 启动失败: {exc}",
+                           op_type="ngrok_start")
 
     # --- 业务服务 ---
     for key in services:
@@ -467,6 +475,8 @@ def main() -> None:
                     if exit_code != 0 and exit_code != -signal.SIGINT:
                         print()
                         print_service_failed(name, f"意外退出 (exit code: {exit_code})")
+                        logger.error(service="scripts", message=f"{name} 意外退出",
+                                     op_type="service_crash", extra={"exit_code": exit_code})
                     _do_shutdown()
                     sys.exit(exit_code if exit_code > 0 else 0)
             time.sleep(1)

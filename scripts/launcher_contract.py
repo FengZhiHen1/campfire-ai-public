@@ -18,6 +18,8 @@ from __future__ import annotations
 import subprocess
 from abc import ABC, abstractmethod
 
+from utils.logger import logger
+
 
 class ServiceLauncher(ABC):
     """服务启动器抽象基类。
@@ -68,6 +70,12 @@ class ServiceLauncher(ABC):
     def _post_check(self, proc: subprocess.Popen) -> None:
         """后置校验（可选覆盖）。默认检查进程是否立即退出。"""
         if proc.poll() is not None:
+            logger.error(
+                service="scripts",
+                message=f"{self.display_name} 进程启动后立即退出",
+                op_type="service_start",
+                extra={"exit_code": proc.returncode, "launcher": self.name},
+            )
             raise RuntimeError(
                 f"{self.display_name} 进程启动后立即退出"
                 f" (exit code: {proc.returncode})"

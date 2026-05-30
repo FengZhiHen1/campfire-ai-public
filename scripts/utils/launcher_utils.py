@@ -23,6 +23,7 @@ from utils.log_utils import (
     print_service_terminating,
     print_stage,
 )
+from utils.logger import logger
 from utils.process_utils import read_output, terminate_process
 
 
@@ -33,6 +34,9 @@ def run_standalone(launcher: ServiceLauncher) -> None:
     """
     name = launcher.display_name
     proc = launcher.start()
+
+    logger.info(service="scripts", message=f"{name} 已启动", op_type="service_start",
+                extra={"pid": proc.pid, "launcher": launcher.name})
 
     print_separator()
     print_stage("阶段二：服务启动")
@@ -50,14 +54,21 @@ def run_standalone(launcher: ServiceLauncher) -> None:
             return
         _shutdown_done = True
 
+        signame = signal.Signals(signum).name
+        logger.info(service="scripts", message=f"收到 {signame}，正在关闭 {name}",
+                    op_type="service_stop", extra={"pid": proc.pid})
+
         print()
         print_exit_header()
         print_service_terminating(name, proc.pid)
         ok = terminate_process(proc)
         if ok:
             print_service_terminated_ok()
+            logger.info(service="scripts", message=f"{name} 已优雅关闭", op_type="service_stop")
         else:
             print_service_terminated_forced()
+            logger.warning(service="scripts", message=f"{name} 被强制终止", op_type="service_stop",
+                           extra={"pid": proc.pid})
         sys.exit(0)
 
     signal.signal(signal.SIGINT, _on_shutdown)
@@ -99,12 +110,10 @@ def shutdown_services(
     procs: list[tuple[subprocess.Popen, str]],
     stop_event: threading.Event,
 ) -> None:
-    """优雅关闭所有服务。
+    """优雅关闭所有服务。"""
+    logger.info(service="scripts", message="开始关闭所有服务", op_type="shutdown",
+                extra={"service_count": len(procs)})
 
-    Args:
-        procs: [(进程, 服务名), ...]
-        stop_event: 日志读取线程的停止信号
-    """
     print()
     print_exit_header()
 
@@ -119,6 +128,8 @@ def shutdown_services(
             print_service_terminated_ok()
         else:
             print_service_terminated_forced()
+            logger.warning(service="scripts", message=f"{name} 被强制终止", op_type="shutdown",
+                           extra={"pid": proc.pid})
 
     from start_ngrok import cleanup_ngrok_url_file
     cleanup_ngrok_url_file()
