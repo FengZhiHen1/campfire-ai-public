@@ -25,6 +25,14 @@
     font-weight: 600;
     color: $cf-on-background;
   }
+
+  &__back {
+    padding: 8px 12px;
+    font-size: 18px;
+    color: $cf-on-surface-variant;
+    background: none;
+    border: none;
+  }
 }
 
 /* ========== 概览信息区 ========== */

@@ -14,11 +14,16 @@ interface ProfileItem {
   primary_behavior?: string;
 }
 
+const GREETING_MORNING = '早上好';
+const GREETING_AFTERNOON = '下午好';
+const GREETING_EVENING = '晚上好';
+const BRAND_NAME = '篝火智答';
+
 function getGreeting(): string {
   const hour = new Date().getHours();
-  if (hour >= 5 && hour < 12) return '早上好';
-  if (hour >= 12 && hour < 18) return '下午好';
-  return '晚上好';
+  if (hour >= 5 && hour < 12) return GREETING_MORNING;
+  if (hour >= 12 && hour < 18) return GREETING_AFTERNOON;
+  return GREETING_EVENING;
 }
 
 function formatTime(dateStr?: string): string {
@@ -41,11 +46,13 @@ function formatTime(dateStr?: string): string {
 
 export default function HomePage() {
   const [loading, setLoading] = useState(true);
+  const [hasError, setHasError] = useState(false);
   const [consultHistory, setConsultHistory] = useState<ConsultationHistoryListItem[]>([]);
   const [profiles, setProfiles] = useState<ProfileItem[]>([]);
 
   const load = async () => {
     setLoading(true);
+    setHasError(false);
     try {
       const [historyRes, profileRes] = await Promise.all([
         consultApi.fetchHistoryList(1, 5).catch(() => ({ items: [], total: 0, page: 1, page_size: 5 })),
@@ -54,7 +61,7 @@ export default function HomePage() {
       setConsultHistory(historyRes.items || []);
       setProfiles(profileRes as ProfileItem[]);
     } catch {
-      // 降级：静默失败，显示空状态
+      setHasError(true);
     } finally {
       setLoading(false);
     }
@@ -85,7 +92,7 @@ export default function HomePage() {
       {/* 顶部问候区 */}
       <View className="home-greeting">
         <View className="home-greeting__brand">
-          <Text className="home-greeting__brand-text">篝火智答</Text>
+          <Text className="home-greeting__brand-text">{BRAND_NAME}</Text>
           <Text className="home-greeting__brand-icon">🔥</Text>
         </View>
         <Text className="home-greeting__title">{greeting}</Text>
@@ -93,6 +100,14 @@ export default function HomePage() {
           {latestProfile ? '今天孩子状态怎么样？' : '欢迎开始使用篝火智答'}
         </Text>
       </View>
+
+      {hasError && (
+        <View className='home-error-banner'>
+          <Text className='home-error-banner__icon'>⚠️</Text>
+          <Text className='home-error-banner__text'>数据加载失败</Text>
+          <Button className='home-error-banner__retry' onClick={load}>重试</Button>
+        </View>
+      )}
 
       {/* 应急咨询大卡片 */}
       <View className="home-emergency">

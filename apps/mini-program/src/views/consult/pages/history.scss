@@ -191,52 +191,10 @@
     &--high { color: $cf-error; }
   }
 
-  &__badge {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    border-radius: $cf-radius-md;
-    padding: 8px 20px;
-    font-size: 22px;
-    font-weight: 500;
-
-    &--high {
-      background-color: $cf-tertiary;
-      color: $cf-on-tertiary;
-    }
-
-    &--medium {
-      background-color: $cf-primary-container;
-      color: $cf-on-primary-container;
-    }
-
-    &--low {
-      background-color: $cf-surface-variant;
-      color: $cf-error;
-    }
-
-    &::after {
-      content: '●';
-      font-size: 16px;
-    }
-  }
-
   &__time {
     font-size: 22px;
     color: $cf-on-surface-variant;
     margin-left: 16px;
-  }
-
-  /* 第二行：行为类型标签 */
-  &__tag {
-    display: inline-block;
-    background-color: $cf-primary-container;
-    color: $cf-on-primary-container;
-    font-size: 22px;
-    font-weight: 500;
-    padding: 8px 20px;
-    border-radius: $cf-radius-md;
-    margin-bottom: $cf-spacing-sm;
   }
 
   /* 第三行：摘要 */
@@ -322,25 +280,3 @@
   }
 }
 
-/* ========== 底部加载指示器 ========== */
-.history-loadmore {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: $cf-spacing-sm;
-  padding: $cf-spacing-md 0;
-
-  &__spinner {
-    width: 40px;
-    height: 40px;
-    border: 2px solid $cf-primary;
-    border-top-color: transparent;
-    border-radius: $cf-radius-full;
-    animation: cf-spin 1s linear infinite;
-  }
-
-  &__text {
-    font-size: 28px;
-    color: $cf-on-surface-variant;
-  }
-}

@@ -396,9 +396,9 @@
     color: $cf-tertiary;
   }
 
-  &__incomplete {
+  &__severity {
     font-size: $cf-footnote;
-    color: $cf-error;
+    color: $cf-tertiary;
   }
 
   &__tag {
@@ -412,11 +412,6 @@
     margin-bottom: $cf-spacing-xs;
   }
 
-  &__summary {
-    font-size: $cf-body-sm;
-    color: $cf-on-background;
-    line-height: 1.5;
-  }
 }
 
 /* ========== 时间线空状态 ========== */
@@ -541,6 +536,26 @@
     &::placeholder {
       color: rgba($cf-on-surface-variant, 0.6);
     }
+  }
+
+  &__picker {
+    width: 100%;
+    background-color: $cf-surface-variant;
+    border-radius: $cf-radius-sm;
+    padding: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    box-sizing: border-box;
+  }
+
+  &__picker--placeholder {
+    color: $cf-on-surface-variant;
+  }
+
+  &__picker-arrow {
+    margin-left: auto;
+    font-size: 12px;
   }
 
   &__submit {

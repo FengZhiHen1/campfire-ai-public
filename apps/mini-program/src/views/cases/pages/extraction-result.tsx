@@ -17,7 +17,15 @@ export default function ExtractionResult() {
   } = useExtractionResult();
 
   if (loading) {
-    return <View className="er-page"><Text>加载中...</Text></View>;
+    return (
+      <View className='er-page'>
+        <View className='er-loading'>
+          <View className='er-loading__skeleton' />
+          <Text className='er-loading__text'>AI 正在分析叙事内容...</Text>
+          <Text className='er-loading__hint'>预计需要 10–30 秒</Text>
+        </View>
+      </View>
+    );
   }
 
   if (cards.length === 0) {

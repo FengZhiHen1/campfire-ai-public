@@ -520,9 +520,9 @@
     color: $cf-on-surface-variant;
   }
 
-  &__incomplete {
+  &__eval {
     font-size: 22px;
-    color: $cf-error;
+    color: $cf-tertiary;
   }
 
   &__actions {
@@ -543,89 +543,7 @@
     margin-bottom: 8px;
   }
 
-  &__desc {
-    font-size: 28px;
-    color: $cf-on-background;
-    line-height: 1.5;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
 
-  /* 展开详情 */
-  &__detail {
-    padding: 24px 32px;
-    background-color: $cf-surface-variant;
-    animation: cf-fade-in-up 200ms ease-out;
-  }
-
-  &__detail-field {
-    margin-top: 20px;
-  }
-
-  &__detail-label {
-    font-size: 24px;
-    font-weight: 500;
-    color: $cf-on-background;
-    margin-bottom: 8px;
-    display: block;
-  }
-
-  &__detail-input {
-    width: 100%;
-    min-height: 96px;
-    background-color: $cf-surface-variant;
-    border-radius: 16px;
-    padding: 16px 24px;
-    font-size: 28px;
-    color: $cf-on-background;
-    box-sizing: border-box;
-
-    &::placeholder {
-      color: rgba($cf-on-surface-variant, 0.6);
-    }
-  }
-
-  &__detail-actions {
-    display: flex;
-    gap: 16px;
-    margin-top: 24px;
-  }
-
-  &__detail-save {
-    flex: 1;
-    height: 80px;
-    background-color: $cf-primary;
-    color: $cf-on-primary;
-    border-radius: 16px;
-    font-size: 28px;
-    font-weight: 600;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    border: none;
-
-    &::after {
-      border: none;
-    }
-  }
-
-  &__detail-cancel {
-    width: 160px;
-    height: 80px;
-    background: none;
-    color: $cf-secondary;
-    border-radius: 16px;
-    font-size: 28px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    border: none;
-
-    &::after {
-      border: none;
-    }
-  }
 }
 
 /* ========== 动画 ========== */
