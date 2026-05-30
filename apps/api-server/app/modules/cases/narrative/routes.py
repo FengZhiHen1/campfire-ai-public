@@ -12,13 +12,19 @@
 
 from __future__ import annotations
 
+import asyncio
 import math
+import uuid as _uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi.responses import JSONResponse
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.dependencies.anonymous_user import get_anonymous_user
-from app.core.dependencies.auth_dependencies import get_db_session
+from app.core.dependencies.auth_dependencies import _get_session_factory, get_db_session
+from py_db.models.case_narrative import CaseNarrative
+from py_logger import logger
 from .service import (
     NarrativeManagementService,
     ExtractionResponse,
@@ -127,45 +133,114 @@ async def submit_narrative_endpoint(
     return narrative_to_response(entity)
 
 
-@router.post("/{narrative_id}/extract", response_model=ExtractionResponse)
+@router.post("/{narrative_id}/extract")
 async def extract_narrative_endpoint(
     narrative_id: str,
     anonymous_user: dict = Depends(get_anonymous_user),
     db: AsyncSession = Depends(get_db_session),
 ):
-    """LLM 提取：从 L1 叙事生成 L2 卡片。"""
-    # 先获取叙事，验证权限
+    """LLM 提取 L2 卡片（幂等 + 异步）。
+
+    状态机：
+    - pending → 启动后台提取，返回 202 extracting
+    - extracting → 返回 202（前端继续轮询）
+    - extracted → 返回 200 + 已有卡片（秒返）
+    - failed → 重试提取，返回 202
+    """
     entity = await _narrative_service.get_narrative(
         NarrativeId(narrative_id), anonymous_user, db,
     )
 
-    # 通过 narrative_to_response 转换后读取状态，避免路由层直接访问 ORM 属性
-    entity_dict = narrative_to_response(entity)
-    if entity_dict["status"] != "draft":
-        raise HTTPException(status_code=400, detail="仅草稿状态的叙事可触发提取")
+    current_status = entity.extraction_status
 
-    # 调用 LLM 提取
-    from ..extraction.service import ExtractionService
-    _extraction_service = ExtractionService()
-    cards = await _extraction_service.extract_cards_from_narrative(
-        narrative_text=entity_dict["narrative"],
-        narrative_id=NarrativeId(narrative_id),
-        db=db,
-    )
+    # 已提取：直接返回缓存卡片
+    if current_status == "extracted" and entity.derived_card_ids:
+        cards = await _narrative_service._do_get_cards_by_narrative(
+            NarrativeId(narrative_id), db,
+        )
+        return {
+            "narrative_id": narrative_id,
+            "card_count": len(cards),
+            "cards": [
+                card_to_response(c, is_owner=True, current_user_id=anonymous_user.get("sub", ""))
+                for c in cards
+            ],
+        }
 
-    # 更新叙事 derived_card_ids（需要 ORM 对象进行写入操作）
-    cids = [str(c.card_id) for c in cards]
-    entity.derived_card_ids = cids
+    # 提取中：告知前端继续等
+    if current_status == "extracting":
+        return JSONResponse(
+            status_code=202,
+            content={"status": "extracting", "narrative_id": narrative_id},
+        )
+
+    # pending 或 failed：启动后台提取
+    narrative_text = entity.narrative
+    entity.extraction_status = "extracting"
     await db.commit()
 
-    return {
-        "narrative_id": narrative_id,
-        "card_count": len(cards),
-        "cards": [
-            card_to_response(c, is_owner=True, current_user_id=anonymous_user.get("sub", ""))
-            for c in cards
-        ],
-    }
+    asyncio.create_task(
+        _run_extraction_background(narrative_id, narrative_text, anonymous_user.get("sub", ""))
+    )
+
+    return JSONResponse(
+        status_code=202,
+        content={"status": "extracting", "narrative_id": narrative_id},
+    )
+
+
+async def _run_extraction_background(
+    narrative_id: str,
+    narrative_text: str,
+    user_id: str,
+) -> None:
+    """后台执行 LLM 提取，独立 DB 会话。"""
+    from ..extraction.service import ExtractionService
+
+    session_factory = _get_session_factory()
+    async with session_factory() as bg_db:
+        try:
+            extraction_service = ExtractionService()
+            cards = await extraction_service.extract_cards_from_narrative(
+                narrative_text=narrative_text,
+                narrative_id=NarrativeId(narrative_id),
+                db=bg_db,
+            )
+            # 更新叙事状态为 extracted
+            result = await bg_db.execute(
+                select(CaseNarrative).where(
+                    CaseNarrative.narrative_id == _uuid.UUID(narrative_id),
+                )
+            )
+            nar = result.scalars().first()
+            if nar:
+                nar.extraction_status = "extracted"
+                nar.derived_card_ids = [str(c.card_id) for c in cards]
+                await bg_db.commit()
+            logger.info(
+                service="api-server",
+                message="extraction_background_done",
+                extra={"narrative_id": narrative_id, "card_count": len(cards)},
+            )
+        except Exception:
+            # 提取失败：回写状态
+            try:
+                result = await bg_db.execute(
+                    select(CaseNarrative).where(
+                        CaseNarrative.narrative_id == _uuid.UUID(narrative_id),
+                    )
+                )
+                nar = result.scalars().first()
+                if nar:
+                    nar.extraction_status = "failed"
+                    await bg_db.commit()
+            except Exception:
+                pass
+            logger.exception(
+                service="api-server",
+                message="extraction_background_failed",
+                extra={"narrative_id": narrative_id},
+            )
 
 
 __all__ = ["router"]

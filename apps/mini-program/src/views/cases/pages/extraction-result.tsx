@@ -12,7 +12,8 @@ import './extraction-result.scss';
 export default function ExtractionResult() {
   const {
     cards, activeTab, editing, loading, isSaving, isSubmittingAll,
-    setActiveTab, updateField, saveCard, submitAll,
+    extracting, extractFailed,
+    setActiveTab, updateField, saveCard, submitAll, retryExtraction,
     behaviorTypeOptions, severityOptions, sceneOptions, categoryOptions,
   } = useExtractionResult();
 
@@ -21,8 +22,40 @@ export default function ExtractionResult() {
       <View className='er-page'>
         <View className='er-loading'>
           <View className='er-loading__skeleton' />
+          <Text className='er-loading__text'>正在加载...</Text>
+        </View>
+      </View>
+    );
+  }
+
+  if (extracting) {
+    return (
+      <View className='er-page'>
+        <View className='er-navbar'>
+          <Text className='er-navbar__title'>提取结果</Text>
+        </View>
+        <View className='er-loading'>
+          <View className='er-loading__skeleton' />
+          <View className='er-loading__skeleton' />
+          <View className='er-loading__skeleton' />
           <Text className='er-loading__text'>AI 正在分析叙事内容...</Text>
-          <Text className='er-loading__hint'>预计需要 10–30 秒</Text>
+          <Text className='er-loading__hint'>预计需要 10–30 秒，当前页可安全退出</Text>
+        </View>
+      </View>
+    );
+  }
+
+  if (extractFailed) {
+    return (
+      <View className='er-page'>
+        <View className='er-navbar'>
+          <Text className='er-navbar__title'>提取结果</Text>
+        </View>
+        <View className='er-empty'>
+          <Text className='er-empty__icon'>⚠️</Text>
+          <Text className='er-empty__title'>提取失败</Text>
+          <Text className='er-empty__desc'>AI 处理超时或服务异常，请重试</Text>
+          <Button className='er-empty__retry' onClick={retryExtraction}>重试</Button>
         </View>
       </View>
     );
@@ -30,11 +63,11 @@ export default function ExtractionResult() {
 
   if (cards.length === 0) {
     return (
-      <View className="er-page">
-        <View className="er-navbar">
-          <Text className="er-navbar__title">提取结果</Text>
+      <View className='er-page'>
+        <View className='er-navbar'>
+          <Text className='er-navbar__title'>提取结果</Text>
         </View>
-        <View className="er-empty">AI 未能识别到干预场景，请检查叙事内容后重试</View>
+        <View className='er-empty'>AI 未能识别到干预场景，请检查叙事内容后重试</View>
       </View>
     );
   }

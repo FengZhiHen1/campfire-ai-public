@@ -90,6 +90,7 @@ export interface NarrativeDetail {
   source_type: string;
   author_id: string;
   status: string;
+  extraction_status: string;
   derived_card_ids: string[] | null;
   cards: CardSummary[];
   created_at: string;
