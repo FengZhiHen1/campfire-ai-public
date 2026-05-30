@@ -62,6 +62,7 @@ def stop_infra() -> None:
 
 def main() -> None:
     from utils.log_utils import print_info, print_error
+    from utils.logger import logger
 
     print_info("正在启动基础设施容器...")
     launcher = InfraLauncher()
@@ -69,10 +70,13 @@ def main() -> None:
     stdout, _ = proc.communicate(timeout=60)
     if proc.returncode == 0:
         print_info("基础设施容器已启动。")
+        logger.info(service="scripts", message="基础设施容器已启动", op_type="infra_start")
         if stdout:
             print(stdout)
     else:
         print_error(f"基础设施启动失败 (exit code {proc.returncode})")
+        logger.error(service="scripts", message="基础设施容器启动失败",
+                     op_type="infra_start", extra={"exit_code": proc.returncode})
         if stdout:
             print(stdout)
         import sys
