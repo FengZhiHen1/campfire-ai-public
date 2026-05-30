@@ -500,7 +500,7 @@ class SseStreamingService:
                         session.status = "COMPLETED"
                         session.finish_reason = finish_reason
 
-                        done_meta = await self._build_done_meta(session)
+                        done_meta = await self._build_done_meta(session, raw_full_text=chunk.raw_full_text)
                         done_event = DoneEvent(
                             finish_reason=finish_reason,
                             sequence=session.sequence,
@@ -742,13 +742,15 @@ class SseStreamingService:
         }
         return mapping.get(reason, "COMPLETE")
 
-    async def _build_done_meta(self, session: StreamSession) -> dict:
+    async def _build_done_meta(self, session: StreamSession, raw_full_text: str | None = None) -> dict:
         """从 generation_meta 和 chunk_buffer 提取 DoneEvent 扩展元数据。
 
         包含置信度校验调用（非阻塞——失败时降级）。
 
         Args:
             session: 当前 StreamSession。
+            raw_full_text: LLM 返回的原始完整 JSON 文本。优先使用此参数；
+                          为 None 时回退到从 chunk_buffer 拼接。
 
         Returns:
             包含 referenced_slice_ids, crisis_level, confidence 等字段的 dict。
@@ -762,11 +764,14 @@ class SseStreamingService:
         crisis_level: str = meta.get("crisis_level", "mild")
         block_deep_response: bool = meta.get("block_deep_response", False)
 
-        # 从 chunk_buffer 拼接完整文本
-        full_text = "".join(
-            session.chunk_buffer[i]
-            for i in sorted(session.chunk_buffer.keys())
-        )
+        # 使用上游传入的原始 JSON 文本（优先），回退到 chunk_buffer 拼接
+        if raw_full_text:
+            full_text = raw_full_text
+        else:
+            full_text = "".join(
+                session.chunk_buffer[i]
+                for i in sorted(session.chunk_buffer.keys())
+            )
 
         # 提取 [N] 引用标记
         ref_pattern = re.compile(r"\[(\d+)\]")

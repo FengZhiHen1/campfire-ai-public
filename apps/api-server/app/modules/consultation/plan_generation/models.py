@@ -193,6 +193,11 @@ class GenerationChunk(BaseModel):
         description="流式输出结束原因。仅在 is_final=true 时有值。"
         "stop=正常结束，length=达到 max_tokens 上限，timeout=本模块全流程超时触发强制截断。",
     )
+    raw_full_text: str | None = Field(
+        default=None,
+        description="LLM 返回的原始完整 JSON 文本（含 JSON 语法字符）。"
+        "仅在 is_final=True 时填充，供下游 SSE 服务解析四段式 sections 使用。",
+    )
 
 
 # ============================================================================
