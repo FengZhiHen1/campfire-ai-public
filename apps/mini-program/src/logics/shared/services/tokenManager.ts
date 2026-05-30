@@ -105,7 +105,7 @@ export function buildMockLoginResponse(
 ): { access_token: string; refresh_token: string; token_type: 'Bearer' } {
   return {
     access_token: 'REDACTED-SET-VIA-ENV' +
-      Buffer.from(JSON.stringify({ sub: 'mock-user', roles: [] })).toString('base64url') +
+      btoa(JSON.stringify({ sub: 'mock-user', roles: [] })) +
       '.mock-signature',
     refresh_token: 'mock-refresh-token',
     token_type: 'Bearer',

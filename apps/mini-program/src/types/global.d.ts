@@ -5,3 +5,7 @@ declare namespace NodeJS {
     TARO_APP_API_BASE?: string;
   }
 }
+
+declare const process: {
+  env: NodeJS.ProcessEnv;
+};
