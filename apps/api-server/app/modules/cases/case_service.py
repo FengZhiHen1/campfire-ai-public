@@ -37,6 +37,7 @@ from py_security.types import PiiWarning as PiiWarningInternal
 
 from app.modules.cases.case_contract import CaseManagementContract
 from app.modules.cases.ebp_validator import check_ebp_consistency
+from app.modules.cases.types import CaseId
 
 _logger = logging.getLogger(__name__)
 
@@ -444,7 +445,7 @@ class CaseManagementService(CaseManagementContract):
 
     async def _do_update_case(
         self,
-        case_id: str,
+        case_id: CaseId,
         update: CaseUpdate,
         current_user: Dict[str, Any],
         session: AsyncSession,
@@ -473,6 +474,10 @@ class CaseManagementService(CaseManagementContract):
         user_id: str = current_user.get("sub", "")
 
         # --- 乐观锁冲突检测 ---
+        # FIXME: 当前区分"案例不存在"和"版本不匹配"需要两次 DB 查询
+        # （先 find_by_id_with_version，若返回 None 再 find_by_case_id）。
+        # 优化方向：为 CaseRepository 增加 get_case_with_version() 方法，
+        # 单次查询同时返回案例和版本信息，或返回 Result[T, NotFound|Conflict] 联合类型。
         case: Case | None = await case_repo.find_by_id_with_version(
             session, case_id, update.updated_at
         )
@@ -548,7 +553,7 @@ class CaseManagementService(CaseManagementContract):
 
     async def _do_submit_case(
         self,
-        case_id: str,
+        case_id: CaseId,
         current_user: Dict[str, Any],
         session: AsyncSession,
         case_repo: CaseRepository,
@@ -612,9 +617,19 @@ class CaseManagementService(CaseManagementContract):
         # 四段式校验（契约上游未做，此处需单独查询 case 后校验）
         _validate_four_stage_fields(case)
 
-        # PII 检测（MVP：仅生成警告提示，不阻断提交）
+        # PII 检测
         pii_result = self._pii_detector.detect(case.narrative)
         pii_warnings: list[PiiWarning] = _convert_pii_warnings(pii_result.warnings)
+
+        # 若检测到疑似 PII 且用户未确认，阻断提交
+        if pii_result.has_pii and not pii_confirmed:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail={
+                    "message": "检测到疑似 PII（个人身份信息），请确认已脱敏后设置 pii_confirmed=true 重新提交",
+                    "pii_warnings": [w.model_dump() for w in pii_warnings],
+                },
+            )
 
         # EBP 一致性检测
         ebp_warning: str | None = check_ebp_consistency(
@@ -675,7 +690,7 @@ class CaseManagementService(CaseManagementContract):
 
     async def _do_get_case(
         self,
-        case_id: str,
+        case_id: CaseId,
         current_user: Dict[str, Any],
         session: AsyncSession,
         case_repo: CaseRepository,

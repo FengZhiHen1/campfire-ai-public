@@ -20,7 +20,7 @@ import logging
 from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 
-import redis
+import redis.asyncio as aioredis
 from fastapi import HTTPException, status
 from py_config import get_settings
 from py_db.models.review_models import CaseReview
@@ -132,20 +132,16 @@ async def _enqueue_index_async(case_id: str) -> None:
     """
     try:
         settings = get_settings()
-        redis_client = redis.from_url(str(settings.REDIS_URL), decode_responses=True)
+        redis_client = aioredis.from_url(str(settings.REDIS_URL), decode_responses=True)
         payload = json.dumps({"task": "index_case", "case_id": case_id})
-        redis_client.lpush("index:queue:case_chunks", payload)
-        redis_client.close()
+        await redis_client.lpush("index:queue:case_chunks", payload)  # type: ignore[misc]  # redis.asyncio 类型桩返回 int|Awaitable[int] 的已知误报
+        await redis_client.close()
         _logger.info(
             "index_enqueue_success",
             extra={"case_id": case_id, "queue": "index:queue:case_chunks"},
         )
-    except SystemExit:
-        # 配置加载失败时不应导致后台任务崩溃
-        _logger.warning(
-            "index_enqueue_skipped",
-            extra={"case_id": case_id, "reason": "settings_unavailable"},
-        )
+    except (SystemExit, KeyboardInterrupt):
+        raise
     except Exception as exc:
         _logger.error(
             "index_enqueue_failed",

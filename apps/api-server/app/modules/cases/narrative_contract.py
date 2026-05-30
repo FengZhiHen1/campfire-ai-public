@@ -23,9 +23,17 @@ from typing import Any, final
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.modules.cases.exceptions import CardNotFoundError
+from app.modules.cases.types import CardId, NarrativeId
+
 
 class NarrativeManagementContract(ABC):
-    """叙事管理服务契约。实现者只能覆写 _do_ 前缀的钩子方法。"""
+    """叙事管理服务契约。实现者只能覆写 _do_ 前缀的钩子方法。
+
+    异常策略: 契约基类校验器抛出 ValueError/RuntimeError（框架无关的契约违例）。
+    Service 实现可通过重写校验器抛出 HTTPException 或其他域异常以适配具体框架。
+    这不是缺陷——这是契约层（框架无关）与服务层（框架适配）的有意分离。
+    """
 
     # ========================================================================
     # L1 叙事层 — @final 公共入口
@@ -59,7 +67,7 @@ class NarrativeManagementContract(ABC):
     @final
     async def get_narrative(
         self,
-        narrative_id: str,
+        narrative_id: NarrativeId,
         current_user: dict[str, Any],
         session: AsyncSession,
     ) -> Any:
@@ -103,7 +111,7 @@ class NarrativeManagementContract(ABC):
     @final
     async def update_narrative(
         self,
-        narrative_id: str,
+        narrative_id: NarrativeId,
         title: str | None,
         narrative: str | None,
         current_user: dict[str, Any],
@@ -129,7 +137,7 @@ class NarrativeManagementContract(ABC):
     @final
     async def submit_narrative(
         self,
-        narrative_id: str,
+        narrative_id: NarrativeId,
         current_user: dict[str, Any],
         session: AsyncSession,
     ) -> Any:
@@ -156,7 +164,7 @@ class NarrativeManagementContract(ABC):
     @final
     async def get_cards_by_narrative(
         self,
-        narrative_id: str,
+        narrative_id: NarrativeId,
         session: AsyncSession,
     ) -> list[Any]:
         """获取某叙事下的所有 L2 卡片。
@@ -170,7 +178,7 @@ class NarrativeManagementContract(ABC):
     @final
     async def get_card(
         self,
-        card_id: str,
+        card_id: CardId,
         session: AsyncSession,
     ) -> Any:
         """获取单张 L2 卡片。
@@ -181,14 +189,13 @@ class NarrativeManagementContract(ABC):
         self._validate_card_id(card_id)
         result = await self._do_get_card(card_id, session)
         if result is None:
-            from app.modules.cases.exceptions import CardNotFoundError
             raise CardNotFoundError(card_id)
         return result
 
     @final
     async def update_card(
         self,
-        card_id: str,
+        card_id: CardId,
         update_data: dict[str, Any],
         session: AsyncSession,
     ) -> Any:
@@ -208,7 +215,7 @@ class NarrativeManagementContract(ABC):
     @final
     async def submit_card(
         self,
-        card_id: str,
+        card_id: CardId,
         session: AsyncSession,
     ) -> Any:
         """提交单张 L2 卡片审核。
@@ -226,7 +233,7 @@ class NarrativeManagementContract(ABC):
     @final
     async def approve_card(
         self,
-        card_id: str,
+        card_id: CardId,
         current_user: dict[str, Any],
         session: AsyncSession,
     ) -> Any:
@@ -264,7 +271,7 @@ class NarrativeManagementContract(ABC):
     @abstractmethod
     async def _do_get_narrative(
         self,
-        narrative_id: str,
+        narrative_id: NarrativeId,
         current_user: dict[str, Any],
         session: AsyncSession,
     ) -> Any: ...
@@ -282,7 +289,7 @@ class NarrativeManagementContract(ABC):
     @abstractmethod
     async def _do_update_narrative(
         self,
-        narrative_id: str,
+        narrative_id: NarrativeId,
         title: str | None,
         narrative: str | None,
         current_user: dict[str, Any],
@@ -292,7 +299,7 @@ class NarrativeManagementContract(ABC):
     @abstractmethod
     async def _do_submit_narrative(
         self,
-        narrative_id: str,
+        narrative_id: NarrativeId,
         current_user: dict[str, Any],
         session: AsyncSession,
     ) -> Any: ...
@@ -300,21 +307,21 @@ class NarrativeManagementContract(ABC):
     @abstractmethod
     async def _do_get_cards_by_narrative(
         self,
-        narrative_id: str,
+        narrative_id: NarrativeId,
         session: AsyncSession,
     ) -> list[Any]: ...
 
     @abstractmethod
     async def _do_get_card(
         self,
-        card_id: str,
+        card_id: CardId,
         session: AsyncSession,
     ) -> Any: ...
 
     @abstractmethod
     async def _do_update_card(
         self,
-        card_id: str,
+        card_id: CardId,
         update_data: dict[str, Any],
         session: AsyncSession,
     ) -> Any: ...
@@ -322,14 +329,14 @@ class NarrativeManagementContract(ABC):
     @abstractmethod
     async def _do_submit_card(
         self,
-        card_id: str,
+        card_id: CardId,
         session: AsyncSession,
     ) -> Any: ...
 
     @abstractmethod
     async def _do_approve_card(
         self,
-        card_id: str,
+        card_id: CardId,
         current_user: dict[str, Any],
         session: AsyncSession,
     ) -> Any: ...

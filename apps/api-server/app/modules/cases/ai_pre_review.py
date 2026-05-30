@@ -15,8 +15,9 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from py_schemas.cases import AiReviewSummary, CheckItem, NCAEP_EBP_LABELS
+from py_schemas.cases import AiReviewSummary, CheckItem
 from py_security import RegexPiiDetector
+from app.modules.cases.ebp_validator import check_ebp_consistency  # EBP 一致性校验（单一真相源）
 
 _logger = logging.getLogger(__name__)
 
@@ -45,6 +46,15 @@ _REQUIRED_FIELDS: list[str] = [
 ]
 """17 个必填字段（与 CASE-01 CaseCreateRequest 字段定义一致）。"""
 
+# 四段式字段定义（与 case_service._validate_four_stage_fields 保持同步）
+_FOUR_STAGE_FIELDS: list[tuple[str, str]] = [
+    ("immediate_action", "即时安全干预动作"),
+    ("comforting_phrase", "情绪安抚话术"),
+    ("observation_metrics", "后续观察指标"),
+    ("medical_criteria", "就医判断标准"),
+]
+"""四段式字段（字段名, 中文显示名）映射。与 case_service 中的同名列表保持同步。"""
+
 
 # ---------------------------------------------------------------------------
 # 内部辅助函数
@@ -65,15 +75,8 @@ def _check_format_completeness(case_data: dict[str, Any]) -> CheckItem:
     Returns:
         CheckItem: 检查结果（status + details + is_hard_gate=True）。
     """
-    four_stage_fields: list[tuple[str, str]] = [
-        ("immediate_action", "即时安全干预动作"),
-        ("comforting_phrase", "情绪安抚话术"),
-        ("observation_metrics", "后续观察指标"),
-        ("medical_criteria", "就医判断标准"),
-    ]
-
     missing: list[str] = []
-    for field_name, display_name in four_stage_fields:
+    for field_name, display_name in _FOUR_STAGE_FIELDS:
         value = case_data.get(field_name)
         if value is None or (isinstance(value, str) and value.strip() == ""):
             missing.append(display_name)
@@ -175,9 +178,8 @@ def _check_required_fields(case_data: dict[str, Any]) -> CheckItem:
 def _check_ebp_consistency(case_data: dict[str, Any]) -> CheckItem:
     """EBP 一致性检查：循证等级与标签列表一致性。
 
-    规则：
-    1. evidence_level="NCAEP循证实践" 且 ebp_labels 含非 NCAEP 标签 → annotated
-    2. evidence_level 不是 NCAEP 但 ebp_labels 含 NCAEP 标签 → annotated
+    委托 ebp_validator.check_ebp_consistency（单一真相源）执行核心逻辑，
+    本函数仅做 str|None → CheckItem 的包装转换。
 
     此项为软检查（is_hard_gate=False），仅标注不拦截。
 
@@ -189,34 +191,17 @@ def _check_ebp_consistency(case_data: dict[str, Any]) -> CheckItem:
     """
     evidence_level: str = case_data.get("evidence_level", "") or ""
     ebp_labels: list[str] = case_data.get("ebp_labels", []) or []
-
     if not isinstance(ebp_labels, list):
         ebp_labels = []
 
-    ebp_set: set[str] = set(ebp_labels)
-
-    if evidence_level == "NCAEP循证实践":
-        non_ncaep: set[str] = ebp_set - NCAEP_EBP_LABELS
-        if non_ncaep:
-            return CheckItem(
-                status="annotated",
-                details=[
-                    f"以下标签不在 NCAEP 循证实践列表中：{'、'.join(sorted(non_ncaep))}"
-                ],
-                is_hard_gate=False,
-            )
-    else:
-        ncaep_found: set[str] = ebp_set & NCAEP_EBP_LABELS
-        if ncaep_found:
-            return CheckItem(
-                status="annotated",
-                details=[
-                    f"evidence_level 为「{evidence_level}」但标签列表中包含 "
-                    f"NCAEP 循证实践标签：{'、'.join(sorted(ncaep_found))}"
-                ],
-                is_hard_gate=False,
-            )
-
+    # 委托 ebp_validator 执行核心一致性校验（单一真相源）
+    warning: str | None = check_ebp_consistency(evidence_level, ebp_labels)
+    if warning:
+        return CheckItem(
+            status="annotated",
+            details=[warning],
+            is_hard_gate=False,
+        )
     return CheckItem(
         status="pass",
         is_hard_gate=False,
@@ -336,10 +321,6 @@ def case_data_from_orm(case: Any) -> dict[str, Any]:
     """
     data: dict[str, Any] = {}
     for field in _REQUIRED_FIELDS:
-        data[field] = getattr(case, field, None)
-
-    # 补充四段式字段（已在 _REQUIRED_FIELDS 中，此处确保覆盖）
-    for field in ("immediate_action", "comforting_phrase", "observation_metrics", "medical_criteria"):
         data[field] = getattr(case, field, None)
 
     return data

@@ -37,11 +37,27 @@ from py_schemas.cases import (
     ReviewQueueItem,
     ReviewRequest,
 )
+from py_schemas.enums.case_enums import CaseStatus
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.modules.cases.ai_pre_review import case_data_from_orm, run_ai_pre_review
+
+from app.modules.cases.exceptions import (
+    CaseNotFoundError,
+    CaseStatusError,
+    PiiHardBlockError,
+    RejectCommentTooShortError,
+    SelfReviewForbiddenError,
+)
 
 
 class ReviewWorkflowContract(ABC):
-    """案例审核服务契约。实现者只能覆写 _do_ 前缀的钩子方法。"""
+    """案例审核服务契约。实现者只能覆写 _do_ 前缀的钩子方法。
+
+    异常策略: 契约基类校验器抛出域异常（exceptions.py 中定义），
+    这些异常携带诊断字段供上层处理。Service 实现可按需包装为 HTTPException。
+    契约层（框架无关）与服务层（FastAPI 适配）的异常体系是有意分离的。
+    """
 
     # ---------------------------------------------------------------------------
     # 常量
@@ -217,19 +233,11 @@ class ReviewWorkflowContract(ABC):
         """加载案例并校验存在性。"""
         case = await case_repo.find_by_case_id(session, case_id)
         if case is None:
-            from app.modules.cases.exceptions import CaseNotFoundError
             raise CaseNotFoundError(case_id)
         return case
 
     def _validate_case_reviewable(self, case: Any, reviewer_id: str) -> None:
         """校验案例可审核性：状态 + 非自审。"""
-        from py_schemas.enums.case_enums import CaseStatus
-
-        from app.modules.cases.exceptions import (
-            CaseStatusError,
-            SelfReviewForbiddenError,
-        )
-
         # 状态校验
         if case.status != CaseStatus.PENDING_REVIEW:
             current = case.status.value if hasattr(case.status, "value") else str(case.status)
@@ -249,8 +257,6 @@ class ReviewWorkflowContract(ABC):
         默认调用本模块的 run_ai_pre_review 规则引擎。
         MVP 阶段若案例未携带 ai_review，返回全 pass 占位结果。
         """
-        from app.modules.cases.ai_pre_review import run_ai_pre_review, case_data_from_orm
-
         if hasattr(case, "ai_review") and case.ai_review:
             raw = case.ai_review
             if isinstance(raw, dict):
@@ -276,7 +282,6 @@ class ReviewWorkflowContract(ABC):
             ai_review.pii_check.is_hard_gate
             and ai_review.pii_check.status == "fail"
         ):
-            from app.modules.cases.exceptions import PiiHardBlockError
             raise PiiHardBlockError(case_id, ai_review.pii_check.details or [])
 
     def _validate_review_decision(self, review_request: ReviewRequest) -> None:
@@ -284,7 +289,6 @@ class ReviewWorkflowContract(ABC):
         if review_request.decision == "rejected":
             comment = review_request.review_comment or ""
             if len(comment.strip()) < self.REJECT_COMMENT_MIN_LENGTH:
-                from app.modules.cases.exceptions import RejectCommentTooShortError
                 raise RejectCommentTooShortError(
                     len(comment), self.REJECT_COMMENT_MIN_LENGTH
                 )
