@@ -2,6 +2,7 @@
 
 去除角色准入校验（MVP 不区分角色），任何用户均可执行审核。
 审核通过后自动投递 Redis 队列触发 Worker 索引。
+路由层仅做依赖注入和委托——所有业务逻辑在 ReviewWorkflowService 中。
 
 两个端点：
 - POST /api/v1/cases/{case_id}/review — 提交审核裁决（approve/reject）
@@ -22,7 +23,7 @@ from app.core.dependencies.auth_dependencies import (
     get_review_audit_log_repository,
     get_review_repository,
 )
-from app.modules.cases.review_service import list_review_queue, submit_review
+from app.modules.cases.review_service import ReviewWorkflowService
 from py_db.repositories.case_repository import CaseRepository
 from py_db.repositories.review_repository import (
     ReviewAuditLogRepository,
@@ -37,6 +38,8 @@ from py_schemas.cases import (
 from py_schemas.security.validation_schemas import ValidationErrorResponse
 
 router = APIRouter(prefix="/api/v1/cases", tags=["reviews"])
+
+_review_service = ReviewWorkflowService()
 
 
 @router.post(
@@ -68,7 +71,7 @@ async def submit_review_endpoint(
     audit_repo: ReviewAuditLogRepository = Depends(get_review_audit_log_repository),
 ) -> CaseReviewResponse:
     """提交审核裁决端点。"""
-    return await submit_review(
+    return await _review_service.submit_review(
         case_id=case_id,
         review_request=review_request,
         current_user=anonymous_user,
@@ -103,7 +106,7 @@ async def list_review_queue_endpoint(
     review_repo: ReviewRepository = Depends(get_review_repository),
 ) -> PaginatedResponse[ReviewQueueItem]:
     """查看待审核队列端点。"""
-    return await list_review_queue(
+    return await _review_service.list_review_queue(
         status_filter=status_filter,
         page=page,
         page_size=page_size,

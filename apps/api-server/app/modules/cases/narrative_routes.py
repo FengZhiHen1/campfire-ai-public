@@ -1,5 +1,7 @@
 """L1 原始叙事层 — FastAPI 路由。
 
+路由层仅做依赖注入和委托——所有业务逻辑在 NarrativeManagementService 中。
+
 - POST /api/v1/narratives — 创建 L1 叙事
 - GET /api/v1/narratives — 列表
 - GET /api/v1/narratives/{id} — 详情
@@ -19,12 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.dependencies.anonymous_user import get_anonymous_user
 from app.core.dependencies.auth_dependencies import get_db_session
 from app.modules.cases.narrative_service import (
-    create_narrative,
-    get_narrative,
-    list_narratives,
-    update_narrative,
-    submit_narrative,
-    get_cards_by_narrative,
+    NarrativeManagementService,
     narrative_to_response,
     card_to_response,
 )
@@ -38,6 +35,8 @@ from py_schemas.cards import CardResponse
 
 router = APIRouter(prefix="/api/v1/narratives", tags=["narratives"])
 
+_narrative_service = NarrativeManagementService()
+
 
 @router.post("", response_model=dict, status_code=status.HTTP_201_CREATED)
 async def create_narrative_endpoint(
@@ -45,7 +44,7 @@ async def create_narrative_endpoint(
     anonymous_user: dict = Depends(get_anonymous_user),
     db: AsyncSession = Depends(get_db_session),
 ):
-    entity = await create_narrative(
+    entity = await _narrative_service.create_narrative(
         title=request.title,
         narrative=request.narrative,
         source_type=request.source_type,
@@ -63,7 +62,7 @@ async def list_narratives_endpoint(
     anonymous_user: dict = Depends(get_anonymous_user),
     db: AsyncSession = Depends(get_db_session),
 ):
-    items, total = await list_narratives(
+    items, total = await _narrative_service.list_narratives(
         scope=scope, current_user=anonymous_user, session=db,
         page=page, page_size=page_size,
     )
@@ -81,8 +80,10 @@ async def get_narrative_endpoint(
     anonymous_user: dict = Depends(get_anonymous_user),
     db: AsyncSession = Depends(get_db_session),
 ):
-    entity = await get_narrative(narrative_id, anonymous_user, db)
-    cards = await get_cards_by_narrative(narrative_id, db)
+    entity = await _narrative_service.get_narrative(
+        narrative_id, anonymous_user, db,
+    )
+    cards = await _narrative_service.get_cards_by_narrative(narrative_id, db)
     result = narrative_to_response(entity, card_count=len(cards))
     result["cards"] = [
         card_to_response(c, is_owner=(str(c.narrative_id) == entity.author_id),
@@ -99,7 +100,7 @@ async def update_narrative_endpoint(
     anonymous_user: dict = Depends(get_anonymous_user),
     db: AsyncSession = Depends(get_db_session),
 ):
-    entity = await update_narrative(
+    entity = await _narrative_service.update_narrative(
         narrative_id, request.title, request.narrative, anonymous_user, db,
     )
     return narrative_to_response(entity)
@@ -111,7 +112,9 @@ async def submit_narrative_endpoint(
     anonymous_user: dict = Depends(get_anonymous_user),
     db: AsyncSession = Depends(get_db_session),
 ):
-    entity = await submit_narrative(narrative_id, anonymous_user, db)
+    entity = await _narrative_service.submit_narrative(
+        narrative_id, anonymous_user, db,
+    )
     return narrative_to_response(entity)
 
 
@@ -123,13 +126,16 @@ async def extract_narrative_endpoint(
 ):
     """LLM 提取：从 L1 叙事生成 L2 卡片。"""
     # 先获取叙事，验证权限
-    entity = await get_narrative(narrative_id, anonymous_user, db)
+    entity = await _narrative_service.get_narrative(
+        narrative_id, anonymous_user, db,
+    )
     if entity.status != "draft":
         return {"error": "仅草稿状态的叙事可触发提取"}
 
     # 调用 LLM 提取
-    from app.modules.cases.case_extraction.extractor import extract_cards_from_narrative
-    cards = await extract_cards_from_narrative(
+    from app.modules.cases.case_extraction.extractor import ExtractionService
+    _extraction_service = ExtractionService()
+    cards = await _extraction_service.extract_cards_from_narrative(
         narrative_text=entity.narrative,
         narrative_id=narrative_id,
         db=db,
