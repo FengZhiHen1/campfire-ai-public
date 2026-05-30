@@ -105,15 +105,21 @@ export default function ConsultIndex() {
       <View className="consult-page">
         <View className="consult-idle">
           <View className="consult-idle__hero">
-            <Text className="consult-idle__hero-icon">🔥</Text>
+            <View className="consult-idle__hero-glow" />
+            <View className="consult-idle__hero-core" />
           </View>
           <Text className="consult-idle__title">应急咨询</Text>
           <Text className="consult-idle__subtitle">
-            描述孩子当前的行为表现，获取应急干预建议
+            描述孩子当前的行为表现，获取基于真实案例的应急建议
           </Text>
           <Button className="consult-idle__start-btn" onClick={startConsult}>
             开始咨询
           </Button>
+        </View>
+        <View className="consult-disclaimer">
+          <Text className="consult-disclaimer__text">
+            基于归档案例的 AI 生成建议，不构成医疗诊断。严重情况请咨询专业医生。
+          </Text>
         </View>
       </View>
     );
