@@ -62,20 +62,14 @@ class AccessLogMiddleware:
             },
         )
 
-from app.api.v1.auth import router as auth_router
-from app.api.v1.cases import router as cases_router
-from app.api.v1.events import router as events_router
-from app.api.v1.experts import router as experts_router
-from app.api.v1.narratives import router as narratives_router
-from app.api.v1.consult import router as consult_router
-from app.api.v1.consult.stream import router as stream_router
-from app.api.v1.consultations import router as consultations_router
-from app.api.v1.health import router as health_router
-from app.api.v1.profiles import router as profiles_router
-from app.api.v1.reviews import router as reviews_router
-from app.dependencies.auth_dependencies import _get_session_factory
-from app.middleware.rate_limit import RateLimitMiddleware
-from app.middleware.validation_handler import register_validation_handler
+from app.core.dependencies.auth_dependencies import _get_session_factory
+from app.core.health import router as health_router
+from app.core.middleware.rate_limit import RateLimitMiddleware
+from app.core.middleware.validation_handler import register_validation_handler
+from app.modules.auth import auth_router
+from app.modules.cases import cases_router, narratives_router, reviews_router
+from app.modules.consultation import consult_router, consultations_router, stream_router
+from app.modules.profiles import events_router, experts_router, profiles_router
 from py_config import get_settings
 from py_logger import logger
 from py_rag.indexing.worker import start_worker, stop_worker
