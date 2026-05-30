@@ -42,6 +42,24 @@ SEVERITY_EVICTION_ORDER: list[str] = ["DEBUG", "INFO"]
 """等级淘汰优先级"""
 
 # ============================================================================
+# ANSI 颜色码（终端可读性）
+# ============================================================================
+
+_COLOR_ENABLED: bool = os.environ.get("LOG_CONSOLE_COLOR", "1") != "0"
+"""通过 LOG_CONSOLE_COLOR=0 环境变量关闭终端颜色输出。"""
+
+_SEVERITY_COLORS: dict[str, str] = {
+    "DEBUG": "\033[90m",       # gray
+    "INFO": "\033[32m",        # green
+    "WARNING": "\033[33m",     # yellow
+    "ERROR": "\033[31m",       # red
+    "CRITICAL": "\033[1;31m",  # bold red
+}
+_RESET = "\033[0m"
+_DIM = "\033[2m"
+_CYAN = "\033[36m"
+
+# ============================================================================
 # 环形缓冲区（模块级状态）
 # ============================================================================
 
@@ -125,6 +143,53 @@ class JSONFormatter(logging.Formatter):
 
 
 # ============================================================================
+# ConsoleFormatter — 终端人类可读输出
+# ============================================================================
+
+
+class ConsoleFormatter(logging.Formatter):
+    """终端人类可读格式化器，可选 ANSI 颜色。
+
+    输出格式::
+
+        timestamp  SEVERITY  service  [trace_id]  [op_type]  message
+
+    颜色可通过环境变量 ``LOG_CONSOLE_COLOR=0`` 关闭。
+    """
+
+    def format(self, record: logging.LogRecord) -> str:
+        timestamp = getattr(record, "timestamp", None) or _make_timestamp()
+        severity: str = record.levelname
+        service: str = getattr(record, "service", "unknown")
+        trace_id: str = getattr(record, "trace_id", "")
+        message: str = record.getMessage()
+        op_type: str | None = getattr(record, "op_type", None)
+
+        trace_short = f"[{trace_id[:8]}]" if trace_id else "[-]"
+        op_part = f"  [{op_type}]" if op_type else ""
+
+        if _COLOR_ENABLED:
+            color = _SEVERITY_COLORS.get(severity, "")
+            return (
+                f"{_DIM}{timestamp}{_RESET}  "
+                f"{color}{severity:<8}{_RESET}  "
+                f"{_CYAN}{service}{_RESET}  "
+                f"{_DIM}{trace_short}{_RESET}"
+                f"{op_part}  "
+                f"{message}"
+            )
+        else:
+            return (
+                f"{timestamp}  "
+                f"{severity:<8}  "
+                f"{service}  "
+                f"{trace_short}"
+                f"{op_part}  "
+                f"{message}"
+            )
+
+
+# ============================================================================
 # DynamicStreamHandler
 # ============================================================================
 
@@ -171,7 +236,7 @@ class StructuredLogger(BaseStructuredLogger):
         """确保 logger 已配置 stdout handler（幂等）。"""
         if not self._logging_logger.handlers:
             handler = _DynamicStreamHandler()
-            handler.setFormatter(JSONFormatter())
+            handler.setFormatter(ConsoleFormatter())
             self._logging_logger.addHandler(handler)
 
     # ------------------------------------------------------------------
