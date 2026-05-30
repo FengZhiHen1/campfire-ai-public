@@ -4,12 +4,11 @@ version = "0.1.0"
 description = "Campfire-AI background worker"
 requires-python = ">=3.12"
 dependencies = [
-    "redis>=5.0",
+    "py-cache",
     "py-config",
-    "py-db",
-    "py-rag",
-    "py-llm",
     "py-logger",
+    "py-rag",
+    "sqlalchemy>=2.0",
 ]
 
 [project.scripts]
