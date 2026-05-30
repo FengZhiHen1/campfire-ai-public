@@ -9,6 +9,36 @@
   padding-bottom: calc(48px + env(safe-area-inset-bottom));
 }
 
+/* ========== 错误状态栏 ========== */
+.home-error-banner {
+  display: flex;
+  align-items: center;
+  gap: $cf-spacing-sm;
+  margin: 0 $cf-spacing-sm;
+  padding: $cf-spacing-xs $cf-spacing-sm;
+  background: $cf-error-container;
+  border-radius: $cf-radius-sm;
+
+  &__icon {
+    font-size: 14px;
+  }
+
+  &__text {
+    flex: 1;
+    font-size: 14px;
+    color: $cf-on-error-container;
+  }
+
+  &__retry {
+    padding: 4px 12px;
+    font-size: 12px;
+    color: $cf-on-error-container;
+    background: none;
+    border: 1px solid $cf-error;
+    border-radius: $cf-radius-sm;
+  }
+}
+
 /* ========== 顶部问候区 ========== */
 .home-greeting {
   padding: $cf-spacing-md;

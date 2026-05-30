@@ -50,7 +50,6 @@ export default function ConsultIndex() {
     planSections,
     accumulatedText,
     isInputValid,
-    isConsultActive,
     emotionLevel,
     referencedCases: refCases,
     crisisLevel,
