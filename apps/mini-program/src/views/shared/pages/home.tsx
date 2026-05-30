@@ -31,7 +31,11 @@ export default function HomePage() {
     Taro.navigateTo({ url: '/views/consult/pages/history' });
   };
 
-  const goProfile = () => {
+  const goProfileList = () => {
+    Taro.navigateTo({ url: '/views/profiles/pages/index' });
+  };
+
+  const goProfileCreate = () => {
     Taro.navigateTo({ url: '/views/profiles/pages/edit' });
   };
 
@@ -107,7 +111,7 @@ export default function HomePage() {
       {/* 个人档案快捷卡片 */}
       <View className="home-section-header">
         <Text className="home-section-header__title">个人档案</Text>
-        <Button className="home-section-header__link" onClick={goProfile}>
+        <Button className="home-section-header__link" onClick={goProfileList}>
           查看全部 →
         </Button>
       </View>
@@ -115,7 +119,7 @@ export default function HomePage() {
       {profilesLoading ? (
         <View className="home-skeleton home-skeleton--profile" />
       ) : latestProfile ? (
-        <View className="home-profile-card" onClick={goProfile}>
+        <View className="home-profile-card" onClick={goProfileList}>
           <View className="home-profile-card__avatar">
             <Text className="home-profile-card__avatar-icon">👤</Text>
           </View>
@@ -142,7 +146,7 @@ export default function HomePage() {
           <Text className="home-profile-card__link">→ 查看档案</Text>
         </View>
       ) : (
-        <View className="home-profile-create" onClick={goProfile}>
+        <View className="home-profile-create" onClick={goProfileCreate}>
           <View className="home-profile-create__icon">📝</View>
           <View className="home-profile-create__content">
             <Text className="home-profile-create__title">创建孩子的第一份档案</Text>
