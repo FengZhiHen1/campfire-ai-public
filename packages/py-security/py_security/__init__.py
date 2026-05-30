@@ -17,9 +17,11 @@ from py_security.exceptions import (
     PiiInputValidationError,
     PiiPatternCompileError,
 )
+from py_security.html_sanitizer import sanitize_html
 from py_security.pii_contract import BasePiiDetector
 from py_security.pii_detector import RegexPiiDetector
 from py_security.pii_patterns import PII_PATTERNS
+from py_security.security_detector import detect_security_threat
 from py_security.types import (
     DetectedText,
     PiiDetectionResult,
@@ -45,4 +47,8 @@ __all__ = [
     "PiiInputValidationError",
     # 模式
     "PII_PATTERNS",
+    # 安全检测
+    "detect_security_threat",
+    # HTML 清洗
+    "sanitize_html",
 ]

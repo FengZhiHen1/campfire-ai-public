@@ -5,6 +5,7 @@ description = "Campfire-AI shared package: py-security - PII detection, security
 requires-python = ">=3.12"
 dependencies = [
     "py-logger",
+    "py-schemas",
 ]
 
 [build-system]

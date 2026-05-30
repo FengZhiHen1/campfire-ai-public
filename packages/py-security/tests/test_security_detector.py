@@ -1,9 +1,11 @@
-"""SEC-05 输入校验防护 — detect_security_threat 单元测试。
+"""安全威胁检测 — detect_security_threat 单元测试。
+
+从 py-schemas/tests/ 迁移至 py-security（P1 架构清理）。
 """
 
 from __future__ import annotations
 
-from py_schemas.utils.security import detect_security_threat
+from py_security.security_detector import detect_security_threat
 from py_schemas.security.validation_schemas import SecurityDetectionType
 
 

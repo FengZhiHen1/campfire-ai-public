@@ -497,25 +497,6 @@ class ProfileListItem(CampfireBaseModel):
 
 
 # ===========================================================================
-# 年龄区间计算工具函数（已迁移至 py_schemas.utils.profiles）
-# ===========================================================================
-
-
-import warnings
-
-from py_schemas.utils.profiles import calculate_age_range as _calculate_age_range
-
-
-def calculate_age_range(birth_date: date) -> AgeRange:
-    """已弃用：请使用 py_schemas.utils.profiles.calculate_age_range。"""
-    warnings.warn(
-        "py_schemas.profiles.calculate_age_range is deprecated. "
-        "Import from py_schemas.utils.profiles instead.",
-        DeprecationWarning,
-        stacklevel=2,
-    )
-    return _calculate_age_range(birth_date)
-
 
 # ===========================================================================
 # PROF-03 — 枚举类型
@@ -883,6 +864,4 @@ __all__ = [
     "EventUpdate",
     "EventResponse",
     "EventListItem",
-    # 工具函数
-    "calculate_age_range",
 ]

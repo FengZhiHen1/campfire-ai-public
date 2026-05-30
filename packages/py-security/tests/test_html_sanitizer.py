@@ -1,11 +1,13 @@
-"""SEC-05 输入校验防护 — sanitize_html 单元测试。
+"""HTML 内容安全清洗 — sanitize_html 单元测试。
+
+从 py-schemas/tests/ 迁移至 py-security（P1 架构清理）。
 """
 
 from __future__ import annotations
 
 import pytest
 
-from py_schemas.utils.html import sanitize_html
+from py_security.html_sanitizer import sanitize_html
 
 
 class TestSanitizeHtml:

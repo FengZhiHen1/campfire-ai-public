@@ -2,6 +2,8 @@
 
 提供 sanitize_html() 纯函数，使用 Python 标准库 html.escape() 执行
 OWASP 五字符转义，防止 XSS 攻击。
+
+从 py-schemas/utils/html.py 迁移至 py-security（P1 架构清理）。
 """
 
 from __future__ import annotations
@@ -27,12 +29,6 @@ def sanitize_html(text: str) -> str:
 
     Raises:
         TypeError: 如果 text 不是字符串类型。
-
-    Side Effects:
-        无。本函数为纯函数，不访问外部资源。
-
-    Thread Safety:
-        本函数内部不维护可变状态，线程安全。
     """
     if not isinstance(text, str):
         raise TypeError(

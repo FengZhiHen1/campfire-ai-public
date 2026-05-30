@@ -1,6 +1,6 @@
-"""PROF-01 档案年龄区间计算。
+"""档案年龄区间计算工具。
 
-提供 calculate_age_range() 纯函数，根据出生日期实时计算年龄区间枚举值。
+从 py-schemas/utils/profiles.py 迁移至 api-server（P1 架构清理）。
 """
 
 from __future__ import annotations

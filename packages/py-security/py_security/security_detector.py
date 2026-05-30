@@ -2,6 +2,8 @@
 
 提供 detect_security_threat() 纯函数，对 Pydantic 校验通过的数据
 执行 SQL 注入/XSS 载荷/格式异常检测。
+
+从 py-schemas/utils/security.py 迁移至 py-security（P1 架构清理）。
 """
 
 from __future__ import annotations
@@ -42,12 +44,10 @@ _XSS_PATTERNS: list[re.Pattern[str]] = [
     re.compile(r"document\.cookie", re.IGNORECASE),
 ]
 
-# 字段名含非法字符的模式
 _MALFORMED_FIELD_NAME_PATTERN = re.compile(r"[<>\"';&|]")
 
 
 def _check_string_for_threats(value: str) -> SecurityDetectionType | None:
-    """对单个字符串值执行 SQL 注入和 XSS 载荷模式匹配。"""
     for pattern in _SQL_INJECTION_PATTERNS:
         if pattern.search(value):
             return SecurityDetectionType.sql_injection
@@ -60,7 +60,6 @@ def _check_string_for_threats(value: str) -> SecurityDetectionType | None:
 def _traverse_and_detect(
     data: Any, depth: int = 0, max_depth: int = 5
 ) -> SecurityDetectionType | None:
-    """递归遍历字典/列表，检测安全威胁。"""
     if depth > max_depth:
         return SecurityDetectionType.malformed_request
 
@@ -101,18 +100,9 @@ def detect_security_threat(
 
     Returns:
         SecurityDetectionType | None: 检测到的威胁类型，无威胁时返回 None。
-
-    Side Effects:
-        无。本函数为纯函数，不记录日志（日志由调用方在检测到威胁后写入）。
-
-    Thread Safety:
-        本函数内部不维护可变状态，线程安全。
     """
     try:
         return _traverse_and_detect(validated_data)
     except Exception:
-        _logger.warning(
-            "security_detection_internal_error",
-            exc_info=True,
-        )
+        _logger.warning("security_detection_internal_error", exc_info=True)
         return None

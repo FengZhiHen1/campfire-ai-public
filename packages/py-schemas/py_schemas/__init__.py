@@ -17,7 +17,6 @@
 - consultation_history.py  咨询历史管理（CSLT-06）
 - enums/          业务枚举定义
 - security/       输入校验模型（SEC-05）
-- utils/          工具函数（HTML 清洗、安全检测、文件校验、年龄计算）
 """
 
 from py_schemas.auth import (

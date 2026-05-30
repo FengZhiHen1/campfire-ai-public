@@ -2,7 +2,7 @@
 
 覆盖 ProfileCreate、ProfileUpdate、ProfileResponse、ProfileListItem、
 EventCreate、EventUpdate、EventResponse、EventListItem、
-AccessRequest、AccessDecision、枚举类型、calculate_age_range。
+AccessRequest、AccessDecision、枚举类型。
 """
 
 from __future__ import annotations
@@ -34,7 +34,6 @@ from py_schemas.profiles import (
     SeverityLevel,
     Trigger,
     VisibleScope,
-    calculate_age_range,
 )
 
 
@@ -351,34 +350,3 @@ class TestEventListItem:
         )
         assert item.has_professional_note is False
 
-
-# ===========================================================================
-# calculate_age_range
-# ===========================================================================
-
-
-class TestCalculateAgeRange:
-    def test_0_3(self):
-        today = date.today()
-        birth = date(today.year - 2, today.month, min(today.day, 28))
-        assert calculate_age_range(birth) == AgeRange.AGE_0_3
-
-    def test_4_6(self):
-        today = date.today()
-        birth = date(today.year - 5, today.month, min(today.day, 28))
-        assert calculate_age_range(birth) == AgeRange.AGE_4_6
-
-    def test_7_12(self):
-        today = date.today()
-        birth = date(today.year - 10, today.month, min(today.day, 28))
-        assert calculate_age_range(birth) == AgeRange.AGE_7_12
-
-    def test_13_18(self):
-        today = date.today()
-        birth = date(today.year - 15, today.month, min(today.day, 28))
-        assert calculate_age_range(birth) == AgeRange.AGE_13_18
-
-    def test_18_plus(self):
-        today = date.today()
-        birth = date(today.year - 25, today.month, min(today.day, 28))
-        assert calculate_age_range(birth) == AgeRange.AGE_18_PLUS
