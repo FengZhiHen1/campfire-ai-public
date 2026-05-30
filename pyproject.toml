@@ -2,48 +2,62 @@
 name = "campfire-ai"
 version = "0.1.0"
 description = "篝火智答 - 孤独症家属智能应急咨询平台"
+readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "api-server",
+    "worker",
+    "py-auth",
+    "py-cache",
+    "py-config",
+    "py-db",
+    "py-health",
+    "py-llm",
+    "py-logger",
+    "py-rag",
+    "py-schemas",
+    "py-security",
+    "py-storage",
     "python-dotenv>=1.2.2",
 ]
 
 [tool.uv.workspace]
 members = [
-    "packages/py-config",
-    "packages/py-db",
-    "packages/py-schemas",
-    "packages/py-rag",
-    "packages/py-llm",
-    "packages/py-cache",
-    "packages/py-storage",
-    "packages/py-auth",
-    "packages/py-logger",
-    "packages/py-security",
-    "packages/py-health",
     "apps/api-server",
     "apps/worker",
+    "packages/py-*",
 ]
 
 [tool.uv.sources]
-py-config = { workspace = true }
-py-db = { workspace = true }
-py-schemas = { workspace = true }
-py-rag = { workspace = true }
-py-llm = { workspace = true }
-py-cache = { workspace = true }
-py-storage = { workspace = true }
-py-auth = { workspace = true }
-py-logger = { workspace = true }
-py-security = { workspace = true }
-py-health = { workspace = true }
 api-server = { workspace = true }
 worker = { workspace = true }
+py-auth = { workspace = true }
+py-cache = { workspace = true }
+py-config = { workspace = true }
+py-db = { workspace = true }
+py-health = { workspace = true }
+py-llm = { workspace = true }
+py-logger = { workspace = true }
+py-rag = { workspace = true }
+py-schemas = { workspace = true }
+py-security = { workspace = true }
+py-storage = { workspace = true }
 
 [dependency-groups]
 dev = [
+    "asyncpg>=0.29",
     "mypy>=2.1.0",
     "pytest>=8.0",
     "pytest-asyncio>=0.24",
     "python-dateutil>=2.9.0.post0",
     "ruff>=0.8",
 ]
+
+[tool.pytest.ini_options]
+addopts = "-q --import-mode=importlib"
+
+[tool.coverage.run]
+source = ["apps", "packages"]
+
+[tool.coverage.report]
+show_missing = true
