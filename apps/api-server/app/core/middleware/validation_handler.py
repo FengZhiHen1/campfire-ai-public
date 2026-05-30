@@ -11,6 +11,7 @@ from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
+from py_logger import logger
 from py_schemas.security.validation_schemas import (
     ValidationErrorItem,
     ValidationErrorResponse,
@@ -105,6 +106,19 @@ async def _validation_exception_handler(
         )
 
     response_body = ValidationErrorResponse(errors=errors)
+
+    logger.warning(
+        service="api-server",
+        message="request_validation_failed",
+        extra={
+            "path": str(request.url.path),
+            "method": request.method,
+            "error_count": len(errors),
+            "errors": [
+                {"field": e.field, "reason": e.reason} for e in errors
+            ],
+        },
+    )
 
     return JSONResponse(
         status_code=422,

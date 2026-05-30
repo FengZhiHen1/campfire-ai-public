@@ -21,6 +21,7 @@ from fastapi.responses import JSONResponse
 from py_health.checker import check_all, check_ready
 from py_health.models import HealthStatus
 from py_health.state import get_consecutive_failures
+from py_logger import logger
 
 router = APIRouter(tags=["health"])
 
@@ -40,10 +41,21 @@ async def _get_health(request: Request) -> JSONResponse:
                 或 consecutive_failures >= 3
     """
     response = await check_all()
-    if response.status == HealthStatus.healthy and get_consecutive_failures() < 3:
+    consecutive = get_consecutive_failures()
+    if response.status == HealthStatus.healthy and consecutive < 3:
         status_code = 200
     else:
         status_code = 503
+        logger.warning(
+            service="api-server",
+            message="health_check_degraded",
+            extra={
+                "status": response.status.value
+                if hasattr(response.status, "value")
+                else str(response.status),
+                "consecutive_failures": consecutive,
+            },
+        )
     return JSONResponse(
         content=response.model_dump(),
         status_code=status_code,
@@ -63,6 +75,12 @@ async def _get_ready(request: Request) -> JSONResponse:
     """
     response = await check_ready()
     status_code = 200 if response.ready else 503
+    if not response.ready:
+        logger.warning(
+            service="api-server",
+            message="readiness_check_failed",
+            extra={"ready": False},
+        )
     return JSONResponse(
         content=response.model_dump(),
         status_code=status_code,

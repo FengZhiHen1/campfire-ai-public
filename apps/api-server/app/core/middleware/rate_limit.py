@@ -162,8 +162,8 @@ def _handle_redis_degraded(
     RATE_LIMIT_REDIS_HEALTH.set(0)
     RATE_LIMIT_CHECK_TOTAL.labels(status="degraded", level="none").inc()
     logger.critical(
-        "api-server",
-        "rate_limit_degraded",
+        service="api-server",
+        message="rate_limit_degraded",
         op_type="rate_limit_degraded",
         extra=extra,
     )
@@ -329,8 +329,8 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         if user_id is not None:
             extra["user_id"] = user_id
         logger.warning(
-            "api-server",
-            "rate_limit_exceeded",
+            service="api-server",
+            message="rate_limit_exceeded",
             extra=extra,
         )
 
@@ -375,8 +375,8 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
                 await redis_client.expire(anomaly_key, 310)
             if hit_count >= 3:
                 logger.warning(
-                    "api-server",
-                    "potential_abnormal_behavior",
+                    service="api-server",
+                    message="potential_abnormal_behavior",
                     extra={
                         "user_id": user_id,
                         "ip": ip,
