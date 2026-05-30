@@ -187,18 +187,24 @@ class TestMainLoop:
         _shutdown_event.clear()
 
         mock_redis = MagicMock()
-        mock_redis.brpop = AsyncMock(return_value=None)
+        _call_count = 0
+
+        async def _limited_brpop(_key, timeout=None):
+            nonlocal _call_count
+            _call_count += 1
+            if _call_count >= 3:
+                _shutdown_event.set()
+            return None
+
+        mock_redis.brpop = _limited_brpop
 
         with (
             patch("worker.main._get_pipeline", return_value=MagicMock()),
             patch("worker.main.get_redis_client", AsyncMock(return_value=mock_redis)),
         ):
-            task = asyncio.create_task(_MAIN_MOD._main_loop())
-            await asyncio.sleep(0.05)
-            _shutdown_event.set()
-            await task
+            await _MAIN_MOD._main_loop()
 
-        mock_redis.brpop.assert_called()
+        assert _call_count == 3
 
 
 # ============================================================================
