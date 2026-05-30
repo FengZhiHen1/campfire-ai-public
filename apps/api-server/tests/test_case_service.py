@@ -186,6 +186,7 @@ class TestSubmitCase:
         repo.find_by_case_id.return_value = case
         updated = _mock_case(status=CaseStatus.PENDING_REVIEW)
         repo.update_status.return_value = updated
+        svc._pii_detector.detect = mock.MagicMock(return_value=mock.MagicMock(has_pii=False, warnings=[]))
         response = await svc.submit_case(
             case_id=CaseId("CASE-2026-0001"), current_user=user,
             session=session, case_repo=repo,

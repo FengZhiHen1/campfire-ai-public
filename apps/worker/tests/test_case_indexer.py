@@ -41,7 +41,7 @@ class TestIndexCase:
                 "sqlalchemy.ext.asyncio.async_sessionmaker",
                 return_value=MagicMock(),
             ),
-            patch("worker.tasks.case_indexer.get_settings"),
+            patch("py_config.get_settings"),
         ):
             await index_case("550e8400-e29b-41d4-a716-446655440000", trace_id="abc123")
 
@@ -75,7 +75,7 @@ class TestIndexCase:
                 "sqlalchemy.ext.asyncio.async_sessionmaker",
                 return_value=MagicMock(),
             ),
-            patch("worker.tasks.case_indexer.get_settings"),
+            patch("py_config.get_settings"),
         ):
             await index_case("test-id")
 
