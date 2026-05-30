@@ -17,6 +17,7 @@ import {
   type MessageItem,
   type MessageSender,
   type MessageType,
+  type PlanSection,
   ConsultErrorCode,
   StateTransitionError,
 } from '../types/index';
@@ -148,4 +149,45 @@ export function createMessageItem(
     messageType,
     ...(metadata ? { metadata } : {}),
   };
+}
+
+// ============================================================================
+// 段落工厂函数
+// ============================================================================
+
+/**
+ * 四段式方案标题常量列表。
+ * 与后端 CSLT-03 解析的 JSON key 保持一致。
+ */
+export const SECTION_KEYS: readonly string[] = [
+  '即时安全干预动作',
+  '情绪安抚话术',
+  '后续观察指标',
+  '就医判断标准',
+] as const;
+
+/**
+ * 创建四个空的 PlanSection。
+ */
+export function createEmptySections(): PlanSection[] {
+  return SECTION_KEYS.map((title) => ({
+    title,
+    contents: [],
+    isCompleted: false,
+  }));
+}
+
+/**
+ * 将后端下发的 sections dict 转换为前端 PlanSection 数组。
+ * sections 由后端从 LLM JSON 输出解析，无需前端正则处理。
+ */
+export function sectionsToPlanSections(sections: Record<string, string[]>): PlanSection[] {
+  return SECTION_KEYS.map((title) => {
+    const contents = sections[title] ?? [];
+    return {
+      title,
+      contents: Array.isArray(contents) ? contents : [],
+      isCompleted: contents.length > 0,
+    };
+  });
 }
