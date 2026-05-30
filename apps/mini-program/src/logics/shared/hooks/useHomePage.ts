@@ -1,25 +1,32 @@
 import { useState, useEffect, useCallback } from 'react';
 import { consultApi } from '../../consult';
 import type { ConsultationHistoryListItem } from '../../consult';
-import type { ProfileListItem } from '../../profiles/types';
-import { listProfiles } from '../../profiles/services/profileApi';
+import { useProfileStore } from '../../profiles/store/profileStore';
+import { useProfile } from '../../profiles/hooks/useProfile';
 
 export function useHomePage() {
   const [loading, setLoading] = useState(true);
   const [hasError, setHasError] = useState(false);
   const [consultHistory, setConsultHistory] = useState<ConsultationHistoryListItem[]>([]);
-  const [profiles, setProfiles] = useState<ProfileListItem[]>([]);
+
+  const profiles = useProfileStore((s) => s.list);
+  const listState = useProfileStore((s) => s.listState);
+  const { fetchProfiles } = useProfile();
+
+  const profilesLoading = listState === 'loading' || (listState === 'idle' && profiles.length === 0);
+
+  useEffect(() => {
+    if (listState === 'idle' && profiles.length === 0) {
+      fetchProfiles();
+    }
+  }, [listState, profiles.length, fetchProfiles]);
 
   const load = useCallback(async () => {
     setLoading(true);
     setHasError(false);
     try {
-      const [historyRes, profileRes] = await Promise.all([
-        consultApi.fetchHistoryList(1, 5).catch(() => ({ items: [], total: 0, page: 1, page_size: 5 })),
-        listProfiles().catch(() => []),
-      ]);
+      const historyRes = await consultApi.fetchHistoryList(1, 5).catch(() => ({ items: [], total: 0, page: 1, page_size: 5 }));
       setConsultHistory(historyRes.items ?? []);
-      setProfiles(profileRes);
     } catch {
       setHasError(true);
     } finally {
@@ -31,5 +38,5 @@ export function useHomePage() {
     load();
   }, [load]);
 
-  return { loading, hasError, consultHistory, profiles, load };
+  return { loading, hasError, consultHistory, profiles, profilesLoading, load };
 }
