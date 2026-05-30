@@ -23,6 +23,9 @@ import type { CaseFormFields, FormErrors } from '../../logics/cases/types';
 // Props 类型定义
 // ============================================================================
 
+/** 可安全作为文本/选择器字段处理的字段名（排除 tuple / array / boolean 类型字段） */
+type TextFieldName = Exclude<keyof CaseFormFields, 'age_range' | 'ebp_labels' | 'is_template'>;
+
 interface CaseFormViewProps {
   /** 表单字段值 */
   fields: CaseFormFields;
@@ -33,7 +36,7 @@ interface CaseFormViewProps {
   /** 最后保存时间 */
   lastSavedAt: string | null;
   /** 更新字段值的回调 */
-  onFieldChange: (name: keyof CaseFormFields, value: string | number | boolean | string[]) => void;
+  onFieldChange: (name: keyof CaseFormFields, value: string | number | boolean | string[] | [number, number]) => void;
   /** 提交表单的回调 */
   onSubmit: () => void;
   /** 重置表单的回调 */
@@ -86,7 +89,7 @@ const CaseFormView: FC<CaseFormViewProps> = ({
    */
   const renderInput = (
     label: string,
-    name: keyof CaseFormFields,
+    name: TextFieldName,
     placeholder: string,
     maxLength?: number,
   ) => (
@@ -108,7 +111,7 @@ const CaseFormView: FC<CaseFormViewProps> = ({
    */
   const renderTextarea = (
     label: string,
-    name: keyof CaseFormFields,
+    name: TextFieldName,
     placeholder: string,
   ) => (
     <View className="form-group">
@@ -128,7 +131,7 @@ const CaseFormView: FC<CaseFormViewProps> = ({
    */
   const renderPicker = (
     label: string,
-    name: keyof CaseFormFields,
+    name: TextFieldName,
     options: string[],
     placeholder: string,
   ) => {
@@ -141,7 +144,7 @@ const CaseFormView: FC<CaseFormViewProps> = ({
           range={options}
           value={selectedIndex >= 0 ? selectedIndex : 0}
           onChange={(e) => {
-            const index: number = parseInt(e.detail.value, 10);
+            const index: number = parseInt(String(e.detail.value), 10);
             onFieldChange(name, options[index] || '');
           }}
         >
@@ -188,21 +191,28 @@ const CaseFormView: FC<CaseFormViewProps> = ({
           <Text className="form-label">适用年龄区间 *</Text>
           <View className="age-range-container">
             <Input
-              className={`form-input age-input ${errors.age_range_min ? 'has-error' : ''}`}
+              className={`form-input age-input ${errors.age_range ? 'has-error' : ''}`}
               type="number"
-              value={String(fields.age_range_min)}
+              value={String(fields.age_range?.[0] ?? 0)}
               placeholder="起始岁"
-              onInput={(e) => onFieldChange('age_range_min', parseInt(e.detail.value, 10) || 0)}
+              onInput={(e) => {
+                const min = parseInt(e.detail.value, 10) || 0;
+                onFieldChange('age_range', [min, fields.age_range?.[1] ?? 0]);
+              }}
             />
             <Text className="age-separator">-</Text>
             <Input
-              className={`form-input age-input ${errors.age_range_max ? 'has-error' : ''}`}
+              className={`form-input age-input ${errors.age_range ? 'has-error' : ''}`}
               type="number"
-              value={String(fields.age_range_max)}
+              value={String(fields.age_range?.[1] ?? 0)}
               placeholder="结束岁"
-              onInput={(e) => onFieldChange('age_range_max', parseInt(e.detail.value, 10) || 0)}
+              onInput={(e) => {
+                const max = parseInt(e.detail.value, 10) || 0;
+                onFieldChange('age_range', [fields.age_range?.[0] ?? 0, max]);
+              }}
             />
           </View>
+          {errors.age_range && <Text className="form-error">{errors.age_range}</Text>}
         </View>
 
         {renderPicker('严重程度 *', 'severity', severityOptions, '请选择严重程度')}

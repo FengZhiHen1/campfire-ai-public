@@ -7,7 +7,7 @@
  * 调用路径：views/cases/pages/detail → useCaseDetailPage → narrativeApi
  */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import Taro from '@tarojs/taro';
 import { getNarrative } from '../services/narrativeApi';
 import { STATUS_TEXT_MAP, STATUS_CLASS_MAP, SOURCE_LABEL_MAP, CARD_STATUS_MAP } from '../types/constants';
@@ -25,6 +25,7 @@ export interface UseCaseDetailPageReturn {
   handleGoExtract: () => void;
   handleEditNarrative: () => void;
   handleCardClick: (cardId: string) => void;
+  handleRetry: () => void;
   statusTextMap: Record<string, string>;
   statusClassMap: Record<string, string>;
   sourceLabelMap: Record<string, string>;
@@ -40,7 +41,7 @@ export function useCaseDetailPage(): UseCaseDetailPageReturn {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
+  const fetchDetail = useCallback(() => {
     const params = Taro.getCurrentInstance().router?.params;
     const narrativeId = params?.narrativeId;
     if (!narrativeId) return;
@@ -51,10 +52,11 @@ export function useCaseDetailPage(): UseCaseDetailPageReturn {
       .then((res) => setData(res))
       .catch(() => {
         setError('加载失败，请稍后重试');
-        Taro.showToast({ title: '加载失败', icon: 'none' });
       })
       .finally(() => setLoading(false));
   }, []);
+
+  useEffect(() => { fetchDetail(); }, [fetchDetail]);
 
   const handleGoExtract = () => {
     if (!data) return;
@@ -71,6 +73,8 @@ export function useCaseDetailPage(): UseCaseDetailPageReturn {
     Taro.navigateTo({ url: `/views/cases/pages/extraction-result?narrativeId=${data.narrative_id}&cardId=${cardId}` });
   };
 
+  const handleRetry = useCallback(() => { fetchDetail(); }, [fetchDetail]);
+
   return {
     data,
     loading,
@@ -78,6 +82,7 @@ export function useCaseDetailPage(): UseCaseDetailPageReturn {
     handleGoExtract,
     handleEditNarrative,
     handleCardClick,
+    handleRetry,
     statusTextMap: STATUS_TEXT_MAP,
     statusClassMap: STATUS_CLASS_MAP,
     sourceLabelMap: SOURCE_LABEL_MAP,

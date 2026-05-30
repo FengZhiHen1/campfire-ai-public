@@ -17,7 +17,7 @@ export default function CasesSubmit() {
     severityIdx, setSeverityIdx,
     sceneIdx, setSceneIdx,
     evidenceLevelIdx, setEvidenceLevelIdx,
-    quartetValues, quartetSetter, handleSubmit,
+    quartetValues, quartetSetter, isSubmitting, handleSubmit,
     behaviorTypeOptions, severityOptions, sceneOptions, evidenceLevelOptions, quartetConfig,
   } = useCaseSubmit();
 
@@ -118,7 +118,9 @@ export default function CasesSubmit() {
 
       {/* 底部操作栏 */}
       <View className="submit-actions">
-        <Button className="submit-actions__btn" onClick={handleSubmit}>提交案例</Button>
+        <Button className="submit-actions__btn" loading={isSubmitting} disabled={isSubmitting} onClick={handleSubmit}>
+          {isSubmitting ? '提交中...' : '提交案例'}
+        </Button>
       </View>
     </View>
   );
