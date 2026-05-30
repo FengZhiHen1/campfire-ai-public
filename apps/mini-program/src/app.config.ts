@@ -13,6 +13,7 @@ export default defineAppConfig({
     'views/cases/pages/narrative-submit',
     'views/cases/pages/extraction-result',
     'views/cases/pages/review',
+    'views/cases/pages/card-detail',
   ],
   window: {
     backgroundTextStyle: 'light',

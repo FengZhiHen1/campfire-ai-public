@@ -24,34 +24,25 @@ const BASE_PATH: string = '/api/v1/narratives';
  * @param scope - 查询范围（public / my）
  * @param page - 页码（从 1 开始）
  * @param pageSize - 每页条数
- * @param keyword - 可选搜索关键词
  * @param signal - 可选外部 AbortSignal
  * @returns 分页叙事列表
  */
 export async function listNarratives(
   scope: string = 'public',
   page: number = 1,
-  pageSize: number = 20,
-  keyword?: string,
+  pageSize: number = 15,
   signal?: AbortSignal,
 ): Promise<PaginatedResponse<NarrativeListItem>> {
   if (signal?.aborted) {
     return Promise.reject(new DOMException('The operation was aborted', 'AbortError'));
   }
-  if (scope === null || scope === undefined) {
-    return Promise.reject(new TypeError('scope is required'));
-  }
-  const queryData: Record<string, unknown> = { scope, page, page_size: pageSize };
-  if (keyword !== undefined) queryData.keyword = keyword;
-
   const { signal: requestSignal, cleanup } = createRequestSignal(signal);
   try {
     const res = await httpClient.request<PaginatedResponse<NarrativeListItem>>(
       withSignal(
         {
-          url: BASE_PATH,
+          url: `${BASE_PATH}?scope=${scope}&page=${page}&page_size=${pageSize}`,
           method: 'GET',
-          data: queryData,
         },
         requestSignal,
       ),
@@ -110,9 +101,6 @@ export async function createNarrative(
   if (signal?.aborted) {
     return Promise.reject(new DOMException('The operation was aborted', 'AbortError'));
   }
-  if (data === null || data === undefined) {
-    return Promise.reject(new TypeError('data is required'));
-  }
   const { signal: requestSignal, cleanup } = createRequestSignal(signal);
   try {
     const res = await httpClient.request<{ narrative_id: string }>(
@@ -120,7 +108,65 @@ export async function createNarrative(
         {
           url: BASE_PATH,
           method: 'POST',
-          data,
+          header: { 'Content-Type': 'application/json' },
+          data: JSON.stringify(data),
+        },
+        requestSignal,
+      ),
+    );
+    return res.data;
+  } finally {
+    cleanup();
+  }
+}
+
+/**
+ * 更新叙事。
+ */
+export async function updateNarrative(
+  narrativeId: string,
+  data: { title?: string; narrative?: string },
+  signal?: AbortSignal,
+): Promise<Record<string, unknown>> {
+  if (signal?.aborted) {
+    return Promise.reject(new DOMException('The operation was aborted', 'AbortError'));
+  }
+  const { signal: requestSignal, cleanup } = createRequestSignal(signal);
+  try {
+    const res = await httpClient.request<Record<string, unknown>>(
+      withSignal(
+        {
+          url: `${BASE_PATH}/${narrativeId}`,
+          method: 'PUT',
+          header: { 'Content-Type': 'application/json' },
+          data: JSON.stringify(data),
+        },
+        requestSignal,
+      ),
+    );
+    return res.data;
+  } finally {
+    cleanup();
+  }
+}
+
+/**
+ * 提交叙事审核。
+ */
+export async function submitNarrative(
+  narrativeId: string,
+  signal?: AbortSignal,
+): Promise<Record<string, unknown>> {
+  if (signal?.aborted) {
+    return Promise.reject(new DOMException('The operation was aborted', 'AbortError'));
+  }
+  const { signal: requestSignal, cleanup } = createRequestSignal(signal);
+  try {
+    const res = await httpClient.request<Record<string, unknown>>(
+      withSignal(
+        {
+          url: `${BASE_PATH}/${narrativeId}/submit`,
+          method: 'POST',
           header: { 'Content-Type': 'application/json' },
         },
         requestSignal,
@@ -133,31 +179,48 @@ export async function createNarrative(
 }
 
 /**
- * 触发 AI 提取干预卡片。
- *
- * @param narrativeId - 叙事唯一标识
- * @param signal - 可选外部 AbortSignal
- * @returns 提取出的卡片数量
+ * 调用 LLM 提取 L2 卡片。
  */
 export async function extractNarrative(
   narrativeId: string,
   signal?: AbortSignal,
-): Promise<{ card_count: number }> {
+): Promise<{ status: string; card_count?: number; cards?: unknown[] }> {
   if (signal?.aborted) {
     return Promise.reject(new DOMException('The operation was aborted', 'AbortError'));
   }
-  if (narrativeId === null || narrativeId === undefined) {
-    return Promise.reject(new TypeError('narrativeId is required'));
-  }
   const { signal: requestSignal, cleanup } = createRequestSignal(signal);
   try {
-    const res = await httpClient.request<{ card_count: number }>(
+    const res = await httpClient.request<{ status: string; card_count?: number; cards?: unknown[] }>(
       withSignal(
         {
           url: `${BASE_PATH}/${narrativeId}/extract`,
           method: 'POST',
           header: { 'Content-Type': 'application/json' },
         },
+        requestSignal,
+      ),
+    );
+    return res.data;
+  } finally {
+    cleanup();
+  }
+}
+
+/**
+ * 获取 L2 卡片详情。
+ */
+export async function getCard(
+  cardId: string,
+  signal?: AbortSignal,
+): Promise<Record<string, unknown>> {
+  if (signal?.aborted) {
+    return Promise.reject(new DOMException('The operation was aborted', 'AbortError'));
+  }
+  const { signal: requestSignal, cleanup } = createRequestSignal(signal);
+  try {
+    const res = await httpClient.request<Record<string, unknown>>(
+      withSignal(
+        { url: `/api/v1/cards/${cardId}`, method: 'GET' },
         requestSignal,
       ),
     );

@@ -368,7 +368,7 @@ export default function ConsultIndex() {
                 <View
                   key={rc.slice_id}
                   className="consult-ref-card"
-                  onClick={() => Taro.navigateTo({ url: `/views/cases/pages/detail?narrativeId=${rc.case_id}` })}
+                  onClick={() => Taro.navigateTo({ url: `/views/cases/pages/card-detail?cardId=${rc.case_id}` })}
                 >
                   <Text className="consult-ref-card__title">{rc.case_title}</Text>
                   <Text className="consult-ref-card__text">{rc.slice_text}</Text>
