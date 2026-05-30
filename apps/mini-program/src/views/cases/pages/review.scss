@@ -1,0 +1,915 @@
+@use '../../shared/styles/tokens' as *;
+
+/* ========== 页面外壳 ========== */
+.review-page {
+  min-height: 100vh;
+  background-color: $cf-background;
+  display: flex;
+  flex-direction: column;
+  padding-bottom: calc(128px + env(safe-area-inset-bottom));
+}
+
+/* ========== 顶部导航栏 ========== */
+.review-navbar {
+  height: 88px;
+  background-color: $cf-surface-dim;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  padding: 0 $cf-spacing-md;
+  z-index: 50;
+
+  &__back {
+    position: absolute;
+    left: $cf-spacing-sm;
+    font-size: 48px;
+    color: $cf-on-background;
+    background: none;
+    border: none;
+    min-width: 88px;
+    height: 88px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    line-height: 1;
+
+    &:active {
+      opacity: 0.7;
+    }
+
+    &::after {
+      border: none;
+    }
+  }
+
+  &__title {
+    font-size: 36px;
+    font-weight: 600;
+    color: $cf-on-background;
+  }
+
+  &__stats-btn {
+    position: absolute;
+    right: $cf-spacing-md;
+    font-size: 28px;
+    color: $cf-primary;
+    background: none;
+    border: none;
+    min-width: 88px;
+    height: 88px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+
+    &:active {
+      opacity: 0.7;
+    }
+
+    &::after {
+      border: none;
+    }
+  }
+}
+
+/* ========== 统计概览区 ========== */
+.review-stats {
+  background-color: $cf-background;
+  padding: $cf-spacing-md;
+  display: flex;
+  gap: $cf-spacing-md;
+
+  &__item {
+    flex: 1;
+    background-color: $cf-surface;
+    border-radius: $cf-radius-md;
+    padding: $cf-spacing-md;
+    box-shadow: $cf-shadow-diffuse;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+  }
+
+  &__label {
+    font-size: 24px;
+    color: $cf-on-surface-variant;
+    margin-bottom: $cf-spacing-xs;
+  }
+
+  &__num {
+    font-size: 56px;
+    font-weight: 700;
+    color: $cf-on-background;
+    line-height: 1;
+
+    &--alert {
+      color: $cf-error;
+    }
+
+    &--success {
+      color: $cf-tertiary;
+    }
+  }
+}
+
+/* ========== 快速筛选标签栏 ========== */
+.review-filters {
+  background-color: $cf-background;
+  padding: $cf-spacing-sm $cf-spacing-md;
+  white-space: nowrap;
+
+  &__tag {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    height: 56px;
+    padding: 0 $cf-spacing-md;
+    margin-right: $cf-spacing-sm;
+    border-radius: $cf-radius-md;
+    font-size: 28px;
+    font-weight: 500;
+    color: $cf-on-surface-variant;
+    background-color: $cf-surface-variant;
+    border: none;
+    line-height: 1;
+
+    &--active {
+      background-color: $cf-primary-container;
+      color: $cf-on-primary-container;
+      box-shadow: inset 0 0 0 2px rgba($cf-primary, 0.3);
+    }
+
+    &:active {
+      transform: scale(0.95);
+      opacity: 0.9;
+    }
+
+    &::after {
+      border: none;
+    }
+  }
+}
+
+/* ========== 列表区域 ========== */
+.review-list {
+  flex: 1;
+  background-color: $cf-background;
+  padding: $cf-spacing-sm $cf-spacing-md $cf-spacing-lg;
+}
+
+/* ========== 审核列表行 ========== */
+.review-row {
+  background-color: $cf-surface;
+  border-radius: 24px;
+  margin-bottom: $cf-spacing-sm;
+  padding: $cf-spacing-md;
+  display: flex;
+  align-items: flex-start;
+  gap: $cf-spacing-sm;
+  position: relative;
+  overflow: hidden;
+  box-shadow: $cf-shadow-diffuse;
+
+  &:active {
+    transform: scale(0.98);
+  }
+
+  &--exiting {
+    animation: er-row-exit 200ms ease-in forwards;
+  }
+
+  /* 左侧状态条 */
+  &__accent {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 4px;
+    height: 100%;
+    background-color: transparent;
+
+    &--error {
+      background-color: $cf-error;
+    }
+  }
+
+  /* 复选框 */
+  &__checkbox {
+    flex-shrink: 0;
+    margin-top: 4px;
+    min-width: 44px;
+    min-height: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  &__checkbox-box {
+    width: 40px;
+    height: 40px;
+    border-radius: 8px;
+    background-color: $cf-surface-variant;
+    border: 2px solid $cf-outline;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 100ms ease;
+
+    &--checked {
+      background-color: $cf-primary;
+      border-color: $cf-primary;
+    }
+  }
+
+  &__checkbox-tick {
+    color: $cf-on-primary;
+    font-size: 24px;
+    font-weight: 700;
+  }
+
+  /* 内容区 */
+  &__body {
+    flex: 1;
+    min-width: 0;
+    padding-left: 8px;
+  }
+
+  &__title {
+    font-size: 30px;
+    font-weight: 500;
+    color: $cf-on-background;
+    line-height: 1.4;
+    margin-bottom: $cf-spacing-xs;
+    display: -webkit-box;
+    -webkit-line-clamp: 1;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  &__meta {
+    display: flex;
+    align-items: center;
+    gap: $cf-spacing-xs;
+    margin-bottom: $cf-spacing-xs;
+  }
+
+  &__behavior {
+    display: inline-block;
+    font-size: 20px;
+    font-weight: 500;
+    padding: 4px 12px;
+    border-radius: 8px;
+    background-color: $cf-primary-container;
+    color: $cf-on-primary-container;
+    line-height: 1;
+  }
+
+  &__author {
+    font-size: 24px;
+    color: $cf-on-surface-variant;
+  }
+
+  /* AI 预审进度 */
+  &__ai {
+    display: flex;
+    align-items: center;
+    gap: $cf-spacing-xs;
+  }
+
+  &__ai-bar {
+    width: 120px;
+    height: 12px;
+    background-color: $cf-surface-variant;
+    border-radius: $cf-radius-full;
+    overflow: hidden;
+  }
+
+  &__ai-bar-fill {
+    height: 100%;
+    border-radius: $cf-radius-full;
+    transition: width 400ms ease-out;
+  }
+
+  &__ai-text {
+    font-size: 22px;
+    color: $cf-on-surface-variant;
+    font-weight: 500;
+  }
+
+  /* 超时状态 */
+  &__timeout {
+    font-size: 22px;
+    font-weight: 500;
+    margin-top: $cf-spacing-xs;
+
+    &--warning {
+      color: $cf-primary;
+    }
+
+    &--overdue {
+      color: $cf-error;
+    }
+  }
+
+  /* 去审核按钮 */
+  &__action {
+    flex-shrink: 0;
+    align-self: center;
+    font-size: 28px;
+    font-weight: 500;
+    color: $cf-primary;
+    background: none;
+    border: none;
+    min-width: 88px;
+    height: 64px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+
+    &:active {
+      opacity: 0.7;
+    }
+
+    &::after {
+      border: none;
+    }
+  }
+}
+
+/* ========== 批量操作栏 ========== */
+.review-batch {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background-color: $cf-surface;
+  border-radius: $cf-radius-lg $cf-radius-lg 0 0;
+  box-shadow: 0 -4px 20px rgba(28, 25, 23, 0.08);
+  padding: $cf-spacing-md $cf-spacing-md calc($cf-spacing-md + env(safe-area-inset-bottom));
+  z-index: 100;
+  animation: er-slide-up 250ms ease-out;
+
+  &__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: $cf-spacing-sm;
+  }
+
+  &__count {
+    font-size: 28px;
+    font-weight: 500;
+    color: $cf-on-background;
+  }
+
+  &__toggle {
+    font-size: 24px;
+    color: $cf-primary;
+    background: none;
+    border: none;
+    padding: 0;
+    min-width: 120px;
+    height: 48px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+
+    &:active {
+      opacity: 0.7;
+    }
+
+    &::after {
+      border: none;
+    }
+  }
+
+  &__actions {
+    display: flex;
+    gap: $cf-spacing-sm;
+  }
+
+  &__btn {
+    flex: 1;
+    height: 80px;
+    border-radius: $cf-radius-md;
+    font-size: 28px;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: none;
+
+    &--pass {
+      background-color: $cf-tertiary;
+      color: $cf-on-tertiary;
+    }
+
+    &--reject {
+      background-color: $cf-error;
+      color: $cf-on-error;
+    }
+
+    &:active {
+      transform: scale(0.98);
+      opacity: 0.95;
+    }
+
+    &::after {
+      border: none;
+    }
+  }
+}
+
+/* ========== 审核面板（Bottom Sheet） ========== */
+.review-sheet-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba($cf-on-background, 0.5);
+  z-index: 110;
+  animation: er-fade-in 200ms ease-out;
+}
+
+.review-sheet {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  max-height: 85vh;
+  min-height: 560px;
+  background-color: $cf-surface;
+  border-radius: $cf-radius-lg $cf-radius-lg 0 0;
+  box-shadow: $cf-shadow-deep;
+  z-index: 120;
+  padding: $cf-spacing-sm $cf-spacing-md calc($cf-spacing-lg + env(safe-area-inset-bottom));
+  display: flex;
+  flex-direction: column;
+  animation: er-sheet-up 300ms ease-out;
+
+  &__handle {
+    display: flex;
+    justify-content: center;
+    padding: $cf-spacing-xs 0 $cf-spacing-sm;
+  }
+
+  &__handle-bar {
+    width: 72px;
+    height: 8px;
+    background-color: $cf-surface-dim;
+    border-radius: $cf-radius-full;
+  }
+
+  &__close {
+    position: absolute;
+    top: $cf-spacing-sm;
+    right: $cf-spacing-md;
+    font-size: 32px;
+    color: $cf-on-surface-variant;
+    background: none;
+    border: none;
+    min-width: 64px;
+    height: 64px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    z-index: 10;
+
+    &:active {
+      opacity: 0.7;
+    }
+
+    &::after {
+      border: none;
+    }
+  }
+
+  &__title {
+    font-size: 36px;
+    font-weight: 600;
+    color: $cf-on-background;
+    margin-bottom: $cf-spacing-xs;
+    padding-right: 64px;
+  }
+
+  &__meta {
+    font-size: 24px;
+    color: $cf-on-surface-variant;
+    margin-bottom: $cf-spacing-md;
+  }
+
+  /* AI 预审 */
+  &__ai {
+    background-color: $cf-surface-variant;
+    border-radius: $cf-radius-md;
+    padding: $cf-spacing-md;
+    margin-bottom: $cf-spacing-md;
+  }
+
+  &__ai-title {
+    font-size: 24px;
+    font-weight: 600;
+    color: $cf-on-background;
+    margin-bottom: $cf-spacing-sm;
+  }
+
+  &__ai-status {
+    display: flex;
+    align-items: center;
+  }
+
+  &__ai-badge {
+    display: inline-flex;
+    align-items: center;
+    padding: $cf-spacing-xs $cf-spacing-sm;
+    border-radius: $cf-radius-md;
+    font-size: 24px;
+    font-weight: 500;
+
+    &--pass {
+      background-color: rgba($cf-tertiary, 0.08);
+      color: $cf-tertiary;
+    }
+
+    &--annotated {
+      background-color: rgba($cf-primary, 0.08);
+      color: $cf-on-primary-container;
+    }
+
+    &--hard_block {
+      background-color: rgba($cf-error, 0.08);
+      color: $cf-error;
+    }
+  }
+
+  /* 查看完整案例链接 */
+  &__link {
+    align-self: flex-start;
+    font-size: 28px;
+    color: $cf-primary;
+    background: none;
+    border: none;
+    padding: $cf-spacing-xs 0;
+    margin-bottom: $cf-spacing-md;
+    line-height: 1;
+
+    &:active {
+      opacity: 0.7;
+    }
+
+    &::after {
+      border: none;
+    }
+  }
+
+  /* 底部操作区 */
+  &__actions {
+    margin-top: auto;
+    padding-top: $cf-spacing-md;
+    border-top: 1px solid rgba($cf-outline, 0.15);
+  }
+
+  &__btn {
+    width: 100%;
+    height: 88px;
+    border-radius: $cf-radius-md;
+    font-size: 32px;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: none;
+    margin-bottom: $cf-spacing-sm;
+
+    &--pass {
+      background-color: $cf-tertiary;
+      color: $cf-on-tertiary;
+    }
+
+    &--reject {
+      background-color: $cf-error;
+      color: $cf-on-error;
+    }
+
+    &--cancel {
+      background-color: transparent;
+      color: $cf-secondary;
+      font-size: 28px;
+      font-weight: 500;
+    }
+
+    &:active {
+      transform: scale(0.98);
+      opacity: 0.95;
+    }
+
+    &::after {
+      border: none;
+    }
+  }
+
+  /* 驳回输入框 */
+  &__reject-input {
+    background-color: $cf-surface-variant;
+    border-radius: $cf-radius-md;
+    padding: $cf-spacing-md;
+    margin-bottom: $cf-spacing-sm;
+  }
+
+  &__reject-field {
+    width: 100%;
+    height: 80px;
+    font-size: 28px;
+    color: $cf-on-background;
+    background: transparent;
+    border: none;
+
+    &::placeholder {
+      color: rgba($cf-on-surface-variant, 0.5);
+    }
+  }
+}
+
+/* ========== 批量驳回弹窗 ========== */
+.review-modal {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 130;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  &__overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: rgba($cf-on-background, 0.5);
+    animation: er-fade-in 200ms ease-out;
+  }
+
+  &__content {
+    position: relative;
+    width: 85%;
+    max-width: 720px;
+    background-color: $cf-surface;
+    border-radius: $cf-radius-lg;
+    box-shadow: $cf-shadow-deep;
+    padding: $cf-spacing-lg;
+    animation: er-modal-in 200ms ease-out;
+  }
+
+  &__title {
+    font-size: 36px;
+    font-weight: 600;
+    color: $cf-on-background;
+    margin-bottom: $cf-spacing-sm;
+  }
+
+  &__subtitle {
+    font-size: 28px;
+    color: $cf-on-surface-variant;
+    line-height: 1.5;
+    margin-bottom: $cf-spacing-md;
+  }
+
+  &__input-wrap {
+    background-color: $cf-surface-variant;
+    border-radius: $cf-radius-md;
+    padding: $cf-spacing-md;
+    margin-bottom: $cf-spacing-md;
+    position: relative;
+  }
+
+  &__input {
+    width: 100%;
+    height: 120px;
+    font-size: 28px;
+    color: $cf-on-background;
+    background: transparent;
+    border: none;
+
+    &::placeholder {
+      color: rgba($cf-on-surface-variant, 0.5);
+    }
+  }
+
+  &__count {
+    position: absolute;
+    bottom: $cf-spacing-sm;
+    right: $cf-spacing-md;
+    font-size: 22px;
+    color: $cf-on-surface-variant;
+  }
+
+  &__actions {
+    display: flex;
+    gap: $cf-spacing-sm;
+  }
+
+  &__btn {
+    flex: 1;
+    height: 80px;
+    border-radius: $cf-radius-md;
+    font-size: 28px;
+    font-weight: 500;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: none;
+
+    &--cancel {
+      background-color: rgba($cf-secondary, 0.15);
+      color: $cf-on-secondary;
+    }
+
+    &--confirm {
+      background-color: $cf-error;
+      color: $cf-on-error;
+    }
+
+    &:active {
+      transform: scale(0.98);
+      opacity: 0.95;
+    }
+
+    &::after {
+      border: none;
+    }
+  }
+}
+
+/* ========== 加载/空/错误状态 ========== */
+.review-loading,
+.review-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: $cf-spacing-lg $cf-spacing-md;
+}
+
+.review-loading__skeleton {
+  width: 100%;
+  height: 160px;
+  background-color: $cf-surface-variant;
+  border-radius: 24px;
+  border: 2px solid rgba($cf-primary, 0.2);
+  animation: er-pulse-border 2s ease-in-out infinite;
+  margin-bottom: $cf-spacing-sm;
+}
+
+.review-empty__icon {
+  width: 200px;
+  height: 200px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: $cf-spacing-sm;
+}
+
+.review-empty__icon-emoji {
+  font-size: 80px;
+}
+
+.review-empty__title {
+  font-size: 36px;
+  font-weight: 600;
+  color: $cf-on-background;
+  margin-bottom: $cf-spacing-sm;
+  text-align: center;
+}
+
+.review-empty__subtitle {
+  font-size: 28px;
+  color: $cf-on-surface-variant;
+  text-align: center;
+  margin-bottom: $cf-spacing-lg;
+  line-height: 1.5;
+}
+
+.review-empty__btn {
+  width: 400px;
+  height: 88px;
+  background-color: $cf-primary;
+  color: $cf-on-primary;
+  border-radius: $cf-radius-md;
+  font-size: 28px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+
+  &--text {
+    background: none;
+    color: $cf-primary;
+    font-size: 28px;
+    height: 64px;
+    width: auto;
+    padding: 0 $cf-spacing-md;
+  }
+
+  &:active {
+    opacity: 0.9;
+  }
+
+  &::after {
+    border: none;
+  }
+}
+
+/* ========== 加载更多 ========== */
+.review-load-more {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: $cf-spacing-sm;
+  padding: $cf-spacing-md 0;
+
+  &__spinner {
+    width: 40px;
+    height: 40px;
+    border: 3px solid rgba($cf-primary, 0.2);
+    border-top-color: $cf-primary;
+    border-radius: 50%;
+    animation: er-spin 1s linear infinite;
+  }
+
+  &__text {
+    font-size: 28px;
+    color: $cf-on-surface-variant;
+  }
+}
+
+.review-no-more {
+  text-align: center;
+  padding: $cf-spacing-lg 0;
+  font-size: 24px;
+  color: rgba($cf-on-surface-variant, 0.5);
+}
+
+/* ========== 动画 ========== */
+@keyframes er-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes er-slide-up {
+  from {
+    opacity: 0;
+    transform: translateY(100%);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes er-sheet-up {
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+
+@keyframes er-modal-in {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes er-row-exit {
+  from {
+    opacity: 1;
+    transform: translateX(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateX(-100%);
+  }
+}
+
+@keyframes er-pulse-border {
+  0%, 100% { border-color: rgba($cf-primary, 0.2); }
+  50% { border-color: rgba($cf-primary, 0.5); }
+}
+
+@keyframes er-spin {
+  to { transform: rotate(360deg); }
+}

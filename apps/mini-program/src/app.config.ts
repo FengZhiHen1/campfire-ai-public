@@ -12,6 +12,7 @@ export default defineAppConfig({
     'views/tickets/pages/detail',
     'views/cases/pages/narrative-submit',
     'views/cases/pages/extraction-result',
+    'views/cases/pages/review',
   ],
   window: {
     backgroundTextStyle: 'light',
