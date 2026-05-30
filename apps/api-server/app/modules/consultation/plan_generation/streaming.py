@@ -366,6 +366,7 @@ async def stream_generate(
             section=None,
             is_final=True,
             finish_reason=finish_reason,
+            raw_full_text=accumulated_text,
         )
 
 
