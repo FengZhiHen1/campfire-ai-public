@@ -11,20 +11,21 @@
 
 /* ========== 顶部导航栏 ========== */
 .profile-edit-navbar {
-  height: 112px;
-  background-color: $cf-surface-dim;
+  height: 128px;
+  background-color: $cf-surface;
   display: flex;
   align-items: center;
   justify-content: center;
   position: relative;
   padding: 0 $cf-spacing-md;
   z-index: 50;
+  box-shadow: $cf-shadow-diffuse;
 
   &__cancel {
     position: absolute;
     left: $cf-spacing-md;
-    font-size: 28px;
-    color: $cf-on-background;
+    font-size: $cf-body-md;
+    color: $cf-secondary;
     background: none;
     border: none;
     min-width: 88px;
@@ -44,19 +45,19 @@
   }
 
   &__title {
-    font-size: 36px;
+    font-size: $cf-headline-sm;
     font-weight: 600;
-    color: $cf-on-background;
+    color: $cf-primary;
   }
 
   &__menu {
     position: absolute;
-    right: 96px;
-    font-size: 32px;
+    right: 112px;
+    font-size: $cf-body-md;
     color: $cf-on-background;
     background: none;
     border: none;
-    min-width: 88px;
+    width: 88px;
     height: 88px;
     display: flex;
     align-items: center;
@@ -75,12 +76,13 @@
   &__save {
     position: absolute;
     right: $cf-spacing-md;
-    min-width: 88px;
-    height: 88px;
+    width: 72px;
+    height: 72px;
     display: flex;
     align-items: center;
-    justify-content: flex-end;
-    background: none;
+    justify-content: center;
+    background-color: $cf-primary-container;
+    border-radius: $cf-radius-full;
     border: none;
     padding: 0;
 
@@ -93,28 +95,29 @@
     }
 
     &-icon {
-      font-size: 40px;
+      font-size: $cf-headline-sm;
       color: $cf-primary;
+      font-weight: 700;
     }
   }
 
   /* 菜单面板 */
   &__menu-panel {
     position: absolute;
-    top: 100%;
+    top: calc(100% + 8px);
     right: $cf-spacing-md;
     background-color: $cf-surface;
-    border-radius: 24px;
+    border-radius: $cf-radius-lg;
     box-shadow: $cf-shadow-deep;
-    width: 360px;
-    padding: 16px 0;
+    width: 320px;
+    padding: $cf-spacing-xs 0;
     z-index: 60;
     animation: cf-fade-in-up 150ms ease-out;
   }
 
   &__menu-item {
-    padding: 20px 32px;
-    font-size: 28px;
+    padding: $cf-spacing-sm $cf-spacing-md;
+    font-size: $cf-body-md;
     color: $cf-on-background;
 
     &--danger {
@@ -123,13 +126,8 @@
 
     &:active {
       background-color: $cf-surface-variant;
+      border-radius: $cf-radius-md;
     }
-  }
-
-  &__menu-divider {
-    height: 2px;
-    background-color: rgba($cf-outline, 0.15);
-    margin: 8px 16px;
   }
 }
 
@@ -140,35 +138,41 @@
   left: 0;
   right: 0;
   bottom: 0;
+  background-color: rgba($cf-on-background, 0.4);
   z-index: 30;
 }
 
 /* ========== 新建提示条 ========== */
 .profile-edit-tip {
   background-color: $cf-primary-container;
-  padding: 24px 32px;
-  font-size: 28px;
+  padding: $cf-spacing-sm $cf-spacing-md;
+  font-size: $cf-body-sm;
   color: $cf-on-primary-container;
+  line-height: 1.6;
 }
 
 /* ========== 保存失败通知 ========== */
 .profile-edit-notice {
-  background-color: $cf-surface-dim;
-  padding: 20px 32px;
+  background-color: $cf-error-container;
+  padding: $cf-spacing-sm $cf-spacing-md;
   display: flex;
   align-items: center;
   justify-content: space-between;
+  margin: $cf-spacing-md $cf-spacing-md 0;
+  border-radius: $cf-radius-md;
 
   &__text {
-    font-size: 28px;
-    color: $cf-error;
+    font-size: $cf-body-sm;
+    color: $cf-on-error-container;
+    line-height: 1.5;
   }
 
   &__close {
-    font-size: 32px;
-    color: $cf-on-surface-variant;
+    font-size: $cf-body-md;
+    color: $cf-on-error-container;
     min-width: 44px;
     text-align: center;
+    margin-left: $cf-spacing-sm;
   }
 }
 
@@ -192,40 +196,79 @@
   }
 
   &__text {
-    font-size: 28px;
+    font-size: $cf-body-sm;
     color: $cf-on-surface-variant;
   }
 }
 
+/* ========== 内容区主容器 ========== */
+.profile-edit-main {
+  display: flex;
+  flex-direction: column;
+  gap: $cf-spacing-lg;
+  padding: $cf-spacing-lg $cf-spacing-md;
+}
+
+/* ========== Section 标题 ========== */
+.profile-edit-section-title {
+  display: flex;
+  align-items: center;
+  gap: $cf-spacing-xs;
+  font-size: $cf-headline-sm;
+  font-weight: 600;
+  color: $cf-on-background;
+  margin-bottom: $cf-spacing-sm;
+
+  &__icon {
+    font-size: $cf-headline-sm;
+    color: $cf-primary;
+  }
+}
+
+/* ========== 卡片容器 ========== */
+.profile-edit-card {
+  background-color: $cf-surface;
+  border-radius: $cf-radius-lg;
+  padding: $cf-spacing-md;
+  box-shadow: $cf-shadow-diffuse;
+  display: flex;
+  flex-direction: column;
+  gap: $cf-spacing-md;
+}
+
 /* ========== 表单内容区 ========== */
 .profile-edit-form {
-  padding: $cf-spacing-md;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: $cf-spacing-md;
 }
 
 /* 头像区域 */
 .profile-edit-avatar {
   display: flex;
   justify-content: center;
-  margin-bottom: $cf-spacing-lg;
 
   &__wrapper {
     position: relative;
-    width: 144px;
-    height: 144px;
+    width: 192px;
+    height: 192px;
   }
 
   &__circle {
-    width: 144px;
-    height: 144px;
+    width: 192px;
+    height: 192px;
     border-radius: $cf-radius-full;
     background-color: $cf-surface-variant;
     display: flex;
     align-items: center;
     justify-content: center;
+    border: 2px solid $cf-primary-container;
+    overflow: hidden;
   }
 
   &__icon {
-    font-size: 72px;
+    font-size: 96px;
     opacity: 0.5;
   }
 
@@ -233,17 +276,17 @@
     position: absolute;
     bottom: 0;
     right: 0;
-    width: 48px;
-    height: 48px;
+    width: 56px;
+    height: 56px;
     border-radius: $cf-radius-full;
     background-color: $cf-primary;
     display: flex;
     align-items: center;
     justify-content: center;
-    border: 2px solid $cf-surface;
+    border: 4px solid $cf-surface;
 
     &-icon {
-      font-size: 24px;
+      font-size: 28px;
       color: $cf-on-primary;
     }
   }
@@ -251,109 +294,123 @@
 
 /* 表单字段 */
 .profile-edit-field {
-  margin-bottom: $cf-spacing-md;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: $cf-spacing-xs;
 
   &__label {
-    font-size: 28px;
+    font-size: $cf-label-md;
     font-weight: 500;
-    color: $cf-on-background;
-    margin-bottom: 12px;
-    display: block;
+    color: $cf-on-surface-variant;
+    display: flex;
+    align-items: center;
   }
 
   &__required {
     color: $cf-error;
-    margin-right: 8px;
+    margin-right: $cf-spacing-xs;
   }
 
   &__input {
     width: 100%;
-    height: 64px;
-    background-color: $cf-surface;
+    height: 96px;
+    background-color: $cf-surface-variant;
     border-radius: $cf-radius-md;
     padding: 0 $cf-spacing-md;
-    font-size: 28px;
+    font-size: $cf-body-md;
     color: $cf-on-background;
     box-sizing: border-box;
+    border: 1px solid transparent;
+    transition: all 0.2s ease;
 
     &::placeholder {
       color: rgba($cf-on-surface-variant, 0.6);
     }
 
     &--error {
-      border: 1px solid rgba($cf-error, 0.3);
+      border-color: rgba($cf-error, 0.3);
+      background-color: rgba($cf-error-container, 0.4);
     }
   }
 
   &__picker {
     width: 100%;
-    height: 64px;
-    background-color: $cf-surface;
+    height: 96px;
+    background-color: $cf-surface-variant;
     border-radius: $cf-radius-md;
     padding: 0 $cf-spacing-md;
-    font-size: 28px;
+    font-size: $cf-body-md;
     color: $cf-on-background;
     box-sizing: border-box;
     display: flex;
     align-items: center;
     justify-content: space-between;
+    border: 1px solid transparent;
 
     &--placeholder {
       color: rgba($cf-on-surface-variant, 0.6);
     }
 
     &--error {
-      border: 1px solid rgba($cf-error, 0.3);
+      border-color: rgba($cf-error, 0.3);
+      background-color: rgba($cf-error-container, 0.4);
     }
   }
 
   &__picker-arrow {
-    font-size: 24px;
+    font-size: $cf-label-md;
     color: $cf-on-surface-variant;
   }
 
   &__error {
-    font-size: 24px;
+    font-size: $cf-footnote;
     color: $cf-error;
-    margin-top: 8px;
+    margin-top: 2px;
   }
 }
 
 /* ========== 标签选择区 ========== */
 .profile-tag-section {
-  padding: $cf-spacing-md;
-  background-color: $cf-background;
-
   &--disabled {
     opacity: 0.6;
   }
 
   &__title {
-    font-size: 32px;
+    display: flex;
+    align-items: center;
+    gap: $cf-spacing-xs;
+    font-size: $cf-headline-sm;
     font-weight: 600;
     color: $cf-on-background;
-    margin-bottom: 8px;
+    margin-bottom: $cf-spacing-sm;
+
+    &-icon {
+      font-size: $cf-headline-sm;
+      color: $cf-primary;
+    }
   }
 
   &__subtitle {
-    font-size: 24px;
+    font-size: $cf-body-sm;
     color: $cf-on-surface-variant;
-    margin-bottom: 24px;
+    margin-bottom: $cf-spacing-md;
+    line-height: 1.5;
   }
 
   &__hint {
-    font-size: 28px;
+    font-size: $cf-body-sm;
     color: $cf-on-surface-variant;
     text-align: center;
-    padding: 48px 0;
+    padding: $cf-spacing-xl 0;
   }
 
   &__sub-title {
-    font-size: 28px;
+    font-size: $cf-label-md;
     font-weight: 500;
-    color: $cf-on-background;
-    margin-top: 32px;
-    margin-bottom: 16px;
+    color: $cf-on-surface-variant;
+    margin-top: $cf-spacing-sm;
+    margin-bottom: $cf-spacing-xs;
   }
 }
 
@@ -361,22 +418,25 @@
 .profile-tag-grid {
   display: flex;
   flex-wrap: wrap;
-  gap: 16px;
+  gap: $cf-spacing-sm;
 
   &__item {
     background-color: $cf-surface-variant;
     color: $cf-on-surface-variant;
-    font-size: 22px;
+    font-size: $cf-label-md;
     font-weight: 500;
-    padding: 12px 20px;
-    border-radius: 16px;
+    padding: $cf-spacing-xs $cf-spacing-sm;
+    border-radius: $cf-radius-full;
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: $cf-spacing-xs;
+    transition: all 0.15s ease-out;
+    line-height: 1.4;
 
     &--active {
       background-color: $cf-primary-container;
       color: $cf-on-primary-container;
+      box-shadow: inset 0 0 0 1px rgba($cf-primary, 0.2);
     }
 
     &:active {
@@ -385,25 +445,27 @@
   }
 
   &__check {
-    font-size: 20px;
+    font-size: $cf-footnote;
+    font-weight: 700;
   }
 }
 
 /* 自定义标签输入 */
 .profile-custom-tag {
   display: flex;
-  gap: 16px;
+  gap: $cf-spacing-sm;
   align-items: center;
 
   &__input {
     flex: 1;
-    height: 64px;
-    background-color: $cf-surface;
+    height: 96px;
+    background-color: $cf-surface-variant;
     border-radius: $cf-radius-md;
     padding: 0 $cf-spacing-md;
-    font-size: 28px;
+    font-size: $cf-body-md;
     color: $cf-on-background;
     box-sizing: border-box;
+    border: 1px solid transparent;
 
     &::placeholder {
       color: rgba($cf-on-surface-variant, 0.6);
@@ -411,20 +473,22 @@
   }
 
   &__add {
-    width: 64px;
-    height: 64px;
-    border-radius: $cf-radius-full;
+    width: 96px;
+    height: 96px;
+    border-radius: $cf-radius-md;
     background-color: $cf-primary;
     color: $cf-on-primary;
-    font-size: 36px;
+    font-size: $cf-headline-sm;
     display: flex;
     align-items: center;
     justify-content: center;
     border: none;
     padding: 0;
+    flex-shrink: 0;
 
     &:active {
       opacity: 0.9;
+      transform: scale(0.95);
     }
 
     &::after {
@@ -433,58 +497,97 @@
   }
 
   &__count {
-    font-size: 22px;
+    font-size: $cf-footnote;
     color: $cf-on-surface-variant;
     text-align: right;
-    margin-top: 8px;
+    margin-top: 2px;
   }
 
   &__list {
     display: flex;
     flex-wrap: wrap;
-    gap: 16px;
-    margin-top: 16px;
+    gap: $cf-spacing-sm;
+    margin-top: $cf-spacing-sm;
   }
 
   &__pill {
-    background-color: $cf-surface;
-    color: $cf-on-background;
-    font-size: 22px;
+    background-color: $cf-secondary-container;
+    color: $cf-on-secondary-container;
+    font-size: $cf-label-md;
     font-weight: 500;
-    padding: 12px 20px;
-    border-radius: 16px;
+    padding: $cf-spacing-xs $cf-spacing-sm;
+    border-radius: $cf-radius-full;
     display: flex;
     align-items: center;
-    gap: 12px;
+    gap: $cf-spacing-xs;
+    line-height: 1.4;
   }
 
   &__remove {
-    font-size: 24px;
-    color: $cf-on-surface-variant;
+    font-size: $cf-label-md;
+    color: rgba($cf-on-secondary-container, 0.7);
+    min-width: 32px;
+    text-align: center;
+
+    &:active {
+      color: $cf-on-secondary-container;
+    }
   }
 }
 
 /* ========== 事件记录区 ========== */
 .profile-event-section {
-  padding: $cf-spacing-md;
-  background-color: $cf-background;
-
   &__header {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    margin-bottom: 24px;
+    margin-bottom: $cf-spacing-sm;
   }
 
   &__title {
-    font-size: 32px;
+    display: flex;
+    align-items: center;
+    gap: $cf-spacing-xs;
+    font-size: $cf-headline-sm;
     font-weight: 600;
     color: $cf-on-background;
+
+    &-icon {
+      font-size: $cf-headline-sm;
+    }
+
+    &-count {
+      font-size: $cf-label-md;
+      color: $cf-secondary;
+      font-weight: 400;
+      margin-left: $cf-spacing-xs;
+    }
   }
 
   &__toggle {
-    font-size: 28px;
+    font-size: $cf-label-md;
     color: $cf-primary;
+    font-weight: 500;
+
+    &:active {
+      opacity: 0.7;
+    }
+  }
+}
+
+/* 时间线容器 */
+.profile-event-timeline {
+  position: relative;
+  padding-left: 56px;
+
+  &::before {
+    content: '';
+    position: absolute;
+    left: 20px;
+    top: $cf-spacing-sm;
+    bottom: $cf-spacing-sm;
+    width: 2px;
+    border-left: 2px dashed rgba($cf-outline, 0.3);
   }
 }
 
@@ -492,67 +595,150 @@
 .profile-event-list {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: $cf-spacing-md;
+
+  &__loading,
+  &__empty {
+    font-size: $cf-body-sm;
+    color: $cf-on-surface-variant;
+    text-align: center;
+    padding: $cf-spacing-lg 0;
+  }
 
   &__item {
-    background-color: $cf-surface;
-    border-radius: 24px;
-    overflow: hidden;
+    position: relative;
+    display: flex;
+    align-items: flex-start;
+    gap: $cf-spacing-sm;
 
     &--shake {
       animation: cf-shake 300ms ease-in-out;
     }
   }
 
-  &__summary {
-    padding: 24px 32px;
+  &__node {
+    width: 40px;
+    height: 40px;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-top: $cf-spacing-xs;
+    position: relative;
+    z-index: 2;
+
+    &-dot {
+      width: 24px;
+      height: 24px;
+      border-radius: 50%;
+      background-color: $cf-surface;
+      border: 4px solid $cf-tertiary;
+
+      &--warning {
+        background-color: $cf-error-container;
+        border-color: $cf-error;
+      }
+    }
+  }
+
+  &__card {
+    flex: 1;
+    background-color: $cf-surface;
+    border-radius: $cf-radius-md;
+    padding: $cf-spacing-sm;
+    box-shadow: $cf-shadow-diffuse;
+    position: relative;
+    overflow: hidden;
+
+    /* 左侧状态指示条 */
+    &::before {
+      content: '';
+      position: absolute;
+      left: 0;
+      top: 0;
+      bottom: 0;
+      width: 6px;
+    }
+
+    &--default::before {
+      background-color: $cf-secondary;
+    }
+
+    &--warning::before {
+      background-color: $cf-error;
+    }
+
+    &--success::before {
+      background-color: $cf-tertiary;
+    }
   }
 
   &__summary-header {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    margin-bottom: 12px;
+    margin-bottom: $cf-spacing-xs;
   }
 
   &__time {
-    font-size: 24px;
-    color: $cf-on-surface-variant;
+    font-size: $cf-footnote;
+    color: $cf-secondary;
+  }
+
+  &__badges {
+    display: flex;
+    align-items: center;
+    gap: $cf-spacing-xs;
   }
 
   &__eval {
-    font-size: 22px;
+    font-size: $cf-footnote;
     color: $cf-tertiary;
+  }
+
+  &__severity {
+    font-size: $cf-footnote;
+    color: $cf-tertiary;
+    background-color: $cf-tertiary-container;
+    padding: 2px 8px;
+    border-radius: $cf-radius-sm;
   }
 
   &__actions {
     display: flex;
-    gap: 24px;
-    font-size: 28px;
+    gap: $cf-spacing-sm;
+    font-size: $cf-body-md;
     color: $cf-on-surface-variant;
+
+    &-btn {
+      min-width: 44px;
+      height: 44px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+
+      &:active {
+        opacity: 0.7;
+      }
+    }
   }
 
   &__tag {
-    display: inline-block;
+    display: inline-flex;
     background-color: $cf-primary-container;
     color: $cf-on-primary-container;
-    font-size: 22px;
+    font-size: 24px;
     font-weight: 500;
-    padding: 8px 20px;
-    border-radius: 16px;
-    margin-bottom: 8px;
+    padding: 4px 16px;
+    border-radius: $cf-radius-sm;
+    margin-bottom: $cf-spacing-xs;
   }
 
-
-}
-
-/* ========== 动画 ========== */
-@keyframes cf-shake {
-  0%, 100% { transform: translateX(0); }
-  20% { transform: translateX(-4px); }
-  40% { transform: translateX(4px); }
-  60% { transform: translateX(-4px); }
-  80% { transform: translateX(4px); }
+  &__desc {
+    font-size: $cf-body-md;
+    color: $cf-on-background;
+    line-height: 1.6;
+  }
 }
 
 /* ========== 删除确认对话框 ========== */
@@ -567,14 +753,14 @@
   justify-content: center;
   background-color: rgba($cf-on-background, 0.5);
   z-index: 300;
-  padding: 48px;
+  padding: $cf-spacing-md;
 
   &__content {
     width: 100%;
     max-width: 640px;
     background-color: $cf-surface;
-    border-radius: 32px;
-    padding: 48px;
+    border-radius: $cf-radius-lg;
+    padding: $cf-spacing-lg;
     box-shadow: $cf-shadow-deep;
     animation: cf-fade-in-scale 200ms ease-out;
     text-align: center;
@@ -588,42 +774,43 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    margin: 0 auto 24px;
+    margin: 0 auto $cf-spacing-md;
     font-size: 48px;
     color: $cf-error;
   }
 
   &__title {
-    font-size: 36px;
+    font-size: $cf-headline-sm;
     font-weight: 600;
     color: $cf-on-background;
-    margin-bottom: 16px;
+    margin-bottom: $cf-spacing-xs;
   }
 
   &__subtitle {
-    font-size: 28px;
+    font-size: $cf-body-sm;
     color: $cf-on-surface-variant;
-    line-height: 1.75;
-    margin-bottom: 24px;
+    line-height: 1.6;
+    margin-bottom: $cf-spacing-md;
   }
 
   &__hint {
-    font-size: 28px;
+    font-size: $cf-body-sm;
     color: $cf-on-background;
-    margin-bottom: 16px;
+    margin-bottom: $cf-spacing-xs;
   }
 
   &__input {
     width: 100%;
-    height: 80px;
+    height: 96px;
     background-color: $cf-surface-variant;
-    border-radius: 16px;
-    padding: 0 24px;
-    font-size: 28px;
+    border-radius: $cf-radius-md;
+    padding: 0 $cf-spacing-md;
+    font-size: $cf-body-md;
     color: $cf-on-background;
     box-sizing: border-box;
-    margin-bottom: 32px;
+    margin-bottom: $cf-spacing-md;
     text-align: center;
+    border: 1px solid transparent;
 
     &::placeholder {
       color: rgba($cf-on-surface-variant, 0.6);
@@ -632,14 +819,14 @@
 
   &__actions {
     display: flex;
-    gap: 24px;
+    gap: $cf-spacing-sm;
   }
 
   &__btn {
     flex: 1;
-    height: 88px;
-    border-radius: 16px;
-    font-size: 32px;
+    height: 96px;
+    border-radius: $cf-radius-md;
+    font-size: $cf-body-md;
     font-weight: 600;
     display: flex;
     align-items: center;
@@ -647,8 +834,8 @@
     border: none;
 
     &--cancel {
-      background-color: rgba($cf-secondary, 0.15);
-      color: $cf-on-secondary;
+      background-color: $cf-surface-variant;
+      color: $cf-on-background;
     }
 
     &--delete {
@@ -659,10 +846,56 @@
     &--disabled {
       background-color: $cf-surface-dim;
       color: $cf-on-surface-variant;
+      opacity: 0.6;
     }
 
     &::after {
       border: none;
     }
+
+    &:active {
+      opacity: 0.9;
+      transform: scale(0.98);
+    }
   }
+}
+
+/* ========== 动画 ========== */
+@keyframes cf-fade-in-up {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes cf-fade-in-scale {
+  from {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes cf-pulse-border {
+  0%, 100% {
+    border-color: rgba($cf-primary, 0.2);
+  }
+  50% {
+    border-color: rgba($cf-primary, 0.5);
+  }
+}
+
+@keyframes cf-shake {
+  0%, 100% { transform: translateX(0); }
+  20% { transform: translateX(-4px); }
+  40% { transform: translateX(4px); }
+  60% { transform: translateX(-4px); }
+  80% { transform: translateX(4px); }
 }
