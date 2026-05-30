@@ -314,10 +314,11 @@ class ProfileCreate(CampfireBaseModel):
         max_length=6,
         description="患者感官反应的特殊性（可多选，最多 6 项）",
     )
-    triggers: list[Trigger] = Field(
+    triggers: list[str] = Field(
         default_factory=list,
         max_length=7,
-        description="已知会引发患者情绪波动或行为问题的环境或情境因素（可多选，最多 7 项）",
+        description="已知会引发患者情绪波动或行为问题的环境或情境因素。"
+        "支持 Trigger 枚举预设值及家属自定义文本（如「害怕狗」），最多 7 项。",
     )
     medication_notes: str | None = Field(
         default=None,
@@ -370,10 +371,10 @@ class ProfileUpdate(CampfireBaseModel):
         max_length=6,
         description="感官特征（多选）",
     )
-    triggers: list[Trigger] | None = Field(
+    triggers: list[str] | None = Field(
         default=None,
         max_length=7,
-        description="已知触发因素（多选）",
+        description="已知触发因素（多选）。支持预设 Trigger 枚举值及自定义文本。",
     )
     medication_notes: str | None = Field(
         default=None,

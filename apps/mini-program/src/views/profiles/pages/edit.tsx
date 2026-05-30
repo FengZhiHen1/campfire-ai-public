@@ -3,7 +3,7 @@ import { View, Text, Button, Input, Picker } from '@tarojs/components';
 import Taro from '@tarojs/taro';
 import { useProfile } from '../../../logics/profiles';
 import { listEvents, deleteEvent as deleteEventApi } from '../../../logics/profiles/services/eventApi';
-import { DIAGNOSIS_OPTIONS, BEHAVIOR_OPTIONS, SENSORY_FEATURE_TAGS, TRIGGER_TAGS, NICKNAME_MAX_LENGTH, ERROR_AUTO_DISMISS_MS } from '../../../logics/profiles/constants';
+import { DIAGNOSIS_OPTIONS, BEHAVIOR_OPTIONS, SENSORY_FEATURE_TAGS, TRIGGER_TAGS, CUSTOM_TAG_MAX_LENGTH, NICKNAME_MAX_LENGTH, ERROR_AUTO_DISMISS_MS } from '../../../logics/profiles/constants';
 import { validateProfileForm } from '../../../logics/profiles/utils/validateForm';
 import { formatDateStr } from '../../../logics/shared/utils/timeFormat';
 import TagSection from '../components/TagSection';
@@ -35,11 +35,12 @@ export default function ProfileEdit() {
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [originalValues, setOriginalValues] = useState({
     nickname: '', birthDate: '', diagnosisType: '', primaryBehavior: '',
-    sensoryFeatures: [] as string[], triggers: [] as string[],
   });
 
   // 标签状态
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
+  const [customTagInput, setCustomTagInput] = useState('');
+  const [customTags, setCustomTags] = useState<string[]>([]);
 
   // 事件状态
   const [events, setEvents] = useState<EventListItem[]>([]);
@@ -70,10 +71,9 @@ export default function ProfileEdit() {
           birthDate: data.birth_date || '',
           diagnosisType: data.diagnosis_type || '',
           primaryBehavior: data.primary_behavior || '',
-          sensoryFeatures: data.sensory_features || [],
-          triggers: data.triggers || [],
         });
-        setSelectedTags([...(data.sensory_features || []), ...(data.triggers || [])]);
+        setSelectedTags(data.sensory_features || []);
+        setCustomTags(data.triggers || []);
 
         setEventsLoading(true);
         listEvents(profileId)
@@ -89,21 +89,15 @@ export default function ProfileEdit() {
 
   // 修改检测
   const isDirty = useMemo(() => {
-    const origSensory = originalValues.sensoryFeatures || [];
-    const origTriggers = originalValues.triggers || [];
-    const currentSensory = selectedTags.filter((t) => SENSORY_FEATURE_TAGS.includes(t));
-    const currentTriggers = selectedTags.filter((t) => TRIGGER_TAGS.includes(t));
     return (
       nickname !== originalValues.nickname ||
       birthDate !== originalValues.birthDate ||
       diagnosisType !== originalValues.diagnosisType ||
       primaryBehavior !== originalValues.primaryBehavior ||
-      currentSensory.length !== origSensory.length ||
-      currentTriggers.length !== origTriggers.length ||
-      !currentSensory.every((t) => origSensory.includes(t)) ||
-      !currentTriggers.every((t) => origTriggers.includes(t))
+      selectedTags.length > 0 ||
+      customTags.length > 0
     );
-  }, [nickname, birthDate, diagnosisType, primaryBehavior, originalValues, selectedTags]);
+  }, [nickname, birthDate, diagnosisType, primaryBehavior, originalValues, selectedTags, customTags]);
 
   const canSave = !saving && (isEdit ? isDirty : true);
 
@@ -112,6 +106,17 @@ export default function ProfileEdit() {
     setSelectedTags((prev) =>
       prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag],
     );
+  };
+
+  const addCustomTag = () => {
+    const tag = customTagInput.trim();
+    if (!tag || tag.length > CUSTOM_TAG_MAX_LENGTH || customTags.includes(tag)) return;
+    setCustomTags((prev) => [...prev, tag]);
+    setCustomTagInput('');
+  };
+
+  const removeCustomTag = (tag: string) => {
+    setCustomTags((prev) => prev.filter((t) => t !== tag));
   };
 
   // 保存
@@ -128,7 +133,10 @@ export default function ProfileEdit() {
       diagnosis_type: diagnosisType as DiagnosisType,
       primary_behavior: primaryBehavior as ProfileBehaviorType,
       sensory_features: selectedTags.filter((t) => SENSORY_FEATURE_TAGS.includes(t)) as SensoryFeature[],
-      triggers: selectedTags.filter((t) => TRIGGER_TAGS.includes(t)),
+      triggers: [
+        ...selectedTags.filter((t) => TRIGGER_TAGS.includes(t)),
+        ...customTags,
+      ],
     };
 
     setSaving(true);
@@ -245,108 +253,124 @@ export default function ProfileEdit() {
         </View>
       )}
 
-      {/* 表单区 */}
-      <View className="profile-edit-form">
-        {/* 头像 */}
-        <View className="profile-edit-avatar">
-          <View className="profile-edit-avatar__wrapper">
-            <View className="profile-edit-avatar__circle">
-              <Text className="profile-edit-avatar__icon">👤</Text>
-            </View>
-            <View className="profile-edit-avatar__edit-badge">
-              <Text className="profile-edit-avatar__edit-badge-icon">✎</Text>
+      {/* 内容区 */}
+      <View className="profile-edit-main">
+        {/* 基础信息 */}
+        <View>
+          <View className="profile-edit-section-title">
+            <Text className="profile-edit-section-title__icon">👤</Text>
+            <Text>基础信息</Text>
+          </View>
+          <View className="profile-edit-card">
+            <View className="profile-edit-form">
+              {/* 头像 */}
+              <View className="profile-edit-avatar">
+                <View className="profile-edit-avatar__wrapper">
+                  <View className="profile-edit-avatar__circle">
+                    <Text className="profile-edit-avatar__icon">👤</Text>
+                  </View>
+                  <View className="profile-edit-avatar__edit-badge">
+                    <Text className="profile-edit-avatar__edit-badge-icon">✎</Text>
+                  </View>
+                </View>
+              </View>
+
+              {/* 昵称 */}
+              <View className="profile-edit-field">
+                <Text className="profile-edit-field__label">
+                  <Text className="profile-edit-field__required">*</Text>档案昵称
+                </Text>
+                <Input
+                  className={`profile-edit-field__input ${errors.nickname ? 'profile-edit-field__input--error' : ''}`}
+                  value={nickname}
+                  onInput={(e) => { setNickname(e.detail.value); setErrors((p) => ({ ...p, nickname: '' })); }}
+                  placeholder="如：小明"
+                  maxlength={NICKNAME_MAX_LENGTH}
+                />
+                {errors.nickname && <Text className="profile-edit-field__error">{errors.nickname}</Text>}
+              </View>
+
+              {/* 出生日期 */}
+              <View className="profile-edit-field">
+                <Text className="profile-edit-field__label">
+                  <Text className="profile-edit-field__required">*</Text>出生日期
+                </Text>
+                <Picker
+                  mode="date"
+                  value={birthDate || formatDateStr(new Date())}
+                  end={formatDateStr(new Date())}
+                  onChange={(e) => { setBirthDate(e.detail.value); setErrors((p) => ({ ...p, birthDate: '' })); }}
+                >
+                  <View className={`profile-edit-field__picker ${errors.birthDate ? 'profile-edit-field__input--error' : ''} ${!birthDate ? 'profile-edit-field__picker--placeholder' : ''}`}>
+                    <Text>{birthDate || '请选择日期'}</Text>
+                    <Text className="profile-edit-field__picker-arrow">▼</Text>
+                  </View>
+                </Picker>
+                {errors.birthDate && <Text className="profile-edit-field__error">{errors.birthDate}</Text>}
+              </View>
+
+              {/* 诊断类型 */}
+              <View className="profile-edit-field">
+                <Text className="profile-edit-field__label">
+                  <Text className="profile-edit-field__required">*</Text>诊断类型
+                </Text>
+                <Picker
+                  mode="selector"
+                  range={[...DIAGNOSIS_OPTIONS]}
+                  value={DIAGNOSIS_OPTIONS.indexOf(diagnosisType)}
+                  onChange={(e) => { setDiagnosisType(DIAGNOSIS_OPTIONS[e.detail.value as number]); setErrors((p) => ({ ...p, diagnosisType: '' })); }}
+                >
+                  <View className={`profile-edit-field__picker ${errors.diagnosisType ? 'profile-edit-field__input--error' : ''} ${!diagnosisType ? 'profile-edit-field__picker--placeholder' : ''}`}>
+                    <Text>{diagnosisType || '请选择类型'}</Text>
+                    <Text className="profile-edit-field__picker-arrow">▼</Text>
+                  </View>
+                </Picker>
+                {errors.diagnosisType && <Text className="profile-edit-field__error">{errors.diagnosisType}</Text>}
+              </View>
+
+              {/* 主要行为 */}
+              <View className="profile-edit-field">
+                <Text className="profile-edit-field__label">
+                  <Text className="profile-edit-field__required">*</Text>主要行为类型
+                </Text>
+                <Picker
+                  mode="selector"
+                  range={[...BEHAVIOR_OPTIONS]}
+                  value={BEHAVIOR_OPTIONS.indexOf(primaryBehavior)}
+                  onChange={(e) => { setPrimaryBehavior(BEHAVIOR_OPTIONS[e.detail.value as number]); setErrors((p) => ({ ...p, primaryBehavior: '' })); }}
+                >
+                  <View className={`profile-edit-field__picker ${errors.primaryBehavior ? 'profile-edit-field__input--error' : ''} ${!primaryBehavior ? 'profile-edit-field__picker--placeholder' : ''}`}>
+                    <Text>{primaryBehavior || '请选择类型'}</Text>
+                    <Text className="profile-edit-field__picker-arrow">▼</Text>
+                  </View>
+                </Picker>
+                {errors.primaryBehavior && <Text className="profile-edit-field__error">{errors.primaryBehavior}</Text>}
+              </View>
             </View>
           </View>
         </View>
 
-        {/* 昵称 */}
-        <View className="profile-edit-field">
-          <Text className="profile-edit-field__label">
-            <Text className="profile-edit-field__required">*</Text>档案昵称
-          </Text>
-          <Input
-            className={`profile-edit-field__input ${errors.nickname ? 'profile-edit-field__input--error' : ''}`}
-            value={nickname}
-            onInput={(e) => { setNickname(e.detail.value); setErrors((p) => ({ ...p, nickname: '' })); }}
-            placeholder="如：小明"
-            maxlength={NICKNAME_MAX_LENGTH}
-          />
-          {errors.nickname && <Text className="profile-edit-field__error">{errors.nickname}</Text>}
-        </View>
-
-        {/* 出生日期 */}
-        <View className="profile-edit-field">
-          <Text className="profile-edit-field__label">
-            <Text className="profile-edit-field__required">*</Text>出生日期
-          </Text>
-          <Picker
-            mode="date"
-            value={birthDate || formatDateStr(new Date())}
-            end={formatDateStr(new Date())}
-            onChange={(e) => { setBirthDate(e.detail.value); setErrors((p) => ({ ...p, birthDate: '' })); }}
-          >
-            <View className={`profile-edit-field__picker ${errors.birthDate ? 'profile-edit-field__input--error' : ''} ${!birthDate ? 'profile-edit-field__picker--placeholder' : ''}`}>
-              <Text>{birthDate || '请选择日期'}</Text>
-              <Text className="profile-edit-field__picker-arrow">▼</Text>
-            </View>
-          </Picker>
-          {errors.birthDate && <Text className="profile-edit-field__error">{errors.birthDate}</Text>}
-        </View>
-
-        {/* 诊断类型 */}
-        <View className="profile-edit-field">
-          <Text className="profile-edit-field__label">
-            <Text className="profile-edit-field__required">*</Text>诊断类型
-          </Text>
-          <Picker
-            mode="selector"
-            range={[...DIAGNOSIS_OPTIONS]}
-            value={DIAGNOSIS_OPTIONS.indexOf(diagnosisType)}
-            onChange={(e) => { setDiagnosisType(DIAGNOSIS_OPTIONS[e.detail.value as number]); setErrors((p) => ({ ...p, diagnosisType: '' })); }}
-          >
-            <View className={`profile-edit-field__picker ${errors.diagnosisType ? 'profile-edit-field__input--error' : ''} ${!diagnosisType ? 'profile-edit-field__picker--placeholder' : ''}`}>
-              <Text>{diagnosisType || '请选择类型'}</Text>
-              <Text className="profile-edit-field__picker-arrow">▼</Text>
-            </View>
-          </Picker>
-          {errors.diagnosisType && <Text className="profile-edit-field__error">{errors.diagnosisType}</Text>}
-        </View>
-
-        {/* 主要行为 */}
-        <View className="profile-edit-field">
-          <Text className="profile-edit-field__label">
-            <Text className="profile-edit-field__required">*</Text>主要行为类型
-          </Text>
-          <Picker
-            mode="selector"
-            range={[...BEHAVIOR_OPTIONS]}
-            value={BEHAVIOR_OPTIONS.indexOf(primaryBehavior)}
-            onChange={(e) => { setPrimaryBehavior(BEHAVIOR_OPTIONS[e.detail.value as number]); setErrors((p) => ({ ...p, primaryBehavior: '' })); }}
-          >
-            <View className={`profile-edit-field__picker ${errors.primaryBehavior ? 'profile-edit-field__input--error' : ''} ${!primaryBehavior ? 'profile-edit-field__picker--placeholder' : ''}`}>
-              <Text>{primaryBehavior || '请选择类型'}</Text>
-              <Text className="profile-edit-field__picker-arrow">▼</Text>
-            </View>
-          </Picker>
-          {errors.primaryBehavior && <Text className="profile-edit-field__error">{errors.primaryBehavior}</Text>}
-        </View>
-      </View>
-
-      <TagSection
-        isEdit={isEdit}
-        selectedTags={selectedTags}
-        onToggleTag={toggleTag}
-      />
-
-      {isEdit && (
-        <EventListSection
-          events={events}
-          isLoading={eventsLoading}
-          expanded={eventsExpanded}
-          onToggle={() => setEventsExpanded(!eventsExpanded)}
-          onDeleteEvent={handleDeleteEvent}
+        <TagSection
+          isEdit={isEdit}
+          selectedTags={selectedTags}
+          customTags={customTags}
+          customTagInput={customTagInput}
+          onToggleTag={toggleTag}
+          onCustomTagInputChange={setCustomTagInput}
+          onAddCustomTag={addCustomTag}
+          onRemoveCustomTag={removeCustomTag}
         />
-      )}
+
+        {isEdit && (
+          <EventListSection
+            events={events}
+            isLoading={eventsLoading}
+            expanded={eventsExpanded}
+            onToggle={() => setEventsExpanded(!eventsExpanded)}
+            onDeleteEvent={handleDeleteEvent}
+          />
+        )}
+      </View>
 
       <DeleteConfirmModal
         visible={showDeleteModal}
