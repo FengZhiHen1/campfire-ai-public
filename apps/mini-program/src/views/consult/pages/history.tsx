@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { View, Text, Button } from '@tarojs/components';
 import Taro from '@tarojs/taro';
 import { consultApi } from '../../../logics/consult';
-import type { ConsultationHistoryListItem } from '../../../logics/consult';
+import type { ConsultationHistoryListItem, CrisisLevel } from '../../../logics/consult';
 import './history.scss';
 
 export default function ConsultHistory() {
@@ -31,13 +31,13 @@ export default function ConsultHistory() {
     Taro.navigateTo({ url: `/views/consult/pages/detail?id=${id}` });
   };
 
-  const getLevelClass = (level: string) => {
+  const getLevelClass = (level: CrisisLevel) => {
     if (level === 'severe') return 'high';
     if (level === 'moderate') return 'medium';
     return 'low';
   };
 
-  const getLevelText = (level: string) => {
+  const getLevelText = (level: CrisisLevel) => {
     if (level === 'severe') return '重度';
     if (level === 'moderate') return '中度';
     return '轻度';
