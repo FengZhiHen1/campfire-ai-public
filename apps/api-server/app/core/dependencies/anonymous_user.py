@@ -16,8 +16,8 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from py_db.models.auth import User
+from py_logger import logger
 from py_schemas.auth import UserRole
-
 
 _ANON_PASSWORD_HASH: str = (
     "$2b$12$xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
@@ -61,6 +61,12 @@ async def _get_or_create_anonymous_user(
         try:
             await session.flush()
             await session.refresh(user)
+            logger.info(
+                service="api-server",
+                message="anonymous_user_created",
+                op_type="USER_REGISTER",
+                extra={"user_id": str(user.id), "device_id": device_id},
+            )
             return user
         except IntegrityError:
             await session.rollback()
@@ -73,6 +79,14 @@ async def _get_or_create_anonymous_user(
                 return existing
             # phone 冲突：重试下一次循环（重新生成 phone）
             if attempt == _MAX_RETRIES:
+                logger.error(
+                    service="api-server",
+                    message="anonymous_user_creation_failed",
+                    extra={
+                        "device_id": device_id,
+                        "attempt": attempt,
+                    },
+                )
                 raise
 
     raise RuntimeError("unreachable")

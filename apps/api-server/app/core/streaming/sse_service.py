@@ -177,9 +177,12 @@ class SseStreamingService:
         if SseStreamingService._semaphore.locked():
             current_connections = self._session_manager.active_count
             logger.warning(
-                "concurrency_limit_reached",
-                current_connections=current_connections,
-                rejected_session=session_id,
+                service="streaming",
+                message="concurrency_limit_reached",
+                extra={
+                    "current_connections": current_connections,
+                    "rejected_session": session_id,
+                },
             )
             raise HTTPException(
                 status_code=status.HTTP_429_TOO_MANY_REQUESTS,
@@ -825,7 +828,8 @@ class SseStreamingService:
                 result["ticket_triggered"] = validation_output.ticket_triggered
             except Exception:
                 logger.warning(
-                    "confidence_validation_failed_in_sse",
+                    service="streaming",
+                    message="confidence_validation_failed_in_sse",
                     extra={"stream_id": session.stream_id},
                 )
 
