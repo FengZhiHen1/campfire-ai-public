@@ -22,8 +22,8 @@ from app.core.dependencies.auth_dependencies import (
     get_case_repository,
     get_db_session,
 )
-from app.modules.cases.case_service import CaseManagementService
-from app.modules.cases.types import CaseId
+from .service import CaseManagementService
+from ..types import CaseId
 from py_db.repositories.case_repository import CaseRepository
 from py_schemas.cases import (
     CaseCreateRequest,

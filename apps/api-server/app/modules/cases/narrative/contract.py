@@ -23,8 +23,8 @@ from typing import Any, final
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.modules.cases.exceptions import CardNotFoundError
-from app.modules.cases.types import CardId, NarrativeId
+from ..exceptions import CardNotFoundError
+from ..types import CardId, NarrativeId
 
 
 class NarrativeManagementContract(ABC):

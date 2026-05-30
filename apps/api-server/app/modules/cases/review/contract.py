@@ -40,9 +40,9 @@ from py_schemas.cases import (
 from py_schemas.enums.case_enums import CaseStatus
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.modules.cases.ai_pre_review import case_data_from_orm, run_ai_pre_review
+from .ai_pre_review import case_data_from_orm, run_ai_pre_review
 
-from app.modules.cases.exceptions import (
+from ..exceptions import (
     CaseNotFoundError,
     CaseStatusError,
     PiiHardBlockError,

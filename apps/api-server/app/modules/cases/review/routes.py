@@ -23,7 +23,7 @@ from app.core.dependencies.auth_dependencies import (
     get_review_audit_log_repository,
     get_review_repository,
 )
-from app.modules.cases.review_service import ReviewWorkflowService
+from .service import ReviewWorkflowService
 from py_db.repositories.case_repository import CaseRepository
 from py_db.repositories.review_repository import (
     ReviewAuditLogRepository,

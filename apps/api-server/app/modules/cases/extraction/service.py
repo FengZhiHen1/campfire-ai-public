@@ -7,21 +7,22 @@ Prompt 设计参照 case-extraction skill，以 ebp_reference.md 为约束字典
 from __future__ import annotations
 
 import json
-import logging
 import re
 import uuid
 from typing import Any
 
+import logging
+
 from sqlalchemy.ext.asyncio import AsyncSession
+
+_logger = logging.getLogger(__name__)
 
 from py_llm import LLMClient
 from py_db.models.case_card import CaseCard
 
-from app.modules.cases.case_extraction.extraction_contract import ExtractionServiceContract
-from app.modules.cases.exceptions import ExtractionError
-from app.modules.cases.types import NarrativeId
-
-_logger = logging.getLogger(__name__)
+from .contract import ExtractionServiceContract
+from ..exceptions import ExtractionError
+from ..types import NarrativeId
 
 # NCAEP 28 种 EBP 标签（用于反向校验）
 _VALID_EBP_TAGS: frozenset[str] = frozenset({

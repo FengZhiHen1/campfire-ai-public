@@ -19,13 +19,13 @@ from py_schemas.enums.case_enums import CaseStatus
 from py_schemas.narratives import NarrativeResponse
 from py_schemas.cards import CardResponse
 
-from app.modules.cases.narrative_contract import NarrativeManagementContract
-from app.modules.cases.exceptions import (
+from .contract import NarrativeManagementContract
+from ..exceptions import (
     NarrativeNotFoundError,
     CaseStatusError,
     SelfReviewForbiddenError,
 )
-from app.modules.cases.types import CardId, NarrativeId
+from ..types import CardId, NarrativeId
 
 _logger = logging.getLogger(__name__)
 

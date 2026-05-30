@@ -23,6 +23,7 @@ from typing import Any, Optional
 import redis.asyncio as aioredis
 from fastapi import HTTPException, status
 from py_config import get_settings
+from py_logger import logger
 from py_db.models.review_models import CaseReview
 from py_db.repositories.case_repository import CaseRepository
 from py_db.repositories.review_repository import (
@@ -39,7 +40,7 @@ from py_schemas.cases import (
 from py_schemas.enums.case_enums import CaseStatus
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.modules.cases.review_contract import ReviewWorkflowContract
+from .contract import ReviewWorkflowContract
 
 _logger = logging.getLogger(__name__)
 

@@ -35,7 +35,7 @@ from py_schemas.cases import (
 )
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.modules.cases.types import CaseId, PiiConfirmation
+from ..types import CaseId, PiiConfirmation
 
 
 class CaseManagementContract(ABC):
