@@ -36,7 +36,6 @@ from app.modules.crisis.models import (
     CrisisJudgmentResult,
     CrisisJudgmentRequest,
     JudgmentLayerResult,
-    PatientProfileSnapshot,
 )
 from app.modules.consultation.plan_generation.models import (
     EmergencyPlanInput,
@@ -80,13 +79,6 @@ class ConsultationOrchestratorImpl(BaseConsultationOrchestrator):
         db: AsyncSession,
     ) -> Any:
         tag_filters = _build_default_tag_filters(behavior_type, emotion_level)
-
-        search_input = SemanticSearchInput(
-            query_text=query_text,
-            tag_filters=tag_filters,
-            top_k=10,
-            request_id=str(request_id),
-        )
 
         logger.info(
             service="api-server",
@@ -168,14 +160,16 @@ class ConsultationOrchestratorImpl(BaseConsultationOrchestrator):
             request_id=str(request_id),
         )
 
-    def _do_generate_stream(self, plan_input: Any) -> Any:
+    def _do_generate_stream(self, plan_input: Any) -> tuple[Any, Any]:
+        """返回 (generator, prompt_ctx)，prompt_ctx 供 _do_register_sse 复用。"""
         builder = PromptBuilder()
         messages, ctx = builder.build(plan_input)
-        return stream_generate(
+        generator = stream_generate(
             input_data=plan_input,
             messages=messages,
             prenumbered_slices=ctx.prenumbered_slices,
         )
+        return generator, ctx
 
     def _do_register_sse(
         self,
@@ -186,15 +180,14 @@ class ConsultationOrchestratorImpl(BaseConsultationOrchestrator):
         crisis_result: Any,
         behavior_description: str,
         request_id: RequestId,
+        prompt_ctx: Any,
     ) -> None:
-        builder = PromptBuilder()
-        _messages, ctx = builder.build(plan_input)
-
+        """复用 _do_generate_stream 产出的 prompt_ctx，不重复构建 Prompt。"""
         streaming_service = SseStreamingService()
         streaming_service.register_generator(str(session_id), generator)
         streaming_service.store_generation_meta(
             session_id=str(session_id),
-            prenumbered_slices={num: sid for num, sid in ctx.prenumbered_slices},
+            prenumbered_slices={num: sid for num, sid in prompt_ctx.prenumbered_slices},
             crisis_level=crisis_result.final_level.value,
             block_deep_response=crisis_result.block_deep_response,
             behavior_description=behavior_description,
@@ -248,7 +241,7 @@ async def start_consultation(
     db: AsyncSession,
 ) -> str:
     """启动应急咨询（委托给 ConsultationOrchestratorImpl ABC 单例）。"""
-    result = _orchestrator.start_consultation(
+    result = await _orchestrator.start_consultation(
         behavior_description=behavior_description,
         profile_id=profile_id,
         behavior_type=behavior_type,

@@ -220,8 +220,21 @@ class ConfidenceValidatorImpl(BaseConfidenceValidator):
         ticket_triggered: bool,
         ticket_creation_failed: bool,
         degradation_note: str | None,
+        elapsed_ms: float,
         background_tasks: Any,
     ) -> Any:
+        # 超时安全兜底：若原本 PASS 但总耗时 > 3s，降级为 APPEND_WARNING
+        if elapsed_ms > _VALIDATION_TIMEOUT_MS and verdict == ValidationVerdict.PASS:
+            logger.warning(
+                service=_SERVICE,
+                message="validation_timeout_fallback",
+                extra={"request_id": input.request_id, "elapsed_ms": elapsed_ms},
+            )
+            verdict = ValidationVerdict.APPEND_WARNING
+            modified_plan_text = input.plan_text + _get_config("LOW_CONFIDENCE_DISCLAIMER", _DEFAULT_WARNING_TEXT)
+            degradation_note = _DEGRADATION_TIMEOUT_FALLBACK
+
+        validation_time_ms = round(elapsed_ms, 2)
         validation_detail: dict[str, Any] = {
             "verdict": verdict.value if hasattr(verdict, 'value') else str(verdict),
             "source_count": len(input.source_list),
@@ -242,7 +255,7 @@ class ConfidenceValidatorImpl(BaseConfidenceValidator):
             ticket_triggered=ticket_triggered,
             ticket_creation_failed=ticket_creation_failed,
             degradation_note=degradation_note,
-            validation_time_ms=0.0,
+            validation_time_ms=validation_time_ms,
         )
 
     def _do_build_pass_result(self, input: Any) -> Any:

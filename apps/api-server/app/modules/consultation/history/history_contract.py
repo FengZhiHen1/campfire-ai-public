@@ -33,7 +33,7 @@ class BaseHistoryManager(ABC):
     # ==========================================================================
 
     @final
-    def archive_consultation(
+    async def archive_consultation(
         self,
         data: Any,
         current_user: dict[str, Any],
@@ -64,13 +64,13 @@ class BaseHistoryManager(ABC):
         """
         self._validate_archive_preconditions(data=data, current_user=current_user, db=db)
 
-        record = self._do_archive(data=data, current_user=current_user, db=db)
+        record = await self._do_archive(data=data, current_user=current_user, db=db)
 
         self._validate_archive_postconditions(record=record)
         return record
 
     @abstractmethod
-    def _do_archive(
+    async def _do_archive(
         self,
         data: Any,
         current_user: dict[str, Any],
@@ -81,14 +81,6 @@ class BaseHistoryManager(ABC):
         实现者在此填写 ORM 写入逻辑。
         不需要关心 data 的顶层校验——_validate_archive_preconditions 已处理。
         不需要关心 consultation_time——实现者以服务端 NOW() 为准。
-
-        输入约束:
-          - data: 已通过顶层校验的 ConsultationHistoryCreate
-          - current_user["sub"]: 用户 UUID 字符串
-        输出约束:
-          - 返回 ConsultationHistoryDetail 实例（新创建或已存在的记录）
-        异常:
-          - ConsultationArchiveError: disclaimer 不一致或写入失败
         """
         ...
 
@@ -97,7 +89,7 @@ class BaseHistoryManager(ABC):
     # ==========================================================================
 
     @final
-    def list_history(
+    async def list_history(
         self,
         page: int,
         page_size: int,
@@ -124,7 +116,7 @@ class BaseHistoryManager(ABC):
         """
         self._validate_list_preconditions(page=page, page_size=page_size, current_user=current_user)
 
-        result = self._do_list_history(
+        result = await self._do_list_history(
             page=page,
             page_size=page_size,
             current_user=current_user,
@@ -135,7 +127,7 @@ class BaseHistoryManager(ABC):
         return result
 
     @abstractmethod
-    def _do_list_history(
+    async def _do_list_history(
         self,
         page: int,
         page_size: int,
@@ -146,11 +138,6 @@ class BaseHistoryManager(ABC):
 
         实现者在此填写 Repository 分页查询和 ORM→DTO 转换逻辑。
         不需要关心参数边界校验——_validate_list_preconditions 已处理。
-
-        输入约束:
-          - page/page_size: 已校验
-        输出约束:
-          - 返回 PaginatedResponse[ConsultationHistoryListItem] 实例
         """
         ...
 
@@ -159,7 +146,7 @@ class BaseHistoryManager(ABC):
     # ==========================================================================
 
     @final
-    def get_detail(
+    async def get_detail(
         self,
         consultation_id: UUID,
         current_user: dict[str, Any],
@@ -187,7 +174,7 @@ class BaseHistoryManager(ABC):
             current_user=current_user,
         )
 
-        record = self._do_get_detail(
+        record = await self._do_get_detail(
             consultation_id=consultation_id,
             current_user=current_user,
             db=db,
@@ -197,7 +184,7 @@ class BaseHistoryManager(ABC):
         return record
 
     @abstractmethod
-    def _do_get_detail(
+    async def _do_get_detail(
         self,
         consultation_id: UUID,
         current_user: dict[str, Any],
@@ -208,8 +195,6 @@ class BaseHistoryManager(ABC):
         实现者在此填写 Repository 查询 + 权限校验 + ORM→DTO 转换。
         不需要关心 consultation_id 格式——Python UUID 类型已保证。
 
-        输入约束:
-          - consultation_id: 有效 UUID
         输出约束:
           - 返回 ConsultationHistoryDetail 实例
         异常:
@@ -259,10 +244,11 @@ class BaseHistoryManager(ABC):
         current_user: dict[str, Any],
     ) -> None:
         """基线前置校验——历史列表。"""
+        from app.modules.consultation.exceptions import ConsultationInputError
         if page < 1:
-            raise ValueError("page 必须 >= 1")
+            raise ConsultationInputError(message="page 必须 >= 1", field="page")
         if page_size < 1 or page_size > 100:
-            raise ValueError("page_size 必须在 [1, 100]")
+            raise ConsultationInputError(message="page_size 必须在 [1, 100]", field="page_size")
 
     def _validate_list_postconditions(self, result: Any) -> None:
         """基线后置校验——历史列表。"""
