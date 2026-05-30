@@ -55,6 +55,11 @@ const config = {
   framework: 'react',
   compiler: 'webpack5',
   mini: {
+    compile: {
+      include: [
+        path.resolve(__dirname, '..', '..', '..', 'packages', 'ts-shared', 'src')
+      ]
+    },
     postcss: {
       pxtransform: {
         enable: true,
