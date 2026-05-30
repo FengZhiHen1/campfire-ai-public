@@ -5,6 +5,7 @@ description = "Campfire-AI shared package: py-auth"
 requires-python = ">=3.12"
 dependencies = [
     "py-config",
+    "py-logger",
     "passlib[bcrypt]>=1.7.4",
     "python-jose[cryptography]>=3.3.0",
 ]

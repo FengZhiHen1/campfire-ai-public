@@ -1,13 +1,16 @@
-"""FastAPI 认证依赖注入（MVP 匿名绕过版）。
+"""py-auth FastAPI 认证依赖注入。
 
-MVP 阶段完全绕过 JWT 认证：
-- 从请求头读取 X-Device-Id 作为匿名身份标识
-- 若缺失则生成随机设备 ID
-- 将设备 ID 确定性映射为 UUID，确保与后端各模块的 UUID 类型兼容
-- 返回兼容现有路由的 payload 字典（sub, roles, jti）
+MVP 阶段：从 X-Device-Id 请求头提取匿名用户身份，兼容现有路由。
+正式阶段：集成 JoseTokenManager 进行 JWT 校验。
 
-所有路由中的 Depends(get_current_user) 和 Depends(require_role(...))
-无需任何修改即可正常工作。
+核心函数:
+  - get_current_user: FastAPI Depends 兼容的认证依赖
+
+Usage:
+    from py_auth.dependencies import get_current_user
+    @router.get("/me")
+    async def me(user: dict = Depends(get_current_user)):
+        ...
 """
 
 from __future__ import annotations
@@ -15,34 +18,41 @@ from __future__ import annotations
 import secrets
 import uuid
 
-from fastapi import HTTPException, Request
+from fastapi import Request
+
+from py_logger import logger
 
 
-async def get_current_user(
-    request: Request,
-) -> dict:
+async def get_current_user(request: Request) -> dict[str, object]:
     """从 X-Device-Id 请求头提取匿名用户身份。
 
     MVP 阶段不进行 JWT 校验，直接信任前端传入的设备匿名 ID。
     若请求头中无 X-Device-Id，则生成一个随机设备 ID。
-    设备 ID 通过 uuid5 确定性映射为 UUID，确保与后端 repository 层的
-    UUID 类型约束兼容，且同一设备始终得到同一 UUID。
+    设备 ID 通过 uuid5 确定性映射为 UUID，确保同一设备始终得到同一 UUID。
 
     Returns:
         dict: 含 sub（UUID 字符串）、roles（固定 ["family"]）、
-              jti（固定 "anonymous"）、exp（固定远期时间戳）的 payload 字典，
-              与原有 JWT payload 结构完全兼容。
+              jti（固定 "anonymous"）、exp（固定远期时间戳）、
+              type（"access"）的 payload 字典。
 
-    Raises:
-        HTTPException(401): 极少场景下（请求对象缺失）返回 401。
+    Side Effects:
+        - 新设备首次访问时记录 info 日志
     """
     device_id = request.headers.get("X-Device-Id", "")
+    is_new_device = not device_id
+
     if not device_id:
-        # 生成一个 16 字符的 URL-safe 随机字符串作为匿名设备 ID
         device_id = secrets.token_urlsafe(12)
 
-    # 将设备 ID 确定性映射为 UUID，兼容后端 repository 的 UUID 类型约束
     user_uuid = uuid.uuid5(uuid.NAMESPACE_DNS, device_id)
+
+    if is_new_device:
+        logger.info(
+            "py-auth",
+            "新匿名设备已分配 UUID",
+            op_type="认证",
+            extra={"device_hash": str(user_uuid)[:8] + "..."},
+        )
 
     return {
         "sub": str(user_uuid),

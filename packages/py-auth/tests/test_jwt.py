@@ -84,9 +84,9 @@ class TestVerifyToken:
         with pytest.raises(TokenDecodeError):
             verify_token("not.a.valid.jwt.token")
 
-    def test_verify_empty_string_raises(self):
-        with pytest.raises(TokenDecodeError):
-            verify_token("")
+    def test_verify_empty_string_returns_none(self):
+        """空字符串 Token 应返回 None（前置校验拒绝，不抛异常）。"""
+        assert verify_token("") is None
 
     def test_verify_garbage_raises(self):
         with pytest.raises(TokenDecodeError):

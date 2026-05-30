@@ -1,162 +1,170 @@
-"""JWT Token 签发与校验。
+"""py-auth JWT Token 管理 — JoseTokenManager 实现。
 
-使用 HMAC-SHA256 (HS256) 对称签名算法签发和校验 JWT Token。
-支持两种 Token 类型：access（15分钟）和 refresh（7天）。
+实现 TokenManager 契约，使用 python-jose 库进行 HMAC-SHA256 对称签名。
 支持密钥轮换：header 中嵌入 kid 字段，校验时根据 kid 选择对应密钥。
 
-公开函数：
-  - create_access_token: 签发访问令牌
-  - create_refresh_token: 签发续期令牌
-  - verify_token: 校验 Token 签名和有效期
-  - verify_access_token: 校验访问令牌（含类型检查）
-  - verify_refresh_token: 校验续期令牌（含类型检查）
+核心类:
+  - JoseTokenManager: 实现 TokenManager 契约，JWT 签发与校验
+  - TokenType: Token 类型枚举 (access / refresh)
+
+Usage:
+    from py_auth.jwt_utils import JoseTokenManager
+    manager = JoseTokenManager()
+    token = manager.create_access_token({"sub": "user-123", "roles": ["family"]})
+    payload = manager.verify_access_token(token)
 """
 
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 from enum import StrEnum
+from typing import Any, cast
 from uuid import uuid4
 
 from jose import jwt as jose_jwt
 from jose.exceptions import JWTError as JoseJWTError
 
+from py_auth.auth_contract import TokenManager
 from py_auth.exceptions import TokenCreationError, TokenDecodeError
 from py_config.security import get_security_config
+from py_logger import logger
 
 
 class TokenType(StrEnum):
+    """JWT Token 类型枚举。"""
     ACCESS = "access"
     REFRESH = "refresh"
 
 
-_ACCESS_TTL = timedelta(minutes=15)
-_REFRESH_TTL = timedelta(days=7)
+class JoseTokenManager(TokenManager):
+    """python-jose JWT 实现，继承 TokenManager 契约。
 
-
-def _build_token(
-    data: dict,
-    token_type: TokenType,
-    expires_delta: timedelta,
-) -> str:
-    if "sub" not in data:
-        raise ValueError("data 必须包含 sub 字段")
-    if "roles" not in data:
-        raise ValueError("data 必须包含 roles 字段")
-
-    config = get_security_config()
-    tz = timezone(timedelta(hours=8), name="Asia/Shanghai")
-    now = datetime.now(tz)
-
-    payload = {
-        "iss": "campfire-ai",
-        "sub": data["sub"],
-        "roles": data["roles"],
-        "type": token_type.value,
-        "iat": int(now.timestamp()),
-        "exp": int((now + expires_delta).timestamp()),
-        "jti": str(uuid4()),
-    }
-
-    try:
-        return jose_jwt.encode(
-            payload,
-            config.JWT_SECRET_KEY,
-            algorithm=config.JWT_ALGORITHM,
-            headers={"kid": config.JWT_KEY_VERSION},
-        )
-    except JoseJWTError as exc:
-        raise TokenCreationError(f"JWT 签发失败: {exc}") from exc
-
-
-def create_access_token(data: dict) -> str:
-    """签发访问令牌（15 分钟有效，type=access）。
-
-    Args:
-        data: 必须包含 ``sub`` (用户ID) 和 ``roles`` (角色列表)。
-
-    Raises:
-        ValueError: 缺少必要字段。
+    从 py-config 读取密钥、算法和密钥版本配置。
+    支持新旧密钥共栖（密钥轮换过渡期）。
     """
-    return _build_token(data, TokenType.ACCESS, _ACCESS_TTL)
+
+    def __init__(self) -> None:
+        self._config = get_security_config()
+        self._tz = timezone(timedelta(hours=8), name="Asia/Shanghai")
+
+    # ------------------------------------------------------------------
+    # 契约钩子
+    # ------------------------------------------------------------------
+
+    def _do_create_token(
+        self, data: dict[str, Any], token_type: str, ttl_seconds: int
+    ) -> str:
+        """执行 JWT 签发——构建 claims，调用 python-jose 编码。"""
+        now = datetime.now(self._tz)
+
+        payload = {
+            "iss": "campfire-ai",
+            "sub": data["sub"],
+            "roles": data["roles"],
+            "type": token_type,
+            "iat": int(now.timestamp()),
+            "exp": int((now + timedelta(seconds=ttl_seconds)).timestamp()),
+            "jti": str(uuid4()),
+        }
+
+        try:
+            result = jose_jwt.encode(
+                payload,
+                self._config.JWT_SECRET_KEY,
+                algorithm=self._config.JWT_ALGORITHM,
+                headers={"kid": self._config.JWT_KEY_VERSION},
+            )
+            return cast(str, result)
+        except JoseJWTError as exc:
+            raise TokenCreationError(
+                f"JWT 签发失败: {exc}",
+                token_type=token_type,
+                detail={"error_type": type(exc).__name__},
+            ) from exc
+
+    def _do_verify_token(self, token: str) -> dict[str, Any] | None:
+        """执行 JWT 校验——解码 header → 选密钥 → 验证签名+过期。"""
+        try:
+            unverified_headers = jose_jwt.get_unverified_headers(token)
+        except JoseJWTError as exc:
+            raise TokenDecodeError(
+                f"Token 格式无效: {exc}",
+                detail={"error_type": type(exc).__name__},
+            ) from exc
+        except Exception as exc:
+            raise TokenDecodeError(
+                f"Token header 解析失败: {exc}",
+                detail={"error_type": type(exc).__name__},
+            ) from exc
+
+        kid = unverified_headers.get("kid")
+
+        # 密钥轮换：当前密钥优先，其次上一版本密钥
+        if kid == self._config.JWT_KEY_VERSION and self._config.JWT_KEY_VERSION:
+            selected_key = self._config.JWT_SECRET_KEY
+        elif (
+            self._config.JWT_PREVIOUS_KEY_VERSION
+            and kid == self._config.JWT_PREVIOUS_KEY_VERSION
+        ):
+            selected_key = self._config.JWT_PREVIOUS_SECRET_KEY
+        else:
+            logger.warning(
+                "py-auth",
+                "Token kid 不匹配任何已知密钥版本",
+                op_type="认证",
+                extra={"kid": kid},
+            )
+            return None
+
+        try:
+            payload: dict[str, Any] = jose_jwt.decode(
+                token,
+                selected_key,
+                algorithms=[self._config.JWT_ALGORITHM],
+                options={"verify_exp": True},
+            )
+            payload["kid"] = kid
+            return payload
+        except JoseJWTError:
+            return None
 
 
-def create_refresh_token(data: dict) -> str:
-    """签发续期令牌（7 天有效，type=refresh）。
+# ============================================================================
+# 模块级便捷函数（兼容旧 API）
+# ============================================================================
 
-    Args:
-        data: 必须包含 ``sub`` (用户ID) 和 ``roles`` (角色列表)。
-    """
-    return _build_token(data, TokenType.REFRESH, _REFRESH_TTL)
-
-
-def verify_token(token: str) -> dict | None:
-    """校验 Token 签名和有效期（不检查 type）。
-
-    校验流程：
-    1. 解码 header 提取 kid
-    2. 根据 kid 选择对应版本密钥（支持新旧密钥共栖）
-    3. 签名校验 + exp 过期检查 → 通过则返回 payload dict
-
-    Returns:
-        dict | None: 解码后的 payload，校验失败返回 None。
-    """
-    config = get_security_config()
-
-    try:
-        unverified_headers = jose_jwt.get_unverified_headers(token)
-    except JoseJWTError as exc:
-        raise TokenDecodeError(f"token 格式无效: {exc}") from exc
-    except Exception as exc:
-        raise TokenDecodeError(f"token 格式无效: {exc}") from exc
-
-    kid = unverified_headers.get("kid")
-
-    if kid == config.JWT_KEY_VERSION and config.JWT_KEY_VERSION:
-        selected_key = config.JWT_SECRET_KEY
-    elif (
-        config.JWT_PREVIOUS_KEY_VERSION
-        and kid == config.JWT_PREVIOUS_KEY_VERSION
-    ):
-        selected_key = config.JWT_PREVIOUS_SECRET_KEY
-    else:
-        return None
-
-    try:
-        payload: dict = jose_jwt.decode(
-            token,
-            selected_key,
-            algorithms=[config.JWT_ALGORITHM],
-            options={"verify_exp": True},
-        )
-        payload["kid"] = kid
-        return payload
-    except JoseJWTError:
-        return None
+_default_manager = JoseTokenManager()
+"""模块级默认实例，供便捷函数使用。"""
 
 
-def verify_access_token(token: str) -> dict | None:
-    """校验访问令牌：签名 + 有效期 + type == access。"""
-    payload = verify_token(token)
-    if payload is None:
-        return None
-    if payload.get("type") != TokenType.ACCESS.value:
-        return None
-    return payload
+def create_access_token(data: dict[str, Any]) -> str:
+    """便捷函数——签发访问令牌。"""
+    return _default_manager.create_access_token(data)
 
 
-def verify_refresh_token(token: str) -> dict | None:
-    """校验续期令牌：签名 + 有效期 + type == refresh。"""
-    payload = verify_token(token)
-    if payload is None:
-        return None
-    if payload.get("type") != TokenType.REFRESH.value:
-        return None
-    return payload
+def create_refresh_token(data: dict[str, Any]) -> str:
+    """便捷函数——签发续期令牌。"""
+    return _default_manager.create_refresh_token(data)
+
+
+def verify_token(token: str) -> dict[str, Any] | None:
+    """便捷函数——校验 Token 签名和有效期。"""
+    return _default_manager.verify_token(token)
+
+
+def verify_access_token(token: str) -> dict[str, Any] | None:
+    """便捷函数——校验访问令牌。"""
+    return _default_manager.verify_access_token(token)
+
+
+def verify_refresh_token(token: str) -> dict[str, Any] | None:
+    """便捷函数——校验续期令牌。"""
+    return _default_manager.verify_refresh_token(token)
 
 
 __all__ = [
     "TokenType",
+    "JoseTokenManager",
     "create_access_token",
     "create_refresh_token",
     "verify_token",
