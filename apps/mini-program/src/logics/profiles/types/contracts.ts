@@ -79,7 +79,7 @@ export interface UseMicroSurveyReturn {
   questions: MicroSurveyQuestion[];
   /** 提交回答。失败时回退到 showing 状态，保留用户选择。 */
   submit: (answer: MicroSurveyAnswer) => Promise<void>;
-  /** 跳过微问卷，标记 consultationId 为已处理 */
+  /** 跳过微问卷，关闭浮层。同 consultation 不会再次弹出（trigger 时已标记去重）。 */
   skip: () => void;
 }
 
