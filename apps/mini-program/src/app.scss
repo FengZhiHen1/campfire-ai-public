@@ -52,6 +52,36 @@ page {
   --cf-on-primary-fixed: #92400E;
   --cf-on-primary-fixed-variant: #B45309;
 
+  --cf-secondary-fixed: #E2E8F0;
+  --cf-secondary-fixed-dim: #CBD5E1;
+  --cf-on-secondary-fixed: #1E293B;
+  --cf-on-secondary-fixed-variant: #64748B;
+
+  --cf-tertiary-fixed: #D1FAE5;
+  --cf-tertiary-fixed-dim: #A7F3D0;
+  --cf-on-tertiary-fixed: #065F46;
+  --cf-on-tertiary-fixed-variant: #059669;
+
+  /* Surface containers */
+  --cf-surface-container-lowest: #FFFFFF;
+  --cf-surface-container-low: #F5F0EB;
+  --cf-surface-container: #F5F0EB;
+  --cf-surface-container-high: #EBE5DE;
+  --cf-surface-container-highest: #EBE5DE;
+  --cf-surface-tint: #F59E0B;
+
+  /* Inverse */
+  --cf-inverse-surface: #1C1917;
+  --cf-inverse-on-surface: #FDF8F3;
+
+  /* Typography (2x DESIGN.md for Taro rpx) */
+  --cf-headline-lg: 48px;
+  --cf-headline-md: 40px;
+  --cf-body-lg: 36px;
+  --cf-body-md: 32px;
+  --cf-label-md: 28px;
+  --cf-footnote: 22px;
+
   /* Spacing */
   --cf-spacing-xs: 8px;
   --cf-spacing-sm: 16px;
