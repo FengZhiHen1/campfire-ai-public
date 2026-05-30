@@ -214,8 +214,9 @@ export class SseStreamParser {
           if (typeof res.data === 'string') {
             chunk = res.data;
           } else if (res.data instanceof ArrayBuffer) {
-            const bytes = new Uint8Array(res.data);
-            chunk = String.fromCharCode(...bytes);
+            // TextDecoder 正确解码 UTF-8 多字节字符（中文等）
+            // String.fromCharCode 逐字节转换会破坏多字节序列导致乱码
+            chunk = new TextDecoder('utf-8').decode(res.data);
           }
           if (chunk) {
             console.debug('[sse] onChunkReceived', { len: chunk.length, preview: chunk.slice(0, 80) });
