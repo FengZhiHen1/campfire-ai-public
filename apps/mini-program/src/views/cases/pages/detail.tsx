@@ -2,6 +2,7 @@ import { View, Text, Button } from '@tarojs/components';
 import Taro from '@tarojs/taro';
 import { useCaseDetailPage } from '../../../logics/cases';
 import type { CardSummary } from '../../../logics/cases';
+import MarkdownRenderer from '../../../logics/shared/components/MarkdownRenderer';
 import './detail.scss';
 
 // ============================================================================
@@ -100,7 +101,7 @@ export default function CasesDetail() {
       <View className="detail-section">
         <Text className="detail-section__title">叙事原文</Text>
         <View className="detail-section__content">
-          <Text className="detail-section__text">{data.narrative}</Text>
+          <MarkdownRenderer content={data.narrative} />
         </View>
       </View>
 
