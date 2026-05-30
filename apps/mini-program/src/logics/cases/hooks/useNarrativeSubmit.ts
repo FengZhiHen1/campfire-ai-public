@@ -68,8 +68,6 @@ export function useNarrativeSubmit(): UseNarrativeSubmitReturn {
     try {
       const res = await createNarrative({ title, narrative, source_type: sourceType });
       const narrativeId = res.narrative_id;
-      setSubmitting(false);
-      setExtracting(true);
       await triggerExtraction(narrativeId);
     } catch {
       Taro.showToast({ title: '提交失败', icon: 'none' });
@@ -78,18 +76,18 @@ export function useNarrativeSubmit(): UseNarrativeSubmitReturn {
   }, [canSubmit, title, narrative, sourceType]);
 
   const triggerExtraction = useCallback(async (narrativeId: string) => {
+    setExtracting(true);
     try {
       await extractNarrative(narrativeId);
+      setSubmitting(false);
       setExtracting(false);
       Taro.redirectTo({
         url: `/views/cases/pages/extraction-result?narrativeId=${narrativeId}`,
       });
     } catch {
-      Taro.showToast({ title: '提取失败，请稍后重试', icon: 'none' });
+      setSubmitting(false);
       setExtracting(false);
-      Taro.redirectTo({
-        url: `/views/cases/pages/extraction-result?narrativeId=${narrativeId}`,
-      });
+      Taro.showToast({ title: '提取失败，请稍后重试', icon: 'none' });
     }
   }, []);
 

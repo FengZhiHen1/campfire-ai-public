@@ -21,6 +21,7 @@ import type {
   CaseCreateRequest,
   CaseListItem,
   CaseResponse,
+  CaseReviewResponse,
   CaseUpdate,
   PaginatedResponse,
   PiiDetectionResult,
@@ -296,7 +297,7 @@ export async function reviewCase(
   decision: 'approved' | 'rejected',
   reviewComment?: string,
   signal?: AbortSignal,
-): Promise<import('@campfire/ts-shared').CaseReviewResponse> {
+): Promise<CaseReviewResponse> {
   if (signal?.aborted) {
     return Promise.reject(new DOMException('The operation was aborted', 'AbortError'));
   }
@@ -305,7 +306,7 @@ export async function reviewCase(
   }
   const { signal: requestSignal, cleanup } = createRequestSignal(signal);
   try {
-    const res = await httpClient.request<import('@campfire/ts-shared').CaseReviewResponse>(
+    const res = await httpClient.request<CaseReviewResponse>(
       withSignal(
         {
           url: `${BASE_PATH}/${caseId}/review`,

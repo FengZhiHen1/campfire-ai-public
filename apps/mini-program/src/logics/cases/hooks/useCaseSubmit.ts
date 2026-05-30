@@ -5,16 +5,22 @@
  * API 调用（createCase + submitCase）。View 层仅负责 JSX 渲染。
  *
  * 调用路径：views/cases/pages/submit → useCaseSubmit → caseApi
+ *           views/ → useCaseSubmit → useCaseStore (Zustand, 自动保存草稿)
  */
 
 import { useState, useCallback } from 'react';
 import Taro from '@tarojs/taro';
 import { createCase, submitCase } from '../services/caseApi';
+import { useCaseStore } from '../store/caseStore';
 import {
   BEHAVIOR_TYPE_OPTIONS,
+  BEHAVIOR_TYPE_VALUES,
   SEVERITY_OPTIONS,
+  SEVERITY_VALUES,
   SCENE_OPTIONS,
+  SCENE_VALUES,
   EVIDENCE_LEVEL_OPTIONS,
+  EVIDENCE_LEVEL_VALUES,
 } from '../types/constants';
 import type { CaseCreateRequest } from '@campfire/ts-shared';
 
@@ -88,60 +94,102 @@ const QUARTET_CONFIG: readonly QuartetFieldConfig[] = [
 ];
 
 // ============================================================================
+// 辅助函数
+// ============================================================================
+
+function indexOfSafe(arr: readonly string[], val: string): number {
+  const idx = arr.indexOf(val);
+  return idx >= 0 ? idx : 0;
+}
+
+// ============================================================================
 // Hook
 // ============================================================================
 
 export function useCaseSubmit(): UseCaseSubmitReturn {
-  const [title, setTitle] = useState('');
-  const [behaviorTypeIdx, setBehaviorTypeIdx] = useState(0);
-  const [severityIdx, setSeverityIdx] = useState(0);
-  const [sceneIdx, setSceneIdx] = useState(0);
-  const [evidenceLevelIdx, setEvidenceLevelIdx] = useState(0);
-  const [immediateAction, setImmediateAction] = useState('');
-  const [comfortingPhrase, setComfortingPhrase] = useState('');
-  const [observationMetrics, setObservationMetrics] = useState('');
-  const [medicalCriteria, setMedicalCriteria] = useState('');
+  const fields = useCaseStore((s) => s.fields);
+  const setField = useCaseStore((s) => s.setField);
+  const loadDraft = useCaseStore((s) => s.loadDraft);
+  const saveDraft = useCaseStore((s) => s.saveDraft);
+  const resetForm = useCaseStore((s) => s.resetForm);
+
+  // 从草稿恢复索引
+  const [behaviorTypeIdx, setBehaviorTypeIdxRaw] = useState<number>(() =>
+    indexOfSafe(BEHAVIOR_TYPE_VALUES, fields.behavior_type),
+  );
+  const [severityIdx, setSeverityIdxRaw] = useState<number>(() =>
+    indexOfSafe(SEVERITY_VALUES, fields.severity),
+  );
+  const [sceneIdx, setSceneIdxRaw] = useState<number>(() =>
+    indexOfSafe(SCENE_VALUES, fields.scene),
+  );
+  const [evidenceLevelIdx, setEvidenceLevelIdxRaw] = useState<number>(() =>
+    indexOfSafe(EVIDENCE_LEVEL_VALUES, fields.evidence_level),
+  );
+
+  const setBehaviorTypeIdx = useCallback((idx: number) => {
+    setBehaviorTypeIdxRaw(idx);
+    setField('behavior_type', BEHAVIOR_TYPE_VALUES[idx]);
+  }, [setField]);
+
+  const setSeverityIdx = useCallback((idx: number) => {
+    setSeverityIdxRaw(idx);
+    setField('severity', SEVERITY_VALUES[idx]);
+  }, [setField]);
+
+  const setSceneIdx = useCallback((idx: number) => {
+    setSceneIdxRaw(idx);
+    setField('scene', SCENE_VALUES[idx]);
+  }, [setField]);
+
+  const setEvidenceLevelIdx = useCallback((idx: number) => {
+    setEvidenceLevelIdxRaw(idx);
+    setField('evidence_level', EVIDENCE_LEVEL_VALUES[idx]);
+  }, [setField]);
+
+  const setTitle = useCallback((v: string) => {
+    setField('title', v);
+  }, [setField]);
 
   const quartetValues: Record<string, string> = {
-    immediate_action: immediateAction,
-    comforting_phrase: comfortingPhrase,
-    observation_metrics: observationMetrics,
-    medical_criteria: medicalCriteria,
-  };
-
-  const quartetSetters: Record<string, (v: string) => void> = {
-    immediate_action: setImmediateAction,
-    comforting_phrase: setComfortingPhrase,
-    observation_metrics: setObservationMetrics,
-    medical_criteria: setMedicalCriteria,
+    immediate_action: fields.immediate_action,
+    comforting_phrase: fields.comforting_phrase,
+    observation_metrics: fields.observation_metrics,
+    medical_criteria: fields.medical_criteria,
   };
 
   const quartetSetter = useCallback((key: string, value: string) => {
-    quartetSetters[key]?.(value);
-  }, []);
+    if (key === 'immediate_action' || key === 'comforting_phrase'
+      || key === 'observation_metrics' || key === 'medical_criteria') {
+      setField(key, value);
+    }
+  }, [setField]);
 
   const handleSubmit = useCallback(async () => {
-    if (!title.trim()) {
+    if (!fields.title.trim()) {
       Taro.showToast({ title: '标题为必填', icon: 'none' });
       return;
     }
-    if (!immediateAction.trim() || !comfortingPhrase.trim() || !observationMetrics.trim() || !medicalCriteria.trim()) {
+    if (!fields.immediate_action.trim() || !fields.comforting_phrase.trim()
+      || !fields.observation_metrics.trim() || !fields.medical_criteria.trim()) {
       Taro.showToast({ title: '四段式字段均为必填', icon: 'none' });
       return;
     }
     try {
-      const draft = await createCase({
-        title,
-        behavior_type: BEHAVIOR_TYPE_OPTIONS[behaviorTypeIdx],
-        severity: SEVERITY_OPTIONS[severityIdx],
-        scene: SCENE_OPTIONS[sceneIdx],
-        evidence_level: EVIDENCE_LEVEL_OPTIONS[evidenceLevelIdx],
-        immediate_action: immediateAction,
-        comforting_phrase: comfortingPhrase,
-        observation_metrics: observationMetrics,
-        medical_criteria: medicalCriteria,
-      } as unknown as CaseCreateRequest);
+      const request: CaseCreateRequest = {
+        title: fields.title,
+        behavior_type: BEHAVIOR_TYPE_VALUES[behaviorTypeIdx] as CaseCreateRequest['behavior_type'],
+        severity: SEVERITY_VALUES[severityIdx] as CaseCreateRequest['severity'],
+        scene: SCENE_VALUES[sceneIdx] as CaseCreateRequest['scene'],
+        evidence_level: EVIDENCE_LEVEL_VALUES[evidenceLevelIdx] as CaseCreateRequest['evidence_level'],
+        immediate_action: fields.immediate_action,
+        comforting_phrase: fields.comforting_phrase,
+        observation_metrics: fields.observation_metrics,
+        medical_criteria: fields.medical_criteria,
+      };
+      const draft = await createCase(request);
       await submitCase(draft.case_id);
+      resetForm();
       Taro.showToast({ title: '案例已提交审核' });
       Taro.showModal({
         title: '提交成功',
@@ -150,13 +198,14 @@ export function useCaseSubmit(): UseCaseSubmitReturn {
         confirmText: '知道了',
       });
       Taro.navigateBack();
-    } catch {
-      Taro.showToast({ title: '提交失败', icon: 'none' });
+    } catch (err: unknown) {
+      const msg: string = err instanceof Error ? err.message : '提交失败';
+      Taro.showToast({ title: msg, icon: 'none' });
     }
-  }, [title, behaviorTypeIdx, severityIdx, sceneIdx, evidenceLevelIdx, immediateAction, comfortingPhrase, observationMetrics, medicalCriteria]);
+  }, [fields, behaviorTypeIdx, severityIdx, sceneIdx, evidenceLevelIdx, resetForm]);
 
   return {
-    title,
+    title: fields.title,
     setTitle,
     behaviorTypeIdx,
     setBehaviorTypeIdx,

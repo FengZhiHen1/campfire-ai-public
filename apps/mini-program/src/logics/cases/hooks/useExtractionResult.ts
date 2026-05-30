@@ -4,50 +4,24 @@
  * 封装 ExtractionResult 页面的全部业务逻辑：卡片列表加载、
  * 编辑态管理、保存/提交操作。View 层仅负责 JSX 渲染。
  *
- * 调用路径：views/cases/pages/extraction-result → useExtractionResult → httpClient
- *           （卡片 CRUD 暂未抽象到独立 service，直接通过 httpClient 调用）
+ * 调用路径：views/cases/pages/extraction-result → useExtractionResult → cardApi → httpClient
  */
 
 import { useState, useEffect, useCallback } from 'react';
 import Taro from '@tarojs/taro';
-import { httpClient } from '../../shared/services/httpClient';
+import { updateCard, submitCard } from '../services/cardApi';
+import { getNarrative } from '../services/narrativeApi';
 import {
   BEHAVIOR_TYPE_OPTIONS,
   SEVERITY_OPTIONS,
   SCENE_OPTIONS,
   FAMILY_CATEGORY_OPTIONS,
 } from '../types/constants';
+import type { CardData } from '../services/cardApi';
 
 // ============================================================================
 // 类型定义
 // ============================================================================
-
-/** AI 提取的卡片数据 */
-interface CardData {
-  card_id: string;
-  title: string;
-  scenario: string;
-  behavior_type: string;
-  age_range: number[];
-  severity: string;
-  scene: string;
-  ebp_labels: string[];
-  family_category: string;
-  immediate_action: string;
-  comforting_phrase: string;
-  observation_metrics: string;
-  medical_criteria: string;
-  evidence_level: string;
-  caution_notes: string;
-  contraindications: string;
-  is_template: boolean;
-  inferred_fields?: Record<string, string>;
-}
-
-/** 叙事 API 返回的卡片列表响应 */
-interface NarrativeCardsResponse {
-  cards: CardData[];
-}
 
 /** useExtractionResult 的返回值 */
 export interface UseExtractionResultReturn {
@@ -67,6 +41,19 @@ export interface UseExtractionResultReturn {
 }
 
 // ============================================================================
+// 辅助函数
+// ============================================================================
+
+function deepCloneCard(card: CardData): CardData {
+  return {
+    ...card,
+    age_range: [...card.age_range],
+    ebp_labels: [...card.ebp_labels],
+    inferred_fields: card.inferred_fields ? { ...card.inferred_fields } : undefined,
+  };
+}
+
+// ============================================================================
 // Hook
 // ============================================================================
 
@@ -80,23 +67,23 @@ export function useExtractionResult(): UseExtractionResultReturn {
 
   useEffect(() => {
     if (!narrativeId) return;
-    httpClient.request<NarrativeCardsResponse>({
-      url: `/api/v1/narratives/${narrativeId}`,
-      method: 'GET',
-    }).then((res) => {
-      const cardList = res.data.cards || [];
-      setCards(cardList);
-      if (cardList.length > 0) {
-        setEditing({ ...cardList[0] });
-      }
-    }).catch(() => {
-      Taro.showToast({ title: '加载失败', icon: 'none' });
-    }).finally(() => setLoading(false));
+    getNarrative(narrativeId)
+      .then((res) => {
+        const cardList: CardData[] = (res.cards || []) as unknown as CardData[];
+        setCards(cardList);
+        if (cardList.length > 0) {
+          setEditing(deepCloneCard(cardList[0]));
+        }
+      })
+      .catch(() => {
+        Taro.showToast({ title: '加载失败', icon: 'none' });
+      })
+      .finally(() => setLoading(false));
   }, [narrativeId]);
 
   const switchTab = useCallback((idx: number) => {
     setActiveTab(idx);
-    setEditing(cards[idx] ? { ...cards[idx] } : null);
+    setEditing(cards[idx] ? deepCloneCard(cards[idx]) : null);
   }, [cards]);
 
   const updateField = useCallback((field: string, value: unknown) => {
@@ -107,14 +94,10 @@ export function useExtractionResult(): UseExtractionResultReturn {
   const saveCard = useCallback(async () => {
     if (!editing) return;
     try {
-      await httpClient.request({
-        url: `/api/v1/cards/${editing.card_id}`,
-        method: 'PUT',
-        data: editing,
-        header: { 'Content-Type': 'application/json' },
-      });
-      const updated = cards.map((c) => c.card_id === editing.card_id ? editing : c);
-      setCards(updated);
+      const updated = await updateCard(editing.card_id, editing);
+      const newCards = cards.map((c) => c.card_id === editing.card_id ? updated : c);
+      setCards(newCards);
+      setEditing(updated);
       Taro.showToast({ title: '已保存', icon: 'success' });
     } catch {
       Taro.showToast({ title: '保存失败', icon: 'none' });
@@ -123,13 +106,7 @@ export function useExtractionResult(): UseExtractionResultReturn {
 
   const submitAll = useCallback(async () => {
     try {
-      for (const card of cards) {
-        await httpClient.request({
-          url: `/api/v1/cards/${card.card_id}/submit`,
-          method: 'POST',
-          header: { 'Content-Type': 'application/json' },
-        });
-      }
+      await Promise.all(cards.map((card) => submitCard(card.card_id)));
       Taro.showToast({ title: '全部卡片已提交审核' });
       Taro.navigateBack();
     } catch {

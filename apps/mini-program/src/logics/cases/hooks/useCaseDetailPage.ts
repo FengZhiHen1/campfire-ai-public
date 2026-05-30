@@ -21,6 +21,7 @@ import type { NarrativeDetail, CardSummary } from '../types';
 export interface UseCaseDetailPageReturn {
   data: NarrativeDetail | null;
   loading: boolean;
+  error: string | null;
   handleGoExtract: () => void;
   handleEditNarrative: () => void;
   handleCardClick: (cardId: string) => void;
@@ -37,6 +38,7 @@ export interface UseCaseDetailPageReturn {
 export function useCaseDetailPage(): UseCaseDetailPageReturn {
   const [data, setData] = useState<NarrativeDetail | null>(null);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     const params = Taro.getCurrentInstance().router?.params;
@@ -44,9 +46,13 @@ export function useCaseDetailPage(): UseCaseDetailPageReturn {
     if (!narrativeId) return;
 
     setLoading(true);
+    setError(null);
     getNarrative(narrativeId)
       .then((res) => setData(res))
-      .catch(() => Taro.showToast({ title: '加载失败', icon: 'none' }))
+      .catch(() => {
+        setError('加载失败，请稍后重试');
+        Taro.showToast({ title: '加载失败', icon: 'none' });
+      })
       .finally(() => setLoading(false));
   }, []);
 
@@ -61,12 +67,14 @@ export function useCaseDetailPage(): UseCaseDetailPageReturn {
   };
 
   const handleCardClick = (cardId: string) => {
-    Taro.navigateTo({ url: `/views/cases/pages/extraction-result?narrativeId=${data?.narrative_id}&cardId=${cardId}` });
+    if (!data) return;
+    Taro.navigateTo({ url: `/views/cases/pages/extraction-result?narrativeId=${data.narrative_id}&cardId=${cardId}` });
   };
 
   return {
     data,
     loading,
+    error,
     handleGoExtract,
     handleEditNarrative,
     handleCardClick,
