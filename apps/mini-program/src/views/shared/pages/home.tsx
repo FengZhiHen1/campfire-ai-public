@@ -1,18 +1,7 @@
-import { useState, useEffect } from 'react';
 import { View, Text, Button } from '@tarojs/components';
 import Taro from '@tarojs/taro';
-import { consultApi } from '../../../logics/consult';
-import type { ConsultationHistoryListItem } from '../../../logics/consult';
-import { listProfiles } from '../../../logics/profiles/services/profileApi';
+import { useHomePage } from '../../../logics/shared/hooks/useHomePage';
 import './home.scss';
-
-interface ProfileItem {
-  profile_id: string;
-  nickname: string;
-  age?: number;
-  diagnosis_type?: string;
-  primary_behavior?: string;
-}
 
 const GREETING_MORNING = '早上好';
 const GREETING_AFTERNOON = '下午好';
@@ -45,31 +34,7 @@ function formatTime(dateStr?: string): string {
 }
 
 export default function HomePage() {
-  const [loading, setLoading] = useState(true);
-  const [hasError, setHasError] = useState(false);
-  const [consultHistory, setConsultHistory] = useState<ConsultationHistoryListItem[]>([]);
-  const [profiles, setProfiles] = useState<ProfileItem[]>([]);
-
-  const load = async () => {
-    setLoading(true);
-    setHasError(false);
-    try {
-      const [historyRes, profileRes] = await Promise.all([
-        consultApi.fetchHistoryList(1, 5).catch(() => ({ items: [], total: 0, page: 1, page_size: 5 })),
-        listProfiles().catch(() => []),
-      ]);
-      setConsultHistory(historyRes.items || []);
-      setProfiles(profileRes as ProfileItem[]);
-    } catch {
-      setHasError(true);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    load();
-  }, []);
+  const { loading, hasError, consultHistory, profiles, load } = useHomePage();
 
   const greeting = getGreeting();
   const latestConsult = consultHistory[0];
