@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql import Select
 
 from py_db.models.auth import User
-from py_db.repositories.base_repository import BaseRepository
+from py_db.base_repository import BaseRepository
 
 
 class UserRepository(BaseRepository[User]):

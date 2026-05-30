@@ -22,7 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql import Select, func
 
 from py_db.models.profiles import TeacherLink
-from py_db.repositories.base_repository import BaseRepository
+from py_db.base_repository import BaseRepository
 
 
 class TeacherLinkRepository(BaseRepository[TeacherLink]):

@@ -12,7 +12,7 @@
 
 from __future__ import annotations
 
-import logging
+from py_logger import logger
 from datetime import datetime
 from typing import Any
 
@@ -22,10 +22,9 @@ from sqlalchemy.inspection import inspect as sa_inspect
 from sqlalchemy.sql import Select, func as sa_func
 
 from py_db.models.case_model import Case
-from py_db.repositories.base_repository import BaseRepository
+from py_db.base_repository import BaseRepository
 from py_schemas.enums.case_enums import CaseStatus
 
-_logger = logging.getLogger(__name__)
 
 
 class CaseRepository(BaseRepository[Case]):
@@ -55,7 +54,7 @@ class CaseRepository(BaseRepository[Case]):
             格式化的案例 ID，如 "CASE-2026-0001"。
 
         Raises:
-            DependencyCommunicationError: 序列读取失败且重试耗尽。
+            RepositoryCommunicationError: 序列读取失败且重试耗尽。
         """
         async def _generate() -> str:
             result = await session.execute(text("SELECT nextval('case_id_seq')"))
@@ -225,7 +224,7 @@ class CaseRepository(BaseRepository[Case]):
             状态为 approved 的案例 ID 子集（空列表表示无匹配）。
 
         Raises:
-            DependencyCommunicationError: 数据库连接失败且重试耗尽。
+            RepositoryCommunicationError: 数据库连接失败且重试耗尽。
         """
         if not case_ids:
             return []

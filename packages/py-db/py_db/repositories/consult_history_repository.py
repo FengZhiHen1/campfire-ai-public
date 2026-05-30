@@ -13,7 +13,7 @@
 
 from __future__ import annotations
 
-import logging
+from py_logger import logger
 import uuid
 from typing import Any
 
@@ -22,7 +22,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from py_db.models.consultation import ConsultationHistory
 
-_logger = logging.getLogger(__name__)
 
 
 class ConsultHistoryRepository:

@@ -12,15 +12,14 @@
 
 from __future__ import annotations
 
-import logging
+from py_logger import logger
 from typing import Any
 
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from py_db.repositories.base_repository import DependencyCommunicationError
+from py_db.exceptions import RepositoryCommunicationError
 
-_logger = logging.getLogger(__name__)
 
 
 class ConsultRepository:
@@ -60,7 +59,7 @@ class ConsultRepository:
             - metadata (dict): JSONB 元数据
 
         Raises:
-            DependencyCommunicationError: 数据库连接失败且重试耗尽。
+            RepositoryCommunicationError: 数据库连接失败且重试耗尽。
         """
         # --- 入口参数校验 ---
         if session is None:
@@ -93,7 +92,7 @@ class ConsultRepository:
             result = await session.execute(sql, bind_params)
             rows = result.fetchall()
         except Exception as exc:
-            _logger.error(
+            logger.error(
                 "search_similar_chunks_failed",
                 extra={
                     "degradation_level": degradation_level.value,
@@ -101,7 +100,7 @@ class ConsultRepository:
                     "error": str(exc),
                 },
             )
-            raise DependencyCommunicationError(
+            raise RepositoryCommunicationError(
                 f"数据库检索操作失败: {exc}"
             ) from exc
 
