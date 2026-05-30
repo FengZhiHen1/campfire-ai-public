@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { View, Text, Button } from '@tarojs/components';
 import Taro from '@tarojs/taro';
 import { consultApi } from '../../../logics/consult';
-import type { ConsultationHistoryDetail } from '../../../logics/consult';
+import type { ConsultationHistoryDetail, CrisisLevel } from '../../../logics/consult';
 import './detail.scss';
 
 export default function ConsultDetail() {
@@ -25,13 +25,13 @@ export default function ConsultDetail() {
       .finally(() => setLoading(false));
   }, []);
 
-  const getLevelClass = (level: string) => {
+  const getLevelClass = (level: CrisisLevel) => {
     if (level === 'severe') return 'high';
     if (level === 'moderate') return 'medium';
     return 'low';
   };
 
-  const getLevelText = (level: string) => {
+  const getLevelText = (level: CrisisLevel) => {
     if (level === 'severe') return '重度危机';
     if (level === 'moderate') return '中度危机';
     return '轻度';

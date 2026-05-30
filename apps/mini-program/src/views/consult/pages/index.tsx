@@ -54,6 +54,7 @@ export default function ConsultIndex() {
     emotionLevel,
     referencedCases: refCases,
     crisisLevel,
+    ticketGuide,
     startConsult,
     setBehaviorTypes,
     setBehaviorDescription,
@@ -94,7 +95,6 @@ export default function ConsultIndex() {
   };
 
   const crisisInfo = crisisLevel ? CRISIS_LABEL_MAP[crisisLevel] : null;
-  const showEscalation = crisisLevel === 'severe' || (refCases.length > 0 && refCases.length < 2);
 
   // ----- idle: 入口 -----
   if (sessionState === 'idle') {
@@ -325,7 +325,7 @@ export default function ConsultIndex() {
         </ScrollView>
 
         {/* 人工兜底条 */}
-        {showEscalation && (
+        {ticketGuide.show && (
           <View className="consult-escalation" onClick={goToTicket}>
             <Text className="consult-escalation__icon">🚨</Text>
             <Text className="consult-escalation__text">立即联系人工专家</Text>
