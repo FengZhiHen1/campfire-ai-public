@@ -38,15 +38,15 @@ export enum SensoryFeature {
   PROPRIOCEPTIVE_SEEKING = 'proprioceptive_seeking',
 }
 
-/** 触发因素 */
+/** 触发因素——枚举值与后端 py-schemas Trigger StrEnum 一致 */
 export enum Trigger {
-  NOISE = 'noise',
-  ENVIRONMENT_CHANGE = 'environment_change',
-  STRANGERS = 'strangers',
-  TASK_INTERRUPTION = 'task_interruption',
-  SOCIAL_PRESSURE = 'social_pressure',
-  SENSORY_OVERLOAD = 'sensory_overload',
-  PHYSICAL_DISCOMFORT = 'physical_discomfort',
+  NOISE = '噪音',
+  ENVIRONMENTAL_CHANGE = '环境变化',
+  STRANGER = '陌生人',
+  TASK_INTERRUPTION = '任务中断',
+  SOCIAL_PRESSURE = '社交压力',
+  SENSORY_OVERLOAD = '感官过载',
+  PHYSICAL_DISCOMFORT = '身体不适',
 }
 
 /** 年龄区间——服务端实时计算，展示文案由 mini-program 映射 */

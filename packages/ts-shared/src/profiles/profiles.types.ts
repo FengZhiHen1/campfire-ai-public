@@ -14,7 +14,7 @@
  *   - 禁止字段名与后端不一致
  */
 
-import type { DiagnosisType, LanguageLevel, SensoryFeature, Trigger, AgeRange, ProfileBehaviorType } from './profiles.enums';
+import type { DiagnosisType, LanguageLevel, SensoryFeature, AgeRange, ProfileBehaviorType } from './profiles.enums';
 
 // === 档案 CRUD ===
 
@@ -26,7 +26,7 @@ export interface ProfileCreate {
   primary_behavior: ProfileBehaviorType;
   language_level?: LanguageLevel | null;
   sensory_features?: SensoryFeature[];
-  triggers?: Trigger[];
+  triggers?: string[];             // Trigger 枚举值或自定义文本
   medication_notes?: string | null;
 }
 
@@ -38,7 +38,7 @@ export interface ProfileUpdate {
   primary_behavior?: ProfileBehaviorType;
   language_level?: LanguageLevel | null;
   sensory_features?: SensoryFeature[];
-  triggers?: Trigger[];
+  triggers?: string[];             // Trigger 枚举值或自定义文本
   medication_notes?: string | null;
 }
 
@@ -52,7 +52,7 @@ export interface ProfileResponse {
   primary_behavior: ProfileBehaviorType;
   language_level: LanguageLevel | null;
   sensory_features: SensoryFeature[];
-  triggers: Trigger[];
+  triggers: string[];              // Trigger 枚举值或自定义文本（后端返回中文）
   medication_notes: string | null;
   is_default: boolean;
   caregiver_id: string;

@@ -15,6 +15,7 @@
  */
 
 import type { MicroSurveyQuestion } from './types/contracts';
+import { Trigger } from '@campfire/ts-shared';
 
 /** 干预有效性反馈选项 */
 export const INTERVENTION_FEEDBACK_OPTIONS: readonly string[] = ['有帮助', '一般', '无帮助'];
@@ -34,14 +35,12 @@ export const DEFAULT_QUESTIONS: readonly MicroSurveyQuestion[] = [
   },
 ];
 
-/** 预设触发因素枚举值（用于判断是否为自定义文本） */
-export const PRESET_TRIGGERS: readonly string[] = [
-  '噪音', '环境变化', '陌生人', '任务中断', '社交压力', '感官过载', '身体不适',
-];
+/** 所有预设触发因素值 */
+const ALL_TRIGGERS: readonly string[] = Object.values(Trigger);
 
-/** 判断触发因素值是否为自定义文本（非预设枚举值） */
+/** 判断触发因素值是否为自定义文本（非预设 Trigger 枚举值） */
 export function isCustomTrigger(value: string): boolean {
-  return !PRESET_TRIGGERS.includes(value);
+  return !ALL_TRIGGERS.includes(value);
 }
 
 /** 档案数量上限 */
