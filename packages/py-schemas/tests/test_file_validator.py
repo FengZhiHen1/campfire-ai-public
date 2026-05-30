@@ -9,7 +9,7 @@ import io
 
 import pytest
 
-from py_schemas.security.file_validator import (
+from py_schemas.utils.files import (
     _detect_mime_type,
     _extract_extension,
     validate_file,

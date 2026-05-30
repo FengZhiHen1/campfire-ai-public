@@ -19,6 +19,7 @@ from py_rag.embedding import (
     encode_text,
     reset_embedding_failure_count,
 )
+from py_rag.exceptions import EmbeddingUnavailableError, RetrievalTimeoutError
 from py_rag.retrieval import PgVectorSearch, hybrid_search
 
 __all__ = [
@@ -33,4 +34,7 @@ __all__ = [
     # 常量
     "EMBEDDING_DIMENSION",
     "EMBEDDING_MODEL",
+    # 异常
+    "RetrievalTimeoutError",
+    "EmbeddingUnavailableError",
 ]

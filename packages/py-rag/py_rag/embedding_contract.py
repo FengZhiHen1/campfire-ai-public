@@ -7,7 +7,7 @@
   - DashScope API: MUST — 阿里云 text-embedding-v4 嵌入服务
   - AppSettings (py_config): MUST — DASHSCOPE_API_KEY、EMBEDDING_MODEL 配置
 边界:
-  - 依赖: py_config（环境配置）、py_infra.exceptions（EmbeddingUnavailableError）
+  - 依赖: py_config（环境配置）、py_rag.exceptions（EmbeddingUnavailableError）
   - 被依赖: embedding.py（DashScope 实现）、retrieval.py（编码查询向量）
   - 被依赖: indexing/worker.py（索引入库时编码文档文本）
 禁止行为:
@@ -96,7 +96,7 @@ class BaseEmbeddingEncoder(ABC):
             await asyncio.sleep(_CIRCUIT_BREAKER_SLEEP)
             self._failure_count = 0
 
-        from py_infra.exceptions import EmbeddingUnavailableError
+        from py_rag.exceptions import EmbeddingUnavailableError
 
         raise EmbeddingUnavailableError(
             message="向量编码服务暂时不可用，请稍后重试",

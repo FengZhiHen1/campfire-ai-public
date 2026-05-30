@@ -3,7 +3,7 @@
 
 from __future__ import annotations
 
-from py_schemas.security.security_detector import detect_security_threat
+from py_schemas.utils.security import detect_security_threat
 from py_schemas.security.validation_schemas import SecurityDetectionType
 
 

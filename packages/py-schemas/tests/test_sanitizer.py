@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import pytest
 
-from py_schemas.security.sanitizer import sanitize_html
+from py_schemas.utils.html import sanitize_html
 
 
 class TestSanitizeHtml:
