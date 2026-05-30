@@ -107,8 +107,3 @@ export interface CardSummary {
   is_owner?: boolean;
 }
 
-/** 叙事列表分页响应 */
-export interface NarrativeListResponse {
-  items: NarrativeListItem[];
-  total: number;
-}

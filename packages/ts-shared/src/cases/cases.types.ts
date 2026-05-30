@@ -150,12 +150,30 @@ export interface ReviewRequest {
   decision: 'approved' | 'rejected';
   review_comment?: string;
   override_reason?: string;
+  pii_override_confirmed?: boolean;
+}
+
+/** 单条 AI 预审检查结果 */
+export interface CheckItem {
+  status: 'pass' | 'fail' | 'annotated';
+  details?: string[];
+  is_hard_gate: boolean;
+}
+
+/** AI 预审结果摘要 */
+export interface AiReviewSummary {
+  format_check: CheckItem;
+  pii_check: CheckItem;
+  required_fields_check: CheckItem;
+  ebp_consistency_check: CheckItem;
+  overall: 'pass' | 'hard_block' | 'annotated';
 }
 
 /** 审核裁决响应 */
 export interface CaseReviewResponse {
   case_id: string;
   new_status: 'approved' | 'rejected';
+  ai_review_summary: AiReviewSummary;
   expert_decision: string;
   review_comment?: string;
   reviewer_id: string;
