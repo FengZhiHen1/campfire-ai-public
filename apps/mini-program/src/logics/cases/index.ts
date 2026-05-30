@@ -25,7 +25,6 @@ export type {
   FormErrors,
   NarrativeListItem,
   NarrativeDetail,
-  NarrativeListResponse,
   CardSummary,
 } from './types';
 

@@ -158,18 +158,12 @@ def _orm_to_case_list_item(case: Case) -> CaseListItem:
         author_id=case.author_id,
         is_template=case.is_template,
         evidence_level=case.evidence_level,
-        age_range=_format_age_range(case.age_range_min, case.age_range_max),
+        age_range=[case.age_range_min, case.age_range_max],
         citation_count=case.citation_count,
         created_at=case.created_at,
         updated_at=case.updated_at,
     )
 
-
-def _format_age_range(min_val: int, max_val: int) -> str:
-    """将年龄区间整数转换为展示字符串。"""
-    if max_val >= 18:
-        return f"{min_val}岁以上"
-    return f"{min_val}-{max_val}岁"
 
 
 def _convert_pii_warnings(

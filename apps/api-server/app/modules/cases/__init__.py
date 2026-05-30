@@ -35,11 +35,13 @@ Usage:
 """
 
 from .case_mgmt.routes import router as cases_router
+from .narrative.card_routes import router as card_router
 from .review.routes import router as reviews_router
 from .narrative.routes import router as narratives_router
 
 __all__ = [
     # 路由
+    "card_router",
     "cases_router",
     "reviews_router",
     "narratives_router",

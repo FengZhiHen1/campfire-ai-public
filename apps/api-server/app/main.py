@@ -67,7 +67,7 @@ from app.core.health import router as health_router
 from app.core.middleware.rate_limit import RateLimitMiddleware
 from app.core.middleware.validation_handler import register_validation_handler
 from app.modules.auth import auth_router
-from app.modules.cases import cases_router, narratives_router, reviews_router
+from app.modules.cases import card_router, cases_router, narratives_router, reviews_router
 from app.modules.consultation import consult_router, consultations_router, stream_router
 from app.modules.profiles import events_router, experts_router, profiles_router
 from py_config import get_settings
@@ -171,6 +171,7 @@ def create_app() -> FastAPI:
     app.include_router(reviews_router)
     app.include_router(cases_router)
     app.include_router(narratives_router)
+    app.include_router(card_router)
     app.include_router(consult_router)
     app.include_router(stream_router)
     app.include_router(consultations_router)
