@@ -1,9 +1,9 @@
 import { useState, useEffect } from 'react';
 import { View, Text, Button } from '@tarojs/components';
 import Taro from '@tarojs/taro';
-import { consultApi } from '../../../logics/consult/services/consultApi';
+import { consultApi } from '../../../logics/consult';
+import type { ConsultationHistoryListItem } from '../../../logics/consult';
 import { listProfiles } from '../../../logics/profiles/services/profileApi';
-import type { ConsultationHistoryListItem } from '../../../logics/consult/types';
 import './home.scss';
 
 interface ProfileItem {

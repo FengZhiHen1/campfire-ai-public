@@ -16,6 +16,7 @@ import type {
   PlanSection,
   DoneEventPayload,
 } from '../types/index';
+import type { RequestId } from '../consult.contract';
 import {
   transitionTo,
   createMessageItem,
@@ -37,7 +38,7 @@ interface ConsultStateView {
   messages: { messageType: string; metadata?: { isCompleted?: boolean } }[];
   ticketGuide: { show: boolean; riskLevel: 'normal' | 'high_risk' };
   behaviorDescription: string;
-  _requestId: string;
+  _requestId: RequestId;
   _reconnectAttempt: number;
 }
 
@@ -59,7 +60,7 @@ type SetFn = (...args: any[]) => any;
 export function createSseCallbacks(
   get: () => ConsultStateView,
   set: SetFn,
-  requestId: string,
+  requestId: RequestId,
 ): SseStreamParserCallbacks {
   return {
     // ---- onChunk：增量追加文本到对应段落 ----
@@ -229,7 +230,7 @@ function handleStreamFailure(
 
 function archiveConsultation(
   state: ConsultStateView,
-  requestId: string,
+  requestId: RequestId,
   crisisLevel: string,
   referencedSliceIds: string[],
 ): void {

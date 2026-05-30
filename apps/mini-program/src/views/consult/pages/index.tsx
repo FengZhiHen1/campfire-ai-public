@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react';
 import { View, Text, Button, Textarea, ScrollView } from '@tarojs/components';
-import { useConsult } from '../../../logics/consult/hooks/useConsult';
+import { useConsult } from '../../../logics/consult';
+import type { BehaviorTypeCategory, EmotionLevel } from '../../../logics/consult';
 import { listProfiles } from '../../../logics/profiles/services/profileApi';
-import type { BehaviorTypeCategory, EmotionLevel } from '../../../logics/consult/types';
 import type { ProfileListItem } from '@campfire/ts-shared';
 import './index.scss';
 
