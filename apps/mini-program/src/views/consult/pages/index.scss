@@ -526,7 +526,7 @@
   border-radius: $cf-radius-lg $cf-radius-lg 0 0;
   padding: $cf-spacing-lg $cf-spacing-md;
   padding-bottom: calc($cf-spacing-lg + env(safe-area-inset-bottom));
-  box-shadow: 0 -$cf-spacing-xs 40px rgba($cf-on-background, 0.08);
+  box-shadow: 0 (-$cf-spacing-xs) 40px rgba($cf-on-background, 0.08);
   animation: consult-slide-up 300ms ease-out;
   max-height: 85vh;
   overflow-y: auto;
