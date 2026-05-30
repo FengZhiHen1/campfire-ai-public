@@ -20,8 +20,8 @@ from typing import Any, final
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.modules.cases.exceptions import ExtractionError
-from app.modules.cases.types import NarrativeId
+from ..exceptions import ExtractionError
+from ..types import NarrativeId
 
 
 class ExtractionServiceContract(ABC):

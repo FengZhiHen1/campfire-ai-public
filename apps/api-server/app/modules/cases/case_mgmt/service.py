@@ -13,11 +13,11 @@ CaseManagementService 继承 CaseManagementContract 契约 ABC：
 
 from __future__ import annotations
 
-import logging
 import math
 from typing import Any, Dict, List, Optional
 
 from fastapi import HTTPException, status
+from py_logger import logger
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from py_db.models.case_model import Case
@@ -35,11 +35,9 @@ from py_schemas.enums.case_enums import CaseStatus
 from py_security import RegexPiiDetector
 from py_security.types import PiiWarning as PiiWarningInternal
 
-from app.modules.cases.case_contract import CaseManagementContract
-from app.modules.cases.ebp_validator import check_ebp_consistency
-from app.modules.cases.types import CaseId
-
-_logger = logging.getLogger(__name__)
+from .contract import CaseManagementContract
+from ..review.ebp_validator import check_ebp_consistency
+from ..types import CaseId
 
 # ---------------------------------------------------------------------------
 # 内部辅助函数（模块级，供 Hook 和旧代码复用）
@@ -260,7 +258,7 @@ def _check_edit_reset(case: Case) -> bool:
     if case.status in (CaseStatus.PENDING_REVIEW, CaseStatus.REJECTED):
         old_status: str = case.status.value if hasattr(case.status, "value") else str(case.status)
         case.status = CaseStatus.DRAFT
-        _logger.info(
+        logger.info(
             "edit_reset_status",
             extra={
                 "case_id": case.case_id,
@@ -416,7 +414,7 @@ class CaseManagementService(CaseManagementContract):
             await session.commit()
         except Exception as exc:
             await session.rollback()
-            _logger.error(
+            logger.error(
                 "case_create_failed",
                 extra={
                     "case_id": generated_case_id,
@@ -429,7 +427,7 @@ class CaseManagementService(CaseManagementContract):
                 detail="服务暂时不可用，请稍后重试",
             ) from exc
 
-        _logger.info(
+        logger.info(
             "case_created",
             extra={
                 "case_id": created_case.case_id,
@@ -488,7 +486,7 @@ class CaseManagementService(CaseManagementContract):
                 session, case_id
             )
             if existing_case is None:
-                _logger.warning(
+                logger.warning(
                     "case_not_found",
                     extra={"case_id": case_id, "user_id": user_id},
                 )
@@ -498,7 +496,7 @@ class CaseManagementService(CaseManagementContract):
                 )
 
             # 乐观锁冲突
-            _logger.warning(
+            logger.warning(
                 "optimistic_lock_conflict",
                 extra={
                     "case_id": case_id,
@@ -532,7 +530,7 @@ class CaseManagementService(CaseManagementContract):
             ) from exc
         except Exception as exc:
             await session.rollback()
-            _logger.error(
+            logger.error(
                 "case_update_failed",
                 extra={"case_id": case_id, "error": str(exc)},
             )
@@ -585,7 +583,7 @@ class CaseManagementService(CaseManagementContract):
         # --- 案例存在性与状态校验 ---
         case: Case | None = await case_repo.find_by_case_id(session, case_id)
         if case is None:
-            _logger.warning(
+            logger.warning(
                 "case_not_found",
                 extra={"case_id": case_id, "user_id": user_id},
             )
@@ -595,7 +593,7 @@ class CaseManagementService(CaseManagementContract):
             )
 
         if case.status != CaseStatus.DRAFT:
-            _logger.warning(
+            logger.warning(
                 "submit_invalid_status",
                 extra={
                     "case_id": case_id,
@@ -651,7 +649,7 @@ class CaseManagementService(CaseManagementContract):
             ) from exc
         except Exception as exc:
             await session.rollback()
-            _logger.error(
+            logger.error(
                 "case_submit_failed",
                 extra={"case_id": case_id, "error": str(exc)},
             )
@@ -661,7 +659,7 @@ class CaseManagementService(CaseManagementContract):
             ) from exc
 
         # --- 审计日志 ---
-        _logger.info(
+        logger.info(
             "case_submitted",
             extra={
                 "case_id": case_id,
@@ -673,7 +671,7 @@ class CaseManagementService(CaseManagementContract):
         )
 
         if pii_confirmed:
-            _logger.info(
+            logger.info(
                 "pii_confirmed",
                 extra={
                     "case_id": case_id,

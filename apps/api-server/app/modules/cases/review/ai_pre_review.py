@@ -15,9 +15,10 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from py_logger import logger
 from py_schemas.cases import AiReviewSummary, CheckItem
 from py_security import RegexPiiDetector
-from app.modules.cases.ebp_validator import check_ebp_consistency  # EBP 一致性校验（单一真相源）
+from .ebp_validator import check_ebp_consistency  # EBP 一致性校验（单一真相源）
 
 _logger = logging.getLogger(__name__)
 

@@ -34,9 +34,9 @@ Usage:
     app.include_router(narratives_router)
 """
 
-from .routes import router as cases_router
-from .review_routes import router as reviews_router
-from .narrative_routes import router as narratives_router
+from .case_mgmt.routes import router as cases_router
+from .review.routes import router as reviews_router
+from .narrative.routes import router as narratives_router
 
 __all__ = [
     # 路由

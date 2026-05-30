@@ -19,7 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.dependencies.anonymous_user import get_anonymous_user
 from app.core.dependencies.auth_dependencies import get_db_session
-from app.modules.cases.narrative_service import (
+from .service import (
     NarrativeManagementService,
     ExtractionResponse,
     NarrativeDetailResponse,
@@ -27,7 +27,7 @@ from app.modules.cases.narrative_service import (
     narrative_to_list_item,
     narrative_to_response,
 )
-from app.modules.cases.types import NarrativeId
+from ..types import NarrativeId
 from py_schemas.narratives import (
     NarrativeCreateRequest,
     NarrativeUpdate,
@@ -145,7 +145,7 @@ async def extract_narrative_endpoint(
         raise HTTPException(status_code=400, detail="仅草稿状态的叙事可触发提取")
 
     # 调用 LLM 提取
-    from app.modules.cases.case_extraction.extractor import ExtractionService
+    from ..extraction.service import ExtractionService
     _extraction_service = ExtractionService()
     cards = await _extraction_service.extract_cards_from_narrative(
         narrative_text=entity_dict["narrative"],
