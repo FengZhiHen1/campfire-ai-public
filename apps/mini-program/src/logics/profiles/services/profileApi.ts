@@ -9,21 +9,13 @@
 import type { PaginatedResponse } from '@campfire/ts-shared';
 
 import { httpClient } from '../../shared/services/httpClient';
-import type { IRequestResponse } from '../../shared/services/httpClient';
 import type {
   ProfileListItem,
   ProfileResponse,
   ProfileCreate,
   ProfileUpdate,
 } from '../types';
-
-// ============================================================================
-// 内部工具
-// ============================================================================
-
-function pickData<T>(res: IRequestResponse<T>): T {
-  return res.data;
-}
+import { pickData } from './base';
 
 // ============================================================================
 // API 方法

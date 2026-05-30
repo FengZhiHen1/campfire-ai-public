@@ -2,68 +2,64 @@
  * useMicroSurvey Hook — 微问卷状态管理。
  *
  * 职责：
- * - 管理微问卷弹出/回答/跳过/去重状态
+ * - 管理微问卷弹出/回答/跳过状态
  * - 回答后调用 profileApi.updateProfile() 写入触发因素
- * - 可选调用 PROF-03 EventCreate（自定义触发因素时）
- * - 同一 consultationId 仅弹出一次（模块作用域 Set 去重）
+ * - 自定义触发因素时通过 eventApi 写入事件记录
+ * - 同一 consultationId 仅弹出一次（由 coordination 层去重）
  *
- * 设计依据：PROF-07 落地规范 §1.5 流程 3、§1.6.2
+ * 设计依据：PROF-07 落地规范 §1.5 流程 3
+ *
+ * 数据来源:
+ *   - microSurveyStore: MUST — 微问卷显示状态
+ *   - profileStore: MUST — 获取当前默认档案
+ *   - profileApi: MUST — 标签更新 HTTP 接口
+ *   - eventApi: MUST — 事件记录 HTTP 接口
+ * 边界:
+ *   - 依赖: ../store/microSurveyStore, ../store/profileStore, ../services/profileApi, ../services/eventApi, ../constants
+ *   - 被依赖: PROF-06 微问卷浮层组件
+ * 禁止行为:
+ *   - 禁止直接调用 httpClient——所有 HTTP 请求通过 service 层
+ *   - 禁止在 Hook 中操作 DOM 或调用 Taro.navigateTo
  */
 
 import { useCallback, useMemo } from 'react';
 import { useProfileStore } from '../store/profileStore';
+import { useMicroSurveyStore } from '../store/microSurveyStore';
 import * as profileApi from '../services/profileApi';
-import { httpClient } from '../../shared/services/httpClient';
-import type { EventCreate } from '../types';
+import * as eventApi from '../services/eventApi';
+import { isCustomTrigger, MICRO_SURVEY_AUTO_CLOSE_DELAY } from '../constants';
 import type { UseMicroSurveyReturn, MicroSurveyAnswer } from '../types';
-
-// ============================================================================
-// 模块作用域：去重 Set（页面刷新自然清空）
-// ============================================================================
-
-const displayedConsultationIds = new Set<string>();
-
-// ============================================================================
-// 触发因素预设枚举值（用于判断是否为自定义文本）
-// ============================================================================
-
-const PRESET_TRIGGERS: string[] = [
-  '噪音', '环境变化', '陌生人', '任务中断', '社交压力', '感官过载', '身体不适',
-];
-
-function isCustomTrigger(value: string): boolean {
-  return !PRESET_TRIGGERS.includes(value);
-}
+import type { EventCreate } from '../types';
 
 // ============================================================================
 // useMicroSurvey Hook
 // ============================================================================
 
 export function useMicroSurvey(): UseMicroSurveyReturn {
-  const state = useProfileStore((s) => s.microSurvey.state);
-  const questions = useProfileStore((s) => s.microSurvey.questions);
+  const state = useMicroSurveyStore((s) => s.state);
+  const questions = useMicroSurveyStore((s) => s.questions);
 
   // ==========================================================================
   // submit — 提交微问卷回答
   // ==========================================================================
 
   const submit = useCallback(async (answer: MicroSurveyAnswer): Promise<void> => {
-    const store = useProfileStore.getState();
+    const profileStore = useProfileStore.getState();
+    const microStore = useMicroSurveyStore.getState();
 
     // 获取当前活跃档案（默认档案）
-    const defaultProfile = store.list.find((p) => p.is_default) ?? store.list[0];
+    const defaultProfile = profileStore.list.find((p) => p.is_default) ?? profileStore.list[0];
     if (!defaultProfile) {
       console.warn('[PROF-07] microSurvey submit: no profile available');
-      store.setMicroSurveyState('hidden');
+      microStore.setState('hidden');
       return;
     }
 
     const profileId = defaultProfile.profile_id;
-
-    store.setMicroSurveyState('answering');
+    microStore.setState('answering');
 
     try {
-      // 写入触发因素：需先获取完整档案以得到现有 triggers 列表
+      // 写入触发因素
       if (answer.triggerFactor) {
         const fullProfile = await profileApi.getProfile(profileId);
         const existingTriggers = fullProfile.triggers ?? [];
@@ -72,7 +68,7 @@ export function useMicroSurvey(): UseMicroSurveyReturn {
           await profileApi.updateProfile(profileId, { triggers: updatedTriggers });
         }
 
-        // 可选事件记录（仅自定义文本时触发）
+        // 自定义触发因素 → 写入事件记录（fire-and-forget）
         if (isCustomTrigger(answer.triggerFactor)) {
           fireAndForgetEvent(profileId, defaultProfile.primary_behavior, answer.triggerFactor);
         }
@@ -86,17 +82,15 @@ export function useMicroSurvey(): UseMicroSurveyReturn {
         });
       }
 
-      // 提交完成
-      store.setMicroSurveyState('submitted');
+      microStore.setState('submitted');
 
-      // 2 秒后自动关闭
+      // 自动关闭
       setTimeout(() => {
-        useProfileStore.getState().setMicroSurveyState('hidden');
-      }, 2000);
+        useMicroSurveyStore.getState().setState('hidden');
+      }, MICRO_SURVEY_AUTO_CLOSE_DELAY);
     } catch {
       // 失败 → 回退到展示状态，保留用户选择
-      store.setMicroSurveyState('showing');
-      // views 层通过 store state 变化展示 toast "保存失败，请重试"
+      microStore.setState('showing');
     }
   }, []);
 
@@ -105,7 +99,7 @@ export function useMicroSurvey(): UseMicroSurveyReturn {
   // ==========================================================================
 
   const skip = useCallback((): void => {
-    useProfileStore.getState().setMicroSurveyState('hidden');
+    useMicroSurveyStore.getState().setState('hidden');
   }, []);
 
   // ==========================================================================
@@ -124,23 +118,13 @@ export function useMicroSurvey(): UseMicroSurveyReturn {
 }
 
 // ============================================================================
-// 模块作用域函数（供 ProfileCoordination 和 Hook 内部使用）
-// ============================================================================
-
-/** 检查 consultationId 是否已弹出过 */
-export function hasBeenDisplayed(consultationId: string): boolean {
-  return displayedConsultationIds.has(consultationId);
-}
-
-/** 标记 consultationId 为已弹出 */
-export function markAsDisplayed(consultationId: string): void {
-  displayedConsultationIds.add(consultationId);
-}
-
-// ============================================================================
 // 内部工具
 // ============================================================================
 
+/**
+ * Fire-and-forget 事件记录。
+ * 仅自定义触发因素时调用，失败不影响主流程。
+ */
 async function fireAndForgetEvent(
   profileId: string,
   behaviorType: string,
@@ -159,12 +143,7 @@ async function fireAndForgetEvent(
       tags: null,
     };
 
-    await httpClient.request({
-      url: '/api/v1/events',
-      method: 'POST',
-      data: eventData,
-      header: { 'Content-Type': 'application/json' },
-    });
+    await eventApi.createEvent(profileId, eventData);
   } catch {
     // fire-and-forget：失败不影响主流程
   }
