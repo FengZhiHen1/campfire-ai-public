@@ -83,11 +83,6 @@ export default function EventListSection({
                   <View className="profile-event-list__tag">
                     <Text>{event.behavior_type}</Text>
                   </View>
-                  {event.description && (
-                    <Text className="profile-event-list__desc" numberOfLines={2}>
-                      {event.description}
-                    </Text>
-                  )}
                 </View>
               </View>
             ))}
