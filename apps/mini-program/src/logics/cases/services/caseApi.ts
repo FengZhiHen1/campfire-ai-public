@@ -25,6 +25,7 @@ import type {
   CaseReviewResponse,
   CaseUpdate,
   PaginatedResponse,
+  ReviewQueueItem,
 } from '@campfire/ts-shared';
 
 const BASE_PATH: string = '/api/v1/cases';
@@ -253,6 +254,41 @@ export async function reviewCase(
           url: `${BASE_PATH}/${caseId}/review`,
           method: 'POST',
           data: { decision, review_comment: reviewComment },
+        },
+        requestSignal,
+      ),
+    );
+    return res.data;
+  } finally {
+    cleanup();
+  }
+}
+
+/**
+ * 获取待审核队列（分页）。
+ * GET /api/v1/cases/review-queue
+ *
+ * @param page - 页码（从 1 开始）
+ * @param pageSize - 每页条数
+ * @param signal - 可选外部 AbortSignal
+ * @returns 分页审核队列
+ */
+export async function fetchReviewQueue(
+  page: number = 1,
+  pageSize: number = 15,
+  signal?: AbortSignal,
+): Promise<PaginatedResponse<ReviewQueueItem>> {
+  if (signal?.aborted) {
+    return Promise.reject(new DOMException('The operation was aborted', 'AbortError'));
+  }
+  const { signal: requestSignal, cleanup } = createRequestSignal(signal);
+  try {
+    const res = await httpClient.request<PaginatedResponse<ReviewQueueItem>>(
+      withSignal(
+        {
+          url: `${BASE_PATH}/review-queue`,
+          method: 'GET',
+          data: { page, page_size: pageSize },
         },
         requestSignal,
       ),

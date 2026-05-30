@@ -17,6 +17,7 @@ export { useCaseDetailPage } from './hooks/useCaseDetailPage';
 export { useCaseSubmit } from './hooks/useCaseSubmit';
 export { useNarrativeSubmit } from './hooks/useNarrativeSubmit';
 export { useExtractionResult } from './hooks/useExtractionResult';
+export { useReviewPage } from './hooks/useReviewPage';
 
 // ---- 类型 ----
 export type {
