@@ -19,10 +19,13 @@
 from __future__ import annotations
 
 import uuid
+from datetime import date
 from typing import Any
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from py_db.models.profiles import Profile
 from py_logger import logger
 from py_rag.retrieval import hybrid_search
 from py_schemas.consult import (
@@ -60,15 +63,56 @@ class ConsultationOrchestratorImpl(BaseConsultationOrchestrator):
     # _do_ 钩子
     # ========================================================================
 
-    def _do_load_profile(
+    async def _do_load_profile(
         self,
         profile_id: str | None,
         db: AsyncSession,
     ) -> ProfileSummary:
         if not profile_id:
             return ProfileSummary("（未关联档案）")
-        # TODO: 档案关联逻辑待调试通过后恢复
-        return ProfileSummary("（未关联档案）")
+
+        try:
+            pid = uuid.UUID(profile_id)
+        except ValueError:
+            logger.warning("invalid_profile_id", extra={"profile_id": profile_id})
+            return ProfileSummary("（未关联档案）")
+
+        result = await db.execute(
+            select(Profile).where(Profile.profile_id == pid)
+        )
+        profile = result.scalars().first()
+        if profile is None:
+            logger.warning("profile_not_found", extra={"profile_id": profile_id})
+            return ProfileSummary("（未关联档案）")
+
+        # 计算年龄
+        today = date.today()
+        age = today.year - profile.birth_date.year
+        if today.month < profile.birth_date.month or (
+            today.month == profile.birth_date.month
+            and today.day < profile.birth_date.day
+        ):
+            age -= 1
+
+        parts: list[str] = []
+        if profile.nickname:
+            parts.append(f"- **昵称**：{profile.nickname}")
+        parts.append(f"- **年龄**：{age} 岁")
+        parts.append(f"- **诊断类型**：{profile.diagnosis_type}")
+        parts.append(f"- **主要行为**：{profile.primary_behavior}")
+        if profile.sensory_features:
+            parts.append(f"- **感官特征**：{'、'.join(profile.sensory_features)}")
+        if profile.triggers:
+            parts.append(f"- **触发因素**：{'、'.join(profile.triggers)}")
+        if profile.medication_notes:
+            parts.append(f"- **用药备注**：{profile.medication_notes}")
+
+        logger.info(
+            service="api-server",
+            message="profile_loaded",
+            extra={"profile_id": profile_id, "age": age},
+        )
+        return ProfileSummary("\n".join(parts))
 
     async def _do_search_cases(
         self,
