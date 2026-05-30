@@ -1,18 +1,12 @@
 import { useState, useEffect, useCallback } from 'react';
 import { View, Text, Button, Input, Picker } from '@tarojs/components';
 import Taro from '@tarojs/taro';
-import { useProfile } from '../../../logics/profiles/hooks/useProfile';
+import { useProfile } from '../../../logics/profiles';
+import { useProfileStore } from '../../../logics/profiles/store/profileStore';
 import { listEvents, createEvent } from '../../../logics/profiles/services/eventApi';
-import type { ProfileListItem, ProfileResponse, EventListItem, EventCreate } from '../../../logics/profiles/types';
+import { BEHAVIOR_OPTIONS, SEVERITY_OPTIONS, SETTING_OPTIONS } from '../../../logics/profiles/constants';
+import type { ProfileListItem, EventListItem, EventCreate } from '../../../logics/profiles/types';
 import './index.scss';
-
-// ============================================================================
-// 常量
-// ============================================================================
-
-const BEHAVIOR_OPTIONS = ['刻板行为', '情绪崩溃', '自伤行为', '攻击行为', '社交退缩', '多动'];
-const SEVERITY_OPTIONS = ['轻', '中', '重'];
-const SETTING_OPTIONS = ['家庭', '学校', '公共场合', '机构'];
 
 /** 格式化时间戳 */
 function formatEventTime(iso: string): string {
@@ -46,15 +40,12 @@ export default function ProfileIndex() {
   // --------------------------------------------------------------------------
   const { profiles, isLoading, error, fetchProfiles, getProfile } = useProfile();
 
-  useEffect(() => {
-    fetchProfiles();
-  }, [fetchProfiles]);
+  const selectedDetail = useProfileStore((s) => s.currentDetail);
 
   // --------------------------------------------------------------------------
   // 本地状态
   // --------------------------------------------------------------------------
   const [selectedIdx, setSelectedIdx] = useState(0);
-  const [selectedDetail, setSelectedDetail] = useState<ProfileResponse | null>(null);
   const [events, setEvents] = useState<EventListItem[]>([]);
   const [eventsLoading, setEventsLoading] = useState(false);
   const [showQuickRecord, setShowQuickRecord] = useState(false);
@@ -77,11 +68,7 @@ export default function ProfileIndex() {
 
   useEffect(() => {
     if (selectedProfile) {
-      getProfile(selectedProfile.profile_id).then((detail) => {
-        setSelectedDetail(detail);
-      }).catch(() => {
-        setSelectedDetail(null);
-      });
+      getProfile(selectedProfile.profile_id);
 
       // 加载真实事件列表
       setEventsLoading(true);
@@ -96,7 +83,6 @@ export default function ProfileIndex() {
           setEventsLoading(false);
         });
     } else {
-      setSelectedDetail(null);
       setEvents([]);
     }
   }, [selectedProfile, getProfile]);

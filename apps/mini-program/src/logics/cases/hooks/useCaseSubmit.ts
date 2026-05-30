@@ -110,8 +110,6 @@ function indexOfSafe(arr: readonly string[], val: string): number {
 export function useCaseSubmit(): UseCaseSubmitReturn {
   const fields = useCaseStore((s) => s.fields);
   const setField = useCaseStore((s) => s.setField);
-  const loadDraft = useCaseStore((s) => s.loadDraft);
-  const saveDraft = useCaseStore((s) => s.saveDraft);
   const resetForm = useCaseStore((s) => s.resetForm);
   const [isSubmitting, setIsSubmitting] = useState(false);
 

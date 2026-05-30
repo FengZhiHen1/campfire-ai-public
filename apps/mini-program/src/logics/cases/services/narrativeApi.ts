@@ -8,53 +8,11 @@
  */
 
 import { httpClient } from '../../shared/services/httpClient';
+import { createRequestSignal, withSignal } from '../../shared/services/requestSignal';
 import type { NarrativeListItem, NarrativeDetail } from '../types';
 import type { PaginatedResponse } from '@campfire/ts-shared';
 
 const BASE_PATH: string = '/api/v1/narratives';
-
-/** 默认请求超时（毫秒） */
-const DEFAULT_TIMEOUT_MS: number = 15000;
-
-// ============================================================================
-// 内部工具
-// ============================================================================
-
-function createRequestSignal(
-  externalSignal?: AbortSignal,
-  timeoutMs: number = DEFAULT_TIMEOUT_MS,
-): { signal: AbortSignal; cleanup: () => void } {
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(new Error('Request timeout')), timeoutMs);
-
-  if (externalSignal) {
-    if (externalSignal.aborted) {
-      controller.abort(externalSignal.reason);
-      clearTimeout(timeoutId);
-    } else {
-      externalSignal.addEventListener(
-        'abort',
-        () => {
-          controller.abort(externalSignal.reason);
-          clearTimeout(timeoutId);
-        },
-        { once: true },
-      );
-    }
-  }
-
-  return {
-    signal: controller.signal,
-    cleanup: () => clearTimeout(timeoutId),
-  };
-}
-
-function withSignal<T>(
-  options: T,
-  signal?: AbortSignal,
-): T & { signal?: AbortSignal } {
-  return { ...options, signal };
-}
 
 // ============================================================================
 // API 函数

@@ -43,6 +43,24 @@ export function isCustomTrigger(value: string): boolean {
   return !ALL_TRIGGERS.includes(value);
 }
 
+/** 诊断类型选项 */
+export const DIAGNOSIS_OPTIONS: readonly string[] = ['ASD', '疑似ASD', '其他发育障碍'];
+
+/** 主要行为类型选项 */
+export const BEHAVIOR_OPTIONS: readonly string[] = ['刻板行为', '情绪崩溃', '自伤行为', '攻击行为', '社交退缩', '多动'];
+
+/** 严重程度选项 */
+export const SEVERITY_OPTIONS: readonly string[] = ['轻', '中', '重'];
+
+/** 发生场景选项 */
+export const SETTING_OPTIONS: readonly string[] = ['家庭', '学校', '公共场合', '机构'];
+
+/** 预设标签 */
+export const PRESET_TAGS: readonly string[] = [
+  '感官敏感', '睡眠障碍', '社交回避', '语言发育迟缓',
+  '刻板行为', '注意力缺陷', '情绪调节困难', '饮食挑剔', '如厕困难', '分离焦虑',
+];
+
 /** 档案数量上限 */
 export const MAX_PROFILE_COUNT = 5;
 

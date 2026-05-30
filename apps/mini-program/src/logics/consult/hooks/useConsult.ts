@@ -95,7 +95,7 @@ export function useConsult(): UseConsultReturn {
       emotionLevel,
       selectedProfileId,
       referencedCases,
-      crisisLevel: crisisLevel as UseConsultReturn['crisisLevel'],
+      crisisLevel,
 
       // 操作方法
       startConsult: store.getState().startConsult,

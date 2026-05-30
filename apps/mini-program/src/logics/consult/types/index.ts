@@ -212,12 +212,9 @@ export interface ReferencedCase {
   slice_text: string;
 }
 
-/** 危机等级（来自 SSE done 事件） */
-export type ConsultCrisisLevel = 'mild' | 'moderate' | 'severe';
-
 /**
  * 咨询会话业务状态（8 状态联合类型）。
- * 状态转换表定义于 LEGAL_TRANSITIONS，共 14 条合法路径。
+ * 状态转换表定义于 LEGAL_TRANSITIONS，共 17 条合法路径。
  */
 export type ConsultSessionState =
   | 'idle'
@@ -376,7 +373,7 @@ export interface UseConsultReturn {
   /** 参考案例列表 */
   referencedCases: ReferencedCase[];
   /** 危机等级 */
-  crisisLevel?: ConsultCrisisLevel;
+  crisisLevel?: CrisisLevel;
 
   // ---------- 操作方法（CSLT-07 绑定到按钮/事件） ----------
   /** 开始新咨询：idle -> selecting_behavior */

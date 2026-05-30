@@ -2,14 +2,14 @@
  * CSLT-08 状态转换守卫 —— LEGAL_TRANSITIONS 查找表 + transitionTo() 纯函数。
  *
  * 职责：
- * - LEGAL_TRANSITIONS：记录 14 条合法状态转换路径
+ * - LEGAL_TRANSITIONS：记录 17 条合法状态转换路径
  * - transitionTo(current, newState)：校验合法性，非法抛 StateTransitionError
  * - getErrorMessage(code)：错误码 → 中文文案映射（唯一文案来源）
  * - createMessageItem(sender, content, messageType, metadata?)：消息工厂函数
  *
  * 设计依据：CSLT-08 落地规范 §1.8（状态机） §1.9（异常文案）
  * 绝对约束：所有 sessionState 变更必须通过 transitionTo()，禁止直接 set()。
- * 12 条合法路径见 LEGAL_TRANSITIONS 定义。
+ * 17 条合法路径见 LEGAL_TRANSITIONS 定义。
  */
 
 import {
@@ -28,7 +28,7 @@ import {
 
 /**
  * 咨询会话状态转换查找表。
- * 14 条合法转换路径，严格按照落地规范 §1.8 定义。
+ * 17 条合法转换路径，严格按照落地规范 §1.8 定义。
  *
  * 使用 Record<ConsultSessionState, ConsultSessionState[]> 格式：
  * - key = 当前状态

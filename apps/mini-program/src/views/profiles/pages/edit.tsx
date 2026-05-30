@@ -6,20 +6,9 @@ import {
   listEvents,
   deleteEvent as deleteEventApi,
 } from '../../../logics/profiles/services/eventApi';
+import { DIAGNOSIS_OPTIONS, BEHAVIOR_OPTIONS, PRESET_TAGS } from '../../../logics/profiles/constants';
 import type { ProfileResponse, EventListItem } from '../../../logics/profiles/types';
 import './edit.scss';
-
-// ============================================================================
-// 常量定义
-// ============================================================================
-
-const DIAGNOSIS_OPTIONS = ['ASD', '疑似ASD', '其他发育障碍'];
-const BEHAVIOR_OPTIONS = ['刻板行为', '情绪崩溃', '自伤行为', '攻击行为', '社交退缩', '多动'];
-
-const PRESET_TAGS = [
-  '感官敏感', '睡眠障碍', '社交回避', '语言发育迟缓',
-  '刻板行为', '注意力缺陷', '情绪调节困难', '饮食挑剔', '如厕困难', '分离焦虑',
-];
 
 // ============================================================================
 // 事件类型（已由后端真实接口提供，本地 Mock 类型已移除）
