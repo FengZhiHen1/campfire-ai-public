@@ -91,6 +91,7 @@ export function useNarrativeSubmit(): UseNarrativeSubmitReturn {
     try {
       const res = await createNarrative({ title, narrative, source_type: sourceType });
       const narrativeId = res.narrative_id;
+      console.debug('[narrative-submit] created narrativeId:', narrativeId);
       clearDraft();
       await triggerExtraction(narrativeId);
     } catch {

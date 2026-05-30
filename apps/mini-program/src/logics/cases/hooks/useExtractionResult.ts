@@ -75,8 +75,14 @@ export function useExtractionResult(): UseExtractionResultReturn {
 
   const narrativeId: string = Taro.getCurrentInstance().router?.params?.narrativeId || '';
 
+  // DEBUG: 确认 narrativeId 是否正确传入
+  console.debug('[extraction-result] narrativeId:', narrativeId, 'router:', Taro.getCurrentInstance().router);
+
   const loadNarrative = useCallback(() => {
-    if (!narrativeId) return;
+    if (!narrativeId) {
+      console.debug('[extraction-result] loadNarrative skipped — narrativeId is empty');
+      return;
+    }
     getNarrative(narrativeId)
       .then((res) => {
         const status = res.extraction_status || 'pending';
