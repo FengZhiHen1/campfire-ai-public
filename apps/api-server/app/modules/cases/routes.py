@@ -1,6 +1,8 @@
 """CASE-01 案例录入管理 — MVP Phase 1 简化版路由。
 
 去除角色准入校验（MVP 不区分角色），保留核心 CRUD。
+路由层仅做依赖注入和委托——所有业务逻辑在 CaseManagementService 中。
+
 - POST /api/v1/cases — 创建案例草稿
 - PUT /api/v1/cases/{case_id} — 更新案例
 - POST /api/v1/cases/{case_id}/submit — 提交审核
@@ -20,13 +22,7 @@ from app.core.dependencies.auth_dependencies import (
     get_case_repository,
     get_db_session,
 )
-from app.modules.cases.case_service import (
-    create_case,
-    get_case,
-    list_cases,
-    submit_case,
-    update_case,
-)
+from app.modules.cases.case_service import CaseManagementService
 from py_db.repositories.case_repository import CaseRepository
 from py_schemas.cases import (
     CaseCreateRequest,
@@ -38,6 +34,9 @@ from py_schemas.cases import (
 from py_schemas.security.validation_schemas import ValidationErrorResponse
 
 router = APIRouter(prefix="/api/v1/cases", tags=["cases"])
+
+# 服务实例（单例，无状态，所有状态通过 session/repo 参数传入）
+_case_service = CaseManagementService()
 
 
 @router.post(
@@ -62,7 +61,7 @@ async def create_case_endpoint(
     case_repo: CaseRepository = Depends(get_case_repository),
 ) -> CaseResponse:
     """创建案例草稿端点。"""
-    return await create_case(
+    return await _case_service.create_case(
         request=request,
         current_user=anonymous_user,
         session=session,
@@ -91,7 +90,7 @@ async def update_case_endpoint(
     case_repo: CaseRepository = Depends(get_case_repository),
 ) -> CaseResponse:
     """更新案例端点。"""
-    return await update_case(
+    return await _case_service.update_case(
         case_id=case_id,
         update=update,
         current_user=anonymous_user,
@@ -125,7 +124,7 @@ async def submit_case_endpoint(
     case_repo: CaseRepository = Depends(get_case_repository),
 ) -> CaseResponse:
     """提交审核端点。"""
-    return await submit_case(
+    return await _case_service.submit_case(
         case_id=case_id,
         pii_confirmed=pii_confirmed,
         current_user=anonymous_user,
@@ -152,7 +151,7 @@ async def get_case_endpoint(
     case_repo: CaseRepository = Depends(get_case_repository),
 ) -> CaseResponse:
     """获取案例详情端点。"""
-    return await get_case(
+    return await _case_service.get_case(
         case_id=case_id,
         current_user=anonymous_user,
         session=session,
@@ -207,7 +206,7 @@ async def list_cases_endpoint(
     case_repo: CaseRepository = Depends(get_case_repository),
 ) -> PaginatedResponse[CaseListItem]:
     """案例列表查询端点。"""
-    return await list_cases(
+    return await _case_service.list_cases(
         status_filter=status_filter,
         behavior_type_filter=behavior_type_filter,
         evidence_level=evidence_level,

@@ -1,3 +1,4 @@
+# @contract
 """CASE-01 EBP 标签一致性校验。
 
 校验循证等级（evidence_level）与循证标签列表（ebp_labels）之间的一致性。

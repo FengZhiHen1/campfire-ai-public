@@ -10,11 +10,15 @@ import json
 import logging
 import re
 import uuid
+from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from py_llm import LLMClient
 from py_db.models.case_card import CaseCard
+
+from app.modules.cases.case_extraction.extraction_contract import ExtractionServiceContract
+from app.modules.cases.exceptions import ExtractionError
 
 _logger = logging.getLogger(__name__)
 
@@ -143,17 +147,162 @@ _EXTRACTION_SYSTEM_PROMPT = """你是一名孤独症行为干预案例提取专�
 age_range 始终用字符串数组。caution_notes 若无可填空字符串。contraindications 若无可填 "无"。
 """
 
+
 # ============================================================================
-# 提取主函数
+# 提取服务实现
 # ============================================================================
+
+
+class ExtractionService(ExtractionServiceContract):
+    """LLM 提取服务实现。实现 ExtractionServiceContract 契约的 _do_extract 钩子。"""
+
+    async def _do_extract(
+        self,
+        narrative_text: str,
+        narrative_id: str,
+        db: AsyncSession,
+    ) -> list[Any]:
+        """执行 LLM 提取的核心逻辑。
+
+        LLM 调用 → JSON 解析 → 逐卡片校验 → 数据库写入。
+        """
+        client = LLMClient()
+
+        messages = [
+            {"role": "system", "content": _EXTRACTION_SYSTEM_PROMPT},
+            {"role": "user", "content": f"请从以下叙事中提取干预卡片：\n\n{narrative_text}\n\nYour response must be a valid JSON object."},
+        ]
+
+        # 调用 LLM（JSON Mode）
+        try:
+            response_text = await client.async_chat(
+                messages=messages,
+                model="deepseek-v4-pro",
+                temperature=0.3,
+                max_tokens=8192,
+                timeout=30.0,
+                response_format={"type": "json_object"},
+            )
+        except Exception as exc:
+            _logger.exception("llm_extraction_failed")
+            raise ExtractionError(str(exc)) from exc
+
+        # 解析 JSON
+        try:
+            # 清理可能的 markdown 代码块包裹
+            cleaned = re.sub(
+                r"^```(?:json)?\s*|\s*```$", "",
+                response_text.strip(), flags=re.MULTILINE,
+            )
+            result = json.loads(cleaned)
+            cards_data = result.get("cards", [])
+        except (json.JSONDecodeError, KeyError) as exc:
+            _logger.error(
+                "extraction_parse_failed", extra={"raw": response_text[:500]},
+            )
+            raise ExtractionError(f"JSON 解析失败: {exc}") from exc
+
+        # 逐卡片校验 + 写入数据库
+        cards: list[Any] = []
+        nid = uuid.UUID(narrative_id)
+
+        for i, raw in enumerate(cards_data):
+            errors = self._validate_card(raw, i)
+            if errors:
+                raise ExtractionError(
+                    f"卡片 {i+1} 校验失败: {'; '.join(errors)}",
+                )
+
+            card = CaseCard(
+                card_id=uuid.uuid4(),
+                narrative_id=nid,
+                title=raw["title"],
+                scenario=raw["scenario"],
+                behavior_type=raw["behavior_type"],
+                age_range_min=int(raw["age_range"][0]),
+                age_range_max=int(raw["age_range"][1]),
+                severity=raw["severity_level"],
+                scene=raw["setting"],
+                ebp_labels=raw.get("ebp_tags", []),
+                family_category=raw["parent_category"],
+                immediate_action=raw["immediate_action"],
+                comforting_phrase=raw["comforting_phrase"],
+                observation_metrics=raw["observation_metrics"],
+                medical_criteria=raw["medical_criteria"],
+                evidence_level=raw.get("evidence_level", "INSTITUTIONAL"),
+                caution_notes=raw.get("caution_notes", ""),
+                contraindications=raw.get("contraindications", "无"),
+                is_template=raw.get("is_template", False),
+                review_status="draft",
+                _inferred=raw.get("_inferred") or raw.get("inferred_fields"),
+            )
+            db.add(card)
+            cards.append(card)
+
+        await db.commit()
+        for c in cards:
+            await db.refresh(c)
+
+        _logger.info("extraction_completed", extra={
+            "narrative_id": narrative_id, "card_count": len(cards),
+        })
+        return cards
+
+    # ========================================================================
+    # 卡片字段校验
+    # ========================================================================
+
+    @staticmethod
+    def _validate_card(raw: dict, index: int) -> list[str]:
+        """校验单张卡片的字段完整性和合法性。"""
+        errors: list[str] = []
+
+        required = [
+            "title", "scenario", "behavior_type", "severity_level", "setting",
+            "immediate_action", "comforting_phrase", "observation_metrics",
+            "medical_criteria", "parent_category",
+        ]
+        for field in required:
+            if not raw.get(field):
+                errors.append(f"缺少必填字段 {field}")
+
+        if raw.get("behavior_type") not in _VALID_BEHAVIOR_TYPES:
+            errors.append(f"无效 behavior_type: {raw.get('behavior_type')}")
+        if raw.get("severity_level") not in _VALID_SEVERITY:
+            errors.append(f"无效 severity_level: {raw.get('severity_level')}")
+        if raw.get("setting") not in _VALID_SETTINGS:
+            errors.append(f"无效 setting: {raw.get('setting')}")
+        if raw.get("parent_category") not in _VALID_PARENT_CATEGORIES:
+            errors.append(f"无效 parent_category: {raw.get('parent_category')}")
+
+        age_range = raw.get("age_range", [])
+        if not isinstance(age_range, list) or len(age_range) != 2:
+            errors.append("age_range 必须是 [min, max] 格式的数组")
+
+        ebp_tags = raw.get("ebp_tags", [])
+        if not isinstance(ebp_tags, list) or len(ebp_tags) == 0:
+            errors.append("ebp_tags 必须是非空数组")
+        else:
+            for tag in ebp_tags:
+                if tag not in _VALID_EBP_TAGS:
+                    errors.append(f"无效 EBP 标签: {tag}")
+
+        return errors
+
+
+# ============================================================================
+# 模块级便捷函数（过渡兼容：创建默认实例委托调用）
+# ============================================================================
+
+_default_service = ExtractionService()
 
 
 async def extract_cards_from_narrative(
     narrative_text: str,
     narrative_id: str,
     db: AsyncSession,
-) -> list[CaseCard]:
-    """从 L1 叙事文本中提取 L2 结构化卡片。
+) -> list[Any]:
+    """从 L1 叙事文本中提取 L2 结构化卡片（模块级委托）。
 
     Args:
         narrative_text: L1 自然语言叙事全文。
@@ -166,125 +315,12 @@ async def extract_cards_from_narrative(
     Raises:
         ExtractionError: LLM 调用失败或输出校验失败。
     """
-    client = LLMClient()
-
-    messages = [
-        {"role": "system", "content": _EXTRACTION_SYSTEM_PROMPT},
-        {"role": "user", "content": f"请从以下叙事中提取干预卡片：\n\n{narrative_text}\n\nYour response must be a valid JSON object."},
-    ]
-
-    # 调用 LLM（JSON Mode）
-    try:
-        response_text = await client.async_chat(
-            messages=messages,
-            model="deepseek-v4-pro",
-            temperature=0.3,
-            max_tokens=8192,
-            timeout=30.0,
-            response_format={"type": "json_object"},
-        )
-    except Exception as exc:
-        _logger.exception("llm_extraction_failed")
-        raise ExtractionError(f"LLM 提取失败: {exc}") from exc
-
-    # 解析 JSON
-    try:
-        # 清理可能的 markdown 代码块包裹
-        cleaned = re.sub(r"^```(?:json)?\s*|\s*```$", "", response_text.strip(), flags=re.MULTILINE)
-        result = json.loads(cleaned)
-        cards_data = result.get("cards", [])
-    except (json.JSONDecodeError, KeyError) as exc:
-        _logger.error("extraction_parse_failed", extra={"raw": response_text[:500]})
-        raise ExtractionError(f"LLM 输出 JSON 解析失败: {exc}") from exc
-
-    if not cards_data:
-        raise ExtractionError("LLM 未识别到任何干预场景")
-
-    # 逐卡片校验 + 写入数据库
-    cards: list[CaseCard] = []
-    nid = uuid.UUID(narrative_id)
-
-    for i, raw in enumerate(cards_data):
-        errors = _validate_card(raw, i)
-        if errors:
-            raise ExtractionError(f"卡片 {i+1} 校验失败: {'; '.join(errors)}")
-
-        card = CaseCard(
-            card_id=uuid.uuid4(),
-            narrative_id=nid,
-            title=raw["title"],
-            scenario=raw["scenario"],
-            behavior_type=raw["behavior_type"],
-            age_range_min=int(raw["age_range"][0]),
-            age_range_max=int(raw["age_range"][1]),
-            severity=raw["severity_level"],
-            scene=raw["setting"],
-            ebp_labels=raw.get("ebp_tags", []),
-            family_category=raw["parent_category"],
-            immediate_action=raw["immediate_action"],
-            comforting_phrase=raw["comforting_phrase"],
-            observation_metrics=raw["observation_metrics"],
-            medical_criteria=raw["medical_criteria"],
-            evidence_level=raw.get("evidence_level", "INSTITUTIONAL"),
-            caution_notes=raw.get("caution_notes", ""),
-            contraindications=raw.get("contraindications", "无"),
-            is_template=raw.get("is_template", False),
-            review_status="draft",
-            _inferred=raw.get("_inferred") or raw.get("inferred_fields"),
-        )
-        db.add(card)
-        cards.append(card)
-
-    await db.commit()
-    for c in cards:
-        await db.refresh(c)
-
-    _logger.info("extraction_completed", extra={
-        "narrative_id": narrative_id, "card_count": len(cards),
-    })
-    return cards
+    return await _default_service.extract_cards_from_narrative(
+        narrative_text, narrative_id, db,
+    )
 
 
-# ============================================================================
-# 校验
-# ============================================================================
-
-
-def _validate_card(raw: dict, index: int) -> list[str]:
-    """校验单张卡片的字段完整性和合法性。"""
-    errors: list[str] = []
-
-    required = ["title", "scenario", "behavior_type", "severity_level", "setting",
-                "immediate_action", "comforting_phrase", "observation_metrics",
-                "medical_criteria", "parent_category"]
-    for field in required:
-        if not raw.get(field):
-            errors.append(f"缺少必填字段 {field}")
-
-    if raw.get("behavior_type") not in _VALID_BEHAVIOR_TYPES:
-        errors.append(f"无效 behavior_type: {raw.get('behavior_type')}")
-    if raw.get("severity_level") not in _VALID_SEVERITY:
-        errors.append(f"无效 severity_level: {raw.get('severity_level')}")
-    if raw.get("setting") not in _VALID_SETTINGS:
-        errors.append(f"无效 setting: {raw.get('setting')}")
-    if raw.get("parent_category") not in _VALID_PARENT_CATEGORIES:
-        errors.append(f"无效 parent_category: {raw.get('parent_category')}")
-
-    age_range = raw.get("age_range", [])
-    if not isinstance(age_range, list) or len(age_range) != 2:
-        errors.append("age_range 必须是 [min, max] 格式的数组")
-
-    ebp_tags = raw.get("ebp_tags", [])
-    if not isinstance(ebp_tags, list) or len(ebp_tags) == 0:
-        errors.append("ebp_tags 必须是非空数组")
-    else:
-        for tag in ebp_tags:
-            if tag not in _VALID_EBP_TAGS:
-                errors.append(f"无效 EBP 标签: {tag}")
-
-    return errors
-
-
-class ExtractionError(Exception):
-    """LLM 提取失败异常。"""
-    pass
+__all__ = [
+    "ExtractionService",
+    "extract_cards_from_narrative",
+]
