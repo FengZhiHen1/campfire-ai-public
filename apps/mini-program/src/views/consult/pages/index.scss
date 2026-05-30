@@ -1005,3 +1005,323 @@
     transform: translateY(0);
   }
 }
+
+/* ========== selecting_behavior 全屏选择页 ========== */
+
+.consult-selection-navbar {
+  flex-shrink: 0;
+  height: 112px;
+  background-color: $cf-surface;
+  display: flex;
+  align-items: center;
+  padding: 0 $cf-spacing-md;
+  box-shadow: $cf-shadow-diffuse;
+
+  &__back {
+    width: 80px;
+    height: 80px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 40px;
+    color: $cf-primary;
+    background: none;
+    border: none;
+    padding: 0;
+
+    &::after {
+      border: none;
+    }
+
+    &:active {
+      opacity: 0.7;
+    }
+  }
+
+  &__title {
+    @include cf-headline-sm;
+    color: $cf-on-background;
+    margin-left: $cf-spacing-sm;
+  }
+}
+
+.consult-selection-scroll {
+  flex: 1;
+  padding: 0 $cf-spacing-md;
+  overflow-y: auto;
+
+  &__spacer {
+    height: $cf-spacing-md;
+  }
+}
+
+/* 区块A — 页头 */
+.consult-selection-header {
+  padding-top: $cf-spacing-md;
+  padding-bottom: $cf-spacing-sm;
+
+  &__title {
+    @include cf-headline-sm;
+    color: $cf-on-background;
+    margin-bottom: $cf-spacing-xs;
+  }
+
+  &__subtitle {
+    @include cf-body-sm;
+    color: $cf-on-surface-variant;
+  }
+}
+
+/* 区块B — 关联档案 */
+.consult-selection-profiles {
+  margin-bottom: $cf-spacing-md;
+
+  &__scroll {
+    white-space: nowrap;
+  }
+
+  &__list {
+    display: inline-flex;
+    gap: $cf-spacing-sm;
+  }
+
+  &__chip {
+    flex-shrink: 0;
+    padding: $cf-spacing-xs $cf-spacing-sm;
+    border-radius: $cf-radius-full;
+    font-size: $cf-label-md;
+    font-weight: 500;
+    background-color: $cf-surface-variant;
+    color: $cf-on-surface-variant;
+    border: none;
+
+    &::after {
+      border: none;
+    }
+
+    &--active {
+      background-color: $cf-primary-container;
+      color: $cf-on-primary-container;
+    }
+
+    &:active {
+      opacity: 0.8;
+    }
+  }
+}
+
+/* 区块C — 行为类型列表 */
+.consult-selection-types {
+  display: flex;
+  flex-direction: column;
+  gap: $cf-spacing-xs;
+  margin-bottom: $cf-spacing-md;
+}
+
+.consult-selection-type {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: $cf-spacing-md;
+  border-radius: $cf-radius-lg;
+  background-color: $cf-surface;
+  min-height: 88px;
+  position: relative;
+
+  &--selected {
+    background-color: $cf-primary-container;
+    border-left: 4px solid $cf-primary;
+  }
+
+  &__main {
+    display: flex;
+    align-items: center;
+    gap: $cf-spacing-md;
+  }
+
+  &__icon {
+    font-size: 32px;
+    color: $cf-secondary;
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  &__text {
+    display: flex;
+    flex-direction: column;
+  }
+
+  &__label {
+    font-size: $cf-body-sm;
+    color: $cf-on-background;
+    font-weight: 600;
+  }
+
+  &__desc {
+    font-size: $cf-footnote;
+    color: $cf-on-surface-variant;
+  }
+
+  &__indicator {
+    width: 32px;
+    height: 32px;
+    border-radius: $cf-radius-full;
+    border: 2px solid $cf-outline;
+    flex-shrink: 0;
+
+    &--selected {
+      background-color: $cf-primary;
+      border-color: $cf-primary;
+      position: relative;
+
+      &::after {
+        content: '';
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        width: 12px;
+        height: 12px;
+        border-radius: $cf-radius-full;
+        background-color: $cf-surface;
+      }
+    }
+  }
+}
+
+/* 区块D — 情绪等级 */
+.consult-selection-emotion {
+  margin-bottom: $cf-spacing-md;
+
+  &__label {
+    font-size: $cf-label-md;
+    color: $cf-on-surface-variant;
+    margin-bottom: $cf-spacing-sm;
+    display: block;
+  }
+
+  &__row {
+    display: flex;
+    background-color: $cf-surface-variant;
+    padding: $cf-spacing-xs;
+    border-radius: $cf-radius-lg;
+    gap: $cf-spacing-xs;
+  }
+
+  &__btn {
+    flex: 1;
+    height: 80px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: $cf-label-md;
+    font-weight: 500;
+    color: $cf-on-surface-variant;
+    background-color: transparent;
+    border: none;
+    border-radius: $cf-radius-md;
+
+    &::after {
+      border: none;
+    }
+
+    &--active {
+      background-color: $cf-primary;
+      color: $cf-on-primary;
+      box-shadow: $cf-shadow-diffuse;
+    }
+
+    &:active {
+      opacity: 0.9;
+    }
+  }
+}
+
+/* 区块E — 补充描述 */
+.consult-selection-desc {
+  margin-bottom: $cf-spacing-md;
+
+  &__label {
+    font-size: $cf-label-md;
+    color: $cf-on-surface-variant;
+    margin-bottom: $cf-spacing-sm;
+    display: block;
+  }
+
+  &__textarea {
+    width: 100%;
+    min-height: 200px;
+    max-height: 400px;
+    background-color: $cf-surface-variant;
+    border-radius: $cf-radius-lg;
+    padding: $cf-spacing-md;
+    font-size: $cf-body-sm;
+    color: $cf-on-background;
+    border: none;
+
+    &::placeholder {
+      color: rgba($cf-on-surface-variant, 0.6);
+    }
+  }
+}
+
+/* 区块F — 底部操作栏 */
+.consult-selection-footer {
+  flex-shrink: 0;
+  background-color: $cf-surface;
+  padding: $cf-spacing-md;
+  padding-bottom: calc($cf-spacing-md + env(safe-area-inset-bottom));
+  box-shadow: 0 -4px 24px rgba(28, 25, 23, 0.06);
+
+  &__submit {
+    width: 100%;
+    height: 96px;
+    background-color: $cf-primary;
+    color: $cf-on-primary;
+    border-radius: $cf-radius-full;
+    font-size: 32px;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: none;
+    margin-bottom: $cf-spacing-sm;
+
+    &::after {
+      border: none;
+    }
+
+    &:disabled {
+      background-color: $cf-surface-dim;
+      color: $cf-on-surface-variant;
+    }
+
+    &:active:not(:disabled) {
+      transform: scale(0.98);
+    }
+  }
+
+  &__skip {
+    width: 100%;
+    height: 80px;
+    background-color: transparent;
+    color: $cf-secondary;
+    font-size: $cf-label-md;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: none;
+
+    &::after {
+      border: none;
+    }
+
+    &:active {
+      background-color: $cf-surface-variant;
+      border-radius: $cf-radius-md;
+    }
+  }
+}
