@@ -43,9 +43,15 @@ export interface UseNarrativeSubmitReturn {
 // ============================================================================
 
 export function useNarrativeSubmit(): UseNarrativeSubmitReturn {
-  const [title, setTitle] = useState('');
-  const [sourceType, setSourceType] = useState('专家撰写');
-  const [narrative, setNarrative] = useState('');
+  const [title, setTitle] = useState(() => {
+    try { return Taro.getStorageSync('narrative_draft_title') || ''; } catch { return ''; }
+  });
+  const [sourceType, setSourceType] = useState(() => {
+    try { return Taro.getStorageSync('narrative_draft_source') || '专家撰写'; } catch { return '专家撰写'; }
+  });
+  const [narrative, setNarrative] = useState(() => {
+    try { return Taro.getStorageSync('narrative_draft_body') || ''; } catch { return ''; }
+  });
   const [submitting, setSubmitting] = useState(false);
   const [extracting, setExtracting] = useState(false);
   const [tipsExpanded, setTipsExpanded] = useState(true);
@@ -54,13 +60,30 @@ export function useNarrativeSubmit(): UseNarrativeSubmitReturn {
   const bodyCount = narrative.length;
   const canSubmit = Boolean(title.trim() && narrative.trim());
 
+  const persistDraft = useCallback(() => {
+    try {
+      Taro.setStorageSync('narrative_draft_title', title);
+      Taro.setStorageSync('narrative_draft_source', sourceType);
+      Taro.setStorageSync('narrative_draft_body', narrative);
+    } catch { /* 存储失败不阻断 */ }
+  }, [title, sourceType, narrative]);
+
   const handleSaveDraft = useCallback(() => {
     if (!title.trim() && !narrative.trim()) {
       Taro.showToast({ title: '请先输入内容', icon: 'none' });
       return;
     }
+    persistDraft();
     Taro.showToast({ title: '草稿已保存', icon: 'success' });
-  }, [title, narrative]);
+  }, [title, narrative, persistDraft]);
+
+  const clearDraft = useCallback(() => {
+    try {
+      Taro.removeStorageSync('narrative_draft_title');
+      Taro.removeStorageSync('narrative_draft_source');
+      Taro.removeStorageSync('narrative_draft_body');
+    } catch { /* 清理失败不阻断 */ }
+  }, []);
 
   const handleSubmit = useCallback(async () => {
     if (!canSubmit) return;
@@ -68,12 +91,13 @@ export function useNarrativeSubmit(): UseNarrativeSubmitReturn {
     try {
       const res = await createNarrative({ title, narrative, source_type: sourceType });
       const narrativeId = res.narrative_id;
+      clearDraft();
       await triggerExtraction(narrativeId);
     } catch {
       Taro.showToast({ title: '提交失败', icon: 'none' });
       setSubmitting(false);
     }
-  }, [canSubmit, title, narrative, sourceType]);
+  }, [canSubmit, title, narrative, sourceType, clearDraft]);
 
   const triggerExtraction = useCallback(async (narrativeId: string) => {
     setExtracting(true);

@@ -13,8 +13,8 @@ import './detail.scss';
 
 export default function CasesDetail() {
   const {
-    data, loading,
-    handleGoExtract, handleEditNarrative, handleCardClick,
+    data, loading, error,
+    handleGoExtract, handleEditNarrative, handleCardClick, handleRetry,
     statusTextMap, statusClassMap, sourceLabelMap, cardStatusMap,
   } = useCaseDetailPage();
 
@@ -28,6 +28,24 @@ export default function CasesDetail() {
         <View className="detail-loading">
           <View className="detail-loading__skeleton" />
           <Text className="detail-loading__text">加载中…</Text>
+        </View>
+      </View>
+    );
+  }
+
+  // ---- 错误态 ----
+  if (error) {
+    return (
+      <View className="detail-page">
+        <View className="detail-navbar">
+          <Button className="detail-navbar__back" onClick={() => Taro.navigateBack()}>&larr;</Button>
+          <Text className="detail-navbar__title">案例详情</Text>
+        </View>
+        <View className="detail-loading">
+          <Text className="detail-loading__text">{error}</Text>
+          <Button className="detail-actions__btn detail-actions__btn--primary" onClick={handleRetry}>
+            重新加载
+          </Button>
         </View>
       </View>
     );

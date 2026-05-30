@@ -11,7 +11,7 @@ import './extraction-result.scss';
 
 export default function ExtractionResult() {
   const {
-    cards, activeTab, editing, loading,
+    cards, activeTab, editing, loading, isSaving, isSubmittingAll,
     setActiveTab, updateField, saveCard, submitAll,
     behaviorTypeOptions, severityOptions, sceneOptions, categoryOptions,
   } = useExtractionResult();
@@ -175,8 +175,12 @@ export default function ExtractionResult() {
 
       {/* 底部操作 */}
       <View className="er-footer">
-        <Button className="er-footer__save-btn" onClick={saveCard}>保存当前卡片</Button>
-        <Button className="er-footer__submit-btn" onClick={submitAll}>提交全部审核</Button>
+        <Button className="er-footer__save-btn" loading={isSaving} disabled={isSaving || isSubmittingAll} onClick={saveCard}>
+          {isSaving ? '保存中...' : '保存当前卡片'}
+        </Button>
+        <Button className="er-footer__submit-btn" loading={isSubmittingAll} disabled={isSaving || isSubmittingAll} onClick={submitAll}>
+          {isSubmittingAll ? '提交中...' : '提交全部审核'}
+        </Button>
       </View>
     </View>
   );

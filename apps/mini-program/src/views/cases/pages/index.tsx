@@ -161,8 +161,16 @@ export default function CasesIndex() {
           </View>
         )}
 
+        {/* 加载更多失败 — 且有已有数据时展示内联错误 */}
+        {error && !loading && filteredItems.length > 0 && (
+          <View className="cases-empty">
+            <Text className="cases-empty__subtitle">{error}</Text>
+            <Button className="cases-empty__btn" onClick={refresh}>重新加载</Button>
+          </View>
+        )}
+
         {/* 无更多 */}
-        {!hasMore && !loading && filteredItems.length > 0 && (
+        {!hasMore && !loading && !error && filteredItems.length > 0 && (
           <Text className="cases-no-more">—— 已展示全部案例 ——</Text>
         )}
       </View>

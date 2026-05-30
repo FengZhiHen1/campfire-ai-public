@@ -50,6 +50,7 @@ export interface UseCaseSubmitReturn {
   setEvidenceLevelIdx: (v: number) => void;
   quartetValues: Record<string, string>;
   quartetSetter: (key: string, value: string) => void;
+  isSubmitting: boolean;
   handleSubmit: () => Promise<void>;
   behaviorTypeOptions: readonly string[];
   severityOptions: readonly string[];
@@ -112,6 +113,7 @@ export function useCaseSubmit(): UseCaseSubmitReturn {
   const loadDraft = useCaseStore((s) => s.loadDraft);
   const saveDraft = useCaseStore((s) => s.saveDraft);
   const resetForm = useCaseStore((s) => s.resetForm);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   // 从草稿恢复索引
   const [behaviorTypeIdx, setBehaviorTypeIdxRaw] = useState<number>(() =>
@@ -175,6 +177,7 @@ export function useCaseSubmit(): UseCaseSubmitReturn {
       Taro.showToast({ title: '四段式字段均为必填', icon: 'none' });
       return;
     }
+    setIsSubmitting(true);
     try {
       const request: CaseCreateRequest = {
         title: fields.title,
@@ -201,6 +204,8 @@ export function useCaseSubmit(): UseCaseSubmitReturn {
     } catch (err: unknown) {
       const msg: string = err instanceof Error ? err.message : '提交失败';
       Taro.showToast({ title: msg, icon: 'none' });
+    } finally {
+      setIsSubmitting(false);
     }
   }, [fields, behaviorTypeIdx, severityIdx, sceneIdx, evidenceLevelIdx, resetForm]);
 
@@ -217,6 +222,7 @@ export function useCaseSubmit(): UseCaseSubmitReturn {
     setEvidenceLevelIdx,
     quartetValues,
     quartetSetter,
+    isSubmitting,
     handleSubmit,
     behaviorTypeOptions: BEHAVIOR_TYPE_OPTIONS,
     severityOptions: SEVERITY_OPTIONS,

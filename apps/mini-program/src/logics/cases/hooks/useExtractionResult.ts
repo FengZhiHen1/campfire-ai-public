@@ -29,6 +29,8 @@ export interface UseExtractionResultReturn {
   activeTab: number;
   editing: CardData | null;
   loading: boolean;
+  isSaving: boolean;
+  isSubmittingAll: boolean;
   narrativeId: string;
   setActiveTab: (idx: number) => void;
   updateField: (field: string, value: unknown) => void;
@@ -62,6 +64,8 @@ export function useExtractionResult(): UseExtractionResultReturn {
   const [activeTab, setActiveTab] = useState(0);
   const [editing, setEditing] = useState<CardData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
+  const [isSubmittingAll, setIsSubmittingAll] = useState(false);
 
   const narrativeId: string = Taro.getCurrentInstance().router?.params?.narrativeId || '';
 
@@ -92,7 +96,8 @@ export function useExtractionResult(): UseExtractionResultReturn {
   }, [editing]);
 
   const saveCard = useCallback(async () => {
-    if (!editing) return;
+    if (!editing || isSaving) return;
+    setIsSaving(true);
     try {
       const updated = await updateCard(editing.card_id, editing);
       const newCards = cards.map((c) => c.card_id === editing.card_id ? updated : c);
@@ -101,24 +106,32 @@ export function useExtractionResult(): UseExtractionResultReturn {
       Taro.showToast({ title: '已保存', icon: 'success' });
     } catch {
       Taro.showToast({ title: '保存失败', icon: 'none' });
+    } finally {
+      setIsSaving(false);
     }
-  }, [editing, cards]);
+  }, [editing, cards, isSaving]);
 
   const submitAll = useCallback(async () => {
+    if (isSubmittingAll) return;
+    setIsSubmittingAll(true);
     try {
       await Promise.all(cards.map((card) => submitCard(card.card_id)));
       Taro.showToast({ title: '全部卡片已提交审核' });
       Taro.navigateBack();
     } catch {
       Taro.showToast({ title: '提交失败', icon: 'none' });
+    } finally {
+      setIsSubmittingAll(false);
     }
-  }, [cards]);
+  }, [cards, isSubmittingAll]);
 
   return {
     cards,
     activeTab,
     editing,
     loading,
+    isSaving,
+    isSubmittingAll,
     narrativeId,
     setActiveTab: switchTab,
     updateField,
