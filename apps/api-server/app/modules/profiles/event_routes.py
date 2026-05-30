@@ -1,20 +1,18 @@
 """PROF-03 事件记录管理 — API 路由。
 
-提供事件记录的 CRUD 端点，挂载于 /api/v1/profiles 前缀下。
-
-端点：
-- GET  /{profile_id}/events           — 事件列表（分页）
-- POST /{profile_id}/events           — 创建事件
-- GET  /{profile_id}/events/{event_id} — 事件详情
-- PUT  /{profile_id}/events/{event_id} — 更新事件
-- DELETE /{profile_id}/events/{event_id} — 删除事件
+端点（挂载于 /api/v1/profiles 前缀下）:
+- GET    /{profile_id}/events              — 事件列表（分页）
+- POST   /{profile_id}/events              — 创建事件
+- GET    /{profile_id}/events/{event_id}    — 事件详情
+- PUT    /{profile_id}/events/{event_id}    — 更新事件
+- DELETE /{profile_id}/events/{event_id}    — 删除事件
 """
 
 from __future__ import annotations
 
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.dependencies.anonymous_user import get_anonymous_user
@@ -23,13 +21,10 @@ from app.core.dependencies.auth_dependencies import (
     get_event_repository,
     get_profile_repository,
 )
-from app.modules.profiles.event_service import (
-    create_event,
-    delete_event,
-    get_event,
-    list_events,
-    update_event,
-)
+from app.modules.profiles._exception_mapping import map_domain_error
+from app.modules.profiles._user_utils import extract_user_id
+from app.modules.profiles.event_service import EventServiceImpl
+from app.modules.profiles.exceptions import ProfileDomainError
 from py_db.repositories.event_repository import EventRepository
 from py_db.repositories.profile_repository import ProfileRepository
 from py_schemas.cases import PaginatedResponse
@@ -38,21 +33,15 @@ from py_schemas.profiles import EventCreate, EventListItem, EventResponse, Event
 router = APIRouter(prefix="/api/v1/profiles", tags=["events"])
 
 
-def _extract_user_id(anonymous_user: dict) -> UUID:
-    """从匿名用户字典中提取用户 UUID。"""
-    user_id_str: str = anonymous_user.get("sub", anonymous_user.get("user_id", ""))
-    if not user_id_str:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="无法解析用户标识",
-        )
-    try:
-        return UUID(user_id_str)
-    except ValueError:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="用户标识格式无效",
-        )
+def _get_event_service(
+    event_repo: EventRepository = Depends(get_event_repository),
+    profile_repo: ProfileRepository = Depends(get_profile_repository),
+) -> EventServiceImpl:
+    """依赖注入：构造 EventServiceImpl 实例。"""
+    return EventServiceImpl(
+        event_repository=event_repo,
+        profile_repository=profile_repo,
+    )
 
 
 # ===========================================================================
@@ -72,20 +61,19 @@ async def list_events_endpoint(
     page_size: int = Query(default=20, ge=1, le=100, description="每页条数"),
     anonymous_user: dict = Depends(get_anonymous_user),
     session: AsyncSession = Depends(get_db_session),
-    event_repo: EventRepository = Depends(get_event_repository),
-    profile_repo: ProfileRepository = Depends(get_profile_repository),
+    event_service: EventServiceImpl = Depends(_get_event_service),
 ) -> PaginatedResponse[EventListItem]:
-    """事件列表端点。"""
-    caregiver_id = _extract_user_id(anonymous_user)
-    return await list_events(
-        profile_id=profile_id,
-        caregiver_id=caregiver_id,
-        page=page,
-        page_size=page_size,
-        session=session,
-        event_repo=event_repo,
-        profile_repo=profile_repo,
-    )
+    caregiver_id = extract_user_id(anonymous_user)
+    try:
+        return await event_service.list_events(
+            profile_id=profile_id,
+            caregiver_id=caregiver_id,
+            page=page,
+            page_size=page_size,
+            session=session,
+        )
+    except ProfileDomainError as exc:
+        raise map_domain_error(exc)
 
 
 # ===========================================================================
@@ -109,19 +97,18 @@ async def create_event_endpoint(
     input_data: EventCreate,
     anonymous_user: dict = Depends(get_anonymous_user),
     session: AsyncSession = Depends(get_db_session),
-    event_repo: EventRepository = Depends(get_event_repository),
-    profile_repo: ProfileRepository = Depends(get_profile_repository),
+    event_service: EventServiceImpl = Depends(_get_event_service),
 ) -> EventResponse:
-    """创建事件端点。"""
-    user_id = _extract_user_id(anonymous_user)
-    return await create_event(
-        profile_id=profile_id,
-        user_id=user_id,
-        input_data=input_data,
-        session=session,
-        event_repo=event_repo,
-        profile_repo=profile_repo,
-    )
+    caregiver_id = extract_user_id(anonymous_user)
+    try:
+        return await event_service.create_event(
+            profile_id=profile_id,
+            user_id=caregiver_id,
+            input_data=input_data,
+            session=session,
+        )
+    except ProfileDomainError as exc:
+        raise map_domain_error(exc)
 
 
 # ===========================================================================
@@ -142,16 +129,20 @@ async def create_event_endpoint(
 async def get_event_endpoint(
     profile_id: UUID,
     event_id: UUID,
+    anonymous_user: dict = Depends(get_anonymous_user),
     session: AsyncSession = Depends(get_db_session),
-    event_repo: EventRepository = Depends(get_event_repository),
+    event_service: EventServiceImpl = Depends(_get_event_service),
 ) -> EventResponse:
-    """事件详情端点。"""
-    return await get_event(
-        event_id=event_id,
-        profile_id=profile_id,
-        session=session,
-        event_repo=event_repo,
-    )
+    caregiver_id = extract_user_id(anonymous_user)
+    try:
+        return await event_service.get_event(
+            event_id=event_id,
+            profile_id=profile_id,
+            caregiver_id=caregiver_id,
+            session=session,
+        )
+    except ProfileDomainError as exc:
+        raise map_domain_error(exc)
 
 
 # ===========================================================================
@@ -173,17 +164,21 @@ async def update_event_endpoint(
     profile_id: UUID,
     event_id: UUID,
     input_data: EventUpdate,
+    anonymous_user: dict = Depends(get_anonymous_user),
     session: AsyncSession = Depends(get_db_session),
-    event_repo: EventRepository = Depends(get_event_repository),
+    event_service: EventServiceImpl = Depends(_get_event_service),
 ) -> EventResponse:
-    """更新事件端点。"""
-    return await update_event(
-        event_id=event_id,
-        profile_id=profile_id,
-        input_data=input_data,
-        session=session,
-        event_repo=event_repo,
-    )
+    caregiver_id = extract_user_id(anonymous_user)
+    try:
+        return await event_service.update_event(
+            event_id=event_id,
+            profile_id=profile_id,
+            caregiver_id=caregiver_id,
+            input_data=input_data,
+            session=session,
+        )
+    except ProfileDomainError as exc:
+        raise map_domain_error(exc)
 
 
 # ===========================================================================
@@ -203,16 +198,20 @@ async def update_event_endpoint(
 async def delete_event_endpoint(
     profile_id: UUID,
     event_id: UUID,
+    anonymous_user: dict = Depends(get_anonymous_user),
     session: AsyncSession = Depends(get_db_session),
-    event_repo: EventRepository = Depends(get_event_repository),
+    event_service: EventServiceImpl = Depends(_get_event_service),
 ) -> None:
-    """删除事件端点。"""
-    await delete_event(
-        event_id=event_id,
-        profile_id=profile_id,
-        session=session,
-        event_repo=event_repo,
-    )
+    caregiver_id = extract_user_id(anonymous_user)
+    try:
+        await event_service.delete_event(
+            event_id=event_id,
+            profile_id=profile_id,
+            caregiver_id=caregiver_id,
+            session=session,
+        )
+    except ProfileDomainError as exc:
+        raise map_domain_error(exc)
 
 
 __all__ = ["router"]

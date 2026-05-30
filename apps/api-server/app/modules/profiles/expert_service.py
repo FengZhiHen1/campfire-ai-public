@@ -1,118 +1,105 @@
-"""PROF-05 专家关联管理 — Service 层。
+"""PROF-05 专家关联管理 — 契约实现。
 
-提供专家关联的查询与解除业务逻辑。
+继承 BaseExpertService ABC，填充 _do_ 钩子。
+按契约模板方法：路由 → @final 公共入口（前置校验） → _do_ 钩子（数据操作） → 后置校验。
 """
 
 from __future__ import annotations
 
 from uuid import UUID
 
-from fastapi import HTTPException, status
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from py_db.repositories.profile_repository import ProfileRepository
-from py_db.repositories.teacher_link_repository import TeacherLinkRepository
-from py_db.repositories.user_repository import UserRepository
+from py_db.models.auth import User
 from py_schemas.profiles import ExpertInfo
+from py_db.repositories.profile_repository import ProfileRepository
+from py_db.repositories.teacher_link_repository import TeacherLinkRepository, StaleDataError
+from py_db.repositories.user_repository import UserRepository
+
+from app.modules.profiles.exceptions import ExpertLinkConflictError
+from app.modules.profiles.experts_contract import BaseExpertService
 
 
-async def list_experts(
-    profile_id: UUID,
-    caregiver_id: UUID,
-    session: AsyncSession,
-    link_repo: TeacherLinkRepository,
-    profile_repo: ProfileRepository,
-    user_repo: UserRepository,
-) -> list[ExpertInfo]:
-    """查询指定档案的关联专家列表。
+class ExpertServiceImpl(BaseExpertService):
+    """PROF-05 专家关联管理服务实现。
 
-    Args:
-        profile_id: 目标档案 UUID。
-        caregiver_id: 当前用户 UUID（用于档案权限校验）。
-        session: 活动数据库会话。
-        link_repo: TeacherLinkRepository 实例。
-        profile_repo: ProfileRepository 实例。
-        user_repo: UserRepository 实例。
-
-    Returns:
-        list[ExpertInfo]: 关联专家列表。
-
-    Raises:
-        HTTPException(404): 档案不存在。
+    继承 BaseExpertService，仅覆写 _do_ 钩子方法。
     """
-    profile = await profile_repo.get_by_id(session, profile_id, caregiver_id)
-    if profile is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="档案不存在",
+
+    def __init__(
+        self,
+        link_repository: TeacherLinkRepository | None = None,
+        profile_repository: ProfileRepository | None = None,
+        user_repository: UserRepository | None = None,
+    ) -> None:
+        super().__init__(
+            link_repository=link_repository or TeacherLinkRepository(session_factory=None),
+            profile_repository=profile_repository or ProfileRepository(session_factory=None),
+            user_repository=user_repository or UserRepository(session_factory=None),
         )
 
-    links = await link_repo.find_links_by_profile(session, profile_id)
-    experts: list[ExpertInfo] = []
+    # ------------------------------------------------------------------
+    # _do_ 钩子 — 关联专家列表
+    # ------------------------------------------------------------------
 
-    for link in links:
-        user = await user_repo.find_by_id(session, link.teacher_id)
-        if user is None:
-            continue
-        name = user.real_name or user.username
-        experts.append(
-            ExpertInfo(
-                expert_id=str(link.teacher_id),
-                link_id=str(link.link_id),
-                name=name,
-                role=link.role,
-                created_at=link.created_at,
+    async def _do_list_experts(
+        self,
+        profile_id: UUID,
+        session: AsyncSession,
+    ) -> list[ExpertInfo]:
+        links = await self._link_repo.find_links_by_profile(session, profile_id)
+        if not links:
+            return []
+
+        # 批量查询所有关联专家用户（避免 N+1）
+        teacher_ids = [link.teacher_id for link in links]
+        result = await session.execute(
+            select(User).where(User.id.in_(teacher_ids))
+        )
+        users_by_id = {u.id: u for u in result.scalars().all()}
+
+        experts: list[ExpertInfo] = []
+        for link in links:
+            user = users_by_id.get(link.teacher_id)
+            if user is None:
+                continue
+            name = user.real_name or user.username
+            experts.append(
+                ExpertInfo(
+                    expert_id=str(link.teacher_id),
+                    link_id=str(link.link_id),
+                    name=name,
+                    role=link.role,
+                    created_at=link.created_at,
+                )
             )
-        )
 
-    return experts
+        return experts
 
+    # ------------------------------------------------------------------
+    # _do_ 钩子 — 解除专家关联
+    # ------------------------------------------------------------------
 
-async def unlink_expert(
-    profile_id: UUID,
-    link_id: UUID,
-    caregiver_id: UUID,
-    session: AsyncSession,
-    link_repo: TeacherLinkRepository,
-    profile_repo: ProfileRepository,
-) -> None:
-    """解除指定档案与专家的关联。
+    async def _do_unlink_expert(
+        self,
+        profile_id: UUID,
+        link_id: UUID,
+        session: AsyncSession,
+    ) -> bool:
+        links = await self._link_repo.find_links_by_profile(session, profile_id)
+        target_link = next((lnk for lnk in links if lnk.link_id == link_id), None)
+        if target_link is None:
+            return False
 
-    Args:
-        profile_id: 目标档案 UUID。
-        link_id: 关联记录 UUID。
-        caregiver_id: 当前用户 UUID（用于档案权限校验）。
-        session: 活动数据库会话。
-        link_repo: TeacherLinkRepository 实例。
-        profile_repo: ProfileRepository 实例。
+        try:
+            await self._link_repo.unlink_teacher(
+                session, link_id, expected_version=target_link.version
+            )
+        except StaleDataError:
+            raise ExpertLinkConflictError(str(link_id))
 
-    Raises:
-        HTTPException(404): 档案不存在或关联不存在。
-    """
-    profile = await profile_repo.get_by_id(session, profile_id, caregiver_id)
-    if profile is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="档案不存在",
-        )
-
-    links = await link_repo.find_links_by_profile(session, profile_id)
-    target_link = next((lnk for lnk in links if lnk.link_id == link_id), None)
-    if target_link is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="关联不存在",
-        )
-
-    from py_db.repositories.teacher_link_repository import StaleDataError
-
-    try:
-        await link_repo.unlink_teacher(session, link_id, expected_version=target_link.version)
-    except StaleDataError:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="关联已被其他操作修改，请刷新后重试",
-        )
+        return True
 
 
-__all__ = ["list_experts", "unlink_expert"]
+__all__ = ["ExpertServiceImpl"]

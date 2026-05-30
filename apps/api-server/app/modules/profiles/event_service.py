@@ -1,16 +1,14 @@
-"""PROF-03 事件记录管理 — Service 层。
+"""PROF-03 事件记录管理 — 契约实现。
 
-提供事件记录的 CRUD 业务逻辑编排。
-所有方法通过 AsyncSession 参数化，不持有会话状态。
+继承 BaseEventService ABC，填充 _do_ 钩子。
+按契约模板方法：路由 → @final 公共入口（前置校验） → _do_ 钩子（数据操作） → 后置校验。
 """
 
 from __future__ import annotations
 
 import math
-from datetime import datetime, timedelta, timezone
 from uuid import UUID
 
-from fastapi import HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from py_db.models.profiles import EventLog
@@ -25,258 +23,183 @@ from py_schemas.profiles import (
     EventUpdate,
 )
 
-
-def _orm_to_event_response(event: EventLog) -> EventResponse:
-    """将 EventLog ORM 实例转换为 EventResponse。"""
-    return EventResponse(
-        event_id=event.event_id,
-        profile_id=event.profile_id,
-        recorded_by=event.recorded_by,
-        recorded_by_role=event.recorded_by_role,
-        event_time=event.event_time,
-        behavior_type=event.behavior_type,
-        severity_level=event.severity_level,
-        setting=event.setting,
-        trigger_description=event.trigger_description,
-        manifestation=event.manifestation,
-        intervention_tried=event.intervention_tried,
-        intervention_result=event.intervention_result,
-        is_professional=event.is_professional,
-        tags=event.tags,
-        created_at=event.created_at,
-        updated_at=event.updated_at,
-    )
+from app.modules.profiles._constants import DEFAULT_RECORDED_BY_ROLE
+from app.modules.profiles.events_contract import BaseEventService
 
 
-def _orm_to_event_list_item(event: EventLog) -> EventListItem:
-    """将 EventLog ORM 实例转换为 EventListItem。"""
-    return EventListItem(
-        event_id=event.event_id,
-        event_time=event.event_time,
-        behavior_type=event.behavior_type,
-        severity_level=event.severity_level,
-        has_professional_note=event.is_professional,
-        created_at=event.created_at,
-    )
+class EventServiceImpl(BaseEventService):
+    """PROF-03 事件记录管理服务实现。
 
-
-async def list_events(
-    profile_id: UUID,
-    caregiver_id: UUID,
-    page: int,
-    page_size: int,
-    session: AsyncSession,
-    event_repo: EventRepository,
-    profile_repo: ProfileRepository,
-) -> PaginatedResponse[EventListItem]:
-    """查询指定档案的事件列表（分页）。
-
-    Args:
-        profile_id: 所属档案 UUID。
-        caregiver_id: 当前用户 UUID（用于档案权限校验）。
-        page: 页码（从 1 开始）。
-        page_size: 每页条数。
-        session: 活动数据库会话。
-        event_repo: EventRepository 实例。
-        profile_repo: ProfileRepository 实例。
-
-    Returns:
-        PaginatedResponse[EventListItem]: 分页事件列表。
-
-    Raises:
-        HTTPException(404): 档案不存在。
+    继承 BaseEventService，仅覆写 _do_ 钩子方法。
+    将原模块级函数重构为契约驱动的类结构。
     """
-    profile = await profile_repo.get_by_id(session, profile_id, caregiver_id)
-    if profile is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="档案不存在",
+
+    def __init__(
+        self,
+        event_repository: EventRepository | None = None,
+        profile_repository: ProfileRepository | None = None,
+    ) -> None:
+        super().__init__(
+            event_repository=event_repository or EventRepository(session_factory=None),
+            profile_repository=profile_repository or ProfileRepository(session_factory=None),
         )
 
-    events, total = await event_repo.list_by_profile(
-        session,
-        profile_id=profile_id,
-        page=page,
-        page_size=page_size,
-    )
+    # ------------------------------------------------------------------
+    # _do_ 钩子 — 列表
+    # ------------------------------------------------------------------
 
-    items = [_orm_to_event_list_item(e) for e in events]
-    total_pages = math.ceil(total / page_size) if total > 0 else 0
+    async def _do_list_events(
+        self,
+        profile_id: UUID,
+        page: int,
+        page_size: int,
+        session: AsyncSession,
+    ) -> PaginatedResponse[EventListItem]:
+        events, total = await self._event_repo.list_by_profile(
+            session,
+            profile_id=profile_id,
+            page=page,
+            page_size=page_size,
+        )
+        items = [self._orm_to_list_item(e) for e in events]
+        total_pages = math.ceil(total / page_size) if total > 0 else 0
 
-    return PaginatedResponse[EventListItem](
-        items=items,
-        total=total,
-        page=page,
-        page_size=page_size,
-        total_pages=total_pages,
-    )
-
-
-async def create_event(
-    profile_id: UUID,
-    user_id: UUID,
-    input_data: EventCreate,
-    session: AsyncSession,
-    event_repo: EventRepository,
-    profile_repo: ProfileRepository,
-) -> EventResponse:
-    """为指定档案创建新事件记录。
-
-    Args:
-        profile_id: 所属档案 UUID。
-        user_id: 记录人用户 UUID。
-        input_data: 事件创建请求体。
-        session: 活动数据库会话。
-        event_repo: EventRepository 实例。
-        profile_repo: ProfileRepository 实例。
-
-    Returns:
-        EventResponse: 创建成功的事件详情。
-
-    Raises:
-        HTTPException(404): 档案不存在。
-        HTTPException(400): 事件时间超出 30 天追溯期。
-    """
-    profile = await profile_repo.get_by_id(session, profile_id, user_id)
-    if profile is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="档案不存在",
+        return PaginatedResponse[EventListItem](
+            items=items,
+            total=total,
+            page=page,
+            page_size=page_size,
+            total_pages=total_pages,
         )
 
-    cutoff = datetime.now(timezone.utc) - timedelta(days=30)
-    event_time = input_data.event_time
-    if event_time.tzinfo is None:
-        event_time = event_time.replace(tzinfo=timezone.utc)
-    if event_time < cutoff:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="仅支持补录最近 30 天内的事件",
+    # ------------------------------------------------------------------
+    # _do_ 钩子 — 创建
+    # ------------------------------------------------------------------
+
+    async def _do_create_event(
+        self,
+        profile_id: UUID,
+        user_id: UUID,
+        input_data: EventCreate,
+        session: AsyncSession,
+    ) -> EventResponse:
+        event = EventLog(
+            profile_id=profile_id,
+            recorded_by=user_id,
+            recorded_by_role=DEFAULT_RECORDED_BY_ROLE,
+            event_time=input_data.event_time,
+            behavior_type=input_data.behavior_type.value,
+            severity_level=input_data.severity_level.value,
+            setting=input_data.setting.value if input_data.setting else None,
+            trigger_description=input_data.trigger_description,
+            manifestation=input_data.manifestation,
+            intervention_tried=input_data.intervention_tried,
+            intervention_result=input_data.intervention_result,
+            tags=input_data.tags,
         )
 
-    event = EventLog(
-        profile_id=profile_id,
-        recorded_by=user_id,
-        recorded_by_role="parent",
-        event_time=event_time,
-        behavior_type=input_data.behavior_type.value,
-        severity_level=input_data.severity_level.value,
-        setting=input_data.setting.value if input_data.setting else None,
-        trigger_description=input_data.trigger_description,
-        manifestation=input_data.manifestation,
-        intervention_tried=input_data.intervention_tried,
-        intervention_result=input_data.intervention_result,
-        tags=input_data.tags,
-    )
-
-    created = await event_repo.create(session, event)
-    logger.info(
-        "event_service",
-        f"事件创建成功: event_id={created.event_id}",
-        extra={"profile_id": str(profile_id)},
-    )
-    return _orm_to_event_response(created)
-
-
-async def get_event(
-    event_id: UUID,
-    profile_id: UUID,
-    session: AsyncSession,
-    event_repo: EventRepository,
-) -> EventResponse:
-    """查询单条事件详情。
-
-    Args:
-        event_id: 事件 UUID。
-        profile_id: 所属档案 UUID（用于数据隔离校验）。
-        session: 活动数据库会话。
-        event_repo: EventRepository 实例。
-
-    Returns:
-        EventResponse: 事件详情。
-
-    Raises:
-        HTTPException(404): 事件不存在。
-    """
-    event = await event_repo.get_by_id(session, event_id, profile_id)
-    if event is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="事件不存在",
+        created = await self._event_repo.create(session, event)
+        logger.info(
+            "event_service",
+            "事件创建成功",
+            extra={"event_id": str(created.event_id), "profile_id": str(profile_id)},
         )
-    return _orm_to_event_response(event)
+        return self._orm_to_response(created)
 
+    # ------------------------------------------------------------------
+    # _do_ 钩子 — 详情
+    # ------------------------------------------------------------------
 
-async def update_event(
-    event_id: UUID,
-    profile_id: UUID,
-    input_data: EventUpdate,
-    session: AsyncSession,
-    event_repo: EventRepository,
-) -> EventResponse:
-    """更新事件记录（Merge Patch 语义）。
+    async def _do_get_event(
+        self,
+        event_id: UUID,
+        profile_id: UUID,
+        session: AsyncSession,
+    ) -> EventResponse | None:
+        event = await self._event_repo.get_by_id(session, event_id, profile_id)
+        if event is None:
+            return None
+        return self._orm_to_response(event)
 
-    Args:
-        event_id: 事件 UUID。
-        profile_id: 所属档案 UUID。
-        input_data: 事件更新请求体（仅提供的字段会被更新）。
-        session: 活动数据库会话。
-        event_repo: EventRepository 实例。
+    # ------------------------------------------------------------------
+    # _do_ 钩子 — 更新
+    # ------------------------------------------------------------------
 
-    Returns:
-        EventResponse: 更新后的事件详情。
+    async def _do_update_event(
+        self,
+        event_id: UUID,
+        profile_id: UUID,
+        input_data: EventUpdate,
+        session: AsyncSession,
+    ) -> EventResponse | None:
+        update_dict = input_data.model_dump(exclude_unset=True)
 
-    Raises:
-        HTTPException(404): 事件不存在。
-    """
-    update_dict = input_data.model_dump(exclude_unset=True)
+        if "behavior_type" in update_dict and update_dict["behavior_type"] is not None:
+            update_dict["behavior_type"] = update_dict["behavior_type"].value
+        if "severity_level" in update_dict and update_dict["severity_level"] is not None:
+            update_dict["severity_level"] = update_dict["severity_level"].value
+        if "setting" in update_dict and update_dict["setting"] is not None:
+            update_dict["setting"] = update_dict["setting"].value
 
-    # 枚举值需转换为字符串
-    if "behavior_type" in update_dict and update_dict["behavior_type"] is not None:
-        update_dict["behavior_type"] = update_dict["behavior_type"].value
-    if "severity_level" in update_dict and update_dict["severity_level"] is not None:
-        update_dict["severity_level"] = update_dict["severity_level"].value
-    if "setting" in update_dict and update_dict["setting"] is not None:
-        update_dict["setting"] = update_dict["setting"].value
+        updated = await self._event_repo.update_event(session, event_id, profile_id, update_dict)
+        if updated is None:
+            return None
+        return self._orm_to_response(updated)
 
-    updated = await event_repo.update_event(session, event_id, profile_id, update_dict)
-    if updated is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="事件不存在",
+    # ------------------------------------------------------------------
+    # _do_ 钩子 — 删除
+    # ------------------------------------------------------------------
+
+    async def _do_delete_event(
+        self,
+        event_id: UUID,
+        profile_id: UUID,
+        session: AsyncSession,
+    ) -> bool:
+        success = await self._event_repo.delete_event(session, event_id, profile_id)
+        if success:
+            logger.info(
+                "event_service",
+                "事件已删除",
+                extra={"event_id": str(event_id), "profile_id": str(profile_id)},
+            )
+        return success
+
+    # ------------------------------------------------------------------
+    # ORM 转换辅助
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _orm_to_response(event: EventLog) -> EventResponse:
+        return EventResponse(
+            event_id=event.event_id,
+            profile_id=event.profile_id,
+            recorded_by=event.recorded_by,
+            recorded_by_role=event.recorded_by_role,
+            event_time=event.event_time,
+            behavior_type=event.behavior_type,
+            severity_level=event.severity_level,
+            setting=event.setting,
+            trigger_description=event.trigger_description,
+            manifestation=event.manifestation,
+            intervention_tried=event.intervention_tried,
+            intervention_result=event.intervention_result,
+            is_professional=event.is_professional,
+            tags=event.tags,
+            created_at=event.created_at,
+            updated_at=event.updated_at,
         )
-    return _orm_to_event_response(updated)
 
-
-async def delete_event(
-    event_id: UUID,
-    profile_id: UUID,
-    session: AsyncSession,
-    event_repo: EventRepository,
-) -> None:
-    """删除指定事件记录。
-
-    Args:
-        event_id: 事件 UUID。
-        profile_id: 所属档案 UUID。
-        session: 活动数据库会话。
-        event_repo: EventRepository 实例。
-
-    Raises:
-        HTTPException(404): 事件不存在。
-    """
-    deleted = await event_repo.delete_event(session, event_id, profile_id)
-    if not deleted:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="事件不存在",
+    @staticmethod
+    def _orm_to_list_item(event: EventLog) -> EventListItem:
+        return EventListItem(
+            event_id=event.event_id,
+            event_time=event.event_time,
+            behavior_type=event.behavior_type,
+            severity_level=event.severity_level,
+            has_professional_note=event.is_professional,
+            created_at=event.created_at,
         )
 
 
-__all__ = [
-    "list_events",
-    "create_event",
-    "get_event",
-    "update_event",
-    "delete_event",
-]
+__all__ = ["EventServiceImpl"]

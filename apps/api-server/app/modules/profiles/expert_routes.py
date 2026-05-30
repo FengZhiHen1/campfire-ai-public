@@ -1,17 +1,15 @@
 """PROF-05 专家关联管理 — API 路由。
 
-提供专家关联的查询与解除端点，挂载于 /api/v1/profiles 前缀下。
-
-端点：
-- GET    /{profile_id}/experts           — 获取关联专家列表
-- DELETE /{profile_id}/experts/{link_id} — 解除专家关联
+端点（挂载于 /api/v1/profiles 前缀下）:
+- GET    /{profile_id}/experts             — 获取关联专家列表
+- DELETE /{profile_id}/experts/{link_id}   — 解除专家关联
 """
 
 from __future__ import annotations
 
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.dependencies.anonymous_user import get_anonymous_user
@@ -21,7 +19,10 @@ from app.core.dependencies.auth_dependencies import (
     get_teacher_link_repository,
     get_user_repository,
 )
-from app.modules.profiles.expert_service import list_experts, unlink_expert
+from app.modules.profiles._exception_mapping import map_domain_error
+from app.modules.profiles._user_utils import extract_user_id
+from app.modules.profiles.exceptions import ProfileDomainError
+from app.modules.profiles.expert_service import ExpertServiceImpl
 from py_db.repositories.profile_repository import ProfileRepository
 from py_db.repositories.teacher_link_repository import TeacherLinkRepository
 from py_db.repositories.user_repository import UserRepository
@@ -30,21 +31,17 @@ from py_schemas.profiles import ExpertInfo
 router = APIRouter(prefix="/api/v1/profiles", tags=["experts"])
 
 
-def _extract_user_id(anonymous_user: dict) -> UUID:
-    """从匿名用户字典中提取用户 UUID。"""
-    user_id_str: str = anonymous_user.get("sub", anonymous_user.get("user_id", ""))
-    if not user_id_str:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="无法解析用户标识",
-        )
-    try:
-        return UUID(user_id_str)
-    except ValueError:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="用户标识格式无效",
-        )
+def _get_expert_service(
+    link_repo: TeacherLinkRepository = Depends(get_teacher_link_repository),
+    profile_repo: ProfileRepository = Depends(get_profile_repository),
+    user_repo: UserRepository = Depends(get_user_repository),
+) -> ExpertServiceImpl:
+    """依赖注入：构造 ExpertServiceImpl 实例。"""
+    return ExpertServiceImpl(
+        link_repository=link_repo,
+        profile_repository=profile_repo,
+        user_repository=user_repo,
+    )
 
 
 # ===========================================================================
@@ -66,20 +63,17 @@ async def list_experts_endpoint(
     profile_id: UUID,
     anonymous_user: dict = Depends(get_anonymous_user),
     session: AsyncSession = Depends(get_db_session),
-    link_repo: TeacherLinkRepository = Depends(get_teacher_link_repository),
-    profile_repo: ProfileRepository = Depends(get_profile_repository),
-    user_repo: UserRepository = Depends(get_user_repository),
+    expert_service: ExpertServiceImpl = Depends(_get_expert_service),
 ) -> list[ExpertInfo]:
-    """关联专家列表端点。"""
-    caregiver_id = _extract_user_id(anonymous_user)
-    return await list_experts(
-        profile_id=profile_id,
-        caregiver_id=caregiver_id,
-        session=session,
-        link_repo=link_repo,
-        profile_repo=profile_repo,
-        user_repo=user_repo,
-    )
+    caregiver_id = extract_user_id(anonymous_user)
+    try:
+        return await expert_service.list_experts(
+            profile_id=profile_id,
+            caregiver_id=caregiver_id,
+            session=session,
+        )
+    except ProfileDomainError as exc:
+        raise map_domain_error(exc)
 
 
 # ===========================================================================
@@ -102,19 +96,18 @@ async def unlink_expert_endpoint(
     link_id: UUID,
     anonymous_user: dict = Depends(get_anonymous_user),
     session: AsyncSession = Depends(get_db_session),
-    link_repo: TeacherLinkRepository = Depends(get_teacher_link_repository),
-    profile_repo: ProfileRepository = Depends(get_profile_repository),
+    expert_service: ExpertServiceImpl = Depends(_get_expert_service),
 ) -> None:
-    """解除专家关联端点。"""
-    caregiver_id = _extract_user_id(anonymous_user)
-    await unlink_expert(
-        profile_id=profile_id,
-        link_id=link_id,
-        caregiver_id=caregiver_id,
-        session=session,
-        link_repo=link_repo,
-        profile_repo=profile_repo,
-    )
+    caregiver_id = extract_user_id(anonymous_user)
+    try:
+        await expert_service.unlink_expert(
+            profile_id=profile_id,
+            link_id=link_id,
+            caregiver_id=caregiver_id,
+            session=session,
+        )
+    except ProfileDomainError as exc:
+        raise map_domain_error(exc)
 
 
 __all__ = ["router"]
