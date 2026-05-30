@@ -72,16 +72,7 @@ export default function ConsultHistory() {
 
   return (
     <View className="history-page">
-      {/* 顶部导航栏 */}
-      <View className="history-navbar">
-        <Button className="history-navbar__back" onClick={() => Taro.navigateBack()}>
-          ←
-        </Button>
-        <Text className="history-navbar__title">咨询历史</Text>
-        <View className="history-navbar__search-btn">🔍</View>
-      </View>
-
-      {/* 搜索栏 */}
+      {/* 搜索栏 -->
       <View className="history-search">
         <View className="history-search__input-wrap">
           <Text className="history-search__icon">🔍</Text>

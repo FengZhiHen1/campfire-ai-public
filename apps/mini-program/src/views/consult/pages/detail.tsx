@@ -49,10 +49,6 @@ export default function ConsultDetail() {
   if (loading) {
     return (
       <View className="detail-page">
-        <View className="detail-navbar">
-          <Button className="detail-navbar__back" onClick={() => Taro.navigateBack()}>←</Button>
-          <Text className="detail-navbar__title">咨询详情</Text>
-        </View>
         <View className="detail-loading">
           <View className="detail-loading__skeleton" />
           <View className="detail-loading__skeleton" />
@@ -66,15 +62,10 @@ export default function ConsultDetail() {
   if (error || !data) {
     return (
       <View className="detail-page">
-        <View className="detail-navbar">
-          <Button className="detail-navbar__back" onClick={() => Taro.navigateBack()}>←</Button>
-          <Text className="detail-navbar__title">咨询详情</Text>
-        </View>
         <View className="detail-error">
           <Text className="detail-error__icon">📡</Text>
           <Text className="detail-error__title">加载失败</Text>
           <Text className="detail-error__subtitle">{error || '未知错误'}</Text>
-          <Button className="detail-error__btn" onClick={() => Taro.navigateBack()}>返回</Button>
         </View>
       </View>
     );
@@ -86,12 +77,6 @@ export default function ConsultDetail() {
 
   return (
     <View className="detail-page">
-      {/* 导航栏 */}
-      <View className="detail-navbar">
-        <Button className="detail-navbar__back" onClick={() => Taro.navigateBack()}>←</Button>
-        <Text className="detail-navbar__title">咨询详情</Text>
-      </View>
-
       {/* 咨询概要 */}
       <View className="detail-header">
         <View className="detail-header__meta">
