@@ -72,6 +72,15 @@ export function createSseCallbacks(
         chunkSection,
         chunkData.text,
       );
+      // DEBUG: 诊断流式渲染——输出每次 onChunk 的关键状态
+      if (chunkSection) {
+        console.debug('[sse] onChunk', {
+          seq: chunkData.sequence,
+          section: chunkSection,
+          text: chunkData.text,
+          sectionContentsLen: updatedSections.find((s) => s.title === chunkSection)?.contents.length ?? -1,
+        });
+      }
       set({
         accumulatedText: state.accumulatedText + chunkData.text,
         lastSequence: chunkData.sequence,
@@ -102,6 +111,13 @@ export function createSseCallbacks(
 
       const doneSections = doneData?.sections ?? {};
       const planSections = sectionsToPlanSections(doneSections);
+      console.debug('[sse] onDone', {
+        finish_reason: doneData?.finish_reason,
+        sectionsKeys: Object.keys(doneSections),
+        sectionsSizes: Object.fromEntries(
+          Object.entries(doneSections).map(([k, v]) => [k, Array.isArray(v) ? v.length : 0]),
+        ),
+      });
 
       const shouldShowTicket = verdict === 'FORCE_BLOCK' || verdict === 'APPEND_WARNING';
       const nextState = shouldShowTicket ? 'ticket_guide' : 'completed';
