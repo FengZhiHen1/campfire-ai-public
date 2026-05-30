@@ -1,8 +1,9 @@
 /**
- * CASE-09 案例管理逻辑 — 内部类型定义。
+ * CASE-09 案例管理逻辑 — 类型定义。
  *
- * 本模块的内部类型（CaseFormFields、FormErrors、CaseFormState）
- * 字段名和类型与 CASE-01 契约（CaseCreateRequest.json）的 properties 对齐。
+ * 本模块的所有类型定义集中管理。
+ * CaseFormFields / FormErrors / CaseFormState 字段对齐 CASE-01 契约（CaseCreateRequest.json）。
+ * NarrativeListItem / NarrativeDetail / CardSummary 原散落在 narrativeApi.ts，现已归并。
  *
  * 设计依据：
  * - 设计文档 §1.1 技术实现思路
@@ -16,12 +17,10 @@
 
 /** 案例表单所有字段 */
 export interface CaseFormFields {
-  // L1 字段
   title: string;
   narrative: string;
   source_type: string;
   author_id: string;
-  // L2 字段
   behavior_type: string;
   age_range: [number, number];
   severity: string;
@@ -35,7 +34,6 @@ export interface CaseFormFields {
   evidence_level: string;
   contraindications: string;
   is_template: boolean;
-  // 选填字段
   excluded_population: string;
 }
 
@@ -54,16 +52,11 @@ export interface FormErrors {
 
 /** Store 状态与方法 */
 export interface CaseFormState {
-  // 表单字段
   fields: CaseFormFields;
-  // 校验错误
   errors: FormErrors;
-  // 提交状态
   isSubmitting: boolean;
-  // 自动保存状态
   lastSavedAt: string | null;
   isDirty: boolean;
-  // 方法
   setField: (name: keyof CaseFormFields, value: string | number | boolean | string[] | [number, number]) => void;
   setFields: (partial: Partial<CaseFormFields>) => void;
   resetForm: () => void;
@@ -72,4 +65,50 @@ export interface CaseFormState {
   setErrors: (errors: FormErrors) => void;
   clearErrors: () => void;
   setSubmitting: (value: boolean) => void;
+}
+
+// ============================================================================
+// 叙事相关类型（原在 narrativeApi.ts 内联定义，现归并于此）
+// ============================================================================
+
+/** 叙事列表项 */
+export interface NarrativeListItem {
+  narrative_id: string;
+  title: string;
+  source_type: string;
+  author_id: string;
+  status: string;
+  card_count: number;
+  created_at: string;
+}
+
+/** 叙事详情 */
+export interface NarrativeDetail {
+  narrative_id: string;
+  title: string;
+  narrative: string;
+  source_type: string;
+  author_id: string;
+  status: string;
+  derived_card_ids: string[] | null;
+  cards: CardSummary[];
+  created_at: string;
+  updated_at: string;
+}
+
+/** 关联卡片摘要 */
+export interface CardSummary {
+  card_id: string;
+  title: string;
+  behavior_type: string;
+  severity: string;
+  scene: string;
+  review_status: string;
+  is_owner?: boolean;
+}
+
+/** 叙事列表分页响应 */
+export interface NarrativeListResponse {
+  items: NarrativeListItem[];
+  total: number;
 }
