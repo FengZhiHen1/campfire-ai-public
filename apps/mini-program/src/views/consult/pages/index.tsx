@@ -129,15 +129,7 @@ export default function ConsultIndex() {
   if (sessionState === 'selecting_behavior') {
     return (
       <View className="consult-page">
-        {/* 顶部导航栏 */}
-        <View className="consult-selection-navbar">
-          <Button className="consult-selection-navbar__back" onClick={cancelSelection}>
-            ←
-          </Button>
-          <Text className="consult-selection-navbar__title">应急咨询</Text>
-        </View>
-
-        {/* 主内容区 */}
+        {/* 主内容区 -->
         <ScrollView className="consult-selection-scroll" scrollY>
           {/* 区块A — 页头 */}
           <View className="consult-selection-header">
