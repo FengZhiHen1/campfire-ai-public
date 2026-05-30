@@ -3,7 +3,7 @@ import { View, Text, Button, Input, Picker } from '@tarojs/components';
 import Taro from '@tarojs/taro';
 import { useProfile } from '../../../logics/profiles';
 import { listEvents, deleteEvent as deleteEventApi } from '../../../logics/profiles/services/eventApi';
-import { DIAGNOSIS_OPTIONS, BEHAVIOR_OPTIONS, CUSTOM_TAG_MAX_LENGTH, NICKNAME_MAX_LENGTH, ERROR_AUTO_DISMISS_MS } from '../../../logics/profiles/constants';
+import { DIAGNOSIS_OPTIONS, BEHAVIOR_OPTIONS, SENSORY_FEATURE_TAGS, TRIGGER_TAGS, NICKNAME_MAX_LENGTH, ERROR_AUTO_DISMISS_MS } from '../../../logics/profiles/constants';
 import { validateProfileForm } from '../../../logics/profiles/utils/validateForm';
 import { formatDateStr } from '../../../logics/shared/utils/timeFormat';
 import TagSection from '../components/TagSection';
@@ -35,12 +35,11 @@ export default function ProfileEdit() {
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [originalValues, setOriginalValues] = useState({
     nickname: '', birthDate: '', diagnosisType: '', primaryBehavior: '',
+    sensoryFeatures: [] as string[], triggers: [] as string[],
   });
 
   // 标签状态
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
-  const [customTagInput, setCustomTagInput] = useState('');
-  const [customTags, setCustomTags] = useState<string[]>([]);
 
   // 事件状态
   const [events, setEvents] = useState<EventListItem[]>([]);
@@ -71,9 +70,10 @@ export default function ProfileEdit() {
           birthDate: data.birth_date || '',
           diagnosisType: data.diagnosis_type || '',
           primaryBehavior: data.primary_behavior || '',
+          sensoryFeatures: data.sensory_features || [],
+          triggers: data.triggers || [],
         });
-        setSelectedTags(data.sensory_features || []);
-        setCustomTags(data.triggers || []);
+        setSelectedTags([...(data.sensory_features || []), ...(data.triggers || [])]);
 
         setEventsLoading(true);
         listEvents(profileId)
@@ -89,15 +89,21 @@ export default function ProfileEdit() {
 
   // 修改检测
   const isDirty = useMemo(() => {
+    const origSensory = originalValues.sensoryFeatures || [];
+    const origTriggers = originalValues.triggers || [];
+    const currentSensory = selectedTags.filter((t) => SENSORY_FEATURE_TAGS.includes(t));
+    const currentTriggers = selectedTags.filter((t) => TRIGGER_TAGS.includes(t));
     return (
       nickname !== originalValues.nickname ||
       birthDate !== originalValues.birthDate ||
       diagnosisType !== originalValues.diagnosisType ||
       primaryBehavior !== originalValues.primaryBehavior ||
-      selectedTags.length > 0 ||
-      customTags.length > 0
+      currentSensory.length !== origSensory.length ||
+      currentTriggers.length !== origTriggers.length ||
+      !currentSensory.every((t) => origSensory.includes(t)) ||
+      !currentTriggers.every((t) => origTriggers.includes(t))
     );
-  }, [nickname, birthDate, diagnosisType, primaryBehavior, originalValues, selectedTags, customTags]);
+  }, [nickname, birthDate, diagnosisType, primaryBehavior, originalValues, selectedTags]);
 
   const canSave = !saving && (isEdit ? isDirty : true);
 
@@ -106,17 +112,6 @@ export default function ProfileEdit() {
     setSelectedTags((prev) =>
       prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag],
     );
-  };
-
-  const addCustomTag = () => {
-    const tag = customTagInput.trim();
-    if (!tag || tag.length > CUSTOM_TAG_MAX_LENGTH || customTags.includes(tag)) return;
-    setCustomTags((prev) => [...prev, tag]);
-    setCustomTagInput('');
-  };
-
-  const removeCustomTag = (tag: string) => {
-    setCustomTags((prev) => prev.filter((t) => t !== tag));
   };
 
   // 保存
@@ -132,8 +127,8 @@ export default function ProfileEdit() {
       birth_date: birthDate,
       diagnosis_type: diagnosisType as DiagnosisType,
       primary_behavior: primaryBehavior as ProfileBehaviorType,
-      sensory_features: selectedTags as SensoryFeature[],
-      triggers: customTags,
+      sensory_features: selectedTags.filter((t) => SENSORY_FEATURE_TAGS.includes(t)) as SensoryFeature[],
+      triggers: selectedTags.filter((t) => TRIGGER_TAGS.includes(t)),
     };
 
     setSaving(true);
@@ -340,12 +335,7 @@ export default function ProfileEdit() {
       <TagSection
         isEdit={isEdit}
         selectedTags={selectedTags}
-        customTags={customTags}
-        customTagInput={customTagInput}
         onToggleTag={toggleTag}
-        onCustomTagInputChange={setCustomTagInput}
-        onAddCustomTag={addCustomTag}
-        onRemoveCustomTag={removeCustomTag}
       />
 
       {isEdit && (

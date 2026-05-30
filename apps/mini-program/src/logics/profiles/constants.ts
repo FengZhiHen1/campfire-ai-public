@@ -15,7 +15,7 @@
  */
 
 import type { MicroSurveyQuestion } from './types/contracts';
-import { Trigger } from '@campfire/ts-shared';
+import { Trigger, SensoryFeature } from '@campfire/ts-shared';
 
 /** 干预有效性反馈选项 */
 export const INTERVENTION_FEEDBACK_OPTIONS: readonly string[] = ['有帮助', '一般', '无帮助'];
@@ -35,12 +35,15 @@ export const DEFAULT_QUESTIONS: readonly MicroSurveyQuestion[] = [
   },
 ];
 
-/** 所有预设触发因素值 */
-const ALL_TRIGGERS: readonly string[] = Object.values(Trigger);
+/** 感官特征预设值（与后端 SensoryFeature 枚举一致） */
+export const SENSORY_FEATURE_TAGS: readonly string[] = Object.values(SensoryFeature);
+
+/** 触发因素预设值（与后端 Trigger 枚举一致） */
+export const TRIGGER_TAGS: readonly string[] = Object.values(Trigger);
 
 /** 判断触发因素值是否为自定义文本（非预设 Trigger 枚举值） */
 export function isCustomTrigger(value: string): boolean {
-  return !ALL_TRIGGERS.includes(value);
+  return !TRIGGER_TAGS.includes(value);
 }
 
 /** 诊断类型选项 */
@@ -55,10 +58,10 @@ export const SEVERITY_OPTIONS: readonly string[] = ['轻', '中', '重'];
 /** 发生场景选项 */
 export const SETTING_OPTIONS: readonly string[] = ['家庭', '学校', '公共场合', '机构'];
 
-/** 预设标签 */
+/** 预设标签——感官特征 + 触发因素合并（编辑页标签选择器使用） */
 export const PRESET_TAGS: readonly string[] = [
-  '感官敏感', '睡眠障碍', '社交回避', '语言发育迟缓',
-  '刻板行为', '注意力缺陷', '情绪调节困难', '饮食挑剔', '如厕困难', '分离焦虑',
+  ...SENSORY_FEATURE_TAGS,
+  ...TRIGGER_TAGS,
 ];
 
 /** 档案数量上限 */

@@ -28,14 +28,14 @@ export enum LanguageLevel {
   CONVERSATIONAL = 'conversational',
 }
 
-/** 感官特征 */
+/** 感官特征——枚举值与后端 py-schemas SensoryFeature StrEnum 一致 */
 export enum SensoryFeature {
-  AUDITORY_SENSITIVITY = 'auditory_sensitivity',
-  TACTILE_SENSITIVITY = 'tactile_sensitivity',
-  GUSTATORY_SENSITIVITY = 'gustatory_sensitivity',
-  VISUAL_SENSITIVITY = 'visual_sensitivity',
-  VESTIBULAR_SEEKING = 'vestibular_seeking',
-  PROPRIOCEPTIVE_SEEKING = 'proprioceptive_seeking',
+  AUDITORY_SENSITIVITY = '听觉敏感',
+  TACTILE_SENSITIVITY = '触觉敏感',
+  GUSTATORY_SENSITIVITY = '味觉敏感',
+  VISUAL_SENSITIVITY = '视觉敏感',
+  VESTIBULAR_SEEKING = '前庭寻求',
+  PROPRIOCEPTIVE_SEEKING = '本体觉寻求',
 }
 
 /** 触发因素——枚举值与后端 py-schemas Trigger StrEnum 一致 */
