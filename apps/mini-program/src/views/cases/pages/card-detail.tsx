@@ -71,10 +71,6 @@ export default function CardDetail() {
   if (error || !data) {
     return (
       <View className="cd-page">
-        <View className="cd-navbar">
-          <Button className="cd-navbar__back" onClick={() => Taro.navigateBack()}>←</Button>
-          <Text className="cd-navbar__title">案例卡片</Text>
-        </View>
         <View className="cd-loading">
           <Text className="cd-loading__text">{error || '未找到案例卡片'}</Text>
           <Button className="cd-retry-btn" onClick={fetchCard}>重试</Button>
@@ -85,10 +81,6 @@ export default function CardDetail() {
 
   return (
     <View className="cd-page">
-      <View className="cd-navbar">
-        <Button className="cd-navbar__back" onClick={() => Taro.navigateBack()}>←</Button>
-        <Text className="cd-navbar__title">案例卡片</Text>
-      </View>
 
       <ScrollView className="cd-scroll" scrollY>
         {/* 概览 */}

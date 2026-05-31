@@ -8,25 +8,6 @@
   flex-direction: column;
 }
 
-/* ========== 顶部导航栏 ========== */
-.er-navbar {
-  height: 88px;
-  background-color: $cf-surface-dim;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  position: relative;
-  padding: 0 $cf-spacing-md;
-  z-index: 50;
-  flex-shrink: 0;
-
-  &__title {
-    font-size: 36px;
-    font-weight: 600;
-    color: $cf-on-background;
-  }
-}
-
 /* ========== 加载状态 ========== */
 .er-loading {
   flex: 1;

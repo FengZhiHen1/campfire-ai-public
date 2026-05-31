@@ -1,5 +1,4 @@
 import { View, Text, Button } from '@tarojs/components';
-import Taro from '@tarojs/taro';
 import { useCaseDetailPage } from '../../../logics/cases';
 import type { CardSummary } from '../../../logics/cases';
 import MarkdownRenderer from '../../../logics/shared/components/MarkdownRenderer';
@@ -23,9 +22,6 @@ export default function CasesDetail() {
   if (loading) {
     return (
       <View className="detail-page">
-        <View className="detail-navbar">
-          <Text className="detail-navbar__title">案例详情</Text>
-        </View>
         <View className="detail-loading">
           <View className="detail-loading__skeleton" />
           <Text className="detail-loading__text">加载中…</Text>
@@ -38,10 +34,6 @@ export default function CasesDetail() {
   if (error) {
     return (
       <View className="detail-page">
-        <View className="detail-navbar">
-          <Button className="detail-navbar__back" onClick={() => Taro.navigateBack()}>&larr;</Button>
-          <Text className="detail-navbar__title">案例详情</Text>
-        </View>
         <View className="detail-loading">
           <Text className="detail-loading__text">{error}</Text>
           <Button className="detail-actions__btn detail-actions__btn--primary" onClick={handleRetry}>
@@ -56,10 +48,6 @@ export default function CasesDetail() {
   if (!data) {
     return (
       <View className="detail-page">
-        <View className="detail-navbar">
-          <Button className="detail-navbar__back" onClick={() => Taro.navigateBack()}>&larr;</Button>
-          <Text className="detail-navbar__title">案例详情</Text>
-        </View>
         <View className="detail-loading">
           <Text className="detail-loading__text">未找到案例</Text>
         </View>
@@ -75,11 +63,6 @@ export default function CasesDetail() {
 
   return (
     <View className="detail-page">
-      {/* 导航栏 */}
-      <View className="detail-navbar">
-        <Text className="detail-navbar__title">案例详情</Text>
-      </View>
-
       {/* 概览信息 */}
       <View className="detail-overview">
         <Text className="detail-overview__title">{data.title}</Text>

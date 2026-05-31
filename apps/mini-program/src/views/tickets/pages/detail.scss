@@ -7,28 +7,6 @@
   flex-direction: column;
 }
 
-.ticket-detail-navbar {
-  display: flex;
-  align-items: center;
-  padding: 24px 32px;
-  background: $cf-surface;
-}
-
-.ticket-detail-navbar__back {
-  font-size: 36px;
-  color: $cf-on-background;
-  background: none;
-  border: none;
-  padding: 0;
-  margin-right: 24px;
-}
-
-.ticket-detail-navbar__title {
-  font-size: 34px;
-  font-weight: 600;
-  color: $cf-on-background;
-}
-
 .ticket-detail-body {
   flex: 1;
   display: flex;
