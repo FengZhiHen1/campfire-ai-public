@@ -262,7 +262,7 @@
 .profile-timeline-header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  position: relative;
   padding: $cf-spacing-sm $cf-spacing-md;
   background-color: $cf-background;
 
@@ -280,6 +280,10 @@
   }
 
   &__add {
+    position: absolute;
+    right: 0;
+    top: 50%;
+    transform: translateY(-50%);
     width: 80px;
     height: 80px;
     font-size: $cf-headline-sm;
@@ -297,7 +301,7 @@
     }
 
     &:active {
-      transform: scale(0.9);
+      transform: translateY(-50%) scale(0.9);
     }
   }
 }
