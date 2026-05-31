@@ -28,7 +28,7 @@
 
   &__review {
     position: absolute;
-    right: 128px;
+    right: 96px;
     font-size: 28px;
     color: $cf-primary;
     background: none;
@@ -51,7 +51,7 @@
 
   &__menu-btn {
     position: absolute;
-    right: $cf-spacing-md;
+    right: 0;
     font-size: 32px;
     color: $cf-on-background;
     background: none;
