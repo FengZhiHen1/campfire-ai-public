@@ -74,7 +74,7 @@ class ConsultationOrchestratorImpl(BaseConsultationOrchestrator):
         try:
             pid = uuid.UUID(profile_id)
         except ValueError:
-            logger.warning("invalid_profile_id", extra={"profile_id": profile_id})
+            logger.warning("consult", "invalid_profile_id", extra={"profile_id": profile_id})
             return ProfileSummary("（未关联档案）")
 
         result = await db.execute(
@@ -82,7 +82,7 @@ class ConsultationOrchestratorImpl(BaseConsultationOrchestrator):
         )
         profile = result.scalars().first()
         if profile is None:
-            logger.warning("profile_not_found", extra={"profile_id": profile_id})
+            logger.warning("consult", "profile_not_found", extra={"profile_id": profile_id})
             return ProfileSummary("（未关联档案）")
 
         # 计算年龄
@@ -184,7 +184,7 @@ class ConsultationOrchestratorImpl(BaseConsultationOrchestrator):
                     try:
                         behavior_type_selection.append(BehaviorTypeCategory(bt))
                     except ValueError:
-                        logger.warning("invalid_behavior_type", extra={"value": bt})
+                        logger.warning("consult", "invalid_behavior_type", extra={"value": bt})
 
             if not behavior_type_selection:
                 behavior_type_selection = [BehaviorTypeCategory.OTHER]
