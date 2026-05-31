@@ -105,8 +105,7 @@ export default function ConsultIndex() {
       <View className="consult-page">
         <View className="consult-idle">
           <View className="consult-idle__hero">
-            <View className="consult-idle__hero-glow" />
-            <View className="consult-idle__hero-core" />
+            <Text className="consult-idle__hero-icon">🔥</Text>
           </View>
           <Text className="consult-idle__title">应急咨询</Text>
           <Text className="consult-idle__subtitle">
