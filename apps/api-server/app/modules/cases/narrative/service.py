@@ -56,6 +56,7 @@ class NarrativeManagementService(NarrativeManagementContract):
         await session.commit()
         await session.refresh(entity)
         logger.info(
+            "narrative",
             "narrative_created",
             extra={
                 "narrative_id": str(entity.narrative_id),
@@ -135,6 +136,7 @@ class NarrativeManagementService(NarrativeManagementContract):
         await session.commit()
         await session.refresh(entity)
         logger.info(
+            "narrative",
             "narrative_updated",
             extra={
                 "narrative_id": narrative_id,
@@ -180,6 +182,7 @@ class NarrativeManagementService(NarrativeManagementContract):
         await session.commit()
         await session.refresh(entity)
         logger.info(
+            "narrative",
             "narrative_submitted",
             extra={
                 "narrative_id": narrative_id,
@@ -272,6 +275,7 @@ class NarrativeManagementService(NarrativeManagementContract):
         await session.commit()
         await session.refresh(entity)
         logger.info(
+            "card",
             "card_submitted",
             extra={"card_id": card_id},
         )
@@ -323,6 +327,7 @@ class NarrativeManagementService(NarrativeManagementContract):
         await enqueue_index_task(str(entity.card_id))
 
         logger.info(
+            "card",
             "card_approved",
             extra={
                 "card_id": card_id,
