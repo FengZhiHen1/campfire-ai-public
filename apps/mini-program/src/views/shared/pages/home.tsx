@@ -98,7 +98,7 @@ export default function HomePage() {
           <Text className="home-consult-card__summary">
             {latestConsult.behavior_description || '（暂无描述）'}
           </Text>
-          <Text className="home-consult-card__action">→ 继续对话</Text>
+          <Text className="home-consult-card__action">→ 开始咨询</Text>
         </View>
       ) : (
         <View className="home-consult-empty">
