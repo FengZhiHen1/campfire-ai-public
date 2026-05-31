@@ -52,7 +52,7 @@
 
   &__stats-btn {
     position: absolute;
-    right: $cf-spacing-md;
+    right: 0;
     font-size: 28px;
     color: $cf-primary;
     background: none;
@@ -467,7 +467,7 @@
   &__close {
     position: absolute;
     top: $cf-spacing-sm;
-    right: $cf-spacing-md;
+    right: 0;
     font-size: 32px;
     color: $cf-on-surface-variant;
     background: none;
