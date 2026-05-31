@@ -183,7 +183,7 @@ class ExtractionService(ExtractionServiceContract):
                 response_format={"type": "json_object"},
             )
         except Exception as exc:
-            logger.exception("llm_extraction_failed")
+            logger.error("extraction", "llm_extraction_failed", extra={"error": str(exc)})
             raise ExtractionError(str(exc)) from exc
 
         # 解析 JSON
@@ -197,7 +197,7 @@ class ExtractionService(ExtractionServiceContract):
             cards_data = result.get("cards", [])
         except (json.JSONDecodeError, KeyError) as exc:
             logger.error(
-                "extraction_parse_failed", extra={"raw": response_text[:500]},
+                "extraction", "extraction_parse_failed", extra={"raw": response_text[:500]},
             )
             raise ExtractionError(f"JSON 解析失败: {exc}") from exc
 
@@ -242,7 +242,7 @@ class ExtractionService(ExtractionServiceContract):
         for c in cards:
             await db.refresh(c)
 
-        logger.info("extraction_completed", extra={
+        logger.info("extraction", "extraction_completed", extra={
             "narrative_id": narrative_id, "card_count": len(cards),
         })
         return cards
