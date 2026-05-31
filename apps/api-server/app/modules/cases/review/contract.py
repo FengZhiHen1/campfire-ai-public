@@ -25,6 +25,7 @@ from datetime import datetime
 from typing import Any, final
 
 from py_db.repositories.case_repository import CaseRepository
+from py_db.repositories.narrative_repository import NarrativeRepository
 from py_db.repositories.review_repository import (
     ReviewAuditLogRepository,
     ReviewRepository,
@@ -150,6 +151,7 @@ class ReviewWorkflowContract(ABC):
         session: AsyncSession,
         case_repo: CaseRepository,
         review_repo: ReviewRepository,
+        narrative_repo: NarrativeRepository,
     ) -> PaginatedResponse[ReviewQueueItem]:
         """查看待审核队列。
 
@@ -160,7 +162,7 @@ class ReviewWorkflowContract(ABC):
         """
         self._validate_queue_params(page, page_size)
         result = await self._do_list_review_queue(
-            status_filter, page, page_size, session, case_repo, review_repo,
+            status_filter, page, page_size, session, case_repo, review_repo, narrative_repo,
         )
         if result is None:
             raise RuntimeError("ReviewWorkflowContract.list_review_queue 返回了 None")
@@ -200,6 +202,7 @@ class ReviewWorkflowContract(ABC):
         session: AsyncSession,
         case_repo: CaseRepository,
         review_repo: ReviewRepository,
+        narrative_repo: NarrativeRepository,
     ) -> PaginatedResponse[ReviewQueueItem]:
         """查看待审核队列的核心逻辑。
 

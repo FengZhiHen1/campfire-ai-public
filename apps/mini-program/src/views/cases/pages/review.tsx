@@ -55,7 +55,7 @@ export default function ReviewPage() {
 
   // ---- 当前面板案例 ----
   const sheetCase = useMemo(
-    () => queue.find((i) => i.case_id === sheetCaseId) ?? null,
+    () => queue.find((i) => i.narrative_id === sheetCaseId) ?? null,
     [queue, sheetCaseId]
   );
 
@@ -70,7 +70,7 @@ export default function ReviewPage() {
   };
 
   const selectAll = () => {
-    setSelectedIds(new Set(filteredQueue.map((i) => i.case_id)));
+    setSelectedIds(new Set(filteredQueue.map((i) => i.narrative_id)));
   };
 
   const clearSelection = () => {
@@ -156,7 +156,7 @@ export default function ReviewPage() {
       Taro.showToast({ title: '驳回意见至少 5 个字', icon: 'none' });
       return;
     }
-    await handleReject(sheetCase.case_id, comment);
+    await handleReject(sheetCase.narrative_id, comment);
     setSheetExpandedReject(false);
     setSheetRejectComment('');
     closeSheet();
@@ -277,12 +277,12 @@ export default function ReviewPage() {
         {/* 案例列表 */}
         {filteredQueue.map((item) => {
           const aiProgress = getAiProgress(item.ai_review_overall);
-          const isSelected = selectedIds.has(item.case_id);
-          const isSubmitting = actionState.isSubmitting && actionState.targetCaseId === item.case_id;
+          const isSelected = selectedIds.has(item.narrative_id);
+          const isSubmitting = actionState.isSubmitting && actionState.targetCaseId === item.narrative_id;
 
           return (
             <View
-              key={item.case_id}
+              key={item.narrative_id}
               className={`review-row ${isSubmitting ? 'review-row--exiting' : ''}`}
             >
               {/* 左侧状态条 */}
@@ -291,7 +291,7 @@ export default function ReviewPage() {
               />
 
               {/* 复选框 */}
-              <View className="review-row__checkbox" onClick={() => toggleSelect(item.case_id)}>
+              <View className="review-row__checkbox" onClick={() => toggleSelect(item.narrative_id)}>
                 <View className={`review-row__checkbox-box ${isSelected ? 'review-row__checkbox-box--checked' : ''}`}>
                   {isSelected && <Text className="review-row__checkbox-tick">&#10003;</Text>}
                 </View>
@@ -331,7 +331,7 @@ export default function ReviewPage() {
               {/* 去审核按钮 */}
               <Button
                 className="review-row__action"
-                onClick={() => openSheet(item.case_id)}
+                onClick={() => openSheet(item.narrative_id)}
               >
                 审核
               </Button>
@@ -413,7 +413,7 @@ export default function ReviewPage() {
             className="review-sheet__link"
             onClick={() => {
               closeSheet();
-              Taro.navigateTo({ url: `/views/cases/pages/detail?narrativeId=${sheetCase.case_id}` });
+              Taro.navigateTo({ url: `/views/cases/pages/detail?narrativeId=${sheetCase.narrative_id}` });
             }}
           >
             查看完整案例 &#8250;
@@ -423,7 +423,7 @@ export default function ReviewPage() {
           <View className="review-sheet__actions">
             <Button
               className="review-sheet__btn review-sheet__btn--pass"
-              onClick={() => onSingleApprove(sheetCase.case_id)}
+              onClick={() => onSingleApprove(sheetCase.narrative_id)}
             >
               &#10003; 通过
             </Button>

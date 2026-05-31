@@ -20,11 +20,13 @@ from app.core.dependencies.anonymous_user import get_anonymous_user
 from app.core.dependencies.auth_dependencies import (
     get_case_repository,
     get_db_session,
+    get_narrative_repository,
     get_review_audit_log_repository,
     get_review_repository,
 )
 from .service import ReviewWorkflowService
 from py_db.repositories.case_repository import CaseRepository
+from py_db.repositories.narrative_repository import NarrativeRepository
 from py_db.repositories.review_repository import (
     ReviewAuditLogRepository,
     ReviewRepository,
@@ -104,6 +106,7 @@ async def list_review_queue_endpoint(
     session: AsyncSession = Depends(get_db_session),
     case_repo: CaseRepository = Depends(get_case_repository),
     review_repo: ReviewRepository = Depends(get_review_repository),
+    narrative_repo: NarrativeRepository = Depends(get_narrative_repository),
 ) -> PaginatedResponse[ReviewQueueItem]:
     """查看待审核队列端点。"""
     return await _review_service.list_review_queue(
@@ -113,6 +116,7 @@ async def list_review_queue_endpoint(
         session=session,
         case_repo=case_repo,
         review_repo=review_repo,
+        narrative_repo=narrative_repo,
     )
 
 

@@ -25,6 +25,7 @@ from py_config import get_settings
 from py_logger import logger
 from py_db.models.review_models import CaseReview
 from py_db.repositories.case_repository import CaseRepository
+from py_db.repositories.narrative_repository import NarrativeRepository
 from py_db.repositories.review_repository import (
     ReviewAuditLogRepository,
     ReviewRepository,
@@ -309,14 +310,15 @@ class ReviewWorkflowService(ReviewWorkflowContract):
         session: AsyncSession,
         case_repo: CaseRepository,
         review_repo: ReviewRepository,
+        narrative_repo: NarrativeRepository,
     ) -> PaginatedResponse[ReviewQueueItem]:
         """查看待审核队列的核心逻辑。
 
         契约前置已处理: 分页参数校验。
-        实现者在此: 查询 pending_review 案例 → 计算超时状态 → 分页组装。
+        实现者在此: 查询 pending_review 叙事 → 计算超时状态 → 分页组装。
         """
-        # 查询所有 pending_review 状态的案例（不限制 author_id）
-        cases, total_count = await case_repo.find_by_filters(
+        # 查询所有 pending_review 状态的叙事（不限制 author_id）
+        narratives, total_count = await narrative_repo.find_by_filters(
             session,
             status=CaseStatus.PENDING_REVIEW,
             author_id=None,
@@ -327,22 +329,22 @@ class ReviewWorkflowService(ReviewWorkflowContract):
         now: datetime = datetime.now(timezone.utc)
         items: list[ReviewQueueItem] = []
 
-        for case in cases:
+        for narrative in narratives:
             # MVP 跳过 AI 预审
             ai_review_overall = "pass"
 
             # 提交时间取 created_at
-            submitted_at: datetime = case.created_at
+            submitted_at: datetime = narrative.created_at
 
             # 计算截止时间和超时状态
             deadline: datetime = _calculate_deadline(submitted_at)
             timeout_status: str = _get_timeout_status(deadline)
 
             items.append(ReviewQueueItem(
-                case_id=case.case_id,
-                title=case.title,
-                author_name=case.author_id,
-                behavior_type=case.behavior_type,
+                narrative_id=str(narrative.narrative_id),
+                title=narrative.title,
+                author_name=narrative.author_id,
+                behavior_type="",  # L1 叙事层不包含行为类型，待提取后由 L2 卡片填充
                 submitted_at=submitted_at,
                 ai_review_overall=ai_review_overall,
                 deadline=deadline,
