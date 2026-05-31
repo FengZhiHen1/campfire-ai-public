@@ -95,15 +95,16 @@ export function useReviewPage(): UseReviewPageReturn {
 
   const user = useSessionStore((s) => s.user);
   const roles: string[] = user?.roles ?? [];
-  const canReview = roles.includes('expert') || roles.includes('admin');
+  // TODO: 暂时关闭权限隔离，后续恢复
+  const canReview = true; // roles.includes('expert') || roles.includes('admin');
 
-  // ===== 门禁：非审核角色自动返回 =====
-  useEffect(() => {
-    if (!canReview) {
-      Taro.showToast({ title: '暂无审核权限', icon: 'none' });
-      Taro.navigateBack();
-    }
-  }, [canReview]);
+  // TODO: 暂时关闭权限隔离，后续恢复
+  // useEffect(() => {
+  //   if (!canReview) {
+  //     Taro.showToast({ title: '暂无审核权限', icon: 'none' });
+  //     Taro.navigateBack();
+  //   }
+  // }, [canReview]);
 
   // ===== fetchQueue =====
   const fetchQueue = useCallback(async (targetPage: number = 1): Promise<void> => {
