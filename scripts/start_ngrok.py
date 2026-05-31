@@ -159,12 +159,24 @@ class NgrokLauncher(ServiceLauncher):
 
     @staticmethod
     def _read_process_output(proc: subprocess.Popen) -> str:
-        out = ""
-        if proc.stdout is not None:
-            out += proc.stdout.read()
-        if proc.stderr is not None:
-            out += proc.stderr.read()
-        return out
+        """尝试读取进程输出（非阻塞）。读取失败时返回空字符串。"""
+        parts: list[str] = []
+        for pipe in (proc.stdout, proc.stderr):
+            if pipe is None:
+                continue
+            try:
+                import os
+                fd = pipe.fileno()
+                os.set_blocking(fd, False)
+            except OSError:
+                pass
+            try:
+                chunk = pipe.read()
+                if chunk:
+                    parts.append(chunk)
+            except Exception:
+                pass
+        return "".join(parts)
 
 
 # ---------------------------------------------------------------------------
