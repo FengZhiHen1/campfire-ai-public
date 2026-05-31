@@ -146,7 +146,7 @@ class BaseConsultationOrchestrator(ABC):
                     async for chunk in generator:
                         await chunk_queue.put(chunk)
                 except Exception:
-                    logger.exception(
+                    logger.error(
                         service="api-server",
                         message="pipeline_background_failed",
                         op_type="pipeline_background",

@@ -196,7 +196,12 @@ class ConsultationOrchestratorImpl(BaseConsultationOrchestrator):
             )
             return await judge_crisis(crisis_request)
         except Exception:
-            logger.exception("crisis_judgment_failed_fallback_to_mild")
+            logger.error(
+                "consult",
+                "crisis_judgment_failed",
+                op_type="crisis_judgment_fallback",
+                extra={"error": "crisis_judgment_failed"},
+            )
             return CrisisJudgmentResult(
                 final_level=CrisisLevel.MILD,
                 block_deep_response=False,
