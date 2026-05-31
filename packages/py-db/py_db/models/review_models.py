@@ -42,11 +42,11 @@ class CaseReview(Base, TimestampMixin):
         comment="UUID v4 主键",
     )
     case_id: Mapped[str] = mapped_column(
-        String(20),
-        ForeignKey("cases.case_id", ondelete="CASCADE"),
+        String(50),
+        ForeignKey("case_narratives.narrative_id", ondelete="CASCADE"),
         nullable=False,
         index=True,
-        comment="关联的案例标识（FK → cases.case_id）",
+        comment="关联的案例标识（FK → case_narratives.narrative_id）",
     )
     review_round: Mapped[int] = mapped_column(
         Integer,
@@ -127,7 +127,7 @@ class ReviewAuditLog(Base):
         comment="BIGSERIAL 自增主键，记录顺序不可伪造",
     )
     case_id: Mapped[str] = mapped_column(
-        String(20),
+        String(50),
         nullable=False,
         index=True,
         comment="关联的案例标识",

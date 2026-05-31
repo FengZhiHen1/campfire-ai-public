@@ -170,22 +170,20 @@ class ReviewWorkflowService(ReviewWorkflowContract):
         review_request: ReviewRequest,
         current_user: dict[str, Any],
         session: AsyncSession,
-        case_repo: CaseRepository,
+        narrative_repo: NarrativeRepository,
         review_repo: ReviewRepository,
         audit_repo: ReviewAuditLogRepository,
+        narrative: Any,
         ai_review: AiReviewSummary,
     ) -> CaseReviewResponse:
         """执行审核裁决的核心逻辑。
-
-        契约前置已处理: case_id 非空、案例存在性、status=pending_review、
-        非自审、AI 预审执行、PII 硬门槛、驳回意见长度。
 
         实现者在此: CAS 状态更新 → 审核记录写入 → 审计日志写入 →
                     异步入队 → 事务提交。
         """
         reviewer_id: str = current_user.get("sub", "")
 
-        # ---- CAS 更新案例状态 ----
+        # ---- CAS 更新叙事状态 ----
         new_status: CaseStatus = (
             CaseStatus.APPROVED
             if review_request.decision == "approved"
@@ -193,7 +191,7 @@ class ReviewWorkflowService(ReviewWorkflowContract):
         )
 
         try:
-            updated_case = await case_repo.update_status(
+            updated_narrative = await narrative_repo.update_status(
                 session,
                 case_id,
                 new_status,
@@ -201,10 +199,9 @@ class ReviewWorkflowService(ReviewWorkflowContract):
                 review_comment=review_request.review_comment,
             )
         except ValueError as exc:
-            raise RuntimeError(f"CAS 更新案例状态失败：{exc}") from exc
+            raise RuntimeError(f"CAS 更新叙事状态失败：{exc}") from exc
 
         # ---- 写入审核记录 ----
-        # 计算 review_round
         latest_review: CaseReview | None = await review_repo.get_latest_review(
             session, case_id
         )
@@ -243,7 +240,6 @@ class ReviewWorkflowService(ReviewWorkflowContract):
             },
         )
 
-        # ---- 如果 override，额外记录 override 审计日志 ----
         if is_override:
             await audit_repo.insert_audit_log(
                 session=session,
@@ -257,14 +253,10 @@ class ReviewWorkflowService(ReviewWorkflowContract):
                 },
             )
 
-        # ---- MVP 简化：审核通过后更新案例 index_status 为 pending ----
-        if review_request.decision == "approved":
-            updated_case.index_status = "pending"
-
         # ---- 提交事务 ----
         try:
             await session.commit()
-            await session.refresh(updated_case)
+            await session.refresh(updated_narrative)
         except Exception as exc:
             await session.rollback()
             logger.error(

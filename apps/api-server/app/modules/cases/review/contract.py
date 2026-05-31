@@ -84,6 +84,7 @@ class ReviewWorkflowContract(ABC):
         case_repo: CaseRepository,
         review_repo: ReviewRepository,
         audit_repo: ReviewAuditLogRepository,
+        narrative_repo: NarrativeRepository,
     ) -> CaseReviewResponse:
         """专家终审 — 提交审核裁决。
 
@@ -122,7 +123,7 @@ class ReviewWorkflowContract(ABC):
         """
         # 步骤 1-4：前置校验
         self._validate_review_preconditions(case_id, review_request, current_user)
-        case = await self._load_case_for_review(case_id, session, case_repo)
+        case = await self._load_case_for_review(case_id, session, narrative_repo)
         reviewer_id = current_user.get("sub", "")
         self._validate_case_reviewable(case, reviewer_id)
 
@@ -136,7 +137,7 @@ class ReviewWorkflowContract(ABC):
         # 步骤 8-10：执行审核
         result = await self._do_submit_review(
             case_id, review_request, current_user, session,
-            case_repo, review_repo, audit_repo, ai_review,
+            narrative_repo, review_repo, audit_repo, case, ai_review,
         )
 
         self._validate_review_result(result, case_id)
@@ -179,15 +180,14 @@ class ReviewWorkflowContract(ABC):
         review_request: ReviewRequest,
         current_user: dict[str, Any],
         session: AsyncSession,
-        case_repo: CaseRepository,
+        narrative_repo: NarrativeRepository,
         review_repo: ReviewRepository,
         audit_repo: ReviewAuditLogRepository,
+        narrative: Any,
         ai_review: AiReviewSummary,
     ) -> CaseReviewResponse:
         """执行审核裁决的核心逻辑。
 
-        不需要关心: 案例存在性、状态校验、审核人校验、PII 硬门槛、
-                   驳回意见长度、AI 预审执行（上游已处理）。
         实现者在此: CAS 状态更新 → 审核记录写入 → 审计日志写入 →
                     异步入队 → 事务提交。
         """
@@ -231,27 +231,27 @@ class ReviewWorkflowContract(ABC):
         self,
         case_id: str,
         session: AsyncSession,
-        case_repo: CaseRepository,
+        narrative_repo: NarrativeRepository,
     ) -> Any:
-        """加载案例并校验存在性。"""
-        case = await case_repo.find_by_case_id(session, case_id)
-        if case is None:
+        """加载叙事并校验存在性。"""
+        narrative = await narrative_repo.find_by_narrative_id(session, case_id)
+        if narrative is None:
             raise CaseNotFoundError(case_id)
-        return case
+        return narrative
 
     def _validate_case_reviewable(self, case: Any, reviewer_id: str) -> None:
-        """校验案例可审核性：状态 + 非自审。"""
+        """校验叙事可审核性：状态 + 非自审。"""
         # 状态校验
         if case.status != CaseStatus.PENDING_REVIEW:
             current = case.status.value if hasattr(case.status, "value") else str(case.status)
             raise CaseStatusError(
-                str(case.case_id), current, "pending_review"
+                str(case.narrative_id), current, "pending_review"
             )
 
         # 禁止自审
         if case.author_id == reviewer_id:
             raise SelfReviewForbiddenError(
-                str(case.case_id), reviewer_id, str(case.author_id)
+                str(case.narrative_id), reviewer_id, str(case.author_id)
             )
 
     def _run_ai_pre_review_for_case(self, case: Any) -> AiReviewSummary:

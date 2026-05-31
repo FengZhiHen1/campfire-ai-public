@@ -7,8 +7,9 @@
 from __future__ import annotations
 
 from typing import Any
+from uuid import UUID
 
-from sqlalchemy import or_, select
+from sqlalchemy import and_, or_, select, update as sa_update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql import Select, func as sa_func
 
@@ -29,6 +30,65 @@ class NarrativeRepository(BaseRepository[CaseNarrative]):
     """
 
     model = CaseNarrative
+
+    async def find_by_narrative_id(
+        self,
+        session: AsyncSession,
+        narrative_id: str,
+    ) -> CaseNarrative | None:
+        """按 narrative_id 查询单条叙事。
+
+        Args:
+            session: 活动数据库会话。
+            narrative_id: 叙事 UUID（字符串或 UUID 对象均可）。
+
+        Returns:
+            匹配的 CaseNarrative 实例，不存在时返回 None。
+        """
+        async def _query() -> CaseNarrative | None:
+            uid = UUID(narrative_id) if isinstance(narrative_id, str) else narrative_id
+            stmt: Select = select(self.model).where(self.model.narrative_id == uid)
+            result = await session.execute(stmt)
+            return result.scalars().first()
+
+        return await self._execute_with_retry(session, "find_by_narrative_id", _query)
+
+    async def update_status(
+        self,
+        session: AsyncSession,
+        narrative_id: str,
+        new_status: CaseStatus,
+        expected_status: CaseStatus | None = None,
+        review_comment: str | None = None,
+    ) -> CaseNarrative:
+        """原子性更新叙事状态。
+
+        若提供 expected_status，使用 CAS 乐观锁。
+        """
+        async def _update() -> CaseNarrative:
+            uid = UUID(narrative_id) if isinstance(narrative_id, str) else narrative_id
+            conditions = [self.model.narrative_id == uid]
+            if expected_status is not None:
+                conditions.append(self.model.status == expected_status)
+
+            values: dict[str, object] = {"status": new_status}
+            if review_comment is not None:
+                values["review_comment"] = review_comment
+
+            result = await session.execute(
+                sa_update(self.model).where(and_(*conditions)).values(**values)
+            )
+            if result.rowcount == 0:
+                raise ValueError(
+                    f"叙事 {narrative_id} 不存在或状态已变更（预期 {expected_status}）"
+                )
+
+            narrative = await self.find_by_narrative_id(session, narrative_id)
+            assert narrative is not None
+            await session.refresh(narrative)
+            return narrative
+
+        return await self._execute_with_retry(session, "update_status", _update)
 
     async def find_by_filters(
         self,
