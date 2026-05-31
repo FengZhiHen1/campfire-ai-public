@@ -72,7 +72,7 @@ export default function ConsultHistory() {
 
   return (
     <View className="history-page">
-      {/* 搜索栏 -->
+      {/* 搜索栏 */}
       <View className="history-search">
         <View className="history-search__input-wrap">
           <Text className="history-search__icon">🔍</Text>
