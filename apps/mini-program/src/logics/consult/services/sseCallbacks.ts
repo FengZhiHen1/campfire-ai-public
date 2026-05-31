@@ -67,6 +67,12 @@ export function createSseCallbacks(
     // ---- onChunk：增量追加文本到对应段落 ----
     onChunk: (chunkData) => {
       const state = get();
+
+      // 首个真实内容 chunk 到达 → 从 submitting/submit_failed 切到 streaming
+      if (state.sessionState === 'submitting') {
+        set({ sessionState: transitionTo(state.sessionState, 'streaming') });
+      }
+
       const chunkSection = chunkData.section ?? null;
       const updatedSections = appendToPlanSections(
         state.planSections,
