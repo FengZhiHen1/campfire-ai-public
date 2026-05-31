@@ -254,7 +254,7 @@ async def _run_extraction_background(
                     await bg_db.commit()
             except Exception:
                 pass
-            logger.exception(
+            logger.error(
                 service="api-server",
                 message="extraction_background_failed",
                 extra={"narrative_id": narrative_id},

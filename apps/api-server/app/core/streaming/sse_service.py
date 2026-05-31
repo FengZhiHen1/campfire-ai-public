@@ -765,7 +765,7 @@ class SseStreamingService:
                     )
                 await db.commit()
         except Exception:
-            logger.exception(
+            logger.error(
                 service="streaming",
                 message="archive_failed_in_sse",
                 extra={

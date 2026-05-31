@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import secrets
 
-from fastapi import Request
+from fastapi import Depends, Request
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -18,6 +18,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from py_db.models.auth import User
 from py_logger import logger
 from py_schemas.auth import UserRole
+
+from app.core.dependencies.auth_dependencies import get_db_session
 
 _ANON_PASSWORD_HASH: str = (
     "$2b$12$xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
@@ -94,12 +96,15 @@ async def _get_or_create_anonymous_user(
 
 async def get_anonymous_user(
     request: Request,
+    db: AsyncSession = Depends(get_db_session),
 ) -> dict:
     """提取/创建匿名用户，返回兼容现有路由的 payload dict。
 
+    复用 get_db_session 的会话，避免每个请求创建两个数据库连接。
+
     流程：
     1. 从 X-Device-Id 读取 device_id（缺失则生成随机值）
-    2. 在数据库查找或创建匿名用户记录
+    2. 在当前请求会话中查找或创建匿名用户记录
     3. 返回现有 Service 层兼容的 dict
 
     Returns:
@@ -109,13 +114,8 @@ async def get_anonymous_user(
     if not device_id:
         device_id = secrets.token_urlsafe(12)
 
-    # 使用 auth_dependencies 中的 session factory 获取会话
-    from app.core.dependencies.auth_dependencies import _get_session_factory
-
-    factory = _get_session_factory()
-    async with factory() as session:
-        user = await _get_or_create_anonymous_user(session, device_id)
-        await session.commit()
+    user = await _get_or_create_anonymous_user(db, device_id)
+    await db.commit()
 
     return {
         "sub": str(user.id),

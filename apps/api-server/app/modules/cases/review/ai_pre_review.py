@@ -293,6 +293,7 @@ def run_ai_pre_review(
     )
 
     logger.info(
+        "review",
         "ai_pre_review_completed",
         extra={
             "overall": overall,

@@ -78,7 +78,8 @@ class ExpertServiceImpl(BaseExpertService):
             )
 
         logger.info(
-            "expert_list",
+            "profile",
+            "expert_list_loaded",
             extra={"profile_id": str(profile_id), "count": len(experts)},
         )
         return experts
@@ -104,12 +105,14 @@ class ExpertServiceImpl(BaseExpertService):
             )
         except StaleDataError:
             logger.warning(
+                "profile",
                 "expert_unlink_conflict",
                 extra={"link_id": str(link_id), "profile_id": str(profile_id)},
             )
             raise ExpertLinkConflictError(str(link_id))
 
         logger.info(
+            "profile",
             "expert_unlinked",
             extra={"profile_id": str(profile_id), "link_id": str(link_id)},
         )
