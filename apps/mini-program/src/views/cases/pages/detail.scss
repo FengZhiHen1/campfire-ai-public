@@ -9,32 +9,6 @@
   padding-bottom: calc(128px + env(safe-area-inset-bottom));
 }
 
-/* ========== 顶部导航栏 ========== */
-.detail-navbar {
-  height: 88px;
-  background-color: $cf-surface-dim;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  position: relative;
-  padding: 0 $cf-spacing-md;
-  z-index: 50;
-
-  &__title {
-    font-size: 36px;
-    font-weight: 600;
-    color: $cf-on-background;
-  }
-
-  &__back {
-    padding: 8px 12px;
-    font-size: 18px;
-    color: $cf-on-surface-variant;
-    background: none;
-    border: none;
-  }
-}
-
 /* ========== 概览信息区 ========== */
 .detail-overview {
   padding: $cf-spacing-md;

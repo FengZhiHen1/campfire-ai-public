@@ -1,5 +1,4 @@
 import { View, Text, Button, Input, Textarea, Picker } from '@tarojs/components';
-import Taro from '@tarojs/taro';
 import { useCaseSubmit } from '../../../logics/cases';
 import './submit.scss';
 
@@ -23,12 +22,6 @@ export default function CasesSubmit() {
 
   return (
     <View className="submit-page">
-      {/* 顶部导航栏 */}
-      <View className="submit-navbar">
-        <Button className="submit-navbar__back" onClick={() => Taro.navigateBack()}>←</Button>
-        <Text className="submit-navbar__title">提交案例</Text>
-      </View>
-
       {/* 封面图占位 */}
       <View className="submit-cover">
         <Text className="submit-cover__icon">📷</Text>

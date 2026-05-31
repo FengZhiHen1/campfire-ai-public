@@ -31,9 +31,6 @@ export default function ExtractionResult() {
   if (extracting) {
     return (
       <View className='er-page'>
-        <View className='er-navbar'>
-          <Text className='er-navbar__title'>提取结果</Text>
-        </View>
         <View className='er-loading'>
           <View className='er-loading__skeleton' />
           <View className='er-loading__skeleton' />
@@ -48,9 +45,6 @@ export default function ExtractionResult() {
   if (extractFailed) {
     return (
       <View className='er-page'>
-        <View className='er-navbar'>
-          <Text className='er-navbar__title'>提取结果</Text>
-        </View>
         <View className='er-empty'>
           <Text className='er-empty__icon'>⚠️</Text>
           <Text className='er-empty__title'>提取失败</Text>
@@ -64,9 +58,6 @@ export default function ExtractionResult() {
   if (cards.length === 0) {
     return (
       <View className='er-page'>
-        <View className='er-navbar'>
-          <Text className='er-navbar__title'>提取结果</Text>
-        </View>
         <View className='er-empty'>AI 未能识别到干预场景，请检查叙事内容后重试</View>
       </View>
     );
@@ -74,10 +65,6 @@ export default function ExtractionResult() {
 
   return (
     <View className="er-page">
-      <View className="er-navbar">
-        <Text className="er-navbar__title">提取结果 ({cards.length} 张卡片)</Text>
-      </View>
-
       {/* Tab 栏 */}
       <ScrollView className="er-tabs" scrollX>
         {cards.map((card, idx) => (
