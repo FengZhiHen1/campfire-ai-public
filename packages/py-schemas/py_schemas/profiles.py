@@ -37,7 +37,7 @@ EventListItem）和枚举（SeverityLevel/EventSetting）。
 
 from __future__ import annotations
 
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from enum import StrEnum
 from uuid import UUID
 
@@ -600,13 +600,13 @@ class EventCreate(CampfireBaseModel):
     def event_time_not_future(cls, v: datetime) -> datetime:
         """校验事件时间不能晚于当前时间（防止未来时间戳）。
 
-        Pydantic 解析不带时区的 ISO 8601 字符串（如 "2026-05-20T14:30:00"）时
-        产生 naive datetime，无法直接与时区感知型 datetime.now(timezone.utc)
-        比较。因此先统一规范化为 timezone-aware datetime。
+        容差 5 分钟——移动设备时钟常与服务器不同步，偏差数秒至
+        1-2 分钟常见。过严的零容差策略导致正常的"现在发生"事件
+        提交因轻微时钟偏差被拒绝。
         """
         if v.tzinfo is None:
             v = v.replace(tzinfo=timezone.utc)
-        if v > datetime.now(timezone.utc):
+        if v > datetime.now(timezone.utc) + timedelta(minutes=5):
             raise ValueError("事件时间不能晚于当前时间")
         return v
 
