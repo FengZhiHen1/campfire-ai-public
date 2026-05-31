@@ -351,7 +351,6 @@ export default function ProfileEdit() {
         </View>
 
         <TagSection
-          isEdit={isEdit}
           selectedTags={selectedTags}
           customTags={customTags}
           customTagInput={customTagInput}
