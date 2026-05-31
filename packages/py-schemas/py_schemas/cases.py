@@ -521,10 +521,10 @@ class ReviewQueueItem(CampfireBaseModel):
     用于前端审核列表展示，包含案例摘要信息和审核队列特有字段。
     """
 
-    case_id: str = Field(..., description="案例唯一标识")
+    narrative_id: str = Field(..., description="叙事唯一标识（UUID）")
     title: str = Field(..., description="案例标题")
     author_name: str = Field(..., description="提交者名称")
-    behavior_type: str = Field(..., description="行为类型")
+    behavior_type: str = Field(default="", description="行为类型（L2 提取后填充）")
     submitted_at: datetime = Field(..., description="提交审核时间")
     ai_review_overall: str = Field(..., description="AI 预审总体结论")
     deadline: datetime = Field(..., description="审核截止时间（AI 预审完成 + 2 工作日）")

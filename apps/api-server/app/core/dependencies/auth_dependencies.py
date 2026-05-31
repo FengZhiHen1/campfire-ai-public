@@ -22,6 +22,7 @@ from py_auth.jwt_utils import JoseTokenManager
 from py_config import get_settings
 from py_db.repositories.case_repository import CaseRepository
 from py_db.repositories.event_repository import EventRepository
+from py_db.repositories.narrative_repository import NarrativeRepository
 from py_db.repositories.profile_repository import ProfileRepository
 from py_db.repositories.review_repository import (
     ReviewAuditLogRepository,
@@ -204,6 +205,15 @@ def get_case_repository() -> CaseRepository:
         CaseRepository: 已配置会话工厂的 Repository 实例。
     """
     return CaseRepository(session_factory=_get_session_factory())
+
+
+def get_narrative_repository() -> NarrativeRepository:
+    """FastAPI Depends 工厂：构造 NarrativeRepository 实例。
+
+    Returns:
+        NarrativeRepository: 已配置会话工厂的 Repository 实例。
+    """
+    return NarrativeRepository(session_factory=_get_session_factory())
 
 
 def get_password_hasher() -> PasswordHasher:

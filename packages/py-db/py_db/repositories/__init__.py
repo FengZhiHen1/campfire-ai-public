@@ -5,6 +5,7 @@
 """
 
 from py_db.repositories.case_repository import CaseRepository
+from py_db.repositories.narrative_repository import NarrativeRepository
 from py_db.repositories.profile_repository import ProfileRepository
 from py_db.repositories.review_repository import (  # noqa: F401
     ReviewAuditLogRepository,
@@ -14,6 +15,7 @@ from py_db.repositories.teacher_link_repository import TeacherLinkRepository
 
 __all__ = [
     "CaseRepository",
+    "NarrativeRepository",
     "ProfileRepository",
     "ReviewRepository",
     "ReviewAuditLogRepository",

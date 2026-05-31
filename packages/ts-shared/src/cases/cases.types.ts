@@ -182,7 +182,7 @@ export interface CaseReviewResponse {
 
 /** 待审核队列条目 */
 export interface ReviewQueueItem {
-  case_id: string;
+  narrative_id: string;
   title: string;
   author_name: string;
   behavior_type: string;
