@@ -463,38 +463,9 @@
     overflow: hidden;
   }
 
-  /* 外层暖光呼吸 */
-  &__hero-glow {
-    position: absolute;
-    width: 200px;
-    height: 200px;
-    border-radius: $cf-radius-full;
-    background: radial-gradient(circle, rgba($cf-primary, 0.22) 0%, rgba($cf-primary, 0.06) 50%, transparent 70%);
-    animation: consult-warm-glow 3s ease-in-out infinite;
-  }
-
-  /* 火焰核心 */
-  &__hero-core {
-    position: relative;
-    width: 56px;
-    height: 72px;
-    background: linear-gradient(180deg, $cf-inverse-primary 0%, $cf-primary 100%);
-    border-radius: 50% 50% 50% 50% / 60% 60% 40% 40%;
-    box-shadow: 0 0 32px rgba($cf-primary, 0.35);
-    animation: consult-warm-pulse 3s ease-in-out infinite;
-
-    /* 内层高亮 */
-    &::after {
-      content: '';
-      position: absolute;
-      top: 8px;
-      left: 50%;
-      transform: translateX(-50%);
-      width: 20px;
-      height: 28px;
-      background: linear-gradient(180deg, rgba($cf-surface, 0.5) 0%, transparent 100%);
-      border-radius: 50% 50% 50% 50% / 60% 60% 40% 40%;
-    }
+  &__hero-icon {
+    font-size: 96px;
+    line-height: 1;
   }
 
   &__title {
@@ -1035,29 +1006,6 @@
   to {
     opacity: 1;
     transform: translateY(0);
-  }
-}
-
-/* idle 暖光呼吸 */
-@keyframes consult-warm-glow {
-  0%, 100% {
-    transform: scale(0.92);
-    opacity: 0.6;
-  }
-  50% {
-    transform: scale(1.08);
-    opacity: 1;
-  }
-}
-
-@keyframes consult-warm-pulse {
-  0%, 100% {
-    transform: scale(0.95) translateY(2px);
-    opacity: 0.85;
-  }
-  50% {
-    transform: scale(1.05) translateY(-2px);
-    opacity: 1;
   }
 }
 
