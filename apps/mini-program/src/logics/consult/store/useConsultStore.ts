@@ -239,8 +239,8 @@ export const useConsultStore = create<ConsultStore>()(
 
           const { stream_url, session_id } = response;
 
-          // HTTP 成功 → 进入 streaming
-          set({ sessionState: transitionTo('submitting', 'streaming') });
+          // 保持在 submitting，等待第一个真实 SSE chunk 到达后再切 streaming
+          // （心跳不算，只有内容 chunk 才触发状态跳转）
 
           // 创建 SSE 解析器（SSE 事件回调委托给 sseCallbacks 工厂）
           const parser = new SseStreamParser(
