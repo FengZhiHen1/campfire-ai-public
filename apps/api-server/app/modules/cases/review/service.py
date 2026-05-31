@@ -136,6 +136,7 @@ async def _enqueue_index_async(case_id: str) -> None:
         await redis_client.lpush("index:queue:case_chunks", payload)  # type: ignore[misc]  # redis.asyncio 类型桩返回 int|Awaitable[int] 的已知误报
         await redis_client.close()
         logger.info(
+            "review",
             "index_enqueue_success",
             extra={"case_id": case_id, "queue": "index:queue:case_chunks"},
         )
@@ -143,6 +144,7 @@ async def _enqueue_index_async(case_id: str) -> None:
         raise
     except Exception as exc:
         logger.error(
+            "review",
             "index_enqueue_failed",
             extra={"case_id": case_id, "error": str(exc)},
         )
@@ -260,6 +262,7 @@ class ReviewWorkflowService(ReviewWorkflowContract):
         except Exception as exc:
             await session.rollback()
             logger.error(
+                "review",
                 "review_commit_failed",
                 extra={"case_id": case_id, "error": str(exc)},
             )
@@ -274,6 +277,7 @@ class ReviewWorkflowService(ReviewWorkflowContract):
 
         # ---- 日志 ----
         logger.info(
+            "review",
             "review_completed",
             extra={
                 "case_id": case_id,
