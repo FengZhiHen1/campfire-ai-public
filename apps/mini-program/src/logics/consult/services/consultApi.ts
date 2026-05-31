@@ -13,7 +13,6 @@
  */
 
 import { httpClient } from '../../shared/services/httpClient';
-import type { IRequestResponse } from '../../shared/services/httpClient';
 import type { RequestId, SessionId } from '../consult.contract';
 import type {
   BehaviorTypeCategory,
@@ -197,29 +196,5 @@ export const consultApi = {
       },
     });
     return res.data;
-  },
-
-  /**
-   * 归档写入咨询历史（步骤 6）。
-   * POST /api/v1/consultations
-   *
-   * 非阻塞——写入失败不阻断用户浏览当前结果。
-   *
-   * @param data - 咨询历史归档数据
-   */
-  async archiveConsultation(data: Record<string, unknown>): Promise<void> {
-    try {
-      await httpClient.request({
-        url: HISTORY_API_PATH,
-        method: 'POST',
-        data,
-        header: {
-          'Content-Type': 'application/json',
-        },
-      });
-    } catch {
-      // 归档写入失败为降级场景：不阻塞用户
-      console.debug('archive_failed', { request_id: data.request_id });
-    }
   },
 };

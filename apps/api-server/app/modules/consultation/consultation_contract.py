@@ -24,13 +24,19 @@
 
 from __future__ import annotations
 
+import asyncio
 import uuid
 from abc import ABC, abstractmethod
 from typing import Any, final
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from py_logger import logger
+
 from .types import BehaviorDescription, ProfileSummary, RequestId, SessionId
+
+_SENTINEL: object = object()
+"""队列哨兵，标记流式输出结束。"""
 
 
 class BaseConsultationOrchestrator(ABC):
@@ -52,29 +58,18 @@ class BaseConsultationOrchestrator(ABC):
     ) -> SessionId:
         """启动一次完整的应急咨询流程，返回 SSE session_id。
 
-        前置校验 → 档案加载 → RAG 检索 → 危机判定 → Prompt 构建 →
-        流式生成 → SSE 注册 → 后置校验。
-        此方法不可覆写（@final）。
+        验证通过后立即返回 session_id。档案加载、RAG 检索、危机判定、
+        流式生成等耗时步骤在后台 asyncio.Task 中异步执行，
+        通过 asyncio.Queue 将 chunk 桥接到 SSE 消费端。
 
         前置:
           - behavior_description 非空，最大 2000 字符
           - db 为有效的 AsyncSession
         后置:
           - 返回有效的 SessionId（格式 stream-{uuid4}）
-          - Generator 已注册到 SseStreamingService
-        输入约束:
-          - behavior_description: 已通过 PII 脱敏
-          - profile_id: UUID v4 字符串或 None
-        输出约束:
-          - SessionId: "stream-" 前缀的 UUID v4 字符串
+          - Queue 消费者 Generator 已注册到 SseStreamingService
         异常:
           - ConsultationInputError: behavior_description 为空
-          - ConsultationSearchError: 检索引擎不可用
-          - ConsultationGenerationError: LLM 不可用且无部分产出
-        Side Effects:
-          - 记录全流程结构化日志（含 request_id + session_id）
-          - 注册 AsyncGenerator 到 SseStreamingService 单例
-          - 存储生成元数据供 SSE DoneEvent 使用
         """
         request_id = RequestId(f"req-{uuid.uuid4()}")
         session_id_raw = f"stream-{uuid.uuid4()}"
@@ -86,49 +81,81 @@ class BaseConsultationOrchestrator(ABC):
             db=db,
         )
 
-        # 步骤 1：加载档案
-        profile_summary = await self._do_load_profile(
-            profile_id=profile_id,
-            db=db,
-        )
+        chunk_queue: asyncio.Queue = asyncio.Queue()
 
-        # 步骤 2：RAG 语义检索
-        search_result = await self._do_search_cases(
-            query_text=behavior_description,
-            behavior_type=behavior_type,
-            emotion_level=emotion_level,
-            request_id=request_id,
-            db=db,
-        )
+        async def _queue_consumer():
+            while True:
+                chunk = await chunk_queue.get()
+                if chunk is _SENTINEL:
+                    return
+                yield chunk
 
-        # 步骤 3：危机分级判定
-        crisis_result = await self._do_judge_crisis(
-            behavior_description=behavior_description,
-            behavior_type=behavior_type,
-            profile_summary=profile_summary,
-        )
+        from app.core.streaming.sse_service import SseStreamingService
+        streaming_service = SseStreamingService()
+        streaming_service.register_generator(str(session_id), _queue_consumer())
 
-        # 步骤 4：构建 EmergencyPlanInput
-        plan_input = self._do_build_plan_input(
-            behavior_description=BehaviorDescription(behavior_description),
-            profile_summary=profile_summary,
-            search_result=search_result,
-            crisis_result=crisis_result,
-            request_id=request_id,
-        )
+        async def _run_pipeline() -> None:
+            from app.core.dependencies.auth_dependencies import _get_session_factory
+            factory = _get_session_factory()
+            async with factory() as bg_db:
+                try:
+                    # 步骤 1：加载档案
+                    profile_summary = await self._do_load_profile(
+                        profile_id=profile_id,
+                        db=bg_db,
+                    )
+                    # 步骤 2：RAG 语义检索
+                    search_result = await self._do_search_cases(
+                        query_text=behavior_description,
+                        behavior_type=behavior_type,
+                        emotion_level=emotion_level,
+                        request_id=request_id,
+                        db=bg_db,
+                    )
+                    # 步骤 3：危机分级判定
+                    crisis_result = await self._do_judge_crisis(
+                        behavior_description=behavior_description,
+                        behavior_type=behavior_type,
+                        profile_summary=profile_summary,
+                    )
+                    # 步骤 4：构建 EmergencyPlanInput
+                    plan_input = self._do_build_plan_input(
+                        behavior_description=BehaviorDescription(behavior_description),
+                        profile_summary=profile_summary,
+                        search_result=search_result,
+                        crisis_result=crisis_result,
+                        request_id=request_id,
+                    )
+                    # 步骤 5：流式生成
+                    generator, prompt_ctx = self._do_generate_stream(plan_input)
 
-        # 步骤 5：流式生成 + SSE 注册（共享 ctx 避免重复 PromptBuilder.build()）
-        generator, prompt_ctx = self._do_generate_stream(plan_input)
-        self._do_register_sse(
-            session_id=session_id,
-            generator=generator,
-            plan_input=plan_input,
-            search_result=search_result,
-            crisis_result=crisis_result,
-            behavior_description=behavior_description,
-            request_id=request_id,
-            prompt_ctx=prompt_ctx,
-        )
+                    # 存储生成元数据（供 SSE DoneEvent 使用）
+                    streaming_service.store_generation_meta(
+                        session_id=str(session_id),
+                        prenumbered_slices={num: sid for num, sid in prompt_ctx.prenumbered_slices},
+                        crisis_level=crisis_result.final_level.value,
+                        block_deep_response=crisis_result.block_deep_response,
+                        behavior_description=behavior_description,
+                        request_id=str(request_id),
+                        user_id=user_id,
+                        search_result=search_result,
+                        plan_input=plan_input,
+                    )
+
+                    # 步骤 6：消费真正的 generator，推入 queue
+                    async for chunk in generator:
+                        await chunk_queue.put(chunk)
+                except Exception:
+                    logger.exception(
+                        service="api-server",
+                        message="pipeline_background_failed",
+                        op_type="pipeline_background",
+                        extra={"session_id": str(session_id)},
+                    )
+                finally:
+                    await chunk_queue.put(_SENTINEL)
+
+        asyncio.create_task(_run_pipeline())
 
         self._validate_start_postconditions(session_id=session_id)
 

@@ -22,8 +22,6 @@ import {
   createMessageItem,
   sectionsToPlanSections,
 } from '../store/stateMachine';
-import { consultApi } from './consultApi';
-import { useSessionStore } from '../../shared/store/userStore';
 import type { SseStreamParserCallbacks } from './sseParser';
 
 // ============================================================================
@@ -132,8 +130,6 @@ export function createSseCallbacks(
           ? { show: true, riskLevel: verdict === 'FORCE_BLOCK' ? 'high_risk' : 'normal' }
           : state.ticketGuide,
       });
-
-      archiveConsultation(state, requestId, crisisLevel, referencedSliceIds);
     },
 
     // ---- onError：致命/非致命分类处理 ----
@@ -240,35 +236,4 @@ function handleStreamFailure(
       messages: [...get().messages, promptMsg],
     });
   } catch { /* 静默 */ }
-}
-
-function archiveConsultation(
-  state: ConsultStateView,
-  requestId: RequestId,
-  crisisLevel: string,
-  referencedSliceIds: string[],
-): void {
-  const archiveData: Record<string, unknown> = {
-    request_id: state._requestId || requestId,
-    user_id: useSessionStore.getState().user?.userId || '00000000-0000-0000-0000-000000000000',
-    crisis_level: crisisLevel,
-    behavior_description: state.behaviorDescription,
-    consultation_time: new Date().toISOString(),
-    generated_plan: state.accumulatedText,
-    source_list: referencedSliceIds ?? [],
-    disclaimer:
-      '以上建议由 AI 生成，仅供参考，不构成医疗诊断或治疗建议。如情况紧急，请立即联系专业医疗机构。',
-    generation_time_ms: 0,
-    is_partial: false,
-    referenced_slice_ids: referencedSliceIds ?? [],
-    finish_reason: 'COMPLETE',
-    ttft_ms: 0,
-    token_input: null,
-    token_output: null,
-    has_feedback: false,
-  };
-
-  consultApi.archiveConsultation(archiveData).catch(() => {
-    // 归档失败为降级场景
-  });
 }
