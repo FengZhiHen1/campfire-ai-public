@@ -129,7 +129,7 @@ export default function ConsultIndex() {
   if (sessionState === 'selecting_behavior') {
     return (
       <View className="consult-page">
-        {/* 主内容区 -->
+        {/* 主内容区 */}
         <ScrollView className="consult-selection-scroll" scrollY>
           {/* 区块A — 页头 */}
           <View className="consult-selection-header">
