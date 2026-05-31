@@ -13,6 +13,29 @@
  * 兼容性：微信小程序基础库 2.18.0+（支持 enableChunked / onChunkReceived）
  */
 
+/** UTF-8 ArrayBuffer → 字符串解码（微信小程序无 TextDecoder） */
+function utf8Decode(buffer: ArrayBuffer): string {
+  const bytes = new Uint8Array(buffer);
+  const len = bytes.length;
+  let result = '';
+  let i = 0;
+  while (i < len) {
+    const b1 = bytes[i++];
+    if (b1 < 0x80) {
+      result += String.fromCharCode(b1);
+    } else if (b1 < 0xE0) {
+      result += String.fromCharCode(((b1 & 0x1F) << 6) | (bytes[i++] & 0x3F));
+    } else if (b1 < 0xF0) {
+      result += String.fromCharCode(((b1 & 0x0F) << 12) | ((bytes[i++] & 0x3F) << 6) | (bytes[i++] & 0x3F));
+    } else {
+      const cp = ((b1 & 0x07) << 18) | ((bytes[i++] & 0x3F) << 12) | ((bytes[i++] & 0x3F) << 6) | (bytes[i++] & 0x3F);
+      result += String.fromCodePoint(cp);
+    }
+  }
+  return result;
+}
+
+
 import Taro from '@tarojs/taro';
 import type { ChunkEventPayload, DoneEventPayload, ErrorEventPayload } from '../types/index';
 
@@ -214,9 +237,7 @@ export class SseStreamParser {
           if (typeof res.data === 'string') {
             chunk = res.data;
           } else if (res.data instanceof ArrayBuffer) {
-            // TextDecoder 正确解码 UTF-8 多字节字符（中文等）
-            // String.fromCharCode 逐字节转换会破坏多字节序列导致乱码
-            chunk = new TextDecoder('utf-8').decode(res.data);
+            chunk = utf8Decode(res.data);
           }
           if (chunk) {
             this.processChunk(chunk);
