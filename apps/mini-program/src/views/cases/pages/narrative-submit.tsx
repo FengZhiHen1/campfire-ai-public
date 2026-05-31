@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { View, Text, Button, Textarea, Input } from '@tarojs/components';
 import Taro from '@tarojs/taro';
 import { useNarrativeSubmit } from '../../../logics/cases';
@@ -19,12 +20,15 @@ export default function NarrativeSubmit() {
     sourceOptions, writingTips, bodyPlaceholder,
   } = useNarrativeSubmit();
 
+  useEffect(() => {
+    if (extracting) {
+      Taro.setNavigationBarTitle({ title: 'AI 正在提取' });
+    }
+  }, [extracting]);
+
   if (extracting) {
     return (
       <View className="ns-page">
-        <View className="ns-navbar">
-          <Text className="ns-navbar__title">AI 正在提取</Text>
-        </View>
         <View className="ns-loading">
           <View className="ns-loading__spinner" />
           <Text className="ns-loading__text">正在分析叙事，提取干预卡片...</Text>
@@ -36,15 +40,6 @@ export default function NarrativeSubmit() {
 
   return (
     <View className="ns-page">
-      {/* TopAppBar */}
-      <View className="ns-navbar">
-        <Button className="ns-navbar__cancel" onClick={() => Taro.navigateBack()}>
-          <Text className="ns-navbar__cancel-text">取消</Text>
-        </Button>
-        <Text className="ns-navbar__title">录入案例叙事</Text>
-        <View className="ns-navbar__spacer" />
-      </View>
-
       {/* Main Content */}
       <View className="ns-form">
         {/* Case Title */}

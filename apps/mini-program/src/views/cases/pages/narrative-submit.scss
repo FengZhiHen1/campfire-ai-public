@@ -9,49 +9,6 @@
   padding-bottom: calc(192px + env(safe-area-inset-bottom));
 }
 
-/* ========== 顶部导航栏 ========== */
-.ns-navbar {
-  height: 88px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0 $cf-spacing-md;
-  background-color: $cf-surface;
-  box-shadow: $cf-shadow-diffuse;
-  position: sticky;
-  top: 0;
-  z-index: 50;
-
-  &__cancel {
-    background: none;
-    border: none;
-    padding: $cf-spacing-xs;
-
-    &::after {
-      border: none;
-    }
-
-    &:active {
-      opacity: 0.7;
-    }
-  }
-
-  &__cancel-text {
-    font-size: $cf-label-md;
-    color: $cf-primary;
-  }
-
-  &__title {
-    font-size: $cf-headline-sm;
-    font-weight: 600;
-    color: $cf-primary;
-  }
-
-  &__spacer {
-    width: 80px;
-  }
-}
-
 /* ========== 加载状态 ========== */
 .ns-loading {
   flex: 1;
