@@ -1,5 +1,5 @@
 import { View, Text, Button, Input } from '@tarojs/components';
-import { PRESET_TAGS, CUSTOM_TAG_MAX_LENGTH } from '../../../logics/profiles/constants';
+import { SENSORY_FEATURE_TAGS, TRIGGER_TAGS, CUSTOM_TAG_MAX_LENGTH } from '../../../logics/profiles/constants';
 
 interface TagSectionProps {
   selectedTags: string[];
@@ -29,11 +29,28 @@ export default function TagSection({
       <Text className="profile-tag-section__subtitle">帮助孩子获得更精准的案例匹配</Text>
 
       <View className="profile-edit-card">
-        {/* 预设标签 */}
+        {/* 感官特征 */}
         <View>
-          <Text className="profile-tag-section__sub-title">预设标签</Text>
+          <Text className="profile-tag-section__sub-title">感官特征</Text>
           <View className="profile-tag-grid">
-            {PRESET_TAGS.map((tag) => (
+            {SENSORY_FEATURE_TAGS.map((tag) => (
+              <View
+                key={tag}
+                className={`profile-tag-grid__item ${selectedTags.includes(tag) ? 'profile-tag-grid__item--active' : ''}`}
+                onClick={() => onToggleTag(tag)}
+              >
+                <Text>{tag}</Text>
+                {selectedTags.includes(tag) && <Text className="profile-tag-grid__check">✓</Text>}
+              </View>
+            ))}
+          </View>
+        </View>
+
+        {/* 触发因素 */}
+        <View>
+          <Text className="profile-tag-section__sub-title">触发因素</Text>
+          <View className="profile-tag-grid">
+            {TRIGGER_TAGS.map((tag) => (
               <View
                 key={tag}
                 className={`profile-tag-grid__item ${selectedTags.includes(tag) ? 'profile-tag-grid__item--active' : ''}`}
