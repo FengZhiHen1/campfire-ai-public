@@ -99,6 +99,7 @@ class EventServiceImpl(BaseEventService):
         )
 
         created = await self._event_repo.create(session, event)
+        await session.commit()
         logger.info(
             "event_service",
             "事件创建成功",
@@ -144,6 +145,7 @@ class EventServiceImpl(BaseEventService):
         updated = await self._event_repo.update_event(session, event_id, profile_id, update_dict)
         if updated is None:
             return None
+        await session.commit()
         return self._orm_to_response(updated)
 
     # ------------------------------------------------------------------
@@ -158,6 +160,7 @@ class EventServiceImpl(BaseEventService):
     ) -> bool:
         success = await self._event_repo.delete_event(session, event_id, profile_id)
         if success:
+            await session.commit()
             logger.info(
                 "event_service",
                 "事件已删除",
