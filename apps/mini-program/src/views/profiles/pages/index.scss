@@ -476,9 +476,9 @@
   left: 0;
   right: 0;
   bottom: 0;
-  background-color: $cf-surface;
+  background-color: $cf-background;
   border-radius: $cf-radius-lg $cf-radius-lg 0 0;
-  box-shadow: $cf-shadow-deep;
+  box-shadow: 0 -8px 40px rgba(28, 25, 23, 0.12);
   z-index: 210;
   animation: cf-sheet-enter 300ms cubic-bezier(0.2, 0, 0, 1) forwards;
   max-height: 85vh;
@@ -488,7 +488,7 @@
   /* ===== Header ===== */
   &__header {
     padding: $cf-spacing-sm $cf-spacing-md;
-    background-color: rgba($cf-surface, 0.95);
+    background-color: rgba($cf-background, 0.95);
     border-bottom: 1px solid rgba($cf-outline-variant, 0.5);
     border-radius: $cf-radius-lg $cf-radius-lg 0 0;
     flex-shrink: 0;
@@ -528,7 +528,7 @@
     width: 32px;
     height: 32px;
     border-radius: $cf-radius-full;
-    background-color: $cf-surface-variant;
+    background-color: $cf-surface-container;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -581,7 +581,7 @@
   }
 
   &__label {
-    @include cf-body-sm;
+    @include cf-body-md;
     font-weight: 500;
     color: $cf-on-background;
     margin-bottom: $cf-spacing-xs;
@@ -595,7 +595,7 @@
   }
 
   &__label-note {
-    @include cf-label-md;
+    @include cf-body-md;
     color: rgba($cf-on-surface-variant, 0.6);
     font-weight: 400;
   }
@@ -604,11 +604,11 @@
   &__chip-grid {
     display: grid;
     grid-template-columns: repeat(3, 1fr);
-    gap: $cf-spacing-xs;
+    gap: $cf-spacing-sm;
   }
 
   &__chip {
-    height: 36px;
+    min-height: 36px;
     border-radius: $cf-radius-sm;
     background-color: $cf-surface-container;
     color: $cf-on-surface-variant;
@@ -616,7 +616,7 @@
     align-items: center;
     justify-content: center;
     gap: 4px;
-    padding: 0 6px;
+    padding: 10px 12px;
     border: 1px solid rgba($cf-outline, 0.15);
     transition: all 150ms ease-out;
 
@@ -647,7 +647,7 @@
   /* ===== Segment Control — 严重程度 ===== */
   &__segment {
     display: flex;
-    height: 40px;
+    height: 48px;
     background-color: $cf-surface-container;
     border-radius: $cf-radius-sm;
     padding: 2px;
@@ -674,7 +674,7 @@
   }
 
   &__segment-text {
-    font-size: $cf-body-sm;
+    @include cf-body-md;
     font-weight: 500;
     color: $cf-on-surface-variant;
 
@@ -686,18 +686,19 @@
   /* ===== Chip Row — 发生场景 ===== */
   &__chip-row {
     display: flex;
-    gap: $cf-spacing-xs;
+    gap: $cf-spacing-sm;
   }
 
   &__chip-row-item {
     flex: 1;
-    height: 32px;
-    border-radius: $cf-radius-sm;
+    min-height: 32px;
+    border-radius: $cf-radius-full;
     background-color: $cf-surface-container;
     color: $cf-on-surface-variant;
     display: flex;
     align-items: center;
     justify-content: center;
+    padding: 8px 16px;
     border: 1px solid rgba($cf-outline, 0.15);
     transition: all 150ms ease-out;
 
@@ -722,11 +723,11 @@
   /* ===== Text Input ===== */
   &__text-input {
     width: 100%;
-    height: 40px;
+    min-height: 40px;
     background-color: $cf-surface-container-lowest;
-    border-radius: $cf-radius-sm;
-    padding: 0 $cf-spacing-sm;
-    font-size: $cf-label-md;
+    border-radius: 12px;
+    padding: 12px $cf-spacing-sm;
+    @include cf-body-md;
     color: $cf-on-background;
     box-sizing: border-box;
     border: 1px solid $cf-outline-variant;
@@ -740,11 +741,11 @@
   /* ===== Textarea ===== */
   &__textarea {
     width: 100%;
-    min-height: 64px;
+    min-height: 96px;
     background-color: $cf-surface-container-lowest;
-    border-radius: $cf-radius-sm;
-    padding: $cf-spacing-sm;
-    font-size: $cf-label-md;
+    border-radius: 12px;
+    padding: 12px $cf-spacing-sm;
+    @include cf-body-md;
     color: $cf-on-background;
     box-sizing: border-box;
     border: 1px solid $cf-outline-variant;
@@ -763,7 +764,7 @@
     justify-content: space-between;
     padding: $cf-spacing-sm;
     background-color: $cf-surface-container;
-    border-radius: $cf-radius-sm;
+    border-radius: 12px;
     border: 1px solid rgba($cf-outline, 0.15);
     transition: all 150ms ease-out;
 
@@ -773,13 +774,13 @@
   }
 
   &__collapse-label {
-    @include cf-body-sm;
+    @include cf-body-md;
     font-weight: 500;
     color: $cf-on-background;
   }
 
   &__collapse-icon {
-    font-size: $cf-body-sm;
+    @include cf-body-md;
     color: $cf-on-surface-variant;
     line-height: 1;
     transition: transform 200ms ease-out;
@@ -794,7 +795,7 @@
   &__footer {
     padding: $cf-spacing-sm $cf-spacing-md;
     padding-bottom: calc(16px + env(safe-area-inset-bottom));
-    background-color: $cf-surface;
+    background-color: $cf-background;
     border-top: 1px solid rgba($cf-outline-variant, 0.5);
     box-shadow: $cf-shadow-input-top;
     flex-shrink: 0;
@@ -802,11 +803,11 @@
 
   &__submit {
     width: 100%;
-    height: 48px;
+    height: 56px;
     background-color: $cf-primary;
-    color: $cf-on-primary;
-    border-radius: $cf-radius-sm;
-    font-size: $cf-body-sm;
+    color: #ffffff;
+    border-radius: 12px;
+    @include cf-body-md;
     font-weight: 600;
     display: flex;
     align-items: center;
@@ -830,7 +831,7 @@
   }
 
   &__submit-text {
-    font-size: $cf-body-sm;
+    @include cf-body-md;
     font-weight: 600;
     line-height: 1;
   }
