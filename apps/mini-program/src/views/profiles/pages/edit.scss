@@ -52,7 +52,7 @@
 
   &__menu {
     position: absolute;
-    right: 112px;
+    right: 80px;
     font-size: $cf-body-md;
     color: $cf-on-background;
     background: none;
@@ -75,7 +75,7 @@
 
   &__save {
     position: absolute;
-    right: $cf-spacing-md;
+    right: 0;
     width: 72px;
     height: 72px;
     display: flex;
