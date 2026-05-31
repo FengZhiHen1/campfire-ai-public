@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import asyncio
 import time
+import uuid
 from typing import AsyncGenerator, ClassVar
 
 from fastapi import HTTPException, status
@@ -120,6 +121,7 @@ class SseStreamingService:
         block_deep_response: bool = False,
         behavior_description: str = "",
         request_id: str = "",
+        user_id: str = "",
     ) -> None:
         """存储生成元数据，供 SSE DoneEvent 构造时注入。
 
@@ -132,6 +134,7 @@ class SseStreamingService:
             block_deep_response: 是否阻断深度回答。
             behavior_description: 用户行为描述。
             request_id: 追踪 ID。
+            user_id: 发起咨询的用户 UUID 字符串，供归档写入使用。
         """
         self._generation_meta[session_id] = {
             "prenumbered_slices": prenumbered_slices,
@@ -141,6 +144,7 @@ class SseStreamingService:
             "block_deep_response": block_deep_response,
             "behavior_description": behavior_description,
             "request_id": request_id,
+            "user_id": user_id,
         }
 
     # ------------------------------------------------------------------
@@ -381,6 +385,7 @@ class SseStreamingService:
                                 "chunks_sent": session.total_chunks,
                             },
                         )
+                        await self._try_archive(session)
                         return
 
                     # ==================================================
@@ -443,6 +448,7 @@ class SseStreamingService:
                                 f"data: {done_event.model_dump_json()}\n\n"
                             )
                             await queue.put(sse_frame)
+                            await self._try_archive(session)
                         return
                     except Exception as exc:
                         # 步骤 5: 异常终端处理
@@ -451,6 +457,7 @@ class SseStreamingService:
                             queue=queue,
                             error=exc,
                         )
+                        await self._try_archive(session)
                         return
 
                     # ==================================================
@@ -529,6 +536,7 @@ class SseStreamingService:
                                 "finish_reason": finish_reason,
                             },
                         )
+                        await self._try_archive(session)
                         return
 
             except asyncio.CancelledError:
@@ -549,6 +557,10 @@ class SseStreamingService:
                         f"data: {done_event.model_dump_json()}\n\n"
                     )
                     await queue.put(sse_frame)
+                    await self._try_archive(session)
+
+                # 清理生成元数据
+                self._generation_meta.pop(session.stream_id, None)
 
                 # 确保 session 状态同步到管理器
                 self._session_manager.update_session(session)
@@ -643,6 +655,124 @@ class SseStreamingService:
         )
 
         self._session_manager.update_session(session)
+
+    async def _try_archive(self, session: StreamSession) -> None:
+        """流完成后将咨询记录归档写入数据库。
+
+        从 generation_meta 和 session 中提取归档所需全部字段，
+        直接调用 ConsultHistoryRepository 写入 consultations 表。
+        写入失败仅记录日志，不阻塞 SSE 流的正常结束。
+
+        仅在 generation_meta 中存在有效 user_id 时执行归档。
+        """
+        meta = self._generation_meta.get(session.stream_id)
+        if meta is None:
+            return
+
+        user_id = meta.get("user_id", "")
+        if not user_id:
+            return
+
+        crisis_level: str = meta.get("crisis_level", "mild")
+        behavior_description: str = meta.get("behavior_description", "")
+        prenumbered_slices: dict[str, str] = meta.get("prenumbered_slices", {})
+
+        # 拼接生成全文
+        if session.chunk_buffer:
+            full_text = "".join(
+                session.chunk_buffer[i]
+                for i in sorted(session.chunk_buffer.keys())
+            )
+        else:
+            full_text = ""
+
+        if not full_text.strip():
+            return
+
+        # 从全文提取引用的 slice IDs
+        import re
+        ref_pattern = re.compile(r"\[(\d+)\]")
+        referenced_slice_ids: list[str] = []
+        seen: set[str] = set()
+        for tag in ref_pattern.findall(full_text):
+            key = f"[{tag}]"
+            if key in prenumbered_slices and prenumbered_slices[key] not in seen:
+                referenced_slice_ids.append(prenumbered_slices[key])
+                seen.add(prenumbered_slices[key])
+
+        # 构建 source_list
+        search_result = meta.get("search_result")
+        referenced_cases = self._build_referenced_cases(
+            referenced_slice_ids, search_result,
+        )
+        source_list: list[str] = [
+            f"[{i + 1}] {c['case_title']}"
+            for i, c in enumerate(referenced_cases)
+        ]
+
+        finish_reason = session.finish_reason or "COMPLETE"
+        generation_time_ms = (time.monotonic() - session.created_at) * 1000.0
+
+        archive_request_id = str(uuid.uuid4())
+        archive_data: dict[str, object] = {
+            "id": uuid.uuid4(),
+            "request_id": archive_request_id,
+            "user_id": user_id,
+            "crisis_level": crisis_level,
+            "behavior_description": behavior_description,
+            "generated_plan": full_text,
+            "source_list": source_list,
+            "disclaimer": (
+                "以上建议由 AI 生成，仅供参考，不构成医疗诊断或治疗建议。"
+                "如情况紧急，请立即联系专业医疗机构。"
+            ),
+            "generation_time_ms": generation_time_ms,
+            "is_partial": finish_reason in ("PARTIAL", "TIMEOUT"),
+            "referenced_slice_ids": referenced_slice_ids,
+            "finish_reason": finish_reason,
+            "ttft_ms": session.ttft_ms or 0.0,
+            "has_feedback": False,
+            "token_input": None,
+            "token_output": None,
+            "device_info": None,
+        }
+
+        try:
+            from app.core.dependencies.auth_dependencies import _get_session_factory
+            from py_db.repositories.consult_history_repository import ConsultHistoryRepository
+
+            factory = _get_session_factory()
+            async with factory() as db:
+                repository = ConsultHistoryRepository()
+                record = await repository.archive(db, archive_data)
+                if record is not None:
+                    await db.flush()
+                    await db.refresh(record)
+                    logger.info(
+                        service="streaming",
+                        message="archive_success",
+                        extra={
+                            "record_id": str(record.id),
+                            "stream_id": session.stream_id,
+                            "finish_reason": finish_reason,
+                        },
+                    )
+                else:
+                    logger.info(
+                        service="streaming",
+                        message="duplicate_archive_skipped",
+                        extra={"stream_id": session.stream_id},
+                    )
+                await db.commit()
+        except Exception:
+            logger.exception(
+                service="streaming",
+                message="archive_failed_in_sse",
+                extra={
+                    "stream_id": session.stream_id,
+                    "finish_reason": finish_reason,
+                },
+            )
 
     async def _build_done_only_response(
         self,
@@ -756,7 +886,7 @@ class SseStreamingService:
             包含 referenced_slice_ids, crisis_level, confidence 等字段的 dict。
         """
         import re
-        meta = self._generation_meta.pop(session.stream_id, None)
+        meta = self._generation_meta.get(session.stream_id)
         if meta is None:
             return {}
 
