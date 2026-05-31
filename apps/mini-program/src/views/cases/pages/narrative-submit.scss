@@ -11,10 +11,11 @@
 
 /* ========== 顶部导航栏 ========== */
 .ns-navbar {
+  height: 88px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: $cf-spacing-sm $cf-spacing-md;
+  padding: 0 $cf-spacing-md;
   background-color: $cf-surface;
   box-shadow: $cf-shadow-diffuse;
   position: sticky;
