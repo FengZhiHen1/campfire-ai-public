@@ -179,9 +179,10 @@ export function useCaseListPage(): UseCaseListPageReturn {
   }, [loadData, activeTab, searchKeyword]);
 
   // ---- 角色相关 ----
-  const canSeeFAB = role === 'teacher' || role === 'expert' || role === 'admin';
-  const canSeeReviewBtn = role === 'expert' || role === 'admin';
-  const canSeeMyTab = role !== 'family';
+  // TODO: 暂时关闭权限隔离，后续恢复
+  const canSeeFAB = true; // role === 'teacher' || role === 'expert' || role === 'admin';
+  const canSeeReviewBtn = true; // role === 'expert' || role === 'admin';
+  const canSeeMyTab = true; // role !== 'family';
 
   // ---- 菜单项 ----
   const menuItems: MenuItem[] = useMemo(() => {
@@ -213,9 +214,7 @@ export function useCaseListPage(): UseCaseListPageReturn {
     if (activeTab === 'public') {
       return {
         title: '暂无已发布案例',
-        subtitle: role === 'family'
-          ? '专家团队正在审核案例中，请稍后再来'
-          : '案例库正在建设中，敬请期待',
+        subtitle: '案例库正在建设中，敬请期待',
         showClearBtn: false,
       };
     }
@@ -224,7 +223,7 @@ export function useCaseListPage(): UseCaseListPageReturn {
       subtitle: '分享您的干预经验，帮助更多家庭',
       showClearBtn: false,
     };
-  }, [searchKeyword, activeTab, role]);
+  }, [searchKeyword, activeTab]);
 
   return {
     activeTab,
