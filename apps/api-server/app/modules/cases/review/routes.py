@@ -71,6 +71,7 @@ async def submit_review_endpoint(
     case_repo: CaseRepository = Depends(get_case_repository),
     review_repo: ReviewRepository = Depends(get_review_repository),
     audit_repo: ReviewAuditLogRepository = Depends(get_review_audit_log_repository),
+    narrative_repo: NarrativeRepository = Depends(get_narrative_repository),
 ) -> CaseReviewResponse:
     """提交审核裁决端点。"""
     return await _review_service.submit_review(
@@ -81,6 +82,7 @@ async def submit_review_endpoint(
         case_repo=case_repo,
         review_repo=review_repo,
         audit_repo=audit_repo,
+        narrative_repo=narrative_repo,
     )
 
 
