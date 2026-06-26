@@ -294,7 +294,7 @@ class TestReviewQueueItem:
     def test_valid(self):
         now = datetime.now(timezone.utc)
         item = ReviewQueueItem(
-            case_id="CASE-2026-0001",
+            narrative_id="NARR-2026-0001",
             title="测试",
             author_name="张三",
             behavior_type="自伤",

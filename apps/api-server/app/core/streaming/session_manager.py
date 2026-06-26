@@ -23,12 +23,13 @@ class StreamSessionManager:
     """
 
     _instance: StreamSessionManager | None = None
+    _sessions: dict[str, StreamSession]
 
     def __new__(cls) -> StreamSessionManager:
         """确保全局只有一个 StreamSessionManager 实例。"""
         if cls._instance is None:
             instance = super().__new__(cls)
-            instance._sessions: dict[str, StreamSession] = {}
+            instance._sessions = {}
             cls._instance = instance
         return cls._instance
 

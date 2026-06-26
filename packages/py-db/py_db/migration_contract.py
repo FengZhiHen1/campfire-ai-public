@@ -101,6 +101,7 @@ class MigrationService(ABC):
         self._validate_connection(resolved_url)
 
         logger.info(
+            "migration",
             "migration_up_started",
             extra={"target": target},
             op_type="migrate_up",
@@ -144,6 +145,7 @@ class MigrationService(ABC):
         self._validate_connection(resolved_url)
 
         logger.info(
+            "migration",
             "migration_down_started",
             extra={"target": target},
             op_type="migrate_down",
@@ -182,6 +184,7 @@ class MigrationService(ABC):
         self._validate_generate_message(message, autogenerate)
 
         logger.info(
+            "migration",
             "migration_generation_started",
             extra={"message": message, "autogenerate": autogenerate},
             op_type="generate_migration",
@@ -223,6 +226,7 @@ class MigrationService(ABC):
         self._validate_connection(database_url)
 
         logger.info(
+            "migration",
             "migration_verification_started",
             op_type="verify_migration",
         )
@@ -415,6 +419,7 @@ class MigrationService(ABC):
             )
 
         logger.info(
+            "migration",
             f"migration_{direction}_completed",
             extra={"target": target, "exit_code": result},
             op_type=f"migrate_{direction}",
@@ -483,6 +488,7 @@ class MigrationService(ABC):
                     conn.commit()
                 engine.dispose()
                 logger.info(
+                    "migration",
                     "database_connection_verified",
                     extra={"attempt": attempt},
                     op_type="validate_connection",
@@ -499,6 +505,7 @@ class MigrationService(ABC):
                     ) from exc
 
                 logger.warning(
+                    "migration",
                     "database_connection_failure",
                     extra={
                         "attempt": attempt,

@@ -174,7 +174,7 @@ class ProfileServiceImpl(BaseProfileService):
             return False
 
         was_default = profile.is_default
-        deleted = await self._repository.delete(session, profile_id, caregiver_id)
+        deleted = await self._repository.delete_profile(session, profile_id, caregiver_id)
         if not deleted:
             return False
 

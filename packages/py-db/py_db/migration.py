@@ -93,6 +93,7 @@ class MigrationServiceImpl(MigrationService):
             head_revisions = script_dir.get_heads()  # type: ignore[attr-defined]
             if not head_revisions:
                 logger.info(
+                    "migration",
                     "migration_up_no_scripts",
                     extra={"target": target},
                     op_type="migrate_up",
@@ -117,6 +118,7 @@ class MigrationServiceImpl(MigrationService):
         except Exception as exc:
             error_msg = str(exc)
             logger.error(
+                "migration",
                 "migration_execution_failed",
                 extra={
                     "target": target,
@@ -131,6 +133,7 @@ class MigrationServiceImpl(MigrationService):
             ) from exc
 
         logger.info(
+            "migration",
             "migration_up_executed",
             extra={"target": target, "previous_version": current_rev},
             op_type="migrate_up",
@@ -161,6 +164,7 @@ class MigrationServiceImpl(MigrationService):
 
         if current_rev is None:
             logger.info(
+                "migration",
                 "migration_down_no_migrations_applied",
                 extra={"target": target},
                 op_type="migrate_down",
@@ -187,6 +191,7 @@ class MigrationServiceImpl(MigrationService):
                 reason = f"Rollback failed: {error_msg}"
 
             logger.error(
+                "migration",
                 "migration_rollback_failed",
                 extra={
                     "target": target,
@@ -201,6 +206,7 @@ class MigrationServiceImpl(MigrationService):
             ) from exc
 
         logger.info(
+            "migration",
             "migration_down_executed",
             extra={
                 "target": target,
@@ -259,6 +265,7 @@ class MigrationServiceImpl(MigrationService):
             ) from exc
 
         logger.info(
+            "migration",
             "migration_generation_completed",
             extra={"file_path": generated_path, "message": message},
             op_type="generate_migration",
@@ -298,6 +305,7 @@ class MigrationServiceImpl(MigrationService):
                     f"Migration check failed (unrecorded schema changes detected): {exc}"
                 )
                 logger.warning(
+                    "migration",
                     "migration_verification_check_failed",
                     extra={"reason": summary},
                     op_type="verify_migration",
@@ -313,6 +321,7 @@ class MigrationServiceImpl(MigrationService):
         except Exception as exc:
             summary = f"Migration scripts are not executable: {exc}"
             logger.warning(
+                "migration",
                 "migration_verification_upgrade_failed",
                 extra={"reason": summary},
                 op_type="verify_migration",
@@ -336,6 +345,7 @@ class MigrationServiceImpl(MigrationService):
                 f"{', '.join(missing_downgrade)}"
             )
             logger.warning(
+                "migration",
                 "migration_verification_missing_downgrade",
                 extra={"reason": summary, "files": missing_downgrade},
                 op_type="verify_migration",
@@ -347,6 +357,7 @@ class MigrationServiceImpl(MigrationService):
             "check OK, upgrade executable, bidirectional OK."
         )
         logger.info(
+            "migration",
             "migration_verification_all_passed",
             extra={"result": "passed"},
             op_type="verify_migration",
@@ -384,6 +395,7 @@ def _get_current_revision(database_url: DatabaseUrl) -> str | None:
         return current_rev
     except ProgrammingError as exc:
         logger.info(
+            "migration",
             "alembic_version_not_found_treating_as_new_database",
             extra={"error": str(exc)},
             op_type="get_current_revision",
@@ -391,6 +403,7 @@ def _get_current_revision(database_url: DatabaseUrl) -> str | None:
         return None
     except OperationalError as exc:
         logger.info(
+            "migration",
             "alembic_version_unreachable_treating_as_new_database",
             extra={"error": str(exc)},
             op_type="get_current_revision",
@@ -467,6 +480,7 @@ def _check_migration_functions(file_path: str) -> tuple[bool, bool]:
 
     except SyntaxError as exc:
         logger.warning(
+            "migration",
             "ast_parse_error_skipping_file",
             extra={"file": file_path, "error": str(exc)},
             op_type="check_migration_functions",

@@ -209,7 +209,7 @@ class KeywordScanner:
 
     async def reload_keywords(
         self,
-        keywords: list[tuple[str, int, str, str]],
+        keywords: list[tuple[str, str, str, str]],
     ) -> None:
         """热加载关键词词库。
 

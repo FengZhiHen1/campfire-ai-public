@@ -93,6 +93,7 @@ class ConsultRepository:
             rows = result.fetchall()
         except Exception as exc:
             logger.error(
+                "db",
                 "search_similar_chunks_failed",
                 extra={
                     "top_k": top_k,
