@@ -242,26 +242,34 @@ export const useConsultStore = create<ConsultStore>()(
           // 保持在 submitting，等待第一个真实 SSE chunk 到达后再切 streaming
           // （心跳不算，只有内容 chunk 才触发状态跳转）
 
-          // 创建 SSE 解析器（SSE 事件回调委托给 sseCallbacks 工厂）
-          const parser = new SseStreamParser(
-            {
-              reconnectMaxRetries: 3,
-              reconnectDelays: [1000, 2000, 5000],
-              heartbeatTimeout: 15000,
-              connectTimeout: 10000,
-              streamNoDataTimeout: 20000,
-            },
-            createSseCallbacks(get, set, requestId),
-          );
+          const sseCallbacks = createSseCallbacks(get, set, requestId);
 
-          const extraHeaders: Record<string, string> = {
-            'ngrok-skip-browser-warning': '1',
-          };
-          if (session_id) {
-            extraHeaders['X-Session-Id'] = session_id;
+          if (process.env.TARO_APP_USE_MOCK === 'true') {
+            // eslint-disable-next-line @typescript-eslint/no-var-requires
+            const { MockSseSimulator: SimCls } = require('../../shared/services/mock/mockSseSimulator');
+            const simulator = new SimCls(sseCallbacks, behaviorDescription);
+            await simulator.connect(stream_url);
+          } else {
+            const parser = new SseStreamParser(
+              {
+                reconnectMaxRetries: 3,
+                reconnectDelays: [1000, 2000, 5000],
+                heartbeatTimeout: 15000,
+                connectTimeout: 10000,
+                streamNoDataTimeout: 20000,
+              },
+              sseCallbacks,
+            );
+
+            const extraHeaders: Record<string, string> = {
+              'ngrok-skip-browser-warning': '1',
+            };
+            if (session_id) {
+              extraHeaders['X-Session-Id'] = session_id;
+            }
+
+            await parser.connect(stream_url, extraHeaders);
           }
-
-          await parser.connect(stream_url, extraHeaders);
         } catch (error: unknown) {
           const currentState = get();
           if (currentState.sessionState !== 'submitting') return;

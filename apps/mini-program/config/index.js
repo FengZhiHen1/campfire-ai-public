@@ -30,6 +30,15 @@ function resolveApiBase() {
   return 'http://127.0.0.1:8000'
 }
 
+/**
+ * 解析 MOCK 模式开关。
+ * USE_MOCK=true 时返回 'true'，其余返回 ''（falsy）。
+ * 由 Node.js 层环境变量控制，编译时注入为 TARO_APP_USE_MOCK。
+ */
+function resolveMockEnabled() {
+  return process.env.USE_MOCK === 'true' ? 'true' : ''
+}
+
 const config = {
   projectName: 'campfire-ai',
   date: '2026-5-27',
@@ -44,6 +53,20 @@ const config = {
   plugins: [],
   defineConstants: {
     'process.env.TARO_APP_API_BASE': JSON.stringify(resolveApiBase()),
+    'process.env.TARO_APP_USE_MOCK': JSON.stringify(resolveMockEnabled()),
+  },
+  h5: {
+    webpackChain(chain) {
+      const tsSharedPath = path.resolve(__dirname, '..', '..', '..', 'packages', 'ts-shared', 'src');
+      chain.module.rules.store.forEach((_value, name) => {
+        const rule = chain.module.rule(name);
+        const uses = rule.uses.store;
+        const hasBabel = uses.has('babelLoader') || [...uses.keys()].some(k => k.toLowerCase().includes('babel'));
+        if (hasBabel) {
+          rule.include.add(tsSharedPath);
+        }
+      });
+    },
   },
   alias: {
     '@': require('path').resolve(__dirname, '..', 'src')

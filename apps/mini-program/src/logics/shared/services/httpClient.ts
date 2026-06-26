@@ -47,6 +47,12 @@ export const httpClient = {
    * 非 2xx 响应统一抛出 HttpError，调用方 catch 处理。
    */
   async request<T = unknown>(options: Taro.request.Option): Promise<IRequestResponse<T>> {
+    if (process.env.TARO_APP_USE_MOCK === 'true') {
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const { mockRequest } = require('./mock/mockRouter');
+      return mockRequest(options) as Promise<IRequestResponse<T>>;
+    }
+
     const deviceId = deviceManager.getDeviceId();
 
     const config: Taro.request.Option = {
