@@ -7,6 +7,8 @@ MVP Phase 1：
 
 from __future__ import annotations
 
+from typing import cast
+
 from fastapi import APIRouter, Depends, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -66,7 +68,7 @@ async def start_consult(
     session_id = await start_consultation(
         behavior_description=request.behavior_description,
         profile_id=str(request.profile_id) if request.profile_id else None,
-        behavior_type=request.behavior_type,
+        behavior_type=cast(list[str], request.behavior_type),
         emotion_level=request.emotion_level,
         user_id=anonymous_user.get("sub", ""),
         db=db,

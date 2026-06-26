@@ -15,6 +15,8 @@ from datetime import datetime, timezone
 from sqlalchemy import select, update
 from sqlalchemy.exc import InvalidRequestError as _SAInvalidRequestError
 
+from py_db.sqlalchemy_helpers import rowcount
+
 class StaleDataError(_SAInvalidRequestError):
     """乐观锁版本冲突异常（SQLAlchemy 2.0 兼容层 — StaleDataError 已于 2.0 移除）."""
     pass
@@ -147,7 +149,7 @@ class TeacherLinkRepository(BaseRepository[TeacherLink]):
                 )
             )
             result = await session.execute(stmt)
-            if result.rowcount == 0:
+            if rowcount(result) == 0:
                 raise StaleDataError(
                     f"乐观锁冲突：link_id={link_id} 的版本不匹配，"
                     f"期望 version={expected_version}，"

@@ -17,7 +17,7 @@ from fastapi.responses import JSONResponse
 from prometheus_client import Counter, Gauge
 from starlette.middleware.base import BaseHTTPMiddleware
 
-from py_cache import get_redis_client
+from py_cache import get_redis_client, maybe_await
 from py_config.security import get_security_config
 from py_logger import logger
 
@@ -237,12 +237,14 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         if user_id is not None:
             user_key = f"ratelimit:user:{user_id}"
             try:
-                result = await redis_client.eval(
-                    RATE_LIMIT_LUA_SCRIPT,
-                    1,
-                    user_key,
-                    window,
-                    now_ts,
+                result = await maybe_await(
+                    redis_client.eval(
+                        RATE_LIMIT_LUA_SCRIPT,
+                        1,
+                        user_key,
+                        window,
+                        now_ts,
+                    )
                 )
             except redis.exceptions.RedisError as exc:
                 _handle_redis_degraded(ip, exc)
@@ -262,12 +264,14 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         # ---- 步骤 4：IP 级限流 ----
         ip_key = f"ratelimit:ip:{ip}"
         try:
-            result = await redis_client.eval(
-                RATE_LIMIT_LUA_SCRIPT,
-                1,
-                ip_key,
-                window,
-                now_ts,
+            result = await maybe_await(
+                redis_client.eval(
+                    RATE_LIMIT_LUA_SCRIPT,
+                    1,
+                    ip_key,
+                    window,
+                    now_ts,
+                )
             )
         except redis.exceptions.RedisError as exc:
             _handle_redis_degraded(ip, exc)

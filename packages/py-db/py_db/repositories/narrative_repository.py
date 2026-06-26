@@ -15,6 +15,7 @@ from sqlalchemy.sql import Select, func as sa_func
 
 from py_db.models.case_narrative import CaseNarrative
 from py_db.base_repository import BaseRepository
+from py_db.sqlalchemy_helpers import rowcount
 from py_schemas.enums.case_enums import CaseStatus
 
 
@@ -78,7 +79,7 @@ class NarrativeRepository(BaseRepository[CaseNarrative]):
             result = await session.execute(
                 sa_update(self.model).where(and_(*conditions)).values(**values)
             )
-            if result.rowcount == 0:
+            if rowcount(result) == 0:
                 raise ValueError(
                     f"叙事 {narrative_id} 不存在或状态已变更（预期 {expected_status}）"
                 )

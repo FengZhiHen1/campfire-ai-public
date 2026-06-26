@@ -161,7 +161,7 @@ class SecurityConfigLoader(BaseConfigLoader[SecurityConfig]):
         Returns:
             SecurityConfig: 校验通过的安全配置实例。
         """
-        return SecurityConfig()  # type: ignore[call-arg]
+        return SecurityConfig.model_validate({})
 
 
 @functools.lru_cache(maxsize=1)

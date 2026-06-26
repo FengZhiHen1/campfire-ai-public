@@ -451,7 +451,8 @@ def _get_versions_dir(alembic_cfg: alembic.config.Config) -> Path:
         migrations/versions/ 目录的 Path 对象。
     """
     script = ScriptDirectory.from_config(alembic_cfg)
-    return Path(script.versions_dir).resolve()
+    versions_dir: str = getattr(script, "versions_dir")
+    return Path(versions_dir).resolve()
 
 
 def _check_migration_functions(file_path: str) -> tuple[bool, bool]:

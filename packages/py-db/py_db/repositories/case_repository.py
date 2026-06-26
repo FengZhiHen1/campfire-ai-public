@@ -18,6 +18,8 @@ from typing import Any
 
 from sqlalchemy import and_, func, or_, select, text, update as sa_update
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from py_db.sqlalchemy_helpers import rowcount
 from sqlalchemy.inspection import inspect as sa_inspect
 from sqlalchemy.sql import Select, func as sa_func
 
@@ -58,7 +60,7 @@ class CaseRepository(BaseRepository[Case]):
         """
         async def _generate() -> str:
             result = await session.execute(text("SELECT nextval('case_id_seq')"))
-            seq_value: int = result.scalar()
+            seq_value = int(result.scalar_one())
             year: int = datetime.now().year
             return f"CASE-{year}-{seq_value:04d}"
 
@@ -284,7 +286,7 @@ class CaseRepository(BaseRepository[Case]):
             result = await session.execute(
                 sa_update(Case).where(and_(*conditions)).values(**values)
             )
-            if result.rowcount == 0:
+            if rowcount(result) == 0:
                 raise ValueError(
                     f"案例 {case_id} 不存在或状态已变更（预期 {expected_status}）"
                 )
@@ -337,7 +339,7 @@ class CaseRepository(BaseRepository[Case]):
                 )
                 .values(**values)
             )
-            if result.rowcount == 0:
+            if rowcount(result) == 0:
                 raise ValueError(
                     f"案例 {case.case_id} 已被其他用户修改，请刷新后重试"
                 )

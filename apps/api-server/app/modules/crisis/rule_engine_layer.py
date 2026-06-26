@@ -112,7 +112,7 @@ class RuleEngineLayer(JudgmentLayer):
 
             # 追踪最高分类等级
             cat = match.get("category", "mild")
-            if _category_to_level(cat) > _category_to_level(highest_category):
+            if _category_to_value(_category_to_level(cat)) > _category_to_value(_category_to_level(highest_category)):
                 highest_category = cat
 
         # 步骤 4：判定等级

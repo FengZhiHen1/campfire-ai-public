@@ -21,7 +21,8 @@ from typing import Any
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from py_cache import get_redis_client
+from py_cache import get_redis_client, maybe_await
+from py_db.sqlalchemy_helpers import rowcount
 from py_logger import logger
 from py_rag.embedding_contract import BaseEmbeddingEncoder
 from py_rag.indexing.chunk_builder import build_chunk_text
@@ -104,7 +105,7 @@ class IndexPipeline(BaseIndexPipeline):
             WHERE card_id = :card_id AND index_status = 'pending'
         """)
         result = await db_session.execute(update_sql, {"card_id": case_id_str})
-        if result.rowcount == 0:  # type: ignore[attr-defined]
+        if rowcount(result) == 0:
             logger.info(
                 "py-rag",
                 "任务 CAS 冲突：案例状态非 pending，跳过",
@@ -181,7 +182,7 @@ class IndexPipeline(BaseIndexPipeline):
         )
         await db_session.commit()
 
-        if result.rowcount == 0:  # type: ignore[attr-defined]
+        if rowcount(result) == 0:
             logger.warning(
                 "py-rag",
                 "状态更新为 indexed 时 CAS 冲突",
@@ -307,8 +308,9 @@ async def _worker_loop(app: object) -> None:
             redis_client = await get_redis_client()
 
             # 步骤 4：BRPOP 阻塞消费
-            lr: tuple[str, str] | None = await redis_client.brpop(
-                INDEX_QUEUE_KEY, timeout=BRPOP_TIMEOUT
+            # aioredis stub 将 BRPOP 返回值标为 list[Any]，实际为 [key, value] 或 None
+            lr: list[str] | None = await maybe_await(
+                redis_client.brpop(INDEX_QUEUE_KEY, timeout=BRPOP_TIMEOUT)
             )
 
             if lr is None:

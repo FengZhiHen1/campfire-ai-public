@@ -18,6 +18,7 @@ import asyncio
 import time as time_module
 from datetime import datetime, timezone
 
+from py_cache import maybe_await
 from py_config import get_settings
 from py_logger import logger
 
@@ -192,7 +193,7 @@ async def _check_redis() -> ComponentHealth:
         )
 
         async def _do_ping() -> bool:
-            return await client.ping()
+            return await maybe_await(client.ping())
 
         await asyncio.wait_for(_do_ping(), timeout=REDIS_TIMEOUT)
 
@@ -294,7 +295,7 @@ async def check_all() -> HealthCheckResponse:
         HealthCheckResponse: 完整的健康检查响应（含整体状态、组件详情、时间戳）。
     """
     # 步骤 1：并发执行三个组件的连通性检查
-    results: list[ComponentHealth | BaseException] = (
+    results: tuple[ComponentHealth | BaseException, ComponentHealth | BaseException, ComponentHealth | BaseException] = (
         await asyncio.gather(
             _check_postgresql(),
             _check_redis(),

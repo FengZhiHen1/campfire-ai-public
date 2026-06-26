@@ -32,7 +32,7 @@ from py_schemas.consult.confidence import (
     ValidationVerdict,
 )
 
-from .validation_contract import BaseConfidenceValidator
+from .validation_contract import BaseConfidenceValidator, DegradationNote
 from .keyword_scanner import KeywordScanner
 from .rule_validator import compute_rule_score
 from .ticket_trigger import trigger_ticket_with_retry
@@ -45,8 +45,8 @@ _SERVICE: str = "consult.confidence"
 _CONFIDENCE_THRESHOLD: float = 0.7
 _VALIDATION_TIMEOUT_MS: float = 3000.0
 _LLM_ASSESSMENT_TIMEOUT_S: float = 5.0
-_DEGRADATION_LLM_UNAVAILABLE: str = "llm_unavailable"
-_DEGRADATION_TIMEOUT_FALLBACK: str = "timeout_fallback"
+_DEGRADATION_LLM_UNAVAILABLE: DegradationNote = "llm_unavailable"
+_DEGRADATION_TIMEOUT_FALLBACK: DegradationNote = "timeout_fallback"
 
 _LLM_ASSESSMENT_SYSTEM_PROMPT: str = (
     "你是一个应急方案质量评估专家。请评估以下应急方案的内容质量，"
@@ -114,7 +114,7 @@ class ConfidenceValidatorImpl(BaseConfidenceValidator):
         )
         return False
 
-    async def _do_llm_assessment(self, input: Any) -> tuple[float | None, str | None]:
+    async def _do_llm_assessment(self, input: Any) -> tuple[float | None, DegradationNote | None]:
         try:
             llm_client = LLMClient()
             assessment_messages: list[dict[str, str]] = [
@@ -168,7 +168,7 @@ class ConfidenceValidatorImpl(BaseConfidenceValidator):
         self,
         llm_score: float | None,
         rule_score: float,
-        degradation_note: str | None,
+        degradation_note: DegradationNote | None,
     ) -> float:
         if degradation_note == _DEGRADATION_LLM_UNAVAILABLE or llm_score is None:
             return rule_score
@@ -219,7 +219,7 @@ class ConfidenceValidatorImpl(BaseConfidenceValidator):
         modified_plan_text: str,
         ticket_triggered: bool,
         ticket_creation_failed: bool,
-        degradation_note: str | None,
+        degradation_note: DegradationNote | None,
         elapsed_ms: float,
         background_tasks: Any,
     ) -> Any:

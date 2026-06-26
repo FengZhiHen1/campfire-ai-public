@@ -8,6 +8,7 @@ dependencies = [
     "sqlalchemy>=2.0",
     "redis>=5.0",
     "minio>=7.0",
+    "py-cache",
     "py-logger",
     "py-config",
 ]

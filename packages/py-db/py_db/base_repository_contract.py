@@ -23,7 +23,7 @@ from abc import ABC
 from typing import Any, Generic, TypeVar, final
 
 from py_logger import logger
-from sqlalchemy import select
+from sqlalchemy import inspect as sa_inspect, select
 from sqlalchemy.exc import OperationalError, TimeoutError as SQLAlchemyTimeoutError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -314,7 +314,11 @@ class BaseRepository(ABC, Generic[ModelT]):
         实现者可按需覆写以添加自定义查询逻辑。
         不需要关心重试和连接管理——@final find_by_id 已通过 _execute_with_retry 处理。
         """
-        stmt = select(self.model).where(self.model.id == entity_id)
+        mapper = sa_inspect(self.model)
+        if mapper is None:
+            raise RuntimeError(f"Model {self.model} is not a mapped SQLAlchemy class")
+        pk_column = mapper.primary_key[0]
+        stmt = select(self.model).where(pk_column == entity_id)
         result = await session.execute(stmt)
         return result.scalars().first()
 

@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import (
     create_async_engine,
 )
 
+from py_auth.auth_contract import PasswordHasher as BasePasswordHasher
 from py_auth.blacklist import RedisBlacklist
 from py_auth.hashing import hash_password, verify_password
 from py_auth.jwt_utils import JoseTokenManager
@@ -85,12 +86,12 @@ async def get_db_session() -> AsyncGenerator[AsyncSession, None]:
 # ---------------------------------------------------------------------------
 
 
-class PasswordHasher:
+class PasswordHasher(BasePasswordHasher):
     """bcrypt 密码哈希适配器。
 
     封装 py_auth.hashing 的 hash_password() / verify_password() 调用，
     提供干净的依赖注入边界，便于 Service 层单元测试时 mock。
-    实现 py_auth.auth_contract.PasswordHasher 的接口语义。
+    继承 py_auth.auth_contract.PasswordHasher 契约。
 
     Usage:
         hasher = PasswordHasher()
@@ -98,35 +99,15 @@ class PasswordHasher:
         is_valid = hasher.verify_password("Abc12345", hashed)
     """
 
-    def hash_password(self, plain_password: str) -> str:
-        """对明文密码执行 bcrypt 不可逆哈希。
+    def _do_hash(self, plain_password: str) -> str:
+        """执行 bcrypt 不可逆哈希。"""
+        return hash_password(plain_password)
 
-        Args:
-            plain_password: 明文密码原文。
-
-        Returns:
-            bcrypt 哈希字符串，格式 $2b$12$...。
-
-        Raises:
-            HashingError: bcrypt 引擎内部错误。
-        """
-        result: str = hash_password(plain_password)
-        return result
-
-    def verify_password(
+    def _do_verify(
         self, plain_password: str, hashed_password: str
     ) -> bool:
-        """验证明文密码是否匹配已存储的哈希值。
-
-        Args:
-            plain_password: 待验证的明文密码。
-            hashed_password: 已存储的 bcrypt 哈希值。
-
-        Returns:
-            True 匹配，False 不匹配。
-        """
-        result: bool = verify_password(plain_password, hashed_password)
-        return result
+        """验证明文密码是否匹配已存储的哈希值。"""
+        return verify_password(plain_password, hashed_password)
 
     # 保留旧 API 以兼容可能存在的外部调用
     def hash(self, plain_password: str) -> str:

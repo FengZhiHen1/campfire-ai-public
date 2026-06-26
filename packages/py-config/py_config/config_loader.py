@@ -118,7 +118,7 @@ class AppSettingsLoader(BaseConfigLoader[AppSettings]):
             pydantic.ValidationError: 校验失败时由 pydantic-settings 抛出，
                 由 load() 模板方法的外层错误处理捕获。
         """
-        return AppSettings()  # type: ignore[call-arg]
+        return AppSettings.model_validate({})
 
     def _handle_validation_error(self, exc: ValidationError) -> None:
         """处理配置校验失败：解析错误 → 结构化日志 → stderr 输出 → sys.exit(1)。

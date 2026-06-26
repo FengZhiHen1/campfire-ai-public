@@ -25,7 +25,8 @@ from typing import Any
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from py_cache import get_redis_client
+from py_cache import get_redis_client, maybe_await
+from py_db.sqlalchemy_helpers import rowcount
 from py_logger import logger
 from py_rag.exceptions import RedisConnectionError
 from py_rag.indexing_contract import (
@@ -100,7 +101,7 @@ class RedisIndexService(BaseIndexService):
         last_error: Exception | None = None
         for attempt in range(REDIS_LPUSH_RETRY_COUNT + 1):
             try:
-                await redis_client.lpush(INDEX_QUEUE_KEY, json_str)
+                await maybe_await(redis_client.lpush(INDEX_QUEUE_KEY, json_str))
                 break
             except Exception as exc:
                 last_error = exc
@@ -134,7 +135,7 @@ class RedisIndexService(BaseIndexService):
         update_result = await db_session.execute(update_sql, {"card_id": case_id_str})
         await db_session.commit()
 
-        if update_result.rowcount == 0:  # type: ignore[attr-defined]
+        if rowcount(update_result) == 0:
             logger.warning(
                 "py-rag",
                 "CAS 冲突：任务已入队但状态更新失败",

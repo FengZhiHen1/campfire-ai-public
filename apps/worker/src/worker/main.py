@@ -22,7 +22,7 @@ import traceback
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
-from py_cache import close_redis_client, get_redis_client
+from py_cache import close_redis_client, get_redis_client, maybe_await
 from py_config import get_settings
 from py_logger import logger
 from py_rag.indexing import IndexPipeline
@@ -174,7 +174,7 @@ async def _main_loop() -> None:
         try:
             redis_client = await get_redis_client()
 
-            result = await redis_client.brpop(INDEX_QUEUE_KEY, timeout=BRPOP_TIMEOUT)
+            result = await maybe_await(redis_client.brpop(INDEX_QUEUE_KEY, timeout=BRPOP_TIMEOUT))
 
             if result is None:
                 reconnect_interval = REDIS_RECONNECT_INITIAL
