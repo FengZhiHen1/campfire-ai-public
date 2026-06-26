@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import math
 import uuid
-from typing import Any
+from typing import Any, Literal, cast
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -234,7 +234,7 @@ def _build_detail_response(record: ConsultationHistoryModel) -> ConsultationHist
         id=record.id,
         request_id=record.request_id,
         user_id=record.user_id,
-        crisis_level=record.crisis_level,
+        crisis_level=cast(Literal["mild", "moderate", "severe"], record.crisis_level),
         behavior_description=record.behavior_description,
         consultation_time=record.consultation_time,
         generated_plan=record.generated_plan,
@@ -243,7 +243,7 @@ def _build_detail_response(record: ConsultationHistoryModel) -> ConsultationHist
         generation_time_ms=record.generation_time_ms,
         is_partial=record.is_partial,
         referenced_slice_ids=record.referenced_slice_ids or [],
-        finish_reason=record.finish_reason,
+        finish_reason=cast(Literal["COMPLETE", "PARTIAL", "BLOCKED", "TIMEOUT", "ERROR"], record.finish_reason),
         ttft_ms=record.ttft_ms,
         has_feedback=record.has_feedback,
         token_input=record.token_input,

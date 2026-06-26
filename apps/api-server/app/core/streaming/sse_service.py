@@ -17,7 +17,7 @@ from __future__ import annotations
 import asyncio
 import time
 import uuid
-from typing import Any, AsyncGenerator, ClassVar
+from typing import Any, AsyncGenerator, ClassVar, Literal, cast
 
 from fastapi import HTTPException, status
 from fastapi.responses import StreamingResponse
@@ -84,7 +84,7 @@ class SseStreamingService:
         if hasattr(self, "_initialized") and self._initialized:
             return
 
-        self._settings = settings or AppSettings()  # type: ignore[call-arg]
+        self._settings = settings or AppSettings.model_validate({})
         self._session_manager = session_manager or StreamSessionManager()
 
         # 初始化信号量容量（首次初始化后不再变更）
@@ -958,7 +958,7 @@ class SseStreamingService:
                         "以上建议由 AI 生成，仅供参考，不构成医疗诊断或治疗建议。"
                         "如情况紧急，请立即联系专业医疗机构。"
                     ),
-                    crisis_level=crisis_level,
+                    crisis_level=cast(Literal["mild", "moderate", "severe"], crisis_level),
                     block_deep_response=block_deep_response,
                     behavior_description=meta.get("behavior_description", ""),
                     request_id=meta.get("request_id", ""),

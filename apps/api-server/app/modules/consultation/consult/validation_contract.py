@@ -21,7 +21,10 @@ from __future__ import annotations
 
 import time
 from abc import ABC, abstractmethod
-from typing import Any, final
+from typing import Any, Literal, final
+
+
+DegradationNote = Literal["llm_unavailable", "timeout_fallback"]
 
 
 class BaseConfidenceValidator(ABC):
@@ -146,7 +149,7 @@ class BaseConfidenceValidator(ABC):
         ...
 
     @abstractmethod
-    async def _do_llm_assessment(self, input: Any) -> tuple[float | None, str | None]:
+    async def _do_llm_assessment(self, input: Any) -> tuple[float | None, DegradationNote | None]:
         """调用 LLM 对方案质量进行自评估。
 
         实现者在此填写 LLM 自评估调用逻辑。
@@ -184,7 +187,7 @@ class BaseConfidenceValidator(ABC):
         self,
         llm_score: float | None,
         rule_score: float,
-        degradation_note: str | None,
+        degradation_note: DegradationNote | None,
     ) -> float:
         """复合评分：LLM 自评估 + 规则校验加权求和。
 
@@ -235,7 +238,7 @@ class BaseConfidenceValidator(ABC):
         modified_plan_text: str,
         ticket_triggered: bool,
         ticket_creation_failed: bool,
-        degradation_note: str | None,
+        degradation_note: DegradationNote | None,
         elapsed_ms: float,
         background_tasks: Any,
     ) -> Any:

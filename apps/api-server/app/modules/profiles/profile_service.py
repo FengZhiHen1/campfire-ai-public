@@ -18,6 +18,9 @@ from py_db.repositories.profile_repository import ProfileRepository
 from py_logger import logger
 from py_schemas.profiles import (
     AgeRange,
+    DiagnosisType,
+    LanguageLevel,
+    ProfileBehaviorType,
     ProfileCreate,
     ProfileListItem,
     ProfileResponse,
@@ -236,9 +239,9 @@ class ProfileServiceImpl(BaseProfileService):
             nickname=profile.nickname,
             birth_date=profile.birth_date,
             age_range=self._calc_age_range(profile.birth_date),
-            diagnosis_type=profile.diagnosis_type,
-            primary_behavior=profile.primary_behavior,
-            language_level=profile.language_level,
+            diagnosis_type=DiagnosisType(profile.diagnosis_type),
+            primary_behavior=ProfileBehaviorType(profile.primary_behavior),
+            language_level=LanguageLevel(profile.language_level) if profile.language_level else None,
             sensory_features=profile.sensory_features or [],
             triggers=profile.triggers or [],
             medication_notes=profile.medication_notes,
@@ -252,8 +255,8 @@ class ProfileServiceImpl(BaseProfileService):
             profile_id=profile.profile_id,
             nickname=profile.nickname,
             age_range=self._calc_age_range(profile.birth_date),
-            diagnosis_type=profile.diagnosis_type,
-            primary_behavior=profile.primary_behavior,
+            diagnosis_type=DiagnosisType(profile.diagnosis_type),
+            primary_behavior=ProfileBehaviorType(profile.primary_behavior),
             is_default=profile.is_default,
         )
 

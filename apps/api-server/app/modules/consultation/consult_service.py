@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import date
-from typing import Any
+from typing import Any, Literal, cast
 
 from sqlalchemy import desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -339,8 +339,14 @@ def _build_default_tag_filters(
     primary_behavior = behavior_type[0] if behavior_type else "OTHER"
     return TagFilterDto(
         age_range="未知年龄段",
-        behavior_type=primary_behavior,
-        emotion_level=emotion_level,
+        behavior_type=cast(
+            Literal[
+                "SELF_INJURY", "AGGRESSION", "ELOPEMENT", "MEDICATION",
+                "EMOTIONAL_MELTDOWN", "STEREOTYPY", "OTHER",
+            ],
+            primary_behavior,
+        ),
+        emotion_level=cast(Literal["轻", "中", "重"], emotion_level) if emotion_level else None,
     )
 
 
