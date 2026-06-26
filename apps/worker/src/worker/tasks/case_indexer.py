@@ -11,6 +11,7 @@ from __future__ import annotations
 from py_logger import logger
 from py_rag.indexing import IndexPipeline
 from py_rag.indexing_contract import INDEX_QUEUE_KEY
+from py_rag.types import CaseIdStr
 
 
 async def index_case(case_id: str, trace_id: str = "") -> None:
@@ -56,7 +57,7 @@ async def index_case(case_id: str, trace_id: str = "") -> None:
         session_factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
         async with session_factory() as session:
             await pipeline.process_task(
-                case_id=case_id,
+                case_id=CaseIdStr(case_id),
                 trace_id=trace_id,
                 db_session=session,
             )

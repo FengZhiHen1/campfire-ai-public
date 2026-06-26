@@ -27,6 +27,7 @@ from py_config import get_settings
 from py_logger import logger
 from py_rag.indexing import IndexPipeline
 from py_rag.indexing_contract import INDEX_QUEUE_KEY
+from py_rag.types import CaseIdStr
 
 # ---------------------------------------------------------------------------
 # 常量
@@ -127,8 +128,9 @@ async def _process_task(
         )
         return
 
-    case_id = task_data.get("case_id")
-    trace_id = task_data.get("trace_id", "")
+    raw_case_id = task_data.get("case_id")
+    case_id = CaseIdStr(raw_case_id) if isinstance(raw_case_id, str) and raw_case_id else None
+    trace_id = str(task_data.get("trace_id", ""))
 
     if not case_id:
         logger.warning(

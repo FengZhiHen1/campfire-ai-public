@@ -17,7 +17,7 @@ from __future__ import annotations
 import asyncio
 import time
 import uuid
-from typing import AsyncGenerator, ClassVar
+from typing import Any, AsyncGenerator, ClassVar
 
 from fastapi import HTTPException, status
 from fastapi.responses import StreamingResponse
@@ -63,13 +63,16 @@ class SseStreamingService:
     """模块级信号量，所有实例共享。实际容量由 _init_semaphore 在 __init__ 中设置。"""
 
     _semaphore_initialized: ClassVar[bool] = False
+    _generators: dict[str, AsyncGenerator[GenerationChunk, None]]
+    _generation_meta: dict[str, dict]
+    _initialized: bool
 
     def __new__(cls, *args, **kwargs) -> SseStreamingService:
         """确保全局只有一个 SseStreamingService 实例。"""
         if cls._instance is None:
             cls._instance = super().__new__(cls)
-            cls._instance._generators: dict[str, AsyncGenerator[GenerationChunk, None]] = {}
-            cls._instance._generation_meta: dict[str, dict] = {}
+            cls._instance._generators = {}
+            cls._instance._generation_meta = {}
         return cls._instance
 
     def __init__(
@@ -81,7 +84,7 @@ class SseStreamingService:
         if hasattr(self, "_initialized") and self._initialized:
             return
 
-        self._settings = settings or AppSettings()
+        self._settings = settings or AppSettings()  # type: ignore[call-arg]
         self._session_manager = session_manager or StreamSessionManager()
 
         # 初始化信号量容量（首次初始化后不再变更）

@@ -324,7 +324,7 @@ class NarrativeManagementService(NarrativeManagementContract):
 
         # 触发索引（必须在 commit 之后，避免 commit 失败导致垃圾索引任务）
         from py_rag.indexing.service import enqueue_index_task
-        await enqueue_index_task(str(entity.card_id))
+        await enqueue_index_task(entity.card_id, session)
 
         logger.info(
             "card",

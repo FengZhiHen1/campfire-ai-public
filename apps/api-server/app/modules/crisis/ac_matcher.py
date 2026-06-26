@@ -184,11 +184,11 @@ class AhoCorasickMatcher:
                         select(CrisisKeyword).where(CrisisKeyword.is_active == True),
                     )
                     rows = result.scalars().all()
-                    keywords: list[tuple[str, int, str, str]] = []
+                    keywords: list[tuple[str, str, str, str]] = []
                     for row in rows:
                         keywords.append((
                             row.keyword,
-                            row.id,
+                            str(row.id),
                             row.category,
                             row.trigger_rule_id,
                         ))
@@ -206,7 +206,7 @@ class AhoCorasickMatcher:
 
     async def load_from_data(
         self,
-        keywords: list[tuple[str, int, str, str]],
+        keywords: list[tuple[str, str, str, str]],
     ) -> None:
         """从内存数据加载关键词（用于测试和离线模式）。
 
@@ -315,7 +315,7 @@ class AhoCorasickMatcher:
     # 热加载（copy-on-write）
     # ------------------------------------------------------------------
 
-    async def reload(self, keywords: list[tuple[str, int, str, str]]) -> None:
+    async def reload(self, keywords: list[tuple[str, str, str, str]]) -> None:
         """热加载关键词词库。
 
         使用 copy-on-write 策略：先编译新的 AC 自动机，
