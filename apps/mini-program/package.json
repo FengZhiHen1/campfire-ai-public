@@ -6,7 +6,10 @@
   "scripts": {
     "dev:weapp": "taro build --type weapp --watch",
     "dev:h5": "taro build --type h5 --watch",
+    "dev:h5:mock": "cross-env USE_MOCK=true taro build --type h5 --watch",
     "build:weapp": "taro build --type weapp",
+    "build:h5": "taro build --type h5",
+    "build:h5:mock": "cross-env USE_MOCK=true taro build --type h5",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
@@ -21,6 +24,7 @@
     "@tarojs/plugin-platform-h5": "^4.2.0",
     "@types/node": "^25.9.1",
     "@types/react": "^18.3.18",
+    "cross-env": "^7.0.3",
     "less": "^4.2.0",
     "react": "^18.3.1",
     "react-refresh": "^0.18.0",
