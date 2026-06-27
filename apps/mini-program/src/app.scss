@@ -195,3 +195,25 @@ page {
     transform: scale(1);
   }
 }
+
+/* ========== H5 手机模拟器布局 ========== */
+/* 仅在 H5 环境生效：限制应用最大宽度并居中，模拟手机视口 */
+html,
+body {
+  height: 100%;
+}
+
+body {
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  background-color: #E7E5E4;
+}
+
+#app {
+  width: 100%;
+  max-width: 430px;
+  min-height: 100vh;
+  background-color: var(--cf-background);
+  box-shadow: 0 0 40px rgba(28, 25, 23, 0.12);
+}
