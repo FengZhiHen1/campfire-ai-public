@@ -417,8 +417,8 @@
     color: $cf-on-primary-container;
     font-size: 24px;
     font-weight: 500;
-    padding: 4px 16px;
-    border-radius: 8px;
+    padding: $cf-spacing-xs $cf-spacing-sm;
+    border-radius: $cf-radius-sm;
     margin-bottom: $cf-spacing-xs;
   }
 
@@ -735,8 +735,8 @@
     width: 100%;
     min-height: 40px;
     background-color: $cf-surface-container-lowest;
-    border-radius: 12px;
-    padding: 12px $cf-spacing-sm;
+    border-radius: $cf-radius-md;
+    padding: $cf-spacing-sm;
     @include cf-body-md;
     color: $cf-on-background;
     box-sizing: border-box;
@@ -753,8 +753,8 @@
     width: 100%;
     min-height: 96px;
     background-color: $cf-surface-container-lowest;
-    border-radius: 12px;
-    padding: 12px $cf-spacing-sm;
+    border-radius: $cf-radius-md;
+    padding: $cf-spacing-sm;
     @include cf-body-md;
     color: $cf-on-background;
     box-sizing: border-box;
@@ -774,7 +774,7 @@
     justify-content: space-between;
     padding: $cf-spacing-sm;
     background-color: $cf-surface-container;
-    border-radius: 12px;
+    border-radius: $cf-radius-md;
     border: 1px solid rgba($cf-outline, 0.15);
     transition: all 150ms ease-out;
 
@@ -815,8 +815,8 @@
     width: 100%;
     height: 56px;
     background-color: $cf-primary;
-    color: #ffffff;
-    border-radius: 12px;
+    color: $cf-on-primary;
+    border-radius: $cf-radius-md;
     @include cf-body-md;
     font-weight: 600;
     display: flex;
@@ -844,17 +844,6 @@
     @include cf-body-md;
     font-weight: 600;
     line-height: 1;
-  }
-}
-
-@keyframes cf-collapse-expand {
-  from {
-    opacity: 0;
-    transform: translateY(-4px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
   }
 }
 
@@ -943,21 +932,4 @@
   }
 }
 
-/* ========== 新增/覆盖动画 ========== */
-@keyframes cf-dot-pulse {
-  0%, 100% {
-    box-shadow: 0 0 0 8px rgba($cf-primary, 0.15);
-  }
-  50% {
-    box-shadow: 0 0 0 16px rgba($cf-primary, 0.05);
-  }
-}
 
-@keyframes cf-sheet-enter {
-  from {
-    transform: translateY(100%);
-  }
-  to {
-    transform: translateY(0);
-  }
-}

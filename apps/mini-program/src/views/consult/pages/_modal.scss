@@ -1,0 +1,754 @@
+@use '../../shared/styles/tokens' as *;
+
+/* ========== selecting_behavior 弹窗 ========== */
+.consult-modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba($cf-on-background, 0.6);
+  z-index: 100;
+  display: flex;
+  align-items: flex-end;
+  animation: cf-fade-in 200ms ease-out;
+}
+
+.consult-modal {
+  width: 100%;
+  background-color: $cf-surface;
+  border-radius: $cf-radius-lg $cf-radius-lg 0 0;
+  padding: $cf-spacing-lg $cf-spacing-md;
+  padding-bottom: calc($cf-spacing-lg + env(safe-area-inset-bottom));
+  box-shadow: 0 (-$cf-spacing-xs) 40px rgba($cf-on-background, 0.08);
+  animation: cf-slide-up 300ms ease-out;
+  max-height: 85vh;
+  overflow-y: auto;
+
+  &__title {
+    font-size: 40px;
+    font-weight: 600;
+    color: $cf-on-background;
+    text-align: center;
+    margin-bottom: $cf-spacing-sm;
+  }
+
+  &__subtitle {
+    @include cf-body-sm;
+    color: $cf-on-surface-variant;
+    text-align: center;
+    margin-bottom: $cf-spacing-lg;
+  }
+
+  &__grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 24px;
+    margin-bottom: $cf-spacing-lg;
+  }
+
+  &__option {
+    background-color: $cf-surface-variant;
+    border-radius: $cf-radius-xl;
+    padding: $cf-spacing-md;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 240px;
+    position: relative;
+    border: none;
+    text-align: center;
+
+    &::after {
+      border: none;
+    }
+
+    &:active {
+      transform: scale(0.97);
+    }
+
+    &--selected {
+      background-color: $cf-primary-container;
+    }
+  }
+
+  &__option-icon {
+    font-size: 64px;
+    margin-bottom: $cf-spacing-sm;
+  }
+
+  &__option-text {
+    @include cf-body-md;
+    font-weight: 600;
+    color: $cf-on-background;
+
+    .consult-modal__option--selected & {
+      color: $cf-on-primary-container;
+    }
+  }
+
+  &__option-desc {
+    @include cf-label-md;
+    color: $cf-on-surface-variant;
+    margin-top: $cf-spacing-xs;
+    opacity: 0.8;
+
+    .consult-modal__option--selected & {
+      color: $cf-on-primary-container;
+      opacity: 0.7;
+    }
+  }
+
+  &__check {
+    position: absolute;
+    top: $cf-spacing-sm;
+    right: $cf-spacing-sm;
+    width: 40px;
+    height: 40px;
+    background-color: $cf-primary;
+    color: $cf-on-primary;
+    border-radius: $cf-radius-full;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    @include cf-label-md;
+    font-weight: 700;
+  }
+
+  &__label {
+    @include cf-body-sm;
+    font-weight: 600;
+    color: $cf-on-background;
+    margin-bottom: $cf-spacing-sm;
+  }
+
+  &__emotion-row {
+    display: flex;
+    gap: 24px;
+    margin-bottom: $cf-spacing-md;
+  }
+
+  &__emotion-btn {
+    flex: 1;
+    height: 96px;
+    background-color: $cf-surface-variant;
+    color: $cf-on-background;
+    border-radius: $cf-radius-xl;
+    @include cf-body-md;
+    font-weight: 500;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: none;
+
+    &::after {
+      border: none;
+    }
+
+    &--active {
+      background-color: $cf-primary;
+      color: $cf-on-primary;
+    }
+
+    &:active {
+      opacity: 0.9;
+    }
+  }
+
+  &__textarea {
+    background-color: $cf-surface-variant;
+    border-radius: $cf-radius-xl;
+    padding: $cf-spacing-md;
+    @include cf-body-sm;
+    line-height: 1.75;
+    color: $cf-on-background;
+    min-height: 240px;
+    width: 100%;
+    box-sizing: border-box;
+    margin-bottom: $cf-spacing-md;
+    border: none;
+  }
+
+  &__actions {
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+  }
+
+  &__submit-btn {
+    width: 100%;
+    height: 96px;
+    background-color: $cf-primary;
+    color: $cf-on-primary;
+    border-radius: $cf-radius-xl;
+    @include cf-body-md;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: none;
+
+    &::after {
+      border: none;
+    }
+
+    &:disabled {
+      background-color: $cf-surface-dim;
+      color: $cf-on-surface-variant;
+    }
+
+    &:active:not(:disabled) {
+      opacity: 0.9;
+    }
+  }
+
+  &__skip-btn {
+    width: 100%;
+    height: 80px;
+    background-color: transparent;
+    color: $cf-secondary;
+    border-radius: $cf-radius-xl;
+    @include cf-body-sm;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: none;
+
+    &::after {
+      border: none;
+    }
+
+    &:active {
+      background-color: $cf-surface-variant;
+    }
+  }
+
+  /* 档案选择 */
+  &__profile-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: $cf-spacing-sm;
+    margin-bottom: $cf-spacing-md;
+  }
+
+  &__profile-btn {
+    background-color: $cf-surface-variant;
+    color: $cf-on-surface-variant;
+    border-radius: $cf-radius-md;
+    padding: 12px 24px;
+    @include cf-label-md;
+    border: none;
+
+    &::after {
+      border: none;
+    }
+
+    &--active {
+      background-color: $cf-primary-container;
+      color: $cf-on-primary-container;
+    }
+
+    &:active {
+      opacity: 0.8;
+    }
+  }
+}
+
+/* ========== submitting 加载骨架屏 ========== */
+.consult-submitting {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: $cf-spacing-md;
+  gap: 24px;
+
+  &__skeleton {
+    width: 240px;
+    height: 48px;
+    background-color: $cf-surface-variant;
+    border-radius: $cf-radius-md;
+    border: 2px solid rgba($cf-primary, 0.3);
+    animation: cf-skel-pulse 1.5s ease-in-out infinite;
+
+    &:nth-child(2) {
+      width: 280px;
+      animation-delay: 0.2s;
+    }
+
+    &:nth-child(3) {
+      width: 200px;
+      animation-delay: 0.4s;
+    }
+  }
+
+  &__text {
+    @include cf-body-sm;
+    color: $cf-on-surface-variant;
+    margin-top: $cf-spacing-sm;
+  }
+}
+
+/* ========== ticket_guide 状态 ========== */
+.consult-ticket-guide {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: $cf-spacing-md;
+
+  &__icon {
+    width: 160px;
+    height: 160px;
+    background-color: $cf-error-container;
+    border-radius: $cf-radius-full;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 72px;
+    margin-bottom: $cf-spacing-md;
+  }
+
+  &__title {
+    @include cf-headline-sm;
+    font-weight: 600;
+    color: $cf-on-background;
+    margin-bottom: $cf-spacing-sm;
+  }
+
+  &__desc {
+    @include cf-body-sm;
+    color: $cf-on-surface-variant;
+    text-align: center;
+    line-height: 1.5;
+    margin-bottom: $cf-spacing-lg;
+    padding: 0 $cf-spacing-md;
+  }
+
+  &__actions {
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+    width: calc(100% - $cf-spacing-xl);
+    max-width: 600px;
+  }
+
+  &__expert-btn {
+    width: 100%;
+    height: 96px;
+    background-color: $cf-error;
+    color: $cf-surface;
+    border-radius: $cf-radius-xl;
+    @include cf-body-md;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: none;
+
+    &::after {
+      border: none;
+    }
+
+    &:active {
+      opacity: 0.9;
+    }
+  }
+
+  &__new-btn {
+    width: 100%;
+    height: 96px;
+    background-color: transparent;
+    color: $cf-secondary;
+    border-radius: $cf-radius-xl;
+    @include cf-body-sm;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: none;
+
+    &::after {
+      border: none;
+    }
+
+    &:active {
+      background-color: $cf-surface-variant;
+    }
+  }
+}
+
+/* ========== error 状态 ========== */
+.consult-error {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: $cf-spacing-md;
+
+  &__icon {
+    width: 160px;
+    height: 160px;
+    background-color: $cf-error-container;
+    border-radius: $cf-radius-full;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 72px;
+    margin-bottom: $cf-spacing-md;
+  }
+
+  &__title {
+    @include cf-headline-sm;
+    font-weight: 600;
+    color: $cf-on-background;
+    margin-bottom: $cf-spacing-sm;
+  }
+
+  &__message {
+    @include cf-body-sm;
+    color: $cf-error;
+    text-align: center;
+    margin-bottom: $cf-spacing-lg;
+    padding: 0 $cf-spacing-md;
+  }
+
+  &__actions {
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+    width: calc(100% - $cf-spacing-xl);
+    max-width: 600px;
+  }
+
+  &__retry-btn {
+    width: 100%;
+    height: 96px;
+    background-color: $cf-primary;
+    color: $cf-on-primary;
+    border-radius: $cf-radius-xl;
+    @include cf-body-md;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: none;
+
+    &::after {
+      border: none;
+    }
+
+    &:active {
+      opacity: 0.9;
+    }
+  }
+
+  &__back-btn {
+    width: 100%;
+    height: 96px;
+    background-color: transparent;
+    color: $cf-secondary;
+    border-radius: $cf-radius-xl;
+    @include cf-body-sm;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: none;
+
+    &::after {
+      border: none;
+    }
+
+    &:active {
+      background-color: $cf-surface-variant;
+    }
+  }
+}
+
+
+
+/* ========== selecting_behavior 全屏选择页 ========== */
+
+.consult-selection-scroll {
+  flex: 1;
+  padding: 0 $cf-spacing-md;
+  overflow-y: auto;
+
+  &__spacer {
+    height: $cf-spacing-md;
+  }
+}
+
+/* 区块A — 页头 */
+.consult-selection-header {
+  padding-top: $cf-spacing-md;
+  padding-bottom: $cf-spacing-sm;
+
+  &__title {
+    @include cf-headline-sm;
+    color: $cf-on-background;
+    margin-bottom: $cf-spacing-xs;
+  }
+
+  &__subtitle {
+    @include cf-body-sm;
+    color: $cf-on-surface-variant;
+  }
+}
+
+/* 区块B — 关联档案 */
+.consult-selection-profiles {
+  margin-bottom: $cf-spacing-md;
+
+  &__scroll {
+    white-space: nowrap;
+  }
+
+  &__list {
+    display: inline-flex;
+    gap: $cf-spacing-sm;
+  }
+
+  &__chip {
+    flex-shrink: 0;
+    padding: $cf-spacing-xs $cf-spacing-sm;
+    border-radius: $cf-radius-full;
+    font-size: $cf-label-md;
+    font-weight: 500;
+    background-color: $cf-surface-variant;
+    color: $cf-on-surface-variant;
+    border: none;
+
+    &::after {
+      border: none;
+    }
+
+    &--active {
+      background-color: $cf-primary-container;
+      color: $cf-on-primary-container;
+    }
+
+    &:active {
+      opacity: 0.8;
+    }
+  }
+}
+
+/* 区块C — 行为类型列表 */
+.consult-selection-types {
+  display: flex;
+  flex-direction: column;
+  gap: $cf-spacing-xs;
+  margin-bottom: $cf-spacing-md;
+}
+
+.consult-selection-type {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: $cf-spacing-md;
+  border-radius: $cf-radius-lg;
+  background-color: $cf-surface;
+  min-height: 88px;
+  position: relative;
+
+  &--selected {
+    background-color: $cf-primary-container;
+    border-left: 4px solid $cf-primary;
+  }
+
+  &__main {
+    display: flex;
+    align-items: center;
+    gap: $cf-spacing-md;
+  }
+
+  &__icon {
+    @include cf-body-md;
+    color: $cf-secondary;
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  &__text {
+    display: flex;
+    flex-direction: column;
+  }
+
+  &__label {
+    font-size: $cf-body-sm;
+    color: $cf-on-background;
+    font-weight: 600;
+  }
+
+  &__desc {
+    font-size: $cf-footnote;
+    color: $cf-on-surface-variant;
+  }
+
+  &__indicator {
+    width: 32px;
+    height: 32px;
+    border-radius: $cf-radius-full;
+    border: 2px solid $cf-outline;
+    flex-shrink: 0;
+
+    &--selected {
+      background-color: $cf-primary;
+      border-color: $cf-primary;
+      position: relative;
+
+      &::after {
+        content: '';
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        width: 12px;
+        height: 12px;
+        border-radius: $cf-radius-full;
+        background-color: $cf-surface;
+      }
+    }
+  }
+}
+
+/* 区块D — 情绪等级 */
+.consult-selection-emotion {
+  margin-bottom: $cf-spacing-md;
+
+  &__label {
+    font-size: $cf-label-md;
+    color: $cf-on-surface-variant;
+    margin-bottom: $cf-spacing-sm;
+    display: block;
+  }
+
+  &__row {
+    display: flex;
+    background-color: $cf-surface-variant;
+    padding: $cf-spacing-xs;
+    border-radius: $cf-radius-lg;
+    gap: $cf-spacing-xs;
+  }
+
+  &__btn {
+    flex: 1;
+    height: 80px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: $cf-label-md;
+    font-weight: 500;
+    color: $cf-on-surface-variant;
+    background-color: transparent;
+    border: none;
+    border-radius: $cf-radius-md;
+
+    &::after {
+      border: none;
+    }
+
+    &--active {
+      background-color: $cf-primary;
+      color: $cf-on-primary;
+      box-shadow: $cf-shadow-diffuse;
+    }
+
+    &:active {
+      opacity: 0.9;
+    }
+  }
+}
+
+/* 区块E — 补充描述 */
+.consult-selection-desc {
+  margin-bottom: $cf-spacing-md;
+
+  &__label {
+    font-size: $cf-label-md;
+    color: $cf-on-surface-variant;
+    margin-bottom: $cf-spacing-sm;
+    display: block;
+  }
+
+  &__textarea {
+    width: 100%;
+    min-height: 200px;
+    max-height: 400px;
+    background-color: $cf-surface-variant;
+    border-radius: $cf-radius-lg;
+    padding: $cf-spacing-md;
+    font-size: $cf-body-sm;
+    color: $cf-on-background;
+    border: none;
+
+    &::placeholder {
+      color: rgba($cf-on-surface-variant, 0.6);
+    }
+  }
+}
+
+/* 区块F — 底部操作栏 */
+.consult-selection-footer {
+  flex-shrink: 0;
+  background-color: $cf-surface;
+  padding: $cf-spacing-md;
+  padding-bottom: calc($cf-spacing-md + env(safe-area-inset-bottom));
+  box-shadow: 0 -4px 24px rgba(28, 25, 23, 0.06);
+
+  &__submit {
+    width: 100%;
+    height: 96px;
+    background-color: $cf-primary;
+    color: $cf-on-primary;
+    border-radius: $cf-radius-full;
+    @include cf-body-md;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: none;
+    margin-bottom: $cf-spacing-sm;
+
+    &::after {
+      border: none;
+    }
+
+    &:disabled {
+      background-color: $cf-surface-dim;
+      color: $cf-on-surface-variant;
+    }
+
+    &:active:not(:disabled) {
+      transform: scale(0.98);
+    }
+  }
+
+  &__skip {
+    width: 100%;
+    height: 80px;
+    background-color: transparent;
+    color: $cf-secondary;
+    font-size: $cf-label-md;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: none;
+
+    &::after {
+      border: none;
+    }
+
+    &:active {
+      background-color: $cf-surface-variant;
+      border-radius: $cf-radius-md;
+    }
+  }
+}

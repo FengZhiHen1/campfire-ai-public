@@ -1,40 +1,42 @@
+@use '../../styles/tokens' as *;
+
 .error-boundary {
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   min-height: 100vh;
-  padding: 32px;
-  background: #FDF8F3;
+  padding: $cf-spacing-md;
+  background: $cf-background;
   text-align: center;
 
   &__icon {
-    font-size: 48px;
-    margin-bottom: 24px;
+    font-size: $cf-headline-md;
+    margin-bottom: $cf-spacing-md;
   }
 
   &__title {
-    font-size: 20px;
-    font-weight: 600;
-    color: #1C1917;
-    margin-bottom: 12px;
+    @include cf-headline-sm;
+    color: $cf-on-background;
+    margin-bottom: $cf-spacing-xs;
   }
 
   &__desc {
-    font-size: 14px;
-    color: #78716C;
-    margin-bottom: 32px;
-    line-height: 1.6;
-    max-width: 280px;
+    @include cf-body-sm;
+    color: $cf-on-surface-variant;
+    margin-bottom: $cf-spacing-md;
+    max-width: 560px;
   }
 
   &__retry {
-    padding: 12px 32px;
-    border-radius: 8px;
-    background: #F59E0B;
-    color: #431407;
-    font-size: 16px;
+    padding: $cf-spacing-sm $cf-spacing-md;
+    border-radius: $cf-radius-sm;
+    background: $cf-primary;
+    color: $cf-on-primary;
+    @include cf-body-sm;
     font-weight: 600;
     border: none;
+
+    @include cf-btn-reset;
   }
 }

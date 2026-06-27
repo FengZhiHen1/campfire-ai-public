@@ -31,6 +31,14 @@ $cf-on-error: #FFFFFF;
 $cf-error-container: #FEE2E2;
 $cf-on-error-container: #991B1B;
 
+// ===== Warning (Amber) =====
+// 用于系统推断/待确认信息的高亮背景与文字。
+// 颜色值保持与现有 hard-coded 用法 #FFFBEB / #D97706 一致。
+$cf-warning: #D97706;
+$cf-on-warning: #FFFFFF;
+$cf-warning-container: #FFFBEB;
+$cf-on-warning-container: #D97706;
+
 // ===== Surface & Background =====
 $cf-background: #FDF8F3;
 $cf-on-background: #1C1917;
@@ -76,25 +84,37 @@ $cf-spacing-xl: 64px;
 $cf-gutter: 32px;
 
 // ===== Radius =====
+$cf-radius-xs: 4px;
 $cf-radius-sm: 8px;
 $cf-radius-md: 16px;
+$cf-radius-xl: 24px;
 $cf-radius-lg: 32px;
+$cf-radius-2xl: 40px;
 $cf-radius-full: 9999px;
 
 // ===== Shadows =====
 $cf-shadow-diffuse: 0 4px 24px rgba(28, 25, 23, 0.06);
 $cf-shadow-deep: 0 8px 40px rgba(28, 25, 23, 0.08);
 $cf-shadow-input-top: 0 -2px 12px rgba(28, 25, 23, 0.04);
+$cf-shadow-focus-inset: inset 0 0 0 1px rgba($cf-primary, 0.3);
 
 // ===== Typography Font-Size Variables =====
+$cf-headline-lg: 48px;
 $cf-headline-md: 40px;
 $cf-headline-sm: 36px;
+$cf-body-lg: 36px;
 $cf-body-md: 32px;
 $cf-body-sm: 28px;
 $cf-label-md: 28px;
 $cf-footnote: 22px;
 
 // ===== Typography Mixins =====
+@mixin cf-headline-lg {
+  font-size: $cf-headline-lg;
+  font-weight: 600;
+  line-height: 76px;
+}
+
 @mixin cf-headline-md {
   font-size: $cf-headline-md;
   font-weight: 600;
@@ -105,6 +125,12 @@ $cf-footnote: 22px;
   font-size: $cf-headline-sm;
   font-weight: 600;
   line-height: 56px;
+}
+
+@mixin cf-body-lg {
+  font-size: $cf-body-lg;
+  font-weight: 400;
+  line-height: 64px;
 }
 
 @mixin cf-body-md {
@@ -129,4 +155,33 @@ $cf-footnote: 22px;
   font-size: $cf-footnote;
   font-weight: 400;
   line-height: 30px;
+}
+
+// ===== Layout Mixins =====
+@mixin cf-page-shell {
+  min-height: 100vh;
+  background-color: $cf-background;
+  display: flex;
+  flex-direction: column;
+}
+
+// ===== Component Mixins =====
+@mixin cf-card {
+  background-color: $cf-surface;
+  border-radius: $cf-radius-xl;
+  box-shadow: $cf-shadow-diffuse;
+}
+
+@mixin cf-shadow-diffuse {
+  box-shadow: 0 4px 24px rgba($cf-on-background, 0.06);
+}
+
+@mixin cf-shadow-deep {
+  box-shadow: 0 8px 40px rgba($cf-on-background, 0.08);
+}
+
+@mixin cf-btn-reset {
+  &::after {
+    border: none;
+  }
 }

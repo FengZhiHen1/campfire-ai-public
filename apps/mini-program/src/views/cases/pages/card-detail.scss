@@ -2,10 +2,7 @@
 
 // 页面
 .cd-page {
-  min-height: 100vh;
-  background-color: $cf-background;
-  display: flex;
-  flex-direction: column;
+  @include cf-page-shell;
 }
 
 // 滚动区
@@ -18,10 +15,10 @@
 // 概览
 .cd-overview {
   background-color: $cf-surface;
-  border-radius: 24px;
+  border-radius: $cf-radius-xl;
   padding: $cf-spacing-md;
   margin-bottom: 20px;
-  box-shadow: 0 4px 24px rgba($cf-on-background, 0.06);
+  box-shadow: $cf-shadow-diffuse;
 
   &__title {
     font-size: 34px;
@@ -39,10 +36,10 @@
   }
 
   &__tag {
-    font-size: 22px;
+    @include cf-footnote;
     color: $cf-on-primary-container;
     background: $cf-primary-container;
-    border-radius: 8px;
+    border-radius: $cf-radius-sm;
     padding: 4px 12px;
 
     &--category {
@@ -58,7 +55,7 @@
   }
 
   &__meta-item {
-    font-size: 24px;
+    @include cf-label-md;
     color: $cf-on-surface-variant;
   }
 }
@@ -69,7 +66,7 @@
   border-top: 1px solid $cf-outline-variant;
 
   &__text {
-    font-size: 28px;
+    @include cf-body-sm;
     line-height: 1.6;
     color: $cf-on-surface-variant;
   }
@@ -78,10 +75,10 @@
 // 四段式卡片（同 er-quartet-card 风格）
 .cd-quartet-card {
   background-color: $cf-surface;
-  border-radius: 24px;
+  border-radius: $cf-radius-xl;
   padding: $cf-spacing-md;
   margin-bottom: 24px;
-  box-shadow: 0 4px 24px rgba($cf-on-background, 0.06);
+  box-shadow: $cf-shadow-diffuse;
   position: relative;
   overflow: hidden;
 
@@ -103,7 +100,7 @@
   }
 
   &__title {
-    font-size: 28px;
+    @include cf-body-sm;
     font-weight: 600;
     margin-bottom: $cf-spacing-sm;
 
@@ -114,7 +111,7 @@
   }
 
   &__content {
-    font-size: 28px;
+    @include cf-body-sm;
     line-height: 1.6;
     color: $cf-on-background;
   }
@@ -135,13 +132,13 @@
 
   &__content {
     background: $cf-surface;
-    border-radius: 20px;
+    border-radius: $cf-radius-xl;
     padding: 24px;
     box-shadow: 0 2px 16px rgba($cf-on-background, 0.04);
   }
 
   &__text {
-    font-size: 28px;
+    @include cf-body-sm;
     line-height: 1.75;
     color: $cf-on-background;
   }
@@ -154,10 +151,10 @@
   gap: 12px;
 
   &__item {
-    font-size: 24px;
+    @include cf-label-md;
     color: $cf-on-secondary-container;
     background: $cf-secondary-container;
-    border-radius: 8px;
+    border-radius: $cf-radius-sm;
     padding: 8px 16px;
   }
 }
@@ -190,9 +187,9 @@
 .cd-retry-btn {
   background: $cf-primary;
   color: $cf-on-primary;
-  border-radius: 12px;
+  border-radius: $cf-radius-md;
   padding: 12px 40px;
-  font-size: 28px;
+  @include cf-body-sm;
   border: none;
   &::after { border: none; }
 }

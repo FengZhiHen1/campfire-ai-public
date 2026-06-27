@@ -2,10 +2,7 @@
 
 /* ========== 页面外壳 ========== */
 .cases-page {
-  min-height: 100vh;
-  background-color: $cf-background;
-  display: flex;
-  flex-direction: column;
+  @include cf-page-shell;
   padding-bottom: calc(128px + env(safe-area-inset-bottom));
 }
 
@@ -21,7 +18,7 @@
   z-index: 50;
 
   &__title {
-    font-size: 36px;
+    @include cf-headline-sm;
     font-weight: 600;
     color: $cf-on-background;
   }
@@ -29,7 +26,7 @@
   &__review {
     position: absolute;
     right: 96px;
-    font-size: 28px;
+    @include cf-body-sm;
     color: $cf-primary;
     background: none;
     border: none;
@@ -52,7 +49,7 @@
   &__menu-btn {
     position: absolute;
     right: 0;
-    font-size: 32px;
+    @include cf-body-md;
     color: $cf-on-background;
     background: none;
     border: none;
@@ -78,17 +75,17 @@
     top: 100%;
     right: 0;
     background-color: $cf-surface;
-    border-radius: 24px;
-    box-shadow: 0 8px 40px rgba($cf-on-background, 0.08);
+    border-radius: $cf-radius-xl;
+    box-shadow: $cf-shadow-deep;
     width: 320px;
     padding: $cf-spacing-sm 0;
     z-index: 60;
-    animation: er-fade-in-up 150ms ease-out;
+    animation: cf-fade-in-down 150ms ease-out;
   }
 
   &__menu-item {
     padding: 20px $cf-spacing-md;
-    font-size: 28px;
+    @include cf-body-sm;
     color: $cf-on-background;
 
     &:active {
@@ -110,7 +107,7 @@
     background-color: $cf-surface;
     color: $cf-on-surface-variant;
     border-radius: $cf-radius-md;
-    font-size: 28px;
+    @include cf-body-sm;
     font-weight: 500;
     display: flex;
     align-items: center;
@@ -151,7 +148,7 @@
   }
 
   &__icon {
-    font-size: 28px;
+    @include cf-body-sm;
     color: $cf-on-surface-variant;
     margin-right: $cf-spacing-sm;
     line-height: 1;
@@ -159,7 +156,7 @@
 
   &__input {
     flex: 1;
-    font-size: 28px;
+    @include cf-body-sm;
     color: $cf-on-background;
     background: transparent;
     border: none;
@@ -171,7 +168,7 @@
   }
 
   &__clear {
-    font-size: 32px;
+    @include cf-body-md;
     color: $cf-on-surface-variant;
     margin-left: $cf-spacing-sm;
     min-width: 44px;
@@ -190,10 +187,10 @@
 /* ========== 案例卡片 ========== */
 .case-card {
   background-color: $cf-surface;
-  border-radius: 24px;
+  border-radius: $cf-radius-xl;
   padding: $cf-spacing-md;
   margin-bottom: 24px;
-  box-shadow: 0 4px 24px rgba($cf-on-background, 0.06);
+  box-shadow: $cf-shadow-diffuse;
   position: relative;
   overflow: hidden;
 
@@ -228,7 +225,7 @@
 
   &__title {
     flex: 1;
-    font-size: 32px;
+    @include cf-body-md;
     font-weight: 600;
     color: $cf-on-background;
     line-height: 1.5;
@@ -273,13 +270,13 @@
   }
 
   &__badge-letter {
-    font-size: 28px;
+    @include cf-body-sm;
     font-weight: 700;
     line-height: 1;
   }
 
   &__badge-level {
-    font-size: 20px;
+    @include cf-footnote;
     line-height: 1;
     margin-top: 2px;
   }
@@ -294,7 +291,7 @@
 
   &__tag {
     display: inline-block;
-    font-size: 22px;
+    @include cf-footnote;
     font-weight: 500;
     padding: $cf-spacing-xs $cf-spacing-sm;
     border-radius: $cf-radius-md;
@@ -313,7 +310,7 @@
     &--mine {
       background-color: $cf-primary-container;
       color: $cf-on-primary-container;
-      font-size: 20px;
+      @include cf-footnote;
       padding: 4px 12px;
     }
   }
@@ -340,12 +337,12 @@
   }
 
   &__status-text {
-    font-size: 24px;
+    @include cf-label-md;
     color: $cf-on-surface-variant;
   }
 
   &__time {
-    font-size: 24px;
+    @include cf-label-md;
     color: rgba($cf-on-surface-variant, 0.5);
     margin-left: auto;
   }
@@ -369,15 +366,13 @@
   border: none;
   z-index: 100;
   box-shadow: 0 4px 16px rgba($cf-primary, 0.35);
-  animation: er-fab-enter 300ms ease-out 200ms both;
+  animation: cf-fab-enter 300ms ease-out 200ms both;
 
   &:active {
     transform: scale(0.95);
   }
 
-  &::after {
-    border: none;
-  }
+  @include cf-btn-reset;
 }
 
 /* ========== 加载/空/错误状态 ========== */
@@ -413,11 +408,11 @@
   height: 120px;
   border-radius: 50%;
   background: radial-gradient(circle, rgba($cf-primary, 0.3) 0%, rgba($cf-primary, 0.1) 50%, transparent 70%);
-  animation: er-fade-in-scale 400ms ease-out;
+  animation: cf-fade-in-scale 400ms ease-out;
 }
 
 .cases-empty__title {
-  font-size: 36px;
+  @include cf-headline-sm;
   font-weight: 600;
   color: $cf-on-background;
   margin-bottom: $cf-spacing-sm;
@@ -425,7 +420,7 @@
 }
 
 .cases-empty__subtitle {
-  font-size: 28px;
+  @include cf-body-sm;
   color: $cf-on-surface-variant;
   text-align: center;
   margin-bottom: $cf-spacing-lg;
@@ -438,7 +433,7 @@
   background-color: $cf-primary;
   color: $cf-on-primary;
   border-radius: $cf-radius-md;
-  font-size: 28px;
+  @include cf-body-sm;
   font-weight: 600;
   display: flex;
   align-items: center;
@@ -448,7 +443,7 @@
   &--text {
     background: none;
     color: $cf-primary;
-    font-size: 28px;
+    @include cf-body-sm;
     height: 64px;
     width: auto;
     padding: 0 $cf-spacing-md;
@@ -458,9 +453,7 @@
     opacity: 0.9;
   }
 
-  &::after {
-    border: none;
-  }
+  @include cf-btn-reset;
 }
 
 /* ========== 加载更多 ========== */
@@ -477,11 +470,11 @@
     border: 3px solid rgba($cf-primary, 0.2);
     border-top-color: $cf-primary;
     border-radius: 50%;
-    animation: er-spin 1s linear infinite;
+    animation: cf-spin 1s linear infinite;
   }
 
   &__text {
-    font-size: 28px;
+    @include cf-body-sm;
     color: $cf-on-surface-variant;
   }
 }
@@ -489,7 +482,7 @@
 .cases-no-more {
   text-align: center;
   padding: $cf-spacing-lg 0;
-  font-size: 24px;
+  @include cf-label-md;
   color: rgba($cf-on-surface-variant, 0.5);
 }
 
@@ -503,40 +496,4 @@
   z-index: 30;
 }
 
-/* ========== 动画 ========== */
-@keyframes er-fab-enter {
-  from {
-    opacity: 0;
-    transform: scale(0.8);
-  }
-  to {
-    opacity: 1;
-    transform: scale(1);
-  }
-}
 
-@keyframes er-fade-in-up {
-  from {
-    opacity: 0;
-    transform: translateY(-4px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-@keyframes er-spin {
-  to { transform: rotate(360deg); }
-}
-
-@keyframes er-fade-in-scale {
-  from {
-    opacity: 0;
-    transform: scale(0.9);
-  }
-  to {
-    opacity: 1;
-    transform: scale(1);
-  }
-}

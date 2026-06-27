@@ -24,19 +24,19 @@
     border-radius: $cf-radius-lg;
     border: 2px solid rgba($cf-primary, 0.2);
     animation: cf-pulse-border 2s ease-in-out infinite;
-    margin-bottom: 24px;
+    margin-bottom: $cf-spacing-md;
   }
 
   &__text {
-    font-size: 28px;
+    @include cf-body-sm;
     color: $cf-on-surface-variant;
   }
 
   &__hint {
-    font-size: 24px;
+    @include cf-label-md;
     color: $cf-on-surface-variant;
     opacity: 0.6;
-    margin-top: 8px;
+    margin-top: $cf-spacing-xs;
   }
 }
 
@@ -48,7 +48,7 @@
   align-items: center;
   justify-content: center;
   padding: $cf-spacing-lg $cf-spacing-md;
-  font-size: 28px;
+  @include cf-body-sm;
   color: $cf-on-surface-variant;
   text-align: center;
   line-height: 1.5;
@@ -67,8 +67,8 @@
   &__btn {
     display: inline-flex;
     align-items: center;
-    padding: $cf-spacing-sm 24px;
-    font-size: 28px;
+    padding: $cf-spacing-sm $cf-spacing-md;
+    @include cf-body-sm;
     font-weight: 500;
     color: $cf-on-surface-variant;
     background: none;
@@ -104,45 +104,45 @@
 
 .er-group {
   background-color: $cf-surface;
-  border-radius: 24px;
+  border-radius: $cf-radius-xl;
   padding: $cf-spacing-md;
-  margin-bottom: 24px;
-  box-shadow: 0 4px 24px rgba($cf-on-background, 0.06);
+  margin-bottom: $cf-spacing-md;
+  box-shadow: $cf-shadow-diffuse;
 
   &__title {
-    font-size: 32px;
+    @include cf-body-md;
     font-weight: 600;
     color: $cf-on-background;
-    margin-bottom: 24px;
+    margin-bottom: $cf-spacing-md;
     line-height: 1.5;
   }
 
   &__subtitle {
-    font-size: 24px;
+    @include cf-label-md;
     color: $cf-on-surface-variant;
-    margin-bottom: 24px;
+    margin-bottom: $cf-spacing-md;
     line-height: 1.4;
   }
 }
 
 .er-field {
-  margin-bottom: 24px;
+  margin-bottom: $cf-spacing-md;
 
   &:last-child {
     margin-bottom: 0;
   }
 
   &--inferred {
-    background-color: #FFFBEB;
+    background-color: $cf-warning-container;
     border-radius: $cf-radius-md;
-    padding: 24px;
-    margin: 0 -24px 24px;
+    padding: $cf-spacing-md;
+    margin: 0 (-$cf-spacing-md) $cf-spacing-md;
   }
 
   &__label {
     display: flex;
     align-items: center;
-    font-size: 28px;
+    @include cf-body-sm;
     font-weight: 500;
     color: $cf-on-background;
     margin-bottom: $cf-spacing-sm;
@@ -151,17 +151,17 @@
 
   &__inferred-badge {
     margin-left: $cf-spacing-sm;
-    padding: 4px 12px;
-    font-size: 20px;
-    color: #D97706;
-    background-color: $cf-primary-container;
+    padding: $cf-spacing-xs $cf-spacing-sm;
+    @include cf-footnote;
+    color: $cf-on-warning-container;
+    background-color: $cf-warning-container;
     border-radius: $cf-radius-sm;
     line-height: 1;
   }
 
   &__inferred-hint {
     display: block;
-    font-size: 22px;
+    @include cf-footnote;
     color: $cf-on-surface-variant;
     margin-bottom: $cf-spacing-sm;
     line-height: 1.4;
@@ -171,8 +171,8 @@
   &__input {
     width: 100%;
     height: 64px;
-    padding: 0 24px;
-    font-size: 28px;
+    padding: 0 $cf-spacing-md;
+    @include cf-body-sm;
     background-color: $cf-surface-variant;
     border-radius: $cf-radius-md;
     color: $cf-on-background;
@@ -183,8 +183,8 @@
   &__textarea {
     width: 100%;
     min-height: 160px;
-    padding: 24px;
-    font-size: 28px;
+    padding: $cf-spacing-md;
+    @include cf-body-sm;
     line-height: 1.6;
     background-color: $cf-surface-variant;
     border-radius: $cf-radius-md;
@@ -198,9 +198,9 @@
   }
 
   &__value {
-    font-size: 28px;
+    @include cf-body-sm;
     color: $cf-on-surface-variant;
-    padding: $cf-spacing-sm 24px;
+    padding: $cf-spacing-sm $cf-spacing-md;
     background-color: $cf-surface-variant;
     border-radius: $cf-radius-md;
     display: inline-block;
@@ -214,8 +214,8 @@
 }
 
 .er-picker-btn {
-  padding: 12px 24px;
-  font-size: 24px;
+  padding: $cf-spacing-sm $cf-spacing-md;
+  @include cf-label-md;
   color: $cf-on-surface-variant;
   background-color: $cf-surface-variant;
   border-radius: $cf-radius-md;
@@ -233,23 +233,23 @@
   &--active {
     color: $cf-on-primary-container;
     background-color: $cf-primary-container;
-    box-shadow: inset 0 0 0 1px rgba($cf-primary, 0.3);
+    box-shadow: $cf-shadow-focus-inset;
   }
 }
 
 /* 推断面板 */
 .er-inferred-panel {
-  background-color: #FFFBEB;
-  border-radius: 24px;
+  background-color: $cf-warning-container;
+  border-radius: $cf-radius-xl;
   padding: $cf-spacing-md;
-  margin-bottom: 24px;
+  margin-bottom: $cf-spacing-md;
   border: 1px solid rgba($cf-primary, 0.15);
 
   &__title {
-    font-size: 28px;
+    @include cf-body-sm;
     font-weight: 600;
-    color: #D97706;
-    margin-bottom: 24px;
+    color: $cf-on-warning-container;
+    margin-bottom: $cf-spacing-md;
   }
 
   &__item {
@@ -262,14 +262,14 @@
 
   &__field {
     display: block;
-    font-size: 24px;
+    @include cf-label-md;
     color: $cf-on-background;
     font-weight: 500;
     margin-bottom: $cf-spacing-xs;
   }
 
   &__reason {
-    font-size: 24px;
+    @include cf-label-md;
     color: $cf-on-surface-variant;
     line-height: 1.5;
   }
@@ -278,10 +278,10 @@
 /* 四段式卡片 */
 .er-quartet-card {
   background-color: $cf-surface;
-  border-radius: 24px;
+  border-radius: $cf-radius-xl;
   padding: $cf-spacing-md;
-  margin-bottom: 24px;
-  box-shadow: 0 4px 24px rgba($cf-on-background, 0.06);
+  margin-bottom: $cf-spacing-md;
+  box-shadow: $cf-shadow-diffuse;
   position: relative;
   overflow: hidden;
 
@@ -299,11 +299,11 @@
   }
 
   &__body {
-    padding-left: 24px;
+    padding-left: $cf-spacing-md;
   }
 
   &__title {
-    font-size: 28px;
+    @include cf-body-sm;
     font-weight: 600;
     margin-bottom: $cf-spacing-sm;
 
@@ -316,8 +316,8 @@
   &__textarea {
     width: 100%;
     min-height: 160px;
-    padding: 24px;
-    font-size: 28px;
+    padding: $cf-spacing-md;
+    @include cf-body-sm;
     line-height: 1.6;
     background-color: $cf-surface-variant;
     border-radius: $cf-radius-md;
@@ -330,17 +330,17 @@
 /* ========== 底部操作 ========== */
 .er-footer {
   display: flex;
-  gap: 24px;
-  padding: 24px $cf-spacing-md calc(24px + env(safe-area-inset-bottom));
+  gap: $cf-spacing-md;
+  padding: $cf-spacing-md $cf-spacing-md calc($cf-spacing-md + env(safe-area-inset-bottom));
   background-color: $cf-surface;
-  border-radius: 24px 24px 0 0;
-  box-shadow: 0 -2px 12px rgba($cf-on-background, 0.04);
+  border-radius: $cf-radius-xl $cf-radius-xl 0 0;
+  box-shadow: $cf-shadow-input-top;
   flex-shrink: 0;
 
   &__save-btn {
     flex: 1;
     height: 88px;
-    font-size: 28px;
+    @include cf-body-sm;
     font-weight: 600;
     color: $cf-primary;
     background-color: $cf-surface;
@@ -349,7 +349,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    box-shadow: inset 0 0 0 1px rgba($cf-primary, 0.3);
+    box-shadow: $cf-shadow-focus-inset;
 
     &::after {
       border: none;
@@ -363,7 +363,7 @@
   &__submit-btn {
     flex: 1;
     height: 88px;
-    font-size: 32px;
+    @include cf-body-md;
     font-weight: 600;
     color: $cf-on-primary;
     background-color: $cf-primary;

@@ -1,0 +1,50 @@
+@use '../../shared/styles/tokens' as *;
+
+/* ========== 顶部导航栏 ========== */
+.consult-navbar {
+  height: 88px;
+  background-color: $cf-surface-dim;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  padding: 0 $cf-spacing-md;
+  z-index: 50;
+  flex-shrink: 0;
+
+  &__title {
+    @include cf-headline-sm;
+    font-weight: 600;
+    color: $cf-on-background;
+  }
+
+  &__badge {
+    position: absolute;
+    right: 0;
+    display: flex;
+    align-items: center;
+    padding: $cf-spacing-xs 20px;
+    border-radius: $cf-radius-md;
+    height: 56px;
+
+    &--mild {
+      background-color: $cf-tertiary;
+    }
+
+    &--moderate {
+      background-color: $cf-primary;
+    }
+
+    &--severe {
+      background-color: $cf-error;
+      animation: cf-pulse-opacity 2s ease-in-out infinite;
+    }
+
+    &-text {
+      @include cf-label-md;
+      font-weight: 500;
+      color: $cf-surface;
+    }
+  }
+}
+

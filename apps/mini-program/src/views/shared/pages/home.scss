@@ -2,10 +2,7 @@
 
 /* ========== 页面外壳 ========== */
 .home-page {
-  min-height: 100vh;
-  background-color: $cf-background;
-  display: flex;
-  flex-direction: column;
+  @include cf-page-shell;
   padding-bottom: calc(48px + env(safe-area-inset-bottom));
 }
 
@@ -53,13 +50,13 @@
   }
 
   &__brand-text {
-    font-size: 28px;
+    @include cf-body-sm;
     font-weight: 500;
     color: $cf-primary;
   }
 
   &__brand-icon {
-    font-size: 28px;
+    @include cf-body-sm;
   }
 
   &__title {
@@ -70,7 +67,7 @@
   }
 
   &__subtitle {
-    font-size: 28px;
+    @include cf-body-sm;
     color: $cf-on-surface-variant;
     margin-top: 8px;
     line-height: 1.5;
@@ -81,7 +78,7 @@
 .home-emergency {
   margin: $cf-spacing-md;
   background-color: $cf-primary;
-  border-radius: 40px;
+  border-radius: $cf-radius-2xl;
   padding: $cf-spacing-lg;
   min-height: 440px;
   display: flex;
@@ -105,7 +102,7 @@
   }
 
   &__desc {
-    font-size: 28px;
+    @include cf-body-sm;
     color: rgba($cf-on-primary, 0.8);
     line-height: 1.6;
     max-width: 80%;
@@ -117,8 +114,8 @@
     height: 96px;
     background-color: $cf-surface;
     color: $cf-primary;
-    border-radius: 24px;
-    font-size: 32px;
+    border-radius: $cf-radius-xl;
+    @include cf-body-md;
     font-weight: 600;
     display: flex;
     align-items: center;
@@ -138,7 +135,7 @@
   }
 
   &__btn-icon {
-    font-size: 36px;
+    @include cf-headline-sm;
   }
 }
 
@@ -152,13 +149,13 @@
   margin-bottom: $cf-spacing-sm;
 
   &__title {
-    font-size: 32px;
+    @include cf-body-md;
     font-weight: 600;
     color: $cf-on-background;
   }
 
   &__link {
-    font-size: 24px;
+    @include cf-label-md;
     color: $cf-primary;
     background: none;
     border: none;
@@ -202,7 +199,7 @@
     display: flex;
     align-items: center;
     gap: 12px;
-    font-size: 24px;
+    @include cf-label-md;
     font-weight: 500;
   }
 
@@ -217,12 +214,12 @@
   }
 
   &__time {
-    font-size: 24px;
+    @include cf-label-md;
     color: $cf-on-surface-variant;
   }
 
   &__summary {
-    font-size: 28px;
+    @include cf-body-sm;
     color: $cf-on-background;
     line-height: 1.5;
     display: -webkit-box;
@@ -232,7 +229,7 @@
   }
 
   &__action {
-    font-size: 24px;
+    @include cf-label-md;
     color: $cf-primary;
     margin-top: 4px;
   }
@@ -258,12 +255,12 @@
   }
 
   &__text {
-    font-size: 28px;
+    @include cf-body-sm;
     color: $cf-on-surface-variant;
   }
 
   &__hint {
-    font-size: 24px;
+    @include cf-label-md;
     color: rgba($cf-on-surface-variant, 0.6);
   }
 }
@@ -316,13 +313,13 @@
   }
 
   &__name {
-    font-size: 32px;
+    @include cf-body-md;
     font-weight: 600;
     color: $cf-on-background;
   }
 
   &__tag {
-    font-size: 22px;
+    @include cf-footnote;
     font-weight: 500;
     padding: 8px 20px;
     border-radius: $cf-radius-md;
@@ -344,12 +341,12 @@
   }
 
   &__behavior {
-    font-size: 24px;
+    @include cf-label-md;
     color: $cf-on-surface-variant;
   }
 
   &__link {
-    font-size: 24px;
+    @include cf-label-md;
     color: $cf-primary;
     white-space: nowrap;
   }
@@ -390,19 +387,19 @@
   }
 
   &__title {
-    font-size: 32px;
+    @include cf-body-md;
     font-weight: 600;
     color: $cf-on-background;
   }
 
   &__subtitle {
-    font-size: 24px;
+    @include cf-label-md;
     color: $cf-on-surface-variant;
     line-height: 1.5;
   }
 
   &__link {
-    font-size: 28px;
+    @include cf-body-sm;
     color: $cf-primary;
     margin-top: 8px;
   }
