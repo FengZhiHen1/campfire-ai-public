@@ -2,10 +2,7 @@
 
 /* ========== 页面外壳 ========== */
 .detail-page {
-  min-height: 100vh;
-  background-color: $cf-background;
-  display: flex;
-  flex-direction: column;
+  @include cf-page-shell;
   padding-bottom: calc(128px + env(safe-area-inset-bottom));
 }
 
@@ -14,7 +11,7 @@
   padding: $cf-spacing-md;
 
   &__title {
-    font-size: 36px;
+    @include cf-headline-sm;
     font-weight: 600;
     color: $cf-on-background;
     line-height: 1.5;
@@ -34,7 +31,7 @@
 
   &__tag {
     display: inline-block;
-    font-size: 22px;
+    @include cf-footnote;
     font-weight: 500;
     padding: $cf-spacing-xs $cf-spacing-sm;
     border-radius: $cf-radius-md;
@@ -90,13 +87,13 @@
   }
 
   &__badge-letter {
-    font-size: 28px;
+    @include cf-body-sm;
     font-weight: 700;
     line-height: 1;
   }
 
   &__badge-level {
-    font-size: 20px;
+    @include cf-footnote;
     line-height: 1;
     margin-top: 2px;
   }
@@ -119,12 +116,12 @@
   }
 
   &__status-text {
-    font-size: 24px;
+    @include cf-label-md;
     color: $cf-on-surface-variant;
   }
 
   &__card-count {
-    font-size: 24px;
+    @include cf-label-md;
     color: $cf-on-surface-variant;
   }
 }
@@ -134,7 +131,7 @@
   margin: 0 $cf-spacing-md 24px;
 
   &__title {
-    font-size: 32px;
+    @include cf-body-md;
     font-weight: 600;
     color: $cf-on-background;
     margin-bottom: $cf-spacing-sm;
@@ -142,13 +139,13 @@
 
   &__content {
     background-color: $cf-surface;
-    border-radius: 24px;
+    border-radius: $cf-radius-xl;
     padding: $cf-spacing-md;
-    box-shadow: 0 4px 24px rgba($cf-on-background, 0.06);
+    box-shadow: $cf-shadow-diffuse;
   }
 
   &__text {
-    font-size: 28px;
+    @include cf-body-sm;
     line-height: 1.75;
     color: $cf-on-background;
     word-break: break-all;
@@ -158,10 +155,10 @@
 /* ========== 关联卡片项 ========== */
 .detail-card-item {
   background-color: $cf-surface;
-  border-radius: 24px;
+  border-radius: $cf-radius-xl;
   padding: $cf-spacing-md;
   margin-bottom: 24px;
-  box-shadow: 0 4px 24px rgba($cf-on-background, 0.06);
+  box-shadow: $cf-shadow-diffuse;
 
   &:active {
     transform: scale(0.98);
@@ -176,7 +173,7 @@
 
   &__title {
     flex: 1;
-    font-size: 32px;
+    @include cf-body-md;
     font-weight: 600;
     color: $cf-on-background;
     line-height: 1.5;
@@ -213,7 +210,7 @@
   }
 
   &__status-text {
-    font-size: 22px;
+    @include cf-footnote;
     font-weight: 500;
   }
 
@@ -225,7 +222,7 @@
 
   &__tag {
     display: inline-block;
-    font-size: 22px;
+    @include cf-footnote;
     font-weight: 500;
     padding: $cf-spacing-xs $cf-spacing-sm;
     border-radius: $cf-radius-md;
@@ -241,14 +238,14 @@
 
   &__panel {
     background-color: $cf-surface;
-    border-radius: 24px;
+    border-radius: $cf-radius-xl;
     padding: $cf-spacing-md;
-    box-shadow: 0 4px 24px rgba($cf-on-background, 0.06);
+    box-shadow: $cf-shadow-diffuse;
     margin-bottom: 24px;
   }
 
   &__panel-title {
-    font-size: 32px;
+    @include cf-body-md;
     font-weight: 600;
     color: $cf-on-background;
     margin-bottom: 24px;
@@ -258,7 +255,7 @@
     width: 100%;
     height: 88px;
     border-radius: $cf-radius-md;
-    font-size: 32px;
+    @include cf-body-md;
     font-weight: 600;
     display: flex;
     align-items: center;
@@ -296,9 +293,9 @@
     align-items: center;
     gap: $cf-spacing-sm;
     padding: $cf-spacing-md;
-    border-radius: 24px;
+    border-radius: $cf-radius-xl;
     margin-bottom: 24px;
-    box-shadow: 0 4px 24px rgba($cf-on-background, 0.06);
+    box-shadow: $cf-shadow-diffuse;
 
     &--approved {
       background-color: $cf-tertiary-container;
@@ -309,13 +306,13 @@
     }
 
     &-icon {
-      font-size: 36px;
+      @include cf-headline-sm;
       color: $cf-tertiary;
       line-height: 1;
     }
 
     &-text {
-      font-size: 32px;
+      @include cf-body-md;
       font-weight: 600;
 
       &--approved {
@@ -349,7 +346,7 @@
   }
 
   &__text {
-    font-size: 28px;
+    @include cf-body-sm;
     color: $cf-on-surface-variant;
   }
 }

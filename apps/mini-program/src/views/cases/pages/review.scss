@@ -2,10 +2,7 @@
 
 /* ========== 页面外壳 ========== */
 .review-page {
-  min-height: 100vh;
-  background-color: $cf-background;
-  display: flex;
-  flex-direction: column;
+  @include cf-page-shell;
   padding-bottom: calc(128px + env(safe-area-inset-bottom));
 }
 
@@ -45,7 +42,7 @@
   }
 
   &__title {
-    font-size: 36px;
+    @include cf-headline-sm;
     font-weight: 600;
     color: $cf-on-background;
   }
@@ -53,7 +50,7 @@
   &__stats-btn {
     position: absolute;
     right: 0;
-    font-size: 28px;
+    @include cf-body-sm;
     color: $cf-primary;
     background: none;
     border: none;
@@ -94,7 +91,7 @@
   }
 
   &__label {
-    font-size: 24px;
+    @include cf-label-md;
     color: $cf-on-surface-variant;
     margin-bottom: $cf-spacing-xs;
   }
@@ -129,7 +126,7 @@
     padding: 0 $cf-spacing-md;
     margin-right: $cf-spacing-sm;
     border-radius: $cf-radius-md;
-    font-size: 28px;
+    @include cf-body-sm;
     font-weight: 500;
     color: $cf-on-surface-variant;
     background-color: $cf-surface-variant;
@@ -163,7 +160,7 @@
 /* ========== 审核列表行 ========== */
 .review-row {
   background-color: $cf-surface;
-  border-radius: 24px;
+  border-radius: $cf-radius-xl;
   margin-bottom: $cf-spacing-sm;
   padding: $cf-spacing-md;
   display: flex;
@@ -178,7 +175,7 @@
   }
 
   &--exiting {
-    animation: er-row-exit 200ms ease-in forwards;
+    animation: cf-row-exit 200ms ease-in forwards;
   }
 
   /* 左侧状态条 */
@@ -209,7 +206,7 @@
   &__checkbox-box {
     width: 40px;
     height: 40px;
-    border-radius: 8px;
+    border-radius: $cf-radius-sm;
     background-color: $cf-surface-variant;
     border: 2px solid $cf-outline;
     display: flex;
@@ -225,7 +222,7 @@
 
   &__checkbox-tick {
     color: $cf-on-primary;
-    font-size: 24px;
+    @include cf-label-md;
     font-weight: 700;
   }
 
@@ -257,17 +254,17 @@
 
   &__behavior {
     display: inline-block;
-    font-size: 20px;
+    @include cf-footnote;
     font-weight: 500;
     padding: 4px 12px;
-    border-radius: 8px;
+    border-radius: $cf-radius-sm;
     background-color: $cf-primary-container;
     color: $cf-on-primary-container;
     line-height: 1;
   }
 
   &__author {
-    font-size: 24px;
+    @include cf-label-md;
     color: $cf-on-surface-variant;
   }
 
@@ -293,14 +290,14 @@
   }
 
   &__ai-text {
-    font-size: 22px;
+    @include cf-footnote;
     color: $cf-on-surface-variant;
     font-weight: 500;
   }
 
   /* 超时状态 */
   &__timeout {
-    font-size: 22px;
+    @include cf-footnote;
     font-weight: 500;
     margin-top: $cf-spacing-xs;
 
@@ -317,7 +314,7 @@
   &__action {
     flex-shrink: 0;
     align-self: center;
-    font-size: 28px;
+    @include cf-body-sm;
     font-weight: 500;
     color: $cf-primary;
     background: none;
@@ -350,7 +347,7 @@
   box-shadow: 0 -4px 20px rgba(28, 25, 23, 0.08);
   padding: $cf-spacing-md $cf-spacing-md calc($cf-spacing-md + env(safe-area-inset-bottom));
   z-index: 100;
-  animation: er-slide-up 250ms ease-out;
+  animation: cf-slide-up 250ms ease-out;
 
   &__header {
     display: flex;
@@ -360,13 +357,13 @@
   }
 
   &__count {
-    font-size: 28px;
+    @include cf-body-sm;
     font-weight: 500;
     color: $cf-on-background;
   }
 
   &__toggle {
-    font-size: 24px;
+    @include cf-label-md;
     color: $cf-primary;
     background: none;
     border: none;
@@ -395,7 +392,7 @@
     flex: 1;
     height: 80px;
     border-radius: $cf-radius-md;
-    font-size: 28px;
+    @include cf-body-sm;
     font-weight: 600;
     display: flex;
     align-items: center;
@@ -432,7 +429,7 @@
   bottom: 0;
   background-color: rgba($cf-on-background, 0.5);
   z-index: 110;
-  animation: er-fade-in 200ms ease-out;
+  animation: cf-fade-in 200ms ease-out;
 }
 
 .review-sheet {
@@ -449,7 +446,7 @@
   padding: $cf-spacing-sm $cf-spacing-md calc($cf-spacing-lg + env(safe-area-inset-bottom));
   display: flex;
   flex-direction: column;
-  animation: er-sheet-up 300ms ease-out;
+  animation: cf-sheet-enter 300ms ease-out;
 
   &__handle {
     display: flex;
@@ -468,7 +465,7 @@
     position: absolute;
     top: $cf-spacing-sm;
     right: 0;
-    font-size: 32px;
+    @include cf-body-md;
     color: $cf-on-surface-variant;
     background: none;
     border: none;
@@ -490,7 +487,7 @@
   }
 
   &__title {
-    font-size: 36px;
+    @include cf-headline-sm;
     font-weight: 600;
     color: $cf-on-background;
     margin-bottom: $cf-spacing-xs;
@@ -498,7 +495,7 @@
   }
 
   &__meta {
-    font-size: 24px;
+    @include cf-label-md;
     color: $cf-on-surface-variant;
     margin-bottom: $cf-spacing-md;
   }
@@ -512,7 +509,7 @@
   }
 
   &__ai-title {
-    font-size: 24px;
+    @include cf-label-md;
     font-weight: 600;
     color: $cf-on-background;
     margin-bottom: $cf-spacing-sm;
@@ -528,7 +525,7 @@
     align-items: center;
     padding: $cf-spacing-xs $cf-spacing-sm;
     border-radius: $cf-radius-md;
-    font-size: 24px;
+    @include cf-label-md;
     font-weight: 500;
 
     &--pass {
@@ -550,7 +547,7 @@
   /* 查看完整案例链接 */
   &__link {
     align-self: flex-start;
-    font-size: 28px;
+    @include cf-body-sm;
     color: $cf-primary;
     background: none;
     border: none;
@@ -578,7 +575,7 @@
     width: 100%;
     height: 88px;
     border-radius: $cf-radius-md;
-    font-size: 32px;
+    @include cf-body-md;
     font-weight: 600;
     display: flex;
     align-items: center;
@@ -599,7 +596,7 @@
     &--cancel {
       background-color: transparent;
       color: $cf-secondary;
-      font-size: 28px;
+      @include cf-body-sm;
       font-weight: 500;
     }
 
@@ -624,7 +621,7 @@
   &__reject-field {
     width: 100%;
     height: 80px;
-    font-size: 28px;
+    @include cf-body-sm;
     color: $cf-on-background;
     background: transparent;
     border: none;
@@ -654,7 +651,7 @@
     right: 0;
     bottom: 0;
     background-color: rgba($cf-on-background, 0.5);
-    animation: er-fade-in 200ms ease-out;
+    animation: cf-fade-in 200ms ease-out;
   }
 
   &__content {
@@ -665,18 +662,18 @@
     border-radius: $cf-radius-lg;
     box-shadow: $cf-shadow-deep;
     padding: $cf-spacing-lg;
-    animation: er-modal-in 200ms ease-out;
+    animation: cf-modal-scale-in 200ms ease-out;
   }
 
   &__title {
-    font-size: 36px;
+    @include cf-headline-sm;
     font-weight: 600;
     color: $cf-on-background;
     margin-bottom: $cf-spacing-sm;
   }
 
   &__subtitle {
-    font-size: 28px;
+    @include cf-body-sm;
     color: $cf-on-surface-variant;
     line-height: 1.5;
     margin-bottom: $cf-spacing-md;
@@ -693,7 +690,7 @@
   &__input {
     width: 100%;
     height: 120px;
-    font-size: 28px;
+    @include cf-body-sm;
     color: $cf-on-background;
     background: transparent;
     border: none;
@@ -707,7 +704,7 @@
     position: absolute;
     bottom: $cf-spacing-sm;
     right: $cf-spacing-md;
-    font-size: 22px;
+    @include cf-footnote;
     color: $cf-on-surface-variant;
   }
 
@@ -720,7 +717,7 @@
     flex: 1;
     height: 80px;
     border-radius: $cf-radius-md;
-    font-size: 28px;
+    @include cf-body-sm;
     font-weight: 500;
     display: flex;
     align-items: center;
@@ -781,7 +778,7 @@
 }
 
 .review-empty__title {
-  font-size: 36px;
+  @include cf-headline-sm;
   font-weight: 600;
   color: $cf-on-background;
   margin-bottom: $cf-spacing-sm;
@@ -789,7 +786,7 @@
 }
 
 .review-empty__subtitle {
-  font-size: 28px;
+  @include cf-body-sm;
   color: $cf-on-surface-variant;
   text-align: center;
   margin-bottom: $cf-spacing-lg;
@@ -802,7 +799,7 @@
   background-color: $cf-primary;
   color: $cf-on-primary;
   border-radius: $cf-radius-md;
-  font-size: 28px;
+  @include cf-body-sm;
   font-weight: 600;
   display: flex;
   align-items: center;
@@ -812,7 +809,7 @@
   &--text {
     background: none;
     color: $cf-primary;
-    font-size: 28px;
+    @include cf-body-sm;
     height: 64px;
     width: auto;
     padding: 0 $cf-spacing-md;
@@ -822,9 +819,7 @@
     opacity: 0.9;
   }
 
-  &::after {
-    border: none;
-  }
+  @include cf-btn-reset;
 }
 
 /* ========== 加载更多 ========== */
@@ -841,11 +836,11 @@
     border: 3px solid rgba($cf-primary, 0.2);
     border-top-color: $cf-primary;
     border-radius: 50%;
-    animation: er-spin 1s linear infinite;
+    animation: cf-spin 1s linear infinite;
   }
 
   &__text {
-    font-size: 28px;
+    @include cf-body-sm;
     color: $cf-on-surface-variant;
   }
 }
@@ -853,58 +848,8 @@
 .review-no-more {
   text-align: center;
   padding: $cf-spacing-lg 0;
-  font-size: 24px;
+  @include cf-label-md;
   color: rgba($cf-on-surface-variant, 0.5);
 }
 
-/* ========== 动画 ========== */
-@keyframes er-fade-in {
-  from { opacity: 0; }
-  to { opacity: 1; }
-}
 
-@keyframes er-slide-up {
-  from {
-    opacity: 0;
-    transform: translateY(100%);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-@keyframes er-sheet-up {
-  from {
-    transform: translateY(100%);
-  }
-  to {
-    transform: translateY(0);
-  }
-}
-
-@keyframes er-modal-in {
-  from {
-    opacity: 0;
-    transform: scale(0.95);
-  }
-  to {
-    opacity: 1;
-    transform: scale(1);
-  }
-}
-
-@keyframes er-row-exit {
-  from {
-    opacity: 1;
-    transform: translateX(0);
-  }
-  to {
-    opacity: 0;
-    transform: translateX(-100%);
-  }
-}
-
-@keyframes er-spin {
-  to { transform: rotate(360deg); }
-}

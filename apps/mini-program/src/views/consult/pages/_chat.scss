@@ -1,0 +1,56 @@
+@use '../../shared/styles/tokens' as *;
+
+/* ========== 聊天滚动区 ========== */
+.consult-chat {
+  flex: 1;
+  padding: 24px $cf-spacing-md;
+  overflow-y: auto;
+}
+
+/* ========== 用户消息气泡 ========== */
+.consult-user-bubble {
+  background-color: $cf-primary-container;
+  border-radius: $cf-radius-lg $cf-radius-lg $cf-radius-sm $cf-radius-lg;
+  padding: 24px $cf-spacing-md;
+  margin-bottom: 24px;
+  margin-left: auto;
+  max-width: 75%;
+  align-self: flex-end;
+
+  &__text {
+    @include cf-body-sm;
+    line-height: 1.75;
+    color: $cf-on-primary-container;
+    word-break: break-all;
+  }
+}
+
+/* ========== AI 消息气泡 ========== */
+.consult-ai-bubble {
+  background-color: $cf-surface;
+  border-radius: $cf-radius-lg $cf-radius-lg $cf-radius-lg $cf-radius-sm;
+  padding: $cf-spacing-md;
+  margin-bottom: 24px;
+  max-width: 85%;
+  box-shadow: $cf-shadow-diffuse;
+  align-self: flex-start;
+
+  &__text {
+    @include cf-body-sm;
+    line-height: 1.75;
+    color: $cf-on-background;
+    word-break: break-all;
+  }
+}
+
+/* ========== 打字机光标 ========== */
+.consult-cursor {
+  display: inline-block;
+  width: 4px;
+  height: 1em;
+  background-color: $cf-primary;
+  margin-left: 4px;
+  vertical-align: middle;
+  animation: cf-cursor-pulse 1.5s ease-in-out infinite;
+}
+

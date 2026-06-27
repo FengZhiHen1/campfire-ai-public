@@ -35,14 +35,14 @@
   }
 
   &__title {
-    font-size: 32px;
+    @include cf-body-md;
     font-weight: 600;
     color: $cf-on-background;
     margin-bottom: $cf-spacing-sm;
   }
 
   &__subtitle {
-    font-size: 28px;
+    @include cf-body-sm;
     color: $cf-on-surface-variant;
     margin-bottom: $cf-spacing-lg;
   }
@@ -53,7 +53,7 @@
     background-color: $cf-primary;
     color: $cf-on-primary;
     border-radius: $cf-radius-lg;
-    font-size: 32px;
+    @include cf-body-md;
     font-weight: 600;
     display: flex;
     align-items: center;
@@ -100,7 +100,7 @@
   }
 
   &__level-text {
-    font-size: 28px;
+    @include cf-body-sm;
     font-weight: 600;
 
     &--low { color: $cf-tertiary; }
@@ -109,7 +109,7 @@
   }
 
   &__time {
-    font-size: 22px;
+    @include cf-footnote;
     color: $cf-on-surface-variant;
   }
 
@@ -127,7 +127,7 @@
   margin-bottom: $cf-spacing-sm;
 
   &__title {
-    font-size: 32px;
+    @include cf-body-md;
     font-weight: 600;
     color: $cf-on-background;
     margin-bottom: $cf-spacing-md;
@@ -135,7 +135,7 @@
   }
 
   &__para {
-    font-size: 28px;
+    @include cf-body-sm;
     color: $cf-on-surface;
     line-height: 1.7;
     margin-bottom: $cf-spacing-md;
@@ -147,7 +147,7 @@
   }
 
   &__empty {
-    font-size: 28px;
+    @include cf-body-sm;
     color: $cf-on-surface-variant;
   }
 }
@@ -163,13 +163,13 @@
   gap: $cf-spacing-sm;
 
   &__icon {
-    font-size: 28px;
+    @include cf-body-sm;
     flex-shrink: 0;
     margin-top: 4px;
   }
 
   &__text {
-    font-size: 24px;
+    @include cf-label-md;
     color: $cf-on-primary-container;
     line-height: 1.6;
   }
@@ -183,7 +183,7 @@
   gap: $cf-spacing-sm;
 
   &__item {
-    font-size: 22px;
+    @include cf-footnote;
     color: $cf-on-surface-variant;
     background-color: $cf-surface-variant;
     padding: 8px 20px;
@@ -208,7 +208,7 @@
     background-color: $cf-primary;
     color: $cf-on-primary;
     border-radius: $cf-radius-lg;
-    font-size: 32px;
+    @include cf-body-md;
     font-weight: 600;
     display: flex;
     align-items: center;

@@ -1,0 +1,109 @@
+@use '../../shared/styles/tokens' as *;
+
+/* ========== 完成状态 ========== */
+.consult-done {
+  text-align: center;
+  padding: $cf-spacing-md 0;
+  margin-top: 24px;
+
+  &__text {
+    @include cf-body-sm;
+    color: $cf-on-surface-variant;
+    margin-bottom: 24px;
+    display: block;
+  }
+
+  &__new-btn {
+    width: calc(100% - $cf-spacing-xl);
+    max-width: 480px;
+    height: 88px;
+    background-color: $cf-primary;
+    color: $cf-on-primary;
+    border-radius: $cf-radius-xl;
+    font-size: 30px;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 0 auto;
+    border: none;
+
+    &::after {
+      border: none;
+    }
+
+    &:active {
+      opacity: 0.9;
+      transform: scale(0.98);
+    }
+  }
+}
+
+/* ========== idle 状态 ========== */
+.consult-idle {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: $cf-spacing-md;
+
+  &__hero {
+    width: 240px;
+    height: 240px;
+    background-color: $cf-primary-container;
+    border-radius: $cf-radius-full;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: $cf-spacing-lg;
+    position: relative;
+    overflow: hidden;
+  }
+
+  &__hero-icon {
+    font-size: 96px;
+    line-height: 1;
+  }
+
+  &__title {
+    font-size: $cf-headline-sm;
+    font-weight: 600;
+    color: $cf-on-background;
+    margin-bottom: $cf-spacing-sm;
+  }
+
+  &__subtitle {
+    font-size: $cf-body-sm;
+    color: $cf-on-surface-variant;
+    line-height: 1.5;
+    text-align: center;
+    margin-bottom: $cf-spacing-xl;
+    padding: 0 $cf-spacing-md;
+  }
+
+  &__start-btn {
+    width: calc(100% - 128px);
+    max-width: 600px;
+    height: 96px;
+    background-color: $cf-primary;
+    color: $cf-on-primary;
+    border-radius: $cf-radius-lg;
+    @include cf-body-md;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: none;
+
+    &::after {
+      border: none;
+    }
+
+    &:active {
+      opacity: 0.9;
+      transform: scale(0.98);
+    }
+  }
+}
+

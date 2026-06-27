@@ -23,14 +23,14 @@
 }
 
 .ticket-detail-body__title {
-  font-size: 36px;
+  @include cf-headline-sm;
   font-weight: 600;
   color: $cf-on-background;
   margin-bottom: 16px;
 }
 
 .ticket-detail-body__desc {
-  font-size: 28px;
+  @include cf-body-sm;
   color: $cf-on-surface-variant;
   line-height: 1.6;
 }
@@ -43,7 +43,7 @@
 .ticket-detail-footer__back-btn {
   width: 100%;
   height: 88px;
-  font-size: 32px;
+  @include cf-body-md;
   color: $cf-surface;
   background: $cf-primary;
   border-radius: $cf-radius-md;

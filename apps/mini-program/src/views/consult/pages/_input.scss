@@ -1,0 +1,97 @@
+@use '../../shared/styles/tokens' as *;
+
+/* ========== 底部输入区 ========== */
+.consult-input-bar {
+  background-color: $cf-surface;
+  border-radius: $cf-radius-lg $cf-radius-lg 0 0;
+  box-shadow: $cf-shadow-input-top;
+  padding: 24px $cf-spacing-md;
+  padding-bottom: calc(24px + env(safe-area-inset-bottom));
+  flex-shrink: 0;
+
+  &__container {
+    position: relative;
+    display: flex;
+    align-items: flex-end;
+    gap: $cf-spacing-sm;
+  }
+
+  &__textarea {
+    flex: 1;
+    min-height: 64px;
+    max-height: 240px;
+    background-color: $cf-surface-variant;
+    border-radius: $cf-radius-md;
+    padding: $cf-spacing-sm 120px $cf-spacing-sm 24px;
+    @include cf-body-sm;
+    line-height: 1.75;
+    color: $cf-on-background;
+    border: none;
+
+    &::placeholder {
+      color: rgba($cf-on-surface-variant, 0.6);
+    }
+  }
+
+  &__voice-btn {
+    position: absolute;
+    right: 0;
+    bottom: $cf-spacing-xs;
+    width: 96px;
+    height: 96px;
+    background-color: $cf-primary;
+    border-radius: $cf-radius-full;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 40px;
+    color: $cf-on-primary;
+    flex-shrink: 0;
+
+    &:active {
+      transform: scale(0.95);
+    }
+  }
+}
+
+/* ========== 人工兜底条 ========== */
+.consult-escalation {
+  background-color: $cf-error;
+  height: 112px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: $cf-spacing-sm;
+  border-radius: $cf-radius-lg $cf-radius-lg 0 0;
+  animation: cf-slide-up 300ms ease-out;
+  flex-shrink: 0;
+
+  &:active {
+    opacity: 0.9;
+  }
+
+  &__icon {
+    font-size: 40px;
+  }
+
+  &__text {
+    @include cf-body-md;
+    font-weight: 600;
+    color: $cf-surface;
+  }
+}
+
+/* ========== 免责声明 ========== */
+.consult-disclaimer {
+  background-color: $cf-surface-dim;
+  padding: 24px $cf-spacing-md;
+  text-align: center;
+  flex-shrink: 0;
+
+  &__text {
+    @include cf-footnote;
+    color: rgba($cf-on-surface-variant, 0.8);
+    line-height: 1.4;
+  }
+}
+

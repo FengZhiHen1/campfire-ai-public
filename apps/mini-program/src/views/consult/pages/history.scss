@@ -250,7 +250,7 @@
     background-color: $cf-surface-variant;
     border-radius: $cf-radius-lg;
     border: 2px solid rgba($cf-primary, 0.2);
-    animation: cf-pulse-border 2s ease-in-out infinite;
+    animation: cf-pulse-opacity 2s ease-in-out infinite;
     margin-bottom: $cf-spacing-sm;
   }
 
@@ -312,7 +312,3 @@
   }
 }
 
-@keyframes cf-pulse-border {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.5; }
-}

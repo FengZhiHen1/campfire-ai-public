@@ -112,7 +112,7 @@
     width: 320px;
     padding: $cf-spacing-xs 0;
     z-index: 60;
-    animation: cf-fade-in-up 150ms ease-out;
+    animation: cf-fade-in-down 150ms ease-out;
   }
 
   &__menu-item {
@@ -762,7 +762,7 @@
     border-radius: $cf-radius-lg;
     padding: $cf-spacing-lg;
     box-shadow: $cf-shadow-deep;
-    animation: cf-fade-in-scale 200ms ease-out;
+    animation: cf-modal-scale-in 200ms ease-out;
     text-align: center;
   }
 
@@ -860,42 +860,4 @@
   }
 }
 
-/* ========== 动画 ========== */
-@keyframes cf-fade-in-up {
-  from {
-    opacity: 0;
-    transform: translateY(-8px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
 
-@keyframes cf-fade-in-scale {
-  from {
-    opacity: 0;
-    transform: scale(0.96);
-  }
-  to {
-    opacity: 1;
-    transform: scale(1);
-  }
-}
-
-@keyframes cf-pulse-border {
-  0%, 100% {
-    border-color: rgba($cf-primary, 0.2);
-  }
-  50% {
-    border-color: rgba($cf-primary, 0.5);
-  }
-}
-
-@keyframes cf-shake {
-  0%, 100% { transform: translateX(0); }
-  20% { transform: translateX(-4px); }
-  40% { transform: translateX(4px); }
-  60% { transform: translateX(-4px); }
-  80% { transform: translateX(4px); }
-}

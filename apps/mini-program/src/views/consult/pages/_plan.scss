@@ -1,0 +1,232 @@
+@use '../../shared/styles/tokens' as *;
+
+/* ========== 方案卡片 ========== */
+.consult-plan-card {
+  background-color: $cf-surface;
+  border-radius: $cf-radius-lg;
+  padding: $cf-spacing-md;
+  margin: 24px 0;
+  box-shadow: $cf-shadow-diffuse;
+
+  &__header {
+    display: flex;
+    align-items: center;
+    gap: $cf-spacing-sm;
+    margin-bottom: $cf-spacing-md;
+    padding-bottom: 24px;
+    border-bottom: 1px solid rgba($cf-on-surface-variant, 0.08);
+  }
+
+  &__header-icon {
+    @include cf-headline-sm;
+  }
+
+  &__header-title {
+    @include cf-body-md;
+    font-weight: 600;
+    color: $cf-on-background;
+  }
+}
+
+/* ========== 四段式段落 ========== */
+.consult-plan-section {
+  position: relative;
+  margin-bottom: $cf-spacing-md;
+  overflow: hidden;
+
+  &:last-child {
+    margin-bottom: 0;
+  }
+
+  &__accent {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 4px;
+    height: 100%;
+    border-radius: $cf-radius-xs;
+
+    &--tertiary { background-color: $cf-tertiary; }
+    &--primary { background-color: $cf-primary; }
+    &--secondary { background-color: $cf-secondary; }
+    &--error { background-color: $cf-error; }
+  }
+
+  &__body {
+    padding-left: 24px;
+  }
+
+  &__header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: $cf-spacing-sm;
+  }
+
+  &__icon {
+    @include cf-body-md;
+    line-height: 1;
+  }
+
+  &__title {
+    @include cf-body-sm;
+    font-weight: 600;
+
+    &--tertiary { color: $cf-tertiary; }
+    &--primary { color: $cf-primary; }
+    &--secondary { color: $cf-secondary; }
+    &--error { color: $cf-error; }
+  }
+
+  &__content {
+    @include cf-body-sm;
+    line-height: 1.8;
+    color: $cf-on-background;
+  }
+
+  &__quote {
+    @include cf-body-sm;
+    line-height: 1.8;
+    color: $cf-on-background;
+    font-style: italic;
+    margin-bottom: $cf-spacing-sm;
+    padding: $cf-spacing-sm 24px;
+    background-color: $cf-surface-variant;
+    border-radius: $cf-radius-md;
+    border-left: 4px solid $cf-primary;
+  }
+
+  &__line {
+    @include cf-body-sm;
+    line-height: 1.75;
+    color: $cf-on-background;
+    margin-bottom: $cf-spacing-xs;
+    display: block;
+
+    &:last-child {
+      margin-bottom: 0;
+    }
+  }
+}
+
+/* ========== 卡片底部信息栏 ========== */
+.consult-plan-footer {
+  display: flex;
+  align-items: center;
+  gap: $cf-spacing-sm;
+  margin-top: $cf-spacing-md;
+  padding-top: 24px;
+  border-top: 1px solid rgba($cf-on-surface-variant, 0.08);
+  flex-wrap: wrap;
+
+  &__cases {
+    @include cf-footnote;
+    color: $cf-tertiary;
+    background-color: $cf-tertiary-container;
+    padding: $cf-spacing-xs $cf-spacing-sm;
+    border-radius: $cf-radius-md;
+    font-weight: 500;
+  }
+}
+
+.consult-confidence {
+  display: flex;
+  align-items: center;
+  gap: $cf-spacing-xs;
+  padding: $cf-spacing-xs $cf-spacing-sm;
+  border-radius: $cf-radius-md;
+  @include cf-footnote;
+  font-weight: 500;
+
+  &--high {
+    background-color: $cf-tertiary;
+    color: $cf-surface;
+  }
+
+  &--medium {
+    background-color: $cf-primary-container;
+    color: $cf-on-primary-container;
+  }
+
+  &--low {
+    background-color: $cf-surface-variant;
+    color: $cf-error;
+  }
+
+  &__dot {
+    font-size: 16px;
+    line-height: 1;
+  }
+
+  &__text {
+    font-size: 14px;
+    color: $cf-on-primary-container;
+  }
+}
+
+/* ========== 参考案例 ========== */
+.consult-refs {
+  margin: 24px 0;
+
+  &__title {
+    @include cf-body-sm;
+    font-weight: 600;
+    color: $cf-on-background;
+    margin-bottom: $cf-spacing-sm;
+  }
+}
+
+.consult-ref-card {
+  background-color: $cf-surface;
+  border-radius: $cf-radius-xl;
+  padding: 24px;
+  margin-bottom: $cf-spacing-sm;
+  box-shadow: $cf-shadow-diffuse;
+
+  &__title {
+    @include cf-body-sm;
+    font-weight: 600;
+    color: $cf-on-background;
+    margin-bottom: $cf-spacing-xs;
+  }
+
+  &__text {
+    @include cf-label-md;
+    line-height: 1.6;
+    color: $cf-on-surface-variant;
+  }
+}
+
+/* ========== 参考案例 ========== */
+.consult-refs {
+  margin: 24px 0;
+
+  &__title {
+    @include cf-body-sm;
+    font-weight: 600;
+    color: $cf-on-background;
+    margin-bottom: $cf-spacing-sm;
+  }
+}
+
+.consult-ref-card {
+  background-color: $cf-surface;
+  border-radius: $cf-radius-xl;
+  padding: 24px;
+  margin-bottom: $cf-spacing-sm;
+  box-shadow: $cf-shadow-diffuse;
+
+  &__title {
+    @include cf-body-sm;
+    font-weight: 600;
+    color: $cf-on-background;
+    margin-bottom: $cf-spacing-xs;
+  }
+
+  &__text {
+    @include cf-label-md;
+    line-height: 1.6;
+    color: $cf-on-surface-variant;
+  }
+}
+

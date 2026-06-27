@@ -2,10 +2,7 @@
 
 /* ========== 页面外壳 ========== */
 .submit-page {
-  min-height: 100vh;
-  background-color: $cf-background;
-  display: flex;
-  flex-direction: column;
+  @include cf-page-shell;
   padding-bottom: calc(192px + env(safe-area-inset-bottom));
 }
 
@@ -27,13 +24,13 @@
   }
 
   &__text {
-    font-size: 32px;
+    @include cf-body-md;
     font-weight: 500;
     color: $cf-on-surface-variant;
   }
 
   &__hint {
-    font-size: 24px;
+    @include cf-label-md;
     color: rgba($cf-on-surface-variant, 0.6);
     margin-top: 8px;
   }
@@ -45,7 +42,7 @@
   align-items: center;
   gap: 8px;
   padding: $cf-spacing-md $cf-spacing-md $cf-spacing-sm;
-  font-size: 32px;
+  @include cf-body-md;
   font-weight: 600;
   color: $cf-on-background;
 
@@ -54,7 +51,7 @@
   }
 
   &__hint {
-    font-size: 24px;
+    @include cf-label-md;
     font-weight: 400;
     color: $cf-on-surface-variant;
     margin-left: 8px;
@@ -71,7 +68,7 @@
 
   &__label {
     display: block;
-    font-size: 28px;
+    @include cf-body-sm;
     font-weight: 500;
     color: $cf-on-background;
     margin-bottom: $cf-spacing-xs;
@@ -88,7 +85,7 @@
     background-color: $cf-surface;
     border-radius: $cf-radius-md;
     padding: 0 $cf-spacing-md;
-    font-size: 32px;
+    @include cf-body-md;
     color: $cf-on-background;
     box-sizing: border-box;
   }
@@ -102,18 +99,18 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    font-size: 32px;
+    @include cf-body-md;
     color: $cf-on-background;
     border: none;
   }
 
   &__picker-text {
-    font-size: 32px;
+    @include cf-body-md;
     color: $cf-on-background;
   }
 
   &__picker-chevron {
-    font-size: 24px;
+    @include cf-label-md;
     color: $cf-on-surface-variant;
   }
 }
@@ -159,7 +156,7 @@
   }
 
   &__title {
-    font-size: 28px;
+    @include cf-body-sm;
     font-weight: 600;
     margin-bottom: 8px;
 
@@ -174,7 +171,7 @@
   }
 
   &__hint {
-    font-size: 24px;
+    @include cf-label-md;
     color: rgba($cf-on-surface-variant, 0.7);
     margin-bottom: $cf-spacing-sm;
   }
@@ -185,7 +182,7 @@
     background-color: $cf-surface-variant;
     border-radius: $cf-radius-md;
     padding: $cf-spacing-md;
-    font-size: 32px;
+    @include cf-body-md;
     line-height: 1.75;
     color: $cf-on-background;
     box-sizing: border-box;
@@ -211,7 +208,7 @@
     background-color: $cf-primary;
     color: $cf-on-primary;
     border-radius: $cf-radius-lg;
-    font-size: 32px;
+    @include cf-body-md;
     font-weight: 600;
     display: flex;
     align-items: center;

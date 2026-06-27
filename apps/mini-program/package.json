@@ -10,6 +10,8 @@
     "build:weapp": "taro build --type weapp",
     "build:h5": "taro build --type h5",
     "build:h5:mock": "cross-env USE_MOCK=true taro build --type h5",
+    "lint:style": "stylelint \"src/**/*.scss\"",
+    "lint:style:fix": "stylelint \"src/**/*.scss\" --fix",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
@@ -28,6 +30,8 @@
     "less": "^4.2.0",
     "react": "^18.3.1",
     "react-refresh": "^0.18.0",
+    "stylelint": "^17.14.0",
+    "stylelint-config-standard-scss": "^17.0.0",
     "typescript": "^6.0.3",
     "vitest": "^4.1.7",
     "zustand": "^5.0.13"

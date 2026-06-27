@@ -1,3 +1,5 @@
+@use './h5-simulator';
+
 /* 全局样式 */
 view,
 text,
@@ -45,6 +47,12 @@ page {
   --cf-error-container: #FEE2E2;
   --cf-on-error-container: #991B1B;
 
+  /* Warning - Amber */
+  --cf-warning: #D97706;
+  --cf-on-warning: #FFFFFF;
+  --cf-warning-container: #FFFBEB;
+  --cf-on-warning-container: #D97706;
+
   /* Surface & Background */
   --cf-background: #FDF8F3;
   --cf-on-background: #1C1917;
@@ -88,8 +96,10 @@ page {
   /* Typography (2x DESIGN.md for Taro rpx) */
   --cf-headline-lg: 48px;
   --cf-headline-md: 40px;
+  --cf-headline-sm: 36px;
   --cf-body-lg: 36px;
   --cf-body-md: 32px;
+  --cf-body-sm: 28px;
   --cf-label-md: 28px;
   --cf-footnote: 22px;
 
@@ -102,15 +112,19 @@ page {
   --cf-gutter: 32px;
 
   /* Radius */
+  --cf-radius-xs: 4px;
   --cf-radius-sm: 8px;
   --cf-radius-md: 16px;
+  --cf-radius-xl: 24px;
   --cf-radius-lg: 32px;
+  --cf-radius-2xl: 40px;
   --cf-radius-full: 9999px;
 
   /* Shadows */
   --cf-shadow-diffuse: 0 4px 24px rgba(28, 25, 23, 0.06);
   --cf-shadow-deep: 0 8px 40px rgba(28, 25, 23, 0.08);
   --cf-shadow-input-top: 0 -2px 12px rgba(28, 25, 23, 0.04);
+  --cf-shadow-focus-inset: inset 0 0 0 1px rgba(245, 158, 11, 0.3);
 }
 
 /* ========== 通用工具类 ========== */
@@ -154,30 +168,26 @@ page {
 }
 
 /* ========== 动画关键帧 ========== */
-@keyframes cf-cursor-pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.4; }
-}
-
-@keyframes cf-pulse-border {
-  0%, 100% { border-color: rgba(245, 158, 11, 0.3); }
-  50% { border-color: rgba(245, 158, 11, 0.6); }
-}
-
-@keyframes cf-badge-pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.85; }
-}
-
-@keyframes cf-spin {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
+@keyframes cf-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 
 @keyframes cf-fade-in-up {
   from {
     opacity: 0;
     transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes cf-fade-in-down {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
   }
   to {
     opacity: 1;
@@ -196,104 +206,106 @@ page {
   }
 }
 
-/* ========== H5 手机模拟器布局 ========== */
-/*
- * 方案：固定 750px 舞台按设计稿 1:1 渲染，再通过 CSS transform: scale
- * 整体缩放到外层容器（最大 520px）。这样彻底避免 pxtransform 与自定义 rem
- * 脚本基准不一致的问题，TabBar 也会随舞台一起缩放。
- */
-
-/* 外框背景：只保留顶部间距 */
-body {
-  background-color: #E7E5E4;
-  padding: 16px 0 0;
-  margin: 0;
-  min-height: 100vh;
-}
-
-/* 外层约束：最大 520px，居中 */
-.h5-scale-wrapper {
-  position: relative;
-  width: 100%;
-  max-width: 520px;
-  margin: 0 auto;
-}
-
-/* 750px 舞台：所有内容按设计稿 1:1 绘制，由 JS 设置 zoom 缩放到 wrapper 宽度 */
-.h5-scale-stage {
-  width: 750px;
-
-  /* H5 模拟器：整体缩放后 TabBar 图标/文字会偏小，这里单独放大。
-     这些类只在 Taro H5 渲染模式下存在，不会作用于微信小程序。 */
-  taro-tabbar {
-    --taro-tabbar-height: 140px;
+@keyframes cf-modal-scale-in {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
   }
-
-  .weui-tabbar__item {
-    padding: 12px 0 10px;
-  }
-
-  .weui-tabbar__icon,
-  .weui-tabbar__icon > i {
-    width: 56px !important;
-    height: 56px !important;
-  }
-
-  .weui-tabbar__label {
-    font-size: 24px !important;
-    line-height: 1.5 !important;
-    margin-top: 6px;
+  to {
+    opacity: 1;
+    transform: scale(1);
   }
 }
 
-/* H5 应用容器 */
-.h5-simulator {
-  display: block;
-  width: 750px;
-  min-height: 100vh;
-  padding-bottom: 140px; /* 为底部 TabBar 预留空间，避免内容被覆盖 */
-  box-sizing: border-box;
-  background-color: var(--cf-background);
-  box-shadow: 0 0 40px rgba(28, 25, 23, 0.12);
-  border-radius: 16px;
-  border: 1px solid #D6D3D1;
-  overflow-x: hidden;
-  overflow-y: auto;
+@keyframes cf-slide-up {
+  from {
+    opacity: 0;
+    transform: translateY(100%);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
-/* Taro H5 组件默认 inline，统一为 block 以匹配小程序布局语义 */
-taro-view-core,
-taro-text-core,
-taro-button-core,
-taro-input-core,
-taro-textarea-core,
-taro-scroll-view-core,
-taro-image-core,
-taro-picker-core,
-taro-radio-core,
-taro-checkbox-core,
-taro-switch-core {
-  display: block;
+@keyframes cf-sheet-enter {
+  from { transform: translateY(100%); }
+  to { transform: translateY(0); }
 }
 
-/* 当 TabBar 被移动到舞台内部后，随舞台 transform 缩放；保留小程序式底部固定 */
-taro-tabbar {
-  position: absolute !important;
-  bottom: 0;
-  left: 0;
-  width: 750px !important;
-  height: 140px;
-  z-index: 1000;
-  box-sizing: border-box;
+@keyframes cf-row-exit {
+  from {
+    opacity: 1;
+    transform: translateX(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateX(-100%);
+  }
 }
 
-.taro-tabbar__tabbar {
-  width: 750px !important;
-  height: 140px !important;
+@keyframes cf-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
 }
 
-/* 隐藏 H5 模拟器下突兀的系统滚动条，保留触摸滚动 */
-.h5-simulator::-webkit-scrollbar,
-.taro-tabbar__panel::-webkit-scrollbar {
-  display: none;
+@keyframes cf-cursor-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
 }
+
+@keyframes cf-pulse-border {
+  0%, 100% { border-color: rgba(245, 158, 11, 0.3); }
+  50% { border-color: rgba(245, 158, 11, 0.6); }
+}
+
+@keyframes cf-pulse-opacity {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.85; }
+}
+
+@keyframes cf-skel-pulse {
+  0%, 100% { opacity: 0.35; }
+  50% { opacity: 1; }
+}
+
+@keyframes cf-badge-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.85; }
+}
+
+@keyframes cf-dot-pulse {
+  0%, 100% { box-shadow: 0 0 0 8px rgba(245, 158, 11, 0.15); }
+  50% { box-shadow: 0 0 0 16px rgba(245, 158, 11, 0.05); }
+}
+
+@keyframes cf-collapse-expand {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes cf-shake {
+  0%, 100% { transform: translateX(0); }
+  20% { transform: translateX(-4px); }
+  40% { transform: translateX(4px); }
+  60% { transform: translateX(-4px); }
+  80% { transform: translateX(4px); }
+}
+
+@keyframes cf-fab-enter {
+  from {
+    opacity: 0;
+    transform: scale(0.8);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
