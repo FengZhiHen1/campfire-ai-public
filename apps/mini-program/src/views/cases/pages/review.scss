@@ -1,9 +1,20 @@
 @use '../../shared/styles/tokens' as *;
 
 /* ========== 页面外壳 ========== */
+/* 批量选择栏尺寸，与 review-page--batch 的 padding-bottom 保持一致 */
+$review-batch-padding-y: $cf-spacing-md;
+$review-batch-header-height: 56px;
+$review-batch-header-gap: $cf-spacing-sm;
+$review-batch-actions-height: 80px;
+$review-batch-total-height: $review-batch-padding-y + $review-batch-header-height + $review-batch-header-gap + $review-batch-actions-height + $review-batch-padding-y;
+
 .review-page {
   @include cf-page-shell;
   padding-bottom: calc(128px + env(safe-area-inset-bottom));
+
+  &--batch {
+    padding-bottom: calc(#{$review-batch-total-height} + env(safe-area-inset-bottom));
+  }
 }
 
 /* ========== 顶部导航栏 ========== */
@@ -353,6 +364,7 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
+    height: $review-batch-header-height;
     margin-bottom: $cf-spacing-sm;
   }
 
@@ -360,6 +372,10 @@
     @include cf-body-sm;
     font-weight: 500;
     color: $cf-on-background;
+    display: flex;
+    align-items: center;
+    height: 100%;
+    white-space: nowrap;
   }
 
   &__toggle {
@@ -398,6 +414,7 @@
     align-items: center;
     justify-content: center;
     border: none;
+    margin: 0;
 
     &--pass {
       background-color: $cf-tertiary;
