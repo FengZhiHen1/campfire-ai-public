@@ -197,26 +197,68 @@ page {
 }
 
 /* ========== H5 手机模拟器布局 ========== */
-/* 仅在 H5 环境生效：限制应用最大宽度并居中，模拟手机视口 */
+/*
+ * 方案：固定 750px 舞台按设计稿 1:1 渲染，再通过 CSS transform: scale
+ * 整体缩放到外层容器（最大 520px）。这样彻底避免 pxtransform 与自定义 rem
+ * 脚本基准不一致的问题，TabBar 也会随舞台一起缩放。
+ */
 
-/* 外框背景 */
+/* 外框背景：只保留顶部间距 */
 body {
   background-color: #E7E5E4;
-  padding: 16px 0;
+  padding: 16px 0 0;
+  margin: 0;
+  min-height: 100vh;
 }
 
-/* H5 应用容器：由 app.tsx 在 H5 时动态添加 */
+/* 外层约束：最大 520px，居中 */
+.h5-scale-wrapper {
+  position: relative;
+  width: 100%;
+  max-width: 520px;
+  margin: 0 auto;
+}
+
+/* 750px 舞台：所有内容按设计稿 1:1 绘制，由 JS 设置 zoom 缩放到 wrapper 宽度 */
+.h5-scale-stage {
+  width: 750px;
+
+  /* H5 模拟器：整体缩放后 TabBar 图标/文字会偏小，这里单独放大。
+     这些类只在 Taro H5 渲染模式下存在，不会作用于微信小程序。 */
+  taro-tabbar {
+    --taro-tabbar-height: 140px;
+  }
+
+  .weui-tabbar__item {
+    padding: 12px 0 10px;
+  }
+
+  .weui-tabbar__icon,
+  .weui-tabbar__icon > i {
+    width: 56px !important;
+    height: 56px !important;
+  }
+
+  .weui-tabbar__label {
+    font-size: 24px !important;
+    line-height: 1.5 !important;
+    margin-top: 6px;
+  }
+}
+
+/* H5 应用容器 */
 .h5-simulator {
   display: block;
-  width: 100%;
-  max-width: 480px;
+  width: 750px;
   min-height: 100vh;
-  margin: 0 auto;
+  padding-bottom: 140px; /* 为底部 TabBar 预留空间，避免内容被覆盖 */
+  box-sizing: border-box;
   background-color: var(--cf-background);
   box-shadow: 0 0 40px rgba(28, 25, 23, 0.12);
   border-radius: 16px;
   border: 1px solid #D6D3D1;
-  overflow: hidden;
+  overflow-x: hidden;
+  overflow-y: auto;
 }
 
 /* Taro H5 组件默认 inline，统一为 block 以匹配小程序布局语义 */
@@ -234,12 +276,20 @@ taro-switch-core {
   display: block;
 }
 
-/* Taro H5 TabBar 限制宽度并居中 */
-taro-tabbar,
+/* 当 TabBar 被移动到舞台内部后，随舞台 transform 缩放；保留小程序式底部固定 */
+taro-tabbar {
+  position: absolute !important;
+  bottom: 0;
+  left: 0;
+  width: 750px !important;
+  height: 140px;
+  z-index: 1000;
+  box-sizing: border-box;
+}
+
 .taro-tabbar__tabbar {
-  width: 100% !important;
-  max-width: 480px !important;
-  margin: 0 auto !important;
+  width: 750px !important;
+  height: 140px !important;
 }
 
 /* 隐藏 H5 模拟器下突兀的系统滚动条，保留触摸滚动 */

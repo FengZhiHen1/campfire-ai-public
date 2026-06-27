@@ -10,21 +10,11 @@
   <meta http-equiv="X-UA-Compatible" content="IE=edge,chrome=1" >
   <title>篝火智答</title>
   <script>
-    // H5 手机模拟器 rem 基准：按容器最大宽度 430px 等比缩放，
-    // 避免大屏幕下内容被过度放大。viewport <= 430 时保持自然缩放。
+    // H5 手机模拟器：舞台固定按设计稿 700px 1:1 渲染，
+    // 再由 app.tsx 通过 CSS transform: scale 缩放到外层容器。
+    // 因此 rem 基准固定为 40px，与 postcss-pxtransform 在 designWidth=700 时的 rootValue 一致。
     (function () {
-      var designWidth = 750;
-      var maxSimulatorWidth = 480;
-      var baseFontSize = 40;
-
-      function setRootFontSize() {
-        var viewportWidth = window.innerWidth;
-        var fontSize = baseFontSize * Math.min(viewportWidth, maxSimulatorWidth) / designWidth;
-        document.documentElement.style.fontSize = fontSize + 'px';
-      }
-
-      setRootFontSize();
-      window.addEventListener('resize', setRootFontSize);
+      document.documentElement.style.fontSize = '40px';
     })();
   </script>
 </head>
