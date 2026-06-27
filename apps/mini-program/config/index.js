@@ -67,6 +67,13 @@ const config = {
         }
       });
     },
+    // H5 已限制为手机宽度模拟器，无需按视口等比缩放，禁用 pxtransform 保持设计稿 1:1
+    postcss: {
+      pxtransform: {
+        enable: false,
+        config: {}
+      }
+    }
   },
   alias: {
     '@': require('path').resolve(__dirname, '..', 'src')
