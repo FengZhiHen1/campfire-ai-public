@@ -209,7 +209,7 @@ body {
 .h5-simulator {
   display: block;
   width: 100%;
-  max-width: 430px;
+  max-width: 480px;
   min-height: 100vh;
   margin: 0 auto;
   background-color: var(--cf-background);
@@ -238,7 +238,7 @@ taro-switch-core {
 taro-tabbar,
 .taro-tabbar__tabbar {
   width: 100% !important;
-  max-width: 430px !important;
+  max-width: 480px !important;
   margin: 0 auto !important;
 }
 

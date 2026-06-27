@@ -67,12 +67,17 @@ const config = {
         }
       });
     },
-    // H5 已限制为手机宽度模拟器，无需按视口等比缩放，禁用 pxtransform 保持设计稿 1:1
+    // H5 已限制为手机宽度模拟器，但保留 pxtransform 转换 px->rem，
+    // 由 index.html 自定义脚本控制 rem 基准，使内容在 430px 容器内正确缩放。
     postcss: {
       pxtransform: {
-        enable: false,
+        enable: true,
         config: {}
       }
+    },
+    // 禁用 Taro 默认的视口级 rem 脚本，避免大屏幕下字体被过度放大
+    htmlPluginOption: {
+      script: ''
     }
   },
   alias: {
