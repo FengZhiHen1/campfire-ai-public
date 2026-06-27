@@ -41,14 +41,14 @@ function H5Simulator(props: { children?: ReactNode }) {
       const simulatorHeight = window.innerHeight / scale;
       simulator.style.minHeight = `${simulatorHeight}px`;
 
-      // Taro H5 的页面根元素 class 为 .taro_page，当前显示页面额外有 .taro_page_show。
-      // 它内部通常使用 min-height: 100vh，但 100vh 指向浏览器视口，而不是被 zoom
-      // 放大后的 simulator。这里强制真正的页面根元素撑满 simulator，避免 TabBar
-      // 上方出现无法滚动覆盖的空白区域。
-      const pageRoot = simulator.querySelector('.taro_page_show') as HTMLElement | null;
-      if (pageRoot) {
-        pageRoot.style.minHeight = `${simulatorHeight - 140}px`; // 减去 TabBar 高度
-      }
+      // Taro H5 的页面根元素 class 为 .taro_page。它内部通常使用 min-height: 100vh，
+      // 但 100vh 指向浏览器视口，而不是被 zoom 放大后的 simulator。
+      // 由于 TabBar 切换时会复用 .taro_page 元素并切换 .taro_page_show class，
+      // 这里需要给所有 .taro_page 都设置正确高度，避免切换页面后出现空白。
+      simulator.querySelectorAll('.taro_page').forEach((page) => {
+        const el = page as HTMLElement;
+        el.style.minHeight = `${simulatorHeight - 140}px`; // 减去 TabBar 高度
+      });
     }
 
     // 将 Taro H5 渲染在 body 上的 taro-tabbar 移入舞台，使其随舞台一起缩放
@@ -66,7 +66,7 @@ function H5Simulator(props: { children?: ReactNode }) {
       moveTabbarIntoStage();
 
       // 页面根元素异步渲染，一旦生成立即重算高度，避免首屏空白。
-      if (simulator.querySelector('.taro_page_show')) {
+      if (simulator.querySelector('.taro_page')) {
         updateScale();
       }
     });
