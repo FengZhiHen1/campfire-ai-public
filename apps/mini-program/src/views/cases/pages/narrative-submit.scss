@@ -1,12 +1,18 @@
 @use '../../shared/styles/tokens' as *;
 
+/* 底部固定栏尺寸变量，确保页面预留空间与栏实际高度一致 */
+$ns-footer-button-height: 176px;
+$ns-footer-padding-y: $cf-spacing-sm;
+$ns-footer-padding-bottom: 24px;
+$ns-footer-total-height: $ns-footer-button-height + $ns-footer-padding-y + $ns-footer-padding-bottom;
+
 /* ========== 页面外壳 ========== */
 .ns-page {
   min-height: 100vh;
   background-color: $cf-background;
   display: flex;
   flex-direction: column;
-  padding-bottom: calc(192px + env(safe-area-inset-bottom));
+  padding-bottom: calc(#{$ns-footer-total-height} + env(safe-area-inset-bottom));
 }
 
 /* ========== 加载状态 ========== */
@@ -242,8 +248,8 @@
   right: 0;
   background-color: rgba($cf-surface-dim, 0.95);
   backdrop-filter: blur(8px);
-  padding: $cf-spacing-sm $cf-spacing-md;
-  padding-bottom: calc(24px + env(safe-area-inset-bottom));
+  padding: $ns-footer-padding-y $cf-spacing-md;
+  padding-bottom: calc(#{$ns-footer-padding-bottom} + env(safe-area-inset-bottom));
   z-index: 50;
 
   &__inner {
@@ -253,22 +259,27 @@
     margin: 0 auto;
   }
 
-  &__draft {
+  &__draft,
+  &__submit {
     flex: 1;
-    height: 176px;
+    height: $ns-footer-button-height;
     font-size: $cf-label-md;
     font-weight: 600;
-    color: $cf-on-surface-variant;
-    background-color: $cf-surface-variant;
     border-radius: $cf-radius-lg;
     border: none;
     display: flex;
     align-items: center;
     justify-content: center;
+    margin: 0;
 
     &::after {
       border: none;
     }
+  }
+
+  &__draft {
+    color: $cf-on-surface-variant;
+    background-color: $cf-surface-variant;
 
     &:active {
       opacity: 0.8;
@@ -276,22 +287,9 @@
   }
 
   &__submit {
-    flex: 1;
-    height: 176px;
-    font-size: $cf-label-md;
-    font-weight: 600;
     color: $cf-on-primary;
     background-color: $cf-primary;
-    border-radius: $cf-radius-lg;
-    border: none;
-    display: flex;
-    align-items: center;
-    justify-content: center;
     box-shadow: $cf-shadow-primary;
-
-    &::after {
-      border: none;
-    }
 
     &:active {
       opacity: 0.9;

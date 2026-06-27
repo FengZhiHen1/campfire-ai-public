@@ -180,7 +180,7 @@ export default function ReviewPage() {
   }
 
   return (
-    <View className="review-page">
+    <View className={`review-page ${selectedIds.size > 0 ? 'review-page--batch' : ''}`}>
       {/* ========== 顶部导航栏 ========== */}
       <View className="review-navbar">
         <Button className="review-navbar__back" onClick={() => Taro.navigateBack()}>
