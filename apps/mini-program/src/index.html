@@ -10,11 +10,59 @@
   <meta http-equiv="X-UA-Compatible" content="IE=edge,chrome=1" >
   <title>篝火智答</title>
   <script>
-    // H5 手机模拟器：舞台固定按设计稿 700px 1:1 渲染，
-    // 再由 app.tsx 通过 CSS transform: scale 缩放到外层容器。
-    // 因此 rem 基准固定为 40px，与 postcss-pxtransform 在 designWidth=700 时的 rootValue 一致。
+    // H5 手机模拟器入口：
+    // 如果当前已经在 iframe（name="h5-app"）中，则让 Taro 正常渲染应用；
+    // 否则将当前页面替换为模拟器外壳，内部通过 iframe 加载应用。
+    // 这样应用内部的 position: fixed / 100vh / vw 都会相对于 iframe 视口，
+    // 无需 zoom 或运行时 DOM 修正即可实现手机预览效果。
     (function () {
-      document.documentElement.style.fontSize = '40px';
+      if (window.name === 'h5-app') return;
+
+      var href = location.href;
+      var bgColor = '#E7E5E4';
+      var surfaceColor = '#FDF8F3';
+      var shellStyle =
+        'html,body{margin:0;padding:0;height:100%;background:' + bgColor + ';}' +
+        '.h5-simulator-shell{width:100%;height:100%;display:flex;justify-content:center;align-items:flex-start;overflow:hidden;}' +
+        '.h5-simulator-shell iframe{width:520px;height:100%;border:none;background:' + surfaceColor + ';border-radius:16px;box-shadow:0 0 40px rgba(28,25,23,0.12);}' +
+        '@media (max-width:520px){.h5-simulator-shell iframe{width:100%;border-radius:0;}}';
+
+      document.open();
+      document.write(
+        '<!DOCTYPE html>' +
+        '<html>' +
+        '<head>' +
+        '  <meta charset="utf-8">' +
+        '  <meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">' +
+        '  <title>篝火智答</title>' +
+        '  <style>' + shellStyle + '</style>' +
+        '</' + 'head>' +
+        '<body>' +
+        '  <div class="h5-simulator-shell">' +
+        '    <iframe name="h5-app" src="' + href + '"></iframe>' +
+        '  </div>' +
+        '</' + 'body>' +
+        '</' + 'html>'
+      );
+      document.close();
+    })();
+  </script>
+  <script>
+    // iframe 内部按实际宽度动态设置 rem 根值，使 750px 设计稿内容正确缩放。
+    // 只在 iframe（name="h5-app"）中执行，外壳页面无需设置。
+    (function () {
+      if (window.name !== 'h5-app') return;
+
+      var DESIGN_WIDTH = 750;
+      var ROOT_VALUE = 40;
+
+      function setRootFontSize() {
+        var width = document.documentElement.getBoundingClientRect().width;
+        document.documentElement.style.fontSize = (ROOT_VALUE * width / DESIGN_WIDTH) + 'px';
+      }
+
+      setRootFontSize();
+      window.addEventListener('resize', setRootFontSize);
     })();
   </script>
 </head>

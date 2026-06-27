@@ -42,7 +42,7 @@ function resolveMockEnabled() {
 const config = {
   projectName: 'campfire-ai',
   date: '2026-5-27',
-  // 与微信小程序设计稿宽度保持一致；H5 模拟器通过 transform scale 按 750px 舞台渲染。
+  // 与微信小程序设计稿宽度保持一致；H5 模拟器通过动态 rem 根值按 750px 比例渲染。
   designWidth: 750,
   deviceRatio: {
     640: 2.34 / 2,
@@ -68,15 +68,15 @@ const config = {
         }
       });
     },
-    // H5 已限制为手机宽度模拟器，但保留 pxtransform 转换 px->rem，
-    // 由 index.html 自定义脚本控制 rem 基准，使内容在 430px 容器内正确缩放。
+    // H5 保留 pxtransform 转换 px->rem。
+    // iframe 模拟器方案下，rem 根值由 index.html 内联脚本手动控制，
+    // 禁用 Taro 默认注入，避免与 iframe 检测逻辑冲突。
     postcss: {
       pxtransform: {
         enable: true,
         config: {}
       }
     },
-    // 禁用 Taro 默认的视口级 rem 脚本，避免大屏幕下字体被过度放大
     htmlPluginOption: {
       script: ''
     }
