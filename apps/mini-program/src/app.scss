@@ -198,22 +198,52 @@ page {
 
 /* ========== H5 手机模拟器布局 ========== */
 /* 仅在 H5 环境生效：限制应用最大宽度并居中，模拟手机视口 */
-html,
-body {
-  height: 100%;
-}
 
+/* 外框背景 */
 body {
-  display: flex;
-  justify-content: center;
-  align-items: flex-start;
   background-color: #E7E5E4;
+  padding: 16px 0;
 }
 
-#app {
+/* H5 应用容器：由 app.tsx 在 H5 时动态添加 */
+.h5-simulator {
+  display: block;
   width: 100%;
   max-width: 430px;
   min-height: 100vh;
+  margin: 0 auto;
   background-color: var(--cf-background);
   box-shadow: 0 0 40px rgba(28, 25, 23, 0.12);
+  border-radius: 16px;
+  border: 1px solid #D6D3D1;
+  overflow: hidden;
+}
+
+/* Taro H5 组件默认 inline，统一为 block 以匹配小程序布局语义 */
+taro-view-core,
+taro-text-core,
+taro-button-core,
+taro-input-core,
+taro-textarea-core,
+taro-scroll-view-core,
+taro-image-core,
+taro-picker-core,
+taro-radio-core,
+taro-checkbox-core,
+taro-switch-core {
+  display: block;
+}
+
+/* Taro H5 TabBar 限制宽度并居中 */
+taro-tabbar,
+.taro-tabbar__tabbar {
+  width: 100% !important;
+  max-width: 430px !important;
+  margin: 0 auto !important;
+}
+
+/* 隐藏 H5 模拟器下突兀的系统滚动条，保留触摸滚动 */
+.h5-simulator::-webkit-scrollbar,
+.taro-tabbar__panel::-webkit-scrollbar {
+  display: none;
 }
