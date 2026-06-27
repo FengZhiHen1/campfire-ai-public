@@ -42,6 +42,7 @@ function resolveMockEnabled() {
 const config = {
   projectName: 'campfire-ai',
   date: '2026-5-27',
+  // 与微信小程序设计稿宽度保持一致；H5 模拟器通过 transform scale 按 750px 舞台渲染。
   designWidth: 750,
   deviceRatio: {
     640: 2.34 / 2,
