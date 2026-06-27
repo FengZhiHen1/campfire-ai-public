@@ -1,17 +1,29 @@
 /**
- * CSLT-08 SSE 流解析器 —— SseStreamParser 类（小程序 enableChunked 版）。
+ * CSLT-08 SSE 流解析器 —— SseStreamParser 类（跨平台版）。
  *
  * 职责：
- * - 通过 Taro.request({ enableChunked: true }) 连接 SSE 端点
- * - 监听 onChunkReceived 回调接收 chunk（responseType: 'text'，直接拿到字符串）
+ * - 微信小程序：通过 Taro.request({ enableChunked: true }) + onChunkReceived 接收 chunk
+ * - H5：通过 fetch + ReadableStream.getReader() 流式读取
  * - 手动解析 SSE 协议（支持 \r\n\r\n 和 \n\n 双换行分隔）
  * - 跨 chunk 边界事件拼接
  * - 心跳监控（15s 无事件判定僵死）
  * - 指数退避重连（1s/2s/5s，3 次上限）
  *
  * 设计依据：CSLT-08 落地规范 §1.7 步骤 4、§1.9 异常 3
- * 兼容性：微信小程序基础库 2.18.0+（支持 enableChunked / onChunkReceived）
+ * 兼容性：
+ *   - 微信小程序基础库 2.18.0+（支持 enableChunked / onChunkReceived）
+ *   - H5 现代浏览器（支持 fetch / ReadableStream / AbortController）
  */
+
+/** 判断当前运行环境是否为 H5 */
+function isH5(): boolean {
+  return process.env.TARO_ENV === 'h5';
+}
+
+/** 可中止的请求任务抽象（兼容 Taro RequestTask 与 H5 fetch AbortController） */
+interface AbortableTask {
+  abort(): void;
+}
 
 /** UTF-8 ArrayBuffer → 字符串解码（微信小程序无 TextDecoder） */
 function utf8Decode(buffer: ArrayBuffer): string {
@@ -106,8 +118,8 @@ export class SseStreamParser {
   private config: SseStreamParserConfig;
   private callbacks: SseStreamParserCallbacks;
 
-  /** Taro 请求任务（用于 abort 和 onChunkReceived） */
-  private task: Taro.RequestTask<unknown> | null = null;
+  /** 可中止的请求任务（Taro RequestTask 或 H5 AbortController 包装） */
+  private task: AbortableTask | null = null;
   private isActive: boolean = false;
 
   // 事件拼接缓冲区
@@ -151,7 +163,7 @@ export class SseStreamParser {
 
   /**
    * 连接到 SSE 端点并开始消费流。
-   * 使用 Taro.request({ enableChunked: true }) 获取 chunk 数据。
+   * H5 使用 fetch + ReadableStream，微信小程序使用 Taro.request({ enableChunked: true })。
    *
    * @param url - SSE 端点 URL
    * @param headers - 额外请求头（如 Last-Event-Id）
@@ -176,9 +188,100 @@ export class SseStreamParser {
 
   /**
    * 执行一次 SSE 连接。
-   * 内部通过 Promise 包装 Taro.request，解耦回调与 async/await。
+   * 根据平台选择 H5 fetch 流式读取或微信小程序 Taro.request enableChunked。
    */
   private _doConnect(url: string, headers?: Record<string, string>): Promise<void> {
+    if (isH5()) {
+      return this._doConnectH5(url, headers);
+    }
+    return this._doConnectWeapp(url, headers);
+  }
+
+  /**
+   * H5 平台：使用 fetch + ReadableStream.getReader() 实现 SSE 流式读取。
+   */
+  private async _doConnectH5(url: string, headers?: Record<string, string>): Promise<void> {
+    this.startConnectTimer();
+
+    const controller = new AbortController();
+    this.task = { abort: () => controller.abort() };
+
+    try {
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: {
+          Accept: 'text/event-stream',
+          'Cache-Control': 'no-cache',
+          ...(this.lastEventId ? { 'Last-Event-Id': this.lastEventId } : {}),
+          ...headers,
+        },
+        signal: controller.signal,
+      });
+
+      this.clearConnectTimer();
+
+      if (!this.isActive) {
+        this.stopAllMonitors();
+        return;
+      }
+
+      if (!response.ok) {
+        this.stopAllMonitors();
+        this.callbacks.onError?.({
+          error_code: 'GENERATION_FAILED',
+          detail: `SSE 连接失败: HTTP ${response.status}`,
+        });
+        throw new Error(`HTTP ${response.status}`);
+      }
+
+      const reader = response.body?.getReader();
+      if (!reader) {
+        this.stopAllMonitors();
+        throw new Error('Response body is not readable');
+      }
+
+      this.startHeartbeatMonitor();
+      this.startNoDataMonitor();
+
+      const decoder = new TextDecoder('utf-8');
+
+      while (this.isActive) {
+        // eslint-disable-next-line no-await-in-loop
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        const chunk = decoder.decode(value, { stream: true });
+        if (chunk) {
+          this.processChunk(chunk);
+        }
+
+        this.lastEventTime = Date.now();
+        this.resetHeartbeatMonitor();
+        this.resetNoDataMonitor();
+      }
+
+      this.stopAllMonitors();
+    } catch (err: unknown) {
+      this.clearConnectTimer();
+      this.stopAllMonitors();
+
+      if (!this.isActive) {
+        return;
+      }
+
+      // 主动 abort（如 disconnect/connect 超时）不触发 onError，由外层决定是否重连
+      if (err instanceof Error && err.name === 'AbortError') {
+        throw err;
+      }
+
+      throw err;
+    }
+  }
+
+  /**
+   * 微信小程序平台：使用 Taro.request({ enableChunked: true }) + onChunkReceived。
+   */
+  private _doConnectWeapp(url: string, headers?: Record<string, string>): Promise<void> {
     return new Promise((resolve, reject) => {
       this.startConnectTimer();
 

@@ -86,18 +86,19 @@ function parseUserFromAccessToken(accessToken: string): SessionUser | null {
 }
 
 /**
- * 检查当前页面是否为登录页，避免重复 reLaunch。
+ * 检查当前页面是否为首页，避免重复跳转。
+ * MVP 阶段无独立登录页，登出后回到首页。
  *
- * @returns 是否已在登录页
+ * @returns 是否已在首页
  */
-function isOnLoginPage(): boolean {
+function isOnHomePage(): boolean {
   try {
     const pages = Taro.getCurrentPages();
     if (pages.length === 0) {
       return false;
     }
     const currentPage = pages[pages.length - 1];
-    return currentPage.route === 'pages/login/index';
+    return currentPage.route === 'views/shared/pages/home';
   } catch {
     return false;
   }
@@ -209,15 +210,15 @@ export function useAuth(): UseAuthReturn {
       // 步骤 2：重置 Zustand Store
       useSessionStore.getState().setUnauthenticated();
 
-      // 步骤 3：跳转登录页（避免重复跳转）
-      if (!isOnLoginPage()) {
-        Taro.reLaunch({ url: '/pages/login/index' });
+      // 步骤 3：跳转首页（MVP 阶段无独立登录页，避免重复跳转）
+      if (!isOnHomePage()) {
+        Taro.switchTab({ url: '/views/shared/pages/home' });
       }
     } catch {
-      // logout 不抛异常——Storage 清除失败仍执行 reLaunch
+      // logout 不抛异常——Storage 清除失败仍执行跳转
       try {
-        if (!isOnLoginPage()) {
-          Taro.reLaunch({ url: '/pages/login/index' });
+        if (!isOnHomePage()) {
+          Taro.switchTab({ url: '/views/shared/pages/home' });
         }
       } catch {
         // 最终降级：静默失败
