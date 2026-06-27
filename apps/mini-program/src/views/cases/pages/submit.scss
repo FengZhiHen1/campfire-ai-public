@@ -18,7 +18,7 @@
   border-radius: 0 0 $cf-radius-lg $cf-radius-lg;
 
   &__icon {
-    font-size: 96px;
+    font-size: $cf-icon-5xl;
     margin-bottom: $cf-spacing-sm;
     opacity: 0.4;
   }

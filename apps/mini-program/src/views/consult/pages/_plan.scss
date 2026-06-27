@@ -154,12 +154,12 @@
   }
 
   &__dot {
-    font-size: 16px;
+    @include cf-caption;
     line-height: 1;
   }
 
   &__text {
-    font-size: 14px;
+    @include cf-caption;
     color: $cf-on-primary-container;
   }
 }

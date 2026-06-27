@@ -20,7 +20,7 @@
   &__back {
     position: absolute;
     left: $cf-spacing-md;
-    font-size: 48px;
+    font-size: $cf-icon-lg;
     color: $cf-on-background;
     background: none;
     border: none;
@@ -97,7 +97,7 @@
   }
 
   &__num {
-    font-size: 56px;
+    @include cf-headline-xl;
     font-weight: 700;
     color: $cf-on-background;
     line-height: 1;
@@ -136,7 +136,7 @@
     &--active {
       background-color: $cf-primary-container;
       color: $cf-on-primary-container;
-      box-shadow: inset 0 0 0 2px rgba($cf-primary, 0.3);
+      box-shadow: $cf-shadow-inset-active;
     }
 
     &:active {
@@ -234,7 +234,7 @@
   }
 
   &__title {
-    font-size: 30px;
+    @include cf-body-md;
     font-weight: 500;
     color: $cf-on-background;
     line-height: 1.4;
@@ -774,7 +774,7 @@
 }
 
 .review-empty__icon-emoji {
-  font-size: 80px;
+  font-size: $cf-icon-4xl;
 }
 
 .review-empty__title {

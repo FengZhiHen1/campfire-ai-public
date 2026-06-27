@@ -26,7 +26,7 @@
   overflow-y: auto;
 
   &__title {
-    font-size: 40px;
+    font-size: $cf-icon-md;
     font-weight: 600;
     color: $cf-on-background;
     text-align: center;
@@ -74,7 +74,7 @@
   }
 
   &__option-icon {
-    font-size: 64px;
+    font-size: $cf-icon-2xl;
     margin-bottom: $cf-spacing-sm;
   }
 
@@ -308,7 +308,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 72px;
+    font-size: $cf-icon-3xl;
     margin-bottom: $cf-spacing-md;
   }
 
@@ -397,7 +397,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 72px;
+    font-size: $cf-icon-3xl;
     margin-bottom: $cf-spacing-md;
   }
 

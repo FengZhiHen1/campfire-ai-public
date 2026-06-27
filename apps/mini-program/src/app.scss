@@ -94,6 +94,7 @@ page {
   --cf-inverse-on-surface: #FDF8F3;
 
   /* Typography (2x DESIGN.md for Taro rpx) */
+  --cf-headline-xl: 56px;
   --cf-headline-lg: 48px;
   --cf-headline-md: 40px;
   --cf-headline-sm: 36px;
@@ -102,6 +103,8 @@ page {
   --cf-body-sm: 28px;
   --cf-label-md: 28px;
   --cf-footnote: 22px;
+  --cf-caption: 14px;
+  --cf-micro: 12px;
 
   /* Spacing */
   --cf-spacing-xs: 8px;
@@ -124,7 +127,24 @@ page {
   --cf-shadow-diffuse: 0 4px 24px rgba(28, 25, 23, 0.06);
   --cf-shadow-deep: 0 8px 40px rgba(28, 25, 23, 0.08);
   --cf-shadow-input-top: 0 -2px 12px rgba(28, 25, 23, 0.04);
+  --cf-shadow-soft: 0 2px 8px rgba(28, 25, 23, 0.08);
+  --cf-shadow-primary: 0 4px 16px rgba(245, 158, 11, 0.3);
+  --cf-shadow-emergency: 0 8px 32px rgba(245, 158, 11, 0.25);
   --cf-shadow-focus-inset: inset 0 0 0 1px rgba(245, 158, 11, 0.3);
+  --cf-shadow-inset-active: inset 0 0 0 2px rgba(245, 158, 11, 0.3);
+  --cf-shadow-inset-ghost: inset 0 0 0 1px rgba(245, 158, 11, 0.2);
+  --cf-shadow-dot-pulse: 0 0 0 8px rgba(245, 158, 11, 0.15);
+
+  /* Icon Sizes */
+  --cf-icon-xs: 24px;
+  --cf-icon-sm: 32px;
+  --cf-icon-md: 40px;
+  --cf-icon-lg: 48px;
+  --cf-icon-xl: 56px;
+  --cf-icon-2xl: 64px;
+  --cf-icon-3xl: 72px;
+  --cf-icon-4xl: 80px;
+  --cf-icon-5xl: 96px;
 }
 
 /* ========== 通用工具类 ========== */

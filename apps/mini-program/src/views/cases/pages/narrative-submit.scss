@@ -287,7 +287,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    box-shadow: 0 4px 16px rgba($cf-primary, 0.3);
+    box-shadow: $cf-shadow-primary;
 
     &::after {
       border: none;
