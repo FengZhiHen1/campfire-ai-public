@@ -20,7 +20,7 @@
     background-color: $cf-primary;
     color: $cf-on-primary;
     border-radius: $cf-radius-xl;
-    font-size: 30px;
+    @include cf-body-md;
     font-weight: 600;
     display: flex;
     align-items: center;
@@ -62,7 +62,7 @@
   }
 
   &__hero-icon {
-    font-size: 96px;
+    font-size: $cf-icon-5xl;
     line-height: 1;
   }
 

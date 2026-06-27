@@ -142,12 +142,12 @@
   }
 
   &__avatar-icon {
-    font-size: 36px;
+    font-size: $cf-icon-sm;
     opacity: 0.5;
   }
 
   &__add-icon {
-    font-size: 36px;
+    font-size: $cf-icon-sm;
     color: $cf-primary;
   }
 
@@ -201,7 +201,7 @@
   }
 
   &__avatar-icon {
-    font-size: 80px;
+    font-size: $cf-icon-4xl;
     opacity: 0.5;
   }
 
@@ -342,7 +342,7 @@
 
     &--latest {
       background-color: $cf-primary;
-      box-shadow: 0 0 0 8px rgba($cf-primary, 0.15);
+      box-shadow: $cf-shadow-dot-pulse;
       animation: cf-dot-pulse 2s ease-in-out infinite;
     }
   }
@@ -415,7 +415,7 @@
     display: inline-flex;
     background-color: $cf-primary-container;
     color: $cf-on-primary-container;
-    font-size: 24px;
+    @include cf-label-md;
     font-weight: 500;
     padding: $cf-spacing-xs $cf-spacing-sm;
     border-radius: $cf-radius-sm;
@@ -679,7 +679,7 @@
 
     &--active {
       background-color: $cf-primary;
-      box-shadow: 0 2px 8px rgba(28, 25, 23, 0.08);
+      box-shadow: $cf-shadow-soft;
     }
   }
 
@@ -894,7 +894,7 @@
     align-items: center;
     justify-content: center;
     border: none;
-    box-shadow: 0 4px 16px rgba(180, 83, 9, 0.25);
+    box-shadow: $cf-shadow-emergency;
 
     &:active {
       opacity: 0.9;

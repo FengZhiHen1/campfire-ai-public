@@ -30,7 +30,7 @@
   padding-top: 320px;
 
   &__icon {
-    font-size: 96px;
+    font-size: $cf-icon-5xl;
     margin-bottom: $cf-spacing-md;
   }
 
@@ -114,7 +114,7 @@
   }
 
   &__behavior {
-    font-size: 30px;
+    @include cf-body-md;
     color: $cf-on-background;
     line-height: 1.6;
   }

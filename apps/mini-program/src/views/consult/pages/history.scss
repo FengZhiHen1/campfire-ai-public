@@ -25,11 +25,11 @@
     border-radius: $cf-radius-md;
     height: 96px;
     padding: 0 $cf-spacing-md;
-    box-shadow: 0 2px 16px rgba(28, 25, 23, 0.04);
+    box-shadow: $cf-shadow-soft;
   }
 
   &__icon {
-    font-size: 32px;
+    @include cf-body-md;
     color: $cf-on-surface-variant;
     margin-right: $cf-spacing-xs;
   }
@@ -72,19 +72,19 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 96px;
+    font-size: $cf-icon-5xl;
     margin-bottom: $cf-spacing-md;
   }
 
   &__empty-title {
-    font-size: 36px;
+    @include cf-headline-sm;
     font-weight: 600;
     color: $cf-on-background;
     margin-bottom: $cf-spacing-sm;
   }
 
   &__empty-subtitle {
-    font-size: 28px;
+    @include cf-body-sm;
     color: $cf-on-surface-variant;
     text-align: center;
     margin-bottom: $cf-spacing-lg;
@@ -98,7 +98,7 @@
     background-color: $cf-primary;
     color: $cf-on-primary;
     border-radius: $cf-radius-lg;
-    font-size: 32px;
+    @include cf-body-md;
     font-weight: 600;
     display: flex;
     align-items: center;
@@ -202,7 +202,7 @@
     }
 
     &-dot {
-      font-size: 16px;
+      @include cf-caption;
       line-height: 1;
     }
   }
@@ -272,19 +272,19 @@
   padding: $cf-spacing-md;
 
   &__icon {
-    font-size: 96px;
+    font-size: $cf-icon-5xl;
     margin-bottom: $cf-spacing-md;
   }
 
   &__title {
-    font-size: 32px;
+    @include cf-headline-sm;
     font-weight: 600;
     color: $cf-on-background;
     margin-bottom: $cf-spacing-sm;
   }
 
   &__subtitle {
-    font-size: 28px;
+    @include cf-body-sm;
     color: $cf-on-surface-variant;
     margin-bottom: $cf-spacing-lg;
   }
@@ -295,7 +295,7 @@
     background-color: $cf-primary;
     color: $cf-on-primary;
     border-radius: $cf-radius-lg;
-    font-size: 32px;
+    @include cf-body-md;
     font-weight: 600;
     display: flex;
     align-items: center;

@@ -268,7 +268,7 @@
   }
 
   &__icon {
-    font-size: 96px;
+    font-size: $cf-icon-5xl;
     opacity: 0.5;
   }
 
@@ -286,7 +286,7 @@
     border: 4px solid $cf-surface;
 
     &-icon {
-      font-size: 28px;
+      font-size: $cf-icon-sm;
       color: $cf-on-primary;
     }
   }
@@ -436,7 +436,7 @@
     &--active {
       background-color: $cf-primary-container;
       color: $cf-on-primary-container;
-      box-shadow: inset 0 0 0 1px rgba($cf-primary, 0.2);
+      box-shadow: $cf-shadow-inset-ghost;
     }
 
     &:active {
@@ -727,9 +727,9 @@
     display: inline-flex;
     background-color: $cf-primary-container;
     color: $cf-on-primary-container;
-    font-size: 24px;
+    @include cf-label-md;
     font-weight: 500;
-    padding: 4px 16px;
+    padding: $cf-spacing-xs $cf-spacing-sm;
     border-radius: $cf-radius-sm;
     margin-bottom: $cf-spacing-xs;
   }
@@ -775,7 +775,7 @@
     align-items: center;
     justify-content: center;
     margin: 0 auto $cf-spacing-md;
-    font-size: 48px;
+    font-size: $cf-icon-lg;
     color: $cf-error;
   }
 
