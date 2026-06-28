@@ -16,7 +16,10 @@ body {
 }
 
 body {
-  background: var(--cf-surface-dim);
+  background:
+    radial-gradient(ellipse 75% 55% at 50% 25%, rgba(245,158,11,0.06) 0%, transparent 60%),
+    radial-gradient(ellipse 55% 45% at 25% 75%, rgba(5,150,105,0.04) 0%, transparent 50%),
+    var(--cf-surface-dim);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }

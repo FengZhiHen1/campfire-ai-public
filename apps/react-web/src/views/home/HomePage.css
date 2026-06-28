@@ -168,7 +168,10 @@
 }
 
 .home-emergency__cta:hover {
-  transform: scale(1.04);
+  transform: translateY(-2px);
+  box-shadow: 0 6px 28px rgba(245, 158, 11, 0.35),
+    0 2px 6px rgba(67, 20, 7, 0.15);
+  background: linear-gradient(135deg, #F7A81B, #E88A08);
 }
 
 .home-emergency__cta:active {
