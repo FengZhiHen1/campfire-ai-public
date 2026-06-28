@@ -2,12 +2,13 @@
 """Campfire-AI 统一启动控制台。
 
 Usage:
-  python scripts/start.py                        # 交互式菜单
-  python scripts/start.py --mode fullstack-h5     # 预设模式
-  python scripts/start.py --services api,worker   # 自定义组合
-  python scripts/start.py --all                   # 启动全部
-  python scripts/start.py --skip-infra            # 跳过 Docker
-  python scripts/start.py --skip-checks           # 跳过前置检查
+  python scripts/start.py                              # 交互式菜单
+  python scripts/start.py --mode fullstack-h5          # 全栈 Taro H5
+  python scripts/start.py --mode fullstack-react-h5    # 全栈 React H5
+  python scripts/start.py --services api,worker        # 自定义组合
+  python scripts/start.py --all                        # 启动默认全栈
+  python scripts/start.py --skip-infra                 # 跳过 Docker
+  python scripts/start.py --skip-checks                # 跳过前置检查
 """
 
 from __future__ import annotations
@@ -32,7 +33,7 @@ PRESET_MODES: dict[str, dict] = {
     "1": {
         "key": "fullstack-h5",
         "name": "全栈 H5 开发",
-        "desc": "API + Worker + H5 (port 5173)",
+        "desc": "API + Worker + Taro H5 (port 5173)",
         "services": ["api", "worker", "web-h5"],
     },
     "2": {
@@ -50,7 +51,7 @@ PRESET_MODES: dict[str, dict] = {
     "4": {
         "key": "frontend-h5",
         "name": "仅前端 H5",
-        "desc": "H5 only (port 5173)",
+        "desc": "Taro H5 only (port 5173)",
         "services": ["web-h5"],
     },
     "5": {
@@ -65,6 +66,18 @@ PRESET_MODES: dict[str, dict] = {
         "desc": "逐个选择服务",
         "services": [],
     },
+    "7": {
+        "key": "fullstack-react-h5",
+        "name": "全栈 React H5 开发",
+        "desc": "API + Worker + React H5 (port 5173)",
+        "services": ["api", "worker", "web-react-h5"],
+    },
+    "8": {
+        "key": "frontend-react-h5",
+        "name": "仅前端 React H5",
+        "desc": "React H5 only (port 5173)",
+        "services": ["web-react-h5"],
+    },
 }
 
 MODE_BY_KEY: dict[str, str] = {m["key"]: num for num, m in PRESET_MODES.items()}
@@ -74,6 +87,7 @@ AVAILABLE_SERVICES: dict[str, str] = {
     "worker": "Worker 服务 (Redis 消费者)",
     "web-h5": "Web-H5 服务 (Taro H5 dev, port 5173)",
     "web-weapp": "Web-小程序 服务 (Taro 微信小程序 dev)",
+    "web-react-h5": "React-H5 服务 (Vite dev, port 5173)",
 }
 
 # ---------------------------------------------------------------------------
@@ -132,6 +146,9 @@ def _create_launcher(service_key: str, project_root: Path = PROJECT_ROOT):
     elif service_key == "web-weapp":
         from start_web import WebLauncher
         return WebLauncher(mode="weapp", project_root=project_root)
+    elif service_key == "web-react-h5":
+        from start_web import WebLauncher
+        return WebLauncher(mode="react-h5", project_root=project_root)
     raise ValueError(f"未知服务: {service_key}")
 
 
@@ -156,14 +173,14 @@ def run_preflight_checks(services: list[str], *, skip_infra: bool) -> bool:
         checks.append(("Python 依赖", check_python_deps_installed()))
 
     # Node.js 工具链
-    if "web-h5" in services or "web-weapp" in services:
+    if "web-h5" in services or "web-weapp" in services or "web-react-h5" in services:
         checks.append(("pnpm 包管理器", check_pnpm_available()))
         checks.append(("Node.js 依赖", check_node_deps_installed()))
 
     # 端口
     if "api" in services:
         checks.append(("端口 8000 (API)", check_port_available(8000)))
-    if "web-h5" in services:
+    if "web-h5" in services or "web-react-h5" in services:
         checks.append(("端口 5173 (H5)", check_port_available(5173)))
 
     # 基础设施
@@ -307,7 +324,10 @@ def _custom_service_menu() -> list[str]:
             selected.append(items[idx - 1][0])
 
     if "web-h5" in selected and "web-weapp" in selected:
-        print_warning("H5 和小程序共享构建目录，不能同时启动。请只选择其中一个。")
+        print_warning("Taro H5 和小程序共享构建目录，不能同时启动。请只选择其中一个。")
+        return []
+    if "web-h5" in selected and "web-react-h5" in selected:
+        print_warning("Taro H5 和 React H5 均使用端口 5173，不能同时启动。请只选择其中一个。")
         return []
 
     return selected
@@ -317,7 +337,7 @@ def _interactive_menu() -> list[str]:
     """两级菜单：预设模式 → 自定义服务选择。"""
     print_info("请选择启动模式:")
     print()
-    for num in ["1", "2", "3", "4", "5", "6"]:
+    for num in sorted(PRESET_MODES.keys(), key=int):
         m = PRESET_MODES[num]
         print(f"  {num}. {m['name']:<18s} {m['desc']}")
     print()
@@ -355,20 +375,22 @@ def _parse_args() -> argparse.Namespace:
         epilog=(
             "示例:\n"
             "  python scripts/start.py                                交互式菜单\n"
-            "  python scripts/start.py --mode fullstack-h5             全栈 H5 开发\n"
+            "  python scripts/start.py --mode fullstack-h5             全栈 Taro H5 开发\n"
+            "  python scripts/start.py --mode fullstack-react-h5       全栈 React H5 开发\n"
             "  python scripts/start.py --mode backend                  仅后端\n"
             "  python scripts/start.py --services api,worker           自定义组合\n"
             "  python scripts/start.py --all --skip-infra              跳过 Docker\n"
             "  python scripts/start.py --all --skip-checks             跳过前置检查\n"
             "\n"
-            "可用模式: fullstack-h5, fullstack-weapp, backend, frontend-h5, frontend-weapp, custom"
+            "可用模式: fullstack-h5, fullstack-weapp, backend, frontend-h5, frontend-weapp, "
+            "fullstack-react-h5, frontend-react-h5, custom"
         ),
     )
 
     group = parser.add_mutually_exclusive_group()
     group.add_argument("--mode", type=str, default=None, help="预设启动模式")
     group.add_argument("--services", type=str, default=None, help="服务列表，逗号分隔")
-    group.add_argument("--all", action="store_true", default=False, help="启动全部服务")
+    group.add_argument("--all", action="store_true", default=False, help="启动默认全栈服务（API + Worker + Taro H5）")
 
     parser.add_argument("--skip-infra", action="store_true", default=False, help="跳过 Docker")
     parser.add_argument("--skip-checks", action="store_true", default=False, help="跳过前置检查")
@@ -402,7 +424,10 @@ def _resolve_services(args: argparse.Namespace) -> list[str]:
             print_info(f"可用服务: {', '.join(AVAILABLE_SERVICES.keys())}")
             sys.exit(1)
         if "web-h5" in services and "web-weapp" in services:
-            print_error("H5 和小程序共享构建目录，不能同时启动。请只选择其中一个。")
+            print_error("Taro H5 和小程序共享构建目录，不能同时启动。请只选择其中一个。")
+            sys.exit(1)
+        if "web-h5" in services and "web-react-h5" in services:
+            print_error("Taro H5 和 React H5 均使用端口 5173，不能同时启动。请只选择其中一个。")
             sys.exit(1)
         return services
 
