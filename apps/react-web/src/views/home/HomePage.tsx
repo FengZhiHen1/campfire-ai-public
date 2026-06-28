@@ -137,8 +137,8 @@ function ProfilePreviewCard({ profile }: { profile: ProfileListItem }) {
 export default function HomePage() {
   const { loading, hasError, consultHistory, profiles, profilesLoading, load } =
     useHomePage();
-  const hasProfiles = profiles.length > 0;
-  const latestConsult = consultHistory[0];
+  const hasProfiles = (profiles ?? []).length > 0;
+  const latestConsult = consultHistory?.[0];
 
   return (
     <>

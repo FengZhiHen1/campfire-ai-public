@@ -9,7 +9,7 @@ export function useHomePage() {
   const [hasError, setHasError] = useState(false);
   const [consultHistory, setConsultHistory] = useState<ConsultationHistoryListItem[]>([]);
 
-  const profiles = useProfileStore((s) => s.list);
+  const profiles = useProfileStore((s) => s.list) ?? [];
   const listState = useProfileStore((s) => s.listState);
   const { fetchProfiles } = useProfile();
 
