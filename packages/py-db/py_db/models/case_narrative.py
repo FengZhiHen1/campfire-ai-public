@@ -99,6 +99,12 @@ class CaseNarrative(Base, TimestampMixin):
         index=True,
         comment="LLM 提取状态（pending/extracting/extracted/failed）",
     )
+    extraction_error: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+        default=None,
+        comment="LLM 提取失败原因/错误详情（仅失败时写入）",
+    )
 
     def __repr__(self) -> str:
         return (
