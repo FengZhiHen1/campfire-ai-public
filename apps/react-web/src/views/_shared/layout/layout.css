@@ -4,19 +4,40 @@
 
 /* ── AppShell ── */
 .cf-app-shell {
-  display: flex;
-  flex-direction: column;
-  height: 100dvh;
   background:
     radial-gradient(ellipse 75% 55% at 50% 25%, rgba(245,158,11,0.06) 0%, transparent 60%),
     radial-gradient(ellipse 55% 45% at 25% 75%, rgba(5,150,105,0.04) 0%, transparent 50%),
-    var(--cf-bg);
-  color: var(--cf-fg);
-  font-family: var(--cf-font-body);
-  font-size: var(--cf-text-base);
-  line-height: var(--cf-leading-body);
+    var(--cf-surface-dim);
+  display: grid; place-items: center; min-height: 100vh;
+  font: 16px/1.75 var(--cf-font-body);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+/* ── Phone Frame（OD 原样照抄）── */
+.phone-frame {
+  width: 375px; height: 812px; position: relative;
+  background:
+    linear-gradient(180deg, rgba(255,255,255,0.45) 0%, transparent 100px),
+    var(--cf-bg);
+  border-radius: 40px; overflow: hidden;
+  box-shadow:
+    0 25px 80px rgba(28,25,23,0.15),
+    0 0 0 2px #2a2a2a,
+    0 0 0 6px #1a1a1a,
+    inset 0 1px 0 rgba(255,255,255,0.3);
+  display: flex; flex-direction: column;
+  color: var(--cf-fg);
+}
+
+.phone-notch {
+  width: 140px; height: 32px; background: #1a1a1a;
+  border-radius: 0 0 20px 20px; margin: 0 auto; position: relative; z-index: 10;
+}
+
+@media (max-width: 420px) {
+  .phone-frame { width: 100vw; height: 100vh; border-radius: 0; box-shadow: none; }
+  .phone-notch { display: none; }
 }
 
 /* ── NavBar ── */
