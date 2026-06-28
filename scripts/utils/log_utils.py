@@ -133,8 +133,9 @@ def print_service_failed(name: str, reason: str) -> None:
 _SERVICE_PORT_INFO: dict[str, str] = {
     "api": "http://localhost:8000  (Swagger: http://localhost:8000/docs)",
     "worker": "Redis 消费者 — 监听队列 campfire:case_index",
-    "web-h5": "http://localhost:5173",
+    "web-h5": "http://localhost:5173  (Taro H5)",
     "web-weapp": "微信小程序 — 请用开发者工具导入 dist/ 目录",
+    "web-react-h5": "http://localhost:5173  (React H5)",
 }
 
 
