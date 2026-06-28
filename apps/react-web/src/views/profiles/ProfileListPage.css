@@ -1,0 +1,27 @@
+/* 直接复制自 OD profiles.html — 去掉 phone/notch/body/tab-bar */
+.nav{height:44px;display:flex;align-items:center;justify-content:space-between;padding:0 12px 0 8px;background:rgba(255,255,255,0.5);backdrop-filter:blur(24px) saturate(1.4);-webkit-backdrop-filter:blur(24px) saturate(1.4);border-bottom:1px solid rgba(28,25,23,0.08)}
+.nav-brand{display:flex;align-items:center;gap:6px}.nav-brand span{font-size:17px;font-weight:600;color:var(--cf-fg)}
+.nav-edit{display:inline-flex;align-items:center;gap:4px;padding:6px 12px;border:none;background:var(--cf-surface-variant);font-size:13px;font-weight:500;color:var(--cf-fg);cursor:pointer;font-family:inherit;border-radius:var(--cf-radius-md);text-decoration:none;transition:background .15s}.nav-edit:hover{background:var(--cf-accent-container);color:var(--cf-accent-container-on)}.nav-edit svg{width:14px;height:14px}
+.chip-scroll{display:flex;gap:8px;overflow-x:auto;padding:12px 0 0;scrollbar-width:none}.chip-scroll::-webkit-scrollbar{display:none}
+.chip{flex-shrink:0;display:flex;flex-direction:column;align-items:center;gap:4px;cursor:pointer;border:none;background:none;font-family:inherit;padding:4px;min-width:56px}
+.chip-avatar{width:44px;height:44px;border-radius:50%;background:var(--cf-surface-variant);display:grid;place-items:center}.chip.active .chip-avatar{background:var(--cf-accent-container);box-shadow:0 0 0 2px var(--cf-accent)}
+.chip-avatar svg{width:22px;height:22px;color:var(--cf-muted)}.chip.active .chip-avatar svg{color:var(--cf-accent)}
+.chip-name{font-size:11px;color:var(--cf-muted)}.chip.active .chip-name{color:var(--cf-fg);font-weight:600}
+.chip-add .chip-avatar{background:var(--cf-surface-variant);border:1px dashed var(--cf-surface-dim)}.chip-add .chip-avatar svg{color:var(--cf-accent-neutral)}
+.info-card{padding:16px;margin:12px 0;background:var(--cf-surface);border-radius:var(--cf-radius-lg);box-shadow:var(--cf-elev-raised)}
+.info-head{display:flex;align-items:center;gap:12px;margin-bottom:12px}
+.info-avatar{width:44px;height:44px;border-radius:50%;background:var(--cf-surface-variant);display:grid;place-items:center}.info-avatar svg{width:24px;height:24px;color:var(--cf-muted)}
+.info-meta h3{font-size:16px;font-weight:600;color:var(--cf-fg)}.info-meta span{font-size:13px;color:var(--cf-muted)}
+.info-tags{display:flex;gap:6px;flex-wrap:wrap}
+.info-tag{padding:4px 10px;border-radius:var(--cf-radius-pill);font-size:12px;font-weight:500;display:flex;align-items:center;gap:4px}
+.info-tag.d{background:var(--cf-surface-variant);color:var(--cf-muted)}.info-tag.p{background:var(--cf-accent-container);color:var(--cf-accent-container-on)}.info-tag.r{background:var(--cf-danger-container);color:var(--cf-danger)}
+.tl-head{display:flex;align-items:center;justify-content:space-between;margin:4px 0 8px}.tl-head h4{font-size:14px;font-weight:600;color:var(--cf-fg)}
+.empty{padding:32px 16px;text-align:center}
+.emp-icon{width:48px;height:48px;margin:0 auto 12px;border-radius:50%;background:var(--cf-accent-container);display:grid;place-items:center}.emp-icon svg{width:24px;height:24px;color:var(--cf-accent)}
+.empty h3{font-size:16px;font-weight:600;color:var(--cf-fg);margin-bottom:4px}.empty p{font-size:13px;color:var(--cf-muted)}
+.cold{padding:40px 16px;text-align:center}
+.cold-illust{width:80px;height:80px;margin:0 auto 20px;border-radius:50%;background:var(--cf-accent-container);display:grid;place-items:center;animation:cPulse 2.5s ease-in-out infinite}@keyframes cPulse{0%,100%{transform:scale(1);opacity:.7}50%{transform:scale(1.05);opacity:1}}
+.cold-illust svg{width:40px;height:40px;color:var(--cf-accent)}
+.cold h2{font-size:20px;font-weight:600;color:var(--cf-fg);margin-bottom:8px}.cold p{font-size:14px;color:var(--cf-muted);max-width:240px;margin:0 auto 20px;line-height:1.6}
+.btn{display:inline-flex;align-items:center;justify-content:center;height:44px;padding:0 24px;border:none;border-radius:var(--cf-radius-md);font:600 15px/1 system-ui,sans-serif;cursor:pointer;text-decoration:none}.btn-p{background:var(--cf-accent);color:var(--cf-accent-on)}
+.glow-loading{height:120px;border-radius:var(--cf-radius-lg);background:var(--cf-surface-variant);position:relative;overflow:hidden}.glow-loading::after{content:"";position:absolute;inset:0;background:radial-gradient(circle at 30% 50%,rgba(245,158,11,0.08) 0%,transparent 60%);animation:glowPulse 2s ease-in-out infinite}@keyframes glowPulse{0%,100%{opacity:.5}50%{opacity:1}}
