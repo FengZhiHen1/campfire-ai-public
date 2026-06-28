@@ -26,5 +26,21 @@ export function setJSON(name: string, value: unknown): void {
   setItem(name, JSON.stringify(value));
 }
 
+/**
+ * Parse JWT payload without verification.
+ * Returns the decoded payload object, or null on failure.
+ */
+export function parseJWTPayload<T = Record<string, unknown>>(token: string): T | null {
+  try {
+    const parts = token.split('.');
+    if (parts.length !== 3) return null;
+    const payload = parts[1];
+    const decoded = atob(payload.replace(/-/g, '+').replace(/_/g, '/'));
+    return JSON.parse(decoded) as T;
+  } catch {
+    return null;
+  }
+}
+
 // Re-export Taro-compatible API for gradual migration
 export { getItem as getStorageSync, setItem as setStorageSync, removeItem as removeStorageSync };
