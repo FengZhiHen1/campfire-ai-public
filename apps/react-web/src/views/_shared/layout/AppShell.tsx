@@ -57,8 +57,11 @@ export default function AppShell() {
 
   return (
     <div className="cf-app-shell">
-      <Outlet />
-      {isTabPage && <TabBar tabs={TABS} />}
+      <div className="phone-frame">
+        <div className="phone-notch" />
+        <Outlet />
+        {isTabPage && <TabBar tabs={TABS} />}
+      </div>
     </div>
   );
 }
