@@ -49,8 +49,8 @@ router = APIRouter(prefix="/api/v1/auth", tags=["auth"])
 # ---------------------------------------------------------------------------
 
 _EXCEPTION_STATUS_MAP: dict[type[AuthServiceError], int] = {
-    PasswordComplexityError: status.HTTP_422_UNPROCESSABLE_ENTITY,
-    RealNameRequiredError: status.HTTP_422_UNPROCESSABLE_ENTITY,
+    PasswordComplexityError: status.HTTP_422_UNPROCESSABLE_CONTENT,
+    RealNameRequiredError: status.HTTP_422_UNPROCESSABLE_CONTENT,
     DuplicateUserError: status.HTTP_409_CONFLICT,
     InvalidCredentialsError: status.HTTP_401_UNAUTHORIZED,
     TokenInvalidError: status.HTTP_401_UNAUTHORIZED,
