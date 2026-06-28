@@ -10,6 +10,7 @@ import {
   GlowLoading,
   Tag,
 } from '@/views/_shared/components';
+import PageContent from '@/views/_shared/layout/PageContent';
 import './HomePage.css';
 
 /* ── Time-based greeting ── */
@@ -141,7 +142,7 @@ export default function HomePage() {
   const latestConsult = consultHistory?.[0];
 
   return (
-    <>
+    <PageContent>
       <GreetingSection hasProfiles={hasProfiles} />
 
       {hasError && (
@@ -190,6 +191,6 @@ export default function HomePage() {
           <span className="home-create-card__link">创建档案 →</span>
         </Link>
       )}
-    </>
+    </PageContent>
   );
 }
