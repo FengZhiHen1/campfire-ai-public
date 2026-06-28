@@ -71,7 +71,7 @@ def _validate_four_stage_fields(obj: Any) -> None:
 
     if missing:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail={
                 "message": "四段式字段不完整",
                 "missing_fields": missing,
@@ -629,7 +629,7 @@ class CaseManagementService(CaseManagementContract):
         # 若检测到疑似 PII 且用户未确认，阻断提交
         if pii_result.has_pii and not pii_confirmed:
             raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                 detail={
                     "message": "检测到疑似 PII（个人身份信息），请确认已脱敏后设置 pii_confirmed=true 重新提交",
                     "pii_warnings": [w.model_dump() for w in pii_warnings],

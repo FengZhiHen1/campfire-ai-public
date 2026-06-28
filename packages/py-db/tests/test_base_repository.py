@@ -10,6 +10,7 @@ from unittest import mock
 import pytest
 from sqlalchemy import Column, Integer, String
 from sqlalchemy.exc import OperationalError, TimeoutError as SQLAlchemyTimeoutError
+from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import DeclarativeBase
 
 from py_db.repositories.base_repository import BaseRepository, DependencyCommunicationError
@@ -40,17 +41,17 @@ class _FakeRepo(BaseRepository[_FakeModel]):
 
 @pytest.fixture
 def repo() -> _RealRepo:
-    return _RealRepo(session_factory=lambda: mock.AsyncMock())
+    return _RealRepo(session_factory=lambda: mock.AsyncMock(spec=AsyncSession))
 
 
 @pytest.fixture
 def fake_repo() -> _FakeRepo:
-    return _FakeRepo(session_factory=lambda: mock.AsyncMock())
+    return _FakeRepo(session_factory=lambda: mock.AsyncMock(spec=AsyncSession))
 
 
 @pytest.fixture
 def session() -> mock.AsyncMock:
-    return mock.AsyncMock()
+    return mock.AsyncMock(spec=AsyncSession)
 
 
 # ---- create ----
