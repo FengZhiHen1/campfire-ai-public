@@ -54,11 +54,18 @@ async def write_index_to_pgvector(
     """
     metadata_dict = metadata.model_dump()
     chunk_id = str(uuid.uuid4())
-    now_iso = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(timezone.utc)
 
     insert_sql = text("""
         INSERT INTO case_chunks (id, card_id, chunk_text, embedding, metadata, created_at)
-        VALUES (:id, :card_id, :chunk_text, :embedding::vector(1024), :metadata::jsonb, :created_at)
+        VALUES (
+            :id,
+            :card_id,
+            :chunk_text,
+            CAST(:embedding AS vector(1024)),
+            CAST(:metadata AS jsonb),
+            :created_at
+        )
     """)
 
     params: dict[str, object] = {
@@ -67,7 +74,7 @@ async def write_index_to_pgvector(
         "chunk_text": chunk_text,
         "embedding": json.dumps(embedding),
         "metadata": json.dumps(metadata_dict, ensure_ascii=False),
-        "created_at": now_iso,
+        "created_at": now,
     }
 
     last_error: Exception | None = None

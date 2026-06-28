@@ -183,7 +183,13 @@ class CaseCard(Base, TimestampMixin):
 
     # ---- 索引状态（由 CASE-04 Worker 更新） ----
     index_status: Mapped[str | None] = mapped_column(
-        String(20),
+        sa_Enum(
+            "pending",
+            "processing",
+            "indexed",
+            "indexing_failed",
+            name="card_index_status_enum",
+        ),
         nullable=True,
         default=None,
         comment="向量化索引状态（pending/processing/indexed/indexing_failed）",

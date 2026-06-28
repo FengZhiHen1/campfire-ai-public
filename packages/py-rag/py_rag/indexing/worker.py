@@ -170,7 +170,7 @@ class IndexPipeline(BaseIndexPipeline):
         WHERE card_id=:id AND index_status='processing'
         """
         case_id_str = str(case_id)
-        now_iso = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(timezone.utc)
 
         update_sql = text("""
             UPDATE case_cards
@@ -178,7 +178,7 @@ class IndexPipeline(BaseIndexPipeline):
             WHERE card_id = :card_id AND index_status = 'processing'
         """)
         result = await db_session.execute(
-            update_sql, {"card_id": case_id_str, "indexed_at": now_iso}
+            update_sql, {"card_id": case_id_str, "indexed_at": now}
         )
         await db_session.commit()
 
