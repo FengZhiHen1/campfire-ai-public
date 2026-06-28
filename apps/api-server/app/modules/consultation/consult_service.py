@@ -145,8 +145,8 @@ class ConsultationOrchestratorImpl(BaseConsultationOrchestrator):
 
         logger.info(
             service="api-server",
-            message="search_cases_started",
-            op_type=None,
+            message="consult_search_started",
+            op_type="consult_search",
             extra={"request_id": str(request_id), "query_len": len(query_text), "top_k": 10},
         )
 
@@ -159,8 +159,8 @@ class ConsultationOrchestratorImpl(BaseConsultationOrchestrator):
 
         logger.info(
             service="api-server",
-            message="search_cases_done",
-            op_type=None,
+            message="consult_search_done",
+            op_type="consult_search",
             extra={
                 "result_count": result.total_count,
                 "is_complete": result.is_complete,
@@ -196,12 +196,15 @@ class ConsultationOrchestratorImpl(BaseConsultationOrchestrator):
                 behavior_description=behavior_description,
             )
             return await judge_crisis(crisis_request)
-        except Exception:
+        except Exception as exc:
             logger.error(
                 "consult",
                 "crisis_judgment_failed",
                 op_type="crisis_judgment_fallback",
-                extra={"error": "crisis_judgment_failed"},
+                extra={
+                    "error": str(exc),
+                    "error_type": type(exc).__name__,
+                },
             )
             return CrisisJudgmentResult(
                 final_level=CrisisLevel.MILD,
@@ -242,8 +245,8 @@ class ConsultationOrchestratorImpl(BaseConsultationOrchestrator):
     async def _do_execute_search(self, request: Any, db: AsyncSession) -> Any:
         logger.info(
             service="api-server",
-            message="search_cases_started",
-            op_type=None,
+            message="standalone_search_started",
+            op_type="standalone_search",
             extra={"request_id": request.request_id, "query_len": len(request.query_text), "top_k": request.top_k},
         )
 
@@ -256,8 +259,8 @@ class ConsultationOrchestratorImpl(BaseConsultationOrchestrator):
 
         logger.info(
             service="api-server",
-            message="search_cases_done",
-            op_type=None,
+            message="standalone_search_done",
+            op_type="standalone_search",
             extra={
                 "result_count": result.total_count,
                 "is_complete": result.is_complete,
