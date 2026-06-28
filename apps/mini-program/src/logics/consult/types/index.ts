@@ -85,6 +85,7 @@ export interface ConsultationHistoryDetail {
   behavior_description: string;
   consultation_time: string;
   generated_plan: string;
+  plan_sections?: Record<string, string[]>;
   source_list: string[];
   disclaimer: string;
   generation_time_ms: number;
@@ -135,6 +136,7 @@ export interface ConsultationHistoryCreate {
   behavior_description: string;
   consultation_time: string;
   generated_plan: string;
+  plan_sections?: Record<string, string[]>;
   source_list: string[];
   disclaimer: string;
   generation_time_ms: number;

@@ -41,6 +41,14 @@
       "maxLength": 65536,
       "description": "AI 生成的完整四段式应急方案全文（Markdown 格式）。映射自 CSLT-03/GenerationResult.text。包含即时安全干预动作、情绪安抚话术、后续观察指标、就医判断标准四个段落。is_partial=true 时可为非完整四段式文本。"
     },
+    "plan_sections": {
+      "type": "object",
+      "description": "AI 生成的四段式应急方案结构化数据（段落标题 → 内容列表）。映射自 CSLT-03/GenerationResult.sections。为空时表示未能解析出段落结构。",
+      "additionalProperties": {
+        "type": "array",
+        "items": { "type": "string" }
+      }
+    },
     "source_list": {
       "type": "array",
       "description": "被引用案例的来源信息列表。映射自 CSLT-03/GenerationResult.source_list。每项格式为 '[N] CASE-XXX 案例标题（录入日期）'。无引用案例时为空列表。",

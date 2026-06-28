@@ -44,6 +44,7 @@ class ConsultationHistory(Base, UUIDPrimaryKeyMixin, TimestampMixin):
         behavior_description: 家属输入的患者行为描述文本（1-2000 汉字，已脱敏 PII）。
         consultation_time: 咨询发生时间（服务端 NOW() 自动填充）。
         generated_plan: AI 生成的四段式应急方案全文（Markdown，最大 65536 字）。
+        plan_sections: AI 生成的四段式应急方案结构化数据（段落标题 → 内容列表）。
         source_list: 被引用案例的来源信息列表（JSONB 数组）。
         disclaimer: 合规免责声明固定文本。
         generation_time_ms: 方案生成总耗时（毫秒）。
@@ -97,6 +98,12 @@ class ConsultationHistory(Base, UUIDPrimaryKeyMixin, TimestampMixin):
         Text,
         nullable=False,
         comment="AI 生成的四段式应急方案全文（Markdown，最大 65536 字符）",
+    )
+    plan_sections: Mapped[dict | None] = mapped_column(
+        JSONB,
+        nullable=True,
+        default=dict,
+        comment="AI 生成的四段式应急方案结构化数据（段落标题 → 内容列表）",
     )
     source_list: Mapped[list] = mapped_column(
         JSONB,

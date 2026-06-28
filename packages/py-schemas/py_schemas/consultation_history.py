@@ -88,6 +88,10 @@ class ConsultationHistoryCreate(CampfireBaseModel):
         max_length=65536,
         description="AI 生成的完整四段式应急方案全文（Markdown 格式）。is_partial=true 时可为非完整四段式文本。",
     )
+    plan_sections: dict[str, list[str]] = Field(
+        default_factory=dict,
+        description="AI 生成的四段式应急方案结构化数据（段落标题 → 内容列表）。为空时表示未能解析出段落结构。",
+    )
     source_list: list[str] = Field(
         ...,
         description="被引用案例的来源信息列表。每项格式为 '[N] CASE-XXX 案例标题（录入日期）'。无引用案例时为空列表。",
@@ -212,6 +216,10 @@ class ConsultationHistoryDetail(CampfireBaseModel):
         min_length=1,
         max_length=65536,
         description="AI 生成的完整四段式应急方案全文（Markdown 格式）。必须原样返回归档时的完整文本，禁止截断、压缩或格式化。",
+    )
+    plan_sections: dict[str, list[str]] = Field(
+        default_factory=dict,
+        description="AI 生成的四段式应急方案结构化数据（段落标题 → 内容列表）。为空时表示旧数据或未能解析出段落结构。",
     )
     source_list: list[str] = Field(
         ...,

@@ -83,6 +83,20 @@ class TestConsultationHistoryCreate:
             req = ConsultationHistoryCreate(**_valid_create_data(finish_reason=reason))
             assert req.finish_reason == reason
 
+    def test_plan_sections_default_empty(self):
+        req = ConsultationHistoryCreate(**_valid_create_data())
+        assert req.plan_sections == {}
+
+    def test_plan_sections_preserved(self):
+        sections = {
+            "即时安全干预动作": ["第一步：确保安全"],
+            "情绪安抚话术": ["\"没关系，我陪着你。\""],
+            "后续观察指标": ["观察频率"],
+            "就医判断标准": ["出现自伤时就医"],
+        }
+        req = ConsultationHistoryCreate(**_valid_create_data(plan_sections=sections))
+        assert req.plan_sections == sections
+
     def test_extra_fields_forbidden(self):
         with pytest.raises(ValidationError):
             ConsultationHistoryCreate(**_valid_create_data(), extra="bad")

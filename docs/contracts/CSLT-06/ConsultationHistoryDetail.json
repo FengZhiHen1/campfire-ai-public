@@ -46,6 +46,14 @@
       "maxLength": 65536,
       "description": "AI 生成的完整四段式应急方案全文（Markdown 格式）。必须原样返回归档时的完整文本，禁止截断、压缩或格式化。"
     },
+    "plan_sections": {
+      "type": "object",
+      "description": "AI 生成的四段式应急方案结构化数据（段落标题 → 内容列表）。为空时表示旧数据或未能解析出段落结构。",
+      "additionalProperties": {
+        "type": "array",
+        "items": { "type": "string" }
+      }
+    },
     "source_list": {
       "type": "array",
       "description": "被引用案例的来源信息列表。",

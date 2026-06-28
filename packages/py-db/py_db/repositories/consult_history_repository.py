@@ -70,6 +70,7 @@ class ConsultHistoryRepository:
                 crisis_level=data["crisis_level"],
                 behavior_description=data["behavior_description"],
                 generated_plan=data["generated_plan"],
+                plan_sections=data.get("plan_sections", {}),
                 source_list=data.get("source_list", []),
                 disclaimer=data["disclaimer"],
                 generation_time_ms=data["generation_time_ms"],

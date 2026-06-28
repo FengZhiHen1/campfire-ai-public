@@ -146,6 +146,39 @@
     }
   }
 
+  &__section {
+    margin-bottom: $cf-spacing-md;
+
+    &:last-child {
+      margin-bottom: 0;
+    }
+  }
+
+  &__section-title {
+    @include cf-body-sm;
+    font-weight: 600;
+    color: $cf-on-background;
+    margin-bottom: $cf-spacing-xs;
+    display: block;
+  }
+
+  &__section-item {
+    @include cf-body-sm;
+    color: $cf-on-surface;
+    line-height: 1.7;
+    margin-bottom: $cf-spacing-xs;
+    display: block;
+
+    &:last-child {
+      margin-bottom: 0;
+    }
+  }
+
+  &__section-empty {
+    @include cf-body-sm;
+    color: $cf-on-surface-variant;
+  }
+
   &__empty {
     @include cf-body-sm;
     color: $cf-on-surface-variant;

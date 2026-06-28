@@ -692,6 +692,9 @@ class SseStreamingService:
         if not full_text.strip():
             return
 
+        # 从全文解析四段式结构化数据
+        sections = parse_json_sections(full_text)
+
         # 从全文提取引用的 slice IDs
         import re
         ref_pattern = re.compile(r"\[(\d+)\]")
@@ -724,6 +727,7 @@ class SseStreamingService:
             "crisis_level": crisis_level,
             "behavior_description": behavior_description,
             "generated_plan": full_text,
+            "plan_sections": sections,
             "source_list": source_list,
             "disclaimer": (
                 "以上建议由 AI 生成，仅供参考，不构成医疗诊断或治疗建议。"
