@@ -230,34 +230,12 @@ class BaseConsultationOrchestrator(ABC):
         """调用流式生成并返回 AsyncGenerator 和 PromptBuildContext。
 
         实现者在此填写 generation service 调用逻辑。
-        不需要关心 SSE 注册——_do_register_sse 独立处理。
+        当前编排使用 Queue 桥接模式：start_consultation 先注册一个 Queue 消费者
+        作为 SSE generator，本钩子返回的真实 generator 在后台任务中被消费并写入
+        Queue；元数据通过 store_generation_meta 直接存储，无需额外注册。
 
         输出约束:
-          - 返回 (generator, prompt_ctx) 元组，prompt_ctx 传递给 _do_register_sse 复用
-        """
-        ...
-
-    @abstractmethod
-    def _do_register_sse(
-        self,
-        session_id: SessionId,
-        generator: Any,
-        plan_input: Any,
-        search_result: Any,
-        crisis_result: Any,
-        behavior_description: str,
-        request_id: RequestId,
-        prompt_ctx: Any,
-    ) -> None:
-        """注册流式生成器到 SSE 服务并存储元数据。
-
-        实现者在此填写 SSE 注册逻辑。
-        不需要关心 session_id 格式校验——start_consultation 内部生成。
-        prompt_ctx 由 _do_generate_stream 产出，避免重复 PromptBuilder.build()。
-
-        Side Effects:
-          - SseStreamingService.register_generator() 写入内存缓存
-          - SseStreamingService.store_generation_meta() 写入元数据
+          - 返回 (generator, prompt_ctx) 元组，prompt_ctx 用于反查引用切片 ID
         """
         ...
 
