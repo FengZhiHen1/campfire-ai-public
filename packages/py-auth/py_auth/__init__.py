@@ -24,9 +24,12 @@
   - is_blacklisted(jti) -> bool
   - mark_refresh_used(jti) -> None
   - is_refresh_used(jti) -> bool
-  - get_current_user(request) -> dict
   - require_role(min_level, exact_roles) -> FastAPI Depends
   - get_masked_phone(phone, roles) -> str
+
+注：MVP 阶段的匿名用户身份由 api-server 的
+    app.core.dependencies.anonymous_user.get_anonymous_user 维护，
+    不在 py-auth 中提供。
 
 Usage:
     from py_auth import BcryptHasher, JoseTokenManager
@@ -63,7 +66,6 @@ from py_auth.blacklist import (
     is_refresh_used,
     mark_refresh_used,
 )
-from py_auth.dependencies import get_current_user
 from py_auth.hashing import BcryptHasher, hash_password, verify_password
 from py_auth.jwt_utils import (
     JoseTokenManager,
@@ -123,7 +125,6 @@ __all__ = [
     "is_blacklisted",
     "mark_refresh_used",
     "is_refresh_used",
-    "get_current_user",
     "require_role",
     "get_guard",
     "get_masked_phone",
