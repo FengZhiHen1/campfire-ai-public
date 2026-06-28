@@ -1,0 +1,108 @@
+/* ═══════════════════════════════════════════════════════════════════
+   Campfire-AI Design Tokens
+   来源：OD DESIGN.md + components.html
+   命名：--cf-{category}-{role}[-{variant}]
+   铁律：禁止在任何业务样式中硬编码 hex/rgb/rgba
+   ═══════════════════════════════════════════════════════════════════ */
+
+:root {
+  /* ── 中性基础层 ── */
+  --cf-bg: #FDF8F3;
+  --cf-bg-warm: #FBF3E8;
+  --cf-surface: #FFFFFF;
+  --cf-surface-variant: #F5F0EB;
+  --cf-surface-dim: #EBE5DE;
+  --cf-fg: #1C1917;
+  --cf-fg-2: #4A4440;
+  --cf-muted: #78716C;
+  --cf-muted-light: #A8A29E;
+
+  /* ── 强调色 ── */
+  --cf-accent: #F59E0B;
+  --cf-accent-on: #431407;
+  --cf-accent-container: #FEF3C7;
+  --cf-accent-container-on: #92400E;
+  --cf-accent-glow: #FCD34D;
+  --cf-accent-secondary: #059669;
+  --cf-accent-secondary-container: #D1FAE5;
+  --cf-accent-secondary-glow: #34D399;
+  --cf-accent-neutral: #64748B;
+  --cf-accent-neutral-container: #E2E8F0;
+
+  /* ── 语义色 ── */
+  --cf-success: #059669;
+  --cf-success-container: #D1FAE5;
+  --cf-warn: #F59E0B;
+  --cf-warn-container: #FEF3C7;
+  --cf-danger: #DC2626;
+  --cf-danger-container: #FEE2E2;
+  --cf-danger-glow: #F87171;
+
+  /* ── 字体 ── */
+  --cf-font-display: system-ui, -apple-system, "PingFang SC", "Noto Sans SC",
+    "Helvetica Neue", sans-serif;
+  --cf-font-body: system-ui, -apple-system, "PingFang SC", "Noto Sans SC",
+    "Helvetica Neue", sans-serif;
+  --cf-font-mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, monospace;
+
+  /* ── 字号（语义级） ── */
+  --cf-text-caption: 11px;
+  --cf-text-xs: 12px;
+  --cf-text-sm: 14px;
+  --cf-text-base: 16px;
+  --cf-text-lg: 18px;
+  --cf-text-xl: 20px;
+  --cf-text-2xl: 24px;
+  --cf-text-3xl: 32px;
+
+  /* ── 行高 ── */
+  --cf-leading-body: 1.75;
+  --cf-leading-heading: 1.6;
+  --cf-leading-tight: 1.2;
+
+  /* ── 字间距 ── */
+  --cf-tracking-display: -0.02em;
+  --cf-tracking-caps: 0.06em;
+  --cf-tracking-label: 0.02em;
+
+  /* ── 间距 ── */
+  --cf-space-1: 4px;
+  --cf-space-2: 8px;
+  --cf-space-3: 12px;
+  --cf-space-4: 16px;
+  --cf-space-5: 20px;
+  --cf-space-6: 24px;
+  --cf-space-8: 32px;
+  --cf-space-12: 48px;
+  --cf-gutter: 16px;
+
+  /* ── 圆角 ── */
+  --cf-radius-sm: 4px;
+  --cf-radius-md: 8px;
+  --cf-radius-lg: 16px;
+  --cf-radius-xl: 24px;
+  --cf-radius-pill: 9999px;
+
+  /* ── 高程 ── */
+  --cf-elev-flat: none;
+  --cf-elev-raised: 0 4px 24px rgba(28, 25, 23, 0.06);
+  --cf-elev-deep: 0 8px 40px rgba(28, 25, 23, 0.08);
+
+  /* ── 动效 ── */
+  --cf-motion-fast: 150ms;
+  --cf-motion-base: 240ms;
+  --cf-motion-slow: 400ms;
+  --cf-ease-standard: cubic-bezier(0.2, 0, 0, 1);
+  --cf-ease-out-expo: cubic-bezier(0.19, 1, 0.22, 1);
+  --cf-ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+
+  /* ── 触控 ── */
+  --cf-touch-min: 44px;
+  --cf-touch-voice: 48px;
+
+  /* ── 交互 ── */
+  --cf-focus-ring: 0 0 0 2px var(--cf-accent), 0 0 0 6px rgba(245, 158, 11, 0.16);
+
+  /* ── 容器 ── */
+  --cf-container-max: 800px;
+}

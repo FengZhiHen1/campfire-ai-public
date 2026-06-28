@@ -1,0 +1,160 @@
+/* ═══════════════════════════════════════════════════════════════════
+   Layout Component Styles — AppShell, TabBar, NavBar, PageContent
+   ═══════════════════════════════════════════════════════════════════ */
+
+/* ── AppShell ── */
+.cf-app-shell {
+  display: flex;
+  flex-direction: column;
+  height: 100dvh;
+  background: var(--cf-bg);
+  color: var(--cf-fg);
+  font-family: var(--cf-font-body);
+  font-size: var(--cf-text-base);
+  line-height: var(--cf-leading-body);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* ── NavBar ── */
+.cf-nav-bar {
+  height: 44px;
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  padding: 0 8px;
+  background: rgba(255, 255, 255, 0.5);
+  backdrop-filter: blur(24px) saturate(1.4);
+  -webkit-backdrop-filter: blur(24px) saturate(1.4);
+  border-bottom: 1px solid rgba(28, 25, 23, 0.08);
+  position: relative;
+  z-index: 5;
+}
+
+.cf-nav-bar__side {
+  width: 52px;
+  display: flex;
+  align-items: center;
+}
+
+.cf-nav-bar__side--right {
+  justify-content: flex-end;
+}
+
+.cf-nav-bar__back {
+  width: var(--cf-touch-min);
+  height: var(--cf-touch-min);
+  display: grid;
+  place-items: center;
+  border: none;
+  background: none;
+  cursor: pointer;
+  color: var(--cf-fg);
+  border-radius: var(--cf-radius-md);
+  transition: background var(--cf-motion-fast),
+    transform var(--cf-motion-fast);
+}
+
+.cf-nav-bar__back:hover {
+  background: var(--cf-surface-variant);
+}
+
+.cf-nav-bar__back:active {
+  transform: scale(0.9);
+}
+
+.cf-nav-bar__title {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--cf-fg);
+  letter-spacing: var(--cf-tracking-label);
+  white-space: nowrap;
+}
+
+/* ── PageContent ── */
+.cf-page-content {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scroll-behavior: smooth;
+  padding: 0 var(--cf-gutter) 24px;
+}
+
+.cf-page-content::-webkit-scrollbar {
+  width: 3px;
+}
+
+.cf-page-content::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.cf-page-content::-webkit-scrollbar-thumb {
+  background: rgba(120, 113, 108, 0.18);
+  border-radius: 3px;
+}
+
+/* ── TabBar ── */
+.cf-tab-bar {
+  display: flex;
+  align-items: stretch;
+  background: rgba(255, 255, 255, 0.55);
+  backdrop-filter: blur(24px) saturate(1.4);
+  -webkit-backdrop-filter: blur(24px) saturate(1.4);
+  border-top: 1px solid rgba(28, 25, 23, 0.08);
+  height: 56px;
+  min-height: 56px;
+  padding-bottom: env(safe-area-inset-bottom, 0);
+}
+
+.cf-tab-bar__item {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  border: none;
+  background: none;
+  cursor: pointer;
+  color: var(--cf-muted-light);
+  font-size: 10px;
+  font-weight: 500;
+  font-family: inherit;
+  transition: all var(--cf-motion-fast);
+  -webkit-tap-highlight-color: transparent;
+  position: relative;
+}
+
+.cf-tab-bar__item--active {
+  color: var(--cf-accent);
+  font-weight: 650;
+}
+
+.cf-tab-bar__item--active::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 24px;
+  height: 3px;
+  border-radius: 0 0 3px 3px;
+  background: var(--cf-accent);
+}
+
+.cf-tab-bar__icon {
+  width: 22px;
+  height: 22px;
+  transition: transform var(--cf-motion-fast);
+}
+
+.cf-tab-bar__item:active .cf-tab-bar__icon {
+  transform: scale(0.88);
+}
+
+.cf-tab-bar__label {
+  line-height: 1;
+}
