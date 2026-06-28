@@ -13,13 +13,13 @@ export function useHomePage() {
   const listState = useProfileStore((s) => s.listState);
   const { fetchProfiles } = useProfile();
 
-  const profilesLoading = listState === 'loading' || (listState === 'idle' && profiles.length === 0);
+  const profilesLoading = listState === 'loading' || (listState === 'idle' && (profiles ?? []).length === 0);
 
   useEffect(() => {
-    if (listState === 'idle' && profiles.length === 0) {
+    if (listState === 'idle' && (profiles ?? []).length === 0) {
       fetchProfiles();
     }
-  }, [listState, profiles.length, fetchProfiles]);
+  }, [listState, profiles?.length, fetchProfiles]);
 
   const load = useCallback(async () => {
     setLoading(true);
