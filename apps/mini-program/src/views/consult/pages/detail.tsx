@@ -2,8 +2,16 @@ import { useState, useEffect } from 'react';
 import { View, Text, Button } from '@tarojs/components';
 import Taro from '@tarojs/taro';
 import { consultApi } from '../../../logics/consult';
-import type { ConsultationHistoryDetail, CrisisLevel } from '../../../logics/consult';
+import type { ConsultationHistoryDetail, CrisisLevel, PlanSection } from '../../../logics/consult';
 import './detail.scss';
+
+/** 四段式方案标题顺序（与后端 CSLT-03 解析的 JSON key 保持一致）。 */
+const SECTION_KEYS: readonly string[] = [
+  '即时安全干预动作',
+  '情绪安抚话术',
+  '后续观察指标',
+  '就医判断标准',
+];
 
 export default function ConsultDetail() {
   const [data, setData] = useState<ConsultationHistoryDetail | null>(null);
@@ -73,7 +81,16 @@ export default function ConsultDetail() {
 
   const levelKey = getLevelClass(data.crisis_level);
   const levelText = getLevelText(data.crisis_level);
-  const paragraphs = parsePlanParagraphs(data.generated_plan);
+
+  /** 优先使用结构化四段式数据；旧数据或无结构化数据时回退到按空行分段。 */
+  const planSections: PlanSection[] = SECTION_KEYS.map((title) => {
+    const contents = data.plan_sections?.[title] ?? [];
+    return { title, contents, isCompleted: contents.length > 0 };
+  });
+  const hasStructuredSections = planSections.some((sec) => sec.contents.length > 0);
+  const fallbackParagraphs = hasStructuredSections
+    ? []
+    : parsePlanParagraphs(data.generated_plan);
 
   return (
     <View className="detail-page">
@@ -94,8 +111,23 @@ export default function ConsultDetail() {
       {/* 生成方案 */}
       <View className="detail-plan">
         <Text className="detail-plan__title">应急干预方案</Text>
-        {paragraphs.length > 0 ? (
-          paragraphs.map((p, idx) => (
+        {hasStructuredSections ? (
+          planSections.map((sec) => (
+            <View key={sec.title} className="detail-plan__section">
+              <Text className="detail-plan__section-title">{sec.title}</Text>
+              {sec.contents.length > 0 ? (
+                sec.contents.map((line, idx) => (
+                  <Text key={idx} className="detail-plan__section-item">
+                    {line}
+                  </Text>
+                ))
+              ) : (
+                <Text className="detail-plan__section-empty">该段落无内容</Text>
+              )}
+            </View>
+          ))
+        ) : fallbackParagraphs.length > 0 ? (
+          fallbackParagraphs.map((p, idx) => (
             <Text key={idx} className="detail-plan__para">{p}</Text>
           ))
         ) : (
