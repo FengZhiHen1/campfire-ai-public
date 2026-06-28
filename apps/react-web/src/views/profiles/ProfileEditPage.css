@@ -1,0 +1,5 @@
+/* 直接复制自 OD profile-edit.html */
+.nav{height:44px;display:flex;align-items:center;justify-content:space-between;padding:0 12px;background:rgba(255,255,255,0.5);backdrop-filter:blur(24px) saturate(1.4);-webkit-backdrop-filter:blur(24px) saturate(1.4);border-bottom:1px solid rgba(28,25,23,0.08)}
+.nav-cancel,.nav-save{display:inline-flex;align-items:center;padding:6px 12px;border:none;background:var(--cf-surface-variant);font-size:13px;font-weight:500;color:var(--cf-fg);cursor:pointer;font-family:inherit;border-radius:var(--cf-radius-md)}.nav-save{background:var(--cf-accent);color:var(--cf-accent-on);font-weight:600}.nav-title{font-size:17px;font-weight:600;color:var(--cf-fg)}
+.field{margin-bottom:16px}.field label{display:block;font-size:13px;font-weight:600;color:var(--cf-muted);margin-bottom:6px}.field .req{color:var(--cf-danger)}
+.field input{width:100%;padding:10px 12px;border:none;border-radius:var(--cf-radius-md);background:var(--cf-surface-variant);font:15px/1.5 system-ui,sans-serif;color:var(--cf-fg);outline:none}.field input:focus{outline:4px solid rgba(245,158,11,.2);outline-offset:0;background:var(--cf-surface)}
