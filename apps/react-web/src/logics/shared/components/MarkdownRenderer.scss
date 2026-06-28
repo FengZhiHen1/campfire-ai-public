@@ -1,0 +1,97 @@
+@use '../../../views/shared/styles/tokens' as *;
+
+.md-root {
+  overflow-wrap: break-word;
+}
+
+// ---- 标题 ----
+.md-h1 {
+  @include cf-headline-sm;
+  color: $cf-on-background;
+  margin-bottom: $cf-spacing-md;
+}
+
+.md-h2 {
+  @include cf-body-md;
+  font-weight: 700;
+  color: $cf-on-background;
+  margin-bottom: $cf-spacing-sm;
+}
+
+.md-h3 {
+  @include cf-body-sm;
+  font-weight: 600;
+  color: $cf-on-background;
+  margin-bottom: $cf-spacing-sm;
+}
+
+.md-h4, .md-h5, .md-h6 {
+  @include cf-body-sm;
+  font-weight: 600;
+  color: $cf-on-background;
+  margin-bottom: $cf-spacing-xs;
+}
+
+// ---- 段落 ----
+.md-paragraph {
+  @include cf-body-sm;
+  color: $cf-on-background;
+  margin-bottom: $cf-spacing-sm;
+}
+
+// ---- 列表 ----
+.md-list-item {
+  display: flex;
+  flex-direction: row;
+  margin-bottom: $cf-spacing-xs;
+  padding-left: $cf-spacing-xs;
+
+  &__bullet {
+    @include cf-body-sm;
+    color: $cf-on-surface-variant;
+    margin-right: $cf-spacing-xs;
+    flex-shrink: 0;
+  }
+
+  &__body {
+    flex: 1;
+    @include cf-body-sm;
+    color: $cf-on-background;
+  }
+}
+
+// ---- 代码块 ----
+.md-code-block {
+  background-color: $cf-surface-variant;
+  border-radius: $cf-radius-md;
+  padding: $cf-spacing-sm $cf-spacing-md;
+  margin-bottom: $cf-spacing-sm;
+  overflow-x: auto;
+
+  &__text {
+    font-family: 'Courier New', Courier, monospace;
+    @include cf-label-md;
+    color: $cf-on-background;
+    white-space: pre-wrap;
+  }
+}
+
+// ---- 行内格式 ----
+.md-bold {
+  font-weight: 700;
+  color: $cf-on-background;
+}
+
+.md-italic {
+  font-style: italic;
+  color: $cf-on-surface-variant;
+}
+
+.md-inline-code {
+  font-family: 'Courier New', Courier, monospace;
+  @include cf-label-md;
+  background-color: $cf-surface-variant;
+  border-radius: $cf-radius-sm;
+  padding: 2px $cf-spacing-xs;
+  color: $cf-error;
+}
