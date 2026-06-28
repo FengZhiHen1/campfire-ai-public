@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import secrets
+import uuid
 
 from fastapi import Depends, Request
 from sqlalchemy import select
@@ -21,16 +22,30 @@ from py_schemas.auth import UserRole
 
 from app.core.dependencies.auth_dependencies import get_db_session
 
-_ANON_PASSWORD_HASH: str = (
-    "$2b$12$xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
-)
+# 匿名用户密码占位值，使用 lazily-initialized 的真实 bcrypt 哈希，
+# 避免硬编码非法哈希，同时不在每次请求时重复计算 bcrypt。
+_ANON_PASSWORD_HASH: str | None = None
 
-_MAX_RETRIES = 3
+_MAX_RETRIES = 10
+
+
+def _get_anon_password_hash() -> str:
+    """获取匿名用户密码哈希（首次调用时生成真实 bcrypt 哈希并缓存）。"""
+    global _ANON_PASSWORD_HASH
+    if _ANON_PASSWORD_HASH is None:
+        from py_auth.hashing import hash_password
+
+        _ANON_PASSWORD_HASH = hash_password(secrets.token_urlsafe(32))
+    return _ANON_PASSWORD_HASH
 
 
 def _generate_anon_phone() -> str:
-    """生成随机 11 位数字作为匿名用户手机号。"""
-    return f"{secrets.randbelow(10 ** 11):011d}"
+    """生成匿名用户占位手机号。
+
+    使用 UUID 前 11 位十六进制字符，空间为 16^11 ≈ 1.76e13，
+    远高于 11 位纯数字空间（1e11），碰撞概率极低。
+    """
+    return uuid.uuid4().hex[:11]
 
 
 async def _get_or_create_anonymous_user(
@@ -54,7 +69,7 @@ async def _get_or_create_anonymous_user(
     for attempt in range(1, _MAX_RETRIES + 1):
         user = User(
             username=device_id,
-            password_hash=_ANON_PASSWORD_HASH,
+            password_hash=_get_anon_password_hash(),
             role=UserRole.FAMILY,
             phone=_generate_anon_phone(),
             device_id=device_id,
