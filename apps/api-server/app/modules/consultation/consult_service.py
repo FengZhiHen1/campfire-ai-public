@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import date
-from typing import Any, Literal, cast
+from typing import Any, cast
 
 from sqlalchemy import desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -31,7 +31,6 @@ from py_rag.retrieval import hybrid_search
 from py_schemas.consult import (
     SemanticSearchInput,
     SemanticSearchResult,
-    TagFilterDto,
 )
 
 from py_schemas.crisis import (
@@ -140,7 +139,9 @@ class ConsultationOrchestratorImpl(BaseConsultationOrchestrator):
         request_id: RequestId,
         db: AsyncSession,
     ) -> Any:
-        tag_filters = _build_default_tag_filters(behavior_type, emotion_level)
+        # NOTE: 当前 hybrid_search 为纯语义检索，未接入 behavior_type/emotion_level 标签过滤。
+        # 该能力需在 py_rag 检索层扩展后再传递 tag_filters。
+        _ = behavior_type, emotion_level
 
         logger.info(
             service="api-server",
@@ -228,7 +229,7 @@ class ConsultationOrchestratorImpl(BaseConsultationOrchestrator):
         )
 
     def _do_generate_stream(self, plan_input: Any) -> tuple[Any, Any]:
-        """返回 (generator, prompt_ctx)，prompt_ctx 供 _do_register_sse 复用。"""
+        """返回 (generator, prompt_ctx)，prompt_ctx 用于引用切片反查。"""
         builder = PromptBuilder()
         messages, ctx = builder.build(plan_input)
         generator = stream_generate(
@@ -237,31 +238,6 @@ class ConsultationOrchestratorImpl(BaseConsultationOrchestrator):
             prenumbered_slices=ctx.prenumbered_slices,
         )
         return generator, ctx
-
-    def _do_register_sse(
-        self,
-        session_id: SessionId,
-        generator: Any,
-        plan_input: Any,
-        search_result: Any,
-        crisis_result: Any,
-        behavior_description: str,
-        request_id: RequestId,
-        prompt_ctx: Any,
-    ) -> None:
-        """复用 _do_generate_stream 产出的 prompt_ctx，不重复构建 Prompt。"""
-        streaming_service = SseStreamingService()
-        streaming_service.register_generator(str(session_id), generator)
-        streaming_service.store_generation_meta(
-            session_id=str(session_id),
-            prenumbered_slices={num: sid for num, sid in prompt_ctx.prenumbered_slices},
-            crisis_level=crisis_result.final_level.value,
-            block_deep_response=crisis_result.block_deep_response,
-            behavior_description=behavior_description,
-            request_id=str(request_id),
-            search_result=search_result,
-            plan_input=plan_input,
-        )
 
     async def _do_execute_search(self, request: Any, db: AsyncSession) -> Any:
         logger.info(
@@ -325,29 +301,6 @@ async def search_cases(
 ) -> SemanticSearchResult:
     """语义检索（委托给 ConsultationOrchestratorImpl ABC 单例）。"""
     return await _orchestrator.search_cases(request=request, db=db)
-
-
-# ============================================================================
-# 内部辅助
-# ============================================================================
-
-
-def _build_default_tag_filters(
-    behavior_type: list[str] | None,
-    emotion_level: str | None,
-) -> TagFilterDto:
-    primary_behavior = behavior_type[0] if behavior_type else "OTHER"
-    return TagFilterDto(
-        age_range="未知年龄段",
-        behavior_type=cast(
-            Literal[
-                "SELF_INJURY", "AGGRESSION", "ELOPEMENT", "MEDICATION",
-                "EMOTIONAL_MELTDOWN", "STEREOTYPY", "OTHER",
-            ],
-            primary_behavior,
-        ),
-        emotion_level=cast(Literal["轻", "中", "重"], emotion_level) if emotion_level else None,
-    )
 
 
 __all__ = [
