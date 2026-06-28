@@ -25,7 +25,7 @@ from app.core.dependencies.anonymous_user import get_anonymous_user
 from app.core.dependencies.auth_dependencies import _get_session_factory, get_db_session
 from py_db.models.case_narrative import CaseNarrative
 from py_logger import logger
-from ..exceptions import NarrativeNotFoundError
+from ..exceptions import ExtractionError, NarrativeNotFoundError
 from .service import (
     NarrativeManagementService,
     ExtractionResponse,
@@ -195,6 +195,7 @@ async def extract_narrative_endpoint(
     # pending 或 failed：启动后台提取
     narrative_text = entity.narrative
     entity.extraction_status = "extracting"
+    entity.extraction_error = None
     await db.commit()
 
     asyncio.create_task(
@@ -233,6 +234,7 @@ async def _run_extraction_background(
             nar = result.scalars().first()
             if nar:
                 nar.extraction_status = "extracted"
+                nar.extraction_error = None
                 nar.derived_card_ids = [str(c.card_id) for c in cards]
                 await bg_db.commit()
             logger.info(
@@ -240,8 +242,9 @@ async def _run_extraction_background(
                 message="extraction_background_done",
                 extra={"narrative_id": narrative_id, "card_count": len(cards)},
             )
-        except Exception:
-            # 提取失败：回写状态
+        except Exception as exc:
+            # 提取失败：回写状态并持久化失败原因
+            error_message = _format_extraction_error(exc)
             try:
                 result = await bg_db.execute(
                     select(CaseNarrative).where(
@@ -251,14 +254,23 @@ async def _run_extraction_background(
                 nar = result.scalars().first()
                 if nar:
                     nar.extraction_status = "failed"
+                    nar.extraction_error = error_message
                     await bg_db.commit()
             except Exception:
                 pass
             logger.error(
                 service="api-server",
                 message="extraction_background_failed",
-                extra={"narrative_id": narrative_id},
+                op_type="case_extraction",
+                extra={"narrative_id": narrative_id, "error": error_message},
             )
+
+
+def _format_extraction_error(exc: Exception) -> str:
+    """将提取异常格式化为可持久化的错误描述。"""
+    if isinstance(exc, ExtractionError):
+        return exc.reason[:2000]
+    return str(exc)[:2000]
 
 
 __all__ = ["router"]
