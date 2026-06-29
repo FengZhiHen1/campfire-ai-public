@@ -1,38 +1,141 @@
-import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { useCaseList } from '@/logics/cases/hooks/useCaseList';
+import { useCaseListPage } from '@/logics/cases';
 import PageContent from '@/views/_shared/layout/PageContent';
 import './CaseListPage.css';
 
+function formatDate(iso: string): string {
+  try {
+    return new Date(iso).toLocaleDateString('zh-CN');
+  } catch {
+    return iso;
+  }
+}
+
 export default function CaseListPage() {
-  const [tab, setTab] = useState<'public' | 'my'>('public');
-  const { list, loading, search, setSearch } = useCaseList({});
+  const {
+    activeTab,
+    searchKeyword,
+    loading,
+    error,
+    filteredItems,
+    hasMore,
+    canSeeReviewBtn,
+    emptyState,
+    statusTextMap,
+    statusClassMap,
+    sourceLabelMap,
+    setSearchKeyword,
+    setActiveTab,
+    goDetail,
+    goSubmit,
+    goReview,
+    refresh,
+    loadMore,
+  } = useCaseListPage();
 
   return (
     <>
       <div className="nav">
         <span className="nav-title">真实案例库</span>
-        <Link className="nav-act" to="/cases/review">审核台</Link>
+        {canSeeReviewBtn && (
+          <button type="button" className="nav-act" onClick={goReview}>
+            审核台
+          </button>
+        )}
       </div>
       <PageContent>
         <div className="tabs">
-          <button className={`tab${tab === 'public' ? ' active' : ''}`} onClick={() => setTab('public')}>公共案例库</button>
-          <button className={`tab${tab === 'my' ? ' active' : ''}`} onClick={() => setTab('my')}>我的提交</button>
+          <button
+            type="button"
+            className={`tab${activeTab === 'public' ? ' active' : ''}`}
+            onClick={() => setActiveTab('public')}
+          >
+            公共案例库
+          </button>
+          <button
+            type="button"
+            className={`tab${activeTab === 'my' ? ' active' : ''}`}
+            onClick={() => setActiveTab('my')}
+          >
+            我的提交
+          </button>
         </div>
+
         <div className="search">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.6" y2="16.6"/></svg>
-          <input placeholder="搜索案例库…" value={search} onChange={(e) => setSearch(e.target.value)} />
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+            <circle cx="11" cy="11" r="7" />
+            <line x1="21" y1="21" x2="16.6" y2="16.6" />
+          </svg>
+          <input
+            placeholder="搜索案例库…"
+            value={searchKeyword}
+            onChange={(e) => setSearchKeyword(e.target.value)}
+          />
+          {searchKeyword && (
+            <button type="button" className="search-clear" onClick={() => setSearchKeyword('')}>
+              清除
+            </button>
+          )}
         </div>
-        {loading ? <div className="glow-loading" /> : list.map((item) => (
-          <Link key={item.id} className="case-card" to={`/cases/${item.id}`}>
-            <div className="card-head"><span className="card-title">{item.title}</span><span className="card-badge">{item.source}</span></div>
-            <div className="card-tags">{item.tags?.map((t: string) => <span key={t} className="card-tag">{t}</span>)}</div>
-            <div className="card-foot"><span className="card-dot approved" /><span className="card-status">{item.status}</span><span className="card-time">{item.date}</span></div>
-          </Link>
-        ))}
-        <div className="no-more">—— 已展示全部案例 ——</div>
+
+        {loading && filteredItems.length === 0 && <div className="glow-loading" />}
+
+        {error && filteredItems.length === 0 && (
+          <div className="empty">
+            <h3>加载失败</h3>
+            <p>{error}</p>
+            <button type="button" className="btn btn-p" onClick={refresh}>重试</button>
+          </div>
+        )}
+
+        {!loading && !error && filteredItems.length === 0 && (
+          <div className="empty">
+            <h3>{emptyState.title}</h3>
+            <p>{emptyState.subtitle}</p>
+            {emptyState.showClearBtn && (
+              <button type="button" className="btn btn-p" onClick={() => setSearchKeyword('')}>
+                清除搜索
+              </button>
+            )}
+          </div>
+        )}
+
+        {filteredItems.map((item) => {
+          const statusCls = statusClassMap[item.status] ?? item.status;
+          return (
+            <button
+              key={item.narrative_id}
+              type="button"
+              className="case-card"
+              onClick={() => goDetail(item.narrative_id)}
+            >
+              <div className="card-head">
+                <span className="card-title">{item.title}</span>
+                {item.card_count > 0 && (
+                  <span className="card-badge">{item.card_count} 张卡片</span>
+                )}
+              </div>
+              <div className="card-tags">
+                <span className="card-tag">{sourceLabelMap[item.source_type] ?? item.source_type}</span>
+              </div>
+              <div className="card-foot">
+                <span className={`card-dot ${statusCls}`} />
+                <span className="card-status">{statusTextMap[item.status] ?? item.status}</span>
+                <span className="card-time">{formatDate(item.created_at)}</span>
+              </div>
+            </button>
+          );
+        })}
+
+        {filteredItems.length > 0 && (
+          <div className="no-more">
+            {loading ? '加载中…' : hasMore ? (
+              <button type="button" className="load-more-btn" onClick={loadMore}>加载更多</button>
+            ) : '—— 已展示全部案例 ——'}
+          </div>
+        )}
       </PageContent>
-      <Link className="fab" to="/cases/narrative">+</Link>
+      <button type="button" className="fab" onClick={goSubmit}>+</button>
     </>
   );
 }

@@ -162,11 +162,11 @@ export function useCaseListPage(): UseCaseListPageReturn {
 
   // ---- 事件处理 ----
   const goDetail = useCallback((narrativeId: string) => {
-    navigate(`/cases/detail?narrativeId=${narrativeId}`);
+    navigate(`/cases/${narrativeId}`);
   }, [navigate]);
 
   const goSubmit = useCallback(() => {
-    navigate('/cases/narrative-submit');
+    navigate('/cases/narrative');
   }, [navigate]);
 
   const goReview = useCallback(() => {

@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { consultApi } from '@/logics/consult';
+import { useConsult } from '@/logics/consult';
 import type { ConsultationHistoryListItem } from '@/logics/consult';
 import PageContent from '@/views/_shared/layout/PageContent';
 import './ConsultHistoryPage.css';
@@ -17,18 +17,22 @@ function getTrust(item: ConsultationHistoryListItem): [string, string] {
 
 export default function ConsultHistoryPage() {
   const navigate = useNavigate();
+  const consult = useConsult();
   const [items, setItems] = useState<ConsultationHistoryListItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
 
   const load = useCallback(async () => {
     setLoading(true);
+    setError(null);
     try {
-      const res = await consultApi.fetchHistoryList(1, 50);
-      setItems(res.items ?? []);
-    } catch { /* ignore */ }
-    finally { setLoading(false); }
-  }, []);
+      const list = await consult.fetchHistoryList(1, 50);
+      setItems(list ?? []);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : '加载失败');
+    } finally { setLoading(false); }
+  }, [consult]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -53,6 +57,21 @@ export default function ConsultHistoryPage() {
           </svg>
           <input placeholder="搜索历史咨询记录…" value={search} onChange={(e) => setSearch(e.target.value)} />
         </div>
+
+        {error && (
+          <div className="empty">
+            <div className="emp-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
+                <circle cx="12" cy="12" r="10" />
+                <line x1="12" y1="8" x2="12" y2="12" />
+                <line x1="12" y1="16" x2="12.01" y2="16" />
+              </svg>
+            </div>
+            <h3>加载失败</h3>
+            <p>{error}</p>
+            <button type="button" className="btn btn-p" onClick={load}>重新加载</button>
+          </div>
+        )}
 
         {loading ? (
           <div className="glow-loading" />

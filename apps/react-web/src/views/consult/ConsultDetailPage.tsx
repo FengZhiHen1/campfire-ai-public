@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { consultApi } from '@/logics/consult';
+import { useConsult } from '@/logics/consult';
 import type { ConsultationHistoryDetail } from '@/logics/consult';
 import PageContent from '@/views/_shared/layout/PageContent';
 import './ConsultDetailPage.css';
@@ -12,19 +12,21 @@ const CRISIS_LABELS: Record<string, string> = {
 export default function ConsultDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const consult = useConsult();
   const [detail, setDetail] = useState<ConsultationHistoryDetail | null>(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     if (!id) return;
-    setLoading(true); setError(false);
+    setLoading(true); setError(null);
     try {
-      const res = await consultApi.fetchHistoryDetail(id);
+      const res = await consult.fetchHistoryDetail(id);
       setDetail(res);
-    } catch { setError(true); }
-    finally { setLoading(false); }
-  }, [id]);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : '加载失败');
+    } finally { setLoading(false); }
+  }, [id, consult]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -35,7 +37,7 @@ export default function ConsultDetailPage() {
         <div className="error-state">
           <div className="err-graphic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg></div>
           <h2>加载失败</h2>
-          <p>无法加载咨询详情，请稍后重试</p>
+          <p>{error ?? '无法加载咨询详情，请稍后重试'}</p>
           <div className="error-acts"><button className="btn-s" onClick={load}>重试</button></div>
         </div>
       </PageContent>
@@ -43,7 +45,7 @@ export default function ConsultDetailPage() {
   }
 
   const crisisClass = detail.crisis_level ?? 'moderate';
-  const planSections = detail.plan_sections ?? [];
+  const planSections = Object.entries(detail.plan_sections ?? {});
 
   return (
     <>
@@ -64,14 +66,18 @@ export default function ConsultDetailPage() {
 
         <div className="plan-card">
           <h3>干预建议大纲</h3>
-          {planSections.map((s, i) => (
-            <div key={i} className={`plan-section ${s.type ?? 'action'}`}>
-              <div className="plan-section-head"><span>{s.title ?? `段落 ${i + 1}`}</span></div>
-              <div className="plan-section-body" dangerouslySetInnerHTML={{ __html: s.content ?? '' }} />
+          {planSections.map(([title, contents], i) => (
+            <div key={i} className="plan-section">
+              <div className="plan-section-head"><span>{title}</span></div>
+              <div className="plan-section-body">
+                {contents.map((line, idx) => (
+                  <p key={idx}>{line}</p>
+                ))}
+              </div>
             </div>
           ))}
           <div className="plan-footer">
-            <span className="case-count">基于 {detail.referenced_case_count ?? 0} 个相似案例</span>
+            <span className="case-count">基于 {detail.referenced_slice_ids.length} 个相似案例</span>
           </div>
         </div>
 

@@ -8,7 +8,7 @@
  */
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import { updateCard, submitCard } from '../services/cardApi';
 import { showToast } from '../../shared/utils/toast';
 import { getNarrative } from '../services/narrativeApi';
@@ -75,7 +75,8 @@ export function useExtractionResult(): UseExtractionResultReturn {
   const [extractFailed, setExtractFailed] = useState(false);
   const pollTimer = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const narrativeId: string = new URLSearchParams(window.location.search).get('narrativeId') || '';
+  const { id } = useParams<{ id: string }>();
+  const narrativeId = id ?? '';
 
   // DEBUG: 确认 narrativeId 是否正确传入
   console.debug('[extraction-result] narrativeId:', narrativeId);

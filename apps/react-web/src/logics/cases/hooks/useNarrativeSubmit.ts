@@ -112,7 +112,7 @@ export function useNarrativeSubmit(): UseNarrativeSubmitReturn {
     }
     setSubmitting(false);
     setExtracting(false);
-    navigate(`/cases/extraction-result?narrativeId=${narrativeId}`, { replace: true });
+    navigate(`/cases/extraction/${narrativeId}`, { replace: true });
   }, []);
 
   return {

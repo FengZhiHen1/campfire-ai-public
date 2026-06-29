@@ -18,6 +18,7 @@ export { useCaseSubmit } from './hooks/useCaseSubmit';
 export { useNarrativeSubmit } from './hooks/useNarrativeSubmit';
 export { useExtractionResult } from './hooks/useExtractionResult';
 export { useReviewPage } from './hooks/useReviewPage';
+export { useCaseCardDetail } from './hooks/useCaseCardDetail';
 
 // ---- 类型 ----
 export type {
@@ -28,6 +29,8 @@ export type {
   NarrativeDetail,
   CardSummary,
 } from './types';
+
+export type { CardData } from './services/cardApi';
 
 
 // ---- 常量 ----
