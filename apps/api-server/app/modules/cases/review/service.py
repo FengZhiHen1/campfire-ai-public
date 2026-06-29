@@ -183,7 +183,10 @@ class ReviewWorkflowService(ReviewWorkflowContract):
         实现者在此: CAS 状态更新 → 审核记录写入 → 审计日志写入 →
                     异步入队 → 事务提交。
         """
-        reviewer_id: str = current_user.get("sub", "")
+        reviewer_id_str: str = current_user.get("sub", "")
+        reviewer_id: uuid.UUID | None = (
+            uuid.UUID(reviewer_id_str) if reviewer_id_str else None
+        )
 
         # ---- CAS 更新叙事状态 ----
         new_status: CaseStatus = (
@@ -211,8 +214,9 @@ class ReviewWorkflowService(ReviewWorkflowContract):
 
         is_override: bool = review_request.override_reason is not None and len(review_request.override_reason.strip()) > 0
 
+        case_id_uuid = uuid.UUID(case_id)
         review_record = CaseReview(
-            case_id=case_id,
+            case_id=case_id_uuid,
             review_round=next_round,
             ai_review_report=ai_review.model_dump(),
             decision=review_request.decision,
@@ -230,7 +234,7 @@ class ReviewWorkflowService(ReviewWorkflowContract):
         )
         await audit_repo.insert_audit_log(
             session=session,
-            case_id=case_id,
+            case_id=case_id_uuid,
             action=audit_action,
             operator_id=reviewer_id,
             operator_role="expert",
@@ -245,7 +249,7 @@ class ReviewWorkflowService(ReviewWorkflowContract):
         if is_override:
             await audit_repo.insert_audit_log(
                 session=session,
-                case_id=case_id,
+                case_id=case_id_uuid,
                 action="expert_override",
                 operator_id=reviewer_id,
                 operator_role="expert",
@@ -294,7 +298,7 @@ class ReviewWorkflowService(ReviewWorkflowContract):
             ai_review_summary=ai_review,
             expert_decision=f"专家{'通过' if review_request.decision == 'approved' else '驳回'}审核",
             review_comment=review_request.review_comment,
-            reviewer_id=reviewer_id,
+            reviewer_id=str(reviewer_id) if reviewer_id else "",
             reviewed_at=review_record.reviewed_at,
         )
 
@@ -339,7 +343,7 @@ class ReviewWorkflowService(ReviewWorkflowContract):
             items.append(ReviewQueueItem(
                 narrative_id=str(narrative.narrative_id),
                 title=narrative.title,
-                author_name=narrative.author_id,
+                author_name=str(narrative.author_id) if narrative.author_id else "",
                 behavior_type="",  # L1 叙事层不包含行为类型，待提取后由 L2 卡片填充
                 submitted_at=submitted_at,
                 ai_review_overall=ai_review_overall,

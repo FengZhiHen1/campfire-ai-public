@@ -44,12 +44,14 @@ class NarrativeManagementService(NarrativeManagementContract):
         session: AsyncSession,
     ) -> Any:
         """创建新的 L1 叙事（status=draft）。"""
+        author_id_str = current_user.get("sub", "")
+        author_id = uuid.UUID(author_id_str) if author_id_str else None
         entity = CaseNarrative(
             narrative_id=uuid.uuid4(),
             title=title,
             narrative=narrative,
             source_type=source_type,
-            author_id=current_user.get("sub", ""),
+            author_id=author_id,
             status=CaseStatus.DRAFT,
         )
         session.add(entity)
@@ -106,8 +108,12 @@ class NarrativeManagementService(NarrativeManagementContract):
             stmt = stmt.where(CaseNarrative.status == CaseStatus.APPROVED)
             count_stmt = count_stmt.where(CaseNarrative.status == CaseStatus.APPROVED)
         elif scope == "my":
-            stmt = stmt.where(CaseNarrative.author_id == current_user.get("sub", ""))
-            count_stmt = count_stmt.where(CaseNarrative.author_id == current_user.get("sub", ""))
+            user_id_str = current_user.get("sub", "")
+            if not user_id_str:
+                return [], 0
+            user_id = uuid.UUID(user_id_str)
+            stmt = stmt.where(CaseNarrative.author_id == user_id)
+            count_stmt = count_stmt.where(CaseNarrative.author_id == user_id)
 
         total = (await session.execute(count_stmt)).scalar() or 0
 

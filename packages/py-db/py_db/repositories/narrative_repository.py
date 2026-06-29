@@ -120,7 +120,8 @@ class NarrativeRepository(BaseRepository[CaseNarrative]):
             if status is not None:
                 conditions.append(self.model.status == status)
             if author_id is not None:
-                conditions.append(self.model.author_id == author_id)
+                uid = UUID(author_id) if isinstance(author_id, str) else author_id
+                conditions.append(self.model.author_id == uid)
             if keyword is not None:
                 kw = f"%{keyword}%"
                 conditions.append(self.model.title.ilike(kw))

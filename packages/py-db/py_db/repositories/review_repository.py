@@ -15,6 +15,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql import Select, func as sa_func
 
+from uuid import UUID
+
 from py_db.models.review_models import CaseReview, ReviewAuditLog
 from py_db.base_repository import BaseRepository
 
@@ -65,7 +67,7 @@ class ReviewRepository(BaseRepository[CaseReview]):
     async def get_review_history(
         self,
         session: AsyncSession,
-        case_id: str,
+        case_id: str | UUID,
         limit: int = 10,
     ) -> list[CaseReview]:
         """按 case_id 查询审核历史，按审核轮次倒序。
@@ -79,9 +81,10 @@ class ReviewRepository(BaseRepository[CaseReview]):
             CaseReview 列表，按 review_round 倒序。
         """
         async def _query() -> list[CaseReview]:
+            uid = UUID(case_id) if isinstance(case_id, str) else case_id
             stmt: Select = (
                 select(self.model)
-                .where(self.model.case_id == case_id)
+                .where(self.model.case_id == uid)
                 .order_by(self.model.review_round.desc())
                 .limit(limit)
             )
@@ -95,7 +98,7 @@ class ReviewRepository(BaseRepository[CaseReview]):
     async def get_latest_review(
         self,
         session: AsyncSession,
-        case_id: str,
+        case_id: str | UUID,
     ) -> CaseReview | None:
         """获取某案例的最新一条审核记录。
 
@@ -107,9 +110,10 @@ class ReviewRepository(BaseRepository[CaseReview]):
             最新的 CaseReview 实例，不存在时返回 None。
         """
         async def _query() -> CaseReview | None:
+            uid = UUID(case_id) if isinstance(case_id, str) else case_id
             stmt: Select = (
                 select(self.model)
-                .where(self.model.case_id == case_id)
+                .where(self.model.case_id == uid)
                 .order_by(self.model.review_round.desc())
                 .limit(1)
             )
@@ -140,9 +144,9 @@ class ReviewAuditLogRepository:
     async def insert_audit_log(
         self,
         session: AsyncSession,
-        case_id: str,
+        case_id: str | UUID,
         action: str,
-        operator_id: str,
+        operator_id: str | UUID,
         operator_role: str,
         details: dict[str, Any] | None = None,
     ) -> ReviewAuditLog:
@@ -164,10 +168,12 @@ class ReviewAuditLogRepository:
         Raises:
             RepositoryCommunicationError: 数据库连接失败且重试耗尽。
         """
+        case_uid = UUID(case_id) if isinstance(case_id, str) else case_id
+        operator_uid = UUID(operator_id) if isinstance(operator_id, str) else operator_id
         log_entry = ReviewAuditLog(
-            case_id=case_id,
+            case_id=case_uid,
             action=action,
-            operator_id=operator_id,
+            operator_id=operator_uid,
             operator_role=operator_role,
             details=details,
         )
