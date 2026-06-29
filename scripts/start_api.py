@@ -115,6 +115,41 @@ def _resolve_port_conflict(port: int) -> None:
         )
 
 
+def _kill_all_uvicorn_processes() -> None:
+    """终止所有残留的 uvicorn 进程，避免旧代码继续服务请求。
+
+    Windows 下 uvicorn --reload 可能产生子进程残留，
+    仅清理端口占用不够，需要主动清理所有 uvicorn 进程。
+    """
+    if sys.platform == "win32":
+        result = subprocess.run(
+            ["taskkill", "/F", "/IM", "uvicorn.exe"],
+            capture_output=True,
+            timeout=10,
+        )
+        if result.returncode == 0:
+            logger.info(
+                service="scripts",
+                message="已终止所有残留 uvicorn.exe 进程",
+                op_type="process_cleanup",
+            )
+        else:
+            # 没有 uvicorn 进程或权限问题，通常可忽略
+            pass
+    else:
+        result = subprocess.run(
+            ["pkill", "-f", "uvicorn"],
+            capture_output=True,
+            timeout=10,
+        )
+        if result.returncode == 0:
+            logger.info(
+                service="scripts",
+                message="已终止所有残留 uvicorn 进程",
+                op_type="process_cleanup",
+            )
+
+
 # ===========================================================================
 # ApiLauncher
 # ===========================================================================
@@ -129,7 +164,9 @@ class ApiLauncher(ServiceLauncher):
         self._project_root = project_root or PROJECT_ROOT
 
     def _pre_check(self) -> None:
-        """启动前自动检测并清理端口占用。"""
+        """启动前自动检测并清理端口占用及残留 uvicorn 进程。"""
+        _kill_all_uvicorn_processes()
+        time.sleep(0.5)
         _resolve_port_conflict(self.port)
 
     def _do_start(self) -> subprocess.Popen:
