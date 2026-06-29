@@ -15,6 +15,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from py_logger.middlewares.fastapi import RequestLoggingMiddleware
 from starlette.types import ASGIApp, Receive, Scope, Send, Message
 
 # 确保 root logger 有 stdout handler，uvicorn access log 依赖此配置
@@ -152,6 +153,13 @@ def create_app() -> FastAPI:
     # 限流中间件（Redis ZSET 滑动窗口）
     # ------------------------------------------------------------------
     app.add_middleware(RateLimitMiddleware)
+
+    # ------------------------------------------------------------------
+    # 请求日志 / trace_id 注入中间件
+    # 最后注册使其位于中间件栈最外层，确保 trace_id 在请求入口即注入，
+    # 后续所有中间件和路由中的日志都能携带一致的 trace_id。
+    # ------------------------------------------------------------------
+    app.add_middleware(RequestLoggingMiddleware, service_name="api-server")
 
     # ------------------------------------------------------------------
     # 全局异常处理器（Pydantic 422 → 统一格式）
