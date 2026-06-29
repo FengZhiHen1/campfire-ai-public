@@ -140,6 +140,16 @@ class ConsultationHistoryCreate(CampfireBaseModel):
         default=None,
         description="设备与平台信息。全字段 nullable。用于运维排查。",
     )
+    confidence_score: float | None = Field(
+        default=None,
+        ge=0.0,
+        le=1.0,
+        description="CSLT-05 置信度后校验综合得分（0.0-1.0）。归档后由异步校验任务回填，初始为 null。",
+    )
+    validation_verdict: Literal["PASS", "APPEND_WARNING", "FORCE_BLOCK"] | None = Field(
+        default=None,
+        description="CSLT-05 置信度判定结论。归档后由异步校验任务回填，初始为 null。",
+    )
 
 
 # ===========================================================================
@@ -266,6 +276,16 @@ class ConsultationHistoryDetail(CampfireBaseModel):
     device_info: dict | None = Field(
         default=None,
         description="设备与平台信息。用于运维排查。",
+    )
+    confidence_score: float | None = Field(
+        default=None,
+        ge=0.0,
+        le=1.0,
+        description="CSLT-05 置信度后校验综合得分（0.0-1.0）。",
+    )
+    validation_verdict: Literal["PASS", "APPEND_WARNING", "FORCE_BLOCK"] | None = Field(
+        default=None,
+        description="CSLT-05 置信度判定结论。",
     )
 
 

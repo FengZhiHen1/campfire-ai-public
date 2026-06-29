@@ -17,7 +17,7 @@ import uuid
 from typing import Any
 
 from py_logger import logger
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -82,6 +82,8 @@ class ConsultHistoryRepository:
                 token_input=data.get("token_input"),
                 token_output=data.get("token_output"),
                 device_info=data.get("device_info"),
+                confidence_score=data.get("confidence_score"),
+                validation_verdict=data.get("validation_verdict"),
             )
             .on_conflict_do_nothing(index_elements=["request_id"])
             .returning(ConsultationHistory)
@@ -97,6 +99,47 @@ class ConsultHistoryRepository:
     # ------------------------------------------------------------------
     # 查询方法
     # ------------------------------------------------------------------
+
+    async def update_validation_result(
+        self,
+        session: AsyncSession,
+        request_id: uuid.UUID,
+        confidence_score: float,
+        validation_verdict: str,
+    ) -> ConsultationHistory | None:
+        """按 request_id 异步回填置信度校验结果。
+
+        由 CSLT-05 置信度后校验完成后调用，更新 consultations 表的
+        confidence_score 和 validation_verdict 字段。
+
+        Args:
+            session: 活动数据库异步会话。
+            request_id: 幂等键（CSLT-08 生成的原始 request_id）。
+            confidence_score: 置信度综合得分（0.0-1.0）。
+            validation_verdict: 判定结论（PASS/APPEND_WARNING/FORCE_BLOCK）。
+
+        Returns:
+            更新后的 ConsultationHistory 实例，不存在时返回 None。
+        """
+        if session is None:
+            raise ValueError("session must not be None")
+
+        stmt = (
+            sa.update(ConsultationHistory)
+            .where(ConsultationHistory.request_id == request_id)
+            .values(
+                confidence_score=confidence_score,
+                validation_verdict=validation_verdict,
+            )
+            .returning(ConsultationHistory)
+        )
+
+        result = await session.execute(stmt)
+        row = result.fetchone()
+        if row is None:
+            return None
+
+        return row[0]
 
     async def find_by_request_id(
         self,

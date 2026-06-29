@@ -164,6 +164,16 @@ class ConsultationHistory(Base, UUIDPrimaryKeyMixin, TimestampMixin):
         nullable=True,
         comment="设备与平台信息（全字段 nullable，用于运维排查）",
     )
+    confidence_score: Mapped[float | None] = mapped_column(
+        Float,
+        nullable=True,
+        comment="CSLT-05 置信度后校验综合得分（0.0-1.0）。null 表示尚未完成校验或校验失败",
+    )
+    validation_verdict: Mapped[str | None] = mapped_column(
+        String(20),
+        nullable=True,
+        comment="CSLT-05 置信度判定结论（PASS/APPEND_WARNING/FORCE_BLOCK）。null 表示尚未完成校验",
+    )
 
     def __repr__(self) -> str:
         return (

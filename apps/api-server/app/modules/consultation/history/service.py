@@ -109,6 +109,8 @@ class HistoryManagerImpl(BaseHistoryManager):
             "token_input": data.token_input,
             "token_output": data.token_output,
             "device_info": data.device_info,
+            "confidence_score": data.confidence_score,
+            "validation_verdict": data.validation_verdict,
         }
 
         record = await _repository.archive(db, archive_data)
@@ -251,6 +253,8 @@ def _build_detail_response(record: ConsultationHistoryModel) -> ConsultationHist
         token_input=record.token_input,
         token_output=record.token_output,
         device_info=record.device_info,
+        confidence_score=record.confidence_score,
+        validation_verdict=record.validation_verdict,
     )
 
 

@@ -35,6 +35,7 @@ from py_schemas.streaming import (
 
 from app.modules.consultation.plan_generation.models import GenerationChunk
 from app.modules.consultation.plan_generation.streaming import parse_json_sections
+from py_schemas.consultation_history import ConsultationHistoryCreate
 
 from .session_manager import StreamSessionManager
 
@@ -663,11 +664,18 @@ class SseStreamingService:
         """流完成后将咨询记录归档写入数据库。
 
         从 generation_meta 和 session 中提取归档所需全部字段，
-        直接调用 ConsultHistoryRepository 写入 consultations 表。
+        严格按照 CSLT-06 ConsultationHistoryCreate 契约组装后，
+        调用 HistoryManagerImpl 归档写入 consultations 表。
+        复用 CSLT-08 编排层生成的原始 request_id 作为幂等键，
         写入失败仅记录日志，不阻塞 SSE 流的正常结束。
 
         仅在 generation_meta 中存在有效 user_id 时执行归档。
         """
+        from datetime import datetime, timezone
+        from uuid import UUID
+
+        from app.modules.consultation.history import archive_consultation
+
         meta = self._generation_meta.get(session.stream_id)
         if meta is None:
             return
@@ -698,18 +706,18 @@ class SseStreamingService:
         # 从全文提取引用的 slice IDs
         import re
         ref_pattern = re.compile(r"\[(\d+)\]")
-        referenced_slice_ids: list[str] = []
+        referenced_slice_ids: list[UUID] = []
         seen: set[str] = set()
         for tag in ref_pattern.findall(full_text):
             key = f"[{tag}]"
             if key in prenumbered_slices and prenumbered_slices[key] not in seen:
-                referenced_slice_ids.append(prenumbered_slices[key])
+                referenced_slice_ids.append(UUID(prenumbered_slices[key]))
                 seen.add(prenumbered_slices[key])
 
         # 构建 source_list
         search_result = meta.get("search_result")
         referenced_cases = self._build_referenced_cases(
-            referenced_slice_ids, search_result,
+            [str(sid) for sid in referenced_slice_ids], search_result,
         )
         source_list: list[str] = [
             f"[{i + 1}] {c['case_title']}"
@@ -719,57 +727,66 @@ class SseStreamingService:
         finish_reason = session.finish_reason or "COMPLETE"
         generation_time_ms = (time.monotonic() - session.created_at) * 1000.0
 
-        archive_request_id = str(uuid.uuid4())
-        archive_data: dict[str, object] = {
-            "id": uuid.uuid4(),
-            "request_id": archive_request_id,
-            "user_id": user_id,
-            "crisis_level": crisis_level,
-            "behavior_description": behavior_description,
-            "generated_plan": full_text,
-            "plan_sections": sections,
-            "source_list": source_list,
-            "disclaimer": (
-                "以上建议由 AI 生成，仅供参考，不构成医疗诊断或治疗建议。"
-                "如情况紧急，请立即联系专业医疗机构。"
-            ),
-            "generation_time_ms": generation_time_ms,
-            "is_partial": finish_reason in ("PARTIAL", "TIMEOUT"),
-            "referenced_slice_ids": referenced_slice_ids,
-            "finish_reason": finish_reason,
-            "ttft_ms": session.ttft_ms or 0.0,
-            "has_feedback": False,
-            "token_input": None,
-            "token_output": None,
-            "device_info": None,
-        }
+        # 复用原始 request_id 作为幂等键；缺失时兜底生成并记录警告
+        original_request_id = meta.get("request_id", "")
+        if original_request_id:
+            archive_request_id = UUID(str(original_request_id))
+        else:
+            archive_request_id = uuid.uuid4()
+            logger.warning(
+                service="streaming",
+                message="archive_missing_original_request_id",
+                extra={"stream_id": session.stream_id, "generated_request_id": str(archive_request_id)},
+            )
+
+        try:
+            data = ConsultationHistoryCreate(
+                request_id=archive_request_id,
+                user_id=UUID(str(user_id)),
+                crisis_level=cast(Literal["mild", "moderate", "severe"], crisis_level),
+                behavior_description=behavior_description,
+                consultation_time=datetime.now(timezone.utc),
+                generated_plan=full_text,
+                plan_sections=sections,
+                source_list=source_list,
+                generation_time_ms=generation_time_ms,
+                is_partial=finish_reason in ("PARTIAL", "TIMEOUT"),
+                referenced_slice_ids=referenced_slice_ids,
+                finish_reason=cast(Literal["COMPLETE", "PARTIAL", "BLOCKED", "TIMEOUT", "ERROR"], finish_reason),
+                ttft_ms=session.ttft_ms or 0.0,
+            )
+        except Exception as exc:
+            logger.error(
+                service="streaming",
+                message="archive_build_data_failed",
+                extra={
+                    "stream_id": session.stream_id,
+                    "error": str(exc),
+                    "error_type": type(exc).__name__,
+                },
+            )
+            return
 
         try:
             from app.core.dependencies.auth_dependencies import _get_session_factory
-            from py_db.repositories.consult_history_repository import ConsultHistoryRepository
 
             factory = _get_session_factory()
             async with factory() as db:
-                repository = ConsultHistoryRepository()
-                record = await repository.archive(db, archive_data)
-                if record is not None:
-                    await db.flush()
-                    await db.refresh(record)
-                    logger.info(
-                        service="streaming",
-                        message="archive_success",
-                        extra={
-                            "record_id": str(record.id),
-                            "stream_id": session.stream_id,
-                            "finish_reason": finish_reason,
-                        },
-                    )
-                else:
-                    logger.info(
-                        service="streaming",
-                        message="duplicate_archive_skipped",
-                        extra={"stream_id": session.stream_id},
-                    )
+                record = await archive_consultation(
+                    data=data,
+                    current_user={"user_id": user_id},
+                    db=db,
+                )
+                logger.info(
+                    service="streaming",
+                    message="archive_success",
+                    extra={
+                        "record_id": str(record.id),
+                        "request_id": str(record.request_id),
+                        "stream_id": session.stream_id,
+                        "finish_reason": finish_reason,
+                    },
+                )
                 await db.commit()
         except Exception:
             logger.error(
@@ -778,6 +795,7 @@ class SseStreamingService:
                 extra={
                     "stream_id": session.stream_id,
                     "finish_reason": finish_reason,
+                    "request_id": str(archive_request_id),
                 },
             )
 
@@ -949,33 +967,61 @@ class SseStreamingService:
             ),
         }
 
-        # === 置信度校验（仅在正常生成时执行） ===
+        # === 置信度校验：作为后台任务异步执行，不阻塞 DoneEvent ===
         if full_text and not block_deep_response:
             try:
-                from py_schemas.consult.confidence import ConfidenceValidationInput
-                from app.modules.consultation.consult.confidence_validator import validate_confidence
-
-                validation_input = ConfidenceValidationInput(
-                    plan_text=full_text,
-                    source_list=[],
-                    disclaimer=(
-                        "以上建议由 AI 生成，仅供参考，不构成医疗诊断或治疗建议。"
-                        "如情况紧急，请立即联系专业医疗机构。"
-                    ),
-                    crisis_level=cast(Literal["mild", "moderate", "severe"], crisis_level),
-                    block_deep_response=block_deep_response,
-                    behavior_description=meta.get("behavior_description", ""),
-                    request_id=meta.get("request_id", ""),
+                asyncio.create_task(
+                    self._run_confidence_validation(
+                        full_text=full_text,
+                        crisis_level=cast(Literal["mild", "moderate", "severe"], crisis_level),
+                        block_deep_response=block_deep_response,
+                        behavior_description=meta.get("behavior_description", ""),
+                        request_id=meta.get("request_id", ""),
+                    )
                 )
-                validation_output = await validate_confidence(validation_input, None)
-                result["confidence_score"] = validation_output.confidence_score
-                result["verdict"] = validation_output.verdict.value if hasattr(validation_output.verdict, "value") else str(validation_output.verdict)
-                result["ticket_triggered"] = validation_output.ticket_triggered
             except Exception:
                 logger.warning(
                     service="streaming",
-                    message="confidence_validation_failed_in_sse",
+                    message="confidence_validation_task_failed_to_start",
                     extra={"stream_id": session.stream_id},
                 )
 
         return result
+
+    async def _run_confidence_validation(
+        self,
+        full_text: str,
+        crisis_level: Literal["mild", "moderate", "severe"],
+        block_deep_response: bool,
+        behavior_description: str,
+        request_id: str,
+    ) -> None:
+        """在后台执行 CSLT-05 置信度校验并持久化结果。
+
+        由 _build_done_meta() 通过 asyncio.create_task 启动，
+        不阻塞 SSE DoneEvent 的发送。校验完成后通过 _persist_validation_result
+        将 confidence_score / validation_verdict 回填到 consultations 表。
+        """
+        try:
+            from py_schemas.consult.confidence import ConfidenceValidationInput
+            from app.modules.consultation.consult.confidence_validator import validate_confidence
+
+            validation_input = ConfidenceValidationInput(
+                plan_text=full_text,
+                source_list=[],
+                disclaimer=(
+                    "以上建议由 AI 生成，仅供参考，不构成医疗诊断或治疗建议。"
+                    "如情况紧急，请立即联系专业医疗机构。"
+                ),
+                crisis_level=crisis_level,
+                block_deep_response=block_deep_response,
+                behavior_description=behavior_description,
+                request_id=request_id,
+            )
+            await validate_confidence(validation_input, None)
+        except Exception:
+            logger.warning(
+                service="streaming",
+                message="confidence_validation_failed_in_background",
+                extra={"request_id": request_id},
+            )
