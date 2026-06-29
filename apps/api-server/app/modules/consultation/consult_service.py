@@ -38,6 +38,7 @@ from py_schemas.crisis import (
     CrisisJudgmentRequest,
     JudgmentLayerResult,
 )
+from app.modules.crisis.models import PatientProfileSnapshot
 from py_schemas.enums.crisis_enums import CrisisLevel, BehaviorTypeCategory
 from app.modules.consultation.plan_generation.models import (
     EmergencyPlanInput,
@@ -175,6 +176,8 @@ class ConsultationOrchestratorImpl(BaseConsultationOrchestrator):
         behavior_description: str,
         behavior_type: list[str] | None,
         profile_summary: ProfileSummary,
+        profile_id: str | None,
+        db: AsyncSession,
     ) -> Any:
         try:
             from app.modules.crisis import judge_crisis
@@ -190,8 +193,54 @@ class ConsultationOrchestratorImpl(BaseConsultationOrchestrator):
             if not behavior_type_selection:
                 behavior_type_selection = [BehaviorTypeCategory.OTHER]
 
+            # 构建患者档案快照注入 CSLT-01
+            patient_profile: PatientProfileSnapshot | None = None
+            if profile_id:
+                try:
+                    pid = uuid.UUID(profile_id)
+                    result = await db.execute(
+                        select(Profile).where(Profile.profile_id == pid)
+                    )
+                    profile = result.scalars().first()
+                    if profile is not None:
+                        # 历史行为标签：从主要行为 + 最近事件推导
+                        historical_tags: set[str] = set()
+                        if profile.primary_behavior:
+                            historical_tags.add(profile.primary_behavior)
+
+                        events_result = await db.execute(
+                            select(EventLog)
+                            .where(EventLog.profile_id == pid)
+                            .order_by(desc(EventLog.event_time))
+                            .limit(5)
+                        )
+                        events = events_result.scalars().all()
+                        recent_event_records: list[dict[str, Any]] = []
+                        for ev in events:
+                            if ev.behavior_type:
+                                historical_tags.add(ev.behavior_type)
+                            recent_event_records.append({
+                                "event_type": ev.behavior_type,
+                                "severity": ev.severity_level,
+                                "occurred_at": ev.event_time.isoformat() if ev.event_time else None,
+                                "manifestation": ev.manifestation,
+                            })
+
+                        patient_profile = PatientProfileSnapshot(
+                            diagnosis_type=profile.diagnosis_type,
+                            historical_behavior_tags=sorted(historical_tags),
+                            recent_event_records=recent_event_records,
+                        )
+                except Exception as exc:
+                    logger.warning(
+                        service="api-server",
+                        message="patient_profile_snapshot_build_failed",
+                        op_type="crisis_judgment",
+                        extra={"profile_id": profile_id, "error": str(exc)},
+                    )
+
             crisis_request = CrisisJudgmentRequest(
-                patient_profile=None,
+                patient_profile=patient_profile,
                 behavior_type_selection=behavior_type_selection,
                 behavior_description=behavior_description,
             )

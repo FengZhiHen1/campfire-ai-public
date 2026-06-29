@@ -22,7 +22,7 @@ from .models import (
 from py_logger import logger
 
 # 默认 LLM 超时时间（毫秒）
-_DEFAULT_LLM_TIMEOUT_MS: int = 5000
+_DEFAULT_LLM_TIMEOUT_MS: int = 30000
 
 # 系统提示模板版本
 _PROMPT_VERSION: str = "v1"

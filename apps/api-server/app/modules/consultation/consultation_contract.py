@@ -117,6 +117,8 @@ class BaseConsultationOrchestrator(ABC):
                         behavior_description=behavior_description,
                         behavior_type=behavior_type,
                         profile_summary=profile_summary,
+                        profile_id=profile_id,
+                        db=bg_db,
                     )
                     # 步骤 4：构建 EmergencyPlanInput
                     plan_input = self._do_build_plan_input(
@@ -201,10 +203,13 @@ class BaseConsultationOrchestrator(ABC):
         behavior_description: str,
         behavior_type: list[str] | None,
         profile_summary: ProfileSummary,
+        profile_id: str | None,
+        db: AsyncSession,
     ) -> Any:
         """执行危机分级判定。
 
-        实现者在此填写危机判定调用逻辑。
+        实现者在此填写危机判定调用逻辑，并可通过 profile_id + db
+        查询患者档案以构建 PatientProfileSnapshot 注入 CSLT-01。
         不需要关心判定失败的处理——实现者应捕获异常并 fallback 到 mild。
         """
         ...
