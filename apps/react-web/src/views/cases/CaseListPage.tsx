@@ -101,14 +101,17 @@ export default function CaseListPage() {
           </div>
         )}
 
-        {filteredItems.map((item) => {
+        {filteredItems.map((item, index) => {
           const statusCls = statusClassMap[item.status] ?? item.status;
           const tags = item.tags?.length ? item.tags : [sourceLabelMap[item.source_type] ?? item.source_type];
+          // 所有卡片都参与进场动画，按索引递增错开，避免批量出现时“突然出现”
+          const animationDelay = `${Math.min(index, 12) * 50}ms`;
           return (
             <Link
               key={item.narrative_id}
               to={`/cases/${item.narrative_id}`}
               className={`case-card ${statusCls}`}
+              style={{ animationDelay }}
             >
               <div className="card-head">
                 <span className="card-title">{item.title}</span>

@@ -10,4 +10,12 @@ export default defineConfig({
       '@campfire/ts-shared': path.resolve(__dirname, '../../packages/ts-shared/src'),
     },
   },
+  server: {
+    proxy: {
+      '/api': {
+        target: 'http://localhost:8000',
+        changeOrigin: true,
+      },
+    },
+  },
 })
