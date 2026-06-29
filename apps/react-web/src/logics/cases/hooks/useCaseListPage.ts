@@ -143,15 +143,17 @@ export function useCaseListPage(): UseCaseListPageReturn {
   }, [loading, hasMore]);
 
   // ---- 服务端搜索 ----
+  // 搜索时保留旧列表，避免卡片被卸载后重新进场，减少卡顿感
   useEffect(() => {
     const scope = activeTab === 'public' ? 'public' : 'my';
     const timer = setTimeout(() => {
       setPage(1);
-      setAllItems([]);
       setHasMore(true);
       loadData(1, false, scope, searchKeyword || undefined);
     }, 300);
     return () => clearTimeout(timer);
+    // 仅监听 keyword；activeTab 变化由上方 effect 处理
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchKeyword]);
 
   // 本地过滤仅作为兜底（服务端已支持搜索时此项仅返回 allItems）

@@ -312,7 +312,7 @@ export function useProfile(): UseProfileReturn {
 
   return useMemo<UseProfileReturn>(
     () => ({
-      profiles,
+      profiles: profiles ?? [],
       isLoading,
       error,
       fetchProfiles,

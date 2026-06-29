@@ -157,7 +157,7 @@ export default function ConsultSelectPage() {
             <p>选择行为类型，以便匹配最相似的案例</p>
           </div>
 
-          {profiles.length > 0 && (
+          {profiles?.length > 0 && (
             <div className="block-profiles">
               <p className="block-profiles-label">关联档案（可选）</p>
               <div className="chip-scroll">
@@ -167,7 +167,7 @@ export default function ConsultSelectPage() {
                 >
                   不关联
                 </button>
-                {profiles.map((p) => (
+                {(profiles ?? []).map((p) => (
                   <button
                     key={p.profile_id}
                     className={`chip${consult.selectedProfileId === p.profile_id ? ' selected' : ''}`}
