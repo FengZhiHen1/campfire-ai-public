@@ -71,6 +71,8 @@ export interface ConsultationHistoryListItem {
   crisis_level: CrisisLevel;
   /** 是否已提交反馈 */
   has_feedback: boolean;
+  /** 行为标签（后端可直接返回中文标签，如 ['自伤行为','情绪崩溃']） */
+  tags?: string[];
 }
 
 /**
@@ -91,6 +93,9 @@ export interface ConsultationHistoryDetail {
   generation_time_ms: number;
   is_partial: boolean;
   referenced_slice_ids: string[];
+  referenced_cases?: ReferencedCase[];
+  /** 行为标签（与列表项保持一致，后端可选返回） */
+  tags?: string[];
   finish_reason: string;
   ttft_ms: number;
   has_feedback: boolean;

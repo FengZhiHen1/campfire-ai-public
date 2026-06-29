@@ -561,6 +561,11 @@ export function seedConsultations(): ConsultationHistoryDetail[] {
       generation_time_ms: 3200,
       is_partial: false,
       referenced_slice_ids: ['mock-case-001', 'mock-case-005'],
+      referenced_cases: [
+        { slice_id: 'mock-case-001', case_id: 'mock-case-001', case_title: '学龄前 ASD 儿童刻板行为干预案例', slice_text: '4 岁 ASD 儿童，家庭环境中通过结构化环境调整和替代行为训练改善刻板行为。' },
+        { slice_id: 'mock-case-005', case_id: 'mock-case-005', case_title: '小学 ASD 儿童社交技能训练小组方案', slice_text: '3-6 年级 ASD 学生社交技能小组训练，包含社会故事、角色扮演与结构化游戏。' },
+      ],
+      tags: ['社交回避'],
       finish_reason: 'COMPLETE',
       ttft_ms: 850,
       has_feedback: false,
@@ -592,6 +597,10 @@ export function seedConsultations(): ConsultationHistoryDetail[] {
       generation_time_ms: 4100,
       is_partial: false,
       referenced_slice_ids: ['mock-case-004'],
+      referenced_cases: [
+        { slice_id: 'mock-case-004', case_id: 'mock-case-004', case_title: 'ASD 儿童公共场所情绪崩溃的紧急应对方案', slice_text: '多年积累的公共场所情绪崩溃应对经验，核心思路是预防 + 快速撤离 + 事后复盘。' },
+      ],
+      tags: ['自伤行为', '情绪崩溃'],
       finish_reason: 'COMPLETE',
       ttft_ms: 720,
       has_feedback: true,
@@ -623,6 +632,10 @@ export function seedConsultations(): ConsultationHistoryDetail[] {
       generation_time_ms: 3800,
       is_partial: false,
       referenced_slice_ids: ['mock-case-002'],
+      referenced_cases: [
+        { slice_id: 'mock-case-002', case_id: 'mock-case-002', case_title: '青少年 ASD 攻击行为行为干预方案', slice_text: '10 岁男性 ASD，受挫或社交冲突时出现攻击行为，含安全隔离与冷静角策略。' },
+      ],
+      tags: ['攻击行为', '情绪崩溃'],
       finish_reason: 'COMPLETE',
       ttft_ms: 910,
       has_feedback: false,

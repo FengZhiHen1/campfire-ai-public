@@ -71,17 +71,15 @@ export default function CaseListPage() {
             value={searchKeyword}
             onChange={(e) => setSearchKeyword(e.target.value)}
           />
-          {searchKeyword && (
-            <button type="button" className="search-clear" onClick={() => setSearchKeyword('')}>
-              清除
-            </button>
-          )}
         </div>
 
         {loading && filteredItems.length === 0 && <div className="glow-loading" />}
 
         {error && filteredItems.length === 0 && (
           <div className="empty">
+            <div className="emp-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+            </div>
             <h3>加载失败</h3>
             <p>{error}</p>
             <button type="button" className="btn btn-p" onClick={refresh}>重试</button>
@@ -90,6 +88,9 @@ export default function CaseListPage() {
 
         {!loading && !error && filteredItems.length === 0 && (
           <div className="empty">
+            <div className="emp-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><circle cx="12" cy="12" r="10"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
+            </div>
             <h3>{emptyState.title}</h3>
             <p>{emptyState.subtitle}</p>
             {emptyState.showClearBtn && (
@@ -102,28 +103,28 @@ export default function CaseListPage() {
 
         {filteredItems.map((item) => {
           const statusCls = statusClassMap[item.status] ?? item.status;
+          const tags = item.tags?.length ? item.tags : [sourceLabelMap[item.source_type] ?? item.source_type];
           return (
-            <button
+            <Link
               key={item.narrative_id}
-              type="button"
-              className="case-card"
-              onClick={() => goDetail(item.narrative_id)}
+              to={`/cases/${item.narrative_id}`}
+              className={`case-card ${statusCls}`}
             >
               <div className="card-head">
                 <span className="card-title">{item.title}</span>
-                {item.card_count > 0 && (
-                  <span className="card-badge">{item.card_count} 张卡片</span>
-                )}
+                <span className="card-badge">{sourceLabelMap[item.source_type] ?? item.source_type}</span>
               </div>
               <div className="card-tags">
-                <span className="card-tag">{sourceLabelMap[item.source_type] ?? item.source_type}</span>
+                {tags.map((t) => (
+                  <span key={t} className="card-tag">{t}</span>
+                ))}
               </div>
               <div className="card-foot">
                 <span className={`card-dot ${statusCls}`} />
                 <span className="card-status">{statusTextMap[item.status] ?? item.status}</span>
                 <span className="card-time">{formatDate(item.created_at)}</span>
               </div>
-            </button>
+            </Link>
           );
         })}
 

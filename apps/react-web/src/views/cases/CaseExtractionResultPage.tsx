@@ -7,18 +7,30 @@ import {
   BEHAVIOR_TYPE_VALUES,
   SEVERITY_OPTIONS,
   SEVERITY_VALUES,
-  SCENE_OPTIONS,
-  SCENE_VALUES,
-  FAMILY_CATEGORY_OPTIONS,
 } from '@/logics/cases';
 import './CaseExtractionResultPage.css';
 
 const QUARTET = [
-  { key: 'immediate_action', label: '即时安全干预动作', accent: 'action' },
+  { key: 'immediate_action', label: '即时安全干预', accent: 'action' },
   { key: 'comforting_phrase', label: '情绪安抚话术', accent: 'soothe' },
   { key: 'observation_metrics', label: '观察指标', accent: 'observe' },
-  { key: 'medical_criteria', label: '就医判断标准', accent: 'medical' },
+  { key: 'medical_criteria', label: '就医判断', accent: 'medical' },
 ] as const;
+
+const FIELD_LABEL_MAP: Record<string, string> = {
+  behavior_type: '行为类型',
+  evidence_level: '循证等级',
+  immediate_action: '即时安全干预',
+  comforting_phrase: '情绪安抚话术',
+  observation_metrics: '观察指标',
+  medical_criteria: '就医判断',
+};
+
+function autoGrow(el: HTMLTextAreaElement) {
+  el.style.height = 'auto';
+  const max = parseInt(getComputedStyle(el).maxHeight || '200', 10);
+  el.style.height = `${Math.min(el.scrollHeight, max)}px`;
+}
 
 export default function CaseExtractionResultPage() {
   const navigate = useNavigate();
@@ -101,7 +113,8 @@ export default function CaseExtractionResultPage() {
 
   const behaviorIndex = BEHAVIOR_TYPE_VALUES.indexOf(editing.behavior_type ?? '');
   const severityIndex = SEVERITY_VALUES.indexOf(editing.severity ?? '');
-  const sceneIndex = SCENE_VALUES.indexOf(editing.scene ?? '');
+  const inferredKeys = editing.inferred_fields ? Object.keys(editing.inferred_fields) : [];
+  const isInferred = (key: string) => inferredKeys.includes(key);
 
   return (
     <>
@@ -139,11 +152,15 @@ export default function CaseExtractionResultPage() {
             <div className="field-label">适用场景</div>
             <textarea
               value={editing.scenario ?? ''}
-              onChange={(e) => updateField('scenario', e.target.value)}
+              onChange={(e) => { updateField('scenario', e.target.value); autoGrow(e.target); }}
+              onInput={(e) => autoGrow(e.currentTarget)}
             />
           </div>
           <div className="field">
-            <div className="field-label">行为类型</div>
+            <div className="field-label">
+              行为类型
+              {isInferred('behavior_type') && <span className="inferred">推断</span>}
+            </div>
             <div className="chip-grid">
               {BEHAVIOR_TYPE_OPTIONS.map((b, i) => (
                 <button
@@ -170,58 +187,62 @@ export default function CaseExtractionResultPage() {
               ))}
             </div>
           </div>
-          <div className="field">
-            <div className="field-label">发生场景</div>
-            <div className="chip-grid">
-              {SCENE_OPTIONS.map((s, i) => (
-                <button
-                  key={s}
-                  className={`chip-btn${i === sceneIndex ? ' selected' : ''}`}
-                  onClick={() => updateField('scene', SCENE_VALUES[i])}
-                >
-                  {s}
-                </button>
-              ))}
-            </div>
-          </div>
-          <div className="field">
-            <div className="field-label">家属展示大类</div>
-            <div className="chip-grid">
-              {FAMILY_CATEGORY_OPTIONS.map((c) => (
-                <button
-                  key={c}
-                  className={`chip-btn${editing.family_category === c ? ' selected' : ''}`}
-                  onClick={() => updateField('family_category', c)}
-                >
-                  {c}
-                </button>
-              ))}
-            </div>
-          </div>
+
           <div className="qrt-section">
             {QUARTET.map((s) => (
               <div key={s.key} className={`qrt-card ${s.accent}`}>
-                <h5>{s.label}</h5>
+                <h5>
+                  {s.label}
+                  {isInferred(s.key) && <span className="inferred">推断</span>}
+                </h5>
                 <textarea
                   value={((editing as unknown) as Record<string, string>)[s.key] ?? ''}
-                  onChange={(e) => updateField(s.key, e.target.value)}
+                  onChange={(e) => { updateField(s.key, e.target.value); autoGrow(e.target); }}
+                  onInput={(e) => autoGrow(e.currentTarget)}
                 />
               </div>
             ))}
+          </div>
+
+          <div className="field">
+            <div className="field-label">
+              循证等级（只读）
+              {isInferred('evidence_level') && <span className="inferred">推断</span>}
+            </div>
+            <input value={editing.evidence_level ?? ''} readOnly />
+          </div>
+          <div className="field">
+            <div className="field-label">禁忌与注意</div>
+            <textarea
+              value={editing.caution_notes ?? ''}
+              onChange={(e) => { updateField('caution_notes', e.target.value); autoGrow(e.target); }}
+              onInput={(e) => autoGrow(e.currentTarget)}
+            />
+          </div>
+          <div className="field">
+            <div className="field-label">不适用人群/场景</div>
+            <textarea
+              value={editing.excluded_population ?? ''}
+              onChange={(e) => { updateField('excluded_population', e.target.value); autoGrow(e.target); }}
+              onInput={(e) => autoGrow(e.currentTarget)}
+            />
           </div>
         </div>
         <div className="inf-panel">
           <button className={`inf-toggle${infOpen ? ' open' : ''}`} onClick={() => setInfOpen(!infOpen)}>AI 推断说明</button>
           <div className={`inf-body${infOpen ? ' open' : ''}`}>
-            {editing.inferred_fields && Object.keys(editing.inferred_fields).length > 0 ? (
-              Object.entries(editing.inferred_fields).map(([k, v]) => (
+            {inferredKeys.length > 0 ? (
+              inferredKeys.map((k) => (
                 <div key={k} className="inf-item">
-                  <span className="inf-field">{k}</span>
-                  <span className="inf-reason">{v}</span>
+                  <span className="inf-field">{FIELD_LABEL_MAP[k] ?? k}</span>
+                  <span className="inf-reason">{editing.inferred_fields?.[k] ?? 'AI 从叙事内容推断'}</span>
                 </div>
               ))
             ) : (
-              <div className="inf-item"><span className="inf-reason">AI 基于叙事内容自动提取，未记录额外推断字段。</span></div>
+              <div className="inf-empty">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+                所有字段均为用户提供或专家标注，无 AI 推断项。
+              </div>
             )}
           </div>
         </div>

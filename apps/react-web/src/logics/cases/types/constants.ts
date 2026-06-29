@@ -20,23 +20,23 @@ export const STATUS_TEXT_MAP: Record<string, string> = {
 /** 案例状态 → CSS 类名后缀 */
 export const STATUS_CLASS_MAP: Record<string, string> = {
   draft: 'draft',
-  pending_review: 'pending',
+  pending_review: 'reviewing',
   approved: 'approved',
   rejected: 'rejected',
 };
 
 /** 来源类型 → 短标签 */
 export const SOURCE_LABEL_MAP: Record<string, string> = {
-  '专家撰写': '专家',
-  '机构脱敏': '机构',
-  '工单沉淀': '工单',
-  '家属分享': '家属',
+  '专家撰写': '专家撰写',
+  '机构脱敏': '机构脱敏',
+  '工单沉淀': '工单沉淀',
+  '家属分享': '家属分享',
 };
 
 /** 卡片审核状态 → 文案 + CSS 类名 */
 export const CARD_STATUS_MAP: Record<string, { text: string; cls: string }> = {
   draft: { text: '草稿', cls: 'draft' },
-  pending_review: { text: '待审核', cls: 'pending' },
+  pending_review: { text: '待审核', cls: 'reviewing' },
   approved: { text: '已通过', cls: 'approved' },
   rejected: { text: '已驳回', cls: 'rejected' },
 };
@@ -47,12 +47,12 @@ export const CARD_STATUS_MAP: Record<string, { text: string; cls: string }> = {
 
 /** 行为类型选项（展示用） */
 export const BEHAVIOR_TYPE_OPTIONS: readonly string[] = [
-  '自伤', '攻击', '刻板', '逃跑', '情绪崩溃', '其他',
+  '自伤行为', '攻击行为', '出走/逃跑', '情绪崩溃', '刻板行为', '用药相关', '其他',
 ];
 
-/** 行为类型后端枚举值（与 SeverityLevel 枚举对齐，按索引对应 BEHAVIOR_TYPE_OPTIONS） */
+/** 行为类型后端枚举值（与 BehaviorType 枚举对齐，按索引对应 BEHAVIOR_TYPE_OPTIONS） */
 export const BEHAVIOR_TYPE_VALUES: readonly string[] = [
-  'self_injury', 'aggression', 'stereotypy', 'elopement', 'meltdown', 'other',
+  'self_injury', 'aggression', 'elopement', 'meltdown', 'stereotypy', 'medication', 'other',
 ];
 
 /** 严重程度选项（展示用） */
