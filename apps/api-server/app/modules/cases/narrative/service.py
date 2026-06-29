@@ -85,7 +85,8 @@ class NarrativeManagementService(NarrativeManagementContract):
         current_id = current_user.get("sub", "")
         is_owner = author_id == current_id
 
-        if entity.status != CaseStatus.APPROVED and not is_owner:
+        # MVP：待审核案例允许审核人查看；草稿/非发布状态仍仅限作者
+        if entity.status != CaseStatus.APPROVED and not is_owner and entity.status != CaseStatus.PENDING_REVIEW:
             raise NarrativeNotFoundError(narrative_id)
 
         return entity

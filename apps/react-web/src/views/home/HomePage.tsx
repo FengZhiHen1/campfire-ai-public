@@ -1,3 +1,4 @@
+import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { useHomePage, formatRelativeTime } from '@/logics/shared';
 import {
@@ -41,8 +42,44 @@ export default function HomePage() {
   const hasProfiles = profilesSafe.length > 0;
   const latestConsult = consultHistory?.[0];
 
+  const [noticeOpen, setNoticeOpen] = useState(false);
+  useEffect(() => {
+    if (localStorage.getItem('campfire-judge-notice-closed') !== '1') {
+      setNoticeOpen(true);
+    }
+  }, []);
+  const closeNotice = () => {
+    localStorage.setItem('campfire-judge-notice-closed', '1');
+    setNoticeOpen(false);
+  };
+
   return (
     <PageContent>
+      {/* ═══ Judge Notice Modal ═══ */}
+      {noticeOpen && (
+        <div className="notice-overlay" onClick={closeNotice} role="dialog" aria-modal="true">
+          <div className="notice-box" onClick={(e) => e.stopPropagation()}>
+            <div className="notice-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="12" cy="12" r="10" />
+                <line x1="12" y1="8" x2="12" y2="12" />
+                <line x1="12" y1="16" x2="12.01" y2="16" />
+              </svg>
+            </div>
+            <h3>评审提示</h3>
+            <p>
+              本应用原形态为<strong>微信小程序</strong>，当前页面是为评审临时重做的 HTML 前端。
+            </p>
+            <p>
+              如遇交互异常或样式 bug，请多包涵。点击任意区域或下方按钮即可关闭。
+            </p>
+            <button type="button" className="notice-btn" onClick={closeNotice}>
+              知道了
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* ═══ Greeting ═══ */}
       <div className="greeting">
         <div className="greeting-brand">
