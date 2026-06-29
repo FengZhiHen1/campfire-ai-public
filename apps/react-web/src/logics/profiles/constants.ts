@@ -15,7 +15,7 @@
  */
 
 import type { MicroSurveyQuestion } from './types/contracts';
-import { Trigger, SensoryFeature } from '@campfire/ts-shared';
+import { Trigger, SensoryFeature, DiagnosisType, ProfileBehaviorType, LanguageLevel } from '@campfire/ts-shared';
 
 /** 干预有效性反馈选项 */
 export const INTERVENTION_FEEDBACK_OPTIONS: readonly string[] = ['有帮助', '一般', '无帮助'];
@@ -46,11 +46,39 @@ export function isCustomTrigger(value: string): boolean {
   return !TRIGGER_TAGS.includes(value);
 }
 
-/** 诊断类型选项 */
+/** 诊断类型选项（展示用） */
 export const DIAGNOSIS_OPTIONS: readonly string[] = ['ASD', '疑似ASD', '其他发育障碍'];
 
-/** 主要行为类型选项 */
+/** 诊断类型后端枚举值（按索引对应 DIAGNOSIS_OPTIONS） */
+export const DIAGNOSIS_VALUES: readonly string[] = [
+  DiagnosisType.ASD,
+  DiagnosisType.SUSPECTED_ASD,
+  DiagnosisType.OTHER_DEVELOPMENTAL_DISORDER,
+];
+
+/** 主要行为类型选项（展示用） */
 export const BEHAVIOR_OPTIONS: readonly string[] = ['刻板行为', '情绪崩溃', '自伤行为', '攻击行为', '社交退缩', '多动'];
+
+/** 主要行为类型后端枚举值（按索引对应 BEHAVIOR_OPTIONS） */
+export const BEHAVIOR_VALUES: readonly string[] = [
+  ProfileBehaviorType.STEREOTYPY,
+  ProfileBehaviorType.MELTDOWN,
+  ProfileBehaviorType.SELF_INJURY,
+  ProfileBehaviorType.AGGRESSION,
+  ProfileBehaviorType.SOCIAL_WITHDRAWAL,
+  ProfileBehaviorType.HYPERACTIVITY,
+];
+
+/** 语言水平选项（展示用） */
+export const LANGUAGE_OPTIONS: readonly string[] = ['无语言', '单词', '短句', '可对话'];
+
+/** 语言水平后端枚举值（按索引对应 LANGUAGE_OPTIONS） */
+export const LANGUAGE_VALUES: readonly string[] = [
+  LanguageLevel.NON_VERBAL,
+  LanguageLevel.SINGLE_WORDS,
+  LanguageLevel.SHORT_PHRASES,
+  LanguageLevel.CONVERSATIONAL,
+];
 
 /** 严重程度选项 */
 export const SEVERITY_OPTIONS: readonly string[] = ['轻', '中', '重'];
