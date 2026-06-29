@@ -23,6 +23,7 @@ export interface NarrativeListItem {
   author_id: string;
   status: string;
   card_count: number;
+  tags?: string[];
   created_at: string;
 }
 

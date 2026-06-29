@@ -1,16 +1,8 @@
 import { useParams, useNavigate } from 'react-router-dom';
 import { useCaseDetailPage } from '@/logics/cases';
-import MarkdownRenderer from '@/logics/shared/components/MarkdownRenderer';
+import { MarkdownRenderer } from '@/logics/shared';
 import PageContent from '@/views/_shared/layout/PageContent';
 import './CaseDetailPage.css';
-
-function formatDate(iso: string): string {
-  try {
-    return new Date(iso).toLocaleDateString('zh-CN');
-  } catch {
-    return iso;
-  }
-}
 
 export default function CaseDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -29,11 +21,13 @@ export default function CaseDetailPage() {
     cardStatusMap,
   } = useCaseDetailPage();
 
+  const statusCls = data ? (statusClassMap[data.status] ?? data.status) : '';
+
   return (
     <>
       <div className="nav">
         <button type="button" className="nav-back" onClick={() => navigate(-1)}>
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <path d="M15 18l-6-6 6-6" />
           </svg>
         </button>
@@ -42,13 +36,13 @@ export default function CaseDetailPage() {
       <PageContent>
         {loading && <div className="glow-loading" />}
 
-        {error && (
+        {error && !data && (
           <div className="error-state">
             <h2>加载失败</h2>
             <p>{error}</p>
             <div className="error-acts">
-              <button type="button" className="btn-s" onClick={handleRetry}>重试</button>
-              <button type="button" className="btn-s" onClick={() => navigate(-1)}>返回</button>
+              <button type="button" className="btn btn-s" onClick={handleRetry}>重试</button>
+              <button type="button" className="btn btn-s" onClick={() => navigate(-1)}>返回</button>
             </div>
           </div>
         )}
@@ -57,68 +51,68 @@ export default function CaseDetailPage() {
           <div className="error-state">
             <h2>未找到案例</h2>
             <p>该案例不存在或已被删除</p>
-            <button type="button" className="btn-s" onClick={() => navigate(-1)}>返回</button>
+            <button type="button" className="btn btn-s" onClick={() => navigate(-1)}>返回</button>
           </div>
         )}
 
         {data && (
           <>
-            <div className="detail-overview">
-              <h1 className="detail-title">{data.title}</h1>
-              <div className="detail-meta">
-                <span className={`detail-status ${statusClassMap[data.status] ?? data.status}`}>
-                  {statusTextMap[data.status] ?? data.status}
-                </span>
-                <span className="detail-source">{sourceLabelMap[data.source_type] ?? data.source_type}</span>
-                <span className="detail-time">{formatDate(data.created_at)}</span>
+            <div className="overview">
+              <h2>{data.title}</h2>
+              <div className="o-tags">
+                <span className="o-tag">{sourceLabelMap[data.source_type] ?? data.source_type}</span>
+              </div>
+              <div className="o-meta">
+                <span className={`o-dot ${statusCls}`} />
+                <span>{statusTextMap[data.status] ?? data.status} · {data.cards.length} 张卡片</span>
               </div>
             </div>
 
-            <div className="detail-section">
+            <div className="section">
               <h3>叙事原文</h3>
-              <div className="detail-narrative">
+              <div className="narrative">
                 <MarkdownRenderer content={data.narrative} />
               </div>
             </div>
 
             {data.cards.length > 0 && (
-              <div className="detail-section">
-                <h3>关联卡片（{data.cards.length}）</h3>
-                <div className="detail-card-list">
-                  {data.cards.map((card) => (
+              <div className="section">
+                <h3>关联卡片 <span className="count">({data.cards.length})</span></h3>
+                {data.cards.map((card) => {
+                  const cardStatus = cardStatusMap[card.review_status] ?? { text: card.review_status, cls: card.review_status };
+                  return (
                     <button
                       key={card.card_id}
                       type="button"
-                      className="detail-card-item"
+                      className="card-item"
                       onClick={() => handleCardClick(card.card_id)}
                     >
-                      <div className="detail-card-head">
-                        <span className="detail-card-title">{card.title}</span>
-                        <span className={`detail-card-status ${cardStatusMap[card.review_status]?.cls ?? card.review_status}`}>
-                          {cardStatusMap[card.review_status]?.text ?? card.review_status}
-                        </span>
+                      <h4>{card.title}</h4>
+                      <div className="c-tags">
+                        <span className="c-tag">{card.behavior_type}</span>
+                        <span className="c-tag">{card.severity}</span>
+                        <span className="c-tag">{card.scene}</span>
                       </div>
-                      <div className="detail-card-tags">
-                        <span>{card.behavior_type}</span>
-                        <span>{card.severity}</span>
-                        <span>{card.scene}</span>
-                      </div>
+                      <span className={`c-status ${cardStatus.cls}`}>{cardStatus.text}</span>
                     </button>
-                  ))}
-                </div>
+                  );
+                })}
               </div>
             )}
 
-            <div className="detail-actions">
-              {data.status === 'draft' ? (
-                <>
-                  <button type="button" className="btn btn-p" onClick={handleGoExtract}>提取卡片</button>
-                  <button type="button" className="btn btn-s" onClick={handleEditNarrative}>编辑原文</button>
-                </>
-              ) : (
-                <span className="detail-approved-tip">该案例已通过审核</span>
-              )}
-            </div>
+            {data.status === 'approved' ? (
+              <div className="approved-badge">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <polyline points="20 6 9 17 4 12" />
+                </svg>
+                该案例已通过审核
+              </div>
+            ) : (
+              <div className="actions">
+                <button type="button" className="btn btn-p" onClick={handleGoExtract}>提取卡片</button>
+                <button type="button" className="btn btn-s" onClick={handleEditNarrative}>编辑原文</button>
+              </div>
+            )}
           </>
         )}
       </PageContent>

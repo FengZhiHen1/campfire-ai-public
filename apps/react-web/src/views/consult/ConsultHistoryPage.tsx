@@ -37,7 +37,12 @@ export default function ConsultHistoryPage() {
   useEffect(() => { load(); }, [load]);
 
   const filtered = search
-    ? items.filter((i) => i.behavior_description?.toLowerCase().includes(search.toLowerCase()))
+    ? items.filter((i) => {
+        const q = search.toLowerCase();
+        const inDesc = i.behavior_description?.toLowerCase().includes(q);
+        const inTags = i.tags?.some((t) => t.toLowerCase().includes(q));
+        return inDesc || inTags;
+      })
     : items;
 
   return (
@@ -108,6 +113,13 @@ export default function ConsultHistoryPage() {
                     <span className="card-time">{item.consultation_time}</span>
                     <span className={`trust ${trustClass}`}>{trustLabel}</span>
                   </div>
+                  {item.tags && item.tags.length > 0 && (
+                    <div className="tags">
+                      {item.tags.map((tag, tidx) => (
+                        <span key={tidx} className="tag">{tag}</span>
+                      ))}
+                    </div>
+                  )}
                   <p className="summary">{item.behavior_description}</p>
                 </Link>
               );

@@ -71,6 +71,7 @@ export default function CaseCardDetailPage() {
   const ageLabel = data.age_range && data.age_range.length === 2
     ? `${data.age_range[0]}-${data.age_range[1]}岁`
     : '';
+  const evidenceText = EVIDENCE_LABEL_MAP[data.evidence_level] ?? data.evidence_level;
 
   return (
     <>
@@ -89,12 +90,6 @@ export default function CaseCardDetailPage() {
         </div>
         <div className="quartet">
           <h3>{data.title}</h3>
-          {data.scenario && (
-            <div className="q-section observation">
-              <div className="q-head">适用场景</div>
-              <div className="q-body">{data.scenario}</div>
-            </div>
-          )}
           <div className="q-section immediate">
             <div className="q-head">即时安全干预动作</div>
             <div className="q-body">{data.immediate_action}</div>
@@ -111,13 +106,11 @@ export default function CaseCardDetailPage() {
             <div className="q-head">就医判断标准</div>
             <div className="q-body">{data.medical_criteria}</div>
           </div>
-          {data.caution_notes && (
-            <div className="q-note info">{data.caution_notes}</div>
-          )}
+          <div className="q-note info">循证等级：{evidenceText}</div>
         </div>
         <div className="footer-label">
           <span>证据等级</span>
-          <span style={{ fontWeight: 600 }}>{EVIDENCE_LABEL_MAP[data.evidence_level] ?? data.evidence_level}</span>
+          <span style={{ fontWeight: 600 }}>基于真实案例 · 已审核</span>
         </div>
       </PageContent>
     </>

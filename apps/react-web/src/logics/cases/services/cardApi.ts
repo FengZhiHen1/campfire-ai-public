@@ -33,6 +33,7 @@ export interface CardData {
   evidence_level: string;
   caution_notes: string;
   contraindications: string;
+  excluded_population?: string;
   is_template: boolean;
   inferred_fields?: Record<string, string>;
 }
