@@ -20,6 +20,20 @@ export { useMicroSurvey } from './hooks/useMicroSurvey';
 // Coordination 导出（CSLT-08 消费）
 export { profileCoordination } from './coordination/profileCoordination';
 
+// 常量导出
+export {
+  DIAGNOSIS_OPTIONS,
+  DIAGNOSIS_VALUES,
+  BEHAVIOR_OPTIONS,
+  BEHAVIOR_VALUES,
+  LANGUAGE_OPTIONS,
+  LANGUAGE_VALUES,
+  SENSORY_FEATURE_TAGS,
+  TRIGGER_TAGS,
+  PRESET_TAGS,
+  MAX_PROFILE_COUNT,
+} from './constants';
+
 // 类型导出
 export type {
   UseProfileReturn,

@@ -1,6 +1,5 @@
 import { Link } from 'react-router-dom';
-import { useHomePage } from '@/logics/shared/hooks/useHomePage';
-import { formatRelativeTime } from '@/logics/shared/utils/timeFormat';
+import { useHomePage, formatRelativeTime } from '@/logics/shared';
 import PageContent from '@/views/_shared/layout/PageContent';
 import './HomePage.css';
 
