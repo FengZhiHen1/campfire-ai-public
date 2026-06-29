@@ -11,10 +11,8 @@
 // ---- Hooks（View 层唯一合法通道）----
 export { useCaseList } from './hooks/useCaseList';
 export { useCaseDetail } from './hooks/useCaseDetail';
-export { useCaseFormStore } from './hooks/useCaseFormStore';
 export { useCaseListPage } from './hooks/useCaseListPage';
 export { useCaseDetailPage } from './hooks/useCaseDetailPage';
-export { useCaseSubmit } from './hooks/useCaseSubmit';
 export { useNarrativeSubmit } from './hooks/useNarrativeSubmit';
 export { useExtractionResult } from './hooks/useExtractionResult';
 export { useReviewPage } from './hooks/useReviewPage';
@@ -22,9 +20,6 @@ export { useCaseCardDetail } from './hooks/useCaseCardDetail';
 
 // ---- 类型 ----
 export type {
-  CaseFormFields,
-  CaseFormState,
-  FormErrors,
   NarrativeListItem,
   NarrativeDetail,
   CardSummary,

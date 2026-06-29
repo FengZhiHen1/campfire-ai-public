@@ -12,62 +12,6 @@
  */
 
 // ============================================================================
-// CaseFormFields — 表单字段（与 CaseCreateRequest 契约对齐）
-// ============================================================================
-
-/** 案例表单所有字段 */
-export interface CaseFormFields {
-  title: string;
-  narrative: string;
-  source_type: string;
-  author_id: string;
-  behavior_type: string;
-  age_range: [number, number];
-  severity: string;
-  scene: string;
-  ebp_labels: string[];
-  family_category: string;
-  immediate_action: string;
-  comforting_phrase: string;
-  observation_metrics: string;
-  medical_criteria: string;
-  evidence_level: string;
-  contraindications: string;
-  is_template: boolean;
-  excluded_population: string;
-}
-
-// ============================================================================
-// FormErrors — 校验错误映射
-// ============================================================================
-
-/** 表单校验错误（字段名 → 错误描述） */
-export interface FormErrors {
-  [field: string]: string;
-}
-
-// ============================================================================
-// CaseFormState — Store 状态与方法
-// ============================================================================
-
-/** Store 状态与方法 */
-export interface CaseFormState {
-  fields: CaseFormFields;
-  errors: FormErrors;
-  isSubmitting: boolean;
-  lastSavedAt: string | null;
-  isDirty: boolean;
-  setField: (name: keyof CaseFormFields, value: string | number | boolean | string[] | [number, number]) => void;
-  setFields: (partial: Partial<CaseFormFields>) => void;
-  resetForm: () => void;
-  loadDraft: () => boolean;
-  saveDraft: () => void;
-  setErrors: (errors: FormErrors) => void;
-  clearErrors: () => void;
-  setSubmitting: (value: boolean) => void;
-}
-
-// ============================================================================
 // 叙事相关类型（原在 narrativeApi.ts 内联定义，现归并于此）
 // ============================================================================
 
