@@ -69,8 +69,8 @@ export function useCaseDetailPage(): UseCaseDetailPageReturn {
   };
 
   const handleCardClick = (cardId: string) => {
-    if (!data) return;
-    Taro.navigateTo({ url: `/views/cases/pages/extraction-result?narrativeId=${data.narrative_id}&cardId=${cardId}` });
+    // 从案例库查看已入库的干预卡片，跳转到「干预卡片」详情页
+    Taro.navigateTo({ url: `/views/cases/pages/card-detail?cardId=${cardId}` });
   };
 
   const handleRetry = useCallback(() => { fetchDetail(); }, [fetchDetail]);
