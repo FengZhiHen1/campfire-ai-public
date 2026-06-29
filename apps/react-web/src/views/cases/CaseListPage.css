@@ -14,8 +14,14 @@
 .fab{position:absolute;bottom:80px;right:16px;width:48px;height:48px;border-radius:50%;background:var(--cf-accent);color:var(--cf-accent-on);border:none;font-size:24px;cursor:pointer;display:grid;place-items:center;box-shadow:0 4px 16px rgba(245,158,11,.35);z-index:5;text-decoration:none;animation:fPulse 2.8s ease-in-out infinite}@keyframes fPulse{0%,100%{box-shadow:0 4px 16px rgba(245,158,11,.35)}50%{box-shadow:0 4px 28px rgba(245,158,11,.5),0 0 36px rgba(245,158,11,.12)}}
 .case-card{animation:caseIn .4s cubic-bezier(.2,0,0,1) both}.case-card:nth-child(1){animation-delay:.05s}.case-card:nth-child(2){animation-delay:.12s}.case-card:nth-child(3){animation-delay:.19s}@keyframes caseIn{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
 .glow-loading{height:200px;border-radius:var(--cf-radius-lg);background:var(--cf-surface-variant);position:relative;overflow:hidden}.glow-loading::after{content:"";position:absolute;inset:0;background:radial-gradient(circle at 30% 50%,rgba(245,158,11,0.08) 0%,transparent 60%);animation:glowPulse 2s ease-in-out infinite}@keyframes glowPulse{0%,100%{opacity:.5}50%{opacity:1}}
+.case-card.draft{border-left-color:var(--cf-muted-light)}
 .case-card.reviewing{border-left-color:var(--cf-accent-secondary)}
+.case-card.approved{border-left-color:var(--cf-accent-secondary)}
+.case-card.rejected{border-left-color:var(--cf-danger)}
+.card-dot.draft{background:var(--cf-muted-light)}
 .card-dot.reviewing{background:var(--cf-accent-secondary)}
+.card-dot.approved{background:var(--cf-accent-secondary)}
+.card-dot.rejected{background:var(--cf-danger)}
 .case-card:nth-child(4){animation-delay:.26s}.case-card:nth-child(5){animation-delay:.33s}
 .case-card{transition:transform .2s cubic-bezier(.2,0,0,1),box-shadow .2s cubic-bezier(.2,0,0,1),background .15s}.case-card:hover{transform:translateX(4px);box-shadow:0 4px 20px rgba(28,25,23,.08)}
 .search input:focus{animation:searchGlow .4s ease}@keyframes searchGlow{from{box-shadow:0 0 0 0 rgba(245,158,11,.3)}to{box-shadow:0 0 0 6px rgba(245,158,11,0)}}
