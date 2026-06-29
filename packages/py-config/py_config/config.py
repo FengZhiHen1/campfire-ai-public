@@ -167,6 +167,32 @@ class AppSettings(BaseSettings):
         description="LLM 全流程超时秒数。CSLT-03 全流程硬超时。",
     )
 
+    # ===== MVP 评委体验账号配置 =====
+    # 当前产品面向评委线上评审，无普通用户场景。
+    # 所有未携带 JWT 的请求默认映射到该预置 expert 账号，实现打开即用。
+
+    JUDGE_USERNAME: str = Field(
+        default="judge",
+        min_length=1,
+        max_length=32,
+        description="预置评委账号用户名。所有匿名请求默认映射到此账号。",
+    )
+
+    JUDGE_PHONE: str = Field(
+        default="19900000000",
+        min_length=11,
+        max_length=11,
+        pattern=r"^1[3-9]\d{9}$",
+        description="预置评委账号占位手机号。",
+    )
+
+    JUDGE_REAL_NAME: str = Field(
+        default="评审专家",
+        min_length=1,
+        max_length=20,
+        description="预置评委账号显示名称。",
+    )
+
     # ===== SSE 流式推送配置 (5) — CSLT-04 =====
 
     SSE_MAX_CONCURRENT_CONNECTIONS: int = Field(
