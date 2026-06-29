@@ -13,16 +13,23 @@ export default function IdlePanel({ onStartConsult }: IdlePanelProps) {
   };
 
   return (
-    <div className="state-panel active">
-      <div className="idle-area">
-        <div className="idle-flame">
+    <div className="state-panel active" data-testid="consult-idle">
+      <div className="idle-area" data-testid="consult-idle-entry">
+        <div className="idle-flame" data-testid="consult-idle-graphic">
           <div className="flame-glow" />
           <div className="flame-ring" />
           <div className="flame-particle" />
           <div className="flame-particle" />
           <div className="flame-particle" />
           <svg viewBox="0 0 64 64" fill="none">
-            <circle cx="32" cy="42" r="16" stroke="var(--cf-accent)" strokeWidth="2" opacity="0.4" />
+            <defs>
+              <radialGradient id="flameGrad" cx="50%" cy="60%" r="50%">
+                <stop offset="0%" stopColor="var(--cf-accent)" stopOpacity="0.6" />
+                <stop offset="60%" stopColor="var(--cf-accent)" stopOpacity="0.25" />
+                <stop offset="100%" stopColor="var(--cf-accent)" stopOpacity="0.08" />
+              </radialGradient>
+            </defs>
+            <circle cx="32" cy="42" r="16" stroke="var(--cf-accent)" strokeWidth="2" fill="url(#flameGrad)" opacity="0.4" />
             <circle cx="32" cy="42" r="12" stroke="var(--cf-accent)" strokeWidth="1.2" fill="none" opacity="0.2" />
             <path d="M32 6 C18 22 16 30 16 38 A16 16 0 0 0 48 38 C48 30 46 22 32 6Z" fill="var(--cf-accent)" opacity="0.22" />
             <path d="M32 14 C22 26 20 32 20 38 A12 12 0 0 0 44 38 C44 32 42 26 32 14Z" fill="var(--cf-accent)" opacity="0.38" />
@@ -35,9 +42,9 @@ export default function IdlePanel({ onStartConsult }: IdlePanelProps) {
         <p className="idle-subtitle">描述孩子当前的行为表现<br />获取基于真实案例的应急建议</p>
       </div>
       <div className="idle-btn-wrap">
-        <button className="btn btn-primary" onClick={handleStart}>开始咨询</button>
+        <button className="btn btn-primary" data-testid="consult-idle-cta" onClick={handleStart}>开始咨询</button>
       </div>
-      <div className="disclaimer">基于归档案例的 AI 生成建议，不构成医疗诊断。严重情况请咨询专业医生。</div>
+      <div className="disclaimer" data-testid="consult-disclaimer">基于归档案例的 AI 生成建议，不构成医疗诊断。严重情况请咨询专业医生。</div>
     </div>
   );
 }

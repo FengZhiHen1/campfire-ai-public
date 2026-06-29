@@ -15,6 +15,7 @@ import type {
   CrisisLevel,
   PlanSection,
   DoneEventPayload,
+  ValidationVerdict,
 } from '../types/index';
 import type { RequestId } from '../consult.contract';
 import {
@@ -108,6 +109,7 @@ export function createSseCallbacks(
       const doneSections = doneData?.sections ?? {};
       const planSections = sectionsToPlanSections(doneSections);
 
+      const confidenceScore = doneData?.confidence_score;
       const shouldShowTicket = verdict === 'FORCE_BLOCK' || verdict === 'APPEND_WARNING';
       const nextState = shouldShowTicket ? 'ticket_guide' : 'completed';
       const next = transitionTo(state.sessionState, nextState);
@@ -123,6 +125,8 @@ export function createSseCallbacks(
         sessionState: next,
         messages: updatedMessages,
         crisisLevel: crisisLevel as CrisisLevel,
+        confidenceScore,
+        validationVerdict: verdict as ValidationVerdict,
         referencedSliceIds,
         referencedCases,
         planSections,

@@ -5,7 +5,7 @@ export interface TicketGuidePanelProps {
 
 export default function TicketGuidePanel({ onGoToTicket, onNewConsult }: TicketGuidePanelProps) {
   return (
-    <div className="state-panel active">
+    <div className="state-panel active" data-testid="consult-ticket-guide">
       <div className="ticket-guide-area">
         <div className="guide-graphic">
           <svg viewBox="0 0 48 48" fill="none" stroke="var(--cf-accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -19,11 +19,11 @@ export default function TicketGuidePanel({ onGoToTicket, onNewConsult }: TicketG
         <h2 className="guide-title">建议联系专家</h2>
         <p className="guide-desc">AI 对当前情况的置信度较低，<br />建议通过人工咨询获取更准确建议</p>
         <div className="guide-actions">
-          <button className="btn btn-primary" onClick={onGoToTicket}>联系专家</button>
+          <button className="btn btn-primary" data-testid="consult-ticket-guide-expert-btn" onClick={onGoToTicket}>联系专家</button>
           <button className="btn btn-secondary" onClick={onNewConsult}>开始新咨询</button>
         </div>
       </div>
-      <div className="disclaimer">基于归档案例的 AI 生成建议，不构成医疗诊断。严重情况请咨询专业医生。</div>
+      <div className="disclaimer" data-testid="consult-disclaimer">基于归档案例的 AI 生成建议，不构成医疗诊断。严重情况请咨询专业医生。</div>
     </div>
   );
 }

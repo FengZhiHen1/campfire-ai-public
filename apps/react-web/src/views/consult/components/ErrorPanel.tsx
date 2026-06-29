@@ -11,7 +11,7 @@ export default function ErrorPanel({ variant, errorMessage, onRetry, onBack }: E
   const retryLabel = isSubmit ? '重试提交' : '重新生成';
 
   return (
-    <div className="state-panel active">
+    <div className="state-panel active" data-testid="consult-error">
       <div className="error-area">
         <div className="error-graphic">
           {isSubmit ? (
@@ -28,13 +28,13 @@ export default function ErrorPanel({ variant, errorMessage, onRetry, onBack }: E
           )}
         </div>
         <h2 className="error-title">{title}</h2>
-        <p className="error-desc">{errorMessage}</p>
+        <p className="error-desc" style={{ whiteSpace: 'pre-line' }}>{errorMessage}</p>
         <div className="error-actions">
-          <button className="btn btn-primary" onClick={onRetry}>{retryLabel}</button>
-          <button className="btn btn-secondary" onClick={onBack}>返回修改</button>
+          <button className="btn btn-primary" data-testid="consult-error-retry-btn" onClick={onRetry}>{retryLabel}</button>
+          <button className="btn btn-secondary" data-testid="consult-error-back-btn" onClick={onBack}>返回修改</button>
         </div>
       </div>
-      <div className="disclaimer">基于归档案例的 AI 生成建议，不构成医疗诊断。严重情况请咨询专业医生。</div>
+      <div className="disclaimer" data-testid="consult-disclaimer">基于归档案例的 AI 生成建议，不构成医疗诊断。严重情况请咨询专业医生。</div>
     </div>
   );
 }

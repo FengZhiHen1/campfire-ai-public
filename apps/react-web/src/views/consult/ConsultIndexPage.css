@@ -19,6 +19,11 @@
   color: var(--cf-fg);
   letter-spacing: 0.02em;
 }
+
+/* 应急咨询页内容区：与 OD phone-content 一致，无额外水平内边距 */
+.consult-page-content {
+  padding: 0;
+}
 .crisis-badge {
   display: none;
   position: absolute; right: 12px;
