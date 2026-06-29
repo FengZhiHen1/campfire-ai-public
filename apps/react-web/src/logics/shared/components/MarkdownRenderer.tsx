@@ -1,5 +1,5 @@
 // React 移植版：View→div, Text→span
-import './MarkdownRenderer.scss';
+import './MarkdownRenderer.css';
 
 interface InlineToken {
   type: 'text' | 'bold' | 'italic' | 'code';

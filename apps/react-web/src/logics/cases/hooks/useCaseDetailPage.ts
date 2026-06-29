@@ -8,7 +8,7 @@
  */
 
 import { useState, useEffect, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import { getNarrative } from '../services/narrativeApi';
 import { STATUS_TEXT_MAP, STATUS_CLASS_MAP, SOURCE_LABEL_MAP, CARD_STATUS_MAP } from '../types/constants';
 import type { NarrativeDetail, CardSummary } from '../types';
@@ -38,18 +38,15 @@ export interface UseCaseDetailPageReturn {
 
 export function useCaseDetailPage(): UseCaseDetailPageReturn {
   const navigate = useNavigate();
+  const { id: narrativeId } = useParams<{ id: string }>();
   const [data, setData] = useState<NarrativeDetail | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const fetchDetail = useCallback(() => {
-    const params = new URLSearchParams(window.location.search);
-    const narrativeId = params.get('narrativeId');
-    if (!narrativeId) return;
-
+  const fetchDetail = useCallback((targetId: string) => {
     setLoading(true);
     setError(null);
-    getNarrative(narrativeId)
+    getNarrative(targetId)
       .then((res) => setData(res))
       .catch(() => {
         setError('加载失败，请稍后重试');
@@ -57,24 +54,32 @@ export function useCaseDetailPage(): UseCaseDetailPageReturn {
       .finally(() => setLoading(false));
   }, []);
 
-  useEffect(() => { fetchDetail(); }, [fetchDetail]);
+  useEffect(() => {
+    if (narrativeId) {
+      fetchDetail(narrativeId);
+    }
+  }, [narrativeId, fetchDetail]);
 
   const handleGoExtract = () => {
-    if (!data) return;
-    navigate(`/cases/extraction-result?narrativeId=${data.narrative_id}`);
+    if (!narrativeId) return;
+    navigate(`/cases/extraction/${narrativeId}`);
   };
 
   const handleEditNarrative = () => {
-    if (!data) return;
-    navigate(`/cases/narrative-submit?mode=edit&narrativeId=${data.narrative_id}`);
+    if (!narrativeId) return;
+    navigate(`/cases/narrative?mode=edit&narrativeId=${narrativeId}`);
   };
 
   const handleCardClick = (cardId: string) => {
-    if (!data) return;
-    navigate(`/cases/extraction-result?narrativeId=${data.narrative_id}&cardId=${cardId}`);
+    if (!narrativeId) return;
+    navigate(`/cases/extraction/${narrativeId}?cardId=${cardId}`);
   };
 
-  const handleRetry = useCallback(() => { fetchDetail(); }, [fetchDetail]);
+  const handleRetry = useCallback(() => {
+    if (narrativeId) {
+      fetchDetail(narrativeId);
+    }
+  }, [narrativeId, fetchDetail]);
 
   return {
     data,

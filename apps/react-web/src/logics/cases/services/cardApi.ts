@@ -59,6 +59,34 @@ export interface CardUpdateData {
 // API 函数
 // ============================================================================
 
+/** 获取卡片详情。 */
+export async function getCard(
+  cardId: string,
+  signal?: AbortSignal,
+): Promise<CardData> {
+  if (signal?.aborted) {
+    return Promise.reject(new DOMException('The operation was aborted', 'AbortError'));
+  }
+  if (cardId === null || cardId === undefined) {
+    return Promise.reject(new TypeError('cardId is required'));
+  }
+  const { signal: requestSignal, cleanup } = createRequestSignal(signal);
+  try {
+    const res = await httpClient.request<CardData>(
+      withSignal(
+        {
+          url: `${BASE_PATH}/${cardId}`,
+          method: 'GET',
+        },
+        requestSignal,
+      ),
+    );
+    return res.data;
+  } finally {
+    cleanup();
+  }
+}
+
 /** 更新卡片。 */
 export async function updateCard(
   cardId: string,

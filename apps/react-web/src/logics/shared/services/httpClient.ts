@@ -35,7 +35,7 @@ function resolveUrl(path: string): string {
   return API_BASE ? API_BASE + path : path;
 }
 
-interface RequestOptions {
+export interface RequestOptions {
   url: string;
   method?: string;
   data?: unknown;

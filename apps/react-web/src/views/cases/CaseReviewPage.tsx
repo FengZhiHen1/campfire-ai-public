@@ -1,21 +1,52 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import PageContent from '@/views/_shared/layout/PageContent';
+import {
+  useReviewPage,
+  BEHAVIOR_TYPE_OPTIONS,
+  BEHAVIOR_TYPE_VALUES,
+} from '@/logics/cases';
 import './CaseReviewPage.css';
 
-const FILTERS = ['全部', '自伤', '攻击', '逃跑', '服药', '情绪'];
-const MOCK_ITEMS = [
-  { id: 1, title: '商场听觉超载自伤案例', tags: ['自伤行为', '公共场合', '待审核'], aiScore: 75 },
-  { id: 2, title: '学校转换困难逃跑干预', tags: ['出走/逃跑', '学校', '待审核'], aiScore: 100 },
-  { id: 3, title: '拒绝服药大哭大闹案例', tags: ['用药相关', '家庭', '待审核'], aiScore: 25 },
-];
+const FILTERS = ['全部', ...BEHAVIOR_TYPE_OPTIONS];
+
+const BEHAVIOR_LABEL_MAP: Record<string, string> = BEHAVIOR_TYPE_VALUES.reduce(
+  (acc, val, idx) => ({ ...acc, [val]: BEHAVIOR_TYPE_OPTIONS[idx] }),
+  {},
+);
+
+const AI_SCORE_MAP: Record<string, number> = {
+  pass: 100,
+  annotated: 75,
+  hard_block: 25,
+};
 
 export default function CaseReviewPage() {
   const navigate = useNavigate();
   const [activeFilter, setActiveFilter] = useState('全部');
-  const [items, setItems] = useState(MOCK_ITEMS);
+  const {
+    queue,
+    isLoading,
+    error,
+    total,
+    hasMore,
+    actionState,
+    getAiReviewText,
+    getTimeoutText,
+    handleApprove,
+    handleReject,
+    loadMore,
+  } = useReviewPage();
 
-  const handleAction = (id: number) => setItems((prev) => prev.filter((i) => i.id !== id));
+  const filteredQueue = activeFilter === '全部'
+    ? queue
+    : queue.filter((item) => BEHAVIOR_LABEL_MAP[item.behavior_type] === activeFilter);
+
+  const onReject = (id: string) => {
+    const comment = window.prompt('请输入驳回意见（必填）');
+    if (comment === null) return;
+    void handleReject(id, comment);
+  };
 
   return (
     <>
@@ -31,17 +62,60 @@ export default function CaseReviewPage() {
             <button key={f} className={`f-chip${activeFilter === f ? ' active' : ''}`} onClick={() => setActiveFilter(f)}>{f}</button>
           ))}
         </div>
-        {items.map((item) => (
-          <div key={item.id} className="rev-card" onClick={() => navigate(`/cases/${item.id}`)}>
-            <h4>{item.title}</h4>
-            <div className="r-tags">{item.tags.map((t) => <span key={t} className="r-tag">{t}</span>)}</div>
-            <div className="ai-bar"><span>AI 预审</span><div className="ai-progress"><div className="ai-fill" style={{ width: `${item.aiScore}%` }} /></div><span>{Math.round(item.aiScore / 25)}/4</span></div>
-            <div className="r-acts">
-              <button className="btn-approve" onClick={(e) => { e.stopPropagation(); handleAction(item.id); }}>通过</button>
-              <button className="btn-reject" onClick={(e) => { e.stopPropagation(); handleAction(item.id); }}>退回</button>
-            </div>
+
+        {error && (
+          <div className="error-state active" style={{ padding: '20px 0' }}>
+            <p>{error}</p>
           </div>
-        ))}
+        )}
+
+        {filteredQueue.map((item) => {
+          const aiScore = AI_SCORE_MAP[item.ai_review_overall] ?? 50;
+          const busy = actionState.isSubmitting;
+          return (
+            <div key={item.narrative_id} className="rev-card" onClick={() => navigate(`/cases/${item.narrative_id}`)}>
+              <h4>{item.title}</h4>
+              <div className="r-tags">
+                <span className="r-tag">{BEHAVIOR_LABEL_MAP[item.behavior_type] ?? item.behavior_type}</span>
+                <span className="r-tag">{getAiReviewText(item.ai_review_overall)}</span>
+                <span className="r-tag">{getTimeoutText(item.timeout_status)}</span>
+              </div>
+              <div className="ai-bar">
+                <span>AI 预审</span>
+                <div className="ai-progress"><div className="ai-fill" style={{ width: `${aiScore}%` }} /></div>
+                <span>{Math.round(aiScore / 25)}/4</span>
+              </div>
+              <div className="r-acts">
+                <button
+                  className="btn-approve"
+                  disabled={busy}
+                  onClick={(e) => { e.stopPropagation(); void handleApprove(item.narrative_id); }}
+                >
+                  通过
+                </button>
+                <button
+                  className="btn-reject"
+                  disabled={busy}
+                  onClick={(e) => { e.stopPropagation(); onReject(item.narrative_id); }}
+                >
+                  退回
+                </button>
+              </div>
+            </div>
+          );
+        })}
+
+        {isLoading && <div style={{ textAlign: 'center', padding: 16, color: 'var(--cf-muted)' }}>加载中…</div>}
+
+        {hasMore && !isLoading && (
+          <button className="btn btn-s" onClick={() => void loadMore()} style={{ marginTop: 8 }}>
+            加载更多 ({queue.length}/{total})
+          </button>
+        )}
+
+        {!isLoading && filteredQueue.length === 0 && !error && (
+          <div style={{ textAlign: 'center', padding: 40, color: 'var(--cf-muted)' }}>暂无待审核案例</div>
+        )}
       </PageContent>
     </>
   );

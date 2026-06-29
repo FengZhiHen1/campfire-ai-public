@@ -15,13 +15,23 @@ const SECTION_LABELS: Record<string, string> = {
   medical: '就医判断标准',
 };
 
+function inferSectionType(title: string): string {
+  if (title.includes('即时') || title.includes('安全') || title.includes('干预')) return 'action';
+  if (title.includes('安抚') || title.includes('话术')) return 'soothe';
+  if (title.includes('观察') || title.includes('指标')) return 'observe';
+  if (title.includes('就医') || title.includes('判断')) return 'medical';
+  return 'action';
+}
+
 function PlanSectionItem({ section }: { section: PlanSection }) {
-  const label = SECTION_LABELS[section.type] ?? section.type;
-  const bodyHtml = section.content || '<span class="plan-section-placeholder">（待生成）</span>';
+  const type = inferSectionType(section.title);
+  const label = SECTION_LABELS[type] ?? section.title;
+  const body = section.contents.join('\n');
+  const bodyHtml = body || '<span class="plan-section-placeholder">（待生成）</span>';
   const hasContent = section.isCompleted;
 
   return (
-    <div className={`plan-section ${section.type} streaming-sec${hasContent ? ' done' : ''}`}>
+    <div className={`plan-section ${type} streaming-sec${hasContent ? ' done' : ''}`}>
       <div className="plan-section-head">
         <span className="plan-section-label">{label}</span>
         <span className={`plan-section-check${hasContent ? ' visible' : ''}`}>✓</span>
@@ -53,7 +63,7 @@ export default function StreamingPanel({
       <div className="plan-card">
         <h3>干预建议大纲</h3>
         {SECTION_KEYS.map((key) => {
-          const section = planSections.find((s) => s.type === key);
+          const section = planSections.find((s) => inferSectionType(s.title) === key);
           return section ? (
             <PlanSectionItem key={key} section={section} />
           ) : (

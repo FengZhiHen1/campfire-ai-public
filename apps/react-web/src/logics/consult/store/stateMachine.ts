@@ -94,8 +94,8 @@ export function transitionTo(
  * @param code - 前端异常错误码
  * @returns 中文提示文案
  */
-export function getErrorMessage(code: ConsultErrorCode): string {
-  const messageMap: Record<ConsultErrorCode, string> = {
+export function getErrorMessage(code: ConsultErrorCode | string): string {
+  const messageMap: Record<string, string> = {
     [ConsultErrorCode.INPUT_VALIDATION_FAILED]:
       '请至少选择一种行为类型，并填写行为描述',
     [ConsultErrorCode.SUBMIT_NETWORK_ERROR]:

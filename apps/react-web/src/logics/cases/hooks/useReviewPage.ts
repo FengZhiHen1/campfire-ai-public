@@ -151,7 +151,7 @@ export function useReviewPage(): UseReviewPageReturn {
     setError(null);
     try {
       await reviewCase(caseId, 'approved');
-      setQueue((prev) => prev.filter((item) => item.case_id !== caseId));
+      setQueue((prev) => prev.filter((item) => item.narrative_id !== caseId));
       setTotal((prev) => prev - 1);
       showToast({ title: '已批准', icon: 'success' });
     } catch (e: unknown) {
@@ -175,7 +175,7 @@ export function useReviewPage(): UseReviewPageReturn {
     setError(null);
     try {
       await reviewCase(caseId, 'rejected', comment.trim());
-      setQueue((prev) => prev.filter((item) => item.case_id !== caseId));
+      setQueue((prev) => prev.filter((item) => item.narrative_id !== caseId));
       setTotal((prev) => prev - 1);
       showToast({ title: '已驳回', icon: 'success' });
     } catch (e: unknown) {

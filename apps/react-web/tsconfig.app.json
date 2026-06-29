@@ -4,7 +4,7 @@
     "target": "es2023",
     "lib": ["ES2023", "DOM", "DOM.Iterable"],
     "module": "esnext",
-    "types": ["vite/client"],
+    "types": ["vite/client", "node"],
     "skipLibCheck": true,
 
     /* Bundler mode */
@@ -18,11 +18,12 @@
     /* Linting */
     "noUnusedLocals": false,
     "noUnusedParameters": false,
-    "erasableSyntaxOnly": true,
+    "erasableSyntaxOnly": false,
     "noFallthroughCasesInSwitch": true,
 
     /* Path aliases */
     "baseUrl": ".",
+    "ignoreDeprecations": "6.0",
     "paths": {
       "@/*": ["src/*"],
       "@campfire/ts-shared": ["../../packages/ts-shared/src"],

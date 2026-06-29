@@ -31,6 +31,7 @@ export async function listNarratives(
   scope: string = 'public',
   page: number = 1,
   pageSize: number = 15,
+  keyword?: string,
   signal?: AbortSignal,
 ): Promise<PaginatedResponse<NarrativeListItem>> {
   if (signal?.aborted) {
@@ -38,10 +39,14 @@ export async function listNarratives(
   }
   const { signal: requestSignal, cleanup } = createRequestSignal(signal);
   try {
+    let url = `${BASE_PATH}?scope=${scope}&page=${page}&page_size=${pageSize}`;
+    if (keyword) {
+      url += `&keyword=${encodeURIComponent(keyword)}`;
+    }
     const res = await httpClient.request<PaginatedResponse<NarrativeListItem>>(
       withSignal(
         {
-          url: `${BASE_PATH}?scope=${scope}&page=${page}&page_size=${pageSize}`,
+          url,
           method: 'GET',
         },
         requestSignal,

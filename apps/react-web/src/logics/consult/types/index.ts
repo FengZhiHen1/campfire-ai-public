@@ -403,7 +403,7 @@ export interface UseConsultReturn {
   /** 跳转工单模块：ticket_guide 状态下触发 Taro.navigateTo */
   goToTicket: () => void;
   /** 获取错误提示文案 */
-  getErrorMessage: (code: ConsultErrorCode) => string;
+  getErrorMessage: (code: ConsultErrorCode | string) => string;
   /** 获取历史咨询列表 */
   fetchHistoryList: (page: number, pageSize: number) => Promise<ConsultationHistoryListItem[]>;
   /** 获取历史咨询详情（只读） */
