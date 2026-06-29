@@ -9,7 +9,6 @@ import ProfileListPage from '@/views/profiles/ProfileListPage';
 import ProfileEditPage from '@/views/profiles/ProfileEditPage';
 import CaseListPage from '@/views/cases/CaseListPage';
 import CaseDetailPage from '@/views/cases/CaseDetailPage';
-import CaseSubmitPage from '@/views/cases/CaseSubmitPage';
 import CaseReviewPage from '@/views/cases/CaseReviewPage';
 import CaseCardDetailPage from '@/views/cases/CaseCardDetailPage';
 import CaseExtractionResultPage from '@/views/cases/CaseExtractionResultPage';
@@ -30,7 +29,6 @@ export const router = createBrowserRouter([
       { path: 'profiles/edit/:id?', element: <ProfileEditPage /> },
       { path: 'cases', element: <CaseListPage /> },
       { path: 'cases/:id', element: <CaseDetailPage /> },
-      { path: 'cases/submit', element: <CaseSubmitPage /> },
       { path: 'cases/review', element: <CaseReviewPage /> },
       { path: 'cases/card/:id', element: <CaseCardDetailPage /> },
       { path: 'cases/extraction/:id', element: <CaseExtractionResultPage /> },
