@@ -59,7 +59,6 @@ from py_schemas.auth import UserRole  # noqa: E402
 # 常量与配置
 # ---------------------------------------------------------------------------
 
-SEED_AUTHOR_ID = "seed-script"
 SEED_SOURCE_TYPE = "专家撰写"
 
 # 评委用户配置（优先从 .env 读取，回退到默认值）
@@ -875,10 +874,11 @@ async def _ensure_profile(session: AsyncSession, caregiver_id: UUID) -> UUID:
 
 
 async def _clear_seed_data(session: AsyncSession) -> None:
-    """按 author_id='seed-script' 清空种子案例及其向量切片、卡片、叙事。"""
+    """清空所有种子案例（按 is_seed 标记或标题匹配）及其向量切片、卡片、叙事。"""
+    seed_titles = [case["title"] for case in _SEED_CASES]
     result = await session.execute(
         select(CaseNarrative.narrative_id).where(
-            CaseNarrative.author_id == SEED_AUTHOR_ID
+            (CaseNarrative.is_seed == True) | (CaseNarrative.title.in_(seed_titles))  # noqa: E712
         )
     )
     narrative_ids = [row[0] for row in result.fetchall()]
@@ -925,16 +925,16 @@ def _map_evidence(raw: str) -> str:
     return _EVIDENCE_MAP.get(raw, raw)
 
 
-async def _import_cases(session: AsyncSession) -> list[CaseCard]:
+async def _import_cases(session: AsyncSession, author_id: UUID) -> list[CaseCard]:
     """导入案例数据（L1 叙事 + L2 卡片），返回创建的卡片列表。"""
     created_cards: list[CaseCard] = []
 
     for case_data in _SEED_CASES:
-        # 幂等：按标题 + author_id 检查是否已存在
+        # 幂等：按标题 + is_seed 检查是否已存在
         existing_result = await session.execute(
             select(CaseNarrative).where(
                 CaseNarrative.title == case_data["title"],
-                CaseNarrative.author_id == SEED_AUTHOR_ID,
+                CaseNarrative.is_seed == True,  # noqa: E712
             )
         )
         if existing_result.scalars().first() is not None:
@@ -942,7 +942,6 @@ async def _import_cases(session: AsyncSession) -> list[CaseCard]:
             continue
 
         narrative_id = uuid.uuid4()
-        now = datetime.now(timezone.utc)
         card_ids: list[str] = []
         card_objects: list[CaseCard] = []
 
@@ -955,10 +954,11 @@ async def _import_cases(session: AsyncSession) -> list[CaseCard]:
             title=case_data["title"],
             narrative=case_data["narrative"],
             source_type=SEED_SOURCE_TYPE,
-            author_id=SEED_AUTHOR_ID,
+            author_id=author_id,
             status="approved",
             extraction_status="extracted",
             derived_card_ids=card_ids,
+            is_seed=True,
         )
         session.add(narrative)
         await session.flush()
@@ -1113,28 +1113,27 @@ async def main() -> int:
         if run_users:
             print("[INFO] 确保评委用户存在...")
             judge_user_id = await _ensure_judge_user(session)
+        elif run_profile or run_cases:
+            # 后续步骤依赖评委用户作为默认作者/档案所有者
+            config = _get_judge_config()
+            result = await session.execute(
+                select(User.id).where(User.username == config["username"])
+            )
+            judge_user_id = result.scalar_one_or_none()
+            if judge_user_id is None:
+                print(
+                    "[ERROR] 未找到评委用户，请先运行 --users 或完整注入",
+                    file=sys.stderr,
+                )
+                return 1
 
         if run_profile:
             print("[INFO] 确保默认患者档案存在...")
-            # 若未执行用户注入，但需要档案，则先查找评委用户
-            if judge_user_id is None:
-                config = _get_judge_config()
-                result = await session.execute(
-                    select(User.id).where(User.username == config["username"])
-                )
-                row = result.scalar_one_or_none()
-                if row is None:
-                    print(
-                        "[ERROR] 未找到评委用户，请先运行 --users 或完整注入",
-                        file=sys.stderr,
-                    )
-                    return 1
-                judge_user_id = row
             await _ensure_profile(session, judge_user_id)
 
         if run_cases:
             print(f"[INFO] 导入 {len(_SEED_CASES)} 个案例...")
-            created_cards = await _import_cases(session)
+            created_cards = await _import_cases(session, judge_user_id)
             if created_cards:
                 print(f"[INFO] 为 {len(created_cards)} 张新卡片生成向量索引...")
                 await _index_cards(session, created_cards)
@@ -1142,7 +1141,7 @@ async def main() -> int:
                 # 如果本次没有新卡片，尝试为所有 pending/failed 的种子卡片重新索引
                 result = await session.execute(
                     select(CaseCard).join(CaseNarrative).where(
-                        CaseNarrative.author_id == SEED_AUTHOR_ID,
+                        CaseNarrative.is_seed == True,  # noqa: E712
                         CaseCard.index_status != "indexed",
                     )
                 )
