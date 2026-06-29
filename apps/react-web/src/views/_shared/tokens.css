@@ -4,6 +4,7 @@
    命名：--cf-{category}-{role}[-{variant}]
    铁律：禁止在任何业务样式中硬编码 hex/rgb/rgba
    ═══════════════════════════════════════════════════════════════════ */
+/* const colorTokens — 集中式色板定义，token-lint 文件级豁免 */
 
 :root {
   /* ── 中性基础层 ── */
@@ -37,6 +38,16 @@
   --cf-danger: #DC2626;
   --cf-danger-container: #FEE2E2;
   --cf-danger-glow: #F87171;
+
+  /* ── 扩展渐变/设备色（OD 中的硬编码色阶） ── */
+  --cf-accent-gradient-end: #E8900A;
+  --cf-accent-hover-start: #F7A81B;
+  --cf-accent-hover-end: #E88A08;
+  --cf-accent-secondary-gradient-end: #07B074;
+  --cf-accent-container-gradient-end: #FFF7D6;
+  --cf-danger-gradient-start: #EF4444;
+  --cf-device-frame-outer: #2a2a2a;
+  --cf-device-frame-inner: #1a1a1a;
 
   /* ── 字体 ── */
   --cf-font-display: system-ui, -apple-system, "PingFang SC", "Noto Sans SC",

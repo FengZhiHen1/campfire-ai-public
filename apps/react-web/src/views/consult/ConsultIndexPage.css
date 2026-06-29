@@ -38,14 +38,14 @@
 .crisis-badge.show {
   display: block; opacity: 1; transform: translateX(0) scale(1);
 }
-.crisis-badge.mild    { background: var(--cf-accent-secondary); color: #fff; }
+.crisis-badge.mild    { background: var(--cf-accent-secondary); color: var(--cf-surface); }
 .crisis-badge.moderate {
   background: linear-gradient(135deg, var(--cf-accent), var(--cf-accent-glow));
   color: var(--cf-accent-on);
 }
 .crisis-badge.severe  {
   background: linear-gradient(135deg, var(--cf-danger), var(--cf-danger-glow));
-  color: #fff;
+  color: var(--cf-surface);
   animation: severePulse 1s ease-in-out infinite;
   box-shadow: 0 0 16px rgba(220,38,38,0.3);
 }
@@ -165,7 +165,7 @@
 .btn:hover::after { opacity: 1; }
 .btn-primary {
   height: 52px; border-radius: var(--cf-radius-md);
-  background: linear-gradient(135deg, var(--cf-accent), #E8900A);
+  background: linear-gradient(135deg, var(--cf-accent), var(--cf-accent-gradient-end));
   color: var(--cf-accent-on);
   box-shadow: 0 4px 20px rgba(245,158,11,0.25), 0 1px 3px rgba(67,20,7,0.12);
   font-weight: 650;
@@ -173,7 +173,7 @@
 .btn-primary:hover {
   box-shadow: 0 6px 28px rgba(245,158,11,0.35), 0 2px 6px rgba(67,20,7,0.15);
   transform: translateY(-1px);
-  background: linear-gradient(135deg, #F7A81B, #E88A08);
+  background: linear-gradient(135deg, var(--cf-accent-hover-start), var(--cf-accent-hover-end));
 }
 .btn-primary:active { transform: scale(0.97) translateY(0); }
 .btn-primary:disabled {
@@ -426,11 +426,11 @@
   box-shadow: 0 2px 8px rgba(0,0,0,0.06);
 }
 .confidence-pill.high {
-  background: linear-gradient(135deg, var(--cf-accent-secondary), #07B074);
-  color: #fff;
+  background: linear-gradient(135deg, var(--cf-accent-secondary), var(--cf-accent-secondary-gradient-end));
+  color: var(--cf-surface);
 }
 .confidence-pill.medium {
-  background: linear-gradient(135deg, var(--cf-accent-container), #FFF7D6);
+  background: linear-gradient(135deg, var(--cf-accent-container), var(--cf-accent-container-gradient-end));
   color: var(--cf-accent-container-on);
 }
 .confidence-pill.low {
@@ -514,8 +514,8 @@
   display: none;
   align-items: center; justify-content: center; gap: 10px;
   height: 56px;
-  background: linear-gradient(135deg, var(--cf-danger), #EF4444);
-  color: #fff;
+  background: linear-gradient(135deg, var(--cf-danger), var(--cf-danger-gradient-start));
+  color: var(--cf-surface);
   font-size: 16px; font-weight: 650;
   cursor: pointer; border: none; width: 100%;
   border-radius: var(--cf-radius-lg) var(--cf-radius-lg) 0 0;
@@ -526,14 +526,14 @@
 }
 .escalation-bar.show { display: flex; }
 .escalation-bar:hover {
-  background: linear-gradient(135deg, #EF4444, #DC2626);
+  background: linear-gradient(135deg, var(--cf-danger-gradient-start), var(--cf-danger));
 }
 .escalation-bar:active { transform: scale(0.98); }
 @keyframes slideUp {
   from { transform: translateY(100%); opacity: 0; }
   to { transform: translateY(0); opacity: 1; }
 }
-.escalation-bar svg { width: 22px; height: 22px; stroke: #fff; fill: none; stroke-width: 2; }
+.escalation-bar svg { width: 22px; height: 22px; stroke: var(--cf-surface); fill: none; stroke-width: 2; }
 
 /* ═══ ERROR ═══ */
 .error-area {

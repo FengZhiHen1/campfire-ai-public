@@ -294,7 +294,7 @@
   border: none;
   border-radius: var(--cf-radius-pill);
   background: var(--cf-danger);
-  color: #fff;
+  color: var(--cf-surface);
   font-size: var(--cf-text-xs);
   font-weight: 600;
   cursor: pointer;
@@ -315,8 +315,8 @@
 }
 
 .cf-confidence--high {
-  background: linear-gradient(135deg, var(--cf-accent-secondary), #07B074);
-  color: #fff;
+  background: linear-gradient(135deg, var(--cf-accent-secondary), var(--cf-accent-secondary-gradient-end));
+  color: var(--cf-surface);
 }
 
 .cf-confidence--medium {
@@ -344,8 +344,8 @@
   justify-content: center;
   gap: 10px;
   height: 56px;
-  background: linear-gradient(135deg, var(--cf-danger), #EF4444);
-  color: #fff;
+  background: linear-gradient(135deg, var(--cf-danger), var(--cf-danger-gradient-start));
+  color: var(--cf-surface);
   font-size: var(--cf-text-base);
   font-weight: 650;
   cursor: pointer;

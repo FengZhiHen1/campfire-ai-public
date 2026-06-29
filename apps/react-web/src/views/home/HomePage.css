@@ -88,7 +88,7 @@
 .card-emergency .btn-consult {
   display: inline-flex; align-items: center; gap: 8px;
   padding: 12px 24px; border: none; border-radius: var(--cf-radius-md);
-  background: linear-gradient(135deg, var(--cf-accent), #E8900A);
+  background: linear-gradient(135deg, var(--cf-accent), var(--cf-accent-gradient-end));
   color: var(--cf-accent-on);
   font: 650 16px/1 system-ui, sans-serif; cursor: pointer;
   text-decoration: none;
@@ -98,7 +98,7 @@
 .card-emergency .btn-consult:hover {
   transform: translateY(-2px);
   box-shadow: 0 6px 28px rgba(245,158,11,0.35), 0 2px 6px rgba(67,20,7,0.15);
-  background: linear-gradient(135deg, #F7A81B, #E88A08);
+  background: linear-gradient(135deg, var(--cf-accent-hover-start), var(--cf-accent-hover-end));
 }
 .card-emergency .btn-consult:active { transform: scale(.97) translateY(0); }
 .btn-mic { width: 20px; height: 20px; flex-shrink: 0; }
