@@ -22,8 +22,17 @@ function generateDeviceId(): string {
 }
 
 function getOrCreateDeviceId(): string {
-  // 固定 mock device_id，与 scripts/seed_mock_profile.py 保持一致
-  return 'campfire-mock-device';
+  // MVP 评委体验阶段：后端已固定映射到预置 judge 账号，
+  // device_id 仅作为请求头占位，不再决定用户身份。
+  // 本地持久化一个稳定随机值即可，避免每次刷新变化。
+  try {
+    const stored = getItem(DEVICE_ID_KEY);
+    if (stored) return stored;
+  } catch { /* ignore */ }
+
+  const newId = generateDeviceId();
+  try { setItem(DEVICE_ID_KEY, newId); } catch { /* ignore */ }
+  return newId;
 }
 
 export const deviceManager = {
