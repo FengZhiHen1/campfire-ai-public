@@ -59,7 +59,10 @@ def _find_pid_by_port(port: int) -> int | None:
 
 
 def _kill_process_by_pid(pid: int) -> bool:
-    """强制终止指定 PID 的进程。跨平台兼容。
+    """强制终止指定 PID 的进程及其子进程。跨平台兼容。
+
+    Windows 下使用 taskkill /T 杀进程树，避免 uvicorn --reload 产生的
+    子进程残留继续占用端口。
 
     Args:
         pid: 要终止的进程 PID。
@@ -68,11 +71,23 @@ def _kill_process_by_pid(pid: int) -> bool:
         True 表示成功终止或进程已不存在。
     """
     if sys.platform == "win32":
+        # 先尝试杀进程树
+        result = subprocess.run(
+            ["taskkill", "/F", "/T", "/PID", str(pid)],
+            capture_output=True, timeout=10,
+        )
+        if result.returncode == 0:
+            return True
+        # 如果进程树不存在，尝试单独杀 PID
         result = subprocess.run(
             ["taskkill", "/F", "/PID", str(pid)],
             capture_output=True, timeout=10,
         )
-        return result.returncode == 0
+        if result.returncode == 0:
+            return True
+        # 若 taskkill 找不到进程（如 PID 已失效），认为无需处理
+        stderr = (result.stderr or b"").decode("gbk", errors="replace")
+        return "找不到" in stderr or "not found" in stderr.lower() or "不存在" in stderr
     else:
         import os
         import signal
@@ -89,10 +104,15 @@ def _resolve_port_conflict(port: int) -> None:
     若端口被占用，记录日志并终止占用进程，等待端口释放。
     端口空闲时无操作。
 
+    Windows 下可能出现"幽灵端口"：netstat 显示某 PID 在监听，但该 PID
+    实际已不存在，taskkill 无法终止。此时提示用户手动处理（通常需要
+    重启电脑或使用 TCPView 释放）。
+
     Args:
         port: 要检查的端口号。
     """
     max_attempts = 10
+    ghost_port_detected = False
     for attempt in range(1, max_attempts + 1):
         pid = _find_pid_by_port(port)
         if pid is None:
@@ -111,15 +131,28 @@ def _resolve_port_conflict(port: int) -> None:
             op_type="port_conflict",
             extra={"port": port, "pid": pid, "attempt": attempt},
         )
-        _kill_process_by_pid(pid)
+        killed = _kill_process_by_pid(pid)
+        if not killed:
+            ghost_port_detected = True
         time.sleep(0.5)
 
-    logger.warning(
-        service="scripts",
-        message=f"端口 {port} 经过 {max_attempts} 次尝试后仍然被占用，稍后可能启动失败",
-        op_type="port_conflict",
-        extra={"port": port},
-    )
+    if ghost_port_detected:
+        logger.error(
+            service="scripts",
+            message=(
+                f"端口 {port} 被无法终止的进程占用（可能是 Windows 幽灵端口）。"
+                f"请使用 TCPView 关闭该端口连接，或重启电脑后重试。"
+            ),
+            op_type="port_conflict",
+            extra={"port": port},
+        )
+    else:
+        logger.warning(
+            service="scripts",
+            message=f"端口 {port} 经过 {max_attempts} 次尝试后仍然被占用，稍后可能启动失败",
+            op_type="port_conflict",
+            extra={"port": port},
+        )
 
 
 def _kill_all_uvicorn_processes() -> None:
