@@ -56,12 +56,33 @@ async def _get_or_create_judge_user(
     phone = settings.JUDGE_PHONE
     real_name = settings.JUDGE_REAL_NAME
 
+    logger.info(
+        service="api-server",
+        message="judge_user_lookup_started",
+        extra={"judge_username": username},
+    )
+
     result = await session.execute(
         select(User).where(User.username == username)
     )
     existing = result.scalars().first()
     if existing is not None:
+        logger.info(
+            service="api-server",
+            message="judge_user_found",
+            extra={
+                "user_id": str(existing.id),
+                "username": existing.username,
+                "role": existing.role.value,
+            },
+        )
         return existing
+
+    logger.warning(
+        service="api-server",
+        message="judge_user_not_found_creating",
+        extra={"judge_username": username},
+    )
 
     for attempt in range(1, _MAX_RETRIES + 1):
         user = User(
@@ -121,8 +142,28 @@ async def get_anonymous_user(
     """
     device_id = request.headers.get("X-Device-Id", "judge")
 
+    logger.info(
+        service="api-server",
+        message="anonymous_auth_start",
+        extra={
+            "device_id": device_id,
+            "path": request.url.path,
+        },
+    )
+
     user = await _get_or_create_judge_user(db)
     await db.commit()
+
+    logger.info(
+        service="api-server",
+        message="anonymous_auth_return_judge",
+        extra={
+            "user_id": str(user.id),
+            "username": user.username,
+            "role": user.role.value,
+            "device_id": device_id,
+        },
+    )
 
     return {
         "sub": str(user.id),
