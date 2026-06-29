@@ -248,8 +248,8 @@ class ReviewWorkflowContract(ABC):
                 str(case.narrative_id), current, "pending_review"
             )
 
-        # 禁止自审
-        if case.author_id == reviewer_id:
+        # 禁止自审（author_id 为 UUID，reviewer_id 为字符串，统一转换为字符串比较）
+        if str(case.author_id) == reviewer_id:
             raise SelfReviewForbiddenError(
                 str(case.narrative_id), reviewer_id, str(case.author_id)
             )
