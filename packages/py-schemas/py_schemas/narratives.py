@@ -41,7 +41,7 @@ class NarrativeResponse(CampfireBaseModel):
     title: str
     narrative: str
     source_type: str
-    author_id: str
+    author_id: str | None = None
     status: CaseStatus
     extraction_status: str = "pending"
     extraction_error: str | None = None
@@ -60,7 +60,7 @@ class NarrativeListItem(CampfireBaseModel):
     narrative_id: str
     title: str
     source_type: str
-    author_id: str
+    author_id: str | None = None
     status: str
     card_count: int = 0
     created_at: datetime
