@@ -96,10 +96,13 @@ export const useProfileStore = create<ProfileStore>()((set, get) => ({
     const item: ProfileListItem = {
       profile_id: profile.profile_id,
       nickname: profile.nickname,
+      birth_date: profile.birth_date,
       age_range: profile.age_range,
       diagnosis_type: profile.diagnosis_type,
       primary_behavior: profile.primary_behavior,
       is_default: profile.is_default,
+      event_count: profile.event_count,
+      consult_count: profile.consult_count,
     };
     set((state) => ({
       list: [...state.list, item],

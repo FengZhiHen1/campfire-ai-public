@@ -204,6 +204,8 @@ export function useProfile(): UseProfileReturn {
         diagnosis_type: response.diagnosis_type,
         primary_behavior: response.primary_behavior,
         is_default: response.is_default,
+        event_count: response.event_count,
+        consult_count: response.consult_count,
       });
       store.setCurrentDetail(response);
       store.setSubmitState('idle');

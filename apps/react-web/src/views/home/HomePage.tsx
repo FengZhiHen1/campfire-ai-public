@@ -1,5 +1,13 @@
 import { Link } from 'react-router-dom';
 import { useHomePage, formatRelativeTime } from '@/logics/shared';
+import {
+  DIAGNOSIS_OPTIONS,
+  DIAGNOSIS_VALUES,
+  BEHAVIOR_OPTIONS,
+  BEHAVIOR_VALUES,
+} from '@/logics/profiles/constants';
+import type { DiagnosisType, ProfileBehaviorType } from '@campfire/ts-shared';
+import type { CrisisLevel } from '@/logics/consult/types';
 import PageContent from '@/views/_shared/layout/PageContent';
 import './HomePage.css';
 
@@ -7,6 +15,25 @@ import './HomePage.css';
 function getGreeting(): string {
   const h = new Date().getHours();
   return h >= 5 && h < 12 ? '早上好' : h >= 12 && h < 18 ? '下午好' : '晚上好';
+}
+
+function mapDiagnosis(value: DiagnosisType): string {
+  const idx = DIAGNOSIS_VALUES.indexOf(value);
+  return idx >= 0 ? DIAGNOSIS_OPTIONS[idx] : value;
+}
+
+function mapBehavior(value: ProfileBehaviorType): string {
+  const idx = BEHAVIOR_VALUES.indexOf(value);
+  return idx >= 0 ? BEHAVIOR_OPTIONS[idx] : value;
+}
+
+function mapCrisisLevel(value: CrisisLevel): string {
+  const map: Record<CrisisLevel, string> = {
+    mild: '轻度',
+    moderate: '中度',
+    severe: '重度',
+  };
+  return map[value] ?? value;
 }
 
 export default function HomePage() {
@@ -91,7 +118,11 @@ export default function HomePage() {
           </div>
           <p className="consult-summary">{latestConsult.behavior_description}</p>
           <div className="consult-meta">
-            <span className="consult-tag">{latestConsult.crisis_level}</span>
+            {(latestConsult.tags?.length ? latestConsult.tags : [mapCrisisLevel(latestConsult.crisis_level)])
+              .slice(0, 2)
+              .map((tag) => (
+                <span key={tag} className="consult-tag">{tag}</span>
+              ))}
           </div>
         </Link>
       ) : (
@@ -126,14 +157,21 @@ export default function HomePage() {
           <div className="profile-info">
             <div className="profile-name-row">
               <span className="profile-name">{profilesSafe[0].nickname}</span>
-              <span className="profile-tag age">{profilesSafe[0].age_range}</span>
-              <span className="profile-tag diag">{profilesSafe[0].diagnosis_type}</span>
+              <span className="profile-tag age">{profilesSafe[0].age_range} 岁</span>
+              <span className="profile-tag diag">{mapDiagnosis(profilesSafe[0].diagnosis_type)}</span>
               {profilesSafe[0].primary_behavior && (
-                <span className="profile-tag behavior">{profilesSafe[0].primary_behavior}</span>
+                <span className="profile-tag behavior">{mapBehavior(profilesSafe[0].primary_behavior)}</span>
               )}
             </div>
             <div className="profile-stats">
-              <span className="profile-stat">档案已建立</span>
+              {profilesSafe[0].event_count !== undefined && profilesSafe[0].consult_count !== undefined ? (
+                <>
+                  <span className="profile-stat">事件 <strong>{profilesSafe[0].event_count}</strong> 条</span>
+                  <span className="profile-stat">咨询 <strong>{profilesSafe[0].consult_count}</strong> 次</span>
+                </>
+              ) : (
+                <span className="profile-stat">档案已建立</span>
+              )}
             </div>
           </div>
           <span className="profile-link">查看</span>

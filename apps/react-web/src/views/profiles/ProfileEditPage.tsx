@@ -7,12 +7,11 @@ import {
   DIAGNOSIS_VALUES,
   BEHAVIOR_OPTIONS,
   BEHAVIOR_VALUES,
-  LANGUAGE_OPTIONS,
-  LANGUAGE_VALUES,
   SENSORY_FEATURE_TAGS,
   TRIGGER_TAGS,
 } from '@/logics/profiles';
-import type { ProfileCreate, ProfileUpdate } from '@/logics/profiles';
+import * as eventApi from '@/logics/profiles/services/eventApi';
+import type { ProfileCreate, ProfileUpdate, EventListItem } from '@/logics/profiles';
 import './ProfileEditPage.css';
 
 interface FormState {
@@ -20,10 +19,8 @@ interface FormState {
   birth_date: string;
   diagnosis_idx: number;
   behavior_idx: number;
-  language_idx: number;
   sensory_features: string[];
   triggers: string[];
-  medication_notes: string;
 }
 
 const EMPTY_FORM: FormState = {
@@ -31,10 +28,8 @@ const EMPTY_FORM: FormState = {
   birth_date: '',
   diagnosis_idx: 0,
   behavior_idx: 0,
-  language_idx: -1,
   sensory_features: [],
   triggers: [],
-  medication_notes: '',
 };
 
 function todayStr(): string {
@@ -42,16 +37,60 @@ function todayStr(): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
+function formatEventTime(iso: string): string {
+  const d = new Date(iso);
+  return `${d.getMonth() + 1}月${d.getDate()}日`;
+}
+
+function eventTitle(ev: EventListItem): string {
+  return `${formatEventTime(ev.event_time)} ${ev.behavior_type}`;
+}
+
+const CheckIcon = () => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+    <polyline points="20 6 9 17 4 12" />
+  </svg>
+);
+
+const UserIcon = () => (
+  <svg viewBox="0 0 48 48" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <circle cx="24" cy="18" r="8" />
+    <path d="M10 42v-2a10 10 0 0 1 10-10h8a10 10 0 0 1 10 10v2" />
+  </svg>
+);
+
+const CameraIcon = () => (
+  <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M12 2l-6 10-4-3" />
+  </svg>
+);
+
+const TagIcon = () => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z" />
+    <line x1="7" y1="7" x2="7.01" y2="7" />
+  </svg>
+);
+
 export default function ProfileEditPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { profiles, getProfile, createProfile, updateProfile } = useProfile();
+  const { profiles, getProfile, createProfile, updateProfile, deleteProfile } = useProfile();
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [customTrigger, setCustomTrigger] = useState('');
   const [openDD, setOpenDD] = useState<string | null>(null);
+
+  const [events, setEvents] = useState<EventListItem[]>([]);
+  const [eventsExpanded, setEventsExpanded] = useState(true);
+  const [eventsLoading, setEventsLoading] = useState(false);
+
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleteConfirm, setDeleteConfirm] = useState('');
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   const isEdit = Boolean(id);
   const existingFromList = id ? (profiles ?? []).find((p) => p.profile_id === id) : null;
@@ -67,10 +106,8 @@ export default function ProfileEditPage() {
           birth_date: p.birth_date ?? '',
           diagnosis_idx: Math.max(0, DIAGNOSIS_VALUES.indexOf(p.diagnosis_type)),
           behavior_idx: Math.max(0, BEHAVIOR_VALUES.indexOf(p.primary_behavior)),
-          language_idx: p.language_level ? LANGUAGE_VALUES.indexOf(p.language_level) : -1,
           sensory_features: p.sensory_features ?? [],
           triggers: p.triggers ?? [],
-          medication_notes: p.medication_notes ?? '',
         });
       })
       .catch(() => setError('加载档案失败'))
@@ -79,18 +116,36 @@ export default function ProfileEditPage() {
 
   useEffect(() => {
     if (!id || !existingFromList) return;
-    // 如果从列表已有数据，先用列表数据填充，避免白等
     setForm({
       nickname: existingFromList.nickname ?? '',
-      birth_date: '', // 列表项没有生日，需要重新拉详情
+      birth_date: '',
       diagnosis_idx: Math.max(0, DIAGNOSIS_VALUES.indexOf(existingFromList.diagnosis_type)),
       behavior_idx: Math.max(0, BEHAVIOR_VALUES.indexOf(existingFromList.primary_behavior)),
-      language_idx: -1,
       sensory_features: [],
       triggers: [],
-      medication_notes: '',
     });
   }, [id, existingFromList]);
+
+  useEffect(() => {
+    if (!id) return;
+    setEventsLoading(true);
+    eventApi
+      .listEvents(id)
+      .then((items) => setEvents(items))
+      .catch(() => setEvents([]))
+      .finally(() => setEventsLoading(false));
+  }, [id]);
+
+  useEffect(() => {
+    function closeDropdown(e: MouseEvent) {
+      const target = e.target as HTMLElement;
+      if (!target.closest('.dd-wrap')) {
+        setOpenDD(null);
+      }
+    }
+    document.addEventListener('click', closeDropdown);
+    return () => document.removeEventListener('click', closeDropdown);
+  }, []);
 
   const toggleArray = (field: 'sensory_features' | 'triggers', value: string) => {
     setForm((prev) => {
@@ -110,6 +165,16 @@ export default function ProfileEditPage() {
 
   const removeTrigger = (value: string) => {
     setForm((prev) => ({ ...prev, triggers: prev.triggers.filter((t) => t !== value) }));
+  };
+
+  const handleDeleteEvent = async (eventId: string) => {
+    if (!id) return;
+    try {
+      await eventApi.deleteEvent(id, eventId);
+      setEvents((prev) => prev.filter((ev) => ev.event_id !== eventId));
+    } catch {
+      setError('删除事件失败');
+    }
   };
 
   const validate = (): boolean => {
@@ -142,10 +207,8 @@ export default function ProfileEditPage() {
       birth_date: form.birth_date,
       diagnosis_type: DIAGNOSIS_VALUES[form.diagnosis_idx] as ProfileCreate['diagnosis_type'],
       primary_behavior: BEHAVIOR_VALUES[form.behavior_idx] as ProfileCreate['primary_behavior'],
-      language_level: form.language_idx >= 0 ? (LANGUAGE_VALUES[form.language_idx] as ProfileCreate['language_level']) : null,
       sensory_features: form.sensory_features,
       triggers: form.triggers,
-      medication_notes: form.medication_notes.trim() || null,
     };
 
     try {
@@ -163,6 +226,24 @@ export default function ProfileEditPage() {
     }
   };
 
+  const handleDeleteProfile = async () => {
+    if (!id) return;
+    if (deleteConfirm !== form.nickname) {
+      setDeleteError('昵称不匹配');
+      return;
+    }
+    setDeleting(true);
+    setDeleteError(null);
+    try {
+      await deleteProfile(id);
+      navigate('/profiles');
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : '删除失败';
+      setDeleteError(msg);
+      setDeleting(false);
+    }
+  };
+
   const renderDropdown = (
     ddId: string,
     label: string,
@@ -172,16 +253,23 @@ export default function ProfileEditPage() {
     onSelect: (idx: number) => void,
   ) => (
     <div className="field">
-      <label>{required && <span className="req">*</span>} {label}</label>
+      <label>
+        {required && <span className="req">*</span>} {label}
+      </label>
       <div className={`dd-wrap${openDD === ddId ? ' open' : ''}`}>
-        <button className="dd-btn" type="button" onClick={() => setOpenDD(openDD === ddId ? null : ddId)}>{value || '请选择'}</button>
+        <button className="dd-btn" type="button" onClick={() => setOpenDD(openDD === ddId ? null : ddId)}>
+          {value || '请选择'}
+        </button>
         <div className="dd-menu">
           {options.map((opt, idx) => (
             <button
               key={opt}
               type="button"
-              className="dd-opt"
-              onClick={() => { onSelect(idx); setOpenDD(null); }}
+              className={`dd-opt${opt === value ? ' selected' : ''}`}
+              onClick={() => {
+                onSelect(idx);
+                setOpenDD(null);
+              }}
             >
               {opt}
             </button>
@@ -191,16 +279,20 @@ export default function ProfileEditPage() {
     </div>
   );
 
-  const selectedLanguage = form.language_idx >= 0 ? LANGUAGE_OPTIONS[form.language_idx] : '请选择（可选）';
+  const pageTitle = useMemo(() => (isEdit ? '编辑档案' : '创建档案'), [isEdit]);
 
   if (loading) {
     return (
       <>
         <div className="nav">
-          <button className="nav-cancel" onClick={() => navigate(-1)}>取消</button>
-          <span className="nav-title">{isEdit ? '编辑档案' : '创建档案'}</span>
+          <button className="nav-cancel" onClick={() => navigate(-1)}>
+            取消
+          </button>
+          <span className="nav-title">{pageTitle}</span>
         </div>
-        <PageContent><div style={{ textAlign: 'center', padding: 40, color: 'var(--cf-muted)' }}>加载中…</div></PageContent>
+        <PageContent>
+          <div style={{ textAlign: 'center', padding: 40, color: 'var(--cf-muted)' }}>加载中…</div>
+        </PageContent>
       </>
     );
   }
@@ -208,109 +300,202 @@ export default function ProfileEditPage() {
   return (
     <>
       <div className="nav">
-        <button className="nav-cancel" onClick={() => navigate(-1)}>取消</button>
-        <span className="nav-title">{isEdit ? '编辑档案' : '创建档案'}</span>
-        <button className="nav-save" onClick={() => void handleSave()} disabled={saving}>
-          {saving ? '保存中…' : '保存'}
+        <button className="nav-cancel" onClick={() => navigate(-1)}>
+          取消
+        </button>
+        <span
+          className="nav-title"
+          onDoubleClick={() => {
+            if (!isEdit) return;
+            setDeleteConfirm('');
+            setDeleteError(null);
+            setDeleteOpen(true);
+          }}
+        >
+          {pageTitle}
+        </span>
+        <button className="nav-save" onClick={() => void handleSave()} disabled={saving} aria-label="保存">
+          {saving ? (
+            <span className="save-spinner" />
+          ) : (
+            <CheckIcon />
+          )}
         </button>
       </div>
-      <PageContent>
+
+      <PageContent className="profile-edit-content">
         {error && <div className="form-error">{error}</div>}
 
-        <div className="field">
-          <label><span className="req">*</span> 昵称</label>
-          <input
-            value={form.nickname}
-            onChange={(e) => setForm((p) => ({ ...p, nickname: e.target.value }))}
-            placeholder="如：小宝"
-            maxLength={20}
-          />
-        </div>
+        <div className="tip">带 * 的项目为必填，保存后可在事件记录中继续补充。</div>
 
-        <div className="field">
-          <label><span className="req">*</span> 出生日期</label>
-          <input
-            type="date"
-            value={form.birth_date}
-            max={todayStr()}
-            onChange={(e) => setForm((p) => ({ ...p, birth_date: e.target.value }))}
-          />
-        </div>
+        <div className="card">
+          <div className="avatar-row">
+            <div className="avatar">
+              <UserIcon />
+              <div className="avatar-badge">
+                <CameraIcon />
+              </div>
+            </div>
+          </div>
 
-        <div className="row">
-          {renderDropdown('diagnosis', '诊断类型', true, DIAGNOSIS_OPTIONS[form.diagnosis_idx], DIAGNOSIS_OPTIONS, (idx) =>
-            setForm((p) => ({ ...p, diagnosis_idx: idx }))
+          <div className="field">
+            <label>
+              <span className="req">*</span> 档案昵称
+            </label>
+            <input
+              value={form.nickname}
+              onChange={(e) => setForm((p) => ({ ...p, nickname: e.target.value }))}
+              placeholder="如：小明"
+              maxLength={20}
+            />
+          </div>
+
+          <div className="field">
+            <label>
+              <span className="req">*</span> 出生日期
+            </label>
+            <input
+              type="date"
+              value={form.birth_date}
+              max={todayStr()}
+              onChange={(e) => setForm((p) => ({ ...p, birth_date: e.target.value }))}
+            />
+          </div>
+
+          {renderDropdown(
+            'diagnosis',
+            '诊断类型',
+            true,
+            DIAGNOSIS_OPTIONS[form.diagnosis_idx],
+            DIAGNOSIS_OPTIONS,
+            (idx) => setForm((p) => ({ ...p, diagnosis_idx: idx })),
           )}
-          {renderDropdown('behavior', '主要行为类型', true, BEHAVIOR_OPTIONS[form.behavior_idx], BEHAVIOR_OPTIONS, (idx) =>
-            setForm((p) => ({ ...p, behavior_idx: idx }))
+
+          {renderDropdown(
+            'behavior',
+            '主要行为类型',
+            true,
+            BEHAVIOR_OPTIONS[form.behavior_idx],
+            BEHAVIOR_OPTIONS,
+            (idx) => setForm((p) => ({ ...p, behavior_idx: idx })),
           )}
         </div>
 
-        {renderDropdown('language', '语言水平', false, selectedLanguage, LANGUAGE_OPTIONS, (idx) =>
-          setForm((p) => ({ ...p, language_idx: idx }))
+        <div className="section-title">
+          <TagIcon />
+          <span>感觉特征（可多选）</span>
+        </div>
+        <div className="tag-row">
+          {SENSORY_FEATURE_TAGS.map((tag) => (
+            <button
+              key={tag}
+              type="button"
+              className={`t-chip${form.sensory_features.includes(tag) ? ' selected' : ''}`}
+              onClick={() => toggleArray('sensory_features', tag)}
+            >
+              {tag}
+            </button>
+          ))}
+        </div>
+
+        <div className="section-title">
+          <TagIcon />
+          <span>触发标签</span>
+        </div>
+        <div className="tag-row">
+          {TRIGGER_TAGS.map((tag) => (
+            <button
+              key={tag}
+              type="button"
+              className={`t-chip${form.triggers.includes(tag) ? ' selected' : ''}`}
+              onClick={() => toggleArray('triggers', tag)}
+            >
+              {tag}
+            </button>
+          ))}
+        </div>
+
+        <div className="add-tag">
+          <input
+            value={customTrigger}
+            onChange={(e) => setCustomTrigger(e.target.value)}
+            placeholder="自定义标签…"
+            maxLength={10}
+            onKeyDown={(e) => e.key === 'Enter' && addCustomTrigger()}
+          />
+          <button type="button" onClick={addCustomTrigger}>
+            添加
+          </button>
+        </div>
+
+        {form.triggers.filter((t) => !TRIGGER_TAGS.includes(t)).length > 0 && (
+          <div className="tag-row custom-tags">
+            {form.triggers
+              .filter((t) => !TRIGGER_TAGS.includes(t))
+              .map((t) => (
+                <button key={t} type="button" className="t-chip selected" onClick={() => removeTrigger(t)}>
+                  {t}
+                </button>
+              ))}
+          </div>
         )}
 
-        <div className="field">
-          <label>感官特征</label>
-          <div className="chip-grid">
-            {SENSORY_FEATURE_TAGS.map((tag) => (
-              <button
-                key={tag}
-                type="button"
-                className={`chip-btn${form.sensory_features.includes(tag) ? ' selected' : ''}`}
-                onClick={() => toggleArray('sensory_features', tag)}
-              >
-                {tag}
+        {isEdit && (
+          <>
+            <div className="events-header">
+              <span>事件记录（共 {events.length} 条）</span>
+              <button type="button" onClick={() => setEventsExpanded((v) => !v)}>
+                {eventsExpanded ? '收起' : '展开'}
               </button>
-            ))}
-          </div>
-        </div>
-
-        <div className="field">
-          <label>常见触发因素</label>
-          <div className="chip-grid">
-            {TRIGGER_TAGS.map((tag) => (
-              <button
-                key={tag}
-                type="button"
-                className={`chip-btn${form.triggers.includes(tag) ? ' selected' : ''}`}
-                onClick={() => toggleArray('triggers', tag)}
-              >
-                {tag}
-              </button>
-            ))}
-          </div>
-          {form.triggers.filter((t) => !TRIGGER_TAGS.includes(t)).length > 0 && (
-            <div className="tag-list">
-              {form.triggers.filter((t) => !TRIGGER_TAGS.includes(t)).map((t) => (
-                <span key={t} className="tag">
-                  {t}
-                  <button type="button" onClick={() => removeTrigger(t)}>×</button>
-                </span>
-              ))}
             </div>
-          )}
-          <div className="custom-tag-row">
+            {eventsExpanded && (
+              <div className="event-list">
+                {eventsLoading ? (
+                  <div className="event-empty">加载中…</div>
+                ) : events.length === 0 ? (
+                  <div className="event-empty">暂无事件记录</div>
+                ) : (
+                  events.map((ev) => (
+                    <div key={ev.event_id} className="event-row">
+                      <span>{eventTitle(ev)}</span>
+                      <button type="button" className="del" onClick={() => void handleDeleteEvent(ev.event_id)}>
+                        删除
+                      </button>
+                    </div>
+                  ))
+                )}
+              </div>
+            )}
+          </>
+        )}
+      </PageContent>
+
+      {deleteOpen && (
+        <div className="modal open">
+          <div className="modal-bg" onClick={() => setDeleteOpen(false)} />
+          <div className="modal-box">
+            <h3>确认删除</h3>
+            <p>输入档案昵称以确认删除</p>
             <input
-              value={customTrigger}
-              onChange={(e) => setCustomTrigger(e.target.value)}
-              placeholder="输入自定义触发因素"
-              maxLength={10}
+              value={deleteConfirm}
+              onChange={(e) => {
+                setDeleteConfirm(e.target.value);
+                if (deleteError) setDeleteError(null);
+              }}
+              placeholder="输入昵称"
             />
-            <button type="button" className="btn btn-s" onClick={addCustomTrigger}>添加</button>
+            {deleteError && <div className="modal-error">{deleteError}</div>}
+            <div className="modal-acts">
+              <button type="button" className="modal-cancel" onClick={() => setDeleteOpen(false)}>
+                取消
+              </button>
+              <button type="button" className="modal-del" onClick={() => void handleDeleteProfile()} disabled={deleting}>
+                {deleting ? '删除中…' : '删除'}
+              </button>
+            </div>
           </div>
         </div>
-
-        <div className="field">
-          <label>用药/就医备注</label>
-          <textarea
-            value={form.medication_notes}
-            onChange={(e) => setForm((p) => ({ ...p, medication_notes: e.target.value }))}
-            placeholder="如正在服用的药物、过敏史、就诊医院等（可选）"
-            rows={3}
-          />
-        </div>
-      </PageContent>
+      )}
     </>
   );
 }

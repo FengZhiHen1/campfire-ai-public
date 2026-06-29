@@ -47,7 +47,7 @@ export function isCustomTrigger(value: string): boolean {
 }
 
 /** 诊断类型选项（展示用） */
-export const DIAGNOSIS_OPTIONS: readonly string[] = ['ASD', '疑似ASD', '其他发育障碍'];
+export const DIAGNOSIS_OPTIONS: readonly string[] = ['ASD（自闭症谱系）', '疑似ASD', '其他发育障碍'];
 
 /** 诊断类型后端枚举值（按索引对应 DIAGNOSIS_OPTIONS） */
 export const DIAGNOSIS_VALUES: readonly string[] = [
@@ -56,15 +56,15 @@ export const DIAGNOSIS_VALUES: readonly string[] = [
   DiagnosisType.OTHER_DEVELOPMENTAL_DISORDER,
 ];
 
-/** 主要行为类型选项（展示用） */
-export const BEHAVIOR_OPTIONS: readonly string[] = ['刻板行为', '情绪崩溃', '自伤行为', '攻击行为', '社交退缩', '多动'];
+/** 主要行为类型选项（展示用）——顺序贴近 OD */
+export const BEHAVIOR_OPTIONS: readonly string[] = ['自伤行为', '攻击行为', '情绪崩溃', '刻板行为', '社交退缩', '多动'];
 
 /** 主要行为类型后端枚举值（按索引对应 BEHAVIOR_OPTIONS） */
 export const BEHAVIOR_VALUES: readonly string[] = [
-  ProfileBehaviorType.STEREOTYPY,
-  ProfileBehaviorType.MELTDOWN,
   ProfileBehaviorType.SELF_INJURY,
   ProfileBehaviorType.AGGRESSION,
+  ProfileBehaviorType.MELTDOWN,
+  ProfileBehaviorType.STEREOTYPY,
   ProfileBehaviorType.SOCIAL_WITHDRAWAL,
   ProfileBehaviorType.HYPERACTIVITY,
 ];

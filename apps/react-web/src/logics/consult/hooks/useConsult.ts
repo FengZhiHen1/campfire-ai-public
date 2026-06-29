@@ -58,9 +58,9 @@ export function useConsult(): UseConsultReturn {
   // 派生状态（computed selectors）
   // ==========================================================================
 
-  /** 输入是否有效：行为类型 ≥1 且描述去除首尾空白后非空 */
+  /** 输入是否有效：行为类型 ≥1 或描述去除首尾空白后非空（满足其一即可提交） */
   const isInputValid: boolean = useMemo(
-    () => (behaviorTypeSelection ?? []).length >= 1 && (behaviorDescription ?? '').trim() !== '',
+    () => (behaviorTypeSelection ?? []).length >= 1 || (behaviorDescription ?? '').trim() !== '',
     [behaviorTypeSelection, behaviorDescription],
   );
 
