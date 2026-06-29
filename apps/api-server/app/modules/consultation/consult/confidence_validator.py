@@ -240,13 +240,26 @@ class ConfidenceValidatorImpl(BaseConfidenceValidator):
             "source_count": len(input.source_list),
             "degradation_note": degradation_note,
         }
-        background_tasks.add_task(
-            _persist_validation_result,
-            request_id=input.request_id,
-            confidence_score=confidence_score,
-            verdict=verdict.value if hasattr(verdict, 'value') else str(verdict),
-            validation_detail=validation_detail,
-        )
+        verdict_str = verdict.value if hasattr(verdict, 'value') else str(verdict)
+        if background_tasks is not None:
+            background_tasks.add_task(
+                _persist_validation_result,
+                request_id=input.request_id,
+                confidence_score=confidence_score,
+                verdict=verdict_str,
+                validation_detail=validation_detail,
+            )
+        else:
+            # 在非 FastAPI 请求上下文（如 SSE 后台任务）中直接创建后台任务
+            import asyncio
+            asyncio.create_task(
+                _persist_validation_result(
+                    request_id=input.request_id,
+                    confidence_score=confidence_score,
+                    verdict=verdict_str,
+                    validation_detail=validation_detail,
+                )
+            )
 
         return ConfidenceValidationOutput(
             confidence_score=confidence_score,
@@ -306,18 +319,65 @@ async def _persist_validation_result(
     verdict: str,
     validation_detail: dict[str, Any],
 ) -> None:
-    """异步持久化校验结果（占位实现）。"""
+    """异步持久化校验结果到 consultations 表。
+
+    按原始 request_id 回填 confidence_score 和 validation_verdict。
+    写入失败仅记录日志，不阻塞主流程。
+    """
+    from uuid import UUID
+
+    from app.core.dependencies.auth_dependencies import _get_session_factory
+    from py_db.repositories.consult_history_repository import ConsultHistoryRepository
+
+    try:
+        request_uuid = UUID(request_id)
+    except ValueError:
+        logger.warning(
+            service=_SERVICE,
+            message="validation_persist_invalid_request_id",
+            extra={"request_id": request_id},
+        )
+        return
+
     try:
         logger.info(
             service=_SERVICE,
             message="validation_persist_started",
             extra={"request_id": request_id, "confidence_score": confidence_score, "verdict": verdict},
         )
+
+        repository = ConsultHistoryRepository()
+        factory = _get_session_factory()
+        async with factory() as db:
+            record = await repository.update_validation_result(
+                session=db,
+                request_id=request_uuid,
+                confidence_score=confidence_score,
+                validation_verdict=verdict,
+            )
+            if record is not None:
+                await db.commit()
+                logger.info(
+                    service=_SERVICE,
+                    message="validation_persist_success",
+                    extra={
+                        "request_id": request_id,
+                        "record_id": str(record.id),
+                        "confidence_score": confidence_score,
+                        "verdict": verdict,
+                    },
+                )
+            else:
+                logger.warning(
+                    service=_SERVICE,
+                    message="validation_persist_record_not_found",
+                    extra={"request_id": request_id},
+                )
     except Exception as exc:
         logger.warning(
             service=_SERVICE,
             message="validation_persist_failed",
-            extra={"request_id": request_id, "error": str(exc)},
+            extra={"request_id": request_id, "error": str(exc), "error_type": type(exc).__name__},
         )
 
 
