@@ -29,7 +29,7 @@ import type {
  * 应急咨询编排逻辑的对外接口 Hook。
  * CSLT-07 应急咨询界面通过此 Hook 获取全部咨询状态与操作方法。
  *
- * @returns UseConsultReturn - 包含只读状态和操作方法的完整接口（20 个字段/方法）
+ * @returns UseConsultReturn - 包含只读状态和操作方法的完整接口（21 个字段/方法）
  *
  * @sideEffects
  *   - 不直接产生副作用（纯 selector 封装）
@@ -53,6 +53,7 @@ export function useConsult(): UseConsultReturn {
   const selectedProfileId = useConsultStore((s) => s.selectedProfileId);
   const referencedCases = useConsultStore((s) => s.referencedCases);
   const crisisLevel = useConsultStore((s) => s.crisisLevel);
+  const confidenceScore = useConsultStore((s) => s.confidenceScore);
 
   // ==========================================================================
   // 派生状态（computed selectors）
@@ -96,6 +97,7 @@ export function useConsult(): UseConsultReturn {
       selectedProfileId,
       referencedCases,
       crisisLevel,
+      confidenceScore,
 
       // 操作方法
       startConsult: store.getState().startConsult,
@@ -125,7 +127,7 @@ export function useConsult(): UseConsultReturn {
       sessionState, behaviorTypeSelection, behaviorDescription, messages,
       planSections, accumulatedText, ticketGuide, errorCode,
       isInputValid, isConsultActive, emotionLevel, selectedProfileId,
-      referencedCases, crisisLevel,
+      referencedCases, crisisLevel, confidenceScore,
     ],
   );
 }

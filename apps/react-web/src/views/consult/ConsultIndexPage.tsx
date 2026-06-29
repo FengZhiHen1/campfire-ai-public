@@ -26,14 +26,14 @@ export default function ConsultIndexPage() {
   return (
     <>
       {/* Navigation Bar */}
-      <div className="consult-nav">
+      <div className="consult-nav" data-testid="consult-navbar">
         <span className="nav-title">应急咨询</span>
-        <span className={crisisBadgeClass}>
+        <span className={crisisBadgeClass} data-testid="consult-navbar-crisis-badge">
           {consult.crisisLevel ? CRISIS_LABELS[consult.crisisLevel] : ''}
         </span>
       </div>
 
-      <PageContent>
+      <PageContent className="consult-page-content">
         {consult.sessionState === 'idle' && (
           <IdlePanel onStartConsult={consult.startConsult} />
         )}
@@ -54,6 +54,7 @@ export default function ConsultIndexPage() {
             planSections={consult.planSections}
             referencedCases={consult.referencedCases}
             crisisLevel={consult.crisisLevel}
+            confidenceScore={consult.confidenceScore}
             onStartNew={consult.startNewConsult}
             onGoToTicket={consult.goToTicket}
             onShowEscalation={() => setShowEscalation(true)}
@@ -88,6 +89,7 @@ export default function ConsultIndexPage() {
       {(consult.ticketGuide?.show || showEscalation) && (
         <button
           className="escalation-bar show"
+          data-testid="consult-escalation-bar"
           onClick={consult.goToTicket}
         >
           <svg viewBox="0 0 24 24">

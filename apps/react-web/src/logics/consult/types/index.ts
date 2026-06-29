@@ -346,7 +346,7 @@ export class StateTransitionError extends Error {
 
 /**
  * useConsult Hook 的完整返回值类型。
- * CSLT-08 对 CSLT-07 的唯一输出接口，包含 20 个字段/方法。
+ * CSLT-08 对 CSLT-07 的唯一输出接口，包含 21 个字段/方法。
  *
  * 设计依据：CSLT-08 落地规范 §1.4
  * 消费方：CSLT-07（应急咨询界面）
@@ -381,6 +381,8 @@ export interface UseConsultReturn {
   referencedCases: ReferencedCase[];
   /** 危机等级 */
   crisisLevel?: CrisisLevel;
+  /** 综合置信度评分 0.00-1.00（后端 SSE done 事件下发） */
+  confidenceScore?: number;
 
   // ---------- 操作方法（CSLT-07 绑定到按钮/事件） ----------
   /** 开始新咨询：idle -> selecting_behavior */
