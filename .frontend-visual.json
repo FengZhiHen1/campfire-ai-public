@@ -1,0 +1,232 @@
+{
+  "version": "1.0.0",
+  "openDesign": {
+    "projectPath": "E:/Project/Open_Source/open-design/.od/projects/bc2c38d0-d284-4132-a3c2-ba256dae2c38",
+    "designSystemFile": "DESIGN.md",
+    "tokensFile": "design-tokens.json",
+    "manifestFile": "manifest.json"
+  },
+  "pages": [
+    {
+      "id": "auth",
+      "name": "登录注册",
+      "functionDoc": "docs/功能设计/功能模块全拆解.md#01-用户认证与授权",
+      "skeletonDoc": null,
+      "odArtifact": null,
+      "odArtifactPath": null,
+      "status": "pending"
+    },
+    {
+      "id": "consult",
+      "name": "应急咨询",
+      "functionDoc": "docs/功能设计/原始材料/篝火智答-智能应急咨询-原始设计意图_v0.md",
+      "odArtifact": null,
+      "odArtifactPath": null,
+      "status": "od-designed",
+      "views": [
+        {
+          "id": "consult-index",
+          "name": "主咨询页",
+          "functionDoc": "docs/功能设计/功能模块全拆解.md#02-智能应急咨询",
+          "skeletonDoc": "docs/pages/应急咨询-主咨询页-页面骨架.md",
+          "odArtifact": "consult.html",
+          "odArtifactPath": "E:/Project/Open_Source/open-design/.od/projects/bc2c38d0-d284-4132-a3c2-ba256dae2c38/consult.html",
+          "status": "od-designed"
+        },
+        {
+          "id": "consult-detail",
+          "name": "咨询详情",
+          "functionDoc": "docs/功能设计/功能模块全拆解.md#02-智能应急咨询",
+          "skeletonDoc": "docs/pages/应急咨询-咨询详情-页面骨架.md",
+          "odArtifact": "consult-detail.html",
+          "odArtifactPath": "E:/Project/Open_Source/open-design/.od/projects/bc2c38d0-d284-4132-a3c2-ba256dae2c38/consult-detail.html",
+          "status": "od-designed"
+        },
+        {
+          "id": "consult-history",
+          "name": "咨询历史",
+          "functionDoc": "docs/功能设计/功能模块全拆解.md#02-智能应急咨询",
+          "skeletonDoc": "docs/pages/应急咨询-咨询历史-页面骨架.md",
+          "odArtifact": "history.html",
+          "odArtifactPath": "E:/Project/Open_Source/open-design/.od/projects/bc2c38d0-d284-4132-a3c2-ba256dae2c38/history.html",
+          "status": "od-designed"
+        },
+        {
+          "id": "consult-select",
+          "name": "行为选择",
+          "functionDoc": "docs/功能设计/功能模块全拆解.md#02-智能应急咨询",
+          "skeletonDoc": null,
+          "odArtifact": "select.html",
+          "odArtifactPath": "E:/Project/Open_Source/open-design/.od/projects/bc2c38d0-d284-4132-a3c2-ba256dae2c38/select.html",
+          "status": "od-designed"
+        }
+      ]
+    },
+    {
+      "id": "profiles",
+      "name": "档案管理",
+      "functionDoc": "docs/功能设计/原始材料/篝火智答-个性化档案库-原始设计意图_v0.md",
+      "odArtifact": null,
+      "odArtifactPath": null,
+      "status": "od-designed",
+      "views": [
+        {
+          "id": "profiles-index",
+          "name": "档案列表",
+          "functionDoc": "docs/功能设计/功能模块全拆解.md#03-个性化档案",
+          "skeletonDoc": "docs/pages/档案管理-档案列表-页面骨架.md",
+          "odArtifact": "profiles.html",
+          "odArtifactPath": "E:/Project/Open_Source/open-design/.od/projects/bc2c38d0-d284-4132-a3c2-ba256dae2c38/profiles.html",
+          "status": "od-designed"
+        },
+        {
+          "id": "profiles-edit",
+          "name": "档案编辑",
+          "functionDoc": "docs/功能设计/功能模块全拆解.md#03-个性化档案",
+          "skeletonDoc": "docs/pages/档案管理-档案编辑-页面骨架.md",
+          "odArtifact": "profile-edit.html",
+          "odArtifactPath": "E:/Project/Open_Source/open-design/.od/projects/bc2c38d0-d284-4132-a3c2-ba256dae2c38/profile-edit.html",
+          "status": "od-designed"
+        }
+      ]
+    },
+    {
+      "id": "cases",
+      "name": "案例管理",
+      "functionDoc": "docs/功能设计/原始材料/篝火智答-真实案例库管理-原始设计意图_v0.md",
+      "odArtifact": null,
+      "odArtifactPath": null,
+      "status": "od-designed",
+      "views": [
+        {
+          "id": "cases-index",
+          "name": "案例列表",
+          "functionDoc": "docs/功能设计/功能模块全拆解.md#04-真实案例库管理",
+          "skeletonDoc": "docs/pages/案例管理-案例列表-页面骨架.md",
+          "odArtifact": "cases.html",
+          "odArtifactPath": "E:/Project/Open_Source/open-design/.od/projects/bc2c38d0-d284-4132-a3c2-ba256dae2c38/cases.html",
+          "status": "od-designed"
+        },
+        {
+          "id": "cases-detail",
+          "name": "案例详情",
+          "functionDoc": "docs/功能设计/功能模块全拆解.md#04-真实案例库管理",
+          "skeletonDoc": "docs/pages/案例管理-案例详情-页面骨架.md",
+          "odArtifact": "case-detail.html",
+          "odArtifactPath": "E:/Project/Open_Source/open-design/.od/projects/bc2c38d0-d284-4132-a3c2-ba256dae2c38/case-detail.html",
+          "status": "od-designed"
+        },
+        {
+          "id": "cases-review",
+          "name": "案例审核",
+          "functionDoc": "docs/功能设计/功能模块全拆解.md#04-真实案例库管理",
+          "skeletonDoc": "docs/pages/案例管理-案例审核-页面骨架.md",
+          "odArtifact": "case-review.html",
+          "odArtifactPath": "E:/Project/Open_Source/open-design/.od/projects/bc2c38d0-d284-4132-a3c2-ba256dae2c38/case-review.html",
+          "status": "od-designed"
+        },
+        {
+          "id": "cases-card-detail",
+          "name": "案例卡片详情",
+          "functionDoc": "docs/功能设计/功能模块全拆解.md#04-真实案例库管理",
+          "skeletonDoc": "docs/pages/案例管理-案例卡片详情-页面骨架.md",
+          "odArtifact": "case-card.html",
+          "odArtifactPath": "E:/Project/Open_Source/open-design/.od/projects/bc2c38d0-d284-4132-a3c2-ba256dae2c38/case-card.html",
+          "status": "od-designed"
+        },
+        {
+          "id": "cases-extraction-result",
+          "name": "AI提取结果",
+          "functionDoc": "docs/功能设计/功能模块全拆解.md#04-真实案例库管理",
+          "skeletonDoc": "docs/pages/案例管理-AI提取结果-页面骨架.md",
+          "odArtifact": "case-extract.html",
+          "odArtifactPath": "E:/Project/Open_Source/open-design/.od/projects/bc2c38d0-d284-4132-a3c2-ba256dae2c38/case-extract.html",
+          "status": "od-designed"
+        },
+        {
+          "id": "cases-narrative-submit",
+          "name": "叙事提交",
+          "functionDoc": "docs/功能设计/功能模块全拆解.md#04-真实案例库管理",
+          "skeletonDoc": "docs/pages/案例管理-叙事提交-页面骨架.md",
+          "odArtifact": "case-narrative.html",
+          "odArtifactPath": "E:/Project/Open_Source/open-design/.od/projects/bc2c38d0-d284-4132-a3c2-ba256dae2c38/case-narrative.html",
+          "status": "od-designed"
+        }
+      ]
+    },
+    {
+      "id": "tickets",
+      "name": "工单管理",
+      "functionDoc": "docs/功能设计/原始材料/篝火智答-人工兜底通道-原始设计意图_v0.md",
+      "odArtifact": null,
+      "odArtifactPath": null,
+      "status": "pending",
+      "views": [
+        {
+          "id": "tickets-index",
+          "name": "工单列表",
+          "functionDoc": "docs/功能设计/功能模块全拆解.md#05-人工兜底通道",
+          "skeletonDoc": null,
+          "odArtifact": null,
+          "odArtifactPath": null,
+          "status": "pending"
+        },
+        {
+          "id": "tickets-detail",
+          "name": "工单详情",
+          "functionDoc": "docs/功能设计/功能模块全拆解.md#05-人工兜底通道",
+          "skeletonDoc": "docs/pages/工单管理-工单详情-页面骨架.md",
+          "odArtifact": "ticket.html",
+          "odArtifactPath": "E:/Project/Open_Source/open-design/.od/projects/bc2c38d0-d284-4132-a3c2-ba256dae2c38/ticket.html",
+          "status": "od-designed"
+        },
+        {
+          "id": "tickets-create",
+          "name": "创建工单",
+          "functionDoc": "docs/功能设计/功能模块全拆解.md#05-人工兜底通道",
+          "skeletonDoc": null,
+          "odArtifact": null,
+          "odArtifactPath": null,
+          "status": "pending"
+        }
+      ]
+    },
+    {
+      "id": "home",
+      "name": "首页",
+      "functionDoc": "docs/功能设计/功能模块全拆解.md",
+      "skeletonDoc": "docs/pages/首页-页面骨架.md",
+      "odArtifact": "home.html",
+      "odArtifactPath": "E:/Project/Open_Source/open-design/.od/projects/bc2c38d0-d284-4132-a3c2-ba256dae2c38/home.html",
+      "status": "od-designed"
+    },
+    {
+      "id": "knowledge",
+      "name": "科普查阅",
+      "functionDoc": "docs/功能设计/原始材料/篝火智答-科普查阅-原始设计意图_v0.md",
+      "odArtifact": null,
+      "odArtifactPath": null,
+      "status": "pending",
+      "views": [
+        {
+          "id": "knowledge-index",
+          "name": "科普首页",
+          "functionDoc": "docs/功能设计/功能模块全拆解.md#06-科普查阅",
+          "skeletonDoc": null,
+          "odArtifact": null,
+          "odArtifactPath": null,
+          "status": "pending"
+        },
+        {
+          "id": "knowledge-detail",
+          "name": "文章详情",
+          "functionDoc": "docs/功能设计/功能模块全拆解.md#06-科普查阅",
+          "skeletonDoc": null,
+          "odArtifact": null,
+          "odArtifactPath": null,
+          "status": "pending"
+        }
+      ]
+    }
+  ]
+}
