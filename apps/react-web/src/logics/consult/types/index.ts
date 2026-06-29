@@ -369,7 +369,7 @@ export interface UseConsultReturn {
   ticketGuide: TicketGuide;
   /** 当前错误码 */
   errorCode?: ConsultErrorCode;
-  /** 输入是否有效（行为类型 ≥1 且描述非空） */
+  /** 输入是否有效（行为类型 ≥1 或描述非空，满足其一即可提交） */
   isInputValid: boolean;
   /** 是否处于活跃咨询中（禁止新提交） */
   isConsultActive: boolean;

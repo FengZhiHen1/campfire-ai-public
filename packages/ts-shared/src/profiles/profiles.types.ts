@@ -58,16 +58,25 @@ export interface ProfileResponse {
   caregiver_id: string;
   created_at: string;              // ISO 8601 datetime
   updated_at: string;              // ISO 8601 datetime
+  /** 关联事件记录数量（首页统计展示，可选） */
+  event_count?: number;
+  /** 关联咨询记录数量（首页统计展示，可选） */
+  consult_count?: number;
 }
 
 /** 档案列表条目 */
 export interface ProfileListItem {
   profile_id: string;
   nickname: string | null;
+  birth_date?: string;              // YYYY-MM-DD（列表展示出生日期，可选）
   age_range: AgeRange;
   diagnosis_type: DiagnosisType;
   primary_behavior: ProfileBehaviorType;
   is_default: boolean;
+  /** 关联事件记录数量（首页统计展示，可选） */
+  event_count?: number;
+  /** 关联咨询记录数量（首页统计展示，可选） */
+  consult_count?: number;
 }
 
 // === 事件记录 ===
@@ -124,6 +133,11 @@ export interface EventListItem {
   event_time: string;              // ISO 8601 datetime
   behavior_type: string;
   severity_level: string;
+  setting?: string | null;
+  trigger_description?: string;
+  manifestation?: string;
+  intervention_tried?: string;
+  intervention_result?: string;
   has_professional_note: boolean;
   created_at: string;              // ISO 8601 datetime
 }
