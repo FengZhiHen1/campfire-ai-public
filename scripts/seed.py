@@ -4,14 +4,16 @@
 本脚本为本地开发/评委评审环境提供唯一的数据初始化入口：
 1. 创建固定的评委用户（role=expert）
 2. 为评委用户创建一份内容丰富的默认患者档案
-3. 注入 3 个真实访谈提取案例（L1 叙事 + L2 卡片）
-4. 通过真实嵌入模型生成 1024 维向量并写入 pgvector
+3. 为档案补充合理的事件记录
+4. 注入 3 个真实访谈提取案例（L1 叙事 + L2 卡片）
+5. 通过真实嵌入模型生成 1024 维向量并写入 pgvector
 
 用法:
     uv run scripts/seed.py              # 幂等注入全部种子数据
     uv run scripts/seed.py --clean      # 清空种子数据后重新注入
     uv run scripts/seed.py --users      # 只注入评委用户
-    uv run scripts/seed.py --profile    # 只注入个人档案
+    uv run scripts/seed.py --profile    # 只注入个人档案（含事件记录）
+    uv run scripts/seed.py --events     # 只注入事件记录
     uv run scripts/seed.py --cases      # 只注入案例库
 
 设计约束:
@@ -46,7 +48,7 @@ from py_db.models.auth import User  # noqa: E402
 from py_db.models.case_card import CaseCard  # noqa: E402
 from py_db.models.case_chunks import CaseChunk  # noqa: E402
 from py_db.models.case_narrative import CaseNarrative  # noqa: E402
-from py_db.models.profiles import Profile  # noqa: E402
+from py_db.models.profiles import EventLog, Profile  # noqa: E402
 from py_db.models.base import Base  # noqa: E402
 from py_logger import logger  # noqa: E402
 from py_rag.embedding import encode_text  # noqa: E402
@@ -86,6 +88,130 @@ _PROFILE_TRIGGERS = [
     "任务中断",
     "社交压力",
     "感官过载",
+]
+
+# 事件记录配置（用于个人档案的事件历史）
+_SEED_EVENTS: list[dict[str, Any]] = [
+    {
+        "behavior_type": "情绪崩溃",
+        "severity_level": "重度",
+        "setting": "家庭",
+        "event_time": datetime(2026, 5, 3, 19, 30, tzinfo=timezone.utc),
+        "trigger_description": "晚餐时被弟弟突然抢走最喜欢的蓝色餐盘，随后被要求\"让着弟弟\"，触发强烈不公感和失控感。",
+        "manifestation": "尖叫持续约 15 分钟，摔椅子，以头撞墙 3 次，拒绝任何人靠近。",
+        "intervention_tried": "家长先保持 2 米距离安静等待，待声音降低后递上 weighted blanket（重力毯），15 分钟后逐渐平静。",
+        "intervention_result": "约 30 分钟后自行走到房间角落坐下，喝了水，当晚没有再发作。",
+    },
+    {
+        "behavior_type": "刻板行为",
+        "severity_level": "轻度",
+        "setting": "家庭",
+        "event_time": datetime(2026, 5, 6, 7, 15, tzinfo=timezone.utc),
+        "trigger_description": "上学出门前发现平时穿的灰色袜子正在清洗，只能穿另一双颜色相近但纹理不同的袜子。",
+        "manifestation": "反复把袜子脱掉又穿上，原地小跳，嘴里重复\"不对、不对\"，但无攻击或自伤。",
+        "intervention_tried": "妈妈拿出备用的一模一样的新袜子，并提前一晚把第二天衣物放在固定位置。",
+        "intervention_result": "换上相同袜子后 3 分钟内平静出门，当天上学未迟到。",
+    },
+    {
+        "behavior_type": "社交退缩",
+        "severity_level": "中度",
+        "setting": "学校",
+        "event_time": datetime(2026, 5, 10, 10, 0, tzinfo=timezone.utc),
+        "trigger_description": "体育课上被分组与不太熟悉的同学搭档，对方大声催促他快点跑。",
+        "manifestation": "僵在原地，低头看地板，拒绝回应同学叫喊，课后躲在厕所隔间直到上课铃响。",
+        "intervention_tried": "班主任没有当众询问，而是课后单独陪他走回教室，用简单句子确认他是否害怕。",
+        "intervention_result": "当天下午能够回到课堂，但当天回家后反复说\"明天不想去学校\"。",
+    },
+    {
+        "behavior_type": "情绪崩溃",
+        "severity_level": "中度",
+        "setting": "公共场合",
+        "event_time": datetime(2026, 5, 14, 16, 45, tzinfo=timezone.utc),
+        "trigger_description": "超市收银台附近有人推着手推车发出持续金属摩擦声，同时广播突然响起促销音乐。",
+        "manifestation": "捂耳朵蹲下，大声哭喊，试图挣脱家长的手往出口跑。",
+        "intervention_tried": "爸爸立即带他离开收银区，到停车场安静角落，允许他蹲在地上直到情绪平复，没有讲道理。",
+        "intervention_result": "约 10 分钟后停止哭喊，愿意被牵着走回车上。回家后 2 小时内对声音刺激特别敏感。",
+    },
+    {
+        "behavior_type": "自伤行为",
+        "severity_level": "重度",
+        "setting": "家庭",
+        "event_time": datetime(2026, 5, 18, 20, 10, tzinfo=timezone.utc),
+        "trigger_description": "做作业时连续两道应用题无法理解，家长提高了音量说\"这么简单你怎么不会\"。",
+        "manifestation": "用拳头连续打自己头部，额头出现红印，边打边说\"我很笨\"。",
+        "intervention_tried": "妈妈立刻停止作业要求，把他带到安静房间，用冷毛巾敷额头，只用简短语句陪伴，不追问原因。",
+        "intervention_result": "40 分钟后完全平静，额头红印消退。当晚没有继续做作业，第二天再试时配合度明显提高。",
+    },
+    {
+        "behavior_type": "攻击行为",
+        "severity_level": "中度",
+        "setting": "学校",
+        "event_time": datetime(2026, 5, 22, 11, 20, tzinfo=timezone.utc),
+        "trigger_description": "午餐排队时被后方同学插队并撞到肩膀。",
+        "manifestation": "转身推了对方一下，随后把餐盘摔在地上，未造成同学受伤但引起围观。",
+        "intervention_tried": "老师将两人分开，没有立即批评，而是等他吃完饭后（由老师陪同在安静角落）用社交故事回顾\"排队被挤可以怎么说\"。",
+        "intervention_result": "当天放学时能向妈妈说出\"他挤我，我很生气\"。之后一周未再出现类似推搡。",
+    },
+    {
+        "behavior_type": "情绪崩溃",
+        "severity_level": "轻度",
+        "setting": "家庭",
+        "event_time": datetime(2026, 5, 26, 18, 0, tzinfo=timezone.utc),
+        "trigger_description": " favorite 的动画片突然被家长暂停，因为要先接电话。",
+        "manifestation": "大声抗议\"不行！\"，在地上打滚 2 分钟，但没有打自己或扔东西。",
+        "intervention_tried": "家长在接电话前使用计时器预告\"电话 2 分钟，然后继续\"，并在挂电话后立即恢复播放。",
+        "intervention_result": "抗议 2 分钟后自行坐回沙发，动画恢复后情绪完全恢复。",
+    },
+    {
+        "behavior_type": "多动",
+        "severity_level": "轻度",
+        "setting": "学校",
+        "event_time": datetime(2026, 6, 2, 9, 30, tzinfo=timezone.utc),
+        "trigger_description": "晨读课需要静坐 20 分钟听同学轮流朗读，环境比平时更安静。",
+        "manifestation": "频繁离开座位、摇晃椅子、用手敲桌子，被老师提醒两次。",
+        "intervention_tried": "老师允许他站在教室后方靠窗位置听课，并给他一个可捏的减压球。",
+        "intervention_result": "能够完成晨读内容，没有干扰其他同学。接下来三天主动要求站在后面。",
+    },
+    {
+        "behavior_type": "社交退缩",
+        "severity_level": "轻度",
+        "setting": "公共场合",
+        "event_time": datetime(2026, 6, 8, 14, 20, tzinfo=timezone.utc),
+        "trigger_description": "在小区游乐场遇到同学打招呼，对方大声叫他的名字。",
+        "manifestation": "立刻转身背对同学，拉着家长的手要求离开，没有语言回应。",
+        "intervention_tried": "家长先带他走远几步，然后用简短句子示范\"你可以挥挥手\"，不强迫他当场回应。",
+        "intervention_result": "回家后主动提到那个同学的名字，第二天在学校能够远距离挥手。",
+    },
+    {
+        "behavior_type": "情绪崩溃",
+        "severity_level": "中度",
+        "setting": "家庭",
+        "event_time": datetime(2026, 6, 15, 17, 40, tzinfo=timezone.utc),
+        "trigger_description": "生日当天期待的蛋糕款式临时买不到，家长买了一个外观相近但装饰不同的替代品。",
+        "manifestation": "哭喊\"这不是我要的\"，把自己关在房间里，用力关门，但没有自伤。",
+        "intervention_tried": "家长没有强行开门，而是在门外说明\"明天我们一起去做你想要的那个\"，并留下一张画有目标蛋糕的纸。",
+        "intervention_result": "20 分钟后开门出来，虽然 still 不高兴但愿意一起唱生日歌。次日按约定补做了目标蛋糕。",
+    },
+    {
+        "behavior_type": "刻板行为",
+        "severity_level": "中度",
+        "setting": "学校",
+        "event_time": datetime(2026, 6, 20, 8, 50, tzinfo=timezone.utc),
+        "trigger_description": "周一升旗仪式改到室内进行，常规流程发生变化。",
+        "manifestation": "反复念叨\"要去操场、要去操场\"，拒绝进入室内礼堂，站在走廊不动。",
+        "intervention_tried": "老师提前一天用可视化流程图告知变化，当天允许他站在礼堂门口最靠近操地的位置。",
+        "intervention_result": "5 分钟后愿意进入礼堂，但全程站在门边。第二天同样流程配合度提高。",
+    },
+    {
+        "behavior_type": "情绪崩溃",
+        "severity_level": "重度",
+        "setting": "公共场合",
+        "event_time": datetime(2026, 6, 25, 11, 10, tzinfo=timezone.utc),
+        "trigger_description": "商场里遇到促销活动，突然响起的 loudspeaker 和大量人群同时聚集。",
+        "manifestation": "捂耳朵尖叫，试图往扶梯方向冲，家长拉住时他咬了自己手臂一口。",
+        "intervention_tried": "家长立即抱起他（虽然体重较大）快步离开商场，到车内安静环境，播放他熟悉的轻音乐。",
+        "intervention_result": "约 25 分钟后完全平静，手臂留下轻微牙印。当天回家后对任何外出活动都表示拒绝。",
+    },
 ]
 
 # 值映射：提取输出 -> 数据库存储
@@ -873,6 +999,49 @@ async def _ensure_profile(session: AsyncSession, caregiver_id: UUID) -> UUID:
     return profile.profile_id
 
 
+async def _ensure_events(session: AsyncSession, profile_id: UUID, recorded_by: UUID) -> int:
+    """为指定档案补充合理的事件记录，返回新增条数。"""
+    created_count = 0
+
+    for event_data in _SEED_EVENTS:
+        # 幂等：按 profile_id + event_time + behavior_type 检查
+        existing_result = await session.execute(
+            select(EventLog).where(
+                EventLog.profile_id == profile_id,
+                EventLog.event_time == event_data["event_time"],
+                EventLog.behavior_type == event_data["behavior_type"],
+            )
+        )
+        if existing_result.scalars().first() is not None:
+            continue
+
+        event = EventLog(
+            event_id=uuid.uuid4(),
+            profile_id=profile_id,
+            recorded_by=recorded_by,
+            recorded_by_role="parent",
+            event_time=event_data["event_time"],
+            behavior_type=event_data["behavior_type"],
+            severity_level=event_data["severity_level"],
+            setting=event_data["setting"],
+            trigger_description=event_data["trigger_description"],
+            manifestation=event_data["manifestation"],
+            intervention_tried=event_data["intervention_tried"],
+            intervention_result=event_data["intervention_result"],
+            is_professional=False,
+            tags=[],
+        )
+        session.add(event)
+        created_count += 1
+
+    await session.commit()
+    if created_count > 0:
+        print(f"[OK] 已创建 {created_count} 条事件记录")
+    else:
+        print("[SKIP] 事件记录已存在")
+    return created_count
+
+
 async def _clear_seed_data(session: AsyncSession) -> None:
     """清空所有种子案例（按 is_seed 标记或标题匹配）及其向量切片、卡片、叙事。"""
     seed_titles = [case["title"] for case in _SEED_CASES]
@@ -1087,12 +1256,19 @@ async def main() -> int:
         action="store_true",
         help="只注入案例库",
     )
+    parser.add_argument(
+        "--events",
+        action="store_true",
+        help="只注入个人档案事件记录",
+    )
     args = parser.parse_args()
 
     # 解析模式：默认全部；指定任意子开关时只执行对应部分
-    run_users = args.users or args.profile or not (args.users or args.profile or args.cases)
-    run_profile = args.profile or not (args.users or args.profile or args.cases)
-    run_cases = args.cases or not (args.users or args.profile or args.cases)
+    has_specific_mode = args.users or args.profile or args.cases or args.events
+    run_users = args.users or args.profile or args.events or not has_specific_mode
+    run_profile = args.profile or args.events or not has_specific_mode
+    run_events = args.profile or args.events or not has_specific_mode
+    run_cases = args.cases or not has_specific_mode
 
     settings = get_settings()
     database_url = str(settings.DATABASE_URL)
@@ -1127,9 +1303,28 @@ async def main() -> int:
                 )
                 return 1
 
+        profile_id: UUID | None = None
         if run_profile:
             print("[INFO] 确保默认患者档案存在...")
-            await _ensure_profile(session, judge_user_id)
+            profile_id = await _ensure_profile(session, judge_user_id)
+
+        if run_events:
+            if profile_id is None:
+                result = await session.execute(
+                    select(Profile.profile_id).where(
+                        Profile.caregiver_id == judge_user_id,
+                        Profile.nickname == PROFILE_NICKNAME,
+                    )
+                )
+                profile_id = result.scalar_one_or_none()
+                if profile_id is None:
+                    print(
+                        "[ERROR] 未找到默认患者档案，请先运行 --profile 或完整注入",
+                        file=sys.stderr,
+                    )
+                    return 1
+            print("[INFO] 确保事件记录存在...")
+            await _ensure_events(session, profile_id, judge_user_id)
 
         if run_cases:
             print(f"[INFO] 导入 {len(_SEED_CASES)} 个案例...")
