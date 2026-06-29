@@ -92,27 +92,34 @@ def _resolve_port_conflict(port: int) -> None:
     Args:
         port: 要检查的端口号。
     """
-    pid = _find_pid_by_port(port)
-    if pid is None:
-        return
+    max_attempts = 10
+    for attempt in range(1, max_attempts + 1):
+        pid = _find_pid_by_port(port)
+        if pid is None:
+            if attempt > 1:
+                logger.info(
+                    service="scripts",
+                    message=f"端口 {port} 已释放",
+                    op_type="port_conflict",
+                    extra={"port": port},
+                )
+            return
 
-    logger.info(
-        service="scripts",
-        message=f"端口 {port} 被 PID {pid} 占用，正在终止...",
-        op_type="port_conflict",
-        extra={"port": port, "pid": pid},
-    )
-    _kill_process_by_pid(pid)
-    time.sleep(0.5)
-
-    # 二次确认
-    if _find_pid_by_port(port) is not None:
-        logger.warning(
+        logger.info(
             service="scripts",
-            message=f"端口 {port} 仍然被占用，稍后可能启动失败",
+            message=f"端口 {port} 被 PID {pid} 占用，正在终止...",
             op_type="port_conflict",
-            extra={"port": port},
+            extra={"port": port, "pid": pid, "attempt": attempt},
         )
+        _kill_process_by_pid(pid)
+        time.sleep(0.5)
+
+    logger.warning(
+        service="scripts",
+        message=f"端口 {port} 经过 {max_attempts} 次尝试后仍然被占用，稍后可能启动失败",
+        op_type="port_conflict",
+        extra={"port": port},
+    )
 
 
 def _kill_all_uvicorn_processes() -> None:
