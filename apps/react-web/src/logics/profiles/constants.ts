@@ -46,7 +46,28 @@ export function isCustomTrigger(value: string): boolean {
   return !TRIGGER_TAGS.includes(value);
 }
 
-/** 诊断类型选项（展示用） */
+/** 感官特征展示文案映射（持久化值以后端为准，展示文案贴近 OD） */
+export const SENSORY_FEATURE_LABELS: Readonly<Record<string, string>> = {
+  [SensoryFeature.AUDITORY_SENSITIVITY]: '声音敏感',
+  [SensoryFeature.VISUAL_SENSITIVITY]: '光线敏感',
+  [SensoryFeature.TACTILE_SENSITIVITY]: '触觉敏感',
+  [SensoryFeature.GUSTATORY_SENSITIVITY]: '味觉敏感',
+  [SensoryFeature.VESTIBULAR_SEEKING]: '前庭寻求',
+  [SensoryFeature.PROPRIOCEPTIVE_SEEKING]: '本体觉寻求',
+};
+
+/** 触发因素展示文案映射（持久化值以后端为准，展示文案贴近 OD） */
+export const TRIGGER_LABELS: Readonly<Record<string, string>> = {
+  [Trigger.NOISE]: '人群嘈杂',
+  [Trigger.ENVIRONMENTAL_CHANGE]: '环境切换',
+  [Trigger.TASK_INTERRUPTION]: '任务拒绝',
+  [Trigger.STRANGER]: '陌生人',
+  [Trigger.SOCIAL_PRESSURE]: '社交压力',
+  [Trigger.SENSORY_OVERLOAD]: '感官过载',
+  [Trigger.PHYSICAL_DISCOMFORT]: '身体不适',
+};
+
+/** 诊断类型选项（展示用，用于编辑页下拉） */
 export const DIAGNOSIS_OPTIONS: readonly string[] = ['ASD（自闭症谱系）', '疑似ASD', '其他发育障碍'];
 
 /** 诊断类型后端枚举值（按索引对应 DIAGNOSIS_OPTIONS） */
@@ -55,6 +76,13 @@ export const DIAGNOSIS_VALUES: readonly string[] = [
   DiagnosisType.SUSPECTED_ASD,
   DiagnosisType.OTHER_DEVELOPMENTAL_DISORDER,
 ];
+
+/** 诊断类型短标签（用于首页/列表页 tag） */
+export const DIAGNOSIS_SHORT_LABELS: Readonly<Record<string, string>> = {
+  [DiagnosisType.ASD]: 'ASD',
+  [DiagnosisType.SUSPECTED_ASD]: '疑似ASD',
+  [DiagnosisType.OTHER_DEVELOPMENTAL_DISORDER]: '其他',
+};
 
 /** 主要行为类型选项（展示用）——顺序贴近 OD */
 export const BEHAVIOR_OPTIONS: readonly string[] = ['自伤行为', '攻击行为', '情绪崩溃', '刻板行为', '社交退缩', '多动'];

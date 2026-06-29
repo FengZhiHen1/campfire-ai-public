@@ -8,7 +8,9 @@ import {
   BEHAVIOR_OPTIONS,
   BEHAVIOR_VALUES,
   SENSORY_FEATURE_TAGS,
+  SENSORY_FEATURE_LABELS,
   TRIGGER_TAGS,
+  TRIGGER_LABELS,
 } from '@/logics/profiles';
 import * as eventApi from '@/logics/profiles/services/eventApi';
 import type { ProfileCreate, ProfileUpdate, EventListItem } from '@/logics/profiles';
@@ -393,7 +395,7 @@ export default function ProfileEditPage() {
               className={`t-chip${form.sensory_features.includes(tag) ? ' selected' : ''}`}
               onClick={() => toggleArray('sensory_features', tag)}
             >
-              {tag}
+              {SENSORY_FEATURE_LABELS[tag] ?? tag}
             </button>
           ))}
         </div>
@@ -410,7 +412,7 @@ export default function ProfileEditPage() {
               className={`t-chip${form.triggers.includes(tag) ? ' selected' : ''}`}
               onClick={() => toggleArray('triggers', tag)}
             >
-              {tag}
+              {TRIGGER_LABELS[tag] ?? tag}
             </button>
           ))}
         </div>

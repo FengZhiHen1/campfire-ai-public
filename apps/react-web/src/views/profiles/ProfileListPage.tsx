@@ -3,7 +3,11 @@ import { Link } from 'react-router-dom';
 import { useProfile } from '@/logics/profiles';
 import { useQuickRecord } from '@/logics/profiles/hooks/useQuickRecord';
 import { listEvents } from '@/logics/profiles/services/eventApi';
-import { BEHAVIOR_OPTIONS, BEHAVIOR_VALUES } from '@/logics/profiles/constants';
+import {
+  BEHAVIOR_OPTIONS,
+  BEHAVIOR_VALUES,
+  DIAGNOSIS_SHORT_LABELS,
+} from '@/logics/profiles/constants';
 import type { EventListItem } from '@campfire/ts-shared';
 import PageContent from '@/views/_shared/layout/PageContent';
 import './ProfileListPage.css';
@@ -191,7 +195,7 @@ export default function ProfileListPage() {
                       <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
                         <path d="M2 4h2l1 8h6l1-8h2" />
                       </svg>
-                      {activeProfile.diagnosis_type}
+                      {DIAGNOSIS_SHORT_LABELS[activeProfile.diagnosis_type] ?? activeProfile.diagnosis_type}
                     </span>
                     <span className="info-tag r">
                       <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
