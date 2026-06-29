@@ -71,8 +71,8 @@ export function useCaseDetailPage(): UseCaseDetailPageReturn {
   };
 
   const handleCardClick = (cardId: string) => {
-    if (!narrativeId) return;
-    navigate(`/cases/extraction/${narrativeId}?cardId=${cardId}`);
+    // 从案例库查看已入库的干预卡片，跳转到「干预卡片」详情页
+    navigate(`/cases/card/${cardId}`);
   };
 
   const handleRetry = useCallback(() => {
