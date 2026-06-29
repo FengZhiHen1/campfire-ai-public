@@ -282,3 +282,17 @@
 .section-header:nth-of-type(2) { animation-delay: .24s; }
 .create-card { transition: transform .2s cubic-bezier(.2,0,0,1), box-shadow .2s cubic-bezier(.2,0,0,1); }
 .create-card:hover { transform: translateY(-2px); box-shadow: 0 4px 16px rgba(28,25,23,.06); }
+
+/* ── Judge Notice Modal ── */
+.notice-overlay { position: fixed; inset: 0; z-index: 100; display: flex; align-items: center; justify-content: center; padding: 24px; background: rgba(28,25,23,0.55); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); animation: noticeFade .25s ease both; }
+@keyframes noticeFade { from { opacity: 0; } to { opacity: 1; } }
+.notice-box { width: 100%; max-width: 360px; padding: 28px 24px 24px; background: var(--cf-surface); border-radius: var(--cf-radius-lg); box-shadow: var(--cf-elev-deep); text-align: center; animation: noticeUp .3s cubic-bezier(.2,0,0,1) .08s both; }
+@keyframes noticeUp { from { opacity: 0; transform: translateY(16px) scale(0.96); } to { opacity: 1; transform: translateY(0) scale(1); } }
+.notice-icon { width: 52px; height: 52px; margin: 0 auto 14px; border-radius: 50%; background: var(--cf-accent-container); display: grid; place-items: center; }
+.notice-icon svg { width: 26px; height: 26px; color: var(--cf-accent); }
+.notice-box h3 { font-size: 18px; font-weight: 650; color: var(--cf-fg); margin-bottom: 12px; }
+.notice-box p { font-size: 14px; line-height: 1.7; color: var(--cf-fg-2); margin-bottom: 10px; }
+.notice-box p strong { color: var(--cf-accent-container-on); font-weight: 600; }
+.notice-btn { width: 100%; height: 44px; margin-top: 8px; border: none; border-radius: var(--cf-radius-md); background: var(--cf-accent); color: var(--cf-accent-on); font: 600 15px/1 system-ui, sans-serif; cursor: pointer; transition: background var(--cf-motion-fast), transform .1s; }
+.notice-btn:hover { background: var(--cf-accent-hover-start); }
+.notice-btn:active { transform: scale(0.98); }

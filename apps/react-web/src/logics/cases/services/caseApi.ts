@@ -209,12 +209,15 @@ export async function listCases(
     if (behaviorType !== undefined) queryData.behavior_type = behaviorType;
     if (scope !== undefined) queryData.scope = scope;
 
+    const queryString = Object.entries(queryData)
+      .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(String(v))}`)
+      .join('&');
+
     const res = await httpClient.request<PaginatedResponse<CaseListItem>>(
       withSignal(
         {
-          url: BASE_PATH,
+          url: `${BASE_PATH}?${queryString}`,
           method: 'GET',
-          data: queryData,
         },
         requestSignal,
       ),
@@ -283,12 +286,12 @@ export async function fetchReviewQueue(
   }
   const { signal: requestSignal, cleanup } = createRequestSignal(signal);
   try {
+    const queryString = `page=${page}&page_size=${pageSize}`;
     const res = await httpClient.request<PaginatedResponse<ReviewQueueItem>>(
       withSignal(
         {
-          url: `${BASE_PATH}/review-queue`,
+          url: `${BASE_PATH}/review-queue?${queryString}`,
           method: 'GET',
-          data: { page, page_size: pageSize },
         },
         requestSignal,
       ),
