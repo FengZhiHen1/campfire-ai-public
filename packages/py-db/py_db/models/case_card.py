@@ -192,6 +192,7 @@ class CaseCard(Base, TimestampMixin):
         ),
         nullable=True,
         default=None,
+        index=True,
         comment="向量化索引状态（pending/processing/indexed/indexing_failed）",
     )
     indexed_at: Mapped[datetime | None] = mapped_column(

@@ -41,12 +41,12 @@ class CaseReview(Base, TimestampMixin):
         default=uuid.uuid4,
         comment="UUID v4 主键",
     )
-    case_id: Mapped[str] = mapped_column(
-        String(20),
-        ForeignKey("cases.case_id", ondelete="CASCADE"),
+    case_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("case_cards.card_id", ondelete="CASCADE"),
         nullable=False,
         index=True,
-        comment="关联的案例标识（FK → cases.case_id）",
+        comment="关联的 L2 卡片标识（FK → case_cards.card_id）",
     )
     review_round: Mapped[int] = mapped_column(
         Integer,
@@ -70,9 +70,10 @@ class CaseReview(Base, TimestampMixin):
         default=None,
         comment="审核意见（驳回时必填，>=10 字）",
     )
-    reviewer_id: Mapped[str] = mapped_column(
-        String(36),
-        nullable=False,
+    reviewer_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
         comment="审核人标识（UUID）",
     )
     reviewed_at: Mapped[datetime] = mapped_column(
@@ -126,20 +127,22 @@ class ReviewAuditLog(Base):
         autoincrement=True,
         comment="BIGSERIAL 自增主键，记录顺序不可伪造",
     )
-    case_id: Mapped[str] = mapped_column(
-        String(20),
+    case_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("case_cards.card_id", ondelete="CASCADE"),
         nullable=False,
         index=True,
-        comment="关联的案例标识",
+        comment="关联的 L2 卡片标识",
     )
     action: Mapped[str] = mapped_column(
         String(40),
         nullable=False,
         comment="审计动作类型",
     )
-    operator_id: Mapped[str] = mapped_column(
-        String(36),
-        nullable=False,
+    operator_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
         comment="操作人 UUID",
     )
     operator_role: Mapped[str] = mapped_column(

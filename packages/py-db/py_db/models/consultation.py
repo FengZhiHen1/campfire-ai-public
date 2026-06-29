@@ -16,7 +16,7 @@ import uuid
 from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import Boolean, DateTime, Float, Index, Integer, String, Text
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Index, Integer, String, Text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.sql import func
@@ -70,13 +70,13 @@ class ConsultationHistory(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     request_id: Mapped[uuid.UUID] = mapped_column(
         nullable=False,
         unique=True,
-        index=True,
         comment="幂等键，由 CSLT-08 编排层在咨询开始前生成 UUID v4",
     )
     user_id: Mapped[uuid.UUID] = mapped_column(
-        nullable=False,
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
         index=True,
-        comment="本次咨询的发起家属用户 UUID（FK 到 users 表，不定义外键约束）",
+        comment="本次咨询的发起家属用户 UUID（FK 到 users 表）",
     )
     crisis_level: Mapped[str] = mapped_column(
         String(10),

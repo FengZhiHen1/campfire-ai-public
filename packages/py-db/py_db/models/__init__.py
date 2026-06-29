@@ -10,8 +10,9 @@ Usage:
 
 from py_db.models.auth import User
 from py_db.models.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
+from py_db.models.case_card import CaseCard
 from py_db.models.case_chunks import CaseChunk
-from py_db.models.case_model import Case
+from py_db.models.case_narrative import CaseNarrative
 from py_db.models.consultation import ConsultationHistory
 from py_db.models.crisis_keyword import CrisisKeyword
 from py_db.models.profiles import Profile, TeacherLink
@@ -20,8 +21,9 @@ from py_db.models.review_models import CaseReview, ReviewAuditLog
 __all__ = [
     "Base",
     "User",
-    "Case",
+    "CaseCard",
     "CaseChunk",
+    "CaseNarrative",
     "ConsultationHistory",
     "CrisisKeyword",
     "Profile",

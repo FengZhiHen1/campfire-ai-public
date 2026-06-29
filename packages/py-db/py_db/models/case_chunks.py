@@ -33,7 +33,7 @@ class CaseChunk(Base, UUIDPrimaryKeyMixin, TimestampMixin):
 
     Attributes:
         id: UUID v4 主键。
-        case_id: 关联的案例标识（FK → cases.id）。
+        card_id: 关联的 L2 卡片标识（FK → case_cards.card_id）。
         chunk_text: 完整四要素拼接文本。
         chunk_type: 切片所属的案例四要素类型（scene/behavior/intervention/result）。
         metadata: JSONB 结构化元数据（behavior_type, age_range, severity, evidence_level, status, vectorized, case_title, case_created_at, source, applicable_tags）。
@@ -43,17 +43,10 @@ class CaseChunk(Base, UUIDPrimaryKeyMixin, TimestampMixin):
 
     __tablename__ = "case_chunks"
 
-    case_id: Mapped[str] = mapped_column(
-        String(20),
-        ForeignKey("cases.case_id", ondelete="CASCADE"),
-        nullable=False,
-        index=True,
-        comment="关联的案例标识，FK → cases.case_id（deprecated: 迁移到 card_id）",
-    )
-    card_id: Mapped[uuid.UUID | None] = mapped_column(
+    card_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("case_cards.card_id", ondelete="CASCADE"),
-        nullable=True,
+        nullable=False,
         index=True,
         comment="关联的 L2 卡片标识，FK → case_cards.card_id",
     )
@@ -80,7 +73,7 @@ class CaseChunk(Base, UUIDPrimaryKeyMixin, TimestampMixin):
 
     def __repr__(self) -> str:
         return (
-            f"<CaseChunk(id={self.id!r}, case_id={self.case_id!r})>"
+            f"<CaseChunk(id={self.id!r}, card_id={self.card_id!r})>"
         )
 
 

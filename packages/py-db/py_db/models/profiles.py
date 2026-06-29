@@ -22,12 +22,12 @@ from __future__ import annotations
 import uuid
 from datetime import date, datetime
 
-from sqlalchemy import Boolean, Date, DateTime, Index, Integer, String, Text
+from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Index, Integer, String, Text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
 
-from py_db.models.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
+from py_db.models.base import Base, TimestampMixin
 
 
 # ===========================================================================
@@ -66,6 +66,7 @@ class Profile(Base):
         comment="UUID v4 主键",
     )
     caregiver_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
         comment="所属家属用户 UUID",
@@ -149,7 +150,7 @@ class Profile(Base):
 # ===========================================================================
 
 
-class TeacherLink(Base, UUIDPrimaryKeyMixin, TimestampMixin):
+class TeacherLink(Base, TimestampMixin):
     """家属-老师关联关系 ORM 模型。
 
     映射 teacher_links 表，记录家属（档案拥有者）与老师/专家之间的
@@ -157,9 +158,9 @@ class TeacherLink(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     档案的权限基础。
 
     Attributes:
-        link_id: UUID v4 主键（由 UUIDPrimaryKeyMixin 提供）。
-        profile_id: 目标个人档案 UUID（FK 到 profiles 表，未直接定义外键约束）。
-        teacher_id: 关联老师/专家的用户 UUID（FK 到 users 表，未直接定义外键约束）。
+        link_id: UUID v4 主键。
+        profile_id: 目标个人档案 UUID（FK 到 profiles 表）。
+        teacher_id: 关联老师/专家的用户 UUID（FK 到 users 表）。
         role: 关联角色（teacher / expert），表示被关联用户在档案中的身份。
         unlinked_at: 解除关联的时间戳。NULL 表示关联有效，非 NULL 表示已解除。
         version: 乐观锁版本号，用于并发控制。
@@ -175,11 +176,13 @@ class TeacherLink(Base, UUIDPrimaryKeyMixin, TimestampMixin):
         comment="UUID v4 主键",
     )
     profile_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("profiles.profile_id", ondelete="CASCADE"),
         nullable=False,
         index=True,
         comment="目标个人档案 UUID",
     )
     teacher_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
         comment="关联老师/专家的用户 UUID",
@@ -260,12 +263,14 @@ class EventLog(Base):
         comment="UUID v4 主键",
     )
     profile_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("profiles.profile_id", ondelete="CASCADE"),
         nullable=False,
         index=True,
         comment="所属档案 UUID",
     )
-    recorded_by: Mapped[uuid.UUID] = mapped_column(
-        nullable=False,
+    recorded_by: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
         comment="记录人用户 UUID",
     )
     recorded_by_role: Mapped[str] = mapped_column(

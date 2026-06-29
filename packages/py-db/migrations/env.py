@@ -81,6 +81,19 @@ def _resolve_db_url() -> str:
 _TRANSACTION_PER_MIGRATION: bool = True
 
 
+def _include_object(object, name, type_, reflected, compare_to):
+    """过滤不应由 Alembic autogenerate 管理的对象。
+
+    pgvector 的 vector 类型列和 HNSW 索引不在 ORM 模型中映射，
+    若参与比较会被误判为需要删除。此处显式排除。
+    """
+    if type_ == "column" and name == "embedding" and getattr(object, "table", None) is not None and object.table.name == "case_chunks":
+        return False
+    if type_ == "index" and name == "ix_case_chunks_embedding_hnsw":
+        return False
+    return True
+
+
 def run_migrations_offline() -> None:
     """离线模式：生成 SQL 脚本而不连接数据库。
 
@@ -94,6 +107,7 @@ def run_migrations_offline() -> None:
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
         transaction_per_migration=_TRANSACTION_PER_MIGRATION,
+        include_object=_include_object,
     )
 
     with context.begin_transaction():
@@ -123,6 +137,7 @@ def run_migrations_online() -> None:
             connection=connection,
             target_metadata=target_metadata,
             transaction_per_migration=_TRANSACTION_PER_MIGRATION,
+            include_object=_include_object,
         )
 
         with context.begin_transaction():

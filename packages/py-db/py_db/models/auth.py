@@ -76,7 +76,6 @@ class User(Base, UUIDPrimaryKeyMixin, TimestampMixin):
         String(32),
         nullable=True,
         unique=True,
-        index=True,
         comment="小程序匿名设备标识，MVP 阶段替代认证",
     )
 

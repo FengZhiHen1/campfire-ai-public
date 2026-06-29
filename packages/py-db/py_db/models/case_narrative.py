@@ -11,11 +11,13 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import DateTime, Enum as sa_Enum, JSON, String, Text
+import uuid
+
+import sqlalchemy as sa
+from sqlalchemy import Boolean, DateTime, Enum as sa_Enum, ForeignKey, JSON, String, Text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.sql import func
-import uuid
 
 from py_db.models.base import Base, TimestampMixin
 from py_schemas.enums.case_enums import CaseStatus
@@ -54,9 +56,10 @@ class CaseNarrative(Base, TimestampMixin):
         nullable=False,
         comment="案例来源类型（专家撰写/机构脱敏/工单沉淀）",
     )
-    author_id: Mapped[str] = mapped_column(
-        String(36),
-        nullable=False,
+    author_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
         index=True,
         comment="撰写专家标识（UUID）",
     )
@@ -104,6 +107,16 @@ class CaseNarrative(Base, TimestampMixin):
         nullable=True,
         default=None,
         comment="LLM 提取失败原因/错误详情（仅失败时写入）",
+    )
+
+    # ---- 种子数据标记 ----
+    is_seed: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+        server_default=sa.text("false"),
+        index=True,
+        comment="是否为种子脚本注入的数据",
     )
 
     def __repr__(self) -> str:
