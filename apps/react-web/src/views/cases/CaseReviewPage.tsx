@@ -3,15 +3,15 @@ import { useNavigate } from 'react-router-dom';
 import PageContent from '@/views/_shared/layout/PageContent';
 import {
   useReviewPage,
-  BEHAVIOR_TYPE_OPTIONS,
-  BEHAVIOR_TYPE_VALUES,
+  BEHAVIOR_FILTER_OPTIONS,
+  BEHAVIOR_DISPLAY_MAP,
 } from '@/logics/cases';
 import './CaseReviewPage.css';
 
-const FILTERS = ['全部', ...BEHAVIOR_TYPE_OPTIONS];
+const FILTERS = ['全部', ...BEHAVIOR_FILTER_OPTIONS.map((o) => o.label)];
 
-const BEHAVIOR_LABEL_MAP: Record<string, string> = BEHAVIOR_TYPE_VALUES.reduce(
-  (acc, val, idx) => ({ ...acc, [val]: BEHAVIOR_TYPE_OPTIONS[idx] }),
+const FILTER_VALUE_MAP: Record<string, string> = BEHAVIOR_FILTER_OPTIONS.reduce(
+  (acc, { label, value }) => ({ ...acc, [label]: value }),
   {},
 );
 
@@ -31,8 +31,6 @@ export default function CaseReviewPage() {
     total,
     hasMore,
     actionState,
-    getAiReviewText,
-    getTimeoutText,
     handleApprove,
     handleReject,
     loadMore,
@@ -40,7 +38,7 @@ export default function CaseReviewPage() {
 
   const filteredQueue = activeFilter === '全部'
     ? queue
-    : queue.filter((item) => BEHAVIOR_LABEL_MAP[item.behavior_type] === activeFilter);
+    : queue.filter((item) => item.behavior_type === FILTER_VALUE_MAP[activeFilter]);
 
   const onReject = (id: string) => {
     const comment = window.prompt('请输入驳回意见（必填）');
@@ -76,9 +74,8 @@ export default function CaseReviewPage() {
             <div key={item.narrative_id} className="rev-card" onClick={() => navigate(`/cases/${item.narrative_id}`)}>
               <h4>{item.title}</h4>
               <div className="r-tags">
-                <span className="r-tag">{BEHAVIOR_LABEL_MAP[item.behavior_type] ?? item.behavior_type}</span>
-                <span className="r-tag">{getAiReviewText(item.ai_review_overall)}</span>
-                <span className="r-tag">{getTimeoutText(item.timeout_status)}</span>
+                <span className="r-tag">{BEHAVIOR_DISPLAY_MAP[item.behavior_type] ?? item.behavior_type}</span>
+                <span className="r-tag">待审核</span>
               </div>
               <div className="ai-bar">
                 <span>AI 预审</span>

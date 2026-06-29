@@ -13,11 +13,11 @@
  *   - 禁止定义与后端枚举值不一致的字符串
  */
 
-/** 诊断类型 */
+/** 诊断类型（持久化值以后端 py-schemas 为准） */
 export enum DiagnosisType {
   ASD = 'ASD',
-  SUSPECTED_ASD = 'suspected_ASD',
-  OTHER_DEVELOPMENTAL_DISORDER = 'other_developmental_disorder',
+  SUSPECTED_ASD = '疑似ASD',
+  OTHER_DEVELOPMENTAL_DISORDER = '其他发育障碍',
 }
 
 /** 语言水平 */
@@ -58,12 +58,12 @@ export enum AgeRange {
   ADULT = '18+',
 }
 
-/** 档案行为类型 */
+/** 档案行为类型（持久化值以后端 py-schemas 为准） */
 export enum ProfileBehaviorType {
-  STEREOTYPY = 'stereotypy',
-  MELTDOWN = 'meltdown',
-  SELF_INJURY = 'self_injury',
-  AGGRESSION = 'aggression',
-  SOCIAL_WITHDRAWAL = 'social_withdrawal',
-  HYPERACTIVITY = 'hyperactivity',
+  SELF_INJURY = '自伤行为',
+  AGGRESSION = '攻击行为',
+  MELTDOWN = '情绪崩溃',
+  STEREOTYPY = '刻板行为',
+  SOCIAL_WITHDRAWAL = '社交退缩',
+  HYPERACTIVITY = '多动',
 }

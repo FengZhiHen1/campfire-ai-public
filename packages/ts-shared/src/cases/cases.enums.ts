@@ -21,52 +21,52 @@ export enum CaseStatus {
   REJECTED = 'rejected',
 }
 
-/** 案例来源类型——对应后端 SourceType 枚举 */
+/** 案例来源类型——持久化值以后端 py-schemas 为准 */
 export enum SourceType {
-  EXPERT_WRITTEN = 'expert_written',
-  INSTITUTION_DESENSITIZED = 'institution_desensitized',
-  TICKET_DEPOSIT = 'ticket_deposit',
+  EXPERT_WRITTEN = '专家撰写',
+  INSTITUTION_DESENSITIZED = '机构脱敏',
+  TICKET_DEPOSIT = '工单沉淀',
 }
 
-/** 行为类型——对应后端 BehaviorType 枚举 */
+/** 行为类型——持久化值以后端 py-schemas 为准 */
 export enum BehaviorType {
-  SELF_INJURY = 'self_injury',
-  AGGRESSION = 'aggression',
-  STEREOTYPY = 'stereotypy',
-  ELOPEMENT = 'elopement',
-  MELTDOWN = 'meltdown',
-  OTHER = 'other',
+  SELF_INJURY = '自伤',
+  AGGRESSION = '攻击',
+  STEREOTYPY = '刻板',
+  ELOPEMENT = '逃跑',
+  MELTDOWN = '情绪崩溃',
+  OTHER = '其他',
 }
 
-/** 严重程度——对应后端 SeverityLevel 枚举 */
+/** 严重程度——持久化值以后端 py-schemas 为准 */
 export enum SeverityLevel {
-  MILD = 'mild',
-  MODERATE = 'moderate',
-  SEVERE = 'severe',
+  MILD = '轻度',
+  MODERATE = '中度',
+  SEVERE = '重度',
 }
 
-/** 场景类型——对应后端 SceneType 枚举 */
+/** 场景类型——持久化值以后端 py-schemas 为准 */
 export enum SceneType {
-  HOME = 'home',
-  SCHOOL = 'school',
-  PUBLIC = 'public',
-  INSTITUTION = 'institution',
-  ANY = 'any',
+  HOME = '家庭',
+  SCHOOL = '学校',
+  PUBLIC = '公共场合',
+  INSTITUTION = '机构',
+  ANY = '不限',
 }
 
-/** 循证等级——对应后端 EvidenceLevel 枚举 */
+/** 循证等级——持久化值以后端 py-schemas 为准 */
 export enum EvidenceLevel {
-  NCAEP = 'ncaep',
-  INSTITUTION_EXPERIENCE = 'institution_experience',
-  CASE_OBSERVATION = 'case_observation',
+  NCAEP = 'NCAEP循证实践',
+  INSTITUTION_EXPERIENCE = '机构经验总结',
+  CASE_OBSERVATION = '个案观察记录',
 }
 
-/** 家属端展示大类——对应后端 FamilyDisplayCategory 枚举 */
+/** 家属端展示大类——持久化值以后端 py-schemas 为准 */
 export enum FamilyDisplayCategory {
-  ENVIRONMENT_ADJUSTMENT = 'environment_adjustment',
-  COMMUNICATION_ALTERNATIVE = 'communication_alternative',
-  BEHAVIOR_SHAPING = 'behavior_shaping',
-  CRISIS_SAFETY = 'crisis_safety',
-  SOCIAL_GUIDANCE = 'social_guidance',
-  SELF_MANAGEMENT = 'self_management',
+  ENVIRONMENT_ADJUSTMENT = '环境调整',
+  COMMUNICATION_ALTERNATIVE = '沟通替代',
+  BEHAVIOR_SHAPING = '行为塑造',
+  CRISIS_SAFETY = '危机安全',
+  SOCIAL_GUIDANCE = '社交引导',
+  SELF_MANAGEMENT = '自我管理',
 }

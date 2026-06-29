@@ -285,7 +285,7 @@ export async function handleCreateNarrative(
     narrative_id: generateNarrativeId(),
     title: (body.title as string) ?? '',
     narrative: (body.narrative as string) ?? '',
-    source_type: (body.source_type as string) ?? 'expert_written',
+    source_type: (body.source_type as string) ?? SourceType.EXPERT_WRITTEN,
     author_id: 'mock-expert-001',
     status: 'draft',
     extraction_status: 'pending',

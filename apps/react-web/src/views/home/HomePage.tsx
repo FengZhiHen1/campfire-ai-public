@@ -1,8 +1,7 @@
 import { Link } from 'react-router-dom';
 import { useHomePage, formatRelativeTime } from '@/logics/shared';
 import {
-  DIAGNOSIS_OPTIONS,
-  DIAGNOSIS_VALUES,
+  DIAGNOSIS_SHORT_LABELS,
   BEHAVIOR_OPTIONS,
   BEHAVIOR_VALUES,
 } from '@/logics/profiles/constants';
@@ -18,8 +17,7 @@ function getGreeting(): string {
 }
 
 function mapDiagnosis(value: DiagnosisType): string {
-  const idx = DIAGNOSIS_VALUES.indexOf(value);
-  return idx >= 0 ? DIAGNOSIS_OPTIONS[idx] : value;
+  return DIAGNOSIS_SHORT_LABELS[value] ?? value;
 }
 
 function mapBehavior(value: ProfileBehaviorType): string {
