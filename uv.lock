@@ -1386,6 +1386,7 @@ version = "0.1.0"
 source = { editable = "packages/py-db" }
 dependencies = [
     { name = "alembic" },
+    { name = "asyncpg" },
     { name = "psycopg" },
     { name = "psycopg2-binary" },
     { name = "py-logger" },
@@ -1396,6 +1397,7 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "alembic", specifier = ">=1.13.0" },
+    { name = "asyncpg", specifier = ">=0.29" },
     { name = "psycopg", specifier = ">=3.2" },
     { name = "psycopg2-binary", specifier = ">=2.9" },
     { name = "py-logger", editable = "packages/py-logger" },
