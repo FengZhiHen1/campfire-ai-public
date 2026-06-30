@@ -207,14 +207,29 @@ class NarrativeManagementService(NarrativeManagementContract):
         narrative_id: NarrativeId,
         session: AsyncSession,
     ) -> list[Any]:
-        """获取某叙事下的所有 L2 卡片。"""
+        """获取某叙事下的所有 L2 卡片。
+
+        优先按叙事层保存的 derived_card_ids 顺序返回；
+        无该信息时回退到 created_at 升序。
+        """
         nid = uuid.UUID(narrative_id)
         result = await session.execute(
             select(CaseCard)
             .where(CaseCard.narrative_id == nid)
             .order_by(CaseCard.created_at.asc())
         )
-        return list(result.scalars().all())
+        cards = list(result.scalars().all())
+
+        # 按叙事层保存的卡片顺序重排；derived_card_ids 是 LLM 提取时的权威顺序。
+        narrative_result = await session.execute(
+            select(CaseNarrative.derived_card_ids)
+            .where(CaseNarrative.narrative_id == nid)
+        )
+        derived_card_ids = narrative_result.scalar() or []
+        if derived_card_ids:
+            order_map = {str(cid): idx for idx, cid in enumerate(derived_card_ids)}
+            cards.sort(key=lambda c: order_map.get(str(c.card_id), len(derived_card_ids)))
+        return cards
 
     async def _do_get_card(
         self,
