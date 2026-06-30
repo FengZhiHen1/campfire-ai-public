@@ -11,13 +11,12 @@ from contextlib import asynccontextmanager
 from unittest import mock
 
 import pytest
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from app.modules.cases.exceptions import ExtractionError
 from app.modules.cases.narrative.routes import (
     _format_extraction_error,
     _run_extraction_background,
 )
+from sqlalchemy.ext.asyncio import AsyncSession
 
 
 def _fake_session_factory(session: mock.AsyncMock):
@@ -58,9 +57,7 @@ async def test_extraction_failure_persists_extraction_error():
         ) as mock_service_cls:
             instance = mock.AsyncMock()
             mock_service_cls.return_value = instance
-            instance.extract_cards_from_narrative.side_effect = ExtractionError(
-                "JSON 解析失败: unexpected token"
-            )
+            instance.extract_cards_from_narrative.side_effect = ExtractionError("JSON 解析失败: unexpected token")
             await _run_extraction_background(
                 narrative_id=narrative_id,
                 narrative_text="测试叙事",

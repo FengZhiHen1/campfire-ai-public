@@ -14,8 +14,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.modules.profiles.exceptions import ProfileNotFoundError
 
 if TYPE_CHECKING:
-    from py_db.repositories.profile_repository import ProfileRepository
     from uuid import UUID
+
+    from py_db.repositories.profile_repository import ProfileRepository
 
 
 async def ensure_profile_exists(

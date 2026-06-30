@@ -17,6 +17,7 @@ from typing import Any
 from py_logger import logger
 from py_schemas.cases import AiReviewSummary, CheckItem
 from py_security import RegexPiiDetector
+
 from .ebp_validator import check_ebp_consistency  # EBP 一致性校验（单一真相源）
 
 # ---------------------------------------------------------------------------
@@ -228,12 +229,8 @@ def _compute_overall(
     Returns:
         "pass"、"hard_block" 或 "annotated"。
     """
-    hard_gate_items: list[CheckItem] = [
-        c for c in [format_check, pii_check] if c.is_hard_gate
-    ]
-    soft_items: list[CheckItem] = [
-        c for c in [required_fields_check, ebp_consistency_check] if not c.is_hard_gate
-    ]
+    hard_gate_items: list[CheckItem] = [c for c in [format_check, pii_check] if c.is_hard_gate]
+    soft_items: list[CheckItem] = [c for c in [required_fields_check, ebp_consistency_check] if not c.is_hard_gate]
 
     # 硬门槛检查：任一 fail → hard_block
     for item in hard_gate_items:
@@ -280,9 +277,7 @@ def run_ai_pre_review(
     required_fields_check: CheckItem = _check_required_fields(case_data)
     ebp_consistency_check: CheckItem = _check_ebp_consistency(case_data)
 
-    overall: str = _compute_overall(
-        format_check, pii_check, required_fields_check, ebp_consistency_check
-    )
+    overall: str = _compute_overall(format_check, pii_check, required_fields_check, ebp_consistency_check)
 
     result = AiReviewSummary(
         format_check=format_check,

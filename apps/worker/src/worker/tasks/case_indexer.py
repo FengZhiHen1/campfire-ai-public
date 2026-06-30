@@ -44,9 +44,12 @@ async def index_case(case_id: str, trace_id: str = "") -> None:
         index_writer=write_index_to_pgvector,
     )
 
-    from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
-
     from py_config import get_settings
+    from sqlalchemy.ext.asyncio import (
+        AsyncSession,
+        async_sessionmaker,
+        create_async_engine,
+    )
 
     settings = get_settings()
     database_url = str(settings.DATABASE_URL)

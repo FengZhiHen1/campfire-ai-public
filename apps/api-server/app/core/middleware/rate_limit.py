@@ -15,11 +15,10 @@ import redis.exceptions
 from fastapi import Request, Response
 from fastapi.responses import JSONResponse
 from prometheus_client import Counter, Gauge
-from starlette.middleware.base import BaseHTTPMiddleware
-
 from py_cache import get_redis_client, maybe_await
 from py_config.security import get_security_config
 from py_logger import logger
+from starlette.middleware.base import BaseHTTPMiddleware
 
 # ============================================================================
 # LUA 脚本 — Redis ZSET 原子滑动窗口限流
@@ -218,9 +217,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
 
         # 安全获取 user_id（未登录场景下 request.state 无 user 属性；
         # 最外层 getattr 防御 request 对象自身可能无 state 属性的极端场景）
-        user_id: str | None = getattr(
-            getattr(getattr(request, "state", None), "user", None), "id", None
-        )
+        user_id: str | None = getattr(getattr(getattr(request, "state", None), "user", None), "id", None)
 
         # ---- 获取 Redis 客户端 ----
         try:

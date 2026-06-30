@@ -23,20 +23,29 @@
 
 from __future__ import annotations
 
-from .generation_contract import BasePlanGenerator
-from .service import PlanGeneratorImpl
 from .enums import BlockVariant, GenerationStatus
-from .exceptions import GenerationInputError, GenerationTimeoutError, LLMUnavailableError
+from .exceptions import (
+    GenerationInputError,
+    GenerationTimeoutError,
+    LLMUnavailableError,
+)
+from .generation_contract import BasePlanGenerator
 from .models import EmergencyPlanInput, GenerationChunk, GenerationResult
 from .prompt_builder import PromptBuilder
-from .service import generate_emergency_plan
-from .streaming import JsonSectionTracker, build_generation_result, parse_json_sections, stream_generate
+from .service import PlanGeneratorImpl, generate_emergency_plan
+from .streaming import (
+    JsonSectionTracker,
+    build_generation_result,
+    parse_json_sections,
+    stream_generate,
+)
 
 __all__ = [
     # 契约
     "BasePlanGenerator",
     # 主接口
     "generate_emergency_plan",
+    "PlanGeneratorImpl",
     # 输入/输出模型
     "EmergencyPlanInput",
     "GenerationResult",

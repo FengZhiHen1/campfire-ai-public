@@ -10,15 +10,17 @@ from unittest import mock
 from uuid import uuid4
 
 import pytest
-
-from py_db.models.profiles import Profile
-from py_schemas.profiles import DiagnosisType, ProfileBehaviorType, ProfileCreate, ProfileUpdate
-
 from app.modules.profiles.exceptions import (
-    ProfileLimitExceededError,
     ProfileNotFoundError,
 )
 from app.modules.profiles.profile_service import ProfileServiceImpl
+from py_db.models.profiles import Profile
+from py_schemas.profiles import (
+    DiagnosisType,
+    ProfileBehaviorType,
+    ProfileCreate,
+    ProfileUpdate,
+)
 
 
 def _mock_profile(**overrides) -> mock.MagicMock:
@@ -124,7 +126,7 @@ class TestCreateProfile:
             diagnosis_type="ASD",
             primary_behavior="刻板行为",
         )
-        result = await svc.create_profile(caregiver_id, data, session)
+        await svc.create_profile(caregiver_id, data, session)
         repo.set_default.assert_called_once()
 
 

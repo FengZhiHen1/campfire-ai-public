@@ -31,17 +31,15 @@ Usage:
 
 from __future__ import annotations
 
+# 实现类
+from .consult_service import (
+    ConsultationOrchestratorImpl,
+    search_cases,
+    start_consultation,
+)
+
 # 契约（供聚合脚本自动发现）
 from .consultation_contract import BaseConsultationOrchestrator
-from .types import (
-    BehaviorDescription,
-    ConfidenceScore,
-    ElapsedMs,
-    PlanText,
-    ProfileSummary,
-    RequestId,
-    SessionId,
-)
 from .exceptions import (
     ConsultationArchiveError,
     ConsultationError,
@@ -51,16 +49,18 @@ from .exceptions import (
     ConsultationSearchError,
     ConsultationStreamError,
 )
-
-# 实现类
-from .consult_service import (
-    ConsultationOrchestratorImpl,
-    search_cases,
-    start_consultation,
-)
+from .history_routes import router as consultations_router
 from .routes import router as consult_router
 from .stream_routes import router as stream_router
-from .history_routes import router as consultations_router
+from .types import (
+    BehaviorDescription,
+    ConfidenceScore,
+    ElapsedMs,
+    PlanText,
+    ProfileSummary,
+    RequestId,
+    SessionId,
+)
 
 __all__ = [
     # 契约
@@ -82,6 +82,7 @@ __all__ = [
     "ConsultationNotFoundError",
     "ConsultationStreamError",
     # 实现接口
+    "ConsultationOrchestratorImpl",
     "search_cases",
     "start_consultation",
     "consult_router",

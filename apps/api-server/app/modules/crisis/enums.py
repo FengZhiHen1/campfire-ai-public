@@ -10,9 +10,11 @@ from py_schemas.enums.crisis_enums import BehaviorTypeCategory, CrisisLevel
 
 # 高危类型集合 —— 供 PreSelectionLayer 快速查找。
 # 仅保留涉及即时人身伤害风险的类型；出走、用药等场景改为通过 RuleEngineLayer 关键词判定。
-HIGH_RISK_TYPES: frozenset[BehaviorTypeCategory] = frozenset({
-    BehaviorTypeCategory.SELF_INJURY,
-    BehaviorTypeCategory.AGGRESSION,
-})
+HIGH_RISK_TYPES: frozenset[BehaviorTypeCategory] = frozenset(
+    {
+        BehaviorTypeCategory.SELF_INJURY,
+        BehaviorTypeCategory.AGGRESSION,
+    }
+)
 
 __all__ = ["CrisisLevel", "BehaviorTypeCategory", "HIGH_RISK_TYPES"]

@@ -34,11 +34,12 @@ from app.modules.profiles._profile_guard import ensure_profile_exists
 from app.modules.profiles.exceptions import ExpertLinkNotFoundError
 
 if TYPE_CHECKING:
+    from uuid import UUID
+
     from py_db.repositories.profile_repository import ProfileRepository
     from py_db.repositories.teacher_link_repository import TeacherLinkRepository
     from py_db.repositories.user_repository import UserRepository
     from py_schemas.profiles import ExpertInfo
-    from uuid import UUID
 
 
 class BaseExpertService(ABC):

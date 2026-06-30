@@ -10,6 +10,10 @@ from __future__ import annotations
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, status
+from py_db.repositories.profile_repository import ProfileRepository
+from py_db.repositories.teacher_link_repository import TeacherLinkRepository
+from py_db.repositories.user_repository import UserRepository
+from py_schemas.profiles import ExpertInfo
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.dependencies.anonymous_user import get_anonymous_user
@@ -23,10 +27,6 @@ from app.modules.profiles._exception_mapping import map_domain_error
 from app.modules.profiles._user_utils import extract_user_id
 from app.modules.profiles.exceptions import ProfileDomainError
 from app.modules.profiles.expert_service import ExpertServiceImpl
-from py_db.repositories.profile_repository import ProfileRepository
-from py_db.repositories.teacher_link_repository import TeacherLinkRepository
-from py_db.repositories.user_repository import UserRepository
-from py_schemas.profiles import ExpertInfo
 
 router = APIRouter(prefix="/api/v1/profiles", tags=["experts"])
 

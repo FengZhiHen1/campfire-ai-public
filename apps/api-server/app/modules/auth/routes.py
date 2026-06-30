@@ -16,13 +16,21 @@ from typing import NoReturn
 
 from fastapi import APIRouter, Body, Depends, Header, Response, status
 from fastapi.exceptions import HTTPException
+from py_schemas.auth import (
+    LoginRequest,
+    RefreshRequest,
+    RegisterRequest,
+    RegisterResponse,
+    TokenResponse,
+)
+from py_schemas.security.validation_schemas import ValidationErrorResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.dependencies.anonymous_user import get_anonymous_user
 from app.core.dependencies.auth_dependencies import (
     get_auth_service,
     get_db_session,
 )
-from app.core.dependencies.anonymous_user import get_anonymous_user
 from app.modules.auth.auth_contract import AuthService
 from app.modules.auth.exceptions import (
     AuthInternalError,
@@ -33,14 +41,6 @@ from app.modules.auth.exceptions import (
     RealNameRequiredError,
     TokenInvalidError,
 )
-from py_schemas.auth import (
-    LoginRequest,
-    RefreshRequest,
-    RegisterRequest,
-    RegisterResponse,
-    TokenResponse,
-)
-from py_schemas.security.validation_schemas import ValidationErrorResponse
 
 router = APIRouter(prefix="/api/v1/auth", tags=["auth"])
 
@@ -89,13 +89,11 @@ def _raise_http(exc: AuthServiceError) -> NoReturn:
     responses={
         201: {"description": "注册成功，返回 user_id"},
         422: {
-            "description": "输入校验失败（字段格式/密码复杂度/专家角色必填），"
-            "复用 SEC-05 ValidationErrorResponse 格式",
+            "description": "输入校验失败（字段格式/密码复杂度/专家角色必填），复用 SEC-05 ValidationErrorResponse 格式",
             "model": ValidationErrorResponse,
         },
         409: {
-            "description": "用户名或手机号已被注册，"
-            "detail.code 精确区分 DUPLICATE_USERNAME / DUPLICATE_PHONE",
+            "description": "用户名或手机号已被注册，detail.code 精确区分 DUPLICATE_USERNAME / DUPLICATE_PHONE",
         },
         500: {"description": "系统内部错误（密码哈希失败/数据库连接异常等）"},
     },
@@ -143,7 +141,7 @@ async def register(
     description=(
         "校验用户名和密码，签发 access_token（15 分钟有效）和 "
         "refresh_token（7 天有效）。\n\n"
-        "安全约束：不区分\"用户不存在\"和\"密码错误\"——统一返回 401，"
+        '安全约束：不区分"用户不存在"和"密码错误"——统一返回 401，'
         "防止攻击者通过错误消息差异枚举有效用户名。"
     ),
 )
@@ -257,8 +255,7 @@ async def logout(
     status_code=status.HTTP_200_OK,
     summary="获取当前用户信息",
     description=(
-        "返回当前认证用户的 user_id、role 和 device_id。"
-        "MVP 阶段基于 X-Device-Id 匿名认证，返回匿名用户的信息。"
+        "返回当前认证用户的 user_id、role 和 device_id。MVP 阶段基于 X-Device-Id 匿名认证，返回匿名用户的信息。"
     ),
     responses={
         200: {"description": "成功返回当前用户信息"},

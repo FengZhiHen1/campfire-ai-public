@@ -14,6 +14,7 @@ from fastapi import APIRouter, Body, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.dependencies.auth_dependencies import get_db_session
+
 from ..exceptions import CardNotFoundError, CaseStatusError
 from ..types import CardId
 from .service import NarrativeManagementService, card_to_response
@@ -48,7 +49,10 @@ async def update_card_endpoint(
     except CardNotFoundError as exc:
         raise HTTPException(status_code=404, detail={"code": "CARD_NOT_FOUND", "message": str(exc)})
     except CaseStatusError as exc:
-        raise HTTPException(status_code=409, detail={"code": "CARD_STATUS_CONFLICT", "message": str(exc)})
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "CARD_STATUS_CONFLICT", "message": str(exc)},
+        )
     return card_to_response(entity)
 
 
@@ -63,7 +67,10 @@ async def submit_card_endpoint(
     except CardNotFoundError as exc:
         raise HTTPException(status_code=404, detail={"code": "CARD_NOT_FOUND", "message": str(exc)})
     except CaseStatusError as exc:
-        raise HTTPException(status_code=409, detail={"code": "CARD_STATUS_CONFLICT", "message": str(exc)})
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "CARD_STATUS_CONFLICT", "message": str(exc)},
+        )
     return card_to_response(entity)
 
 

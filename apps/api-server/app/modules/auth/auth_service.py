@@ -14,12 +14,11 @@ import asyncio
 import traceback
 from typing import TYPE_CHECKING, Any
 
-from py_logger import logger
-from sqlalchemy.exc import IntegrityError, SQLAlchemyError
-
 from py_auth.exceptions import HashingError, TokenCreationError
 from py_db.models.auth import User
+from py_logger import logger
 from py_schemas.auth import RegisterRequest, RegisterResponse, TokenResponse, UserRole
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
 from app.modules.auth.auth_contract import AuthService
 from app.modules.auth.exceptions import (
@@ -30,7 +29,11 @@ from app.modules.auth.exceptions import (
 if TYPE_CHECKING:
     from py_auth.auth_contract import (
         PasswordHasher as PasswordHasherContract,
+    )
+    from py_auth.auth_contract import (
         TokenBlacklist as TokenBlacklistContract,
+    )
+    from py_auth.auth_contract import (
         TokenManager as TokenManagerContract,
     )
     from py_db.repositories.user_repository import UserRepository

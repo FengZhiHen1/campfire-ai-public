@@ -13,7 +13,11 @@ Usage:
     from app.core.streaming import StreamSessionManager, SseStreamingService
 """
 
-from app.core.dependencies import get_anonymous_user, get_db_session, get_user_repository
+from app.core.dependencies import (
+    get_anonymous_user,
+    get_db_session,
+    get_user_repository,
+)
 from app.core.health import router as health_router
 from app.core.middleware import RateLimitMiddleware, register_validation_handler
 
@@ -25,12 +29,14 @@ from app.core.middleware import RateLimitMiddleware, register_validation_handler
 def get_stream_session_manager():
     """惰性获取 StreamSessionManager 单例。"""
     from app.core.streaming import StreamSessionManager
+
     return StreamSessionManager()
 
 
 def get_sse_streaming_service():
     """惰性获取 SseStreamingService 单例。"""
     from app.core.streaming import SseStreamingService
+
     return SseStreamingService()
 
 

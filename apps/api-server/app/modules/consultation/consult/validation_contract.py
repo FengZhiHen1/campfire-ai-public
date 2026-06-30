@@ -23,7 +23,6 @@ import time
 from abc import ABC, abstractmethod
 from typing import Any, Literal, final
 
-
 DegradationNote = Literal["llm_unavailable", "timeout_fallback"]
 
 
@@ -69,7 +68,7 @@ class BaseConfidenceValidator(ABC):
         self._validate_confidence_preconditions(input=input)
 
         # 阻断场景短路
-        if getattr(input, 'block_deep_response', False):
+        if getattr(input, "block_deep_response", False):
             return self._do_build_pass_result(input=input)
 
         # 阶段一：关键词安检
@@ -271,6 +270,7 @@ class BaseConfidenceValidator(ABC):
         """基线前置校验——置信度后校验。"""
         if input is None:
             from app.modules.consultation.exceptions import ConsultationInputError
+
             raise ConsultationInputError(
                 message="校验输入不能为空",
                 field="input",

@@ -28,7 +28,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import re
 from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING, Any, final
@@ -47,7 +46,11 @@ from app.modules.auth.exceptions import (
 if TYPE_CHECKING:
     from py_auth.auth_contract import (
         PasswordHasher as PasswordHasherContract,
+    )
+    from py_auth.auth_contract import (
         TokenBlacklist as TokenBlacklistContract,
+    )
+    from py_auth.auth_contract import (
         TokenManager as TokenManagerContract,
     )
     from py_db.repositories.user_repository import UserRepository
@@ -63,9 +66,7 @@ if TYPE_CHECKING:
 # 常量
 # ---------------------------------------------------------------------------
 
-_PASSWORD_COMPLEXITY_REGEX: re.Pattern[str] = re.compile(
-    r"^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{8,}$"
-)
+_PASSWORD_COMPLEXITY_REGEX: re.Pattern[str] = re.compile(r"^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{8,}$")
 r"""密码复杂度正则：至少包含一个小写字母、一个大写字母、一个数字，且至少 8 位。"""
 
 
@@ -262,9 +263,7 @@ class AuthService(ABC):
         ...
 
     @abstractmethod
-    async def _do_register(
-        self, request: "RegisterRequest", hashed_password: str, session: Any
-    ) -> "RegisterResponse":
+    async def _do_register(self, request: "RegisterRequest", hashed_password: str, session: Any) -> "RegisterResponse":
         """执行用户数据持久化。
 
         实现者在此构造 User ORM 对象并调用 self._user_repo.create()。
@@ -313,9 +312,7 @@ class AuthService(ABC):
         ...
 
     @abstractmethod
-    async def _do_refresh(
-        self, payload: dict[str, Any], old_refresh_token: str
-    ) -> "TokenResponse":
+    async def _do_refresh(self, payload: dict[str, Any], old_refresh_token: str) -> "TokenResponse":
         """执行 Token 轮换——标记旧 token + 签发新 token 对。
 
         实现者在此:
@@ -333,9 +330,7 @@ class AuthService(ABC):
         ...
 
     @abstractmethod
-    async def _do_logout(
-        self, access_jti: str | None, refresh_jti: str | None
-    ) -> None:
+    async def _do_logout(self, access_jti: str | None, refresh_jti: str | None) -> None:
         """执行 Token 失效操作。
 
         实现者在此:
@@ -362,9 +357,7 @@ class AuthService(ABC):
         if not _PASSWORD_COMPLEXITY_REGEX.match(password):
             raise PasswordComplexityError()
 
-    def _validate_expert_real_name(
-        self, role: UserRole, real_name: str | None
-    ) -> None:
+    def _validate_expert_real_name(self, role: UserRole, real_name: str | None) -> None:
         """专家角色 real_name 必填校验。
 
         Raises:
@@ -373,9 +366,7 @@ class AuthService(ABC):
         if role == UserRole.EXPERT and not real_name:
             raise RealNameRequiredError()
 
-    async def _validate_uniqueness(
-        self, username: str, phone: str, session: Any
-    ) -> None:
+    async def _validate_uniqueness(self, username: str, phone: str, session: Any) -> None:
         """用户名和手机号唯一性校验。
 
         分别查询用户名和手机号是否存在，精确区分冲突类型。
@@ -408,9 +399,7 @@ class AuthService(ABC):
         if user is None:
             raise InvalidCredentialsError()
 
-    def _validate_password_match(
-        self, plain_password: str, hashed_password: str
-    ) -> None:
+    def _validate_password_match(self, plain_password: str, hashed_password: str) -> None:
         """密码匹配校验——login 流程前置。
 
         通过注入的 password_hasher 执行 bcrypt 比对。

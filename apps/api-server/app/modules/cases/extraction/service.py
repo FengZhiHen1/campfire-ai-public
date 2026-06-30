@@ -11,28 +11,41 @@ import re
 import uuid
 from typing import Any
 
+from py_db.models.case_card import CaseCard
+from py_llm import LLMClient
 from py_logger import logger
+from py_schemas.cases import NCAEP_EBP_LABELS
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from py_llm import LLMClient
-from py_db.models.case_card import CaseCard
-from py_schemas.cases import NCAEP_EBP_LABELS
-
-from .contract import ExtractionServiceContract
 from ..exceptions import ExtractionError
 from ..types import NarrativeId
+from .contract import ExtractionServiceContract
 
 # NCAEP 循证实践标准标签集（与 py_schemas.cases.NCAEP_EBP_LABELS 保持一致，
 # 用于 EBP 一致性校验和下游检索）
 _VALID_EBP_TAGS: frozenset[str] = frozenset(NCAEP_EBP_LABELS)
 
-_VALID_PARENT_CATEGORIES: frozenset[str] = frozenset({
-    "环境调整", "沟通替代", "行为塑造", "危机安全", "社交引导", "自我管理",
-})
+_VALID_PARENT_CATEGORIES: frozenset[str] = frozenset(
+    {
+        "环境调整",
+        "沟通替代",
+        "行为塑造",
+        "危机安全",
+        "社交引导",
+        "自我管理",
+    }
+)
 
-_VALID_BEHAVIOR_TYPES: frozenset[str] = frozenset({
-    "自伤", "攻击", "刻板", "逃跑", "情绪崩溃", "其他",
-})
+_VALID_BEHAVIOR_TYPES: frozenset[str] = frozenset(
+    {
+        "自伤",
+        "攻击",
+        "刻板",
+        "逃跑",
+        "情绪崩溃",
+        "其他",
+    }
+)
 
 _VALID_SEVERITY: frozenset[str] = frozenset({"轻度", "中度", "重度"})
 _VALID_SETTINGS: frozenset[str] = frozenset({"家庭", "学校", "公共场合", "机构", "不限"})
@@ -288,7 +301,10 @@ class ExtractionService(ExtractionServiceContract):
 
         messages = [
             {"role": "system", "content": _EXTRACTION_SYSTEM_PROMPT},
-            {"role": "user", "content": f"请从以下叙事中提取干预卡片：\n\n{narrative_text}\n\nYour response must be a valid JSON object."},
+            {
+                "role": "user",
+                "content": f"请从以下叙事中提取干预卡片：\n\n{narrative_text}\n\nYour response must be a valid JSON object.",
+            },
         ]
 
         # 调用 LLM（JSON Mode）
@@ -309,18 +325,23 @@ class ExtractionService(ExtractionServiceContract):
         try:
             # 清理可能的 markdown 代码块包裹
             cleaned = re.sub(
-                r"^```(?:json)?\s*|\s*```$", "",
-                response_text.strip(), flags=re.MULTILINE,
+                r"^```(?:json)?\s*|\s*```$",
+                "",
+                response_text.strip(),
+                flags=re.MULTILINE,
             )
             result = json.loads(cleaned)
             cards_data = result.get("cards", [])
         except (json.JSONDecodeError, KeyError) as exc:
             raw_snippet = response_text[:4000]
             logger.error(
-                "extraction", "extraction_parse_failed", extra={"raw": raw_snippet},
+                "extraction",
+                "extraction_parse_failed",
+                extra={"raw": raw_snippet},
             )
             raise ExtractionError(
-                f"JSON 解析失败: {exc}", raw_output=response_text,
+                f"JSON 解析失败: {exc}",
+                raw_output=response_text,
             ) from exc
 
         # 逐卡片校验 + 写入数据库
@@ -334,7 +355,7 @@ class ExtractionService(ExtractionServiceContract):
             errors = self._validate_card(raw, i)
             if errors:
                 raise ExtractionError(
-                    f"卡片 {i+1} 校验失败: {'; '.join(errors)}",
+                    f"卡片 {i + 1} 校验失败: {'; '.join(errors)}",
                 )
 
             card = CaseCard(
@@ -367,9 +388,14 @@ class ExtractionService(ExtractionServiceContract):
         for c in cards:
             await db.refresh(c)
 
-        logger.info("extraction", "extraction_completed", extra={
-            "narrative_id": narrative_id, "card_count": len(cards),
-        })
+        logger.info(
+            "extraction",
+            "extraction_completed",
+            extra={
+                "narrative_id": narrative_id,
+                "card_count": len(cards),
+            },
+        )
         return cards
 
     # ========================================================================
@@ -447,9 +473,16 @@ class ExtractionService(ExtractionServiceContract):
         errors: list[str] = []
 
         required = [
-            "title", "scenario", "behavior_type", "severity_level", "setting",
-            "immediate_action", "comforting_phrase", "observation_metrics",
-            "medical_criteria", "parent_category",
+            "title",
+            "scenario",
+            "behavior_type",
+            "severity_level",
+            "setting",
+            "immediate_action",
+            "comforting_phrase",
+            "observation_metrics",
+            "medical_criteria",
+            "parent_category",
         ]
         for field in required:
             if not raw.get(field):
@@ -488,6 +521,7 @@ class ExtractionService(ExtractionServiceContract):
                     errors.append(f"无效 EBP 标签: {tag}")
 
         return errors
+
 
 __all__ = [
     "ExtractionService",

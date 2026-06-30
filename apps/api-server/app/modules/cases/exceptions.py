@@ -48,9 +48,7 @@ class CaseStatusError(CasesError):
         self.case_id = case_id
         self.current_status = current_status
         self.expected_status = expected_status
-        super().__init__(
-            f"案例 {case_id} 当前状态为 {current_status}，需要 {expected_status}"
-        )
+        super().__init__(f"案例 {case_id} 当前状态为 {current_status}，需要 {expected_status}")
 
 
 class OptimisticLockError(CasesError):
@@ -67,9 +65,7 @@ class OptimisticLockError(CasesError):
         self.case_id = case_id
         self.expected_ts = expected_ts
         self.actual_ts = actual_ts
-        super().__init__(
-            f"编辑冲突：案例 {case_id} 已被其他用户修改。请刷新后重试。"
-        )
+        super().__init__(f"编辑冲突：案例 {case_id} 已被其他用户修改。请刷新后重试。")
 
 
 class FourStageValidationError(CasesError):
@@ -125,10 +121,7 @@ class PiiHardBlockError(ReviewError):
     def __init__(self, case_id: str, pii_details: list[str]) -> None:
         self.case_id = case_id
         self.pii_details = pii_details
-        super().__init__(
-            f"案例 {case_id} 未通过 PII 脱敏检查（硬门槛），"
-            "请提交者完成脱敏后重新提交。"
-        )
+        super().__init__(f"案例 {case_id} 未通过 PII 脱敏检查（硬门槛），请提交者完成脱敏后重新提交。")
 
 
 class RejectCommentTooShortError(ReviewError):
@@ -143,9 +136,7 @@ class RejectCommentTooShortError(ReviewError):
     def __init__(self, current_length: int, min_length: int) -> None:
         self.current_length = current_length
         self.min_length = min_length
-        super().__init__(
-            f"驳回意见至少需要 {min_length} 个字，当前 {current_length} 字"
-        )
+        super().__init__(f"驳回意见至少需要 {min_length} 个字，当前 {current_length} 字")
 
 
 # ============================================================================

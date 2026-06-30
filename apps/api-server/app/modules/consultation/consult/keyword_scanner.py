@@ -16,12 +16,12 @@ from __future__ import annotations
 
 import asyncio
 import re
-import time
 from typing import Any
+
+from py_logger import logger
 
 from app.modules.crisis.ac_matcher import AhoCorasickMatcher
 from app.modules.crisis.exceptions import KeywordDictLoadError
-from py_logger import logger
 
 # ===========================================================================
 # 降级关键词列表（AC 自动机加载失败时使用）
@@ -168,15 +168,17 @@ class KeywordScanner:
         results: list[dict[str, Any]] = []
         for match in self._fallback_pattern.finditer(text):
             keyword = match.group()
-            results.append({
-                "keyword": keyword,
-                "keyword_id": -1,
-                "category": "severe",
-                "trigger_rule_id": "KW_FALLBACK",
-                "start_pos": match.start(),
-                "end_pos": match.end(),
-                "negation_filtered": False,
-            })
+            results.append(
+                {
+                    "keyword": keyword,
+                    "keyword_id": -1,
+                    "category": "severe",
+                    "trigger_rule_id": "KW_FALLBACK",
+                    "start_pos": match.start(),
+                    "end_pos": match.end(),
+                    "negation_filtered": False,
+                }
+            )
 
         return results
 

@@ -12,6 +12,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from py_logger import logger
+
 from .crisis_contract import CrisisJudgmentPipeline
 from .enums import CrisisLevel
 from .exceptions import CrisisJudgmentError, KeywordDictLoadError
@@ -23,7 +25,6 @@ from .models import (
 )
 from .pre_selection_layer import PreSelectionLayer
 from .rule_engine_layer import RuleEngineLayer
-from py_logger import logger
 
 
 class CrisisJudgmentPipelineImpl(CrisisJudgmentPipeline):
@@ -143,9 +144,7 @@ class CrisisJudgmentPipelineImpl(CrisisJudgmentPipeline):
         context.sources.append(result)
 
         # 传播 manual_review_flag
-        if result.details.get("manual_review_recommended") or result.details.get(
-            "profile_overlap_triggered"
-        ):
+        if result.details.get("manual_review_recommended") or result.details.get("profile_overlap_triggered"):
             context.manual_review_flag = True
 
         if result.level == CrisisLevel.SEVERE:
