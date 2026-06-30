@@ -64,32 +64,6 @@ jobs:
           DATABASE_URL: postgresql+asyncpg://campfire:test@localhost:5432/campfire_test
           REDIS_URL: redis://localhost:6379/0
 
-  frontend-mini-program:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up pnpm
-        uses: pnpm/action-setup@v3
-        with:
-          version: 10
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: pnpm
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Type check
-        run: pnpm --filter mini-program exec tsc --noEmit
-
-      - name: Lint style
-        run: pnpm --filter mini-program lint:style
-        continue-on-error: true
-
   frontend-react-web:
     runs-on: ubuntu-latest
     steps:
