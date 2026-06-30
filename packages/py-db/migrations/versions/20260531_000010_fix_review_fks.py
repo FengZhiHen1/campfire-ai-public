@@ -15,7 +15,10 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    op.execute("ALTER TABLE case_reviews DROP CONSTRAINT IF EXISTS case_reviews_case_id_fkey")
+    # SQLAlchemy 自动生成的 FK 约束名为 fk_case_reviews_case_id_cases，
+    # 而非 PostgreSQL 默认的 case_reviews_case_id_fkey。
+    op.execute("ALTER TABLE case_reviews DROP CONSTRAINT IF EXISTS fk_case_reviews_case_id_cases")
+    # review_audit_logs 在原始建表脚本中未设置 FK，保留幂等清理。
     op.execute("ALTER TABLE review_audit_logs DROP CONSTRAINT IF EXISTS review_audit_logs_case_id_fkey")
 
 

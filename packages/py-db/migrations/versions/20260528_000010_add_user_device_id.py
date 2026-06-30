@@ -26,22 +26,21 @@ def upgrade() -> None:
             "device_id",
             sa.String(32),
             nullable=True,
-            unique=True,
-            index=True,
+            unique=False,
             comment="小程序匿名设备标识，MVP 阶段替代认证",
         ),
     )
 
-    op.create_index(
-        "ix_users_device_id",
+    # 使用唯一约束而非唯一索引，后续迁移脚本按约束名引用
+    op.create_unique_constraint(
+        "users_device_id_key",
         "users",
         ["device_id"],
-        unique=True,
     )
 
 
 def downgrade() -> None:
-    """回滚：删除 device_id 列及索引。"""
+    """回滚：删除 device_id 列及约束。"""
 
-    op.drop_index("ix_users_device_id", table_name="users")
+    op.drop_constraint("users_device_id_key", table_name="users", type_="unique")
     op.drop_column("users", "device_id")
