@@ -289,6 +289,7 @@ export async function handleCreateNarrative(
     author_id: 'mock-expert-001',
     status: 'draft',
     extraction_status: 'pending',
+    extraction_error: null,
     derived_card_ids: null,
     cards: [],
     created_at: now(),
