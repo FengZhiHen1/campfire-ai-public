@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useConsult } from '@/logics/consult';
 import type { ConsultationHistoryDetail } from '@/logics/consult';
+import { CARD_STATUS_MAP } from '@/logics/cases';
 import PageContent from '@/views/_shared/layout/PageContent';
 import './ConsultDetailPage.css';
 
@@ -176,6 +177,31 @@ export default function ConsultDetailPage() {
               </Link>
             ))}
           </details>
+        )}
+
+        {(detail.associated_cards ?? []).length > 0 && (
+          <div className="associated-cards">
+            <h3>关联卡片 <span className="count">({(detail.associated_cards ?? []).length})</span></h3>
+            {(detail.associated_cards ?? []).map((card) => {
+              const status = CARD_STATUS_MAP[card.review_status] ?? { text: card.review_status, cls: card.review_status };
+              return (
+                <button
+                  key={card.card_id}
+                  type="button"
+                  className="assoc-card-item"
+                  onClick={() => navigate(`/cases/card/${card.card_id}`)}
+                >
+                  <h4>{card.title}</h4>
+                  <div className="assoc-card-tags">
+                    <span className="assoc-card-tag">{card.behavior_type}</span>
+                    <span className="assoc-card-tag">{card.severity}</span>
+                    <span className="assoc-card-tag">{card.scene}</span>
+                  </div>
+                  <span className={`assoc-card-status ${status.cls}`}>{status.text}</span>
+                </button>
+              );
+            })}
+          </div>
         )}
 
         <div className="disclaimer-block">基于归档案例的 AI 生成建议，不构成医疗诊断。严重情况请咨询专业医生。</div>

@@ -13,8 +13,11 @@ export default function CaseNarrativeSubmitPage() {
     setSourceType,
     narrative,
     setNarrative,
+    loadingDraft,
     submitting,
     extracting,
+    savingDraft,
+    draftSaved,
     tipsExpanded,
     setTipsExpanded,
     titleCount,
@@ -29,6 +32,23 @@ export default function CaseNarrativeSubmitPage() {
 
   const [openDD, setOpenDD] = useState(false);
 
+  if (loadingDraft) {
+    return (
+      <>
+        <div className="nav">
+          <button className="nav-back" onClick={() => navigate(-1)}>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+          </button>
+          <span className="nav-title">提交叙事</span>
+        </div>
+        <div className="extract-state active">
+          <div className="glow" />
+          <h2>正在加载草稿…</h2>
+        </div>
+      </>
+    );
+  }
+
   if (submitting || extracting) {
     return (
       <>
@@ -41,7 +61,8 @@ export default function CaseNarrativeSubmitPage() {
         <div className="extract-state active">
           <div className="glow" />
           <h2>正在分析叙事…</h2>
-          <p>AI 正在提取干预卡片，预计需要 10-30 秒</p>
+          <p>AI 正在提取干预卡片，内容较长时可能需要 1–3 分钟</p>
+          <p className="extract-hint">你可以中途退出，稍后从案例详情页重新进入查看结果</p>
         </div>
       </>
     );
@@ -106,7 +127,10 @@ export default function CaseNarrativeSubmitPage() {
         </div>
 
         <button className="btn" onClick={handleSubmit} disabled={!canSubmit}>提交并提取卡片</button>
-        <button className="btn btn-s" onClick={handleSaveDraft}>保存草稿</button>
+        <button className="btn btn-s" onClick={handleSaveDraft} disabled={savingDraft}>
+          {savingDraft ? '保存中…' : '保存草稿'}
+        </button>
+        {draftSaved && <div className="draft-saved-hint">草稿已保存</div>}
       </PageContent>
     </>
   );

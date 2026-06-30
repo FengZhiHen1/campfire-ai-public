@@ -82,7 +82,21 @@ export const httpClient = {
 
       if (!res.ok) {
         const detail = (body as Record<string, unknown>)?.detail;
-        const message = typeof detail === 'string' ? String(detail) : `HTTP ${res.status}`;
+        let message: string;
+        if (detail && typeof detail === 'object') {
+          const detailMessage = (detail as Record<string, unknown>).message;
+          if (typeof detailMessage === 'string') {
+            message = detailMessage;
+          } else {
+            message = `HTTP ${res.status}`;
+          }
+        } else if (typeof detail === 'string') {
+          message = detail;
+        } else if (typeof (body as Record<string, unknown>)?.message === 'string') {
+          message = (body as Record<string, unknown>).message as string;
+        } else {
+          message = `HTTP ${res.status}`;
+        }
         throw new HttpError(res.status, message, body);
       }
 

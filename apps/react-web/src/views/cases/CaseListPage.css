@@ -1,6 +1,6 @@
 /* 直接复制自 OD cases.html */
-.nav{height:44px;display:flex;align-items:center;justify-content:space-between;padding:0 8px;background:rgba(255,255,255,0.5);backdrop-filter:blur(24px) saturate(1.4);-webkit-backdrop-filter:blur(24px) saturate(1.4);border-bottom:1px solid rgba(28,25,23,0.08)}
-.nav-title{font-size:17px;font-weight:600;color:var(--cf-fg)}
+.nav{height:44px;display:flex;align-items:center;justify-content:flex-end;position:relative;padding:0 8px;background:rgba(255,255,255,0.5);backdrop-filter:blur(24px) saturate(1.4);-webkit-backdrop-filter:blur(24px) saturate(1.4);border-bottom:1px solid rgba(28,25,23,0.08)}
+.nav-title{position:absolute;left:50%;transform:translateX(-50%);font-size:17px;font-weight:600;color:var(--cf-fg)}
 .nav-act{display:inline-flex;align-items:center;gap:4px;padding:6px 12px;border:none;background:var(--cf-surface-variant);font-size:13px;font-weight:500;color:var(--cf-fg);cursor:pointer;font-family:inherit;border-radius:var(--cf-radius-md);text-decoration:none;transition:background .15s}.nav-act:hover{background:var(--cf-accent-container);color:var(--cf-accent-container-on)}
 .tabs{display:flex;margin:12px 0;border-radius:var(--cf-radius-md);overflow:hidden;background:var(--cf-surface-variant)}
 .tab{flex:1;height:36px;border:none;cursor:pointer;font:500 14px/1 system-ui,sans-serif;background:transparent;color:var(--cf-muted)}.tab.active{background:var(--cf-accent);color:var(--cf-accent-on);font-weight:600;border-radius:var(--cf-radius-md)}

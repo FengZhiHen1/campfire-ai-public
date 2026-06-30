@@ -2,14 +2,19 @@
  * CASE-09 案例管理逻辑 — 叙事提交页 Hook。
  *
  * 封装 NarrativeSubmit 页面的全部业务逻辑：表单状态、来源类型选择、
- * 叙事创建 + AI 提取流程。View 层仅负责 JSX 渲染。
+ * 叙事草稿保存（后端持久化）+ AI 提取流程。View 层仅负责 JSX 渲染。
  *
  * 调用路径：views/cases/pages/narrative-submit → useNarrativeSubmit → narrativeApi
  */
 
-import { useState, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { createNarrative, extractNarrative } from '../services/narrativeApi';
+import { useState, useCallback, useEffect } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import {
+  createNarrative,
+  extractNarrative,
+  getNarrative,
+  updateNarrative,
+} from '../services/narrativeApi';
 import { HttpError } from '../../shared/services/httpClient';
 import { showToast } from '../../shared/utils/toast';
 import { SOURCE_TYPE_OPTIONS, WRITING_TIPS, NARRATIVE_BODY_PLACEHOLDER } from '../types/constants';
@@ -41,14 +46,17 @@ export interface UseNarrativeSubmitReturn {
   setSourceType: (v: string) => void;
   narrative: string;
   setNarrative: (v: string) => void;
+  loadingDraft: boolean;
   submitting: boolean;
   extracting: boolean;
+  savingDraft: boolean;
+  draftSaved: boolean;
   tipsExpanded: boolean;
   setTipsExpanded: (v: boolean) => void;
   titleCount: number;
   bodyCount: number;
   canSubmit: boolean;
-  handleSaveDraft: () => void;
+  handleSaveDraft: () => Promise<void>;
   handleSubmit: () => Promise<void>;
   sourceOptions: readonly string[];
   writingTips: readonly string[];
@@ -61,47 +69,73 @@ export interface UseNarrativeSubmitReturn {
 
 export function useNarrativeSubmit(): UseNarrativeSubmitReturn {
   const navigate = useNavigate();
-  const [title, setTitle] = useState(() => {
-    try { return localStorage.getItem('narrative_draft_title') || ''; } catch { return ''; }
-  });
-  const [sourceType, setSourceType] = useState(() => {
-    try { return localStorage.getItem('narrative_draft_source') || '专家撰写'; } catch { return '专家撰写'; }
-  });
-  const [narrative, setNarrative] = useState(() => {
-    try { return localStorage.getItem('narrative_draft_body') || ''; } catch { return ''; }
-  });
+  const [searchParams] = useSearchParams();
+  const narrativeIdFromUrl = searchParams.get('narrativeId') ?? '';
+  const isEditMode = searchParams.get('mode') === 'edit' && Boolean(narrativeIdFromUrl);
+
+  const [title, setTitle] = useState('');
+  const [sourceType, setSourceType] = useState('专家撰写');
+  const [narrative, setNarrative] = useState('');
+  const [loadingDraft, setLoadingDraft] = useState(isEditMode);
   const [submitting, setSubmitting] = useState(false);
   const [extracting, setExtracting] = useState(false);
+  const [savingDraft, setSavingDraft] = useState(false);
+  const [draftSaved, setDraftSaved] = useState(false);
   const [tipsExpanded, setTipsExpanded] = useState(true);
+
+  // 编辑模式：从后端加载已有草稿
+  useEffect(() => {
+    if (!isEditMode) {
+      setLoadingDraft(false);
+      return;
+    }
+    setLoadingDraft(true);
+    getNarrative(narrativeIdFromUrl)
+      .then((res) => {
+        setTitle(res.title);
+        setNarrative(res.narrative);
+        setSourceType(res.source_type || '专家撰写');
+      })
+      .catch((err) => {
+        const message = getErrorMessage(err, '加载草稿失败');
+        showToast({ title: message, icon: 'none' });
+      })
+      .finally(() => setLoadingDraft(false));
+  }, [isEditMode, narrativeIdFromUrl]);
 
   const titleCount = title.length;
   const bodyCount = narrative.length;
   const canSubmit = Boolean(title.trim() && narrative.trim());
 
-  const persistDraft = useCallback(() => {
-    try {
-      localStorage.setItem('narrative_draft_title', title);
-      localStorage.setItem('narrative_draft_source', sourceType);
-      localStorage.setItem('narrative_draft_body', narrative);
-    } catch { /* 存储失败不阻断 */ }
-  }, [title, sourceType, narrative]);
-
-  const handleSaveDraft = useCallback(() => {
+  const handleSaveDraft = useCallback(async () => {
     if (!title.trim() && !narrative.trim()) {
       showToast({ title: '请先输入内容', icon: 'none' });
       return;
     }
-    persistDraft();
-    showToast({ title: '草稿已保存', icon: 'success' });
-  }, [title, narrative, persistDraft]);
-
-  const clearDraft = useCallback(() => {
+    if (savingDraft) return;
+    setSavingDraft(true);
+    setDraftSaved(false);
     try {
-      localStorage.removeItem('narrative_draft_title');
-      localStorage.removeItem('narrative_draft_source');
-      localStorage.removeItem('narrative_draft_body');
-    } catch { /* 清理失败不阻断 */ }
-  }, []);
+      if (narrativeIdFromUrl) {
+        // 已有草稿：更新后端记录
+        await updateNarrative(narrativeIdFromUrl, { title, narrative });
+        setDraftSaved(true);
+        showToast({ title: '草稿已保存', icon: 'success' });
+        window.setTimeout(() => setDraftSaved((v) => (v ? false : v)), 1800);
+      } else {
+        // 新草稿：创建后端记录，并进入编辑模式
+        const res = await createNarrative({ title, narrative, source_type: sourceType });
+        const newId = res.narrative_id;
+        showToast({ title: '草稿已保存', icon: 'success' });
+        navigate(`/cases/narrative?mode=edit&narrativeId=${newId}`, { replace: true });
+      }
+    } catch (err) {
+      const message = getErrorMessage(err, '保存草稿失败');
+      showToast({ title: message, icon: 'none' });
+    } finally {
+      setSavingDraft(false);
+    }
+  }, [title, narrative, sourceType, narrativeIdFromUrl, savingDraft, navigate]);
 
   const triggerExtraction = useCallback(async (narrativeId: string) => {
     setExtracting(true);
@@ -125,17 +159,22 @@ export function useNarrativeSubmit(): UseNarrativeSubmitReturn {
     if (!canSubmit) return;
     setSubmitting(true);
     try {
-      const res = await createNarrative({ title, narrative, source_type: sourceType });
-      const narrativeId = res.narrative_id;
-      console.debug('[narrative-submit] created narrativeId:', narrativeId);
-      clearDraft();
-      await triggerExtraction(narrativeId);
+      let targetNarrativeId = narrativeIdFromUrl;
+      if (!targetNarrativeId) {
+        // 新草稿：先创建，再提取
+        const res = await createNarrative({ title, narrative, source_type: sourceType });
+        targetNarrativeId = res.narrative_id;
+      } else {
+        // 已有草稿：先更新，再提取
+        await updateNarrative(targetNarrativeId, { title, narrative });
+      }
+      await triggerExtraction(targetNarrativeId);
     } catch (err) {
       const message = getErrorMessage(err, '提交失败');
       showToast({ title: message, icon: 'none' });
       setSubmitting(false);
     }
-  }, [canSubmit, title, narrative, sourceType, clearDraft, triggerExtraction]);
+  }, [canSubmit, title, narrative, sourceType, narrativeIdFromUrl, triggerExtraction]);
 
   return {
     title,
@@ -144,8 +183,11 @@ export function useNarrativeSubmit(): UseNarrativeSubmitReturn {
     setSourceType,
     narrative,
     setNarrative,
+    loadingDraft,
     submitting,
     extracting,
+    savingDraft,
+    draftSaved,
     tipsExpanded,
     setTipsExpanded,
     titleCount,

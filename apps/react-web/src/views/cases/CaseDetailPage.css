@@ -30,3 +30,7 @@
 .glow-loading{height:200px;border-radius:var(--cf-radius-lg);background:var(--cf-surface-variant);position:relative;overflow:hidden}
 .glow-loading::after{content:"";position:absolute;inset:0;background:radial-gradient(circle at 30% 50%,rgba(245,158,11,0.08) 0%,transparent 60%);animation:glowPulse 2s ease-in-out infinite}
 @keyframes glowPulse{0%,100%{opacity:.5}50%{opacity:1}}
+.extracting-hint{display:flex;align-items:flex-start;gap:10px;padding:12px 14px;margin-top:16px;border-radius:var(--cf-radius-md);background:var(--cf-accent-secondary-container);color:var(--cf-accent-secondary);font-size:13px;line-height:1.6}
+.ext-dot{width:8px;height:8px;border-radius:50%;background:var(--cf-accent-secondary);margin-top:5px;animation:extPulse 1.4s ease-in-out infinite}
+@keyframes extPulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.5;transform:scale(.85)}}
+.extract-error-hint{width:100%;padding:10px 12px;margin-top:8px;border-radius:var(--cf-radius-md);background:var(--cf-danger-container);color:var(--cf-danger);font-size:13px;line-height:1.5}

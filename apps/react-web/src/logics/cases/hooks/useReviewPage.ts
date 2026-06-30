@@ -47,6 +47,8 @@ export interface UseReviewPageReturn {
   actionState: ReviewActionState;
   /** 当前用户是否有审核权限 */
   canReview: boolean;
+  /** 判断某条队列是否为自己的案例（禁止自审） */
+  isSelfReview: (item: ReviewQueueItem) => boolean;
   /** 加载队列 */
   fetchQueue: (page?: number) => Promise<void>;
   /** 批准案例 */
@@ -96,9 +98,15 @@ export function useReviewPage(): UseReviewPageReturn {
   });
 
   const user = useSessionStore((s) => s.user);
+  const currentUserId = user?.userId ?? '';
   const roles: string[] = user?.roles ?? [];
   // TODO: 暂时关闭权限隔离，后续恢复
   const canReview = true; // roles.includes('expert') || roles.includes('admin');
+
+  const isSelfReview = useCallback(
+    (item: ReviewQueueItem) => Boolean(item.author_id && item.author_id === currentUserId),
+    [currentUserId],
+  );
 
   // TODO: 暂时关闭权限隔离，后续恢复
   // useEffect(() => {
@@ -206,6 +214,7 @@ export function useReviewPage(): UseReviewPageReturn {
     hasMore,
     actionState,
     canReview,
+    isSelfReview,
     fetchQueue,
     handleApprove,
     handleReject,

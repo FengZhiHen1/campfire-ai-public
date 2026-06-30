@@ -496,6 +496,7 @@ export function seedCards(): CardData[] {
       contraindications: '不得强行打断无害刻板行为，不得使用惩罚手段',
       evidence_level: '循证实践（NCAEP 推荐）',
       is_template: true,
+      review_status: 'draft',
     },
     {
       card_id: 'mock-card-002',
@@ -515,6 +516,7 @@ export function seedCards(): CardData[] {
       contraindications: '不得大声斥责或多人围住孩子，不得在孩子崩溃时进行说教',
       evidence_level: '案例分析',
       is_template: true,
+      review_status: 'draft',
     },
     {
       card_id: 'mock-card-003',
@@ -534,6 +536,7 @@ export function seedCards(): CardData[] {
       contraindications: '不得在孩子激动时长篇说教，不得使用体罚',
       evidence_level: '机构经验',
       is_template: false,
+      review_status: 'approved',
     },
     {
       card_id: 'mock-card-004',
@@ -553,6 +556,7 @@ export function seedCards(): CardData[] {
       contraindications: '不得强迫孩子长时间坐定训练，不得在孩子回避时追问',
       evidence_level: '循证实践（NCAEP 推荐）',
       is_template: false,
+      review_status: 'pending_review',
     },
   ];
 }

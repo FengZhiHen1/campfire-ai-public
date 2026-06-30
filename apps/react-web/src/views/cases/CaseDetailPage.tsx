@@ -107,6 +107,24 @@ export default function CaseDetailPage() {
                 </svg>
                 该案例已通过审核
               </div>
+            ) : data.extraction_status === 'extracting' ? (
+              <div className="extracting-hint">
+                <div className="ext-dot" />
+                <span>AI 正在提取干预卡片，内容较长时可能需要 1–3 分钟。你可以先去别处，稍后回来查看结果。</span>
+              </div>
+            ) : data.extraction_status === 'extracted' && data.cards.length > 0 ? (
+              <div className="actions">
+                <button type="button" className="btn btn-p" onClick={handleGoExtract}>查看提取结果</button>
+                <button type="button" className="btn btn-s" onClick={handleEditNarrative}>编辑原文</button>
+              </div>
+            ) : data.extraction_status === 'failed' ? (
+              <div className="actions">
+                <button type="button" className="btn btn-p" onClick={handleGoExtract}>重新提取</button>
+                <button type="button" className="btn btn-s" onClick={handleEditNarrative}>编辑原文</button>
+                {data.extraction_error && (
+                  <div className="extract-error-hint">{data.extraction_error}</div>
+                )}
+              </div>
             ) : (
               <div className="actions">
                 <button type="button" className="btn btn-p" onClick={handleGoExtract}>提取卡片</button>

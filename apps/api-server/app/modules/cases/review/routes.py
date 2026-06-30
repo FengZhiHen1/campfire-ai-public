@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, Optional
 
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.dependencies.anonymous_user import get_anonymous_user
@@ -38,6 +38,7 @@ from py_schemas.cases import (
     ReviewRequest,
 )
 from py_schemas.security.validation_schemas import ValidationErrorResponse
+from ..exceptions import SelfReviewForbiddenError
 
 router = APIRouter(prefix="/api/v1/cases", tags=["reviews"])
 
@@ -74,16 +75,22 @@ async def submit_review_endpoint(
     narrative_repo: NarrativeRepository = Depends(get_narrative_repository),
 ) -> CaseReviewResponse:
     """提交审核裁决端点。"""
-    return await _review_service.submit_review(
-        case_id=case_id,
-        review_request=review_request,
-        current_user=anonymous_user,
-        session=session,
-        case_repo=case_repo,
-        review_repo=review_repo,
-        audit_repo=audit_repo,
-        narrative_repo=narrative_repo,
-    )
+    try:
+        return await _review_service.submit_review(
+            case_id=case_id,
+            review_request=review_request,
+            current_user=anonymous_user,
+            session=session,
+            case_repo=case_repo,
+            review_repo=review_repo,
+            audit_repo=audit_repo,
+            narrative_repo=narrative_repo,
+        )
+    except SelfReviewForbiddenError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "SELF_REVIEW_FORBIDDEN", "message": str(exc)},
+        ) from exc
 
 
 @router.get(

@@ -194,8 +194,10 @@ class ExtractionError(CasesError):
     触发条件: LLM 调用失败、JSON 解析失败或卡片校验不通过。
     诊断字段:
       - reason: 失败原因简述
+      - raw_output: 出问题时 LLM 返回的原始文本（JSON 解析失败等场景用于排错）
     """
 
-    def __init__(self, reason: str) -> None:
+    def __init__(self, reason: str, raw_output: str | None = None) -> None:
         self.reason = reason
+        self.raw_output = raw_output
         super().__init__(f"LLM 提取失败: {reason}")

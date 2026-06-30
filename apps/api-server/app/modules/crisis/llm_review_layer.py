@@ -84,7 +84,7 @@ class LLMReviewLayer(JudgmentLayer):
                     ],
                     model=self._model,
                     temperature=0.1,
-                    max_tokens=512,
+                    max_tokens=10000,
                     timeout=timeout_seconds,
                     response_format={"type": "json_object"},
                 ),
