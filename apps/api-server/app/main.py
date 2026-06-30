@@ -68,7 +68,7 @@ from app.core.health import router as health_router
 from app.core.middleware.rate_limit import RateLimitMiddleware
 from app.core.middleware.validation_handler import register_validation_handler
 from app.modules.auth import auth_router
-from app.modules.cases import card_router, cases_router, narratives_router, reviews_router
+from app.modules.cases import card_router, narratives_router, reviews_router
 from app.modules.consultation import consult_router, consultations_router, stream_router
 from app.modules.profiles import events_router, experts_router, profiles_router
 from py_config import get_settings
@@ -173,11 +173,10 @@ def create_app() -> FastAPI:
     app.include_router(health_router)
 
     # 业务路由
-    # 注意：reviews_router 必须在 cases_router 之前注册，
-    # 否则 cases_router 的 /{case_id} 会拦截 /review-queue
+    # 注意：reviews_router 使用 /api/v1/cases 前缀，
+    # 必须在其他可能产生路径冲突的路由之前注册。
     app.include_router(auth_router)
     app.include_router(reviews_router)
-    app.include_router(cases_router)
     app.include_router(narratives_router)
     app.include_router(card_router)
     app.include_router(consult_router)
