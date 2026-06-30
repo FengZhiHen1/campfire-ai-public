@@ -201,3 +201,50 @@ sshpass -p "<从 .tmp/云服务器路径.md 读取的密码>" \
 - 不得将密码、私钥写入版本控制或任何公开位置。
 - 不得在回复中完整复述密码。
 - 不得把服务器凭证上传给第三方服务。
+
+## 8.6 部署同步说明
+
+### 8.6.1 代码仓库
+
+- **GitHub 仓库**：`https://github.com/FengZhiHen1/Campfire-AI.git`
+- **本地默认分支**：`master`
+- **服务器项目目录**：`/root/Campfire-AI`
+
+### 8.6.2 本地改动推送到 GitHub
+
+本地完成修改并通过检查清单后，执行：
+
+```bash
+git add <修改的文件>
+git commit -m "<中文 commit message>"
+git push origin master
+```
+
+### 8.6.3 服务器同步并更新服务
+
+在服务器上拉取最新代码、重新构建镜像并重启服务：
+
+```bash
+cd /root/Campfire-AI
+git pull origin master
+
+# 重新构建涉及代码变更的服务
+docker compose -f docker-compose.prod.yml build --no-cache \
+  api-server worker migration
+
+# 启动/重启服务
+docker compose -f docker-compose.prod.yml up -d
+
+# 执行数据库迁移
+docker compose -f docker-compose.prod.yml run --rm migration
+
+# 检查状态
+docker compose -f docker-compose.prod.yml ps
+```
+
+### 8.6.4 注意事项
+
+- 部署前确认 `.env` 和 `infrastructure/nginx/ssl/` 已正确保留（它们在 `.gitignore` 中，不会被 Git 覆盖）。
+- `docker compose up -d` 会重建有变化的容器，期间相关服务会有短暂中断。
+- 若仅修改了静态前端文件或文档，可跳过 `migration` 步骤。
+- 数据库迁移属于 schema/数据变更，执行前需按第 8.3 节确认影响范围。
