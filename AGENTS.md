@@ -208,21 +208,41 @@ sshpass -p "<从 .tmp/云服务器路径.md 读取的密码>" \
 
 - **GitHub 仓库**：`https://github.com/FengZhiHen1/Campfire-AI.git`
 - **本地默认分支**：`master`
+- **开发分支**：`dev`
 - **服务器项目目录**：`/root/Campfire-AI`
 
-### 8.6.2 本地改动推送到 GitHub
+### 8.6.2 分支策略
 
-本地完成修改并通过检查清单后，执行：
+**日常开发在 `dev` 分支进行，`master` 分支只保留稳定版本。**
+
+- 新功能、bug 修复、文档更新等日常改动，先在 `dev` 分支提交并推送。
+- `dev` 分支经过本地测试、类型检查、lint 等验证后，再合并到 `master`。
+- **只有 `master` 分支的代码才会部署到远程服务器**，避免把不稳定代码直接推上生产环境。
+- 合并到 `master` 前，确保已阅读并遵循相关设计文档，且通过第 7 节检查清单。
+
+### 8.6.3 本地改动推送到 GitHub
+
+本地完成修改并通过检查清单后，推送到 `dev` 分支：
 
 ```bash
+git checkout dev
 git add <修改的文件>
 git commit -m "<中文 commit message>"
+git push origin dev
+```
+
+当 `dev` 分支达到可发布状态时，合并到 `master`：
+
+```bash
+git checkout master
+git pull origin master
+git merge dev
 git push origin master
 ```
 
-### 8.6.3 服务器同步并更新服务
+### 8.6.4 服务器同步并更新服务
 
-在服务器上拉取最新代码、重新构建镜像并重启服务：
+服务器只从 `master` 分支拉取。拉取最新代码、重新构建镜像并重启服务：
 
 ```bash
 cd /root/Campfire-AI
@@ -242,9 +262,10 @@ docker compose -f docker-compose.prod.yml run --rm migration
 docker compose -f docker-compose.prod.yml ps
 ```
 
-### 8.6.4 注意事项
+### 8.6.5 注意事项
 
 - 部署前确认 `.env` 和 `infrastructure/nginx/ssl/` 已正确保留（它们在 `.gitignore` 中，不会被 Git 覆盖）。
 - `docker compose up -d` 会重建有变化的容器，期间相关服务会有短暂中断。
 - 若仅修改了静态前端文件或文档，可跳过 `migration` 步骤。
 - 数据库迁移属于 schema/数据变更，执行前需按第 8.3 节确认影响范围。
+- 禁止直接把未经验证的 `dev` 分支代码部署到服务器。
