@@ -170,7 +170,9 @@ class NarrativeManagementContract(ABC):
         """获取某叙事下的所有 L2 卡片。
 
         后置:
-          - 返回 CaseCard 列表（按 created_at 升序）
+          - 返回 CaseCard 列表
+          - 优先按叙事层保存的 derived_card_ids 顺序排列
+          - 无 derived_card_ids 时回退到 created_at 升序
         """
         self._validate_narrative_id(narrative_id)
         return await self._do_get_cards_by_narrative(narrative_id, session)

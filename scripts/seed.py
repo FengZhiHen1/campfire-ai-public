@@ -1132,8 +1132,9 @@ async def _import_cases(session: AsyncSession, author_id: UUID) -> list[CaseCard
         session.add(narrative)
         await session.flush()
 
-        for card_data in case_data["cards"]:
-            card_id = uuid.uuid4()
+        for idx, card_data in enumerate(case_data["cards"]):
+            # 复用 narrative.derived_card_ids 中预生成的 ID，保持两者一致
+            card_id = uuid.UUID(card_ids[idx])
             age_range = card_data.get("age_range", [0, 0])
             card = CaseCard(
                 card_id=card_id,
@@ -1229,6 +1230,45 @@ async def _index_cards(session: AsyncSession, cards: list[CaseCard]) -> None:
             await session.commit()
 
 
+async def _repair_derived_card_ids(session: AsyncSession) -> int:
+    """修正所有叙事与其真实卡片 ID 不一致的 derived_card_ids。
+
+    按 CaseCard.created_at 升序重建 derived_card_ids，仅当现有值与期望值
+    不一致时才更新，避免覆盖其他字段或已经正确的数据。
+    """
+    from sqlalchemy import select
+
+    result = await session.execute(select(CaseNarrative))
+    narratives = list(result.scalars().all())
+
+    repaired = 0
+    skipped = 0
+
+    for narrative in narratives:
+        card_result = await session.execute(
+            select(CaseCard)
+            .where(CaseCard.narrative_id == narrative.narrative_id)
+            .order_by(CaseCard.created_at.asc())
+        )
+        cards = list(card_result.scalars().all())
+        expected = [str(c.card_id) for c in cards]
+        current = narrative.derived_card_ids or []
+
+        if current != expected:
+            narrative.derived_card_ids = expected if expected else []
+            repaired += 1
+            action = "清空" if not expected else f"重排 {len(expected)} 张卡片"
+            print(f"[REPAIR] {narrative.title}: {action}")
+        else:
+            skipped += 1
+
+    if repaired:
+        await session.commit()
+
+    print(f"[INFO] derived_card_ids 修复: {repaired} 条修正, {skipped} 条无需处理")
+    return repaired
+
+
 # ---------------------------------------------------------------------------
 # 主入口
 # ---------------------------------------------------------------------------
@@ -1261,14 +1301,22 @@ async def main() -> int:
         action="store_true",
         help="只注入个人档案事件记录",
     )
+    parser.add_argument(
+        "--repair-derived-ids",
+        action="store_true",
+        help="仅修正 case_narratives.derived_card_ids 与实际卡片 ID 不一致的数据",
+    )
     args = parser.parse_args()
 
     # 解析模式：默认全部；指定任意子开关时只执行对应部分
-    has_specific_mode = args.users or args.profile or args.cases or args.events
+    has_specific_mode = (
+        args.users or args.profile or args.cases or args.events or args.repair_derived_ids
+    )
     run_users = args.users or args.profile or args.events or not has_specific_mode
     run_profile = args.profile or args.events or not has_specific_mode
     run_events = args.profile or args.events or not has_specific_mode
     run_cases = args.cases or not has_specific_mode
+    run_repair = args.repair_derived_ids
 
     settings = get_settings()
     database_url = str(settings.DATABASE_URL)
@@ -1346,6 +1394,10 @@ async def main() -> int:
                     await _index_cards(session, pending_cards)
                 else:
                     print("[SKIP] 所有种子卡片已完成索引")
+
+        if run_repair:
+            print("[INFO] 修正 derived_card_ids 不一致的数据...")
+            await _repair_derived_card_ids(session)
 
     await engine.dispose()
     print("\n[OK] 种子注入完成")
