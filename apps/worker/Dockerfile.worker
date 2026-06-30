@@ -7,7 +7,7 @@
 # Stage 1: Builder
 FROM python:3.12 AS builder
 
-WORKDIR /build
+WORKDIR /app
 
 # Install uv package manager
 COPY --from=ghcr.io/astral-sh/uv:0.6.14 /uv /usr/local/bin/uv
@@ -18,9 +18,10 @@ ENV UV_COMPILE_BYTECODE=1
 ENV UV_LINK_MODE=copy
 
 # Copy workspace definition, lockfile and dependency manifests
+# 注意：必须复制整个 apps/ 目录，因为根 pyproject.toml 将 api-server 和 worker 都声明为 workspace 成员
 COPY pyproject.toml uv.lock ./
 COPY packages/ ./packages/
-COPY apps/worker/ ./apps/worker/
+COPY apps/ ./apps/
 
 # Install dependencies (pinned by uv.lock for reproducible builds)
 RUN uv sync --no-dev --package worker --frozen
@@ -30,8 +31,19 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
+# 安装健康检查所需的 procps（pgrep）
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends procps \
+    && rm -rf /var/lib/apt/lists/*
+
 # Copy virtual environment from builder
-COPY --from=builder /build/.venv /app/.venv
+COPY --from=builder /app/.venv /app/.venv
+
+# Copy workspace packages (uv installs them as editable, so source must remain available)
+COPY packages/ /app/packages/
+
+# Copy worker source so the editable install .pth points to the same path as in builder
+COPY apps/worker/src /app/apps/worker/src
 
 # Configure runtime environment
 ENV PATH="/app/.venv/bin:$PATH"
