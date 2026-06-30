@@ -679,6 +679,12 @@ class SseStreamingService:
 
         from app.modules.consultation.history import archive_consultation
 
+        logger.info(
+            service="streaming",
+            message="archive_entered",
+            op_type="archive",
+            extra={"stream_id": session.stream_id, "has_meta": session.stream_id in self._generation_meta},
+        )
         meta = self._generation_meta.get(session.stream_id)
         if meta is None:
             logger.warning(
@@ -792,15 +798,50 @@ class SseStreamingService:
             )
             return
 
+        logger.info(
+            service="streaming",
+            message="archive_data_built",
+            op_type="archive",
+            extra={"stream_id": session.stream_id, "request_id": str(archive_request_id)},
+        )
+
         try:
             from app.core.dependencies.auth_dependencies import _get_session_factory
 
             factory = _get_session_factory()
+            logger.info(
+                service="streaming",
+                message="archive_session_factory_ready",
+                op_type="archive",
+                extra={"stream_id": session.stream_id},
+            )
             async with factory() as db:
+                logger.info(
+                    service="streaming",
+                    message="archive_db_session_acquired",
+                    op_type="archive",
+                    extra={"stream_id": session.stream_id},
+                )
+                logger.info(
+                    service="streaming",
+                    message="archive_calling",
+                    op_type="archive",
+                    extra={"stream_id": session.stream_id, "request_id": str(archive_request_id)},
+                )
                 record = await archive_consultation(
                     data=data,
                     current_user={"sub": user_id, "user_id": user_id},
                     db=db,
+                )
+                logger.info(
+                    service="streaming",
+                    message="archive_returned",
+                    op_type="archive",
+                    extra={
+                        "stream_id": session.stream_id,
+                        "record_id": str(record.id) if record is not None else None,
+                        "request_id": str(record.request_id) if record is not None else None,
+                    },
                 )
                 logger.info(
                     service="streaming",
@@ -813,6 +854,12 @@ class SseStreamingService:
                     },
                 )
                 await db.commit()
+                logger.info(
+                    service="streaming",
+                    message="archive_committed",
+                    op_type="archive",
+                    extra={"stream_id": session.stream_id, "request_id": str(record.request_id)},
+                )
         except Exception:
             logger.error(
                 service="streaming",
