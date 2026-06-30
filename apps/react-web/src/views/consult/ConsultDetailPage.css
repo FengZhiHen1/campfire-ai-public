@@ -27,6 +27,8 @@
 .plan-section.medical .plan-section-head{color:var(--cf-accent-neutral)}
 .plan-section-body{font-size:15px;line-height:1.85;color:var(--cf-fg-2)}
 .plan-section-body p{margin-bottom:3px}.plan-section-body p:last-child{margin-bottom:0}
+.plan-section-body.raw-plan{font-size:14px;line-height:1.75;color:var(--cf-fg-2)}
+.plan-section.empty .plan-section-body{color:var(--cf-muted);font-size:14px;text-align:center;padding:12px 0}
 .partial-warning{display:flex;align-items:center;gap:6px;padding:8px 12px;margin-bottom:12px;background:var(--cf-accent-container);border-radius:var(--cf-radius-md);font-size:12px;font-weight:500;color:var(--cf-accent-container-on)}
 .partial-warning svg{width:14px;height:14px;flex-shrink:0}
 .plan-footer{margin-top:16px;padding-top:12px;border-top:1px solid rgba(28,25,23,0.06);display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;font-size:12px;color:var(--cf-muted)}

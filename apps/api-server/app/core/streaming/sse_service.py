@@ -543,7 +543,7 @@ class SseStreamingService:
                                 "finish_reason": finish_reason,
                             },
                         )
-                        await self._try_archive(session)
+                        await self._try_archive(session, raw_full_text=chunk.raw_full_text)
                         return
 
             except asyncio.CancelledError:
@@ -663,7 +663,11 @@ class SseStreamingService:
 
         self._session_manager.update_session(session)
 
-    async def _try_archive(self, session: StreamSession) -> None:
+    async def _try_archive(
+        self,
+        session: StreamSession,
+        raw_full_text: str | None = None,
+    ) -> None:
         """流完成后将咨询记录归档写入数据库。
 
         从 generation_meta 和 session 中提取归档所需全部字段，
@@ -673,6 +677,11 @@ class SseStreamingService:
         写入失败仅记录日志，不阻塞 SSE 流的正常结束。
 
         仅在 generation_meta 中存在有效 user_id 时执行归档。
+
+        Args:
+            session: 当前 StreamSession。
+            raw_full_text: LLM 返回的原始完整 JSON 文本。优先使用此参数解析
+                plan_sections 与引用；为 None 时回退到从 chunk_buffer 拼接。
         """
         from datetime import datetime, timezone
         from uuid import UUID
@@ -707,8 +716,10 @@ class SseStreamingService:
         behavior_description: str = meta.get("behavior_description", "")
         prenumbered_slices: dict[str, str] = meta.get("prenumbered_slices", {})
 
-        # 拼接生成全文
-        if session.chunk_buffer:
+        # 优先使用上游传入的原始 JSON 文本；异常断流等场景回退到 chunk_buffer 拼接
+        if raw_full_text is not None:
+            full_text = raw_full_text
+        elif session.chunk_buffer:
             full_text = "".join(
                 session.chunk_buffer[i]
                 for i in sorted(session.chunk_buffer.keys())
@@ -755,12 +766,31 @@ class SseStreamingService:
 
             finish_reason = session.finish_reason or "COMPLETE"
             is_partial = finish_reason in ("PARTIAL", "TIMEOUT")
-            generated_plan = full_text
+            # generated_plan 保存原始 JSON 文本，便于后续解析/展示；
+            # 只有异常断流导致 raw_full_text 缺失时才保留 chunk_buffer 拼接内容。
+            generated_plan = raw_full_text if raw_full_text is not None else full_text
 
         # 复用原始 request_id 作为幂等键；缺失时兜底生成并记录警告
         original_request_id = meta.get("request_id", "")
         if original_request_id:
-            archive_request_id = UUID(str(original_request_id))
+            # CSLT-08 编排层生成的 request_id 格式为 "req-{uuid4}"，
+            # 需要去掉前缀后转成 UUID。
+            raw_request_id = str(original_request_id)
+            if raw_request_id.startswith("req-"):
+                raw_request_id = raw_request_id[4:]
+            try:
+                archive_request_id = UUID(raw_request_id)
+            except ValueError:
+                archive_request_id = uuid.uuid4()
+                logger.warning(
+                    service="streaming",
+                    message="archive_malformed_request_id",
+                    extra={
+                        "stream_id": session.stream_id,
+                        "original_request_id": str(original_request_id),
+                        "fallback_request_id": str(archive_request_id),
+                    },
+                )
         else:
             archive_request_id = uuid.uuid4()
             logger.warning(

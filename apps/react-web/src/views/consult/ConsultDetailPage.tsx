@@ -95,16 +95,30 @@ export default function ConsultDetailPage() {
 
         <div className="plan-card">
           <h3>干预建议大纲</h3>
-          {planSections.map(([title, contents], i) => (
-            <div key={i} className={`plan-section ${getSectionClass(title)}`}>
-              <div className="plan-section-head"><span>{title}</span></div>
-              <div className="plan-section-body">
-                {contents.map((line, idx) => (
-                  <p key={idx}>{line}</p>
+          {planSections.length > 0 ? (
+            planSections.map(([title, contents], i) => (
+              <div key={i} className={`plan-section ${getSectionClass(title)}`}>
+                <div className="plan-section-head"><span>{title}</span></div>
+                <div className="plan-section-body">
+                  {contents.map((line, idx) => (
+                    <p key={idx}>{line}</p>
+                  ))}
+                </div>
+              </div>
+            ))
+          ) : detail.generated_plan ? (
+            <div className="plan-section">
+              <div className="plan-section-body raw-plan">
+                {detail.generated_plan.split(/\n|。/).filter(Boolean).map((line, idx) => (
+                  <p key={idx}>{line.trim()}</p>
                 ))}
               </div>
             </div>
-          ))}
+          ) : (
+            <div className="plan-section empty">
+              <div className="plan-section-body">暂无干预建议内容</div>
+            </div>
+          )}
           <div className="plan-footer">
             <span className="case-count">基于 {detail.referenced_slice_ids.length} 个相似案例</span>
             {genSeconds && <span className="gen-time">生成耗时 {genSeconds}s</span>}

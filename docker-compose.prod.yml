@@ -115,7 +115,7 @@ services:
         condition: service_completed_successfully
     env_file: .env
     volumes:
-      - ./scripts/seed_cases.py:/app/scripts/seed_cases.py:ro
+      - ./scripts/seed.py:/app/scripts/seed.py:ro
     networks:
       - campfire-net
     deploy:
@@ -185,7 +185,7 @@ services:
       - ./infrastructure/nginx/conf.d/:/etc/nginx/conf.d/:ro
       - ./infrastructure/nginx/ssl/:/etc/nginx/ssl/:ro
       - ./infrastructure/nginx/html/:/usr/share/nginx/html/:ro
-      - ./apps/mini-program/dist:/usr/share/nginx/html/h5:ro
+      - ./apps/react-web/dist:/usr/share/nginx/html/h5:ro
     networks:
       - campfire-net
     deploy:
