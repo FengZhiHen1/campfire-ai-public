@@ -28,7 +28,6 @@ from py_logger import logger
 from ..exceptions import ExtractionError, NarrativeNotFoundError
 from .service import (
     NarrativeManagementService,
-    ExtractionResponse,
     NarrativeDetailResponse,
     card_to_response,
     narrative_to_list_item,
@@ -46,6 +45,9 @@ from py_schemas.cases import PaginatedResponse
 router = APIRouter(prefix="/api/v1/narratives", tags=["narratives"])
 
 _narrative_service = NarrativeManagementService()
+
+# 保留后台提取任务的强引用，避免被 asyncio 垃圾回收；任务完成后通过 done 回调移除。
+_extraction_tasks: set[asyncio.Task] = set()
 
 
 def _handle_narrative_error(exc: NarrativeNotFoundError) -> None:
@@ -198,9 +200,11 @@ async def extract_narrative_endpoint(
     entity.extraction_error = None
     await db.commit()
 
-    asyncio.create_task(
+    task = asyncio.create_task(
         _run_extraction_background(narrative_id, narrative_text, anonymous_user.get("sub", ""))
     )
+    _extraction_tasks.add(task)
+    task.add_done_callback(_extraction_tasks.discard)
 
     return JSONResponse(
         status_code=202,
@@ -232,11 +236,30 @@ async def _run_extraction_background(
                 )
             )
             nar = result.scalars().first()
-            if nar:
-                nar.extraction_status = "extracted"
-                nar.extraction_error = None
-                nar.derived_card_ids = [str(c.card_id) for c in cards]
-                await bg_db.commit()
+            if nar is None:
+                logger.warning(
+                    service="api-server",
+                    message="extraction_background_narrative_missing",
+                    extra={"narrative_id": narrative_id},
+                )
+                return
+
+            # 防御性检查：如果状态已被其他任务/请求改变，则避免覆盖。
+            if nar.extraction_status != "extracting":
+                logger.warning(
+                    service="api-server",
+                    message="extraction_background_status_changed",
+                    extra={
+                        "narrative_id": narrative_id,
+                        "current_status": nar.extraction_status,
+                    },
+                )
+                return
+
+            nar.extraction_status = "extracted"
+            nar.extraction_error = None
+            nar.derived_card_ids = [str(c.card_id) for c in cards]
+            await bg_db.commit()
             logger.info(
                 service="api-server",
                 message="extraction_background_done",
@@ -252,7 +275,19 @@ async def _run_extraction_background(
                     )
                 )
                 nar = result.scalars().first()
-                if nar:
+                if nar is None:
+                    pass
+                elif nar.extraction_status != "extracting":
+                    # 状态已被其他任务/请求改变，避免覆盖。
+                    logger.warning(
+                        service="api-server",
+                        message="extraction_background_failed_status_changed",
+                        extra={
+                            "narrative_id": narrative_id,
+                            "current_status": nar.extraction_status,
+                        },
+                    )
+                else:
                     nar.extraction_status = "failed"
                     nar.extraction_error = error_message
                     await bg_db.commit()
