@@ -3,48 +3,57 @@
 模拟 JsonSectionTracker 对各类 LLM 输出的解析能力，
 以及端到端 stream_generate 流程。
 """
+
 from __future__ import annotations
-import json
+
 import asyncio
+import json
 from typing import AsyncGenerator
 
 # ============================================================================
 # 步骤 1: 测试 JsonSectionTracker 对各种格式的解析
 # ============================================================================
 
+
 def test_tracker():
     """测试 tracker 对不同 LLM 输出格式的解析能力。"""
     from app.services.emergency_plan_generation.streaming import JsonSectionTracker
 
     test_cases = {
-        "标准 JSON": json.dumps({
-            "即时安全干预动作": ["措施1 [1]", "措施2"],
-            "情绪安抚话术": ["话术1", "话术2"],
-            "后续观察指标": ["指标1", "指标2"],
-            "就医判断标准": ["标准1", "标准2"],
-        }, ensure_ascii=False),
-
-        "Markdown 包裹 (```json)": '好的，以下是方案：\n```json\n' + json.dumps({
-            "即时安全干预动作": ["措施1 [1]", "措施2"],
-            "情绪安抚话术": ["话术1", "话术2"],
-            "后续观察指标": ["指标1", "指标2"],
-            "就医判断标准": ["标准1", "标准2"],
-        }, ensure_ascii=False) + '\n```\n以上建议仅供参考。',
-
-        "前缀说明 + JSON": '以下是您需要的应急方案，请查收：\n' + json.dumps({
-            "即时安全干预动作": ["措施1", "措施2"],
-            "情绪安抚话术": ["话术1", "话术2"],
-            "后续观察指标": ["指标1", "指标2"],
-            "就医判断标准": ["标准1", "标准2"],
-        }, ensure_ascii=False),
-
+        "标准 JSON": json.dumps(
+            {
+                "即时安全干预动作": ["措施1 [1]", "措施2"],
+                "情绪安抚话术": ["话术1", "话术2"],
+                "后续观察指标": ["指标1", "指标2"],
+                "就医判断标准": ["标准1", "标准2"],
+            },
+            ensure_ascii=False,
+        ),
+        "Markdown 包裹 (```json)": "好的，以下是方案：\n```json\n"
+        + json.dumps(
+            {
+                "即时安全干预动作": ["措施1 [1]", "措施2"],
+                "情绪安抚话术": ["话术1", "话术2"],
+                "后续观察指标": ["指标1", "指标2"],
+                "就医判断标准": ["标准1", "标准2"],
+            },
+            ensure_ascii=False,
+        )
+        + "\n```\n以上建议仅供参考。",
+        "前缀说明 + JSON": "以下是您需要的应急方案，请查收：\n"
+        + json.dumps(
+            {
+                "即时安全干预动作": ["措施1", "措施2"],
+                "情绪安抚话术": ["话术1", "话术2"],
+                "后续观察指标": ["指标1", "指标2"],
+                "就医判断标准": ["标准1", "标准2"],
+            },
+            ensure_ascii=False,
+        ),
         "Markdown bold keys": '{"即时安全干预动作":["正常"],"情绪安抚话术":["正常"],"后续观察指标":["正常"],"就医判断标准":["正常"]}',
-
         "英文 keys": '{"immediate_action":["test"],"calming_words":["test"],"observation":["test"],"medical_criteria":["test"]}',
-
-        "空 JSON": '{}',
-
-        "纯文本 (无 JSON)": '抱歉，我无法生成方案。请提供更多信息。',
+        "空 JSON": "{}",
+        "纯文本 (无 JSON)": "抱歉，我无法生成方案。请提供更多信息。",
     }
 
     for name, sample in test_cases.items():
@@ -58,24 +67,30 @@ def test_tracker():
 
         total_yield_chars = sum(section_chars.values())
         status = "OK" if total_yield_chars > 0 else "零产出!"
-        print(f"[{status}] {name}: {len(fragments)} fragments, {total_yield_chars} content chars, sections={list(section_chars.keys())}")
+        print(
+            f"[{status}] {name}: {len(fragments)} fragments, {total_yield_chars} content chars, sections={list(section_chars.keys())}"
+        )
 
 
 # ============================================================================
 # 步骤 2: 端到端 stream_generate 模拟
 # ============================================================================
 
+
 class MockChunk:
     def __init__(self, content: str):
         self.choices = [MockChoice(content)]
+
 
 class MockChoice:
     def __init__(self, content: str):
         self.delta = MockDelta(content)
 
+
 class MockDelta:
     def __init__(self, content: str):
         self.content = content
+
 
 class MockLLMClient:
     """模拟 LLMClient，返回预定义的 JSON 响应。"""
@@ -87,16 +102,18 @@ class MockLLMClient:
         # 模拟流式：将响应分成多个 chunk
         chunk_size = 10
         for i in range(0, len(self._text), chunk_size):
-            yield MockChunk(self._text[i:i + chunk_size])
+            yield MockChunk(self._text[i : i + chunk_size])
 
 
 async def test_stream_generate(response_text: str, label: str):
     """用模拟 LLM 客户端测试 stream_generate。"""
-    from app.services.emergency_plan_generation.streaming import stream_generate
-    from app.services.emergency_plan_generation.models import EmergencyPlanInput
-
-    from app.services.crisis_judgment.models import CrisisJudgmentResult, JudgmentLayerResult
     from app.services.crisis_judgment.enums import CrisisLevel
+    from app.services.crisis_judgment.models import (
+        CrisisJudgmentResult,
+        JudgmentLayerResult,
+    )
+    from app.services.emergency_plan_generation.models import EmergencyPlanInput
+    from app.services.emergency_plan_generation.streaming import stream_generate
     from py_schemas.consult import SemanticSearchResult
 
     mock_crisis = CrisisJudgmentResult.model_construct(
@@ -138,7 +155,9 @@ async def test_stream_generate(response_text: str, label: str):
         return
 
     content_total = sum(len(c.text) for c in chunks)
-    print(f"  [{label}]: {len(chunks)} content chunks, {content_total} total chars, finish={chunk.finish_reason if 'chunk' in dir() else 'N/A'}")
+    print(
+        f"  [{label}]: {len(chunks)} content chunks, {content_total} total chars, finish={chunk.finish_reason if 'chunk' in dir() else 'N/A'}"
+    )
 
 
 async def main():
@@ -152,22 +171,25 @@ async def main():
     print("步骤 2: stream_generate 端到端模拟")
     print("=" * 60)
 
-    standard_json = json.dumps({
-        "即时安全干预动作": ["措施1 [1]", "措施2"],
-        "情绪安抚话术": ["话术1", "话术2"],
-        "后续观察指标": ["指标1", "指标2"],
-        "就医判断标准": ["标准1", "标准2"],
-    }, ensure_ascii=False)
+    standard_json = json.dumps(
+        {
+            "即时安全干预动作": ["措施1 [1]", "措施2"],
+            "情绪安抚话术": ["话术1", "话术2"],
+            "后续观察指标": ["指标1", "指标2"],
+            "就医判断标准": ["标准1", "标准2"],
+        },
+        ensure_ascii=False,
+    )
 
     # 场景 A: 标准 JSON
     await test_stream_generate(standard_json, "标准 JSON")
 
     # 场景 B: Markdown 包裹
-    markdown_text = '好的，以下是应急方案：\n```json\n' + standard_json + '\n```\n以上建议仅供参考。'
+    markdown_text = "好的，以下是应急方案：\n```json\n" + standard_json + "\n```\n以上建议仅供参考。"
     await test_stream_generate(markdown_text, "Markdown 包裹")
 
     # 场景 C: 前缀 + JSON
-    await test_stream_generate('以下是您的应急方案：' + standard_json, "前缀说明 + JSON")
+    await test_stream_generate("以下是您的应急方案：" + standard_json, "前缀说明 + JSON")
 
     print()
     print("=" * 60)

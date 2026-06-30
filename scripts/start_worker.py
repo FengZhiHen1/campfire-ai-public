@@ -63,7 +63,7 @@ def _kill_stale_worker() -> None:
     import psutil
 
     try:
-        proc = psutil.Process(pid)
+        psutil.Process(pid)
     except psutil.NoSuchProcess:
         _remove_pid_file()
         return
@@ -126,6 +126,7 @@ class WorkerLauncher(ServiceLauncher):
 # 向后兼容：保留函数式接口
 # ---------------------------------------------------------------------------
 
+
 def start() -> tuple[subprocess.Popen, str]:
     """启动 Worker 服务。返回 (进程, 展示名称)。"""
     launcher = WorkerLauncher()
@@ -136,8 +137,10 @@ def start() -> tuple[subprocess.Popen, str]:
 # 独立运行入口
 # ---------------------------------------------------------------------------
 
+
 def main() -> None:
     from utils.launcher_utils import run_standalone
+
     run_standalone(WorkerLauncher())
 
 

@@ -37,7 +37,10 @@ def _find_pid_by_port(port: int) -> int | None:
     if sys.platform == "win32":
         result = subprocess.run(
             ["netstat", "-ano"],
-            capture_output=True, text=True, encoding="gbk", timeout=10,
+            capture_output=True,
+            text=True,
+            encoding="gbk",
+            timeout=10,
         )
         for line in (result.stdout or "").splitlines():
             if f":{port}" in line and "LISTENING" in line:
@@ -48,7 +51,10 @@ def _find_pid_by_port(port: int) -> int | None:
                     continue
     else:
         result = subprocess.run(
-            ["lsof", "-ti", f":{port}"], capture_output=True, text=True, timeout=10,
+            ["lsof", "-ti", f":{port}"],
+            capture_output=True,
+            text=True,
+            timeout=10,
         )
         if result.stdout.strip():
             try:
@@ -74,14 +80,16 @@ def _kill_process_by_pid(pid: int) -> bool:
         # 先尝试杀进程树
         result = subprocess.run(
             ["taskkill", "/F", "/T", "/PID", str(pid)],
-            capture_output=True, timeout=10,
+            capture_output=True,
+            timeout=10,
         )
         if result.returncode == 0:
             return True
         # 如果进程树不存在，尝试单独杀 PID
         result = subprocess.run(
             ["taskkill", "/F", "/PID", str(pid)],
-            capture_output=True, timeout=10,
+            capture_output=True,
+            timeout=10,
         )
         if result.returncode == 0:
             return True
@@ -91,6 +99,7 @@ def _kill_process_by_pid(pid: int) -> bool:
     else:
         import os
         import signal
+
         try:
             os.kill(pid, signal.SIGKILL)
             return True
@@ -212,10 +221,16 @@ class ApiLauncher(ServiceLauncher):
     def _do_start(self) -> subprocess.Popen:
         return start_process(
             [
-                "uv", "run", "--package", "api-server",
-                "uvicorn", "app.main:app",
-                "--host", "0.0.0.0",
-                "--port", str(self.port),
+                "uv",
+                "run",
+                "--package",
+                "api-server",
+                "uvicorn",
+                "app.main:app",
+                "--host",
+                "0.0.0.0",
+                "--port",
+                str(self.port),
                 "--reload",
             ],
             cwd=self._project_root,
@@ -225,6 +240,7 @@ class ApiLauncher(ServiceLauncher):
 # ---------------------------------------------------------------------------
 # 向后兼容：保留函数式接口
 # ---------------------------------------------------------------------------
+
 
 def start() -> tuple[subprocess.Popen, str]:
     """启动 API 服务。返回 (进程, 展示名称)。"""
@@ -236,8 +252,10 @@ def start() -> tuple[subprocess.Popen, str]:
 # 独立运行入口
 # ---------------------------------------------------------------------------
 
+
 def main() -> None:
     from utils.launcher_utils import run_standalone
+
     run_standalone(ApiLauncher())
 
 
