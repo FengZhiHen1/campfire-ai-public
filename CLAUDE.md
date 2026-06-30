@@ -1,94 +1,75 @@
-# CLAUDE.md
+# 项目简介
 
-Behavioral guidelines to reduce common LLM coding mistakes. Merge with project-specific instructions as needed.
+- 项目名：**篝火智答 (Campfire-AI)**
+- 目标：为孤独症人士家庭提供智能应急咨询与干预支持服务的全栈平台，基于 RAG 检索增强生成与案例库管理，帮助家属在突发行为/情绪危机时获得即时、结构化、可溯源的应急建议。
 
-**Tradeoff:** These guidelines bias toward caution over speed. For trivial tasks, use judgment.
+# 设计文档位置
 
-## 1. Think Before Coding
+> 在进行项目开发前，请务必阅读以下设计文档，以确保项目的顺利进行：
 
-**Don't assume. Don't hide confusion. Surface tradeoffs.**
+1. 技术栈文档：@docs\篝火智答-技术栈设计.md
+2. 项目结构文档：@docs\篝火智答-项目结构.md
 
-Before implementing:
-- State your assumptions explicitly. If uncertain, ask.
-- If multiple interpretations exist, present them - don't pick silently.
-- If a simpler approach exists, say so. Push back when warranted.
-- If something is unclear, stop. Name what's confusing. Ask.
+## 功能设计
 
-## 2. Simplicity First
+1. 原始材料：@docs\功能设计\原始材料\
+    - 其中的材料是关于**篝火智答各功能点**的设计，不涉及最终的功能模块拆分。
 
-**Minimum code that solves the problem. Nothing speculative.**
+# 编码行为准则
 
-- No features beyond what was asked.
-- No abstractions for single-use code.
-- No "flexibility" or "configurability" that wasn't requested.
-- No error handling for impossible scenarios.
-- If you write 200 lines and it could be 50, rewrite it.
+## 1. 编码前思考
 
-Ask yourself: "Would a senior engineer say this is overcomplicated?" If yes, simplify.
+**不要假设，不要隐藏困惑，暴露 tradeoff。**
 
-## 3. Surgical Changes
+- 动手前显式陈述对需求的假设；不确定时直接提问。
+- 若一个需求存在多种理解，列出选项，不要静默选择最复杂的那个。
+- 若存在更简单的实现路径，主动提出；必要时反驳过度设计。
+- 遇到模糊、矛盾或缺失的信息，停下来指明问题，而不是先写代码再返工。
 
-**Touch only what you must. Clean up only your own mess.**
+## 2. 极简优先
 
-When editing existing code:
-- Don't "improve" adjacent code, comments, or formatting.
-- Don't refactor things that aren't broken.
-- Match existing style, even if you'd do it differently.
-- If you notice unrelated dead code, mention it - don't delete it.
+**用最小的代码解决问题，不做 speculative 设计。**
 
-When your changes create orphans:
-- Remove imports/variables/functions that YOUR changes made unused.
-- Don't remove pre-existing dead code unless asked.
+- 不实现未被明确要求的功能。
+- 不为一处使用场景创建抽象。
+- 不添加未被要求的“灵活性”或“可配置性”。
+- 不为不可能发生的场景写异常处理。
+- 写完若觉得“一个资深工程师会说这过度复杂了”，就重写得更简单。
 
-The test: Every changed line should trace directly to the user's request.
+## 3. 精准改动
 
-## 4. Goal-Driven Execution
+**只碰必须碰的地方，只清理自己制造的残留。**
 
-**Define success criteria. Loop until verified.**
+- 不借机会“优化”相邻代码、注释或格式。
+- 不重构没有损坏的代码。
+- 遵循现有代码风格，即使你个人偏好不同。
+- 发现无关的死代码时，可以指出，但不要擅自删除。
+- 自己改动导致未使用的 import、变量或函数，必须清理；但预先存在的死代码需经用户确认后再删除。
 
-Transform tasks into verifiable goals:
-- "Add validation" → "Write tests for invalid inputs, then make them pass"
-- "Fix the bug" → "Write a test that reproduces it, then make it pass"
-- "Refactor X" → "Ensure tests pass before and after"
+**检验标准：** 每一行改动都应能直接追溯到用户的请求。
 
-For multi-step tasks, state a brief plan:
+## 4. 目标驱动执行
+
+**先定义可验证的成功标准，再循环验证直至达成。**
+
+将模糊任务转化为可验证目标：
+
+- “加个校验” → “为无效输入写测试，然后让测试通过”。
+- “修个 bug” → “写能复现 bug 的测试，然后让它通过”。
+- “重构 X” → “重构前后测试集都通过”。
+
+多步骤任务应给出简短计划：
+
 ```
-1. [Step] → verify: [check]
-2. [Step] → verify: [check]
-3. [Step] → verify: [check]
+1. [步骤] → 验证：[检查]
+2. [步骤] → 验证：[检查]
+3. [步骤] → 验证：[检查]
 ```
 
-Strong success criteria let you loop independently. Weak criteria ("make it work") require constant clarification.
+完成任务前必须运行覆盖该改动的检查或测试，确认通过后再结束。
 
----
+# 特殊规范
 
-**These guidelines are working if:** fewer unnecessary changes in diffs, fewer rewrites due to overcomplication, and clarifying questions come before implementation rather than after mistakes.
-
----
-
-## CSS / SCSS 编写规范（mini-program）
-
-### 设计令牌
-- 所有颜色、间距、圆角、阴影、字号优先使用 `apps/mini-program/src/views/shared/styles/_tokens.scss` 中的 `$cf-*` 变量或 `@include cf-*` mixins。
-- 新增颜色值必须先进入 `_tokens.scss`，禁止在业务样式中写死 `#hex` / `rgb` / `rgba`（除 `tokens` 文件与 `h5-simulator.scss` 外）。
-- 常用 mixins：
-  - `@include cf-page-shell` — 页面外壳
-  - `@include cf-card` — 标准卡片
-  - `@include cf-btn-reset` — 清除 Taro button 默认边框
-  - `@include cf-shadow-diffuse` / `@include cf-shadow-deep`
-
-### 动画
-- 动画 keyframes 统一放在 `app.scss`，以 `cf-*` 为前缀。
-- 业务文件禁止自定义局部 keyframes；如需新动画，先在 `app.scss` 注册。
-
-### 命名
-- 页面/组件级样式使用 BEM：`.block__element--modifier`。
-- 文件名与顶级 class 保持一致。
-
-### 工程化
-- 提交前运行 `pnpm lint:style`（当前为 warning 级别，后续将提升为 error）。
-- 新增 `.scss` 文件必须 `@use '../../shared/styles/tokens' as *;`（路径按实际层级调整）。
-
-### 文件组织
-- 避免单文件超过 600 行；可按结构拆分为 `_partial.scss` 并通过 `@use './partial';` 聚合。
-- H5 模拟器样式统一放在 `src/h5-simulator.scss`，不混入 `app.scss`。
+1. 使用标准的中文 commit message；若无特殊要求，每次 commit，只 commit 本 Agent 修改过的文件，排除其没有修改过的文件。
+2. 注释应使用中文（变量名、函数名等仍为英文）。
+3. 使用 Alembic 迁移数据库时，优先使用 `alembic revision --autogenerate`，并在生成的迁移文件中添加必要的注释。
