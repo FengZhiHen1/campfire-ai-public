@@ -43,7 +43,9 @@ from py_rag.types import (
 # 常量
 # ---------------------------------------------------------------------------
 
-_TOTAL_TIMEOUT_SECONDS: float = 5.0
+# 检索全流程超时：包含查询编码、向量检索与结果组装。
+# 考虑到 DashScope embedding 在高峰期可能接近 5~10s，预留充足余量。
+_TOTAL_TIMEOUT_SECONDS: float = 30.0
 
 
 class BaseSemanticSearch(ABC):

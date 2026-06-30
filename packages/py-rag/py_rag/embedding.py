@@ -39,7 +39,8 @@ EMBEDDING_URL: str = (
     "https://dashscope.aliyuncs.com/api/v1/services/embeddings/text-embedding/text-embedding"
 )
 EMBEDDING_MODEL: str = "text-embedding-v4"
-EMBEDDING_TIMEOUT: int = 5
+# 单次 embedding HTTP 调用超时，适当放宽以应对网络抖动。
+EMBEDDING_TIMEOUT: int = 15
 EMBEDDING_MAX_CONNECTIONS: int = 5
 EMBEDDING_MAX_KEEPALIVE: int = 2
 
