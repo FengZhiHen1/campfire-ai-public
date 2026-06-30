@@ -70,6 +70,13 @@ JUDGE_PHONE = "19900000000"
 JUDGE_REAL_NAME = "评审专家"
 JUDGE_DEVICE_ID = "judge"
 
+# 咨询历史种子数据固定 UUID（保证幂等）
+_SEED_CONSULTATION_ID = uuid.UUID("068dfb83-3c77-4c87-8770-f2ff952cd81f")
+_SEED_CONSULTATION_REQUEST_ID = uuid.UUID("34070918-ed93-42aa-ae4c-1e01d1c19c26")
+_SEED_CONSULTATION_REFERENCED_SLICE_ID = uuid.UUID(
+    "1994e2ea-e634-4cab-9baa-661f69de8cfb"
+)
+
 # 患者档案配置
 PROFILE_NICKNAME = "小阳"
 PROFILE_BIRTH_DATE = date(2012, 6, 15)
@@ -1043,6 +1050,101 @@ async def _ensure_events(session: AsyncSession, profile_id: UUID, recorded_by: U
     return created_count
 
 
+# 种子咨询历史数据：内容来自本地数据库 consultations 表第一条记录
+_SEED_CONSULTATION: dict[str, Any] = {
+    "crisis_level": "mild",
+    "behavior_description": "想让孩子做家务，但孩子不愿意怎么办？",
+    "generated_plan": '''{"即时安全干预动作":["平静地告知孩子具体家务任务（如“请把土豆皮削一下”），只讲一遍，不重复催促。[1]","若孩子未立即响应，家长不提高音量，不表现愤怒，停止当前依赖该家务完成的家庭活动（如放下菜刀），等待孩子准备。[1]","保持环境安静，不在等待期间进行说教或反复提醒，给予孩子处理听觉信息的时间。[1]","当孩子主动开始任务时，立即给予简短肯定（如“谢谢你帮忙”），不追加额外任务。[1]","若孩子出现情绪升级迹象（如烦躁、捂耳朵），允许他暂停，并确保环境无额外噪音刺激。[1]"],"情绪安抚话术":["“等你准备好了就去做。”","“谢谢你帮忙，这对我很重要。”","“我知道你听见了，我等你。”","“我们不急，慢慢来。”","“你做得很好，现在我们可以继续做饭了。”"],"后续观察指标":["从提出任务到孩子开始执行的时间间隔，逐次记录趋势。[1]","孩子主动完成任务的比例（无需任何催促的次数 ÷ 总提出任务次数），以周为单位统计。[1]","任务完成过程中孩子的情绪状态（1=平静配合，2=略有情绪但完成，3=明显抗拒但最终完成，4=完全拒绝）。[1]","一周内需要使用“停止活动”策略的频率变化。[1]","孩子是否因任务要求出现听觉敏感反应（如捂耳朵）或前庭寻求行为（如摇晃），并记录频率。"],"就医判断标准":["任务拒绝伴随攻击行为（打人、摔物、踢家具）或自伤行为（如咬自己）。[1]","拒绝行为持续超过1小时且孩子情绪出现明显恶化（哭闹、尖叫、捂耳朵等）。[1]","孩子连续3天以上拒绝所有家务配合，并泛化到拒绝进食、拒绝洗漱等基本活动。[1]","若上述情况持续一周内无改善，或出现新的自伤行为，建议咨询医生。"]}''',
+    "plan_sections": {
+        "即时安全干预动作": [
+            "平静地告知孩子具体家务任务（如“请把土豆皮削一下”），只讲一遍，不重复催促。[1]",
+            "若孩子未立即响应，家长不提高音量，不表现愤怒，停止当前依赖该家务完成的家庭活动（如放下菜刀），等待孩子准备。[1]",
+            "保持环境安静，不在等待期间进行说教或反复提醒，给予孩子处理听觉信息的时间。[1]",
+            "当孩子主动开始任务时，立即给予简短肯定（如“谢谢你帮忙”），不追加额外任务。[1]",
+            "若孩子出现情绪升级迹象（如烦躁、捂耳朵），允许他暂停，并确保环境无额外噪音刺激。[1]",
+        ],
+        "情绪安抚话术": [
+            "“等你准备好了就去做。”",
+            "“谢谢你帮忙，这对我很重要。”",
+            "“我知道你听见了，我等你。”",
+            "“我们不急，慢慢来。”",
+            "“你做得很好，现在我们可以继续做饭了。”",
+        ],
+        "后续观察指标": [
+            "从提出任务到孩子开始执行的时间间隔，逐次记录趋势。[1]",
+            "孩子主动完成任务的比例（无需任何催促的次数 ÷ 总提出任务次数），以周为单位统计。[1]",
+            "任务完成过程中孩子的情绪状态（1=平静配合，2=略有情绪但完成，3=明显抗拒但最终完成，4=完全拒绝）。[1]",
+            "一周内需要使用“停止活动”策略的频率变化。[1]",
+            "孩子是否因任务要求出现听觉敏感反应（如捂耳朵）或前庭寻求行为（如摇晃），并记录频率。",
+        ],
+        "就医判断标准": [
+            "任务拒绝伴随攻击行为（打人、摔物、踢家具）或自伤行为（如咬自己）。[1]",
+            "拒绝行为持续超过1小时且孩子情绪出现明显恶化（哭闹、尖叫、捂耳朵等）。[1]",
+            "孩子连续3天以上拒绝所有家务配合，并泛化到拒绝进食、拒绝洗漱等基本活动。[1]",
+            "若上述情况持续一周内无改善，或出现新的自伤行为，建议咨询医生。",
+        ],
+    },
+    "source_list": [
+        "[1] 自然结果等待法应对家务任务拒绝 - ASD儿童家庭日常"
+    ],
+    "disclaimer": "以上建议由 AI 生成，仅供参考，不构成医疗诊断或治疗建议。如情况紧急，请立即联系专业医疗机构。",
+    "generation_time_ms": 33282.0,
+    "is_partial": False,
+    "referenced_slice_ids": [str(_SEED_CONSULTATION_REFERENCED_SLICE_ID)],
+    "finish_reason": "COMPLETE",
+    "ttft_ms": 28453.0,
+    "token_input": None,
+    "token_output": None,
+    "device_info": None,
+    "confidence_score": None,
+    "validation_verdict": None,
+}
+
+
+async def _ensure_consultation(session: AsyncSession, user_id: UUID) -> UUID | None:
+    """查找或创建种子咨询历史记录，返回 consultation_id。
+
+    幂等键为固定的 request_id，重复运行不会重复创建。
+    """
+    existing_result = await session.execute(
+        select(ConsultationHistory).where(
+            ConsultationHistory.request_id == _SEED_CONSULTATION_REQUEST_ID
+        )
+    )
+    existing = existing_result.scalars().first()
+    if existing is not None:
+        print(f"[SKIP] 咨询历史已存在: {existing.id}")
+        return existing.id
+
+    consultation = ConsultationHistory(
+        id=_SEED_CONSULTATION_ID,
+        request_id=_SEED_CONSULTATION_REQUEST_ID,
+        user_id=user_id,
+        crisis_level=_SEED_CONSULTATION["crisis_level"],
+        behavior_description=_SEED_CONSULTATION["behavior_description"],
+        consultation_time=datetime(2026, 6, 30, 10, 4, 5, tzinfo=timezone.utc),
+        generated_plan=_SEED_CONSULTATION["generated_plan"],
+        plan_sections=_SEED_CONSULTATION["plan_sections"],
+        source_list=_SEED_CONSULTATION["source_list"],
+        disclaimer=_SEED_CONSULTATION["disclaimer"],
+        generation_time_ms=_SEED_CONSULTATION["generation_time_ms"],
+        is_partial=_SEED_CONSULTATION["is_partial"],
+        referenced_slice_ids=_SEED_CONSULTATION["referenced_slice_ids"],
+        finish_reason=_SEED_CONSULTATION["finish_reason"],
+        ttft_ms=_SEED_CONSULTATION["ttft_ms"],
+        token_input=_SEED_CONSULTATION["token_input"],
+        token_output=_SEED_CONSULTATION["token_output"],
+        device_info=_SEED_CONSULTATION["device_info"],
+        confidence_score=_SEED_CONSULTATION["confidence_score"],
+        validation_verdict=_SEED_CONSULTATION["validation_verdict"],
+    )
+    session.add(consultation)
+    await session.commit()
+    await session.refresh(consultation)
+    print(f"[OK] 咨询历史已创建: {consultation.id}")
+    return consultation.id
+
+
 async def _clear_seed_data(session: AsyncSession) -> None:
     """清空所有种子案例（按 is_seed 标记或标题匹配）及其向量切片、卡片、叙事。"""
     seed_titles = [case["title"] for case in _SEED_CASES]
@@ -1473,6 +1575,23 @@ async def main() -> int:
         if run_repair:
             print("[INFO] 修正 derived_card_ids 不一致的数据...")
             await _repair_derived_card_ids(session)
+
+        # 咨询历史：默认注入一条，与案例库种子数据配套展示
+        if run_users or run_profile or run_cases:
+            print("[INFO] 确保咨询历史记录存在...")
+            # 此时 judge_user_id 必然已存在
+            if judge_user_id is None:
+                result = await session.execute(
+                    select(User.id).where(User.username == JUDGE_USERNAME)
+                )
+                judge_user_id = result.scalar_one_or_none()
+            if judge_user_id is not None:
+                await _ensure_consultation(session, judge_user_id)
+            else:
+                print(
+                    "[WARN] 未找到评委用户，跳过咨询历史注入",
+                    file=sys.stderr,
+                )
 
     await engine.dispose()
     print("\n[OK] 种子注入完成")
