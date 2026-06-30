@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useConsult } from '@/logics/consult';
 import { useConsultStore } from '@/logics/consult/store/useConsultStore';
 import PageContent from '@/views/_shared/layout/PageContent';
@@ -21,10 +21,14 @@ export default function ConsultIndexPage() {
   const [showEscalation, setShowEscalation] = useState(false);
 
   // 从 consult/select 返回时，store 可能仍停留在 selecting_behavior，
-  // 导致内容区没有匹配的面板。在此处安全地重置回 idle。
+  // 导致内容区没有匹配的面板。仅在组件挂载时执行一次重置，
+  // 避免用户点击"开始咨询"后状态被立即复位到 idle。
+  const hasResetRef = useRef(false);
   const sessionState = useConsultStore((s) => s.sessionState);
   const cancelSelection = useConsultStore((s) => s.cancelSelection);
   useEffect(() => {
+    if (hasResetRef.current) return;
+    hasResetRef.current = true;
     if (sessionState === 'selecting_behavior') {
       cancelSelection();
     }
