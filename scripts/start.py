@@ -152,6 +152,32 @@ def _create_launcher(service_key: str, project_root: Path = PROJECT_ROOT):
     raise ValueError(f"未知服务: {service_key}")
 
 
+def _cleanup_dead_processes(services: list[str]) -> None:
+    """自动清理占用选中服务必需端口的残留进程。"""
+    ports: list[int] = []
+    if "api" in services:
+        ports.append(8000)
+    if "web-h5" in services or "web-react-h5" in services:
+        ports.append(5173)
+
+    if not ports:
+        return
+
+    print_stage("阶段零：清理残留进程")
+    from utils.process_utils import clean_port_occupants
+
+    cleaned = clean_port_occupants(ports)
+    if cleaned:
+        for port, pids in cleaned:
+            msg = f"已终止占用端口 {port} 的进程: {', '.join(str(pid) for pid in pids)}"
+            print_warning(f"  {msg}")
+            logger.warning(service="scripts", message=msg, op_type="dead_process_cleanup",
+                           extra={"port": port, "pids": pids})
+    else:
+        print_info("  未发现占用必需端口的残留进程")
+    print()
+
+
 # ====================================================================
 # 前置检查
 # ====================================================================
@@ -460,6 +486,9 @@ def main() -> None:
         return
 
     print_banner(PROJECT_NAME)
+
+    # 阶段零：自动清理残留进程
+    _cleanup_dead_processes(services)
 
     # 阶段一：前置检查
     if not args.skip_checks:

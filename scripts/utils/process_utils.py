@@ -160,7 +160,7 @@ def _terminate_tree(pid: int) -> None:
         try:
             pgid = os.getpgid(pid)
             os.killpg(pgid, signal.SIGTERM)
-        except ProcessLookupError:
+        except (ProcessLookupError, PermissionError):
             pass
 
 
@@ -172,7 +172,7 @@ def _force_kill_tree(pid: int) -> None:
         try:
             pgid = os.getpgid(pid)
             os.killpg(pgid, signal.SIGKILL)
-        except ProcessLookupError:
+        except (ProcessLookupError, PermissionError):
             pass
 
 
@@ -186,3 +186,77 @@ def _windows_taskkill(pid: int, *, force: bool) -> None:
         subprocess.run(args, capture_output=True, timeout=10)
     except subprocess.TimeoutExpired:
         pass
+
+
+# ---------------------------------------------------------------------------
+# Public: port-based dead-process cleanup
+# ---------------------------------------------------------------------------
+
+
+def find_pids_by_port(port: int) -> list[int]:
+    """Return PIDs that are currently listening on ``port``.
+
+    Uses ``psutil`` for a cross-platform view of TCP listeners.
+    """
+    import psutil
+
+    pids: set[int] = set()
+    for conn in psutil.net_connections(kind="inet"):
+        if conn.status != psutil.CONN_LISTEN:
+            continue
+        laddr = conn.laddr
+        if laddr is not None and laddr.port == port:
+            pid = conn.pid
+            if pid is not None and pid > 0:
+                pids.add(pid)
+    return sorted(pids)
+
+
+def terminate_process_by_pid(pid: int, timeout: float = 5.0) -> bool:
+    """Gracefully terminate an arbitrary process tree, then force-kill.
+
+    Returns True if the process is gone within the timeout, False otherwise.
+    """
+    import psutil
+
+    try:
+        proc = psutil.Process(pid)
+    except psutil.NoSuchProcess:
+        return True
+
+    try:
+        proc.terminate()
+        proc.wait(timeout=timeout)
+        return True
+    except psutil.NoSuchProcess:
+        return True
+    except psutil.TimeoutExpired:
+        try:
+            proc.kill()
+            proc.wait(timeout=2)
+        except psutil.NoSuchProcess:
+            return True
+        except psutil.TimeoutExpired:
+            return False
+    return False
+
+
+def clean_port_occupants(ports: list[int]) -> list[tuple[int, list[int]]]:
+    """Terminate any processes listening on the given ports.
+
+    Returns a list of (port, [killed_pids]) for ports where processes were
+    actually removed. This is intended for cleaning up stale dev-server
+    processes left behind by previous runs.
+    """
+    cleaned: list[tuple[int, list[int]]] = []
+    for port in ports:
+        pids = find_pids_by_port(port)
+        if not pids:
+            continue
+        killed: list[int] = []
+        for pid in pids:
+            if terminate_process_by_pid(pid, timeout=5.0):
+                killed.append(pid)
+        if killed:
+            cleaned.append((port, killed))
+    return cleaned
