@@ -267,4 +267,5 @@ VERSION_TAG=latest docker compose -f docker-compose.prod.yml ps
 - `docker compose up -d` 会重建有变化的容器，期间相关服务会有短暂中断。
 - 若仅修改了静态前端文件或文档，可跳过 `migration` 步骤。
 - 数据库迁移属于 schema/数据变更，执行前需按第 8.3 节确认影响范围。
+- **每次自动部署都会执行 `scripts/seed.py --reset --yes`，清空案例库（L1 叙事、L2 卡片、向量切片）与咨询历史，并重新注入种子数据；用户账号与默认患者档案保留。**
 - 自动部署失败时，`scripts/deploy-remote.sh` 会尝试将服务回滚到上一次健康的镜像标签；如回滚也失败，需要人工介入。

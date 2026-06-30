@@ -217,6 +217,25 @@ log_info "执行数据库迁移..."
 VERSION_TAG="${VERSION_TAG}" docker compose -f "${COMPOSE_FILE}" run --rm migration
 
 # ---------------------------------------------------------------------------
+# 重置数据库并注入种子数据
+# ---------------------------------------------------------------------------
+# 警告：每次部署都会清空案例库（L1 叙事、L2 卡片、向量切片）与咨询历史，
+# 然后重新注入 scripts/seed.py 中的种子数据。用户账号与默认患者档案会被保留。
+log_warn "开始重置数据库并注入种子数据（将清空案例与咨询历史）..."
+for i in $(seq 1 30); do
+    if docker compose -f "${COMPOSE_FILE}" ps api-server | grep -q "Up"; then
+        break
+    fi
+    sleep 2
+    if [[ $i -eq 30 ]]; then
+        log_error "api-server 容器未就绪，无法执行数据库重置"
+        exit 1
+    fi
+done
+docker compose -f "${COMPOSE_FILE}" exec -T api-server python scripts/seed.py --reset --yes
+log_success "数据库重置并注入种子数据完成"
+
+# ---------------------------------------------------------------------------
 # 健康检查
 # ---------------------------------------------------------------------------
 log_info "等待 API 服务健康检查..."
