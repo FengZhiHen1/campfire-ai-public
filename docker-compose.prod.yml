@@ -5,9 +5,9 @@
 # ============================================================
 
 services:
-  # --- PostgreSQL 17 ---
+  # --- PostgreSQL 17 + pgvector ---
   postgres:
-    image: postgres:17
+    image: pgvector/pgvector:pg17
     container_name: campfire-postgres
     restart: unless-stopped
     healthcheck:
@@ -184,7 +184,6 @@ services:
       - ./infrastructure/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
       - ./infrastructure/nginx/conf.d/:/etc/nginx/conf.d/:ro
       - ./infrastructure/nginx/ssl/:/etc/nginx/ssl/:ro
-      - ./infrastructure/nginx/html/:/usr/share/nginx/html/:ro
       - ./apps/react-web/dist:/usr/share/nginx/html/h5:ro
     networks:
       - campfire-net
