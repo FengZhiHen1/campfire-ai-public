@@ -2,35 +2,32 @@
 """api-server 危机分级判定管线行为契约 — ABC 模板方法骨架。
 
 模块: app.modules.crisis.crisis_contract
-职责: 定义三层递进危机分级判定的业务编排契约。覆盖 CSLT-01 全流程：
-      PreSelection → RuleEngine → LLMReview → Merge。
+职责: 定义两层危机分级判定的业务编排契约。覆盖 CSLT-01 流程：
+      PreSelection → RuleEngine → Merge。
+      LLMReviewLayer 已从默认阻塞链路中移除，以降低咨询首字节延迟。
       每个 @final 公共入口强制执行前置校验 → _do_ 钩子 → 后置校验三步流程，
       实现者只能覆写 _do_ 钩子。
 
 数据来源:
   - py_db.models.crisis_keyword.CrisisKeyword: MUST — AC 自动机关键词词库，不可绕过
-  - py_llm.LLMClient: MUST — DeepSeek API 客户端，LLM 复审不可绕过
-  - py_config.get_settings: SHOULD — 读取 LLM 超时和模型配置
+  - py_config.get_settings: SHOULD — 读取配置
   - py_logger: SHOULD — 结构化判定日志
 
 边界:
-  - 依赖: py_db, py_llm, py_config, py_logger, pyahocorasick
+  - 依赖: py_db, py_config, py_logger, pyahocorasick
   - 被依赖: app.modules.crisis.service (judge_crisis 入口)
 
 禁止行为:
-  - 禁止在 @final run() 中直接调用 py_llm.LLMClient（必须走注入的契约实例）
   - 禁止实现者覆写 @final run() 方法
   - 禁止在 _do_ 钩子中直接操作 JudgmentContext.skip_remaining（由 @final 控制短路逻辑）
-  - 禁止在 _do_merge() 中硬编码合并策略——必须调用注入的 merge_strategy 可调用对象
   - 禁止规则引擎直接判 severe 时不记录 WARNING 级别安全事件日志
 """
 
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import TYPE_CHECKING, Any, final
+from typing import Any, final
 
-from .enums import CrisisLevel
 from .exceptions import CrisisJudgmentError
 from .models import (
     CrisisJudgmentRequest,
@@ -38,9 +35,6 @@ from .models import (
     JudgmentContext,
     JudgmentLayerResult,
 )
-
-if TYPE_CHECKING:
-    from py_llm import LLMClient
 
 
 # ============================================================================
@@ -55,25 +49,25 @@ class CrisisJudgmentPipeline(ABC):
     外部调用者通过 @final run() 进入，无法绕过前置校验和后置处理。
 
     依赖注入（通过 __init__ 传入）:
-      - llm_client: LLMClient 实例（py_llm）
+      - llm_client: 保留参数，当前不再使用。
       - keyword_loader: 关键词加载可调用对象，返回 list[tuple[str, int, str, str]]
     """
 
     def __init__(
         self,
-        llm_client: "LLMClient | None" = None,
+        llm_client: Any = None,
         keyword_loader: Any = None,
     ) -> None:
         self._llm_client = llm_client
         self._keyword_loader = keyword_loader
 
-    # ======================================================================
+    # =======================================================================
     # CSLT-01 危机分级判定主流程
-    # ======================================================================
+    # =======================================================================
 
     @final
     async def run(self, request: CrisisJudgmentRequest) -> CrisisJudgmentResult:
-        """执行完整的三层递进危机分级判定。
+        """执行两层危机分级判定。
 
         前置:
           - request 已通过 Pydantic Field 级校验（调用方 Depends 完成）
@@ -93,7 +87,6 @@ class CrisisJudgmentPipeline(ABC):
         Side Effects:
           - 记录各判定层的结构化日志（INFO 级别）
           - 规则引擎命中 severe 时记录 WARNING 级别安全事件日志
-          - LLM 超时时记录 WARNING 级别事件
           - 不持久化判定结果——仅返回内存对象
         """
         # 步骤 1: 前置校验 + 初始化上下文
@@ -112,18 +105,14 @@ class CrisisJudgmentPipeline(ABC):
         if not context.skip_remaining:
             await self._do_rule_engine_match(context)
 
-        # 步骤 5: 条件执行 — LLM 精调复审
-        if not context.skip_remaining:
-            await self._do_llm_review(context)
-
-        # 步骤 6: 合并输出
+        # 步骤 5: 合并输出
         result = self._do_merge(context)
         self._validate_merge_output(result)
         return result
 
-    # ======================================================================
+    # =======================================================================
     # @abstractmethod 钩子 — 实现者填以下方法
-    # ======================================================================
+    # =======================================================================
 
     @abstractmethod
     async def _do_pre_select(self, context: JudgmentContext) -> None:
@@ -171,45 +160,19 @@ class CrisisJudgmentPipeline(ABC):
         ...
 
     @abstractmethod
-    async def _do_llm_review(self, context: JudgmentContext) -> None:
-        """执行 LLM 精调复审。
-
-        实现者在此调用注入的 self._llm_client 发送 DeepSeek API 请求。
-        不需要关心超时边界——由实现者通过 asyncio.wait_for 控制。
-        不需要关心短路逻辑——@final run() 控制是否进入此步骤。
-
-        输入约束:
-          - context.request.behavior_description 为非空字符串
-          - context.skip_remaining = False（@final run() 保证）
-        输出约束:
-          - 向 context.sources 追加 LLMReviewLayer 的判定结果
-          - 超时时 details.timeouts = True, level = None
-          - 解析失败时 details.parse_error = True, level = None
-        Side Effects:
-          - 调用 DeepSeek API（网络 IO）
-          - 超时时记录 WARNING 级别日志
-          - 解析失败时记录 ERROR 级别日志
-        异常:
-          - 不抛异常——所有异常降级为无 LLM 判定结果（fail-open 策略）
-        """
-        ...
-
-    @abstractmethod
     def _do_merge(self, context: JudgmentContext) -> CrisisJudgmentResult:
-        """执行"宁升勿降"合并策略。
+        """合并两层判定结果。
 
         实现者在此按优先级合并各层判定结果:
           - 前置选择 severe → 直接输出 severe
           - 规则引擎 severe → 直接输出 severe
-          - LLM 超时 → 采用规则引擎等级
-          - 正常合并 → 按二维查找表取最大值
+          - 其余 → 取 RuleEngine 非空等级，否则 mild
 
         不需要关心 context 的完整性——@final run() 保证各层已追加结果到 context.sources。
         不需要关心 degradation_note 的设置——@final run() 和各 _do_ 钩子已设置。
 
         输入约束:
           - context.sources 至少含 PreSelectionLayer 的判定结果
-          - context.llm_timed_out 已在 _do_llm_review() 中设置
         输出约束:
           - CrisisJudgmentResult: final_level 非 None
           - judgment_sources = context.sources 的副本
@@ -218,9 +181,9 @@ class CrisisJudgmentPipeline(ABC):
         """
         ...
 
-    # ======================================================================
+    # =======================================================================
     # 校验器 — 子类可通过 super() 叠加业务级校验
-    # ======================================================================
+    # =======================================================================
 
     def _validate_run_input(self, request: CrisisJudgmentRequest) -> None:
         """前置校验——确保判定请求的必填字段非空。

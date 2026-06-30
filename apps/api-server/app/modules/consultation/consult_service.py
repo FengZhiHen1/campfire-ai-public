@@ -6,8 +6,7 @@
       模块级便捷函数委托给单例实例，保持 routes.py 的导入兼容。
 数据来源:
   - py_rag.hybrid_search: MUST — RAG 语义检索引擎
-  - app.modules.crisis: MUST — 危机分级判定
-  - app.core.streaming.SseStreamingService: MUST — SSE 流式推送
+  - app.modules.crisis: MUST — 危机分级判定（快速规则，无 LLM）
 边界:
   - 依赖: py_rag, py_logger, py_schemas, app.modules.crisis, app.core.streaming
   - 被依赖: routes.py
@@ -20,7 +19,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import date
-from typing import Any, cast
+from typing import Any
 
 from sqlalchemy import desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -45,10 +44,9 @@ from app.modules.consultation.plan_generation.models import (
 )
 from app.modules.consultation.plan_generation.prompt_builder import PromptBuilder
 from app.modules.consultation.plan_generation.streaming import stream_generate
-from app.core.streaming.sse_service import SseStreamingService
 
 from .consultation_contract import BaseConsultationOrchestrator
-from .types import BehaviorDescription, ProfileSummary, RequestId, SessionId
+from .types import BehaviorDescription, ProfileSummary, RequestId
 
 
 # ============================================================================

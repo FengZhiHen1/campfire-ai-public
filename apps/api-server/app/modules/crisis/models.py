@@ -88,10 +88,6 @@ class JudgmentContext(BaseModel):
         default=False,
         description="跳过后续判定层标记",
     )
-    llm_timed_out: bool = Field(
-        default=False,
-        description="LLM 复审是否超时",
-    )
     degradation_note: str | None = Field(
         default=None,
         description="降级标注",

@@ -142,13 +142,12 @@ class CrisisJudgmentResult(BaseModel):
         ge=0.0,
         le=1.0,
         description="LLM 复审置信度分数（0~1 区间）。"
-        "规则引擎直接判定 severe 时跳过了 LLM 复审，此字段为 null。",
+        "当前 CSLT-01 已移除 LLM 复审，此字段保留仅为兼容性，恒为 null。",
     )
     judgment_sources: list[JudgmentLayerResult] = Field(
         min_length=1,
         description="各判定层的裁决结论，记录决策依据供审计追溯。"
-        "至少包含前置选择层的判定结果；规则引擎直接判定重度时后续层不记录；"
-        "LLM 超时时该层标记 timeouts。",
+        "当前包含 PreSelectionLayer 与 RuleEngineLayer 两层结果。",
     )
     degradation_note: str | None = Field(
         default=None,
