@@ -1,5 +1,6 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useConsult } from '@/logics/consult';
+import { useConsultStore } from '@/logics/consult/store/useConsultStore';
 import PageContent from '@/views/_shared/layout/PageContent';
 import IdlePanel from './components/IdlePanel';
 import SubmittingPanel from './components/SubmittingPanel';
@@ -18,6 +19,16 @@ const CRISIS_LABELS: Record<string, string> = {
 export default function ConsultIndexPage() {
   const consult = useConsult();
   const [showEscalation, setShowEscalation] = useState(false);
+
+  // 从 consult/select 返回时，store 可能仍停留在 selecting_behavior，
+  // 导致内容区没有匹配的面板。在此处安全地重置回 idle。
+  const sessionState = useConsultStore((s) => s.sessionState);
+  const cancelSelection = useConsultStore((s) => s.cancelSelection);
+  useEffect(() => {
+    if (sessionState === 'selecting_behavior') {
+      cancelSelection();
+    }
+  }, [sessionState, cancelSelection]);
 
   const crisisBadgeClass = consult.crisisLevel
     ? `crisis-badge ${consult.crisisLevel} show`
