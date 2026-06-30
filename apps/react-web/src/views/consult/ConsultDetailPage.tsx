@@ -10,6 +10,14 @@ const CRISIS_LABELS: Record<string, string> = {
   mild: '轻度危机', moderate: '中度危机', severe: '重度危机',
 };
 
+// 干预建议大纲四段式标准顺序
+const SECTION_ORDER: Record<string, number> = {
+  action: 0,
+  soothe: 1,
+  observe: 2,
+  medical: 3,
+};
+
 function getSectionClass(title: string): string {
   if (title.includes('安全') || title.includes('即时')) return 'action';
   if (title.includes('安抚') || title.includes('话术') || title.includes('情绪')) return 'soothe';
@@ -95,7 +103,13 @@ export default function ConsultDetailPage() {
   }
 
   const crisisClass = detail.crisis_level ?? 'moderate';
-  const planSections = Object.entries(detail.plan_sections ?? {});
+  const planSections = Object.entries(detail.plan_sections ?? {}).sort(
+    ([titleA], [titleB]) => {
+      const orderA = SECTION_ORDER[getSectionClass(titleA)] ?? Number.MAX_SAFE_INTEGER;
+      const orderB = SECTION_ORDER[getSectionClass(titleB)] ?? Number.MAX_SAFE_INTEGER;
+      return orderA - orderB;
+    },
+  );
   const referencedCases = detail.referenced_cases ?? [];
   const genSeconds = detail.generation_time_ms ? (detail.generation_time_ms / 1000).toFixed(1) : null;
 
