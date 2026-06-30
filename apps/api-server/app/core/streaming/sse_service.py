@@ -35,7 +35,10 @@ from py_schemas.streaming import (
 
 from app.modules.consultation.plan_generation.models import GenerationChunk
 from app.modules.consultation.plan_generation.streaming import parse_json_sections
-from py_schemas.consultation_history import ConsultationHistoryCreate
+from py_schemas.consultation_history import (
+    GENERATION_DISCLAIMER_CONST,
+    ConsultationHistoryCreate,
+)
 
 from .session_manager import StreamSessionManager
 
@@ -678,10 +681,20 @@ class SseStreamingService:
 
         meta = self._generation_meta.get(session.stream_id)
         if meta is None:
+            logger.warning(
+                service="streaming",
+                message="archive_skipped_no_meta",
+                extra={"stream_id": session.stream_id},
+            )
             return
 
         user_id = meta.get("user_id", "")
         if not user_id:
+            logger.warning(
+                service="streaming",
+                message="archive_skipped_no_user_id",
+                extra={"stream_id": session.stream_id},
+            )
             return
 
         crisis_level: str = meta.get("crisis_level", "mild")
@@ -697,35 +710,46 @@ class SseStreamingService:
         else:
             full_text = ""
 
-        if not full_text.strip():
-            return
-
-        # 从全文解析四段式结构化数据
-        sections = parse_json_sections(full_text)
-
-        # 从全文提取引用的 slice IDs
-        import re
-        ref_pattern = re.compile(r"\[(\d+)\]")
-        referenced_slice_ids: list[UUID] = []
-        seen: set[str] = set()
-        for tag in ref_pattern.findall(full_text):
-            key = f"[{tag}]"
-            if key in prenumbered_slices and prenumbered_slices[key] not in seen:
-                referenced_slice_ids.append(UUID(prenumbered_slices[key]))
-                seen.add(prenumbered_slices[key])
-
-        # 构建 source_list
-        search_result = meta.get("search_result")
-        referenced_cases = self._build_referenced_cases(
-            [str(sid) for sid in referenced_slice_ids], search_result,
-        )
-        source_list: list[str] = [
-            f"[{i + 1}] {c['case_title']}"
-            for i, c in enumerate(referenced_cases)
-        ]
-
-        finish_reason = session.finish_reason or "COMPLETE"
         generation_time_ms = (time.monotonic() - session.created_at) * 1000.0
+
+        if not full_text.strip():
+            # 空流：客户端在首条 chunk 前断开或上游未产生任何内容。
+            # 仍写入 consultations 表，finish_reason=ERROR 且 is_partial=true，
+            # 保证用户能在历史记录中看到一次失败的咨询尝试。
+            sections: dict[str, list[str]] = {}
+            referenced_slice_ids: list[UUID] = []
+            source_list: list[str] = []
+            finish_reason = "ERROR"
+            is_partial = True
+            generated_plan = "（生成失败：未收到任何有效内容）"
+        else:
+            # 从全文解析四段式结构化数据
+            sections = parse_json_sections(full_text)
+
+            # 从全文提取引用的 slice IDs
+            import re
+            ref_pattern = re.compile(r"\[(\d+)\]")
+            referenced_slice_ids = []
+            seen: set[str] = set()
+            for tag in ref_pattern.findall(full_text):
+                key = f"[{tag}]"
+                if key in prenumbered_slices and prenumbered_slices[key] not in seen:
+                    referenced_slice_ids.append(UUID(prenumbered_slices[key]))
+                    seen.add(prenumbered_slices[key])
+
+            # 构建 source_list
+            search_result = meta.get("search_result")
+            referenced_cases = self._build_referenced_cases(
+                [str(sid) for sid in referenced_slice_ids], search_result,
+            )
+            source_list = [
+                f"[{i + 1}] {c['case_title']}"
+                for i, c in enumerate(referenced_cases)
+            ]
+
+            finish_reason = session.finish_reason or "COMPLETE"
+            is_partial = finish_reason in ("PARTIAL", "TIMEOUT")
+            generated_plan = full_text
 
         # 复用原始 request_id 作为幂等键；缺失时兜底生成并记录警告
         original_request_id = meta.get("request_id", "")
@@ -746,11 +770,12 @@ class SseStreamingService:
                 crisis_level=cast(Literal["mild", "moderate", "severe"], crisis_level),
                 behavior_description=behavior_description,
                 consultation_time=datetime.now(timezone.utc),
-                generated_plan=full_text,
+                generated_plan=generated_plan,
                 plan_sections=sections,
                 source_list=source_list,
+                disclaimer=GENERATION_DISCLAIMER_CONST,
                 generation_time_ms=generation_time_ms,
-                is_partial=finish_reason in ("PARTIAL", "TIMEOUT"),
+                is_partial=is_partial,
                 referenced_slice_ids=referenced_slice_ids,
                 finish_reason=cast(Literal["COMPLETE", "PARTIAL", "BLOCKED", "TIMEOUT", "ERROR"], finish_reason),
                 ttft_ms=session.ttft_ms or 0.0,
@@ -774,7 +799,7 @@ class SseStreamingService:
             async with factory() as db:
                 record = await archive_consultation(
                     data=data,
-                    current_user={"user_id": user_id},
+                    current_user={"sub": user_id, "user_id": user_id},
                     db=db,
                 )
                 logger.info(
