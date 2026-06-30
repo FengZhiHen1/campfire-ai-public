@@ -96,8 +96,9 @@ tests/              — 集成测试
 
 ## Git Workflow
 
-- 分支策略：`master` 主干开发，推送后自动触发 GitHub Actions CI/CD
+- 分支策略：`dev` 日常开发，`master` 仅保留稳定版本；推送 `dev` 后自动触发 CI/CD
 - 仓库：`https://github.com/FengZhiHen1/Campfire-AI.git`
+- ❌ 禁止：直接在 `master` 上开发或提交
 - ❌ 禁止：一个 commit 塞多个无关主题的改动
 
 ## Design Docs
