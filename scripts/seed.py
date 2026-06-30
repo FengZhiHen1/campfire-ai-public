@@ -34,7 +34,7 @@ from pathlib import Path
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
@@ -48,6 +48,7 @@ from py_db.models.auth import User  # noqa: E402
 from py_db.models.case_card import CaseCard  # noqa: E402
 from py_db.models.case_chunks import CaseChunk  # noqa: E402
 from py_db.models.case_narrative import CaseNarrative  # noqa: E402
+from py_db.models.consultation import ConsultationHistory  # noqa: E402
 from py_db.models.profiles import EventLog, Profile  # noqa: E402
 from py_db.models.base import Base  # noqa: E402
 from py_logger import logger  # noqa: E402
@@ -1269,6 +1270,55 @@ async def _repair_derived_card_ids(session: AsyncSession) -> int:
     return repaired
 
 
+async def _reset_database(session: AsyncSession, yes: bool = False) -> bool:
+    """将数据库恢复到种子数据刚注入的状态。
+
+    删除全部案例（L1 叙事、L2 卡片、向量切片）和咨询历史记录，
+    但保留用户账号与默认患者档案。执行前会要求二次确认。
+
+    Args:
+        session: 活动数据库异步会话。
+        yes: 是否跳过交互式确认。
+
+    Returns:
+        True 表示已执行重置，False 表示用户取消。
+    """
+    # 先统计待删除数据量，用于确认提示
+    narrative_count = await session.scalar(
+        select(func.count()).select_from(CaseNarrative)
+    )
+    card_count = await session.scalar(
+        select(func.count()).select_from(CaseCard)
+    )
+    chunk_count = await session.scalar(
+        select(func.count()).select_from(CaseChunk)
+    )
+    consult_count = await session.scalar(
+        select(func.count()).select_from(ConsultationHistory)
+    )
+
+    print("[WARN] 即将重置数据库到种子数据初始状态：")
+    print(f"       - 删除 {narrative_count or 0} 条 L1 叙事")
+    print(f"       - 删除 {card_count or 0} 张 L2 卡片")
+    print(f"       - 删除 {chunk_count or 0} 条向量切片")
+    print(f"       - 删除 {consult_count or 0} 条咨询历史")
+    print("       - 保留用户账号与默认患者档案")
+
+    if not yes:
+        answer = input("确认重置吗？输入 'yes' 继续: ")
+        if answer.strip().lower() != "yes":
+            print("[CANCEL] 已取消重置")
+            return False
+
+    # 由于 FK 设置了 ondelete=CASCADE，删除叙事会自动级联删除卡片与切片
+    await session.execute(CaseNarrative.__table__.delete())
+    await session.execute(ConsultationHistory.__table__.delete())
+    await session.commit()
+
+    print("[OK] 数据库已清空，开始重新注入种子数据...")
+    return True
+
+
 # ---------------------------------------------------------------------------
 # 主入口
 # ---------------------------------------------------------------------------
@@ -1306,17 +1356,37 @@ async def main() -> int:
         action="store_true",
         help="仅修正 case_narratives.derived_card_ids 与实际卡片 ID 不一致的数据",
     )
+    parser.add_argument(
+        "--reset",
+        action="store_true",
+        help="危险：清空全部案例与咨询历史后重新注入种子数据",
+    )
+    parser.add_argument(
+        "--yes",
+        action="store_true",
+        help="配合 --reset 使用，跳过二次确认",
+    )
     args = parser.parse_args()
 
     # 解析模式：默认全部；指定任意子开关时只执行对应部分
+    run_reset = args.reset
     has_specific_mode = (
-        args.users or args.profile or args.cases or args.events or args.repair_derived_ids
+        args.users or args.profile or args.cases or args.events
+        or args.repair_derived_ids or run_reset
     )
-    run_users = args.users or args.profile or args.events or not has_specific_mode
-    run_profile = args.profile or args.events or not has_specific_mode
-    run_events = args.profile or args.events or not has_specific_mode
-    run_cases = args.cases or not has_specific_mode
-    run_repair = args.repair_derived_ids
+    if run_reset:
+        # --reset 为独立模式：重置后执行完整种子注入
+        run_users = True
+        run_profile = True
+        run_events = True
+        run_cases = True
+        run_repair = False
+    else:
+        run_users = args.users or args.profile or args.events or not has_specific_mode
+        run_profile = args.profile or args.events or not has_specific_mode
+        run_events = args.profile or args.events or not has_specific_mode
+        run_cases = args.cases or not has_specific_mode
+        run_repair = args.repair_derived_ids
 
     settings = get_settings()
     database_url = str(settings.DATABASE_URL)
@@ -1329,7 +1399,12 @@ async def main() -> int:
     )
 
     async with session_factory() as session:
-        if args.clean and run_cases:
+        if run_reset:
+            reset_ok = await _reset_database(session, yes=args.yes)
+            if not reset_ok:
+                return 0
+
+        if args.clean and run_cases and not run_reset:
             print("[INFO] 清空种子案例数据...")
             await _clear_seed_data(session)
 
