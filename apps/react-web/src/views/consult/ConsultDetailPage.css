@@ -10,7 +10,7 @@
 .crisis-badge.mild{background:var(--cf-accent-secondary);color:#fff}
 .crisis-badge.severe{background:linear-gradient(135deg,var(--cf-danger),#EF4444);color:#fff;box-shadow:0 2px 10px rgba(220,38,38,.2);animation:badgePulse 1.2s ease-in-out infinite}
 @keyframes badgePulse{0%,100%{opacity:1}50%{opacity:.75}}
-.crisis-time{font-size:13px;color:var(--cf-muted)}
+.crisis-time{display:inline-flex;align-items:center;gap:5px;font-size:13px;color:var(--cf-fg-2);font-weight:500}.crisis-time svg{width:13px;height:13px;color:var(--cf-muted);flex-shrink:0}
 .crisis-desc{font-size:15px;color:var(--cf-fg);line-height:1.65;padding:14px 16px;background:rgba(255,255,255,0.7);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);border-radius:var(--cf-radius-md);border:1px solid rgba(28,25,23,0.04)}
 .plan-card{margin-bottom:14px;padding:20px 16px;background:rgba(255,255,255,0.85);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);border-radius:var(--cf-radius-lg);border:1px solid rgba(28,25,23,0.04);box-shadow:0 2px 16px rgba(28,25,23,0.04)}
 .plan-card h3{font-size:16px;font-weight:650;color:var(--cf-fg);margin-bottom:18px}

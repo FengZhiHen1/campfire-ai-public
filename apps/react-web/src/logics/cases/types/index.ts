@@ -36,6 +36,7 @@ export interface NarrativeDetail {
   author_id: string;
   status: string;
   extraction_status: string;
+  extraction_error: string | null;
   derived_card_ids: string[] | null;
   cards: CardSummary[];
   created_at: string;

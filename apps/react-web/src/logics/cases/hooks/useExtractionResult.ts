@@ -11,7 +11,8 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { updateCard, submitCard } from '../services/cardApi';
 import { showToast } from '../../shared/utils/toast';
-import { getNarrative } from '../services/narrativeApi';
+import { getNarrative, extractNarrative } from '../services/narrativeApi';
+import { HttpError } from '../../shared/services/httpClient';
 import {
   BEHAVIOR_TYPE_OPTIONS,
   SEVERITY_OPTIONS,
@@ -19,6 +20,29 @@ import {
   FAMILY_CATEGORY_OPTIONS,
 } from '../types/constants';
 import type { CardData } from '../services/cardApi';
+
+function getErrorMessage(err: unknown, fallback: string): string {
+  if (err instanceof HttpError && err.data) {
+    const data = err.data as Record<string, unknown>;
+    if (Array.isArray(data.errors) && data.errors.length > 0) {
+      const first = data.errors[0] as Record<string, unknown>;
+      if (typeof first.constraint === 'string') return first.constraint;
+      if (typeof first.reason === 'string') return first.reason;
+    }
+    if (typeof data.detail === 'string') return data.detail;
+    if (typeof data.message === 'string') return data.message;
+  }
+  if (err instanceof Error) return err.message;
+  return fallback;
+}
+
+function isHardError(err: unknown): boolean {
+  if (err instanceof HttpError) {
+    // 4xx 客户端错误（除超时/限流外）不再重试
+    return err.statusCode >= 400 && err.statusCode < 500 && err.statusCode !== 408 && err.statusCode !== 429;
+  }
+  return false;
+}
 
 // ============================================================================
 // 类型定义
@@ -34,6 +58,7 @@ export interface UseExtractionResultReturn {
   isSubmittingAll: boolean;
   extracting: boolean;
   extractFailed: boolean;
+  extractError: string | null;
   narrativeId: string;
   setActiveTab: (idx: number) => void;
   updateField: (field: string, value: unknown) => void;
@@ -73,6 +98,7 @@ export function useExtractionResult(): UseExtractionResultReturn {
   const [isSubmittingAll, setIsSubmittingAll] = useState(false);
   const [extracting, setExtracting] = useState(false);
   const [extractFailed, setExtractFailed] = useState(false);
+  const [extractError, setExtractError] = useState<string | null>(null);
   const pollTimer = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const { id } = useParams<{ id: string }>();
@@ -99,26 +125,36 @@ export function useExtractionResult(): UseExtractionResultReturn {
           setLoading(false);
           setExtracting(false);
           setExtractFailed(false);
+          setExtractError(null);
           if (pollTimer.current) { clearInterval(pollTimer.current); pollTimer.current = null; }
         } else if (status === 'failed') {
           setLoading(false);
           setExtracting(false);
           setExtractFailed(true);
+          setExtractError(res.extraction_error || 'AI 提取失败，未返回具体原因');
           if (pollTimer.current) { clearInterval(pollTimer.current); pollTimer.current = null; }
         } else {
           // pending 或 extracting：继续轮询
           setExtracting(true);
+          setExtractFailed(false);
+          setExtractError(null);
           setLoading(false);
           if (!pollTimer.current) {
             pollTimer.current = setInterval(() => loadNarrative(), 3000);
           }
         }
       })
-      .catch(() => {
+      .catch((err) => {
+        const message = getErrorMessage(err, '加载失败');
         setLoading(false);
         setExtracting(false);
-        if (!pollTimer.current) {
-          // 网络错误也重试轮询
+        if (isHardError(err)) {
+          // 客户端错误（404/422 等）：停止轮询，展示错误
+          setExtractFailed(true);
+          setExtractError(message);
+          if (pollTimer.current) { clearInterval(pollTimer.current); pollTimer.current = null; }
+        } else if (!pollTimer.current) {
+          // 网络/服务端抖动：延长轮询
           pollTimer.current = setInterval(() => loadNarrative(), 5000);
         }
       });
@@ -135,11 +171,23 @@ export function useExtractionResult(): UseExtractionResultReturn {
     };
   }, [narrativeId, loadNarrative]);
 
-  const retryExtraction = useCallback(() => {
+  const retryExtraction = useCallback(async () => {
     setExtractFailed(false);
+    setExtractError(null);
     setExtracting(true);
+    try {
+      await extractNarrative(narrativeId);
+    } catch (err) {
+      const message = getErrorMessage(err, '重试提取失败');
+      setExtracting(false);
+      setExtractFailed(true);
+      setExtractError(message);
+      showToast({ title: message, icon: 'none' });
+      return;
+    }
+    // 触发成功后开始轮询
     loadNarrative();
-  }, [loadNarrative]);
+  }, [loadNarrative, narrativeId]);
 
   const switchTab = useCallback((idx: number) => {
     setActiveTab(idx);
@@ -179,7 +227,7 @@ export function useExtractionResult(): UseExtractionResultReturn {
     } finally {
       setIsSubmittingAll(false);
     }
-  }, [cards, isSubmittingAll]);
+  }, [cards, isSubmittingAll, navigate]);
 
   return {
     cards,
@@ -190,6 +238,7 @@ export function useExtractionResult(): UseExtractionResultReturn {
     isSubmittingAll,
     extracting,
     extractFailed,
+    extractError,
     narrativeId,
     setActiveTab: switchTab,
     updateField,

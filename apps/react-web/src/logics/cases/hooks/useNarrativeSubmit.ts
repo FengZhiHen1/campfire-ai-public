@@ -10,8 +10,24 @@
 import { useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { createNarrative, extractNarrative } from '../services/narrativeApi';
+import { HttpError } from '../../shared/services/httpClient';
 import { showToast } from '../../shared/utils/toast';
 import { SOURCE_TYPE_OPTIONS, WRITING_TIPS, NARRATIVE_BODY_PLACEHOLDER } from '../types/constants';
+
+function getErrorMessage(err: unknown, fallback: string): string {
+  if (err instanceof HttpError && err.data) {
+    const data = err.data as Record<string, unknown>;
+    if (Array.isArray(data.errors) && data.errors.length > 0) {
+      const first = data.errors[0] as Record<string, unknown>;
+      if (typeof first.constraint === 'string') return first.constraint;
+      if (typeof first.reason === 'string') return first.reason;
+    }
+    if (typeof data.detail === 'string') return data.detail;
+    if (typeof data.message === 'string') return data.message;
+  }
+  if (err instanceof Error) return err.message;
+  return fallback;
+}
 
 // ============================================================================
 // 类型定义
@@ -87,6 +103,24 @@ export function useNarrativeSubmit(): UseNarrativeSubmitReturn {
     } catch { /* 清理失败不阻断 */ }
   }, []);
 
+  const triggerExtraction = useCallback(async (narrativeId: string) => {
+    setExtracting(true);
+    try {
+      // 火后不理：触发后台提取后立即跳转结果页，不等待 LLM 完成
+      await extractNarrative(narrativeId);
+    } catch (err) {
+      // 即使提取触发失败也跳转，结果页会轮询真实状态；
+      // 但如果是可识别的错误，给用户一个提示。
+      const message = getErrorMessage(err, '提取启动失败');
+      if (message && message !== '提取启动失败') {
+        showToast({ title: `提取启动异常：${message}`, icon: 'none' });
+      }
+    }
+    setSubmitting(false);
+    setExtracting(false);
+    navigate(`/cases/extraction/${narrativeId}`, { replace: true });
+  }, [navigate]);
+
   const handleSubmit = useCallback(async () => {
     if (!canSubmit) return;
     setSubmitting(true);
@@ -96,24 +130,12 @@ export function useNarrativeSubmit(): UseNarrativeSubmitReturn {
       console.debug('[narrative-submit] created narrativeId:', narrativeId);
       clearDraft();
       await triggerExtraction(narrativeId);
-    } catch {
-      showToast({ title: '提交失败', icon: 'none' });
+    } catch (err) {
+      const message = getErrorMessage(err, '提交失败');
+      showToast({ title: message, icon: 'none' });
       setSubmitting(false);
     }
-  }, [canSubmit, title, narrative, sourceType, clearDraft]);
-
-  const triggerExtraction = useCallback(async (narrativeId: string) => {
-    setExtracting(true);
-    try {
-      // 火后不理：触发后台提取后立即跳转结果页，不等待 LLM 完成
-      await extractNarrative(narrativeId);
-    } catch {
-      // 即使请求中断（用户退出等），仍然跳转——结果页会轮询状态
-    }
-    setSubmitting(false);
-    setExtracting(false);
-    navigate(`/cases/extraction/${narrativeId}`, { replace: true });
-  }, []);
+  }, [canSubmit, title, narrative, sourceType, clearDraft, triggerExtraction]);
 
   return {
     title,

@@ -13,3 +13,4 @@
 .field textarea{resize:none;overflow-y:auto}
 .field textarea::-webkit-scrollbar{width:3px}.field textarea::-webkit-scrollbar-track{background:transparent}.field textarea::-webkit-scrollbar-thumb{background:rgba(120,113,108,.15);border-radius:3px}
 .inf-empty{color:var(--cf-accent-secondary);font-weight:500;display:flex;align-items:center;gap:6px}.inf-empty svg{width:16px;height:16px;flex-shrink:0}
+.error-detail{width:100%;max-width:320px;margin:0 0 20px;padding:12px 14px;background:var(--cf-danger-container);border-radius:var(--cf-radius-md);text-align:left}.error-detail-label{display:block;font-size:12px;font-weight:600;color:var(--cf-danger);margin-bottom:6px}.error-detail p{font-size:13px;color:var(--cf-fg-2);line-height:1.6;margin:0;word-break:break-word;max-width:none}

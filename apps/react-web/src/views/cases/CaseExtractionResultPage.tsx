@@ -44,6 +44,7 @@ export default function CaseExtractionResultPage() {
     isSubmittingAll,
     extracting,
     extractFailed,
+    extractError,
     setActiveTab,
     updateField,
     saveCard,
@@ -85,6 +86,12 @@ export default function CaseExtractionResultPage() {
           </div>
           <h3>提取失败</h3>
           <p>AI 处理过程中出现异常，请返回重试</p>
+          {extractError && (
+            <div className="error-detail">
+              <span className="error-detail-label">错误详情</span>
+              <p>{extractError}</p>
+            </div>
+          )}
           <div className="error-actions">
             <button className="btn btn-p" onClick={retryExtraction}>重试</button>
             <button className="btn btn-s" onClick={() => navigate(-1)}>返回修改叙事</button>
