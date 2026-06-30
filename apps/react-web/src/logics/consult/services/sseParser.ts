@@ -91,9 +91,10 @@ export interface SseStreamParserCallbacks {
 const DEFAULT_CONFIG: SseStreamParserConfig = {
   reconnectMaxRetries: 3,
   reconnectDelays: [1000, 2000, 5000],
-  heartbeatTimeout: 15000,
-  connectTimeout: 10000,
-  streamNoDataTimeout: 20000,
+  // 与后端 SSE 心跳间隔（默认 15s）对齐，避免首数据前被误判为连接失败。
+  heartbeatTimeout: 35000,
+  connectTimeout: 30000,
+  streamNoDataTimeout: 90000,
 };
 
 // ============================================================================
