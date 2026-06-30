@@ -220,26 +220,45 @@ git commit -m "<中文 commit message>"
 git push origin master
 ```
 
+`master` 分支推送后会自动触发 GitHub Actions CI，CI 通过后自动部署到服务器。
+
 ### 8.6.3 服务器同步并更新服务
 
-在服务器上拉取最新代码、重新构建镜像并重启服务：
+#### 方式一：GitHub Actions 自动部署（推荐）
+
+仓库已配置 `.github/workflows/deploy.yml`，CI 成功后会通过 SSH 登录服务器并执行 `scripts/deploy-remote.sh`。
+
+首次启用前，需要在 GitHub 仓库 Settings → Secrets and variables → Actions 中配置以下 Secrets：
+
+| Secret | 说明 |
+|--------|------|
+| `SSH_PRIVATE_KEY` | 可登录服务器的 SSH 私钥全文 |
+| `SSH_HOST` | 服务器地址，如 `47.76.204.1` |
+| `SSH_USER` | 登录用户名，如 `root` |
+| `SERVER_PROJECT_DIR` | 服务器上项目目录，如 `/root/Campfire-AI` |
+
+部署脚本会自动完成：同步代码 → 本地构建镜像 → 数据库迁移 → 健康检查 → 失败回滚。
+
+#### 方式二：服务器手动部署（应急/回滚用）
+
+如需绕过 CI/CD 在服务器上直接更新，执行：
 
 ```bash
 cd /root/Campfire-AI
 git pull origin master
 
 # 重新构建涉及代码变更的服务
-docker compose -f docker-compose.prod.yml build --no-cache \
+VERSION_TAG=latest docker compose -f docker-compose.prod.yml build --no-cache \
   api-server worker migration
 
 # 启动/重启服务
-docker compose -f docker-compose.prod.yml up -d
+VERSION_TAG=latest docker compose -f docker-compose.prod.yml up -d
 
 # 执行数据库迁移
-docker compose -f docker-compose.prod.yml run --rm migration
+VERSION_TAG=latest docker compose -f docker-compose.prod.yml run --rm migration
 
 # 检查状态
-docker compose -f docker-compose.prod.yml ps
+VERSION_TAG=latest docker compose -f docker-compose.prod.yml ps
 ```
 
 ### 8.6.4 注意事项
@@ -248,3 +267,4 @@ docker compose -f docker-compose.prod.yml ps
 - `docker compose up -d` 会重建有变化的容器，期间相关服务会有短暂中断。
 - 若仅修改了静态前端文件或文档，可跳过 `migration` 步骤。
 - 数据库迁移属于 schema/数据变更，执行前需按第 8.3 节确认影响范围。
+- 自动部署失败时，`scripts/deploy-remote.sh` 会尝试将服务回滚到上一次健康的镜像标签；如回滚也失败，需要人工介入。
