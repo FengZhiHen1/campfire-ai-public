@@ -27,10 +27,10 @@ export async function listEvents(
   page: number = 1,
   pageSize: number = 20,
 ): Promise<EventListItem[]> {
+  const query = new URLSearchParams({ page: String(page), page_size: String(pageSize) });
   const res = await httpClient.request<PaginatedResponse<EventListItem>>({
-    url: `/api/v1/profiles/${profileId}/events`,
+    url: `/api/v1/profiles/${profileId}/events?${query}`,
     method: 'GET',
-    data: { page, page_size: pageSize },
   });
   return pickData(res).items;
 }

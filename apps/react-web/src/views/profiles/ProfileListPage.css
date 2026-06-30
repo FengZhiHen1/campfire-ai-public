@@ -34,7 +34,7 @@
 
 /* ── Timeline ── */
 .timeline{position:relative;padding-left:16px}
-.tl-item{position:relative;padding:10px 0 10px 16px;border-left:2px solid var(--cf-surface-dim)}
+.tl-item{position:relative;padding:10px 0 10px 16px;border-left:2px solid var(--cf-surface-dim);animation:cf-fade-up var(--cf-motion-base) var(--cf-ease-standard) both;animation-delay:calc(var(--tl-index) * 60ms)}
 .tl-item:last-child{border-left-color:transparent}
 .tl-dot{position:absolute;left:-6px;top:14px;width:10px;height:10px;border-radius:50%;background:var(--cf-accent-secondary)}
 .tl-date{font-size:11px;color:var(--cf-muted);margin-bottom:2px}
