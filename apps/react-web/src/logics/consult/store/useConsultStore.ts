@@ -255,9 +255,11 @@ export const useConsultStore = create<ConsultStore>()(
               {
                 reconnectMaxRetries: 3,
                 reconnectDelays: [1000, 2000, 5000],
-                heartbeatTimeout: 15000,
-                connectTimeout: 10000,
-                streamNoDataTimeout: 20000,
+                // 后端 SSE 心跳间隔 15s、首 chunk 软超时 60s，
+                // 前端超时阈值必须大于后端心跳/首 chunk 间隔，避免误判连接失败。
+                heartbeatTimeout: 35000,
+                connectTimeout: 30000,
+                streamNoDataTimeout: 90000,
               },
               sseCallbacks,
             );
