@@ -13,7 +13,11 @@ import PageContent from '@/views/_shared/layout/PageContent';
 import './ProfileListPage.css';
 
 const OD_BEHAVIOR_OPTIONS = ['自伤行为', '攻击行为', '刻板行为', '情绪崩溃', '社交退缩', '多动'];
-const SEVERITY_OPTIONS = ['轻度', '中度', '重度'];
+const SEVERITY_OPTIONS: { label: string; value: string }[] = [
+  { label: '轻度', value: '轻' },
+  { label: '中度', value: '中' },
+  { label: '重度', value: '重' },
+];
 const SETTING_OPTIONS: { label: string; value: string }[] = [
   { label: '不限', value: '' },
   { label: '家庭', value: '家庭' },
@@ -26,13 +30,34 @@ function formatEventTime(iso: string): string {
   return `${d.getMonth() + 1}月${d.getDate()}日 ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
 }
 
+function endsWithPunctuation(str: string): boolean {
+  return /[。，！？；.,!?;]$/.test(str.trim());
+}
+
 function formatEventText(evt: EventListItem): string {
   const parts: string[] = [];
   if (evt.trigger_description) parts.push(evt.trigger_description);
   if (evt.manifestation) parts.push(evt.manifestation);
-  const base = parts.join('，');
-  const suffix = `情绪等级：${evt.severity_level}`;
-  return base ? `${base}。${suffix}` : suffix;
+
+  return parts
+    .map((p) => (endsWithPunctuation(p) ? p : `${p}。`))
+    .join('');
+}
+
+function severityMeta(level: string): { label: string; cls: string } {
+  switch (level) {
+    case '轻':
+    case '轻度':
+      return { label: '轻度', cls: 'mild' };
+    case '中':
+    case '中度':
+      return { label: '中度', cls: 'moderate' };
+    case '重':
+    case '重度':
+      return { label: '重度', cls: 'severe' };
+    default:
+      return { label: level, cls: 'moderate' };
+  }
 }
 
 function behaviorLabel(value: string): string {
@@ -214,17 +239,25 @@ export default function ProfileListPage() {
                   <div className="glow-loading" style={{ marginTop: 12 }} />
                 ) : sortedEvents.length > 0 ? (
                   <div className="timeline">
-                    {sortedEvents.map((evt, idx) => (
-                      <div
-                        key={evt.event_id}
-                        className="tl-item"
-                        style={{ '--tl-index': idx } as React.CSSProperties}
-                      >
-                        <div className="tl-dot" />
-                        <div className="tl-date">{formatEventTime(evt.event_time)}</div>
-                        <div className="tl-text">{formatEventText(evt)}</div>
-                      </div>
-                    ))}
+                    {sortedEvents.map((evt, idx) => {
+                      const severity = severityMeta(evt.severity_level);
+                      const eventText = formatEventText(evt);
+                      return (
+                        <div
+                          key={evt.event_id}
+                          className="tl-item"
+                          style={{ '--tl-index': idx } as React.CSSProperties}
+                        >
+                          <div className={`tl-dot ${severity.cls}`} />
+                          <div className="tl-date">{formatEventTime(evt.event_time)}</div>
+                          <div className="tl-badges">
+                            <span className="tl-behavior">{evt.behavior_type}</span>
+                            <span className={`tl-severity ${severity.cls}`}>{severity.label}</span>
+                          </div>
+                          {eventText && <div className="tl-text">{eventText}</div>}
+                        </div>
+                      );
+                    })}
                   </div>
                 ) : (
                   <div className="empty">
@@ -297,12 +330,12 @@ export default function ProfileListPage() {
           <div className="f-group">
             <p className="f-label">严重程度<span className="req">*</span></p>
             <div className="segmented">
-              {SEVERITY_OPTIONS.map((label) => (
+              {SEVERITY_OPTIONS.map(({ label, value }) => (
                 <button
-                  key={label}
+                  key={value}
                   type="button"
-                  className={`seg-btn${record.form.severity === label ? ' selected' : ''}`}
-                  onClick={() => record.setField('severity', label)}
+                  className={`seg-btn${record.form.severity === value ? ' selected' : ''}`}
+                  onClick={() => record.setField('severity', value)}
                 >
                   {label}
                 </button>
