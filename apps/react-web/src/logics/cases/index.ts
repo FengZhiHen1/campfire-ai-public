@@ -9,8 +9,6 @@
  */
 
 // ---- Hooks（View 层唯一合法通道）----
-export { useCaseList } from './hooks/useCaseList';
-export { useCaseDetail } from './hooks/useCaseDetail';
 export { useCaseListPage } from './hooks/useCaseListPage';
 export { useCaseDetailPage } from './hooks/useCaseDetailPage';
 export { useNarrativeSubmit } from './hooks/useNarrativeSubmit';
