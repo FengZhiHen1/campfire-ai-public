@@ -1,0 +1,9 @@
+.gitattributes text eol=lf
+
+# 自动处理行尾换行符
+* text=auto
+
+# Shell 脚本与 GitHub Actions 工作流必须在 Linux 服务器上使用 LF
+*.sh text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
