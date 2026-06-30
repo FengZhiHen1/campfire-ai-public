@@ -14,8 +14,6 @@
 from __future__ import annotations
 
 import re
-from typing import Any
-
 from py_logger import logger
 
 from .models import EmergencyPlanInput, PromptBuildContext
@@ -67,9 +65,6 @@ _SYSTEM_PROMPT_TEMPLATE: str = (
     "- moderate（中度）：在家庭干预基础上增加明确的观察指标和就医准备，给出清晰的升级触发条件\n"
     "- severe（重度）：优先确保人身安全，立即移除危险因素，就医判断标准必须包含「立即就医/拨打急救电话」\n\n"
     "## 引用规则\n"
-    "- 当某条建议直接参考了提供的案例时，在该建议文本末尾使用 [N] 格式标注（如 [1]、[2]）\n"
-    "- **禁止**使用未在参考案例中分配的序号\n"
-    "- 若无参考案例或建议来自通用专业知识，不得包含任何 [N] 格式标记\n"
     "- 无参考案例时，必须在「即时安全干预动作」的第一条建议中明确告知：当前无匹配的真实干预案例参考，以下建议基于通用专业知识\n\n"
     "## 患者档案感知约束\n"
     "- 必须结合患者档案中的年龄、诊断类型、主要行为、感官特征和触发因素生成建议\n"
@@ -213,7 +208,7 @@ class PromptBuilder:
     def _build_user_message(self, input_data: EmergencyPlanInput, ctx: PromptBuildContext) -> str:
         """构建 User Message 内容。
 
-        包含危机等级提示、患者档案摘要、行为描述、可选的检索降级提示。
+        包含危机等级提示（由上游规则判定产生）、患者档案摘要、行为描述、可选的检索降级提示。
 
         Args:
             input_data: EmergencyPlanInput 实例。
@@ -224,7 +219,7 @@ class PromptBuilder:
         """
         parts: list[str] = []
 
-        # 危机等级提示（指导 LLM 按分层策略生成）
+        # 危机等级提示（由上游 CSLT-01 规则判定产生，severe 已在编排层阻断，不会进入此处）
         final_level = input_data.crisis_result.final_level.value
         parts.append(f"## 当前危机等级\n{final_level}")
 

@@ -18,11 +18,14 @@ from .models import (
 )
 from py_logger import logger
 
-# 档案叠加规则触发词
+# 档案叠加规则触发词（表示重复发生）
 _PROFILE_OVERLAP_TRIGGERS: list[str] = ["又", "再次", "还是"]
 
 # 档案叠加规则匹配的历史行为标签
 _PROFILE_OVERLAP_TAGS: list[str] = ["self_injury", "aggression"]
+
+# 档案叠加规则要求的伤害动作词——必须同时出现才升级等级
+_PROFILE_OVERLAP_ACTIONS: list[str] = ["撞头", "撞墙", "自伤", "自残", "咬手", "抓挠", "打人", "攻击", "踢人", "摔东西"]
 
 
 class RuleEngineLayer(JudgmentLayer):
@@ -133,6 +136,10 @@ class RuleEngineLayer(JudgmentLayer):
             if level is None or _category_to_value(level) < 1:
                 level = CrisisLevel.MODERATE
                 trigger_rule_id = "PROFILE_OVERLAP_001"
+        elif _check_profile_overlap_review_only(request):
+            # 仅命中触发词但无明确动作词：建议人工复核，但不升级等级
+            details["manual_review_recommended"] = True
+            details["profile_overlap_review_only"] = True
 
         # 步骤 6：命中 severe 时记录安全日志
         if level == CrisisLevel.SEVERE:
@@ -191,11 +198,38 @@ def _category_to_value(level: CrisisLevel | None) -> int:
     return mapping.get(level, -1)
 
 
+def _check_profile_overlap_review_only(request: CrisisJudgmentRequest) -> bool:
+    """检查是否仅触发档案复核标记而不升级等级。
+
+    满足历史标签条件且文本含触发词，但不含明确伤害动作词时返回 True，
+    用于标记建议人工复核，同时避免一般性重复行为被误升级为 moderate。
+    """
+    profile = request.patient_profile
+    if profile is None:
+        return False
+
+    has_overlap_tag = any(
+        tag in profile.historical_behavior_tags
+        for tag in _PROFILE_OVERLAP_TAGS
+    )
+    if not has_overlap_tag:
+        return False
+
+    text = request.behavior_description
+    has_trigger = any(re.search(trigger, text) for trigger in _PROFILE_OVERLAP_TRIGGERS)
+    if not has_trigger:
+        return False
+
+    has_action = any(action in text for action in _PROFILE_OVERLAP_ACTIONS)
+    return not has_action
+
+
 def _check_profile_overlap(request: CrisisJudgmentRequest) -> bool:
     """执行档案叠加规则检查。
 
-    患者档案不为 None 且 historical_behavior_tags 含 "self_injury" 或 "aggression"
-    且 behavior_description 含触发词 "又" / "再次" / "还是" 时触发。
+    患者档案不为 None 且 historical_behavior_tags 含 "self_injury" 或 "aggression"，
+    且 behavior_description 同时含触发词（"又"/"再次"/"还是"）和明确伤害动作词时触发。
+    仅文本中含触发词但无动作词时，不升级等级，但可在 details 中标记建议人工复核。
 
     Args:
         request: 危机分级判定请求。
@@ -217,8 +251,9 @@ def _check_profile_overlap(request: CrisisJudgmentRequest) -> bool:
 
     # 检查文本中是否含触发词
     text = request.behavior_description
-    for trigger in _PROFILE_OVERLAP_TRIGGERS:
-        if re.search(trigger, text):
-            return True
+    has_trigger = any(re.search(trigger, text) for trigger in _PROFILE_OVERLAP_TRIGGERS)
+    if not has_trigger:
+        return False
 
-    return False
+    # 检查文本中是否含明确伤害动作词，避免"又出现了刻板行为"等场景误升级
+    return any(action in text for action in _PROFILE_OVERLAP_ACTIONS)

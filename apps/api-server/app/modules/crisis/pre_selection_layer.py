@@ -9,7 +9,6 @@ from __future__ import annotations
 
 from .enums import (
     HIGH_RISK_TYPES,
-    BehaviorTypeCategory,
     CrisisLevel,
 )
 from .layer import JudgmentLayer

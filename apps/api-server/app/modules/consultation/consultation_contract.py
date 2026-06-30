@@ -6,9 +6,9 @@
       实现者只能覆写 _do_ 前缀的钩子方法。
 数据来源:
   - py_rag.BaseSemanticSearch: MUST — 语义检索引擎
-  - py_llm.LLMClientContract: MUST — LLM API 客户端
+  - py_llm.LLMClientContract: MUST — LLM API 客户端（仅在非阻断分支调用一次）
   - py_db.ConsultHistoryRepository: MUST — 咨询历史持久化
-  - app.modules.crisis: MUST — 危机分级判定
+  - app.modules.crisis: MUST — 危机分级判定（快速规则，无 LLM）
   - app.core.streaming.SseStreamingService: MUST — SSE 流式推送
   - app.modules.consultation.plan_generation.BasePlanGenerator: MUST — 应急方案生成
   - app.modules.consultation.consult.BaseConfidenceValidator: SHOULD — 置信度后校验（MVP Phase 1 轻量化）
@@ -104,15 +104,8 @@ class BaseConsultationOrchestrator(ABC):
                         profile_id=profile_id,
                         db=bg_db,
                     )
-                    # 步骤 2：RAG 语义检索
-                    search_result = await self._do_search_cases(
-                        query_text=behavior_description,
-                        behavior_type=behavior_type,
-                        emotion_level=emotion_level,
-                        request_id=request_id,
-                        db=bg_db,
-                    )
-                    # 步骤 3：危机分级判定
+
+                    # 步骤 2：快速危机判定（无 LLM，仅规则引擎 + 前置类型筛选）
                     crisis_result = await self._do_judge_crisis(
                         behavior_description=behavior_description,
                         behavior_type=behavior_type,
@@ -120,33 +113,79 @@ class BaseConsultationOrchestrator(ABC):
                         profile_id=profile_id,
                         db=bg_db,
                     )
-                    # 步骤 4：构建 EmergencyPlanInput
-                    plan_input = self._do_build_plan_input(
-                        behavior_description=BehaviorDescription(behavior_description),
-                        profile_summary=profile_summary,
-                        search_result=search_result,
-                        crisis_result=crisis_result,
-                        request_id=request_id,
-                    )
-                    # 步骤 5：流式生成
-                    generator, prompt_ctx = self._do_generate_stream(plan_input)
 
-                    # 存储生成元数据（供 SSE DoneEvent 使用）
-                    streaming_service.store_generation_meta(
-                        session_id=str(session_id),
-                        prenumbered_slices={num: sid for num, sid in prompt_ctx.prenumbered_slices},
-                        crisis_level=crisis_result.final_level.value,
-                        block_deep_response=crisis_result.block_deep_response,
-                        behavior_description=behavior_description,
-                        request_id=str(request_id),
-                        user_id=user_id,
-                        search_result=search_result,
-                        plan_input=plan_input,
-                    )
+                    if crisis_result.block_deep_response:
+                        # 阻断分支：severe 场景直接返回安全提示，不调用 LLM，不执行 RAG
+                        from py_schemas.consult import (
+                            DegradationLevel,
+                            SemanticSearchResult,
+                        )
 
-                    # 步骤 6：消费真正的 generator，推入 queue
-                    async for chunk in generator:
-                        await chunk_queue.put(chunk)
+                        empty_search_result = SemanticSearchResult(
+                            results=[],
+                            total_count=0,
+                            is_complete=True,
+                            reason=None,
+                            query_fingerprint="0" * 64,
+                            degradation_applied=False,
+                            degradation_level=DegradationLevel.NONE,
+                            elapsed_ms=0.0,
+                        )
+                        plan_input = self._do_build_plan_input(
+                            behavior_description=BehaviorDescription(behavior_description),
+                            profile_summary=profile_summary,
+                            search_result=empty_search_result,
+                            crisis_result=crisis_result,
+                            request_id=request_id,
+                        )
+                        generator, prompt_ctx = self._do_generate_stream(plan_input)
+
+                        streaming_service.store_generation_meta(
+                            session_id=str(session_id),
+                            prenumbered_slices={num: sid for num, sid in prompt_ctx.prenumbered_slices},
+                            crisis_level=crisis_result.final_level.value,
+                            block_deep_response=True,
+                            behavior_description=behavior_description,
+                            request_id=str(request_id),
+                            user_id=user_id,
+                            search_result=empty_search_result,
+                            plan_input=plan_input,
+                        )
+
+                        async for chunk in generator:
+                            await chunk_queue.put(chunk)
+                    else:
+                        # 正常分支：RAG 语义检索 + 一次 LLM 流式生成
+                        search_result = await self._do_search_cases(
+                            query_text=behavior_description,
+                            behavior_type=behavior_type,
+                            emotion_level=emotion_level,
+                            request_id=request_id,
+                            db=bg_db,
+                        )
+                        plan_input = self._do_build_plan_input(
+                            behavior_description=BehaviorDescription(behavior_description),
+                            profile_summary=profile_summary,
+                            search_result=search_result,
+                            crisis_result=crisis_result,
+                            request_id=request_id,
+                        )
+                        generator, prompt_ctx = self._do_generate_stream(plan_input)
+
+                        streaming_service.store_generation_meta(
+                            session_id=str(session_id),
+                            prenumbered_slices={num: sid for num, sid in prompt_ctx.prenumbered_slices},
+                            crisis_level=crisis_result.final_level.value,
+                            block_deep_response=False,
+                            behavior_description=behavior_description,
+                            request_id=str(request_id),
+                            user_id=user_id,
+                            search_result=search_result,
+                            plan_input=plan_input,
+                        )
+
+                        async for chunk in generator:
+                            await chunk_queue.put(chunk)
                 except Exception:
                     logger.error(
                         service="api-server",
@@ -210,6 +249,8 @@ class BaseConsultationOrchestrator(ABC):
 
         实现者在此填写危机判定调用逻辑，并可通过 profile_id + db
         查询患者档案以构建 PatientProfileSnapshot 注入 CSLT-01。
+        当前 CSLT-01 仅使用规则引擎 + 前置类型筛选，不再调用 LLM 复审，
+        以保证快速判定和低首字节延迟。
         不需要关心判定失败的处理——实现者应捕获异常并 fallback 到 mild。
         """
         ...

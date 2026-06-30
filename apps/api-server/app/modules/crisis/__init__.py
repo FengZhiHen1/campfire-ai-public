@@ -1,9 +1,11 @@
 """app.modules.crisis — 危机分级判定模块 (CSLT-01)。
 
-提供三层递进危机等级判定服务：
-1. 前置行为类型选择 — 高危类型（自伤/攻击/走失/用药）命中直接判重度
+提供两层危机等级判定服务：
+1. 前置行为类型选择 — 高危类型（自伤/攻击）命中直接判重度
 2. 规则引擎关键词匹配 — AC 自动机扫描 + 否定词过滤 + 档案叠加规则
-3. LLM 精调复审 — DeepSeek API 复审，超时降级为规则引擎结果
+
+LLM 精调复审已从默认阻塞链路中移除，以降低咨询首字节延迟。
+如需后台审计，可单独导入 llm_review_layer.py 中的 LLMReviewLayer。
 
 核心类：
   - CrisisJudgmentPipeline: 危机分级判定管线契约（ABC 模板方法骨架，crisis_contract.py）
@@ -11,7 +13,6 @@
   - JudgmentLayer: 单层判定接口契约（crisis_contract.py）
   - PreSelectionLayer: 前置行为类型判定层实现（pre_selection_layer.py）
   - RuleEngineLayer: 规则引擎关键词匹配层实现（rule_engine_layer.py）
-  - LLMReviewLayer: LLM 精调复审层实现（llm_review_layer.py）
   - KeywordMatcher: 关键词匹配器 Protocol 接口（protocols.py）
 
 外部接口：
