@@ -1,271 +1,139 @@
-> **适用范围**
->
-> 本文件是 Kimi Code CLI 在本项目中的本地指南。当用户即时指令与本文件冲突时，遵循用户指令，但应在回复中简要说明冲突点。
+# Campfire-AI — 篝火智答
 
-# 1. 项目上下文
+> 为孤独症人士家庭提供智能应急咨询与干预支持服务的全栈平台。
+> 基于 RAG 检索增强生成与案例库管理，帮助家属在突发危机时获得结构化、可溯源的应急建议。
 
-## 1.1 项目定位
+<!-- Last updated: 2026-06-30 -->
 
-- **项目名**：篝火智答 (Campfire-AI)
-- **目标**：为孤独症人士家庭提供智能应急咨询与干预支持服务的全栈平台。
-- **核心能力**：基于 RAG 检索增强生成与案例库管理，帮助家属在突发行为/情绪危机时获得即时、结构化、可溯源的应急建议。
+## Stack
 
-## 1.2 技术栈与工程结构
+- Language: Python 3.12+ (strict), TypeScript ~6.0
+- Backend: FastAPI + Uvicorn (api-server), Celery (worker)
+- Frontend: React 19 + Vite 8, React Router 7
+- Package manager: uv (Python), pnpm 9.x (frontend)
+- Database: PostgreSQL 17 (pgvector), Redis 7-alpine
+- Storage: MinIO (S3-compatible)
+- Infrastructure: Docker Compose (dev + prod)
+- Migration: Alembic
+- Lint: ruff (Python), oxlint (frontend)
+- Test: pytest + pytest-asyncio
 
-- **后端**：Python，monorepo 结构，`packages/py-*` 为可复用包，`apps/api-server` 与 `apps/worker` 为应用入口。
-- **前端**：TypeScript + React，`apps/react-web` 为主前端；另有 `apps/mini-program` 小程序。
-- **包管理**：前端使用 pnpm workspace；Python 包按项目约定管理。
-- **数据库迁移**：Alembic。
-- **基础设施**：Docker Compose、`infrastructure/` 下的 nginx、monitoring、scripts。
+## Commands
 
-## 1.3 关键目录职责
+```bash
+# 开发环境
+docker compose up -d                           # 启动基础设施（PG + Redis + MinIO）
+cd apps/react-web && pnpm dev                  # 前端开发服务器
 
-| 目录 | 职责 |
-|------|------|
-| `apps/` | 可独立部署的应用（api-server、worker、react-web、mini-program） |
-| `packages/` | 跨应用复用的 Python/TypeScript 包 |
-| `docs/` | 设计文档、API 文档、功能设计原始材料 |
-| `infrastructure/` | Docker、Nginx、监控、部署脚本 |
-| `tests/` | 集成测试 |
-| `scripts/` | 工程脚本（构建、迁移、诊断等） |
+# 测试
+uv run pytest                                  # 后端测试
+uv run ruff check .                            # Python 代码检查
+cd apps/react-web && pnpm lint                 # 前端代码检查
+cd apps/react-web && pnpm build                # 前端类型检查 + 构建
 
-# 2. 设计文档是开发的先决条件
+# 数据库迁移
+uv run alembic revision --autogenerate         # 生成迁移
+uv run alembic upgrade head                    # 执行迁移
+```
 
-## 2.1 必读文档
+## Architecture
 
-在实现任何新功能、新模块或重大改动前，必须阅读以下文档：
+```
+apps/api-server/    — FastAPI REST API 入口
+apps/worker/        — Celery 后台任务
+apps/react-web/     — React 前端（主 Web 应用）
+apps/mini-program/  — 微信小程序
+packages/py-*/      — Python 可复用包（auth/cache/config/db/health/llm/logger/rag/schemas/security/storage）
+docs/               — 设计文档与功能设计原始材料
+infrastructure/     — Docker、Nginx、部署脚本
+scripts/            — 工程脚本（构建、迁移、诊断等）
+tests/              — 集成测试
+```
 
+> 详细架构见：`docs/篝火智答-技术栈设计.md`、`docs/篝火智答-项目结构.md`
+
+## Conventions
+
+### 开发流程：Plan → Do → Verify
+
+1. **Plan** — 先读 `docs/` 相关设计文档；明确成功标准；列出假设；识别影响范围；制定步骤计划。
+2. **Do** — 每次只改与任务直接相关的代码；遵循现有代码风格；不顺手重构；不为单一场景建抽象。
+3. **Verify** — 运行测试或检查；确认无未使用代码、循环依赖、跨层调用；对照 #Checklist 逐项确认。
+
+### 代码风格
+
+- 注释用中文，变量/函数/类/文件命名用英文
+- Python: ruff format + ruff check，行宽 120
+- TypeScript: oxlint
+- ❌ 禁止：引入与本次任务无关的第三方依赖
+- ❌ 禁止：为自己造成的未使用 import/变量/函数不清理
+
+### 提交规范
+
+- 中文 commit message，说明"做了什么"和"为什么"
+- 每次 commit 只包含本次修改的文件
+- ❌ 禁止：把多个无关主题改动塞进同一个 commit
+
+### 数据库迁移
+
+- 优先用 `alembic revision --autogenerate` 生成迁移
+- 迁移文件中必须添加中文注释说明业务意图
+- ❌ 禁止：手动修改生产数据库 schema 而不通过迁移文件
+
+### 接口与契约
+
+- 修改 API 接口、数据库 schema、公共函数签名前，先确认影响范围
+- 新增模块时考虑是否需要补充或更新契约文档
+- ❌ 禁止：在未确认影响范围的情况下破坏性修改已有接口
+
+## Security
+
+- ❌ 禁止：硬编码 API Key、密码、密钥——统一用 `.env` 环境变量
+- ❌ 禁止：将 `.env`、`.tmp/`、SSL 证书提交到版本控制
+- ❌ 禁止：在回复中完整复述密码或服务器凭证
+- ❌ 禁止：把服务器凭证上传给第三方服务
+- 服务器操作详见：`docs/远程服务器操作指引.md`
+
+## Git Workflow
+
+- 分支策略：`master` 主干开发，推送后自动触发 GitHub Actions CI/CD
+- 仓库：`https://github.com/FengZhiHen1/Campfire-AI.git`
+- ❌ 禁止：一个 commit 塞多个无关主题的改动
+
+## Design Docs
+
+新功能/模块/重大改动前必读：
 1. `docs/篝火智答-技术栈设计.md`
 2. `docs/篝火智答-项目结构.md`
-3. 与本次任务相关的 `docs/功能设计/原始材料/` 文件
+3. 与任务相关的 `docs/功能设计/原始材料/` 文件
 
-## 2.2 文档驱动原则
+- ❌ 禁止：未读相关设计文档就直接开始编码
+- 发现设计文档与代码现状不一致时，停止编码并告知用户
+- 新增/修改/废弃功能点后，同步更新对应设计文档或原始材料
 
-- **MUST**：未读相关设计文档前，不得直接开始编码。
-- **MUST**：若实现过程中发现设计文档与代码现状不一致，停止编码并告知用户。
-- **SHOULD**：当新增、修改或废弃某个功能点时，同步更新对应的设计文档或原始材料。
+## Anti-patterns
 
-# 3. 开发工作流
+遇到以下行为必须停下来重新审视：顺手重构、过度设计（为单一场景建抽象）、未验证就声称完成、前端跨层穿透（违反 Domain/Application/ViewModel/View/Infrastructure 依赖方向）、文档与代码脱节、静默做决策、扩大范围（把用户没要求的"相关优化"一起提交）。
 
-## 3.1 编码前（Plan）
+## When to Stop and Ask
 
-- 明确本次任务的成功标准，最好能用一句话说出“完成”的标志。
-- 列出你对需求的假设；不确定的假设必须提出，不能隐藏。
-- 若需求存在多种理解，列出选项并说明推荐方案及理由，不要静默选择。
-- 识别本次任务涉及的文件、模块、接口、数据库变更范围。
-- 制定简短计划：
+出现以下情况停止编码，先向用户确认：
+- 需求与设计文档/接口契约/代码实现矛盾
+- 需要修改数据库 schema、公共 API 契约或跨模块接口
+- 发现架构债务但修复它不在本次任务范围内
+- 测试无法运行、环境缺失
+- 需要引入新的外部依赖或修改基础设施配置
+- 需要在远程服务器上执行高风险操作（详见 `docs/远程服务器操作指引.md`）
 
-```
-1. [步骤] → 验证：[检查]
-2. [步骤] → 验证：[检查]
-3. [步骤] → 验证：[检查]
-```
+## Checklist
 
-## 3.2 编码中（Do）
+每次任务完成前逐项确认：
 
-- 每次只改动与任务直接相关的代码。
-- 遵循现有代码风格，即使你个人偏好不同。
-- 中文注释，英文命名（变量、函数、类、文件）。
-- 不重构没有损坏的代码，不顺手优化相邻模块。
-- 不为单一场景创建抽象，不添加未被要求的配置项。
-- 自己造成的未使用 import、变量、函数必须清理；预先存在的死代码只指出、不删除。
-
-## 3.3 编码后（Verify）
-
-- 运行与改动相关的测试或检查，确认通过。
-- 若项目无相关测试，至少通过手动运行、类型检查、lint 等方式验证。
-- 检查是否引入新的未使用代码、循环依赖或跨层调用。
-- 对照第 7 节“任务结束前检查清单”逐项确认。
-
-# 4. 规范与约束
-
-## 4.1 代码规范
-
-- **MUST**：注释使用中文；变量名、函数名、类名、文件名保持英文。
-- **MUST**：遵循项目现有代码风格与目录约定。
-- **MUST NOT**：引入与本次任务无关的第三方依赖。
-- **SHOULD**：优先使用项目已有工具函数与抽象，避免重复造轮子。
-
-## 4.2 提交规范
-
-- **MUST**：使用标准的中文 commit message。
-- **MUST**：若无特殊要求，每次 commit 只包含本 Agent 修改过的文件，排除未修改文件。
-- **MUST NOT**：把多个无关主题的改动塞进同一个 commit。
-- **SHOULD**：commit message 能说明“做了什么”以及“为什么”。
-
-## 4.3 数据库迁移
-
-- **SHOULD**：使用 Alembic 迁移数据库时，优先使用 `alembic revision --autogenerate`。
-- **MUST**：在生成的迁移文件中添加必要的中文注释，说明本次迁移的业务意图。
-- **MUST NOT**：直接手动修改生产数据库 schema 而不通过迁移文件。
-
-## 4.4 接口与契约
-
-- **MUST**：修改 API 接口、数据库 schema、公共函数签名前，先确认是否涉及契约或接口文档。
-- **SHOULD**：新增模块时考虑是否需要补充或更新契约文档（尤其当项目启用契约驱动开发时）。
-- **MUST NOT**：在未确认影响范围的情况下破坏性修改已有接口。
-
-## 4.5 文档同步
-
-- **SHOULD**：修改架构、目录结构、构建流程、部署配置后，同步更新 `AGENTS.md`、README 或相关设计文档。
-- **SHOULD**：若你发现 `AGENTS.md` 本身已经过时或与现状不符，告知用户并提议更新。
-
-# 5. 常见陷阱（Anti-patterns）
-
-遇到以下行为时必须停下来重新审视：
-
-1. **顺手重构**：借修 bug 或加功能的机会重构无关代码。
-2. **过度设计**：为单一场景引入抽象层、配置项或插件机制。
-3. **未验证即完成**：改动后没有运行任何测试或检查就声称完成。
-4. **跨层穿透**：前端违反分层架构（Domain/Application/ViewModel/View/Infrastructure）的依赖方向。
-5. **文档与代码脱节**：实现了功能但没有更新对应的设计文档或 API 文档。
-6. **静默做决策**：遇到歧义时不提问，直接按自己的理解实现。
-7. **扩大范围**：把用户没有要求的“相关优化”一起提交。
-
-# 6. 必须停下来问用户的情况
-
-出现以下任何一种情况，停止编码并先向用户确认：
-
-- 需求与现有设计文档、接口契约或代码实现矛盾。
-- 需要修改数据库 schema、公共 API 契约或跨模块接口。
-- 发现现有代码存在架构债务，但修复它不在本次任务范围内。
-- 测试无法运行、环境缺失，或无法按预期验证改动。
-- 用户指令本身模糊、不完整或可能产生副作用。
-- 需要引入新的外部依赖或修改基础设施配置。
-- 需要在远程服务器上执行第 8 节所列的高风险操作（如停止服务、删除数据、修改配置等）。
-
-# 7. 任务结束前检查清单
-
-每次任务完成前，逐项确认：
-
-- [ ] 本次改动的每一行都能追溯到用户的请求，没有无关改动。
-- [ ] 已阅读并遵循了相关设计文档。
-- [ ] 已运行相关测试或检查，且结果通过。
-- [ ] 注释为中文，变量/函数/类名为英文。
-- [ ] 已清理本 Agent 造成的未使用 import、变量或函数。
-- [ ] commit 只包含本 Agent 修改过的文件。
-- [ ] 若涉及 schema、接口或架构变更，已确认影响范围。
-- [ ] 若相关设计文档已过时，已告知用户或已同步更新。
-
-# 8. 远程服务器操作指引
-
-## 8.1 服务器连接信息
-
-- **公网 IP**：`47.76.204.1`
-- **用户名**：`root`
-- **密码位置**：`.tmp/云服务器路径.md`
-- **快捷登录脚本**：`.tmp/ssh-login.sh`（供人工使用）
-
-## 8.2 Kimi 登录方式
-
-当任务需要连接服务器时，优先使用非交互式 SSH：
-
-```bash
-sshpass -p "<从 .tmp/云服务器路径.md 读取的密码>" \
-  ssh -o StrictHostKeyChecking=accept-new \
-      -o UserKnownHostsFile=/dev/null \
-      root@47.76.204.1 "<要执行的命令>"
-```
-
-若当前环境未安装 `sshpass`，则读取密码后通过 `ssh` 直接执行命令，或告知用户环境缺失。
-
-## 8.3 授权边界
-
-**无需逐条确认即可执行的操作**（在任务目标已明确的前提下）：
-
-- 查看系统状态、服务状态、进程、日志
-- 读取配置文件
-- 运行诊断命令（`ps`、`df`、`free`、`netstat`、`systemctl status` 等）
-- 执行用户明确要求的非破坏性查询
-
-**必须停下来向用户确认的操作**：
-
-- 修改任何配置文件
-- 停止、重启、启用/禁用服务
-- 安装、卸载软件包
-- 删除文件或数据（尤其 `rm -rf`）
-- 数据库 schema 或数据变更
-- 网络、防火墙、安全组、SSL 证书、用户权限变更
-- 部署新版本或执行迁移脚本
-
-## 8.4 汇报要求
-
-每次在服务器上执行操作后，简要说明：
-
-- 执行了什么命令
-- 结果如何
-- 是否产生了需要用户留意的副作用
-
-## 8.5 安全红线
-
-- 不得将密码、私钥写入版本控制或任何公开位置。
-- 不得在回复中完整复述密码。
-- 不得把服务器凭证上传给第三方服务。
-
-## 8.6 部署同步说明
-
-### 8.6.1 代码仓库
-
-- **GitHub 仓库**：`https://github.com/FengZhiHen1/Campfire-AI.git`
-- **本地默认分支**：`master`
-- **服务器项目目录**：`/root/Campfire-AI`
-
-### 8.6.2 本地改动推送到 GitHub
-
-本地完成修改并通过检查清单后，执行：
-
-```bash
-git add <修改的文件>
-git commit -m "<中文 commit message>"
-git push origin master
-```
-
-`master` 分支推送后会自动触发 GitHub Actions CI，CI 通过后自动部署到服务器。
-
-### 8.6.3 服务器同步并更新服务
-
-#### 方式一：GitHub Actions 自动部署（推荐）
-
-仓库已配置 `.github/workflows/deploy.yml`，CI 成功后会通过 SSH 登录服务器并执行 `scripts/deploy-remote.sh`。
-
-首次启用前，需要在 GitHub 仓库 Settings → Secrets and variables → Actions 中配置以下 Secrets：
-
-| Secret | 说明 |
-|--------|------|
-| `SSH_PRIVATE_KEY` | 可登录服务器的 SSH 私钥全文 |
-| `SSH_HOST` | 服务器地址，如 `47.76.204.1` |
-| `SSH_USER` | 登录用户名，如 `root` |
-| `SERVER_PROJECT_DIR` | 服务器上项目目录，如 `/root/Campfire-AI` |
-
-部署脚本会自动完成：同步代码 → 本地构建镜像 → 数据库迁移 → 健康检查 → 失败回滚。
-
-#### 方式二：服务器手动部署（应急/回滚用）
-
-如需绕过 CI/CD 在服务器上直接更新，执行：
-
-```bash
-cd /root/Campfire-AI
-git pull origin master
-
-# 重新构建涉及代码变更的服务
-VERSION_TAG=latest docker compose -f docker-compose.prod.yml build --no-cache \
-  api-server worker migration
-
-# 启动/重启服务
-VERSION_TAG=latest docker compose -f docker-compose.prod.yml up -d
-
-# 执行数据库迁移
-VERSION_TAG=latest docker compose -f docker-compose.prod.yml run --rm migration
-
-# 检查状态
-VERSION_TAG=latest docker compose -f docker-compose.prod.yml ps
-```
-
-### 8.6.4 注意事项
-
-- 部署前确认 `.env` 和 `infrastructure/nginx/ssl/` 已正确保留（它们在 `.gitignore` 中，不会被 Git 覆盖）。
-- `docker compose up -d` 会重建有变化的容器，期间相关服务会有短暂中断。
-- 若仅修改了静态前端文件或文档，可跳过 `migration` 步骤。
-- 数据库迁移属于 schema/数据变更，执行前需按第 8.3 节确认影响范围。
-- **每次自动部署都会执行 `scripts/seed.py --reset --yes`，清空案例库（L1 叙事、L2 卡片、向量切片）与咨询历史，并重新注入种子数据；用户账号与默认患者档案保留。**
-- 自动部署失败时，`scripts/deploy-remote.sh` 会尝试将服务回滚到上一次健康的镜像标签；如回滚也失败，需要人工介入。
+- [ ] 每行改动都能追溯到用户请求，没有无关改动
+- [ ] 已阅读并遵循相关设计文档
+- [ ] 已运行测试或检查，且结果通过
+- [ ] 注释为中文，变量/函数/类名为英文
+- [ ] 已清理自己造成的未使用 import、变量或函数
+- [ ] commit 只包含本次修改的文件
+- [ ] 若涉及 schema、接口或架构变更，已确认影响范围
+- [ ] 若相关设计文档已过时，已告知用户或已同步更新
