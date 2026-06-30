@@ -241,6 +241,50 @@ def terminate_process_by_pid(pid: int, timeout: float = 5.0) -> bool:
     return False
 
 
+def terminate_process_tree_by_pid(pid: int, timeout: float = 5.0) -> bool:
+    """按根 PID 终止整个进程树，先优雅终止再强制终止。
+
+    Args:
+        pid: 进程树根进程 PID。
+        timeout: 优雅终止等待超时（秒）。
+
+    Returns:
+        True 表示进程树已消失，False 表示仍有残留。
+    """
+    import psutil
+
+    try:
+        root = psutil.Process(pid)
+    except psutil.NoSuchProcess:
+        return True
+
+    # 先终止子进程，再终止根进程，避免根进程先退出后子进程被 init/systemd 收养
+    children = root.children(recursive=True)
+    for child in children:
+        try:
+            child.terminate()
+        except psutil.NoSuchProcess:
+            pass
+
+    try:
+        root.terminate()
+    except psutil.NoSuchProcess:
+        return True
+
+    gone, alive = psutil.wait_procs(children + [root], timeout=timeout)
+    if not alive:
+        return True
+
+    # 优雅终止超时，强制杀剩余进程
+    for proc in alive:
+        try:
+            proc.kill()
+        except psutil.NoSuchProcess:
+            pass
+    _gone, still_alive = psutil.wait_procs(alive, timeout=2)
+    return not still_alive
+
+
 def clean_port_occupants(ports: list[int]) -> list[tuple[int, list[int]]]:
     """Terminate any processes listening on the given ports.
 
