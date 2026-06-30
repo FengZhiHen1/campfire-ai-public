@@ -181,7 +181,7 @@ class AhoCorasickMatcher:
             try:
                 async with session_factory() as session:
                     result = await session.execute(
-                        select(CrisisKeyword).where(CrisisKeyword.is_active == True),
+                        select(CrisisKeyword).where(CrisisKeyword.is_active.is_(True)),
                     )
                     rows = result.scalars().all()
                     keywords: list[tuple[str, str, str, str]] = []

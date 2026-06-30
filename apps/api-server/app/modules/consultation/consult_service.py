@@ -39,10 +39,18 @@ from py_schemas.crisis import (
 )
 from app.modules.crisis.models import PatientProfileSnapshot
 from py_schemas.enums.crisis_enums import CrisisLevel, BehaviorTypeCategory
+from app.modules.consultation.plan_generation.blocked_outputs import (
+    BLOCKED_PROMPT_TEMPLATES,
+    DEFAULT_BLOCKED_TEXT,
+    DISCLAIMER_TEXT,
+)
 from app.modules.consultation.plan_generation.models import (
     EmergencyPlanInput,
+    GenerationChunk,
+    PromptBuildContext,
 )
 from app.modules.consultation.plan_generation.prompt_builder import PromptBuilder
+from app.modules.consultation.plan_generation.service import _infer_block_variant
 from app.modules.consultation.plan_generation.streaming import stream_generate
 
 from .consultation_contract import BaseConsultationOrchestrator
@@ -279,7 +287,14 @@ class ConsultationOrchestratorImpl(BaseConsultationOrchestrator):
         )
 
     def _do_generate_stream(self, plan_input: Any) -> tuple[Any, Any]:
-        """返回 (generator, prompt_ctx)，prompt_ctx 用于引用切片反查。"""
+        """返回 (generator, prompt_ctx)，prompt_ctx 用于引用切片反查。
+
+        若 crisis_result.block_deep_response=True，直接返回阻断安全提示生成器，
+        不调用 LLM。
+        """
+        if plan_input.crisis_result.block_deep_response:
+            return self._build_blocked_stream(plan_input)
+
         builder = PromptBuilder()
         messages, ctx = builder.build(plan_input)
         generator = stream_generate(
@@ -288,6 +303,45 @@ class ConsultationOrchestratorImpl(BaseConsultationOrchestrator):
             prenumbered_slices=ctx.prenumbered_slices,
         )
         return generator, ctx
+
+    def _build_blocked_stream(
+        self,
+        plan_input: Any,
+    ) -> tuple[Any, Any]:
+        """构建 severe 阻断场景下的安全提示流。
+
+        不调用 LLM，直接产出预设安全提示文本 + 免责声明，
+        并以 finish_reason=BLOCKED 结束。
+        """
+        block_variant = _infer_block_variant(plan_input)
+        blocked_text = (
+            BLOCKED_PROMPT_TEMPLATES[block_variant]
+            if block_variant
+            else DEFAULT_BLOCKED_TEXT
+        )
+        full_text = f"{blocked_text}\n\n---\n\n{DISCLAIMER_TEXT}"
+
+        async def _blocked_generator():
+            yield GenerationChunk(
+                text=full_text,
+                section=None,
+                is_final=False,
+            )
+            yield GenerationChunk(
+                text="",
+                section=None,
+                is_final=True,
+                finish_reason="BLOCKED",
+                raw_full_text=full_text,
+            )
+
+        ctx = PromptBuildContext(
+            prenumbered_slices=[],
+            slice_text_block="",
+            profile_markdown=plan_input.profile_summary,
+            has_cases=False,
+        )
+        return _blocked_generator(), ctx
 
     async def _do_execute_search(self, request: Any, db: AsyncSession) -> Any:
         logger.info(
