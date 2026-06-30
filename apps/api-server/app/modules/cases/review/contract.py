@@ -21,7 +21,6 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from datetime import datetime
 from typing import Any, final
 
 from py_db.repositories.case_repository import CaseRepository
@@ -41,8 +40,6 @@ from py_schemas.cases import (
 from py_schemas.enums.case_enums import CaseStatus
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from .ai_pre_review import case_data_from_orm, run_ai_pre_review
-
 from ..exceptions import (
     CaseNotFoundError,
     CaseStatusError,
@@ -50,6 +47,7 @@ from ..exceptions import (
     RejectCommentTooShortError,
     SelfReviewForbiddenError,
 )
+from .ai_pre_review import case_data_from_orm, run_ai_pre_review
 
 
 class ReviewWorkflowContract(ABC):
@@ -136,8 +134,15 @@ class ReviewWorkflowContract(ABC):
 
         # 步骤 8-10：执行审核
         result = await self._do_submit_review(
-            case_id, review_request, current_user, session,
-            narrative_repo, review_repo, audit_repo, case, ai_review,
+            case_id,
+            review_request,
+            current_user,
+            session,
+            narrative_repo,
+            review_repo,
+            audit_repo,
+            case,
+            ai_review,
         )
 
         self._validate_review_result(result, case_id)
@@ -163,7 +168,13 @@ class ReviewWorkflowContract(ABC):
         """
         self._validate_queue_params(page, page_size)
         result = await self._do_list_review_queue(
-            status_filter, page, page_size, session, case_repo, review_repo, narrative_repo,
+            status_filter,
+            page,
+            page_size,
+            session,
+            case_repo,
+            review_repo,
+            narrative_repo,
         )
         if result is None:
             raise RuntimeError("ReviewWorkflowContract.list_review_queue 返回了 None")
@@ -244,15 +255,11 @@ class ReviewWorkflowContract(ABC):
         # 状态校验
         if case.status != CaseStatus.PENDING_REVIEW:
             current = case.status.value if hasattr(case.status, "value") else str(case.status)
-            raise CaseStatusError(
-                str(case.narrative_id), current, "pending_review"
-            )
+            raise CaseStatusError(str(case.narrative_id), current, "pending_review")
 
         # 禁止自审（author_id 为 UUID，reviewer_id 为字符串，统一转换为字符串比较）
         if str(case.author_id) == reviewer_id:
-            raise SelfReviewForbiddenError(
-                str(case.narrative_id), reviewer_id, str(case.author_id)
-            )
+            raise SelfReviewForbiddenError(str(case.narrative_id), reviewer_id, str(case.author_id))
 
     def _run_ai_pre_review_for_case(self, case: Any) -> AiReviewSummary:
         """执行 AI 预审（模板提供基线实现，子类可覆写以注入 mock）。
@@ -266,8 +273,18 @@ class ReviewWorkflowContract(ABC):
                 return AiReviewSummary(
                     overall=raw.get("overall", "pass"),
                     format_check=CheckItem(**raw.get("format_check", {"status": "pass", "is_hard_gate": True})),
-                    required_fields_check=CheckItem(**raw.get("required_fields_check", {"status": "pass", "is_hard_gate": False})),
-                    ebp_consistency_check=CheckItem(**raw.get("ebp_consistency_check", {"status": "pass", "is_hard_gate": False})),
+                    required_fields_check=CheckItem(
+                        **raw.get(
+                            "required_fields_check",
+                            {"status": "pass", "is_hard_gate": False},
+                        )
+                    ),
+                    ebp_consistency_check=CheckItem(
+                        **raw.get(
+                            "ebp_consistency_check",
+                            {"status": "pass", "is_hard_gate": False},
+                        )
+                    ),
                     pii_check=CheckItem(**raw.get("pii_check", {"status": "pass", "is_hard_gate": True})),
                 )
             elif isinstance(raw, AiReviewSummary):
@@ -277,14 +294,9 @@ class ReviewWorkflowContract(ABC):
         case_data = case_data_from_orm(case)
         return run_ai_pre_review(case_data)
 
-    def _validate_pii_hard_gate(
-        self, ai_review: AiReviewSummary, case_id: str
-    ) -> None:
+    def _validate_pii_hard_gate(self, ai_review: AiReviewSummary, case_id: str) -> None:
         """PII 硬门槛校验。"""
-        if (
-            ai_review.pii_check.is_hard_gate
-            and ai_review.pii_check.status == "fail"
-        ):
+        if ai_review.pii_check.is_hard_gate and ai_review.pii_check.status == "fail":
             raise PiiHardBlockError(case_id, ai_review.pii_check.details or [])
 
     def _validate_review_decision(self, review_request: ReviewRequest) -> None:
@@ -292,18 +304,12 @@ class ReviewWorkflowContract(ABC):
         if review_request.decision == "rejected":
             comment = review_request.review_comment or ""
             if len(comment.strip()) < self.REJECT_COMMENT_MIN_LENGTH:
-                raise RejectCommentTooShortError(
-                    len(comment), self.REJECT_COMMENT_MIN_LENGTH
-                )
+                raise RejectCommentTooShortError(len(comment), self.REJECT_COMMENT_MIN_LENGTH)
 
-    def _validate_review_result(
-        self, result: CaseReviewResponse, case_id: str
-    ) -> None:
+    def _validate_review_result(self, result: CaseReviewResponse, case_id: str) -> None:
         """基线审核后置校验。"""
         if result is None:
-            raise RuntimeError(
-                f"ReviewWorkflowContract.submit_review({case_id}) 返回了 None"
-            )
+            raise RuntimeError(f"ReviewWorkflowContract.submit_review({case_id}) 返回了 None")
 
     def _validate_queue_params(self, page: int, page_size: int) -> None:
         """基线队列查询参数校验。"""

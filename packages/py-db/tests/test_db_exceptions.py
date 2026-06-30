@@ -1,5 +1,4 @@
-"""DEPLOY-04 数据库迁移 + SEC-05 Repository 异常 — 单元测试。
-"""
+"""DEPLOY-04 数据库迁移 + SEC-05 Repository 异常 — 单元测试。"""
 
 from __future__ import annotations
 

@@ -12,9 +12,11 @@ from typing import AsyncGenerator
 from openai import AsyncOpenAI
 from py_logger import logger
 
-from py_llm.llm_contract import LLMClientContract, LLMClientError  # LLMClientError 仅由 __init__.py 重导出  # noqa: F401
+from py_llm.llm_contract import (  # LLMClientError 仅由 __init__.py 重导出  # noqa: F401
+    LLMClientContract,
+    LLMClientError,
+)
 from py_llm.types import ChatCompletionChunk, Choice, Delta, RetryConfig
-
 
 # ============================================================================
 # DeepSeekLLMClient —— LLMClientContract 的具体实现
@@ -54,9 +56,7 @@ class DeepSeekLLMClient(LLMClientContract):
 
                 settings = get_settings()
                 resolved_api_key = settings.DEEPSEEK_API_KEY.get_secret_value()
-                resolved_base_url = (
-                    str(settings.DEEPSEEK_BASE_URL).rstrip("/v1").rstrip("/")
-                )
+                resolved_base_url = str(settings.DEEPSEEK_BASE_URL).rstrip("/v1").rstrip("/")
                 _api_key_source = "py_config"
             except (ImportError, AttributeError):
                 resolved_api_key = ""  # 降级模式——测试中可 mock async_chat_stream
@@ -72,7 +72,10 @@ class DeepSeekLLMClient(LLMClientContract):
                 service="py-llm",
                 message="DeepSeekLLMClient 以降级模式初始化（py_config 不可用，API Key 为空）",
                 op_type="init",
-                extra={"api_key_source": _api_key_source, "base_url": resolved_base_url},
+                extra={
+                    "api_key_source": _api_key_source,
+                    "base_url": resolved_base_url,
+                },
             )
         else:
             logger.info(

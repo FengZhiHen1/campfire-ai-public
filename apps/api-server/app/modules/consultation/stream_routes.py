@@ -19,9 +19,9 @@ import re
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import StreamingResponse
+from py_schemas.streaming import StreamErrorCode
 
 from app.core.streaming import SseStreamingService
-from py_schemas.streaming import StreamErrorCode
 
 router = APIRouter(prefix="/api/v1/consult", tags=["consult"])
 
@@ -87,10 +87,10 @@ def _validate_session_id(session_id: str) -> str:
         "将上游 CSLT-03 应急方案生成服务的流式输出封装为 W3C SSE 标准事件流，"
         "通过 GET 请求建立长连接后持续推送。\n\n"
         "**事件类型**：\n"
-        "- ``event: chunk`` → data: {\"text\": \"...\", \"sequence\": n} — 文本增量\n"
+        '- ``event: chunk`` → data: {"text": "...", "sequence": n} — 文本增量\n'
         "- ``event: heartbeat`` → data: {} — 连接保活（15s 间隔）\n"
-        "- ``event: done`` → data: {\"finish_reason\": \"...\"} — 推送终止\n"
-        "- ``event: error`` → data: {\"error_code\": \"...\", \"detail\": \"...\"} — 异常通知\n\n"
+        '- ``event: done`` → data: {"finish_reason": "..."} — 推送终止\n'
+        '- ``event: error`` → data: {"error_code": "...", "detail": "..."} — 异常通知\n\n'
         "**断点续传**：重连时在请求头携带 ``Last-Event-Id: n``，服务端从 sequence=n+1 开始续传。\n\n"
         "**前置条件**：上游 CSLT-08 编排层需先通过 register_generator() 注册 Generator。"
     ),

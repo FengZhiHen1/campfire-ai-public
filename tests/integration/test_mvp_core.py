@@ -10,10 +10,6 @@
 
 from __future__ import annotations
 
-import json
-
-import pytest
-
 # ---------------------------------------------------------------------------
 # 测试用例 1：案例完整生命周期
 # ---------------------------------------------------------------------------
@@ -67,8 +63,9 @@ def test_case_lifecycle(client, db_fetchval, db_fetch):
     assert db_status == "approved"
 
     # 5. Redis 队列验证：存在索引任务
-    import redis
     import os
+
+    import redis
 
     redis_url = os.getenv("REDIS_URL", "")
     if redis_url:

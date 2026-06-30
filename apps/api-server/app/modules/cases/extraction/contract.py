@@ -82,22 +82,16 @@ class ExtractionServiceContract(ABC):
     # 校验器（模板提供基线校验）
     # ---------------------------------------------------------------------------
 
-    def _validate_extraction_input(
-        self, narrative_text: str, narrative_id: str
-    ) -> None:
+    def _validate_extraction_input(self, narrative_text: str, narrative_id: str) -> None:
         """基线输入校验。"""
         if not narrative_text or not narrative_text.strip():
             raise ValueError("narrative_text 不能为空")
         if not narrative_id:
             raise ValueError("narrative_id 不能为空")
 
-    def _validate_extraction_result(
-        self, cards: list[Any], narrative_id: str
-    ) -> None:
+    def _validate_extraction_result(self, cards: list[Any], narrative_id: str) -> None:
         """基线后置校验。"""
         if cards is None:
-            raise RuntimeError(
-                f"ExtractionServiceContract.extract({narrative_id}) 返回了 None"
-            )
+            raise RuntimeError(f"ExtractionServiceContract.extract({narrative_id}) 返回了 None")
         if len(cards) == 0:
             raise ExtractionError("LLM 未识别到任何干预场景")

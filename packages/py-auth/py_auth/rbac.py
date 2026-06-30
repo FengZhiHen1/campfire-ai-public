@@ -25,12 +25,12 @@ if TYPE_CHECKING:
     from py_schemas.profiles import AccessDecision
 
 from fastapi import HTTPException, Request
+from py_logger import logger
+from py_schemas.auth import UserRole
 
 from py_auth.auth_contract import RBACGuard
 from py_auth.exceptions import PermissionDeniedError
 from py_auth.types import HasRoles
-from py_logger import logger
-from py_schemas.auth import UserRole
 
 # ---------------------------------------------------------------------------
 # 常量
@@ -189,10 +189,7 @@ def get_masked_phone(phone: str | None, user_roles: Sequence[UserRole]) -> str:
         if not user_roles:
             max_level = 0
         else:
-            max_level = max(
-                role.level if isinstance(role, UserRole) else 0
-                for role in user_roles
-            )
+            max_level = max(role.level if isinstance(role, UserRole) else 0 for role in user_roles)
 
         if max_level >= 4:
             return str(phone).strip()
@@ -238,6 +235,7 @@ class PrivacyGuard:
     @staticmethod
     async def check_access(request: Any, db_session: Any) -> AccessDecision:
         from py_schemas.profiles import AccessDecision, VisibleScope
+
         return AccessDecision(
             allowed=True,
             visible_scope=VisibleScope.ALL_FIELDS,

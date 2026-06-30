@@ -22,7 +22,6 @@ from typing import Any
 from pydantic import Field
 
 from py_schemas.base import CampfireBaseModel
-from py_schemas.cases import PaginatedResponse
 from py_schemas.enums.case_enums import CaseStatus
 
 
@@ -111,9 +110,7 @@ class CardUpdate(CampfireBaseModel):
     contraindications: str | None = None
     excluded_population: str | None = None
     inferred_fields: dict[str, Any] | None = None
-    updated_at: str | None = Field(
-        default=None, description="乐观锁时间戳"
-    )
+    updated_at: str | None = Field(default=None, description="乐观锁时间戳")
 
 
 class CardExtractionResult(CampfireBaseModel):

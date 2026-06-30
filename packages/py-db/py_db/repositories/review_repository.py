@@ -8,18 +8,15 @@ ReviewAuditLogRepository 仅提供 INSERT 操作（BIGSERIAL 自增主键保证�
 
 from __future__ import annotations
 
-from py_logger import logger
 from typing import Any
+from uuid import UUID
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.sql import Select, func as sa_func
+from sqlalchemy.sql import Select
 
-from uuid import UUID
-
-from py_db.models.review_models import CaseReview, ReviewAuditLog
 from py_db.base_repository import BaseRepository
-
+from py_db.models.review_models import CaseReview, ReviewAuditLog
 
 
 class ReviewRepository(BaseRepository[CaseReview]):
@@ -80,6 +77,7 @@ class ReviewRepository(BaseRepository[CaseReview]):
         Returns:
             CaseReview 列表，按 review_round 倒序。
         """
+
         async def _query() -> list[CaseReview]:
             uid = UUID(case_id) if isinstance(case_id, str) else case_id
             stmt: Select = (
@@ -91,9 +89,7 @@ class ReviewRepository(BaseRepository[CaseReview]):
             result = await session.execute(stmt)
             return list(result.scalars().all())
 
-        return await self._execute_with_retry(
-            session, "get_review_history", _query
-        )
+        return await self._execute_with_retry(session, "get_review_history", _query)
 
     async def get_latest_review(
         self,
@@ -109,20 +105,16 @@ class ReviewRepository(BaseRepository[CaseReview]):
         Returns:
             最新的 CaseReview 实例，不存在时返回 None。
         """
+
         async def _query() -> CaseReview | None:
             uid = UUID(case_id) if isinstance(case_id, str) else case_id
             stmt: Select = (
-                select(self.model)
-                .where(self.model.case_id == uid)
-                .order_by(self.model.review_round.desc())
-                .limit(1)
+                select(self.model).where(self.model.case_id == uid).order_by(self.model.review_round.desc()).limit(1)
             )
             result = await session.execute(stmt)
             return result.scalars().first()
 
-        return await self._execute_with_retry(
-            session, "get_latest_review", _query
-        )
+        return await self._execute_with_retry(session, "get_latest_review", _query)
 
 
 class ReviewAuditLogRepository:

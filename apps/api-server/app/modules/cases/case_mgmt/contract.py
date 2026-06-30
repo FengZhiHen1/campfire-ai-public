@@ -31,11 +31,10 @@ from py_schemas.cases import (
     CaseResponse,
     CaseUpdate,
     PaginatedResponse,
-    PiiWarning,
 )
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..types import CaseId, PiiConfirmation
+from ..types import CaseId
 
 
 class CaseManagementContract(ABC):
@@ -112,9 +111,7 @@ class CaseManagementContract(ABC):
           - 可能触发 edit_reset_status 审计日志
         """
         self._validate_update_preconditions(case_id, update)
-        result = await self._do_update_case(
-            case_id, update, current_user, session, case_repo
-        )
+        result = await self._do_update_case(case_id, update, current_user, session, case_repo)
         self._validate_update_result(result, case_id)
         return result
 
@@ -148,9 +145,7 @@ class CaseManagementContract(ABC):
           - 记录结构化审计日志（case_submitted）
         """
         self._validate_submit_preconditions(case_id, current_user, session, case_repo)
-        result = await self._do_submit_case(
-            case_id, current_user, session, case_repo, pii_confirmed
-        )
+        result = await self._do_submit_case(case_id, current_user, session, case_repo, pii_confirmed)
         self._validate_submit_result(result, case_id)
         return result
 
@@ -173,9 +168,7 @@ class CaseManagementContract(ABC):
           - CaseNotFoundError: 案例不存在或无权限
         """
         self._validate_case_id(case_id)
-        result = await self._do_get_case(
-            case_id, current_user, session, case_repo
-        )
+        result = await self._do_get_case(case_id, current_user, session, case_repo)
         self._validate_get_result(result, case_id)
         return result
 
@@ -203,9 +196,17 @@ class CaseManagementContract(ABC):
         """
         self._validate_list_params(page, page_size)
         return await self._do_list_cases(
-            status_filter, behavior_type_filter, evidence_level,
-            sort_by, keyword, page, page_size, scope,
-            current_user, session, case_repo,
+            status_filter,
+            behavior_type_filter,
+            evidence_level,
+            sort_by,
+            keyword,
+            page,
+            page_size,
+            scope,
+            current_user,
+            session,
+            case_repo,
         )
 
     # ---------------------------------------------------------------------------
@@ -315,9 +316,7 @@ class CaseManagementContract(ABC):
         if not result.case_id:
             raise RuntimeError("创建的案例缺少 case_id")
 
-    def _validate_update_preconditions(
-        self, case_id: str, update: CaseUpdate
-    ) -> None:
+    def _validate_update_preconditions(self, case_id: str, update: CaseUpdate) -> None:
         """基线更新前置校验。"""
         if not case_id:
             raise ValueError("case_id 不能为空")
@@ -327,9 +326,7 @@ class CaseManagementContract(ABC):
     def _validate_update_result(self, result: CaseResponse, case_id: str) -> None:
         """基线更新后置校验。"""
         if result is None:
-            raise RuntimeError(
-                f"CaseManagementContract.update_case({case_id}) 返回了 None"
-            )
+            raise RuntimeError(f"CaseManagementContract.update_case({case_id}) 返回了 None")
 
     def _validate_submit_preconditions(
         self,
@@ -348,9 +345,7 @@ class CaseManagementContract(ABC):
     def _validate_submit_result(self, result: CaseResponse, case_id: str) -> None:
         """基线提交后置校验。"""
         if result is None:
-            raise RuntimeError(
-                f"CaseManagementContract.submit_case({case_id}) 返回了 None"
-            )
+            raise RuntimeError(f"CaseManagementContract.submit_case({case_id}) 返回了 None")
 
     def _validate_case_id(self, case_id: str) -> None:
         """校验 case_id 非空。"""
@@ -360,9 +355,7 @@ class CaseManagementContract(ABC):
     def _validate_get_result(self, result: CaseResponse, case_id: str) -> None:
         """基线获取后置校验。"""
         if result is None:
-            raise RuntimeError(
-                f"CaseManagementContract.get_case({case_id}) 返回了 None"
-            )
+            raise RuntimeError(f"CaseManagementContract.get_case({case_id}) 返回了 None")
 
     def _validate_list_params(self, page: int, page_size: int) -> None:
         """基线列表查询参数校验。"""

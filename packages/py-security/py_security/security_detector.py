@@ -28,8 +28,8 @@ _SQL_INJECTION_PATTERNS: list[re.Pattern[str]] = [
     re.compile(r"DELETE\s+FROM", re.IGNORECASE),
     re.compile(r"\b1\s*=\s*1\b", re.IGNORECASE),
     re.compile(r"OR\s+'1'\s*=\s*'1'?", re.IGNORECASE),
-    re.compile(r"--"),          # SQL 注释注入
-    re.compile(r";"),           # 语句终止符
+    re.compile(r"--"),  # SQL 注释注入
+    re.compile(r";"),  # 语句终止符
 ]
 
 _XSS_PATTERNS: list[re.Pattern[str]] = [
@@ -57,9 +57,7 @@ def _check_string_for_threats(value: str) -> SecurityDetectionType | None:
     return None
 
 
-def _traverse_and_detect(
-    data: Any, depth: int = 0, max_depth: int = 5
-) -> SecurityDetectionType | None:
+def _traverse_and_detect(data: Any, depth: int = 0, max_depth: int = 5) -> SecurityDetectionType | None:
     if depth > max_depth:
         return SecurityDetectionType.malformed_request
 

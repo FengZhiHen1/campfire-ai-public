@@ -15,14 +15,13 @@ from __future__ import annotations
 import asyncio
 
 import pytest
-
-from py_llm.llm_contract import LLMClientError
 from helpers import (
     NormalClient,
     SpyClient,
     make_chunk,
     make_rate_limit_error,
 )
+from py_llm.llm_contract import LLMClientError
 
 VALID_MESSAGES = [{"role": "user", "content": "Hi"}]
 

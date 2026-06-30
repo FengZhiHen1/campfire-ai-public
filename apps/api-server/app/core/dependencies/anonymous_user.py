@@ -13,14 +13,13 @@ import secrets
 from typing import cast
 
 from fastapi import Depends, Request
-from sqlalchemy import select
-from sqlalchemy.exc import IntegrityError
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from py_config import get_settings
 from py_db.models.auth import User
 from py_logger import logger
 from py_schemas.auth import UserRole
+from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.dependencies.auth_dependencies import get_db_session
 
@@ -62,9 +61,7 @@ async def _get_or_create_judge_user(
         extra={"judge_username": username},
     )
 
-    result = await session.execute(
-        select(User).where(User.username == username)
-    )
+    result = await session.execute(select(User).where(User.username == username))
     existing = result.scalars().first()
     if existing is not None:
         logger.info(
@@ -106,9 +103,7 @@ async def _get_or_create_judge_user(
             return user
         except IntegrityError:
             await session.rollback()
-            result = await session.execute(
-                select(User).where(User.username == username)
-            )
+            result = await session.execute(select(User).where(User.username == username))
             existing = result.scalars().first()
             if existing is not None:
                 return existing

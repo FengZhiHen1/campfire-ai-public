@@ -9,14 +9,16 @@ from __future__ import annotations
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import and_, or_, select, update as sa_update
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.sql import Select, func as sa_func
-
-from py_db.models.case_narrative import CaseNarrative
-from py_db.base_repository import BaseRepository
-from py_db.sqlalchemy_helpers import rowcount
 from py_schemas.enums.case_enums import CaseStatus
+from sqlalchemy import and_, select
+from sqlalchemy import update as sa_update
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.sql import Select
+from sqlalchemy.sql import func as sa_func
+
+from py_db.base_repository import BaseRepository
+from py_db.models.case_narrative import CaseNarrative
+from py_db.sqlalchemy_helpers import rowcount
 
 
 class NarrativeRepository(BaseRepository[CaseNarrative]):
@@ -46,6 +48,7 @@ class NarrativeRepository(BaseRepository[CaseNarrative]):
         Returns:
             匹配的 CaseNarrative 实例，不存在时返回 None。
         """
+
         async def _query() -> CaseNarrative | None:
             uid = UUID(narrative_id) if isinstance(narrative_id, str) else narrative_id
             stmt: Select = select(self.model).where(self.model.narrative_id == uid)
@@ -66,6 +69,7 @@ class NarrativeRepository(BaseRepository[CaseNarrative]):
 
         若提供 expected_status，使用 CAS 乐观锁。
         """
+
         async def _update() -> CaseNarrative:
             uid = UUID(narrative_id) if isinstance(narrative_id, str) else narrative_id
             conditions = [self.model.narrative_id == uid]
@@ -76,13 +80,9 @@ class NarrativeRepository(BaseRepository[CaseNarrative]):
             if review_comment is not None:
                 values["review_comment"] = review_comment
 
-            result = await session.execute(
-                sa_update(self.model).where(and_(*conditions)).values(**values)
-            )
+            result = await session.execute(sa_update(self.model).where(and_(*conditions)).values(**values))
             if rowcount(result) == 0:
-                raise ValueError(
-                    f"叙事 {narrative_id} 不存在或状态已变更（预期 {expected_status}）"
-                )
+                raise ValueError(f"叙事 {narrative_id} 不存在或状态已变更（预期 {expected_status}）")
 
             narrative = await self.find_by_narrative_id(session, narrative_id)
             assert narrative is not None
@@ -115,6 +115,7 @@ class NarrativeRepository(BaseRepository[CaseNarrative]):
         Returns:
             (narratives, total_count) 元组。
         """
+
         async def _query() -> tuple[list[CaseNarrative], int]:
             conditions: list[Any] = []
             if status is not None:

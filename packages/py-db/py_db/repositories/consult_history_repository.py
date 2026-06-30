@@ -16,13 +16,12 @@ from __future__ import annotations
 import uuid
 from typing import Any
 
-from py_logger import logger
-from sqlalchemy import func, select, update
+import sqlalchemy as sa
+from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from py_db.models.consultation import ConsultationHistory
-
 
 
 class ConsultHistoryRepository:
@@ -157,9 +156,7 @@ class ConsultHistoryRepository:
         Returns:
             匹配的 ConsultationHistory 实例，不存在时返回 None。
         """
-        stmt = select(ConsultationHistory).where(
-            ConsultationHistory.request_id == request_id
-        )
+        stmt = select(ConsultationHistory).where(ConsultationHistory.request_id == request_id)
         result = await session.execute(stmt)
         return result.scalars().first()
 
@@ -197,9 +194,7 @@ class ConsultHistoryRepository:
         ]
 
         # COUNT 查询
-        count_stmt = select(func.count()).where(
-            ConsultationHistory.user_id == user_id
-        )
+        count_stmt = select(func.count()).where(ConsultationHistory.user_id == user_id)
         count_result = await session.execute(count_stmt)
         total: int = count_result.scalar_one()
 
@@ -269,9 +264,7 @@ class ConsultHistoryRepository:
         Returns:
             该 id 在表中的记录数（0 或 1）。
         """
-        stmt = select(func.count()).where(
-            ConsultationHistory.id == record_id
-        )
+        stmt = select(func.count()).where(ConsultationHistory.id == record_id)
         result = await session.execute(stmt)
         return result.scalar_one()
 

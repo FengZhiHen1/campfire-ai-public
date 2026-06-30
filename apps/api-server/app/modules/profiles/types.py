@@ -14,9 +14,8 @@
 
 from __future__ import annotations
 
-from uuid import UUID
-
 from typing import NewType
+from uuid import UUID
 
 # PROF-01 档案标识
 ProfileId = NewType("ProfileId", UUID)

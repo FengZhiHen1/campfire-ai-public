@@ -14,16 +14,13 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
-
 from py_rag.embedding_contract import BaseEmbeddingEncoder
 from py_rag.retrieval_contract import BaseSemanticSearch
 from py_rag.types import (
     TOP_K_MAX,
     TOP_K_MIN,
     EmbeddingVector,
-    QueryFingerprint,
 )
-
 
 # ============================================================================
 # Mock 子类 — 最小合法实现
@@ -114,51 +111,37 @@ class TestTopKClamping:
 
     def test_p1_top_k_zero_clamped_to_min(self):
         """top_k=0 应钳位到 TOP_K_MIN (1)。"""
-        actual_top_k, _fingerprint = self.search._validate_input(
-            "测试", 0, self.valid_db
-        )
+        actual_top_k, _fingerprint = self.search._validate_input("测试", 0, self.valid_db)
         assert actual_top_k == TOP_K_MIN
 
     def test_p1_top_k_negative_clamped_to_min(self):
         """top_k 为负数应钳位到 TOP_K_MIN (1)。"""
-        actual_top_k, _fingerprint = self.search._validate_input(
-            "测试", -5, self.valid_db
-        )
+        actual_top_k, _fingerprint = self.search._validate_input("测试", -5, self.valid_db)
         assert actual_top_k == TOP_K_MIN
 
     def test_p1_top_k_exceeds_max_clamped(self):
         """top_k=100 超过 TOP_K_MAX (50)，应钳位到 50。"""
-        actual_top_k, _fingerprint = self.search._validate_input(
-            "测试", 100, self.valid_db
-        )
+        actual_top_k, _fingerprint = self.search._validate_input("测试", 100, self.valid_db)
         assert actual_top_k == TOP_K_MAX
 
     def test_p1_top_k_large_number_clamped(self):
         """top_k 为极大值 (9999) 也应钳位到 TOP_K_MAX。"""
-        actual_top_k, _fingerprint = self.search._validate_input(
-            "测试", 9999, self.valid_db
-        )
+        actual_top_k, _fingerprint = self.search._validate_input("测试", 9999, self.valid_db)
         assert actual_top_k == TOP_K_MAX
 
     def test_p1_top_k_at_min_boundary(self):
         """top_k 恰好为 1（最小值），不钳位。"""
-        actual_top_k, _fingerprint = self.search._validate_input(
-            "测试", 1, self.valid_db
-        )
+        actual_top_k, _fingerprint = self.search._validate_input("测试", 1, self.valid_db)
         assert actual_top_k == 1
 
     def test_p1_top_k_at_max_boundary(self):
         """top_k 恰好为 50（最大值），不钳位。"""
-        actual_top_k, _fingerprint = self.search._validate_input(
-            "测试", 50, self.valid_db
-        )
+        actual_top_k, _fingerprint = self.search._validate_input("测试", 50, self.valid_db)
         assert actual_top_k == 50
 
     def test_p1_top_k_in_range_unchanged(self):
         """top_k 在合法范围内 (25)，保持不变。"""
-        actual_top_k, _fingerprint = self.search._validate_input(
-            "测试", 25, self.valid_db
-        )
+        actual_top_k, _fingerprint = self.search._validate_input("测试", 25, self.valid_db)
         assert actual_top_k == 25
 
 
@@ -177,23 +160,17 @@ class TestQueryTextLengthBoundary:
 
     def test_p1_query_text_min_length_succeeds(self):
         """1 字符 query_text 通过校验。"""
-        actual_top_k, _fingerprint = self.search._validate_input(
-            "x", 10, self.valid_db
-        )
+        actual_top_k, _fingerprint = self.search._validate_input("x", 10, self.valid_db)
         assert actual_top_k is not None  # 校验通过，不抛异常
 
     def test_p1_query_text_max_length_succeeds(self):
         """恰好 2000 字符 query_text 通过校验。"""
-        actual_top_k, _fingerprint = self.search._validate_input(
-            "x" * 2000, 10, self.valid_db
-        )
+        actual_top_k, _fingerprint = self.search._validate_input("x" * 2000, 10, self.valid_db)
         assert actual_top_k == 10  # top_k 未被钳位
 
     def test_p1_query_text_max_length_minus_one_succeeds(self):
         """1999 字符 query_text 通过校验。"""
-        actual_top_k, _fingerprint = self.search._validate_input(
-            "x" * 1999, 10, self.valid_db
-        )
+        actual_top_k, _fingerprint = self.search._validate_input("x" * 1999, 10, self.valid_db)
         assert actual_top_k == 10
 
 
@@ -209,7 +186,7 @@ class TestTypeBreaking:
         """传入裸 list[float] 给期望 EmbeddingVector 的 _do_search 参数。
         NewType 在运行时透传，不抛异常。"""
         encoder = MockSearchEncoder()
-        search = MockSearch(encoder)
+        _search = MockSearch(encoder)
         # _do_search 契约参数类型是 EmbeddingVector，
         # 但运行时传入裸 list[float] 应正常工作
         # 需要异步执行...
@@ -220,9 +197,7 @@ class TestTypeBreaking:
         encoder = MockSearchEncoder()
         search = MockSearch(encoder)
         # 裸 str 正常通过校验
-        actual_top_k, _fingerprint = search._validate_input(
-            "裸字符串查询", 10, object()
-        )
+        actual_top_k, _fingerprint = search._validate_input("裸字符串查询", 10, object())
         assert actual_top_k == 10
 
 
@@ -301,9 +276,7 @@ class TestQueryFingerprint:
 
     def test_p3_validate_input_includes_fingerprint(self):
         """_validate_input 返回值同时包含 actual_top_k 和 query_fingerprint。"""
-        actual_top_k, fingerprint = self.search._validate_input(
-            "测试查询", 10, object()
-        )
+        actual_top_k, fingerprint = self.search._validate_input("测试查询", 10, object())
         assert isinstance(actual_top_k, int)
         assert isinstance(fingerprint, str)
         assert len(fingerprint) == 64
@@ -320,6 +293,7 @@ class TestSearchIntegration:
     @pytest.mark.asyncio
     async def test_p3_search_propagates_encoder_error(self):
         """编码器故障 → search 将异常向上传播。"""
+
         # 创建一个始终抛异常的编码器
         class BrokenEncoder(BaseEmbeddingEncoder):
             async def _do_encode(self, text: str, text_type: str) -> list[float]:

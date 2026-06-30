@@ -6,11 +6,8 @@ verify_access_token、verify_refresh_token、TokenType。
 
 from __future__ import annotations
 
-from unittest import mock
-
 import pytest
-
-from py_auth.exceptions import TokenCreationError, TokenDecodeError
+from py_auth.exceptions import TokenDecodeError
 from py_auth.jwt_utils import (
     TokenType,
     create_access_token,
@@ -19,7 +16,6 @@ from py_auth.jwt_utils import (
     verify_refresh_token,
     verify_token,
 )
-
 
 _VALID_DATA = {"sub": "user-001", "roles": ["family"]}
 

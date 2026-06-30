@@ -21,9 +21,12 @@ from typing import Any, AsyncGenerator, ClassVar, Literal, cast
 
 from fastapi import HTTPException, status
 from fastapi.responses import StreamingResponse
-
 from py_config.config import AppSettings
 from py_logger import logger
+from py_schemas.consultation_history import (
+    GENERATION_DISCLAIMER_CONST,
+    ConsultationHistoryCreate,
+)
 from py_schemas.streaming import (
     ChunkEvent,
     DoneEvent,
@@ -35,10 +38,6 @@ from py_schemas.streaming import (
 
 from app.modules.consultation.plan_generation.models import GenerationChunk
 from app.modules.consultation.plan_generation.streaming import parse_json_sections
-from py_schemas.consultation_history import (
-    GENERATION_DISCLAIMER_CONST,
-    ConsultationHistoryCreate,
-)
 
 from .session_manager import StreamSessionManager
 
@@ -214,10 +213,7 @@ class SseStreamingService:
             # ==== 新会话 ====
             if last_event_id is not None:
                 # 仅当 last_event_id 是合法正整数格式时才视为重连
-                if (
-                    last_event_id.isdigit()
-                    and 0 < int(last_event_id) <= 2_147_483_647
-                ):
+                if last_event_id.isdigit() and 0 < int(last_event_id) <= 2_147_483_647:
                     SseStreamingService._semaphore.release()
                     raise HTTPException(
                         status_code=status.HTTP_404_NOT_FOUND,
@@ -271,10 +267,7 @@ class SseStreamingService:
         # 类型检查：必须是 AsyncGenerator
         if not hasattr(generator, "__aiter__"):
             SseStreamingService._semaphore.release()
-            raise TypeError(
-                "chunk_generator 必须是异步生成器 (AsyncGenerator)，"
-                f"实际类型为 {type(generator).__name__}"
-            )
+            raise TypeError(f"chunk_generator 必须是异步生成器 (AsyncGenerator)，实际类型为 {type(generator).__name__}")
 
         # ==================================================================
         # 构建响应头
@@ -335,10 +328,7 @@ class SseStreamingService:
             try:
                 while True:
                     await asyncio.sleep(heartbeat_interval)
-                    sse_frame = (
-                        f"event: heartbeat\n"
-                        f"data: {HeartbeatEvent().model_dump_json()}\n\n"
-                    )
+                    sse_frame = f"event: heartbeat\ndata: {HeartbeatEvent().model_dump_json()}\n\n"
                     await queue.put(sse_frame)
             except asyncio.CancelledError:
                 pass
@@ -356,7 +346,7 @@ class SseStreamingService:
 
                 it = chunk_generator.__aiter__()
                 # 若为断点续传，跳过已推送的 chunk
-                skip_count = (resume_from or 0)
+                skip_count = resume_from or 0
 
                 # 记录当前已跳过的 chunk 数，用于 continue 场景
                 skipped = 0
@@ -377,10 +367,7 @@ class SseStreamingService:
                             finish_reason="TIMEOUT",
                             sequence=session.sequence if session.sequence > 0 else None,
                         )
-                        sse_frame = (
-                            f"event: done\n"
-                            f"data: {done_event.model_dump_json()}\n\n"
-                        )
+                        sse_frame = f"event: done\ndata: {done_event.model_dump_json()}\n\n"
                         await queue.put(sse_frame)
                         logger.info(
                             service="streaming",
@@ -414,10 +401,7 @@ class SseStreamingService:
                             error_code=StreamErrorCode.STREAM_TIMEOUT,
                             detail="正在生成中，请耐心等待",
                         )
-                        sse_frame = (
-                            f"event: error\n"
-                            f"data: {error_event.model_dump_json()}\n\n"
-                        )
+                        sse_frame = f"event: error\ndata: {error_event.model_dump_json()}\n\n"
                         await queue.put(sse_frame)
                         continue
                     except StopAsyncIteration:
@@ -430,10 +414,7 @@ class SseStreamingService:
                                 error_code=StreamErrorCode.GENERATION_FAILED,
                                 detail="方案生成失败，请稍后重试",
                             )
-                            sse_frame = (
-                                f"event: error\n"
-                                f"data: {error_event.model_dump_json()}\n\n"
-                            )
+                            sse_frame = f"event: error\ndata: {error_event.model_dump_json()}\n\n"
                             await queue.put(sse_frame)
                         else:
                             # 已推送部分内容但缺少最终标记，视为正常完成
@@ -450,10 +431,7 @@ class SseStreamingService:
                                 ticket_triggered=done_meta.get("ticket_triggered", False),
                                 sections=done_meta.get("sections", {}),
                             )
-                            sse_frame = (
-                                f"event: done\n"
-                                f"data: {done_event.model_dump_json()}\n\n"
-                            )
+                            sse_frame = f"event: done\ndata: {done_event.model_dump_json()}\n\n"
                             await queue.put(sse_frame)
                             await self._try_archive(session)
                         return
@@ -481,9 +459,7 @@ class SseStreamingService:
                     # 记录首个 chunk 时间（步骤 4 第 1 项）
                     if session.first_chunk_sent_at is None:
                         session.first_chunk_sent_at = time.monotonic()
-                        session.ttft_ms = (
-                            (session.first_chunk_sent_at - session.created_at) * 1000.0
-                        )
+                        session.ttft_ms = (session.first_chunk_sent_at - session.created_at) * 1000.0
 
                     # 递增 sequence（步骤 4 第 3 项）
                     session.sequence += 1
@@ -496,11 +472,7 @@ class SseStreamingService:
                     )
 
                     # 写入 SSE 帧（步骤 4 第 5 项）
-                    sse_frame = (
-                        f"id: {session.sequence}\n"
-                        f"event: chunk\n"
-                        f"data: {chunk_event.model_dump_json()}\n\n"
-                    )
+                    sse_frame = f"id: {session.sequence}\nevent: chunk\ndata: {chunk_event.model_dump_json()}\n\n"
                     await queue.put(sse_frame)
 
                     # 缓存文本（步骤 4 第 6 项）
@@ -526,10 +498,7 @@ class SseStreamingService:
                             ticket_triggered=done_meta.get("ticket_triggered", False),
                             sections=done_meta.get("sections", {}),
                         )
-                        sse_frame = (
-                            f"event: done\n"
-                            f"data: {done_event.model_dump_json()}\n\n"
-                        )
+                        sse_frame = f"event: done\ndata: {done_event.model_dump_json()}\n\n"
                         await queue.put(sse_frame)
 
                         logger.info(
@@ -559,10 +528,7 @@ class SseStreamingService:
                         finish_reason="ERROR",
                         sequence=session.sequence if session.sequence > 0 else None,
                     )
-                    sse_frame = (
-                        f"event: done\n"
-                        f"data: {done_event.model_dump_json()}\n\n"
-                    )
+                    sse_frame = f"event: done\ndata: {done_event.model_dump_json()}\n\n"
                     await queue.put(sse_frame)
                     await self._try_archive(session)
 
@@ -630,10 +596,7 @@ class SseStreamingService:
                 finish_reason="ERROR",
                 sequence=session.sequence,
             )
-            sse_frame = (
-                f"event: done\n"
-                f"data: {done_event.model_dump_json()}\n\n"
-            )
+            sse_frame = f"event: done\ndata: {done_event.model_dump_json()}\n\n"
             await queue.put(sse_frame)
         else:
             # 未推送任何 chunk，发送 ErrorEvent
@@ -642,10 +605,7 @@ class SseStreamingService:
                 error_code=StreamErrorCode.GENERATION_FAILED,
                 detail="方案生成失败，请稍后重试",
             )
-            sse_frame = (
-                f"event: error\n"
-                f"data: {error_event.model_dump_json()}\n\n"
-            )
+            sse_frame = f"event: error\ndata: {error_event.model_dump_json()}\n\n"
             await queue.put(sse_frame)
 
         logger.error(
@@ -692,7 +652,10 @@ class SseStreamingService:
             service="streaming",
             message="archive_entered",
             op_type="archive",
-            extra={"stream_id": session.stream_id, "has_meta": session.stream_id in self._generation_meta},
+            extra={
+                "stream_id": session.stream_id,
+                "has_meta": session.stream_id in self._generation_meta,
+            },
         )
         meta = self._generation_meta.get(session.stream_id)
         if meta is None:
@@ -720,10 +683,7 @@ class SseStreamingService:
         if raw_full_text is not None:
             full_text = raw_full_text
         elif session.chunk_buffer:
-            full_text = "".join(
-                session.chunk_buffer[i]
-                for i in sorted(session.chunk_buffer.keys())
-            )
+            full_text = "".join(session.chunk_buffer[i] for i in sorted(session.chunk_buffer.keys()))
         else:
             full_text = ""
 
@@ -745,6 +705,7 @@ class SseStreamingService:
 
             # 从全文提取引用的 slice IDs
             import re
+
             ref_pattern = re.compile(r"\[(\d+)\]")
             referenced_slice_ids = []
             seen: set[str] = set()
@@ -757,12 +718,10 @@ class SseStreamingService:
             # 构建 source_list
             search_result = meta.get("search_result")
             referenced_cases = self._build_referenced_cases(
-                [str(sid) for sid in referenced_slice_ids], search_result,
+                [str(sid) for sid in referenced_slice_ids],
+                search_result,
             )
-            source_list = [
-                f"[{i + 1}] {c['case_title']}"
-                for i, c in enumerate(referenced_cases)
-            ]
+            source_list = [f"[{i + 1}] {c['case_title']}" for i, c in enumerate(referenced_cases)]
 
             finish_reason = session.finish_reason or "COMPLETE"
             is_partial = finish_reason in ("PARTIAL", "TIMEOUT")
@@ -796,7 +755,10 @@ class SseStreamingService:
             logger.warning(
                 service="streaming",
                 message="archive_missing_original_request_id",
-                extra={"stream_id": session.stream_id, "generated_request_id": str(archive_request_id)},
+                extra={
+                    "stream_id": session.stream_id,
+                    "generated_request_id": str(archive_request_id),
+                },
             )
 
         try:
@@ -813,7 +775,10 @@ class SseStreamingService:
                 generation_time_ms=generation_time_ms,
                 is_partial=is_partial,
                 referenced_slice_ids=referenced_slice_ids,
-                finish_reason=cast(Literal["COMPLETE", "PARTIAL", "BLOCKED", "TIMEOUT", "ERROR"], finish_reason),
+                finish_reason=cast(
+                    Literal["COMPLETE", "PARTIAL", "BLOCKED", "TIMEOUT", "ERROR"],
+                    finish_reason,
+                ),
                 ttft_ms=session.ttft_ms or 0.0,
             )
         except Exception as exc:
@@ -832,7 +797,10 @@ class SseStreamingService:
             service="streaming",
             message="archive_data_built",
             op_type="archive",
-            extra={"stream_id": session.stream_id, "request_id": str(archive_request_id)},
+            extra={
+                "stream_id": session.stream_id,
+                "request_id": str(archive_request_id),
+            },
         )
 
         try:
@@ -856,7 +824,10 @@ class SseStreamingService:
                     service="streaming",
                     message="archive_calling",
                     op_type="archive",
-                    extra={"stream_id": session.stream_id, "request_id": str(archive_request_id)},
+                    extra={
+                        "stream_id": session.stream_id,
+                        "request_id": str(archive_request_id),
+                    },
                 )
                 record = await archive_consultation(
                     data=data,
@@ -888,7 +859,10 @@ class SseStreamingService:
                     service="streaming",
                     message="archive_committed",
                     op_type="archive",
-                    extra={"stream_id": session.stream_id, "request_id": str(record.request_id)},
+                    extra={
+                        "stream_id": session.stream_id,
+                        "request_id": str(record.request_id),
+                    },
                 )
         except Exception:
             logger.error(
@@ -964,12 +938,14 @@ class SseStreamingService:
         for sid in referenced_slice_ids:
             if sid in slice_map and sid not in seen:
                 info = slice_map[sid]
-                cases.append({
-                    "slice_id": sid,
-                    "case_id": info["card_id"],
-                    "case_title": info["case_title"] or "无标题",
-                    "slice_text": info["slice_text"],
-                })
+                cases.append(
+                    {
+                        "slice_id": sid,
+                        "case_id": info["card_id"],
+                        "case_title": info["case_title"] or "无标题",
+                        "slice_text": info["slice_text"],
+                    }
+                )
                 seen.add(sid)
         return cases
 
@@ -1013,6 +989,7 @@ class SseStreamingService:
             包含 referenced_slice_ids, crisis_level, confidence 等字段的 dict。
         """
         import re
+
         meta = self._generation_meta.get(session.stream_id)
         if meta is None:
             return {}
@@ -1025,10 +1002,7 @@ class SseStreamingService:
         if raw_full_text:
             full_text = raw_full_text
         else:
-            full_text = "".join(
-                session.chunk_buffer[i]
-                for i in sorted(session.chunk_buffer.keys())
-            )
+            full_text = "".join(session.chunk_buffer[i] for i in sorted(session.chunk_buffer.keys()))
 
         # 提取 [N] 引用标记
         ref_pattern = re.compile(r"\[(\d+)\]")
@@ -1064,9 +1038,7 @@ class SseStreamingService:
             "referenced_slice_ids": referenced_slice_ids,
             "crisis_level": crisis_level,
             "sections": sections,
-            "referenced_cases": self._build_referenced_cases(
-                referenced_slice_ids, meta.get("search_result")
-            ),
+            "referenced_cases": self._build_referenced_cases(referenced_slice_ids, meta.get("search_result")),
         }
 
         # === 置信度校验：作为后台任务异步执行，不阻塞 DoneEvent ===
@@ -1106,14 +1078,16 @@ class SseStreamingService:
         """
         try:
             from py_schemas.consult.confidence import ConfidenceValidationInput
-            from app.modules.consultation.consult.confidence_validator import validate_confidence
+
+            from app.modules.consultation.consult.confidence_validator import (
+                validate_confidence,
+            )
 
             validation_input = ConfidenceValidationInput(
                 plan_text=full_text,
                 source_list=[],
                 disclaimer=(
-                    "以上建议由 AI 生成，仅供参考，不构成医疗诊断或治疗建议。"
-                    "如情况紧急，请立即联系专业医疗机构。"
+                    "以上建议由 AI 生成，仅供参考，不构成医疗诊断或治疗建议。如情况紧急，请立即联系专业医疗机构。"
                 ),
                 crisis_level=crisis_level,
                 block_deep_response=block_deep_response,

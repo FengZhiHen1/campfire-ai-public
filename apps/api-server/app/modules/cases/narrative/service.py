@@ -8,25 +8,25 @@ from __future__ import annotations
 import uuid
 from typing import Any
 
-from sqlalchemy import select, func, update as sa_update
-from sqlalchemy.ext.asyncio import AsyncSession
-
-from py_db.models.case_narrative import CaseNarrative
 from py_db.models.case_card import CaseCard
+from py_db.models.case_narrative import CaseNarrative
+from py_logger import logger
 from py_schemas.base import CampfireBaseModel
+from py_schemas.cards import CardResponse
 from py_schemas.enums.case_enums import CaseStatus
 from py_schemas.narratives import NarrativeResponse
-from py_schemas.cards import CardResponse
+from sqlalchemy import func, select
+from sqlalchemy import update as sa_update
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from py_logger import logger
-
-from .contract import NarrativeManagementContract
 from ..exceptions import (
-    NarrativeNotFoundError,
     CaseStatusError,
+    NarrativeNotFoundError,
     SelfReviewForbiddenError,
 )
 from ..types import CardId, NarrativeId
+from .contract import NarrativeManagementContract
+
 
 class NarrativeManagementService(NarrativeManagementContract):
     """叙事管理服务实现。实现 NarrativeManagementContract 契约的全部 _do_ 钩子。"""
@@ -76,9 +76,7 @@ class NarrativeManagementService(NarrativeManagementContract):
     ) -> Any:
         """获取 L1 叙事详情（含所有权检查）。"""
         nid = uuid.UUID(narrative_id)
-        result = await session.execute(
-            select(CaseNarrative).where(CaseNarrative.narrative_id == nid)
-        )
+        result = await session.execute(select(CaseNarrative).where(CaseNarrative.narrative_id == nid))
         entity = result.scalars().first()
         if entity is None:
             raise NarrativeNotFoundError(narrative_id)
@@ -179,11 +177,15 @@ class NarrativeManagementService(NarrativeManagementContract):
             await session.refresh(entity)
             if entity.status != CaseStatus.DRAFT:
                 raise CaseStatusError(
-                    narrative_id, str(entity.status), "draft",
+                    narrative_id,
+                    str(entity.status),
+                    "draft",
                 )
             # 理论上不应到达此处（refresh 后仍为 draft 说明记录被删除）
             raise CaseStatusError(
-                narrative_id, str(entity.status), "draft",
+                narrative_id,
+                str(entity.status),
+                "draft",
             )
 
         await session.commit()
@@ -214,16 +216,13 @@ class NarrativeManagementService(NarrativeManagementContract):
         """
         nid = uuid.UUID(narrative_id)
         result = await session.execute(
-            select(CaseCard)
-            .where(CaseCard.narrative_id == nid)
-            .order_by(CaseCard.created_at.asc())
+            select(CaseCard).where(CaseCard.narrative_id == nid).order_by(CaseCard.created_at.asc())
         )
         cards = list(result.scalars().all())
 
         # 按叙事层保存的卡片顺序重排；derived_card_ids 是 LLM 提取时的权威顺序。
         narrative_result = await session.execute(
-            select(CaseNarrative.derived_card_ids)
-            .where(CaseNarrative.narrative_id == nid)
+            select(CaseNarrative.derived_card_ids).where(CaseNarrative.narrative_id == nid)
         )
         derived_card_ids = narrative_result.scalar() or []
         if derived_card_ids:
@@ -238,9 +237,7 @@ class NarrativeManagementService(NarrativeManagementContract):
     ) -> Any:
         """获取单张 L2 卡片。未找到返回 None，由契约层抛出 CardNotFoundError。"""
         cid = uuid.UUID(card_id)
-        result = await session.execute(
-            select(CaseCard).where(CaseCard.card_id == cid)
-        )
+        result = await session.execute(select(CaseCard).where(CaseCard.card_id == cid))
         return result.scalars().first()
 
     async def _do_update_card(
@@ -253,7 +250,9 @@ class NarrativeManagementService(NarrativeManagementContract):
         entity = await self.get_card(card_id, session)
         if entity.review_status not in (CaseStatus.DRAFT, CaseStatus.REJECTED):
             raise CaseStatusError(
-                card_id, str(entity.review_status), "draft 或 rejected",
+                card_id,
+                str(entity.review_status),
+                "draft 或 rejected",
             )
 
         for key, value in update_data.items():
@@ -313,18 +312,19 @@ class NarrativeManagementService(NarrativeManagementContract):
         entity = await self.get_card(card_id, session)
         if entity.review_status != CaseStatus.PENDING_REVIEW:
             raise CaseStatusError(
-                card_id, str(entity.review_status), "pending_review",
+                card_id,
+                str(entity.review_status),
+                "pending_review",
             )
 
         # 自审核检查：加载卡片的所属叙事，比较 author_id 与当前用户
         nid = entity.narrative_id
-        narrative_result = await session.execute(
-            select(CaseNarrative).where(CaseNarrative.narrative_id == nid)
-        )
+        narrative_result = await session.execute(select(CaseNarrative).where(CaseNarrative.narrative_id == nid))
         narrative = narrative_result.scalars().first()
         if narrative and str(narrative.author_id) == current_user.get("sub", ""):
             raise SelfReviewForbiddenError(
-                card_id, current_user.get("sub", ""),
+                card_id,
+                current_user.get("sub", ""),
                 str(narrative.author_id),
             )
 
@@ -338,7 +338,9 @@ class NarrativeManagementService(NarrativeManagementContract):
         )
         if result.rowcount == 0:  # type: ignore[attr-defined]
             raise CaseStatusError(
-                card_id, str(entity.review_status), "pending_review",
+                card_id,
+                str(entity.review_status),
+                "pending_review",
             )
 
         await session.commit()
@@ -346,6 +348,7 @@ class NarrativeManagementService(NarrativeManagementContract):
 
         # 触发索引（必须在 commit 之后，避免 commit 失败导致垃圾索引任务）
         from py_rag.indexing.service import enqueue_index_task
+
         await enqueue_index_task(entity.card_id, session)
 
         logger.info(
@@ -462,12 +465,14 @@ def card_to_response(
 
 class NarrativeDetailResponse(NarrativeResponse):
     """叙事详情响应（含关联 L2 卡片列表与卡片计数）。"""
+
     card_count: int = 0
     cards: list[CardResponse] = []
 
 
 class ExtractionResponse(CampfireBaseModel):
     """LLM 提取 L2 卡片响应。"""
+
     narrative_id: str
     card_count: int
     cards: list[CardResponse]

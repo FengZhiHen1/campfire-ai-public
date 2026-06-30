@@ -112,8 +112,12 @@ class ProfileRepository(BaseRepository[Profile]):
             tuple[list[Profile], int]: (档案列表, 总记录数)。
         """
         # 查询总记录数
-        count_stmt = select(func.count()).select_from(Profile).where(
-            Profile.caregiver_id == caregiver_id,
+        count_stmt = (
+            select(func.count())
+            .select_from(Profile)
+            .where(
+                Profile.caregiver_id == caregiver_id,
+            )
         )
         total_result = await session.execute(count_stmt)
         total: int = total_result.scalar() or 0
@@ -146,8 +150,12 @@ class ProfileRepository(BaseRepository[Profile]):
         Returns:
             int: 档案总数。
         """
-        stmt = select(func.count()).select_from(Profile).where(
-            Profile.caregiver_id == caregiver_id,
+        stmt = (
+            select(func.count())
+            .select_from(Profile)
+            .where(
+                Profile.caregiver_id == caregiver_id,
+            )
         )
         result = await session.execute(stmt)
         return result.scalar() or 0

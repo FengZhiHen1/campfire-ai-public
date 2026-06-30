@@ -10,10 +10,9 @@ import json
 import uuid
 from datetime import datetime, timezone
 
+from py_logger import logger
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
-
-from py_logger import logger
 
 from py_rag.models import ChunkMetadata
 

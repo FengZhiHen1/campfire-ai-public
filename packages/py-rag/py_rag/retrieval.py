@@ -16,14 +16,13 @@ from __future__ import annotations
 
 from typing import Any
 
+from py_db.repositories.consult_repository import ConsultRepository
+from py_schemas.consult import SemanticSearchResult
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from py_db.repositories.consult_repository import ConsultRepository
-from py_logger import logger
 from py_rag.embedding_contract import BaseEmbeddingEncoder
 from py_rag.retrieval_contract import BaseSemanticSearch
 from py_rag.types import EmbeddingVector
-from py_schemas.consult import SemanticSearchResult
 
 # ---------------------------------------------------------------------------
 # 模块级单例

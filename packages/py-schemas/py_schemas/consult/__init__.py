@@ -24,7 +24,6 @@ from pydantic import Field
 
 from py_schemas.base import CampfireBaseModel
 
-
 # ===========================================================================
 # 枚举定义
 # ===========================================================================
@@ -93,8 +92,13 @@ class TagFilterDto(CampfireBaseModel):
         examples=["学龄儿童(6-12岁)"],
     )
     behavior_type: Literal[
-        "SELF_INJURY", "AGGRESSION", "ELOPEMENT", "MEDICATION",
-        "EMOTIONAL_MELTDOWN", "STEREOTYPY", "OTHER",
+        "SELF_INJURY",
+        "AGGRESSION",
+        "ELOPEMENT",
+        "MEDICATION",
+        "EMOTIONAL_MELTDOWN",
+        "STEREOTYPY",
+        "OTHER",
     ] = Field(
         ...,
         description="主要行为类型。枚举值引用 CSLT-01/BehaviorTypeCategory。",
@@ -220,7 +224,13 @@ class CaseSliceDto(CampfireBaseModel):
     applicable_tags: dict[str, str] | None = Field(
         default=None,
         description="该案例适用的人群标签维度，包含年龄段区间、诊断类型、行为类型等",
-        examples=[{"age_range": "学龄儿童(6-12岁)", "diagnosis_type": "ASD", "behavior_type": "情绪崩溃"}],
+        examples=[
+            {
+                "age_range": "学龄儿童(6-12岁)",
+                "diagnosis_type": "ASD",
+                "behavior_type": "情绪崩溃",
+            }
+        ],
     )
 
 

@@ -21,7 +21,6 @@ from py_schemas.enums.crisis_enums import (
     CrisisLevel,
 )
 
-
 # ============================================================================
 # CrisisJudgmentRequest（外部输入契约）
 # ============================================================================
@@ -124,8 +123,7 @@ class CrisisJudgmentResult(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     final_level: CrisisLevel = Field(
-        description="最终危机等级。由 merge() 按'宁升勿降'策略合并各判定层结果"
-        "——任一层判 severe 即为 severe。",
+        description="最终危机等级。由 merge() 按'宁升勿降'策略合并各判定层结果——任一层判 severe 即为 severe。",
     )
     block_deep_response: bool = Field(
         description="阻断深度回答标记。final_level=severe 时为 true，"
@@ -141,8 +139,7 @@ class CrisisJudgmentResult(BaseModel):
         default=None,
         ge=0.0,
         le=1.0,
-        description="LLM 复审置信度分数（0~1 区间）。"
-        "当前 CSLT-01 已移除 LLM 复审，此字段保留仅为兼容性，恒为 null。",
+        description="LLM 复审置信度分数（0~1 区间）。当前 CSLT-01 已移除 LLM 复审，此字段保留仅为兼容性，恒为 null。",
     )
     judgment_sources: list[JudgmentLayerResult] = Field(
         min_length=1,

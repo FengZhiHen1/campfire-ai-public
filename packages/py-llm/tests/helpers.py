@@ -4,10 +4,8 @@ from __future__ import annotations
 
 import httpx
 from openai import APIStatusError, APITimeoutError, RateLimitError
-
 from py_llm.llm_contract import LLMClientContract
 from py_llm.types import ChatCompletionChunk, Choice, Delta, RetryConfig
-
 
 # ============================================================================
 # 异常工厂函数
@@ -112,14 +110,16 @@ class NormalClient(LLMClientContract):
         timeout: float,
         response_format: dict[str, str] | None,
     ):
-        self.stream_kwargs.append({
-            "messages": messages,
-            "model": model,
-            "temperature": temperature,
-            "max_tokens": max_tokens,
-            "timeout": timeout,
-            "response_format": response_format,
-        })
+        self.stream_kwargs.append(
+            {
+                "messages": messages,
+                "model": model,
+                "temperature": temperature,
+                "max_tokens": max_tokens,
+                "timeout": timeout,
+                "response_format": response_format,
+            }
+        )
         if self._stream_error:
             raise self._stream_error
         for chunk in self._stream_chunks:
@@ -134,14 +134,16 @@ class NormalClient(LLMClientContract):
         timeout: float,
         response_format: dict[str, str] | None,
     ) -> str:
-        self.completion_kwargs.append({
-            "messages": messages,
-            "model": model,
-            "temperature": temperature,
-            "max_tokens": max_tokens,
-            "timeout": timeout,
-            "response_format": response_format,
-        })
+        self.completion_kwargs.append(
+            {
+                "messages": messages,
+                "model": model,
+                "temperature": temperature,
+                "max_tokens": max_tokens,
+                "timeout": timeout,
+                "response_format": response_format,
+            }
+        )
         if self._completion_error:
             raise self._completion_error
         return self._completion_result

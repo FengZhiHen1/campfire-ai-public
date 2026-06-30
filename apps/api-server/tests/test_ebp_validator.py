@@ -1,5 +1,4 @@
-"""CASE-01 EBP 标签一致性校验 — 单元测试。
-"""
+"""CASE-01 EBP 标签一致性校验 — 单元测试。"""
 
 from __future__ import annotations
 

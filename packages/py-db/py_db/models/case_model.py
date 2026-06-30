@@ -13,12 +13,12 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import DateTime, Enum as sa_Enum, Integer, JSON, String, Text
+from py_schemas.enums.case_enums import CaseStatus
+from sqlalchemy import JSON, DateTime, Integer, String, Text
+from sqlalchemy import Enum as sa_Enum
 from sqlalchemy.orm import Mapped, mapped_column
-from sqlalchemy.sql import func
 
 from py_db.models.base import Base, TimestampMixin
-from py_schemas.enums.case_enums import CaseStatus
 
 
 class Case(Base, TimestampMixin):
@@ -191,10 +191,7 @@ class Case(Base, TimestampMixin):
     )
 
     def __repr__(self) -> str:
-        return (
-            f"<Case(case_id={self.case_id!r}, title={self.title!r}, "
-            f"status={self.status.value!r})>"
-        )
+        return f"<Case(case_id={self.case_id!r}, title={self.title!r}, status={self.status.value!r})>"
 
 
 __all__ = ["Case"]

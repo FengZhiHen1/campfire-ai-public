@@ -24,18 +24,15 @@
 
 from __future__ import annotations
 
-import json
-import secrets
 import uuid as uuid_lib
 from abc import ABC, abstractmethod
-from datetime import datetime, timezone
 from typing import Any, final
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from py_rag.models import ChunkMetadata
 from py_rag.protocols import ChunkBuilder, IndexWriter
-from py_rag.types import CaseIdStr, TraceIdStr
+from py_rag.types import CaseIdStr
 
 # ---------------------------------------------------------------------------
 # 常量
@@ -118,9 +115,7 @@ class BaseIndexService(ABC):
         if status is None:
             raise ValueError(f"案例 {case_id} 不存在")
         if status != "failed":
-            raise ValueError(
-                f"案例当前索引状态非异常，不允许手动重试（当前状态不允许）"
-            )
+            raise ValueError("案例当前索引状态非异常，不允许手动重试（当前状态不允许）")
 
         result = await self._do_enqueue(case_id, db_session)
         self._validate_enqueue_result(result)
@@ -236,38 +231,28 @@ class BaseIndexPipeline(ABC):
         # 步骤 2：读取案例数据
         case_data = await self._do_read_case_data(case_id, db_session)
         if case_data is None:
-            await self._do_mark_failed(
-                case_id, "案例数据读取失败：行不存在", "read_case", db_session
-            )
+            await self._do_mark_failed(case_id, "案例数据读取失败：行不存在", "read_case", db_session)
             return
 
         # 步骤 3：文本组装与 PII 校验
         try:
             chunk_text, metadata = await self._do_build_chunk(case_data)
         except Exception as exc:
-            await self._do_mark_failed(
-                case_id, str(exc), "build_chunk_text", db_session
-            )
+            await self._do_mark_failed(case_id, str(exc), "build_chunk_text", db_session)
             return
 
         # 步骤 4：调用嵌入服务生成文档向量
         try:
             embedding_list = await self._do_generate_embedding(chunk_text)
         except Exception as exc:
-            await self._do_mark_failed(
-                case_id, f"嵌入服务调用失败: {exc}", "generate_embedding", db_session
-            )
+            await self._do_mark_failed(case_id, f"嵌入服务调用失败: {exc}", "generate_embedding", db_session)
             return
 
         # 步骤 5：写入 pgvector 索引
         try:
-            await self._do_write_index(
-                case_id, chunk_text, embedding_list, metadata, db_session
-            )
+            await self._do_write_index(case_id, chunk_text, embedding_list, metadata, db_session)
         except Exception as exc:
-            await self._do_mark_failed(
-                case_id, f"pgvector 索引写入失败: {exc}", "write_index", db_session
-            )
+            await self._do_mark_failed(case_id, f"pgvector 索引写入失败: {exc}", "write_index", db_session)
             return
 
         # 步骤 6：标记为 indexed

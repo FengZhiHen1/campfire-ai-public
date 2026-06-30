@@ -12,14 +12,13 @@
 
 from __future__ import annotations
 
-from py_logger import logger
 from typing import Any
 
+from py_logger import logger
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from py_db.exceptions import RepositoryCommunicationError
-
 
 
 class ConsultRepository:
@@ -67,9 +66,7 @@ class ConsultRepository:
         if not query_vector:
             raise ValueError("query_vector must not be empty")
         if len(query_vector) != 1024:
-            raise ValueError(
-                f"query_vector must be 1024 dimensions, got {len(query_vector)}"
-            )
+            raise ValueError(f"query_vector must be 1024 dimensions, got {len(query_vector)}")
         bind_params: dict[str, Any] = {
             "query_vector": str(query_vector),
             "top_k": top_k,
@@ -100,9 +97,7 @@ class ConsultRepository:
                     "error": str(exc),
                 },
             )
-            raise RepositoryCommunicationError(
-                f"数据库检索操作失败: {exc}"
-            ) from exc
+            raise RepositoryCommunicationError(f"数据库检索操作失败: {exc}") from exc
 
         return [
             {

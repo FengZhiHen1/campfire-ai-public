@@ -10,9 +10,6 @@
 from __future__ import annotations
 
 import pytest
-
-from py_llm.llm_contract import LLMClientContract, LLMClientError
-from py_llm.types import RetryConfig
 from helpers import (
     ErrorSequenceClient,
     NormalClient,
@@ -21,6 +18,8 @@ from helpers import (
     make_rate_limit_error,
     make_timeout_error,
 )
+from py_llm.llm_contract import LLMClientContract, LLMClientError
+from py_llm.types import RetryConfig
 
 VALID_MESSAGES = [{"role": "user", "content": "Hi"}]
 

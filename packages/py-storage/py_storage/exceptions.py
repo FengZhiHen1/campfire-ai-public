@@ -48,9 +48,7 @@ class FileExtensionNotAllowedError(FileValidationError):
         self.extension: str = extension
         self.allowed: frozenset[str] = allowed
         allowed_str = ", ".join(sorted(allowed))
-        super().__init__(
-            f"文件扩展名 .{extension} 不在允许白名单中。允许的类型：{allowed_str}"
-        )
+        super().__init__(f"文件扩展名 .{extension} 不在允许白名单中。允许的类型：{allowed_str}")
 
 
 class FileTooLargeError(FileValidationError):
@@ -68,9 +66,7 @@ class FileTooLargeError(FileValidationError):
         self.category: str = category
         actual_mb = actual_bytes / (1024 * 1024)
         limit_mb = limit_bytes / (1024 * 1024)
-        super().__init__(
-            f"{category}大小 {actual_mb:.1f}MB 超过上限 {limit_mb:.0f}MB"
-        )
+        super().__init__(f"{category}大小 {actual_mb:.1f}MB 超过上限 {limit_mb:.0f}MB")
 
 
 class FileMimeTypeNotAllowedError(FileValidationError):
@@ -80,9 +76,7 @@ class FileMimeTypeNotAllowedError(FileValidationError):
         self.detected_mime: str = detected_mime
         self.allowed: frozenset[str] = allowed
         allowed_str = ", ".join(sorted(allowed))
-        super().__init__(
-            f"文件类型 {detected_mime} 不在允许列表中。允许的类型：{allowed_str}"
-        )
+        super().__init__(f"文件类型 {detected_mime} 不在允许列表中。允许的类型：{allowed_str}")
 
 
 class FileMimeDetectionError(FileValidationError):
@@ -101,9 +95,7 @@ class FileContentTooShortError(FileValidationError):
     def __init__(self, actual_bytes: int, min_required: int) -> None:
         self.actual_bytes: int = actual_bytes
         self.min_required: int = min_required
-        super().__init__(
-            f"文件内容仅 {actual_bytes} 字节，不足 {min_required} 字节的最小校验长度"
-        )
+        super().__init__(f"文件内容仅 {actual_bytes} 字节，不足 {min_required} 字节的最小校验长度")
 
 
 class FileMagicSignatureMismatchError(FileValidationError):
@@ -112,9 +104,7 @@ class FileMagicSignatureMismatchError(FileValidationError):
     def __init__(self, extension: str, actual_hex: str) -> None:
         self.extension: str = extension
         self.actual_hex: str = actual_hex
-        super().__init__(
-            f".{extension} 文件头签名不匹配，实际为 {actual_hex}"
-        )
+        super().__init__(f".{extension} 文件头签名不匹配，实际为 {actual_hex}")
 
 
 __all__ = [

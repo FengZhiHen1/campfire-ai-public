@@ -8,20 +8,27 @@
 
 from __future__ import annotations
 
+import uuid
 from datetime import datetime
 from typing import Any
 
+from py_schemas.enums.case_enums import CaseStatus
 from sqlalchemy import (
-    Boolean, DateTime, Enum as sa_Enum, ForeignKey,
-    Integer, JSON, String, Text,
+    JSON,
+    Boolean,
+    DateTime,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+)
+from sqlalchemy import (
+    Enum as sa_Enum,
 )
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
-from sqlalchemy.sql import func
-import uuid
 
 from py_db.models.base import Base, TimestampMixin
-from py_schemas.enums.case_enums import CaseStatus
 
 
 class CaseCard(Base, TimestampMixin):
@@ -212,10 +219,7 @@ class CaseCard(Base, TimestampMixin):
     )
 
     def __repr__(self) -> str:
-        return (
-            f"<CaseCard(card_id={self.card_id!r}, title={self.title!r}, "
-            f"review_status={self.review_status.value!r})>"
-        )
+        return f"<CaseCard(card_id={self.card_id!r}, title={self.title!r}, review_status={self.review_status.value!r})>"
 
 
 __all__ = ["CaseCard"]

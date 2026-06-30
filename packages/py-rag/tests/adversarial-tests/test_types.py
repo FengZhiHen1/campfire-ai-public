@@ -21,8 +21,6 @@ from __future__ import annotations
 import hashlib
 import uuid as uuid_lib
 
-import pytest
-
 from py_rag.types import (
     EMBEDDING_DIMENSION,
     TOP_K_MAX,
@@ -36,7 +34,6 @@ from py_rag.types import (
     SimilarityScore,
     TraceIdStr,
 )
-
 
 # ============================================================================
 # P1：EmbeddingVector 运行时行为

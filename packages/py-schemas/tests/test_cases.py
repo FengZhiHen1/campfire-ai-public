@@ -10,8 +10,6 @@ from __future__ import annotations
 from datetime import datetime, timezone
 
 import pytest
-from pydantic import ValidationError
-
 from py_schemas.cases import (
     AiReviewSummary,
     CaseCreateRequest,
@@ -26,7 +24,7 @@ from py_schemas.cases import (
     ReviewRequest,
 )
 from py_schemas.enums.case_enums import BehaviorType, CaseStatus
-
+from pydantic import ValidationError
 
 # ===========================================================================
 # helpers
@@ -65,8 +63,17 @@ class TestCaseCreateRequest:
             CaseCreateRequest(**_valid_create_data(title="a" * 101))
 
     def test_missing_required_fields(self):
-        required = ["title", "behavior_type", "severity", "scene", "immediate_action",
-                    "comforting_phrase", "observation_metrics", "medical_criteria", "evidence_level"]
+        required = [
+            "title",
+            "behavior_type",
+            "severity",
+            "scene",
+            "immediate_action",
+            "comforting_phrase",
+            "observation_metrics",
+            "medical_criteria",
+            "evidence_level",
+        ]
         for field in required:
             data = _valid_create_data()
             del data[field]
@@ -156,14 +163,24 @@ class TestCaseUpdate:
 
 class TestPiiWarning:
     def test_valid(self):
-        w = PiiWarning(pii_type="手机号码", detected_text="13800138000", position_start=10, position_end=21)
+        w = PiiWarning(
+            pii_type="手机号码",
+            detected_text="13800138000",
+            position_start=10,
+            position_end=21,
+        )
         assert w.pii_type == "手机号码"
         assert w.position_start == 10
 
 
 class TestPiiDetectionResult:
     def test_has_pii_true(self):
-        w = PiiWarning(pii_type="手机号码", detected_text="13800138000", position_start=0, position_end=11)
+        w = PiiWarning(
+            pii_type="手机号码",
+            detected_text="13800138000",
+            position_start=0,
+            position_end=11,
+        )
         result = PiiDetectionResult(has_pii=True, warnings=[w])
         assert result.has_pii is True
         assert len(result.warnings) == 1
@@ -283,8 +300,10 @@ class TestAiReviewSummary:
         rf = CheckItem(status="pass", is_hard_gate=False)
         ebp = CheckItem(status="annotated", is_hard_gate=False)
         summary = AiReviewSummary(
-            format_check=fmt, pii_check=pii,
-            required_fields_check=rf, ebp_consistency_check=ebp,
+            format_check=fmt,
+            pii_check=pii,
+            required_fields_check=rf,
+            ebp_consistency_check=ebp,
             overall="hard_block",
         )
         assert summary.overall == "hard_block"

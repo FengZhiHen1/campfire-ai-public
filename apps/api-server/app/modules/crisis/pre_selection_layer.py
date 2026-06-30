@@ -38,9 +38,7 @@ class PreSelectionLayer(JudgmentLayer):
             前置选择层的判定结果。
         """
         checked_types: list[str] = [t.value for t in request.behavior_type_selection]
-        high_risk_hit: bool = any(
-            t in HIGH_RISK_TYPES for t in request.behavior_type_selection
-        )
+        high_risk_hit: bool = any(t in HIGH_RISK_TYPES for t in request.behavior_type_selection)
 
         if high_risk_hit:
             return JudgmentLayerResult(

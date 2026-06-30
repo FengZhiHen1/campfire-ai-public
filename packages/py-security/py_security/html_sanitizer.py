@@ -31,7 +31,5 @@ def sanitize_html(text: str) -> str:
         TypeError: 如果 text 不是字符串类型。
     """
     if not isinstance(text, str):
-        raise TypeError(
-            f"sanitize_html expects str, got {type(text).__name__}"
-        )
+        raise TypeError(f"sanitize_html expects str, got {type(text).__name__}")
     return html.escape(html.unescape(text), quote=True)

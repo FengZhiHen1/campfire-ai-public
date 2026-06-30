@@ -17,14 +17,18 @@ from sqlalchemy.exc import InvalidRequestError as _SAInvalidRequestError
 
 from py_db.sqlalchemy_helpers import rowcount
 
+
 class StaleDataError(_SAInvalidRequestError):
     """乐观锁版本冲突异常（SQLAlchemy 2.0 兼容层 — StaleDataError 已于 2.0 移除）."""
-    pass
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.sql import Select, func
 
-from py_db.models.profiles import TeacherLink
+    pass
+
+
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.sql import Select
+
 from py_db.base_repository import BaseRepository
+from py_db.models.profiles import TeacherLink
 
 
 class TeacherLinkRepository(BaseRepository[TeacherLink]):
@@ -67,6 +71,7 @@ class TeacherLinkRepository(BaseRepository[TeacherLink]):
             匹配的 TeacherLink 实例（仅返回第一条匹配记录），
             不存在有效关联时返回 None。
         """
+
         async def _query() -> TeacherLink | None:
             stmt: Select = (
                 select(self.model)
@@ -78,7 +83,9 @@ class TeacherLinkRepository(BaseRepository[TeacherLink]):
             return result.scalars().first()
 
         return await self._execute_with_retry(
-            session, "find_active_links", _query,
+            session,
+            "find_active_links",
+            _query,
         )
 
     async def find_links_by_profile(
@@ -98,17 +105,18 @@ class TeacherLinkRepository(BaseRepository[TeacherLink]):
         Returns:
             有效关联列表，无关联时返回空列表。
         """
+
         async def _query() -> list[TeacherLink]:
             stmt: Select = (
-                select(self.model)
-                .where(self.model.profile_id == profile_id)
-                .where(self.model.unlinked_at.is_(None))
+                select(self.model).where(self.model.profile_id == profile_id).where(self.model.unlinked_at.is_(None))
             )
             result = await session.execute(stmt)
             return list(result.scalars().all())
 
         return await self._execute_with_retry(
-            session, "find_links_by_profile", _query,
+            session,
+            "find_links_by_profile",
+            _query,
         )
 
     # ------------------------------------------------------------------
@@ -137,6 +145,7 @@ class TeacherLinkRepository(BaseRepository[TeacherLink]):
             StaleDataError: 版本不匹配（其他家属已先完成了解除操作）
                             或 link_id 不存在。
         """
+
         async def _unlink() -> None:
             now = datetime.now(timezone.utc)
             stmt = (
@@ -157,7 +166,9 @@ class TeacherLinkRepository(BaseRepository[TeacherLink]):
                 )
 
         await self._execute_with_retry(
-            session, "unlink_teacher", _unlink,
+            session,
+            "unlink_teacher",
+            _unlink,
         )
 
 

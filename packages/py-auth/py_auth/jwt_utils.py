@@ -23,15 +23,16 @@ from uuid import uuid4
 
 from jose import jwt as jose_jwt
 from jose.exceptions import JWTError as JoseJWTError
+from py_config.security import get_security_config
+from py_logger import logger
 
 from py_auth.auth_contract import TokenManager
 from py_auth.exceptions import TokenCreationError, TokenDecodeError
-from py_config.security import get_security_config
-from py_logger import logger
 
 
 class TokenType(StrEnum):
     """JWT Token 类型枚举。"""
+
     ACCESS = "access"
     REFRESH = "refresh"
 
@@ -51,9 +52,7 @@ class JoseTokenManager(TokenManager):
     # 契约钩子
     # ------------------------------------------------------------------
 
-    def _do_create_token(
-        self, data: dict[str, Any], token_type: str, ttl_seconds: int
-    ) -> str:
+    def _do_create_token(self, data: dict[str, Any], token_type: str, ttl_seconds: int) -> str:
         """执行 JWT 签发——构建 claims，调用 python-jose 编码。"""
         now = datetime.now(self._tz)
 
@@ -97,10 +96,7 @@ class JoseTokenManager(TokenManager):
         # 密钥轮换：当前密钥优先，其次上一版本密钥
         if kid == self._config.JWT_KEY_VERSION and self._config.JWT_KEY_VERSION:
             selected_key = self._config.JWT_SECRET_KEY
-        elif (
-            self._config.JWT_PREVIOUS_KEY_VERSION
-            and kid == self._config.JWT_PREVIOUS_KEY_VERSION
-        ):
+        elif self._config.JWT_PREVIOUS_KEY_VERSION and kid == self._config.JWT_PREVIOUS_KEY_VERSION:
             selected_key = self._config.JWT_PREVIOUS_SECRET_KEY
         else:
             logger.warning(

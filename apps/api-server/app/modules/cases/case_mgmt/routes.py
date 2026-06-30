@@ -14,16 +14,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, Optional
 
-from fastapi import APIRouter, Body, Depends, Query, status
-from sqlalchemy.ext.asyncio import AsyncSession
-
-from app.core.dependencies.anonymous_user import get_anonymous_user
-from app.core.dependencies.auth_dependencies import (
-    get_case_repository,
-    get_db_session,
-)
-from .service import CaseManagementService
-from ..types import CaseId
+from fastapi import APIRouter, Depends, Query, status
 from py_db.repositories.case_repository import CaseRepository
 from py_schemas.cases import (
     CaseCreateRequest,
@@ -33,6 +24,16 @@ from py_schemas.cases import (
     PaginatedResponse,
 )
 from py_schemas.security.validation_schemas import ValidationErrorResponse
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.core.dependencies.anonymous_user import get_anonymous_user
+from app.core.dependencies.auth_dependencies import (
+    get_case_repository,
+    get_db_session,
+)
+
+from ..types import CaseId
+from .service import CaseManagementService
 
 router = APIRouter(prefix="/api/v1/cases", tags=["cases"])
 
@@ -168,10 +169,7 @@ async def get_case_endpoint(
         200: {"description": "返回案例列表（分页）"},
     },
     summary="案例列表查询",
-    description=(
-        "按状态查询案例列表，支持分页。"
-        "默认返回所有案例，按 created_at 倒序排列。"
-    ),
+    description=("按状态查询案例列表，支持分页。默认返回所有案例，按 created_at 倒序排列。"),
 )
 async def list_cases_endpoint(
     status_filter: Optional[str] = Query(

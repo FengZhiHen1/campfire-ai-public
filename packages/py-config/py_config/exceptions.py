@@ -170,9 +170,7 @@ class EventLimitExceededError(Exception):
 
     def __init__(
         self,
-        detail: str = (
-            "事件记录已达上限（500 条），请删除不再需要的历史事件后重试"
-        ),
+        detail: str = ("事件记录已达上限（500 条），请删除不再需要的历史事件后重试"),
         current_count: int = 500,
         max_allowed: int = 500,
     ) -> None:

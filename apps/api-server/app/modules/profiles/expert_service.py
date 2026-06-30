@@ -8,16 +8,17 @@ from __future__ import annotations
 
 from uuid import UUID
 
+from py_db.models.auth import User
+from py_db.repositories.profile_repository import ProfileRepository
+from py_db.repositories.teacher_link_repository import (
+    StaleDataError,
+    TeacherLinkRepository,
+)
+from py_db.repositories.user_repository import UserRepository
+from py_logger import logger
+from py_schemas.profiles import ExpertInfo
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-
-from py_db.models.auth import User
-from py_schemas.profiles import ExpertInfo
-from py_db.repositories.profile_repository import ProfileRepository
-from py_db.repositories.teacher_link_repository import TeacherLinkRepository, StaleDataError
-from py_db.repositories.user_repository import UserRepository
-
-from py_logger import logger
 
 from app.modules.profiles.exceptions import ExpertLinkConflictError
 from app.modules.profiles.experts_contract import BaseExpertService
@@ -56,9 +57,7 @@ class ExpertServiceImpl(BaseExpertService):
 
         # 批量查询所有关联专家用户（避免 N+1）
         teacher_ids = [link.teacher_id for link in links]
-        result = await session.execute(
-            select(User).where(User.id.in_(teacher_ids))
-        )
+        result = await session.execute(select(User).where(User.id.in_(teacher_ids)))
         users_by_id = {u.id: u for u in result.scalars().all()}
 
         experts: list[ExpertInfo] = []
@@ -100,9 +99,7 @@ class ExpertServiceImpl(BaseExpertService):
             return False
 
         try:
-            await self._link_repo.unlink_teacher(
-                session, link_id, expected_version=target_link.version
-            )
+            await self._link_repo.unlink_teacher(session, link_id, expected_version=target_link.version)
         except StaleDataError:
             logger.warning(
                 "profile",

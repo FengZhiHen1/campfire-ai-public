@@ -10,12 +10,6 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, AsyncGenerator
 
-from sqlalchemy.ext.asyncio import (
-    AsyncSession,
-    async_sessionmaker,
-    create_async_engine,
-)
-
 from py_auth.auth_contract import PasswordHasher as BasePasswordHasher
 from py_auth.blacklist import RedisBlacklist
 from py_auth.hashing import hash_password, verify_password
@@ -32,6 +26,11 @@ from py_db.repositories.review_repository import (
 from py_db.repositories.teacher_link_repository import TeacherLinkRepository
 from py_db.repositories.user_repository import UserRepository
 from py_logger import logger
+from sqlalchemy.ext.asyncio import (
+    AsyncSession,
+    async_sessionmaker,
+    create_async_engine,
+)
 
 if TYPE_CHECKING:
     from app.modules.auth.auth_contract import AuthService
@@ -103,9 +102,7 @@ class PasswordHasher(BasePasswordHasher):
         """执行 bcrypt 不可逆哈希。"""
         return hash_password(plain_password)
 
-    def _do_verify(
-        self, plain_password: str, hashed_password: str
-    ) -> bool:
+    def _do_verify(self, plain_password: str, hashed_password: str) -> bool:
         """验证明文密码是否匹配已存储的哈希值。"""
         return verify_password(plain_password, hashed_password)
 

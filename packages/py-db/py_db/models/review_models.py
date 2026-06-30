@@ -164,10 +164,7 @@ class ReviewAuditLog(Base):
     )
 
     def __repr__(self) -> str:
-        return (
-            f"<ReviewAuditLog(id={self.id!r}, case_id={self.case_id!r}, "
-            f"action={self.action!r})>"
-        )
+        return f"<ReviewAuditLog(id={self.id!r}, case_id={self.case_id!r}, action={self.action!r})>"
 
 
 __all__ = [

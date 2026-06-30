@@ -215,18 +215,21 @@ class BaseHistoryManager(ABC):
         """基线前置校验——归档写入。"""
         if data is None:
             from app.modules.consultation.exceptions import ConsultationArchiveError
+
             raise ConsultationArchiveError(
                 message="归档数据不能为空",
                 field="data",
             )
         if not current_user or not current_user.get("sub"):
             from app.modules.consultation.exceptions import ConsultationArchiveError
+
             raise ConsultationArchiveError(
                 message="用户身份不能为空",
                 field="user_id",
             )
         if db is None:
             from app.modules.consultation.exceptions import ConsultationArchiveError
+
             raise ConsultationArchiveError(
                 message="数据库会话不能为空",
                 field="db",
@@ -245,6 +248,7 @@ class BaseHistoryManager(ABC):
     ) -> None:
         """基线前置校验——历史列表。"""
         from app.modules.consultation.exceptions import ConsultationInputError
+
         if page < 1:
             raise ConsultationInputError(message="page 必须 >= 1", field="page")
         if page_size < 1 or page_size > 100:
@@ -263,12 +267,14 @@ class BaseHistoryManager(ABC):
         """基线前置校验——详情查询。"""
         if consultation_id is None:
             from app.modules.consultation.exceptions import ConsultationNotFoundError
+
             raise ConsultationNotFoundError(
                 consultation_id="None",
                 actual_reason="consultation_id 为空",
             )
         if not current_user or not current_user.get("sub"):
             from app.modules.consultation.exceptions import ConsultationNotFoundError
+
             raise ConsultationNotFoundError(
                 consultation_id=str(consultation_id),
                 actual_reason="user_id 缺失",

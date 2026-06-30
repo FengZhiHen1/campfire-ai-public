@@ -87,7 +87,12 @@ def _include_object(object, name, type_, reflected, compare_to):
     pgvector 的 vector 类型列和 HNSW 索引不在 ORM 模型中映射，
     若参与比较会被误判为需要删除。此处显式排除。
     """
-    if type_ == "column" and name == "embedding" and getattr(object, "table", None) is not None and object.table.name == "case_chunks":
+    if (
+        type_ == "column"
+        and name == "embedding"
+        and getattr(object, "table", None) is not None
+        and object.table.name == "case_chunks"
+    ):
         return False
     if type_ == "index" and name == "ix_case_chunks_embedding_hnsw":
         return False

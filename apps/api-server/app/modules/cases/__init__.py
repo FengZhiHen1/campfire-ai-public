@@ -28,8 +28,8 @@ Usage:
 """
 
 from .narrative.card_routes import router as card_router
-from .review.routes import router as reviews_router
 from .narrative.routes import router as narratives_router
+from .review.routes import router as reviews_router
 
 __all__ = [
     # 路由

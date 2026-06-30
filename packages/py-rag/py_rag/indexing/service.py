@@ -22,12 +22,12 @@ import uuid as uuid_lib
 from datetime import datetime, timezone
 from typing import Any
 
-from sqlalchemy import text
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from py_cache import get_redis_client, maybe_await
 from py_db.sqlalchemy_helpers import rowcount
 from py_logger import logger
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from py_rag.exceptions import RedisConnectionError
 from py_rag.indexing_contract import (
     INDEX_QUEUE_KEY,
@@ -98,13 +98,11 @@ class RedisIndexService(BaseIndexService):
 
         redis_client = await get_redis_client()
 
-        last_error: Exception | None = None
         for attempt in range(REDIS_LPUSH_RETRY_COUNT + 1):
             try:
                 await maybe_await(redis_client.lpush(INDEX_QUEUE_KEY, json_str))
                 break
             except Exception as exc:
-                last_error = exc
                 if attempt < REDIS_LPUSH_RETRY_COUNT:
                     await asyncio.sleep(REDIS_LPUSH_RETRY_INTERVAL)
                 else:
@@ -119,9 +117,7 @@ class RedisIndexService(BaseIndexService):
                             "error": str(exc),
                         },
                     )
-                    raise RedisConnectionError(
-                        "索引队列不可用，案例索引入库暂时中断"
-                    ) from exc
+                    raise RedisConnectionError("索引队列不可用，案例索引入库暂时中断") from exc
 
         # CAS UPDATE case_cards SET index_status = 'pending'
         update_sql = text("""
@@ -194,9 +190,7 @@ class RedisIndexService(BaseIndexService):
         index_status: str | None = row_dict.get("index_status")
 
         if review_status != "approved":
-            raise ValueError(
-                f"案例 {case_id_str} 未审核通过，当前状态: {review_status}"
-            )
+            raise ValueError(f"案例 {case_id_str} 未审核通过，当前状态: {review_status}")
 
         if index_status == "indexed":
             logger.info(

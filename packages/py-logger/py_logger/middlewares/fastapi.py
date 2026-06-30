@@ -24,7 +24,6 @@ from ..context import set_trace_id
 from ..core import logger
 from ..types import ServiceName, TraceId
 
-
 # W3C traceparent 格式: version-trace_id-span_id-flags
 _TRACEPARENT_PATTERN_LENGTH = 4
 _TRACEPARENT_TRACE_ID_INDEX = 1
@@ -71,7 +70,14 @@ class RequestLoggingMiddleware:
 
     def __init__(
         self,
-        app: Callable[[dict[str, Any], Callable[[], Awaitable[dict[str, Any]]], Callable[[dict[str, Any]], Awaitable[None]]], Awaitable[None]],
+        app: Callable[
+            [
+                dict[str, Any],
+                Callable[[], Awaitable[dict[str, Any]]],
+                Callable[[dict[str, Any]], Awaitable[None]],
+            ],
+            Awaitable[None],
+        ],
         service_name: str = "api-server",
     ) -> None:
         self.app = app

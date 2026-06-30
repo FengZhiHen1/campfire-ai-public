@@ -1,22 +1,17 @@
-"""OBS-04 健康检查 — 模型与状态管理单元测试。
-"""
+"""OBS-04 健康检查 — 模型与状态管理单元测试。"""
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
-
 import pytest
-from pydantic import ValidationError
-
+from py_health.checker import _is_status_degraded, _truncate_error
 from py_health.models import (
     ComponentHealth,
-    ComponentStatus,
     Components,
+    ComponentStatus,
     HealthCheckResponse,
     HealthStatus,
     ReadinessResponse,
 )
-from py_health.checker import _truncate_error, _is_status_degraded
 from py_health.state import (
     get_consecutive_failures,
     get_last_status,
@@ -24,7 +19,7 @@ from py_health.state import (
     reset_failures,
     set_last_status,
 )
-
+from pydantic import ValidationError
 
 # ---- Enums ----
 

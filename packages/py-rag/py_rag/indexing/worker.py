@@ -18,12 +18,12 @@ import json
 from datetime import datetime, timezone
 from typing import Any
 
-from sqlalchemy import text
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
-
 from py_cache import get_redis_client, maybe_await
 from py_db.sqlalchemy_helpers import rowcount
 from py_logger import logger
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+
 from py_rag.embedding_contract import BaseEmbeddingEncoder
 from py_rag.indexing.chunk_builder import build_chunk_text
 from py_rag.indexing.index_writer import write_index_to_pgvector
@@ -177,9 +177,7 @@ class IndexPipeline(BaseIndexPipeline):
             SET index_status = 'indexed', indexed_at = :indexed_at
             WHERE card_id = :card_id AND index_status = 'processing'
         """)
-        result = await db_session.execute(
-            update_sql, {"card_id": case_id_str, "indexed_at": now}
-        )
+        result = await db_session.execute(update_sql, {"card_id": case_id_str, "indexed_at": now})
         await db_session.commit()
 
         if rowcount(result) == 0:
@@ -286,7 +284,9 @@ async def _worker_loop(app: object) -> None:
     最外层 try/except 兜底确保 Worker 永不死循环退出。
     """
     db_session_factory: async_sessionmaker[AsyncSession] | None = getattr(
-        app.state, "db_session_factory", None  # type: ignore[attr-defined]
+        app.state,
+        "db_session_factory",
+        None,  # type: ignore[attr-defined]
     )
     if db_session_factory is None:
         logger.critical(
@@ -309,9 +309,7 @@ async def _worker_loop(app: object) -> None:
 
             # 步骤 4：BRPOP 阻塞消费
             # aioredis stub 将 BRPOP 返回值标为 list[Any]，实际为 [key, value] 或 None
-            lr: list[str] | None = await maybe_await(
-                redis_client.brpop(INDEX_QUEUE_KEY, timeout=BRPOP_TIMEOUT)
-            )
+            lr: list[str] | None = await maybe_await(redis_client.brpop(INDEX_QUEUE_KEY, timeout=BRPOP_TIMEOUT))
 
             if lr is None:
                 redis_reconnect_interval = REDIS_RECONNECT_INTERVAL_INITIAL
@@ -350,9 +348,7 @@ async def _worker_loop(app: object) -> None:
                 extra={"error": str(exc)},
             )
             await asyncio.sleep(redis_reconnect_interval)
-            redis_reconnect_interval = min(
-                redis_reconnect_interval * 2, REDIS_RECONNECT_INTERVAL_MAX
-            )
+            redis_reconnect_interval = min(redis_reconnect_interval * 2, REDIS_RECONNECT_INTERVAL_MAX)
 
 
 async def _process_task(

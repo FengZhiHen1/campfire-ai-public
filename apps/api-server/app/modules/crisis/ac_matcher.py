@@ -18,9 +18,9 @@ import time
 from typing import Any
 
 import ahocorasick  # pyahocorasick >= 2.0
+from py_logger import logger
 
 from .exceptions import KeywordDictLoadError
-from py_logger import logger
 
 # 否定词列表 —— 前向 7 字符扫描
 # 最长否定词 2 字 + 5 字符前向上下文
@@ -164,18 +164,20 @@ class AhoCorasickMatcher:
         """
         try:
             from py_config import get_settings
+            from py_db.models.crisis_keyword import CrisisKeyword
             from sqlalchemy import select
             from sqlalchemy.ext.asyncio import (
                 AsyncSession,
                 async_sessionmaker,
                 create_async_engine,
             )
-            from py_db.models.crisis_keyword import CrisisKeyword
 
             settings = get_settings()
             engine = create_async_engine(str(settings.DATABASE_URL), echo=False)
             session_factory = async_sessionmaker(
-                engine, class_=AsyncSession, expire_on_commit=False,
+                engine,
+                class_=AsyncSession,
+                expire_on_commit=False,
             )
 
             try:
@@ -186,12 +188,14 @@ class AhoCorasickMatcher:
                     rows = result.scalars().all()
                     keywords: list[tuple[str, str, str, str]] = []
                     for row in rows:
-                        keywords.append((
-                            row.keyword,
-                            str(row.id),
-                            row.category,
-                            row.trigger_rule_id,
-                        ))
+                        keywords.append(
+                            (
+                                row.keyword,
+                                str(row.id),
+                                row.category,
+                                row.trigger_rule_id,
+                            )
+                        )
                     await self.load_from_data(keywords)
             finally:
                 await engine.dispose()
@@ -280,8 +284,7 @@ class AhoCorasickMatcher:
         """
         if self._automaton is None:
             raise RuntimeError(
-                "AhoCorasickMatcher has not been loaded yet. "
-                "Call load_from_data() or get_instance() first."
+                "AhoCorasickMatcher has not been loaded yet. Call load_from_data() or get_instance() first."
             )
 
         results: list[dict[str, Any]] = []
@@ -299,15 +302,17 @@ class AhoCorasickMatcher:
             # 否定词过滤
             negation_filtered = _negation_filter(start_pos, text)
 
-            results.append({
-                "keyword": keyword,
-                "keyword_id": keyword_id,
-                "category": category,
-                "trigger_rule_id": trigger_rule_id,
-                "start_pos": start_pos,
-                "end_pos": end_pos,
-                "negation_filtered": negation_filtered,
-            })
+            results.append(
+                {
+                    "keyword": keyword,
+                    "keyword_id": keyword_id,
+                    "category": category,
+                    "trigger_rule_id": trigger_rule_id,
+                    "start_pos": start_pos,
+                    "end_pos": end_pos,
+                    "negation_filtered": negation_filtered,
+                }
+            )
 
         return results
 

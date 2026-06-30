@@ -155,6 +155,4 @@ class BaseEmbeddingEncoder(ABC):
         子类可通过 super() 叠加业务级校验（如向量范数检查）。
         """
         if len(embedding) != EMBEDDING_DIMENSION:
-            raise RuntimeError(
-                f"嵌入向量维度异常：期望 {EMBEDDING_DIMENSION}，实际 {len(embedding)}"
-            )
+            raise RuntimeError(f"嵌入向量维度异常：期望 {EMBEDDING_DIMENSION}，实际 {len(embedding)}")

@@ -20,14 +20,11 @@ API 协议：DashScope 原生
 
 from __future__ import annotations
 
-from typing import Literal
+from typing import Any, Literal
 
 import httpx
-
-from typing import Any
-
 from py_config import get_settings
-from py_logger import logger
+
 from py_rag.embedding_contract import BaseEmbeddingEncoder
 from py_rag.types import EMBEDDING_DIMENSION, EmbeddingVector
 
@@ -35,9 +32,7 @@ from py_rag.types import EMBEDDING_DIMENSION, EmbeddingVector
 # 模块级常量
 # ---------------------------------------------------------------------------
 
-EMBEDDING_URL: str = (
-    "https://dashscope.aliyuncs.com/api/v1/services/embeddings/text-embedding/text-embedding"
-)
+EMBEDDING_URL: str = "https://dashscope.aliyuncs.com/api/v1/services/embeddings/text-embedding/text-embedding"
 EMBEDDING_MODEL: str = "text-embedding-v4"
 # 单次 embedding HTTP 调用超时，适当放宽以应对网络抖动。
 EMBEDDING_TIMEOUT: int = 15
@@ -136,9 +131,7 @@ class DashScopeEncoder(BaseEmbeddingEncoder):
             raise KeyError("响应中缺少 embedding 字段")
 
         if len(embedding) != EMBEDDING_DIMENSION:
-            raise ValueError(
-                f"期望 {EMBEDDING_DIMENSION} 维，实际 {len(embedding)} 维"
-            )
+            raise ValueError(f"期望 {EMBEDDING_DIMENSION} 维，实际 {len(embedding)} 维")
 
         return embedding
 

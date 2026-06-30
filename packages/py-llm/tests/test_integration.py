@@ -6,9 +6,8 @@
 from __future__ import annotations
 
 import pytest
-
-from py_llm.types import ChatCompletionChunk
 from helpers import NormalClient, make_chunk, make_default_chunks
+from py_llm.types import ChatCompletionChunk
 
 VALID_MESSAGES = [{"role": "user", "content": "Hello, how are you?"}]
 
@@ -130,8 +129,8 @@ async def test_chat_with_custom_parameters():
 @pytest.mark.asyncio
 async def test_custom_retry_config_is_used():
     """自定义 RetryConfig 应在契约入口中生效。"""
-    from py_llm.types import RetryConfig
     from helpers import ErrorSequenceClient, make_rate_limit_error
+    from py_llm.types import RetryConfig
 
     msgs = [{"role": "user", "content": "Hi"}]
     # max_retries=1: 共 2 次尝试（0, 1），均抛异常 → 最终失败

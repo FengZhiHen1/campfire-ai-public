@@ -29,9 +29,8 @@ import uuid
 from abc import ABC, abstractmethod
 from typing import Any, final
 
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from py_logger import logger
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from .types import BehaviorDescription, ProfileSummary, RequestId, SessionId
 
@@ -91,11 +90,13 @@ class BaseConsultationOrchestrator(ABC):
                 yield chunk
 
         from app.core.streaming.sse_service import SseStreamingService
+
         streaming_service = SseStreamingService()
         streaming_service.register_generator(str(session_id), _queue_consumer())
 
         async def _run_pipeline() -> None:
             from app.core.dependencies.auth_dependencies import _get_session_factory
+
             factory = _get_session_factory()
             async with factory() as bg_db:
                 try:
@@ -343,12 +344,14 @@ class BaseConsultationOrchestrator(ABC):
         """
         if not behavior_description or not behavior_description.strip():
             from .exceptions import ConsultationInputError
+
             raise ConsultationInputError(
                 message="行为描述不能为空",
                 field="behavior_description",
             )
         if db is None:
             from .exceptions import ConsultationInputError
+
             raise ConsultationInputError(
                 message="数据库会话不能为空",
                 field="db",
@@ -367,12 +370,14 @@ class BaseConsultationOrchestrator(ABC):
         """基线前置校验——语义检索。"""
         if request is None:
             from .exceptions import ConsultationInputError
+
             raise ConsultationInputError(
                 message="检索请求不能为空",
                 field="request",
             )
         if db is None:
             from .exceptions import ConsultationInputError
+
             raise ConsultationInputError(
                 message="数据库会话不能为空",
                 field="db",

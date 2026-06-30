@@ -1,5 +1,4 @@
-"""AUTH-04 RBAC — require_role / get_masked_phone / PrivacyGuard 单元测试。
-"""
+"""AUTH-04 RBAC — require_role / get_masked_phone / PrivacyGuard 单元测试。"""
 
 from __future__ import annotations
 
@@ -7,10 +6,8 @@ from unittest import mock
 
 import pytest
 from fastapi import HTTPException
-
 from py_auth.rbac import PrivacyGuard, get_masked_phone, require_role
 from py_schemas.auth import UserRole
-
 
 # ---- require_role ----
 

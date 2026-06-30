@@ -19,11 +19,10 @@ import asyncio
 import time
 
 import redis.asyncio as aioredis
-from redis.exceptions import RedisError
-
 from py_config import get_settings
 from py_config.security import get_security_config
 from py_logger import logger
+from redis.exceptions import RedisError
 
 # 模块级 Redis 客户端（惰性初始化）
 _redis_client: aioredis.Redis | None = None
@@ -168,10 +167,7 @@ async def _check_sliding_window(
         bool: True=允许通过（未超限），False=超限。
     """
     # 生成窗口内所有 key
-    window_keys = [
-        f"{key_prefix}:{current_timestamp - offset}"
-        for offset in range(window_seconds)
-    ]
+    window_keys = [f"{key_prefix}:{current_timestamp - offset}" for offset in range(window_seconds)]
     current_key = window_keys[0]
 
     # Pipeline: INCR + EXPIRE + MGET（减少网络往返）

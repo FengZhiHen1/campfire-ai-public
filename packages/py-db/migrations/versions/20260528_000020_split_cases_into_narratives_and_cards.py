@@ -3,12 +3,13 @@
 Revision ID: 20260528_000020
 Create Date: 2026-05-28
 """
+
 from __future__ import annotations
 
 from typing import Sequence, Union
 
-from alembic import op
 import sqlalchemy as sa
+from alembic import op
 from sqlalchemy.dialects.postgresql import JSON, JSONB, UUID
 
 revision: str = "20260528_000020"
@@ -25,21 +26,53 @@ def upgrade() -> None:
     # =========================================================================
     op.create_table(
         "case_narratives",
-        sa.Column("narrative_id", UUID(as_uuid=True), primary_key=True,
-                  comment="L1 叙事唯一标识（UUID v4）"),
+        sa.Column(
+            "narrative_id",
+            UUID(as_uuid=True),
+            primary_key=True,
+            comment="L1 叙事唯一标识（UUID v4）",
+        ),
         sa.Column("title", sa.String(100), nullable=False, comment="叙事标题"),
         sa.Column("narrative", sa.Text(), nullable=False, comment="完整自然语言叙事文本"),
         sa.Column("source_type", sa.String(20), nullable=False, comment="案例来源类型"),
-        sa.Column("author_id", sa.String(36), nullable=False, index=True, comment="撰写专家标识"),
-        sa.Column("status", sa.Enum("draft", "pending_review", "approved", "rejected",
-                                    name="narrative_status"),
-                  nullable=False, server_default="draft", index=True, comment="叙事状态"),
+        sa.Column(
+            "author_id",
+            sa.String(36),
+            nullable=False,
+            index=True,
+            comment="撰写专家标识",
+        ),
+        sa.Column(
+            "status",
+            sa.Enum(
+                "draft",
+                "pending_review",
+                "approved",
+                "rejected",
+                name="narrative_status",
+            ),
+            nullable=False,
+            server_default="draft",
+            index=True,
+            comment="叙事状态",
+        ),
         sa.Column("review_comment", sa.Text(), nullable=True, comment="审核驳回意见"),
         sa.Column("derived_card_ids", JSON, nullable=True, comment="衍生的 L2 卡片 ID 列表"),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(),
-                  nullable=False, comment="记录创建时间"),
-        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(),
-                  onupdate=sa.func.now(), nullable=False, comment="记录最后更新时间"),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.func.now(),
+            nullable=False,
+            comment="记录创建时间",
+        ),
+        sa.Column(
+            "updated_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.func.now(),
+            onupdate=sa.func.now(),
+            nullable=False,
+            comment="记录最后更新时间",
+        ),
     )
 
     # =========================================================================
@@ -47,11 +80,20 @@ def upgrade() -> None:
     # =========================================================================
     op.create_table(
         "case_cards",
-        sa.Column("card_id", UUID(as_uuid=True), primary_key=True,
-                  comment="L2 卡片唯一标识（UUID v4）"),
-        sa.Column("narrative_id", UUID(as_uuid=True),
-                  sa.ForeignKey("case_narratives.narrative_id", ondelete="CASCADE"),
-                  nullable=False, index=True, comment="关联的 L1 叙事"),
+        sa.Column(
+            "card_id",
+            UUID(as_uuid=True),
+            primary_key=True,
+            comment="L2 卡片唯一标识（UUID v4）",
+        ),
+        sa.Column(
+            "narrative_id",
+            UUID(as_uuid=True),
+            sa.ForeignKey("case_narratives.narrative_id", ondelete="CASCADE"),
+            nullable=False,
+            index=True,
+            comment="关联的 L1 叙事",
+        ),
         # 基础信息
         sa.Column("title", sa.String(100), nullable=False, comment="卡片标题"),
         sa.Column("scenario", sa.Text(), nullable=False, comment="适用场景描述"),
@@ -61,8 +103,13 @@ def upgrade() -> None:
         sa.Column("severity", sa.String(10), nullable=False, comment="严重程度"),
         sa.Column("scene", sa.String(20), nullable=False, comment="发生场景"),
         # 循证标注
-        sa.Column("ebp_labels", JSON, nullable=False, server_default=sa.text("'[]'::json"),
-                  comment="NCAEP 循证实践标签"),
+        sa.Column(
+            "ebp_labels",
+            JSON,
+            nullable=False,
+            server_default=sa.text("'[]'::json"),
+            comment="NCAEP 循证实践标签",
+        ),
         sa.Column("family_category", sa.String(20), nullable=False, comment="家属端展示大类"),
         # 四段式
         sa.Column("immediate_action", sa.Text(), nullable=False, comment="即时安全干预动作"),
@@ -71,32 +118,88 @@ def upgrade() -> None:
         sa.Column("medical_criteria", sa.Text(), nullable=False, comment="就医判断标准"),
         # 循证与质量
         sa.Column("evidence_level", sa.String(20), nullable=False, comment="循证等级"),
-        sa.Column("caution_notes", sa.Text(), nullable=False, server_default="",
-                  comment="禁忌与常见误用"),
+        sa.Column(
+            "caution_notes",
+            sa.Text(),
+            nullable=False,
+            server_default="",
+            comment="禁忌与常见误用",
+        ),
         sa.Column("contraindications", sa.Text(), nullable=False, comment="不适用人群/场景"),
-        sa.Column("is_template", sa.Boolean(), nullable=False, server_default=sa.text("false"),
-                  comment="是否模板"),
+        sa.Column(
+            "is_template",
+            sa.Boolean(),
+            nullable=False,
+            server_default=sa.text("false"),
+            comment="是否模板",
+        ),
         # 选填
-        sa.Column("excluded_population", sa.Text(), nullable=True, comment="不适用人群（选填）"),
-        sa.Column("attachment_refs", JSON, nullable=True,
-                  server_default=sa.text("'[]'::json"), comment="附件引用（选填）"),
+        sa.Column(
+            "excluded_population",
+            sa.Text(),
+            nullable=True,
+            comment="不适用人群（选填）",
+        ),
+        sa.Column(
+            "attachment_refs",
+            JSON,
+            nullable=True,
+            server_default=sa.text("'[]'::json"),
+            comment="附件引用（选填）",
+        ),
         # 状态
-        sa.Column("review_status", sa.Enum("draft", "pending_review", "approved", "rejected",
-                                           name="card_review_status"),
-                  nullable=False, server_default="draft", index=True, comment="卡片审核状态"),
+        sa.Column(
+            "review_status",
+            sa.Enum(
+                "draft",
+                "pending_review",
+                "approved",
+                "rejected",
+                name="card_review_status",
+            ),
+            nullable=False,
+            server_default="draft",
+            index=True,
+            comment="卡片审核状态",
+        ),
         sa.Column("review_comment", sa.Text(), nullable=True, comment="审核驳回意见"),
         # 索引状态
-        sa.Column("index_status", sa.Enum("pending", "processing", "indexed", "indexing_failed",
-                                          name="card_index_status_enum"),
-                  nullable=True, comment="向量化索引状态"),
-        sa.Column("indexed_at", sa.DateTime(timezone=True), nullable=True, comment="索引完成时间"),
+        sa.Column(
+            "index_status",
+            sa.Enum(
+                "pending",
+                "processing",
+                "indexed",
+                "indexing_failed",
+                name="card_index_status_enum",
+            ),
+            nullable=True,
+            comment="向量化索引状态",
+        ),
+        sa.Column(
+            "indexed_at",
+            sa.DateTime(timezone=True),
+            nullable=True,
+            comment="索引完成时间",
+        ),
         # LLM 推断
         sa.Column("inferred_fields", JSONB, nullable=True, comment="LLM 推断字段及依据"),
         # 时间戳
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(),
-                  nullable=False, comment="记录创建时间"),
-        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(),
-                  onupdate=sa.func.now(), nullable=False, comment="记录最后更新时间"),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.func.now(),
+            nullable=False,
+            comment="记录创建时间",
+        ),
+        sa.Column(
+            "updated_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.func.now(),
+            onupdate=sa.func.now(),
+            nullable=False,
+            comment="记录最后更新时间",
+        ),
     )
 
     op.create_index("ix_case_cards_index_status", "case_cards", ["index_status"])

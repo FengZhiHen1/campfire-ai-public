@@ -21,9 +21,6 @@ import uuid
 from datetime import date
 from typing import Any
 
-from sqlalchemy import desc, select
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from py_db.models.profiles import EventLog, Profile
 from py_logger import logger
 from py_rag.retrieval import hybrid_search
@@ -31,14 +28,15 @@ from py_schemas.consult import (
     SemanticSearchInput,
     SemanticSearchResult,
 )
-
 from py_schemas.crisis import (
-    CrisisJudgmentResult,
     CrisisJudgmentRequest,
+    CrisisJudgmentResult,
     JudgmentLayerResult,
 )
-from app.modules.crisis.models import PatientProfileSnapshot
-from py_schemas.enums.crisis_enums import CrisisLevel, BehaviorTypeCategory
+from py_schemas.enums.crisis_enums import BehaviorTypeCategory, CrisisLevel
+from sqlalchemy import desc, select
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.modules.consultation.plan_generation.blocked_outputs import (
     BLOCKED_PROMPT_TEMPLATES,
     DEFAULT_BLOCKED_TEXT,
@@ -52,10 +50,10 @@ from app.modules.consultation.plan_generation.models import (
 from app.modules.consultation.plan_generation.prompt_builder import PromptBuilder
 from app.modules.consultation.plan_generation.service import _infer_block_variant
 from app.modules.consultation.plan_generation.streaming import stream_generate
+from app.modules.crisis.models import PatientProfileSnapshot
 
 from .consultation_contract import BaseConsultationOrchestrator
 from .types import BehaviorDescription, ProfileSummary, RequestId
-
 
 # ============================================================================
 # ConsultationOrchestratorImpl — 实现 BaseConsultationOrchestrator ABC
@@ -83,9 +81,7 @@ class ConsultationOrchestratorImpl(BaseConsultationOrchestrator):
             logger.warning("consult", "invalid_profile_id", extra={"profile_id": profile_id})
             return ProfileSummary("（未关联档案）")
 
-        result = await db.execute(
-            select(Profile).where(Profile.profile_id == pid)
-        )
+        result = await db.execute(select(Profile).where(Profile.profile_id == pid))
         profile = result.scalars().first()
         if profile is None:
             logger.warning("consult", "profile_not_found", extra={"profile_id": profile_id})
@@ -95,8 +91,7 @@ class ConsultationOrchestratorImpl(BaseConsultationOrchestrator):
         today = date.today()
         age = today.year - profile.birth_date.year
         if today.month < profile.birth_date.month or (
-            today.month == profile.birth_date.month
-            and today.day < profile.birth_date.day
+            today.month == profile.birth_date.month and today.day < profile.birth_date.day
         ):
             age -= 1
 
@@ -115,10 +110,7 @@ class ConsultationOrchestratorImpl(BaseConsultationOrchestrator):
 
         # 最近事件（最多 5 条）
         events_result = await db.execute(
-            select(EventLog)
-            .where(EventLog.profile_id == pid)
-            .order_by(desc(EventLog.event_time))
-            .limit(5)
+            select(EventLog).where(EventLog.profile_id == pid).order_by(desc(EventLog.event_time)).limit(5)
         )
         events = events_result.scalars().all()
         if events:
@@ -154,7 +146,11 @@ class ConsultationOrchestratorImpl(BaseConsultationOrchestrator):
             service="api-server",
             message="consult_search_started",
             op_type="consult_search",
-            extra={"request_id": str(request_id), "query_len": len(query_text), "top_k": 10},
+            extra={
+                "request_id": str(request_id),
+                "query_len": len(query_text),
+                "top_k": 10,
+            },
         )
 
         result: SemanticSearchResult = await hybrid_search(
@@ -204,9 +200,7 @@ class ConsultationOrchestratorImpl(BaseConsultationOrchestrator):
             if profile_id:
                 try:
                     pid = uuid.UUID(profile_id)
-                    result = await db.execute(
-                        select(Profile).where(Profile.profile_id == pid)
-                    )
+                    result = await db.execute(select(Profile).where(Profile.profile_id == pid))
                     profile = result.scalars().first()
                     if profile is not None:
                         # 历史行为标签：从主要行为 + 最近事件推导
@@ -225,12 +219,14 @@ class ConsultationOrchestratorImpl(BaseConsultationOrchestrator):
                         for ev in events:
                             if ev.behavior_type:
                                 historical_tags.add(ev.behavior_type)
-                            recent_event_records.append({
-                                "event_type": ev.behavior_type,
-                                "severity": ev.severity_level,
-                                "occurred_at": ev.event_time.isoformat() if ev.event_time else None,
-                                "manifestation": ev.manifestation,
-                            })
+                            recent_event_records.append(
+                                {
+                                    "event_type": ev.behavior_type,
+                                    "severity": ev.severity_level,
+                                    "occurred_at": ev.event_time.isoformat() if ev.event_time else None,
+                                    "manifestation": ev.manifestation,
+                                }
+                            )
 
                         patient_profile = PatientProfileSnapshot(
                             diagnosis_type=profile.diagnosis_type,
@@ -264,9 +260,7 @@ class ConsultationOrchestratorImpl(BaseConsultationOrchestrator):
             return CrisisJudgmentResult(
                 final_level=CrisisLevel.MILD,
                 block_deep_response=False,
-                judgment_sources=[
-                    JudgmentLayerResult(layer_name="Fallback", level=CrisisLevel.MILD)
-                ],
+                judgment_sources=[JudgmentLayerResult(layer_name="Fallback", level=CrisisLevel.MILD)],
                 degradation_note="crisis_judgment_failed",
             )
 
@@ -314,11 +308,7 @@ class ConsultationOrchestratorImpl(BaseConsultationOrchestrator):
         并以 finish_reason=BLOCKED 结束。
         """
         block_variant = _infer_block_variant(plan_input)
-        blocked_text = (
-            BLOCKED_PROMPT_TEMPLATES[block_variant]
-            if block_variant
-            else DEFAULT_BLOCKED_TEXT
-        )
+        blocked_text = BLOCKED_PROMPT_TEMPLATES[block_variant] if block_variant else DEFAULT_BLOCKED_TEXT
         full_text = f"{blocked_text}\n\n---\n\n{DISCLAIMER_TEXT}"
 
         async def _blocked_generator():
@@ -348,7 +338,11 @@ class ConsultationOrchestratorImpl(BaseConsultationOrchestrator):
             service="api-server",
             message="standalone_search_started",
             op_type="standalone_search",
-            extra={"request_id": request.request_id, "query_len": len(request.query_text), "top_k": request.top_k},
+            extra={
+                "request_id": request.request_id,
+                "query_len": len(request.query_text),
+                "top_k": request.top_k,
+            },
         )
 
         result: SemanticSearchResult = await hybrid_search(

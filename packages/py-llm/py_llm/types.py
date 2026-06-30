@@ -10,7 +10,6 @@ from dataclasses import dataclass
 
 from pydantic import BaseModel, Field
 
-
 # ============================================================================
 # 重试配置
 # ============================================================================
@@ -36,9 +35,7 @@ class RetryConfig:
         if self.base_delay <= 0:
             raise ValueError(f"base_delay must be > 0, got {self.base_delay}")
         if self.max_delay < self.base_delay:
-            raise ValueError(
-                f"max_delay ({self.max_delay}) must be >= base_delay ({self.base_delay})"
-            )
+            raise ValueError(f"max_delay ({self.max_delay}) must be >= base_delay ({self.base_delay})")
 
 
 # ============================================================================

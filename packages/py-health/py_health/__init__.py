@@ -20,8 +20,8 @@ from __future__ import annotations
 from py_health.checker import check_all, check_ready
 from py_health.models import (
     ComponentHealth,
-    ComponentStatus,
     Components,
+    ComponentStatus,
     HealthCheckResponse,
     HealthStatus,
     ReadinessResponse,

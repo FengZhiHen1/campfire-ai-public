@@ -55,20 +55,14 @@ class InternalIndexContext(BaseModel):
         pattern=r"^[a-f0-9]{32}$",
         description="全链路追踪标识",
     )
-    retry_count: int = Field(
-        default=0, ge=0, le=2, description="当前重试次数"
-    )
-    phase: str = Field(
-        description="当前处理阶段: build_chunk_text | generate_embedding | write_index"
-    )
+    retry_count: int = Field(default=0, ge=0, le=2, description="当前重试次数")
+    phase: str = Field(description="当前处理阶段: build_chunk_text | generate_embedding | write_index")
 
 
 class EmbeddingResponse(BaseModel):
     """嵌入 API 返回的嵌入向量（内部模型）。"""
 
-    embedding: list[float] = Field(
-        min_length=1024, max_length=1024, description="1024 维 float32 向量"
-    )
+    embedding: list[float] = Field(min_length=1024, max_length=1024, description="1024 维 float32 向量")
     model: str = Field(default="text-embedding-v4", description="嵌入模型名称")
 
 
@@ -76,9 +70,7 @@ class EmbeddingResponse(BaseModel):
 # 类型别名
 # ============================================================================
 
-EnqueueResult = dict[
-    Literal["status"], Literal["enqueued", "already_queued", "already_indexed"]
-]
+EnqueueResult = dict[Literal["status"], Literal["enqueued", "already_queued", "already_indexed"]]
 """enqueue_index_task() 返回字典结构。"""
 
 INDEX_METADATA_KEYS: frozenset[str] = frozenset(

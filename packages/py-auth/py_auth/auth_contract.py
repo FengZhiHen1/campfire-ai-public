@@ -16,9 +16,9 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from typing import Any, final
 
-from py_auth.types import HasRoles
 from py_logger import logger
 
+from py_auth.types import HasRoles
 
 # ============================================================================
 # PasswordHasher — 密码哈希契约
@@ -136,14 +136,11 @@ class PasswordHasher(ABC):
             ValueError: 密码长度不在 [8, 64] 范围内。
         """
         if not isinstance(plain_password, str):
-            raise ValueError(
-                f"密码必须是 str 类型，实际为 {type(plain_password).__name__}"
-            )
+            raise ValueError(f"密码必须是 str 类型，实际为 {type(plain_password).__name__}")
         length = len(plain_password)
         if length < self._MIN_PASSWORD_LENGTH or length > self._MAX_PASSWORD_LENGTH:
             raise ValueError(
-                f"密码长度必须在 {self._MIN_PASSWORD_LENGTH}-{self._MAX_PASSWORD_LENGTH} "
-                f"之间，当前长度为 {length}"
+                f"密码长度必须在 {self._MIN_PASSWORD_LENGTH}-{self._MAX_PASSWORD_LENGTH} 之间，当前长度为 {length}"
             )
 
     def _validate_hash_format(self, hashed_password: str) -> None:
@@ -153,15 +150,9 @@ class PasswordHasher(ABC):
             ValueError: 哈希串不是以 $2b$ 或 $2a$ 开头的合法 bcrypt 格式。
         """
         if not isinstance(hashed_password, str):
-            raise ValueError(
-                f"hashed_password 必须是 str 类型，实际为 {type(hashed_password).__name__}"
-            )
-        if not hashed_password.startswith("$2b$") and not hashed_password.startswith(
-            "$2a$"
-        ):
-            raise ValueError(
-                "hashed_password 格式不合法，必须以 $2b$ 或 $2a$ 开头"
-            )
+            raise ValueError(f"hashed_password 必须是 str 类型，实际为 {type(hashed_password).__name__}")
+        if not hashed_password.startswith("$2b$") and not hashed_password.startswith("$2a$"):
+            raise ValueError("hashed_password 格式不合法，必须以 $2b$ 或 $2a$ 开头")
 
     def _validate_hash_output(self, hashed: str) -> None:
         """基线后置校验——确保 _do_hash 返回值格式正确。
@@ -172,10 +163,7 @@ class PasswordHasher(ABC):
         if not hashed or not isinstance(hashed, str):
             raise RuntimeError(f"{self.__class__.__name__}._do_hash 返回了无效结果")
         if not hashed.startswith("$2b$") and not hashed.startswith("$2a$"):
-            raise RuntimeError(
-                f"{self.__class__.__name__}._do_hash 输出格式不合法: "
-                f"必须以 $2b$ 或 $2a$ 开头"
-            )
+            raise RuntimeError(f"{self.__class__.__name__}._do_hash 输出格式不合法: 必须以 $2b$ 或 $2a$ 开头")
 
 
 # ============================================================================
@@ -309,9 +297,7 @@ class TokenManager(ABC):
     # === @abstractmethod 钩子 ===
 
     @abstractmethod
-    def _do_create_token(
-        self, data: dict[str, Any], token_type: str, ttl_seconds: int
-    ) -> str:
+    def _do_create_token(self, data: dict[str, Any], token_type: str, ttl_seconds: int) -> str:
         """执行 JWT Token 签发。
 
         实现者在此填写实际的 JWT 编码逻辑。
@@ -367,9 +353,7 @@ class TokenManager(ABC):
             RuntimeError: Token 签发返回空值。
         """
         if not token:
-            raise RuntimeError(
-                f"{self.__class__.__name__}._do_create_token 返回了空 Token"
-            )
+            raise RuntimeError(f"{self.__class__.__name__}._do_create_token 返回了空 Token")
 
 
 # ============================================================================
@@ -428,7 +412,11 @@ class TokenBlacklist(ABC):
                 "py-auth",
                 "黑名单写入失败（fail-open）",
                 op_type="权限拒绝",
-                extra={"jti": jti[:20] + "...", "strategy": "fail_open", "error": str(exc)},
+                extra={
+                    "jti": jti[:20] + "...",
+                    "strategy": "fail_open",
+                    "error": str(exc),
+                },
             )
 
     @final
@@ -454,7 +442,11 @@ class TokenBlacklist(ABC):
                 "py-auth",
                 "黑名单查询降级（fail-open）",
                 op_type="权限拒绝",
-                extra={"jti": jti[:20] + "...", "strategy": "fail_open", "error": str(exc)},
+                extra={
+                    "jti": jti[:20] + "...",
+                    "strategy": "fail_open",
+                    "error": str(exc),
+                },
             )
             return False
 
@@ -478,7 +470,11 @@ class TokenBlacklist(ABC):
                 "py-auth",
                 "Refresh 标记写入失败（fail-open）",
                 op_type="认证",
-                extra={"jti": jti[:20] + "...", "strategy": "fail_open", "error": str(exc)},
+                extra={
+                    "jti": jti[:20] + "...",
+                    "strategy": "fail_open",
+                    "error": str(exc),
+                },
             )
 
     @final
@@ -496,7 +492,11 @@ class TokenBlacklist(ABC):
                 "py-auth",
                 "Refresh 查询降级（fail-open）",
                 op_type="认证",
-                extra={"jti": jti[:20] + "...", "strategy": "fail_open", "error": str(exc)},
+                extra={
+                    "jti": jti[:20] + "...",
+                    "strategy": "fail_open",
+                    "error": str(exc),
+                },
             )
             return False
 

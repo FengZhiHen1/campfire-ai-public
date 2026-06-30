@@ -242,9 +242,7 @@ class MigrationServiceImpl(MigrationService):
                 autogenerate=autogenerate,
             )
         except Exception as exc:
-            raise MigrationGenerationError(
-                f"Failed to generate migration script '{message}': {exc}"
-            ) from exc
+            raise MigrationGenerationError(f"Failed to generate migration script '{message}': {exc}") from exc
 
         # 定位最新生成的迁移脚本文件
         versions_dir = _get_versions_dir(alembic_cfg)
@@ -255,14 +253,10 @@ class MigrationServiceImpl(MigrationService):
                 reverse=True,
             )
             if not py_files:
-                raise MigrationGenerationError(
-                    "Migration script was not created. Check Alembic configuration."
-                )
+                raise MigrationGenerationError("Migration script was not created. Check Alembic configuration.")
             generated_path = str(py_files[0].resolve())
         except Exception as exc:
-            raise MigrationGenerationError(
-                f"Failed to locate generated migration file: {exc}"
-            ) from exc
+            raise MigrationGenerationError(f"Failed to locate generated migration file: {exc}") from exc
 
         logger.info(
             "migration",
@@ -301,9 +295,7 @@ class MigrationServiceImpl(MigrationService):
         except Exception as exc:
             error_msg = str(exc)
             if "check" in error_msg.lower() or "migration" in error_msg.lower():
-                summary = (
-                    f"Migration check failed (unrecorded schema changes detected): {exc}"
-                )
+                summary = f"Migration check failed (unrecorded schema changes detected): {exc}"
                 logger.warning(
                     "migration",
                     "migration_verification_check_failed",
@@ -311,9 +303,7 @@ class MigrationServiceImpl(MigrationService):
                     op_type="verify_migration",
                 )
                 return (3, summary)
-            raise MigrationVerificationError(
-                f"Unexpected error during alembic check: {exc}"
-            ) from exc
+            raise MigrationVerificationError(f"Unexpected error during alembic check: {exc}") from exc
 
         # 检查 2: upgrade head — 验证全部迁移脚本可执行
         try:
@@ -340,10 +330,7 @@ class MigrationServiceImpl(MigrationService):
                 missing_downgrade.append(py_file.name)
 
         if missing_downgrade:
-            summary = (
-                f"Missing downgrade() in {len(missing_downgrade)} script(s): "
-                f"{', '.join(missing_downgrade)}"
-            )
+            summary = f"Missing downgrade() in {len(missing_downgrade)} script(s): {', '.join(missing_downgrade)}"
             logger.warning(
                 "migration",
                 "migration_verification_missing_downgrade",
@@ -352,10 +339,7 @@ class MigrationServiceImpl(MigrationService):
             )
             return (2, summary)
 
-        summary = (
-            "All migration verifications passed: "
-            "check OK, upgrade executable, bidirectional OK."
-        )
+        summary = "All migration verifications passed: check OK, upgrade executable, bidirectional OK."
         logger.info(
             "migration",
             "migration_verification_all_passed",

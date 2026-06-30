@@ -12,15 +12,13 @@ from __future__ import annotations
 
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field
-
 from py_schemas.crisis import (
     CrisisJudgmentRequest,
     CrisisJudgmentResult,
     JudgmentLayerResult,
 )
 from py_schemas.enums.crisis_enums import CrisisLevel
-
+from pydantic import BaseModel, ConfigDict, Field
 
 # ============================================================================
 # PatientProfileSnapshot（内部类型，非对外契约）

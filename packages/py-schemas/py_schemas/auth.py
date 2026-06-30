@@ -147,10 +147,7 @@ class RegisterRequest(CampfireBaseModel):
         不可通过注册接口直接获取。
         """
         if v not in (UserRole.FAMILY, UserRole.TEACHER, UserRole.EXPERT):
-            raise ValueError(
-                f"注册阶段仅允许 family/teacher/expert 角色，"
-                f"当前值为 {v.value}"
-            )
+            raise ValueError(f"注册阶段仅允许 family/teacher/expert 角色，当前值为 {v.value}")
         return v
 
 

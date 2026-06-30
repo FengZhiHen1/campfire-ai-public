@@ -23,7 +23,6 @@ from pydantic import Field
 
 from py_schemas.base import CampfireBaseModel
 
-
 # ===========================================================================
 # 判定结论枚举
 # ===========================================================================
@@ -78,8 +77,7 @@ class LLMAssessmentResult(CampfireBaseModel):
         ge=0.0,
         le=1.0,
         description=(
-            "逻辑连贯性评分。评估四段式内容之间的逻辑关系是否自然、不矛盾。"
-            "0=段落之间逻辑断裂或矛盾，1=逻辑完全连贯。"
+            "逻辑连贯性评分。评估四段式内容之间的逻辑关系是否自然、不矛盾。0=段落之间逻辑断裂或矛盾，1=逻辑完全连贯。"
         ),
     )
     unsourced_claim_risk: float = Field(
@@ -167,17 +165,11 @@ class ConfidenceValidationInput(CampfireBaseModel):
         ...,
         min_length=1,
         max_length=2000,
-        description=(
-            "患者行为描述原文（已脱敏），用于 LLM 自评估时提供完整评估上下文。"
-            "1-2000 个汉字。"
-        ),
+        description=("患者行为描述原文（已脱敏），用于 LLM 自评估时提供完整评估上下文。1-2000 个汉字。"),
     )
     request_id: str = Field(
         ...,
-        description=(
-            "本次咨询的追踪标识。由 CSLT-08 编排层生成并传入，"
-            "用于全链路日志关联和幂等性控制。"
-        ),
+        description=("本次咨询的追踪标识。由 CSLT-08 编排层生成并传入，用于全链路日志关联和幂等性控制。"),
     )
 
 

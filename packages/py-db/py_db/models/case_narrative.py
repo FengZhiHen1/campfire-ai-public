@@ -8,19 +8,16 @@
 
 from __future__ import annotations
 
-from datetime import datetime
-from typing import Any
-
 import uuid
 
 import sqlalchemy as sa
-from sqlalchemy import Boolean, DateTime, Enum as sa_Enum, ForeignKey, JSON, String, Text
+from py_schemas.enums.case_enums import CaseStatus
+from sqlalchemy import JSON, Boolean, ForeignKey, String, Text
+from sqlalchemy import Enum as sa_Enum
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
-from sqlalchemy.sql import func
 
 from py_db.models.base import Base, TimestampMixin
-from py_schemas.enums.case_enums import CaseStatus
 
 
 class CaseNarrative(Base, TimestampMixin):
@@ -121,8 +118,7 @@ class CaseNarrative(Base, TimestampMixin):
 
     def __repr__(self) -> str:
         return (
-            f"<CaseNarrative(narrative_id={self.narrative_id!r}, "
-            f"title={self.title!r}, status={self.status.value!r})>"
+            f"<CaseNarrative(narrative_id={self.narrative_id!r}, title={self.title!r}, status={self.status.value!r})>"
         )
 
 

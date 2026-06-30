@@ -24,11 +24,10 @@ from datetime import date, datetime
 
 from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Index, Integer, String, Text
 from sqlalchemy.dialects.postgresql import JSONB
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.sql import func
 
 from py_db.models.base import Base, TimestampMixin
-
 
 # ===========================================================================
 # PROF-01 — Profile ORM 模型
@@ -253,9 +252,7 @@ class EventLog(Base):
     __tablename__ = "event_logs"
 
     # 复合索引: (profile_id, event_time DESC) — 列表查询
-    __table_args__ = (
-        Index("ix_event_logs_profile_event_time", "profile_id", "event_time"),
-    )
+    __table_args__ = (Index("ix_event_logs_profile_event_time", "profile_id", "event_time"),)
 
     event_id: Mapped[uuid.UUID] = mapped_column(
         primary_key=True,

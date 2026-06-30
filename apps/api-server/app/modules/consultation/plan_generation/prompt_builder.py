@@ -14,6 +14,7 @@
 from __future__ import annotations
 
 import re
+
 from py_logger import logger
 
 from .models import EmergencyPlanInput, PromptBuildContext
@@ -58,7 +59,7 @@ _SYSTEM_PROMPT_TEMPLATE: str = (
     "- 四个字段缺一不可，值为字符串数组\n"
     "- 每个数组至少包含 2 条、至多 5 条建议\n"
     "- 每条建议为一句完整的中文，禁止在建议文本中使用 Markdown 格式\n"
-    "- 「情绪安抚话术」中的每条话术必须使用中文双引号包裹，例如：\"妈妈在这里，你很安全\"\n"
+    '- 「情绪安抚话术」中的每条话术必须使用中文双引号包裹，例如："妈妈在这里，你很安全"\n'
     "- 同一段落内的建议按优先级从高到低排列\n\n"
     "## 危机等级分层策略\n"
     "生成方案时必须结合本次判定的危机等级（mild/moderate/severe）：\n"
@@ -83,10 +84,7 @@ _SYSTEM_PROMPT_TEMPLATE: str = (
 )
 
 # 参考案例区域模板（有案例时）
-_CASE_BLOCK_TEMPLATE: str = (
-    "## 参考案例（共 {count} 条，按匹配度降序）\n"
-    "{slices}\n"
-)
+_CASE_BLOCK_TEMPLATE: str = "## 参考案例（共 {count} 条，按匹配度降序）\n{slices}\n"
 
 # 参考案例区域模板（无案例时）
 _NO_CASE_BLOCK: str = (
@@ -187,9 +185,7 @@ class PromptBuilder:
 
             slice_text = s.slice_text or ""
 
-            slice_lines.append(
-                f"{number_tag} [{s.card_id}] {case_title}（{case_date}，循证等级：{evidence}）"
-            )
+            slice_lines.append(f"{number_tag} [{s.card_id}] {case_title}（{case_date}，循证等级：{evidence}）")
             slice_lines.append(f"{slice_text}\n")
 
         slice_text_block = _CASE_BLOCK_TEMPLATE.format(
@@ -261,9 +257,11 @@ class PromptBuilder:
         if not input_data.search_result.degradation_applied:
             return None
 
-        degradation_level = input_data.search_result.degradation_level.value if hasattr(
-            input_data.search_result.degradation_level, "value"
-        ) else str(input_data.search_result.degradation_level)
+        degradation_level = (
+            input_data.search_result.degradation_level.value
+            if hasattr(input_data.search_result.degradation_level, "value")
+            else str(input_data.search_result.degradation_level)
+        )
 
         level_hints = {
             "NONE": None,

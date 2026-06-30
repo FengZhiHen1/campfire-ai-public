@@ -45,9 +45,8 @@ def client():
     内部自动管理事件循环，调用 async 路由。
     必须使用上下文管理器 yield，确保 blocking portal 生命周期正确。
     """
-    from fastapi.testclient import TestClient
-
     from app.main import app
+    from fastapi.testclient import TestClient
 
     with TestClient(app) as c:
         yield c
@@ -114,7 +113,9 @@ def clear_tables(database_url: str):
         try:
             # 删除测试创建的案例、档案和用户
             await conn.execute("DELETE FROM cases WHERE case_id LIKE 'CASE-2026-%'")
-            await conn.execute("DELETE FROM profiles WHERE caregiver_id IN (SELECT id FROM users WHERE device_id LIKE 'test-device-%')")
+            await conn.execute(
+                "DELETE FROM profiles WHERE caregiver_id IN (SELECT id FROM users WHERE device_id LIKE 'test-device-%')"
+            )
             await conn.execute("DELETE FROM users WHERE device_id LIKE 'test-device-%' OR device_id LIKE 'reviewer-%'")
             # 重置序列到已用最大值之后
             max_seq = await conn.fetchval(

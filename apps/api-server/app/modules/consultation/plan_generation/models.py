@@ -12,13 +12,11 @@
 
 from __future__ import annotations
 
+from py_schemas.consult import SemanticSearchResult
+from py_schemas.crisis import CrisisJudgmentResult
 from pydantic import BaseModel, ConfigDict, Field
 
-from py_schemas.crisis import CrisisJudgmentResult
-from py_schemas.consult import SemanticSearchResult
-
 from .enums import BlockVariant, GenerationStatus
-
 
 # ============================================================================
 # EmergencyPlanInput（对外输入契约）
@@ -102,9 +100,7 @@ class GenerationResult(BaseModel):
         "包含即时安全干预动作、情绪安抚话术、后续观察指标、就医判断标准四个字段，"
         "以及预编号的来源引用标记如 [1][2]。阻断场景下为空字符串。",
         max_length=65536,
-        examples=[
-            '{"即时安全干预动作":["将孩子带离嘈杂环境[1]"],"情绪安抚话术":["没关系，妈妈在这里"]}'
-        ],
+        examples=['{"即时安全干预动作":["将孩子带离嘈杂环境[1]"],"情绪安抚话术":["没关系，妈妈在这里"]}'],
     )
     sections: dict[str, list[str]] = Field(
         default_factory=dict,
@@ -135,8 +131,7 @@ class GenerationResult(BaseModel):
     )
     referenced_slice_ids: list[str] = Field(
         default_factory=list,
-        description="LLM 输出中实际引用的案例切片 ID 列表。"
-        "从 LLM 文本中提取 [N] 序号后反查预编号映射表获取。",
+        description="LLM 输出中实际引用的案例切片 ID 列表。从 LLM 文本中提取 [N] 序号后反查预编号映射表获取。",
         examples=[["a1b2c3d4-e5f6-7890-abcd-ef1234567890"]],
     )
     finish_reason: GenerationStatus = Field(
@@ -221,8 +216,7 @@ class PromptBuildContext(BaseModel):
     )
     slice_text_block: str = Field(
         default="",
-        description="组装完成的「参考案例」区域 Markdown 文本块，"
-        "包含全量切片的预编号和循证等级标注。",
+        description="组装完成的「参考案例」区域 Markdown 文本块，包含全量切片的预编号和循证等级标注。",
     )
     profile_markdown: str = Field(
         default="",

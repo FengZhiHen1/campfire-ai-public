@@ -5,8 +5,8 @@
 
 from __future__ import annotations
 
-from py_security.security_detector import detect_security_threat
 from py_schemas.security.validation_schemas import SecurityDetectionType
+from py_security.security_detector import detect_security_threat
 
 
 class TestDetectSecurityThreat:
@@ -54,7 +54,7 @@ class TestDetectSecurityThreat:
         assert result == SecurityDetectionType.xss_payload
 
     def test_malformed_field_name(self):
-        result = detect_security_threat({'<script': "value"})
+        result = detect_security_threat({"<script": "value"})
         assert result == SecurityDetectionType.malformed_request
 
     def test_nested_dict_clean(self):

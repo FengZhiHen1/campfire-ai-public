@@ -59,9 +59,8 @@ class LLMReviewTimeoutError(CrisisJudgmentError):
         elapsed_ms: int | None = None,
         original_error: Exception | None = None,
     ) -> None:
-        message = (
-            f"LLM review timed out after {timeout_ms}ms"
-            + (f" (elapsed: {elapsed_ms}ms)" if elapsed_ms is not None else "")
+        message = f"LLM review timed out after {timeout_ms}ms" + (
+            f" (elapsed: {elapsed_ms}ms)" if elapsed_ms is not None else ""
         )
         self.timeout_ms = timeout_ms
         self.elapsed_ms = elapsed_ms
@@ -84,9 +83,5 @@ class KeywordDictLoadError(CrisisJudgmentError):
         detail: str = "",
         original_error: Exception | None = None,
     ) -> None:
-        message = (
-            f"failed to load keyword dictionary: {detail}"
-            if detail
-            else "failed to load keyword dictionary"
-        )
+        message = f"failed to load keyword dictionary: {detail}" if detail else "failed to load keyword dictionary"
         super().__init__(message=message, original_error=original_error)

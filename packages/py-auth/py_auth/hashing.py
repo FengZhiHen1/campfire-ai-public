@@ -16,11 +16,11 @@ Usage:
 from __future__ import annotations
 
 import bcrypt
+from py_config.security import get_security_config
+from py_logger import logger
 
 from py_auth.auth_contract import PasswordHasher
 from py_auth.exceptions import HashingError
-from py_config.security import get_security_config
-from py_logger import logger
 
 
 class BcryptHasher(PasswordHasher):
@@ -55,9 +55,7 @@ class BcryptHasher(PasswordHasher):
                 op_type="认证",
                 extra={"error_type": type(exc).__name__},
             )
-            raise HashingError(
-                f"bcrypt 哈希计算失败: {exc}", operation="hash"
-            ) from exc
+            raise HashingError(f"bcrypt 哈希计算失败: {exc}", operation="hash") from exc
 
     def _do_verify(self, plain_password: str, hashed_password: str) -> bool:
         """执行密码比对校验。"""
@@ -73,9 +71,7 @@ class BcryptHasher(PasswordHasher):
                 op_type="认证",
                 extra={"error_type": type(exc).__name__},
             )
-            raise HashingError(
-                f"bcrypt 密码校验失败: {exc}", operation="verify"
-            ) from exc
+            raise HashingError(f"bcrypt 密码校验失败: {exc}", operation="verify") from exc
 
 
 # ============================================================================

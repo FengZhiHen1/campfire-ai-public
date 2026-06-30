@@ -20,11 +20,10 @@ from __future__ import annotations
 import asyncio
 import json
 import os
-import time
 from typing import Any
 
-from py_logger import logger
 from py_llm.client import LLMClient, LLMClientError
+from py_logger import logger
 from py_schemas.consult.confidence import (
     ConfidenceValidationInput,
     ConfidenceValidationOutput,
@@ -32,10 +31,10 @@ from py_schemas.consult.confidence import (
     ValidationVerdict,
 )
 
-from .validation_contract import BaseConfidenceValidator, DegradationNote
 from .keyword_scanner import KeywordScanner
 from .rule_validator import compute_rule_score
 from .ticket_trigger import trigger_ticket_with_retry
+from .validation_contract import BaseConfidenceValidator, DegradationNote
 
 # ============================================================================
 # 常量
@@ -145,11 +144,20 @@ class ConfidenceValidatorImpl(BaseConfidenceValidator):
             logger.info(
                 service=_SERVICE,
                 message="llm_assessment_success",
-                extra={"request_id": input.request_id, "llm_score": round(llm_score, 4)},
+                extra={
+                    "request_id": input.request_id,
+                    "llm_score": round(llm_score, 4),
+                },
             )
             return llm_score, None
 
-        except (LLMClientError, asyncio.TimeoutError, json.JSONDecodeError, ValueError, Exception):
+        except (
+            LLMClientError,
+            asyncio.TimeoutError,
+            json.JSONDecodeError,
+            ValueError,
+            Exception,
+        ):
             logger.warning(
                 service=_SERVICE,
                 message="llm_assessment_unavailable",
@@ -236,11 +244,11 @@ class ConfidenceValidatorImpl(BaseConfidenceValidator):
 
         validation_time_ms = round(elapsed_ms, 2)
         validation_detail: dict[str, Any] = {
-            "verdict": verdict.value if hasattr(verdict, 'value') else str(verdict),
+            "verdict": verdict.value if hasattr(verdict, "value") else str(verdict),
             "source_count": len(input.source_list),
             "degradation_note": degradation_note,
         }
-        verdict_str = verdict.value if hasattr(verdict, 'value') else str(verdict)
+        verdict_str = verdict.value if hasattr(verdict, "value") else str(verdict)
         if background_tasks is not None:
             background_tasks.add_task(
                 _persist_validation_result,
@@ -252,6 +260,7 @@ class ConfidenceValidatorImpl(BaseConfidenceValidator):
         else:
             # 在非 FastAPI 请求上下文（如 SSE 后台任务）中直接创建后台任务
             import asyncio
+
             asyncio.create_task(
                 _persist_validation_result(
                     request_id=input.request_id,
@@ -326,8 +335,9 @@ async def _persist_validation_result(
     """
     from uuid import UUID
 
-    from app.core.dependencies.auth_dependencies import _get_session_factory
     from py_db.repositories.consult_history_repository import ConsultHistoryRepository
+
+    from app.core.dependencies.auth_dependencies import _get_session_factory
 
     try:
         request_uuid = UUID(request_id)
@@ -343,7 +353,11 @@ async def _persist_validation_result(
         logger.info(
             service=_SERVICE,
             message="validation_persist_started",
-            extra={"request_id": request_id, "confidence_score": confidence_score, "verdict": verdict},
+            extra={
+                "request_id": request_id,
+                "confidence_score": confidence_score,
+                "verdict": verdict,
+            },
         )
 
         repository = ConsultHistoryRepository()
@@ -377,7 +391,11 @@ async def _persist_validation_result(
         logger.warning(
             service=_SERVICE,
             message="validation_persist_failed",
-            extra={"request_id": request_id, "error": str(exc), "error_type": type(exc).__name__},
+            extra={
+                "request_id": request_id,
+                "error": str(exc),
+                "error_type": type(exc).__name__,
+            },
         )
 
 
