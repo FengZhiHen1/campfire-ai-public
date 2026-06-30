@@ -164,13 +164,10 @@ export const consultApi = {
     page: number,
     pageSize: number,
   ): Promise<HistoryListResponse> {
+    const query = new URLSearchParams({ page: String(page), page_size: String(pageSize) });
     const res = await httpClient.request<HistoryListResponse>({
-      url: HISTORY_API_PATH,
+      url: `${HISTORY_API_PATH}?${query}`,
       method: 'GET',
-      data: {
-        page,
-        page_size: pageSize,
-      },
       header: {
         'Content-Type': 'application/json',
       },

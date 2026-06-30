@@ -214,8 +214,12 @@ export default function ProfileListPage() {
                   <div className="glow-loading" style={{ marginTop: 12 }} />
                 ) : sortedEvents.length > 0 ? (
                   <div className="timeline">
-                    {sortedEvents.map((evt) => (
-                      <div key={evt.event_id} className="tl-item">
+                    {sortedEvents.map((evt, idx) => (
+                      <div
+                        key={evt.event_id}
+                        className="tl-item"
+                        style={{ '--tl-index': idx } as React.CSSProperties}
+                      >
                         <div className="tl-dot" />
                         <div className="tl-date">{formatEventTime(evt.event_time)}</div>
                         <div className="tl-text">{formatEventText(evt)}</div>
