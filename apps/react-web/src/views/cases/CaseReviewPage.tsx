@@ -31,6 +31,7 @@ export default function CaseReviewPage() {
     total,
     hasMore,
     actionState,
+    isSelfReview,
     handleApprove,
     handleReject,
     loadMore,
@@ -70,34 +71,42 @@ export default function CaseReviewPage() {
         {filteredQueue.map((item) => {
           const aiScore = AI_SCORE_MAP[item.ai_review_overall] ?? 50;
           const busy = actionState.isSubmitting;
+          const selfReview = isSelfReview(item);
           return (
-            <div key={item.narrative_id} className="rev-card" onClick={() => navigate(`/cases/${item.narrative_id}`)}>
+            <div key={item.narrative_id} className={`rev-card${selfReview ? ' self-review' : ''}`} onClick={() => navigate(`/cases/${item.narrative_id}`)}>
               <h4>{item.title}</h4>
               <div className="r-tags">
                 <span className="r-tag">{BEHAVIOR_DISPLAY_MAP[item.behavior_type] ?? item.behavior_type}</span>
                 <span className="r-tag">待审核</span>
+                {selfReview && <span className="r-tag self">不可自审</span>}
               </div>
               <div className="ai-bar">
                 <span>AI 预审</span>
                 <div className="ai-progress"><div className="ai-fill" style={{ width: `${aiScore}%` }} /></div>
                 <span>{Math.round(aiScore / 25)}/4</span>
               </div>
-              <div className="r-acts">
-                <button
-                  className="btn-approve"
-                  disabled={busy}
-                  onClick={(e) => { e.stopPropagation(); void handleApprove(item.narrative_id); }}
-                >
-                  通过
-                </button>
-                <button
-                  className="btn-reject"
-                  disabled={busy}
-                  onClick={(e) => { e.stopPropagation(); onReject(item.narrative_id); }}
-                >
-                  退回
-                </button>
-              </div>
+              {selfReview ? (
+                <div className="r-acts self-review-hint">
+                  这是你自己提交的案例，无法自行审核
+                </div>
+              ) : (
+                <div className="r-acts">
+                  <button
+                    className="btn-approve"
+                    disabled={busy}
+                    onClick={(e) => { e.stopPropagation(); void handleApprove(item.narrative_id); }}
+                  >
+                    通过
+                  </button>
+                  <button
+                    className="btn-reject"
+                    disabled={busy}
+                    onClick={(e) => { e.stopPropagation(); onReject(item.narrative_id); }}
+                  >
+                    退回
+                  </button>
+                </div>
+              )}
             </div>
           );
         })}

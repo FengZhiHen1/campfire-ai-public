@@ -13,6 +13,7 @@
 from __future__ import annotations
 
 import asyncio
+import datetime
 import math
 import uuid as _uuid
 
@@ -48,6 +49,37 @@ _narrative_service = NarrativeManagementService()
 
 # 保留后台提取任务的强引用，避免被 asyncio 垃圾回收；任务完成后通过 done 回调移除。
 _extraction_tasks: set[asyncio.Task] = set()
+
+# 提取任务过期时间：后台任务超过该时间仍未结束，视为孤儿任务，允许重新提取。
+_EXTRACTION_STALE_AFTER_SECONDS = 600
+
+_STALE_EXTRACTION_ERROR = "提取任务已超时或中断，请重试"
+
+
+def _is_extraction_stale(entity: CaseNarrative) -> bool:
+    """判断当前 extracting 状态是否已经过期（孤儿任务）。"""
+    if entity.extraction_status != "extracting":
+        return False
+    updated_at = entity.updated_at
+    if updated_at is None:
+        return True
+    elapsed = datetime.datetime.now(datetime.timezone.utc) - updated_at
+    return elapsed.total_seconds() > _EXTRACTION_STALE_AFTER_SECONDS
+
+
+async def _reset_stale_extraction(entity: CaseNarrative, db: AsyncSession) -> None:
+    """将过期的 extracting 状态重置为 failed，并持久化错误信息。"""
+    entity.extraction_status = "failed"
+    entity.extraction_error = _STALE_EXTRACTION_ERROR
+    await db.commit()
+    logger.warning(
+        service="api-server",
+        message="extraction_stale_reset",
+        extra={
+            "narrative_id": str(entity.narrative_id),
+            "updated_at": str(entity.updated_at),
+        },
+    )
 
 
 def _handle_narrative_error(exc: NarrativeNotFoundError) -> None:
@@ -103,6 +135,12 @@ async def get_narrative_endpoint(
         )
     except NarrativeNotFoundError as exc:
         _handle_narrative_error(exc)
+
+    # 处理过期的 extracting 状态，避免前端永远轮询一个已不存在的后台任务。
+    if _is_extraction_stale(entity):
+        await _reset_stale_extraction(entity, db)
+        await db.refresh(entity)
+
     cards = await _narrative_service.get_cards_by_narrative(NarrativeId(narrative_id), db)
 
     # 通过 narrative_to_response 转换，避免路由层直接访问 ORM 属性
@@ -170,6 +208,12 @@ async def extract_narrative_endpoint(
         )
     except NarrativeNotFoundError as exc:
         _handle_narrative_error(exc)
+
+    # 如果 extracting 状态已经过期（孤儿任务），先重置为 failed，允许重新提取。
+    if _is_extraction_stale(entity):
+        await _reset_stale_extraction(entity, db)
+        # 刷新 entity 以获取重置后的状态
+        await db.refresh(entity)
 
     current_status = entity.extraction_status
 
@@ -304,7 +348,10 @@ async def _run_extraction_background(
 def _format_extraction_error(exc: Exception) -> str:
     """将提取异常格式化为可持久化的错误描述。"""
     if isinstance(exc, ExtractionError):
-        return exc.reason[:2000]
+        message = exc.reason[:2000]
+        if exc.raw_output:
+            message = f"{message}\n\n原始 LLM 输出:\n{exc.raw_output[:2000]}"
+        return message
     return str(exc)[:2000]
 
 

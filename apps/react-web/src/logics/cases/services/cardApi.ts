@@ -35,6 +35,7 @@ export interface CardData {
   contraindications: string;
   excluded_population?: string;
   is_template: boolean;
+  review_status: string;
   inferred_fields?: Record<string, string>;
 }
 

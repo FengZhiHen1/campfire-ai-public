@@ -188,6 +188,20 @@ class ConsultationHistoryListItem(CampfireBaseModel):
     )
 
 
+class AssociatedCard(CampfireBaseModel):
+    """咨询详情中展示的关联 L2 卡片摘要。
+
+    由本次咨询实际引用的案例切片反查得到，供前端点击跳转。
+    """
+
+    card_id: UUID = Field(..., description="卡片唯一标识")
+    title: str = Field(..., description="卡片标题")
+    behavior_type: str = Field(default="", description="行为类型")
+    severity: str = Field(default="", description="严重程度")
+    scene: str = Field(default="", description="发生场景")
+    review_status: str = Field(default="", description="卡片审核状态")
+
+
 class ConsultationHistoryDetail(CampfireBaseModel):
     """单次咨询的完整详情。
 
@@ -287,6 +301,10 @@ class ConsultationHistoryDetail(CampfireBaseModel):
         default=None,
         description="CSLT-05 置信度判定结论。",
     )
+    associated_cards: list[AssociatedCard] = Field(
+        default_factory=list,
+        description="本次咨询引用切片关联的 L2 卡片摘要列表。",
+    )
 
 
 __all__ = [
@@ -294,4 +312,5 @@ __all__ = [
     "ConsultationHistoryCreate",
     "ConsultationHistoryListItem",
     "ConsultationHistoryDetail",
+    "AssociatedCard",
 ]

@@ -7,6 +7,7 @@ import {
   BEHAVIOR_TYPE_VALUES,
   SEVERITY_OPTIONS,
   SEVERITY_VALUES,
+  CARD_STATUS_MAP,
 } from '@/logics/cases';
 import './CaseExtractionResultPage.css';
 
@@ -42,6 +43,7 @@ export default function CaseExtractionResultPage() {
     loading,
     isSaving,
     isSubmittingAll,
+    canSubmitAll,
     extracting,
     extractFailed,
     extractError,
@@ -64,7 +66,8 @@ export default function CaseExtractionResultPage() {
         <div className="extracting active">
           <div className="ext-ring" />
           <h3>AI 正在分析叙事内容…</h3>
-          <p>预计需要 10–30 秒</p>
+          <p>内容较长时可能需要 1–3 分钟</p>
+          <p className="extract-hint">你可以中途退出，稍后从案例详情页重新进入查看结果</p>
           <div className="ext-progress" />
         </div>
       </>
@@ -137,15 +140,19 @@ export default function CaseExtractionResultPage() {
           AI 从叙事中提取了 <strong>{cards.length}</strong> 张干预卡片
         </div>
         <div className="tab-scroll">
-          {cards.map((c, i) => (
-            <button
-              key={c.card_id}
-              className={`tab-chip${i === activeTab ? ' active' : ''}`}
-              onClick={() => setActiveTab(i)}
-            >
-              卡片 {i + 1}
-            </button>
-          ))}
+          {cards.map((c, i) => {
+            const cardStatus = CARD_STATUS_MAP[c.review_status] ?? { text: c.review_status, cls: c.review_status };
+            return (
+              <button
+                key={c.card_id}
+                className={`tab-chip${i === activeTab ? ' active' : ''}`}
+                onClick={() => setActiveTab(i)}
+              >
+                卡片 {i + 1}
+                <span className={`tab-status ${cardStatus.cls}`}>{cardStatus.text}</span>
+              </button>
+            );
+          })}
         </div>
         <div className="form-wrap">
           <div className="field">
@@ -256,7 +263,13 @@ export default function CaseExtractionResultPage() {
       </PageContent>
       <div className="footer-bar">
         <button className="btn btn-p" onClick={saveCard} disabled={isSaving}>{isSaving ? '保存中…' : '保存当前卡片'}</button>
-        <button className="btn btn-outline" onClick={submitAll} disabled={isSubmittingAll}>{isSubmittingAll ? '提交中…' : '全部提交审核'}</button>
+        <button
+          className="btn btn-outline"
+          onClick={submitAll}
+          disabled={isSubmittingAll || !canSubmitAll}
+        >
+          {isSubmittingAll ? '提交中…' : canSubmitAll ? '全部提交审核' : '已全部提交'}
+        </button>
       </div>
     </>
   );

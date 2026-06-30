@@ -264,8 +264,8 @@ class ExtractionService(ExtractionServiceContract):
                 messages=messages,
                 model="deepseek-v4-pro",
                 temperature=0.3,
-                max_tokens=8192,
-                timeout=30.0,
+                max_tokens=16384,
+                timeout=300.0,
                 response_format={"type": "json_object"},
             )
         except Exception as exc:
@@ -282,10 +282,13 @@ class ExtractionService(ExtractionServiceContract):
             result = json.loads(cleaned)
             cards_data = result.get("cards", [])
         except (json.JSONDecodeError, KeyError) as exc:
+            raw_snippet = response_text[:4000]
             logger.error(
-                "extraction", "extraction_parse_failed", extra={"raw": response_text[:500]},
+                "extraction", "extraction_parse_failed", extra={"raw": raw_snippet},
             )
-            raise ExtractionError(f"JSON 解析失败: {exc}") from exc
+            raise ExtractionError(
+                f"JSON 解析失败: {exc}", raw_output=response_text,
+            ) from exc
 
         # 逐卡片校验 + 写入数据库
         cards: list[Any] = []

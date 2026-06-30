@@ -523,6 +523,7 @@ class ReviewQueueItem(CampfireBaseModel):
 
     narrative_id: str = Field(..., description="叙事唯一标识（UUID）")
     title: str = Field(..., description="案例标题")
+    author_id: str | None = Field(default=None, description="提交者标识（用于前端判断自审）")
     author_name: str = Field(..., description="提交者名称")
     behavior_type: str = Field(default="", description="行为类型（L2 提取后填充）")
     submitted_at: datetime = Field(..., description="提交审核时间")

@@ -11,7 +11,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { updateCard, submitCard } from '../services/cardApi';
 import { showToast } from '../../shared/utils/toast';
-import { getNarrative, extractNarrative } from '../services/narrativeApi';
+import { getNarrative, extractNarrative, submitNarrative } from '../services/narrativeApi';
 import { HttpError } from '../../shared/services/httpClient';
 import {
   BEHAVIOR_TYPE_OPTIONS,
@@ -56,6 +56,7 @@ export interface UseExtractionResultReturn {
   loading: boolean;
   isSaving: boolean;
   isSubmittingAll: boolean;
+  canSubmitAll: boolean;
   extracting: boolean;
   extractFailed: boolean;
   extractError: string | null;
@@ -215,19 +216,33 @@ export function useExtractionResult(): UseExtractionResultReturn {
     }
   }, [editing, cards, isSaving]);
 
+  const draftCards = cards.filter((c) => c.review_status === 'draft');
+  const canSubmitAll = draftCards.length > 0;
+
   const submitAll = useCallback(async () => {
-    if (isSubmittingAll) return;
+    if (isSubmittingAll || draftCards.length === 0) return;
     setIsSubmittingAll(true);
     try {
-      await Promise.all(cards.map((card) => submitCard(card.card_id)));
+      await Promise.all(draftCards.map((card) => submitCard(card.card_id)));
+      const submittedIds = new Set(draftCards.map((c) => c.card_id));
+      setCards((prev) =>
+        prev.map((c) =>
+          submittedIds.has(c.card_id) ? { ...c, review_status: 'pending_review' } : c,
+        ),
+      );
+      // 卡片全部提交后，同步将叙事本身也提交为待审核，保持列表状态一致。
+      if (narrativeId) {
+        await submitNarrative(narrativeId);
+      }
       showToast({ title: '全部卡片已提交审核' });
       navigate(-1);
-    } catch {
-      showToast({ title: '提交失败', icon: 'none' });
+    } catch (err) {
+      const message = getErrorMessage(err, '提交失败');
+      showToast({ title: message, icon: 'none' });
     } finally {
       setIsSubmittingAll(false);
     }
-  }, [cards, isSubmittingAll, navigate]);
+  }, [draftCards, isSubmittingAll, navigate, narrativeId]);
 
   return {
     cards,
@@ -236,6 +251,7 @@ export function useExtractionResult(): UseExtractionResultReturn {
     loading,
     isSaving,
     isSubmittingAll,
+    canSubmitAll,
     extracting,
     extractFailed,
     extractError,

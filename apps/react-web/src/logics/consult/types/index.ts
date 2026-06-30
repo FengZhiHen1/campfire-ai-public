@@ -94,6 +94,8 @@ export interface ConsultationHistoryDetail {
   is_partial: boolean;
   referenced_slice_ids: string[];
   referenced_cases?: ReferencedCase[];
+  /** 本次咨询引用切片关联的 L2 卡片摘要 */
+  associated_cards?: AssociatedCard[];
   /** 行为标签（与列表项保持一致，后端可选返回） */
   tags?: string[];
   finish_reason: string;
@@ -217,6 +219,16 @@ export interface ReferencedCase {
   case_id: string;
   case_title: string;
   slice_text: string;
+}
+
+/** 关联 L2 卡片摘要（由引用切片反查） */
+export interface AssociatedCard {
+  card_id: string;
+  title: string;
+  behavior_type: string;
+  severity: string;
+  scene: string;
+  review_status: string;
 }
 
 /**

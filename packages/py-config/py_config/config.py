@@ -154,7 +154,7 @@ class AppSettings(BaseSettings):
     )
 
     GENERATION_MAX_TOKENS: int = Field(
-        default=8192,
+        default=16384,
         ge=1,
         le=32768,
         description="LLM 单次生成的最大 Token 数。CSLT-03 使用。",

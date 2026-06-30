@@ -343,6 +343,7 @@ class ReviewWorkflowService(ReviewWorkflowContract):
             items.append(ReviewQueueItem(
                 narrative_id=str(narrative.narrative_id),
                 title=narrative.title,
+                author_id=str(narrative.author_id) if narrative.author_id else None,
                 author_name=str(narrative.author_id) if narrative.author_id else "",
                 behavior_type="",  # L1 叙事层不包含行为类型，待提取后由 L2 卡片填充
                 submitted_at=submitted_at,

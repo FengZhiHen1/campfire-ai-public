@@ -184,6 +184,7 @@ export interface CaseReviewResponse {
 export interface ReviewQueueItem {
   narrative_id: string;
   title: string;
+  author_id?: string;
   author_name: string;
   behavior_type: string;
   submitted_at: string;       // ISO 8601 datetime

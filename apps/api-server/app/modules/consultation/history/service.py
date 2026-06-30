@@ -23,14 +23,18 @@ import uuid
 from typing import Any, Literal, cast
 from uuid import UUID
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from py_db.models.case_card import CaseCard
+from py_db.models.case_chunks import CaseChunk
 from py_db.models.consultation import ConsultationHistory as ConsultationHistoryModel
 from py_db.repositories.consult_history_repository import ConsultHistoryRepository
 from py_logger import logger
 from py_schemas.cases import PaginatedResponse
 from py_schemas.consultation_history import (
     GENERATION_DISCLAIMER_CONST,
+    AssociatedCard,
     ConsultationHistoryCreate,
     ConsultationHistoryDetail,
     ConsultationHistoryListItem,
@@ -223,7 +227,8 @@ class HistoryManagerImpl(BaseHistoryManager):
             message="get_detail_completed",
             extra={"consultation_id": str(consultation_id)},
         )
-        return _build_detail_response(record)
+        associated_cards = await _load_associated_cards(db, record.referenced_slice_ids or [])
+        return _build_detail_response(record, associated_cards)
 
 
 # ============================================================================
@@ -231,7 +236,60 @@ class HistoryManagerImpl(BaseHistoryManager):
 # ============================================================================
 
 
-def _build_detail_response(record: ConsultationHistoryModel) -> ConsultationHistoryDetail:
+async def _load_associated_cards(
+    db: AsyncSession,
+    slice_ids: list[UUID],
+) -> list[AssociatedCard]:
+    """由本次咨询引用的切片 ID 反查关联的 L2 卡片摘要。"""
+    if not slice_ids:
+        return []
+
+    try:
+        # 1. 由切片 ID 拿到关联的 card_id（去重）
+        chunk_result = await db.execute(
+            select(CaseChunk.card_id)
+            .where(CaseChunk.id.in_(slice_ids))
+            .distinct(),
+        )
+        card_ids = [row[0] for row in chunk_result.all()]
+        if not card_ids:
+            return []
+
+        # 2. 查询卡片摘要
+        card_result = await db.execute(
+            select(
+                CaseCard.card_id,
+                CaseCard.title,
+                CaseCard.behavior_type,
+                CaseCard.severity,
+                CaseCard.scene,
+                CaseCard.review_status,
+            )
+            .where(CaseCard.card_id.in_(card_ids)),
+        )
+        return [
+            AssociatedCard(
+                card_id=row[0],
+                title=row[1],
+                behavior_type=row[2] or "",
+                severity=row[3] or "",
+                scene=row[4] or "",
+                review_status=str(row[5]) if row[5] is not None else "",
+            )
+            for row in card_result.all()
+        ]
+    except Exception:
+        logger.warning(
+            service="api-server",
+            message="load_associated_cards_failed",
+        )
+        return []
+
+
+def _build_detail_response(
+    record: ConsultationHistoryModel,
+    associated_cards: list[AssociatedCard] | None = None,
+) -> ConsultationHistoryDetail:
     """将 ORM 实例转换为 DTO。"""
     return ConsultationHistoryDetail(
         id=record.id,
@@ -255,6 +313,7 @@ def _build_detail_response(record: ConsultationHistoryModel) -> ConsultationHist
         device_info=record.device_info,
         confidence_score=record.confidence_score,
         validation_verdict=record.validation_verdict,
+        associated_cards=associated_cards or [],
     )
 
 
