@@ -350,3 +350,22 @@ class TestEventListItem:
         )
         assert item.has_professional_note is False
 
+    def test_valid_with_descriptions(self):
+        uid = uuid4()
+        now = datetime.now(timezone.utc)
+        item = EventListItem(
+            event_id=uid,
+            event_time=now,
+            behavior_type="情绪崩溃",
+            severity_level="中",
+            setting="家庭",
+            trigger_description="噪音刺激",
+            manifestation="捂耳蹲下，持续约3分钟",
+            intervention_tried="带离现场，使用降噪耳机",
+            intervention_result="情绪逐渐平复",
+            has_professional_note=False,
+            created_at=now,
+        )
+        assert item.trigger_description == "噪音刺激"
+        assert item.manifestation == "捂耳蹲下，持续约3分钟"
+

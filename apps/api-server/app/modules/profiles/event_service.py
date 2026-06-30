@@ -200,6 +200,11 @@ class EventServiceImpl(BaseEventService):
             event_time=event.event_time,
             behavior_type=event.behavior_type,
             severity_level=event.severity_level,
+            setting=event.setting,
+            trigger_description=event.trigger_description,
+            manifestation=event.manifestation,
+            intervention_tried=event.intervention_tried,
+            intervention_result=event.intervention_result,
             has_professional_note=event.is_professional,
             created_at=event.created_at,
         )

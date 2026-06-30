@@ -36,8 +36,17 @@
 .timeline{position:relative;padding-left:16px}
 .tl-item{position:relative;padding:10px 0 10px 16px;border-left:2px solid var(--cf-surface-dim);animation:cf-fade-up var(--cf-motion-base) var(--cf-ease-standard) both;animation-delay:calc(var(--tl-index) * 60ms)}
 .tl-item:last-child{border-left-color:transparent}
-.tl-dot{position:absolute;left:-6px;top:14px;width:10px;height:10px;border-radius:50%;background:var(--cf-accent-secondary)}
-.tl-date{font-size:11px;color:var(--cf-muted);margin-bottom:2px}
+.tl-dot{position:absolute;left:-6px;top:14px;width:10px;height:10px;border-radius:50%;background:var(--cf-accent-secondary);box-shadow:0 0 0 2px var(--cf-surface)}
+.tl-dot.mild{background:var(--cf-success)}
+.tl-dot.moderate{background:var(--cf-warn)}
+.tl-dot.severe{background:var(--cf-danger)}
+.tl-date{font-size:11px;color:var(--cf-muted);margin-bottom:4px}
+.tl-badges{display:flex;align-items:center;gap:6px;margin-bottom:6px;flex-wrap:wrap}
+.tl-behavior,.tl-severity{display:inline-flex;align-items:center;padding:3px 8px;border-radius:var(--cf-radius-pill);font-size:11px;font-weight:600;line-height:1}
+.tl-behavior{background:var(--cf-surface-variant);color:var(--cf-muted)}
+.tl-severity.mild{background:var(--cf-success-container);color:var(--cf-success)}
+.tl-severity.moderate{background:var(--cf-warn-container);color:var(--cf-warn)}
+.tl-severity.severe{background:var(--cf-danger-container);color:var(--cf-danger)}
 .tl-text{font-size:13px;color:var(--cf-fg-2);line-height:1.5}
 
 /* ── FAB ── */

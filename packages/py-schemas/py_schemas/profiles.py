@@ -787,7 +787,7 @@ class EventListItem(CampfireBaseModel):
     """事件记录列表精简条目输出模型。
 
     用于 GET /api/v1/profiles/{profile_id}/events 列表接口，
-    仅包含列表展示所需的核心字段。
+    包含列表展示所需的核心字段以及事件描述字段。
     has_professional_note 语义与 EventResponse.is_professional 对应。
 
     与 docs/contracts/PROF-03/EventListItem.json 契约一致。
@@ -808,6 +808,26 @@ class EventListItem(CampfireBaseModel):
     severity_level: str = Field(
         ...,
         description="严重程度（字符串形式）",
+    )
+    setting: str | None = Field(
+        default=None,
+        description="发生场景，未填写时为 null",
+    )
+    trigger_description: str | None = Field(
+        default=None,
+        description="触发因素描述",
+    )
+    manifestation: str | None = Field(
+        default=None,
+        description="具体行为与情绪表现细节",
+    )
+    intervention_tried: str | None = Field(
+        default=None,
+        description="尝试的干预措施",
+    )
+    intervention_result: str | None = Field(
+        default=None,
+        description="干预措施的效果",
     )
     has_professional_note: bool = Field(
         ...,
