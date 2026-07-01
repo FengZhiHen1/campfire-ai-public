@@ -79,8 +79,8 @@ export default function CaseNarrativeSubmitPage() {
       <PageContent>
         <div className="field">
           <label>案例标题</label>
-          <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="为这个案例起一个标题" maxLength={50} />
-          <div className="counter">{titleCount}/50</div>
+          <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="为这个案例起一个标题" maxLength={100} />
+          <div className="counter">{titleCount}/100</div>
         </div>
         <div className="field">
           <label>来源类型</label>
@@ -105,8 +105,9 @@ export default function CaseNarrativeSubmitPage() {
             value={narrative}
             onChange={(e) => setNarrative(e.target.value)}
             placeholder={bodyPlaceholder}
+            maxLength={5000}
           />
-          <div className="counter">{bodyCount}/2000</div>
+          <div className="counter">{bodyCount}/5000</div>
         </div>
 
         <div className="field">
