@@ -17,13 +17,11 @@ concurrency:
 jobs:
   deploy:
     if: ${{ github.event.workflow_run.conclusion == 'success' || github.event_name == 'workflow_dispatch' }}
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     environment: production
     timeout-minutes: 20
 
     steps:
-      - uses: actions/checkout@v4
-
       - name: Compute version tag
         id: meta
         run: |
@@ -31,25 +29,12 @@ jobs:
           echo "VERSION_TAG=${VERSION_TAG}" >> "$GITHUB_ENV"
           echo "version_tag=${VERSION_TAG}" >> "$GITHUB_OUTPUT"
 
-      - name: Deploy to server via SSH
-        uses: appleboy/ssh-action@v1
+      - name: Deploy on self-hosted runner
         env:
           SERVER_PROJECT_DIR: ${{ secrets.SERVER_PROJECT_DIR }}
-        with:
-          host: ${{ secrets.SSH_HOST }}
-          username: ${{ secrets.SSH_USER }}
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
-          port: 22
-          timeout: 120s
-          command_timeout: 15m
-          envs: SERVER_PROJECT_DIR
-          script_stop: true
-          script: |
-            set -euo pipefail
-            SERVER_PROJECT_DIR="${SERVER_PROJECT_DIR:-/root/Campfire-AI}"
-            cd "${SERVER_PROJECT_DIR}"
-            echo "[deploy] syncing code from origin/master..."
-            git fetch origin
-            git reset --hard origin/master
-            echo "[deploy] running remote deployment script with VERSION_TAG=${VERSION_TAG}"
-            bash scripts/deploy-remote.sh "${VERSION_TAG}"
+        run: |
+          set -euo pipefail
+          SERVER_PROJECT_DIR="${SERVER_PROJECT_DIR:-/root/Campfire-AI}"
+          cd "${SERVER_PROJECT_DIR}"
+          echo "[deploy] running remote deployment script with VERSION_TAG=${VERSION_TAG}"
+          bash scripts/deploy-remote.sh "${VERSION_TAG}"
