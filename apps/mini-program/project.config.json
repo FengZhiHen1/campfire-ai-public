@@ -2,7 +2,6 @@
   "miniprogramRoot": "dist/",
   "projectname": "campfire-ai",
   "description": "篝火智答 - 孤独症家属智能应急咨询平台",
-  "appid": "wxa7c54ee6053427b6",
   "setting": {
     "urlCheck": false,
     "es6": true,
