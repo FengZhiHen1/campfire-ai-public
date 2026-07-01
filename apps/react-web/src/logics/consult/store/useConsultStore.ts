@@ -315,7 +315,9 @@ export const useConsultStore = create<ConsultStore>()(
       retrySubmit: async (): Promise<void> => {
         const { sessionState } = get();
         if (sessionState !== 'submit_failed') return;
-        set({ sessionState: transitionTo(sessionState, 'submitting'), errorCode: undefined });
+        // 先清空错误码，由 submitConsult 内部根据校验结果决定状态：
+        // 校验通过 → 转换到 submitting；校验失败 → 保持在 submit_failed 并设置错误码。
+        set({ errorCode: undefined });
         await get().submitConsult();
       },
 
