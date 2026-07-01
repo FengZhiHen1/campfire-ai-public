@@ -10,14 +10,14 @@ from __future__ import annotations
 from typing import cast
 
 from fastapi import APIRouter, Depends, status
+from py_schemas.consult import SemanticSearchInput, SemanticSearchResult
+from py_schemas.consult_start import ConsultStartRequest, ConsultStartResponse
+from py_schemas.security.validation_schemas import ValidationErrorResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.dependencies.anonymous_user import get_anonymous_user
 from app.core.dependencies.auth_dependencies import get_db_session
 from app.modules.consultation.consult_service import search_cases, start_consultation
-from py_schemas.consult import SemanticSearchInput, SemanticSearchResult
-from py_schemas.consult_start import ConsultStartRequest, ConsultStartResponse
-from py_schemas.security.validation_schemas import ValidationErrorResponse
 
 router = APIRouter(prefix="/api/v1/consult", tags=["consult"])
 

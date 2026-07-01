@@ -21,13 +21,17 @@ from __future__ import annotations
 import time
 from typing import Any
 
-from pydantic import ValidationError
 from py_logger import logger
+from pydantic import ValidationError
 
 from ._metrics import GENERATION_DURATION, GENERATION_REQUESTS, GENERATION_TTFT
 from .blocked_outputs import BLOCKED_PROMPT_TEMPLATES, DEFAULT_BLOCKED_TEXT
 from .enums import BlockVariant, GenerationStatus
-from .exceptions import GenerationInputError, GenerationTimeoutError, LLMUnavailableError
+from .exceptions import (
+    GenerationInputError,
+    GenerationTimeoutError,
+    LLMUnavailableError,
+)
 from .generation_contract import BasePlanGenerator
 from .models import EmergencyPlanInput, GenerationResult
 from .prompt_builder import PromptBuilder
@@ -222,7 +226,11 @@ async def generate_emergency_plan(
             first = exc.errors()[0]
             field = ".".join(str(loc) for loc in first["loc"])
             raise GenerationInputError(
-                detail={"field": field, "msg": first["msg"], "received": str(first.get("input", ""))},
+                detail={
+                    "field": field,
+                    "msg": first["msg"],
+                    "received": str(first.get("input", "")),
+                },
                 message="输入数据校验失败",
                 original_error=exc,
             ) from exc

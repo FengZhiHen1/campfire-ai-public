@@ -17,11 +17,9 @@ import math
 from typing import Any, Dict, List, Optional
 
 from fastapi import HTTPException, status
-from py_logger import logger
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from py_db.models.case_model import Case
 from py_db.repositories.case_repository import CaseRepository
+from py_logger import logger
 from py_schemas.cases import (
     AttachmentRef,
     CaseCreateRequest,
@@ -34,10 +32,11 @@ from py_schemas.cases import (
 from py_schemas.enums.case_enums import CaseStatus
 from py_security import RegexPiiDetector
 from py_security.types import PiiWarning as PiiWarningInternal
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from .contract import CaseManagementContract
 from ..review.ebp_validator import check_ebp_consistency
 from ..types import CaseId
+from .contract import CaseManagementContract
 
 # ---------------------------------------------------------------------------
 # 内部辅助函数（模块级，供 Hook 和旧代码复用）
@@ -165,7 +164,6 @@ def _orm_to_case_list_item(case: Case) -> CaseListItem:
     )
 
 
-
 def _convert_pii_warnings(
     internal_warnings: tuple[PiiWarningInternal, ...] | list[PiiWarningInternal],
 ) -> list[PiiWarning]:
@@ -289,9 +287,7 @@ class CaseManagementService(CaseManagementContract):
         """基线创建前置校验：四段式字段完整性（HTTPException 版本）。"""
         _validate_four_stage_fields(request)
 
-    def _validate_update_preconditions(
-        self, case_id: str, update: CaseUpdate
-    ) -> None:
+    def _validate_update_preconditions(self, case_id: str, update: CaseUpdate) -> None:
         """基线更新前置校验（HTTPException 版本）。"""
         if not case_id:
             raise HTTPException(
@@ -478,15 +474,11 @@ class CaseManagementService(CaseManagementContract):
         # （先 find_by_id_with_version，若返回 None 再 find_by_case_id）。
         # 优化方向：为 CaseRepository 增加 get_case_with_version() 方法，
         # 单次查询同时返回案例和版本信息，或返回 Result[T, NotFound|Conflict] 联合类型。
-        case: Case | None = await case_repo.find_by_id_with_version(
-            session, case_id, update.updated_at
-        )
+        case: Case | None = await case_repo.find_by_id_with_version(session, case_id, update.updated_at)
 
         if case is None:
             # 先检查案例是否存在（区分"不存在"和"版本不匹配"）
-            existing_case: Case | None = await case_repo.find_by_case_id(
-                session, case_id
-            )
+            existing_case: Case | None = await case_repo.find_by_case_id(session, case_id)
             if existing_case is None:
                 logger.warning(
                     service="api-server",
@@ -523,9 +515,7 @@ class CaseManagementService(CaseManagementContract):
         _apply_update_fields(case, update)
 
         try:
-            updated_case: Case = await case_repo.update_case_with_version(
-                session, case, update.updated_at
-            )
+            await case_repo.update_case_with_version(session, case, update.updated_at)
             await session.commit()
         except ValueError as exc:
             raise HTTPException(
@@ -644,9 +634,7 @@ class CaseManagementService(CaseManagementContract):
 
         # --- 状态转换为 pending_review ---
         try:
-            updated_case: Case = await case_repo.update_status(
-                session, case_id, CaseStatus.PENDING_REVIEW
-            )
+            updated_case: Case = await case_repo.update_status(session, case_id, CaseStatus.PENDING_REVIEW)
             await session.commit()
             await session.refresh(updated_case)
         except ValueError as exc:

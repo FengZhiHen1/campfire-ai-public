@@ -16,7 +16,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from py_logger.middlewares.fastapi import RequestLoggingMiddleware
-from starlette.types import ASGIApp, Receive, Scope, Send, Message
+from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 # 确保 root logger 有 stdout handler，uvicorn access log 依赖此配置
 logging.basicConfig(format="%(message)s", stream=sys.stdout, force=True)
@@ -52,7 +52,7 @@ class AccessLogMiddleware:
 
         logger.info(
             "api-server",
-            f"{addr} - \"{method} {path}\" {status_code}",
+            f'{addr} - "{method} {path}" {status_code}',
             op_type="access",
             extra={
                 "method": method,
@@ -63,6 +63,11 @@ class AccessLogMiddleware:
             },
         )
 
+
+from py_config import get_settings
+from py_logger import logger
+from py_rag.indexing.worker import start_worker, stop_worker
+
 from app.core.dependencies.auth_dependencies import _get_session_factory
 from app.core.health import router as health_router
 from app.core.middleware.rate_limit import RateLimitMiddleware
@@ -71,9 +76,6 @@ from app.modules.auth import auth_router
 from app.modules.cases import card_router, narratives_router, reviews_router
 from app.modules.consultation import consult_router, consultations_router, stream_router
 from app.modules.profiles import events_router, experts_router, profiles_router
-from py_config import get_settings
-from py_logger import logger
-from py_rag.indexing.worker import start_worker, stop_worker
 
 
 @asynccontextmanager

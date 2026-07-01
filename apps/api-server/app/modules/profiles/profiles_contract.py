@@ -36,6 +36,8 @@ from app.modules.profiles.exceptions import (
 )
 
 if TYPE_CHECKING:
+    from uuid import UUID
+
     from py_db.repositories.profile_repository import ProfileRepository
     from py_schemas.profiles import (
         ProfileCreate,
@@ -43,7 +45,6 @@ if TYPE_CHECKING:
         ProfileResponse,
         ProfileUpdate,
     )
-    from uuid import UUID
 
 
 class BaseProfileService(ABC):

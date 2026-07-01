@@ -17,7 +17,6 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
-
 from py_health.checker import check_all, check_ready
 from py_health.models import HealthStatus
 from py_health.state import get_consecutive_failures
@@ -50,9 +49,7 @@ async def _get_health(request: Request) -> JSONResponse:
             service="api-server",
             message="health_check_degraded",
             extra={
-                "status": response.status.value
-                if hasattr(response.status, "value")
-                else str(response.status),
+                "status": response.status.value if hasattr(response.status, "value") else str(response.status),
                 "consecutive_failures": consecutive,
             },
         )
@@ -91,10 +88,7 @@ async def _get_ready(request: Request) -> JSONResponse:
 router.get(
     "/health",
     summary="系统整体健康检查",
-    description=(
-        "并发探测 PostgreSQL、Redis、MinIO 三个基础服务的连通性。"
-        "全部健康返回 200，任一不连通返回 503。"
-    ),
+    description=("并发探测 PostgreSQL、Redis、MinIO 三个基础服务的连通性。全部健康返回 200，任一不连通返回 503。"),
     responses={
         200: {"description": "全部组件连通"},
         503: {"description": "部分或全部组件不连通"},
@@ -104,10 +98,7 @@ router.get(
 router.get(
     "/ready",
     summary="启动就绪探针",
-    description=(
-        "仅检查 PostgreSQL 连通性（不检查 Redis/MinIO），"
-        "用于容器启动阶段的就绪判定。"
-    ),
+    description=("仅检查 PostgreSQL 连通性（不检查 Redis/MinIO），用于容器启动阶段的就绪判定。"),
     responses={
         200: {"description": "PostgreSQL 连通，服务就绪"},
         503: {"description": "PostgreSQL 不连通"},

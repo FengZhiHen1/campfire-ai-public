@@ -9,16 +9,12 @@
 
 from __future__ import annotations
 
-import json
-
+from py_logger import logger
 from tenacity import (
     retry,
     stop_after_attempt,
     wait_exponential,
-    RetryError,
 )
-
-from py_logger import logger
 
 _SERVICE: str = "consult.confidence"
 

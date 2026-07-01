@@ -17,6 +17,13 @@ import math
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, status
+from py_schemas.cases import PaginatedResponse
+from py_schemas.profiles import (
+    ProfileCreate,
+    ProfileListItem,
+    ProfileResponse,
+    ProfileUpdate,
+)
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.dependencies.anonymous_user import get_anonymous_user
@@ -26,8 +33,6 @@ from app.modules.profiles._exception_mapping import map_domain_error
 from app.modules.profiles._user_utils import extract_user_id
 from app.modules.profiles.exceptions import ProfileDomainError
 from app.modules.profiles.profile_service import ProfileServiceImpl
-from py_schemas.cases import PaginatedResponse
-from py_schemas.profiles import ProfileCreate, ProfileListItem, ProfileResponse, ProfileUpdate
 
 router = APIRouter(prefix="/api/v1/profiles", tags=["profiles"])
 _profile_service = ProfileServiceImpl()

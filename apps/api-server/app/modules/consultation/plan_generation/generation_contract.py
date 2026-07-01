@@ -184,6 +184,7 @@ class BasePlanGenerator(ABC):
         """基线前置校验——应急方案生成。"""
         if input_data is None:
             from .exceptions import GenerationInputError
+
             raise GenerationInputError(
                 message="输入数据不能为空",
                 detail={"field": "input_data"},
@@ -199,8 +200,10 @@ class BasePlanGenerator(ABC):
 
         子类可覆写以改变阻断条件。
         """
-        return bool(getattr(input_data, 'crisis_result', None)
-                    and getattr(input_data.crisis_result, 'block_deep_response', False))
+        return bool(
+            getattr(input_data, "crisis_result", None)
+            and getattr(input_data.crisis_result, "block_deep_response", False)
+        )
 
 
 __all__ = ["BasePlanGenerator"]

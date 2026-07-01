@@ -1,5 +1,4 @@
-"""CASE-01 案例服务 — 内部辅助函数单元测试。
-"""
+"""CASE-01 案例服务 — 内部辅助函数单元测试。"""
 
 from __future__ import annotations
 
@@ -7,18 +6,16 @@ from datetime import datetime, timezone
 from unittest import mock
 
 import pytest
-from fastapi import HTTPException
-
-from py_db.models.case_model import Case
-from py_schemas.cases import CaseUpdate, PiiWarning
-from py_schemas.enums.case_enums import CaseStatus
-
 from app.modules.cases.case_mgmt.service import (
     _apply_update_fields,
     _check_edit_reset,
     _orm_to_case_list_item,
     _validate_four_stage_fields,
 )
+from fastapi import HTTPException
+from py_db.models.case_model import Case
+from py_schemas.cases import CaseUpdate
+from py_schemas.enums.case_enums import CaseStatus
 
 
 def _make_case(**overrides) -> Case:

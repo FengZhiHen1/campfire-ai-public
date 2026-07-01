@@ -6,16 +6,13 @@ Redis/DB/IndexPipeline 使用 mock，不依赖真实基础设施。
 
 from __future__ import annotations
 
-import asyncio
 import json
 import signal
 import sys
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-
 from py_rag.indexing_contract import INDEX_QUEUE_KEY
-
 from worker.main import (  # noqa: E402
     BRPOP_TIMEOUT,
     REDIS_RECONNECT_INITIAL,
@@ -122,9 +119,7 @@ class TestProcessTask:
     @pytest.mark.asyncio
     async def test_valid_message_delegates_to_pipeline(self, mock_pipeline):
         """有效消息应委托给 IndexPipeline.process_task()。"""
-        message = json.dumps(
-            {"case_id": "550e8400-e29b-41d4-a716-446655440000", "trace_id": "abc123"}
-        )
+        message = json.dumps({"case_id": "550e8400-e29b-41d4-a716-446655440000", "trace_id": "abc123"})
 
         with patch.object(
             _MAIN_MOD,

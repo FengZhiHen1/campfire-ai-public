@@ -23,14 +23,13 @@ import re
 import time
 from typing import Any, AsyncGenerator
 
-from py_logger import logger
-
 from py_llm import LLMClient
 from py_llm.client import LLMClientError
+from py_logger import logger
 
 from .blocked_outputs import DISCLAIMER_TEXT
 from .enums import GenerationStatus
-from .exceptions import GenerationTimeoutError, LLMUnavailableError
+from .exceptions import LLMUnavailableError
 from .models import EmergencyPlanInput, GenerationChunk, GenerationResult
 
 # ============================================================================
@@ -134,7 +133,7 @@ class JsonSectionTracker:
                     if self._key_buffer in _SECTION_KEY_SET:
                         self._current_section = self._key_buffer
                     self._state = self._AWAITING_VALUE
-                elif ch == '\\':
+                elif ch == "\\":
                     if idx + 1 < len(text):
                         self._key_buffer += text[idx + 1]
                         idx += 1
@@ -142,19 +141,19 @@ class JsonSectionTracker:
                     self._key_buffer += ch
 
             elif self._state == self._AWAITING_VALUE:
-                if ch == '[':
+                if ch == "[":
                     self._state = self._BETWEEN_VALUES
 
             elif self._state == self._BETWEEN_VALUES:
                 if ch == '"':
                     self._state = self._IN_VALUE
                     self._content_buffer = ""
-                elif ch == ']':
+                elif ch == "]":
                     self._state = self._LOOKING_FOR_KEY
                     self._current_section = None
 
             elif self._state == self._IN_VALUE:
-                if ch == '\\':
+                if ch == "\\":
                     if idx + 1 < len(text):
                         self._content_buffer += text[idx + 1]
                         idx += 1

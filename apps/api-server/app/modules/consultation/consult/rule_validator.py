@@ -79,15 +79,10 @@ class RuleValidator:
         structure_score: float = self._compute_structure_score(plan_text)
 
         # 维度 2：来源引用覆盖率
-        citation_score: float = self._compute_citation_score(
-            plan_text, source_list
-        )
+        citation_score: float = self._compute_citation_score(plan_text, source_list)
 
         # 复合评分并归一化
-        raw_score: float = (
-            structure_score * _STRUCTURE_WEIGHT
-            + citation_score * _CITATION_WEIGHT
-        )
+        raw_score: float = structure_score * _STRUCTURE_WEIGHT + citation_score * _CITATION_WEIGHT
         return round(max(0.0, min(1.0, raw_score)), 4)
 
     # ------------------------------------------------------------------

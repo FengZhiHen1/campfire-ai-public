@@ -21,10 +21,10 @@ Usage:
 
 from __future__ import annotations
 
-from .validation_contract import BaseConfidenceValidator
 from .confidence_validator import ConfidenceValidatorImpl, validate_confidence
 from .keyword_scanner import KeywordScanner
 from .rule_validator import RuleValidator, compute_rule_score
+from .validation_contract import BaseConfidenceValidator
 
 __all__ = [
     # 契约

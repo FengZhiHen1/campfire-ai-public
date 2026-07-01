@@ -20,14 +20,13 @@ import signal
 import threading
 import traceback
 
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
-
 from py_cache import close_redis_client, get_redis_client, maybe_await
 from py_config import get_settings
 from py_logger import logger
 from py_rag.indexing import IndexPipeline
 from py_rag.indexing_contract import INDEX_QUEUE_KEY
 from py_rag.types import CaseIdStr
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 # ---------------------------------------------------------------------------
 # 常量
@@ -75,9 +74,7 @@ def _get_session_factory() -> async_sessionmaker[AsyncSession]:
         settings = get_settings()
         database_url = str(settings.DATABASE_URL)
         _engine = create_async_engine(database_url, echo=False)
-        _session_factory = async_sessionmaker(
-            _engine, class_=AsyncSession, expire_on_commit=False
-        )
+        _session_factory = async_sessionmaker(_engine, class_=AsyncSession, expire_on_commit=False)
     return _session_factory
 
 

@@ -15,9 +15,10 @@ from __future__ import annotations
 
 from typing import Any
 
+from py_logger import logger
+
 from .models import CrisisJudgmentRequest, CrisisJudgmentResult
 from .pipeline import CrisisJudgmentPipelineImpl
-from py_logger import logger
 
 
 async def judge_crisis(

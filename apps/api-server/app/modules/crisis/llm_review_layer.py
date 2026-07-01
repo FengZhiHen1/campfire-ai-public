@@ -12,6 +12,7 @@ import time
 from typing import Any
 
 from py_llm import LLMClient
+from py_logger import logger
 
 from .enums import CrisisLevel
 from .layer import JudgmentLayer
@@ -19,7 +20,6 @@ from .models import (
     CrisisJudgmentRequest,
     JudgmentLayerResult,
 )
-from py_logger import logger
 
 # 默认 LLM 超时时间（毫秒）
 _DEFAULT_LLM_TIMEOUT_MS: int = 30000
@@ -56,6 +56,7 @@ class LLMReviewLayer(JudgmentLayer):
         if model is None:
             try:
                 from py_config import get_settings
+
                 model = get_settings().DEEPSEEK_MODEL
             except (ImportError, AttributeError):
                 model = "deepseek-v4-pro"
@@ -194,9 +195,7 @@ class LLMReviewLayer(JudgmentLayer):
             )
 
         # 序列化行为类型
-        behavior_types: str = ", ".join(
-            t.value for t in request.behavior_type_selection
-        )
+        behavior_types: str = ", ".join(t.value for t in request.behavior_type_selection)
 
         prompt: str = (
             "你是一名孤独症危机行为评估专家。根据以下信息判断当前场景的危机严重程度"
