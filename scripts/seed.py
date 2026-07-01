@@ -1373,9 +1373,9 @@ async def _repair_derived_card_ids(session: AsyncSession) -> int:
 async def _reset_database(session: AsyncSession, yes: bool = False) -> bool:
     """将数据库恢复到种子数据刚注入的状态。
 
-    删除种子数据以外的案例（L1 叙事、L2 卡片、向量切片）和全部咨询历史记录，
-    但保留用户账号、默认患者档案以及标记为 is_seed 的种子案例。
-    执行前会要求二次确认。
+    删除全部案例（L1 叙事、L2 卡片、向量切片）、全部咨询历史、全部事件记录，
+    以及非默认患者档案（级联删除 teacher_links），但保留用户账号与默认患者档案。
+    随后由调用方重新注入种子数据。执行前会要求二次确认。
 
     Args:
         session: 活动数据库异步会话。
@@ -1384,35 +1384,40 @@ async def _reset_database(session: AsyncSession, yes: bool = False) -> bool:
     Returns:
         True 表示已执行重置，False 表示用户取消。
     """
-    # 识别非种子叙事 ID
-    non_seed_narrative_ids_result = await session.execute(
-        select(CaseNarrative.narrative_id).where(CaseNarrative.is_seed.is_not(True))
-    )
-    non_seed_narrative_ids = [row[0] for row in non_seed_narrative_ids_result.fetchall()]
-
-    # 先统计待删除数据量，用于确认提示
-    narrative_count = len(non_seed_narrative_ids)
-    card_count = 0
-    chunk_count = 0
-    if non_seed_narrative_ids:
-        card_count = await session.scalar(
-            select(func.count()).select_from(CaseCard).where(CaseCard.narrative_id.in_(non_seed_narrative_ids))
-        )
-        if card_count:
-            chunk_count = await session.scalar(
-                select(func.count())
-                .select_from(CaseChunk)
-                .join(CaseCard, CaseChunk.card_id == CaseCard.card_id)
-                .where(CaseCard.narrative_id.in_(non_seed_narrative_ids))
-            )
+    # 统计待删除数据量，用于确认提示
+    narrative_count = await session.scalar(select(func.count()).select_from(CaseNarrative))
+    card_count = await session.scalar(select(func.count()).select_from(CaseCard))
+    chunk_count = await session.scalar(select(func.count()).select_from(CaseChunk))
     consult_count = await session.scalar(select(func.count()).select_from(ConsultationHistory))
+    event_count = await session.scalar(select(func.count()).select_from(EventLog))
+    profile_count = await session.scalar(select(func.count()).select_from(Profile))
+
+    # 定位需要保留的默认患者档案（评委账号的默认档案）
+    config = _get_judge_config()
+    judge_result = await session.execute(select(User.id).where(User.username == config["username"]))
+    judge_user_id = judge_result.scalar_one_or_none()
+    default_profile_id: uuid.UUID | None = None
+    if judge_user_id is not None:
+        profile_result = await session.execute(
+            select(Profile.profile_id).where(
+                Profile.caregiver_id == judge_user_id,
+                Profile.nickname == PROFILE_NICKNAME,
+            )
+        )
+        default_profile_id = profile_result.scalar_one_or_none()
+
+    retained_profile_desc = f"保留默认档案 {default_profile_id}" if default_profile_id else "无默认档案可保留"
 
     print("[WARN] 即将重置数据库到种子数据初始状态：")
-    print(f"       - 删除 {narrative_count or 0} 条非种子 L1 叙事")
-    print(f"       - 删除 {card_count or 0} 张非种子 L2 卡片")
-    print(f"       - 删除 {chunk_count or 0} 条非种子向量切片")
+    print(f"       - 删除 {narrative_count or 0} 条 L1 叙事")
+    print(f"       - 删除 {card_count or 0} 张 L2 卡片")
+    print(f"       - 删除 {chunk_count or 0} 条向量切片")
     print(f"       - 删除 {consult_count or 0} 条咨询历史")
-    print("       - 保留用户账号、默认患者档案以及种子案例")
+    print(f"       - 删除 {event_count or 0} 条事件记录")
+    print(
+        f"       - 删除 {profile_count - (1 if default_profile_id else 0)} 条非默认个人档案（{retained_profile_desc}）"
+    )
+    print("       - 保留用户账号，随后重新注入种子数据")
 
     if not yes:
         answer = input("确认重置吗？输入 'yes' 继续: ")
@@ -1420,22 +1425,24 @@ async def _reset_database(session: AsyncSession, yes: bool = False) -> bool:
             print("[CANCEL] 已取消重置")
             return False
 
-    if non_seed_narrative_ids:
-        # 先删除非种子卡片关联的向量切片，再删除卡片，最后删除叙事
-        await session.execute(
-            CaseChunk.__table__.delete().where(
-                CaseChunk.card_id.in_(select(CaseCard.card_id).where(CaseCard.narrative_id.in_(non_seed_narrative_ids)))
-            )
-        )
-        await session.execute(CaseCard.__table__.delete().where(CaseCard.narrative_id.in_(non_seed_narrative_ids)))
-        await session.execute(
-            CaseNarrative.__table__.delete().where(CaseNarrative.narrative_id.in_(non_seed_narrative_ids))
-        )
+    # 先清空案例库（切片 → 卡片 → 叙事），级联删除审核记录/审计日志
+    await session.execute(CaseChunk.__table__.delete())
+    await session.execute(CaseCard.__table__.delete())
+    await session.execute(CaseNarrative.__table__.delete())
 
+    # 清空咨询历史与事件记录
     await session.execute(ConsultationHistory.__table__.delete())
+    await session.execute(EventLog.__table__.delete())
+
+    # 删除非默认档案（级联删除 teacher_links）
+    if default_profile_id is not None:
+        await session.execute(Profile.__table__.delete().where(Profile.profile_id != default_profile_id))
+    else:
+        await session.execute(Profile.__table__.delete())
+
     await session.commit()
 
-    print("[OK] 非种子数据已清空，开始重新注入种子数据...")
+    print("[OK] 数据已清空，开始重新注入种子数据...")
     return True
 
 
