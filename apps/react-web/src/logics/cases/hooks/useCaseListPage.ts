@@ -18,8 +18,6 @@ import type { NarrativeListItem } from '../types';
 // 类型定义
 // ============================================================================
 
-type UserRole = 'family' | 'teacher' | 'expert' | 'admin';
-
 type ActiveTab = 'public' | 'my';
 
 interface MenuItem {
@@ -63,28 +61,12 @@ export interface UseCaseListPageReturn {
 }
 
 // ============================================================================
-// 辅助函数
-// ============================================================================
-
-function resolveRole(roles?: string[]): UserRole {
-  if (!roles || roles.length === 0) return 'family';
-  if (roles.includes('admin')) return 'admin';
-  if (roles.includes('expert')) return 'expert';
-  if (roles.includes('teacher')) return 'teacher';
-  if (roles.includes('family')) return 'family';
-  console.warn('[useCaseListPage] 未知角色静默降级为 family:', roles);
-  return 'family';
-}
-
-// ============================================================================
 // Hook
 // ============================================================================
 
 export function useCaseListPage(): UseCaseListPageReturn {
   const navigate = useNavigate();
   const user = useSessionStore((s) => s.user);
-  const _role: UserRole = useMemo(() => resolveRole(user?.roles), [user?.roles]);
-  void _role;
   const currentUserId: string = user?.userId ?? '';
 
   const [activeTab, setActiveTab] = useState<ActiveTab>('public');
