@@ -86,6 +86,14 @@ export default function ProfileEditPage() {
   const [error, setError] = useState<string | null>(null);
   const [customTrigger, setCustomTrigger] = useState('');
   const [openDD, setOpenDD] = useState<string | null>(null);
+  const [triggerAtLimit, setTriggerAtLimit] = useState(false);
+
+  // 达到上限时的闪烁提示，1.5s 后自动消失
+  useEffect(() => {
+    if (!triggerAtLimit) return;
+    const t = setTimeout(() => setTriggerAtLimit(false), 1500);
+    return () => clearTimeout(t);
+  }, [triggerAtLimit]);
 
   const [events, setEvents] = useState<EventListItem[]>([]);
   const [eventsExpanded, setEventsExpanded] = useState(true);
@@ -155,6 +163,7 @@ export default function ProfileEditPage() {
     setForm((prev) => {
       const arr = prev[field];
       if (field === 'triggers' && !arr.includes(value) && arr.length >= TRIGGER_MAX_COUNT) {
+        setTriggerAtLimit(true);
         return prev;
       }
       const next = arr.includes(value) ? arr.filter((v) => v !== value) : [...arr, value];
@@ -166,7 +175,10 @@ export default function ProfileEditPage() {
     const v = customTrigger.trim();
     if (!v) return;
     if (form.triggers.includes(v)) return;
-    if (form.triggers.length >= TRIGGER_MAX_COUNT) return;
+    if (form.triggers.length >= TRIGGER_MAX_COUNT) {
+      setTriggerAtLimit(true);
+      return;
+    }
     setForm((prev) => ({ ...prev, triggers: [...prev.triggers, v] }));
     setCustomTrigger('');
   };
@@ -416,33 +428,49 @@ export default function ProfileEditPage() {
 
         <div className="section-title">
           <TagIcon />
-          <span>触发标签</span>
+          <span>
+            触发标签
+            <em className={`tag-count${form.triggers.length >= TRIGGER_MAX_COUNT ? ' full' : ''}`}>
+              {form.triggers.length}/{TRIGGER_MAX_COUNT}
+            </em>
+          </span>
         </div>
         <div className="tag-row">
-          {TRIGGER_TAGS.map((tag) => (
-            <button
-              key={tag}
-              type="button"
-              className={`t-chip${form.triggers.includes(tag) ? ' selected' : ''}`}
-              onClick={() => toggleArray('triggers', tag)}
-            >
-              {TRIGGER_LABELS[tag] ?? tag}
-            </button>
-          ))}
+          {TRIGGER_TAGS.map((tag) => {
+            const selected = form.triggers.includes(tag);
+            const atLimit = !selected && form.triggers.length >= TRIGGER_MAX_COUNT;
+            return (
+              <button
+                key={tag}
+                type="button"
+                className={`t-chip${selected ? ' selected' : ''}${atLimit ? ' disabled' : ''}`}
+                onClick={() => toggleArray('triggers', tag)}
+                disabled={atLimit}
+              >
+                {TRIGGER_LABELS[tag] ?? tag}
+              </button>
+            );
+          })}
         </div>
 
-        <div className="add-tag">
+        <div className={`add-tag${form.triggers.length >= TRIGGER_MAX_COUNT ? ' disabled' : ''}`}>
           <input
             value={customTrigger}
             onChange={(e) => setCustomTrigger(e.target.value)}
-            placeholder="自定义标签…"
+            placeholder={form.triggers.length >= TRIGGER_MAX_COUNT ? '已达上限' : '自定义标签…'}
             maxLength={10}
+            disabled={form.triggers.length >= TRIGGER_MAX_COUNT}
             onKeyDown={(e) => e.key === 'Enter' && addCustomTrigger()}
           />
-          <button type="button" onClick={addCustomTrigger}>
+          <button
+            type="button"
+            onClick={addCustomTrigger}
+            disabled={form.triggers.length >= TRIGGER_MAX_COUNT}
+          >
             添加
           </button>
         </div>
+        {triggerAtLimit && <p className="field-hint at-limit">触发标签已达上限（{TRIGGER_MAX_COUNT} 个）</p>}
 
         {form.triggers.filter((t) => !TRIGGER_TAGS.includes(t)).length > 0 && (
           <div className="tag-row custom-tags">
