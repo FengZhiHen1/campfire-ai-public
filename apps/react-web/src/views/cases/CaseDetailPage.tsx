@@ -5,7 +5,7 @@ import PageContent from '@/views/_shared/layout/PageContent';
 import './CaseDetailPage.css';
 
 export default function CaseDetailPage() {
-  const { id } = useParams<{ id: string }>();
+  const { id: _id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const {
     data,

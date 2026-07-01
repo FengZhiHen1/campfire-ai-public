@@ -11,7 +11,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { getNarrative } from '../services/narrativeApi';
 import { STATUS_TEXT_MAP, STATUS_CLASS_MAP, SOURCE_LABEL_MAP, CARD_STATUS_MAP } from '../types/constants';
-import type { NarrativeDetail, CardSummary } from '../types';
+import type { NarrativeDetail } from '../types';
 
 // ============================================================================
 // 类型定义

@@ -22,8 +22,11 @@ interface AbortableTask {
   abort(): void;
 }
 
-/** UTF-8 ArrayBuffer → 字符串解码（微信小程序无 TextDecoder） */
-function utf8Decode(buffer: ArrayBuffer): string {
+/** UTF-8 ArrayBuffer → 字符串解码（微信小程序无 TextDecoder）
+ * TODO: 当前未使用，迁移小程序时恢复
+ */
+function _utf8Decode(buffer: ArrayBuffer): string {
+  void buffer;
   const bytes = new Uint8Array(buffer);
   const len = bytes.length;
   let result = '';
@@ -517,7 +520,7 @@ export class SseStreamParser {
         // 重连成功且流正常结束
         this.isReconnecting = false;
         return;
-      } catch (error: unknown) {
+      } catch {
         // 手动断开连接时不重试
         if (!this.isActive) {
           this.isReconnecting = false;

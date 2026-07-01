@@ -26,7 +26,6 @@ export default function CaseListPage() {
     sourceLabelMap,
     setSearchKeyword,
     setActiveTab,
-    goDetail,
     goSubmit,
     goReview,
     refresh,

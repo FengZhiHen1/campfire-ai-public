@@ -22,8 +22,6 @@ import type {
   ProfileUpdate,
 } from '@campfire/ts-shared';
 import type {
-  ProfileListState,
-  ProfileSubmitState,
   MicroSurveyState,
 } from './state';
 

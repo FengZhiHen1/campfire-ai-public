@@ -6,7 +6,6 @@ import type { ProfileResponse, EventResponse } from '@campfire/ts-shared';
 import { DiagnosisType, LanguageLevel, SensoryFeature, AgeRange, ProfileBehaviorType } from '@campfire/ts-shared';
 import { MockDatabase } from '../mockDatabase';
 import {
-  simulateDelay,
   handleList,
   handleGetById,
   handleCreate,
