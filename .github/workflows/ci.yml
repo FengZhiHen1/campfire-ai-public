@@ -63,6 +63,7 @@ jobs:
         env:
           DATABASE_URL: postgresql+asyncpg://campfire:test@localhost:5432/campfire_test
           REDIS_URL: redis://localhost:6379/0
+          JWT_SECRET_KEY: ci-test-key-at-least-32-characters-long-not-for-prod
 
   frontend-react-web:
     runs-on: ubuntu-latest
