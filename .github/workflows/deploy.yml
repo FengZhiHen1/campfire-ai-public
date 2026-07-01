@@ -40,9 +40,8 @@ jobs:
           fi
           cd "${SERVER_PROJECT_DIR}"
           echo "[deploy] syncing code from origin/master..."
-          git config --global --add safe.directory "${SERVER_PROJECT_DIR}"
-          git remote -v
-          git fetch origin
-          git reset --hard origin/master
+          git -c safe.directory="${SERVER_PROJECT_DIR}" remote -v
+          git -c safe.directory="${SERVER_PROJECT_DIR}" fetch origin
+          git -c safe.directory="${SERVER_PROJECT_DIR}" reset --hard origin/master
           echo "[deploy] running remote deployment script with VERSION_TAG=${VERSION_TAG}"
           bash scripts/deploy-remote.sh "${VERSION_TAG}"
