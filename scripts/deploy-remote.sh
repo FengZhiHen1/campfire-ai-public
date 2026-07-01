@@ -241,7 +241,7 @@ log_success "数据库重置并注入种子数据完成"
 log_info "等待 API 服务健康检查..."
 api_healthy=false
 for i in $(seq 1 $((HEALTH_TIMEOUT / HEALTH_INTERVAL))); do
-    if curl -sf http://localhost:8000/health >/dev/null 2>&1; then
+    if docker compose -f "${COMPOSE_FILE}" exec -T api-server curl -sf http://localhost:8000/health >/dev/null 2>&1; then
         api_healthy=true
         break
     fi
