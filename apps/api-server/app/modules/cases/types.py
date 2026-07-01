@@ -14,10 +14,11 @@ from typing import NewType
 # ============================================================================
 
 # === CaseId ===
-# 前置: 格式为 "CASE-YYYY-NNNN"，由 CaseRepository.generate_case_id() 生成
+# 前置: 格式为 "CASE-YYYY-NNNN"，由数据库序列 case_id_seq 生成
 # 后置: 用于案例查询、状态变更、日志记录和跨模块引用
 # 输入约束: "CASE-" + 4位年份 + "-" + 4位序号，如 "CASE-2026-0001"
 # 输出约束: 通过 NewType 防止被误当作 UUID 或普通字符串传递
+# 注意: Case 模型已退役，CaseId 仅作为遗留品牌类型保留，待完全迁移后移除
 CaseId = NewType("CaseId", str)
 
 # === NarrativeId ===

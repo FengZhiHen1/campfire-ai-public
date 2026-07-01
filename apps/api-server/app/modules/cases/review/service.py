@@ -24,7 +24,6 @@ import redis.asyncio as aioredis
 from fastapi import HTTPException, status
 from py_config import get_settings
 from py_db.models.review_models import CaseReview
-from py_db.repositories.case_repository import CaseRepository
 from py_db.repositories.narrative_repository import NarrativeRepository
 from py_db.repositories.review_repository import (
     ReviewAuditLogRepository,
@@ -298,7 +297,6 @@ class ReviewWorkflowService(ReviewWorkflowContract):
         page: int,
         page_size: int,
         session: AsyncSession,
-        case_repo: CaseRepository,
         review_repo: ReviewRepository,
         narrative_repo: NarrativeRepository,
     ) -> PaginatedResponse[ReviewQueueItem]:

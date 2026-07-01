@@ -18,7 +18,6 @@ from app.core.dependencies.auth_dependencies import (
     PasswordHasher,
     get_audit_logger,
     get_auth_service,
-    get_case_repository,
     get_db_session,
     get_event_repository,
     get_narrative_repository,
@@ -35,7 +34,6 @@ from app.core.dependencies.auth_dependencies import (
 __all__ = [
     "get_db_session",
     "get_user_repository",
-    "get_case_repository",
     "get_narrative_repository",
     "get_review_repository",
     "get_review_audit_log_repository",
