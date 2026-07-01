@@ -176,8 +176,8 @@ log_info "项目目录：${APP_DIR}"
 # ---------------------------------------------------------------------------
 cd "${APP_DIR}"
 log_info "同步代码..."
-git fetch origin
-git reset --hard origin/master
+git -c safe.directory="${APP_DIR}" fetch origin
+git -c safe.directory="${APP_DIR}" reset --hard origin/master
 log_success "代码已同步到 origin/master"
 
 # ---------------------------------------------------------------------------
