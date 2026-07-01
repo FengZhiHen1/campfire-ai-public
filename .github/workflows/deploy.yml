@@ -40,6 +40,7 @@ jobs:
           fi
           cd "${SERVER_PROJECT_DIR}"
           echo "[deploy] syncing code from origin/master..."
+          git config --global --add safe.directory "${SERVER_PROJECT_DIR}"
           git remote -v
           git fetch origin
           git reset --hard origin/master
