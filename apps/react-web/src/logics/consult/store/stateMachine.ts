@@ -96,8 +96,7 @@ export function transitionTo(
  */
 export function getErrorMessage(code: ConsultErrorCode | string): string {
   const messageMap: Record<string, string> = {
-    [ConsultErrorCode.INPUT_VALIDATION_FAILED]:
-      '请至少选择一种行为类型，并填写行为描述',
+    [ConsultErrorCode.INPUT_VALIDATION_FAILED]: '请填写补充描述',
     [ConsultErrorCode.SUBMIT_NETWORK_ERROR]:
       '网络连接失败，请检查网络后重试',
     [ConsultErrorCode.SUBMIT_SERVER_ERROR]:

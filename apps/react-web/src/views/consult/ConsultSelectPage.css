@@ -142,6 +142,11 @@
   letter-spacing: var(--cf-tracking-label);
 }
 
+.block-label .required {
+  color: var(--cf-danger);
+  margin-left: 4px;
+}
+
 .type-list {
   display: flex;
   flex-direction: column;
@@ -306,6 +311,13 @@
   font-size: var(--cf-text-caption);
   color: var(--cf-muted);
   margin-top: 4px;
+}
+
+.submit-error {
+  margin-top: 8px;
+  font-size: var(--cf-text-sm);
+  color: var(--cf-danger);
+  line-height: 1.4;
 }
 
 .btn {

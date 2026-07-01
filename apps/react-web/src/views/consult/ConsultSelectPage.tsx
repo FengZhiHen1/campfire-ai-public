@@ -135,6 +135,11 @@ export default function ConsultSelectPage() {
   };
 
   const handleSubmit = () => {
+    if (!consult.isInputValid) {
+      // 触发校验错误提示并停留在当前页
+      void consult.submitConsult();
+      return;
+    }
     void consult.submitConsult();
     navigate('/consult');
   };
@@ -232,7 +237,12 @@ export default function ConsultSelectPage() {
           </div>
 
           <div className="block-desc">
-            <p className="block-label">补充描述</p>
+            <p className="block-label">
+              补充描述
+              <span className="required" aria-label="必填">
+                *
+              </span>
+            </p>
             <textarea
               className="desc-textarea"
               placeholder="例如：孩子在商场突然捂住耳朵蹲下尖叫，持续了约5分钟…"
@@ -240,8 +250,14 @@ export default function ConsultSelectPage() {
               value={consult.behaviorDescription}
               onChange={(e) => consult.setBehaviorDescription(e.target.value)}
               rows={5}
+              aria-required="true"
             />
             <p className="desc-counter">{consult.behaviorDescription.length} / 2000</p>
+            {consult.errorCode && (
+              <p className="submit-error" role="alert">
+                {consult.getErrorMessage(consult.errorCode)}
+              </p>
+            )}
           </div>
 
           <div className="block-actions">
