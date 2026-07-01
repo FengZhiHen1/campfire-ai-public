@@ -48,10 +48,10 @@ export function isCustomTrigger(value: string): boolean {
 
 /** 感官特征展示文案映射（持久化值以后端为准，展示文案贴近 OD） */
 export const SENSORY_FEATURE_LABELS: Readonly<Record<string, string>> = {
-  [SensoryFeature.AUDITORY_SENSITIVITY]: '声音敏感',
-  [SensoryFeature.VISUAL_SENSITIVITY]: '光线敏感',
-  [SensoryFeature.TACTILE_SENSITIVITY]: '触觉敏感',
-  [SensoryFeature.GUSTATORY_SENSITIVITY]: '味觉敏感',
+  [SensoryFeature.AUDITORY_SENSITIVE]: '声音敏感',
+  [SensoryFeature.VISUAL_SENSITIVE]: '光线敏感',
+  [SensoryFeature.TACTILE_SENSITIVE]: '触觉敏感',
+  [SensoryFeature.GUSTATORY_SENSITIVE]: '味觉敏感',
   [SensoryFeature.VESTIBULAR_SEEKING]: '前庭寻求',
   [SensoryFeature.PROPRIOCEPTIVE_SEEKING]: '本体觉寻求',
 };
@@ -92,7 +92,7 @@ export const BEHAVIOR_VALUES: readonly string[] = [
   ProfileBehaviorType.SELF_INJURY,
   ProfileBehaviorType.AGGRESSION,
   ProfileBehaviorType.MELTDOWN,
-  ProfileBehaviorType.STEREOTYPY,
+  ProfileBehaviorType.STEREOTYPED,
   ProfileBehaviorType.SOCIAL_WITHDRAWAL,
   ProfileBehaviorType.HYPERACTIVITY,
 ];

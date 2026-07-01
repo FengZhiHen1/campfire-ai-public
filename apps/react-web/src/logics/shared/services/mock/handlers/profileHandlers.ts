@@ -73,7 +73,7 @@ export async function handleCreateProfile(
     birth_date: (body.birth_date as string) ?? MOCK_DATE,
     age_range: (body.age_range as AgeRange) ?? AgeRange.PRESCHOOL,
     diagnosis_type: (body.diagnosis_type as DiagnosisType) ?? DiagnosisType.ASD,
-    primary_behavior: (body.primary_behavior as ProfileBehaviorType) ?? ProfileBehaviorType.STEREOTYPY,
+    primary_behavior: (body.primary_behavior as ProfileBehaviorType) ?? ProfileBehaviorType.STEREOTYPED,
     language_level: (body.language_level as LanguageLevel | null) ?? null,
     sensory_features: Array.isArray(body.sensory_features) ? asSensoryFeatures(body.sensory_features as string[]) : [],
     triggers: (body.triggers as string[]) ?? [],
