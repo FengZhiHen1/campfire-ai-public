@@ -59,10 +59,10 @@ export function useConsult(): UseConsultReturn {
   // 派生状态（computed selectors）
   // ==========================================================================
 
-  /** 输入是否有效：行为类型 ≥1 或描述去除首尾空白后非空（满足其一即可提交） */
+  /** 输入是否有效：行为描述去除首尾空白后非空（behavior_type 为可选补充） */
   const isInputValid: boolean = useMemo(
-    () => (behaviorTypeSelection ?? []).length >= 1 || (behaviorDescription ?? '').trim() !== '',
-    [behaviorTypeSelection, behaviorDescription],
+    () => (behaviorDescription ?? '').trim() !== '',
+    [behaviorDescription],
   );
 
   /** 是否处于活跃咨询中：submitting 或 streaming 状态 */

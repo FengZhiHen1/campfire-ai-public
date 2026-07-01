@@ -35,6 +35,8 @@ export {
   TRIGGER_LABELS,
   PRESET_TAGS,
   MAX_PROFILE_COUNT,
+  NICKNAME_MAX_LENGTH,
+  TRIGGER_MAX_COUNT,
 } from './constants';
 
 // 类型导出

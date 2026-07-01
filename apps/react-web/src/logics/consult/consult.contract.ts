@@ -21,7 +21,7 @@
  *   - 禁止校验函数产生副作用（日志、网络请求等）
  */
 
-import type { BehaviorTypeCategory } from './types';
+
 
 // ============================================================================
 // 品牌类型（Branded Types）——等价于 Python NewType
@@ -42,7 +42,7 @@ export type RequestId = string & { [RequestBrand]: 'RequestId' };
 /**
  * 校验咨询提交请求必填字段非空。
  * 前置: data 为 Store 层传入的表单数据。
- * 后置: 返回 true 表示 behavior_description 非空或 behavior_type_selection 至少 1 项（二选一即可提交）。
+ * 后置: 返回 true 表示 behavior_description 非空（behavior_type_selection 仅作补充，不替代描述）。
  * 输入约束: data 不为 null/undefined。
  * 输出约束: 布尔值，不修改输入。
  * 异常: 无——仅返回 false，由调用方决定如何处理。
@@ -54,10 +54,7 @@ export function isValidConsultSubmitRequest(data: unknown): boolean {
   const hasDescription =
     typeof d['behavior_description'] === 'string' &&
     (d['behavior_description'] as string).trim().length > 0;
-  const hasTypes =
-    Array.isArray(d['behavior_type_selection']) &&
-    (d['behavior_type_selection'] as unknown[]).length >= 1;
-  return hasDescription || hasTypes;
+  return hasDescription;
 }
 
 // TODO: 待 Hook 层复用后启用
