@@ -254,6 +254,25 @@ if [[ "${api_healthy}" != "true" ]]; then
 fi
 log_success "API 服务健康检查通过"
 
+# api-server 容器重建后 IP 可能变化，必须重启 nginx 以刷新上游解析
+log_info "重启 nginx 以刷新 api-server 上游 IP..."
+VERSION_TAG="${VERSION_TAG}" docker compose -f "${COMPOSE_FILE}" restart nginx
+
+log_info "等待 nginx 上游健康检查..."
+nginx_healthy=false
+for i in $(seq 1 $((HEALTH_TIMEOUT / HEALTH_INTERVAL))); do
+    if docker compose -f "${COMPOSE_FILE}" exec -T nginx curl -sf http://api-server:8000/health >/dev/null 2>&1; then
+        nginx_healthy=true
+        break
+    fi
+    sleep "${HEALTH_INTERVAL}"
+done
+if [[ "${nginx_healthy}" != "true" ]]; then
+    log_error "nginx 上游健康检查未通过"
+    exit 1
+fi
+log_success "nginx 上游健康检查通过"
+
 log_info "等待 Worker 健康检查..."
 worker_healthy=false
 for i in $(seq 1 $((HEALTH_TIMEOUT / HEALTH_INTERVAL))); do
