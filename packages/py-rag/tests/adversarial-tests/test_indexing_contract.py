@@ -14,14 +14,11 @@
 
 from __future__ import annotations
 
-import uuid as uuid_lib
 from typing import Any
 
 import pytest
-
 from py_rag.indexing_contract import BaseIndexPipeline, BaseIndexService
-from py_rag.types import CaseIdStr, TraceIdStr
-
+from py_rag.types import CaseIdStr
 
 # ============================================================================
 # Mock 子类 — 最小合法实现
@@ -35,14 +32,10 @@ class MockIndexService(BaseIndexService):
         super().__init__()
         self._mock_return_status = return_status
 
-    async def _do_enqueue(
-        self, case_id: CaseIdStr, db_session: Any
-    ) -> dict[str, str]:
+    async def _do_enqueue(self, case_id: CaseIdStr, db_session: Any) -> dict[str, str]:
         return {"status": "enqueued"}
 
-    async def _check_case_status(
-        self, case_id: CaseIdStr, db_session: Any
-    ) -> str | None:
+    async def _check_case_status(self, case_id: CaseIdStr, db_session: Any) -> str | None:
         return self._mock_return_status
 
     def set_status(self, status: str | None) -> None:
@@ -53,14 +46,10 @@ class MockIndexService(BaseIndexService):
 class MockBadEnqueueService(BaseIndexService):
     """返回不含 'status' 键的 dict，测试 _validate_enqueue_result。"""
 
-    async def _do_enqueue(
-        self, case_id: CaseIdStr, db_session: Any
-    ) -> dict[str, str]:
+    async def _do_enqueue(self, case_id: CaseIdStr, db_session: Any) -> dict[str, str]:
         return {"result": "ok"}  # 缺少 status 键
 
-    async def _check_case_status(
-        self, case_id: CaseIdStr, db_session: Any
-    ) -> str | None:
+    async def _check_case_status(self, case_id: CaseIdStr, db_session: Any) -> str | None:
         return "approved_pending"
 
 
@@ -111,21 +100,19 @@ class MockIndexPipeline(BaseIndexPipeline):
         if phase == "build":
             self._chunk_builder = lambda data: (_ for _ in ()).throw(RuntimeError(message))
         if phase == "write":
+
             async def _failing_writer(**kwargs: Any) -> None:
                 raise RuntimeError(message)
+
             self._index_writer = _failing_writer
 
-    async def _do_update_status_to_processing(
-        self, case_id: CaseIdStr, db_session: Any
-    ) -> bool:
+    async def _do_update_status_to_processing(self, case_id: CaseIdStr, db_session: Any) -> bool:
         if self._fail_on == "processing":
             raise RuntimeError(self._fail_message)
         self._status_processing_updated = True
         return self._status_processing_result
 
-    async def _do_read_case_data(
-        self, case_id: CaseIdStr, db_session: Any
-    ) -> dict[str, Any] | None:
+    async def _do_read_case_data(self, case_id: CaseIdStr, db_session: Any) -> dict[str, Any] | None:
         if self._fail_on == "read":
             raise RuntimeError(self._fail_message)
         return self._case_data
@@ -140,12 +127,8 @@ class MockIndexPipeline(BaseIndexPipeline):
             raise RuntimeError(self._fail_message)
         self._marked_indexed_calls.append(case_id)
 
-    async def _do_mark_failed(
-        self, case_id: CaseIdStr, error: str, phase: str, db_session: Any
-    ) -> None:
-        self._marked_failed_calls.append(
-            {"case_id": case_id, "error": error, "phase": phase}
-        )
+    async def _do_mark_failed(self, case_id: CaseIdStr, error: str, phase: str, db_session: Any) -> None:
+        self._marked_failed_calls.append({"case_id": case_id, "error": error, "phase": phase})
 
 
 # ============================================================================
@@ -236,28 +219,36 @@ class TestValidateTaskPreconditions:
         """case_id 为空字符串应抛 ValueError，消息含 '不能为空'。"""
         with pytest.raises(ValueError, match="case_id 不能为空"):
             self.pipeline._validate_task_preconditions(
-                "", "aabbccdd11223344aabbccdd11223344", self.valid_db  # type: ignore[arg-type]
+                "",
+                "aabbccdd11223344aabbccdd11223344",
+                self.valid_db,  # type: ignore[arg-type]
             )
 
     def test_p0_empty_trace_id_raises_valueerror(self):
         """trace_id 为空字符串应抛 ValueError，消息含 '不能为空'。"""
         with pytest.raises(ValueError, match="trace_id 不能为空"):
             self.pipeline._validate_task_preconditions(
-                VALID_UUID, "", self.valid_db  # type: ignore[arg-type]
+                VALID_UUID,
+                "",
+                self.valid_db,  # type: ignore[arg-type]
             )
 
     def test_p0_none_db_session_raises_valueerror(self):
         """db_session=None 应抛 ValueError，消息含 '不能为 None'。"""
         with pytest.raises(ValueError, match="db_session 不能为 None"):
             self.pipeline._validate_task_preconditions(
-                VALID_UUID, "aabbccdd11223344aabbccdd11223344", None  # type: ignore[arg-type]
+                VALID_UUID,
+                "aabbccdd11223344aabbccdd11223344",
+                None,  # type: ignore[arg-type]
             )
 
     def test_p0_both_case_id_and_trace_id_empty(self):
         """两个参数均为空 → 先检查 case_id，抛 case_id 相关错误。"""
         with pytest.raises(ValueError, match="case_id 不能为空"):
             self.pipeline._validate_task_preconditions(
-                "", "", self.valid_db  # type: ignore[arg-type]
+                "",
+                "",
+                self.valid_db,  # type: ignore[arg-type]
             )
 
 
@@ -286,7 +277,9 @@ class TestValidInputBoundary:
         pipeline = MockIndexPipeline()
         # 不应抛异常
         pipeline._validate_task_preconditions(
-            VALID_UUID, "abcdef0123456789abcdef0123456789", object()  # type: ignore[arg-type]
+            VALID_UUID,
+            "abcdef0123456789abcdef0123456789",
+            object(),  # type: ignore[arg-type]
         )
 
     def test_p1_trace_id_single_char_passes(self):
@@ -294,7 +287,9 @@ class TestValidInputBoundary:
         pipeline = MockIndexPipeline()
         # 不应抛异常——契约仅检查非空
         pipeline._validate_task_preconditions(
-            VALID_UUID, "x", object()  # type: ignore[arg-type]
+            VALID_UUID,
+            "x",
+            object(),  # type: ignore[arg-type]
         )
 
     def test_p1_none_case_id_in_task_preconditions(self):
@@ -302,7 +297,9 @@ class TestValidInputBoundary:
         pipeline = MockIndexPipeline()
         with pytest.raises(ValueError, match="case_id 不能为空"):
             pipeline._validate_task_preconditions(
-                None, "valid_trace", object()  # type: ignore[arg-type]
+                None,
+                "valid_trace",
+                object(),  # type: ignore[arg-type]
             )
 
 

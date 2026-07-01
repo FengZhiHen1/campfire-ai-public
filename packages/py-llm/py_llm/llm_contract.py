@@ -21,7 +21,6 @@ from py_logger import logger
 
 from py_llm.types import ChatCompletionChunk, RetryConfig
 
-
 # ============================================================================
 # 异常
 # ============================================================================
@@ -264,9 +263,7 @@ class LLMClientContract(ABC):
         if not model:
             raise ValueError("model must not be empty")
         if not 0.0 <= temperature <= 2.0:
-            raise ValueError(
-                f"temperature must be in [0.0, 2.0], got {temperature}"
-            )
+            raise ValueError(f"temperature must be in [0.0, 2.0], got {temperature}")
         if max_tokens < 1:
             raise ValueError(f"max_tokens must be >= 1, got {max_tokens}")
 
@@ -351,7 +348,7 @@ class LLMClientContract(ABC):
     @staticmethod
     def _calculate_delay(attempt: int, cfg: RetryConfig) -> float:
         """计算第 attempt 次重试的等待延迟（指数退避 + 随机抖动）。"""
-        delay: float = cfg.base_delay * (2 ** attempt) + random.uniform(0, 1)
+        delay: float = cfg.base_delay * (2**attempt) + random.uniform(0, 1)
         return min(delay, cfg.max_delay)
 
     def _map_error(self, exc: Exception) -> LLMClientError:

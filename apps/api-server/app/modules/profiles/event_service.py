@@ -9,8 +9,6 @@ from __future__ import annotations
 import math
 from uuid import UUID
 
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from py_db.models.profiles import EventLog
 from py_db.repositories.event_repository import EventRepository
 from py_db.repositories.profile_repository import ProfileRepository
@@ -22,6 +20,7 @@ from py_schemas.profiles import (
     EventResponse,
     EventUpdate,
 )
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.profiles._constants import DEFAULT_RECORDED_BY_ROLE
 from app.modules.profiles.events_contract import BaseEventService

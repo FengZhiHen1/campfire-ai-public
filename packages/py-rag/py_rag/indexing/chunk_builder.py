@@ -7,7 +7,6 @@
 from __future__ import annotations
 
 import re
-
 from typing import Any
 
 from py_logger import logger
@@ -21,12 +20,8 @@ from py_rag.models import ChunkMetadata
 
 _PII_PATTERNS: dict[str, re.Pattern[str]] = {
     "phone_number": re.compile(r"1[3-9]\d{9}"),
-    "id_card": re.compile(
-        r"[1-9]\d{5}(19|20)\d{2}(0[1-9]|1[0-2])(0[1-9]|[12]\d|3[01])\d{3}[\dXx]"
-    ),
-    "address": re.compile(
-        r"([一-龥]{2,}(市|区|县|镇|路|街|号|弄|小区|栋|单元|室)){2,}"
-    ),
+    "id_card": re.compile(r"[1-9]\d{5}(19|20)\d{2}(0[1-9]|1[0-2])(0[1-9]|[12]\d|3[01])\d{3}[\dXx]"),
+    "address": re.compile(r"([一-龥]{2,}(市|区|县|镇|路|街|号|弄|小区|栋|单元|室)){2,}"),
 }
 
 _REQUIRED_FIELDS: list[str] = [
@@ -72,11 +67,7 @@ def build_chunk_text(case_data: dict[str, Any]) -> tuple[str, ChunkMetadata]:
     missing_fields: list[str] = []
     for field in _REQUIRED_FIELDS:
         value = case_data.get(field)
-        if (
-            value is None
-            or not isinstance(value, str)
-            or len(value.strip()) < _MIN_FIELD_LENGTH
-        ):
+        if value is None or not isinstance(value, str) or len(value.strip()) < _MIN_FIELD_LENGTH:
             missing_fields.append(field)
 
     if missing_fields:
@@ -106,13 +97,7 @@ def build_chunk_text(case_data: dict[str, Any]) -> tuple[str, ChunkMetadata]:
     result = case_data["observation_metrics"].strip()
     medical = case_data["medical_criteria"].strip()
 
-    chunk_text = (
-        f"场景：{scene}\n"
-        f"行为：{behavior}\n"
-        f"干预：{intervention}\n"
-        f"结果：{result}\n"
-        f"就医判断：{medical}"
-    )
+    chunk_text = f"场景：{scene}\n行为：{behavior}\n干预：{intervention}\n结果：{result}\n就医判断：{medical}"
 
     # ------------------------------------------------------------------
     # 步骤 3：免责声明处理 — 追加到 chunk_text 末尾
@@ -164,9 +149,7 @@ def build_chunk_text(case_data: dict[str, Any]) -> tuple[str, ChunkMetadata]:
             extra={
                 "case_id": case_id,
                 "patterns_matched": patterns_matched,
-                "sample_text": safe_sample[
-                    max(0, (first_match_offset or 0) - 20) : (first_match_offset or 0) + 20
-                ],
+                "sample_text": safe_sample[max(0, (first_match_offset or 0) - 20) : (first_match_offset or 0) + 20],
                 "phase": "build_chunk_text",
             },
         )

@@ -25,5 +25,6 @@ def __getattr__(name: str):
     """惰性导入 SseStreamingService，避免启动期循环依赖。"""
     if name == "SseStreamingService":
         from app.core.streaming.sse_service import SseStreamingService
+
         return SseStreamingService
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

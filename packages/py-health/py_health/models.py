@@ -14,7 +14,6 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
 from enum import Enum
 
 from pydantic import BaseModel, Field
@@ -60,16 +59,11 @@ class ComponentHealth(BaseModel):
     契约引用：docs/contracts/OBS-04/ComponentHealth.json
     """
 
-    status: ComponentStatus = Field(
-        description="组件连通状态，connected 表示检查通过，disconnected 表示失败"
-    )
+    status: ComponentStatus = Field(description="组件连通状态，connected 表示检查通过，disconnected 表示失败")
     error: str | None = Field(
         default=None,
         min_length=1,
-        description=(
-            "连通性检查失败时的错误描述（如连接超时、认证失败、服务未启动）。"
-            "connected 状态时此字段为 null"
-        ),
+        description=("连通性检查失败时的错误描述（如连接超时、认证失败、服务未启动）。connected 状态时此字段为 null"),
     )
 
     model_config = {"extra": "forbid"}
@@ -84,15 +78,9 @@ class Components(BaseModel):
     契约引用：docs/contracts/OBS-04/HealthCheckResponse.json §components
     """
 
-    postgresql: ComponentHealth = Field(
-        description="PostgreSQL 数据库的连通性检查结果"
-    )
-    redis: ComponentHealth = Field(
-        description="Redis 缓存服务的连通性检查结果"
-    )
-    minio: ComponentHealth = Field(
-        description="MinIO 对象存储服务的连通性检查结果"
-    )
+    postgresql: ComponentHealth = Field(description="PostgreSQL 数据库的连通性检查结果")
+    redis: ComponentHealth = Field(description="Redis 缓存服务的连通性检查结果")
+    minio: ComponentHealth = Field(description="MinIO 对象存储服务的连通性检查结果")
 
     model_config = {"extra": "forbid"}
 
@@ -106,9 +94,7 @@ class HealthCheckResponse(BaseModel):
     契约引用：docs/contracts/OBS-04/HealthCheckResponse.json
     """
 
-    status: HealthStatus = Field(
-        description="系统整体健康状态，基于全部三个组件的连通性检查结果实时判定"
-    )
+    status: HealthStatus = Field(description="系统整体健康状态，基于全部三个组件的连通性检查结果实时判定")
     version: str = Field(
         min_length=1,
         description="当前 API 服务的版本号，从 pyproject.toml 或环境变量读取",
@@ -119,9 +105,7 @@ class HealthCheckResponse(BaseModel):
         description="API 服务自启动以来的运行时长（秒）",
         examples=[3600],
     )
-    components: Components = Field(
-        description="三个基础服务的连通性检查详情"
-    )
+    components: Components = Field(description="三个基础服务的连通性检查详情")
     timestamp: str = Field(
         description="本次健康检查的执行时间，ISO 8601 格式，精确到秒",
         examples=["2026-05-26T23:07:02+08:00"],
@@ -144,9 +128,7 @@ class ReadinessResponse(BaseModel):
         description="服务是否就绪：仅当 PostgreSQL 连通时为 true",
         examples=[True],
     )
-    database: ComponentHealth = Field(
-        description="PostgreSQL 数据库的连通性检查结果"
-    )
+    database: ComponentHealth = Field(description="PostgreSQL 数据库的连通性检查结果")
     timestamp: str = Field(
         description="本次就绪检查的执行时间，ISO 8601 格式，精确到秒",
         examples=["2026-05-26T23:07:02+08:00"],

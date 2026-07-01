@@ -23,9 +23,6 @@ import uuid
 from typing import Any, Literal, cast
 from uuid import UUID
 
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from py_db.models.case_card import CaseCard
 from py_db.models.case_chunks import CaseChunk
 from py_db.models.consultation import ConsultationHistory as ConsultationHistoryModel
@@ -39,6 +36,8 @@ from py_schemas.consultation_history import (
     ConsultationHistoryDetail,
     ConsultationHistoryListItem,
 )
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.consultation.exceptions import (
     ConsultationArchiveError,
@@ -46,7 +45,6 @@ from app.modules.consultation.exceptions import (
 )
 
 from .history_contract import BaseHistoryManager
-
 
 # ============================================================================
 # 兼容旧引用异常（映射到新异常体系）
@@ -57,6 +55,7 @@ class ConsultationHistoryIncompleteDataError(ConsultationArchiveError):
     """归档写入数据不完整异常（兼容旧引用，继承自 ConsultationArchiveError）。
 
     路由层应使用 exc.message（str）而非 exc.detail（dict）。"""
+
     pass
 
 
@@ -86,7 +85,10 @@ class HistoryManagerImpl(BaseHistoryManager):
             logger.warning(
                 service="api-server",
                 message="archive_validation_failed",
-                extra={"field": "disclaimer", "reason": "disclaimer 内容与标准声明不一致"},
+                extra={
+                    "field": "disclaimer",
+                    "reason": "disclaimer 内容与标准声明不一致",
+                },
             )
             raise ConsultationArchiveError(
                 message="disclaimer 内容与标准声明不一致，请使用 CSLT-03 输出的原始声明文本",
@@ -160,7 +162,11 @@ class HistoryManagerImpl(BaseHistoryManager):
         if not user_id_str:
             logger.warning(service="api-server", message="list_history_missing_user_id")
             return PaginatedResponse(
-                items=[], total=0, page=page, page_size=page_size, total_pages=0,
+                items=[],
+                total=0,
+                page=page,
+                page_size=page_size,
+                total_pages=0,
             )
 
         user_id = UUID(user_id_str)
@@ -185,7 +191,11 @@ class HistoryManagerImpl(BaseHistoryManager):
         )
 
         return PaginatedResponse(
-            items=items, total=total, page=page, page_size=page_size, total_pages=total_pages,
+            items=items,
+            total=total,
+            page=page,
+            page_size=page_size,
+            total_pages=total_pages,
         )
 
     async def _do_get_detail(
@@ -215,7 +225,10 @@ class HistoryManagerImpl(BaseHistoryManager):
             logger.warning(
                 service="api-server",
                 message="consultation_access_denied",
-                extra={"consultation_id": str(consultation_id), "actual_reason": actual_reason},
+                extra={
+                    "consultation_id": str(consultation_id),
+                    "actual_reason": actual_reason,
+                },
             )
             raise ConsultationNotFoundError(
                 consultation_id=str(consultation_id),
@@ -247,9 +260,7 @@ async def _load_associated_cards(
     try:
         # 1. 由切片 ID 拿到关联的 card_id（去重）
         chunk_result = await db.execute(
-            select(CaseChunk.card_id)
-            .where(CaseChunk.id.in_(slice_ids))
-            .distinct(),
+            select(CaseChunk.card_id).where(CaseChunk.id.in_(slice_ids)).distinct(),
         )
         card_ids = [row[0] for row in chunk_result.all()]
         if not card_ids:
@@ -264,8 +275,7 @@ async def _load_associated_cards(
                 CaseCard.severity,
                 CaseCard.scene,
                 CaseCard.review_status,
-            )
-            .where(CaseCard.card_id.in_(card_ids)),
+            ).where(CaseCard.card_id.in_(card_ids)),
         )
         return [
             AssociatedCard(
@@ -305,7 +315,10 @@ def _build_detail_response(
         generation_time_ms=record.generation_time_ms,
         is_partial=record.is_partial,
         referenced_slice_ids=record.referenced_slice_ids or [],
-        finish_reason=cast(Literal["COMPLETE", "PARTIAL", "BLOCKED", "TIMEOUT", "ERROR"], record.finish_reason),
+        finish_reason=cast(
+            Literal["COMPLETE", "PARTIAL", "BLOCKED", "TIMEOUT", "ERROR"],
+            record.finish_reason,
+        ),
         ttft_ms=record.ttft_ms,
         has_feedback=record.has_feedback,
         token_input=record.token_input,

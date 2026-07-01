@@ -9,15 +9,13 @@ from datetime import datetime, timezone
 from unittest import mock
 
 import pytest
-from fastapi import HTTPException
-
-from py_db.models.case_model import Case
-from py_security import RegexPiiDetector
-from py_schemas.cases import CaseCreateRequest, CaseUpdate
-from py_schemas.enums.case_enums import CaseStatus
-
 from app.modules.cases.case_mgmt.service import CaseManagementService
 from app.modules.cases.types import CaseId
+from fastapi import HTTPException
+from py_db.models.case_model import Case
+from py_schemas.cases import CaseCreateRequest
+from py_schemas.enums.case_enums import CaseStatus
+from py_security import RegexPiiDetector
 
 
 def _mock_case(**overrides) -> mock.MagicMock:
@@ -29,7 +27,8 @@ def _mock_case(**overrides) -> mock.MagicMock:
         "source_type": "专家撰写",
         "author_id": "user-1",
         "behavior_type": "自伤",
-        "age_range_min": 3, "age_range_max": 12,
+        "age_range_min": 3,
+        "age_range_max": 12,
         "severity": "重度",
         "scene": "家庭",
         "ebp_labels": ["强化"],
@@ -104,7 +103,10 @@ class TestCreateCase:
     async def test_create_success(self, svc, session, repo, user):
         request = _valid_create_data()
         response = await svc.create_case(
-            request=request, current_user=user, session=session, case_repo=repo,
+            request=request,
+            current_user=user,
+            session=session,
+            case_repo=repo,
         )
         assert response.case_id == "CASE-2026-0042"
         assert response.status == "draft"
@@ -115,7 +117,10 @@ class TestCreateCase:
         request.medical_criteria = ""
         with pytest.raises(HTTPException) as exc:
             await svc.create_case(
-                request=request, current_user=user, session=session, case_repo=repo,
+                request=request,
+                current_user=user,
+                session=session,
+                case_repo=repo,
             )
         assert exc.value.status_code == 422
 
@@ -125,7 +130,10 @@ class TestCreateCase:
         request = _valid_create_data()
         with pytest.raises(HTTPException) as exc:
             await svc.create_case(
-                request=request, current_user=user, session=session, case_repo=repo,
+                request=request,
+                current_user=user,
+                session=session,
+                case_repo=repo,
             )
         assert exc.value.status_code == 503
 
@@ -139,8 +147,10 @@ class TestGetCase:
         case = _mock_case(status=CaseStatus.DRAFT, author_id="user-1")
         repo.find_by_case_id.return_value = case
         response = await svc.get_case(
-            case_id=CaseId("CASE-2026-0001"), current_user=user,
-            session=session, case_repo=repo,
+            case_id=CaseId("CASE-2026-0001"),
+            current_user=user,
+            session=session,
+            case_repo=repo,
         )
         assert response.is_owner is True
 
@@ -150,8 +160,10 @@ class TestGetCase:
         repo.find_by_case_id.return_value = case
         with pytest.raises(HTTPException) as exc:
             await svc.get_case(
-                case_id=CaseId("CASE-2026-0001"), current_user=user,
-                session=session, case_repo=repo,
+                case_id=CaseId("CASE-2026-0001"),
+                current_user=user,
+                session=session,
+                case_repo=repo,
             )
         assert exc.value.status_code == 404
 
@@ -160,8 +172,10 @@ class TestGetCase:
         case = _mock_case(status=CaseStatus.APPROVED, author_id="other-user")
         repo.find_by_case_id.return_value = case
         response = await svc.get_case(
-            case_id=CaseId("CASE-2026-0001"), current_user=user,
-            session=session, case_repo=repo,
+            case_id=CaseId("CASE-2026-0001"),
+            current_user=user,
+            session=session,
+            case_repo=repo,
         )
         assert response.is_owner is False
 
@@ -170,8 +184,10 @@ class TestGetCase:
         repo.find_by_case_id.return_value = None
         with pytest.raises(HTTPException) as exc:
             await svc.get_case(
-                case_id=CaseId("CASE-2026-9999"), current_user=user,
-                session=session, case_repo=repo,
+                case_id=CaseId("CASE-2026-9999"),
+                current_user=user,
+                session=session,
+                case_repo=repo,
             )
         assert exc.value.status_code == 404
 
@@ -188,8 +204,10 @@ class TestSubmitCase:
         repo.update_status.return_value = updated
         svc._pii_detector.detect = mock.MagicMock(return_value=mock.MagicMock(has_pii=False, warnings=[]))
         response = await svc.submit_case(
-            case_id=CaseId("CASE-2026-0001"), current_user=user,
-            session=session, case_repo=repo,
+            case_id=CaseId("CASE-2026-0001"),
+            current_user=user,
+            session=session,
+            case_repo=repo,
         )
         assert response.status == "pending_review"
 
@@ -199,8 +217,10 @@ class TestSubmitCase:
         repo.find_by_case_id.return_value = case
         with pytest.raises(HTTPException) as exc:
             await svc.submit_case(
-                case_id=CaseId("CASE-2026-0001"), current_user=user,
-                session=session, case_repo=repo,
+                case_id=CaseId("CASE-2026-0001"),
+                current_user=user,
+                session=session,
+                case_repo=repo,
             )
         assert exc.value.status_code == 409
 
@@ -209,8 +229,10 @@ class TestSubmitCase:
         repo.find_by_case_id.return_value = None
         with pytest.raises(HTTPException) as exc:
             await svc.submit_case(
-                case_id=CaseId("CASE-2026-9999"), current_user=user,
-                session=session, case_repo=repo,
+                case_id=CaseId("CASE-2026-9999"),
+                current_user=user,
+                session=session,
+                case_repo=repo,
             )
         assert exc.value.status_code == 404
 

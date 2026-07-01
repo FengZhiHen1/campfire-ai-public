@@ -47,8 +47,7 @@ class AppSettings(BaseSettings):
     # ===== 必填字段 (10) =====
 
     DATABASE_URL: PostgresDsn = Field(
-        description="PostgreSQL 连接串（含异步驱动 asyncpg），"
-        "必须包含数据库地址、端口、用户名、密码和数据库名",
+        description="PostgreSQL 连接串（含异步驱动 asyncpg），必须包含数据库地址、端口、用户名、密码和数据库名",
     )
 
     REDIS_URL: RedisDsn = Field(
@@ -265,10 +264,7 @@ class AppSettings(BaseSettings):
                 affected_fields.append(field_name)
 
         if affected_fields:
-            warning_message = (
-                "生产环境中检测到密钥来源于本地 .env 文件（非 KMS 注入），"
-                "存在安全隐患。"
-            )
+            warning_message = "生产环境中检测到密钥来源于本地 .env 文件（非 KMS 注入），存在安全隐患。"
             warnings.warn(
                 ConfigWarning(
                     message=warning_message,

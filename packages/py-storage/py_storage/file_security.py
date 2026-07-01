@@ -40,12 +40,13 @@ def _get_logger() -> StructuredLogger:
 
     return logger
 
+
 # ---------------------------------------------------------------------------
 # 文件大小上限（字节）
 # ---------------------------------------------------------------------------
 
-_SIZE_LIMIT_IMAGE = 5 * 1024 * 1024       # 5 MB
-_SIZE_LIMIT_DOCUMENT = 10 * 1024 * 1024    # 10 MB
+_SIZE_LIMIT_IMAGE = 5 * 1024 * 1024  # 5 MB
+_SIZE_LIMIT_DOCUMENT = 10 * 1024 * 1024  # 10 MB
 
 # ---------------------------------------------------------------------------
 # 文件类别 → 扩展名映射
@@ -58,12 +59,14 @@ _DOCUMENT_EXTENSIONS: frozenset[str] = frozenset({"pdf", "docx"})
 # 允许的 MIME 类型
 # ---------------------------------------------------------------------------
 
-_ALLOWED_MIME_TYPES: frozenset[str] = frozenset({
-    "application/pdf",
-    "image/jpeg",
-    "image/png",
-    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-})
+_ALLOWED_MIME_TYPES: frozenset[str] = frozenset(
+    {
+        "application/pdf",
+        "image/jpeg",
+        "image/png",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    }
+)
 
 # ---------------------------------------------------------------------------
 # 文件头魔数签名表
@@ -188,7 +191,7 @@ class DefaultFileValidator(BaseFileValidator):
             # 扩展名在白名单但无对应魔数签名 → 跳过魔数校验
             return
 
-        actual_header = content[:len(expected_magic)]
+        actual_header = content[: len(expected_magic)]
         if actual_header != expected_magic:
             actual_hex = " ".join(f"{b:02x}" for b in actual_header)
             expected_hex = " ".join(f"{b:02x}" for b in expected_magic)

@@ -9,8 +9,6 @@ from __future__ import annotations
 from uuid import uuid4
 
 import pytest
-from pydantic import ValidationError
-
 from py_schemas.consult.confidence import (
     ConfidenceValidationInput,
     ConfidenceValidationOutput,
@@ -18,7 +16,7 @@ from py_schemas.consult.confidence import (
     ValidationVerdict,
 )
 from py_schemas.consult_start import ConsultStartRequest, ConsultStartResponse
-
+from pydantic import ValidationError
 
 # ===========================================================================
 # ValidationVerdict

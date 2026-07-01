@@ -100,9 +100,7 @@ class BasePiiDetector(ABC):
         异常: PiiInputValidationError — text 为 None 或非字符串类型
         """
         if not isinstance(text, str):
-            raise PiiInputValidationError(
-                f"text 必须是 str 类型，实际类型: {type(text).__name__}"
-            )
+            raise PiiInputValidationError(f"text 必须是 str 类型，实际类型: {type(text).__name__}")
         if not text or not text.strip():
             raise PiiInputValidationError("text 不能为空或仅含空白字符")
 
@@ -118,18 +116,12 @@ class BasePiiDetector(ABC):
         text_len = len(text)
         has_warnings = len(result.warnings) > 0
         if result.has_pii != has_warnings:
-            raise PiiDetectionError(
-                f"has_pii={result.has_pii} 与 warnings 数量({len(result.warnings)})不一致"
-            )
+            raise PiiDetectionError(f"has_pii={result.has_pii} 与 warnings 数量({len(result.warnings)})不一致")
         for i, w in enumerate(result.warnings):
             if w.position_start < 0:
-                raise PiiDetectionError(
-                    f"warning[{i}] position_start={w.position_start} < 0"
-                )
+                raise PiiDetectionError(f"warning[{i}] position_start={w.position_start} < 0")
             if w.position_end > text_len:
-                raise PiiDetectionError(
-                    f"warning[{i}] position_end={w.position_end} 超出文本长度 {text_len}"
-                )
+                raise PiiDetectionError(f"warning[{i}] position_end={w.position_end} 超出文本长度 {text_len}")
             if w.position_start >= w.position_end:
                 raise PiiDetectionError(
                     f"warning[{i}] position_start({w.position_start}) >= position_end({w.position_end})"

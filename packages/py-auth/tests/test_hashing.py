@@ -8,10 +8,8 @@ from __future__ import annotations
 from unittest import mock
 
 import pytest
-
 from py_auth.exceptions import HashingError
 from py_auth.hashing import hash_password, verify_password
-
 
 # ---- hash_password ----
 
@@ -79,4 +77,7 @@ class TestHashingErrorPropagation:
     def test_verify_password_raises_hashing_error(self):
         with mock.patch("py_auth.hashing.bcrypt.checkpw", side_effect=RuntimeError("boom")):
             with pytest.raises(HashingError, match="bcrypt 密码校验失败"):
-                verify_password("ValidP@ss1", "$2b$12$aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+                verify_password(
+                    "ValidP@ss1",
+                    "$2b$12$aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                )

@@ -6,10 +6,8 @@
 from __future__ import annotations
 
 import sys
-from unittest.mock import MagicMock
 
 import pytest
-
 from py_storage.exceptions import (
     FileContentTooShortError,
     FileExtensionNotAllowedError,
@@ -25,7 +23,6 @@ from py_storage.types import (
     FileContent,
     FileName,
     FileValidationInput,
-    FileValidationResult,
 )
 
 # ---------------------------------------------------------------------------
@@ -53,7 +50,6 @@ def _set_magic_error(exc: Exception) -> None:
 
 
 class TestDefaultFileValidator:
-
     # ---- 全部通过 ----
 
     def test_validate_png_passes(self):
@@ -205,9 +201,7 @@ class TestDefaultFileValidator:
     def test_skip_magic_check_when_no_signature(self):
         """扩展名在白名单但无对应魔数签名时，跳过魔数校验。"""
         _set_allowed_extensions(["docx"])
-        _set_magic_mime(
-            "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-        )
+        _set_magic_mime("application/vnd.openxmlformats-officedocument.wordprocessingml.document")
 
         validator = DefaultFileValidator()
         result = validator.validate(
@@ -220,7 +214,6 @@ class TestDefaultFileValidator:
 
 
 class TestFileValidationInput:
-
     def test_frozen_dataclass(self):
         inp = FileValidationInput(
             filename=FileName("test.pdf"),
@@ -231,7 +224,6 @@ class TestFileValidationInput:
 
 
 class TestExceptionHierarchy:
-
     def test_file_too_large_error_fields(self):
         err = FileTooLargeError(
             actual_bytes=6 * 1024 * 1024,

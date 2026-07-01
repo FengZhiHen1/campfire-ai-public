@@ -56,18 +56,13 @@ def check_ebp_consistency(
         non_ncaep: set[str] = ebp_set - NCAEP_EBP_LABELS
         if non_ncaep:
             non_ncaep_list: str = "、".join(sorted(non_ncaep))
-            return (
-                f"以下标签不在 NCAEP 循证实践列表中：{non_ncaep_list}"
-            )
+            return f"以下标签不在 NCAEP 循证实践列表中：{non_ncaep_list}"
     else:
         # evidence_level 不是 NCAEP，检查是否包含 NCAEP 标签
         ncaep_found: set[str] = ebp_set & NCAEP_EBP_LABELS
         if ncaep_found:
             ncaep_list: str = "、".join(sorted(ncaep_found))
-            return (
-                f"evidence_level 为\"{evidence_level}\"但标签列表中包含 "
-                f"NCAEP 循证实践标签：{ncaep_list}"
-            )
+            return f'evidence_level 为"{evidence_level}"但标签列表中包含 NCAEP 循证实践标签：{ncaep_list}'
 
     return None
 

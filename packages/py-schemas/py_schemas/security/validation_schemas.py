@@ -44,9 +44,7 @@ class ValidationErrorResponse(CampfireBaseModel):
     覆盖 FastAPI 默认 422 格式，errors 列表至少包含 1 项。
     """
 
-    errors: list[ValidationErrorItem] = Field(
-        ..., min_length=1, description="校验失败的错误明细列表，至少包含 1 项"
-    )
+    errors: list[ValidationErrorItem] = Field(..., min_length=1, description="校验失败的错误明细列表，至少包含 1 项")
 
 
 class FileValidationRule(CampfireBaseModel):
@@ -56,15 +54,9 @@ class FileValidationRule(CampfireBaseModel):
     定义允许的文件类型白名单和大小上限。
     """
 
-    allowed_mime_types: list[str] = Field(
-        ..., min_length=1, description="允许的 MIME 类型白名单"
-    )
-    allowed_extensions: list[str] = Field(
-        ..., min_length=1, description="允许的文件扩展名白名单"
-    )
-    max_size_bytes: int = Field(
-        ..., ge=1, description="文件大小上限（字节）"
-    )
+    allowed_mime_types: list[str] = Field(..., min_length=1, description="允许的 MIME 类型白名单")
+    allowed_extensions: list[str] = Field(..., min_length=1, description="允许的文件扩展名白名单")
+    max_size_bytes: int = Field(..., ge=1, description="文件大小上限（字节）")
 
 
 class FileValidationResult(CampfireBaseModel):
@@ -75,15 +67,9 @@ class FileValidationResult(CampfireBaseModel):
     """
 
     is_valid: bool = Field(..., description="文件是否通过校验")
-    error_message: str | None = Field(
-        default=None, description="校验失败时的错误说明，仅 is_valid=False 时有值"
-    )
-    detected_mime_type: str = Field(
-        ..., min_length=1, description="通过文件头魔数检测到的真实 MIME 类型"
-    )
-    file_size_bytes: int = Field(
-        ..., ge=1, description="文件大小（字节）"
-    )
+    error_message: str | None = Field(default=None, description="校验失败时的错误说明，仅 is_valid=False 时有值")
+    detected_mime_type: str = Field(..., min_length=1, description="通过文件头魔数检测到的真实 MIME 类型")
+    file_size_bytes: int = Field(..., ge=1, description="文件大小（字节）")
 
 
 class SecurityAuditLogEntry(CampfireBaseModel):
@@ -94,10 +80,6 @@ class SecurityAuditLogEntry(CampfireBaseModel):
     """
 
     trace_id: str = Field(..., min_length=1, description="请求链路追踪 ID")
-    event_type: SecurityDetectionType = Field(
-        ..., description="安全事件类型标识"
-    )
-    detection_detail: str = Field(
-        ..., min_length=1, description="检测详情，不得包含用户原始输入全文"
-    )
+    event_type: SecurityDetectionType = Field(..., description="安全事件类型标识")
+    detection_detail: str = Field(..., min_length=1, description="检测详情，不得包含用户原始输入全文")
     timestamp: str = Field(..., description="事件发生时间（ISO 8601 格式）")

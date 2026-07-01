@@ -30,19 +30,14 @@ from typing import final
 
 import alembic.command
 import alembic.config
-from alembic.runtime.migration import MigrationContext
-from alembic.script import ScriptDirectory
 from py_logger import logger
 from sqlalchemy import create_engine, text
 from sqlalchemy.exc import OperationalError, ProgrammingError
 
 from py_db.exceptions import (
     MigrationConnectionError,
-    MigrationExecutionError,
     MigrationGenerationError,
-    MigrationRollbackError,
     MigrationScriptNotFoundError,
-    MigrationVerificationError,
 )
 from py_db.types import DatabaseUrl, MigrationMessage, MigrationTarget
 
@@ -352,8 +347,7 @@ class MigrationService(ABC):
         else:
             if not re.match(r"^(head|\d{8}_\d{6})$", target):
                 raise MigrationScriptNotFoundError(
-                    f"Invalid target format: '{target}'. "
-                    "Expected 'head' or revision hash (YYYYMMDD_HHMMSS).",
+                    f"Invalid target format: '{target}'. Expected 'head' or revision hash (YYYYMMDD_HHMMSS).",
                     target=target,
                 )
 
@@ -368,9 +362,7 @@ class MigrationService(ABC):
         异常:
           - MigrationConnectionError: URL 为空或格式不正确。
         """
-        if not database_url or not re.match(
-            r"^postgresql(\+[a-z][a-z0-9]*)?://", database_url
-        ):
+        if not database_url or not re.match(r"^postgresql(\+[a-z][a-z0-9]*)?://", database_url):
             raise MigrationConnectionError(
                 f"Invalid database URL format: '{database_url}'. "
                 "Expected postgresql:// or postgresql+driver:// prefix.",
@@ -395,9 +387,7 @@ class MigrationService(ABC):
         if len(message) > 128:
             raise ValueError("message must not exceed 128 characters")
         if not isinstance(autogenerate, bool):
-            raise MigrationGenerationError(
-                f"autogenerate must be a boolean, got {type(autogenerate).__name__}."
-            )
+            raise MigrationGenerationError(f"autogenerate must be a boolean, got {type(autogenerate).__name__}.")
 
     def _validate_migration_result(
         self,
@@ -414,9 +404,7 @@ class MigrationService(ABC):
           - RuntimeError: 返回值类型不正确。
         """
         if not isinstance(result, int):
-            raise RuntimeError(
-                f"Migration {direction} returned non-int result: {type(result).__name__}"
-            )
+            raise RuntimeError(f"Migration {direction} returned non-int result: {type(result).__name__}")
 
         logger.info(
             "migration",
@@ -434,9 +422,7 @@ class MigrationService(ABC):
         if not path:
             raise RuntimeError("Generated migration path is empty")
         if not path.endswith(".py"):
-            raise RuntimeError(
-                f"Generated migration path is not a .py file: {path}"
-            )
+            raise RuntimeError(f"Generated migration path is not a .py file: {path}")
 
     def _validate_verify_result(self, result: tuple[int, str]) -> None:
         """后置校验：确认 verify_migration 返回合法结果。
@@ -447,18 +433,12 @@ class MigrationService(ABC):
           - RuntimeError: 返回值结构不正确。
         """
         if not isinstance(result, tuple) or len(result) != 2:
-            raise RuntimeError(
-                f"verify_migration returned invalid result: {type(result).__name__}"
-            )
+            raise RuntimeError(f"verify_migration returned invalid result: {type(result).__name__}")
         exit_code, summary = result
         if not isinstance(exit_code, int) or exit_code not in (0, 1, 2, 3):
-            raise RuntimeError(
-                f"verify_migration returned invalid exit_code: {exit_code}"
-            )
+            raise RuntimeError(f"verify_migration returned invalid exit_code: {exit_code}")
         if not isinstance(summary, str):
-            raise RuntimeError(
-                f"verify_migration returned non-str summary: {type(summary).__name__}"
-            )
+            raise RuntimeError(f"verify_migration returned non-str summary: {type(summary).__name__}")
 
     def _validate_connection(
         self,
@@ -592,9 +572,7 @@ class MigrationService(ABC):
         package_dir = module_dir.parent  # packages/py-db/
         ini_path = str(package_dir / "alembic.ini")
 
-        resolved_url = database_url or DatabaseUrl(
-            os.environ.get("DATABASE_URL", "")
-        )
+        resolved_url = database_url or DatabaseUrl(os.environ.get("DATABASE_URL", ""))
 
         cfg = alembic.config.Config(ini_path)
         if resolved_url:

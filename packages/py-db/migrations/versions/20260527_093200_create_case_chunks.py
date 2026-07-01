@@ -16,8 +16,8 @@ from __future__ import annotations
 
 from typing import Sequence, Union
 
-from alembic import op
 import sqlalchemy as sa
+from alembic import op
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 
 # revision identifiers, used by Alembic.
@@ -99,16 +99,10 @@ def upgrade() -> None:
         " USING CASE WHEN embedding IS NULL THEN NULL::vector(1024)"
         " ELSE embedding::vector(1024) END"
     )
-    op.execute(
-        "ALTER TABLE case_chunks ALTER COLUMN embedding"
-        " SET DEFAULT NULL::vector(1024)"
-    )
+    op.execute("ALTER TABLE case_chunks ALTER COLUMN embedding SET DEFAULT NULL::vector(1024)")
 
     # 2. 创建 HNSW 索引（cosine 距离）
-    op.execute(
-        "CREATE INDEX ix_case_chunks_embedding_hnsw"
-        " ON case_chunks USING hnsw (embedding vector_cosine_ops)"
-    )
+    op.execute("CREATE INDEX ix_case_chunks_embedding_hnsw ON case_chunks USING hnsw (embedding vector_cosine_ops)")
 
 
 def downgrade() -> None:

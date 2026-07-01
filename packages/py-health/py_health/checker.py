@@ -24,14 +24,13 @@ from py_logger import logger
 
 from py_health.models import (
     ComponentHealth,
-    ComponentStatus,
     Components,
+    ComponentStatus,
     HealthCheckResponse,
     HealthStatus,
     ReadinessResponse,
 )
 from py_health.state import (
-    get_consecutive_failures,
     get_last_status,
     increment_failures,
     reset_failures,
@@ -71,6 +70,7 @@ _process_start_time: float = time_module.time()
 # ============================================================================
 # 内部工具函数
 # ============================================================================
+
 
 def _now_iso() -> str:
     """生成当前 UTC 时间的 ISO 8601 字符串，精确到秒。
@@ -247,13 +247,9 @@ async def _check_minio() -> ComponentHealth:
         )
 
         async def _do_bucket_check() -> bool:
-            return await asyncio.to_thread(
-                client.bucket_exists, BUCKET_NAME
-            )
+            return await asyncio.to_thread(client.bucket_exists, BUCKET_NAME)
 
-        bucket_found = await asyncio.wait_for(
-            _do_bucket_check(), timeout=MINIO_TIMEOUT
-        )
+        bucket_found = await asyncio.wait_for(_do_bucket_check(), timeout=MINIO_TIMEOUT)
 
         if bucket_found:
             return ComponentHealth(status=ComponentStatus.connected)
@@ -295,13 +291,15 @@ async def check_all() -> HealthCheckResponse:
         HealthCheckResponse: 完整的健康检查响应（含整体状态、组件详情、时间戳）。
     """
     # 步骤 1：并发执行三个组件的连通性检查
-    results: tuple[ComponentHealth | BaseException, ComponentHealth | BaseException, ComponentHealth | BaseException] = (
-        await asyncio.gather(
-            _check_postgresql(),
-            _check_redis(),
-            _check_minio(),
-            return_exceptions=True,
-        )
+    results: tuple[
+        ComponentHealth | BaseException,
+        ComponentHealth | BaseException,
+        ComponentHealth | BaseException,
+    ] = await asyncio.gather(
+        _check_postgresql(),
+        _check_redis(),
+        _check_minio(),
+        return_exceptions=True,
     )
 
     # 步骤 2：提取各组件健康状态
@@ -311,9 +309,7 @@ async def check_all() -> HealthCheckResponse:
 
     # 步骤 3：判定整体健康状态
     disconnected_count = sum(
-        1
-        for h in (pg_health, redis_health, minio_health)
-        if h.status == ComponentStatus.disconnected
+        1 for h in (pg_health, redis_health, minio_health) if h.status == ComponentStatus.disconnected
     )
 
     if disconnected_count == 0:
@@ -327,9 +323,7 @@ async def check_all() -> HealthCheckResponse:
     any_failure = disconnected_count > 0
     if any_failure:
         # MinIO bucket_not_found 不应计入失败（连通性正常）
-        actual_failures = _count_actual_failures(
-            pg_health, redis_health, minio_health
-        )
+        actual_failures = _count_actual_failures(pg_health, redis_health, minio_health)
         if actual_failures > 0:
             increment_failures()
     else:
@@ -503,6 +497,4 @@ def _build_status_change_message(
     """
     if previous is None:
         return f"Initial health check completed: status={current.value}"
-    return (
-        f"Health status changed: {previous.value} -> {current.value}"
-    )
+    return f"Health status changed: {previous.value} -> {current.value}"

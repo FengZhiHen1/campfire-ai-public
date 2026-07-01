@@ -9,6 +9,8 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from py_logger import logger
+
 from .ac_matcher import AhoCorasickMatcher, _negation_filter
 from .enums import CrisisLevel
 from .layer import JudgmentLayer
@@ -16,7 +18,6 @@ from .models import (
     CrisisJudgmentRequest,
     JudgmentLayerResult,
 )
-from py_logger import logger
 
 # 档案叠加规则触发词（表示重复发生）
 _PROFILE_OVERLAP_TRIGGERS: list[str] = ["又", "再次", "还是"]
@@ -25,7 +26,18 @@ _PROFILE_OVERLAP_TRIGGERS: list[str] = ["又", "再次", "还是"]
 _PROFILE_OVERLAP_TAGS: list[str] = ["self_injury", "aggression"]
 
 # 档案叠加规则要求的伤害动作词——必须同时出现才升级等级
-_PROFILE_OVERLAP_ACTIONS: list[str] = ["撞头", "撞墙", "自伤", "自残", "咬手", "抓挠", "打人", "攻击", "踢人", "摔东西"]
+_PROFILE_OVERLAP_ACTIONS: list[str] = [
+    "撞头",
+    "撞墙",
+    "自伤",
+    "自残",
+    "咬手",
+    "抓挠",
+    "打人",
+    "攻击",
+    "踢人",
+    "摔东西",
+]
 
 
 class RuleEngineLayer(JudgmentLayer):
@@ -208,10 +220,7 @@ def _check_profile_overlap_review_only(request: CrisisJudgmentRequest) -> bool:
     if profile is None:
         return False
 
-    has_overlap_tag = any(
-        tag in profile.historical_behavior_tags
-        for tag in _PROFILE_OVERLAP_TAGS
-    )
+    has_overlap_tag = any(tag in profile.historical_behavior_tags for tag in _PROFILE_OVERLAP_TAGS)
     if not has_overlap_tag:
         return False
 
@@ -242,10 +251,7 @@ def _check_profile_overlap(request: CrisisJudgmentRequest) -> bool:
         return False
 
     # 检查历史行为标签
-    has_overlap_tag = any(
-        tag in profile.historical_behavior_tags
-        for tag in _PROFILE_OVERLAP_TAGS
-    )
+    has_overlap_tag = any(tag in profile.historical_behavior_tags for tag in _PROFILE_OVERLAP_TAGS)
     if not has_overlap_tag:
         return False
 

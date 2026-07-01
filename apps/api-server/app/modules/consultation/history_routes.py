@@ -13,6 +13,7 @@ from __future__ import annotations
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from py_schemas.consultation_history import ConsultationHistoryCreate
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.dependencies.anonymous_user import get_anonymous_user
@@ -23,7 +24,6 @@ from app.modules.consultation.history.service import (
     get_detail,
     list_history,
 )
-from py_schemas.consultation_history import ConsultationHistoryCreate
 
 router = APIRouter(prefix="/api/v1/consultations", tags=["consultations"])
 
@@ -132,11 +132,7 @@ async def list_consultations(
     "/{consultation_id}",
     status_code=status.HTTP_200_OK,
     summary="查询咨询详情",
-    description=(
-        "查询单次咨询的完整详情。"
-        "仅返回当前用户本人的记录。"
-        "不存在或无权访问时统一返回 404。"
-    ),
+    description=("查询单次咨询的完整详情。仅返回当前用户本人的记录。不存在或无权访问时统一返回 404。"),
     responses={
         200: {"description": "成功返回咨询完整详情"},
         404: {"description": "该咨询记录不存在或无权查看"},

@@ -10,8 +10,8 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql import Select
 
-from py_db.models.auth import User
 from py_db.base_repository import BaseRepository
+from py_db.models.auth import User
 
 
 class UserRepository(BaseRepository[User]):
@@ -48,10 +48,9 @@ class UserRepository(BaseRepository[User]):
         Returns:
             匹配的 User 实例，不存在时返回 None。
         """
+
         async def _query() -> User | None:
-            stmt: Select = select(self.model).where(
-                func.lower(self.model.username) == func.lower(username)
-            )
+            stmt: Select = select(self.model).where(func.lower(self.model.username) == func.lower(username))
             result = await session.execute(stmt)
             return result.scalars().first()
 
@@ -74,6 +73,7 @@ class UserRepository(BaseRepository[User]):
         Returns:
             匹配的 User 实例，不存在时返回 None。
         """
+
         async def _query() -> User | None:
             stmt: Select = select(self.model).where(self.model.phone == phone)
             result = await session.execute(stmt)
@@ -95,6 +95,7 @@ class UserRepository(BaseRepository[User]):
         Returns:
             匹配的 User 实例，不存在时返回 None。
         """
+
         async def _query() -> User | None:
             stmt: Select = select(self.model).where(self.model.device_id == device_id)
             result = await session.execute(stmt)

@@ -5,8 +5,6 @@
 
 from __future__ import annotations
 
-import pytest
-
 from py_schemas.enums.case_enums import (
     BehaviorType,
     CaseStatus,

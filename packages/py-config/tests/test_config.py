@@ -6,13 +6,7 @@
 
 from __future__ import annotations
 
-import os
-import warnings
-from unittest import mock
-
 import pytest
-from pydantic import ValidationError
-
 from py_config.exceptions import (
     ConfigError,
     ConfigFormatError,
@@ -23,7 +17,7 @@ from py_config.exceptions import (
     ProfileConflictError,
     ProfileLimitExceededError,
 )
-
+from pydantic import ValidationError
 
 # ===========================================================================
 # Exceptions
@@ -106,6 +100,7 @@ class TestConfigWarning:
 class TestRateLimitConfig:
     def test_defaults(self):
         from py_config.security import RateLimitConfig
+
         cfg = RateLimitConfig()
         assert cfg.RATE_LIMIT_USER_PER_MINUTE == 30
         assert cfg.RATE_LIMIT_IP_PER_MINUTE == 100
@@ -113,6 +108,7 @@ class TestRateLimitConfig:
 
     def test_custom(self):
         from py_config.security import RateLimitConfig
+
         cfg = RateLimitConfig(
             RATE_LIMIT_USER_PER_MINUTE=10,
             RATE_LIMIT_IP_PER_MINUTE=50,
@@ -134,6 +130,7 @@ class TestSecurityConfig:
         monkeypatch.setenv("SECURITY_JWT_SECRET_KEY", _MIN_32_KEY)
         monkeypatch.setenv("SECURITY_JWT_PREVIOUS_SECRET_KEY", _MIN_32_KEY)
         from py_config.security import SecurityConfig
+
         cfg = SecurityConfig()
         assert cfg.BCRYPT_ROUNDS == 12
         assert cfg.JWT_ALGORITHM == "HS256"
@@ -146,6 +143,7 @@ class TestSecurityConfig:
         monkeypatch.setenv("SECURITY_JWT_SECRET_KEY", "short")
         monkeypatch.setenv("SECURITY_JWT_PREVIOUS_SECRET_KEY", _MIN_32_KEY)
         from py_config.security import SecurityConfig
+
         with pytest.raises(ValidationError):
             SecurityConfig()
 
@@ -154,6 +152,7 @@ class TestSecurityConfig:
         monkeypatch.delenv("SECURITY_JWT_PREVIOUS_SECRET_KEY", raising=False)
         # Need to reload; lru_cache makes this tricky
         from py_config.security import get_security_config
+
         get_security_config.cache_clear()
 
     def test_custom_bcrypt_rounds(self, monkeypatch):
@@ -161,6 +160,7 @@ class TestSecurityConfig:
         monkeypatch.setenv("SECURITY_JWT_PREVIOUS_SECRET_KEY", _MIN_32_KEY)
         monkeypatch.setenv("SECURITY_BCRYPT_ROUNDS", "14")
         from py_config.security import SecurityConfig
+
         cfg = SecurityConfig()
         assert cfg.BCRYPT_ROUNDS == 14
 
@@ -168,6 +168,7 @@ class TestSecurityConfig:
         monkeypatch.setenv("SECURITY_JWT_SECRET_KEY", _MIN_32_KEY)
         monkeypatch.setenv("SECURITY_JWT_PREVIOUS_SECRET_KEY", _MIN_32_KEY)
         from py_config.security import SecurityConfig
+
         cfg = SecurityConfig()
         assert cfg.JWT_KEY_VERSION == "v1"
 
@@ -175,8 +176,10 @@ class TestSecurityConfig:
         monkeypatch.setenv("SECURITY_JWT_SECRET_KEY", _MIN_32_KEY)
         monkeypatch.setenv("SECURITY_JWT_PREVIOUS_SECRET_KEY", _MIN_32_KEY)
         import json
+
         monkeypatch.setenv("SECURITY_ALLOWED_FILE_EXTENSIONS", json.dumps(["pdf", "jpg"]))
         from py_config.security import SecurityConfig
+
         cfg = SecurityConfig()
         assert cfg.ALLOWED_FILE_EXTENSIONS == ["pdf", "jpg"]
 
@@ -186,6 +189,7 @@ class TestGetSecurityConfig:
         monkeypatch.setenv("SECURITY_JWT_SECRET_KEY", _MIN_32_KEY)
         monkeypatch.setenv("SECURITY_JWT_PREVIOUS_SECRET_KEY", _MIN_32_KEY)
         from py_config.security import get_security_config
+
         get_security_config.cache_clear()
         cfg1 = get_security_config()
         cfg2 = get_security_config()
@@ -203,6 +207,7 @@ class TestAppSettings:
         monkeypatch.setenv("SECURITY_JWT_SECRET_KEY", _MIN_32_KEY)
         monkeypatch.setenv("SECURITY_JWT_PREVIOUS_SECRET_KEY", _MIN_32_KEY)
         from py_config.security import SecurityConfig
+
         cfg = SecurityConfig()
         assert cfg.JWT_SECRET_KEY == _MIN_32_KEY
         assert cfg.JWT_PREVIOUS_SECRET_KEY == _MIN_32_KEY

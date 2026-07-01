@@ -12,21 +12,20 @@
 
 from __future__ import annotations
 
-from py_logger import logger
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import and_, func, or_, select, text, update as sa_update
-from sqlalchemy.ext.asyncio import AsyncSession
-
-from py_db.sqlalchemy_helpers import rowcount
-from sqlalchemy.inspection import inspect as sa_inspect
-from sqlalchemy.sql import Select, func as sa_func
-
-from py_db.models.case_model import Case
-from py_db.base_repository import BaseRepository
 from py_schemas.enums.case_enums import CaseStatus
+from sqlalchemy import and_, or_, select, text
+from sqlalchemy import update as sa_update
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.inspection import inspect as sa_inspect
+from sqlalchemy.sql import Select
+from sqlalchemy.sql import func as sa_func
 
+from py_db.base_repository import BaseRepository
+from py_db.models.case_model import Case
+from py_db.sqlalchemy_helpers import rowcount
 
 
 class CaseRepository(BaseRepository[Case]):
@@ -58,15 +57,14 @@ class CaseRepository(BaseRepository[Case]):
         Raises:
             RepositoryCommunicationError: 序列读取失败且重试耗尽。
         """
+
         async def _generate() -> str:
             result = await session.execute(text("SELECT nextval('case_id_seq')"))
             seq_value = int(result.scalar_one())
             year: int = datetime.now().year
             return f"CASE-{year}-{seq_value:04d}"
 
-        return await self._execute_with_retry(
-            session, "generate_case_id", _generate
-        )
+        return await self._execute_with_retry(session, "generate_case_id", _generate)
 
     # ------------------------------------------------------------------
     # 自定义查询方法
@@ -86,6 +84,7 @@ class CaseRepository(BaseRepository[Case]):
         Returns:
             匹配的 Case 实例，不存在时返回 None。
         """
+
         async def _query() -> Case | None:
             stmt: Select = select(self.model).where(self.model.case_id == case_id)
             result = await session.execute(stmt)
@@ -113,6 +112,7 @@ class CaseRepository(BaseRepository[Case]):
         Returns:
             Case 实例（版本匹配）或 None（版本不匹配）。
         """
+
         async def _query() -> Case | None:
             stmt: Select = select(self.model).where(
                 self.model.case_id == case_id,
@@ -121,9 +121,7 @@ class CaseRepository(BaseRepository[Case]):
             result = await session.execute(stmt)
             return result.scalars().first()
 
-        return await self._execute_with_retry(
-            session, "find_by_id_with_version", _query
-        )
+        return await self._execute_with_retry(session, "find_by_id_with_version", _query)
 
     async def find_by_filters(
         self,
@@ -153,6 +151,7 @@ class CaseRepository(BaseRepository[Case]):
         Returns:
             (cases, total_count) 元组。
         """
+
         async def _query() -> tuple[list[Case], int]:
             conditions: list[Any] = []
             if status is not None:
@@ -239,9 +238,7 @@ class CaseRepository(BaseRepository[Case]):
             result = await session.execute(stmt)
             return list(result.scalars().all())
 
-        return await self._execute_with_retry(
-            session, "find_approved_ids", _query
-        )
+        return await self._execute_with_retry(session, "find_approved_ids", _query)
 
     # ------------------------------------------------------------------
     # 状态更新
@@ -283,13 +280,9 @@ class CaseRepository(BaseRepository[Case]):
             if review_comment is not None:
                 values["review_comment"] = review_comment
 
-            result = await session.execute(
-                sa_update(Case).where(and_(*conditions)).values(**values)
-            )
+            result = await session.execute(sa_update(Case).where(and_(*conditions)).values(**values))
             if rowcount(result) == 0:
-                raise ValueError(
-                    f"案例 {case_id} 不存在或状态已变更（预期 {expected_status}）"
-                )
+                raise ValueError(f"案例 {case_id} 不存在或状态已变更（预期 {expected_status}）")
 
             case = await self.find_by_case_id(session, case_id)
             assert case is not None
@@ -340,9 +333,7 @@ class CaseRepository(BaseRepository[Case]):
                 .values(**values)
             )
             if rowcount(result) == 0:
-                raise ValueError(
-                    f"案例 {case.case_id} 已被其他用户修改，请刷新后重试"
-                )
+                raise ValueError(f"案例 {case.case_id} 已被其他用户修改，请刷新后重试")
 
             await session.refresh(case)
             return case

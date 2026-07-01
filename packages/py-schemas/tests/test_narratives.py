@@ -1,20 +1,18 @@
-"""L1 原始叙事层 — Pydantic Schema 单元测试。
-"""
+"""L1 原始叙事层 — Pydantic Schema 单元测试。"""
 
 from __future__ import annotations
 
 from datetime import datetime, timezone
 
 import pytest
-from pydantic import ValidationError
-
+from py_schemas.enums.case_enums import CaseStatus
 from py_schemas.narratives import (
     NarrativeCreateRequest,
     NarrativeListItem,
     NarrativeResponse,
     NarrativeUpdate,
 )
-from py_schemas.enums.case_enums import CaseStatus
+from pydantic import ValidationError
 
 
 class TestNarrativeCreateRequest:
@@ -37,7 +35,10 @@ class TestNarrativeCreateRequest:
     def test_extra_fields_forbidden(self):
         with pytest.raises(ValidationError):
             NarrativeCreateRequest(
-                title="测试", narrative="内容", source_type="专家撰写", extra="bad",
+                title="测试",
+                narrative="内容",
+                source_type="专家撰写",
+                extra="bad",
             )
 
 

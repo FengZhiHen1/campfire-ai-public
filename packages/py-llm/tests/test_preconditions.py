@@ -8,7 +8,6 @@
 from __future__ import annotations
 
 import pytest
-
 from helpers import NormalClient
 
 VALID_MESSAGES: list[dict[str, str]] = [{"role": "user", "content": "Hi"}]
@@ -80,11 +79,17 @@ async def test_chat_rejects_empty_model():
 # ============================================================================
 
 
-@pytest.mark.parametrize("temp,should_reject", [
-    (-0.1, True), (-100.0, True),
-    (0.0, False), (2.0, False),
-    (2.1, True), (100.0, True),
-])
+@pytest.mark.parametrize(
+    "temp,should_reject",
+    [
+        (-0.1, True),
+        (-100.0, True),
+        (0.0, False),
+        (2.0, False),
+        (2.1, True),
+        (100.0, True),
+    ],
+)
 @pytest.mark.asyncio
 async def test_chat_stream_temperature_validation(temp, should_reject):
     """temperature 必须在 [0.0, 2.0] 范围内。"""
@@ -98,9 +103,15 @@ async def test_chat_stream_temperature_validation(temp, should_reject):
         assert len(chunks) > 0
 
 
-@pytest.mark.parametrize("temp,should_reject", [
-    (-0.1, True), (0.0, False), (2.0, False), (2.1, True),
-])
+@pytest.mark.parametrize(
+    "temp,should_reject",
+    [
+        (-0.1, True),
+        (0.0, False),
+        (2.0, False),
+        (2.1, True),
+    ],
+)
 @pytest.mark.asyncio
 async def test_chat_temperature_validation(temp, should_reject):
     """非流式路径中 temperature 必须在 [0.0, 2.0] 范围内。"""
@@ -118,10 +129,16 @@ async def test_chat_temperature_validation(temp, should_reject):
 # ============================================================================
 
 
-@pytest.mark.parametrize("tokens,should_reject", [
-    (0, True), (-1, True), (-100, True),
-    (1, False), (8192, False),
-])
+@pytest.mark.parametrize(
+    "tokens,should_reject",
+    [
+        (0, True),
+        (-1, True),
+        (-100, True),
+        (1, False),
+        (8192, False),
+    ],
+)
 @pytest.mark.asyncio
 async def test_chat_stream_max_tokens_validation(tokens, should_reject):
     """max_tokens 必须 >= 1。"""
@@ -135,9 +152,14 @@ async def test_chat_stream_max_tokens_validation(tokens, should_reject):
         assert len(chunks) > 0
 
 
-@pytest.mark.parametrize("tokens,should_reject", [
-    (0, True), (1, False), (-5, True),
-])
+@pytest.mark.parametrize(
+    "tokens,should_reject",
+    [
+        (0, True),
+        (1, False),
+        (-5, True),
+    ],
+)
 @pytest.mark.asyncio
 async def test_chat_max_tokens_validation(tokens, should_reject):
     """非流式路径中 max_tokens 必须 >= 1。"""

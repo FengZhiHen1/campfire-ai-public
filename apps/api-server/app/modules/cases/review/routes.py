@@ -14,17 +14,6 @@ from __future__ import annotations
 from typing import Any, Dict, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy.ext.asyncio import AsyncSession
-
-from app.core.dependencies.anonymous_user import get_anonymous_user
-from app.core.dependencies.auth_dependencies import (
-    get_case_repository,
-    get_db_session,
-    get_narrative_repository,
-    get_review_audit_log_repository,
-    get_review_repository,
-)
-from .service import ReviewWorkflowService
 from py_db.repositories.case_repository import CaseRepository
 from py_db.repositories.narrative_repository import NarrativeRepository
 from py_db.repositories.review_repository import (
@@ -38,7 +27,19 @@ from py_schemas.cases import (
     ReviewRequest,
 )
 from py_schemas.security.validation_schemas import ValidationErrorResponse
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.core.dependencies.anonymous_user import get_anonymous_user
+from app.core.dependencies.auth_dependencies import (
+    get_case_repository,
+    get_db_session,
+    get_narrative_repository,
+    get_review_audit_log_repository,
+    get_review_repository,
+)
+
 from ..exceptions import SelfReviewForbiddenError
+from .service import ReviewWorkflowService
 
 router = APIRouter(prefix="/api/v1/cases", tags=["reviews"])
 
@@ -60,8 +61,7 @@ _review_service = ReviewWorkflowService()
     },
     summary="提交审核裁决",
     description=(
-        "对处于 pending_review 状态的案例执行审核。\n\n"
-        "MVP 阶段：任何用户均可审核。审核通过后自动触发 Worker 索引入队。"
+        "对处于 pending_review 状态的案例执行审核。\n\nMVP 阶段：任何用户均可审核。审核通过后自动触发 Worker 索引入队。"
     ),
 )
 async def submit_review_endpoint(

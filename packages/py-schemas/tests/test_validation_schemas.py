@@ -7,8 +7,6 @@ FileValidationRule、FileValidationResult、SecurityAuditLogEntry。
 from __future__ import annotations
 
 import pytest
-from pydantic import ValidationError
-
 from py_schemas.security.validation_schemas import (
     FileValidationResult,
     FileValidationRule,
@@ -17,6 +15,7 @@ from py_schemas.security.validation_schemas import (
     ValidationErrorItem,
     ValidationErrorResponse,
 )
+from pydantic import ValidationError
 
 
 class TestSecurityDetectionType:
@@ -62,7 +61,11 @@ class TestFileValidationRule:
 
     def test_zero_max_size(self):
         with pytest.raises(ValidationError):
-            FileValidationRule(allowed_mime_types=["image/jpeg"], allowed_extensions=[".jpg"], max_size_bytes=0)
+            FileValidationRule(
+                allowed_mime_types=["image/jpeg"],
+                allowed_extensions=[".jpg"],
+                max_size_bytes=0,
+            )
 
 
 class TestFileValidationResult:

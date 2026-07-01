@@ -7,7 +7,6 @@
 from __future__ import annotations
 
 import pytest
-
 from py_security.exceptions import PiiInputValidationError, PiiPatternCompileError
 from py_security.pii_detector import RegexPiiDetector
 from py_security.types import (

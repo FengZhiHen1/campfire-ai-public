@@ -10,7 +10,6 @@ from __future__ import annotations
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
-
 from py_logger import logger
 from py_schemas.security.validation_schemas import (
     ValidationErrorItem,
@@ -114,9 +113,7 @@ async def _validation_exception_handler(
             "path": str(request.url.path),
             "method": request.method,
             "error_count": len(errors),
-            "errors": [
-                {"field": e.field, "reason": e.reason} for e in errors
-            ],
+            "errors": [{"field": e.field, "reason": e.reason} for e in errors],
         },
     )
 

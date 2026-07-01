@@ -11,15 +11,12 @@
 
 from __future__ import annotations
 
-import asyncio
 from typing import Any
 from unittest.mock import AsyncMock, patch
 
 import pytest
-
 from py_rag.embedding_contract import BaseEmbeddingEncoder
-from py_rag.types import EMBEDDING_DIMENSION, EmbeddingVector
-
+from py_rag.types import EMBEDDING_DIMENSION
 
 # ============================================================================
 # Mock 子类 — 仅实现 @abstractmethod 钩子，返回最小合法值
@@ -184,6 +181,7 @@ class TestEncodeBoundary:
 # P3：状态/熔断器测试
 # ============================================================================
 
+
 class TestCircuitBreaker:
     """熔断器与失败计数器测试。"""
 
@@ -265,9 +263,7 @@ class TestCircuitBreaker:
             # 验证 asyncio.sleep(30.0) 被调用过（熔断器专用值）
             # 注意：重试也调用 sleep(1.0) 和 sleep(3.0)
             sleep_calls = [call.args[0] for call in mock_sleep.await_args_list]
-            assert 30.0 in sleep_calls, (
-                f"熔断器睡眠未被调用，实际调用参数: {sleep_calls}"
-            )
+            assert 30.0 in sleep_calls, f"熔断器睡眠未被调用，实际调用参数: {sleep_calls}"
 
     @pytest.mark.asyncio
     async def test_p3_two_retries_before_final_failure(self):
@@ -277,9 +273,7 @@ class TestCircuitBreaker:
             await encoder.encode("测试")
         except Exception:
             pass
-        assert encoder.call_count == 3, (
-            f"期望 3 次尝试（1+2 重试），实际 {encoder.call_count}"
-        )
+        assert encoder.call_count == 3, f"期望 3 次尝试（1+2 重试），实际 {encoder.call_count}"
 
 
 # ============================================================================

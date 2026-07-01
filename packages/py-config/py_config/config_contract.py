@@ -66,6 +66,4 @@ class BaseConfigLoader(ABC, Generic[TSettings]):
         （如生产环境密钥来源检测）。
         """
         if settings is None:
-            raise RuntimeError(
-                f"{self.__class__.__name__}._do_load() returned None"
-            )
+            raise RuntimeError(f"{self.__class__.__name__}._do_load() returned None")

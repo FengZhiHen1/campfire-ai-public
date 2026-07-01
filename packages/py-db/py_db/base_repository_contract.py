@@ -23,8 +23,10 @@ from abc import ABC
 from typing import Any, Generic, TypeVar, final
 
 from py_logger import logger
-from sqlalchemy import inspect as sa_inspect, select
-from sqlalchemy.exc import OperationalError, TimeoutError as SQLAlchemyTimeoutError
+from sqlalchemy import inspect as sa_inspect
+from sqlalchemy import select
+from sqlalchemy.exc import OperationalError
+from sqlalchemy.exc import TimeoutError as SQLAlchemyTimeoutError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from py_db.exceptions import RepositoryCommunicationError
@@ -136,8 +138,7 @@ class BaseRepository(ABC, Generic[ModelT]):
                         pass
 
         raise RepositoryCommunicationError(
-            f"数据库操作 '{operation_name}' 在 {_MAX_RETRY_COUNT} 次重试后仍然失败: "
-            f"{last_exception}",
+            f"数据库操作 '{operation_name}' 在 {_MAX_RETRY_COUNT} 次重试后仍然失败: {last_exception}",
             operation_name=operation_name,
             retries_attempted=_MAX_RETRY_COUNT,
         )
@@ -166,9 +167,7 @@ class BaseRepository(ABC, Generic[ModelT]):
           - 通过 py_logger 记录结构化日志（失败重试时）
         """
         self._validate_entity_not_none(entity)
-        result = await self._execute_with_retry(
-            session, "create", lambda: self._do_create(session, entity)
-        )
+        result = await self._execute_with_retry(session, "create", lambda: self._do_create(session, entity))
         self._validate_result_not_none(result, "create")
         return result
 
@@ -196,9 +195,7 @@ class BaseRepository(ABC, Generic[ModelT]):
           - 通过 py_logger 记录结构化日志（失败重试时）
         """
         self._validate_entity_id_not_none(entity_id)
-        result = await self._execute_with_retry(
-            session, "find_by_id", lambda: self._do_find_by_id(session, entity_id)
-        )
+        result = await self._execute_with_retry(session, "find_by_id", lambda: self._do_find_by_id(session, entity_id))
         self._validate_find_result(result, entity_id)
         return result
 
@@ -228,9 +225,7 @@ class BaseRepository(ABC, Generic[ModelT]):
           - 通过 py_logger 记录结构化日志（失败重试时）
         """
         self._validate_pagination_params(offset, limit)
-        result = await self._execute_with_retry(
-            session, "find_all", lambda: self._do_find_all(session, offset, limit)
-        )
+        result = await self._execute_with_retry(session, "find_all", lambda: self._do_find_all(session, offset, limit))
         self._validate_result_is_list(result, "find_all")
         return result
 
@@ -258,9 +253,7 @@ class BaseRepository(ABC, Generic[ModelT]):
           - 通过 py_logger 记录结构化日志（失败重试时）
         """
         self._validate_entity_not_none(entity)
-        result = await self._execute_with_retry(
-            session, "update", lambda: self._do_update(session, entity)
-        )
+        result = await self._execute_with_retry(session, "update", lambda: self._do_update(session, entity))
         self._validate_result_not_none(result, "update")
         return result
 
@@ -286,9 +279,7 @@ class BaseRepository(ABC, Generic[ModelT]):
           - 通过 py_logger 记录结构化日志（失败重试时）
         """
         self._validate_entity_not_none(entity)
-        await self._execute_with_retry(
-            session, "delete", lambda: self._do_delete(session, entity)
-        )
+        await self._execute_with_retry(session, "delete", lambda: self._do_delete(session, entity))
         self._validate_delete_completed()
 
     # ==================================================================
@@ -306,9 +297,7 @@ class BaseRepository(ABC, Generic[ModelT]):
         await session.refresh(entity)
         return entity
 
-    async def _do_find_by_id(
-        self, session: AsyncSession, entity_id: Any
-    ) -> ModelT | None:
+    async def _do_find_by_id(self, session: AsyncSession, entity_id: Any) -> ModelT | None:
         """执行 SELECT ... WHERE id = :id 查询。
 
         实现者可按需覆写以添加自定义查询逻辑。
@@ -322,9 +311,7 @@ class BaseRepository(ABC, Generic[ModelT]):
         result = await session.execute(stmt)
         return result.scalars().first()
 
-    async def _do_find_all(
-        self, session: AsyncSession, offset: int, limit: int
-    ) -> list[ModelT]:
+    async def _do_find_all(self, session: AsyncSession, offset: int, limit: int) -> list[ModelT]:
         """执行 SELECT ... LIMIT OFFSET 分页查询。
 
         实现者可按需覆写以添加自定义查询逻辑。
@@ -398,9 +385,7 @@ class BaseRepository(ABC, Generic[ModelT]):
           - RuntimeError: result 为 None。
         """
         if result is None:
-            raise RuntimeError(
-                f"{operation} returned None after successful execution"
-            )
+            raise RuntimeError(f"{operation} returned None after successful execution")
 
     @staticmethod
     def _validate_result_is_list(result: list[ModelT], operation: str) -> None:
@@ -410,21 +395,16 @@ class BaseRepository(ABC, Generic[ModelT]):
           - RuntimeError: result 不是 list。
         """
         if not isinstance(result, list):
-            raise RuntimeError(
-                f"{operation} returned non-list result: {type(result).__name__}"
-            )
+            raise RuntimeError(f"{operation} returned non-list result: {type(result).__name__}")
 
-    def _validate_find_result(
-        self, result: ModelT | None, entity_id: Any
-    ) -> None:
+    def _validate_find_result(self, result: ModelT | None, entity_id: Any) -> None:
         """后置校验：查询结果可为 None（表示未找到），不阻断。
 
         子类可覆写以添加"必须找到"语义。
         """
         if result is not None and not isinstance(result, self.model):
             raise RuntimeError(
-                f"find_by_id returned unexpected type: {type(result).__name__}, "
-                f"expected {self.model.__name__}"
+                f"find_by_id returned unexpected type: {type(result).__name__}, expected {self.model.__name__}"
             )
 
     @staticmethod

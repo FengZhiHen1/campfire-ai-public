@@ -1,5 +1,4 @@
-"""Trace ID 上下文管理 — 单元测试。
-"""
+"""Trace ID 上下文管理 — 单元测试。"""
 
 from __future__ import annotations
 

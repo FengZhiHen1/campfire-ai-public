@@ -6,7 +6,6 @@
 from __future__ import annotations
 
 import pytest
-
 from py_llm.llm_contract import LLMClientError
 from py_llm.types import ChatCompletionChunk, Choice, Delta, RetryConfig
 

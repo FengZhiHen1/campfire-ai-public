@@ -72,9 +72,7 @@ class CaseChunk(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     )
 
     def __repr__(self) -> str:
-        return (
-            f"<CaseChunk(id={self.id!r}, card_id={self.card_id!r})>"
-        )
+        return f"<CaseChunk(id={self.id!r}, card_id={self.card_id!r})>"
 
 
 __all__ = ["CaseChunk"]

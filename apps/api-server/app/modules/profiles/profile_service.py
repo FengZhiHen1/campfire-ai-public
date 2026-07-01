@@ -11,8 +11,6 @@ from datetime import date
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from py_db.models.profiles import Profile
 from py_db.repositories.profile_repository import ProfileRepository
 from py_logger import logger
@@ -26,6 +24,7 @@ from py_schemas.profiles import (
     ProfileResponse,
     ProfileUpdate,
 )
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.profiles.profiles_contract import BaseProfileService
 
@@ -83,9 +82,7 @@ class ProfileServiceImpl(BaseProfileService):
     ) -> ProfileResponse | None:
         existing = await self._repository.get_default(session, caregiver_id)
         if existing is None:
-            profiles, _ = await self._repository.list_by_caregiver(
-                session, caregiver_id, page=1, page_size=1
-            )
+            profiles, _ = await self._repository.list_by_caregiver(session, caregiver_id, page=1, page_size=1)
             existing = profiles[0] if profiles else None
 
         if existing is None:
@@ -120,15 +117,16 @@ class ProfileServiceImpl(BaseProfileService):
         created = await self._repository.create(session, profile)
 
         if count == 0:
-            created = await self._repository.set_default(
-                session, created.profile_id, caregiver_id
-            ) or created
+            created = await self._repository.set_default(session, created.profile_id, caregiver_id) or created
 
         await session.commit()
         logger.info(
             "profile_service",
             "档案创建成功",
-            extra={"profile_id": str(created.profile_id), "caregiver_id": str(caregiver_id)},
+            extra={
+                "profile_id": str(created.profile_id),
+                "caregiver_id": str(caregiver_id),
+            },
         )
         return self._to_response(created)
 
@@ -189,9 +187,7 @@ class ProfileServiceImpl(BaseProfileService):
         )
 
         if was_default:
-            candidate = await self._repository.find_next_default_candidate(
-                session, caregiver_id, profile_id
-            )
+            candidate = await self._repository.find_next_default_candidate(session, caregiver_id, profile_id)
             if candidate:
                 await self._repository.set_default(session, candidate.profile_id, caregiver_id)
                 await session.commit()

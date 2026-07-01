@@ -38,24 +38,13 @@ Usage:
 """
 
 # ── 契约 ────────────────────────────────────────────────────────────────────
+from py_schemas.auth import UserRole
+
 from py_auth.auth_contract import (
     PasswordHasher,
+    RBACGuard,
     TokenBlacklist,
     TokenManager,
-    RBACGuard,
-)
-
-# ── 语法契约（语义类型）─────────────────────────────────────────────────────
-from py_auth.types import DeviceID, HasRoles, JtiToken, PlainPassword, TokenHash, UserID
-
-# ── 异常 ────────────────────────────────────────────────────────────────────
-from py_auth.exceptions import (
-    AuthError,
-    BlacklistError,
-    HashingError,
-    PermissionDeniedError,
-    TokenCreationError,
-    TokenDecodeError,
 )
 
 # ── 实现 ────────────────────────────────────────────────────────────────────
@@ -65,6 +54,16 @@ from py_auth.blacklist import (
     is_blacklisted,
     is_refresh_used,
     mark_refresh_used,
+)
+
+# ── 异常 ────────────────────────────────────────────────────────────────────
+from py_auth.exceptions import (
+    AuthError,
+    BlacklistError,
+    HashingError,
+    PermissionDeniedError,
+    TokenCreationError,
+    TokenDecodeError,
 )
 from py_auth.hashing import BcryptHasher, hash_password, verify_password
 from py_auth.jwt_utils import (
@@ -83,7 +82,9 @@ from py_auth.rbac import (
     get_masked_phone,
     require_role,
 )
-from py_schemas.auth import UserRole
+
+# ── 语法契约（语义类型）─────────────────────────────────────────────────────
+from py_auth.types import DeviceID, HasRoles, JtiToken, PlainPassword, TokenHash, UserID
 
 __all__ = [
     # ── 契约 ──

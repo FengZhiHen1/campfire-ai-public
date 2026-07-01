@@ -7,8 +7,6 @@ RefreshRequest、PermissionDeniedResponse、UserRole。
 from __future__ import annotations
 
 import pytest
-from pydantic import ValidationError
-
 from py_schemas.auth import (
     LoginRequest,
     PermissionDeniedResponse,
@@ -18,7 +16,7 @@ from py_schemas.auth import (
     TokenResponse,
     UserRole,
 )
-
+from pydantic import ValidationError
 
 # ===========================================================================
 # UserRole
@@ -148,7 +146,11 @@ class TestRegisterResponse:
 
     def test_extra_fields_forbidden(self):
         with pytest.raises(ValidationError):
-            RegisterResponse(result="success", user_id="550e8400-e29b-41d4-a716-446655440000", token="x")
+            RegisterResponse(
+                result="success",
+                user_id="550e8400-e29b-41d4-a716-446655440000",
+                token="x",
+            )
 
 
 # ===========================================================================

@@ -45,7 +45,6 @@ from pydantic import Field, field_validator
 
 from py_schemas.base import CampfireBaseModel
 
-
 # ===========================================================================
 # PROF-05 类型（保持不变）
 # ===========================================================================
@@ -160,10 +159,7 @@ class AccessDecision(CampfireBaseModel):
     denial_reason: str | None = Field(
         default=None,
         max_length=100,
-        description=(
-            "拒绝原因。allowed=false 时必填，值必须为泛化消息'数据不存在'。"
-            "allowed=true 时为 null"
-        ),
+        description=("拒绝原因。allowed=false 时必填，值必须为泛化消息'数据不存在'。allowed=true 时为 null"),
     )
 
 

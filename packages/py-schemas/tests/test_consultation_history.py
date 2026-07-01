@@ -10,15 +10,13 @@ from datetime import datetime, timezone
 from uuid import uuid4
 
 import pytest
-from pydantic import ValidationError
-
 from py_schemas.consultation_history import (
+    GENERATION_DISCLAIMER_CONST,
     ConsultationHistoryCreate,
     ConsultationHistoryDetail,
     ConsultationHistoryListItem,
-    GENERATION_DISCLAIMER_CONST,
 )
-
+from pydantic import ValidationError
 
 DISCLAIMER = GENERATION_DISCLAIMER_CONST
 
@@ -90,7 +88,7 @@ class TestConsultationHistoryCreate:
     def test_plan_sections_preserved(self):
         sections = {
             "即时安全干预动作": ["第一步：确保安全"],
-            "情绪安抚话术": ["\"没关系，我陪着你。\""],
+            "情绪安抚话术": ['"没关系，我陪着你。"'],
             "后续观察指标": ["观察频率"],
             "就医判断标准": ["出现自伤时就医"],
         }

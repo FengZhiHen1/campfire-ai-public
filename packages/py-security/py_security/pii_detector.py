@@ -32,12 +32,13 @@ def _get_logger() -> StructuredLogger:
     from py_logger import logger
 
     return logger
+
+
 from py_security.pii_contract import BasePiiDetector
 from py_security.pii_patterns import PII_PATTERNS
 from py_security.types import (
     DetectedText,
     PiiDetectionResult,
-    PiiType,
     PiiWarning,
     PositionIndex,
 )

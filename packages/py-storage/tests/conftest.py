@@ -25,7 +25,11 @@ def _mock_native_deps(monkeypatch):
     fake_security = MagicMock(name="py_config.security")
     fake_get_config = MagicMock(name="get_security_config")
     fake_get_config.return_value.ALLOWED_FILE_EXTENSIONS = [
-        "png", "jpg", "jpeg", "pdf", "docx",
+        "png",
+        "jpg",
+        "jpeg",
+        "pdf",
+        "docx",
     ]
     fake_security.get_security_config = fake_get_config
 

@@ -36,7 +36,6 @@ from py_rag.types import (
     CompositeScore,
     EmbeddingVector,
     QueryFingerprint,
-    SimilarityScore,
 )
 
 # ---------------------------------------------------------------------------
@@ -96,9 +95,7 @@ class BaseSemanticSearch(ABC):
           - 记录结构化日志（含 query_fingerprint，不含完整查询文本）
           - 不执行任何写操作（纯只读）
         """
-        actual_top_k, query_fingerprint = self._validate_input(
-            query_text, top_k, db
-        )
+        actual_top_k, query_fingerprint = self._validate_input(query_text, top_k, db)
 
         query_vector: EmbeddingVector | None = None
         embedding_successful: bool = False
@@ -117,9 +114,7 @@ class BaseSemanticSearch(ABC):
             )
 
         try:
-            final_rows = await asyncio.wait_for(
-                _search_pipeline(), timeout=_TOTAL_TIMEOUT_SECONDS
-            )
+            final_rows = await asyncio.wait_for(_search_pipeline(), timeout=_TOTAL_TIMEOUT_SECONDS)
         except asyncio.TimeoutError:
             elapsed_ms: float = (time.monotonic() - start_time) * 1000
 
@@ -216,9 +211,7 @@ class BaseSemanticSearch(ABC):
         基线实现使用 hashlib.sha256。
         子类可覆写以使用不同哈希算法。
         """
-        return QueryFingerprint(
-            hashlib.sha256(query_text.encode("utf-8")).hexdigest()
-        )
+        return QueryFingerprint(hashlib.sha256(query_text.encode("utf-8")).hexdigest())
 
     def _build_case_slice_dto(self, row: dict[str, Any]) -> Any:
         """将数据库结果行组装为 CaseSliceDto。
@@ -269,9 +262,7 @@ class BaseSemanticSearch(ABC):
         返回 (actual_top_k, query_fingerprint) 供后续步骤使用。
         """
         if not isinstance(query_text, str):
-            raise ValueError(
-                f"query_text 必须为字符串类型，实际为 {type(query_text).__name__}"
-            )
+            raise ValueError(f"query_text 必须为字符串类型，实际为 {type(query_text).__name__}")
         if not query_text:
             raise ValueError("query_text 不能为空")
         if len(query_text) > 2000:

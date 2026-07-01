@@ -12,10 +12,9 @@ from __future__ import annotations
 
 from typing import Sequence, Union
 
-from alembic import op
 import sqlalchemy as sa
+from alembic import op
 from sqlalchemy.dialects.postgresql import JSONB
-
 
 revision: str = "20260628_000010"
 down_revision: Union[str, Sequence[str], None] = "20260531_000020"

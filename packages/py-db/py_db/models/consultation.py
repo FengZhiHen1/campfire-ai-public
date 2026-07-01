@@ -14,9 +14,17 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
-from typing import Optional
 
-from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Index, Integer, String, Text
+from sqlalchemy import (
+    Boolean,
+    DateTime,
+    Float,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    Text,
+)
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.sql import func
@@ -63,9 +71,7 @@ class ConsultationHistory(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     __tablename__ = "consultations"
 
     # 复合索引: (user_id, consultation_time DESC) — 列表查询
-    __table_args__ = (
-        Index("ix_consultations_user_time", "user_id", "consultation_time"),
-    )
+    __table_args__ = (Index("ix_consultations_user_time", "user_id", "consultation_time"),)
 
     request_id: Mapped[uuid.UUID] = mapped_column(
         nullable=False,

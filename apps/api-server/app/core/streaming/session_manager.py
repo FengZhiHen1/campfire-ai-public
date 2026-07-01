@@ -53,8 +53,7 @@ class StreamSessionManager:
         )
         if not re.match(_SESSION_ID_PATTERN, session_id):
             raise ValueError(
-                f"Invalid session_id format: {session_id!r}. "
-                f"Expected stream-{{uuid4}}",
+                f"Invalid session_id format: {session_id!r}. Expected stream-{{uuid4}}",
             )
 
         session = StreamSession(

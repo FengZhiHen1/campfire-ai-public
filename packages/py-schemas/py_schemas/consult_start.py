@@ -27,12 +27,20 @@ class ConsultStartRequest(CampfireBaseModel):
         default=None,
         description="关联的患者档案 ID（可选）。若提供，将提取档案标签注入检索",
     )
-    behavior_type: list[
+    behavior_type: (
+        list[
             Literal[
-                "SELF_INJURY", "AGGRESSION", "ELOPEMENT", "MEDICATION",
-                "EMOTIONAL_MELTDOWN", "STEREOTYPY", "OTHER",
+                "SELF_INJURY",
+                "AGGRESSION",
+                "ELOPEMENT",
+                "MEDICATION",
+                "EMOTIONAL_MELTDOWN",
+                "STEREOTYPY",
+                "OTHER",
             ]
-        ] | None = Field(
+        ]
+        | None
+    ) = Field(
         default=None,
         min_length=1,
         description="前置行为类型选择（可选，可多选）",
@@ -43,7 +51,6 @@ class ConsultStartRequest(CampfireBaseModel):
     )
 
 
-
 class ConsultStartResponse(CampfireBaseModel):
     """提交应急咨询的响应体。"""
 
@@ -51,7 +58,6 @@ class ConsultStartResponse(CampfireBaseModel):
         ...,
         description="SSE 流式推送会话 ID。客户端随后连接 GET /api/v1/consult/stream/{session_id}",
     )
-
 
 
 __all__ = ["ConsultStartRequest", "ConsultStartResponse"]

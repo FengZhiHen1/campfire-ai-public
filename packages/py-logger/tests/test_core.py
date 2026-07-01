@@ -1,5 +1,4 @@
-"""结构化日志核心 — 单元测试。
-"""
+"""结构化日志核心 — 单元测试。"""
 
 from __future__ import annotations
 
@@ -36,10 +35,16 @@ class TestDefaultHandler:
 class TestJSONFormatter:
     def test_format_output_is_json(self):
         import logging
+
         formatter = JSONFormatter()
         record = logging.LogRecord(
-            name="test", level=logging.INFO, pathname="", lineno=1,
-            msg="hello world", args=(), exc_info=None,
+            name="test",
+            level=logging.INFO,
+            pathname="",
+            lineno=1,
+            msg="hello world",
+            args=(),
+            exc_info=None,
         )
         record.service = "test-service"
         record.trace_id = "trace-abc"

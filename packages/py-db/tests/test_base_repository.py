@@ -8,12 +8,15 @@ from __future__ import annotations
 from unittest import mock
 
 import pytest
+from py_db.repositories.base_repository import (
+    BaseRepository,
+    DependencyCommunicationError,
+)
 from sqlalchemy import Column, Integer, String
-from sqlalchemy.exc import OperationalError, TimeoutError as SQLAlchemyTimeoutError
+from sqlalchemy.exc import OperationalError
+from sqlalchemy.exc import TimeoutError as SQLAlchemyTimeoutError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import DeclarativeBase
-
-from py_db.repositories.base_repository import BaseRepository, DependencyCommunicationError
 
 
 class _TestBase(DeclarativeBase):
@@ -28,6 +31,7 @@ class _RealModel(_TestBase):
 
 class _FakeModel:
     """用于非 select 操作的 ORM 模型替身。"""
+
     id: int = 1
 
 
@@ -61,7 +65,7 @@ class TestCreate:
     @pytest.mark.asyncio
     async def test_create_adds_and_flushes(self, repo, session):
         entity = _RealModel(id=1, name="test")
-        result = await repo.create(session, entity)
+        await repo.create(session, entity)
         session.add.assert_called_once_with(entity)
         session.flush.assert_called_once()
         session.refresh.assert_called_once()
@@ -73,7 +77,7 @@ class TestCreate:
             None,
         ]
         entity = _RealModel(id=1, name="test")
-        result = await repo.create(session, entity)
+        await repo.create(session, entity)
         assert session.flush.call_count == 2
 
     @pytest.mark.asyncio
@@ -158,7 +162,7 @@ class TestUpdate:
     async def test_update_merges_and_flushes(self, repo, session):
         entity = _RealModel(id=1, name="test")
         session.merge.return_value = entity
-        result = await repo.update(session, entity)
+        await repo.update(session, entity)
         session.merge.assert_called_once_with(entity)
         session.flush.assert_called_once()
 

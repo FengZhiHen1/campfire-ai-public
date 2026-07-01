@@ -166,15 +166,12 @@ class BaseFileValidator(ABC):
         """
         if not isinstance(file_input, FileValidationInput):
             raise FileInputValidationError(
-                f"file_input 必须是 FileValidationInput 类型，"
-                f"实际为 {type(file_input).__name__}"
+                f"file_input 必须是 FileValidationInput 类型，实际为 {type(file_input).__name__}"
             )
         if not file_input.filename:
             raise FileInputValidationError("filename 不能为空")
         if not isinstance(file_input.content, bytes):
-            raise FileInputValidationError(
-                f"content 必须是 bytes 类型，实际为 {type(file_input.content).__name__}"
-            )
+            raise FileInputValidationError(f"content 必须是 bytes 类型，实际为 {type(file_input.content).__name__}")
 
     def _validate_result(
         self,
@@ -189,13 +186,10 @@ class BaseFileValidator(ABC):
         """
         if not result.is_valid:
             raise FileValidationError(
-                f"后置校验失败: 预期 is_valid=True，实际 is_valid=False，"
-                f"reason='{result.reason}'"
+                f"后置校验失败: 预期 is_valid=True，实际 is_valid=False，reason='{result.reason}'"
             )
         if result.reason is not None:
-            raise FileValidationError(
-                f"后置校验失败: 校验通过但 reason 非空: '{result.reason}'"
-            )
+            raise FileValidationError(f"后置校验失败: 校验通过但 reason 非空: '{result.reason}'")
 
 
 __all__ = [

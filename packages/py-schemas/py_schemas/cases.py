@@ -22,7 +22,6 @@ from typing import Generic, Literal, TypeVar
 from pydantic import Field, StrictBool, field_validator
 
 from py_schemas.base import CampfireBaseModel
-
 from py_schemas.enums.case_enums import (
     BehaviorType,
     CaseStatus,
@@ -123,9 +122,7 @@ class PiiDetectionResult(CampfireBaseModel):
     """
 
     has_pii: bool = Field(..., description="是否检测到疑似 PII")
-    warnings: list[PiiWarning] = Field(
-        ..., description="PII 警告列表，has_pii 为 False 时为空列表"
-    )
+    warnings: list[PiiWarning] = Field(..., description="PII 警告列表，has_pii 为 False 时为空列表")
 
 
 # ---------------------------------------------------------------------------
@@ -142,45 +139,23 @@ class CaseCreateRequest(CampfireBaseModel):
     """
 
     # MVP 核心必填字段
-    title: str = Field(
-        ..., max_length=100, description="案例标题（L1），去个性化后的简短名称"
-    )
-    behavior_type: BehaviorType = Field(
-        ..., description="行为类型（L2）"
-    )
-    severity: SeverityLevel = Field(
-        ..., description="适用严重程度（L2）"
-    )
-    scene: SceneType = Field(
-        ..., description="发生场景（L2）"
-    )
-    immediate_action: str = Field(
-        ..., min_length=1, description="即时安全干预动作（L2），四段式第一段"
-    )
-    comforting_phrase: str = Field(
-        ..., min_length=1, description="情绪安抚话术（L2），四段式第二段"
-    )
-    observation_metrics: str = Field(
-        ..., min_length=1, description="后续观察指标（L2），四段式第三段"
-    )
-    medical_criteria: str = Field(
-        ..., min_length=1, description="就医判断标准（L2），四段式第四段"
-    )
-    evidence_level: EvidenceLevel = Field(
-        ..., description="循证等级（L2）"
-    )
+    title: str = Field(..., max_length=100, description="案例标题（L1），去个性化后的简短名称")
+    behavior_type: BehaviorType = Field(..., description="行为类型（L2）")
+    severity: SeverityLevel = Field(..., description="适用严重程度（L2）")
+    scene: SceneType = Field(..., description="发生场景（L2）")
+    immediate_action: str = Field(..., min_length=1, description="即时安全干预动作（L2），四段式第一段")
+    comforting_phrase: str = Field(..., min_length=1, description="情绪安抚话术（L2），四段式第二段")
+    observation_metrics: str = Field(..., min_length=1, description="后续观察指标（L2），四段式第三段")
+    medical_criteria: str = Field(..., min_length=1, description="就医判断标准（L2），四段式第四段")
+    evidence_level: EvidenceLevel = Field(..., description="循证等级（L2）")
 
     # MVP 简化：非核心字段改为 Optional，由 Service 层填充默认值
     narrative: str | None = Field(
         default="",
         description="原始叙事文本（L1），以自然语言撰写的完整干预故事，必须完成 PII 脱敏",
     )
-    source_type: SourceType | None = Field(
-        default=None, description="案例来源类型（L1）"
-    )
-    author_id: str | None = Field(
-        default=None, description="撰写专家标识（L1），后端从 current_user 填充"
-    )
+    source_type: SourceType | None = Field(default=None, description="案例来源类型（L1）")
+    author_id: str | None = Field(default=None, description="撰写专家标识（L1），后端从 current_user 填充")
     age_range: list[int] | None = Field(
         default=None,
         min_length=2,
@@ -191,23 +166,15 @@ class CaseCreateRequest(CampfireBaseModel):
         default=None,
         description="循证实践标签（L2），从 NCAEP EBP 标签中选取至少一项",
     )
-    family_category: FamilyDisplayCategory | None = Field(
-        default=None, description="家属端展示大类（L2）"
-    )
-    contraindications: str | None = Field(
-        default=None, description="禁忌与注意事项（L2），必须具体明确"
-    )
-    is_template: bool = Field(
-        default=False, description="是否模板（L2），普通录入默认为 false"
-    )
+    family_category: FamilyDisplayCategory | None = Field(default=None, description="家属端展示大类（L2）")
+    contraindications: str | None = Field(default=None, description="禁忌与注意事项（L2），必须具体明确")
+    is_template: bool = Field(default=False, description="是否模板（L2），普通录入默认为 false")
 
     # 选填字段
     excluded_population: str | None = Field(
         default=None, description="不适用人群（L2，选填），明确标注不适宜的患者群体"
     )
-    attachment_refs: list[AttachmentRef] | None = Field(
-        default=None, description="附件引用列表（L2，选填）"
-    )
+    attachment_refs: list[AttachmentRef] | None = Field(default=None, description="附件引用列表（L2，选填）")
 
     @field_validator("age_range")
     @classmethod
@@ -241,63 +208,29 @@ class CaseUpdate(CampfireBaseModel):
     """
 
     title: str | None = Field(default=None, max_length=100, description="案例标题（L1）")
-    narrative: str | None = Field(
-        default=None, min_length=100, description="原始叙事文本（L1）"
-    )
-    source_type: SourceType | None = Field(
-        default=None, description="案例来源类型（L1）"
-    )
-    behavior_type: BehaviorType | None = Field(
-        default=None, description="行为类型（L2）"
-    )
+    narrative: str | None = Field(default=None, min_length=100, description="原始叙事文本（L1）")
+    source_type: SourceType | None = Field(default=None, description="案例来源类型（L1）")
+    behavior_type: BehaviorType | None = Field(default=None, description="行为类型（L2）")
     age_range: list[int] | None = Field(
         default=None,
         min_length=2,
         max_length=2,
         description="适用年龄区间（L2），[起始岁, 结束岁]",
     )
-    severity: SeverityLevel | None = Field(
-        default=None, description="适用严重程度（L2）"
-    )
-    scene: SceneType | None = Field(
-        default=None, description="发生场景（L2）"
-    )
-    ebp_labels: list[str] | None = Field(
-        default=None, min_length=1, description="循证实践标签（L2）"
-    )
-    family_category: FamilyDisplayCategory | None = Field(
-        default=None, description="家属端展示大类（L2）"
-    )
-    immediate_action: str | None = Field(
-        default=None, min_length=1, description="即时安全干预动作（L2）"
-    )
-    comforting_phrase: str | None = Field(
-        default=None, min_length=1, description="情绪安抚话术（L2）"
-    )
-    observation_metrics: str | None = Field(
-        default=None, min_length=1, description="后续观察指标（L2）"
-    )
-    medical_criteria: str | None = Field(
-        default=None, min_length=1, description="就医判断标准（L2）"
-    )
-    evidence_level: EvidenceLevel | None = Field(
-        default=None, description="循证等级（L2）"
-    )
-    contraindications: str | None = Field(
-        default=None, min_length=1, description="禁忌与注意事项（L2）"
-    )
-    is_template: bool | None = Field(
-        default=None, description="是否模板（L2）"
-    )
-    excluded_population: str | None = Field(
-        default=None, description="不适用人群（L2，选填）"
-    )
-    attachment_refs: list[AttachmentRef] | None = Field(
-        default=None, description="附件引用列表（L2，选填）"
-    )
-    updated_at: datetime = Field(
-        ..., description="上次读取时的时间戳，用于乐观锁冲突检测"
-    )
+    severity: SeverityLevel | None = Field(default=None, description="适用严重程度（L2）")
+    scene: SceneType | None = Field(default=None, description="发生场景（L2）")
+    ebp_labels: list[str] | None = Field(default=None, min_length=1, description="循证实践标签（L2）")
+    family_category: FamilyDisplayCategory | None = Field(default=None, description="家属端展示大类（L2）")
+    immediate_action: str | None = Field(default=None, min_length=1, description="即时安全干预动作（L2）")
+    comforting_phrase: str | None = Field(default=None, min_length=1, description="情绪安抚话术（L2）")
+    observation_metrics: str | None = Field(default=None, min_length=1, description="后续观察指标（L2）")
+    medical_criteria: str | None = Field(default=None, min_length=1, description="就医判断标准（L2）")
+    evidence_level: EvidenceLevel | None = Field(default=None, description="循证等级（L2）")
+    contraindications: str | None = Field(default=None, min_length=1, description="禁忌与注意事项（L2）")
+    is_template: bool | None = Field(default=None, description="是否模板（L2）")
+    excluded_population: str | None = Field(default=None, description="不适用人群（L2，选填）")
+    attachment_refs: list[AttachmentRef] | None = Field(default=None, description="附件引用列表（L2，选填）")
+    updated_at: datetime = Field(..., description="上次读取时的时间戳，用于乐观锁冲突检测")
 
     @field_validator("age_range")
     @classmethod
@@ -346,26 +279,14 @@ class CaseResponse(CampfireBaseModel):
     evidence_level: str = Field(..., description="循证等级")
     contraindications: str = Field(..., description="禁忌与注意事项")
     is_template: bool = Field(..., description="是否模板")
-    excluded_population: str | None = Field(
-        default=None, description="不适用人群"
-    )
-    attachment_refs: list[AttachmentRef] | None = Field(
-        default=None, description="附件引用列表"
-    )
-    review_comment: str | None = Field(
-        default=None, description="审核驳回意见，由 CASE-03 填写"
-    )
+    excluded_population: str | None = Field(default=None, description="不适用人群")
+    attachment_refs: list[AttachmentRef] | None = Field(default=None, description="附件引用列表")
+    review_comment: str | None = Field(default=None, description="审核驳回意见，由 CASE-03 填写")
     created_at: datetime = Field(..., description="创建时间")
     updated_at: datetime = Field(..., description="最后编辑时间")
-    pii_warnings: list[PiiWarning] | None = Field(
-        default=None, description="PII 检测警告列表（仅创建和提交时返回）"
-    )
-    ebp_inconsistency_warning: str | None = Field(
-        default=None, description="EBP 标签一致性警告（仅提交时返回）"
-    )
-    is_owner: bool | None = Field(
-        default=None, description="当前用户是否为案例作者"
-    )
+    pii_warnings: list[PiiWarning] | None = Field(default=None, description="PII 检测警告列表（仅创建和提交时返回）")
+    ebp_inconsistency_warning: str | None = Field(default=None, description="EBP 标签一致性警告（仅提交时返回）")
+    is_owner: bool | None = Field(default=None, description="当前用户是否为案例作者")
 
 
 class CaseListItem(CampfireBaseModel):
@@ -436,9 +357,7 @@ class ReviewRequest(CampfireBaseModel):
     - PII 零容忍：pii_override_confirmed=true 也会被拒绝（PII 硬门槛不可覆盖）
     """
 
-    decision: Literal["approved", "rejected"] = Field(
-        ..., description="专家裁决（approved/rejected）"
-    )
+    decision: Literal["approved", "rejected"] = Field(..., description="专家裁决（approved/rejected）")
     review_comment: str | None = Field(
         default=None,
         description="审核意见（驳回时必填，>=10 字，逐项列出修改建议）",
@@ -463,12 +382,8 @@ class CheckItem(CampfireBaseModel):
     status: Literal["pass", "fail", "annotated"] = Field(
         ..., description="检查状态：pass=通过 / fail=不通过 / annotated=标注"
     )
-    details: list[str] | None = Field(
-        default=None, description="具体不合格项或标注说明"
-    )
-    is_hard_gate: bool = Field(
-        ..., description="true=硬门槛（拦截），false=软检查（仅标注）"
-    )
+    details: list[str] | None = Field(default=None, description="具体不合格项或标注说明")
+    is_hard_gate: bool = Field(..., description="true=硬门槛（拦截），false=软检查（仅标注）")
 
 
 class AiReviewSummary(CampfireBaseModel):
@@ -483,15 +398,9 @@ class AiReviewSummary(CampfireBaseModel):
 
     format_check: CheckItem = Field(..., description="格式完整性检查（硬门槛）")
     pii_check: CheckItem = Field(..., description="PII 脱敏检查（硬门槛）")
-    required_fields_check: CheckItem = Field(
-        ..., description="必填字段存在性检查（软检查）"
-    )
-    ebp_consistency_check: CheckItem = Field(
-        ..., description="EBP 一致性检查（软检查）"
-    )
-    overall: Literal["pass", "hard_block", "annotated"] = Field(
-        ..., description="总体结论"
-    )
+    required_fields_check: CheckItem = Field(..., description="必填字段存在性检查（软检查）")
+    ebp_consistency_check: CheckItem = Field(..., description="EBP 一致性检查（软检查）")
+    overall: Literal["pass", "hard_block", "annotated"] = Field(..., description="总体结论")
 
 
 class CaseReviewResponse(CampfireBaseModel):
@@ -501,16 +410,10 @@ class CaseReviewResponse(CampfireBaseModel):
     """
 
     case_id: str = Field(..., description="案例唯一标识")
-    new_status: Literal["approved", "rejected"] = Field(
-        ..., description="审核后的案例状态"
-    )
-    ai_review_summary: AiReviewSummary = Field(
-        ..., description="AI 预审结果摘要"
-    )
+    new_status: Literal["approved", "rejected"] = Field(..., description="审核后的案例状态")
+    ai_review_summary: AiReviewSummary = Field(..., description="AI 预审结果摘要")
     expert_decision: str = Field(..., description="专家裁决描述")
-    review_comment: str | None = Field(
-        default=None, description="审核意见"
-    )
+    review_comment: str | None = Field(default=None, description="审核意见")
     reviewer_id: str = Field(..., description="审核人标识")
     reviewed_at: datetime = Field(..., description="审核完成时间")
 
@@ -529,9 +432,7 @@ class ReviewQueueItem(CampfireBaseModel):
     submitted_at: datetime = Field(..., description="提交审核时间")
     ai_review_overall: str = Field(..., description="AI 预审总体结论")
     deadline: datetime = Field(..., description="审核截止时间（AI 预审完成 + 2 工作日）")
-    timeout_status: Literal["normal", "warning", "overdue"] = Field(
-        ..., description="超时状态"
-    )
+    timeout_status: Literal["normal", "warning", "overdue"] = Field(..., description="超时状态")
 
 
 __all__ = [

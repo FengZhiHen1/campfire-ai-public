@@ -76,7 +76,4 @@ class ServiceLauncher(ABC):
                 op_type="service_start",
                 extra={"exit_code": proc.returncode, "launcher": self.name},
             )
-            raise RuntimeError(
-                f"{self.display_name} 进程启动后立即退出"
-                f" (exit code: {proc.returncode})"
-            )
+            raise RuntimeError(f"{self.display_name} 进程启动后立即退出 (exit code: {proc.returncode})")

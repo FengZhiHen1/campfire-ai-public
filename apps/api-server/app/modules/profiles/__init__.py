@@ -19,15 +19,15 @@
   - exceptions.py: 统一异常层次（ProfileDomainError 及其子类）
 """
 
-from app.modules.profiles.profile_service import ProfileServiceImpl
-from app.modules.profiles.event_service import EventServiceImpl
-from app.modules.profiles.expert_service import ExpertServiceImpl
-from app.modules.profiles.profiles_contract import BaseProfileService
-from app.modules.profiles.events_contract import BaseEventService
-from app.modules.profiles.experts_contract import BaseExpertService
-from app.modules.profiles.routes import router as profiles_router
 from app.modules.profiles.event_routes import router as events_router
+from app.modules.profiles.event_service import EventServiceImpl
+from app.modules.profiles.events_contract import BaseEventService
 from app.modules.profiles.expert_routes import router as experts_router
+from app.modules.profiles.expert_service import ExpertServiceImpl
+from app.modules.profiles.experts_contract import BaseExpertService
+from app.modules.profiles.profile_service import ProfileServiceImpl
+from app.modules.profiles.profiles_contract import BaseProfileService
+from app.modules.profiles.routes import router as profiles_router
 
 __all__ = [
     # 实现类（向后兼容）

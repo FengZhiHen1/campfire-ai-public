@@ -49,10 +49,10 @@ _COLOR_ENABLED: bool = os.environ.get("LOG_CONSOLE_COLOR", "1") != "0"
 """通过 LOG_CONSOLE_COLOR=0 环境变量关闭终端颜色输出。"""
 
 _SEVERITY_COLORS: dict[str, str] = {
-    "DEBUG": "\033[90m",       # gray
-    "INFO": "\033[32m",        # green
-    "WARNING": "\033[33m",     # yellow
-    "ERROR": "\033[31m",       # red
+    "DEBUG": "\033[90m",  # gray
+    "INFO": "\033[32m",  # green
+    "WARNING": "\033[33m",  # yellow
+    "ERROR": "\033[31m",  # red
     "CRITICAL": "\033[1;31m",  # bold red
 }
 _RESET = "\033[0m"
@@ -179,14 +179,7 @@ class ConsoleFormatter(logging.Formatter):
                 f"{message}"
             )
         else:
-            return (
-                f"{timestamp}  "
-                f"{severity:<8}  "
-                f"{service}  "
-                f"{trace_short}"
-                f"{op_part}  "
-                f"{message}"
-            )
+            return f"{timestamp}  {severity:<8}  {service}  {trace_short}{op_part}  {message}"
 
 
 # ============================================================================
@@ -276,19 +269,13 @@ class StructuredLogger(BaseStructuredLogger):
                 "trace_id": trace_id_val,
                 "message": message,
                 "op_type": op_type,
-                "extra": (
-                    extra_dict if extra_dict else ({} if extra is not None else None)
-                ),
+                "extra": (extra_dict if extra_dict else ({} if extra is not None else None)),
             }
 
             try:
-                json_str = json.dumps(
-                    log_entry, default=_default_handler, ensure_ascii=False
-                )
+                json_str = json.dumps(log_entry, default=_default_handler, ensure_ascii=False)
             except (TypeError, ValueError):
-                json_str = self._build_fallback(
-                    service, trace_id_val, message, extra_dict
-                )
+                json_str = self._build_fallback(service, trace_id_val, message, extra_dict)
                 print(
                     f"[py-logger] serialization failed: {message[:200]}",
                     file=sys.stderr,

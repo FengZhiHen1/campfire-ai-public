@@ -1,5 +1,4 @@
-"""py-auth 异常层次 — 单元测试。
-"""
+"""py-auth 异常层次 — 单元测试。"""
 
 from __future__ import annotations
 

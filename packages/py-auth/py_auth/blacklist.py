@@ -21,11 +21,9 @@ from __future__ import annotations
 import asyncio
 
 import redis.asyncio as aioredis
-from redis.exceptions import RedisError
+from py_config import get_settings
 
 from py_auth.auth_contract import TokenBlacklist
-from py_config import get_settings
-from py_logger import logger
 
 # ---------------------------------------------------------------------------
 # 常量

@@ -14,6 +14,7 @@ Narratives 是案例系统的第一层：原始干预故事的通用化叙事。
 from __future__ import annotations
 
 from datetime import datetime
+
 from pydantic import Field
 
 from py_schemas.base import CampfireBaseModel

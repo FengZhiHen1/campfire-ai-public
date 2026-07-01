@@ -13,11 +13,12 @@ UUID 主键由 PostgreSQL gen_random_uuid() 在数据库层面生成——
 
 from __future__ import annotations
 
-from sqlalchemy import Enum as sa_Enum, String
+from py_schemas.auth import UserRole
+from sqlalchemy import Enum as sa_Enum
+from sqlalchemy import String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from py_db.models.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
-from py_schemas.auth import UserRole
 
 
 class User(Base, UUIDPrimaryKeyMixin, TimestampMixin):
@@ -80,10 +81,7 @@ class User(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     )
 
     def __repr__(self) -> str:
-        return (
-            f"<User(id={self.id!r}, username={self.username!r}, "
-            f"role={self.role.value!r})>"
-        )
+        return f"<User(id={self.id!r}, username={self.username!r}, role={self.role.value!r})>"
 
 
 __all__ = ["User"]

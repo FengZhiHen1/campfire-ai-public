@@ -16,13 +16,13 @@ from __future__ import annotations
 
 import asyncio
 import json
+import uuid
 from datetime import datetime, timedelta, timezone
-from typing import Any, Optional
+from typing import Any
 
 import redis.asyncio as aioredis
 from fastapi import HTTPException, status
 from py_config import get_settings
-from py_logger import logger
 from py_db.models.review_models import CaseReview
 from py_db.repositories.case_repository import CaseRepository
 from py_db.repositories.narrative_repository import NarrativeRepository
@@ -30,6 +30,7 @@ from py_db.repositories.review_repository import (
     ReviewAuditLogRepository,
     ReviewRepository,
 )
+from py_logger import logger
 from py_schemas.cases import (
     AiReviewSummary,
     CaseReviewResponse,
@@ -114,10 +115,7 @@ def _compute_pii_blocked(ai_review: AiReviewSummary) -> bool:
     Returns:
         True 表示 PII 硬门槛不通过（不可被专家覆盖）。
     """
-    return (
-        ai_review.pii_check.is_hard_gate
-        and ai_review.pii_check.status == "fail"
-    )
+    return ai_review.pii_check.is_hard_gate and ai_review.pii_check.status == "fail"
 
 
 async def _enqueue_index_async(case_id: str) -> None:
@@ -184,16 +182,10 @@ class ReviewWorkflowService(ReviewWorkflowContract):
                     异步入队 → 事务提交。
         """
         reviewer_id_str: str = current_user.get("sub", "")
-        reviewer_id: uuid.UUID | None = (
-            uuid.UUID(reviewer_id_str) if reviewer_id_str else None
-        )
+        reviewer_id: uuid.UUID | None = uuid.UUID(reviewer_id_str) if reviewer_id_str else None
 
         # ---- CAS 更新叙事状态 ----
-        new_status: CaseStatus = (
-            CaseStatus.APPROVED
-            if review_request.decision == "approved"
-            else CaseStatus.REJECTED
-        )
+        new_status: CaseStatus = CaseStatus.APPROVED if review_request.decision == "approved" else CaseStatus.REJECTED
 
         try:
             updated_narrative = await narrative_repo.update_status(
@@ -207,12 +199,12 @@ class ReviewWorkflowService(ReviewWorkflowContract):
             raise RuntimeError(f"CAS 更新叙事状态失败：{exc}") from exc
 
         # ---- 写入审核记录 ----
-        latest_review: CaseReview | None = await review_repo.get_latest_review(
-            session, case_id
-        )
+        latest_review: CaseReview | None = await review_repo.get_latest_review(session, case_id)
         next_round: int = (latest_review.review_round + 1) if latest_review else 1
 
-        is_override: bool = review_request.override_reason is not None and len(review_request.override_reason.strip()) > 0
+        is_override: bool = (
+            review_request.override_reason is not None and len(review_request.override_reason.strip()) > 0
+        )
 
         case_id_uuid = uuid.UUID(case_id)
         review_record = CaseReview(
@@ -229,9 +221,7 @@ class ReviewWorkflowService(ReviewWorkflowContract):
         await review_repo.create_review_record(session, review_record)
 
         # ---- 写入审计日志 ----
-        audit_action: str = (
-            "approved" if review_request.decision == "approved" else "rejected"
-        )
+        audit_action: str = "approved" if review_request.decision == "approved" else "rejected"
         await audit_repo.insert_audit_log(
             session=session,
             case_id=case_id_uuid,
@@ -326,7 +316,6 @@ class ReviewWorkflowService(ReviewWorkflowContract):
             page_size=page_size,
         )
 
-        now: datetime = datetime.now(timezone.utc)
         items: list[ReviewQueueItem] = []
 
         for narrative in narratives:
@@ -340,17 +329,19 @@ class ReviewWorkflowService(ReviewWorkflowContract):
             deadline: datetime = _calculate_deadline(submitted_at)
             timeout_status: str = _get_timeout_status(deadline)
 
-            items.append(ReviewQueueItem(
-                narrative_id=str(narrative.narrative_id),
-                title=narrative.title,
-                author_id=str(narrative.author_id) if narrative.author_id else None,
-                author_name=str(narrative.author_id) if narrative.author_id else "",
-                behavior_type="",  # L1 叙事层不包含行为类型，待提取后由 L2 卡片填充
-                submitted_at=submitted_at,
-                ai_review_overall=ai_review_overall,
-                deadline=deadline,
-                timeout_status=timeout_status,  # type: ignore[arg-type]
-            ))
+            items.append(
+                ReviewQueueItem(
+                    narrative_id=str(narrative.narrative_id),
+                    title=narrative.title,
+                    author_id=str(narrative.author_id) if narrative.author_id else None,
+                    author_name=str(narrative.author_id) if narrative.author_id else "",
+                    behavior_type="",  # L1 叙事层不包含行为类型，待提取后由 L2 卡片填充
+                    submitted_at=submitted_at,
+                    ai_review_overall=ai_review_overall,
+                    deadline=deadline,
+                    timeout_status=timeout_status,  # type: ignore[arg-type]
+                )
+            )
 
         total_pages: int = (total_count + page_size - 1) // page_size if total_count > 0 else 0
 

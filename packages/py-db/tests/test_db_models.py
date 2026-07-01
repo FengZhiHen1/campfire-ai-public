@@ -6,13 +6,9 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
-
-from sqlalchemy import Integer
-from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 from py_db.models.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
-
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 # ---- UUIDPrimaryKeyMixin ----
 
@@ -31,6 +27,7 @@ class _MockBase(DeclarativeBase):
 
 def test_uuid_mixin_with_base():
     """验证 UUIDPrimaryKeyMixin 可以与 Base 组合定义 ORM 类。"""
+
     class TestModel(_MockBase, UUIDPrimaryKeyMixin):
         __tablename__ = "test_uuid_mixin"
         name: Mapped[str] = mapped_column()
@@ -48,14 +45,12 @@ def test_id_default_is_callable():
 
 def test_timestamp_mixin_is_callable():
     """TimestampMixin 可正常导入和继承。"""
-    from py_db.models.base import TimestampMixin
     assert hasattr(TimestampMixin, "created_at")
     assert hasattr(TimestampMixin, "updated_at")
 
 
 def test_base_naming_convention():
     """验证 Base 使用命名约定。"""
-    from py_db.models.base import Base
     assert Base.metadata.naming_convention is not None
     assert "pk" in Base.metadata.naming_convention
     assert "fk" in Base.metadata.naming_convention

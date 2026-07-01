@@ -16,13 +16,9 @@ Create Date: 2026-05-28 17:44:40.699786
 
 from typing import Sequence, Union
 
-from alembic import op
-import sqlalchemy as sa
-
-
 # revision identifiers, used by Alembic.
-revision: str = '811914200e96'
-down_revision: Union[str, Sequence[str], None] = ('20260528_000010', '20260528_000020')
+revision: str = "811914200e96"
+down_revision: Union[str, Sequence[str], None] = ("20260528_000010", "20260528_000020")
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

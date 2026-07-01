@@ -8,11 +8,9 @@ AccessRequest、AccessDecision、枚举类型。
 from __future__ import annotations
 
 from datetime import date, datetime, timezone
-from uuid import UUID, uuid4
+from uuid import uuid4
 
 import pytest
-from pydantic import ValidationError
-
 from py_schemas.profiles import (
     AccessDecision,
     AccessOperation,
@@ -22,9 +20,7 @@ from py_schemas.profiles import (
     EventCreate,
     EventListItem,
     EventResponse,
-    EventSetting,
     EventUpdate,
-    LanguageLevel,
     ProfileBehaviorType,
     ProfileCreate,
     ProfileListItem,
@@ -35,7 +31,7 @@ from py_schemas.profiles import (
     Trigger,
     VisibleScope,
 )
-
+from pydantic import ValidationError
 
 # ===========================================================================
 # Enums
@@ -118,7 +114,11 @@ class TestAccessDecision:
         assert d.denial_reason is None
 
     def test_denied(self):
-        d = AccessDecision(allowed=False, visible_scope=VisibleScope.NOTHING, denial_reason="数据不存在")
+        d = AccessDecision(
+            allowed=False,
+            visible_scope=VisibleScope.NOTHING,
+            denial_reason="数据不存在",
+        )
         assert d.allowed is False
         assert d.denial_reason == "数据不存在"
 
@@ -150,7 +150,11 @@ class TestProfileCreate:
 
     def test_future_birth_date(self):
         with pytest.raises(ValidationError):
-            ProfileCreate(birth_date=date(2099, 1, 1), diagnosis_type="ASD", primary_behavior="刻板行为")
+            ProfileCreate(
+                birth_date=date(2099, 1, 1),
+                diagnosis_type="ASD",
+                primary_behavior="刻板行为",
+            )
 
     def test_invalid_diagnosis_type(self):
         with pytest.raises(ValidationError):
@@ -269,8 +273,10 @@ class TestEventCreate:
                 event_time=datetime(2099, 1, 1, tzinfo=timezone.utc),
                 behavior_type=ProfileBehaviorType.MELTDOWN,
                 severity_level=SeverityLevel.MODERATE,
-                trigger_description="x", manifestation="x",
-                intervention_tried="x", intervention_result="x",
+                trigger_description="x",
+                manifestation="x",
+                intervention_tried="x",
+                intervention_result="x",
             )
 
     def test_tags_too_many(self):
@@ -279,8 +285,10 @@ class TestEventCreate:
                 event_time=datetime(2026, 1, 1, tzinfo=timezone.utc),
                 behavior_type=ProfileBehaviorType.MELTDOWN,
                 severity_level=SeverityLevel.MODERATE,
-                trigger_description="x", manifestation="x",
-                intervention_tried="x", intervention_result="x",
+                trigger_description="x",
+                manifestation="x",
+                intervention_tried="x",
+                intervention_result="x",
                 tags=["t1", "t2", "t3", "t4", "t5", "t6"],
             )
 
@@ -290,8 +298,10 @@ class TestEventCreate:
                 event_time=datetime(2026, 1, 1, tzinfo=timezone.utc),
                 behavior_type=ProfileBehaviorType.MELTDOWN,
                 severity_level=SeverityLevel.MODERATE,
-                trigger_description="x", manifestation="x",
-                intervention_tried="x", intervention_result="x",
+                trigger_description="x",
+                manifestation="x",
+                intervention_tried="x",
+                intervention_result="x",
                 tags=["  "],
             )
 
@@ -303,7 +313,9 @@ class TestEventCreate:
                 behavior_type=ProfileBehaviorType.MELTDOWN,
                 severity_level=SeverityLevel.MODERATE,
                 trigger_description=too_long,
-                manifestation="x", intervention_tried="x", intervention_result="x",
+                manifestation="x",
+                intervention_tried="x",
+                intervention_result="x",
             )
 
 
@@ -368,4 +380,3 @@ class TestEventListItem:
         )
         assert item.trigger_description == "噪音刺激"
         assert item.manifestation == "捂耳蹲下，持续约3分钟"
-

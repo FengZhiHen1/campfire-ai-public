@@ -47,9 +47,7 @@ class HashingError(AuthError):
       - detail: {"operation": "hash"|"verify", "error_type": 原始异常类名}
     """
 
-    def __init__(
-        self, message: str, operation: str = "", detail: dict[str, Any] | None = None
-    ) -> None:
+    def __init__(self, message: str, operation: str = "", detail: dict[str, Any] | None = None) -> None:
         merged = detail or {}
         if operation:
             merged["operation"] = operation
@@ -69,9 +67,7 @@ class TokenCreationError(AuthError):
       - detail: {"token_type": "access"|"refresh", "error_type": 原始异常类名}
     """
 
-    def __init__(
-        self, message: str, token_type: str = "", detail: dict[str, Any] | None = None
-    ) -> None:
+    def __init__(self, message: str, token_type: str = "", detail: dict[str, Any] | None = None) -> None:
         merged = detail or {}
         if token_type:
             merged["token_type"] = token_type
@@ -91,9 +87,7 @@ class TokenDecodeError(AuthError):
       - detail: {"kid": 从 header 提取的 kid（如有）, "error_type": 原始异常类名}
     """
 
-    def __init__(
-        self, message: str, kid: str = "", detail: dict[str, Any] | None = None
-    ) -> None:
+    def __init__(self, message: str, kid: str = "", detail: dict[str, Any] | None = None) -> None:
         merged = detail or {}
         if kid:
             merged["kid"] = kid
@@ -145,7 +139,11 @@ class BlacklistError(AuthError):
     """
 
     def __init__(
-        self, message: str, jti: str = "", operation: str = "", detail: dict[str, Any] | None = None
+        self,
+        message: str,
+        jti: str = "",
+        operation: str = "",
+        detail: dict[str, Any] | None = None,
     ) -> None:
         merged = detail or {}
         if jti:

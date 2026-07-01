@@ -158,22 +158,14 @@ class EventRepository(BaseRepository[EventLog]):
             conditions.append(EventLog.behavior_type == behavior_type)
 
         # 查询总记录数
-        count_stmt = (
-            select(func.count())
-            .select_from(EventLog)
-            .where(*conditions)
-        )
+        count_stmt = select(func.count()).select_from(EventLog).where(*conditions)
         total_result = await session.execute(count_stmt)
         total: int = total_result.scalar() or 0
 
         # 分页查询
         offset = (page - 1) * page_size
         query_stmt = (
-            select(EventLog)
-            .where(*conditions)
-            .order_by(EventLog.event_time.desc())
-            .offset(offset)
-            .limit(page_size)
+            select(EventLog).where(*conditions).order_by(EventLog.event_time.desc()).offset(offset).limit(page_size)
         )
         result = await session.execute(query_stmt)
         events = list(result.scalars().all())
@@ -254,11 +246,7 @@ class EventRepository(BaseRepository[EventLog]):
         Returns:
             int: 事件记录总数。
         """
-        stmt = (
-            select(func.count())
-            .select_from(EventLog)
-            .where(EventLog.profile_id == profile_id)
-        )
+        stmt = select(func.count()).select_from(EventLog).where(EventLog.profile_id == profile_id)
         result = await session.execute(stmt)
         return result.scalar() or 0
 
@@ -281,11 +269,7 @@ class EventRepository(BaseRepository[EventLog]):
             int: 被删除的事件记录数。
         """
         # 先计数用于日志
-        count_stmt = (
-            select(func.count())
-            .select_from(EventLog)
-            .where(EventLog.profile_id == profile_id)
-        )
+        count_stmt = select(func.count()).select_from(EventLog).where(EventLog.profile_id == profile_id)
         count_result = await session.execute(count_stmt)
         deleted_count: int = count_result.scalar() or 0
 

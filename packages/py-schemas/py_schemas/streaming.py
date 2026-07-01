@@ -68,8 +68,7 @@ class ChunkEvent(CampfireBaseModel):
     )
     section: str | None = Field(
         default=None,
-        description="当前 chunk 所属的段落标题，前端据此增量追加到对应 planSections 卡片。"
-        "None 表示非内容文本。",
+        description="当前 chunk 所属的段落标题，前端据此增量追加到对应 planSections 卡片。None 表示非内容文本。",
     )
 
 
@@ -181,14 +180,12 @@ class StreamSession(CampfireBaseModel):
 
     stream_id: str = Field(
         ...,
-        description="流标识符，格式 stream-{uuid4}，通过首次 SSE 连接响应头 "
-        "X-Stream-Id 返回前端。",
+        description="流标识符，格式 stream-{uuid4}，通过首次 SSE 连接响应头 X-Stream-Id 返回前端。",
         examples=["stream-a1b2c3d4-e5f6-7890-abcd-ef1234567890"],
     )
     chunk_buffer: dict[int, str] = Field(
         default_factory=dict,
-        description="已推送的 chunk 文本缓冲区，key 为 sequence 号（从 1 开始），"
-        "用于断点续传时跳过已推送内容。",
+        description="已推送的 chunk 文本缓冲区，key 为 sequence 号（从 1 开始），用于断点续传时跳过已推送内容。",
     )
     sequence: int = Field(
         default=0,
@@ -202,8 +199,7 @@ class StreamSession(CampfireBaseModel):
     )
     first_chunk_sent_at: float | None = Field(
         default=None,
-        description="首个 chunk 成功推送的时间戳（time.monotonic()）。"
-        "为 None 表示尚未推送任何 chunk。",
+        description="首个 chunk 成功推送的时间戳（time.monotonic()）。为 None 表示尚未推送任何 chunk。",
     )
     status: str = Field(
         default="CREATED",

@@ -14,7 +14,7 @@
 
 from __future__ import annotations
 
-from sqlalchemy import Boolean, Integer, String, Text
+from sqlalchemy import Boolean, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from py_db.models.base import Base, TimestampMixin, UUIDPrimaryKeyMixin

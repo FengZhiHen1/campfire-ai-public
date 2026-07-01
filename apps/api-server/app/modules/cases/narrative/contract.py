@@ -59,7 +59,11 @@ class NarrativeManagementContract(ABC):
         """
         self._validate_narrative_fields(title, narrative)
         result = await self._do_create_narrative(
-            title, narrative, source_type, current_user, session,
+            title,
+            narrative,
+            source_type,
+            current_user,
+            session,
         )
         self._validate_narrative_result(result)
         return result
@@ -105,7 +109,11 @@ class NarrativeManagementContract(ABC):
         """
         self._validate_list_params(page, page_size)
         return await self._do_list_narratives(
-            scope, current_user, session, page, page_size,
+            scope,
+            current_user,
+            session,
+            page,
+            page_size,
         )
 
     @final
@@ -129,7 +137,11 @@ class NarrativeManagementContract(ABC):
         """
         self._validate_narrative_id(narrative_id)
         result = await self._do_update_narrative(
-            narrative_id, title, narrative, current_user, session,
+            narrative_id,
+            title,
+            narrative,
+            current_user,
+            session,
         )
         self._validate_narrative_result(result)
         return result
@@ -152,7 +164,9 @@ class NarrativeManagementContract(ABC):
         """
         self._validate_narrative_id(narrative_id)
         result = await self._do_submit_narrative(
-            narrative_id, current_user, session,
+            narrative_id,
+            current_user,
+            session,
         )
         self._validate_narrative_result(result)
         return result
@@ -363,15 +377,11 @@ class NarrativeManagementContract(ABC):
 
     def _validate_narrative_result(self, result: Any) -> None:
         if result is None:
-            raise RuntimeError(
-                f"{self.__class__.__name__} 叙事操作返回了 None"
-            )
+            raise RuntimeError(f"{self.__class__.__name__} 叙事操作返回了 None")
 
     def _validate_card_result(self, result: Any) -> None:
         if result is None:
-            raise RuntimeError(
-                f"{self.__class__.__name__} 卡片操作返回了 None"
-            )
+            raise RuntimeError(f"{self.__class__.__name__} 卡片操作返回了 None")
 
     def _validate_list_params(self, page: int, page_size: int) -> None:
         if page < 1:
