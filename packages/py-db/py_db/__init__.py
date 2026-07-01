@@ -17,7 +17,7 @@ Campfire-AI 共享能力层（L2）的核心数据包。
 核心类：
   - MigrationServiceImpl: 实现 MigrationService 契约，Alembic 迁移执行
   - BaseRepository: 异步仓储契约 ABC，通用 CRUD 骨架（从 base_repository 导入）
-  - CaseRepository / UserRepository / ProfileRepository / ...: 具体仓储实现
+  - NarrativeRepository / UserRepository / ProfileRepository / ...: 具体仓储实现
 
 外部接口：
   - MigrationServiceImpl().migrate_up(target, database_url) -> int
@@ -27,7 +27,7 @@ Campfire-AI 共享能力层（L2）的核心数据包。
 
 Usage:
     from py_db import MigrationServiceImpl, Base
-    from py_db.repositories import CaseRepository
+    from py_db.repositories import NarrativeRepository
 
     # 迁移操作
     impl = MigrationServiceImpl()

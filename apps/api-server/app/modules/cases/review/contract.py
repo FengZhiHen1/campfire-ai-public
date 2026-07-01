@@ -8,7 +8,6 @@
 实现者只能覆写 _do_ 前缀的钩子方法。
 
 数据来源:
-  - CaseRepository (py_db): MUST — 案例查询 + CAS 状态更新
   - ReviewRepository (py_db): MUST — 审核记录读写
   - ReviewAuditLogRepository (py_db): MUST — 审计日志写入
   - run_ai_pre_review (本模块): MUST — AI 预审规则引擎
@@ -23,7 +22,6 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from typing import Any, final
 
-from py_db.repositories.case_repository import CaseRepository
 from py_db.repositories.narrative_repository import NarrativeRepository
 from py_db.repositories.review_repository import (
     ReviewAuditLogRepository,
@@ -79,7 +77,6 @@ class ReviewWorkflowContract(ABC):
         review_request: ReviewRequest,
         current_user: dict[str, Any],
         session: AsyncSession,
-        case_repo: CaseRepository,
         review_repo: ReviewRepository,
         audit_repo: ReviewAuditLogRepository,
         narrative_repo: NarrativeRepository,
@@ -155,7 +152,6 @@ class ReviewWorkflowContract(ABC):
         page: int,
         page_size: int,
         session: AsyncSession,
-        case_repo: CaseRepository,
         review_repo: ReviewRepository,
         narrative_repo: NarrativeRepository,
     ) -> PaginatedResponse[ReviewQueueItem]:
@@ -172,7 +168,6 @@ class ReviewWorkflowContract(ABC):
             page,
             page_size,
             session,
-            case_repo,
             review_repo,
             narrative_repo,
         )
@@ -211,7 +206,6 @@ class ReviewWorkflowContract(ABC):
         page: int,
         page_size: int,
         session: AsyncSession,
-        case_repo: CaseRepository,
         review_repo: ReviewRepository,
         narrative_repo: NarrativeRepository,
     ) -> PaginatedResponse[ReviewQueueItem]:

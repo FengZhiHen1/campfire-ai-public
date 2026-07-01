@@ -4,7 +4,6 @@
 禁止在 Service 层直接调用 session.execute() 或拼接 SQL。
 """
 
-from py_db.repositories.case_repository import CaseRepository
 from py_db.repositories.narrative_repository import NarrativeRepository
 from py_db.repositories.profile_repository import ProfileRepository
 from py_db.repositories.review_repository import (  # noqa: F401
@@ -14,7 +13,6 @@ from py_db.repositories.review_repository import (  # noqa: F401
 from py_db.repositories.teacher_link_repository import TeacherLinkRepository
 
 __all__ = [
-    "CaseRepository",
     "NarrativeRepository",
     "ProfileRepository",
     "ReviewRepository",

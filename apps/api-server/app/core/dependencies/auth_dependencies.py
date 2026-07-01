@@ -15,7 +15,6 @@ from py_auth.blacklist import RedisBlacklist
 from py_auth.hashing import hash_password, verify_password
 from py_auth.jwt_utils import JoseTokenManager
 from py_config import get_settings
-from py_db.repositories.case_repository import CaseRepository
 from py_db.repositories.event_repository import EventRepository
 from py_db.repositories.narrative_repository import NarrativeRepository
 from py_db.repositories.profile_repository import ProfileRepository
@@ -173,17 +172,6 @@ def get_user_repository() -> UserRepository:
     return UserRepository(session_factory=_get_session_factory())
 
 
-def get_case_repository() -> CaseRepository:
-    """FastAPI Depends 工厂：构造 CaseRepository 实例。
-
-    注入 async_session_factory 供 Repository 内部使用。
-    每次请求调用时返回新实例。
-
-    Returns:
-        CaseRepository: 已配置会话工厂的 Repository 实例。
-    """
-    return CaseRepository(session_factory=_get_session_factory())
-
 
 def get_narrative_repository() -> NarrativeRepository:
     """FastAPI Depends 工厂：构造 NarrativeRepository 实例。
@@ -300,7 +288,6 @@ def get_teacher_link_repository() -> TeacherLinkRepository:
 __all__ = [
     "get_db_session",
     "get_user_repository",
-    "get_case_repository",
     "get_review_repository",
     "get_review_audit_log_repository",
     "get_event_repository",

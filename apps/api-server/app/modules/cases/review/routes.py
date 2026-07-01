@@ -14,7 +14,6 @@ from __future__ import annotations
 from typing import Any, Dict, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from py_db.repositories.case_repository import CaseRepository
 from py_db.repositories.narrative_repository import NarrativeRepository
 from py_db.repositories.review_repository import (
     ReviewAuditLogRepository,
@@ -31,7 +30,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.dependencies.anonymous_user import get_anonymous_user
 from app.core.dependencies.auth_dependencies import (
-    get_case_repository,
     get_db_session,
     get_narrative_repository,
     get_review_audit_log_repository,
@@ -69,7 +67,6 @@ async def submit_review_endpoint(
     review_request: ReviewRequest,
     anonymous_user: Dict[str, Any] = Depends(get_anonymous_user),
     session: AsyncSession = Depends(get_db_session),
-    case_repo: CaseRepository = Depends(get_case_repository),
     review_repo: ReviewRepository = Depends(get_review_repository),
     audit_repo: ReviewAuditLogRepository = Depends(get_review_audit_log_repository),
     narrative_repo: NarrativeRepository = Depends(get_narrative_repository),
@@ -81,7 +78,6 @@ async def submit_review_endpoint(
             review_request=review_request,
             current_user=anonymous_user,
             session=session,
-            case_repo=case_repo,
             review_repo=review_repo,
             audit_repo=audit_repo,
             narrative_repo=narrative_repo,
@@ -113,7 +109,6 @@ async def list_review_queue_endpoint(
     page_size: int = Query(default=15, ge=1, le=100, description="每页条数"),
     anonymous_user: Dict[str, Any] = Depends(get_anonymous_user),
     session: AsyncSession = Depends(get_db_session),
-    case_repo: CaseRepository = Depends(get_case_repository),
     review_repo: ReviewRepository = Depends(get_review_repository),
     narrative_repo: NarrativeRepository = Depends(get_narrative_repository),
 ) -> PaginatedResponse[ReviewQueueItem]:
@@ -123,7 +118,6 @@ async def list_review_queue_endpoint(
         page=page,
         page_size=page_size,
         session=session,
-        case_repo=case_repo,
         review_repo=review_repo,
         narrative_repo=narrative_repo,
     )
