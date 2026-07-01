@@ -34,9 +34,16 @@ jobs:
           SERVER_PROJECT_DIR: ${{ secrets.SERVER_PROJECT_DIR }}
         run: |
           set -euo pipefail
-          SERVER_PROJECT_DIR="${SERVER_PROJECT_DIR:-/root/Campfire-AI}"
+          SERVER_PROJECT_DIR="${SERVER_PROJECT_DIR}"
+          if [[ -z "${SERVER_PROJECT_DIR}" ]]; then
+            SERVER_PROJECT_DIR="/root/Campfire-AI"
+          fi
+          echo "[deploy] SERVER_PROJECT_DIR=${SERVER_PROJECT_DIR}"
+          echo "[deploy] current dir=$(pwd)"
+          ls -la "${SERVER_PROJECT_DIR}" || true
           cd "${SERVER_PROJECT_DIR}"
           echo "[deploy] syncing code from origin/master..."
+          git remote -v
           git fetch origin
           git reset --hard origin/master
           echo "[deploy] running remote deployment script with VERSION_TAG=${VERSION_TAG}"
