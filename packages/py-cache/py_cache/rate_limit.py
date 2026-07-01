@@ -51,6 +51,8 @@ async def _get_redis() -> aioredis.Redis:
             socket_keepalive=True,
             health_check_interval=30,
             socket_connect_timeout=10,
+            # 显式关闭读超时，避免 redis-py 8.x 默认 5s 读超时与 BRPOP 阻塞命令冲突
+            socket_timeout=None,
             retry_on_timeout=True,
         )
         return _redis_client

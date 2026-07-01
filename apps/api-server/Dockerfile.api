@@ -17,14 +17,14 @@ ENV UV_COMPILE_BYTECODE=1
 # Link venv to a known path
 ENV UV_LINK_MODE=copy
 
-# Copy workspace definition and dependency manifests
+# Copy workspace definition, lockfile and dependency manifests
 # 注意：必须复制整个 apps/ 目录，因为根 pyproject.toml 将 api-server 和 worker 都声明为 workspace 成员
-COPY pyproject.toml ./
+COPY pyproject.toml uv.lock ./
 COPY packages/ ./packages/
 COPY apps/ ./apps/
 
-# Install dependencies (without dev deps; use --frozen when uv.lock is available)
-RUN uv sync --no-dev --package api-server
+# Install dependencies (pinned by uv.lock for reproducible builds)
+RUN uv sync --no-dev --package api-server --frozen
 
 # Stage 2: Runtime
 FROM python:3.12-slim

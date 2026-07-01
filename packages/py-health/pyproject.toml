@@ -6,7 +6,7 @@ requires-python = ">=3.12"
 dependencies = [
     "pydantic>=2.0",
     "sqlalchemy>=2.0",
-    "redis>=5.0",
+    "redis>=5.0,<8.0",
     "minio>=7.0",
     "py-cache",
     "py-logger",

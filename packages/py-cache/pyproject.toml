@@ -6,7 +6,7 @@ requires-python = ">=3.12"
 dependencies = [
     "py-config",
     "py-logger",
-    "redis>=5.0",
+    "redis>=5.0,<8.0",
 ]
 
 [build-system]

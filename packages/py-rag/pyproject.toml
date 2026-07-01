@@ -5,7 +5,7 @@ description = "Campfire-AI shared package: py-rag (embedding, retrieval, indexin
 requires-python = ">=3.12"
 dependencies = [
     "httpx>=0.27",
-    "redis>=5.0",
+    "redis>=5.0,<8.0",
     "sqlalchemy>=2.0",
     "py-cache",
     "py-config",
