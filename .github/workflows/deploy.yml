@@ -30,17 +30,14 @@ jobs:
           echo "version_tag=${VERSION_TAG}" >> "$GITHUB_OUTPUT"
 
       - name: Deploy on self-hosted runner
-        env:
-          SERVER_PROJECT_DIR: ${{ secrets.SERVER_PROJECT_DIR }}
         run: |
           set -euo pipefail
-          SERVER_PROJECT_DIR="${SERVER_PROJECT_DIR}"
-          if [[ -z "${SERVER_PROJECT_DIR}" ]]; then
-            SERVER_PROJECT_DIR="/root/Campfire-AI"
-          fi
+          SERVER_PROJECT_DIR="/root/Campfire-AI"
           echo "[deploy] SERVER_PROJECT_DIR=${SERVER_PROJECT_DIR}"
-          echo "[deploy] current dir=$(pwd)"
-          ls -la "${SERVER_PROJECT_DIR}" || true
+          if [[ ! -d "${SERVER_PROJECT_DIR}/.git" ]]; then
+            echo "[deploy] ERROR: ${SERVER_PROJECT_DIR} is not a git repository"
+            exit 1
+          fi
           cd "${SERVER_PROJECT_DIR}"
           echo "[deploy] syncing code from origin/master..."
           git remote -v
