@@ -64,6 +64,12 @@ jobs:
           DATABASE_URL: postgresql+asyncpg://campfire:test@localhost:5432/campfire_test
           REDIS_URL: redis://localhost:6379/0
           JWT_SECRET_KEY: ci-test-key-at-least-32-characters-long-not-for-prod
+          DEEPSEEK_API_KEY: sk-ci-test-deepseek-key-not-for-prod
+          DEEPSEEK_BASE_URL: https://api.deepseek.com/v1
+          DASHSCOPE_API_KEY: sk-ci-test-dashscope-key-not-for-prod
+          MINIO_ENDPOINT: localhost:9000
+          MINIO_ACCESS_KEY: minioadmin
+          MINIO_SECRET_KEY: minioadmin
 
   frontend-react-web:
     runs-on: ubuntu-latest
