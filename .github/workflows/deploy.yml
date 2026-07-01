@@ -36,5 +36,8 @@ jobs:
           set -euo pipefail
           SERVER_PROJECT_DIR="${SERVER_PROJECT_DIR:-/root/Campfire-AI}"
           cd "${SERVER_PROJECT_DIR}"
+          echo "[deploy] syncing code from origin/master..."
+          git fetch origin
+          git reset --hard origin/master
           echo "[deploy] running remote deployment script with VERSION_TAG=${VERSION_TAG}"
           bash scripts/deploy-remote.sh "${VERSION_TAG}"
