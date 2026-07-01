@@ -50,6 +50,93 @@ _VALID_BEHAVIOR_TYPES: frozenset[str] = frozenset(
 _VALID_SEVERITY: frozenset[str] = frozenset({"轻度", "中度", "重度"})
 _VALID_SETTINGS: frozenset[str] = frozenset({"家庭", "学校", "公共场合", "机构", "不限"})
 
+# JSON 结构符，用于判断字符串内部的引号是否为闭合引号
+_JSON_STRUCTURAL_CHARS: frozenset[str] = frozenset(",:]}")
+
+
+def _escape_internal_quotes(text: str) -> str:
+    """把 JSON 字符串值内部未转义的 ASCII 双引号转义为 \\"。
+
+    LLM 经常在字符串值里使用 ASCII 双引号（如 "我"、"你"）却忘记转义，
+    导致 json.loads 失败。本函数按 JSON 字符串边界做状态机修复：
+
+    - 遇到反斜杠时，原样保留下一个字符（尊重已有转义）。
+    - 进入字符串后，遇到 " 时向前看：若下一个非空白字符是 JSON 结构符
+      （, : ] }）或已到结尾，视为字符串结束；否则视为内部引号并加反斜杠。
+
+    Args:
+        text: 待修复的 JSON 文本。
+
+    Returns:
+        修复后的文本。
+    """
+    result: list[str] = []
+    i = 0
+    n = len(text)
+    in_string = False
+
+    while i < n:
+        ch = text[i]
+        if ch == "\\":
+            # 保留转义序列，不把它当作字符串边界
+            result.append(ch)
+            i += 1
+            if i < n:
+                result.append(text[i])
+                i += 1
+            continue
+
+        if ch == '"':
+            if not in_string:
+                in_string = True
+                result.append(ch)
+            else:
+                # 向前看，跳过空白，判断是字符串结束还是内部引号
+                j = i + 1
+                while j < n and text[j] in " \t\r\n":
+                    j += 1
+                if j < n and text[j] in _JSON_STRUCTURAL_CHARS:
+                    in_string = False
+                    result.append(ch)
+                else:
+                    result.append('\\"')
+            i += 1
+            continue
+
+        result.append(ch)
+        i += 1
+
+    return "".join(result)
+
+
+def _repair_json(raw: str) -> str:
+    """对 LLM 返回的 JSON 做常见容错修复。
+
+    修复内容：
+    - 去掉 markdown 代码块包裹
+    - 字符串值内部未转义的 ASCII 双引号
+    - 对象/数组末尾多余的逗号
+
+    Args:
+        raw: LLM 原始输出。
+
+    Returns:
+        尽可能可解析的 JSON 文本。
+    """
+    # 去掉 markdown 代码块包裹
+    text = re.sub(
+        r"^```(?:json)?\s*|\s*```$",
+        "",
+        raw.strip(),
+        flags=re.MULTILINE,
+    )
+    # 修复字符串内部未转义的引号
+    text = _escape_internal_quotes(text)
+    # 去掉尾随逗号
+    text = re.sub(r",(\s*[}\]])", r"\1", text)
+    return text
+
+
 # ============================================================================
 # System Prompt（基于 case-extraction skill 步骤 1-4）
 # ============================================================================
@@ -321,15 +408,9 @@ class ExtractionService(ExtractionServiceContract):
             logger.error("extraction", "llm_extraction_failed", extra={"error": str(exc)})
             raise ExtractionError(str(exc)) from exc
 
-        # 解析 JSON
+        # 解析 JSON（先做容错修复，再交给标准 json.loads）
         try:
-            # 清理可能的 markdown 代码块包裹
-            cleaned = re.sub(
-                r"^```(?:json)?\s*|\s*```$",
-                "",
-                response_text.strip(),
-                flags=re.MULTILINE,
-            )
+            cleaned = _repair_json(response_text)
             result = json.loads(cleaned)
             cards_data = result.get("cards", [])
         except (json.JSONDecodeError, KeyError) as exc:
@@ -408,8 +489,9 @@ class ExtractionService(ExtractionServiceContract):
 
         支持的输入形式：
         - [6, 12] / ["6", "12"]
+        - [6] / ["6"]（单元素扩展为 [6, 6]）
         - "6-12" / "6~12" / "6-12岁" / "6岁到12岁"
-        - "[6, 12]"
+        - "[6, 12]" / "[6]"
         - {"min": 6, "max": 12}
         无法解析时返回 None，由上层校验报错。
         """
@@ -418,12 +500,18 @@ class ExtractionService(ExtractionServiceContract):
 
         # 已经是数组
         if isinstance(value, list):
-            if len(value) != 2:
-                return None
-            try:
-                return [int(value[0]), int(value[1])]
-            except (ValueError, TypeError):
-                return None
+            if len(value) == 1:
+                try:
+                    n = int(value[0])
+                    return [n, n]
+                except (ValueError, TypeError):
+                    return None
+            if len(value) == 2:
+                try:
+                    return [int(value[0]), int(value[1])]
+                except (ValueError, TypeError):
+                    return None
+            return None
 
         # 对象形式
         if isinstance(value, dict):
@@ -439,12 +527,15 @@ class ExtractionService(ExtractionServiceContract):
         if not text:
             return None
 
-        # JSON 数组字符串，如 "[6, 12]"
+        # JSON 数组字符串，如 "[6, 12]" / "[6]"
         if text.startswith("[") and text.endswith("]"):
             try:
                 parsed = json.loads(text)
-                if isinstance(parsed, list) and len(parsed) == 2:
-                    return [int(parsed[0]), int(parsed[1])]
+                if isinstance(parsed, list):
+                    if len(parsed) == 1:
+                        return [int(parsed[0]), int(parsed[0])]
+                    if len(parsed) == 2:
+                        return [int(parsed[0]), int(parsed[1])]
             except (json.JSONDecodeError, ValueError, TypeError):
                 pass
 
