@@ -11,6 +11,8 @@ import {
   SENSORY_FEATURE_LABELS,
   TRIGGER_TAGS,
   TRIGGER_LABELS,
+  NICKNAME_MAX_LENGTH,
+  TRIGGER_MAX_COUNT,
 } from '@/logics/profiles';
 import * as eventApi from '@/logics/profiles/services/eventApi';
 import type { ProfileCreate, ProfileUpdate, EventListItem } from '@/logics/profiles';
@@ -152,6 +154,9 @@ export default function ProfileEditPage() {
   const toggleArray = (field: 'sensory_features' | 'triggers', value: string) => {
     setForm((prev) => {
       const arr = prev[field];
+      if (field === 'triggers' && !arr.includes(value) && arr.length >= TRIGGER_MAX_COUNT) {
+        return prev;
+      }
       const next = arr.includes(value) ? arr.filter((v) => v !== value) : [...arr, value];
       return { ...prev, [field]: next };
     });
@@ -161,6 +166,7 @@ export default function ProfileEditPage() {
     const v = customTrigger.trim();
     if (!v) return;
     if (form.triggers.includes(v)) return;
+    if (form.triggers.length >= TRIGGER_MAX_COUNT) return;
     setForm((prev) => ({ ...prev, triggers: [...prev.triggers, v] }));
     setCustomTrigger('');
   };
@@ -184,6 +190,10 @@ export default function ProfileEditPage() {
       setError('请输入昵称');
       return false;
     }
+    if (form.nickname.trim().length > NICKNAME_MAX_LENGTH) {
+      setError(`昵称最多 ${NICKNAME_MAX_LENGTH} 个字符`);
+      return false;
+    }
     if (!form.birth_date) {
       setError('请选择出生日期');
       return false;
@@ -194,6 +204,10 @@ export default function ProfileEditPage() {
     }
     if (form.behavior_idx < 0) {
       setError('请选择主要行为类型');
+      return false;
+    }
+    if (form.triggers.length > TRIGGER_MAX_COUNT) {
+      setError(`触发标签最多 ${TRIGGER_MAX_COUNT} 个`);
       return false;
     }
     return true;
@@ -348,7 +362,7 @@ export default function ProfileEditPage() {
               value={form.nickname}
               onChange={(e) => setForm((p) => ({ ...p, nickname: e.target.value }))}
               placeholder="如：小明"
-              maxLength={20}
+              maxLength={NICKNAME_MAX_LENGTH}
             />
           </div>
 

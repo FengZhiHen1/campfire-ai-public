@@ -3,7 +3,7 @@ import { View, Text, Button, Input, Picker } from '@tarojs/components';
 import Taro from '@tarojs/taro';
 import { useProfile } from '../../../logics/profiles';
 import { listEvents, deleteEvent as deleteEventApi } from '../../../logics/profiles/services/eventApi';
-import { DIAGNOSIS_OPTIONS, BEHAVIOR_OPTIONS, SENSORY_FEATURE_TAGS, TRIGGER_TAGS, CUSTOM_TAG_MAX_LENGTH, NICKNAME_MAX_LENGTH, ERROR_AUTO_DISMISS_MS } from '../../../logics/profiles/constants';
+import { DIAGNOSIS_OPTIONS, BEHAVIOR_OPTIONS, SENSORY_FEATURE_TAGS, TRIGGER_TAGS, CUSTOM_TAG_MAX_LENGTH, NICKNAME_MAX_LENGTH, TRIGGER_MAX_COUNT, ERROR_AUTO_DISMISS_MS } from '../../../logics/profiles/constants';
 import { validateProfileForm } from '../../../logics/profiles/utils/validateForm';
 import { formatDateStr } from '../../../logics/shared/utils/timeFormat';
 import TagSection from '../components/TagSection';
@@ -101,8 +101,22 @@ export default function ProfileEdit() {
 
   const canSave = !saving && (isEdit ? isDirty : true);
 
+  // 触发标签总数 = 预设触发因素 + 自定义标签
+  const triggerCount = useMemo(
+    () => selectedTags.filter((t) => TRIGGER_TAGS.includes(t)).length + customTags.length,
+    [selectedTags, customTags],
+  );
+
   // 标签操作
   const toggleTag = (tag: string) => {
+    if (
+      TRIGGER_TAGS.includes(tag) &&
+      !selectedTags.includes(tag) &&
+      triggerCount >= TRIGGER_MAX_COUNT
+    ) {
+      Taro.showToast({ title: `触发标签最多 ${TRIGGER_MAX_COUNT} 个`, icon: 'none' });
+      return;
+    }
     setSelectedTags((prev) =>
       prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag],
     );
@@ -111,6 +125,10 @@ export default function ProfileEdit() {
   const addCustomTag = () => {
     const tag = customTagInput.trim();
     if (!tag || tag.length > CUSTOM_TAG_MAX_LENGTH || customTags.includes(tag)) return;
+    if (triggerCount >= TRIGGER_MAX_COUNT) {
+      Taro.showToast({ title: `触发标签最多 ${TRIGGER_MAX_COUNT} 个`, icon: 'none' });
+      return;
+    }
     setCustomTags((prev) => [...prev, tag]);
     setCustomTagInput('');
   };
