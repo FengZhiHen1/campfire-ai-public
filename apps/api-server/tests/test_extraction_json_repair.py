@@ -66,7 +66,15 @@ class TestRepairJson:
             r'"medical_criteria": "1. 持续耐心教授3个月后，人称代词混淆无任何改善。", '
             r'"evidence_level": "机构经验总结", "caution_notes": "避免在孩子说错时责备或取笑。", '
             r'"contraindications": "无", "is_template": false, '
-            r'"_inferred": { "behavior_type": "叙事描述'"'"'说话你我他分不清'"'"'，推断为'"'"'其他'"'"'", '
+            r'"_inferred": { "behavior_type": "叙事描述'
+            "'"
+            "说话你我他分不清"
+            "'"
+            "，推断为"
+            "'"
+            "其他"
+            "'"
+            '", '
             r'"parent_category_candidates": "候选1: 沟通替代；候选2: 行为塑造" } } ] }'
         )
         repaired = _repair_json(raw)

@@ -172,7 +172,6 @@ def get_user_repository() -> UserRepository:
     return UserRepository(session_factory=_get_session_factory())
 
 
-
 def get_narrative_repository() -> NarrativeRepository:
     """FastAPI Depends 工厂：构造 NarrativeRepository 实例。
 
