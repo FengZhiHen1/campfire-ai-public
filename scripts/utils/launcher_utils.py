@@ -9,9 +9,9 @@ import signal
 import subprocess
 import sys
 import threading
-from typing import Callable
 
 from launcher_contract import ServiceLauncher
+
 from utils.log_utils import (
     print_exit_header,
     print_running_status,
@@ -35,8 +35,12 @@ def run_standalone(launcher: ServiceLauncher) -> None:
     name = launcher.display_name
     proc = launcher.start()
 
-    logger.info(service="scripts", message=f"{name} 已启动", op_type="service_start",
-                extra={"pid": proc.pid, "launcher": launcher.name})
+    logger.info(
+        service="scripts",
+        message=f"{name} 已启动",
+        op_type="service_start",
+        extra={"pid": proc.pid, "launcher": launcher.name},
+    )
 
     print_separator()
     print_stage("阶段二：服务启动")
@@ -55,8 +59,12 @@ def run_standalone(launcher: ServiceLauncher) -> None:
         _shutdown_done = True
 
         signame = signal.Signals(signum).name
-        logger.info(service="scripts", message=f"收到 {signame}，正在关闭 {name}",
-                    op_type="service_stop", extra={"pid": proc.pid})
+        logger.info(
+            service="scripts",
+            message=f"收到 {signame}，正在关闭 {name}",
+            op_type="service_stop",
+            extra={"pid": proc.pid},
+        )
 
         print()
         print_exit_header()
@@ -67,8 +75,12 @@ def run_standalone(launcher: ServiceLauncher) -> None:
             logger.info(service="scripts", message=f"{name} 已优雅关闭", op_type="service_stop")
         else:
             print_service_terminated_forced()
-            logger.warning(service="scripts", message=f"{name} 被强制终止", op_type="service_stop",
-                           extra={"pid": proc.pid})
+            logger.warning(
+                service="scripts",
+                message=f"{name} 被强制终止",
+                op_type="service_stop",
+                extra={"pid": proc.pid},
+            )
         sys.exit(0)
 
     signal.signal(signal.SIGINT, _on_shutdown)
@@ -96,7 +108,10 @@ def start_log_readers(
     for proc, name in procs:
         t = threading.Thread(
             target=read_output,
-            args=(proc, lambda line, n=name: print_service_log(n, line, max_name_width)),
+            args=(
+                proc,
+                lambda line, n=name: print_service_log(n, line, max_name_width),
+            ),
             kwargs={"stop_event": stop_event},
             daemon=True,
         )
@@ -111,8 +126,12 @@ def shutdown_services(
     stop_event: threading.Event,
 ) -> None:
     """优雅关闭所有服务。"""
-    logger.info(service="scripts", message="开始关闭所有服务", op_type="shutdown",
-                extra={"service_count": len(procs)})
+    logger.info(
+        service="scripts",
+        message="开始关闭所有服务",
+        op_type="shutdown",
+        extra={"service_count": len(procs)},
+    )
 
     print()
     print_exit_header()
@@ -128,12 +147,18 @@ def shutdown_services(
             print_service_terminated_ok()
         else:
             print_service_terminated_forced()
-            logger.warning(service="scripts", message=f"{name} 被强制终止", op_type="shutdown",
-                           extra={"pid": proc.pid})
+            logger.warning(
+                service="scripts",
+                message=f"{name} 被强制终止",
+                op_type="shutdown",
+                extra={"pid": proc.pid},
+            )
 
     from start_ngrok import cleanup_ngrok_url_file
+
     cleanup_ngrok_url_file()
 
     from utils.log_utils import print_exit_footer
+
     print()
     print_exit_footer()

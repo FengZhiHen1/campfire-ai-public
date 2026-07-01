@@ -47,9 +47,7 @@ class WebLauncher(ServiceLauncher):
             self._package = "react-web"
             self._script = "dev"
         else:
-            raise ValueError(
-                f"未知 Web 模式: {mode!r}，可选: h5, weapp, react-h5"
-            )
+            raise ValueError(f"未知 Web 模式: {mode!r}，可选: h5, weapp, react-h5")
 
     def _do_start(self) -> subprocess.Popen:
         return start_process(
@@ -62,6 +60,7 @@ class WebLauncher(ServiceLauncher):
 # 向后兼容：保留函数式接口
 # ---------------------------------------------------------------------------
 
+
 def start(*, mode: str = "h5") -> tuple[subprocess.Popen, str]:
     """启动 Web dev server。返回 (进程, 展示名称)。"""
     launcher = WebLauncher(mode=mode)
@@ -72,14 +71,17 @@ def start(*, mode: str = "h5") -> tuple[subprocess.Popen, str]:
 # 独立运行入口
 # ---------------------------------------------------------------------------
 
+
 def main() -> None:
     import os
+
     from utils.launcher_utils import run_standalone
 
     mode = os.environ.get("WEB_MODE") or os.environ.get("TARO_MODE", "h5")
     launcher = WebLauncher(mode=mode)
     if launcher.port:
         from utils.log_utils import print_info
+
         print_info(f"{launcher.display_name} 开发服务器将在 http://localhost:{launcher.port} 启动")
     run_standalone(launcher)
 

@@ -62,3 +62,25 @@ source = ["apps", "packages"]
 
 [tool.coverage.report]
 show_missing = true
+
+[tool.ruff]
+exclude = [
+    ".agent",
+    ".claude",
+    ".git",
+    ".mypy_cache",
+    ".pytest_cache",
+    ".ruff_cache",
+    ".tmp",
+    ".venv",
+    "__pycache__",
+    "apps/mini-program",
+    "build",
+    "dist",
+    "node_modules",
+]
+line-length = 120
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I"]
+ignore = ["E402", "E501"]

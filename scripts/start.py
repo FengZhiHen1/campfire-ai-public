@@ -94,20 +94,6 @@ AVAILABLE_SERVICES: dict[str, str] = {
 # 日志导入（sys.path 设置后）
 # ---------------------------------------------------------------------------
 
-from utils.logger import logger  # noqa: E402
-from utils.log_utils import (  # noqa: E402
-    print_banner,
-    print_check_fail,
-    print_check_ok,
-    print_error,
-    print_info,
-    print_running_status,
-    print_separator,
-    print_service_failed,
-    print_service_starting,
-    print_stage,
-    print_warning,
-)
 from utils.check_utils import (  # noqa: E402
     check_docker_available,
     check_env_file,
@@ -121,11 +107,23 @@ from utils.check_utils import (  # noqa: E402
     check_uv_available,
 )
 from utils.launcher_utils import (  # noqa: E402
-    run_standalone,
     shutdown_services,
     start_log_readers,
 )
-
+from utils.log_utils import (  # noqa: E402
+    print_banner,
+    print_check_fail,
+    print_check_ok,
+    print_error,
+    print_info,
+    print_running_status,
+    print_separator,
+    print_service_failed,
+    print_service_starting,
+    print_stage,
+    print_warning,
+)
+from utils.logger import logger  # noqa: E402
 
 # ====================================================================
 # 启动器工厂
@@ -136,18 +134,23 @@ def _create_launcher(service_key: str, project_root: Path = PROJECT_ROOT):
     """根据服务标识创建对应的启动器实例。"""
     if service_key == "api":
         from start_api import ApiLauncher
+
         return ApiLauncher(project_root=project_root)
     elif service_key == "worker":
         from start_worker import WorkerLauncher
+
         return WorkerLauncher(project_root=project_root)
     elif service_key == "web-h5":
         from start_web import WebLauncher
+
         return WebLauncher(mode="h5", project_root=project_root)
     elif service_key == "web-weapp":
         from start_web import WebLauncher
+
         return WebLauncher(mode="weapp", project_root=project_root)
     elif service_key == "web-react-h5":
         from start_web import WebLauncher
+
         return WebLauncher(mode="react-h5", project_root=project_root)
     raise ValueError(f"未知服务: {service_key}")
 
@@ -171,8 +174,12 @@ def _cleanup_dead_processes(services: list[str]) -> None:
         for port, pids in cleaned:
             msg = f"已终止占用端口 {port} 的进程: {', '.join(str(pid) for pid in pids)}"
             print_warning(f"  {msg}")
-            logger.warning(service="scripts", message=msg, op_type="dead_process_cleanup",
-                           extra={"port": port, "pids": pids})
+            logger.warning(
+                service="scripts",
+                message=msg,
+                op_type="dead_process_cleanup",
+                extra={"port": port, "pids": pids},
+            )
     else:
         print_info("  未发现占用必需端口的残留进程")
     print()
@@ -223,8 +230,12 @@ def run_preflight_checks(services: list[str], *, skip_infra: bool) -> bool:
             print_check_ok(name, msg)
         else:
             print_check_fail(name, msg)
-            logger.warning(service="scripts", message=f"前置检查失败: {name}",
-                           op_type="preflight_check", extra={"detail": msg})
+            logger.warning(
+                service="scripts",
+                message=f"前置检查失败: {name}",
+                op_type="preflight_check",
+                extra={"detail": msg},
+            )
             all_ok = False
 
     print()
@@ -250,6 +261,7 @@ def start_services(services: list[str], *, skip_infra: bool) -> list[tuple]:
 
     def _cleanup() -> None:
         from utils.process_utils import terminate_process
+
         for proc, _name in procs:
             if proc.poll() is None:
                 terminate_process(proc, timeout=5.0)
@@ -257,6 +269,7 @@ def start_services(services: list[str], *, skip_infra: bool) -> list[tuple]:
     # --- 基础设施 ---
     if not skip_infra:
         from start_infra import InfraLauncher
+
         print(f"  ● {'Infra':<20s} 正在启动 Docker 容器...", flush=True)
         infra = InfraLauncher()
         infra_proc = infra.start()
@@ -267,8 +280,12 @@ def start_services(services: list[str], *, skip_infra: bool) -> list[tuple]:
             time.sleep(2)
         else:
             print_check_fail("Infra", "Docker 启动失败")
-            logger.error(service="scripts", message="Docker 容器启动失败",
-                         op_type="infra_start", extra={"exit_code": infra_proc.returncode})
+            logger.error(
+                service="scripts",
+                message="Docker 容器启动失败",
+                op_type="infra_start",
+                extra={"exit_code": infra_proc.returncode},
+            )
             if stdout:
                 print(f"     {stdout}")
             return []
@@ -278,6 +295,7 @@ def start_services(services: list[str], *, skip_infra: bool) -> list[tuple]:
     if "web-weapp" in services and "api" in services:
         try:
             from start_ngrok import NgrokLauncher
+
             print()
             print_info("正在启动 ngrok 内网穿透...")
             ngrok = NgrokLauncher(port=8000)
@@ -288,8 +306,11 @@ def start_services(services: list[str], *, skip_infra: bool) -> list[tuple]:
             print()
         except Exception as exc:
             print_warning(f"ngrok 启动失败: {exc}")
-            logger.warning(service="scripts", message=f"ngrok 启动失败: {exc}",
-                           op_type="ngrok_start")
+            logger.warning(
+                service="scripts",
+                message=f"ngrok 启动失败: {exc}",
+                op_type="ngrok_start",
+            )
 
     # --- 业务服务 ---
     for key in services:
@@ -299,7 +320,7 @@ def start_services(services: list[str], *, skip_infra: bool) -> list[tuple]:
             procs.append((proc, launcher.display_name))
             print_service_starting(launcher.display_name, proc.pid)
         except Exception as exc:
-            print_service_failed(launcher.display_name if 'launcher' in dir() else key, str(exc))
+            print_service_failed(launcher.display_name if "launcher" in dir() else key, str(exc))
             _cleanup()
             return []
 
@@ -416,7 +437,12 @@ def _parse_args() -> argparse.Namespace:
     group = parser.add_mutually_exclusive_group()
     group.add_argument("--mode", type=str, default=None, help="预设启动模式")
     group.add_argument("--services", type=str, default=None, help="服务列表，逗号分隔")
-    group.add_argument("--all", action="store_true", default=False, help="启动默认全栈服务（API + Worker + Taro H5）")
+    group.add_argument(
+        "--all",
+        action="store_true",
+        default=False,
+        help="启动默认全栈服务（API + Worker + Taro H5）",
+    )
 
     parser.add_argument("--skip-infra", action="store_true", default=False, help="跳过 Docker")
     parser.add_argument("--skip-checks", action="store_true", default=False, help="跳过前置检查")
@@ -472,6 +498,7 @@ def main() -> None:
     # 仅基础设施模式
     if not services:
         from start_infra import InfraLauncher
+
         print()
         print_stage("阶段二：服务启动")
         infra = InfraLauncher()
@@ -529,8 +556,12 @@ def main() -> None:
                     if exit_code != 0 and exit_code != -signal.SIGINT:
                         print()
                         print_service_failed(name, f"意外退出 (exit code: {exit_code})")
-                        logger.error(service="scripts", message=f"{name} 意外退出",
-                                     op_type="service_crash", extra={"exit_code": exit_code})
+                        logger.error(
+                            service="scripts",
+                            message=f"{name} 意外退出",
+                            op_type="service_crash",
+                            extra={"exit_code": exit_code},
+                        )
                     _do_shutdown()
                     sys.exit(exit_code if exit_code > 0 else 0)
             time.sleep(1)

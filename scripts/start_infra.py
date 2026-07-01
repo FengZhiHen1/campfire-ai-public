@@ -46,6 +46,7 @@ class InfraLauncher(ServiceLauncher):
 # 向后兼容：保留函数式接口
 # ---------------------------------------------------------------------------
 
+
 def start_infra() -> subprocess.Popen:
     """启动基础设施容器。返回已完成的 Popen。"""
     return InfraLauncher().start()
@@ -60,8 +61,9 @@ def stop_infra() -> None:
 # 独立运行入口
 # ---------------------------------------------------------------------------
 
+
 def main() -> None:
-    from utils.log_utils import print_info, print_error
+    from utils.log_utils import print_error, print_info
     from utils.logger import logger
 
     print_info("正在启动基础设施容器...")
@@ -75,11 +77,16 @@ def main() -> None:
             print(stdout)
     else:
         print_error(f"基础设施启动失败 (exit code {proc.returncode})")
-        logger.error(service="scripts", message="基础设施容器启动失败",
-                     op_type="infra_start", extra={"exit_code": proc.returncode})
+        logger.error(
+            service="scripts",
+            message="基础设施容器启动失败",
+            op_type="infra_start",
+            extra={"exit_code": proc.returncode},
+        )
         if stdout:
             print(stdout)
         import sys
+
         sys.exit(proc.returncode)
 
 

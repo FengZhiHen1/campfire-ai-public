@@ -7,10 +7,8 @@ Connectivity checks use TCP socket probes — lightweight and no driver dependen
 
 from __future__ import annotations
 
-import os
 import socket
 import subprocess
-import sys
 from pathlib import Path
 
 # ---------------------------------------------------------------------------
@@ -33,11 +31,7 @@ def check_env_file() -> tuple[bool, str]:
 
     example = PROJECT_ROOT / ".env.example"
     if example.exists():
-        return False, (
-            "未找到 .env 文件\n"
-            "        请从 .env.example 复制并填入真实值:\n"
-            "          cp .env.example .env"
-        )
+        return False, ("未找到 .env 文件\n        请从 .env.example 复制并填入真实值:\n          cp .env.example .env")
 
     return False, "未找到 .env 或 .env.example 文件"
 
@@ -151,9 +145,7 @@ def check_port_available(port: int) -> tuple[bool, str]:
 # ---------------------------------------------------------------------------
 
 
-def check_postgres_connectivity(
-    host: str = "localhost", port: int = 5432
-) -> tuple[bool, str]:
+def check_postgres_connectivity(host: str = "localhost", port: int = 5432) -> tuple[bool, str]:
     """Probe PostgreSQL TCP port."""
     ok, err = _tcp_connect(host, port)
     if ok:
@@ -161,9 +153,7 @@ def check_postgres_connectivity(
     return False, f"数据库连接失败 → {err}，请确认 PostgreSQL 容器已启动"
 
 
-def check_redis_connectivity(
-    host: str = "localhost", port: int = 6379
-) -> tuple[bool, str]:
+def check_redis_connectivity(host: str = "localhost", port: int = 6379) -> tuple[bool, str]:
     """Probe Redis TCP port."""
     ok, err = _tcp_connect(host, port)
     if ok:
@@ -171,9 +161,7 @@ def check_redis_connectivity(
     return False, f"Redis 连接失败 → {err}，请确认 Redis 容器已启动"
 
 
-def check_minio_connectivity(
-    host: str = "localhost", port: int = 9000
-) -> tuple[bool, str]:
+def check_minio_connectivity(host: str = "localhost", port: int = 9000) -> tuple[bool, str]:
     """Probe MinIO TCP port."""
     ok, err = _tcp_connect(host, port)
     if ok:
