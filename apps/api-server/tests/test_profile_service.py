@@ -161,14 +161,14 @@ class TestDeleteProfile:
 class TestCalcAgeRange:
     def test_null_returns_18_plus(self):
         result = ProfileServiceImpl._calc_age_range(None)
-        assert result == "18岁以上"
+        assert result == "18+"
 
     def test_age_5_returns_4_6(self):
         birth = date.today().replace(year=date.today().year - 5)
         result = ProfileServiceImpl._calc_age_range(birth)
-        assert result == "4-6岁"
+        assert result == "4-6"
 
     def test_age_0_returns_0_3(self):
         birth = date.today()
         result = ProfileServiceImpl._calc_age_range(birth)
-        assert result == "0-3岁"
+        assert result == "0-3"

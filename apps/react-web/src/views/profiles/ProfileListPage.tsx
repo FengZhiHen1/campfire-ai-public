@@ -366,6 +366,7 @@ export default function ProfileListPage() {
               value={record.form.trigger}
               onChange={(e) => record.setField('trigger', e.target.value)}
               placeholder="如：在超市遇到噪音刺激…"
+              maxLength={2000}
             />
           </div>
           <div className="f-group">
@@ -375,6 +376,7 @@ export default function ProfileListPage() {
               value={record.form.manifest}
               onChange={(e) => record.setField('manifest', e.target.value)}
               placeholder="如：突然捂耳蹲下，持续约3分钟…"
+              maxLength={2000}
             />
           </div>
 
@@ -393,6 +395,7 @@ export default function ProfileListPage() {
                 value={record.form.intervention}
                 onChange={(e) => record.setField('intervention', e.target.value)}
                 placeholder="如：带离现场，使用降噪耳机…"
+                maxLength={2000}
               />
             </div>
             <div className="f-group">
@@ -402,6 +405,7 @@ export default function ProfileListPage() {
                 value={record.form.result}
                 onChange={(e) => record.setField('result', e.target.value)}
                 placeholder="如：情绪逐渐平复…"
+                maxLength={2000}
               />
             </div>
           </div>

@@ -204,14 +204,15 @@ class LanguageLevel(StrEnum):
     """患者语言沟通能力评估等级枚举。
 
     用于个人档案的可选字段 language_level。
+    持久化值与 @campfire/ts-shared LanguageLevel 枚举保持一致。
 
     与 docs/contracts/PROF-01/LanguageLevel.json 契约一致。
     """
 
-    NO_LANGUAGE = "无语言"
-    SINGLE_WORD = "单字词"
-    SHORT_PHRASE = "短句"
-    CONVERSATIONAL = "可对话"
+    NON_VERBAL = "non_verbal"
+    SINGLE_WORDS = "single_words"
+    SHORT_PHRASES = "short_phrases"
+    CONVERSATIONAL = "conversational"
 
 
 class SensoryFeature(StrEnum):
@@ -254,15 +255,16 @@ class AgeRange(StrEnum):
 
     由出生日期实时计算得出（不持久化存储）。
     用于个人档案输出字段 age_range 和下游 PROF-02 的检索过滤。
+    持久化值与 @campfire/ts-shared AgeRange 枚举保持一致。
 
     与 docs/contracts/PROF-01/AgeRange.json 契约一致。
     """
 
-    AGE_0_3 = "0-3岁"
-    AGE_4_6 = "4-6岁"
-    AGE_7_12 = "7-12岁"
-    AGE_13_18 = "13-18岁"
-    AGE_18_PLUS = "18岁以上"
+    AGE_0_3 = "0-3"
+    AGE_4_6 = "4-6"
+    AGE_7_12 = "7-12"
+    AGE_13_18 = "13-18"
+    AGE_18_PLUS = "18+"
 
 
 # ===========================================================================
@@ -303,7 +305,7 @@ class ProfileCreate(CampfireBaseModel):
     language_level: LanguageLevel | None = Field(
         default=None,
         description="患者的语言沟通能力评估等级",
-        examples=["短句"],
+        examples=["short_phrases"],
     )
     sensory_features: list[SensoryFeature] = Field(
         default_factory=list,
@@ -430,9 +432,9 @@ class ProfileResponse(CampfireBaseModel):
         ...,
         description="感官特征列表",
     )
-    triggers: list[Trigger] = Field(
+    triggers: list[str] = Field(
         ...,
-        description="已知触发因素列表",
+        description="已知触发因素列表。支持 Trigger 枚举预设值及自定义文本。",
     )
     medication_notes: str | None = Field(
         default=None,
