@@ -1373,8 +1373,9 @@ async def _repair_derived_card_ids(session: AsyncSession) -> int:
 async def _reset_database(session: AsyncSession, yes: bool = False) -> bool:
     """将数据库恢复到种子数据刚注入的状态。
 
-    删除全部案例（L1 叙事、L2 卡片、向量切片）和咨询历史记录，
-    但保留用户账号与默认患者档案。执行前会要求二次确认。
+    删除种子数据以外的案例（L1 叙事、L2 卡片、向量切片）和全部咨询历史记录，
+    但保留用户账号、默认患者档案以及标记为 is_seed 的种子案例。
+    执行前会要求二次确认。
 
     Args:
         session: 活动数据库异步会话。
@@ -1383,18 +1384,37 @@ async def _reset_database(session: AsyncSession, yes: bool = False) -> bool:
     Returns:
         True 表示已执行重置，False 表示用户取消。
     """
+    # 识别非种子叙事 ID
+    non_seed_narrative_ids_result = await session.execute(
+        select(CaseNarrative.narrative_id).where(CaseNarrative.is_seed.is_not(True))
+    )
+    non_seed_narrative_ids = [row[0] for row in non_seed_narrative_ids_result.fetchall()]
+
     # 先统计待删除数据量，用于确认提示
-    narrative_count = await session.scalar(select(func.count()).select_from(CaseNarrative))
-    card_count = await session.scalar(select(func.count()).select_from(CaseCard))
-    chunk_count = await session.scalar(select(func.count()).select_from(CaseChunk))
+    narrative_count = len(non_seed_narrative_ids)
+    card_count = 0
+    chunk_count = 0
+    if non_seed_narrative_ids:
+        card_count = await session.scalar(
+            select(func.count())
+            .select_from(CaseCard)
+            .where(CaseCard.narrative_id.in_(non_seed_narrative_ids))
+        )
+        if card_count:
+            chunk_count = await session.scalar(
+                select(func.count())
+                .select_from(CaseChunk)
+                .join(CaseCard, CaseChunk.card_id == CaseCard.card_id)
+                .where(CaseCard.narrative_id.in_(non_seed_narrative_ids))
+            )
     consult_count = await session.scalar(select(func.count()).select_from(ConsultationHistory))
 
     print("[WARN] 即将重置数据库到种子数据初始状态：")
-    print(f"       - 删除 {narrative_count or 0} 条 L1 叙事")
-    print(f"       - 删除 {card_count or 0} 张 L2 卡片")
-    print(f"       - 删除 {chunk_count or 0} 条向量切片")
+    print(f"       - 删除 {narrative_count or 0} 条非种子 L1 叙事")
+    print(f"       - 删除 {card_count or 0} 张非种子 L2 卡片")
+    print(f"       - 删除 {chunk_count or 0} 条非种子向量切片")
     print(f"       - 删除 {consult_count or 0} 条咨询历史")
-    print("       - 保留用户账号与默认患者档案")
+    print("       - 保留用户账号、默认患者档案以及种子案例")
 
     if not yes:
         answer = input("确认重置吗？输入 'yes' 继续: ")
@@ -1402,12 +1422,26 @@ async def _reset_database(session: AsyncSession, yes: bool = False) -> bool:
             print("[CANCEL] 已取消重置")
             return False
 
-    # 由于 FK 设置了 ondelete=CASCADE，删除叙事会自动级联删除卡片与切片
-    await session.execute(CaseNarrative.__table__.delete())
+    if non_seed_narrative_ids:
+        # 先删除非种子卡片关联的向量切片，再删除卡片，最后删除叙事
+        await session.execute(
+            CaseChunk.__table__.delete().where(
+                CaseChunk.card_id.in_(
+                    select(CaseCard.card_id).where(CaseCard.narrative_id.in_(non_seed_narrative_ids))
+                )
+            )
+        )
+        await session.execute(
+            CaseCard.__table__.delete().where(CaseCard.narrative_id.in_(non_seed_narrative_ids))
+        )
+        await session.execute(
+            CaseNarrative.__table__.delete().where(CaseNarrative.narrative_id.in_(non_seed_narrative_ids))
+        )
+
     await session.execute(ConsultationHistory.__table__.delete())
     await session.commit()
 
-    print("[OK] 数据库已清空，开始重新注入种子数据...")
+    print("[OK] 非种子数据已清空，开始重新注入种子数据...")
     return True
 
 
