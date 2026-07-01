@@ -981,7 +981,17 @@ async def _ensure_profile(session: AsyncSession, caregiver_id: UUID) -> UUID:
     )
     existing = result.scalars().first()
     if existing is not None:
-        print(f"[SKIP] 个人档案已存在: {existing.profile_id}")
+        # 当种子常量发生变更（如枚举值调整）时，同步更新已有档案
+        existing.birth_date = PROFILE_BIRTH_DATE
+        existing.diagnosis_type = PROFILE_DIAGNOSIS_TYPE
+        existing.primary_behavior = PROFILE_PRIMARY_BEHAVIOR
+        existing.language_level = PROFILE_LANGUAGE_LEVEL
+        existing.sensory_features = _PROFILE_SENSORY_FEATURES
+        existing.triggers = _PROFILE_TRIGGERS
+        existing.medication_notes = PROFILE_MEDICATION_NOTES
+        existing.is_default = True
+        await session.commit()
+        print(f"[OK] 个人档案已同步: {existing.profile_id}")
         return existing.profile_id
 
     profile = Profile(
