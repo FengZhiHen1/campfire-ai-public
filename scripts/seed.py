@@ -1396,9 +1396,7 @@ async def _reset_database(session: AsyncSession, yes: bool = False) -> bool:
     chunk_count = 0
     if non_seed_narrative_ids:
         card_count = await session.scalar(
-            select(func.count())
-            .select_from(CaseCard)
-            .where(CaseCard.narrative_id.in_(non_seed_narrative_ids))
+            select(func.count()).select_from(CaseCard).where(CaseCard.narrative_id.in_(non_seed_narrative_ids))
         )
         if card_count:
             chunk_count = await session.scalar(
@@ -1426,14 +1424,10 @@ async def _reset_database(session: AsyncSession, yes: bool = False) -> bool:
         # 先删除非种子卡片关联的向量切片，再删除卡片，最后删除叙事
         await session.execute(
             CaseChunk.__table__.delete().where(
-                CaseChunk.card_id.in_(
-                    select(CaseCard.card_id).where(CaseCard.narrative_id.in_(non_seed_narrative_ids))
-                )
+                CaseChunk.card_id.in_(select(CaseCard.card_id).where(CaseCard.narrative_id.in_(non_seed_narrative_ids)))
             )
         )
-        await session.execute(
-            CaseCard.__table__.delete().where(CaseCard.narrative_id.in_(non_seed_narrative_ids))
-        )
+        await session.execute(CaseCard.__table__.delete().where(CaseCard.narrative_id.in_(non_seed_narrative_ids)))
         await session.execute(
             CaseNarrative.__table__.delete().where(CaseNarrative.narrative_id.in_(non_seed_narrative_ids))
         )
