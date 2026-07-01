@@ -31,7 +31,7 @@ const EVIDENCE_LABEL_MAP: Record<string, string> = EVIDENCE_LEVEL_VALUES.reduce(
 );
 
 export default function CaseCardDetailPage() {
-  const { id } = useParams<{ id: string }>();
+  const { id: _id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { data, loading, error, refetch } = useCaseCardDetail();
 

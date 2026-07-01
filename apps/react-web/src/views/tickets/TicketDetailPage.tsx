@@ -3,7 +3,7 @@ import PageContent from '@/views/_shared/layout/PageContent';
 import './TicketDetailPage.css';
 
 export default function TicketDetailPage() {
-  const { id } = useParams<{ id: string }>();
+  const { id: _id } = useParams<{ id: string }>();
   const navigate = useNavigate();
 
   return (

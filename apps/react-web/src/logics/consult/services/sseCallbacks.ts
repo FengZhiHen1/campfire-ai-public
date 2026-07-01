@@ -60,7 +60,7 @@ type SetFn = (...args: any[]) => any;
 export function createSseCallbacks(
   get: () => ConsultStateView,
   set: SetFn,
-  requestId: RequestId,
+  _requestId: RequestId,
 ): SseStreamParserCallbacks {
   return {
     // ---- onChunk：增量追加文本到对应段落 ----

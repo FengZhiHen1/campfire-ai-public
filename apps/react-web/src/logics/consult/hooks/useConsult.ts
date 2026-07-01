@@ -123,6 +123,8 @@ export function useConsult(): UseConsultReturn {
       fetchHistoryDetail: (consultationId: string): Promise<ConsultationHistoryDetail> =>
         consultApi.fetchHistoryDetail(consultationId),
     }),
+    // store 为模块级常量（Zustand useConsultStore），引用稳定
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [
       sessionState, behaviorTypeSelection, behaviorDescription, messages,
       planSections, accumulatedText, ticketGuide, errorCode,

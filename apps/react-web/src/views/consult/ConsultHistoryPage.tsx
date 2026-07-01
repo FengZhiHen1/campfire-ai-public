@@ -95,7 +95,7 @@ export default function ConsultHistoryPage() {
           </div>
         ) : (
           <>
-            {filtered.map((item, idx) => {
+            {filtered.map((item, _idx) => {
               const [trustLabel, trustClass] = getTrust(item);
               return (
                 <Link key={item.id} className="card" to={`/consult/${item.id}`}>

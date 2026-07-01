@@ -22,7 +22,6 @@ import {
   tokenManager,
   buildMockLoginResponse,
   LoginError,
-  SessionExpiredError,
 } from '../services/tokenManager';
 import type { TokenPair } from '../store/userStore';
 import { parseJWTPayload } from '../utils/storage';
@@ -115,7 +114,8 @@ export function useAuth(): UseAuthReturn {
   // 订阅 Zustand Store（选择器优化：仅订阅需要的字段）
   const sessionState: SessionState = useSessionStore((state) => state.sessionState);
   const user: SessionUser | null = useSessionStore((state) => state.user);
-  const tokenPair: TokenPair | null = useSessionStore((state) => state.tokenPair);
+  const _tokenPair: TokenPair | null = useSessionStore((state) => state.tokenPair);
+  void _tokenPair;
 
   // 便捷布尔值
   const isAuthenticated: boolean = sessionState === 'authenticated';

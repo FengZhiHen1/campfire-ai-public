@@ -83,7 +83,8 @@ function resolveRole(roles?: string[]): UserRole {
 export function useCaseListPage(): UseCaseListPageReturn {
   const navigate = useNavigate();
   const user = useSessionStore((s) => s.user);
-  const role: UserRole = useMemo(() => resolveRole(user?.roles), [user?.roles]);
+  const _role: UserRole = useMemo(() => resolveRole(user?.roles), [user?.roles]);
+  void _role;
   const currentUserId: string = user?.userId ?? '';
 
   const [activeTab, setActiveTab] = useState<ActiveTab>('public');
@@ -133,6 +134,7 @@ export function useCaseListPage(): UseCaseListPageReturn {
     if (page === 1) return;
     const scope = activeTab === 'public' ? 'public' : 'my';
     loadData(page, true, scope, searchKeyword || undefined);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- 仅 page 变化时触发分页追加
   }, [page]);
 
   // TODO: Replace useReachBottom with IntersectionObserver in View layer

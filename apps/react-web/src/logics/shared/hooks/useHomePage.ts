@@ -19,6 +19,7 @@ export function useHomePage() {
     if (listState === 'idle' && (profiles ?? []).length === 0) {
       fetchProfiles();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- 仅在 idle + 空列表时触发初始加载
   }, [listState, profiles?.length, fetchProfiles]);
 
   const load = useCallback(async () => {

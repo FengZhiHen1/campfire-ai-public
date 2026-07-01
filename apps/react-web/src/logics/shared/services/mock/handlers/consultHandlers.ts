@@ -9,7 +9,7 @@ let consultCounter = 0;
 
 export async function handleConsultSubmit(
   _options: Record<string, unknown>,
-  db: MockDatabase,
+  _db: MockDatabase,
 ): Promise<IRequestResponse> {
   await simulateDelay();
   consultCounter++;
