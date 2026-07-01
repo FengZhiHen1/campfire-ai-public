@@ -22,32 +22,6 @@ interface AbortableTask {
   abort(): void;
 }
 
-/** UTF-8 ArrayBuffer → 字符串解码（微信小程序无 TextDecoder）
- * TODO: 当前未使用，迁移小程序时恢复
- */
-function _utf8Decode(buffer: ArrayBuffer): string {
-  void buffer;
-  const bytes = new Uint8Array(buffer);
-  const len = bytes.length;
-  let result = '';
-  let i = 0;
-  while (i < len) {
-    const b1 = bytes[i++];
-    if (b1 < 0x80) {
-      result += String.fromCharCode(b1);
-    } else if (b1 < 0xE0) {
-      result += String.fromCharCode(((b1 & 0x1F) << 6) | (bytes[i++] & 0x3F));
-    } else if (b1 < 0xF0) {
-      result += String.fromCharCode(((b1 & 0x0F) << 12) | ((bytes[i++] & 0x3F) << 6) | (bytes[i++] & 0x3F));
-    } else {
-      const cp = ((b1 & 0x07) << 18) | ((bytes[i++] & 0x3F) << 12) | ((bytes[i++] & 0x3F) << 6) | (bytes[i++] & 0x3F);
-      result += String.fromCodePoint(cp);
-    }
-  }
-  return result;
-}
-
-
 import type { ChunkEventPayload, DoneEventPayload, ErrorEventPayload } from '../types/index';
 
 // ============================================================================

@@ -118,8 +118,6 @@ export default function StreamingPanel({
         <h3 data-testid="consult-plan-card-header">干预建议大纲</h3>
         {sections.map(({ type, section }, idx) => {
           const isActive = activeKey === type;
-          const _hasContent = (section?.contents.length ?? 0) > 0;
-          void _hasContent;
           const showCheck = (section?.isCompleted ?? false) || isActive;
           const bodyHtml = renderBodyHtml(section?.contents ?? [], { active: isActive });
 

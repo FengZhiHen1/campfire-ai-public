@@ -1,9 +1,8 @@
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import PageContent from '@/views/_shared/layout/PageContent';
 import './TicketDetailPage.css';
 
 export default function TicketDetailPage() {
-  const { id: _id } = useParams<{ id: string }>();
   const navigate = useNavigate();
 
   return (

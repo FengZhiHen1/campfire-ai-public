@@ -14,7 +14,6 @@
  */
 
 import { useState, useEffect, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { fetchReviewQueue, reviewCase } from '../services/caseApi';
 import { useSessionStore } from '../../shared/store/userStore';
 import { showToast } from '../../shared/utils/toast';
@@ -86,7 +85,6 @@ const PAGE_SIZE = 15;
 // ============================================================================
 
 export function useReviewPage(): UseReviewPageReturn {
-  const _navigate = useNavigate();
   const [queue, setQueue] = useState<ReviewQueueItem[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -99,8 +97,6 @@ export function useReviewPage(): UseReviewPageReturn {
 
   const user = useSessionStore((s) => s.user);
   const currentUserId = user?.userId ?? '';
-  const _roles: string[] = user?.roles ?? [];
-  void _roles;
   // TODO: 暂时关闭权限隔离，后续恢复
   const canReview = true; // _roles.includes('expert') || _roles.includes('admin');
 

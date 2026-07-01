@@ -114,8 +114,6 @@ export function useAuth(): UseAuthReturn {
   // 订阅 Zustand Store（选择器优化：仅订阅需要的字段）
   const sessionState: SessionState = useSessionStore((state) => state.sessionState);
   const user: SessionUser | null = useSessionStore((state) => state.user);
-  const _tokenPair: TokenPair | null = useSessionStore((state) => state.tokenPair);
-  void _tokenPair;
 
   // 便捷布尔值
   const isAuthenticated: boolean = sessionState === 'authenticated';

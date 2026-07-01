@@ -1,11 +1,10 @@
-import { useParams, useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { useCaseDetailPage } from '@/logics/cases';
 import { MarkdownRenderer } from '@/logics/shared';
 import PageContent from '@/views/_shared/layout/PageContent';
 import './CaseDetailPage.css';
 
 export default function CaseDetailPage() {
-  const { id: _id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const {
     data,
