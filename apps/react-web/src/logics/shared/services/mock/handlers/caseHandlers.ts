@@ -290,6 +290,7 @@ export async function handleCreateNarrative(
     status: 'draft',
     extraction_status: 'pending',
     extraction_error: null,
+    review_comment: null,
     derived_card_ids: null,
     cards: [],
     created_at: now(),

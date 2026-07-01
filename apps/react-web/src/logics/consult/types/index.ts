@@ -127,7 +127,7 @@ export interface ConfidenceValidationOutput {
   /** 工单创建是否失败（默认 false） */
   ticket_creation_failed?: boolean;
   /** 降级原因说明（正常复合评分时为 null） */
-  degradation_note?: string | null;
+  degradation_note?: 'llm_unavailable' | 'timeout_fallback' | null;
   /** 校验总耗时毫秒 */
   validation_time_ms: number;
 }
@@ -436,10 +436,15 @@ export interface UseConsultReturn {
 // TODO: ConsultInputState 已移除——无外部消费，待实际使用时恢复
 
 /**
- * 提交给后端 API 的咨询请求体。
+ * 内部表单校验输入类型（Store → 契约守卫）。
+ *
+ * 注意：此类型用于 isValidConsultSubmitRequest 校验，
+ * 字段名 behavior_type_selection 对应 Store 内部状态键，
+ * 而非 POST /api/v1/consult 的请求体字段 behavior_type。
+ * API 请求体格式见 consultApi.submitConsult()。
  */
 export interface ConsultSubmitRequest {
-  /** 行为类型列表（snake_case 对齐后端） */
+  /** 行为类型列表（Store 内部键名，API 发送时映射为 behavior_type） */
   behavior_type_selection: BehaviorTypeCategory[];
   /** 行为描述文本 */
   behavior_description: string;

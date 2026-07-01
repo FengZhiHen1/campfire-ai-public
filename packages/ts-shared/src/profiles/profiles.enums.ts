@@ -30,10 +30,10 @@ export enum LanguageLevel {
 
 /** 感官特征——枚举值与后端 py-schemas SensoryFeature StrEnum 一致 */
 export enum SensoryFeature {
-  AUDITORY_SENSITIVITY = '听觉敏感',
-  TACTILE_SENSITIVITY = '触觉敏感',
-  GUSTATORY_SENSITIVITY = '味觉敏感',
-  VISUAL_SENSITIVITY = '视觉敏感',
+  AUDITORY_SENSITIVE = '听觉敏感',
+  TACTILE_SENSITIVE = '触觉敏感',
+  GUSTATORY_SENSITIVE = '味觉敏感',
+  VISUAL_SENSITIVE = '视觉敏感',
   VESTIBULAR_SEEKING = '前庭寻求',
   PROPRIOCEPTIVE_SEEKING = '本体觉寻求',
 }
@@ -63,7 +63,7 @@ export enum ProfileBehaviorType {
   SELF_INJURY = '自伤行为',
   AGGRESSION = '攻击行为',
   MELTDOWN = '情绪崩溃',
-  STEREOTYPY = '刻板行为',
+  STEREOTYPED = '刻板行为',
   SOCIAL_WITHDRAWAL = '社交退缩',
   HYPERACTIVITY = '多动',
 }

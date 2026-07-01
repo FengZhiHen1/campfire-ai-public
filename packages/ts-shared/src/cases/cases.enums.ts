@@ -14,10 +14,11 @@
  *   - 禁止在此文件中定义运行时工具函数（枚举 → 标签映射应放在 contract.ts 中）
  */
 
-/** 案例状态——对应后端 CaseStatus 枚举 */
+/** 案例状态——对应后端 CaseStatus 枚举（py_schemas.enums.case_enums.CaseStatus） */
 export enum CaseStatus {
   DRAFT = 'draft',
   PENDING_REVIEW = 'pending_review',
+  APPROVED = 'approved',
   REJECTED = 'rejected',
 }
 

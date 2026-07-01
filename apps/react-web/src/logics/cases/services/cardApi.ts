@@ -18,6 +18,7 @@ const BASE_PATH: string = '/api/v1/cards';
 
 export interface CardData {
   card_id: string;
+  narrative_id: string;
   title: string;
   scenario: string;
   behavior_type: string;
@@ -36,7 +37,12 @@ export interface CardData {
   excluded_population?: string;
   is_template: boolean;
   review_status: string;
+  review_comment?: string | null;
   inferred_fields?: Record<string, string>;
+  attachment_refs?: unknown[] | null;
+  is_owner?: boolean | null;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface CardUpdateData {
@@ -55,6 +61,8 @@ export interface CardUpdateData {
   evidence_level?: string;
   contraindications?: string;
   is_template?: boolean;
+  /** 乐观锁时间戳，必填（对齐后端 CardUpdate.updated_at） */
+  updated_at?: string;
 }
 
 // ============================================================================
