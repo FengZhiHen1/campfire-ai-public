@@ -1,0 +1,4 @@
+{
+  "appid": "YOUR_WECHAT_APPID_HERE",
+  "description": "本地开发配置示例，复制为 project.private.config.json 后填入真实 appid"
+}
