@@ -181,6 +181,25 @@ git -c safe.directory="${APP_DIR}" reset --hard origin/master
 log_success "代码已同步到 origin/master"
 
 # ---------------------------------------------------------------------------
+# 构建 react-web H5 前端（服务器无 Node，使用 Docker 容器构建）
+# ---------------------------------------------------------------------------
+log_info "构建 react-web H5 前端..."
+if ! docker pull node:20-alpine >/dev/null 2>&1; then
+    log_warn "无法拉取 node:20-alpine，尝试使用已缓存镜像"
+fi
+if ! docker run --rm \
+    -v "${APP_DIR}:/app" \
+    -w /app \
+    -e NODE_ENV=production \
+    -e CI=true \
+    node:20-alpine \
+    sh -c "corepack enable && pnpm install --frozen-lockfile && pnpm --filter react-web build"; then
+    log_error "react-web 前端构建失败"
+    exit 1
+fi
+log_success "react-web H5 前端构建完成"
+
+# ---------------------------------------------------------------------------
 # 备份当前镜像（用于回滚）
 # ---------------------------------------------------------------------------
 log_info "备份当前运行镜像..."
