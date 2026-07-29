@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+
+<html class="light" lang="zh-CN"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" name="viewport"/>
+<title>Campfire AI - 记录行为事件</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            "colors": {
+                    "surface-bright": "#fff8f5",
+                    "on-surface": "#1f1b17",
+                    "surface-container-high": "#f0e6e0",
+                    "on-error-container": "#93000a",
+                    "primary-fixed-dim": "#ffb95f",
+                    "error": "#ba1a1a",
+                    "tertiary": "#006c4a",
+                    "inverse-surface": "#342f2b",
+                    "inverse-on-surface": "#f9efe8",
+                    "on-secondary-fixed-variant": "#38485d",
+                    "surface-tint": "#855300",
+                    "on-secondary": "#ffffff",
+                    "outline-variant": "#d8c3ad",
+                    "surface-dim": "#e2d8d2",
+                    "on-tertiary-container": "#004e35",
+                    "on-tertiary": "#ffffff",
+                    "on-primary-fixed-variant": "#653e00",
+                    "error-container": "#ffdad6",
+                    "secondary-container": "#d0e1fb",
+                    "tertiary-fixed-dim": "#68dba9",
+                    "on-error": "#ffffff",
+                    "secondary-fixed-dim": "#b7c8e1",
+                    "primary": "#855300",
+                    "secondary": "#505f76",
+                    "outline": "#867461",
+                    "secondary-fixed": "#d3e4fe",
+                    "surface-variant": "#eae1da",
+                    "surface-container-lowest": "#ffffff",
+                    "on-primary-fixed": "#2a1700",
+                    "primary-container": "#f59e0b",
+                    "surface-container": "#f6ece6",
+                    "on-primary": "#ffffff",
+                    "surface-container-low": "#fcf2eb",
+                    "on-secondary-container": "#54647a",
+                    "on-secondary-fixed": "#0b1c30",
+                    "background": "#fff8f5",
+                    "on-tertiary-fixed-variant": "#005137",
+                    "on-primary-container": "#613b00",
+                    "on-background": "#1f1b17",
+                    "on-tertiary-fixed": "#002114",
+                    "surface": "#fff8f5",
+                    "inverse-primary": "#ffb95f",
+                    "tertiary-container": "#50c594",
+                    "on-surface-variant": "#534434",
+                    "primary-fixed": "#ffddb8",
+                    "tertiary-fixed": "#85f8c4",
+                    "surface-container-highest": "#eae1da"
+            },
+            "borderRadius": {
+                    "DEFAULT": "0.25rem",
+                    "lg": "0.5rem",
+                    "xl": "0.75rem",
+                    "full": "9999px",
+                    "2xl": "1rem",
+                    "3xl": "1.5rem"
+            },
+            "spacing": {
+                    "margin-desktop": "24px",
+                    "xs": "4px",
+                    "margin-mobile": "16px",
+                    "sm": "8px",
+                    "lg": "24px",
+                    "base": "8px",
+                    "xl": "32px",
+                    "gutter": "16px",
+                    "md": "16px"
+            },
+            "fontFamily": {
+                    "label-md": [
+                            "system-ui, -apple-system, 'PingFang SC', 'Noto Sans SC', 'Helvetica Neue', sans-serif"
+                    ],
+                    "headline-lg": [
+                            "system-ui, -apple-system, 'PingFang SC', 'Noto Sans SC', 'Helvetica Neue', sans-serif"
+                    ],
+                    "body-lg": [
+                            "system-ui, -apple-system, 'PingFang SC', 'Noto Sans SC', 'Helvetica Neue', sans-serif"
+                    ],
+                    "headline-md": [
+                            "system-ui, -apple-system, 'PingFang SC', 'Noto Sans SC', 'Helvetica Neue', sans-serif"
+                    ],
+                    "body-md": [
+                            "system-ui, -apple-system, 'PingFang SC', 'Noto Sans SC', 'Helvetica Neue', sans-serif"
+                    ],
+                    "footnote": [
+                            "system-ui, -apple-system, 'PingFang SC', 'Noto Sans SC', 'Helvetica Neue', sans-serif"
+                    ]
+            },
+            "fontSize": {
+                    "label-md": [
+                            "14px",
+                            {
+                                    "lineHeight": "21px",
+                                    "letterSpacing": "0px",
+                                    "fontWeight": "400"
+                            }
+                    ],
+                    "headline-lg": [
+                            "24px",
+                            {
+                                    "lineHeight": "38px",
+                                    "fontWeight": "600"
+                            }
+                    ],
+                    "body-lg": [
+                            "18px",
+                            {
+                                    "lineHeight": "32px",
+                                    "fontWeight": "400"
+                            }
+                    ],
+                    "headline-md": [
+                            "20px",
+                            {
+                                    "lineHeight": "32px",
+                                    "fontWeight": "600"
+                            }
+                    ],
+                    "body-md": [
+                            "16px",
+                            {
+                                    "lineHeight": "28px",
+                                    "fontWeight": "400"
+                            }
+                    ],
+                    "footnote": [
+                            "11px",
+                            {
+                                    "lineHeight": "15px",
+                                    "letterSpacing": "0px",
+                                    "fontWeight": "400"
+                            }
+                    ]
+            }
+    },
+        },
+      }
+    </script>
+<style>
+        /* Fallbacks for custom font sizes requested but not in config */
+        .font-headline-sm { font-family: system-ui, -apple-system, 'PingFang SC', 'Noto Sans SC', sans-serif; }
+        .text-headline-sm { font-size: 18px; line-height: 28px; font-weight: 600; }
+        .font-body-sm { font-family: system-ui, -apple-system, 'PingFang SC', 'Noto Sans SC', sans-serif; }
+        .text-body-sm { font-size: 14px; line-height: 20px; font-weight: 400; }
+        
+        .hide-scrollbar::-webkit-scrollbar {
+            display: none;
+        }
+        .hide-scrollbar {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
+        
+        /* Bottom Sheet Animation */
+        @keyframes slideUp {
+            from { transform: translateY(100%); }
+            to { transform: translateY(0); }
+        }
+        .bottom-sheet {
+            animation: slideUp 0.3s cubic-bezier(0.2, 0, 0, 1) forwards;
+        }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-surface text-on-surface antialiased w-full h-screen overflow-hidden flex flex-col items-center">
+<!-- Mock Background (Dimmed Profile Page) -->
+<div class="fixed inset-0 w-full max-w-md mx-auto bg-surface-container-low z-0 opacity-40">
+<!-- Blurred background content to simulate context -->
+<div class="p-margin-mobile flex flex-col gap-md pt-20">
+<div class="h-32 bg-surface-variant rounded-xl blur-sm w-full"></div>
+<div class="h-64 bg-surface-variant rounded-xl blur-sm w-full mt-4"></div>
+<div class="h-20 bg-surface-variant rounded-xl blur-sm w-full mt-4"></div>
+</div>
+</div>
+<!-- Dim Overlay -->
+<div class="fixed inset-0 w-full max-w-md mx-auto bg-on-surface/40 z-40 transition-opacity"></div>
+<!-- Bottom Sheet Wrapper (constrained for mobile preview) -->
+<div class="fixed bottom-0 w-full max-w-md mx-auto z-50 h-[751px] flex flex-col justify-end">
+<!-- Bottom Sheet Container -->
+<div class="bg-surface w-full h-full rounded-t-3xl shadow-[0_-8px_40px_rgba(28,25,23,0.12)] flex flex-col bottom-sheet relative">
+<!-- Drag Handle & Header -->
+<div class="pt-sm pb-md px-margin-mobile flex flex-col items-center border-b border-surface-variant/50 sticky top-0 bg-surface/95 backdrop-blur-sm z-20 rounded-t-3xl">
+<!-- Handle -->
+<div class="w-12 h-1.5 bg-outline-variant rounded-full mb-md"></div>
+<!-- Title Area -->
+<div class="w-full flex justify-between items-start">
+<div class="flex flex-col">
+<h2 class="font-headline-sm text-headline-sm text-on-surface">记录行为事件</h2>
+<p class="font-body-sm text-body-sm text-on-surface-variant mt-xs">完整记录有助于AI精准匹配案例</p>
+</div>
+<!-- Optional close button visually -->
+<button class="w-8 h-8 rounded-full bg-surface-container flex items-center justify-center text-on-surface-variant hover:bg-surface-variant active:scale-95 transition-all">
+<span class="material-symbols-outlined text-[20px]">close</span>
+</button>
+</div>
+</div>
+<!-- Scrollable Content -->
+<div class="flex-1 overflow-y-auto px-margin-mobile py-lg pb-32 hide-scrollbar">
+<!-- Section 1: Classification -->
+<section class="mb-xl flex flex-col gap-lg">
+<!-- Event Type -->
+<div class="flex flex-col gap-sm">
+<label class="font-body-md text-body-md text-on-surface flex items-center gap-xs font-medium">
+                            行为类型 <span class="text-error text-xl leading-none translate-y-1">*</span>
+</label>
+<div class="grid grid-cols-3 gap-md">
+<!-- Selected Chip -->
+<button class="py-2.5 px-3 rounded-lg bg-[#fef3c7] border border-[#f59e0b]/30 flex items-center justify-center gap-1 active:scale-95 transition-transform">
+<span class="material-symbols-outlined text-[#d97706] text-[16px]" style="font-variation-settings: 'FILL' 1;">check</span>
+<span class="font-label-md text-label-md text-[#b45309] font-medium whitespace-nowrap">自伤行为</span>
+</button>
+<!-- Unselected Chips -->
+<button class="py-2.5 px-3 rounded-lg bg-surface-container border border-transparent flex items-center justify-center active:scale-95 transition-transform">
+<span class="font-label-md text-label-md text-on-surface-variant whitespace-nowrap">攻击行为</span>
+</button>
+<button class="py-2.5 px-3 rounded-lg bg-surface-container border border-transparent flex items-center justify-center active:scale-95 transition-transform">
+<span class="font-label-md text-label-md text-on-surface-variant whitespace-nowrap">刻板行为</span>
+</button>
+<button class="py-2.5 px-3 rounded-lg bg-surface-container border border-transparent flex items-center justify-center active:scale-95 transition-transform">
+<span class="font-label-md text-label-md text-on-surface-variant whitespace-nowrap">情绪崩溃</span>
+</button>
+<button class="py-2.5 px-3 rounded-lg bg-surface-container border border-transparent flex items-center justify-center active:scale-95 transition-transform">
+<span class="font-label-md text-label-md text-on-surface-variant whitespace-nowrap">社交退缩</span>
+</button>
+<button class="py-2.5 px-3 rounded-lg bg-surface-container border border-transparent flex items-center justify-center active:scale-95 transition-transform">
+<span class="font-label-md text-label-md text-on-surface-variant whitespace-nowrap">多动</span>
+</button>
+</div>
+</div>
+<!-- Severity -->
+<div class="flex flex-col gap-sm">
+<label class="font-body-md text-body-md text-on-surface flex items-center gap-xs font-medium">
+                            严重程度 <span class="text-error text-xl leading-none translate-y-1">*</span>
+</label>
+<div class="flex bg-surface-container rounded-lg p-1 w-full h-12 relative overflow-hidden">
+<!-- Background Slider (Visual only for selected state) -->
+<div class="absolute w-[33.33%] h-[calc(100%-8px)] top-1 left-[33.33%] bg-primary-container rounded-md shadow-sm transition-all duration-300"></div>
+<!-- Segments -->
+<button class="flex-1 relative z-10 font-body-md text-body-md text-on-surface-variant">轻度</button>
+<button class="flex-1 relative z-10 font-body-md text-body-md text-on-primary-container font-medium">中度</button>
+<button class="flex-1 relative z-10 font-body-md text-body-md text-on-surface-variant">重度</button>
+</div>
+</div>
+</section>
+<!-- Section 2: Setting -->
+<section class="mb-xl flex flex-col gap-sm">
+<label class="font-body-md text-body-md text-on-surface font-medium">
+                        发生场景 <span class="text-on-surface-variant/60 font-normal text-sm ml-1">（可选）</span>
+</label>
+<div class="flex flex-wrap gap-md">
+<button class="py-2 px-4 rounded-full bg-surface-container border border-outline-variant/30 font-label-md text-label-md text-on-surface-variant active:bg-surface-variant transition-colors">家庭</button>
+<button class="py-2 px-4 rounded-full bg-surface-container border border-outline-variant/30 font-label-md text-label-md text-on-surface-variant active:bg-surface-variant transition-colors">学校</button>
+<button class="py-2 px-4 rounded-full bg-surface-container border border-outline-variant/30 font-label-md text-label-md text-on-surface-variant active:bg-surface-variant transition-colors">公共场合</button>
+<button class="py-2 px-4 rounded-full bg-surface-container border border-outline-variant/30 font-label-md text-label-md text-on-surface-variant active:bg-surface-variant transition-colors">机构</button>
+</div>
+</section>
+<!-- Section 3: Description -->
+<section class="mb-xl flex flex-col gap-lg">
+<!-- Triggers -->
+<div class="flex flex-col gap-sm">
+<label class="font-body-md text-body-md text-on-surface flex items-center gap-xs font-medium">
+                            触发因素 <span class="text-error text-xl leading-none translate-y-1">*</span>
+</label>
+<input class="w-full bg-surface-container-lowest border border-outline-variant rounded-xl px-4 py-3 font-body-md text-body-md text-on-surface placeholder:text-on-surface-variant/50 focus:border-primary focus:ring-1 focus:ring-primary transition-colors" placeholder="如：在超市遇到噪音刺激…" type="text"/>
+</div>
+<!-- Behaviors -->
+<div class="flex flex-col gap-sm">
+<label class="font-body-md text-body-md text-on-surface flex items-center gap-xs font-medium">
+                            具体表现 <span class="text-error text-xl leading-none translate-y-1">*</span>
+</label>
+<textarea class="w-full bg-surface-container-lowest border border-outline-variant rounded-xl px-4 py-3 font-body-md text-body-md text-on-surface placeholder:text-on-surface-variant/50 focus:border-primary focus:ring-1 focus:ring-primary transition-colors resize-none" placeholder="如：突然捂耳蹲下，持续约3分钟…" rows="3"></textarea>
+</div>
+</section>
+<!-- Section 4: Intervention -->
+<section class="mb-xl">
+<button class="w-full flex items-center justify-between p-4 bg-surface-container rounded-xl active:scale-[0.99] transition-transform">
+<span class="font-body-md text-body-md text-on-surface font-medium">干预记录 <span class="text-on-surface-variant/60 font-normal text-sm ml-1">（可选）</span></span>
+<span class="material-symbols-outlined text-on-surface-variant">chevron_right</span>
+</button>
+</section>
+</div>
+<!-- Sticky Footer -->
+<div class="absolute bottom-0 left-0 w-full bg-surface px-margin-mobile pt-md pb-[max(16px,env(safe-area-inset-bottom))] border-t border-surface-variant/50 shadow-[0_-4px_24px_rgba(28,25,23,0.04)] z-30">
+<button class="w-full h-14 bg-primary-container text-[#fff] font-headline-md text-headline-md rounded-xl flex items-center justify-center active:scale-95 transition-transform shadow-sm">
+                    保存记录
+                </button>
+</div>
+</div>
+</div>
+</body></html>

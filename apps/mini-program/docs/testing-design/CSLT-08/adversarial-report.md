@@ -4,7 +4,7 @@
 前端 TypeScript 模块（L1b 逻辑层）：Taro 4.x + React 18 + Zustand 5.x + TypeScript 5.x
 
 ### 代码组织依据
-严格遵循 `docs/篝火智答-项目结构.md` §6.1 的 `logics/consult/` 目录规范
+严格遵循 `docs/技术设计/项目结构.md` §6.1 的 `logics/consult/` 目录规范
 
 ### 修改文件范围
 - **新增**：
