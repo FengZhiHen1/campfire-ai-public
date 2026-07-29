@@ -117,7 +117,7 @@ Skill 采用 [Agent Skills 标准](https://agentskills.io/specification)：每�
 | `py-rag`（hybrid_search、切片、嵌入） | **保留**，作为 `rag_search` 等工具的实现底座；LangChain 依赖逐步退出 |
 | `py-llm`（DeepSeek 封装） | **由 Pydantic AI 模型层取代**，随 Agent 基座落地后退役 |
 | `py-schemas` | **强化**，新增 Agent 输出契约（四段式、L2 卡片、复盘报告等） |
-| 危机分级管道（CSLT-01 实现） | **保留在代码层**，作为应急面的安全前置 |
+| 危机分级管道 | **保留在代码层**，作为应急面的安全前置 |
 | SSE 流式链路 | **保留**，改由 Agent 基座的流式输出驱动 |
 
 > 具体重构计划与迁移顺序属于增量实施规划，不在本文范围。
