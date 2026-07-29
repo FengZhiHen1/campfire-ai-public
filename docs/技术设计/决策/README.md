@@ -13,6 +13,7 @@
 | [ADR-004](./ADR-004-模块化单体.md) | 架构模式选择模块化单体 | 有效（已由 DSR-001 演进为 Hybrid Monorepo） |
 | [ADR-005](./ADR-005-LLM-DeepSeek.md) | LLM 选择 DeepSeek API | 有效 |
 | [ADR-006](./ADR-006-平台分工-小程序与Web.md) | 平台分工：小程序=需求侧，Web=供给侧 | 有效 |
+| [ADR-007](./ADR-007-Agent化-统一基座与分面自治.md) | 应用 Agent 化：统一基座（Pydantic AI）+ 分面自治 | 有效 |
 | [DSR-001](./DSR-001-Hybrid-Monorepo.md) | 采用 Hybrid Monorepo（厚 package、薄 app） | 有效 |
 | [DSR-002](./DSR-002-模型与Schema集中管理.md) | ORM 模型与 Pydantic Schema 集中管理 | 有效 |
 | [DSR-003](./DSR-003-基础设施拆包.md) | 基础设施能力拆分为独立 package | 有效 |
