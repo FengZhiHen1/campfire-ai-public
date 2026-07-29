@@ -55,6 +55,14 @@ _SECTION_KEYS: list[str] = [
 
 _SECTION_KEY_SET: frozenset[str] = frozenset(_SECTION_KEYS)
 
+# 情绪安抚话术 key（兜底分段用）
+_SOOTHE_SECTION_KEY: str = "情绪安抚话术"
+
+# 引号边界正则：关闭引号与开启引号之间的位置（含中间空白），用于兜底拆分
+# 示例："A。"  "B。"  -> ["A。", "B。"]
+_QUOTE_BOUNDARY_RE: re.Pattern[str] = re.compile(r'(?<=["”」』〞])\s*(?=["“「『〝])')
+
+
 # ============================================================================
 # JsonSectionTracker — 流式 JSON 解析状态机
 # ============================================================================
@@ -169,6 +177,20 @@ class JsonSectionTracker:
         return chunks
 
 
+def _split_clustered_soothe_items(items: list[str]) -> list[str]:
+    """兜底拆分：将聚在一起的安抚话术按引号边界拆分为独立条目。
+
+    LLM 偶尔会把多条安抚话术写成一个字符串（如："A。""B。""C。"），
+    导致前端无法分段渲染。此函数在解析后做兜底处理，仅在检测到一个
+    字符串内存在两个及以上引号边界时才拆分。
+    """
+    result: list[str] = []
+    for item in items:
+        segments = [seg.strip() for seg in _QUOTE_BOUNDARY_RE.split(item) if seg.strip()]
+        result.extend(segments if len(segments) >= 2 else [item])
+    return result
+
+
 # ============================================================================
 # parse_json_sections —— 从 JSON 文本提取四段式结构化数据
 # ============================================================================
@@ -200,6 +222,8 @@ def parse_json_sections(text: str) -> dict[str, list[str]]:
                     sections[key] = [str(item) for item in value]
                 else:
                     sections[key] = []
+            # 兜底：拆分情绪安抚话术中聚在一起的引用句
+            sections[_SOOTHE_SECTION_KEY] = _split_clustered_soothe_items(sections.get(_SOOTHE_SECTION_KEY, []))
             return sections
 
     # 回退：用流式解析器（容忍未转义引号等轻微语法瑕疵）
@@ -223,6 +247,9 @@ def parse_json_sections(text: str) -> dict[str, list[str]]:
 
     if current_section is not None and current_text.strip():
         sections[current_section].append(current_text.strip())
+
+    # 兜底：拆分情绪安抚话术中聚在一起的引用句
+    sections[_SOOTHE_SECTION_KEY] = _split_clustered_soothe_items(sections.get(_SOOTHE_SECTION_KEY, []))
 
     return sections
 

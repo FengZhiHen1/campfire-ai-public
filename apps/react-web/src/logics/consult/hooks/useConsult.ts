@@ -16,6 +16,7 @@
  */
 
 import { useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useConsultStore, getErrorMessage } from '../store/useConsultStore';
 import { consultApi } from '../services/consultApi';
 import type {
@@ -34,9 +35,11 @@ import type {
  * @sideEffects
  *   - 不直接产生副作用（纯 selector 封装）
  *   - submitConsult() / retrySubmit() / retryStream() 内部发起 HTTP 请求和 SSE 连接
- *   - startNewConsult() 清空当前会话状态
+ *   - startNewConsult() 先跳转 /consult/select，再清空当前会话状态
  */
 export function useConsult(): UseConsultReturn {
+  const navigate = useNavigate();
+
   // ==========================================================================
   // Zustand Store Selector（细粒度订阅）
   // ==========================================================================
@@ -114,7 +117,11 @@ export function useConsult(): UseConsultReturn {
       retrySubmit: () => store.getState().retrySubmit(),
       goBackToSelecting: () => store.getState().goBackToSelecting(),
       retryStream: () => store.getState().retryStream(),
-      startNewConsult: () => store.getState().startNewConsult(),
+      startNewConsult: () => {
+        // 先跳转再重置，避免当前页面在 selecting_behavior 状态下出现空白页
+        navigate('/consult/select');
+        store.getState().startNewConsult();
+      },
       goToTicket: () => store.getState().goToTicket(),
       getErrorMessage,
 
@@ -129,7 +136,7 @@ export function useConsult(): UseConsultReturn {
       sessionState, behaviorTypeSelection, behaviorDescription, messages,
       planSections, accumulatedText, ticketGuide, errorCode,
       isInputValid, isConsultActive, emotionLevel, selectedProfileId,
-      referencedCases, crisisLevel, confidenceScore,
+      referencedCases, crisisLevel, confidenceScore, navigate,
     ],
   );
 }

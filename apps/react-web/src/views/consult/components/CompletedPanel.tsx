@@ -47,6 +47,9 @@ function inferSectionType(title: string): SectionType {
 
 const QUOTE_RE = /^[“""「『〝]+|["""」』〞]+$/g;
 
+// 引号边界正则：用于兜底拆分 LLM 偶尔把多条话术聚成一个字符串的情况
+const QUOTE_BOUNDARY_RE = /(?<=["”」』〞])\s*(?=["“「『〝])/g;
+
 function stripQuotes(text: string): string {
   return text.replace(QUOTE_RE, '');
 }
@@ -55,8 +58,18 @@ function isQuotedLine(line: string): boolean {
   return stripQuotes(line) !== line;
 }
 
+/** 兜底拆分：若一个字符串内包含多条引号包裹的话术，则按引号边界拆分。 */
+function splitQuotedSegments(text: string): string[] {
+  const segments = text
+    .split(QUOTE_BOUNDARY_RE)
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0);
+  return segments.length >= 2 ? segments : [text];
+}
+
 function normalizeLines(contents: string[]): string[] {
   return contents
+    .flatMap((c) => splitQuotedSegments(c))
     .flatMap((c) => c.split('\n'))
     .map((l) => l.trim())
     .filter((l) => l.length > 0);
