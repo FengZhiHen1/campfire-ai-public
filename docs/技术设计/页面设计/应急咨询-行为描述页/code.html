@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+
+<html lang="zh-CN"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" name="viewport"/>
+<title>应急咨询 - Campfire AI</title>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            "colors": {
+                    "surface-bright": "#fff8f5",
+                    "outline": "#867461",
+                    "on-secondary-container": "#54647a",
+                    "on-secondary-fixed": "#0b1c30",
+                    "on-tertiary-container": "#004e35",
+                    "background": "#fff8f5",
+                    "tertiary-fixed-dim": "#68dba9",
+                    "on-primary": "#ffffff",
+                    "error-container": "#ffdad6",
+                    "error": "#ba1a1a",
+                    "surface-container-high": "#f0e6e0",
+                    "inverse-on-surface": "#f9efe8",
+                    "on-error": "#ffffff",
+                    "primary-fixed-dim": "#ffb95f",
+                    "secondary-fixed-dim": "#b7c8e1",
+                    "on-primary-fixed": "#2a1700",
+                    "on-background": "#1f1b17",
+                    "primary": "#855300",
+                    "secondary-container": "#d0e1fb",
+                    "on-tertiary-fixed-variant": "#005137",
+                    "surface-tint": "#855300",
+                    "tertiary-fixed": "#85f8c4",
+                    "surface-variant": "#eae1da",
+                    "inverse-primary": "#ffb95f",
+                    "secondary-fixed": "#d3e4fe",
+                    "tertiary-container": "#50c594",
+                    "on-surface": "#1f1b17",
+                    "surface-dim": "#e2d8d2",
+                    "surface-container-highest": "#eae1da",
+                    "surface-container-lowest": "#ffffff",
+                    "surface": "#fff8f5",
+                    "primary-fixed": "#ffddb8",
+                    "on-tertiary": "#ffffff",
+                    "on-primary-container": "#613b00",
+                    "on-tertiary-fixed": "#002114",
+                    "surface-container": "#f6ece6",
+                    "secondary": "#505f76",
+                    "inverse-surface": "#342f2b",
+                    "on-secondary-fixed-variant": "#38485d",
+                    "outline-variant": "#d8c3ad",
+                    "surface-container-low": "#fcf2eb",
+                    "on-secondary": "#ffffff",
+                    "on-surface-variant": "#534434",
+                    "primary-container": "#f59e0b",
+                    "on-primary-fixed-variant": "#653e00",
+                    "tertiary": "#006c4a",
+                    "on-error-container": "#93000a"
+            },
+            "borderRadius": {
+                    "DEFAULT": "0.25rem",
+                    "lg": "0.5rem",
+                    "xl": "0.75rem",
+                    "full": "9999px"
+            },
+            "spacing": {
+                    "sm": "8px",
+                    "margin-mobile": "16px",
+                    "lg": "24px",
+                    "xl": "32px",
+                    "base": "8px",
+                    "md": "16px",
+                    "gutter": "16px",
+                    "xs": "4px",
+                    "margin-desktop": "24px"
+            },
+            "fontFamily": {
+                    "label-md": ["system-ui", "-apple-system", "sans-serif"],
+                    "headline-lg": ["system-ui", "-apple-system", "sans-serif"],
+                    "headline-md": ["system-ui", "-apple-system", "sans-serif"],
+                    "body-md": ["system-ui", "-apple-system", "sans-serif"],
+                    "body-lg": ["system-ui", "-apple-system", "sans-serif"]
+            },
+            "fontSize": {
+                    "label-md": ["14px", {"lineHeight": "21px", "letterSpacing": "0px", "fontWeight": "400"}],
+                    "headline-lg": ["24px", {"lineHeight": "38px", "fontWeight": "600"}],
+                    "headline-md": ["20px", {"lineHeight": "32px", "fontWeight": "600"}],
+                    "headline-lg-mobile": ["22px", {"lineHeight": "32px", "fontWeight": "700"}],
+                    "headline-md-mobile": ["18px", {"lineHeight": "28px", "fontWeight": "600"}],
+                    "body-md": ["16px", {"lineHeight": "28px", "fontWeight": "400"}],
+                    "body-lg": ["18px", {"lineHeight": "32px", "fontWeight": "400"}]
+            }
+          },
+        },
+      }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+            vertical-align: middle;
+        }
+        .safe-bottom {
+            padding-bottom: env(safe-area-inset-bottom);
+        }
+        ::-webkit-scrollbar {
+            display: none;
+        }
+        .active-ring {
+            box-shadow: 0 0 0 2px #855300;
+        }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-surface font-body-md text-on-surface">
+<!-- Top Navigation -->
+<header class="fixed top-0 w-full z-50 bg-surface flex justify-between items-center h-16 px-margin-mobile">
+<div class="flex items-center gap-4">
+<button class="active:scale-95 transition-transform">
+<span class="material-symbols-outlined text-primary text-2xl">arrow_back</span>
+</button>
+<h1 class="font-headline-md-mobile text-headline-md-mobile text-primary">应急咨询</h1>
+</div>
+<button class="hover:opacity-80 transition-opacity">
+<span class="material-symbols-outlined text-on-surface-variant">account_circle</span>
+</button>
+</header>
+<main class="pt-20 pb-40 px-margin-mobile space-y-lg">
+<!-- Block A: Header -->
+<section class="space-y-xs">
+<h2 class="font-headline-md text-headline-md text-on-surface">描述当前行为</h2>
+<p class="font-label-md text-label-md text-on-surface-variant">选择行为类型，以便匹配最相似的案例</p>
+</section>
+<!-- Block B: Profiles -->
+<section class="flex gap-sm overflow-x-auto py-1">
+<button class="flex-none px-md py-2 rounded-full border border-primary bg-primary-container text-on-primary-container font-label-md text-label-md transition-colors">
+                不关联
+            </button>
+<button class="flex-none px-md py-2 rounded-full border border-outline-variant bg-surface text-on-surface-variant font-label-md text-label-md hover:bg-surface-variant transition-colors">
+                小明
+            </button>
+<button class="flex-none px-3 py-2 rounded-full border border-dashed border-outline-variant text-outline flex items-center gap-1">
+<span class="material-symbols-outlined text-[18px]">add</span>
+<span class="font-label-md text-label-md">添加</span>
+</button>
+</section>
+<!-- Block C: Behavior Categories -->
+<section class="space-y-sm">
+<!-- Item 1 -->
+<div class="flex items-center justify-between p-md rounded-xl bg-surface-container-low hover:bg-surface-container transition-all cursor-pointer">
+<div class="flex items-center gap-md">
+<span class="material-symbols-outlined text-secondary">healing</span>
+<div>
+<div class="font-body-md text-on-surface">自伤行为</div>
+<div class="text-[12px] text-on-surface-variant">咬人、撞头等</div>
+</div>
+</div>
+<div class="w-5 h-5 rounded-full border-2 border-outline"></div>
+</div>
+<!-- Item 2 -->
+<div class="flex items-center justify-between p-md rounded-xl bg-surface-container-low hover:bg-surface-container transition-all cursor-pointer">
+<div class="flex items-center gap-md">
+<span class="material-symbols-outlined text-secondary">front_hand</span>
+<div>
+<div class="font-body-md text-on-surface">攻击行为</div>
+<div class="text-[12px] text-on-surface-variant">拍打、推搡他人</div>
+</div>
+</div>
+<div class="w-5 h-5 rounded-full border-2 border-outline"></div>
+</div>
+<!-- Item 3 -->
+<div class="flex items-center justify-between p-md rounded-xl bg-surface-container-low hover:bg-surface-container transition-all cursor-pointer">
+<div class="flex items-center gap-md">
+<span class="material-symbols-outlined text-secondary">directions_run</span>
+<div>
+<div class="font-body-md text-on-surface">出走/逃跑</div>
+<div class="text-[12px] text-on-surface-variant">冲出家门或学校</div>
+</div>
+</div>
+<div class="w-5 h-5 rounded-full border-2 border-outline"></div>
+</div>
+<!-- Item 4 -->
+<div class="flex items-center justify-between p-md rounded-xl bg-surface-container-low hover:bg-surface-container transition-all cursor-pointer">
+<div class="flex items-center gap-md">
+<span class="material-symbols-outlined text-secondary">pill</span>
+<div>
+<div class="font-body-md text-on-surface">用药相关</div>
+<div class="text-[12px] text-on-surface-variant">误服、过量或漏服</div>
+</div>
+</div>
+<div class="w-5 h-5 rounded-full border-2 border-outline"></div>
+</div>
+<!-- Selected Item 5: Meltdown -->
+<div class="flex items-center justify-between p-md rounded-xl bg-[#FEF3C7] shadow-sm transition-all cursor-pointer border-l-4 border-primary">
+<div class="flex items-center gap-md">
+<span class="material-symbols-outlined text-primary" style="font-variation-settings: 'FILL' 1;">mood_bad</span>
+<div>
+<div class="font-body-md text-on-primary-container font-semibold">情绪崩溃</div>
+<div class="text-[12px] text-on-primary-container">哭闹、尖叫、难以安抚</div>
+</div>
+</div>
+<div class="w-5 h-5 rounded-full bg-primary flex items-center justify-center">
+<div class="w-2 h-2 rounded-full bg-white"></div>
+</div>
+</div>
+<!-- Item 6 -->
+<div class="flex items-center justify-between p-md rounded-xl bg-surface-container-low hover:bg-surface-container transition-all cursor-pointer">
+<div class="flex items-center gap-md">
+<span class="material-symbols-outlined text-secondary">gesture</span>
+<div>
+<div class="font-body-md text-on-surface">刻板行为</div>
+<div class="text-[12px] text-on-surface-variant">重复动作、强烈秩序感</div>
+</div>
+</div>
+<div class="w-5 h-5 rounded-full border-2 border-outline"></div>
+</div>
+<!-- Item 7 -->
+<div class="flex items-center justify-between p-md rounded-xl bg-surface-container-low hover:bg-surface-container transition-all cursor-pointer">
+<div class="flex items-center gap-md">
+<span class="material-symbols-outlined text-secondary">more_horiz</span>
+<div>
+<div class="font-body-md text-on-surface">其他</div>
+<div class="text-[12px] text-on-surface-variant">无法归类的紧急情况</div>
+</div>
+</div>
+<div class="w-5 h-5 rounded-full border-2 border-outline"></div>
+</div>
+</section>
+<!-- Block D: Emotion Level -->
+<section class="space-y-sm">
+<h3 class="font-label-md text-label-md text-on-surface-variant">紧急/严重程度</h3>
+<div class="flex bg-surface-container-high p-1 rounded-xl">
+<button class="flex-1 py-2 text-center rounded-lg font-label-md text-label-md text-on-surface-variant hover:bg-surface transition-colors">轻度</button>
+<button class="flex-1 py-2 text-center rounded-lg font-label-md text-label-md bg-primary text-white shadow-md">中度</button>
+<button class="flex-1 py-2 text-center rounded-lg font-label-md text-label-md text-on-surface-variant hover:bg-surface transition-colors">重度</button>
+</div>
+</section>
+<!-- Block E: Supplementary Description -->
+<section class="space-y-sm">
+<h3 class="font-label-md text-label-md text-on-surface-variant">补充细节 (可选)</h3>
+<textarea class="w-full h-32 p-md rounded-xl bg-surface-container-low border-none focus:ring-2 focus:ring-primary-container text-body-md placeholder:text-outline/50 resize-none" placeholder="例如：孩子在商场突然捂住耳朵蹲下尖叫，持续了约5分钟…"></textarea>
+</section>
+</main>
+<!-- Block F: Bottom Bar -->
+<footer class="fixed bottom-0 w-full bg-surface-bright/95 backdrop-blur-md safe-bottom shadow-[0_-4px_24px_rgba(28,25,23,0.06)] px-margin-mobile pt-4 pb-6">
+<div class="flex flex-col items-center gap-4">
+<button class="w-full py-4 bg-primary text-on-primary rounded-full font-headline-md-mobile text-headline-md-mobile shadow-lg active:scale-[0.98] transition-all">
+                获取应急建议
+            </button>
+<button class="text-secondary font-label-md text-label-md hover:underline">
+                直接描述，不选择分类
+            </button>
+</div>
+</footer>
+<script>
+        // Simple interactive handling
+        document.querySelectorAll('.p-md').forEach(card => {
+            card.addEventListener('click', function() {
+                // Simplified toggle logic for prototype
+                console.log('Category selected:', this.querySelector('.font-body-md').innerText);
+            });
+        });
+
+        // Atmospheric effect: Subtle pulse on primary button
+        const mainBtn = document.querySelector('button.bg-primary');
+        setInterval(() => {
+            mainBtn.style.boxShadow = '0 8px 30px rgba(133, 83, 0, 0.2)';
+            setTimeout(() => {
+                mainBtn.style.boxShadow = '0 4px 20px rgba(133, 83, 0, 0.1)';
+            }, 1000);
+        }, 2000);
+    </script>
+</body></html>
