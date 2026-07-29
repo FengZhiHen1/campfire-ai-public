@@ -8,10 +8,11 @@
 | 编号 | 决策 | 状态 |
 |------|------|------|
 | [ADR-001](./ADR-001-后端框架-FastAPI.md) | 后端框架选择 Python/FastAPI | 有效 |
-| [ADR-002](./ADR-002-前端-Taro-微信小程序.md) | 前端选择 Taro + 微信小程序 | ⚠️ 已被实施偏离，待重访 |
+| [ADR-002](./ADR-002-前端-Taro-微信小程序.md) | 前端选择 Taro + 微信小程序 | 已由 ADR-006 关闭重访 |
 | [ADR-003](./ADR-003-向量检索-pgvector.md) | 向量检索选择 pgvector 而非独立向量库 | 有效 |
 | [ADR-004](./ADR-004-模块化单体.md) | 架构模式选择模块化单体 | 有效（已由 DSR-001 演进为 Hybrid Monorepo） |
 | [ADR-005](./ADR-005-LLM-DeepSeek.md) | LLM 选择 DeepSeek API | 有效 |
+| [ADR-006](./ADR-006-平台分工-小程序与Web.md) | 平台分工：小程序=需求侧，Web=供给侧 | 有效 |
 | [DSR-001](./DSR-001-Hybrid-Monorepo.md) | 采用 Hybrid Monorepo（厚 package、薄 app） | 有效 |
 | [DSR-002](./DSR-002-模型与Schema集中管理.md) | ORM 模型与 Pydantic Schema 集中管理 | 有效 |
 | [DSR-003](./DSR-003-基础设施拆包.md) | 基础设施能力拆分为独立 package | 有效 |
@@ -30,4 +31,4 @@
 
 ## 待重访事项
 
-- **ADR-002 前端形态**：实施中 react-web（React + Vite）已成为主 Web 应用并通过 H5 部署，与「Taro 微信小程序优先、H5 远期预留」的原决策不一致。需要补充新决策记录，明确小程序与 Web 端的关系及各端承载的功能范围。
+- 暂无。（ADR-002 前端形态偏离已由 [ADR-006](./ADR-006-平台分工-小程序与Web.md) 于 2026-06-30 正式收束。）
