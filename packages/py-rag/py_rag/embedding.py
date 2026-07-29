@@ -15,7 +15,7 @@ API 协议：DashScope 原生
 模型：text-embedding-v4
 维度：1024
 
-参考文档：docs/API文档/通义-文本与多模态向量化.md
+参考文档：docs/references/API文档/通义-文本与多模态向量化.md
 """
 
 from __future__ import annotations
