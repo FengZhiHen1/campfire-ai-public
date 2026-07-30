@@ -92,7 +92,7 @@ Skill 采用 [Agent Skills 标准](https://agentskills.io/specification)：每�
 
 - 工具白名单：仅 `ticket_create`；max_steps = 1；硬超时；
 - TTFT 工程前提：注入精选、DeepSeek 上下文缓存命中静态部分、首字前零工具调用；
-- **实测门禁**：staging 环境 P95 TTFT ≤ 3s，不达标则本面回退纯管线方案。
+- **实测门禁**：staging 环境对比实测——Agent 面相对纯管线的**编排开销 ≤ 1s**，超标则本面回退纯管线方案。TTFT 绝对值为需求侧设计目标（P50 ≤ 3s，P95 > 5s 告警，见[需求/功能需求与验收](../需求/功能需求与验收.md) §二），供应商侧延迟不作为架构回退依据。
 
 ### 5.2 异步面（案例/预审/复盘/工单/科普，完整自主）
 
