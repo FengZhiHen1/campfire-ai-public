@@ -14,7 +14,8 @@
 | [ADR-005](./ADR-005-LLM-DeepSeek.md) | LLM 选择 DeepSeek API | 有效 |
 | [ADR-006](./ADR-006-平台分工-小程序与Web.md) | 平台分工：小程序=需求侧，Web=供给侧 | 有效 |
 | [ADR-007](./ADR-007-Agent化-统一基座与分面自治.md) | 应用 Agent 化：统一基座（Pydantic AI）+ 分面自治 | 有效（安全约束中的「危机分级三层判定」已由 ADR-008 演进为二元安全门） |
-| [ADR-008](./ADR-008-二元安全门取代三级危机分级.md) | 二元安全门取代三级危机分级 + LLM 复审 | 有效 |
+| [ADR-008](./ADR-008-二元安全门取代三级危机分级.md) | 二元安全门取代三级危机分级 + LLM 复审 | 有效（部分语义已由 ADR-009 演进） |
+| [ADR-009](./ADR-009-应急链路时刻分层重构.md) | 应急链路时刻分层重构（此刻安全层 + 完整方案层） | 有效 |
 | [DSR-001](./DSR-001-Hybrid-Monorepo.md) | 采用 Hybrid Monorepo（厚 package、薄 app） | 有效 |
 | [DSR-002](./DSR-002-模型与Schema集中管理.md) | ORM 模型与 Pydantic Schema 集中管理 | 有效 |
 | [DSR-003](./DSR-003-基础设施拆包.md) | 基础设施能力拆分为独立 package | 有效 |
