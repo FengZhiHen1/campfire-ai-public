@@ -1,5 +1,6 @@
-import { Outlet, useLocation } from 'react-router-dom';
+import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 import type { ComponentType, SVGProps } from 'react';
+import { useAuth } from '@/viewModel/auth';
 import TabBar from './TabBar';
 import type { TabItem } from './TabBar';
 import './layout.css';
@@ -46,21 +47,51 @@ const TABS: TabItem[] = [
   { id: 'profiles', label: '档案', icon: ProfilesIcon, to: '/profiles' },
 ];
 
+/** 角色 → 可见 Tab（角色收敛导航，认证与访问 §六） */
+const ROLE_TABS: Record<string, string[]> = {
+  family: ['home', 'consult', 'profiles'],
+  volunteer: ['home', 'consult', 'profiles'],
+  teacher: ['home', 'cases', 'profiles'],
+  expert: ['home', 'cases', 'profiles'],
+  admin: ['home', 'cases'],
+};
+
 /**
  * 应用外壳：Tab 页布局 = PageContent + TabBar。
  * 非 Tab 页（如 case-submit 等子页面）仅渲染 Outlet，不显示 TabBar。
+ * ADR-013：Tab 按当前用户角色收敛；右上角固定登出入口（S6 正式布局替代）。
  */
 export default function AppShell() {
   const { pathname } = useLocation();
+  const navigate = useNavigate();
+  const { user, logout } = useAuth();
   const tabPaths = ['/', '/consult', '/cases', '/profiles'];
   const isTabPage = tabPaths.includes(pathname);
+
+  const visibleIds = user ? (ROLE_TABS[user.role] ?? ['home']) : ['home'];
+  const visibleTabs = TABS.filter((t) => visibleIds.includes(t.id));
+
+  async function handleLogout() {
+    await logout();
+    navigate('/login', { replace: true });
+  }
 
   return (
     <div className="cf-app-shell">
       <div className="phone-frame">
         <div className="phone-notch" />
+        {user && (
+          <button
+            type="button"
+            className="cf-logout-fab"
+            title={`退出登录（${user.realName ?? user.phone}）`}
+            onClick={() => void handleLogout()}
+          >
+            退出
+          </button>
+        )}
         <Outlet />
-        {isTabPage && <TabBar tabs={TABS} />}
+        {isTabPage && <TabBar tabs={visibleTabs} />}
       </div>
     </div>
   );

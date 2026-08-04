@@ -249,6 +249,7 @@ class AuthService(ABC):
             real_name=user.real_name,
             role=user.role,
             status=user.status,
+            reject_reason=user.reject_reason,
         )
 
     # ==================================================================

@@ -182,3 +182,24 @@
 .cf-tab-bar__label {
   line-height: 1;
 }
+
+/* 登出浮钮（S1 过渡形态，S6 正式布局替代） */
+.cf-logout-fab {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  z-index: 60;
+  padding: 5px 12px;
+  border: none;
+  border-radius: 999px;
+  background: var(--cf-surface-variant);
+  color: var(--cf-muted);
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 0.2s, color 0.2s;
+}
+
+.cf-logout-fab:hover {
+  background: var(--cf-danger-container);
+  color: var(--cf-danger);
+}
