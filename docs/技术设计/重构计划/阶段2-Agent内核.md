@@ -1,7 +1,7 @@
 # 阶段 2 · Agent 内核（py-agent-kernel）
 
 > **目标态依据**：[ADR-011](./决策/ADR-011-Agent内核框架-内核加扩展与PydanticAI路线.md)（路线与裁剪）、[Agent内核框架](../Agent内核框架.md)（本文唯一拥有内核契约——ExtensionAPI/事件总线/工具契约/Session/skill-loader/安全扩展约定/偏差清单）
-> **状态**：【未开始】。`packages/py-agent-kernel/` 为全新包，**不触碰任何现有代码**。
+> **状态**：【已完成】（2026-08-04，验证门全绿）
 
 ## 一、目标态
 
