@@ -9,8 +9,7 @@ import InviteCodesPage from '@/view/pages/admin/InviteCodesPage';
 import ReviewsPage from '@/view/pages/admin/ReviewsPage';
 import HomePage from '@/views/home/HomePage';
 import ConsultIndexPage from '@/views/consult/ConsultIndexPage';
-import ConsultSelectPage from '@/views/consult/ConsultSelectPage';
-import ConsultDetailPage from '@/views/consult/ConsultDetailPage';
+import ConsultSessionPage from '@/views/consult/ConsultSessionPage';
 import ConsultHistoryPage from '@/views/consult/ConsultHistoryPage';
 import ProfileListPage from '@/views/profiles/ProfileListPage';
 import ProfileEditPage from '@/views/profiles/ProfileEditPage';
@@ -45,8 +44,7 @@ export const router = createBrowserRouter([
         children: [
           { index: true, element: <HomePage /> },
           { path: 'consult', element: <ConsultIndexPage /> },
-          { path: 'consult/select', element: <ConsultSelectPage /> },
-          { path: 'consult/:id', element: <ConsultDetailPage /> },
+          { path: 'consult/session/:sessionId', element: <ConsultSessionPage /> },
           { path: 'consult/history', element: <ConsultHistoryPage /> },
           { path: 'profiles', element: <ProfileListPage /> },
           { path: 'profiles/edit/:id?', element: <ProfileEditPage /> },

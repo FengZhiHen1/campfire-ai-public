@@ -1,13 +1,13 @@
 import { useState, useEffect, useCallback } from 'react';
 import { consultApi } from '../../consult';
-import type { ConsultationHistoryListItem } from '../../consult';
+import type { ConsultHistoryItem } from '../../consult';
 import { useProfileStore } from '../../profiles/store/profileStore';
 import { useProfile } from '../../profiles/hooks/useProfile';
 
 export function useHomePage() {
   const [loading, setLoading] = useState(true);
   const [hasError, setHasError] = useState(false);
-  const [consultHistory, setConsultHistory] = useState<ConsultationHistoryListItem[]>([]);
+  const [consultHistory, setConsultHistory] = useState<ConsultHistoryItem[]>([]);
 
   const profiles = useProfileStore((s) => s.list) ?? [];
   const listState = useProfileStore((s) => s.listState);

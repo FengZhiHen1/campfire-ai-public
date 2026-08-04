@@ -1,0 +1,293 @@
+/* 应急咨询样式（时刻分层交互：桶选择 / 分级消息聊天容器） */
+
+.consult-index {
+  padding: 20px 16px 96px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.consult-index__title {
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--cf-fg);
+  text-align: center;
+  margin-top: 8px;
+}
+
+.consult-index__hint {
+  font-size: var(--cf-text-sm);
+  color: var(--cf-muted);
+  text-align: center;
+}
+
+.consult-index__footer {
+  text-align: center;
+  font-size: var(--cf-text-sm);
+}
+
+.consult-index__footer a {
+  color: var(--cf-accent);
+}
+
+/* ── 桶选择（大字按钮，危机中单手可操作） ── */
+
+.bucket-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-top: 8px;
+}
+
+.bucket-btn {
+  min-height: 72px;
+  border: none;
+  border-radius: 16px;
+  background: var(--cf-surface);
+  font-size: 19px;
+  font-weight: 600;
+  color: var(--cf-fg);
+  cursor: pointer;
+  box-shadow: 0 2px 10px rgba(28, 25, 23, 0.08);
+  transition: transform 0.15s, box-shadow 0.15s;
+}
+
+.bucket-btn:active {
+  transform: scale(0.96);
+}
+
+.bucket-btn--redline {
+  background: var(--cf-danger-container);
+  color: var(--cf-danger);
+}
+
+.bucket-btn:disabled {
+  opacity: 0.6;
+}
+
+.consult-error {
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: var(--cf-danger-container);
+  color: var(--cf-danger);
+  font-size: var(--cf-text-sm);
+  text-align: center;
+}
+
+/* ── 安全卡 ── */
+
+.safety-card {
+  border-radius: 16px;
+  padding: 18px;
+  background: var(--cf-surface);
+  box-shadow: 0 2px 12px rgba(28, 25, 23, 0.08);
+  border-left: 4px solid var(--cf-accent);
+}
+
+.safety-card--universal {
+  border-left-color: var(--cf-accent-secondary);
+}
+
+.safety-card--redline {
+  border-left-color: var(--cf-danger);
+  background: var(--cf-danger-container);
+}
+
+.safety-card--elopement {
+  border-left-color: var(--cf-danger);
+  background: var(--cf-warn-container);
+}
+
+.safety-card__title {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--cf-fg);
+  margin-bottom: 8px;
+}
+
+.safety-card--redline .safety-card__title {
+  color: var(--cf-danger);
+}
+
+.safety-card__content {
+  font-size: var(--cf-text-base, 15px);
+  line-height: 1.8;
+  color: var(--cf-fg-2);
+  white-space: pre-wrap;
+}
+
+/* ── 聊天容器（分级消息样式） ── */
+
+.consult-session {
+  padding: 16px 16px 180px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-height: 100%;
+}
+
+.msg {
+  max-width: 92%;
+  border-radius: 14px;
+  padding: 14px 16px;
+  font-size: var(--cf-text-sm);
+  line-height: 1.7;
+}
+
+/* 大字号强视觉（危机安全卡/阶段问题/红线指引） */
+.msg--critical {
+  max-width: 100%;
+  font-size: 17px;
+  padding: 18px;
+}
+
+.msg--user {
+  align-self: flex-end;
+  background: var(--cf-accent);
+  color: var(--cf-accent-on);
+}
+
+.msg--plan {
+  background: var(--cf-surface);
+  box-shadow: 0 2px 10px rgba(28, 25, 23, 0.08);
+}
+
+.msg__section-title {
+  font-weight: 700;
+  margin-top: 10px;
+  margin-bottom: 4px;
+  color: var(--cf-fg);
+}
+
+.msg__disclaimer {
+  margin-top: 12px;
+  font-size: var(--cf-text-xs);
+  color: var(--cf-muted);
+}
+
+/* 阶段问题 quick-reply（大字按钮） */
+.stage-question {
+  background: var(--cf-surface);
+  border-radius: 16px;
+  padding: 18px;
+  box-shadow: 0 2px 12px rgba(28, 25, 23, 0.1);
+}
+
+.stage-question__text {
+  font-size: 19px;
+  font-weight: 600;
+  color: var(--cf-fg);
+  margin-bottom: 14px;
+}
+
+.stage-question__options {
+  display: flex;
+  gap: 12px;
+}
+
+.stage-question__option {
+  flex: 1;
+  min-height: 56px;
+  border: none;
+  border-radius: 12px;
+  background: var(--cf-accent);
+  color: var(--cf-accent-on);
+  font-size: 18px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.stage-question__option:disabled {
+  opacity: 0.5;
+}
+
+/* 红线指引（标红置顶，锁定视觉重心） */
+.redline-guide {
+  border: 2px solid var(--cf-danger);
+  border-radius: 16px;
+  padding: 18px;
+  background: var(--cf-danger-container);
+}
+
+.redline-guide__title {
+  color: var(--cf-danger);
+  font-size: 18px;
+  font-weight: 700;
+  margin-bottom: 8px;
+}
+
+.redline-guide__body {
+  white-space: pre-wrap;
+  line-height: 1.8;
+  color: var(--cf-fg);
+}
+
+/* 兜底强提示 */
+.fallback-notice {
+  border: 2px solid var(--cf-warn);
+  border-radius: 16px;
+  padding: 16px;
+  background: var(--cf-warn-container);
+}
+
+.fallback-notice__message {
+  font-weight: 600;
+  color: var(--cf-fg);
+  margin-bottom: 6px;
+}
+
+.fallback-notice__guidance {
+  color: var(--cf-fg-2);
+  line-height: 1.7;
+}
+
+/* 追问输入区（固定底部） */
+.consult-input-bar {
+  position: fixed;
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 100%;
+  max-width: 480px;
+  padding: 12px 16px calc(12px + 60px);
+  background: var(--cf-surface);
+  border-top: 1px solid var(--cf-surface-dim);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.consult-input-bar__row {
+  display: flex;
+  gap: 8px;
+}
+
+.consult-input-bar__input {
+  flex: 1;
+  height: 44px;
+  padding: 0 14px;
+  border: 1px solid var(--cf-surface-dim);
+  border-radius: 22px;
+  font-size: var(--cf-text-sm);
+  outline: none;
+}
+
+.consult-input-bar__input:focus {
+  border-color: var(--cf-accent);
+}
+
+.consult-input-bar__actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: var(--cf-text-xs);
+  color: var(--cf-muted);
+}
+
+.consult-input-bar__unresolved {
+  border: none;
+  background: none;
+  color: var(--cf-warn);
+  font-size: var(--cf-text-xs);
+  cursor: pointer;
+}
