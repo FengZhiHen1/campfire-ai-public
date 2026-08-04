@@ -148,6 +148,92 @@ async def clean_auth_domain(session) -> None:
     logger.info("seed", "认证域数据已清空", op_type="seed")
 
 
+# ---------------------------------------------------------------------------
+# 安全卡占位模板（D7：机制就绪、内容待专家撰写）
+# ---------------------------------------------------------------------------
+
+_UNIVERSAL_CARD = {
+    "title": "通用安全卡",
+    "template": (
+        "【占位模板·待专家撰写】\n"
+        "1. 移走周围可能的危险物品\n"
+        "2. 降低环境刺激（关小声音、调暗灯光）\n"
+        "3. 保持冷静，深呼吸\n"
+        "4. 不要强行约束他\n"
+        "5. 确保他在你的视线范围内"
+    ),
+}
+
+# 各行为桶通用桶卡占位（桶 × 阶段变体按需生产，本期 meltdown 桶建全四阶段占位）
+_BUCKET_CARD_TEMPLATES: dict[str, str] = {
+    "情绪崩溃": "【占位模板·待专家撰写】情绪哭闹桶通用卡\n1. 保持安静陪伴\n2. 移走 {触发物}\n3. 递上 {安抚物}\n4. 用 {话术适配} 告诉他你在",
+    "刻板行为": "【占位模板·待专家撰写】刻板升级桶通用卡\n1. 不打断，先观察\n2. 移走 {触发物}\n3. 提供替代感官活动",
+    "自伤": "【占位模板·待专家撰写】自伤高危桶卡\n1. 立即用软垫挡住他撞击的部位\n2. 移走周围危险物品\n3. 保持近距离看护\n4. 如造成伤口，立即就医",
+    "攻击": "【占位模板·待专家撰写】攻击高危桶卡\n1. 保护被攻击者，将其带离\n2. 保持距离，不正面阻拦\n3. 移走可用作攻击的物品",
+    "走失": "【走失应急·占位模板·待专家撰写】\n立即报警话术：我的孩子{称呼}走失了。{体貌特征}。他是孤独症患者，可能没有危险意识。常去地点：{常去地点}。\n优先排查附近水体！",
+    "用药相关": "【占位模板·待专家撰写】用药高危桶卡\n1. 保留药品包装\n2. 记录服用时间与剂量\n3. 立即联系主治医生或 120",
+    "社交退缩": "【占位模板·待专家撰写】社交退缩桶通用卡\n1. 不强迫互动\n2. 提供安静的独处空间",
+    "多动": "【占位模板·待专家撰写】多动桶通用卡\n1. 确保活动空间安全\n2. 移走易碎物品",
+    "其他": "【占位模板·待专家撰写】通用桶卡\n1. 确保安全\n2. 保持冷静",
+}
+
+# meltdown 桶四阶段变体占位（高峰期只输出安全指令——机制 §3.1）
+_MELTDOWN_STAGE_TEMPLATES: dict[str, str] = {
+    "触发": "【占位模板·待专家撰写】情绪哭闹·触发期\n1. 移走 {触发物}\n2. 轻声叫他的名字{称呼}\n3. 递上 {安抚物}",
+    "躁动": "【占位模板·待专家撰写】情绪哭闹·躁动期\n1. 减少语言，保持安静\n2. 陪伴在一侧，不对视压力",
+    "加速": "【占位模板·待专家撰写】情绪哭闹·加速期\n1. 不讲道理，不说教\n2. 引导至安静区域",
+    "高峰": "【占位模板·待专家撰写】情绪哭闹·高峰期\n1. 确保安全，移走危险物\n2. 保持距离看护\n3. 等待高峰过去",
+}
+
+
+async def seed_safety_cards(session) -> None:
+    """注入安全卡占位模板（幂等：按 桶×阶段×标题 查重）。
+
+    D7：占位模板标注「待专家撰写」，review_status=approved 以便供给链路就绪；
+    真实内容生产另立排期（M3 审核链路）。
+    """
+    from py_db.models.consultation import SafetyCard
+    from py_schemas.enums import BehaviorBucket, CrisisStage
+    from py_schemas.enums.case_enums import CaseStatus
+
+    result = await session.execute(select(SafetyCard))
+    existing = {(c.bucket, c.crisis_stage) for c in result.scalars().all()}
+
+    created = 0
+
+    def _add(bucket, stage, title, template):
+        nonlocal created
+        if (bucket, stage) in existing:
+            return
+        session.add(
+            SafetyCard(
+                bucket=bucket,
+                crisis_stage=stage,
+                title=title,
+                card_template=template,
+                review_status=CaseStatus.APPROVED,
+                version=1,
+            )
+        )
+        created += 1
+
+    # 通用卡（0 输入）
+    _add(None, None, _UNIVERSAL_CARD["title"], _UNIVERSAL_CARD["template"])
+    # 9 桶通用桶卡
+    for bucket in BehaviorBucket:
+        template = _BUCKET_CARD_TEMPLATES.get(bucket.value)
+        if template:
+            _add(bucket, None, f"{bucket.ui_label}·通用卡", template)
+    # meltdown 桶四阶段变体
+    for stage in CrisisStage:
+        template = _MELTDOWN_STAGE_TEMPLATES.get(stage.value)
+        if template:
+            _add(BehaviorBucket.MELTDOWN, stage, f"情绪哭闹·{stage.value}期", template)
+
+    await session.commit()
+    logger.info("seed", f"安全卡占位模板注入完成（新增 {created}）", op_type="seed")
+
+
 async def main() -> None:
     parser = argparse.ArgumentParser(description="Campfire-AI 种子注入")
     parser.add_argument("--clean", action="store_true", help="清空认证域数据后重新注入")
@@ -162,6 +248,7 @@ async def main() -> None:
             await clean_auth_domain(session)
         users = await seed_users(session)
         await seed_invite_codes(session, users)
+        await seed_safety_cards(session)
 
     await engine.dispose()
     print("种子注入完成。演示账号：13800000001~13800000006（family/volunteer/teacher/expert/admin/maintainer）")

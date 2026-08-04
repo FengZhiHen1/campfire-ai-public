@@ -269,10 +269,19 @@ class EmergencyService:
     ) -> None:
         """红线命中：高危桶卡（标红置顶）+ 就医指引，不进入方案层。"""
         card = await self._safety.get_redline_card(db, bucket, snapshot)
-        if card:
-            await self._publish_card(session_id, card)
+        if card is None:
+            # 保底：红线场景不因内容缺失而无输出（安全底线）
+            card = SafetyCardDto(
+                card_id="builtin-redline",
+                bucket=bucket,
+                title=f"{bucket.ui_label}·紧急处置",
+                content="确保环境安全，移走危险物品。如已造成或即将造成伤害，请立即拨打 120。",
+                personalized=False,
+                variant="redline",
+            )
+        await self._publish_card(session_id, card)
         guide = RedlineGuideDto(
-            card=card or SafetyCardDto(card_id="", bucket=bucket, title="紧急情况", content="", variant="redline"),
+            card=card,
             guidance=_REDLINE_GUIDANCE,
             gate_trigger=gate_trigger,
         )

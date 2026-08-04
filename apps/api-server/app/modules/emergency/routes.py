@@ -53,7 +53,7 @@ router = APIRouter(prefix="/api/v1/consult", tags=["emergency"])
 _EMERGENCY_ROLES = (UserRole.FAMILY, UserRole.VOLUNTEER)
 
 
-def _get_emergency_service() -> EmergencyService:
+def _get_emergency_service(model_factory: Any | None = None) -> EmergencyService:
     card_repo = SafetyCardRepository(session_factory=_get_session_factory())
     safety_layer = SafetyLayer(card_repo)
     crisis_service = CrisisService(safety_layer)
@@ -61,7 +61,13 @@ def _get_emergency_service() -> EmergencyService:
         crisis_service=crisis_service,
         safety_layer=safety_layer,
         session_factory=_get_session_factory,
+        model_factory=model_factory,
     )
+
+
+def _model_factory_from(request: Request) -> Any | None:
+    """从 app.state 读取可选模型工厂（集成测试注入 TestModel；生产为 None → DeepSeek）。"""
+    return getattr(request.app.state, "emergency_model_factory", None)
 
 
 # ===========================================================================
@@ -109,10 +115,11 @@ async def get_universal_card(
 )
 async def create_or_advance_stream(
     request: ConsultStreamCreateRequest,
+    http_request: Request,
     current_user: CurrentUser = Depends(require_roles(*_EMERGENCY_ROLES)),
     db: AsyncSession = Depends(get_db_session),
 ) -> ConsultStreamCreateResponse:
-    service = _get_emergency_service()
+    service = _get_emergency_service(_model_factory_from(http_request))
     try:
         if request.session_id is None:
             session_id = await service.start(current_user.user_id, request, db)
@@ -169,10 +176,11 @@ async def stream_events(
 async def followup(
     session_id: str,
     request: FollowupRequest,
+    http_request: Request,
     _current_user: CurrentUser = Depends(require_roles(*_EMERGENCY_ROLES)),
     db: AsyncSession = Depends(get_db_session),
 ) -> dict[str, str]:
-    service = _get_emergency_service()
+    service = _get_emergency_service(_model_factory_from(http_request))
     try:
         await service.followup(session_id, request.text, db)
     except KeyError as exc:
