@@ -18,7 +18,7 @@
 |------|----------------|
 | [总体架构](./总体架构.md) | 技术选型、部署拓扑、安全设计、环境划分、监控告警、技术风险与后备方案 |
 | [Agent 基座](./Agent基座.md) | Campfire 分面执行策略、领域工具与 Skill 清单、Campfire 侧安全规则与编排开销门禁 |
-| [Agent 内核框架](./Agent内核框架.md) | 通用 Agent 内核（py-agent-kernel）架构与契约：ExtensionAPI、事件总线、工具契约、Session、Skill 目录、安全插件约定、保真度审计 |
+| [Agent 内核框架](./Agent内核框架.md) | 通用 Agent 内核（py-agent-kernel）架构与契约：ExtensionAPI、事件总线、工具契约、Session、Skill 目录、安全扩展约定、保真度审计 |
 | [机制](./机制/README.md) | 各功能模块的机制、数据模型、接口契约、状态流转与失败语义 |
 | [项目结构](./项目结构/README.md) | 仓库形态、分层架构、目录骨架、层间数据流、命名与模块边界约定 |
 | [决策](./决策/README.md) | 重大技术备选、选择依据、后果与重访条件（ADR/DSR） |
