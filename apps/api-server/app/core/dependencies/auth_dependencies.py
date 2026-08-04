@@ -105,6 +105,14 @@ class CurrentUser:
     def roles(self) -> list[UserRole]:
         return [self.role]
 
+    def to_legacy_dict(self) -> dict[str, str]:
+        """转为旧 service 层期望的 dict 契约（sub/user_id/role）。
+
+        兼容桥接：consultation/cases/profiles 各 service 在 S3/S4 模块重写前
+        仍消费 dict 形态入参；模块重写时改收 CurrentUser 并删除本方法。
+        """
+        return {"sub": self.user_id, "user_id": self.user_id, "role": self.role.value}
+
 
 # ---------------------------------------------------------------------------
 # PasswordHasher 适配器

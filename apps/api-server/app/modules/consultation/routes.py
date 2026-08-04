@@ -10,13 +10,17 @@ from __future__ import annotations
 from typing import cast
 
 from fastapi import APIRouter, Depends, status
+from py_schemas.auth import UserRole
 from py_schemas.consult import SemanticSearchInput, SemanticSearchResult
 from py_schemas.consult_start import ConsultStartRequest, ConsultStartResponse
 from py_schemas.security.validation_schemas import ValidationErrorResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.dependencies.anonymous_user import get_anonymous_user
-from app.core.dependencies.auth_dependencies import get_db_session
+from app.core.dependencies.auth_dependencies import (
+    CurrentUser,
+    get_db_session,
+    require_roles,
+)
 from app.modules.consultation.consult_service import search_cases, start_consultation
 
 router = APIRouter(prefix="/api/v1/consult", tags=["consult"])
@@ -52,14 +56,14 @@ router = APIRouter(prefix="/api/v1/consult", tags=["consult"])
 )
 async def start_consult(
     request: ConsultStartRequest,
-    anonymous_user: dict = Depends(get_anonymous_user),
+    current_user: CurrentUser = Depends(require_roles(UserRole.FAMILY, UserRole.VOLUNTEER)),
     db: AsyncSession = Depends(get_db_session),
 ) -> ConsultStartResponse:
     """启动应急咨询端点。
 
     Args:
         request: 咨询请求体（行为描述 + 可选档案 ID + 可选标签）。
-        anonymous_user: 匿名用户字典（由 X-Device-Id 提取/创建）。
+        current_user: 已认证用户（family/volunteer 应急咨询能力域）。
         db: 数据库异步会话。
 
     Returns:
@@ -70,7 +74,7 @@ async def start_consult(
         profile_id=str(request.profile_id) if request.profile_id else None,
         behavior_type=cast(list[str], request.behavior_type),
         emotion_level=request.emotion_level,
-        user_id=anonymous_user.get("sub", ""),
+        user_id=current_user.user_id,
         db=db,
     )
     return ConsultStartResponse(session_id=session_id)
@@ -117,6 +121,7 @@ async def start_consult(
 )
 async def search(
     request: SemanticSearchInput,
+    _current_user: CurrentUser = Depends(require_roles(UserRole.FAMILY, UserRole.VOLUNTEER)),
     db: AsyncSession = Depends(get_db_session),
 ) -> SemanticSearchResult:
     """语义检索端点。

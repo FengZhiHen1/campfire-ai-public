@@ -6,34 +6,41 @@
 Usage:
     from app.core.dependencies import (
         get_db_session,
-        get_user_repository,
-        get_password_hasher,
-        get_audit_logger,
+        get_current_user,
+        require_roles,
     )
 """
 
-from app.core.dependencies.anonymous_user import get_anonymous_user
 from app.core.dependencies.auth_dependencies import (
     AuditLogger,
+    CurrentUser,
     PasswordHasher,
     get_audit_logger,
     get_auth_service,
+    get_credential_repository,
+    get_current_user,
     get_db_session,
     get_event_repository,
+    get_invite_code_repository,
+    get_invite_code_service,
     get_narrative_repository,
     get_password_hasher,
     get_profile_repository,
     get_review_audit_log_repository,
     get_review_repository,
+    get_review_service,
     get_teacher_link_repository,
     get_token_blacklist,
     get_token_manager,
     get_user_repository,
+    require_roles,
 )
 
 __all__ = [
     "get_db_session",
     "get_user_repository",
+    "get_credential_repository",
+    "get_invite_code_repository",
     "get_narrative_repository",
     "get_review_repository",
     "get_review_audit_log_repository",
@@ -45,7 +52,11 @@ __all__ = [
     "get_token_manager",
     "get_token_blacklist",
     "get_auth_service",
-    "get_anonymous_user",
+    "get_invite_code_service",
+    "get_review_service",
+    "get_current_user",
+    "require_roles",
+    "CurrentUser",
     "PasswordHasher",
     "AuditLogger",
 ]
