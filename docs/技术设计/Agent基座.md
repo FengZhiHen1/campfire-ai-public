@@ -1,15 +1,15 @@
 # Agent 基座
 
 > **本文唯一拥有**：Campfire 的分面执行策略（应急面/异步面编排）、领域工具与 Skill 清单、Campfire 侧安全规则与扩展约定、编排开销门禁。
-> **状态**：架构基线（2026-06-30，[ADR-007](./决策/ADR-007-Agent化-统一基座与分面自治.md)；2026-08-04 起基座实现归 [ADR-011](./决策/ADR-011-Agent内核框架-内核加插件与PydanticAI路线.md)）。**Agent 内核的契约与机制（ExtensionAPI、事件总线、Session、skill-loader、安全插件约定）归 [Agent内核框架](./Agent内核框架.md) 拥有**，本文只描述 Campfire 如何使用内核；各模块机制文档（[机制](./机制/README.md)）拥有业务规则与数据模型。
+> **状态**：架构基线（2026-06-30，[ADR-007](./决策/ADR-007-Agent化-统一基座与分面自治.md)；2026-08-04 起基座实现归 [ADR-011](./决策/ADR-011-Agent内核框架-内核加扩展与PydanticAI路线.md)）。**Agent 内核的契约与机制（ExtensionAPI、事件总线、Session、skill-loader、安全扩展约定）归 [Agent内核框架](./Agent内核框架.md) 拥有**，本文只描述 Campfire 如何使用内核；各模块机制文档（[机制](./机制/README.md)）拥有业务规则与数据模型。
 > **依据**：[Agent内核框架](./Agent内核框架.md)（内核契约）、[Agent框架概览](../references/Agent框架概览.md)（框架选型输入）、[Agent Skills 标准](https://agentskills.io/specification)（Skill 格式）。
 
 ## 一、设计原则
 
-1. **统一内核**：全部 Agent 能力面运行在同一份 Agent 内核（`py-agent-kernel`，见 [Agent内核框架](./Agent内核框架.md)）之上，Campfire 能力以领域插件形态组织，不为单模块另建 Agent；
+1. **统一内核**：全部 Agent 能力面运行在同一份 Agent 内核（`py-agent-kernel`，见 [Agent内核框架](./Agent内核框架.md)）之上，Campfire 能力以领域扩展形态组织，不为单模块另建 Agent；
 2. **分面自治**：内核统一，自治级别按面划分——应急面受限（代码持有控制流），异步面自主（Agent 持有控制流）；
 3. **Skill 即工作流**：平台能力以 Agent Skills 标准（SKILL.md 能力包）定义，渐进披露，与运行时解耦；
-4. **安全不让渡**：红线安全门、权限校验、PII 脱敏、免责声明注入由 Campfire 的 `security` 插件以代码实现，经内核事件总线挂载（首位注册 + 启动断言，见 [Agent内核框架](./Agent内核框架.md) §八），永远在 Agent 之外、LLM 不可触碰；
+4. **安全不让渡**：红线安全门、权限校验、PII 脱敏、免责声明注入由 Campfire 的 `security` 扩展以代码实现，经内核事件总线挂载（首位注册 + 启动断言，见 [Agent内核框架](./Agent内核框架.md) §八），永远在 Agent 之外、LLM 不可触碰；
 5. **契约驱动**：Agent 的结构化输出（四段式、L2 卡片、复盘报告）一律由 Pydantic 模型约束，与 `py-schemas` 契约体系同构。
 
 ## 二、架构总览
@@ -20,12 +20,12 @@
 │  应急面：预取并行 → 预注入 → 强制加载 Skill → 单轮生成       │
 │  异步面：任务触发 → Agent 自主执行                          │
 ├─────────────────────────────────────────────────────────┤
-│ Campfire 领域插件（内核插件形态：工具 + Skill + 输出契约）   │
-│  emergency 插件 · case 插件 · knowledge 插件 …            │
+│ Campfire 领域扩展（内核扩展形态：工具 + Skill + 输出契约）   │
+│  emergency 扩展 · case 扩展 · knowledge 扩展 …            │
 ├─────────────────────────────────────────────────────────┤
 │ Agent 内核 py-agent-kernel（契约见 Agent内核框架.md）       │
 │  ExtensionAPI · 事件总线 · Session · skill-loader            │
-│  （安全能力 = security 插件，首位注册 + 启动断言）              │
+│  （安全能力 = security 扩展，首位注册 + 启动断言）              │
 ├─────────────────────────────────────────────────────────┤
 │ pydantic-ai（Agent 循环 · 消息模型 · 流式 · provider）      │
 ├─────────────────────────────────────────────────────────┤
@@ -35,20 +35,20 @@
 
 ## 三、领域工具清单
 
-工具是领域能力的原子封装，按领域插件组织（工具契约与注册机制归 [Agent内核框架](./Agent内核框架.md) §五）。**插件边界 = 机制模块边界**（1:1 镜像，不发明新分组规则）；插件归属仅声明所有权，运行期寻址与白名单一律按工具名（pi 语义）。初版插件划分：
+工具是领域能力的原子封装，按领域扩展组织（工具契约与注册机制归 [Agent内核框架](./Agent内核框架.md) §五）。**扩展边界 = 机制模块边界**（1:1 镜像，不发明新分组规则）；扩展归属仅声明所有权，运行期寻址与白名单一律按工具名（pi 语义）。初版扩展划分：
 
-| 插件 | 对应机制模块 | 工具 | Skill | 输出契约（py-schemas 拥有） |
+| 扩展 | 对应机制模块 | 工具 | Skill | 输出契约（py-schemas 拥有） |
 |---|---|---|---|---|
-| `emergency` | 智能应急咨询 | —（经白名单消费他插件工具） | `emergency-consult` | 四段式 |
+| `emergency` | 智能应急咨询 | —（经白名单消费他扩展工具） | `emergency-consult` | 四段式 |
 | `case` | 标准案例库 | `rag_search`、`ebp_suggest` | `case-extraction`、`review-assist` | L2 卡片、预审报告 |
 | `profile` | 个性化档案库 | `profile_get`、`event_add` | `trend-report` | 复盘报告 |
 | `ticket` | 人工兜底通道 | `ticket_create` | `ticket-enrich` | 工单摘要 |
 | `knowledge` | 科普查阅 | `knowledge_search` | `knowledge-qa` | — |
 | `security` | 红线安全门与兜底策略 | `pii_scan` | — | 脱敏建议 |
 
-要点：emergency 插件不持有工具（应急面工具分属 profile/case/ticket，经白名单消费，插件间零 import）；`trend-report` 归 profile（输入是档案事件流，所有权跟数据走）；`pii_scan` 归 security（消费者横跨预审/工单多个异步场景，与红线门同模块）；输出契约不进插件目录，统一由 `py-schemas` 拥有（DSR-002），插件经 Skill metadata `output-schema` 声明引用。
+要点：emergency 扩展不持有工具（应急面工具分属 profile/case/ticket，经白名单消费，扩展间零 import）；`trend-report` 归 profile（输入是档案事件流，所有权跟数据走）；`pii_scan` 归 security（消费者横跨预审/工单多个异步场景，与红线门同模块）；输出契约不进扩展目录，统一由 `py-schemas` 拥有（DSR-002），扩展经 Skill metadata `output-schema` 声明引用。
 
-插件物理形态：`packages/py-agent-plugins/` 单包多子包（`py_agent_plugins/emergency/` 等）；api-server 与 worker 启动时显式声明插件清单与加载顺序（`security` 首位），并注入面白名单配置。
+扩展物理形态：`packages/py-agent-extensions/` 单包多子包（`py_agent_extensions/emergency/` 等）；api-server 与 worker 启动时显式声明扩展清单与加载顺序（`security` 首位），并注入面白名单配置。
 
 初版工具清单（按面白名单）：
 
@@ -62,7 +62,7 @@
 | `ebp_suggest` | NCAEP EBP 标签建议 | ❌ | ✅（案例提取） |
 | `knowledge_search` | 科普知识库检索 | ❌ | ✅（科普面） |
 
-约束：工具实现内必须自带权限与参数校验（不信任 Agent 传入的调用上下文）；工具的读写范围遵循安全插件在事件总线上的校验规则。
+约束：工具实现内必须自带权限与参数校验（不信任 Agent 传入的调用上下文）；工具的读写范围遵循安全扩展在事件总线上的校验规则。
 
 ## 四、Skill 目录
 
@@ -132,7 +132,7 @@ Skill 采用 [Agent Skills 标准](https://agentskills.io/specification)：每�
 | `py-rag`（hybrid_search、切片、嵌入） | **保留**，作为 `rag_search` 等工具的实现底座；LangChain 依赖逐步退出 |
 | `py-llm`（DeepSeek 封装） | **由 pydantic-ai 模型层取代**，随内核落地后退役 |
 | `py-schemas` | **强化**，新增 Agent 输出契约（四段式、L2 卡片、复盘报告等） |
-| 红线安全门管道 | **保留在代码层**，改由 `security` 插件经事件总线挂载（应急面的安全前置） |
+| 红线安全门管道 | **保留在代码层**，改由 `security` 扩展经事件总线挂载（应急面的安全前置） |
 | SSE 流式链路 | **保留**，改由内核事件总线的流式输出驱动 |
 | 自研 skill-loader（ADR-007） | **上收**为 `py-agent-kernel` 组件，不再是 Campfire 私有件 |
 

@@ -17,7 +17,7 @@
 | [ADR-008](./ADR-008-二元安全门取代三级危机分级.md) | 二元安全门取代三级危机分级 + LLM 复审 | 有效（部分语义已由 ADR-009 演进） |
 | [ADR-009](./ADR-009-应急链路时刻分层重构.md) | 应急链路时刻分层重构（此刻安全层 + 完整方案层） | 有效 |
 | [ADR-010](./ADR-010-档案四层结构与事件记录ABC标准化.md) | 档案四层结构与事件记录 ABC 标准化 | 有效 |
-| [ADR-011](./ADR-011-Agent内核框架-内核加插件与PydanticAI路线.md) | Agent 内核框架：内核+插件架构与「基于 Pydantic AI、契约仿 pi」路线 | 有效 |
+| [ADR-011](./ADR-011-Agent内核框架-内核加扩展与PydanticAI路线.md) | Agent 内核框架：内核+扩展架构与「基于 Pydantic AI、契约仿 pi」路线 | 有效 |
 | [DSR-001](./DSR-001-Hybrid-Monorepo.md) | 采用 Hybrid Monorepo（厚 package、薄 app） | 有效 |
 | [DSR-002](./DSR-002-模型与Schema集中管理.md) | ORM 模型与 Pydantic Schema 集中管理 | 有效 |
 | [DSR-003](./DSR-003-基础设施拆包.md) | 基础设施能力拆分为独立 package | 有效 |
