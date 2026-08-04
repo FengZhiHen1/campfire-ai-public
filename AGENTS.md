@@ -3,14 +3,14 @@
 > 为孤独症人士家庭提供智能应急咨询与干预支持服务的全栈平台。
 > 基于 RAG 检索增强生成与案例库管理，帮助家属在突发危机时获得结构化、可溯源的应急建议。
 
-<!-- Last updated: 2026-07-02 -->
+<!-- Last updated: 2026-08-04 -->
 
 ## Stack
 
 - Language: Python 3.12+ (strict), TypeScript ~6.0
-- Backend: FastAPI + Uvicorn (api-server), Celery (worker)
+- Backend: FastAPI + Uvicorn (api-server)，后台 Worker（Redis 队列消费）
 - Frontend: React 19 + Vite 8, React Router 7
-- Package manager: uv (Python), pnpm 9.x (frontend)
+- Package manager: uv (Python), pnpm 10.x (frontend)
 - Database: PostgreSQL 17 (pgvector), Redis 7-alpine
 - Storage: MinIO (S3-compatible)
 - Infrastructure: Docker Compose (dev + prod)
@@ -40,10 +40,10 @@ uv run alembic upgrade head                    # 执行迁移
 
 ```
 apps/api-server/    — FastAPI REST API 入口
-apps/worker/        — Celery 后台任务
+apps/worker/        — 后台任务（Redis 队列消费）
 apps/react-web/     — React 前端（主 Web 应用）
-apps/mini-program/  — 微信小程序
-packages/py-*/      — Python 可复用包（auth/cache/config/db/health/llm/logger/rag/schemas/security/storage）
+apps/mini-program/  — 微信小程序（MVP 期冻结，见 ADR-014）
+packages/py-*/      — Python 可复用包（auth/cache/config/db/health/llm/logger/rag/schemas/security/storage；llm 待退役，勿用于新代码）
 docs/               — 设计文档与功能设计原始材料
 infrastructure/     — Docker、Nginx、部署脚本
 scripts/            — 工程脚本（构建、迁移、诊断等）
