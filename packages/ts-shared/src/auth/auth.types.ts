@@ -59,6 +59,7 @@ export interface MeResponse {
   real_name: string | null;
   role: UserRole;
   status: AccountStatus;
+  reject_reason: string | null;
 }
 
 // === 准入审核（admin） ===

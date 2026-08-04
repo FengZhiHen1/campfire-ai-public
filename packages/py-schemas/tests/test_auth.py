@@ -11,7 +11,6 @@
 from __future__ import annotations
 
 import pytest
-from pydantic import ValidationError
 from py_schemas.auth import (
     CHANNEL_ALLOWED_ROLES,
     InviteCodeCreateRequest,
@@ -38,6 +37,7 @@ from py_schemas.enums import (
     InviteChannel,
     InviteCodeStatus,
 )
+from pydantic import ValidationError
 
 # ===========================================================================
 # UserRole — 六角色枚举
@@ -246,6 +246,27 @@ class TestMeResponse:
             status=AccountStatus.ACTIVE,
         )
         assert resp.real_name is None
+
+    def test_reject_reason_default_none(self):
+        resp = MeResponse(
+            user_id="550e8400-e29b-41d4-a716-446655440000",
+            phone="13800138000",
+            real_name="张老师",
+            role=UserRole.TEACHER,
+            status=AccountStatus.ACTIVE,
+        )
+        assert resp.reject_reason is None
+
+    def test_rejected_with_reason(self):
+        resp = MeResponse(
+            user_id="550e8400-e29b-41d4-a716-446655440000",
+            phone="13800138000",
+            real_name="张老师",
+            role=UserRole.TEACHER,
+            status=AccountStatus.REJECTED,
+            reject_reason="资质材料不清晰",
+        )
+        assert resp.reject_reason == "资质材料不清晰"
 
 
 # ===========================================================================

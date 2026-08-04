@@ -1,0 +1,212 @@
+/* 认证特性页面样式（登录/注册/准入状态/管理页） */
+
+.auth-page {
+  min-height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 32px 24px;
+}
+
+.auth-card {
+  width: 100%;
+  max-width: 400px;
+  background: var(--cf-surface);
+  border-radius: 16px;
+  padding: 32px 24px;
+  box-shadow: 0 4px 24px rgba(28, 25, 23, 0.08);
+}
+
+.auth-card__title {
+  font-family: var(--cf-font-display);
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--cf-fg);
+  text-align: center;
+  margin-bottom: 8px;
+}
+
+.auth-card__subtitle {
+  font-size: var(--cf-text-sm);
+  color: var(--cf-muted);
+  text-align: center;
+  margin-bottom: 24px;
+}
+
+.auth-form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.auth-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.auth-field__label {
+  font-size: var(--cf-text-sm);
+  font-weight: 500;
+  color: var(--cf-fg-2);
+}
+
+.auth-field__input,
+.auth-field__select {
+  height: 44px;
+  padding: 0 14px;
+  border: 1px solid var(--cf-surface-dim);
+  border-radius: 10px;
+  background: var(--cf-bg);
+  font-size: var(--cf-text-sm);
+  color: var(--cf-fg);
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+.auth-field__input:focus,
+.auth-field__select:focus {
+  border-color: var(--cf-accent);
+}
+
+.auth-field__hint {
+  font-size: var(--cf-text-xs);
+  color: var(--cf-muted);
+}
+
+.auth-error {
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: var(--cf-danger-container);
+  color: var(--cf-danger);
+  font-size: var(--cf-text-sm);
+}
+
+.auth-success {
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: var(--cf-success-container);
+  color: var(--cf-success);
+  font-size: var(--cf-text-sm);
+}
+
+.auth-links {
+  margin-top: 16px;
+  display: flex;
+  justify-content: center;
+  gap: 16px;
+  font-size: var(--cf-text-sm);
+}
+
+.auth-links a {
+  color: var(--cf-accent);
+}
+
+/* ── 管理页 ── */
+
+.admin-page {
+  padding: 24px 20px 96px;
+  max-width: 640px;
+  margin: 0 auto;
+  width: 100%;
+}
+
+.admin-page__title {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--cf-fg);
+  margin-bottom: 4px;
+}
+
+.admin-page__desc {
+  font-size: var(--cf-text-sm);
+  color: var(--cf-muted);
+  margin-bottom: 20px;
+}
+
+.admin-section {
+  background: var(--cf-surface);
+  border-radius: 14px;
+  padding: 20px;
+  margin-bottom: 16px;
+  box-shadow: 0 2px 12px rgba(28, 25, 23, 0.06);
+}
+
+.admin-section__title {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--cf-fg);
+  margin-bottom: 12px;
+}
+
+.admin-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.admin-list__item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--cf-surface-dim);
+  border-radius: 10px;
+  font-size: var(--cf-text-sm);
+}
+
+.admin-list__meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.admin-list__primary {
+  font-weight: 600;
+  color: var(--cf-fg);
+}
+
+.admin-list__secondary {
+  color: var(--cf-muted);
+  font-size: var(--cf-text-xs);
+}
+
+.admin-list__actions {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.admin-tag {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 6px;
+  font-size: var(--cf-text-xs);
+  background: var(--cf-accent-container);
+  color: var(--cf-accent-container-on);
+}
+
+.admin-tag--muted {
+  background: var(--cf-accent-neutral-container);
+  color: var(--cf-accent-neutral);
+}
+
+.admin-code-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.admin-code-chip {
+  font-family: var(--cf-font-mono);
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: var(--cf-accent-container);
+  color: var(--cf-accent-container-on);
+  font-size: var(--cf-text-sm);
+  letter-spacing: 1px;
+}

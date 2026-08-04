@@ -2,12 +2,14 @@
  * 统一 HTTP 客户端 —— React 移植版（基于 fetch）。
  *
  * 职责：
- * - 请求拦截器：注入 X-Device-Id 请求头，自动拼接 API base URL
+ * - 请求拦截器：注入 Authorization Bearer token（ADR-013，经新 tokenStorage 桥接）
  * - 响应拦截器：非 2xx 响应统一抛异常
  *
- * 所有业务模块通过此客户端发送 API 请求。
+ * 过渡形态：S1 起 token 注入桥接至 infrastructure/http/tokenManager；
+ * 本客户端整体将在 S6 五层重组时被 infrastructure/http/httpClient 取代并删除。
  */
 
+import { tokenStorage } from '@/infrastructure/http/tokenManager';
 import { deviceManager } from './tokenManager';
 
 export interface IRequestResponse<T = unknown> {
@@ -58,6 +60,11 @@ export const httpClient = {
       'ngrok-skip-browser-warning': '1',
       ...(options.header as Record<string, string> || {}),
     };
+    // ADR-013：携带已认证 token（未登录时为空，由后端守卫 401 拒绝）
+    const accessToken = tokenStorage.getAccessToken();
+    if (accessToken) {
+      headers['Authorization'] = `Bearer ${accessToken}`;
+    }
 
     const controller = new AbortController();
     const timeoutId = options.timeout ? setTimeout(() => controller.abort(), options.timeout) : null;

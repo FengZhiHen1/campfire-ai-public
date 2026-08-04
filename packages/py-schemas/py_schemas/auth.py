@@ -187,6 +187,7 @@ class MeResponse(CampfireBaseModel):
     """当前用户信息响应（GET /api/v1/auth/me）。
 
     返回本人手机号完整值（字段级脱敏约束的是查看他人手机号，见认证与访问 §六）。
+    rejected 状态时 reject_reason 非空（§3.2：可登录查看驳回原因）。
     """
 
     user_id: str = Field(..., description="用户 UUID")
@@ -194,6 +195,7 @@ class MeResponse(CampfireBaseModel):
     real_name: str | None = Field(..., description="真实姓名（可空）")
     role: UserRole = Field(..., description="角色")
     status: AccountStatus = Field(..., description="账号状态")
+    reject_reason: str | None = Field(default=None, description="最近一次驳回原因（rejected 时非空）")
 
 
 # ===========================================================================
