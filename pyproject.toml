@@ -57,6 +57,9 @@ dev = [
 
 [tool.pytest.ini_options]
 addopts = "-q --import-mode=importlib"
+markers = [
+    "integration: 依赖真实 PostgreSQL/Redis 的集成测试（docker compose up -d）",
+]
 
 [tool.coverage.run]
 source = ["apps", "packages"]
