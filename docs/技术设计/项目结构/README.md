@@ -28,7 +28,7 @@
 | 异步任务 | Redis 队列 + 独立 Worker（框架选型归[总体架构](../总体架构.md)） | `apps/worker/` 为异步面编排宿主 |
 | 数据校验 | Pydantic 2.x | `packages/py-schemas/` 集中 DTO 与 Agent 输出契约（[DSR-002](../决策/DSR-002-模型与Schema集中管理.md)） |
 | Agent 框架 | Pydantic AI 2.x + 自研内核（ADR-011） | `packages/py-agent-kernel/`（通用内核，零领域知识）+ `packages/py-agent-extensions/`（Campfire 领域扩展，单包多子包） |
-| LLM 服务 | DeepSeek API v3 | 经 pydantic-ai provider 接入；无独立 LLM 客户端包（py-llm 已移除，DSR-006） |
+| LLM 服务 | DeepSeek API V4 系列（`deepseek-v4-pro`/`flash`） | 经 pydantic-ai provider 接入；无独立 LLM 客户端包（py-llm 已移除，DSR-006） |
 | RAG 检索与嵌入 | pgvector + 阿里 text-embedding-v4 | `packages/py-rag/` 为工具实现底座（检索/切片/嵌入/索引）；编排角色移交内核，LangChain 已退出 |
 | 关系型数据库 | PostgreSQL 17.x + pgvector 0.7+ | ORM 模型与 Alembic 迁移集中在 `packages/py-db/` |
 | 缓存与队列 | Redis 7.x | `packages/py-cache/` |
