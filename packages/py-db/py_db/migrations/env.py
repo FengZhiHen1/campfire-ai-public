@@ -1,4 +1,4 @@
-"""Alembic 运行时环境配置 — DEPLOY-04 数据库迁移。
+"""Alembic 运行时环境配置 — 全新迁移链（重构决策 D2）。
 
 配置 target_metadata、连接引擎、事务模式，供 alembic.command.* 调用。
 
@@ -6,6 +6,7 @@
 - 同步驱动强制：DDL 操作使用 psycopg2，禁止使用 asyncpg
 - transaction_per_migration = True：每份迁移脚本在独立事务中执行
 - 连接串从 DATABASE_URL 环境变量读取（支持 asyncpg/psycopg2 双协议自动转换）
+- 全新迁移链：废弃旧 schema 演进史，按目标态模型从零建立（2026-08-04 重构）
 """
 
 from __future__ import annotations
@@ -26,12 +27,9 @@ if config.config_file_name is not None:
 # ---------------------------------------------------------------------------
 # target_metadata — 指向所有 ORM 模型的声明式基类
 # ---------------------------------------------------------------------------
-# 导入 Base，Alembic autogenerate 通过比对 Base.metadata 与数据库实际结构
-# 差异来生成迁移脚本。
-#
-# 当前指向空 Base（models 尚未定义具体表）。
-# 待 models/ 下各模块定义具体表后，Base.metadata 自动包含全部表结构。
-from py_db.models.base import Base  # noqa: E402
+# 导入 py_db.models 全量模型包，触发全部表结构注册到 Base.metadata，
+# Alembic autogenerate 通过比对 Base.metadata 与数据库实际结构生成迁移脚本。
+from py_db.models import Base  # noqa: E402,F401
 
 target_metadata = Base.metadata
 
@@ -47,7 +45,7 @@ def _resolve_db_url() -> str:
     1. 环境变量 DATABASE_URL
     2. alembic.ini [alembic] sqlalchemy.url
 
-    若连接串使用 asyncpg 协议（postgresql+asyncgp://），自动转换为
+    若连接串使用 asyncpg 协议（postgresql+asyncpg://），自动转换为
     psycopg2 协议（postgresql+psycopg2://），因为 Alembic DDL 操作
     必须通过同步驱动执行。
 
@@ -76,8 +74,6 @@ def _resolve_db_url() -> str:
 # ---------------------------------------------------------------------------
 # 事务模式 — 每份迁移脚本独立事务
 # ---------------------------------------------------------------------------
-# 不通过 get_section 传递此配置，直接在 run_migrations_online 中硬编码以确保
-# transaction_per_migration 在所有环境下均强制执行。
 _TRANSACTION_PER_MIGRATION: bool = True
 
 
@@ -100,11 +96,7 @@ def _include_object(object, name, type_, reflected, compare_to):
 
 
 def run_migrations_offline() -> None:
-    """离线模式：生成 SQL 脚本而不连接数据库。
-
-    在此模式下，Alembic 输出纯 SQL 文本而非实际执行 DDL。
-    用于生成可审查的 SQL 预览或在不联网环境中产出 DDL 脚本。
-    """
+    """离线模式：生成 SQL 脚本而不连接数据库。"""
     url = _resolve_db_url()
     context.configure(
         url=url,
@@ -127,7 +119,6 @@ def run_migrations_online() -> None:
     """
     db_url = _resolve_db_url()
 
-    # 构建引擎配置 — 仅使用必要的连接参数
     engine_config = config.get_section(config.config_ini_section, {})
     engine_config["sqlalchemy.url"] = db_url
 

@@ -8,7 +8,7 @@ Usage:
     from py_db.models.auth import User
 """
 
-from py_db.models.auth import User
+from py_db.models.auth import Credential, InviteCode, User
 from py_db.models.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
 from py_db.models.case_card import CaseCard
 from py_db.models.case_chunks import CaseChunk
@@ -21,6 +21,8 @@ from py_db.models.review_models import CaseReview, ReviewAuditLog
 __all__ = [
     "Base",
     "User",
+    "Credential",
+    "InviteCode",
     "CaseCard",
     "CaseChunk",
     "CaseNarrative",

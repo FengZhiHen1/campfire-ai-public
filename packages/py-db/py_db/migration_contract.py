@@ -578,7 +578,7 @@ class MigrationService(ABC):
         if resolved_url:
             cfg.set_main_option("sqlalchemy.url", resolved_url)
 
-        script_location = os.path.join(os.path.dirname(ini_path), "migrations")
+        script_location = os.path.join(os.path.dirname(ini_path), "py_db", "migrations")
         cfg.set_main_option("script_location", script_location)
 
         return cfg
