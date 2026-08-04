@@ -7,6 +7,7 @@ requires-python = ">=3.12"
 dependencies = [
     "api-server",
     "worker",
+    "py-agent-kernel",
     "py-auth",
     "py-cache",
     "py-config",
@@ -31,6 +32,7 @@ members = [
 [tool.uv.sources]
 api-server = { workspace = true }
 worker = { workspace = true }
+py-agent-kernel = { workspace = true }
 py-auth = { workspace = true }
 py-cache = { workspace = true }
 py-config = { workspace = true }
