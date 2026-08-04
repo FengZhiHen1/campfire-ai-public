@@ -1,8 +1,8 @@
 # DSR-005：前端保持 views/logics 分层，引入 ts-shared
 
-> **状态**：⚠️ 部分被实施偏离（2026-05-24 决策）
+> **状态**：已由 [DSR-006](./DSR-006-项目结构v3目标态.md) 取代（2026-08-04）——views/logics 两层演进为 domain/application/viewModel/view/infrastructure 物理五层；`ts-shared` 纯类型定位维持有效。
 >
-> **偏离说明**：本决策针对 Taro 小程序前端作出。实施中新增的 `apps/react-web`（主 Web 应用）沿用了 views/logics 目录形态，但 `ts-shared` 的引用关系与 ADR-002 的前端形态偏离关联，待新决策一并明确。
+> ~~**偏离说明**~~：（历史记录）本决策针对 Taro 小程序前端作出；react-web 曾沿用 views/logics 形态。
 
 ## 上下文
 
