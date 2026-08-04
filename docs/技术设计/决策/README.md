@@ -19,6 +19,7 @@
 | [ADR-010](./ADR-010-档案四层结构与事件记录ABC标准化.md) | 档案四层结构与事件记录 ABC 标准化 | 有效 |
 | [ADR-011](./ADR-011-Agent内核框架-内核加扩展与PydanticAI路线.md) | Agent 内核框架：内核+扩展架构与「基于 Pydantic AI、契约仿 pi」路线 | 有效 |
 | [ADR-012](./ADR-012-内测期Web承载需求侧服务.md) | 内测期平台分工：Web 承载需求侧内测服务（应急咨询+档案，邀请码制，过审后下线） | 有效（时限性修订 ADR-006） |
+| [ADR-013](./ADR-013-用户认证体系重构.md) | 用户认证体系重构：身份-凭证分离、废除匿名轨、六角色准入生命周期、显式 RBAC | 有效 |
 | [DSR-001](./DSR-001-Hybrid-Monorepo.md) | 采用 Hybrid Monorepo（厚 package、薄 app） | 有效 |
 | [DSR-002](./DSR-002-模型与Schema集中管理.md) | ORM 模型与 Pydantic Schema 集中管理 | 有效 |
 | [DSR-003](./DSR-003-基础设施拆包.md) | 基础设施能力拆分为独立 package | 有效 |
