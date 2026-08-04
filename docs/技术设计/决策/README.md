@@ -24,17 +24,20 @@
 | [DSR-002](./DSR-002-模型与Schema集中管理.md) | ORM 模型与 Pydantic Schema 集中管理 | 有效 |
 | [DSR-003](./DSR-003-基础设施拆包.md) | 基础设施能力拆分为独立 package | 有效 |
 | [DSR-004](./DSR-004-Worker独立应用.md) | Worker 独立为应用 | 有效 |
-| [DSR-005](./DSR-005-前端分层与ts-shared.md) | 前端保持 views/logics 分层，引入 ts-shared | ⚠️ 部分被实施偏离（react-web 采用 views/logics，见该文） |
+| [DSR-005](./DSR-005-前端分层与ts-shared.md) | 前端保持 views/logics 分层，引入 ts-shared | 已由 DSR-006 取代（ts-shared 纯类型定位维持） |
+| [DSR-006](./DSR-006-项目结构v3目标态.md) | 项目结构 v3.0 目标态收束：前端物理五层、内核+扩展形态、模块 1:1 单一边界轴 | 有效 |
 
-## 沿用的早期决策（原 DSR-006）
+## 沿用的早期决策（v1.0 结构决策保留清单）
+
+> 本节在原 v2.0 文档组中称「原 DSR-006」（无独立文件）；2026-08-04 起 DSR-006 编号由[项目结构 v3.0 目标态](./DSR-006-项目结构v3目标态.md)正式使用。
 
 以下 v1.0 结构决策在 v2.0 重构中确认保持不变：
 
-| 原决策 | 内容 | 保留原因 |
-|:---|:---|:---|
-| DS-003 | 前端 Feature-Based + 表现/逻辑分层 | 5 个功能模块边界清晰，views/logics 分离是核心优势 |
-| DS-004 | api-server 和 mini-program 分离为独立 app | 技术栈异构、构建独立、部署独立 |
-| DS-005 | 后端 flat-layout | 仅作为应用运行，Docker 容器内直接执行，不需要 pip install |
+| 原决策 | 内容 | 保留原因 | 现行状态 |
+|:---|:---|:---|:---|
+| DS-003 | 前端 Feature-Based + 表现/逻辑分层 | 5 个功能模块边界清晰，views/logics 分离是核心优势 | 已由 DSR-006 演进（五层分层、层内按特性组织） |
+| DS-004 | api-server 和 mini-program 分离为独立 app | 技术栈异构、构建独立、部署独立 | 有效 |
+| DS-005 | 后端 flat-layout | 仅作为应用运行，Docker 容器内直接执行，不需要 pip install | 有效 |
 
 ## 待重访事项
 
