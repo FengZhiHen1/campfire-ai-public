@@ -50,7 +50,7 @@ def assert_security_first(loaded_extensions: list[Any]) -> None:
 
 
 def build_emergency_model() -> Any:
-    """构建 DeepSeek 模型实例（pydantic-ai provider）。
+    """构建 DeepSeek 模型实例（pydantic-ai OpenAI 兼容 provider 接入）。
 
     环境缺失自愈：未配置 API Key 时抛 RuntimeError（调用方降级处理，
     测试以 TestModel 注入替代——不伪造外部可用性）。
@@ -60,13 +60,16 @@ def build_emergency_model() -> Any:
     base_url = getattr(settings, "DEEPSEEK_BASE_URL", None)
     if not api_key:
         raise RuntimeError("DEEPSEEK_API_KEY 未配置，无法构建应急面模型")
-    from pydantic_ai.models.deepseek import DeepSeekModel
-    from pydantic_ai.providers.deepseek import DeepSeekProvider
+    from pydantic_ai.models.openai import OpenAIChatModel
+    from pydantic_ai.providers.openai import OpenAIProvider
 
-    provider_kwargs: dict[str, Any] = {"api_key": api_key.get_secret_value() if hasattr(api_key, "get_secret_value") else str(api_key)}
+    provider_kwargs: dict[str, Any] = {
+        "api_key": api_key.get_secret_value() if hasattr(api_key, "get_secret_value") else str(api_key)
+    }
     if base_url:
         provider_kwargs["base_url"] = str(base_url)
-    return DeepSeekModel("deepseek-chat", provider=DeepSeekProvider(**provider_kwargs))
+    model_name = getattr(settings, "DEEPSEEK_MODEL", "deepseek-chat")
+    return OpenAIChatModel(model_name, provider=OpenAIProvider(**provider_kwargs))
 
 
 def create_emergency_session(

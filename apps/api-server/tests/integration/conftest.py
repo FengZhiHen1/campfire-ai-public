@@ -120,6 +120,11 @@ def integration_client():
     from app.main import app
     from fastapi.testclient import TestClient
 
+    # 集成测试注入 TestModel（不依赖外部 LLM；真实 DeepSeek 路径已由冒烟验证）
+    from pydantic_ai.models.test import TestModel
+
+    app.state.emergency_model_factory = TestModel
+
     with TestClient(app) as client:
         yield client
 
@@ -158,6 +163,32 @@ def clean_auth_tables(integration_client):
     r.close()
 
     return integration_client
+
+
+@pytest.fixture
+def seed_safety_cards(clean_auth_tables):
+    """应急测试前置：清空应急四表并注入安全卡模板。"""
+    import psycopg2
+
+    conn = psycopg2.connect(_TEST_DB_URL.replace("+asyncpg", ""))
+    conn.autocommit = True
+    with conn.cursor() as cur:
+        cur.execute("TRUNCATE consultation_sessions, consultations, safety_cards, consultation_logs CASCADE")
+        cur.execute(
+            """
+            INSERT INTO safety_cards (id, bucket, crisis_stage, title, card_template, review_status, version, created_at, updated_at)
+            VALUES
+              (gen_random_uuid(), NULL, NULL, '通用安全卡', '移走危险物品。保持冷静。', 'approved', 1, now(), now()),
+              (gen_random_uuid(), '情绪崩溃', NULL, '情绪哭闹·通用卡', '保持安静陪伴。递上 {安抚物}。', 'approved', 1, now(), now()),
+              (gen_random_uuid(), '情绪崩溃', '触发', '情绪哭闹·触发期', '移走 {触发物}。', 'approved', 1, now(), now()),
+              (gen_random_uuid(), '刻板行为', NULL, '刻板升级·通用卡', '不打断，先观察。', 'approved', 1, now(), now()),
+              (gen_random_uuid(), '自伤', NULL, '自伤高危桶卡', '用软垫挡住撞击部位。', 'approved', 1, now(), now()),
+              (gen_random_uuid(), '走失', NULL, '走失应急卡', '立即报警：我的孩子{称呼}走失了。', 'approved', 1, now(), now())
+            ON CONFLICT DO NOTHING
+            """
+        )
+    conn.close()
+    return clean_auth_tables
 
 
 @pytest.fixture

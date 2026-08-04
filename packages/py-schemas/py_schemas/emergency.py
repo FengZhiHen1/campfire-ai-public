@@ -180,6 +180,40 @@ class EmergencyPlan(CampfireBaseModel):
 
 
 # ===========================================================================
+# 安全卡管理 DTO（admin/expert 内容运营，M3 审核链路复用）
+# ===========================================================================
+
+
+class SafetyCardUpsertRequest(CampfireBaseModel):
+    """安全卡创建/更新请求（更新生成新版本）"""
+
+    bucket: BehaviorBucket | None = Field(default=None, description="所属行为桶；null 为通用卡")
+    stage: CrisisStage | None = Field(default=None, description="所属危机阶段；null 为通用桶卡")
+    title: str = Field(..., min_length=1, max_length=100)
+    card_template: str = Field(..., min_length=1, description="含槽位占位符的模板正文")
+
+
+class SafetyCardManageItem(CampfireBaseModel):
+    """安全卡管理列表项。"""
+
+    card_id: str
+    bucket: BehaviorBucket | None
+    stage: CrisisStage | None
+    title: str
+    card_template: str
+    review_status: str
+    version: int
+    updated_at: str
+
+
+class SafetyCardReviewRequest(CampfireBaseModel):
+    """安全卡审核操作（approve/reject/unlist）。"""
+
+    action: str = Field(..., pattern=r"^(approve|reject|unlist)$")
+    comment: str | None = Field(default=None, max_length=200)
+
+
+# ===========================================================================
 # 历史与详情 DTO
 # ===========================================================================
 
@@ -226,6 +260,9 @@ __all__ = [
     "FollowupRequest",
     "UnresolvedMarkRequest",
     "SafetyCardDto",
+    "SafetyCardUpsertRequest",
+    "SafetyCardManageItem",
+    "SafetyCardReviewRequest",
     "StageQuestionDto",
     "RedlineGuideDto",
     "FallbackNoticeDto",

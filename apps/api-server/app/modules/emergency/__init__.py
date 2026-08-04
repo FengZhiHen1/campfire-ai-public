@@ -6,6 +6,7 @@
 
 from app.modules.emergency.emergency_service import EmergencyService
 from app.modules.emergency.routes import router as emergency_router
+from app.modules.emergency.safety_card_routes import router as safety_card_router
 from app.modules.emergency.session_flow import EmergencySessionState, get_session_registry
 from app.modules.emergency.stream_hub import ConsultStreamHub, get_stream_hub
 
@@ -14,6 +15,7 @@ __all__ = [
     "EmergencySessionState",
     "ConsultStreamHub",
     "emergency_router",
+    "safety_card_router",
     "get_session_registry",
     "get_stream_hub",
 ]
