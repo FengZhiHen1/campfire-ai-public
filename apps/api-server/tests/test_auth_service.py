@@ -1,43 +1,46 @@
-"""auth 模块 — 正式测试套件。
+"""auth 模块 — ADR-013 目标态测试套件。
 
-三部分：
-  A. 契约对抗测试（保留自 adversarial/）—— 匿名子类验证 @final 方法边界
-  B. AuthServiceImpl 集成测试 —— 真实实现 + mock 依赖链
-  C. 路由冒烟测试 —— FastAPI TestClient 端到端
+覆盖阶段 S1 任务 T1.4 的全部服务编排语义：
+- 注册：邀请码预检/渠道约束/原子消费、手机号唯一、密码复杂度、
+  teacher/expert real_name 必填与 pending_review 落态
+- 登录：手机号+密码统一 401 防枚举、disabled 拒签、pending_review 放行
+- 刷新：轮换 + 家族吊销检查 + 复用检测（命中吊销全家族）
+- 登出：access 黑名单 + 家族吊销
+- me：当前用户信息
 """
 
 from __future__ import annotations
 
-import asyncio
 import base64
 import json
+import uuid
+from datetime import datetime, timedelta, timezone
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from app.modules.auth.auth_contract import AuthService
 from app.modules.auth.auth_service import AuthServiceImpl
 from app.modules.auth.exceptions import (
-    AuthInternalError,
+    AccountDisabledError,
     DuplicateUserError,
     InvalidCredentialsError,
+    InvalidInviteCodeError,
+    InviteChannelMismatchError,
     PasswordComplexityError,
     RealNameRequiredError,
     TokenInvalidError,
 )
-from fastapi.testclient import TestClient
-from py_auth.exceptions import HashingError, TokenCreationError
 from py_schemas.auth import (
     LoginRequest,
     RefreshRequest,
     RegisterRequest,
-    RegisterResponse,
     TokenResponse,
     UserRole,
 )
+from py_schemas.enums import AccountStatus, CredentialType, InviteChannel, InviteCodeStatus
 
 # =============================================================================
-# 工具函数
+# 工具与 Fixtures
 # =============================================================================
 
 
@@ -49,11 +52,13 @@ def _make_jwt(payload: dict[str, Any]) -> str:
 
 
 def _make_user(**overrides: Any) -> MagicMock:
-    """构造 mock User ORM 实例。"""
     defaults: dict[str, Any] = {
-        "id": "550e8400-e29b-41d4-a716-446655440000",
-        "username": "testuser",
-        "password_hash": "$2b$12$LJ3m4ys3GZfnYMz8kVsKaOS7XxBt2NkPOdSqQHsVxVAYfGvN5HXEu",
+        "id": uuid.UUID("550e8400-e29b-41d4-a716-446655440000"),
+        "phone": "13800138000",
+        "real_name": None,
+        "role": UserRole.FAMILY,
+        "status": AccountStatus.ACTIVE,
+        "reject_reason": None,
     }
     defaults.update(overrides)
     user = MagicMock()
@@ -62,15 +67,41 @@ def _make_user(**overrides: Any) -> MagicMock:
     return user
 
 
-# =============================================================================
-# Fixtures
-# =============================================================================
+def _make_credential(user_id: Any = None, **overrides: Any) -> MagicMock:
+    defaults: dict[str, Any] = {
+        "id": uuid.uuid4(),
+        "user_id": user_id or uuid.UUID("550e8400-e29b-41d4-a716-446655440000"),
+        "type": CredentialType.PASSWORD,
+        "identifier": "13800138000",
+        "secret": "$2b$12$LJ3m4ys3GZfnYMz8kVsKaOS7XxBt2NkPOdSqQHsVxVAYfGvN5HXEu",
+    }
+    defaults.update(overrides)
+    cred = MagicMock()
+    for k, v in defaults.items():
+        setattr(cred, k, v)
+    return cred
+
+
+def _make_invite_code(**overrides: Any) -> MagicMock:
+    defaults: dict[str, Any] = {
+        "code": "ABCD2345",
+        "channel": InviteChannel.DEMAND,
+        "max_uses": 1,
+        "used_count": 0,
+        "expires_at": datetime.now(timezone.utc) + timedelta(days=7),
+        "status": InviteCodeStatus.ACTIVE,
+    }
+    defaults.update(overrides)
+    code = MagicMock()
+    for k, v in defaults.items():
+        setattr(code, k, v)
+    return code
 
 
 @pytest.fixture
 def mock_hasher() -> MagicMock:
     h = MagicMock()
-    h.hash_password.return_value = "$2b$12$LJ3m4ys3GZfnYMz8kVsKaOS7XxBt2NkPOdSqQHsVxVAYfGvN5HXEu"
+    h.hash_password.return_value = "$2b$12$hashed"
     h.verify_password.return_value = True
     return h
 
@@ -78,14 +109,8 @@ def mock_hasher() -> MagicMock:
 @pytest.fixture
 def mock_tokens() -> MagicMock:
     tm = MagicMock()
-    tm.create_access_token.return_value = "eyJ...access.fake"
-    tm.create_refresh_token.return_value = "eyJ...refresh.fake"
-    tm.verify_refresh_token.return_value = {
-        "sub": "550e8400-e29b-41d4-a716-446655440000",
-        "roles": ["family"],
-        "jti": "jti-refresh-001",
-        "type": "refresh",
-    }
+    tm.create_access_token.side_effect = lambda data: f"access:{data['sub']}:{data['family_id']}"
+    tm.create_refresh_token.side_effect = lambda data: f"refresh:{data['sub']}:{data['family_id']}"
     return tm
 
 
@@ -93,692 +118,338 @@ def mock_tokens() -> MagicMock:
 def mock_blacklist() -> MagicMock:
     tb = MagicMock()
     tb.is_refresh_used = AsyncMock(return_value=False)
+    tb.is_family_revoked = AsyncMock(return_value=False)
     tb.add_to_blacklist = AsyncMock()
     tb.mark_refresh_used = AsyncMock()
+    tb.revoke_family = AsyncMock()
     return tb
 
 
 @pytest.fixture
-def mock_repo() -> MagicMock:
+def mock_user_repo() -> MagicMock:
     repo = MagicMock()
-    repo.find_by_username_lower = AsyncMock(return_value=None)
     repo.find_by_phone = AsyncMock(return_value=None)
-    repo.create = AsyncMock()
+    repo.find_by_id = AsyncMock(return_value=None)
+    repo.create = AsyncMock(side_effect=lambda s, u: u)
+    return repo
+
+
+@pytest.fixture
+def mock_credential_repo() -> MagicMock:
+    repo = MagicMock()
+    repo.find_by_type_and_identifier = AsyncMock(return_value=None)
+    repo.create = AsyncMock(side_effect=lambda s, c: c)
+    return repo
+
+
+@pytest.fixture
+def mock_invite_repo() -> MagicMock:
+    repo = MagicMock()
+    repo.find_by_code = AsyncMock(return_value=_make_invite_code())
+    repo.consume_if_valid = AsyncMock(return_value=_make_invite_code(used_count=1))
     return repo
 
 
 @pytest.fixture
 def mock_session() -> MagicMock:
-    return MagicMock()
-
-
-# =============================================================================
-# A. 契约对抗测试 — 匿名子类验证 @final 方法
-# =============================================================================
-
-
-class _TestAuthService(AuthService):
-    """测试用最小化子类，委托所有 _do_ 钩子给注入的 mock。"""
-
-    def _do_hash_password(self, plain_password: str) -> str:
-        return self._password_hasher.hash_password(plain_password)
-
-    async def _do_register(self, request, hashed_password, session) -> RegisterResponse:
-        return RegisterResponse(
-            result="success",
-            user_id="550e8400-e29b-41d4-a716-446655440000",
-        )
-
-    async def _fetch_user(self, username, session):
-        return await self._user_repo.find_by_username_lower(session, username)
-
-    def _do_login(self, user) -> TokenResponse:
-        data = {
-            "sub": str(user.id),
-            "roles": [getattr(user.role, "value", str(user.role))],
-        }
-        return TokenResponse(
-            access_token=str(self._token_manager.create_access_token(data)),
-            refresh_token=str(self._token_manager.create_refresh_token(data)),
-        )
-
-    async def _do_refresh(self, payload, old_refresh_token) -> TokenResponse:
-        await self._token_blacklist.mark_refresh_used(payload["jti"])
-        new_data = {"sub": payload["sub"], "roles": payload.get("roles", [])}
-        return TokenResponse(
-            access_token=str(self._token_manager.create_access_token(new_data)),
-            refresh_token=str(self._token_manager.create_refresh_token(new_data)),
-        )
-
-    async def _do_logout(self, access_jti, refresh_jti) -> None:
-        if access_jti:
-            await self._token_blacklist.add_to_blacklist(access_jti)
-        if refresh_jti:
-            await self._token_blacklist.mark_refresh_used(refresh_jti)
+    session = MagicMock()
+    session.commit = AsyncMock()
+    session.rollback = AsyncMock()
+    return session
 
 
 @pytest.fixture
-def svc(mock_hasher, mock_tokens, mock_blacklist, mock_repo) -> _TestAuthService:
-    return _TestAuthService(
-        password_hasher=mock_hasher,
-        token_manager=mock_tokens,
-        token_blacklist=mock_blacklist,
-        user_repo=mock_repo,
-    )
-
-
-class TestContractPasswordComplexity:
-    """P0-1: 密码复杂度边界。"""
-
-    @pytest.mark.parametrize(
-        "password,bypass",
-        [
-            ("abcdefgh", False),
-            ("ABCDEFGH", False),
-            ("12345678", False),
-            ("Abc1234", True),
-            ("!@#$%^&*", False),
-        ],
-    )
-    @pytest.mark.asyncio
-    async def test_rejected(self, svc, mock_session, password, bypass):
-        if bypass:
-            request = RegisterRequest.model_construct(
-                username="testuser",
-                password=password,
-                role=UserRole.FAMILY,
-                phone="13800138000",
-            )
-        else:
-            request = RegisterRequest(
-                username="testuser",
-                password=password,
-                role=UserRole.FAMILY,
-                phone="13800138000",
-            )
-        with pytest.raises(PasswordComplexityError):
-            await svc.register(request, mock_session)
-
-
-class TestContractExpertRealName:
-    """P0-2: 专家 real_name 必填。"""
-
-    @pytest.mark.parametrize("real_name,bypass", [(None, False), ("", True)])
-    @pytest.mark.asyncio
-    async def test_required(self, svc, mock_session, real_name, bypass):
-        if bypass:
-            request = RegisterRequest.model_construct(
-                username="expert1",
-                password="Abc12345",
-                role=UserRole.EXPERT,
-                phone="13800138001",
-                real_name="",
-            )
-        else:
-            request = RegisterRequest(
-                username="expert1",
-                password="Abc12345",
-                role=UserRole.EXPERT,
-                phone="13800138001",
-                real_name=None,
-            )
-        with pytest.raises(RealNameRequiredError):
-            await svc.register(request, mock_session)
-
-
-class TestContractUniqueness:
-    """P0-3/4: 用户名和手机号唯一性。"""
-
-    @pytest.mark.asyncio
-    async def test_username_duplicate(self, svc, mock_repo, mock_session):
-        mock_repo.find_by_username_lower.return_value = MagicMock()
-        request = RegisterRequest(
-            username="existing",
-            password="Abc12345",
-            role=UserRole.FAMILY,
-            phone="13800138000",
-        )
-        with pytest.raises(DuplicateUserError) as exc:
-            await svc.register(request, mock_session)
-        assert exc.value.code == "DUPLICATE_USERNAME"
-
-    @pytest.mark.asyncio
-    async def test_phone_duplicate(self, svc, mock_repo, mock_session):
-        mock_repo.find_by_phone.return_value = MagicMock()
-        request = RegisterRequest(
-            username="newuser",
-            password="Abc12345",
-            role=UserRole.FAMILY,
-            phone="13800138000",
-        )
-        with pytest.raises(DuplicateUserError) as exc:
-            await svc.register(request, mock_session)
-        assert exc.value.code == "DUPLICATE_PHONE"
-
-
-class TestContractLoginAntiEnumeration:
-    """P0-5: 登录防枚举攻击。"""
-
-    @pytest.mark.asyncio
-    async def test_user_not_exist(self, svc, mock_repo, mock_session):
-        mock_repo.find_by_username_lower.return_value = None
-        request = LoginRequest(username="nonexistent", password="Abc12345")
-        with pytest.raises(InvalidCredentialsError):
-            await svc.login(request, mock_session)
-
-    @pytest.mark.asyncio
-    async def test_wrong_password(self, svc, mock_hasher, mock_repo, mock_session):
-        mock_repo.find_by_username_lower.return_value = _make_user()
-        mock_hasher.verify_password.return_value = False
-        request = LoginRequest(username="testuser", password="WrongPass1")
-        with pytest.raises(InvalidCredentialsError):
-            await svc.login(request, mock_session)
-
-    @pytest.mark.asyncio
-    async def test_same_error_message(self, svc, mock_hasher, mock_repo, mock_session):
-        mock_repo.find_by_username_lower.return_value = None
-        with pytest.raises(InvalidCredentialsError) as exc1:
-            await svc.login(LoginRequest(username="noexist", password="Abc12345"), mock_session)
-
-        mock_repo.find_by_username_lower.return_value = _make_user()
-        mock_hasher.verify_password.return_value = False
-        with pytest.raises(InvalidCredentialsError) as exc2:
-            await svc.login(LoginRequest(username="testuser", password="WrongPass1"), mock_session)
-
-        assert exc1.value.message == exc2.value.message
-        assert exc1.value.code == exc2.value.code == "INVALID_CREDENTIALS"
-
-
-class TestContractRefreshToken:
-    """P0-6/7: refresh token 校验与重放防护。"""
-
-    @pytest.mark.asyncio
-    async def test_wrong_token_type(self, svc, mock_tokens, mock_session):
-        mock_tokens.verify_refresh_token.return_value = None
-        request = RefreshRequest(refresh_token="some.access.token")
-        with pytest.raises(TokenInvalidError) as exc:
-            await svc.refresh_token(request, mock_session)
-        assert exc.value.detail.get("reason") == "token_invalid"
-
-    @pytest.mark.asyncio
-    async def test_replay_attack(self, svc, mock_tokens, mock_blacklist, mock_session):
-        mock_tokens.verify_refresh_token.return_value = {
-            "sub": "user-1",
-            "roles": ["family"],
-            "jti": "jti-reused",
-            "type": "refresh",
-        }
-        mock_blacklist.is_refresh_used.return_value = True
-        request = RefreshRequest(refresh_token="some.token")
-        with pytest.raises(TokenInvalidError) as exc:
-            await svc.refresh_token(request, mock_session)
-        assert exc.value.detail.get("reason") == "token_reused"
-
-
-class TestContractNormalPaths:
-    """P0-8/9/10: 正常路径。"""
-
-    @pytest.mark.asyncio
-    async def test_register_success(self, svc, mock_session):
-        request = RegisterRequest(
-            username="newuser",
-            password="Abc12345",
-            role=UserRole.FAMILY,
-            phone="13800138000",
-        )
-        result = await svc.register(request, mock_session)
-        assert result.result == "success"
-        assert result.user_id
-
-    @pytest.mark.asyncio
-    async def test_login_success(self, svc, mock_hasher, mock_repo, mock_session):
-        mock_repo.find_by_username_lower.return_value = _make_user()
-        mock_hasher.verify_password.return_value = True
-        request = LoginRequest(username="testuser", password="Abc12345")
-        result = await svc.login(request, mock_session)
-        assert result.access_token
-        assert result.refresh_token
-        assert result.token_type == "Bearer"
-
-    @pytest.mark.asyncio
-    async def test_logout_invalid_token_no_error(self, svc):
-        try:
-            await svc.logout("garbage", "garbage")
-        except Exception as exc:
-            pytest.fail(f"登出对无效 token 抛异常: {exc}")
-
-
-class TestContractExceptionInjection:
-    """P1: 内部异常注入。"""
-
-    @pytest.mark.asyncio
-    async def test_hash_failure_propagates(self, svc, mock_session):
-        with patch.object(svc, "_do_hash_password", side_effect=HashingError("bcrypt 引擎错误")):
-            request = RegisterRequest(
-                username="newuser",
-                password="Abc12345",
-                role=UserRole.FAMILY,
-                phone="13800138000",
-            )
-            with pytest.raises(HashingError):
-                await svc.register(request, mock_session)
-
-    @pytest.mark.asyncio
-    async def test_jwt_failure_propagates(self, svc, mock_hasher, mock_repo, mock_session):
-        mock_repo.find_by_username_lower.return_value = _make_user()
-        mock_hasher.verify_password.return_value = True
-        with patch.object(svc, "_do_login", side_effect=TokenCreationError("JWT 签发异常")):
-            request = LoginRequest(username="testuser", password="Abc12345")
-            with pytest.raises(TokenCreationError):
-                await svc.login(request, mock_session)
-
-    @pytest.mark.asyncio
-    async def test_empty_user_id_rejected(self, svc, mock_session):
-        with patch.object(
-            svc,
-            "_do_register",
-            return_value=RegisterResponse(
-                result="success",
-                user_id="",
-            ),
-        ):
-            request = RegisterRequest(
-                username="newuser",
-                password="Abc12345",
-                role=UserRole.FAMILY,
-                phone="13800138000",
-            )
-            with pytest.raises(AuthInternalError):
-                await svc.register(request, mock_session)
-
-
-class TestContractConcurrency:
-    """P2: 并发竞态。"""
-
-    @pytest.mark.asyncio
-    async def test_concurrent_same_username(self, svc, mock_repo, mock_session):
-        mock_repo.find_by_phone.return_value = None
-        mock_repo.find_by_username_lower.return_value = None
-
-        calls = 0
-
-        async def race_register(request, hashed, session):
-            nonlocal calls
-            calls += 1
-            if calls == 1:
-                await asyncio.sleep(0.05)
-                return RegisterResponse(user_id="uuid-aaa")
-            raise DuplicateUserError(code="DUPLICATE_USERNAME", message="该用户名已被注册")
-
-        with patch.object(svc, "_do_register", side_effect=race_register):
-            req1 = RegisterRequest(
-                username="same",
-                password="Abc12345",
-                role=UserRole.FAMILY,
-                phone="13800138001",
-            )
-            req2 = RegisterRequest(
-                username="same",
-                password="Xyz98765",
-                role=UserRole.FAMILY,
-                phone="13800138002",
-            )
-            results = await asyncio.gather(
-                svc.register(req1, mock_session),
-                svc.register(req2, mock_session),
-                return_exceptions=True,
-            )
-
-        exceptions = [r for r in results if isinstance(r, Exception)]
-        assert len(exceptions) >= 1
-
-
-class TestContractFuzz:
-    """P3: 模糊测试。"""
-
-    @pytest.mark.parametrize(
-        "username,password,phone",
-        [
-            ("abcd", "Abc12345", "13800138000"),
-            ("a" * 32, "Abc12345", "13800138001"),
-            ("user8pwd", "Xy9aaaaa", "13800138002"),
-            ("userphone", "Abc12345", "13900139000"),
-        ],
-    )
-    @pytest.mark.asyncio
-    async def test_boundary_inputs(self, svc, mock_session, username, password, phone):
-        request = RegisterRequest(username=username, password=password, role=UserRole.FAMILY, phone=phone)
-        result = await svc.register(request, mock_session)
-        assert result.result == "success"
-
-    def test_empty_password_rejected_by_pydantic(self):
-        from pydantic import ValidationError
-
-        with pytest.raises(ValidationError):
-            LoginRequest(username="testuser", password="")
-
-
-# =============================================================================
-# B. AuthServiceImpl 集成测试 — 真实实现 + mock 依赖链
-# =============================================================================
-
-
-@pytest.fixture
-def impl_svc(mock_hasher, mock_tokens, mock_blacklist, mock_repo) -> AuthServiceImpl:
-    """构建 AuthServiceImpl，验证真实实现与契约的一致性。"""
+def svc(mock_hasher, mock_tokens, mock_blacklist, mock_user_repo, mock_credential_repo, mock_invite_repo):
     return AuthServiceImpl(
         password_hasher=mock_hasher,
         token_manager=mock_tokens,
         token_blacklist=mock_blacklist,
-        user_repo=mock_repo,
+        user_repo=mock_user_repo,
+        credential_repo=mock_credential_repo,
+        invite_code_repo=mock_invite_repo,
     )
 
 
-class TestAuthServiceImplRegister:
-    """AuthServiceImpl._do_register 真实实现测试。"""
+def _register_request(**overrides: Any) -> RegisterRequest:
+    data: dict[str, Any] = {
+        "phone": "13800138000",
+        "password": "Abc12345",
+        "invite_code": "ABCD2345",
+        "role": "family",
+    }
+    data.update(overrides)
+    return RegisterRequest(**data)
 
+
+# =============================================================================
+# 注册
+# =============================================================================
+
+
+class TestRegister:
     @pytest.mark.asyncio
-    async def test_creates_user_and_returns_response(self, impl_svc, mock_repo, mock_session):
-        created_user = _make_user()
-        mock_repo.create = AsyncMock(return_value=created_user)
-
-        request = RegisterRequest(
-            username="newuser",
-            password="Abc12345",
-            role=UserRole.FAMILY,
-            phone="13800138000",
-        )
-        result = await impl_svc._do_register(request, "$2b$12$hash", mock_session)
-
+    async def test_family_register_active(self, svc, mock_session):
+        """family 注册落态 active。"""
+        result = await svc.register(_register_request(), mock_session)
         assert result.result == "success"
-        assert result.user_id == "550e8400-e29b-41d4-a716-446655440000"
-        mock_repo.create.assert_awaited_once()
+        assert result.status == AccountStatus.ACTIVE
 
     @pytest.mark.asyncio
-    async def test_integrity_error_mapped_to_duplicate(self, impl_svc, mock_repo, mock_session):
-        from sqlalchemy.exc import IntegrityError
+    async def test_volunteer_register_active(self, svc, mock_session):
+        result = await svc.register(_register_request(role="volunteer"), mock_session)
+        assert result.status == AccountStatus.ACTIVE
 
-        orig = Exception()
-        setattr(orig, "pgcode", "23505")
-        setattr(orig, "diag", MagicMock(constraint_name="unique_username"))
-        mock_repo.create = AsyncMock(side_effect=IntegrityError("dup", {}, orig))
-
-        request = RegisterRequest(
-            username="existing",
-            password="Abc12345",
-            role=UserRole.FAMILY,
-            phone="13800138000",
+    @pytest.mark.asyncio
+    async def test_expert_register_pending_review(self, svc, mock_user_repo, mock_invite_repo, mock_session):
+        """expert 注册（supply 码 + real_name）落态 pending_review。"""
+        mock_invite_repo.find_by_code.return_value = _make_invite_code(channel=InviteChannel.SUPPLY)
+        mock_invite_repo.consume_if_valid.return_value = _make_invite_code(channel=InviteChannel.SUPPLY)
+        result = await svc.register(
+            _register_request(role="expert", real_name="王专家", invite_code="SUPPLY001"),
+            mock_session,
         )
+        assert result.status == AccountStatus.PENDING_REVIEW
+
+    @pytest.mark.asyncio
+    async def test_teacher_real_name_required(self, svc, mock_session):
+        mock_invite = _make_invite_code(channel=InviteChannel.SUPPLY)
+        svc._invite_code_repo.find_by_code = AsyncMock(return_value=mock_invite)
+        with pytest.raises(RealNameRequiredError):
+            await svc.register(_register_request(role="teacher", real_name=None), mock_session)
+
+    @pytest.mark.asyncio
+    async def test_password_complexity(self, svc, mock_session):
+        with pytest.raises(PasswordComplexityError):
+            await svc.register(_register_request(password="abcdefgh"), mock_session)
+
+    @pytest.mark.asyncio
+    async def test_invite_code_not_found(self, svc, mock_invite_repo, mock_session):
+        mock_invite_repo.find_by_code.return_value = None
+        with pytest.raises(InvalidInviteCodeError):
+            await svc.register(_register_request(), mock_session)
+
+    @pytest.mark.asyncio
+    async def test_invite_code_revoked(self, svc, mock_invite_repo, mock_session):
+        mock_invite_repo.find_by_code.return_value = _make_invite_code(status=InviteCodeStatus.REVOKED)
+        with pytest.raises(InvalidInviteCodeError):
+            await svc.register(_register_request(), mock_session)
+
+    @pytest.mark.asyncio
+    async def test_invite_code_expired(self, svc, mock_invite_repo, mock_session):
+        mock_invite_repo.find_by_code.return_value = _make_invite_code(
+            expires_at=datetime.now(timezone.utc) - timedelta(days=1)
+        )
+        with pytest.raises(InvalidInviteCodeError):
+            await svc.register(_register_request(), mock_session)
+
+    @pytest.mark.asyncio
+    async def test_invite_code_exhausted(self, svc, mock_invite_repo, mock_session):
+        mock_invite_repo.find_by_code.return_value = _make_invite_code(used_count=1, max_uses=1)
+        with pytest.raises(InvalidInviteCodeError):
+            await svc.register(_register_request(), mock_session)
+
+    @pytest.mark.asyncio
+    async def test_channel_mismatch(self, svc, mock_invite_repo, mock_session):
+        """demand 码注册 expert → 渠道约束拒绝。"""
+        with pytest.raises(InviteChannelMismatchError):
+            await svc.register(_register_request(role="expert", real_name="王专家"), mock_session)
+
+    @pytest.mark.asyncio
+    async def test_duplicate_phone(self, svc, mock_user_repo, mock_session):
+        mock_user_repo.find_by_phone.return_value = _make_user()
         with pytest.raises(DuplicateUserError) as exc:
-            await impl_svc._do_register(request, "$2b$12$hash", mock_session)
-        assert exc.value.code == "DUPLICATE_USERNAME"
+            await svc.register(_register_request(), mock_session)
+        assert exc.value.code == "DUPLICATE_PHONE"
 
     @pytest.mark.asyncio
-    async def test_db_error_mapped_to_internal(self, impl_svc, mock_repo, mock_session):
-        from sqlalchemy.exc import SQLAlchemyError
+    async def test_atomic_consume_race_loser(self, svc, mock_invite_repo, mock_session):
+        """并发下条件自增未命中（预检通过但消费失败）→ 邀请码已用完。"""
+        mock_invite_repo.consume_if_valid.return_value = None
+        with pytest.raises(InvalidInviteCodeError):
+            await svc.register(_register_request(), mock_session)
 
-        mock_repo.create = AsyncMock(side_effect=SQLAlchemyError("connection lost"))
+    @pytest.mark.asyncio
+    async def test_creates_user_and_credential_atomically(
+        self, svc, mock_user_repo, mock_credential_repo, mock_invite_repo, mock_session
+    ):
+        """注册原子事务：消费邀请码 + 创建 User + 创建 password Credential + commit。"""
+        await svc.register(_register_request(), mock_session)
 
-        request = RegisterRequest(
-            username="newuser",
-            password="Abc12345",
-            role=UserRole.FAMILY,
-            phone="13800138000",
-        )
-        with pytest.raises(AuthInternalError):
-            await impl_svc._do_register(request, "$2b$12$hash", mock_session)
+        mock_invite_repo.consume_if_valid.assert_awaited_once()
+        mock_user_repo.create.assert_awaited_once()
+        mock_credential_repo.create.assert_awaited_once()
+        mock_session.commit.assert_awaited_once()
 
-
-class TestAuthServiceImplHashPassword:
-    """AuthServiceImpl._do_hash_password 真实实现测试。"""
-
-    def test_hashes_and_returns_string(self, impl_svc, mock_hasher):
-        result = impl_svc._do_hash_password("Abc12345")
-        assert result == "$2b$12$LJ3m4ys3GZfnYMz8kVsKaOS7XxBt2NkPOdSqQHsVxVAYfGvN5HXEu"
-        mock_hasher.hash_password.assert_called_once_with("Abc12345")
-
-    def test_hashing_error_mapped_to_internal(self, impl_svc, mock_hasher):
-        mock_hasher.hash_password.side_effect = HashingError("bcrypt 故障")
-        with pytest.raises(AuthInternalError, match="密码哈希失败"):
-            impl_svc._do_hash_password("Abc12345")
+        # Credential 语义：type=password, identifier=phone, secret=哈希
+        created_cred = mock_credential_repo.create.await_args.args[1]
+        assert created_cred.type == CredentialType.PASSWORD
+        assert created_cred.identifier == "13800138000"
+        assert created_cred.secret == "$2b$12$hashed"
 
 
-class TestAuthServiceImplLogin:
-    """AuthServiceImpl._do_login 真实实现测试。"""
+# =============================================================================
+# 登录
+# =============================================================================
 
-    def test_issues_token_pair(self, impl_svc, mock_tokens):
-        user = _make_user()
-        user.role = MagicMock(value="family")
-        result = impl_svc._do_login(user)
+
+class TestLogin:
+    @pytest.mark.asyncio
+    async def test_credential_not_found_401(self, svc, mock_session):
+        with pytest.raises(InvalidCredentialsError):
+            await svc.login(LoginRequest(phone="13800138000", password="Abc12345"), mock_session)
+
+    @pytest.mark.asyncio
+    async def test_wrong_password_same_error(self, svc, mock_credential_repo, mock_hasher, mock_user_repo, mock_session):
+        """密码错误与用户不存在返回完全相同的错误（防枚举）。"""
+        with pytest.raises(InvalidCredentialsError) as exc1:
+            await svc.login(LoginRequest(phone="13800138000", password="Abc12345"), mock_session)
+
+        mock_credential_repo.find_by_type_and_identifier.return_value = _make_credential()
+        mock_user_repo.find_by_id.return_value = _make_user()
+        mock_hasher.verify_password.return_value = False
+        with pytest.raises(InvalidCredentialsError) as exc2:
+            await svc.login(LoginRequest(phone="13800138000", password="WrongPass1"), mock_session)
+
+        assert exc1.value.message == exc2.value.message
+        assert exc1.value.code == exc2.value.code
+
+    @pytest.mark.asyncio
+    async def test_disabled_rejected(self, svc, mock_credential_repo, mock_user_repo, mock_session):
+        """disabled 账号即签即拒（凭证校验通过后拒绝签发）。"""
+        mock_credential_repo.find_by_type_and_identifier.return_value = _make_credential()
+        mock_user_repo.find_by_id.return_value = _make_user(status=AccountStatus.DISABLED)
+        with pytest.raises(AccountDisabledError):
+            await svc.login(LoginRequest(phone="13800138000", password="Abc12345"), mock_session)
+
+    @pytest.mark.asyncio
+    async def test_pending_review_allowed(self, svc, mock_credential_repo, mock_user_repo, mock_session):
+        """pending_review 可登录（仅见状态页，由 RBAC 守卫收敛能力）。"""
+        mock_credential_repo.find_by_type_and_identifier.return_value = _make_credential()
+        mock_user_repo.find_by_id.return_value = _make_user(status=AccountStatus.PENDING_REVIEW)
+        result = await svc.login(LoginRequest(phone="13800138000", password="Abc12345"), mock_session)
+        assert isinstance(result, TokenResponse)
         assert result.access_token
-        assert result.refresh_token
-        assert result.token_type == "Bearer"
-        mock_tokens.create_access_token.assert_called_once()
-        mock_tokens.create_refresh_token.assert_called_once()
-
-    def test_token_creation_error_mapped(self, impl_svc, mock_tokens):
-        mock_tokens.create_access_token.side_effect = TokenCreationError("JWT 故障")
-        user = _make_user()
-        user.role = MagicMock(value="family")
-        with pytest.raises(AuthInternalError, match="Token 签发失败"):
-            impl_svc._do_login(user)
-
-
-class TestAuthServiceImplRefresh:
-    """AuthServiceImpl._do_refresh 真实实现测试。"""
 
     @pytest.mark.asyncio
-    async def test_marks_old_and_issues_new(self, impl_svc, mock_blacklist, mock_tokens):
-        payload = {"sub": "user-1", "roles": ["family"], "jti": "jti-old"}
-        result = await impl_svc._do_refresh(payload, "old.token")
-        mock_blacklist.mark_refresh_used.assert_awaited_once_with("jti-old")
-        assert result.access_token
-        assert result.refresh_token
+    async def test_login_creates_new_family(self, svc, mock_credential_repo, mock_user_repo, mock_tokens, mock_session):
+        """每次登录创建新 Token 家族（family_id 为合法 UUID）。"""
+        mock_credential_repo.find_by_type_and_identifier.return_value = _make_credential()
+        mock_user_repo.find_by_id.return_value = _make_user()
+        result = await svc.login(LoginRequest(phone="13800138000", password="Abc12345"), mock_session)
+
+        family_id = result.access_token.split(":")[2]
+        uuid.UUID(family_id)  # 合法 UUID 不抛异常
+
+        # payload 携带 role/status（以 DB 最新值为准）
+        token_data = mock_tokens.create_access_token.call_args.args[0]
+        assert token_data["role"] == "family"
+        assert token_data["status"] == "active"
+
+
+# =============================================================================
+# 刷新（轮换 + 家族语义）
+# =============================================================================
+
+
+def _refresh_payload(**overrides: Any) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "sub": "550e8400-e29b-41d4-a716-446655440000",
+        "role": "family",
+        "status": "active",
+        "family_id": "fam-001",
+        "jti": "jti-refresh-001",
+        "type": "refresh",
+    }
+    payload.update(overrides)
+    return payload
+
+
+class TestRefresh:
+    @pytest.mark.asyncio
+    async def test_invalid_token(self, svc, mock_tokens, mock_session):
+        mock_tokens.verify_refresh_token.return_value = None
+        with pytest.raises(TokenInvalidError) as exc:
+            await svc.refresh_token(RefreshRequest(refresh_token="bad.token"), mock_session)
+        assert exc.value.detail["reason"] == "token_invalid"
 
     @pytest.mark.asyncio
-    async def test_token_creation_error_mapped(self, impl_svc, mock_tokens):
-        mock_tokens.create_access_token.side_effect = TokenCreationError("JWT 故障")
-        payload = {"sub": "user-1", "roles": ["family"], "jti": "jti-old"}
-        with pytest.raises(AuthInternalError, match="Token 续期失败"):
-            await impl_svc._do_refresh(payload, "old.token")
-
-
-class TestAuthServiceImplLogout:
-    """AuthServiceImpl._do_logout 真实实现测试。"""
+    async def test_family_revoked(self, svc, mock_tokens, mock_blacklist, mock_user_repo, mock_session):
+        mock_tokens.verify_refresh_token.return_value = _refresh_payload()
+        mock_blacklist.is_family_revoked.return_value = True
+        mock_user_repo.find_by_id.return_value = _make_user()
+        with pytest.raises(TokenInvalidError) as exc:
+            await svc.refresh_token(RefreshRequest(refresh_token="some.token"), mock_session)
+        assert exc.value.detail["reason"] == "family_revoked"
 
     @pytest.mark.asyncio
-    async def test_blacklists_both_tokens(self, impl_svc, mock_blacklist):
-        await impl_svc._do_logout("jti-access", "jti-refresh")
+    async def test_reuse_triggers_family_revocation(self, svc, mock_tokens, mock_blacklist, mock_user_repo, mock_session):
+        """旧 refresh 复用 → 判定泄露 → 吊销全家族 + 拒绝。"""
+        mock_tokens.verify_refresh_token.return_value = _refresh_payload()
+        mock_blacklist.is_refresh_used.return_value = True
+        mock_user_repo.find_by_id.return_value = _make_user()
+        with pytest.raises(TokenInvalidError) as exc:
+            await svc.refresh_token(RefreshRequest(refresh_token="reused.token"), mock_session)
+        assert exc.value.detail["reason"] == "token_reused"
+        mock_blacklist.revoke_family.assert_awaited_once_with("fam-001")
+
+    @pytest.mark.asyncio
+    async def test_disabled_user_rejected(self, svc, mock_tokens, mock_user_repo, mock_session):
+        """disabled 用户 refresh 拒签。"""
+        mock_tokens.verify_refresh_token.return_value = _refresh_payload()
+        mock_user_repo.find_by_id.return_value = _make_user(status=AccountStatus.DISABLED)
+        with pytest.raises(AccountDisabledError):
+            await svc.refresh_token(RefreshRequest(refresh_token="some.token"), mock_session)
+
+    @pytest.mark.asyncio
+    async def test_rotation_keeps_family(
+        self, svc, mock_tokens, mock_blacklist, mock_user_repo, mock_session
+    ):
+        """轮换在同一家族内延续：标记旧 jti + 新对沿用旧 family_id + 最新 role/status。"""
+        mock_tokens.verify_refresh_token.return_value = _refresh_payload()
+        mock_user_repo.find_by_id.return_value = _make_user(role=UserRole.VOLUNTEER)
+        result = await svc.refresh_token(RefreshRequest(refresh_token="old.token"), mock_session)
+
+        mock_blacklist.mark_refresh_used.assert_awaited_once_with("jti-refresh-001")
+        assert result.access_token.endswith(":fam-001")
+        token_data = mock_tokens.create_access_token.call_args.args[0]
+        assert token_data["role"] == "volunteer"  # 以 DB 最新角色为准
+
+
+# =============================================================================
+# 登出
+# =============================================================================
+
+
+class TestLogout:
+    @pytest.mark.asyncio
+    async def test_logout_blacklists_access_and_revokes_family(self, svc, mock_blacklist):
+        access = _make_jwt({"jti": "jti-access", "family_id": "fam-x"})
+        refresh = _make_jwt({"jti": "jti-refresh", "family_id": "fam-x"})
+        await svc.logout(access, refresh)
         mock_blacklist.add_to_blacklist.assert_awaited_once_with("jti-access")
-        mock_blacklist.mark_refresh_used.assert_awaited_once_with("jti-refresh")
+        mock_blacklist.revoke_family.assert_awaited_once_with("fam-x")
 
     @pytest.mark.asyncio
-    async def test_skips_none_jti(self, impl_svc, mock_blacklist):
-        await impl_svc._do_logout(None, None)
-        mock_blacklist.add_to_blacklist.assert_not_called()
-        mock_blacklist.mark_refresh_used.assert_not_called()
-
-
-class TestAuthServiceImplFetchUser:
-    """AuthServiceImpl._fetch_user 真实实现测试。"""
-
-    @pytest.mark.asyncio
-    async def test_delegates_to_repo(self, impl_svc, mock_repo, mock_session):
-        mock_user = _make_user()
-        mock_repo.find_by_username_lower.return_value = mock_user
-        result = await impl_svc._fetch_user("testuser", mock_session)
-        assert result is mock_user
-        mock_repo.find_by_username_lower.assert_awaited_once_with(mock_session, "testuser")
+    async def test_logout_invalid_tokens_no_error(self, svc):
+        await svc.logout("garbage", "garbage")  # fail-open，不抛异常
 
 
 # =============================================================================
-# C. 路由冒烟测试 — FastAPI TestClient
+# me
 # =============================================================================
 
 
-@pytest.fixture
-def client() -> TestClient:
-    """构建 TestClient，用 mock AuthService 替换依赖。"""
-    from app.core.dependencies import auth_dependencies
-    from app.modules.auth.routes import router
-    from fastapi import FastAPI
+class TestMe:
+    @pytest.mark.asyncio
+    async def test_me_returns_profile(self, svc, mock_user_repo, mock_session):
+        mock_user_repo.find_by_id.return_value = _make_user(real_name="张老师", role=UserRole.TEACHER)
+        me = await svc.get_me("550e8400-e29b-41d4-a716-446655440000", mock_session)
+        assert me.phone == "13800138000"
+        assert me.role == UserRole.TEACHER
+        assert me.status == AccountStatus.ACTIVE
 
-    app = FastAPI()
-    app.include_router(router)
-
-    # 覆盖依赖：注入 mock AuthService
-    mock_svc = MagicMock(spec=AuthService)
-    mock_svc.register = AsyncMock()
-    mock_svc.login = AsyncMock()
-    mock_svc.refresh_token = AsyncMock()
-    mock_svc.logout = AsyncMock()
-
-    app.dependency_overrides[auth_dependencies.get_auth_service] = lambda: mock_svc
-    app.dependency_overrides[auth_dependencies.get_db_session] = lambda: MagicMock()
-
-    # 保存 mock 引用供测试断言
-    client = TestClient(app)
-    client._mock_auth_service = mock_svc  # type: ignore[attr-defined]
-    return client
-
-
-class TestRegisterRoute:
-    """POST /api/v1/auth/register 路由测试。"""
-
-    def test_201_success(self, client):
-        client._mock_auth_service.register.return_value = RegisterResponse(  # type: ignore[attr-defined]
-            result="success",
-            user_id="uuid-1234",
-        )
-        resp = client.post(
-            "/api/v1/auth/register",
-            json={
-                "username": "newuser",
-                "password": "Abc12345",
-                "role": "family",
-                "phone": "13800138000",
-            },
-        )
-        assert resp.status_code == 201
-        assert resp.json()["result"] == "success"
-
-    def test_422_pydantic_validation(self, client):
-        resp = client.post(
-            "/api/v1/auth/register",
-            json={
-                "username": "ab",
-                "password": "short",
-                "role": "family",
-                "phone": "13800138000",
-            },
-        )
-        assert resp.status_code == 422
-
-    def test_409_duplicate(self, client):
-        client._mock_auth_service.register.side_effect = DuplicateUserError(  # type: ignore[attr-defined]
-            code="DUPLICATE_USERNAME",
-            message="该用户名已被注册",
-        )
-        resp = client.post(
-            "/api/v1/auth/register",
-            json={
-                "username": "existing",
-                "password": "Abc12345",
-                "role": "family",
-                "phone": "13800138000",
-            },
-        )
-        assert resp.status_code == 409
-
-    def test_422_password_complexity(self, client):
-        client._mock_auth_service.register.side_effect = PasswordComplexityError()  # type: ignore[attr-defined]
-        resp = client.post(
-            "/api/v1/auth/register",
-            json={
-                "username": "newuser",
-                "password": "abcdefgh",
-                "role": "family",
-                "phone": "13800138000",
-            },
-        )
-        assert resp.status_code == 422
-
-
-class TestLoginRoute:
-    """POST /api/v1/auth/login 路由测试。"""
-
-    def test_200_success(self, client):
-        client._mock_auth_service.login.return_value = TokenResponse(  # type: ignore[attr-defined]
-            access_token="tok_access",
-            refresh_token="tok_refresh",
-        )
-        resp = client.post(
-            "/api/v1/auth/login",
-            json={
-                "username": "testuser",
-                "password": "Abc12345",
-            },
-        )
-        assert resp.status_code == 200
-        assert resp.json()["access_token"] == "tok_access"
-
-    def test_401_invalid_credentials(self, client):
-        client._mock_auth_service.login.side_effect = InvalidCredentialsError()  # type: ignore[attr-defined]
-        resp = client.post(
-            "/api/v1/auth/login",
-            json={
-                "username": "testuser",
-                "password": "WrongPass1",
-            },
-        )
-        assert resp.status_code == 401
-
-
-class TestRefreshRoute:
-    """POST /api/v1/auth/refresh 路由测试。"""
-
-    def test_200_success(self, client):
-        client._mock_auth_service.refresh_token.return_value = TokenResponse(  # type: ignore[attr-defined]
-            access_token="new_access",
-            refresh_token="new_refresh",
-        )
-        resp = client.post(
-            "/api/v1/auth/refresh",
-            json={
-                "refresh_token": "valid.refresh.token",
-            },
-        )
-        assert resp.status_code == 200
-
-    def test_401_token_invalid(self, client):
-        client._mock_auth_service.refresh_token.side_effect = TokenInvalidError()  # type: ignore[attr-defined]
-        resp = client.post(
-            "/api/v1/auth/refresh",
-            json={
-                "refresh_token": "expired.token",
-            },
-        )
-        assert resp.status_code == 401
-
-
-class TestLogoutRoute:
-    """POST /api/v1/auth/logout 路由测试。"""
-
-    def test_204_success(self, client):
-        client._mock_auth_service.logout.return_value = None  # type: ignore[attr-defined]
-        resp = client.post(
-            "/api/v1/auth/logout",
-            json={
-                "refresh_token": "some.refresh.token",
-            },
-        )
-        assert resp.status_code == 204
-
-    def test_204_with_authorization_header(self, client):
-        client._mock_auth_service.logout.return_value = None  # type: ignore[attr-defined]
-        resp = client.post(
-            "/api/v1/auth/logout",
-            json={"refresh_token": "some.refresh.token"},
-            headers={"Authorization": "Bearer some.access.token"},
-        )
-        assert resp.status_code == 204
+    @pytest.mark.asyncio
+    async def test_me_user_not_found(self, svc, mock_user_repo, mock_session):
+        mock_user_repo.find_by_id.return_value = None
+        with pytest.raises(InvalidCredentialsError):
+            await svc.get_me("550e8400-e29b-41d4-a716-446655440000", mock_session)
