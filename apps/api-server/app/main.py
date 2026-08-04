@@ -1,7 +1,7 @@
 """Campfire-AI API Server — FastAPI 应用入口。
 
-MVP Phase 0 精简版：
-- 认证完全绕过（从 X-Device-Id 提取匿名身份）
+ADR-013 目标态：
+- 全站正式认证（get_current_user / require_roles 守卫，匿名演示轨已废除）
 - 挂载全部业务路由
 - CORS / 限流 / 校验异常处理器
 """

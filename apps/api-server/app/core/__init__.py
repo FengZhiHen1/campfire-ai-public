@@ -14,9 +14,10 @@ Usage:
 """
 
 from app.core.dependencies import (
-    get_anonymous_user,
+    get_current_user,
     get_db_session,
     get_user_repository,
+    require_roles,
 )
 from app.core.health import router as health_router
 from app.core.middleware import RateLimitMiddleware, register_validation_handler
@@ -46,7 +47,8 @@ __all__ = [
     # 依赖注入
     "get_db_session",
     "get_user_repository",
-    "get_anonymous_user",
+    "get_current_user",
+    "require_roles",
     # 中间件
     "RateLimitMiddleware",
     "register_validation_handler",

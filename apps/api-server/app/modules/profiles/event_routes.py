@@ -15,15 +15,17 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Query, status
 from py_db.repositories.event_repository import EventRepository
 from py_db.repositories.profile_repository import ProfileRepository
+from py_schemas.auth import UserRole
 from py_schemas.cases import PaginatedResponse
 from py_schemas.profiles import EventCreate, EventListItem, EventResponse, EventUpdate
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.dependencies.anonymous_user import get_anonymous_user
 from app.core.dependencies.auth_dependencies import (
+    CurrentUser,
     get_db_session,
     get_event_repository,
     get_profile_repository,
+    require_roles,
 )
 from app.modules.profiles._exception_mapping import map_domain_error
 from app.modules.profiles._user_utils import extract_user_id
@@ -31,6 +33,9 @@ from app.modules.profiles.event_service import EventServiceImpl
 from app.modules.profiles.exceptions import ProfileDomainError
 
 router = APIRouter(prefix="/api/v1/profiles", tags=["events"])
+
+# 档案事件能力域角色集合（同 profiles 路由）
+_PROFILE_ROLES = (UserRole.FAMILY, UserRole.VOLUNTEER, UserRole.TEACHER, UserRole.EXPERT)
 
 
 def _get_event_service(
@@ -59,11 +64,11 @@ async def list_events_endpoint(
     profile_id: UUID,
     page: int = Query(default=1, ge=1, description="页码（从 1 开始）"),
     page_size: int = Query(default=20, ge=1, le=100, description="每页条数"),
-    anonymous_user: dict = Depends(get_anonymous_user),
+    current_user: CurrentUser = Depends(require_roles(*_PROFILE_ROLES)),
     session: AsyncSession = Depends(get_db_session),
     event_service: EventServiceImpl = Depends(_get_event_service),
 ) -> PaginatedResponse[EventListItem]:
-    caregiver_id = extract_user_id(anonymous_user)
+    caregiver_id = extract_user_id(current_user)
     try:
         return await event_service.list_events(
             profile_id=profile_id,
@@ -95,11 +100,11 @@ async def list_events_endpoint(
 async def create_event_endpoint(
     profile_id: UUID,
     input_data: EventCreate,
-    anonymous_user: dict = Depends(get_anonymous_user),
+    current_user: CurrentUser = Depends(require_roles(*_PROFILE_ROLES)),
     session: AsyncSession = Depends(get_db_session),
     event_service: EventServiceImpl = Depends(_get_event_service),
 ) -> EventResponse:
-    caregiver_id = extract_user_id(anonymous_user)
+    caregiver_id = extract_user_id(current_user)
     try:
         return await event_service.create_event(
             profile_id=profile_id,
@@ -129,11 +134,11 @@ async def create_event_endpoint(
 async def get_event_endpoint(
     profile_id: UUID,
     event_id: UUID,
-    anonymous_user: dict = Depends(get_anonymous_user),
+    current_user: CurrentUser = Depends(require_roles(*_PROFILE_ROLES)),
     session: AsyncSession = Depends(get_db_session),
     event_service: EventServiceImpl = Depends(_get_event_service),
 ) -> EventResponse:
-    caregiver_id = extract_user_id(anonymous_user)
+    caregiver_id = extract_user_id(current_user)
     try:
         return await event_service.get_event(
             event_id=event_id,
@@ -164,11 +169,11 @@ async def update_event_endpoint(
     profile_id: UUID,
     event_id: UUID,
     input_data: EventUpdate,
-    anonymous_user: dict = Depends(get_anonymous_user),
+    current_user: CurrentUser = Depends(require_roles(*_PROFILE_ROLES)),
     session: AsyncSession = Depends(get_db_session),
     event_service: EventServiceImpl = Depends(_get_event_service),
 ) -> EventResponse:
-    caregiver_id = extract_user_id(anonymous_user)
+    caregiver_id = extract_user_id(current_user)
     try:
         return await event_service.update_event(
             event_id=event_id,
@@ -198,11 +203,11 @@ async def update_event_endpoint(
 async def delete_event_endpoint(
     profile_id: UUID,
     event_id: UUID,
-    anonymous_user: dict = Depends(get_anonymous_user),
+    current_user: CurrentUser = Depends(require_roles(*_PROFILE_ROLES)),
     session: AsyncSession = Depends(get_db_session),
     event_service: EventServiceImpl = Depends(_get_event_service),
 ) -> None:
-    caregiver_id = extract_user_id(anonymous_user)
+    caregiver_id = extract_user_id(current_user)
     try:
         await event_service.delete_event(
             event_id=event_id,

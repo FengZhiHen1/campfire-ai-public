@@ -13,15 +13,17 @@ from fastapi import APIRouter, Depends, status
 from py_db.repositories.profile_repository import ProfileRepository
 from py_db.repositories.teacher_link_repository import TeacherLinkRepository
 from py_db.repositories.user_repository import UserRepository
+from py_schemas.auth import UserRole
 from py_schemas.profiles import ExpertInfo
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.dependencies.anonymous_user import get_anonymous_user
 from app.core.dependencies.auth_dependencies import (
+    CurrentUser,
     get_db_session,
     get_profile_repository,
     get_teacher_link_repository,
     get_user_repository,
+    require_roles,
 )
 from app.modules.profiles._exception_mapping import map_domain_error
 from app.modules.profiles._user_utils import extract_user_id
@@ -29,6 +31,9 @@ from app.modules.profiles.exceptions import ProfileDomainError
 from app.modules.profiles.expert_service import ExpertServiceImpl
 
 router = APIRouter(prefix="/api/v1/profiles", tags=["experts"])
+
+# 专家视角档案能力域角色集合：teacher/expert 受邀共建（认证与访问 §六）
+_EXPERT_ROLES = (UserRole.TEACHER, UserRole.EXPERT)
 
 
 def _get_expert_service(
@@ -61,11 +66,11 @@ def _get_expert_service(
 )
 async def list_experts_endpoint(
     profile_id: UUID,
-    anonymous_user: dict = Depends(get_anonymous_user),
+    current_user: CurrentUser = Depends(require_roles(*_EXPERT_ROLES)),
     session: AsyncSession = Depends(get_db_session),
     expert_service: ExpertServiceImpl = Depends(_get_expert_service),
 ) -> list[ExpertInfo]:
-    caregiver_id = extract_user_id(anonymous_user)
+    caregiver_id = extract_user_id(current_user)
     try:
         return await expert_service.list_experts(
             profile_id=profile_id,
@@ -94,11 +99,11 @@ async def list_experts_endpoint(
 async def unlink_expert_endpoint(
     profile_id: UUID,
     link_id: UUID,
-    anonymous_user: dict = Depends(get_anonymous_user),
+    current_user: CurrentUser = Depends(require_roles(*_EXPERT_ROLES)),
     session: AsyncSession = Depends(get_db_session),
     expert_service: ExpertServiceImpl = Depends(_get_expert_service),
 ) -> None:
-    caregiver_id = extract_user_id(anonymous_user)
+    caregiver_id = extract_user_id(current_user)
     try:
         await expert_service.unlink_expert(
             profile_id=profile_id,

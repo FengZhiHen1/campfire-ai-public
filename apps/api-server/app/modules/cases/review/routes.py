@@ -1,6 +1,6 @@
-"""CASE-03 案例审核工作流 — MVP Phase 1 简化版路由。
+"""CASE-03 案例审核工作流 — 路由。
 
-去除角色准入校验（MVP 不区分角色），任何用户均可执行审核。
+案例审核能力域：expert 审核 / admin 强制下架（认证与访问 §六）。
 审核通过后自动投递 Redis 队列触发 Worker 索引。
 路由层仅做依赖注入和委托——所有业务逻辑在 ReviewWorkflowService 中。
 
@@ -11,7 +11,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict, Optional
+from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from py_db.repositories.narrative_repository import NarrativeRepository
@@ -19,6 +19,7 @@ from py_db.repositories.review_repository import (
     ReviewAuditLogRepository,
     ReviewRepository,
 )
+from py_schemas.auth import UserRole
 from py_schemas.cases import (
     CaseReviewResponse,
     PaginatedResponse,
@@ -28,18 +29,22 @@ from py_schemas.cases import (
 from py_schemas.security.validation_schemas import ValidationErrorResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.dependencies.anonymous_user import get_anonymous_user
 from app.core.dependencies.auth_dependencies import (
+    CurrentUser,
     get_db_session,
     get_narrative_repository,
     get_review_audit_log_repository,
     get_review_repository,
+    require_roles,
 )
 
 from ..exceptions import SelfReviewForbiddenError
 from .service import ReviewWorkflowService
 
 router = APIRouter(prefix="/api/v1/cases", tags=["reviews"])
+
+# 案例审核能力域角色集合：expert 审核 / admin 强制下架（认证与访问 §六）
+_CASE_REVIEW_ROLES = (UserRole.EXPERT, UserRole.ADMIN)
 
 _review_service = ReviewWorkflowService()
 
@@ -59,13 +64,13 @@ _review_service = ReviewWorkflowService()
     },
     summary="提交审核裁决",
     description=(
-        "对处于 pending_review 状态的案例执行审核。\n\nMVP 阶段：任何用户均可审核。审核通过后自动触发 Worker 索引入队。"
+        "对处于 pending_review 状态的案例执行审核（expert/admin）。\n\n审核通过后自动触发 Worker 索引入队。"
     ),
 )
 async def submit_review_endpoint(
     case_id: str,
     review_request: ReviewRequest,
-    anonymous_user: Dict[str, Any] = Depends(get_anonymous_user),
+    current_user: CurrentUser = Depends(require_roles(*_CASE_REVIEW_ROLES)),
     session: AsyncSession = Depends(get_db_session),
     review_repo: ReviewRepository = Depends(get_review_repository),
     audit_repo: ReviewAuditLogRepository = Depends(get_review_audit_log_repository),
@@ -76,7 +81,7 @@ async def submit_review_endpoint(
         return await _review_service.submit_review(
             case_id=case_id,
             review_request=review_request,
-            current_user=anonymous_user,
+            current_user=current_user.to_legacy_dict(),
             session=session,
             review_repo=review_repo,
             audit_repo=audit_repo,
@@ -107,7 +112,7 @@ async def list_review_queue_endpoint(
     ),
     page: int = Query(default=1, ge=1, description="页码，从 1 开始"),
     page_size: int = Query(default=15, ge=1, le=100, description="每页条数"),
-    anonymous_user: Dict[str, Any] = Depends(get_anonymous_user),
+    _current_user: CurrentUser = Depends(require_roles(*_CASE_REVIEW_ROLES)),
     session: AsyncSession = Depends(get_db_session),
     review_repo: ReviewRepository = Depends(get_review_repository),
     narrative_repo: NarrativeRepository = Depends(get_narrative_repository),

@@ -21,6 +21,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import JSONResponse
 from py_db.models.case_narrative import CaseNarrative
 from py_logger import logger
+from py_schemas.auth import UserRole
 from py_schemas.cases import PaginatedResponse
 from py_schemas.narratives import (
     NarrativeCreateRequest,
@@ -31,8 +32,12 @@ from py_schemas.narratives import (
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.dependencies.anonymous_user import get_anonymous_user
-from app.core.dependencies.auth_dependencies import _get_session_factory, get_db_session
+from app.core.dependencies.auth_dependencies import (
+    CurrentUser,
+    _get_session_factory,
+    get_db_session,
+    require_roles,
+)
 
 from ..exceptions import ExtractionError, NarrativeNotFoundError
 from ..types import NarrativeId
@@ -45,6 +50,9 @@ from .service import (
 )
 
 router = APIRouter(prefix="/api/v1/narratives", tags=["narratives"])
+
+# 案例录入能力域角色集合：teacher/expert（认证与访问 §六）
+_CASE_WRITE_ROLES = (UserRole.TEACHER, UserRole.EXPERT)
 
 _narrative_service = NarrativeManagementService()
 
@@ -91,14 +99,14 @@ def _handle_narrative_error(exc: NarrativeNotFoundError) -> None:
 @router.post("", response_model=NarrativeResponse, status_code=status.HTTP_201_CREATED)
 async def create_narrative_endpoint(
     request: NarrativeCreateRequest,
-    anonymous_user: dict = Depends(get_anonymous_user),
+    current_user: CurrentUser = Depends(require_roles(*_CASE_WRITE_ROLES)),
     db: AsyncSession = Depends(get_db_session),
 ):
     entity = await _narrative_service.create_narrative(
         title=request.title,
         narrative=request.narrative,
         source_type=request.source_type,
-        current_user=anonymous_user,
+        current_user=current_user.to_legacy_dict(),
         session=db,
     )
     return narrative_to_response(entity)
@@ -109,12 +117,12 @@ async def list_narratives_endpoint(
     scope: str = Query(default="public"),
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=15, ge=1, le=100),
-    anonymous_user: dict = Depends(get_anonymous_user),
+    current_user: CurrentUser = Depends(require_roles(*_CASE_WRITE_ROLES)),
     db: AsyncSession = Depends(get_db_session),
 ):
     items, total = await _narrative_service.list_narratives(
         scope=scope,
-        current_user=anonymous_user,
+        current_user=current_user.to_legacy_dict(),
         session=db,
         page=page,
         page_size=page_size,
@@ -132,13 +140,13 @@ async def list_narratives_endpoint(
 @router.get("/{narrative_id}", response_model=NarrativeDetailResponse)
 async def get_narrative_endpoint(
     narrative_id: str,
-    anonymous_user: dict = Depends(get_anonymous_user),
+    current_user: CurrentUser = Depends(require_roles(*_CASE_WRITE_ROLES)),
     db: AsyncSession = Depends(get_db_session),
 ):
     try:
         entity = await _narrative_service.get_narrative(
             NarrativeId(narrative_id),
-            anonymous_user,
+            current_user.to_legacy_dict(),
             db,
         )
     except NarrativeNotFoundError as exc:
@@ -156,9 +164,9 @@ async def get_narrative_endpoint(
     result["card_count"] = len(cards)
 
     # is_owner: 判断当前用户是否为叙事作者
-    is_owner = result["author_id"] == anonymous_user.get("sub", "")
+    is_owner = result["author_id"] == current_user.user_id
     result["cards"] = [
-        card_to_response(c, is_owner=is_owner, current_user_id=anonymous_user.get("sub", "")) for c in cards
+        card_to_response(c, is_owner=is_owner, current_user_id=current_user.user_id) for c in cards
     ]
     return result
 
@@ -167,7 +175,7 @@ async def get_narrative_endpoint(
 async def update_narrative_endpoint(
     narrative_id: str,
     request: NarrativeUpdate,
-    anonymous_user: dict = Depends(get_anonymous_user),
+    current_user: CurrentUser = Depends(require_roles(*_CASE_WRITE_ROLES)),
     db: AsyncSession = Depends(get_db_session),
 ):
     try:
@@ -175,7 +183,7 @@ async def update_narrative_endpoint(
             NarrativeId(narrative_id),
             request.title,
             request.narrative,
-            anonymous_user,
+            current_user.to_legacy_dict(),
             db,
         )
     except NarrativeNotFoundError as exc:
@@ -186,13 +194,13 @@ async def update_narrative_endpoint(
 @router.post("/{narrative_id}/submit", response_model=NarrativeResponse)
 async def submit_narrative_endpoint(
     narrative_id: str,
-    anonymous_user: dict = Depends(get_anonymous_user),
+    current_user: CurrentUser = Depends(require_roles(*_CASE_WRITE_ROLES)),
     db: AsyncSession = Depends(get_db_session),
 ):
     try:
         entity = await _narrative_service.submit_narrative(
             NarrativeId(narrative_id),
-            anonymous_user,
+            current_user.to_legacy_dict(),
             db,
         )
     except NarrativeNotFoundError as exc:
@@ -203,7 +211,7 @@ async def submit_narrative_endpoint(
 @router.post("/{narrative_id}/extract")
 async def extract_narrative_endpoint(
     narrative_id: str,
-    anonymous_user: dict = Depends(get_anonymous_user),
+    current_user: CurrentUser = Depends(require_roles(*_CASE_WRITE_ROLES)),
     db: AsyncSession = Depends(get_db_session),
 ):
     """LLM 提取 L2 卡片（幂等 + 异步）。
@@ -217,7 +225,7 @@ async def extract_narrative_endpoint(
     try:
         entity = await _narrative_service.get_narrative(
             NarrativeId(narrative_id),
-            anonymous_user,
+            current_user.to_legacy_dict(),
             db,
         )
     except NarrativeNotFoundError as exc:
@@ -240,7 +248,7 @@ async def extract_narrative_endpoint(
         return {
             "narrative_id": narrative_id,
             "card_count": len(cards),
-            "cards": [card_to_response(c, is_owner=True, current_user_id=anonymous_user.get("sub", "")) for c in cards],
+            "cards": [card_to_response(c, is_owner=True, current_user_id=current_user.user_id) for c in cards],
         }
 
     # 提取中：告知前端继续等
@@ -256,7 +264,7 @@ async def extract_narrative_endpoint(
     entity.extraction_error = None
     await db.commit()
 
-    task = asyncio.create_task(_run_extraction_background(narrative_id, narrative_text, anonymous_user.get("sub", "")))
+    task = asyncio.create_task(_run_extraction_background(narrative_id, narrative_text, current_user.user_id))
     _extraction_tasks.add(task)
     task.add_done_callback(_extraction_tasks.discard)
 
