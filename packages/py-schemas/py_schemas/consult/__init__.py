@@ -18,7 +18,6 @@
 from __future__ import annotations
 
 from enum import StrEnum
-from typing import Literal
 
 from pydantic import Field
 
@@ -74,44 +73,27 @@ class RetrievalStatus(StrEnum):
 
 
 class TagFilterDto(CampfireBaseModel):
-    """档案标签过滤条件数据传输对象。
+    """检索过滤条件 DTO（ADR-009/010 目标态）。
 
-    契约: TagFilterDto.json
-    由上游 PROF-02 从患者个性化档案中提取并标准化后传入。
-
-    age_range: 患者年龄段（必填）。
-    behavior_type: 主要行为类型（必填），枚举值引用 CSLT-01/BehaviorTypeCategory。
-    emotion_level: 情绪等级（可选），为 null 时不应用此过滤条件。
-    sensory_features: 感官特征标签（可选），为 null 时不应用此过滤条件。
+    检索过滤统一为「年龄段 + 行为桶」（档案库数据模型 §1.1：情绪等级维度退役）；
+    behavior_type 取值与应急行为桶/档案行为类型共用统一枚举（中文持久化值）。
     """
 
     age_range: str = Field(
         ...,
         min_length=1,
-        description="患者年龄段。枚举值由 PROF-02 定义（如：学龄前(0-5岁)、学龄儿童(6-12岁)等）。",
+        description="患者年龄段（如：学龄前(0-5岁)、学龄儿童(6-12岁)）。",
         examples=["学龄儿童(6-12岁)"],
     )
-    behavior_type: Literal[
-        "SELF_INJURY",
-        "AGGRESSION",
-        "ELOPEMENT",
-        "MEDICATION",
-        "EMOTIONAL_MELTDOWN",
-        "STEREOTYPY",
-        "OTHER",
-    ] = Field(
+    behavior_type: str = Field(
         ...,
-        description="主要行为类型。枚举值引用 CSLT-01/BehaviorTypeCategory。",
-        examples=["EMOTIONAL_MELTDOWN"],
-    )
-    emotion_level: Literal["轻", "中", "重"] | None = Field(
-        default=None,
-        description="情绪等级（可选）。枚举值：轻、中、重。为 null 时不应用此过滤条件。",
-        examples=["重"],
+        min_length=1,
+        description="行为桶（统一行为类型枚举值：情绪崩溃/刻板行为/自伤/攻击/走失/用药相关/社交退缩/多动/其他）。",
+        examples=["情绪崩溃"],
     )
     sensory_features: str | None = Field(
         default=None,
-        description="感官特征标签（可选）。如听觉敏感、触觉敏感、视觉敏感等。",
+        description="感官特征标签（可选）。如听觉敏感、触觉敏感等。",
         examples=["听觉敏感"],
     )
 

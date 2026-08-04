@@ -18,9 +18,15 @@ from py_schemas.enums.case_enums import (
     SeverityLevel,
     SourceType,
 )
-from py_schemas.enums.crisis_enums import (
-    BehaviorTypeCategory,
-    CrisisLevel,
+from py_schemas.enums.emergency_enums import (
+    ELOPEMENT_BUCKET,
+    REDLINE_BUCKETS,
+    BehaviorBucket,
+    CrisisStage,
+    FallbackSignal,
+    GateResult,
+    MeltdownType,
+    TurnType,
 )
 
 __all__ = [
@@ -37,7 +43,13 @@ __all__ = [
     "SceneType",
     "EvidenceLevel",
     "FamilyDisplayCategory",
-    # 危机域
-    "CrisisLevel",
-    "BehaviorTypeCategory",
+    # 应急域（ADR-009 时刻分层）
+    "BehaviorBucket",
+    "REDLINE_BUCKETS",
+    "ELOPEMENT_BUCKET",
+    "CrisisStage",
+    "MeltdownType",
+    "TurnType",
+    "GateResult",
+    "FallbackSignal",
 ]

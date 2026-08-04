@@ -71,41 +71,45 @@ from py_schemas.consult import (
     SemanticSearchResult,
     TagFilterDto,
 )
-from py_schemas.consult.confidence import (
-    ConfidenceValidationInput,
-    ConfidenceValidationOutput,
-    LLMAssessmentResult,
-    ValidationVerdict,
-)
-from py_schemas.consult_start import (
-    ConsultStartRequest,
-    ConsultStartResponse,
-)
-from py_schemas.consultation_history import (
-    GENERATION_DISCLAIMER_CONST,
-    ConsultationHistoryCreate,
-    ConsultationHistoryDetail,
-    ConsultationHistoryListItem,
-)
 from py_schemas.crisis import (
-    CrisisJudgmentRequest,
-    CrisisJudgmentResult,
-    JudgmentLayerResult,
+    RedlineEventRecord,
+    RedlineGateRequest,
+    RedlineGateResult,
+)
+from py_schemas.emergency import (
+    DISCLAIMER_TEXT,
+    ConsultationSessionDetailDto,
+    ConsultationSessionListItem,
+    ConsultationTurnDto,
+    ConsultStreamCreateRequest,
+    ConsultStreamCreateResponse,
+    EmergencyPlan,
+    FallbackNoticeDto,
+    FollowupRequest,
+    RedlineGuideDto,
+    SafetyCardDto,
+    SourceRef,
+    StageQuestionDto,
+    UnresolvedMarkRequest,
 )
 from py_schemas.enums import (
     AccountStatus,
+    BehaviorBucket,
     BehaviorType,
-    BehaviorTypeCategory,
     CaseStatus,
     CredentialType,
-    CrisisLevel,
+    CrisisStage,
     EvidenceLevel,
+    FallbackSignal,
     FamilyDisplayCategory,
+    GateResult,
     InviteChannel,
     InviteCodeStatus,
+    MeltdownType,
     SceneType,
     SeverityLevel,
     SourceType,
+    TurnType,
 )
 from py_schemas.narratives import (
     NarrativeCreateRequest,
@@ -148,7 +152,13 @@ from py_schemas.streaming import (
     ChunkEvent,
     DoneEvent,
     ErrorEvent,
+    FallbackNoticeEvent,
     HeartbeatEvent,
+    RedlineGuideEvent,
+    ResultEvent,
+    SafetyCardEvent,
+    SseEventType,
+    StageQuestionEvent,
     StreamErrorCode,
     StreamSession,
 )
@@ -242,26 +252,44 @@ __all__ = [
     "SemanticSearchInput",
     "CaseSliceDto",
     "SemanticSearchResult",
-    # CSLT-04 — 流式应答推送 SSE 事件模型
+    # SSE 流式协议（ADR-015 统一族 + 应急面消息事件）
+    "SseEventType",
     "ChunkEvent",
+    "ResultEvent",
     "DoneEvent",
     "HeartbeatEvent",
     "ErrorEvent",
+    "SafetyCardEvent",
+    "StageQuestionEvent",
+    "RedlineGuideEvent",
+    "FallbackNoticeEvent",
     "StreamErrorCode",
     "StreamSession",
-    # CSLT-05 — 置信度后校验
-    "ValidationVerdict",
-    "LLMAssessmentResult",
-    "ConfidenceValidationInput",
-    "ConfidenceValidationOutput",
-    # CSLT-06 — 咨询历史管理
-    "ConsultationHistoryCreate",
-    "ConsultationHistoryListItem",
-    "ConsultationHistoryDetail",
-    "GENERATION_DISCLAIMER_CONST",
-    # CSLT-MVP — 应急咨询触发
-    "ConsultStartRequest",
-    "ConsultStartResponse",
+    # 应急咨询（ADR-009 时刻分层）
+    "BehaviorBucket",
+    "CrisisStage",
+    "MeltdownType",
+    "TurnType",
+    "GateResult",
+    "FallbackSignal",
+    "DISCLAIMER_TEXT",
+    "ConsultStreamCreateRequest",
+    "ConsultStreamCreateResponse",
+    "FollowupRequest",
+    "UnresolvedMarkRequest",
+    "SafetyCardDto",
+    "StageQuestionDto",
+    "RedlineGuideDto",
+    "FallbackNoticeDto",
+    "SourceRef",
+    "EmergencyPlan",
+    "ConsultationTurnDto",
+    "ConsultationSessionDetailDto",
+    "ConsultationSessionListItem",
+    # 红线安全门（ADR-008 二元判定）
+    "RedlineGateRequest",
+    "RedlineGateResult",
+    "RedlineEventRecord",
     # SEC-05 — 输入校验模型
     "SecurityDetectionType",
     "ValidationErrorItem",
@@ -269,12 +297,6 @@ __all__ = [
     "FileValidationRule",
     "FileValidationResult",
     "SecurityAuditLogEntry",
-    # CSLT-01 — 危机分级判定
-    "CrisisLevel",
-    "BehaviorTypeCategory",
-    "CrisisJudgmentRequest",
-    "CrisisJudgmentResult",
-    "JudgmentLayerResult",
 ]
 # 注意: consult.EvidenceLevel 与 case_enums.EvidenceLevel 冲突，
 # 顶层仅导出 case_enums 版本。consult 版本请通过 py_schemas.consult.EvidenceLevel 访问。
