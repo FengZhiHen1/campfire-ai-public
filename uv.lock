@@ -12,6 +12,7 @@ resolution-markers = [
 members = [
     "api-server",
     "campfire-ai",
+    "py-agent-extensions",
     "py-agent-kernel",
     "py-auth",
     "py-cache",
@@ -111,6 +112,8 @@ dependencies = [
     { name = "fastapi", extra = ["standard"] },
     { name = "minio" },
     { name = "prometheus-client" },
+    { name = "py-agent-extensions" },
+    { name = "py-agent-kernel" },
     { name = "py-auth" },
     { name = "py-cache" },
     { name = "py-config" },
@@ -133,6 +136,8 @@ requires-dist = [
     { name = "fastapi", extras = ["standard"], specifier = ">=0.115.0" },
     { name = "minio", specifier = ">=7.0" },
     { name = "prometheus-client", specifier = ">=0.20" },
+    { name = "py-agent-extensions", editable = "packages/py-agent-extensions" },
+    { name = "py-agent-kernel", editable = "packages/py-agent-kernel" },
     { name = "py-auth", editable = "packages/py-auth" },
     { name = "py-cache", editable = "packages/py-cache" },
     { name = "py-config", editable = "packages/py-config" },
@@ -415,6 +420,7 @@ version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
     { name = "api-server" },
+    { name = "py-agent-extensions" },
     { name = "py-agent-kernel" },
     { name = "py-auth" },
     { name = "py-cache" },
@@ -446,6 +452,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "api-server", editable = "apps/api-server" },
+    { name = "py-agent-extensions", editable = "packages/py-agent-extensions" },
     { name = "py-agent-kernel", editable = "packages/py-agent-kernel" },
     { name = "py-auth", editable = "packages/py-auth" },
     { name = "py-cache", editable = "packages/py-cache" },
@@ -2043,6 +2050,21 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/56/ad/44b06659949b243ae10112cd3b20a197f9bf3e81d5651379b9eb889bfaad/psycopg2_binary-2.9.12-cp314-cp314-musllinux_1_2_riscv64.whl", hash = "sha256:77b348775efd4cdab410ec6609d81ccecd1139c90265fa583a7255c8064bc03d", size = 3048977, upload-time = "2026-04-20T23:35:41.806Z" },
     { url = "https://files.pythonhosted.org/packages/1d/f2/10a1bcebadb6aa55e280e1f58975c36a7b560ea525184c7aa4064c466633/psycopg2_binary-2.9.12-cp314-cp314-musllinux_1_2_x86_64.whl", hash = "sha256:527e6342b3e44c2f0544f6b8e927d60de7f163f5723b8f1dfa7d2a84298738cd", size = 3351466, upload-time = "2026-04-20T23:35:43.993Z" },
     { url = "https://files.pythonhosted.org/packages/20/be/b732c8418ffa5bcfda002890f5dc4c869fc17db66ff11f53b17cfe44afc0/psycopg2_binary-2.9.12-cp314-cp314-win_amd64.whl", hash = "sha256:f12ae41fcafadb39b2785e64a40f9db05d6de2ac114077457e0e7c597f3af980", size = 2848762, upload-time = "2026-04-20T23:35:46.421Z" },
+]
+
+[[package]]
+name = "py-agent-extensions"
+version = "0.1.0"
+source = { editable = "packages/py-agent-extensions" }
+dependencies = [
+    { name = "py-agent-kernel" },
+    { name = "py-schemas" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "py-agent-kernel", editable = "packages/py-agent-kernel" },
+    { name = "py-schemas", editable = "packages/py-schemas" },
 ]
 
 [[package]]

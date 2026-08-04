@@ -13,7 +13,7 @@ import uuid
 
 from py_db.models.profiles import EventLog
 from py_schemas.crisis import RedlineGateRequest, RedlineGateResult
-from py_schemas.enums import BehaviorBucket, GateResult
+from py_schemas.enums import GateResult
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
