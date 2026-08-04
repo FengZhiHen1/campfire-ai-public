@@ -37,7 +37,7 @@
 | 安全原语 | PII 检测、红线词规则 | `packages/py-security/`，由 crisis 模块与 security 扩展共同消费 |
 | 部署方式 | Docker Compose v2 + Nginx 1.26+ | `infrastructure/` 集中管理部署资产 |
 | 包管理器 | uv（Python）+ pnpm（Node.js） | 双工作空间 `pyproject.toml` + `pnpm-workspace.yaml` |
-| 日志监控 | structlog + Prometheus + Grafana | `packages/py-logger/`；`infrastructure/monitoring/` |
+| 日志监控 | Python logging（JSON 结构化）+ Prometheus + Grafana | `packages/py-logger/`；`infrastructure/monitoring/` |
 
 ---
 
