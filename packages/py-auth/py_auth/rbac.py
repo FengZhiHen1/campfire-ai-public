@@ -1,24 +1,27 @@
-"""py-auth 五级 RBAC 鉴权 — DefaultRBACGuard 实现。
+"""py-auth 显式角色→能力 RBAC（ADR-013 目标态）。
 
-实现 RBACGuard 契约，提供路由级权限校验、字段级脱敏和档案隐私控制。
+六角色显式能力矩阵（认证与访问 §六）——矩阵即文档，越权用例可直接
+对照验收；数值层级继承（min_level）已废除，守卫统一为显式集合匹配。
 
-核心类:
-  - DefaultRBACGuard: 实现 RBACGuard 契约，五级角色权限判定
-
-工具函数:
-  - require_role: FastAPI Depends 工厂函数（路由级权限）
-  - get_masked_phone: 手机号字段级脱敏
+核心内容:
+  - Capability: 能力域枚举（应急咨询/档案/案例/工单/平台管理/系统运维）
+  - ROLE_CAPABILITIES: 角色→能力显式映射矩阵
+  - DefaultRBACGuard: 实现 RBACGuard 契约，显式集合匹配判定
+  - require_roles: FastAPI Depends 工厂（路由级显式角色守卫）
+  - has_capability: 能力判定纯函数
+  - get_masked_phone: 手机号字段级脱敏（NFR：仅 admin 可见完整手机号）
 
 Usage:
-    from py_auth.rbac import DefaultRBACGuard, require_role, get_guard
-    guard = get_guard()
-    guard.authorize(user, min_level=UserRole.ADMIN)
+    from py_auth.rbac import require_roles, has_capability, Capability
+    @router.get("/admin")
+    async def admin_route(_: None = Depends(require_roles(UserRole.ADMIN))): ...
 """
 
 from __future__ import annotations
 
 import re
 import traceback
+from enum import StrEnum
 from typing import TYPE_CHECKING, Any, Callable, Sequence, cast
 
 if TYPE_CHECKING:
@@ -42,25 +45,101 @@ _AUTH_MISSING_DETAIL: str = "未登录或角色信息缺失，请重新登录"
 _PHONE_PATTERN: re.Pattern[str] = re.compile(r"^1[3-9]\d{9}$")
 _FALLBACK_MASK: str = "****"
 
+
+# ===========================================================================
+# 能力域枚举与角色→能力矩阵（认证与访问 §六 的代码直译）
+# ===========================================================================
+
+
+class Capability(StrEnum):
+    """能力域枚举——全站能力的最小授权单位。
+
+    与认证与访问 §六 矩阵的「能力域」列一一对应；
+    数据级授权（档案关联、案例可见性分级等）归各模块机制文档，不在此枚举。
+    """
+
+    EMERGENCY_CONSULT = "emergency_consult"  # 应急咨询 / 科普
+    PROFILE_OWN = "profile_own"  # 档案（自有家庭全权）
+    PROFILE_COLLAB = "profile_collab"  # 档案（受邀受限/受邀共建）
+    CASE_CREATE = "case_create"  # 案例录入
+    CASE_REVIEW = "case_review"  # 案例审核 / 下架
+    CASE_FORCE_UNLIST = "case_force_unlist"  # 案例强制下架（admin）
+    TICKET_FAMILY = "ticket_family"  # 工单家属侧
+    TICKET_TEACHER = "ticket_teacher"  # 工单普通/紧急接单
+    TICKET_EXPERT = "ticket_expert"  # 工单专家侧（特急仅专家）
+    TICKET_DISPATCH = "ticket_dispatch"  # 工单转派
+    PLATFORM_ADMIN = "platform_admin"  # 平台管理（用户/准入审核/邀请码）
+    SYSTEM_OPS = "system_ops"  # 系统运维（健康/监控/维护）
+
+
+ROLE_CAPABILITIES: dict[UserRole, frozenset[Capability]] = {
+    UserRole.FAMILY: frozenset(
+        {
+            Capability.EMERGENCY_CONSULT,
+            Capability.PROFILE_OWN,
+            Capability.TICKET_FAMILY,
+        }
+    ),
+    UserRole.VOLUNTEER: frozenset(
+        {
+            Capability.EMERGENCY_CONSULT,
+            Capability.PROFILE_COLLAB,
+        }
+    ),
+    UserRole.TEACHER: frozenset(
+        {
+            Capability.PROFILE_COLLAB,
+            Capability.CASE_CREATE,
+            Capability.TICKET_TEACHER,
+        }
+    ),
+    UserRole.EXPERT: frozenset(
+        {
+            Capability.PROFILE_COLLAB,
+            Capability.CASE_CREATE,
+            Capability.CASE_REVIEW,
+            Capability.TICKET_EXPERT,
+        }
+    ),
+    UserRole.ADMIN: frozenset(
+        {
+            Capability.CASE_FORCE_UNLIST,
+            Capability.TICKET_DISPATCH,
+            Capability.PLATFORM_ADMIN,
+        }
+    ),
+    UserRole.MAINTAINER: frozenset(
+        {
+            Capability.SYSTEM_OPS,
+        }
+    ),
+}
+"""六角色 → 能力显式映射矩阵。变更属设计变更，需同步更新认证与访问 §六。"""
+
+
+def has_capability(role: UserRole, capability: Capability) -> bool:
+    """判定角色是否拥有指定能力（显式映射，无隐式继承）。"""
+    return capability in ROLE_CAPABILITIES.get(role, frozenset())
+
+
 # ---------------------------------------------------------------------------
-# RBACGuard 实现
+# RBACGuard 实现（显式集合匹配）
 # ---------------------------------------------------------------------------
 
 
 class DefaultRBACGuard(RBACGuard):
-    """五级 RBAC 权限判定，继承 RBACGuard 契约。
+    """显式角色集合匹配守卫，继承 RBACGuard 契约。
 
-    前置校验（用户存在性、角色非空、参数互斥）由 @final authorize 处理，
-    实现者只需关心角色层级比较逻辑。
+    前置校验（用户存在性、角色非空）由 @final authorize 处理，
+    本类只关心显式集合匹配逻辑。
     """
 
     def _do_authorize(
         self,
         user: HasRoles,
-        min_level: Any | None,
         exact_roles: list[Any] | None,
     ) -> bool:
-        """判定用户角色是否满足权限要求。
+        """判定用户角色是否满足显式集合要求。
 
         Returns:
             True 表示应拒绝（权限不足），False 表示放行。
@@ -68,19 +147,14 @@ class DefaultRBACGuard(RBACGuard):
         user_roles: list[UserRole] = list(getattr(user, "roles", []))
 
         # 防御：虽然 _validate_authorize_input 已校验 roles 非空，
-        # 但这里仍做一次防御，避免非正常调用路径触发 max([]) 崩溃
+        # 但这里仍做一次防御，避免非正常调用路径触发异常
         if not user_roles:
             return True  # 拒绝——无角色不可访问
 
-        if min_level is not None:
-            max_level = max(role.level for role in user_roles)
-            if max_level < min_level.level:
-                return True  # 拒绝
-        elif exact_roles is not None:
+        if exact_roles is not None:
             allowed_set = set(exact_roles)
             if not any(role in allowed_set for role in user_roles):
                 return True  # 拒绝
-        # 两者均为 None → 默认放行
 
         return False  # 放行
 
@@ -93,11 +167,7 @@ _guard_instance: DefaultRBACGuard | None = None
 
 
 def get_guard() -> DefaultRBACGuard:
-    """获取 DefaultRBACGuard 模块级单例（惰性初始化）。
-
-    首次调用时创建实例，后续调用返回同一实例。
-    避免在模块 import 阶段触发配置读取（get_security_config）。
-    """
+    """获取 DefaultRBACGuard 模块级单例（惰性初始化）。"""
     global _guard_instance
     if _guard_instance is None:
         _guard_instance = DefaultRBACGuard()
@@ -109,45 +179,37 @@ def get_guard() -> DefaultRBACGuard:
 # ============================================================================
 
 
-def require_role(
-    min_level: UserRole | None = None,
-    exact_roles: Sequence[UserRole] | None = None,
-) -> Callable[[Request], Any]:
-    """路由级权限校验 FastAPI Depends 工厂。
+def require_roles(*roles: UserRole) -> Callable[[Request], Any]:
+    """路由级权限校验 FastAPI Depends 工厂（显式集合匹配）。
 
-    通过调用 DefaultRBACGuard.authorize() 进入契约路径：
-    前置校验（用户存在性、角色非空）→ _do_authorize 判定 → 后置日志。
+    从 request.state.user 读取已认证用户（由 get_current_user 依赖注入），
+    通过 DefaultRBACGuard.authorize() 进入契约路径判定。
 
     在路由中使用:
         @router.get("/admin")
-        async def admin_route(_: None = Depends(require_role(min_level=UserRole.ADMIN))):
+        async def admin_route(_: None = Depends(require_roles(UserRole.ADMIN))):
             ...
 
     Args:
-        min_level: 层级累加模式——用户最高角色层级 >= 此值时放行。
-        exact_roles: 精确模式——用户任一角色在此白名单内时放行。
+        *roles: 放行的角色集合（显式枚举，至少一个）。
 
     Raises:
-        ValueError: 两个参数同时非空（互斥）。
+        ValueError: 未传入任何角色（编程错误，禁止空调用）。
     """
-    if min_level is not None and exact_roles is not None:
-        raise ValueError("min_level 和 exact_roles 参数不能同时使用")
+    if not roles:
+        raise ValueError("require_roles 必须显式声明至少一个角色")
 
-    async def _require_role(request: Request) -> None:
+    required = list(roles)
+
+    async def _require_roles(request: Request) -> None:
         if not hasattr(request, "state"):
             raise HTTPException(status_code=401, detail=_AUTH_MISSING_DETAIL)
 
         user = getattr(request.state, "user", None)
 
-        # 通过契约公共入口 authorize 进行判定
-        # authorize 的 _validate_authorize_input 会处理 user=None → PermissionDeniedError
         guard = get_guard()
         try:
-            guard.authorize(
-                cast(HasRoles, user),
-                min_level=min_level,
-                exact_roles=list(exact_roles) if exact_roles else None,
-            )
+            guard.authorize(cast(HasRoles, user), exact_roles=required)
         except PermissionDeniedError as e:
             if e.reason in ("user_missing", "no_roles"):
                 raise HTTPException(
@@ -161,7 +223,7 @@ def require_role(
 
         return None
 
-    return _require_role
+    return _require_roles
 
 
 # ============================================================================
@@ -170,10 +232,10 @@ def require_role(
 
 
 def get_masked_phone(phone: str | None, user_roles: Sequence[UserRole]) -> str:
-    """手机号字段级脱敏判定。
+    """手机号字段级脱敏判定（NFR：手机号仅管理员可见）。
 
-    admin(level>=4) / maintainer(5) 返回完整号码，其他角色返回脱敏格式。
-    任何意外异常降级为 "****" 并记录 warning 日志。
+    仅 admin 返回完整号码，其他角色（含 maintainer——无业务数据权限）
+    返回脱敏格式。任何意外异常降级为 "****" 并记录 warning 日志。
 
     Args:
         phone: 原始手机号字符串（可为 None）。
@@ -186,12 +248,7 @@ def get_masked_phone(phone: str | None, user_roles: Sequence[UserRole]) -> str:
         if phone is None:
             return _FALLBACK_MASK
 
-        if not user_roles:
-            max_level = 0
-        else:
-            max_level = max(role.level if isinstance(role, UserRole) else 0 for role in user_roles)
-
-        if max_level >= 4:
+        if UserRole.ADMIN in user_roles:
             return str(phone).strip()
 
         cleaned = str(phone).strip()
@@ -219,7 +276,7 @@ def get_masked_phone(phone: str | None, user_roles: Sequence[UserRole]) -> str:
 
 
 # ============================================================================
-# PrivacyGuard — MVP 绕过版（临时）
+# PrivacyGuard — MVP 绕过版（临时，S4 档案重构时处理）
 # ============================================================================
 
 
@@ -227,9 +284,9 @@ class PrivacyGuard:
     """档案隐私控制守卫（MVP 绕过版）。
 
     所有访问请求直接放行，返回 allowed=True。
-    正式上线后替换为基于 RBAC 的真实实现。
+    档案四层重构（S4）时替换为基于数据级授权的真实实现。
 
-    # TODO: 正式版替换为 call RBAC guard 的真实实现（deadline: 上线前）
+    # TODO: 正式版替换为档案机制文档定义的数据级授权实现（S4 处理）
     """
 
     @staticmethod
@@ -243,9 +300,12 @@ class PrivacyGuard:
 
 
 __all__ = [
+    "Capability",
+    "ROLE_CAPABILITIES",
+    "has_capability",
     "DefaultRBACGuard",
     "get_guard",
-    "require_role",
+    "require_roles",
     "get_masked_phone",
     "PrivacyGuard",
 ]

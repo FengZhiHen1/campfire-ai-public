@@ -338,13 +338,15 @@ class TokenManager(ABC):
     def _validate_token_data(self, data: dict[str, Any]) -> None:
         """基线 Token 数据校验——确保必填字段存在。
 
+        ADR-013 目标态：access token 承载 sub/role/status/jti/exp（认证与访问 §5.1），
+        family_id 为 Token 家族标识（§5.2 轮换在同一家族内延续）。
+
         Raises:
-            ValueError: data 缺少 "sub" 或 "roles" 字段。
+            ValueError: data 缺少必填字段。
         """
-        if "sub" not in data:
-            raise ValueError("data 必须包含 sub 字段")
-        if "roles" not in data:
-            raise ValueError("data 必须包含 roles 字段")
+        for field in ("sub", "role", "status", "family_id"):
+            if field not in data:
+                raise ValueError(f"data 必须包含 {field} 字段")
 
     def _validate_token_output(self, token: str) -> None:
         """基线后置校验——确保 _do_create_token 返回非空字符串。
@@ -536,6 +538,73 @@ class TokenBlacklist(ABC):
         """查询 Refresh Token 是否已被使用。"""
         ...
 
+    # === Token 家族吊销（ADR-013 §5.2）===
+
+    @final
+    async def revoke_family(self, family_id: str) -> None:
+        """吊销整个 Token 家族。
+
+        触发场景：refresh 复用检测命中 / logout / 账号禁用 / role·status 变更。
+        存储不可用时静默降级（fail-open），记录 warning 日志。
+
+        输入约束:
+          - family_id: 非空字符串（登录时签发的家族标识）
+        Side Effects:
+          - 写入 Key: token_family_revoked:{family_id}，TTL=7d（refresh 有效期）
+        """
+        if not family_id:
+            return
+        try:
+            await self._do_revoke_family(family_id)
+        except Exception as exc:
+            logger.warning(
+                "py-auth",
+                "家族吊销写入失败（fail-open）",
+                op_type="认证",
+                extra={
+                    "family_id": family_id[:20] + "...",
+                    "strategy": "fail_open",
+                    "error": str(exc),
+                },
+            )
+
+    @final
+    async def is_family_revoked(self, family_id: str) -> bool:
+        """查询 Token 家族是否已被吊销。
+
+        存储不可用时返回 False（fail-open 放行）。
+        """
+        if not family_id:
+            return False
+        try:
+            return await self._do_check_family(family_id)
+        except Exception as exc:
+            logger.warning(
+                "py-auth",
+                "家族吊销查询降级（fail-open）",
+                op_type="认证",
+                extra={
+                    "family_id": family_id[:20] + "...",
+                    "strategy": "fail_open",
+                    "error": str(exc),
+                },
+            )
+            return False
+
+    @abstractmethod
+    async def _do_revoke_family(self, family_id: str) -> None:
+        """执行家族吊销标记写入。
+
+        Side Effects:
+          - 写入 Key: token_family_revoked:{family_id}，TTL=7d
+        """
+        ...
+
+    @abstractmethod
+    async def _do_check_family(self, family_id: str) -> bool:
+        """查询家族吊销标记是否存在。"""
+        ...
+
 
 # ============================================================================
 # RBACGuard — 角色权限判定契约
@@ -543,15 +612,15 @@ class TokenBlacklist(ABC):
 
 
 class RBACGuard(ABC):
-    """基于角色的权限判定契约。
+    """基于角色的权限判定契约（ADR-013 显式角色→能力映射）。
 
     实现者只能覆写 _do_authorize 钩子。
     外部调用者通过 @final authorize 进入，无法绕过用户存在性校验。
 
-    权限判定模式（互斥）:
-    - min_level: 层级累加模式，用户最高角色层级 >= 此值时放行
-    - exact_roles: 精确模式，用户任一角色在此白名单内时放行
-    - 两者均为 None: 默认放行（任何已认证用户）
+    权限判定模式:
+    - exact_roles: 显式角色集合匹配——用户任一角色在集合内时放行
+    - 未指定: 默认放行（任何已认证用户）
+    数值层级继承（min_level）已废除——矩阵即文档，见认证与访问 §六。
     """
 
     _LOG_PERMISSION_DENIED_EVENT: str = "permission_denied"
@@ -560,7 +629,6 @@ class RBACGuard(ABC):
     def authorize(
         self,
         user: HasRoles,
-        min_level: Any | None = None,
         exact_roles: list[Any] | None = None,
     ) -> None:
         """校验用户是否有权限执行操作。
@@ -569,36 +637,27 @@ class RBACGuard(ABC):
 
         前置:
           - user 对象存在且包含 roles 属性
-          - min_level 和 exact_roles 互斥（不同时非空）
         后置:
           - 权限不足时抛出 PermissionDeniedError
           - 通过时静默返回
         输入约束:
           - user: 含 roles 属性的用户对象
-          - min_level: 最低角色层级（与 exact_roles 互斥）
-          - exact_roles: 角色白名单（与 min_level 互斥）
+          - exact_roles: 角色白名单（显式集合匹配）
         异常:
           - PermissionDeniedError: 用户不存在、无角色或权限不足
-          - ValueError: min_level 和 exact_roles 同时非空
         Side Effects:
           - 权限拒绝时记录结构化 warning 日志
         """
-        self._validate_authorize_input(user, min_level, exact_roles)
-        denied = self._do_authorize(user, min_level, exact_roles)
+        self._validate_authorize_input(user, exact_roles)
+        denied = self._do_authorize(user, exact_roles)
 
         if denied:
-            self._log_denial(user, min_level, exact_roles)
+            self._log_denial(user, exact_roles)
             raise PermissionDeniedError(
                 "当前角色无权执行此操作，如需权限请联系管理员",
                 detail={
                     "user_roles": [str(r) for r in getattr(user, "roles", [])],
-                    "required": (
-                        str(min_level)
-                        if min_level is not None
-                        else [str(r) for r in exact_roles]
-                        if exact_roles is not None
-                        else None
-                    ),
+                    "required": [str(r) for r in exact_roles] if exact_roles is not None else None,
                 },
             )
 
@@ -608,17 +667,15 @@ class RBACGuard(ABC):
     def _do_authorize(
         self,
         user: HasRoles,
-        min_level: Any | None,
         exact_roles: list[Any] | None,
     ) -> bool:
         """执行权限判定逻辑。
 
         实现者在此填写实际的权限判断。
-        用户存在性和互斥校验已由 @final authorize 处理。
+        用户存在性校验已由 @final authorize 处理。
 
         输入约束:
           - user 已通过 _validate_authorize_input 校验
-          - min_level 和 exact_roles 不同时非空
         输出约束:
           - bool: True 表示应拒绝（权限不足），False 表示放行
         """
@@ -629,14 +686,12 @@ class RBACGuard(ABC):
     def _validate_authorize_input(
         self,
         user: HasRoles,
-        min_level: Any | None,
         exact_roles: list[Any] | None,
     ) -> None:
         """基线授权输入校验。
 
         Raises:
             PermissionDeniedError: user 为 None、无 roles 属性或 roles 为空。
-            ValueError: min_level 和 exact_roles 同时非空。
         """
         if user is None:
             raise PermissionDeniedError(
@@ -649,15 +704,12 @@ class RBACGuard(ABC):
                 "角色信息缺失",
                 reason="no_roles",
             )
-        if min_level is not None and exact_roles is not None:
-            raise ValueError("min_level 和 exact_roles 参数不能同时使用")
 
     # === 内部 ===
 
     def _log_denial(
         self,
         user: HasRoles,
-        min_level: Any | None,
         exact_roles: list[Any] | None,
     ) -> None:
         """记录权限拒绝日志。"""
@@ -669,13 +721,7 @@ class RBACGuard(ABC):
                 extra={
                     "user_id": getattr(user, "id", None),
                     "user_roles": [str(r) for r in getattr(user, "roles", [])],
-                    "required": (
-                        str(min_level)
-                        if min_level is not None
-                        else [str(r) for r in exact_roles]
-                        if exact_roles is not None
-                        else None
-                    ),
+                    "required": [str(r) for r in exact_roles] if exact_roles is not None else None,
                 },
             )
         except Exception:

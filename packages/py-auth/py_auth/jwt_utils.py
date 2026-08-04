@@ -53,13 +53,19 @@ class JoseTokenManager(TokenManager):
     # ------------------------------------------------------------------
 
     def _do_create_token(self, data: dict[str, Any], token_type: str, ttl_seconds: int) -> str:
-        """执行 JWT 签发——构建 claims，调用 python-jose 编码。"""
+        """执行 JWT 签发——构建 claims，调用 python-jose 编码。
+
+        ADR-013 目标态 claims：sub / role / status / family_id / type / iat / exp / jti。
+        family_id 为 Token 家族标识：登录创建新家族，轮换在同一家族内延续（§5.2）。
+        """
         now = datetime.now(self._tz)
 
         payload = {
             "iss": "campfire-ai",
             "sub": data["sub"],
-            "roles": data["roles"],
+            "role": data["role"],
+            "status": data["status"],
+            "family_id": data["family_id"],
             "type": token_type,
             "iat": int(now.timestamp()),
             "exp": int((now + timedelta(seconds=ttl_seconds)).timestamp()),

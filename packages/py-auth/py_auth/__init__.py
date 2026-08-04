@@ -52,8 +52,10 @@ from py_auth.blacklist import (
     RedisBlacklist,
     add_to_blacklist,
     is_blacklisted,
+    is_family_revoked,
     is_refresh_used,
     mark_refresh_used,
+    revoke_family,
 )
 
 # ── 异常 ────────────────────────────────────────────────────────────────────
@@ -76,11 +78,14 @@ from py_auth.jwt_utils import (
     verify_token,
 )
 from py_auth.rbac import (
+    ROLE_CAPABILITIES,
+    Capability,
     DefaultRBACGuard,
     PrivacyGuard,
     get_guard,
     get_masked_phone,
-    require_role,
+    has_capability,
+    require_roles,
 )
 
 # ── 语法契约（语义类型）─────────────────────────────────────────────────────
@@ -111,6 +116,10 @@ __all__ = [
     "JoseTokenManager",
     "RedisBlacklist",
     "DefaultRBACGuard",
+    # ── 能力矩阵 ──
+    "Capability",
+    "ROLE_CAPABILITIES",
+    "has_capability",
     # ── 工具 ──
     "TokenType",
     "UserRole",
@@ -126,7 +135,9 @@ __all__ = [
     "is_blacklisted",
     "mark_refresh_used",
     "is_refresh_used",
-    "require_role",
+    "revoke_family",
+    "is_family_revoked",
+    "require_roles",
     "get_guard",
     "get_masked_phone",
     "PrivacyGuard",

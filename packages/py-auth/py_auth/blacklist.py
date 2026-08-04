@@ -32,6 +32,9 @@ from py_auth.auth_contract import TokenBlacklist
 _TOKEN_BLACKLIST_PREFIX: str = "token_blacklist:"
 """Redis Key 前缀，格式 token_blacklist:{jti}。"""
 
+_FAMILY_REVOKED_PREFIX: str = "token_family_revoked:"
+"""Redis Key 前缀，格式 token_family_revoked:{family_id}（家族吊销标记）。"""
+
 
 class RedisBlacklist(TokenBlacklist):
     """Redis 持久化的 Token 黑名单，继承 TokenBlacklist 契约。
@@ -88,6 +91,22 @@ class RedisBlacklist(TokenBlacklist):
         """查询 Refresh Token 是否已被使用。"""
         client = await self._get_client()
         key = f"refresh_used:{jti}"
+        result: bool = await client.exists(key) > 0
+        return result
+
+    async def _do_revoke_family(self, family_id: str) -> None:
+        """写入家族吊销标记，TTL=refresh 有效期（7d）。
+
+        Key: token_family_revoked:{family_id}
+        """
+        client = await self._get_client()
+        key = f"{_FAMILY_REVOKED_PREFIX}{family_id}"
+        await client.setex(key, self._REFRESH_USED_TTL, "1")
+
+    async def _do_check_family(self, family_id: str) -> bool:
+        """查询家族吊销标记是否存在。"""
+        client = await self._get_client()
+        key = f"{_FAMILY_REVOKED_PREFIX}{family_id}"
         result: bool = await client.exists(key) > 0
         return result
 
@@ -157,10 +176,22 @@ async def is_refresh_used(jti: str) -> bool:
     return await _get_blacklist().is_refresh_used(jti)
 
 
+async def revoke_family(family_id: str) -> None:
+    """便捷函数——吊销整个 Token 家族。"""
+    await _get_blacklist().revoke_family(family_id)
+
+
+async def is_family_revoked(family_id: str) -> bool:
+    """便捷函数——查询 Token 家族是否已被吊销。"""
+    return await _get_blacklist().is_family_revoked(family_id)
+
+
 __all__ = [
     "RedisBlacklist",
     "add_to_blacklist",
     "is_blacklisted",
     "mark_refresh_used",
     "is_refresh_used",
+    "revoke_family",
+    "is_family_revoked",
 ]
