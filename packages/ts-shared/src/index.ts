@@ -22,6 +22,7 @@
  *     import { PaginatedResponse, isISODateTime } from '@campfire/ts-shared/common';
  */
 
+export * from './auth';
 export * from './cases';
 export * from './profiles';
 export * from './common';

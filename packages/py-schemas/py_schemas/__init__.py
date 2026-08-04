@@ -20,11 +20,24 @@
 """
 
 from py_schemas.auth import (
+    CHANNEL_ALLOWED_ROLES,
+    REGISTRABLE_ROLES,
+    REVIEW_REQUIRED_ROLES,
+    InviteCodeCreateRequest,
+    InviteCodeCreateResponse,
+    InviteCodeItem,
+    InviteCodeListResponse,
     LoginRequest,
+    MeResponse,
     PermissionDeniedResponse,
     RefreshRequest,
     RegisterRequest,
     RegisterResponse,
+    ReviewApproveResponse,
+    ReviewListItem,
+    ReviewListResponse,
+    ReviewRejectRequest,
+    ReviewResubmitRequest,
     TokenResponse,
     UserRole,
 )
@@ -80,12 +93,16 @@ from py_schemas.crisis import (
     JudgmentLayerResult,
 )
 from py_schemas.enums import (
+    AccountStatus,
     BehaviorType,
     BehaviorTypeCategory,
     CaseStatus,
+    CredentialType,
     CrisisLevel,
     EvidenceLevel,
     FamilyDisplayCategory,
+    InviteChannel,
+    InviteCodeStatus,
     SceneType,
     SeverityLevel,
     SourceType,
@@ -137,13 +154,30 @@ from py_schemas.streaming import (
 )
 
 __all__ = [
-    # AUTH — 用户认证与授权
+    # AUTH — 用户认证与授权（ADR-013 目标态）
     "UserRole",
+    "CHANNEL_ALLOWED_ROLES",
+    "REGISTRABLE_ROLES",
+    "REVIEW_REQUIRED_ROLES",
+    "AccountStatus",
+    "CredentialType",
+    "InviteChannel",
+    "InviteCodeStatus",
     "LoginRequest",
     "TokenResponse",
     "RefreshRequest",
     "RegisterRequest",
     "RegisterResponse",
+    "MeResponse",
+    "ReviewListItem",
+    "ReviewListResponse",
+    "ReviewApproveResponse",
+    "ReviewRejectRequest",
+    "ReviewResubmitRequest",
+    "InviteCodeCreateRequest",
+    "InviteCodeCreateResponse",
+    "InviteCodeItem",
+    "InviteCodeListResponse",
     "PermissionDeniedResponse",
     # PROF-05 — 档案隐私控制
     "AccessOperation",
