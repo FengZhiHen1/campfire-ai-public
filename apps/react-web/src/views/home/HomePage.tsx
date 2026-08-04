@@ -7,7 +7,8 @@ import {
   BEHAVIOR_VALUES,
 } from '@/logics/profiles/constants';
 import type { DiagnosisType, ProfileBehaviorType } from '@campfire/ts-shared';
-import type { CrisisLevel } from '@/logics/consult/types';
+import { BUCKET_UI_LABELS } from '@/logics/consult/types';
+import type { BehaviorBucket } from '@/logics/consult/types';
 import PageContent from '@/views/_shared/layout/PageContent';
 import './HomePage.css';
 
@@ -26,13 +27,8 @@ function mapBehavior(value: ProfileBehaviorType): string {
   return idx >= 0 ? BEHAVIOR_OPTIONS[idx] : value;
 }
 
-function mapCrisisLevel(value: CrisisLevel): string {
-  const map: Record<CrisisLevel, string> = {
-    mild: '轻度',
-    moderate: '中度',
-    severe: '重度',
-  };
-  return map[value] ?? value;
+function mapBucketLabel(value: string): string {
+  return BUCKET_UI_LABELS[value as BehaviorBucket] ?? value;
 }
 
 export default function HomePage() {
@@ -142,22 +138,21 @@ export default function HomePage() {
       {loading ? (
         <div className="glow-loading" />
       ) : latestConsult ? (
-        <Link className="consult-card" to={`/consult/${latestConsult.id}`}>
+        <Link className="consult-card" to={`/consult/session/${latestConsult.id}`}>
           <div className="consult-card-header">
             <span className="consult-level">
               <span className="consult-dot" /> 咨询记录
             </span>
             <span className="consult-time">
-              {formatRelativeTime(latestConsult.consultation_time)}
+              {formatRelativeTime(latestConsult.created_at)}
             </span>
           </div>
-          <p className="consult-summary">{latestConsult.behavior_description}</p>
+          <p className="consult-summary">{mapBucketLabel(latestConsult.bucket)}</p>
           <div className="consult-meta">
-            {(latestConsult.tags?.length ? latestConsult.tags : [mapCrisisLevel(latestConsult.crisis_level)])
-              .slice(0, 2)
-              .map((tag) => (
-                <span key={tag} className="consult-tag">{tag}</span>
-              ))}
+            <span className="consult-tag">{mapBucketLabel(latestConsult.bucket)}</span>
+            {latestConsult.crisis_stage && (
+              <span className="consult-tag">{latestConsult.crisis_stage}</span>
+            )}
           </div>
         </Link>
       ) : (

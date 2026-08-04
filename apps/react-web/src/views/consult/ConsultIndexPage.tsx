@@ -1,118 +1,89 @@
-import { useEffect, useRef, useState } from 'react';
-import { useConsult } from '@/logics/consult';
-import { useConsultStore } from '@/logics/consult/store/useConsultStore';
-import PageContent from '@/views/_shared/layout/PageContent';
-import IdlePanel from './components/IdlePanel';
-import SubmittingPanel from './components/SubmittingPanel';
-import StreamingPanel from './components/StreamingPanel';
-import CompletedPanel from './components/CompletedPanel';
-import ErrorPanel from './components/ErrorPanel';
-import TicketGuidePanel from './components/TicketGuidePanel';
-import './ConsultIndexPage.css';
+/**
+ * 应急咨询入口页——0 输入通用安全卡 + 行为桶选择（大字按钮，危机中单手可操作）。
+ * ADR-009 时刻分层：桶选择兼任输入方式/红线分流/检索过滤维度三职。
+ */
 
-const CRISIS_LABELS: Record<string, string> = {
-  mild: '等级：轻度',
-  moderate: '等级：中度',
-  severe: '等级：重度',
-};
+import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import {
+  BehaviorBucket,
+  BUCKET_UI_LABELS,
+  consultApi,
+  REDLINE_BUCKETS,
+  useConsultSession,
+} from '@/logics/consult';
+import type { SafetyCardPayload } from '@/logics/consult';
+import PageContent from '@/views/_shared/layout/PageContent';
+import './consult.css';
+
+const BUCKET_ORDER: BehaviorBucket[] = [
+  BehaviorBucket.MELTDOWN,
+  BehaviorBucket.STEREOTYPY,
+  BehaviorBucket.SELF_INJURY,
+  BehaviorBucket.AGGRESSION,
+  BehaviorBucket.ELOPEMENT,
+  BehaviorBucket.MEDICATION,
+  BehaviorBucket.SOCIAL_WITHDRAWAL,
+  BehaviorBucket.HYPERACTIVITY,
+  BehaviorBucket.OTHER,
+];
 
 export default function ConsultIndexPage() {
-  const consult = useConsult();
-  const [showEscalation, setShowEscalation] = useState(false);
+  const navigate = useNavigate();
+  const { startWithBucket } = useConsultSession();
+  const [universalCard, setUniversalCard] = useState<SafetyCardPayload | null>(null);
+  const [submitting, setSubmitting] = useState<BehaviorBucket | null>(null);
+  const [error, setError] = useState('');
 
-  // 从 consult/select 返回时，store 可能仍停留在 selecting_behavior，
-  // 导致内容区没有匹配的面板。仅在组件挂载时执行一次重置，
-  // 避免用户点击"开始咨询"后状态被立即复位到 idle。
-  const hasResetRef = useRef(false);
-  const sessionState = useConsultStore((s) => s.sessionState);
-  const cancelSelection = useConsultStore((s) => s.cancelSelection);
   useEffect(() => {
-    if (hasResetRef.current) return;
-    hasResetRef.current = true;
-    if (sessionState === 'selecting_behavior') {
-      cancelSelection();
-    }
-  }, [sessionState, cancelSelection]);
+    consultApi.fetchUniversalCard().then(setUniversalCard).catch(() => setUniversalCard(null));
+  }, []);
 
-  const crisisBadgeClass = consult.crisisLevel
-    ? `crisis-badge ${consult.crisisLevel} show`
-    : 'crisis-badge';
+  async function handleBucket(bucket: BehaviorBucket) {
+    if (submitting) return;
+    setError('');
+    setSubmitting(bucket);
+    try {
+      const sessionId = await startWithBucket(bucket);
+      navigate(`/consult/session/${sessionId}`);
+    } catch (err) {
+      setError((err as Error).message || '发起咨询失败，请稍后重试');
+      setSubmitting(null);
+    }
+  }
 
   return (
-    <>
-      {/* Navigation Bar */}
-      <div className="consult-nav" data-testid="consult-navbar">
-        <span className="nav-title">应急咨询</span>
-        <span className={crisisBadgeClass} data-testid="consult-navbar-crisis-badge">
-          {consult.crisisLevel ? CRISIS_LABELS[consult.crisisLevel] : ''}
-        </span>
+    <PageContent className="consult-index">
+      {/* 0 输入通用安全卡（秒级展示） */}
+      {universalCard && (
+        <section className="safety-card safety-card--universal">
+          <h2 className="safety-card__title">{universalCard.title}</h2>
+          <div className="safety-card__content">{universalCard.content}</div>
+        </section>
+      )}
+
+      <h1 className="consult-index__title">他现在是什么情况？</h1>
+      <p className="consult-index__hint">点选最符合的一项，我们一步步来</p>
+
+      <div className="bucket-grid">
+        {BUCKET_ORDER.map((bucket) => (
+          <button
+            key={bucket}
+            type="button"
+            className={`bucket-btn${REDLINE_BUCKETS.has(bucket) ? ' bucket-btn--redline' : ''}`}
+            disabled={submitting !== null}
+            onClick={() => void handleBucket(bucket)}
+          >
+            {submitting === bucket ? '进入中…' : BUCKET_UI_LABELS[bucket]}
+          </button>
+        ))}
       </div>
 
-      <PageContent className="consult-page-content">
-        {consult.sessionState === 'idle' && (
-          <IdlePanel onStartConsult={consult.startConsult} />
-        )}
-        {consult.sessionState === 'submitting' && <SubmittingPanel />}
-        {consult.sessionState === 'streaming' && (
-          <StreamingPanel
-            behaviorTypeSelection={consult.behaviorTypeSelection}
-            behaviorDescription={consult.behaviorDescription}
-            emotionLevel={consult.emotionLevel}
-            planSections={consult.planSections}
-          />
-        )}
-        {consult.sessionState === 'completed' && (
-          <CompletedPanel
-            behaviorTypeSelection={consult.behaviorTypeSelection}
-            behaviorDescription={consult.behaviorDescription}
-            emotionLevel={consult.emotionLevel}
-            planSections={consult.planSections}
-            referencedCases={consult.referencedCases}
-            crisisLevel={consult.crisisLevel}
-            confidenceScore={consult.confidenceScore}
-            onStartNew={consult.startNewConsult}
-            onGoToTicket={consult.goToTicket}
-            onShowEscalation={() => setShowEscalation(true)}
-            ticketGuideShow={consult.ticketGuide?.show ?? false}
-          />
-        )}
-        {consult.sessionState === 'submit_failed' && (
-          <ErrorPanel
-            variant="submit_failed"
-            errorMessage={consult.getErrorMessage(consult.errorCode ?? 'UNKNOWN')}
-            onRetry={consult.retrySubmit}
-            onBack={consult.goBackToSelecting}
-          />
-        )}
-        {consult.sessionState === 'stream_failed' && (
-          <ErrorPanel
-            variant="stream_failed"
-            errorMessage={consult.getErrorMessage(consult.errorCode ?? 'STREAM_BROKEN')}
-            onRetry={consult.retryStream}
-            onBack={consult.goBackToSelecting}
-          />
-        )}
-        {consult.sessionState === 'ticket_guide' && (
-          <TicketGuidePanel
-            onGoToTicket={consult.goToTicket}
-            onNewConsult={consult.startNewConsult}
-          />
-        )}
-      </PageContent>
+      {error && <div className="consult-error" role="alert">{error}</div>}
 
-      {/* Escalation Bar */}
-      {(consult.ticketGuide?.show || showEscalation) && (
-        <button
-          className="escalation-bar show"
-          data-testid="consult-escalation-bar"
-          onClick={consult.goToTicket}
-        >
-          <svg viewBox="0 0 24 24">
-            <path d="M22 12h-4l-3 9L9 3l-3 9H2" />
-          </svg>
-          立即联系人工专家
-        </button>
-      )}
-    </>
+      <div className="consult-index__footer">
+        <a href="/consult/history">查看咨询记录</a>
+      </div>
+    </PageContent>
   );
 }

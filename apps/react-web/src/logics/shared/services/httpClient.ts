@@ -47,11 +47,6 @@ export interface RequestOptions {
 
 export const httpClient = {
   async request<T = unknown>(options: RequestOptions): Promise<IRequestResponse<T>> {
-    if (import.meta.env.VITE_USE_MOCK === 'true') {
-      const { mockRequest } = await import('./mock/mockRouter');
-      return mockRequest(options) as Promise<IRequestResponse<T>>;
-    }
-
     const deviceId = deviceManager.getDeviceId();
     const url = resolveUrl(options.url);
     const headers: Record<string, string> = {

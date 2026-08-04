@@ -1,51 +1,24 @@
 /**
- * CSLT-08 咨询编排逻辑 — 域入口。
+ * 应急咨询域入口（ADR-009 时刻分层）。
  *
- * consult 域的唯一公共接口。View 层只能通过此入口导入，
- * 禁止直接引用 hooks/、store/、services/ 下的内部文件。
- *
- * 域内分层：
- *   views/ → hooks/ → store/ (Zustand) / services/ (API + SSE)
+ * consult 域的唯一公共接口。View 层只能通过此入口导入。
  */
 
 // ---- Hook（View 层主通道）----
-export { useConsult } from './hooks/useConsult';
+export { useConsultSession } from './hooks/useConsultSession';
 
 // ---- API 服务（历史/详情页独立使用）----
 export { consultApi } from './services/consultApi';
+export type { ConsultHistoryItem, ConsultHistoryList } from './services/consultApi';
 
 // ---- 类型 ----
+export { BehaviorBucket, BUCKET_UI_LABELS, REDLINE_BUCKETS } from './types';
 export type {
-  UseConsultReturn,
-  ConsultSessionState,
-  ConsultErrorCode,
-  ConsultSubmitRequest,
-  BehaviorTypeCategory,
-  CrisisLevel,
-  EmotionLevel,
-  PlanSection,
-  TicketGuide,
-  TicketRiskLevel,
-  MessageItem,
-  MessageId,
-  MessageSender,
-  MessageType,
-  ReferencedCase,
-  StreamErrorCode,
-  ValidationVerdict,
-  ConfidenceValidationOutput,
-  ConsultationHistoryListItem,
-  ConsultationHistoryDetail,
-  ConsultationHistoryCreate,
-  ChunkEventPayload,
-  DoneEventPayload,
-  ErrorEventPayload,
+  ConsultMessage,
+  ConsultPhase,
+  EmergencyPlanPayload,
+  FallbackNoticePayload,
+  RedlineGuidePayload,
+  SafetyCardPayload,
+  StageQuestionPayload,
 } from './types';
-
-export { StateTransitionError } from './types';
-
-// ---- 品牌类型 ----
-export type { SessionId, RequestId } from './consult.contract';
-
-// ---- 类型守卫 ----
-export { isValidConsultSubmitRequest } from './consult.contract';

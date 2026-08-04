@@ -1,8 +1,8 @@
 # @contract
 """红线安全门 — Pydantic 契约（ADR-008 二元安全门目标态）。
 
-二元判定（redline/pass）取代三级危机分级；判定为纯规则、零 LLM 参与
-（红线安全门与兜底策略 §一）。CrisisLevel 三级语义已废除。
+二元判定（redline/pass）取代旧三级危机分级；判定为纯规则、零 LLM 参与
+（红线安全门与兜底策略 §一）。旧三级危机分级语义已废除。
 
 模型清单：
     RedlineGateRequest   红线判定请求
