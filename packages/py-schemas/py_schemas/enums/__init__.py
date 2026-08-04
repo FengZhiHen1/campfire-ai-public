@@ -28,6 +28,20 @@ from py_schemas.enums.emergency_enums import (
     MeltdownType,
     TurnType,
 )
+from py_schemas.enums.profile_enums import (
+    AccessRole,
+    AccessStatus,
+    AntecedentCategory,
+    Comorbidity,
+    CommunicationMethod,
+    EventSetting,
+    EvidenceBasis,
+    FunctionHypothesis,
+    IntensityLevel,
+    Outcome,
+    PhysicalState,
+    RecordedByRole,
+)
 
 __all__ = [
     # 认证域
@@ -52,4 +66,17 @@ __all__ = [
     "TurnType",
     "GateResult",
     "FallbackSignal",
+    # 档案域（ADR-010 四层与 ABC）
+    "IntensityLevel",
+    "AntecedentCategory",
+    "PhysicalState",
+    "EventSetting",
+    "Outcome",
+    "FunctionHypothesis",
+    "Comorbidity",
+    "CommunicationMethod",
+    "AccessRole",
+    "AccessStatus",
+    "RecordedByRole",
+    "EvidenceBasis",
 ]

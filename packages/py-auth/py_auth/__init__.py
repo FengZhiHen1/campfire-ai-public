@@ -81,7 +81,6 @@ from py_auth.rbac import (
     ROLE_CAPABILITIES,
     Capability,
     DefaultRBACGuard,
-    PrivacyGuard,
     get_guard,
     get_masked_phone,
     has_capability,
@@ -140,5 +139,4 @@ __all__ = [
     "require_roles",
     "get_guard",
     "get_masked_phone",
-    "PrivacyGuard",
 ]

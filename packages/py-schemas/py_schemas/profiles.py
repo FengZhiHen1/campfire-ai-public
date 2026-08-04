@@ -1,887 +1,299 @@
 # @contract
-"""PROF-05 档案隐私控制 + PROF-01 个人档案管理 + PROF-03 事件记录管理 — Pydantic Schema 定义。
+"""个性化档案库 — Pydantic 契约（ADR-010 四层结构与 ABC 标准化目标态）。
 
-PROF-05 部分：提供档案操作类型枚举、可见范围枚举、访问请求和裁决模型。
-PROF-01 部分：提供个人档案管理的 DTO 和枚举类型。
-PROF-03 部分：提供事件记录管理的 DTO（EventCreate/EventUpdate/EventResponse/
-EventListItem）和枚举（SeverityLevel/EventSetting）。
+四层结构（数据模型 §2-§5）：
+- 身份基础层（IdentityLayer）：相对稳定的人口学与诊断信息
+- 危机预案层（CrisisPlanLayer）：应急槽位的唯一字段来源
+- 事件时间线层（EventLog）：ABC 结构化事件（一键打点 + 事后补全双模式）
+- 专业评估层（ProfessionalNote）：老师/专家挂载，只读家属内容
 
-对外接口类型定义与 docs/contracts/ 下的 JSON Schema 契约一致。
+关联管理（ProfileAccess）：家属主控，受邀协作（老师/专家/志愿者），
+家属可随时单方面解除（隐私与权限 §1.1）。
 
-契约引用（PROF-05）：
-- AccessOperation: docs/contracts/PROF-05/AccessOperation.json
-- VisibleScope: docs/contracts/PROF-05/VisibleScope.json
-- AccessRequest: docs/contracts/PROF-05/AccessRequest.json
-- AccessDecision: docs/contracts/PROF-05/AccessDecision.json
-
-契约引用（PROF-01）：
-- DiagnosisType: docs/contracts/PROF-01/DiagnosisType.json
-- ProfileBehaviorType: docs/contracts/PROF-01/ProfileBehaviorType.json
-- LanguageLevel: docs/contracts/PROF-01/LanguageLevel.json
-- SensoryFeature: docs/contracts/PROF-01/SensoryFeature.json
-- Trigger: docs/contracts/PROF-01/Trigger.json
-- AgeRange: docs/contracts/PROF-01/AgeRange.json
-- ProfileCreate: docs/contracts/PROF-01/ProfileCreate.json
-- ProfileUpdate: docs/contracts/PROF-01/ProfileUpdate.json
-- ProfileResponse: docs/contracts/PROF-01/ProfileResponse.json
-- ProfileListItem: docs/contracts/PROF-01/ProfileListItem.json
-
-契约引用（PROF-03）：
-- SeverityLevel: docs/contracts/PROF-03/SeverityLevel.json
-- EventSetting: docs/contracts/PROF-03/EventSetting.json
-- EventCreate: docs/contracts/PROF-03/EventCreate.json
-- EventUpdate: docs/contracts/PROF-03/EventUpdate.json
-- EventResponse: docs/contracts/PROF-03/EventResponse.json
-- EventListItem: docs/contracts/PROF-03/EventListItem.json
+已废除：旧单层扁平 DTO、severity_level 3 级、intervention_tried/result、
+PROF-05 隐私 DTO（AccessDecision 等——数据级授权由 ProfileAccess 落地）。
 """
 
 from __future__ import annotations
 
-from datetime import date, datetime, timedelta, timezone
-from enum import StrEnum
+from datetime import date
 from uuid import UUID
 
 from pydantic import Field, field_validator
 
 from py_schemas.base import CampfireBaseModel
-
-# ===========================================================================
-# PROF-05 类型（保持不变）
-# ===========================================================================
-
-
-class AccessOperation(StrEnum):
-    """个人档案操作类型枚举。
-
-    定义可对个人档案执行的全部操作种类，六值枚举：
-    - VIEW: 查看档案内容
-    - CREATE: 新增档案数据
-    - UPDATE: 修改档案数据
-    - DELETE: 删除档案数据
-    - SUPPLEMENT_ASSESSMENT: 补充专业评估
-    - UNLINK: 解除老师关联
-
-    与 docs/contracts/PROF-05/AccessOperation.json 契约一致。
-    """
-
-    VIEW = "view"
-    CREATE = "create"
-    UPDATE = "update"
-    DELETE = "delete"
-    SUPPLEMENT_ASSESSMENT = "supplement_assessment"
-    UNLINK = "unlink"
-
-
-class VisibleScope(StrEnum):
-    """档案数据可见范围枚举。
-
-    定义访问被允许时请求人可查看的数据范围，三值枚举：
-    - ALL_FIELDS: 全部字段可见（家属、关联老师/专家）
-    - METADATA_ONLY: 仅元数据可见（管理员）
-    - NOTHING: 无可见内容（非关联用户/拒绝时）
-
-    与 docs/contracts/PROF-05/VisibleScope.json 契约一致。
-    """
-
-    ALL_FIELDS = "all_fields"
-    METADATA_ONLY = "metadata_only"
-    NOTHING = "none"
-
-
-class AccessRequest(CampfireBaseModel):
-    """档案访问请求输入模型。
-
-    封装一次档案访问请求的全部上下文信息，由下游模块（PROF-01/03/04）
-    在执行档案操作前构造并传递给 PrivacyGuard.check_access() 进行权限校验。
-
-    与 docs/contracts/PROF-05/AccessRequest.json 契约一致。
-
-    Attributes:
-        operation: 请求执行的操作类型，必须在 AccessOperation 枚举值范围内。
-        target_profile_id: 目标个人档案的唯一标识。
-        requester_id: 请求发起人的用户唯一标识。
-        requester_role: 请求发起人的角色枚举值（family/teacher/expert/admin/maintainer）。
-        relation_type: 请求人与目标档案的关联关系类型（可选）。
-    """
-
-    operation: AccessOperation = Field(
-        ...,
-        description="请求执行的操作类型，必须在 AccessOperation 枚举值范围内",
-    )
-    target_profile_id: UUID = Field(
-        ...,
-        description="目标个人档案的唯一标识，必须对应 profiles 表中的有效记录",
-    )
-    requester_id: UUID = Field(
-        ...,
-        description="请求发起人的用户唯一标识，必须是已通过 AUTH-04 鉴权的有效用户",
-    )
-    requester_role: str = Field(
-        ...,
-        pattern="^(family|teacher|expert|admin|maintainer)$",
-        description="请求发起人的角色枚举值，必须是五级角色之一",
-    )
-    relation_type: str | None = Field(
-        default=None,
-        description=(
-            "请求人与目标档案的关联关系类型。"
-            "linked_teacher/linked_expert 表示已关联，"
-            "family_member 表示同家庭家属，none 表示无关联"
-        ),
-    )
-
-
-class AccessDecision(CampfireBaseModel):
-    """档案访问裁决输出模型。
-
-    封装 PrivacyGuard.check_access() 对一次档案访问请求的裁决结论。
-    被下游模块（PROF-01/03/04）消费以决定是否继续执行数据库操作。
-
-    与 docs/contracts/PROF-05/AccessDecision.json 契约一致。
-
-    Attributes:
-        allowed: 访问许可结果。true 表示允许，false 表示拒绝。
-        visible_scope: 可见数据范围。allowed=true 时值取决于角色；allowed=false 时固定为 nothing。
-        denial_reason: 拒绝原因。allowed=false 时必填，值为泛化消息"数据不存在"。
-    """
-
-    allowed: bool = Field(
-        ...,
-        description="访问许可结果。true 表示允许执行所请求的操作，false 表示拒绝",
-    )
-    visible_scope: VisibleScope = Field(
-        ...,
-        description=(
-            "可见数据范围。allowed=true 时值取决于角色和访问矩阵"
-            "（all_fields/metadata_only）；allowed=false 时固定为 none"
-        ),
-    )
-    denial_reason: str | None = Field(
-        default=None,
-        max_length=100,
-        description=("拒绝原因。allowed=false 时必填，值必须为泛化消息'数据不存在'。allowed=true 时为 null"),
-    )
+from py_schemas.enums import (
+    AccessRole,
+    AccessStatus,
+    AntecedentCategory,
+    BehaviorBucket,
+    Comorbidity,
+    CommunicationMethod,
+    EventSetting,
+    EvidenceBasis,
+    FunctionHypothesis,
+    IntensityLevel,
+    Outcome,
+    PhysicalState,
+    RecordedByRole,
+)
 
 
 # ===========================================================================
-# PROF-01 — 枚举类型
+# 身份基础层
 # ===========================================================================
 
 
-class DiagnosisType(StrEnum):
-    """患者诊断类型枚举。
-
-    定义孤独症谱系障碍的专业诊断分类。
-    用于个人档案的必填字段 diagnosis_type。
-
-    与 docs/contracts/PROF-01/DiagnosisType.json 契约一致。
-    """
-
-    ASD = "ASD"
-    SUSPECTED_ASD = "疑似ASD"
-    OTHER_DEVELOPMENTAL_DISORDER = "其他发育障碍"
-
-
-class ProfileBehaviorType(StrEnum):
-    """个人档案主要行为类型枚举。
-
-    定义孤独症患者最常出现的行为特征类别（单值必填）。
-    用于个人档案的必填字段 primary_behavior。
-    与 CASE-01 的 BehaviorType 业务域不同，使用 ProfileBehaviorType 命名以避碰。
-
-    与 docs/contracts/PROF-01/ProfileBehaviorType.json 契约一致。
-    """
-
-    STEREOTYPED = "刻板行为"
-    MELTDOWN = "情绪崩溃"
-    SELF_INJURY = "自伤行为"
-    AGGRESSION = "攻击行为"
-    SOCIAL_WITHDRAWAL = "社交退缩"
-    HYPERACTIVITY = "多动"
-
-
-class LanguageLevel(StrEnum):
-    """患者语言沟通能力评估等级枚举。
-
-    用于个人档案的可选字段 language_level。
-    持久化值与 @campfire/ts-shared LanguageLevel 枚举保持一致。
-
-    与 docs/contracts/PROF-01/LanguageLevel.json 契约一致。
-    """
-
-    NON_VERBAL = "non_verbal"
-    SINGLE_WORDS = "single_words"
-    SHORT_PHRASES = "short_phrases"
-    CONVERSATIONAL = "conversational"
-
-
-class SensoryFeature(StrEnum):
-    """患者感官特征枚举。
-
-    定义孤独症人士常见的感官反应类别（可多选）。
-    用于个人档案的可选字段 sensory_features。
-
-    与 docs/contracts/PROF-01/SensoryFeature.json 契约一致。
-    """
-
-    AUDITORY_SENSITIVE = "听觉敏感"
-    TACTILE_SENSITIVE = "触觉敏感"
-    GUSTATORY_SENSITIVE = "味觉敏感"
-    VISUAL_SENSITIVE = "视觉敏感"
-    VESTIBULAR_SEEKING = "前庭寻求"
-    PROPRIOCEPTIVE_SEEKING = "本体觉寻求"
-
-
-class Trigger(StrEnum):
-    """已知触发因素枚举。
-
-    定义可能引发患者情绪波动或行为问题的环境/情境因素（可多选）。
-    用于个人档案的可选字段 triggers。
-
-    与 docs/contracts/PROF-01/Trigger.json 契约一致。
-    """
-
-    NOISE = "噪音"
-    ENVIRONMENTAL_CHANGE = "环境变化"
-    STRANGER = "陌生人"
-    TASK_INTERRUPTION = "任务中断"
-    SOCIAL_PRESSURE = "社交压力"
-    SENSORY_OVERLOAD = "感官过载"
-    PHYSICAL_DISCOMFORT = "身体不适"
-
-
-class AgeRange(StrEnum):
-    """患者年龄区间枚举。
-
-    由出生日期实时计算得出（不持久化存储）。
-    用于个人档案输出字段 age_range 和下游 PROF-02 的检索过滤。
-    持久化值与 @campfire/ts-shared AgeRange 枚举保持一致。
-
-    与 docs/contracts/PROF-01/AgeRange.json 契约一致。
-    """
-
-    AGE_0_3 = "0-3"
-    AGE_4_6 = "4-6"
-    AGE_7_12 = "7-12"
-    AGE_13_18 = "13-18"
-    AGE_18_PLUS = "18+"
-
-
-# ===========================================================================
-# PROF-01 — DTO
-# ===========================================================================
-
-
-class ProfileCreate(CampfireBaseModel):
-    """个人档案创建请求体。
-
-    家属通过 POST /api/v1/profiles 创建新患者档案时提交的输入模型。
-    必填字段为 birth_date、diagnosis_type、primary_behavior 共 3 项。
-
-    与 docs/contracts/PROF-01/ProfileCreate.json 契约一致。
-    """
+class IdentityLayerDto(CampfireBaseModel):
+    """身份基础层（冷启动必填：birth_date/diagnosis_type/primary_behavior）。"""
 
     nickname: str | None = Field(
         default=None,
         max_length=10,
-        description="档案昵称，家属对患者的日常称呼，仅家庭内部可见。不使用真实姓名",
-        examples=["小明"],
+        description="家属自定义称呼（应急槽位来源；不得以「孩子」为默认称呼）",
     )
-    birth_date: date = Field(
+    birth_date: date = Field(..., description="出生日期（系统自动计算年龄区间，全生命周期覆盖）")
+    diagnosis_type: str = Field(
         ...,
-        description="患者的出生日期，格式 YYYY-MM-DD，不能晚于当前日期",
-        examples=["2019-03-15"],
-    )
-    diagnosis_type: DiagnosisType = Field(
-        ...,
-        description="患者获得的专业诊断结果分类",
+        description="诊断类型：ASD / 疑似 ASD / 其他发育障碍",
         examples=["ASD"],
     )
-    primary_behavior: ProfileBehaviorType = Field(
-        ...,
-        description="患者最常出现的行为特征类别",
-        examples=["刻板行为"],
-    )
-    language_level: LanguageLevel | None = Field(
-        default=None,
-        description="患者的语言沟通能力评估等级",
-        examples=["short_phrases"],
-    )
-    sensory_features: list[SensoryFeature] = Field(
-        default_factory=list,
-        max_length=6,
-        description="患者感官反应的特殊性（可多选，最多 6 项）",
-    )
-    triggers: list[str] = Field(
-        default_factory=list,
-        max_length=7,
-        description="已知会引发患者情绪波动或行为问题的环境或情境因素。"
-        "支持 Trigger 枚举预设值及家属自定义文本（如「害怕狗」），最多 7 项。",
-    )
-    medication_notes: str | None = Field(
-        default=None,
-        max_length=200,
-        description="患者当前服用的药物信息，建议注明药名和剂量。仅家属本人和关联老师可见",
-        examples=["利培酮每日 0.5mg，睡前服用"],
-    )
-
-    @field_validator("birth_date")
-    @classmethod
-    def birth_date_not_future(cls, v: date) -> date:
-        """校验出生日期不能晚于当前日期。"""
-        if v > date.today():
-            raise ValueError("出生日期不能晚于当前日期")
-        return v
+    primary_behavior: BehaviorBucket = Field(..., description="主要行为类型（统一行为枚举）")
+    comorbidities: list[Comorbidity] = Field(default_factory=list, description="精神共病多选")
+    sensory_profile: list[str] = Field(default_factory=list, description="感官特征多选")
+    triggers: list[str] = Field(default_factory=list, description="已知情绪触发因素")
+    is_default: bool = Field(default=False, description="是否为该账号下默认档案")
 
 
-class ProfileUpdate(CampfireBaseModel):
-    """个人档案更新请求体。
+# ===========================================================================
+# 危机预案层（应急槽位唯一字段来源）
+# ===========================================================================
 
-    家属通过 PUT /api/v1/profiles/{profile_id} 修改已有档案时提交的输入模型。
-    所有字段均为可选——仅提交需要更新的字段，未提交的字段保持原值不变。
 
-    与 docs/contracts/PROF-01/ProfileUpdate.json 契约一致。
-    """
+class EmergencyContact(CampfireBaseModel):
+    """安全联系人。"""
 
-    nickname: str | None = Field(
-        default=None,
-        max_length=10,
-        description="档案昵称",
-    )
-    birth_date: date | None = Field(
-        default=None,
-        description="患者的出生日期，不能晚于当前日期",
-    )
-    diagnosis_type: DiagnosisType | None = Field(
-        default=None,
-        description="诊断类型",
-    )
-    primary_behavior: ProfileBehaviorType | None = Field(
-        default=None,
-        description="主要行为类型",
-    )
-    language_level: LanguageLevel | None = Field(
-        default=None,
-        description="语言水平",
-    )
-    sensory_features: list[SensoryFeature] | None = Field(
-        default=None,
-        max_length=6,
-        description="感官特征（多选）",
-    )
-    triggers: list[str] | None = Field(
-        default=None,
-        max_length=7,
-        description="已知触发因素（多选）。支持预设 Trigger 枚举值及自定义文本。",
-    )
-    medication_notes: str | None = Field(
-        default=None,
-        max_length=200,
-        description="用药备注",
-    )
+    name: str = Field(..., max_length=20)
+    relation: str = Field(..., max_length=20)
+    phone: str = Field(..., min_length=5, max_length=20)
 
-    @field_validator("birth_date")
-    @classmethod
-    def birth_date_not_future(cls, v: date | None) -> date | None:
-        """校验出生日期不能晚于当前日期。"""
-        if v is not None and v > date.today():
-            raise ValueError("出生日期不能晚于当前日期")
-        return v
+
+class CrisisPlanLayerDto(CampfireBaseModel):
+    """危机预案层（冷启动仅走失史家庭重点引导走失组，其余渐进完善）。"""
+
+    # 走失专项组
+    physical_description: str | None = Field(default=None, description="体貌特征（报警话术填充）")
+    familiar_places: list[str] = Field(default_factory=list, description="常去地点/可能去向")
+    water_risk: list[str] = Field(default_factory=list, description="水体风险与游泳能力")
+    # 干预偏好组
+    soothing_items: list[str] = Field(default_factory=list, description="有效安抚物/感官工具")
+    avoid_list: list[str] = Field(default_factory=list, description="禁忌/无效方式")
+    # 沟通与联系组
+    communication_methods: list[CommunicationMethod] = Field(
+        default_factory=list, description="语言水平 + AAC/视觉支持多选"
+    )
+    emergency_contacts: list[EmergencyContact] = Field(default_factory=list, description="安全联系人")
+    medication_notes: str | None = Field(default=None, description="用药记录（仅家属和老师可见）")
+
+
+# ===========================================================================
+# 档案 CRUD DTO
+# ===========================================================================
+
+
+class ProfileCreateRequest(CampfireBaseModel):
+    """创建档案（身份基础层必填，危机预案层可选渐进完善）。"""
+
+    identity: IdentityLayerDto
+    crisis_plan: CrisisPlanLayerDto | None = Field(default=None, description="危机预案层（可选，渐进完善）")
+
+
+class ProfileUpdateRequest(CampfireBaseModel):
+    """更新档案（分层分步保存——两层均可独立部分更新）。"""
+
+    identity: IdentityLayerDto | None = None
+    crisis_plan: CrisisPlanLayerDto | None = None
 
 
 class ProfileResponse(CampfireBaseModel):
-    """个人档案详情响应体。
+    """档案完整视图（身份层 + 危机预案层 + 元信息）。"""
 
-    GET /api/v1/profiles/{profile_id} 和 POST/PUT 操作成功后返回的完整档案数据。
-    age_range 字段由出生日期实时计算（不持久化）。
-
-    与 docs/contracts/PROF-01/ProfileResponse.json 契约一致。
-    """
-
-    profile_id: UUID = Field(
-        ...,
-        description="系统为档案分配的唯一标识，UUID v4 格式，全局不可重复",
-        examples=["550e8400-e29b-41d4-a716-446655440000"],
-    )
-    nickname: str | None = Field(
-        default=None,
-        max_length=10,
-        description="档案昵称",
-    )
-    birth_date: date = Field(
-        ...,
-        description="患者的出生日期，YYYY-MM-DD 格式",
-    )
-    age_range: AgeRange = Field(
-        ...,
-        description="由出生日期实时计算得出的年龄区间，不持久化存储",
-    )
-    diagnosis_type: DiagnosisType = Field(
-        ...,
-        description="诊断类型",
-    )
-    primary_behavior: ProfileBehaviorType = Field(
-        ...,
-        description="主要行为类型",
-    )
-    language_level: LanguageLevel | None = Field(
-        default=None,
-        description="语言水平",
-    )
-    sensory_features: list[SensoryFeature] = Field(
-        ...,
-        description="感官特征列表",
-    )
-    triggers: list[str] = Field(
-        ...,
-        description="已知触发因素列表。支持 Trigger 枚举预设值及自定义文本。",
-    )
-    medication_notes: str | None = Field(
-        default=None,
-        max_length=200,
-        description="用药备注",
-    )
-    is_default: bool = Field(
-        ...,
-        description="是否为当前家属账号的默认档案，同一账号下有且仅有一个默认为 true",
-    )
-    caregiver_id: UUID = Field(
-        ...,
-        description="所属家属用户标识，由服务端从 JWT payload 注入，不来自客户端请求",
-    )
-    created_at: datetime = Field(
-        ...,
-        description="档案首次创建的日期与时刻，服务端自动记录，不可修改",
-    )
-    updated_at: datetime = Field(
-        ...,
-        description="档案最近一次被修改的日期与时刻，每次修改后自动刷新",
-    )
+    profile_id: str
+    caregiver_id: str
+    identity: IdentityLayerDto
+    crisis_plan: CrisisPlanLayerDto
+    age_range: str = Field(..., description="系统计算的年龄区间（由 birth_date 推导）")
+    created_at: str
+    updated_at: str
 
 
 class ProfileListItem(CampfireBaseModel):
-    """个人档案列表条目响应体。
+    """档案列表项。"""
 
-    GET /api/v1/profiles 返回的档案列表中的每个条目，
-    为 ProfileResponse 的精简版。
-
-    与 docs/contracts/PROF-01/ProfileListItem.json 契约一致。
-    """
-
-    profile_id: UUID = Field(
-        ...,
-        description="档案唯一标识",
-        examples=["550e8400-e29b-41d4-a716-446655440000"],
-    )
-    nickname: str | None = Field(
-        default=None,
-        max_length=10,
-        description="档案昵称",
-    )
-    age_range: AgeRange = Field(
-        ...,
-        description="年龄区间（实时计算）",
-    )
-    diagnosis_type: DiagnosisType = Field(
-        ...,
-        description="诊断类型",
-    )
-    primary_behavior: ProfileBehaviorType = Field(
-        ...,
-        description="主要行为类型",
-    )
-    is_default: bool = Field(
-        ...,
-        description="是否为当前家属账号的默认档案",
-    )
+    profile_id: str
+    nickname: str | None
+    age_range: str
+    diagnosis_type: str
+    primary_behavior: BehaviorBucket
+    is_default: bool
+    created_at: str
 
 
 # ===========================================================================
-
-# ===========================================================================
-# PROF-03 — 枚举类型
+# 事件时间线层（ABC 结构化，双模式记录）
 # ===========================================================================
 
 
-class SeverityLevel(StrEnum):
-    """家属自评事件严重程度枚举。
+class EventCreateRequest(CampfireBaseModel):
+    """一键打点（危机中）：必填仅 behavior_type，自动时间戳（is_quick_log=true）。"""
 
-    面向家属对单次事件的即时主观评估，三值短形式适配移动端快速选择。
-    与 CASE-01 的 SeverityLevel（轻度/中度/重度）业务域不同——
-    PROF-03 面向家属即时评估，CASE-01 面向案例审核的结构化标准。
-
-    与 docs/contracts/PROF-03/SeverityLevel.json 契约一致。
-    """
-
-    MILD = "轻"
-    MODERATE = "中"
-    SEVERE = "重"
+    behavior_type: BehaviorBucket = Field(..., description="行为大类（打点必填）")
+    event_time: str | None = Field(default=None, description="事件发生时间（ISO 8601；空=服务端当前时间）")
+    session_id: str | None = Field(default=None, description="挂接的应急咨询会话（可挂应急会话自动生成）")
 
 
-class EventSetting(StrEnum):
-    """事件发生场景枚举。
+class EventCompleteRequest(CampfireBaseModel):
+    """事后补全（A.4 顺序引导，全部可选）。"""
 
-    定义行为/情绪事件发生时所处的环境类型，四值可选字段。
-    用于事件记录的 setting 字段。
-
-    与 docs/contracts/PROF-03/EventSetting.json 契约一致。
-    """
-
-    HOME = "家庭"
-    SCHOOL = "学校"
-    PUBLIC = "公共场合"
-    INSTITUTION = "机构"
-
-
-# ===========================================================================
-# PROF-03 — DTO
-# ===========================================================================
-
-
-class EventCreate(CampfireBaseModel):
-    """创建事件记录的输入模型。
-
-    家属填写事件结构化表单后提交。Service 层校验 30 天追溯期、
-    档案存在性、权限、容量上限后写入 event_logs 表。
-
-    与 docs/contracts/PROF-03/EventCreate.json 契约一致。
-    """
-
-    event_time: datetime = Field(
-        ...,
-        description="事件实际发生时间（UTC），支持补录历史事件。Service 层校验 >= utcnow - 30d",
-    )
-    behavior_type: ProfileBehaviorType = Field(
-        ...,
-        description="行为类型分类，复用 PROF-01 的 ProfileBehaviorType 枚举",
-    )
-    severity_level: SeverityLevel = Field(
-        ...,
-        description="家属自评严重程度，三值枚举（轻/中/重）",
-    )
-    setting: EventSetting | None = Field(
-        default=None,
-        description="行为事件发生场景，可选字段。不填写时为 null",
-    )
-    trigger_description: str = Field(
-        ...,
-        min_length=1,
-        max_length=2000,
-        description="触发因素描述，自由文本",
-    )
-    manifestation: str = Field(
-        ...,
-        min_length=1,
-        max_length=2000,
-        description="具体表现描述，自由文本",
-    )
-    intervention_tried: str = Field(
-        ...,
-        min_length=1,
-        max_length=2000,
-        description="尝试干预措施，自由文本",
-    )
-    intervention_result: str = Field(
-        ...,
-        min_length=1,
-        max_length=2000,
-        description="干预结果，自由文本",
-    )
-    tags: list[str] | None = Field(
-        default=None,
-        max_length=5,
-        description="自定义标签列表，可选，最多 5 个。每个标签经归一处理后不超过 10 字",
-    )
-
-    @field_validator("event_time")
-    @classmethod
-    def event_time_not_future(cls, v: datetime) -> datetime:
-        """校验事件时间不能晚于当前时间（防止未来时间戳）。
-
-        容差 5 分钟——移动设备时钟常与服务器不同步，偏差数秒至
-        1-2 分钟常见。过严的零容差策略导致正常的"现在发生"事件
-        提交因轻微时钟偏差被拒绝。
-        """
-        if v.tzinfo is None:
-            v = v.replace(tzinfo=timezone.utc)
-        if v > datetime.now(timezone.utc) + timedelta(minutes=5):
-            raise ValueError("事件时间不能晚于当前时间")
-        return v
+    behavior_form: str | None = Field(default=None, description="具体形态（BPI-01 词表）")
+    intensity: IntensityLevel | None = None
+    duration: str | None = Field(default=None, max_length=50, description="持续时间（如「约 5 分钟」）")
+    setting: EventSetting | None = None
+    activity: str | None = Field(default=None, max_length=100, description="进行中的活动")
+    people_present: str | None = Field(default=None, max_length=100, description="在场人员")
+    physical_state: list[PhysicalState] | None = None
+    antecedent_category: AntecedentCategory | None = None
+    trigger_description: str | None = Field(default=None, description="前事细节补充（可选）")
+    consequence: str | None = Field(default=None, description="后果/应对（你做了什么）")
+    reaction: str | None = Field(default=None, description="当事人对后果的反应")
+    outcome: Outcome | None = Field(default=None, description="干预效果结构标记")
+    manifestation: str | None = Field(default=None, description="具体表现补充描述")
+    note: str | None = Field(default=None, description="自由备注（唯一自由文本字段）")
+    tags: list[str] | None = Field(default=None, description="自定义标签（最多 5 个）")
 
     @field_validator("tags")
     @classmethod
-    def validate_tags_items(cls, v: list[str] | None) -> list[str] | None:
-        """校验每个标签非空且不超过 10 字符（pre-normalization check）。"""
-        if v is not None:
-            for tag in v:
-                if not tag or not tag.strip():
-                    raise ValueError("标签不能为空字符串")
-                if len(tag) > 10:
-                    raise ValueError(f"单个标签不能超过 10 个字符，当前: {tag!r}")
-        return v
-
-
-class EventUpdate(CampfireBaseModel):
-    """更新事件记录的输入模型（Merge Patch 语义）。
-
-    所有字段默认为 None（表示不修改此字段）。仅用户显式提供的
-    非 None 字段写入数据库。setting 字段传入显式 None 表示清除
-    已设置的发生场景。
-
-    与 docs/contracts/PROF-03/EventUpdate.json 契约一致。
-    """
-
-    event_time: datetime | None = Field(
-        default=None,
-        description="修改后的事件实际发生时间，null 表示不修改此字段",
-    )
-    behavior_type: ProfileBehaviorType | None = Field(
-        default=None,
-        description="修改后的行为类型，null 表示不修改此字段",
-    )
-    severity_level: SeverityLevel | None = Field(
-        default=None,
-        description="修改后的严重程度，null 表示不修改此字段",
-    )
-    setting: EventSetting | None = Field(
-        default=None,
-        description="修改后的发生场景。传入 null（显式）表示清除已设置的发生场景",
-    )
-    trigger_description: str | None = Field(
-        default=None,
-        min_length=1,
-        max_length=2000,
-        description="修改后的触发因素描述，null 表示不修改此字段",
-    )
-    manifestation: str | None = Field(
-        default=None,
-        min_length=1,
-        max_length=2000,
-        description="修改后的具体表现描述，null 表示不修改此字段",
-    )
-    intervention_tried: str | None = Field(
-        default=None,
-        min_length=1,
-        max_length=2000,
-        description="修改后的尝试干预措施，null 表示不修改此字段",
-    )
-    intervention_result: str | None = Field(
-        default=None,
-        min_length=1,
-        max_length=2000,
-        description="修改后的干预结果，null 表示不修改此字段",
-    )
-    tags: list[str] | None = Field(
-        default=None,
-        max_length=5,
-        description="修改后的自定义标签列表，null 表示不修改此字段",
-    )
-
-    @field_validator("event_time")
-    @classmethod
-    def event_time_not_future(cls, v: datetime | None) -> datetime | None:
-        """校验事件时间不能晚于当前时间。
-
-        Pydantic 解析不带时区的 ISO 8601 字符串时产生 naive datetime，
-        无法直接与 timezone-aware datetime 比较。先统一规范化。
-        """
-        if v is not None:
-            if v.tzinfo is None:
-                v = v.replace(tzinfo=timezone.utc)
-            if v > datetime.now(timezone.utc):
-                raise ValueError("事件时间不能晚于当前时间")
-        return v
-
-    @field_validator("tags")
-    @classmethod
-    def validate_tags_items(cls, v: list[str] | None) -> list[str] | None:
-        """校验每个标签非空且不超过 10 字符。"""
-        if v is not None:
-            for tag in v:
-                if not tag or not tag.strip():
-                    raise ValueError("标签不能为空字符串")
-                if len(tag) > 10:
-                    raise ValueError(f"单个标签不能超过 10 个字符，当前: {tag!r}")
+    def tags_max_five(cls, v: list[str] | None) -> list[str] | None:
+        if v is not None and len(v) > 5:
+            raise ValueError("自定义标签最多 5 个")
         return v
 
 
 class EventResponse(CampfireBaseModel):
-    """事件记录完整详情输出模型。
+    """事件完整视图。"""
 
-    包含 16 个字段，覆盖意图文档全部输出字段。
-    recorded_by 和 recorded_by_role 由系统从 JWT 获取。
-    is_professional 默认为 false，仅 PROF-04 补充评估后设置为 true。
-
-    与 docs/contracts/PROF-03/EventResponse.json 契约一致。
-    """
-
-    event_id: UUID = Field(
-        ...,
-        description="事件唯一标识，系统通过 uuid.uuid4() 生成",
-    )
-    profile_id: UUID = Field(
-        ...,
-        description="所属档案标识",
-    )
-    recorded_by: UUID = Field(
-        ...,
-        description="记录人标识，创建时从 JWT payload 获取",
-    )
-    recorded_by_role: str = Field(
-        ...,
-        description="记录人角色，创建时固定为 'parent'",
-    )
-    event_time: datetime = Field(
-        ...,
-        description="事件实际发生时间（UTC）",
-    )
-    behavior_type: str = Field(
-        ...,
-        description="行为类型（字符串形式），对应 ProfileBehaviorType 枚举值",
-    )
-    severity_level: str = Field(
-        ...,
-        description="家属自评严重程度（字符串形式）",
-    )
-    setting: str | None = Field(
-        default=None,
-        description="发生场景，未填写时为 null",
-    )
-    trigger_description: str = Field(
-        ...,
-        description="触发因素描述",
-    )
-    manifestation: str = Field(
-        ...,
-        description="具体行为与情绪表现细节",
-    )
-    intervention_tried: str = Field(
-        ...,
-        description="尝试的干预措施",
-    )
-    intervention_result: str = Field(
-        ...,
-        description="干预措施的效果",
-    )
-    is_professional: bool = Field(
-        default=False,
-        description="是否有专业评估补充",
-    )
-    tags: list[str] | None = Field(
-        default=None,
-        description="自定义标签列表，未填写时为 null",
-    )
-    created_at: datetime = Field(
-        ...,
-        description="记录创建时间（UTC），服务端自动生成",
-    )
-    updated_at: datetime = Field(
-        ...,
-        description="最后更新时间（UTC），每次修改后自动刷新",
-    )
+    event_id: str
+    profile_id: str
+    recorded_by: str
+    recorded_by_role: RecordedByRole
+    event_time: str
+    is_quick_log: bool
+    behavior_type: BehaviorBucket
+    behavior_form: str | None = None
+    intensity: IntensityLevel | None = None
+    duration: str | None = None
+    setting: EventSetting | None = None
+    activity: str | None = None
+    people_present: str | None = None
+    physical_state: list[PhysicalState] | None = None
+    antecedent_category: AntecedentCategory | None = None
+    trigger_description: str | None = None
+    consequence: str | None = None
+    reaction: str | None = None
+    outcome: Outcome | None = None
+    function_hypothesis: FunctionHypothesis | None = None
+    manifestation: str | None = None
+    note: str | None = None
+    tags: list[str] | None = None
+    created_at: str
 
 
-class EventListItem(CampfireBaseModel):
-    """事件记录列表精简条目输出模型。
-
-    用于 GET /api/v1/profiles/{profile_id}/events 列表接口，
-    包含列表展示所需的核心字段以及事件描述字段。
-    has_professional_note 语义与 EventResponse.is_professional 对应。
-
-    与 docs/contracts/PROF-03/EventListItem.json 契约一致。
-    """
-
-    event_id: UUID = Field(
-        ...,
-        description="事件唯一标识",
-    )
-    event_time: datetime = Field(
-        ...,
-        description="事件实际发生时间（UTC）",
-    )
-    behavior_type: str = Field(
-        ...,
-        description="行为类型（字符串形式）",
-    )
-    severity_level: str = Field(
-        ...,
-        description="严重程度（字符串形式）",
-    )
-    setting: str | None = Field(
-        default=None,
-        description="发生场景，未填写时为 null",
-    )
-    trigger_description: str | None = Field(
-        default=None,
-        description="触发因素描述",
-    )
-    manifestation: str | None = Field(
-        default=None,
-        description="具体行为与情绪表现细节",
-    )
-    intervention_tried: str | None = Field(
-        default=None,
-        description="尝试的干预措施",
-    )
-    intervention_result: str | None = Field(
-        default=None,
-        description="干预措施的效果",
-    )
-    has_professional_note: bool = Field(
-        ...,
-        description="是否有专业评估补充。与 EventResponse.is_professional 语义对应",
-    )
-    created_at: datetime = Field(
-        ...,
-        description="记录创建时间（UTC）",
-    )
+class EventListResponse(CampfireBaseModel):
+    items: list[EventResponse] = Field(default_factory=list)
+    total: int = Field(..., ge=0)
 
 
 # ===========================================================================
-# PROF-05 — 专家信息 DTO
+# 专业评估层（Professional Note）
 # ===========================================================================
 
 
-class ExpertInfo(CampfireBaseModel):
-    """关联专家信息条目。"""
+class ProfessionalNoteCreateRequest(CampfireBaseModel):
+    """专业评估挂载（老师/专家，关联到事件）。"""
 
-    expert_id: str = Field(..., description="专家用户 UUID")
-    link_id: str = Field(..., description="关联记录 UUID")
-    name: str = Field(..., description="专家姓名")
-    role: str = Field(..., description="关联角色（teacher/expert）")
-    created_at: datetime = Field(..., description="关联创建时间")
+    event_id: str = Field(..., description="关联事件 ID")
+    assessment: str = Field(..., min_length=1, description="专业评估（FBA 简要结论）")
+    recommended_action: str = Field(..., min_length=1, description="建议干预策略")
+    evidence_basis: EvidenceBasis | None = None
+    function_hypothesis: FunctionHypothesis | None = Field(default=None, description="功能假设（QABF 预留）")
+
+
+class ProfessionalNoteResponse(CampfireBaseModel):
+    note_id: str
+    event_id: str
+    author_id: str
+    author_role: str
+    assessment: str
+    recommended_action: str
+    evidence_basis: EvidenceBasis | None = None
+    function_hypothesis: FunctionHypothesis | None = None
+    created_at: str
 
 
 # ===========================================================================
-# 模块导出
+# 关联管理（ProfileAccess）
 # ===========================================================================
+
+
+class ProfileAccessCreateRequest(CampfireBaseModel):
+    """关联邀请（家属主控）：按手机号邀请老师/专家/志愿者。"""
+
+    invitee_phone: str = Field(
+        ...,
+        min_length=11,
+        max_length=11,
+        pattern=r"^1[3-9]\d{9}$",
+        description="被邀请人手机号（须为已注册用户）",
+    )
+    role: AccessRole = Field(..., description="关联角色：teacher/expert/volunteer")
+
+
+class ProfileAccessItem(CampfireBaseModel):
+    access_id: str
+    profile_id: str
+    user_id: str
+    phone: str = Field(..., description="被邀请人手机号（家属可见——主控方）")
+    real_name: str | None = None
+    role: AccessRole
+    status: AccessStatus
+    created_at: str
+
+
+class ProfileAccessListResponse(CampfireBaseModel):
+    items: list[ProfileAccessItem] = Field(default_factory=list)
+    total: int = Field(..., ge=0)
 
 
 __all__ = [
-    # PROF-05
-    "AccessOperation",
-    "VisibleScope",
-    "AccessRequest",
-    "AccessDecision",
-    "ExpertInfo",
-    # PROF-01 枚举
-    "DiagnosisType",
-    "ProfileBehaviorType",
-    "LanguageLevel",
-    "SensoryFeature",
-    "Trigger",
-    "AgeRange",
-    # PROF-01 DTO
-    "ProfileCreate",
-    "ProfileUpdate",
+    # 四层
+    "IdentityLayerDto",
+    "CrisisPlanLayerDto",
+    "EmergencyContact",
+    # 档案 CRUD
+    "ProfileCreateRequest",
+    "ProfileUpdateRequest",
     "ProfileResponse",
     "ProfileListItem",
-    # PROF-03 枚举
-    "SeverityLevel",
-    "EventSetting",
-    # PROF-03 DTO
-    "EventCreate",
-    "EventUpdate",
+    # 事件
+    "EventCreateRequest",
+    "EventCompleteRequest",
     "EventResponse",
-    "EventListItem",
+    "EventListResponse",
+    # 专业评估
+    "ProfessionalNoteCreateRequest",
+    "ProfessionalNoteResponse",
+    # 关联管理
+    "ProfileAccessCreateRequest",
+    "ProfileAccessItem",
+    "ProfileAccessListResponse",
 ]

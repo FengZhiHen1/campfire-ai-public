@@ -19,7 +19,7 @@ from py_db.models.consultation import (
     ConsultationSession,
     SafetyCard,
 )
-from py_db.models.profiles import Profile, TeacherLink
+from py_db.models.profiles import EventLog, ProfessionalNote, Profile, ProfileAccess
 from py_db.models.redline_keyword import RedlineKeyword
 from py_db.models.review_models import CaseReview, ReviewAuditLog
 
@@ -37,7 +37,9 @@ __all__ = [
     "ConsultationLog",
     "RedlineKeyword",
     "Profile",
-    "TeacherLink",
+    "EventLog",
+    "ProfessionalNote",
+    "ProfileAccess",
     "CaseReview",
     "ReviewAuditLog",
     "TimestampMixin",

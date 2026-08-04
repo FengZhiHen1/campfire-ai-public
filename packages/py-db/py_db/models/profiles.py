@@ -1,60 +1,57 @@
-"""PROF-05 档案隐私控制 + PROF-01 个人档案管理 + PROF-03 事件记录管理 — ORM 模型定义。
+"""档案域 ORM 模型（ADR-010 四层结构与 ABC 标准化目标态）。
 
-PROF-05 部分：teacher_links 表（家属-老师关联关系表）。
-PROF-01 部分：profiles 表（个人档案主表）。
-PROF-03 部分：event_logs 表（事件记录表，16 列）。
+四表：
+- profiles: 身份基础层 + 危机预案层字段组（每档案一份危机预案）
+- event_logs: 事件时间线层（ABC 结构化，一键打点/事后补全双模式）
+- professional_notes: 专业评估层（老师/专家挂载，只读家属内容）
+- profile_access: 关联管理（家属主控，受邀协作，单方面解除）
 
-teacher_links 表用于存储家属（profile owner）与老师/专家之间的
-关联关系。每次档案访问请求到达时，PrivacyGuard 通过实时查询此表
-（WHERE unlinked_at IS NULL）判定请求人是否与目标档案存在有效关联。
-
-profiles 表是 PROF-01 的核心数据表，存储每个患者的个人档案信息。
-使用 JSONB 存储多选标签字段（sensory_features、triggers），
-利用 GIN 索引支持下游 PROF-02 的标签过滤查询。
-
-级联删除由 PROF-01 应用层编排。
+事实源：docs/技术设计/机制/个性化档案库/数据模型.md。
+已废除：TeacherLink（并入 ProfileAccess）、severity_level 3 级、
+intervention_tried/intervention_result 必填自由文本。
 """
 
-# @contract — profiles / teacher_links / event_logs 表 Schema 契约
+# @contract — profiles / event_logs / professional_notes / profile_access 表契约
 
 from __future__ import annotations
 
 import uuid
 from datetime import date, datetime
 
-from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Index, Integer, String, Text
+from py_schemas.enums import (
+    AccessRole,
+    AccessStatus,
+    AntecedentCategory,
+    BehaviorBucket,
+    EventSetting,
+    EvidenceBasis,
+    FunctionHypothesis,
+    IntensityLevel,
+    Outcome,
+    RecordedByRole,
+)
+from sqlalchemy import Boolean, Date, DateTime, ForeignKey, String, Text, UniqueConstraint
+from sqlalchemy import Enum as sa_Enum
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.sql import func
 
 from py_db.models.base import Base, TimestampMixin
 
-# ===========================================================================
-# PROF-01 — Profile ORM 模型
-# ===========================================================================
+
+def _enum_col(enum_cls, name: str, **kwargs):
+    """统一枚举列定义（值持久化枚举的中文值）。"""
+    return mapped_column(
+        sa_Enum(enum_cls, name=name, values_callable=lambda obj: [e.value for e in obj]),
+        **kwargs,
+    )
 
 
-class Profile(Base):
-    """个人档案 ORM 模型。
+class Profile(Base, TimestampMixin):
+    """个人档案（身份基础层 + 危机预案层字段组）。
 
-    映射 profiles 表，存储患者的个人档案信息。
-    每个档案属于一个家属用户（caregiver_id），
-    患者数据严格按 caregiver_id 物理隔离。
-
-    Attributes:
-        profile_id: UUID v4 主键，由服务端 uuid.uuid4() 生成。
-        caregiver_id: 所属家属用户 UUID，建立索引支持按用户查询。
-        nickname: 档案昵称，可选，最长 10 字符。
-        birth_date: 患者出生日期，用于实时计算年龄区间。
-        diagnosis_type: 诊断类型枚举值（ASD/疑似ASD/其他发育障碍）。
-        primary_behavior: 主要行为类型枚举值。
-        language_level: 语言水平枚举值，可选。
-        sensory_features: 感官特征列表，JSONB 数组存储。
-        triggers: 已知触发因素列表，JSONB 数组存储。
-        medication_notes: 用药备注，可选，最长 200 字符。
-        is_default: 是否为当前家属账号的默认档案。
-        created_at: 记录创建时间（由 TimestampMixin 语义提供）。
-        updated_at: 记录最后更新时间，用作乐观锁版本。
+    一个家属账号可创建多个档案；危机预案层为应急槽位唯一字段来源。
+    隐私：档案数据绝不入向量索引（隐私与权限 §1.2）。
     """
 
     __tablename__ = "profiles"
@@ -62,298 +59,355 @@ class Profile(Base):
     profile_id: Mapped[uuid.UUID] = mapped_column(
         primary_key=True,
         default=uuid.uuid4,
-        comment="UUID v4 主键",
+        comment="个人唯一标识（UUID v4）",
     )
     caregiver_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("users.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
-        comment="所属家属用户 UUID",
+        comment="所属家属用户",
     )
+
+    # ---- 身份基础层 ----
     nickname: Mapped[str | None] = mapped_column(
         String(10),
         nullable=True,
-        default=None,
-        comment="档案昵称，最长 10 字符",
+        comment="家属自定义称呼（应急槽位：称呼来源）",
     )
     birth_date: Mapped[date] = mapped_column(
         Date,
         nullable=False,
-        comment="患者出生日期",
+        comment="出生日期（系统自动计算年龄区间）",
     )
     diagnosis_type: Mapped[str] = mapped_column(
         String(20),
         nullable=False,
-        comment="诊断类型（ASD/疑似ASD/其他发育障碍）",
+        comment="诊断类型（ASD / 疑似 ASD / 其他发育障碍）",
     )
-    primary_behavior: Mapped[str] = mapped_column(
-        String(20),
+    primary_behavior: Mapped[BehaviorBucket] = _enum_col(
+        BehaviorBucket,
+        "behavior_bucket",
         nullable=False,
-        comment="主要行为类型",
+        comment="主要行为类型（统一行为枚举）",
     )
-    language_level: Mapped[str | None] = mapped_column(
-        String(20),
-        nullable=True,
-        default=None,
-        comment="语言水平",
-    )
-    sensory_features: Mapped[list] = mapped_column(
+    comorbidities: Mapped[list | None] = mapped_column(
         JSONB,
-        nullable=False,
-        default=list,
-        comment="感官特征列表（JSONB 数组）",
-    )
-    triggers: Mapped[list] = mapped_column(
-        JSONB,
-        nullable=False,
-        default=list,
-        comment="已知触发因素列表（JSONB 数组）",
-    )
-    medication_notes: Mapped[str | None] = mapped_column(
-        Text,
         nullable=True,
-        default=None,
-        comment="用药备注",
+        comment="精神共病多选",
+    )
+    sensory_profile: Mapped[list | None] = mapped_column(
+        JSONB,
+        nullable=True,
+        comment="感官特征多选",
+    )
+    triggers: Mapped[list | None] = mapped_column(
+        JSONB,
+        nullable=True,
+        comment="已知情绪触发因素",
     )
     is_default: Mapped[bool] = mapped_column(
         Boolean,
         nullable=False,
         default=False,
-        comment="是否为当前家属账号的默认档案",
-    )
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
-        server_default=func.now(),
-        nullable=False,
-        comment="记录创建时间",
-    )
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
-        server_default=func.now(),
-        onupdate=func.now(),
-        nullable=False,
-        comment="记录最后更新时间（乐观锁版本）",
+        server_default="false",
+        comment="是否为该账号下默认档案",
     )
 
-    def __repr__(self) -> str:
-        return (
-            f"<Profile(profile_id={self.profile_id!r}, "
-            f"caregiver_id={self.caregiver_id!r}, "
-            f"nickname={self.nickname!r}, "
-            f"is_default={self.is_default!r})>"
-        )
-
-
-# ===========================================================================
-# PROF-05 — TeacherLink ORM 模型（保持不变）
-# ===========================================================================
-
-
-class TeacherLink(Base, TimestampMixin):
-    """家属-老师关联关系 ORM 模型。
-
-    映射 teacher_links 表，记录家属（档案拥有者）与老师/专家之间的
-    关联关系。有效关联（unlinked_at IS NULL）是该老师/专家访问对应
-    档案的权限基础。
-
-    Attributes:
-        link_id: UUID v4 主键。
-        profile_id: 目标个人档案 UUID（FK 到 profiles 表）。
-        teacher_id: 关联老师/专家的用户 UUID（FK 到 users 表）。
-        role: 关联角色（teacher / expert），表示被关联用户在档案中的身份。
-        unlinked_at: 解除关联的时间戳。NULL 表示关联有效，非 NULL 表示已解除。
-        version: 乐观锁版本号，用于并发控制。
-        created_at: 记录创建时间（由 TimestampMixin 提供）。
-        updated_at: 记录最后更新时间（由 TimestampMixin 提供）。
-    """
-
-    __tablename__ = "teacher_links"
-
-    link_id: Mapped[uuid.UUID] = mapped_column(
-        primary_key=True,
-        default=uuid.uuid4,
-        comment="UUID v4 主键",
-    )
-    profile_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("profiles.profile_id", ondelete="CASCADE"),
-        nullable=False,
-        index=True,
-        comment="目标个人档案 UUID",
-    )
-    teacher_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("users.id", ondelete="CASCADE"),
-        nullable=False,
-        index=True,
-        comment="关联老师/专家的用户 UUID",
-    )
-    role: Mapped[str] = mapped_column(
-        String(20),
-        nullable=False,
-        comment="关联角色（teacher / expert）",
-    )
-    unlinked_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True),
+    # ---- 危机预案层（应急槽位唯一字段来源） ----
+    physical_description: Mapped[str | None] = mapped_column(
+        Text,
         nullable=True,
-        default=None,
-        comment="解除关联时间戳，NULL 表示关联有效",
+        comment="走失专项：体貌特征（报警话术填充）",
     )
-    version: Mapped[int] = mapped_column(
-        Integer,
-        nullable=False,
-        default=1,
-        comment="乐观锁版本号",
+    familiar_places: Mapped[list | None] = mapped_column(
+        JSONB,
+        nullable=True,
+        comment="走失专项：常去地点/可能去向",
     )
-
-    def __repr__(self) -> str:
-        return (
-            f"<TeacherLink(link_id={self.link_id!r}, "
-            f"profile_id={self.profile_id!r}, "
-            f"teacher_id={self.teacher_id!r}, "
-            f"role={self.role!r}, "
-            f"unlinked_at={self.unlinked_at!r}, "
-            f"version={self.version!r})>"
-        )
-
-
-# ===========================================================================
-# PROF-03 — EventLog ORM 模型
-# ===========================================================================
+    water_risk: Mapped[list | None] = mapped_column(
+        JSONB,
+        nullable=True,
+        comment="走失专项：水体风险与游泳能力",
+    )
+    soothing_items: Mapped[list | None] = mapped_column(
+        JSONB,
+        nullable=True,
+        comment="有效安抚物/感官工具（事件 outcome=有效 推导作兜底）",
+    )
+    avoid_list: Mapped[list | None] = mapped_column(
+        JSONB,
+        nullable=True,
+        comment="禁忌/无效方式",
+    )
+    communication_methods: Mapped[list | None] = mapped_column(
+        JSONB,
+        nullable=True,
+        comment="沟通方式（语言水平 + AAC/视觉支持多选）",
+    )
+    emergency_contacts: Mapped[list | None] = mapped_column(
+        JSONB,
+        nullable=True,
+        comment="安全联系人 [{name, relation, phone}]",
+    )
+    medication_notes: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+        comment="用药记录（仅家属和老师可见）",
+    )
 
 
 class EventLog(Base):
-    """事件记录 ORM 模型。
+    """事件时间线层（ABC 结构化，双模式记录）。
 
-    映射 event_logs 表，存储家属为关联患者记录的行为/情绪事件。
-    每条事件属于一个档案（profile_id），按 profile_id 物理隔离。
-    所有查询必须含 WHERE profile_id = :pid 条件。
-
-    不设 ON DELETE CASCADE 外键——级联删除由 PROF-01
-    应用层通过 EventRepository.delete_by_profile() 编排。
-
-    Attributes:
-        event_id: UUID v4 主键，由服务端 uuid.uuid4() 生成。
-        profile_id: 所属档案 UUID，建立单列索引和复合索引。
-        recorded_by: 记录人用户 UUID（创建时从 JWT 获取，不可修改）。
-        recorded_by_role: 记录人角色，固定值 'parent'。
-        event_time: 事件实际发生时间（UTC），支持 30 天内的补录。
-        behavior_type: 行为类型（ProfileBehaviorType 枚举字符串值）。
-        severity_level: 家属自评严重程度（SeverityLevel 枚举字符串值）。
-        setting: 事件发生场景（EventSetting 枚举字符串值），可选。
-        trigger_description: 触发因素描述，自由文本。
-        manifestation: 具体表现描述，自由文本。
-        intervention_tried: 尝试干预措施，自由文本。
-        intervention_result: 干预结果，自由文本。
-        is_professional: 是否有专业评估补充，默认为 false。
-        tags: 自定义标签列表，JSONB 数组，可选。
-        created_at: 记录创建时间。
-        updated_at: 记录最后更新时间。
+    一键打点：仅 behavior_type + 自动时间戳（is_quick_log=true）；
+    事后补全：其余字段全可选；补全后 is_quick_log 可转 false。
     """
 
     __tablename__ = "event_logs"
 
-    # 复合索引: (profile_id, event_time DESC) — 列表查询
-    __table_args__ = (Index("ix_event_logs_profile_event_time", "profile_id", "event_time"),)
-
     event_id: Mapped[uuid.UUID] = mapped_column(
         primary_key=True,
         default=uuid.uuid4,
-        comment="UUID v4 主键",
+        comment="事件唯一标识",
     )
     profile_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("profiles.profile_id", ondelete="CASCADE"),
         nullable=False,
         index=True,
-        comment="所属档案 UUID",
+        comment="关联个人（物理隔离键）",
     )
-    recorded_by: Mapped[uuid.UUID | None] = mapped_column(
+    recorded_by: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL"),
         nullable=True,
-        comment="记录人用户 UUID",
+        comment="记录人用户",
     )
-    recorded_by_role: Mapped[str] = mapped_column(
-        String(20),
+    recorded_by_role: Mapped[RecordedByRole] = _enum_col(
+        RecordedByRole,
+        "recorded_by_role",
         nullable=False,
-        default="parent",
-        comment="记录人角色，固定为 'parent'",
+        comment="记录人角色（parent / volunteer）",
     )
     event_time: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
-        comment="事件实际发生时间（UTC）",
+        comment="事件发生时间（可补录历史事件）",
     )
-    behavior_type: Mapped[str] = mapped_column(
-        String(20),
-        nullable=False,
-        comment="行为类型",
-    )
-    severity_level: Mapped[str] = mapped_column(
-        String(10),
-        nullable=False,
-        comment="家属自评严重程度",
-    )
-    setting: Mapped[str | None] = mapped_column(
-        String(20),
-        nullable=True,
-        default=None,
-        comment="事件发生场景",
-    )
-    trigger_description: Mapped[str] = mapped_column(
-        Text,
-        nullable=False,
-        comment="触发因素描述",
-    )
-    manifestation: Mapped[str] = mapped_column(
-        Text,
-        nullable=False,
-        comment="具体表现描述",
-    )
-    intervention_tried: Mapped[str] = mapped_column(
-        Text,
-        nullable=False,
-        comment="尝试干预措施",
-    )
-    intervention_result: Mapped[str] = mapped_column(
-        Text,
-        nullable=False,
-        comment="干预结果",
-    )
-    is_professional: Mapped[bool] = mapped_column(
+    is_quick_log: Mapped[bool] = mapped_column(
         Boolean,
         nullable=False,
-        default=False,
-        comment="是否有专业评估补充",
+        default=True,
+        server_default="true",
+        comment="打点模式标记（补全后可转 false）",
+    )
+    behavior_type: Mapped[BehaviorBucket] = _enum_col(
+        BehaviorBucket,
+        "behavior_bucket",
+        nullable=False,
+        comment="行为大类（统一行为枚举，打点必填）",
+    )
+    behavior_form: Mapped[str | None] = mapped_column(
+        String(50),
+        nullable=True,
+        comment="具体形态（BPI-01 词表）",
+    )
+    intensity: Mapped[IntensityLevel | None] = _enum_col(
+        IntensityLevel,
+        "intensity_level",
+        nullable=True,
+        comment="强度 4 级（低/中/高/严重）",
+    )
+    duration: Mapped[str | None] = mapped_column(
+        String(50),
+        nullable=True,
+        comment="持续时间（如「约 5 分钟」）",
+    )
+    setting: Mapped[EventSetting | None] = _enum_col(
+        EventSetting,
+        "event_setting",
+        nullable=True,
+        comment="发生场景（含工作场所/托养机构）",
+    )
+    activity: Mapped[str | None] = mapped_column(
+        String(100),
+        nullable=True,
+        comment="进行中的活动",
+    )
+    people_present: Mapped[str | None] = mapped_column(
+        String(100),
+        nullable=True,
+        comment="在场人员",
+    )
+    physical_state: Mapped[list | None] = mapped_column(
+        JSONB,
+        nullable=True,
+        comment="身体状态多选",
+    )
+    antecedent_category: Mapped[AntecedentCategory | None] = _enum_col(
+        AntecedentCategory,
+        "antecedent_category",
+        nullable=True,
+        comment="前事预置分类",
+    )
+    trigger_description: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+        comment="前事细节补充（可选）",
+    )
+    consequence: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+        comment="后果/应对（你做了什么）",
+    )
+    reaction: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+        comment="当事人对后果的反应",
+    )
+    outcome: Mapped[Outcome | None] = _enum_col(
+        Outcome,
+        "outcome",
+        nullable=True,
+        comment="干预效果结构标记（有效/部分有效/无效）",
+    )
+    function_hypothesis: Mapped[FunctionHypothesis | None] = _enum_col(
+        FunctionHypothesis,
+        "function_hypothesis",
+        nullable=True,
+        comment="功能假设（QABF 预留，M5 交互）",
+    )
+    manifestation: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+        comment="具体表现补充描述（可选）",
+    )
+    note: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+        comment="自由备注（唯一自由文本字段）",
     )
     tags: Mapped[list | None] = mapped_column(
         JSONB,
         nullable=True,
-        default=None,
-        comment="自定义标签列表（JSONB 数组）",
+        comment="自定义标签（最多 5 个）",
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),
         nullable=False,
-        comment="记录创建时间",
+        comment="记录时间",
     )
-    updated_at: Mapped[datetime] = mapped_column(
+
+
+class ProfessionalNote(Base):
+    """专业评估层（老师/专家挂载到事件；不直接修改家属内容）。"""
+
+    __tablename__ = "professional_notes"
+
+    note_id: Mapped[uuid.UUID] = mapped_column(
+        primary_key=True,
+        default=uuid.uuid4,
+        comment="评估唯一标识",
+    )
+    event_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("event_logs.event_id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+        comment="关联事件",
+    )
+    author_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+        comment="提交老师/专家",
+    )
+    assessment: Mapped[str] = mapped_column(
+        Text,
+        nullable=False,
+        comment="专业评估（FBA 简要结论）",
+    )
+    recommended_action: Mapped[str] = mapped_column(
+        Text,
+        nullable=False,
+        comment="建议干预策略",
+    )
+    evidence_basis: Mapped[EvidenceBasis | None] = _enum_col(
+        EvidenceBasis,
+        "evidence_basis",
+        nullable=True,
+        comment="依据：NCAEP EBP / 机构经验 / 个案观察",
+    )
+    function_hypothesis: Mapped[FunctionHypothesis | None] = _enum_col(
+        FunctionHypothesis,
+        "function_hypothesis",
+        nullable=True,
+        comment="功能假设（QABF 预留）",
+    )
+    created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),
-        onupdate=func.now(),
         nullable=False,
-        comment="记录最后更新时间",
+        comment="提交时间",
     )
 
-    def __repr__(self) -> str:
-        return (
-            f"<EventLog(event_id={self.event_id!r}, "
-            f"profile_id={self.profile_id!r}, "
-            f"behavior_type={self.behavior_type!r}, "
-            f"event_time={self.event_time!r})>"
-        )
+
+class ProfileAccess(Base):
+    """档案关联（家属主控的受邀协作）。
+
+    家属邀请老师/专家/志愿者建立关联；家属可随时单方面解除，
+    解除后立即失去全部访问入口（隐私与权限 §1.1）。
+    """
+
+    __tablename__ = "profile_access"
+    __table_args__ = (
+        UniqueConstraint("profile_id", "user_id", name="uq_profile_access_profile_user"),
+    )
+
+    access_id: Mapped[uuid.UUID] = mapped_column(
+        primary_key=True,
+        default=uuid.uuid4,
+        comment="关联唯一标识",
+    )
+    profile_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("profiles.profile_id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+        comment="关联档案",
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+        comment="被邀请用户",
+    )
+    role: Mapped[AccessRole] = _enum_col(
+        AccessRole,
+        "access_role",
+        nullable=False,
+        comment="关联角色（teacher/expert/volunteer）",
+    )
+    status: Mapped[AccessStatus] = _enum_col(
+        AccessStatus,
+        "access_status",
+        nullable=False,
+        default=AccessStatus.ACTIVE,
+        server_default=AccessStatus.ACTIVE.value,
+        comment="关联状态（active/revoked）",
+    )
+    created_by: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+        comment="创建关联的家属",
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
+        comment="建立时间",
+    )
+    revoked_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+        comment="解除时间",
+    )
 
 
-__all__ = [
-    "Profile",
-    "TeacherLink",
-    "EventLog",
-]
+__all__ = ["Profile", "EventLog", "ProfessionalNote", "ProfileAccess"]

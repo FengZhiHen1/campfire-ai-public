@@ -24,9 +24,6 @@ import traceback
 from enum import StrEnum
 from typing import TYPE_CHECKING, Any, Callable, Sequence, cast
 
-if TYPE_CHECKING:
-    from py_schemas.profiles import AccessDecision
-
 from fastapi import HTTPException, Request
 from py_logger import logger
 from py_schemas.auth import UserRole
@@ -275,30 +272,6 @@ def get_masked_phone(phone: str | None, user_roles: Sequence[UserRole]) -> str:
         return _FALLBACK_MASK
 
 
-# ============================================================================
-# PrivacyGuard — MVP 绕过版（临时，S4 档案重构时处理）
-# ============================================================================
-
-
-class PrivacyGuard:
-    """档案隐私控制守卫（MVP 绕过版）。
-
-    所有访问请求直接放行，返回 allowed=True。
-    档案四层重构（S4）时替换为基于数据级授权的真实实现。
-
-    # TODO: 正式版替换为档案机制文档定义的数据级授权实现（S4 处理）
-    """
-
-    @staticmethod
-    async def check_access(request: Any, db_session: Any) -> AccessDecision:
-        from py_schemas.profiles import AccessDecision, VisibleScope
-
-        return AccessDecision(
-            allowed=True,
-            visible_scope=VisibleScope.ALL_FIELDS,
-        )
-
-
 __all__ = [
     "Capability",
     "ROLE_CAPABILITIES",
@@ -307,5 +280,4 @@ __all__ = [
     "get_guard",
     "require_roles",
     "get_masked_phone",
-    "PrivacyGuard",
 ]

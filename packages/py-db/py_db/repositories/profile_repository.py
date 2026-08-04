@@ -1,349 +1,199 @@
-"""PROF-01 个人档案管理 — Repository 层。
+"""档案域仓储（ADR-010 目标态）。
 
-提供 Profile 实体的所有数据库操作封装。
-所有方法必须通过 AsyncSession 参数化查询执行，
-禁止 SQL 字符串拼接。
-
-方法清单：
-- create() — [继承] @final INSERT，含重试保护
-- get_by_id() — 按 profile_id + caregiver_id 查询单条
-- list_by_caregiver() — 按 caregiver_id 分页查询
-- count_active_by_caregiver() — 统计某家属账号下档案总数
-- update_with_optimistic_lock() — 带乐观锁的 UPDATE（比较 updated_at）
-- delete_profile() — 硬删除（DELETE，双 ID WHERE）
-- get_default() — 查询某家属的默认档案
-- set_default() — 设置指定档案为默认（原子操作）
-- unset_default_for_caregiver() — 取消某家属的所有默认标记
+Profile / EventLog / ProfessionalNote / ProfileAccess 的持久化操作。
+隐私纪律：所有查询按 profile_id 物理隔离（隐私与权限 §1.2）。
 """
 
 from __future__ import annotations
 
-from datetime import datetime
-from typing import Any
-from uuid import UUID
+import uuid
 
-from sqlalchemy import delete, func, select, update
+from py_schemas.enums import AccessStatus, Outcome
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.sql import Select
 
 from py_db.base_repository import BaseRepository
-from py_db.models.profiles import Profile
+from py_db.models.profiles import EventLog, ProfessionalNote, Profile, ProfileAccess
 
 
 class ProfileRepository(BaseRepository[Profile]):
-    """个人档案数据库操作封装。
-
-    继承 BaseRepository[Profile] 获得 @final 保护的 create / find_by_id /
-    find_all / update / delete 方法及连接失败重试机制。
-    自定义方法接收 AsyncSession 作为参数，支持跨方法的事务编排。
-    """
+    """档案仓储。"""
 
     model = Profile
-
-    def __init__(self, session_factory: Any) -> None:
-        """初始化 Repository 实例。
-
-        Args:
-            session_factory: 异步会话工厂。
-        """
-        super().__init__(session_factory)
-
-    async def exists(
-        self,
-        session: AsyncSession,
-        profile_id: UUID,
-    ) -> bool:
-        """检查指定 profile_id 的档案是否存在。
-
-        仅判断行存在性，不校验归属关系（供 PROF-03 在权限校验前
-        独立判断档案存在性使用）。
-
-        Args:
-            session: 活动数据库会话。
-            profile_id: 目标档案 UUID。
-
-        Returns:
-            bool: 档案存在时返回 True。
-        """
-        from sqlalchemy import exists as sa_exists
-
-        stmt = sa_exists().where(Profile.profile_id == profile_id).select()
-        result = await session.execute(stmt)
-        return result.scalar() or False
 
     async def get_by_id(
         self,
         session: AsyncSession,
-        profile_id: UUID,
-        caregiver_id: UUID,
+        profile_id: uuid.UUID,
     ) -> Profile | None:
-        """按 profile_id 和 caregiver_id 查询单条记录。
+        """按 ID 查询档案。"""
 
-        Args:
-            session: 活动数据库会话。
-            profile_id: 目标档案 UUID。
-            caregiver_id: 所属家属 UUID。
+        async def _query() -> Profile | None:
+            stmt: Select = select(self.model).where(self.model.profile_id == profile_id)
+            result = await session.execute(stmt)
+            return result.scalars().first()
 
-        Returns:
-            Profile | None: 匹配的档案，不存在时返回 None。
-        """
-        stmt = select(Profile).where(
-            Profile.profile_id == profile_id,
-            Profile.caregiver_id == caregiver_id,
-        )
-        result = await session.execute(stmt)
-        return result.scalars().first()
+        return await self._execute_with_retry(session, "get_by_id", _query)
 
     async def list_by_caregiver(
         self,
         session: AsyncSession,
-        caregiver_id: UUID,
-        page: int = 1,
-        page_size: int = 10,
-    ) -> tuple[list[Profile], int]:
-        """按 caregiver_id 分页查询档案列表。
+        caregiver_id: uuid.UUID,
+    ) -> list[Profile]:
+        """家属名下档案列表。"""
 
-        Args:
-            session: 活动数据库会话。
-            caregiver_id: 所属家属 UUID。
-            page: 页码（从 1 开始）。
-            page_size: 每页条数（默认 10）。
-
-        Returns:
-            tuple[list[Profile], int]: (档案列表, 总记录数)。
-        """
-        # 查询总记录数
-        count_stmt = (
-            select(func.count())
-            .select_from(Profile)
-            .where(
-                Profile.caregiver_id == caregiver_id,
+        async def _query() -> list[Profile]:
+            stmt: Select = (
+                select(self.model)
+                .where(self.model.caregiver_id == caregiver_id)
+                .order_by(self.model.is_default.desc(), self.model.created_at.desc())
             )
-        )
-        total_result = await session.execute(count_stmt)
-        total: int = total_result.scalar() or 0
+            result = await session.execute(stmt)
+            return list(result.scalars().all())
 
-        # 分页查询
-        offset = (page - 1) * page_size
-        query_stmt = (
-            select(Profile)
-            .where(Profile.caregiver_id == caregiver_id)
-            .order_by(Profile.created_at.desc())
-            .offset(offset)
-            .limit(page_size)
-        )
-        result = await session.execute(query_stmt)
-        profiles = list(result.scalars().all())
+        return await self._execute_with_retry(session, "list_by_caregiver", _query)
 
-        return profiles, total
 
-    async def count_active_by_caregiver(
+class EventLogRepository(BaseRepository[EventLog]):
+    """事件仓储（时间线查询供趋势复盘与槽位推导兜底）。"""
+
+    model = EventLog
+
+    async def list_by_profile(
         self,
         session: AsyncSession,
-        caregiver_id: UUID,
-    ) -> int:
-        """统计某家属账号下所有档案总数。
+        profile_id: uuid.UUID,
+        *,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> list[EventLog]:
+        """按档案查询事件时间线（发生时间倒序）。"""
 
-        Args:
-            session: 活动数据库会话。
-            caregiver_id: 所属家属 UUID。
-
-        Returns:
-            int: 档案总数。
-        """
-        stmt = (
-            select(func.count())
-            .select_from(Profile)
-            .where(
-                Profile.caregiver_id == caregiver_id,
+        async def _query() -> list[EventLog]:
+            stmt: Select = (
+                select(self.model)
+                .where(self.model.profile_id == profile_id)
+                .order_by(self.model.event_time.desc())
+                .limit(limit)
+                .offset(offset)
             )
-        )
-        result = await session.execute(stmt)
-        return result.scalar() or 0
+            result = await session.execute(stmt)
+            return list(result.scalars().all())
 
-    async def update_with_optimistic_lock(
+        return await self._execute_with_retry(session, "list_by_profile", _query)
+
+    async def find_latest_by_outcome(
         self,
         session: AsyncSession,
-        profile_id: UUID,
-        caregiver_id: UUID,
-        previous_updated_at: datetime,
-        update_data: dict[str, Any],
-    ) -> Profile | None:
-        """带乐观锁的更新操作。
+        profile_id: uuid.UUID,
+        outcome: Outcome,
+    ) -> EventLog | None:
+        """最近一条指定效果的事件（槽位推导兜底：outcome=有效/无效）。"""
 
-        使用 UPDATE ... WHERE profile_id=? AND caregiver_id=? AND updated_at=?
-        的原子语义检测并发冲突。若更新行数为 0，说明 updated_at 已变化。
-
-        Args:
-            session: 活动数据库会话。
-            profile_id: 目标档案 UUID。
-            caregiver_id: 所属家属 UUID。
-            previous_updated_at: 乐观锁期望的 updated_at 值。
-            update_data: 需要更新的字段字典。
-
-        Returns:
-            Profile | None: 更新后的档案，乐观锁冲突时返回 None。
-        """
-        stmt = (
-            update(Profile)
-            .where(
-                Profile.profile_id == profile_id,
-                Profile.caregiver_id == caregiver_id,
-                Profile.updated_at == previous_updated_at,
+        async def _query() -> EventLog | None:
+            stmt: Select = (
+                select(self.model)
+                .where(self.model.profile_id == profile_id)
+                .where(self.model.outcome == outcome)
+                .order_by(self.model.event_time.desc())
+                .limit(1)
             )
-            .values(**update_data)
-            .returning(Profile)
-        )
-        result = await session.execute(stmt)
-        await session.flush()
-        return result.scalars().first()
+            result = await session.execute(stmt)
+            return result.scalars().first()
 
-    async def delete_profile(
+        return await self._execute_with_retry(session, "find_latest_by_outcome", _query)
+
+
+class ProfessionalNoteRepository(BaseRepository[ProfessionalNote]):
+    """专业评估仓储。"""
+
+    model = ProfessionalNote
+
+    async def list_by_event(
         self,
         session: AsyncSession,
-        profile_id: UUID,
-        caregiver_id: UUID,
-    ) -> bool:
-        """硬删除指定档案。
+        event_id: uuid.UUID,
+    ) -> list[ProfessionalNote]:
+        """事件挂载的专业评估列表。"""
 
-        Args:
-            session: 活动数据库会话。
-            profile_id: 目标档案 UUID。
-            caregiver_id: 所属家属 UUID。
-
-        Returns:
-            bool: 是否成功删除（True 表示有记录被删除）。
-        """
-        stmt = (
-            delete(Profile)
-            .where(
-                Profile.profile_id == profile_id,
-                Profile.caregiver_id == caregiver_id,
+        async def _query() -> list[ProfessionalNote]:
+            stmt: Select = (
+                select(self.model)
+                .where(self.model.event_id == event_id)
+                .order_by(self.model.created_at.desc())
             )
-            .returning(Profile.profile_id)
-        )
-        result = await session.execute(stmt)
-        await session.flush()
-        return result.scalars().first() is not None
+            result = await session.execute(stmt)
+            return list(result.scalars().all())
 
-    async def get_default(
+        return await self._execute_with_retry(session, "list_by_event", _query)
+
+
+class ProfileAccessRepository(BaseRepository[ProfileAccess]):
+    """档案关联仓储。"""
+
+    model = ProfileAccess
+
+    async def find_active(
         self,
         session: AsyncSession,
-        caregiver_id: UUID,
-    ) -> Profile | None:
-        """查询某家属账号的默认档案。
+        profile_id: uuid.UUID,
+        user_id: uuid.UUID,
+    ) -> ProfileAccess | None:
+        """查询活跃关联（访问控制判定入口）。"""
 
-        Args:
-            session: 活动数据库会话。
-            caregiver_id: 所属家属 UUID。
+        async def _query() -> ProfileAccess | None:
+            stmt: Select = (
+                select(self.model)
+                .where(self.model.profile_id == profile_id)
+                .where(self.model.user_id == user_id)
+                .where(self.model.status == AccessStatus.ACTIVE)
+            )
+            result = await session.execute(stmt)
+            return result.scalars().first()
 
-        Returns:
-            Profile | None: 默认档案，不存在时返回 None。
-        """
-        stmt = select(Profile).where(
-            Profile.caregiver_id == caregiver_id,
-            Profile.is_default == True,  # noqa: E712
-        )
-        result = await session.execute(stmt)
-        return result.scalars().first()
+        return await self._execute_with_retry(session, "find_active", _query)
 
-    async def set_default(
+    async def list_by_profile(
         self,
         session: AsyncSession,
-        profile_id: UUID,
-        caregiver_id: UUID,
-    ) -> Profile | None:
-        """设置指定档案为默认档案。
+        profile_id: uuid.UUID,
+    ) -> list[ProfileAccess]:
+        """档案的关联列表（含已解除）。"""
 
-        在同一个事务中先取消该家属的所有默认标记，
-        再设置目标档案为默认。
-
-        Args:
-            session: 活动数据库会话。
-            profile_id: 目标档案 UUID。
-            caregiver_id: 所属家属 UUID。
-
-        Returns:
-            Profile | None: 设置成功后的档案。
-        """
-        # 步骤 1: 取消该家属的所有默认标记
-        unset_stmt = (
-            update(Profile)
-            .where(
-                Profile.caregiver_id == caregiver_id,
-                Profile.is_default == True,  # noqa: E712
+        async def _query() -> list[ProfileAccess]:
+            stmt: Select = (
+                select(self.model)
+                .where(self.model.profile_id == profile_id)
+                .order_by(self.model.created_at.desc())
             )
-            .values(is_default=False)
-        )
-        await session.execute(unset_stmt)
+            result = await session.execute(stmt)
+            return list(result.scalars().all())
 
-        # 步骤 2: 设置目标档案为默认
-        set_stmt = (
-            update(Profile)
-            .where(
-                Profile.profile_id == profile_id,
-                Profile.caregiver_id == caregiver_id,
-            )
-            .values(is_default=True)
-            .returning(Profile)
-        )
-        result = await session.execute(set_stmt)
-        await session.flush()
-        return result.scalars().first()
+        return await self._execute_with_retry(session, "list_by_profile", _query)
 
-    async def find_next_default_candidate(
+    async def list_by_user(
         self,
         session: AsyncSession,
-        caregiver_id: UUID,
-        exclude_profile_id: UUID,
-    ) -> Profile | None:
-        """查找除指定档案外最新更新的档案，作为默认档案候选。
+        user_id: uuid.UUID,
+    ) -> list[ProfileAccess]:
+        """用户的活跃关联档案列表（受邀协作方视角）。"""
 
-        用于删除默认档案时，查找应被提升为默认的下一候选档案。
-        按 updated_at 降序选取最新更新的档案（排除当前待删除的档案）。
-
-        Args:
-            session: 活动数据库会话。
-            caregiver_id: 所属家属 UUID。
-            exclude_profile_id: 需要排除的档案 UUID（通常是待删除的档案）。
-
-        Returns:
-            Profile | None: 找到的候选档案，不存在（无其他档案）时返回 None。
-        """
-        stmt = (
-            select(Profile)
-            .where(
-                Profile.caregiver_id == caregiver_id,
-                Profile.profile_id != exclude_profile_id,
+        async def _query() -> list[ProfileAccess]:
+            stmt: Select = (
+                select(self.model)
+                .where(self.model.user_id == user_id)
+                .where(self.model.status == AccessStatus.ACTIVE)
             )
-            .order_by(Profile.updated_at.desc())
-            .limit(1)
-        )
-        result = await session.execute(stmt)
-        return result.scalars().first()
+            result = await session.execute(stmt)
+            return list(result.scalars().all())
 
-    async def unset_default_for_caregiver(
-        self,
-        session: AsyncSession,
-        caregiver_id: UUID,
-    ) -> None:
-        """取消某家属账号下的所有默认档案标记。
-
-        Args:
-            session: 活动数据库会话。
-            caregiver_id: 所属家属 UUID。
-        """
-        stmt = (
-            update(Profile)
-            .where(
-                Profile.caregiver_id == caregiver_id,
-                Profile.is_default == True,  # noqa: E712
-            )
-            .values(is_default=False)
-        )
-        await session.execute(stmt)
-        await session.flush()
+        return await self._execute_with_retry(session, "list_by_user", _query)
 
 
 __all__ = [
     "ProfileRepository",
+    "EventLogRepository",
+    "ProfessionalNoteRepository",
+    "ProfileAccessRepository",
 ]
