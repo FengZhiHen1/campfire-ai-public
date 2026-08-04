@@ -1,49 +1,62 @@
 # @contract
-"""api-server 认证服务行为契约 — ABC 模板方法骨架。
+"""api-server 认证服务行为契约 — ABC 模板方法骨架（ADR-013 目标态）。
 
 模块: app.modules.auth.auth_contract
-职责: 定义认证服务的业务编排契约。覆盖 AUTH-01（注册）、AUTH-02（登录）、
-      AUTH-03（续期）和登出四个核心流程。每个 @final 公共入口强制执行
+职责: 定义认证服务的业务编排契约。覆盖注册（邀请码原子消费 + 准入落态）、
+      登录（手机号 + 状态机放行）、续期（轮换 + 家族吊销 + 复用检测）、
+      登出（家族吊销）与 me 五个核心流程。每个 @final 公共入口强制执行
       前置校验 → _do_ 钩子 → 后置校验三步流程，实现者只能覆写 _do_ 钩子。
 
 数据来源:
-  - py_auth.auth_contract.PasswordHasher: MUST — 密码哈希与校验，不可绕过 bcrypt
-  - py_auth.auth_contract.TokenManager: MUST — JWT 签发与校验，不可绕过 HS256
-  - py_auth.auth_contract.TokenBlacklist: MUST — Token 失效管理，不可绕过 Redis 黑名单
-  - py_db.repositories.user_repository.UserRepository: MUST — 用户持久化查询
-  - py_schemas.auth (RegisterRequest, LoginRequest, TokenResponse, RefreshRequest): MUST — 数据契约
-  - py_logger: SHOULD — 结构化审计日志
+  - py_auth.auth_contract.PasswordHasher: MUST — 密码哈希与校验
+  - py_auth.auth_contract.TokenManager: MUST — JWT 签发与校验（family_id 家族语义）
+  - py_auth.auth_contract.TokenBlacklist: MUST — 黑名单/refresh 单次使用/家族吊销
+  - py_db UserRepository / CredentialRepository / InviteCodeRepository: MUST — 持久化
+  - py_schemas.auth: MUST — 数据契约（事实源：机制/认证与访问）
 
 边界:
-  - 依赖: py_auth, py_db, py_schemas, py_logger, sqlalchemy (AsyncSession)
-  - 被依赖: app.modules.auth.routes (FastAPI 路由层)
+  - 依赖: py_auth, py_db, py_schemas, sqlalchemy (AsyncSession)
+  - 被依赖: app.modules.auth.routes（FastAPI 路由层）
 
 禁止行为:
   - 禁止在 @final 方法中直接调用 py_auth 便捷函数（必须走注入的契约实例）
-  - 禁止在 _do_ 钩子中直接操作 FastAPI HTTPException（由 @final 方法统一转换异常）
-  - 禁止在 Service 层直接访问 HTTP 请求对象（Request 对象只存在于路由层）
+  - 禁止在 _do_ 钩子中直接操作 FastAPI HTTPException
+  - 禁止在 Service 层直接访问 HTTP 请求对象
   - 禁止实现者覆写 @final 方法
-  - 禁止在 register 流程中同步等待审计日志写入（必须使用 asyncio.create_task 异步投递）
+  - 禁止绕过邀请码原子消费（consume_if_valid 条件自增）直接 used_count+1
 """
 
 from __future__ import annotations
 
+import base64
+import json
 import re
 from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING, Any, final
 
-from py_schemas.auth import UserRole
+from py_schemas.auth import (
+    CHANNEL_ALLOWED_ROLES,
+    REVIEW_REQUIRED_ROLES,
+    MeResponse,
+    UserRole,
+)
+from py_schemas.enums import AccountStatus, InviteCodeStatus
 
 from app.modules.auth.exceptions import (
+    AccountDisabledError,
     AuthInternalError,
     DuplicateUserError,
     InvalidCredentialsError,
+    InvalidInviteCodeError,
+    InviteChannelMismatchError,
     PasswordComplexityError,
     RealNameRequiredError,
     TokenInvalidError,
 )
 
 if TYPE_CHECKING:
+    from datetime import datetime
+
     from py_auth.auth_contract import (
         PasswordHasher as PasswordHasherContract,
     )
@@ -53,6 +66,9 @@ if TYPE_CHECKING:
     from py_auth.auth_contract import (
         TokenManager as TokenManagerContract,
     )
+    from py_db.models.auth import InviteCode
+    from py_db.repositories.credential_repository import CredentialRepository
+    from py_db.repositories.invite_code_repository import InviteCodeRepository
     from py_db.repositories.user_repository import UserRepository
     from py_schemas.auth import (
         LoginRequest,
@@ -67,7 +83,7 @@ if TYPE_CHECKING:
 # ---------------------------------------------------------------------------
 
 _PASSWORD_COMPLEXITY_REGEX: re.Pattern[str] = re.compile(r"^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{8,}$")
-r"""密码复杂度正则：至少包含一个小写字母、一个大写字母、一个数字，且至少 8 位。"""
+r"""密码复杂度正则：至少包含一个小写字母、一个大写字母、一个数字，且至少 8 位（维持现状规则）。"""
 
 
 # ============================================================================
@@ -76,16 +92,14 @@ r"""密码复杂度正则：至少包含一个小写字母、一个大写字母�
 
 
 class AuthService(ABC):
-    """认证服务契约 — 业务编排层 ABC。
+    """认证服务契约 — 业务编排层 ABC（ADR-013 目标态）。
 
     实现者只能覆写 _do_ 前缀的钩子。
     外部调用者通过 @final 方法进入，无法绕过前置校验和后置处理。
 
     依赖注入（通过 __init__ 传入）:
-      - password_hasher: PasswordHasher 契约实现（py_auth）
-      - token_manager: TokenManager 契约实现（py_auth）
-      - token_blacklist: TokenBlacklist 契约实现（py_auth）
-      - user_repo: UserRepository 实例（py_db）
+      - password_hasher / token_manager / token_blacklist: py_auth 契约实例
+      - user_repo / credential_repo / invite_code_repo: py_db Repository
     """
 
     def __init__(
@@ -94,419 +108,337 @@ class AuthService(ABC):
         token_manager: "TokenManagerContract",
         token_blacklist: "TokenBlacklistContract",
         user_repo: "UserRepository",
+        credential_repo: "CredentialRepository",
+        invite_code_repo: "InviteCodeRepository",
     ) -> None:
         self._password_hasher = password_hasher
         self._token_manager = token_manager
         self._token_blacklist = token_blacklist
         self._user_repo = user_repo
+        self._credential_repo = credential_repo
+        self._invite_code_repo = invite_code_repo
 
-    # ======================================================================
-    # AUTH-01 用户注册
-    # ======================================================================
+    # ==================================================================
+    # 注册（邀请码 + 准入落态）
+    # ==================================================================
 
     @final
     async def register(self, request: "RegisterRequest", session: Any) -> "RegisterResponse":
-        """用户注册 — 7 步校验流程编排。
+        """用户注册 — 邀请码校验 + 原子消费 + 身份-凭证落库（认证与访问 §4.2）。
 
-        前置:
-          - request 已通过 Pydantic Field 级校验（路由层 Depends 完成）
-          - session 是活跃的 AsyncSession（请求级依赖注入）
-          - request.role 仅允许 family/teacher/expert
-        后置:
-          - 成功: 用户持久化到 users 表，审计日志异步投递
-          - 失败: 抛出 AuthServiceError 子类异常
-        输入约束:
-          - request: RegisterRequest Pydantic 模型实例
-          - session: sqlalchemy.ext.asyncio.AsyncSession
-        输出约束:
-          - RegisterResponse: result="success", user_id=UUIDv4 字符串
+        流程编排:
+          1. 密码复杂度校验
+          2. teacher/expert real_name 必填校验
+          3. 邀请码预检（存在/active/未过期/有余量）+ channel 约束角色
+          4. 手机号唯一性校验
+          5. 密码哈希
+          6. _do_register：原子消费邀请码 + 创建 User + Credential + commit
+          7. 审计日志异步投递
+
         异常:
-          - PasswordComplexityError: 密码复杂度不足
-          - RealNameRequiredError: 专家角色缺少 real_name
-          - DuplicateUserError: 用户名或手机号重复
-          - AuthInternalError: 密码哈希失败或数据库操作失败
-        Side Effects:
-          - 写入 users 表（同步等待）
-          - 异步投递审计日志（不阻塞响应）
+          - PasswordComplexityError / RealNameRequiredError: 输入校验失败
+          - InvalidInviteCodeError: 邀请码无效或并发消费失败
+          - InviteChannelMismatchError: 邀请码渠道不允许该角色
+          - DuplicateUserError: 手机号已注册
+          - AuthInternalError: 内部错误
         """
-        # 步骤 1: 密码复杂度校验（Pydantic Field 校验由路由层完成）
         self._validate_password_complexity(request.password)
-        # 步骤 2: 专家角色 real_name 必填校验
-        self._validate_expert_real_name(request.role, request.real_name)
-        # 步骤 3: 用户名 + 手机号唯一性校验
-        await self._validate_uniqueness(request.username, request.phone, session)
-        # 步骤 4: 密码哈希
+        self._validate_review_role_real_name(request.role, request.real_name)
+        invite_code = await self._validate_invite_code(request.invite_code, request.role, session)
+        await self._validate_phone_uniqueness(request.phone, session)
         hashed = self._do_hash_password(request.password)
-        # 步骤 5: 数据写入
-        result = await self._do_register(request, hashed, session)
-        # 后置: 结果校验 + 审计日志异步投递
+        result = await self._do_register(request, hashed, invite_code, session)
         self._validate_register_result(result)
-        self._audit_log_async(result.user_id, request.username, request.role)
+        self._audit_log_async(result.user_id, request.phone, request.role)
         return result
 
-    # ======================================================================
-    # AUTH-02 用户登录
-    # ======================================================================
+    # ==================================================================
+    # 登录（手机号 + 状态机放行）
+    # ==================================================================
 
     @final
     async def login(self, request: "LoginRequest", session: Any) -> "TokenResponse":
-        """用户登录 — 凭证校验 + JWT 签发。
+        """用户登录 — 凭证校验 + 状态机放行 + 新 Token 家族签发（§4.3 / §5.2）。
 
-        前置:
-          - request 已通过 Pydantic 校验
-          - session 是活跃的 AsyncSession
-        后置:
-          - 成功: 返回 access_token + refresh_token + expires_in
-          - 失败: 抛出 InvalidCredentialsError
-        输入约束:
-          - request: LoginRequest Pydantic 模型实例
-          - session: AsyncSession
-        输出约束:
-          - TokenResponse: access_token, refresh_token, token_type="Bearer"
+        流程编排:
+          1. 查询 password 凭证（identifier=phone）
+          2. 凭证存在性校验（防枚举统一 401）
+          3. 密码校验（同上统一 401）
+          4. 查询用户并按 status 放行（disabled 拒签）
+          5. _do_login：创建新家族（family_id）并签发 Token 对
+
         异常:
-          - InvalidCredentialsError: 用户名不存在或密码错误（不区分具体原因）
+          - InvalidCredentialsError: 凭证不存在或密码错误（不区分）
+          - AccountDisabledError: 账号已禁用
           - AuthInternalError: JWT 签发失败
-        Side Effects:
-          - 无持久化写入（Token 本身不存储）
         """
-        # 前置: 查询用户
-        user = await self._fetch_user(request.username, session)
-        # 前置: 用户存在性校验（不区分"不存在"和"密码错"——防枚举攻击）
+        credential = await self._do_fetch_credential(request.phone, session)
+        self._validate_credential_exists(credential)
+        assert credential is not None
+        self._validate_password_match(request.password, credential.secret)
+        user = await self._do_fetch_user_by_id(str(credential.user_id), session)
         self._validate_user_exists(user)
-        assert user is not None  # _validate_user_exists 保证非 None
-        # 前置: 密码校验
-        self._validate_password_match(request.password, user.password_hash)
-        # 后置: JWT 签发
+        assert user is not None
+        self._validate_user_status(user)
         result = self._do_login(user)
-        self._validate_login_result(result)
+        self._validate_token_pair(result)
         return result
 
-    # ======================================================================
-    # AUTH-03 Token 续期
-    # ======================================================================
+    # ==================================================================
+    # 续期（轮换 + 家族吊销 + 复用检测）
+    # ==================================================================
 
     @final
     async def refresh_token(self, request: "RefreshRequest", session: Any) -> "TokenResponse":
-        """Token 续期 — 校验 refresh token + 轮换。
+        """Token 续期 — 轮换 + 家族语义（§5.1 / §5.2）。
 
-        前置:
-          - request.refresh_token 为非空 JWT 字符串
-          - session 是活跃的 AsyncSession
-        后置:
-          - 旧 refresh token 标记为已使用（防重放攻击）
-          - 返回新的 TokenResponse
-        输入约束:
-          - request: RefreshRequest Pydantic 模型实例
-          - session: AsyncSession
-        输出约束:
-          - TokenResponse: 新的 access_token + refresh_token
+        流程编排:
+          1. 校验 refresh token 签名与类型
+          2. 家族吊销检查（logout/禁用/角色变更后旧家族即拒）
+          3. 复用检测：旧 refresh 再次出示 → 吊销全家族并拒绝
+          4. 查询用户并校验状态（disabled 拒签）
+          5. _do_refresh：标记旧 jti 已用 + 以最新 role/status 在同一家族内签发新对
+
         异常:
-          - TokenInvalidError: refresh token 无效、过期或已被使用
-          - AuthInternalError: JWT 签发失败
-        Side Effects:
-          - 旧 refresh token 的 jti 标记为已使用（Redis 写入）
+          - TokenInvalidError: token_invalid / family_revoked / token_reused
+          - AccountDisabledError: 账号已禁用
         """
-        # 前置: 校验 refresh token 签名和类型
         payload = self._validate_refresh_token(request.refresh_token)
-        # 前置: 防重放检测
-        await self._validate_refresh_not_used(payload["jti"])
-        # 执行: 标记旧 token → 签发新 token 对
-        result = await self._do_refresh(payload, request.refresh_token)
-        # 后置: 校验新 token 对非空
-        self._validate_refresh_output(result)
+        await self._validate_family_not_revoked(payload["family_id"])
+        await self._validate_refresh_not_used(payload["jti"], payload["family_id"])
+        user = await self._do_fetch_user_by_id(payload["sub"], session)
+        self._validate_user_exists(user)
+        assert user is not None
+        self._validate_user_status(user)
+        result = await self._do_refresh(payload, user)
+        self._validate_token_pair(result)
         return result
 
-    # ======================================================================
-    # 登出
-    # ======================================================================
+    # ==================================================================
+    # 登出（access 黑名单 + 家族吊销）
+    # ==================================================================
 
     @final
     async def logout(self, access_token: str, refresh_token: str) -> None:
-        """登出 — Token 失效。
+        """登出 — access jti 入黑名单 + refresh 家族吊销（§5.2）。
 
-        前置:
-          - access_token 和 refresh_token 为非空 JWT 字符串
-        后置:
-          - access token 的 jti 加入黑名单（TTL=900s）
-          - refresh token 的 jti 标记为已使用（TTL=7d）
-        输入约束:
-          - access_token: JWT access token
-          - refresh_token: JWT refresh token
-        异常:
-          - 不抛异常——黑名单写入失败采用 fail-open 降级策略
-        Side Effects:
-          - Redis 写入（黑名单 + refresh 标记）
+        Redis 故障 fail-open 返回正常（维持现状语义）。
+        不抛异常。
         """
-        access_jti = self._extract_jti_unsafe(access_token)
-        refresh_jti = self._extract_jti_unsafe(refresh_token)
-        await self._do_logout(access_jti, refresh_jti)
+        access_jti = self._extract_claim_unsafe(access_token, "jti")
+        family_id = self._extract_claim_unsafe(refresh_token, "family_id")
+        await self._do_logout(access_jti, family_id)
 
-    # ======================================================================
-    # @abstractmethod 钩子 — 实现者填以下方法
-    # ======================================================================
+    # ==================================================================
+    # me — 当前用户信息
+    # ==================================================================
+
+    @final
+    async def get_me(self, user_id: str, session: Any) -> MeResponse:
+        """获取当前用户信息。
+
+        异常:
+          - InvalidCredentialsError: 用户不存在（token 失效后的正常清理路径）
+        """
+        user = await self._do_fetch_user_by_id(user_id, session)
+        self._validate_user_exists(user)
+        assert user is not None
+        return MeResponse(
+            user_id=str(user.id),
+            phone=user.phone,
+            real_name=user.real_name,
+            role=user.role,
+            status=user.status,
+        )
+
+    # ==================================================================
+    # @abstractmethod 钩子
+    # ==================================================================
 
     @abstractmethod
     def _do_hash_password(self, plain_password: str) -> str:
-        """执行 bcrypt 密码哈希。
+        """执行 bcrypt 密码哈希（调用注入的 password_hasher）。"""
+        ...
 
-        实现者在此调用注入的 self._password_hasher.hash_password()。
-        不需要关心密码复杂度——@final register 已通过 _validate_password_complexity 处理。
-        不需要关心密码长度——PasswordHasher 契约内置长度校验。
+    @abstractmethod
+    async def _do_register(
+        self,
+        request: "RegisterRequest",
+        hashed_password: str,
+        invite_code: "InviteCode",
+        session: Any,
+    ) -> "RegisterResponse":
+        """执行注册落库原子事务。
+
+        实现者职责:
+          1. consume_if_valid 原子消费邀请码（失败 → InvalidInviteCodeError）
+          2. 创建 User（teacher/expert 置 pending_review，其余 active）
+          3. 创建 password Credential（identifier=phone, secret=哈希）
+          4. session.commit() 提交事务
 
         输入约束:
-          - plain_password 已通过复杂度正则和 Pydantic min_length=8 校验
+          - request 已通过全部前置校验；invite_code 已通过预检
         输出约束:
-          - bcrypt 哈希字符串 ($2b$ 或 $2a$ 开头)
-        异常:
-          - HashingError: bcrypt 引擎内部错误（由 @final 转换为 AuthInternalError）
+          - RegisterResponse（status 反映准入落态）
         """
         ...
 
     @abstractmethod
-    async def _do_register(self, request: "RegisterRequest", hashed_password: str, session: Any) -> "RegisterResponse":
-        """执行用户数据持久化。
-
-        实现者在此构造 User ORM 对象并调用 self._user_repo.create()。
-        不需要关心密码复杂度、唯一性校验、专家角色校验——@final register 已全部处理。
-
-        输入约束:
-          - request 所有字段已通过校验
-          - hashed_password 是合法的 bcrypt 哈希串
-        输出约束:
-          - RegisterResponse 实例
-        异常:
-          - IntegrityError 由实现者在 try/except 中捕获并转换为 DuplicateUserError
-        """
+    async def _do_fetch_credential(self, phone: str, session: Any) -> Any | None:
+        """按手机号查询 password 渠道凭证。"""
         ...
 
-    async def _fetch_user(self, username: str, session: Any) -> Any | None:
-        """查询用户——大小写不敏感用户名匹配。
-
-        调用注入的 self._user_repo.find_by_username_lower()。
-        子类可覆写以自定义查询逻辑。
-
-        输入约束:
-          - username 已通过 Pydantic 校验
-        输出约束:
-          - User ORM 实例或 None
-        """
-        return await self._user_repo.find_by_username_lower(session, username)
+    @abstractmethod
+    async def _do_fetch_user_by_id(self, user_id: str, session: Any) -> Any | None:
+        """按 UUID 查询用户。"""
+        ...
 
     @abstractmethod
     def _do_login(self, user: Any) -> "TokenResponse":
-        """执行 JWT Token 对签发。
-
-        实现者在此调用:
-        1. self._token_manager.create_access_token(data)
-        2. self._token_manager.create_refresh_token(data)
-
-        不需要关心用户存在性和密码正确性——@final login 已校验。
-
-        输入约束:
-          - user 是已通过认证的 User ORM 实例（id, username, role 均非空）
-        输出约束:
-          - TokenResponse 实例
-        异常:
-          - TokenCreationError 由 @final 转换为 AuthInternalError
-        """
+        """执行新 Token 家族签发（family_id=新 UUID）。"""
         ...
 
     @abstractmethod
-    async def _do_refresh(self, payload: dict[str, Any], old_refresh_token: str) -> "TokenResponse":
-        """执行 Token 轮换——标记旧 token + 签发新 token 对。
-
-        实现者在此:
-        1. 调用 self._token_blacklist.mark_refresh_used(payload["jti"])
-        2. 调用 self._token_manager.create_access_token() 和 create_refresh_token()
-
-        不需要关心 refresh token 有效性校验——@final refresh_token 已处理。
-        不需要关心重放检测——@final refresh_token 已处理。
-
-        输入约束:
-          - payload 是通过校验的 refresh token payload（含 sub, roles, jti）
-        输出约束:
-          - TokenResponse 实例
-        """
+    async def _do_refresh(self, payload: dict[str, Any], user: Any) -> "TokenResponse":
+        """执行 Token 轮换——标记旧 jti + 同家族内签发新对（以 DB 最新 role/status）。"""
         ...
 
     @abstractmethod
-    async def _do_logout(self, access_jti: str | None, refresh_jti: str | None) -> None:
-        """执行 Token 失效操作。
-
-        实现者在此:
-        1. 若 access_jti 非空 → 调用 self._token_blacklist.add_to_blacklist(access_jti)
-        2. 若 refresh_jti 非空 → 调用 self._token_blacklist.mark_refresh_used(refresh_jti)
-
-        不需要关心 fail-open 降级——TokenBlacklist 契约内置降级策略。
-
-        输入约束:
-          - access_jti 和 refresh_jti 可能为 None（token 格式损坏无法提取 jti 时）
-        """
+    async def _do_logout(self, access_jti: str | None, family_id: str | None) -> None:
+        """执行 Token 失效——access jti 入黑名单 + 家族吊销。"""
         ...
 
-    # ======================================================================
-    # 校验器 — 子类可通过 super() 叠加业务级校验
-    # ======================================================================
+    # ==================================================================
+    # 校验器
+    # ==================================================================
 
     def _validate_password_complexity(self, password: str) -> None:
-        """密码复杂度校验——必须同时包含大小写字母和数字，至少 8 位。
-
-        Raises:
-            PasswordComplexityError: 复杂度不足。
-        """
+        """密码复杂度校验——大小写字母 + 数字，至少 8 位。"""
         if not _PASSWORD_COMPLEXITY_REGEX.match(password):
             raise PasswordComplexityError()
 
-    def _validate_expert_real_name(self, role: UserRole, real_name: str | None) -> None:
-        """专家角色 real_name 必填校验。
-
-        Raises:
-            RealNameRequiredError: 专家角色缺少 real_name。
-        """
-        if role == UserRole.EXPERT and not real_name:
+    def _validate_review_role_real_name(self, role: UserRole, real_name: str | None) -> None:
+        """teacher/expert real_name 必填校验（准入审核依据）。"""
+        if role in REVIEW_REQUIRED_ROLES and not real_name:
             raise RealNameRequiredError()
 
-    async def _validate_uniqueness(self, username: str, phone: str, session: Any) -> None:
-        """用户名和手机号唯一性校验。
+    async def _validate_invite_code(self, code: str, role: UserRole, session: Any) -> "InviteCode":
+        """邀请码预检——存在性/状态/过期/余量 + channel 约束角色。
 
-        分别查询用户名和手机号是否存在，精确区分冲突类型。
-
-        Raises:
-            DuplicateUserError: 用户名或手机号重复，code 精确区分。
-        """
-        existing_user = await self._user_repo.find_by_username_lower(session, username)
-        if existing_user is not None:
-            raise DuplicateUserError(
-                code="DUPLICATE_USERNAME",
-                message="该用户名已被注册",
-            )
-        existing_phone = await self._user_repo.find_by_phone(session, phone)
-        if existing_phone is not None:
-            raise DuplicateUserError(
-                code="DUPLICATE_PHONE",
-                message="该手机号已被注册",
-            )
-
-    def _validate_user_exists(self, user: Any | None) -> None:
-        """用户存在性校验——login 流程前置。
-
-        不区分"用户不存在"和"密码错误"——统一抛出 InvalidCredentialsError，
-        防止攻击者通过错误消息差异枚举有效用户名。
+        注意：此为预检，最终一致性由 _do_register 的原子消费保证
+        （条件自增，并发下仅一个请求成功）。
 
         Raises:
-            InvalidCredentialsError: 用户名或密码错误。
+            InvalidInviteCodeError: 码不存在/已停用/已过期/已用完（不区分原因，防枚举）。
+            InviteChannelMismatchError: 码渠道不允许注册该角色。
         """
-        if user is None:
+        invite_code = await self._invite_code_repo.find_by_code(session, code)
+        if invite_code is None:
+            raise InvalidInviteCodeError()
+        if invite_code.status != InviteCodeStatus.ACTIVE:
+            raise InvalidInviteCodeError()
+        if self._is_expired(invite_code.expires_at):
+            raise InvalidInviteCodeError()
+        if invite_code.used_count >= invite_code.max_uses:
+            raise InvalidInviteCodeError()
+        if role not in CHANNEL_ALLOWED_ROLES[invite_code.channel]:
+            raise InviteChannelMismatchError()
+        return invite_code
+
+    @staticmethod
+    def _is_expired(expires_at: "datetime") -> bool:
+        """过期判定（兼容 naive/aware 时间戳）。"""
+        from datetime import datetime, timezone
+
+        now = datetime.now(timezone.utc)
+        if expires_at.tzinfo is None:
+            return expires_at < now.replace(tzinfo=None)
+        return expires_at < now
+
+    async def _validate_phone_uniqueness(self, phone: str, session: Any) -> None:
+        """手机号唯一性校验。"""
+        existing = await self._user_repo.find_by_phone(session, phone)
+        if existing is not None:
+            raise DuplicateUserError()
+
+    def _validate_credential_exists(self, credential: Any | None) -> None:
+        """凭证存在性校验——与密码错误统一 401（防枚举）。"""
+        if credential is None:
             raise InvalidCredentialsError()
 
-    def _validate_password_match(self, plain_password: str, hashed_password: str) -> None:
-        """密码匹配校验——login 流程前置。
-
-        通过注入的 password_hasher 执行 bcrypt 比对。
-        密码不匹配时抛出与"用户不存在"完全相同的异常。
-
-        Raises:
-            InvalidCredentialsError: 密码不匹配。
-        """
+    def _validate_password_match(self, plain_password: str, hashed_password: str | None) -> None:
+        """密码匹配校验——与凭证不存在统一 401。"""
+        if not hashed_password:
+            raise InvalidCredentialsError()
         if not self._password_hasher.verify_password(plain_password, hashed_password):
             raise InvalidCredentialsError()
 
-    def _validate_refresh_token(self, token: str) -> dict[str, Any]:
-        """Refresh token 有效性校验——续期流程前置。
+    def _validate_user_exists(self, user: Any | None) -> None:
+        """用户存在性校验。"""
+        if user is None:
+            raise InvalidCredentialsError()
 
-        校验签名 + 有效期 + type == "refresh"。
+    def _validate_user_status(self, user: Any) -> None:
+        """账号状态放行校验——disabled 即签即拒（§3.2 / §4.3）。
 
-        Raises:
-            TokenInvalidError: token 无效、过期或类型不是 refresh。
-
-        Returns:
-            dict: 校验通过后的 token payload。
+        pending_review/rejected 放行（可登录见状态页，能力由 RBAC 守卫收敛）。
         """
+        if user.status == AccountStatus.DISABLED:
+            raise AccountDisabledError()
+
+    def _validate_refresh_token(self, token: str) -> dict[str, Any]:
+        """Refresh token 有效性校验（签名 + 有效期 + type）。"""
         payload: dict[str, Any] | None = self._token_manager.verify_refresh_token(token)
         if payload is None:
             raise TokenInvalidError(reason="token_invalid")
         return payload
 
-    async def _validate_refresh_not_used(self, jti: str) -> None:
-        """Refresh token 重放检测——续期流程前置。
+    async def _validate_family_not_revoked(self, family_id: str) -> None:
+        """家族吊销检查——logout/禁用/角色变更后旧家族即拒。"""
+        if await self._token_blacklist.is_family_revoked(family_id):
+            raise TokenInvalidError(reason="family_revoked")
 
-        查询 Redis 黑名单中该 jti 是否已被标记为使用过。
-        若已使用 → 可能的 token 盗窃事件，拒绝续期。
-
-        Raises:
-            TokenInvalidError: refresh token 已被使用（reason=token_reused）。
-        """
-        was_used = await self._token_blacklist.is_refresh_used(jti)
-        if was_used:
+    async def _validate_refresh_not_used(self, jti: str, family_id: str) -> None:
+        """Refresh 复用检测——旧 token 再次出示判定泄露，吊销全家族（§5.2）。"""
+        if await self._token_blacklist.is_refresh_used(jti):
+            await self._token_blacklist.revoke_family(family_id)
+            self._audit_token_reuse(family_id)
             raise TokenInvalidError(reason="token_reused")
 
-    def _validate_login_result(self, result: Any) -> None:
-        """后置校验——确保登录返回的 TokenResponse 非空且含 access_token。
-
-        Raises:
-            AuthInternalError: 登录返回结果异常。
-        """
-        if result is None or not result.access_token:
-            raise AuthInternalError("登录返回结果异常")
-
     def _validate_register_result(self, result: Any) -> None:
-        """后置校验——确保注册结果包含非空 user_id。
-
-        Raises:
-            AuthInternalError: 注册返回结果缺少 user_id。
-        """
+        """后置校验——注册结果含非空 user_id。"""
         if result is None or not result.user_id:
             raise AuthInternalError("注册返回结果异常")
 
-    def _validate_refresh_output(self, result: Any) -> None:
-        """后置校验——确保续期返回的 TokenResponse 非空。
+    def _validate_token_pair(self, result: Any) -> None:
+        """后置校验——Token 对非空。"""
+        if result is None or not result.access_token or not result.refresh_token:
+            raise AuthInternalError("Token 签发返回异常")
 
-        Raises:
-            AuthInternalError: Token 续期返回空结果。
-        """
-        if result is None:
-            raise AuthInternalError("Token 续期返回异常")
-
-    # ======================================================================
+    # ==================================================================
     # 辅助方法
-    # ======================================================================
+    # ==================================================================
 
     @staticmethod
-    def _extract_jti_unsafe(token: str) -> str | None:
-        """不验证签名地从 token 中提取 jti claim。
-
-        用于登出流程——即使 token 已过期也需要提取 jti 以写入黑名单。
-        通过 base64 解码 payload 段实现，不调用签名校验。
-
-        Args:
-            token: JWT 字符串（可能已过期或签名无效）。
-
-        Returns:
-            jti 字符串（提取成功）或 None（token 格式损坏）。
-        """
-        import base64
-        import json
-
+    def _extract_claim_unsafe(token: str, claim: str) -> str | None:
+        """不验证签名地从 token 中提取指定 claim（登出流程，token 可能已过期）。"""
         try:
             parts = token.split(".")
             if len(parts) != 3:
                 return None
-            # 解码 payload 段（不校验签名）
             payload_bytes = base64.urlsafe_b64decode(parts[1] + "=" * (-len(parts[1]) % 4))
             payload: dict[str, Any] = json.loads(payload_bytes)
-            return payload.get("jti")
+            value = payload.get(claim)
+            return str(value) if value is not None else None
         except Exception:
             return None
 
-    def _audit_log_async(self, user_id: str, username: str, role: UserRole) -> None:
-        """异步投递审计日志——不阻塞注册响应。
+    def _audit_log_async(self, user_id: str, phone: str, role: UserRole) -> None:
+        """异步投递注册审计日志——基类默认空操作，子类可覆写注入 audit_logger。"""
+        pass
 
-        基类默认实现为空操作。子类可覆写以注入实际的 audit_logger 实例。
-        注意：不是 _do_ 前缀——这不是抽象钩子，是可选的覆写点。
-
-        实现者应使用 asyncio.create_task + asyncio.to_thread 投递日志，
-        失败时静默记录 warning，不中断用户响应。
-        """
+    def _audit_token_reuse(self, family_id: str) -> None:
+        """令牌复用检测安全审计事件——基类默认空操作，子类可覆写。"""
         pass
 
 

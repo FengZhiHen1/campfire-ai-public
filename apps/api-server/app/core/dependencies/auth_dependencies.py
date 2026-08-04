@@ -1,21 +1,30 @@
-"""api-server 认证模块 — FastAPI 依赖注入工厂。
+"""api-server 认证模块 — FastAPI 依赖注入工厂（ADR-013 目标态）。
 
-提供 UserRepository、PasswordHasher、AuditLogger、TokenManager、
-TokenBlacklist 和 AuthService 的依赖注入工厂函数，
-以及数据库异步会话的请求级依赖。
-所有工厂函数均可在 FastAPI Depends() 中直接使用。
+提供：
+- 数据库会话与各 Repository 的请求级依赖
+- py_auth 契约实例的组装工厂（PasswordHasher/TokenManager/TokenBlacklist）
+- AuthService / InviteCodeService / ReviewService 的组装工厂
+- CurrentUser 语义类型与全站认证守卫：
+  - get_current_user: JWT 验签 + jti 黑名单 + 家族吊销检查（无状态，不查 DB）
+  - require_roles(*roles): 显式角色集合守卫（组合 get_current_user + RBACGuard）
 """
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, AsyncGenerator
 
+from fastapi import Depends, HTTPException, Request
 from py_auth.auth_contract import PasswordHasher as BasePasswordHasher
 from py_auth.blacklist import RedisBlacklist
+from py_auth.exceptions import PermissionDeniedError
 from py_auth.hashing import hash_password, verify_password
 from py_auth.jwt_utils import JoseTokenManager
+from py_auth.rbac import get_guard
 from py_config import get_settings
+from py_db.repositories.credential_repository import CredentialRepository
 from py_db.repositories.event_repository import EventRepository
+from py_db.repositories.invite_code_repository import InviteCodeRepository
 from py_db.repositories.narrative_repository import NarrativeRepository
 from py_db.repositories.profile_repository import ProfileRepository
 from py_db.repositories.review_repository import (
@@ -25,6 +34,8 @@ from py_db.repositories.review_repository import (
 from py_db.repositories.teacher_link_repository import TeacherLinkRepository
 from py_db.repositories.user_repository import UserRepository
 from py_logger import logger
+from py_schemas.auth import UserRole
+from py_schemas.enums import AccountStatus
 from sqlalchemy.ext.asyncio import (
     AsyncSession,
     async_sessionmaker,
@@ -33,6 +44,8 @@ from sqlalchemy.ext.asyncio import (
 
 if TYPE_CHECKING:
     from app.modules.auth.auth_contract import AuthService
+    from app.modules.auth.invite_codes_service import InviteCodeService
+    from app.modules.auth.review_service import ReviewService
 
 
 # ---------------------------------------------------------------------------
@@ -44,18 +57,10 @@ _async_session_factory: async_sessionmaker[AsyncSession] | None = None
 
 
 def _get_session_factory() -> async_sessionmaker[AsyncSession]:
-    """获取或创建异步会话工厂（惰性初始化）。
-
-    首次调用时从 AppSettings.DATABASE_URL 创建 asyncpg 引擎，
-    后续调用返回缓存的会话工厂。
-
-    Returns:
-        async_sessionmaker[AsyncSession]: 已配置的异步会话工厂。
-    """
+    """获取或创建异步会话工厂（惰性初始化）。"""
     global _engine, _async_session_factory
     if _async_session_factory is None:
         settings = get_settings()
-        # PostgresDsn 的字符串形式即为完整连接串
         database_url = str(settings.DATABASE_URL)
         _engine = create_async_engine(database_url, echo=False)
         _async_session_factory = async_sessionmaker(
@@ -67,16 +72,38 @@ def _get_session_factory() -> async_sessionmaker[AsyncSession]:
 
 
 async def get_db_session() -> AsyncGenerator[AsyncSession, None]:
-    """FastAPI 依赖：为每个请求提供独立的异步数据库会话。
-
-    会话在请求结束时自动关闭，确保连接归还连接池。
-
-    Yields:
-        AsyncSession: 当前请求的数据库异步会话。
-    """
+    """FastAPI 依赖：为每个请求提供独立的异步数据库会话。"""
     factory = _get_session_factory()
     async with factory() as session:
         yield session
+
+
+# ---------------------------------------------------------------------------
+# CurrentUser — 已认证用户语义类型
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class CurrentUser:
+    """当前已认证用户（access token 验签后的可信声明）。
+
+    roles 属性满足 py_auth.types.HasRoles 协议（单角色互斥后仍保持
+    协议形态，供 RBACGuard 复用）。
+    """
+
+    user_id: str
+    role: UserRole
+    status: AccountStatus
+    family_id: str
+    jti: str
+
+    @property
+    def id(self) -> str:
+        return self.user_id
+
+    @property
+    def roles(self) -> list[UserRole]:
+        return [self.role]
 
 
 # ---------------------------------------------------------------------------
@@ -85,30 +112,13 @@ async def get_db_session() -> AsyncGenerator[AsyncSession, None]:
 
 
 class PasswordHasher(BasePasswordHasher):
-    """bcrypt 密码哈希适配器。
-
-    封装 py_auth.hashing 的 hash_password() / verify_password() 调用，
-    提供干净的依赖注入边界，便于 Service 层单元测试时 mock。
-    继承 py_auth.auth_contract.PasswordHasher 契约。
-
-    Usage:
-        hasher = PasswordHasher()
-        hashed = hasher.hash_password("Abc12345")
-        is_valid = hasher.verify_password("Abc12345", hashed)
-    """
+    """bcrypt 密码哈希适配器（封装 py_auth.hashing 调用）。"""
 
     def _do_hash(self, plain_password: str) -> str:
-        """执行 bcrypt 不可逆哈希。"""
         return hash_password(plain_password)
 
     def _do_verify(self, plain_password: str, hashed_password: str) -> bool:
-        """验证明文密码是否匹配已存储的哈希值。"""
         return verify_password(plain_password, hashed_password)
-
-    # 保留旧 API 以兼容可能存在的外部调用
-    def hash(self, plain_password: str) -> str:
-        """【已废弃】使用 hash_password 替代。"""
-        return self.hash_password(plain_password)
 
 
 # ---------------------------------------------------------------------------
@@ -117,42 +127,119 @@ class PasswordHasher(BasePasswordHasher):
 
 
 class AuditLogger:
-    """审计日志适配器。
+    """审计日志适配器（认证与访问 §七 审计事件，统一 py_logger 结构化日志）。"""
 
-    封装 py_logger.logger.critical() 调用（op_type 必填），
-    提供干净的依赖注入边界，便于 Service 层单元测试时 mock。
-
-    Usage:
-        audit = AuditLogger()
-        audit.log_user_register(user_id="...", username="...", role="family")
-    """
-
-    def log_user_register(
-        self,
-        user_id: str,
-        username: str,
-        role: str,
-    ) -> None:
-        """写入用户注册成功审计日志。
-
-        调用 logger.critical() 强制要求 op_type="USER_REGISTER"，
-        确保注册事件不可绕过审计追踪。
-
-        Args:
-            user_id: 新注册用户的 UUID 字符串。
-            username: 注册用户名。
-            role: 用户角色值（family/teacher/expert）。
-        """
+    def log_user_register(self, user_id: str, phone: str, role: str) -> None:
+        """用户注册成功审计（手机号脱敏记录——日志不落地完整 PII）。"""
         logger.critical(
             service="api-server",
-            message=f"用户注册成功: {username}",
+            message="用户注册成功",
             op_type="USER_REGISTER",
             extra={
                 "user_id": user_id,
-                "username": username,
+                "phone_masked": phone[:3] + "****" + phone[-4:] if len(phone) == 11 else "****",
                 "role": role,
             },
         )
+
+
+# ---------------------------------------------------------------------------
+# 全站认证守卫
+# ---------------------------------------------------------------------------
+
+_AUTH_MISSING_DETAIL = "未登录或凭证无效，请重新登录"
+_PERMISSION_DENIED_DETAIL = "当前角色无权执行此操作，如需权限请联系管理员"
+
+_token_manager: JoseTokenManager | None = None
+_token_blacklist: RedisBlacklist | None = None
+
+
+def _get_token_manager() -> JoseTokenManager:
+    global _token_manager
+    if _token_manager is None:
+        _token_manager = JoseTokenManager()
+    return _token_manager
+
+
+def _get_token_blacklist() -> RedisBlacklist:
+    global _token_blacklist
+    if _token_blacklist is None:
+        _token_blacklist = RedisBlacklist()
+    return _token_blacklist
+
+
+async def get_current_user(request: Request) -> CurrentUser:
+    """全站认证守卫——解析并校验 access token。
+
+    校验链（无状态，不查 DB——机制 §5.1「校验无状态，吊销状态存 Redis」）：
+      1. Authorization Bearer token 提取
+      2. JWT 验签 + 有效期 + type=access
+      3. jti 黑名单检查（logout 后的 access 即拒）
+      4. family_id 吊销检查（登出/复用检测/角色状态变更后的家族即拒）
+
+    disabled 账号语义：存活 access ≤15min 自然到期收敛（机制 §3.2），
+    刷新路径由 AuthService 以 DB 最新 status 拒签。
+
+    Raises:
+        HTTPException 401: 未携带凭证 / 验签失败 / 已吊销。
+    """
+    authorization = request.headers.get("Authorization", "")
+    if not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail=_AUTH_MISSING_DETAIL)
+
+    token = authorization.removeprefix("Bearer ").strip()
+    payload = _get_token_manager().verify_access_token(token)
+    if payload is None:
+        raise HTTPException(status_code=401, detail=_AUTH_MISSING_DETAIL)
+
+    blacklist = _get_token_blacklist()
+    jti = str(payload.get("jti", ""))
+    if jti and await blacklist.is_blacklisted(jti):
+        raise HTTPException(status_code=401, detail=_AUTH_MISSING_DETAIL)
+
+    family_id = str(payload.get("family_id", ""))
+    if family_id and await blacklist.is_family_revoked(family_id):
+        raise HTTPException(status_code=401, detail=_AUTH_MISSING_DETAIL)
+
+    try:
+        user = CurrentUser(
+            user_id=str(payload["sub"]),
+            role=UserRole(str(payload["role"])),
+            status=AccountStatus(str(payload["status"])),
+            family_id=family_id,
+            jti=jti,
+        )
+    except (KeyError, ValueError) as exc:
+        raise HTTPException(status_code=401, detail=_AUTH_MISSING_DETAIL) from exc
+
+    # 写入 request.state 供 py_auth.rbac.require_roles 等下游守卫复用
+    request.state.user = user
+    return user
+
+
+def require_roles(*roles: UserRole):
+    """显式角色集合守卫工厂（认证与访问 §六）。
+
+    组合 get_current_user + RBACGuard 显式集合匹配，
+    返回 CurrentUser 供路由处理函数使用。
+
+    Usage:
+        @router.get("/admin")
+        async def admin_route(user: CurrentUser = Depends(require_roles(UserRole.ADMIN))): ...
+    """
+    if not roles:
+        raise ValueError("require_roles 必须显式声明至少一个角色")
+
+    required = list(roles)
+
+    async def _dep(user: CurrentUser = Depends(get_current_user)) -> CurrentUser:
+        try:
+            get_guard().authorize(user, exact_roles=required)
+        except PermissionDeniedError as exc:
+            raise HTTPException(status_code=403, detail=_PERMISSION_DENIED_DETAIL) from exc
+        return user
+
+    return _dep
 
 
 # ---------------------------------------------------------------------------
@@ -161,79 +248,47 @@ class AuditLogger:
 
 
 def get_user_repository() -> UserRepository:
-    """FastAPI Depends 工厂：构造 UserRepository 实例。
-
-    注入 async_session_factory 供 Repository 内部使用。
-    每次请求调用时返回新实例（无状态，创建成本可忽略）。
-
-    Returns:
-        UserRepository: 已配置会话工厂的 Repository 实例。
-    """
+    """FastAPI Depends 工厂：构造 UserRepository 实例。"""
     return UserRepository(session_factory=_get_session_factory())
 
 
-def get_narrative_repository() -> NarrativeRepository:
-    """FastAPI Depends 工厂：构造 NarrativeRepository 实例。
+def get_credential_repository() -> CredentialRepository:
+    """FastAPI Depends 工厂：构造 CredentialRepository 实例。"""
+    return CredentialRepository(session_factory=_get_session_factory())
 
-    Returns:
-        NarrativeRepository: 已配置会话工厂的 Repository 实例。
-    """
+
+def get_invite_code_repository() -> InviteCodeRepository:
+    """FastAPI Depends 工厂：构造 InviteCodeRepository 实例。"""
+    return InviteCodeRepository(session_factory=_get_session_factory())
+
+
+def get_narrative_repository() -> NarrativeRepository:
+    """FastAPI Depends 工厂：构造 NarrativeRepository 实例。"""
     return NarrativeRepository(session_factory=_get_session_factory())
 
 
 def get_password_hasher() -> PasswordHasher:
-    """FastAPI Depends 工厂：构造 PasswordHasher 适配器实例。
-
-    Returns:
-        PasswordHasher: 封装 hash_password() / verify_password() 的适配器。
-    """
+    """FastAPI Depends 工厂：构造 PasswordHasher 适配器实例。"""
     return PasswordHasher()
 
 
 def get_audit_logger() -> AuditLogger:
-    """FastAPI Depends 工厂：构造 AuditLogger 适配器实例。
-
-    Returns:
-        AuditLogger: 封装 logger.critical() 的适配器。
-    """
+    """FastAPI Depends 工厂：构造 AuditLogger 适配器实例。"""
     return AuditLogger()
 
 
 def get_token_manager() -> JoseTokenManager:
-    """FastAPI Depends 工厂：构造 JoseTokenManager 实例。
-
-    从 py_auth.jwt_utils 导入，惰性初始化密钥配置。
-
-    Returns:
-        JoseTokenManager: JWT 签发与校验管理器。
-    """
+    """FastAPI Depends 工厂：构造 JoseTokenManager 实例。"""
     return JoseTokenManager()
 
 
 def get_token_blacklist() -> RedisBlacklist:
-    """FastAPI Depends 工厂：构造 RedisBlacklist 实例。
-
-    从 py_auth.blacklist 导入，惰性初始化 Redis 连接。
-
-    Returns:
-        RedisBlacklist: Token 黑名单管理器。
-    """
+    """FastAPI Depends 工厂：构造 RedisBlacklist 实例。"""
     return RedisBlacklist()
 
 
 def get_auth_service() -> "AuthService":
-    """FastAPI Depends 工厂：组装 AuthServiceImpl 并注入所有依赖。
-
-    注入链：
-      - PasswordHasher() — 本地适配器（封装 py_auth.hashing）
-      - JoseTokenManager() — JWT 签发与校验
-      - RedisBlacklist() — Token 失效管理
-      - UserRepository — 用户持久化查询
-      - AuditLogger() — 审计日志写入
-
-    Returns:
-        AuthServiceImpl: 认证服务契约实现（返回类型标注为 ABC 以解耦路由层）。
-    """
+    """FastAPI Depends 工厂：组装 AuthServiceImpl 并注入所有依赖。"""
     from app.modules.auth.auth_service import AuthServiceImpl
 
     return AuthServiceImpl(
@@ -241,31 +296,37 @@ def get_auth_service() -> "AuthService":
         token_manager=JoseTokenManager(),
         token_blacklist=RedisBlacklist(),
         user_repo=UserRepository(session_factory=_get_session_factory()),
+        credential_repo=CredentialRepository(session_factory=_get_session_factory()),
+        invite_code_repo=InviteCodeRepository(session_factory=_get_session_factory()),
         audit_logger=AuditLogger(),
     )
 
 
+def get_invite_code_service() -> "InviteCodeService":
+    """FastAPI Depends 工厂：组装 InviteCodeService。"""
+    from app.modules.auth.invite_codes_service import InviteCodeService
+
+    return InviteCodeService(
+        invite_code_repo=InviteCodeRepository(session_factory=_get_session_factory()),
+    )
+
+
+def get_review_service() -> "ReviewService":
+    """FastAPI Depends 工厂：组装 ReviewService。"""
+    from app.modules.auth.review_service import ReviewService
+
+    return ReviewService(
+        user_repo=UserRepository(session_factory=_get_session_factory()),
+    )
+
+
 def get_review_repository() -> ReviewRepository:
-    """FastAPI Depends 工厂：构造 ReviewRepository 实例。
-
-    注入 async_session_factory 供 Repository 内部使用。
-    每次请求调用时返回新实例（无状态，创建成本可忽略）。
-
-    Returns:
-        ReviewRepository: 已配置会话工厂的 Repository 实例。
-    """
+    """FastAPI Depends 工厂：构造 ReviewRepository 实例。"""
     return ReviewRepository(session_factory=_get_session_factory())
 
 
 def get_review_audit_log_repository() -> ReviewAuditLogRepository:
-    """FastAPI Depends 工厂：构造 ReviewAuditLogRepository 实例。
-
-    注入 async_session_factory 供 Repository 内部使用（虽然 AuditLogRepository
-    不使用会话工厂——它直接接收已开启的 session 作为参数）。
-
-    Returns:
-        ReviewAuditLogRepository: 已配置的审计日志 Repository 实例。
-    """
+    """FastAPI Depends 工厂：构造 ReviewAuditLogRepository 实例。"""
     return ReviewAuditLogRepository(session_factory=_get_session_factory())
 
 
@@ -285,8 +346,13 @@ def get_teacher_link_repository() -> TeacherLinkRepository:
 
 
 __all__ = [
+    "CurrentUser",
+    "get_current_user",
+    "require_roles",
     "get_db_session",
     "get_user_repository",
+    "get_credential_repository",
+    "get_invite_code_repository",
     "get_review_repository",
     "get_review_audit_log_repository",
     "get_event_repository",
@@ -297,6 +363,8 @@ __all__ = [
     "get_token_manager",
     "get_token_blacklist",
     "get_auth_service",
+    "get_invite_code_service",
+    "get_review_service",
     "PasswordHasher",
     "AuditLogger",
 ]
