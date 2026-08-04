@@ -1,30 +1,26 @@
-"""CSLT-06 咨询历史管理 — ConsultationHistory ORM 模型。
+"""应急咨询域 ORM 模型（ADR-009 时刻分层目标态）— 四表。
 
-定义 consultations 表的 SQLAlchemy 2.0 声明式映射模型。
-ConsultationHistory 模型作为应急咨询流程末端的记录存档节点，
-按 user_id 物理隔离，append-only 写入，不支持修改或删除。
+- ConsultationSession: 一次危机会话（桶/阶段/meltdown 分流结论）
+- Consultation: 会话内的一轮咨询（首份方案四段式 / 追问轮自由文本）
+- SafetyCard: 此刻安全层静态模板（bucket × stage，含槽位占位符，M3 审核状态机）
+- ConsultationLog: 异步咨询日志（含红线事件，event_type 区分）
 
-UUID 主键由 UUIDPrimaryKeyMixin 提供（Python uuid.uuid4 作为应用层后备）。
-幂等键 request_id 由 CSLT-08 编排层生成并传入，本模块仅做存储和冲突检测。
+事实源：docs/技术设计/机制/智能应急咨询.md §八。
+旧 ConsultationHistory 单表已随时刻分层重构废除（全新迁移链）。
 """
 
-# @contract — consultations 表 Schema 契约
+# @contract — consultation_sessions / consultations / safety_cards / consultation_logs 表契约
 
 from __future__ import annotations
 
 import uuid
 from datetime import datetime
+from decimal import Decimal
 
-from sqlalchemy import (
-    Boolean,
-    DateTime,
-    Float,
-    ForeignKey,
-    Index,
-    Integer,
-    String,
-    Text,
-)
+from py_schemas.enums import BehaviorBucket, CrisisStage, MeltdownType, TurnType
+from py_schemas.enums.case_enums import CaseStatus
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, Numeric, String, Text
+from sqlalchemy import Enum as sa_Enum
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.sql import func
@@ -32,163 +28,193 @@ from sqlalchemy.sql import func
 from py_db.models.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
 
 
-class ConsultationHistory(Base, UUIDPrimaryKeyMixin, TimestampMixin):
-    """咨询历史记录 ORM 模型。
+class ConsultationSession(Base, UUIDPrimaryKeyMixin):
+    """应急咨询会话（一次危机会话）。
 
-    映射 PostgreSQL consultations 表，存储每次应急咨询的完整上下文数据。
-    记录一旦归档即为只读，不支持用户自行修改或删除。
+    桶选择兼任：输入方式 / 红线分流 / 案例检索过滤维度。
+    """
 
-    索引策略：
-    - PK: id（UUIDPrimaryKeyMixin 提供）
-    - UNIQUE: request_id（幂等键，由 CSLT-08 生成）
-    - COMPOSITE: (user_id, consultation_time DESC)（驱动列表查询）
-    - INDEX: user_id（用户隔离）
+    __tablename__ = "consultation_sessions"
 
-    Attributes:
-        id: UUID v4 主键（由 UUIDPrimaryKeyMixin 提供）。
-        request_id: 幂等键，由 CSLT-08 编排层在咨询开始前生成 UUID v4。
-        user_id: 本次咨询的发起家属用户 UUID（FK 到 users 表，不定义外键约束）。
-        crisis_level: 危机分级判定结果（mild/moderate/severe）。
-        behavior_description: 家属输入的患者行为描述文本（1-2000 汉字，已脱敏 PII）。
-        consultation_time: 咨询发生时间（服务端 NOW() 自动填充）。
-        generated_plan: AI 生成的四段式应急方案全文（Markdown，最大 65536 字）。
-        plan_sections: AI 生成的四段式应急方案结构化数据（段落标题 → 内容列表）。
-        source_list: 被引用案例的来源信息列表（JSONB 数组）。
-        disclaimer: 合规免责声明固定文本。
-        generation_time_ms: 方案生成总耗时（毫秒）。
-        is_partial: 是否为部分生成结果。
-        referenced_slice_ids: LLM 输出中实际引用的案例切片 ID 列表（JSONB 数组）。
-        finish_reason: 生成结束原因（COMPLETE/PARTIAL/BLOCKED/TIMEOUT/ERROR）。
-        ttft_ms: 首字延迟 Time to First Token（毫秒）。
-        has_feedback: 是否已提交反馈标记（默认 false，由 QUAL-03 单向更新为 true）。
-        token_input: LLM 输入 Token 数量（阻断场景下为 NULL）。
-        token_output: LLM 输出 Token 数量（阻断场景下为 NULL）。
-        device_info: 设备与平台信息（JSONB，全字段 nullable）。
-        created_at: 记录创建时间（由 TimestampMixin 提供）。
-        updated_at: 记录最后更新时间（由 TimestampMixin 提供）。
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+        comment="会话所属用户",
+    )
+    profile_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("profiles.profile_id", ondelete="SET NULL"),
+        nullable=True,
+        comment="关联档案（可无档案模式，槽位回退纯模板）",
+    )
+    bucket: Mapped[BehaviorBucket] = mapped_column(
+        sa_Enum(BehaviorBucket, name="behavior_bucket", values_callable=lambda obj: [e.value for e in obj]),
+        nullable=False,
+        comment="行为桶（统一行为枚举子集；UI 标签映射见枚举）",
+    )
+    crisis_stage: Mapped[CrisisStage | None] = mapped_column(
+        sa_Enum(CrisisStage, name="crisis_stage", values_callable=lambda obj: [e.value for e in obj]),
+        nullable=True,
+        comment="危机阶段（触发/躁动/加速/高峰；阶段单点问题判定后写入）",
+    )
+    meltdown_type: Mapped[MeltdownType | None] = mapped_column(
+        sa_Enum(MeltdownType, name="meltdown_type", values_callable=lambda obj: [e.value for e in obj]),
+        nullable=True,
+        comment="情绪哭闹桶内分流结论（meltdown/tantrum）",
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
+        comment="会话创建时间",
+    )
+
+
+class Consultation(Base, UUIDPrimaryKeyMixin):
+    """会话内的一轮咨询（首份方案或追问轮）。
+
+    confidence_score 仅离线观测（ADR-009：废除置信度路由），不驱动任何行为。
     """
 
     __tablename__ = "consultations"
 
-    # 复合索引: (user_id, consultation_time DESC) — 列表查询
-    __table_args__ = (Index("ix_consultations_user_time", "user_id", "consultation_time"),)
-
-    request_id: Mapped[uuid.UUID] = mapped_column(
+    session_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("consultation_sessions.id", ondelete="CASCADE"),
         nullable=False,
-        unique=True,
-        comment="幂等键，由 CSLT-08 编排层在咨询开始前生成 UUID v4",
-    )
-    user_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("users.id", ondelete="SET NULL"),
-        nullable=True,
         index=True,
-        comment="本次咨询的发起家属用户 UUID（FK 到 users 表）",
+        comment="所属会话",
     )
-    crisis_level: Mapped[str] = mapped_column(
-        String(10),
+    turn_type: Mapped[TurnType] = mapped_column(
+        sa_Enum(TurnType, name="turn_type", values_callable=lambda obj: [e.value for e in obj]),
         nullable=False,
-        comment="危机分级判定结果（mild/moderate/severe）",
+        comment="轮次类型：initial_plan 首份方案 / followup 追问轮",
     )
-    behavior_description: Mapped[str] = mapped_column(
-        String(2000),
+    behavior_description: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+        comment="用户补充的文字描述",
+    )
+    retrieved_case_ids: Mapped[list | None] = mapped_column(
+        JSONB,
+        nullable=True,
+        comment="检索命中的案例切片 ID 列表",
+    )
+    generated_plan: Mapped[dict | None] = mapped_column(
+        JSONB,
+        nullable=True,
+        comment="首份方案的结构化四段（immediate_action/soothing_script/observation/medical_judgment）",
+    )
+    reply_text: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+        comment="追问轮自由文本回复（不套四段式契约）",
+    )
+    confidence_score: Mapped[Decimal | None] = mapped_column(
+        Numeric(3, 2),
+        nullable=True,
+        comment="置信度分数：仅离线观测，不驱动任何行为（ADR-009）",
+    )
+    sources: Mapped[list | None] = mapped_column(
+        JSONB,
+        nullable=True,
+        comment="来源引用 [{case_id, title, source_type}]",
+    )
+    disclaimer_served: Mapped[bool] = mapped_column(
+        Boolean,
         nullable=False,
-        comment="家属输入的患者行为描述文本（1-2000 汉字，已脱敏 PII）",
+        default=False,
+        server_default="false",
+        comment="免责声明是否已随响应送达",
     )
-    consultation_time: Mapped[datetime] = mapped_column(
+    created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),
         nullable=False,
-        comment="咨询发生时间（服务端时间，由 PostgreSQL NOW() 自动填充）",
+        comment="轮次创建时间",
     )
-    generated_plan: Mapped[str] = mapped_column(
+
+
+class SafetyCard(Base, UUIDPrimaryKeyMixin, TimestampMixin):
+    """此刻安全层静态模板卡（bucket × stage 组织）。
+
+    卡体含槽位占位符（{称呼}/{触发物}/{安抚物}/{禁忌}/{话术适配}/{走失信息}），
+    由 slot_filler 确定性填充（零 LLM）；内容生产复用 M3 案例审核链路。
+    """
+
+    __tablename__ = "safety_cards"
+
+    bucket: Mapped[BehaviorBucket | None] = mapped_column(
+        sa_Enum(BehaviorBucket, name="behavior_bucket", values_callable=lambda obj: [e.value for e in obj]),
+        nullable=True,
+        comment="所属行为桶；NULL 为 0 输入通用安全卡",
+    )
+    crisis_stage: Mapped[CrisisStage | None] = mapped_column(
+        sa_Enum(CrisisStage, name="crisis_stage", values_callable=lambda obj: [e.value for e in obj]),
+        nullable=True,
+        comment="所属危机阶段；NULL 为通用桶卡",
+    )
+    title: Mapped[str] = mapped_column(
+        String(100),
+        nullable=False,
+        comment="卡片标题",
+    )
+    card_template: Mapped[str] = mapped_column(
         Text,
         nullable=False,
-        comment="AI 生成的四段式应急方案全文（Markdown，最大 65536 字符）",
+        comment="含槽位占位符的模板正文（祈使短句、一句一个动作、列表 ≤5 项）",
     )
-    plan_sections: Mapped[dict | None] = mapped_column(
-        JSONB,
-        nullable=True,
-        default=dict,
-        comment="AI 生成的四段式应急方案结构化数据（段落标题 → 内容列表）",
-    )
-    source_list: Mapped[list] = mapped_column(
-        JSONB,
+    review_status: Mapped[CaseStatus] = mapped_column(
+        sa_Enum(CaseStatus, name="case_status", values_callable=lambda obj: [e.value for e in obj]),
         nullable=False,
-        default=list,
-        comment="被引用案例的来源信息列表（JSONB 数组）",
+        default=CaseStatus.DRAFT,
+        server_default=CaseStatus.DRAFT.value,
+        comment="审核状态（复用案例审核状态机：draft/pending_review/approved/rejected）",
     )
-    disclaimer: Mapped[str] = mapped_column(
-        Text,
-        nullable=False,
-        comment="合规免责声明固定文本",
-    )
-    generation_time_ms: Mapped[float] = mapped_column(
-        Float,
-        nullable=False,
-        comment="从接收输入到完整方案生成完毕的总耗时（毫秒）",
-    )
-    is_partial: Mapped[bool] = mapped_column(
-        Boolean,
-        nullable=False,
-        default=False,
-        comment="是否为部分生成结果。true 时前端应展示「部分生成」提示",
-    )
-    referenced_slice_ids: Mapped[list] = mapped_column(
-        JSONB,
-        nullable=False,
-        default=list,
-        comment="LLM 输出中实际引用的案例切片 ID 列表（JSONB 数组）",
-    )
-    finish_reason: Mapped[str] = mapped_column(
-        String(10),
-        nullable=False,
-        comment="生成结束原因（COMPLETE/PARTIAL/BLOCKED/TIMEOUT/ERROR）",
-    )
-    ttft_ms: Mapped[float] = mapped_column(
-        Float,
-        nullable=False,
-        comment="首字延迟 Time to First Token（毫秒）。阻断场景下为 0",
-    )
-    has_feedback: Mapped[bool] = mapped_column(
-        Boolean,
-        nullable=False,
-        default=False,
-        comment="反馈标记。默认 false。由 QUAL-03 单向更新为 true",
-    )
-    token_input: Mapped[int | None] = mapped_column(
+    version: Mapped[int] = mapped_column(
         Integer,
-        nullable=True,
-        comment="LLM 输入 Token 数量。阻断场景下为 NULL",
+        nullable=False,
+        default=1,
+        server_default="1",
+        comment="内容版本号",
     )
-    token_output: Mapped[int | None] = mapped_column(
-        Integer,
+
+
+class ConsultationLog(Base, UUIDPrimaryKeyMixin):
+    """异步咨询日志（含红线事件）。
+
+    event_type 区分：consult_completed / redline_hit / fallback_triggered 等。
+    """
+
+    __tablename__ = "consultation_logs"
+
+    session_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("consultation_sessions.id", ondelete="SET NULL"),
         nullable=True,
-        comment="LLM 输出 Token 数量。阻断场景下为 NULL",
+        index=True,
+        comment="关联会话（可空——红线判定先于会话建立的场景）",
     )
-    device_info: Mapped[dict | None] = mapped_column(
+    event_type: Mapped[str] = mapped_column(
+        String(40),
+        nullable=False,
+        index=True,
+        comment="事件类型：consult_completed / redline_hit / fallback_triggered",
+    )
+    payload: Mapped[dict] = mapped_column(
         JSONB,
-        nullable=True,
-        comment="设备与平台信息（全字段 nullable，用于运维排查）",
+        nullable=False,
+        comment="事件载荷（触发规则/输入摘要/兜底信号等）",
     )
-    confidence_score: Mapped[float | None] = mapped_column(
-        Float,
-        nullable=True,
-        comment="CSLT-05 置信度后校验综合得分（0.0-1.0）。null 表示尚未完成校验或校验失败",
-    )
-    validation_verdict: Mapped[str | None] = mapped_column(
-        String(20),
-        nullable=True,
-        comment="CSLT-05 置信度判定结论（PASS/APPEND_WARNING/FORCE_BLOCK）。null 表示尚未完成校验",
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
+        comment="事件时间",
     )
 
-    def __repr__(self) -> str:
-        return (
-            f"<ConsultationHistory(id={self.id!r}, "
-            f"request_id={self.request_id!r}, "
-            f"user_id={self.user_id!r}, "
-            f"crisis_level={self.crisis_level!r}, "
-            f"consultation_time={self.consultation_time!r})>"
-        )
 
-
-__all__ = ["ConsultationHistory"]
+__all__ = [
+    "ConsultationSession",
+    "Consultation",
+    "SafetyCard",
+    "ConsultationLog",
+]

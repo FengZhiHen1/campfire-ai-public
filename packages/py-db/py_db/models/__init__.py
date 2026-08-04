@@ -13,9 +13,14 @@ from py_db.models.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
 from py_db.models.case_card import CaseCard
 from py_db.models.case_chunks import CaseChunk
 from py_db.models.case_narrative import CaseNarrative
-from py_db.models.consultation import ConsultationHistory
-from py_db.models.crisis_keyword import CrisisKeyword
+from py_db.models.consultation import (
+    Consultation,
+    ConsultationLog,
+    ConsultationSession,
+    SafetyCard,
+)
 from py_db.models.profiles import Profile, TeacherLink
+from py_db.models.redline_keyword import RedlineKeyword
 from py_db.models.review_models import CaseReview, ReviewAuditLog
 
 __all__ = [
@@ -26,8 +31,11 @@ __all__ = [
     "CaseCard",
     "CaseChunk",
     "CaseNarrative",
-    "ConsultationHistory",
-    "CrisisKeyword",
+    "ConsultationSession",
+    "Consultation",
+    "SafetyCard",
+    "ConsultationLog",
+    "RedlineKeyword",
     "Profile",
     "TeacherLink",
     "CaseReview",
