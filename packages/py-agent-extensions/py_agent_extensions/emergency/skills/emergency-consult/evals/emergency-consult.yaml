@@ -1,0 +1,5 @@
+# emergency-consult eval-set（S5 全量回归用，S3 占位）
+# 断言类型：contains / tool_called（内核 eval 入口支持）
+- input: "孩子突然倒地大哭，怎么哄都不行"
+  expect:
+    contains: ["安全", "就医"]

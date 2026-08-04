@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import asyncio
 import uuid
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, AsyncIterator, Callable
 
@@ -43,6 +44,15 @@ from py_agent_kernel.skills.loader import SkillLoader
 from py_agent_kernel.tools.toolset import KernelToolset
 
 
+@dataclass
+class PreloadedExtensions:
+    """预加载的扩展面（宿主启动装配注入——启动断言在注入前完成）。"""
+
+    bus: EventBus
+    toolset: KernelToolset
+    loaded: list[LoadedExtension]
+
+
 class AgentSession:
     """Agent 会话——宿主装配与运行入口。
 
@@ -66,17 +76,23 @@ class AgentSession:
         session_id: str | None = None,
         audit_sink: Callable[[ToolCallRecord], None] | None = None,
         compaction_threshold: int = 40,
+        preloaded: PreloadedExtensions | None = None,
     ) -> None:
         self.session_id = session_id or str(uuid.uuid4())
-        self.bus = EventBus()
-        self.toolset = KernelToolset(session_id=self.session_id, cwd=str(session_dir) if session_dir else None)
+        if preloaded is not None:
+            # 宿主预加载路径（启动断言已完成）：直接使用注入的扩展面
+            self.bus = preloaded.bus
+            self.toolset = preloaded.toolset
+            self.loaded_extensions = preloaded.loaded
+        else:
+            self.bus = EventBus()
+            self.toolset = KernelToolset(session_id=self.session_id, cwd=str(session_dir) if session_dir else None)
+            # 扩展加载（加载顺序即优先级）
+            self.loaded_extensions = load_extensions(extensions or [], self.bus, self.toolset)
         self.audit = AuditRecorder(sink=audit_sink)
         self.usage = UsageTracker()
         self.pending = PendingMessageQueue()
         self._compaction_threshold = compaction_threshold
-
-        # 扩展加载（加载顺序即优先级）
-        self.loaded_extensions: list[LoadedExtension] = load_extensions(extensions or [], self.bus, self.toolset)
 
         # Skill 发现（扩展 skills/ 目录 + 宿主额外目录 + resources_discover 贡献）
         skill_roots: list[Path] = []
@@ -471,6 +487,7 @@ def create_agent_session(
     active_tools: list[str] | None = None,
     session_id: str | None = None,
     audit_sink: Callable[[ToolCallRecord], None] | None = None,
+    preloaded: "PreloadedExtensions | None" = None,
 ) -> AgentSession:
     """创建 Agent 会话（宿主装配唯一入口）。
 
@@ -485,6 +502,7 @@ def create_agent_session(
         active_tools: 面白名单（工具名列表，None = 全量）。
         session_id: 会话标识（缺省生成 UUID）。
         audit_sink: 工具调用审计外送回调（trace_id 透传宿主日志）。
+        preloaded: 预加载扩展面（宿主启动装配注入，启动断言在注入前完成）。
     """
     return AgentSession(
         model,
@@ -496,6 +514,7 @@ def create_agent_session(
         active_tools=active_tools,
         session_id=session_id,
         audit_sink=audit_sink,
+        preloaded=preloaded,
     )
 
 

@@ -9,10 +9,9 @@ S5 统一说明：词库原语归 py-security 所有（阶段文档 T3.3），
 
 from __future__ import annotations
 
+from py_db.repositories.redline_keyword_repository import RedlineKeywordRepository
 from py_logger import logger
 from sqlalchemy.ext.asyncio import AsyncSession
-
-from py_db.repositories.redline_keyword_repository import RedlineKeywordRepository
 
 # 内置默认词库（红线安全门 §3.2 示例词 + 机制兜底）：
 # (关键词, 触发规则 ID)——规则 ID 供事件落库与词库迭代追溯

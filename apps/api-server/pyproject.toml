@@ -5,6 +5,8 @@ description = "Campfire-AI FastAPI API gateway"
 requires-python = ">=3.12"
 dependencies = [
     # Workspace packages
+    "py-agent-extensions",
+    "py-agent-kernel",
     "py-auth",
     "py-cache",
     "py-config",

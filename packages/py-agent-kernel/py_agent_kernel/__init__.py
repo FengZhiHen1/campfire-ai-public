@@ -34,6 +34,7 @@ from py_agent_kernel.runtime import (
     AgentSession,
     AuditRecorder,
     KernelStreamEvent,
+    PreloadedExtensions,
     ToolCallRecord,
     UsageTracker,
     create_agent_session,
@@ -104,6 +105,7 @@ __all__ = [
     "SkillLoadError",
     # 运行时
     "AgentSession",
+    "PreloadedExtensions",
     "create_agent_session",
     "KernelStreamEvent",
     "translate_stream_event",

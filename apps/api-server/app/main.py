@@ -74,6 +74,7 @@ from app.core.middleware.rate_limit import RateLimitMiddleware
 from app.core.middleware.validation_handler import register_validation_handler
 from app.modules.auth import auth_router
 from app.modules.cases import card_router, narratives_router, reviews_router
+from app.modules.emergency import emergency_router
 from app.modules.profiles import events_router, experts_router, profiles_router
 
 
@@ -177,6 +178,7 @@ def create_app() -> FastAPI:
     # 注意：reviews_router 使用 /api/v1/cases 前缀，
     # 必须在其他可能产生路径冲突的路由之前注册。
     app.include_router(auth_router)
+    app.include_router(emergency_router)
     app.include_router(reviews_router)
     app.include_router(narratives_router)
     app.include_router(card_router)
