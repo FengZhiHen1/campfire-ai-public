@@ -17,7 +17,6 @@ PROF-05 隐私 DTO（AccessDecision 等——数据级授权由 ProfileAccess �
 from __future__ import annotations
 
 from datetime import date
-from uuid import UUID
 
 from pydantic import Field, field_validator
 
@@ -27,8 +26,8 @@ from py_schemas.enums import (
     AccessStatus,
     AntecedentCategory,
     BehaviorBucket,
-    Comorbidity,
     CommunicationMethod,
+    Comorbidity,
     EventSetting,
     EvidenceBasis,
     FunctionHypothesis,
@@ -37,7 +36,6 @@ from py_schemas.enums import (
     PhysicalState,
     RecordedByRole,
 )
-
 
 # ===========================================================================
 # 身份基础层

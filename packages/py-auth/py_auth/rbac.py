@@ -22,7 +22,7 @@ from __future__ import annotations
 import re
 import traceback
 from enum import StrEnum
-from typing import TYPE_CHECKING, Any, Callable, Sequence, cast
+from typing import Any, Callable, Sequence, cast
 
 from fastapi import HTTPException, Request
 from py_logger import logger
