@@ -1,12 +1,12 @@
 # 阶段 2 · Agent 内核（py-agent-kernel）
 
-> **目标态依据**：[ADR-011](./决策/ADR-011-Agent内核框架-内核加扩展与PydanticAI路线.md)（路线与裁剪）、[Agent内核框架](../Agent内核框架.md)（本文唯一拥有内核契约——ExtensionAPI/事件总线/工具契约/Session/skill-loader/安全扩展约定/偏差清单）
+> **目标态依据**：ADR-011（路线与裁剪）、《Agent内核框架》（本文唯一拥有内核契约——ExtensionAPI/事件总线/工具契约/Session/skill-loader/安全扩展约定/偏差清单）
 > **状态**：【已完成】（2026-08-04，验证门全绿）
 
 ## 一、目标态
 
-1. **通用内核包** `packages/py-agent-kernel`（零 Campfire 依赖，仅依赖 pydantic-ai 2.x 及通用库），孵化期纪律：API 变更须同步[Agent内核框架](../Agent内核框架.md)与 ADR；
-2. **组件**（目录骨架见[项目结构/目录骨架](../项目结构/目录骨架.md) §一）：
+1. **通用内核包** `packages/py-agent-kernel`（零 Campfire 依赖，仅依赖 pydantic-ai 2.x 及通用库），孵化期纪律：API 变更须同步《Agent内核框架》与 ADR；
+2. **组件**（目录骨架见《项目结构/目录骨架》§一）：
    - `extension_api.py`：`ExtensionAPI`（on/register_tool/register_command/resources_discover），扩展生命周期（加载→session_start→session_shutdown），`extension.yaml` 兼容性校验（偏差项）；
    - `events/`：事件总线（事件表：session_start/shutdown、input、before_agent_start、agent_start/end、turn_start/end、message_start/update/end、context、tool_call、tool_result、tool_execution_start/update/end）；链式干预（可干预事件按扩展加载顺序传递）；fail-closed（可阻断事件 handler 抛异常一律视为 block）；
    - `tools/`：`AgentTool` 契约（name/label/description/parameters/execution_mode/execute 五参签名）、`ToolResult`（content blocks + details）、`FilteredToolset`（面白名单，按工具名寻址）；
@@ -14,7 +14,7 @@
    - `skills/`：skill-loader（扫描发现 → frontmatter 解析 → name+description 注入系统提示 → 按需加载正文 → allowed-tools 过滤；metadata 原样透传）；
    - `runtime/`：pydantic-ai 接缝（Hooks 翻译：before_run/after_run/node_run/tool_execute/output_validate → 统一事件面；节点对→turn 聚合、part 流→消息边界聚合；AgentStreamEvent 装配；内联阻断 = before_tool_execute 抛 ModelRetry / wrapper toolset 短路；HITL = DeferredToolRequests 仅用于人工审批流）；
 3. **安全即扩展**：内核无安全专属机制，安全保证锚定受控加载（全第一方、显式清单、启动断言、fail-closed）；
-4. **显式偏差落地**：按[Agent内核框架](../Agent内核框架.md) §十偏差清单实现——并行工具事件序按 Pydantic AI 原生语义、`terminate` 以 `end_strategy` 近似、会话字节不兼容仅结构同构、extension.yaml 自造契约、skills/ 自动发现由扩展吸收；
+4. **显式偏差落地**：按《Agent内核框架》§十偏差清单实现——并行工具事件序按 Pydantic AI 原生语义、`terminate` 以 `end_strategy` 近似、会话字节不兼容仅结构同构、extension.yaml 自造契约、skills/ 自动发现由扩展吸收；
 5. **独立测试与文档**：`tests/` 覆盖全部组件；`docs/` 为框架自有文档（随包维护）。
 
 ## 二、任务清单（按序执行）
@@ -84,7 +84,7 @@
 
 - 宿主装配：`create_agent_session(extensions=[...], tools=..., skills_dir=...)` → session；`session.run()` / 流式
 - 扩展侧：`def extension(pi: ExtensionAPI) -> None`；`pi.on(event, handler)` / `pi.register_tool(AgentTool)` / `pi.register_command(name, fn)`
-- 事件 handler 签名与可干预性按[Agent内核框架](../Agent内核框架.md) §四事件表
+- 事件 handler 签名与可干预性按《Agent内核框架》§四事件表
 - 白名单：`set_active_tools(["rag_search", ...])`（面级，S3/S5 注入）
 
 ## 四、成功标准
@@ -102,6 +102,6 @@ grep -rn "campfire\|py_schemas\|py_db\|py_rag" packages/py-agent-kernel/py_agent
 ## 五、风险与注意
 
 - **pydantic-ai 版本锁定**：接缝层强依赖上游 Hooks/Capabilities API，锁定精确版本并在 `docs/` 记录升级检查清单；
-- 偏差清单项必须按[Agent内核框架](../Agent内核框架.md) §十「处置」列实现并测试，**禁止悄悄走样**；
+- 偏差清单项必须按《Agent内核框架》§十「处置」列实现并测试，**禁止悄悄走样**；
 - 本阶段不实现任何 Campfire 业务；业务扩展在 S5 落地；
 - 若实现中发现「pi 语义 ↔ Pydantic AI 接缝」存在文档未覆盖的偏差，**停止并确认**（可能触发 ADR-011 重访条件评估）。

@@ -1,8 +1,8 @@
 # Agent 内核框架
 
 > **本文唯一拥有**：通用 Agent 内核（`py-agent-kernel`）的架构与契约——扩展契约（ExtensionAPI）、事件总线、工具契约、Session 与上下文、Skill 目录、安全扩展约定、保真度审计与偏差清单。
-> **状态**：架构基线（2026-08-04，[ADR-011](./决策/ADR-011-Agent内核框架-内核加扩展与PydanticAI路线.md)）。本文描述的是面向多项目复用的通用框架，Campfire 仅为第一个消费者；Campfire 的面编排与安全规则归 [Agent基座](./Agent基座.md)。2026-08-04 经保真度审查修订：会话格式目标降级为结构同构、并行工具偏差归因修正、内联阻断与 HITL 审批挂载点拆分、事件粒度近似与 extension.yaml 自造契约补入偏差清单；术语严格对齐 pi——「插件」统一为「扩展」（pi extension），组织轴表述修正为 extension 语义、package 层裁剪及其 skills/ 自动发现的吸收记入偏差清单（均见 §十）。
-> **依据**：[pi](https://pi.dev) 三层架构与扩展哲学（harness 层契约源头）、[Agent Skills 标准](https://agentskills.io/specification)（Skill 格式）、Pydantic AI 2.22 源码能力审计（LLM 层与接缝机制，审计结论见 §十）。
+> **状态**：架构基线（ADR-011）。本文描述的是面向多项目复用的通用框架，Campfire 仅为第一个消费者；Campfire 的面编排与安全规则由 Agent 基座文档拥有。
+> **依据**：pi 三层架构与扩展哲学（https://pi.dev，harness 层契约源头）、Agent Skills 标准（https://agentskills.io/specification，Skill 格式）、Pydantic AI 2.22 源码能力审计（LLM 层与接缝机制，审计结论见 §十）。
 
 ## 一、定位与设计原则
 
@@ -120,7 +120,7 @@ class AgentTool(BaseModel):
 - `ctx` 对应 pi `execute` 的第 5 参（`ExtensionContext` 子集）：内核暴露会话只读访问与工作目录，供审计、状态类工具使用；
 - `execution_mode` 由 Pydantic AI 的 per-tool `sequential=True` 屏障承载（run 级 `parallel_execution_mode('sequential')` 可全局串行化）；
 - **错误语义**：工具失败抛异常，内核捕获后以 `isError: true` 回传模型；不允许把错误信息伪装成正常 content 返回（pi 约定）；
-- **工具自带校验**：工具实现内必须自行做权限与参数业务校验，不信任调用上下文（安全原则，与 [Agent基座](./Agent基座.md) §三一致）；
+- **工具自带校验**：工具实现内必须自行做权限与参数业务校验，不信任调用上下文（安全原则，与 Agent 基座文档 §三一致）；
 - **按面白名单**：宿主为不同执行面配置可用工具子集（`FilteredToolset` 机制，内核暴露 `set_active_tools` 等价 API）；**白名单按工具名寻址**（pi 语义——跨扩展来源一视同仁，工具归属哪个扩展仅是所有权维度，不影响寻址）。
 
 ## 六、Session 与上下文
@@ -132,10 +132,10 @@ class AgentTool(BaseModel):
 
 ## 七、Skill 目录
 
-- 遵循 [Agent Skills 标准](https://agentskills.io/specification)：每个 Skill 是一个目录，含 `SKILL.md`（frontmatter + 工作流指令），可附 `scripts/`、`references/`；
+- 遵循 Agent Skills 标准（https://agentskills.io/specification）：每个 Skill 是一个目录，含 `SKILL.md`（frontmatter + 工作流指令），可附 `scripts/`、`references/`；
 - **skill-loader 流程**（内核自研薄层）：扫描发现 → frontmatter 解析 → name+description 注入系统提示 → 模型选定后按需加载完整指令 → `allowed-tools` 过滤；
 - **渐进披露**：description 常驻、正文按需、引用文件再按需，三层披露与 pi 一致；
-- **metadata 透传**：frontmatter `metadata` 键原样透传给宿主，内核不解释其内容（Campfire 的 `output-schema`/`surface`/`eval-set` 约定即挂在此处，归 [Agent基座](./Agent基座.md) 拥有）；
+- **metadata 透传**：frontmatter `metadata` 键原样透传给宿主，内核不解释其内容（Campfire 的 `output-schema`/`surface`/`eval-set` 约定即挂在此处，由 Agent 基座文档拥有）；
 - 扩展经 `skills/` 目录贡献 Skill，内核统一汇总成目录。
 
 ## 八、安全即扩展
