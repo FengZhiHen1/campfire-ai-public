@@ -1,15 +1,15 @@
 # Agent 基座
 
 > **本文唯一拥有**：Campfire 的分面执行策略（应急面/异步面编排）、领域工具与 Skill 清单、Campfire 侧安全规则与扩展约定、编排开销门禁。
-> **状态**：架构基线（2026-06-30，[ADR-007](./决策/ADR-007-Agent化-统一基座与分面自治.md)；2026-08-04 起基座实现归 [ADR-011](./决策/ADR-011-Agent内核框架-内核加扩展与PydanticAI路线.md)）。**Agent 内核的契约与机制（ExtensionAPI、事件总线、Session、skill-loader、安全扩展约定）归 [Agent内核框架](./Agent内核框架.md) 拥有**，本文只描述 Campfire 如何使用内核；各模块机制文档（[机制](./机制/README.md)）拥有业务规则与数据模型。
-> **依据**：[Agent内核框架](./Agent内核框架.md)（内核契约）、[Agent框架概览](../references/Agent框架概览.md)（框架选型输入）、[Agent Skills 标准](https://agentskills.io/specification)（Skill 格式）。
+> **状态**：架构基线（ADR-007；基座实现归 ADR-011）。**Agent 内核的契约与机制（ExtensionAPI、事件总线、Session、skill-loader、安全扩展约定）由 Agent 内核框架文档拥有**，本文只描述 Campfire 如何使用内核；各模块机制文档拥有业务规则与数据模型。
+> **依据**：Agent 内核框架文档（内核契约）、存档 references/Agent框架概览.md（框架选型输入）、Agent Skills 标准 https://agentskills.io/specification（Skill 格式）。
 
 ## 一、设计原则
 
-1. **统一内核**：全部 Agent 能力面运行在同一份 Agent 内核（`py-agent-kernel`，见 [Agent内核框架](./Agent内核框架.md)）之上，Campfire 能力以领域扩展形态组织，不为单模块另建 Agent；
+1. **统一内核**：全部 Agent 能力面运行在同一份 Agent 内核（`py-agent-kernel`，契约由 Agent 内核框架文档拥有）之上，Campfire 能力以领域扩展形态组织，不为单模块另建 Agent；
 2. **分面自治**：内核统一，自治级别按面划分——应急面受限（代码持有控制流），异步面自主（Agent 持有控制流）；
 3. **Skill 即工作流**：平台能力以 Agent Skills 标准（SKILL.md 能力包）定义，渐进披露，与运行时解耦；
-4. **安全不让渡**：红线安全门、权限校验、PII 脱敏、免责声明注入由 Campfire 的 `security` 扩展以代码实现，经内核事件总线挂载（首位注册 + 启动断言，见 [Agent内核框架](./Agent内核框架.md) §八），永远在 Agent 之外、LLM 不可触碰；
+4. **安全不让渡**：红线安全门、权限校验、PII 脱敏、免责声明注入由 Campfire 的 `security` 扩展以代码实现，经内核事件总线挂载（首位注册 + 启动断言），永远在 Agent 之外、LLM 不可触碰；
 5. **契约驱动**：Agent 的结构化输出（四段式、L2 卡片、复盘报告）一律由 Pydantic 模型约束，与 `py-schemas` 契约体系同构。
 
 ## 二、架构总览
@@ -35,7 +35,7 @@
 
 ## 三、领域工具清单
 
-工具是领域能力的原子封装，按领域扩展组织（工具契约与注册机制归 [Agent内核框架](./Agent内核框架.md) §五）。**扩展边界 = 机制模块边界**（1:1 镜像，不发明新分组规则）；扩展归属仅声明所有权，运行期寻址与白名单一律按工具名（pi 语义）。初版扩展划分：
+工具是领域能力的原子封装，按领域扩展组织（工具契约与注册机制由 Agent 内核框架文档 §五 拥有）。**扩展边界 = 机制模块边界**（1:1 镜像，不发明新分组规则）；扩展归属仅声明所有权，运行期寻址与白名单一律按工具名（pi 语义）。初版扩展划分：
 
 | 扩展 | 对应机制模块 | 工具 | Skill | 输出契约（py-schemas 拥有） |
 |---|---|---|---|---|
@@ -66,7 +66,7 @@
 
 ## 四、Skill 目录
 
-Skill 采用 [Agent Skills 标准](https://agentskills.io/specification)：每个 Skill 是一个目录，含 `SKILL.md`（frontmatter + 工作流指令），可附 `scripts/`、`references/`（发现与渐进披露机制归 [Agent内核框架](./Agent内核框架.md) §七）。初版 Skill 清单：
+Skill 采用 Agent Skills 标准（https://agentskills.io/specification）：每个 Skill 是一个目录，含 `SKILL.md`（frontmatter + 工作流指令），可附 `scripts/`、`references/`（发现与渐进披露机制由 Agent 内核框架文档 §七 拥有）。初版 Skill 清单：
 
 | Skill | 触发情境 | 执行面 |
 |---|---|---|
@@ -89,10 +89,10 @@ Skill 采用 [Agent Skills 标准](https://agentskills.io/specification)：每�
 
 ### 5.1 应急面（P0 同步链路，受限自治）
 
-> 2026-08-03 按 [ADR-009](./决策/ADR-009-应急链路时刻分层重构.md) 演进：链路前置确定性「此刻安全层」，首轮生成后为会话内多轮。
+> 按 ADR-009 演进：链路前置确定性「此刻安全层」，首轮生成后为会话内多轮。
 
 ```
-家属点选行为桶（可附文字）→ 红线安全门判定（代码层纯规则，见机制/红线安全门与兜底策略）
+家属点选行为桶（可附文字）→ 红线安全门判定（代码层纯规则，规则由机制红线安全门文档拥有）
   ├─ 命中红线：高危桶卡 + 就医指引（不经 Agent；M4 后追加特急工单）
   └─ 未命中：
       ⓪ 此刻安全层（代码层）：通用卡 → 桶卡 → 阶段单点问题，零 LLM
@@ -107,7 +107,7 @@ Skill 采用 [Agent Skills 标准](https://agentskills.io/specification)：每�
 - 工具白名单：`ticket_create` + `rag_search`（仅追问轮）；首份方案 max_steps = 1；硬超时；
 - 红线关键词门对每条用户输入（含追问）生效；
 - TTFT 工程前提：注入精选、DeepSeek 上下文缓存命中静态部分、首字前零工具调用；
-- **实测门禁**：staging 环境对比实测——Agent 面相对纯管线的**编排开销 ≤ 1s**，超标则本面回退纯管线方案。TTFT 绝对值为需求侧设计目标（P50 ≤ 3s，P95 > 5s 告警，见[需求/功能需求与验收](../需求/功能需求与验收.md) §二），供应商侧延迟不作为架构回退依据。
+- **实测门禁**：staging 环境对比实测——Agent 面相对纯管线的**编排开销 ≤ 1s**，超标则本面回退纯管线方案。TTFT 绝对值为需求侧设计目标（P50 ≤ 3s，P95 > 5s 告警，归需求文档非功能需求），供应商侧延迟不作为架构回退依据。
 
 ### 5.2 异步面（案例/预审/复盘/工单/科普，完整自主）
 
