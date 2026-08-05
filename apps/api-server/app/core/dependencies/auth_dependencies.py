@@ -23,12 +23,6 @@ from py_auth.jwt_utils import JoseTokenManager
 from py_auth.rbac import get_guard
 from py_config import get_settings
 from py_db.repositories.credential_repository import CredentialRepository
-from py_db.repositories.consultation_repository import (
-    ConsultationLogRepository,
-    ConsultationRepository,
-    ConsultationSessionRepository,
-)
-from py_db.repositories.credential_repository import CredentialRepository
 from py_db.repositories.invite_code_repository import InviteCodeRepository
 from py_db.repositories.narrative_repository import NarrativeRepository
 from py_db.repositories.profile_repository import (
@@ -381,7 +375,6 @@ __all__ = [
     "get_profile_access_repository",
     "get_professional_note_repository",
     "get_profile_repository",
-    "get_teacher_link_repository",
     "get_password_hasher",
     "get_audit_logger",
     "get_token_manager",
