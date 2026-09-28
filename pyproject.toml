@@ -12,7 +12,7 @@ dependencies = [
 
 [tool.uv.workspace]
 # 新目标结构将包含 apps/api-server、apps/worker、packages/py-*（见
-# docs/技术设计/项目结构设计.md）。这些目录尚未创建，暂空以避免 workspace 解析失败。
+# docs/项目结构设计.md）。这些目录尚未创建，暂空以避免 workspace 解析失败。
 members = []
 
 [tool.uv.sources]
