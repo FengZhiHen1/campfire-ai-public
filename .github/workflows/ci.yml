@@ -1,5 +1,7 @@
 name: CI
 
+# 当前仓库只有设计（无实现代码），CI 校验设计文档的完整性与一致性。
+# 目标实现落地后，在此恢复后端 lint/测试与前端 lint/build 作业。
 on:
   push:
     branches: [main, master]
@@ -14,117 +16,77 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  backend:
-    runs-on: ubuntu-latest
-    services:
-      postgres:
-        image: pgvector/pgvector:pg17
-        env:
-          POSTGRES_USER: campfire
-          POSTGRES_PASSWORD: test
-          POSTGRES_DB: campfire_test
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-      redis:
-        image: redis:7-alpine
-        ports:
-          - 6379:6379
-        options: >-
-          --health-cmd "redis-cli ping"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up uv
-        uses: astral-sh/setup-uv@v3
-        with:
-          version: "0.9.x"
-          enable-cache: true
-
-      - name: Install dependencies
-        run: uv sync --all-packages
-
-      - name: Lint
-        run: uv run ruff check .
-
-      - name: Format check
-        run: uv run ruff format --check .
-
-      - name: Test
-        run: uv run pytest --cov --cov-report=xml
-        env:
-          DATABASE_URL: postgresql+asyncpg://campfire:test@localhost:5432/campfire_test
-          REDIS_URL: redis://localhost:6379/0
-          JWT_SECRET_KEY: ci-test-key-at-least-32-characters-long-not-for-prod
-          DEEPSEEK_API_KEY: sk-ci-test-deepseek-key-not-for-prod
-          DEEPSEEK_BASE_URL: https://api.deepseek.com/v1
-          DASHSCOPE_API_KEY: sk-ci-test-dashscope-key-not-for-prod
-          MINIO_ENDPOINT: localhost:9000
-          MINIO_ACCESS_KEY: minioadmin
-          MINIO_SECRET_KEY: minioadmin
-
-  frontend-react-web:
+  design-docs:
+    name: 设计文档一致性
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up pnpm
-        uses: pnpm/action-setup@v3
+      - name: Set up Python
+        uses: actions/setup-python@v5
         with:
-          version: 10
+          python-version: "3.12"
 
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: pnpm
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Lint
-        run: pnpm --filter react-web lint
-
-      - name: Build
-        run: pnpm --filter react-web build
-
-  docker-build:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      # 预检查 .env.example 存在即可；生产 .env 不在仓库中
-      - name: Check environment example
+      - name: 校验相对链接、稳定 ID 与设计契约 token
         run: |
-          test -f .env.example || (echo "ERROR: .env.example is missing" && exit 1)
+          python - <<'PY'
+          from pathlib import Path
+          from urllib.parse import unquote
+          import re, sys
 
-      - name: Build api-server image
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: apps/api-server/Dockerfile.api
-          push: false
-          tags: campfire-api-server:ci
-          cache-from: type=gha,scope=api-server
-          cache-to: type=gha,mode=max,scope=api-server
+          root = Path(".").resolve()
+          docs = root / "docs"
+          problems = []
 
-      - name: Build worker image
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: apps/worker/Dockerfile.worker
-          push: false
-          tags: campfire-worker:ci
-          cache-from: type=gha,scope=worker
-          cache-to: type=gha,mode=max,scope=worker
+          # 1) 有效设计文档中的相对链接必须存在
+          active = sorted(list(docs.rglob("*.md")) + [root / "AGENTS.md", root / "archive" / "README.md"])
+          links = 0
+          for page in active:
+              if not page.is_file():
+                  continue
+              for lineno, line in enumerate(page.read_text(encoding="utf-8-sig").splitlines(), 1):
+                  for href in re.findall(r"(?<!!)\[[^\]]+\]\(([^)]+)\)", line):
+                      if re.match(r"^(?:https?://|mailto:|#)", href):
+                          continue
+                      links += 1
+                      target = unquote(href.split("#")[0].split("?")[0])
+                      if target and not (page.parent / target).exists():
+                          problems.append(f"断链 {page.relative_to(root)}:{lineno} -> {href}")
+
+          # 2) 需求 ID 与验收行必须相互可解析
+          spec = (docs / "需求" / "功能需求与验收.md").read_text(encoding="utf-8-sig")
+          requirements = set(re.findall(r"^### (RQ-[A-Z]+-\d{2})\b", spec, re.M))
+          covered = set()
+          for line in [l for l in spec.splitlines() if re.match(r"^\| AC-[A-Z]+-\d{2} \|", l)]:
+              refs = [c.strip() for c in line.strip("|").split("|")][1]
+              for m in re.finditer(r"(RQ-[A-Z]+)-(\d{2})(?:～|-)(?:(RQ-[A-Z]+)-)?(\d{2})", refs):
+                  if m.group(1) != (m.group(3) or m.group(1)):
+                      continue
+                  for i in range(int(m.group(2)), int(m.group(4)) + 1):
+                      covered.add(f"{m.group(1)}-{i:02d}")
+              covered.update(re.findall(r"\bRQ-[A-Z]+-\d{2}\b", refs))
+          for missing in sorted(requirements - covered):
+              problems.append(f"需求缺少验收行：{missing}")
+
+          # 3) 视觉契约必须齐全且不引用未定义 token
+          tokens = (docs / "design" / "tokens.css").read_text(encoding="utf-8-sig")
+          comps = (docs / "design" / "components.html").read_text(encoding="utf-8-sig")
+          defined = set(re.findall(r"(--[a-z][a-z0-9-]*)\s*:", tokens))
+          required = {"--bg", "--surface", "--fg", "--muted", "--border", "--accent",
+                      "--font-display", "--font-body", "--font-mono"}
+          for name in sorted(required - defined):
+              problems.append(f"tokens.css 缺少契约 token：{name}")
+          for name in sorted(set(re.findall(r"var\((--[a-z][a-z0-9-]*)", comps)) - defined):
+              problems.append(f"components.html 引用未定义 token：{name}")
+
+          print(f"设计文档 {len(active)} 份，相对链接 {links} 条，需求 {len(requirements)} 项")
+          if problems:
+              print("\n".join(problems))
+              sys.exit(1)
+          print("全部检查通过")
+          PY
+
+  # 目标实现落地后，按 docs/技术设计/项目结构设计.md 恢复以下作业：
+  #   backend:  uv sync --all-packages && uv run ruff check . && uv run pytest --cov
+  #   frontend: pnpm install --frozen-lockfile && pnpm --filter react-web lint && pnpm --filter react-web build
+  #   docker:   构建 apps/api-server 与 apps/worker 镜像

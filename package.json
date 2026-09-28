@@ -2,12 +2,8 @@
   "name": "campfire-ai",
   "version": "0.1.0",
   "private": true,
-  "description": "篝火智答 - 孤独症家属智能应急咨询平台",
-  "scripts": {
-    "dev:mini-program": "pnpm --filter mini-program dev",
-    "build:mini-program": "pnpm --filter mini-program build",
-    "lint:style": "pnpm --filter mini-program lint:style"
-  },
+  "description": "篝火智答 - 面向孤独症人士及其支持网络的情境支持平台",
+  "scripts": {},
   "keywords": [],
   "author": "",
   "license": "ISC",
