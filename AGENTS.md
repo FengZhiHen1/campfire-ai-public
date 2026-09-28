@@ -14,9 +14,9 @@
 - Infrastructure: Docker Compose v2 + Nginx；Alembic 迁移
 - Lint/Test: ruff、oxlint；pytest + pytest-asyncio
 
-> ⚠️ 工程配置尚未按新结构重写：`pyproject.toml`、`pnpm-workspace.yaml`、`uv.lock`、
-> `pnpm-lock.yaml`、`docker-compose*.yml` 仍指向已归档的 `apps/`、`packages/` 路径。
-> 在这些配置更新前，下述构建/测试/迁移命令都不会成功，这是预期状态而非缺陷。
+> ℹ️ 工程配置已与旧路径解耦：`pyproject.toml` 的 uv 工作空间成员为空、`pnpm-workspace.yaml`
+> 只列目标前端路径、`pnpm-lock.yaml` 已重建，`uv run`、`ruff`、`pnpm install` 均可用。
+> 构建与迁移命令缺失是因为尚无实现代码，不是配置损坏。
 
 ## Commands
 
@@ -47,7 +47,7 @@ AGENTS.md           — 本文件
 
 ### 目标重构与迁移
 
-- 以 `docs/需求/`、`docs/技术设计/技术栈设计.md`、`项目结构设计.md` 和 `目标机制/` 为目标；`archive/` 只用于辨认遗留实现与历史决策。
+- 以 `docs/需求/`、`docs/技术设计/技术栈设计.md`、`项目结构设计.md`、`机制/` 与 `迁移验证与发布.md` 为目标；`archive/` 只用于辨认遗留实现与历史决策。
 - 先盘点实际数据与引用、核实可恢复备份及影响范围，再分阶段建设；数据状态未知时不得以旧 ADR 的“无真实用户数据”推断可以清库。
 - ❌ 禁止：从 `archive/` 复制权限模型、四层档案、行为桶或 `/api/v1` SSE 契约到新实现。
 - ❌ 禁止：执行归档 `scripts/` 中的部署/重建脚本或 `docker compose down -v`；授权撤销与条目停用不得靠异步清理充当即时安全边界。
@@ -74,7 +74,7 @@ AGENTS.md           — 本文件
 
 ### 接口与契约
 
-- 以 `docs/技术设计/目标机制/接口契约.md` 的 `/api/v2` 为目标；旧 `/api/v1` 已归档
+- 以 `docs/技术设计/机制/接口契约.md` 的 `/api/v2` 为目标；旧 `/api/v1` 已归档
 - 修改 API 接口、数据库 schema、公共函数签名前，先确认影响范围
 - ❌ 禁止：在未确认影响范围的情况下破坏性修改已有接口
 
@@ -99,7 +99,7 @@ AGENTS.md           — 本文件
 
 设计或实施前按顺序阅读：
 1. `docs/README.md` 与 `docs/需求/功能需求与验收.md`（业务/验收）；
-2. `docs/技术设计/技术栈设计.md`、`项目结构设计.md` 与相关 `目标机制/`（目标结构、接口、授权和发布）；
+2. `docs/技术设计/技术栈设计.md`、`项目结构设计.md`、`机制/` 与 `迁移验证与发布.md`（目标结构、接口、授权与发布门槛）；
 3. 涉及 Web 页面时读 `docs/design/README.md`。
 
 - ❌ 禁止：把 `archive/` 中的“有效”“目标态”等字样当作新目标实现要求。
