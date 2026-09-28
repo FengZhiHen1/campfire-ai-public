@@ -1,7 +1,7 @@
 # Agent 内核框架
 
 > **本文唯一拥有**：通用 Agent 内核（`py-agent-kernel`）的架构与契约——扩展契约（ExtensionAPI）、事件总线、工具契约、Session 与上下文、Skill 目录、安全扩展约定、保真度审计与偏差清单。
-> **状态**：架构基线（ADR-011）。本文描述的是面向多项目复用的通用框架，Campfire 仅为第一个消费者；Campfire 的面编排与安全规则由 Agent 基座文档拥有。
+> **状态**：现有通用框架契约和旧 Campfire 使用方案的技术参考（ADR-011）；内核的通用接口仍可复用，但本文“安全能力仅靠受控扩展加载保证”的结论已由[ADR-016](./决策/ADR-016-授权与发布由业务代码强制执行.md)限缩。当前 Campfire 业务授权与发布由[目标机制](./目标机制/README.md)定义。
 > **依据**：pi 三层架构与扩展哲学（https://pi.dev，harness 层契约源头）、Agent Skills 标准（https://agentskills.io/specification，Skill 格式）、Pydantic AI 2.22 源码能力审计（LLM 层与接缝机制，审计结论见 §十）。
 
 ## 一、定位与设计原则
