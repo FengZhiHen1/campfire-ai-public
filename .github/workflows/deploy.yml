@@ -1,47 +1,36 @@
 name: Deploy
 
+# ⚠️ 已停用（2026-09-26）。
+#
+# 原流程在 push 到 master 时通过 self-hosted runner 对生产目录执行
+# `git reset --hard origin/master`，再调用 scripts/deploy-remote.sh。
+# 旧实现与 scripts/ 已整体归档至 archive/，该脚本在仓库根已不存在；
+# 若继续触发，部署会在硬重置之后、脚本调用处失败，使生产目录停在半更新状态。
+#
+# 恢复条件：目标实现落地并使 scripts/deploy-remote.sh 重新可用后，
+# 取消下面的 if: false 并复核部署脚本、镜像构建路径与回滚步骤。
+#
+# 原触发条件保留在注释中以便恢复：
+#   on:
+#     workflow_run:
+#       workflows: [CI]
+#       types: [completed]
+#       branches: [main, master]
+#     workflow_dispatch:
+
 on:
-  workflow_run:
-    workflows: [CI]
-    types: [completed]
-    branches: [main, master]
   workflow_dispatch:
 
 permissions:
   contents: read
 
-concurrency:
-  group: deploy-${{ github.ref }}
-  cancel-in-progress: false
-
 jobs:
-  deploy:
-    if: ${{ github.event.workflow_run.conclusion == 'success' || github.event_name == 'workflow_dispatch' }}
-    runs-on: self-hosted
-    environment: production
-    timeout-minutes: 20
-
+  deploy-disabled:
+    if: false
+    runs-on: ubuntu-latest
     steps:
-      - name: Compute version tag
-        id: meta
+      - name: 部署已停用
         run: |
-          VERSION_TAG="${GITHUB_SHA::12}"
-          echo "VERSION_TAG=${VERSION_TAG}" >> "$GITHUB_ENV"
-          echo "version_tag=${VERSION_TAG}" >> "$GITHUB_OUTPUT"
-
-      - name: Deploy on self-hosted runner
-        run: |
-          set -euo pipefail
-          SERVER_PROJECT_DIR="/root/Campfire-AI"
-          echo "[deploy] SERVER_PROJECT_DIR=${SERVER_PROJECT_DIR}"
-          if [[ ! -d "${SERVER_PROJECT_DIR}/.git" ]]; then
-            echo "[deploy] ERROR: ${SERVER_PROJECT_DIR} is not a git repository"
-            exit 1
-          fi
-          cd "${SERVER_PROJECT_DIR}"
-          echo "[deploy] syncing code from origin/master..."
-          git -c safe.directory="${SERVER_PROJECT_DIR}" remote -v
-          git -c safe.directory="${SERVER_PROJECT_DIR}" fetch origin
-          git -c safe.directory="${SERVER_PROJECT_DIR}" reset --hard origin/master
-          echo "[deploy] running remote deployment script with VERSION_TAG=${VERSION_TAG}"
-          bash scripts/deploy-remote.sh "${VERSION_TAG}"
+          echo "Deploy 已停用：旧部署链路依赖已归档的 scripts/deploy-remote.sh。"
+          echo "见 .github/workflows/deploy.yml 顶部说明。"
+          exit 1
