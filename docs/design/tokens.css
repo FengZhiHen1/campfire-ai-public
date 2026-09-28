@@ -1,0 +1,62 @@
+/* Campfire-AI v3 design contract — base: open-design/design-systems/cafe.
+ * Design reference only; not wired into the current React application.
+ * Brand-color approval and in-browser component contrast remain release checks.
+ */
+:root {
+  --bg: #fbf6ee;
+  --surface: #fffdf8;
+  --fg: #201914;
+  --muted: #7a6d63;
+  --border: #ded2c3;
+  --accent: #9b5b32;
+  --font-display: Georgia, "Noto Serif SC", "Songti SC", serif;
+  --font-body: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", "Noto Sans SC", sans-serif;
+  --font-mono: "SF Mono", ui-monospace, Menlo, monospace;
+
+  --surface-warm: #f1e3cf;
+  --fg-soft: #4c4037;
+  --border-soft: #eee4d7;
+  --border-control: var(--muted);
+  --accent-on: #ffffff;
+  --accent-hover: color-mix(in oklab, var(--accent), black 8%);
+  --success: #4f8a4f;
+  --warn: #c9822f;
+  --danger: #b33a3a;
+  --danger-surface: color-mix(in oklab, var(--danger), var(--surface) 92%);
+
+  --text-xs: 12px;
+  --text-sm: 14px;
+  --text-base: 17px;
+  --text-lg: 20px;
+  --text-xl: 28px;
+  --text-2xl: 42px;
+  --leading-body: 1.62;
+  --leading-tight: 1.18;
+  --tracking-display: -0.025em;
+  --tracking-label: 0.02em;
+  --measure: 65ch;
+
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-12: 48px;
+  --radius-sm: 10px;
+  --radius-md: 16px;
+  --radius-lg: 24px;
+  --elev-flat: none;
+  --elev-raised: 0 20px 52px color-mix(in oklab, var(--fg), transparent 88%);
+  --focus-ring: 0 0 0 3px var(--accent);
+  --motion-fast: 150ms;
+  --motion-base: 240ms;
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+  --touch-min: 48px;
+  --container-max: 1180px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root { --motion-fast: 0ms; --motion-base: 0ms; }
+}

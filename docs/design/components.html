@@ -1,0 +1,67 @@
+<!doctype html>
+<!-- v3 visual component catalogue; not an application prototype or current UI implementation. -->
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>篝火智答 · 设计组件契约</title>
+  <link rel="stylesheet" href="./tokens.css" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; }
+    body { margin: 0; padding: var(--space-6); background: var(--bg); color: var(--fg); font: var(--text-base)/var(--leading-body) var(--font-body); }
+    main { max-width: var(--container-max); margin-inline: auto; display: grid; gap: var(--space-8); }
+    h1, h2 { font-family: var(--font-display); line-height: var(--leading-tight); letter-spacing: var(--tracking-display); }
+    h2 { font-size: var(--text-xl); }
+    p { max-width: var(--measure); }
+    section { display: grid; gap: var(--space-3); }
+    .action { display: inline-flex; align-items: center; justify-content: center; min-height: var(--touch-min); width: fit-content; padding: var(--space-2) var(--space-5); border: 1px solid var(--border-control); border-radius: var(--radius-md); background: var(--surface); color: var(--fg); font: 600 var(--text-base) var(--font-body); letter-spacing: var(--tracking-label); text-decoration: none; cursor: pointer; }
+    .action--primary { border-color: var(--accent); background: var(--accent); color: var(--accent-on); }
+    .action--quiet { border-color: transparent; background: transparent; text-decoration: underline; }
+    .action--danger { border-color: var(--danger); background: var(--danger-surface); color: var(--fg); }
+    :is(.action, .entry, input, textarea, summary):focus-visible { outline: none; box-shadow: var(--focus-ring); }
+    :is(.action, .entry) { transition: background var(--motion-fast) var(--ease-standard), border-color var(--motion-fast) var(--ease-standard); }
+    .entry { display: block; width: 100%; padding: var(--space-5); border: 1px solid var(--border-control); border-radius: var(--radius-lg); background: var(--surface); color: var(--fg); text-align: left; font: inherit; cursor: pointer; }
+    .entry strong, .entry small { display: block; }
+    .entry small { color: var(--fg-soft); font-size: var(--text-sm); }
+    .notice, .plan-item, .source-note, .empty, .feedback { padding: var(--space-5); border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface); }
+    .notice--public { background: var(--surface-warm); }
+    .notice--warning { background: var(--danger-surface); }
+    .scope-chip, .state-badge { display: inline-block; width: fit-content; padding: var(--space-1) var(--space-3); border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface); font-size: var(--text-sm); font-weight: 600; }
+    .state-badge--draft { background: var(--surface-warm); }
+    .state-badge--confirmed { border-color: var(--success); }
+    .state-badge--suspended { border-color: var(--danger); background: var(--danger-surface); }
+    .source-note { font-size: var(--text-sm); color: var(--fg-soft); }
+    .plan-item { display: grid; gap: var(--space-3); }
+    .plan-item--suspended { border-color: var(--danger); }
+    .field { display: grid; gap: var(--space-2); }
+    label { font-weight: 600; }
+    input, textarea { min-height: var(--touch-min); width: min(100%, 65ch); padding: var(--space-3); border: 1px solid var(--border-control); border-radius: var(--radius-sm); background: var(--surface); color: var(--fg); font: inherit; }
+    textarea { min-height: 120px; resize: vertical; }
+    .field-hint { color: var(--fg-soft); font-size: var(--text-sm); }
+    .field-error { color: var(--danger); font-size: var(--text-sm); }
+    .feedback--error { border-color: var(--danger); }
+    .skeleton { min-height: 68px; border: 1px solid var(--border-soft); border-radius: var(--radius-md); background: var(--surface-warm); }
+    @media (max-width: 640px) { body { padding: var(--space-4); } .action { width: 100%; } }
+    @media (prefers-reduced-motion: reduce) { :is(.action, .entry) { transition: none; } }
+  </style>
+</head>
+<body>
+<main>
+  <header><h1>篝火智答 · 页面组件契约</h1><p>面向支持者的设计参照；这些文字是演示状态，不是已审核的现场建议。</p></header>
+  <!-- @source: base(cafe) — buttons, adapted for 48px touch and CJK -->
+  <section data-od-id="actions"><h2>操作按钮</h2><a class="action action--primary" href="#">查看基础支持</a><button class="action" type="button">稍后再保存</button><button class="action action--quiet" type="button">查看依据</button><button class="action action--danger" type="button">提交安全异议</button></section>
+  <!-- @source: project — three situation entries -->
+  <section data-od-id="situation-entry"><h2>情境入口卡</h2><button class="entry" type="button"><strong>接下来有件事</strong><small>提前梳理需要确认的事和分工</small></button><button class="entry" type="button"><strong>现在遇到困难</strong><small>先查看已审阅的基础支持和真实求助路径</small></button><button class="entry" type="button"><strong>刚发生一件事</strong><small>把经过、解释和未知分开核对</small></button></section>
+  <!-- @source: project — never imply unreviewed safety content is approved -->
+  <section data-od-id="safety"><h2>公开支持提示</h2><aside class="notice notice--public"><strong>已审阅的基础支持</strong><p>真实发布页须显示适用范围、审阅版本和现实求助方式；当前示例不包含具体安全处置。</p></aside><aside class="notice notice--warning"><strong>当前无法确认个人计划</strong><p>请查看仍可用的公开内容；不要把旧摘要当作现行安排。</p></aside></section>
+  <!-- @source: project — scope, source, and confirmation must be legible without color -->
+  <section data-od-id="provenance"><h2>范围与来源</h2><span class="scope-chip">仅自己可见 · 私人事项</span><span class="scope-chip">获授权空间 · 仅限当前成员</span><aside class="source-note">来源：用户本次叙述 · 尚未核对 · 不作为个人事实</aside><span class="state-badge state-badge--draft">草稿 · 未确认</span><span class="state-badge state-badge--confirmed">已确认 · 有适用条件</span><span class="state-badge state-badge--suspended">暂时停用 · 等待复核</span></section>
+  <!-- @source: base(cafe) — panels; @source: project — plan-item semantics -->
+  <section data-od-id="plan"><h2>计划条目</h2><article class="plan-item"><span class="state-badge state-badge--draft">草稿 · 未确认</span><strong>准备就医问题清单</strong><p>这里呈现待核对的事项，不把 AI 整理冒充已确认策略。</p></article><article class="plan-item plan-item--suspended"><span class="state-badge state-badge--suspended">暂时停用 · 等待复核</span><p>此条目不再作为当前建议；有权查看者仍能查看异议与历史版本。</p></article></section>
+  <!-- @source: base(cafe) — input/field shell; @source: project — objection details -->
+  <section data-od-id="forms"><h2>输入与异议</h2><div class="field"><label for="situation">描述现在需要准备的事</label><textarea id="situation" aria-describedby="situation-hint"></textarea><span class="field-hint" id="situation-hint">不用先填写诊断、出生日期或长期档案。</span></div><div class="field"><label for="objection">这条建议在哪种情境下不适用？</label><textarea id="objection" aria-describedby="objection-hint"></textarea><span class="field-hint" id="objection-hint">可说明观察到的风险或本人当下的拒绝。</span></div></section>
+  <!-- @source: base(cafe) — empty and feedback shells; @source: project — truthful recovery copy -->
+  <section data-od-id="states"><h2>空态、加载与失败</h2><div class="skeleton" aria-hidden="true"></div><div class="empty"><strong>还没有保存的事项</strong><p>先描述眼前的一件事；只有核对并选择保存后才会在这里出现。</p></div><div class="feedback feedback--error" role="alert"><strong>这次生成没有完成</strong><p>输入仍在当前页面，可重试或查看已审阅的基础内容。</p></div></section>
+</main>
+</body>
+</html>
