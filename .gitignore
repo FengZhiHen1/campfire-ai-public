@@ -14,7 +14,7 @@ __pycache__/
 .env
 
 # 微信小程序本地私有配置（含 appid）
-apps/mini-program/project.private.config.json
+**/mini-program/project.private.config.json
 
 # Node.js
 node_modules/
@@ -44,4 +44,9 @@ _tmp_test/
 
 # frontend-visual 个人/会话级配置
 .frontend-visual.json
-infrastructure/nginx/ssl/
+
+# TLS 证书与私钥（归档后路径变化，按名称匹配避免失效）
+**/nginx/ssl/
+*.pem
+*.key
+*.crt

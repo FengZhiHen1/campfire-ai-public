@@ -1,51 +1,22 @@
 [project]
 name = "campfire-ai"
 version = "0.1.0"
-description = "篝火智答 - 孤独症家属智能应急咨询平台"
+description = "篝火智答 - 面向孤独症人士及其支持网络的情境支持平台"
 readme = "README.md"
 requires-python = ">=3.12"
+# 目标依赖待实现落地后按 apps/、packages/ 重新声明。
+# 旧实现的依赖清单同旧代码一并归档，见 archive/apps/ 与 archive/packages/。
 dependencies = [
-    "api-server",
-    "worker",
-    "py-agent-extensions",
-    "py-agent-kernel",
-    "py-auth",
-    "py-cache",
-    "py-config",
-    "py-db",
-    "py-health",
-    "py-llm",
-    "py-logger",
-    "py-rag",
-    "py-schemas",
-    "py-security",
-    "py-storage",
     "python-dotenv>=1.2.2",
 ]
 
 [tool.uv.workspace]
-members = [
-    "apps/api-server",
-    "apps/worker",
-    "packages/py-*",
-]
+# 新目标结构将包含 apps/api-server、apps/worker、packages/py-*（见
+# docs/技术设计/项目结构设计.md）。这些目录尚未创建，暂空以避免 workspace 解析失败。
+members = []
 
 [tool.uv.sources]
-api-server = { workspace = true }
-worker = { workspace = true }
-py-agent-kernel = { workspace = true }
-py-agent-extensions = { workspace = true }
-py-auth = { workspace = true }
-py-cache = { workspace = true }
-py-config = { workspace = true }
-py-db = { workspace = true }
-py-health = { workspace = true }
-py-llm = { workspace = true }
-py-logger = { workspace = true }
-py-rag = { workspace = true }
-py-schemas = { workspace = true }
-py-security = { workspace = true }
-py-storage = { workspace = true }
+# 目标实现重建后在此声明各 workspace 包来源。
 
 [dependency-groups]
 dev = [
@@ -61,12 +32,17 @@ dev = [
 
 [tool.pytest.ini_options]
 addopts = "-q --import-mode=importlib"
+# 归档代码不参与收集：archive/ 下为已废弃的旧实现与旧测试。
+# 不设 testpaths——目标实现尚未落地，待 apps/、packages/ 重建后按默认根目录收集。
+norecursedirs = ["archive", "node_modules", ".venv", "dist", "build", ".dsh", ".claude", ".agent"]
 markers = [
     "integration: 依赖真实 PostgreSQL/Redis 的集成测试（docker compose up -d）",
 ]
 
 [tool.coverage.run]
+# 目标实现落地后 source 自动指向 apps/、packages/；当前二者已归档
 source = ["apps", "packages"]
+omit = ["archive/*"]
 
 [tool.coverage.report]
 show_missing = true
@@ -82,7 +58,7 @@ exclude = [
     ".tmp",
     ".venv",
     "__pycache__",
-    "apps/mini-program",
+    "archive",
     "build",
     "dist",
     "node_modules",
