@@ -1,4 +1,4 @@
-# 目标前端工作空间（见 docs/技术设计/项目结构设计.md）。
+# 目标前端工作空间（见 docs/项目结构设计.md）。
 # apps/react-web 与 packages/ts-shared 尚未创建；pnpm 会忽略暂不存在的成员目录。
 # 旧实现（含 apps/mini-program）已整体归档至 archive/，不再作为工作空间成员。
 packages:

@@ -5,7 +5,7 @@
 
 ## Stack
 
-目标选型（尚未落地，详见 `docs/技术设计/技术栈设计.md`）：
+目标选型（尚未落地，详见 `docs/技术栈设计.md`）：
 
 - Language: Python ≥3.12, TypeScript ~6.0
 - Backend: FastAPI + Pydantic 2，uv 工作空间；独立 Worker
@@ -35,7 +35,7 @@ docker-compose.yml  — 仅本地基础设施编排
 AGENTS.md           — 本文件
 ```
 
-新目标结构（未落地）见 `docs/技术设计/项目结构设计.md`：后端模块 `auth`、`public_support`、`assist`、`matters`、`spaces`、`records`、`handoffs`、`plans`、`evidence`、`practice`；前端沿用 domain/application/viewModel/view/infrastructure 单向五层。
+新目标结构（未落地）见 `docs/项目结构设计.md`：后端模块 `auth`、`public_support`、`assist`、`matters`、`spaces`、`records`、`handoffs`、`plans`、`evidence`、`practice`；前端沿用 domain/application/viewModel/view/infrastructure 单向五层。工程纪律见 `docs/技术设计/technical-details/工程约定.md`。
 
 ## Conventions
 
@@ -47,7 +47,7 @@ AGENTS.md           — 本文件
 
 ### 目标重构与迁移
 
-- 以 `docs/需求/`、`docs/技术设计/技术栈设计.md`、`项目结构设计.md`、`机制/` 与 `迁移验证与发布.md` 为目标；`archive/` 只用于辨认遗留实现与历史决策。
+- 以 `docs/需求/`、`docs/技术栈设计.md`、`docs/项目结构设计.md`、`docs/技术设计/technical-details/` 与其中的 `迁移验证与发布.md` 为目标；`archive/` 只用于辨认遗留实现与历史决策。
 - 先盘点实际数据与引用、核实可恢复备份及影响范围，再分阶段建设；数据状态未知时不得以旧 ADR 的“无真实用户数据”推断可以清库。
 - ❌ 禁止：从 `archive/` 复制权限模型、四层档案、行为桶或 `/api/v1` SSE 契约到新实现。
 - ❌ 禁止：执行归档 `scripts/` 中的部署/重建脚本或 `docker compose down -v`；授权撤销与条目停用不得靠异步清理充当即时安全边界。
@@ -74,7 +74,7 @@ AGENTS.md           — 本文件
 
 ### 接口与契约
 
-- 以 `docs/技术设计/机制/接口契约.md` 的 `/api/v2` 为目标；旧 `/api/v1` 已归档
+- 以 `docs/技术设计/technical-details/接口契约.md` 的 `/api/v2` 为目标；旧 `/api/v1` 已归档
 - 修改 API 接口、数据库 schema、公共函数签名前，先确认影响范围
 - ❌ 禁止：在未确认影响范围的情况下破坏性修改已有接口
 
@@ -99,8 +99,12 @@ AGENTS.md           — 本文件
 
 设计或实施前按顺序阅读：
 1. `docs/README.md` 与 `docs/需求/功能需求与验收.md`（业务/验收）；
-2. `docs/技术设计/技术栈设计.md`、`项目结构设计.md`、`机制/` 与 `迁移验证与发布.md`（目标结构、接口、授权与发布门槛）；
-3. 涉及 Web 页面时读 `docs/design/README.md`。
+2. `docs/技术栈设计.md` 与 `docs/项目结构设计.md`（项目级定调）；
+3. `docs/技术设计/technical-details/` 中的机制文档、`工程约定.md` 与 `迁移验证与发布.md`（目标结构、接口、工程纪律、授权与发布门槛）；
+4. `docs/技术设计/decisions/` 与 `docs/需求/decisions/`（重大取舍与重访条件）；
+5. 涉及 Web 页面时读 `docs/design/README.md`（含 `decisions/` 中的视觉底座决策）。
+
+目录按 design-spec-workshop 的标准回退结构组织：两份定调文档在 `docs/` 顶层，技术细节在 `technical-details/`，决策在各自 `decisions/` 下。枚举与错误码取值统一见 `docs/技术设计/technical-details/枚举与错误码.md`，不得在各文档自行扩展。
 
 - ❌ 禁止：把 `archive/` 中的“有效”“目标态”等字样当作新目标实现要求。
 - ❌ 禁止：未读相关设计文档就开始实现，或发现设计与目标不一致时静默沿用旧行为。
@@ -123,4 +127,4 @@ AGENTS.md           — 本文件
 - [ ] 若更改授权、数据或 API，已验证影响范围与回滚门槛；对应文档已同步。
 - [ ] 如需 commit，只包含本次任务文件，中文信息说明做什么及原因；确认未提交密钥或私钥。
 
-<!-- Last updated: 2026-09-26 -->
+<!-- Last updated: 2026-09-27 -->
