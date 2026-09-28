@@ -1,7 +1,7 @@
 # Agent 基座
 
 > **本文唯一拥有**：Campfire 的分面执行策略（应急面/异步面编排）、领域工具与 Skill 清单、Campfire 侧安全规则与扩展约定、编排开销门禁。
-> **状态**：架构基线（ADR-007；基座实现归 ADR-011）。**Agent 内核的契约与机制（ExtensionAPI、事件总线、Session、skill-loader、安全扩展约定）由 Agent 内核框架文档拥有**，本文只描述 Campfire 如何使用内核；各模块机制文档拥有业务规则与数据模型。
+> **状态**：旧应急中心执行基线，仅供代码与历史方案对照；当前 AI 业务边界、授权和结果发布由[目标机制](./目标机制/README.md)与[ADR-016](./决策/ADR-016-授权与发布由业务代码强制执行.md)拥有。内核通用接口可继续复用，但安全扩展首位加载不构成当前业务授权证明。
 > **依据**：Agent 内核框架文档（内核契约）、存档 references/Agent框架概览.md（框架选型输入）、Agent Skills 标准 https://agentskills.io/specification（Skill 格式）。
 
 ## 一、设计原则
