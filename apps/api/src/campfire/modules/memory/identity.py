@@ -6,11 +6,12 @@ episode 的确定性标识由 `pending_id` 派生。
 
 ## 两个必须集中在此处的理由
 
-1. **账号标识要过两道校验**，而两道都不可省：
-   - Graphiti 的 `validate_group_id`（`^[a-zA-Z0-9_-]+$`）；
-   - FalkorDB 的图名约束——2026-09-29 实测：在 FalkorDB 后端 **`group_id` 就是图名**
-     （`driver.clone(database=group_id)`），不是同图内的属性分区。
-   任一不合法都会在运行期变成难查的失败，因此在**入口处**转成显式错误。
+1. **账号标识必须在入口处校验**：唯一依据是 Graphiti 的 `validate_group_id`
+   （`^[a-zA-Z0-9_-]+$`）。**更正（2026-09-29 评审）**：此前此处写「还有 FalkorDB 的
+   图名约束」——**该说法不成立**（实测 FalkorDB 图名无字符集限制，唯一真实限制是
+   空图名）。但分区语义仍然关键：在 FalkorDB 后端 **`group_id` 就是图名**
+   （`driver.clone(database=group_id)`），不是同图内的属性分区；不合法或不存在的账号
+   会变成「写入成功、读取为空」这类难查的失败，因此在**入口处**转成显式错误。
 2. **确定性 uuid 是幂等的唯一依据**（第 3 节实测）：图库的身份是 `uuid` 而非 `name`，
    但同一个 uuid 不能直接交给 `add_episode(uuid=...)`（该参数要求节点已存在）。
    把「派生」与「写入」分开，是为了让写入侧能先查我方幂等标记再决定要不要碰图库。
@@ -84,6 +85,11 @@ EPISODE_UUID_NAMESPACE = uuid.UUID("6f2a1c3e-9b74-4d51-8a0e-2c5f7b9d4e11")
 #: 上界防止畸形输入被用来构造超长图名或异常长的派生输入。
 MAX_PENDING_ID_LENGTH = 64
 
+#: episode 标识的长度上界。规范 UUID 文本是 36 字符；账本列宽是 64
+#: （``models.MemoryDeletionLedger.episode_key``），这里取列宽以保持一致——
+#: 允许多于列宽的值会在写入时被数据库拒绝而不是在这里给出可读的错误。
+MAX_EPISODE_KEY_LENGTH = 64
+
 
 class AccountIdError(MemoryDataError):
     """账号标识不满足分区键的约束。
@@ -100,6 +106,51 @@ class AccountIdError(MemoryDataError):
             operation="validate_account_id",
             detail=reason,
         )
+
+
+def to_episode_key(raw: object) -> EpisodeUuid:
+    """把外部传入的 episode 标识转成 `EpisodeUuid`，并在边界处校验。
+
+    **为什么需要它**：删除路径的入口参数是「哪条记忆」，由调用方给出。若不做校验，
+    一个畸形字符串会进账本——而账本的 `episode_key` 是**过滤判据**，里面的脏值不会
+    报错，只会让某条记忆永远删不掉或误删不到（静默失效）。
+
+    校验形状与 `derive_episode_uuid` 的产物一致：**必须能解析成 UUID**。
+    只要求「可解析」而不要求「特指 UUID5」：UUID5 由派生保证，但账本可能记录历史
+    版本派生的值，入口收紧到「不是 UUID 就拒绝」即可覆盖真正的畸形输入。
+
+    Raises:
+        MemoryDataError: 非字符串、空值、超长，或无法解析为 UUID。
+    """
+    if not isinstance(raw, str):
+        raise MemoryDataError(
+            "episode 标识必须是字符串",
+            operation="validate_episode_key",
+            detail=f"type={type(raw).__name__}",
+        )
+    if not raw:
+        raise MemoryDataError(
+            "episode 标识为空",
+            operation="validate_episode_key",
+            detail="episode 标识不得为空",
+        )
+    if len(raw) > MAX_EPISODE_KEY_LENGTH:
+        raise MemoryDataError(
+            f"episode 标识超过 {MAX_EPISODE_KEY_LENGTH} 字符上界",
+            operation="validate_episode_key",
+            detail=f"length={len(raw)}",
+        )
+    try:
+        parsed = uuid.UUID(raw)
+    except ValueError as exc:
+        raise MemoryDataError(
+            "episode 标识不是合法 UUID",
+            operation="validate_episode_key",
+            detail=f"value={raw!r}",
+        ) from exc
+    # 归一为规范小写连字符形式：账本按等值过滤，大小写或花括号形式不一致会让
+    # 「同一条记忆」在写入与读取两侧看起来是两个 key。
+    return EpisodeUuid(str(parsed))
 
 
 def to_account_id(raw: object) -> AccountId:
@@ -169,6 +220,7 @@ __all__ = [
     # 常量
     "EPISODE_UUID_NAMESPACE",
     "MAX_ACCOUNT_ID_LENGTH",
+    "MAX_EPISODE_KEY_LENGTH",
     "MAX_PENDING_ID_LENGTH",
     # 语义类型
     "AccountId",
@@ -179,4 +231,5 @@ __all__ = [
     # 函数
     "derive_episode_uuid",
     "to_account_id",
+    "to_episode_key",
 ]

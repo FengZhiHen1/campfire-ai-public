@@ -27,7 +27,7 @@ Graphiti 的 ``remove_episode`` 只删该 episode **独占**的实体与边：�
 
 from datetime import datetime
 
-from sqlalchemy import DateTime, Index, String
+from sqlalchemy import CheckConstraint, DateTime, Index, String
 from sqlalchemy import text as sql_text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
@@ -48,6 +48,14 @@ DELETION_REASONS: frozenset[str] = frozenset(
         DELETION_REASON_ACCOUNT_DELETION,
     }
 )
+
+#: 词表的 SQL 字面量（`CHECK ... IN (...)` 用）。
+#:
+#: **从 `DELETION_REASONS` 派生而不是另写一份**：两份手写清单必然漂移。排序保证
+#: 文本稳定（迁移与模型两侧一致，避免 autogenerate 产生无意义差异）。
+#: 迁移文件里是**冻结的字面量快照**（迁移是历史记录，不随词表演进）——新增原因时
+#: 需同时写一次迁移更新 CHECK，这是有意接受的成本（见模型里 `reason` 的说明）。
+_DELETION_REASONS_SQL = ", ".join(f"'{value}'" for value in sorted(DELETION_REASONS))
 
 
 class MemoryDeletionLedger(Base):
@@ -81,10 +89,30 @@ class MemoryDeletionLedger(Base):
     #: 类型与 `account_id` 同源，理由同上。
     deleted_by: Mapped[str | None] = mapped_column(String(128), nullable=True)
     #: 删除原因，取值见 `DELETION_REASONS`。
+    #:
+    #: **判据落在 CHECK 约束上**（2026-09-29 评审指出，实测当时只有注释承诺）：
+    #: 词表是闭集（调用方按原因区分处置：`account_deletion` 是账号级清理，其余是单条
+    #: 语义删除），而此前 `pg_constraint` 里只有 PK 与 UNIQUE——探针插入
+    #: `reason='not_a_valid_reason'` **成功**，即存储层可写入任意字符串，注释承诺的
+    #: 词表形同不存在（CORE-05：不变量要落最强可行通道）。
+    #: 代价是词表变更需要一次迁移，这是**有意接受的**：删除原因进审计，静默写入未知
+    #: 原因比一次迁移昂贵得多。
     reason: Mapped[str] = mapped_column(String(32), nullable=False)
     #: 删除时已知的派生物 uuid 清单（边与节点）。**尽力记录，不作过滤依据**
     #: （见模块说明第 2 点）；物理清理时可作起点。
-    derived_uuids: Mapped[list[str]] = mapped_column(JSONB, nullable=False, server_default=sql_text("'[]'::jsonb"))
+    #:
+    #: `default=list` 是**必需的**：只有 `server_default` 时，该属性在 flush 之前一直
+    #: 是 ``None``（2026-09-29 实测），而 `Mapped[list[str]]` 声明的是列表——
+    #: 调用方在提交前读它会拿到 ``None``。`default=list` 修的正是「插入时写成 NULL」
+    #: 这一问题。
+    #:
+    #: **注意 `default=` 的生效时机**（实测，避免误解）：它**只在 flush/INSERT 时**
+    #: 求值，**构造后立刻读仍是 `None`**。若调用方必须在持久化前读到 `[]`，需要在
+    #: 服务层显式赋值（如 `ledger.record_deletion` 里的 `derived_uuids or []`，
+    #: 那里就是这么做的）——不要指望 ORM 默认值在构造期生效。
+    derived_uuids: Mapped[list[str]] = mapped_column(
+        JSONB, nullable=False, server_default=sql_text("'[]'::jsonb"), default=list
+    )
 
     __table_args__ = (
         # 读取侧按账号 + 时间取账本（账号级清理与排查用）。
@@ -95,6 +123,16 @@ class MemoryDeletionLedger(Base):
         ),
         # 按原因筛选（告警与审计：纠正与账号清理的量级不同）。
         Index("ix_campfire_memory_deletion_ledger_reason", "reason"),
+        # 词表的**存储层**判据（见 `reason` 字段说明）。
+        # 名字只给 `reason`：`core/db` 的 NAMING_CONVENTION 会把它展开为
+        # `ck_campfire_memory_deletion_ledger_reason`。**不要在这里写全名**——
+        # 约定会再套一层前缀，实测得到 63 字符被 PostgreSQL 截断的
+        # `ck_campfire_memory_deletion_ledger_ck_campfire_memory_d_0b19`，
+        # 与迁移里声明的名字不一致，autogenerate 会反复产出删旧建新的噪音。
+        CheckConstraint(
+            f"reason IN ({_DELETION_REASONS_SQL})",
+            name="reason",
+        ),
         # 说明：`episode_key` 上**只**建唯一约束、不另建普通索引——唯一约束自带索引，
         # 而时间线回看的过滤正是按 episode_key 等值查，走的就是它。
         # 表注释必须在此声明：迁移建表时写 comment、而 ORM 不声明的话，
