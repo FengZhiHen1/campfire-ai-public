@@ -25,8 +25,10 @@
   镜像按实际存在的 tag 固定（见 docs/技术栈设计.md 第 2 节）。
 
 **已实现**（2026-09-29）：``errors.py``（异常层次）、``graph.py``（Graphiti +
-FalkorDB 装配：驱动、TokenHub 三客户端、空重排器）。写入、两条读路径与删除账本
-尚未落地。
+FalkorDB 装配：驱动、TokenHub 三客户端、空重排器）、``identity.py``（账号分区键
+与确定性 episode uuid）、``models.py`` + 迁移（删除账本表）、``ledger.py``（读取侧
+删除过滤）、``store.py``（时间线回看与 episode 写入）。应急预注入（派生事实）与
+纠正的完整语义尚未落地。
 
 **实测环境**：graphiti-core 0.30.2、falkordb 客户端 1.7.1、FalkorDB 镜像
 ``v4.20.7-alpine``（graph 模块 42007、vectorset 模块 1）。
@@ -39,6 +41,15 @@ from campfire.modules.memory.errors import (
     MemoryUnavailableError,
 )
 from campfire.modules.memory.graph import MemoryGraph, build_memory_graph
+from campfire.modules.memory.identity import (
+    AccountId,
+    AccountIdError,
+    EpisodeUuid,
+    PendingId,
+    derive_episode_uuid,
+    to_account_id,
+)
+from campfire.modules.memory.store import MemoryEpisode, read_timeline, write_episode
 
 __all__ = [
     # 异常
@@ -46,7 +57,18 @@ __all__ = [
     "MemoryDataError",
     "MemoryModuleError",
     "MemoryUnavailableError",
+    # 身份
+    "AccountId",
+    "AccountIdError",
+    "EpisodeUuid",
+    "PendingId",
+    "derive_episode_uuid",
+    "to_account_id",
     # 装配
     "MemoryGraph",
     "build_memory_graph",
+    # 读写
+    "MemoryEpisode",
+    "read_timeline",
+    "write_episode",
 ]
