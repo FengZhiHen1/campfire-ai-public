@@ -1,0 +1,118 @@
+"""摘要调用的实现：用**与主调用同一模型同一路由**的一次独立调用写摘要。
+
+依据 docs/技术设计/technical-details/压缩策略.md 第 4 节：
+
+- **由模型写**，且必须与主调用同一模型与路由——否则不共享前缀缓存；
+- **逐字回放热前缀**：系统提示、上次路由请求的工具声明、被遮蔽范围的消息逐字回放，
+  压缩指令作为**最后一条 user 消息**追加；
+- 摘要输出受 ``maxTokens`` 限制；**只有返回文本进入检查点**，推理与工具调用一律排除；
+- 已有检查点时要求合并（合并要求由 :mod:`campfire.agent.context.compaction` 追加，不在这里）。
+
+## 两处必须写明的实现取舍
+
+1. **工具声明照旧带上，但 ``tool_choice="none"``**。带上是为了让前缀与主调用**逐字一致**
+   （第 4 节的缓存要求）；禁止调用工具是为了让「工具调用一律排除」由构造保证，而不是靠
+   事后过滤——顺带也避免压缩时真的去执行一次检索。这是对提供方的假设：OpenAI 兼容端点
+   支持 ``tool_choice="none"``（未在 TokenHub 上核实，登记为待验证项）。
+2. **截断用 ``output_tokens >= maxTokens`` 判定，是启发式**。SDK 的 ``ModelResponse`` 不暴露
+   ``finish_reason``（实测字段只有 output/usage/response_id/request_id/raw_usage），因此拿不到
+   「因长度而停」的官方信号。判错的代价是不对称的：把完整摘要误判为截断只是**不改窗口**
+   （第 7 节的安全方向），把截断摘要误判为完整则会把半截摘要写进检查点、**丢掉没被摘要的
+   历史**。所以这里从严。
+"""
+
+from __future__ import annotations
+
+import time
+from collections.abc import Sequence
+from dataclasses import replace
+
+from agents import Agent, FunctionTool, RunConfig, Runner
+from agents.items import TResponseInputItem
+
+from campfire.agent.context import SummaryRequest, SummaryResult
+from campfire.agent.model import ModelBinding
+
+DEFAULT_AGENT_NAME = "campfire-compaction"
+
+_TRACE_WORKFLOW = "campfire-compaction"
+"""追踪工作流名：与主运行分开，便于在追踪里区分「写摘要」与「答使用者」。"""
+
+
+class ModelSummarizer:
+    """用一次独立模型调用写摘要（不写会话、不执行工具）。"""
+
+    def __init__(
+        self,
+        *,
+        binding: ModelBinding,
+        instruction: str,
+        tools: Sequence[FunctionTool] = (),
+        agent_name: str = DEFAULT_AGENT_NAME,
+    ) -> None:
+        """绑定模型与指令。
+
+        ``tools`` 必须与主调用使用的声明**同一份**（同顺序、同 schema），否则前缀不一致、
+        缓存复用不成立。``instruction`` 的内容由产品侧拥有（第 4 节的六节结构属领域约定）。
+        """
+        self._binding = binding
+        self._instruction = instruction
+        self._tools = list(tools)
+        self._agent_name = agent_name
+
+    # quality-floor: ignore docstring-promise 异常由 SDK/提供方抛出并原样冒泡，函数体无 raise
+    async def summarize(self, request: SummaryRequest) -> SummaryResult:
+        """写一次摘要。
+
+        Raises:
+            Exception: 提供方或 SDK 的异常原样冒泡——调用方（压缩机制）按第 7 节把它转成
+                「摘要失败、窗口不动」，而不是在这里吞掉。
+        """
+        agent = Agent(
+            name=self._agent_name,
+            instructions=self._instruction,
+            model=self._binding.model,
+            tools=list(self._tools),
+        )
+        settings = replace(
+            self._binding.settings,
+            tool_choice="none",  # 声明照旧、调用禁止：见模块 docstring 第 1 条
+            max_tokens=request.max_tokens,
+        )
+        run_config = RunConfig(
+            model=self._binding.model,
+            model_settings=settings,
+            trace_include_sensitive_data=False,
+            workflow_name=_TRACE_WORKFLOW,
+        )
+        instructions = _replay(request)
+
+        started = time.monotonic()
+        result = await Runner.run(agent, input=instructions, max_turns=1, run_config=run_config)
+        elapsed = time.monotonic() - started
+
+        usage = result.context_wrapper.usage
+        return SummaryResult(
+            text=_final_text(result.final_output),
+            truncated=usage.output_tokens >= request.max_tokens,
+            input_tokens=usage.input_tokens,
+            output_tokens=usage.output_tokens,
+            elapsed_seconds=elapsed,
+        )
+
+
+def _replay(request: SummaryRequest) -> list[TResponseInputItem]:
+    """把热前缀逐字回放，并把压缩指令作为最后一条 user 消息追加（第 4 节）。"""
+    replayed: list[TResponseInputItem] = []
+    for item in request.prefix:
+        replayed.append(dict(item))  # type: ignore[arg-type]  # 逐字回放：只复制，不改写
+    replayed.append({"role": "user", "content": request.instruction})
+    return replayed
+
+
+def _final_text(output: object) -> str:
+    """取模型输出里的**文本**；非文本（例如 None）返回空串。
+
+    空串会让压缩机制按「摘要为空 → 不落检查点」处理（第 7 节），因此不需要在这里编造内容。
+    """
+    return output if isinstance(output, str) else ""

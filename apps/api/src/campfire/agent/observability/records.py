@@ -31,6 +31,7 @@ from campfire.agent.context import CitationRecord
 from campfire.agent.runtime import (
     CandidateEvent,
     CitationEvent,
+    CompactionFacts,
     RunEvent,
     RunFailedEvent,
     RunFinishedEvent,
@@ -89,6 +90,9 @@ class RunRecord:
     candidate_count: int = 0
     """候选产出条数（内容进业务侧候选列表，不在这里存副本）。"""
 
+    compactions: tuple[CompactionFacts, ...] = ()
+    """本次运行做过的压缩计量（压缩策略第 9 节）。"""
+
     @property
     def outcome(self) -> RunOutcome:
         """把「结束原因 / 失败码 / 取消 / 什么都没有」压成一档。"""
@@ -109,6 +113,11 @@ class RunRecord:
     def citation_references(self) -> tuple[str, ...]:
         """引用指向的业务标识，便于按条目反查。"""
         return tuple(record.reference for record in self.citations)
+
+    @property
+    def released_tokens_by_compaction(self) -> int:
+        """压缩累计释放的 token（第 9 节的「释放 token」）。"""
+        return sum(item.released_tokens for item in self.compactions)
 
     @property
     def finished_at(self) -> datetime:
@@ -166,6 +175,7 @@ class RunRecorder:
             record.citations = event.citations
             record.usage = event.usage
             record.elapsed_seconds = event.elapsed_seconds
+            record.compactions = event.compactions
         elif isinstance(event, RunFailedEvent):
             record.failure_code = event.code
             record.failure_detail = event.detail
@@ -173,6 +183,7 @@ class RunRecorder:
             record.citations = event.citations
             record.usage = event.usage
             record.elapsed_seconds = event.elapsed_seconds
+            record.compactions = event.compactions
 
     def mark_cancelled(self) -> None:
         """由消费方在捕获取消后调用。
