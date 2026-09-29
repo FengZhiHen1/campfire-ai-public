@@ -46,17 +46,20 @@ class ModelSummarizer:
         self,
         *,
         binding: ModelBinding,
-        instruction: str,
         tools: Sequence[FunctionTool] = (),
         agent_name: str = DEFAULT_AGENT_NAME,
     ) -> None:
-        """绑定模型与指令。
+        """绑定模型与声明。
+
+        **系统提示不在这里**：它由 :class:`~campfire.agent.context.SummaryRequest` 承载
+        （主运行的静态系统提示）。第一版把摘要器自己的提示当系统消息，于是接口根本无法保证
+        「系统提示逐字回放」——前缀缓存从第一条消息起就不可能命中（第 8 节：违反缓存纪律
+        视为缺陷）。摘要指令走请求里的最后一条 user 消息，不占系统位。
 
         ``tools`` 必须与主调用使用的声明**同一份**（同顺序、同 schema），否则前缀不一致、
-        缓存复用不成立。``instruction`` 的内容由产品侧拥有（第 4 节的六节结构属领域约定）。
+        缓存复用不成立。
         """
         self._binding = binding
-        self._instruction = instruction
         self._tools = list(tools)
         self._agent_name = agent_name
 
@@ -70,7 +73,7 @@ class ModelSummarizer:
         """
         agent = Agent(
             name=self._agent_name,
-            instructions=self._instruction,
+            instructions=request.system_prompt,  # 逐字回放主运行的系统提示（第 4 节）
             model=self._binding.model,
             tools=list(self._tools),
         )
@@ -94,7 +97,7 @@ class ModelSummarizer:
         usage = result.context_wrapper.usage
         return SummaryResult(
             text=_final_text(result.final_output),
-            truncated=usage.output_tokens >= request.max_tokens,
+            truncated=_looks_truncated(usage.output_tokens, request.max_tokens),
             input_tokens=usage.input_tokens,
             output_tokens=usage.output_tokens,
             elapsed_seconds=elapsed,
@@ -108,6 +111,22 @@ def _replay(request: SummaryRequest) -> list[TResponseInputItem]:
         replayed.append(dict(item))  # type: ignore[arg-type]  # 逐字回放：只复制，不改写
     replayed.append({"role": "user", "content": request.instruction})
     return replayed
+
+
+def _looks_truncated(output_tokens: int, max_tokens: int) -> bool:
+    """摘要是否疑似被 ``max_tokens`` 截断。
+
+    **两种情形都算疑似**：
+
+    - ``output_tokens >= max_tokens``：用满了上限；
+    - ``output_tokens <= 0``：提供方**没给用量**。此时无法判断是否写满，必须按不安全方向处理
+      （第一版直接算「完整」，等于把「没数据」当成了「没截断」的正面证据）。
+
+    判错代价不对称（第 7 节）：误判为截断只是不改窗口（安全方向），误判为完整会把半截摘要
+    写进检查点、**丢掉没被摘要的历史**。代价是「提供方不给用量」时压缩会一直不生效——
+    那是一个会显式暴露的降级（``summary_truncated``），比静默丢历史好。
+    """
+    return output_tokens <= 0 or output_tokens >= max_tokens
 
 
 def _final_text(output: object) -> str:

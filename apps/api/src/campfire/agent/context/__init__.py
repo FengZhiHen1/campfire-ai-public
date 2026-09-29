@@ -21,6 +21,7 @@
 
 from .citations import CitationIndex, CitationRecord, CitationRecorder
 from .compaction import (
+    CompactionCommit,
     CompactionError,
     CompactionJournal,
     CompactionOutcome,
@@ -72,6 +73,7 @@ __all__ = [
     "CitationIndex",
     "CitationRecord",
     "CitationRecorder",
+    "CompactionCommit",
     "CompactionError",
     "CompactionJournal",
     "CompactionOutcome",

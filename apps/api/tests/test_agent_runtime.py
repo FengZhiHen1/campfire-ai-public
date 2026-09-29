@@ -946,8 +946,8 @@ async def test_no_compaction_below_threshold() -> None:
     assert not any(isinstance(event, ProgressEvent) for event in events)
     finished = events[-1]
     assert isinstance(finished, RunFinishedEvent)
-    assert finished.compactions[0].performed is False
-    assert finished.compactions[0].reason == "below_threshold"
+    # 触发条件没到 → 不构成一次压缩，记录里不留噪音
+    assert finished.compactions == ()
 
 
 @pytest.mark.asyncio
@@ -1015,7 +1015,12 @@ async def test_skill_catalog_is_reinjected_after_compaction(tmp_path: Path) -> N
 
 @pytest.mark.asyncio
 async def test_context_overflow_triggers_a_max_head_reduction_and_retry() -> None:
-    """第 7 节：提供方明确报溢出 → 绕过阈值与保留策略做一次最大头部缩减后重试。"""
+    """第 7 节：提供方明确报溢出 → 绕过阈值与保留策略做一次最大头部缩减后重试。
+
+    历史刻意压在**阈值之下**（否则运行前会先压一次，窗口变小之后「窗口接近上限」这条证据
+    就不成立，溢出判定会正确地退回常规失败——见另一个用例）。这里要的是「窗口确实很大、
+    提供方说溢出」这个组合。
+    """
     overflow = json.dumps({"error": {"message": "This model's maximum context length is 1000 tokens"}}).encode()
 
     class OverflowThenOk(ScriptedChat):
@@ -1031,7 +1036,8 @@ async def test_context_overflow_triggers_a_max_head_reduction_and_retry() -> Non
             return httpx.Response(200, headers={"content-type": "text/event-stream"}, content=self._script.pop(0))
 
     chat = OverflowThenOk()
-    session = FakeSession("s-1", _long_history())
+    # 约 654 token：低于阈值 800（运行前不压缩），但 ≥ 窗口上限 1000 的一半（证据成立）
+    session = FakeSession("s-1", [{"role": "user", "content": f"历史 {index} " + "字" * 80} for index in range(6)])
 
     events = await _collect(
         AgentRunner(
@@ -1049,10 +1055,49 @@ async def test_context_overflow_triggers_a_max_head_reduction_and_retry() -> Non
     assert isinstance(finished, RunFinishedEvent), f"溢出后应重试成功，实际：{finished}"
     assert finished.reason == "completed"
     assert len(chat.requests) == 2  # 确实重试了一次
-    # 两次压缩：运行前按压力压一次，溢出恢复再按**最大头部缩减**压一次
-    assert len(finished.compactions) == 2
-    assert all(item.performed for item in finished.compactions)
+    assert len(finished.compactions) == 1  # 只有溢出恢复这一次最大头部缩减
+    assert finished.compactions[-1].performed is True
     assert finished.compactions[-1].retained_items == 0, "溢出恢复应绕过保留预算（最大头部缩减）"
+
+
+@pytest.mark.asyncio
+async def test_overflow_claim_on_a_small_window_is_not_treated_as_overflow() -> None:
+    """窗口远未接近上限时，400 + 上下文措辞**不得**触发破坏性的最大头部缩减。
+
+    §7 要求「只在提供方明确分类窗口溢出时触发」；真实溢出不可能发生在小窗口上，因此宁可
+    漏判（退回常规失败），也不永久改写窗口。
+    """
+    overflow = json.dumps({"error": {"message": "maximum context length exceeded"}}).encode()
+
+    class AlwaysOverflow(ScriptedChat):
+        """每次都报溢出。"""
+
+        def __init__(self) -> None:
+            super().__init__([])
+
+        async def handler(self, request: httpx.Request) -> httpx.Response:
+            self.requests.append(json.loads(request.content))
+            return httpx.Response(400, content=overflow, headers={"content-type": "application/json"})
+
+    chat = AlwaysOverflow()
+    session = FakeSession("s-1", [{"role": "user", "content": "很短的历史"}])
+
+    events = await _collect(
+        AgentRunner(
+            binding=_binding(chat),
+            tools=ToolPool([read_tool()]),
+            skills=SkillRegistry.discover(_empty_root()),
+            citations=FakeCitationIndex(),
+            sessions=lambda session_id: session,
+            compaction=_wiring(),
+        ),
+        _request(),
+    )
+
+    failed = events[-1]
+    assert isinstance(failed, RunFailedEvent)
+    assert failed.code == "model_unavailable", "小窗口上的溢出措辞不该走破坏性路径"
+    assert not any("最大头部缩减" in str(event) for event in events)
 
 
 @pytest.mark.asyncio

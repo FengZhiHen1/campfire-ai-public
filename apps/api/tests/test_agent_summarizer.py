@@ -124,9 +124,18 @@ def _search_tool() -> ToolSpec[_Args]:
     return ToolSpec(name="search_knowledge", description="检索", args_model=_Args, handler=handler)
 
 
-def _request(*, prefix: Sequence[dict[str, object]] = (), max_tokens: int = 512) -> SummaryRequest:
+SYSTEM_PROMPT = "主运行的静态系统提示"
+
+
+def _request(
+    *,
+    prefix: Sequence[dict[str, object]] = (),
+    max_tokens: int = 512,
+    system_prompt: str = SYSTEM_PROMPT,
+) -> SummaryRequest:
     return SummaryRequest(
         prefix=tuple(prefix),  # type: ignore[arg-type]
+        system_prompt=system_prompt,
         instruction="把历史压成六节摘要。",
         previous_summary=None,
         max_tokens=max_tokens,
@@ -134,10 +143,26 @@ def _request(*, prefix: Sequence[dict[str, object]] = (), max_tokens: int = 512)
 
 
 @pytest.mark.asyncio
+async def test_system_prompt_is_the_main_run_prompt_replayed_verbatim() -> None:
+    """第 4 节 + 第 8 节：**主运行**的系统提示逐字回放。
+
+    这条是缓存能否命中的前提：前缀缓存要求「完整匹配一个已持久化的前缀单元」，第 0 条消息
+    就不同的话整个前缀都不命中。第一版把摘要器自己的提示放在系统位，接口**无法承载**主运行
+    的系统提示——只能靠装配处碰巧传同一个字符串。
+    """
+    chat = ScriptedChat("摘要正文")
+    summarizer = ModelSummarizer(binding=_binding(chat))
+
+    await summarizer.summarize(_request(system_prompt="主运行的静态系统提示"))
+
+    assert chat.body["messages"][0] == {"role": "system", "content": "主运行的静态系统提示"}
+
+
+@pytest.mark.asyncio
 async def test_instruction_comes_last_after_the_replayed_prefix() -> None:
     """第 4 节：热前缀逐字回放，压缩指令作为**最后一条 user 消息**追加。"""
     chat = ScriptedChat("摘要正文")
-    summarizer = ModelSummarizer(binding=_binding(chat), instruction="系统提示：你是压缩器。")
+    summarizer = ModelSummarizer(binding=_binding(chat))
     prefix = [
         {"role": "user", "content": "第一段历史"},
         {"role": "assistant", "content": "第二段历史"},
@@ -147,7 +172,7 @@ async def test_instruction_comes_last_after_the_replayed_prefix() -> None:
 
     messages = chat.body["messages"]
     assert messages[0]["role"] == "system"
-    assert messages[0]["content"] == "系统提示：你是压缩器。"
+    assert messages[0]["content"] == SYSTEM_PROMPT
     # 被压缩范围的消息逐字回放
     assert messages[1]["content"] == "第一段历史"
     assert messages[2]["content"] == "第二段历史"
@@ -161,7 +186,7 @@ async def test_instruction_comes_last_after_the_replayed_prefix() -> None:
 async def test_replayed_items_are_copied_not_mutated() -> None:
     """「逐字回放」不只是措辞：原项不得被就地修改。"""
     chat = ScriptedChat("摘要")
-    summarizer = ModelSummarizer(binding=_binding(chat), instruction="指令")
+    summarizer = ModelSummarizer(binding=_binding(chat))
     original = {"role": "user", "content": "历史"}
 
     await summarizer.summarize(_request(prefix=[original]))
@@ -203,7 +228,7 @@ async def test_tools_are_declared_but_calls_are_forbidden() -> None:
     dispatcher = ToolDispatcher(pool, resolve_scope(pool), context=_tool_context())
     bridge = ToolBridge(dispatcher, sink=lambda _event: None)
 
-    summarizer = ModelSummarizer(binding=_binding(chat), instruction="指令", tools=bridge.function_tools())
+    summarizer = ModelSummarizer(binding=_binding(chat), tools=bridge.function_tools())
     await summarizer.summarize(_request())
 
     declared = {tool["function"]["name"] for tool in chat.body["tools"]}
@@ -216,7 +241,7 @@ async def test_max_tokens_bounds_the_summary_call() -> None:
     """第 4 节：摘要输出受 maxTokens 限制。"""
     chat = ScriptedChat("摘要")
 
-    await ModelSummarizer(binding=_binding(chat), instruction="指令").summarize(_request(max_tokens=1234))
+    await ModelSummarizer(binding=_binding(chat)).summarize(_request(max_tokens=1234))
 
     assert chat.body["max_tokens"] == 1234
 
@@ -226,7 +251,7 @@ async def test_usage_and_elapsed_are_reported() -> None:
     """第 9 节：摘要调用的用量与耗时进记录。"""
     chat = ScriptedChat("摘要", output_tokens=37)
 
-    result = await ModelSummarizer(binding=_binding(chat), instruction="指令").summarize(_request(max_tokens=512))
+    result = await ModelSummarizer(binding=_binding(chat)).summarize(_request(max_tokens=512))
 
     assert result.text == "摘要"
     assert result.output_tokens == 37
@@ -240,8 +265,24 @@ async def test_summary_hitting_the_cap_is_flagged_as_truncated() -> None:
     """截断从严：``output_tokens >= maxTokens`` 即视为疑似截断，让机制拒绝落检查点。"""
     chat = ScriptedChat("半截摘要", output_tokens=512)
 
-    result = await ModelSummarizer(binding=_binding(chat), instruction="指令").summarize(_request(max_tokens=512))
+    result = await ModelSummarizer(binding=_binding(chat)).summarize(_request(max_tokens=512))
 
+    assert result.truncated is True
+
+
+@pytest.mark.asyncio
+async def test_missing_usage_is_treated_as_suspect_not_as_complete() -> None:
+    """提供方**没给用量**时必须按不安全方向处理。
+
+    ``output_tokens`` 缺失时它是 0：第一版把它算成「完整」，等于把「没有数据」当成了
+    「没截断」的正面证据——而判错代价是不对称的（误判为完整会把半截摘要写进检查点、
+    丢掉没被摘要的历史）。
+    """
+    chat = ScriptedChat("摘要", output_tokens=0)
+
+    result = await ModelSummarizer(binding=_binding(chat)).summarize(_request(max_tokens=512))
+
+    assert result.output_tokens == 0
     assert result.truncated is True
 
 
@@ -249,7 +290,7 @@ async def test_summary_hitting_the_cap_is_flagged_as_truncated() -> None:
 async def test_provider_failure_propagates_to_the_mechanism() -> None:
     """提供方失败原样冒泡：由压缩机制按第 7 节转成「摘要失败、窗口不动」。"""
     chat = ScriptedChat(status_code=500)
-    summarizer = ModelSummarizer(binding=_binding(chat), instruction="指令")
+    summarizer = ModelSummarizer(binding=_binding(chat))
 
     with pytest.raises(Exception):  # noqa: B017 —— 这里只断言「没有被吞掉」
         await summarizer.summarize(_request())
