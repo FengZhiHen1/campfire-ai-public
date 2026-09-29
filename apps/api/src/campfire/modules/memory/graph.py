@@ -60,6 +60,8 @@ pool=600)``、``max_retries=2``，再叠加 Graphiti 自身的 ``MAX_RETRIES`` �
 
 from __future__ import annotations
 
+import asyncio
+from contextlib import suppress
 from dataclasses import dataclass, field
 
 import httpx2
@@ -75,6 +77,7 @@ from openai import AsyncOpenAI
 
 from campfire.core.config import EMBEDDING_DIM, Settings
 from campfire.modules.memory.errors import MemoryConfigurationError
+from campfire.modules.memory.identity import to_account_id
 
 #: 实体抽取与消解的模型调用上限（token）。Graphiti 的默认是 16384；
 #: 我们**显式传入**而不是沿用默认，理由：抽取是需要结构化输出的短任务，
@@ -145,27 +148,54 @@ class MemoryGraph:
     #: 字段用 ``field(default_factory=...)``：``frozen=True`` 不影响可变字段的内容。
     account_drivers: dict[str, GraphDriver] = field(default_factory=dict)
 
+    # quality-floor: ignore docstring-promise 异常由 to_account_id 抛出并原样传播，函数体只做校验委托
     def driver_for(self, account_id: str) -> GraphDriver:
         """取该账号那张图的驱动，**命中缓存则不新建**。
 
         同库名时 ``clone`` 本就返回 ``self``（实测），因此这里对 base 库不额外缓存。
 
+        **这里做入口校验**（2026-09-29 评审指出）：``driver_for`` 是两条读路径与缓存
+        的**唯一共同入口**，而此前它接受任意字符串——实测未校验的键
+        （含换行/分号、5000 字符、框架哨兵 ``'_'``）都会被接受并成为图名，
+        而 ``'_'`` 还会落到 ``default_db``（正是 ``identity`` 要拒的哨兵）。
+        校验放在此处，比要求每个调用方各自记得调 ``to_account_id`` 更可靠。
+
         Args:
-            account_id: 账号标识（即 ``group_id`` / 图名）。
+            account_id: 账号标识（即 ``group_id`` / 图名）。**会被校验**。
 
         Returns:
             指向该账号那张图的驱动。
+
+        Raises:
+            AccountIdError: 账号标识不合法（空、超长、含非法字符、或命中框架哨兵）。
 
         Note:
             淘汰只从字典里移除引用，**不关闭**被淘汰的驱动：它共享同一个
             ``falkordb`` 客户端（实测 ``clone.client is base.client``），关它会连带
             关掉其它账号在用连接。连接由 :meth:`aclose` 统一收口。
+            淘汰**留下无人取消的后台任务**（每个 clone 各调度一个，实测）——这是
+            封装成本：有界缓存换来「淘汰时留下一个已取消不了的任务」，
+            由 :meth:`aclose` 对**现存**条目收口，已淘汰条目的任务在下次
+            事件循环检查时自然结束（其索引语句对已存在的索引是幂等的）。
+
+        Note:
+            **本函数只覆盖读路径**（2026-09-29 实测说明）：``add_episode``（写路径）
+            内部自己调 ``_resolve_request_scope`` → ``driver.clone(...)``，不经过这里，
+            因此写入期间仍会临时新建驱动。实测：3 次 ``write_episode`` 期间可见 2 个新
+            ``build_indices`` 任务，但**这些任务会结束**，且连续 12 次写入后存活的
+            ``FalkorDriver`` 对象数**不增长**（恒为 2）——即那是**每次调用的临时分配**，
+            不是无界累积。若将来发现它随写入次数线性增长，处置方向是让写入复用本缓存
+            的驱动（需绕过 ``add_episode`` 的内部 clone，属上游接口限制）。
         """
-        cached = self.account_drivers.get(account_id)
+        # 入口校验：见 docstring。已校验过的键（合法）走同一个函数不会有额外代价
+        # （正则匹配）。
+        validated = to_account_id(account_id)
+
+        cached = self.account_drivers.get(validated)
         if cached is not None:
             return cached
 
-        scoped = self.driver.clone(database=account_id)
+        scoped = self.driver.clone(database=validated)
         if scoped is self.driver:
             # 账号恰好等于配置库名：clone 返回自身，无需缓存（也不该占用一个名额）。
             return scoped
@@ -174,7 +204,7 @@ class MemoryGraph:
             # 淘汰最早插入的一条（FIFO）。见字段说明：这里只丢引用，不关连接。
             oldest = next(iter(self.account_drivers))
             del self.account_drivers[oldest]
-        self.account_drivers[account_id] = scoped
+        self.account_drivers[validated] = scoped
         return scoped
 
     async def aclose(self) -> None:
@@ -193,21 +223,57 @@ class MemoryGraph:
         ``AsyncOpenAI.close()`` 实测会连带关闭注入的 ``http_client``，因此这里先关
         客户端、再兜底关 ``http_client``（``aclose()`` 幂等，重复关无副作用）。
 
-        缓存的账号驱动**不需要逐个关闭**：它们与 base 共享同一个 ``falkordb`` 客户端
-        （实测 ``clone.client is base.client``），关客户端即全部断开；但每个克隆驱动
-        各有自己的后台索引任务，故逐个取消（否则又留下无人取回的任务异常）。
+        **缓存的账号驱动为什么不能逐个调 ``close()``**（2026-09-29 评审指出，实测确认）：
+        克隆驱动与 base **共享同一个 `falkordb` 客户端**（实测
+        ``clone.client is base.client``），而 ``FalkorDriver.close()`` 内部就是
+        ``await self.client.aclose()``——逐个调它会把**同一个共享客户端关闭 N+1 次**。
+        实测：3 个缓存账号时 ``client.aclose()`` 被调用 **4 次**（应为 1 次），且会
+        打断在途查询（``ConnectionError``）。因此这里只**取消各克隆驱动自己的后台
+        索引任务**（那是每个克隆独有的资源），客户端只由 ``graphiti.close()`` 关一次。
         """
-        # Graphiti.close() 即 driver.close()：取消并取回 base 驱动的后台索引任务。
+        # Graphiti.close() 即 driver.close()：取消并取回 base 驱动的后台索引任务，
+        # 并关闭共享的 falkordb 客户端（**唯一一次**）。
         await self.graphiti.close()
-        # 克隆出来的驱动各自持有后台任务，必须逐个收口（连接是共享的，见上面说明）。
+        # 克隆出来的驱动各有自己的后台索引任务（每个 clone 各调度一个，实测），
+        # 但客户端是共享的——只取消任务，不再关客户端。
         for scoped in self.account_drivers.values():
             if scoped is not self.driver:
-                await scoped.close()
+                await _cancel_driver_init_task(scoped)
         self.account_drivers.clear()
         for client in self.model_clients:
             await client.close()
         if self.http_client is not None:
             await self.http_client.aclose()
+
+
+async def _cancel_driver_init_task(driver: GraphDriver) -> None:
+    """取消某个驱动自己的后台初始化任务，**不触碰共享客户端**，并等它真正结束。
+
+    为什么需要这个函数（而不是直接用 ``driver.close()``）：``FalkorDriver.close()``
+    做两件事——取消任务 + 关闭客户端——而克隆驱动的客户端是**与 base 共享的**
+    （实测 ``clone.client is base.client``），调它会重复关闭同一个客户端。
+
+    **为什么必须 await**（2026-09-29 实测）：只调 ``task.cancel()`` 而不 await 时，
+    任务仍会在 ``asyncio.all_tasks()`` 中短暂可见，测试里表现为「残留后台索引任务」
+    ——取消是**请求**，只有让出控制权后任务才会真正结束。``await`` 它并吞掉
+    ``CancelledError`` 才能确保收口完成（上游 ``FalkorDriver.close()`` 也是这么做的：
+    ``with suppress(asyncio.CancelledError): await self._init_task``）。
+
+    这里访问 ``_init_task`` 这个私有属性是**有意的妥协**：上游没有暴露「只取消任务」
+    的公开接口。范围被压到最小（只读该属性、只 cancel + await），并用 ``getattr``
+    兜住上游改名——改名后不会静默漏收口，而是退化为「不取消」，
+    由实测（``Task exception was never retrieved``）暴露出来。
+
+    Note:
+        ``driver`` 参数用基类 ``GraphDriver``：调用方只依赖「有个可取消的初始化任务」
+        这一点，不绑定 FalkorDB 的具体类型。
+    """
+    task = getattr(driver, "_init_task", None)
+    if task is None or task.done():
+        return
+    task.cancel()
+    with suppress(asyncio.CancelledError):
+        await task
 
 
 def build_memory_graph(settings: Settings) -> MemoryGraph:

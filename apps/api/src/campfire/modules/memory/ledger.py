@@ -20,7 +20,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from campfire.modules.memory.errors import MemoryDataError
-from campfire.modules.memory.identity import to_episode_key
+from campfire.modules.memory.identity import AccountId, EpisodeUuid, to_account_id, to_episode_key
 from campfire.modules.memory.models import (
     DELETION_REASON_USER_REQUEST,
     DELETION_REASONS,
@@ -32,8 +32,13 @@ from campfire.modules.memory.models import (
 #:
 #: **触顶时的行为是「显式失败」而不是「返回前 N 条」**（2026-09-29 修正）：
 #: 截断意味着「部分已删记忆仍会被返回」——即删除静默失效，直接违反 `RQ-MEM-03`。
-#: 宁可明确报错并提示需要物理清理（`docs/技术设计/technical-details/通用记忆.md`
-#: 第 7 节已写明该规模下物理清理必须启用），也不返回用户已删除的内容。
+#: 宁可明确报错并提示需要物理清理，也不返回用户已删除的内容。
+#:
+#: **已知风险（2026-09-29 评审指出）**：账本写入**无 per-account 配额**（任何 uuid
+#: 都能记一行），而读侧是**全量拉取** + 触顶**整体失败**——三者叠加使单账号账本涨到
+#: 上界后，该账号的**两条读路径都不可用**（哪怕它只是想读记忆）。这是有意的
+#: fail-closed（好过静默失效），但代价是「删除账本」成了可影响读的单点。
+#: 待办：补 per-account 配额或分页（登记于 TODO `TECH-22`）。
 DELETED_KEYS_LIMIT: Final[int] = 10_000
 
 
@@ -72,8 +77,11 @@ class DeletionRecord:
     owner_account_id: str | None = None
 
 
-async def deleted_episode_keys(session: AsyncSession, account_id: object) -> list[str]:
+async def deleted_episode_keys(session: AsyncSession, account_id: AccountId | str) -> list[str]:
     """取该账号已删除的 episode key 列表（按删除时间升序，稳定）。
+
+    参数**在入口校验**（与 `record_deletion` 同一理由：脏账号键会让读侧按错误的
+    分区过滤，把「已删记忆」当成「未删」返回，或反之）。
 
     Args:
         session: 关系库会话。
@@ -83,10 +91,12 @@ async def deleted_episode_keys(session: AsyncSession, account_id: object) -> lis
         已删 `episode_key`；无删除记录时为空列表（**正常状态，不是错误**）。
 
     Raises:
+        AccountIdError: 账号标识不合法。
         MemoryDataError: 该账号的删除记录**超过** ``DELETED_KEYS_LIMIT``。此时无法
             完整排除已删内容，返回部分结果等于让删除静默失效（见常量说明）；
             需先按账号做物理清理。
     """
+    account_id = to_account_id(account_id)
     # 多取一条用于检测「还有更多」——只看 == LIMIT 无法区分「恰好这么多」与「被截断」。
     result = await session.execute(
         select(MemoryDeletionLedger.episode_key)
@@ -107,10 +117,10 @@ async def deleted_episode_keys(session: AsyncSession, account_id: object) -> lis
 async def record_deletion(
     session: AsyncSession,
     *,
-    account_id: str,
-    episode_key: str,
+    account_id: AccountId,
+    episode_key: EpisodeUuid | str,
     reason: str = DELETION_REASON_USER_REQUEST,
-    deleted_by: str | None = None,
+    deleted_by: AccountId | str | None = None,
     derived_uuids: list[str] | None = None,
 ) -> DeletionRecord:
     """把一条记忆记入删除账本（幂等）。
@@ -131,11 +141,22 @@ async def record_deletion(
         `DeletionRecord`：本次新记还是幂等命中。
 
     Raises:
+        AccountIdError: `account_id` / `deleted_by` 不合法（空、超长、非法字符，
+            或命中框架哨兵）。
         MemoryDataError: `reason` 不在词表内；或 `episode_key` 为空、非字符串、
             超长、非合法 UUID（形状校验见 `identity.to_episode_key`）。
-        MemoryDataError: `episode_key` 已被**其它账号**记录删除。这说明该 uuid 被
-            两个账号共用（`episode_key` 由 uuid4 派生，正常不可能发生）；此时
-            静默幂等会让本账号的删除看起来成功、实际不生效，故显式失败。
+        MemoryDataError: `episode_key` 已被**其它账号**记录删除。此时静默幂等会让
+            本账号的删除看起来成功、实际不生效，故显式失败。
+
+    Note:
+        **跨账号共用 `episode_key` 的成因（2026-09-29 评审更正）**：此前这里写
+        「由 uuid4 派生，正常不可能发生」——**该理由不成立**。`episode_key` 实际由
+        `derive_episode_uuid` 用 **uuid5** 从 `pending_id` 派生，而 `pending_id` 只要求
+        「非空、≤64 字符的字符串」，**代码里没有任何地方强制它来自 `pending_write.id`
+        的 uuid4**，且账本的唯一约束是**全局**的。因此两个账号若拿到同一个
+        `pending_id`，就会派生出同一个 `episode_key`——这是**可能发生**的。
+        守卫本身（fail-closed）仍然正确（优于静默幂等），但它是**应用层判据**，
+        且一旦触发，第二个账号**无法删除该 episode**，恢复路径（人工清账本行）尚未成文。
     """
     if reason not in DELETION_REASONS:
         raise MemoryDataError(
@@ -143,6 +164,14 @@ async def record_deletion(
             operation="record_deletion",
             detail=f"合法取值={sorted(DELETION_REASONS)}",
         )
+
+    # **两个标识都在入口校验**（2026-09-29 评审发现的阻断级：此前只校验 episode_key）。
+    # 为什么 account_id 必须校验（实测后果）：一条 `account_id=''` 的行**既不被任何真实
+    # 账号读到**（读路径按 account_id 过滤），又因 `episode_key` 的**全局**唯一约束
+    # 永久占用该 key——于是合法账号删除那条记忆会撞上下面的跨账号守卫而**永久失败**，
+    # 且没有任何 API 能清掉这行（不可恢复的毒化行）。这正是本模块要防的「删除静默失效」。
+    # 超长值此前还会退化成裸 `StringDataRightTruncationError`（非领域错误）。
+    account_id = to_account_id(account_id)
 
     # 归一为规范 UUID 文本（大小写/花括号形式不一致会让同一条记忆在写入与读取两侧
     # 看起来是两个 key）。校验在此处做而不是信任调用方——账本里的脏 key 不会报错，
@@ -155,7 +184,8 @@ async def record_deletion(
         .values(
             account_id=account_id,
             episode_key=episode_key,
-            deleted_by=deleted_by if deleted_by is not None else account_id,
+            # `deleted_by` 与归属同源（一期同值），因此同样校验。
+            deleted_by=to_account_id(deleted_by) if deleted_by is not None else account_id,
             reason=reason,
             derived_uuids=derived_uuids or [],
         )

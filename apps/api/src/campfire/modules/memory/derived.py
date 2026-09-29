@@ -19,6 +19,20 @@
 2. **多来源边的删除判据是「至少一条来源在账本中即排除」**（第 7 节）：`EntityEdge.episodes`
    是列表，Graphiti 命中既有事实时会 `episodes.append(...)`，多来源是常态。取「全部被删」
    会让只删一条的情形漏过（删除未生效）；取「任一条」才与 `RQ-MEM-03` 一致。
+
+## 已知边界：`episodes` 为空/缺失的边不受删除过滤影响（实测确认，2026-09-29）
+
+判据写成 `NOT any(ep IN $deleted WHERE ep IN e.episodes)`。Cypher 的 `any()` 对空列表
+返回 `false`，取反为 `true`——因此**一条没有 `episodes` 属性（或该属性为空）的边会被
+保留**，删除过滤对它无效。实测确认这一语义。
+
+**为什么当前接受它**：`episodes` 为空意味着这条边**不引用任何 episode**，即它无法被
+归因到某条具体记忆，也就不是「某条被删记忆的派生事实」——删除的目标（某条记忆）
+与它无关联。Graphiti 在 resolve 路径上总会写入 `episodes`，空值属异常数据。
+**残余风险**：若上游将来写出无 `episodes` 的边，而它事实上源自某条被删记忆，
+删除对它不生效。**该风险未实测**（需要构造无 episodes 边的真实抽取场景）。
+处置方向（若真出现）：在注入侧对 `episodes` 为空的边**整体排除**——那会让
+「不可归因的边」不再注入，代价是可能丢掉合法边；届时应按实测数据决定。
 """
 
 from __future__ import annotations
@@ -36,13 +50,20 @@ if TYPE_CHECKING:
     # 以免形成环（graph.py 不需要知道读路径的形状）。
     from campfire.modules.memory.graph import MemoryGraph
 
-#: 应急预注入的派生事实**条数**硬上限（通用记忆第 10 节参数表初值）。
+#: 应急预注入的派生事实**条数**默认上限（通用记忆第 10 节参数表初值）。
 #: 防记忆量线性增长击穿注入预算；实测后按真实数据调整。
 EMERGENCY_MEMORY_LIMIT = 20
+
+#: **调用方传入的 `limit` 的上界**（CORE-11：不信任调用方给的上限）。
+#: 默认上限只是个默认值——若调用方给 10**9，默认值形同不存在。实测此前
+#: `read_emergency_facts(limit=10**9)` 被原样接受。与 `store.TIMELINE_MAX_LIMIT`
+#: 的处理对称。100 条远超一期单账号记忆量，越过它说明调用方算错了。
+EMERGENCY_MEMORY_LIMIT_MAX = 100
 
 #: 应急预注入的**字符**总量上限（第 5 节：条数上限不能代替字符上限）。
 #: `fact` 文本长度无界，20 条的字符量可以远超 RAG 应急注入 top-3 的量级。
 #: 6000 字符约为中文 3000 字，与档案七组同处一个注入预算管道内（第 5 节）。
+#: **这是硬上界**：单条超预算时会被截断（见 `read_emergency_facts` 的实现说明）。
 EMERGENCY_MEMORY_CHARS = 6000
 
 
@@ -70,6 +91,8 @@ class EmergencyMemory:
 
     facts: list[DerivedFact]
     #: 因字符上限被截断的条数（>0 时调用方应知道"记忆被压缩过"）。
+    #: **含被截断的那一条本身**——即「这一条只保留了一部分」也算进此计数，
+    #: 因为它确实没有完整注入。
     truncated_by_chars: int = 0
 
     @property
@@ -104,7 +127,11 @@ async def read_emergency_facts(
         MemoryDataError: 取回的数据不合法（缺 `fact` 文本）。
     """
     conditions = ["e.group_id = $group_id", "e.invalid_at IS NULL"]
-    params: dict[str, object] = {"group_id": account_id, "limit": max(1, limit)}
+    # 条数**必须收敛**：调用方（或将来的配置）可能给一个很大的值。此前这里只做
+    # `max(1, limit)`，实测 `limit=10**9` 被原样接受——即「条数上界」不成立。
+    # 与 `store.read_timeline` 的 `TIMELINE_MAX_LIMIT` 收敛对称。
+    effective_limit = max(1, min(limit, EMERGENCY_MEMORY_LIMIT_MAX))
+    params: dict[str, object] = {"group_id": account_id, "limit": effective_limit}
 
     if deleted_keys:
         # 多来源边判据（第 7 节）：**至少一条**来源 episode 在账本中即排除。
@@ -132,7 +159,7 @@ async def read_emergency_facts(
     facts: list[DerivedFact] = []
     used_chars = 0
     truncated = 0
-    for record in records:
+    for index, record in enumerate(records):
         fact_text = record.get("fact")
         if fact_text is None:
             raise MemoryDataError(
@@ -142,12 +169,32 @@ async def read_emergency_facts(
             )
         text = str(fact_text)
 
-        # 字符预算：逐条累加，放不下就停止（并记下被截断的条数，供调用方如实告知）。
-        if used_chars + len(text) > char_budget and facts:
-            truncated = len(records) - len(facts)
+        remaining = char_budget - used_chars
+        if len(text) > remaining:
+            # **字符预算是硬上界**（第 5 节）。此前写成
+            # `if used_chars + len(text) > char_budget and facts:`——那个 `and facts`
+            # 让**第一条**无条件放行，实测预算 6000 时注入了 11000 字符且
+            # `truncated_by_chars=0`（把「超预算」误报成「没截断」）。
+            if not facts and remaining > 0:
+                # **首条**就超预算：截断它以守住上界。
+                # 为什么只对首条这么做：整条丢弃会让「有记忆」的账号在预注入里完全空白，
+                # 而截断至少让模型看到这条事实的开头。对**后续**条目则不截断——把一条
+                # 事实截成几个字符毫无信息量，那种碎片不如不注入（见下面的分支）。
+                facts.append(
+                    DerivedFact(
+                        fact=text[:remaining],
+                        valid_at=_optional_datetime(record.get("valid_at")),
+                        source_episodes=_as_str_list(record.get("episodes")),
+                    )
+                )
+                used_chars += remaining
+            # 从**本条**起都没能完整注入：计数含被截断的那条本身。
+            # 用下标算而不是 `len(records) - len(facts)`——后者在「截断后仍 append」
+            # 时会算成 0，又是一次误报。
+            truncated = len(records) - index
             break
-        used_chars += len(text)
 
+        used_chars += len(text)
         facts.append(
             DerivedFact(
                 fact=text,
@@ -167,10 +214,16 @@ def _optional_datetime(raw: object) -> datetime | None:
 
 
 def _as_str_list(raw: object) -> list[str]:
-    """把图库返回的 episode 列表归一为 `list[str]`。
+    """把图库返回的 `episodes` 归一为 `list[str]`，用于**填充返回值的来源指针**。
 
-    实测：FalkorDB 返回的是原生列表；但也可能是单个字符串（属性形状差异）。
-    两种都接受，其它类型返回空列表——**不猜**（猜出来的来源清单会让删除判据失准）。
+    **这个函数不参与删除过滤**：过滤在 Cypher 侧完成
+    （`NOT any(ep IN $deleted WHERE ep IN e.episodes)`），用的是图库自己的列表。
+    本函数只是把同一份数据装进 `DerivedFact.source_episodes` 供调用方排查。
+
+    因此「非预期类型返回 `[]`」在这里**只影响诊断字段的完整度**，不会让删除判据失效
+    （2026-09-29 更正：原 docstring 把「来源清单准不准」与「删除判据准不准」混为一谈）。
+
+    实测：FalkorDB 返回原生列表；也可能是单个字符串（属性形状差异）。两种都接受。
     """
     if raw is None:
         return []
