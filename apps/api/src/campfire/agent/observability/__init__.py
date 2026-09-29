@@ -13,5 +13,25 @@
 一期可观测（见 docs/技术栈设计.md 第 2 节）：OpenAI Agents SDK 内置 tracing +
 结构化日志；**不引入 Langfuse 一类平台**。
 
-尚未实现：本包当前无代码。
+模块分工：:mod:`~campfire.agent.observability.records` 是记录形状与由事件派生的累积器，
+:mod:`~campfire.agent.observability.writer` 是写入端口与「顺带记录」的事件转发。
+
+**两处尚未落地，都不是遗漏**：
+
+- **记录的持久化**由装配处实现（基座只声明 :class:`RunTraceWriter` 端口）：表要由 Alembic
+  迁移创建，而迁移与 ``core/db`` 同批落地（技术栈设计第 1 节记着「迁移命令仍缺失」）。
+- **评测集**（触发准确性与输出质量）依赖尚不存在的 skill 内容与
+  「应为／不应为触发」提示集；登记于 ``docs/TODO.md``，与第一份 ``SKILL.md`` 同批落地。
 """
+
+from .records import RunOutcome, RunRecord, RunRecorder, ToolCallRecord
+from .writer import RunTraceWriter, record_stream
+
+__all__ = [
+    "RunOutcome",
+    "RunRecord",
+    "RunRecorder",
+    "RunTraceWriter",
+    "ToolCallRecord",
+    "record_stream",
+]
