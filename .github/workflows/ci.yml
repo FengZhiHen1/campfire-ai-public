@@ -1,12 +1,16 @@
 name: CI
 
-# 当前仓库只有设计（无实现代码），CI 校验设计文档的完整性与一致性。
-# 目标实现落地后，在此恢复后端 lint/测试与前端 lint/build 作业。
+# 仓库结构见 docs/项目结构设计.md：唯一的 Python 应用在 apps/api（HTTP 与 Worker
+# 两个入口），唯一前端在 apps/web。
+#
+# 分支策略见 AGENTS.md：dev 日常开发（本文件在此把关），master 仅保留稳定版本，
+# 推送 master 由 deploy.yml 触发部署。原文件只在 main/master 上跑，dev 的开发提交
+# 反而没有 CI，故补上 dev。
 on:
   push:
-    branches: [main, master]
+    branches: [dev, main, master]
   pull_request:
-    branches: [main, master]
+    branches: [dev, main, master]
 
 permissions:
   contents: read
@@ -20,73 +24,39 @@ jobs:
     name: 设计文档一致性
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
 
-      - name: 校验相对链接、稳定 ID 与设计契约 token
-        run: |
-          python - <<'PY'
-          from pathlib import Path
-          from urllib.parse import unquote
-          import re, sys
+      # 检查逻辑只有一份，放在 scripts/ 里，CI 与本地跑的是同一个文件。
+      - name: 校验相对链接、需求与验收的相互可解析、视觉契约 token
+        run: python scripts/check_design_docs.py
 
-          root = Path(".").resolve()
-          docs = root / "docs"
-          problems = []
+  backend:
+    name: 后端 lint 与测试
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
 
-          # 1) 有效设计文档中的相对链接必须存在
-          active = sorted(list(docs.rglob("*.md")) + [root / "AGENTS.md", root / "archive" / "README.md"])
-          links = 0
-          for page in active:
-              if not page.is_file():
-                  continue
-              for lineno, line in enumerate(page.read_text(encoding="utf-8-sig").splitlines(), 1):
-                  for href in re.findall(r"(?<!!)\[[^\]]+\]\(([^)]+)\)", line):
-                      if re.match(r"^(?:https?://|mailto:|#)", href):
-                          continue
-                      links += 1
-                      target = unquote(href.split("#")[0].split("?")[0])
-                      if target and not (page.parent / target).exists():
-                          problems.append(f"断链 {page.relative_to(root)}:{lineno} -> {href}")
+      - uses: astral-sh/setup-uv@v10
+        with:
+          enable-cache: true
 
-          # 2) 需求 ID 与验收行必须相互可解析
-          spec = (docs / "需求" / "功能需求与验收.md").read_text(encoding="utf-8-sig")
-          requirements = set(re.findall(r"^### (RQ-[A-Z]+-\d{2})\b", spec, re.M))
-          covered = set()
-          for line in [l for l in spec.splitlines() if re.match(r"^\| AC-[A-Z]+-\d{2} \|", l)]:
-              refs = [c.strip() for c in line.strip("|").split("|")][1]
-              for m in re.finditer(r"(RQ-[A-Z]+)-(\d{2})(?:～|-)(?:(RQ-[A-Z]+)-)?(\d{2})", refs):
-                  if m.group(1) != (m.group(3) or m.group(1)):
-                      continue
-                  for i in range(int(m.group(2)), int(m.group(4)) + 1):
-                      covered.add(f"{m.group(1)}-{i:02d}")
-              covered.update(re.findall(r"\bRQ-[A-Z]+-\d{2}\b", refs))
-          for missing in sorted(requirements - covered):
-              problems.append(f"需求缺少验收行：{missing}")
+      - name: 安装依赖（锁定版本，lock 过期即失败）
+        run: uv sync --frozen
 
-          # 3) 视觉契约必须齐全且不引用未定义 token
-          tokens = (docs / "design" / "tokens.css").read_text(encoding="utf-8-sig")
-          comps = (docs / "design" / "components.html").read_text(encoding="utf-8-sig")
-          defined = set(re.findall(r"(--[a-z][a-z0-9-]*)\s*:", tokens))
-          required = {"--bg", "--surface", "--fg", "--muted", "--border", "--accent",
-                      "--font-display", "--font-body", "--font-mono"}
-          for name in sorted(required - defined):
-              problems.append(f"tokens.css 缺少契约 token：{name}")
-          for name in sorted(set(re.findall(r"var\((--[a-z][a-z0-9-]*)", comps)) - defined):
-              problems.append(f"components.html 引用未定义 token：{name}")
+      - name: ruff check
+        run: uv run ruff check .
 
-          print(f"设计文档 {len(active)} 份，相对链接 {links} 条，需求 {len(requirements)} 项")
-          if problems:
-              print("\n".join(problems))
-              sys.exit(1)
-          print("全部检查通过")
-          PY
+      - name: ruff format --check
+        run: uv run ruff format --check .
 
-  # 目标实现落地后，按 docs/技术设计/项目结构设计.md 恢复以下作业：
-  #   backend:  uv sync --all-packages && uv run ruff check . && uv run pytest --cov
-  #   frontend: pnpm install --frozen-lockfile && pnpm --filter react-web lint && pnpm --filter react-web build
-  #   docker:   构建 apps/api-server 与 apps/worker 镜像
+      - name: pytest
+        run: uv run pytest
+
+  # 前端作业待 apps/web 具备构建链后再加：
+  #   pnpm install --frozen-lockfile && pnpm --filter web lint && pnpm --filter web build
+  # apps/web 目前只有目录占位——视觉契约（docs/design/）未重建，故不引入构建链，
+  # 详见 apps/web/README.md。
