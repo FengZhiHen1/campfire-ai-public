@@ -63,6 +63,8 @@
 
 - **嵌入模型名唯一配置处是 `core/config`**：`agent/model` 只拥有 LLM 模型名，而 `core/*` 不得依赖 `agent/*`（[项目结构设计](../../项目结构设计.md)第 7 节白名单），嵌入模型名（`Kinfra-Text-Embedding-4b`）经 `core/config` 注入，复用 `tokenhub_base_url`/`tokenhub_api_key`——嵌入服务同为 TokenHub，不引入第二套凭据。**维度不做成可配置项**：2560 与模型绑定，作为 `modules/library` 内的常量——可配置的维度会诱发「配错维度混库」（第 7 节纪律 4）。
 - **连接串必须给两条**（2026-09-29 实测）：`PGVectorStore._connect()` **无条件同时建同步引擎（psycopg2）与异步引擎（asyncpg）**，因此 `connection_string` 与 `async_connection_string` 都必须提供——检索路径用原生 async 的 `aquery`/`aretrieve`，摄取写入用同步 `add`。
+- **布尔过滤必须以字符串存**（2026-09-29 实测）：`MetadataFilter.value` 的类型联合是 int/float/str/列表，**不含 `bool`**——传 `value=False` 会被 pydantic 严格模式拒绝。因此节点 metadata 的 `withdrawn` 等布尔语义**存成 `"true"`/`"false"` 字符串**（框架的 `->>` 把 JSON 值渲染为文本，字符串取值可正确匹配）；`status`、库别本就是字符串，不受影响。
+- **表结构与命名由迁移拥有**（已落地）：业务表用 `campfire_` 前缀（避让 SuperTokens core 自建表与 SDK 自建表），节点表名为 `data_campfire_node`（框架渲染 `data_<table_name>`）；迁移建出扩展 `vector`/`pg_trgm` 与两张表，取用方一律 `perform_setup=False`。集成测试 `apps/api/tests/test_library_schema_integration.py` 锁住这些约定。
 - **节点表 DDL 走 Alembic、`perform_setup=False`**：pgvector 扩展与节点表结构由迁移建立，与「schema 变更必须经迁移文件」的全局约定一致（[项目结构设计](../../项目结构设计.md)第 10 节），处置先例同 SDK 自建表（[设计待办](../../TODO.md)第五节）。**已实测（2026-09-29）**：`perform_setup=False` + 自建表下写入与 `aquery` 均正常，metadata 过滤**确实下推到 SQL 的 `WHERE`**（实测 SQL：`WHERE metadata_->>'item_id' = 'item-1' ORDER BY distance asc`），符合「过滤在 SQL 内完成」的不变量。迁移必须匹配框架的两条约定：**表名是 `data_<table_name>`**（框架加 `data_` 前缀），且 **`id` 为 `bigint` + sequence 自增**——缺 sequence 会写入失败。setup 期的静默吞错（`TECH-14`（b））随 `perform_setup=False` 不再适用。
 
 ## 3. 索引
