@@ -25,8 +25,12 @@ NAME_PATTERN = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 _NAME_MAX_LENGTH = 64
 _DESCRIPTION_MAX_LENGTH = 1024
 _COMPATIBILITY_MAX_LENGTH = 500
-# allowed-tools 的单个工具名：与工具池注册名同形（英文标识符）。
-_TOOL_NAME_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+# allowed-tools 的单个工具名：与工具池注册名同形。
+#
+# 契约放在这里而不是 ``agent/tools``：``allowed-tools`` 是作者写下工具名的地方，而
+# ``agent/tools`` 的池子要读 ``Skill``；把契约放这边，两个子包就不必互相 import。
+# 工具池复用本常量（``agent.tools.spec``），不另写一条正则。
+TOOL_NAME_PATTERN = re.compile(r"^[a-z][a-z0-9_]*$")
 
 # 自有元数据键（见基座文档第 3 节末行）。
 _METADATA_AUTOLOAD = "autoload"
@@ -107,8 +111,11 @@ def _parse_allowed_tools(frontmatter: Mapping[object, object], path: str) -> fro
 
     tools = raw.split()
     for tool in tools:
-        if not _TOOL_NAME_PATTERN.match(tool):
-            raise SkillFrontmatterError(path, f"allowed-tools 含非法工具名 {tool!r}")
+        if not TOOL_NAME_PATTERN.match(tool):
+            raise SkillFrontmatterError(
+                path,
+                f"allowed-tools 含非法工具名 {tool!r}：只允许小写字母、数字与下划线，且以字母开头",
+            )
     return frozenset(tools)
 
 

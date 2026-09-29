@@ -14,5 +14,41 @@
   OpenAI Responses-only，本项目走 TokenHub 兼容端点，**整条路已排除**。
 - 一期无高风险动作（risk 全为 low），不实现人工审批。
 
-尚未实现：本包当前无代码。
+模块分工：:mod:`~campfire.agent.tools.spec` 是注册形状与参数边界，
+:mod:`~campfire.agent.tools.pool` 管注册与稳定声明，
+:mod:`~campfire.agent.tools.scope` 管可用集合与告知，
+:mod:`~campfire.agent.tools.dispatch` 是执行前的权限门。
+
+**与 SDK 的接线不在这里**：把 :class:`ToolSpec` 转成 SDK 的 ``FunctionTool`` 属于运行
+编排的装配细节；基座的注册形状不依赖任何 SDK 版本。
 """
+
+from .dispatch import ToolDispatcher
+from .errors import ToolError, ToolNotRegisteredError, ToolRegistrationError, ToolSpecError
+from .pool import ToolPool
+from .results import Candidate, ToolErrorCode, ToolFailure, ToolOutcome, ToolResult
+from .scope import AVAILABILITY_SOURCE, ToolScope, resolve_scope
+from .spec import TOOL_NAME_PATTERN, RiskLevel, Tool, ToolContext, ToolHandler, ToolSpec
+
+__all__ = [
+    "AVAILABILITY_SOURCE",
+    "Candidate",
+    "RiskLevel",
+    "TOOL_NAME_PATTERN",
+    "Tool",
+    "ToolContext",
+    "ToolDispatcher",
+    "ToolError",
+    "ToolErrorCode",
+    "ToolFailure",
+    "ToolHandler",
+    "ToolNotRegisteredError",
+    "ToolOutcome",
+    "ToolPool",
+    "ToolRegistrationError",
+    "ToolResult",
+    "ToolScope",
+    "ToolSpec",
+    "ToolSpecError",
+    "resolve_scope",
+]
