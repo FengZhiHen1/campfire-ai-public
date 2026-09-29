@@ -2,7 +2,8 @@
 
 依据 docs/技术设计/technical-details/通用基座.md 第 3 节「发现」行：扫描配置根目录
 下的 ``*/SKILL.md``、解析 frontmatter，**不合法即拒绝加载并在启动时失败**，不得以
-空元数据静默加载。根目录由配置指定（``CAMPFIRE_SKILL_ROOT``，默认应用内 ``skills/``）。
+空元数据静默加载。根目录由配置指定（``Settings.skill_root``，环境变量 ``SKILL_ROOT``，
+默认应用内 ``skills/``）。
 
 两条纪律的具体落法：
 
@@ -76,22 +77,30 @@ class SkillRegistry:
         if not root_path.is_dir():
             raise SkillDiscoveryError(f"skill 根目录不存在或不是目录：{root_path}")
 
+        try:
+            entries = sorted(root_path.iterdir(), key=lambda path: path.name)
+        except OSError as exc:
+            raise SkillDiscoveryError(f"skill 根目录无法列出：{root_path.as_posix()}（{type(exc).__name__}）") from exc
+
         skills: dict[str, Skill] = {}
         warnings: list[SkillWarning] = []
         problems: list[str] = []
 
-        for entry in sorted(root_path.iterdir(), key=lambda path: path.name):
-            if not entry.is_dir():
+        for entry in entries:
+            if not _is_directory(entry):
                 # 根目录下的普通文件（如 README.md）不是 skill，也不该被当错误。
                 continue
 
-            skill_file = entry / SKILL_FILE_NAME
-            if not skill_file.is_file():
+            # 按**精确名字**判定，不靠文件系统的大小写语义：Windows 上
+            # `skill.md` 会被 `is_file()` 认成 `SKILL.md`，同一棵树在 CI 的
+            # Linux 上却会变成「目录下没有 SKILL.md」——行为必须与平台无关。
+            skill_file = _exact_skill_file(entry)
+            if skill_file is None:
                 warnings.append(
                     SkillWarning(
                         code=_WARNING_MISSING_SKILL_FILE,
                         path=entry.as_posix(),
-                        detail=f"目录下没有 {SKILL_FILE_NAME}，已跳过（疑似改名或拼写错误）",
+                        detail=f"目录下没有 {SKILL_FILE_NAME}（精确文件名），已跳过（疑似改名或拼写错误）",
                     )
                 )
                 continue
@@ -103,6 +112,11 @@ class SkillRegistry:
                 continue
             except UnicodeDecodeError as exc:
                 problems.append(f"{skill_file.as_posix()}: 不是 UTF-8 文本（{exc.reason}）")
+                continue
+            except OSError as exc:
+                # 权限、被占用、读到一半被删：不让裸 OSError 逃出去，破坏
+                # 「一次加载报出全部问题」。取消不属于 Exception，照旧冒泡。
+                problems.append(f"{skill_file.as_posix()}: 读取失败（{type(exc).__name__}）")
                 continue
 
             skills[skill.name] = skill
@@ -168,6 +182,25 @@ class SkillRegistry:
             for skill in sorted(self._skills.values(), key=lambda item: item.name)
             if surface is None or skill.metadata.surface in (None, surface)
         )
+
+
+def _is_directory(path: Path) -> bool:
+    """是否是目录；不抛异常（权限不足时当作不是，交由上层告警处理）。"""
+    try:
+        return path.is_dir()
+    except OSError:
+        return False
+
+
+def _exact_skill_file(directory: Path) -> Path | None:
+    """在目录里按**精确名字**找 ``SKILL.md``；找不到返回 ``None``。"""
+    try:
+        for child in directory.iterdir():
+            if child.name == SKILL_FILE_NAME and child.is_file():
+                return child
+    except OSError:
+        return None
+    return None
 
 
 def _load_skill(skill_file: Path, *, directory_name: str) -> Skill:

@@ -12,8 +12,13 @@
 - frontmatter **只用标准的六个字段**，不得自创；自有元数据放 ``metadata``。
 - 发现时**不合法即拒绝加载并在启动时失败**，不得以空元数据静默加载。
 - 目录注入只含 ``name`` 与 ``description``；目录**预算上限 4000 token**。
-- 校验使用标准参照实现 ``skills-ref validate``，纳入工程检查。
 - 一期不做安装、市场与运行时下发；skills 随应用发布，根目录由配置指定。
+
+**标准参照实现 ``skills-ref validate`` 尚未接入工程检查**（基座第 3 节要求接入）：
+``apps/api/skills/`` 下目前没有任何 ``SKILL.md``，此刻接入只会得到一条「校验了 0 个、
+因此必然通过」的真空闸门。本模块的校验是独立实现，不替代标准参照实现；两项状态登记于
+``docs/TODO.md`` 第四节，落地条件是第一份 skill 内容进入仓库——届时该检查必须做到
+「0 个 skill 即失败」。
 
 模块分工：:mod:`~campfire.agent.skill_runtime.frontmatter` 只做「文本 → 映射」，
 :mod:`~campfire.agent.skill_runtime.skill` 只做字段语义，:mod:`registry` 负责发现与
@@ -21,7 +26,7 @@
 """
 
 from .activation import render_activation
-from .catalog import CATALOG_BUDGET_TOKENS, estimate_tokens, render_catalog, visible_to
+from .catalog import CATALOG_BUDGET_TOKENS, estimate_tokens, render_catalog
 from .errors import (
     SkillCatalogOverflowError,
     SkillDiscoveryError,
@@ -59,5 +64,4 @@ __all__ = [
     "read_resource",
     "render_activation",
     "render_catalog",
-    "visible_to",
 ]

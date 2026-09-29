@@ -11,6 +11,8 @@
 
 from __future__ import annotations
 
+from campfire.agent.markup import escape_attribute
+
 from .resources import list_resources
 from .skill import Skill
 
@@ -21,12 +23,20 @@ def render_activation(skill: Skill) -> str:
     资源指引只列 ``references/`` 与 ``assets/``（一层深）。``scripts/`` 刻意不列：
     一期不提供脚本执行（基座文档第 10 节只保留端口），列出可执行路径会诱导模型
     调用一个不存在的能力。
+
+    存在但读不了的资源**照样列出**并带 ``reason``：让模型知道「有这份东西但读不到」，
+    比让它从清单里消失更接近事实（第 4 节：注入失败必须显式标注该来源不可用）。
     """
     resources = list_resources(skill)
-    lines = [f'<skill_content name="{skill.name}">', skill.body, "</skill_content>"]
+    lines = [f'<skill_content name="{escape_attribute(skill.name)}">', skill.body, "</skill_content>"]
 
     if resources:
         lines.append("<skill_resources>")
-        lines.extend(f"  {resource.relative_path}" for resource in resources)
+        for resource in resources:
+            path = escape_attribute(resource.relative_path)
+            if resource.issue is None:
+                lines.append(f'  <resource path="{path}" />')
+            else:
+                lines.append(f'  <resource path="{path}" reason="{escape_attribute(resource.issue)}" />')
         lines.append("</skill_resources>")
     return "\n".join(lines)
