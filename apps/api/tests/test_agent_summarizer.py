@@ -221,12 +221,13 @@ class _FakeIndex:
 def _tool_context() -> ToolContext:
     """一个最小可用的工具上下文。"""
     from campfire.agent.context import CitationRecorder
+    from campfire.agent.tools import ActivationState
 
     return ToolContext(
         run_id="r",
         session_id="s",
         surface=None,
-        activated_skills=frozenset(),
+        activation_state=ActivationState(),
         citations=CitationRecorder(_FakeIndex(), run_id="r"),
     )
 

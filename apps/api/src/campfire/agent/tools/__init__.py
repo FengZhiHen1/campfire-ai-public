@@ -23,6 +23,7 @@
 编排的装配细节；基座的注册形状不依赖任何 SDK 版本。
 """
 
+from .activation_state import ActivationState
 from .dispatch import ToolDispatcher
 from .errors import ToolError, ToolNotRegisteredError, ToolRegistrationError, ToolSpecError
 from .pool import RESERVED_TOOL_NAMES, ToolPool
@@ -32,6 +33,7 @@ from .spec import TOOL_NAME_PATTERN, RiskLevel, Tool, ToolContext, ToolHandler, 
 
 __all__ = [
     "AVAILABILITY_SOURCE",
+    "ActivationState",
     "RESERVED_TOOL_NAMES",
     "Candidate",
     "RiskLevel",

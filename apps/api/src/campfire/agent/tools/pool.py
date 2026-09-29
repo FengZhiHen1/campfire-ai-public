@@ -20,13 +20,14 @@ from campfire.agent.skill_runtime import Skill
 from .errors import ToolNotRegisteredError, ToolRegistrationError
 from .spec import _DESCRIPTION_MAX_LENGTH, _NAME_MAX_LENGTH, TOOL_NAME_PATTERN, Tool
 
-RESERVED_TOOL_NAMES: frozenset[str] = frozenset({"skill"})
+RESERVED_TOOL_NAMES: frozenset[str] = frozenset({"skill", "read_skill_resource"})
 """基座保留的工具名。
 
-``skill`` 是**模型侧激活**用的工具名（基座文档第 3 节：模型调用 ``skill({ name })``）。
-产品侧工具不得占用它——否则模型侧的激活工具要么被顶掉、要么与产品工具同名，而
-``allowed-tools`` 与实际派发都以名字为键，重名会让权限判定面对一个含义不明的名字。
-保留名的注册走 :meth:`ToolPool.register_base`。
+两个都是**基座机制**工具：``skill`` 是模型侧激活（基座文档第 3 节：模型调用
+``skill({ name })``）；``read_skill_resource`` 是激活后的资源读取（第 3 节「资源」行，
+2026-09-29 补——激活载荷里的资源清单必须有一件能读的工具配套，否则就是一份
+「列出却读不到的清单」）。产品侧工具不得占用它们：重名会让机制工具被顶掉，而
+``allowed-tools`` 与实际派发都以名字为键。保留名的注册走 :meth:`ToolPool.register_base`。
 """
 
 

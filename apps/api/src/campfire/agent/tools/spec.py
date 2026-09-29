@@ -38,6 +38,7 @@ from pydantic import BaseModel, ValidationError
 from campfire.agent.context import CitationRecorder
 from campfire.agent.skill_runtime import TOOL_NAME_PATTERN
 
+from .activation_state import ActivationState
 from .errors import ToolSpecError
 from .results import ToolFailure, ToolOutcome
 
@@ -77,6 +78,10 @@ class ToolContext:
     基座能说的只有运行层面的事实。产品侧的领域事实（支持对象标识之类）经 ``payload``
     透传：**基座不解读它，也不保证形状**——产品侧 handler 必须自己显式解析，
     把「以为拿到的是 X」变成一次明确的失败，而不是一次隐性的错算。
+
+    ``activated_skills`` 是**属性**而非冻结字段：它读 ``activation_state`` 的实时快照，
+    模型侧激活（运行中调 ``skill`` 工具）并入后，后续工具调用立即看到新状态——
+    ``read_skill_resource`` 的授权判定依赖这一点。
     """
 
     run_id: str
@@ -88,14 +93,19 @@ class ToolContext:
     surface: str | None
     """当前面；``None`` 表示未指定。"""
 
-    activated_skills: frozenset[str]
-    """本次运行已激活的 skill 名。"""
+    activation_state: "ActivationState"
+    """运行时激活集合（共享、可增长）；``activated_skills`` 的唯一事实来源。"""
 
     citations: CitationRecorder
     """引用写入端。工具要产出引用**只能**经它，因此引用与索引记录不会脱钩。"""
 
     payload: object | None = None
     """装配处放入的每次运行的领域事实；基座不解读。"""
+
+    @property
+    def activated_skills(self) -> frozenset[str]:
+        """本次运行已激活的 skill 名（含运行中模型侧激活）。"""
+        return self.activation_state.snapshot()
 
 
 class Tool(Protocol):
