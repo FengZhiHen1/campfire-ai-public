@@ -13,7 +13,14 @@ from __future__ import annotations
 
 from typing import Literal
 
-from openai import APIConnectionError, APIStatusError, APITimeoutError, AuthenticationError, RateLimitError
+from openai import (
+    APIConnectionError,
+    APIStatusError,
+    APITimeoutError,
+    AuthenticationError,
+    PermissionDeniedError,
+    RateLimitError,
+)
 
 ModelFailureReason = Literal[
     "timeout",
@@ -27,7 +34,7 @@ ModelFailureReason = Literal[
 
 - ``timeout``：单次请求超时（已按策略重试后仍失败）；
 - ``rate_limited``：被限流；
-- ``authentication``：凭据被拒——**不重试**，重试解决不了，配置错误必须暴露；
+- ``authentication``：凭据被拒（401）或权限不足（403）——**不重试**，重试解决不了，配置错误必须暴露；
 - ``connection``：连不上（DNS、TCP、代理）；
 - ``provider_error``：供应商返回了非 2xx 且不属于上面几类；
 - ``unknown``：SDK 层的其他异常。
@@ -48,15 +55,19 @@ class ModelConfigurationError(ModelError):
 def classify_model_failure(error: BaseException) -> ModelFailureReason:
     """把一个异常归类成基座的模型失败原因。
 
-    判定顺序有讲究：``APITimeoutError`` 是 ``APIConnectionError`` 的子类，
-    先判连接就会把超时误报成网络问题——而这两者对使用者的含义完全不同
-    （超时是「这次太慢」，连接失败是「根本连不上」）。
+    两处判定顺序有讲究，都有实测依据：
+
+    - ``APITimeoutError`` 是 ``APIConnectionError`` 的子类，先判连接就会把超时误报成网络
+      问题——而这两者对使用者的含义完全不同（超时是「这次太慢」，连接失败是「根本连不上」）。
+    - **403 必须与 401 并列**：``openai.PermissionDeniedError`` 实测**不是**
+      ``AuthenticationError`` 的子类，只判后者会把「凭据/权限配置错」报成
+      ``provider_error``，把运营者引向供应商故障排查。
     """
     if isinstance(error, (TimeoutError, APITimeoutError)):
         return "timeout"
     if isinstance(error, RateLimitError):
         return "rate_limited"
-    if isinstance(error, AuthenticationError):
+    if isinstance(error, (AuthenticationError, PermissionDeniedError)):
         return "authentication"
     if isinstance(error, APIConnectionError):
         return "connection"
