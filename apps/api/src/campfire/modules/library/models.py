@@ -106,6 +106,9 @@ class KnowledgeItem(Base):
         Index("ix_campfire_knowledge_item_withdrawn_status", "withdrawn", "status"),
         # 摄取幂等：同一文件同一 hash 不重复入库（RAG 策略第 7 节）。
         UniqueConstraint("source_path", "doc_hash", name="uq_campfire_knowledge_item_source_doc"),
+        # 表注释必须与迁移 113a04901d24 建表时写的一致：ORM 未声明时
+        # `--autogenerate` 会产出 drop_table_comment（见 RetrievedNode 的同类说明）。
+        {"comment": "专业资料条目：事实真源（内容与来源字段的权威）"},
     )
 
 
@@ -143,4 +146,9 @@ class RetrievedNode(Base):
         Index("ix_data_campfire_node_item_id", sql_text("((metadata_ ->> 'item_id'))")),
         Index("ix_data_campfire_node_library", sql_text("((metadata_ ->> 'library'))")),
         Index("ix_data_campfire_node_withdrawn", sql_text("((metadata_ ->> 'withdrawn'))")),
+        # 表注释必须在此声明：迁移 113a04901d24 建表时写了 comment，而 ORM 未声明，
+        # 于是 `--autogenerate` 会反复产出「drop_table_comment」——一个与本次改动
+        # 无关的破坏性操作（2026-09-29 实测：生成删除账本迁移时同时产出两条）。
+        # 在 ORM 侧补齐后，metadata 与库内实际一致，autogenerate 不再漂移。
+        {"comment": "检索节点：条目表的投影，供 PGVectorStore 读写（perform_setup=False）"},
     )
