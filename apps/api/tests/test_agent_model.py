@@ -106,23 +106,64 @@ def test_gateway_injects_retry_settings() -> None:
 
 @pytest.mark.asyncio
 async def test_gateway_closes_its_client() -> None:
+    """关闭后底层客户端必须真的关掉（只断言「不抛」的话，改成空实现也会通过）。"""
     gateway = ModelGateway(_settings())
+    assert gateway.client.is_closed() is False
 
-    await gateway.aclose()  # 不抛即通过：关闭的是连接池，幂等由 openai 客户端负责
+    await gateway.aclose()
+
+    assert gateway.client.is_closed() is True
+
+
+def test_gateway_rejects_a_client_that_keeps_its_own_retries(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """重试只能有一个所有者：客户端若没接受 ``max_retries=0``，构造期就要失败。"""
+
+    class StubbornClient:
+        """忽略我们传入的 max_retries。"""
+
+        max_retries = 3
+
+        def __init__(self, **_kwargs: object) -> None:
+            pass
+
+    monkeypatch.setattr("campfire.agent.model.gateway.AsyncOpenAI", StubbornClient)
+
+    with pytest.raises(ModelConfigurationError, match="关闭自身重试"):
+        ModelGateway(_settings())
 
 
 def test_client_construction_failure_becomes_an_actionable_configuration_error(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """宿主机代理环境有问题时，构造期异常必须转成可操作的配置错误。
+    """任何构造期异常都必须转成可操作的配置错误。
 
-    裸 ``InvalidURL`` 抛给使用者毫无指向性；实测触发条件是 ``no_proxy`` 含 ``[::1]``。
+    用**通用**异常而不是某个具体传输异常：真实路径上 openai 用的是 **httpx2**，
+    它的 ``InvalidURL`` 与 ``httpx`` 0.28.1 的 ``InvalidURL`` 是两个类（实测互不为子类），
+    因此拿 ``httpx.InvalidURL`` 造夹具其实没覆盖真实陷阱，只是被 ``except Exception`` 兜住。
     """
+    from openai import APIConnectionError
 
     def broken_client(**_kwargs: object) -> None:
-        raise httpx.InvalidURL("Invalid port: ':1]'")
+        raise APIConnectionError(request=None)  # type: ignore[arg-type]  # 只为构造一个真实类型
 
     monkeypatch.setattr("campfire.agent.model.gateway.AsyncOpenAI", broken_client)
+
+    with pytest.raises(ModelConfigurationError, match="客户端构造失败"):
+        ModelGateway(_settings())
+
+
+def test_real_no_proxy_trap_is_translated_into_a_configuration_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """宿主机 ``no_proxy`` 含 ``[::1]`` 这条真实陷阱必须被翻译成配置错误。
+
+    **本用例自带失效条件**：它锁住的是 httpx2 当前对 ``no_proxy`` 里带方括号的 IPv6
+    字面量的解析行为。若将来 httpx2 修好这个解析，构造会成功、本用例会失败——那时删掉它，
+    并把「陷阱已消失」记进文档，而不是放宽断言。
+    """
+    monkeypatch.setenv("no_proxy", "127.0.0.1,localhost,::1,[::1]")
 
     with pytest.raises(ModelConfigurationError, match="客户端构造失败"):
         ModelGateway(_settings())
@@ -132,18 +173,78 @@ def test_client_construction_failure_becomes_an_actionable_configuration_error(
 
 
 def test_default_retry_budget_fits_inside_the_run_cap() -> None:
-    """重试预算必须落在 180 秒通用响应上限内，否则重试会被运行上限砍断。"""
+    """重试预算必须落在 180 秒通用响应上限内，否则重试会被运行上限砍断。
+
+    退避按 **SDK 的抖动上界**算（每次延迟最多 1.125 倍，见
+    ``agents/run_internal/model_retry.py:204``）：只按名义值算会低估，第一版就是这么错的。
+    """
     worst_case = worst_case_model_seconds(_settings())
 
-    assert worst_case == pytest.approx(45.0 * 3 + 1.0 + 2.0)
+    assert worst_case == pytest.approx(45.0 * 3 + 1.125 + 2.25)
     assert worst_case <= AGENT_RUN_TIMEOUT_SECONDS
+
+
+def test_retry_budget_counts_the_jitter_upper_bound() -> None:
+    """一组合法配置：按名义退避算是 177.8 秒（会放行），按抖动上界是 200.0 秒（必须拒绝）。
+
+    这是审查者用探针测出来的反例，锁住它才能防止「算术退回名义值」。
+    """
+    sneaky = _settings(
+        model_request_timeout_seconds=0.001,
+        model_max_retries=7,
+        model_retry_initial_delay_seconds=1.4,
+        model_retry_max_delay_seconds=1000.0,
+    )
+
+    assert worst_case_model_seconds(sneaky) >= AGENT_RUN_TIMEOUT_SECONDS
+    with pytest.raises(ModelConfigurationError, match="达到或超过通用响应上限"):
+        build_retry_settings(sneaky)
+
+
+def test_retry_budget_is_allowed_to_reach_the_cap_exactly_is_rejected() -> None:
+    """恰好等于上限也要拒绝：那时最后一次重试与运行上限同时到期，失败原因会摇摆。"""
+    exact = _settings(model_request_timeout_seconds=59.0, model_max_retries=2)
+
+    assert worst_case_model_seconds(exact) >= AGENT_RUN_TIMEOUT_SECONDS
+    with pytest.raises(ModelConfigurationError):
+        build_retry_settings(exact)
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("model_request_timeout_seconds", 0.0),
+        ("model_request_timeout_seconds", -5.0),
+        ("model_max_retries", -1),
+        ("model_retry_initial_delay_seconds", -1.0),
+        ("model_retry_max_delay_seconds", -1.0),
+    ],
+)
+def test_illegal_retry_numbers_are_rejected_at_config_load(field: str, value: float) -> None:
+    """负数重试会把「最坏耗时」算成 0 秒、让闸门对任何超时值放行——加载期就要失败。
+
+    实测反例：``model_max_retries=-1`` 配 ``timeout=1000`` 曾能构造成功。
+    """
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError):
+        _settings(**{field: value})
 
 
 def test_retry_budget_that_exceeds_the_run_cap_is_rejected() -> None:
     burst = _settings(model_request_timeout_seconds=100.0, model_max_retries=3)
 
-    with pytest.raises(ModelConfigurationError, match="超过通用响应上限"):
+    with pytest.raises(ModelConfigurationError, match="达到或超过通用响应上限"):
         build_retry_settings(burst)
+
+
+def test_huge_retry_count_is_reported_not_overflowed() -> None:
+    """极大重试次数必须给可操作的配置错误，而不是浮点溢出（第一版抛 OverflowError）。"""
+    base = _settings()
+    huge = Settings.model_construct(**{**base.model_dump(), "model_max_retries": 2000})
+
+    with pytest.raises(ModelConfigurationError, match="达到或超过通用响应上限"):
+        build_retry_settings(huge)
 
 
 @pytest.mark.asyncio

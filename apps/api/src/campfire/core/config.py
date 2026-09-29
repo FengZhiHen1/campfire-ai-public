@@ -11,7 +11,7 @@
 from functools import lru_cache
 from pathlib import Path
 
-from pydantic import SecretStr
+from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # 本文件位于 <仓库根>/apps/api/src/campfire/core/config.py，
@@ -50,19 +50,23 @@ class Settings(BaseSettings):
     tokenhub_api_key: SecretStr | None = None
     model_name: str = "deepseek-v4.1-flash"
     # 单次请求超时与重试上界。三者的最坏组合必须落在基座第 2 节的 180 秒通用响应
-    # 上限之内（默认值最坏 45×3 + 1 + 2 = 138 秒），否则重试会被运行上限从中间砍断；
-    # 越界配置在 agent.model 构造期即抛错，见 docs/技术设计/technical-details/通用基座.md 第 6 节。
-    model_request_timeout_seconds: float = 45.0
-    model_max_retries: int = 2
-    model_retry_initial_delay_seconds: float = 1.0
-    model_retry_max_delay_seconds: float = 8.0
+    # 上限之内（默认值最坏 45×3 + 退避(1.125+2.25)，gateway 的算术按 SDK 的抖动上界算），
+    # 否则重试会被运行上限从中间砍断；越界配置在 agent.model 构造期即抛错，
+    # 见 docs/技术设计/technical-details/通用基座.md 第 6 节。
+    #
+    # 数值边界写进类型约束（而不是只靠构造期校验）：负数重试会让「最坏耗时」算成 0 秒、
+    # 使那条闸门对任何超时值都放行——实测 model_max_retries=-1 配 timeout=1000 可构造成功。
+    model_request_timeout_seconds: float = Field(default=45.0, gt=0)
+    model_max_retries: int = Field(default=2, ge=0)
+    model_retry_initial_delay_seconds: float = Field(default=1.0, ge=0)
+    model_retry_max_delay_seconds: float = Field(default=8.0, ge=0)
     # --- 压缩阈值算术的两个输入（见压缩策略第 2、10 节）---
     # W：模型上下文上限。已核实 deepseek-v4.1-flash 为 1M（压缩策略第 2 节）。
-    model_context_window_tokens: int = 1_000_000
+    model_context_window_tokens: int = Field(default=1_000_000, gt=0)
     # O：为输出预留的额度，代入阈值公式 floor(min(W×0.8, W−O−headroom))。
     # **注意**：基座第 2 节不设 token 上限，因此我们**不**在请求上写 max_tokens——
     # 这里的 O 是预算假设（压缩策略第 2 节按 8192 代入），不是截断值。
-    model_output_reserve_tokens: int = 8192
+    model_output_reserve_tokens: int = Field(default=8192, ge=0)
 
     # --- 认证（SuperTokens core 容器）---
     # 会话校验在 Python SDK 内完成、不经过 core；core 只在注册、登录、

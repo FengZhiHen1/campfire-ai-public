@@ -14,9 +14,12 @@ Base URL 固定 ``https://tokenhub.tencentmaas.com/v1``，且**按开通地域�
 
 **1. 重试交给 SDK 的 runner-managed retry，客户端自身的重试关掉（``max_retries=0``）。**
 SDK 提供 ``ModelRetrySettings`` 与 ``retry_policies`` 策略 DSL，它自己处理「响应是否已经
-开始流出」这类重放安全问题；而 OpenAI 客户端也有自己的重试。两者同时开会让最坏尝试次数
-相乘（客户端 3 次 × SDK 3 次 = 最多 16 次请求），且两套退避互相叠加、总时长不可预期。
-因此：**重试只有一个所有者**，就是 SDK 的 runner-managed retry。
+开始流出」这类重放安全问题；而 OpenAI 客户端也有自己的重试。**实测**（按 500 响应计 HTTP
+请求数）：客户端不设 ``max_retries`` 时一次调用最多发 **3** 个请求，设为 0 后只发 **1** 个。
+两者都开时**并非简单相乘**——SDK 在第二次尝试起会禁用 provider 管理重试
+（``agents/run_internal/model_retry.py:516-549``），实测「客户端 2 + SDK 2」= **5** 个请求、
+「客户端 2 + SDK 3」= **6** 个，而不是 9。结论不变（客户端必须是 0），但理由要说准：
+**首次尝试会额外带上客户端的请求，而那一部分不在我们的预算算术里**。
 
 **2. 重试预算必须落在 180 秒通用响应上限之内。** 否则模型重试会被运行上限从中间砍断，
 失败原因从「模型不可用」变成「运行超时」——那是最难排查的一类误报。构造时即校验
@@ -28,11 +31,14 @@ TLS 握手，代价直接落在应急路径的首字时延上（``RQ-EMG-03``）
 
 ## 已核实的宿主机环境陷阱（会在这里以明确错误暴露）
 
-构造任何开启 ``trust_env`` 的 httpx/openai 客户端时，若 ``no_proxy`` 含**带方括号的
-IPv6 字面量**（例如 ``no_proxy=127.0.0.1,localhost,::1,[::1]``），httpx 0.28.1 会在解析
-挂载规则时抛 ``InvalidURL: Invalid port: ':1]'``。实测复现：本机 ``no_proxy`` 值即含
-``[::1]``，``httpx.AsyncClient()`` 与 ``openai.AsyncOpenAI(...)`` 都在**构造期**失败；
-把 ``[::1]`` 去掉即恢复。
+构造任何开启 ``trust_env`` 的客户端时，若 ``no_proxy`` 含**带方括号的 IPv6 字面量**
+（例如 ``no_proxy=127.0.0.1,localhost,::1,[::1]``），URL 解析会在**构造期**抛
+``InvalidURL: Invalid port: ':1]'``。实测复现：本机 ``no_proxy`` 值即含 ``[::1]``，
+``httpx.AsyncClient()`` 与 ``openai.AsyncOpenAI(...)`` 都在构造期失败；去掉 ``[::1]`` 即恢复。
+
+**归因要说准**：`openai` 客户端用的是 **httpx2**（``openai/_base_client.py:37``
+``import httpx2``），与探针自用的 **httpx 0.28.1** 是**两个独立包**，两者的 ``InvalidURL``
+实测互不为子类、也不是同一个类。因此排查时不能只看 ``httpx`` 的版本。
 
 我们**仍然保留** ``trust_env``：TokenHub 是外部服务，企业网络下可能需要经代理访问
 （与健康探针同一取舍）。代价是这个环境问题会表现为构造失败，因此构造异常一律转成
@@ -63,6 +69,18 @@ ModelPurpose = Literal["default"]
 # 退避倍数固定为 2：它只是一个上界参数，没有第二个消费者要调它，因此不做成配置项。
 _BACKOFF_MULTIPLIER = 2.0
 
+# SDK 的抖动上界。依据 ``agents/run_internal/model_retry.py:204``：
+#     min(max(base * (0.875 + random() * 0.25), 0.0), max_delay)
+# 即每次延迟最多是 base 的 1.125 倍。预算必须按这个上界算：只按名义 base 算会低估
+# （实测默认配置低估 0.375 秒，而一组合法配置低估 22.2 秒——足以让闸门放行一个真实最坏
+# 200 秒的配置）。
+_JITTER_UPPER_BOUND = 1.125
+
+# 指数项的夹子。``max_delay`` 一旦饱和，后续延迟都等于上界，所以夹住指数不改变上界；
+# 而不夹会让 ``2.0 ** attempt`` 在 attempt 上千时抛 OverflowError（配置错误却得到浮点溢出，
+# 恰是本该给可操作提示的场景）。
+_MAX_BACKOFF_EXPONENT = 64
+
 # 需要重试的供应商状态码：408 请求超时、409 冲突、429 限流，以及 5xx。
 # 认证失败（401/403）与 400 类**不在其中**：重试不会让它们变好，只会消耗时间预算。
 _RETRYABLE_STATUS_CODES = frozenset({408, 409, 429, 500, 502, 503, 504})
@@ -79,33 +97,72 @@ def resolve_model_name(settings: Settings, purpose: ModelPurpose = "default") ->
     return settings.model_name
 
 
+def require_sane_retry_config(settings: Settings) -> None:
+    """校验重试相关的四个数字本身合法（闸门与算术共用同一份判定）。
+
+    **必须在算术之前做**：``model_max_retries = -1`` 会让「尝试次数 = 0」、最坏耗时算成
+    **0 秒**，于是「预算落在 180 秒内」这道闸门对任何超时值都放行；``timeout <= 0`` 同理。
+    pydantic 侧对 ``.env`` 来的值也会拦，但算术不能依赖「上一步拦住了」。
+
+    Raises:
+        ModelConfigurationError: 超时非正、退避延迟为负、或重试次数为负。
+    """
+    if settings.model_request_timeout_seconds <= 0:
+        raise ModelConfigurationError(
+            f"model_request_timeout_seconds 必须为正数（当前 {settings.model_request_timeout_seconds}）："
+            "0 或负数会让单次模型请求没有时间上界"
+        )
+    if settings.model_max_retries < 0:
+        raise ModelConfigurationError(
+            f"model_max_retries 不能为负（当前 {settings.model_max_retries}）："
+            "负数会被 SDK 当作 0，而重试预算算术会归零、闸门形同不存在"
+        )
+    if settings.model_retry_initial_delay_seconds < 0 or settings.model_retry_max_delay_seconds < 0:
+        raise ModelConfigurationError("model_retry_initial_delay_seconds / model_retry_max_delay_seconds 不能为负")
+
+
+# quality-floor: ignore docstring-promise 异常由 require_sane_retry_config 抛出，本函数体只做算术
 def worst_case_model_seconds(settings: Settings) -> float:
     """模型调用链最坏情况占用的墙钟秒数：``超时 × 尝试次数 + 退避延迟之和``。
 
+    三条口径，写清楚以免再次算错：
+
+    1. **退避按 SDK 的抖动上界算**（每次延迟再乘 :data:`_JITTER_UPPER_BOUND`），
+       不是按名义值算——SDK 开着 ``jitter=True``；
+    2. **先校验再算**（:func:`require_sane_retry_config`）：负数重试会把最坏耗时算成 0 秒；
+    3. **指数项夹在 :data:`_MAX_BACKOFF_EXPONENT` 次方**，保证对任意配置都不抛浮点溢出。
+
     供构造期校验与测试使用，让「重试预算落在运行上限内」这条约束可被机械核对，
     而不是靠读注释相信它。
+
+    Raises:
+        ModelConfigurationError: 重试相关配置本身非法（见 :func:`require_sane_retry_config`）。
     """
-    attempts = settings.model_max_retries + 1
-    delays = sum(
-        min(
-            settings.model_retry_initial_delay_seconds * (_BACKOFF_MULTIPLIER**attempt),
+    require_sane_retry_config(settings)
+
+    retries = settings.model_max_retries
+    delays = 0.0
+    for attempt in range(retries):
+        base = min(
+            settings.model_retry_initial_delay_seconds * (_BACKOFF_MULTIPLIER ** min(attempt, _MAX_BACKOFF_EXPONENT)),
             settings.model_retry_max_delay_seconds,
         )
-        for attempt in range(settings.model_max_retries)
-    )
-    return settings.model_request_timeout_seconds * attempts + delays
+        delays += min(base * _JITTER_UPPER_BOUND, settings.model_retry_max_delay_seconds)
+    return settings.model_request_timeout_seconds * (retries + 1) + delays
 
 
 def build_retry_settings(settings: Settings) -> ModelRetrySettings:
     """构造 SDK 的 runner-managed 重试配置。
 
     Raises:
-        ModelConfigurationError: 配置的重试预算超出 180 秒通用响应上限。
+        ModelConfigurationError: 重试相关配置非法，或其预算达到/超过 180 秒通用响应上限。
     """
     worst_case = worst_case_model_seconds(settings)
-    if worst_case > AGENT_RUN_TIMEOUT_SECONDS:
+    # 用 >= 而不是 >：最坏耗时**恰好等于**上限时，最后一次重试与运行上限同时到期，
+    # 失败原因会在「模型不可用」与「运行超时」之间摇摆——那正是这条闸门要避免的误报。
+    if worst_case >= AGENT_RUN_TIMEOUT_SECONDS:
         raise ModelConfigurationError(
-            f"模型重试预算最坏 {worst_case:.1f} 秒，超过通用响应上限 {AGENT_RUN_TIMEOUT_SECONDS:.0f} 秒："
+            f"模型重试预算最坏 {worst_case:.1f} 秒，达到或超过通用响应上限 {AGENT_RUN_TIMEOUT_SECONDS:.0f} 秒："
             "重试会被运行上限从中间砍断，失败原因会变成「运行超时」。"
             "请下调 model_request_timeout_seconds 或 model_max_retries"
         )
@@ -145,6 +202,13 @@ class ModelBinding:
 
     单独成形是为了让运行编排只依赖这三样，而不是依赖整个网关——测试可以给出替身模型，
     而不必伪造凭据与客户端。
+
+    **``frozen=True`` 只冻结这个外壳，不冻结 ``settings``**：``ModelSettings`` 与
+    ``ModelRetrySettings`` 实测都不是 frozen dataclass，且同一个对象会在多次取用之间共享
+    （``binding.settings is gateway.model_settings`` 为真）。就地改它会影响后续所有运行。
+    仓库内目前没有触发者：SDK 的 ``ModelSettings.resolve()`` 是 copy-on-write，压缩的摘要
+    调用用 ``dataclasses.replace``。因此这是**已知的理论风险**而非已发生的缺陷——真要在
+    结构上消除，需要给这两个 SDK 类型加冻结语义（我们无法改 SDK，只能包一层）。
     """
 
     name: str
@@ -181,11 +245,19 @@ class ModelGateway:
                 max_retries=0,
             )
         except Exception as exc:  # noqa: BLE001 —— 构造期异常一律转成可操作的配置错误
-            # 不带原始消息：httpx 的异常文本可能包含代理 URL（其中可能含凭据）。
+            # 不带原始消息：底层异常文本可能包含代理 URL（其中可能含凭据）。
             raise ModelConfigurationError(
                 f"模型客户端构造失败（{type(exc).__name__}）：请检查 TOKENHUB_BASE_URL 与宿主机代理配置"
-                "（已知陷阱：no_proxy 里的 [::1] 会让 httpx 在构造期失败）"
+                "（已知陷阱：no_proxy 里的 [::1] 会让 httpx2 在构造期失败，见模块 docstring）"
             ) from exc
+
+        # 把「客户端必须自己不重试」这条契约在构造期核实，而不是只写在 docstring 里：
+        # 客户端真的带上了重试的话，重试就有两个所有者，预算算术也不再成立。
+        if self._client.max_retries != 0:
+            raise ModelConfigurationError(
+                f"模型客户端未按契约关闭自身重试（max_retries={self._client.max_retries}）："
+                "重试只能有一个所有者（SDK 的 runner-managed retry）"
+            )
 
         self._model = OpenAIChatCompletionsModel(model=self._model_name, openai_client=self._client)
 
@@ -194,14 +266,18 @@ class ModelGateway:
         """底层 HTTP 客户端。
 
         暴露它是为了让**重试归属**这条契约可被核对：客户端自身必须 ``max_retries=0``
-        （否则与 SDK 的 runner-managed retry 相乘），超时必须是有界值。这条契约写在
-        docstring 里无法防止有人改掉它，暴露出来才能被测到。
+        （否则重试出现两个所有者），超时必须是有界值。构造期已核实一次；这条契约的
+        **运行时**强度仍只由测试保证——就地改 ``gateway.client.max_retries`` 会真实抬高
+        首次尝试的请求数，而那一部分不在预算算术里（已知的理论风险，无结构防护）。
         """
         return self._client
 
     @property
     def binding(self) -> ModelBinding:
-        """把模型三件套打包给运行编排。"""
+        """把模型三件套打包给运行编排。
+
+        ``settings`` 是**共享**对象（见 :class:`ModelBinding` 的说明）：取用方不得就地改它。
+        """
         return ModelBinding(name=self._model_name, model=self._model, settings=self._settings)
 
     @property
