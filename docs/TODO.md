@@ -69,8 +69,8 @@
 
 | ID | 待验证内容 | 影响 |
 |---|---|---|
-| TECH-02 | **本账号**在 TokenHub 上 DeepSeek-V4.1-Flash 的实际可用性、RPM/TPM/并发与额度（文档层规则已核实，数值只在控制台） | 全部咨询能力的可运行性 |
-| TECH-20 | **嵌入模型**（`Kinfra-Text-Embedding-4b`）在本账号 TokenHub 上的实际可用性、维度确为 2560、单条 2000 字符与批量 128 条的真实边界（文档层规则已核实） | 摄取与检索链的可运行性；维度不符则整库重建 |
+| TECH-02 | **本账号**在 TokenHub 上 DeepSeek-V4.1-Flash 的实际可用性、RPM/TPM/并发与额度（文档层规则已核实，数值只在控制台）。**2026-09-29 实测：当前 `.env` 里的 `TOKENHUB_API_KEY` 就是 `.env.example` 的占位符**（`sk-xxx…`），两个端点均返回 `401002 The API Key does not exist or signature verification failed`。**另外**：本机 `HTTP(S)_PROXY` 指向本地代理且**该代理对 tokenhub 的 TLS 握手失败**——直连可达（返回 401 证明服务端在应答），经代理则 `SSL connection could not be established`。因此本机验证 TokenHub 需**同时**满足：有效凭据 + `no_proxy` 含 `tokenhub.tencentmaas.com` | 全部咨询能力的可运行性；记忆侧的实体抽取**无法用真实模型验证**，只能以假客户端测机制 |
+| TECH-20 | **嵌入模型**（`Kinfra-Text-Embedding-4b`）在本账号 TokenHub 上的实际可用性、维度确为 2560、单条 2000 字符与批量 128 条的真实边界（文档层规则已核实）。受 `TECH-02` 同一原因阻塞（占位凭据 + 代理阻断 TLS） | 摄取与检索链的可运行性；维度不符则整库重建 |
 | TECH-05 | Graphiti 的 episode 写入**没有官方重试或幂等承诺**，幂等须由我们自建并在实测中验证。**版本口径已更正（2026-09-29）**：原写「FalkorDB 版本要求 ≥1.1.2（已核实）」，但该数字是 Graphiti 自己的**客户端依赖**（`graphiti-core` 声明 `falkordb>=1.1.2,<2.0.0`），**不是镜像 tag，也不是服务器版本**——`falkordb/falkordb` 镜像没有 `1.1.2`（经镜像 tag 接口核实为 404），其镜像版本线是 4.x | 记忆写入的失败语义与重复写入风险 |
 | TECH-12 | `is_enabled`、`RunConfig.session_input_callback`、`RunConfig.call_model_input_filter` 在 TokenHub 的 OpenAI 兼容 Chat Completions 端点上**是否真生效**——官方文档只把它们排除在 Responses-only 清单外，**未声明供应商无关** | 工具范围的抑制手段与模型窗口派生；不生效则退化为"服务端拒绝 + 自持输入列表" |
 | TECH-13 | FalkorDB 的向量索引**已核实支持 1–4096 维**（[官方文档](https://docs.falkordb.com/cypher/indexing/vector-index)，2560 在范围内；2026-09-29 核实）。**残留一项须实测**：Graphiti 嵌入器与 FalkorDB 向量索引的接通方式（配置路径与索引创建行为） | 记忆侧复用同一嵌入提供商的接通性；不支持则记忆侧要换模型或另建索引 |
