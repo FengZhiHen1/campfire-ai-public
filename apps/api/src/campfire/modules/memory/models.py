@@ -64,12 +64,22 @@ class MemoryDeletionLedger(Base):
     #: 不产生第二行——删除本身也必须是幂等的。
     episode_key: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
     #: 归属账号：分区键同源（`group_id = account_id`）。账号级清理按它筛。
-    account_id: Mapped[UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    #:
+    #: **为什么是 String 而不是 UUID**（2026-09-29 评审复核修正）：`identity.to_account_id`
+    #: 接受的字符集是 Graphiti 的 `group_id` 判据（`[a-zA-Z0-9_-]`），**不只 UUID**——
+    #: 而 `accounts/` 仍是占位包、账号标识的形态**尚未决定**（技术栈设计称标识存在
+    #: SuperTokens 的 `email` 字段里，业务账号名形态未定）。此前列类型定为 UUID，与
+    #: 本校验直接冲突：实测 `'acct_aaa'::uuid` 报 `invalid input syntax for type uuid`，
+    #: 即「合法账号键无法落库」，删除与纠正对该类账号不可实现。
+    #: 改为 String 后，UUID 形态的账号同样可用（36 字符 < 上界），**不预先收窄契约**；
+    #: 宽度与 `identity.MAX_ACCOUNT_ID_LENGTH` 一致。
+    account_id: Mapped[str] = mapped_column(String(128), nullable=False)
     deleted_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=sql_text("now()")
     )
     #: 发起删除的账号（一期与 account_id 同值；二期机构协作时二者可能不同）。
-    deleted_by: Mapped[UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    #: 类型与 `account_id` 同源，理由同上。
+    deleted_by: Mapped[str | None] = mapped_column(String(128), nullable=True)
     #: 删除原因，取值见 `DELETION_REASONS`。
     reason: Mapped[str] = mapped_column(String(32), nullable=False)
     #: 删除时已知的派生物 uuid 清单（边与节点）。**尽力记录，不作过滤依据**
