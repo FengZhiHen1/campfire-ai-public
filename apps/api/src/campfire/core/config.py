@@ -103,7 +103,12 @@ class Settings(BaseSettings):
     falkordb_host: str = "localhost"
     falkordb_port: int = Field(default=6380, gt=0, lt=65536)
     falkordb_password: SecretStr | None = None
-    falkordb_database: str = "campfire"
+    # 图库名必须满足 **Graphiti 的 group_id 判据**（`^[a-zA-Z0-9_-]+$`，见
+    # ``validate_group_id``）：它在每次请求里被拿来与账号 id 比较
+    # （``_resolve_request_scope`` 的 ``group_id == driver._database``），含非法字符
+    # 或为空都会让「是否同一个图」的判定失效。实测未加约束时
+    # ``'campfire test'``/``'bad/name'``/``''``/非 ASCII 全部放行。
+    falkordb_database: str = Field(default="campfire", min_length=1, pattern=r"^[a-zA-Z0-9_-]+$")
     # 单次图库操作超时（秒）。**有界**：应急预注入在首字时延路径上（`RQ-EMG-03`），
     # 图库慢时必须尽快落进「明确标注不可用」的降级分支，而不是拖住整次运行。
     falkordb_timeout_seconds: float = Field(default=5.0, gt=0)

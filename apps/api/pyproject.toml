@@ -9,6 +9,13 @@
 # （实测 0.30.2：只有 neo4j/numpy/openai/posthog/pydantic/python-dotenv/tenacity），
 # 缺它会在 `import graphiti_core` 时直接 ModuleNotFoundError。本项目本就依赖 httpx，
 # 因此实际不缺；uv 也会把它记进 graphiti-core 的依赖闭包（见 uv.lock 的 requires-dist）。
+#
+# 为什么还声明 httpx2（2026-09-29）：modules/memory 显式构造 http 客户端并注入给两个
+# openai 客户端（避免改写 os.environ 来绕过宿主机的代理豁免表，见 graph.py 说明）。
+# **openai 实际用的是 httpx2**（实测 openai 3.x 的依赖是 `httpx2<3,>=2.12.0`，
+# 且 `openai._base_client.httpx2` 指向它），注入的客户端必须是 httpx2 的类型。
+# 它此前只是传递依赖：直接 import 而不声明，会在上游改依赖时以 ImportError 形式
+# 突然断裂，因此按「直接使用即直接声明」补上。
 
 [project]
 name = "campfire-api"
@@ -26,6 +33,7 @@ dependencies = [
     "taskiq>=0.11",
     "taskiq-redis>=1.0",
     "httpx>=0.28",
+    "httpx2>=2.12",
     "pyyaml>=6.0.3",
     "openai-agents>=0.22.3",
     "openai>=3.20.0",

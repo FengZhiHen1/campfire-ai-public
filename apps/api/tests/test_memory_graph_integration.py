@@ -2,11 +2,16 @@
 
 对应 ``docs/技术设计/technical-details/通用记忆.md`` 第 3、9 节，以及
 TODO ``TECH-13`` / ``TECH-18`` 的实测项。这些事实**只能在真实 FalkorDB 上验证**，
-因此带 ``integration`` marker，默认不在 ``uv run pytest`` 中运行
-（见根 pyproject.toml 的 addopts）；显式跑法：
+因此带 ``integration`` marker。显式跑法：
 
     docker compose up -d falkordb
     uv run pytest -m integration
+
+**注意（2026-09-29 评审更正）**：此前此处写「默认不在 ``uv run pytest`` 中运行
+（见根 pyproject.toml 的 addopts）」——**该说法错误**。``addopts`` 是
+``-q --import-mode=importlib``，**没有** marker 过滤，因此默认收集会包含本文件；
+``uv run pytest`` 靠下面的「容器不可用则跳过」保持绿色。要真正排除请显式
+``-m "not integration"``。这意味着「CI 绿」对本文件的置信度低于它看起来的样子。
 
 锁住的三条（都是「照直觉写就会错」的坑）：
 
@@ -37,9 +42,21 @@ pytestmark = pytest.mark.integration
 #: 本文件专用的分区前缀，测试结束按它清理，不影响其他数据。
 GROUP = "it_memory_probe"
 
+#: 「容器没起」这一类异常。**只把这些**成跳过（CORE-07：边界显式）：
+#: 其它异常（查询语法错、装配坏、协议变更）必须让用例**失败**。
+#: 此前是裸 ``except Exception → skip``，实测会把我们自己造成的
+#: ``ConnectionError``（客户端被提前关闭）也吞成 skip，整个文件不失败。
+_UNAVAILABLE_ERRORS = (
+    ConnectionError,
+    ConnectionRefusedError,
+    ConnectionResetError,
+    TimeoutError,
+    OSError,
+)
+
 
 async def _graph():  # noqa: ANN202 —— 返回 MemoryGraph，此处避免 import 循环
-    """构造记忆图库；图库不可用时跳过而不是假失败。"""
+    """构造记忆图库；**仅当容器不可用**时跳过，其余异常照常抛出。"""
     settings = get_settings()
     if settings.tokenhub_api_key is None:
         pytest.skip("未配置 TOKENHUB_API_KEY——装配需要它（不实际调用模型）")
@@ -47,9 +64,14 @@ async def _graph():  # noqa: ANN202 —— 返回 MemoryGraph，此处避免 imp
     try:
         # 一次真实往返：连不上就跳过，而不是让整套用例以误导性的方式失败。
         await graph.driver.execute_query("RETURN 1 AS ok")
-    except Exception as exc:  # noqa: BLE001
+    except _UNAVAILABLE_ERRORS as exc:
+        # 只把「连不上」当环境问题；其余异常直接冒泡成失败。
         await graph.aclose()
         pytest.skip(f"FalkorDB 不可用（{type(exc).__name__}）——先 docker compose up -d falkordb")
+    except Exception:
+        # 非连接类异常说明装配或查询真的坏了，必须先关资源再让用例失败。
+        await graph.aclose()
+        raise
     return graph
 
 
