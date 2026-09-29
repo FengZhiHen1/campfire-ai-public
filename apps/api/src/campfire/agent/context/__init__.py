@@ -37,6 +37,7 @@ from .window import (
     is_system_message,
     last_checkpoint_index,
     leading_system_count,
+    message_text,
 )
 
 __all__ = [
@@ -60,4 +61,5 @@ __all__ = [
     "is_system_message",
     "last_checkpoint_index",
     "leading_system_count",
+    "message_text",
 ]

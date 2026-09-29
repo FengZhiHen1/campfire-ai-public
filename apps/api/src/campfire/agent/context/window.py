@@ -37,17 +37,43 @@ COMPACTED_SUMMARY_CLOSE_TAG = "</compacted-summary>"
 """摘要检查点的闭标签。开闭成对才算检查点。"""
 
 
-def _string_field(item: object, field: str) -> str | None:
-    """从一个形如消息的映射里取字符串字段；取不到返回 ``None``。
+_TEXT_PART_TYPES = frozenset({"text", "input_text", "output_text"})
+"""分片 content 里算作文本的部件类型。"""
+
+
+def message_text(item: object) -> str | None:
+    """从一个形如消息的映射里取文本 content；取不到或形状不认识返回 ``None``。
 
     只依赖 ``get`` 这一个鸭子类型接口：SDK 的消息项与普通字典都能直接用，不必把
     SDK 类型引入本模块。
+
+    支持两种 content 形状，因为**实测两种都会出现**：使用者消息是字符串，而 SDK 落库的
+    助手消息是分片数组（形如 ``[{"type": "output_text", "text": "…"}]``）。只认字符串会让
+    检查点判定在分片形状上永远漏检——方向安全（不裁剪历史），但压缩会静默失效。
+    遇到不认识的部件（例如图片）时返回 ``None``，不猜、不拼半句。
     """
     getter = getattr(item, "get", None)
     if not callable(getter):
         return None
-    value = getter(field, None)
-    return value if isinstance(value, str) else None
+    content = getter("content", None)
+    if isinstance(content, str):
+        return content
+    if not isinstance(content, list):
+        return None
+
+    parts: list[str] = []
+    for part in content:
+        if isinstance(part, str):
+            parts.append(part)
+            continue
+        part_getter = getattr(part, "get", None)
+        if not callable(part_getter) or part_getter("type", None) not in _TEXT_PART_TYPES:
+            return None
+        text = part_getter("text", None)
+        if not isinstance(text, str):
+            return None
+        parts.append(text)
+    return "".join(parts)
 
 
 def is_compacted_summary(item: object) -> bool:
@@ -59,7 +85,7 @@ def is_compacted_summary(item: object) -> bool:
     这一窗口很窄，且修正它需要压缩写入方给出「不可能出现在使用者内容里」的标记
     （例如带属性的标签），那属于压缩机制的契约，不在这里发明。
     """
-    content = _string_field(item, "content")
+    content = message_text(item)
     if content is None:
         return False
     stripped = content.strip()
@@ -70,7 +96,10 @@ def is_compacted_summary(item: object) -> bool:
 
 def is_system_message(item: object) -> bool:
     """判断一项是否是系统消息。"""
-    return _string_field(item, "role") == "system"
+    getter = getattr(item, "get", None)
+    if not callable(getter):
+        return False
+    return getter("role", None) == "system"
 
 
 def last_checkpoint_index(

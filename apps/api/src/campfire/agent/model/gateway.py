@@ -41,6 +41,7 @@ IPv6 字面量**（例如 ``no_proxy=127.0.0.1,localhost,::1,[::1]``），httpx 
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Literal
 
 from agents import ModelSettings
@@ -138,6 +139,19 @@ def build_model_settings(settings: Settings) -> ModelSettings:
     return ModelSettings(retry=build_retry_settings(settings))
 
 
+@dataclass(frozen=True, slots=True)
+class ModelBinding:
+    """一次运行要用的模型三件套：名字、模型实例、调用设置。
+
+    单独成形是为了让运行编排只依赖这三样，而不是依赖整个网关——测试可以给出替身模型，
+    而不必伪造凭据与客户端。
+    """
+
+    name: str
+    model: Model
+    settings: ModelSettings
+
+
 class ModelGateway:
     """进程内复用的模型网关：一次构造，按次取用。
 
@@ -184,6 +198,11 @@ class ModelGateway:
         docstring 里无法防止有人改掉它，暴露出来才能被测到。
         """
         return self._client
+
+    @property
+    def binding(self) -> ModelBinding:
+        """把模型三件套打包给运行编排。"""
+        return ModelBinding(name=self._model_name, model=self._model, settings=self._settings)
 
     @property
     def model(self) -> Model:

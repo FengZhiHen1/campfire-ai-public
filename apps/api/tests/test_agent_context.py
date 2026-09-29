@@ -25,6 +25,7 @@ from campfire.agent.context import (
     UnavailableSource,
     derive_window,
     last_checkpoint_index,
+    message_text,
 )
 
 FIXED_TIME = datetime(2026, 9, 29, 12, 0, tzinfo=UTC)
@@ -377,6 +378,50 @@ def test_envelope_with_surrounding_whitespace_is_still_a_checkpoint() -> None:
     history = [_message("user", "m0"), _message("user", "\n  <compacted-summary>摘要</compacted-summary>\n")]
 
     assert last_checkpoint_index(history) == 1
+
+
+def test_message_text_reads_both_content_shapes() -> None:
+    """两种 content 形状都要能取到文本。
+
+    实测：使用者消息是字符串，而 SDK 落库的助手消息是分片数组
+    （``[{"type": "output_text", "text": "…"}]``）。只认字符串会让检查点在分片形状上
+    永远漏检——方向安全（不裁剪历史），但压缩会静默失效。
+    """
+    assert message_text({"role": "user", "content": "纯文本"}) == "纯文本"
+    assert (
+        message_text(
+            {
+                "role": "assistant",
+                "content": [
+                    {"type": "output_text", "text": "第一段"},
+                    {"type": "output_text", "text": "第二段"},
+                ],
+            }
+        )
+        == "第一段第二段"
+    )
+
+
+def test_checkpoint_detection_works_on_list_shaped_content() -> None:
+    history = [
+        {"role": "user", "content": "旧"},
+        {
+            "role": "assistant",
+            "content": [{"type": "output_text", "text": "<compacted-summary>摘要</compacted-summary>"}],
+        },
+        {"role": "user", "content": "新"},
+    ]
+
+    assert last_checkpoint_index(history) == 1
+    assert derive_window(history) == history[1:]
+
+
+def test_message_text_refuses_unknown_shapes_instead_of_guessing() -> None:
+    """不认识的部件（如图片）返回 None：不猜、不拼半句。"""
+    assert message_text({"role": "user", "content": [{"type": "input_image", "image_url": "x"}]}) is None
+    assert message_text({"role": "user", "content": 42}) is None
+    assert message_text("不是映射") is None
+    assert message_text({"role": "user"}) is None
 
 
 def test_window_appends_new_items_after_history() -> None:
