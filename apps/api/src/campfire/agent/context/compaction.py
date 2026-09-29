@@ -46,7 +46,7 @@ from __future__ import annotations
 import math
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from typing import Literal, Protocol
+from typing import TYPE_CHECKING, Literal, Protocol
 
 from campfire.agent.skill_runtime import estimate_tokens
 
@@ -58,6 +58,9 @@ from .window import (
     leading_system_count,
     message_text,
 )
+
+if TYPE_CHECKING:
+    from campfire.core.config import Settings
 
 Item = Mapping[str, object]
 """会话历史里的一项。
@@ -195,6 +198,19 @@ class CompactionSettings:
     def summary_max_tokens(self) -> int:
         """摘要输出上限（第 10 节：默认取 ``headroomTokens``）。"""
         return self.max_tokens if self.max_tokens is not None else self.headroom_tokens
+
+
+def settings_from_config(settings: "Settings") -> CompactionSettings:
+    """按配置构造压缩参数：``W``/``O`` 来自 ``core/config``，其余取第 10 节默认值。
+
+    存在的理由是「配置唯一入口」（项目结构设计第 10 节）：装配处不该自己把
+    ``model_context_window_tokens`` / ``model_output_reserve_tokens`` 两个字段名再抄一遍，
+    抄一遍就多一个会漂移的第二真相。
+    """
+    return CompactionSettings(
+        context_window_tokens=settings.model_context_window_tokens,
+        output_reserve_tokens=settings.model_output_reserve_tokens,
+    )
 
 
 # --- 历史项的形状判定与计数 -------------------------------------------------
@@ -797,5 +813,6 @@ __all__ = [
     "previous_summary_text",
     "retained_after_last_checkpoint",
     "select_range",
+    "settings_from_config",
     "window_tokens",
 ]

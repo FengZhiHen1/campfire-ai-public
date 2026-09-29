@@ -174,6 +174,22 @@ def test_absolute_retention_is_accepted_when_below_threshold() -> None:
     assert settings.retain_budget_tokens == 200
 
 
+def test_settings_from_config_maps_the_two_numbers() -> None:
+    """W 与 O 只能来自配置（「配置唯一入口」），装配处不该再抄一遍字段名。"""
+    from campfire.agent.context import settings_from_config
+    from campfire.core.config import Settings
+
+    settings = settings_from_config(Settings(model_context_window_tokens=2_000_000, model_output_reserve_tokens=4096))
+
+    assert settings.context_window_tokens == 2_000_000
+    assert settings.output_reserve_tokens == 4096
+    # 其余参数取第 10 节默认值
+    assert settings.threshold_ratio == 0.8
+    assert settings.headroom_tokens == 65_536
+    assert settings.retain_ratio == 0.16
+    assert settings.max_overflow_retries == 1
+
+
 # --- 范围选择（第 3、6 节） -------------------------------------------------
 
 
