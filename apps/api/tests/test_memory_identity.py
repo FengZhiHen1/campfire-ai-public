@@ -3,13 +3,15 @@
 对应 ``docs/技术设计/technical-details/通用记忆.md`` 第 1、3 节与
 ``docs/技术设计/decisions/通用记忆归属为账号.md``。
 
-这里锁的是两个**实测得到的硬约束**（都不需要真实图库）：
+这里锁的是三个**实测得到的硬约束**（都不需要真实图库）：
 
-1. 分区键要同时满足 Graphiti 的 `validate_group_id` 与 FalkorDB 的图名约束——
-   实测 `group_id` 在 FalkorDB 后端**就是图名**，不合法的键会变成「写入成功、
-   读取为空」的静默失败，因此在入口拒绝。
+1. 分区键要满足 Graphiti 的 `validate_group_id`——实测 `group_id` 在 FalkorDB 后端
+   **就是图名**，不合法的键会变成「写入成功、读取为空」的静默失败，因此在入口拒绝。
+   **注意**：FalkorDB 图名本身**没有**字符集限制（实测），约束的唯一来源是 Graphiti。
 2. episode 的确定性标识必须**稳定**：同一 `pending_id` 永远派生出同一 uuid
    （幂等唯一依据），不同 `pending_id` 必须不同（否则两条记忆会撞成一条）。
+3. 外部传入的 episode 标识（删除路径的入口参数）必须是合法 UUID——账本里的脏 key
+   不会报错，只会让某条记忆永远删不掉、或误删不到（静默失效）。
 """
 
 from __future__ import annotations
@@ -211,7 +213,51 @@ def test_episode_uuid_namespace_is_pinned() -> None:
 
     一旦改动，所有历史 pending_id 都会派生出不同的 uuid——已写入的记忆将无法再
     被同一条待处理记录认出，幂等与删除账本同时失效。此断言把该常量钉住。
+
+    Note:
+        这条只钉**常量值**；「常量被真正接到派生输出上」由黄金向量
+        `test_derived_uuid_matches_a_pinned_golden_vector` 负责（2026-09-29 评审
+        发现只有这条时，换命名空间不会让任何测试失败）。
     """
     from campfire.modules.memory.identity import EPISODE_UUID_NAMESPACE
 
     assert str(EPISODE_UUID_NAMESPACE) == "6f2a1c3e-9b74-4d51-8a0e-2c5f7b9d4e11"
+
+
+# ---------------------------------------------------------------------------
+# episode 标识的入口校验（删除路径的参数）
+# ---------------------------------------------------------------------------
+
+
+def test_episode_key_accepts_a_canonical_uuid() -> None:
+    """规范 UUID 文本通过，并原样返回。"""
+    from campfire.modules.memory.identity import to_episode_key
+
+    raw = "3f2504e0-4f89-41d3-9a0c-0305e82c3301"
+    assert to_episode_key(raw) == raw
+
+
+def test_episode_key_normalizes_non_canonical_uuid_forms() -> None:
+    """非规范形式被归一为小写连字符形式。
+
+    为什么重要：账本按 `episode_key` **等值**过滤。若大小写或花括号形式不一致，
+    「同一条记忆」在写入与读取两侧会被当成两个 key——删除记了却过滤不到。
+    """
+    from campfire.modules.memory.identity import to_episode_key
+
+    canonical = "3f2504e0-4f89-41d3-9a0c-0305e82c3301"
+    for variant in (canonical.upper(), "{" + canonical + "}", canonical.replace("-", "")):
+        assert to_episode_key(variant) == canonical, f"{variant!r} 应归一为规范形式"
+
+
+def test_episode_key_rejects_malformed_values() -> None:
+    """畸形 episode 标识在入口被拒——账本里的脏 key 只会让删除静默失效。"""
+    from campfire.modules.memory.identity import to_episode_key
+
+    for bad in ("", "not-a-uuid", "cd000000-0000-4000-8000-00000000idem", "x" * 100):
+        with pytest.raises(MemoryDataError):
+            to_episode_key(bad)
+    # 非字符串同样转成领域错误，而不是泄漏 TypeError（CORE-04）。
+    for bad_type in (123, None, b"3f2504e0-4f89-41d3-9a0c-0305e82c3301"):
+        with pytest.raises(MemoryDataError):
+            to_episode_key(bad_type)
