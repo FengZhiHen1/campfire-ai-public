@@ -31,7 +31,6 @@ from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
 from graphiti_core.driver.driver import GraphDriver
-from graphiti_core.driver.falkordb_driver import FalkorDriver
 from graphiti_core.nodes import EpisodeType
 
 from campfire.modules.memory.errors import MemoryDataError, MemoryUnavailableError
@@ -90,16 +89,16 @@ def _utc_iso(value: datetime) -> str:
     return value.astimezone(timezone.utc).isoformat()
 
 
-def account_driver(driver: FalkorDriver, account_id: AccountId) -> GraphDriver:
+def account_driver(driver: GraphDriver, account_id: AccountId) -> GraphDriver:
     """返回指向**该账号那张图**的驱动（第 1 节实测的分区语义）。
 
     同库名时 `clone` 返回自身（不新建实例），因此重复调用是廉价的；
     但调用方**不应在每个请求里对多个账号反复 clone**（每次 clone 会新建驱动并调度
     一个建索引的后台任务，第 1 节实测）。
 
-    返回类型是基类 `GraphDriver`（上游 `clone` 的声明返回值）：调用方只依赖
-    `execute_query` 这一条接口，不必绑定 FalkorDB 的具体类型——若将来换图库后端，
-    本函数的调用点不变。
+    参数与返回都用基类 `GraphDriver`（上游 `clone` 的声明形状）：调用方只依赖
+    `execute_query` 与 `clone` 两条接口，不必绑定 FalkorDB 的具体类型——若将来换
+    图库后端，本函数的调用点不变。
 
     Note:
         这里不做缓存：缓存属于装配层的职责（`graph.py` 的 `MemoryGraph`），
@@ -199,7 +198,7 @@ def _to_episode(record: dict[str, object]) -> MemoryEpisode:
             operation="read_timeline",
             detail=f"uuid={record.get('uuid')!r}",
         )
-    occurred_at = _parse_db_datetime(raw_valid_at)
+    occurred_at = parse_db_datetime(raw_valid_at, operation="read_timeline")
 
     content = record.get("content")
     if content is None:
@@ -218,12 +217,19 @@ def _to_episode(record: dict[str, object]) -> MemoryEpisode:
     )
 
 
-def _parse_db_datetime(raw: object) -> datetime:
+def parse_db_datetime(raw: object, *, operation: str) -> datetime:
     """解析图库返回的时间值。
 
     FalkorDB 存的是 ISO 字符串（实测），但也可能已是 datetime（驱动差异），
     两种都接受；无法解析时抛 `MemoryDataError` 而不是静默用当前时间——
-    "时间不确定"与"时间就是现在"是完全不同的语义，后者会污染时间线。
+    「时间不确定」与「时间就是现在」是完全不同的语义，后者会污染时间线。
+
+    Args:
+        raw: 图库返回值。
+        operation: 调用方操作名，用于诊断字段（两条读路径各自标识自己）。
+
+    Raises:
+        MemoryDataError: 类型不受支持或字符串无法解析。
     """
     if isinstance(raw, datetime):
         return raw if raw.tzinfo is not None else raw.replace(tzinfo=timezone.utc)
@@ -232,14 +238,14 @@ def _parse_db_datetime(raw: object) -> datetime:
             parsed = datetime.fromisoformat(raw)
         except ValueError as exc:
             raise MemoryDataError(
-                "记忆片段的时间无法解析",
-                operation="read_timeline",
-                detail=f"valid_at={raw!r}",
+                "记忆的时间无法解析",
+                operation=operation,
+                detail=f"value={raw!r}",
             ) from exc
         return parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=timezone.utc)
     raise MemoryDataError(
-        "记忆片段的时间类型不受支持",
-        operation="read_timeline",
+        "记忆的时间类型不受支持",
+        operation=operation,
         detail=f"type={type(raw).__name__}",
     )
 
@@ -348,6 +354,7 @@ __all__ = [
     "TIMELINE_MAX_LIMIT",
     "MemoryEpisode",
     "account_driver",
+    "parse_db_datetime",
     "read_timeline",
     "write_episode",
 ]

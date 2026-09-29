@@ -6,19 +6,27 @@ docs/技术设计/decisions/检索链归入library模块.md）：嵌入适配是
 （``core/*`` 不得依赖 ``agent/*``，故不能放 ``agent/model``）。凭据复用
 ``tokenhub_base_url``/``tokenhub_api_key``，不引入第二套凭据。
 
-**实测得到的三个约束**（2026-09-29）：
+**实测得到的四个约束**（2026-09-29）：
 
 - 框架的 ``OpenAIEmbedding`` 用 **``model_name=`` 而非 ``model=``** 构造：``model``
   会被当作 ``OpenAIEmbeddingModelType`` 枚举校验，我们的 ``Kinfra-Text-Embedding-4b``
   不在枚举内，会抛 ``ValueError: ... is not a valid OpenAIEmbeddingModelType``；
   传 ``model_name`` 则直接采用自定义名（见框架 ``base.py`` 的 ``if "model_name" in kwargs``
   分支）。这是设计「经 OpenAI 兼容嵌入适配接入」的可行入口。
+- **必须显式传 ``encoding_format="float"```**：OpenAI Python SDK 在未指定该参数时
+  会自动填 ``"base64"``（``openai/resources/embeddings.py`` 的
+  ``if not is_given(encoding_format)`` 分支），而 TokenHub **只接受 ``float``**
+  ——实测被拒，错误码 ``400001``："encoding_format only supports float"。框架把
+  ``additional_kwargs`` 透传给 SDK，因此经它传入。这条约束设计文档早就记录过
+  （RAG 策略「依据」列：「``encoding_format`` 仅 ``float``」），首次真实调用才暴露。
 - **单条文本硬上限 2000 字符**、单请求建议 ≤128 条——分块后处理与批量大小都据此设定
   （RAG 策略第 1.2 节与第 10 节）。
 - 凭据为空时**显式失败**，不静默降级：缺凭据的嵌入会产出一批零向量或报错，
   两者都比「明确说没配」更危险。
 
-维度（2560）**不做成可配置项**：它与模型绑定，作为常量定义在本模块，
+维度（2560）**不做成可配置项**：它与模型绑定。常量定义在 ``core/config``
+（``EMBEDDING_DIM``），本模块只转出——记忆模块也要用同一维度，而 ``modules/*``
+之间不得互相 import（项目结构设计第 7 节），故真源必须落在 ``core``。
 可配置的维度会诱发配错维度混库（RAG 策略第 7 节纪律 4）。
 """
 
@@ -97,6 +105,9 @@ def build_embedding(settings: Settings) -> BaseEmbedding:
         timeout=EMBEDDING_TIMEOUT_SECONDS,
         max_retries=EMBEDDING_MAX_RETRIES,
         async_http_client=http_client,
+        # 必须显式指定 float：SDK 默认填 base64，而 TokenHub 只接受 float（实测 400001）。
+        # 框架把 additional_kwargs 透传给 SDK 的 embeddings.create。
+        additional_kwargs={"encoding_format": "float"},
     )
 
 
