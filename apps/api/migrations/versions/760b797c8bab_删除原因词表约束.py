@@ -50,9 +50,11 @@ _REASONS = ("user_request", "correction", "account_deletion")
 def upgrade() -> None:
     """加上删除原因的词表约束。
 
-    **本迁移由手工编写，不是 `--autogenerate` 的产物**：实测 Alembic 对 CHECK 约束的
-    自动检测产出的是**空迁移**（`pass`），那会声称加上了约束而实际什么都没做——
-    属于「永远不会失败的假闸门」，比没有迁移更危险。
+    **本迁移由手工编写，不是 `--autogenerate` 的产物**。实测（2026-09-29）Alembic 的
+    自动检测在**给已存在的表新增 CHECK 约束**时产出的是**空迁移**（函数体只有 `pass`），
+    那会声称加上了约束而实际什么都没做——属于「永远不会失败的假闸门」，比没有迁移更危险。
+    （对照：**新建表**时 autogenerate 会把 CHECK 一起写进 `create_table`，见
+    `5e27503214c3_待处理写入记录表.py`。所以缺口只在「给既有表补约束」这一种情形。）
     """
     values = ", ".join(f"'{reason}'" for reason in _REASONS)
     op.create_check_constraint(
