@@ -63,7 +63,11 @@ _session_factory: async_sessionmaker[AsyncSession] | None = None
 
 
 def create_engine(settings: Settings) -> AsyncEngine:
-    """按配置创建新的异步引擎（调用方负责释放）。"""
+    """按配置创建新的异步引擎（调用方负责释放）。
+
+    Raises:
+        RuntimeError: 未配置 ``DATABASE_URL`` 时——宁可显式失败，也不静默连到别处。
+    """
     if not settings.database_url:
         raise RuntimeError("未配置 DATABASE_URL，无法创建数据库引擎")
     # pool_pre_ping：连接可能被网络或数据库重启中断，取用前先探活。
@@ -96,6 +100,9 @@ async def session_scope(settings: Settings) -> AsyncIterator[AsyncSession]:
 
     用例服务经此获得会话，不各自 ``commit``——撤下要求「同时改条目状态与删除
     该条目的节点」在同一事务内完成（RAG 策略第 2 节）。
+
+    Raises:
+        Exception: 透传块内异常（先回滚再抛出），不做吞并与转译。
     """
     factory = get_session_factory(settings)
     async with factory() as session:

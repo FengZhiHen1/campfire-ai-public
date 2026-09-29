@@ -49,6 +49,13 @@ class Settings(BaseSettings):
     tokenhub_base_url: str = "https://tokenhub.tencentmaas.com/v1"
     tokenhub_api_key: SecretStr | None = None
     model_name: str = "deepseek-v4.1-flash"
+    # 嵌入模型名（RAG 策略第 2 节「配置与 DDL 归属」）：**唯一配置处是本文件**，
+    # 因为 `core/*` 不得依赖 `agent/*`（项目结构设计第 7 节）——`agent/model`
+    # 只拥有 LLM 模型名。复用上面的 base_url 与 api_key：嵌入服务同为 TokenHub，
+    # 不引入第二套凭据（RAG 策略第 11 节要求记忆侧也用同一个向量模型）。
+    # 维度（2560）与模型绑定，**不做成可配置项**——可配置的维度会诱发配错维度
+    # 混库，使检索静默失准（RAG 策略第 7 节纪律 4）；常量定义在 modules/library。
+    embedding_model_name: str = "kinfra-text-embedding-4b"
     # 单次请求超时与重试上界。三者的最坏组合必须落在基座第 2 节的 180 秒通用响应
     # 上限之内（默认值最坏 45×3 + 退避(1.125+2.25)，gateway 的算术按 SDK 的抖动上界算），
     # 否则重试会被运行上限从中间砍断；越界配置在 agent.model 构造期即抛错，
