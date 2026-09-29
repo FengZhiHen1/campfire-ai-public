@@ -82,7 +82,7 @@ from campfire.agent.context import (
 from campfire.agent.limits import AGENT_RUN_TIMEOUT_SECONDS
 from campfire.agent.model import ModelBinding, ModelFailureReason, classify_model_failure
 from campfire.agent.skill_runtime import Skill, SkillRegistry, render_activation
-from campfire.agent.tools import ToolContext, ToolDispatcher, ToolPool, ToolScope, resolve_scope
+from campfire.agent.tools import ActivationState, ToolContext, ToolDispatcher, ToolPool, ToolScope, resolve_scope
 
 from .assembly import ToolBridge, WindowCallback, build_agent, build_run_config
 from .errors import RuntimeAssemblyError
@@ -102,6 +102,7 @@ from .events import (
     ToolCallFinishedEvent,
     ToolCallStartedEvent,
 )
+from .resource_tool import READ_SKILL_RESOURCE_TOOL_NAME
 from .session import SessionFactory
 from .skill_tool import SKILL_TOOL_NAME
 
@@ -230,8 +231,13 @@ class AgentRunner:
                 f"工具池缺少模型侧激活工具 {SKILL_TOOL_NAME}：存在可选 skill 时模型将无法激活它们。"
                 "请在装配处用 build_skill_tool(skill_registry) 注册（ToolPool.register_base）"
             )
-        # 激活工具是机制本身，必须恒可用；不参与 allowed-tools 的并集。
-        self._always_active: tuple[str, ...] = (SKILL_TOOL_NAME,) if has_activation_tool else ()
+        # 激活工具与资源读取工具都是机制本身，必须恒可用；不参与 allowed-tools 的并集。
+        # 资源工具未注册不构成装配错误：它的缺失只让渐进披露退化为「清单读不到」，
+        # 而激活工具缺失会让模型侧激活整个失效——两者的严重度不同，只有后者值得拒绝启动。
+        always: list[str] = [SKILL_TOOL_NAME] if has_activation_tool else []
+        if READ_SKILL_RESOURCE_TOOL_NAME in tools.names():
+            always.append(READ_SKILL_RESOURCE_TOOL_NAME)
+        self._always_active: tuple[str, ...] = tuple(always)
 
     def _resolve_scope(self, request: RunRequest) -> ToolScope:
         """按请求解析工具范围（唯一入口，避免两处各算一次而分叉）。"""
@@ -320,6 +326,10 @@ class AgentRunner:
             yield ProgressEvent(message="上下文压力偏高，已压缩较早的历史。")
 
         buffer: list[RunEvent] = []
+        # 运行时激活集合：初始 = 请求携带的激活；模型侧激活（skill 工具）在运行中并入。
+        # dispatcher 的范围判定与 ToolContext.activated_skills 都读它，激活后立即生效。
+        activation_state = ActivationState()
+        activation_state.update(scope.activated_skills)
         dispatcher = ToolDispatcher(
             self._tools,
             scope,
@@ -327,10 +337,11 @@ class AgentRunner:
                 run_id=run_id,
                 session_id=request.session_id,
                 surface=request.surface,
-                activated_skills=scope.activated_skills,
+                activation_state=activation_state,
                 citations=recorder,
                 payload=request.context_payload,
             ),
+            activation_state=activation_state,
         )
         bridge = ToolBridge(dispatcher, sink=buffer.append)
         agent = build_agent(

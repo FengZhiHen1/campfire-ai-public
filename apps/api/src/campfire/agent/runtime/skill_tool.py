@@ -75,9 +75,13 @@ def build_skill_tool(registry: SkillRegistry) -> ToolSpec[ActivateSkillArgs]:
     """构造模型侧的技能激活工具。
 
     由装配处用 ``ToolPool.register_base`` 注册（它使用基座保留名）。
+
+    激活成功时经 ``context.activation_state.add`` 并入运行时激活集合——不需要构造期
+    回调：``ToolContext`` 本来就会交给 handler，运行中的激活状态由此可达，且每次运行
+    一份（state 在 runner 里按运行创建）。
     """
 
-    async def handler(_context: ToolContext, args: ActivateSkillArgs) -> ToolOutcome:
+    async def handler(context: ToolContext, args: ActivateSkillArgs) -> ToolOutcome:
         """查注册表并渲染激活载荷。"""
         try:
             skill = registry.get(args.name)
@@ -95,6 +99,7 @@ def build_skill_tool(registry: SkillRegistry) -> ToolSpec[ActivateSkillArgs]:
                 message=f"skill {skill.name} 只能由应用在运行入口激活，模型不得自动匹配它",
             )
 
+        context.activation_state.add(skill.name)
         return ToolResult(text=render_activation(skill))
 
     return ToolSpec(
