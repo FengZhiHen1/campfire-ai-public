@@ -70,3 +70,4 @@
 | TECH-07 | SuperTokens 的付费特性清单——门禁机制在 `ee/`，被门禁的功能代码可能在主源码树 | 确认 EmailPassword 与 Session 不被企业许可门禁 |
 | TECH-08 | SuperTokens 把账号名存放于 `email` 字段带来的歧义 | 以后加邮箱时"登录名"与"联系方式"会冲突；与自有用户表的关系需写清 |
 | TECH-09 | TokenHub 上的 DeepSeek-V4.1-Flash 是否支持工具延后加载（`tool_namespace`、`defer_loading`、`ToolSearchTool`）所依赖的 Responses 语义 | 决定日常咨询能否用延后加载省 token；不支持时退化为仅用 `is_enabled` 过滤 |
+| TECH-10 | SDK 会话在 `add_items` 后能否按我们的顺序稳定读回注入消息；窗口策略下会话存储的增长与清理行为 | 单真源下注入项的读取与存储策略 |
