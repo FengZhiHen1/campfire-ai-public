@@ -31,7 +31,7 @@ from campfire.core.pending_write import (
     mark_retryable_failure,
 )
 from campfire.modules.memory.consumer import consume_memory_episode
-from campfire.modules.memory.errors import MemoryModuleError
+from campfire.modules.memory.errors import MemoryDataError, MemoryUnavailableError
 from campfire.modules.memory.graph import MemoryGraph, build_memory_graph
 
 logger = logging.getLogger(__name__)
@@ -67,18 +67,27 @@ async def consume_memory_episode_task(pending_id: str, lease_owner: str = "worke
         （已被他人领取/租约未到期/已终结）——**不是错误**。
 
     Raises:
-        MemoryModuleError: 载荷不合法（形状错误）。这类失败**重试无用**，因此直接
-            转 ``dead`` 并抛出，让 Taskiq 记录失败。
-        Exception: 基础设施类失败（图库/数据库不可用）按第 6 节记 ``attempts + 1``
-            与退避后**原样抛出**——吞掉它会让队列以为任务成功。
+        MemoryDataError: 载荷不合法（形状错误）。这类失败**重试无用**，因此直接转
+            ``dead`` 并抛出，让 Taskiq 记录失败。
+        Exception: 基础设施类失败（图库/数据库不可用，含 ``MemoryUnavailableError``）
+            按第 6 节记 ``attempts + 1`` 与退避后**原样抛出**——吞掉它会让队列以为
+            任务成功。
     """
     graph = _get_memory_graph()
     try:
         async with session_scope(get_settings()) as session:
             result = await consume_memory_episode(session, graph, pending_id=pending_id, lease_owner=lease_owner)
-    except MemoryModuleError as exc:
-        # 载荷/形状不合法：重试不会变好，直接转 dead（第 6 节：不得静默丢弃）。
-        # `session_scope` 已回滚，故另开一个会话登记终结状态。
+    except MemoryUnavailableError as exc:
+        # **可重试**：图库/查询暂时不可用（第 6 节的「Worker 处理失败（可重试）」）。
+        # ⚠️ 这个分支必须在 `MemoryModuleError` **之前**（2026-09-29 自查发现，实测确认）：
+        # `MemoryUnavailableError` 是 `MemoryModuleError` 的子类，若只写基类分支，
+        # 图库一次瞬时故障就会被归成「载荷不合法」而直接转 `dead`——**一条本来健康的
+        # 记录被永久判死**。按类型分档时，子类分支必须排在父类之前。
+        await _register_retryable_failure(pending_id, exc)
+        raise
+    except MemoryDataError as exc:
+        # **不可重试**：载荷/形状不合法，重试不会变好，直接转 `dead`
+        # （第 6 节：不得静默丢弃）。`session_scope` 已回滚，故另开会话登记终结状态。
         logger.warning("记忆写入的载荷不合法，转 dead：pending_id=%s cause=%s", pending_id, type(exc).__name__)
         async with session_scope(get_settings()) as session:
             try:
@@ -87,13 +96,9 @@ async def consume_memory_episode_task(pending_id: str, lease_owner: str = "worke
                 logger.exception("登记 dead 失败：pending_id=%s", pending_id)
         raise
     except Exception as exc:
-        # 基础设施类失败：记可重试失败（含 attempts+1 与退避；到上限会自动转 dead）。
-        logger.warning("记忆写入失败：pending_id=%s cause=%s", pending_id, type(exc).__name__)
-        async with session_scope(get_settings()) as session:
-            try:
-                await mark_retryable_failure(session, pending_id=pending_id, error=f"{type(exc).__name__}: {exc}")
-            except Exception:  # noqa: BLE001 —— 登记失败不能掩盖原始错误
-                logger.exception("登记可重试失败失败：pending_id=%s", pending_id)
+        # 其它一切（含数据库不可用）：按可重试处理——**宁可多重试几次，也不要把可能
+        # 瞬时的失败判成永久 dead**。到上限会自动转 dead（第 6 节）。
+        await _register_retryable_failure(pending_id, exc)
         raise
 
     if not result.written:
@@ -106,3 +111,17 @@ async def consume_memory_episode_task(pending_id: str, lease_owner: str = "worke
         MAX_ATTEMPTS,
     )
     return "written"
+
+
+async def _register_retryable_failure(pending_id: str, exc: BaseException) -> None:
+    """记一次可重试失败（`attempts+1` 与退避；到上限自动转 `dead`）。
+
+    登记本身失败**不能掩盖原始错误**：调用方紧接着会重新抛出 `exc`，这里只记日志。
+    错误摘要**只写类型名与消息**，不复述连接串或凭据（AGENTS.md 安全条款）。
+    """
+    logger.warning("记忆写入失败（可重试）：pending_id=%s cause=%s", pending_id, type(exc).__name__)
+    async with session_scope(get_settings()) as session:
+        try:
+            await mark_retryable_failure(session, pending_id=pending_id, error=f"{type(exc).__name__}: {exc}")
+        except Exception:  # noqa: BLE001 —— 登记失败不能掩盖原始错误
+            logger.exception("登记可重试失败失败：pending_id=%s", pending_id)

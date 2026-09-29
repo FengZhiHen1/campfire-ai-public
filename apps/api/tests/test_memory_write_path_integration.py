@@ -35,6 +35,7 @@ from campfire.core.config import EMBEDDING_DIM, get_settings
 from campfire.core.db import dispose_engine, session_scope
 from campfire.core.pending_write import (
     KIND_PROFILE_ITEM,
+    STATE_DEAD,
     STATE_DONE,
     STATE_PENDING,
     PendingWrite,
@@ -378,5 +379,101 @@ async def test_deleted_memory_is_not_returned_after_write_path_completes(
 
         after = await read_timeline(memory_graph, to_account_id(_ACCOUNT), deleted_keys=keys)
         assert after == [], "写入后删除的记忆不得再出现在时间线"
+    finally:
+        await _clear()
+
+
+# ---------------------------------------------------------------------------
+# Worker 的错误分档（可重试 vs 不可重试）
+# ---------------------------------------------------------------------------
+
+
+def test_error_classes_are_disjoint_for_the_worker_classification() -> None:
+    """**可重试与不可重试的两类错误必须分得开**（第 6 节的失败语义）。
+
+    为什么必须有这条（2026-09-29 自查发现，实测确认）：`worker.py` 按类型分档——
+    `MemoryUnavailableError` → 可重试（图库瞬时故障），`MemoryDataError` → 转 `dead`
+    （载荷不合法，重试无用）。而 `MemoryUnavailableError` **是** `MemoryModuleError`
+    的子类，所以若只按基类分档、或把两个分支的顺序写反，**图库一次瞬时故障就会把一条
+    本来健康的记录永久判死**。
+
+    这条断言把「两类可分」写进测试：`MemoryUnavailableError` **不是** `MemoryDataError`，
+    反之亦然。若将来有人把 `MemoryUnavailableError` 改成继承 `MemoryDataError`
+    （例如为了复用诊断字段），本用例会失败并提醒分档逻辑失效。
+    """
+    from campfire.modules.memory.errors import MemoryDataError, MemoryUnavailableError
+
+    assert not issubclass(MemoryUnavailableError, MemoryDataError)
+    assert not issubclass(MemoryDataError, MemoryUnavailableError)
+
+    # 两者共同的上位是基类——这正是「不能只按基类分档」的原因。
+    from campfire.modules.memory.errors import MemoryModuleError
+
+    assert issubclass(MemoryUnavailableError, MemoryModuleError)
+    assert issubclass(MemoryDataError, MemoryModuleError)
+
+
+@pytest.mark.asyncio
+async def test_worker_classifies_graph_failure_as_retryable_not_dead(memory_graph: MemoryGraph) -> None:
+    """图库故障必须被记成**可重试失败**（`attempts+1`、回 `pending`），不能转 `dead`。
+
+    这是上一条的端到端版本：直接调 `worker` 里那个任务函数，让图库调用抛
+    `MemoryUnavailableError`（用一个「写入即失败」的图库替身），然后断言记录
+    **仍是 `pending` 且 `attempts == 1`**，而不是 `dead`。
+    """
+    from campfire import worker as worker_module
+    from campfire.modules.memory.errors import MemoryUnavailableError
+
+    await _clear()
+    occurred = datetime.now(timezone.utc)
+    try:
+        pending_id = await _enqueue(occurred_at=occurred.isoformat())
+
+        class _BrokenGraph:
+            """图库替身：任何写入都失败（模拟 FalkorDB 瞬时不可用）。"""
+
+            def driver_for(self, _account):  # noqa: ANN001, ANN202
+                raise MemoryUnavailableError("图库不可用", operation="probe", cause="ConnectionError")
+
+        # 让任务用这个替身，而不是真实图库。
+        original = worker_module._get_memory_graph
+        worker_module._get_memory_graph = lambda: _BrokenGraph()  # type: ignore[assignment]
+        try:
+            with pytest.raises(MemoryUnavailableError):
+                await worker_module.consume_memory_episode_task(pending_id, lease_owner="w")
+        finally:
+            worker_module._get_memory_graph = original  # type: ignore[assignment]
+
+        async with session_scope(get_settings()) as session:
+            row = (await session.execute(select(PendingWrite).where(PendingWrite.id == pending_id))).scalar_one()
+        assert row.state == STATE_PENDING, "图库瞬时故障不得把记录判成 dead"
+        assert row.attempts == 1, "可重试失败应记一次 attempts"
+        assert row.next_attempt_at is not None, "应设退避时间"
+        assert row.last_error is not None
+    finally:
+        await _clear()
+
+
+@pytest.mark.asyncio
+async def test_worker_classifies_bad_payload_as_dead(memory_graph: MemoryGraph) -> None:
+    """载荷不合法（`MemoryDataError`）→ **转 `dead`**：重试不会变好，不得无声重试。
+
+    与上一条配对：两条一起把 Worker 的分档钉死（一类可重试、一类终结）。
+    """
+    await _clear()
+    try:
+        # 缺 occurred_at ⇒ consume 会抛 MemoryDataError。
+        pending_id = await _enqueue(occurred_at=None)
+
+        from campfire import worker as worker_module
+
+        with pytest.raises(MemoryDataError):
+            await worker_module.consume_memory_episode_task(pending_id, lease_owner="w")
+
+        async with session_scope(get_settings()) as session:
+            row = (await session.execute(select(PendingWrite).where(PendingWrite.id == pending_id))).scalar_one()
+        assert row.state == STATE_DEAD, "载荷不合法应转 dead"
+        assert row.finished_at is not None
+        assert row.last_error is not None
     finally:
         await _clear()
