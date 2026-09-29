@@ -4,7 +4,7 @@
 > **状态**：2026-09-29 依用户确认的"全量引入 LlamaIndex"（`B`）、"合并改用 RRF"与"一期不直接导入 PDF"三项决定，以及已核实的供应商与框架事实重写；**同日按实现期实测修订四处**——融合自实现（框架 RRF 要求同步检索器）、摄取不经框架 `IngestionPipeline`（要同事务）、嵌入用 `model_name=` 接入、分块保护与超长切分的确切行为。**检索链已实现**（`modules/library/`），真实语料与真实嵌入调用未验证（`EVID-F` 与 `TECH-20`）。
 > **追溯**：`RQ-KB-01`、`RQ-KB-02`、`RQ-KB-04`、`RQ-CON-02`、`RQ-CON-03`、`RQ-EMG-03`、`AC-05`、`AC-06`、`AC-09`、`AC-11`。
 > **依据（已核实）**：
-> - **实现期实测（2026-09-29，真实容器与安装产物）**：`OpenAIEmbedding` 必须用 `model_name=` 传自定义模型名（`model=` 走枚举校验会抛错）；`PGVectorStore.add()` 自建并提交事务（不能参与外部事务）、`aquery`/`adelete` 为原生 async、`engine`/`async_engine` 必须成对注入；RRF 按 `node.hash`（内容哈希）合并；`MetadataFilter.value` 不含 `bool`；`gin_trgm_ops` 不接受 `text[]`；`MarkdownNodeParser` 不切进表格/列表内部、也不对超长 section 二次切分。
+> - **实现期实测（2026-09-29，真实容器、真实 TokenHub 调用与安装产物）**：`OpenAIEmbedding` 必须用 `model_name=` 传自定义模型名（`model=` 走枚举校验会抛错）；**且必须显式传 `encoding_format="float"`**（SDK 默认填 `base64`，TokenHub 只接受 `float`，实测错误码 `400001`）；真实嵌入**维度 2560**、语义可区分（相关文本 0.54 vs 无关 0.36）；`PGVectorStore.add()` 自建并提交事务（不能参与外部事务）、`aquery`/`adelete` 为原生 async、`engine`/`async_engine` 必须成对注入；**框架 `TextNode.hash` 由「文本 + metadata」共同决定**（两路节点仅文本一致时哈希不同，RRF 无法合并——见第 4 节）；**框架 `header_path` 只含父级路径、不含当前标题**（`## 一、服务对象` 的节点 header_path 只有 `/规范/`），`locator` 必须自行补上章节标题；`MetadataFilter.value` 不含 `bool`；`gin_trgm_ops` 不接受 `text[]`；`MarkdownNodeParser` 不切进表格/列表内部、也不对超长 section 二次切分。
 > - **TokenHub 向量模型**：`POST /v1/embeddings` 兼容 OpenAI Embeddings；`Kinfra-Text-Embedding-0.6b` 1024 维、`Kinfra-Text-Embedding-4b` **2560 维**（维度固定），均 32k 上下文，`encoding_format` 仅 `float`，**单条文本 ≤2000 字符**、单请求建议 ≤128 条，支持中文等 30+ 语言（标注 CMTEB）。TokenHub 模型列表共八类，**无重排模型**。
 > - **pgvector**：`vector` 建索引上限 **2000 维**、`halfvec` **4000 维**（此限只作用于建索引，不限制列类型）；**近似索引下过滤在索引扫描之后应用**，0.8.0 起支持 iterative index scan。
 > - **LlamaIndex**（MIT；最新 0.14.25 / 2026-09-21；近一年约 21 个版本，节奏明显放缓；仍在 1.0 之前；`llama-index-core` wheel ≈11.9 MB、**29 个直接依赖**，Python ≥3.10,<4.0，可只装 core 加个别集成包）：`PGVectorStore` **把 metadata 过滤下推到 SQL**（`MetadataFilters` 可嵌套、`indexed_metadata_keys` 可建索引），支持自定义 `table_name`/`schema_name`/`perform_setup`/`use_jsonb` 与 `hnsw_kwargs`（m、ef_construction、ef_search、dist_method），`hybrid_search=True` 走 **tsvector** GIN；`QueryFusionRetriever` 有四种模式含 **`reciprocal_rerank`（RRF）**，入参是检索器列表、可混合自定义检索器；`IngestionPipeline` 有 docstore 去重与 `IngestionCache`（可用我们已有的 Redis）；`RetrieverEvaluator` 内置 `hit_rate`/`mrr`/`precision`/`recall`/`ndcg`；`MarkdownNodeParser` 按 `#` 层级切并写 `metadata["header_path"]`；`SentenceSplitter` 的 `chunk_size` 以 **token** 计、**不识别表格与列表**、不做超长二次切分。
@@ -17,6 +17,8 @@
 - 理由：我们的"结构优先分块"依赖**标题层级**，而普通 PDF 读取器只给页码（`page_label`）、不保标题层级；同时保住"标题层级 + 表格结构 + 页码"需要官方的付费解析服务 **LlamaParse**，那会新增一个供应商与一套凭据，与"少供应商"相悖。
 - 因此**资料准备流程在链外**：PDF → Markdown（外部工具 + 人工核对标题与表格）→ 才进系统。这一步属于 `EVID-F`（首期资料与案例的收集与录入），**责任人承担结构保真度**。
 - **HTML 同样在链外清理**：只保留正文与标题层级，去掉导航、页脚与脚本残留。
+- **语料件的元数据写在文件头部的 YAML frontmatter**（2026-09-29 实现期定）：`source`、`applicable_scope`、`title`、`keywords`、`aliases`、`license` 等键与正文**同文件**，由摄取链解析为条目字段。理由：出处与适用范围写在文件里比命令行参数更不易错配（一次导入几十份时尤其明显），而许可与出处**必须随语料存活**——它们是一期发布闸门 `EVID-B` 的判据。frontmatter **不参与分块**（进正文会污染检索内容，实测过：YAML 会成为一个可检索节点）。**缺 `source` 或 `applicable_scope` 即拒绝入库**（不变量，`RQ-KB-02`）：可在文件里给，也可由命令行 `--source`/`--scope` 给，显式参数优先。
+- **原件常含无关内容，加工时要裁剪并留痕**：例如《国家卫健委公报》是整期刊物，同期刊载食品安全、网络安全、人才规划等其他公文。整份入库会让无关内容进入检索（`header_path` 相同的节点混在一起尤其难筛）。裁剪范围与理由写进 frontmatter 的 `derivation` 键——**不静默丢弃**。
 
 ### 1.2 分块：框架切 + 我们两层后处理
 
@@ -28,6 +30,7 @@
 - 目标块长 **400–800 字符**，硬上限 2000 字符。**字符计数用 Unicode 码点**（`len(str)`）而非框架 `SentenceSplitter` 的 token 计数——嵌入接口的限制是**字符**，中文下 token 与字符不是一回事。标题路径会拼入块文本（保留层级语义），因此**计入长度预算**。
 - **结构边界处不重叠**（重叠会让同一内容在引用里出现两次，也让 `locator` 含混）。
 - 每个节点携带：`item_id`、`chunk_index`、`header_path`（框架给）、`locator`（章节路径；**一期没有 PDF，所以没有页码**）、`char_count`。
+- **`locator` 必须自己补上当前章节标题**（2026-09-29 实测）：框架的 `header_path` 语义是**父级路径，不含当前标题**——节点 `## 一、服务对象` 的 `header_path` 只有 `/规范/`。直接拿它当 `locator`，同一章下所有块会指向同一位置（实测 23 个块只产出 3 种 `locator`），引用回指 `AC-05` 失准。因此 `locator = header_path + 当前章节标题`（实测可区分度从 3 种升至 19 种）。**章节标题要在切分前取好并传给每一块**：超长 section 被切成多块后只有首块还带标题行，若从块文本现取，后续块的章节名会丢。节点 metadata 存补齐后的 `locator`，`header_path` 原样保留框架语义。
 
 ### 1.3 案例卡片（2026-09-29 定）
 
@@ -90,7 +93,9 @@
 
 ## 4. 融合检索与候选
 
-- **融合用 RRF**（2026-09-29 定，2026-09-29 实现期修订）：**RRF 本身照旧**（`score = Σ 1/(rank + k)`，k=60，与框架同值，源自 RRF 原论文）；但**不由 `QueryFusionRetriever` 执行**——实测它的融合发生在 `_retrieve` 内部，两路输入必须是**同步**检索器，而我们的两路都是异步 SQL；塞进去需要线程池包装，会钝化失败语义（单路失败要能降级并标注）。融合公式只有几行，由 `modules/library/retrieval.py` 自实现，并照搬框架的一个关键行为：**按 `node.hash`（内容哈希）而非 `node_id` 合并**（实测：相同内容、不同 id 的 hash 相同；不同内容则不同）——这决定字面路展开出的节点只要内容一致就能与向量路正确合并。
+- **融合用 RRF**（2026-09-29 定，同日实现期修订）：**RRF 本身照旧**（`score = Σ 1/(rank + k)`，k=60，与框架同值，源自 RRF 原论文）；但**不由 `QueryFusionRetriever` 执行**——实测它的融合发生在 `_retrieve` 内部，两路输入必须是**同步**检索器，而我们的两路都是异步 SQL；塞进去需要线程池包装，会钝化失败语义（单路失败要能降级并标注）。融合公式只有几行，由 `modules/library/retrieval.py` 自实现。
+- **合并键是 `node.hash`（文本 + metadata 的哈希），不是 `node_id`**（2026-09-29 实测，含一次已修缺陷）：框架的 `TextNode.hash` **把 metadata 一并纳入计算**。字面路展开节点时若只带文本、不带 metadata，两路即便 `text` 完全一致，哈希也不同，RRF 因此永远判不出「两路都命中」——实测 23 个节点 text 全同、hash 全不同，融合退化成只有向量路。**因此字面路展开的节点必须照搬库中存的那份 metadata**。这条已由集成测试 `test_both_paths_merge_when_text_matches` 守护（两路合并时 `fused_score` 约为单路的两倍）。
+- **命中来源要记账**：返回契约的 `ranking` 要求「哪几路命中」（[资料与案例检索](资料与案例检索.md)第 3 节），实现里由 `ranking["hit_paths"]` 给出 `vector`/`literal`/`both`。它是调试与第 8 节评测判断「某一路是否在拖后腿」的依据。
 - **为什么改用 RRF**：它只用**名次**、不用原始分数，因此不存在跨路分数量纲不一致的问题，也没有需要调的神秘权重；这比先前自拟的"路内排名 + 命中路数"更有依据。**不做跨路分数加权归一化。**
 - **一期不用 LLM 多查询生成**（会加一次模型调用，且应急时延吃紧）。
 - 候选取值：向量路 **top-30**（节点）、字面路 **top-30**（按条目计；**待确认**）、融合后取 **top-8 条目**。

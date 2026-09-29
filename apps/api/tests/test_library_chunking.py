@@ -18,6 +18,7 @@ from campfire.modules.library.chunking import (
     TARGET_MIN_CHARS,
     chunk_markdown_section,
 )
+from campfire.modules.library.ingestion import parse_frontmatter
 
 
 def _long_paragraph(sentences: int) -> str:
@@ -115,3 +116,101 @@ def test_header_variants_are_handled(header: str) -> None:
 
     assert report.chunks
     assert all(len(c.text) <= HARD_MAX_CHARS for c in report.chunks)
+
+
+# ---------------------------------------------------------------- 章节路径
+
+
+def test_locator_includes_current_section_title() -> None:
+    """`locator` 必须含当前章节标题——框架的 header_path 只有父级路径。
+
+    实测依据：`## 一、服务对象` 节点的 header_path 只有 `/规范/`，直接拿它当
+    locator 会让同章下所有块指向同一位置，引用回指（`AC-05`）失准。
+    """
+    report = chunk_markdown_section("/规范/", "## 一、服务对象\n\n辖区内的儿童。")
+
+    assert report.chunks[0].locator == "/规范/一、服务对象/"
+    # header_path 原样保留框架语义，不被改写。
+    assert report.chunks[0].header_path == "/规范/"
+
+
+def test_locator_nests_under_appendix() -> None:
+    """附件下的子章节嵌套正确（附件内部小节不与规范正文各章混同）。"""
+    report = chunk_markdown_section("/规范/附件2/", "### 一、基本要求\n\n填写说明。")
+
+    assert report.chunks[0].locator == "/规范/附件2/一、基本要求/"
+
+
+def test_locator_keeps_section_title_across_split_pieces() -> None:
+    """超长 section 切成多块时，**每一块**都保留章节标题，而不是只有首块。
+
+    切分后标题行只在首块里，因此章节名必须在切分前取好并传入——否则后续块的
+    locator 会退化成父级路径，多块指向同一位置。
+    """
+    body = "## 三、服务内容\n\n" + _long_paragraph(400) + "\n\n" + _long_paragraph(400)
+    report = chunk_markdown_section("/规范/", body)
+
+    assert len(report.chunks) > 1, "本用例需要产生多块"
+    assert all(c.locator == "/规范/三、服务内容/" for c in report.chunks)
+
+
+def test_locator_falls_back_to_parent_without_heading() -> None:
+    """块文本没有标题行时退回父级路径（不编造章节名）。"""
+    report = chunk_markdown_section("/规范/", "没有标题的正文。")
+
+    assert report.chunks[0].locator == "/规范/"
+
+
+def test_locator_handles_root_header() -> None:
+    """根路径（`/`）下的块不产生空 locator。"""
+    report = chunk_markdown_section("/", "## 一、服务对象\n\n正文。")
+
+    assert report.chunks[0].locator == "/一、服务对象/"
+
+
+# ---------------------------------------------------------------- frontmatter
+
+
+def test_frontmatter_is_split_from_body() -> None:
+    """frontmatter 被解析为元数据，**不进入正文**（进正文会污染检索内容）。"""
+    text = "---\ntitle: 测试标题\nsource: WHO 2024\napplicable_scope: 学龄前儿童\n---\n\n# 正文标题\n\n正文内容。\n"
+
+    metadata, body = parse_frontmatter(text)
+
+    assert metadata["title"] == "测试标题"
+    assert metadata["source"] == "WHO 2024"
+    assert metadata["applicable_scope"] == "学龄前儿童"
+    assert "---" not in body
+    assert "source:" not in body, "元数据不得留在正文里"
+    assert body.startswith("# 正文标题")
+
+
+def test_no_frontmatter_returns_original_text() -> None:
+    """没有 frontmatter 时原样返回，不误截断。"""
+    text = "# 标题\n\n正文内容。\n"
+
+    metadata, body = parse_frontmatter(text)
+
+    assert metadata == {}
+    assert body == text
+
+
+def test_unterminated_frontmatter_is_treated_as_body() -> None:
+    """只有起始分隔符（未闭合）时按普通正文处理——宁可当正文也不错位截断。"""
+    text = "---\ntitle: 半截\n\n正文继续。\n"
+
+    metadata, body = parse_frontmatter(text)
+
+    assert metadata == {}
+    assert body == text
+
+
+def test_frontmatter_values_may_be_quoted() -> None:
+    """带引号的值被去掉引号；空行与注释行被跳过。"""
+    text = "---\n# 注释\nsource: \"带引号的出处\"\n\nscope: '单引号'\n---\n正文\n"
+
+    metadata, body = parse_frontmatter(text)
+
+    assert metadata["source"] == "带引号的出处"
+    assert metadata["scope"] == "单引号"
+    assert body.strip() == "正文"
