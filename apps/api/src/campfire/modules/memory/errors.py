@@ -42,6 +42,10 @@ class MemoryUnavailableError(MemoryModuleError):
       - operation: 失败的操作名（如 ``read_timeline``），供日志定位；
       - cause: 底层异常的类型名。**只记类型名，不复述连接串或凭据**
         （AGENTS.md 安全条款：日志与错误消息不复述凭据）。
+
+    **原始异常对象经 ``raise ... from exc`` 承载**（``__cause__``）：``cause`` 字段
+    只有类型名，便于日志 grep 且不泄漏连接串；而排查需要完整堆栈时读 ``__cause__``
+    即可。两者分工明确，不要为了「记全一点」把连接串塞进 ``cause``。
     """
 
     def __init__(self, message: str, *, operation: str, cause: str) -> None:
