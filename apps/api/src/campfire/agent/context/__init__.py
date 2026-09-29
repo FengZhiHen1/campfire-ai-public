@@ -20,7 +20,7 @@
 """
 
 from .citations import CitationIndex, CitationRecord, CitationRecorder
-from .errors import CitationError, ContextError, InjectionError
+from .errors import CitationError, ContextError, InjectionError, InjectionRenderError
 from .injection import (
     InjectionBatch,
     InjectionItem,
@@ -30,6 +30,7 @@ from .injection import (
     UnavailableSource,
 )
 from .window import (
+    COMPACTED_SUMMARY_CLOSE_TAG,
     COMPACTED_SUMMARY_TAG,
     derive_window,
     is_compacted_summary,
@@ -39,6 +40,7 @@ from .window import (
 )
 
 __all__ = [
+    "COMPACTED_SUMMARY_CLOSE_TAG",
     "COMPACTED_SUMMARY_TAG",
     "CitationError",
     "CitationIndex",
@@ -50,6 +52,7 @@ __all__ = [
     "InjectionItem",
     "InjectionMessage",
     "InjectionPriority",
+    "InjectionRenderError",
     "InjectionRole",
     "UnavailableSource",
     "derive_window",
