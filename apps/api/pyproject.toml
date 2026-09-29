@@ -35,6 +35,8 @@ dev = [
     "pytest>=8.0",
     "pytest-asyncio>=0.24",
     "pytest-cov>=6.0",
+    # pyyaml 的类型存根：仅供 mypy 读取（skill frontmatter 解析用了 yaml），运行时不导入。
+    "types-PyYAML>=6.0.12",
 ]
 
 [build-system]
