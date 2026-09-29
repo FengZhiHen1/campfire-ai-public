@@ -1,6 +1,9 @@
 .agent/
 .claude/
 .tmp/
+
+# 本地参考资料与研究材料（不作为设计权威）
+/references/
 __pycache__/
 *.pyc
 *.pyo
