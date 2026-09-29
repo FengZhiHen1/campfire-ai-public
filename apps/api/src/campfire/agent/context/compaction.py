@@ -911,23 +911,19 @@ _OVERFLOW_PHRASES = (
 )
 
 
-def is_context_overflow(
-    error: BaseException,
-    *,
-    estimated_window_tokens: int | None = None,
-    context_window_tokens: int | None = None,
-) -> bool:
+def is_context_overflow(error: BaseException) -> bool:
     """提供方是否**明确**报了上下文窗口溢出（第 2、7 节的溢出恢复入口）。
 
-    判定要同时满足两条，才允许走那条**破坏性**路径（绕过阈值与保留策略、永久改动窗口）：
+    触发条件是「状态码 400/413 + 措辞指向**上下文窗口**」。措辞刻意收紧到不含 "too long"
+    这类泛词：第一版收了它，于是与窗口无关的 400 参数错误
+    （``Invalid 'messages[1].content': string too long``）被误判成溢出，走了**绕过阈值与保留
+    策略**的最大头部缩减、**永久改动了窗口**。中文措辞一并收（提供方是腾讯云）。
 
-    1. 状态码是 400/413，且错误文本里出现**指向上下文窗口**的措辞（不是「太长」这类泛词）；
-    2. 如果调用方给了窗口估算与其上限，则估算必须已经接近上限（默认 ≥ 一半）——真实溢出
-       不可能发生在空会话上。
-
-    第一版只做「400/413 + 5 个英文关键词」，实测把与溢出无关的 400 参数错误
-    （``Invalid 'messages[1].content': string too long``）判成溢出，于是**永久改写了窗口**
-    并给出错误原因；而中文溢出措辞又会漏判。两条判据与结构化措辞一起收紧它。
+    **被考虑并拒绝的第二道门槛**：审查者提出「窗口估算 ≥ 上限的一半」以防假阳性。不采用，
+    因为本模块的估算有**已知的系统性偏低**（刻意不计工具声明、认不出的形状计 0），拿它去否决
+    提供方的明确信号，会把真实溢出变成更难排查的模型故障；而压缩策略第 7 节的原文是
+    「溢出恢复**只在提供方明确分类窗口溢出时触发**」——判据在提供方的分类，不在我们的估算。
+    假阳性由措辞收紧来挡，这条判定因此只认状态码与措辞。
     """
     status = getattr(error, "status_code", None)
     if status not in (400, 413):
@@ -938,13 +934,7 @@ def is_context_overflow(
         return False
 
     text = str(error).lower()
-    if not any(phrase in text for phrase in _OVERFLOW_PHRASES):
-        return False
-
-    if estimated_window_tokens is not None and context_window_tokens is not None and context_window_tokens > 0:
-        # 第二道闸门：窗口占用必须真的接近上限。否则宁可漏判（退回常规失败）。
-        return estimated_window_tokens * 2 >= context_window_tokens
-    return True
+    return any(phrase in text for phrase in _OVERFLOW_PHRASES)
 
 
 __all__ = [

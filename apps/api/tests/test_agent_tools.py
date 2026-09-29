@@ -136,6 +136,70 @@ def test_tool_description_is_required() -> None:
         _spec(description="   ")
 
 
+def test_open_object_parameters_are_rejected_at_registration() -> None:
+    """参数 schema 含开放对象时，**注册期**就要失败（SDK 的严格模式不接受它）。
+
+    实测：``ensure_strict_json_schema`` 由 SDK 在构造工具时调用，而那一刻运行已经发出
+    ``run_started``——参数模型含 ``dict[str, X]`` 或 ``extra="allow"`` 时抛裸 ``UserError``，
+    事件流只到 ``run_started`` 就断，调用方拿不到任何 ``run_failed``。
+    """
+
+    class OpenArgs(BaseModel):
+        table: dict[str, int]
+
+    async def handler(_context: object, _args: OpenArgs) -> ToolResult:
+        return ToolResult(text="ok")
+
+    with pytest.raises(ToolSpecError, match="严格模式"):
+        ToolSpec(name="read_alpha", description="开放对象", args_model=OpenArgs, handler=handler)
+
+
+def test_closed_object_parameters_are_accepted() -> None:
+    """对照组：普通模型（含嵌套、枚举、可选）必须能注册——否则上一条会变成「总是失败」。"""
+
+    class Inner(BaseModel):
+        label: str
+
+    class NestedArgs(BaseModel):
+        inner: Inner
+        tags: list[str] = []
+        ratio: float | None = None
+
+    async def handler(_context: object, _args: NestedArgs) -> ToolResult:
+        return ToolResult(text="ok")
+
+    spec = ToolSpec(name="read_alpha", description="嵌套模型", args_model=NestedArgs, handler=handler)
+
+    assert spec.parameters["type"] == "object"
+
+
+def test_pool_rejects_a_duck_typed_tool_with_empty_name_or_description() -> None:
+    """池接受结构类型，但**校验不能靠结构**：空名字/空描述必须被拒。
+
+    实测：一个鸭子类型对象带 ``name=""``、``description=""`` 能进池并进请求体，而名字是权限
+    判定与 ``allowed-tools`` 的键、描述是模型选工具的唯一依据。
+    """
+
+    class Duck:
+        def __init__(self, name: str, description: str) -> None:
+            self.name = name
+            self.description = description
+            self.risk = "low"
+            self.requires_approval = False
+
+        @property
+        def parameters(self) -> dict[str, object]:
+            return {"type": "object", "properties": {}}
+
+        async def invoke(self, _context: object, _arguments_json: str) -> ToolResult:
+            return ToolResult(text="ok")
+
+    with pytest.raises(ToolRegistrationError, match="不合法"):
+        ToolPool([Duck("", "有描述")])
+    with pytest.raises(ToolRegistrationError, match="描述"):
+        ToolPool([Duck("read_alpha", "   ")])
+
+
 def test_parameters_schema_is_derived_from_the_args_model() -> None:
     """schema 与校验同源：手写两份必然漂移，而漂移方向是最坏的方向。"""
     spec = _spec()

@@ -18,7 +18,7 @@ from types import MappingProxyType
 from campfire.agent.skill_runtime import Skill
 
 from .errors import ToolNotRegisteredError, ToolRegistrationError
-from .spec import Tool
+from .spec import _DESCRIPTION_MAX_LENGTH, _NAME_MAX_LENGTH, TOOL_NAME_PATTERN, Tool
 
 RESERVED_TOOL_NAMES: frozenset[str] = frozenset({"skill"})
 """基座保留的工具名。
@@ -60,10 +60,36 @@ class ToolPool:
         self._register(tool)
 
     def _register(self, tool: Tool) -> None:
-        """实际写入；重名一律拒绝。"""
+        """实际写入；重名一律拒绝，并核实名字与描述的形状。
+
+        **形状在这里也要查一遍**：池接受的是结构类型（:class:`Tool`），因此一个鸭子类型对象
+        可以绕过 :class:`ToolSpec` 的构造期校验带着空名字或空描述进来——实测空名字与空描述
+        都能进池并进请求体，而名字是权限判定与 ``allowed-tools`` 的键、描述是模型选工具的唯一
+        依据。类型可以靠结构，校验不能。
+
+        Raises:
+            ToolRegistrationError: 重名、名字不合法/超长，或描述为空。
+        """
         if tool.name in self._tools:
             raise ToolRegistrationError(f"工具 {tool.name} 重复注册")
+        self._require_usable(tool)
         self._tools[tool.name] = tool
+
+    def _require_usable(self, tool: Tool) -> None:
+        """核实工具名与描述可用（与 :class:`ToolSpec` 同一套契约）。
+
+        Raises:
+            ToolRegistrationError: 名字不符合 :data:`TOOL_NAME_PATTERN`、超长，或描述为空/超长。
+        """
+        if not TOOL_NAME_PATTERN.fullmatch(tool.name):
+            raise ToolRegistrationError(f"工具名 {tool.name!r} 不合法：只允许小写字母、数字与下划线，且以字母开头")
+        if len(tool.name) > _NAME_MAX_LENGTH:
+            raise ToolRegistrationError(f"工具名 {tool.name!r} 超过 {_NAME_MAX_LENGTH} 字符")
+        description = getattr(tool, "description", "")
+        if not str(description).strip():
+            raise ToolRegistrationError(f"工具 {tool.name} 的描述不能为空：描述是模型选择工具的唯一依据")
+        if len(str(description)) > _DESCRIPTION_MAX_LENGTH:
+            raise ToolRegistrationError(f"工具 {tool.name} 的描述超过 {_DESCRIPTION_MAX_LENGTH} 字符")
 
     @property
     def tools(self) -> Mapping[str, Tool]:

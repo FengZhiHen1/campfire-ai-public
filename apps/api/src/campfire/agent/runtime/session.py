@@ -40,10 +40,17 @@ def build_sqlalchemy_session(
 ) -> Session:
     """按会话标识造一个 SDK 会话。
 
+    ``create_tables=True`` 会让 SDK 建**它自己的**两张表（``agent_sessions`` /
+    ``agent_messages``）。这两张表目前没有登记在任何设计文档与迁移里，而
+    docs/项目结构设计.md 第 187 行要求表归属与模块同名——因此默认关闭，只在本地开发与
+    测试里显式打开；生产路径必须由 Alembic 迁移建表（技术栈设计第 1 节），并先为这两张表
+    定下归属与命名。**登记于 docs/TODO.md。**
+
     Raises:
-        SessionConfigurationError: ``session_id`` 为空——没有标识就无法保证两次运行落在
-            同一条对话上，那会让「对话是唯一真源」失去意义。
+        SessionConfigurationError: ``session_id`` 为空或**只有空白**——没有标识就无法保证两次
+            运行落在同一条对话上，那会让「对话是唯一真源」失去意义；纯空白同样不能定位
+            （实测 ``"   "`` 会被单纯的真值判断放过）。
     """
-    if not session_id:
+    if not session_id.strip():
         raise SessionConfigurationError("会话标识不能为空：对话真源必须能被稳定定位")
     return SQLAlchemySession(session_id, engine=engine, create_tables=create_tables)
