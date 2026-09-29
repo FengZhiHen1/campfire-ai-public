@@ -34,6 +34,11 @@ from .events import (
     ToolCallFinishedEvent,
     ToolCallStartedEvent,
 )
+from .resource_tool import (
+    READ_SKILL_RESOURCE_TOOL_NAME,
+    ReadSkillResourceArgs,
+    build_read_skill_resource_tool,
+)
 from .runner import SESSION_IO_DETAIL, AgentRunner, CompactionWiring, RunRequest
 from .session import SessionFactory, build_sqlalchemy_session
 from .skill_tool import SKILL_TOOL_NAME, ActivateSkillArgs, build_skill_tool
@@ -42,7 +47,9 @@ from .summarizer import ModelSummarizer
 __all__ = [
     "SESSION_IO_DETAIL",
     "SKILL_TOOL_NAME",
+    "READ_SKILL_RESOURCE_TOOL_NAME",
     "ActivateSkillArgs",
+    "ReadSkillResourceArgs",
     "AgentRunner",
     "CandidateEvent",
     "CitationEvent",
@@ -66,6 +73,7 @@ __all__ = [
     "ToolCallFinishedEvent",
     "ToolCallStartedEvent",
     "build_agent",
+    "build_read_skill_resource_tool",
     "build_run_config",
     "build_skill_tool",
     "build_sqlalchemy_session",

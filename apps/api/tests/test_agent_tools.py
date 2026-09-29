@@ -20,6 +20,7 @@ from campfire.agent.context import CitationRecord, CitationRecorder, InjectionPr
 from campfire.agent.skill_runtime import Skill, SkillMetadata
 from campfire.agent.tools import (
     AVAILABILITY_SOURCE,
+    ActivationState,
     RiskLevel,
     ToolContext,
     ToolDispatcher,
@@ -62,11 +63,13 @@ class EmptyArgs(BaseModel):
 
 def _context(index: FakeCitationIndex | None = None) -> ToolContext:
     """构造一个绑定了运行事实与引用写入端的上下文。"""
+    activation = ActivationState()
+    activation.update(frozenset({"emergency"}))
     return ToolContext(
         run_id="run-1",
         session_id="session-1",
         surface="consult",
-        activated_skills=frozenset({"emergency"}),
+        activation_state=activation,
         citations=CitationRecorder(
             index or FakeCitationIndex(),
             run_id="run-1",

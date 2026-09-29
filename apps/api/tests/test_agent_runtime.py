@@ -36,6 +36,7 @@ from campfire.agent.context import (
 )
 from campfire.agent.model import ModelBinding
 from campfire.agent.runtime import (
+    READ_SKILL_RESOURCE_TOOL_NAME,
     SKILL_TOOL_NAME,
     AgentRunner,
     CompactionWiring,
@@ -49,6 +50,7 @@ from campfire.agent.runtime import (
     TextDeltaEvent,
     ToolCallFinishedEvent,
     ToolCallStartedEvent,
+    build_read_skill_resource_tool,
     build_skill_tool,
     build_sqlalchemy_session,
 )
@@ -660,6 +662,138 @@ def test_missing_activation_tool_is_an_assembly_error(tmp_path: Path) -> None:
             citations=FakeCitationIndex(),
             sessions=lambda session_id: FakeSession("s-1"),
         )
+
+
+# --- 资源读取工具（read_skill_resource）-------------------------------------
+
+
+def _skill_root_with_resources(tmp_path: Path) -> SkillRegistry:
+    """带一份 reference 资源的 skill 注册表（激活后清单里能看到它）。"""
+    _skill_root(tmp_path)
+    references = tmp_path / "daily-consulting" / "references"
+    references.mkdir(exist_ok=True)
+    (references / "guide.md").write_text("参考正文", encoding="utf-8")
+    # 重新发现以包含新目录
+    return SkillRegistry.discover(tmp_path)
+
+
+def _resource_pool(registry: SkillRegistry) -> ToolPool:
+    pool = ToolPool([read_tool()])
+    pool.register_base(build_skill_tool(registry))
+    pool.register_base(build_read_skill_resource_tool(registry))
+    return pool
+
+
+@pytest.mark.asyncio
+async def test_model_can_read_a_resource_after_activation(tmp_path: Path) -> None:
+    """第 3 节「资源」行：激活后模型可经 read_skill_resource 读资源，内容作为工具结果进入对话。"""
+    registry = _skill_root_with_resources(tmp_path)
+    pool = _resource_pool(registry)
+    chat = ScriptedChat(
+        [
+            tool_call_reply(SKILL_TOOL_NAME, {"name": "daily-consulting"}),
+            tool_call_reply(
+                READ_SKILL_RESOURCE_TOOL_NAME,
+                {"skill": "daily-consulting", "path": "references/guide.md"},
+                call_id="call-2",
+            ),
+            text_reply("已按参考执行"),
+        ]
+    )
+    runner = AgentRunner(
+        binding=_binding(chat),
+        tools=pool,
+        skills=registry,
+        citations=FakeCitationIndex(),
+        sessions=lambda session_id: FakeSession("s-1"),
+    )
+
+    events = await _collect(runner, _request())
+
+    finishes = [event for event in events if isinstance(event, ToolCallFinishedEvent)]
+    assert [(event.tool_name, event.ok) for event in finishes] == [
+        (SKILL_TOOL_NAME, True),
+        (READ_SKILL_RESOURCE_TOOL_NAME, True),
+    ]
+    # 资源内容作为工具结果进入第三次请求的上下文
+    third = [message["content"] for message in chat.messages_seen[2]]
+    assert any(content and "参考正文" in str(content) for content in third)
+
+
+@pytest.mark.asyncio
+async def test_resource_of_a_skill_that_is_not_activated_is_refused(tmp_path: Path) -> None:
+    """未激活 skill 的资源不可读——渐进披露的第三层不因资源工具而被旁路。"""
+    registry = _skill_root_with_resources(tmp_path)
+    pool = _resource_pool(registry)
+    chat = ScriptedChat(
+        [
+            tool_call_reply(
+                READ_SKILL_RESOURCE_TOOL_NAME, {"skill": "daily-consulting", "path": "references/guide.md"}
+            ),
+            text_reply("好"),
+        ]
+    )
+    runner = AgentRunner(
+        binding=_binding(chat),
+        tools=pool,
+        skills=registry,
+        citations=FakeCitationIndex(),
+        sessions=lambda session_id: FakeSession("s-1"),
+    )
+
+    events = await _collect(runner, _request())
+
+    finishes = [event for event in events if isinstance(event, ToolCallFinishedEvent)]
+    assert [(event.ok, event.error_code) for event in finishes] == [(False, "tool_not_available")]
+    assert "未激活" in "".join(message["content"] or "" for message in chat.messages_seen[1])
+
+
+@pytest.mark.asyncio
+async def test_resource_with_an_out_of_shape_path_returns_a_recoverable_error(tmp_path: Path) -> None:
+    """越界路径（多层、绝对路径等）作为可恢复失败回给模型，校验复用资源模块判据。"""
+    registry = _skill_root_with_resources(tmp_path)
+    pool = _resource_pool(registry)
+    chat = ScriptedChat(
+        [
+            tool_call_reply(SKILL_TOOL_NAME, {"name": "daily-consulting"}),
+            tool_call_reply(
+                READ_SKILL_RESOURCE_TOOL_NAME,
+                {"skill": "daily-consulting", "path": "references/../SKILL.md"},
+                call_id="call-2",
+            ),
+            text_reply("好"),
+        ]
+    )
+    runner = AgentRunner(
+        binding=_binding(chat),
+        tools=pool,
+        skills=registry,
+        citations=FakeCitationIndex(),
+        sessions=lambda session_id: FakeSession("s-1"),
+    )
+
+    events = await _collect(runner, _request())
+
+    finishes = [event for event in events if isinstance(event, ToolCallFinishedEvent)]
+    assert finishes[-1].ok is False
+    assert finishes[-1].error_code == "tool_failed"
+
+
+def test_read_skill_resource_name_is_reserved() -> None:
+    """基座保留名：产品侧工具占用 read_skill_resource 时注册被拒。"""
+    from campfire.agent.tools import ToolRegistrationError
+
+    async def handler(_context: ToolContext, _args: ReadArgs) -> ToolResult:
+        return ToolResult(text="x")
+
+    squatter = ToolSpec(
+        name=READ_SKILL_RESOURCE_TOOL_NAME,
+        description="占用保留名的产品工具",
+        args_model=ReadArgs,
+        handler=handler,
+    )
+    with pytest.raises(ToolRegistrationError, match="保留名"):
+        ToolPool().register(squatter)
 
 
 # --- 失败语义 ---------------------------------------------------------------
