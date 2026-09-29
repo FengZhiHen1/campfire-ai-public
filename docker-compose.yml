@@ -1,14 +1,19 @@
 # ============================================================
-#  (Campfire-AI) — local development infrastructure orchestration
-# Start: docker compose up -d
-# Stop:  docker compose down
+# 篝火智答 (Campfire-AI) — 本地开发基础设施编排
+# 启动：docker compose up -d
+# 停止：docker compose down
 #
-# dev environment only orchestrates 3 data containers (postgres/redis/minio).
-# api-server, worker, and nginx run directly on the host.
+# dev 环境只编排数据服务；api、worker、web 直接在宿主机上运行。
+# 一期需要的五个数据服务：PostgreSQL、Redis、FalkorDB、SuperTokens core、MinIO。
+# MinIO 一期不依赖（一期需求无附件），保留编排以便开放附件时直接启用。
+#
+# 部署目标（api、web、worker、nginx 入编排）见 docs/技术栈设计.md 第 6 节；
+# 那是另一份产物，本文件只覆盖本地开发。
 # ============================================================
 
 services:
-  # --- PostgreSQL 17 ---
+  # --- PostgreSQL 17 + pgvector ---
+  # SuperTokens core 的表也在本库内（见 docs/技术栈设计.md 第 4 节）。
   postgres:
     image: pgvector/pgvector:pg17
     container_name: campfire-postgres
@@ -32,6 +37,7 @@ services:
         max-file: "3"
 
   # --- Redis 7 ---
+  # 缓存、限流与 Taskiq broker 的队列。
   redis:
     image: redis:7-alpine
     container_name: campfire-redis
@@ -52,7 +58,60 @@ services:
         max-size: "10m"
         max-file: "3"
 
-  # --- MinIO ---
+  # --- FalkorDB（通用记忆的图库后端，Graphiti 需要）---
+  # 版本说明：设计文档写作「FalkorDB 1.1.2 容器」，但该镜像仓库（falkordb/falkordb）
+  # 的真实 tag 是 4.x 系列（v4.20.7 为当前稳定版），**不存在 1.1.2 这个 tag**；
+  # 「1.1.2」疑为 falkordb Python 客户端的版本。此处按镜像实际存在的 tag 固定，
+  # 该措辞差异已登记待确认。
+  # 端口用 6380，避免与 Redis 的 6379 撞车。
+  falkordb:
+    image: falkordb/falkordb:v4.20.7-alpine
+    container_name: campfire-falkordb
+    restart: unless-stopped
+    env_file: .env
+    ports:
+      - "6380:6379"
+    volumes:
+      - falkordb_data_dev:/data
+    healthcheck:
+      # FalkorDB 是 Redis 分支，redis-cli 随镜像提供。
+      # ⚠️ 未实测：本次改动时 Docker daemon 未运行，无法启动容器核对。
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # --- SuperTokens core（独立 Java HTTP 服务）---
+  # 会话校验在 Python SDK 内完成、不经过 core；core 只在注册、登录、重置、刷新时
+  # 被调用（见 docs/技术栈设计.md 第 2 节）。
+  # ⚠️ 已知风险：core 会在本库内建自己的表，而 Alembic 的 --autogenerate 会把
+  # 这些表当成「该删除的对象」。接入迁移前必须为 autogenerate 排除这些表，
+  # 否则一次自动生成就会产出删表迁移。此项已登记待确认。
+  supertokens:
+    image: supertokens/supertokens-postgresql:12.2.0
+    container_name: campfire-supertokens
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      POSTGRESQL_CONNECTION_URI: postgresql://${POSTGRES_USER:-campfire}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-campfire}
+      API_KEYS: ${SUPERTOKENS_API_KEY}
+    ports:
+      - "3567:3567"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # --- MinIO 对象存储（一期不依赖）---
   minio:
     image: minio/minio
     container_name: campfire-minio
@@ -83,4 +142,5 @@ services:
 volumes:
   pgdata_dev:
   redis_data_dev:
+  falkordb_data_dev:
   minio_data_dev:
