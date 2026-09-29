@@ -32,6 +32,7 @@ RunFailureCode = Literal[
     "model_unavailable",
     "injection_failed",
     "session_write_failed",
+    "context_overflow",
     "internal",
 ]
 """失败码（``run_failed``）。
@@ -39,6 +40,8 @@ RunFailureCode = Literal[
 - ``model_unavailable``：模型调用重试耗尽（``model_reason`` 给出细分原因）；
 - ``injection_failed``：注入项渲染/索引写入失败——**不得**当作「没有注入」继续；
 - ``session_write_failed``：对话未能落库（第 9 节：不得把未落库的对话当作已保存继续下一轮）；
+- ``context_overflow``：提供方明确报上下文溢出，而压缩无法把窗口再降下来（压缩策略第 7 节：
+  不可分单元超预算时**明确失败并提示**，不静默截断）；
 - ``internal``：其余未归类异常。
 """
 
@@ -138,13 +141,45 @@ class CandidateEvent:
 
 
 @dataclass(frozen=True, slots=True)
+class CompactionFacts:
+    """一次压缩的**计量**（压缩策略第 9 节），只带计数与用量、不带摘要正文。
+
+    为什么挂在 ``run_finished`` / ``run_failed`` 上而不是新开一种事件：第 7 节的事件表是与
+    AG-UI 对齐的对外契约，加一种类型等于改契约；而第 9 节要的是**记录**里的计量，终端事件
+    已经带着引用清单与用量，把压缩计量一并带上最省事，也不给面增加新的分支。溢出恢复发生在
+    运行开始**之后**，因此只有终端事件能收全所有压缩。
+    """
+
+    performed: bool
+    window_tokens_before: int
+    window_tokens_after: int
+    released_tokens: int
+    compacted_items: int
+    retained_items: int
+    attempts: int
+    failed_attempts: int
+    previous_summary_merged: bool
+    summary_input_tokens: int
+    summary_output_tokens: int
+    summary_elapsed_seconds: float
+    reason: str | None = None
+    """没有压缩时的原因（压缩策略第 3、7 节：不留假成功，没做就要说清为什么）。"""
+
+    detail: str = ""
+    """给排障看的说明，只带类型级信息。"""
+
+
+@dataclass(frozen=True, slots=True)
 class RunFinishedEvent:
-    """运行结束（正常、触顶或取消），含结束原因与引用清单。"""
+    """运行结束（正常或触顶），含结束原因与引用清单。"""
 
     reason: RunEndReason
     citations: tuple[CitationRecord, ...]
     usage: RunUsage
     elapsed_seconds: float
+    compactions: tuple[CompactionFacts, ...] = ()
+    """本次运行做过的压缩（第 9 节的计量）；没压缩时为空。"""
+
     type: Literal["run_finished"] = field(default="run_finished", init=False)
 
 
@@ -161,6 +196,9 @@ class RunFailedEvent:
     elapsed_seconds: float
     model_reason: ModelFailureReason | None = None
     """``code`` 为 ``model_unavailable`` 时的细分原因。"""
+
+    compactions: tuple[CompactionFacts, ...] = ()
+    """本次运行做过的压缩（第 9 节的计量）；没压缩时为空。"""
 
     type: Literal["run_failed"] = field(default="run_failed", init=False)
 

@@ -57,18 +57,26 @@ from dataclasses import dataclass, field
 
 from agents import Runner
 from agents.items import TResponseInputItem
+from agents.memory.session import Session
 from agents.result import RunResultStreaming
 from agents.stream_events import RawResponsesStreamEvent, RunItemStreamEvent
 
 from campfire.agent.context import (
     CitationIndex,
     CitationRecorder,
+    CompactionJournal,
+    CompactionOutcome,
+    CompactionSettings,
+    CompactionSummarizer,
     InjectionBatch,
     InjectionItem,
     InjectionMessage,
     InjectionPriority,
     InjectionRenderError,
+    Item,
+    compact,
     derive_window,
+    is_context_overflow,
     message_text,
 )
 from campfire.agent.limits import AGENT_RUN_TIMEOUT_SECONDS
@@ -81,6 +89,8 @@ from .errors import RuntimeAssemblyError
 from .events import (
     SUMMARY_LIMIT,
     CitationEvent,
+    CompactionFacts,
+    ProgressEvent,
     RunEvent,
     RunFailedEvent,
     RunFailureCode,
@@ -144,6 +154,43 @@ class RunRequest:
             raise RuntimeAssemblyError("RunRequest.instructions 不能为空：模型需要静态系统提示")
 
 
+class CompactionWiring:
+    """压缩的协作者与参数（装配处提供）。
+
+    单独成包而不是四个平铺参数，是为了让「压缩要不要接线」在构造点一眼可见：不传它，
+    运行编排就不做压缩（窗口退化为全量历史——**安全方向**，但压缩策略第 2 节的触发不存在）。
+    """
+
+    def __init__(
+        self,
+        *,
+        settings: CompactionSettings,
+        summarizer: CompactionSummarizer,
+        journal: CompactionJournal,
+        instruction: str,
+        manual: bool = False,
+    ) -> None:
+        """绑定参数、摘要实现、记账端口与指令。
+
+        ``instruction`` 的内容由产品侧拥有（压缩策略第 4 节的六节结构属领域约定）。
+        ``manual`` 对应第 2 节的手动触发：**仅供运维与调试，不暴露给使用者**。
+        """
+        self.settings = settings
+        self.summarizer = summarizer
+        self.journal = journal
+        self.instruction = instruction
+        self.manual = manual
+
+
+class _ContextOverflow(Exception):
+    """提供方明确报了上下文溢出（内部信号，用于触发一次最大头部缩减后重试）。"""
+
+    def __init__(self, detail: str) -> None:
+        """记录面向排障的说明（只带类型级信息）。"""
+        self.detail = detail
+        super().__init__(detail)
+
+
 class AgentRunner:
     """把一次运行跑完，并只产出基座事件。"""
 
@@ -157,6 +204,7 @@ class AgentRunner:
         sessions: SessionFactory,
         timeout_seconds: float = AGENT_RUN_TIMEOUT_SECONDS,
         agent_name: str = "campfire",
+        compaction: CompactionWiring | None = None,
     ) -> None:
         """绑定协作者。会话工厂与引用索引由装配处提供（基座不拥有连接池与表）。
 
@@ -171,6 +219,7 @@ class AgentRunner:
         self._sessions = sessions
         self._timeout_seconds = timeout_seconds
         self._agent_name = agent_name
+        self._compaction = compaction
 
         has_candidates = bool(skills.activation_candidates())
         has_activation_tool = SKILL_TOOL_NAME in tools.names()
@@ -208,6 +257,13 @@ class AgentRunner:
             logger.warning("读取会话失败 run=%s error=%s", run_id, type(exc).__name__)
             yield _failure("session_write_failed", SESSION_IO_DETAIL, recorder, RunUsage(), started, None)
             return
+
+        compactions: list[CompactionFacts] = []
+        history, facts = await self._compact_if_needed(session, history, request)
+        if facts is not None:
+            compactions.append(facts)
+        if facts is not None and facts.performed:
+            yield ProgressEvent(message="上下文压力偏高，已压缩较早的历史。")
 
         scope = self._resolve_scope(request)
         batch = InjectionBatch(
@@ -267,11 +323,146 @@ class AgentRunner:
             tools=bridge.function_tools(),
         )
         run_config = build_run_config(binding=self._binding, window=_window_callback())
-        # max_turns=None：基座第 2 节不设步数上限，SDK 默认的 10 轮就是一条步数上限。
-        result = Runner.run_streamed(agent, input=new_items, session=session, max_turns=None, run_config=run_config)
 
-        async for event in self._stream(result=result, recorder=recorder, buffer=buffer, started=started):
+        async for event in self._execute(
+            session=session,
+            agent=agent,
+            run_config=run_config,
+            new_items=new_items,
+            history=history,
+            request=request,
+            recorder=recorder,
+            buffer=buffer,
+            started=started,
+            compactions=compactions,
+        ):
             yield event
+
+    async def _execute(
+        self,
+        *,
+        session: Session,
+        agent: object,
+        run_config: object,
+        new_items: list[TResponseInputItem],
+        history: list[TResponseInputItem],
+        request: RunRequest,
+        recorder: CitationRecorder,
+        buffer: list[RunEvent],
+        started: float,
+        compactions: list[CompactionFacts],
+    ) -> AsyncIterator[RunEvent]:
+        """跑 SDK 并按第 7 节处理上下文溢出恢复，直到结束或明确失败。
+
+        单独成方法有两个理由：一是让 :meth:`run` 只剩「准备 → 交付」两步；二是溢出恢复需要
+        「重跑整次 SDK 调用」，那是一个循环，混在准备逻辑里会让人看不出这个循环的边界。
+
+        **已知代价（写清楚，不藏）**：重试会把本轮新增项（注入 + 使用者消息）再交给 SDK 一次；
+        若首次尝试已经把这批项部分落库，会话里可能出现重复消息。要彻底消除需要会话事务，
+        而会话级重写是压缩策略第 10 节明确一期不做的范围。溢出是一期几乎不会走的路径
+        （阈值约 80 万 token），因此接受这个代价并在此标注。
+        """
+        overflow_attempts = 0
+        while True:
+            # max_turns=None：基座第 2 节不设步数上限，SDK 默认的 10 轮就是一条步数上限。
+            result = Runner.run_streamed(
+                agent,
+                input=new_items,
+                session=session,
+                max_turns=None,
+                run_config=run_config,
+            )
+            try:
+                async for event in self._stream(
+                    result=result,
+                    recorder=recorder,
+                    buffer=buffer,
+                    started=started,
+                    compactions=tuple(compactions),
+                ):
+                    yield event
+                return
+            except _ContextOverflow as overflow:
+                wiring = self._compaction
+                if wiring is None or overflow_attempts >= wiring.settings.max_overflow_retries:
+                    yield _failure(
+                        "context_overflow",
+                        overflow.detail,
+                        recorder,
+                        RunUsage(),
+                        started,
+                        None,
+                        compactions=tuple(compactions),
+                    )
+                    return
+
+                overflow_attempts += 1
+                history, facts = await self._compact_if_needed(
+                    session,
+                    history,
+                    request,
+                    force_max_reduction=True,
+                )
+                if facts is not None:
+                    compactions.append(facts)
+                if facts is None or not facts.performed:
+                    # 第 7 节：只有在替换确实推进了之后才重试；推不动就明确失败并提示，
+                    # 不静默截断（不可分单元超预算的情形）。
+                    reason = facts.detail if facts is not None else "压缩未接线"
+                    yield _failure(
+                        "context_overflow",
+                        f"{overflow.detail}；最大头部缩减未能降低窗口（{reason}）",
+                        recorder,
+                        RunUsage(),
+                        started,
+                        None,
+                        compactions=tuple(compactions),
+                    )
+                    return
+                yield ProgressEvent(message="提供方报了上下文溢出，已做最大头部缩减，重试本次运行。")
+
+    async def _compact_if_needed(
+        self,
+        session: Session,
+        history: list[TResponseInputItem],
+        request: RunRequest,
+        *,
+        force_max_reduction: bool = False,
+    ) -> tuple[list[TResponseInputItem], CompactionFacts | None]:
+        """运行前（或溢出恢复时）压缩：按需压缩并把追加内容写回会话。
+
+        压缩发生在**派生窗口之前**（压缩策略第 2 节的触发时机）。把追加内容写回会话是这里的
+        职责而不是机制的：机制只返回「原历史 + 追加」，落库仍是会话的事（基座第 2 节单真源）。
+        """
+        wiring = self._compaction
+        if wiring is None:
+            return history, None
+
+        updated, outcome = await compact(
+            history_from(history),
+            settings=wiring.settings,
+            summarizer=wiring.summarizer,
+            instruction=wiring.instruction,
+            journal=wiring.journal,
+            manual=wiring.manual,
+            force_max_reduction=force_max_reduction,
+            extra_text=request.instructions,
+        )
+        facts = compaction_facts(outcome)
+        if not outcome.performed:
+            if outcome.reason not in ("below_threshold", "auto_disabled", "no_safe_range"):
+                # 越过了阈值却没能压缩：这是需要被看见的降级，不能静默。
+                logger.warning(
+                    "压缩未执行 session=%s reason=%s detail=%s",
+                    request.session_id,
+                    outcome.reason,
+                    outcome.detail,
+                )
+            return history, facts
+
+        appended = _as_items(updated[len(history) :])
+        await session.add_items(appended)
+        return [*history, *appended], facts
 
     async def _stream(
         self,
@@ -280,6 +471,7 @@ class AgentRunner:
         recorder: CitationRecorder,
         buffer: list[RunEvent],
         started: float,
+        compactions: tuple[CompactionFacts, ...] = (),
     ) -> AsyncIterator[RunEvent]:
         """消费 SDK 的事件流，翻译成基座事件，直到结束、触顶或失败。
 
@@ -289,6 +481,8 @@ class AgentRunner:
         Raises:
             asyncio.CancelledError: 消费者取消时原样抛出（第 9 节：立即停止调用）；
                 此时不产出结束事件，因为取消自己的消费者收不到任何后续事件。
+            _ContextOverflow: 提供方明确报上下文溢出——交给 :meth:`run` 做一次最大头部缩减后
+                重试（压缩策略第 7 节），因此不在这里变成 ``run_failed``。
         """
         run_id = recorder.run_id
         usage = RunUsage()
@@ -312,6 +506,7 @@ class AgentRunner:
                         citations=recorder.issued,
                         usage=usage,
                         elapsed_seconds=time.monotonic() - started,
+                        compactions=compactions,
                     )
                     return
 
@@ -325,10 +520,14 @@ class AgentRunner:
             _cancel_quietly(result, run_id)
             raise
         except Exception as exc:  # noqa: BLE001 —— 任何未归类异常都要变成带码的失败
+            if is_context_overflow(exc):
+                # 溢出恢复的入口：先停掉这次运行，再交给 run() 决定能否压缩后重试。
+                _cancel_quietly(result, run_id)
+                raise _ContextOverflow(f"提供方报了上下文溢出（{type(exc).__name__}）") from exc
             logger.warning("运行失败 run=%s error=%s", run_id, type(exc).__name__)
             for item in tracker.flush(buffer):
                 yield item
-            yield _failed_from_exception(exc, recorder, usage, started)
+            yield _failed_from_exception(exc, recorder, usage, started, compactions=compactions)
             return
 
         for item in tracker.flush(buffer):
@@ -338,6 +537,7 @@ class AgentRunner:
             citations=recorder.issued,
             usage=usage,
             elapsed_seconds=time.monotonic() - started,
+            compactions=compactions,
         )
 
     def _pending_injections(
@@ -350,12 +550,17 @@ class AgentRunner:
 
         只追加「与历史里最后一条同名消息不同」的那些（压缩策略第 8 节第 1 条：只在末尾追加，
         不原地替换）。判断完全由会话历史推导，不依赖进程内记忆。
+
+        **判据只看窗口，不看整段历史**：压缩之后，目录/可用性/激活内容都可能落在被摘要覆盖的
+        那一段里——那里已经不进窗口了。若继续按整段历史判断，模型会在压缩后丢掉技能目录，
+        而基座还以为「已经注入过」。
         """
+        window = derive_window(history)
         pending: list[InjectionItem] = []
 
         if self._skills.activation_candidates():  # 没有任何可选 skill 时，空目录是噪音
             catalog = self._skills.catalog(surface=request.surface)
-            if _last_content(history, _CATALOG_PREFIX) != catalog:
+            if _last_content(window, _CATALOG_PREFIX) != catalog:
                 pending.append(
                     InjectionItem(
                         source="skill-catalog",
@@ -367,7 +572,7 @@ class AgentRunner:
         for skill in request.activated:
             payload = render_activation(skill)
             prefix = _ACTIVATION_PREFIX_TEMPLATE.format(name=skill.name)
-            if _last_content(history, prefix) != payload:
+            if _last_content(window, prefix) != payload:
                 pending.append(
                     InjectionItem(
                         source=f"skill-activation:{skill.name}",
@@ -378,7 +583,7 @@ class AgentRunner:
 
         if scope.declared:  # 没有任何已声明工具时，可用性告知是噪音
             availability = scope.availability_item()
-            if _last_content(history, _AVAILABILITY_PREFIX) != availability.content:
+            if _last_content(window, _AVAILABILITY_PREFIX) != availability.content:
                 pending.append(availability)
 
         return pending
@@ -533,6 +738,41 @@ def _window_callback() -> WindowCallback:
     return window
 
 
+def history_from(items: Sequence[TResponseInputItem]) -> list[Item]:
+    """把 SDK 的输入项交给压缩机制。
+
+    运行时两者都是普通 dict；这里显式转一次，是因为 ``TypedDict`` 在静态类型上并不是
+    ``Mapping[str, object]`` 的子类型——用一个明确的转换代替类型逃逸。
+    """
+    return [dict(item) for item in items]
+
+
+def _as_items(items: Sequence[Item]) -> list[TResponseInputItem]:
+    """把基座项形状交回 SDK（写入会话时用）。"""
+    return [dict(item) for item in items]  # type: ignore[list-item]  # 运行时形状一致，TypedDict 无法从 Mapping 静态推导
+
+
+def compaction_facts(outcome: CompactionOutcome) -> CompactionFacts:
+    """把压缩结果压成事件里的计量（不带摘要正文，见 :class:`CompactionFacts`）。"""
+    summary = outcome.summary
+    return CompactionFacts(
+        performed=outcome.performed,
+        window_tokens_before=outcome.window_tokens_before,
+        window_tokens_after=outcome.window_tokens_after,
+        released_tokens=outcome.released_tokens,
+        compacted_items=outcome.compacted_items,
+        retained_items=outcome.retained_items,
+        attempts=outcome.attempts,
+        failed_attempts=outcome.failed_attempts,
+        previous_summary_merged=outcome.previous_summary_merged,
+        summary_input_tokens=summary.input_tokens if summary is not None else 0,
+        summary_output_tokens=summary.output_tokens if summary is not None else 0,
+        summary_elapsed_seconds=outcome.summary_elapsed_seconds,
+        reason=outcome.reason,
+        detail=outcome.detail,
+    )
+
+
 def _as_input_item(message: InjectionMessage) -> TResponseInputItem:
     """把注入消息转成 SDK 的输入项（形状一致，只是补齐 SDK 的联合类型）。"""
     if message["role"] == "assistant":
@@ -566,12 +806,30 @@ def _failed_from_exception(
     recorder: CitationRecorder,
     usage: RunUsage,
     started: float,
+    *,
+    compactions: tuple[CompactionFacts, ...] = (),
 ) -> RunFailedEvent:
     """把一次未捕获的异常变成 ``run_failed``：模型侧问题与内部问题分开报码。"""
     reason = classify_model_failure(error)
     if reason == "unknown":
-        return _failure("internal", f"运行内部错误（{type(error).__name__}）", recorder, usage, started, None)
-    return _failure("model_unavailable", f"模型调用失败（{type(error).__name__}）", recorder, usage, started, error)
+        return _failure(
+            "internal",
+            f"运行内部错误（{type(error).__name__}）",
+            recorder,
+            usage,
+            started,
+            None,
+            compactions=compactions,
+        )
+    return _failure(
+        "model_unavailable",
+        f"模型调用失败（{type(error).__name__}）",
+        recorder,
+        usage,
+        started,
+        error,
+        compactions=compactions,
+    )
 
 
 def _failure(
@@ -581,6 +839,8 @@ def _failure(
     usage: RunUsage,
     started: float,
     cause: BaseException | None,
+    *,
+    compactions: tuple[CompactionFacts, ...] = (),
 ) -> RunFailedEvent:
     """造一个 ``run_failed`` 事件；模型失败额外带上细分原因。"""
     reason: ModelFailureReason | None = None
@@ -593,6 +853,7 @@ def _failure(
         usage=usage,
         elapsed_seconds=time.monotonic() - started,
         model_reason=reason,
+        compactions=compactions,
     )
 
 

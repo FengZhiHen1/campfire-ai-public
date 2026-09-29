@@ -21,6 +21,7 @@ from .errors import RuntimeAssemblyError, SessionConfigurationError
 from .events import (
     CandidateEvent,
     CitationEvent,
+    CompactionFacts,
     ProgressEvent,
     RunEndReason,
     RunEvent,
@@ -33,9 +34,10 @@ from .events import (
     ToolCallFinishedEvent,
     ToolCallStartedEvent,
 )
-from .runner import SESSION_IO_DETAIL, AgentRunner, RunRequest
+from .runner import SESSION_IO_DETAIL, AgentRunner, CompactionWiring, RunRequest
 from .session import SessionFactory, build_sqlalchemy_session
 from .skill_tool import SKILL_TOOL_NAME, ActivateSkillArgs, build_skill_tool
+from .summarizer import ModelSummarizer
 
 __all__ = [
     "SESSION_IO_DETAIL",
@@ -44,6 +46,9 @@ __all__ = [
     "AgentRunner",
     "CandidateEvent",
     "CitationEvent",
+    "CompactionFacts",
+    "CompactionWiring",
+    "ModelSummarizer",
     "ProgressEvent",
     "RunEndReason",
     "RunEvent",
