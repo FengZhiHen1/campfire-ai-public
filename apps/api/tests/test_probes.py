@@ -76,7 +76,9 @@ async def test_model_probe_reports_not_configured_without_key() -> None:
 class _FakeResponse:
     """假响应：状态码 + body（JSON 或原始文本）。"""
 
-    def __init__(self, status_code: int, *, json_body: object = None, text: str = "", raises: BaseException | None = None):
+    def __init__(
+        self, status_code: int, *, json_body: object = None, text: str = "", raises: BaseException | None = None
+    ):
         self.status_code = status_code
         self._json_body = json_body
         self._text = text
@@ -145,8 +147,12 @@ async def test_model_probe_notes_a_missing_model_without_failing(monkeypatch: py
 @pytest.mark.parametrize(
     ("response", "expected_fragment"),
     [
-        pytest.param(_FakeResponse(200, text="<html>502 Bad Gateway</html>", raises=ValueError()), "不是 JSON", id="HTML 错误页"),
-        pytest.param(_FakeResponse(200, json_body={"error": {"code": "invalid_api_key"}}), "不是模型清单", id="错误 body"),
+        pytest.param(
+            _FakeResponse(200, text="<html>502 Bad Gateway</html>", raises=ValueError()), "不是 JSON", id="HTML 错误页"
+        ),
+        pytest.param(
+            _FakeResponse(200, json_body={"error": {"code": "invalid_api_key"}}), "不是模型清单", id="错误 body"
+        ),
         pytest.param(_FakeResponse(200, json_body={"data": []}), "不是模型清单", id="空清单"),
         pytest.param(_FakeResponse(404, json_body={}), "返回 404", id="非 200"),
     ],

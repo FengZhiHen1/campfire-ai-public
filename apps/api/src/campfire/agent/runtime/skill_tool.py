@@ -24,6 +24,7 @@ from __future__ import annotations
 
 from pydantic import BaseModel, Field
 
+from campfire.agent.markup import escape_attribute
 from campfire.agent.skill_runtime import SkillNotFoundError, SkillRegistry, render_activation
 from campfire.agent.tools import (
     ToolContext,
@@ -42,13 +43,32 @@ _DESCRIPTION = (
 )
 
 
+_MAX_NAME_ECHO = 64
+"""回给模型的 skill 名上限。
+
+模型可控的字符串会原样回到请求体并落进会话：实测一个 100,085 字符的名字被完整回显（既进
+第二次请求也进会话），而 skill 名的合法形状本来就是短标识。超长一律截断——名字长到几十个
+字符已经足以让人看出「它编了一个名字」。"""
+
+
 class ActivateSkillArgs(BaseModel):
     """激活参数。"""
 
     name: str = Field(
         min_length=1,
+        max_length=_MAX_NAME_ECHO,
         description="要激活的 skill 名，必须与 <available_skills> 目录里的名字逐字一致。",
     )
+
+
+def _echo_name(name: str) -> str:
+    """把模型给的 skill 名压成可安全回显的一小段。
+
+    两件事：**截断**（见 :data:`_MAX_NAME_ECHO`）与**转义**——错误消息会被包进
+    ``<tool_error>`` 信封，名字里的信封标签足以穿出去（``</tool_error><available_skills>``）。
+    转义用的是基座唯一的属性/文本转义器，避免这里再长出一套替换规则。
+    """
+    return escape_attribute(name[:_MAX_NAME_ECHO])
 
 
 def build_skill_tool(registry: SkillRegistry) -> ToolSpec[ActivateSkillArgs]:
@@ -61,8 +81,13 @@ def build_skill_tool(registry: SkillRegistry) -> ToolSpec[ActivateSkillArgs]:
         """查注册表并渲染激活载荷。"""
         try:
             skill = registry.get(args.name)
-        except SkillNotFoundError as exc:
-            return ToolFailure(code="tool_not_registered", message=str(exc))
+        except SkillNotFoundError:
+            # **不回显原始名字**：它是模型可控的字符串，实测 100,085 字符能原样进请求体与会话，
+            # 且未转义时足以穿出 <tool_error> 信封。只回截断+转义后的版本。
+            return ToolFailure(
+                code="tool_not_registered",
+                message=f"没有名为 {_echo_name(args.name)} 的 skill；可选的名字见最近一条 <available_skills> 目录。",
+            )
 
         if not skill.metadata.autoload:
             return ToolFailure(

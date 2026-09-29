@@ -32,6 +32,7 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Generic, Literal, Protocol, TypeVar
 
+from agents.function_schema import ensure_strict_json_schema
 from pydantic import BaseModel, ValidationError
 
 from campfire.agent.context import CitationRecorder
@@ -138,10 +139,11 @@ class ToolSpec(Generic[ArgsT]):
     requires_approval: bool = False
 
     def __post_init__(self) -> None:
-        """校验名字与描述的形状。
+        """校验名字、描述与**参数 schema 能否通过严格模式**。
 
         Raises:
-            ToolSpecError: 名字不符合 :data:`TOOL_NAME_PATTERN`（或超长），描述为空或超长。
+            ToolSpecError: 名字不符合 :data:`TOOL_NAME_PATTERN`（或超长）、描述为空或超长，
+                或参数 schema 无法被 SDK 的严格模式接受。
         """
         if not TOOL_NAME_PATTERN.fullmatch(self.name):
             raise ToolSpecError(f"工具名 {self.name!r} 不合法：只允许小写字母、数字与下划线，且以字母开头")
@@ -151,6 +153,26 @@ class ToolSpec(Generic[ArgsT]):
             raise ToolSpecError(f"工具 {self.name} 的描述不能为空：描述是模型选择工具的唯一依据")
         if len(self.description) > _DESCRIPTION_MAX_LENGTH:
             raise ToolSpecError(f"工具 {self.name} 的描述超过 {_DESCRIPTION_MAX_LENGTH} 字符")
+        self._require_strict_schema()
+
+    def _require_strict_schema(self) -> None:
+        """在**注册期**确认参数 schema 能被 SDK 的严格模式接受。
+
+        为什么必须提前：``ensure_strict_json_schema`` 由 SDK 在**构造工具时**调用，而那一刻
+        运行已经发出 ``run_started`` 了——实测参数模型含开放对象（``dict[str, int]``、
+        ``extra="allow"``）时抛裸 ``UserError``，事件流只到 ``run_started`` 就断，调用方拿不到
+        任何 ``run_failed``。注册期就失败，问题是配置错误，而不是一次半截的运行。
+
+        Raises:
+            ToolSpecError: schema 含开放对象等严格模式不支持的结构。
+        """
+        try:
+            ensure_strict_json_schema(self.parameters)
+        except Exception as exc:  # noqa: BLE001 —— SDK 的 UserError 也要变成我们的配置错误
+            raise ToolSpecError(
+                f"工具 {self.name} 的参数 schema 无法通过严格模式（{type(exc).__name__}）："
+                "参数模型不要使用开放对象（例如 dict[str, X]）或 extra='allow'"
+            ) from exc
 
     @property
     def parameters(self) -> dict[str, object]:
