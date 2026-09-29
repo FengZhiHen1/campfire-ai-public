@@ -22,13 +22,13 @@
 
 ```yaml
 name: daily-consulting
-description: 用于监护者就支持对象的日常状况、行为、沟通与支持方式展开咨询：当使用者想弄清一个持续存在的困扰、比较几种做法、或想知道某个做法是否合适时使用。可多轮澄清、检索专业资料与案例，并在需要时把已出现的信息整理进个性化档案。
+description: 用于监护者就支持对象的日常状况、行为、沟通与支持方式展开咨询：当使用者想弄清一个持续存在的困扰、比较几种做法、或想知道某个做法是否合适时使用。可多轮澄清、检索专业资料与案例，回看既往记忆，并在需要时把已出现的信息整理进个性化档案。
 license: 项目内部内容，随应用发布，不单独授权
-compatibility: 依赖 read_profile_summary、read_profile_items、search_knowledge、search_cases 四个只读工具；不依赖脚本与外部二进制
+compatibility: 依赖 read_profile_summary、read_profile_items、read_memory、search_knowledge、search_cases 五个只读工具；不依赖脚本与外部二进制
 metadata:
   surface: "consult"
   autoload: "true"
-allowed-tools: read_profile_summary read_profile_items search_knowledge search_cases
+allowed-tools: read_profile_summary read_profile_items read_memory search_knowledge search_cases
 ```
 
 ### 3.2 方法论（正文主体）
@@ -56,6 +56,7 @@ allowed-tools: read_profile_summary read_profile_items search_knowledge search_c
 - 检索**按需**，不为凑引用；同一轮不要对同一问题重复检索。
 - **查询词自改写**：案例卡片是临床/指南文风，使用者的口语原话（如"孩子装听不见怎么办"）与卡片文风错配，直接拿原话当 `query` 会漏召回。检索前把口语描述**改写成简明的行为与情境描述**再查（例：搜"听到指令不执行、拖延、假装未听见"）。改写只发生在工具调用的 `query` 里，**不改变使用者原话的呈现**——输出中引用使用者表述仍用原话。机制与评测闸门见[RAG 策略](../../../technical-details/RAG策略.md)第 8.1 节。
 - `read_profile_items` 只在需要具体条目时用；只想要概览时用 `read_profile_summary`。
+- **记忆工具的使用指导**（2026-09-29 定，[通用记忆](../../../technical-details/通用记忆.md)第 4 节）：`read_memory` 用于**回看时间线**——"上次是怎么说的、这件事什么时候开始的"这类问题先查记忆再回答；它读的是片段原文，不是结论，涉及"现在该信什么"时以档案与本次对话为准。不需要每次咨询都调用；判断依据是使用者的问题是否涉及既往经历或演变。
 - **写工具一律不可用**：本 skill 没有 `propose_profile_item`、`write_memory`；越界调用由服务端拒绝。
 
 ### 3.5 `references/` 的内容边界
@@ -72,6 +73,7 @@ allowed-tools: read_profile_summary read_profile_items search_knowledge search_c
 - **事实与推测分离**：构造"使用者只描述了行为"的输入，验证输出不把推断写成事实。
 - **不强行服从目标**：构造"目标是让孩子听话"的输入，验证该目标被摆出来讨论而不是被默认接受。
 - **不越权写入**：尝试调用写工具，服务端拒绝。
+- **记忆回看**：构造"上次说过什么"的提问，验证输出引用 `read_memory` 的返回且标注时间；构造与既往无关的新问题，验证不无谓调用。
 
 ## 5. 不在本文范围
 

@@ -1,18 +1,20 @@
 # write_memory
 
-> **权威范围**：该工具的契约。异步写入路径见[写入路径](../../../technical-details/写入路径.md)。
+> **权威范围**：该工具的契约。异步写入路径见[写入路径](../../../technical-details/写入路径.md)；记忆单元粒度、时间模型与删除账本见[通用记忆](../../../technical-details/通用记忆.md)。
 > **状态**：2026-09-29 依已确认机制设计，待用户确认。
-> **追溯**：`RQ-MEM-01`、`RQ-MEM-02`、`RQ-MEM-03`。
+> **追溯**：`RQ-MEM-01`、`RQ-MEM-02`、`RQ-MEM-03`、`RQ-MEM-07`。
 
 ## 1. 用途
 
 把一段对话内容作为**记忆片段**提交，供以后按时间回看。
 
+**归属**：记忆随支持对象分区（`group_id = support_object_id`，[通用记忆](../../../technical-details/通用记忆.md)第 1 节）；一个账号多个对象时各自独立。
+
 ## 2. 参数
 
 ```text
 support_object_id: string
-content: string          # 要记住的内容
+content: string          # 要记住的内容：一件值得记住的事，一个 episode
 occurred_at: string      # 这件事发生的时间（不是提交时间）
 source: object           # 会话 id、消息定位、时间
 ```
