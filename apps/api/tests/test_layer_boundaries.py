@@ -20,8 +20,11 @@ LAYERS = ("agent", "surfaces", "tools", "modules", "core", "cli")
 # 每层允许引用的同项目包前缀（不含该层自身，自身由 _owner_prefix 放行）。
 # 依据 docs/项目结构设计.md 第 7 节的表。
 ALLOWED: dict[str, set[str]] = {
-    # 基座只允许 core/config（设计另列 core/logging，但该模块在目录设计中不存在）
-    "agent": {"campfire.core.config"},
+    # 基座只允许 core/config（设计另列 core/logging，但该模块在目录设计中不存在）。
+    # ``campfire.agent`` 自身在列：第 7 节的表把 agent/* 当作**一层**，层内子包
+    # （runtime、skill_runtime、tools…）互相引用不构成跨层依赖；而 _owner_prefix
+    # 只放行到 agent/<子包>，不放行兄弟子包，故必须显式列出。
+    "agent": {"campfire.core.config", "campfire.agent"},
     "surfaces": {"campfire.agent", "campfire.tools", "campfire.modules", "campfire.core"},
     "tools": {"campfire.modules", "campfire.core"},
     "modules": {"campfire.core"},

@@ -15,5 +15,48 @@
 - 校验使用标准参照实现 ``skills-ref validate``，纳入工程检查。
 - 一期不做安装、市场与运行时下发；skills 随应用发布，根目录由配置指定。
 
-尚未实现：本包当前无代码。
+模块分工：:mod:`~campfire.agent.skill_runtime.frontmatter` 只做「文本 → 映射」，
+:mod:`~campfire.agent.skill_runtime.skill` 只做字段语义，:mod:`registry` 负责发现与
+取用，:mod:`catalog` 与 :mod:`activation` 只做渲染（纯函数）。
 """
+
+from .activation import render_activation
+from .catalog import CATALOG_BUDGET_TOKENS, estimate_tokens, render_catalog, visible_to
+from .errors import (
+    SkillCatalogOverflowError,
+    SkillDiscoveryError,
+    SkillError,
+    SkillFrontmatterError,
+    SkillNotFoundError,
+    SkillResourceError,
+)
+from .registry import SKILL_FILE_NAME, SkillRegistry, SkillWarning
+from .resources import MAX_RESOURCE_BYTES, RESOURCE_DIRECTORIES, SkillResource, list_resources, read_resource
+from .script_runner import ScriptRunner
+from .skill import NAME_PATTERN, Skill, SkillMetadata
+
+__all__ = [
+    "CATALOG_BUDGET_TOKENS",
+    "MAX_RESOURCE_BYTES",
+    "NAME_PATTERN",
+    "RESOURCE_DIRECTORIES",
+    "SKILL_FILE_NAME",
+    "ScriptRunner",
+    "Skill",
+    "SkillCatalogOverflowError",
+    "SkillDiscoveryError",
+    "SkillError",
+    "SkillFrontmatterError",
+    "SkillMetadata",
+    "SkillNotFoundError",
+    "SkillRegistry",
+    "SkillResource",
+    "SkillResourceError",
+    "SkillWarning",
+    "estimate_tokens",
+    "list_resources",
+    "read_resource",
+    "render_activation",
+    "render_catalog",
+    "visible_to",
+]
