@@ -1,0 +1,80 @@
+"""模型侧激活：``skill`` 工具。
+
+依据 docs/技术设计/technical-details/通用基座.md 第 3 节「激活（模型侧）」：**模型调用
+``skill({ name })`` 工具**，工具结果消息携带 ``<skill_content>``（``SKILL.md`` 正文）与
+资源指引，正文由此进入对话。应用侧激活用同一个渲染函数，因此两种形态同形。
+
+放在 ``runtime/`` 而不是 ``skill_runtime/``：这个模块要同时用到「工具注册形状」（``tools``）
+与「skill 注册表」（``skill_runtime``），而 ``tools`` 反过来要读 ``Skill``——把文件放在
+``skill_runtime`` 会形成 ``tools → skill_runtime → tools`` 的部分初始化环。运行编排本来
+就是两者的装配处，放这里没有额外依赖方向。
+
+三条行为约定：
+
+- **未知名字 → ``tool_not_registered``**：错误码与基座其它路径一致，说明里带上已注册的名字，
+  模型可以据此换一个名字重试（第 9 节：工具失败作为结果回给模型，可恢复）。
+- **``autoload: "false"`` 的 skill 拒绝模型激活 → ``tool_not_available``**：这类 skill 只能
+  由应用注入激活（技能设计第 69 行「应急验证『注入即激活』且**不被自动匹配**」）。目录里
+  不列它只是第一道；模型若从历史或猜测里拿到名字，这里仍然挡住。
+- **正文由 :func:`~campfire.agent.skill_runtime.render_activation` 渲染**，与注入路径同一份
+  实现——同形由此保证，而不是靠两处对齐。
+"""
+
+from __future__ import annotations
+
+from pydantic import BaseModel, Field
+
+from campfire.agent.skill_runtime import SkillNotFoundError, SkillRegistry, render_activation
+from campfire.agent.tools import (
+    ToolContext,
+    ToolFailure,
+    ToolOutcome,
+    ToolResult,
+    ToolSpec,
+)
+
+SKILL_TOOL_NAME = "skill"
+"""模型侧激活工具的名字。与 ``tools.pool.RESERVED_TOOL_NAMES`` 是同一个名字。"""
+
+_DESCRIPTION = (
+    "激活一个 skill：把它完整的指令与资源指引读进来，之后本轮对话都遵循它。"
+    "可选的名字与用途见最近一条 <available_skills> 目录。"
+)
+
+
+class ActivateSkillArgs(BaseModel):
+    """激活参数。"""
+
+    name: str = Field(
+        min_length=1,
+        description="要激活的 skill 名，必须与 <available_skills> 目录里的名字逐字一致。",
+    )
+
+
+def build_skill_tool(registry: SkillRegistry) -> ToolSpec[ActivateSkillArgs]:
+    """构造模型侧的技能激活工具。
+
+    由装配处用 ``ToolPool.register_base`` 注册（它使用基座保留名）。
+    """
+
+    async def handler(_context: ToolContext, args: ActivateSkillArgs) -> ToolOutcome:
+        """查注册表并渲染激活载荷。"""
+        try:
+            skill = registry.get(args.name)
+        except SkillNotFoundError as exc:
+            return ToolFailure(code="tool_not_registered", message=str(exc))
+
+        if not skill.metadata.autoload:
+            return ToolFailure(
+                code="tool_not_available",
+                message=f"skill {skill.name} 只能由应用在运行入口激活，模型不得自动匹配它",
+            )
+
+        return ToolResult(text=render_activation(skill))
+
+    return ToolSpec(
+        name=SKILL_TOOL_NAME,
+        description=_DESCRIPTION,
+        args_model=ActivateSkillArgs,
+        handler=handler,
+    )

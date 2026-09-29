@@ -14,6 +14,7 @@
 
 from .errors import ModelConfigurationError, ModelError, ModelFailureReason, classify_model_failure
 from .gateway import (
+    ModelBinding,
     ModelGateway,
     ModelPurpose,
     build_model_settings,
@@ -24,6 +25,7 @@ from .gateway import (
 from .probe import ModelEndpointReport, check_model_endpoint
 
 __all__ = [
+    "ModelBinding",
     "ModelConfigurationError",
     "ModelEndpointReport",
     "ModelError",
