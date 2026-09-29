@@ -69,3 +69,4 @@
 | TECH-06 | 微信小程序类目资质与 AI 生成内容的审核要求 | 远期端可行性，不影响一期 |
 | TECH-07 | SuperTokens 的付费特性清单——门禁机制在 `ee/`，被门禁的功能代码可能在主源码树 | 确认 EmailPassword 与 Session 不被企业许可门禁 |
 | TECH-08 | SuperTokens 把账号名存放于 `email` 字段带来的歧义 | 以后加邮箱时"登录名"与"联系方式"会冲突；与自有用户表的关系需写清 |
+| TECH-09 | TokenHub 上的 DeepSeek-V4.1-Flash 是否支持工具延后加载（`tool_namespace`、`defer_loading`、`ToolSearchTool`）所依赖的 Responses 语义 | 决定日常咨询能否用延后加载省 token；不支持时退化为仅用 `is_enabled` 过滤 |
