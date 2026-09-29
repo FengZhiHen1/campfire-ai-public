@@ -119,10 +119,26 @@ def parse_frontmatter(text: str) -> tuple[dict[str, str], str]:
         key, separator, value = stripped.partition(":")
         if not separator:
             continue
-        metadata[key.strip()] = value.strip().strip('"').strip("'")
+        metadata[key.strip()] = _unquote(value.strip())
 
     body = "\n".join(lines[end + 1 :]).lstrip("\n")
     return metadata, body
+
+
+def _unquote(value: str) -> str:
+    """去掉值两端的引号并还原转义（与 ``html_extract._yaml_value`` 对称）。
+
+    为什么必须对称（2026-09-29 实测缺陷）：写侧把含引号的值转义成 ``\\"``，
+    而读侧若只 ``strip('"')``，读回的值会带一个多余的反斜杠——**语料里的
+    出处或标题被静默改写**。写法与读法必须成对。
+    """
+    if len(value) >= 2 and value[0] == value[-1] and value[0] in ("'", '"'):
+        inner = value[1:-1]
+        if value[0] == '"':
+            # 只还原写侧产生的转义（反斜杠与双引号），不解释任意 YAML 转义。
+            return inner.replace('\\"', '"').replace("\\\\", "\\")
+        return inner
+    return value
 
 
 def split_markdown(text: str) -> list[Chunk]:

@@ -47,7 +47,12 @@ LITERAL_TOP_K = 30
 FUSED_TOP_K = 8
 
 #: 中文三元组的可用下限：≥3 个连续汉字才走字面路（RAG 策略第 3.1 节）。
+#: 中文查询走字面路所需的最长连续汉字数。实测 3 是对 ``asd`` 一类 3 字符
+#: 查询的分界（见 ``literal_path_is_usable`` 的实测表）。
 MIN_CJK_FOR_TRIGRAM = 3
+
+#: 非中文查询走字面路所需的最长连续字母/数字段长度（同一实测依据）。
+MIN_CHARS_FOR_TRIGRAM = 3
 
 _CJK_PATTERN = re.compile(r"[\u4e00-\u9fff]")
 
@@ -92,13 +97,49 @@ def _count_cjk(text_value: str) -> int:
     return longest
 
 
-def literal_path_is_usable(query: str) -> bool:
-    """字面路是否可用：查询词需 ≥3 个连续汉字。
+def _longest_word_run(text_value: str) -> int:
+    """最长连续字母/数字段（非中文查询的判据）。
 
-    1–2 字的查询走字面路会退化为顺序扫描且几乎无召回（RAG 策略第 3.1 节），
-    因此直接跳过该路——只走向量路与元数据过滤。
+    用"最长单段"而不是"总长度"：``"a b"`` 总长 3 但两段各 1 字符，各自产生的
+    三元组选择性极差——用总长会让这类噪声查询通过闸门。
     """
-    return _count_cjk(query) >= MIN_CJK_FOR_TRIGRAM
+    longest = 0
+    current = 0
+    for ch in text_value:
+        if ch.isalnum() and not _CJK_PATTERN.match(ch):
+            current += 1
+            longest = max(longest, current)
+        else:
+            current = 0
+    return longest
+
+
+def literal_path_is_usable(query: str) -> bool:
+    """字面路是否可用：中文需 ≥3 连续汉字，非中文需 ≥3 个连续字母/数字。
+
+    **实测依据**（2026-09-29，2 万行临时表 + 与生产一致的三列 trigram 索引，
+    两张计划都测：规划器自选与 `SET enable_seqscan=off` 强制）：
+
+    | 查询 | 规划器自选 | 强制走索引 |
+    |---|---|---|
+    | ``autism``（6 字符） | Bitmap Index Scan | 走索引 |
+    | ``asd``（3 字符） | Bitmap Index Scan | 走索引 |
+    | ``ab``（2 字符） | **Seq Scan** | 走索引 |
+    | ``孤独症``（3 汉字） | Bitmap Index Scan | 走索引 |
+    | ``筛查``/``干预``（2 汉字） | **Seq Scan** | 走索引 |
+
+    因此阈值是**选择性**而非"有无三元组"——实测 ``ab`` 这类 2 字符串**同样
+    产生 3 个三元组**（pg_trgm 会填充边界），但那些三元组太常见，规划器宁可
+    全表扫描。3 字符是分界点（``asd`` 恰好走索引），故非中文取 ≥3。
+
+    1–2 字符的查询走字面路会退化为顺序扫描且几乎无召回（RAG 策略第 3.1 节），
+    因此直接跳过该路——只走向量路与元数据过滤。
+
+    放宽的缘由（2026-09-29）：此前的闸门只数汉字，导致**英文查询永远走不了
+    字面路**（实测 ``"autism"`` 被判不可用）。语料加入英文文献后这条开始有
+    实际影响，而 pg_trgm 对英文同样有效。
+    """
+    return _count_cjk(query) >= MIN_CJK_FOR_TRIGRAM or _longest_word_run(query) >= MIN_CHARS_FOR_TRIGRAM
 
 
 async def literal_search(session: AsyncSession, query: str, top_k: int = LITERAL_TOP_K) -> list[tuple[str, int]]:
@@ -418,6 +459,7 @@ __all__ = [
     "FUSED_TOP_K",
     "LITERAL_TOP_K",
     "MIN_CJK_FOR_TRIGRAM",
+    "MIN_CHARS_FOR_TRIGRAM",
     "VECTOR_TOP_K",
     "RetrievalError",
     "RetrievedItem",

@@ -65,3 +65,58 @@ def test_cli_module_is_runnable_via_dash_m() -> None:
 
     assert completed.returncode == 2
     assert "ingest" in completed.stderr
+    assert "convert" in completed.stderr
+
+
+# ---------------------------------------------------------------- convert
+
+
+def test_convert_writes_markdown_beside_input(tmp_path: object) -> None:
+    """`convert` 是**纯转换**：写出 .md，不连库、不调模型。
+
+    与 ingest 分成两条命令是设计要求（RAG 策略第 1.1 节「链外准备＋人工核对」）
+    ——产物必须先审再喂。
+    """
+    from pathlib import Path
+
+    root = Path(str(tmp_path))
+    source = root / "page.html"
+    source.write_text(
+        "<html><head>"
+        '<meta name="citation_title" content="测试页面"/>'
+        '<meta name="citation_author" content="张三"/>'
+        "</head><body><article>"
+        "<h2>第一节</h2><p>正文内容。</p>"
+        "</article></body></html>",
+        encoding="utf-8",
+    )
+
+    code = main(["convert", str(source), "--scope", "测试适用范围"])
+
+    assert code == 0
+    out = root / "page.md"
+    assert out.is_file(), "缺省应写到输入文件同目录同名 .md"
+    text = out.read_text(encoding="utf-8")
+    assert "## 第一节" in text
+    assert "正文内容。" in text
+    assert "scope" in text or "applicable_scope" in text
+
+
+def test_convert_missing_file_fails_loudly() -> None:
+    """输入不存在 → 退出码 1（不产出空文件假装成功）。"""
+    assert main(["convert", "definitely-not-here.html"]) == 1
+
+
+def test_convert_does_not_ingest(tmp_path: object) -> None:
+    """转换**不落库**——它不 import 数据库会话，因此无需凭据也能跑。
+
+    这是"先审后喂"能成立的前提；若 convert 顺带入库，人工核对就没有意义了。
+    """
+    import inspect
+
+    from campfire.cli import __main__ as cli_main
+
+    source = inspect.getsource(cli_main._run_convert)
+
+    assert "session_scope" not in source
+    assert "ingest_file" not in source

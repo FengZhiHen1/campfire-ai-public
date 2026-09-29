@@ -17,6 +17,7 @@ from llama_index.core.schema import NodeWithScore, TextNode
 
 from campfire.modules.library.models import KnowledgeItem
 from campfire.modules.library.retrieval import (
+    MIN_CHARS_FOR_TRIGRAM,
     MIN_CJK_FOR_TRIGRAM,
     _reciprocal_rank_fuse,
     aggregate_to_items,
@@ -54,15 +55,31 @@ def _item(item_id: str, **overrides: object) -> KnowledgeItem:
         ("孤独症 autism", True),  # 含 3 字词元即可用
         ("干预", False),  # 2 字：退化
         ("症", False),  # 1 字
-        ("autism", False),  # 无汉字
         ("", False),
-        ("a b c", False),
+        # 非中文：按最长连续字母/数字段判定（2026-09-29 放宽，含实测依据）。
+        ("autism", True),
+        ("asd", True),  # 3 字符是分界点（实测走 Bitmap Index Scan）
+        ("Project AIM", True),  # 最长段 7
+        ("ab", False),  # 2 字符：实测规划器弃用索引
+        ("a b", False),  # 总长 3 但每段 1 字符——按最长段判而非总长
+        ("123", True),
+        ("12", False),
+        ("!!!", False),  # 无字母数字
     ],
 )
 def test_literal_path_gate_follows_min_cjk_rule(query: str, expected: bool) -> None:
-    """字面路需 ≥3 个连续汉字，否则跳过该路（RAG 策略第 3.1 节）。"""
+    """字面路闸门：中文 ≥3 连续汉字，非中文 ≥3 连续字母/数字（RAG 策略第 3.1 节）。
+
+    实测依据见 `literal_path_is_usable`：3 字符是"规划器是否使用 trigram 索引"
+    的分界点，而非"有无三元组"（2 字符串同样产生三元组，但选择性差）。
+    """
     assert literal_path_is_usable(query) is expected
+
+
+def test_gate_thresholds_are_three() -> None:
+    """两个阈值都是 3——与实测的分界点一致。"""
     assert MIN_CJK_FOR_TRIGRAM == 3
+    assert MIN_CHARS_FOR_TRIGRAM == 3
 
 
 # ---------------------------------------------------------------- RRF 融合
