@@ -324,8 +324,17 @@ async def test_correction_withdraws_the_old_episode_from_both_paths(memory_graph
 
 
 @pytest.mark.asyncio
-async def test_deletion_does_not_affect_other_accounts(memory_graph: MemoryGraph) -> None:
-    """删除按账号分区：另一账号的记忆不受影响（跨账号误删是 `AC-07`/`AC-22` 级别的事故）。"""
+async def test_deletion_is_isolated_between_accounts(memory_graph: MemoryGraph) -> None:
+    """**跨账号隔离**：删 A 的记忆，B 的记忆仍在两条读路径上可见。
+
+    为什么重写这条（2026-09-29 评审发现它此前是**空转测试**）：原实现名为
+    「删除不影响其它账号」，但函数体**从不调用任何删除 API**——只有写 episode、
+    读时间线、断言账本为空。消融验证：把 `delete_episode`/`correct_episode` 换成
+    no-op 后，本文件 7 条中 6 条失败，**只有它仍然通过**，即其断言在该名下永远不会
+    失败（AGENTS.md 明令禁止）。现在它真的执行删除，并断言另一账号不受影响。
+
+    跨账号误删是 `AC-07`/`AC-22` 级别的事故，因此这条必须真的覆盖删除动作。
+    """
     from sqlalchemy import delete
 
     other = "it_mem_del_other"
@@ -334,24 +343,43 @@ async def test_deletion_does_not_affect_other_accounts(memory_graph: MemoryGraph
     try:
         async with session_scope(get_settings()) as session:
             await session.execute(delete(MemoryDeletionLedger).where(MemoryDeletionLedger.account_id == other))
+        # **开测前先清另一账号的图**：本用例会往里写数据，若上次运行在断言处失败，
+        # 收尾的清理不会执行，残留会让下一次运行看到多条内容而假失败
+        # （实测踩过：连续 3 次消融运行后该账号积了 3 条）。清理放在 try 内、
+        # 写入之前，使用例可重复运行。
+        other_scoped = memory_graph.driver_for(other)
+        await other_scoped.execute_query("MATCH (n) DETACH DELETE n")
 
-        key = derive_episode_uuid(PendingId("del-other-acct"))
+        # 两个账号各写一条记忆（各自图里）。
+        mine_key = await _write_episode(memory_graph, "iso-mine", "我的记忆", now)
+        other_key = str(uuid.uuid4())
         await write_episode(
             memory_graph,
             to_account_id(other),
-            key,
+            other_key,
             content="另一账号的记忆",
             occurred_at=now,
             source_description="session=s9 message=m1",
         )
 
+        # **真的删除本账号的那条**（这是原实现缺的一步）。
         async with session_scope(get_settings()) as session:
-            mine = await deleted_episode_keys(session, _ACCOUNT)
-        assert mine == [], "本账号无删除记录"
+            result = await delete_episode(session, account_id=to_account_id(_ACCOUNT), episode_key=mine_key)
+        assert result.newly_deleted is True
 
-        # 另一账号的记忆仍然可见（用空 deleted_keys 读它自己的图）。
-        timeline = await read_timeline(memory_graph, to_account_id(other), deleted_keys=[])
-        assert [e.content for e in timeline] == ["另一账号的记忆"]
+        async with session_scope(get_settings()) as session:
+            my_deleted = await deleted_episode_keys(session, _ACCOUNT)
+            other_deleted = await deleted_episode_keys(session, other)
+        assert my_deleted == [mine_key], "账本只应记本账号的删除"
+        assert other_deleted == [], "本次删除不得在另一账号的账本里留下记录"
+
+        # 本账号：删掉的不再返回。
+        timeline = await read_timeline(memory_graph, to_account_id(_ACCOUNT), deleted_keys=my_deleted)
+        assert timeline == [], "本账号已删的记忆不得返回"
+
+        # 另一账号：**不受影响**（用它自己的账本读它自己的图）。
+        other_timeline = await read_timeline(memory_graph, to_account_id(other), deleted_keys=other_deleted)
+        assert [e.content for e in other_timeline] == ["另一账号的记忆"], "删本账号的记忆不得影响另一账号"
 
         # 清理另一账号的图与账本
         scoped = memory_graph.driver_for(other)

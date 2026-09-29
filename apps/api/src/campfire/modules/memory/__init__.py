@@ -25,10 +25,15 @@
   镜像按实际存在的 tag 固定（见 docs/技术栈设计.md 第 2 节）。
 
 **已实现**（2026-09-29）：``errors.py``（异常层次）、``graph.py``（Graphiti +
-FalkorDB 装配：驱动、TokenHub 三客户端、空重排器）、``identity.py``（账号分区键
-与确定性 episode uuid）、``models.py`` + 迁移（删除账本表）、``ledger.py``（读取侧
-删除过滤）、``store.py``（时间线回看与 episode 写入）、``derived.py``（应急预注入
-的派生事实取数与时效过滤）。删除写入端与纠正的完整语义尚未落地。
+FalkorDB 装配：驱动缓存、TokenHub 三客户端、空重排器）、``identity.py``（账号分区键
+与确定性 episode uuid）、``models.py`` + 迁移（删除账本表，含词表 CHECK）、
+``ledger.py``（**删除过滤与删除写入端** ``record_deletion``）、``deletion.py``
+（**删除与纠正两个用例**：``delete_episode`` / ``correct_episode``）、``store.py``
+（时间线回看与 episode 写入）、``derived.py``（应急预注入的派生事实取数与时效过滤）、
+``consumer.py``（Worker 侧消费：``pending_write`` → 图库）。
+
+**仍缺**：记忆侧的**工具契约与 `tools/` 包装**（含 `delete_memory`）——即模型还调不到
+这些用例，登记于 TODO `TECH-22`。图库**物理清理**延期（账本过滤已保证语义删除生效）。
 
 **实测环境**：graphiti-core 0.30.2、falkordb 客户端 1.7.1、FalkorDB 镜像
 ``v4.20.7-alpine``（graph 模块 42007、vectorset 模块 1）。

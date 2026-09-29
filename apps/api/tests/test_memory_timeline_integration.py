@@ -8,8 +8,10 @@
     docker compose up -d falkordb
     uv run pytest -m integration apps/api/tests/test_memory_timeline_integration.py
 
-**注意**：``addopts`` 里**没有** marker 过滤，因此默认 ``uv run pytest`` 也会收集本文件
-（靠「容器不可用则跳过」保持绿色）；要排除请显式 ``-m "not integration"``。
+**注意（诚实声明）**：``addopts`` 里**没有** marker 过滤，因此默认 ``uv run pytest``
+也会收集本文件。本文件**只依赖 FalkorDB**（不连 PostgreSQL），所以容器不可用时
+「跳过」有效——但 `FalkorDB(...)` 构造本身会发网络 I/O，因此它必须在 try 内
+（见夹具说明；此前放在 try 外，容器不可用时是 ERROR 而非 skip）。
 
 **为什么用假模型客户端**：实体抽取要调 TokenHub，而当前 `.env` 的 `TOKENHUB_API_KEY`
 是 `.env.example` 的占位符（实测两端点均 401，登记于 TODO `TECH-02`）。因此本文件注入
@@ -45,6 +47,8 @@ from campfire.modules.memory.store import (
     write_episode,
 )
 
+from .conftest import connect_falkordb_or_skip
+
 pytestmark = pytest.mark.integration
 
 #: 两个账号：用于验证分区隔离（各自的图）。
@@ -68,8 +72,6 @@ async def memory_graph() -> AsyncIterator[MemoryGraph]:
     os.environ["no_proxy"] = "localhost,127.0.0.1"
     os.environ["NO_PROXY"] = "localhost,127.0.0.1"
 
-    from falkordb.asyncio import FalkorDB
-    from graphiti_core.driver.falkordb_driver import FalkorDriver
     from graphiti_core.embedder.client import EmbedderClient
     from graphiti_core.graphiti import Graphiti
     from graphiti_core.llm_client.client import LLMClient
@@ -97,17 +99,9 @@ async def memory_graph() -> AsyncIterator[MemoryGraph]:
                 return {name: [] for name in response_model.model_fields}
             return {}
 
-    client = FalkorDB(host="localhost", port=6380)
-    driver = FalkorDriver(falkor_db=client, database="campfire")
-    try:
-        await driver.execute_query("RETURN 1 AS ok")
-    except (ConnectionError, ConnectionRefusedError, ConnectionResetError, TimeoutError, OSError) as exc:
-        # 只把「连不上容器」当环境问题；其余异常照常失败（CORE-07：边界显式）。
-        await client.aclose()
-        pytest.skip(f"FalkorDB 不可用（{type(exc).__name__}）——先 docker compose up -d falkordb")
-    except Exception:
-        await client.aclose()
-        raise
+    # 连容器：构造 `FalkorDB(...)` 本身发网络 I/O，因此它必须在 try 内——
+    # 细节与实测依据见 `conftest.connect_falkordb_or_skip`。
+    driver, client = connect_falkordb_or_skip()
 
     graph = MemoryGraph(
         graphiti=Graphiti(
@@ -216,20 +210,59 @@ async def test_timeline_keyword_filter_is_case_insensitive_substring(memory_grap
 
 @pytest.mark.asyncio
 async def test_timeline_limit_is_bounded_by_server_cap(memory_graph: MemoryGraph) -> None:
-    """`limit` 超上界时被收敛（CORE-11：不信任调用方给的上限）。
+    """`limit` 超上界时**收敛到服务端上界**（CORE-11：不信任调用方给的上限）。
 
-    这里只断言「不会返回超过上界」——不构造 200+ 条数据（那会拖慢集成测试），
-    而是给一个超大 limit 并确认返回条数 ≤ 服务端上界。
+    为什么不能像此前那样只断言 `len(episodes) <= TIMELINE_MAX_LIMIT`
+    （2026-09-29 评审指出，已消融验证）：只写 3 条数据时那句断言**永远不会失败**——
+    即使把 `store.py` 里的 `min(limit, TIMELINE_MAX_LIMIT)` 整段删掉，返回的仍是 3 条，
+    断言照样通过。这属 AGENTS.md 明令禁止的「永远不会失败的检查」。
+
+    现在的做法：**拦截实际发给图库的 `LIMIT` 参数**，直接断言它被收敛成上界。
+    这样删掉收敛逻辑就会失败（传进去的会是 10_000）。
+    """
+    now = datetime.now(timezone.utc)
+    await _write(memory_graph, _ACCOUNT_A, "cap-0", content="唯一一条", occurred_at=now)
+
+    scoped = memory_graph.driver_for(_ACCOUNT_A)
+    real_execute = scoped.execute_query
+    seen_limits: list[object] = []
+
+    async def spy(cypher, **params):  # noqa: ANN001, ANN202
+        if "limit" in params:
+            seen_limits.append(params["limit"])
+        return await real_execute(cypher, **params)
+
+    scoped.execute_query = spy  # type: ignore[method-assign]
+    try:
+        await read_timeline(memory_graph, to_account_id(_ACCOUNT_A), deleted_keys=[], limit=10_000)
+    finally:
+        scoped.execute_query = real_execute  # type: ignore[method-assign]
+
+    assert seen_limits, "前置条件：查询必须带着 limit 参数发给图库"
+    assert seen_limits[0] == TIMELINE_MAX_LIMIT, (
+        f"传给图库的 LIMIT 应被收敛为 {TIMELINE_MAX_LIMIT}，实际 {seen_limits[0]}"
+    )
+
+
+@pytest.mark.asyncio
+async def test_timeline_limit_is_honoured_when_below_the_cap(memory_graph: MemoryGraph) -> None:
+    """小于上界的 `limit` 被**原样使用**，而不是一律抬到上界。
+
+    与上一条互补：只测「收敛」会让「把 limit 写死成上界」的实现通过——那会让
+    `read_memory(limit=5)` 实际返回 200 条。
     """
     now = datetime.now(timezone.utc)
     for index in range(3):
         await _write(
-            memory_graph, _ACCOUNT_A, f"cap-{index}", content=f"第 {index} 条", occurred_at=now - timedelta(days=index)
+            memory_graph,
+            _ACCOUNT_A,
+            f"small-{index}",
+            content=f"第 {index} 条",
+            occurred_at=now - timedelta(days=index),
         )
 
-    episodes = await read_timeline(memory_graph, to_account_id(_ACCOUNT_A), deleted_keys=[], limit=10_000)
-    assert len(episodes) <= TIMELINE_MAX_LIMIT
-    assert len(episodes) == 3
+    episodes = await read_timeline(memory_graph, to_account_id(_ACCOUNT_A), deleted_keys=[], limit=2)
+    assert len(episodes) == 2, "limit=2 时必须只返回 2 条（不得抬到上界）"
 
 
 @pytest.mark.asyncio
@@ -612,15 +645,37 @@ async def test_driver_for_reuses_one_driver_per_account(memory_graph: MemoryGrap
 
 
 @pytest.mark.asyncio
-async def test_driver_cache_is_bounded(memory_graph: MemoryGraph) -> None:
-    """驱动缓存**有界**（CORE-11）：账号数无上界，无界缓存只是换一种泄漏。"""
-    from campfire.modules.memory.graph import MAX_CACHED_ACCOUNT_DRIVERS
+async def test_driver_cache_evicts_when_full(memory_graph: MemoryGraph) -> None:
+    """驱动缓存**有界**（CORE-11）：超过上界时淘汰最早插入的条目。
 
-    # 只放一个探针账号，验证上界常量是有限值且缓存不会无限制增长。
-    assert MAX_CACHED_ACCOUNT_DRIVERS > 0
-    initial = len(memory_graph.account_drivers)
-    memory_graph.driver_for("it_mem_cache_probe_2")
-    assert len(memory_graph.account_drivers) <= max(initial + 1, MAX_CACHED_ACCOUNT_DRIVERS)
+    为什么不写 `assert len(cache) <= max(initial + 1, MAX_CACHED_ACCOUNT_DRIVERS)`
+    （2026-09-29 评审指出，已消融验证）：那个断言**恒真**——右边取 `max` 后必然
+    不小于 `initial + 1`，即使把 `driver_for` 里的整段淘汰逻辑删掉也照样通过。
+
+    现在的做法：用一个**临时调小的上界**真正压满缓存，验证：(a) 规模不超过上界，
+    (b) 最早插入的那条被淘汰（FIFO），(c) 最近插入的仍在。
+    为此把模块常量临时改小——这是**有意的**，因为构造 64 个驱动太慢，而我们要验的是
+    「淘汰会不会发生」，不是「64 这个数字是多少」。
+    """
+    from campfire.modules.memory import graph as graph_module
+
+    original_cap = graph_module.MAX_CACHED_ACCOUNT_DRIVERS
+    test_cap = 3
+    graph_module.MAX_CACHED_ACCOUNT_DRIVERS = test_cap
+    memory_graph.account_drivers.clear()
+    try:
+        accounts = [f"it_mem_evict_{index}" for index in range(test_cap + 2)]
+        for account in accounts:
+            memory_graph.driver_for(account)
+
+        assert len(memory_graph.account_drivers) <= test_cap, (
+            f"缓存规模不得超过上界 {test_cap}，实际 {len(memory_graph.account_drivers)}"
+        )
+        assert accounts[0] not in memory_graph.account_drivers, "最早插入的条目应被淘汰（FIFO）"
+        assert accounts[-1] in memory_graph.account_drivers, "最近插入的条目应仍在缓存"
+    finally:
+        graph_module.MAX_CACHED_ACCOUNT_DRIVERS = original_cap
+        memory_graph.account_drivers.clear()
 
 
 @pytest.mark.asyncio
@@ -635,3 +690,64 @@ async def test_aclose_clears_the_driver_cache(memory_graph: MemoryGraph) -> None
             continue
         # 允许测试框架自身的任务；只要求不留「建索引」类任务（收口失败会在此暴露）。
         assert "build_indices" not in repr(task.get_coro()), f"残留后台索引任务：{task.get_coro()}"
+
+
+@pytest.mark.asyncio
+async def test_aclose_closes_the_shared_client_exactly_once(memory_graph: MemoryGraph) -> None:
+    """**共享的 falkordb 客户端只被关闭一次**，不随缓存条目数重复关。
+
+    为什么必须有这条（2026-09-29 评审发现，实测复现）：克隆驱动与 base **共享同一个
+    falkordb 客户端**（实测 `clone.client is base.client`），而 `FalkorDriver.close()`
+    内部就是 `await self.client.aclose()`。此前 `aclose()` 对每个缓存驱动调一次
+    `close()`，实测 3 个账号时**同一个客户端被关 4 次**，会打断在途查询
+    （`ConnectionError`）。模块 docstring 当时还宣称「不重复关客户端」——被实测否证。
+
+    判别性：把 `aclose()` 里的 `_cancel_driver_init_task` 换回 `await scoped.close()`
+    就会失败（计数变 4）。
+    """
+    for account in ("it_mem_close_a", "it_mem_close_b", "it_mem_close_c"):
+        memory_graph.driver_for(account)
+
+    client = memory_graph.driver.client
+    # 前置条件：三个缓存驱动的客户端确实是同一个对象（本用例的前提）。
+    for account in ("it_mem_close_a", "it_mem_close_b", "it_mem_close_c"):
+        assert memory_graph.driver_for(account).client is client
+
+    calls: list[str] = []
+    original = client.aclose
+
+    async def counting_aclose():  # noqa: ANN202
+        calls.append("aclose")
+        return await original()
+
+    client.aclose = counting_aclose  # type: ignore[method-assign]
+    await memory_graph.aclose()
+
+    assert len(calls) == 1, f"共享客户端应只关一次，实际关了 {len(calls)} 次"
+
+
+@pytest.mark.asyncio
+async def test_driver_for_validates_the_account_key(memory_graph: MemoryGraph) -> None:
+    """`driver_for` 做**入口校验**：畸形账号键不得成为图名或占用缓存。
+
+    为什么必须有这条（2026-09-29 评审发现）：此前 `driver_for` 接受任意字符串，实测
+    含换行/分号的键、5000 字符的键、以及框架哨兵 `'_'`（会落到 `default_db`）
+    都会被接受。它是两条读路径与缓存的唯一共同入口，校验放这里比要求每个调用方
+    记得调 `to_account_id` 可靠。
+    """
+    from campfire.modules.memory.identity import AccountIdError
+
+    bad_keys = (
+        "bad\nname; DROP",
+        "x" * 5000,
+        "_",  # 框架哨兵：clone 会落到 default_db
+        "",  # 空
+        "acct.aaa",  # Graphiti 的 group_id 判据不允许点
+    )
+    for bad in bad_keys:
+        with pytest.raises(AccountIdError):
+            memory_graph.driver_for(bad)
+        assert bad not in memory_graph.account_drivers, f"被拒的键不得进入缓存：{bad!r}"
+
+    # 合法键仍然可用（防止把校验做成「一律拒绝」）。
+    assert memory_graph.driver_for("it_mem_valid_account") is not None

@@ -38,9 +38,9 @@ from campfire.modules.memory.models import DELETION_REASON_CORRECTION, DELETION_
 class DeletionResult:
     """一次删除/纠正中，账本记录的结果。
 
-    字段刻意与 `ledger.DeletionRecord` 同形但有语义差异：这里的 ``already_deleted``
-    是**面向使用者**的结论（「这条记忆此前已删除」），调用方据此决定文案；而
-    `DeletionOutcome` 是存储层的机械结果。
+    字段刻意与 `ledger.DeletionRecord` 同形但有语义差异：这里的 ``newly_deleted``
+    是**面向使用者**的结论（``False`` = 这条记忆此前已删除），调用方据此决定文案；
+    而 `DeletionOutcome` 是存储层的机械结果（``RECORDED`` / ``ALREADY_RECORDED``）。
     """
 
     episode_key: str
