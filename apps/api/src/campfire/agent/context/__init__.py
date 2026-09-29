@@ -11,5 +11,50 @@
 - **不变量**：没有索引记录的注入消息不得成为「可引用依据」；注入失败必须显式
   标注该来源不可用，不得静默当作没有该信息。
 
-尚未实现：本包当前无代码。
+本模块另含**模型窗口的派生**（:mod:`~campfire.agent.context.window`）：窗口是由对话
+真源派生的视图，只裁模型输入、不影响落库；规则由压缩策略文档第 5、8 节拥有。
+
+模块分工：:mod:`~campfire.agent.context.citations` 是引用索引与唯一的引用凭据来源，
+:mod:`~campfire.agent.context.injection` 负责排序、索引记录与失败告知，
+:mod:`~campfire.agent.context.window` 是纯函数式的窗口派生。
 """
+
+from .citations import CitationIndex, CitationRecord, CitationRecorder
+from .errors import CitationError, ContextError, InjectionError
+from .injection import (
+    InjectionBatch,
+    InjectionItem,
+    InjectionMessage,
+    InjectionPriority,
+    InjectionRole,
+    UnavailableSource,
+)
+from .window import (
+    COMPACTED_SUMMARY_TAG,
+    derive_window,
+    is_compacted_summary,
+    is_system_message,
+    last_checkpoint_index,
+    leading_system_count,
+)
+
+__all__ = [
+    "COMPACTED_SUMMARY_TAG",
+    "CitationError",
+    "CitationIndex",
+    "CitationRecord",
+    "CitationRecorder",
+    "ContextError",
+    "InjectionBatch",
+    "InjectionError",
+    "InjectionItem",
+    "InjectionMessage",
+    "InjectionPriority",
+    "InjectionRole",
+    "UnavailableSource",
+    "derive_window",
+    "is_compacted_summary",
+    "is_system_message",
+    "last_checkpoint_index",
+    "leading_system_count",
+]
