@@ -18,7 +18,7 @@ authorization: string # 可选，按授权状态过滤
 
 ## 3. 返回
 
-案例结果数组，字段与 `search_knowledge` 一致，**并额外必须带 `authorization`**（该案例的授权状态）。
+案例结果数组，字段与 `search_knowledge` 一致，**并额外必须带 `authorization`**（该案例的授权状态）与案例专属字段：`source_type`、`evidence_level`、`review_status`、`interview_at`、`makes_claims_high_risk`、`inferred_fields`（形状与语义见[资料与案例检索](../../../technical-details/资料与案例检索.md)第 3 节，权威归该文）。
 
 ## 4. 硬约束（实现层）
 
