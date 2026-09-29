@@ -24,11 +24,17 @@ from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from campfire.core.db import Base, Vector, new_uuid
+from campfire.modules.library.embedding import EMBEDDING_DIM
 
-#: 嵌入维度：与 `Kinfra-Text-Embedding-4b` 绑定，**固定不可配置**。
-#: 可配置的维度会诱发「配错维度混库」——混入不同维度的向量会让检索静默失准
-#: （RAG 策略第 7 节纪律 4）。换模型必须整库重建。
-EMBEDDING_DIM = 2560
+#: 嵌入维度常量由 :mod:`campfire.modules.library.embedding` 拥有（它与模型绑定，
+#: 固定不可配置）；此处只转出，供迁移与调用方从本模块取用。
+__all__ = [
+    "EMBEDDING_DIM",
+    "LIBRARY_CASE",
+    "LIBRARY_KNOWLEDGE",
+    "KnowledgeItem",
+    "RetrievedNode",
+]
 
 #: 库别：资料库与案例库是两个独立集合，不合并成一张表加类型标签（`RQ-KB-01`）。
 LIBRARY_KNOWLEDGE = "knowledge"

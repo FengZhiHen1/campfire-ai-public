@@ -74,6 +74,25 @@ async def _table_exists(table: str) -> bool:
         await engine.dispose()
 
 
+async def _cleanup_nodes(node_ids: list[str]) -> None:
+    """按 node_id 清理本文件写入的节点。
+
+    注意：**框架只会删除一条匹配的行**，而 `node_id` 上没有唯一约束（框架自己
+    也不建，加了会让重复写入由「覆盖」变「报错」），因此重复跑测试会累积多行。
+    这里直接按 id 全删，保证跑完不留残留。
+    """
+    engine = create_engine(get_settings())
+    try:
+        async with engine.begin() as connection:
+            for node_id in node_ids:
+                await connection.execute(
+                    text("DELETE FROM data_campfire_node WHERE node_id = :nid"),
+                    {"nid": node_id},
+                )
+    finally:
+        await engine.dispose()
+
+
 @pytest.mark.asyncio
 async def test_migration_created_the_tables_the_framework_expects() -> None:
     """迁移已建出两张表，且节点表名符合框架的 `data_` 前缀约定。"""
@@ -104,7 +123,7 @@ async def test_pgvector_store_can_write_and_query_migration_table() -> None:
         texts = [n.text for n in (result.nodes or [])]
         assert "集成测试节点" in texts
     finally:
-        await store.adelete("it-migration-1")
+        await _cleanup_nodes(["it-migration-1"])
 
 
 @pytest.mark.asyncio
@@ -146,5 +165,4 @@ async def test_metadata_filter_is_applied_and_booleans_are_rejected() -> None:
         with pytest.raises(ValidationError):
             MetadataFilters(filters=[MetadataFilter(key="withdrawn", value=False)])  # type: ignore[arg-type]
     finally:
-        await store.adelete("it-filter-a")
-        await store.adelete("it-filter-b")
+        await _cleanup_nodes(["it-filter-a", "it-filter-b"])
