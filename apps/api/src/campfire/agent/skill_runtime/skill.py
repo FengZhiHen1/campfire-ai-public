@@ -21,7 +21,8 @@ from .errors import SkillFrontmatterError
 
 # 只允许小写字母、数字与连字符；首尾不得是连字符、不得连续连字符——
 # 这一条正则同时覆盖了标准里的四条约束。
-NAME_PATTERN = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
+# 用 fullmatch 校验（调用点）：`$` 匹配「结尾或结尾前换行」，`match` + `$` 会放进 `"x\n"`。
+NAME_PATTERN = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*")
 _NAME_MAX_LENGTH = 64
 _DESCRIPTION_MAX_LENGTH = 1024
 _COMPATIBILITY_MAX_LENGTH = 500
@@ -30,7 +31,9 @@ _COMPATIBILITY_MAX_LENGTH = 500
 # 契约放在这里而不是 ``agent/tools``：``allowed-tools`` 是作者写下工具名的地方，而
 # ``agent/tools`` 的池子要读 ``Skill``；把契约放这边，两个子包就不必互相 import。
 # 工具池复用本常量（``agent.tools.spec``），不另写一条正则。
-TOOL_NAME_PATTERN = re.compile(r"^[a-z][a-z0-9_]*$")
+#
+# 同样用 fullmatch 校验：`$` 会放过尾随换行，而工具名里的换行足以撑破 <tool_availability>。
+TOOL_NAME_PATTERN = re.compile(r"[a-z][a-z0-9_]*")
 
 # 自有元数据键（见基座文档第 3 节末行）。
 _METADATA_AUTOLOAD = "autoload"
@@ -74,7 +77,7 @@ def _require_str(frontmatter: Mapping[object, object], field: str, path: str, *,
 def _validate_name(name: str, path: str) -> str:
     if len(name) > _NAME_MAX_LENGTH:
         raise SkillFrontmatterError(path, f"name 超过 {_NAME_MAX_LENGTH} 字符（实际 {len(name)}）")
-    if not NAME_PATTERN.match(name):
+    if not NAME_PATTERN.fullmatch(name):
         raise SkillFrontmatterError(
             path,
             f"name={name!r} 不合法：只允许小写字母、数字与连字符，且首尾不得是连字符、不得连续连字符",
@@ -128,7 +131,7 @@ def _parse_allowed_tools(frontmatter: Mapping[object, object], path: str) -> fro
 
     tools = raw.split()
     for tool in tools:
-        if not TOOL_NAME_PATTERN.match(tool):
+        if not TOOL_NAME_PATTERN.fullmatch(tool):
             raise SkillFrontmatterError(
                 path,
                 f"allowed-tools 含非法工具名 {tool!r}：只允许小写字母、数字与下划线，且以字母开头",

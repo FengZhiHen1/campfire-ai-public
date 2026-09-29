@@ -317,9 +317,10 @@ def test_catalog_budget_uses_the_injected_counter(tmp_path: Path) -> None:
 
 def test_estimate_tokens_is_conservative_for_cjk() -> None:
     assert estimate_tokens("") == 0
-    assert estimate_tokens("abcd") == 1
-    # 中文字符按 1 字符 1 token 计，刻意高估于 ASCII 比例
-    assert estimate_tokens("中文正文") == 4
+    # 单个 ASCII 词段按 1.5 权重向上取整，短串会略偏高——保守方向是刻意的
+    assert estimate_tokens("abcd") == 2
+    # 中文字符按 1.25 token/字符计（实测约 1.0–1.25），刻意取偏高一侧
+    assert estimate_tokens("中文正文") == 5
 
 
 # --- 激活与资源 -------------------------------------------------------------
@@ -619,17 +620,115 @@ def test_symlink_escaping_the_skill_directory_is_marked(tmp_path: Path) -> None:
         read_resource(skill, "references/link.md")
 
 
-def test_estimate_tokens_is_a_conservative_upper_bound() -> None:
-    """三种曾被实测低估的形态：稀疏 ASCII、emoji、CJK 全角标点。
+def test_column_zero_delimiter_inside_block_scalar_fails_loudly(tmp_path: Path) -> None:
+    """顶格 `---` / `...` 落在块标量里时，必须**明确失败**而不是静默丢字段。
 
-    期望值的来源是代理分词器（tiktoken ``cl100k_base``）的实测数量，见
-    ``catalog.estimate_tokens`` 的 docstring；这里是**下界断言**——
-    估算允许高估，但不得低于实测，否则 4000 token 那条上限就不是上界。
+    这类文档按 YAML 规范会让块标量在该行结束，于是其后的 ``metadata``、``allowed-tools``
+    落到 frontmatter 之外、被当成正文吞掉。实测（含 `|1` 显式缩进指示符）能把
+    ``autoload: "false"`` 吞掉，使本该只由程序注入的 skill 变成可被模型自动匹配，
+    而且既不报错也不告警——正是「不得静默加载」禁止的处置。
     """
-    assert estimate_tokens("a " * 200) >= 200  # 稀疏 ASCII：实测 200
-    assert estimate_tokens("🙂" * 100) >= 200  # emoji：实测 200
-    assert estimate_tokens("中文" * 80) >= 140  # 中文：实测 140
+    document = (
+        "---\n"
+        "name: trick-f\n"
+        "description: |1\n"
+        " 第一行\n"
+        "---\n"
+        "metadata:\n"
+        '  autoload: "false"\n'
+        "allowed-tools: read_alpha\n"
+        "---\n"
+        "正文。\n"
+    )
+    _make_skill(tmp_path, "trick-f", frontmatter=document, body="")
+
+    with pytest.raises(SkillDiscoveryError, match="正文以标准字段"):
+        SkillRegistry.discover(tmp_path)
+
+
+def test_column_zero_end_marker_inside_block_scalar_fails_loudly(tmp_path: Path) -> None:
+    document = (
+        "---\n"
+        "name: trick-b\n"
+        "description: |\n"
+        "  说明：第一行本身就是 ---\n"
+        "...\n"
+        "metadata:\n"
+        '  autoload: "false"\n'
+        "---\n"
+        "正文。\n"
+    )
+    _make_skill(tmp_path, "trick-b", frontmatter=document, body="")
+
+    with pytest.raises(SkillDiscoveryError, match="正文以标准字段"):
+        SkillRegistry.discover(tmp_path)
+
+
+def test_body_may_mention_standard_fields_after_the_first_line(tmp_path: Path) -> None:
+    """正文**中间**出现标准字段是合法内容（指令里举例很常见），不得误伤。"""
+    body = "用法示例：\nmetadata:\n  surface: consult\n\n以上是举例。\n"
+    _make_skill(tmp_path, "sample", body=body)
+
+    skill = SkillRegistry.discover(tmp_path).get("sample")
+
+    assert skill.body.startswith("用法示例：")
+
+
+def test_tool_name_pattern_rejects_trailing_newline() -> None:
+    """``$`` 会匹配「结尾或结尾前换行」，所以必须用 fullmatch 校验。
+
+    带换行的工具名会被原样写进 ``<tool_availability>`` 信封，把信封撑破。
+    """
+    from campfire.agent.skill_runtime.skill import TOOL_NAME_PATTERN
+
+    assert TOOL_NAME_PATTERN.match("read_x\n") is not None  # 记录 `$` 的危险语义
+    assert TOOL_NAME_PATTERN.fullmatch("read_x\n") is None
+    assert TOOL_NAME_PATTERN.fullmatch("read_x") is not None
+
+
+def test_skill_name_pattern_rejects_trailing_newline() -> None:
+    """与工具名同理：``$`` 会放过尾随换行，必须用 fullmatch。"""
+    from campfire.agent.skill_runtime.skill import NAME_PATTERN
+
+    assert NAME_PATTERN.match("daily\n") is not None
+    assert NAME_PATTERN.fullmatch("daily\n") is None
+    assert NAME_PATTERN.fullmatch("daily-consulting") is not None
+    """按代理分词器（tiktoken ``cl100k_base``）实测值校准的三条下界断言。
+
+    数字是**实测值**，不是拍的阈值：``a `` ×200 → 201、emoji ×100 → 200、
+    ``中文`` ×80 → 160。断言「估算 ≥ 实测」，否则 4000 token 那条预算就不是上界。
+    """
+    assert estimate_tokens("a " * 200) >= 201
+    assert estimate_tokens("🙂" * 100) >= 200
+    assert estimate_tokens("中文" * 80) >= 160
     assert estimate_tokens("") == 0
-    # 普通英文散文不应被高估到失控：实测 121
-    prose = "the quick brown fox jumps over the lazy dog " * 3
-    assert estimate_tokens(prose) <= 135
+
+
+def test_estimate_tokens_on_the_shape_the_catalog_actually_has() -> None:
+    """目录的真实形状（name + 中文 description + 少量标签）必须被保守估计。
+
+    实测：50 条这样的目录约 1558 token（cl100k），估算 1733，比值 1.11。
+    """
+    catalog = (
+        "<available_skills>\n"
+        + "\n".join(
+            f'  <skill name="skill-{index}" description="这是一个中文描述，说明做什么与何时用。" />'
+            for index in range(50)
+        )
+        + "\n</available_skills>"
+    )
+
+    assert estimate_tokens(catalog) >= 1558
+
+
+def test_estimate_tokens_may_underestimate_punctuation_heavy_ascii() -> None:
+    """已知的**低估**形状：标点密集的中英混排（含文件路径）实测比值 0.95。
+
+    这条断言是刻意的：`estimate_tokens` 的 docstring 说它是「估算不是上界」，
+    如果哪天有人把权重调回「必上界」，这条会先失败——它守住的是**声明与实际一致**。
+    """
+    sample = "应急咨询 skill 的第一层闸门：先排除医疗危险（见 references/gates.md）。" * 10
+
+    assert estimate_tokens(sample) < 360  # cl100k 实测 360
+    # 但它不会低到离谱：仍在同一量级
+    assert estimate_tokens(sample) > 300

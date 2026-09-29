@@ -17,9 +17,10 @@ ToolSpec:
 1. **JSON Schema 与参数校验同源**：``parameters`` 由 ``args_model`` 的 Pydantic 模型
    导出，而不是手写一份 schema 再单独写一份校验。手写两份必然漂移，而漂移的方向恰好是
    最坏的方向——schema 说必填、校验说可选。
-2. **名字形状只在这里定义**：``TOOL_NAME_PATTERN`` 是工具名的唯一契约，
-   skill 的 ``allowed-tools`` 复用它（``skill_runtime`` 从这里 import），避免两处各写
-   一条正则后慢慢分叉。
+2. **工具名的形状契约定义在 ``skill_runtime.skill``**，本模块复用它（不另写一条正则）：
+   ``allowed-tools`` 是作者写下工具名的地方，契约放那一侧可避免两个子包互相 import。
+   校验用 ``fullmatch``——``$`` 会放过尾随换行，而带换行的工具名足以撑破
+   ``<tool_availability>`` 信封。
 3. **工具名字面量不含任何领域词**：基座不知道自己被用在哪件事上。
 """
 
@@ -37,7 +38,7 @@ from campfire.agent.context import CitationRecorder
 from campfire.agent.skill_runtime import TOOL_NAME_PATTERN
 
 from .errors import ToolSpecError
-from .results import ToolFailure, ToolOutcome, ToolResult
+from .results import ToolFailure, ToolOutcome
 
 logger = logging.getLogger("campfire.agent.tools")
 
@@ -60,8 +61,12 @@ _DESCRIPTION_MAX_LENGTH = 1024
 
 ArgsT = TypeVar("ArgsT", bound=BaseModel)
 
-ToolHandler = Callable[["ToolContext", ArgsT], Awaitable[ToolResult]]
-"""产品侧注册的工具实现：拿到解析后的参数，返回产出。"""
+ToolHandler = Callable[["ToolContext", ArgsT], Awaitable[ToolOutcome]]
+"""产品侧注册的工具实现：拿到解析后的参数，返回产出。
+
+返回类型允许是 :class:`~campfire.agent.tools.ToolFailure`——工具可以**显式声明一次可恢复
+失败并带上错误码**（例如「你要激活的 skill 不存在」），而不是只能靠抛异常把细节丢掉。
+"""
 
 
 @dataclass(frozen=True, slots=True)
@@ -138,7 +143,7 @@ class ToolSpec(Generic[ArgsT]):
         Raises:
             ToolSpecError: 名字不符合 :data:`TOOL_NAME_PATTERN`（或超长），描述为空或超长。
         """
-        if not TOOL_NAME_PATTERN.match(self.name):
+        if not TOOL_NAME_PATTERN.fullmatch(self.name):
             raise ToolSpecError(f"工具名 {self.name!r} 不合法：只允许小写字母、数字与下划线，且以字母开头")
         if len(self.name) > _NAME_MAX_LENGTH:
             raise ToolSpecError(f"工具名 {self.name!r} 超过 {_NAME_MAX_LENGTH} 字符")
@@ -157,7 +162,8 @@ class ToolSpec(Generic[ArgsT]):
 
         解析失败是**显式状态**（``tool_invalid_arguments``），不是异常；实现自身抛出的
         异常转成 ``tool_failed`` 回给模型，只带异常类型名——异常消息里可能带连接串或
-        凭据，不得进入对话与日志（见 AGENTS.md 安全条款）。
+        凭据，不得进入对话与日志（见 AGENTS.md 安全条款）。实现若显式返回
+        :class:`~campfire.agent.tools.ToolFailure`，则原样透传（它自己选了错误码）。
 
         ``asyncio.CancelledError`` 继承自 ``BaseException``，因此不会被下面的
         ``except Exception`` 吞掉：取消必须优先于工具自身的失败处置。
