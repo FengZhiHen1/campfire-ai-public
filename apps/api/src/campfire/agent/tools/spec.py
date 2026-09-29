@@ -81,7 +81,8 @@ class ToolContext:
 
     ``activated_skills`` 是**属性**而非冻结字段：它读 ``activation_state`` 的实时快照，
     模型侧激活（运行中调 ``skill`` 工具）并入后，后续工具调用立即看到新状态——
-    ``read_skill_resource`` 的授权判定依赖这一点。
+    ``read_skill_resource`` 的授权判定依赖这一点。这里取的是 **skill 名**命名空间；
+    工具名的并集由 dispatcher 取（见 ``activation_state`` 模块头）。
     """
 
     run_id: str
@@ -94,7 +95,7 @@ class ToolContext:
     """当前面；``None`` 表示未指定。"""
 
     activation_state: "ActivationState"
-    """运行时激活集合（共享、可增长）；``activated_skills`` 的唯一事实来源。"""
+    """运行时激活状态（共享、可增长）；skill 名与预授权工具集的唯一事实来源。"""
 
     citations: CitationRecorder
     """引用写入端。工具要产出引用**只能**经它，因此引用与索引记录不会脱钩。"""
@@ -105,7 +106,7 @@ class ToolContext:
     @property
     def activated_skills(self) -> frozenset[str]:
         """本次运行已激活的 skill 名（含运行中模型侧激活）。"""
-        return self.activation_state.snapshot()
+        return self.activation_state.skill_names()
 
 
 class Tool(Protocol):

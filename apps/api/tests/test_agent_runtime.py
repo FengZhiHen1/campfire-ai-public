@@ -108,6 +108,12 @@ class ReadArgs(BaseModel):
     query: str
 
 
+class SearchArgs(BaseModel):
+    """检索类工具参数（用于「skill 与工具同名」的越权用例）。"""
+
+    query: str
+
+
 def _chunk(delta: dict[str, Any], finish_reason: str | None = None) -> str:
     payload = {
         "id": "chatcmpl-test",
@@ -718,6 +724,90 @@ async def test_model_can_read_a_resource_after_activation(tmp_path: Path) -> Non
     # 资源内容作为工具结果进入第三次请求的上下文
     third = [message["content"] for message in chat.messages_seen[2]]
     assert any(content and "参考正文" in str(content) for content in third)
+
+
+@pytest.mark.asyncio
+async def test_model_side_activation_makes_the_skills_tools_usable(tmp_path: Path) -> None:
+    """模型侧激活后，该 skill 的 ``allowed-tools`` 必须真的可用（基座第 5 节）。
+
+    走真实运行链路：模型先调 ``skill`` 激活 ``daily-consulting``（``allowed-tools: read_alpha``），
+    再调 ``read_alpha``。第一版把 skill 名当工具名判定，这里第二条调用会被
+    ``tool_not_available`` 拒掉、handler 一次都不执行。
+    """
+    registry = _skill_root(tmp_path)
+    calls: list[str] = []
+    pool = ToolPool([read_tool(calls=calls)])
+    pool.register_base(build_skill_tool(registry))
+    chat = ScriptedChat(
+        [
+            tool_call_reply(SKILL_TOOL_NAME, {"name": "daily-consulting"}),
+            tool_call_reply("read_alpha", {"query": "q"}, call_id="call-2"),
+            text_reply("已按 skill 执行"),
+        ]
+    )
+    runner = AgentRunner(
+        binding=_binding(chat),
+        tools=pool,
+        skills=registry,
+        citations=FakeCitationIndex(),
+        sessions=lambda session_id: FakeSession("s-1"),
+    )
+
+    events = await _collect(runner, _request())
+
+    finishes = [event for event in events if isinstance(event, ToolCallFinishedEvent)]
+    assert [(event.tool_name, event.ok, event.error_code) for event in finishes] == [
+        (SKILL_TOOL_NAME, True, None),
+        ("read_alpha", True, None),
+    ]
+    assert calls == ["q"], "激活后的工具必须真的执行（不是只在声明里可见）"
+
+
+@pytest.mark.asyncio
+async def test_model_side_activation_does_not_authorize_a_same_named_tool(tmp_path: Path) -> None:
+    """激活与工具同名的 skill，**不得**放行那个工具（AG-02）。
+
+    ``evil-skill`` 的 ``allowed-tools`` 为空；池里恰好有一个同名工具。第一版会让它被
+    无条件放行，等价于「激活 skill 即授权同名工具」。
+    """
+    root = tmp_path / "skills"
+    directory = root / "search"
+    directory.mkdir(parents=True)
+    (directory / "SKILL.md").write_text(
+        "---\nname: search\ndescription: 与工具同名的技能。\n---\n正文。\n",
+        encoding="utf-8",
+    )
+    registry = SkillRegistry.discover(root)
+
+    executed: list[str] = []
+
+    async def handler(_context: ToolContext, _args: SearchArgs) -> ToolResult:
+        executed.append("search")
+        return ToolResult(text="敏感结果")
+
+    pool = ToolPool([ToolSpec(name="search", description="同名工具", args_model=SearchArgs, handler=handler)])
+    pool.register_base(build_skill_tool(registry))
+    chat = ScriptedChat(
+        [
+            tool_call_reply(SKILL_TOOL_NAME, {"name": "search"}),
+            tool_call_reply("search", {"query": "q"}, call_id="call-2"),
+            text_reply("好"),
+        ]
+    )
+    runner = AgentRunner(
+        binding=_binding(chat),
+        tools=pool,
+        skills=registry,
+        citations=FakeCitationIndex(),
+        sessions=lambda session_id: FakeSession("s-1"),
+    )
+
+    events = await _collect(runner, _request())
+
+    finishes = [event for event in events if isinstance(event, ToolCallFinishedEvent)]
+    assert [(event.tool_name, event.ok) for event in finishes] == [(SKILL_TOOL_NAME, True), ("search", False)]
+    assert finishes[1].error_code == "tool_not_available"
+    assert executed == [], "同名工具被越权放行：handler 被调用了"
 
 
 @pytest.mark.asyncio

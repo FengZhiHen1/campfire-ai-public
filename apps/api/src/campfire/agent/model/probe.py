@@ -15,6 +15,13 @@ from campfire.core.config import Settings
 
 from .gateway import resolve_model_name
 
+_PROBE_TIMEOUT_SECONDS = 5.0
+"""探针单次请求的时间上界。
+
+取值理由：健康检查是**聚合**等待（多个依赖串起来），因此单个探针不能吃掉调用方的容忍度——
+5 秒比一次真实运行的 180 秒上限低一个半数量级，同时足够覆盖一次 ``GET /models`` 的正常
+往返。探针只回答「配没配、通不通」，不值得为它延长整体的健康检查时延。"""
+
 
 @dataclass(frozen=True, slots=True)
 class ModelEndpointReport:
@@ -76,7 +83,7 @@ async def check_model_endpoint(settings: Settings) -> ModelEndpointReport:
         # 与内网探针不同，这里**保留** trust_env：TokenHub 是外部服务，
         # 企业网络下可能需要经代理访问。代价是宿主机代理配置异常时探针也会失败，
         # 故下面把 InvalidURL 单独区分出来。
-        async with httpx.AsyncClient(timeout=5.0) as client:
+        async with httpx.AsyncClient(timeout=_PROBE_TIMEOUT_SECONDS) as client:
             response = await client.get(url, headers=headers)
     except (httpx.InvalidURL, httpx.UnsupportedProtocol):
         # 配置问题，不是可达性问题。实测两类都要覆盖：坏端口抛 InvalidURL，

@@ -2,7 +2,8 @@
 
 依据 docs/技术设计/technical-details/通用基座.md 第 4 节：
 
-- 档案摘要、检索到的资料与案例、技能目录、激活内容、候选提示，全部以消息形式进入对话。
+- 产品侧准备的各类业务上下文（业务摘要、检索到的资料等）、技能目录、激活内容、
+  候选提示，全部以消息形式进入对话。
 - 每条注入消息在引用索引里留一条记录；**没有索引记录的注入消息不得成为「可引用依据」**。
 - 注入失败必须**显式标注该来源不可用**，不得静默当作没有该信息。
 - 组装顺序与预算由基座决定，但受窗口策略约束。
@@ -138,6 +139,7 @@ class InjectionBatch:
         """保存注入项与失败来源；此时不排序、不写索引。"""
         self._items = tuple(items)
         self._unavailable = tuple(unavailable)
+        self._rendered = False
 
     @property
     def items(self) -> tuple[InjectionItem, ...]:
@@ -165,14 +167,22 @@ class InjectionBatch:
     async def render(self, recorder: CitationRecorder) -> tuple[InjectionMessage, ...]:
         """写引用索引并渲染成消息；顺序即窗口中的顺序。
 
+        **只做一次**（本类 docstring 的承诺，由 :attr:`_rendered` 承载）：渲染会写索引，
+        重复渲染会让同一条业务条目在索引里出现两条记录，而 `run_finished` 报出的引用清单
+        与实际注入的消息对不上。
+
         **写到一半失败不算成功**：任何一条引用写不进去，就抛
         :class:`InjectionRenderError` 并带上已落索引的引用与已渲染的消息，让调用方把
         本次运行标为注入失败。绝不返回「部分消息」当作完整结果——那样索引里有记录、
         窗口里没有，``run_finished`` 会报出一条模型从未看到的依据。
 
         Raises:
+            InjectionError: 同一批次被渲染第二次。
             InjectionRenderError: 某条引用的索引写入失败；``recorded`` 是已落索引的引用。
         """
+        if self._rendered:
+            raise InjectionError("同一个 InjectionBatch 不能渲染两次：渲染会写引用索引，重复渲染产生重复引用")
+
         messages: list[InjectionMessage] = []
         for item in self.ordered():
             if item.reference is not None:
@@ -186,6 +196,10 @@ class InjectionBatch:
                         rendered=tuple(messages),
                     ) from exc
             messages.append(item.message())
+
+        # 仅在成功后置位：失败时调用方可能换一个 recorder 重试同一批次（例如索引恢复后），
+        # 那时窗口与索引都还没有这份内容，重复渲染不会产生重复引用。
+        self._rendered = True
         return tuple(messages)
 
 

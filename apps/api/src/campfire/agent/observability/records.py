@@ -116,6 +116,10 @@ class RunRecord:
 
     刻意**不含** ``"cancelled"``：取消不产出终态事件（消费者取消了就收不到任何后续事件），
     取消的事实由 :attr:`cancelled` 表达。这样「终态原因」与「被取消」不会互相冒充。
+
+    这条纪律由 :meth:`RunRecorder.apply` 的**显式分流**承载，不是靠「运行编排现在不发
+    cancelled 终态」这类隐含约定：真收到 ``reason="cancelled"`` 的终态事件时，它落进
+    :attr:`cancelled` 而不是这里。
     """
 
     failure_code: str | None = None
@@ -224,7 +228,13 @@ class RunRecorder:
         elif isinstance(event, CandidateEvent):
             record.candidate_count += 1
         elif isinstance(event, RunFinishedEvent):
-            record.end_reason = event.reason
+            # ``RunEndReason`` 含 ``"cancelled"``，而本记录的 ``end_reason`` 刻意不含它
+            # （见字段 docstring）：取消走 ``cancelled`` 标志那条通道。这个分流是显式的，
+            # 因此两处词表不会互相冒充，也不依赖「运行编排现在不发 cancelled 终态」。
+            if event.reason == "cancelled":
+                record.cancelled = True
+            else:
+                record.end_reason = event.reason
             record.citations = _merged_citations(record.citations, _refs(event.citations))
             record.usage = event.usage
             record.elapsed_seconds = event.elapsed_seconds

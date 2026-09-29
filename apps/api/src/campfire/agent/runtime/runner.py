@@ -55,7 +55,7 @@ import uuid
 from collections.abc import AsyncIterator, Iterator, Sequence
 from dataclasses import dataclass, field
 
-from agents import Runner
+from agents import Agent, RunConfig, Runner
 from agents.items import TResponseInputItem
 from agents.memory.session import Session
 from agents.result import RunResultStreaming
@@ -326,10 +326,10 @@ class AgentRunner:
             yield ProgressEvent(message="上下文压力偏高，已压缩较早的历史。")
 
         buffer: list[RunEvent] = []
-        # 运行时激活集合：初始 = 请求携带的激活；模型侧激活（skill 工具）在运行中并入。
-        # dispatcher 的范围判定与 ToolContext.activated_skills 都读它，激活后立即生效。
+        # 运行时激活状态：初始 = 请求携带的激活 skill 名；模型侧激活（skill 工具）在运行中
+        # 并入（连同它的 allowed-tools）。dispatcher 读工具名并集，ToolContext 读 skill 名。
         activation_state = ActivationState()
-        activation_state.update(scope.activated_skills)
+        activation_state.seed(scope.activated_skills)
         dispatcher = ToolDispatcher(
             self._tools,
             scope,
@@ -370,8 +370,8 @@ class AgentRunner:
         self,
         *,
         session: Session,
-        agent: object,
-        run_config: object,
+        agent: Agent,
+        run_config: RunConfig,
         new_items: list[TResponseInputItem],
         history: list[TResponseInputItem],
         request: RunRequest,
@@ -915,8 +915,12 @@ def history_from(items: Sequence[TResponseInputItem]) -> list[Item]:
 
 
 def _as_items(items: Sequence[Item]) -> list[TResponseInputItem]:
-    """把基座项形状交回 SDK（写入会话时用）。"""
-    return [dict(item) for item in items]  # type: ignore[list-item]  # 运行时形状一致，TypedDict 无法从 Mapping 静态推导
+    """把基座项形状交回 SDK（写入会话时用）。
+
+    ``Item`` 是 ``Mapping[str, object]``，SDK 的输入项是 TypedDict 联合——静态类型看不穿
+    这层「运行时形状一致」，故此处豁免（实测错误码是 ``misc``，不是 ``list-item``）。
+    """
+    return [dict(item) for item in items]  # type: ignore[misc]  # 运行时形状一致，TypedDict 无法从 Mapping 静态推导
 
 
 def compaction_facts(outcome: CompactionOutcome) -> CompactionFacts:

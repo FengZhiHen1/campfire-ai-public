@@ -266,6 +266,43 @@ async def test_partial_render_failure_reports_what_already_reached_the_index() -
     assert "RuntimeError" in str(error.value)
 
 
+@pytest.mark.asyncio
+async def test_rendering_the_same_batch_twice_is_refused() -> None:
+    """同一批次渲染两次必须被拒：渲染会写索引，重复渲染产出重复引用。
+
+    类 docstring 承诺「也只做一次」；没有守卫时第二次调用会静默再写一轮索引，
+    而 ``run_finished`` 报出的引用清单与实际注入的消息就对不上了。
+    """
+    index = FakeCitationIndex()
+    batch = InjectionBatch([InjectionItem(source="retrieved", content="资料", reference="kb-1")])
+    await batch.render(_recorder(index))
+
+    with pytest.raises(InjectionError, match="不能渲染两次"):
+        await batch.render(_recorder(index))
+
+    assert len(index.records) == 1, "第二次渲染不该再写索引"
+
+
+@pytest.mark.asyncio
+async def test_a_failed_render_can_be_retried() -> None:
+    """渲染**失败**不算「渲染过」：索引恢复后换个 recorder 重试同一批次应当被允许。
+
+    失败时窗口与索引都还没有这份内容，因此重试不会产生重复引用；把守卫在失败路径也置位
+    会让调用方永远无法补上这次注入。
+    """
+    failing = FakeCitationIndex(fail_on_add=True)
+    batch = InjectionBatch([InjectionItem(source="retrieved", content="资料", reference="kb-1")])
+
+    with pytest.raises(InjectionRenderError):
+        await batch.render(_recorder(failing))
+
+    healthy = FakeCitationIndex()
+    messages = await batch.render(_recorder(healthy))
+
+    assert [message["content"] for message in messages] == ["资料"]
+    assert len(healthy.records) == 1
+
+
 # --- 窗口派生 ---------------------------------------------------------------
 
 

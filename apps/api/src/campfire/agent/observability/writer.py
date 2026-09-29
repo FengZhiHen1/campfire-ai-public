@@ -116,12 +116,33 @@ async def _attempt_write(writer: RunTraceWriter, record: RunRecord) -> None:
     第一版会把它当成「取消」抛给调用方——一次**完全成功**的运行因此变成 ``CancelledError``，
     且没有任何写失败的日志。
     """
+    _warn_if_run_identity_is_missing(record)
     try:
         await writer.write(record)
     except Exception as exc:  # noqa: BLE001 —— 观测失败不得改变运行结果
         _log_write_failure(record, type(exc).__name__, "失败")
     except BaseException as exc:  # noqa: BLE001 —— 含 CancelledError 形态的写失败
         _log_write_failure(record, type(exc).__name__, "被中断")
+
+
+def _warn_if_run_identity_is_missing(record: RunRecord) -> None:
+    """记录里没有运行标识时显式告警——这是**观测缺口**，不是可以静默接受的常态。
+
+    来路：运行编排在 ``run_started`` **之前**就会以 ``run_failed`` 结束（会话读取失败、
+    注入渲染/准备失败，见 ``runtime/runner``）。那类运行的事件流里没有 ``run_started``，
+    因而记录派生不出 ``run_id`` / ``session_id``，落库后无法回答「这是谁的运行失败了」。
+
+    为什么只告警而不在这里补标识：运行标识不在本层可知（记录只从事件派生，见
+    :mod:`campfire.agent.observability.records` 的模块说明）。填补它要么让失败路径也发
+    ``run_started``，要么给 ``run_failed`` 加运行标识字段——两者都改 §7 的对外事件形状，
+    属需要先确认影响范围的契约变更，因此这里只保证**缺口不被静默吞掉**。
+    """
+    if record.run_id is None:
+        logger.warning(
+            "运行记录缺少运行标识（run_started 未发出）：outcome=%s failure=%s——该记录无法回指到具体运行",
+            record.outcome,
+            record.failure_code,
+        )
 
 
 async def _flush_after_cancellation(task: "asyncio.Task[None]", record: RunRecord) -> None:
