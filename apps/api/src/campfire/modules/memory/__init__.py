@@ -34,6 +34,11 @@ FalkorDB 装配：驱动、TokenHub 三客户端、空重排器）、``identity.
 ``v4.20.7-alpine``（graph 模块 42007、vectorset 模块 1）。
 """
 
+from campfire.modules.memory.deletion import (
+    DeletionResult,
+    correct_episode,
+    delete_episode,
+)
 from campfire.modules.memory.derived import (
     EMERGENCY_MEMORY_CHARS,
     EMERGENCY_MEMORY_LIMIT,
@@ -56,7 +61,13 @@ from campfire.modules.memory.identity import (
     derive_episode_uuid,
     to_account_id,
 )
-from campfire.modules.memory.ledger import deleted_episode_keys, keys_are_complete
+from campfire.modules.memory.ledger import (
+    DELETED_KEYS_LIMIT,
+    DeletionOutcome,
+    DeletionRecord,
+    deleted_episode_keys,
+    record_deletion,
+)
 from campfire.modules.memory.store import MemoryEpisode, read_timeline, write_episode
 
 __all__ = [
@@ -87,6 +98,13 @@ __all__ = [
     "EMERGENCY_MEMORY_LIMIT",
     "read_emergency_facts",
     # 删除账本
+    "DELETED_KEYS_LIMIT",
+    "DeletionOutcome",
+    "DeletionRecord",
     "deleted_episode_keys",
-    "keys_are_complete",
+    "record_deletion",
+    # 删除与纠正用例
+    "DeletionResult",
+    "correct_episode",
+    "delete_episode",
 ]
