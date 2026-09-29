@@ -95,12 +95,15 @@ class ModelSummarizer:
         elapsed = time.monotonic() - started
 
         usage = result.context_wrapper.usage
+        cache_hit, cache_miss = _cache_tokens(usage)
         return SummaryResult(
             text=_final_text(result.final_output),
             truncated=_looks_truncated(usage.output_tokens, request.max_tokens),
             input_tokens=usage.input_tokens,
             output_tokens=usage.output_tokens,
             elapsed_seconds=elapsed,
+            prompt_cache_hit_tokens=cache_hit,
+            prompt_cache_miss_tokens=cache_miss,
         )
 
 
@@ -127,6 +130,26 @@ def _looks_truncated(output_tokens: int, max_tokens: int) -> bool:
     那是一个会显式暴露的降级（``summary_truncated``），比静默丢历史好。
     """
     return output_tokens <= 0 or output_tokens >= max_tokens
+
+
+def _cache_tokens(usage: object) -> tuple[int, int]:
+    """从 SDK 归一后的 usage 里取缓存命中/未命中 token。
+
+    **实测（探针 `.tmp/probe_raw_usage.py`）**：Chat Completions 路径下
+    ``ModelResponse.raw_usage`` 是 ``None``，而 ``Usage.input_tokens_details.cached_tokens``
+    是 SDK 归一后的真实字段。第一版去读 ``raw_usage["prompt_cache_hit_tokens"]``，恒为 0
+    且无法验证——那等于记了两个永远为零的字段。
+
+    命中取 ``cached_tokens``；**未命中按 ``input_tokens - cached_tokens`` 推导**（提供方在
+    OpenAI 形状里只给命中数）。推导口径写在这里，供第 12 节的断言复核。
+
+    **证据边界**：提供方不报缓存明细时，读到的命中必然是 0、未命中等于全部输入 token——
+    它表达的是「我们没看到命中」，**不区分**「确实没有缓存」与「提供方不报」。
+    """
+    details = getattr(usage, "input_tokens_details", None)
+    hit = int(getattr(details, "cached_tokens", 0) or 0)
+    total = int(getattr(usage, "input_tokens", 0) or 0)
+    return hit, max(0, total - hit)
 
 
 def _final_text(output: object) -> str:

@@ -856,6 +856,8 @@ def compaction_facts(outcome: CompactionOutcome) -> CompactionFacts:
         summary_input_tokens=summary.input_tokens if summary is not None else 0,
         summary_output_tokens=summary.output_tokens if summary is not None else 0,
         summary_elapsed_seconds=outcome.summary_elapsed_seconds,
+        prompt_cache_hit_tokens=summary.prompt_cache_hit_tokens if summary is not None else 0,
+        prompt_cache_miss_tokens=summary.prompt_cache_miss_tokens if summary is not None else 0,
         reason=outcome.reason,
         detail=outcome.detail,
     )

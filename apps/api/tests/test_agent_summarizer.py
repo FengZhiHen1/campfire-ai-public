@@ -44,10 +44,18 @@ class ScriptedChat:
     ``AttributeError``。
     """
 
-    def __init__(self, text: str = "摘要正文", *, output_tokens: int = 0, status_code: int = 200) -> None:
+    def __init__(
+        self,
+        text: str = "摘要正文",
+        *,
+        output_tokens: int = 0,
+        status_code: int = 200,
+        with_cache: bool = False,
+    ) -> None:
         self._text = text
         self._output_tokens = output_tokens
         self._status = status_code
+        self._with_cache = with_cache
         self.requests: list[dict[str, Any]] = []
 
     async def handler(self, request: httpx.Request) -> httpx.Response:
@@ -86,6 +94,9 @@ class ScriptedChat:
                 "prompt_tokens": 42,
                 "completion_tokens": self._output_tokens,
                 "total_tokens": 42 + self._output_tokens,
+                # 缓存命中走 OpenAI 形状的 prompt_tokens_details.cached_tokens：实测
+                # Chat Completions 路径下 raw_usage 为 None，只有 SDK 归一后的这个字段是真的。
+                **({"prompt_tokens_details": {"cached_tokens": 40}} if self._with_cache else {}),
             },
         }
 
@@ -268,6 +279,36 @@ async def test_summary_hitting_the_cap_is_flagged_as_truncated() -> None:
     result = await ModelSummarizer(binding=_binding(chat)).summarize(_request(max_tokens=512))
 
     assert result.truncated is True
+
+
+@pytest.mark.asyncio
+async def test_cache_tokens_are_taken_from_raw_usage() -> None:
+    """第 9 节：压缩记录要带 ``prompt_cache_hit/miss_tokens``（第 12 节用它断言缓存仍有效）。
+
+    SDK 的聚合 ``Usage`` 不带这两个字段，因此必须读 ``ModelResponse.raw_usage``。
+    提供方不给时保持 0——不编造计量。
+    """
+    chat = ScriptedChat("摘要", output_tokens=7, with_cache=True)
+
+    result = await ModelSummarizer(binding=_binding(chat)).summarize(_request(max_tokens=512))
+
+    assert result.prompt_cache_hit_tokens == 40
+    assert result.prompt_cache_miss_tokens == 2  # 42 − 40，推导口径见 _cache_tokens
+
+
+@pytest.mark.asyncio
+async def test_no_cache_details_means_no_observed_hits() -> None:
+    """提供方不报缓存明细时：命中 0、未命中等于全部输入 token。
+
+    这只表达「我们没看到命中」，**不区分**「确实没有缓存」与「提供方不报」——口径与边界写在
+    ``_cache_tokens`` 的 docstring 里，不在这里编造一个 0。
+    """
+    chat = ScriptedChat("摘要", output_tokens=7)
+
+    result = await ModelSummarizer(binding=_binding(chat)).summarize(_request(max_tokens=512))
+
+    assert result.prompt_cache_hit_tokens == 0
+    assert result.prompt_cache_miss_tokens == result.input_tokens == 42
 
 
 @pytest.mark.asyncio

@@ -38,6 +38,7 @@ from campfire.agent.runtime import (
     RunUsage,
     TextDeltaEvent,
     ToolCallFinishedEvent,
+    ToolCallStartedEvent,
 )
 from campfire.agent.skill_runtime import SkillRegistry
 from campfire.agent.tools import Candidate, ToolPool, ToolResult, ToolSpec
@@ -45,12 +46,13 @@ from campfire.agent.tools import Candidate, ToolPool, ToolResult, ToolSpec
 STARTED_AT = datetime(2026, 9, 29, 12, 0, tzinfo=UTC)
 
 
-def _citation(reference: str = "kb-1") -> CitationRecord:
+def _citation(reference: str = "kb-1", *, citation_id: str = "cite-1", summary: str | None = None) -> CitationRecord:
     return CitationRecord(
-        citation_id="cite-1",
+        citation_id=citation_id,
         run_id="run-1",
         source="knowledge",
         reference=reference,
+        summary=summary,
         recorded_at=STARTED_AT,
     )
 
@@ -106,7 +108,7 @@ def test_completed_run_records_every_field_the_design_asks_for() -> None:
     assert record.injection_count == 3
     assert record.appended_messages == 3
     assert record.tool_calls == [
-        ToolCallRecord(tool_name="search_knowledge", call_id="c1", ok=True, error_code=None, summary="摘要")
+        ToolCallRecord(tool_name="search_knowledge", call_id="c1", ok=True, error_code=None, summary_chars=2)
     ]
     assert record.citation_references == ("kb-1",)
     assert record.usage.total_tokens == 15
@@ -120,6 +122,115 @@ def test_finished_at_is_started_plus_elapsed() -> None:
     recorder.apply(RunFinishedEvent(reason="completed", citations=(), usage=RunUsage(), elapsed_seconds=90.0))
 
     assert recorder.finish().finished_at == datetime(2026, 9, 29, 12, 1, 30, tzinfo=UTC)
+
+
+def test_record_never_carries_tool_result_or_citation_text() -> None:
+    """记录不存对话与业务正文（第 2 节单真源 + 模块 docstring 第 1 条）。
+
+    第一版把工具结果摘要与引用摘要原样存进记录——实测一条含口令的连接串会原样进记录。
+    这条用例专门盯**真正会把正文带进记录**的两条通道（此前只测了 `text_delta` 这条
+    根本不进记录的通道）。
+    """
+    secret = "postgresql://appuser:s3cretpw@10.0.0.5:5432/campfire"
+    recorder = RunRecorder(started_at=STARTED_AT)
+    recorder.apply(
+        ToolCallStartedEvent(tool_name="search_knowledge", call_id="c1"),
+    )
+    recorder.apply(
+        ToolCallFinishedEvent(tool_name="search_knowledge", call_id="c1", ok=True, error_code=None, summary=secret)
+    )
+    recorder.apply(CitationEvent(citation=_citation(summary="档案里的一句话摘要")))
+    recorder.apply(RunFinishedEvent(reason="completed", citations=(), usage=RunUsage(), elapsed_seconds=0.1))
+
+    record = recorder.finish()
+
+    assert secret not in repr(record)
+    assert "s3cretpw" not in repr(record)
+    assert "档案里的一句话摘要" not in repr(record)
+    # 长度与标识仍然留下，足够排查
+    assert record.tool_calls[0].summary_chars == len(secret)
+    assert record.citation_references == ("kb-1",)
+
+
+def test_record_keeps_tool_calls_that_never_finished() -> None:
+    """被打断的工具调用也必须留痕（第 8 节要求记「工具调用」）。
+
+    实测触顶时事件序列是 ``run_started → tool_call_started → run_finished``：第一版只处理结束
+    事件，于是记录里**完全没有**这次调用。
+    """
+    recorder = RunRecorder(started_at=STARTED_AT)
+    recorder.apply(ToolCallStartedEvent(tool_name="read_alpha", call_id="c9"))
+    recorder.apply(RunFinishedEvent(reason="timeout", citations=(), usage=RunUsage(), elapsed_seconds=0.2))
+
+    record = recorder.finish()
+
+    assert [call.tool_name for call in record.tool_calls] == ["read_alpha"]
+    assert record.tool_calls[0].ok is None
+    assert record.unfinished_tool_calls == 1
+
+
+def test_cancelled_run_gets_a_measured_elapsed_and_no_fabricated_end() -> None:
+    """取消的运行不得写一个伪造的结束时间（``elapsed=0`` 且 ``finished_at == started_at``）。"""
+    recorder = RunRecorder(started_at=STARTED_AT)
+
+    recorder.mark_cancelled()
+    record = recorder.finish()
+
+    assert record.outcome == "cancelled"
+    assert record.end_reason is None
+    assert record.elapsed_seconds is not None
+    assert record.elapsed_seconds >= 0
+    assert record.finished_at is not None
+    # 没有终态事件、也没有量到耗时的情况下不编造
+    blank = RunRecord(started_at=STARTED_AT)
+    assert blank.finished_at is None
+
+
+def test_cancellation_does_not_override_a_terminal_outcome() -> None:
+    """已经跑完的运行不该因为随后的一次取消被改判（实测会写成自相矛盾的一行）。"""
+    recorder = RunRecorder(started_at=STARTED_AT)
+    recorder.apply(RunFinishedEvent(reason="completed", citations=(), usage=RunUsage(), elapsed_seconds=1.0))
+
+    recorder.mark_cancelled()
+    record = recorder.finish()
+
+    assert record.outcome == "completed"
+    assert record.cancelled is False
+
+
+def test_terminate_then_apply_is_ignored() -> None:
+    """终态之后不再吃事件：批式写入器不该落盘到「后来的」状态。"""
+    recorder = RunRecorder(started_at=STARTED_AT)
+    recorder.apply(RunFinishedEvent(reason="completed", citations=(), usage=RunUsage(), elapsed_seconds=1.0))
+
+    recorder.apply(TextDeltaEvent(delta="事后诸葛亮"))
+
+    assert recorder.record.text_deltas == 0
+
+
+def test_finish_returns_a_snapshot_not_the_live_object() -> None:
+    """``finish()`` 返回副本：交付之后再改内部对象不影响已写出去的那一份。"""
+    recorder = RunRecorder(started_at=STARTED_AT)
+    recorder.apply(_started())
+    record = recorder.finish()
+
+    assert record is not recorder.record
+    assert record.tool_calls is not recorder.record.tool_calls
+
+    recorder.apply(TextDeltaEvent(delta="事后"))
+    recorder.record.activated_skills = ("外部改写",)
+
+    assert record.text_deltas == 0
+    assert record.activated_skills == ("daily-consulting",)
+
+
+def test_citations_from_events_are_merged_not_overwritten() -> None:
+    """终态事件的引用清单与先到的引用事件**按 id 合并**，不是整体覆盖。"""
+    recorder = RunRecorder(started_at=STARTED_AT)
+    recorder.apply(CitationEvent(citation=_citation(citation_id="cit-1", reference="kb-1")))
+    recorder.apply(RunFinishedEvent(reason="completed", citations=(), usage=RunUsage(), elapsed_seconds=1.0))
+
+    assert recorder.finish().citation_references == ("kb-1",)
 
 
 def test_record_keeps_no_conversation_content() -> None:

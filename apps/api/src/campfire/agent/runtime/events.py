@@ -162,6 +162,16 @@ class CompactionFacts:
     summary_input_tokens: int
     summary_output_tokens: int
     summary_elapsed_seconds: float
+    prompt_cache_hit_tokens: int = 0
+    """摘要调用的缓存命中 token（压缩策略第 9 节要求记录、第 12 节要求用它断言）。
+
+    来源是提供方 usage 里的 ``prompt_cache_hit_tokens``；键名与是否返回**均未核实**
+    （``TECH-02``），取不到时保持 0——不编造。
+    """
+
+    prompt_cache_miss_tokens: int = 0
+    """摘要调用的缓存未命中 token（同上）。"""
+
     reason: str | None = None
     """没有压缩时的原因（压缩策略第 3、7 节：不留假成功，没做就要说清为什么）。"""
 

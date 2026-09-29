@@ -26,10 +26,11 @@
   「基座已确认要求尚未落地」第 ① 项）。
 """
 
-from .records import RunOutcome, RunRecord, RunRecorder, ToolCallRecord
+from .records import CitationRef, RunOutcome, RunRecord, RunRecorder, ToolCallRecord
 from .writer import RunTraceWriter, record_stream
 
 __all__ = [
+    "CitationRef",
     "RunOutcome",
     "RunRecord",
     "RunRecorder",
