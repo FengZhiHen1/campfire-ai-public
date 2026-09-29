@@ -57,22 +57,28 @@ def test_header_path_is_prepended_and_counts_toward_limit() -> None:
     assert all(len(chunk.text) <= HARD_MAX_CHARS for chunk in report.chunks)
 
 
-def test_oversized_table_is_not_truncated_but_flagged_for_manual_review() -> None:
-    """超长表格**不截断**：标记需人工处理，并进入 unsplittable。"""
+def test_oversized_table_is_split_not_truncated() -> None:
+    """超长表格按行切分，**内容一行不少**（不截断是硬要求）。
+
+    本用例原先断言"超长表格进人工队列"。2026-09-29 改为按行切分（依据见
+    `test_oversized_table_splits_by_rows_and_repeats_header`），因此断言随之
+    更新——但**"不截断"这条不变量不变**：切分只改变分块边界，不丢行。
+    """
     rows = "\n".join(f"| 9:{i:02d} | 活动{i} | 说明文字若干 |" for i in range(120))
     table = f"| 时间 | 活动 | 说明 |\n|---|---|---|\n{rows}"
     assert len(table) > HARD_MAX_CHARS
 
     report = chunk_markdown_section("/附录/", table)
 
-    assert report.unsplittable, "超长表格应进入人工处理队列"
-    flagged = report.unsplittable[0]
-    assert flagged.needs_manual_review is True
-    assert flagged.review_reason, "必须给出原因，便于人工处理"
+    assert len(report.chunks) > 1, "超长表格应被切分"
+    assert report.unsplittable == [], "按行切分后不应再有不可分单元"
+    joined = "\n".join(c.text for c in report.chunks)
     # 关键：内容完整保留，未截断。
-    assert "活动0" in flagged.text
-    assert "活动119" in flagged.text
-    assert len(report.embedded_chunks) == 0, "需人工处理的块不得送去嵌入"
+    assert "活动0" in joined
+    assert "活动119" in joined
+    for i in range(120):
+        assert f"活动{i} " in joined, f"第 {i} 行丢失"
+    assert all(len(c.text) <= HARD_MAX_CHARS for c in report.chunks)
 
 
 def test_list_items_are_not_split_across_chunks() -> None:
@@ -166,6 +172,60 @@ def test_locator_handles_root_header() -> None:
     report = chunk_markdown_section("/", "## 一、服务对象\n\n正文。")
 
     assert report.chunks[0].locator == "/一、服务对象/"
+
+
+# ---------------------------------------------------------------- 超长表格
+
+
+def test_oversized_table_splits_by_rows_and_repeats_header() -> None:
+    """超长表格**按行切分、每片重复表头**——不整块判为"不可分"。
+
+    已修缺陷的回归（2026-09-29）：早先一律判"以表格为主，切断会破坏结构"，
+    导致 PMC 论文的 27 种循证实践清单（Table 2，8,487 字符）**不进检索**——
+    而"有哪些循证实践"正是最可能的提问。结构保护的本意是不切断**行内**，
+    按行分段并重复表头产出的每片仍是合法且自解释的表格。
+    """
+    rows = [
+        f"| 实践{i} | 这是第{i}种循证实践的定义说明文字，需要足够长以避免碎片并撑过硬上限 |"
+        for i in range(60)
+    ]
+    table = "\n".join(["| 实践 | 定义 |", "|---|---|", *rows])
+    assert len(table) > HARD_MAX_CHARS, "本用例需要超长表格"
+
+    report = chunk_markdown_section("/规范/", table)
+
+    assert report.unsplittable == [], "表格不应被判为不可分"
+    assert len(report.chunks) > 1, "超长表格应被切成多片"
+    for chunk in report.chunks:
+        # 每片都要有自己的表头与分隔行——否则列义丢失。
+        assert "| 实践 | 定义 |" in chunk.text
+        assert "|---|---|" in chunk.text
+        assert len(chunk.text) <= HARD_MAX_CHARS
+
+
+def test_table_without_recognizable_header_still_goes_to_manual() -> None:
+    """表头识别不出时仍交人工——宁可漏嵌也不产出列义不明的碎片。"""
+    # 没有 `|---|` 分隔行，不是标准 Markdown 表格。
+    rows = [f"| 实践{i} | 这是第{i}种实践的定义文字，需要足够长以撑过硬上限 |" for i in range(120)]
+    body = "\n".join(rows)
+    assert len(body) > HARD_MAX_CHARS
+
+    report = chunk_markdown_section("/规范/", body)
+
+    assert report.unsplittable, "无表头的结构块应进人工队列"
+    assert "无法按行切分" in (report.unsplittable[0].review_reason or "")
+
+
+def test_oversized_list_is_not_silently_dropped() -> None:
+    """超长列表不是表格：走表格分支会安全退回——但绝不静默丢弃。"""
+    items = [f"- 第{i}项：这是一条足够长的列表项内容用于测试超长处理" for i in range(80)]
+    body = "\n".join(items)
+    assert len(body) > HARD_MAX_CHARS
+
+    report = chunk_markdown_section("/规范/", body)
+
+    assert report.chunks
+    assert report.unsplittable or len(report.chunks) > 1
 
 
 # ---------------------------------------------------------------- frontmatter

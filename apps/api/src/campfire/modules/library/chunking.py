@@ -38,6 +38,8 @@ _HEADER_BUDGET_CHARS = 200
 #: 列表项与表格行的识别：切分时不切断它们。
 _LIST_ITEM_PATTERN = re.compile(r"^\s*(?:[-*+]|\d+[.)])\s+")
 _TABLE_ROW_PATTERN = re.compile(r"^\s*\|.*\|\s*$")
+#: Markdown 表格的分隔行（`|---|:--:|`）——按行切分表格时据此识别表头。
+_TABLE_SEPARATOR_PATTERN = re.compile(r"^\s*\|(?:\s*:?-{1,}:?\s*\|)+\s*$")
 
 #: 句子边界：中文句号/问号/叹号/分号与英文对应标点，后接空白或结束。
 _SENTENCE_END_PATTERN = re.compile(r"(?<=[。！？；!?;])|(?<=[.])\s+")
@@ -84,12 +86,82 @@ def _is_structural_line(line: str) -> bool:
     return bool(_LIST_ITEM_PATTERN.match(line) or _TABLE_ROW_PATTERN.match(line))
 
 
+def _split_oversized_table(paragraph: str, limit: int) -> tuple[list[str], str | None]:
+    """超长表格**按行切分，每片重复表头**。
+
+    为什么这不是"破坏结构"（2026-09-29 实测教训）：结构保护的本意是
+    **不把一行从中间切断**，而按行分段并重复表头产出的每一片仍是**合法且自解释**
+    的 Markdown 表格（表头决定了列义）。早先一律判为"不可分"，导致 PMC 论文里
+    27 种循证实践清单（Table 2，8,487 字符）**不进检索**——而"有哪些循证实践"
+    恰是最可能的提问，等于丢掉论文的核心交付物。
+
+    表头识别：前两行是「列名行 + `|---|` 分隔行」（标准 Markdown 表格）。
+    识别不出表头时（表格形态异常）**返回失败**，仍交由人工处理——
+    宁可漏嵌也不产出列义不明的碎片。
+
+    Returns:
+        ``(切片列表, None)``；无法安全切分时 ``([], 原因)``。
+    """
+    lines = [line for line in paragraph.splitlines() if line.strip()]
+    if len(lines) < 3:
+        return [], "表格行数过少，无法按行切分"
+
+    header, separator = lines[0], lines[1]
+    # 第二行必须是**真正的分隔行**（`|---|`），不能只是"任意表格行"：
+    # 否则缺分隔行的畸形表格会把一条数据行当成表头分隔，切出的碎片列义不明。
+    if not _TABLE_ROW_PATTERN.match(header) or not _TABLE_SEPARATOR_PATTERN.match(separator.strip()):
+        return [], "超长且首两行不是表格表头，无法按行切分"
+
+    body_rows = [line for line in lines[2:] if _TABLE_ROW_PATTERN.match(line)]
+    non_table = [line for line in lines[2:] if not _TABLE_ROW_PATTERN.match(line)]
+    if len(body_rows) < 2:
+        return [], "表格体不足两行，按行切分无意义"
+
+    # 单行就超限：切出来仍超限，交人工（不截断）。
+    if max(len(header), len(separator), *(len(r) for r in body_rows)) > limit:
+        return [], "存在单行超过硬上限"
+
+    prefix = [line for line in lines[:2]]
+    head_block = "\n".join(prefix)
+    pieces: list[str] = []
+    buffer: list[str] = []
+
+    def flush() -> None:
+        if buffer:
+            pieces.append("\n".join([*prefix, *buffer]))
+
+    for row in body_rows:
+        candidate = len(head_block) + 1 + sum(len(r) + 1 for r in buffer) + len(row)
+        if buffer and candidate > limit:
+            flush()
+            buffer = []
+        buffer.append(row)
+    flush()
+
+    # 表格外的文字（表注、说明）附到最后一片，不丢内容。
+    if non_table:
+        extra = "\n".join(non_table)
+        if pieces and len(pieces[-1]) + len(extra) + 2 <= limit:
+            pieces[-1] = f"{pieces[-1]}\n\n{extra}"
+        else:
+            if len(extra) > limit:
+                return [], "表注文本超过硬上限"
+            pieces.append("\n".join([*prefix, extra]))
+
+    return pieces, None
+
+
 def _split_oversized_paragraph(paragraph: str, limit: int) -> tuple[list[str], str | None]:
-    """切分单个超长段落：结构行不可切，否则按句子累积。"""
+    """切分单个超长段落：先是表格按行切，再按句子累积。
+
+    顺序有讲究：**表格优先**——表格若按句子切会把行切碎（一行的定义文本可能
+    含句号），而按行切并重复表头能保住列义。只有非表格内容才按句子处理。
+    """
     lines = paragraph.splitlines()
     structural = sum(1 for line in lines if _is_structural_line(line))
     if lines and structural >= max(1, len(lines) // 2):
-        return [], "超长且以表格或列表为主，切断会破坏结构"
+        # 结构为主：尝试表格按行切分（保留表头），失败才交人工。
+        return _split_oversized_table(paragraph, limit)
 
     sentences = [s for s in _SENTENCE_END_PATTERN.split(paragraph) if s]
     if len(sentences) <= 1:
