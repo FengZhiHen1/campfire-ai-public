@@ -13,6 +13,9 @@ from pathlib import Path
 import pytest
 
 from campfire.agent.skill_runtime import (
+    CATALOG_BUDGET_TOKENS,
+    MAX_RESOURCE_BYTES,
+    SKILL_FILE_NAME,
     SkillCatalogOverflowError,
     SkillDiscoveryError,
     SkillFrontmatterError,
@@ -68,12 +71,22 @@ def test_valid_skill_is_loaded_with_all_standard_fields(tmp_path: Path) -> None:
 
 
 def test_repository_skill_root_loads_without_error() -> None:
-    """配置指向的真实根目录必须可加载（当前为空，也不得报错）。"""
+    """配置指向的真实根目录必须可加载，且加载结果与磁盘事实一致。
+
+    期望值从文件系统推导，而不是写死「零 skill」——写死会在第一份真实 SKILL.md 落地时
+    变成一条假失败，也掩盖「什么都没加载却报通过」这种真空绿跑。
+    """
+    expected_names = tuple(
+        sorted(entry.parent.name for entry in REPO_SKILL_ROOT.glob(f"*/{SKILL_FILE_NAME}") if entry.is_file())
+    )
+    expected_warnings = sorted(
+        entry.name for entry in REPO_SKILL_ROOT.iterdir() if entry.is_dir() and not (entry / SKILL_FILE_NAME).is_file()
+    )
+
     registry = SkillRegistry.discover(REPO_SKILL_ROOT)
 
-    assert registry.names() == ()
-    # 空目录不是错误，但也必须留下可核对的痕迹：目录清单之外的普通文件被忽略。
-    assert all(warning.code == "skill_directory_without_skill_md" for warning in registry.warnings)
+    assert registry.names() == expected_names
+    assert sorted(warning.path.rsplit("/", 1)[-1] for warning in registry.warnings) == expected_warnings
 
 
 def test_missing_root_fails_loudly(tmp_path: Path) -> None:
@@ -104,36 +117,61 @@ def test_get_reports_unknown_name_without_raising_through_the_run(tmp_path: Path
 
 # --- 拒绝路径：frontmatter ---------------------------------------------------
 
-INVALID_DOCUMENTS: dict[str, str] = {
-    "缺 frontmatter 起始行": "name: x\ndescription: y\n",
-    "frontmatter 没有结束行": "---\nname: {name}\ndescription: 描述\n",
-    "根不是映射": "---\njust a string\n---\n正文\n",
-    "缺 name": "---\ndescription: 描述\n---\n正文\n",
-    "缺 description": "---\nname: {name}\n---\n正文\n",
-    "自创字段": "---\nname: {name}\ndescription: 描述\nversion: 2\n---\n正文\n",
-    "重复字段": "---\nname: {name}\ndescription: 描述\ndescription: 又一遍\n---\n正文\n",
-    "name 非字符串": "---\nname: 123\ndescription: 描述\n---\n正文\n",
-    "name 大写": "---\nname: Daily\ndescription: 描述\n---\n正文\n",
-    "name 连续连字符": "---\nname: daily--consulting\ndescription: 描述\n---\n正文\n",
-    "description 为空": "---\nname: {name}\ndescription: '   '\n---\n正文\n",
-    "metadata 值非字符串": "---\nname: {name}\ndescription: 描述\nmetadata:\n  autoload: false\n---\n正文\n",
-    "metadata.autoload 取值非法": "---\nname: {name}\ndescription: 描述\nmetadata:\n  autoload: 'maybe'\n---\n正文\n",
-    "metadata.surface 为空": "---\nname: {name}\ndescription: 描述\nmetadata:\n  surface: ''\n---\n正文\n",
-    "allowed-tools 用逗号": "---\nname: {name}\ndescription: 描述\nallowed-tools: read_a, write_b\n---\n正文\n",
-    "allowed-tools 含非法名": "---\nname: {name}\ndescription: 描述\nallowed-tools: 'read-a'\n---\n正文\n",
-    "正文为空": "---\nname: {name}\ndescription: 描述\n---\n\n",
-    "YAML 语法错误": "---\nname: {name}\ndescription: [未闭合\n---\n正文\n",
+INVALID_DOCUMENTS: dict[str, tuple[str, str]] = {
+    # 样例 → (文档, 期望在失败原因里出现的片段)
+    "缺 frontmatter 起始行": ("name: x\ndescription: y\n", "必须以顶格的 `---` 开头"),
+    "frontmatter 没有结束行": ("---\nname: {name}\ndescription: 描述\n", "没有结束行"),
+    "根不是映射": ("---\njust a string\n---\n正文\n", "必须是字段映射"),
+    "缺 name": ("---\ndescription: 描述\n---\n正文\n", "缺少必填字段 name"),
+    "缺 description": ("---\nname: {name}\n---\n正文\n", "缺少必填字段 description"),
+    "自创字段": ("---\nname: {name}\ndescription: 描述\nversion: 2\n---\n正文\n", "标准之外的字段"),
+    "重复字段": ("---\nname: {name}\ndescription: 描述\ndescription: 又一遍\n---\n正文\n", "重复字段"),
+    "name 非字符串": ("---\nname: 123\ndescription: 描述\n---\n正文\n", "name 必须是字符串"),
+    "name 大写": ("---\nname: Daily\ndescription: 描述\n---\n正文\n", "name='Daily' 不合法"),
+    "name 连续连字符": (
+        "---\nname: daily--consulting\ndescription: 描述\n---\n正文\n",
+        "不得连续连字符",
+    ),
+    "description 为空": ("---\nname: {name}\ndescription: '   '\n---\n正文\n", "description 不能为空"),
+    "metadata 值非字符串": (
+        "---\nname: {name}\ndescription: 描述\nmetadata:\n  autoload: false\n---\n正文\n",
+        "metadata.autoload 必须是字符串",
+    ),
+    "metadata.autoload 取值非法": (
+        "---\nname: {name}\ndescription: 描述\nmetadata:\n  autoload: 'maybe'\n---\n正文\n",
+        'autoload 只接受 "true" 或 "false"',
+    ),
+    "metadata.surface 为空": (
+        "---\nname: {name}\ndescription: 描述\nmetadata:\n  surface: ''\n---\n正文\n",
+        "surface 不能为空",
+    ),
+    "allowed-tools 用逗号": (
+        "---\nname: {name}\ndescription: 描述\nallowed-tools: read_a, write_b\n---\n正文\n",
+        "不接受逗号",
+    ),
+    "allowed-tools 含非法名": (
+        "---\nname: {name}\ndescription: 描述\nallowed-tools: 'read-a'\n---\n正文\n",
+        "含非法工具名",
+    ),
+    "正文为空": ("---\nname: {name}\ndescription: 描述\n---\n\n", "正文为空"),
+    "YAML 语法错误": ("---\nname: {name}\ndescription: [未闭合\n---\n正文\n", "不是合法 YAML"),
+    "孤代理对": (
+        '---\nname: {name}\ndescription: "\\ud83d 应急"\n---\n正文\n',
+        "无法编码为 UTF-8",
+    ),
 }
 
 
 @pytest.mark.parametrize("case", sorted(INVALID_DOCUMENTS), ids=sorted(INVALID_DOCUMENTS))
-def test_invalid_frontmatter_is_rejected(tmp_path: Path, case: str) -> None:
-    _make_skill(tmp_path, "sample", frontmatter=INVALID_DOCUMENTS[case].format(name="sample"), body="")
+def test_invalid_frontmatter_is_rejected_with_the_expected_reason(tmp_path: Path, case: str) -> None:
+    """每条非法样例都断言**具体原因**——只断言「被拒绝」无法区分按规则拒绝与因别的原因失败。"""
+    document, expected = INVALID_DOCUMENTS[case]
+    _make_skill(tmp_path, "sample", frontmatter=document.format(name="sample"), body="")
 
     with pytest.raises(SkillDiscoveryError) as error:
         SkillRegistry.discover(tmp_path)
 
-    assert "sample" in str(error.value)
+    assert expected in str(error.value), f"期望失败原因包含 {expected!r}，实际：{error.value}"
 
 
 def test_name_must_equal_directory_name(tmp_path: Path) -> None:
@@ -308,12 +346,41 @@ def test_activation_contains_body_and_resource_guide(tmp_path: Path) -> None:
     assert "scripts/run.py" not in payload
 
 
-def test_activation_is_identical_for_repeated_renders(tmp_path: Path) -> None:
-    """模型侧工具与应用侧注入共用同一渲染，同形由此保证。"""
+def test_activation_wraps_the_body_verbatim(tmp_path: Path) -> None:
+    """激活载荷的正文必须与 SKILL.md 正文逐字一致（不是摘要、不是重写）。
+
+    「模型侧工具与应用侧注入同形」的**跨路径**断言要等运行编排落地才能写（两条路径
+    都要先存在）；这里先锁住内容契约，免得同形断言退化成自比自。
+    """
     _make_skill(tmp_path, "sample")
     skill = SkillRegistry.discover(tmp_path).get("sample")
 
-    assert render_activation(skill) == render_activation(skill)
+    payload = render_activation(skill)
+
+    assert payload == '<skill_content name="sample">\n正文指令。\n</skill_content>'
+
+
+def test_activation_marks_unreadable_resources_instead_of_hiding_them(tmp_path: Path) -> None:
+    """存在但读不了的资源照样列出并带原因：显式标注不可用，好过让它从清单里消失。"""
+    directory = tmp_path / "sample"
+    _make_skill(tmp_path, "sample")
+    references = directory / "references"
+    references.mkdir()
+    (references / "guide.md").write_text("参考", encoding="utf-8")
+    (references / "huge.md").write_bytes(b"x" * (MAX_RESOURCE_BYTES + 1))
+
+    skill = SkillRegistry.discover(tmp_path).get("sample")
+    payload = render_activation(skill)
+
+    assert '<resource path="references/guide.md" />' in payload
+    assert 'path="references/huge.md"' in payload
+    assert "reason=" in payload
+
+
+def test_repository_constants_match_the_design_numbers() -> None:
+    """设计里写死的两个数字必须有测试锁定，否则改动它们不会惊动任何检查。"""
+    assert CATALOG_BUDGET_TOKENS == 4000  # 基座文档第 3 节（2026-09-29 定）
+    assert MAX_RESOURCE_BYTES == 256 * 1024
 
 
 def test_list_resources_is_one_level_deep_and_sorted(tmp_path: Path) -> None:
@@ -419,3 +486,150 @@ def test_build_metadata_rejects_non_string_license(tmp_path: Path) -> None:
             path="sample/SKILL.md",
             directory_name="sample",
         )
+
+
+# --- 对抗性审查回归：曾经静默通过的缺陷 -------------------------------------
+#
+# 下面每条都对应一次实测发现的缺陷。它们曾经「加载成功、无告警」，因此用例的要点是
+# **断言加载结果本身**，而不是断言「没有抛异常」。
+
+
+def test_indented_delimiters_inside_block_scalars_do_not_end_frontmatter(tmp_path: Path) -> None:
+    """块标量里的缩进 `---` / `...` 不是分隔符。
+
+    初版按 ``line.strip()`` 找结束行，于是下面这份文档会在这里提前收尾：``metadata``
+    与 ``allowed-tools`` 被静默吞进正文，``autoload: "false"`` 随之丢失——本该只由程序
+    注入的 skill 变成可被模型自动匹配，且**没有任何告警**。
+    """
+    document = (
+        "---\n"
+        "name: sample\n"
+        "description: |\n"
+        "  第一行\n"
+        "  ---\n"
+        "  第二行\n"
+        "compatibility: |\n"
+        "  需要 Python 3.12\n"
+        "  ...\n"
+        "  其余环境说明\n"
+        "metadata:\n"
+        '  autoload: "false"\n'
+        "  surface: consult\n"
+        "allowed-tools: read_alpha write_beta\n"
+        "---\n"
+        "正文\n"
+    )
+    _make_skill(tmp_path, "sample", frontmatter=document, body="")
+
+    skill = SkillRegistry.discover(tmp_path).get("sample")
+
+    assert skill.metadata.description == "第一行\n---\n第二行\n"
+    assert skill.metadata.compatibility == "需要 Python 3.12\n...\n其余环境说明\n"
+    assert skill.metadata.autoload is False
+    assert skill.metadata.surface == "consult"
+    assert skill.metadata.allowed_tools == frozenset({"read_alpha", "write_beta"})
+    assert skill.body == "正文"
+    # 该 skill 不得出现在模型可见目录里
+    assert skill.name not in SkillRegistry.discover(tmp_path).catalog()
+
+
+def test_indented_opening_line_is_not_a_frontmatter_start(tmp_path: Path) -> None:
+    _make_skill(tmp_path, "sample", frontmatter="  ---\nname: sample\ndescription: 描述\n---\n正文\n", body="")
+
+    with pytest.raises(SkillDiscoveryError, match="顶格"):
+        SkillRegistry.discover(tmp_path)
+
+
+def test_read_failure_is_aggregated_instead_of_escaping(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """读到一半失败（并发删除、权限）也要并进 problems，不让裸 OSError 逃出去。"""
+    _make_skill(tmp_path, "sample")
+    original_read_text = Path.read_text
+
+    def flaky_read_text(self: Path, *args: object, **kwargs: object) -> str:
+        if self.name == SKILL_FILE_NAME:
+            raise PermissionError(13, "Permission denied")
+        return original_read_text(self, *args, **kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(Path, "read_text", flaky_read_text)
+
+    with pytest.raises(SkillDiscoveryError, match="读取失败"):
+        SkillRegistry.discover(tmp_path)
+
+
+def test_skill_file_name_must_match_case_exactly(tmp_path: Path) -> None:
+    """``skill.md`` 在大小写不敏感的文件系统上会被 ``is_file()`` 认成 ``SKILL.md``。
+
+    行为必须与平台无关：只认精确文件名，其余当作「目录缺少 SKILL.md」并告警。
+    因此这里**无条件**断言未加载——如果实现退回 ``(entry / SKILL_FILE_NAME).is_file()``，
+    本条会在 Windows 上失败（把目录里的小写文件当成 skill 加载）。
+    """
+    directory = tmp_path / "sample"
+    directory.mkdir()
+    (directory / "skill.md").write_text(VALID_FRONTMATTER.format(name="sample") + "正文\n", encoding="utf-8")
+
+    registry = SkillRegistry.discover(tmp_path)
+
+    assert registry.names() == ()
+    assert [warning.code for warning in registry.warnings] == ["skill_directory_without_skill_md"]
+
+
+@pytest.mark.parametrize("relative_path", ["references/x\x00.md", "references/guide.md:hidden"])
+def test_read_resource_rejects_unportable_characters(tmp_path: Path, relative_path: str) -> None:
+    """NUL 会让 Path 操作抛裸 ValueError；``:`` 在 Windows 上指 NTFS 备用数据流。"""
+    _make_skill(tmp_path, "sample")
+    references = tmp_path / "sample" / "references"
+    references.mkdir()
+    (references / "guide.md").write_text("参考", encoding="utf-8")
+    skill = SkillRegistry.discover(tmp_path).get("sample")
+
+    with pytest.raises(SkillResourceError, match="不可移植字符"):
+        read_resource(skill, relative_path)
+
+
+def test_list_resources_marks_unreadable_entries(tmp_path: Path) -> None:
+    """列举与读取用同一组判据：列出来却读不了的条目必须带 issue。"""
+    _make_skill(tmp_path, "sample")
+    references = tmp_path / "sample" / "references"
+    references.mkdir()
+    (references / "ok.md").write_text("参考", encoding="utf-8")
+    (references / "big.md").write_text("x" * 64, encoding="utf-8")
+    skill = SkillRegistry.discover(tmp_path).get("sample")
+
+    resources = {resource.relative_path: resource.issue for resource in list_resources(skill, max_bytes=16)}
+
+    assert resources == {"references/big.md": "超过体积上限 16 字节", "references/ok.md": None}
+
+
+def test_symlink_escaping_the_skill_directory_is_marked(tmp_path: Path) -> None:
+    _make_skill(tmp_path, "sample")
+    outside = tmp_path / "outside.md"
+    outside.write_text("目录外的内容", encoding="utf-8")
+    references = tmp_path / "sample" / "references"
+    references.mkdir()
+    try:
+        (references / "link.md").symlink_to(outside)
+    except (OSError, NotImplementedError):
+        pytest.skip("本机不允许创建符号链接")
+
+    skill = SkillRegistry.discover(tmp_path).get("sample")
+
+    listed = {resource.relative_path: resource.issue for resource in list_resources(skill)}
+    assert listed["references/link.md"] == "越出 skill 目录"
+    with pytest.raises(SkillResourceError, match="越出 skill 目录"):
+        read_resource(skill, "references/link.md")
+
+
+def test_estimate_tokens_is_a_conservative_upper_bound() -> None:
+    """三种曾被实测低估的形态：稀疏 ASCII、emoji、CJK 全角标点。
+
+    期望值的来源是代理分词器（tiktoken ``cl100k_base``）的实测数量，见
+    ``catalog.estimate_tokens`` 的 docstring；这里是**下界断言**——
+    估算允许高估，但不得低于实测，否则 4000 token 那条上限就不是上界。
+    """
+    assert estimate_tokens("a " * 200) >= 200  # 稀疏 ASCII：实测 200
+    assert estimate_tokens("🙂" * 100) >= 200  # emoji：实测 200
+    assert estimate_tokens("中文" * 80) >= 140  # 中文：实测 140
+    assert estimate_tokens("") == 0
+    # 普通英文散文不应被高估到失控：实测 121
+    prose = "the quick brown fox jumps over the lazy dog " * 3
+    assert estimate_tokens(prose) <= 135

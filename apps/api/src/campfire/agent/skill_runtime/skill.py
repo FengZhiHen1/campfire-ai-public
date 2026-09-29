@@ -37,6 +37,23 @@ _METADATA_AUTOLOAD = "autoload"
 _METADATA_SURFACE = "surface"
 
 
+def _ensure_encodable(value: str, field: str, path: str) -> str:
+    """拒绝无法编码为 UTF-8 的字符串（孤代理对）。
+
+    YAML 允许 ``"\\ud83d"`` 这种落单的代理项；它在加载期一切正常，却会在落库或
+    SSE 编码时才抛 ``UnicodeEncodeError``——错误离现场很远，且那时已无法定位到文件。
+    与其让它在远处炸，不如在这里拒绝。
+    """
+    try:
+        value.encode("utf-8")
+    except UnicodeEncodeError as exc:
+        raise SkillFrontmatterError(
+            path,
+            f"{field} 含无法编码为 UTF-8 的字符（{exc.reason}）：落库与传输都会失败",
+        ) from exc
+    return value
+
+
 def _require_str(frontmatter: Mapping[object, object], field: str, path: str, *, required: bool) -> str | None:
     """取一个字符串字段；缺省时按 ``required`` 决定报错还是返回 ``None``。"""
     if field not in frontmatter:
@@ -51,7 +68,7 @@ def _require_str(frontmatter: Mapping[object, object], field: str, path: str, *,
         raise SkillFrontmatterError(path, f"{field} 必须是字符串，实际是 {type(value).__name__}")
     if not value.strip():
         raise SkillFrontmatterError(path, f"{field} 不能为空")
-    return value
+    return _ensure_encodable(value, field, path)
 
 
 def _validate_name(name: str, path: str) -> str:
@@ -88,7 +105,7 @@ def _parse_metadata(frontmatter: Mapping[object, object], path: str) -> Mapping[
                 path,
                 f'metadata.{key} 必须是字符串（如 autoload: "false"），实际是 {type(value).__name__}',
             )
-        parsed[key] = value
+        parsed[_ensure_encodable(key, "metadata 的键", path)] = _ensure_encodable(value, f"metadata.{key}", path)
 
     # 自有键在**加载时**校验，不留到读取属性时才炸：那时已经离错误来源很远了。
     autoload = parsed.get(_METADATA_AUTOLOAD)

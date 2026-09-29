@@ -59,21 +59,30 @@ def split_frontmatter(text: str, *, path: str) -> tuple[str, str]:
 
     容忍 UTF-8 BOM 与 CRLF：它们不改变语义，不该成为加载失败的理由。
 
+    **分隔符只认顶格行**。这条不是洁癖：YAML 块标量（``|`` / ``>``）里的缩进 ``---``
+    会让「按 strip 找结束行」的实现提前收尾，把后面的 ``metadata``、``allowed-tools``
+    静默吞进正文——实测能把 ``autoload: "false"`` 吞掉，使本该只由程序注入的 skill
+    变成可被模型自动匹配。静默加载正是基座文档第 3 节禁止的处置。
+
     Raises:
-        SkillFrontmatterError: 缺少 ``---`` 起始行，或 frontmatter 没有结束行。
+        SkillFrontmatterError: 缺少顶格的 ``---`` 起始行，或没有顶格的结束行。
     """
     normalized = text.lstrip(_UTF8_BOM).replace("\r\n", "\n").replace("\r", "\n")
     lines = normalized.split("\n")
 
-    if not lines or lines[0].strip() != "---":
-        raise SkillFrontmatterError(path, "文档必须以 `---` 开头（frontmatter 缺失）")
+    if not lines or lines[0].rstrip() != "---":
+        raise SkillFrontmatterError(path, "文档必须以顶格的 `---` 开头（frontmatter 缺失）")
 
     for index in range(1, len(lines)):
-        if lines[index].strip() in _FRONTMATTER_DELIMITERS:
+        line = lines[index]
+        if line != line.lstrip():
+            # 缩进行属于上一行的块标量内容，不可能是分隔符。
+            continue
+        if line.rstrip() in _FRONTMATTER_DELIMITERS:
             body = "\n".join(lines[index + 1 :]).strip("\n")
             return "\n".join(lines[1:index]), body
 
-    raise SkillFrontmatterError(path, "frontmatter 没有结束行（缺少 `---` 或 `...`）")
+    raise SkillFrontmatterError(path, "frontmatter 没有结束行（缺少顶格的 `---` 或 `...`）")
 
 
 def parse_frontmatter(text: str, *, path: str) -> tuple[dict[object, object], str]:
