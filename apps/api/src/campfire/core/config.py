@@ -49,6 +49,13 @@ class Settings(BaseSettings):
     tokenhub_base_url: str = "https://tokenhub.tencentmaas.com/v1"
     tokenhub_api_key: SecretStr | None = None
     model_name: str = "deepseek-v4.1-flash"
+    # 单次请求超时与重试上界。三者的最坏组合必须落在基座第 2 节的 180 秒通用响应
+    # 上限之内（默认值最坏 45×3 + 1 + 2 = 138 秒），否则重试会被运行上限从中间砍断；
+    # 越界配置在 agent.model 构造期即抛错，见 docs/技术设计/technical-details/通用基座.md 第 6 节。
+    model_request_timeout_seconds: float = 45.0
+    model_max_retries: int = 2
+    model_retry_initial_delay_seconds: float = 1.0
+    model_retry_max_delay_seconds: float = 8.0
 
     # --- 认证（SuperTokens core 容器）---
     # 会话校验在 Python SDK 内完成、不经过 core；core 只在注册、登录、
