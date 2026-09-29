@@ -54,6 +54,7 @@ allowed-tools: read_profile_summary read_profile_items search_knowledge search_c
 ### 3.4 工具使用纪律
 
 - 检索**按需**，不为凑引用；同一轮不要对同一问题重复检索。
+- **查询词自改写**：案例卡片是临床/指南文风，使用者的口语原话（如"孩子装听不见怎么办"）与卡片文风错配，直接拿原话当 `query` 会漏召回。检索前把口语描述**改写成简明的行为与情境描述**再查（例：搜"听到指令不执行、拖延、假装未听见"）。改写只发生在工具调用的 `query` 里，**不改变使用者原话的呈现**——输出中引用使用者表述仍用原话。机制与评测闸门见[RAG 策略](../../../technical-details/RAG策略.md)第 8.1 节。
 - `read_profile_items` 只在需要具体条目时用；只想要概览时用 `read_profile_summary`。
 - **写工具一律不可用**：本 skill 没有 `propose_profile_item`、`write_memory`；越界调用由服务端拒绝。
 
