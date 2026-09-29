@@ -140,6 +140,18 @@ def to_episode_key(raw: object) -> EpisodeUuid:
             operation="validate_episode_key",
             detail=f"length={len(raw)}",
         )
+    # **显式拒绝含空白字符的输入**（2026-09-29 评审发现，实测复现）：`uuid.UUID()` 内部
+    # 先剥连字符再 `int(s, 16)`，而 `int()` **会剥离首尾空白**（`int(" ff ", 16) == 255`）。
+    # 于是「长度不变、用一个空白顶替某位 hex」的畸形串会被**接受并归一到另一个 UUID**
+    # ——形如 `3f2504e0-4f89-41d3-9a0c-0305e82c330` + 空格会被当成完全不同的 key。
+    # 后果不是误删（那个 key 不对应任何真实 episode），而是**记了一条指向不存在记忆的
+    # 账本行 + 本次删除静默无效**——与毒化行同类。合法 UUID 文本不含空白，故直接拒绝。
+    if any(ch.isspace() for ch in raw):
+        raise MemoryDataError(
+            "episode 标识含空白字符（合法 UUID 文本不含空白；空白会被解析器当作填充位而静默改写标识）",
+            operation="validate_episode_key",
+            detail=f"value={raw!r}",
+        )
     try:
         parsed = uuid.UUID(raw)
     except ValueError as exc:

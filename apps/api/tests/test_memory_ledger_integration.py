@@ -348,6 +348,58 @@ async def test_deleted_episode_keys_returns_what_was_recorded() -> None:
 
 
 @pytest.mark.asyncio
+async def test_record_deletion_rejects_invalid_account_ids() -> None:
+    """`account_id` 必须过入口校验——否则会产生**不可恢复的毒化行**。
+
+    为什么必须有这条（2026-09-29 评审发现的阻断级，实测复现）：此前 `record_deletion`
+    只校验 `episode_key`，`account_id` 是裸 `str`。写入一条 `account_id=''` 的行后，
+    它**既不被任何真实账号读到**（读路径按 account_id 过滤），又因 `episode_key` 的
+    **全局唯一约束**永久占用该 key——合法账号删除那条记忆会撞上跨账号守卫而**永久失败**，
+    且没有 API 能清掉该行。超长值此前还会退化成裸 `StringDataRightTruncationError`。
+
+    判别性：去掉 `account_id = to_account_id(account_id)` 这一行，本用例会失败
+    （空串会被接受）。
+    """
+    from campfire.modules.memory.identity import AccountIdError
+
+    await _cleanup()
+    key = _episode_key("badacct")
+    try:
+        for bad in ("", "_", "acct.aaa", "a" * 200):
+            async with session_scope(get_settings()) as session:
+                with pytest.raises(AccountIdError):
+                    await record_deletion(session, account_id=bad, episode_key=key)
+
+        # 被拒的请求不得留下任何账本行（毒化行的定义就是「留下了」）。
+        async with session_scope(get_settings()) as session:
+            count = (
+                await session.execute(
+                    select(func.count())
+                    .select_from(MemoryDeletionLedger)
+                    .where(MemoryDeletionLedger.episode_key == key)
+                )
+            ).scalar_one()
+            assert count == 0, "被拒的账号标识不得留下账本行"
+
+        # 合法账号仍然可用（防止把校验做成「一律拒绝」）。
+        async with session_scope(get_settings()) as session:
+            ok = await record_deletion(session, account_id=_ACCOUNT, episode_key=key)
+        assert ok.outcome is DeletionOutcome.RECORDED
+    finally:
+        await _cleanup()
+
+
+@pytest.mark.asyncio
+async def test_deleted_episode_keys_rejects_invalid_account_id() -> None:
+    """读侧同样校验账号标识（脏键会让读路径按错误分区过滤）。"""
+    from campfire.modules.memory.identity import AccountIdError
+
+    async with session_scope(get_settings()) as session:
+        with pytest.raises(AccountIdError):
+            await deleted_episode_keys(session, "")
+
+
+@pytest.mark.asyncio
 async def test_deleted_episode_keys_is_empty_for_untouched_account() -> None:
     """没有删除记录的账号返回空列表——**正常状态，不是错误**。"""
     async with session_scope(get_settings()) as session:

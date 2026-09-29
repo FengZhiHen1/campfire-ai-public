@@ -36,7 +36,8 @@ class MemoryUnavailableError(MemoryModuleError):
     **必须与「没有记忆」区分**（通用记忆第 6 节）：图库不可用时明确标注该来源
     不可用，不得静默当作「没有记忆」。注意 ``EntityEdge.get_by_group_ids`` 对
     **空分区**也抛异常（实测 ``GroupsEdgesNotFoundError``），因此读取侧必须把
-    该情形转成空结果而不是本异常——见 ``store.py`` 的空结果处理。
+    该情形转成空结果而不是本异常——两条读路径都**自建 Cypher**，从而根本不经过那个
+    方法（见 ``derived.py`` 的说明：自建的理由之一就是它）。
 
     诊断字段:
       - operation: 失败的操作名（如 ``read_timeline``），供日志定位；

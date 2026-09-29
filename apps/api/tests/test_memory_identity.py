@@ -250,6 +250,36 @@ def test_episode_key_normalizes_non_canonical_uuid_forms() -> None:
         assert to_episode_key(variant) == canonical, f"{variant!r} 应归一为规范形式"
 
 
+def test_episode_key_rejects_whitespace_that_would_silently_remap_it() -> None:
+    """含空白的 episode 标识被拒绝——**不能被静默改写成另一个 key**。
+
+    为什么必须有这条（2026-09-29 评审发现，实测复现）：`uuid.UUID()` 内部先剥连字符
+    再 `int(s, 16)`，而 `int()` **会剥离首尾空白**。于是「长度不变、用一个空白顶替某位
+    hex」的畸形串会被**接受并归一到另一个 UUID**：
+
+        "3f2504e0-4f89-41d3-9a0c-0305e82c330" + " "  →  03f2504e-04f8-941d-39a0-c0305e82c330
+
+    后果是记了一条指向不存在记忆的账本行、且本次删除静默无效。
+    合法 UUID 文本不含空白，因此直接拒绝是安全的。
+    """
+    from campfire.modules.memory.identity import to_episode_key
+
+    canonical = "3f2504e0-4f89-41d3-9a0c-0305e82c3301"
+    # 用一个空白顶替某位 hex（长度仍是 36，此前会被静默接受并改写）。
+    for bad in (
+        canonical[:-1] + " ",
+        canonical[:-1] + "\t",
+        canonical[:-2] + "  ",
+        " " + canonical,
+        canonical + " ",
+    ):
+        with pytest.raises(MemoryDataError):
+            to_episode_key(bad)
+
+    # 反向：不含空白的规范形式仍然接受（防止把校验做成「一律拒绝」）。
+    assert to_episode_key(canonical) == canonical
+
+
 def test_episode_key_rejects_malformed_values() -> None:
     """畸形 episode 标识在入口被拒——账本里的脏 key 只会让删除静默失效。"""
     from campfire.modules.memory.identity import to_episode_key
