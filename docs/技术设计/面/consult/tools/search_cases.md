@@ -16,6 +16,8 @@ limit: number         # 可选
 authorization: string # 可选，按授权状态过滤
 ```
 
+**一期不向模型暴露结构化过滤参数**（2026-09-29 定）：卡片级过滤维度（`risk_class`、`age_range`、`severity_level`、`behavior_type`、`ebp_tags`、`parent_category`）已投影进节点 metadata（[RAG 策略](../../../technical-details/RAG策略.md)第 2 节），由检索层与评测消费，**不进工具契约**——一期 10 张卡片下过滤无收益，而暴露参数需要把值域写进 skill（挤占技能目录预算），误填值还会制造假空结果。**重访条件**：卡片数过百使 top-8 不够，或评测显示特定维度仅靠查询的召回系统性失效。
+
 ## 3. 返回
 
 案例结果数组，字段与 `search_knowledge` 一致，**并额外必须带 `authorization`**（该案例的授权状态）与案例专属字段：`source_type`、`evidence_level`、`review_status`、`interview_at`、`makes_claims_high_risk`、`inferred_fields`（形状与语义见[资料与案例检索](../../../technical-details/资料与案例检索.md)第 3 节，权威归该文）。
