@@ -42,14 +42,22 @@ _TABLE_ROW_PATTERN = re.compile(r"^\s*\|.*\|\s*$")
 #: 句子边界：中文句号/问号/叹号/分号与英文对应标点，后接空白或结束。
 _SENTENCE_END_PATTERN = re.compile(r"(?<=[。！？；!?;])|(?<=[.])\s+")
 
+#: Markdown 标题行：`#` 一到六级 + 空白 + 标题文字。
+_HEADING_PATTERN = re.compile(r"^#{1,6}\s+(.*)$")
+
 
 @dataclass
 class Chunk:
     """一个待嵌入的块。"""
 
     text: str
-    #: 章节路径（来自框架的 `header_path`），用于返回契约的 `locator`。
+    #: 框架给出的**父级**标题路径（如 `/规范/附件2/`），原样保留。
     header_path: str
+    #: 章节路径：`header_path` + 当前章节标题（如 `/规范/附件2/一、基本要求/`）。
+    #: 返回契约的 `locator` 用它——框架的 `header_path` **不含当前标题**（实测：
+    #: `## 一、服务对象` 的节点 header_path 只有父级），直接拿它当 locator 会让
+    #: 同章下所有块失去区分度。
+    locator: str
     #: 在原文中的序号，便于回溯与稳定排序。
     chunk_index: int
     #: 超出硬限且不可再分时为 True；此类块**不送去嵌入**，进人工处理队列。
@@ -155,34 +163,66 @@ def _merge_small_pieces(pieces: list[str], min_chars: int, max_chars: int) -> li
     return compacted
 
 
-def _with_header(header_path: str, text: str) -> str:
+def _leading_heading(text: str) -> str:
+    """取文本首行的标题文字（去掉 `#` 标记）；首行不是标题时返回空串。"""
+    first = text.lstrip().splitlines()[0] if text.strip() else ""
+    match = _HEADING_PATTERN.match(first.strip())
+    return match.group(1).strip() if match else ""
+
+
+def _join_locator(header_path: str, section_title: str) -> str:
+    """拼出章节路径：父级路径 + 当前章节标题。
+
+    框架的 `header_path` 是**父级**路径，不含当前标题（实测），因此必须补上，
+    否则同一章下所有块的 `locator` 完全相同、引用无法定位到章节。
+    """
+    base = header_path if header_path and header_path != "/" else "/"
+    if not section_title:
+        return base
+    return f"{base}{section_title}/" if base.endswith("/") else f"{base}/{section_title}/"
+
+
+def _with_header(locator: str, text: str) -> str:
     """把章节路径拼到块前面，供嵌入时保留层级语义。
 
     拼接后的长度才是「单条文本」长度——因此硬限判断必须基于拼接结果。
     """
-    if not header_path or header_path == "/":
+    if not locator or locator == "/":
         return text
-    return f"{header_path}\n{text}"
+    return f"{locator}\n{text}"
 
 
-def chunk_markdown_section(header_path: str, text: str, start_index: int = 0) -> ChunkingReport:
+def chunk_markdown_section(
+    header_path: str,
+    text: str,
+    start_index: int = 0,
+    section_title: str = "",
+) -> ChunkingReport:
     """对一个 section 做块长归一化（供摄取流水线逐节点调用）。
 
     入参是框架已按 heading 切好的 section；本函数只负责**块长**层面的后处理。
     返回报告：`chunks` 是最终块；`unsplittable` 是需人工处理的块（超限且不可分）。
+
+    ``section_title`` 由调用方在**节点粒度**给出：超长 section 会被切成多块，
+    只有首块还带着标题行，因此不能从块文本里现取（那样后续块的章节路径会丢）。
+    缺省时回退为从文本首行取。
     """
     report = ChunkingReport()
 
-    # 预算扣除标题开销：正文可用的硬限。
-    body_limit = HARD_MAX_CHARS - (len(header_path) + 1 if header_path and header_path != "/" else 0)
+    title = section_title or _leading_heading(text)
+    locator = _join_locator(header_path, title)
+
+    # 预算扣除章节路径开销：正文可用的硬限。
+    body_limit = HARD_MAX_CHARS - (len(locator) + 1 if locator and locator != "/" else 0)
     body_limit = max(body_limit, TARGET_MAX_CHARS)
 
     pieces, reason = _split_oversized(text, body_limit)
 
     if reason is not None:
         oversized = Chunk(
-            text=_with_header(header_path, text),
+            text=_with_header(locator, text),
             header_path=header_path,
+            locator=locator,
             chunk_index=start_index,
             needs_manual_review=True,
             review_reason=reason,
@@ -196,8 +236,9 @@ def chunk_markdown_section(header_path: str, text: str, start_index: int = 0) ->
     for offset, piece in enumerate(pieces):
         report.chunks.append(
             Chunk(
-                text=_with_header(header_path, piece),
+                text=_with_header(locator, piece),
                 header_path=header_path,
+                locator=locator,
                 chunk_index=start_index + offset,
             )
         )

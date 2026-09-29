@@ -20,7 +20,7 @@ from sqlalchemy import func, select
 from campfire.core.config import get_settings
 from campfire.core.db import create_engine, create_sync_engine, dispose_engine, session_scope
 from campfire.modules.library.embedding import EMBEDDING_DIM
-from campfire.modules.library.ingestion import build_vector_store, ingest_file
+from campfire.modules.library.ingestion import IngestionError, build_vector_store, ingest_file
 from campfire.modules.library.models import KnowledgeItem, RetrievedNode
 
 pytestmark = pytest.mark.integration
@@ -188,6 +188,99 @@ async def test_ingest_is_idempotent_for_unchanged_file(tmp_path: Path, _patched_
         sync_engine.dispose()
     finally:
         await _cleanup(source_path)
+
+
+@pytest.mark.asyncio
+async def test_frontmatter_supplies_item_metadata_and_stays_out_of_nodes(
+    tmp_path: Path, _patched_embedding: None
+) -> None:
+    """文件 frontmatter 提供条目元数据，**不进入节点正文**。
+
+    这是与语料加工件的接口：出处与适用范围写在文件里比命令行参数更不易错配，
+    但 YAML 若被当作正文嵌入，就会污染检索内容（本用例的第二个断言）。
+    """
+    _require_db()
+    doc = tmp_path / "corpus.md"
+    doc.write_text(
+        "---\n"
+        "title: 加工件标题\n"
+        "source: 国家卫健委公报 2022 年第 8 期\n"
+        "applicable_scope: 0～6岁儿童\n"
+        "keywords: 孤独症 筛查\n"
+        "---\n"
+        "\n"
+        "# 正文根标题\n\n这是可检索的正文内容。\n",
+        encoding="utf-8",
+    )
+    settings = get_settings()
+    source_path = str(doc)
+
+    try:
+        sync_engine = create_sync_engine(settings)
+        async_engine = create_engine(settings)
+        store = build_vector_store(settings, engine=sync_engine, async_engine=async_engine)
+
+        async with session_scope(settings) as session:
+            await ingest_file(settings, session, vector_store=store, path=doc)
+
+        async with session_scope(settings) as session:
+            item = (
+                await session.execute(select(KnowledgeItem).where(KnowledgeItem.source_path == source_path))
+            ).scalar_one()
+            assert item.title == "加工件标题"
+            assert item.source == "国家卫健委公报 2022 年第 8 期"
+            assert item.applicable_scope == "0～6岁儿童"
+            assert item.keywords == "孤独症 筛查"
+
+            texts = (
+                (await session.execute(select(RetrievedNode.text).where(RetrievedNode.node_id.like(f"{item.id}:%"))))
+                .scalars()
+                .all()
+            )
+
+        assert texts, "应有节点写入"
+        assert all("applicable_scope:" not in t for t in texts), "frontmatter 不得进入节点正文"
+        assert any("可检索的正文内容" in t for t in texts)
+
+        await async_engine.dispose()
+        sync_engine.dispose()
+    finally:
+        await _cleanup(source_path)
+
+
+@pytest.mark.asyncio
+async def test_ingest_rejects_file_without_source_or_scope(tmp_path: Path, _patched_embedding: None) -> None:
+    """缺来源或适用范围的文件**拒绝入库**（不变量：缺来源不进入检索）。
+
+    这是 `RQ-KB-02` 与 `RQ-CON-03` 在入口处的闸门——校验必须在写库之前发生，
+    否则「先入库再发现缺字段」就要靠清理补救。
+    """
+    _require_db()
+    doc = tmp_path / "no-source.md"
+    doc.write_text("# 标题\n\n这段内容缺少来源与适用范围。\n", encoding="utf-8")
+    settings = get_settings()
+
+    sync_engine = create_sync_engine(settings)
+    async_engine = create_engine(settings)
+    store = build_vector_store(settings, engine=sync_engine, async_engine=async_engine)
+
+    try:
+        with pytest.raises(IngestionError, match="source"):
+            async with session_scope(settings) as session:
+                await ingest_file(settings, session, vector_store=store, path=doc)
+
+        # 未写入任何条目。
+        async with session_scope(settings) as session:
+            count = (
+                await session.execute(
+                    select(func.count()).select_from(KnowledgeItem).where(KnowledgeItem.source_path == str(doc))
+                )
+            ).scalar_one()
+        assert count == 0
+    finally:
+        await _cleanup(str(doc))
+        await async_engine.dispose()
+        sync_engine.dispose()
 
 
 @pytest.mark.asyncio

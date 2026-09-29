@@ -181,6 +181,72 @@ async def test_short_query_skips_literal_path_but_still_searches(
 
 
 @pytest.mark.asyncio
+async def test_both_paths_merge_when_text_matches(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """两路命中同一份内容时，必须合并为一条并标 `both`。
+
+    **已修复缺陷的回归测试**（2026-09-29）：框架 ``TextNode.hash`` 由「文本 +
+    metadata」共同决定；字面路若只带文本构造节点，哈希与向量路不同，RRF 就永远
+    判不出「两路都命中」——实测 23 个节点 text 全同、hash 全不同，`hit_paths`
+    恒为 ``vector``，融合退化成只有向量路。
+    """
+    paths = await _seed(tmp_path, monkeypatch)
+    settings = get_settings()
+    try:
+        sync_engine = create_sync_engine(settings)
+        async_engine = create_engine(settings)
+        store = build_vector_store(settings, engine=sync_engine, async_engine=async_engine)
+
+        # 「孤独症」既是关键词（字面路命中），也语义相关（向量路命中）。
+        async with session_scope(settings) as session:
+            results = await search(session, store, "孤独症", embed_query=_fake_embed_query)
+
+        assert results, "应有结果"
+        hits = {r.ranking.get("hit_paths") for r in results}
+        assert "both" in hits, f"两路应合并为 both，实际只有 {hits}——两路哈希未对齐"
+
+        # 两路命中得分应高于单路（RRF 的 Σ1/(rank+k) 叠加）。
+        both = next(r for r in results if r.ranking.get("hit_paths") == "both")
+        only_vector = next((r for r in results if r.ranking.get("hit_paths") == "vector"), None)
+        if only_vector is not None:
+            assert float(both.ranking["fused_score"]) > float(only_vector.ranking["fused_score"])
+
+        await async_engine.dispose()
+        sync_engine.dispose()
+    finally:
+        await _cleanup(paths)
+
+
+@pytest.mark.asyncio
+async def test_locator_points_to_a_section_not_just_the_document(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`locator` 要能定位到章节，而不是整份文档（引用回指 `AC-05` 的前提）。
+
+    框架的 `header_path` 只有父级路径，直接拿它当 locator 会让同章所有块指向
+    同一位置。
+    """
+    paths = await _seed(tmp_path, monkeypatch)
+    settings = get_settings()
+    try:
+        sync_engine = create_sync_engine(settings)
+        async_engine = create_engine(settings)
+        store = build_vector_store(settings, engine=sync_engine, async_engine=async_engine)
+
+        async with session_scope(settings) as session:
+            results = await search(session, store, "孤独症", embed_query=_fake_embed_query)
+
+        locators = [r.locator for r in results if r.locator]
+        assert locators, "结果应带 locator"
+        # 至少有一个 locator 含具体章节名，而不只是文档根。
+        assert any(loc.strip("/").count("/") >= 1 for loc in locators), f"locator 未定位到章节：{locators}"
+
+        await async_engine.dispose()
+        sync_engine.dispose()
+    finally:
+        await _cleanup(paths)
+
+
+@pytest.mark.asyncio
 async def test_withdrawn_item_is_immediately_unsearchable(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """撤下即刻不可检索（`RQ-KB-04`）：查询时过滤，不依赖索引清理。"""
     paths = await _seed(tmp_path, monkeypatch)

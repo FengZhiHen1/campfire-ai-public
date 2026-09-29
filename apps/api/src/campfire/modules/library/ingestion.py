@@ -80,6 +80,51 @@ def compute_doc_hash(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
+#: 语料文件的 YAML frontmatter 分隔符（首行 `---` 起、下一行 `---` 止）。
+_FRONTMATTER_DELIMITER = "---"
+
+
+def parse_frontmatter(text: str) -> tuple[dict[str, str], str]:
+    """分离语料文件的可选 frontmatter 与正文。
+
+    资料准备在链外完成（RAG 策略第 1.1 节），加工件因此可以自带出处元数据。
+    这些字段是**条目字段的来源**（`RQ-KB-02` 要求每条必须有来源与适用范围），
+    必须被解析出来——**不能当正文嵌入**（YAML 会污染检索内容），也不能丢弃
+    （那会让许可与出处脱离语料）。
+
+    支持的最小形态是「`---` 起、键值对、`---` 止」；键值都是字符串，不支持
+    嵌套结构——语料的元数据不需要它，而完整 YAML 解析器会为一个薄需求引入依赖。
+
+    Returns:
+        ``(元数据字典, 正文)``；没有 frontmatter 时返回 ``({}, 原文)``。
+    """
+    lines = text.splitlines()
+    if not lines or lines[0].strip() != _FRONTMATTER_DELIMITER:
+        return {}, text
+
+    end = None
+    for index in range(1, len(lines)):
+        if lines[index].strip() == _FRONTMATTER_DELIMITER:
+            end = index
+            break
+    if end is None:
+        # 只有起始分隔符：不当作 frontmatter，按普通正文处理（宁可当正文也不错位截断）。
+        return {}, text
+
+    metadata: dict[str, str] = {}
+    for line in lines[1:end]:
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        key, separator, value = stripped.partition(":")
+        if not separator:
+            continue
+        metadata[key.strip()] = value.strip().strip('"').strip("'")
+
+    body = "\n".join(lines[end + 1 :]).lstrip("\n")
+    return metadata, body
+
+
 def split_markdown(text: str) -> list[Chunk]:
     """把 Markdown 切成块：框架按标题切 + 我们的两层后处理。
 
@@ -94,6 +139,8 @@ def split_markdown(text: str) -> list[Chunk]:
     index = 0
     for node in nodes:
         header_path = str(node.metadata.get("header_path", "") or "")
+        # 章节标题在节点粒度取值：超长 section 会被切成多块，只有首块带标题行，
+        # 因此必须在切分前取好并传给每一块（否则后续块的 locator 会丢章节）。
         report = chunk_markdown_section(header_path, node.text, start_index=index)
         chunks.extend(report.chunks)
         index += len(report.chunks)
@@ -162,7 +209,9 @@ def _node_metadata(item: KnowledgeItem, chunk: Chunk) -> dict[str, str]:
         "title": item.title,
         "source": item.source,
         "applicable_scope": item.applicable_scope,
-        "locator": chunk.header_path,
+        # locator 用补全章节名的路径（chunk.locator），而非框架的父级 header_path——
+        # 后者不含当前标题，会让同章所有块的引用指向同一个位置。
+        "locator": chunk.locator,
     }
 
 
@@ -200,23 +249,44 @@ async def ingest_file(
     vector_store: PGVectorStore,
     path: Path,
     title: str | None = None,
-    source: str,
-    applicable_scope: str,
+    source: str | None = None,
+    applicable_scope: str | None = None,
     keywords: str = "",
     aliases: str = "",
 ) -> IngestionResult:
     """摄取一个 Markdown 文件（调用方负责事务与会话）。
 
+    元数据来源有两条，**显式参数优先于文件 frontmatter**：
+
+    1. 文件自带的 YAML frontmatter（``source``/``applicable_scope``/``title``/
+       ``keywords``/``aliases``）——语料加工件的常规形态，出处与正文同文件，
+       不会错配；
+    2. 调用方传的参数——用于没有 frontmatter 的裸 Markdown。
+
+    两者都缺 ``source`` 或 ``applicable_scope`` 时**拒绝入库**：缺来源的条目不
+    进入检索、缺适用范围的输出无法说明局限（`RQ-KB-02`、`RQ-CON-03`），
+    这是不变量，不能在入口放行。
+
     幂等：同 `source_path` + 同 `doc_hash` 的条目已存在则跳过，不重复嵌入。
     变了的文件：删除其旧节点后重新写入（保证「撤下/更新即刻生效」的同一套机制）。
 
     Raises:
-        IngestionError: 读文件、嵌入或写库任一步失败——由调用方回滚整个事务。
+        IngestionError: 读文件、缺必填元数据、嵌入或写库任一步失败——由调用方回滚整个事务。
     """
     try:
         raw = path.read_text(encoding="utf-8")
     except OSError as exc:
         raise IngestionError(f"读取文件失败：{type(exc).__name__}") from exc
+
+    # frontmatter 是元数据来源，**不参与分块**——它进正文会污染检索内容。
+    frontmatter, body = parse_frontmatter(raw)
+
+    resolved_source = source or frontmatter.get("source", "")
+    resolved_scope = applicable_scope or frontmatter.get("applicable_scope", "")
+    if not resolved_source:
+        raise IngestionError("缺少来源（source）：可用文件 frontmatter 或 --source 提供")
+    if not resolved_scope:
+        raise IngestionError("缺少适用范围（applicable_scope）：可用文件 frontmatter 或 --scope 提供")
 
     doc_hash = compute_doc_hash(raw)
     source_path = str(path)
@@ -228,7 +298,7 @@ async def ingest_file(
     if existing is not None and existing.doc_hash == doc_hash:
         return IngestionResult(source_path=source_path, item_id=str(existing.id), skipped=True)
 
-    chunks = split_markdown(raw)
+    chunks = split_markdown(body)
     if not chunks:
         raise IngestionError("文件未产生任何块（空文件或不含可检索内容）")
 
@@ -238,11 +308,11 @@ async def ingest_file(
     vectors = await _embed_chunks(settings, embeddable)
 
     item = existing if existing is not None else KnowledgeItem(source_path=source_path)
-    item.title = title or path.stem
-    item.source = source
-    item.applicable_scope = applicable_scope
-    item.keywords = keywords
-    item.aliases = aliases
+    item.title = title or frontmatter.get("title") or path.stem
+    item.source = resolved_source
+    item.applicable_scope = resolved_scope
+    item.keywords = keywords or frontmatter.get("keywords", "")
+    item.aliases = aliases or frontmatter.get("aliases", "")
     item.doc_hash = doc_hash
     if existing is None:
         session.add(item)

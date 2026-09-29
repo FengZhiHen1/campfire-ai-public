@@ -147,11 +147,19 @@ async def literal_search(session: AsyncSession, query: str, top_k: int = LITERAL
     return [(row.item_id, rank) for rank, row in enumerate(rows)]
 
 
-async def expand_items_to_nodes(session: AsyncSession, item_ids: list[str]) -> dict[str, list[tuple[str, str]]]:
-    """把字面路命中的条目展开为节点：``{item_id: [(node_id, text)]}``。
+async def expand_items_to_nodes(
+    session: AsyncSession, item_ids: list[str]
+) -> dict[str, list[tuple[str, str, dict[str, str]]]]:
+    """把字面路命中的条目展开为节点：``{item_id: [(node_id, text, metadata)]}``。
 
     RAG 策略第 4 节要求字面路「按条目检索、参与融合前展开为该条目的节点」，
-    同一条目的节点共享名次——融合在节点粒度进行（框架 RRF 按内容哈希合并）。
+    同一条目的节点共享名次——融合在节点粒度进行。
+
+    **metadata 必须一并取出**（2026-09-29 实测教训）：框架 ``TextNode.hash``
+    由**文本 + metadata 共同决定**，不是只看文本。只带文本构造的字面路节点与
+    向量路节点即便 text 完全一致，哈希也不同，RRF 因此永远无法把它们判为
+    「两路都命中」（实测：23 个节点 text 全同、hash 全不同，`hit_paths` 恒为
+    ``vector``）。这里取回与写入时一致的 metadata，让两路哈希可对齐。
 
     Raises:
         RetrievalError: 节点查询失败时——由调用方按单路失败降级处理。
@@ -164,7 +172,7 @@ async def expand_items_to_nodes(session: AsyncSession, item_ids: list[str]) -> d
             await session.execute(
                 text(
                     """
-                    SELECT node_id, text, metadata_->>'item_id' AS item_id
+                    SELECT node_id, text, metadata_ AS metadata
                     FROM data_campfire_node
                     WHERE metadata_->>'item_id' = ANY(:ids)
                     ORDER BY node_id
@@ -176,27 +184,33 @@ async def expand_items_to_nodes(session: AsyncSession, item_ids: list[str]) -> d
     except Exception as exc:  # noqa: BLE001
         raise RetrievalError(f"展开节点失败：{type(exc).__name__}") from exc
 
-    grouped: dict[str, list[tuple[str, str]]] = {}
+    grouped: dict[str, list[tuple[str, str, dict[str, str]]]] = {}
     for row in rows:
-        grouped.setdefault(row.item_id, []).append((row.node_id, row.text))
+        metadata = dict(row.metadata or {})
+        grouped.setdefault(str(metadata.get("item_id", "")), []).append((row.node_id, row.text, metadata))
     return grouped
 
 
 def build_literal_nodes(
     item_ids: list[str],
-    nodes_by_item: dict[str, list[tuple[str, str]]],
+    nodes_by_item: dict[str, list[tuple[str, str, dict[str, str]]]],
 ) -> list[NodeWithScore]:
     """把字面路结果构造成框架节点，名次按条目名次、同条目节点共享名次。
 
     分数用 ``1/(rank+k)``（RRF 的同一形式）：框架会按分数排序后再算 RRF，
     因此这里给出一致的单调分数即可，避免依赖具体量纲。
+
+    metadata 照搬库中存的那份——两路哈希要对齐才能合并（见
+    :func:`expand_items_to_nodes`）。
     """
     k = 60.0
     results: list[NodeWithScore] = []
     for rank, item_id in enumerate(item_ids):
         score = 1.0 / (rank + k)
-        for node_id, node_text in nodes_by_item.get(item_id, []):
-            results.append(NodeWithScore(node=TextNode(text=node_text, id_=node_id), score=score))
+        for node_id, node_text, metadata in nodes_by_item.get(item_id, []):
+            results.append(
+                NodeWithScore(node=TextNode(text=node_text, id_=node_id, metadata=dict(metadata)), score=score)
+            )
     return results
 
 
@@ -266,7 +280,12 @@ def aggregate_to_items(
                 applicable_scope=item.applicable_scope,
                 status=item.status,
                 locator=str(node.node.metadata.get("locator", "") or ""),
-                ranking={"fused_score": score, "node_id": node.node_id},
+                ranking={
+                    "fused_score": score,
+                    "node_id": node.node_id,
+                    # 返回契约要求「哪几路命中」（资料与案例检索第 3 节）。
+                    "hit_paths": str(node.node.metadata.get("retrieval_hits", "")),
+                },
             )
         )
         if len(results) >= top_k:
@@ -300,22 +319,31 @@ def _reciprocal_rank_fuse(
     并把「按内容哈希合并」这一框架行为照搬——同一内容在两路命中时只算一条。
 
     ``k=60`` 与框架一致，来源是 RRF 原论文（框架源码注释里给出的同一链接）。
+
+    **命中来源记账**：返回的每个节点在 ``metadata["retrieval_hits"]`` 上带
+    ``"vector"``/``"literal"``/``"both"``——返回契约的 `ranking` 字段要求
+    「哪几路命中」，这是它的数据来源（RAG 策略第 9 节的度量也用它判断某一路
+    是否在拖后腿）。
     """
     k = 60.0
     fused: dict[str, float] = {}
     node_by_hash: dict[str, NodeWithScore] = {}
+    hit_paths: dict[str, set[str]] = {}
 
-    for nodes in (vector_nodes, literal_nodes):
+    for path_name, nodes in (("vector", vector_nodes), ("literal", literal_nodes)):
         # 框架先按分数降序再按名次计分；这里保持一致。
         for rank, nws in enumerate(sorted(nodes, key=lambda x: x.score or 0.0, reverse=True)):
             node_hash = nws.node.hash
             node_by_hash[node_hash] = nws
             fused[node_hash] = fused.get(node_hash, 0.0) + 1.0 / (rank + k)
+            hit_paths.setdefault(node_hash, set()).add(path_name)
 
     ordered = sorted(fused.items(), key=lambda kv: kv[1], reverse=True)[:top_k]
     results: list[NodeWithScore] = []
     for node_hash, score in ordered:
         source = node_by_hash[node_hash]
+        paths = hit_paths[node_hash]
+        source.node.metadata["retrieval_hits"] = "both" if len(paths) == 2 else next(iter(paths))
         results.append(NodeWithScore(node=source.node, score=score))
     return results
 

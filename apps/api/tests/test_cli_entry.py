@@ -15,9 +15,7 @@ import os
 import subprocess
 import sys
 
-import pytest
-
-from campfire.cli.__main__ import main
+from campfire.cli.__main__ import _build_parser, main
 
 
 def test_no_subcommand_prints_usage_and_exits_two() -> None:
@@ -25,16 +23,19 @@ def test_no_subcommand_prints_usage_and_exits_two() -> None:
     assert main([]) == 2
 
 
-def test_ingest_requires_source_and_scope() -> None:
-    """缺 --source/--scope 时 argparse 直接拒绝。
+def test_ingest_no_longer_requires_source_and_scope_flags() -> None:
+    """`--source`/`--scope` 不再是命令行必填——文件 frontmatter 可提供。
 
-    这两个参数是必填的：缺来源的条目不进入检索（不变量），缺适用范围的输出
-    无法说明局限（`RQ-CON-03`）。
+    换成 argparse 必填会让「元数据写在文件里」的语料无法直接摄取。必填性移到
+    摄取层判定（缺来源或适用范围即拒绝入库），见
+    `test_ingest_rejects_file_without_source_in_frontmatter`。
     """
-    with pytest.raises(SystemExit) as excinfo:
-        main(["ingest", "some.md"])
+    parser = _build_parser()
 
-    assert excinfo.value.code != 0
+    args = parser.parse_args(["ingest", "some.md"])
+
+    assert args.source is None
+    assert args.scope is None
 
 
 def test_ingest_missing_file_fails_loudly(tmp_path: object) -> None:

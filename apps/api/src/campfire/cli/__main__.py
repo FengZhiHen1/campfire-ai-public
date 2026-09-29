@@ -44,11 +44,19 @@ def _build_parser() -> argparse.ArgumentParser:
 
     ingest = sub.add_parser("ingest", help="摄取 Markdown 文件到资料库")
     ingest.add_argument("path", type=Path, help="待摄取的 Markdown 文件")
-    ingest.add_argument("--source", required=True, help="出处：机构、年份、链接或文件引用（必填，缺来源不进入检索）")
-    ingest.add_argument("--scope", required=True, help="适用人群与情境（必填，返回契约要求）")
-    ingest.add_argument("--title", default=None, help="标题；缺省用文件名")
-    ingest.add_argument("--keywords", default="", help="字面路关键词，空格分隔（机构名、缩写、英文原名）")
-    ingest.add_argument("--aliases", default="", help="字面路别名，空格分隔（常见俗称）")
+    ingest.add_argument(
+        "--source",
+        default=None,
+        help="出处：机构、年份、链接或文件引用。可省略——文件 frontmatter 的 source 同样有效；两者都缺则拒绝入库",
+    )
+    ingest.add_argument(
+        "--scope",
+        default=None,
+        help="适用人群与情境。可省略——文件 frontmatter 的 applicable_scope 同样有效；两者都缺则拒绝入库",
+    )
+    ingest.add_argument("--title", default=None, help="标题；缺省用 frontmatter 的 title，再缺省用文件名")
+    ingest.add_argument("--keywords", default="", help="字面路关键词，空格分隔（覆盖 frontmatter）")
+    ingest.add_argument("--aliases", default="", help="字面路别名，空格分隔（覆盖 frontmatter）")
     return parser
 
 
