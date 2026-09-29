@@ -3,10 +3,13 @@
 对应 ``docs/技术设计/technical-details/通用记忆.md`` 第 3、4、7 节与
 ``read_memory`` 契约（`docs/技术设计/面/consult/tools/read_memory.md`）。
 
-带 ``integration`` marker，默认不在 ``uv run pytest`` 中运行；显式跑法：
+带 ``integration`` marker。显式跑法：
 
     docker compose up -d falkordb
     uv run pytest -m integration apps/api/tests/test_memory_timeline_integration.py
+
+**注意**：``addopts`` 里**没有** marker 过滤，因此默认 ``uv run pytest`` 也会收集本文件
+（靠「容器不可用则跳过」保持绿色）；要排除请显式 ``-m "not integration"``。
 
 **为什么用假模型客户端**：实体抽取要调 TokenHub，而当前 `.env` 的 `TOKENHUB_API_KEY`
 是 `.env.example` 的占位符（实测两端点均 401，登记于 TODO `TECH-02`）。因此本文件注入
@@ -24,6 +27,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import os
 import uuid
 from collections.abc import AsyncIterator
@@ -97,9 +101,13 @@ async def memory_graph() -> AsyncIterator[MemoryGraph]:
     driver = FalkorDriver(falkor_db=client, database="campfire")
     try:
         await driver.execute_query("RETURN 1 AS ok")
-    except Exception as exc:  # noqa: BLE001
+    except (ConnectionError, ConnectionRefusedError, ConnectionResetError, TimeoutError, OSError) as exc:
+        # 只把「连不上容器」当环境问题；其余异常照常失败（CORE-07：边界显式）。
         await client.aclose()
         pytest.skip(f"FalkorDB 不可用（{type(exc).__name__}）——先 docker compose up -d falkordb")
+    except Exception:
+        await client.aclose()
+        raise
 
     graph = MemoryGraph(
         graphiti=Graphiti(
@@ -114,8 +122,10 @@ async def memory_graph() -> AsyncIterator[MemoryGraph]:
     try:
         yield graph
     finally:
+        # 走 driver_for 复用缓存驱动（而不是裸 clone）：裸 clone 每次新建驱动 +
+        # 后台任务，清理阶段反复 clone 本身就是被测代码里那个泄漏的同一个坑。
         for account in (_ACCOUNT_A, _ACCOUNT_B):
-            scoped = driver.clone(database=account)
+            scoped = graph.driver_for(account)
             await scoped.execute_query("MATCH (n) DETACH DELETE n")
         await graph.aclose()
 
@@ -383,3 +393,245 @@ async def test_write_rejects_empty_content_and_source(memory_graph: MemoryGraph)
             occurred_at=now,
             source_description="",
         )
+
+
+# ---------------------------------------------------------------------------
+# 应急预注入的取数（派生事实层，第 6、7 节）
+# ---------------------------------------------------------------------------
+
+
+async def _write_edge(
+    graph: MemoryGraph,
+    account: str,
+    edge_uuid: str,
+    *,
+    fact: str,
+    valid_at: datetime,
+    invalid_at: datetime | None = None,
+    episodes: list[str] | None = None,
+) -> None:
+    """直接落一条派生事实边（不走抽取——假 LLM 不产出实体，见文件头说明）。"""
+    scoped = graph.driver.clone(database=account)
+    await scoped.execute_query(
+        """
+        MERGE (a:Entity {uuid: $a_id}) SET a.name = 'A', a.group_id = $g
+        MERGE (b:Entity {uuid: $b_id}) SET b.name = 'B', b.group_id = $g
+        MERGE (a)-[e:RELATES_TO {uuid: $uid}]->(b)
+        SET e.group_id = $g, e.name = 'REL', e.fact = $fact,
+            e.valid_at = $valid, e.invalid_at = $invalid,
+            e.episodes = $episodes, e.created_at = $valid
+        """,
+        a_id=f"A:{account}",
+        b_id=f"B:{account}",
+        uid=edge_uuid,
+        g=account,
+        fact=fact,
+        valid=valid_at.isoformat(),
+        invalid=(invalid_at.isoformat() if invalid_at else None),
+        episodes=episodes or [],
+    )
+
+
+@pytest.mark.asyncio
+async def test_emergency_facts_exclude_invalidated_edges(memory_graph: MemoryGraph) -> None:
+    """**时效过滤**：`invalid_at` 非空的边不得注入。
+
+    这是 `RQ-MEM-01`（过期或已被推翻的内容不得作为当前依据误导后续输出）在取数层的
+    唯一落点。`EntityEdge.get_by_group_ids` **不过滤 invalid_at**（第 4 节实测），
+    因此必须自建查询——若哪天改回用上游方法，本用例会失败。
+    """
+    from campfire.modules.memory.derived import read_emergency_facts
+
+    now = datetime.now(timezone.utc)
+    await _write_edge(
+        memory_graph,
+        _ACCOUNT_A,
+        "ef-valid",
+        fact="当前有效的事实",
+        valid_at=now - timedelta(days=1),
+        episodes=["ep-v"],
+    )
+    await _write_edge(
+        memory_graph,
+        _ACCOUNT_A,
+        "ef-stale",
+        fact="已被推翻的事实",
+        valid_at=now - timedelta(days=3),
+        invalid_at=now - timedelta(days=1),
+        episodes=["ep-s"],
+    )
+
+    result = await read_emergency_facts(memory_graph, to_account_id(_ACCOUNT_A), deleted_keys=[])
+    facts = [f.fact for f in result.facts]
+    assert facts == ["当前有效的事实"], "失效边被当成『当前认识』注入会误导输出"
+    assert not result.is_empty
+
+
+@pytest.mark.asyncio
+async def test_emergency_facts_empty_account_is_empty_not_error(memory_graph: MemoryGraph) -> None:
+    """**没有记忆 ≠ 图库不可用**：空账号返回空结果，不抛异常。
+
+    这是第 6 节的硬要求，也是不用 `EntityEdge.get_by_group_ids` 的原因之一——
+    它对空分区抛 `GroupsEdgesNotFoundError`，会把新账号误报成故障。
+    """
+    from campfire.modules.memory.derived import read_emergency_facts
+
+    result = await read_emergency_facts(memory_graph, to_account_id(_ACCOUNT_B), deleted_keys=[])
+    assert result.is_empty
+    assert result.facts == []
+
+
+@pytest.mark.asyncio
+async def test_emergency_facts_multi_source_deletion_uses_any_not_all(memory_graph: MemoryGraph) -> None:
+    """**多来源边的删除判据是「至少一条来源被删即排除」**（第 7 节）。
+
+    判别性说明：边 `ef-multi` 的来源是 `[ep-a, ep-b]`，账本里只删了 `ep-b`。
+    - 正确判据（any）→ 该边被排除；
+    - 错判据（all，要求全部来源都被删）→ 该边**仍被注入**。
+    两种实现结果不同，因此本用例真的能判别实现，不是恒过断言。
+    """
+    from campfire.modules.memory.derived import read_emergency_facts
+
+    now = datetime.now(timezone.utc)
+    await _write_edge(
+        memory_graph,
+        _ACCOUNT_A,
+        "ef-multi",
+        fact="多来源事实",
+        valid_at=now - timedelta(days=1),
+        episodes=["ep-keep", "ep-gone"],
+    )
+    await _write_edge(
+        memory_graph,
+        _ACCOUNT_A,
+        "ef-clean",
+        fact="来源未被删的事实",
+        valid_at=now - timedelta(days=2),
+        episodes=["ep-keep"],
+    )
+
+    result = await read_emergency_facts(memory_graph, to_account_id(_ACCOUNT_A), deleted_keys=["ep-gone"])
+    facts = [f.fact for f in result.facts]
+    assert facts == ["来源未被删的事实"], "只删了部分来源的边仍被注入——删除判据用成了『全部来源被删』"
+
+
+@pytest.mark.asyncio
+async def test_emergency_facts_respects_char_budget(memory_graph: MemoryGraph) -> None:
+    """**字符预算**独立于条数上限：超预算时截断并如实标注。
+
+    第 5 节：条数上限不能代替字符上限（`fact` 长度无界）。这里给一个只放得下一条的
+    预算，验证：不超预算、且 `truncated_by_chars` 如实报告被丢掉的条数
+    （静默截断会让调用方以为「已注入全部记忆」）。
+    """
+    from campfire.modules.memory.derived import read_emergency_facts
+
+    now = datetime.now(timezone.utc)
+    for index in range(3):
+        await _write_edge(
+            memory_graph,
+            _ACCOUNT_A,
+            f"ef-budget-{index}",
+            fact="X" * 40,
+            valid_at=now - timedelta(days=index),
+            episodes=[f"ep-{index}"],
+        )
+
+    result = await read_emergency_facts(memory_graph, to_account_id(_ACCOUNT_A), deleted_keys=[], char_budget=45)
+    assert len(result.facts) == 1, "字符预算应只放得下一条"
+    assert sum(len(f.fact) for f in result.facts) <= 45
+    assert result.truncated_by_chars == 2, "被截断的条数必须如实回报"
+
+
+@pytest.mark.asyncio
+async def test_derived_facts_are_isolated_per_account(memory_graph: MemoryGraph) -> None:
+    """派生事实同样按账号分区——另一账号的图里取不到。"""
+    from campfire.modules.memory.derived import read_emergency_facts
+
+    now = datetime.now(timezone.utc)
+    await _write_edge(
+        memory_graph,
+        _ACCOUNT_A,
+        "ef-iso-a",
+        fact="A 的事实",
+        valid_at=now,
+        episodes=["ep-a"],
+    )
+    await _write_edge(
+        memory_graph,
+        _ACCOUNT_B,
+        "ef-iso-b",
+        fact="B 的事实",
+        valid_at=now,
+        episodes=["ep-b"],
+    )
+
+    a = await read_emergency_facts(memory_graph, to_account_id(_ACCOUNT_A), deleted_keys=[])
+    b = await read_emergency_facts(memory_graph, to_account_id(_ACCOUNT_B), deleted_keys=[])
+
+    assert [f.fact for f in a.facts] == ["A 的事实"]
+    assert [f.fact for f in b.facts] == ["B 的事实"]
+
+
+# ---------------------------------------------------------------------------
+# 驱动缓存（防「每条查询泄漏一个驱动 + 一个后台任务」）
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_driver_for_reuses_one_driver_per_account(memory_graph: MemoryGraph) -> None:
+    """`driver_for` 对同一账号返回**同一个驱动对象**、且不新增后台任务。
+
+    为什么必须有这条（2026-09-29 我自查发现的真实缺陷）：此前 `account_driver` 是
+    裸 `clone`，实测同一账号连续两次调用返回**两个不同对象**、pending task 计数
+    2→3→4——即每条查询泄漏一个驱动与一个建索引的后台任务（模块自己的文档还写着
+    「不得在每条查询路径上 clone」，代码却没照做）。
+
+    判别性：若实现退回裸 `clone`，`is` 断言与任务计数断言都会失败。
+    """
+    account = "it_mem_cache_probe"
+
+    def pending_index_tasks() -> int:
+        """当前未完成的「建索引」后台任务数（驱动构造会各调度一个）。"""
+        return sum(1 for t in asyncio.all_tasks() if not t.done() and "build_indices" in repr(t.get_coro()))
+
+    # 第一次取驱动**会**新建一个驱动并调度它的建索引任务——这是允许的（首次访问）。
+    first = memory_graph.driver_for(account)
+    after_first = pending_index_tasks()
+
+    # 关键断言：**第二次**取同一账号不得再新建驱动、也不得再多一个后台任务。
+    second = memory_graph.driver_for(account)
+    assert first is second, "同一账号必须复用同一个驱动，否则每条查询泄漏一个驱动"
+    assert pending_index_tasks() == after_first, (
+        f"复用缓存的驱动不得新增后台任务（{after_first} -> {pending_index_tasks()}）"
+    )
+
+    # 同库名时 clone 本就返回自身（实测），不应占用缓存名额。
+    same_db = memory_graph.driver_for("campfire")
+    assert same_db is memory_graph.driver, "配置库名应返回 base 驱动本身"
+    assert account in memory_graph.account_drivers
+
+
+@pytest.mark.asyncio
+async def test_driver_cache_is_bounded(memory_graph: MemoryGraph) -> None:
+    """驱动缓存**有界**（CORE-11）：账号数无上界，无界缓存只是换一种泄漏。"""
+    from campfire.modules.memory.graph import MAX_CACHED_ACCOUNT_DRIVERS
+
+    # 只放一个探针账号，验证上界常量是有限值且缓存不会无限制增长。
+    assert MAX_CACHED_ACCOUNT_DRIVERS > 0
+    initial = len(memory_graph.account_drivers)
+    memory_graph.driver_for("it_mem_cache_probe_2")
+    assert len(memory_graph.account_drivers) <= max(initial + 1, MAX_CACHED_ACCOUNT_DRIVERS)
+
+
+@pytest.mark.asyncio
+async def test_aclose_clears_the_driver_cache(memory_graph: MemoryGraph) -> None:
+    """`aclose()` 清空驱动缓存并收口每个克隆驱动的后台任务。"""
+    memory_graph.driver_for("it_mem_cache_probe_3")
+    assert memory_graph.account_drivers, "前置条件：缓存里应已有条目"
+    await memory_graph.aclose()
+    assert memory_graph.account_drivers == {}, "关闭后不得留下缓存的驱动引用"
+    for task in asyncio.all_tasks():
+        if task.done():
+            continue
+        # 允许测试框架自身的任务；只要求不留「建索引」类任务（收口失败会在此暴露）。
+        assert "build_indices" not in repr(task.get_coro()), f"残留后台索引任务：{task.get_coro()}"
