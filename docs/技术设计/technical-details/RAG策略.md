@@ -55,6 +55,7 @@
 
 - **条目（`knowledge_item` / `case_item`）仍是事实真源**，留在我们自己的表里：状态（`published`/`internal`/`fictional`）、`withdrawn`、来源、适用范围、授权状态、`keywords`/`aliases` 都由它拥有，录入与审阅流程也走它。
 - **节点表是它的投影**：需要在 **SQL 层过滤**的字段（状态、`withdrawn`、库别、授权）**同时写进节点的 metadata**，否则过滤会掉到应用层，违反"过滤在 SQL 内完成"的不变量。投影不是第二真源——它的权威仍是条目表。
+- **案例库节点的投影清单（2026-09-29 定）**：在四项通用投影之上，卡片级节点再带——① 返回契约消费的字段（[资料与案例检索](资料与案例检索.md)第 3 节案例必带五项：`source_type`、`evidence_level`、`review_status`、`interview_at`、`makes_claims_high_risk`，加 `inferred_fields`）；② 聚合依赖：`card_id`；③ 结构化过滤维度（[公共案例库](公共案例库.md)第 2、5 节明说"元数据过滤/过滤维度"）：`risk_class`、`age_range`、`severity_level`、`behavior_type`、`ebp_tags`、`parent_category`。其余字段（`subject_type`、`consent_*`、`transcript_ref` 等）无过滤或返回消费，**从窄不投影**。
 - **两者同库同事务**（pgvector 就在主库）：因此**撤下可以在一个事务里同时改条目状态与删除该条目的节点**，不需要"最终一致"的窗口，`RQ-KB-04` 的"撤下即刻不可检索"得以成立。
 
 ## 3. 索引
