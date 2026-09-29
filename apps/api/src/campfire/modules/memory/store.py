@@ -92,16 +92,18 @@ def _utc_iso(value: datetime) -> str:
 def account_driver(driver: GraphDriver, account_id: AccountId) -> GraphDriver:
     """返回指向**该账号那张图**的驱动（第 1 节实测的分区语义）。
 
-    同库名时 `clone` 返回自身（不新建实例），因此重复调用是廉价的；
-    但调用方**不应在每个请求里对多个账号反复 clone**（每次 clone 会新建驱动并调度
-    一个建索引的后台任务，第 1 节实测）。
+    ⚠️ **这是无缓存的裸 ``clone``，在热路径上直接调用会泄漏**（2026-09-29 实测）：
+    ``clone(database=X)`` 在 X 与当前库名不同时构造**新的 ``FalkorDriver``**，而它的
+    ``__init__`` 会调度一个建索引的后台任务——实测同一账号连续两次取驱动返回两个
+    **不同对象**、pending task 计数 2→3→4，即每条查询泄漏一个驱动 + 一个后台任务。
+    **热路径请用 ``MemoryGraph.driver_for()``**（按账号缓存、缓存有界、关闭时逐个收口）。
 
-    参数与返回都用基类 `GraphDriver`（上游 `clone` 的声明形状）：调用方只依赖
-    `execute_query` 与 `clone` 两条接口，不必绑定 FalkorDB 的具体类型——若将来换
-    图库后端，本函数的调用点不变。
+    保留本函数是为了让「哪张图」这条事实有一个不依赖装配层的表达（测试、以及需要
+    一次性驱动的场景）。参数与返回都用基类 ``GraphDriver``（上游 ``clone`` 的声明
+    形状）：调用方只依赖 ``execute_query`` 与 ``clone`` 两条接口。
 
     Note:
-        这里不做缓存：缓存属于装配层的职责（`graph.py` 的 `MemoryGraph`），
+        不做缓存：缓存属于装配层的职责（``graph.py`` 的 ``MemoryGraph``），
         本函数只表达「哪张图」这一个事实。
     """
     return driver.clone(database=account_id)
@@ -171,7 +173,7 @@ async def read_timeline(
         + " ORDER BY e.valid_at DESC LIMIT $limit"
     )
 
-    scoped = account_driver(graph.driver, account_id)
+    scoped = graph.driver_for(account_id)
     try:
         records, _, _ = await scoped.execute_query(cypher, **params)
     except Exception as exc:  # noqa: BLE001 —— 驱动异常统一转成记忆侧语义
@@ -295,7 +297,8 @@ async def write_episode(
         )
 
     # 预建节点要落在该账号那张图：group_id 在 FalkorDB 后端就是图名（第 1 节实测）。
-    scoped = account_driver(graph.driver, account_id)
+    # 用 driver_for 而非裸 clone：后者每条查询泄漏一个驱动与一个后台任务（实测）。
+    scoped = graph.driver_for(account_id)
     valid_at = _utc_iso(occurred_at)
     # created_at 用真实入库时间；valid_at 用发生时间（第 2 节的时间语义）。
     created_at = _utc_iso(datetime.now(timezone.utc))
