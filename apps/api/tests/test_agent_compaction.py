@@ -125,15 +125,17 @@ def test_threshold_and_retention_arithmetic() -> None:
 
 
 def test_default_parameters_match_the_design_numbers() -> None:
-    """按压缩策略第 2 节的代入值：W=1M、O=8192、headroom=65536 → 阈值约 80 万。"""
+    """按压缩策略第 2 节的代入值：W=1024k、O=8192、headroom=65536 → 阈值约 83.9 万。"""
     design = CompactionSettings(
-        context_window_tokens=1_000_000,
+        context_window_tokens=1_048_576,
         output_reserve_tokens=8192,
         headroom_tokens=65_536,
     )
 
-    assert design.threshold_tokens == 800_000
-    assert design.retain_budget_tokens == 158_689  # (1M − 8192) × 0.16，文档写「约 15.9 万」
+    # min(W × 0.8, W − O − headroom) = min(838_860.8, 974_848)
+    assert design.threshold_tokens == 838_860
+    # (1024k − 8192) × 0.16，文档写「约 16.6 万」
+    assert design.retain_budget_tokens == 166_461
 
 
 @pytest.mark.parametrize(
