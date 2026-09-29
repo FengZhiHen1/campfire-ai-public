@@ -39,7 +39,11 @@ def test_uuid_account_id_is_accepted() -> None:
 
 
 def test_underscore_and_hyphen_account_ids_are_accepted() -> None:
-    """下划线与连字符均在判据内（与 Graphiti 的 validate_group_id 一致）。"""
+    """下划线与连字符均在判据内（与 Graphiti 的 `validate_group_id` 一致）。
+
+    这两类的**落库能力**由 `test_memory_ledger_integration` 用真实 PG 证明
+    （账本列已放宽为 varchar；此前是 uuid 列，会拒绝 `acct_aaa`）。
+    """
     for raw in ("acct_aaa", "acct-bbb", "Acct123"):
         assert to_account_id(raw) == AccountId(raw)
 
@@ -48,20 +52,76 @@ def test_account_id_must_match_graphiti_group_id_rule() -> None:
     """与 Graphiti 的判据保持一致：只允许 `[a-zA-Z0-9_-]`。
 
     含点、空格、中文等字符的账号键会让 Graphiti 在写入时抛
-    `GroupIdValidationError`；在入口拒绝比在图库写入时失败更易定位。
+    `GroupIdValidationError`（`helpers.py` 的 `re.match`）；在入口拒绝比在图库
+    写入时失败更易定位。
+
+    **注意**：FalkorDB 图名本身**没有**字符集限制（实测这些值都能建图），
+    所以约束的唯一来源是 Graphiti——此处不断言 FalkorDB 的行为。
     """
     for bad in ("acct.aaa", "acct aaa", "账号一号", "acct/aaa", "acct:aaa"):
         with pytest.raises(AccountIdError):
             to_account_id(bad)
 
 
-def test_empty_account_id_is_rejected() -> None:
-    """空账号被拒绝——空串在 Graphiti 里代表**默认分区**。
+def test_trailing_newline_is_rejected_even_though_graphiti_allows_it() -> None:
+    """尾随换行被拒绝——我方比 Graphiti 更严（安全方向）。
 
-    放行空值等于允许所有人共用一张图，正是本次归属裁决要避免的事。
+    Graphiti 用 `re.match`，其 `$` 允许尾随换行（实测 `validate_group_id('acct\\n')`
+    返回 True）；我们用 `fullmatch`。宁可少收一个畸形键，也不让换行进入图名。
+    这条把「方向更严」写成可执行事实，而不是注释里的声明。
+    """
+    with pytest.raises(AccountIdError):
+        to_account_id("acct\n")
+
+
+def test_empty_account_id_is_rejected() -> None:
+    """空账号被拒绝。
+
+    **理由（2026-09-29 评审更正）**：此前写「空串在 Graphiti 里代表默认分区」——
+    该说法**不成立**。Graphiti 的 `validate_group_id('')` 确实放行，但随后
+    `clone(database='')` 会造出一个**空图名的坏驱动**，其建索引任务抛
+    `TypeError: Expected a string parameter`。真正回落到默认分区的是
+    `group_id=None`（属性为 `'_'`、图仍是配置库）。
+    因此「拒绝空值」的正当理由是：它既不是合法图名，也不是框架的默认分区语义，
+    放行只会得到一个写不进去的驱动。
     """
     with pytest.raises(AccountIdError, match="为空"):
         to_account_id("")
+
+
+def test_framework_sentinel_account_id_is_rejected() -> None:
+    """框架哨兵 `'_'` 被拒绝（`FalkorDriver.default_group_id`）。
+
+    理由：`clone(database='_')` 会走「等于 default_group_id」分支、**落到 `default_db`**
+    （实测），与我方写 `'_'` 那张图不是同一个图。允许账号叫 `_` 会造成
+    「我方写 A 图、框架写 B 图」的静默分叉。
+    """
+    with pytest.raises(AccountIdError, match="哨兵"):
+        to_account_id("_")
+
+
+def test_non_string_account_id_raises_domain_error_not_type_error() -> None:
+    """非字符串输入抛领域错误，而不是与校验无关的 `TypeError`（CORE-04）。
+
+    实测此前 `to_account_id(123)` 抛 `TypeError: expected string or bytes-like object`
+    ——调用方无法按 `AccountIdError` 处理，且错误消息指向正则内部而非输入本身。
+    """
+    for bad in (123, None, b"acct", ["acct"], object()):
+        with pytest.raises(AccountIdError):
+            to_account_id(bad)
+
+
+def test_overlong_account_id_is_rejected() -> None:
+    """超长账号键被拒绝（CORE-11：外部输入必须有界）。
+
+    实测此前 100000 字符的键被接受，而它会直接成为 Redis 的图名。
+    """
+    from campfire.modules.memory.identity import MAX_ACCOUNT_ID_LENGTH
+
+    with pytest.raises(AccountIdError, match="上界"):
+        to_account_id("a" * (MAX_ACCOUNT_ID_LENGTH + 1))
+    # 恰好等于上界仍应接受（边界是闭区间，避免 off-by-one 把合法值挡掉）。
+    assert to_account_id("a" * MAX_ACCOUNT_ID_LENGTH)
 
 
 def test_account_id_error_is_a_memory_data_error() -> None:
@@ -106,14 +166,38 @@ def test_derived_uuid_is_a_parseable_uuid() -> None:
 
 
 def test_derived_uuid_is_stable_across_calls_and_processes() -> None:
-    """派生结果不依赖进程状态（用固定命名空间，非随机）。
+    """同一 pending_id 反复派生得到同一结果（确定性，不依赖进程状态）。
 
-    这条防的是「把命名空间改成随机值」或「改用 uuid4」这类改动——那会让历史
-    pending_id 漂移到不同 uuid，重复投递随之产生重复 episode。
-    UUID 的版本号是判据：**5 = 基于名字的确定性派生**，4 = 随机。
+    UUID 版本号是判据之一：**5 = 基于名字的确定性派生**，4 = 随机。
     """
-    derived = derive_episode_uuid(PendingId("fixed-pending-id"))
-    assert uuid.UUID(derived).version == 5, "必须是 UUID5（名字派生），不能是 UUID4（随机）"
+    first = derive_episode_uuid(PendingId("fixed-pending-id"))
+    second = derive_episode_uuid(PendingId("fixed-pending-id"))
+    assert first == second, "同一 pending_id 两次派生必须一致"
+    assert uuid.UUID(first).version == 5, "必须是 UUID5（名字派生），不能是 UUID4（随机）"
+
+
+def test_derived_uuid_matches_a_pinned_golden_vector() -> None:
+    """**黄金向量**：把命名空间常量真正接到派生输出上。
+
+    为什么必须有这条（2026-09-29 评审发现的真实漏洞）：原有断言只查「版本 == 5」
+    与「常量字面值」，而把 `EPISODE_UUID_NAMESPACE` 换成 `uuid.NAMESPACE_DNS` 时
+    **两条都仍然通过**（实测消融）——派生值已漂移、测试却全绿。后果是所有历史
+    `pending_id` 派生出不同的 uuid：重复投递不再幂等、删除账本对不上旧记录。
+
+    这条把「常量 → 输出」的接线钉住：改常量或改派生方式都会让它失败。
+    """
+    assert derive_episode_uuid(PendingId("fixed-pending-id")) == "490eabc3-f4d2-55ca-a837-edf78e84ede3"
+
+
+def test_derived_uuid_does_not_use_a_standard_namespace() -> None:
+    """反向断言：换成标准命名空间会得到**不同**结果。
+
+    与黄金向量互补——黄金向量防「实现被改」，这条防「常量被换成标准命名空间却
+    看起来仍然合理」（例如有人顺手改用 `NAMESPACE_URL`）。
+    """
+    our_value = derive_episode_uuid(PendingId("fixed-pending-id"))
+    for foreign in (uuid.NAMESPACE_DNS, uuid.NAMESPACE_URL, uuid.NAMESPACE_OID, uuid.NAMESPACE_X500):
+        assert our_value != str(uuid.uuid5(foreign, "fixed-pending-id"))
 
 
 def test_empty_pending_id_is_rejected() -> None:
