@@ -191,6 +191,56 @@ async def test_ingest_is_idempotent_for_unchanged_file(tmp_path: Path, _patched_
 
 
 @pytest.mark.asyncio
+async def test_failure_after_item_write_rolls_back_the_item_too(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """**写条目之后**节点写入失败，条目也必须回滚。
+
+    与下一个用例的区别（这里补的是一个验证缺口）：那个用例的失败发生在嵌入
+    阶段，即在任何写入之前——它只能证明「失败时没有写入」。真正要守的不变量是
+    「不留一半进去了的状态」：条目已 flush 进事务、节点写入才失败时，条目同样
+    不能留下。本用例在 ``_write_nodes`` 处注入故障来覆盖该路径。
+    """
+    _require_db()
+    doc = tmp_path / "partial.md"
+    doc.write_text("# 标题\n\n条目会先写入，随后节点写入失败。\n", encoding="utf-8")
+    settings = get_settings()
+    source_path = str(doc)
+
+    async def _boom_write_nodes(*_args: object, **_kwargs: object) -> None:
+        raise RuntimeError("模拟节点写入故障")
+
+    monkeypatch.setattr(
+        "campfire.modules.library.ingestion.build_embedding",
+        lambda _settings: _FakeEmbedder(),
+    )
+    monkeypatch.setattr("campfire.modules.library.ingestion._write_nodes", _boom_write_nodes)
+
+    sync_engine = create_sync_engine(settings)
+    async_engine = create_engine(settings)
+    store = build_vector_store(settings, engine=sync_engine, async_engine=async_engine)
+
+    try:
+        with pytest.raises(RuntimeError):
+            async with session_scope(settings) as session:
+                await ingest_file(
+                    settings, session, vector_store=store, path=doc, source="出处", applicable_scope="范围"
+                )
+
+        async with session_scope(settings) as session:
+            count = (
+                await session.execute(
+                    select(func.count()).select_from(KnowledgeItem).where(KnowledgeItem.source_path == source_path)
+                )
+            ).scalar_one()
+        assert count == 0, "节点写入失败后条目仍在——留下了一半的状态"
+    finally:
+        await _cleanup(source_path)
+        await async_engine.dispose()
+        sync_engine.dispose()
+
+
+@pytest.mark.asyncio
 async def test_ingest_failure_rolls_back_everything(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """嵌入失败时整份回滚：**不留「一半进去了」的状态**（RAG 策略第 7 节）。"""
     _require_db()
