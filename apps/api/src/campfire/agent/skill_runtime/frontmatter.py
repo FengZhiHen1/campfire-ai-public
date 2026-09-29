@@ -99,7 +99,7 @@ def parse_frontmatter(text: str, *, path: str) -> tuple[dict[object, object], st
     再由调用方校验，比在这里假装键一定是字符串更诚实。
 
     Raises:
-        SkillFrontmatterError: 分段失败、YAML 非法、根不是映射，或出现标准之外的字段。
+        SkillFrontmatterError: 分段失败、YAML 非法或嵌套过深、根不是映射，或出现标准之外的字段。
     """
     raw, body = split_frontmatter(text, path=path)
 
@@ -108,6 +108,12 @@ def parse_frontmatter(text: str, *, path: str) -> tuple[dict[object, object], st
     except yaml.YAMLError as exc:
         detail = str(getattr(exc, "problem", None) or exc).strip()
         raise SkillFrontmatterError(path, f"frontmatter 不是合法 YAML：{detail}") from exc
+    except RecursionError as exc:
+        # 深嵌套 YAML（例如 ``a: [[[[…]]]]``）会在解析器里耗尽栈，抛 RecursionError 而不是
+        # YAMLError。不转译的话，``SkillRegistry.discover`` 的 except 链接不住它，畸形
+        # SKILL.md 会让整次加载裸崩——而 skill 内容是外部数据，必须按第 3 节
+        # 「不合法即拒绝加载」显式拒绝。
+        raise SkillFrontmatterError(path, "frontmatter 嵌套过深（疑似畸形或构造的 YAML），拒绝加载") from exc
 
     if loaded is None:
         raise SkillFrontmatterError(path, "frontmatter 为空；六个标准字段中 name 与 description 为必填")

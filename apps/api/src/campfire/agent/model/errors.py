@@ -13,6 +13,7 @@ from __future__ import annotations
 
 from typing import Literal
 
+from agents.exceptions import ModelTimeoutError
 from openai import (
     APIConnectionError,
     APIStatusError,
@@ -55,15 +56,20 @@ class ModelConfigurationError(ModelError):
 def classify_model_failure(error: BaseException) -> ModelFailureReason:
     """把一个异常归类成基座的模型失败原因。
 
-    两处判定顺序有讲究，都有实测依据：
+    三处判定顺序有讲究，都有实测依据：
 
     - ``APITimeoutError`` 是 ``APIConnectionError`` 的子类，先判连接就会把超时误报成网络
       问题——而这两者对使用者的含义完全不同（超时是「这次太慢」，连接失败是「根本连不上」）。
     - **403 必须与 401 并列**：``openai.PermissionDeniedError`` 实测**不是**
       ``AuthenticationError`` 的子类，只判后者会把「凭据/权限配置错」报成
       ``provider_error``，把运营者引向供应商故障排查。
+    - **SDK 自己的 ``ModelTimeoutError`` 也归 ``timeout``**：它与 ``openai`` 的
+      ``APITimeoutError`` 没有继承关系，漏掉就会让「模型调用超时」分裂成两个错误码
+      （该走 ``model_unavailable``+``timeout``，却落进 ``internal``）。当前链路上
+      ``ModelSettings`` 未设 ``timeout`` 字段、SDK 不抛它，但那是文档化合法字段，
+      一旦启用就该落在同一档。
     """
-    if isinstance(error, (TimeoutError, APITimeoutError)):
+    if isinstance(error, (TimeoutError, APITimeoutError, ModelTimeoutError)):
         return "timeout"
     if isinstance(error, RateLimitError):
         return "rate_limited"

@@ -15,6 +15,7 @@ import asyncio
 
 import httpx
 import pytest
+from agents.exceptions import ModelTimeoutError
 from agents.retry import ModelRetryNormalizedError, RetryDecision, RetryPolicyContext
 from pydantic import SecretStr
 
@@ -40,6 +41,7 @@ def _settings(**overrides: object) -> Settings:
         "model_name": "deepseek-v4.1-flash",
     }
     values.update(overrides)
+    # 夹具以 object 组合再交给 pydantic 收敛校验，静态类型看不出这层收敛，故豁免
     return Settings(**values)  # type: ignore[arg-type]
 
 
@@ -72,6 +74,7 @@ def test_gateway_uses_the_configured_model_name_and_base_url() -> None:
     gateway = ModelGateway(_settings())
 
     assert gateway.model_name == "deepseek-v4.1-flash"
+    # Model 接口不暴露 model 属性，这里断言的是具体实现回填了配置的模型名
     assert gateway.model.model == "deepseek-v4.1-flash"  # type: ignore[attr-defined]
     assert str(gateway.client.base_url).startswith("https://tokenhub.example/v1")
 
@@ -202,10 +205,15 @@ def test_retry_budget_counts_the_jitter_upper_bound() -> None:
 
 
 def test_retry_budget_is_allowed_to_reach_the_cap_exactly_is_rejected() -> None:
-    """恰好等于上限也要拒绝：那时最后一次重试与运行上限同时到期，失败原因会摇摆。"""
-    exact = _settings(model_request_timeout_seconds=59.0, model_max_retries=2)
+    """恰好等于上限也要拒绝：那时最后一次重试与运行上限同时到期，失败原因会摇摆。
 
-    assert worst_case_model_seconds(exact) >= AGENT_RUN_TIMEOUT_SECONDS
+    用 ``timeout=58.875`` 让最坏耗时**确实**恰好等于 180.0（实测：2 次重试 + 抖动上界后
+    的退避和正好是 3.375，与 3×58.875 相加为 180.0）。第一版写 ``59.0``，实际得到 180.375
+    ——那测的是「超过上限」，与用例名宣称的精确边界不是一回事。
+    """
+    exact = _settings(model_request_timeout_seconds=58.875, model_max_retries=2)
+
+    assert worst_case_model_seconds(exact) == AGENT_RUN_TIMEOUT_SECONDS
     with pytest.raises(ModelConfigurationError):
         build_retry_settings(exact)
 
@@ -298,6 +306,59 @@ async def test_retry_policy_retries_network_and_timeout_failures() -> None:
         assert await _retry_decision(policy, context) is True
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize("retry_after", [600.0, 3600.0])
+async def test_supplier_retry_after_is_clamped_to_the_configured_max_delay(retry_after: float) -> None:
+    """供应商给的 ``Retry-After`` 必须被夹到退避上界内——否则预算闸门对它形同不存在。
+
+    SDK 原生的 ``retry_after()`` 把该值原样当 delay 睡掉（``agents/retry.py:348-355`` →
+    ``run_internal/model_retry.py:483-491`` → ``:678``），于是 ``Retry-After: 600`` 会让一次
+    重试睡 600 秒，被 180 秒运行预算砍断，失败原因从「模型不可用」变成「运行超时」。
+    这里断言**延迟本身**有界（只断言「会重试」会漏掉这个缺陷——上面那条参数化用例正是如此）。
+    """
+    settings = _settings(model_retry_max_delay_seconds=8.0)
+    policy = build_retry_settings(settings).policy
+    assert policy is not None
+
+    context = RetryPolicyContext(
+        error=RuntimeError("stub"),
+        attempt=1,
+        max_retries=settings.model_max_retries,
+        stream=True,
+        normalized=ModelRetryNormalizedError(status_code=429, retry_after=retry_after),
+    )
+
+    decision = policy(context)
+    if asyncio.iscoroutine(decision):
+        decision = await decision
+    assert isinstance(decision, RetryDecision)
+    assert decision.retry is True
+    assert decision.delay is not None, "必须显式给出夹紧后的 delay，否则 SDK 会回落到未夹紧的原值"
+    assert decision.delay <= 8.0, f"Retry-After {retry_after} 未被夹到退避上界：{decision.delay}"
+
+
+@pytest.mark.asyncio
+async def test_supplier_retry_after_smaller_than_the_cap_is_kept_verbatim() -> None:
+    """夹紧只压上界：供应商给的较小延迟应原样保留（它有真实语义，不该被抬高）。"""
+    settings = _settings(model_retry_max_delay_seconds=8.0)
+    policy = build_retry_settings(settings).policy
+    assert policy is not None
+
+    context = RetryPolicyContext(
+        error=RuntimeError("stub"),
+        attempt=1,
+        max_retries=settings.model_max_retries,
+        stream=True,
+        normalized=ModelRetryNormalizedError(status_code=429, retry_after=3.0),
+    )
+
+    decision = policy(context)
+    if asyncio.iscoroutine(decision):
+        decision = await decision
+    assert isinstance(decision, RetryDecision)
+    assert decision.delay == 3.0
+
+
 # --- 失败分类 ---------------------------------------------------------------
 
 
@@ -313,6 +374,7 @@ def _response(status_code: int) -> httpx.Response:
     ("error", "expected"),
     [
         (TimeoutError("slow"), "timeout"),
+        (ModelTimeoutError(30.0), "timeout"),
         (httpx.ReadTimeout("slow"), "unknown"),
         (ValueError("boom"), "unknown"),
     ],

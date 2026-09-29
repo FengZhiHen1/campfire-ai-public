@@ -64,7 +64,7 @@ class EmptyArgs(BaseModel):
 def _context(index: FakeCitationIndex | None = None) -> ToolContext:
     """构造一个绑定了运行事实与引用写入端的上下文。"""
     activation = ActivationState()
-    activation.update(frozenset({"emergency"}))
+    activation.seed({"emergency"})
     return ToolContext(
         run_id="run-1",
         session_id="session-1",
@@ -479,6 +479,87 @@ def test_availability_item_omits_the_unavailable_block_when_everything_is_active
 def _dispatcher(pool: ToolPool, *, activated: tuple[str, ...] = ("read_alpha",)) -> ToolDispatcher:
     scope = resolve_scope(pool, default_active=list(activated))
     return ToolDispatcher(pool, scope, context=_context())
+
+
+def _dispatcher_with_runtime_activation(
+    pool: ToolPool,
+    *,
+    skill_name: str,
+    allowed_tools: tuple[str, ...],
+    default_active: tuple[str, ...] = (),
+) -> ToolDispatcher:
+    """造一个「模型侧刚激活了某个 skill」的 dispatcher（复刻 runner 的接线）。"""
+    activation = ActivationState()
+    scope = resolve_scope(pool, default_active=list(default_active))
+    activation.seed(scope.activated_skills)
+    activation.activate(skill_name=skill_name, allowed_tools=allowed_tools)
+    context = ToolContext(
+        run_id="run-1",
+        session_id="session-1",
+        surface="consult",
+        activation_state=activation,
+        citations=CitationRecorder(FakeCitationIndex(), run_id="run-1"),
+    )
+    return ToolDispatcher(pool, scope, context=context, activation_state=activation)
+
+
+@pytest.mark.asyncio
+async def test_runtime_activation_makes_the_skills_allowed_tools_usable() -> None:
+    """运行中激活后，该 skill 的 ``allowed-tools`` 必须真的可用（基座第 5 节）。
+
+    第一版把 skill 名当工具名判定，于是这里会得到 ``tool_not_available``——激活成功、
+    工具却用不了，是「宣称的语义没有代码承载」。
+    """
+    calls: list[str] = []
+    pool = ToolPool([_spec("read_alpha", calls=calls)])
+    dispatcher = _dispatcher_with_runtime_activation(pool, skill_name="daily-consulting", allowed_tools=("read_alpha",))
+
+    outcome = await dispatcher.dispatch("read_alpha", json.dumps({"query": "q"}))
+
+    assert isinstance(outcome, ToolResult)
+    assert calls == ["read_alpha"]
+
+
+@pytest.mark.asyncio
+async def test_runtime_activation_does_not_authorize_a_same_named_tool() -> None:
+    """激活一个与工具同名的 skill，**不得**因此放行那个工具（AG-02）。
+
+    第一版只存一个名字集合，激活 skill ``search`` 会让工具 ``search`` 被无条件放行——
+    等价于「激活 skill 即授权同名工具」，而该 skill 的 ``allowed-tools`` 是空的。
+    """
+    calls: list[str] = []
+    pool = ToolPool([_spec("search", calls=calls)])
+    dispatcher = _dispatcher_with_runtime_activation(pool, skill_name="search", allowed_tools=())
+
+    outcome = await dispatcher.dispatch("search", json.dumps({"query": "q"}))
+
+    assert isinstance(outcome, ToolFailure)
+    assert outcome.code == "tool_not_available"
+    assert calls == [], "同名工具被越权放行：handler 被调用了"
+
+
+@pytest.mark.asyncio
+async def test_runtime_activation_does_not_authorize_tools_outside_allowed_tools() -> None:
+    """运行中激活只放行该 skill 声明的工具，池里的其它工具照旧被拒。"""
+    calls: list[str] = []
+    pool = ToolPool([_spec("read_alpha", calls=calls), _spec("write_beta", calls=calls)])
+    dispatcher = _dispatcher_with_runtime_activation(pool, skill_name="daily-consulting", allowed_tools=("read_alpha",))
+
+    outcome = await dispatcher.dispatch("write_beta", json.dumps({"query": "q"}))
+
+    assert isinstance(outcome, ToolFailure)
+    assert outcome.code == "tool_not_available"
+    assert calls == []
+
+
+def test_activation_state_keeps_skill_names_and_tool_names_apart() -> None:
+    """两个命名空间分开维护：skill 名不得混进工具集，反之亦然。"""
+    state = ActivationState()
+    state.seed({"from-request"})
+    state.activate(skill_name="daily-consulting", allowed_tools=("read_alpha",))
+
+    assert state.skill_names() == {"from-request", "daily-consulting"}
+    assert state.allowed_tools() == {"read_alpha"}, "请求时的激活属 scope 的职责，不在这里重复并入"
 
 
 @pytest.mark.asyncio

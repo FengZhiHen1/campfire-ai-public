@@ -76,9 +76,11 @@ def build_skill_tool(registry: SkillRegistry) -> ToolSpec[ActivateSkillArgs]:
 
     由装配处用 ``ToolPool.register_base`` 注册（它使用基座保留名）。
 
-    激活成功时经 ``context.activation_state.add`` 并入运行时激活集合——不需要构造期
-    回调：``ToolContext`` 本来就会交给 handler，运行中的激活状态由此可达，且每次运行
-    一份（state 在 runner 里按运行创建）。
+    激活成功时经 ``context.activation_state.activate`` 并入**两个命名空间**：skill 名
+    （资源读取等按 skill 判定的工具要它）与该 skill 的 ``allowed-tools``（dispatcher 的
+    可用性判定要它）。只并名字会让它的工具一件都放行不了；只并工具则无法回答「激活了
+    哪些 skill」。不需要构造期回调：``ToolContext`` 本来就会交给 handler，运行中的激活
+    状态由此可达，且每次运行一份（state 在 runner 里按运行创建）。
     """
 
     async def handler(context: ToolContext, args: ActivateSkillArgs) -> ToolOutcome:
@@ -99,7 +101,7 @@ def build_skill_tool(registry: SkillRegistry) -> ToolSpec[ActivateSkillArgs]:
                 message=f"skill {skill.name} 只能由应用在运行入口激活，模型不得自动匹配它",
             )
 
-        context.activation_state.add(skill.name)
+        context.activation_state.activate(skill_name=skill.name, allowed_tools=skill.metadata.allowed_tools)
         return ToolResult(text=render_activation(skill))
 
     return ToolSpec(

@@ -17,8 +17,13 @@
 越界的工具分开报码，模型才能正确决定是放弃还是换参数重试。
 
 **运行中激活**：``activation_state`` 非空时，可用性判定 = 请求时 scope ∪ 运行中激活
-（模型侧 ``skill`` 工具成功后由回调并入）。没有它，模型侧激活的 ``allowed-tools``
-并集永远不生效——那是第 5 节「激活集合变化时扩大可用工具」已定而快照实现漏掉的语义。
+（模型侧 ``skill`` 工具成功后并入）。没有它，模型侧激活的 ``allowed-tools`` 并集永远
+不生效——那是第 5 节「激活集合变化时扩大可用工具」已定而快照实现漏掉的语义。
+
+**此处只认工具名**：``ActivationState`` 同时维护 skill 名与工具名两个命名空间，本模块
+取的是 :meth:`~campfire.agent.tools.activation_state.ActivationState.allowed_tools`
+（工具名）。取错一个不会报错——两个命名空间都是 ``str``——但会让激活的 skill 一件工具
+都放行不了，或让同名工具被越权放行。
 """
 
 from __future__ import annotations
@@ -62,8 +67,11 @@ class ToolDispatcher:
         return self._scope
 
     def _is_active(self, name: str) -> bool:
-        """可用性判定：请求时 scope ∪ 运行中激活（若有通道）。"""
-        if self._activation_state is not None and name in self._activation_state.snapshot():
+        """可用性判定：请求时 scope ∪ 运行中激活带来的工具并集。
+
+        ``name`` 是**工具名**；``allowed_tools()`` 是同一命名空间（见模块头）。
+        """
+        if self._activation_state is not None and name in self._activation_state.allowed_tools():
             return True
         return self._scope.is_active(name)
 

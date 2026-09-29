@@ -54,7 +54,9 @@ from .errors import ContextError
 from .window import (
     COMPACTED_SUMMARY_CLOSE_TAG,
     COMPACTED_SUMMARY_TAG,
+    derive_window,
     is_compacted_summary,
+    last_checkpoint_index,
     leading_system_count,
     message_text,
 )
@@ -93,10 +95,16 @@ class CompactionCommit(Protocol):
     """把追加内容落库的端口（第 7 节事务的落库步骤）。
 
     单独成端口是为了让「记结束」发生在落库**之后**：由机制决定顺序，调用方只提供实现。
+
+    **超时语义（实现方必须遵守）**：实现必须自带超时上界（本层的 180 秒运行预算是最后
+    一道，不该由它承担单次写入的等待）。超时抛出的异常会被 ``compact`` 记成
+    ``commit_failed``，而**超时其实是「结果未知」**——会话可能已经写入。因此实现方要么
+    让写入**幂等**（同一批追加内容重放不产生重复），要么在超时后自行核实落库结果；
+    只把超时当「确定没写」会得到一份与真源不一致的窗口判断。
     """
 
     async def __call__(self, appended: Sequence[Item]) -> None:
-        """把追加内容写进会话；写不进去必须抛异常。"""
+        """把追加内容写进会话；写不进去必须抛异常（超时必须与「确定失败」区分，见类说明）。"""
         ...
 
 
@@ -307,8 +315,6 @@ def window_tokens(items: Sequence[object], *, extra_text: str = "") -> int:
     :func:`~campfire.agent.context.window.derive_window` 裁剪再计数。用整段历史会高估，
     并让「压缩后仍高于阈值」永远成立。
     """
-    from .window import derive_window
-
     return estimate_window_tokens(derive_window(items), extra_text=extra_text)
 
 
@@ -416,8 +422,6 @@ def select_range(
       「绕过保留策略」在第 2 节是溢出行的专属手段，常规重试不该动用它——实测第一版在重试时
       丢掉了整段逐字尾部，代价付了、窗口却仍在阈值之上。
     """
-    from .window import last_checkpoint_index
-
     checkpoint = last_checkpoint_index(items)
     start = checkpoint if checkpoint is not None else leading_system_count(items)
     if start >= len(items):
@@ -472,8 +476,6 @@ def previous_summary_text(items: Sequence[object]) -> str | None:
 
 def retained_after_last_checkpoint(items: Sequence[Item]) -> tuple[Item, ...]:
     """取「最后一条检查点之后」的项——压缩后逐字保留、仍在窗口里的那一段。"""
-    from .window import last_checkpoint_index
-
     checkpoint = last_checkpoint_index(items)
     if checkpoint is None:
         return tuple(items)
@@ -548,7 +550,14 @@ class SummaryResult:
 
 
 class CompactionSummarizer(Protocol):
-    """写摘要的端口。实现方负责热前缀回放，以及与主调用同一模型同一路由。"""
+    """写摘要的端口。实现方负责热前缀回放，以及与主调用同一模型同一路由。
+
+    **超时与预算（实现方必须遵守）**：摘要调用是模型调用，其「超时 × 重试 + 退避」的
+    最坏耗时必须自己保证落在运行上限之内（与 ``agent.model`` 对主调用的要求同源，见
+    :mod:`campfire.agent.limits`）；本层不再套一层超时。摘要失败只让窗口不动（第 7 节的
+    安全方向），因此**超时按失败处理是可接受的**——它没有已提交的副作用，不需要区分
+    「未知」；真正的约束是不许无界等待，否则运行预算会被从中间砍断。
+    """
 
     async def summarize(self, request: SummaryRequest) -> SummaryResult:
         """产出一段摘要文本。"""
@@ -591,6 +600,10 @@ class CompactionJournal(Protocol):
 
     崩在 :meth:`record_started` 与 :meth:`record_finished` 之间，留下的就是一条**没有结束
     记录的标记**——这正是「可检测的未闭合标记」，不是假装压缩完成。
+
+    **超时语义（实现方必须遵守）**：记账是本地写，实现必须自带超时上界。超时异常的处置与
+    其它异常一致——**原样冒泡**（见 :func:`compact` 的 Raises）：记账失败不得被当成
+    「压缩没发生」。冒泡值得接受的前提是它不会挂住运行，因此上界由实现保证。
     """
 
     async def record_started(

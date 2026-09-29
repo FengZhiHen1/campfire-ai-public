@@ -53,7 +53,14 @@ from typing import Literal
 from agents import ModelSettings
 from agents.models.interface import Model
 from agents.models.openai_chatcompletions import OpenAIChatCompletionsModel
-from agents.retry import ModelRetryBackoffSettings, ModelRetrySettings, retry_policies
+from agents.retry import (
+    ModelRetryBackoffSettings,
+    ModelRetrySettings,
+    RetryDecision,
+    RetryPolicy,
+    RetryPolicyContext,
+    retry_policies,
+)
 from openai import AsyncOpenAI
 
 from campfire.agent.limits import AGENT_RUN_TIMEOUT_SECONDS
@@ -132,6 +139,11 @@ def worst_case_model_seconds(settings: Settings) -> float:
     2. **先校验再算**（:func:`require_sane_retry_config`）：负数重试会把最坏耗时算成 0 秒；
     3. **指数项夹在 :data:`_MAX_BACKOFF_EXPONENT` 次方**，保证对任意配置都不抛浮点溢出。
 
+    供应商 ``Retry-After`` 那条路径**已纳入同一上界**：SDK 原生的 ``retry_after()`` 会把
+    供应商给的秒数原样当 delay 睡掉、绕过这里的算术，因此 :func:`build_retry_settings`
+    改用 :func:`_bounded_retry_after`，把该值夹到 ``model_retry_max_delay_seconds``。
+    本函数算的就是那个上界，两者因此一致。
+
     供构造期校验与测试使用，让「重试预算落在运行上限内」这条约束可被机械核对，
     而不是靠读注释相信它。
 
@@ -180,10 +192,40 @@ def build_retry_settings(settings: Settings) -> ModelRetrySettings:
         # 而 TokenHub 属第三方兼容端点，是否给该信号未经核实（TECH-12 同类未知）。
         policy=retry_policies.any(
             retry_policies.network_error(),
-            retry_policies.retry_after(),
+            _bounded_retry_after(settings),
             retry_policies.http_status(_RETRYABLE_STATUS_CODES),
         ),
     )
+
+
+def _bounded_retry_after(settings: Settings) -> RetryPolicy:
+    """``retry_policies.retry_after()`` 的**有上界**版本。
+
+    为什么必须包一层：SDK 的 ``retry_after()`` 把供应商的 ``Retry-After`` 原样作为
+    ``RetryDecision.delay`` 返回（``agents/retry.py:348-355``），而该 delay **优先于**默认
+    退避（``run_internal/model_retry.py:483-491``）且不经任何夹紧，最终被
+    ``_sleep_for_retry(decision.delay)`` 直接睡掉（同文件 ``:678``）。于是一个
+    ``Retry-After: 600`` 会睡 600 秒，被运行编排的 180 秒预算从中间砍断——失败原因从
+    「模型不可用」变成「运行超时」，正是本模块要消灭的那类误报。
+    夹到 ``model_retry_max_delay_seconds`` 之后，该路径落回与其它退避同一个上界，
+    :func:`worst_case_model_seconds` 的算术因此对它重新成立。
+
+    另一处必须一并夹的是 SDK 的兜底分支（``model_retry.py:487``）：即便本策略返回
+    ``retry=True`` 而不给 delay，SDK 也会回落到 ``normalized.retry_after``。因此这里
+    **总是显式给出** 夹紧后的 delay，而不是「有值才给」。
+    """
+
+    def policy(context: RetryPolicyContext) -> bool | RetryDecision:
+        """按供应商给的 Retry-After 决定重试，延迟夹到配置的退避上界。"""
+        delay = context.normalized.retry_after
+        if delay is None and context.provider_advice is not None:
+            delay = context.provider_advice.retry_after
+        if delay is None:
+            return False
+        return RetryDecision(retry=True, delay=min(delay, settings.model_retry_max_delay_seconds))
+
+    policy.__name__ = "_bounded_retry_after"
+    return policy
 
 
 # quality-floor: ignore docstring-promise 异常由 build_retry_settings 抛出，本函数体无 raise

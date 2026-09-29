@@ -22,6 +22,7 @@ ToolErrorCode = Literal[
     "tool_requires_approval",
     "tool_invalid_arguments",
     "tool_failed",
+    "tool_interrupted",
 ]
 """工具失败的错误码。
 
@@ -29,7 +30,11 @@ ToolErrorCode = Literal[
 - ``tool_not_available``：工具已声明但**此刻未激活**，服务端拒绝（硬边界）；
 - ``tool_requires_approval``：需要人工审批，而一期不实现 HITL，故显式拒绝；
 - ``tool_invalid_arguments``：参数不是合法 JSON 或不符合该工具的 JSON Schema；
-- ``tool_failed``：工具实现自己报错，错误类型回给模型，它可据此换个方式再试。
+- ``tool_failed``：工具实现自己报错，错误类型回给模型，它可据此换个方式再试；
+- ``tool_interrupted``：调用**没有结果**就结束了（运行触顶、运行失败或取消打断）。
+  它不是工具自身报错，因此与 ``tool_failed`` 分开——消费方据此知道「工具可能还在跑」
+  而不是「工具说它坏了」。这个码由运行编排合成（工具没机会返回结果），
+  见 :class:`~campfire.agent.runtime.runner._ToolCallTracker`。
 """
 
 
