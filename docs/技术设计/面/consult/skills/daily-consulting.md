@@ -57,6 +57,13 @@ allowed-tools: read_profile_summary read_profile_items search_knowledge search_c
 - `read_profile_items` 只在需要具体条目时用；只想要概览时用 `read_profile_summary`。
 - **写工具一律不可用**：本 skill 没有 `propose_profile_item`、`write_memory`；越界调用由服务端拒绝。
 
+### 3.5 `references/` 的内容边界
+
+| 文件 | 内容边界 | 明确不含 |
+|---|---|---|
+| `references/clarification.md` | 澄清顺序与**停问条件**（追问必须服务于改变下一步行动；简单问题允许直接回答并结束）；"为什么问"必须能说出口的自检规则 | 不写通用问句库（问句由当次情境决定） |
+| `references/evidence-and-options.md` | 依据与引用的呈现纪律（来源、适用范围、真实/虚构标注）；**可选方向的呈现模板**——每个方向带适用条件与代价 | 不写资料清单本身（资料在库里，经工具检索） |
+
 ## 4. 验证方式
 
 - **触发**：选定后下一条消息生效；未选定时按 `description` 匹配到本 skill。

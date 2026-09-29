@@ -56,6 +56,13 @@ allowed-tools: read_profile_items propose_profile_item read_memory write_memory
 - `write_memory` 写通用记忆，`read_memory` 读它；两者都不得用来绕过档案的确认流程。
 - 写入是**异步**的（经待处理记录与 Worker），所以回执只能承诺"已提交"，**不得**声称"已保存"。
 
+### 3.5 `references/` 的内容边界
+
+| 文件 | 内容边界 | 明确不含 |
+|---|---|---|
+| `references/extraction-rules.md` | 何谓值得沉淀（具名判据）；**三分**（使用者陈述／他人观察／系统推断）各自的判定；**写入前先读现有条目**的去重规则 | 不写字段定义（在[个性化档案](../../../technical-details/个性化档案.md)） |
+| `references/source-and-status.md` | 来源与时间的标注格式；确认状态的含义与**候选 → 稳定**的转换条件；冲突并列的处理 | 不写确认入口的交互（属页面设计） |
+
 ## 4. 验证方式
 
 - **不推断**：构造"使用者只说了行为、没说原因"的输入，验证候选条目不含原因猜测。
