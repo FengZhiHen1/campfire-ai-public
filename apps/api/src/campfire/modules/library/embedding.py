@@ -28,11 +28,22 @@ import httpx
 from llama_index.core.base.embeddings.base import BaseEmbedding
 from llama_index.embeddings.openai import OpenAIEmbedding
 
-from campfire.core.config import Settings
+from campfire.core.config import EMBEDDING_DIM, Settings
 
-#: 嵌入维度：与 `Kinfra-Text-Embedding-4b` 绑定，**固定不可配置**。
-#: 换模型必须整库重建（RAG 策略第 7 节纪律 4）。
-EMBEDDING_DIM = 2560
+#: 嵌入维度：**定义在 ``core/config``**（与嵌入模型名的唯一配置处同位），此处只转出。
+#: 之所以不在本模块定义：记忆侧（`modules/memory` 的 Graphiti 嵌入器）必须用同一个
+#: 维度（RAG 策略第 11 节），而 `modules/*` 之间不得互相 import（项目结构设计第 7 节）
+#: ——两处各写一份数字就是第二真源。详见 core/config 的常量注释。
+__all__ = [
+    "EMBEDDING_DIM",
+    "EMBEDDING_MAX_RETRIES",
+    "EMBEDDING_TIMEOUT_SECONDS",
+    "MAX_TEXT_CHARS",
+    "RECOMMENDED_BATCH_SIZE",
+    "EmbeddingConfigurationError",
+    "assert_text_within_limit",
+    "build_embedding",
+]
 
 #: 单条文本硬上限（字符）。TokenHub 嵌入接口限制；分块后处理据此设定硬限。
 MAX_TEXT_CHARS = 2000
@@ -101,15 +112,3 @@ def assert_text_within_limit(text: str) -> None:
     """
     if len(text) > MAX_TEXT_CHARS:
         raise ValueError(f"单条文本 {len(text)} 字符，超过嵌入接口硬上限 {MAX_TEXT_CHARS}")
-
-
-__all__ = [
-    "EMBEDDING_DIM",
-    "EMBEDDING_MAX_RETRIES",
-    "EMBEDDING_TIMEOUT_SECONDS",
-    "MAX_TEXT_CHARS",
-    "RECOMMENDED_BATCH_SIZE",
-    "EmbeddingConfigurationError",
-    "assert_text_within_limit",
-    "build_embedding",
-]

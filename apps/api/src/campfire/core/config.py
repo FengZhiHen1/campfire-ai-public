@@ -21,6 +21,18 @@ _REPO_ROOT = Path(__file__).resolve().parents[5]
 _APP_ROOT = Path(__file__).resolve().parents[3]
 _ENV_FILE = _REPO_ROOT / ".env"
 
+#: 嵌入维度：与 ``embedding_model_name``（`Kinfra-Text-Embedding-4b`）绑定，
+#: **固定不可配置**——可配置的维度会诱发「配错维度混库」，使检索静默失准
+#: （RAG 策略第 7 节纪律 4）。换模型必须整库重建。
+#:
+#: **为什么放在 core 而不是某个模块内**（2026-09-29 定）：检索链（`modules/library`）
+#: 与记忆侧（`modules/memory`，Graphiti 的嵌入器）**必须用同一个向量模型与维度**
+#: （RAG 策略第 11 节），而 [项目结构设计] 第 7 节禁止 `modules/*` 之间互相 import。
+#: 若常量留在 library，memory 只能靠 `library` 导入或各自复制一份——前者越过白名单，
+#: 后者制造第二真源（本项目已因「同一事实两处定义」修过一次）。因此它与
+#: ``embedding_model_name`` 放在同一处：模型名的唯一配置处，也是维度的唯一常量处。
+EMBEDDING_DIM = 2560
+
 
 class Settings(BaseSettings):
     """应用配置。字段名对应同名的大写环境变量（大小写不敏感）。"""
@@ -54,7 +66,7 @@ class Settings(BaseSettings):
     # 只拥有 LLM 模型名。复用上面的 base_url 与 api_key：嵌入服务同为 TokenHub，
     # 不引入第二套凭据（RAG 策略第 11 节要求记忆侧也用同一个向量模型）。
     # 维度（2560）与模型绑定，**不做成可配置项**——可配置的维度会诱发配错维度
-    # 混库，使检索静默失准（RAG 策略第 7 节纪律 4）；常量定义在 modules/library。
+    # 混库，使检索静默失准（RAG 策略第 7 节纪律 4）；常量见本模块的 EMBEDDING_DIM。
     embedding_model_name: str = "kinfra-text-embedding-4b"
     # 单次请求超时与重试上界。三者的最坏组合必须落在基座第 2 节的 180 秒通用响应
     # 上限之内（默认值最坏 45×3 + 退避(1.125+2.25)，gateway 的算术按 SDK 的抖动上界算），
@@ -81,8 +93,23 @@ class Settings(BaseSettings):
     # 不需要 API Key），故暂无 supertokens_api_key 字段——它在 SDK 装配落地时加入。
     supertokens_connection_uri: str = "http://localhost:3567"
 
-    # 通用记忆（Graphiti + FalkorDB）的连接配置同理：内存模块落地时，
-    # 连同它的消费者一起加入。
+    # --- 通用记忆（Graphiti + FalkorDB）---
+    # 连接配置在此集中：modules/memory 不得自己读环境变量（第 10 节唯一入口）。
+    # FalkorDB 是 Redis 分支，故端口与 Docker 的宿主机映射一致（compose 里 6380:6379，
+    # 避开 Redis 自己的 6379）。密码可空——本地容器默认无密码；生产必须设。
+    # 图库名（database）一期固定一个：**记忆按账号分区靠 group_id，不靠分库**
+    # （见 docs/技术设计/decisions/通用记忆归属为账号.md），分库会让账号隔离
+    # 与一次查询分区的设计同时失效。
+    falkordb_host: str = "localhost"
+    falkordb_port: int = Field(default=6380, gt=0, lt=65536)
+    falkordb_password: SecretStr | None = None
+    falkordb_database: str = "campfire"
+    # 单次图库操作超时（秒）。**有界**：应急预注入在首字时延路径上（`RQ-EMG-03`），
+    # 图库慢时必须尽快落进「明确标注不可用」的降级分支，而不是拖住整次运行。
+    falkordb_timeout_seconds: float = Field(default=5.0, gt=0)
+    # 图库并发上界，传给 Graphiti 的 max_coroutines。Graphiti 默认取环境变量
+    # SEMAPHORE_LIMIT（默认 20）；我们显式传入，避免该行为随环境漂移。
+    falkordb_max_coroutines: int = Field(default=20, gt=0)
 
     # --- skill 内容根目录 ---
     # 由配置指定（见 docs/项目结构设计.md 第 10 节）；默认指向应用内的 skills/。

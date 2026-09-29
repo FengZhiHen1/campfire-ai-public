@@ -71,14 +71,17 @@ def test_embedding_dim_is_fixed_constant() -> None:
 
 
 def test_embedding_dim_has_a_single_source_of_truth() -> None:
-    """维度只在一处定义：`models` 转出的必须与 `embedding` 的定义是同一个值。
+    """维度只在一处定义：`core/config`，其余位置都是转出同一个对象。
 
     这是防漂移的**真实**闸门——本项目已因「同一事实两处定义」修过一次
-    （search_knowledge 的合并规则）。若有人日后在 models 里另写一个数字，
+    （search_knowledge 的合并规则）。2026-09-29 记忆侧落地时该常量从
+    `modules/library` 移到 `core/config`：记忆侧（Graphiti 嵌入器）必须用同一维度，
+    而 `modules/*` 之间不得互相 import（项目结构设计第 7 节），留在 library
+    会逼出「越白名单导入」或「第二处定义」二选一。若有人日后另写一个数字，
     本用例会失败，而不是等到「维度配错、检索静默失准」才发现。
     """
     from campfire.modules.library import models
 
     assert models.EMBEDDING_DIM is EMBEDDING_DIM, (
-        "models.EMBEDDING_DIM 与 embedding.EMBEDDING_DIM 不是同一个对象——维度出现了第二处定义"
+        "models.EMBEDDING_DIM 与 core/config.EMBEDDING_DIM 不是同一个对象——维度出现了第二处定义"
     )

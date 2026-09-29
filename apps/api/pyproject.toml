@@ -1,8 +1,14 @@
 # 篝火智答唯一的 Python 应用：HTTP 与 Worker 两个运行入口共用一套代码。
 #
 # 依赖只声明「运行外壳当前真实消费的东西」。技术栈设计里已定但尚无消费者的
-# 依赖（graphiti-core、supertokens-python、alembic）在各自消费者落地时再加入，
-# 避免空壳依赖。LlamaIndex 三个包由 modules/library 的检索链消费（2026-09-29 加入）。
+# 依赖在各自消费者落地时再加入，避免空壳依赖：LlamaIndex 三个包由 modules/library
+# 的检索链消费（2026-09-29 加入）；graphiti-core 由 modules/memory 消费（2026-09-29 加入）；
+# supertokens-python 仍未加入（surfaces/accounts 尚未落地）。
+#
+# graphiti-core 为什么额外声明 httpx：它 import httpx 却**没有把它写进依赖**
+# （实测 0.30.2：只有 neo4j/numpy/openai/posthog/pydantic/python-dotenv/tenacity），
+# 缺它会在 `import graphiti_core` 时直接 ModuleNotFoundError。本项目本就依赖 httpx，
+# 因此实际不缺；uv 也会把它记进 graphiti-core 的依赖闭包（见 uv.lock 的 requires-dist）。
 
 [project]
 name = "campfire-api"
@@ -28,6 +34,7 @@ dependencies = [
     "llama-index-embeddings-openai>=0.7.0",
     "alembic>=1.20.0",
     "pgvector>=0.5.0",
+    "graphiti-core[falkordb]>=0.30.2",
 ]
 
 [dependency-groups]
