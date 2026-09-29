@@ -18,6 +18,8 @@ from contextlib import asynccontextmanager
 
 from pgvector.sqlalchemy import Vector
 from sqlalchemy import MetaData, text
+from sqlalchemy import create_engine as create_engine_sync
+from sqlalchemy.engine import Engine
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase
 
@@ -50,12 +52,14 @@ __all__ = [
     "Vector",
     "check_database",
     "create_engine",
+    "create_sync_engine",
     "dispose_engine",
     "get_engine",
     "get_session_factory",
     "metadata",
     "new_uuid",
     "session_scope",
+    "to_sync_url",
 ]
 
 _engine: AsyncEngine | None = None
@@ -72,6 +76,27 @@ def create_engine(settings: Settings) -> AsyncEngine:
         raise RuntimeError("未配置 DATABASE_URL，无法创建数据库引擎")
     # pool_pre_ping：连接可能被网络或数据库重启中断，取用前先探活。
     return create_async_engine(settings.database_url, pool_pre_ping=True)
+
+
+def to_sync_url(async_url: str) -> str:
+    """把异步连接串转成同步驱动形式（``+asyncpg`` → 驱动默认）。
+
+    之所以存在：LlamaIndex 的 ``PGVectorStore`` 要求**同时**提供同步与异步引擎
+    （实测 ``ValueError: Both engine and async_engine must be provided``），
+    而本项目运行期只用 asyncpg。同步引擎仅用于该框架组件的写入路径。
+    """
+    return async_url.replace("postgresql+asyncpg://", "postgresql://")
+
+
+def create_sync_engine(settings: Settings) -> Engine:
+    """按配置创建同步引擎（供需要同步驱动的框架组件使用）。
+
+    Raises:
+        RuntimeError: 未配置 ``DATABASE_URL`` 时。
+    """
+    if not settings.database_url:
+        raise RuntimeError("未配置 DATABASE_URL，无法创建数据库引擎")
+    return create_engine_sync(to_sync_url(settings.database_url), pool_pre_ping=True)
 
 
 def get_engine(settings: Settings) -> AsyncEngine:
