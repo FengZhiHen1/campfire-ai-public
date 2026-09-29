@@ -42,6 +42,7 @@ from .compaction import (
     previous_summary_text,
     retained_after_last_checkpoint,
     select_range,
+    settings_from_config,
     window_tokens,
 )
 from .errors import CitationError, ContextError, InjectionError, InjectionRenderError
@@ -107,5 +108,6 @@ __all__ = [
     "previous_summary_text",
     "retained_after_last_checkpoint",
     "select_range",
+    "settings_from_config",
     "window_tokens",
 ]
