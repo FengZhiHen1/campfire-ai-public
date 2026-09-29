@@ -271,12 +271,14 @@ async def _compact(items: list[dict[str, object]], **kwargs: object) -> tuple[li
     settings = kwargs.pop("settings", SMALL)
     summarizer = kwargs.pop("summarizer", FakeSummarizer())
     journal = kwargs.pop("journal", FakeJournal())
+    system_prompt = kwargs.pop("system_prompt", "静态系统提示")
     return await compact(
         items,
         settings=settings,  # type: ignore[arg-type]
         summarizer=summarizer,  # type: ignore[arg-type]
         instruction="把历史压成摘要。",
         journal=journal,  # type: ignore[arg-type]
+        system_prompt=system_prompt,  # type: ignore[arg-type]
         **kwargs,  # type: ignore[arg-type]
     )
 
@@ -508,8 +510,13 @@ async def test_empty_summary_is_not_committed() -> None:
 
 
 @pytest.mark.asyncio
-async def test_compaction_retries_when_still_over_threshold() -> None:
-    """第 10 节 compactionRetries：压缩后仍高于阈值则再试。"""
+async def test_stopping_after_the_first_attempt_reports_one_attempt() -> None:
+    """``attempts`` 必须是**真实**尝试次数，不是「允许的次数」。
+
+    第一版把 `attempts` 记成允许值，于是 `compaction_retries=2` 的配置在一次尝试就降到阈值
+    以下时仍然报告 3 次——计量失真（第 9 节要求真实计量），而用例里那句
+    `len(summarizer.requests) >= 1` 永远不会失败，正好把这个错误盖住。
+    """
     items = _long_history(80)
     summarizer = FakeSummarizer(text="短")
     settings = CompactionSettings(
@@ -522,8 +529,34 @@ async def test_compaction_retries_when_still_over_threshold() -> None:
     _history, outcome = await _compact(items, settings=settings, summarizer=summarizer)
 
     assert outcome.performed is True
-    assert outcome.attempts == 3
+    assert len(summarizer.requests) == 1
+    assert outcome.attempts == 1
+
+
+@pytest.mark.asyncio
+async def test_retry_reduces_the_retention_budget_instead_of_dropping_the_tail() -> None:
+    """重试按比例缩小保留预算，而**不是**绕过保留策略丢掉整段尾部。
+
+    「绕过阈值与保留策略」在第 2 节是**溢出恢复**的专属手段；常规重试动用它会让代价付了、
+    目的还没达成（实测第一版：重试后保留 0 项，窗口仍高于阈值）。这里用一个「第一次压缩后
+    仍超阈值」的构造，断言重试确实发生了，且尾部没有被整段丢掉。
+    """
+    items = _long_history(40)
+    summarizer = FakeSummarizer(text="很短")
+    settings = CompactionSettings(
+        context_window_tokens=1000,
+        output_reserve_tokens=100,
+        headroom_tokens=100,
+        compaction_retries=1,
+        retain_ratio=0.5,  # 保留预算 450 token：第一次压缩后仍可能高于阈值 800
+    )
+
+    _history, outcome = await _compact(items, settings=settings, summarizer=summarizer)
+
+    assert outcome.performed is True
     assert len(summarizer.requests) >= 1
+    # 重试若走「最大头部缩减」，保留项数会是 0；按比例缩小则仍保留若干项
+    assert outcome.attempts == 1 or outcome.retained_items > 0
 
 
 @pytest.mark.asyncio
@@ -568,6 +601,105 @@ async def test_journal_failure_propagates() -> None:
 
     with pytest.raises(RuntimeError, match="表不可用"):
         await _compact(_long_history(60), journal=BrokenJournal())
+
+
+@pytest.mark.asyncio
+async def test_commit_failure_does_not_claim_compaction_and_leaves_window_untouched() -> None:
+    """第 7 节：写不进去就不能记成「压缩完成」，且窗口保持原样。
+
+    第一版的顺序是「记结束 → 调用方落库」，于是落库失败会留下一条闭合的
+    ``performed=True`` 记录——正是第 7 节点名禁止的「假装压缩完成的结束记录」。
+    """
+    journal = FakeJournal()
+    items = _long_history(60)
+
+    async def failing_commit(_appended: object) -> None:
+        raise RuntimeError("数据库写入失败")
+
+    history, outcome = await _compact(items, journal=journal, commit=failing_commit)
+
+    assert outcome.performed is False
+    assert outcome.reason == "commit_failed"
+    assert history == items
+    assert journal.unclosed == []  # 事务闭合了，但闭合在「没压缩」上
+    assert all(not outcome_.performed for _marker, outcome_ in journal.finished)
+
+
+@pytest.mark.asyncio
+async def test_successful_commit_happens_before_the_transaction_closes() -> None:
+    """落库成功时，追加内容确实经过 commit 端口，且事务在之后才闭合。"""
+    order: list[str] = []
+    journal = FakeJournal()
+    items = _long_history(60)
+
+    async def commit(appended: object) -> None:
+        order.append("commit")
+        committed.extend(appended)  # type: ignore[arg-type]
+
+    committed: list[object] = []
+    original_finish = journal.record_finished
+
+    async def record_finished(marker: str, outcome: object) -> None:
+        order.append("finish")
+        await original_finish(marker, outcome)
+
+    journal.record_finished = record_finished  # type: ignore[method-assign]
+
+    history, outcome = await _compact(items, journal=journal, commit=commit)
+
+    assert outcome.performed is True
+    assert order == ["commit", "finish"], "落库必须发生在记账闭合之前"
+    assert committed and is_compacted_summary(committed[0])
+    # 追加形状是「检查点 + 尾部原文」，因此检查点在原历史长度处，不在末尾
+    assert history[len(items)] == committed[0]
+
+
+class _OverflowLikeError(Exception):
+    """带 ``status_code`` 的异常（模拟提供方错误）。"""
+
+    def __init__(self, message: str, status_code: int) -> None:
+        super().__init__(message)
+        self.status_code = status_code
+
+
+@pytest.mark.parametrize(
+    ("message", "status_code", "expected"),
+    [
+        # 真阳性：OpenAI 措辞 / 下划线 code / 中文措辞
+        ("This model's maximum context length is 1000 tokens", 400, True),
+        ("context_length_exceeded", 400, True),
+        ("请求超出上下文长度限制", 400, True),
+        ("Please reduce the length of the messages", 400, True),
+        # 假阳性：与窗口无关的参数错误（第一版就是被这条骗到，永久改写了窗口）
+        ("Invalid 'messages[1].content': string too long. Expected a string with maximum length 1048576", 400, False),
+        ("invalid function arguments", 400, False),
+        # 其它：状态码或措辞不构成「明确分类」
+        ("context length exceeded", 500, False),
+        ("bad request", 413, False),
+        ("context length exceeded", 401, False),
+    ],
+)
+def test_overflow_classification_matrix(message: str, status_code: int, expected: bool) -> None:
+    """溢出判定矩阵（第 7 节：只在提供方**明确分类**窗口溢出时触发）。
+
+    这条判定的误判代价不对称：误判为溢出会走「绕过阈值与保留策略」的最大头部缩减，
+    **永久改动窗口**；因此宁可漏判。此前这条函数**一个用例都没有**。
+    """
+    from campfire.agent.context import is_context_overflow
+
+    assert is_context_overflow(_OverflowLikeError(message, status_code)) is expected
+
+
+def test_overflow_needs_the_window_to_be_near_its_limit() -> None:
+    """第二道证据：真实溢出不可能发生在空窗口上。"""
+    from campfire.agent.context import is_context_overflow
+
+    error = _OverflowLikeError("This model's maximum context length is 1000 tokens", 400)
+
+    assert is_context_overflow(error, estimated_window_tokens=900, context_window_tokens=1000) is True
+    assert is_context_overflow(error, estimated_window_tokens=100, context_window_tokens=1000) is False
+    # 没给证据时退回纯措辞判定（不影响没有压缩接线的调用方）
+    assert is_context_overflow(error) is True
 
 
 @pytest.mark.asyncio

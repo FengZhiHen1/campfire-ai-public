@@ -78,6 +78,7 @@ from campfire.agent.context import (
     derive_window,
     is_context_overflow,
     message_text,
+    window_tokens,
 )
 from campfire.agent.limits import AGENT_RUN_TIMEOUT_SECONDS
 from campfire.agent.model import ModelBinding, ModelFailureReason, classify_model_failure
@@ -185,9 +186,10 @@ class CompactionWiring:
 class _ContextOverflow(Exception):
     """提供方明确报了上下文溢出（内部信号，用于触发一次最大头部缩减后重试）。"""
 
-    def __init__(self, detail: str) -> None:
-        """记录面向排障的说明（只带类型级信息）。"""
+    def __init__(self, detail: str, usage: RunUsage) -> None:
+        """带上到溢出为止已经产生的用量：重试不能让那部分 token 从记录里消失。"""
         self.detail = detail
+        self.usage = usage
         super().__init__(detail)
 
 
@@ -259,11 +261,9 @@ class AgentRunner:
             return
 
         compactions: list[CompactionFacts] = []
-        history, facts = await self._compact_if_needed(session, history, request)
+        history, facts = await self._compact_before_run(session, history, request)
         if facts is not None:
             compactions.append(facts)
-        if facts is not None and facts.performed:
-            yield ProgressEvent(message="上下文压力偏高，已压缩较早的历史。")
 
         scope = self._resolve_scope(request)
         batch = InjectionBatch(
@@ -301,6 +301,10 @@ class AgentRunner:
         )
         for record in recorder.issued:
             yield CitationEvent(citation=record)
+        if facts is not None and facts.performed:
+            # 放在 run_started **之后**：事件流以 run_started 为首项是第 7 节的形状约定，
+            # 压缩提示不该抢在它前面（实测第一版就是 ProgressEvent 排第一）。
+            yield ProgressEvent(message="上下文压力偏高，已压缩较早的历史。")
 
         buffer: list[RunEvent] = []
         dispatcher = ToolDispatcher(
@@ -335,8 +339,20 @@ class AgentRunner:
             buffer=buffer,
             started=started,
             compactions=compactions,
+            overflow_evidence=self._overflow_evidence(history, request),
         ):
             yield event
+
+    def _overflow_evidence(self, history: Sequence[TResponseInputItem], request: RunRequest) -> tuple[int, int] | None:
+        """给溢出判定准备窗口证据；没接线压缩时返回 ``None``（退回纯措辞判定）。
+
+        只有接线了压缩才知道窗口上限在哪，也只有那时才存在「最大头部缩减」这条破坏性路径。
+        """
+        wiring = self._compaction
+        if wiring is None:
+            return None
+        estimate = window_tokens(history_from(history), extra_text=request.instructions)
+        return estimate, wiring.settings.context_window_tokens
 
     async def _execute(
         self,
@@ -351,6 +367,7 @@ class AgentRunner:
         buffer: list[RunEvent],
         started: float,
         compactions: list[CompactionFacts],
+        overflow_evidence: tuple[int, int] | None = None,
     ) -> AsyncIterator[RunEvent]:
         """跑 SDK 并按第 7 节处理上下文溢出恢复，直到结束或明确失败。
 
@@ -363,6 +380,8 @@ class AgentRunner:
         （阈值约 80 万 token），因此接受这个代价并在此标注。
         """
         overflow_attempts = 0
+        # 跨尝试累加的用量：第一次尝试的 token 不能因为溢出重试就消失（第 8 节要记 token）。
+        carried = RunUsage()
         while True:
             # max_turns=None：基座第 2 节不设步数上限，SDK 默认的 10 轮就是一条步数上限。
             result = Runner.run_streamed(
@@ -379,17 +398,20 @@ class AgentRunner:
                     buffer=buffer,
                     started=started,
                     compactions=tuple(compactions),
+                    carried=carried,
+                    overflow_evidence=overflow_evidence,
                 ):
                     yield event
                 return
             except _ContextOverflow as overflow:
+                carried = carried + overflow.usage
                 wiring = self._compaction
                 if wiring is None or overflow_attempts >= wiring.settings.max_overflow_retries:
                     yield _failure(
                         "context_overflow",
                         overflow.detail,
                         recorder,
-                        RunUsage(),
+                        carried,
                         started,
                         None,
                         compactions=tuple(compactions),
@@ -397,12 +419,7 @@ class AgentRunner:
                     return
 
                 overflow_attempts += 1
-                history, facts = await self._compact_if_needed(
-                    session,
-                    history,
-                    request,
-                    force_max_reduction=True,
-                )
+                history, facts = await self._compact_before_run(session, history, request, force_max_reduction=True)
                 if facts is not None:
                     compactions.append(facts)
                 if facts is None or not facts.performed:
@@ -413,13 +430,56 @@ class AgentRunner:
                         "context_overflow",
                         f"{overflow.detail}；最大头部缩减未能降低窗口（{reason}）",
                         recorder,
-                        RunUsage(),
+                        carried,
                         started,
                         None,
                         compactions=tuple(compactions),
                     )
                     return
                 yield ProgressEvent(message="提供方报了上下文溢出，已做最大头部缩减，重试本次运行。")
+
+    async def _compact_before_run(
+        self,
+        session: Session,
+        history: list[TResponseInputItem],
+        request: RunRequest,
+        *,
+        force_max_reduction: bool = False,
+    ) -> tuple[list[TResponseInputItem], CompactionFacts | None]:
+        """运行前压缩，并把**任何**失败如实转成降级事实（绝不裸异常冒给调用方）。
+
+        为什么在这里兜住：``compact`` 会经过记账端口与会话写入两处外部 I/O，任一失败若冒到
+        调用方，调用方拿到的是裸异常而不是 ``run_failed`` 事件（基座第 9 节要求会话写入失败
+        必须表现为「本次运行明确失败」）。这里把所有异常收成一个带原因的降级事实：
+
+        - **窗口未被改写**（机制保证只在落库成功后才算压缩完成），对话完好；
+        - 因此继续跑一次**未压缩**的运行，比因为观测/记账表不可用就让使用者答不了话更合理；
+        - 降级必须可见：记 warning，且 ``CompactionFacts.reason`` 会进运行记录。
+
+        与基座第 9 节「会话写入失败 → 本次运行明确失败」的关系：那一条针对的是**对话本身**
+        没落库（下面由 SDK 的会话写入异常照旧转成 ``session_write_failed``）；压缩的追加写
+        失败不会留下半截状态，故按降级处理。这是明确的设计取舍，登记在压缩策略「已知偏差」。
+        """
+        try:
+            return await self._compact_if_needed(session, history, request, force_max_reduction=force_max_reduction)
+        except Exception as exc:  # noqa: BLE001 —— 压缩的任何失败都不得让运行失败
+            logger.warning("压缩未执行 session=%s error=%s", request.session_id, type(exc).__name__)
+            return history, CompactionFacts(
+                performed=False,
+                reason="journal_failed",
+                detail=f"压缩事务不可用（{type(exc).__name__}）：窗口未改动",
+                window_tokens_before=0,
+                window_tokens_after=0,
+                released_tokens=0,
+                compacted_items=0,
+                retained_items=0,
+                attempts=0,
+                failed_attempts=1,
+                previous_summary_merged=False,
+                summary_input_tokens=0,
+                summary_output_tokens=0,
+                summary_elapsed_seconds=0.0,
+            )
 
     async def _compact_if_needed(
         self,
@@ -429,14 +489,18 @@ class AgentRunner:
         *,
         force_max_reduction: bool = False,
     ) -> tuple[list[TResponseInputItem], CompactionFacts | None]:
-        """运行前（或溢出恢复时）压缩：按需压缩并把追加内容写回会话。
+        """按需压缩；追加内容由机制通过 ``commit`` 端口在本事务内写回会话。
 
-        压缩发生在**派生窗口之前**（压缩策略第 2 节的触发时机）。把追加内容写回会话是这里的
-        职责而不是机制的：机制只返回「原历史 + 追加」，落库仍是会话的事（基座第 2 节单真源）。
+        压缩发生在**派生窗口之前**（压缩策略第 2 节的触发时机）。落库交给机制而不是这里，
+        是为了让「记结束」排在落库之后（第 7 节：不留假装压缩完成的结束记录）。
         """
         wiring = self._compaction
         if wiring is None:
             return history, None
+
+        async def commit(appended: Sequence[Item]) -> None:
+            """把检查点 + 尾部原文写回会话（写不进去就抛，由机制记成 commit_failed）。"""
+            await session.add_items(_as_items(appended))
 
         updated, outcome = await compact(
             history_from(history),
@@ -444,24 +508,26 @@ class AgentRunner:
             summarizer=wiring.summarizer,
             instruction=wiring.instruction,
             journal=wiring.journal,
+            system_prompt=request.instructions,
+            commit=commit,
             manual=wiring.manual,
             force_max_reduction=force_max_reduction,
-            extra_text=request.instructions,
         )
         facts = compaction_facts(outcome)
+        if outcome.reason in ("below_threshold", "auto_disabled"):
+            # 触发条件没到：这不构成一次「压缩」，不该进记录（否则每一次运行都会留下一条
+            # below_threshold，`compactions` 的长度就不再表示「压缩发生过几次」）。
+            return history, None
         if not outcome.performed:
-            if outcome.reason not in ("below_threshold", "auto_disabled", "no_safe_range"):
-                # 越过了阈值却没能压缩：这是需要被看见的降级，不能静默。
-                logger.warning(
-                    "压缩未执行 session=%s reason=%s detail=%s",
-                    request.session_id,
-                    outcome.reason,
-                    outcome.detail,
-                )
+            # 触发条件到了却没能压缩：这是需要被看见的降级，不能静默。
+            logger.warning(
+                "压缩未执行 session=%s reason=%s detail=%s",
+                request.session_id,
+                outcome.reason,
+                outcome.detail,
+            )
             return history, facts
-
         appended = _as_items(updated[len(history) :])
-        await session.add_items(appended)
         return [*history, *appended], facts
 
     async def _stream(
@@ -472,11 +538,17 @@ class AgentRunner:
         buffer: list[RunEvent],
         started: float,
         compactions: tuple[CompactionFacts, ...] = (),
+        carried: RunUsage | None = None,
+        overflow_evidence: tuple[int, int] | None = None,
     ) -> AsyncIterator[RunEvent]:
         """消费 SDK 的事件流，翻译成基座事件，直到结束、触顶或失败。
 
         与 :meth:`run` 分开是为了让「准备」和「流式消费」各自可读：前者是装配与注入，
         后者是事件循环与失败处置，混在一个函数里既难读也难改。
+
+        ``carried`` 是**上一次尝试**（溢出重试前）已产生的用量，最终用量是两者之和。
+        ``overflow_evidence`` 是 ``(窗口估算 token, 窗口上限)``：判定「提供方是不是真的报了
+        上下文溢出」的第二道证据，没有它就只能靠错误文本措辞（第 7 节要求「明确分类」）。
 
         Raises:
             asyncio.CancelledError: 消费者取消时原样抛出（第 9 节：立即停止调用）；
@@ -485,7 +557,7 @@ class AgentRunner:
                 重试（压缩策略第 7 节），因此不在这里变成 ``run_failed``。
         """
         run_id = recorder.run_id
-        usage = RunUsage()
+        usage = carried if carried is not None else RunUsage()
         deadline = started + self._timeout_seconds
         tracker = _ToolCallTracker()
 
@@ -520,10 +592,10 @@ class AgentRunner:
             _cancel_quietly(result, run_id)
             raise
         except Exception as exc:  # noqa: BLE001 —— 任何未归类异常都要变成带码的失败
-            if is_context_overflow(exc):
+            if _is_overflow(exc, overflow_evidence):
                 # 溢出恢复的入口：先停掉这次运行，再交给 run() 决定能否压缩后重试。
                 _cancel_quietly(result, run_id)
-                raise _ContextOverflow(f"提供方报了上下文溢出（{type(exc).__name__}）") from exc
+                raise _ContextOverflow(f"提供方报了上下文溢出（{type(exc).__name__}）", usage) from exc
             logger.warning("运行失败 run=%s error=%s", run_id, type(exc).__name__)
             for item in tracker.flush(buffer):
                 yield item
@@ -750,6 +822,22 @@ def history_from(items: Sequence[TResponseInputItem]) -> list[Item]:
 def _as_items(items: Sequence[Item]) -> list[TResponseInputItem]:
     """把基座项形状交回 SDK（写入会话时用）。"""
     return [dict(item) for item in items]  # type: ignore[list-item]  # 运行时形状一致，TypedDict 无法从 Mapping 静态推导
+
+
+def _is_overflow(error: BaseException, evidence: tuple[int, int] | None) -> bool:
+    """带窗口证据的溢出判定；没有证据时退回纯措辞判定。
+
+    证据是 ``(窗口估算 token, 窗口上限)``：真实溢出不可能发生在空会话上，因此「窗口远未接近
+    上限」时宁可漏判（退回常规失败），也不走那条会永久改写窗口的破坏性路径。
+    """
+    if evidence is None:
+        return is_context_overflow(error)
+    estimate, window = evidence
+    return is_context_overflow(
+        error,
+        estimated_window_tokens=estimate,
+        context_window_tokens=window,
+    )
 
 
 def compaction_facts(outcome: CompactionOutcome) -> CompactionFacts:
