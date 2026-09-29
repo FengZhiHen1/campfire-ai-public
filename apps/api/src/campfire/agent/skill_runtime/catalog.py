@@ -22,10 +22,15 @@ from .skill import Skill
 # 2026-09-29 定：目录预算上限 4000 token。
 CATALOG_BUDGET_TOKENS = 4000
 
-# ASCII 的经验比例基准：约 4 字符 1 token（只用于散文；稀疏 ASCII 由词段数兜底）。
+# ASCII 的经验比例基准：约 4 字符 1 token（只用于散文）。
 _ASCII_CHARS_PER_TOKEN = 4
-# 非 ASCII 且非 CJK 的字符（emoji、符号）按 2 token/字符计。
-_WIDE_NON_CJK_TOKENS = 2
+# ASCII 词段的权重：BPE 会把长词切成多段，按段数乘 1.5 才不至于低估。
+_ASCII_RUN_WEIGHT = 3 / 2
+# CJK 每字符 1.25 token：实测中文字符在 cl100k 下约 1.0–1.25 token/字符，
+# 取偏高一侧，让目录预算宁可早失败也不溢出。
+_CJK_WEIGHT = 5 / 4
+# 非 ASCII 且非 CJK 的字符（emoji、符号）按 3 token/字符计：实测 emoji 为 2，取 3 留余量。
+_WIDE_NON_CJK_TOKENS = 3
 
 
 def _is_cjk(char: str) -> bool:
@@ -40,26 +45,35 @@ def _is_cjk(char: str) -> bool:
 
 
 def estimate_tokens(text: str) -> int:
-    """估算一段文本占用的 token 数。**取值刻意取保守上界。**
+    """估算一段文本占用的 token 数。**它是估算，不是上界。**
 
     这是**估算不是精确分词**：DeepSeek 的分词器不在本仓库依赖内（技术栈设计只声明
     全应用单一模型，未引入 tokenizer）。规则：
 
-    - ASCII：``max(字符数 / 4, 非空白连续段数)``——后者兜住稀疏 ASCII（``a a a``
-      这类每个词都自成 token 的形态），只按 4 字符折算会低估一半；
-    - 非 ASCII 且非 CJK（emoji、符号）：2 token/字符；
-    - CJK：1 token/字符。
+    - ASCII：``max(字符数 / 4, 非空白连续段数 × 1.5)``；
+    - 非 ASCII 且非 CJK（emoji、符号）：3 token/字符；
+    - CJK：1.25 token/字符。
 
-    这三条不是猜的。初版只写「ASCII/4 + 非 ASCII 各 1 token」并声称「宁可高估」，
-    该说法被一次对抗性审查用代理分词器（tiktoken ``cl100k_base``）实测证伪：
-    稀疏 ASCII 与 emoji 都低估到 0.5 倍，而目录预算的作用正是防挤占上下文，
-    低估会让 4000 token 这条上限形同虚设。CJK 维持 1 token/字符，是因为实测
-    0.88 token/字符，再乘 2 会把中文目录的可用容量砍掉一半。
+    权重不是猜的，而是按代理分词器（``tiktoken`` 的 ``cl100k_base``）实测校准的
+    （**代理**：它不是 DeepSeek 的分词器，只用于判断低估的方向与量级）：
 
-    **代理结论的边界**：上述倍数来自 ``cl100k_base``，不是 DeepSeek 的分词器；
-    「稀疏 ASCII 与 emoji 被低估」的方向对任何带空格前缀词表的 BPE 都成立，
-    具体倍数未在真实模型上验证。需要精确值时由调用方注入真正的计数器
-    （见 :func:`render_catalog` 的 ``count_tokens``）。
+    | 样例 | 估算 | 实测 | 比值 |
+    |---|---|---|---|
+    | 50 条 name+description 的目录（真实消费形状） | 1733 | 1558 | 1.11 |
+    | 中文散文（含标点） | 525 | 400 | 1.31 |
+    | 中英混排句子 | 475 | 380 | 1.25 |
+    | 英文散文（``the quick brown fox``） | 41 | 28 | 1.46 |
+    | 稀疏 ASCII（``a a a…`` ×200） | 300 | 201 | 1.49 |
+    | emoji ×100 | 300 | 200 | 1.50 |
+    | **标点密集的中英混排（含文件路径）** | 343 | 360 | **0.95** |
+
+    最后一行是它**不是上界**的证据：ASCII 标点密集的片段（如 ``references/gates.md``）
+    在 BPE 里按字符切得更碎，估算会偏低约 5%。消费这个估算的只有技能目录预算，而目录
+    的形状恰好是第一行（名字 + 中文描述 + 少量标签，比值 1.11），因此对
+    :data:`CATALOG_BUDGET_TOKENS` 这条预算是够用的保守值。
+
+    需要精确值时由调用方注入真正的计数器（见 :func:`render_catalog` 的 ``count_tokens``，
+    技术栈设计里 LlamaIndex 的依赖本身会带来分词器）。
     """
     ascii_chars = 0
     ascii_runs = 0
@@ -82,8 +96,8 @@ def estimate_tokens(text: str) -> int:
             else:
                 wide_chars += 1
 
-    ascii_tokens = max(math.ceil(ascii_chars / _ASCII_CHARS_PER_TOKEN), ascii_runs)
-    return ascii_tokens + cjk_chars + wide_chars * _WIDE_NON_CJK_TOKENS
+    ascii_tokens = max(math.ceil(ascii_chars / _ASCII_CHARS_PER_TOKEN), math.ceil(ascii_runs * _ASCII_RUN_WEIGHT))
+    return ascii_tokens + math.ceil(cjk_chars * _CJK_WEIGHT) + wide_chars * _WIDE_NON_CJK_TOKENS
 
 
 def visible_to(skill: Skill, surface: str | None) -> bool:
