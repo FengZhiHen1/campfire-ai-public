@@ -33,7 +33,7 @@ from .errors import (
 from .registry import SKILL_FILE_NAME, SkillRegistry, SkillWarning
 from .resources import MAX_RESOURCE_BYTES, RESOURCE_DIRECTORIES, SkillResource, list_resources, read_resource
 from .script_runner import ScriptRunner
-from .skill import NAME_PATTERN, Skill, SkillMetadata
+from .skill import NAME_PATTERN, TOOL_NAME_PATTERN, Skill, SkillMetadata
 
 __all__ = [
     "CATALOG_BUDGET_TOKENS",
@@ -41,6 +41,7 @@ __all__ = [
     "NAME_PATTERN",
     "RESOURCE_DIRECTORIES",
     "SKILL_FILE_NAME",
+    "TOOL_NAME_PATTERN",
     "ScriptRunner",
     "Skill",
     "SkillCatalogOverflowError",
