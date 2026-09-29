@@ -23,11 +23,12 @@ from sqlalchemy import text as sql_text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
+from campfire.core.config import EMBEDDING_DIM
 from campfire.core.db import Base, Vector, new_uuid
-from campfire.modules.library.embedding import EMBEDDING_DIM
 
-#: 嵌入维度常量由 :mod:`campfire.modules.library.embedding` 拥有（它与模型绑定，
-#: 固定不可配置）；此处只转出，供迁移与调用方从本模块取用。
+#: 嵌入维度常量由 :mod:`campfire.core.config` 拥有（它与嵌入模型名同处唯一配置点，
+#: 因为检索链与记忆侧必须共用同一维度，而 `modules/*` 之间不得互相 import）；
+#: 此处只转出，供迁移与调用方从本模块取用。
 __all__ = [
     "EMBEDDING_DIM",
     "LIBRARY_CASE",
