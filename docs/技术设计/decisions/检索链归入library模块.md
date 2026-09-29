@@ -34,7 +34,7 @@
 - [资料与案例检索](../technical-details/资料与案例检索.md)：权威范围与第 2 节（合并规则的复述收敛到 RAG 策略）。
 - [search_knowledge](../面/consult/tools/search_knowledge.md) 与 [search_cases](../面/consult/tools/search_cases.md)：删除对他人权威事实的复述。
 - [README](../../README.md)：文档地图新增本目录。
-- [设计待办](../../TODO.md)：`TECH-19` 影响面中的模块名。
+- [设计待办](../../TODO.md)：`TECH-20`（嵌入模型实测）、`TECH-21`（摄取流水线异步形状）。
 - 代码与仓库说明：`apps/api/src/campfire/core/retrieval/` 删除；`core/__init__.py`、`campfire/__init__.py`、`modules/library/__init__.py`、`cli/__init__.py` 与仓库根 `AGENTS.md` 的目录说明同步。
 
 ## 重访条件
