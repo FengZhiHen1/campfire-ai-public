@@ -20,19 +20,17 @@ authorization: string # 可选，按授权状态过滤
 
 ## 3. 返回
 
-案例结果数组，字段与 `search_knowledge` 一致，**并额外必须带 `authorization`**（该案例的授权状态）与案例专属字段：`source_type`、`evidence_level`、`review_status`、`interview_at`、`makes_claims_high_risk`、`inferred_fields`（形状与语义见[资料与案例检索](../../../technical-details/资料与案例检索.md)第 3 节，权威归该文）。
+返回案例结果数组：字段与 `search_knowledge` 一致，另带 `authorization`（该案例的授权状态）与案例专属字段——清单、形状与语义由[资料与案例检索](../../../technical-details/资料与案例检索.md)第 3 节拥有，本文不重复枚举。
 
-## 4. 硬约束（实现层）
+## 4. 硬约束（工具侧）
 
-- **只查案例库**。
-- **真实案例与虚构样例必须可辨**（`RQ-KB-02`、`AC-06`）：`status` 与 `authorization` 必须随结果返回，模型引用时**必须**说明它是真实案例还是虚构样例。
-- **不得把虚构样例当真实经验呈现**——包括不得用"有家长遇到过"这类措辞包装虚构样例。
-- **已撤下的案例不返回**（`RQ-KB-04`）。
-- 中文查询约束同 `search_knowledge`。
+- **只查案例库**，不混入专业资料。
+- **结果侧约束不在本文重复定义**：`status` 与 `authorization` 必须随结果返回、真实案例与虚构样例必须可辨（[资料与案例检索](../../../technical-details/资料与案例检索.md)第 3 节、[公共案例库](../../../technical-details/公共案例库.md)第 8 节）；撤下即不返回（[资料与案例检索](../../../technical-details/资料与案例检索.md)第 4 节）；中文查询约束与合并规则见 [RAG 策略](../../../technical-details/RAG策略.md)第 3.1、4 节。
+- **呈现纪律**（不归本文拥有）：模型引用时说明案例性质、不得把虚构样例包装成真实经验，见[技能设计](../../../technical-details/技能设计.md)下的各 skill。
 
 ## 5. 失败语义
 
-同 `search_knowledge`：单路失败则降级并标注；两路都失败时明确失败，**不得**让模型以为"没有类似案例"。
+不归本文拥有——与 `search_knowledge` 同为检索链的失败语义，见[资料与案例检索](../../../technical-details/资料与案例检索.md)第 5 节。
 
 ## 6. 验证方式
 

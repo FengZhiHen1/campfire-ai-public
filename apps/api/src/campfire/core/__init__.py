@@ -1,4 +1,4 @@
-"""跨切能力：config、db、cache、auth、authz、jobs、retrieval。
+"""跨切能力：config、db、cache、auth、authz、jobs。
 
 归属见 docs/项目结构设计.md 第 2 节。依赖白名单（第 7 节）：``core/*`` 只允许
 依赖上游库与 ``core/*`` 内同级，**禁止依赖 ``agent/*``、``surfaces/*``、
