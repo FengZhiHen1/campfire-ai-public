@@ -61,8 +61,8 @@ class Settings(BaseSettings):
     model_retry_initial_delay_seconds: float = Field(default=1.0, ge=0)
     model_retry_max_delay_seconds: float = Field(default=8.0, ge=0)
     # --- 压缩阈值算术的两个输入（见压缩策略第 2、10 节）---
-    # W：模型上下文上限。已核实 deepseek-v4.1-flash 为 1M（压缩策略第 2 节）。
-    model_context_window_tokens: int = Field(default=1_000_000, gt=0)
+    # W：模型上下文上限。**2026-09-29 经用户确认为 1024k = 1,048,576**（压缩策略第 2 节）。
+    model_context_window_tokens: int = Field(default=1_048_576, gt=0)
     # O：为输出预留的额度，代入阈值公式 floor(min(W×0.8, W−O−headroom))。
     # **注意**：基座第 2 节不设 token 上限，因此我们**不**在请求上写 max_tokens——
     # 这里的 O 是预算假设（压缩策略第 2 节按 8192 代入），不是截断值。
