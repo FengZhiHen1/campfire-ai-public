@@ -56,6 +56,13 @@ class Settings(BaseSettings):
     model_max_retries: int = 2
     model_retry_initial_delay_seconds: float = 1.0
     model_retry_max_delay_seconds: float = 8.0
+    # --- 压缩阈值算术的两个输入（见压缩策略第 2、10 节）---
+    # W：模型上下文上限。已核实 deepseek-v4.1-flash 为 1M（压缩策略第 2 节）。
+    model_context_window_tokens: int = 1_000_000
+    # O：为输出预留的额度，代入阈值公式 floor(min(W×0.8, W−O−headroom))。
+    # **注意**：基座第 2 节不设 token 上限，因此我们**不**在请求上写 max_tokens——
+    # 这里的 O 是预算假设（压缩策略第 2 节按 8192 代入），不是截断值。
+    model_output_reserve_tokens: int = 8192
 
     # --- 认证（SuperTokens core 容器）---
     # 会话校验在 Python SDK 内完成、不经过 core；core 只在注册、登录、
