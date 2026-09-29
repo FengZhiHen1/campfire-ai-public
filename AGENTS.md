@@ -1,11 +1,11 @@
 # Campfire-AI — 篝火智答
 
-> 面向孤独症人士及其支持网络的情境支持平台：用户可先取得已审阅的公开帮助，再围绕一件事核对 AI 草案、自主保存私人事项；经过合法核验与逐项授权后才可能共享记录、计划和交接。
-> 当前仓库**只有设计，没有实现**：`docs/` 是唯一有效的设计来源；旧实现与旧设计已整体移入 `archive/`，仅作参考，不构成任何当前依据。
+> **当前没有有效的设计基线，也没有实现代码。** v3.0 设计（需求、项目级定调、技术细节、Web 视觉契约与页面设计）已于 2026-09-29 整体移入 `archive/docs-v3设计/`；更早的实现与设计见 `archive/` 其余目录。二者仅作参考，不构成任何当前依据。
+> 新设计正在逐项确认中：产品定位、需求与技术栈均未定。确认前不要依据任何归档文档开始实现，也不要把归档内容当作当前目标。
 
 ## Stack
 
-目标选型（尚未落地，详见 `docs/技术栈设计.md`）：
+**待确认**：新设计尚未确认技术选型。下列是上一轮 v3.0 基线的选型（原文已归档为 `archive/docs-v3设计/技术栈设计.md`），仅作讨论参考，不是当前约束：
 
 - Language: Python ≥3.12, TypeScript ~6.0
 - Backend: FastAPI + Pydantic 2，uv 工作空间；独立 Worker
@@ -29,13 +29,13 @@ docker compose up -d          # 仅基础设施（PG + Redis + MinIO），此命
 ## Architecture
 
 ```
-docs/               — 唯一有效设计（需求 / 技术设计 / design 视觉契约 / TODO）
-archive/            — 旧实现与旧设计，废弃物，仅供参考
+docs/               — 重建中的设计根：当前只有 README.md 与 TODO.md（待办与可扩展方向）
+archive/            — 已归档实现与设计（含 `docs-v3设计/`），废弃物，仅供参考
 docker-compose.yml  — 仅本地基础设施编排
 AGENTS.md           — 本文件
 ```
 
-新目标结构（未落地）见 `docs/项目结构设计.md`：后端模块 `auth`、`public_support`、`assist`、`matters`、`spaces`、`records`、`handoffs`、`plans`、`evidence`、`practice`；前端沿用 domain/application/viewModel/view/infrastructure 单向五层。工程纪律见 `docs/技术设计/technical-details/工程约定.md`。
+v3.0 的目标目录结构（后端模块 `auth`、`public_support`、`assist`、`matters`、`spaces`、`records`、`handoffs`、`plans`、`evidence`、`practice`；前端 domain/application/viewModel/view/infrastructure 单向五层）已随基线归档，仅作历史参考，不是新设计的模块边界。
 
 ## Conventions
 
@@ -47,7 +47,7 @@ AGENTS.md           — 本文件
 
 ### 目标重构与迁移
 
-- 以 `docs/需求/`、`docs/技术栈设计.md`、`docs/项目结构设计.md`、`docs/技术设计/technical-details/` 与其中的 `迁移验证与发布.md` 为目标；`archive/` 只用于辨认遗留实现与历史决策。
+- 新设计确认前不实施业务代码改动；`archive/` 只用于辨认遗留实现与历史决策。
 - 先盘点实际数据与引用、核实可恢复备份及影响范围，再分阶段建设；数据状态未知时不得以旧 ADR 的“无真实用户数据”推断可以清库。
 - ❌ 禁止：从 `archive/` 复制权限模型、四层档案、行为桶或 `/api/v1` SSE 契约到新实现。
 - ❌ 禁止：执行归档 `scripts/` 中的部署/重建脚本或 `docker compose down -v`；授权撤销与条目停用不得靠异步清理充当即时安全边界。
@@ -74,7 +74,7 @@ AGENTS.md           — 本文件
 
 ### 接口与契约
 
-- 以 `docs/技术设计/technical-details/接口契约.md` 的 `/api/v2` 为目标；旧 `/api/v1` 已归档
+- 新设计的接口契约未定；v3.0 的 `/api/v2` 契约已随基线归档（`archive/docs-v3设计/技术设计/technical-details/接口契约.md`），不得直接沿用
 - 修改 API 接口、数据库 schema、公共函数签名前，先确认影响范围
 - ❌ 禁止：在未确认影响范围的情况下破坏性修改已有接口
 
@@ -97,18 +97,12 @@ AGENTS.md           — 本文件
 
 ## Design Docs
 
-设计或实施前按顺序阅读：
-1. `docs/README.md` 与 `docs/需求/功能需求与验收.md`（业务/验收）；
-2. `docs/技术栈设计.md` 与 `docs/项目结构设计.md`（项目级定调）；
-3. `docs/技术设计/technical-details/` 中的机制文档、`工程约定.md` 与 `迁移验证与发布.md`（目标结构、接口、工程纪律、授权与发布门槛）；
-4. `docs/技术设计/decisions/` 与 `docs/需求/decisions/`（重大取舍与重访条件）；
-5. 涉及 Web 页面时读 `docs/design/README.md`（含 `decisions/` 中的视觉底座决策）。
+**当前只有重建期的登记文件**：`docs/README.md` 与 `docs/TODO.md`（可扩展方向、已移出范围、发布前置、待确认事项）。v3.0 基线已归档，新设计尚未形成需求或技术基线。
 
-目录按 design-spec-workshop 的标准回退结构组织：两份定调文档在 `docs/` 顶层，技术细节在 `technical-details/`，决策在各自 `decisions/` 下。枚举与错误码取值统一见 `docs/技术设计/technical-details/枚举与错误码.md`，不得在各文档自行扩展。
-
+- 新设计讨论期间的结论只保留在会话中；未确认内容不得写入权威文档，也不得据此开始实现。
 - ❌ 禁止：把 `archive/` 中的“有效”“目标态”等字样当作新目标实现要求。
-- ❌ 禁止：未读相关设计文档就开始实现，或发现设计与目标不一致时静默沿用旧行为。
-- 新增/修改/废弃能力后同步维护拥有该事实的目标文档。
+- ❌ 禁止：未形成设计基线就开始实现，或发现设计不一致时静默沿用旧行为。
+- 新设计确认后，按 design-spec-workshop 的标准回退结构在 `docs/` 建立文档并更新本节。
 
 ## Behavioral Guidelines
 
@@ -127,4 +121,4 @@ AGENTS.md           — 本文件
 - [ ] 若更改授权、数据或 API，已验证影响范围与回滚门槛；对应文档已同步。
 - [ ] 如需 commit，只包含本次任务文件，中文信息说明做什么及原因；确认未提交密钥或私钥。
 
-<!-- Last updated: 2026-09-27 -->
+<!-- Last updated: 2026-09-29 -->
