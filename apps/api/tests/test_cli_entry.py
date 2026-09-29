@@ -1,21 +1,49 @@
-"""本地摄取入口的诚实失败语义。
+"""本地摄取入口的命令行契约。
 
-设计（RAG 策略第 7 节）把入口形态定成 ``python -m campfire.cli ingest <路径>``。
-摄取流水线尚未实现，本组用例锁住两件事：
+设计（RAG 策略第 7 节）把入口形态定成 ``python -m campfire.cli ingest <路径>``，
+且明确「不暴露成服务端点」。本组用例锁住入口的命令行行为——**不触网、不连库**：
 
-1. 入口真的接好了（能通过 ``-m`` 跑到 ``main()``）；
-2. 它**不假装成功**——退出码非 0，且说明缺什么。
+1. 无子命令时打印用法并以退出码 2 结束（不是静默成功）；
+2. 参数缺失时 argparse 报错、退出码非 0；
+3. 路径不存在时**明确失败**（退出码 1），不假装成功；
+4. 入口能真正通过 ``-m`` 跑到 ``main()``。
 """
+
+from __future__ import annotations
 
 import os
 import subprocess
 import sys
 
+import pytest
+
 from campfire.cli.__main__ import main
 
 
-def test_cli_entry_returns_failure_code_instead_of_pretending_success() -> None:
-    assert main() == 2
+def test_no_subcommand_prints_usage_and_exits_two() -> None:
+    """无子命令：打印用法、退出码 2（形同虚设的入口最危险）。"""
+    assert main([]) == 2
+
+
+def test_ingest_requires_source_and_scope() -> None:
+    """缺 --source/--scope 时 argparse 直接拒绝。
+
+    这两个参数是必填的：缺来源的条目不进入检索（不变量），缺适用范围的输出
+    无法说明局限（`RQ-CON-03`）。
+    """
+    with pytest.raises(SystemExit) as excinfo:
+        main(["ingest", "some.md"])
+
+    assert excinfo.value.code != 0
+
+
+def test_ingest_missing_file_fails_loudly(tmp_path: object) -> None:
+    """路径不存在 → 退出码 1，且错误信息里有路径（不静默成功）。"""
+    missing = "definitely-not-here.md"
+
+    code = main(["ingest", missing, "--source", "测试出处", "--scope", "测试范围"])
+
+    assert code == 1
 
 
 def test_cli_module_is_runnable_via_dash_m() -> None:
@@ -35,4 +63,4 @@ def test_cli_module_is_runnable_via_dash_m() -> None:
     )
 
     assert completed.returncode == 2
-    assert "尚未实现" in completed.stderr
+    assert "ingest" in completed.stderr
