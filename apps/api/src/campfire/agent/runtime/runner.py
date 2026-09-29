@@ -78,7 +78,6 @@ from campfire.agent.context import (
     derive_window,
     is_context_overflow,
     message_text,
-    window_tokens,
 )
 from campfire.agent.limits import AGENT_RUN_TIMEOUT_SECONDS
 from campfire.agent.model import ModelBinding, ModelFailureReason, classify_model_failure
@@ -92,6 +91,7 @@ from .events import (
     CitationEvent,
     CompactionFacts,
     ProgressEvent,
+    RunEndReason,
     RunEvent,
     RunFailedEvent,
     RunFailureCode,
@@ -149,8 +149,8 @@ class RunRequest:
         Raises:
             RuntimeAssemblyError: 会话标识为空，或静态提示为空。
         """
-        if not self.session_id:
-            raise RuntimeAssemblyError("RunRequest.session_id 不能为空")
+        if not self.session_id.strip():
+            raise RuntimeAssemblyError("RunRequest.session_id 不能为空（纯空白同样不能定位对话）")
         if not self.instructions.strip():
             raise RuntimeAssemblyError("RunRequest.instructions 不能为空：模型需要静态系统提示")
 
@@ -265,13 +265,12 @@ class AgentRunner:
         if facts is not None:
             compactions.append(facts)
 
-        scope = self._resolve_scope(request)
-        batch = InjectionBatch(
-            [*self._pending_injections(history, request, scope), *request.injections.items],
-            request.injections.unavailable,
-        )
-
         try:
+            scope = self._resolve_scope(request)
+            batch = InjectionBatch(
+                [*self._pending_injections(history, request, scope), *request.injections.items],
+                request.injections.unavailable,
+            )
             rendered = await batch.render(recorder)
         except InjectionRenderError as exc:
             # 索引里可能已有记录而窗口里没有：不得当作「没有注入」继续。
@@ -279,6 +278,20 @@ class AgentRunner:
             yield _failure(
                 "injection_failed",
                 f"注入渲染失败（{type(exc).__name__}）",
+                recorder,
+                RunUsage(),
+                started,
+                None,
+            )
+            return
+        except Exception as exc:  # noqa: BLE001 —— 注入侧的准备失败也是「本次运行明确失败」
+            # 实测：技能目录超预算（``SkillCatalogOverflowError``）会从这里裸冒出去——0 次模型
+            # 请求、没有 ``run_failed``，调用方只能看到异常。注入侧的一切准备失败都归
+            # ``injection_failed``（基座第 4 节：注入是基座的职责，失败要说清是它）。
+            logger.warning("注入准备失败 run=%s error=%s", run_id, type(exc).__name__)
+            yield _failure(
+                "injection_failed",
+                f"注入准备失败（{type(exc).__name__}）",
                 recorder,
                 RunUsage(),
                 started,
@@ -339,20 +352,8 @@ class AgentRunner:
             buffer=buffer,
             started=started,
             compactions=compactions,
-            overflow_evidence=self._overflow_evidence(history, request),
         ):
             yield event
-
-    def _overflow_evidence(self, history: Sequence[TResponseInputItem], request: RunRequest) -> tuple[int, int] | None:
-        """给溢出判定准备窗口证据；没接线压缩时返回 ``None``（退回纯措辞判定）。
-
-        只有接线了压缩才知道窗口上限在哪，也只有那时才存在「最大头部缩减」这条破坏性路径。
-        """
-        wiring = self._compaction
-        if wiring is None:
-            return None
-        estimate = window_tokens(history_from(history), extra_text=request.instructions)
-        return estimate, wiring.settings.context_window_tokens
 
     async def _execute(
         self,
@@ -367,7 +368,6 @@ class AgentRunner:
         buffer: list[RunEvent],
         started: float,
         compactions: list[CompactionFacts],
-        overflow_evidence: tuple[int, int] | None = None,
     ) -> AsyncIterator[RunEvent]:
         """跑 SDK 并按第 7 节处理上下文溢出恢复，直到结束或明确失败。
 
@@ -399,7 +399,6 @@ class AgentRunner:
                     started=started,
                     compactions=tuple(compactions),
                     carried=carried,
-                    overflow_evidence=overflow_evidence,
                 ):
                     yield event
                 return
@@ -539,7 +538,6 @@ class AgentRunner:
         started: float,
         compactions: tuple[CompactionFacts, ...] = (),
         carried: RunUsage | None = None,
-        overflow_evidence: tuple[int, int] | None = None,
     ) -> AsyncIterator[RunEvent]:
         """消费 SDK 的事件流，翻译成基座事件，直到结束、触顶或失败。
 
@@ -547,8 +545,6 @@ class AgentRunner:
         后者是事件循环与失败处置，混在一个函数里既难读也难改。
 
         ``carried`` 是**上一次尝试**（溢出重试前）已产生的用量，最终用量是两者之和。
-        ``overflow_evidence`` 是 ``(窗口估算 token, 窗口上限)``：判定「提供方是不是真的报了
-        上下文溢出」的第二道证据，没有它就只能靠错误文本措辞（第 7 节要求「明确分类」）。
 
         Raises:
             asyncio.CancelledError: 消费者取消时原样抛出（第 9 节：立即停止调用）；
@@ -558,11 +554,15 @@ class AgentRunner:
         """
         run_id = recorder.run_id
         usage = carried if carried is not None else RunUsage()
-        deadline = started + self._timeout_seconds
+        budget = _Budget(deadline=started + self._timeout_seconds)
         tracker = _ToolCallTracker()
 
         try:
-            async for event in _drain(result, deadline):
+            async for event in _drain(result, budget):
+                # 交付给消费方的耗时不算运行预算：慢速 SSE 客户端挂起时，模型与工具并没有在跑
+                # （本函数 docstring 的承诺）。第一版把这段算进去，实测一个 0 次模型调用的运行
+                # 也会被判成 timeout 并丢弃已产出的文本。
+                handed_off = time.monotonic()
                 if isinstance(event, _SdkEvent):
                     mapped, delta = _translate(event.value)
                     usage = usage + delta
@@ -571,15 +571,17 @@ class AgentRunner:
                         yield item
                 else:  # _TimedOut
                     _cancel_quietly(result, run_id)
-                    for item in tracker.flush(buffer):
-                        yield item
-                    yield RunFinishedEvent(
-                        reason="timeout",
-                        citations=recorder.issued,
+                    for item in self._finalize(
+                        tracker=tracker,
+                        buffer=buffer,
+                        recorder=recorder,
                         usage=usage,
-                        elapsed_seconds=time.monotonic() - started,
+                        started=started,
                         compactions=compactions,
-                    )
+                        reason="timeout",
+                        interrupted="运行触顶，工具调用被中断",
+                    ):
+                        yield item
                     return
 
                 for item in tracker.flush(buffer):
@@ -588,24 +590,66 @@ class AgentRunner:
                 orphan = tracker.orphan_finish(event.value) if isinstance(event, _SdkEvent) else None
                 if orphan is not None:
                     yield orphan
+                # 把「交付给消费方」的挂起时间还给预算：慢客户端不该把运行逼成 timeout。
+                budget.credit(time.monotonic() - handed_off)
         except asyncio.CancelledError:
             _cancel_quietly(result, run_id)
             raise
+        except _ContextOverflow:
+            _cancel_quietly(result, run_id)
+            raise
         except Exception as exc:  # noqa: BLE001 —— 任何未归类异常都要变成带码的失败
-            if _is_overflow(exc, overflow_evidence):
+            if is_context_overflow(exc):
                 # 溢出恢复的入口：先停掉这次运行，再交给 run() 决定能否压缩后重试。
                 _cancel_quietly(result, run_id)
                 raise _ContextOverflow(f"提供方报了上下文溢出（{type(exc).__name__}）", usage) from exc
             logger.warning("运行失败 run=%s error=%s", run_id, type(exc).__name__)
             for item in tracker.flush(buffer):
                 yield item
+            for finish in tracker.interrupted_finishes(reason="运行失败，工具调用被中断"):
+                yield finish
             yield _failed_from_exception(exc, recorder, usage, started, compactions=compactions)
             return
+        finally:
+            # 消费者放弃这个流（``aclose()`` / ``break`` + GC）时也要停掉 SDK 侧的运行：
+            # 否则它会继续调模型、继续写会话（实测 aclose 后 1.2 秒又发了一次请求、
+            # 会话从 2 条涨到 5 条）。第 9 节：取消要立即停止调用。
+            if not getattr(result, "is_complete", False):
+                _cancel_quietly(result, run_id)
 
-        for item in tracker.flush(buffer):
-            yield item
-        yield RunFinishedEvent(
+        for item in self._finalize(
+            tracker=tracker,
+            buffer=buffer,
+            recorder=recorder,
+            usage=usage,
+            started=started,
+            compactions=compactions,
             reason="completed",
+            interrupted="运行结束，工具调用没有结果",
+        ):
+            yield item
+
+    def _finalize(
+        self,
+        *,
+        tracker: _ToolCallTracker,
+        buffer: list[RunEvent],
+        recorder: CitationRecorder,
+        usage: RunUsage,
+        started: float,
+        compactions: tuple[CompactionFacts, ...],
+        reason: RunEndReason,
+        interrupted: str,
+    ) -> Iterator[RunEvent]:
+        """正常收尾：交出缓冲的事件 → 给被打断的调用补结束事件 → 产终态事件。
+
+        单独成方法是为了让 :meth:`_stream` 的三条出口（触顶、完成、失败）各自一眼可读——
+        并且让「触顶」与「完成」走**同一段**收尾代码，避免两条路径慢慢分叉。
+        """
+        yield from tracker.flush(buffer)
+        yield from tracker.interrupted_finishes(reason=interrupted)
+        yield RunFinishedEvent(
+            reason=reason,
             citations=recorder.issued,
             usage=usage,
             elapsed_seconds=time.monotonic() - started,
@@ -676,7 +720,28 @@ class _TimedOut:
     """到达时间上限。"""
 
 
-async def _drain(result: RunResultStreaming, deadline: float) -> AsyncIterator[_SdkEvent | _TimedOut]:
+@dataclass(slots=True)
+class _Budget:
+    """运行预算：**模型与工具侧**耗时的上限。
+
+    刻意做成可变对象而不是传一个 float：交付事件给消费方的挂起时间要从预算里还回来
+    （第 2 节的上限针对的是模型与工具，不是慢速 SSE 客户端）。传 float 的话 ``_drain``
+    拿到的是当时那个值，还回来的时间它看不见。
+    """
+
+    deadline: float
+
+    def remaining(self) -> float:
+        """剩余预算（秒）；可能为负。"""
+        return self.deadline - time.monotonic()
+
+    def credit(self, seconds: float) -> None:
+        """把交付给消费方花掉的时间还回预算。"""
+        if seconds > 0:
+            self.deadline += seconds
+
+
+async def _drain(result: RunResultStreaming, budget: _Budget) -> AsyncIterator[_SdkEvent | _TimedOut]:
     """按**剩余预算**逐次拉取 SDK 事件。
 
     每次拉取单独设超时，而不是把整个循环套进一个超时上下文：生成器把事件交给消费方时可能
@@ -685,7 +750,7 @@ async def _drain(result: RunResultStreaming, deadline: float) -> AsyncIterator[_
     """
     stream = result.stream_events()
     while True:
-        remaining = deadline - time.monotonic()
+        remaining = budget.remaining()
         if remaining <= 0:
             yield _TimedOut()
             return
@@ -787,6 +852,25 @@ class _ToolCallTracker:
             summary=str(output)[:SUMMARY_LIMIT],
         )
 
+    def interrupted_finishes(self, *, reason: str) -> Iterator[ToolCallFinishedEvent]:
+        """为所有「已开始但永远不会结束」的调用补结束事件。
+
+        为什么必须有：SDK 在**执行工具之前**就发出 ``tool_called``，因此工具执行到一半触顶时
+        事件序列是 ``run_started → tool_call_started → run_finished``（实测）。不补的话面会看到
+        一个永远转圈的工具指示器，而「事件成对」是第 7 节的形状要求（本类 docstring 也这么承诺）。
+        合成事件带 ``ok=False`` 与 ``tool_interrupted``，让消费方能一眼看出是中断而非失败。
+        """
+        for call_id, tool_name in list(self._pending.items()):
+            self._finished.add(call_id)
+            self._pending.pop(call_id, None)
+            yield ToolCallFinishedEvent(
+                tool_name=tool_name,
+                call_id=call_id,
+                ok=False,
+                error_code="tool_interrupted",
+                summary=reason[:SUMMARY_LIMIT],
+            )
+
 
 def _tool_output_call_id(event: object) -> str | None:
     """取 ``tool_output`` 事件对应的调用标识；不是这类事件时返回 ``None``。"""
@@ -822,22 +906,6 @@ def history_from(items: Sequence[TResponseInputItem]) -> list[Item]:
 def _as_items(items: Sequence[Item]) -> list[TResponseInputItem]:
     """把基座项形状交回 SDK（写入会话时用）。"""
     return [dict(item) for item in items]  # type: ignore[list-item]  # 运行时形状一致，TypedDict 无法从 Mapping 静态推导
-
-
-def _is_overflow(error: BaseException, evidence: tuple[int, int] | None) -> bool:
-    """带窗口证据的溢出判定；没有证据时退回纯措辞判定。
-
-    证据是 ``(窗口估算 token, 窗口上限)``：真实溢出不可能发生在空会话上，因此「窗口远未接近
-    上限」时宁可漏判（退回常规失败），也不走那条会永久改写窗口的破坏性路径。
-    """
-    if evidence is None:
-        return is_context_overflow(error)
-    estimate, window = evidence
-    return is_context_overflow(
-        error,
-        estimated_window_tokens=estimate,
-        context_window_tokens=window,
-    )
 
 
 def compaction_facts(outcome: CompactionOutcome) -> CompactionFacts:

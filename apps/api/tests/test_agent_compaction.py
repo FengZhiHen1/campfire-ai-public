@@ -690,15 +690,22 @@ def test_overflow_classification_matrix(message: str, status_code: int, expected
     assert is_context_overflow(_OverflowLikeError(message, status_code)) is expected
 
 
-def test_overflow_needs_the_window_to_be_near_its_limit() -> None:
-    """第二道证据：真实溢出不可能发生在空窗口上。"""
+def test_overflow_decision_does_not_use_our_window_estimate() -> None:
+    """判定只看提供方的状态码与措辞，**不看**我们的窗口估算（一次显式裁决）。
+
+    两位审查者在这里给出了相反的建议：一位要求「窗口估算 ≥ 上限一半」以防假阳性，另一位指出
+    那会把提供方**明确**报的溢出降级成 ``model_unavailable``，与第 7 节「溢出恢复只在提供方
+    明确分类窗口溢出时触发」冲突。按文档裁决：不加否决门槛。
+
+    理由：本模块的估算有**已知的系统性偏低**（刻意不计工具声明、认不出的形状计 0），拿它去
+    否决提供方的明确信号，会把真实溢出变成更难排查的模型故障；而假阳性由**措辞收紧**挡住
+    （不含 "too long" 这类泛词，见判定矩阵）。
+    """
     from campfire.agent.context import is_context_overflow
 
     error = _OverflowLikeError("This model's maximum context length is 1000 tokens", 400)
 
-    assert is_context_overflow(error, estimated_window_tokens=900, context_window_tokens=1000) is True
-    assert is_context_overflow(error, estimated_window_tokens=100, context_window_tokens=1000) is False
-    # 没给证据时退回纯措辞判定（不影响没有压缩接线的调用方）
+    # 没有窗口参数可传：估算不参与判定
     assert is_context_overflow(error) is True
 
 
