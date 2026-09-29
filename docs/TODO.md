@@ -50,6 +50,9 @@
 
 | 事项 | 说明 |
 |---|---|
+| 案例卡片的分块与嵌入文本构造 | [RAG 策略](技术设计/technical-details/RAG策略.md)第 1 节的分块链只覆盖 Markdown/HTML；卡片是结构化 JSON，哪些字段拼进嵌入文本、高风险字段（`immediate_action` 等，[公共案例库](技术设计/technical-details/公共案例库.md)第 5 节）是否参与嵌入、卡片节点的 `locator` 取什么（无页码无 header_path），均无文档拥有（2026-09-29 审查发现） |
+| 案例库节点 metadata 投影清单 | RAG 策略第 2 节的投影字段只列到条目级（状态、撤下、库别、授权）；案例库的卡片级过滤维度（`age_range`、`severity_level`、`behavior_type`、`risk_class`、`makes_claims_high_risk` 等）哪些进节点 metadata、过滤在 SQL 层还是 skill 层，无归属（2026-09-29 审查发现） |
+| `search_cases` 的结构化过滤取舍 | [公共案例库](技术设计/technical-details/公共案例库.md)第 2 节称卡片提供"元数据过滤"，但[工具契约](技术设计/面/consult/tools/search_cases.md)参数只有 `query`/`limit`/`authorization`；一期是否刻意省略结构化过滤参数，该取舍未被记录（2026-09-29 审查发现） |
 | 支持对象的建立与切换交互 | 一期已定一个账号可有多个对象（`RQ-MEM-07`）；对象的建立入口、切换交互与会话绑定的呈现属页面设计，待定 |
 | 档案所有权与本人访视 | 一期由监护人账号持有、本人无法登录；外部调研所引 NHS 立场要求档案由本人拥有。本人身份、访视与共享是重访方向 |
 | 二期共用的重访条件 | 一期已定不含共用（`RQ-MEM-05`）；二期共用的核验资源与争议处理人力仍未定 |
