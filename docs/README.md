@@ -51,4 +51,4 @@
 - 一期的业务结果、范围与验收由[功能需求与验收](./需求/功能需求与验收.md)拥有，技术选型由[技术栈设计](./技术栈设计.md)拥有，模块边界由[项目结构设计](./项目结构设计.md)拥有，本文不复写。
 - 需求稿编号在 2026-09-29 评审中重排（`RQ-EMG-04` → `RQ-CON-02`、`RQ-DAY-02` → `RQ-CON-03`、`RQ-EMG-03` → `RQ-CON-04`、`RQ-DAY-03` → `RQ-CON-05`、`RQ-EMG-05` → `RQ-CON-07`、`RQ-EMG-06` → `RQ-EMG-03`）。该稿已于当日确认，上列编号为当前稳定 ID。
 - 归档去向与「不要做什么」见 [`archive/README.md`](../archive/README.md)。
-- 技术栈的全部未核实项（`pg_trgm` 中文行为、TokenHub 可用性、许可证条款、assistant-ui 兼容、Graphiti 与 FalkorDB 匹配）见[技术栈设计](./技术栈设计.md)第 7 节与[设计待办](./TODO.md)第五节。
+- 技术栈的全部未核实项（TokenHub 可用性、许可证条款、assistant-ui 兼容、Graphiti 与 FalkorDB 匹配等）见[技术栈设计](./技术栈设计.md)第 7 节与[设计待办](./TODO.md)第五节；`pg_trgm` 中文行为与 `PGVectorStore` 接口形状已在真实容器内实测关闭（2026-09-29）。
