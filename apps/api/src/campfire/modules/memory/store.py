@@ -26,6 +26,7 @@
 
 from __future__ import annotations
 
+from contextlib import suppress
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING
@@ -70,8 +71,15 @@ class MemoryEpisode:
     occurred_at: datetime
     #: 来源会话标识。承载在 `source_description` 上（`episode_metadata` 不落库，实测）。
     source: str
-    #: 写入状态。账本与图库都只含已写入的 episode，因此恒为 `done`；保留字段是为让
-    #: 契约显式承载「非 done 不得出现」这条不变量（read_memory 第 3 节）。
+    #: 写入状态。**当前是字面量 `done`**，不是真的回查 `pending_write.state`——
+    #: 它表达的是「图库里存在 episode 节点 ⇒ 已写入」这一**约定**，而该约定之所以
+    #: 成立，是因为 `write_episode` 在抽取失败时会**补偿删除**刚建的节点
+    #: （见该函数的失败分支；实测复现过「半写节点被当成已写入返回」）。
+    #:
+    #: **该字段的前提条件（改动写入形状前必读）**：若将来写入改成多阶段
+    #: （例如「先落节点、异步补齐派生事实」），这个常量就不再成立——读路径会返回
+    #: 未完成的记录。届时本字段必须改为**真的回查** `pending_write.state`，
+    #: 而不是继续用约定。契约依据：`read_memory` 第 3 节要求非 `done` 不出现在返回里。
     write_state: str = "done"
 
 
@@ -317,6 +325,20 @@ async def write_episode(
     # created_at 用真实入库时间；valid_at 用发生时间（第 2 节的时间语义）。
     created_at = _utc_iso(datetime.now(timezone.utc))
 
+    # 预建节点是否**本来不存在**：失败时据此决定要不要回滚（见下方补偿说明）。
+    # 在 MERGE 之前查，避免把「上一次成功写入的节点」误删。
+    try:
+        existing, _, _ = await scoped.execute_query(
+            "MATCH (e:Episodic {uuid: $uuid}) RETURN count(e) AS c", uuid=episode_uuid
+        )
+        node_predates_this_call = bool(existing) and existing[0]["c"] > 0
+    except Exception as exc:  # noqa: BLE001 —— 驱动异常统一转记忆侧语义
+        raise MemoryUnavailableError(
+            "写入记忆片段失败",
+            operation="write_episode",
+            cause=type(exc).__name__,
+        ) from exc
+
     try:
         # 第一步：预建节点。`MERGE` 保证同 uuid 只一个节点；`SET e = {...}` 与
         # Graphiti 自己的写法一致（它也是整节点替换），因此重跑不会残留旧属性。
@@ -351,6 +373,17 @@ async def write_episode(
             group_id=account_id,
         )
     except Exception as exc:  # noqa: BLE001 —— 驱动/框架异常统一转记忆侧语义
+        # **补偿：删掉本次新建的半写节点**（2026-09-29 实测发现的缺陷）。
+        # 为什么必须补：读路径把「图库里存在 episode 节点」当作已写入（`write_state`
+        # 就是靠这一点成立的）。而写入分两步——先预建节点、再抽取；**第二步失败时节点
+        # 已经存在**，于是读路径会把一条从未成功写入的记忆当成已写入返回，直接违反
+        # `read_memory` 契约第 3 节与写入路径第 2 节的不变量。
+        # 实测复现：抽取抛错后 `read_timeline` 仍返回该条且 `write_state='done'`。
+        # 只删**本次新建**的节点：若它本来就在（重试场景），保留原状——
+        # 破坏既有数据比留下半写节点更糟。
+        if not node_predates_this_call:
+            with suppress(Exception):
+                await scoped.execute_query("MATCH (e:Episodic {uuid: $uuid}) DETACH DELETE e", uuid=episode_uuid)
         raise MemoryUnavailableError(
             "写入记忆片段失败",
             operation="write_episode",

@@ -384,6 +384,65 @@ async def test_deleted_memory_is_not_returned_after_write_path_completes(
 
 
 # ---------------------------------------------------------------------------
+# 半写节点的补偿（写入失败后不得留下「看起来已写入」的节点）
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_failed_write_leaves_no_readable_episode(memory_graph: MemoryGraph) -> None:
+    """**抽取失败后，不得留下能被读路径返回的 episode**。
+
+    为什么必须有这条（2026-09-29 实测发现的缺陷）：写入分两步——先预建节点（正文落库），
+    再 `add_episode` 抽取派生事实。**第二步失败时节点已经存在**，而读路径把「图库里存在
+    episode 节点」当作已写入（`MemoryEpisode.write_state` 就是靠这一点成立的），
+    于是**一条从未成功写入的记忆会被当成已写入返回**——直接违反 `read_memory` 契约
+    第 3 节（非 `done` 不得返回）与写入路径第 2 节的不变量。
+
+    实测复现（修复前）：抽取抛错后 `read_timeline` 仍返回该条、`write_state='done'`、
+    图库里 1 个节点。修复后：节点数 0、时间线空。
+
+    判别性：去掉 `write_episode` 里的补偿删除（`DETACH DELETE e`），本用例会失败。
+    """
+    from campfire.modules.memory.errors import MemoryUnavailableError
+    from campfire.modules.memory.identity import PendingId, derive_episode_uuid
+    from campfire.modules.memory.store import write_episode
+
+    await _clear()
+    now = datetime.now(timezone.utc)
+    key = derive_episode_uuid(PendingId("halfwrite-regression"))
+    try:
+        # 让抽取阶段抛错：替换 graphiti 的 add_episode 为一个必定失败的替身。
+        async def _boom(**_kwargs):  # noqa: ANN202
+            raise RuntimeError("模拟抽取失败")
+
+        original = memory_graph.graphiti.add_episode
+        memory_graph.graphiti.add_episode = _boom  # type: ignore[method-assign]
+        try:
+            with pytest.raises(MemoryUnavailableError):
+                await write_episode(
+                    memory_graph,
+                    to_account_id(_ACCOUNT),
+                    key,
+                    content="这条从未成功写入",
+                    occurred_at=now,
+                    source_description="session=s1",
+                )
+        finally:
+            memory_graph.graphiti.add_episode = original  # type: ignore[method-assign]
+
+        # 图库里不得残留该节点。
+        scoped = memory_graph.driver_for(_ACCOUNT)
+        rows, _, _ = await scoped.execute_query("MATCH (e:Episodic {uuid: $uuid}) RETURN count(e) AS c", uuid=key)
+        assert rows[0]["c"] == 0, "抽取失败后不得留下半写节点"
+
+        # 读路径也不得返回它（这才是契约的可观察面）。
+        timeline = await read_timeline(memory_graph, to_account_id(_ACCOUNT), deleted_keys=[])
+        assert timeline == [], "从未成功写入的记忆不得出现在时间线里"
+    finally:
+        await _clear()
+
+
+# ---------------------------------------------------------------------------
 # Worker 的错误分档（可重试 vs 不可重试）
 # ---------------------------------------------------------------------------
 
