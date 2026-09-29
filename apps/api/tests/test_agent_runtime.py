@@ -25,11 +25,21 @@ from agents.memory.session import Session
 from agents.models.openai_chatcompletions import OpenAIChatCompletionsModel
 from pydantic import BaseModel
 
-from campfire.agent.context import CitationRecord, InjectionBatch, InjectionItem, message_text
+from campfire.agent.context import (
+    CitationRecord,
+    CompactionSettings,
+    InjectionBatch,
+    InjectionItem,
+    SummaryRequest,
+    SummaryResult,
+    message_text,
+)
 from campfire.agent.model import ModelBinding
 from campfire.agent.runtime import (
     SKILL_TOOL_NAME,
     AgentRunner,
+    CompactionWiring,
+    ProgressEvent,
     RunFailedEvent,
     RunFinishedEvent,
     RunRequest,
@@ -795,3 +805,335 @@ async def test_unavailable_source_is_announced_but_does_not_fail_the_run() -> No
     assert isinstance(events[-1], RunFinishedEvent)
     seen = [message["content"] for message in chat.messages_seen[0]]
     assert any(content and "<unavailable_sources>" in content for content in seen)
+
+
+# --- 压缩接线（压缩策略第 2、5、7、9 节） ------------------------------------
+#
+# 阈值用很小的数字（W=1000、O=100、headroom=100 → 阈值 800、保留预算 144），
+# 这样「越过阈值」只需要几十条填充历史，用例跑得快且不依赖真实分词器。
+
+
+class FakeJournal:
+    """压缩事务记账替身。"""
+
+    def __init__(self) -> None:
+        self.started: list[str] = []
+        self.finished: list[tuple[str, object]] = []
+
+    async def record_started(self, **_kwargs: object) -> str:
+        marker = f"m{len(self.started)}"
+        self.started.append(marker)
+        return marker
+
+    async def record_finished(self, marker: str, outcome: object) -> None:
+        self.finished.append((marker, outcome))
+
+    @property
+    def unclosed(self) -> list[str]:
+        """没有结束记录的标记（正常路径必须为空）。"""
+        closed = {marker for marker, _ in self.finished}
+        return [marker for marker in self.started if marker not in closed]
+
+
+class FakeSummarizer:
+    """摘要替身：默认成功，可注入失败。"""
+
+    def __init__(self, *, text: str = "六节摘要", raises: BaseException | None = None) -> None:
+        self.text = text
+        self.raises = raises
+        self.requests: list[SummaryRequest] = []
+
+    async def summarize(self, request: SummaryRequest) -> SummaryResult:
+        self.requests.append(request)
+        if self.raises is not None:
+            raise self.raises
+        return SummaryResult(text=self.text, input_tokens=11, output_tokens=5, elapsed_seconds=0.25)
+
+
+def _compaction_settings(**overrides: object) -> CompactionSettings:
+    """小数字的压缩参数（见本节注释）。"""
+    values: dict[str, object] = {
+        "context_window_tokens": 1000,
+        "output_reserve_tokens": 100,
+        "headroom_tokens": 100,
+    }
+    values.update(overrides)
+    return CompactionSettings(**values)  # type: ignore[arg-type]
+
+
+def _long_history(count: int = 60) -> list[TResponseInputItem]:
+    """一段足够越过阈值的历史。"""
+    return [{"role": "user", "content": f"历史 {index} " + "字" * 80} for index in range(count)]  # type: ignore[list-item]
+
+
+def _wiring(
+    *,
+    settings: CompactionSettings | None = None,
+    summarizer: FakeSummarizer | None = None,
+    journal: FakeJournal | None = None,
+    manual: bool = False,
+) -> CompactionWiring:
+    return CompactionWiring(
+        settings=settings or _compaction_settings(),
+        summarizer=summarizer or FakeSummarizer(),
+        journal=journal or FakeJournal(),
+        instruction="把历史压成六节摘要。",
+        manual=manual,
+    )
+
+
+@pytest.mark.asyncio
+async def test_pressure_compaction_runs_before_the_model_call() -> None:
+    """第 2 节：触发时机是**每次运行之前、派生窗口之前**。"""
+    chat = ScriptedChat([text_reply("好")])
+    session = FakeSession("s-1", _long_history())
+    summarizer = FakeSummarizer()
+    journal = FakeJournal()
+
+    events = await _collect(
+        AgentRunner(
+            binding=_binding(chat),
+            tools=ToolPool([read_tool()]),
+            skills=SkillRegistry.discover(_empty_root()),
+            citations=FakeCitationIndex(),
+            sessions=lambda session_id: session,
+            compaction=_wiring(summarizer=summarizer, journal=journal),
+        ),
+        _request(default_active_tools=("read_alpha",)),
+    )
+
+    # 摘要真的被调用了一次，事务闭合
+    assert len(summarizer.requests) == 1
+    assert journal.unclosed == []
+    # 检查点落库（追加，不改写）
+    assert any(
+        isinstance(item, dict) and str(item.get("content", "")).startswith("<compacted-summary>")
+        for item in session.items
+    )
+    # 模型只看到摘要之后的窗口：最早的填充历史不在请求里
+    seen = [message["content"] for message in chat.messages_seen[0]]
+    assert not any(content and str(content).startswith("历史 0 ") for content in seen)
+    # 进度提示 + 计量随终端事件交出
+    assert any(isinstance(event, ProgressEvent) for event in events)
+    finished = events[-1]
+    assert isinstance(finished, RunFinishedEvent)
+    assert len(finished.compactions) == 1
+    assert finished.compactions[0].performed is True
+    assert finished.compactions[0].released_tokens > 0
+    assert finished.compactions[0].summary_output_tokens == 5
+    assert finished.compactions[0].summary_elapsed_seconds == 0.25
+
+
+@pytest.mark.asyncio
+async def test_no_compaction_below_threshold() -> None:
+    chat = ScriptedChat([text_reply("好")])
+    session = FakeSession("s-1", [{"role": "user", "content": "很短的历史"}])
+    summarizer = FakeSummarizer()
+
+    events = await _collect(
+        AgentRunner(
+            binding=_binding(chat),
+            tools=ToolPool([read_tool()]),
+            skills=SkillRegistry.discover(_empty_root()),
+            citations=FakeCitationIndex(),
+            sessions=lambda session_id: session,
+            compaction=_wiring(summarizer=summarizer),
+        ),
+        _request(),
+    )
+
+    assert summarizer.requests == []
+    assert not any(isinstance(event, ProgressEvent) for event in events)
+    finished = events[-1]
+    assert isinstance(finished, RunFinishedEvent)
+    assert finished.compactions[0].performed is False
+    assert finished.compactions[0].reason == "below_threshold"
+
+
+@pytest.mark.asyncio
+async def test_compaction_failure_does_not_break_the_conversation() -> None:
+    """第 7 节：摘要失败不改动窗口，压缩失败不得让对话不可用。"""
+    chat = ScriptedChat([text_reply("照常回答")])
+    session = FakeSession("s-1", _long_history())
+    summarizer = FakeSummarizer(raises=RuntimeError("boom"))
+
+    events = await _collect(
+        AgentRunner(
+            binding=_binding(chat),
+            tools=ToolPool([read_tool()]),
+            skills=SkillRegistry.discover(_empty_root()),
+            citations=FakeCitationIndex(),
+            sessions=lambda session_id: session,
+            compaction=_wiring(summarizer=summarizer),
+        ),
+        _request(),
+    )
+
+    finished = events[-1]
+    assert isinstance(finished, RunFinishedEvent)
+    assert finished.reason == "completed"
+    # 窗口未改动：会话里**没有**出现检查点（会话本身会因本轮注入与回答而正常增长）
+    assert not any("<compacted-summary>" in str(item.get("content", "")) for item in session.items)
+    assert finished.compactions[0].performed is False
+    assert finished.compactions[0].reason == "summary_failed"
+    # 模型照常收到完整历史（未压缩）
+    seen = [message["content"] for message in chat.messages_seen[0]]
+    assert any(content and str(content).startswith("历史 0 ") for content in seen)
+
+
+@pytest.mark.asyncio
+async def test_skill_catalog_is_reinjected_after_compaction(tmp_path: Path) -> None:
+    """压缩后窗口不再包含旧目录 → 必须重新注入。
+
+    判据只看**窗口**（从最后一条检查点起）而不是整段历史：若按整段历史判断，模型在压缩后
+    会丢掉技能目录，而基座还以为「已经注入过」。
+    """
+    registry = _skill_root(tmp_path)
+    chat = ScriptedChat([text_reply("好")])
+    session = FakeSession("s-1", _long_history())
+    # 历史里先放一条旧目录（会被摘要覆盖）
+    session.items.insert(0, {"role": "user", "content": registry.catalog(surface="consult")})
+    pool = ToolPool([read_tool()])
+    pool.register_base(build_skill_tool(registry))
+
+    await _collect(
+        AgentRunner(
+            binding=_binding(chat),
+            tools=pool,
+            skills=registry,
+            citations=FakeCitationIndex(),
+            sessions=lambda session_id: session,
+            compaction=_wiring(summarizer=FakeSummarizer(text="摘要")),
+        ),
+        _request(),
+    )
+
+    seen = [message["content"] for message in chat.messages_seen[0]]
+    catalogs = [content for content in seen if content and str(content).startswith("<available_skills>")]
+    assert len(catalogs) == 1, "压缩后必须重新注入技能目录（窗口内恰好一份）"
+
+
+@pytest.mark.asyncio
+async def test_context_overflow_triggers_a_max_head_reduction_and_retry() -> None:
+    """第 7 节：提供方明确报溢出 → 绕过阈值与保留策略做一次最大头部缩减后重试。"""
+    overflow = json.dumps({"error": {"message": "This model's maximum context length is 1000 tokens"}}).encode()
+
+    class OverflowThenOk(ScriptedChat):
+        """第一次请求返回 400 上下文溢出，之后正常应答。"""
+
+        def __init__(self) -> None:
+            super().__init__([text_reply("重试成功")])
+
+        async def handler(self, request: httpx.Request) -> httpx.Response:
+            self.requests.append(json.loads(request.content))
+            if len(self.requests) == 1:
+                return httpx.Response(400, content=overflow, headers={"content-type": "application/json"})
+            return httpx.Response(200, headers={"content-type": "text/event-stream"}, content=self._script.pop(0))
+
+    chat = OverflowThenOk()
+    session = FakeSession("s-1", _long_history())
+
+    events = await _collect(
+        AgentRunner(
+            binding=_binding(chat),
+            tools=ToolPool([read_tool()]),
+            skills=SkillRegistry.discover(_empty_root()),
+            citations=FakeCitationIndex(),
+            sessions=lambda session_id: session,
+            compaction=_wiring(),
+        ),
+        _request(),
+    )
+
+    finished = events[-1]
+    assert isinstance(finished, RunFinishedEvent), f"溢出后应重试成功，实际：{finished}"
+    assert finished.reason == "completed"
+    assert len(chat.requests) == 2  # 确实重试了一次
+    # 两次压缩：运行前按压力压一次，溢出恢复再按**最大头部缩减**压一次
+    assert len(finished.compactions) == 2
+    assert all(item.performed for item in finished.compactions)
+    assert finished.compactions[-1].retained_items == 0, "溢出恢复应绕过保留预算（最大头部缩减）"
+
+
+@pytest.mark.asyncio
+async def test_context_overflow_without_progress_fails_explicitly() -> None:
+    """压缩无法推进时明确失败并提示，不静默截断（第 7 节）。"""
+    overflow = json.dumps({"error": {"message": "maximum context length exceeded"}}).encode()
+
+    class AlwaysOverflow(ScriptedChat):
+        """每次都报溢出。"""
+
+        def __init__(self) -> None:
+            super().__init__([])
+
+        async def handler(self, request: httpx.Request) -> httpx.Response:
+            self.requests.append(json.loads(request.content))
+            return httpx.Response(400, content=overflow, headers={"content-type": "application/json"})
+
+    chat = AlwaysOverflow()
+    session = FakeSession("s-1", _long_history())
+
+    events = await _collect(
+        AgentRunner(
+            binding=_binding(chat),
+            tools=ToolPool([read_tool()]),
+            skills=SkillRegistry.discover(_empty_root()),
+            citations=FakeCitationIndex(),
+            sessions=lambda session_id: session,
+            compaction=_wiring(summarizer=FakeSummarizer(raises=RuntimeError("摘要不可用"))),
+        ),
+        _request(),
+    )
+
+    failed = events[-1]
+    assert isinstance(failed, RunFailedEvent)
+    assert failed.code == "context_overflow"
+    assert "最大头部缩减未能降低窗口" in failed.detail
+
+
+@pytest.mark.asyncio
+async def test_overflow_without_compaction_wiring_fails_with_its_own_code() -> None:
+    """没接线压缩时，溢出就是一次明确的失败——不当成「没发生」。"""
+    overflow = json.dumps({"error": {"message": "maximum context length exceeded"}}).encode()
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(400, content=overflow, headers={"content-type": "application/json"})
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    binding = ModelBinding(
+        name=MODEL_NAME,
+        model=OpenAIChatCompletionsModel(model=MODEL_NAME, openai_client=_openai_client(client)),
+        settings=ModelSettings(),
+    )
+
+    events = await _collect(_runner(binding=binding, session=FakeSession("s-1")), _request())
+
+    failed = events[-1]
+    assert isinstance(failed, RunFailedEvent)
+    assert failed.code == "context_overflow"
+
+
+@pytest.mark.asyncio
+async def test_compaction_facts_reach_the_run_record() -> None:
+    """第 9 节：压缩计量要进运行记录（不是只在事件里过一遍）。"""
+    from campfire.agent.observability import RunRecorder
+
+    chat = ScriptedChat([text_reply("好")])
+    session = FakeSession("s-1", _long_history())
+    runner = AgentRunner(
+        binding=_binding(chat),
+        tools=ToolPool([read_tool()]),
+        skills=SkillRegistry.discover(_empty_root()),
+        citations=FakeCitationIndex(),
+        sessions=lambda session_id: session,
+        compaction=_wiring(),
+    )
+    recorder = RunRecorder()
+
+    async for event in runner.run(_request()):
+        recorder.apply(event)
+
+    record = recorder.finish()
+    assert record.compactions
+    assert record.compactions[0].performed is True
+    assert record.released_tokens_by_compaction > 0
