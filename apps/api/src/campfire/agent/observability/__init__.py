@@ -21,7 +21,9 @@
 - **记录的持久化**由装配处实现（基座只声明 :class:`RunTraceWriter` 端口）：表要由 Alembic
   迁移创建，而迁移与 ``core/db`` 同批落地（技术栈设计第 1 节记着「迁移命令仍缺失」）。
 - **评测集**（触发准确性与输出质量）依赖尚不存在的 skill 内容与
-  「应为／不应为触发」提示集；登记于 ``docs/TODO.md``，与第一份 ``SKILL.md`` 同批落地。
+  「应为／不应为触发」提示集，因此与第一份 ``SKILL.md`` 同批落地——和
+  ``skills-ref validate`` 的接入条件完全相同（该条件登记于 ``docs/TODO.md`` 第四节
+  「基座已确认要求尚未落地」第 ① 项）。
 """
 
 from .records import RunOutcome, RunRecord, RunRecorder, ToolCallRecord
