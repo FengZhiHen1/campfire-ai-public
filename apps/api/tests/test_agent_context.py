@@ -21,6 +21,7 @@ from campfire.agent.context import (
     InjectionError,
     InjectionItem,
     InjectionPriority,
+    InjectionRenderError,
     UnavailableSource,
     derive_window,
     last_checkpoint_index,
@@ -157,10 +158,15 @@ async def test_render_is_empty_without_items() -> None:
     assert await InjectionBatch().render(_recorder(FakeCitationIndex())) == ()
 
 
-def test_injection_rejects_system_role() -> None:
-    """系统提示必须静态：注入消息不得借 system 角色改写它（压缩策略第 8 节）。"""
-    with pytest.raises(InjectionError, match="system"):
-        InjectionItem(source="catalog", content="x", role="system")  # type: ignore[arg-type]
+@pytest.mark.parametrize("role", ["system", "tool", ""])
+def test_injection_rejects_roles_outside_the_allowed_set(role: str) -> None:
+    """系统提示必须静态：注入消息不得借 system 角色改写它（压缩策略第 8 节）。
+
+    静态类型已排除 ``system``，但装配处的调用方不一定经过类型检查，因此运行期同样校验，
+    并且挡住 ``tool`` 这类不属于注入消息的角色。
+    """
+    with pytest.raises(InjectionError, match="不被允许"):
+        InjectionItem(source="catalog", content="x", role=role)  # type: ignore[arg-type]
 
 
 def test_injection_rejects_empty_source_or_content() -> None:
@@ -205,7 +211,11 @@ async def test_unavailable_source_attributes_are_escaped() -> None:
 
 
 @pytest.mark.asyncio
-async def test_status_message_comes_after_business_injections() -> None:
+async def test_unavailable_notice_is_a_status_level_item_appended_last() -> None:
+    """失败告知是 STATUS 档的一员，并由 ordered() 追加在该档的末尾。
+
+    契约是「它必然出现在业务上下文之后」，因此必需那句在最前、告知在最后。
+    """
     batch = InjectionBatch(
         [
             InjectionItem(source="status-source", content="系统状态", priority=InjectionPriority.STATUS),
@@ -217,11 +227,42 @@ async def test_status_message_comes_after_business_injections() -> None:
     messages = await batch.render(_recorder(FakeCitationIndex()))
 
     contents = [message["content"] for message in messages]
-    # 业务上下文（CONTEXT=40）先于状态档（STATUS=90）；同为 STATUS 的两条保持传入顺序，
-    # 失败告知由 ordered() 最后追加，因此它是最后一条。
     assert contents[0] == "资料"
     assert contents[1] == "系统状态"
     assert "<unavailable_sources>" in contents[-1]
+
+
+@pytest.mark.asyncio
+async def test_partial_render_failure_reports_what_already_reached_the_index() -> None:
+    """写到一半失败不得被当作成功：已落索引的引用必须随错误一起交出来。
+
+    否则索引里有记录、窗口里没有消息，``run_finished`` 会报出一条模型从未看到的依据。
+    """
+    index = FakeCitationIndex()
+    recorder = _recorder(index)
+    batch = InjectionBatch(
+        [
+            InjectionItem(source="first", content="第一条", reference="ref-1"),
+            InjectionItem(source="second", content="第二条", reference="ref-2"),
+        ]
+    )
+
+    original_add = index.add
+
+    async def flaky_add(record: CitationRecord) -> None:
+        if record.reference == "ref-2":
+            raise RuntimeError("索引写入失败")
+        await original_add(record)
+
+    index.add = flaky_add  # type: ignore[method-assign]
+
+    with pytest.raises(InjectionRenderError) as error:
+        await batch.render(recorder)
+
+    assert [record.reference for record in error.value.recorded] == ["ref-1"]
+    assert [message["content"] for message in error.value.rendered] == ["第一条"]
+    # 没有「部分成功」的返回值可用，调用方只能按失败处置
+    assert "RuntimeError" in str(error.value)
 
 
 # --- 窗口派生 ---------------------------------------------------------------
@@ -282,15 +323,60 @@ def test_leading_system_messages_are_never_shadowed() -> None:
 
 
 def test_checkpoint_is_located_by_tag_not_by_position() -> None:
-    """读回顺序不是硬保证，因此靠内容标签定位最后一条摘要。"""
+    """读回顺序不是硬保证，因此靠内容标签定位最后一条摘要。
+
+    用例刻意让**真正的检查点不在末位**：若实现改成「取最后一条消息」，它会失败。
+    """
     history = [
         _message("user", "m0"),
         _message("user", "<compacted-summary>检查点</compacted-summary>"),
-        _message("user", "标签出现在正文里但不是检查点：<compacted-summary>"),
+        _message("user", "m2"),
     ]
 
-    assert last_checkpoint_index(history) == 2
-    assert derive_window(history) == history[2:]
+    assert last_checkpoint_index(history) == 1
+    assert derive_window(history) == history[1:]
+
+
+def test_quoting_the_tag_in_normal_content_is_not_a_checkpoint() -> None:
+    """正文提到标签**不得**成为检查点：那会在没有任何摘要的情况下裁掉历史。
+
+    初版用子串包含判定，于是使用者问一句「你上一轮写的 <compacted-summary> 是什么」
+    就会触发一次窗口裁剪，被裁掉的内容当次看不到——压缩策略第 8 节第 1 条禁止滑动窗口。
+    """
+    history = [
+        _message("user", "重要历史 A"),
+        _message("assistant", "重要历史 B"),
+        _message("user", "你上一轮写的 <compacted-summary> 是什么意思？"),
+        _message("assistant", "那是我总结历史用的标签"),
+    ]
+
+    assert last_checkpoint_index(history) is None
+    assert derive_window(history) == history
+
+
+def test_only_the_exact_envelope_counts_as_a_checkpoint() -> None:
+    """只有开闭标签成对框住整条消息才算检查点；近似形态一律不算。
+
+    漏判的方向是安全的（不裁剪，只是压缩没生效），误判的方向会丢历史，因此从严。
+    """
+    variants = [
+        "<COMPACTED-SUMMARY>大写变体</COMPACTED-SUMMARY>",
+        "<compacted-summary>缺少闭标签",
+        "缺少开标签</compacted-summary>",
+        "<compacted-summary >带空格的开标签</compacted-summary >",
+        "<compacted-summary/>自闭合",
+        "&lt;compacted-summary&gt;被转义的&lt;/compacted-summary&gt;",
+    ]
+
+    for variant in variants:
+        history = [_message("user", "m0"), _message("user", variant), _message("user", "m2")]
+        assert last_checkpoint_index(history) is None, variant
+
+
+def test_envelope_with_surrounding_whitespace_is_still_a_checkpoint() -> None:
+    history = [_message("user", "m0"), _message("user", "\n  <compacted-summary>摘要</compacted-summary>\n")]
+
+    assert last_checkpoint_index(history) == 1
 
 
 def test_window_appends_new_items_after_history() -> None:

@@ -11,10 +11,11 @@
 
 1. **顺序由 :class:`InjectionPriority` 决定**（同优先级保持传入顺序）。第 4 节把顺序
    交给基座，基座就必须有一条可核对的规则，而不是「看调用方怎么拼列表」。
-2. **本模块不做注入总量截断**。第 2 节明确「只设一条通用响应上限 180 秒，不另设
-   token 上限」，上下文压力由窗口与压缩策略处理（压缩策略第 2 节）。此处若自行发明
-   一个总量上限，会与这两条冲突；唯一存在的注入预算是技能目录的 4000 token
-   （第 3 节），由 ``skill_runtime.catalog`` 负责。
+2. **本模块不做注入总量截断**——**这是登记在案的未完成项，不是「合理不做」**。
+   第 4 节把「组装顺序与预算」交给基座，本模块只做了顺序。已确定的数字是技能目录的
+   4000 token（第 3 节，`skill_runtime.catalog` 已实现）；检索结果占窗口 8% 的那条
+   （RAG 策略第 5 节）标注为**待确认**，因此这里不发明默认上限——没有经过确认的数字
+   比没有上限更危险，它会让后续判断误以为预算已经被守住了。状态登记于 docs/TODO.md。
 """
 
 from __future__ import annotations
@@ -24,8 +25,10 @@ from dataclasses import dataclass
 from enum import IntEnum
 from typing import Literal, TypedDict
 
+from campfire.agent.markup import escape_attribute
+
 from .citations import CitationRecorder
-from .errors import InjectionError
+from .errors import InjectionError, InjectionRenderError
 
 InjectionRole = Literal["user", "assistant"]
 """注入消息允许的角色。
@@ -34,6 +37,9 @@ InjectionRole = Literal["user", "assistant"]
 检索结果、时间、活跃技能一律不得进入系统提示，只能作为尾部消息。把这条纪律放进
 类型里，比写在注释里更难过不了关。
 """
+
+_ALLOWED_ROLES = frozenset({"user", "assistant"})
+"""运行时可接受的角色集合，与 :data:`InjectionRole` 一致；用于挡住未经类型检查的调用方。"""
 
 
 class InjectionMessage(TypedDict):
@@ -90,9 +96,12 @@ class InjectionItem:
             raise InjectionError("注入项必须说明来源：来源不可用时要靠它标注")
         if not self.content:
             raise InjectionError(f"注入项内容不能为空（来源 {self.source}）")
-        if self.role == "system":
-            # 静态类型已排除 system；这里挡住未经类型检查的调用方。
-            raise InjectionError("注入消息不得使用 system 角色：系统提示必须保持静态（压缩策略第 8 节）")
+        if self.role not in _ALLOWED_ROLES:
+            # 静态类型已排除 system；这里挡住未经类型检查的调用方（含 tool 这类角色）。
+            raise InjectionError(
+                f"注入消息的角色 {self.role!r} 不被允许：只接受 {sorted(_ALLOWED_ROLES)}"
+                "（系统提示必须保持静态，压缩策略第 8 节）"
+            )
         if self.summary is not None and self.reference is None:
             raise InjectionError(f"来源 {self.source} 给了摘要却没有业务回指：这样的引用无法回指业务条目")
 
@@ -153,18 +162,29 @@ class InjectionBatch:
             )
         return tuple(ordered)
 
-    # quality-floor: ignore docstring-promise 异常由 recorder.record 传播，函数体自身没有 raise 语句
     async def render(self, recorder: CitationRecorder) -> tuple[InjectionMessage, ...]:
         """写引用索引并渲染成消息；顺序即窗口中的顺序。
 
+        **写到一半失败不算成功**：任何一条引用写不进去，就抛
+        :class:`InjectionRenderError` 并带上已落索引的引用与已渲染的消息，让调用方把
+        本次运行标为注入失败。绝不返回「部分消息」当作完整结果——那样索引里有记录、
+        窗口里没有，``run_finished`` 会报出一条模型从未看到的依据。
+
         Raises:
-            CitationError: 注入项带了无法成形的引用。
-            Exception: 索引写入失败原样冒泡；此时**不得**认为注入已完成。
+            InjectionRenderError: 某条引用的索引写入失败；``recorded`` 是已落索引的引用。
         """
         messages: list[InjectionMessage] = []
         for item in self.ordered():
             if item.reference is not None:
-                await recorder.record(source=item.source, reference=item.reference, summary=item.summary)
+                try:
+                    await recorder.record(source=item.source, reference=item.reference, summary=item.summary)
+                except Exception as exc:  # noqa: BLE001 —— 失败要转成带部分状态的可判定错误
+                    raise InjectionRenderError(
+                        f"注入渲染在来源 {item.source!r} 处失败（{type(exc).__name__}）："
+                        f"索引可能已写入 {len(recorder.issued)} 条引用",
+                        recorded=recorder.issued,
+                        rendered=tuple(messages),
+                    ) from exc
             messages.append(item.message())
         return tuple(messages)
 
@@ -173,11 +193,8 @@ def _render_unavailable(sources: Sequence[UnavailableSource]) -> str:
     """把失败来源渲染成一条显式告知，而不是让它们消失。"""
     lines = ["<unavailable_sources>"]
     for source in sources:
-        lines.append(f'  <source name="{_escape(source.source)}" reason="{_escape(source.reason)}" />')
+        lines.append(
+            f'  <source name="{escape_attribute(source.source)}" reason="{escape_attribute(source.reason)}" />'
+        )
     lines.append("</unavailable_sources>")
     return "\n".join(lines)
-
-
-def _escape(value: str) -> str:
-    """转义属性值，避免来源名或原因里的字符破坏信封。"""
-    return value.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', "&quot;")

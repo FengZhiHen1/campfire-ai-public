@@ -13,6 +13,12 @@
 ``limit=None`` 的读回顺序写成硬保证，所以**定位最后一条摘要消息靠内容里的
 ``<compacted-summary>`` 标签，而不是靠顺序**。
 
+**标签按整条信封判定**（``startswith`` 开标签且 ``endswith`` 闭标签），不是子串包含。
+理由是实测过的：按子串包含判定时，一句正常的对话——例如使用者问「你上一轮写的
+``<compacted-summary>`` 是什么意思」——会被当成检查点，于是**没有任何摘要就把历史裁掉**，
+违反压缩策略第 8 节第 1 条。误判的代价（丢历史、当次看不到）远高于漏判的代价
+（不做裁剪，只是压缩没生效）。
+
 本模块是纯函数：给定历史与要追加的项，返回本轮模型输入。它不认识 SDK 类型，也不写
 任何存储——落库由 SDK 会话负责，「窗口裁剪不影响落库」因此是结构性的。
 """
@@ -25,7 +31,10 @@ from typing import TypeVar
 ItemT = TypeVar("ItemT")
 
 COMPACTED_SUMMARY_TAG = "<compacted-summary>"
-"""摘要检查点的标签；压缩机制写入它，窗口派生靠它定位。"""
+"""摘要检查点的开标签；压缩机制写入它，窗口派生靠它定位。"""
+
+COMPACTED_SUMMARY_CLOSE_TAG = "</compacted-summary>"
+"""摘要检查点的闭标签。开闭成对才算检查点。"""
 
 
 def _string_field(item: object, field: str) -> str | None:
@@ -42,9 +51,21 @@ def _string_field(item: object, field: str) -> str | None:
 
 
 def is_compacted_summary(item: object) -> bool:
-    """判断一项是否是压缩摘要检查点（靠标签，不靠位置）。"""
+    """判断一项是否是压缩摘要检查点。
+
+    判定是**整条信封**：去掉首尾空白后必须以开标签开头、以闭标签结尾。子串包含不算。
+
+    已知残余风险（有意接受）：使用者若把一整条检查点原文贴回来，那条消息会被当成检查点。
+    这一窗口很窄，且修正它需要压缩写入方给出「不可能出现在使用者内容里」的标记
+    （例如带属性的标签），那属于压缩机制的契约，不在这里发明。
+    """
     content = _string_field(item, "content")
-    return content is not None and COMPACTED_SUMMARY_TAG in content
+    if content is None:
+        return False
+    stripped = content.strip()
+    if len(stripped) < len(COMPACTED_SUMMARY_TAG) + len(COMPACTED_SUMMARY_CLOSE_TAG):
+        return False
+    return stripped.startswith(COMPACTED_SUMMARY_TAG) and stripped.endswith(COMPACTED_SUMMARY_CLOSE_TAG)
 
 
 def is_system_message(item: object) -> bool:
@@ -73,7 +94,12 @@ def leading_system_count(
     *,
     is_system_prompt: Callable[[object], bool] = is_system_message,
 ) -> int:
-    """返回历史开头连续 system 消息的条数（系统提示的那一段）。"""
+    """返回历史开头连续 system 消息的条数（系统提示的那一段）。
+
+    **前提：系统提示是历史的前缀。** 若将来 SDK 会话允许在首条非 system 消息之后再追加
+    system 项，那一段会被压缩窗口遮蔽——压缩策略第 3 节只承诺「不遮蔽系统提示」，
+    而前缀之外 system 项的存在与否尚未核实（记在实施前必须验证的事项里）。
+    """
     count = 0
     for item in history:
         if not is_system_prompt(item):
