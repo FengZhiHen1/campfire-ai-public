@@ -21,6 +21,8 @@ dependencies = [
     "taskiq-redis>=1.0",
     "httpx>=0.28",
     "pyyaml>=6.0.3",
+    "openai-agents>=0.22.3",
+    "openai>=3.20.0",
 ]
 
 [dependency-groups]
