@@ -20,5 +20,8 @@ docs/技术设计/technical-details/RAG策略.md 第 3.1 节）。
 虚构素材呈现为真实案例；``EVID-F`` 首期资料由项目所有者手动导入，
 未录入前两库为空，检索只能返回「未找到」。
 
-尚未实现：本包当前无代码。
+**已实现**（2026-09-29）：`models.py`（条目表与节点表）、`chunking.py`（分块后处理）、
+`embedding.py`（TokenHub 嵌入适配）、`ingestion.py`（摄取流水线）、`retrieval.py`
+（两路检索、RRF 融合、条目聚合与检索用例）。真实语料未录入（`EVID-F`），
+真实嵌入调用未验证（`TECH-20`）。
 """

@@ -1,9 +1,10 @@
 # RAG 策略
 
 > **权威范围**：检索链的**内部机制与参数**——语料输入形态与分块、嵌入与向量存储、索引、融合与候选取值、条目聚合、上下文装配预算、时延预算与评测。**对外行为**（两库边界、返回契约、撤下传播、失败语义）由[资料与案例检索](资料与案例检索.md)拥有；供应商与框架选型由[技术栈设计](../../技术栈设计.md)拥有；`search_*` 的参数与返回由[咨询面 `tools/`](../面/consult/tools/)拥有。
-> **状态**：2026-09-29 依用户确认的"全量引入 LlamaIndex"（`B`）、"合并改用 RRF"与"一期不直接导入 PDF"三项决定，以及已核实的供应商与框架事实重写，待用户确认。不代表已实现。
+> **状态**：2026-09-29 依用户确认的"全量引入 LlamaIndex"（`B`）、"合并改用 RRF"与"一期不直接导入 PDF"三项决定，以及已核实的供应商与框架事实重写；**同日按实现期实测修订四处**——融合自实现（框架 RRF 要求同步检索器）、摄取不经框架 `IngestionPipeline`（要同事务）、嵌入用 `model_name=` 接入、分块保护与超长切分的确切行为。**检索链已实现**（`modules/library/`），真实语料与真实嵌入调用未验证（`EVID-F` 与 `TECH-20`）。
 > **追溯**：`RQ-KB-01`、`RQ-KB-02`、`RQ-KB-04`、`RQ-CON-02`、`RQ-CON-03`、`RQ-EMG-03`、`AC-05`、`AC-06`、`AC-09`、`AC-11`。
 > **依据（已核实）**：
+> - **实现期实测（2026-09-29，真实容器与安装产物）**：`OpenAIEmbedding` 必须用 `model_name=` 传自定义模型名（`model=` 走枚举校验会抛错）；`PGVectorStore.add()` 自建并提交事务（不能参与外部事务）、`aquery`/`adelete` 为原生 async、`engine`/`async_engine` 必须成对注入；RRF 按 `node.hash`（内容哈希）合并；`MetadataFilter.value` 不含 `bool`；`gin_trgm_ops` 不接受 `text[]`；`MarkdownNodeParser` 不切进表格/列表内部、也不对超长 section 二次切分。
 > - **TokenHub 向量模型**：`POST /v1/embeddings` 兼容 OpenAI Embeddings；`Kinfra-Text-Embedding-0.6b` 1024 维、`Kinfra-Text-Embedding-4b` **2560 维**（维度固定），均 32k 上下文，`encoding_format` 仅 `float`，**单条文本 ≤2000 字符**、单请求建议 ≤128 条，支持中文等 30+ 语言（标注 CMTEB）。TokenHub 模型列表共八类，**无重排模型**。
 > - **pgvector**：`vector` 建索引上限 **2000 维**、`halfvec` **4000 维**（此限只作用于建索引，不限制列类型）；**近似索引下过滤在索引扫描之后应用**，0.8.0 起支持 iterative index scan。
 > - **LlamaIndex**（MIT；最新 0.14.25 / 2026-09-21；近一年约 21 个版本，节奏明显放缓；仍在 1.0 之前；`llama-index-core` wheel ≈11.9 MB、**29 个直接依赖**，Python ≥3.10,<4.0，可只装 core 加个别集成包）：`PGVectorStore` **把 metadata 过滤下推到 SQL**（`MetadataFilters` 可嵌套、`indexed_metadata_keys` 可建索引），支持自定义 `table_name`/`schema_name`/`perform_setup`/`use_jsonb` 与 `hnsw_kwargs`（m、ef_construction、ef_search、dist_method），`hybrid_search=True` 走 **tsvector** GIN；`QueryFusionRetriever` 有四种模式含 **`reciprocal_rerank`（RRF）**，入参是检索器列表、可混合自定义检索器；`IngestionPipeline` 有 docstore 去重与 `IngestionCache`（可用我们已有的 Redis）；`RetrieverEvaluator` 内置 `hit_rate`/`mrr`/`precision`/`recall`/`ndcg`；`MarkdownNodeParser` 按 `#` 层级切并写 `metadata["header_path"]`；`SentenceSplitter` 的 `chunk_size` 以 **token** 计、**不识别表格与列表**、不做超长二次切分。
@@ -20,10 +21,11 @@
 ### 1.2 分块：框架切 + 我们两层后处理
 
 - **先用 `MarkdownNodeParser`**：按 `#` 层级切分，写出 `metadata["header_path"]`（如 `/H1/H2/`），代码块内的 `#` 不会误判为标题。
-- **我们补两层后处理**（框架开箱不保证，这是引入后仍必须自己写的部分）：
-  1. **表格与列表保护**：表格整块成节点（交给 `MarkdownElementNodeParser` 或我们的规则）；列表项不跨节点切断——切断了就直接制造错误依据。
-  2. **超长二次切分**：框架**不对超长 section 再切**，而嵌入接口**单条硬上限 2000 字符**。超限节点按**句边界**二次切；仍超限的**不可分单元**（例如整页表格）标记为"未嵌入"并进人工处理队列，**不静默截断**。
-- 目标块长 **400–800 字符**。注意 `SentenceSplitter` 的 `chunk_size` 以 **token** 计，中文下**不能直接当字符数用**，换算后仍受 2000 字符硬限约束。
+- **我们补两层后处理**（框架开箱不保证，这是引入后仍必须自己写的部分；实现见 `modules/library/chunking.py`）：
+  1. **表格与列表保护**：实测框架按标题边界切分，**不会切进表格或列表内部**（表格整块成节点、列表项不跨节点）——但它不保证结构，因此我们的切分仍**只在段落/句子边界进行**；以表格或列表为主、且自身超限的单元**不做中间切断**。
+  2. **超长二次切分**：框架**不对超长 section 再切**（实测一个 2248 字符的 section 原样成为一个节点），而嵌入接口**单条硬上限 2000 字符**。超限内容先按**段落边界**切，段落仍超限时按**句边界**切；仍不可分的单元（例如整页表格、无标点的超长串）标记 `needs_manual_review` 并计入人工处理队列，**不静默截断**。
+  3. **小段落合并**：切出的碎片合并回目标区间，减少语义不完整的块。
+- 目标块长 **400–800 字符**，硬上限 2000 字符。**字符计数用 Unicode 码点**（`len(str)`）而非框架 `SentenceSplitter` 的 token 计数——嵌入接口的限制是**字符**，中文下 token 与字符不是一回事。标题路径会拼入块文本（保留层级语义），因此**计入长度预算**。
 - **结构边界处不重叠**（重叠会让同一内容在引用里出现两次，也让 `locator` 含混）。
 - 每个节点携带：`item_id`、`chunk_index`、`header_path`（框架给）、`locator`（章节路径；**一期没有 PDF，所以没有页码**）、`char_count`。
 
@@ -39,16 +41,17 @@
 ### 1.4 条目侧字段
 
 - **`keywords`** 与 **`aliases`**：导入时填写（机构名、缩写、常见俗称、英文原名）。**字面路只查 `title` + 这两个字段，不查正文**——中文正文的 trigram 噪声很大，而真正需要字面命中的恰是这类短词。
+- **两者是文本列（空格分隔多值），不是数组**（2026-09-29 实测）：`pg_trgm` 的 `gin_trgm_ops` **不接受 `text[]`**（报 `operator class "gin_trgm_ops" does not accept data type text[]`），而 `array_to_string` 表达式索引又不被允许（非 `IMMUTABLE`）。设计要求在这两个字段上直接建 GIN trigram 索引，因此用文本列最贴合。
 
 ## 2. 嵌入与向量存储
 
 | 项 | 取值 |
 |---|---|
-| 嵌入服务 | TokenHub `POST /v1/embeddings`，经 LlamaIndex 的 OpenAI 兼容嵌入适配接入 |
+| 嵌入服务 | TokenHub `POST /v1/embeddings`，经 LlamaIndex 的 `OpenAIEmbedding` 接入（**必须用 `model_name=` 而非 `model=`**，见下） |
 | 模型 / 维度 | `Kinfra-Text-Embedding-4b` / **2560**（固定，不可自定义） |
 | 单条上限 | 2000 字符（因此分块后处理是硬需求） |
 | 批量 | 单请求建议 ≤128 条 |
-| 节点存储 | `PGVectorStore`，**自带表结构**，`table_name` 自定义、`use_jsonb` 存 metadata |
+| 节点存储 | `data_campfire_node`：DDL 由 Alembic 迁移拥有，取用方 `perform_setup=False` + `use_jsonb` |
 | 索引 | 一期不建（见第 3 节） |
 
 **真源划分（重要）**：
@@ -62,10 +65,10 @@
 **配置与 DDL 归属**：
 
 - **嵌入模型名唯一配置处是 `core/config`**：`agent/model` 只拥有 LLM 模型名，而 `core/*` 不得依赖 `agent/*`（[项目结构设计](../../项目结构设计.md)第 7 节白名单），嵌入模型名（`Kinfra-Text-Embedding-4b`）经 `core/config` 注入，复用 `tokenhub_base_url`/`tokenhub_api_key`——嵌入服务同为 TokenHub，不引入第二套凭据。**维度不做成可配置项**：2560 与模型绑定，作为 `modules/library` 内的常量——可配置的维度会诱发「配错维度混库」（第 7 节纪律 4）。
-- **连接串必须给两条**（2026-09-29 实测）：`PGVectorStore._connect()` **无条件同时建同步引擎（psycopg2）与异步引擎（asyncpg）**，因此 `connection_string` 与 `async_connection_string` 都必须提供——检索路径用原生 async 的 `aquery`/`aretrieve`，摄取写入用同步 `add`。
+- **嵌入适配的接入方式**（2026-09-29 实测）：框架的 `OpenAIEmbedding` 用 `model=` 会把值当作 `OpenAIEmbeddingModelType` **枚举**校验，我们的 `Kinfra-Text-Embedding-4b` 不在枚举内，构造即抛 `ValueError: ... is not a valid OpenAIEmbeddingModelType`。**改传 `model_name=`** 即可承载自定义模型名（框架 `base.py` 内有 `if "model_name" in kwargs` 分支直接采用该值）——因此「经 OpenAI 兼容嵌入适配接入」成立，不需要自研嵌入客户端。超时与重试上界（30 秒 / 2 次）定得比对话模型低：嵌入失败可降级到字面路，不值得吃掉应急时延预算。
+- **两条连接串 + 注入自己的引擎才能与业务同事务**（2026-09-29 实测）：`PGVectorStore` 要求 `connection_string`（同步）与 `async_connection_string`（异步）**同时提供**，且 `engine`/`async_engine` 必须成对注入（只给一个会抛 `ValueError: Both engine and async_engine must be provided`）。检索用原生 async 的 `aquery`/`adelete`。**摄取不能走框架的 `add()`**：它内部自建并提交 session（`with session.begin()`），无法参与我们的外部事务，而「条目表与节点表同事务」是撤下语义的前提（第 2 节末条）。因此摄取用**我们自己的 session** + 框架的 `_table_class` 写节点行——框架耦合收敛到这一处，由集成测试守护。
 - **布尔过滤必须以字符串存**（2026-09-29 实测）：`MetadataFilter.value` 的类型联合是 int/float/str/列表，**不含 `bool`**——传 `value=False` 会被 pydantic 严格模式拒绝。因此节点 metadata 的 `withdrawn` 等布尔语义**存成 `"true"`/`"false"` 字符串**（框架的 `->>` 把 JSON 值渲染为文本，字符串取值可正确匹配）；`status`、库别本就是字符串，不受影响。
-- **表结构与命名由迁移拥有**（已落地）：业务表用 `campfire_` 前缀（避让 SuperTokens core 自建表与 SDK 自建表），节点表名为 `data_campfire_node`（框架渲染 `data_<table_name>`）；迁移建出扩展 `vector`/`pg_trgm` 与两张表，取用方一律 `perform_setup=False`。集成测试 `apps/api/tests/test_library_schema_integration.py` 锁住这些约定。
-- **节点表 DDL 走 Alembic、`perform_setup=False`**：pgvector 扩展与节点表结构由迁移建立，与「schema 变更必须经迁移文件」的全局约定一致（[项目结构设计](../../项目结构设计.md)第 10 节），处置先例同 SDK 自建表（[设计待办](../../TODO.md)第五节）。**已实测（2026-09-29）**：`perform_setup=False` + 自建表下写入与 `aquery` 均正常，metadata 过滤**确实下推到 SQL 的 `WHERE`**（实测 SQL：`WHERE metadata_->>'item_id' = 'item-1' ORDER BY distance asc`），符合「过滤在 SQL 内完成」的不变量。迁移必须匹配框架的两条约定：**表名是 `data_<table_name>`**（框架加 `data_` 前缀），且 **`id` 为 `bigint` + sequence 自增**——缺 sequence 会写入失败。setup 期的静默吞错（`TECH-14`（b））随 `perform_setup=False` 不再适用。
+- **表结构与命名由迁移拥有**（已落地）：业务表用 `campfire_` 前缀（避让 SuperTokens core 自建表与 SDK 自建表），节点表名为 `data_campfire_node`——框架把 `table_name` 渲染成 `data_<table_name>`。**迁移必须匹配框架的三条约定**：表名带 `data_` 前缀；`id` 为 `bigint` + sequence 自增（缺 sequence 会写入失败）；列名为 `text`（`varchar`）/`metadata_`（jsonb）/`node_id`/`embedding`。取用方一律 `perform_setup=False`，pgvector 扩展与两张表都由迁移建立（与「schema 变更必须经迁移文件」一致，先例同 SDK 自建表，见[设计待办](../../TODO.md)第五节）。**已实测**：`perform_setup=False` + 迁移建表下写入与 `aquery` 均正常，metadata 过滤**确实下推到 SQL 的 `WHERE`**（实测 SQL：`WHERE metadata_->>'item_id' = 'item-1' ORDER BY distance asc`），符合「过滤在 SQL 内完成」的不变量；setup 期的静默吞错（`TECH-14`（b））随 `perform_setup=False` 不再适用。集成测试 `apps/api/tests/test_library_schema_integration.py` 锁住这些约定。
 
 ## 3. 索引
 
@@ -87,13 +90,13 @@
 
 ## 4. 融合检索与候选
 
-- **融合用 RRF**（2026-09-29 定）：`QueryFusionRetriever` 的 `reciprocal_rerank` 模式，检索器列表 = **pgvector 向量检索器 + 我们自研的 pg_trgm 检索器**。
+- **融合用 RRF**（2026-09-29 定，2026-09-29 实现期修订）：**RRF 本身照旧**（`score = Σ 1/(rank + k)`，k=60，与框架同值，源自 RRF 原论文）；但**不由 `QueryFusionRetriever` 执行**——实测它的融合发生在 `_retrieve` 内部，两路输入必须是**同步**检索器，而我们的两路都是异步 SQL；塞进去需要线程池包装，会钝化失败语义（单路失败要能降级并标注）。融合公式只有几行，由 `modules/library/retrieval.py` 自实现，并照搬框架的一个关键行为：**按 `node.hash`（内容哈希）而非 `node_id` 合并**（实测：相同内容、不同 id 的 hash 相同；不同内容则不同）——这决定字面路展开出的节点只要内容一致就能与向量路正确合并。
 - **为什么改用 RRF**：它只用**名次**、不用原始分数，因此不存在跨路分数量纲不一致的问题，也没有需要调的神秘权重；这比先前自拟的"路内排名 + 命中路数"更有依据。**不做跨路分数加权归一化。**
-- **一期不用 LLM 多查询生成**（`QueryFusionRetriever` 支持，但会加一次模型调用，且应急时延吃紧）。
+- **一期不用 LLM 多查询生成**（会加一次模型调用，且应急时延吃紧）。
 - 候选取值：向量路 **top-30**（节点）、字面路 **top-30**（按条目计；**待确认**）、融合后取 **top-8 条目**。
 - 过滤（库别、状态、撤下、授权）**在 SQL 内完成**（metadata 过滤已核实可下推）。
 - **条目聚合仍是我们自己写**：框架返回的是节点与分数，我们需要把同一 `item_id` 的多个节点**聚合为条目**、只保留名次最高的节点作为 snippet、并把条目名次上提；**同一轮不重复注入同一条目**。
-- **两路在同一粒度上得名次**：`QueryFusionRetriever` 融合的单位是节点。向量路的候选自然是节点；字面路的检索单位是**条目**（条目表行），参与融合前展开为该条目的节点——同一条目的节点共享其名次，聚合时归回条目。RRF 只用名次、聚合取最佳节点，因此节点数多的条目不会获得名次优势；字面路候选槽位被长条目占满是已知代价，一期语料量小不构成问题，评测若显示字面路覆盖不足则重访候选数（第 10 节）。
+- **两路在同一粒度上得名次**：融合的单位是节点。向量路的候选自然是节点；字面路的检索单位是**条目**（条目表行），参与融合前展开为该条目的节点——同一条目的节点共享其名次，聚合时归回条目。RRF 只用名次、聚合取最佳节点，因此节点数多的条目不会获得名次优势；字面路候选槽位被长条目占满是已知代价，一期语料量小不构成问题，评测若显示字面路覆盖不足则重访候选数（第 10 节）。
 - **一期不做重排**（2026-09-29 定）：TokenHub 没有重排模型，接外部重排会新增供应商，且加一次调用会吃掉应急的时延预算。
 
 ## 5. 上下文装配
@@ -114,10 +117,10 @@
 **摄取不暴露在应用里**（2026-09-29 定）：没有上传接口、没有知识库管理页、没有审核工作流 UI。资料与案例在**本地**处理入库，检索才在运行时由两个工具使用。
 
 - **入口形态**：应用包内的**一个 CLI 入口**（`python -m campfire.cli ingest <路径>`），**跑在同一镜像里**、连同一个库。**不是**仓库根 `scripts/` 下的独立脚本——它必须复用同一份依赖与同一套写入逻辑（条目表、幂等、嵌入适配），独立脚本一定会漂移。「本地」指的是**运行环境与触发方式**（不暴露成服务端点），不是「独立代码」。CLI 只是入口：摄取流水线、分块链与嵌入适配的实现归 `modules/library`（检索链与摄取同属一个模块，见第 3.1 节的实现归属）。
-- **流水线**：`IngestionPipeline`，transformations = 我们的分块链（`MarkdownNodeParser` + 两层后处理）+ 嵌入。
-- **去重与增量**：docstore 按 doc_id + hash 判断（未变跳过、变了重新 upsert）；`IngestionCache` 用我们已有的 Redis，避免重复嵌入同一文本。
+- **流水线**（2026-09-29 实现期修订）：分块链 = `MarkdownNodeParser`（框架）+ 我们的两层后处理，**由 `modules/library` 直接编排**，不经框架的 `IngestionPipeline`——原因见第 2 节：摄取必须与条目表同事务，而框架的写入路径自建事务。嵌入经第 2 节的 `OpenAIEmbedding` 适配器批量调用。
+- **去重与增量**：按 `source_path` + `doc_hash`（内容 SHA-256）判断——**未变跳过、变了先删该条目的旧节点再写新节点**，同一事务内完成。一期不用框架的 docstore/`IngestionCache`（Redis 缓存重复嵌入），重访条件见第 9 节。
 - **导入是一次链外准备 + 一次链内摄取**：链外产出 md/html，链内负责切分、嵌入与写入。
-- 导入失败要么整份成功、要么明确失败并留下可见记录；**不留下「一半进去了」的静默状态**。不受 HTTP 超时约束，因此**一份文件一个事务**。
+- 导入失败要么整份成功、要么明确失败并留下可见记录；**不留下「一半进去了」的静默状态**。不受 HTTP 超时约束，因此**一份文件一个事务**（已实测覆盖：失败在嵌入阶段、以及条目已写入后节点写入失败，两种情形都整份回滚）。
 
 **四条必须与「本地跑」一起成立的纪律**：
 
@@ -152,6 +155,7 @@
 | 向量索引 | 节点数 >5 万，或单次向量检索 SQL >100 毫秒 |
 | **PDF 解析**（含引入付费解析服务） | 一期链外准备的成本被证明不可持续，且数据处理条款核实通过 |
 | 条目摘要嵌入、父子块 | 评测显示长文档的局部细节检索不到 |
+| 框架的 `IngestionPipeline` 与 docstore/`IngestionCache` | 摄取量与重复嵌入成为成本问题，或出现跨运行的增量摄取需求——届时需先解决「框架写入自建事务」与「条目表/节点表同事务」的冲突（第 2 节） |
 
 ## 10. 参数表
 
@@ -165,8 +169,8 @@
 | 嵌入模型 / 维度 | `Kinfra-Text-Embedding-4b` / 2560 |
 | 节点存储 | `PGVectorStore`（自定义 `table_name`、`use_jsonb`） |
 | 向量索引 | 一期不建；条件触发时 `hnsw_kwargs` + 自设 `hnsw.iterative_scan` |
-| 字面索引 | 我们自己表上的 GIN trigram（`title`/`keywords`/`aliases`） |
-| 融合 | `QueryFusionRetriever` + `reciprocal_rerank`（RRF） |
+| 字面索引 | 我们自己表上的 GIN trigram（`title`/`keywords`/`aliases`；**文本列**，`gin_trgm_ops` 不接受 `text[]`） |
+| 融合 | 我们自实现 RRF（k=60，按内容哈希合并）；**不用 `QueryFusionRetriever`**——它要求两路是同步检索器，与我们的异步 SQL 不合（见第 4 节） |
 | 候选 | 向量 top-30（节点）、字面 top-30（按条目计；**待确认**） |
 | 融合后 | top-8 条目 |
 | 重排 | 无 |
