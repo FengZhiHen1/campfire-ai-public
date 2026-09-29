@@ -1,8 +1,8 @@
 # 篝火智答唯一的 Python 应用：HTTP 与 Worker 两个运行入口共用一套代码。
 #
 # 依赖只声明「运行外壳当前真实消费的东西」。技术栈设计里已定但尚无消费者的
-# 依赖（openai-agents、taskiq 之外的队列扩展、graphiti-core、pgvector、
-# supertokens-python、alembic）在各自消费者落地时再加入，避免空壳依赖。
+# 依赖（graphiti-core、supertokens-python、alembic）在各自消费者落地时再加入，
+# 避免空壳依赖。LlamaIndex 三个包由 modules/library 的检索链消费（2026-09-29 加入）。
 
 [project]
 name = "campfire-api"
@@ -23,6 +23,9 @@ dependencies = [
     "pyyaml>=6.0.3",
     "openai-agents>=0.22.3",
     "openai>=3.20.0",
+    "llama-index-core>=0.14.25",
+    "llama-index-vector-stores-postgres>=0.9.0",
+    "llama-index-embeddings-openai>=0.7.0",
 ]
 
 [dependency-groups]
