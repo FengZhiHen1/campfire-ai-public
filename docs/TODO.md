@@ -66,4 +66,4 @@
 | TECH-05 | Graphiti 的 episode 写入**没有官方重试或幂等承诺**，幂等须由我们自建并在实测中验证；FalkorDB 版本要求 ≥1.1.2（已核实） | 记忆写入的失败语义与重复写入风险 |
 | TECH-12 | `is_enabled`、`RunConfig.session_input_callback`、`RunConfig.call_model_input_filter` 在 TokenHub 的 OpenAI 兼容 Chat Completions 端点上**是否真生效**——官方文档只把它们排除在 Responses-only 清单外，**未声明供应商无关** | 工具范围的抑制手段与模型窗口派生；不生效则退化为"服务端拒绝 + 自持输入列表" |
 | TECH-13 | FalkorDB 的向量索引是否支持 **2560 维**（TokenHub `Kinfra-Text-Embedding-4b` 的维度），以及它与 Graphiti 嵌入器配置的接通方式 | 记忆侧能否复用同一嵌入提供商；不支持则记忆侧要换模型或另建索引 |
-| TECH-14 | LlamaIndex 全量引入的四点：`PGVectorStore` 的表结构能否承载我们的 item/chunk 与状态字段；元数据过滤是否真在 **SQL 层**执行；分块能否保证不切断表格与列表项；版本节奏与依赖体量 | 决定"全量引入"在**检索**这一段是否成立；不成立则退回"摄取与分块交给它、检索自研" |
+| TECH-14 | LlamaIndex 的三项未证实（其余已核实并写进文档）：`PGVectorStore` 是否**自动创建 IVFFlat 索引**（文档只见 `ivfflat_probes` 检索参数）；node parser 是否写出 `start/end_char_idx` **位置字段**（本次抓取 404）；**依赖体量的实测数字**（现为 wheel 大小与直接依赖数推断，传递依赖未测） | 位置字段决定我们能否不自己算 `locator`；索引创建方式决定切换向量索引时的迁移脚本；体量决定"全量引入"是否划算 |
