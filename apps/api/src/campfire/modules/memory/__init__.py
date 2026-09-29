@@ -16,11 +16,37 @@
   请求只负责与业务数据同事务地写入待处理记录。
 - Graphiti 的 episode 写入**没有官方重试或幂等承诺**，幂等须由我们自建并实测；
   且 episode 的身份是 **``uuid`` 而非 ``name``**（落库为 ``MERGE {uuid: $uuid}``），
-  确定性标识必须显式传入。
+  但同 uuid 的 ``MERGE ... SET`` 是**整节点覆盖**、没有「已存在则跳过」语义，
+  而 ``add_episode(uuid=...)`` 又要求节点**已存在**（内部先 ``get_by_uuid``）。
+  因此幂等靠我方「已写入」标记，落地形状见通用记忆第 3 节。
 - 过期或被推翻的内容**不得作为当前依据**。
 - **版本口径**：安装要求里的「FalkorDB 1.1.2」是 Graphiti 自己的**客户端依赖**
   （``graphiti-core`` 声明 ``falkordb>=1.1.2,<2.0.0``），**不是服务器版本**；
   镜像按实际存在的 tag 固定（见 docs/技术栈设计.md 第 2 节）。
 
-尚未实现：本包当前无代码。
+**已实现**（2026-09-29）：``errors.py``（异常层次）、``graph.py``（Graphiti +
+FalkorDB 装配：驱动、TokenHub 三客户端、空重排器）。写入、两条读路径与删除账本
+尚未落地。
+
+**实测环境**：graphiti-core 0.30.2、falkordb 客户端 1.7.1、FalkorDB 镜像
+``v4.20.7-alpine``（graph 模块 42007、vectorset 模块 1）。
 """
+
+from campfire.modules.memory.errors import (
+    MemoryConfigurationError,
+    MemoryDataError,
+    MemoryModuleError,
+    MemoryUnavailableError,
+)
+from campfire.modules.memory.graph import MemoryGraph, build_memory_graph
+
+__all__ = [
+    # 异常
+    "MemoryConfigurationError",
+    "MemoryDataError",
+    "MemoryModuleError",
+    "MemoryUnavailableError",
+    # 装配
+    "MemoryGraph",
+    "build_memory_graph",
+]
