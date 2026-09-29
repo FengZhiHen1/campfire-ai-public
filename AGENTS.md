@@ -62,8 +62,8 @@ apps/api/              — 唯一的 Python 应用
     agent/             — 通用 Agent 基座：产品无关，不含任何领域术语
     surfaces/          — 面：产品入口与运行装配
     tools/             — 产品侧工具，注册进基座工具池
-    modules/           — 业务数据与用例：accounts、library、profile、memory
-    core/              — 跨切能力：config、db、cache、auth、authz、jobs、retrieval
+    modules/           — 业务数据与用例：accounts、library（含检索链）、profile、memory
+    core/              — 跨切能力：config、db、cache、auth、authz、jobs
   tests/
 apps/web/              — React H5（当前只有目录占位）
 infrastructure/        — docker、nginx（占位）

@@ -61,7 +61,7 @@
 
 **配置与 DDL 归属**：
 
-- **嵌入模型名唯一配置处是 `core/config`**：`agent/model` 只拥有 LLM 模型名，而 `core/*` 不得依赖 `agent/*`（[项目结构设计](../../项目结构设计.md)第 7 节白名单），嵌入模型名（`Kinfra-Text-Embedding-4b`）经 `core/config` 注入，复用 `tokenhub_base_url`/`tokenhub_api_key`——嵌入服务同为 TokenHub，不引入第二套凭据。**维度不做成可配置项**：2560 与模型绑定，作为 `core/retrieval` 内的常量——可配置的维度会诱发「配错维度混库」（第 7 节纪律 4）。
+- **嵌入模型名唯一配置处是 `core/config`**：`agent/model` 只拥有 LLM 模型名，而 `core/*` 不得依赖 `agent/*`（[项目结构设计](../../项目结构设计.md)第 7 节白名单），嵌入模型名（`Kinfra-Text-Embedding-4b`）经 `core/config` 注入，复用 `tokenhub_base_url`/`tokenhub_api_key`——嵌入服务同为 TokenHub，不引入第二套凭据。**维度不做成可配置项**：2560 与模型绑定，作为 `modules/library` 内的常量——可配置的维度会诱发「配错维度混库」（第 7 节纪律 4）。
 - **节点表 DDL 走 Alembic、`perform_setup=False`**：pgvector 扩展与节点表结构由迁移建立，与「schema 变更必须经迁移文件」的全局约定一致（[项目结构设计](../../项目结构设计.md)第 10 节），处置先例同 SDK 自建表（[设计待办](../../TODO.md)第五节）。setup 期的静默吞错（`TECH-14`（b））随 `perform_setup=False` 不再适用；迁移建出的表结构与 `PGVectorStore` 期望的一致性由集成测试断言，「无 setup 下读写路径完整」归 `TECH-19` 验证。
 
 ## 3. 索引
@@ -73,7 +73,7 @@
 - **需 ≥3 个连续汉字**：1–2 字的查询**不走字面路**，只走向量路与元数据过滤。
 - 部署 locale **不得为 `C`**（`C` 下汉字被全部丢弃、相似度恒为 0）；默认 locale 下是否可用仍需实测（`TECH-01`）。
 - **不要用框架的 `hybrid_search`**：它建的是 **tsvector** GIN（全文检索），中文没有分词器时基本不可用——这与 `pg_trgm` 是两回事。
-- **字面检索器的实现归属（2026-09-29 定）**：归 `modules/library`——`title`/`keywords`/`aliases` 是条目表的列，schema 知识留在表主一侧；`core/retrieval` 只定义字面检索器接口（Protocol）并拥有向量路、融合与聚合，检索链在 `tools/`（检索链的消费者，白名单允许同时依赖 `modules/*` 与 `core/*`）装配。`core/*` 因此不以 SQL 字符串耦合条目表——依赖方向显式落在白名单内（`modules → core`），而不是白名单看不见的隐式 schema 耦合（[项目结构设计](../../项目结构设计.md)第 1、7 节）。
+- **检索链的实现归属（2026-09-29 定）**：整条链归 `modules/library`——`title`/`keywords`/`aliases` 是它自己的条目表列，节点投影、向量路、字面路、RRF 融合与条目聚合也都消费它的领域字段（状态、库别、`item_id`、案例卡片维度），机制与模式同属一个模块；`core/retrieval` 因此取消，不存在需要跨模块解释的接口缝。LlamaIndex 只有 library 一个消费者，**框架耦合止于 `modules/library`**；装配（工具注册）仍在入口按[项目结构设计](../../项目结构设计.md)第 7 节完成。
 
 ### 3.2 向量索引（现在不建，条件触发）
 
@@ -109,7 +109,7 @@
 
 **摄取不暴露在应用里**（2026-09-29 定）：没有上传接口、没有知识库管理页、没有审核工作流 UI。资料与案例在**本地**处理入库，检索才在运行时由两个工具使用。
 
-- **入口形态**：应用包内的**一个 CLI 入口**（`python -m campfire.cli ingest <路径>`），**跑在同一镜像里**、连同一个库。**不是**仓库根 `scripts/` 下的独立脚本——它必须复用同一份依赖与同一套写入逻辑（条目表、幂等、嵌入适配），独立脚本一定会漂移。「本地」指的是**运行环境与触发方式**（不暴露成服务端点），不是「独立代码」。
+- **入口形态**：应用包内的**一个 CLI 入口**（`python -m campfire.cli ingest <路径>`），**跑在同一镜像里**、连同一个库。**不是**仓库根 `scripts/` 下的独立脚本——它必须复用同一份依赖与同一套写入逻辑（条目表、幂等、嵌入适配），独立脚本一定会漂移。「本地」指的是**运行环境与触发方式**（不暴露成服务端点），不是「独立代码」。CLI 只是入口：摄取流水线、分块链与嵌入适配的实现归 `modules/library`（检索链与摄取同属一个模块，见第 3.1 节的实现归属）。
 - **流水线**：`IngestionPipeline`，transformations = 我们的分块链（`MarkdownNodeParser` + 两层后处理）+ 嵌入。
 - **去重与增量**：docstore 按 doc_id + hash 判断（未变跳过、变了重新 upsert）；`IngestionCache` 用我们已有的 Redis，避免重复嵌入同一文本。
 - **导入是一次链外准备 + 一次链内摄取**：链外产出 md/html，链内负责切分、嵌入与写入。
