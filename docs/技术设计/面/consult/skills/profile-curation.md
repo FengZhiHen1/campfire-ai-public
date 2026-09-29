@@ -53,7 +53,7 @@ allowed-tools: read_profile_items propose_profile_item read_memory write_memory
 ### 3.4 工具使用纪律与硬约束
 
 - `propose_profile_item` **只写待处理记录**，落进候选层；**确认才进稳定层**。工具实现层必须硬卡：`origin` 属于 `system_observation` 或 `ai_inference` 时**不得**写成 `confirmation = confirmed`。
-- `write_memory` 写通用记忆，`read_memory` 读它；两者都不得用来绕过档案的确认流程。
+- `write_memory` 写通用记忆，`read_memory` 读它；两者都不得用来绕过档案的确认流程。**两者都属账号、不收 `support_object_id`**（记忆是关于使用者自身的经验，[决策记录](../../../decisions/通用记忆归属为账号.md)）——凡是关于支持对象的事实必须走档案，不得借记忆通道绕过确认。
 - 写入是**异步**的（经待处理记录与 Worker），所以回执只能承诺"已提交"，**不得**声称"已保存"。
 
 ### 3.5 `references/` 的内容边界
