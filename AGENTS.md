@@ -1,13 +1,15 @@
 # Campfire-AI — 篝火智答
 
-> **设计基线已确认；仓库有可运行的骨架，尚无业务实现。** 需求、技术栈与项目结构
+> **设计基线已确认；仓库有可运行的骨架，业务实现刚开始。** 需求、技术栈与项目结构
 > 已于 2026-09-29 经用户确认，真源在 `docs/`。`archive/` 是已废弃的旧实现与旧设计，
 > 仅作参考，不构成任何当前依据。
-> 当前代码只有骨架：三个运行入口可跑、健康检查逐项如实报告；各业务模块是只带
-> 归属与禁令说明的占位包。
-> **例外**：`agent/`（通用 Agent 基座）已有实现与测试（运行编排、skill 机制、工具池与
-> 权限门、注入项与引用索引、模型网关、上下文压缩、运行记录）；`surfaces/`、`tools/`
-> （产品侧工具）、`modules/` 与 `core/` 其余部分仍是占位包。
+> **已实现**：`agent/`（通用 Agent 基座：运行编排、skill 机制、工具池与权限门、注入项与
+> 引用索引、模型网关、上下文压缩、运行记录）；`modules/library`（**RAG 检索链**：条目与
+> 节点表、分块后处理、嵌入适配、摄取流水线、两路检索与 RRF 融合、HTML→Markdown 加工）；
+> `modules/memory`（Graphiti 记忆：身份、时间线、派生事实、删除账本）；`core/` 的
+> `config`、`db`、`health`；`cli/`（`convert` 与 `ingest`）。
+> **仍是占位包**：`surfaces/`、`tools/`（产品侧工具）、`modules/{accounts,profile}`、
+> `core/{cache,auth,authz,jobs}`、`apps/web/`、`infrastructure/`。
 
 ## Stack
 
@@ -38,7 +40,8 @@ uv run pytest
 # apps/api 的三个运行入口
 uv run uvicorn campfire.main:app --reload      # HTTP
 uv run taskiq worker campfire.worker:broker    # Worker，需 Redis
-uv run python -m campfire.cli                  # 本地摄取，尚未实现（退出码 2）
+uv run python -m campfire.cli convert <x.html> # 本地：HTML → 可摄取 Markdown（不连库）
+uv run python -m campfire.cli ingest <x.md>    # 本地：摄取到资料库（条目与节点同事务）
 
 # 设计文档一致性（与 CI 跑同一份脚本）
 uv run python scripts/check_design_docs.py
