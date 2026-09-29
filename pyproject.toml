@@ -1,47 +1,24 @@
-[project]
-name = "campfire-ai"
-version = "0.1.0"
-description = "篝火智答 - 面向孤独症人士及其支持网络的情境支持平台"
-readme = "README.md"
-requires-python = ">=3.12"
-# 目标依赖待实现落地后按 apps/、packages/ 重新声明。
-# 旧实现的依赖清单同旧代码一并归档，见 archive/apps/ 与 archive/packages/。
-dependencies = [
-    "python-dotenv>=1.2.2",
-]
+# 仓库根 pyproject.toml —— uv 工作空间根与全局工程配置。
+#
+# 本仓库只有一个 Python 应用，位于 apps/api（两个运行入口：HTTP 与 Worker），
+# 不拆多包工作空间；理由见 docs/项目结构设计.md 第 1 节第 3 条。
+# 根目录本身不是包，因此本文件不声明 [project]，只作为虚拟工作空间根；
+# 依赖清单属于应用，声明在 apps/api/pyproject.toml。
 
 [tool.uv.workspace]
-# 新目标结构将包含 apps/api-server、apps/worker、packages/py-*（见
-# docs/项目结构设计.md）。这些目录尚未创建，暂空以避免 workspace 解析失败。
-members = []
-
-[tool.uv.sources]
-# 目标实现重建后在此声明各 workspace 包来源。
-
-[dependency-groups]
-dev = [
-    "asyncpg>=0.29",
-    "mypy>=2.1.0",
-    "psutil>=7.2.2",
-    "pytest>=8.0",
-    "pytest-asyncio>=0.24",
-    "pytest-cov>=6.0",
-    "python-dateutil>=2.9.0.post0",
-    "ruff>=0.8",
-]
+members = ["apps/api"]
 
 [tool.pytest.ini_options]
 addopts = "-q --import-mode=importlib"
+testpaths = ["apps/api/tests"]
 # 归档代码不参与收集：archive/ 下为已废弃的旧实现与旧测试。
-# 不设 testpaths——目标实现尚未落地，待 apps/、packages/ 重建后按默认根目录收集。
 norecursedirs = ["archive", "node_modules", ".venv", "dist", "build", ".dsh", ".claude", ".agent"]
 markers = [
     "integration: 依赖真实 PostgreSQL/Redis 的集成测试（docker compose up -d）",
 ]
 
 [tool.coverage.run]
-# 目标实现落地后 source 自动指向 apps/、packages/；当前二者已归档
-source = ["apps", "packages"]
+source = ["apps/api/src/campfire"]
 omit = ["archive/*"]
 
 [tool.coverage.report]
@@ -68,3 +45,7 @@ line-length = 120
 [tool.ruff.lint]
 select = ["E", "F", "W", "I"]
 ignore = ["E402", "E501"]
+
+[tool.ruff.lint.isort]
+# 不加这条，ruff 会把 campfire 当第三方包，与 pytest 等合并成一块。
+known-first-party = ["campfire"]
