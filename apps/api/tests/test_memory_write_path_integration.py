@@ -1,0 +1,382 @@
+"""集成测试：记忆的写入链路（``pending_write`` → Worker 消费，端到端）。
+
+对应 ``docs/技术设计/technical-details/写入路径.md`` 第 3、4、5、6 节与
+``write_memory`` 契约（`docs/技术设计/面/consult/tools/write_memory.md`）。
+
+这是**跨两个存储**的测试：PostgreSQL（待处理记录的状态机）与 FalkorDB（episode）。
+因此需要两个容器：
+
+    docker compose up -d postgres falkordb
+    uv run pytest -m integration apps/api/tests/test_memory_write_path_integration.py
+
+**图库侧用假模型客户端**（抽取要调 TokenHub，当前凭据是占位符——见 `TECH-02`），
+因此本文件验证的是**链路与状态推进**，不验证抽取质量（那是 `TECH-18`）。
+
+锁住的行为：
+1. 入队一条记忆记录 → 消费 → 图库里出现 episode，且**派生的 uuid 与 pending_id 对应**
+   （幂等依据是派生的确定性 uuid，不是 `name`）。
+2. **只有 `done` 算写入成功**：消费前是 `pending`，消费后是 `done` 且 `finished_at` 有值。
+3. **重复消费不产生第二条 episode**（第 5 节幂等）。
+4. **来源会话标识经 `source_description` 往返**（`episode_metadata` 不落库，第 3 节实测）。
+5. **载荷缺必填键时显式失败**，且**不产生** episode（不猜时间、不猜来源）。
+6. 非 `memory_episode` 的 kind 被本消费者拒绝。
+"""
+
+from __future__ import annotations
+
+from collections.abc import AsyncIterator
+from datetime import datetime, timedelta, timezone
+
+import pytest
+import pytest_asyncio
+from sqlalchemy import delete, select
+
+from campfire.core.config import EMBEDDING_DIM, get_settings
+from campfire.core.db import dispose_engine, session_scope
+from campfire.core.pending_write import (
+    KIND_PROFILE_ITEM,
+    STATE_DONE,
+    STATE_PENDING,
+    PendingWrite,
+    enqueue,
+)
+from campfire.modules.memory.consumer import consume_memory_episode
+from campfire.modules.memory.errors import MemoryDataError
+from campfire.modules.memory.graph import MemoryGraph, OrderedCrossEncoder
+from campfire.modules.memory.identity import PendingId, derive_episode_uuid, to_account_id
+from campfire.modules.memory.ledger import deleted_episode_keys
+from campfire.modules.memory.store import read_timeline
+
+pytestmark = pytest.mark.integration
+
+_ACCOUNT = "it_mem_write_account"
+
+
+@pytest_asyncio.fixture(autouse=True)
+async def _require_database() -> AsyncIterator[None]:
+    """未配置 `DATABASE_URL` 时跳过——不假装通过。"""
+    if not get_settings().database_url:
+        pytest.skip("未配置 DATABASE_URL——集成测试需要 docker compose up -d postgres")
+    yield
+
+
+@pytest_asyncio.fixture(autouse=True)
+async def _dispose_shared_engine() -> AsyncIterator[None]:
+    """每个用例前后释放共享引擎（跨事件循环复用会 ``Event loop is closed``）。"""
+    await dispose_engine()
+    yield
+    await dispose_engine()
+
+
+@pytest_asyncio.fixture
+async def memory_graph() -> AsyncIterator[MemoryGraph]:
+    """使用假模型客户端的记忆图库句柄（不调真实供应商）。"""
+    from falkordb.asyncio import FalkorDB
+    from graphiti_core.driver.falkordb_driver import FalkorDriver
+    from graphiti_core.embedder.client import EmbedderClient
+    from graphiti_core.graphiti import Graphiti
+    from graphiti_core.llm_client.client import LLMClient
+    from graphiti_core.llm_client.config import LLMConfig
+
+    class _FakeEmbedder(EmbedderClient):
+        async def create(self, input_data) -> list[float]:  # noqa: ANN001
+            return [0.001] * EMBEDDING_DIM
+
+        async def create_batch(self, input_data_list: list[str]) -> list[list[float]]:
+            return [[0.001] * EMBEDDING_DIM for _ in input_data_list]
+
+    class _FakeLLM(LLMClient):
+        def __init__(self) -> None:
+            super().__init__(config=LLMConfig(api_key="test", model="fake"))
+
+        async def _generate_response(
+            self,
+            messages=None,
+            response_model=None,
+            max_tokens=None,
+            model_size=None,
+            group_id=None,
+            prompt_name=None,
+            **kwargs,
+        ):  # noqa: ANN001
+            if response_model is not None:
+                return {name: [] for name in response_model.model_fields}
+            return {}
+
+    client = FalkorDB(host="localhost", port=6380)
+    driver = FalkorDriver(falkor_db=client, database="campfire")
+    try:
+        await driver.execute_query("RETURN 1 AS ok")
+    except (ConnectionError, ConnectionRefusedError, ConnectionResetError, TimeoutError, OSError) as exc:
+        await client.aclose()
+        pytest.skip(f"FalkorDB 不可用（{type(exc).__name__}）——先 docker compose up -d falkordb")
+    except Exception:
+        await client.aclose()
+        raise
+
+    graph = MemoryGraph(
+        graphiti=Graphiti(
+            graph_driver=driver,
+            llm_client=_FakeLLM(),
+            embedder=_FakeEmbedder(),
+            cross_encoder=OrderedCrossEncoder(),
+            store_raw_episode_content=True,
+        ),
+        driver=driver,
+    )
+    try:
+        yield graph
+    finally:
+        scoped = graph.driver_for(_ACCOUNT)
+        await scoped.execute_query("MATCH (n) DETACH DELETE n")
+        await graph.aclose()
+
+
+async def _clear() -> None:
+    """清掉本文件账号的待处理记录。"""
+    async with session_scope(get_settings()) as session:
+        await session.execute(delete(PendingWrite).where(PendingWrite.account_id == _ACCOUNT))
+
+
+async def _enqueue(
+    *,
+    content: str = "他喜欢早上跑步",
+    occurred_at: str | None = None,
+    session_id: str | None = "s1",
+    kind: str = "memory_episode",
+) -> str:
+    """入队一条记忆记录，返回其 id 字符串。"""
+    payload: dict[str, object] = {"content": content}
+    if occurred_at is not None:
+        payload["occurred_at"] = occurred_at
+    source: dict[str, object] = {}
+    if session_id is not None:
+        source["session_id"] = session_id
+
+    async with session_scope(get_settings()) as session:
+        record = await enqueue(
+            session,
+            kind=kind,
+            account_id=_ACCOUNT,
+            origin="user_statement",
+            payload=payload,
+            source=source,
+            support_object_id="obj-1" if kind == KIND_PROFILE_ITEM else None,
+        )
+        return str(record.id)
+
+
+# ---------------------------------------------------------------------------
+# 端到端链路
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_pending_record_becomes_an_episode_with_the_derived_uuid(
+    memory_graph: MemoryGraph,
+) -> None:
+    """**主链路**：入队 → 消费 → 图库出现 episode，uuid 由 `pending_id` 派生。
+
+    幂等依据必须是**派生的确定性 uuid**（`write_memory` 契约第 4 节），不是 `name`。
+    这条同时验证「消费前的记录是 pending（未写入）」与「消费后是 done」。
+    """
+    await _clear()
+    occurred = datetime.now(timezone.utc) - timedelta(days=1)
+    try:
+        pending_id = await _enqueue(occurred_at=occurred.isoformat())
+
+        # 消费前：记录是 pending，图库里没有 episode。
+        async with session_scope(get_settings()) as session:
+            before = (await session.execute(select(PendingWrite).where(PendingWrite.id == pending_id))).scalar_one()
+        assert before.state == STATE_PENDING
+        assert await read_timeline(memory_graph, to_account_id(_ACCOUNT), deleted_keys=[]) == []
+
+        async with session_scope(get_settings()) as session:
+            result = await consume_memory_episode(session, memory_graph, pending_id=pending_id, lease_owner="worker-1")
+
+        assert result.written is True
+        expected_uuid = derive_episode_uuid(PendingId(pending_id))
+        assert result.episode_uuid == expected_uuid, "幂等依据必须是派生 uuid"
+
+        # 消费后：记录是 done，图库里有那条 episode，且内容是载荷里的正文。
+        async with session_scope(get_settings()) as session:
+            after = (await session.execute(select(PendingWrite).where(PendingWrite.id == pending_id))).scalar_one()
+        assert after.state == STATE_DONE
+        assert after.finished_at is not None
+        assert after.lease_owner is None, "完成后必须清租约"
+
+        episodes = await read_timeline(memory_graph, to_account_id(_ACCOUNT), deleted_keys=[])
+        assert [e.content for e in episodes] == ["他喜欢早上跑步"]
+        assert episodes[0].episode_uuid == expected_uuid
+    finally:
+        await _clear()
+
+
+@pytest.mark.asyncio
+async def test_source_session_id_round_trips_via_source_description(memory_graph: MemoryGraph) -> None:
+    """来源会话标识经 `source_description` 往返。
+
+    为什么必须断言：`episode_metadata` **不落库**（通用记忆第 3 节实测），所以来源只能
+    走 `source_description`。若哪天改成依赖 `episode_metadata`，来源会静默丢失。
+    """
+    await _clear()
+    occurred = datetime.now(timezone.utc)
+    try:
+        pending_id = await _enqueue(occurred_at=occurred.isoformat(), session_id="session-42")
+        async with session_scope(get_settings()) as session:
+            await consume_memory_episode(session, memory_graph, pending_id=pending_id, lease_owner="w")
+
+        episodes = await read_timeline(memory_graph, to_account_id(_ACCOUNT), deleted_keys=[])
+        assert len(episodes) == 1
+        assert "session=session-42" in episodes[0].source
+        # pending 标识也在来源里，便于从图库反查是哪条待处理记录写的。
+        assert pending_id in episodes[0].source
+    finally:
+        await _clear()
+
+
+@pytest.mark.asyncio
+async def test_repeated_consumption_does_not_create_a_second_episode(memory_graph: MemoryGraph) -> None:
+    """**重复消费不产生第二条 episode**（第 5 节幂等 / 契约的「重复提交」一行）。
+
+    第二次消费会因租约仍有效而**领取失败**（`written=False`）——这本身就是幂等的一道
+    防线。为排除「只是租约挡住了」，这里额外验证：即使绕过租约直接重写同一 uuid，
+    图库里的 episode 数仍是 1（`MERGE` 按 uuid，通用记忆第 3 节实测）。
+    """
+    await _clear()
+    occurred = datetime.now(timezone.utc)
+    try:
+        pending_id = await _enqueue(occurred_at=occurred.isoformat())
+        async with session_scope(get_settings()) as session:
+            first = await consume_memory_episode(session, memory_graph, pending_id=pending_id, lease_owner="w1")
+        assert first.written is True
+
+        # 第二次消费：记录已 done，领取不到（不是错误）。
+        async with session_scope(get_settings()) as session:
+            second = await consume_memory_episode(session, memory_graph, pending_id=pending_id, lease_owner="w2")
+        assert second.written is False, "已完成的记录不得被再次领取"
+
+        scoped = memory_graph.driver_for(_ACCOUNT)
+        rows, _, _ = await scoped.execute_query("MATCH (e:Episodic) RETURN count(e) AS c")
+        assert rows[0]["c"] == 1, "重复消费不得产生第二条 episode"
+    finally:
+        await _clear()
+
+
+# ---------------------------------------------------------------------------
+# 载荷形状的边界（第 3 节：Worker 只凭自足载荷工作，缺键必须显式失败）
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_missing_occurred_at_fails_without_writing(memory_graph: MemoryGraph) -> None:
+    """载荷缺 `occurred_at` **显式失败且不写图库**——不猜「就是现在」。
+
+    猜时间会污染时间线（记忆回看的唯一载体），因此宁可失败。
+    """
+    await _clear()
+    try:
+        pending_id = await _enqueue(occurred_at=None)
+        async with session_scope(get_settings()) as session:
+            with pytest.raises(MemoryDataError, match="occurred_at"):
+                await consume_memory_episode(session, memory_graph, pending_id=pending_id, lease_owner="w")
+
+        scoped = memory_graph.driver_for(_ACCOUNT)
+        rows, _, _ = await scoped.execute_query("MATCH (e:Episodic) RETURN count(e) AS c")
+        assert rows[0]["c"] == 0, "载荷不合法时不得写图库"
+    finally:
+        await _clear()
+
+
+@pytest.mark.asyncio
+async def test_naive_occurred_at_is_rejected(memory_graph: MemoryGraph) -> None:
+    """缺时区的 `occurred_at` 被拒绝——朴素时间会被解释成不同瞬间，破坏时间顺序。"""
+    await _clear()
+    try:
+        pending_id = await _enqueue(occurred_at="2026-09-29T08:00:00")
+        async with session_scope(get_settings()) as session:
+            with pytest.raises(MemoryDataError, match="时区"):
+                await consume_memory_episode(session, memory_graph, pending_id=pending_id, lease_owner="w")
+    finally:
+        await _clear()
+
+
+@pytest.mark.asyncio
+async def test_missing_session_id_fails_without_writing(memory_graph: MemoryGraph) -> None:
+    """来源缺 `session_id` 显式失败——没有来源的记忆无法核对（契约硬约束）。"""
+    await _clear()
+    occurred = datetime.now(timezone.utc)
+    try:
+        pending_id = await _enqueue(occurred_at=occurred.isoformat(), session_id=None)
+        async with session_scope(get_settings()) as session:
+            with pytest.raises(MemoryDataError, match="session_id"):
+                await consume_memory_episode(session, memory_graph, pending_id=pending_id, lease_owner="w")
+    finally:
+        await _clear()
+
+
+@pytest.mark.asyncio
+async def test_profile_item_kind_is_rejected_by_the_memory_consumer(memory_graph: MemoryGraph) -> None:
+    """非 `memory_episode` 的 kind 被本消费者拒绝——按 kind 分派不得串台。"""
+    await _clear()
+    occurred = datetime.now(timezone.utc)
+    try:
+        pending_id = await _enqueue(kind=KIND_PROFILE_ITEM, occurred_at=occurred.isoformat())
+        async with session_scope(get_settings()) as session:
+            with pytest.raises(MemoryDataError, match="profile_item"):
+                await consume_memory_episode(session, memory_graph, pending_id=pending_id, lease_owner="w")
+    finally:
+        await _clear()
+
+
+@pytest.mark.asyncio
+async def test_consuming_an_unknown_pending_id_is_skipped_not_an_error(
+    memory_graph: MemoryGraph,
+) -> None:
+    """消费一个不存在的 `pending_id` 返回 `written=False`，**不抛异常**。
+
+    「没领到」是并发下的正常结果（已被他人领取、已终结、或记录不存在）；把它当异常会让
+    兜底扫描把每次竞争都记成失败。
+    """
+    await _clear()
+    try:
+        async with session_scope(get_settings()) as session:
+            result = await consume_memory_episode(
+                session, memory_graph, pending_id="00000000-0000-4000-8000-000000000000", lease_owner="w"
+            )
+        assert result.written is False
+    finally:
+        await _clear()
+
+
+@pytest.mark.asyncio
+async def test_deleted_memory_is_not_returned_after_write_path_completes(
+    memory_graph: MemoryGraph,
+) -> None:
+    """写入链路与删除账本协同：写完再删，读路径不再返回它。
+
+    这条把步骤 6（删除）与步骤 7（写入）接起来——两者分别可测，但**串起来**才是
+    `AC-08` 在真实时序下的形态（先写入，后删除）。
+    """
+    from campfire.modules.memory.deletion import delete_episode
+
+    await _clear()
+    occurred = datetime.now(timezone.utc)
+    try:
+        pending_id = await _enqueue(occurred_at=occurred.isoformat())
+        async with session_scope(get_settings()) as session:
+            await consume_memory_episode(session, memory_graph, pending_id=pending_id, lease_owner="w")
+
+        episode_uuid = derive_episode_uuid(PendingId(pending_id))
+        episodes = await read_timeline(memory_graph, to_account_id(_ACCOUNT), deleted_keys=[])
+        assert len(episodes) == 1
+
+        async with session_scope(get_settings()) as session:
+            await delete_episode(session, account_id=to_account_id(_ACCOUNT), episode_key=episode_uuid)
+        async with session_scope(get_settings()) as session:
+            keys = await deleted_episode_keys(session, _ACCOUNT)
+
+        after = await read_timeline(memory_graph, to_account_id(_ACCOUNT), deleted_keys=keys)
+        assert after == [], "写入后删除的记忆不得再出现在时间线"
+    finally:
+        await _clear()

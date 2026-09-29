@@ -19,10 +19,10 @@ from sqlalchemy import pool
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
+# 导入模型以注册进 metadata：不导入则 autogenerate 认为「表全都该删」。
+from campfire.core import pending_write as pending_write_models  # noqa: F401  —— 仅为注册副作用
 from campfire.core.config import get_settings
 from campfire.core.db import metadata
-
-# 导入模型以注册进 metadata：不导入则 autogenerate 认为「表全都该删」。
 from campfire.modules.library import models  # noqa: F401  —— 仅为注册副作用
 from campfire.modules.memory import models as memory_models  # noqa: F401  —— 仅为注册副作用
 
