@@ -1,6 +1,9 @@
-# 目标前端工作空间（见 docs/项目结构设计.md）。
-# apps/react-web 与 packages/ts-shared 尚未创建；pnpm 会忽略暂不存在的成员目录。
-# 旧实现（含 apps/mini-program）已整体归档至 archive/，不再作为工作空间成员。
+# 前端工作空间（见 docs/项目结构设计.md 第 2 节与第 9 节）。
+#
+# 只有一个前端：apps/web（React H5）。上一轮的 apps/react-web 与
+# packages/ts-shared 属已归档结构，不在此列。
+#
+# apps/web 目前只有目录占位、尚无 package.json：一期前端样式契约
+# （docs/design/tokens.css）尚未重建，故先不引入构建链。
 packages:
-  - "apps/react-web"
-  - "packages/ts-shared"
+  - "apps/web"
