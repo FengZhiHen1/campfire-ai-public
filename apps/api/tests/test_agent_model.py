@@ -5,14 +5,13 @@
 发给外部处理方）。
 
 **测试环境自保**：构造 httpx/openai 客户端时会读取宿主机的 ``no_proxy``；实测本机
-``no_proxy`` 含 ``[::1]`` 时 httpx 0.28.1 在构造期抛 ``InvalidURL``。因此下面的用例
-先把 ``no_proxy`` 归一到合法值，让结果不依赖宿主机环境（这条陷阱本身也有一条用例）。
+``no_proxy`` 含 ``[::1]`` 时 httpx 0.28.1 在构造期抛 ``InvalidURL``。归一化在
+``tests/conftest.py`` 里统一做，本文件不再重复（这条陷阱本身也有一条用例）。
 """
 
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Iterator
 
 import httpx
 import pytest
@@ -31,14 +30,6 @@ from campfire.agent.model import (
 from campfire.core.config import Settings
 
 API_KEY = SecretStr("test-key")
-
-
-@pytest.fixture(autouse=True)
-def _neutralise_proxy_env(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
-    """把代理环境归一到合法值，避免宿主机 ``no_proxy`` 影响客户端能否构造。"""
-    monkeypatch.setenv("no_proxy", "localhost,127.0.0.1")
-    monkeypatch.setenv("NO_PROXY", "localhost,127.0.0.1")
-    yield
 
 
 def _settings(**overrides: object) -> Settings:
