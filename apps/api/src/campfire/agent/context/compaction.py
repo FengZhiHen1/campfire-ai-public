@@ -540,6 +540,11 @@ class SummaryResult:
     input_tokens: int = 0
     output_tokens: int = 0
     elapsed_seconds: float = 0.0
+    prompt_cache_hit_tokens: int = 0
+    """缓存命中 token（第 9 节要求记录、第 12 节要求用它断言缓存仍有效）。取不到时为 0。"""
+
+    prompt_cache_miss_tokens: int = 0
+    """缓存未命中 token（同上）。"""
 
 
 class CompactionSummarizer(Protocol):
