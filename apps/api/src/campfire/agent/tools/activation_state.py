@@ -1,4 +1,4 @@
-"""运行时激活集合：一次运行内可增长的激活状态。
+"""运行时激活状态：一次运行内可增长的「已激活 skill」与其「预授权工具集」。
 
 为什么需要它：基座第 5 节定的是「激活集合变化时扩大可用工具」，但 ``ToolScope`` 与
 ``ToolContext`` 都是运行开始时的**冻结快照**——模型在运行中调 ``skill`` 工具激活后，
@@ -6,14 +6,12 @@
 工具调用被「未被已激活的 skill 授权」拒绝；② ``read_skill_resource`` 这类依赖激活态的
 工具读到过期状态。
 
-解法是一个**共享的可变集合**：``resolve_scope`` 算出的初始激活集并入它，模型侧激活
-回调（``build_skill_tool(on_activated=...)``）往里加名字；dispatcher 的范围判定与
-``ToolContext.activated_skills`` 都改为读它的实时快照。冻结形状不变——对外仍然是
-frozenset，只是取值时现算。
-
-放在 ``tools`` 而不是 ``runtime``：它是工具范围机制的一部分（dispatcher 与
-``ToolContext`` 都要读它），而 ``runtime`` 反过来要用 ``tools``——放 ``runtime``
-会形成反向依赖。
+**两个命名空间必须分开维护**（这是本模块存在的第二个理由）：已激活的是 **skill 名**，
+可放行的是 **工具名**；两者都以 ``str`` 表示，语义却不同。第一版只存一集合、把 skill 名
+当工具名判定，于是双向都错：模型侧激活的 ``allowed-tools`` 永不生效（fail-closed），
+而池里与 skill 同名的工具被无条件放行（fail-open，等价于「激活 skill 即授权同名工具」）。
+因此本类只在 :meth:`activate` 一处同时写入两个命名空间，且两个参数**强制关键字传参**：
+位置传参会把 skill 名喂进工具集合，类型检查器看不见这类错，只能由签名挡住。
 
 设计边界（刻意不做的事）：
 
@@ -27,23 +25,40 @@ frozenset，只是取值时现算。
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 
 
 @dataclass
 class ActivationState:
-    """一次运行的激活名字集合（可增长）。"""
+    """一次运行的激活状态：skill 名与预授权工具集，分两个命名空间维护。"""
 
-    _names: set[str] = field(default_factory=set)
+    _skill_names: set[str] = field(default_factory=set)
+    _allowed_tools: set[str] = field(default_factory=set)
 
-    def add(self, name: str) -> None:
-        """并入一个激活名（模型侧激活回调调用）。"""
-        self._names.add(name)
+    def seed(self, skill_names: Iterable[str]) -> None:
+        """并入运行**开始**时的激活 skill 名。
 
-    def update(self, names: frozenset[str]) -> None:
-        """并入初始激活集合（运行开始时调用一次）。"""
-        self._names.update(names)
+        不并工具集：那批工具已由 ``ToolScope`` 放行（dispatcher 的判定本身就是
+        「scope ∪ 本状态」的并集），重复并入只会多一份会漂移的真相。
+        """
+        self._skill_names.update(skill_names)
 
-    def snapshot(self) -> frozenset[str]:
-        """当前激活名的实时快照。"""
-        return frozenset(self._names)
+    def activate(self, *, skill_name: str, allowed_tools: Iterable[str]) -> None:
+        """并入运行**中**激活的一个 skill：它的名字，以及它预授权的工具名。
+
+        名字与工具集在同一处并入，因此「激活了 skill 却没并工具」这类半边状态不可表示。
+        """
+        self._skill_names.add(skill_name)
+        self._allowed_tools.update(allowed_tools)
+
+    def skill_names(self) -> frozenset[str]:
+        """当前已激活的 **skill 名**快照（供按 skill 判定的工具使用，如资源读取）。"""
+        return frozenset(self._skill_names)
+
+    def allowed_tools(self) -> frozenset[str]:
+        """运行中激活带来的 **工具名** 并集快照（供 dispatcher 的可用性判定使用）。
+
+        只报本状态新增的部分；请求时的 ``ToolScope.active`` 由 scope 承担。
+        """
+        return frozenset(self._allowed_tools)

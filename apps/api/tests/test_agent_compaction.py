@@ -19,10 +19,12 @@ from campfire.agent.context import (
     derive_window,
     estimate_window_tokens,
     is_compacted_summary,
+    item_text,
     previous_summary_text,
     retained_after_last_checkpoint,
     select_range,
 )
+from campfire.agent.skill_runtime import estimate_tokens
 
 # 阈值算术里的小数字：W=1000、O=100、headroom=100 → 阈值 = floor(min(800, 800)) = 800
 # 保留预算 = floor((1000−100) × 0.16) = 144
@@ -234,6 +236,73 @@ def test_range_selection_is_empty_when_history_is_only_the_system_prompt() -> No
     selection = select_range([_message("system", "提示")], SMALL)
 
     assert selection.is_empty
+
+
+def _pair_ids(item: dict[str, object]) -> set[str]:
+    """取一项携带的全部工具配对键（Chat Completions 与 Responses 两种形态都读）。"""
+    ids: set[str] = set()
+    for key in ("call_id", "tool_call_id"):
+        value = item.get(key)
+        if isinstance(value, str):
+            ids.add(value)
+    calls = item.get("tool_calls")
+    if isinstance(calls, list):
+        for call in calls:
+            if isinstance(call, dict) and isinstance(call.get("id"), str):
+                ids.add(call["id"])
+    return ids
+
+
+def test_range_selection_does_not_split_a_chat_completions_tool_pair() -> None:
+    """Chat Completions 形态的**多调用**助手消息也不得被切开。
+
+    这条形态是实测缺陷的来路（见 ``compaction._call_ids`` 的说明）：一条助手消息可以同时
+    发起多个调用，只读第一个配对键会让边界检查漏掉其余配对。构造刻意让**第二个**调用
+    （``c2``）成为边界上的那个：朴素边界落在 ``c2`` 的结果上，而 ``c2`` 只出现在助手消息的
+    ``tool_calls`` 列表第二位——只读第一位就会判定「安全」，把 ``c2`` 的调用与结果切开。
+    """
+    assistant = {
+        "role": "assistant",
+        "content": None,
+        "tool_calls": [
+            {"id": "c1", "type": "function", "function": {"name": "search", "arguments": '{"q": "x"}'}},
+            {"id": "c2", "type": "function", "function": {"name": "read", "arguments": '{"q": "y"}'}},
+        ],
+    }
+    items = [
+        _filler(0),
+        _filler(1),
+        assistant,
+        _message("tool", "结果一"),
+        {"role": "tool", "tool_call_id": "c2", "content": "结果二" * 200},
+    ]
+
+    selection = select_range(items, SMALL)
+
+    compacted = set().union(*(_pair_ids(item) for item in items[: selection.end])) if selection.end else set()
+    kept = set().union(*(_pair_ids(item) for item in items[selection.end :])) if selection.end < len(items) else set()
+    assert not (compacted & kept), f"边界 {selection.end} 切开了工具配对：{compacted & kept}"
+
+
+def test_item_text_counts_chat_completions_tool_call_arguments() -> None:
+    """助手消息的 ``tool_calls[*].function.arguments`` 必须计入估算。
+
+    第一版没读它，于是一条 arguments 上千字的助手消息被计成 0 token——估算偏低到失真，
+    而这条估算正是压缩阈值的判据。
+    """
+    message = {
+        "role": "assistant",
+        "content": None,
+        "tool_calls": [
+            {
+                "id": "c1",
+                "type": "function",
+                "function": {"name": "search", "arguments": '{"q": "' + "x" * 4000 + '"}'},
+            },
+        ],
+    }
+
+    assert estimate_tokens(item_text(message)) > 100, "tool_calls 的参数未被计入估算"
 
 
 def test_force_max_reduction_ignores_the_retention_budget() -> None:
@@ -540,8 +609,13 @@ async def test_retry_reduces_the_retention_budget_instead_of_dropping_the_tail()
     """重试按比例缩小保留预算，而**不是**绕过保留策略丢掉整段尾部。
 
     「绕过阈值与保留策略」在第 2 节是**溢出恢复**的专属手段；常规重试动用它会让代价付了、
-    目的还没达成（实测第一版：重试后保留 0 项，窗口仍高于阈值）。这里用一个「第一次压缩后
-    仍超阈值」的构造，断言重试确实发生了，且尾部没有被整段丢掉。
+    目的还没达成（实测第一版：重试后保留 0 项，窗口仍高于阈值）。
+
+    构造：``retain_tokens=790``（< 阈值 800，合法）让第一次压缩后窗口仍约 862 token，
+    因而**必须**走第二次尝试；重试把保留预算按 ``retain_scale`` 缩到一半后降到约 442。
+    第一版用 ``retain_ratio=0.5``：那个构造第一次尝试就达标（实测窗口 547 < 800），
+    重试路径从未进入，末句 ``attempts == 1 or retained_items > 0`` 经左支路恒真——
+    用例名与断言都在宣称一件没发生的事。
     """
     items = _long_history(40)
     summarizer = FakeSummarizer(text="很短")
@@ -550,15 +624,17 @@ async def test_retry_reduces_the_retention_budget_instead_of_dropping_the_tail()
         output_reserve_tokens=100,
         headroom_tokens=100,
         compaction_retries=1,
-        retain_ratio=0.5,  # 保留预算 450 token：第一次压缩后仍可能高于阈值 800
+        retain_ratio=None,
+        retain_tokens=790,  # 第一次压缩后窗口仍 > 阈值 800（实测 862）
     )
 
     _history, outcome = await _compact(items, settings=settings, summarizer=summarizer)
 
     assert outcome.performed is True
-    assert len(summarizer.requests) >= 1
+    assert len(summarizer.requests) == 2, "这个构造必须真的触发第二次尝试"
+    assert outcome.attempts == 2
     # 重试若走「最大头部缩减」，保留项数会是 0；按比例缩小则仍保留若干项
-    assert outcome.attempts == 1 or outcome.retained_items > 0
+    assert outcome.retained_items > 0, "重试不该把逐字保留的尾部整段丢掉"
 
 
 @pytest.mark.asyncio

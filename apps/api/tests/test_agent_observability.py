@@ -265,6 +265,22 @@ def test_outcome_mapping(events: Sequence[object], cancelled: bool, expected: st
     assert recorder.finish().outcome == expected
 
 
+def test_cancelled_terminal_event_goes_to_the_flag_not_the_end_reason() -> None:
+    """``reason="cancelled"`` 的终态事件落进 ``cancelled`` 标志，不写进 ``end_reason``。
+
+    ``RunEndReason`` 含 ``"cancelled"`` 而记录的 ``end_reason`` 刻意不含它——这条纪律必须由
+    显式分流承载：直接赋值的话，未来某条 cancelled 终态会让字段与其 docstring 自相矛盾
+    （而且 ``end_reason`` 的类型收不下它）。
+    """
+    recorder = RunRecorder(started_at=STARTED_AT)
+    recorder.apply(RunFinishedEvent(reason="cancelled", citations=(), usage=RunUsage(), elapsed_seconds=0.5))
+
+    record = recorder.finish()
+    assert record.cancelled is True
+    assert record.end_reason is None
+    assert record.outcome == "cancelled"
+
+
 def test_failure_record_carries_code_and_model_reason() -> None:
     recorder = RunRecorder(started_at=STARTED_AT)
     recorder.apply(_started())
@@ -348,6 +364,50 @@ async def test_record_stream_forwards_events_unchanged_and_writes_one_record() -
     assert forwarded == incoming
     assert len(writer.records) == 1
     assert writer.records[0].outcome == "completed"
+
+
+@pytest.mark.asyncio
+async def test_record_without_run_started_warns_about_the_missing_run_identity(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """事件流没有 ``run_started`` 时，记录无法回指到运行——这个观测缺口必须显式告警。
+
+    来路：运行编排在 ``run_started`` 之前就会以 ``run_failed`` 结束（会话读取失败、注入
+    渲染/准备失败）。那类运行派生不出 ``run_id``，落库后无法回答「这是谁的运行失败了」。
+    缺口的**结构性**修复要动 §7 的对外事件形状，因此这里只保证它不被静默吞掉。
+    """
+    writer = _FakeWriter()
+    incoming = [
+        RunFailedEvent(
+            code="injection_failed",
+            detail="注入渲染失败（RuntimeError）",
+            citations=(),
+            usage=RunUsage(),
+            elapsed_seconds=0.0,
+        ),
+    ]
+
+    with caplog.at_level(logging.WARNING):
+        forwarded = [event async for event in record_stream(_events(*incoming), writer=writer)]
+
+    assert forwarded == incoming, "告警不得改变事件转发"
+    assert writer.records[0].run_id is None
+    assert "缺少运行标识" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_record_with_run_started_does_not_warn(caplog: pytest.LogCaptureFixture) -> None:
+    """正常路径（有 ``run_started``）不得产生这条告警——否则告警会退化成噪音被忽略。"""
+    writer = _FakeWriter()
+    incoming = [
+        _started(),
+        RunFinishedEvent(reason="completed", citations=(), usage=RunUsage(), elapsed_seconds=0.2),
+    ]
+
+    with caplog.at_level(logging.WARNING):
+        [event async for event in record_stream(_events(*incoming), writer=writer)]
+
+    assert "缺少运行标识" not in caplog.text
 
 
 @pytest.mark.asyncio

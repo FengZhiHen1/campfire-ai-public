@@ -155,6 +155,10 @@ INVALID_DOCUMENTS: dict[str, tuple[str, str]] = {
     ),
     "正文为空": ("---\nname: {name}\ndescription: 描述\n---\n\n", "正文为空"),
     "YAML 语法错误": ("---\nname: {name}\ndescription: [未闭合\n---\n正文\n", "不是合法 YAML"),
+    "YAML 嵌套过深": (
+        "---\nname: {name}\ndescription: 描述\nmetadata:\n  deep: " + "[" * 3000 + "]" * 3000 + "\n---\n正文\n",
+        "嵌套过深",
+    ),
     "孤代理对": (
         '---\nname: {name}\ndescription: "\\ud83d 应急"\n---\n正文\n',
         "无法编码为 UTF-8",
