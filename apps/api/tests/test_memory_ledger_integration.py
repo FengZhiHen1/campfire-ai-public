@@ -17,7 +17,6 @@ marker，默认不在 ``uv run pytest`` 中运行；显式跑法：
 
 from __future__ import annotations
 
-import uuid
 from collections.abc import AsyncIterator
 
 import pytest
@@ -35,8 +34,10 @@ from campfire.modules.memory.models import (
 
 pytestmark = pytest.mark.integration
 
-#: 本文件专用的账号前缀，测试结束按它清理。
-_ACCOUNT = uuid.UUID("cd000000-0000-4000-8000-000000000001")
+#: 本文件专用的账号标识。**故意用非 UUID 形态**：账本列此前是 `uuid`，而
+#: `identity.to_account_id` 接受 `[a-zA-Z0-9_-]`（不只 UUID）——两者冲突会让
+#: 「合法账号键无法落库」。用下划线形态正是为了把这个缺陷钉住（2026-09-29 评审发现）。
+_ACCOUNT = "cd_it_account_001"
 
 
 @pytest_asyncio.fixture(autouse=True)
@@ -165,7 +166,7 @@ async def test_account_filter_is_the_query_path_for_account_wide_cleanup() -> No
     同时验证**跨账号不可见**：另一个账号的删除记录不出现在结果里——
     这是「记忆按账号归属」在账本上的体现（决策记录 `通用记忆归属为账号.md`）。
     """
-    other_account = uuid.UUID("cd000000-0000-4000-8000-0000000000ff")
+    other_account = "cd_it_account_002"
     await _cleanup()
     try:
         async with session_scope(get_settings()) as session:

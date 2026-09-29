@@ -53,6 +53,23 @@ jobs:
       - name: ruff format --check
         run: uv run ruff format --check .
 
+      # 类型检查是 NewType 语义类型（如 AccountId/PendingId/EpisodeUuid）的**唯一机器通道**。
+      # 不跑它，那些类型就只是注释——混用不会被任何东西拦下（2026-09-29 评审指出）。
+      #
+      # 覆盖范围是**已达标的部分**：agent、core、modules/memory、入口文件。
+      # `modules/library` 有 3 处**既存**类型错误（retrieval.py:140 的参数字典被推断为
+      # dict[str,str] 却赋 int；retrieval.py:264 与 ingestion.py:97 对 BaseNode 取 .text），
+      # 修它们属另一个主题、不该混进本次改动。这里**显式列出被排除的路径**而不是
+      # 静默跳过——一旦 library 修好，应把范围放宽为 apps/api/src/campfire 整体。
+      - name: mypy
+        run: >
+          uv run mypy
+          apps/api/src/campfire/agent
+          apps/api/src/campfire/core
+          apps/api/src/campfire/modules/memory
+          apps/api/src/campfire/main.py
+          apps/api/src/campfire/worker.py
+
       - name: pytest
         run: uv run pytest
 
