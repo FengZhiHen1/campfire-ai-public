@@ -20,6 +20,15 @@ from campfire.agent.skill_runtime import Skill
 from .errors import ToolNotRegisteredError, ToolRegistrationError
 from .spec import Tool
 
+RESERVED_TOOL_NAMES: frozenset[str] = frozenset({"skill"})
+"""基座保留的工具名。
+
+``skill`` 是**模型侧激活**用的工具名（基座文档第 3 节：模型调用 ``skill({ name })``）。
+产品侧工具不得占用它——否则模型侧的激活工具要么被顶掉、要么与产品工具同名，而
+``allowed-tools`` 与实际派发都以名字为键，重名会让权限判定面对一个含义不明的名字。
+保留名的注册走 :meth:`ToolPool.register_base`。
+"""
+
 
 class ToolPool:
     """已注册工具的集合。"""
@@ -31,12 +40,27 @@ class ToolPool:
             self.register(tool)
 
     def register(self, tool: Tool) -> None:
-        """注册一个工具。
+        """注册一个**产品侧**工具。
 
         Raises:
-            ToolRegistrationError: 同名工具已注册。不覆盖、不忽略——重名会让权限判定
+            ToolRegistrationError: 同名工具已注册，或用了基座保留名
+                （见 :data:`RESERVED_TOOL_NAMES`）。不覆盖、不忽略——重名会让权限判定
                 面对一个含义不明的名字。
         """
+        if tool.name in RESERVED_TOOL_NAMES:
+            raise ToolRegistrationError(f"工具名 {tool.name} 是基座保留名（模型侧激活工具）：产品侧工具不得占用")
+        self._register(tool)
+
+    def register_base(self, tool: Tool) -> None:
+        """注册一个**基座自有**工具，允许使用保留名。
+
+        与 :meth:`register` 分开是为了让「这个工具属于基座还是产品侧」在调用点就可见；
+        两者的重名规则不同，混在一个方法里就只能靠注释说明。
+        """
+        self._register(tool)
+
+    def _register(self, tool: Tool) -> None:
+        """实际写入；重名一律拒绝。"""
         if tool.name in self._tools:
             raise ToolRegistrationError(f"工具 {tool.name} 重复注册")
         self._tools[tool.name] = tool

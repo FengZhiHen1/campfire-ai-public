@@ -12,6 +12,8 @@
 
 from __future__ import annotations
 
+import re
+
 import yaml
 
 from .errors import SkillFrontmatterError
@@ -28,6 +30,11 @@ STANDARD_FIELDS: tuple[str, ...] = (
 
 _FRONTMATTER_DELIMITERS = ("---", "...")
 _UTF8_BOM = "\ufeff"
+
+# 正文首行以标准字段开头的样子（`metadata:` / `allowed-tools: …`）。
+_BODY_LOOKS_LIKE_FRONTMATTER = re.compile(
+    r"^(name|description|license|compatibility|metadata|allowed-tools)\s*:",
+)
 
 
 class _StrictSafeLoader(yaml.SafeLoader):
@@ -115,4 +122,33 @@ def parse_frontmatter(text: str, *, path: str) -> tuple[dict[object, object], st
             f"出现标准之外的字段 {unknown}；只允许 {allowed}，自有元数据放 metadata 下",
         )
 
+    _reject_body_that_looks_like_frontmatter(body, path=path)
     return loaded, body
+
+
+def _reject_body_that_looks_like_frontmatter(body: str, *, path: str) -> None:
+    """正文以标准字段开头时**拒绝加载**。
+
+    为什么需要这一条：顶格 ``---`` 出现在块标量里时，YAML 规范会让块标量在该行结束，
+    于是其后的 ``metadata``、``allowed-tools`` 落到 frontmatter 之外、被当成正文吞掉。
+    实测（``description: |1`` 显式缩进指示符、或内容里写着「第一行就是 ``---``」）能把
+    ``autoload: "false"`` 吞掉，使本该只由程序注入的 skill 变成**可被模型自动匹配**，
+    而且既不报错也不告警——正是基座第 3 节禁止的「静默加载」。
+
+    **只在正文首个非空行判定**：正文中间出现 ``metadata:`` 是合法内容（指令里举例很常见），
+    在任意行判定会误伤。
+
+    Raises:
+        SkillFrontmatterError: 正文首行是标准字段赋值，疑似分隔符写错。
+    """
+    for line in body.splitlines():
+        if not line.strip():
+            continue
+        if _BODY_LOOKS_LIKE_FRONTMATTER.match(line):
+            field = line.split(":", 1)[0].strip()
+            raise SkillFrontmatterError(
+                path,
+                f"正文以标准字段 {field!r} 开头，疑似 frontmatter 结束行写错："
+                "块标量内出现顶格 `---` / `...` 会让其后的字段被当成正文。请检查 frontmatter 的分隔符",
+            )
+        return

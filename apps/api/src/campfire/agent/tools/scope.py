@@ -14,6 +14,16 @@
    只读资料与案例，与默认集并不相同。
 2. **``allowed-tools`` 指向未注册工具时直接失败**，不静默收窄。静默收窄会把 skill 作者
    的笔误藏起来，让「以为能用这个工具」的 skill 静默地少一件工具。
+
+另外两处需要显式说明的形状（都是「看起来像缺陷，其实是决定」）：
+
+- **``always_active``**：模型侧激活工具 ``skill`` 必须**永远可用**，否则模型无法激活任何
+  skill，第 3 节的机制自相矛盾。它因此不参与 ``allowed-tools`` 的并集计算，而是由运行
+  编排单独传进来。
+- **``allowed-tools`` 为空集是合法的**，含义是「这个 skill 一件工具都不用」（纯方法论
+  skill）。启动期校验因此不会为空集报警。这个方向的失败是**功能不足**而不是越权（模型
+  可用的工具更少），若哪天出现「作者漏写 allowed-tools 却没人发现」的真实事故，再把它
+  改成显式声明（例如要求写 ``allowed-tools: (none)``）。
 """
 
 from __future__ import annotations
@@ -82,12 +92,16 @@ def resolve_scope(
     *,
     activated: Sequence[Skill] = (),
     default_active: Iterable[str] = (),
+    always_active: Iterable[str] = (),
 ) -> ToolScope:
     """按激活集合解析出本次运行的工具范围。
 
+    ``always_active`` 是「机制本身」需要的工具（当前只有模型侧激活工具 ``skill``）：
+    它必须恒可用，否则模型连第一个 skill 都激活不了。
+
     Raises:
-        ToolNotRegisteredError: 激活 skill 的 ``allowed-tools`` 或 ``default_active``
-            里出现了未注册的工具名。
+        ToolNotRegisteredError: 激活 skill 的 ``allowed-tools``、``default_active`` 或
+            ``always_active`` 里出现了未注册的工具名。
     """
     names = pool.names()
 
@@ -96,10 +110,11 @@ def resolve_scope(
     else:
         active = frozenset(default_active)
 
-    pool.ensure_names_are_registered(active)
+    always = frozenset(always_active)
+    pool.ensure_names_are_registered(active | always)
 
     return ToolScope(
         declared=names,
-        active=active,
+        active=active | always,
         activated_skills=frozenset(skill.name for skill in activated),
     )

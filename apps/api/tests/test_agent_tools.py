@@ -153,6 +153,68 @@ def test_duplicate_registration_fails_instead_of_overwriting() -> None:
         pool.register(_spec("read_alpha"))
 
 
+def test_reserved_tool_name_cannot_be_squatted_by_product_code() -> None:
+    """``skill`` 是模型侧激活工具的保留名：产品侧不得占用（否则激活机制被顶掉）。"""
+    pool = ToolPool()
+
+    with pytest.raises(ToolRegistrationError, match="保留名"):
+        pool.register(_spec("skill"))
+
+    # 基座自有工具走另一条注册路径
+    pool.register_base(_spec("skill"))
+    assert pool.names() == ("skill",)
+
+
+def test_tool_pool_view_is_read_only() -> None:
+    pool = ToolPool([_spec("read_alpha")])
+
+    with pytest.raises(TypeError):
+        pool.tools["x"] = _spec("x")  # type: ignore[index]
+
+
+def test_always_active_tools_do_not_depend_on_allowed_tools() -> None:
+    """机制本身（激活工具）必须恒可用，否则模型连第一个 skill 都激活不了。"""
+    pool = ToolPool([_spec("read_alpha"), _spec("write_beta")])
+
+    scope = resolve_scope(
+        pool,
+        activated=[_skill("daily", ("read_alpha",))],
+        always_active=["write_beta"],
+    )
+
+    assert scope.active == {"read_alpha", "write_beta"}
+
+
+def test_always_active_tool_must_be_registered() -> None:
+    pool = ToolPool([_spec("read_alpha")])
+
+    with pytest.raises(ToolNotRegisteredError, match="nope"):
+        resolve_scope(pool, always_active=["nope"])
+
+
+def test_empty_allowed_tools_means_no_tools_for_that_skill() -> None:
+    """空集是合法形状：该 skill 一件工具都不用（纯方法论 skill），不是越权。"""
+    pool = ToolPool([_spec("read_alpha")])
+    scope = resolve_scope(pool, activated=[_skill("pure-method", ())], default_active=["read_alpha"])
+
+    assert scope.active == frozenset()
+
+
+def test_handler_may_return_an_explicit_recoverable_failure() -> None:
+    """工具可以显式返回带码失败，而不是只能抛异常把细节丢掉。"""
+
+    async def handler(_context: ToolContext, _args: ReadArgs) -> ToolFailure:
+        return ToolFailure(code="tool_not_registered", message="没有这个条目")
+
+    spec = ToolSpec(name="read_alpha", description="读", args_model=ReadArgs, handler=handler)
+
+    outcome = asyncio.run(spec.invoke(_context(), json.dumps({"query": "q"})))
+
+    assert isinstance(outcome, ToolFailure)
+    assert outcome.code == "tool_not_registered"
+    assert outcome.message == "没有这个条目"
+
+
 def test_declared_order_is_stable_and_sorted() -> None:
     pool = ToolPool([_spec("write_beta"), _spec("read_alpha")])
 
@@ -307,6 +369,7 @@ def test_scope_unions_multiple_activated_skills() -> None:
     scope = resolve_scope(pool, activated=[_skill("daily", ("read_alpha",)), _skill("curation", ("write_beta",))])
 
     assert scope.active == {"read_alpha", "write_beta"}
+    assert scope.activated_skills == {"daily", "curation"}
 
 
 def test_scope_rejects_allowed_tools_that_are_not_registered() -> None:

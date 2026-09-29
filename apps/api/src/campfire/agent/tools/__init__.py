@@ -25,13 +25,14 @@
 
 from .dispatch import ToolDispatcher
 from .errors import ToolError, ToolNotRegisteredError, ToolRegistrationError, ToolSpecError
-from .pool import ToolPool
+from .pool import RESERVED_TOOL_NAMES, ToolPool
 from .results import Candidate, ToolErrorCode, ToolFailure, ToolOutcome, ToolResult
 from .scope import AVAILABILITY_SOURCE, ToolScope, resolve_scope
 from .spec import TOOL_NAME_PATTERN, RiskLevel, Tool, ToolContext, ToolHandler, ToolSpec
 
 __all__ = [
     "AVAILABILITY_SOURCE",
+    "RESERVED_TOOL_NAMES",
     "Candidate",
     "RiskLevel",
     "TOOL_NAME_PATTERN",

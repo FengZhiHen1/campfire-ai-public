@@ -7,12 +7,6 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:
-    from .citations import CitationRecord
-    from .injection import InjectionMessage
-
 
 class ContextError(Exception):
     """上下文层的基类错误。"""
@@ -40,14 +34,18 @@ class InjectionRenderError(ContextError):
 
     ``detail`` 只带异常**类型名**，不带原始消息：原始消息可能含连接串与凭据
     （见 AGENTS.md 安全条款）。
+
+    ``recorded`` / ``rendered`` 的元素类型分别是 ``CitationRecord`` 与 ``InjectionMessage``。
+    这里刻意标成 ``object``：那两个类型所在的模块都 import 本模块（``errors``），
+    用真类型注解会形成环；标成 ``object`` 让 ``get_type_hints()`` 这类反射也能正常求值。
     """
 
     def __init__(
         self,
         detail: str,
         *,
-        recorded: tuple["CitationRecord", ...] = (),
-        rendered: tuple["InjectionMessage", ...] = (),
+        recorded: tuple[object, ...] = (),
+        rendered: tuple[object, ...] = (),
     ) -> None:
         """记录失败说明、已落索引的引用与已渲染的消息。"""
         self.recorded = recorded
