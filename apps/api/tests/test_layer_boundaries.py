@@ -34,8 +34,28 @@ ALLOWED: dict[str, set[str]] = {
     "tools": {"campfire.agent.tools", "campfire.modules", "campfire.core"},
     "modules": {"campfire.core"},
     "core": {"campfire.core"},
-    # 本地摄取入口：禁止 import surfaces、禁止暴露成服务端点
-    "cli": {"campfire.core", "campfire.modules.library"},
+    # 本地运维入口：禁止 import surfaces、禁止暴露成服务端点。
+    #
+    # **为什么放行 memory 与 accounts**（2026-09-30 定调级修正）：账号注销的编排
+    # （`core/auth/deletion`）需要一个「清除该账号在记忆领域的数据」的实现，
+    # 而 `core/*` 不得依赖 `modules/*`。因此实现放 `modules/memory/purge.py`、
+    # **由装配处（CLI）注入**给编排——与其他领域的清除者同一种做法。
+    # 邀请码与账号状态机在 `modules/accounts`（运营子命令直接调用）。
+    # CLI 是运维编排点，放行它符合既有定调。
+    # 该修正同时同步《项目结构设计》第 7 节与 `cli/__init__.py` 的 docstring
+    # （三者此前互不一致，见 docs/TODO.md 的定调级条目）。
+    #
+    # `campfire.cli` 自身在列，理由与 `agent` 那一行**完全相同**：第 7 节的表把
+    # `cli/*` 当作**一层**，层内文件互相引用（`__main__` 用 `operator`）不构成跨层依赖；
+    # 而 `_owner_prefix` 对层根下的文件只放行到 `cli/<文件名>`，**不放行兄弟文件**，
+    # 故必须显式列出。
+    "cli": {
+        "campfire.cli",
+        "campfire.core",
+        "campfire.modules.accounts",
+        "campfire.modules.library",
+        "campfire.modules.memory",
+    },
 }
 
 

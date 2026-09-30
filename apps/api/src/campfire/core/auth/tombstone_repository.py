@@ -23,6 +23,7 @@ Worker 的消费路径按 ``pending_id`` 单条处理，但注销编排与排查
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from datetime import datetime, timezone
 from typing import NamedTuple
 
@@ -210,27 +211,47 @@ async def is_account_deleted(session: AsyncSession, *, account_id: object) -> bo
 async def deleted_account_ids(
     session: AsyncSession,
     *,
-    account_ids: list[str],
+    account_ids: Sequence[str],
 ) -> set[str]:
     """批量查询：这批账号里哪些已注销。
 
     用**一条** ``IN`` 查询而不是逐个查（避免 N+1）。
 
+    ## 为什么入口要拒绝 ``str``（2026-09-30 评审抓出的静默误报）
+
+    第一版只校验 ``len()`` 上界，**不校验容器类型**。传入 ``str`` 时
+    ``for value in account_ids`` 会**逐字符**迭代，于是
+    ``IN ('i','t','_')`` → 返回**空集**，即**静默回答「这些账号都没注销」**。
+    这正是墓碑要防的「删后复活」的入口——调用方少写一层 ``[ ... ]`` 就会拿到
+    与事实相反的答案，而且**不报错**。评审实测：传 ``str`` 返回空集、传 ``None``
+    或生成器抛裸 ``TypeError``。
+
     Args:
         session: 关系库会话。
-        account_ids: 待查的账号标识列表。空列表直接返回空集（不发查询）。
+        account_ids: 待查的账号标识**序列**（list/tuple/set）。空序列直接返回空集
+            （不发查询）。**不接受 ``str``/``bytes``/生成器/``None``**——见上。
 
     Returns:
         已注销账号的集合（可能是空集）。
 
     Raises:
-        TombstonePayloadError: 列表超长（``BATCH_MAX_ACCOUNTS``），或含不合法的标识。
+        TombstonePayloadError: 容器类型不对、超长（``BATCH_MAX_ACCOUNTS``），
+            或含不合法的标识。
     """
-    if len(account_ids) > BATCH_MAX_ACCOUNTS:
-        raise TombstonePayloadError(f"批量查询超过 {BATCH_MAX_ACCOUNTS} 个账号上界（实际 {len(account_ids)}）")
-    if not account_ids:
+    # 类型守卫必须在 `len()` 之前：`str` 与 `bytes` 都有 `len()`，但它们迭代出的是
+    # 字符/整数，会造成上面说的静默空集。生成器与 None 没有 `len()`，会抛裸 TypeError。
+    if isinstance(account_ids, (str, bytes)) or not isinstance(account_ids, (list, tuple, set, frozenset)):
+        raise TombstonePayloadError(
+            f"account_ids 必须是账号标识的序列（list/tuple/set），收到 {type(account_ids).__name__}"
+            "——传字符串会被逐字符校验并静默返回空集（误报「都没注销」）"
+        )
+    # 先转成 list：`set`/`frozenset` 没有稳定的顺序，重复元素也不该重复查。
+    candidates = list(account_ids)
+    if len(candidates) > BATCH_MAX_ACCOUNTS:
+        raise TombstonePayloadError(f"批量查询超过 {BATCH_MAX_ACCOUNTS} 个账号上界（实际 {len(candidates)}）")
+    if not candidates:
         return set()
-    normalized = [_validate_account_id(value) for value in account_ids]
+    normalized = [_validate_account_id(value) for value in candidates]
     rows = (
         await session.execute(
             select(AccountDeletionTombstone.account_id).where(AccountDeletionTombstone.account_id.in_(normalized))

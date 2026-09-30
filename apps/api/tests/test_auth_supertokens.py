@@ -243,6 +243,41 @@ def test_init_rejects_missing_api_key() -> None:
         st.init_supertokens(settings)
 
 
+def test_sign_up_parameters_must_be_provided_together() -> None:
+    """``api_overrides`` 与 ``sign_up_form_fields`` **必须成对**，单独给即拒绝。
+
+    ## 为什么要有这条（评审实测的不对称危险）
+
+    | 传了 | 结果 |
+    |---|---|
+    | 只传 ``api_overrides`` | 未声明的表单字段让请求在复写之前被拒 → 永远无法注册（fail-closed） |
+    | 只传 ``sign_up_form_fields`` | **邀请码校验被彻底绕过**：实测无码、空码、乱码码三种都注册成功（**fail-open**） |
+
+    后者会静默把「须凭邀请码注册」（``RQ-ACC-04``）变成「任何人可注册」。
+    因此让危险组合**无法被表达**，比在文档里提醒可靠。
+
+    判别性：去掉 `init_supertokens` 里的成对校验，本用例失败（不抛异常）。
+    """
+    import pytest
+    from supertokens_python.recipe.emailpassword.interfaces import APIInterface
+
+    settings = Settings(supertokens_api_key="x")
+
+    def _noop_overrides(original: APIInterface) -> APIInterface:
+        return original
+
+    def _noop_fields() -> list[object]:
+        return []
+
+    # 只给 api_overrides
+    with pytest.raises(st.SuperTokensConfigurationError, match="必须同时给出"):
+        st.init_supertokens(settings, api_overrides=_noop_overrides)
+
+    # 只给 sign_up_form_fields —— 这是**安全缺口**那一侧
+    with pytest.raises(st.SuperTokensConfigurationError, match="必须同时给出"):
+        st.init_supertokens(settings, sign_up_form_fields=_noop_fields)
+
+
 def test_configuration_check_reports_missing_key() -> None:
     """配置自检不发起网络请求，且如实报告缺失项（not_configured 而不是伪装可用）。"""
     from campfire.core.health import Status
