@@ -41,8 +41,15 @@ pytestmark = pytest.mark.integration
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 
 #: 判定「有删表提议」的标志。alembic 的 autogenerate 差异以 repr 形式打印，
-#: 表级删除表现为 ``remove_table``，索引级为 ``remove_index``。
-_DROP_MARKERS = ("remove_table", "remove_index", "drop_table", "drop_index")
+#: 表级删除表现为 ``remove_table``。
+_DROP_MARKERS = ("remove_table", "drop_table")
+
+#: 正向控制的探测列名。取一个明显不属业务命名的名字，便于在失败输出里辨认。
+_PROBE_COLUMN = "migration_safety_probe"
+
+#: 正向控制作用的表。选 ``campfire_pending_write``：它是我方表，加/删一个可空整数列
+#: 对并发读取无害，且随即在 ``finally`` 里还原。
+_PROBE_TABLE = "campfire_pending_write"
 
 
 def _run_alembic_check() -> subprocess.CompletedProcess[str]:
@@ -62,17 +69,40 @@ def _run_alembic_check() -> subprocess.CompletedProcess[str]:
     )
 
 
-@pytest.fixture(autouse=True)
+def _sql(statement: str) -> None:
+    """对集成库执行一条 DDL（同步引擎，一次性连接）。
+
+    Raises:
+        RuntimeError: 未配置 ``DATABASE_URL``（调用方已用夹具拦住，这里是兜底）。
+    """
+    from sqlalchemy import create_engine, text
+
+    from campfire.core.db import to_sync_url
+
+    url = get_settings().database_url
+    if not url:
+        raise RuntimeError("未配置 DATABASE_URL")
+    engine = create_engine(to_sync_url(url))
+    try:
+        with engine.begin() as connection:
+            connection.execute(text(statement))
+    finally:
+        engine.dispose()
+
+
+@pytest.fixture
 def _require_database() -> None:
     """未配置 `DATABASE_URL` 时跳过——**不假装通过**（仓库既有集成测试的统一做法）。
 
-    ``alembic check`` 必须连库才有意义：它比较的是「我方元数据」与「数据库现状」，
-    没有数据库就没有可比对象。
+    **刻意不是 ``autouse``**（2026-09-30 评审修正）：正向控制用例需要数据库，
+    但它一旦是 autouse，未来任何纯元数据/纯静态断言都会被一并跳过，
+    在无库环境（含 CI）里变成白写。谁需要库，谁显式声明。
     """
     if not get_settings().database_url:
         pytest.skip("未配置 DATABASE_URL——集成测试需要 docker compose up -d postgres")
 
 
+@pytest.mark.usefixtures("_require_database")
 def test_autogenerate_proposes_no_table_drops() -> None:
     """``alembic check`` 必须报告**无待执行操作**，且输出里不得出现删表提议。
 
@@ -95,29 +125,57 @@ def test_autogenerate_proposes_no_table_drops() -> None:
         f"（SuperTokens core 自建表无前缀，实测 56 张）。\n输出尾部：\n{combined[-4000:]}"
     )
 
-    # 正向断言：确认「无差异」是**真的比对过**，而不是检查没跑到。
-    assert "No new upgrade operations detected" in combined, (
-        "未看到 alembic 的『无新操作』结论——本用例可能没有真正完成比对"
-        f"（空跑会让它永远通过）。\n输出尾部：\n{combined[-2000:]}"
-    )
 
+@pytest.mark.usefixtures("_require_database")
+def test_filter_still_sees_our_own_tables() -> None:
+    """**正向控制**：过滤器必须是白名单，不能退化成「什么都不过滤」。
 
-def test_filter_keeps_our_own_tables_in_scope() -> None:
-    """反向守卫：过滤器是**白名单**，但不得把本项目自己的表排除掉。
+    ## 这条用例替代了什么（以及为什么原来的写法是错的）
 
-    「不删外部表」有个廉价的错误实现——把 ``include_object`` 写成一律返回 False。
-    那样上面那条用例会通过（没有删表提议），却同时让**新增与改列全部失明**。
-    这里断言我方元数据非空且都在比较范围内，堵住那种实现。
+    上一版是一条**纯元数据断言**（只看 ``metadata.tables`` 非空、表名前缀符合约定）。
+    2026-09-30 评审实测：把 ``include_object`` 改成 ``return False``（一律拒绝）后
+    **两条用例全都通过**——因为所有差异都被过滤掉，``alembic check`` 照样打印
+    「No new upgrade operations detected」。那是一条**永远不会失败**的检查，
+    AGENTS.md 明文禁止，而当时的 commit message 还声称它「堵住了那种廉价错误实现」
+    ——该声明与实测不符，已随本次修正撤销。
+
+    现在的做法是**黑盒正向控制**：真的往库里加一个我方模型里没有的列，然后驱动
+    alembic。若过滤器仍在正常工作，它会看到这个差异并提议 ``remove_column``；
+    若过滤器一律返回 False（或白名单误把我方表排除），则**什么都看不到**，用例失败。
+
+    用 ``remove_column`` 而不是 ``add_table`` 作信号：加列是我方表上的差异，
+    与「删外部表」走同一套比较路径但方向相反，因此它能同时证明
+    「外部表被拦」与「我方表没被拦」两件事。
     """
-    # 我方元数据里的表（由 env.py 导入各模块模型时注册）。
-    from campfire.core import pending_write as _pending_write  # noqa: F401
-    from campfire.core.db import metadata
-    from campfire.modules.library import models as _library  # noqa: F401
-    from campfire.modules.memory import models as _memory  # noqa: F401
+    from sqlalchemy import create_engine, inspect
 
-    ours = set(metadata.tables)
-    assert ours, "我方元数据为空——过滤器会把本项目自己的表也当成外部表"
+    from campfire.core.db import to_sync_url
 
-    # 每张我方表都必须能通过白名单判据（``reflected=True`` 时按名字放行）。
-    external_names = {name for name in ours if not name.startswith(("campfire_", "data_"))}
-    assert not external_names, f"我方表名不符合前缀约定，白名单判据可能失准：{sorted(external_names)}"
+    _sql(f"ALTER TABLE {_PROBE_TABLE} ADD COLUMN {_PROBE_COLUMN} integer")
+    try:
+        completed = _run_alembic_check()
+        combined = completed.stdout + completed.stderr
+
+        # 先确认库上真的多了这一列：否则下面的断言没有判别力——加列失败时，
+        # 过滤器再正确也看不到差异，用例会以**错误的原因**通过或失败。
+        url = get_settings().database_url
+        assert url, "未配置 DATABASE_URL"
+        engine = create_engine(to_sync_url(url))
+        try:
+            columns = {column["name"] for column in inspect(engine).get_columns(_PROBE_TABLE)}
+        finally:
+            engine.dispose()
+        assert _PROBE_COLUMN in columns, (
+            f"探测列 {_PROBE_COLUMN} 未能加到 {_PROBE_TABLE} 上——本次核对没有真的制造出差异"
+        )
+
+        assert "remove_column" in combined, (
+            "过滤器没有看到我方表上的差异（未提议 remove_column）——它可能已退化成"
+            "「一律返回 False」或把本项目自己的表也排除了；这两种情况都会让"
+            "**新增与改列全部失明**（而删表用例反而会因此通过）。\n"
+            f"stdout:\n{completed.stdout[-3000:]}\n"
+            f"stderr:\n{completed.stderr[-2000:]}"
+        )
+    finally:
+        # 无论如何都要还原：这是对**集成库**的真实改动，留着会污染后续用例与开发环境。
+        _sql(f"ALTER TABLE {_PROBE_TABLE} DROP COLUMN IF EXISTS {_PROBE_COLUMN}")
