@@ -314,6 +314,27 @@ async def bind_first_object(
     return inserted is not None
 
 
+async def discard_session_binding(session: AsyncSession, *, session_id: object) -> int:
+    """删除某会话的对象绑定，返回删除条数（只在会话本身被丢弃时用）。
+
+    唯一合法调用点是「会话刚建好就注定不存在」的补偿删除：应急入口在一个事务里
+    落归属行、绑定与首轮注入标记，而运行起步失败时调用方拿不到 `session_id`
+    ——那个会话没有任何入口可达。绑定行会独立留在这张表里，而
+    :func:`resolve_default_object` 按 `bound_at` 最大的绑定的对象推导「上一次的选择」：
+    一个从未存在过的会话就此决定该账号下一次新建会话绑哪个对象。
+
+    不用它做改绑：一个会话恰好一个对象、建立后不再改变（支持对象第 6 节），
+    「可切换」影响的是后续新建的会话。
+
+    Returns:
+        实际删除的条数；该会话没有绑定时为 0（不是错误）。
+
+    Raises:
+        ProfileDataError: 会话标识不合法。
+    """
+    return await repo.delete_session_binding(session, session_id=session_id)
+
+
 # ============================================================================
 # 档案条目：写入用例
 # ============================================================================
