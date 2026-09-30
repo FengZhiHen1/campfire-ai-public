@@ -213,6 +213,34 @@ describe('案例库浏览页 · 就地展开', () => {
     expect(screen.getByText(/含推断字段：情绪触发点/)).toBeDefined();
     expect(p.listItems).toHaveBeenLastCalledWith(expect.objectContaining({ expand: 'c1' }));
   });
+
+  it('P1 卡片上的展开/收起提示随展开态切换（整卡可点的可读提示不得是死分支）', async () => {
+    // 判别性：ItemRow 不把 onToggle 传给 ItemRowBody 时，onToggle !== undefined 恒假，
+    // 「展开内容」永不出现，本用例第一条断言即失败。
+    const p = port({
+      listItems: vi.fn(async (params: { library: 'case' | 'knowledge'; expand?: string }) => ({
+        library: params.library,
+        items:
+          params.expand === 'c1'
+            ? [
+                item({
+                  narrative: { sections: [{ key: 's1', heading: '情境', text: '超市人多时' }] },
+                }),
+              ]
+            : [item()],
+        next_cursor: null,
+      })),
+    });
+    renderPage(p);
+    await screen.findByText('超市哭闹时的分流做法');
+
+    // 未展开：提示「展开内容」；展开后：提示「收起」。
+    expect(within(screen.getByRole('button', { name: /超市哭闹时的分流做法/ })).getByText('展开内容')).toBeDefined();
+
+    fireEvent.click(screen.getByRole('button', { name: /超市哭闹时的分流做法/ }));
+    expect(await screen.findByText('收起')).toBeDefined();
+    expect(screen.queryByText('展开内容')).toBeNull();
+  });
 });
 
 describe('案例库浏览页 · deep-link 三态', () => {
