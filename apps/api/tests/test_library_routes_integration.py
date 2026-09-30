@@ -611,6 +611,48 @@ async def test_deep_link_of_unknown_or_malformed_id_is_404(client: httpx.AsyncCl
     assert unknown.json()["code"] == malformed.json()["code"] == "not_found"
 
 
+async def test_deep_link_maps_known_retrieval_failure_to_503(
+    client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch, seeded: dict[str, str]
+) -> None:  # noqa: ANN001
+    """已知取数失败（`RetrievalError`）→ 503，与列表路同形（契约第 6 节）。"""
+    from campfire.modules.library.retrieval import RetrievalError
+
+    async def _fail(_item_uuid):  # noqa: ANN001
+        raise RetrievalError("虚构取数失败：节点表不可达")
+
+    monkeypatch.setattr(library_routes, "_find_item_any_library", _fail)
+
+    response = await client.get(f"/library/items/{uuid.uuid4()}")
+
+    assert response.status_code == 503
+    assert response.json()["code"] == "retrieval_unavailable"
+
+
+async def test_deep_link_lets_unknown_errors_bubble_instead_of_reporting_503(
+    client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch, seeded: dict[str, str]
+) -> None:  # noqa: ANN001
+    """未知编程错误原样冒出，不冒充「检索暂时不可用」503。
+
+    本端点自己的 docstring 写明「未归入上面两类的意外异常原样冒出：把未知缺陷报成
+    『检索暂时不可用』会掩盖真实的程序错误」，同文件 `list_items` 也只把已知失败
+    类型转 503。改名/契约漂移类的缺陷（`AttributeError`/`TypeError`）被报成 503 时，
+    使用者会照提示重试、运维会按依赖故障排查，而真相是代码缺陷。
+
+    ASGI 传输把未捕获异常原样抛回测试，因此这里断言异常类型——它等价于生产里的
+    500（由 Starlette 的 ServerErrorMiddleware 兜底），而不是 503。
+
+    消融：修复前这里是 `except Exception`，本用例收不到异常、响应是 503，必红。
+    """
+
+    async def _boom(_item_uuid):  # noqa: ANN001
+        raise AttributeError("虚构的编程错误：条目字段改名后取值处未同步")
+
+    monkeypatch.setattr(library_routes, "_find_item_any_library", _boom)
+
+    with pytest.raises(AttributeError):
+        await client.get(f"/library/items/{uuid.uuid4()}")
+
+
 async def test_deep_link_works_across_both_libraries(client: httpx.AsyncClient, seeded: dict[str, str]) -> None:  # noqa: ANN001
     """deep-link 没有 `library` 参数，因此两库都查得到（`item_id` 是 UUID，跨库不撞）。"""
     case = await client.get(f"/library/items/{seeded['case_item_id']}")
