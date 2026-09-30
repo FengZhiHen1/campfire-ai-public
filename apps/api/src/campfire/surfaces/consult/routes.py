@@ -56,6 +56,7 @@ from campfire.modules.accounts.onboarding import onboarding_pending as read_onbo
 from campfire.modules.accounts.onboarding import read_onboarding_state, should_inject_onboarding
 from campfire.modules.accounts.onboarding_skip import skip_onboarding
 from campfire.modules.accounts.onboarding_start import start_onboarding
+from campfire.modules.accounts.session_repository import delete_session_owner
 from campfire.modules.accounts.sessions import (
     list_sessions as list_account_sessions,
 )
@@ -67,7 +68,13 @@ from campfire.modules.accounts.sessions import (
 from campfire.modules.memory.derived import EmergencyMemory, read_emergency_facts
 from campfire.modules.memory.errors import MemoryModuleError
 from campfire.modules.memory.graph import get_shared_memory_graph
-from campfire.modules.profile import EmergencyContext, bind_first_object, emergency_context, resolve_default_object
+from campfire.modules.profile import (
+    EmergencyContext,
+    bind_first_object,
+    discard_session_binding,
+    emergency_context,
+    resolve_default_object,
+)
 from campfire.surfaces.consult import assembly, runbus
 from campfire.surfaces.consult.answers import SendMessageRequest, render_answers
 from campfire.surfaces.consult.emergency import EmergencyConsultRequest
@@ -806,8 +813,11 @@ async def start_emergency(
        而是记一条来源不可用，由基座显式告知模型；
     4. 八项渲染成第一条使用者消息（缺项写「未采集（未排除）」），档案与记忆作为注入
        排在它前面——注入消息由基座追加在末尾，顺序即「档案 → 记忆 → 使用者输入」；
-    5. 会话位与新会话不可能冲突（标识刚生成），但仍按同一形状占位并启动，
-       起步失败时释放占位并回 503（没有 `run_id` 就没有可订阅的路径）。
+    5. 会话位与新会话不可能冲突（标识刚生成），但仍按同一形状占位并启动；
+       起步失败时先补偿删除这次建的会话行与绑定、再释放占位，然后回 503
+       （没有 `run_id` 就没有可订阅的路径）——那三行已经提交，而调用方拿不到
+       `session_id`，不补偿就是一个永远不可达的会话（理由见
+       :func:`_discard_emergency_session`）。
 
     越权与不存在的文案统一：传入的支持对象不可写或不属于当前账号时 404，
     与「支持对象不存在」同一条文案（`OBJECT_NOT_ACCESSIBLE_MESSAGE`）。
@@ -877,6 +887,10 @@ async def start_emergency(
     try:
         run_id = await pump.begin()
     except runbus.RunStartupFailure as exc:
+        # 补偿先于释放占位：先清掉不可逆的业务行（会话行一旦留下就永久不可达，
+        # 而占位键有 TTL、释放失败只会晚一点过期）；反过来时一次 Redis 抖动
+        # 会让补偿被整段跳过。
+        await _discard_emergency_session(settings, session_id=session_id)
         await runbus.release_session_run(cache, lease)
         raise _unavailable(f"{exc.code}: {exc.detail}") from exc
 
@@ -885,6 +899,40 @@ async def start_emergency(
         status_code=status.HTTP_202_ACCEPTED,
         content={"session_id": session_id, "run_id": run_id},
     )
+
+
+async def _discard_emergency_session(settings: Settings, *, session_id: str) -> None:
+    """补偿删除应急入口在运行起步失败时留下的会话行与绑定。
+
+    为什么必须补偿：归属行、绑定与首轮注入标记在 `pump.begin()` 之前就已提交，而起步
+    失败时调用方拿不到 `session_id`——这个会话没有任何入口可达。留下的后果都不是残留级别：
+
+    - 标记已为真，而它是本面判定「该会话是否已注入引导」的依据，账号侧的引导状态
+      又由该账号「是否已开始引导」共同决定，于是使用者下一次的日常消息会被判成
+      「已注入」而跳过引导告知——O-4 要保证的那次告知他永远看不到；
+    - 绑定行会参与 `resolve_default_object` 的推导（`bound_at` 最大的绑定），
+      一个不存在的会话决定该账号下一次新建会话绑哪个对象；
+    - 前端按契约第 2 节对 503 重试，每次重试再堆一条，且这些会话会以空标题出现在
+      `GET /consult/sessions` 里。
+
+    为什么不在原事务里回滚：写入与起步分属两个事务——起步要在 Redis 上占会话位、
+    还要真的驱动运行器产出首个事件，跨事务的原子性在这里拿不到，只能事后补偿。
+
+    为什么只删业务侧两行、不动 SDK 的会话真源：那两张表的内容由 SDK 拥有
+    （`SessionAccountPurger` 同一条口径），且本例的失败码本就是「会话真源不可用」；
+    归属行一旦删除，那里的残留已不可达（水合与列表都以归属行为准）。
+
+    补偿本身失败只记警告、不抛：503 已经注定要回给前端，把它换成另一个失败对调用方
+    没有任何好处，而残留会真实发生——因此日志带上会话标识，供人工清理。
+    """
+    try:
+        async with session_scope(settings) as db:
+            # 先删子行（绑定）再删归属行：两行没有外键，删的顺序不影响结果，
+            # 但读代码的人不该去推「先删哪一行才对」。
+            await discard_session_binding(db, session_id=session_id)
+            await delete_session_owner(db, session_id=session_id)
+    except Exception as exc:  # noqa: BLE001 —— 503 必须照回，删不掉只记日志供人工清理
+        logger.warning("应急会话补偿删除失败：会话=%s 异常=%s", session_id, type(exc).__name__)
 
 
 async def _read_emergency_profile(
