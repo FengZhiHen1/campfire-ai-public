@@ -1,42 +1,8 @@
 """产品侧工具的注册清单：把 `tools/*` 的实现包成 `ToolSpec` 注册进池。
 
-归属（项目结构设计见 docs/项目结构设计.md 第 7 节）：
-工具注册在装配处完成，因此 `agent/*` 不需要 import `tools/*`——本模块属于
-装配处一侧，`agent/*` 不会反过来依赖它。
-
-为什么单独一个 `registry.py` 而不是写进 `surfaces/consult`：
-
-`surfaces/consult/` 是面的运行装配（HTTP 与 SSE 契约、应急表单到一次运行的装配），
-它还没有实现。工具注册清单与「面怎么发请求」无关：Worker 侧或 CLI 侧将来若要跑一次
-运行，需要的是同一份工具清单，而不是某一个面的路由。因此清单独立于此，由各装配处
-（面、Worker）共同取用——「工具注册在装配处完成」指的是由装配处调用本模块，
-而不是把清单抄在每个装配处里（抄两份必然漂移）。
-
-已注册与未注册（2026-09-30 实测）：
-
-已实现并在此注册的只有 3 个：
-
-工具 → 归属 → 状态
-- `read_memory` → `modules/memory` → ✅ 注册
-- `write_memory` → `modules/memory` → ✅ 注册
-- `search_knowledge` → `modules/library` → ✅ 注册
-
-未注册的 4 个，依赖不存在（不是遗漏）：
-
-- `search_cases`：案例条目表与 7 个案例专属字段都不存在，且检索链硬编码只查资料库。
-  证据与前置见 `tools/library.py` 的模块说明。
-- `read_profile_summary` / `read_profile_items` / `propose_profile_item`：
-  `modules/profile` 是零实现的占位包（只有 `__init__.py` 的 docstring），
-  没有任何用例函数可包装。
-
-不注册也不该注册的 1 个：`delete_memory` 不存在——记忆的删除与纠正由记忆面的
-HTTP 契约承载（决策记录见 docs/技术设计/decisions/记忆删除走用户确认入口.md）。
-
-工具范围与 skill 的关系：
-
-注册进池不等于模型全都看得见：`allowed-tools` 与激活集合决定实际可用范围
-（通用基座见 docs/技术设计/technical-details/通用基座.md 第 5 节）。
-本模块只负责「池里有什么」。
+职责：声明池里有哪些产品侧工具，供各装配处共同取用。
+边界：只负责「池里有什么」，不决定模型实际可见范围；不实现面的路由。
+参考：docs/项目结构设计.md 第 7 节；通用基座第 5 节。
 """
 
 from __future__ import annotations
@@ -70,6 +36,45 @@ _SEARCH_KNOWLEDGE_DESCRIPTION = (
 
 def build_product_tools() -> list[Tool]:
     """构造产品侧工具的注册清单（顺序稳定，便于比对与测试）。
+
+    归属（项目结构设计见 docs/项目结构设计.md 第 7 节）：
+    工具注册在装配处完成，因此 `agent/*` 不需要 import `tools/*`——本模块属于
+    装配处一侧，`agent/*` 不会反过来依赖它。
+
+    为什么单独一个 `registry.py` 而不是写进 `surfaces/consult`：
+
+    `surfaces/consult/` 是面的运行装配（HTTP 与 SSE 契约、应急表单到一次运行的装配），
+    它还没有实现。工具注册清单与「面怎么发请求」无关：Worker 侧或 CLI 侧将来若要跑一次
+    运行，需要的是同一份工具清单，而不是某一个面的路由。因此清单独立于此，由各装配处
+    （面、Worker）共同取用——「工具注册在装配处完成」指的是由装配处调用本模块，
+    而不是把清单抄在每个装配处里（抄两份必然漂移）。
+
+    已注册与未注册（2026-09-30 实测）：
+
+    已实现并在此注册的只有 3 个：
+
+    工具 → 归属 → 状态
+    - `read_memory` → `modules/memory` → ✅ 注册
+    - `write_memory` → `modules/memory` → ✅ 注册
+    - `search_knowledge` → `modules/library` → ✅ 注册
+
+    未注册的 6 个，依赖不存在（不是遗漏）：
+
+    - `search_cases`：案例条目表与 7 个案例专属字段都不存在，且检索链硬编码只查资料库。
+      证据与前置见 `tools/library.py` 的模块说明。
+    - `read_profile_summary` / `read_profile_items` / `propose_profile_item` / `create_support_object`：
+      `modules/profile` 是零实现的占位包（只有 `__init__.py` 的 docstring），
+      没有任何用例函数可包装。
+    - `finish_onboarding`：归属 `modules/accounts`，该表的仓储尚未落地。
+
+    不注册也不该注册的 1 个：`delete_memory` 不存在——记忆的删除与纠正由记忆面的
+    HTTP 契约承载（决策记录见 docs/技术设计/decisions/记忆删除走用户确认入口.md）。
+
+    工具范围与 skill 的关系：
+
+    注册进池不等于模型全都看得见：`allowed-tools` 与激活集合决定实际可用范围
+    （通用基座见 docs/技术设计/technical-details/通用基座.md 第 5 节）。
+    本模块只负责「池里有什么」。
 
     Returns:
         `ToolSpec` 列表。顺序按工具名排列——顺序本身不承载语义，稳定即可。
