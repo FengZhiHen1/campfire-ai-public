@@ -26,6 +26,7 @@ from sqlalchemy.ext.asyncio import async_engine_from_config
 from campfire.core import pending_write as pending_write_models  # noqa: F401  —— 仅为注册副作用
 from campfire.core.config import get_settings
 from campfire.core.db import metadata
+from campfire.modules.accounts import models as accounts_models  # noqa: F401  —— 仅为注册副作用
 from campfire.modules.library import models  # noqa: F401  —— 仅为注册副作用
 from campfire.modules.memory import models as memory_models  # noqa: F401  —— 仅为注册副作用
 
