@@ -176,27 +176,43 @@ def build_vector_store(settings: Settings, *, engine: Engine, async_engine: Asyn
     )
 
 
-async def _embed_chunks(settings: Settings, chunks: list[Chunk]) -> list[list[float]]:
-    """批量嵌入块文本。
+async def embed_texts(settings: Settings, texts: list[str]) -> list[list[float]]:
+    """批量嵌入文本（资料与案例摄取共用）。
+
+    与 `_embed_chunks` 分开的原因：案例摄取嵌的是整张卡片的拼接文本，
+    没有 `Chunk` 对象（卡片是结构化 JSON，不走 Markdown 分块链）。两处各写一份
+    批量嵌入就会漂移出「一处校验长度、一处不校验」这类差异，而漏掉的长度校验
+    会让供应商拒绝或静默截断（截断即制造错误的检索依据）。
 
     Raises:
         EmbeddingConfigurationError: 缺凭据（透传，调用方需区别于普通失败）。
         IngestionError: 供应商报错，或返回条数与请求不符（后者会静默错配向量与文本）。
     """
-    for chunk in chunks:
-        assert_text_within_limit(chunk.text)
+    for text in texts:
+        assert_text_within_limit(text)
 
     try:
         embedder = build_embedding(settings)
-        vectors = await embedder.aget_text_embedding_batch([c.text for c in chunks])
+        vectors = await embedder.aget_text_embedding_batch(texts)
     except EmbeddingConfigurationError:
         raise
     except Exception as exc:  # noqa: BLE001 —— 转译成领域错误并保留原因类型
         raise IngestionError(f"嵌入失败：{type(exc).__name__}") from exc
 
-    if len(vectors) != len(chunks):
-        raise IngestionError(f"嵌入返回条数不符：期望 {len(chunks)}，得到 {len(vectors)}")
+    if len(vectors) != len(texts):
+        raise IngestionError(f"嵌入返回条数不符：期望 {len(texts)}，得到 {len(vectors)}")
     return vectors
+
+
+# quality-floor: ignore docstring-promise 异常由 embed_texts 抛出并原样传播，本函数只做转发
+async def _embed_chunks(settings: Settings, chunks: list[Chunk]) -> list[list[float]]:
+    """批量嵌入块文本（资料侧入口，转发到 :func:`embed_texts`）。
+
+    Raises:
+        EmbeddingConfigurationError: 缺凭据（透传，调用方需区别于普通失败）。
+        IngestionError: 供应商报错，或返回条数与请求不符（后者会静默错配向量与文本）。
+    """
+    return await embed_texts(settings, [chunk.text for chunk in chunks])
 
 
 def _node_metadata(item: KnowledgeItem, chunk: Chunk) -> dict[str, str]:
