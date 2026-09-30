@@ -17,15 +17,110 @@
 因此这里把 ``no_proxy`` 归一到合法值，让测试结果**不依赖宿主机的代理配置**。
 生产代码保留 ``trust_env``（企业网络可能需代理），并把这个环境问题转成可操作的
 配置错误——见 ``campfire.agent.model.gateway`` 的模块 docstring。
+
+## 同类的第二处宿主机适配：本地服务地址归一（见 :func:`pytest_configure`）
+
+代理之外还有一个宿主机差异会让整套集成测试慢一个量级：``localhost`` 的解析结果里
+``::1`` 排在前面，而 compose 只把 PostgreSQL 与 SuperTokens 绑在 IPv4，于是每次建连
+先撞一次注定失败的 ``::1``——本机实测这一次失败要花约 2.07 秒。修在测试侧的
+理由、实测数字与「为什么不改生产默认值」都记在 :func:`pytest_configure` 与
+:data:`_LOCAL_SERVICE_ENV_KEYS` 上。
 """
 
 from __future__ import annotations
 
+import os
+import re
 from collections.abc import Iterator
 from contextlib import suppress
 
 import pytest
 from redis.exceptions import ConnectionError as RedisConnectionError
+
+#: 「本地数据服务」设置项：**环境变量名 → Settings 字段名**。
+#:
+#: 值里出现主机位 ``localhost`` 时，在测试进程内改写为 ``127.0.0.1``。
+#:
+#: **为什么（2026-10-01 实测）**：宿主机 ``getaddrinfo("localhost")`` 先返回 ``::1``，
+#: 而 compose 只把 PostgreSQL 与 SuperTokens 绑在 IPv4（``127.0.0.1:5432`` /
+#: ``127.0.0.1:3567``）。于是每次建连都先撞一次注定失败的 ``::1``，而**这次失败连接
+#: 在本机要花约 2.07 秒**（对照：连一个没人监听的 ``127.0.0.1:54321`` 同样是 2049 ms，
+#: 即这 2 秒是宿主机失败连接的固定代价，与网络质量无关）。实测单个连接：
+#: ``asyncpg`` 走 ``localhost`` 2068.6 ms、走 ``127.0.0.1`` 21.6 ms；
+#: ``check_auth_core`` 走 ``localhost`` 276.2 ms、走 ``127.0.0.1`` 12.5 ms。
+#:
+#: **为什么放在测试侧而不是改 ``core/config`` 的默认值**：那是生产默认值，改成
+#: ``127.0.0.1`` 会把「只监听 IPv6 的部署形态」挡在门外，且这属于宿主机网络缺陷、
+#: 不是产品缺陷（Linux 上 ``::1`` 拒绝是瞬时的，很可能只有 Windows 会踩）。
+#: 测试只需绕开宿主机这一项配置即可，不动产品行为。
+_LOCAL_SERVICE_ENV_KEYS: dict[str, str] = {
+    "DATABASE_URL": "database_url",
+    "SUPERTOKENS_CONNECTION_URI": "supertokens_connection_uri",
+    "FALKORDB_HOST": "falkordb_host",
+    "REDIS_URL": "redis_url",
+}
+
+
+def _rewrite_loopback_host(value: str) -> str:
+    """把值里的**主机位** ``localhost`` 改写成 ``127.0.0.1``；其余位置不动。
+
+    只认两个主机位置：``://localhost``（URL 的主机紧随 scheme）与 ``@localhost``
+    （带凭据的 URL 里主机紧随 ``@``）。这样 ```user:localhost@db-host``` 这种
+    **密码恰好叫 localhost** 的串不会被误改——那里的 ``localhost`` 前面是冒号。
+    大小写不敏感（主机名按 DNS 规则不区分大小写）。
+
+    Args:
+        value: 原始设置值（URL 或裸主机名）。
+
+    Returns:
+        改写后的值；不含主机位 ``localhost`` 时原样返回。
+    """
+    if value.strip().lower() == "localhost":
+        # 裸主机名字段（如 FALKORDB_HOST）：整个值就是主机位。
+        return "127.0.0.1"
+    return re.sub(r"(://|@)localhost(?=[:\"/]|$)", r"\g<1>127.0.0.1", value, flags=re.IGNORECASE)
+
+
+def pytest_configure(config: pytest.Config) -> None:
+    """在**任何测试模块导入之前**把本地服务地址归一到 IPv4 回环。
+
+    ## 为什么读 ``Settings`` 而不是直接读 ``os.environ``
+
+    **实测踩坑（2026-10-01，本轮自己的第一版就这么错了）**：这些值通常写在 ``.env``
+    里而**不在进程环境变量里**，于是按 ``os.environ`` 遍历改写的写法一个都没改到
+    ——表面上「归一化已生效」，实际整轮耗时与改动前一致（467.8s → 469.5s，无收益），
+    差一点把「没生效」当成「无效的优化」。因此这里**先取解析后的配置值**
+    （``Settings`` 会合并 ``.env`` 与环境变量），再写回 ``os.environ``：
+    ``pydantic-settings`` 的优先级里环境变量高于 ``.env``，写回环境变量即可覆盖。
+
+    ## 时点
+
+    ``pytest_configure`` 早于测试模块导入（已验证）。``Settings`` 经 ``lru_cache``
+    缓存，故写回后清一次缓存。``apps/api/src`` 下无模块级 ``get_settings()`` 调用，
+    因此此处改写对全部测试模块都有效。
+
+    ``SUPERTOKENS_API_DOMAIN`` / ``SUPERTOKENS_WEBSITE_DOMAIN`` **刻意不改**：
+    它们是 cookie 域与 same-site 判定的输入，不承担建连职责，改写会改变 SDK 行为。
+
+    Args:
+        config: pytest 配置对象（本钩子不使用它，仅需签名匹配）。
+    """
+    del config  # 显式声明未使用：本钩子只借时点，不读配置
+
+    from campfire.core.config import Settings, get_settings
+
+    resolved = Settings()
+    for env_key, attribute in _LOCAL_SERVICE_ENV_KEYS.items():
+        current = getattr(resolved, attribute, None)
+        if not isinstance(current, str) or not current:
+            continue  # 未配置（如 CI 无 DATABASE_URL）：保持原样，由各文件的跳过守卫处理
+        rewritten = _rewrite_loopback_host(current)
+        if rewritten != current:
+            os.environ[env_key] = rewritten
+
+    # 清缓存：让后续 get_settings() 用写回后的环境变量重新解析。
+    get_settings.cache_clear()
+
 
 #: 「连不上 FalkorDB 容器」这一类异常。
 #:
