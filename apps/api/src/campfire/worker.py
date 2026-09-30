@@ -1,6 +1,7 @@
 """Taskiq Worker 入口。
 
-职责：消费 `kind = memory_episode` 待处理记录 + 常驻兜底扫描（第 4.1 节）。
+职责：按 `kind` 分派待处理记录（当前已接上消费者的是 `memory_episode`），
+并跑常驻兜底扫描（第 4.1 节）。
 边界：只依赖 `core/*` 与 `modules/{profile,memory}`；禁止 import `surfaces/*`。
 参考：写入路径第 4、5、6 节。
 启动方式：`uv run taskiq worker campfire.worker:broker`
@@ -16,9 +17,15 @@
 # - 兜底扫描（第 4.1 节）：Worker 启动时拉起一个常驻周期任务，回收过期租约并把
 #   「该处理却没被处理」的记录重新投递。跑在 Worker 进程内、不新增部署单元
 #   （2026-09-30 裁决；重访条件见 `_start_sweep` 的 docstring）。
+#
+# 投递按 `kind` 分派（第 4 节第 3 条）：分派表是 `_CONSUMER_DISPATCHERS`。
+# 表里没有的 kind 显式跳过、不终结记录——`profile_item` 的消费分支归 T12，
+# 在它落地之前这些记录必须留在 `pending` 而不是被误投给记忆消费者判 `dead`
+# （2026-09-30 修复：此前投递钩子硬编码只投记忆任务）。
 
 import asyncio
 import logging
+from collections.abc import Awaitable, Callable
 from contextlib import suppress
 from datetime import datetime, timezone
 
@@ -30,6 +37,7 @@ from campfire.core.config import get_settings
 from campfire.core.db import session_scope
 from campfire.core.jobs import build_broker, dispatch_pending_write, set_dispatch_hook
 from campfire.core.pending_write import (
+    KIND_MEMORY_EPISODE,
     MAX_ATTEMPTS,
     STATE_DEAD,
     find_undelivered,
@@ -66,20 +74,60 @@ def _get_memory_graph() -> MemoryGraph:
     return get_shared_memory_graph()
 
 
-async def _dispatch_to_queue(pending_id: str) -> None:
-    """投递一条待处理记录（装配处注入 `core/jobs` 的钩子）。
+async def _enqueue_memory_episode(pending_id: str) -> None:
+    """把一条 `memory_episode` 投给记忆消费者任务。"""
+    await consume_memory_episode_task.kiq(pending_id, lease_owner="api")
+
+
+#: kind → 投递到队列的函数（分派表，写入路径第 4 节第 3 条）。
+#:
+#: 每条记录只能交给懂它的消费者：`memory_episode` 交给记忆任务。表里没有的 kind
+#: 显式跳过——不投、不改状态、记一条 warning，记录留在 `pending` 等消费者接上。
+#:
+#: 为什么不给未注册的 kind 一个兜底消费者：那等于把异构载荷塞给不懂它的消费者，
+#: 它只能判载荷不合法，结果是记录被永久判 `dead`（2026-09-30 修复前的实际行为）。
+#:
+#: 当前只有 `memory_episode`：`profile_item` 的用例侧消费已就绪
+#: （`modules/profile/consumer.write_from_pending`），缺的是 Worker 侧的任务接线，
+#: 归 T12。`KINDS` 的每个取值都必须在这里有键——机械检查见
+#: `apps/api/tests/test_pending_write_dispatch.py`（它当前把 T12 的缺口钉住）。
+_CONSUMER_DISPATCHERS: dict[str, Callable[[str], Awaitable[None]]] = {
+    KIND_MEMORY_EPISODE: _enqueue_memory_episode,
+}
+
+#: 已接上消费者的 kind（分派表的键集）。兜底扫描据此过滤候选集：没有消费者的 kind
+#: 投出去也没人接，而它们一直停在 `pending`、又排在最前，会白占每轮的条数预算。
+CONSUMED_KINDS: frozenset[str] = frozenset(_CONSUMER_DISPATCHERS)
+
+
+async def dispatch_pending_write_to_queue(pending_id: str, kind: str) -> None:
+    """按 `kind` 投递一条待处理记录（装配处注入 `core/jobs` 的钩子实现）。
 
     运行模型（见 docs/技术栈设计.md 第 5 节）：全异步，不引入同步与异步之间的
     桥接；broker 与 HTTP 入口共用同一份构造（`core/jobs.build_broker`）。
 
     必须 await：`kiq()` 返回协程，不 await 等于没有投递（mypy 抓过这个错误）。
+
+    未注册消费者的 kind 走显式跳过：记一条 warning 后原样返回，不投给别的消费者、
+    不改记录状态。这是「不终结」的处置——记录仍是 `pending`，消费者接上后由兜底扫描
+    自动带回（扫描按 `CONSUMED_KINDS` 过滤，见 `sweep_once`）。绝不能因为「暂时没人接」
+    把它判 `dead`：`dead` 的含义是「授权不再成立」或「重试耗尽」（第 6 节），
+    而分派不到消费者是装配缺口，不是这条记录的失败。
     """
-    await consume_memory_episode_task.kiq(pending_id, lease_owner="api")
+    dispatcher = _CONSUMER_DISPATCHERS.get(kind)
+    if dispatcher is None:
+        logger.warning(
+            "尚无 kind=%s 的消费者，跳过投递（记录留在 pending，待消费者接上后由兜底扫描带回）：pending_id=%s",
+            kind,
+            pending_id,
+        )
+        return
+    await dispatcher(pending_id)
 
 
-# 装配点：产品侧工具（`tools/`）只依赖 `core/jobs`，
+# 装配点：产品侧工具（`tools/`）与 API 入口只依赖 `core/jobs`，
 # 不 import 本入口模块（层白名单）。
-set_dispatch_hook(_dispatch_to_queue)
+set_dispatch_hook(dispatch_pending_write_to_queue)
 
 
 @broker.task
@@ -192,10 +240,15 @@ _sweep_task: asyncio.Task[None] | None = None
 
 
 async def sweep_once(session: AsyncSession | None = None, *, now: datetime | None = None) -> int:
-    """跑一轮兜底扫描：回收过期租约 + 重投没人处理的记录。返回重投条数。
+    """跑一轮兜底扫描：回收过期租约 + 按 kind 重投没人处理的记录。返回重投条数。
 
     两件事的顺序有讲究：先回收租约、再重投。回收把「领取后崩溃」的记录放回
     `pending`，紧接着的查询就能把它们一并重投——否则它们要等下一周期（5 分钟）。
+
+    候选集按 `CONSUMED_KINDS` 过滤（写入路径第 4 节第 3 条）：没有消费者的 kind
+    重投也没人接，而且它们会一直停在 `pending`、按 `created_at` 排在最前，于是每轮
+    占满条数预算，把该重投的记忆记录挤出候选集。消费者接上后无需改这里——
+    把 kind 加进分派表，它自动重新进入候选集。
 
     Args:
         session: 关系库会话；省略则自行开一个（周期任务走这条）。
@@ -215,9 +268,9 @@ async def sweep_once(session: AsyncSession | None = None, *, now: datetime | Non
     reclaimed = await reclaim_expired_leases(session, now=reference)
     if reclaimed:
         logger.info("兜底扫描：回收 %d 条过期租约", len(reclaimed))
-    undelivered = await find_undelivered(session, now=reference)
-    for pending_id in undelivered:
-        await dispatch_pending_write(str(pending_id))
+    undelivered = await find_undelivered(session, now=reference, kinds=CONSUMED_KINDS)
+    for pending_id, kind in undelivered:
+        await dispatch_pending_write(str(pending_id), kind)
     if undelivered:
         logger.info("兜底扫描：重投 %d 条待处理记录", len(undelivered))
     return len(undelivered)

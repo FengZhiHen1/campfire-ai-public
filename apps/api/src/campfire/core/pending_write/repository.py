@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import uuid
+from collections.abc import Collection
 from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import or_, select, update
@@ -507,8 +508,9 @@ async def find_undelivered(
     session: AsyncSession,
     *,
     now: datetime | None = None,
+    kinds: Collection[str] | None = None,
     limit: int = SWEEP_MAX_LIMIT,
-) -> list[uuid.UUID]:
+) -> list[tuple[uuid.UUID, str]]:
     """找出该被处理却还没被处理的记录（兜底扫描的候选集，第 4.1 节）。
 
     它补的是什么：
@@ -526,6 +528,19 @@ async def find_undelivered(
     - 不含 `done`/`dead`：终态不得被复活（`mark_done`/`mark_dead`/回收都有 state
       守卫，这里是同一纪律的第一道）。
 
+    为什么返回 `(id, kind)`：投递必须按 `kind` 分派（第 4 节第 3 条）。
+    只返回 id 时，调用方只能把每条记录都投给同一个消费者——那正是「档案条目被投给
+    记忆消费者、被当成载荷不合法判 `dead`」的成因。kind 在候选集里一并取出，
+    投递方不必再回查一次。
+
+    为什么要按 `kinds` 过滤：
+
+    兜底扫描只该挑「当前有消费者」的 kind。没有消费者的 kind 投出去也没人接，
+    投递方只能显式跳过；而它们会一直停在 `pending`，又按 `created_at` 排在最前，
+    于是每轮都占满 `limit` 预算、把真正该重投的记忆记录饿死在候选集之外。
+    过滤掉它们才是「不该被处理的记录不占扫描预算」。
+    接上消费者后无需改这里：把 kind 加进扫描传入的集合即可自动重新进入候选集。
+
     为什么不需要「已投递」标记列：
 
     重复投递是安全的：领取是单条条件更新（并发下只有一个赢家），且确定性 episode
@@ -539,16 +554,19 @@ async def find_undelivered(
     Args:
         session: 关系库会话。
         now: 参照时间。
+        kinds: 只挑这些 kind 的记录；`None` 表示不按 kind 过滤（全部）。
+            空集合表示「没有任何 kind 可投递」，返回空列表——不是「不过滤」。
+            取值集由调用方（Worker 的分派表）给出，本模块不知道谁有消费者。
         limit: 单次返回条数上界；收敛到 `SWEEP_MAX_LIMIT`。
 
     Returns:
-        待重投的记录 id（按 `next_attempt_at`、`created_at`、`id` 升序，稳定）：
+        待重投的 `(id, kind)`（按 `next_attempt_at`、`created_at`、`id` 升序，稳定）：
         最早该处理的先投，避免积压时新记录一直插到前面。
     """
     reference = now if now is not None else _utc_now()
     effective_limit = max(1, min(limit, SWEEP_MAX_LIMIT))
     statement = (
-        select(PendingWrite.id)
+        select(PendingWrite.id, PendingWrite.kind)
         .where(
             PendingWrite.state == STATE_PENDING,
             or_(PendingWrite.next_attempt_at.is_(None), PendingWrite.next_attempt_at <= reference),
@@ -556,7 +574,12 @@ async def find_undelivered(
         .order_by(PendingWrite.next_attempt_at.asc().nullsfirst(), PendingWrite.created_at, PendingWrite.id)
         .limit(effective_limit)
     )
-    return list((await session.execute(statement)).scalars())
+    if kinds is not None:
+        # 排序后入参：同一集合每次生成同一条 SQL，便于按语句缓存与排查。
+        statement = statement.where(PendingWrite.kind.in_(sorted(kinds)))
+    rows = (await session.execute(statement)).all()
+    # 显式解包成元组：`Row` 是 SQLAlchemy 的行对象，直接外传会让调用方依赖它的取值方式。
+    return [(row[0], row[1]) for row in rows]
 
 
 __all__ = [
