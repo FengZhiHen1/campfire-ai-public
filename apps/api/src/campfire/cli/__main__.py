@@ -119,6 +119,9 @@ def _run_convert(args: argparse.Namespace) -> int:
     try:
         markdown, conversion = convert_html_file(
             path,
+            # `--title` 必须真的往下传：显式输入被静默丢弃正是本文件
+            # `_reject_knowledge_only_flags` 明令避免的「看着成功、其实没生效」。
+            title=args.title,
             source=args.source,
             applicable_scope=args.scope,
             license_note=args.license_note,
