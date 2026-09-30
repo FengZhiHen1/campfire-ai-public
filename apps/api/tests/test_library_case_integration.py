@@ -165,6 +165,27 @@ async def _cleanup_case(paths: list[str]) -> None:
                 await session.delete(item)
 
 
+async def _node_counts(item_id: str) -> tuple[int, int]:
+    """某条目的 `(节点总数, 元数据声称 withdrawn='false' 的节点数)`。
+
+    第二个数就是「节点元数据与条目表矛盾」的节点数：条目撤下后既不该留有节点，
+    更不该有节点声称自己未撤下——那会让向量路的 `withdrawn` 过滤对它失效，
+    撤下只剩装配层的二次过滤兜底。
+    """
+    async with session_scope(get_settings()) as session:
+        row = (
+            await session.execute(
+                text(
+                    "select count(*) as total,"
+                    " count(*) filter (where metadata_->>'withdrawn' = 'false') as claiming_active"
+                    " from data_campfire_node where metadata_->>'item_id' = :i"
+                ),
+                {"i": item_id},
+            )
+        ).one()
+    return int(row.total), int(row.claiming_active)
+
+
 def _store():
     settings = get_settings()
     sync_engine = create_sync_engine(settings)
@@ -775,6 +796,81 @@ async def test_withdrawal_is_idempotent(tmp_path: Path, _patched_embedding: None
             ).scalar_one()
             assert item.withdrawn_reason == "第一次", "重复撤下覆盖了首次原因——审计事实失真"
             assert item.withdrawn_at is not None
+    finally:
+        await _cleanup_case([str(package)])
+        await async_engine.dispose()
+        sync_engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_reingest_after_withdrawal_does_not_rebuild_nodes(tmp_path: Path, _patched_embedding: None) -> None:
+    """撤下后重新摄取改过的包：不重建节点，且节点元数据不得与条目表矛盾（D-16）。
+
+    撤下在向量路上的生效机制就是「该条目没有节点」（`withdrawal.py` 同事务删除）；
+    内容哈希变化时无条件重建节点，会让「撤下后节点真删」的承诺被后续摄取推翻，
+    而重建时硬编码的 `withdrawn="false"` 又让向量路的 `withdrawn` 过滤对已撤下
+    条目失效——安全性只剩装配层的二次过滤，等于把「撤下生效」押在调用方记得过滤上。
+
+    判别性（对未修复实现会失败）：重建的节点让「节点数不增加」失败，
+    其中声称 `withdrawn="false"` 的节点让「元数据与条目表一致」失败。
+    """
+    _require_db()
+    package = build_case_package(tmp_path, slug="withdraw-reingest")
+    settings, sync_engine, async_engine, store = _store()
+
+    try:
+        # 前置：入库后节点在场——否则后面的「不增加」是无意义的真。
+        async with session_scope(settings) as session:
+            first = await ingest_case_package(settings, session, vector_store=store, package_dir=package)
+        total_before, _ = await _node_counts(first.item_id)
+        assert total_before == 1 + len(NARRATIVE_SECTIONS), f"前置：应写入 1 张卡片 + 五节叙事节点，实际 {total_before}"
+
+        # 前置对照：撤下前两路都命得中——否则文末的「查不到」是无判别力的空断言。
+        async with session_scope(settings) as session:
+            literal_before = await literal_search(session, "结构化活动", library="case")
+        async with session_scope(settings) as session:
+            fused_before = await search(session, store, "结构化活动", library="case", embed_query=_fake_embed_query)
+        assert any(item_id == first.item_id for item_id, _rank in literal_before), "前置：撤下前字面路应命中该条目"
+        assert any(r.item_id == first.item_id for r in fused_before.items), "前置：撤下前检索路应命中该条目"
+
+        async with session_scope(settings) as session:
+            withdrawal = await withdraw_item(session, library="case", item_id=first.item_id, reason="虚构测试撤下")
+        assert withdrawal.nodes_deleted == total_before
+        assert await _node_counts(first.item_id) == (0, 0), "前置：撤下应清空该条目的节点"
+
+        # 改内容后重新摄取：上游修订后重新交付是正常运维路径。
+        (package / "L2_x_01.json").write_text(
+            json.dumps(_card(title="虚构卡片：撤下后改过的标题"), ensure_ascii=False), encoding="utf-8"
+        )
+        async with session_scope(settings) as session:
+            second = await ingest_case_package(settings, session, vector_store=store, package_dir=package)
+
+        assert second.item_id == first.item_id, "同一 source_path 应复用同一条目，不该新建条目"
+        assert second.skipped is False, "内容已变，不该被当作「未变」跳过"
+        assert await _node_counts(first.item_id) == (0, 0), (
+            "撤下后重新摄取重建了节点（或写回了声称未撤下的节点）——「撤下即删节点」的承诺被推翻"
+        )
+        assert (second.cards_written, second.narrative_nodes) == (0, 0), "已撤下的条目不得写回节点"
+
+        # 条目表的撤下事实与审计字段仍在：摄取不得动摇撤下状态。
+        async with session_scope(settings) as session:
+            item = (await session.execute(select(CaseItem).where(CaseItem.id == uuid.UUID(first.item_id)))).scalar_one()
+            assert item.withdrawn is True, "重新摄取把条目恢复成在库——撤下被上游重新交付静默推翻"
+            assert item.withdrawn_reason == "虚构测试撤下"
+            assert item.withdrawn_at is not None
+
+        # 端到端：撤下的用户可见后果不因重新摄取而改变（两路都查不到）。
+        async with session_scope(settings) as session:
+            literal_after = await literal_search(session, "结构化活动", library="case")
+        async with session_scope(settings) as session:
+            fused_after = await search(session, store, "结构化活动", library="case", embed_query=_fake_embed_query)
+        assert all(item_id != first.item_id for item_id, _rank in literal_after), "撤下后字面路仍命中该条目"
+        assert all(r.item_id != first.item_id for r in fused_after.items), "撤下后检索路仍返回该条目"
+
+        # 再摄取同一份改过的包：走同一条「内容未变」幂等路径（撤下状态不破坏幂等）。
+        async with session_scope(settings) as session:
+            third = await ingest_case_package(settings, session, vector_store=store, package_dir=package)
+        assert third.skipped is True, "已撤下条目的重复摄取应被幂等跳过"
     finally:
         await _cleanup_case([str(package)])
         await async_engine.dispose()

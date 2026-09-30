@@ -65,7 +65,12 @@ class CaseIngestionError(Exception):
 
 @dataclass
 class CaseIngestionResult:
-    """一次案例摄取的结果，供 CLI 输出与导入记账使用。"""
+    """一次案例摄取的结果，供 CLI 输出与导入记账使用。
+
+    已撤下的条目被重新摄取时：`skipped` 为 False（条目行确实更新了 `doc_hash`），
+    但 `cards_written` 与 `narrative_nodes` 为 0——这种摄取不重建任何节点，
+    见 `ingest_case_package` 的设计依据。
+    """
 
     source_path: str
     item_id: str
@@ -108,7 +113,13 @@ def _compute_package_hash(manifest_path: Path, card_paths: list[Path], narrative
 
 
 def _card_metadata(
-    manifest: CaseManifest, item_id: str, card: dict[str, object], card_id: str, locator: str
+    manifest: CaseManifest,
+    item_id: str,
+    card: dict[str, object],
+    card_id: str,
+    locator: str,
+    *,
+    withdrawn: bool,
 ) -> dict[str, object]:
     """卡片节点的 metadata：条目投影 + 结构化过滤维度（RAG 策略第 1.3、2 节）。
 
@@ -125,12 +136,17 @@ def _card_metadata(
 
     `withdrawn` 与 `makes_claims_high_risk` 用字符串存：`MetadataFilter.value`
     的类型联合不含 `bool`（实测）。
+
+    `withdrawn` 由条目实体的当前状态派生（调用方传 `item.withdrawn`），不是常量：
+    节点元数据是条目状态在写入时刻的投影，写成字面量会在「撤下后重新摄取」时对这条
+    案例撒谎——向量路的 `withdrawn` 过滤会因此对它失效。写入侧已经保证不为已撤下
+    条目写节点，这里是同一事实的第二处落点：即便将来放开写入侧的闸门，元数据仍如实。
     """
     return {
         "item_id": item_id,
         "library": LIBRARY_CASE,
         "status": manifest.status,
-        "withdrawn": "false",
+        "withdrawn": "true" if withdrawn else "false",
         # --- 返回契约消费 ---
         "authorization": manifest.authorization,
         "source_type": manifest.source_type,
@@ -155,7 +171,12 @@ def _card_metadata(
 
 
 def _narrative_metadata(
-    manifest: CaseManifest, item_id: str, chunk: Chunk, *, makes_claims_high_risk: bool
+    manifest: CaseManifest,
+    item_id: str,
+    chunk: Chunk,
+    *,
+    makes_claims_high_risk: bool,
+    withdrawn: bool,
 ) -> dict[str, object]:
     """叙事节点的 metadata：同通用投影 + 返回契约字段，但无卡片级维度。
 
@@ -165,12 +186,14 @@ def _narrative_metadata(
 
     高风险标记取案例级判定：叙事常复述含高风险处置的干预过程，
     「命中内容是否含高风险」在叙事命中时同样要如实回答。
+
+    `withdrawn` 同样由条目实体现值派生，理由见 `_card_metadata`。
     """
     return {
         "item_id": item_id,
         "library": LIBRARY_CASE,
         "status": manifest.status,
-        "withdrawn": "false",
+        "withdrawn": "true" if withdrawn else "false",
         "authorization": manifest.authorization,
         "source_type": manifest.source_type,
         "evidence_level": manifest.evidence_level,
@@ -351,6 +374,17 @@ async def ingest_case_package(
     - 一份包一个事务：与资料摄取同一条纪律，不留「一半进去了」的状态。
     - 幂等：按 `source_path` + 包内容哈希判断，未变跳过。
 
+    重新摄取与撤下（撤下的条目不再重建节点）：
+
+    - 已撤下条目（`existing.withdrawn`）的内容哈希再变，也不写回节点，并先清掉
+      该条目名下的任何残留节点。撤下的承诺是「该条目没有检索节点」（`withdrawal.py`
+      同事务删除节点），写回节点会推翻它；而节点元数据是写入时刻的状态快照，
+      为已撤下条目写节点等于把「撤下生效」重新押在装配层记得过滤上。
+    - 条目行仍随最新包更新（含 `doc_hash`），因此重复摄取同一份包照常按幂等跳过；
+      但写入计数为 0，结果对象不虚报。
+    - 一期没有「重新摄取即恢复」的语义：恢复必须是运维的显式动作，
+      不能被上游的一次重新交付悄悄完成（若将来要恢复，需要单独设计并写清语义）。
+
     节点形状（第 1.3 节、第 2 节）：
 
     - 检索单位是卡片、呈现单位是案例——每张卡片整卡一个节点（不走进
@@ -437,6 +471,25 @@ async def ingest_case_package(
 
     item_id = str(item.id)
 
+    # 先删该条目的旧节点再写新节点：更新与撤下走同一套机制，且与条目表同事务
+    # （RAG 策略第 2 节：撤下要能同时改状态与删节点）。
+    # 这一步对已撤下条目同样执行：撤下的承诺是「该条目没有检索节点」，重跑顺手清掉
+    # 任何残留（历史脏数据或旁路写入），而不是把它们留在库里等某条取数路径读到。
+    await session.execute(delete(RetrievedNode).where(RetrievedNode.node_id.like(f"{item_id}:%")))
+
+    if item.withdrawn:
+        # 已撤下的条目不重建节点：撤下在向量路上唯一生效的机制就是「节点不存在」，
+        # 内容变了就写回节点会推翻这个承诺，也把「撤下生效」重新押在装配层记得过滤上。
+        # 条目行仍随最新包更新（含 doc_hash，使重复摄取照常按幂等跳过），但一次嵌入
+        # 调用都不做——为不会被检索的内容付供应商往返是纯浪费。
+        # 计数保持缺省 0：本次确实没有写入任何节点，结果对象不得虚报。
+        await session.flush()
+        return CaseIngestionResult(
+            source_path=source_path,
+            item_id=item_id,
+            external_key=manifest.external_key,
+        )
+
     # 嵌入：卡片与叙事块一起批量送，减少往返（单请求建议 ≤128 条）。
     all_texts = [*card_texts, *(chunk.text for chunk in embeddable_narrative)]
     try:
@@ -449,14 +502,10 @@ async def ingest_case_package(
     card_vectors = vectors[: len(card_texts)]
     narrative_vectors = vectors[len(card_texts) :]
 
-    # 先删该条目的旧节点再写新节点：更新与撤下走同一套机制，且与条目表同事务
-    # （RAG 策略第 2 节：撤下要能同时改状态与删节点）。
-    await session.execute(delete(RetrievedNode).where(RetrievedNode.node_id.like(f"{item_id}:%")))
-
     table = vector_store._table_class  # noqa: SLF001 —— 框架耦合点，由集成测试守护
     high_risk = item.makes_claims_high_risk
     for index, (card, card_id, text, vector) in enumerate(zip(cards, card_ids, card_texts, card_vectors, strict=True)):
-        metadata = _card_metadata(manifest, item_id, card, card_id, locator=card["title"])
+        metadata = _card_metadata(manifest, item_id, card, card_id, locator=card["title"], withdrawn=item.withdrawn)
         # 案例级高风险一旦为真，逐卡也标为真：叙事与卡片的标记口径必须一致，
         # 否则同一案例的卡片说「低风险」而案例说「高风险」，skill 无从判断该信哪个。
         if high_risk:
@@ -476,7 +525,9 @@ async def ingest_case_package(
                 node_id=f"{item_id}:narrative:{chunk.chunk_index}",
                 text=chunk.text,
                 embedding=vector,
-                metadata_=_narrative_metadata(manifest, item_id, chunk, makes_claims_high_risk=high_risk),
+                metadata_=_narrative_metadata(
+                    manifest, item_id, chunk, makes_claims_high_risk=high_risk, withdrawn=item.withdrawn
+                ),
             )
         )
     await session.flush()
