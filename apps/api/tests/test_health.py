@@ -38,6 +38,23 @@ def test_report_exposes_degraded_components_individually() -> None:
     assert report.as_dict()["components"]["model"]["status"] == "not_configured"
 
 
+def test_report_with_no_components_is_not_ready() -> None:
+    """一项能力都没探测时**不就绪**——空集合上的 `all(...)` 恒为真。
+
+    判别性：去掉 `is_ready` 里的 `bool(self.components)`，本用例失败。
+
+    可达性如实说明：当前唯一装配点（`main.health`）用 `asyncio.gather` 恒传四个
+    探针，因此这条分支线上不可触发；本用例不是修当前 bug，而是防将来把组件列表改成
+    按配置或插件构造时**装配漏传**——「没有任何检查」被读成「检查都通过」正是
+    AGENTS.md 禁止的闸门形状。
+    """
+    report = HealthReport(())
+
+    assert report.is_ready is False
+    assert report.as_dict()["ready"] is False
+    assert report.degraded == ()
+
+
 def _install_probes(monkeypatch: pytest.MonkeyPatch, *, failing: str | None) -> None:
     """替换四个探针为测试替身，避免测试依赖网络与基础设施。"""
     attributes = {
