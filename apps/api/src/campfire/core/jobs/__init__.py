@@ -10,11 +10,55 @@ broker 选择 ``ListQueueBroker``（Redis 列表）而非 ``RedisStreamBroker``�
 语义。重访条件：出现列表模型无法表达的投递保证需求。
 """
 
+import logging
+from collections.abc import Awaitable, Callable
+
 import redis.asyncio as aioredis
 from taskiq_redis import ListQueueBroker
 
 from campfire.core.config import Settings
 from campfire.core.health import ComponentHealth, Status
+
+logger = logging.getLogger(__name__)
+
+#: 投递钩子（**装配处设置一次**）。**必须是协程函数**：Taskiq 的 `kiq()` 返回协程，
+#: 不 await 就等于没有投递（mypy 的 `unused-coroutine` 抓到过这个错误）。
+#:
+#: ## 为什么是钩子而不是直接 import 任务
+#:
+#: 投递需要任务对象（`consume_memory_episode_task.kiq`），而它定义在 `worker.py`——那是
+#: **入口模块，不属于任何层**。产品侧工具（`tools/*`）的白名单只有 `agent/tools`、
+#: `modules/*` 与 `core/*`（[项目结构设计](../../../../docs/项目结构设计.md)第 7 节），
+#: 因此 `tools/*` **不得** import `campfire.worker`（`test_layer_boundaries.py` 会判失败）。
+#: 由装配处把投递函数注入本模块，工具只依赖 `core/*`，依赖方向保持单向。
+#:
+#: ## 未设置时的行为
+#:
+#: **不抛异常，只记 warning**：记录已在事务里落库，留在 `pending`，由兜底扫描重投
+#: （[写入路径](../../../../docs/技术设计/technical-details/写入路径.md)第 4.1 节）。
+#: 投递失败本来就不改变本次回执——回执承诺的是「已提交」，不是「已保存」。
+_dispatch_hook: Callable[[str], Awaitable[object]] | None = None
+
+
+def set_dispatch_hook(hook: Callable[[str], Awaitable[object]] | None) -> None:
+    """设置（或清除）投递钩子。**只在装配处调用**。
+
+    传 ``None`` 可清除——测试据此隔离彼此，避免钩子跨用例泄漏。
+    """
+    global _dispatch_hook
+    _dispatch_hook = hook
+
+
+async def dispatch_pending_write(pending_id: str) -> None:
+    """把一条待处理记录投递给队列；**投递失败不让调用方失败**。"""
+    if _dispatch_hook is None:
+        logger.warning("投递钩子未设置，记录留给兜底扫描：pending_id=%s", pending_id)
+        return
+    try:
+        await _dispatch_hook(pending_id)
+    except Exception:  # noqa: BLE001 —— 投递失败由兜底扫描补救，不改变本次回执
+        # 只记标识与异常类型：异常消息可能带连接串（AGENTS.md 安全条款）。
+        logger.warning("投递失败，记录留给兜底扫描：pending_id=%s", pending_id)
 
 
 def build_broker(settings: Settings) -> ListQueueBroker:
