@@ -24,7 +24,7 @@ import logging
 
 from campfire.core.config import get_settings
 from campfire.core.db import session_scope
-from campfire.core.jobs import build_broker
+from campfire.core.jobs import build_broker, set_dispatch_hook
 from campfire.core.pending_write import (
     MAX_ATTEMPTS,
     STATE_DEAD,
@@ -33,7 +33,7 @@ from campfire.core.pending_write import (
 )
 from campfire.modules.memory.consumer import consume_memory_episode
 from campfire.modules.memory.errors import MemoryDataError
-from campfire.modules.memory.graph import MemoryGraph, build_memory_graph
+from campfire.modules.memory.graph import MemoryGraph, get_shared_memory_graph
 
 logger = logging.getLogger(__name__)
 
@@ -45,11 +45,24 @@ _memory_graph: MemoryGraph | None = None
 
 
 def _get_memory_graph() -> MemoryGraph:
-    """取（或首次构造）进程内复用的记忆图库句柄。"""
-    global _memory_graph
-    if _memory_graph is None:
-        _memory_graph = build_memory_graph(get_settings())
-    return _memory_graph
+    """取（或首次构造）进程内复用的记忆图库句柄。
+
+    委托给 `modules/memory/graph.get_shared_memory_graph`：**API 侧的工具要读同一张图**，
+    两个入口必须共用一套句柄（每次重建会新建驱动、模型客户端与 http 客户端）。
+    """
+    return get_shared_memory_graph()
+
+
+async def _dispatch_to_queue(pending_id: str) -> None:
+    """投递一条待处理记录（装配处注入 `core/jobs` 的钩子）。
+
+    **必须 await**：`kiq()` 返回协程，不 await 等于没有投递（mypy 抓过这个错误）。
+    """
+    await consume_memory_episode_task.kiq(pending_id, lease_owner="api")
+
+
+# 装配点：产品侧工具（`tools/`）只依赖 `core/jobs`，不 import 本入口模块（层白名单）。
+set_dispatch_hook(_dispatch_to_queue)
 
 
 @broker.task
