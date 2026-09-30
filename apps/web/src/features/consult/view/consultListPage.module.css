@@ -1,0 +1,43 @@
+/* 会话列表页就近布局（CSS Modules）：只消费 token 变量。
+ * 列表行视觉来自契约的 .list-row/.lr-title/.lr-sub/.lr-meta（shared/styles/components.css）。 */
+
+/* 新对话入口：整卡可点，视觉重量高于列表项（列表页布局结构第 2 节）。
+ * 用 <button> 是为了拿到键盘可达与 44px 热区；外观由这类名补齐 <button> 的 UA 差异。 */
+.newEntry {
+  display: grid;
+  gap: var(--space-3);
+  width: 100%;
+  text-align: left;
+  color: var(--fg);
+}
+
+.newTitle {
+  font-family: var(--font-display);
+  font-weight: 500;
+  font-size: var(--text-lg);
+}
+
+.newBody {
+  color: var(--fg-2);
+}
+
+.rows {
+  display: grid;
+}
+
+.row {
+  display: grid;
+  gap: var(--space-2);
+  width: 100%;
+  min-height: 64px;
+  border-inline: 0;
+  border-bottom: 0;
+  background: none;
+  text-align: left;
+  color: var(--fg);
+}
+
+/* 触底哨兵：零高度元素，仅用于 IntersectionObserver 观察。 */
+.sentinel {
+  height: 1px;
+}
