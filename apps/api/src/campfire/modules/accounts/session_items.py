@@ -12,8 +12,10 @@ docs/技术设计/technical-details/通用基座.md 第 2 节；
 服务，要尽量取出可读文本（逐部件取，认不出的部件单独丢掉）。判据不同故不合并，
 而依赖白名单也不允许 `modules/*` import `agent/*`（项目结构设计第 7 节）。
 
-两处shared 常量的漂移风险由测试机械守住：`_TEXT_PART_TYPES` 与
-`window._TEXT_PART_TYPES` 必须相等（`test_accounts_sessions_integration.py`）。
+两处常量的漂移风险由测试机械守住：本模块的 `_TEXT_PART_TYPES` 与
+`agent/context/window.py` 的同名集合都必须等于同一个字面量
+（`test_accounts_session_items.py` 的 `test_text_part_types_agree_across_the_two_parsers`）。
+两侧不能合并成一份：`modules/*` 不得 import `agent/*`（同上），故相等关系只能由用例守。
 """
 
 from __future__ import annotations
