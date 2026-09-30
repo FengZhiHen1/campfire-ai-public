@@ -79,8 +79,8 @@ def build_skill_tool(registry: SkillRegistry) -> ToolSpec[ActivateSkillArgs]:
     - 未知名字 → `tool_not_registered`：错误码与基座其它路径一致，说明里带上已注册的
       名字，模型可以据此换一个名字重试（第 9 节：工具失败作为结果回给模型，可恢复）。
     - `autoload: "false"` 的 skill 拒绝模型激活 → `tool_not_available`：这类 skill 只能
-      由应用注入激活（技能设计第 69 行「应急验证『注入即激活』且不被自动匹配」）。目录里
-      不列它只是第一道；模型若从历史或猜测里拿到名字，这里仍然挡住。
+      由应用在运行入口注入激活，不参与模型侧的自动匹配。目录里不列它只是第一道；
+      模型若从历史或猜测里拿到名字，这里仍然挡住。
     - 正文由 :func:`~campfire.agent.skill_runtime.render_activation` 渲染，与注入路径同一份
       实现——同形由此保证，而不是靠两处对齐。
     """
