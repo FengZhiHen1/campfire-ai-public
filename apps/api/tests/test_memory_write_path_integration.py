@@ -520,6 +520,70 @@ async def test_hard_kill_leftover_is_unreadable_by_both_paths(memory_graph: Memo
         await _clear()
 
 
+@pytest.mark.asyncio
+async def test_retry_of_a_written_episode_does_not_downgrade_the_marker(memory_graph: MemoryGraph) -> None:
+    """重试**已成功写入**的 episode 不得把完成标记降级（2026-09-29 自查，实测发现）。
+
+    场景：第一次 `write_episode` 的 `add_episode` 成功、标记已写 `done`，但随后
+    `mark_done` 因数据库抖动失败 → 记录仍是 `processing` → 租约过期 → 回收 → 重试。
+    重试第一步是 `MERGE ... SET e = {...}`（**整节点替换**），实测会把 `write_state`
+    从 `done` 覆盖成 `pending`；若这次 `add_episode` 又失败，**一条原本可读的记忆会
+    变成不可读**（方向是 fail-closed，但属数据可见性缺陷）。
+
+    修法：预建时若该节点已带完成标记，则**保持** `done`，不降级。
+
+    判别性：把预建的 `write_state` 无条件写成 `pending`，本用例失败。
+    """
+    from campfire.modules.memory.identity import PendingId, derive_episode_uuid
+    from campfire.modules.memory.store import EPISODE_WRITE_STATE_DONE, write_episode
+
+    await _clear()
+    now = datetime.now(timezone.utc)
+    key = derive_episode_uuid(PendingId("downgrade-regression"))
+    scoped = memory_graph.driver_for(to_account_id(_ACCOUNT))
+    try:
+        # 第一次写入：走真实路径（假 LLM 返回空实体，等价于「抽取成功」）。
+        await write_episode(
+            memory_graph,
+            to_account_id(_ACCOUNT),
+            key,
+            content="第一次成功写入",
+            occurred_at=now,
+            source_description="session=1",
+        )
+        rows, _, _ = await scoped.execute_query("MATCH (e:Episodic {uuid: $u}) RETURN e.write_state AS ws", u=key)
+        assert rows[0]["ws"] == EPISODE_WRITE_STATE_DONE, "首次写入后应带完成标记"
+
+        # 第二次：同 uuid 重跑，但这次抽取失败（模拟重试且失败）。
+        async def _boom(**_kwargs):  # noqa: ANN202
+            raise RuntimeError("重试时抽取失败")
+
+        original = memory_graph.graphiti.add_episode
+        memory_graph.graphiti.add_episode = _boom  # type: ignore[method-assign]
+        try:
+            with pytest.raises(MemoryUnavailableError):
+                await write_episode(
+                    memory_graph,
+                    to_account_id(_ACCOUNT),
+                    key,
+                    content="重试的正文",
+                    occurred_at=now,
+                    source_description="session=1",
+                )
+        finally:
+            memory_graph.graphiti.add_episode = original  # type: ignore[method-assign]
+
+        # 关键断言：原本可读的记忆必须仍然可读。
+        rows, _, _ = await scoped.execute_query("MATCH (e:Episodic {uuid: $u}) RETURN e.write_state AS ws", u=key)
+        assert rows[0]["ws"] == EPISODE_WRITE_STATE_DONE, (
+            f"重试把已成功的标记降级成了 {rows[0]['ws']!r}——原本可读的记忆变得不可读"
+        )
+        timeline = await read_timeline(memory_graph, to_account_id(_ACCOUNT), deleted_keys=[])
+        assert [e.episode_uuid for e in timeline] == [key], "已成功写入的记忆必须仍可读"
+    finally:
+        await _clear()
+
+
 # ---------------------------------------------------------------------------
 # Worker 的错误分档（可重试 vs 不可重试）
 # ---------------------------------------------------------------------------
