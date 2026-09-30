@@ -115,8 +115,15 @@ def _lease_identity() -> str:
 
 
 async def _enqueue_memory_episode(pending_id: str) -> None:
-    """把一条 `memory_episode` 投给记忆消费者任务。"""
-    await consume_memory_episode_task.kiq(pending_id, lease_owner="api")
+    """把一条 `memory_episode` 投给记忆消费者任务。
+
+    投递时不带租约身份：租约是领取者自己盖的章，由消费者在自己的进程里取
+    （见 `consume_memory_episode_task` 与 `_lease_identity`）。投递点在这里填一个常量
+    会让「领取」与「终结」用同一个常量回比，栅栏恒真——2026-09-30 实测（修改前）：
+    这里传常量 `"api"`，`lease_owner` 列永远读作 `"api"`，租约过期被重领后
+    先领取者的迟到 `mark_done` 仍会抢先成功。
+    """
+    await consume_memory_episode_task.kiq(pending_id)
 
 
 async def _enqueue_profile_item(pending_id: str) -> None:
@@ -128,9 +135,7 @@ async def _enqueue_profile_item(pending_id: str) -> None:
     生产唯一投递点此前传常量 `"api"`，`lease_owner` 列永远读作 `"api"`，
     租约过期被重领后先领取者的迟到 `mark_done` 仍会抢先成功。
 
-    记忆侧（`_enqueue_memory_episode`）仍传常量：那是 T02/T08 的接线，修它要同时改
-    `consume_memory_episode_task` 的签名，属跨切能力（`core/jobs` + worker 投递契约），
-    不在本包范围。已登记于交付报告的未决问题节。
+    记忆侧（`_enqueue_memory_episode`）同一处置：两个投递点都不带身份常量。
     """
     await consume_profile_item_task.kiq(pending_id)
 
@@ -188,7 +193,7 @@ set_dispatch_hook(dispatch_pending_write_to_queue)
 
 
 @broker.task
-async def consume_memory_episode_task(pending_id: str, lease_owner: str = "worker") -> str:
+async def consume_memory_episode_task(pending_id: str, lease_owner: str | None = None) -> str:
     """消费一条记忆待处理记录。
 
     失败语义（第 6 节）：
@@ -198,10 +203,19 @@ async def consume_memory_episode_task(pending_id: str, lease_owner: str = "worke
 
     返回状态字符串（`written` / `skipped`），供 Taskiq 记录与排查。
 
+    租约身份（第 4 节的租约栅栏，2026-09-30 侦察 D-31）
+
+    `lease_owner` 省略时取本次领取的身份（`_lease_identity`：主机名:进程号 +
+    每次领取唯一的后缀）。为什么由消费者自己定、为什么唯一性必须落在每次领取而不是
+    每个进程：见 `_lease_identity` 与 `consume_profile_item_task` 的同一段说明。
+
     Args:
         pending_id: 待处理记录标识（Taskiq 任务载荷）。
-        lease_owner: Worker 标识；默认 `worker`。生产应传实例名，便于排查
-            「谁持有租约」。
+        lease_owner: 领取者身份；省略时取本次领取的身份。生产路径省略它，由消费者在
+            自己的进程里盖章；投递点传的任何值都是投递方的常量，两次不同的领取会拿到
+            同一个值，`mark_done` 的栅栏因此恒真（修改前实测：这里收到 `"api"`，
+            领取与终结都用它回比，租约过期重领后先领取者的迟到 `mark_done` 仍成功）。
+            参数保留是为了让测试注入互不相同的身份（栅栏的判别用例需要两个不同 owner）。
 
     Returns:
         `"written"` 表示本次写入图库并置 `done`；`"skipped"` 表示未领取到
@@ -214,10 +228,11 @@ async def consume_memory_episode_task(pending_id: str, lease_owner: str = "worke
             按第 6 节记 `attempts + 1` 与退避后原样抛出——吞掉它会让队列以为
             任务成功。
     """
+    owner = lease_owner if lease_owner is not None else _lease_identity()
     graph = _get_memory_graph()
     try:
         async with session_scope(get_settings()) as session:
-            result = await consume_memory_episode(session, graph, pending_id=pending_id, lease_owner=lease_owner)
+            result = await consume_memory_episode(session, graph, pending_id=pending_id, lease_owner=owner)
     except MemoryDataError as exc:
         # 不可重试：载荷/形状不合法，重试不会变好，直接转 `dead`
         # （第 6 节：不得静默丢弃）。`session_scope` 已回滚，故另开会话登记终结状态。
