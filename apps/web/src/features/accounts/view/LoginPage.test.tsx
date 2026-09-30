@@ -292,6 +292,8 @@ describe('登录页 · server-error', () => {
     const banner = message.closest('.error-card');
     expect(banner).not.toBeNull();
     expect(banner?.getAttribute('role')).toBe('alert');
+    // 设计第 46 行的「紧凑变体」= 契约的 .error-card.form-feedback（不是整块错误态）。
+    expect(banner?.classList.contains('form-feedback')).toBe(true);
   });
 });
 
