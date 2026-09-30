@@ -387,6 +387,36 @@ async def test_emit_returns_a_card_matching_the_base_envelope() -> None:
 
 
 @pytest.mark.asyncio
+async def test_a_shuffled_payload_is_emitted_in_the_canonical_section_order() -> None:
+    """乱序七节被接受，但产出的卡片按 `SECTION_KEYS` 的规范顺序（契约第 2 节「按固定顺序」）。
+
+    顺序是呈现层事实：基座 `ActionCard.sections` 的说明是「按呈现顺序」，前端
+    `.action-card` 按它渲染。契约第 5 节的失败语义只列「缺节 / 某节为空」，
+    因此乱序不构成拒绝条件，而是生产方要规范化掉的输入。
+
+    判别性：去掉 handler 里的排序，本用例失败——产出顺序会与模型给的乱序一致。
+    """
+    shuffled = list(reversed(_raw_args()["sections"]))
+    assert [section["key"] for section in shuffled] != list(SECTION_KEYS), "样本必须真的乱序"
+
+    outcome = await emit_emergency_action_card(_accounted(), _args(sections=shuffled))
+
+    assert isinstance(outcome, ToolResult), "乱序是合法输入，不得被拒绝"
+    emitted = outcome.cards[0].sections
+    assert [section.key for section in emitted] == list(SECTION_KEYS)
+    # 小标题跟着键走，不因排序而错配到别节。
+    assert [section.heading for section in emitted] == [
+        "当前状态",
+        "立即怎么沟通",
+        "立即做",
+        "不要做",
+        "需要的医疗检查",
+        "安全措施",
+        "何时升级",
+    ]
+
+
+@pytest.mark.asyncio
 async def test_emit_reports_the_card_id_to_the_model() -> None:
     """返回文本带上 `card_id`（契约第 3 节的返回字段），且与卡片里的一致。
 
