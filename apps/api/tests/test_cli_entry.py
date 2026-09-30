@@ -15,6 +15,8 @@ import os
 import subprocess
 import sys
 
+import pytest
+
 from campfire.cli.__main__ import _build_parser, main
 
 
@@ -120,3 +122,129 @@ def test_convert_does_not_ingest(tmp_path: object) -> None:
 
     assert "session_scope" not in source
     assert "ingest_file" not in source
+
+
+# ---------------------------------------------------------------- 运营子命令
+#
+# 以下用例不连库、不连 core（SDK 调用被拦截在装配层之外），钉的是
+# 2026-10-01 审查发现的两个 CLI 真实缺陷：account 子命令不初始化 SDK、
+# `purgers` 传的是工厂函数而不是它返回的列表。
+
+
+def _operator_parser():
+    """构造带运营子命令的解析器（复用入口的真解析器，不另写一份）。"""
+    return _build_parser()
+
+
+def test_account_delete_initializes_the_sdk(monkeypatch: pytest.MonkeyPatch) -> None:
+    """``account delete`` 必须在执行前初始化 SuperTokens SDK。
+
+    **背景（阻断级，2026-10-01 审查发现）**：第 3、4 步（撤会话、删身份用户）走
+    SDK，而 SDK 的 ``SessionRecipe.get_instance()`` 在未 init 的进程里直接抛
+    ``GeneralError: Initialisation not done``（源码实测）。CLI 不共享 Web 入口的
+    lifespan，不初始化就意味着 ``account delete`` **必然**在第一步成功后崩掉。
+
+    判别性：去掉 ``_run_account_delete`` 里的 ``_init_supertokens_for_cli`` 调用，
+    本用例失败（``initialized`` 不会被置真）。
+
+    库层（``session_scope``）与编排（``delete_account``）都用假件替身——本用例
+    钉的是「init 先于执行」与「purgers 已求值」两件事，不连库。
+    """
+    import asyncio
+
+    import campfire.core.auth.deletion as deletion
+    from campfire.cli import operator
+    from campfire.core.auth import PurgeOutcome
+
+    initialized: list[bool] = []
+    monkeypatch.setattr(operator, "_init_supertokens_for_cli", lambda settings: initialized.append(True))
+
+    async def fake_revoke(account_id: str) -> None:
+        return None
+
+    async def fake_delete_user(account_id: str) -> None:
+        return None
+
+    class _NoopPurger:
+        #: 领域名（与端口契约一致；编排步骤名从它取）。
+        name = "noop"
+
+        async def purge_account(self, account_id: str) -> PurgeOutcome:
+            return PurgeOutcome(name="noop", detail="无数据")
+
+    calls: list[str] = []
+
+    async def fake_delete_account(
+        session,
+        *,
+        account_id,
+        revoke_all_sessions,
+        delete_identity_user,
+        purgers,
+        reason="user_request",
+        confirmed=False,
+    ):
+        calls.append("delete_account")
+        # purgers 必须是**列表**：修复前传进来的是工厂函数本身，迭代它会抛 TypeError。
+        assert isinstance(purgers, list), f"purgers 应为已求值的列表，实际 {type(purgers).__name__}"
+        assert all(hasattr(p, "purge_account") for p in purgers), "列表成员必须是清除者"
+        return deletion.DeletionReport(account_id=account_id)
+
+    class _NullSession:
+        async def __aenter__(self):
+            return object()
+
+        async def __aexit__(self, *exc_info):
+            return False
+
+    monkeypatch.setattr(operator, "session_scope", lambda settings: _NullSession())
+    # operator.py 是 `from ... import delete_account` 直接导入名字，
+    # 必须拦在 operator 模块的命名空间上（拦 deletion 模块属性对它无效）。
+    monkeypatch.setattr(operator, "delete_account", fake_delete_account)
+    monkeypatch.setattr(operator, "_revoke_all_sessions_for", fake_revoke)
+    monkeypatch.setattr(operator, "_delete_identity_user", fake_delete_user)
+    monkeypatch.setattr(operator, "_purgers", lambda settings: [_NoopPurger()])
+
+    args = _operator_parser().parse_args(["account", "delete", "acct-x", "--confirm", "acct-x"])
+    code = asyncio.run(operator._run_account_delete(args))
+
+    assert code == 0
+    assert initialized == [True], "account delete 必须先初始化 SDK 再执行注销"
+    assert calls == ["delete_account"]
+
+
+def test_account_reset_initializes_the_sdk(monkeypatch: pytest.MonkeyPatch) -> None:
+    """``account reset`` 同样必须初始化 SDK（改密走 ``update_email_or_password``）。
+
+    判别性：去掉 ``_run_account_reset`` 里的初始化调用，本用例失败。
+    SDK 函数本身用假件替身（本用例不连 core），初始化的**事实**才是断言对象。
+    """
+    import asyncio
+
+    from campfire.cli import operator
+
+    initialized: list[bool] = []
+    monkeypatch.setattr(operator, "_init_supertokens_for_cli", lambda settings: initialized.append(True))
+
+    class _OkResult:
+        status = "OK"
+
+    async def fake_update(**kwargs):
+        return _OkResult()
+
+    async def fake_revoke(account_id: str) -> None:
+        return None
+
+    import supertokens_python.recipe.emailpassword.asyncio as ep_asyncio
+
+    monkeypatch.setattr(ep_asyncio, "update_email_or_password", fake_update)
+    monkeypatch.setattr(operator, "_revoke_all_sessions_for", fake_revoke)
+
+    code = asyncio.run(
+        operator._run_account_reset(
+            _operator_parser().parse_args(["account", "reset", "acct-y", "--password", "probePass123"])
+        )
+    )
+
+    assert code == 0
+    assert initialized == [True], "account reset 必须先初始化 SDK 再改密"

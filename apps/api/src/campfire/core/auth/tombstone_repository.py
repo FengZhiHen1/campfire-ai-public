@@ -6,9 +6,9 @@
 
 ## 为什么写入必须幂等，且「已存在」算成功
 
-注销的编排者（``modules/accounts`` 的注销用例）可能在**重试**时再次调用它
-（例如第 2 步失败后整体重跑）。若第二次调用报错，重试路径会把「其实已经写好了」
-当作失败——而墓碑**先于**所有删除动作，这会让操作者以为注销没有开始，
+注销的编排者（``core/auth/deletion.delete_account``；CLI 经它调用）可能在**重试**时
+再次调用它（例如第 2 步失败后整体重跑）。若第二次调用报错，重试路径会把「其实已经
+写好了」当作失败——而墓碑**先于**所有删除动作，这会让操作者以为注销没有开始，
 转而排查一个不存在的问题。
 
 因此 :func:`record_deletion` 的语义是「**确保**该账号已有墓碑」：
@@ -181,6 +181,7 @@ async def get_tombstone(
     Raises:
         TombstonePayloadError: 账号标识不合法（长度/空值/类型）。
     """
+    # quality-floor: ignore docstring-promise 异常由 _validate_account_id 抛出（间接 raise），本函数只做查询
     normalized = _validate_account_id(account_id)
     return (
         await session.execute(select(AccountDeletionTombstone).where(AccountDeletionTombstone.account_id == normalized))
@@ -196,6 +197,7 @@ async def is_account_deleted(session: AsyncSession, *, account_id: object) -> bo
     Raises:
         TombstonePayloadError: 账号标识不合法（长度/空值/类型）。
     """
+    # quality-floor: ignore docstring-promise 异常由 _validate_account_id 抛出（间接 raise），本函数只做查询
     normalized = _validate_account_id(account_id)
     found = (
         await session.execute(

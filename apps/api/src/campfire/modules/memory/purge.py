@@ -51,7 +51,14 @@ class MemoryAccountPurger:
     重试注销是正常路径（第一次可能在后续步骤失败）。
     实测依据：``GRAPH.DELETE`` 对不存在的图不报错；``DELETE ... WHERE`` 命中 0 行
     也不报错。
+
+    ``name`` 属性（``"memory"``）：注销编排的步骤名从它取（如
+    ``领域清除（memory）``），与 :class:`PurgeOutcome` 的 ``name`` 同源——
+    多个清除者并存时，操作者据此分辨「哪个领域已清过」。
     """
+
+    #: 清除者的领域名（编排步骤名与结果汇总共用，勿与类名耦合）。
+    name = "memory"
 
     def __init__(self, settings: Settings) -> None:
         """记录配置。
@@ -78,7 +85,7 @@ class MemoryAccountPurger:
         ledger_deleted = await self._delete_ledger_rows(account_id)
         detail = f"{graph_detail}；删除账本 {ledger_deleted} 行"
         logger.info("记忆清除完成：标识=%s %s", account_id, detail)
-        return PurgeOutcome(name="memory", detail=detail)
+        return PurgeOutcome(name=self.name, detail=detail)
 
     async def _drop_graph(self, account_id: str) -> str:
         """丢弃该账号的图；不存在则如实说明「无图可丢弃」。"""

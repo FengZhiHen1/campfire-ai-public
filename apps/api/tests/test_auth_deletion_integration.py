@@ -94,18 +94,25 @@ class _Recorder:
 
 
 class _FakePurger:
-    """假的领域清除者。"""
+    """假的领域清除者。
 
-    def __init__(self, recorder: _Recorder, fail: bool = False) -> None:
+    ``name`` 用于多清除者用例里区分「哪一个」：同类两个实例须能分辨，
+    步骤名带该名（见 :func:`test_partial_purger_failure_reports_completed_purger`）。
+    """
+
+    def __init__(self, recorder: _Recorder, fail: bool = False, name: str | None = None) -> None:
         self._recorder = recorder
         self._fail = fail
+        #: 公开属性 ``name``：编排从它取步骤名（缺省回退类名），与
+        #: ``PurgeOutcome.name`` 同源。
+        self.name = name or type(self).__name__
 
     async def purge_account(self, account_id: str) -> PurgeOutcome:
         """记录一次清除；`fail=True` 时抛错（用于验证失败语义）。"""
-        self._recorder.calls.append(f"purge:{account_id}")
+        self._recorder.calls.append(f"purge:{self.name}:{account_id}")
         if self._fail:
             raise RuntimeError("模拟领域清除失败")
-        return PurgeOutcome(name="fake", detail="已清除")
+        return PurgeOutcome(name=self.name, detail="已清除")
 
 
 async def _enqueue(account_id: str, *, state: str = STATE_PENDING) -> uuid.UUID:
@@ -297,6 +304,47 @@ async def test_purger_failure_fails_the_whole_deletion() -> None:
 
 
 @pytest.mark.asyncio
+async def test_partial_purger_failure_reports_completed_purger() -> None:
+    """**多个清除者中第 2 个失败时，第 1 个的完成必须出现在报告里**。
+
+    ## 背景（2026-10-01 审查修正的回归测试）
+
+    修复前第 5 步只在**全部** purger 成功后追加一条「领域清除」——第 2 个失败时，
+    第 1 个已真实执行却不出现在 ``completed``。操作者据「重试安全」重跑时无法从
+    报告区分哪个领域已清过；purger 幂等让重跑无害，但报告必须与事实一致。
+
+    判别性：把 ``completed.append`` 改回循环外（旧实现），本用例失败——
+    ``error.completed`` 里没有任何「领域清除」条目。
+    """
+    await _clear()
+    account = _account("partial")
+    recorder = _Recorder()
+    first = _FakePurger(recorder, name="first")
+    second = _FakePurger(recorder, name="second", fail=True)
+    try:
+        async with session_scope(get_settings()) as session:
+            with pytest.raises(AccountDeletionError) as excinfo:
+                await delete_account(
+                    session,
+                    account_id=account,
+                    revoke_all_sessions=recorder.revoke_all_sessions,
+                    delete_identity_user=recorder.delete_identity_user,
+                    purgers=[first, second],
+                    confirmed=True,
+                )
+
+        error = excinfo.value
+        # 失败步骤点名第 2 个清除者；第 1 个的完成被如实记录。
+        assert "second" in error.step, f"失败步骤应点名失败的清除者，实际 {error.step!r}"
+        assert any("first" in step for step in error.completed), (
+            f"第 1 个清除者已完成，必须出现在 completed 里，实际 {error.completed}"
+        )
+        assert not any("second" in step for step in error.completed), "失败的清除者不得出现在 completed 里"
+    finally:
+        await _clear()
+
+
+@pytest.mark.asyncio
 async def test_retry_is_safe_and_reports_existing_tombstone() -> None:
     """**重试安全**：墓碑幂等，重跑报告「已存在」并继续完成后续步骤。
 
@@ -369,13 +417,13 @@ async def test_purge_outcomes_are_reported() -> None:
             )
 
         assert len(report.purges) == 1
-        assert report.purges[0].name == "fake"
-        assert "领域清除" in report.completed_steps
+        assert report.purges[0].name == "_FakePurger", "展示名缺省取类名（与编排的失败点名同源）"
+        assert any("领域清除" in step for step in report.completed_steps)
         # 调用顺序：墓碑 → （删记录）→ 撤会话 → 删用户 → 清除
         assert recorder.calls == [
             f"revoke_sessions:{account}",
             f"delete_user:{account}",
-            f"purge:{account}",
+            f"purge:_FakePurger:{account}",
         ]
     finally:
         await _clear()
