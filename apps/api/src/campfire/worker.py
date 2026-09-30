@@ -28,6 +28,7 @@ import asyncio
 import logging
 import os
 import socket
+import uuid
 from collections.abc import Awaitable, Callable
 from contextlib import suppress
 from datetime import datetime, timezone
@@ -83,25 +84,34 @@ def _get_memory_graph() -> MemoryGraph:
 #: 租约身份的字符上界，与存储列宽一致（`PendingWrite.lease_owner` 是 `String(128)`）。
 #:
 #: 超宽会在写库时抛裸 `DBAPIError`（看不出是哪个字段），因此在这里显式截断：
-#: 主机名异常长时仍能领取，只是身份被截断——截断不破坏栅栏的判别力，
-#: 因为同一进程每次算出的值相同、不同进程的前缀通常已经不同（CORE-11 有界性）。
+#: 主机名异常长时仍能领取，但截断只削主机名前缀、绝不削尾部的唯一后缀——
+#: 削掉后缀会让同一进程的两次领取重新得到同一个身份，栅栏又变回恒真（CORE-11 有界性）。
 LEASE_IDENTITY_MAX_CHARS = 128
+
+#: 每次领取的唯一后缀字符数：`uuid4` 十六进制前 8 位（16^8 个取值）。
+_LEASE_SUFFIX_CHARS = 8
 
 
 def _lease_identity() -> str:
-    """本进程的租约身份：`主机名:进程号`。
+    """本次领取的租约身份：`主机名:进程号:<每次领取唯一的短标识>`。
 
-    为什么用主机名加进程号：栅栏要比的是「同一条记录先后被两个领取者碰过没有」，
-    因此身份只需满足「进程内唯一 + 可排查」——主机名指向哪台机器、进程号指向那个
-    进程，出问题时能直接定位；不引入配置项与部署约定（一期单机单 Worker）。
+    后缀必须每次领取都不同，而不是每个进程一个值：栅栏要比的是「同一条记录先后被
+    两个领取者碰过没有」。一期只有一个 Worker 进程（兜底扫描与消费任务跑在同一个
+    进程里，第 4.1 节），进程级身份在「租约过期后被同进程重领」这条真实序列上两次
+    全等，`mark_done` 的 owner 比对因此恒真——先领取者的迟到响应仍会抢先成功
+    （2026-09-30 审查实测：同进程两次领取 owner 相同，迟到 `mark_done` 成功）。
+    主机名与进程号留在前缀里只为排查（谁领的、在哪台机器上），唯一性由后缀承担；
+    侦察 D-31 的原建议「实例名/进程名 + 任务标识」里的任务标识就是这一段。
 
     为什么不在投递点算：投递发生在 API 请求进程或兜底扫描里，那个身份属于投递方；
-    栅栏要的是**领取方**的身份（见 `consume_profile_item_task` 的说明）。
+    栅栏要的是领取方的身份（见 `consume_profile_item_task` 的说明）。
 
-    重访条件：Worker 水平扩容到多副本、且同一主机上跑多个副本时，进程号仍互不相同，
-    本函数无需改动；若要跨重启追溯「上一次是谁领的」，才需要换成带实例名的稳定标识。
+    重访条件：身份只在一次领取内可读（置终态时租约被清空），它回答不了「上一次是谁
+    领的」；要跨重启追溯归属才需要换成可持久化的实例名。
     """
-    return f"{socket.gethostname()}:{os.getpid()}"[:LEASE_IDENTITY_MAX_CHARS]
+    head = f"{socket.gethostname()}:{os.getpid()}"
+    suffix = uuid.uuid4().hex[:_LEASE_SUFFIX_CHARS]
+    return f"{head[: LEASE_IDENTITY_MAX_CHARS - _LEASE_SUFFIX_CHARS - 1]}:{suffix}"
 
 
 async def _enqueue_memory_episode(pending_id: str) -> None:
@@ -253,13 +263,16 @@ async def consume_profile_item_task(pending_id: str, lease_owner: str | None = N
     幂等查重 → 写条目 → 置 `done`。领取、授权重判与幂等查重都在
     `modules/profile/consumer.write_from_pending` 内，本函数只负责失败分档。
 
-    租约身份（第 4 节的租约栅栏，2026-09-30 侦察 D-31）
+    租约身份（第 4 节的租约栅栏，2026-09-30 侦察 D-31、同日审查 P1-3）
 
-    `lease_owner` 省略时取**本进程**的身份（`_lease_identity`）。为什么由消费者自己定、
-    而不是由投递点传进来：栅栏要比的是「领这条记录的是不是当前这个人」——
-    投递点（API 请求路径与 Worker 兜底扫描）传的任何值都是**投递方**的常量，
-    两次不同的领取会拿到同一个值，栅栏就恒真了。只有领取者在自己进程里盖的章
-    才随进程变化，也才谈得上「迟到响应不得抢先成功」（CORE-03）。
+    `lease_owner` 省略时取本次领取的身份（`_lease_identity`：主机名:进程号 +
+    每次领取唯一的后缀）。为什么由消费者自己定、而不是由投递点传进来：栅栏要比的是
+    「领这条记录的是不是当前这个人」——投递点（API 请求路径与 Worker 兜底扫描）传的
+    任何值都是投递方的常量，两次不同的领取会拿到同一个值，栅栏就恒真了。
+
+    为什么唯一性必须落在「每次领取」而不是「每个进程」：一期只有一个 Worker 进程，
+    兜底扫描与消费任务同进程（第 4.1 节）。进程级身份在「租约过期后被同进程重领」
+    这条真实序列上两次全等，栅栏照样恒真——2026-09-30 审查实测过这个残留。
 
     参数保留是为了让测试注入互不相同的身份（栅栏的判别用例需要两个不同的 owner）。
 

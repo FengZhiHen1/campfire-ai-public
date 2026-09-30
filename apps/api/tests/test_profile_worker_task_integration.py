@@ -21,6 +21,7 @@
 from __future__ import annotations
 
 from collections.abc import AsyncIterator
+from datetime import datetime, timedelta, timezone
 
 import pytest
 import pytest_asyncio
@@ -37,7 +38,10 @@ from campfire.core.pending_write import (
     STATE_DONE,
     STATE_PENDING,
     PendingWrite,
+    PendingWriteNotFoundError,
     enqueue,
+    mark_done,
+    take_for_processing,
 )
 from campfire.modules.profile import repository as repo
 from campfire.modules.profile import service
@@ -305,10 +309,66 @@ async def test_dispatch_does_not_pass_a_constant_lease_owner(monkeypatch: pytest
         f"投递不得带 lease_owner（栅栏要的是领取者的身份），实际投递={seen}"
     )
 
-    # 消费者侧的身份随进程变化，且可排查（主机名:进程号）。
+    # 消费者侧的身份必须可排查（主机名:进程号前缀），且每次领取都不同（唯一后缀）。
     identity = worker_module._lease_identity()
-    assert identity.endswith(f":{os.getpid()}") and ":" in identity, f"租约身份不可排查：{identity!r}"
+    parts = identity.split(":")
+    assert len(parts) == 3 and parts[1] == str(os.getpid()), f"租约身份不可排查或缺进程号：{identity!r}"
+    assert parts[2] != "", "唯一后缀不得为空——空后缀等于退回「每个进程一个身份」"
     assert len(identity) <= worker_module.LEASE_IDENTITY_MAX_CHARS, "租约身份必须有上界（与列宽一致）"
+    assert worker_module._lease_identity() != identity, "同进程两次领取必须得到不同身份（D-31）"
+
+
+@pytest.mark.asyncio
+async def test_lease_fence_holds_when_the_same_process_reclaims() -> None:
+    """同进程内租约过期重领 → 先领取者的迟到 `mark_done` 被拒（D-31 返工，2026-09-30）。
+
+    一期只有一个 Worker 进程（兜底扫描与消费任务同进程，写入路径第 4.1 节），
+    因此「两次领取拿到互不相同的身份」是这条栅栏在生产形态下可用的前提。
+    审查者的探针正是拿这里两次 `_lease_identity()` 当 owner 复现的：
+    身份相同 → 迟到者抢先成功，栅栏未判别。
+
+    判别性：把 `_lease_identity` 改回 `主机名:进程号`（每个进程一个值），
+    第一条断言与「迟到 `mark_done` 被拒」两处同时失败。
+
+    对照（canary）：同一段代码在 owner 互不相同时本就拒绝迟到者
+    （`test_pending_write_integration.test_lease_fence_rejects_a_late_writer`），
+    因此这里的失败不可能是「栅栏机制本身没接上」。
+    """
+    object_id = await _new_object()
+    pending_id = await _enqueue(object_id)
+
+    owner_first = worker_module._lease_identity()
+    owner_second = worker_module._lease_identity()
+    assert owner_first != owner_second, "同进程两次领取必须得到不同身份——否则栅栏在同进程重领时恒真"
+
+    async with session_scope(get_settings()) as session:
+        claimed = await take_for_processing(session, pending_id=repo.to_item_uuid(pending_id), lease_owner=owner_first)
+    assert claimed is not None and claimed.lease_owner == owner_first
+
+    # 租约过期（模拟慢写入超过 5 分钟租约）。
+    async with session_scope(get_settings()) as session:
+        await session.execute(
+            PendingWrite.__table__.update()
+            .where(PendingWrite.id == repo.to_item_uuid(pending_id))
+            .values(lease_expires_at=datetime.now(timezone.utc) - timedelta(seconds=1))
+        )
+
+    async with session_scope(get_settings()) as session:
+        reclaimed = await take_for_processing(
+            session, pending_id=repo.to_item_uuid(pending_id), lease_owner=owner_second
+        )
+    assert reclaimed is not None and reclaimed.lease_owner == owner_second
+
+    # 先领取者的迟到终结 → 必须被拒（CORE-03）。
+    async with session_scope(get_settings()) as session:
+        with pytest.raises(PendingWriteNotFoundError):
+            await mark_done(session, pending_id=repo.to_item_uuid(pending_id), lease_owner=owner_first)
+
+    # 真领取者的终结仍必须成功（迟到者不得挤掉它）。
+    async with session_scope(get_settings()) as session:
+        done = await mark_done(session, pending_id=repo.to_item_uuid(pending_id), lease_owner=owner_second)
+    assert done.state == STATE_DONE
+    assert done.lease_owner is None, "置 done 必须同事务清租约"
 
 
 @pytest.mark.asyncio
@@ -318,6 +378,9 @@ async def test_the_consumed_lease_owner_is_the_consumers_own_identity(monkeypatc
     与上一条配对——上一条钉投递，这一条钉「领取时真的用了自己的身份」。
     `mark_done` 在消费成功时会清空租约，因此消费后再读记录读不到它；
     这里用一个记录型的包装器截获交给 `write_from_pending` 的实参。
+
+    比的是前缀（主机名:进程号）而不是整体：身份带每次领取唯一的后缀，
+    再取一次 `_lease_identity()` 必然不同（那正是栅栏可判别的前提）。
     """
     captured: list[str] = []
 
@@ -332,7 +395,9 @@ async def test_the_consumed_lease_owner_is_the_consumers_own_identity(monkeypatc
     monkeypatch.setattr(worker_module, "write_from_pending", _spy)
 
     assert await worker_module.consume_profile_item_task(pending_id) == "written"
-    assert captured == [worker_module._lease_identity()], f"领取时应盖本进程的章，实际={captured}"
+    assert len(captured) == 1, f"领取恰好一次，实际={captured}"
+    own_prefix = worker_module._lease_identity().rsplit(":", 1)[0]
+    assert captured[0].rsplit(":", 1)[0] == own_prefix, f"领取时应盖本进程的章，实际={captured}"
 
 
 @pytest.mark.asyncio
