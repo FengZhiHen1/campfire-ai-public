@@ -1,7 +1,7 @@
 """登记 SDK 会话两表并纳入迁移白名单
 
 Revision ID: 5fe0de69e768
-Revises: 711fc22a40fd
+Revises: fecd059d662b
 Create Date: 2026-09-30 23:07:34.613692
 
 业务意图（依据 docs/项目结构设计.md 第 10 节；docs/TODO.md「SDK 自建表未登记」条；
@@ -55,7 +55,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "5fe0de69e768"
-down_revision: Union[str, Sequence[str], None] = "711fc22a40fd"
+down_revision: Union[str, Sequence[str], None] = "fecd059d662b"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
