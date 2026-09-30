@@ -53,11 +53,11 @@
 name: emergency-consulting
 description: 用于监护者在突发情境下需要立刻可执行建议的即时咨询：当支持对象正在出现或刚刚出现让人当场无法应对的行为或状态时使用。按固定顺序做医疗、基线偏离、沟通、环境、既往策略与安全六层判断，输出一张现场行动卡；不做诊断、不给用药建议、不含已发生自伤或伤人时的处置流程。
 license: 项目内部内容，随应用发布，不单独授权
-compatibility: 依赖 search_knowledge、search_cases 两个只读工具；档案稳定信息由应用预先注入；不依赖脚本与外部二进制
+compatibility: 依赖 search_knowledge、search_cases 两个检索工具与 emit_emergency_action_card 一个输出工具；档案稳定信息由应用预先注入；不依赖脚本与外部二进制
 metadata:
   surface: "consult"
   autoload: "false"
-allowed-tools: search_knowledge search_cases
+allowed-tools: search_knowledge search_cases emit_emergency_action_card
 ```
 
 ### 3.2 方法论：六层闸门，顺序固定
@@ -155,18 +155,22 @@ allowed-tools: search_knowledge search_cases
 | 与平时相比的变化 | 无 / 轻度 / 明显 | `none` / `mild` / `moderate` / `marked` / `unknown` | `none` → 无；`mild`、`moderate` → 轻度；`marked` → 明显；`unknown` → **归入"未排除"语义，不得显示为"无"** |
 | 当前沟通 | 正常 / 下降 / 严重下降 | `baseline` / `reduced` / `severely_reduced` / `unavailable` | `baseline` → 正常；`reduced` → 下降；`severely_reduced`、`unavailable` → 严重下降 |
 | 当前感觉负荷 | 低 / 中 / 高 | `low` / `moderate` / `high` / `extreme` | `low` → 低；`moderate` → 中；`high`、`extreme` → 高 |
-| 医疗风险 | 稳定 / 未排除 / 高风险 | `stable` / `uncertain` / `high-risk` | 一一对应 |
+| 医疗风险 | 稳定 / 未排除 / 高风险 | `stable` / `uncertain` / `high_risk` | 一一对应 |
 
 **"立即做"与"不要做"的判据基线**（可按个体档案覆盖，但不得反过来放宽）：
 
 - 做：一次只让一个人讲话；使用短句；每次只问一个问题；回答前等待至少 10 秒；明确告诉本人下一步；允许降噪耳机；如可能减少光线和人群；允许熟悉支持者陪同；减少人员；避免不必要的身体接触。
 - 不要做：突然触碰；强迫眼神接触；多人同时提问；快速连续重复问题；**阻止无危险的自我调节动作**；**因其不说话就认为无法理解**。
 
-**每条动作与判断必须带来源标注**（六类）：本人报告、家属报告、现场观察、历史记录、医疗记录、AI 推断；**AI 推断必须与事实分开显示**（`RQ-CON-07`）。判断带**置信等级**（四级）：`confirmed` / `likely` / `possible` / `unknown`；**不使用没有充分依据的精确概率**。
+**每条动作与判断必须带来源标注**（六类）：本人报告、家属报告、现场观察、历史记录、医疗记录、AI 推断；**AI 推断必须与事实分开显示**（`RQ-CON-07`）。工具侧的枚举标识符与之一一对应：`self_report` / `family_report` / `onsite_observation` / `history` / `medical_record` / `ai_inference`（[工具契约](../tools/emit_emergency_action_card.md)第 2 节）。判断带**置信等级**（四级）：`confirmed` / `likely` / `possible` / `unknown`；**不使用没有充分依据的精确概率**。
 
 **相关不等于因果**：可以说"环境噪音可能是重要促发因素"，**不得**写成"原因就是噪音"，尤其在疼痛或身体疾病尚未排除时。
 
-**输出通道**（2026-09-29 定）：Action Card 经基座 `emit_action_card` 工具以结构化载荷发出（非自由文本），前端渲染为卡片（见[咨询对话界面](../../../technical-details/咨询对话界面.md)第 6.2 节）；`medical_risk` 等状态字段由工具参数校验，七节语义不变。
+**输出通道**（2026-09-30 定）：Action Card 经产品侧工具 `emit_emergency_action_card` 以结构化载荷发出（非自由文本），前端渲染为卡片（见[咨询对话界面](../../../technical-details/咨询对话界面.md)第 6.2 节）。工具参数即本节的七节与四个状态字段，**词表由参数模型的枚举在解析期硬校验**（取值表见下），因此模型编不出第四种取值——这是机械保证，不是提示词约束（与 `RQ-LIM-05` 所述"提示词层可绕过"的区别正在此；裁决见[决策记录](../../../decisions/应急卡片由产品侧工具产出.md)）。
+
+**四个状态字段的取值词表**（工具侧枚举与上面的映射表同源，实现时以[工具契约](../tools/emit_emergency_action_card.md)第 4 节为准）：`deviation` 取五值（`none`/`mild`/`moderate`/`marked`/`unknown`）、`communication` 取四值（`baseline`/`reduced`/`severely_reduced`/`unavailable`）、`sensory_load` 取四值（`low`/`moderate`/`high`/`extreme`）、`medical_risk` 取三值（`stable`/`uncertain`/`high_risk`）。
+
+**取值一律用下划线**（`high_risk` 而非 `high-risk`）：枚举值会进 HTTP 载荷、事件与前端分支，连字符在两种语境里都容易与分隔符混淆，且此处是**标识符**不是展示文本。卡片上呈现的中文三档（稳定/未排除/高风险）由上面的映射表决定，与标识符拼写无关。
 
 ### 3.5 依据清单（默认收起）
 
@@ -243,6 +247,7 @@ Action Card 之后附一个**默认收起**的依据清单：本次引用的资�
 ## 6. 工具依赖
 
 - 只读两件：`search_knowledge`、`search_cases`（找依据）。
+- 输出一件：`emit_emergency_action_card`（发卡）。它是本 skill **唯一的结构化输出通道**，不读不写业务数据；四个状态字段的词表由参数模型枚举硬校验（[工具契约](../tools/emit_emergency_action_card.md)第 4 节）。
 - **查询词自改写**（同日常 skill 3.4 节）：口语原话与案例卡片的临床文风错配会漏召回；检索前把口语描述改写成简明的行为与情境描述再查，**不改变使用者原话的呈现**，也**不为此多花一轮**——改写发生在本来就要生成的 `query` 里。机制与评测闸门见[RAG 策略](../../../technical-details/RAG策略.md)第 8.1 节。
 - **写工具一律不可用**：本 skill 不沉淀档案；沉淀由日常对话里激活的 `profile-curation` 承担。越界调用由服务端拒绝。
 - 时延纪律（`RQ-EMG-03`：首个可读输出 **≤10 秒**、完整 Action Card **≤60 秒**，p50）：**不为凑依据多轮检索**；档案取不到就标注未预存，不重试。
