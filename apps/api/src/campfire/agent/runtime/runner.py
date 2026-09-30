@@ -266,7 +266,12 @@ class AgentRunner:
             return
 
         compactions: list[CompactionFacts] = []
-        history, facts = await self._compact_before_run(session, history, request)
+        try:
+            history, facts = await self._compact_before_run(session, history, request)
+        except Exception as exc:  # noqa: BLE001 —— 压缩事务失败不是「压缩没发生」
+            logger.warning("压缩事务失败 run=%s error=%s", run_id, type(exc).__name__)
+            yield _compaction_failed(exc, recorder, RunUsage(), started)
+            return
         if facts is not None:
             compactions.append(facts)
 
@@ -444,7 +449,14 @@ class AgentRunner:
                     return
 
                 overflow_attempts += 1
-                history, facts = await self._compact_before_run(session, history, request, force_max_reduction=True)
+                try:
+                    history, facts = await self._compact_before_run(
+                        session, history, request, force_max_reduction=True
+                    )
+                except Exception as exc:  # noqa: BLE001 —— 压缩事务失败不是「压缩没发生」
+                    logger.warning("压缩事务失败 run=%s error=%s", recorder.run_id, type(exc).__name__)
+                    yield _compaction_failed(exc, recorder, carried, started, compactions=tuple(compactions))
+                    return
                 if facts is not None:
                     compactions.append(facts)
                 if facts is None or not facts.performed:
@@ -471,40 +483,25 @@ class AgentRunner:
         *,
         force_max_reduction: bool = False,
     ) -> tuple[list[TResponseInputItem], CompactionFacts | None]:
-        """运行前压缩，并把任何失败如实转成降级事实（绝不裸异常冒给调用方）。
+        """运行前压缩。这里不问结果——可降级的失败在 `compact` 内部已经变成降级事实。
 
-        为什么在这里兜住：`compact` 会经过记账端口与会话写入两处外部 I/O，任一失败若冒到
-        调用方，调用方拿到的是裸异常而不是 `run_failed` 事件（基座第 9 节要求会话写入失败
-        必须表现为「本次运行明确失败」）。这里把所有异常收成一个带原因的降级事实：
+        这里**不再兜住异常**。`compact` 只把两类失败转成 `CompactionOutcome`（摘要失败 →
+        `summary_failed`、会话追加写失败 → `commit_failed`），因此能逃出 `compact` 的异常
+        只剩压缩事务的记账失败与程序错误，两者都该让本次运行明确失败。记账失败按端口契约
+        原样冒泡（见 `compaction.py` 的 `CompactionJournal` 与 `compact` 的 Raises：记账失败
+        不得被当成「压缩没发生」）。
 
-        - 窗口未被改写（机制保证只在落库成功后才算压缩完成），对话完好；
-        - 因此继续跑一次未压缩的运行，比因为观测/记账表不可用就让使用者答不了话更合理；
-        - 降级必须可见：记 warning，且 `CompactionFacts.reason` 会进运行记录。
+        为什么记账失败必须让运行失败，而不是降级成一次未压缩的运行：`_attempt` 的顺序是
+        「落库 → 记结束」，`record_finished` 失败时检查点已经写进会话、SDK 侧窗口也按新检查点
+        派生——此时「窗口未改动」与真源相反；而运行记录是审计依据，记不上账的运行不该以
+        `run_finished` 收场。代价是账本不可用时整次运行失败，接受它：端口说明要求实现自带
+        超时上界，因此失败不会挂住运行，契约要的正是把这种不一致暴露出来。
 
-        与基座第 9 节「会话写入失败 → 本次运行明确失败」的关系：那一条针对的是对话本身
-        没落库（下面由 SDK 的会话写入异常照旧转成 `session_write_failed`）；压缩的追加写
-        失败不会留下半截状态，故按降级处理。这是明确的设计取舍，登记在压缩策略「已知偏差」。
+        与基座第 9 节「会话写入失败 → 本次运行明确失败」的关系：那一条针对对话本身没落库
+        （SDK 的会话写入异常照旧转成 `session_write_failed`）；压缩的追加写失败仍按
+        `commit_failed` 降级处理，两者不冲突。
         """
-        try:
-            return await self._compact_if_needed(session, history, request, force_max_reduction=force_max_reduction)
-        except Exception as exc:  # noqa: BLE001 —— 压缩的任何失败都不得让运行失败
-            logger.warning("压缩未执行 session=%s error=%s", request.session_id, type(exc).__name__)
-            return history, CompactionFacts(
-                performed=False,
-                reason="journal_failed",
-                detail=f"压缩事务不可用（{type(exc).__name__}）：窗口未改动",
-                window_tokens_before=0,
-                window_tokens_after=0,
-                released_tokens=0,
-                compacted_items=0,
-                retained_items=0,
-                attempts=0,
-                failed_attempts=1,
-                previous_summary_merged=False,
-                summary_input_tokens=0,
-                summary_output_tokens=0,
-                summary_elapsed_seconds=0.0,
-            )
+        return await self._compact_if_needed(session, history, request, force_max_reduction=force_max_reduction)
 
     async def _compact_if_needed(
         self,
@@ -1052,6 +1049,32 @@ def _failed_from_exception(
         usage,
         started,
         error,
+        compactions=compactions,
+    )
+
+
+def _compaction_failed(
+    error: BaseException,
+    recorder: CitationRecorder,
+    usage: RunUsage,
+    started: float,
+    *,
+    compactions: tuple[CompactionFacts, ...] = (),
+) -> RunFailedEvent:
+    """把压缩事务的异常变成 `run_failed`（端口契约：记账失败不得被当成「压缩没发生」）。
+
+    用 `internal` 而不新增失败码：`RunFailureCode` 与 `apps/web` 的 TS 联合类型是同一份对外
+    契约，加一个码会造出只有后端认识的值；`internal` 已覆盖「其余未归类内部错误」。失败码
+    分不出记账与其它内部错误，说明文字与 warning 日志补上——detail 不写「窗口未改动」，
+    因为 `record_finished` 失败时检查点已经落库，真源变了。
+    """
+    return _failure(
+        "internal",
+        f"压缩事务失败（{type(error).__name__}）：记账未闭合或压缩准备出错，运行记录与对话真源可能不一致",
+        recorder,
+        usage,
+        started,
+        None,
         compactions=compactions,
     )
 
