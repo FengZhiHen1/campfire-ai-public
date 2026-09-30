@@ -16,23 +16,28 @@
 6. **归属字段按 kind**（第 3 节）：`memory_episode` 带对象、`profile_item` 缺对象
    都被**存储层**拒绝。
 7. **词表落 CHECK**：非法 `kind`/`origin`/`state` 被存储层拒绝。
+8. **词表与库内约束一致**：库内 `origin` CHECK 的取值集合必须**等于**模型 `ORIGINS`。
+   alembic 的 autogenerate 不比对 CHECK 约束，缺了这条守护，两侧漂移只会在运行期
+   表现为「契约能传、存储拒收」。
 """
 
 from __future__ import annotations
 
 import asyncio
+import re
 import uuid
 from collections.abc import AsyncIterator
 from datetime import datetime, timedelta, timezone
 
 import pytest
 import pytest_asyncio
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, select, text
 
 from campfire.core.config import get_settings
 from campfire.core.db import session_scope
 from campfire.core.pending_write import (
     MAX_ATTEMPTS,
+    ORIGINS,
     STATE_DEAD,
     STATE_DONE,
     STATE_PENDING,
@@ -190,6 +195,77 @@ async def test_database_rejects_values_outside_the_vocabularies() -> None:
             with pytest.raises(IntegrityError, match=constraint):
                 async with session_scope(get_settings()) as session:
                     session.add(PendingWrite(**kwargs))
+    finally:
+        await _clear()
+
+
+# ---------------------------------------------------------------------------
+# 词表与库内约束的一致性（alembic 不比对 CHECK，这类漂移只能靠测试守）
+# ---------------------------------------------------------------------------
+
+
+async def _origin_check_definition() -> str:
+    """读库内 `origin` CHECK 的定义原文。
+
+    用裸 SQL 而不是 ORM：被测的是**存储层事实**，经 ORM 读到的只会是模型自己的声明。
+    """
+    async with session_scope(get_settings()) as session:
+        return (
+            await session.execute(
+                text(
+                    "SELECT pg_get_constraintdef(oid) FROM pg_constraint "
+                    "WHERE conrelid = 'campfire_pending_write'::regclass "
+                    "AND conname = 'ck_campfire_pending_write_origin'"
+                )
+            )
+        ).scalar_one()
+
+
+@pytest.mark.asyncio
+async def test_database_origin_check_matches_the_model_vocabulary() -> None:
+    """库内 `origin` CHECK 的取值集合 **==** 模型 `ORIGINS`（集合相等，不是子集）。
+
+    为什么必须显式守：alembic 的 autogenerate **不比对 CHECK 约束**（给既有表改约束时
+    它产出空操作，见 `760b797c8bab` 与 `711fc22a40fd` 的说明），因此「模型加了取值、
+    库内 CHECK 不认」这类漂移在 `alembic check` 里是隐形的，只在运行期表现为写入被拒。
+
+    判别性：往 `ORIGINS` 增删一个取值而不同步迁移，本用例失败；把库内 CHECK 退回四值，
+    同样失败——集合相等会同时暴露「多值」与「少值」两个方向。
+    """
+    stored = set(re.findall(r"'([^']*)'", await _origin_check_definition()))
+    assert stored == set(ORIGINS), (
+        f"库内 origin CHECK 与模型 ORIGINS 不一致：库内={sorted(stored)}，模型={sorted(ORIGINS)}"
+        "；不一致会让契约能传的取值被存储层拒收（现象是工具失败，调用方读不到原因）"
+    )
+
+
+@pytest.mark.parametrize("origin", ["document", "third_party_report"])
+@pytest.mark.asyncio
+async def test_origins_added_by_the_contract_actually_land(origin: str) -> None:
+    """`document` / `third_party_report` 真的能落库（六值里的后两个）。
+
+    单独测这两个的原因：库内 CHECK 只接受四值时被拒的正是它们，而拒绝表现为
+    `propose_profile_item` 的 `tool_failed`（`tools/profile.py` 的 `except Exception`
+    分支，那是有意的：写入失败不得回执 submitted）——调用方读不到「是约束不接受」。
+    断言到**回读 `origin` 相等**而不是「没抛异常」：只有真读回来才证明它进了库。
+    """
+    await _clear()
+    try:
+        async with session_scope(get_settings()) as session:
+            record = await enqueue(
+                session,
+                kind="memory_episode",
+                account_id=_ACCOUNT,
+                origin=origin,
+                payload={"content": f"{origin} 的探针内容"},
+                source={"session_id": "s-origin-vocab", "message_seq": 1},
+            )
+            pending_id = record.id
+
+        async with session_scope(get_settings()) as session:
+            row = (await session.execute(select(PendingWrite).where(PendingWrite.id == pending_id))).scalar_one()
+        assert row.origin == origin
+        assert row.state == STATE_PENDING
     finally:
         await _clear()
 
