@@ -15,6 +15,7 @@ import { createRoot } from 'react-dom/client';
 
 import { App } from './app/App';
 import './shared/styles/tokens.css';
+import './shared/styles/components.css';
 import './shared/styles/global.css';
 
 const container = document.getElementById('root');
