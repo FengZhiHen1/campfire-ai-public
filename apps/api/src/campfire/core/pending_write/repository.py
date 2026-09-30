@@ -67,6 +67,10 @@ _BACKOFF_SECONDS = (60, 120, 240, 480, 960)
 #: 调用方给多大都收敛到该上界，避免一次兜底扫描在积压时耗时不可控。
 RECLAIM_MAX_LIMIT = 1000
 
+#: 单次兜底扫描返回的条数上界（第 4.1 节）。与 `RECLAIM_MAX_LIMIT` 同一纪律：
+#: 扫描是周期任务，一次处理不完的记录留给下一周期，不得让单次扫描无界。
+SWEEP_MAX_LIMIT = 1000
+
 #: `last_error` 的长度上界，与列宽一致。**截断而不是报错**：错误摘要是诊断信息，
 #: 因它写入失败会让「失败记录」本身丢失，反而更难排查。
 MAX_LAST_ERROR_LENGTH = 512
@@ -493,14 +497,73 @@ async def reclaim_expired_leases(
     return list(result.scalars())
 
 
+async def find_undelivered(
+    session: AsyncSession,
+    *,
+    now: datetime | None = None,
+    limit: int = SWEEP_MAX_LIMIT,
+) -> list[uuid.UUID]:
+    """找出**该被处理却还没被处理**的记录（兜底扫描的候选集，第 4.1 节）。
+
+    ## 它补的是什么
+
+    投递失败或 Worker 从未启动时，记录会**永久停在 `pending`**。本函数是「丢的任务
+    可被检测」的那一半——[技术栈设计](../../../../docs/技术栈设计.md)第 2 节把 Taskiq
+    列为准则 1 的**例外**（该库自报 Alpha），其可接受理由正是这条兼底控制。
+
+    ## 判据：只挑「该被处理而没被处理」的
+
+    - `state = pending` 且 `next_attempt_at` 已到（或为空）——含**从未成功投递**的，
+      以及退避到期的；
+    - **不含 `processing`**：租约过期的属于「领取后 Worker 崩溃」，由
+      `reclaim_expired_leases` 处理（那条路径**不消耗 `attempts`**，语义不同）；
+    - **不含 `done`/`dead`**：终态不得被复活（`mark_done`/`mark_dead`/回收都有 state
+      守卫，这里是同一纪律的第一道）。
+
+    ## 为什么不需要「已投递」标记列
+
+    重复投递是**安全的**：领取是单条条件更新（并发下只有一个赢家），且确定性 episode
+    uuid 使重复消费不产生重复内容（第 5 节）。因此扫描只需按状态与时间挑，无需记账
+    「这条投过没有」——那会多一张状态表，而收益为零。
+
+    ## 有界（CORE-11）
+
+    `limit` 收敛到 `SWEEP_MAX_LIMIT`：扫描周期固定，无界查询在积压时耗时不可控。
+
+    Args:
+        session: 关系库会话。
+        now: 参照时间。
+        limit: 单次返回条数上界；收敛到 `SWEEP_MAX_LIMIT`。
+
+    Returns:
+        待重投的记录 id（按 `next_attempt_at`、`created_at`、`id` 升序，稳定）：
+        **最早该处理的先投**，避免积压时新记录一直插到前面。
+    """
+    reference = now if now is not None else _utc_now()
+    effective_limit = max(1, min(limit, SWEEP_MAX_LIMIT))
+    statement = (
+        select(PendingWrite.id)
+        .where(
+            PendingWrite.state == STATE_PENDING,
+            or_(PendingWrite.next_attempt_at.is_(None), PendingWrite.next_attempt_at <= reference),
+        )
+        .order_by(PendingWrite.next_attempt_at.asc().nullsfirst(), PendingWrite.created_at, PendingWrite.id)
+        .limit(effective_limit)
+    )
+    return list((await session.execute(statement)).scalars())
+
+
 __all__ = [
     "LEASE_SECONDS",
     "MAX_ATTEMPTS",
     "MAX_LAST_ERROR_LENGTH",
+    "RECLAIM_MAX_LIMIT",
+    "SWEEP_MAX_LIMIT",
     "InsufficientPayloadError",
     "PendingWriteError",
     "PendingWriteNotFoundError",
     "enqueue",
+    "find_undelivered",
     "mark_dead",
     "mark_done",
     "mark_retryable_failure",
