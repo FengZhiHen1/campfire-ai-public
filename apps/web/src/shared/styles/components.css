@@ -361,21 +361,32 @@ input[aria-invalid='true'] {
   font-size: var(--text-xl);
 }
 
+/* 次级页头实高 = 48px + safe-area-inset-top（对话页.md:15、记忆页.md:22 明文写死）。
+ * 与契约的第 5 处单侧差异（本包新增）：契约源 components.html:299 是 `min-height: 48px` +
+ * 上下各 `--space-2`(8px)。
+ *
+ * 为什么偏离契约源：那组值给不出 48px 实高。实高由最高的子项决定，而返回键 `.sp-back` 的
+ * 44px 触控热区不可缩，于是 border-box 下实高 = 44 + 8×2 + 1(边框) = 61px（浏览器实测 61px；
+ * 标题未限定行高时反被 28px×1.62=45.36px 的行盒顶到 62.36px）。页面设计要的是 48px 这个实高，
+ * 故纵向 padding 归零，由 min-height 撑满：48 = 内容盒 47 + 边框 1，44px 返回键在 47px 内居中。
+ * safe-area 由 padding-top 承担，min-height 同步加上同一份 inset，保证「48px + inset」成立。 */
 .subpage-head {
   position: sticky;
   top: 0;
   display: flex;
   align-items: center;
   gap: var(--space-3);
-  min-height: 48px;
-  padding: var(--space-2) var(--container-gutter-phone);
-  padding-top: calc(var(--space-2) + env(safe-area-inset-top, 0px));
+  min-height: calc(48px + env(safe-area-inset-top, 0px));
+  padding: 0 var(--container-gutter-phone);
+  padding-top: env(safe-area-inset-top, 0px);
   border-bottom: 1px solid var(--border-soft);
   background: var(--surface);
 }
 
-/* 项目侧 .phone-shell（global.css）自带一份左右 gutter，契约 .subpage-head 也自带一份：
- * 嵌套时会出现两份内缩（返回链接左边界 32px vs 卡片 16px，视觉上头部比内容更靠内）。
+/* 与契约的第 2 处单侧差异：契约源 components.html:299 无这条规则。
+ *
+ * 为什么偏离契约源：项目侧 .phone-shell（global.css）自带一份左右 gutter，契约 .subpage-head
+ * 也自带一份，嵌套时会出现两份内缩（返回链接左边界 32px vs 卡片 16px，视觉上头部比内容更靠内）。
  * 在 shell 内取消头部那份，让吸顶头与内容卡左对齐；脱离 shell 单独使用时行为不变。 */
 .phone-shell .subpage-head {
   padding-inline: 0;
@@ -390,8 +401,12 @@ input[aria-invalid='true'] {
   font-size: var(--text-sm);
 }
 
-/* 次级页标题的字号与字重：契约只给了字体族，字号继承正文（实测 17px/400），
- * 而页面设计对次级页标题明文要求 `--text-xl`、500（使用说明.md:15、案例库浏览页.md:15）。
+/* 次级页标题：契约源 components.html:301 只给了字体族，字号/字重/行高在这里补齐，是本文件
+ * 与契约的第 1 处单侧差异。
+ *
+ * 为什么偏离契约源：契约让字号继承正文（实测 17px / 400），而页面设计对次级页标题明文要求
+ * `--text-xl`、500（使用说明.md:15、案例库浏览页.md:15）；行高取显示标题那组约定的 1.3
+ * （同本文件顶部 `h1, h2, h3` 规则），不限定行高时 28px × 1.62 = 45.36px 的行盒会顶高页头。
  * 标在契约层而不是各页面：这是所有次级页共同的标题规格，页面各写一份必然漂移。 */
 .sp-title {
   flex: 1;
@@ -402,6 +417,7 @@ input[aria-invalid='true'] {
   font-family: var(--font-display);
   font-size: var(--text-xl);
   font-weight: 500;
+  line-height: 1.3;
 }
 
 .tab-bar {
@@ -539,8 +555,10 @@ input[aria-invalid='true'] {
 /* ── 底部确认单 ─────────────────────────────────────────────── */
 
 /* 底部确认单。
- * z-index 必须高于 .tab-bar（40）：两者同为 position:fixed，否则 tab 栏会盖住 sheet 底部，
- * 在真机高度下「取消/退出」两个按钮正好落在 tab 栏区域内而**不可点**（实测重叠 57px、
+ * 与契约的第 3 处单侧差异：契约源 components.html:225 没有 z-index。
+ *
+ * 为什么偏离契约源：z-index 必须高于 .tab-bar（40）——两者同为 position:fixed，否则 tab 栏会盖住
+ * sheet 底部，在真机高度下「取消/退出」两个按钮正好落在 tab 栏区域内而不可点（实测重叠 57px、
  * 按钮中心 elementFromPoint 命中 a.tab-item）。契约未定义 z-index 层级 token，故用字面量，
  * 与 .tab-bar 的 40 同族。 */
 .confirm-sheet {
@@ -570,11 +588,14 @@ input[aria-invalid='true'] {
 }
 
 /* 进入类动效统一走 --motion-base；减弱动效偏好下由下方全局规则关闭。
+ * 与契约的第 4 处单侧差异：契约源 components.html 既无这条规则，也无 sheet-slide-in 这个
+ * keyframes（全文 @keyframes 零命中）。为什么偏离契约源：底部确认单需要滑入动效，视觉审查
+ * 要求其进入时值走 token 层的 --motion-base，契约未定义该动效，故由实现侧补上。
  *
- * 为什么选择器是 .confirm-sheet 而不是契约原文的 .confirm-sheet[open]：`[open]` 只在原生
+ * 为什么选择器是 .confirm-sheet 而不是 .confirm-sheet[open]：`[open]` 只在原生
  * `<dialog>` 由 showModal/setAttribute 打开时成立，而本期实现用「挂载即打开」的 div
  * （jsdom 未实现 showModal，见 SettingsPage 的 LogoutConfirmSheet 注释），从不设置 open 属性，
- * 于是 `[open]` 版本是一条**永不命中的死规则**（实测 animationName=none）。
+ * 于是 `[open]` 版本是一条永不命中的死规则（实测 animationName=none）。
  * 改挂 .confirm-sheet 对其余用法同样成立：未打开的 <dialog> 是 display:none，从 none 转为
  * 可见时动画照常触发；打开的 <dialog> 与本期的 div 都在 DOM 中可见，两者都会播放。 */
 @media (prefers-reduced-motion: no-preference) {
