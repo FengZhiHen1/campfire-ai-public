@@ -16,7 +16,7 @@ from graphiti_core.nodes import EpisodeType
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from campfire.modules.memory.errors import MemoryDataError, MemoryUnavailableError
-from campfire.modules.memory.identity import AccountId, EpisodeUuid
+from campfire.modules.memory.identity import AccountId, EpisodeUuid, to_episode_key
 from campfire.modules.memory.ledger import deleted_episode_keys
 
 if TYPE_CHECKING:
@@ -263,6 +263,54 @@ async def _read_timeline(
     return [_to_episode(record) for record in records]
 
 
+async def episode_exists(
+    graph: MemoryGraph,
+    account_id: AccountId,
+    *,
+    episode_key: EpisodeUuid | str,
+) -> bool:
+    """这条 episode 是否在本账号那张图里、且写入已完成。
+
+    判据与 `_read_timeline` 同源：按 `group_id` 落到该账号那张图（图名就是
+    `account_id`，第 1 节实测），并要求 `write_state = done`——半写节点不算
+    「存在」，与两条读路径的可见性一致（见 `EPISODE_WRITE_STATE_PENDING`）。
+
+    不查删除账本：调用方（记忆面删除端点）先用 `recorded_deletion_reason`
+    判定「本账号是否已删过」，已删的 key 在那一步就分流了；本函数只回答
+    「图库里此刻有没有这条片段」。
+
+    Args:
+        graph: 记忆图库句柄。
+        account_id: 分区键（图名），由登录态决定。
+        episode_key: episode 标识。
+
+    Returns:
+        图库里有这条已完成的 episode 时为 True。
+
+    Raises:
+        AccountIdError: 账号标识不合法（`driver_for` 的入口校验）。
+        MemoryUnavailableError: 图库查询失败。
+        MemoryDataError: `episode_key` 形状非法。
+    """
+    key = to_episode_key(episode_key)
+    scoped = graph.driver_for(account_id)
+    try:
+        records, _, _ = await scoped.execute_query(
+            "MATCH (e:Episodic) WHERE e.group_id = $group_id AND e.uuid = $uuid AND e.write_state = $write_state"
+            " RETURN e.uuid LIMIT 1",
+            group_id=account_id,
+            uuid=str(key),
+            write_state=EPISODE_WRITE_STATE_DONE,
+        )
+    except Exception as exc:  # noqa: BLE001 —— 驱动异常统一转记忆侧语义
+        raise MemoryUnavailableError(
+            "查询记忆片段是否存在失败",
+            operation="episode_exists",
+            cause=type(exc).__name__,
+        ) from exc
+    return bool(records)
+
+
 def _to_episode(record: dict[str, object]) -> MemoryEpisode:
     """把一条 Cypher 记录转成 `MemoryEpisode`。
 
@@ -505,6 +553,7 @@ __all__ = [
     "TIMELINE_DEFAULT_LIMIT",
     "TIMELINE_MAX_LIMIT",
     "MemoryEpisode",
+    "episode_exists",
     "parse_db_datetime",
     "read_timeline",
     "write_episode",

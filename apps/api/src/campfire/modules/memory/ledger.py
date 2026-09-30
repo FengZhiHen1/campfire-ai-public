@@ -117,6 +117,47 @@ async def deleted_episode_keys(session: AsyncSession, account_id: AccountId | st
     return keys
 
 
+async def recorded_deletion_reason(
+    session: AsyncSession,
+    *,
+    account_id: AccountId | str,
+    episode_key: EpisodeUuid | str,
+) -> str | None:
+    """本账号已把这条 episode 记入删除账本时，返回账本里的原原因；否则返回 None。
+
+    与 `record_deletion` 的分工：本函数只读、不写——幂等仍落在唯一约束上，
+    不能改成「先查后写」（并发下会双写）。
+
+    删除面需要这个读（2026-09-30 编排器裁决 2）：账本过滤会让已删记忆从时间线里
+    消失，因此只看图库无法把「重复删除」（契约第 2 节要求 200 幂等命中）与
+    「不存在或不属于本账号」（404）分开。两件事是不同判据，各自判定。
+
+    Args:
+        session: 关系库会话。
+        account_id: 归属账号（分区键同源）。
+        episode_key: episode 标识。
+
+    Returns:
+        账本里的原原因（`user_request` / `correction` / `account_deletion`）；
+        本账号没有该记录时返回 `None`——包括「这条 key 被别的账号记过」，
+        那种情形在本函数里与「没记过」同形，由调用方按「不存在」处置。
+
+    Raises:
+        AccountIdError: 账号标识不合法。
+        MemoryDataError: `episode_key` 形状非法。
+    """
+    account_id = to_account_id(account_id)
+    episode_key = to_episode_key(episode_key)
+    return (
+        await session.execute(
+            select(MemoryDeletionLedger.reason).where(
+                MemoryDeletionLedger.account_id == account_id,
+                MemoryDeletionLedger.episode_key == episode_key,
+            )
+        )
+    ).scalar_one_or_none()
+
+
 async def record_deletion(
     session: AsyncSession,
     *,
@@ -244,4 +285,5 @@ __all__ = [
     "DeletionRecord",
     "deleted_episode_keys",
     "record_deletion",
+    "recorded_deletion_reason",
 ]
