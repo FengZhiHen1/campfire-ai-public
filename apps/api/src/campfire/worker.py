@@ -26,6 +26,8 @@
 
 import asyncio
 import logging
+import os
+import socket
 from collections.abc import Awaitable, Callable
 from contextlib import suppress
 from datetime import datetime, timezone
@@ -78,14 +80,49 @@ def _get_memory_graph() -> MemoryGraph:
     return get_shared_memory_graph()
 
 
+#: 租约身份的字符上界，与存储列宽一致（`PendingWrite.lease_owner` 是 `String(128)`）。
+#:
+#: 超宽会在写库时抛裸 `DBAPIError`（看不出是哪个字段），因此在这里显式截断：
+#: 主机名异常长时仍能领取，只是身份被截断——截断不破坏栅栏的判别力，
+#: 因为同一进程每次算出的值相同、不同进程的前缀通常已经不同（CORE-11 有界性）。
+LEASE_IDENTITY_MAX_CHARS = 128
+
+
+def _lease_identity() -> str:
+    """本进程的租约身份：`主机名:进程号`。
+
+    为什么用主机名加进程号：栅栏要比的是「同一条记录先后被两个领取者碰过没有」，
+    因此身份只需满足「进程内唯一 + 可排查」——主机名指向哪台机器、进程号指向那个
+    进程，出问题时能直接定位；不引入配置项与部署约定（一期单机单 Worker）。
+
+    为什么不在投递点算：投递发生在 API 请求进程或兜底扫描里，那个身份属于投递方；
+    栅栏要的是**领取方**的身份（见 `consume_profile_item_task` 的说明）。
+
+    重访条件：Worker 水平扩容到多副本、且同一主机上跑多个副本时，进程号仍互不相同，
+    本函数无需改动；若要跨重启追溯「上一次是谁领的」，才需要换成带实例名的稳定标识。
+    """
+    return f"{socket.gethostname()}:{os.getpid()}"[:LEASE_IDENTITY_MAX_CHARS]
+
+
 async def _enqueue_memory_episode(pending_id: str) -> None:
     """把一条 `memory_episode` 投给记忆消费者任务。"""
     await consume_memory_episode_task.kiq(pending_id, lease_owner="api")
 
 
 async def _enqueue_profile_item(pending_id: str) -> None:
-    """把一条 `profile_item` 投给档案消费者任务。"""
-    await consume_profile_item_task.kiq(pending_id, lease_owner="api")
+    """把一条 `profile_item` 投给档案消费者任务。
+
+    投递时**不带**租约身份：租约是领取者自己盖的章，由消费者在自己的进程里取
+    （见 `consume_profile_item_task` 与 `_lease_identity`）。投递点在这里填一个常量
+    会让「领取」与「终结」用同一个常量回比，栅栏恒真——2026-09-30 侦察 D-31 实测：
+    生产唯一投递点此前传常量 `"api"`，`lease_owner` 列永远读作 `"api"`，
+    租约过期被重领后先领取者的迟到 `mark_done` 仍会抢先成功。
+
+    记忆侧（`_enqueue_memory_episode`）仍传常量：那是 T02/T08 的接线，修它要同时改
+    `consume_memory_episode_task` 的签名，属跨切能力（`core/jobs` + worker 投递契约），
+    不在本包范围。已登记于交付报告的未决问题节。
+    """
+    await consume_profile_item_task.kiq(pending_id)
 
 
 #: kind → 投递到队列的函数（分派表，写入路径第 4 节第 3 条）。
@@ -209,12 +246,22 @@ async def consume_memory_episode_task(pending_id: str, lease_owner: str = "worke
 
 
 @broker.task
-async def consume_profile_item_task(pending_id: str, lease_owner: str = "worker") -> str:
+async def consume_profile_item_task(pending_id: str, lease_owner: str | None = None) -> str:
     """消费一条档案待处理记录（`kind = profile_item`）。
 
     结构照 `consume_memory_episode_task`（第 4、5、6 节）：领取 → 授权重判 →
     幂等查重 → 写条目 → 置 `done`。领取、授权重判与幂等查重都在
     `modules/profile/consumer.write_from_pending` 内，本函数只负责失败分档。
+
+    租约身份（第 4 节的租约栅栏，2026-09-30 侦察 D-31）
+
+    `lease_owner` 省略时取**本进程**的身份（`_lease_identity`）。为什么由消费者自己定、
+    而不是由投递点传进来：栅栏要比的是「领这条记录的是不是当前这个人」——
+    投递点（API 请求路径与 Worker 兜底扫描）传的任何值都是**投递方**的常量，
+    两次不同的领取会拿到同一个值，栅栏就恒真了。只有领取者在自己进程里盖的章
+    才随进程变化，也才谈得上「迟到响应不得抢先成功」（CORE-03）。
+
+    参数保留是为了让测试注入互不相同的身份（栅栏的判别用例需要两个不同的 owner）。
 
     失败分档（第 6 节）——档案侧不可重试的失败有两种，不是一种：
 
@@ -240,9 +287,10 @@ async def consume_profile_item_task(pending_id: str, lease_owner: str = "worker"
         Exception: 基础设施类失败按第 6 节记 `attempts + 1` 与退避后原样抛出——
             吞掉它会让队列以为任务成功。
     """
+    owner = lease_owner if lease_owner is not None else _lease_identity()
     try:
         async with session_scope(get_settings()) as session:
-            result = await write_from_pending(session, pending_id=pending_id, lease_owner=lease_owner)
+            result = await write_from_pending(session, pending_id=pending_id, lease_owner=owner)
     except ProfileDataError as exc:
         # 不可重试：载荷/形状不合法，重试不会变好（第 6 节：不得静默丢弃）。
         # `session_scope` 已回滚，故另开会话登记终结状态。
