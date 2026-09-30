@@ -51,15 +51,33 @@ from campfire.core.config import Settings, get_settings
 from campfire.core.db import get_engine, session_scope
 from campfire.core.db.sdk_session import AgentMessage, AgentSession
 from campfire.modules.accounts import session_repository as accounts_repo
-from campfire.modules.accounts.models import CampfireOnboarding, CampfireSession
+from campfire.modules.accounts.first_run_injection import read_first_run_injected
+from campfire.modules.accounts.models import (
+    ONBOARDING_COMPLETED,
+    ONBOARDING_IN_PROGRESS,
+    ONBOARDING_SKIPPED,
+    CampfireOnboarding,
+    CampfireSession,
+)
+from campfire.modules.accounts.onboarding import read_onboarding_state
+from campfire.modules.accounts.onboarding_completion import complete_onboarding
 from campfire.modules.accounts.registration import api_overrides, sign_up_form_fields
+from campfire.modules.accounts.session_items import message_text
 from campfire.modules.accounts.session_repository import get_session_owner
+from campfire.modules.memory.derived import EmergencyMemory
+from campfire.modules.memory.errors import MemoryUnavailableError
 from campfire.modules.profile import archive_object, create_object
 from campfire.modules.profile.authz import OwnerAuthorizer
 from campfire.modules.profile.models import SessionObjectBinding, SupportObject
 from campfire.surfaces.consult import assembly as consult_assembly
 from campfire.surfaces.consult import routes as consult_routes
-from campfire.surfaces.consult.runbus import cancel_pumps, drain_pumps, events_key, mutex_key
+from campfire.surfaces.consult.injections import (
+    EMERGENCY_INTAKE_PREFIX,
+    EMERGENCY_MEMORY_PREFIX,
+    EMERGENCY_PROFILE_PREFIX,
+    ONBOARDING_NOTICE_PREFIX,
+)
+from campfire.surfaces.consult.runbus import RUN_NOT_RUNNING, cancel_pumps, drain_pumps, events_key, mutex_key
 
 # 本文件的用例全是 async（仓库未开 pytest-asyncio 的 auto 模式，逐个加标记是既有做法）。
 pytestmark = [pytest.mark.integration, pytest.mark.asyncio]
@@ -80,8 +98,10 @@ _KEY_PATTERNS = ("run:*", "session:*", "idem:*")
 class ScriptedRunner:
     """按固定脚本产出事件的运行器替身。
 
-    它同时承担真实运行的一件事：把使用者消息写进 SDK 会话真源。少了它，
-    「幂等不重复追加」「并发被拒时不追加」两条断言就没有可观测对象。
+    它同时承担真实运行的两件事：把使用者消息写进 SDK 会话真源（少了它，
+    「幂等不重复追加」「并发被拒时不追加」两条断言就没有可观测对象），
+    以及把本次请求原样记下来（`requests`）——T07b 的新增断言要看的正是
+    「服务端到底给这次运行注入了什么」，而那只有面构造的 `RunRequest` 能回答。
     """
 
     def __init__(
@@ -92,15 +112,24 @@ class ScriptedRunner:
         startup_delay: float = 0.0,
         fail_before_start: bool = False,
         append_user_message: bool = True,
+        append_injections: bool = False,
     ) -> None:
-        """绑定配置与脚本参数。"""
+        """绑定配置与脚本参数。
+
+        `append_injections` 默认关闭：打开后每次运行会额外落若干条注入条目，
+        而 T07a 的既有用例按条目计数断言「消息只落一条」——默认关闭让那些断言
+        保持不动，需要观察注入落库的用例（首轮告知）自己打开它。
+        """
         self._settings = settings
         self._deltas = tuple(deltas)
         self._startup_delay = startup_delay
         self._fail_before_start = fail_before_start
         self._append_user_message = append_user_message
+        self._append_injections = append_injections
         #: 本次进程内真正启动过的运行（并发用例据此断言「只起了一次」）。
         self.started: list[str] = []
+        #: 面交给运行器的每一次请求（按发生顺序），供注入断言检查。
+        self.requests: list[RunRequest] = []
         #: 闸门：置为不空时运行会停在它上面，供「运行中再发」的用例保持运行。
         self.gate: asyncio.Event | None = None
 
@@ -124,8 +153,15 @@ class ScriptedRunner:
 
         run_id = uuid.uuid4().hex
         self.started.append(run_id)
+        self.requests.append(request)
+        sdk = build_sqlalchemy_session(request.session_id, engine=get_engine(self._settings))
+        if self._append_injections:
+            # 真实基座把注入项写在使用者消息之前（`runner.run` 的 `new_items` 顺序）。
+            # 这里不写引用索引：本面的注入项都没有业务回指（`reference is None`），
+            # 渲染结果就是逐条的消息正文。
+            for item in request.injections.ordered():
+                await sdk.add_items([{"role": item.role, "content": item.content}])  # type: ignore[arg-type]  # SDK 的 add_items 收 SDK 自有条目类型，测试传字面量 dict
         if self._append_user_message:
-            sdk = build_sqlalchemy_session(request.session_id, engine=get_engine(self._settings))
             await sdk.add_items([{"role": "user", "content": request.user_input or ""}])  # type: ignore[arg-type]  # SDK 的 add_items 收 SDK 自有条目类型，测试传字面量 dict
 
         yield RunStartedEvent(
@@ -134,7 +170,7 @@ class ScriptedRunner:
             surface=request.surface,
             model="scripted",
             activated_skills=tuple(skill.name for skill in request.activated),
-            injection_sources=(),
+            injection_sources=tuple(item.source for item in request.injections.ordered()),
             appended_messages=1,
         )
         if self.gate is not None:
@@ -306,6 +342,18 @@ async def _item_count(session_id: str) -> int:
     """某会话在 SDK 真源里的条目条数。"""
     async with session_scope(get_settings()) as session:
         return await accounts_repo.count_session_items(session, session_id=session_id)
+
+
+async def _onboarding_state(account_id: str) -> str | None:
+    """账号在引导状态表里的状态（无行返回 `None`）。"""
+    async with session_scope(get_settings()) as session:
+        return await read_onboarding_state(session, account_id=account_id)
+
+
+async def _first_run_injected(session_id: str) -> bool:
+    """会话的首轮注入结算标记。"""
+    async with session_scope(get_settings()) as session:
+        return await read_first_run_injected(session, session_id=session_id)
 
 
 # ---------------------------------------------------------------------------
@@ -552,10 +600,18 @@ async def test_send_message_to_foreign_or_missing_session_is_404(client: httpx.A
 async def test_send_message_rejects_unknown_skill_and_accepts_registered_one(
     client: httpx.AsyncClient,
 ) -> None:
-    """`skill` 必须是已注册技能（裁决 11）；已注册时该次运行程序注入它。"""
+    """`skill` 必须是已注册技能（裁决 11）；已注册时该次运行程序注入它。
+
+    先把账号的引导状态收束掉再发消息：否则这是会话的第一次运行，服务端会按契约 3.1
+    程序注入 onboarding 并忽略 `skill`（T07b 落地的后果，用例见
+    `test_consult_emergency_integration.py`）。本用例只回答「`skill` 参数怎么被校验与消费」，
+    因此它必须跑在引导已终结的账号上。
+    """
     runner = ScriptedRunner(get_settings())
     _install_runner(runner)
     session_id = await _create_session(client)
+    async with session_scope(get_settings()) as db:
+        await complete_onboarding(db, account_id=_ACCOUNT)
 
     unknown = await _send(client, session_id, content="x", skill="no-such-skill")
     assert unknown.status_code == 422
@@ -774,7 +830,651 @@ async def test_unauthenticated_requests_are_401(client: httpx.AsyncClient) -> No
         ("GET", f"/consult/sessions/{uuid.uuid4().hex}/messages"),
         ("POST", f"/consult/sessions/{uuid.uuid4().hex}/messages"),
         ("GET", f"/consult/runs/{uuid.uuid4().hex}/stream"),
+        ("POST", f"/consult/runs/{uuid.uuid4().hex}/cancel"),
+        ("POST", "/consult/emergency"),
+        ("POST", f"/consult/sessions/{uuid.uuid4().hex}/onboarding/skip"),
     ):
         response = await client.request(method, path, json={} if method == "POST" else None)
         assert response.status_code == 401, (method, path, response.status_code, response.text)
     assert (await client.get("/health")).status_code in (200, 503)
+
+
+# ---------------------------------------------------------------------------
+# 3.1 的后果：首次日常会话的第一次运行注入引导（T07b）
+# ---------------------------------------------------------------------------
+
+
+async def test_first_daily_run_injects_onboarding_and_ignores_skill(client: httpx.AsyncClient) -> None:
+    """首次日常会话的第一次运行程序注入 onboarding 与静态告知，并忽略 `skill`。
+
+    契约 3.1 的两句话在这里一次验完：`onboarding_pending` 为真时会话的第一次运行由
+    服务端注入引导；而这一次运行不是使用者选的那件事（他选了 daily-consulting，
+    因此「忽略 skill 参数」必须可观测）。
+    """
+    runner = ScriptedRunner(get_settings(), append_injections=True)
+    _install_runner(runner)
+    session_id = await _create_session(client)
+
+    response = await _send(client, session_id, content="你好", skill="daily-consulting")
+    assert response.status_code == 202, response.text
+    await drain_pumps()
+
+    request = runner.requests[-1]
+    assert [skill.name for skill in request.activated] == ["onboarding"], "首次运行必须注入引导并忽略 skill 选择"
+    notices = [item for item in request.injections.ordered() if item.source == "onboarding-notice"]
+    assert len(notices) == 1
+    assert notices[0].role == "assistant", "告知必须落到助手角色，否则水合会把它当机器上下文跳过"
+    assert notices[0].content.startswith(ONBOARDING_NOTICE_PREFIX)
+    assert "本次输入的内容用于生成回答，并按你的确认累积到档案与记忆。" in notices[0].content
+
+    # 记账两处：会话标记（本会话不再注入）+ 账号引导状态（引导已开始）。
+    assert await _first_run_injected(session_id) is True
+    assert await _onboarding_state(_ACCOUNT) == ONBOARDING_IN_PROGRESS
+
+    # 告知真的能被使用者读到：它是水合出来的第一条消息，且不是使用者消息。
+    hydrated = (await client.get(f"/consult/sessions/{session_id}/messages")).json()
+    first = hydrated["messages"][0]
+    assert first["role"] == "assistant"
+    assert ONBOARDING_NOTICE_PREFIX in first["parts"][0]["text"]
+
+
+async def test_first_run_ignores_an_unknown_skill_instead_of_rejecting_it(client: httpx.AsyncClient) -> None:
+    """首次运行忽略 `skill`（契约 4.1）：未知技能名在这一支不产生 422。
+
+    「先校验后忽略」与「忽略即不校验」有可观测差异：这次运行本来就不消费使用者的选择，
+    先校验会让一个用不上的名字把整次运行拒掉，而契约明写该次运行忽略这个参数。
+
+    后半段把校验仍在的边界钉住：同一个会话的第二次运行照旧对未知技能名回 422——
+    否则「把校验整段删掉」也能让前半段通过。
+
+    **消融**：把 `_activated_skill` 挪回首轮判定之前（或去掉条件分支），
+    前半段立即变成 422，本用例失败。
+    """
+    runner = ScriptedRunner(get_settings())
+    _install_runner(runner)
+    session_id = await _create_session(client)
+
+    first = await _send(client, session_id, content="你好", skill="no-such-skill")
+    assert first.status_code == 202, first.text
+    await drain_pumps()
+    assert [skill.name for skill in runner.requests[-1].activated] == ["onboarding"], "首次运行仍然注入引导"
+
+    second = await _send(client, session_id, content="第二次", skill="no-such-skill")
+    assert second.status_code == 422, "非首次运行的技能校验不得被放松"
+
+
+async def test_second_run_of_the_same_session_does_not_inject_onboarding(client: httpx.AsyncClient) -> None:
+    """同一个会话的第二次运行不再注入引导，`skill` 参数恢复生效。"""
+    runner = ScriptedRunner(get_settings())
+    _install_runner(runner)
+    session_id = await _create_session(client)
+
+    assert (await _send(client, session_id, content="第一次")).status_code == 202
+    await drain_pumps()
+    second = await _send(client, session_id, content="第二次", skill="daily-consulting")
+    assert second.status_code == 202, second.text
+    await drain_pumps()
+
+    request = runner.requests[-1]
+    assert [skill.name for skill in request.activated] == ["daily-consulting"]
+    assert request.injections.ordered() == (), "第二次运行不该再带引导注入"
+
+
+async def test_first_run_injection_is_not_consumed_when_the_run_fails_to_start(
+    client: httpx.AsyncClient,
+) -> None:
+    """运行起步失败（503）时首轮注入不结算：这个会话下次仍会注入引导。
+
+    漏注入不可恢复（使用者此后没有任何入口回到引导），重复注入只是多一段可跳过的引导
+    ——两者代价不对称，因此记账只能落在运行真的起步之后。
+    """
+    _install_runner(ScriptedRunner(get_settings(), fail_before_start=True))
+    session_id = await _create_session(client)
+
+    failed = await _send(client, session_id, content="你好")
+    assert failed.status_code == 503, failed.text
+    await drain_pumps()
+    assert await _first_run_injected(session_id) is False, "起步失败不得消耗首轮注入"
+    assert await _onboarding_state(_ACCOUNT) is None, "起步失败不得落引导开始状态"
+
+    runner = ScriptedRunner(get_settings())
+    _install_runner(runner)
+    retried = await _send(client, session_id, content="你好")
+    assert retried.status_code == 202, retried.text
+    await drain_pumps()
+    assert [skill.name for skill in runner.requests[-1].activated] == ["onboarding"]
+
+
+async def test_completed_onboarding_is_not_injected_on_the_first_run(client: httpx.AsyncClient) -> None:
+    """引导已终结时 `onboarding_pending` 为假，第一次运行也不注入（契约 3.1）。"""
+    runner = ScriptedRunner(get_settings())
+    _install_runner(runner)
+    async with session_scope(get_settings()) as db:
+        await complete_onboarding(db, account_id=_ACCOUNT)
+
+    created = await client.post("/consult/sessions", json={})
+    assert created.status_code == 201
+    assert created.json()["onboarding_pending"] is False
+    session_id = created.json()["session_id"]
+
+    assert (await _send(client, session_id, content="你好", skill="daily-consulting")).status_code == 202
+    await drain_pumps()
+    assert [skill.name for skill in runner.requests[-1].activated] == ["daily-consulting"]
+
+
+# ---------------------------------------------------------------------------
+# 4.3 取消
+# ---------------------------------------------------------------------------
+
+
+async def _start_gated_run(client: httpx.AsyncClient, runner: ScriptedRunner) -> str:
+    """起一次挂在闸门上的运行，返回 `run_id`（用例自己负责放行或取消）。"""
+    runner.gate = asyncio.Event()
+    session_id = await _create_session(client)
+    response = await _send(client, session_id, content="跑起来")
+    assert response.status_code == 202, response.text
+    return response.json()["run_id"]
+
+
+async def test_cancel_returns_202_and_the_stream_ends_without_a_terminal_event(
+    client: httpx.AsyncClient,
+) -> None:
+    """取消是 202；被取消的运行不发终态事件，流的结束只由状态落定触发（契约 4.3）。
+
+    取消与订阅真并发（`asyncio.gather`）：流在取消发出时正挂在轮询上，
+    因此「终态事件不会到达」这条断言测的是取消路径本身，而不是「运行先跑完了」。
+    """
+    runner = ScriptedRunner(get_settings())
+    _install_runner(runner)
+    run_id = await _start_gated_run(client, runner)
+
+    cancel_response, streamed = await asyncio.gather(
+        client.post(f"/consult/runs/{run_id}/cancel"),
+        _read_stream(client, run_id),
+    )
+
+    assert cancel_response.status_code == 202, cancel_response.text
+    assert cancel_response.json()["cancelled"] is True
+    assert streamed.status_code == 200
+    assert b"event: run_started" in streamed.content, "取消前已产出的事件照常送达"
+    assert b"event: run_finished" not in streamed.content
+    assert b"event: run_failed" not in streamed.content
+
+    runner.gate.set()
+    await drain_pumps()
+
+
+async def test_cancel_releases_the_session_and_metadata_says_finished(client: httpx.AsyncClient) -> None:
+    """取消之后：运行元数据落终结状态、会话位释放（同一会话可以立刻再发消息）。"""
+    runner = ScriptedRunner(get_settings())
+    _install_runner(runner)
+    session_id = await _create_session(client)
+    runner.gate = asyncio.Event()
+    started = await _send(client, session_id, content="跑起来")
+    assert started.status_code == 202, started.text
+    run_id = started.json()["run_id"]
+
+    assert (await client.post(f"/consult/runs/{run_id}/cancel")).status_code == 202
+    runner.gate.set()
+    await drain_pumps()
+
+    cache = RedisCache(get_settings().redis_url)
+    try:
+        assert await cache.get(mutex_key(session_id)) is None, "取消后必须释放会话位"
+        meta_raw = await cache.get(f"run:{run_id}:meta")
+        assert meta_raw is not None and '"status":"finished"' in meta_raw, meta_raw
+    finally:
+        await cache.aclose()
+
+    again = await _send(client, session_id, content="再发一条")
+    assert again.status_code == 202, "会话位没释放时这里会拿到 409"
+    await drain_pumps()
+
+
+async def test_cancel_finished_run_is_409(client: httpx.AsyncClient) -> None:
+    """已终结的运行返回 409（契约 4.3），错误码是本面补的 `run_not_running`。"""
+    _install_runner(ScriptedRunner(get_settings()))
+    session_id = await _create_session(client)
+    response = await _send(client, session_id, content="跑完")
+    assert response.status_code == 202, response.text
+    await drain_pumps()
+
+    cancelled = await client.post(f"/consult/runs/{response.json()['run_id']}/cancel")
+    assert cancelled.status_code == 409, cancelled.text
+    assert cancelled.json()["detail"] == RUN_NOT_RUNNING
+
+
+async def test_concurrent_cancels_never_both_succeed_and_never_error(client: httpx.AsyncClient) -> None:
+    """两条取消真并发：都不报错，且至少一条 202（另一条可能已看到终结状态而 409）。"""
+    runner = ScriptedRunner(get_settings())
+    _install_runner(runner)
+    run_id = await _start_gated_run(client, runner)
+
+    first, second = await asyncio.gather(
+        client.post(f"/consult/runs/{run_id}/cancel"),
+        client.post(f"/consult/runs/{run_id}/cancel"),
+    )
+    statuses = sorted([first.status_code, second.status_code])
+    assert set(statuses) <= {202, 409}, (first.text, second.text)
+    assert statuses[0] == 202, "第一次取消必须成功"
+
+    runner.gate.set()
+    await drain_pumps()
+
+
+async def test_cancel_other_accounts_run_is_404_with_the_same_body(client: httpx.AsyncClient) -> None:
+    """越权与不存在逐字同文案同状态码（项目不变量）。"""
+    runner = ScriptedRunner(get_settings())
+    _install_runner(runner)
+    run_id = await _start_gated_run(client, runner)
+
+    main_module.app.dependency_overrides[consult_routes._session_dependency] = _auth_as(_OTHER_ACCOUNT)
+    try:
+        foreign = await client.post(f"/consult/runs/{run_id}/cancel")
+        missing = await client.post(f"/consult/runs/{uuid.uuid4().hex}/cancel")
+    finally:
+        main_module.app.dependency_overrides[consult_routes._session_dependency] = _auth_as(_ACCOUNT)
+
+    assert foreign.status_code == missing.status_code == 404
+    assert foreign.json() == missing.json()
+    runner.gate.set()
+    await drain_pumps()
+
+
+# ---------------------------------------------------------------------------
+# 5 应急入口
+# ---------------------------------------------------------------------------
+
+
+def _intake_items() -> list[dict[str, object]]:
+    """八项现场采集的一份完整载荷（契约第 5 节的示例形状）。"""
+    return [
+        {"key": "medical_red_flags", "values": ["意识改变"], "skipped": False},
+        {"key": "baseline_deviation", "value": "marked", "skipped": False},
+        {"key": "communication", "value": "reduced", "skipped": False},
+        {"key": "distress", "value": "高", "skipped": False},
+        {"key": "sensory_environment", "values": ["噪音", "强光"], "skipped": False},
+        {"key": "what_happened", "skipped": True},
+        {"key": "primary_risk", "value": "medical", "skipped": False},
+        {"key": "possible_pain", "value": "uncertain", "skipped": False},
+    ]
+
+
+async def test_emergency_builds_session_message_and_run_in_one_call(
+    client: httpx.AsyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """一次调用完成建会话、落第一条消息、启动运行（契约第 5 节）。"""
+    runner = ScriptedRunner(get_settings())
+    _install_runner(runner)
+    object_id = await _make_object(_ACCOUNT, "小宝")
+    _stub_memory(monkeypatch, EmergencyMemory(facts=[]))
+
+    response = await client.post(
+        "/consult/emergency",
+        json={"support_object_id": object_id, "items": _intake_items()},
+    )
+    assert response.status_code == 202, response.text
+    body = response.json()
+    assert body["session_id"] and body["run_id"]
+    await drain_pumps()
+
+    request = runner.requests[-1]
+    assert [skill.name for skill in request.activated] == ["emergency-consulting"], "应急是程序注入激活"
+    sources = [item.source for item in request.injections.items]
+    assert sources == ["emergency-profile", "emergency-memory"]
+    assert request.injections.items[0].content.startswith(EMERGENCY_PROFILE_PREFIX)
+    assert request.injections.items[1].content.startswith(EMERGENCY_MEMORY_PREFIX)
+    assert request.user_input is not None
+    assert request.user_input.startswith(EMERGENCY_INTAKE_PREFIX)
+    assert "what_happened：已跳过（未排除）" in request.user_input
+
+    # 会话真源里的第一条使用者消息就是渲染好的八项（八项是使用者填的表单）。
+    async with session_scope(get_settings()) as db:
+        items = await accounts_repo.read_all_items(db, session_id=body["session_id"])
+    user_texts = [message_text(item.data) or "" for item in items if item.data.get("role") == "user"]
+    assert user_texts and user_texts[0].startswith(EMERGENCY_INTAKE_PREFIX)
+
+    # 归属、绑定与首轮注入结算都落了库。
+    async with session_scope(get_settings()) as db:
+        owner = await get_session_owner(db, session_id=body["session_id"])
+        binding = (
+            await db.execute(select(SessionObjectBinding).where(SessionObjectBinding.session_id == body["session_id"]))
+        ).scalar_one_or_none()
+    assert owner is not None and owner.account_id == _ACCOUNT
+    assert binding is not None and str(binding.support_object_id) == object_id
+    assert await _first_run_injected(body["session_id"]) is True
+
+
+async def test_emergency_profile_with_object_but_no_items_is_marked_absent(
+    client: httpx.AsyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """对象存在但一条档案条目都没有时，档案注入标注「本次未使用个性化档案」（`AC-02`）。
+
+    与上面那条的差别只在「有没有档案内容」：`EmergencyContext.has_profile` 由
+    `emergency_context` 按稳定层条目算出来，为假表示这份上下文整份不可用。忽略它的
+    后果是把「无档案」注入成「有档案（八组都没内容）」——模型据此以为拿到了档案。
+
+    **消融**：去掉 `render_emergency_profile` 里 `not context.has_profile` 那一支，
+    信封回到 `state="present"`，本用例失败。
+    """
+    runner = ScriptedRunner(get_settings())
+    _install_runner(runner)
+    _stub_memory(monkeypatch, EmergencyMemory(facts=[]))
+    object_id = await _make_object(_ACCOUNT, "空档案对象")
+
+    response = await client.post(
+        "/consult/emergency",
+        json={"support_object_id": object_id, "items": _intake_items()},
+    )
+    assert response.status_code == 202, response.text
+    await drain_pumps()
+
+    profile = runner.requests[-1].injections.items[0]
+    assert profile.source == "emergency-profile"
+    assert profile.content.startswith(EMERGENCY_PROFILE_PREFIX)
+    assert 'state="absent"' in profile.content
+    assert "本次未使用个性化档案" in profile.content
+
+
+def _fake_memory_reader(memory: EmergencyMemory):  # noqa: ANN202 —— 返回替身协程函数
+    """造一个「按给定结果返回」的记忆取数替身（签名与 `read_emergency_facts` 的后两参一致）。"""
+
+    async def _reader(_session: object, _graph: object, _account_id: str) -> EmergencyMemory:
+        return memory
+
+    return _reader
+
+
+def _stub_memory(monkeypatch: pytest.MonkeyPatch, memory: EmergencyMemory) -> None:
+    """把应急记忆取数整条路径换成替身（本面的用例测装配，不测图库查询）。
+
+    连 `get_shared_memory_graph` 一起替掉，而不是只替 `read_emergency_facts`：
+    真实调用会构造 FalkorDB 驱动并在后台起建索引任务（`build_indices_and_constraints`），
+    于是用例既依赖另一个容器是否在跑，又会在那条连接被关掉时留下一条与断言无关的
+    报错日志（实测：全量跑时出现 network ConnectionError 的 future 异常日志）。
+    """
+    monkeypatch.setattr(consult_routes, "get_shared_memory_graph", lambda *_: object())
+    monkeypatch.setattr(consult_routes, "read_emergency_facts", _fake_memory_reader(memory))
+
+
+async def test_emergency_marks_unavailable_memory_instead_of_empty_memory(
+    client: httpx.AsyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """记忆取数失败时标注来源不可用，**不**注入一条「该账号还没有可用记忆」。"""
+    runner = ScriptedRunner(get_settings())
+    _install_runner(runner)
+
+    def _raise(_settings: object = None) -> object:
+        raise MemoryUnavailableError("图库不可用（测试）", operation="read_emergency_facts", cause="FalkorDB")
+
+    monkeypatch.setattr(consult_routes, "get_shared_memory_graph", _raise)
+
+    response = await client.post("/consult/emergency", json={"items": _intake_items()})
+    assert response.status_code == 202, response.text
+    await drain_pumps()
+
+    request = runner.requests[-1]
+    contents = [item.content for item in request.injections.ordered()]
+    assert not [text for text in contents if text.startswith(EMERGENCY_MEMORY_PREFIX)]
+    status = [text for text in contents if text.startswith("<unavailable_sources>")]
+    assert len(status) == 1 and 'name="emergency-memory"' in status[0]
+
+
+async def test_emergency_session_never_triggers_onboarding(
+    client: httpx.AsyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """应急会话永不触发引导（`RQ-EMG-03`）：它后续的消息走日常路径也不注入引导。"""
+    runner = ScriptedRunner(get_settings())
+    _install_runner(runner)
+    _stub_memory(monkeypatch, EmergencyMemory(facts=[]))
+    emergency = await client.post("/consult/emergency", json={"items": _intake_items()})
+    assert emergency.status_code == 202, emergency.text
+    await drain_pumps()
+    session_id = emergency.json()["session_id"]
+
+    # 账号的引导仍未终结（应急不落引导状态），但本会话的首轮注入已结算。
+    assert await _onboarding_state(_ACCOUNT) is None
+    assert await _first_run_injected(session_id) is True
+
+    follow_up = await _send(client, session_id, content="继续说", skill="daily-consulting")
+    assert follow_up.status_code == 202, follow_up.text
+    await drain_pumps()
+    assert [skill.name for skill in runner.requests[-1].activated] == ["daily-consulting"]
+    assert runner.requests[-1].injections.ordered() == ()
+
+
+async def test_emergency_uses_the_default_object_when_omitted(
+    client: httpx.AsyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """省略对象时按支持对象第 6 节推导默认对象，档案注入用它取数。"""
+    _install_runner(ScriptedRunner(get_settings()))
+    object_id = await _make_object(_ACCOUNT, "默认对象")
+    seen: dict[str, object] = {}
+
+    async def _capture(_db: object, *, account_id: str, support_object_id: str | None):  # noqa: ANN202 —— 替身
+        seen["account_id"] = account_id
+        seen["support_object_id"] = support_object_id
+        return None
+
+    monkeypatch.setattr(consult_routes, "emergency_context", _capture)
+    monkeypatch.setattr(consult_routes, "read_emergency_facts", _fake_memory_reader(EmergencyMemory(facts=[])))
+
+    response = await client.post("/consult/emergency", json={"items": _intake_items()})
+    assert response.status_code == 202, response.text
+    await drain_pumps()
+    assert seen["account_id"] == _ACCOUNT
+    assert seen["support_object_id"] == object_id
+
+    async with session_scope(get_settings()) as db:
+        binding = (
+            await db.execute(
+                select(SessionObjectBinding).where(SessionObjectBinding.session_id == response.json()["session_id"])
+            )
+        ).scalar_one_or_none()
+    assert binding is not None and str(binding.support_object_id) == object_id
+
+
+async def test_emergency_with_foreign_or_archived_object_is_404_with_the_same_message(
+    client: httpx.AsyncClient,
+) -> None:
+    """越权对象与已归档对象都是 404，且与「对象不存在」逐字同文案。"""
+    foreign = await _make_object(_OTHER_ACCOUNT, "别人的孩子")
+    archived = await _make_object(_ACCOUNT, "已归档")
+    async with session_scope(get_settings()) as db:
+        await archive_object(db, account_id=_ACCOUNT, support_object_id=archived)
+
+    for object_id in (foreign, archived, str(uuid.uuid4())):
+        response = await client.post(
+            "/consult/emergency",
+            json={"support_object_id": object_id, "items": _intake_items()},
+        )
+        assert response.status_code == 404, response.text
+        assert response.json()["detail"] == OBJECT_NOT_ACCESSIBLE_MESSAGE
+
+
+async def test_emergency_rejects_unknown_keys_and_bad_shapes(client: httpx.AsyncClient) -> None:
+    """载荷不合法一律 422（契约第 2 节的 422 行）。"""
+    _install_runner(ScriptedRunner(get_settings()))
+    cases = (
+        {"items": []},
+        {"items": [{"key": "no_such_item", "value": "x", "skipped": False}]},
+        {"items": [{"key": "medical_red_flags", "value": "意识改变", "skipped": False}]},
+        {"items": [{"key": "distress", "value": "高", "skipped": True}]},
+        {"items": [{"key": "distress", "value": "高", "skipped": False}, {"key": "distress", "value": "低"}]},
+        {"unknown_field": 1, "items": _intake_items()},
+    )
+    for payload in cases:
+        response = await client.post("/consult/emergency", json=payload)
+        assert response.status_code == 422, (payload, response.status_code, response.text)
+
+
+async def test_emergency_is_503_without_creating_a_session_when_not_assembled(
+    client: httpx.AsyncClient,
+) -> None:
+    """运行器没装配时 503，且不留下一个跑不起来的空会话。
+
+    判据是「尝试失败后账号名下仍没有会话」——把会话先建出来再回 503 会让前端重试时
+    不断堆积空会话，而其中没有一个能跑。
+    """
+    consult_assembly.set_runner_factory(None)
+    response = await client.post("/consult/emergency", json={"items": _intake_items()})
+    assert response.status_code == 503, response.text
+
+    async with session_scope(get_settings()) as db:
+        owners = (
+            await db.execute(select(CampfireSession.session_id).where(CampfireSession.account_id == _ACCOUNT))
+        ).scalars()
+    assert list(owners) == [], "装配缺失的请求不得留下会话"
+
+
+async def test_emergency_is_503_when_the_skill_content_is_missing(
+    client: httpx.AsyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """内容目录里没有应急 skill 时 503（服务端自己的依赖缺失，不是使用者的载荷错）。"""
+    _install_runner(ScriptedRunner(get_settings()))
+
+    def _explode(_settings: object) -> object:
+        raise consult_assembly.ConsultAssemblyError("技能内容根目录不可用（测试）")
+
+    monkeypatch.setattr(consult_assembly, "get_skill_registry", _explode)
+    response = await client.post("/consult/emergency", json={"items": _intake_items()})
+    assert response.status_code == 503, response.text
+
+
+async def test_emergency_discards_the_session_when_the_run_fails_to_start(
+    client: httpx.AsyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """运行起步失败（503）时补偿删除这次建的会话行与绑定，账号名下 0 会话。
+
+    与上面「装配缺失不留会话」那条对称：那一条失败在任何写入之前，这一条失败在写入
+    之后——归属行、绑定与首轮注入标记都已提交，而调用方拿不到 `session_id`。不补偿就是
+    一个永远不可达的会话，且三条后果都真实（判据见 `_discard_emergency_session`）：
+    标记已为真会让该账号后续的日常消息被判成「已注入」而跳过引导告知；绑定行会参与
+    下一次新建会话的默认对象推导；前端对 503 的重试会逐次堆积。
+
+    **消融**：去掉 `except runbus.RunStartupFailure` 里的补偿删除，两条断言立即失败。
+    """
+    _install_runner(ScriptedRunner(get_settings(), fail_before_start=True))
+    _stub_memory(monkeypatch, EmergencyMemory(facts=[]))
+    object_id = await _make_object(_ACCOUNT, "小宝")
+
+    response = await client.post(
+        "/consult/emergency",
+        json={"support_object_id": object_id, "items": _intake_items()},
+    )
+    assert response.status_code == 503, response.text
+
+    async with session_scope(get_settings()) as db:
+        owners = list(
+            (
+                await db.execute(select(CampfireSession.session_id).where(CampfireSession.account_id == _ACCOUNT))
+            ).scalars()
+        )
+        bindings = list(
+            (
+                await db.execute(
+                    select(SessionObjectBinding.session_id).where(SessionObjectBinding.account_id == _ACCOUNT)
+                )
+            ).scalars()
+        )
+    assert owners == [], "起步失败不得留下不可达的会话行"
+    assert bindings == [], "起步失败不得留下孤儿绑定（它会决定下一次新建会话绑哪个对象）"
+
+    # 占位也释放了：本用例没建过别的会话，因此这个模式下不该有任何会话键。
+    cache = RedisCache(get_settings().redis_url)
+    try:
+        assert await cache.scan_keys("session:*", limit=100) == [], "起步失败必须释放会话占位"
+    finally:
+        await cache.aclose()
+
+
+# ---------------------------------------------------------------------------
+# 6 引导跳过入口
+# ---------------------------------------------------------------------------
+
+
+async def test_skip_sets_skipped_and_is_idempotent(client: httpx.AsyncClient) -> None:
+    """跳过写入 `skipped`；重复调用仍 200 且状态不变（契约第 6 节的幂等）。"""
+    _install_runner(ScriptedRunner(get_settings()))
+    session_id = await _create_session(client)
+
+    first = await client.post(f"/consult/sessions/{session_id}/onboarding/skip")
+    assert first.status_code == 200, first.text
+    assert first.json() == {"state": ONBOARDING_SKIPPED}
+    assert await _onboarding_state(_ACCOUNT) == ONBOARDING_SKIPPED
+
+    second = await client.post(f"/consult/sessions/{session_id}/onboarding/skip")
+    assert second.status_code == 200, second.text
+    assert second.json() == {"state": ONBOARDING_SKIPPED}
+
+    # 跳过之后新会话的 `onboarding_pending` 为假，第一次运行也不注入引导。
+    runner = ScriptedRunner(get_settings())
+    _install_runner(runner)
+    created = await client.post("/consult/sessions", json={})
+    assert created.json()["onboarding_pending"] is False
+    assert (await _send(client, created.json()["session_id"], content="你好")).status_code == 202
+    await drain_pumps()
+    assert runner.requests[-1].injections.ordered() == ()
+
+
+async def test_skip_does_not_overwrite_completed(client: httpx.AsyncClient) -> None:
+    """已 `completed` 时跳过不代写：仍 200，但返回并保持 `completed`（两条通道互不代写）。"""
+    _install_runner(ScriptedRunner(get_settings()))
+    async with session_scope(get_settings()) as db:
+        await complete_onboarding(db, account_id=_ACCOUNT)
+    session_id = await _create_session(client)
+
+    response = await client.post(f"/consult/sessions/{session_id}/onboarding/skip")
+    assert response.status_code == 200, response.text
+    assert response.json() == {"state": ONBOARDING_COMPLETED}
+    assert await _onboarding_state(_ACCOUNT) == ONBOARDING_COMPLETED
+
+
+async def test_skip_other_accounts_session_is_404_with_the_same_body(client: httpx.AsyncClient) -> None:
+    """会话归属是跳过的前置凭据：别人的会话与不存在的会话同文案同码。"""
+    _install_runner(ScriptedRunner(get_settings()))
+    session_id = await _create_session(client)
+
+    main_module.app.dependency_overrides[consult_routes._session_dependency] = _auth_as(_OTHER_ACCOUNT)
+    try:
+        foreign = await client.post(f"/consult/sessions/{session_id}/onboarding/skip")
+        missing = await client.post(f"/consult/sessions/{uuid.uuid4().hex}/onboarding/skip")
+    finally:
+        main_module.app.dependency_overrides[consult_routes._session_dependency] = _auth_as(_ACCOUNT)
+
+    assert foreign.status_code == missing.status_code == 404
+    assert foreign.json() == missing.json()
+    assert await _onboarding_state(_ACCOUNT) is None, "越权请求不得改动别人的引导状态"
+
+
+async def test_skip_does_not_cancel_a_running_run(client: httpx.AsyncClient) -> None:
+    """跳过只写状态，不取消正在跑的运行（契约第 6 节末行）。"""
+    runner = ScriptedRunner(get_settings())
+    _install_runner(runner)
+    session_id = await _create_session(client)
+    runner.gate = asyncio.Event()
+    started = await _send(client, session_id, content="跑起来")
+    assert started.status_code == 202, started.text
+    run_id = started.json()["run_id"]
+
+    skipped = await client.post(f"/consult/sessions/{session_id}/onboarding/skip")
+    assert skipped.status_code == 200, skipped.text
+
+    cache = RedisCache(get_settings().redis_url)
+    try:
+        assert await cache.get(mutex_key(session_id)) is not None, "跳过不得释放会话位（运行还在跑）"
+    finally:
+        await cache.aclose()
+    busy = await _send(client, session_id, content="再发一条")
+    assert busy.status_code == 409, busy.text
+
+    runner.gate.set()
+    await drain_pumps()
+    assert (await client.post(f"/consult/runs/{run_id}/cancel")).status_code == 409
