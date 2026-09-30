@@ -1507,9 +1507,7 @@ async def test_skip_does_not_cancel_a_running_run(client: httpx.AsyncClient) -> 
     assert (await client.post(f"/consult/runs/{run_id}/cancel")).status_code == 409
 
 
-async def test_skip_maps_a_write_failure_to_503(
-    client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch
-) -> None:
+async def test_skip_maps_a_write_failure_to_503(client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch) -> None:
     """写入失败明确回 503，不得回 200（契约第 6 节）。
 
     为什么必须回 5xx 而不是「当成功」：回 200 会让前端以为使用者的跳过已生效，
