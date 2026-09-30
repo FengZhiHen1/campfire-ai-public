@@ -557,6 +557,46 @@ async def test_correction_rebinds_an_inferred_item_to_the_user_statement(already
     assert [item.description for item in grouped.items] == ["使用者改写的描述"]
 
 
+@pytest.mark.asyncio
+async def test_correcting_an_already_superseded_item_fails_without_rewriting_pointers() -> None:
+    """对已被取代的条目再次纠正：明确失败，不静默改写 `superseded_by`（第 3 节不变量 3）。
+
+    双击与弱网重试同一个纠正请求即命中这条路径：第二次纠正会覆写旧条目的
+    `superseded_by`，让第一次产生的取代者成为悬挂指针——「谁取代了谁」只答一半。
+    断言三件事：
+
+    ① 第二次纠正抛 `ProfileItemNotFoundError`，而不是静默改写后返回 201；
+    ② 旧条目的 `superseded_by` 仍指向第一次的新条目（互指未被破坏）；
+    ③ 库里仍是两条条目——失败的那笔整笔回滚，不留下悬挂的新条目。
+    """
+    object_id = await _new_object()
+    first_old = await _propose(object_id, origin="user_statement", description="第一版描述")
+    async with session_scope(get_settings()) as session:
+        first_new, _ = await service.correct_item(
+            session, account_id=_ACCOUNT, item_id=first_old, description="第二版描述"
+        )
+    first_new_id = str(first_new.item_id)
+
+    with pytest.raises(ProfileItemNotFoundError, match="已被取代"):
+        async with session_scope(get_settings()) as session:
+            await service.correct_item(session, account_id=_ACCOUNT, item_id=first_old, description="第三版描述")
+
+    async with session_scope(get_settings()) as session:
+        row_old = await repo.get_item(session, item_id=first_old)
+        row_new = await repo.get_item(session, item_id=first_new_id)
+        total = await session.scalar(
+            select(func.count())
+            .select_from(ProfileItem)
+            .where(ProfileItem.support_object_id == repo.to_object_uuid(object_id))
+        )
+
+    assert row_old is not None and row_new is not None
+    assert str(row_old.superseded_by) == first_new_id, "重复纠正不得改写 superseded_by"
+    assert row_old.freshness == "historical"
+    assert str(row_new.supersedes) == first_old, "反向指针不得被第二次纠正改写"
+    assert total == 2, "失败的纠正必须整笔回滚，不得留下悬挂的新条目"
+
+
 # ---------------------------------------------------------------------------
 # 6. 删除（`AC-08`）与幂等
 # ---------------------------------------------------------------------------

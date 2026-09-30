@@ -833,8 +833,14 @@ async def mark_superseded(
     也不静默改写。两个指针都要写：档案面契约第 4 节的响应带 `supersedes`，
     而取数只认 `superseded_by`——缺任一侧都会让「谁取代了谁」只答一半。
 
+    状态判据放进 `WHERE` 而不是先查后改（与 `confirm_item` 同法）：对已被取代的
+    条目再来一次纠正会覆写 `superseded_by`，让先前的取代者成为悬挂指针，
+    而「谁取代了谁」只答一半正是不可变量 3 禁止的静默改写。放进 `WHERE` 后，
+    并发下的两个纠正请求也只有一个能拿到行。
+
     Returns:
-        更新后的旧条目；`None` 表示旧条目不存在。
+        更新后的旧条目；`None` 表示旧条目不存在、已被取代，或不在 `current` 态
+        （由用例层转成明确的失败，而不是静默改写既有的取代关系）。
 
     Raises:
         ProfileDataError: 任一标识不合法。
@@ -843,7 +849,15 @@ async def mark_superseded(
     parsed_new = to_item_uuid(new_item_id)
     statement = (
         update(ProfileItem)
-        .where(ProfileItem.item_id == parsed_old)
+        .where(
+            ProfileItem.item_id == parsed_old,
+            # 状态判据放进 WHERE（与 `confirm_item` 同法）：只有尚未被取代的
+            # `current` 条目能被再次取代，否则这次纠正会覆写既有的
+            # `superseded_by`，先前的取代者随之成为悬挂指针——「谁取代了谁」
+            # 只答一半正是第 3 节不变量 3 禁止的静默改写。
+            ProfileItem.freshness == FRESHNESS_CURRENT,
+            ProfileItem.superseded_by.is_(None),
+        )
         .values(
             freshness=FRESHNESS_HISTORICAL,
             superseded_by=parsed_new,
