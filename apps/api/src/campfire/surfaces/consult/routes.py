@@ -135,8 +135,13 @@ def _not_resumable() -> HTTPException:
 
 
 def _unprocessable(reason: str) -> HTTPException:
-    """载荷或查询参数不合法 → 422。"""
-    return HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=reason)
+    """载荷或查询参数不合法 → 422。
+
+    状态码用字面量而不是 `status.HTTP_422_UNPROCESSABLE_ENTITY`：新版 Starlette 已把它
+    标记为弃用（改名成 `..._CONTENT`），而沿用旧名会在每次调用处打一条弃用警告；
+    两条名字都可用期间，字面量是唯一不随版本漂移的写法。
+    """
+    return HTTPException(status_code=422, detail=reason)
 
 
 def _unavailable(reason: str) -> HTTPException:
