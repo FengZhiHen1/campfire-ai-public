@@ -1,21 +1,21 @@
 """集成测试：Worker 侧 `profile_item` 消费分支（T12）。
 
-对应 ``docs/技术设计/technical-details/写入路径.md`` 第 4、5、6 节。
+对应 `docs/技术设计/technical-details/写入路径.md` 第 4、5、6 节。
 
     docker compose up -d postgres
     uv run pytest -m integration apps/api/tests/test_profile_worker_task_integration.py
 
 与 `test_profile_consumer_integration.py` 的分工：那一个测的是用例
-（`write_from_pending` 本身）；本文件测的是 **Worker 侧接线**——任务函数、
+（`write_from_pending` 本身）；本文件测的是 Worker 侧接线——任务函数、
 失败分档（哪一类转 `dead`、哪一类回 `pending`）与重复执行的幂等。
 分档只在任务函数里，用例层看不见它。
 
-## 本文件守住的判据
+本文件守住的判据
 
-1. **主链路**：任务跑一次 → 条目出现、记录置 `done`。
-2. **幂等（实测两次）**：同一 `pending_id` 跑两次 → 只有一条条目，第二次拿到 `skipped`。
-3. **授权在领取时重新判定**：对象在排队期间被归档 → 转 `dead` 且**不写入**。
-4. **载荷不合法** → 转 `dead`。
+1. 主链路：任务跑一次 → 条目出现、记录置 `done`。
+2. 幂等（实测两次）：同一 `pending_id` 跑两次 → 只有一条条目，第二次拿到 `skipped`。
+3. 授权在领取时重新判定：对象在排队期间被归档 → 转 `dead` 且不写入。
+4. 载荷不合法 → 转 `dead`。
 """
 
 from __future__ import annotations
@@ -174,10 +174,10 @@ async def test_inferred_item_lands_in_the_candidate_layer() -> None:
 
 @pytest.mark.asyncio
 async def test_running_the_task_twice_does_not_duplicate_the_item() -> None:
-    """**幂等实测两次**：同一 `pending_id` 连跑两次 → 只有一条条目。
+    """幂等实测两次：同一 `pending_id` 连跑两次 → 只有一条条目。
 
     第二次的期望是 `skipped`（未领取到：记录已 `done`，不再是可领取状态），
-    且**条目不增加**。唯一约束是兜底，正常路径由「已终结不可领取 + 显式查重」先行挡住。
+    且条目不增加。唯一约束是兜底，正常路径由「已终结不可领取 + 显式查重」先行挡住。
 
     这条不能靠代码审查代替：重复执行是运行期行为，
     「第二次真的什么都没写进去」只能跑出来看。
@@ -200,7 +200,7 @@ async def test_replay_after_lease_is_reclaimed_is_still_idempotent() -> None:
 
     与上一条的区别：记录已被 `mark_done` 终结时重跑走的是「不可领取」；
     这里让记录回到可领取态（模拟「写入成功但 mark_done 丢失」的崩溃窗口），
-    走的是**领取成功 + 显式查重命中**那条路——两条路都要幂等。
+    走的是领取成功 + 显式查重命中那条路——两条路都要幂等。
     """
     object_id = await _new_object()
     pending_id = await _enqueue(object_id)
@@ -229,7 +229,7 @@ async def test_replay_after_lease_is_reclaimed_is_still_idempotent() -> None:
 
 @pytest.mark.asyncio
 async def test_archived_object_is_dead_not_written() -> None:
-    """对象在排队期间被归档 → 领取时判定不成立 → **转 `dead`、不写入**（第 6 节）。
+    """对象在排队期间被归档 → 领取时判定不成立 → 转 `dead`、不写入（第 6 节）。
 
     消融：把 `consume_profile_item_task` 里的 `except AuthorizationError` 分支删掉，
     记录会落到可重试分支、变成 `pending` + `attempts=1`，本用例失败。
@@ -259,7 +259,7 @@ async def test_archived_object_is_dead_not_written() -> None:
 
 @pytest.mark.asyncio
 async def test_bad_payload_is_dead() -> None:
-    """载荷缺必填键（`ProfileDataError`）→ **转 `dead`**：重试不会变好。"""
+    """载荷缺必填键（`ProfileDataError`）→ 转 `dead`：重试不会变好。"""
     from campfire.modules.profile.errors import ProfileDataError
 
     object_id = await _new_object()
@@ -279,7 +279,7 @@ async def test_bad_payload_is_dead() -> None:
 async def test_dispatch_table_routes_profile_item_to_its_own_task(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """分派表把 `profile_item` 投给**档案**任务，不是记忆任务。
+    """分派表把 `profile_item` 投给档案任务，不是记忆任务。
 
     这是 2026-09-30 那条缺陷的正面覆写：此前投递硬编码只投记忆任务，
     `profile_item` 被记忆消费者按「kind 不符」判 `dead`。这里把两个投递函数都换成
