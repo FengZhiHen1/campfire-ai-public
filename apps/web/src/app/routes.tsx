@@ -22,7 +22,26 @@ import { PlaceholderPage } from './PlaceholderPage';
 import { RequireSession } from './RequireSession';
 import { LoginPage } from '../features/accounts/view/LoginPage';
 import { SettingsPage } from '../features/accounts/view/SettingsPage';
+import { useSessionStore } from '../features/accounts/viewModel/sessionStore';
+import { ChatPage } from '../features/consult/view/ChatPage';
+import { ConsultListPage } from '../features/consult/view/ConsultListPage';
+import { EmergencyFormPage } from '../features/consult/view/EmergencyFormPage';
 import { supertokensAuthPort } from '../infrastructure/auth/authPort';
+import { createConsultApi } from '../infrastructure/consult/consultPort';
+
+/**
+ * 咨询面端口（组合根）。
+ *
+ * 为什么在这里建实例而不是 App：路由表已经是各页面的装配点（登录页与设置页同样在表里
+ * 收端口）。401 的接线必须在这里给：JSON 请求的 401 由 infrastructure/http/client 的
+ * 全局处置回调负责（App 装配），而 SSE 请求不经过它，所以咨询端口自带一个回调，
+ * 两者最终落到同一个动作（清本地状态 → 守卫把使用者送到登录页）。
+ */
+const consultPort = createConsultApi({
+  onUnauthorized: () => {
+    useSessionStore.getState().markAnonymous();
+  },
+});
 
 /** 一条前端路由的描述；守卫需求是数据而不是散落在 JSX 里的条件。 */
 export interface AppRoute {
@@ -58,18 +77,26 @@ export const APP_ROUTES: readonly AppRoute[] = [
     requiresSession: true,
     element: () => <HomePage />,
   },
-  { path: '/consult', title: '咨询记录', description: '历史会话列表，回看过去的咨询。', requiresSession: true },
+  {
+    path: '/consult',
+    title: '咨询记录',
+    description: '历史会话列表，回看过去的咨询。',
+    requiresSession: true,
+    element: () => <ConsultListPage consult={consultPort} />,
+  },
   {
     path: '/consult/sessions/:sessionId',
     title: '对话',
     description: '日常咨询主界面：消息流、依据区与提问卡。',
     requiresSession: true,
+    element: () => <ChatPage consult={consultPort} />,
   },
   {
     path: '/consult/emergency',
     title: '应急现场采集',
     description: '八项现场情况采集，提交后直接进入对话。',
     requiresSession: true,
+    element: () => <EmergencyFormPage consult={consultPort} />,
   },
   {
     path: '/profile',

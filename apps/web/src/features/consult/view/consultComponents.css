@@ -1,0 +1,599 @@
+/* 咨询面的契约组件样式：类名与规则对应 docs/design/components.html 的对话面段落，
+ * 与 shared/styles/components.css（T10 交付的通用契约表）互补——那里是布局、按钮、表单与
+ * 三态基元，这里只有对话页、提问卡、行动卡、依据区、工具行、候选提示与应急分步流的组件。
+ *
+ * 为什么是全局类名而不是 CSS Modules：与 components.css 同一理由——契约组件名（.action-card、
+ * .question-card、.citation-block、.bubble-user…）是设计契约的一部分，CSS Modules 的哈希会让
+ * DOM 类名不再等于契约类名。页面私有布局走就近的 *.module.css。
+ *
+ * 视觉契约唯一权威是 token 层（shared/styles/tokens.css）；本文件不定义色值与间距，只引用变量。 */
+
+/* ── 折叠件（依据区、思考行、工具行、候选预览共用） ───────────────── */
+
+details > summary {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: 48px;
+  cursor: pointer;
+  list-style: none;
+  color: var(--fg-2);
+}
+
+details > summary::-webkit-details-marker {
+  display: none;
+}
+
+details > summary .when-open,
+details[open] > summary .when-closed {
+  display: none;
+}
+
+details[open] > summary .when-open {
+  display: inline;
+}
+
+.toggle-label {
+  flex: none;
+  color: var(--meta);
+  font-size: var(--text-sm);
+}
+
+/* ── 消息流 ─────────────────────────────────────────────────── */
+
+.chat-message + .chat-message {
+  margin-top: var(--space-6);
+}
+
+.chat-message .message-caption {
+  margin-bottom: var(--space-2);
+}
+
+.bubble-user {
+  width: fit-content;
+  max-width: 78%;
+  margin-left: auto;
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-md) var(--space-1) var(--radius-md) var(--radius-md);
+  background: var(--surface-warm);
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.msg-doc {
+  padding-left: var(--space-4);
+  border-left: 2px solid var(--border-soft);
+}
+
+.msg-doc .status {
+  margin-bottom: var(--space-3);
+}
+
+.chat-message.assistant .msg-doc {
+  padding-left: var(--space-3);
+}
+
+.chat-message .msg-doc > p + p {
+  margin-top: var(--space-3);
+}
+
+.chat-message .question-card,
+.chat-message .action-card {
+  margin-top: var(--space-4);
+}
+
+.chat-message .action-card {
+  padding: var(--space-4);
+}
+
+.chat-message .error-card {
+  margin-top: var(--space-4);
+}
+
+/* ── 运行状态条与输入区 ─────────────────────────────────────── */
+
+.run-status {
+  color: var(--fg-2);
+  font-size: var(--text-sm);
+  margin-bottom: var(--space-4);
+}
+
+.chat-progress {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  margin-bottom: var(--space-2);
+  color: var(--fg-2);
+  font-size: var(--text-sm);
+}
+
+.chat-progress .flame-dot {
+  margin-top: var(--space-2);
+}
+
+.flame-dot.sm {
+  width: var(--space-3);
+  height: var(--space-3);
+}
+
+.skill-picker {
+  display: flex;
+  gap: var(--space-2);
+  overflow-x: auto;
+  padding-bottom: var(--space-2);
+}
+
+.skill-chip {
+  flex: none;
+  min-height: 44px;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  background: var(--surface);
+  color: var(--meta);
+  font-size: var(--text-sm);
+}
+
+.skill-chip[aria-pressed='true'] {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.chat-compose {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--space-2);
+}
+
+.chat-compose textarea {
+  flex: 1;
+  min-width: 0;
+  min-height: 48px;
+  max-height: 136px;
+  padding: var(--space-3);
+  resize: none;
+  overflow-y: auto;
+  line-height: 1.5;
+}
+
+.chat-compose .btn {
+  flex: none;
+  padding-inline: var(--space-3);
+}
+
+.chat-footer .meta {
+  margin-top: var(--space-2);
+}
+
+/* ── 提问卡 ─────────────────────────────────────────────────── */
+
+.question-card {
+  padding: 0;
+  overflow: hidden;
+}
+
+.question-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-5) 0;
+}
+
+.question-head .text-button {
+  flex: none;
+  text-decoration: none;
+}
+
+.question-body {
+  padding: 0 var(--space-5) var(--space-5);
+}
+
+.question-card .q-title {
+  margin-top: var(--space-2);
+  overflow-wrap: anywhere;
+}
+
+.question-card > .q-title {
+  margin-inline: var(--space-5);
+  margin-bottom: var(--space-3);
+}
+
+.question-card .q-options {
+  display: grid;
+  gap: var(--space-2);
+  margin-top: var(--space-4);
+}
+
+.question-option {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  width: 100%;
+  min-height: 48px;
+  padding: var(--space-3);
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--fg);
+  text-align: left;
+  cursor: pointer;
+}
+
+.question-number {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: var(--space-6);
+  height: var(--space-6);
+  border-radius: var(--radius-sm);
+  background: var(--surface-warm);
+  color: var(--meta);
+  font-size: var(--text-xs);
+}
+
+.question-copy {
+  display: grid;
+  gap: var(--space-1);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.question-label {
+  font-size: var(--text-base);
+  font-weight: 600;
+  line-height: 1.5;
+}
+
+.question-description {
+  color: var(--meta);
+  font-size: var(--text-sm);
+  line-height: var(--leading-body);
+}
+
+.question-option[aria-pressed='true'] {
+  border-color: var(--border);
+  background: var(--surface-warm);
+}
+
+.question-option[aria-pressed='true'] .question-number {
+  background: var(--fg-2);
+  color: var(--surface);
+}
+
+.question-option[aria-pressed='true'] .question-label::after {
+  content: '已选';
+  margin-left: var(--space-2);
+  color: var(--meta);
+  font-size: var(--text-xs);
+  font-weight: 400;
+}
+
+.question-card.answered {
+  background: var(--bg);
+}
+
+.question-free-toggle {
+  width: 100%;
+  min-height: 48px;
+  justify-content: flex-start;
+  align-items: flex-start;
+  gap: var(--space-3);
+  margin-top: var(--space-3);
+  padding: var(--space-3);
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  font-size: var(--text-base);
+  line-height: 1.5;
+  text-align: left;
+  text-decoration: none;
+}
+
+.question-free-toggle[aria-expanded='true'] {
+  color: var(--fg);
+  border-color: var(--border);
+  background: var(--surface-warm);
+}
+
+.question-card .field {
+  margin-top: var(--space-3);
+}
+
+.question-card textarea {
+  min-height: 96px;
+}
+
+.question-footer {
+  display: grid;
+  gap: var(--space-3);
+  margin-top: var(--space-4);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--border-soft);
+}
+
+.question-progress {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--space-3);
+  color: var(--meta);
+  font-size: var(--text-sm);
+}
+
+.question-actions {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.question-actions .btn {
+  flex: none;
+  padding-inline: var(--space-3);
+}
+
+.question-actions [data-question-next],
+.question-actions [data-question-submit] {
+  margin-left: auto;
+}
+
+.question-record-list {
+  display: grid;
+  gap: var(--space-4);
+  margin: var(--space-4) 0 0;
+  padding-left: var(--space-5);
+}
+
+.question-record-list p {
+  margin-top: var(--space-1);
+  color: var(--fg-2);
+}
+
+.question-record-list .meta {
+  display: block;
+  margin-top: var(--space-1);
+}
+
+@media (hover: hover) {
+  .question-option:not([aria-pressed='true']):hover {
+    background: color-mix(in oklab, var(--surface-warm), transparent 65%);
+  }
+}
+
+/* ── 行动卡 ─────────────────────────────────────────────────── */
+
+.action-card > .tag {
+  margin-bottom: var(--space-4);
+}
+
+.ac-section + .ac-section {
+  margin-top: var(--space-5);
+}
+
+.ac-head {
+  font-size: var(--text-base);
+  padding-bottom: var(--space-2);
+  border-bottom: 1px solid var(--border-soft);
+}
+
+.ac-head span {
+  margin-right: var(--space-2);
+  color: var(--meta);
+  font: var(--text-sm) / 1.6 var(--font-body);
+}
+
+.ac-section p {
+  margin-top: var(--space-2);
+}
+
+.ac-source {
+  display: block;
+  margin-top: var(--space-2);
+  color: var(--meta);
+  font-size: var(--text-xs);
+}
+
+.ac-section.now {
+  padding: var(--space-4);
+  margin-inline: calc(-1 * var(--space-2));
+  background: var(--surface-warm);
+  border-radius: var(--radius-md);
+}
+
+.expired {
+  border-style: dashed;
+}
+
+.expired p {
+  margin-top: var(--space-3);
+  color: var(--meta);
+  font-size: var(--text-sm);
+}
+
+.chat-action-priority {
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-warm);
+  margin-bottom: var(--space-4);
+}
+
+.chat-action-priority .meta {
+  display: block;
+  margin-bottom: var(--space-1);
+}
+
+.chat-message .expired {
+  box-shadow: none;
+  background: var(--bg);
+}
+
+.chat-message .expired .status {
+  margin-bottom: var(--space-2);
+}
+
+.chat-message .expired > details > summary {
+  font-size: var(--text-sm);
+}
+
+.chat-message .expired .ac-section p {
+  color: var(--fg-2);
+  font-size: var(--text-base);
+}
+
+/* ── 依据区 ─────────────────────────────────────────────────── */
+
+.citation-block {
+  margin-top: var(--space-5);
+  border-top: 1px solid var(--border-soft);
+  padding-top: var(--space-2);
+}
+
+.citation-list {
+  display: grid;
+  gap: var(--space-4);
+  padding-block: var(--space-3);
+}
+
+.citation-title {
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+}
+
+.citation-item p {
+  margin-top: var(--space-2);
+}
+
+.source-body {
+  padding-top: var(--space-3);
+}
+
+/* ── 思考行与工具行 ─────────────────────────────────────────── */
+
+.reasoning-row,
+.tool-row {
+  margin-bottom: var(--space-2);
+}
+
+.reasoning-row > summary,
+.tool-row > summary {
+  min-height: 44px;
+  font-size: var(--text-sm);
+}
+
+.reasoning-row .process-body,
+.tool-row .process-body {
+  padding: 0 0 var(--space-3) var(--space-3);
+  border-left: 2px solid var(--border-soft);
+  color: var(--meta);
+  font-size: var(--text-sm);
+}
+
+/* ── 候选轻提示 ─────────────────────────────────────────────── */
+
+.candidate-toast {
+  border-radius: var(--radius-md);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.candidate-toast .ct-panel {
+  padding: var(--space-3) 0;
+}
+
+.candidate-toast p {
+  margin-bottom: var(--space-3);
+}
+
+/* ── 应急分步流 ─────────────────────────────────────────────── */
+
+.step-meta {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+}
+
+.progress-track {
+  height: 2px;
+  background: var(--border);
+  border-radius: var(--radius-pill);
+  margin-bottom: var(--space-5);
+  overflow: hidden;
+}
+
+.progress-fill {
+  height: 100%;
+  background: var(--accent);
+  transition: width var(--motion-base) var(--ease-standard);
+}
+
+.step-title {
+  scroll-margin-top: calc(var(--space-12) + var(--space-8));
+}
+
+.step-options {
+  display: grid;
+  gap: var(--space-2);
+  margin-top: var(--space-4);
+}
+
+.selection {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: 48px;
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  cursor: pointer;
+}
+
+.selection input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: 0;
+  opacity: 0;
+}
+
+.check-box {
+  width: var(--space-5);
+  height: var(--space-5);
+  border: 1.5px solid var(--meta);
+  border-radius: var(--radius-sm);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+}
+
+.selection:has(input:checked) {
+  border-color: var(--accent);
+  background: color-mix(in oklab, var(--accent), transparent 94%);
+}
+
+.selection:has(input:checked) .check-box {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.selection:has(input:checked) .check-box::after {
+  content: '';
+  width: 10px;
+  height: 6px;
+  border-left: 2px solid var(--accent-on);
+  border-bottom: 2px solid var(--accent-on);
+  transform: rotate(-45deg) translateY(-1px);
+}
+
+.selection:has(input:focus-visible) {
+  outline: 2px solid var(--accent);
+  outline-offset: var(--space-1);
+}

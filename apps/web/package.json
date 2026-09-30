@@ -6,7 +6,7 @@
   "description": "篝火智答 React H5（一期唯一前端）",
   "scripts": {
     "dev": "node scripts/sync-tokens.mjs && vite",
-    "build": "node scripts/sync-tokens.mjs && tsc --noEmit && vite build",
+    "build": "node scripts/sync-tokens.mjs && tsc --noEmit && vite build && node scripts/check-contract-css.mjs",
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
