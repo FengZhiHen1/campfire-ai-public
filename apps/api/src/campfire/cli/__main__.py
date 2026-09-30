@@ -25,6 +25,7 @@ import asyncio
 import sys
 from pathlib import Path
 
+from campfire.cli.operator import add_operator_subcommands, dispatch_operator_command
 from campfire.core.config import get_settings
 from campfire.core.db import create_engine, session_scope
 from campfire.modules.library.embedding import EmbeddingConfigurationError
@@ -37,13 +38,23 @@ from campfire.modules.library.ingestion import (
 
 _USAGE = """campfire.cli —— 本地运维入口（不暴露成服务端点）
 
-子命令：
+资料子命令：
   convert <input.html>   把网页原件转成可摄取的 Markdown（不连库、可先审后喂）
   ingest  <路径>         摄取处理好的 Markdown 文件到资料库
+
+运营子命令（见 docs/技术设计/decisions/运营操作经CLI.md）：
+  invite issue          签发一张一次性邀请码
+  invite revoke <码>    撤销邀请码（撤销后立即不可用）
+  invite list           列出邀请码（可加 --state / --limit）
+  account reset <账号>  重置密码并撤销该账号全部会话（--password）
+  account delete <账号> 注销账号（不可逆，须 --confirm 重复输入账号标识）
 
 示例：
   python -m campfire.cli convert corpus/guide.html --out corpus/guide.md
   python -m campfire.cli ingest corpus/guide.md --source "WHO 2024" --scope "学龄前儿童"
+  python -m campfire.cli invite issue
+  python -m campfire.cli account reset 8f3a... --password '新密码'
+  python -m campfire.cli account delete 8f3a... --confirm 8f3a...
 """
 
 
@@ -74,6 +85,9 @@ def _build_parser() -> argparse.ArgumentParser:
     ingest.add_argument("--title", default=None, help="标题；缺省用 frontmatter 的 title，再缺省用文件名")
     ingest.add_argument("--keywords", default="", help="字面路关键词，空格分隔（覆盖 frontmatter）")
     ingest.add_argument("--aliases", default="", help="字面路别名，空格分隔（覆盖 frontmatter）")
+
+    # 运营子命令（邀请码、账号）由 operator 模块提供——见该模块的说明。
+    add_operator_subcommands(sub)
     return parser
 
 
@@ -184,6 +198,12 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "ingest":
         return asyncio.run(_run_ingest(args))
+
+    # 运营子命令（邀请码、账号）——它们的实现与解析在 `cli/operator.py`，
+    # 与摄取子命令互不相关，各自演进。返回 None 表示「不是运营命令」。
+    operator_result = dispatch_operator_command(args)
+    if operator_result is not None:
+        return operator_result
 
     print(_USAGE, file=sys.stderr)
     return 2

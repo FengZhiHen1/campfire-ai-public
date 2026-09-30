@@ -1,0 +1,356 @@
+"""运营子命令：邀请码的发放/撤销/查看，人工重置，账号注销。
+
+归属：``cli/``（本地运维入口，**不暴露成服务端点**）。形态由
+[决策记录](../../../../docs/技术设计/decisions/运营操作经CLI.md)与
+[认证与账号](../../../../docs/技术设计/technical-details/认证与账号.md)第 7、8 节拥有。
+
+## 为什么运营操作是 CLI 而不是 web 后台
+
+第 7 节：一期运营量极小（`RQ-ACC-06` 的自助找回重访条件是「真实用户数 ≥50，或
+每周 ≥1 次找回请求」，反过来说明重置预期是**个位数次数**）。为个位数操作建一个
+浏览器可达、能重置任意密码与建任意账号的界面，攻击面与收益不成比例。
+
+**运营者身份就是「能执行该 CLI 的人」**，即服务器的操作系统访问权——本期不引入
+应用层运营者身份与审计表。**代价如实写明**：无法回答「是哪位运营者重置了谁的密码」，
+追责只能依赖 OS 层日志。
+
+## 本模块只做「命令行形态 + 调用顺序」
+
+邀请码状态机在 ``modules/accounts``、注销编排在 ``core/auth/deletion``。这里不重复
+它们的判据，只负责：参数解析、为缺省值找到合理的默认（如运营者标识取当前 OS 用户）、
+把领域异常翻译成**可读的失败信息与非零退出码**。
+
+## 退出码
+
+与既有子命令一致：``0`` 成功、``1`` 失败（含参数错误与领域拒绝）、``2`` 未实现的子命令。
+**失败必须非零**——运营脚本依赖它判断成败。
+"""
+
+from __future__ import annotations
+
+import argparse
+import asyncio
+import getpass
+import sys
+from datetime import datetime
+
+from campfire.core.auth.deletion import AccountDataPurger, AccountDeletionError, delete_account
+from campfire.core.config import Settings, get_settings
+from campfire.core.db import session_scope
+from campfire.modules.accounts.errors import AccountsError
+from campfire.modules.accounts.models import INVITE_CODE_TTL_DAYS
+from campfire.modules.accounts.repository import (
+    issue_invite_code,
+    list_invite_codes,
+    revoke_invite_code,
+)
+from campfire.modules.memory.purge import MemoryAccountPurger
+
+
+def _operator() -> str:
+    """运营者标识：**当前操作系统的用户名**。
+
+    它**不是**应用层身份（第 7 节：本期不引入应用层运营者身份与审计表），
+    只是「这条记录是哪台机器的哪个 OS 用户产生的」。追责依赖 OS 层日志。
+
+    取不到时用 ``"unknown"`` 而不是报错：这个值只用于留痕，不该让一次
+    合法的运营操作因为它失败。
+    """
+    try:
+        return getpass.getuser()[:128] or "unknown"
+    except Exception:  # noqa: BLE001 —— 取不到用户名不是失败理由
+        return "unknown"
+
+
+def _print_invite_row(record: object) -> None:
+    """打印一行邀请码（**不打印任何凭据以外的东西**；码本身就是运营要看的）。"""
+    code = getattr(record, "code", "?")
+    state = getattr(record, "state", "?")
+    expires = getattr(record, "expires_at", None)
+    used_by = getattr(record, "used_by_account_id", None)
+    parts = [f"{code}  {state:<8}"]
+    if isinstance(expires, datetime):
+        parts.append(f"到期 {expires:%Y-%m-%d}")
+    if used_by:
+        parts.append(f"用于 {used_by}")
+    print("  ".join(parts))
+
+
+# ---------------------------------------------------------------------------
+# invite：发放 / 撤销 / 查看
+# ---------------------------------------------------------------------------
+
+
+async def _run_invite_issue(args: argparse.Namespace) -> int:
+    """签发邀请码（第 4 节）。"""
+    settings = get_settings()
+    try:
+        async with session_scope(settings) as session:
+            record = await issue_invite_code(
+                session,
+                created_by=_operator(),
+                ttl_days=args.days,
+            )
+    except AccountsError as exc:
+        print(f"签发失败：{exc}", file=sys.stderr)
+        return 1
+
+    print("已签发邀请码（**一次性**，请立即转交使用者）：")
+    _print_invite_row(record)
+    print(f"  有效期：{args.days} 天")
+    return 0
+
+
+async def _run_invite_revoke(args: argparse.Namespace) -> int:
+    """撤销邀请码（第 4 节：撤销后立即不可再用）。"""
+    settings = get_settings()
+    try:
+        async with session_scope(settings) as session:
+            record = await revoke_invite_code(session, code=args.code)
+    except AccountsError as exc:
+        print(f"撤销失败：{exc}", file=sys.stderr)
+        return 1
+
+    print("已撤销：")
+    _print_invite_row(record)
+    return 0
+
+
+async def _run_invite_list(args: argparse.Namespace) -> int:
+    """列出邀请码（按签发时间倒序）。"""
+    settings = get_settings()
+    try:
+        async with session_scope(settings) as session:
+            records = await list_invite_codes(session, state=args.state, limit=args.limit)
+    except AccountsError as exc:
+        print(f"查询失败：{exc}", file=sys.stderr)
+        return 1
+
+    if not records:
+        print("（没有匹配的邀请码）")
+        return 0
+
+    print(f"共 {len(records)} 张（最多显示 {args.limit} 张）：")
+    for record in records:
+        _print_invite_row(record)
+    return 0
+
+
+# ---------------------------------------------------------------------------
+# account：重置密码 / 注销
+# ---------------------------------------------------------------------------
+
+
+async def _revoke_all_sessions_for(account_id: str) -> None:
+    """撤销该账号的**全部**会话（第 7 节：重置与注销都必然包含它）。
+
+    经身份服务的 SDK 执行（``revoke_all_sessions_for_user``）——它在 core 侧删除
+    会话行，而我们的会话校验是**逐请求查证数据库**的，因此撤销**立即生效**。
+    """
+    from supertokens_python.recipe.session.asyncio import revoke_all_sessions_for_user
+
+    await revoke_all_sessions_for_user(account_id)
+
+
+async def _delete_identity_user(account_id: str) -> None:
+    """删除身份服务里的用户（第 8 节第 4 步）。"""
+    from supertokens_python.asyncio import delete_user
+
+    await delete_user(account_id)
+
+
+def _purgers(settings: Settings) -> list[AccountDataPurger]:
+    """本次注销要执行的领域清除者。
+
+    新领域需要清除时**加在这里**，不改编排（见 ``core/auth/deletion`` 的说明）。
+    目前只有记忆（图库 + 删除账本）。
+    """
+    return [MemoryAccountPurger(settings)]
+
+
+async def _run_account_reset(args: argparse.Namespace) -> int:
+    """人工重置密码，**并在同一操作内撤销该账号全部会话**（第 7 节）。
+
+    ## 顺序与失败语义（第 9 节末行）
+
+    撤销会话与改密**必须同时成立**——任一失败即整体失败并明确报错，
+    **不得留下「密码已改但旧会话仍有效」**。因此本函数先改密、再撤会话；
+    改密失败则什么都不做（会话保留，使用者仍能用旧密码登录，状态一致）。
+
+    **先改密再撤会话**的理由：撤销是**不可逆**的（旧会话没了），而改密可能因
+    「新密码不合校验器」等**可预期**的输入问题失败。先做可能失败的那个，
+    失败时不留任何副作用；反过来会给使用者一个「会话被踢掉但密码没改成」的状态。
+    """
+    from supertokens_python.recipe.emailpassword.asyncio import update_email_or_password
+    from supertokens_python.types import RecipeUserId
+
+    settings = get_settings()
+    # 本 SDK 版本的参数名是 `recipe_user_id`（且收 `RecipeUserId` 包装），
+    # **不是** `user_id`——实测签名：recipe_user_id / email / password /
+    # apply_password_policy / tenant_id_for_password_policy / user_context。
+    # 写错参数名会让重置路径直接抛 TypeError（**mypy 抓到了这一处**，
+    # 这正是「类型检查是语义类型的唯一机器通道」那条纪律在起作用）。
+    # `apply_password_policy` 保持默认（True），即套用身份服务的默认密码校验器
+    # （≥8 字符、含小写字母与数字）——第 4 节采用默认校验器，不自定规则。
+    result = await update_email_or_password(
+        recipe_user_id=RecipeUserId(args.account),
+        password=args.password,
+    )
+    status = getattr(result, "status", None)
+    if status is not None and status != "OK":
+        print(f"重置失败：{status}", file=sys.stderr)
+        return 1
+
+    try:
+        await _revoke_all_sessions_for(args.account)
+    except Exception as exc:  # noqa: BLE001 —— 撤会话失败必须让整个重置失败
+        print(
+            f"密码已改但**撤销会话失败**（{type(exc).__name__}）——"
+            "该账号的旧会话可能仍然有效，必须重新执行本命令直到成功",
+            file=sys.stderr,
+        )
+        return 1
+
+    print(f"已重置密码并撤销该账号全部会话：{args.account}")
+    print("  提示：使用者现在必须用新密码登录；旧会话已立即失效。")
+    del settings  # 本操作不经本库，配置仅用于保持与其他子命令一致的取用方式
+    return 0
+
+
+async def _run_account_delete(args: argparse.Namespace) -> int:
+    """账号注销（第 8 节，**不可逆**）。
+
+    ## 为什么必须显式确认
+
+    第 8 节：注销不是登出、也不是停用，**不提供撤销**。这里要求操作者
+    **重新输入账号标识**作为确认——比 ``--yes`` 之类的标志更能防止「对着错的账号
+    执行了不可逆操作」（`--yes` 容易成为肌肉记忆）。
+
+    ## 失败时报告已完成到哪一步
+
+    注销是多步且不可逆的。中途失败时，操作者需要知道**当前处于什么状态**
+    才能决定重试还是人工介入——因此 :class:`AccountDeletionError` 携带已完成步骤，
+    这里如实打印。重试是安全的（墓碑幂等，见 ``core/auth/deletion``）。
+    """
+    settings = get_settings()
+
+    if args.confirm != args.account:
+        print(
+            "已取消：为确认注销，请用 --confirm 重复输入同一个账号标识。\n"
+            f"  待注销账号：{args.account}\n"
+            f"  实际输入：  {args.confirm}",
+            file=sys.stderr,
+        )
+        return 1
+
+    try:
+        async with session_scope(settings) as session:
+            report = await delete_account(
+                session,
+                account_id=args.account,
+                revoke_all_sessions=args._revoke_all_sessions,
+                delete_identity_user=args._delete_identity_user,
+                purgers=args._purgers,
+                confirmed=True,
+            )
+    except AccountDeletionError as exc:
+        print(f"注销失败：{exc}", file=sys.stderr)
+        if exc.completed:
+            print(
+                "  已完成：" + "、".join(exc.completed) + "\n"
+                "  重试是安全的（墓碑写入幂等）；若反复失败请人工核对后处理。",
+                file=sys.stderr,
+            )
+        return 1
+
+    print(f"已注销账号：{report.account_id}")
+    print(f"  已完成步骤：{'、'.join(report.completed_steps)}")
+    print(f"  墓碑：{'本次新建' if report.tombstone_created else '此前已存在（本次为重试）'}")
+    print(f"  删除未领取的待处理记录：{report.pending_writes_deleted} 条")
+    for purge in report.purges:
+        print(f"  {purge.name}：{purge.detail}")
+    print("  ⚠️ 保留了一条不含内容的注销记录（账号标识、时间、原因）——")
+    print("     因此**不得**对外声称「已删除全部数据」，准确表述是「已删除全部内容」。")
+    return 0
+
+
+# ---------------------------------------------------------------------------
+# 参数解析（与既有子命令同构）
+# ---------------------------------------------------------------------------
+
+
+def add_operator_subcommands(sub: argparse._SubParsersAction) -> None:  # noqa: SLF001 —— argparse 的既定形态
+    """把运营子命令挂到既有的子命令解析器上。
+
+    单独抽成函数（而不是写在 ``_build_parser`` 里）：运营子命令与摄取子命令
+    **互不相关**，分开便于各自演进，也让 ``_build_parser`` 保持可读。
+    """
+    invite = sub.add_parser("invite", help="邀请码的发放、撤销与查看（运营操作）")
+    invite_sub = invite.add_subparsers(dest="invite_command")
+
+    issue = invite_sub.add_parser("issue", help="签发一张一次性邀请码")
+    issue.add_argument("--days", type=int, default=INVITE_CODE_TTL_DAYS, help="有效期天数（默认 30）")
+
+    revoke = invite_sub.add_parser("revoke", help="撤销一张邀请码（撤销后立即不可用）")
+    revoke.add_argument("code", help="要撤销的邀请码")
+
+    listing = invite_sub.add_parser("list", help="列出邀请码（按签发时间倒序）")
+    listing.add_argument("--state", choices=["issued", "used", "revoked"], default=None, help="只看某个状态")
+    listing.add_argument("--limit", type=int, default=50, help="最多显示多少张（默认 50）")
+
+    account = sub.add_parser("account", help="账号管理（重置密码、注销）")
+    account_sub = account.add_subparsers(dest="account_command")
+
+    reset = account_sub.add_parser("reset", help="重置密码并撤销该账号全部会话")
+    reset.add_argument("account", help="账号标识（身份服务的用户标识）")
+    reset.add_argument("--password", required=True, help="新密码（须满足身份服务的默认校验器）")
+
+    delete = account_sub.add_parser("delete", help="注销账号（不可逆，须显式确认）")
+    delete.add_argument("account", help="要注销的账号标识")
+    delete.add_argument(
+        "--confirm",
+        required=True,
+        help="为确认注销，**重复输入同一个账号标识**（比 --yes 更能防误操作）",
+    )
+    # 依赖注入：把真实实现挂在命名空间上，便于测试替换成假实现（不连 core）。
+    delete.set_defaults(
+        _revoke_all_sessions=_revoke_all_sessions_for,
+        _delete_identity_user=_delete_identity_user,
+        _purgers=_purgers,
+    )
+
+
+def dispatch_operator_command(args: argparse.Namespace) -> int | None:
+    """执行运营子命令；**不是运营命令时返回 ``None``**，交由调用方继续分派。
+
+    返回 ``None`` 而不是抛异常：``main`` 里已有「未识别的命令 → 用法 + 退出码 2」
+    这条路径，这里不重复。
+
+    Raises:
+        无：所有失败都转成退出码（CLI 的契约是退出码，不是异常）。
+    """
+    if args.command == "invite":
+        if args.invite_command == "issue":
+            return asyncio.run(_run_invite_issue(args))
+        if args.invite_command == "revoke":
+            return asyncio.run(_run_invite_revoke(args))
+        if args.invite_command == "list":
+            return asyncio.run(_run_invite_list(args))
+        print("用法：python -m campfire.cli invite {issue|revoke|list}", file=sys.stderr)
+        return 1
+
+    if args.command == "account":
+        if args.account_command == "reset":
+            return asyncio.run(_run_account_reset(args))
+        if args.account_command == "delete":
+            return asyncio.run(_run_account_delete(args))
+        print("用法：python -m campfire.cli account {reset|delete}", file=sys.stderr)
+        return 1
+
+    return None
+
+
+__all__ = [
+    "add_operator_subcommands",
+    "dispatch_operator_command",
+]
