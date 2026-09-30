@@ -24,7 +24,9 @@ import { LoginPage } from '../features/accounts/view/LoginPage';
 import { SettingsPage } from '../features/accounts/view/SettingsPage';
 import { ProfilePage } from '../features/profile/view/ProfilePage';
 import { MemoryPage } from '../features/memory/view/MemoryPage';
+import { LibraryPage } from '../features/library/view/LibraryPage';
 import { supertokensAuthPort } from '../infrastructure/auth/authPort';
+import { httpLibraryPort } from '../infrastructure/http/libraryPort';
 import { httpMemoryPort } from '../infrastructure/http/memoryPort';
 import { httpProfilePort } from '../infrastructure/http/profilePort';
 
@@ -87,6 +89,7 @@ export const APP_ROUTES: readonly AppRoute[] = [
     title: '案例库',
     description: '公开案例浏览与检索，支持从引用跳转定位。',
     requiresSession: true,
+    element: () => <LibraryPage port={httpLibraryPort} />,
   },
   {
     path: '/settings',

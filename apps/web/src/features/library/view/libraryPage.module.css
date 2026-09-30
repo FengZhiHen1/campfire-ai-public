@@ -1,0 +1,85 @@
+/* 案例库浏览页私有布局。视觉契约唯一权威是 tokens 层与 components.css；
+ * 本文件只放页面级排布（吸顶检索行、整卡可点、展开态边框），不定义色值与间距数值。 */
+
+/* 检索行吸顶（页面设计第 58 行：吸顶高度 56px）。 */
+.searchRow {
+  position: sticky;
+  top: var(--space-2);
+  z-index: 10;
+  display: grid;
+  gap: var(--space-2);
+  padding-block: var(--space-2);
+  background: var(--bg);
+}
+
+/* 圆角胶囊搜索输入（页面设计第 16 行「.field 变体、圆角胶囊」）。 */
+.searchInput {
+  width: 100%;
+  min-height: 44px;
+  padding-inline: var(--space-4);
+  border-radius: var(--radius-pill);
+}
+
+.tabs {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.results {
+  display: grid;
+}
+
+/* 整卡可点：按钮承担点击与键盘可达，视觉上不可见（内容自己排布）。 */
+.cardButton {
+  display: grid;
+  gap: var(--space-2);
+  width: 100%;
+  padding: 0;
+  border: none;
+  background: none;
+  color: inherit;
+  text-align: start;
+}
+
+.card {
+  padding: var(--space-4) 0;
+}
+
+/* 展开态：边框转 --fg-2 色以示「进入阅读」，高度过渡 240ms。 */
+.reading {
+  border: 1px solid var(--fg-2);
+  border-radius: var(--radius-md);
+  padding: var(--space-4);
+  transition: border-color var(--motion-base) var(--ease-standard);
+}
+
+/* deep-link 定位到的一次性高亮。 */
+.focused {
+  box-shadow: var(--focus-ring);
+}
+
+.clamp {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.sectionHeading {
+  margin-top: var(--space-3);
+  font-size: var(--text-base);
+  font-weight: 600;
+}
+
+.cardBody {
+  margin-top: var(--space-3);
+  padding: var(--space-3);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-md);
+}
+
+.withdrawnTitle {
+  margin-top: var(--space-2);
+  font-size: var(--text-base);
+  font-weight: 600;
+}

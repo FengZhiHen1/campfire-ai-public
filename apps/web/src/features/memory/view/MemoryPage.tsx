@@ -13,10 +13,11 @@
  *   - 禁止使用 accent（本页是工具页，纠正走 secondary；页面设计 token 使用节）
  */
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useState } from 'react';
 import { Link } from 'react-router';
 
 import { AppShell } from '../../../shared/ui/AppShell';
+import { ListTail } from '../../../shared/ui/ListTail';
 import { EmptyState, ErrorCard, Skeleton } from '../../../shared/ui/StatePrimitives';
 import type { MemoryPort } from '../application/ports';
 import { dateHeading, groupByDate, occurredAtLabel, sourceLabel } from '../domain/episodes';
@@ -238,7 +239,14 @@ export function MemoryPage({ port }: MemoryPageProps) {
             </section>
           )}
 
-          {page.hasMore && <TimelineTail loading={page.loadingMore} onReachEnd={page.loadMore} />}
+          {page.hasMore && (
+            <ListTail
+              loading={page.loadingMore}
+              loadingLabel={COPY.loadingMoreLabel}
+              loadMoreLabel={COPY.loadMore}
+              onReachEnd={page.loadMore}
+            />
+          )}
         </>
       )}
 
@@ -263,63 +271,6 @@ export function MemoryPage({ port }: MemoryPageProps) {
         </div>
       )}
     </AppShell>
-  );
-}
-
-/** 触底分页的尾部 props。 */
-interface TimelineTailProps {
-  loading: boolean;
-  onReachEnd(): Promise<void>;
-}
-
-/**
- * 渲染列表尾部：触底自动分页。
- *
- * 为什么在 `IntersectionObserver` 不可用时要给一个显式按钮：自动分页在缺少该 API 的
- * 环境里（jsdom、以及部分老浏览器）会静默失去「还有下一页」的能力——使用者看到的是
- * 一条没有尽头的短列表，而数据其实还有。给按钮是让这份能力在降级环境下仍然存在，
- * 不是给设计加装饰；有 Observer 时按钮不渲染（设计只写呼吸点）。
- */
-function TimelineTail({ loading, onReachEnd }: TimelineTailProps) {
-  const sentinel = useRef<HTMLDivElement | null>(null);
-
-  useEffect(() => {
-    const node = sentinel.current;
-    if (node === null || typeof IntersectionObserver === 'undefined') return;
-    const observer = new IntersectionObserver((entries) => {
-      if (entries.some((entry) => entry.isIntersecting)) void onReachEnd();
-    });
-    observer.observe(node);
-    return () => {
-      observer.disconnect();
-    };
-  }, [onReachEnd]);
-
-  if (typeof IntersectionObserver === 'undefined') {
-    return (
-      <div className={styles.tail}>
-        <button
-          className="btn btn-quiet"
-          disabled={loading}
-          onClick={() => {
-            void onReachEnd();
-          }}
-          type="button"
-        >
-          {loading ? COPY.loadingMore : COPY.loadMore}
-        </button>
-      </div>
-    );
-  }
-
-  return (
-    <div className={styles.tail} ref={sentinel}>
-      {loading && (
-        <span className="meta">
-          <span className="flame-dot sm" aria-hidden="true" /> {COPY.loadingMoreLabel}
-        </span>
-      )}
-    </div>
   );
 }
 
