@@ -560,9 +560,19 @@ input[aria-invalid='true'] {
  * 为什么偏离契约源：z-index 必须高于 .tab-bar（40）——两者同为 position:fixed，否则 tab 栏会盖住
  * sheet 底部，在真机高度下「取消/退出」两个按钮正好落在 tab 栏区域内而不可点（实测重叠 57px、
  * 按钮中心 elementFromPoint 命中 a.tab-item）。契约未定义 z-index 层级 token，故用字面量，
- * 与 .tab-bar 的 40 同族。 */
+ * 与 .tab-bar 的 40 同族。
+ *
+ * 与契约的第 6 处单侧差异：契约源 components.html:225 没有 inset-inline。
+ *
+ * 为什么偏离契约源：本元素 position:fixed + width:100% + margin:0 auto，而 left/right 为 auto 时
+ * 取「静态位置」——它是 .phone-shell（global.css 自带 --container-gutter-phone 的 16px 左右内边距）
+ * 的子元素，静态位置就落在内容盒左边界上，于是整体右移一个 gutter：390 视口实测 x=16 w=390
+ * （右边界 406 被裁掉 16px，左右不对称、右上圆角不可见）；900 视口实测 shell 210..690、
+ * sheet 226..706，同样偏右 16px。补 inset-inline:0 后 sheet 与契约同族的 .tab-bar 一致
+ * （后者契约源就带这条，实测 x=0 w=390）。契约源缺这条属漏项，已登记回写（审查报告回写清单 f）。 */
 .confirm-sheet {
   position: fixed;
+  inset-inline: 0;
   top: auto;
   bottom: 0;
   z-index: 50;
