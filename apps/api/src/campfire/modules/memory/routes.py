@@ -17,6 +17,7 @@ Agent 运行装配（docs/项目结构设计.md 第 5 节），而记忆面不�
 
 from __future__ import annotations
 
+import logging
 import uuid
 from datetime import datetime
 from typing import Annotated
@@ -30,7 +31,12 @@ from campfire.core.auth.supertokens import require_session
 from campfire.core.config import get_settings
 from campfire.core.db import session_scope
 from campfire.modules.memory import deletion
-from campfire.modules.memory.errors import MemoryConfigurationError, MemoryDataError, MemoryUnavailableError
+from campfire.modules.memory.errors import (
+    EpisodeKeyOwnedByAnotherAccountError,
+    MemoryConfigurationError,
+    MemoryDataError,
+    MemoryUnavailableError,
+)
 from campfire.modules.memory.graph import get_shared_memory_graph
 from campfire.modules.memory.identity import (
     AccountId,
@@ -68,6 +74,12 @@ _SESSION_TOKEN = "session="
 #: 越权与不存在必须逐字相同（本项目被机械守卫的不变量）：区分它们等于提供
 #: episode 枚举通道。本文件里出现 404 的地方一律引用本常量，不另写文案。
 NOT_FOUND_MESSAGE = "该记忆不存在"
+
+#: 账本状态不可信（不变量破坏）时的 503 文案。与图库故障同一状态码：都表示
+#: 「现在答不了」，而不得伪装成「标识写错了」——形状校验在入口已经做过。
+LEDGER_UNUSABLE_MESSAGE = "记忆存储暂时不可用"
+
+logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
@@ -393,10 +405,18 @@ async def delete_episode(
     标识形状在入口校验（本包裁决 7）：非法形状 → 422，与「episode 不存在」
     （404）分开——形状校验是载荷问题，重试同样的请求不会变好。
 
+    错误码按异常类型分派，不按消息文本（2026-09-30，D-40）
+    ------------------------------------------------------
+
+    跨账号守卫抛 `EpisodeKeyOwnedByAnotherAccountError`（`deletion.py` 在用例边界
+    把 `record_deletion` 的跨账号失败类型化）→ 404；其余 `MemoryDataError` 是账本
+    不变量问题 → 503。判据不能用 `str(exc)` 做子串匹配：文案一改就会把跨账号命中
+    静默降级成 422「标识形状非法」。
+
     Raises（对外映射）:
         404: 该 episode 不存在，或不属于当前账号（越权与不存在逐字同文案）。
         422: 标识形状非法。
-        503: 本库（账本）不可用。
+        503: 本库（账本）不可用或账本状态不可信。
     """
     try:
         key = to_episode_key(episode_key)
@@ -425,13 +445,23 @@ async def delete_episode(
                 return _error(404, NOT_FOUND_MESSAGE, "not_found")
 
             result = await deletion.delete_episode(session, account_id=account, episode_key=key)
-    except MemoryDataError as exc:
+    except EpisodeKeyOwnedByAnotherAccountError:
         # 跨账号守卫（`record_deletion`）的兜底：账本判据通过之后，同一 key 仍可能
         # 被别的账号抢先写进账本（`episode_key` 由 uuid5 派生，可跨账号撞车，
-        # 见 `record_deletion` 的 Note）。与「不存在」同形处理。
-        if "已被其它账号" in str(exc):
-            return _error(404, NOT_FOUND_MESSAGE, "not_found")
-        return _error(422, "episode 标识形状非法", "invalid_payload")
+        # 见 `record_deletion` 的 Note）。与「不存在」同形处理——判据是异常类型，
+        # 不是异常文案（`errors.py` 的纪律：文案一改就会静默降级成 422）。
+        return _error(404, NOT_FOUND_MESSAGE, "not_found")
+    except MemoryDataError as exc:
+        # 其余 `MemoryDataError`（形状非法、原因不在词表、账本状态不一致）落在这里。
+        # 形状不可能有问题：本函数开头已把同一个 `key` 校验过，非法标识到不了这里。
+        # 因此不再自称「标识形状非法」（那会把排查方向引向载荷），而是如实报存储不可用，
+        # 并把真正的 operation/detail 留给日志——响应不复述内部细节。
+        logger.error(
+            "删除的账本写入失败：operation=%s detail=%s",
+            exc.operation,
+            exc.detail,
+        )
+        return _unavailable(LEDGER_UNUSABLE_MESSAGE)
     except MemoryConfigurationError:  # pragma: no cover —— 删除不构造图库，防御性保留
         return _unavailable("记忆图库暂时不可用")
     except MemoryUnavailableError:
@@ -487,8 +517,9 @@ async def correct_episode(
     该取舍登记在交付报告的未决问题节。
 
     Raises（对外映射）:
-        404: 跨账号命中账本守卫（同删除）。
+        404: 跨账号命中账本守卫（按异常类型分派，同删除）。
         422: 标识形状非法、内容为空、时间无法解析或缺时区。
+        503: 本库（账本）不可用或账本状态不可信。
     """
     try:
         key = to_episode_key(episode_key)
@@ -512,10 +543,16 @@ async def correct_episode(
     try:
         async with session_scope(get_settings()) as session:
             superseded = await deletion.correct_episode(session, account_id=account, corrected_episode_key=key)
+    except EpisodeKeyOwnedByAnotherAccountError:
+        # 与删除同一判据（同一段分派，见 `delete_episode` 的说明）。
+        return _error(404, NOT_FOUND_MESSAGE, "not_found")
     except MemoryDataError as exc:
-        if "已被其它账号" in str(exc):
-            return _error(404, NOT_FOUND_MESSAGE, "not_found")
-        return _error(422, "episode 标识形状非法", "invalid_payload")
+        logger.error(
+            "纠正撤下旧记忆失败：operation=%s detail=%s",
+            exc.operation,
+            exc.detail,
+        )
+        return _unavailable(LEDGER_UNUSABLE_MESSAGE)
     except MemoryConfigurationError:  # pragma: no cover —— 撤下不构造图库，防御性保留
         return _unavailable("记忆图库暂时不可用")
 

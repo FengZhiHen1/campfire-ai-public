@@ -26,6 +26,8 @@
 5. 非法 `episode_key` → 422（形状校验在路由层，本包裁决 7）。
 5b. 删除的两个判据各钉一条（裁决 2）：图库可用且本账号没有这条片段 → 404，
     越权与不存在逐字同文案；图库不可用 → 账本照记并返回 200（契约第 6 节）。
+5c. 跨账号账本守卫按异常类型分派，与异常文案无关（D-40）：删除与纠正两处各钉一条；
+    账本不变量破坏不得被说成「episode 标识形状非法」。
 6. 纠正两步：正常路径返回 201 且 `superseded` / `new_episode_written` 都为真；
    写新失败时返回 **200** 与 `{superseded: true, new_episode_written: false}`
    （本包裁决 3 的中间态形状）——旧记忆已撤下、新记忆未写入。
@@ -622,6 +624,109 @@ async def test_other_accounts_episode_is_not_visible_and_delete_is_404(
     assert foreign not in [item["episode_key"] for item in listing.json()["items"]]
     assert deleted.status_code == 404
     assert deleted.json()["code"] == "not_found"
+
+
+def _reworded_guard(*_args: object, **_kwargs: object) -> None:
+    """账本写入的测试替身：抛跨账号守卫，但措辞与实现里的文案不同（D-40）。"""
+    from campfire.modules.memory.errors import MemoryDataError
+
+    raise MemoryDataError(
+        "这条 key 属于另一个账号（措辞与实现无关）",
+        operation="record_deletion",
+        detail="测试替身",
+    )
+
+
+async def _record_foreign_deletion(episode_key: str) -> None:
+    """把一条 key 记进另一个账号的删除账本（跨账号守卫的触发条件）。"""
+    from campfire.modules.memory.ledger import record_deletion
+
+    async with session_scope(get_settings()) as session:
+        await record_deletion(session, account_id=to_account_id(_ACCOUNT_OTHER), episode_key=episode_key)
+
+
+async def test_delete_dispatches_the_cross_account_guard_by_type_not_by_message(
+    client: httpx.AsyncClient, graph: MemoryGraph, as_account, monkeypatch: pytest.MonkeyPatch
+) -> None:  # noqa: ANN001
+    """跨账号账本守卫 → 404 且逐字文案，判据是异常类型而不是异常文案（D-40）。
+
+    为什么必须有这条：`ledger.record_deletion` 对「词表外的原因」「账本状态不一致」
+    「跨账号守卫」抛的是同一个 `MemoryDataError`，而路由原先按 `"已被其它账号" in str(exc)`
+    分派——文案一改就静默降级成 422「episode 标识形状非法」，把「这条记忆不是你的」
+    说成「你的标识写错了」。本用例把守卫的消息换成不含该子串的措辞，断言分派结果不变。
+
+    触发条件是两个账号因同一个 `pending_id` 派生出同一个 `episode_key`：本账号图里有
+    这条片段（图库判据通过），而账本里那一行属于另一个账号（见 `record_deletion` 的 Note）。
+
+    判别性：修复前本用例得到 422 `invalid_payload`，红。
+    """
+    from campfire.modules.memory import deletion as deletion_module
+
+    shared_pending = str(uuid.uuid4())
+    key = await _write(graph, content="撞车的记忆", pending=shared_pending)
+    await _write(graph, content="撞车的记忆", account=_ACCOUNT_OTHER, pending=shared_pending)
+    await _record_foreign_deletion(key)
+    monkeypatch.setattr(deletion_module, "record_deletion", _reworded_guard)
+
+    response = await client.delete(f"/memory/episodes/{key}")
+
+    assert response.status_code == 404
+    assert response.json() == {"detail": NOT_FOUND_MESSAGE, "code": "not_found"}
+
+
+async def test_correct_dispatches_the_cross_account_guard_by_type_not_by_message(
+    client: httpx.AsyncClient, graph: MemoryGraph, as_account, monkeypatch: pytest.MonkeyPatch
+) -> None:  # noqa: ANN001
+    """纠正第一步（撤下旧记忆）的跨账号守卫同样按类型分派 404（D-40 的第二处）。
+
+    与删除同一判据，只是走 `/correct`：两处是复制的同一段分派，必须一起钉住，
+    否则只修一处会留下另一处仍在按文案分派。
+    """
+    from campfire.modules.memory import deletion as deletion_module
+
+    key = str(uuid.uuid4())
+    await _record_foreign_deletion(key)
+    monkeypatch.setattr(deletion_module, "record_deletion", _reworded_guard)
+
+    response = await client.post(
+        f"/memory/episodes/{key}/correct",
+        json={"occurred_at": _NOW.isoformat(), "content": "纠正后的内容"},
+    )
+
+    assert response.status_code == 404
+    assert response.json() == {"detail": NOT_FOUND_MESSAGE, "code": "not_found"}
+
+
+async def test_ledger_invariant_failure_is_not_reported_as_a_payload_problem(
+    client: httpx.AsyncClient, graph: MemoryGraph, as_account, monkeypatch: pytest.MonkeyPatch
+) -> None:  # noqa: ANN001
+    """账本不变量破坏（未插入也查不到）→ 不得被说成「episode 标识形状非法」（D-40）。
+
+    形状校验在入口已经做过（非法标识在进账本之前就返回 422），能走到账本写入的 key
+    一定是合法形状。因此这一支只能是存储侧的不变量破坏，按「记忆存储不可用」回 503
+    ——把排查方向指向载荷是错的一侧。
+
+    判别性：修复前本用例得到 422 `invalid_payload`，红。
+    """
+    from campfire.modules.memory import deletion as deletion_module
+    from campfire.modules.memory.errors import MemoryDataError
+
+    key = await _write(graph, content="本账号的记忆")
+
+    def _inconsistent(*_args: object, **_kwargs: object) -> None:
+        raise MemoryDataError(
+            "删除记录既未插入也查不到，账本状态不一致",
+            operation="record_deletion",
+            detail="测试替身",
+        )
+
+    monkeypatch.setattr(deletion_module, "record_deletion", _inconsistent)
+
+    response = await client.delete(f"/memory/episodes/{key}")
+
+    assert response.status_code == 503
+    assert response.json()["code"] == "memory_unavailable", "不变量破坏不得被说成载荷问题"
+    assert response.json()["code"] != "invalid_payload"
 
 
 async def test_routes_are_mounted_under_the_memory_prefix() -> None:
