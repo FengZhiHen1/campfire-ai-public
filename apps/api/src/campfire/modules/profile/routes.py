@@ -33,6 +33,7 @@ from campfire.core.authz import (
 )
 from campfire.core.config import get_settings
 from campfire.core.db import session_scope
+from campfire.core.pagination import parse_offset_cursor
 from campfire.modules.profile import service
 from campfire.modules.profile.errors import ProfileError
 from campfire.modules.profile.models import SupportObject
@@ -129,21 +130,6 @@ def _map_error(exc: Exception) -> JSONResponse:
 # ---------------------------------------------------------------------------
 # 分页
 # ---------------------------------------------------------------------------
-
-
-def _parse_cursor(cursor: str | None) -> int | None:
-    """把游标解析成偏移量；非法返回 None 由调用方转 422。
-
-    游标是本面自定的不透明串（十进制偏移量），只由本面产生、只被本面消费。
-    用偏移量而不是键集游标：用例层只接 `limit`（不接「从某键之后」的谓词），
-    面层无法把键集条件下推到查询里，硬做只会得到「看起来是键集、实际是全量重排」
-    的分页。代价是深翻页需要多读若干行，因此配上 `PAGE_WINDOW_MAX` 硬上界。
-    """
-    if cursor is None:
-        return 0
-    if not cursor.isdigit():
-        return None
-    return int(cursor)
 
 
 def _page_window(offset: int, limit: int) -> int:
@@ -551,7 +537,11 @@ async def list_items(
     而 `items` 才是被游标分页的那一条流。把两者混在一个游标里需要「合并后的
     原始顺序」，而用例层的返回结构已经把它们分成两组、丢失了交错关系。
     """
-    offset = _parse_cursor(cursor)
+    # 游标是本面自定的不透明串（十进制偏移量），只由本面产生、只被本面消费。
+    # 用偏移量而不是键集游标：用例层只接 `limit`（不接「从某键之后」的谓词），
+    # 面层无法把键集条件下推到查询里，硬做只会得到「看起来是键集、实际是全量重排」
+    # 的分页。代价是深翻页需要多读若干行，因此配上 `PAGE_WINDOW_MAX` 硬上界。
+    offset = parse_offset_cursor(cursor)
     if offset is None:
         return _error(422, "cursor 不是本面发出的游标", "invalid_payload")
 
