@@ -100,7 +100,11 @@ async def consume_memory_episode(
     episode_uuid = await _write_record_to_graph(graph, record)
 
     # 置 done 与「清理租约」同一次更新（`core/pending_write` 已实现）。
-    await mark_done(session, pending_id=pending_id)
+    # **带租约栅栏**（CORE-03）：抽取可能超过租约时长，期间记录会被另一个 Worker
+    # 重领；若这里不带 `lease_owner`，先领取者的迟到 `mark_done` 会抢先成功，
+    # 把真正写入者的终结挤成失败（实测复现，2026-09-29 评审 C-3）。
+    # 栅栏不匹配说明本次写入已不再被承认——显式失败，不假装成功。
+    await mark_done(session, pending_id=pending_id, lease_owner=lease_owner)
     return ConsumeResult(pending_id=str(pending_id), written=True, episode_uuid=episode_uuid)
 
 
