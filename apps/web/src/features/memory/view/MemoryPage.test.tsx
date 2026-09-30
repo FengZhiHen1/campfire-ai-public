@@ -276,6 +276,38 @@ describe('记忆页 · 纠正', () => {
 });
 
 describe('记忆页 · 触底分页', () => {
+  it('P0 触底加载下一页失败 → 列表尾部给出可见的失败与重试，不静默吞掉', async () => {
+    // 判别性：把分页失败只写进行内状态（没有对应行）或只设 failure 而不改渲染条件时，
+    // alert 永不出现，本用例在 `findByRole('alert')` 处超时失败。
+    let attempt = 0;
+    const p = port({
+      listEpisodes: vi.fn(async (options?: { cursor?: string }) => {
+        if (options?.cursor === undefined) {
+          return { items: [episode({ episode_key: 'e1', content: '第一页的事' })], next_cursor: '20' };
+        }
+        attempt += 1;
+        if (attempt === 1) throw { status: 503 };
+        return { items: [episode({ episode_key: 'e2', content: '第二页的事' })], next_cursor: null };
+      }),
+    });
+    renderPage(p);
+    await screen.findByText('第一页的事');
+
+    fireEvent.click(screen.getByRole('button', { name: '加载更多' }));
+
+    // 失败必须可见（本项目明令禁止静默兜底）：行内错误卡 + 重试。
+    const alert = await screen.findByRole('alert');
+    expect(within(alert).getByText('暂时无法读取记录')).toBeDefined();
+    // 已加载的内容仍在：分页失败不改整页。
+    expect(screen.getByText('第一页的事')).toBeDefined();
+
+    // 重试走同一个游标，成功后追加。
+    fireEvent.click(within(alert).getByRole('button', { name: '重试' }));
+    expect(await screen.findByText('第二页的事')).toBeDefined();
+    expect(screen.getByText('第一页的事')).toBeDefined();
+    expect(p.listEpisodes).toHaveBeenLastCalledWith({ cursor: '20' });
+  });
+
   it('P1 还有下一页时给出加载入口，加载后追加而不是替换', async () => {
     const p = port({
       listEpisodes: vi.fn(async (options?: { cursor?: string }) =>

@@ -178,13 +178,34 @@ export function LibraryPage({ port, searchOverride }: LibraryPageProps) {
               />
             ))}
           </div>
-          {page.hasMore && (
-            <ListTail
-              loading={page.loadingMore}
-              loadingLabel={COPY.loadingMoreLabel}
-              loadMoreLabel={COPY.loadMore}
-              onReachEnd={page.loadMore}
+          {/* 尾部只有一种形态：还有下一页时给加载入口，失败时给错误卡 + 重试。
+           * 分页失败过去只写进整页 `failure` 而 status 仍为 ready，而错误卡只在
+           * status==='error' 渲染——失败因此在界面上零反馈（禁止静默兜底）。 */}
+          {page.loadMoreFailure !== null ? (
+            <ErrorCard
+              actions={
+                <button
+                  className="btn btn-secondary"
+                  onClick={() => {
+                    void page.loadMore();
+                  }}
+                  type="button"
+                >
+                  {COPY.retry}
+                </button>
+              }
+              description={libraryFailureDescription(page.loadMoreFailure)}
+              title={libraryFailureTitle(page.loadMoreFailure)}
             />
+          ) : (
+            page.hasMore && (
+              <ListTail
+                loading={page.loadingMore}
+                loadingLabel={COPY.loadingMoreLabel}
+                loadMoreLabel={COPY.loadMore}
+                onReachEnd={page.loadMore}
+              />
+            )
           )}
         </>
       )}

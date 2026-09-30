@@ -168,15 +168,15 @@ export function MemoryPage({ port }: MemoryPageProps) {
                           {COPY.delete}
                         </button>
                       </div>
-                      {page.rowFailure !== null &&
-                        page.rowFailure.episodeKey === episode.episode_key &&
-                        page.rowFailure.episodeKey !== '' && (
-                          <p className="field-error" role="alert">
-                            {page.rowFailure.failure.kind === 'unknown'
-                              ? '这条记录没有删除成功，请重试'
-                              : memoryFailureTitle(page.rowFailure.failure)}
-                          </p>
-                        )}
+                      {/* 行内错误只属于删除失败：它按条目键归属，因此只在这一行渲染。
+                       * 触底分页失败没有对应的行，走尾部的错误卡（见下）。 */}
+                      {page.rowFailure !== null && page.rowFailure.episodeKey === episode.episode_key && (
+                        <p className="field-error" role="alert">
+                          {page.rowFailure.failure.kind === 'unknown'
+                            ? '这条记录没有删除成功，请重试'
+                            : memoryFailureTitle(page.rowFailure.failure)}
+                        </p>
+                      )}
                     </article>
                   );
                 })}
@@ -239,13 +239,36 @@ export function MemoryPage({ port }: MemoryPageProps) {
             </section>
           )}
 
-          {page.hasMore && (
-            <ListTail
-              loading={page.loadingMore}
-              loadingLabel={COPY.loadingMoreLabel}
-              loadMoreLabel={COPY.loadMore}
-              onReachEnd={page.loadMore}
+          {/* 尾部只有一种形态：还有下一页时给加载入口，失败时给错误卡 + 重试。
+           * 触底失败曾经被写进行内错误（空键占位），而渲染条件要求键匹配真实条目，
+           * 于是失败在界面上零反馈——这条路径必须可见（禁止静默兜底）。 */}
+          {page.loadMoreFailure !== null ? (
+            <ErrorCard
+              actions={
+                isRetryable(page.loadMoreFailure) ? (
+                  <button
+                    className="btn btn-secondary"
+                    onClick={() => {
+                      void page.loadMore();
+                    }}
+                    type="button"
+                  >
+                    {COPY.retry}
+                  </button>
+                ) : undefined
+              }
+              description={memoryFailureDescription(page.loadMoreFailure)}
+              title={memoryFailureTitle(page.loadMoreFailure)}
             />
+          ) : (
+            page.hasMore && (
+              <ListTail
+                loading={page.loadingMore}
+                loadingLabel={COPY.loadingMoreLabel}
+                loadMoreLabel={COPY.loadMore}
+                onReachEnd={page.loadMore}
+              />
+            )
           )}
         </>
       )}
