@@ -4,8 +4,9 @@
 `deletion.correct_episode`）暴露成记忆面契约的 HTTP 形状，并把图库不可用与
 「没有记忆」严格区分开。
 边界：只做 HTTP 形状、载荷校验与错误码映射——时间模型、账本过滤、分区键都归
-      `modules/memory` 的既有用例；本模块不直接查图库（唯一例外是纠正时写新片段，
-      见 `correct_episode` 的说明），也不装配 Agent 运行。
+      `modules/memory` 的既有用例。两处图库访问都经用例层函数转发
+      （`store.episode_exists` 判存在性、纠正时写新片段），本模块不自建查询，
+      也不装配 Agent 运行。
 参考：docs/技术设计/面/profile/记忆面HTTP契约.md 第 2～6 节；
       docs/技术设计/technical-details/通用记忆.md 第 3、4、7 节；
       docs/技术设计/decisions/记忆删除走用户确认入口.md。
@@ -138,6 +139,30 @@ def _unavailable(detail: str) -> JSONResponse:
     而真相是读不到了。`detail` 只给异常类别，不复述连接串与凭据。
     """
     return _error(503, detail, "memory_unavailable")
+
+
+async def _episode_presence(account: AccountId, episode_key: EpisodeUuid) -> bool | None:
+    """这条 episode 在本账号的时间线里是否存在；判不了时返回 None。
+
+    三值返回是本面「删除与纠正」共用的判据形状，不要压成两值：
+
+    - `True`：图库里有这条已完成的片段；
+    - `False`：本账号没有这条片段（不存在，或属于别人）→ 404，文案与「不存在」
+      逐字相同（契约第 2 节：区分两者等于提供 episode 枚举通道）；
+    - `None`：图库未配置或不可用 → 判不了存在性，既不报 404 也不报 503，
+      由调用方按契约第 6 节继续——删除与纠正的「撤下」步骤写的是本库账本，
+      与图库是两回事，图库故障不该让撤下失效。
+
+    为什么两处共用一处实现：删除与纠正必须给出逐字相同的 404，而两处各写一遍
+    正是「纠正漏了这一步」这个缺陷的成因——同一条判据复制两份就会有一份漂移。
+
+    异常类型是唯一判据（见 `errors.MemoryModuleError`），不靠异常消息文本：
+    文案一改就会让「图库不可用」静默变成「不存在」。
+    """
+    try:
+        return await episode_exists(get_shared_memory_graph(), account, episode_key=episode_key)
+    except (MemoryConfigurationError, MemoryUnavailableError):
+        return None
 
 
 # ---------------------------------------------------------------------------
@@ -436,12 +461,7 @@ async def delete_episode(
 
             # `None` = 图库判定不了（未配置或不可用）：不报 404，也不报 503，
             # 继续走账本写入——见函数说明第 3 条。
-            exists: bool | None
-            try:
-                exists = await episode_exists(get_shared_memory_graph(), account, episode_key=key)
-            except (MemoryConfigurationError, MemoryUnavailableError):
-                exists = None
-            if exists is False:
+            if await _episode_presence(account, key) is False:
                 return _error(404, NOT_FOUND_MESSAGE, "not_found")
 
             result = await deletion.delete_episode(session, account_id=account, episode_key=key)
@@ -516,8 +536,24 @@ async def correct_episode(
     ——每次请求都是一个新的新片段（新记忆本来就是一具新记录，语义上无需幂等）。
     该取舍登记在交付报告的未决问题节。
 
+    先判「这条 episode 在不在」再撤下（契约第 2 节的 404 行）
+    ------------------------------------------------------
+
+    账本的唯一约束是全局的，且账本行没有回收路径：为一条从未存在的 key 记一行
+    `correction`，会让该 key 日后成为真实 episode（`identity.derive_episode_uuid`）
+    时从诞生起就被账本过滤隐去。判据与删除逐字同源（`_episode_presence`）；
+    位置在写账本之前——撤下一旦提交，404 就只能在副作用之后判出来。
+    载荷校验（标识形状、时间、内容）仍先于存在性判定：载荷问题重试不会变好，
+    而存在性问题换个请求可能就成立。
+
+    图库判不了存在性（`None`）时不阻断纠正：照旧撤下并尝试写新片段，与契约第 6 节
+    「删除与纠正的撤下步骤仍可用」一致——图库故障期间让纠正整体失败，等于让本已
+    生效于本库的撤下静默失效。代价与删除同笔：图库故障窗口内可能为一条判不了
+    存在性的 key 记一行账本，这是三分支里判不了那一支的固有代价。
+
     Raises（对外映射）:
-        404: 跨账号命中账本守卫（按异常类型分派，同删除）。
+        404: 该 episode 不存在，或不属于当前账号（越权与不存在逐字同文案）；
+             跨账号命中账本守卫时同样 404（按异常类型分派，同删除）。
         422: 标识形状非法、内容为空、时间无法解析或缺时区。
         503: 本库（账本）不可用或账本状态不可信。
     """
@@ -538,6 +574,13 @@ async def correct_episode(
         account = to_account_id(account_id)
     except MemoryDataError:
         return _unavailable("记忆分区键不可用")
+
+    # 存在性判据与删除同源（见 `_episode_presence`）：`False` → 404 与「不存在」
+    # 逐字同文案；`None`（图库不可用）不阻断撤下。必须早于账本写入——账本行
+    # 全局唯一且无回收路径，为一条从未存在的 key 记 `correction` 会永久隐去
+    # 该 key 日后可能出现的真实记忆。
+    if await _episode_presence(account, key) is False:
+        return _error(404, NOT_FOUND_MESSAGE, "not_found")
 
     # --- 第一步：撤下旧记忆（本库事务，独立提交） ---
     try:
