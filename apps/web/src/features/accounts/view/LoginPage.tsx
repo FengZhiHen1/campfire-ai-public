@@ -107,9 +107,11 @@ export function LoginPage({ auth, initialMode = 'login' }: LoginPageProps) {
           {mode === 'login' ? '登录' : '注册账号'}
         </h2>
 
-        {/* server-error 与限流共用这一个横幅位置（页面设计状态覆盖表两行同形态）。 */}
+        {/* server-error 与限流共用这一个横幅位置（页面设计状态覆盖表两行同形态）。
+            variant="form" 落实设计第 46 行的「`.error-card` 紧凑变体」——契约里的表单横幅是 .error-card.form-feedback。 */}
         {form.serverError !== null && (
           <ErrorCard
+            variant="form"
             title={form.serverError.kind === 'rate-limited' ? '暂时无法继续' : '没有成功'}
             description={form.serverError.message}
           />

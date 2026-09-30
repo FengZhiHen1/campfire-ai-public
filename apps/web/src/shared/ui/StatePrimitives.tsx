@@ -66,6 +66,9 @@ export function EmptyState({ title, description, action }: EmptyStateProps) {
   );
 }
 
+/** 错误卡形态：'form' = 表单内错误横幅，追加契约的间距变体 .form-feedback。 */
+export type ErrorCardVariant = 'form';
+
 /** 错误卡 props。 */
 export interface ErrorCardProps {
   /** 错误标题：说清哪件事没成功（不写「出错了」这类无信息量的句子）。 */
@@ -74,21 +77,27 @@ export interface ErrorCardProps {
   description: string;
   /** 可选操作区（重试、返回等）。 */
   actions?: ReactNode;
+  /** 形态；省略即整块错误态。'form' 对应契约里唯一的横幅变体（components.html 的 .form-feedback）。 */
+  variant?: ErrorCardVariant;
 }
 
 /**
  * 渲染错误卡。
  *
  * 前置: title 与 description 非空
- * 后置: 输出 .error-card 容器；作为告警语义暴露给辅助技术（role="alert"）
+ * 后置: 输出 .error-card 容器（variant='form' 时并带 .form-feedback）；作为告警语义暴露给辅助技术（role="alert"）
  * 异常: 无
  *
  * 为什么带 role="alert"：错误卡是「操作没有成功」的即时告知，屏幕阅读器用户
  * 若只在视觉上看到红色边框，会以为提交仍在进行。
+ *
+ * 为什么把变体做成参数而不是由页面拼类名：契约只为「表单内横幅」定义了间距变体，
+ * 形态归组件，页面就不必知道变体的类名（也避免下一处表单各拼各的）。
  */
-export function ErrorCard({ title, description, actions }: ErrorCardProps) {
+export function ErrorCard({ title, description, actions, variant }: ErrorCardProps) {
+  const className = variant === 'form' ? 'error-card form-feedback' : 'error-card';
   return (
-    <div className="error-card" role="alert">
+    <div className={className} role="alert">
       <strong className="ec-title">{title}</strong>
       <p>{description}</p>
       {actions}
