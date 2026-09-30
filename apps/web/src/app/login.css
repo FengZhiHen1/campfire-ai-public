@@ -1,0 +1,5 @@
+/* 登录页局部样式：只消费 token 变量，不定义色值与间距。 */
+
+.login-page {
+  justify-content: flex-start;
+}
