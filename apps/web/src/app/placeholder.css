@@ -1,0 +1,7 @@
+/* 占位页局部样式：只消费 token 变量。 */
+
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
