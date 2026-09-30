@@ -65,7 +65,7 @@ describe('首页 · 布局与入口', () => {
 
     expect(container.querySelectorAll('.mini-card')).toHaveLength(2);
     expect(screen.getByRole('link', { name: /案例库/ }).getAttribute('href')).toBe('/cases');
-    expect(screen.getByRole('link', { name: /资料库说明/ }).getAttribute('href')).toBe('/cases?section=library');
+    expect(screen.getByRole('link', { name: /资料库说明/ }).getAttribute('href')).toBe('/cases?section=knowledge');
   });
 
   it('P0 次级入口文案逐字', () => {
