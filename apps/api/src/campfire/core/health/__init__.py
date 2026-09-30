@@ -51,8 +51,14 @@ class HealthReport:
 
     @property
     def is_ready(self) -> bool:
-        """全部能力可用才算就绪。"""
-        return all(item.status is Status.OK for item in self.components)
+        """全部能力可用才算就绪；一项都没探测时**不就绪**。
+
+        空集合上 `all(...)` 恒为真——那会留下一条永远不会失败的闸门
+        （AGENTS.md 行为准则：提取到 0 条即应失败，而不是静默通过）。
+        「每项都 ok」与「没有任何项」必须分开判断，否则将来把组件列表改成
+        按配置或插件构造时，装配漏传会被读成一切正常。
+        """
+        return bool(self.components) and all(item.status is Status.OK for item in self.components)
 
     @property
     def degraded(self) -> tuple[ComponentHealth, ...]:
