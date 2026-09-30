@@ -28,7 +28,7 @@ import pytest
 import pytest_asyncio
 
 from campfire.core.config import EMBEDDING_DIM, get_settings
-from campfire.core.db import dispose_engine, session_scope
+from campfire.core.db import session_scope
 from campfire.modules.memory.deletion import correct_episode, delete_episode
 from campfire.modules.memory.derived import read_emergency_facts
 from campfire.modules.memory.graph import MemoryGraph, OrderedCrossEncoder
@@ -71,19 +71,6 @@ async def _require_database() -> AsyncIterator[None]:
     if not get_settings().database_url:
         pytest.skip("未配置 DATABASE_URL——集成测试需要 docker compose up -d postgres")
     yield
-
-
-@pytest_asyncio.fixture(autouse=True)
-async def _dispose_shared_engine() -> AsyncIterator[None]:
-    """每个用例前后释放 ``core/db`` 的全局共享引擎。
-
-    原因：pytest-asyncio 为每个用例新建事件循环，而共享引擎的连接池绑定在首次使用
-    的事件循环上——跨循环复用会抛 ``RuntimeError: Event loop is closed``。
-    同处理见 ``test_memory_ledger_integration.py``。
-    """
-    await dispose_engine()
-    yield
-    await dispose_engine()
 
 
 @pytest_asyncio.fixture

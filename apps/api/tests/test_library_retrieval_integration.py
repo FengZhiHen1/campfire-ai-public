@@ -13,15 +13,13 @@
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator
 from pathlib import Path
 
 import pytest
-import pytest_asyncio
 from sqlalchemy import select
 
 from campfire.core.config import get_settings
-from campfire.core.db import create_engine, create_sync_engine, dispose_engine, session_scope
+from campfire.core.db import create_engine, create_sync_engine, session_scope
 from campfire.modules.library.embedding import EMBEDDING_DIM
 from campfire.modules.library.ingestion import build_vector_store, ingest_file
 from campfire.modules.library.models import KnowledgeItem, RetrievedNode
@@ -42,14 +40,6 @@ class _FakeEmbedder:
 
 async def _fake_embed_query(query: str) -> list[float]:
     return _fake_vector(query)
-
-
-@pytest_asyncio.fixture(autouse=True)
-async def _dispose_shared_engine() -> AsyncIterator[None]:
-    """每个用例前后释放共享引擎（跨事件循环复用会失效，见摄取集成测试的说明）。"""
-    await dispose_engine()
-    yield
-    await dispose_engine()
 
 
 def _require_db() -> str:
