@@ -455,6 +455,141 @@ async def test_non_ok_result_with_account_created_does_not_release_the_code() ->
 
 
 @pytest.mark.asyncio
+async def test_exception_after_account_created_does_not_release_the_code(client: object) -> None:
+    """**建号成功后 original 抛异常时，不得释放邀请码**（阻断级缺陷的回归测试）。
+
+    ## 这条守的是什么
+
+    SDK 的顺序是 ``implementation.py:738`` **建号** → ``:755`` ``post_auth_checks``
+    → 再 ``create_new_session``——**建号之后仍有会抛异常的步骤**。
+    修复前 ``except Exception`` 分支**无条件**释放邀请码，于是存在真实路径：
+    「账号已建、随后抛异常」→ 码退回 ``issued`` → 同一张码再建第二个账号
+    （``AC-15``「一码只用一次」被破坏）。
+
+    评审实测复现方式：劫持 ``create_new_session`` 令其抛错，走完整 HTTP 注册，
+    得到「账号已建但码回到 issued」。本用例用**假的 original**（真的建号、然后抛错）
+    复现同一组合，无需劫持 SDK 内部函数。
+
+    判别性：把 ``except`` 分支改回无条件 ``_release_quietly(code)``，本用例失败
+    （码会回到 ``issued``）。
+    """
+    # client 夹具已负责「未配置即跳过」并**初始化 SDK**——本用例直接调复写函数，
+    # 因此必须依赖它完成的 SDK 装配（第一版漏了这个参数，实测报
+    # GeneralError: Initialisation not done）。
+    await _clear()
+    try:
+        from supertokens_python.recipe.emailpassword.asyncio import sign_up
+
+        from campfire.modules.accounts import registration as reg
+
+        email = _unique_email("exc")
+        code = await _issue_code()
+
+        async def fake_original(  # noqa: ANN202 —— 模拟 SDK：**先建号**，再抛异常
+            form_fields, tenant_id, session, linking, api_options, user_context
+        ):
+            created = await sign_up(tenant_id, email, _PASSWORD)
+            assert type(created).__name__.startswith("SignUpOk"), f"构造失败，账号没建出来：{created}"
+            raise RuntimeError("模拟 create_new_session 失败")
+
+        override = reg.make_sign_up_override(fake_original)
+        with pytest.raises(RuntimeError):
+            await override(
+                [
+                    FormField("email", email),
+                    FormField("password", _PASSWORD),
+                    FormField(INVITE_CODE_FORM_FIELD, code),
+                ],
+                "public",
+                None,
+                None,
+                None,
+                {},
+            )
+
+        # 前置确认：账号**确实**建出来了（否则本用例没有判别力）。
+        assert await _account_exists(email) is True, "构造失败：账号没建出来，本用例失去判别力"
+
+        # 核心断言：码**不得**回到 issued。
+        async with session_scope(get_settings()) as session:
+            record = await get_invite_code(session, code=normalize_invite_code(code))
+        assert record is not None
+        assert record.state != STATE_ISSUED, "建号已发生却释放了邀请码——同一个码可以再建一个账号（AC-15 破坏）"
+    finally:
+        await _clear()
+
+
+@pytest.mark.asyncio
+async def test_session_credentials_go_to_cookies_not_headers(client: object) -> None:
+    """**会话凭据必须走 cookie，不得出现在响应头**（2026-09-30 评审抓出的重要级）。
+
+    ## 为什么这是设计冲突而不是风格问题
+
+    认证与账号第 5 节定的是「**cookie 型会话，凭据不可被前端 JavaScript 读取**」，
+    项目结构设计第 9 节也写「前端不得读取或存储凭据」。而 SDK 的默认传输方式是
+    「按 `st-auth-mode` 头决定，缺省落 **header**」——实测
+    `session_request_functions.py:285-290`：`"any"` 且无该头时**落成 `"header"`**。
+    于是注册会把 access/refresh token 放进响应头（**JS 可读**），与上述两条冲突。
+
+    判别性：去掉 `session.init` 里的 `get_token_transfer_method` 固定，
+    本用例失败（响应头会重新出现 `st-access-token`、`Set-Cookie` 数为 0）。
+    """
+    settings = _settings_or_skip()
+    await _clear()
+    try:
+        email = _unique_email("cookie")
+        code = await _issue_code()
+
+        response = await client.post(_signup_path(settings), json=_signup_payload(email, code))  # type: ignore[attr-defined]
+
+        assert _is_ok(response), f"有效码注册应成功：{response.text[:300]}"  # type: ignore[attr-defined]
+
+        header_names = {name.lower() for name in response.headers}  # type: ignore[attr-defined]
+        assert "st-access-token" not in header_names, (
+            "access token 出现在响应头里——前端 JS 可读，与「凭据不可被前端读取」冲突"
+        )
+        assert "st-refresh-token" not in header_names, "refresh token 出现在响应头里"
+        assert len(response.headers.get_list("set-cookie")) > 0, (  # type: ignore[attr-defined]
+            "注册未下发任何 Set-Cookie——凭据没有走 cookie 传输"
+        )
+    finally:
+        await _clear()
+
+
+@pytest.mark.asyncio
+async def test_anonymous_account_existence_endpoint_is_disabled(client: object) -> None:
+    """**匿名的账号存在性端点必须关闭**（2026-09-30 评审抓出）。
+
+    SDK 默认挂载 ``GET /auth/signup/email/exists``（``disable_email_exists_get``
+    默认 ``False``），**无需会话**即可回答「某账号名是否存在」。评审用真实 uvicorn
+    实测：已存在 → ``200 {"exists":true}``、不存在 → ``exists:false``——**可区分**。
+    这与第 5 节「不区分『账号不存在』与『密码错误』」（防账号枚举）是同一条纪律的反面。
+
+    判别性：去掉 `api_overrides` 里的 `disable_email_exists_get = True`，
+    本用例失败（该端点会返回 200 并泄露存在性）。
+    """
+    settings = _settings_or_skip()
+    await _clear()
+    try:
+        # 先造一个**确实存在**的账号，让「可区分」有判别力。
+        existing = _unique_email("exists")
+        code = await _issue_code()
+        created = await client.post(_signup_path(settings), json=_signup_payload(existing, code))  # type: ignore[attr-defined]
+        assert _is_ok(created), f"前置账号创建失败：{created.text[:300]}"  # type: ignore[attr-defined]
+
+        base = settings.supertokens_api_base_path.rstrip("/")
+        for email in (existing, _unique_email("absent")):
+            response = await client.get(f"{base}/signup/email/exists", params={"email": email})  # type: ignore[attr-defined]
+            # 端点关闭后应**不可用**（404 或等价），绝不能返回存在性。
+            assert response.status_code != 200, (
+                f"匿名存在性端点仍可用（HTTP {response.status_code}，body={response.text[:160]}）"
+                "——任何人都能查任意账号名是否存在"
+            )
+    finally:
+        await _clear()
+
+
+@pytest.mark.asyncio
 async def test_rejection_message_does_not_distinguish_reasons(client: object) -> None:
     """四种拒绝（缺失/不存在/已撤销/已用）的**响应体一致**——不可枚举。
 

@@ -349,9 +349,28 @@ def make_sign_up_override(
                 user_context,
             )
         except Exception:
-            # 建号**抛异常**（而非返回错误结果）时也必须补偿释放，否则该码永久停在
-            # 「已占用」。这是第 4 节步骤 3 的完整含义：失败包括抛异常。
-            await _release_quietly(code)
+            # 建号**抛异常**时也要走与非 OK 分支**同一套判据**：先确认账号没建出来，
+            # 再决定是否释放。
+            #
+            # ⚠️ **这里曾是一个阻断级缺陷**（2026-09-30 评审抓出，与前面非 OK 分支
+            # 同源）：原实现**无条件**释放。而 SDK 的顺序是
+            # `implementation.py:738` 建号 → `:755` `post_auth_checks` → 再
+            # `create_new_session`——**建号之后仍有会抛异常的步骤**。
+            # 因此存在真实路径：「账号已建、随后抛异常」→ 码被退回 `issued`
+            # → 同一张码再建第二个账号（`AC-15` 破坏）。
+            # 评审实测复现：劫持 `create_new_session` 令其抛错，走完整 HTTP 注册，
+            # 得到「账号已建但码回到 issued」。
+            #
+            # 判据与非 OK 分支共用 `_account_exists`（直接问身份服务），
+            # 而不是看 `used_by_account_id`——后者在占用时必然是 NULL，无法区分
+            # 「还没建号」与「建了号但没回填」。
+            if not await _account_exists(_field_value(form_fields, EMAIL_FORM_FIELD)):
+                await _release_quietly(code)
+            else:
+                logger.warning(
+                    "建号已发生但后续步骤抛异常——**不释放邀请码**（该码已被真实使用）：code=%s",
+                    code,
+                )
             raise
 
         # --- 第 3 步：按结果决定「回填」还是「补偿释放」---
@@ -402,14 +421,27 @@ def make_sign_up_override(
 
 
 def api_overrides(original: APIInterface) -> APIInterface:
-    """把 ``sign_up_post`` 换成注入邀请码校验的实现，其余 API 原样保留。
+    """把 ``sign_up_post`` 换成注入邀请码校验的实现，并**关闭匿名的账号存在性查询**。
 
     这是交给 ``emailpassword.init(override=InputOverrideConfig(apis=...))`` 的函数。
-    **只改这一个 API**：登录、重置、email 存在性查询都维持 SDK 原行为——
-    改动它们会引入与本功能无关的行为差异。
+    **只改这两处**：登录与密码重置维持 SDK 原行为——改动它们会引入与本功能无关的差异。
+
+    ## 为什么必须关掉 ``disable_email_exists_get``（2026-09-30 评审抓出）
+
+    SDK **默认挂载** ``GET /auth/signup/email/exists``（``disable_email_exists_get``
+    默认 ``False``），它**无需会话**即可回答「某个账号名是否已存在」。
+    这与认证与账号第 5 节「**不区分**『账号不存在』与『密码错误』」是同一条纪律的
+    反面：该端点把「账号是否存在」直接变成一个匿名可查的布尔值。
+
+    评审实测（真实 uvicorn，非 ASGI 夹具）：已存在 → ``200 {"exists":true}``、
+    不存在 → ``exists:false``——**可区分**。
+
+    关闭它**不影响登录**：登录走 ``sign_in_post``，不依赖该端点。
     """
     # SDK 的 APIInterface 是抽象类实例；直接改属性即可（官方 override 的既有做法）。
     original.sign_up_post = make_sign_up_override(original.sign_up_post)  # type: ignore[method-assign]
+    # 关闭匿名的账号枚举端点：见 docstring 的实测依据。
+    original.disable_email_exists_get = True
     return original
 
 
