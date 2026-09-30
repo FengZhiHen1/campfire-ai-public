@@ -114,13 +114,6 @@
   margin: 0;
 }
 
-.note {
-  margin: 0;
-  color: var(--muted);
-  font-size: var(--text-sm);
-  text-align: center;
-}
-
 /* 极简两级 stagger 渐入：品牌区 → 表单区（页面设计「动效意图」节，--motion-base 240ms）。
  * 错误出现不带任何动画；循环动效为零。prefers-reduced-motion 下由 components.css 的
  * 全局规则统一关停。 */

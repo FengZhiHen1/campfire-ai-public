@@ -45,7 +45,6 @@ const COPY = {
   passwordShow: '显示密码',
   passwordHide: '隐藏密码',
   inviteHint: '邀请码由运营者发放，8 位、一次性使用',
-  manualReset: '忘记密码？请联系运营者人工重置。',
 } as const;
 
 /**
@@ -217,8 +216,9 @@ export function LoginPage({ auth, initialMode = 'login' }: LoginPageProps) {
         )}
       </p>
 
-      {/* 一期不存在自助找回（无邮箱即无自助通道）：如实呈现，不放假的找回入口。 */}
-      <p className={styles.note}>{COPY.manualReset}</p>
+      {/* 「忘记密码？请联系运营者人工重置」的归属是设置页（设置页设计第 25 行），本页设计只列三个区块。
+          这里不再重复呈现：同一句话两页各说一遍会各自漂移（此前本页那份多一个句末句号）。
+          本页只守「不放假的找回入口」——一期无邮箱即无自助通道。 */}
     </div>
   );
 }
