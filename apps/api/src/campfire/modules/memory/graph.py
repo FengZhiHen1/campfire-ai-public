@@ -75,7 +75,7 @@ from graphiti_core.llm_client.config import LLMConfig
 from graphiti_core.llm_client.openai_client import OpenAIClient
 from openai import AsyncOpenAI
 
-from campfire.core.config import EMBEDDING_DIM, Settings
+from campfire.core.config import EMBEDDING_DIM, Settings, get_settings
 from campfire.modules.memory.errors import MemoryConfigurationError
 from campfire.modules.memory.identity import to_account_id
 
@@ -376,9 +376,48 @@ def build_memory_graph(settings: Settings) -> MemoryGraph:
     )
 
 
+#: 进程内共享的记忆图库句柄。
+#:
+#: **必须复用**：每次 `build_memory_graph` 都会新建 FalkorDB 驱动（其构造函数会调度建索引
+#: 的后台任务）、三个模型客户端与一个 http 客户端；按调用重建等于每次泄漏一整套连接池
+#: （实测依据见 `MemoryGraph.aclose` 与 `store.account_driver` 的说明）。
+#:
+#: 放在本模块（而不是 `worker.py`）的理由：**投递与读路径是两个入口**——Worker 消费
+#: 待处理记录、API 侧的工具读时间线，两者要共用同一个句柄；而 `tools/*` 的白名单只有
+#: `modules/*` 与 `core/*`，**不能** import 入口模块 `campfire.worker`
+#: （[项目结构设计](../../../../docs/项目结构设计.md)第 7 节）。因此句柄的归属必须下沉到这里。
+_shared_graph: MemoryGraph | None = None
+
+
+def get_shared_memory_graph(settings: Settings | None = None) -> MemoryGraph:
+    """取（或首次构造）进程内共享的记忆图库句柄。
+
+    Args:
+        settings: 可选配置；首次构造时使用，省略则读全局配置。
+
+    Raises:
+        MemoryConfigurationError: 配置不完整（未配凭据）时——记忆的抽取与嵌入都要调模型，
+            缺凭据**显式失败**，不静默降级。
+    """
+    global _shared_graph
+    if _shared_graph is None:
+        _shared_graph = build_memory_graph(settings if settings is not None else get_settings())
+    return _shared_graph
+
+
+async def aclose_shared_memory_graph() -> None:
+    """关闭并清空共享句柄（进程退出或测试收尾时调用）。幂等。"""
+    global _shared_graph
+    if _shared_graph is not None:
+        await _shared_graph.aclose()
+        _shared_graph = None
+
+
 __all__ = [
     "LLM_MAX_TOKENS",
     "MemoryGraph",
     "OrderedCrossEncoder",
+    "aclose_shared_memory_graph",
     "build_memory_graph",
+    "get_shared_memory_graph",
 ]

@@ -26,7 +26,12 @@ ALLOWED: dict[str, set[str]] = {
     # 只放行到 agent/<子包>，不放行兄弟子包，故必须显式列出。
     "agent": {"campfire.core.config", "campfire.agent"},
     "surfaces": {"campfire.agent", "campfire.tools", "campfire.modules", "campfire.core"},
-    "tools": {"campfire.modules", "campfire.core"},
+    # 产品侧工具**实现**基座定义的接口：`ToolHandler` 收 `ToolContext`、返回
+    # `ToolOutcome`（两者都在 `agent/tools`）。不依赖基座的类型就不是基座的工具，
+    # 因此放行 `campfire.agent.tools`——**只放行它**，不放行整个 `campfire.agent`
+    # （运行编排、模型网关、运行记录与产品工具无关）。反方向不变：`agent/*` 仍不得
+    # 依赖 `tools/*`（见上一行）。依据见 docs/项目结构设计.md 第 7 节。
+    "tools": {"campfire.agent.tools", "campfire.modules", "campfire.core"},
     "modules": {"campfire.core"},
     "core": {"campfire.core"},
     # 本地摄取入口：禁止 import surfaces、禁止暴露成服务端点
