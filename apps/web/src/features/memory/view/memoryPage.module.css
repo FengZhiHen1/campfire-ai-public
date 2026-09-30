@@ -1,5 +1,5 @@
 /* 记忆页私有布局。视觉契约唯一权威是 tokens 层与 components.css；
- * 本文件只放页面级排布（两行截断、展开后的完整原文、分页尾部），不定义色值与间距数值。 */
+ * 本文件只放页面级排布（两行截断、展开后的完整原文），不定义色值与间距数值。 */
 
 /* 两行截断：核对场景用展开补救，不是丢信息。
  * `-webkit-line-clamp` 是本项目在 -webkit- 前缀下的既有做法（components.css 亦用同族属性）。 */
@@ -17,13 +17,4 @@
   color: var(--fg-2);
   font-size: var(--text-base);
   white-space: pre-wrap;
-}
-
-/* 分页尾部：呼吸点或降级按钮都居中，与列表同一列。 */
-.tail {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  gap: var(--space-2);
-  padding-block: var(--space-4);
 }
