@@ -124,6 +124,69 @@ def test_convert_does_not_ingest(tmp_path: object) -> None:
     assert "ingest_file" not in source
 
 
+def _page_with_metadata_title(root: object, text: str) -> object:
+    """写一个自带元数据标题的 HTML 页，返回路径。"""
+    from pathlib import Path
+
+    source = Path(str(root)) / "titled.html"
+    source.write_text(
+        "<html><head>"
+        f'<meta name="citation_title" content="{text}"/>'
+        "</head><body><article>"
+        "<h2>第一节</h2><p>正文内容。</p>"
+        "</article></body></html>",
+        encoding="utf-8",
+    )
+    return source
+
+
+def test_convert_title_flag_overrides_the_page_metadata(tmp_path: object) -> None:
+    """`convert --title` 必须真的覆盖页面元数据标题（显式输入不得被静默丢弃）。
+
+    判别性：不把 `title` 透传给 `convert_html_file`，本用例失败——修复前的行为正是
+    参数声明在解析器里、却从未往下传：产出的 frontmatter 与正文 H1 都仍是页面元数据
+    标题，且没有任何提示或非零退出码。
+
+    与 `ingest --title` 同一条优先级（`ingestion.ingest_file`：
+    `title or frontmatter.get("title") or path.stem`）：显式参数优先。
+    """
+    from pathlib import Path
+
+    from campfire.modules.library.ingestion import parse_frontmatter
+
+    source = _page_with_metadata_title(tmp_path, "页面自带标题")
+
+    code = main(["convert", str(source), "--title", "命令行标题"])
+
+    assert code == 0
+    text = (Path(str(tmp_path)) / "titled.md").read_text(encoding="utf-8")
+    metadata, body = parse_frontmatter(text)
+    assert metadata.get("title") == "命令行标题", f"--title 被静默忽略，实际 frontmatter title={metadata.get('title')!r}"
+    assert body.lstrip().startswith("# 命令行标题"), f"正文根标题也未用命令行标题：{body[:80]!r}"
+    assert "页面自带标题" not in text, "命令行标题应压过元数据标题，两个标题同时出现说明覆盖没生效"
+
+
+def test_convert_without_title_flag_keeps_the_page_metadata(tmp_path: object) -> None:
+    """不传 `--title` 时仍用页面元数据标题——防止修 D-36 时矫枉过正。
+
+    本用例在修复前后都通过：它不是 D-36 的判别用例，钉的是「覆盖」不等于
+    「替换数据源」（例如把 `--title` 改成必填、或让它压掉元数据以外的字段）。
+    """
+    from pathlib import Path
+
+    from campfire.modules.library.ingestion import parse_frontmatter
+
+    source = _page_with_metadata_title(tmp_path, "页面自带标题")
+
+    code = main(["convert", str(source)])
+
+    assert code == 0
+    text = (Path(str(tmp_path)) / "titled.md").read_text(encoding="utf-8")
+    metadata, body = parse_frontmatter(text)
+    assert metadata.get("title") == "页面自带标题"
+    assert body.lstrip().startswith("# 页面自带标题")
+
+
 # ---------------------------------------------------------------- 运营子命令
 #
 # 以下用例不连库、不连 core（SDK 调用被拦截在装配层之外），钉的是
