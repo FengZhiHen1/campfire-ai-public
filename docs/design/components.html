@@ -1,766 +1,1561 @@
 <!doctype html>
+<!-- 当前视觉契约的组件参考与交互预览；使用虚构样例，不构成产品运行或现场处置依据。 -->
 <html lang="zh-CN">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>篝火智答 — 契约组件参考</title>
-    <meta name="description" content="Campfire-AI 设计契约组件参考：warm-editorial base + 火焰橙改造。所有可见值来自 docs/design/tokens.css。" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@500&display=swap" rel="stylesheet" />
-    <style>
-      /* :root 粘贴块 — 与 docs/design/tokens.css 保持同步 */
-      :root {
-        --bg: #fbf6ee;
-        --surface: #fffdf8;
-        --surface-warm: #f1e3cf;
-        --fg: #201914;
-        --fg-2: #4c4037;
-        --muted: #7a6d63;
-        --meta: #57534e;
-        --border: #ded2c3;
-        --border-soft: #eee4d7;
-        --accent: #c2410c;
-        --accent-on: #fffdf8;
-        --accent-hover: color-mix(in oklab, var(--accent), black 8%);
-        --accent-active: color-mix(in oklab, var(--accent), black 14%);
-        --success: #3f7a44;
-        --warn: #b45309;
-        --danger: #b3372f;
-        --status-stable: #3f7a44;
-        --status-unruled: #b45309;
-        --status-high: #b3372f;
-        --font-display: "Noto Serif SC", "Songti SC", "STSong", "SimSun", Georgia, serif;
-        --font-body: system-ui, -apple-system, "PingFang SC", "Hiragino Sans GB",
-          "Microsoft YaHei", sans-serif;
-        --font-mono: "SF Mono", ui-monospace, Menlo, Consolas, monospace;
-        --text-xs: 12px;
-        --text-sm: 14px;
-        --text-base: 17px;
-        --text-lg: 20px;
-        --text-xl: 28px;
-        --text-2xl: 42px;
-        --text-3xl: 64px;
-        --text-4xl: 88px;
-        --leading-body: 1.62;
-        --leading-tight: 1;
-        --tracking-display: -0.025em;
-        --space-1: 4px;
-        --space-2: 8px;
-        --space-3: 12px;
-        --space-4: 16px;
-        --space-5: 20px;
-        --space-6: 24px;
-        --space-8: 32px;
-        --space-12: 48px;
-        --radius-sm: 10px;
-        --radius-md: 16px;
-        --radius-lg: 24px;
-        --radius-pill: 9999px;
-        --elev-flat: none;
-        --elev-ring: 0 0 0 1px var(--border);
-        --elev-raised: 0 20px 52px rgba(32, 25, 20, 0.12);
-        --focus-ring: 0 0 0 4px rgba(194, 65, 12, 0.24);
-        --motion-fast: 150ms;
-        --motion-base: 240ms;
-        --motion-breath: 2000ms;
-        --ease-standard: cubic-bezier(0.2, 0, 0, 1);
-        --container-max: 1180px;
-        --container-gutter-desktop: 36px;
-        --container-gutter-tablet: 24px;
-        --container-gutter-phone: 16px;
-        --section-y-desktop: 112px;
-        --section-y-tablet: 80px;
-        --section-y-phone: 56px;
-        --phone-shell-max: 480px;
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="description" content="篝火智答组件交互预览：咨询入口、应急采集、行动卡、依据与档案确认。" />
+  <meta name="color-scheme" content="light" />
+  <title>篝火智答 · 组件契约与交互预览</title>
+  <link rel="icon" type="image/svg+xml" href="./assets/brand-mark.svg" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@500&amp;display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="./tokens.css" />
+  <style>
+    /* 消费当前视觉契约；仅手机单列，宽屏呈现手机蒙版。 */
+    *, *::before, *::after { box-sizing: border-box; }
+    [hidden] { display: none !important; }
+    html { scroll-behavior: auto; }
+      /* 纸面滚动条（@source: project）：共用现有 token，透明轨道融入各层背景。 */
+      @media (forced-colors: none) {
+        * { scrollbar-width: thin; scrollbar-color: var(--muted) transparent; }
+        /* 支持细节伪元素时取消标准属性覆盖，统一滑块圆角与悬停反馈。 */
+        @supports selector(::-webkit-scrollbar) {
+          * { scrollbar-width: auto; scrollbar-color: auto; }
+          ::-webkit-scrollbar { width: var(--space-3); height: var(--space-3); }
+          ::-webkit-scrollbar-track { background: transparent; }
+          ::-webkit-scrollbar-thumb { min-width: var(--space-8); min-height: var(--space-8); border: var(--space-1) solid transparent; border-radius: var(--radius-pill); background: var(--muted); background-clip: padding-box; }
+          ::-webkit-scrollbar-thumb:hover { background-color: var(--meta); }
+          ::-webkit-scrollbar-thumb:active { background-color: var(--fg-2); }
+          ::-webkit-scrollbar-corner { background: transparent; }
+          ::-webkit-scrollbar-button { display: none; }
+        }
       }
+    body { margin: 0; background: var(--surface-warm); color: var(--fg); font: var(--text-base)/var(--leading-body) var(--font-body); -webkit-font-smoothing: antialiased; }
+    body.chat-modal-open { overflow: hidden; }
+    button, input, textarea, select { font: inherit; }
+    button, select, summary, label { cursor: pointer; -webkit-tap-highlight-color: transparent; }
+    a { color: var(--fg); text-underline-offset: var(--space-1); }
+    h1, h2, h3, p, ul { margin: 0; }
+    h1, h2, h3, .brand-name { font-family: var(--font-display); font-weight: 500; line-height: 1.3; letter-spacing: var(--tracking-display); }
+    h1, h2 { font-size: var(--text-xl); }
+    h3 { font-size: var(--text-lg); }
+    p, li, strong, summary { overflow-wrap: anywhere; }
+    strong { font-weight: 600; }
+    :where(a, button, input, textarea, select, summary):focus-visible { outline: 2px solid var(--accent); outline-offset: var(--space-1); }
+    :where(h2, [tabindex="-1"]):focus { outline: none; }
+    .sr-only { position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+    .skip-link { position: fixed; top: var(--space-3); left: var(--space-3); z-index: 80; padding: var(--space-3); background: var(--surface); border-radius: var(--radius-sm); transform: translateY(-200%); }
+    .skip-link:focus { transform: none; }
+    .phone-shell { max-width: var(--phone-shell-max); width: 100%; min-height: 100svh; margin-inline: auto; background: var(--bg); box-shadow: var(--elev-ring); }
+    .masthead { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); padding: calc(var(--space-4) + env(safe-area-inset-top, 0px)) var(--container-gutter-phone) var(--space-3); }
+    .brand { display: inline-flex; align-items: center; gap: var(--space-3); min-height: 44px; text-decoration: none; }
+    .brand img { width: var(--space-8); height: var(--space-8); object-fit: contain; }
+    .brand-name { font-size: var(--text-lg); }
+    .tag { display: inline-flex; align-items: center; width: fit-content; padding: var(--space-1) var(--space-2); border: 1px solid var(--border-soft); border-radius: var(--radius-pill); color: var(--meta); font-size: var(--text-xs); }
+    .catalog-nav { position: sticky; top: 0; z-index: 20; display: flex; align-items: center; gap: var(--space-3); padding: var(--space-2) var(--container-gutter-phone); padding-top: calc(var(--space-2) + env(safe-area-inset-top, 0px)); background: var(--surface); border-block: 1px solid var(--border-soft); }
+    .catalog-nav label { flex: none; color: var(--meta); font-size: var(--text-sm); }
+    select { min-height: 44px; min-width: 0; width: 100%; padding: var(--space-2) var(--space-3); border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface); color: var(--fg); }
+    .select-field { width: 100%; min-width: 0; }
+    .select-trigger { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); min-height: 48px; padding: var(--space-3); border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface); color: var(--fg); font-size: var(--text-sm); cursor: pointer; }
+    .select-value { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .select-action { flex: none; color: var(--meta); font-size: var(--text-xs); }
+    .select-trigger:focus-visible { outline: 2px solid var(--accent); outline-offset: var(--space-1); }
+    .select-trigger[aria-expanded="true"] { border-color: var(--accent); box-shadow: var(--focus-ring); }
+    .select-trigger[aria-disabled="true"] { opacity: 0.5; cursor: not-allowed; }
+    .select-menu { position: fixed; z-index: 60; margin: 0; padding: var(--space-2); overflow-y: auto; overscroll-behavior: contain; border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface); box-shadow: var(--elev-raised); }
+    .select-option { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); min-height: 48px; padding: var(--space-3); border-radius: var(--radius-sm); color: var(--fg-2); font-size: var(--text-sm); cursor: pointer; }
+    .select-option + .select-option { margin-top: var(--space-1); }
+    .select-option.is-focused { background: var(--surface-warm); }
+    .select-option[aria-selected="true"] { color: var(--fg); font-weight: 600; }
+    .select-option .select-selected { flex: none; visibility: hidden; color: var(--meta); font-size: var(--text-xs); font-weight: 400; }
+    .select-option[aria-selected="true"] .select-selected { visibility: visible; }
+    main { padding-inline: calc(var(--container-gutter-phone) + env(safe-area-inset-left, 0px)) calc(var(--container-gutter-phone) + env(safe-area-inset-right, 0px)); }
+    .intro { padding-block: var(--space-6) var(--space-4); }
+    .intro p { margin-top: var(--space-3); color: var(--meta); font-size: var(--text-sm); }
+    .component-section { padding-top: var(--section-y-phone); scroll-margin-top: calc(var(--space-12) + var(--space-8)); }
+    .component-section:first-of-type { padding-top: var(--space-5); }
+    .section-heading { margin-bottom: var(--space-5); }
+    .section-kicker { display: block; margin-bottom: var(--space-2); color: var(--meta); font-size: var(--text-xs); letter-spacing: 0.02em; }
+    .section-heading p { margin-top: var(--space-3); color: var(--fg-2); }
+    .stack { display: grid; gap: var(--space-4); }
+    .panel { padding: var(--space-5); border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface); box-shadow: var(--elev-raised); }
+    .tile { padding: var(--space-5); border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface); }
+    .mini-card { padding: var(--space-4); border: 1px solid var(--border-soft); border-radius: var(--radius-md); background: var(--surface-warm); }
+    .hint, .specimen-note { color: var(--meta); font-size: var(--text-sm); }
+    .meta { color: var(--meta); font-size: var(--text-xs); line-height: 1.6; letter-spacing: 0.01em; }
+    .hint { margin-top: var(--space-2); }
+    .specimen-note { margin-top: var(--space-4); padding: var(--space-3) 0; }
+    .specimen-note a, .text-button { display: inline-flex; align-items: center; min-height: 44px; min-width: 44px; }
+    .specimen-note a { font-size: var(--text-sm); }
+    .specimen-note label { display: block; margin-bottom: var(--space-2); }
+    .btn { display: inline-flex; justify-content: center; align-items: center; min-height: 48px; min-width: 44px; padding: var(--space-3) var(--space-4); border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface); color: var(--fg); font: 700 var(--text-sm)/1.5 var(--font-body); letter-spacing: 0.02em; text-decoration: none; transition: background-color var(--motion-fast) var(--ease-standard), border-color var(--motion-fast) var(--ease-standard); }
+    .btn.block { width: 100%; }
+    .btn-primary { background: var(--accent); color: var(--accent-on); border-color: var(--accent); }
+    .btn-primary:active { background: var(--accent-active); }
+    .btn-quiet { background: var(--surface-warm); border-color: transparent; color: var(--fg-2); }
+    .btn-danger { background: var(--danger); color: var(--surface); border-color: var(--danger); }
+    .btn:disabled, .text-button:disabled { opacity: 0.5; cursor: not-allowed; }
+    .button-row { display: flex; gap: var(--space-3); }
+    .button-row > .btn { flex: 1; min-width: 0; }
+    .text-button { padding: var(--space-2) 0; border: 0; background: none; color: var(--fg-2); font-size: var(--text-sm); text-decoration: underline; text-underline-offset: var(--space-1); }
+    .emergency-entry { border: 1.5px solid var(--accent); }
+    .entry-title { display: flex; align-items: center; gap: var(--space-3); }
+    .flame-dot { width: var(--space-2); height: var(--space-2); border-radius: var(--radius-pill); background: var(--accent); flex: none; }
+    .emergency-entry p { margin-block: var(--space-3) var(--space-5); color: var(--fg-2); }
+    .daily-entry { display: grid; gap: var(--space-3); text-decoration: none; }
+    .daily-entry p { color: var(--fg-2); }
+    .entry-next { color: var(--meta); font-size: var(--text-sm); }
+    .status { display: inline-flex; align-items: center; gap: var(--space-2); color: var(--meta); font-size: var(--text-sm); font-weight: 600; }
+    .status::before { content: ""; width: var(--space-2); height: var(--space-2); border-radius: var(--radius-pill); background: var(--meta); flex: none; }
+    .status.stable::before { background: var(--status-stable); }
+    .status.unruled::before { background: var(--status-unruled); }
+    .status.high::before { background: var(--status-high); }
+    .emergency-preview { padding: 0; }
+    .emergency-content { padding: var(--space-5); }
+    .step-meta { display: flex; justify-content: space-between; align-items: center; gap: var(--space-2); margin-bottom: var(--space-3); }
+    .progress-track { height: 2px; background: var(--border); border-radius: var(--radius-pill); margin-bottom: var(--space-5); overflow: hidden; }
+    .progress-fill { height: 100%; background: var(--accent); width: 12.5%; transition: width var(--motion-base) var(--ease-standard); }
+    .step-title { scroll-margin-top: calc(var(--space-12) + var(--space-8)); }
+    .step-options { display: grid; gap: var(--space-2); margin-top: var(--space-4); }
+    .selection { position: relative; display: flex; align-items: center; gap: var(--space-3); min-height: 48px; padding: var(--space-3); border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface); cursor: pointer; }
+    .selection input { position: absolute; width: 1px; height: 1px; margin: 0; opacity: 0; }
+    .check-box { width: var(--space-5); height: var(--space-5); border: 1.5px solid var(--meta); border-radius: var(--radius-sm); display: inline-flex; align-items: center; justify-content: center; flex: none; }
+    .selection:has(input:checked) { border-color: var(--accent); background: color-mix(in oklab, var(--accent), transparent 94%); }
+    .selection:has(input:checked) .check-box { background: var(--accent); border-color: var(--accent); }
+    .selection:has(input:checked) .check-box::after { content: ""; width: 10px; height: 6px; border-left: 2px solid var(--accent-on); border-bottom: 2px solid var(--accent-on); transform: rotate(-45deg) translateY(-1px); }
+    .selection:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: var(--space-1); }
+    .emergency-controls { position: sticky; bottom: 0; z-index: 5; display: grid; gap: var(--space-3); padding: var(--space-4); padding-bottom: calc(var(--space-4) + env(safe-area-inset-bottom, 0px)); border-top: 1px solid var(--border-soft); border-radius: 0 0 var(--radius-md) var(--radius-md); background: var(--surface); }
+    .step-review { padding-top: var(--space-4); }
+    .step-review ul { padding-left: var(--space-5); margin-top: var(--space-3); }
+    .field { display: grid; gap: var(--space-2); }
+    .field label { color: var(--fg-2); font-size: var(--text-sm); font-weight: 600; }
+    textarea { width: 100%; min-height: 120px; padding: var(--space-3) var(--space-4); border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface); color: var(--fg); font: inherit; resize: vertical; }
+    textarea::placeholder { color: var(--muted); opacity: 1; }
+    textarea:focus { outline: none; border-color: var(--accent); box-shadow: var(--focus-ring); }
+    textarea[aria-invalid="true"] { border-color: var(--danger); }
+    textarea:read-only { background: var(--bg); }
+    .field .hint { margin: 0; }
+    .field-error { color: var(--danger); font-size: var(--text-sm); }
+    .field-error:empty { display: none; }
+    .question-card { padding: 0; overflow: hidden; }
+    .question-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); padding: var(--space-3) var(--space-5) 0; }
+    .question-head .text-button { flex: none; text-decoration: none; }
+    .question-body { padding: 0 var(--space-5) var(--space-5); }
+    .question-card .q-title { margin-top: var(--space-2); overflow-wrap: anywhere; }
+    .question-card > .q-title { margin-inline: var(--space-5); margin-bottom: var(--space-3); }
+    .question-card:has(.question-body[hidden]) > .q-title { margin-bottom: var(--space-5); }
+    .question-card .q-options { display: grid; gap: var(--space-2); margin-top: var(--space-4); }
+    .question-option { position: relative; display: flex; align-items: flex-start; gap: var(--space-3); width: 100%; min-height: 48px; padding: var(--space-3); border: 1px solid transparent; border-radius: var(--radius-sm); background: transparent; color: var(--fg); text-align: left; cursor: pointer; }
+    .question-option input { position: absolute; width: 1px; height: 1px; opacity: 0; }
+    .question-number { display: inline-flex; align-items: center; justify-content: center; flex: none; width: var(--space-6); height: var(--space-6); border-radius: var(--radius-sm); background: var(--surface-warm); color: var(--meta); font-size: var(--text-xs); }
+    .question-copy { display: grid; gap: var(--space-1); min-width: 0; overflow-wrap: anywhere; }
+    .question-label { font-size: var(--text-base); font-weight: 600; line-height: 1.5; }
+    .question-description { color: var(--meta); font-size: var(--text-sm); line-height: var(--leading-body); }
+    .question-recommended { display: inline-flex; vertical-align: middle; margin-left: var(--space-2); padding: 0 var(--space-2); border: 1px solid var(--border); border-radius: var(--radius-pill); color: var(--meta); font-size: var(--text-xs); font-weight: 400; }
+    .question-option:has(input:checked) { border-color: var(--border); background: var(--surface-warm); }
+    .question-option:has(input:checked) .question-number { background: var(--fg-2); color: var(--surface); }
+    .question-option:has(input:checked) .question-label::after { content: "已选"; margin-left: var(--space-2); color: var(--meta); font-size: var(--text-xs); font-weight: 400; }
+    .question-option:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: -2px; }
+    .question-card.answered { background: var(--bg); }
+    .question-free-toggle { width: 100%; min-height: 48px; justify-content: flex-start; align-items: flex-start; gap: var(--space-3); margin-top: var(--space-3); padding: var(--space-3); border: 1px solid transparent; border-radius: var(--radius-sm); font-size: var(--text-base); line-height: 1.5; text-align: left; text-decoration: none; }
+    .question-free-toggle[aria-expanded="true"] { color: var(--fg); border-color: var(--border); background: var(--surface-warm); }
+    .question-card .field { margin-top: var(--space-3); }
+    .question-card textarea { min-height: 96px; }
+    .question-footer { display: grid; gap: var(--space-3); margin-top: var(--space-4); padding-top: var(--space-3); border-top: 1px solid var(--border-soft); }
+    .question-progress { display: flex; justify-content: space-between; align-items: center; gap: var(--space-3); color: var(--meta); font-size: var(--text-sm); }
+    .question-actions { display: flex; gap: var(--space-2); }
+    .question-actions .btn { flex: none; padding-inline: var(--space-3); }
+    .question-actions [data-question-next], .question-actions [data-question-submit] { margin-left: auto; }
+    .question-record-list { display: grid; gap: var(--space-4); margin: var(--space-4) 0 0; padding-left: var(--space-5); }
+    .question-record-list p { margin-top: var(--space-1); color: var(--fg-2); }
+    .question-record-list .meta { display: block; margin-top: var(--space-1); }
+    @media (hover: hover) { .question-option:not(:has(input:checked)):hover { background: color-mix(in oklab, var(--surface-warm), transparent 65%); } .select-option:hover { background: var(--surface-warm); } }
+    .action-card > .tag { margin-bottom: var(--space-4); }
+    .ac-section + .ac-section { margin-top: var(--space-5); }
+    .ac-head { font-size: var(--text-base); padding-bottom: var(--space-2); border-bottom: 1px solid var(--border-soft); }
+    .ac-head span { margin-right: var(--space-2); color: var(--meta); font: var(--text-sm)/1.6 var(--font-body); }
+    .ac-section p { margin-top: var(--space-2); }
+    .ac-source { display: block; margin-top: var(--space-2); color: var(--meta); font-size: var(--text-xs); }
+    .ac-section.now { padding: var(--space-4); margin-inline: calc(-1 * var(--space-2)); background: var(--surface-warm); border-radius: var(--radius-md); }
+    .expired { border-style: dashed; }
+    .expired p { margin-top: var(--space-3); color: var(--meta); font-size: var(--text-sm); }
+    details > summary { display: flex; justify-content: space-between; align-items: center; gap: var(--space-3); min-height: 48px; cursor: pointer; list-style: none; color: var(--fg-2); }
+    details > summary::-webkit-details-marker { display: none; }
+    details > summary .when-open, details[open] > summary .when-closed { display: none; }
+    details[open] > summary .when-open { display: inline; }
+    .toggle-label { flex: none; color: var(--meta); font-size: var(--text-sm); }
+    .citation-block { margin-top: var(--space-5); border-top: 1px solid var(--border-soft); padding-top: var(--space-2); }
+    .citation-list { display: grid; gap: var(--space-4); padding-block: var(--space-3); }
+    .citation-title { display: flex; align-items: center; min-height: 44px; }
+    .citation-item p { margin-top: var(--space-2); }
+    .source-body { padding-top: var(--space-3); }
+    .risk-examples { display: flex; flex-wrap: wrap; gap: var(--space-4); padding-top: var(--space-3); }
+    .record-head { margin-bottom: var(--space-4); }
+    .record-head p { margin-top: var(--space-2); }
+    .list-row { display: grid; gap: var(--space-2); padding: var(--space-4) 0; border-top: 1px solid var(--border-soft); }
+    .list-row .lr-title { font-size: var(--text-base); font-weight: 600; }
+    .list-row .lr-actions { display: flex; gap: var(--space-3); margin-top: var(--space-2); }
+    .list-row .lr-actions .btn { flex: 1; min-width: 0; }
+    .group-collapse .gc-body { padding-top: var(--space-3); }
+    .candidate-record { padding: var(--space-4); border: 1px solid var(--border); border-radius: var(--radius-md); }
+    .candidate-record > .status { margin-bottom: var(--space-2); }
+    .candidate-toast { border-radius: var(--radius-md); padding: var(--space-3) var(--space-4); border: 1px solid var(--border); background: var(--surface); }
+    .candidate-toast .ct-panel { padding: var(--space-3) 0; }
+    .candidate-toast p { margin-bottom: var(--space-3); }
+    .empty-state { padding: var(--space-6) var(--space-4); text-align: center; }
+    .empty-state .es-title { font-family: var(--font-display); font-weight: 500; font-size: var(--text-lg); }
+    .empty-state p { margin-block: var(--space-3) var(--space-5); color: var(--fg-2); }
+    .error-card { display: grid; gap: var(--space-3); padding: var(--space-4); border: 1px solid color-mix(in oklab, var(--danger), transparent 55%); border-radius: var(--radius-md); background: var(--surface); }
+    .error-card .ec-title { color: var(--danger); font-size: var(--text-base); font-weight: 600; }
+    .error-card p { color: var(--fg-2); }
+    .form-feedback { margin-block: var(--space-4); }
+    .form-status { color: var(--fg-2); margin-top: var(--space-4); }
+    .form-status:empty { display: none; }
+    .skeleton { min-height: 16px; border-radius: var(--radius-sm); background: color-mix(in oklab, var(--surface-warm), transparent 40%); }
+    .skeleton.row { min-height: calc(var(--space-12) * 2); border-radius: var(--radius-md); }
+    .run-status { color: var(--fg-2); font-size: var(--text-sm); margin-bottom: var(--space-4); }
+    .msg-doc { padding-left: var(--space-4); border-left: 2px solid var(--border-soft); }
+    .msg-doc .status { margin-bottom: var(--space-3); }
+    .state-view .button-row { margin-top: var(--space-4); }
+    .button-samples { display: grid; gap: var(--space-4); padding-top: var(--space-4); }
+    .button-samples .sample { display: grid; gap: var(--space-2); }
+    .footer { display: grid; gap: var(--space-2); margin: var(--section-y-phone) var(--container-gutter-phone) 0; padding-block: var(--space-5) calc(var(--space-6) + env(safe-area-inset-bottom, 0px)); border-top: 1px solid var(--border); color: var(--meta); font-size: var(--text-xs); }
+    .footer a { display: inline-flex; align-items: center; min-height: 44px; width: fit-content; font-size: var(--text-sm); }
+    .confirm-sheet { position: fixed; top: auto; bottom: 0; max-width: var(--phone-shell-max); width: 100%; max-height: 90svh; margin: 0 auto; padding: var(--space-6) var(--space-5) calc(var(--space-6) + env(safe-area-inset-bottom, 0px)); border: 1px solid var(--border); border-radius: var(--radius-lg) var(--radius-lg) 0 0; background: var(--surface); color: var(--fg); box-shadow: var(--elev-raised); }
+    .confirm-sheet::backdrop { background: color-mix(in oklab, var(--bg), transparent 20%); }
+    .confirm-sheet p { margin-block: var(--space-3) var(--space-5); color: var(--fg-2); }
+    .toast { position: fixed; bottom: calc(var(--space-4) + env(safe-area-inset-bottom, 0px)); inset-inline: 0; width: calc(100% - var(--space-8)); max-width: calc(var(--phone-shell-max) - var(--space-8)); margin-inline: auto; padding: var(--space-3) var(--space-4); display: flex; align-items: center; gap: var(--space-3); border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface); box-shadow: var(--elev-raised); z-index: 30; }
+    .toast p { flex: 1; font-size: var(--text-sm); }
+    .toast button { flex: none; min-height: 44px; min-width: 44px; border: 0; background: none; color: var(--fg-2); }
+    /* 同一工作面在图录内和全屏中复用，消息独立滚动，输入区按提问状态切换。 */
+    .intro .btn { margin-top: var(--space-4); }
+    .chat-preview-controls { display: grid; gap: var(--space-3); margin-bottom: var(--space-4); }
+    .chat-preview-controls label { display: block; margin-bottom: var(--space-2); }
+    .chat-shell { position: relative; display: flex; flex-direction: column; height: clamp(440px, 78dvh, 760px); min-height: 0; overflow: clip; border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--bg); }
+    .chat-head { display: flex; align-items: center; gap: var(--space-3); flex: none; min-height: 64px; padding: var(--space-3) var(--space-4); border-bottom: 1px solid var(--border-soft); background: var(--surface); }
+    .chat-heading { flex: 1; min-width: 0; }
+    .chat-heading h3 { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--text-base); }
+    .chat-heading .meta { display: block; margin-top: var(--space-1); }
+    .chat-head .text-button { flex: none; text-decoration: none; }
+    .chat-candidate { flex: none; border: 0; border-bottom: 1px solid var(--border-soft); border-radius: 0; padding: var(--space-2) var(--space-4); background: var(--surface); }
+    .chat-candidate .ct-panel { max-height: 180px; overflow-y: auto; }
+    .chat-thread { flex: 1; min-height: 0; padding: var(--space-5) var(--space-4); overflow-y: auto; overscroll-behavior: contain; scroll-behavior: auto; }
+    .chat-message + .chat-message { margin-top: var(--space-6); }
+    .chat-message .message-caption { margin-bottom: var(--space-2); }
+    .bubble-user { width: fit-content; max-width: 78%; margin-left: auto; padding: var(--space-3) var(--space-4); border-radius: var(--radius-md) var(--space-1) var(--radius-md) var(--radius-md); background: var(--surface-warm); overflow-wrap: anywhere; white-space: pre-wrap; }
+    .chat-message.assistant .msg-doc { padding-left: var(--space-3); }
+    .chat-message .msg-doc > p + p { margin-top: var(--space-3); }
+    .chat-message .question-card, .chat-message .action-card { margin-top: var(--space-4); }
+    .chat-message .action-card { padding: var(--space-4); }
+    .chat-action-priority { padding: var(--space-3); border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface-warm); margin-bottom: var(--space-4); }
+    .chat-action-priority .meta { display: block; margin-bottom: var(--space-1); }
+    .chat-message .expired { box-shadow: none; background: var(--bg); }
+    .chat-message .expired .status { margin-bottom: var(--space-2); }
+    .chat-message .expired > details > summary { font-size: var(--text-sm); }
+    .chat-message .expired .ac-section p { color: var(--fg-2); font-size: var(--text-base); }
+    .reasoning-row, .tool-row { margin-bottom: var(--space-2); }
+    .reasoning-row > summary, .tool-row > summary { min-height: 44px; font-size: var(--text-sm); }
+    .reasoning-row .process-body, .tool-row .process-body { padding: 0 0 var(--space-3) var(--space-3); border-left: 2px solid var(--border-soft); color: var(--meta); font-size: var(--text-sm); }
+    .chat-message .error-card { margin-top: var(--space-4); }
+    .chat-footer { flex: none; padding: var(--space-2) var(--space-3) var(--space-3); border-top: 1px solid var(--border-soft); background: var(--surface); }
+    .chat-progress { display: flex; align-items: flex-start; gap: var(--space-2); margin-bottom: var(--space-2); color: var(--fg-2); font-size: var(--text-sm); }
+    .chat-progress .flame-dot { margin-top: var(--space-2); }
+    .skill-picker { display: flex; gap: var(--space-2); overflow-x: auto; padding-bottom: var(--space-2); }
+    .skill-chip { flex: none; min-height: 44px; padding: var(--space-2) var(--space-3); border: 1px solid var(--border); border-radius: var(--radius-pill); background: var(--surface); color: var(--meta); font-size: var(--text-sm); }
+    .skill-chip[aria-pressed="true"] { color: var(--accent); border-color: var(--accent); }
+    .chat-compose { display: flex; align-items: flex-end; gap: var(--space-2); }
+    .chat-compose textarea { flex: 1; min-width: 0; min-height: 48px; max-height: 136px; padding: var(--space-3); resize: none; overflow-y: auto; line-height: 1.5; }
+    .chat-compose .btn { flex: none; padding-inline: var(--space-3); }
+    .chat-shell[data-running="true"] .chat-compose textarea { background: var(--bg); }
+    .chat-footer .meta { margin-top: var(--space-2); }
+    .chat-latest { flex: none; align-self: center; min-height: 44px; margin-block: var(--space-2); padding: var(--space-2) var(--space-3); border: 1px solid var(--border); border-radius: var(--radius-pill); background: var(--surface); color: var(--fg); font-size: var(--text-sm); }
+    .chat-shell[data-answering="true"] .chat-thread { padding-bottom: calc(var(--space-5) + env(safe-area-inset-bottom, 0px)); }
+    .chat-shell[data-answering="true"] .chat-latest { margin-bottom: calc(var(--space-2) + env(safe-area-inset-bottom, 0px)); }
+    .chat-sheet { position: fixed; inset: 0; margin: 0 auto; padding: 0; width: 100%; max-width: var(--phone-shell-max); height: 100dvh; max-height: none; overflow: clip; border: 0; background: var(--bg); color: var(--fg); }
+    .chat-sheet::backdrop { background: var(--surface-warm); }
+    .chat-sheet .chat-shell { height: 100%; border: 0; border-radius: 0; }
+    .chat-sheet .chat-head { padding-top: calc(var(--space-3) + env(safe-area-inset-top, 0px)); }
+    .chat-sheet .chat-footer { padding-bottom: calc(var(--space-3) + env(safe-area-inset-bottom, 0px)); }
 
-      /* ═══ 手机蒙版（仅手机端定调的契约级布局） ═══════════════════
-       * 参考页自身即蒙版的演示：>640px 视口时内容容器以
-       * --phone-shell-max 宽居中、容器外为暖沙蒙版底（DESIGN.md 定调）。 */
-      .phone-mask {
-        background: var(--surface-warm);
-        min-height: 100vh;
-        padding: 0;
-      }
-      .phone-shell {
-        max-width: var(--phone-shell-max);
-        margin-inline: auto;
-        min-height: 100vh;
-        background: linear-gradient(135deg, #fbf6ee 0%, #fffdf8 58%, #f1e3cf 100%);
-        border-inline: 1px solid var(--border);
-      }
-      @media (max-width: 640px) {
-        .phone-mask { background: transparent; }
-        .phone-shell { border-inline: 0; }
-      }
-
-      *, *::before, *::after { box-sizing: border-box; }
-      html, body { margin: 0; padding: 0; }
-      body {
-        background: var(--surface-warm);
-        color: var(--fg);
-        font-family: var(--font-body);
-        font-size: var(--text-base);
-        line-height: var(--leading-body);
-        -webkit-font-smoothing: antialiased;
-      }
-      .page { min-height: 100vh; background: linear-gradient(135deg, #fbf6ee 0%, #fffdf8 58%, #f1e3cf 100%); }
-      .container { max-width: var(--container-max); margin-inline: auto; padding-inline: var(--container-gutter-desktop); }
-      section { padding-block: var(--section-y-tablet); }
-      @media (max-width: 639px) { .container { padding-inline: var(--container-gutter-phone); } section { padding-block: var(--section-y-phone); } }
-      h1, h2, h3, p { margin: 0; }
-      h1, h2, h3 { font-family: var(--font-display); font-weight: 500; line-height: var(--leading-tight); letter-spacing: var(--tracking-display); }
-      h1 { max-width: 840px; font-size: var(--text-4xl); }
-      h2 { font-size: var(--text-3xl); }
-      h3 { font-size: var(--text-xl); }
-      .eyebrow { color: var(--meta); font-family: var(--font-mono); font-size: var(--text-xs); font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; }
-      .lead { max-width: 640px; color: var(--fg-2); font-size: var(--text-lg); }
-      .stack > * + * { margin-block-start: var(--space-4); }
-      .actions { display: flex; flex-wrap: wrap; gap: var(--space-3); margin-block-start: var(--space-6); }
-
-      /* ═══ 组件分组演示骨架（仅参考页使用，非契约组件） ══════════ */
-      .demo-section {
-        padding-block: var(--space-6);
-        border-bottom: 1px solid var(--border-soft);
-      }
-      .demo-section:last-of-type { border-bottom: 0; padding-bottom: calc(88px + var(--space-6)); }
-      .demo-title {
-        font-family: var(--font-display); font-weight: 500;
-        font-size: var(--text-lg); color: var(--fg);
-        margin-block-end: var(--space-1);
-      }
-      .demo-desc { color: var(--muted); font-size: var(--text-sm); margin-block-end: var(--space-4); }
-      .demo-row { display: flex; flex-wrap: wrap; gap: var(--space-3); align-items: center; }
-      .demo-col { display: grid; gap: var(--space-3); }
-
-      /* ─── 按钮（@source: base(warm-editorial)） ─────────────────── */
-      .btn {
-        display: inline-flex; align-items: center; justify-content: center;
-        min-height: 44px; padding: 0 var(--space-5);
-        border: 1px solid transparent; border-radius: var(--radius-md);
-        font: 700 var(--text-sm) / 1 var(--font-body); color: inherit;
-        text-decoration: none; cursor: pointer;
-        transition: background-color var(--motion-fast) var(--ease-standard),
-          border-color var(--motion-fast) var(--ease-standard),
-          color var(--motion-fast) var(--ease-standard),
-          transform var(--motion-fast) var(--ease-standard),
-          box-shadow var(--motion-fast) var(--ease-standard);
-      }
-      .btn:focus-visible { outline: none; box-shadow: var(--focus-ring); }
-      .btn-primary { background: var(--accent); color: var(--accent-on); }
-      .btn-primary:hover { background: var(--accent-hover); transform: translateY(-1px); }
-      .btn-primary:active { background: var(--accent-active); transform: none; }
-      .btn-secondary { background: var(--surface); color: var(--fg); border-color: var(--border); box-shadow: var(--elev-ring); }
-      .btn-secondary:hover { border-color: var(--accent); color: var(--accent); }
-      .btn-quiet { background: var(--surface-warm); color: var(--fg-2); }
-      .btn-quiet:hover { color: var(--fg); }
-      .btn-danger { background: var(--danger); color: var(--surface); }
-      .btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
-      .btn.block { width: 100%; min-height: 48px; }
-
-      /* ─── 输入（@source: base(warm-editorial)） ─────────────────── */
-      .field { display: grid; gap: var(--space-2); margin-block-start: var(--space-5); }
-      label { color: var(--fg-2); font-size: var(--text-sm); font-weight: 700; }
-      input, textarea, select {
-        width: 100%; min-height: 46px; padding: var(--space-2) var(--space-4);
-        border: 1px solid var(--border); border-radius: var(--radius-sm);
-        background: var(--surface); color: var(--fg); font: inherit;
-      }
-      textarea { min-height: 96px; resize: vertical; }
-      input:focus, textarea:focus, select:focus { outline: none; box-shadow: var(--focus-ring); border-color: var(--accent); }
-      input:user-invalid, textarea:user-invalid { border-color: var(--danger); }
-      .field .hint { color: var(--muted); font-size: var(--text-sm); }
-      .field .error { color: var(--danger); font-size: var(--text-sm); }
-
-      /* ─── 卡片与面板（@source: base(warm-editorial)） ───────────── */
-      .panel {
-        background: color-mix(in oklab, var(--surface), transparent 4%);
-        border: 1px solid var(--border); border-radius: var(--radius-lg);
-        box-shadow: var(--elev-raised); overflow: hidden;
-      }
-      .panel-head {
-        display: flex; justify-content: space-between; align-items: center;
-        gap: var(--space-4); padding: var(--space-5);
-        border-bottom: 1px solid var(--border-soft);
-      }
-      .tile { padding: var(--space-5); border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface); }
-      .tile p { color: var(--muted); font-size: var(--text-sm); margin-block-start: var(--space-3); }
-      .mini-card { min-height: 148px; padding: var(--space-5); border: 1px solid var(--border-soft); border-radius: var(--radius-md); background: var(--surface-warm); }
-      .mini-card p { color: var(--muted); font-size: var(--text-sm); margin-block-start: var(--space-3); }
-      .card-row { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-4); padding: var(--space-5); }
-      @media (max-width: 860px) { .card-row { grid-template-columns: 1fr; } }
-
-      /* ─── 状态徽章（@source: base(warm-editorial)，语义色重绑） ── */
-      .status {
-        display: inline-flex; align-items: center; gap: var(--space-2);
-        color: var(--meta); font: 700 var(--text-xs) / 1 var(--font-mono);
-        text-transform: uppercase; letter-spacing: 0.08em;
-      }
-      .status::before { width: 8px; height: 8px; border-radius: var(--radius-pill); background: var(--success); content: ""; }
-      .status.stable::before { background: var(--status-stable); }
-      .status.unruled::before { background: var(--status-unruled); }
-      .status.high::before { background: var(--status-high); }
-      .status.off::before { background: var(--meta); }
-
-      /* ─── 弱标签 chip（@source: project — 元信息/选择器/SkillPicker） ── */
-      .tag {
-        display: inline-flex; align-items: center; gap: var(--space-1);
-        min-height: 36px; padding: var(--space-1) var(--space-4);
-        border: 1px solid var(--border); border-radius: var(--radius-pill);
-        background: var(--surface); color: var(--fg-2);
-        font-size: var(--text-sm); cursor: pointer; white-space: nowrap;
-        transition: border-color var(--motion-fast) var(--ease-standard),
-          color var(--motion-fast) var(--ease-standard),
-          background-color var(--motion-fast) var(--ease-standard);
-      }
-      .tag:focus-visible { outline: none; box-shadow: var(--focus-ring); }
-      .tag.selected { border-color: var(--accent); color: var(--accent); background: color-mix(in oklab, var(--accent), transparent 94%); }
-      .tag.meta { background: none; border-color: var(--border-soft); color: var(--meta); min-height: 0; padding: var(--space-1) var(--space-2); font-size: var(--text-xs); cursor: default; }
-
-      /* ─── 链接（@source: base(warm-editorial)） ─────────────────── */
-      a { color: var(--accent); text-decoration: underline; text-decoration-color: color-mix(in oklab, var(--accent), transparent 55%); text-underline-offset: 3px; }
-      a:hover { text-decoration-color: var(--accent); }
-
-      /* ─── 排版与布局（@source: base(warm-editorial)） ──────────── */
-      .hero { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(320px, 0.9fr); gap: var(--space-8); align-items: center; }
-      @media (max-width: 860px) { .hero { grid-template-columns: 1fr; } }
-      .lower { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-4); }
-      @media (max-width: 860px) { .lower { grid-template-columns: 1fr; } }
-      .metric-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); border-bottom: 1px solid var(--border-soft); }
-      .metric { padding: var(--space-5); border-right: 1px solid var(--border-soft); }
-      .metric:last-child { border-right: 0; }
-      .metric strong { display: block; font-family: var(--font-display); font-size: var(--text-2xl); line-height: var(--leading-tight); }
-      .metric span { color: var(--muted); font-size: var(--text-sm); }
-      @media (max-width: 860px) { .metric-grid { grid-template-columns: 1fr; } .metric { border-right: 0; border-bottom: 1px solid var(--border-soft); } .metric:last-child { border-bottom: 0; } }
-
-      /* ─── 篝火呼吸点（@source: project — 项目唯一记忆点组件） ──── */
-      .flame-dot {
-        display: inline-block; width: 8px; height: 8px;
-        border-radius: var(--radius-pill); background: var(--accent);
-        animation: flame-breathe var(--motion-breath) ease-in-out infinite;
-      }
-      .flame-dot.sm { width: 12px; height: 12px; }
-      @keyframes flame-breathe {
-        0%, 100% { box-shadow: 0 0 0 0 color-mix(in oklab, var(--accent), transparent 30%); opacity: 1; }
-        50% { box-shadow: 0 0 0 6px color-mix(in oklab, var(--accent), transparent 82%); opacity: 0.82; }
-      }
-      @media (prefers-reduced-motion: reduce) {
-        .flame-dot { animation: none; box-shadow: 0 0 0 3px color-mix(in oklab, var(--accent), transparent 78%); }
-      }
-
-      /* ─── tab 栏（@source: project — 底部导航，四个一级页面共用） ── */
-      .tab-bar {
-        position: fixed; inset-inline: 0; bottom: 0; z-index: 40;
-        display: flex; justify-content: space-around;
-        background: color-mix(in oklab, var(--surface), transparent 5%);
-        backdrop-filter: blur(8px);
-        border-top: 1px solid var(--border);
-        padding-bottom: env(safe-area-inset-bottom, 0px);
-        max-width: var(--phone-shell-max); margin-inline: auto;
-      }
-      .tab-item {
-        display: flex; flex-direction: column; align-items: center; justify-content: center;
-        gap: var(--space-1); min-width: 56px; min-height: 56px;
-        color: var(--fg-2); font-size: var(--text-xs);
-        background: none; border: 0; cursor: pointer;
-        transition: color var(--motion-fast) var(--ease-standard),
-          background-color var(--motion-fast) var(--ease-standard);
-      }
-      .tab-item svg { width: 22px; height: 22px; }
-      .tab-item[aria-current="page"] { color: var(--accent); }
-      .tab-item:active { background: color-mix(in oklab, var(--accent), transparent 92%); }
-
-      /* ─── 次级页头（@source: project — 次级页面返回导航） ──────── */
-      .subpage-head {
-        position: sticky; top: 0; z-index: 30;
-        display: flex; align-items: center; gap: var(--space-3);
-        min-height: 48px; padding: var(--space-1) var(--container-gutter-phone);
-        padding-top: calc(var(--space-1) + env(safe-area-inset-top, 0px));
-        background: color-mix(in oklab, var(--bg), transparent 4%);
-        backdrop-filter: blur(8px);
-        border-bottom: 1px solid var(--border-soft);
-      }
-      .subpage-head .sp-back {
-        display: inline-flex; align-items: center; gap: var(--space-1);
-        min-height: 44px; background: none; border: 0;
-        color: var(--fg-2); font-size: var(--text-sm); font-weight: 700;
-        font-family: var(--font-body); cursor: pointer;
-      }
-      .subpage-head .sp-title { flex: 1; font-family: var(--font-display); font-weight: 500; font-size: var(--text-base); color: var(--fg); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-      .subpage-head .sp-tag { margin-left: auto; }
-
-      /* ─── 一级页头（@source: project — 一级页面标题行） ────────── */
-      .page-head {
-        display: flex; align-items: baseline; justify-content: space-between;
-        padding: calc(var(--space-4) + env(safe-area-inset-top, 0px)) var(--container-gutter-phone) var(--space-2);
-      }
-      .page-head h1 { font-size: var(--text-xl); }
-
-      /* ─── 勾选行（@source: project — 应急表单多项勾选） ────────── */
-      .check-row {
-        display: flex; align-items: center; gap: var(--space-3);
-        min-height: 48px; padding-block: var(--space-2);
-        cursor: pointer; user-select: none;
-        border-bottom: 1px solid var(--border-soft);
-      }
-      .check-row:last-child { border-bottom: 0; }
-      .check-box {
-        width: 20px; height: 20px; flex: none;
-        border: 1.5px solid var(--border); border-radius: var(--radius-sm);
-        background: var(--surface);
-        display: inline-flex; align-items: center; justify-content: center;
-        transition: background-color var(--motion-fast) var(--ease-standard),
-          border-color var(--motion-fast) var(--ease-standard);
-      }
-      .check-row[aria-pressed="true"] .check-box { background: var(--accent); border-color: var(--accent); }
-      .check-row[aria-pressed="true"] .check-box::after {
-        content: ""; width: 10px; height: 6px;
-        border-left: 2px solid var(--accent-on); border-bottom: 2px solid var(--accent-on);
-        transform: rotate(-45deg) translateY(-1px);
-      }
-      .check-row span { font-size: var(--text-base); color: var(--fg); }
-
-      /* ─── 选择卡（@source: project — 应急表单三选一） ───────────── */
-      .tile.choice {
-        display: flex; align-items: center; gap: var(--space-3);
-        min-height: 52px; padding: var(--space-3) var(--space-4);
-        cursor: pointer;
-        transition: border-color var(--motion-fast) var(--ease-standard),
-          background-color var(--motion-fast) var(--ease-standard);
-      }
-      .tile.choice[aria-pressed="true"] {
-        border: 1.5px solid var(--accent);
-        background: color-mix(in oklab, var(--accent), transparent 94%);
-      }
-
-      /* ─── 细进度条（@source: project — 应急分步位置指示） ───────── */
-      .progress-track { height: 2px; background: var(--border); border-radius: var(--radius-pill); overflow: hidden; }
-      .progress-fill {
-        height: 100%; background: var(--accent);
-        transition: width var(--motion-base) var(--ease-standard);
-      }
-
-      /* ─── 使用者消息气泡（@source: project — 对话页） ───────────── */
-      .bubble-user {
-        margin-left: auto; max-width: 78%;
-        padding: var(--space-3) var(--space-4);
-        background: var(--surface-warm); color: var(--fg);
-        border-radius: var(--radius-md); border-top-right-radius: 4px;
-        font-size: var(--text-base); line-height: var(--leading-body);
-      }
-
-      /* ─── 助手消息正文容器（@source: project — 对话页，读物非气泡） ─ */
-      .msg-doc {
-        padding-left: var(--space-4);
-        border-left: 2px solid var(--border-soft);
-        font-size: var(--text-base); line-height: var(--leading-body); color: var(--fg);
-      }
-
-      /* ─── 运行状态条（@source: project — progress 事件，时延感知） ── */
-      .run-status {
-        display: flex; align-items: center; gap: var(--space-2);
-        padding: var(--space-2) var(--space-4);
-        color: var(--fg-2); font-size: var(--text-sm);
-      }
-
-      /* ─── 骨架屏（@source: project — loading 态，与真实内容同形） ── */
-      .skeleton {
-        border-radius: var(--radius-sm);
-        background: color-mix(in oklab, var(--surface-warm), transparent 40%);
-        min-height: 16px;
-      }
-      .skeleton.row { min-height: 64px; border-radius: var(--radius-md); }
-      .skeleton.bubble { min-height: 44px; width: 62%; border-radius: var(--radius-md); border-top-right-radius: 4px; }
-      .skeleton.doc { min-height: 72px; }
-
-      /* ─── 空态卡（@source: project — empty 态） ─────────────────── */
-      .empty-state { text-align: center; padding: var(--space-8) var(--space-5); }
-      .empty-state .es-title { font-family: var(--font-display); font-weight: 500; font-size: var(--text-lg); color: var(--fg); }
-      .empty-state .es-desc { color: var(--muted); font-size: var(--text-sm); margin-block: var(--space-2) var(--space-5); }
-
-      /* ─── 错误卡（@source: project — error 态，含重试） ─────────── */
-      .error-card {
-        display: grid; gap: var(--space-3); padding: var(--space-5);
-        border: 1px solid color-mix(in oklab, var(--danger), transparent 55%);
-        border-radius: var(--radius-md); background: var(--surface);
-      }
-      .error-card .ec-title { display: flex; align-items: center; gap: var(--space-2); color: var(--danger); font-weight: 700; font-size: var(--text-base); }
-      .error-card .ec-desc { color: var(--fg-2); font-size: var(--text-sm); }
-
-      /* ─── 结构化提问卡（@source: project — question 事件） ──────── */
-      .question-card { padding: var(--space-5); }
-      .question-card .q-title { font-size: var(--text-lg); color: var(--fg); margin-block-end: var(--space-4); }
-      .question-card .q-options { display: grid; gap: var(--space-2); }
-      .question-card .q-options .btn { justify-content: flex-start; min-height: 48px; }
-      .question-card .q-footer { display: flex; justify-content: space-between; margin-block-start: var(--space-4); }
-      .question-card.answered { opacity: 0.7; pointer-events: none; }
-
-      /* ─── 应急行动卡（@source: project — action_card 事件） ─────── */
-      .action-card { padding: var(--space-6); }
-      .action-card .ac-section { margin-block-start: var(--space-5); }
-      .action-card .ac-section:first-child { margin-block-start: 0; }
-      .action-card .ac-head {
-        display: flex; align-items: baseline; gap: var(--space-2);
-        font-family: var(--font-display); font-weight: 500;
-        font-size: var(--text-base); color: var(--fg);
-        padding-block-end: var(--space-1);
-        border-bottom: 1px solid var(--border-soft);
-      }
-      .action-card .ac-item {
-        display: flex; gap: var(--space-2); align-items: baseline;
-        padding-block: var(--space-1); font-size: var(--text-base); color: var(--fg);
-      }
-      .action-card .ac-item.now svg { color: var(--accent); flex: none; align-self: center; }
-      .action-card .ac-source { font-size: var(--text-xs); color: var(--meta); }
-      .action-card .ac-confidence { font-size: var(--text-xs); color: var(--meta); }
-      .action-card.expired { border: 1px dashed var(--border); }
-      .action-card.expired .ac-expired-bar {
-        display: flex; align-items: center; gap: var(--space-2);
-        color: var(--meta); font-size: var(--text-sm); margin-block-end: var(--space-3);
-      }
-
-      /* ─── 依据区（@source: project — citation 事件，默认收起） ──── */
-      .citation-block { border-top: 1px solid var(--border-soft); margin-block-start: var(--space-4); padding-block-start: var(--space-3); }
-      .citation-head { color: var(--meta); font-size: var(--text-sm); cursor: pointer; background: none; border: 0; padding: 0; }
-      .citation-list { display: none; margin-block-start: var(--space-3); }
-      .citation-block.open .citation-list { display: grid; gap: var(--space-3); }
-      .citation-item .c-title { font-size: var(--text-sm); color: var(--fg); }
-      .citation-item .c-title a { color: var(--fg); }
-      .citation-item .c-meta { font-size: var(--text-xs); color: var(--meta); }
-      .citation-item .c-withdrawn { color: var(--meta); }
-
-      /* ─── 思考折叠行（@source: project — reasoning 事件） ───────── */
-      .reasoning-row { border-left: 2px solid var(--border-soft); padding-left: var(--space-3); }
-      .reasoning-row > summary {
-        color: var(--muted); font-size: var(--text-sm); cursor: pointer;
-        list-style: none; display: inline-flex; align-items: center; gap: var(--space-2);
-      }
-      .reasoning-row > summary::-webkit-details-marker { display: none; }
-      .reasoning-row[open] > summary { color: var(--fg-2); }
-      .reasoning-row .r-body { color: var(--muted); font-size: var(--text-sm); margin-block-start: var(--space-2); }
-
-      /* ─── 工具调用指示（@source: project — tool_call 事件） ─────── */
-      .tool-row { color: var(--meta); font-size: var(--text-xs); }
-      .tool-row > summary { cursor: pointer; list-style: none; display: inline-flex; gap: var(--space-1); }
-      .tool-row > summary::-webkit-details-marker { display: none; }
-
-      /* ─── 候选轻提示（@source: project — candidate 事件派生 UI） ── */
-      .candidate-toast {
-        display: inline-flex; align-items: center; gap: var(--space-2);
-        padding: var(--space-2) var(--space-4);
-        background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-pill);
-        color: var(--fg-2); font-size: var(--text-sm);
-        box-shadow: var(--elev-ring); cursor: pointer;
-      }
-      .candidate-toast .ct-panel {
-        display: none; position: absolute; inset-inline: 0; margin-block-start: var(--space-2);
-        padding: var(--space-4);
-        background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-md);
-        box-shadow: var(--elev-raised);
-      }
-      .candidate-toast.open { position: relative; }
-      .candidate-toast.open .ct-panel { display: block; }
-      .candidate-toast .ct-item { display: grid; gap: var(--space-1); margin-block-end: var(--space-3); }
-      .candidate-toast .ct-item .ct-text { font-size: var(--text-sm); color: var(--fg); }
-      .candidate-toast .ct-item .ct-origin { font-size: var(--text-xs); color: var(--meta); }
-
-      /* ─── 底部确认操作单（@source: project — 不可撤销操作确认） ── */
-      .confirm-sheet {
-        position: fixed; inset-inline: 0; bottom: 0; z-index: 50;
-        background: var(--surface);
-        border-radius: var(--radius-lg) var(--radius-lg) 0 0;
-        box-shadow: var(--elev-raised);
-        padding: var(--space-6) var(--space-5) calc(var(--space-6) + env(safe-area-inset-bottom, 0px));
-        max-width: var(--phone-shell-max); margin-inline: auto;
-      }
-      .confirm-sheet .cs-title { font-family: var(--font-display); font-weight: 500; font-size: var(--text-lg); color: var(--fg); }
-      .confirm-sheet .cs-desc { color: var(--muted); font-size: var(--text-sm); margin-block: var(--space-2) var(--space-5); }
-      .confirm-sheet .cs-actions { display: flex; gap: var(--space-3); }
-      .confirm-sheet .cs-actions .btn { flex: 1; }
-
-      /* ─── 列表行（@source: project — 会话/档案条目通用行） ──────── */
-      .list-row {
-        display: grid; gap: var(--space-1); padding: var(--space-4) var(--space-5);
-        border: 1px solid var(--border); border-radius: var(--radius-md);
-        background: var(--surface); cursor: pointer;
-        transition: border-color var(--motion-fast) var(--ease-standard);
-      }
-      .list-row:hover { border-color: color-mix(in oklab, var(--fg-2), transparent 55%); }
-      .list-row .lr-title { font-size: var(--text-base); color: var(--fg); font-weight: 700; }
-      .list-row .lr-sub { font-size: var(--text-sm); color: var(--muted); }
-      .list-row .lr-meta { font-size: var(--text-xs); color: var(--meta); }
-      .list-row .lr-actions { display: flex; gap: var(--space-2); margin-block-start: var(--space-2); }
-
-      /* ─── 折叠分组（@source: project — 档案领域分组、案例展开） ── */
-      .group-collapse > summary {
-        display: flex; align-items: center; gap: var(--space-2);
-        min-height: 44px; cursor: pointer; list-style: none;
-        color: var(--fg-2); font-size: var(--text-sm); font-weight: 700;
-      }
-      .group-collapse > summary::-webkit-details-marker { display: none; }
-      .group-collapse > summary .gc-arrow { transition: transform var(--motion-fast) var(--ease-standard); }
-      .group-collapse[open] > summary .gc-arrow { transform: rotate(90deg); }
-      .group-collapse .gc-body { display: grid; gap: var(--space-3); margin-block-start: var(--space-2); }
-    </style>
-  </head>
-  <body>
-    <div class="phone-mask">
-      <div class="phone-shell">
-        <main class="page">
-          <div style="padding: calc(var(--space-8) + env(safe-area-inset-top, 0px)) var(--container-gutter-phone) 0;">
-            <p class="eyebrow">Campfire-AI · 契约组件</p>
-            <h1 style="font-size: var(--text-2xl); margin-block: var(--space-2) var(--space-3);">篝火智答设计契约</h1>
-            <p class="lead" style="font-size: var(--text-base); color: var(--fg-2);">warm-editorial 底座 × 火焰橙。本页为组件形状契约（480px 手机蒙版呈现），非页面设计。</p>
+    /* 基础组件（@source: base(warm-editorial)）：消费同一份 tokens.css。 */
+    input:not([type="checkbox"], [type="radio"]) { width: 100%; min-height: 48px; padding: var(--space-3); border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface); color: var(--fg); }
+    input:not([type="checkbox"], [type="radio"]):focus { outline: none; border-color: var(--accent); box-shadow: var(--focus-ring); }
+    input:read-only { background: var(--bg); }
+    input[aria-invalid="true"] { border-color: var(--danger); }
+    .btn-secondary { background: var(--surface); color: var(--fg); border-color: var(--border); }
+    .panel-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); padding-bottom: var(--space-4); border-bottom: 1px solid var(--border-soft); }
+    .tag.selected { border-color: var(--accent); color: var(--accent); background: color-mix(in oklab, var(--accent), transparent 94%); }
+    .tag.meta { color: var(--meta); }
+    button.tag { min-height: 44px; min-width: 44px; }
+    .flame-dot.sm { width: var(--space-3); height: var(--space-3); }
+    .skeleton.bubble { min-height: 44px; width: 62%; border-top-right-radius: var(--space-1); }
+    .skeleton.doc { min-height: 72px; }
+    .list-row .lr-sub { color: var(--muted); font-size: var(--text-sm); }
+    .list-row .lr-meta { color: var(--meta); font-size: var(--text-xs); }
+    /* 导航（@source: project）：单列页头与四项底栏；图录内只演示局部布局。 */
+    .page-head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-3); padding: var(--space-4) 0; }
+    .page-head :is(h1, h2, h3) { font-size: var(--text-xl); }
+    .subpage-head { position: sticky; top: 0; display: flex; align-items: center; gap: var(--space-3); min-height: 48px; padding: var(--space-2) var(--container-gutter-phone); padding-top: calc(var(--space-2) + env(safe-area-inset-top, 0px)); border-bottom: 1px solid var(--border-soft); background: var(--surface); }
+    .sp-back { display: inline-flex; align-items: center; min-height: 44px; min-width: 44px; color: var(--fg-2); font-size: var(--text-sm); }
+    .sp-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--font-display); }
+    .sp-tag { flex: none; }
+    .tab-bar { position: fixed; inset-inline: 0; bottom: 0; z-index: 40; display: flex; justify-content: space-around; max-width: var(--phone-shell-max); margin-inline: auto; padding-bottom: env(safe-area-inset-bottom, 0px); border-top: 1px solid var(--border); background: var(--surface); }
+    .tab-item { display: flex; flex: 1; flex-direction: column; align-items: center; justify-content: center; gap: var(--space-1); min-width: 56px; min-height: 56px; color: var(--fg-2); font-size: var(--text-xs); text-decoration: none; }
+    .tab-item[aria-current="page"] { color: var(--accent); text-decoration: underline; text-underline-offset: var(--space-1); }
+    #foundation .subpage-head, #foundation .tab-bar { position: static; }
+    #foundation .field { margin-top: var(--space-4); }
+    #foundation .mini-card p { margin-top: var(--space-2); color: var(--fg-2); }
+    @media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition: none !important; animation: none !important; } }
+    @media print { body { background: var(--surface); } .phone-shell { max-width: none; box-shadow: none; } .catalog-nav, .toast, .specimen-note, .skip-link { display: none; } .component-section { break-inside: avoid; } .panel { box-shadow: none; } .emergency-controls { position: static; } }
+  </style>
+</head>
+<body>
+  <a class="skip-link" href="#overview">跳到主要内容</a>
+  <div class="phone-shell">
+    <header class="masthead">
+      <a class="brand" href="#overview" aria-label="篝火智答，返回组件预览开头"><img src="./assets/brand-mark.svg" width="128" height="128" alt="" /><span class="brand-name">篝火智答</span></a><span class="tag">组件参考</span>
+    </header>
+    <nav class="catalog-nav" aria-label="组件目录"><label for="section-picker">定位组件</label><select id="section-picker">
+      <option value="situation-entry">01 · 咨询入口</option><option value="safety">02 · 应急采集与追问</option><option value="provenance">03 · 行动卡与依据</option><option value="plan">04 · 档案与候选确认</option><option value="forms">05 · 输入与校验</option><option value="actions">06 · 操作层级</option><option value="states">07 · 加载、空态与失败</option><option value="conversation">08 · 完整对话工作面</option><option value="foundation">09 · 基础组件与导航</option>
+    </select></nav>
+    <main>
+      <header class="intro" id="overview" tabindex="-1"><h1>组件契约 · 交互预览</h1><p>按当前页面任务组织。所有内容均为虚构示例，操作仅改变本页预览，刷新后恢复。</p><a class="btn" href="#conversation">体验完整对话</a></header>
+      <section class="component-section" id="situation-entry" data-od-id="situation-entry" aria-labelledby="entry-title">
+        <div class="section-heading"><span class="section-kicker">01 / 首页</span><h2 id="entry-title" tabindex="-1">把人送进正确的入口</h2></div>
+        <div class="stack">
+          <article class="panel emergency-entry"><div class="entry-title"><span class="flame-dot" aria-hidden="true"></span><h3>现在需要帮助</h3></div><p>在现场遇到正在发生的情况？回答几个问题，开始应急咨询。</p><a class="btn btn-primary block" href="#safety">开始应急咨询</a></article>
+          <a class="tile daily-entry" href="#daily-preview"><h3>日常咨询</h3><p>想聊聊正在准备或刚发生的事，随时开始。</p><span class="entry-next">进入对话预览 →</span></a>
+        </div>
+        <p class="specimen-note">应急入口优先；日常入口整卡可点。<br /><a href="./pages/首页.md">对照首页设计</a></p>
+      </section>
+      <section class="component-section" id="safety" data-od-id="safety" aria-labelledby="safety-title">
+        <div class="section-heading"><span class="section-kicker">02 / 应急表单与对话追问</span><h2 id="safety-title" tabindex="-1">少输入，也能继续</h2><p>每项都可以跳过；跳过按“未排除”处理，不会当作正常。</p></div>
+        <div class="tile emergency-preview">
+          <div class="emergency-content">
+            <div class="step-meta"><span class="meta" id="step-number">第 1 / 8 题</span><button class="text-button" id="step-back" type="button" disabled>上一题</button></div>
+            <div class="progress-track" role="progressbar" aria-label="采集题目位置" aria-valuemin="1" aria-valuemax="8" aria-valuenow="1"><div class="progress-fill"></div></div>
+            <h3 class="step-title" id="step-title" tabindex="-1">现在有没有以下医疗危险表现？</h3><p class="hint" id="step-hint">可以多选；不确定或无法核对时，直接跳过。</p>
+            <div class="step-options" id="step-options" role="group" aria-labelledby="step-title" aria-describedby="step-hint"></div>
+            <div class="step-review" id="step-review" hidden tabindex="-1"><strong id="step-review-title"></strong><ul id="step-review-list"></ul><a class="text-button" href="#provenance">查看行动卡形态 →</a></div>
+            <p class="sr-only" id="step-live" role="status" aria-live="polite"></p>
           </div>
+          <div class="emergency-controls"><div class="button-row"><button class="btn btn-quiet" id="step-skip" type="button">跳过这题</button><button class="btn" id="step-next" type="button">下一题</button></div><button class="btn btn-primary block" id="step-submit" type="button">提交，开始分析</button><p class="meta">随时提交，无需答完八题。</p></div>
+        </div>
+        <p class="specimen-note">本页只演示采集与反馈，提交不会生成现场建议。</p>
+        <div class="specimen-note"><label for="question-scenario">提问组件 · 虚构样例</label><select id="question-scenario"><option value="daily">多题 · 日常情境</option><option value="single">单题 · 咨询方向</option><option value="emergency">多题 · 现场核对</option></select><p>单题和多题使用同一组件。逐题作答，可返回修改，整组提交后形成一条回答。</p></div>
+        <div id="question-preview"></div>
+        <div class="specimen-note"><button class="text-button" id="question-reset" type="button">重置提问</button><p>跳过只作用于当前题；事实类问题不预选答案。这里与手机对话直接复用相同模板、样式和交互。</p></div>
+      </section>
+      <section class="component-section" id="provenance" data-od-id="provenance" aria-labelledby="provenance-title">
+        <div class="section-heading"><span class="section-kicker">03 / 对话页</span><h2 id="provenance-title" tabindex="-1">先看行动，再核对依据</h2><p>以下展示七节结构与来源标签，内容取自设计文档中的虚构情境。</p></div>
+        <article class="panel action-card">
+          <span class="tag">行动卡 · 虚构情境，勿作现场依据</span>
+          <div class="ac-section"><h3 class="ac-head"><span>01</span>当前状态</h3><p><span class="status unruled">医疗风险 · 未排除</span></p><p>与平时相比：明显变化<br />当前沟通：下降<br />感觉负荷：尚未核对</p><small class="ac-source">来源：家属报告 · 置信：未知</small></div>
+          <div class="ac-section"><h3 class="ac-head"><span>02</span>立即怎么沟通</h3><p>一次只问一个问题，留出回应时间。</p><small class="ac-source">来源：AI 推断 · 置信：可能</small></div>
+          <div class="ac-section now"><h3 class="ac-head"><span>03</span>立即做</h3><p>先询问本人是否愿意换到更安静的地方。</p><small class="ac-source">来源：AI 推断 · 置信：可能</small></div>
+          <div class="ac-section"><h3 class="ac-head"><span>04</span>不要做</h3><p>不要突然触碰或多人同时追问。</p><small class="ac-source">来源：AI 推断 · 置信：可能</small></div>
+          <div class="ac-section"><h3 class="ac-head"><span>05</span>需要的医疗检查</h3><p>需要确认是否存在疼痛或其他身体不适；目前信息不足。</p><small class="ac-source">来源：AI 推断 · 置信：未知</small></div>
+          <div class="ac-section"><h3 class="ac-head"><span>06</span>安全措施</h3><p>允许熟悉的支持者陪同，减少人员围观。</p><small class="ac-source">来源：AI 推断 · 置信：可能</small></div>
+          <div class="ac-section"><h3 class="ac-head"><span>07</span>何时升级</h3><p>遇到紧急医疗情况，请直接就医或拨打急救电话。</p><small class="ac-source">来源：AI 推断 · 置信：未知 · 非诊断结论</small></div>
+          <details class="citation-block"><summary><span>依据 1 条</span><span class="toggle-label"><span class="when-closed">展开</span><span class="when-open">收起</span></span></summary><div class="citation-list">
+            <article class="citation-item"><a class="citation-title" href="#source-example">沟通方式记录（虚构样例）</a><p class="meta">来源：项目内虚构资料 · <span class="tag">虚构样例</span></p><p class="hint">适用范围：仅展示来源条目，不支持实际处置结论。</p></article>
+            <article class="citation-item mini-card"><strong>历史引用：旧版情境记录</strong><p><span class="status off">该来源已撤下</span></p><p class="hint">不再作为当前依据，不显示正文。</p></article>
+          </div></details>
+        </article>
+        <div class="stack" style="margin-top: var(--space-4)">
+          <article class="tile expired"><span class="status off">上一次行动卡 · 已过期</span><p>现场信息已有更新，请查看上方最新卡片。旧卡保留为历史记录。</p></article>
+          <details class="tile" id="source-example"><summary><span>来源条目预览</span><span class="toggle-label"><span class="when-closed">展开</span><span class="when-open">收起</span></span></summary><div class="source-body"><h3>沟通方式记录</h3><p class="hint">虚构样例。用于核对标题、来源、适用范围与状态的呈现；无真实案例或专业审阅记录。</p><p class="meta">资料分区 · 本页演示条目</p></div></details>
+          <details class="tile"><summary><span>三值风险徽章</span><span class="toggle-label"><span class="when-closed">展开</span><span class="when-open">收起</span></span></summary><div class="risk-examples"><span class="status stable">稳定</span><span class="status unruled">未排除</span><span class="status high">高风险</span></div><p class="hint">三种状态均有文字，跳过不会显示为“稳定”。</p></details>
+        </div>
+        <p class="specimen-note"><a href="./pages/对话页.md">对照对话页设计</a></p>
+      </section>
+      <section class="component-section" id="plan" data-od-id="plan" aria-labelledby="plan-title">
+        <div class="section-heading"><span class="section-kicker">04 / 档案页与对话候选提示</span><h2 id="plan-title" tabindex="-1">陈述与推断，分开核对</h2><p>你直接说过的内容可以入档；AI 归纳留在待确认区，不进入当前摘要。</p></div>
+        <div id="profile-preview" class="stack">
+          <article class="panel"><div class="record-head"><h3 id="profile-summary-title" tabindex="-1">关于 TA 的当前认识</h3><p class="hint">摘要只收你直接说过或确认过的内容。</p><span class="tag">仅当前账号 · 虚构对象</span></div><div id="stable-records"><article class="list-row" data-record="statement"><strong class="lr-title">在较吵的环境中喜欢戴耳罩</strong><p class="meta">你说过 · 本次演示 · 陈述已记录</p><div class="lr-actions"><button class="btn" type="button" data-delete="statement">删除记录</button></div></article></div><div class="empty-state" id="summary-empty" hidden><strong class="es-title">摘要中还没有记录</strong><p>咨询中你直接说过的相关内容会自动记录，也可以主动补充。</p><a class="btn block" href="#forms">补充一条</a></div></article>
+          <details class="tile group-collapse" open><summary><span class="status unruled" id="candidate-heading" tabindex="-1">待确认（1）</span><span class="toggle-label"><span class="when-closed">展开</span><span class="when-open">收起</span></span></summary><div class="gc-body" id="candidate-records"><article class="list-row candidate-record" data-record="candidate"><span class="status unruled" id="candidate-status">待确认 · AI 归纳</span><strong class="lr-title">提前知道结束时间，可能更安心</strong><p class="meta">来源：本次虚构对话 · 生成方式：AI 归纳</p><p class="hint">这是推断。确认前不会进入摘要或作为事实使用。</p><div class="lr-actions"><button class="btn" type="button" id="candidate-confirm">确认这条</button><button class="btn btn-quiet" type="button" data-delete="candidate">删除</button></div></article></div><p class="hint" id="candidate-empty" hidden>没有待确认内容。</p></details>
+          <a class="btn block" href="#forms">补充一条记录</a>
+        </div>
+        <div class="specimen-note"><button class="text-button" id="profile-reset" type="button">重置档案预览</button><p>确认后条目移入摘要，仍保留“AI 归纳”的生成方式。删除先显示确认面板。</p></div>
+        <details class="candidate-toast"><summary><span id="candidate-toast-label">对话中 · 有 1 条待确认</span><span class="toggle-label"><span class="when-closed">预览</span><span class="when-open">收起</span></span></summary><div class="ct-panel"><p id="candidate-toast-text">提前知道结束时间，可能更安心。</p><p class="meta">来源：本次虚构对话 · AI 归纳</p><a class="btn block" href="#candidate-heading">去档案核对</a></div></details>
+      </section>
+      <section class="component-section" id="forms" data-od-id="forms" aria-labelledby="forms-title">
+        <div class="section-heading"><span class="section-kicker">05 / 档案补充与表单状态</span><h2 id="forms-title" tabindex="-1">写下内容，反馈留在原处</h2><p>首次输入不急着报错；失焦或提交后校验，失败时保留已填内容。</p></div>
+        <form class="panel" id="record-form"><div class="field"><label for="record-content">补充一条关于 TA 的记录</label><textarea id="record-content" name="record" required aria-describedby="record-hint record-error" placeholder="例如：他喜欢提前知道什么时候结束。"></textarea><span class="hint" id="record-hint">写下你直接说过或观察到的一件事。</span><span class="field-error" id="record-error" role="alert"></span></div><div class="error-card form-feedback" id="record-server-error" hidden><strong class="ec-title">这条记录没有保存成功</strong><p>服务暂时不可用，内容仍在输入框里，可以重新保存。</p></div><p class="form-status" id="record-status" role="status" aria-live="polite"></p><button class="btn btn-primary block" id="record-submit" type="submit" style="margin-top: var(--space-5)">保存这条记录</button></form>
+        <div class="specimen-note"><label for="save-outcome">预览控制 · 提交结果</label><select id="save-outcome"><option value="error">模拟保存失败</option><option value="success">模拟保存成功</option></select><p class="hint">只写入本页的虚构档案预览；刷新后恢复。</p></div>
+        <details class="tile" id="daily-preview"><summary><span>日常对话输入预览</span><span class="toggle-label"><span class="when-closed">展开</span><span class="when-open">收起</span></span></summary><form class="field" id="daily-form"><label for="situation">想聊聊什么？</label><textarea id="situation" required aria-describedby="daily-hint daily-error" placeholder="从正在准备或刚发生的一件事说起……"></textarea><span class="hint" id="daily-hint">不必先建立档案。</span><span class="field-error" id="daily-error" role="alert"></span><button class="btn block" type="submit">发送消息</button></form><p id="daily-result" class="hint" role="status" aria-live="polite"></p></details>
+      </section>
+      <section class="component-section" id="actions" data-od-id="actions" aria-labelledby="actions-title">
+        <div class="section-heading"><span class="section-kicker">06 / 通用操作</span><h2 id="actions-title" tabindex="-1">文字与动作保持一致</h2></div>
+        <details class="tile"><summary><span>主操作、次操作、跳过与删除</span><span class="toggle-label"><span class="when-closed">展开</span><span class="when-open">收起</span></span></summary><div class="button-samples">
+          <div class="sample"><a class="btn btn-primary block" href="#safety">开始应急咨询</a><span class="hint">主要操作：直接进入采集预览。</span></div>
+          <div class="sample"><a class="btn block" href="#source-example">查看来源</a><span class="hint">次要操作：打开对应来源条目。</span></div>
+          <div class="sample"><a class="btn btn-quiet block" href="#question-preview">查看可跳过的追问</a><span class="hint">跳过保留不确定性；表达异议无需危险样式。</span></div>
+          <div class="sample"><button class="btn btn-danger block" type="button" data-delete="statement">删除示例记录</button><span class="hint">危险操作：先确认，再移除本页记录。</span></div>
+        </div></details>
+      </section>
+      <section class="component-section" id="states" data-od-id="states" aria-labelledby="states-title">
+        <div class="section-heading"><span class="section-kicker">07 / 数据区与运行反馈</span><h2 id="states-title" tabindex="-1">失败，也有明确下一步</h2></div>
+        <div class="specimen-note"><label for="state-picker">预览控制 · 页面状态</label><select id="state-picker"><option value="populated">正常 · 咨询记录</option><option value="loading">加载中 · 同形骨架</option><option value="delayed">等待较久 · 可取消</option><option value="empty">首次使用 · 没有记录</option><option value="no-results">搜索 · 没有匹配结果</option><option value="error" selected>失败 · 记录加载失败</option><option value="partial">中断 · 保留部分回答</option></select></div>
+        <div id="state-stage">
+          <div class="state-view tile" data-state="populated" hidden><a class="daily-entry" href="#provenance"><strong>回顾等候区里的沟通情况</strong><span class="meta">刚刚 · 虚构对象</span><span class="entry-next">打开对话预览 →</span></a></div>
+          <div class="state-view tile" data-state="loading" hidden><p class="run-status">正在加载咨询记录…</p><div class="stack" aria-hidden="true"><div class="skeleton row"></div><div class="skeleton row"></div><div class="skeleton row"></div></div><p class="hint">加载状态预览，可从上方切换。</p></div>
+          <div class="state-view tile" data-state="delayed" hidden><p>加载时间较长，你可以取消等待。</p><div class="button-row"><button class="btn" type="button" data-state-retry>重试加载</button><button class="btn btn-quiet" type="button" id="state-cancel">取消，返回入口</button></div></div>
+          <div class="state-view tile empty-state" data-state="empty" hidden><strong class="es-title">还没有咨询记录</strong><p>从这里开始第一次日常咨询。</p><a class="btn block" href="#daily-preview">开始日常咨询</a></div>
+          <div class="state-view tile empty-state" data-state="no-results" hidden><strong class="es-title">没有找到“超市哭闹”相关内容</strong><p>试试其他日常说法，或减少筛选条件。</p><button class="btn block" id="state-clear-search" type="button">清除筛选</button></div>
+          <div class="state-view error-card" data-state="error"><strong class="ec-title">咨询记录加载失败</strong><p>服务暂时不可用。可以重试，或先开始新的咨询。</p><div class="button-row"><button class="btn" type="button" data-state-retry>重试</button><a class="btn btn-quiet" href="#situation-entry">返回入口</a></div></div>
+          <div class="state-view tile" data-state="partial" hidden><div class="msg-doc"><span class="status off">本次回答中断</span><p>你提到刚才的等候区比较吵，他比平时更少说话，捂住了耳朵。</p></div><p class="hint">已收到的文字保留，未完成的回答不当作完整建议。</p><div class="button-row"><button class="btn" type="button" data-state-retry>重新尝试</button><a class="btn btn-quiet" href="#daily-preview">返回输入</a></div></div>
+        </div>
+        <p class="sr-only" id="state-live" role="status" aria-live="polite"></p>
+      </section>
+      <section class="component-section" id="conversation" data-od-id="conversation" aria-labelledby="conversation-title">
+        <div class="section-heading"><span class="section-kicker">08 / 完整对话工作面</span><h2 id="conversation-title" tabindex="-1">从一条消息，到下一步</h2><p>把提问、依据、行动卡和运行反馈放回同一段对话中。</p></div>
+        <div class="chat-preview-controls specimen-note">
+          <div><label for="chat-scenario">预览控制 · 对话情境</label><select id="chat-scenario"><option value="daily">日常 · 追问与依据</option><option value="emergency">应急 · 行动卡与多题追问</option><option value="history">历史 · 加载后恢复</option><option value="history-error">历史 · 加载失败</option><option value="retrieval-error">运行 · 检索暂时不可用</option><option value="reconnecting">连接 · 重连与失败</option><option value="delayed">应急 · 首字超过 10 秒</option></select></div>
+          <div class="button-row"><button class="btn" id="chat-open" type="button">全屏体验</button><button class="btn btn-quiet" id="chat-reset" type="button">重置对话</button></div>
+          <p class="hint">虚构对话，本地模拟流式与异常；不会调用模型或保存数据。切换情境保留草稿，重置会清空。</p>
+        </div>
+        <div id="chat-inline-host">
+          <div class="chat-shell" id="chat-shell" data-running="false">
+            <header class="chat-head"><div class="chat-heading"><h3 id="chat-title">等候时的沟通</h3><span class="meta" id="chat-active-skill">日常咨询 · 虚构样例</span></div><button class="text-button" id="chat-close" type="button" hidden>退出预览</button></header>
+            <details class="candidate-toast chat-candidate" id="chat-candidate" hidden><summary><span>有 1 条待确认</span><span class="toggle-label"><span class="when-closed">预览</span><span class="when-open">收起</span></span></summary><div class="ct-panel"><p>提前知道结束时间，可能更安心。</p><p class="meta">来源：本次虚构对话 · AI 归纳</p><button class="btn block" id="chat-go-profile" type="button">去档案核对</button></div></details>
+            <div class="chat-thread" id="chat-thread" role="log" aria-label="咨询消息" aria-live="off" tabindex="0"></div>
+            <button class="chat-latest" id="chat-latest" type="button" hidden>回到最新消息</button>
+            <footer class="chat-footer" id="chat-footer">
+              <div class="chat-progress" id="chat-progress" hidden><span class="flame-dot" aria-hidden="true"></span><span id="chat-progress-text"></span></div>
+              <div class="skill-picker" role="group" aria-label="下一条消息使用的技能"><button class="skill-chip" type="button" data-chat-skill="auto" aria-pressed="true">自动</button><button class="skill-chip" type="button" data-chat-skill="daily" aria-pressed="false">日常咨询</button><button class="skill-chip" type="button" data-chat-skill="emergency" aria-pressed="false">应急咨询</button><button class="skill-chip" type="button" data-chat-skill="profile" aria-pressed="false">档案整理</button></div>
+              <form class="chat-compose" id="chat-compose"><label class="sr-only" for="chat-input">发送消息</label><textarea id="chat-input" rows="1" aria-describedby="chat-compose-hint" placeholder="写下你想补充的情况……"></textarea><button class="btn btn-primary" id="chat-send" type="submit" disabled>发送</button><button class="btn btn-primary" id="chat-stop" type="button" hidden>停止</button></form>
+              <p class="meta" id="chat-compose-hint">技能只作用于下一条消息，发送后回归“自动”。</p>
+            </footer>
+          </div>
+        </div>
+        <p class="sr-only" id="chat-live" role="status" aria-live="polite" aria-atomic="true"></p>
+      </section>
 
-          <!-- ═══ 01 按钮 ═══ -->
-          <section class="demo-section" style="padding-inline: var(--container-gutter-phone);">
-            <p class="demo-title">01 · 按钮</p>
-            <p class="demo-desc">四级动作语言：primary 唯一主动作、secondary 次动作、quiet 静默、danger 危险。</p>
-            <div class="demo-row">
-              <button class="btn btn-primary" type="button">开始应急咨询</button>
-              <button class="btn btn-secondary" type="button">查看依据</button>
-              <button class="btn btn-quiet" type="button">跳过这题</button>
-              <button class="btn btn-danger" type="button">删除记录</button>
-              <button class="btn btn-primary" type="button" disabled>正在登录…</button>
-            </div>
-          </section>
-
-          <!-- ═══ 02 输入 ═══ -->
-          <section class="demo-section" style="padding-inline: var(--container-gutter-phone);">
-            <p class="demo-title">02 · 输入</p>
-            <p class="demo-desc">label 在上、focus 橙环、user-invalid 才出红边（blur 前不校验）。</p>
-            <div class="field" style="margin-block-start: 0;">
-              <label for="demo-account">账号名</label>
-              <input id="demo-account" placeholder="用于登录的账号名" />
-              <p class="hint">不要求邮箱，也不会用于验证。</p>
-            </div>
-            <div class="field">
-              <label for="demo-invite">邀请码</label>
-              <input id="demo-invite" required value="A1B2" />
-              <p class="error" role="alert">邀请码无效或已被使用</p>
-            </div>
-            <div class="field">
-              <label for="demo-note">刚刚发生了什么（可跳过）</label>
-              <textarea id="demo-note" placeholder="一句话描述现场情况"></textarea>
-            </div>
-          </section>
-
-          <!-- ═══ 03 卡片三层 ═══ -->
-          <section class="demo-section" style="padding-inline: var(--container-gutter-phone);">
-            <p class="demo-title">03 · 卡片三层</p>
-            <p class="demo-desc">panel（抬升）> tile（平铺）> mini-card（暖沙内衬）——海拔即层级。</p>
-            <div class="panel">
-              <div class="panel-head">
-                <div><p class="eyebrow">panel</p><h3 style="font-size: var(--text-lg);">抬升面板</h3></div>
-                <span class="status stable">在线</span>
-              </div>
-              <div style="padding: var(--space-5);"><p style="color: var(--muted); font-size: var(--text-sm);">唯一带阴影层：一页摘要、应急入口、行动卡。</p></div>
-            </div>
-            <div class="tile">
-              <h3 style="font-size: var(--text-lg);">tile 平铺卡</h3>
-              <p>边框卡无阴影——列表行、入口、提问卡。</p>
-            </div>
-            <div class="mini-card">
-              <h3 style="font-size: var(--text-lg);">mini-card 暖沙内衬</h3>
-              <p>次级入口、低权重信息区。</p>
-            </div>
-          </section>
-
-          <!-- ═══ 04 状态徽章与弱标签 ═══ -->
-          <section class="demo-section" style="padding-inline: var(--container-gutter-phone);">
-            <p class="demo-title">04 · 状态徽章与弱标签</p>
-            <p class="demo-desc">三值医疗风险徽章（硬校验）；tag 元信息 chip 与选择器 chip。</p>
-            <div class="demo-row">
-              <span class="status stable">稳定</span>
-              <span class="status unruled">未排除</span>
-              <span class="status high">高风险</span>
-              <span class="status off">已撤下</span>
-            </div>
-            <div class="demo-row" style="margin-block-start: var(--space-4);">
-              <span class="tag">自动</span>
-              <span class="tag selected">日常咨询</span>
-              <span class="tag">应急咨询</span>
-            </div>
-            <div class="demo-row">
-              <span class="tag meta">已发表</span>
-              <span class="tag meta">内部</span>
-              <span class="tag meta">虚构样例</span>
-              <span class="tag meta">待确认</span>
-              <span class="tag meta">已授权</span>
-            </div>
-          </section>
-
-          <!-- ═══ 05 导航骨架 ═══ -->
-          <section class="demo-section" style="padding-inline: 0;">
-            <p class="demo-title" style="padding-inline: var(--container-gutter-phone);">05 · 导航骨架</p>
-            <p class="demo-desc" style="padding-inline: var(--container-gutter-phone);">次级页头（返回 + 标题 + 技能标签）；底部 tab 栏见页脚。</p>
-            <div class="subpage-head">
-              <button class="sp-back" type="button">← 返回</button>
-              <span class="sp-title">与平时相比的变化</span>
-              <span class="tag meta sp-tag">应急咨询</span>
-            </div>
-            <div class="page-head" style="padding-block-start: var(--space-4);">
-              <h1>档案</h1>
-            </div>
-          </section>
-
-          <!-- ═══ 06 呼吸点与进度 ═══ -->
-          <section class="demo-section" style="padding-inline: var(--container-gutter-phone);">
-            <p class="demo-title">06 · 呼吸点与进度</p>
-            <p class="demo-desc">flame-dot 项目唯一记忆点（2s 呼吸、reduced-motion 静态）；分步进度只给位置感。</p>
-            <div class="demo-row">
-              <span class="flame-dot"></span>
-              <span class="flame-dot sm"></span>
-              <span style="color: var(--muted); font-size: var(--text-sm);">8px / 12px 两档</span>
-            </div>
-            <div class="progress-track" role="img" aria-label="第 3 题，共 8 题" style="margin-block-start: var(--space-4);"><div class="progress-fill" style="width: 37.5%;"></div></div>
-          </section>
-
-          <!-- ═══ 07 采集控件 ═══ -->
-          <section class="demo-section" style="padding-inline: var(--container-gutter-phone);">
-            <p class="demo-title">07 · 采集控件</p>
-            <p class="demo-desc">应急八项的勾选行与三选一卡——整行热区 ≥48px，选中态不改变行高。</p>
-            <div class="tile" style="padding: var(--space-2) var(--space-5);">
-              <div class="check-row" aria-pressed="true" role="button" tabindex="0"><span class="check-box"></span><span>呼吸异常</span></div>
-              <div class="check-row" aria-pressed="false" role="button" tabindex="0"><span class="check-box"></span><span>明显外伤</span></div>
-              <div class="check-row" aria-pressed="false" role="button" tabindex="0"><span class="check-box"></span><span>癫痫持续或异常发作</span></div>
-            </div>
-            <div class="demo-col">
-              <div class="tile choice" aria-pressed="true" role="button" tabindex="0"><span style="font-size: var(--text-base);">明显变化</span></div>
-              <div class="tile choice" aria-pressed="false" role="button" tabindex="0"><span style="font-size: var(--text-base);">轻度变化</span></div>
-            </div>
-          </section>
-
-          <!-- ═══ 08 对话消息流 ═══ -->
-          <section class="demo-section" style="padding-inline: var(--container-gutter-phone);">
-            <p class="demo-title">08 · 对话消息流</p>
-            <p class="demo-desc">使用者是气泡、助手是读物正文——左细线区隔，17px 阅读字号。</p>
-            <div class="demo-col">
-              <div class="bubble-user">他刚才在超市突然捂住耳朵蹲下了，怎么都不肯走。</div>
-              <div class="msg-doc">根据你描述的情况，环境噪音可能是重要促发因素。建议先带他到相对安静的角落，等待至少 10 秒再尝试沟通。</div>
-              <div class="run-status"><span class="flame-dot sm"></span>正在检索资料…</div>
-              <details class="reasoning-row"><summary>正在分析…</summary><div class="r-body">思考过程的中间态呈现区，与正文视觉区隔；不是结论，不作为依据引用。</div></details>
-              <details class="tool-row"><summary>查阅资料（2 条）</summary><div style="margin-block-start: var(--space-1);">search_knowledge · search_cases 的调用摘要。</div></details>
-            </div>
-          </section>
-
-          <!-- ═══ 09 提问卡与行动卡 ═══ -->
-          <section class="demo-section" style="padding-inline: var(--container-gutter-phone);">
-            <p class="demo-title">09 · 提问卡与行动卡</p>
-            <p class="demo-desc">question 三通道（点选/自由/跳过）；action-card 七节、三值徽章、来源标注。</p>
-            <div class="tile question-card">
-              <p class="q-title">他现在愿意用简单手势或写字回应吗？</p>
-              <div class="q-options">
-                <button class="btn btn-secondary" type="button">愿意</button>
-                <button class="btn btn-secondary" type="button">不愿意</button>
-              </div>
-              <div class="q-footer"><button class="btn btn-quiet" type="button">自由回答</button><button class="btn btn-quiet" type="button">跳过这题</button></div>
-            </div>
-            <div class="tile question-card answered">
-              <p class="q-title">是否可能疼痛？</p>
-              <div class="q-options">
-                <button class="btn btn-secondary" type="button" aria-pressed="true">不确定</button>
-              </div>
-              <div class="q-footer"><button class="btn btn-quiet" type="button" tabindex="-1">已回答 · 2026-10-06 14:32</button></div>
-            </div>
-            <div class="panel action-card">
-              <div class="ac-section">
-                <div class="ac-head">1 · 当前状态</div>
-                <div class="ac-item"><span>医疗风险</span><span class="status unruled">未排除</span></div>
-                <div class="ac-item"><span>与平时相比：明显变化</span><span class="ac-source">来源：家属报告</span><span class="ac-confidence">较可能</span></div>
-              </div>
-              <div class="ac-section">
-                <div class="ac-head">3 · 立即做</div>
-                <div class="ac-item now"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M3 8.5 6.5 12 13 4.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg><span>带他离开当前货架区，到入口侧安静角落</span><span class="ac-source">来源：现场观察</span></div>
-                <div class="ac-item now"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M3 8.5 6.5 12 13 4.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg><span>一次一人讲话，等待至少 10 秒</span><span class="ac-source">来源：历史记录</span></div>
-              </div>
-              <div class="citation-block open">
-                <button class="citation-head" type="button">依据 2 条</button>
-                <div class="citation-list">
-                  <div class="citation-item"><p class="c-title"><a href="#">感觉超负荷时的环境调整策略</a></p><p class="c-meta">来源：某机构公开材料 · 适用：学龄前至学龄期 · 已发表</p></div>
-                  <div class="citation-item"><p class="c-title">超市购物场景的支持记录</p><p class="c-meta c-withdrawn">该来源已撤下</p></div>
-                </div>
-              </div>
-            </div>
-            <div class="panel action-card expired">
-              <div class="ac-expired-bar"><span class="status off">已过期</span>见最新卡片</div>
-              <div class="ac-section"><div class="ac-head">1 · 当前状态</div><div class="ac-item"><span>医疗风险</span><span class="status unruled">未排除</span></div></div>
-            </div>
-          </section>
-
-          <!-- ═══ 10 候选与确认 ═══ -->
-          <section class="demo-section" style="padding-inline: var(--container-gutter-phone);">
-            <p class="demo-title">10 · 候选与确认</p>
-            <p class="demo-desc">候选轻提示（预览不进消息流）；底部确认操作单（不可撤销动作）。</p>
-            <div class="candidate-toast" role="button" tabindex="0">有 2 条待确认
-              <div class="ct-panel">
-                <div class="ct-item"><p class="ct-text">超市等嘈杂环境可能是感觉触发因素</p><p class="ct-origin">AI 归纳 · 待确认</p></div>
-                <div class="ct-item"><p class="ct-text">捂耳是他表达不适的常见方式</p><p class="ct-origin">系统观察 · 待确认</p></div>
-                <button class="btn btn-secondary" type="button">去档案确认</button>
-              </div>
-            </div>
-          </section>
-
-          <!-- ═══ 11 列表与分组 ═══ -->
-          <section class="demo-section" style="padding-inline: var(--container-gutter-phone);">
-            <p class="demo-title">11 · 列表与分组</p>
-            <p class="demo-desc">会话/档案通用列表行；领域折叠分组（默认展开、带计数）。</p>
-            <div class="demo-col">
-              <div class="list-row">
-                <p class="lr-title">超市里突然捂耳朵蹲下怎么办</p>
-                <p class="lr-sub">他刚才在超市突然捂住耳朵蹲下了，怎么都不肯走…</p>
-                <p class="lr-meta">昨天 · 小宇</p>
-              </div>
-              <details class="group-collapse tile" open>
-                <summary><svg class="gc-arrow" width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M6 4l4 4-4 4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>沟通（3）</summary>
-                <div class="gc-body">
-                  <div class="list-row">
-                    <p class="lr-title">无口语时用文字或二选一</p>
-                    <p class="lr-sub">用手写字板或出示两个选项，比追问有效。</p>
-                    <p class="lr-meta">你说过 · 10-02 确认</p>
-                  </div>
-                  <div class="list-row">
-                    <p class="lr-title">等待至少 10 秒再回应</p>
-                    <p class="lr-meta">文档记录 · 09-28 确认</p>
-                  </div>
-                </div>
-              </details>
-            </div>
-          </section>
-
-          <!-- ═══ 12 三态基元 ═══ -->
-          <section class="demo-section" style="padding-inline: var(--container-gutter-phone);">
-            <p class="demo-title">12 · 三态基元</p>
-            <p class="demo-desc">骨架与真实内容同形；空态是引导时刻；错误三问（发生了什么/为什么/怎么办）。</p>
-            <div class="demo-col">
-              <div class="skeleton row"></div>
-              <div class="skeleton bubble"></div>
-              <div class="skeleton doc"></div>
-            </div>
-            <div class="tile empty-state">
-              <p class="es-title">还没有咨询记录</p>
-              <p class="es-desc">从上面开始第一次咨询</p>
-              <button class="btn btn-primary" type="button">开始新的日常咨询</button>
-            </div>
-            <div class="error-card">
-              <p class="ec-title"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><circle cx="8" cy="8" r="6.5" stroke="currentColor" stroke-width="1.6"/><path d="M8 5v4M8 11h.01" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>检索暂时不可用</p>
-              <p class="ec-desc">网络连接中断，已保留你输入的内容。</p>
-              <div><button class="btn btn-secondary" type="button">重试</button></div>
-            </div>
-          </section>
-        </main>
+      <section class="component-section" id="foundation" data-od-id="foundation" aria-labelledby="foundation-title">
+        <div class="section-heading"><span class="section-kicker">09 / 基础组件与导航</span><h2 id="foundation-title" tabindex="-1">同一套纸面语言</h2><p>基础输入、卡片层级和导航，与上方交互组件共用视觉参数。</p></div>
+        <div class="stack">
+          <article class="tile"><h3>基础输入与按钮</h3><div class="field"><label for="demo-account">账号名</label><input id="demo-account" autocomplete="off" placeholder="用于登录的账号名" aria-describedby="demo-account-hint" /><span class="hint" id="demo-account-hint">仅演示输入样式，不会提交或保存。</span></div><div class="field"><label for="demo-invite">邀请码 · 错误态示例</label><input id="demo-invite" value="A1B2" readonly aria-invalid="true" aria-describedby="demo-invite-error" /><span class="field-error" id="demo-invite-error">邀请码无效或已被使用</span></div><div class="button-samples"><a class="btn btn-secondary block" href="#source-example">次要操作 · 查看来源</a><button class="btn block" type="button" disabled>处理中…</button></div></article>
+          <article class="panel"><div class="panel-head"><h3>卡片层级</h3><span class="tag meta">组件示例</span></div><div class="stack" style="margin-top: var(--space-4)"><div class="tile"><h3>平铺卡</h3><p class="hint">边框区隔内容，用于提问、列表与入口。</p></div><div class="mini-card"><h3>暖沙内衬</h3><p>次级信息用暖底承托，保持阅读层级。</p></div></div></article>
+          <article class="tile"><h3>页头与导航</h3><header class="page-head"><h3>档案</h3><span class="tag meta">仅当前账号</span></header><header class="subpage-head"><a class="sp-back" href="#overview">返回</a><span class="sp-title">等候时的沟通</span><span class="tag meta sp-tag">日常咨询</span></header><nav class="tab-bar" aria-label="一级导航布局示例"><a class="tab-item" href="#situation-entry" aria-current="page">首页</a><a class="tab-item" href="#conversation">咨询</a><a class="tab-item" href="#plan">档案</a><a class="tab-item" href="#foundation">我的</a></nav><p class="hint">图录内用文字导航定位组件，正式页面的图标取自 assets。</p></article>
+          <article class="tile"><h3>消息骨架</h3><div class="stack" aria-hidden="true" style="margin-top: var(--space-4)"><div class="bubble-user skeleton bubble"></div><div class="msg-doc skeleton doc"></div></div><p class="hint">使用者气泡与助手正文分别保持加载前后的形状。</p></article>
+        </div>
+      </section>
+    </main>
+    <footer class="footer"><p>篝火智答 · 当前组件参考与交互预览<br />页面草案的交互参照，未接入应用或专业审阅。</p><a href="#overview">回到开头</a></footer>
+  </div>
+  <dialog class="confirm-sheet" id="delete-sheet" aria-labelledby="delete-title" aria-describedby="delete-description"><h2 id="delete-title">删除这条示例记录？</h2><p id="delete-description">记录将从本页预览移除。刷新页面可恢复。</p><div class="button-row"><button class="btn btn-quiet" id="delete-cancel" type="button" autofocus>取消</button><button class="btn btn-danger" id="delete-confirm" type="button">删除记录</button></div></dialog>
+  <!-- 单一提问模板同时用于组件样例和手机消息，不另设场景变体。 -->
+  <template id="question-card-template">
+    <div class="tile question-card">
+      <div class="question-head"><span class="meta" data-question-context>下一步</span><button class="text-button" type="button" data-question-collapse aria-expanded="true">收起</button></div>
+      <h3 class="q-title" data-question-title tabindex="-1"></h3>
+      <div class="question-body" data-question-body>
+        <form data-question-form>
+          <p class="hint">选择一项，或用自己的话回答；全部处理后再提交。</p>
+          <div class="q-options" data-question-options role="radiogroup"></div>
+          <button class="text-button question-free-toggle" data-question-free-toggle type="button" aria-expanded="false"><span class="question-number" aria-hidden="true">＋</span><span data-question-free-label>用自己的话回答</span></button>
+          <div class="field" data-question-free-field hidden><label>你的回答</label><textarea data-question-free placeholder="也可以提出其他方向……"></textarea></div>
+          <p class="hint" data-question-hint></p>
+          <div class="question-footer">
+            <div class="question-progress"><span data-question-progress></span><span data-question-count></span></div>
+            <div class="question-actions"><button class="btn" data-question-previous type="button">上一题</button><button class="btn btn-quiet" data-question-skip type="button">跳过</button><button class="btn btn-primary" data-question-next type="button">下一题</button><button class="btn btn-primary" data-question-submit type="submit" hidden>提交</button></div>
+          </div>
+        </form>
+        <div data-question-record hidden><p class="hint" data-question-record-status></p><ol class="question-record-list"></ol></div>
+        <span class="sr-only" data-question-live role="status" aria-live="polite"></span>
       </div>
     </div>
+  </template>
+  <dialog class="chat-sheet" id="chat-sheet" aria-labelledby="chat-title"></dialog>
+  <p class="sr-only" id="demo-live" role="status" aria-live="polite" aria-atomic="true"></p>
+  <div class="toast" id="demo-toast" hidden><p id="toast-message"></p><button id="toast-close" type="button" aria-label="关闭预览提示">关闭</button></div>
+  <noscript><p class="tile">交互预览需要 JavaScript；入口、依据折叠及目录内容仍可阅读。</p></noscript>
+  <script>
+    // 所有数据均为内存中的虚构样例，不发请求、不持久化，不生成现场建议。
+    const byId = (id) => document.getElementById(id);
+    function notify(message) {
+      byId('demo-live').textContent = message;
+      byId('toast-message').textContent = message;
+      byId('demo-toast').hidden = false;
+    }
+    byId('toast-close').addEventListener('click', () => { byId('demo-toast').hidden = true; });
+    addEventListener('keydown', (event) => {
+      if (event.key === 'Escape' && !byId('delete-sheet').open) byId('demo-toast').hidden = true;
+    });
 
-    <!-- 确认操作单演示（固定底部，与 tab 栏同层级互斥出现） -->
-    <div class="confirm-sheet" role="dialog" aria-modal="true" aria-label="删除确认">
-      <p class="cs-title">删除这条记录？</p>
-      <p class="cs-desc">删除后咨询和检索都不会再用到它。</p>
-      <div class="cs-actions">
-        <button class="btn btn-quiet" type="button">取消</button>
-        <button class="btn btn-danger" type="button">删除</button>
-      </div>
-    </div>
-  </body>
+    // 原生 select 保留取值与无脚本回退；展开层统一绘制，避免系统蓝色菜单。
+    const selectControls = new Map();
+    let closeActiveSelect = null;
+    function syncSelect(select) { selectControls.get(select)?.sync(); }
+    document.querySelectorAll('select').forEach((select) => {
+      const label = document.querySelector('label[for="' + select.id + '"]');
+      label.id ||= select.id + '-label';
+      const wrapper = document.createElement('div');
+      wrapper.className = 'select-field';
+      const trigger = document.createElement('div');
+      trigger.id = select.id + '-trigger';
+      trigger.className = 'select-trigger';
+      trigger.tabIndex = 0;
+      trigger.setAttribute('role', 'combobox');
+      trigger.setAttribute('aria-haspopup', 'listbox');
+      trigger.setAttribute('aria-expanded', 'false');
+      const value = document.createElement('span');
+      value.id = select.id + '-value';
+      value.className = 'select-value';
+      const action = document.createElement('span');
+      action.className = 'select-action';
+      action.setAttribute('aria-hidden', 'true');
+      trigger.setAttribute('aria-labelledby', label.id + ' ' + value.id);
+      trigger.append(value, action);
+      const menu = document.createElement('div');
+      menu.id = select.id + '-listbox';
+      menu.className = 'select-menu';
+      menu.hidden = true;
+      menu.setAttribute('role', 'listbox');
+      menu.setAttribute('aria-labelledby', label.id);
+      trigger.setAttribute('aria-controls', menu.id);
+      const items = [...select.options].map((option, index) => {
+        const item = document.createElement('div');
+        item.id = select.id + '-option-' + index;
+        item.className = 'select-option';
+        item.setAttribute('role', 'option');
+        const caption = document.createElement('span');
+        caption.textContent = option.textContent;
+        const selected = document.createElement('span');
+        selected.className = 'select-selected';
+        selected.textContent = '已选';
+        selected.setAttribute('aria-hidden', 'true');
+        item.append(caption, selected);
+        menu.append(item);
+        return item;
+      });
+      let focusedIndex = select.selectedIndex;
+      let searchText = '';
+      let lastSearch = 0;
+      const sync = () => {
+        value.textContent = select.selectedOptions[0]?.textContent || '';
+        trigger.setAttribute('aria-disabled', String(select.disabled));
+        trigger.tabIndex = select.disabled ? -1 : 0;
+        action.textContent = menu.hidden ? '展开' : '收起';
+        items.forEach((item, index) => item.setAttribute('aria-selected', String(index === select.selectedIndex)));
+        if (select.disabled) close();
+      };
+      const focusOption = (index) => {
+        focusedIndex = Math.max(0, Math.min(items.length - 1, index));
+        items.forEach((item, position) => item.classList.toggle('is-focused', position === focusedIndex));
+        const item = items[focusedIndex];
+        trigger.setAttribute('aria-activedescendant', item.id);
+        // 只滚动列表，不改变页面或目录定位。
+        if (item.offsetTop < menu.scrollTop) menu.scrollTop = item.offsetTop;
+        else if (item.offsetTop + item.offsetHeight > menu.scrollTop + menu.clientHeight) menu.scrollTop = item.offsetTop + item.offsetHeight - menu.clientHeight;
+      };
+      const close = () => {
+        menu.hidden = true;
+        trigger.setAttribute('aria-expanded', 'false');
+        trigger.removeAttribute('aria-activedescendant');
+        action.textContent = '展开';
+        searchText = '';
+        if (closeActiveSelect === close) closeActiveSelect = null;
+      };
+      const open = () => {
+        if (select.disabled) return;
+        closeActiveSelect?.();
+        const rect = trigger.getBoundingClientRect();
+        const gutter = 8;
+        const below = innerHeight - rect.bottom - gutter;
+        const above = rect.top - gutter;
+        const desired = Math.min(336, items.length * 52 + 16);
+        const upwards = below < desired && above > below;
+        const height = Math.min(desired, Math.max(64, upwards ? above - gutter : below - gutter));
+        menu.style.width = rect.width + 'px';
+        menu.style.left = Math.max(gutter, Math.min(rect.left, innerWidth - rect.width - gutter)) + 'px';
+        menu.style.maxHeight = height + 'px';
+        menu.hidden = false;
+        menu.style.top = (upwards ? Math.max(gutter, rect.top - menu.offsetHeight - gutter) : rect.bottom + gutter) + 'px';
+        trigger.setAttribute('aria-expanded', 'true');
+        action.textContent = '收起';
+        closeActiveSelect = close;
+        trigger.focus({ preventScroll: true });
+        focusOption(select.selectedIndex);
+      };
+      const choose = (index) => {
+        const changed = select.selectedIndex !== index;
+        select.selectedIndex = index;
+        close();
+        sync();
+        trigger.focus({ preventScroll: true });
+        if (changed) select.dispatchEvent(new Event('change', { bubbles: true }));
+      };
+      trigger.addEventListener('click', () => { if (menu.hidden) open(); else close(); });
+      trigger.addEventListener('keydown', (event) => {
+        if (select.disabled) return;
+        if (event.key === 'Tab') { close(); return; }
+        if (event.key === 'Escape') { if (!menu.hidden) { event.preventDefault(); close(); } return; }
+        if (['ArrowDown', 'ArrowUp', 'Home', 'End', 'Enter', ' '].includes(event.key)) {
+          event.preventDefault();
+          if (menu.hidden) { open(); if (event.key === 'Home') focusOption(0); else if (event.key === 'End') focusOption(items.length - 1); }
+          else if (event.key === 'Enter' || event.key === ' ') choose(focusedIndex);
+          else focusOption(event.key === 'Home' ? 0 : event.key === 'End' ? items.length - 1 : focusedIndex + (event.key === 'ArrowDown' ? 1 : -1));
+          return;
+        }
+        if (event.key.length === 1 && !event.ctrlKey && !event.metaKey && !event.altKey) {
+          event.preventDefault();
+          if (menu.hidden) open();
+          const now = Date.now();
+          searchText = now - lastSearch > 700 ? event.key : searchText + event.key;
+          lastSearch = now;
+          const match = [...select.options].findIndex((option) => option.textContent.trim().toLocaleLowerCase().startsWith(searchText.toLocaleLowerCase()));
+          if (match >= 0) focusOption(match);
+        }
+      });
+      trigger.addEventListener('blur', close);
+      items.forEach((item, index) => {
+        item.addEventListener('mousedown', (event) => event.preventDefault());
+        item.addEventListener('pointermove', (event) => { if (event.pointerType === 'mouse') focusOption(index); });
+        item.addEventListener('click', () => choose(index));
+      });
+      label.addEventListener('click', () => trigger.focus());
+      select.addEventListener('change', sync);
+      new MutationObserver(sync).observe(select, { attributes: true, attributeFilter: ['disabled'] });
+      document.addEventListener('pointerdown', (event) => { if (!wrapper.contains(event.target) && !menu.contains(event.target)) close(); });
+      select.before(wrapper);
+      wrapper.append(trigger, select);
+      document.body.append(menu);
+      select.hidden = true;
+      selectControls.set(select, { trigger, sync });
+      sync();
+    });
+    addEventListener('scroll', () => closeActiveSelect?.(), { passive: true });
+    addEventListener('resize', () => closeActiveSelect?.());
+
+    // 目录和入口共用原生锚点；打开目标所在的折叠区，再定位和转移焦点。
+    const sectionPicker = byId('section-picker');
+    const sections = [...document.querySelectorAll('.component-section')];
+    let explicitSection = null;
+    let explicitScroll = 0;
+    function jumpTo(id, updateHistory = true) {
+      const target = byId(id);
+      if (!target) return;
+      for (let detail = target.closest('details'); detail; detail = detail.parentElement.closest('details')) detail.open = true;
+      const navHeight = document.querySelector('.catalog-nav').getBoundingClientRect().height;
+      const heading = target.matches('section') ? target.querySelector('h2') : target;
+      const focusTarget = heading.matches('details') ? heading.querySelector('summary') : heading;
+      if (!focusTarget.matches('a, button, input, textarea, select, summary, [tabindex]')) focusTarget.tabIndex = -1;
+      focusTarget.focus({ preventScroll: true });
+      window.scrollTo({ top: id === 'overview' ? 0 : Math.max(0, scrollY + heading.getBoundingClientRect().top - navHeight - 24), behavior: 'instant' });
+      const section = target.closest('.component-section');
+      explicitSection = section ? section.id : sections[0].id;
+      explicitScroll = scrollY;
+      sectionPicker.value = explicitSection;
+      syncSelect(sectionPicker);
+      if (updateHistory && location.hash !== '#' + id) history.pushState(null, '', '#' + id);
+    }
+    document.addEventListener('click', (event) => {
+      const anchor = event.target.closest('a[href^="#"]');
+      if (!anchor || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
+      const id = anchor.hash.slice(1);
+      if (!byId(id)) return;
+      event.preventDefault();
+      jumpTo(id);
+    });
+    sectionPicker.addEventListener('change', () => jumpTo(sectionPicker.value));
+    addEventListener('popstate', () => { if (location.hash) jumpTo(location.hash.slice(1), false); });
+    addEventListener('hashchange', () => { if (location.hash) jumpTo(location.hash.slice(1), false); });
+    let navigationQueued = false;
+    function updateNavigation() {
+      // 页尾可能同时露出两个章节；主动定位的选择保持到用户继续滚动。
+      if (explicitSection && Math.abs(scrollY - explicitScroll) < 2) {
+        sectionPicker.value = explicitSection;
+        syncSelect(sectionPicker);
+        navigationQueued = false;
+        return;
+      }
+      explicitSection = null;
+      const marker = document.querySelector('.catalog-nav').getBoundingClientRect().bottom + 32;
+      let current = sections[0].id;
+      for (const section of sections) if (section.querySelector('h2').getBoundingClientRect().top <= marker) current = section.id;
+      if (innerHeight + scrollY >= document.documentElement.scrollHeight - 2) current = sections.at(-1).id;
+      if (document.activeElement !== selectControls.get(sectionPicker).trigger) { sectionPicker.value = current; syncSelect(sectionPicker); }
+      navigationQueued = false;
+    }
+    addEventListener('scroll', () => {
+      if (!navigationQueued) { navigationQueued = true; requestAnimationFrame(updateNavigation); }
+    }, { passive: true });
+
+    // 八项顺序取自应急 skill。未填和跳过均保留为 null，不伪装成正常。
+    const questions = [
+      { title: '现在有没有以下医疗危险表现？', kind: 'checkbox', options: ['意识改变', '呼吸异常', '严重出血', '明显外伤', '癫痫持续或异常发作', '中毒或误服', '严重过敏', '明显疼痛', '突然出现与平时不同的神经或行为表现'] },
+      { title: '与平时相比，变化有多明显？', kind: 'radio', options: ['无明显变化', '轻度变化', '明显变化'] },
+      { title: '现在的沟通能力与平时相比怎样？', kind: 'radio', options: ['与平时相同', '有所下降', '严重下降'] },
+      { title: '当前的痛苦程度怎样？', kind: 'radio', options: ['轻度', '中度', '明显'] },
+      { title: '当前有哪些感觉环境因素？', kind: 'checkbox', options: ['噪音', '强光或闪烁灯光', '人群拥挤', '温度不适', '明显气味', '突然触碰'] },
+      { title: '刚刚发生了什么？', kind: 'text', options: [] },
+      { title: '当前最需要关注的风险是什么？', kind: 'radio', options: ['医疗', '自伤', '伤人', '走失', '环境'] },
+      { title: '是否可能存在疼痛？', kind: 'radio', options: ['否', '不确定', '是'] }
+    ];
+    const answers = Array(questions.length).fill(null);
+    let stepIndex = 0;
+    function renderStep(moveFocus = false) {
+      const question = questions[stepIndex];
+      byId('step-title').textContent = question.title;
+      byId('step-number').textContent = '第 ' + (stepIndex + 1) + ' / 8 题';
+      byId('step-hint').textContent = question.kind === 'text' ? '可跳过；不必先填写诊断或长期档案。' : (question.kind === 'checkbox' ? '可以多选；不确定或无法核对时，直接跳过。' : '请选择一项；不确定或无法核对时，直接跳过。');
+      const progress = document.querySelector('.progress-track');
+      progress.setAttribute('aria-valuenow', String(stepIndex + 1));
+      progress.setAttribute('aria-valuetext', '第 ' + (stepIndex + 1) + ' 题，共 8 题');
+      document.querySelector('.progress-fill').style.width = ((stepIndex + 1) / 8 * 100) + '%';
+      byId('step-back').disabled = stepIndex === 0;
+      byId('step-next').hidden = stepIndex === 7;
+      byId('step-review').hidden = true;
+      const options = byId('step-options');
+      options.replaceChildren();
+      if (question.kind === 'text') {
+        const field = document.createElement('textarea');
+        field.id = 'step-free';
+        field.setAttribute('aria-labelledby', 'step-title');
+        field.setAttribute('aria-describedby', 'step-hint');
+        field.value = answers[stepIndex] || '';
+        field.placeholder = '从刚才发生的一件事说起……';
+        field.addEventListener('input', () => { answers[stepIndex] = field.value.trim() ? field.value : null; });
+        options.append(field);
+      } else {
+        question.options.forEach((text, index) => {
+          const label = document.createElement('label');
+          label.className = 'selection ' + (question.kind === 'checkbox' ? 'check-row' : 'choice');
+          const input = document.createElement('input');
+          input.type = question.kind;
+          input.name = 'step-' + stepIndex;
+          input.id = 'step-option-' + index;
+          input.value = text;
+          input.checked = Array.isArray(answers[stepIndex]) && answers[stepIndex].includes(text);
+          const box = document.createElement('span');
+          box.className = 'check-box';
+          box.setAttribute('aria-hidden', 'true');
+          const caption = document.createElement('span');
+          caption.textContent = text;
+          label.append(input, box, caption);
+          options.append(label);
+          input.addEventListener('change', () => {
+            const selected = [...options.querySelectorAll('input:checked')].map((item) => item.value);
+            answers[stepIndex] = selected.length ? selected : null;
+            byId('step-review').hidden = true;
+          });
+        });
+      }
+      if (moveFocus) jumpTo('step-title', false);
+    }
+    byId('step-next').addEventListener('click', () => { if (stepIndex < 7) { stepIndex += 1; renderStep(true); } });
+    byId('step-back').addEventListener('click', () => { if (stepIndex > 0) { stepIndex -= 1; renderStep(true); } });
+    byId('step-skip').addEventListener('click', () => {
+      answers[stepIndex] = null;
+      if (stepIndex < 7) { stepIndex += 1; renderStep(true); }
+      else { renderStep(); byId('step-live').textContent = '第 8 题已跳过，按未排除处理。现在可以提交。'; }
+    });
+    byId('step-submit').addEventListener('click', () => {
+      const snapshot = answers.map((value) => Array.isArray(value) ? value.slice() : value);
+      const completed = snapshot.filter((value) => value !== null).length;
+      const list = byId('step-review-list');
+      list.replaceChildren();
+      questions.forEach((question, index) => {
+        const item = document.createElement('li');
+        const value = snapshot[index];
+        item.textContent = (index + 1) + '. ' + question.title + ' ' + (value === null ? '未排除（未填或跳过）' : (Array.isArray(value) ? value.join('、') : value));
+        list.append(item);
+      });
+      byId('step-review-title').textContent = '已提交示例信息：' + completed + ' 项已填，' + (8 - completed) + ' 项未排除';
+      byId('step-review').hidden = false;
+      byId('step-live').textContent = byId('step-review-title').textContent + '。仅预览，未生成现场建议。';
+      jumpTo('step-review', false);
+    });
+    renderStep();
+
+    // 原生约束保留；脚本只接管错误时机、空白校验与内联消息。
+    function installValidation(form, field, error, message) {
+      form.noValidate = true;
+      let touched = false;
+      const setConstraint = () => field.setCustomValidity(field.value.trim() ? '' : message);
+      const validate = () => {
+        touched = true;
+        setConstraint();
+        const valid = field.validity.valid;
+        field.setAttribute('aria-invalid', String(!valid));
+        error.textContent = valid ? '' : message;
+        return valid;
+      };
+      field.addEventListener('blur', (event) => {
+        // 点提交时由 submit 校验，避免错误行挤动按钮而吞掉这次点击。
+        const submit = event.relatedTarget?.closest('button[type="submit"]');
+        if (submit?.form !== form) validate();
+      });
+      for (const event of ['input', 'change']) field.addEventListener(event, () => { setConstraint(); if (touched) validate(); });
+      validate.reset = () => {
+        touched = false;
+        field.value = '';
+        field.setCustomValidity('');
+        field.removeAttribute('aria-invalid');
+        error.textContent = '';
+      };
+      return validate;
+    }
+    function focusInvalid(field) {
+      // 等表单的默认焦点处理结束，确保焦点留在需要纠正的字段。
+      setTimeout(() => {
+        field.focus({ preventScroll: true });
+        field.scrollIntoView({ block: 'center', behavior: 'instant' });
+      }, 0);
+    }
+    // 单题、多题、日常与现场核对仅替换数据，全部复用同一模板与作答控制器。
+    const questionSamples = {
+      daily: [
+        { question: '这次你希望先得到哪方面帮助？', allowSkip: true, options: [
+          { label: '一起梳理刚才的情境', description: '从发生了什么、本人怎样回应说起，帮助补全背景。', recommended: true },
+          { label: '准备下一次沟通', description: '围绕你想表达的内容，整理可以先说的一句话。' },
+          { label: '整理一条日常记录', description: '把这次观察写清楚，留待以后回顾和核对。' }
+        ] },
+        { question: '刚才主要发生在哪种情境？', allowSkip: true, options: [
+          { label: '候诊或等候', description: '在候诊区、排队或等待安排时。' },
+          { label: '乘车或出行', description: '在交通工具上，或往返途中。' },
+          { label: '其他情境', description: '也可以用自己的话补充地点和当时发生的事。' }
+        ] },
+        { question: '你希望接下来怎样整理？', allowSkip: true, options: [
+          { label: '先给简短要点', description: '先看清这次需要核对的几件事。' },
+          { label: '完整梳理一遍', description: '按发生顺序整理观察与尚不确定的部分。' },
+          { label: '先保留这次记录', description: '保留描述，之后再补充。' }
+        ] }
+      ],
+      emergency: [
+        { question: '本人愿意换到更安静的地方吗？', allowSkip: true, options: [
+          { label: '愿意', description: '本人已表示愿意。' },
+          { label: '不愿意', description: '本人已表示不愿意。' },
+          { label: '不确定', description: '尚未询问，或暂时无法确认。' }
+        ] },
+        { question: '与平时相比，目前的回应怎样？', allowSkip: true, options: [
+          { label: '接近平时', description: '本人回应的方式与平时接近。' },
+          { label: '明显减少', description: '本人比平时更少回应或说话。' },
+          { label: '暂时无法核对', description: '目前没有足够的信息进行比较。' }
+        ] }
+      ]
+    };
+    let questionCardNumber = 0;
+    function createQuestionCard(questions, { context = '下一步', onSubmit, onChange, onFocus } = {}) {
+      if (!Array.isArray(questions) || !questions.length) throw new Error('提问组件需要至少一个问题');
+      const card = byId('question-card-template').content.firstElementChild.cloneNode(true);
+      const part = (name) => card.querySelector('[data-question-' + name + ']');
+      const prefix = 'question-card-' + (++questionCardNumber) + '-';
+      const title = part('title');
+      const body = part('body');
+      const form = part('form');
+      const field = part('free');
+      const freeRegion = part('free-field');
+      const freeToggle = part('free-toggle');
+      const collapse = part('collapse');
+      const options = part('options');
+      const hint = part('hint');
+      const next = part('next');
+      const previous = part('previous');
+      const submit = part('submit');
+      const skip = part('skip');
+      let index = 0;
+      let finished = false;
+      const states = questions.map(() => ({ kind: null, option: null, text: '', freeOpen: false }));
+      for (const name of ['title', 'body', 'free', 'free-field', 'hint']) part(name).id = prefix + name;
+      collapse.setAttribute('aria-controls', body.id);
+      freeToggle.setAttribute('aria-controls', freeRegion.id);
+      freeRegion.querySelector('label').htmlFor = field.id;
+      field.setAttribute('aria-describedby', hint.id);
+      options.setAttribute('aria-labelledby', title.id);
+      part('context').textContent = context;
+      const isResolved = (state) => state.kind === 'skipped' || state.kind === 'option' || (state.kind === 'free' && Boolean(state.text.trim()));
+      const results = () => questions.map((question, i) => ({
+        question: question.question,
+        answer: states[i].kind === 'skipped' ? '（跳过）' : states[i].kind === 'option' ? question.options[states[i].option].label : states[i].text.trim(),
+        status: states[i].kind === 'skipped' ? 'skipped' : isResolved(states[i]) ? 'answered' : 'unanswered'
+      }));
+      function update() {
+        const state = states[index];
+        const free = state.freeOpen;
+        freeRegion.hidden = !free;
+        freeToggle.setAttribute('aria-expanded', String(free));
+        part('free-label').textContent = free ? '收起自由回答' : '用自己的话回答';
+        options.querySelectorAll('input').forEach((input, i) => { input.checked = state.kind === 'option' && state.option === i; });
+        part('progress').textContent = (index + 1) + '/' + questions.length;
+        const resolved = states.filter(isResolved).length;
+        part('count').textContent = '已处理 ' + resolved + '/' + questions.length + ' 题';
+        previous.hidden = questions.length === 1;
+        previous.disabled = index === 0;
+        skip.hidden = !questions[index].allowSkip;
+        next.hidden = index === questions.length - 1;
+        next.disabled = !isResolved(state);
+        submit.hidden = index !== questions.length - 1;
+        submit.disabled = resolved !== questions.length;
+        if (state.kind === 'skipped') hint.textContent = '已跳过此题，提交前可以重新回答。';
+        else if (state.kind === 'option') hint.textContent = '已选择，提交前还可以改选。';
+        else if (state.kind === 'free') {
+          hint.textContent = state.text.trim() ? (free ? '回答会随整组问题一起提交。' : '自由回答已收起，答案已保留。') : (free ? '写下一句回答，或跳过此题。' : '请展开填写自由回答，或跳过此题。');
+        } else hint.textContent = questions[index].allowSkip ? '本题可以跳过，不会预选答案。' : '请回答本题后继续。';
+        onChange?.();
+      }
+      function focusPart(element) {
+        element.focus({ preventScroll: true });
+        if (onFocus) onFocus(element);
+        else element.scrollIntoView({ block: 'nearest' });
+      }
+      function render(moveFocus = false) {
+        const question = questions[index];
+        title.textContent = question.question;
+        options.replaceChildren();
+        (question.options || []).forEach((option, optionIndex) => {
+          const label = document.createElement('label');
+          label.className = 'question-option';
+          const input = document.createElement('input');
+          input.type = 'radio';
+          input.name = prefix + 'answer-' + index;
+          input.value = option.label;
+          const number = document.createElement('span');
+          number.className = 'question-number';
+          number.setAttribute('aria-hidden', 'true');
+          number.textContent = optionIndex + 1;
+          const copy = document.createElement('span');
+          copy.className = 'question-copy';
+          const text = document.createElement('span');
+          text.className = 'question-label';
+          text.textContent = option.label;
+          // 推荐只属于日常方向的虚构样例文案，不向事件契约添加字段。
+          if (option.recommended) {
+            const recommendation = document.createElement('span');
+            recommendation.className = 'question-recommended';
+            recommendation.textContent = '推荐';
+            text.append(recommendation);
+          }
+          copy.append(text);
+          if (option.description) {
+            const description = document.createElement('span');
+            description.className = 'question-description';
+            description.textContent = option.description;
+            copy.append(description);
+          }
+          label.append(input, number, copy);
+          input.addEventListener('change', () => {
+            states[index].kind = 'option';
+            states[index].option = optionIndex;
+            states[index].freeOpen = false;
+            update();
+          });
+          options.append(label);
+        });
+        field.value = states[index].text;
+        update();
+        if (moveFocus) {
+          part('live').textContent = '第 ' + (index + 1) + ' 题，共 ' + questions.length + ' 题。';
+          focusPart(title);
+        }
+      }
+      function showRecord(submitted) {
+        if (finished) return;
+        finished = true;
+        card.classList.toggle('answered', submitted);
+        card.dataset.questionState = submitted ? 'submitted' : 'superseded';
+        title.textContent = submitted ? '这组问题已提交' : '这组提问已结束';
+        form.hidden = true;
+        form.querySelectorAll('input, textarea, button').forEach((element) => { element.disabled = true; });
+        const record = part('record');
+        record.hidden = false;
+        part('record-status').textContent = submitted ? '已提交 · 共 ' + questions.length + ' 题' : '未提交 · 已开始后续消息，保留当时的作答草稿。';
+        results().forEach((result) => {
+          const item = document.createElement('li');
+          const label = document.createElement('strong');
+          label.textContent = result.question;
+          const answer = document.createElement('p');
+          answer.textContent = result.answer || '（未回答）';
+          item.append(label, answer);
+          if (result.status === 'skipped') {
+            const note = document.createElement('span');
+            note.className = 'meta';
+            note.textContent = '已跳过，未提供答案。';
+            item.append(note);
+          }
+          record.querySelector('ol').append(item);
+        });
+        part('live').textContent = submitted ? '这组回答已提交。' : '这组提问未提交，草稿已保留。';
+        onChange?.();
+      }
+      collapse.addEventListener('click', () => {
+        body.hidden = !body.hidden;
+        collapse.setAttribute('aria-expanded', String(!body.hidden));
+        collapse.textContent = body.hidden ? '展开' : '收起';
+        onChange?.();
+      });
+      freeToggle.addEventListener('click', () => {
+        const state = states[index];
+        state.freeOpen = !state.freeOpen;
+        if (state.freeOpen) state.kind = 'free';
+        update();
+        if (state.freeOpen) focusPart(field);
+      });
+      field.addEventListener('input', () => { states[index].text = field.value; update(); });
+      previous.addEventListener('click', () => { if (index > 0) { index -= 1; render(true); } });
+      next.addEventListener('click', () => { if (isResolved(states[index]) && index < questions.length - 1) { index += 1; render(true); } });
+      skip.addEventListener('click', () => {
+        if (!questions[index].allowSkip) return;
+        states[index].kind = 'skipped';
+        states[index].freeOpen = false;
+        if (index < questions.length - 1) { index += 1; render(true); }
+        else { update(); part('live').textContent = '已跳过最后一题，可以提交整组回答。'; }
+      });
+      form.addEventListener('submit', (event) => {
+        event.preventDefault();
+        if (finished) return;
+        if (index < questions.length - 1) { if (isResolved(states[index])) { index += 1; render(true); } return; }
+        if (!states.every(isResolved)) return;
+        if (onSubmit?.(results()) === false) return;
+        showRecord(true);
+      });
+      render();
+      return {
+        card,
+        supersede: () => showRecord(false),
+        restore: (answers) => {
+          if (!Array.isArray(answers) || answers.length !== questions.length) throw new Error('历史回答数量与问题不一致');
+          answers.forEach((answer, i) => {
+            states[i].kind = answer === '（跳过）' ? 'skipped' : 'free';
+            states[i].text = answer === '（跳过）' ? '' : answer;
+          });
+          showRecord(true);
+        }
+      };
+    }
+    function loadQuestionPreview() {
+      const scenario = byId('question-scenario').value;
+      const questions = scenario === 'single' ? questionSamples.daily.slice(0, 1) : questionSamples[scenario];
+      byId('question-preview').replaceChildren(createQuestionCard(questions).card);
+    }
+    byId('question-scenario').addEventListener('change', loadQuestionPreview);
+    byId('question-reset').addEventListener('click', () => { loadQuestionPreview(); jumpTo('question-preview', false); });
+    loadQuestionPreview();
+
+    // 待确认条目与摘要使用不同容器；确认前没有进入摘要的路径。
+    const originalProfile = byId('profile-preview').innerHTML;
+    let manualRecordNumber = 0;
+    function updateProfileState() {
+      const candidateCount = byId('candidate-records').children.length;
+      byId('candidate-heading').textContent = '待确认（' + candidateCount + '）';
+      byId('candidate-empty').hidden = candidateCount !== 0;
+      byId('summary-empty').hidden = byId('stable-records').children.length !== 0;
+      byId('candidate-toast-label').textContent = candidateCount ? '对话中 · 有 ' + candidateCount + ' 条待确认' : '对话中 · 没有待确认内容';
+      document.querySelector('.candidate-toast .ct-panel').hidden = candidateCount === 0;
+      const chatCandidate = byId('chat-candidate');
+      chatCandidate.querySelector('summary > span').textContent = '有 ' + candidateCount + ' 条待确认';
+      if (!candidateCount) chatCandidate.hidden = true;
+      document.querySelectorAll('[data-delete="statement"]').forEach((button) => { button.disabled = !document.querySelector('[data-record="statement"]'); });
+    }
+    document.addEventListener('click', (event) => {
+      if (event.target.closest('#candidate-confirm')) {
+        const record = document.querySelector('[data-record="candidate"]');
+        record.classList.remove('candidate-record');
+        record.querySelector('.status').className = 'status stable';
+        record.querySelector('.status').textContent = '已由你确认 · AI 归纳';
+        record.querySelector('.hint').textContent = '确认来源与适用情境后，已加入当前摘要预览。';
+        record.querySelector('#candidate-confirm').remove();
+        record.querySelector('[data-delete]').textContent = '删除记录';
+        record.querySelector('[data-delete]').classList.remove('btn-quiet');
+        byId('stable-records').append(record);
+        updateProfileState();
+        jumpTo('profile-summary-title', false);
+        notify('这条 AI 归纳已加入摘要预览；生成方式仍保留。');
+      }
+    });
+    byId('profile-reset').addEventListener('click', () => {
+      byId('profile-preview').innerHTML = originalProfile;
+      updateProfileState();
+      notify('档案预览已恢复初始状态。');
+    });
+
+    const deleteSheet = byId('delete-sheet');
+    let pendingRecord = null;
+    let deleteTrigger = null;
+    document.addEventListener('click', (event) => {
+      const button = event.target.closest('[data-delete]');
+      if (!button || button.disabled) return;
+      pendingRecord = document.querySelector('[data-record="' + button.dataset.delete + '"]');
+      if (!pendingRecord) return;
+      deleteTrigger = button;
+      byId('delete-description').textContent = '「' + pendingRecord.querySelector('.lr-title').textContent + '」将从本页预览移除。刷新页面可恢复。';
+      byId('demo-toast').hidden = true;
+      deleteSheet.showModal();
+    });
+    byId('delete-cancel').addEventListener('click', () => deleteSheet.close());
+    byId('delete-confirm').addEventListener('click', () => {
+      if (pendingRecord) pendingRecord.remove();
+      updateProfileState();
+      deleteSheet.close();
+      notify('示例记录已移除，刷新页面可恢复。');
+    });
+    deleteSheet.addEventListener('close', () => {
+      if (deleteTrigger && deleteTrigger.isConnected && !deleteTrigger.disabled) deleteTrigger.focus();
+      else jumpTo('profile-summary-title', false);
+      pendingRecord = null;
+    });
+    deleteSheet.addEventListener('keydown', (event) => {
+      if (event.key !== 'Tab') return;
+      const first = byId('delete-cancel');
+      const last = byId('delete-confirm');
+      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+    });
+    deleteSheet.addEventListener('click', (event) => {
+      const rect = deleteSheet.getBoundingClientRect();
+      if (event.target === deleteSheet && (event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom)) deleteSheet.close();
+    });
+    updateProfileState();
+
+    const recordForm = byId('record-form');
+    const recordField = byId('record-content');
+    const validateRecord = installValidation(recordForm, recordField, byId('record-error'), '请写下一条记录后再保存。');
+    recordField.addEventListener('input', () => {
+      byId('record-submit').disabled = false;
+      byId('record-submit').textContent = '保存这条记录';
+      byId('record-server-error').hidden = true;
+      byId('record-status').textContent = '';
+    });
+    recordForm.addEventListener('submit', (event) => {
+      event.preventDefault();
+      if (recordField.readOnly) return;
+      if (!validateRecord()) { focusInvalid(recordField); return; }
+      const content = recordField.value.trim();
+      const outcome = byId('save-outcome').value;
+      recordField.readOnly = true;
+      byId('record-submit').disabled = true;
+      byId('record-submit').textContent = '正在保存…';
+      byId('record-status').textContent = '正在保存这条示例记录…';
+      byId('record-server-error').hidden = true;
+      byId('save-outcome').disabled = true;
+      setTimeout(() => {
+        recordField.readOnly = false;
+        byId('save-outcome').disabled = false;
+        if (outcome === 'error') {
+          byId('record-server-error').hidden = false;
+          byId('record-submit').disabled = false;
+          byId('record-submit').textContent = '重新保存';
+          byId('record-status').textContent = '保存失败，已保留全部输入。';
+          return;
+        }
+        const record = document.createElement('article');
+        const recordId = 'manual-' + (++manualRecordNumber);
+        record.className = 'list-row';
+        record.dataset.record = recordId;
+        const title = document.createElement('strong');
+        title.className = 'lr-title';
+        title.textContent = content;
+        const meta = document.createElement('p');
+        meta.className = 'meta';
+        meta.textContent = '你说过 · 刚刚 · 本页预览';
+        const actions = document.createElement('div');
+        actions.className = 'lr-actions';
+        const remove = document.createElement('button');
+        remove.type = 'button';
+        remove.className = 'btn';
+        remove.dataset.delete = recordId;
+        remove.textContent = '删除记录';
+        actions.append(remove);
+        record.append(title, meta, actions);
+        byId('stable-records').append(record);
+        updateProfileState();
+        byId('record-submit').textContent = '已加入预览';
+        byId('record-status').textContent = '已加入上方档案预览，输入仍保留；刷新后恢复。';
+      }, 650);
+    });
+
+    const dailyForm = byId('daily-form');
+    const dailyField = byId('situation');
+    const validateDaily = installValidation(dailyForm, dailyField, byId('daily-error'), '请写下一句想聊的内容。');
+    dailyForm.addEventListener('submit', (event) => {
+      event.preventDefault();
+      if (!validateDaily()) { focusInvalid(dailyField); return; }
+      byId('daily-result').textContent = '已发送（本页预览）：' + dailyField.value.trim();
+    });
+
+    // 状态切换器属于图录控制；重试反馈有确定结束，不留下无限等待。
+    let retryTimer = null;
+    const statePicker = byId('state-picker');
+    function showState(state) {
+      clearTimeout(retryTimer);
+      document.querySelectorAll('[data-state-retry]').forEach((button) => { button.disabled = false; button.textContent = button.dataset.label; });
+      document.querySelector('[data-state="partial"] .status').textContent = '本次回答中断';
+      document.querySelectorAll('.state-view').forEach((view) => { view.hidden = view.dataset.state !== state; });
+      statePicker.value = state;
+      syncSelect(statePicker);
+      byId('state-live').textContent = statePicker.selectedOptions[0].textContent + '预览';
+    }
+    statePicker.addEventListener('change', () => showState(statePicker.value));
+    document.querySelectorAll('[data-state-retry]').forEach((button) => {
+      button.dataset.label = button.textContent;
+      button.addEventListener('click', () => {
+      const partial = statePicker.value === 'partial';
+      if (partial) {
+        button.disabled = true;
+        button.textContent = '正在重试…';
+        byId('state-live').textContent = '正在重试，已收到的文字仍然保留。';
+      } else showState('loading');
+      retryTimer = setTimeout(() => {
+        if (partial) {
+          const view = document.querySelector('[data-state="partial"]');
+          view.querySelector('.status').textContent = '重试完成 · 本页预览';
+          button.textContent = '重新尝试';
+          button.disabled = false;
+          byId('state-live').textContent = '重试预览完成，已有文字没有清空。';
+        } else {
+          showState('populated');
+          document.querySelector('[data-state="populated"] a').focus();
+        }
+      }, 650);
+      });
+    });
+    byId('state-cancel').addEventListener('click', () => { showState('populated'); jumpTo('situation-entry'); });
+    byId('state-clear-search').addEventListener('click', () => showState('populated'));
+
+    // 完整对话只消费本地虚构事件；计时器按运行隔离，停止或切换后不回写旧结果。
+    const chatThread = byId('chat-thread');
+    const chatInput = byId('chat-input');
+    const chatShell = byId('chat-shell');
+    const chatSheet = byId('chat-sheet');
+    const chatTimers = new Set();
+    const chatActionTemplate = document.querySelector('#provenance .action-card').cloneNode(true);
+    const chatSkillNames = { auto: '自动', daily: '日常咨询', emergency: '应急咨询', profile: '档案整理' };
+    let chatEpoch = 0;
+    let chatBusy = false;
+    let chatPendingSkill = 'auto';
+    let chatCurrentRun = null;
+    let chatPendingQuestion = null;
+    let chatFollowOutput = true;
+    function chatNode(html) {
+      // 这里只解析仓库内的固定模板；使用者输入始终写入 textContent。
+      const template = document.createElement('template');
+      template.innerHTML = html;
+      return template.content.firstElementChild;
+    }
+    function chatSchedule(callback, delay) {
+      const epoch = chatEpoch;
+      const timer = setTimeout(() => { chatTimers.delete(timer); if (epoch === chatEpoch) callback(); }, delay);
+      chatTimers.add(timer);
+    }
+    function clearChatTimers() {
+      chatEpoch += 1;
+      chatTimers.forEach(clearTimeout);
+      chatTimers.clear();
+    }
+    function updateChatScroll() {
+      byId('chat-latest').hidden = chatThread.scrollHeight - chatThread.scrollTop - chatThread.clientHeight < 48;
+    }
+    function followChat() {
+      if (chatFollowOutput) chatThread.scrollTop = chatThread.scrollHeight;
+      updateChatScroll();
+    }
+    function addChatMessage(node, forceFollow = false) {
+      if (forceFollow) chatFollowOutput = true;
+      chatThread.append(node);
+      followChat();
+    }
+    chatThread.addEventListener('scroll', () => {
+      chatFollowOutput = chatThread.scrollHeight - chatThread.scrollTop - chatThread.clientHeight < 48;
+      updateChatScroll();
+    }, { passive: true });
+    byId('chat-latest').addEventListener('click', () => { chatFollowOutput = true; followChat(); chatThread.focus({ preventScroll: true }); });
+    function revealChatField(field) {
+      const viewport = chatThread.getBoundingClientRect();
+      const rect = field.getBoundingClientRect();
+      if (rect.bottom > viewport.bottom - 8) chatThread.scrollTop += rect.bottom - viewport.bottom + 8;
+      else if (rect.top < viewport.top + 8) chatThread.scrollTop += rect.top - viewport.top - 8;
+      updateChatScroll();
+    }
+    function updateChatInput() {
+      if (byId('chat-footer').hidden) { updateChatScroll(); return; }
+      chatInput.style.height = 'auto';
+      const style = getComputedStyle(chatInput);
+      const border = parseFloat(style.borderTopWidth) + parseFloat(style.borderBottomWidth);
+      chatInput.style.height = Math.min(chatInput.scrollHeight + border, 136) + 'px';
+      byId('chat-send').disabled = chatBusy || !chatInput.value.trim();
+      updateChatScroll();
+    }
+    function updateChatComposer() {
+      const waitingForAnswers = Boolean(chatPendingQuestion) && !chatBusy;
+      const footer = byId('chat-footer');
+      const composerFocused = footer.contains(document.activeElement);
+      footer.hidden = waitingForAnswers;
+      chatShell.dataset.answering = String(waitingForAnswers);
+      if (waitingForAnswers) {
+        // 收起的是普通消息输入区；草稿保留，自由回答仍在同一张提问卡内。
+        if (composerFocused) {
+          const title = chatPendingQuestion.card.querySelector('[data-question-title]');
+          title.focus({ preventScroll: true });
+          revealChatField(title);
+        }
+        updateChatScroll();
+      } else updateChatInput();
+    }
+    function setChatBusy(busy, progress = '') {
+      chatBusy = busy;
+      chatShell.dataset.running = String(busy);
+      byId('chat-send').hidden = busy;
+      byId('chat-stop').hidden = !busy;
+      byId('chat-progress').hidden = !progress;
+      byId('chat-progress-text').textContent = progress;
+      byId('chat-compose-hint').textContent = busy ? '正在回应，你可以继续写草稿；停止后可再次发送。' : '技能只作用于下一条消息，发送后回归“自动”。';
+      updateChatComposer();
+    }
+    function chooseChatSkill(skill) {
+      chatPendingSkill = skill;
+      document.querySelectorAll('[data-chat-skill]').forEach((button) => button.setAttribute('aria-pressed', String(button.dataset.chatSkill === skill)));
+    }
+    document.querySelectorAll('[data-chat-skill]').forEach((button) => button.addEventListener('click', () => chooseChatSkill(button.dataset.chatSkill)));
+    chatInput.addEventListener('input', updateChatInput);
+    function chatUser(text) {
+      const article = chatNode('<article class="chat-message user" aria-label="你的消息"><p class="bubble-user"></p></article>');
+      article.querySelector('p').textContent = text;
+      addChatMessage(article, true);
+    }
+    function chatAssistant() {
+      const article = chatNode('<article class="chat-message assistant" aria-label="助手消息"><p class="meta message-caption">篝火智答</p><div class="msg-doc"></div></article>');
+      addChatMessage(article);
+      return article;
+    }
+    function chatCitations() {
+      return chatNode('<details class="citation-block"><summary><span>依据 1 条</span><span class="toggle-label"><span class="when-closed">展开</span><span class="when-open">收起</span></span></summary><div class="citation-list"><details class="citation-item"><summary><span>沟通方式记录（虚构样例）</span><span class="toggle-label">查看</span></summary><div class="source-body"><p class="meta">来源：项目内虚构资料 · 虚构样例</p><p class="hint">适用范围：仅展示资料结构，不支持实际处置结论。</p><p>样例记录提到，等候区里人多且声音较大。</p></div></details><article class="citation-item mini-card"><strong>历史引用：旧版情境记录</strong><p class="status off">该来源已撤下</p><p class="hint">保留引用记录，不显示正文或跳转入口。</p></article></div></details>');
+    }
+    function addChatQuestion(article, mode = 'daily', historical = false) {
+      const questions = questionSamples[mode];
+      const controller = createQuestionCard(questions, {
+        onChange: followChat,
+        onFocus: revealChatField,
+        onSubmit: (answers) => {
+          if (chatBusy) return false;
+          chatPendingQuestion = null;
+          const text = answers.length === 1 ? answers[0].answer : answers.map((answer, index) => (index + 1) + '. ' + answer.question + '\n回答：' + answer.answer).join('\n\n');
+          sendChatMessage(text, mode === 'emergency' ? 'emergency' : null);
+        }
+      });
+      article.append(controller.card);
+      if (historical) controller.restore(questions.map((question) => question.options[0].label));
+      else chatPendingQuestion = controller;
+      updateChatComposer();
+      followChat();
+    }
+    function retireChatActions() {
+      chatThread.querySelectorAll('.action-card:not(.expired)').forEach((card) => {
+        const archive = chatNode('<details><summary><span>查看当时的行动卡</span><span class="toggle-label"><span class="when-closed">展开</span><span class="when-open">收起</span></span></summary><div></div></details>');
+        archive.querySelector('div').append(...card.childNodes);
+        card.append(chatNode('<p class="status off">已过期，见最新卡片</p>'), archive);
+        card.classList.add('expired');
+      });
+    }
+    function addChatAction(article) {
+      retireChatActions();
+      const card = chatActionTemplate.cloneNode(true);
+      card.querySelector('.citation-block').remove();
+      const priority = chatNode('<div class="chat-action-priority"><span class="meta">现在先看 · 立即做</span><p></p></div>');
+      priority.querySelector('p').textContent = card.querySelector('.ac-section.now p').textContent;
+      priority.append(card.querySelector('.ac-section.now .ac-source').cloneNode(true));
+      card.querySelector('.tag').after(priority);
+      card.append(chatCitations());
+      article.append(card);
+    }
+    function finishChatRun(run) {
+      run.article.querySelector('.message-caption').textContent = '篝火智答';
+      run.reasoning.querySelector('[data-process-label]').textContent = '分析说明 · 已结束';
+      run.reasoning.open = false;
+      run.tool.querySelector('[data-process-label]').textContent = '查阅资料 · 1 条';
+      run.tool.dataset.state = 'completed';
+      if (run.skill === 'emergency') { addChatAction(run.article); addChatQuestion(run.article, 'emergency'); }
+      else run.article.querySelector('.msg-doc').append(chatCitations());
+      if (run.skill === 'profile') byId('chat-candidate').hidden = byId('candidate-records').children.length === 0;
+      setChatBusy(false);
+      chatCurrentRun = null;
+      byId('chat-live').textContent = '回答已完成' + (run.skill === 'emergency' ? '，已显示行动卡和追问。' : '，依据可展开查看。');
+      followChat();
+    }
+    function startChatRun(text, skill, delayed = false) {
+      clearChatTimers();
+      const article = chatAssistant();
+      const doc = article.querySelector('.msg-doc');
+      const reasoning = chatNode('<details class="reasoning-row"><summary><span data-process-label>正在分析…</span><span class="toggle-label"><span class="when-closed">展开</span><span class="when-open">收起</span></span></summary><div class="process-body">分析说明是中间状态，不作为结论或依据。正在核对描述中的情境和资料适用范围。</div></details>');
+      const tool = chatNode('<details class="tool-row" data-state="running"><summary><span data-process-label>查阅资料 · 进行中</span><span class="toggle-label"><span class="when-closed">展开</span><span class="when-open">收起</span></span></summary><div class="process-body">查阅与沟通方式相关的虚构资料，核对来源、适用范围与是否仍然有效。</div></details>');
+      const output = document.createElement('p');
+      doc.append(reasoning, tool, output);
+      const run = { article, reasoning, tool, output, text, skill };
+      chatCurrentRun = run;
+      byId('chat-active-skill').textContent = chatSkillNames[skill] + ' · 虚构样例';
+      article.querySelector('.message-caption').textContent = '篝火智答 · 正在回应';
+      setChatBusy(true, skill === 'emergency' ? '正在分析现场情况…' : '正在检索资料…');
+      const response = skill === 'emergency' ? '已收到这次补充。尚未核对的信息继续保留为“未排除”，下面更新行动卡。' : skill === 'profile' ? '这次观察可以先写清楚。你直接报告的内容与 AI 归纳需要分开核对；待确认内容可去档案页查看。' : '你补充的情况已收到。回顾这次等候，可以先分开记录环境变化、本人刚才的回应，以及目前还不能确认的部分。依据放在这条回答末尾，方便核对适用范围。';
+      const beginStream = () => {
+        let position = 0;
+        run.tool.dataset.state = 'completed';
+        run.tool.querySelector('[data-process-label]').textContent = '查阅资料 · 已完成';
+        setChatBusy(true, '正在整理回答…');
+        const tick = () => {
+          position = Math.min(response.length, position + 7);
+          output.textContent = response.slice(0, position);
+          followChat();
+          if (position < response.length) chatSchedule(tick, 120);
+          else finishChatRun(run);
+        };
+        tick();
+      };
+      if (delayed) {
+        chatSchedule(() => { setChatBusy(true, '生成时间较长，仍可停止等待；请先关注现场安全。'); byId('chat-live').textContent = '超过十秒仍未收到正文，已显示等待提示。'; }, 10000);
+        chatSchedule(beginStream, 12500);
+      } else chatSchedule(beginStream, 700);
+      followChat();
+    }
+    function sendChatMessage(text, forcedSkill = null) {
+      if (chatBusy || !text.trim()) return;
+      if (chatPendingQuestion) { chatPendingQuestion.supersede(); chatPendingQuestion = null; }
+      const skill = forcedSkill || (chatPendingSkill === 'auto' ? (['emergency', 'delayed'].includes(byId('chat-scenario').value) ? 'emergency' : 'daily') : chatPendingSkill);
+      chatUser(text);
+      chooseChatSkill('auto');
+      startChatRun(text, skill);
+    }
+    byId('chat-compose').addEventListener('submit', (event) => {
+      event.preventDefault();
+      if (chatPendingQuestion || chatBusy || !chatInput.value.trim()) return;
+      const text = chatInput.value.trim();
+      chatInput.value = '';
+      sendChatMessage(text);
+      updateChatInput();
+    });
+    function addChatFailure(article, title, description, retry) {
+      const error = chatNode('<div class="error-card"><strong class="ec-title"></strong><p></p><button class="btn" type="button">重新尝试</button></div>');
+      error.querySelector('strong').textContent = title;
+      error.querySelector('p').textContent = description;
+      error.querySelector('button').addEventListener('click', () => { if (!chatBusy) { error.querySelector('button').disabled = true; retry(); } });
+      article.append(error);
+      followChat();
+    }
+    byId('chat-stop').addEventListener('click', () => {
+      if (!chatBusy) return;
+      const run = chatCurrentRun;
+      clearChatTimers();
+      if (run) {
+        run.article.querySelector('.message-caption').textContent = '篝火智答 · 本次回答已中断';
+        if (run.reasoning) { run.reasoning.open = false; run.reasoning.querySelector('[data-process-label]').textContent = '分析已停止'; }
+        if (run.tool?.dataset.state === 'running') run.tool.querySelector('[data-process-label]').textContent = '查阅资料 · 已中断';
+        addChatFailure(run.article, '已停止本次回答', '已收到的文字保留，你可以补充情况或重新尝试。', () => startChatRun(run.text, run.skill));
+      }
+      chatCurrentRun = null;
+      setChatBusy(false);
+      byId('chat-live').textContent = '本次回答已停止，文字和草稿均已保留。';
+    });
+    function seedChat(emergency = false, historical = false) {
+      chatUser('刚才等候区很吵，他捂住耳朵，今天比平时更少说话。');
+      const article = chatAssistant();
+      const paragraph = document.createElement('p');
+      paragraph.textContent = emergency ? '以下行动卡保留未核对的信息，先查看“立即做”。' : '你提到等候区比较吵，他比平时更少说话，捂住了耳朵。我们可以从这次情境说起，不必先建立档案。';
+      article.querySelector('.msg-doc').append(paragraph);
+      if (emergency) addChatAction(article);
+      else article.querySelector('.msg-doc').append(chatCitations());
+      addChatQuestion(article, emergency ? 'emergency' : 'daily', historical);
+      byId('chat-candidate').hidden = emergency || byId('candidate-records').children.length === 0;
+      byId('chat-active-skill').textContent = (emergency ? '应急咨询' : '日常咨询') + ' · 虚构样例';
+      chatFollowOutput = false;
+      chatThread.scrollTop = 0;
+      updateChatScroll();
+    }
+    function loadChatScenario() {
+      clearChatTimers();
+      chatCurrentRun = null;
+      chatPendingQuestion = null;
+      chatThread.replaceChildren();
+      chatThread.removeAttribute('aria-busy');
+      chatFollowOutput = true;
+      byId('chat-candidate').hidden = true;
+      byId('chat-candidate').open = false;
+      setChatBusy(false);
+      const scenario = byId('chat-scenario').value;
+      if (scenario === 'daily' || scenario === 'emergency') seedChat(scenario === 'emergency');
+      else if (scenario === 'history' || scenario === 'history-error') {
+        chatThread.setAttribute('aria-busy', 'true');
+        chatThread.append(chatNode('<div class="stack"><p class="hint">正在载入这段对话…</p><div class="bubble-user skeleton row" aria-hidden="true"></div><div class="skeleton row" aria-hidden="true"></div><div class="bubble-user skeleton row" aria-hidden="true"></div></div>'));
+        chatBusy = true;
+        byId('chat-send').disabled = true;
+        chatSchedule(() => {
+          chatThread.replaceChildren();
+          chatThread.removeAttribute('aria-busy');
+          setChatBusy(false);
+          if (scenario === 'history') { seedChat(false, true); byId('chat-live').textContent = '历史对话已载入，已回答问题保留为静态记录。'; }
+          else {
+            const error = document.createElement('div');
+            addChatMessage(error);
+            addChatFailure(error, '这段对话没有载入成功', '历史记录暂时不可用，请重试。你的草稿仍保留。', () => { byId('chat-scenario').value = 'history'; syncSelect(byId('chat-scenario')); loadChatScenario(); });
+            byId('chat-live').textContent = '历史载入失败，可以重试。';
+          }
+        }, 700);
+      } else if (scenario === 'delayed') {
+        chatUser('我需要先核对刚才发生的情况。');
+        startChatRun('我需要先核对刚才发生的情况。', 'emergency', true);
+      } else {
+        chatUser('想回顾一下刚才等候时的情况。');
+        const article = chatAssistant();
+        const paragraph = document.createElement('p');
+        paragraph.textContent = '你提到刚才的等候区比较吵，他比平时更少说话。';
+        article.querySelector('.msg-doc').append(paragraph);
+        const fail = () => {
+          article.querySelector('.message-caption').textContent = '篝火智答 · 本次回答中断';
+          setChatBusy(false);
+          chatCurrentRun = null;
+          addChatFailure(article, scenario === 'retrieval-error' ? '检索暂时不可用' : '连接中断，重连未成功', '已收到的文字保留，不作为完整回答。可以重新尝试，你的草稿不会清空。', () => startChatRun('想回顾一下刚才等候时的情况。', 'daily'));
+          byId('chat-live').textContent = scenario === 'retrieval-error' ? '检索暂时不可用，已有回答已标注中断。' : '重连三次后仍未成功，可以手动重试。';
+        };
+        if (scenario === 'retrieval-error') fail();
+        else {
+          chatCurrentRun = { article, text: '想回顾一下刚才等候时的情况。', skill: 'daily' };
+          setChatBusy(true, '连接中断，正在重连（1/3）');
+          chatSchedule(() => setChatBusy(true, '连接中断，正在重连（2/3）'), 650);
+          chatSchedule(() => setChatBusy(true, '连接中断，正在重连（3/3）'), 1950);
+          chatSchedule(fail, 4550);
+        }
+      }
+      updateChatInput();
+    }
+    byId('chat-scenario').addEventListener('change', loadChatScenario);
+    byId('chat-reset').addEventListener('click', () => { chatInput.value = ''; chooseChatSkill('auto'); loadChatScenario(); });
+    function sizeChatSheet() {
+      if (!chatSheet.open) return;
+      if (window.visualViewport && visualViewport.scale === 1) { chatSheet.style.top = visualViewport.offsetTop + 'px'; chatSheet.style.height = visualViewport.height + 'px'; chatSheet.style.bottom = 'auto'; }
+      updateChatInput();
+      if (chatThread.contains(document.activeElement)) revealChatField(document.activeElement);
+    }
+    byId('chat-open').addEventListener('click', () => {
+      closeActiveSelect?.();
+      document.body.classList.add('chat-modal-open');
+      byId('chat-close').hidden = false;
+      chatSheet.append(chatShell);
+      chatSheet.showModal();
+      sizeChatSheet();
+      byId('chat-close').focus({ preventScroll: true });
+      updateChatScroll();
+    });
+    byId('chat-close').addEventListener('click', () => chatSheet.close());
+    chatSheet.addEventListener('close', () => {
+      byId('chat-inline-host').append(chatShell);
+      document.body.classList.remove('chat-modal-open');
+      byId('chat-close').hidden = true;
+      chatSheet.removeAttribute('style');
+      updateChatInput();
+      byId('chat-open').focus({ preventScroll: true });
+    });
+    chatSheet.addEventListener('keydown', (event) => {
+      if (event.key !== 'Tab') return;
+      const targets = [...chatSheet.querySelectorAll('button:not(:disabled), textarea, input:not(:disabled), summary, [tabindex="0"]')].filter((node) => node.getClientRects().length);
+      if (event.shiftKey && document.activeElement === targets[0]) { event.preventDefault(); targets.at(-1).focus(); }
+      else if (!event.shiftKey && document.activeElement === targets.at(-1)) { event.preventDefault(); targets[0].focus(); }
+    });
+    byId('chat-go-profile').addEventListener('click', () => { if (chatSheet.open) chatSheet.close(); jumpTo('candidate-heading'); });
+    addEventListener('resize', () => { sizeChatSheet(); updateChatScroll(); });
+    if (window.visualViewport) { visualViewport.addEventListener('resize', sizeChatSheet); visualViewport.addEventListener('scroll', sizeChatSheet); }
+    loadChatScenario();
+    if (location.hash && byId(location.hash.slice(1))) requestAnimationFrame(() => jumpTo(location.hash.slice(1), false));
+    updateNavigation();
+  </script>
+</body>
 </html>
