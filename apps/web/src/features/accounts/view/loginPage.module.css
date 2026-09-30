@@ -31,12 +31,15 @@
   gap: var(--space-4);
 }
 
+/* 显示标题行高取契约的 1.3（components.html 的 h1/h2/h3/.brand-name 规则，components.css 同形）。
+ * 不借用 --leading-tight：它是 1，会把本页 42px 标题的行盒压在 42px，而同仓首页、说明页、
+ * 设置页的 28px 标题都是 36.4px（=1.3）——同一设计系统里不该有两种显示标题行高。 */
 .title {
   margin: 0;
   font-family: var(--font-display);
   font-weight: 500;
   font-size: var(--text-2xl);
-  line-height: var(--leading-tight);
+  line-height: 1.3;
   letter-spacing: var(--tracking-display);
 }
 
