@@ -276,8 +276,11 @@ class ProfileItemPayload(BaseModel):
     unhelpful_support: list[str]
     origin: str
     #: 来源定位原样透出（`AC-07` 的可复核性载体）。存储列是 JSONB，键随写入方
-    #: 而不同（`session_id`/`message_ref`/`tool_name`/`recorded_at`/`relayed_by`），
-    #: 因此值类型写成 JSON 标量联合而不是 `Any`：后者会让「这里可能混进嵌套对象」
+    #: 而不同——本批可达的两个写入方是：补充条目由服务端补
+    #: `{"channel": "profile_page"}`（`MANUAL_ENTRY_SOURCE`），以及 Worker 消费
+    #: `profile_item` 时原样转发待处理记录里的 `source`（其生产者
+    #: `propose_profile_item` 工具尚未实现）。因此这里不做键名归一。
+    #: 值类型写成 JSON 标量联合而不是 `Any`：后者会让「这里可能混进嵌套对象」
     #: 在类型层不可见，而本面承诺的是可读的来源定位。
     source: dict[str, str | int | float | bool | None]
     confirmation: str
