@@ -55,9 +55,20 @@ export interface CorrectMemoryEpisodeRequest {
  * 纠正响应。形状见记忆面契约第 5 节：先撤下旧记忆再写新的，两步失败语义不同，
  * 因此响应必须让调用方知道自己处在哪一步——旧记忆已撤下但新记忆未写入时，
  * 两者都要显式呈现，不得笼统报成功或笼统报失败。
+ *
+ * `superseded` 与 `new_episode_written` 是契约第 5 节未点名、但后端已实现并明确
+ * 声明的两个字段（`modules/memory/routes.CorrectEpisodePayload`「本包裁决 3 的中间态形状」）。
+ * 只有 `episode_key` 无法区分三种情形：成功、旧已撤下新未写入、以及两者都未发生。
+ * 中间态由后端以 **200** 返回（成功是 201），但判定用字段而不是状态码——
+ * 共享客户端的 `request()` 只透出载荷，不透出状态码。
  */
 export interface CorrectMemoryEpisodeResponse {
-  episode_key: string | null;
-  supersedes: string;
+  /** 旧记忆是否已撤下（本库事务，成功即生效）。 */
+  superseded: boolean;
+  /** 新记忆是否已写入图库（走模型抽取，可能失败）。 */
   new_episode_written: boolean;
+  /** 新记忆标识；未写入时为 null（不得编造一个不存在的标识）。 */
+  episode_key: string | null;
+  /** 被撤下的旧记忆标识。 */
+  supersedes: string;
 }
