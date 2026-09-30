@@ -189,6 +189,30 @@ def test_profile_without_object_is_marked_not_used() -> None:
     assert "本次未使用个性化档案" in text
 
 
+def test_profile_with_object_but_no_items_is_marked_not_used() -> None:
+    """有支持对象但一条档案都没有时同样标注「本次未使用个性化档案」（`AC-02`）。
+
+    `EmergencyContext.has_profile` 为假表示「无档案——整份上下文不可用」。忽略它并按
+    「有档案」渲染（信封 `state="present"`、八组全 absent）会把「无档案」表述成
+    「有档案但什么都没有」——模型与使用者对这两种说法读到的是两个不同的事实。
+
+    **消融**：去掉 `not context.has_profile` 那一支，本用例立即失败（信封回到 present）。
+    """
+    context = EmergencyContext(
+        support_object_id="22222222-2222-2222-2222-222222222222",
+        has_profile=False,
+        groups={"baseline": None, "known_triggers": None, "medical_risks": None},
+        communication={},
+    )
+    text = render_emergency_profile(context)
+    assert text.startswith(EMERGENCY_PROFILE_PREFIX)
+    assert 'state="absent"' in text
+    assert "本次未使用个性化档案" in text
+    assert 'state="present"' not in text, "无档案不得渲染成「有档案」"
+    assert "<group" not in text, "标注为未使用时不逐组渲染，避免「有档案但内容为空」的读法"
+    assert 'object="' not in text, "未使用档案时不带对象标识（没有可归属的档案内容）"
+
+
 def test_profile_escapes_source_text_so_it_cannot_break_out() -> None:
     """档案正文里的信封标签被转义——否则一句伪造的闭合标签就穿出了信封。"""
     context = EmergencyContext(

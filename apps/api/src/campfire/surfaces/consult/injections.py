@@ -118,15 +118,24 @@ def render_emergency_profile(context: EmergencyContext | None) -> str:
     「这组没有内容」在语义上不同，而注入文案必须写「未预存」而不是暗示「没有这种
     情况」（应急 skill 第 2 节：缺失即标注，不得由模型补全）。
 
-    `context` 为 `None` 表示该账号连支持对象都没有（`AC-02`）：此时整体标成
-    `state="absent"` 并写明「本次未使用个性化档案」，而不是给一个空档案。
+    两种「没有档案可注入」的情形共用同一个成稿（`context` 为 `None`：该账号连支持
+    对象都没有；`context.has_profile` 为假：有支持对象但稳定层一条条目都没有），
+    只把理由写在括号里分开。判据取自 `EmergencyContext.has_profile` 的字段契约：
+    它为假表示「无档案——整份上下文不可用」，调用方须按 `AC-02` 标注「本次未使用
+    个性化档案」。少这一处判定的后果是把「无档案」表述成「有档案但什么都没有」——
+    模型与使用者对这两种说法读到的是两个不同的事实。
+
+    上界归属（本次不修，避免后续判断误以为已被守住）：本函数逐条全量渲染，
+    `modules/profile/repository.read_stable_items_by_domains` 也不带条数上界，
+    因此档案注入是四条产品侧注入里唯一既无条数/字符上界、也无截断标记的一条。
+    该上界归基座的注入预算统一承担（`agent/context/injection.py` 明写基座尚未落地
+    预算），状态登记于 `docs/TODO.md` 第四节「基座两项已确认要求尚未落地」第 ② 项；
+    预算未定之前不在这里发明一个数字（未经确认的数字比没有上限更危险）。
     """
     if context is None:
-        return (
-            f'{EMERGENCY_PROFILE_PREFIX} state="absent">\n'
-            "  本次未使用个性化档案（该账号还没有支持对象）。\n"
-            "</emergency_profile>"
-        )
+        return _render_profile_absent("该账号还没有支持对象")
+    if not context.has_profile:
+        return _render_profile_absent("该对象还没有档案条目")
 
     object_id = escape_attribute(context.support_object_id)
     lines = [f'{EMERGENCY_PROFILE_PREFIX} object="{object_id}" state="present">']
@@ -182,6 +191,7 @@ def build_emergency_injections(
     三个入参各表示什么，不重叠也不含糊：
 
     - `profile=None` 表示该账号没有支持对象（`AC-02`）：注入里明写「本次未使用个性化档案」；
+      它非 `None` 但 `has_profile` 为假（有对象、零档案条目）走同一句标注；
     - `memory=None` 表示记忆取数失败：此时不注入记忆信封（注入一条空记忆等于宣称
       「这个账号没有记忆」），改用 `unavailable` 里的来源不可用告知；
     - `unavailable` 是取数失败的来源清单，由调用方在取数处登记，本函数只负责把它
@@ -209,6 +219,16 @@ def build_emergency_injections(
             )
         )
     return InjectionBatch(items=tuple(items), unavailable=unavailable)
+
+
+def _render_profile_absent(reason: str) -> str:
+    """渲染「本次未使用个性化档案」的成稿（`AC-02` 的同一句标注，理由分两种）。
+
+    两种情形（没有支持对象、有支持对象但没有档案条目）对模型与使用者的后果相同
+    ——本次运行没有可用的个性化档案，因此标注只有一句话，理由作为括注如实写明；
+    括号里写错理由与不写标注同样是失实陈述。
+    """
+    return f'{EMERGENCY_PROFILE_PREFIX} state="absent">\n  本次未使用个性化档案（{reason}）。\n</emergency_profile>'
 
 
 def _render_entry(entry: SummaryEntry) -> str:
