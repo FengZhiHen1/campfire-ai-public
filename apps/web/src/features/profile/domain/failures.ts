@@ -67,7 +67,8 @@ export function failureFromError(error: unknown): ProfileFailure {
   return classifyProfileFailure(statusOf(error) ?? 0);
 }
 
-/** 失败对应的界面标题。 */export function profileFailureTitle(failure: ProfileFailure): string {
+/** 失败对应的界面标题。 */
+export function profileFailureTitle(failure: ProfileFailure): string {
   switch (failure.kind) {
     case 'unauthorized':
       return '登录状态已失效';

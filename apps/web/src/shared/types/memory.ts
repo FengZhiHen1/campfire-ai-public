@@ -59,7 +59,7 @@ export interface CorrectMemoryEpisodeRequest {
  * `superseded` 与 `new_episode_written` 是契约第 5 节未点名、但后端已实现并明确
  * 声明的两个字段（`modules/memory/routes.CorrectEpisodePayload`「本包裁决 3 的中间态形状」）。
  * 只有 `episode_key` 无法区分三种情形：成功、旧已撤下新未写入、以及两者都未发生。
- * 中间态由后端以 **200** 返回（成功是 201），但判定用字段而不是状态码——
+ * 中间态由后端以 200 返回（成功是 201），但判定用字段而不是状态码——
  * 共享客户端的 `request()` 只透出载荷，不透出状态码。
  */
 export interface CorrectMemoryEpisodeResponse {

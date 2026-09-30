@@ -30,7 +30,7 @@ export class SearchLibraryUseCase {
   /**
    * 前置: query 可以为空串——空检索词即全量浏览流（契约第 3 节）
    * 后置: 返回本页条目与下一页游标；无命中时返回空数组（不是失败）
-   * 异常: 端口异常原样抛出（503 由调用方分类成「检索暂时不可用」）
+   * @throws 端口异常原样抛出（503 由调用方分类成「检索暂时不可用」）
    */
   async execute(params: {
     library: LibraryKind;
@@ -49,8 +49,8 @@ export class ResolveDeepLinkUseCase {
 
   /**
    * 前置: itemId 来自 URL 查询串（不由使用者直接输入）
-   * 后置: 返回在库 / 已撤下 / 不存在三态之一；已撤下时**只带标题**
-   * 异常: 端口异常原样抛出——404（不存在或非法 id）由调用方按普通进入处理，
+   * 后置: 返回在库 / 已撤下 / 不存在三态之一；已撤下时只带标题
+   * @throws 端口异常原样抛出——404（不存在或非法 id）由调用方按普通进入处理，
    *      不在这里转成一个「错误态」，因为按契约它不是错误（第 5 节）
    */
   async execute(itemId: string): Promise<DeepLinkOutcome> {
