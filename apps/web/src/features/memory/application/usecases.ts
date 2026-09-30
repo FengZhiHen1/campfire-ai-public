@@ -30,7 +30,7 @@ export class LoadEpisodesUseCase {
   /**
    * 前置: 无
    * 后置: 返回本页条目与下一页游标；查询为空时返回空数组（空不是失败）
-   * 异常: 端口异常原样抛出（503 图库不可用由调用方分类成「暂时无法读取」）
+   * @throws 端口异常原样抛出（503 图库不可用由调用方分类成「暂时无法读取」）
    */
   async execute(cursor?: string): Promise<EpisodePage> {
     const response = await this.port.listEpisodes(cursor === undefined ? undefined : { cursor });
@@ -45,7 +45,7 @@ export class DeleteEpisodeUseCase {
   /**
    * 前置: episodeKey 非空（来自列表，不由使用者输入）
    * 后置: 成功后该记忆在两条读路径都不再返回；重复删除幂等（`newly_deleted: false`）
-   * 异常: 端口异常原样抛出
+   * @throws 端口异常原样抛出
    */
   async execute(episodeKey: string): Promise<DeleteMemoryEpisodeResponse> {
     return this.port.deleteEpisode(episodeKey);
@@ -59,7 +59,7 @@ export class CorrectEpisodeUseCase {
   /**
    * 前置: 草稿通过校验（内容非空且与原内容不同、发生时间可解析）
    * 后置: 返回判别联合——`written`（新记忆已写入）或 `superseded-only`（只撤下了旧的）
-   * 异常: CorrectionValidationError（未发起请求）；端口异常原样抛出
+   * @throws CorrectionValidationError（未发起请求）；端口异常原样抛出
    */
   async execute(episodeKey: string, draft: CorrectionDraft, originalContent: string): Promise<CorrectionOutcome> {
     const occurredAt = validateCorrectionDraft(draft, originalContent);

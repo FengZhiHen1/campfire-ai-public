@@ -55,7 +55,7 @@ export interface MemoryPageState {
   /** 行内错误（删除失败等）。 */
   rowFailure: { episodeKey: string; failure: MemoryFailure } | null;
   correction: MemoryCorrectionState | null;
-  /** 一次性提示：纠正成功，或**中间态**（原记录已撤下、新记录没写成）。 */
+  /** 一次性提示：纠正成功，或中间态（原记录已撤下、新记录没写成）。 */
   notice: { kind: 'written' | 'superseded-only'; text: string } | null;
 
   retry(): Promise<void>;
