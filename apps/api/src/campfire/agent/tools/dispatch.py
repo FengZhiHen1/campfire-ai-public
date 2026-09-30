@@ -1,10 +1,10 @@
-"""工具派发：**执行前的权限门**。
+"""工具派发：执行前的权限门。
 
 依据 docs/技术设计/technical-details/通用基座.md 第 5 节：
 
-- **权限在执行前校验，不靠隐藏 schema**；工具不可见不是安全边界；
+- 权限在执行前校验，不靠隐藏 schema；工具不可见不是安全边界；
 - 越界调用由服务端拒绝——这是硬边界，与 SDK 和模型供应商都无关；
-- 拒绝返回**明确错误码**，不静默降级为其他工具。
+- 拒绝返回明确错误码，不静默降级为其他工具。
 
 四道门的顺序是刻意的，且每道门都返回带码失败而不是抛异常（除了取消）：
 
@@ -16,13 +16,13 @@
 顺序理由：先判「有没有」再判「能不能」，最后才是「参数对不对」——把不存在的工具与
 越界的工具分开报码，模型才能正确决定是放弃还是换参数重试。
 
-**运行中激活**：``activation_state`` 非空时，可用性判定 = 请求时 scope ∪ 运行中激活
-（模型侧 ``skill`` 工具成功后并入）。没有它，模型侧激活的 ``allowed-tools`` 并集永远
+运行中激活：`activation_state` 非空时，可用性判定 = 请求时 scope ∪ 运行中激活
+（模型侧 `skill` 工具成功后并入）。没有它，模型侧激活的 `allowed-tools` 并集永远
 不生效——那是第 5 节「激活集合变化时扩大可用工具」已定而快照实现漏掉的语义。
 
-**此处只认工具名**：``ActivationState`` 同时维护 skill 名与工具名两个命名空间，本模块
+此处只认工具名：`ActivationState` 同时维护 skill 名与工具名两个命名空间，本模块
 取的是 :meth:`~campfire.agent.tools.activation_state.ActivationState.allowed_tools`
-（工具名）。取错一个不会报错——两个命名空间都是 ``str``——但会让激活的 skill 一件工具
+（工具名）。取错一个不会报错——两个命名空间都是 `str`——但会让激活的 skill 一件工具
 都放行不了，或让同名工具被越权放行。
 """
 
@@ -48,7 +48,7 @@ class ToolDispatcher:
     ) -> None:
         """绑定工具池、本次运行的范围与上下文。
 
-        ``activation_state`` 是运行中激活的可增长集合（见模块头）；``None`` 表示
+        `activation_state` 是运行中激活的可增长集合（见模块头）；`None` 表示
         本次运行没有运行中激活通道（未注册模型侧激活工具），行为与原先一致。
         """
         self._pool = pool
@@ -69,7 +69,7 @@ class ToolDispatcher:
     def _is_active(self, name: str) -> bool:
         """可用性判定：请求时 scope ∪ 运行中激活带来的工具并集。
 
-        ``name`` 是**工具名**；``allowed_tools()`` 是同一命名空间（见模块头）。
+        `name` 是工具名；`allowed_tools()` 是同一命名空间（见模块头）。
         """
         if self._activation_state is not None and name in self._activation_state.allowed_tools():
             return True
@@ -78,7 +78,7 @@ class ToolDispatcher:
     async def dispatch(self, name: str, arguments_json: str) -> ToolOutcome:
         """执行一次工具调用；任何拒绝都以带码失败返回。
 
-        不在这里发流式事件：``tool_call_started`` / ``tool_call_finished`` 由运行编排
+        不在这里发流式事件：`tool_call_started` / `tool_call_finished` 由运行编排
         统一发出，避免同一件事有两个发出点。
         """
         tool = self._pool.tools.get(name)

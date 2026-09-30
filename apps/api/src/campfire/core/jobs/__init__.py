@@ -2,10 +2,10 @@
 
 归属（见 docs/项目结构设计.md 第 6 节）：Worker 侧的投递与消费入口。
 
-失败语义（见 docs/技术栈设计.md 第 5 节）：**待处理记录（PostgreSQL）是真相源，
-队列只负责投递**；丢的任务必须可被检测与补救，不得静默丢弃、不得假装成功。
+失败语义（见 docs/技术栈设计.md 第 5 节）：待处理记录（PostgreSQL）是真相源，
+队列只负责投递；丢的任务必须可被检测与补救，不得静默丢弃、不得假装成功。
 
-broker 选择 ``ListQueueBroker``（Redis 列表）而非 ``RedisStreamBroker``：
+broker 选择 `ListQueueBroker`（Redis 列表）而非 `RedisStreamBroker`：
 真相源不在队列，积压与丢失由待处理记录的记账发现，队列无需自带消费组与 ack
 语义。重访条件：出现列表模型无法表达的投递保证需求。
 """
@@ -21,36 +21,36 @@ from campfire.core.health import ComponentHealth, Status
 
 logger = logging.getLogger(__name__)
 
-#: 投递钩子（**装配处设置一次**）。**必须是协程函数**：Taskiq 的 `kiq()` 返回协程，
+#: 投递钩子（装配处设置一次）。必须是协程函数：Taskiq 的 `kiq()` 返回协程，
 #: 不 await 就等于没有投递（mypy 的 `unused-coroutine` 抓到过这个错误）。
 #:
-#: ## 为什么是钩子而不是直接 import 任务
+#: 为什么是钩子而不是直接 import 任务：
 #:
 #: 投递需要任务对象（`consume_memory_episode_task.kiq`），而它定义在 `worker.py`——那是
-#: **入口模块，不属于任何层**。产品侧工具（`tools/*`）的白名单只有 `agent/tools`、
-#: `modules/*` 与 `core/*`（[项目结构设计](../../../../docs/项目结构设计.md)第 7 节），
-#: 因此 `tools/*` **不得** import `campfire.worker`（`test_layer_boundaries.py` 会判失败）。
+#: 入口模块，不属于任何层。产品侧工具（`tools/*`）的白名单只有 `agent/tools`、
+#: `modules/*` 与 `core/*`（见 docs/项目结构设计.md 第 7 节），
+#: 因此 `tools/*` 不得 import `campfire.worker`（`test_layer_boundaries.py` 会判失败）。
 #: 由装配处把投递函数注入本模块，工具只依赖 `core/*`，依赖方向保持单向。
 #:
-#: ## 未设置时的行为
+#: 未设置时的行为：
 #:
-#: **不抛异常，只记 warning**：记录已在事务里落库，留在 `pending`，由兜底扫描重投
-#: （[写入路径](../../../../docs/技术设计/technical-details/写入路径.md)第 4.1 节）。
+#: 不抛异常，只记 warning：记录已在事务里落库，留在 `pending`，由兜底扫描重投
+#: （见 docs/技术设计/technical-details/写入路径.md 第 4.1 节）。
 #: 投递失败本来就不改变本次回执——回执承诺的是「已提交」，不是「已保存」。
 _dispatch_hook: Callable[[str], Awaitable[object]] | None = None
 
 
 def set_dispatch_hook(hook: Callable[[str], Awaitable[object]] | None) -> None:
-    """设置（或清除）投递钩子。**只在装配处调用**。
+    """设置（或清除）投递钩子。只在装配处调用。
 
-    传 ``None`` 可清除——测试据此隔离彼此，避免钩子跨用例泄漏。
+    传 `None` 可清除——测试据此隔离彼此，避免钩子跨用例泄漏。
     """
     global _dispatch_hook
     _dispatch_hook = hook
 
 
 async def dispatch_pending_write(pending_id: str) -> None:
-    """把一条待处理记录投递给队列；**投递失败不让调用方失败**。"""
+    """把一条待处理记录投递给队列；投递失败不让调用方失败。"""
     if _dispatch_hook is None:
         logger.warning("投递钩子未设置，记录留给兜底扫描：pending_id=%s", pending_id)
         return
@@ -62,7 +62,7 @@ async def dispatch_pending_write(pending_id: str) -> None:
 
 
 def build_broker(settings: Settings) -> ListQueueBroker:
-    """构造 Taskiq broker。装配处（``main.py`` / ``worker.py``）各自调用一次。"""
+    """构造 Taskiq broker。装配处（`main.py` / `worker.py`）各自调用一次。"""
     return ListQueueBroker(url=settings.redis_url, queue_name=settings.taskiq_queue_name)
 
 

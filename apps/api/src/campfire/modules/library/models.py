@@ -3,16 +3,16 @@
 归属（见 docs/项目结构设计.md 第 6 节与
 docs/技术设计/decisions/检索链归入library模块.md）：条目表与检索链同属本模块。
 
-**两张表的关系**（RAG 策略第 2 节）：条目表是**事实真源**——状态、撤下、来源、
-适用范围、`keywords`/`aliases` 都由它拥有；节点表是它的**投影**，供向量检索使用。
-投影不是第二真源，但**需要在 SQL 层过滤的字段必须同时写进节点 metadata**，
+两张表的关系（RAG 策略第 2 节）：条目表是事实真源——状态、撤下、来源、
+适用范围、`keywords`/`aliases` 都由它拥有；节点表是它的投影，供向量检索使用。
+投影不是第二真源，但需要在 SQL 层过滤的字段必须同时写进节点 metadata，
 否则过滤会掉到应用层，违反「过滤在 SQL 内完成」的不变量。
 
-**节点表为什么不用 ORM 声明**：它由 LlamaIndex 的 ``PGVectorStore`` 自带表结构
-（表名 ``data_<table_name>``、``id bigint`` + sequence 自增、``metadata_ jsonb``、
-``embedding vector(N)``），已实测（TECH-19，2026-09-29）。我们用 Alembic 建出
-**与之逐列一致**的结构并令 ``perform_setup=False``，因此该表在这里只导出
-**供迁移使用的 SQLAlchemy 表对象**，不注册进 ``Base.metadata`` 之外的 ORM 映射——
+节点表为什么不用 ORM 声明：它由 LlamaIndex 的 `PGVectorStore` 自带表结构
+（表名 `data_<table_name>`、`id bigint` + sequence 自增、`metadata_ jsonb`、
+`embedding vector(N)`），已实测（TECH-19，2026-09-29）。我们用 Alembic 建出
+与之逐列一致的结构并令 `perform_setup=False`，因此该表在这里只导出
+供迁移使用的 SQLAlchemy 表对象，不注册进 `Base.metadata` 之外的 ORM 映射——
 避免两处定义漂移。
 """
 
@@ -65,7 +65,7 @@ class KnowledgeItem(Base):
     withdrawn_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     #: 状态固定为 `published`（资料侧无授权维度）；保留列以便与案例侧同形。
     status: Mapped[str] = mapped_column(String(20), nullable=False, server_default=sql_text("'published'"))
-    #: 字面路字段。**用文本列而不是数组**：`pg_trgm` 的 `gin_trgm_ops` 操作符类
+    #: 字面路字段。用文本列而不是数组：`pg_trgm` 的 `gin_trgm_ops` 操作符类
     #: 不接受 `text[]`（实测报 "operator class gin_trgm_ops does not accept data type
     #: text[]"），而 `array_to_string` 表达式索引又不被允许（非 IMMUTABLE）。
     #: 约定以空格分隔多值；字面路用 `LIKE '%词%'` 匹配。
@@ -113,21 +113,21 @@ class KnowledgeItem(Base):
 
 
 class RetrievedNode(Base):
-    """检索节点表：条目表的投影，结构必须与 ``PGVectorStore`` 期望的一致。
+    """检索节点表：条目表的投影，结构必须与 `PGVectorStore` 期望的一致。
 
-    ⚠️ **本表由迁移建出后，``PGVectorStore`` 以 ``perform_setup=False`` 使用它**。
-    列名与类型不可随意改（``id``/``text``/``metadata_``/``node_id``/``embedding``），
+    ⚠️ 本表由迁移建出后，`PGVectorStore` 以 `perform_setup=False` 使用它。
+    列名与类型不可随意改（`id`/`text`/`metadata_`/`node_id`/`embedding`），
     因为框架按这些名字读写；改动必须同步框架版本并重跑集成测试。
 
-    表名 ``data_campfire_node`` → 框架渲染为 ``data_`` 前缀的约定见 RAG 策略第 2 节。
+    表名 `data_campfire_node` → 框架渲染为 `data_` 前缀的约定见 RAG 策略第 2 节。
     """
 
     __tablename__ = "data_campfire_node"
 
     #: 框架期望 bigint + sequence 自增；缺 sequence 会写入失败（TECH-19 实测）。
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
-    #: 节点正文（分块后的文本）。**用 varchar 而非 text**：框架建出的是
-    #: `character varying`，此处保持一致，否则 ``--autogenerate`` 会反复生成改列类型的迁移。
+    #: 节点正文（分块后的文本）。用 varchar 而非 text：框架建出的是
+    #: `character varying`，此处保持一致，否则 `--autogenerate` 会反复生成改列类型的迁移。
     text: Mapped[str] = mapped_column(String, nullable=False)
     #: 框架的 metadata JSONB 列，名字带尾下划线（框架固定）。
     metadata_: Mapped[dict | None] = mapped_column("metadata_", JSONB, nullable=True)

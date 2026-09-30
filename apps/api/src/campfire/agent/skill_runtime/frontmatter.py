@@ -4,7 +4,7 @@
 
 严格性的三条来源（docs/项目结构设计.md 第 4 节、通用基座第 3 节）：
 
-1. frontmatter **只用标准的六个字段**，出现自创字段即拒绝——否则拼错的字段名会被
+1. frontmatter 只用标准的六个字段，出现自创字段即拒绝——否则拼错的字段名会被
    静默忽略，skill 的行为与作者预期不一致。
 2. 重复键即拒绝：PyYAML 默认静默保留最后一个，等于悄悄丢数据。
 3. 非映射根（例如整段是字符串或列表）即拒绝，而不是当作空元数据。
@@ -38,7 +38,7 @@ _BODY_LOOKS_LIKE_FRONTMATTER = re.compile(
 
 
 class _StrictSafeLoader(yaml.SafeLoader):
-    """在 ``SafeLoader`` 上补一条重复键检查。"""
+    """在 `SafeLoader` 上补一条重复键检查。"""
 
 
 def _construct_mapping(loader: _StrictSafeLoader, node: yaml.MappingNode, deep: bool = False) -> dict[object, object]:
@@ -62,17 +62,17 @@ _StrictSafeLoader.add_constructor(yaml.resolver.BaseResolver.DEFAULT_MAPPING_TAG
 
 
 def split_frontmatter(text: str, *, path: str) -> tuple[str, str]:
-    """把 ``SKILL.md`` 切成 (frontmatter 原文, 正文)。
+    """把 `SKILL.md` 切成 (frontmatter 原文, 正文)。
 
     容忍 UTF-8 BOM 与 CRLF：它们不改变语义，不该成为加载失败的理由。
 
-    **分隔符只认顶格行**。这条不是洁癖：YAML 块标量（``|`` / ``>``）里的缩进 ``---``
-    会让「按 strip 找结束行」的实现提前收尾，把后面的 ``metadata``、``allowed-tools``
-    静默吞进正文——实测能把 ``autoload: "false"`` 吞掉，使本该只由程序注入的 skill
+    分隔符只认顶格行。这条不是洁癖：YAML 块标量（`|` / `>`）里的缩进 `---`
+    会让「按 strip 找结束行」的实现提前收尾，把后面的 `metadata`、`allowed-tools`
+    静默吞进正文——实测能把 `autoload: "false"` 吞掉，使本该只由程序注入的 skill
     变成可被模型自动匹配。静默加载正是基座文档第 3 节禁止的处置。
 
     Raises:
-        SkillFrontmatterError: 缺少顶格的 ``---`` 起始行，或没有顶格的结束行。
+        SkillFrontmatterError: 缺少顶格的 `---` 起始行，或没有顶格的结束行。
     """
     normalized = text.lstrip(_UTF8_BOM).replace("\r\n", "\n").replace("\r", "\n")
     lines = normalized.split("\n")
@@ -93,9 +93,9 @@ def split_frontmatter(text: str, *, path: str) -> tuple[str, str]:
 
 
 def parse_frontmatter(text: str, *, path: str) -> tuple[dict[object, object], str]:
-    """解析 ``SKILL.md``：返回 (frontmatter 映射, 正文)。
+    """解析 `SKILL.md`：返回 (frontmatter 映射, 正文)。
 
-    键类型是 ``object`` 而不是 ``str``：YAML 允许 ``123: x`` 这种键，先如实承载、
+    键类型是 `object` 而不是 `str`：YAML 允许 `123: x` 这种键，先如实承载、
     再由调用方校验，比在这里假装键一定是字符串更诚实。
 
     Raises:
@@ -109,8 +109,8 @@ def parse_frontmatter(text: str, *, path: str) -> tuple[dict[object, object], st
         detail = str(getattr(exc, "problem", None) or exc).strip()
         raise SkillFrontmatterError(path, f"frontmatter 不是合法 YAML：{detail}") from exc
     except RecursionError as exc:
-        # 深嵌套 YAML（例如 ``a: [[[[…]]]]``）会在解析器里耗尽栈，抛 RecursionError 而不是
-        # YAMLError。不转译的话，``SkillRegistry.discover`` 的 except 链接不住它，畸形
+        # 深嵌套 YAML（例如 `a: [[[[…]]]]`）会在解析器里耗尽栈，抛 RecursionError 而不是
+        # YAMLError。不转译的话，`SkillRegistry.discover` 的 except 链接不住它，畸形
         # SKILL.md 会让整次加载裸崩——而 skill 内容是外部数据，必须按第 3 节
         # 「不合法即拒绝加载」显式拒绝。
         raise SkillFrontmatterError(path, "frontmatter 嵌套过深（疑似畸形或构造的 YAML），拒绝加载") from exc
@@ -133,15 +133,15 @@ def parse_frontmatter(text: str, *, path: str) -> tuple[dict[object, object], st
 
 
 def _reject_body_that_looks_like_frontmatter(body: str, *, path: str) -> None:
-    """正文以标准字段开头时**拒绝加载**。
+    """正文以标准字段开头时拒绝加载。
 
-    为什么需要这一条：顶格 ``---`` 出现在块标量里时，YAML 规范会让块标量在该行结束，
-    于是其后的 ``metadata``、``allowed-tools`` 落到 frontmatter 之外、被当成正文吞掉。
-    实测（``description: |1`` 显式缩进指示符、或内容里写着「第一行就是 ``---``」）能把
-    ``autoload: "false"`` 吞掉，使本该只由程序注入的 skill 变成**可被模型自动匹配**，
+    为什么需要这一条：顶格 `---` 出现在块标量里时，YAML 规范会让块标量在该行结束，
+    于是其后的 `metadata`、`allowed-tools` 落到 frontmatter 之外、被当成正文吞掉。
+    实测（`description: |1` 显式缩进指示符、或内容里写着「第一行就是 `---`」）能把
+    `autoload: "false"` 吞掉，使本该只由程序注入的 skill 变成可被模型自动匹配，
     而且既不报错也不告警——正是基座第 3 节禁止的「静默加载」。
 
-    **只在正文首个非空行判定**：正文中间出现 ``metadata:`` 是合法内容（指令里举例很常见），
+    只在正文首个非空行判定：正文中间出现 `metadata:` 是合法内容（指令里举例很常见），
     在任意行判定会误伤。
 
     Raises:

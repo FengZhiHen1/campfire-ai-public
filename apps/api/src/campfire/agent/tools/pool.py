@@ -2,12 +2,12 @@
 
 依据 docs/技术设计/technical-details/通用基座.md 第 5 节与 docs/项目结构设计.md 第 7 节：
 
-- **工具注册在装配处完成**（``main.py`` / ``worker.py``），因此 ``agent/*`` 不需要
-  import ``tools/*``（产品侧工具包）。
-- **声明保持稳定**：请求里的 ``tools`` 数组在一条对话内不变（超集）。这是缓存纪律的
+- 工具注册在装配处完成（`main.py` / `worker.py`），因此 `agent/*` 不需要
+  import `tools/*`（产品侧工具包）。
+- 声明保持稳定：请求里的 `tools` 数组在一条对话内不变（超集）。这是缓存纪律的
   要求——声明一变前缀就变，缓存从变化处失效。因此 :meth:`ToolPool.declared` 按名字
   排序返回固定顺序，而不是跟随注册顺序。
-- 工具池是**超集**：``allowed-tools`` 不限制池子，它只选出「此刻可用」的子集。
+- 工具池是超集：`allowed-tools` 不限制池子，它只选出「此刻可用」的子集。
 """
 
 from __future__ import annotations
@@ -23,11 +23,11 @@ from .spec import _DESCRIPTION_MAX_LENGTH, _NAME_MAX_LENGTH, TOOL_NAME_PATTERN, 
 RESERVED_TOOL_NAMES: frozenset[str] = frozenset({"skill", "read_skill_resource"})
 """基座保留的工具名。
 
-两个都是**基座机制**工具：``skill`` 是模型侧激活（基座文档第 3 节：模型调用
-``skill({ name })``）；``read_skill_resource`` 是激活后的资源读取（第 3 节「资源」行，
+两个都是基座机制工具：`skill` 是模型侧激活（基座文档第 3 节：模型调用
+`skill({ name })`）；`read_skill_resource` 是激活后的资源读取（第 3 节「资源」行，
 2026-09-29 补——激活载荷里的资源清单必须有一件能读的工具配套，否则就是一份
 「列出却读不到的清单」）。产品侧工具不得占用它们：重名会让机制工具被顶掉，而
-``allowed-tools`` 与实际派发都以名字为键。保留名的注册走 :meth:`ToolPool.register_base`。
+`allowed-tools` 与实际派发都以名字为键。保留名的注册走 :meth:`ToolPool.register_base`。
 """
 
 
@@ -41,7 +41,7 @@ class ToolPool:
             self.register(tool)
 
     def register(self, tool: Tool) -> None:
-        """注册一个**产品侧**工具。
+        """注册一个产品侧工具。
 
         Raises:
             ToolRegistrationError: 同名工具已注册，或用了基座保留名
@@ -53,7 +53,7 @@ class ToolPool:
         self._register(tool)
 
     def register_base(self, tool: Tool) -> None:
-        """注册一个**基座自有**工具，允许使用保留名。
+        """注册一个基座自有工具，允许使用保留名。
 
         与 :meth:`register` 分开是为了让「这个工具属于基座还是产品侧」在调用点就可见；
         两者的重名规则不同，混在一个方法里就只能靠注释说明。
@@ -63,9 +63,9 @@ class ToolPool:
     def _register(self, tool: Tool) -> None:
         """实际写入；重名一律拒绝，并核实名字与描述的形状。
 
-        **形状在这里也要查一遍**：池接受的是结构类型（:class:`Tool`），因此一个鸭子类型对象
+        形状在这里也要查一遍：池接受的是结构类型（:class:`Tool`），因此一个鸭子类型对象
         可以绕过 :class:`ToolSpec` 的构造期校验带着空名字或空描述进来——实测空名字与空描述
-        都能进池并进请求体，而名字是权限判定与 ``allowed-tools`` 的键、描述是模型选工具的唯一
+        都能进池并进请求体，而名字是权限判定与 `allowed-tools` 的键、描述是模型选工具的唯一
         依据。类型可以靠结构，校验不能。
 
         Raises:
@@ -102,7 +102,7 @@ class ToolPool:
         return tuple(sorted(self._tools))
 
     def declared(self) -> tuple[Tool, ...]:
-        """请求里交给模型的**稳定声明**（超集，按名字排序）。"""
+        """请求里交给模型的稳定声明（超集，按名字排序）。"""
         return tuple(self._tools[name] for name in self.names())
 
     def get(self, name: str) -> Tool:
@@ -117,23 +117,23 @@ class ToolPool:
             raise ToolNotRegisteredError((name,), self.names()) from exc
 
     def ensure_names_are_registered(self, names: Iterable[str]) -> None:
-        """校验一组名字都存在（用于 ``allowed-tools`` 与面配置的默认可用集）。
+        """校验一组名字都存在（用于 `allowed-tools` 与面配置的默认可用集）。
 
         Raises:
-            ToolNotRegisteredError: 存在未注册的名字；``names`` 属性带全部缺失项。
+            ToolNotRegisteredError: 存在未注册的名字；`names` 属性带全部缺失项。
         """
         missing = tuple(sorted({name for name in names if name not in self._tools}))
         if missing:
             raise ToolNotRegisteredError(missing, self.names())
 
     def ensure_skills_are_resolvable(self, skills: Sequence[Skill]) -> None:
-        """启动期校验：每个 skill 的 ``allowed-tools`` 都必须指向已注册工具。
+        """启动期校验：每个 skill 的 `allowed-tools` 都必须指向已注册工具。
 
-        在启动时跑一次，是为了让 skill 作者的名字笔误在**启动**就暴露，而不是等到
+        在启动时跑一次，是为了让 skill 作者的名字笔误在启动就暴露，而不是等到
         某个 skill 第一次被激活时的那次运行。一次报出全部问题。
 
         Raises:
-            ToolNotRegisteredError: 存在指向未注册工具的 ``allowed-tools``。
+            ToolNotRegisteredError: 存在指向未注册工具的 `allowed-tools`。
         """
         missing: set[str] = set()
         for skill in skills:

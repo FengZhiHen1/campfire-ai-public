@@ -1,7 +1,7 @@
-"""``python -m campfire.cli`` 的入口。
+"""`python -m campfire.cli` 的入口。
 
-设计（RAG 策略第 7 节）把摄取定成**应用包内的一个 CLI 入口**，跑在同一镜像里、
-连同一个库；**不暴露成服务端点**。提取逻辑归 ``modules/library``（检索链与摄取
+设计（RAG 策略第 7 节）把摄取定成应用包内的一个 CLI 入口，跑在同一镜像里、
+连同一个库；不暴露成服务端点。提取逻辑归 `modules/library`（检索链与摄取
 同属一个模块），本入口只负责命令行形态、参数解析与退出码。
 
 用法::
@@ -9,8 +9,8 @@
     python -m campfire.cli convert <input.html> [--out <output.md>]
     python -m campfire.cli ingest  <路径> --source <出处> --scope <适用范围>
 
-**为什么 convert 与 ingest 分成两条命令**（2026-09-29 定）：设计要求语料"加工后
-**＋人工核对标题与表格**"才进系统（RAG 策略第 1.1 节）。convert 是**纯转换**——
+为什么 convert 与 ingest 分成两条命令（2026-09-29 定）：设计要求语料"加工后
+＋人工核对标题与表格"才进系统（RAG 策略第 1.1 节）。convert 是纯转换——
 不连库、不调模型、零成本，产物可先审再喂；把转换并进 ingest 会跳过"审"这一步，
 而那正是链外准备买到的东西。
 
@@ -94,7 +94,7 @@ def _build_parser() -> argparse.ArgumentParser:
 def _run_convert(args: argparse.Namespace) -> int:
     """执行转换：纯函数式加工，不连库、不调模型。
 
-    产物**不自动入库**——转换与入库分两步是设计要求（链外准备＋人工核对）。
+    产物不自动入库——转换与入库分两步是设计要求（链外准备＋人工核对）。
     """
     path: Path = args.path
     if not path.is_file():
@@ -189,7 +189,7 @@ async def _run_ingest(args: argparse.Namespace) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
-    """入口点。返回退出码而不是 ``sys.exit``，便于测试直接断言。"""
+    """入口点。返回退出码而不是 `sys.exit`，便于测试直接断言。"""
     parser = _build_parser()
     args = parser.parse_args(argv if argv is not None else sys.argv[1:])
 

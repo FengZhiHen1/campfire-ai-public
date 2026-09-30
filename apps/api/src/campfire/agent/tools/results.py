@@ -2,8 +2,8 @@
 
 依据 docs/技术设计/technical-details/通用基座.md 第 5 节失败语义：
 
-- **工具自身错误作为结果回给模型**（可恢复），不是抛异常中断运行；
-- **权限拒绝返回明确错误码，不静默降级为其他工具**。
+- 工具自身错误作为结果回给模型（可恢复），不是抛异常中断运行；
+- 权限拒绝返回明确错误码，不静默降级为其他工具。
 
 因此结果是一个判别联合（:data:`ToolOutcome`）：成功带产出，失败带错误码。没有
 「成功但为空」「失败但像成功」的中间态。
@@ -26,13 +26,13 @@ ToolErrorCode = Literal[
 ]
 """工具失败的错误码。
 
-- ``tool_not_registered``：模型调用了一个不存在的工具名；
-- ``tool_not_available``：工具已声明但**此刻未激活**，服务端拒绝（硬边界）；
-- ``tool_requires_approval``：需要人工审批，而一期不实现 HITL，故显式拒绝；
-- ``tool_invalid_arguments``：参数不是合法 JSON 或不符合该工具的 JSON Schema；
-- ``tool_failed``：工具实现自己报错，错误类型回给模型，它可据此换个方式再试；
-- ``tool_interrupted``：调用**没有结果**就结束了（运行触顶、运行失败或取消打断）。
-  它不是工具自身报错，因此与 ``tool_failed`` 分开——消费方据此知道「工具可能还在跑」
+- `tool_not_registered`：模型调用了一个不存在的工具名；
+- `tool_not_available`：工具已声明但此刻未激活，服务端拒绝（硬边界）；
+- `tool_requires_approval`：需要人工审批，而一期不实现 HITL，故显式拒绝；
+- `tool_invalid_arguments`：参数不是合法 JSON 或不符合该工具的 JSON Schema；
+- `tool_failed`：工具实现自己报错，错误类型回给模型，它可据此换个方式再试；
+- `tool_interrupted`：调用没有结果就结束了（运行触顶、运行失败或取消打断）。
+  它不是工具自身报错，因此与 `tool_failed` 分开——消费方据此知道「工具可能还在跑」
   而不是「工具说它坏了」。这个码由运行编排合成（工具没机会返回结果），
   见 :class:`~campfire.agent.runtime.runner._ToolCallTracker`。
 """
@@ -40,9 +40,9 @@ ToolErrorCode = Literal[
 
 @dataclass(frozen=True, slots=True)
 class Candidate:
-    """一条**未确认**的候选产出，供面呈现为「待确认」。
+    """一条未确认的候选产出，供面呈现为「待确认」。
 
-    基座只承载形状（业务回指 + 摘要），**不承载语义**：为什么待确认、确认后写到哪，
+    基座只承载形状（业务回指 + 摘要），不承载语义：为什么待确认、确认后写到哪，
     都由产品侧与面决定（基座不得出现领域术语）。
     """
 
@@ -57,7 +57,7 @@ class Candidate:
 class ToolResult:
     """工具成功执行后的产出。
 
-    ``citations`` 只能来自 :class:`~campfire.agent.context.CitationRecorder`：引用
+    `citations` 只能来自 :class:`~campfire.agent.context.CitationRecorder`：引用
     凭据与索引写入是同一个动作，工具无法伪造一条「查不到出处」的依据。
     """
 
