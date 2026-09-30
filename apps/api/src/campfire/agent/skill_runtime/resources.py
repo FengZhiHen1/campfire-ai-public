@@ -1,14 +1,14 @@
 """skill 资源的列举与按需读取。
 
-依据 docs/技术设计/technical-details/通用基座.md 第 3 节：``references/`` 与
-``assets/`` 按需读取；**相对路径、一层深，不做多级引用链**。
+依据 docs/技术设计/technical-details/通用基座.md 第 3 节：`references/` 与
+`assets/` 按需读取；相对路径、一层深，不做多级引用链。
 
 四条边界都是显式的：
 
-- 只认 ``references/<文件名>`` 与 ``assets/<文件名>`` 两种形状，多一层即拒绝；
-- 拒绝绝对路径、``..``、NUL 与 ``:``（越界或不可移植的读取不是「找不到」，是明确的拒绝）；
+- 只认 `references/<文件名>` 与 `assets/<文件名>` 两种形状，多一层即拒绝；
+- 拒绝绝对路径、`..`、NUL 与 `:`（越界或不可移植的读取不是「找不到」，是明确的拒绝）；
 - 单文件体积上限，避免一次读取把上下文挤爆（有界性要求）；
-- **列举与读取用同一组判据**：列举时就把不合格的条目标成「不可用」并带上原因，而不是
+- 列举与读取用同一组判据：列举时就把不合格的条目标成「不可用」并带上原因，而不是
   列出一份读不到的清单——第 4 节要求注入失败显式标注该来源不可用。
 """
 
@@ -32,25 +32,25 @@ MAX_RESOURCE_BYTES = 256 * 1024
 class SkillResource:
     """一个 skill 资源条目。
 
-    ``issue`` 非空表示它**存在但不可读**（越界符号链接、超体积、非 UTF-8 之外的结构性
+    `issue` 非空表示它存在但不可读（越界符号链接、超体积、非 UTF-8 之外的结构性
     问题）。这样的条目仍会被列出——显式标注不可用，好过让它悄悄消失。
     """
 
     relative_path: str
-    """相对 skill 目录的路径，形如 ``references/clarification.md``。"""
+    """相对 skill 目录的路径，形如 `references/clarification.md`。"""
 
     directory: str
-    """所属资源根目录（``references`` 或 ``assets``）。"""
+    """所属资源根目录（`references` 或 `assets`）。"""
 
     issue: str | None = None
-    """不可读的原因；``None`` 表示可以正常读取。"""
+    """不可读的原因；`None` 表示可以正常读取。"""
 
 
 def list_resources(skill: Skill, *, max_bytes: int = MAX_RESOURCE_BYTES) -> tuple[SkillResource, ...]:
     """列出 skill 的资源文件（一层深、按路径排序、确定性顺序）。
 
     不存在的资源目录直接跳过；子目录忽略（标准只允许一层深）。每个条目都经
-    :func:`_inspect` 判定可读性，不可读的带 ``issue`` 返回。
+    :func:`_inspect` 判定可读性，不可读的带 `issue` 返回。
     """
     found: list[SkillResource] = []
     for directory_name in RESOURCE_DIRECTORIES:
@@ -104,12 +104,12 @@ def _validate_shape(relative_path: str) -> None:
     """校验路径形状。
 
     Raises:
-        SkillResourceError: 绝对路径、层数不对、不在允许的根目录下，或含 NUL / ``:``。
+        SkillResourceError: 绝对路径、层数不对、不在允许的根目录下，或含 NUL / `:`。
     """
     allowed = "、".join(f"{name}/<文件名>" for name in RESOURCE_DIRECTORIES)
     if "\x00" in relative_path or ":" in relative_path:
-        # NUL 会让 Path 操作抛裸 ValueError；``:`` 在 Windows 上指 NTFS 备用数据流
-        # （``guide.md:hidden``），那是列举永远看不到的第二份内容。
+        # NUL 会让 Path 操作抛裸 ValueError；`:` 在 Windows 上指 NTFS 备用数据流
+        # （`guide.md:hidden`），那是列举永远看不到的第二份内容。
         raise SkillResourceError(f"资源路径 {relative_path!r} 含不可移植字符（NUL 或 ':'），拒绝读取")
 
     parts = Path(relative_path).parts
@@ -137,7 +137,7 @@ def _resolve_target(skill: Skill, relative_path: str, parts: tuple[str, ...]) ->
 
 
 def _inspect(skill: Skill, entry: Path, relative_path: str, *, max_bytes: int) -> str | None:
-    """返回不可读的原因；可读返回 ``None``。用于列举时标注，不抛异常。"""
+    """返回不可读的原因；可读返回 `None`。用于列举时标注，不抛异常。"""
     try:
         resolved = entry.resolve()
         if not resolved.is_relative_to(skill.directory.resolve()):

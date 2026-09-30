@@ -1,18 +1,18 @@
-"""流式事件：一次运行对外的**唯一**输出形状。
+"""流式事件：一次运行对外的唯一输出形状。
 
 依据 docs/技术设计/technical-details/通用基座.md 第 7 节：事件类型一期经 SSE 传输，
-**名称与语义对齐 AG-UI 以便升级**。因此这里的 ``type`` 取值就是线上契约，改名等于改契约。
+名称与语义对齐 AG-UI 以便升级。因此这里的 `type` 取值就是线上契约，改名等于改契约。
 
 第一次看到这个模块的人常问三件事，答案都写在这里：
 
-1. **为什么事件类型不直接暴露 SDK 的类型？** 这些事件要过 SSE 到前端、要进运行记录，
-   两处都不该跟着 SDK 的版本漂移。所以 ``RunUsage``、``CitationRecord`` 等是基座自己的
-   形状，SDK 类型在 ``runner`` 里被翻译一次。
-2. **``run_finished`` 与 ``run_failed`` 怎么分？** 第 9 节把「触顶（步数/token/时间）」与
-   「运行被取消」都归为**以明确原因结束并保留已产生的引用**，所以它们是 ``run_finished``
-   的 ``reason``（``completed`` / ``timeout`` / ``cancelled``）；模型不可用、会话写入失败
-   这类「本次运行明确失败」才是 ``run_failed``。
-3. **为什么有 ``progress``？** 第 7 节要求长等待（例如检索中）有进度提示；它由装配处
+1. 为什么事件类型不直接暴露 SDK 的类型？ 这些事件要过 SSE 到前端、要进运行记录，
+   两处都不该跟着 SDK 的版本漂移。所以 `RunUsage`、`CitationRecord` 等是基座自己的
+   形状，SDK 类型在 `runner` 里被翻译一次。
+2. `run_finished` 与 `run_failed` 怎么分？ 第 9 节把「触顶（步数/token/时间）」与
+   「运行被取消」都归为以明确原因结束并保留已产生的引用，所以它们是 `run_finished`
+   的 `reason`（`completed` / `timeout` / `cancelled`）；模型不可用、会话写入失败
+   这类「本次运行明确失败」才是 `run_failed`。
+3. 为什么有 `progress`？ 第 7 节要求长等待（例如检索中）有进度提示；它由装配处
    在等待期间发出，不承载业务语义。
 """
 
@@ -26,7 +26,7 @@ from campfire.agent.model import ModelFailureReason
 from campfire.agent.tools import Candidate, ToolErrorCode
 
 RunEndReason = Literal["completed", "timeout", "cancelled"]
-"""结束后原因（``run_finished``）。三者都会保留已产生的引用（第 9 节）。"""
+"""结束后原因（`run_finished`）。三者都会保留已产生的引用（第 9 节）。"""
 
 RunFailureCode = Literal[
     "model_unavailable",
@@ -35,14 +35,14 @@ RunFailureCode = Literal[
     "context_overflow",
     "internal",
 ]
-"""失败码（``run_failed``）。
+"""失败码（`run_failed`）。
 
-- ``model_unavailable``：模型调用重试耗尽（``model_reason`` 给出细分原因）；
-- ``injection_failed``：注入项渲染/索引写入失败——**不得**当作「没有注入」继续；
-- ``session_write_failed``：对话未能落库（第 9 节：不得把未落库的对话当作已保存继续下一轮）；
-- ``context_overflow``：提供方明确报上下文溢出，而压缩无法把窗口再降下来（压缩策略第 7 节：
-  不可分单元超预算时**明确失败并提示**，不静默截断）；
-- ``internal``：其余未归类异常。
+- `model_unavailable`：模型调用重试耗尽（`model_reason` 给出细分原因）；
+- `injection_failed`：注入项渲染/索引写入失败——不得当作「没有注入」继续；
+- `session_write_failed`：对话未能落库（第 9 节：不得把未落库的对话当作已保存继续下一轮）；
+- `context_overflow`：提供方明确报上下文溢出，而压缩无法把窗口再降下来（压缩策略第 7 节：
+  不可分单元超预算时明确失败并提示，不静默截断）；
+- `internal`：其余未归类异常。
 """
 
 # 工具结果摘要的长度上限。事件的用途是让使用者看到「发生了什么」，完整结果已经回给模型；
@@ -54,7 +54,7 @@ SUMMARY_LIMIT = 200
 class RunUsage:
     """一次运行的 token 计量。
 
-    用**提供方返回的 usage**（见压缩策略第 9 节：不用字符数折算），SDK 的响应事件里带。
+    用提供方返回的 usage（见压缩策略第 9 节：不用字符数折算），SDK 的响应事件里带。
     多次模型调用在同一运行内累加。
     """
 
@@ -134,7 +134,7 @@ class CitationEvent:
 
 @dataclass(frozen=True, slots=True)
 class CandidateEvent:
-    """一条**未确认**的候选产出，供面呈现为「待确认」。"""
+    """一条未确认的候选产出，供面呈现为「待确认」。"""
 
     candidate: Candidate
     type: Literal["candidate"] = field(default="candidate", init=False)
@@ -142,12 +142,12 @@ class CandidateEvent:
 
 @dataclass(frozen=True, slots=True)
 class CompactionFacts:
-    """一次压缩的**计量**（压缩策略第 9 节），只带计数与用量、不带摘要正文。
+    """一次压缩的计量（压缩策略第 9 节），只带计数与用量、不带摘要正文。
 
-    为什么挂在 ``run_finished`` / ``run_failed`` 上而不是新开一种事件：第 7 节的事件表是与
-    AG-UI 对齐的对外契约，加一种类型等于改契约；而第 9 节要的是**记录**里的计量，终端事件
+    为什么挂在 `run_finished` / `run_failed` 上而不是新开一种事件：第 7 节的事件表是与
+    AG-UI 对齐的对外契约，加一种类型等于改契约；而第 9 节要的是记录里的计量，终端事件
     已经带着引用清单与用量，把压缩计量一并带上最省事，也不给面增加新的分支。溢出恢复发生在
-    运行开始**之后**，因此只有终端事件能收全所有压缩。
+    运行开始之后，因此只有终端事件能收全所有压缩。
     """
 
     performed: bool
@@ -165,8 +165,8 @@ class CompactionFacts:
     prompt_cache_hit_tokens: int = 0
     """摘要调用的缓存命中 token（压缩策略第 9 节要求记录、第 12 节要求用它断言）。
 
-    来源是提供方 usage 里的 ``prompt_cache_hit_tokens``；键名与是否返回**均未核实**
-    （``TECH-02``），取不到时保持 0——不编造。
+    来源是提供方 usage 里的 `prompt_cache_hit_tokens`；键名与是否返回均未核实
+    （`TECH-02`），取不到时保持 0——不编造。
     """
 
     prompt_cache_miss_tokens: int = 0
@@ -199,13 +199,13 @@ class RunFailedEvent:
 
     code: RunFailureCode
     detail: str
-    """面向排障的说明，**只带类型级信息**，不含凭据与使用者内容。"""
+    """面向排障的说明，只带类型级信息，不含凭据与使用者内容。"""
 
     citations: tuple[CitationRecord, ...]
     usage: RunUsage
     elapsed_seconds: float
     model_reason: ModelFailureReason | None = None
-    """``code`` 为 ``model_unavailable`` 时的细分原因。"""
+    """`code` 为 `model_unavailable` 时的细分原因。"""
 
     compactions: tuple[CompactionFacts, ...] = ()
     """本次运行做过的压缩（第 9 节的计量）；没压缩时为空。"""
@@ -224,4 +224,4 @@ RunEvent = Union[
     RunFinishedEvent,
     RunFailedEvent,
 ]
-"""一次运行可能发出的事件全集（判别联合，按 ``type`` 区分）。"""
+"""一次运行可能发出的事件全集（判别联合，按 `type` 区分）。"""

@@ -1,23 +1,23 @@
 """分块后处理：框架不保证的部分（RAG 策略第 1.2 节）。
 
-**为什么必须有这一层**（2026-09-29 在真实产物上实测）：
+为什么必须有这一层（2026-09-29 在真实产物上实测）：
 
 - 框架的 `MarkdownNodeParser` 按 `#` 层级切分并写出 `metadata["header_path"]`，
-  但它**不对超长 section 二次切分**——实测一个 2248 字符的 section 原样成为一个
-  节点，而 TokenHub 嵌入接口**单条文本硬上限 2000 字符**。不切就会在嵌入处失败。
-- 表格与列表在本样本上**未被切断**（框架按 heading 边界切，天然不切进表格/列表
+  但它不对超长 section 二次切分——实测一个 2248 字符的 section 原样成为一个
+  节点，而 TokenHub 嵌入接口单条文本硬上限 2000 字符。不切就会在嵌入处失败。
+- 表格与列表在本样本上未被切断（框架按 heading 边界切，天然不切进表格/列表
   内部）；但这是框架的实现细节而非书面承诺，因此这里仍做结构保护：超长切分
-  **只在段落/句子边界进行**，绝不切进表格行或列表项之间。
+  只在段落/句子边界进行，绝不切进表格行或列表项之间。
 
 设计约束（RAG 策略第 1.2 节与第 10 节参数表）：
 
-- 目标块长 **400–800 字符**；硬上限 **2000 字符**。
-- **结构边界处不重叠**（重叠会让同一内容在引用里出现两次，也让 `locator` 含混）。
-- 超限的**不可分单元**（例如整页表格）标记为「未嵌入」并进人工处理队列，
-  **不静默截断**——截断会制造错误依据。
+- 目标块长 400–800 字符；硬上限 2000 字符。
+- 结构边界处不重叠（重叠会让同一内容在引用里出现两次，也让 `locator` 含混）。
+- 超限的不可分单元（例如整页表格）标记为「未嵌入」并进人工处理队列，
+  不静默截断——截断会制造错误依据。
 
 字符计数用 `len(str)`（Unicode 码点）而非框架 `SentenceSplitter` 的 token 计数：
-嵌入接口的限制是**字符**，中文下 token 与字符不是一回事（设计已指出该陷阱）。
+嵌入接口的限制是字符，中文下 token 与字符不是一回事（设计已指出该陷阱）。
 """
 
 from __future__ import annotations
@@ -29,7 +29,7 @@ from dataclasses import dataclass, field
 TARGET_MIN_CHARS = 400
 TARGET_MAX_CHARS = 800
 
-#: 硬上限（字符）：TokenHub 嵌入接口单条文本 ≤2000 字符，**留出余量**——
+#: 硬上限（字符）：TokenHub 嵌入接口单条文本 ≤2000 字符，留出余量——
 #: 我们拼接时会在块前加标题路径，那部分也计入单条文本。
 HARD_MAX_CHARS = 2000
 #: 标题路径占用的预留额度，避免「正文刚好 2000 + 标题」超限。
@@ -53,16 +53,16 @@ class Chunk:
     """一个待嵌入的块。"""
 
     text: str
-    #: 框架给出的**父级**标题路径（如 `/规范/附件2/`），原样保留。
+    #: 框架给出的父级标题路径（如 `/规范/附件2/`），原样保留。
     header_path: str
     #: 章节路径：`header_path` + 当前章节标题（如 `/规范/附件2/一、基本要求/`）。
-    #: 返回契约的 `locator` 用它——框架的 `header_path` **不含当前标题**（实测：
+    #: 返回契约的 `locator` 用它——框架的 `header_path` 不含当前标题（实测：
     #: `## 一、服务对象` 的节点 header_path 只有父级），直接拿它当 locator 会让
     #: 同章下所有块失去区分度。
     locator: str
     #: 在原文中的序号，便于回溯与稳定排序。
     chunk_index: int
-    #: 超出硬限且不可再分时为 True；此类块**不送去嵌入**，进人工处理队列。
+    #: 超出硬限且不可再分时为 True；此类块不送去嵌入，进人工处理队列。
     needs_manual_review: bool = False
     review_reason: str | None = None
 
@@ -87,27 +87,27 @@ def _is_structural_line(line: str) -> bool:
 
 
 def _split_oversized_table(paragraph: str, limit: int) -> tuple[list[str], str | None]:
-    """超长表格**按行切分，每片重复表头**。
+    """超长表格按行切分，每片重复表头。
 
     为什么这不是"破坏结构"（2026-09-29 实测教训）：结构保护的本意是
-    **不把一行从中间切断**，而按行分段并重复表头产出的每一片仍是**合法且自解释**
+    不把一行从中间切断，而按行分段并重复表头产出的每一片仍是合法且自解释
     的 Markdown 表格（表头决定了列义）。早先一律判为"不可分"，导致 PMC 论文里
-    27 种循证实践清单（Table 2，8,487 字符）**不进检索**——而"有哪些循证实践"
+    27 种循证实践清单（Table 2，8,487 字符）不进检索——而"有哪些循证实践"
     恰是最可能的提问，等于丢掉论文的核心交付物。
 
     表头识别：前两行是「列名行 + `|---|` 分隔行」（标准 Markdown 表格）。
-    识别不出表头时（表格形态异常）**返回失败**，仍交由人工处理——
+    识别不出表头时（表格形态异常）返回失败，仍交由人工处理——
     宁可漏嵌也不产出列义不明的碎片。
 
     Returns:
-        ``(切片列表, None)``；无法安全切分时 ``([], 原因)``。
+        `(切片列表, None)`；无法安全切分时 `([], 原因)`。
     """
     lines = [line for line in paragraph.splitlines() if line.strip()]
     if len(lines) < 3:
         return [], "表格行数过少，无法按行切分"
 
     header, separator = lines[0], lines[1]
-    # 第二行必须是**真正的分隔行**（`|---|`），不能只是"任意表格行"：
+    # 第二行必须是真正的分隔行（`|---|`），不能只是"任意表格行"：
     # 否则缺分隔行的畸形表格会把一条数据行当成表头分隔，切出的碎片列义不明。
     if not _TABLE_ROW_PATTERN.match(header) or not _TABLE_SEPARATOR_PATTERN.match(separator.strip()):
         return [], "超长且首两行不是表格表头，无法按行切分"
@@ -154,7 +154,7 @@ def _split_oversized_table(paragraph: str, limit: int) -> tuple[list[str], str |
 def _split_oversized_paragraph(paragraph: str, limit: int) -> tuple[list[str], str | None]:
     """切分单个超长段落：先是表格按行切，再按句子累积。
 
-    顺序有讲究：**表格优先**——表格若按句子切会把行切碎（一行的定义文本可能
+    顺序有讲究：表格优先——表格若按句子切会把行切碎（一行的定义文本可能
     含句号），而按行切并重复表头能保住列义。只有非表格内容才按句子处理。
     """
     lines = paragraph.splitlines()
@@ -188,9 +188,9 @@ def _split_oversized(text: str, limit: int) -> tuple[list[str], str | None]:
 
     切分顺序（从最保守到最激进）：
 
-    1. **段落边界**（空行）——最自然，优先使用。
-    2. **句子边界**——段落本身仍超限时。
-    3. **结构行不可切**：若单个段落由表格行/列表项构成且自身超限，**不切**，
+    1. 段落边界（空行）——最自然，优先使用。
+    2. 句子边界——段落本身仍超限时。
+    3. 结构行不可切：若单个段落由表格行/列表项构成且自身超限，不切，
        返回失败原因交由调用方标记为需人工处理（静默截断会制造错误依据）。
     """
     if len(text) <= limit:
@@ -245,7 +245,7 @@ def _leading_heading(text: str) -> str:
 def _join_locator(header_path: str, section_title: str) -> str:
     """拼出章节路径：父级路径 + 当前章节标题。
 
-    框架的 `header_path` 是**父级**路径，不含当前标题（实测），因此必须补上，
+    框架的 `header_path` 是父级路径，不含当前标题（实测），因此必须补上，
     否则同一章下所有块的 `locator` 完全相同、引用无法定位到章节。
     """
     base = header_path if header_path and header_path != "/" else "/"
@@ -272,10 +272,10 @@ def chunk_markdown_section(
 ) -> ChunkingReport:
     """对一个 section 做块长归一化（供摄取流水线逐节点调用）。
 
-    入参是框架已按 heading 切好的 section；本函数只负责**块长**层面的后处理。
+    入参是框架已按 heading 切好的 section；本函数只负责块长层面的后处理。
     返回报告：`chunks` 是最终块；`unsplittable` 是需人工处理的块（超限且不可分）。
 
-    ``section_title`` 由调用方在**节点粒度**给出：超长 section 会被切成多块，
+    `section_title` 由调用方在节点粒度给出：超长 section 会被切成多块，
     只有首块还带着标题行，因此不能从块文本里现取（那样后续块的章节路径会丢）。
     缺省时回退为从文本首行取。
     """

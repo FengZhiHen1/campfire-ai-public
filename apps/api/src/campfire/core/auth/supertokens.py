@@ -1,40 +1,39 @@
 """SuperTokens SDK 的装配与会话校验入口。
 
-归属（见 docs/项目结构设计.md 第 6 节）：本模块是 ``core/auth`` 的一部分，
-拥有**会话校验的装配与唯一入口**；注册、邀请码、重置、注销等**用例**归
-``modules/accounts``。
+归属（见 docs/项目结构设计.md 第 6 节）：本模块是 `core/auth` 的一部分，
+拥有会话校验的装配与唯一入口；注册、邀请码、重置、注销等用例归
+`modules/accounts`。
 
-## 本模块存在的唯一理由：把「逐请求查证」变成不可遗忘的默认
+本模块存在的唯一理由：把「逐请求查证」变成不可遗忘的默认
 
-[认证与账号] 第 6 节与决策记录要求**每个受限操作都开启数据库查证**
-（``check_database=True``），否则撤销不即时（``AC-17``、``RQ-ACC-06`` 落空）。
+[认证与账号] 第 6 节与决策记录要求每个受限操作都开启数据库查证
+（`check_database=True`），否则撤销不即时（`AC-17`、`RQ-ACC-06` 落空）。
 
-**实测（2026-09-30，真实 core + 真实库）**——这个开关的性质决定了本模块的形状：
+实测（2026-09-30，真实 core + 真实库）——这个开关的性质决定了本模块的形状：
 
-| 撤销会话后，用同一个 access token 校验 | 结果 |
-|---|---|
-| ``check_database`` 不传（**SDK 默认**） | **仍然通过**：「撤销未即时生效」 |
-| ``check_database=True`` | **被拒**：``Either the session has ended or has been blacklisted`` |
+撤销会话后，用同一个 access token 校验 → 结果
+- `check_database` 不传（SDK 默认） → 仍然通过：「撤销未即时生效」
+- `check_database=True` → 被拒：`Either the session has ended or has been blacklisted`
 
-关键事实：``check_database`` **不是 ``session.init`` 的初始化选项**，而是
-**每一次调用都要传的参数**（实测 ``session.init`` 的签名里没有它；
-``recipe/session/framework/fastapi/__init__.py`` 的 ``verify_session`` 默认值是
-``check_database: bool = False``）。
+关键事实：`check_database` 不是 `session.init` 的初始化选项，而是
+每一次调用都要传的参数（实测 `session.init` 的签名里没有它；
+`recipe/session/framework/fastapi/__init__.py` 的 `verify_session` 默认值是
+`check_database: bool = False`）。
 
-**因此「忘了传」不会报错，只会静默失去撤销能力**——这正是决策记录那条不变量
+因此「忘了传」不会报错，只会静默失去撤销能力——这正是决策记录那条不变量
 （「不得只在部分端点开启」）在实现层最容易被违反的方式。本模块的应对是：
-**不暴露任何能绕过它的调用形态**——对外只提供 :func:`require_session`，
-它在内部固定传 ``True``，调用方没有机会漏传。
+不暴露任何能绕过它的调用形态——对外只提供 :func:`require_session`，
+它在内部固定传 `True`，调用方没有机会漏传。
 
     ❌ 不要在生产代码里直接 `from supertokens_python... import verify_session`
        再自己传参。那样本模块的保证就被绕过了（`test_auth_supertokens` 会盯着这点）。
 
-## fail-closed
+fail-closed：
 
-core 不可达时**拒绝**，不回退到无状态校验——决策记录明文要求
+core 不可达时拒绝，不回退到无状态校验——决策记录明文要求
 （「数据库查证失败一律拒绝……回退等于在故障时静默关闭撤销能力」）。
-这一点由 SDK 的行为保证（查证失败即抛 ``UnauthorisedError``/异常），
-本模块**不做任何兜底捕获后放行**。
+这一点由 SDK 的行为保证（查证失败即抛 `UnauthorisedError`/异常），
+本模块不做任何兜底捕获后放行。
 """
 
 from __future__ import annotations
@@ -55,13 +54,13 @@ from campfire.core.health import ComponentHealth, Status
 
 logger = logging.getLogger(__name__)
 
-#: FastAPI 依赖函数的类型（即 SDK ``verify_session`` 的返回签名）。
+#: FastAPI 依赖函数的类型（即 SDK `verify_session` 的返回签名）。
 #:
-#: 这里的 ``Any`` 是**复刻 SDK 自己的签名**（``Callable[..., Coroutine[Any, Any, ...]]``，
-#: 见 ``recipe/session/framework/fastapi/__init__.py``）：协程的发送/投掷值类型由
+#: 这里的 `Any` 是复刻 SDK 自己的签名（`Callable[..., Coroutine[Any, Any, ...]]`，
+#: 见 `recipe/session/framework/fastapi/__init__.py`）：协程的发送/投掷值类型由
 #: 事件循环决定，SDK 未收窄，我们不发明比上游更窄的谎话。
-#: ``verify_session`` 以 ``session_required=True`` 调用时函数恒返回 ``SessionContainer``
-#: （未登录即抛 ``UnauthorisedError``），但类型上含 ``None``——按 SDK 签名如实声明。
+#: `verify_session` 以 `session_required=True` 调用时函数恒返回 `SessionContainer`
+#: （未登录即抛 `UnauthorisedError`），但类型上含 `None`——按 SDK 签名如实声明。
 SessionDependency = Callable[..., "Coroutine[Any, Any, SessionContainer | None]"]
 
 #: 健康检查里这一项的名字。与 `main.check_auth_core` 的项名一致，
@@ -72,27 +71,27 @@ AUTH_COMPONENT = "auth"
 class SuperTokensConfigurationError(RuntimeError):
     """SDK 装配所需的配置缺失或非法。
 
-    **刻意在装配期显式抛错**（而不是留到第一次请求）：配置问题若推迟到请求期暴露，
+    刻意在装配期显式抛错（而不是留到第一次请求）：配置问题若推迟到请求期暴露，
     表现会是一条 500 或「登录莫名失败」，而排查者会先去查网络与凭据本身。
-    这条与 ``core/db.create_engine`` 对未配置 ``DATABASE_URL`` 的处置同源。
+    这条与 `core/db.create_engine` 对未配置 `DATABASE_URL` 的处置同源。
     """
 
 
 def _require_api_key(settings: Settings) -> str:
     """取出 Management API 密钥，未配置即显式失败。
 
-    **实测必须有值**：core 以 ``API_KEYS`` 启动时，不带该 key 的请求会被拒
-    （实测 ``GET /apiversion`` → ``401 Invalid API key``），SDK 因此在**建号的第一步**
+    实测必须有值：core 以 `API_KEYS` 启动时，不带该 key 的请求会被拒
+    （实测 `GET /apiversion` → `401 Invalid API key`），SDK 因此在建号的第一步
     就失败。所以「没配也能跑」不成立，不如在装配期就说清楚。
 
     Raises:
-        SuperTokensConfigurationError: 未配置 ``SUPERTOKENS_API_KEY``。
+        SuperTokensConfigurationError: 未配置 `SUPERTOKENS_API_KEY`。
     """
     if settings.supertokens_api_key is None:
         raise SuperTokensConfigurationError(
             "未配置 SUPERTOKENS_API_KEY——core 以 API_KEYS 启动时所有 Management API 请求都会被拒"
         )
-    # SecretStr：取值本身是显式动作，且**不进入日志或异常消息**。
+    # SecretStr：取值本身是显式动作，且不进入日志或异常消息。
     return settings.supertokens_api_key.get_secret_value()
 
 
@@ -102,58 +101,57 @@ def init_supertokens(
     api_overrides: Callable[[APIInterface], APIInterface] | None = None,
     sign_up_form_fields: Callable[[], list[InputFormField]] | None = None,
 ) -> None:
-    """初始化 SuperTokens SDK（**幂等**，可重复调用）。
+    """初始化 SuperTokens SDK（幂等，可重复调用）。
 
-    幂等性由 SDK 保证（实测 ``Supertokens.init`` 只在 ``__instance is None`` 时构造），
+    幂等性由 SDK 保证（实测 `Supertokens.init` 只在 `__instance is None` 时构造），
     因此 Web 入口可在 lifespan 里调用、测试可多次调用而不必自己防重。
 
-    ## 配方（recipe）选择与理由
+    配方（recipe）选择与理由：
 
-    - ``session.init(anti_csrf="VIA_CUSTOM_HEADER")``：认证与账号第 5 节定的 anti-CSRF
-      方式。**它要求前端随请求带自定义头**，且在 ``sameSite=lax`` 且 API 与站点同顶级域
+    - `session.init(anti_csrf="VIA_CUSTOM_HEADER")`：认证与账号第 5 节定的 anti-CSRF
+      方式。它要求前端随请求带自定义头，且在 `sameSite=lax` 且 API 与站点同顶级域
       时是 SDK 的默认值；一期正是同顶级域部署。
-      **实测注意**：``VIA_CUSTOM_HEADER`` 下若**没有** HTTP 请求上下文而直接调
-      ``get_session``，SDK 会抛异常（「can't check the CSRF token」）——那是**预期的**
-      设计行为，不是缺陷：走 FastAPI 依赖（本模块的 ``require_session``）时请求上下文
+      实测注意：`VIA_CUSTOM_HEADER` 下若没有 HTTP 请求上下文而直接调
+      `get_session`，SDK 会抛异常（「can't check the CSRF token」）——那是预期的
+      设计行为，不是缺陷：走 FastAPI 依赖（本模块的 `require_session`）时请求上下文
       存在，CSRF 校验正常进行。
-    - ``emailpassword.init(...)``：账号名 + 密码（账号名**存放在 ``email`` 字段**，
-      ``TECH-08`` 的已知偏差）。**采用官方默认密码校验器**（≥8 字符、含小写字母与数字），
+    - `emailpassword.init(...)`：账号名 + 密码（账号名存放在 `email` 字段，
+      `TECH-08` 的已知偏差）。采用官方默认密码校验器（≥8 字符、含小写字母与数字），
       不自定规则（认证与账号第 4 节）。
-    - **不启用 Account Linking**：它会使主用户 ID 变更（官方《User Object》原文：
+    - 不启用 Account Linking：它会使主用户 ID 变更（官方《User Object》原文：
       *The primary user ID. It can change if the user links to another user*），
-      而 ``account_id`` 是记忆分区键与图名（认证与账号第 3 节）——启用等于让全部记忆
-      与账本失联。**刻意不初始化该配方**：不初始化即不可能被启用。
+      而 `account_id` 是记忆分区键与图名（认证与账号第 3 节）——启用等于让全部记忆
+      与账本失联。刻意不初始化该配方：不初始化即不可能被启用。
 
-    ## 注册复写为什么是**注入**而不是本模块 import
+    注册复写为什么是注入而不是本模块 import：
 
     注册须校验邀请码（认证与账号第 4 节），而邀请码的存储与状态机在
-    ``modules/accounts``。**``core/*`` 不得依赖 ``modules/*``**（项目结构设计第 7 节），
-    因此本模块**不 import 那个模块**，而是由装配处（``main.py``）把复写函数传进来——
+    `modules/accounts`。`core/*` 不得依赖 `modules/*`（项目结构设计第 7 节），
+    因此本模块不 import 那个模块，而是由装配处（`main.py`）把复写函数传进来——
     与「工具注册在装配处完成」同一种做法。
 
-    ## 为什么两个参数必须**同时**给出（否则显式拒绝）
+    为什么两个参数必须同时给出（否则显式拒绝）：
 
-    评审实测（2026-09-30）两者单独给的效果**不对称**，而这个不对称是危险的：
+    评审实测（2026-09-30）两者单独给的效果不对称，而这个不对称是危险的：
 
-    | 传了 | 结果 |
-    |---|---|
-    | 只传 ``api_overrides`` | 未声明的表单字段让请求在**复写之前**被拒 → 「永远拒绝注册」（可用性问题，fail-closed） |
-    | 只传 ``sign_up_form_fields`` | **邀请码校验被彻底绕过**：实测无码、空码、乱码码**三种都注册成功**（安全缺口，**fail-open**） |
+    传了 → 结果
+    - 只传 `api_overrides` → 未声明的表单字段让请求在复写之前被拒 → 「永远拒绝注册」（可用性问题，fail-closed）
+    - 只传 `sign_up_form_fields` → 邀请码校验被彻底绕过：实测无码、空码、乱码码三种都注册成功（安全缺口，fail-open）
 
-    后者会静默地把「须凭邀请码注册」（``RQ-ACC-04``）变成「任何人都能注册」。
-    因此这里**不接受**单独给出二者之一：一旦给了其中一个，另一个也必须给，
+    后者会静默地把「须凭邀请码注册」（`RQ-ACC-04`）变成「任何人都能注册」。
+    因此这里不接受单独给出二者之一：一旦给了其中一个，另一个也必须给，
     否则抛 :class:`SuperTokensConfigurationError`。
-    让危险的组合**无法被表达**，比在文档里提醒可靠。
+    让危险的组合无法被表达，比在文档里提醒可靠。
 
     Args:
         settings: 应用配置（唯一配置入口）。
-        api_overrides: API 复写（注册时校验邀请码）。**必须与**
-            ``sign_up_form_fields`` 同给同不给。
-        sign_up_form_fields: signup 自定义表单字段声明。**必须与**
-            ``api_overrides`` 同给同不给。
+        api_overrides: API 复写（注册时校验邀请码）。必须与
+            `sign_up_form_fields` 同给同不给。
+        sign_up_form_fields: signup 自定义表单字段声明。必须与
+            `api_overrides` 同给同不给。
 
     Raises:
-        SuperTokensConfigurationError: 缺少必需的配置项，或**只给了两个注册相关参数之一**。
+        SuperTokensConfigurationError: 缺少必需的配置项，或只给了两个注册相关参数之一。
     """
     api_key = _require_api_key(settings)
 
@@ -186,15 +184,15 @@ def init_supertokens(
         recipe_list=[
             session.init(
                 anti_csrf="VIA_CUSTOM_HEADER",
-                # **固定为 cookie 传输**（2026-09-30 评审抓出，实测确认）。
+                # 固定为 cookie 传输（2026-09-30 评审抓出，实测确认）。
                 #
                 # 不固定时 SDK 的默认是「按请求头决定，缺省落 header」：实测
                 # `session_request_functions.py:285-290` —— `output_transfer_method`
-                # 为 `"any"` 且无 `st-auth-mode` 头时**落成 `"header"`**。
-                # 于是注册会把 access/refresh token 放进**响应头**
+                # 为 `"any"` 且无 `st-auth-mode` 头时落成 `"header"`。
+                # 于是注册会把 access/refresh token 放进响应头
                 # （实测响应头含 `st-access-token`、`Set-Cookie` 数为 0），
-                # 而响应头对前端 JavaScript 是**可读**的——与认证与账号第 5 节
-                # 「cookie 型会话，凭据**不可被前端 JavaScript 读取**」以及
+                # 而响应头对前端 JavaScript 是可读的——与认证与账号第 5 节
+                # 「cookie 型会话，凭据不可被前端 JavaScript 读取」以及
                 # 项目结构设计第 9 节「前端不得读取或存储凭据」直接冲突。
                 #
                 # 固定成 cookie 后：凭据只在 `Set-Cookie` 里（HttpOnly 由 SDK 设置），
@@ -208,15 +206,15 @@ def init_supertokens(
 
 
 def require_session() -> SessionDependency:
-    """**唯一**的会话校验依赖。FastAPI 依赖注入用。
+    """唯一的会话校验依赖。FastAPI 依赖注入用。
 
-    ## 为什么必须经由这个函数（而不是直接用 SDK 的 ``verify_session``）
+    为什么必须经由这个函数（而不是直接用 SDK 的 `verify_session`）：
 
-    SDK 的 ``verify_session`` 默认 ``check_database=False``，且它是**每次调用**的参数
-    而非初始化选项（实测，见模块说明）。直接使用它意味着**每一处调用点都要记得传
-    ``True``**——漏一处，那条路径的撤销就静默失效，而**没有任何东西会报错**。
+    SDK 的 `verify_session` 默认 `check_database=False`，且它是每次调用的参数
+    而非初始化选项（实测，见模块说明）。直接使用它意味着每一处调用点都要记得传
+    `True`——漏一处，那条路径的撤销就静默失效，而没有任何东西会报错。
 
-    本函数把该参数**固定**在内部，调用方没有机会漏传：
+    本函数把该参数固定在内部，调用方没有机会漏传：
 
         @app.get("/protected")
         async def protected(session: SessionContainer = Depends(require_session())):
@@ -225,8 +223,8 @@ def require_session() -> SessionDependency:
     返回的是 SDK 的依赖函数（而不是我们自己包一层），这样 FastAPI 的依赖注入、
     以及 SDK 自身的 cookie/anti-CSRF 处理都保持原生行为——我们只固定那一个开关。
 
-    **``session_required=True`` 是刻意的**：全应用必须登录（``RQ-ACC-01``），
-    不存在匿名可达的业务路径（唯一例外是运维探针 ``GET /health``，它不经过本依赖）。
+    `session_required=True` 是刻意的：全应用必须登录（`RQ-ACC-01`），
+    不存在匿名可达的业务路径（唯一例外是运维探针 `GET /health`，它不经过本依赖）。
     """
     return verify_session(
         # 这两个默认值都由 SDK 决定，不在此处覆盖：
@@ -241,9 +239,9 @@ def require_session() -> SessionDependency:
 
 
 def check_supertokens_configuration(settings: Settings) -> ComponentHealth:
-    """装配期自检：报告 SDK 配置是否齐备（**不发起网络请求**）。
+    """装配期自检：报告 SDK 配置是否齐备（不发起网络请求）。
 
-    与 :func:`campfire.core.auth.check_auth_core` 的分工：那个探 core **可达性**，
+    与 :func:`campfire.core.auth.check_auth_core` 的分工：那个探 core 可达性，
     这个只回答「我们这边的配置能不能装配起来」。两者都是必要的——
     core 活着但没配 API Key 时，注册仍会失败，而可达性探针是绿的。
 

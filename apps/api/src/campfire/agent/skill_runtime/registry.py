@@ -1,15 +1,15 @@
 """skill 发现与注册表。
 
 依据 docs/技术设计/technical-details/通用基座.md 第 3 节「发现」行：扫描配置根目录
-下的 ``*/SKILL.md``、解析 frontmatter，**不合法即拒绝加载并在启动时失败**，不得以
-空元数据静默加载。根目录由配置指定（``Settings.skill_root``，环境变量 ``SKILL_ROOT``，
-默认应用内 ``skills/``）。
+下的 `*/SKILL.md`、解析 frontmatter，不合法即拒绝加载并在启动时失败，不得以
+空元数据静默加载。根目录由配置指定（`Settings.skill_root`，环境变量 `SKILL_ROOT`，
+默认应用内 `skills/`）。
 
 两条纪律的具体落法：
 
-- **一次报全部问题**：所有不合法的 skill 聚合成一个 :class:`SkillDiscoveryError`
+- 一次报全部问题：所有不合法的 skill 聚合成一个 :class:`SkillDiscoveryError`
   抛出，而不是改一个报一个。
-- **非致命问题不静默**：目录缺少 ``SKILL.md``、正文过长这类「可疑但不非法」的情况
+- 非致命问题不静默：目录缺少 `SKILL.md`、正文过长这类「可疑但不非法」的情况
   记为 :class:`SkillWarning` 挂在注册表上，由装配处决定怎么记录——不吞掉，也不假装
   是错误。
 """
@@ -91,7 +91,7 @@ class SkillRegistry:
                 # 根目录下的普通文件（如 README.md）不是 skill，也不该被当错误。
                 continue
 
-            # 按**精确名字**判定，不靠文件系统的大小写语义：Windows 上
+            # 按精确名字判定，不靠文件系统的大小写语义：Windows 上
             # `skill.md` 会被 `is_file()` 认成 `SKILL.md`，同一棵树在 CI 的
             # Linux 上却会变成「目录下没有 SKILL.md」——行为必须与平台无关。
             skill_file = _exact_skill_file(entry)
@@ -152,10 +152,10 @@ class SkillRegistry:
             raise SkillNotFoundError(name, self.names()) from exc
 
     def activation_candidates(self) -> tuple[Skill, ...]:
-        """**允许模型自动匹配**的 skill，即目录里列出的那一批。
+        """允许模型自动匹配的 skill，即目录里列出的那一批。
 
-        依据：基座文档第 3 节把 ``metadata.autoload`` 定义为「是否允许模型自动匹配」，
-        且该键**不送入模型**。既然模型看不到这个标记，唯一不泄标记又能守住语义的做法
+        依据：基座文档第 3 节把 `metadata.autoload` 定义为「是否允许模型自动匹配」，
+        且该键不送入模型。既然模型看不到这个标记，唯一不泄标记又能守住语义的做法
         就是——不进入目录；程序注入的激活不受此限（第 3 节「激活（应用侧）」）。
         """
         return tuple(skill for skill in self._skills.values() if skill.metadata.autoload)
@@ -167,7 +167,7 @@ class SkillRegistry:
         budget_tokens: int = CATALOG_BUDGET_TOKENS,
         count_tokens: Callable[[str], int] = estimate_tokens,
     ) -> str:
-        """渲染模型可见的技能目录（只含 ``name`` 与 ``description``）。"""
+        """渲染模型可见的技能目录（只含 `name` 与 `description`）。"""
         return render_catalog(
             self.activation_candidates(),
             surface=surface,
@@ -193,7 +193,7 @@ def _is_directory(path: Path) -> bool:
 
 
 def _exact_skill_file(directory: Path) -> Path | None:
-    """在目录里按**精确名字**找 ``SKILL.md``；找不到返回 ``None``。"""
+    """在目录里按精确名字找 `SKILL.md`；找不到返回 `None`。"""
     try:
         for child in directory.iterdir():
             if child.name == SKILL_FILE_NAME and child.is_file():
@@ -204,7 +204,7 @@ def _exact_skill_file(directory: Path) -> Path | None:
 
 
 def _load_skill(skill_file: Path, *, directory_name: str) -> Skill:
-    """读取并校验单个 ``SKILL.md``。"""
+    """读取并校验单个 `SKILL.md`。"""
     text = skill_file.read_text(encoding="utf-8")
     frontmatter, body = parse_frontmatter(text, path=skill_file.as_posix())
     metadata = build_metadata(frontmatter, path=skill_file.as_posix(), directory_name=directory_name)

@@ -1,9 +1,9 @@
 """读取侧的删除过滤：把账本里的 `episode_key` 取出来供图库侧排除，以及删除的写入。
 
-归属（见 docs/技术设计/technical-details/通用记忆.md 第 7 节）：**账本过滤是语义
-删除的唯一生效点**，图库物理删除不是。两条读路径都必须先经这里。
+归属（见 docs/技术设计/technical-details/通用记忆.md 第 7 节）：账本过滤是语义
+删除的唯一生效点，图库物理删除不是。两条读路径都必须先经这里。
 
-**为什么是「取 key 再传给图库」而不是「读回来再过滤」**：先在图库查询里排除
+为什么是「取 key 再传给图库」而不是「读回来再过滤」：先在图库查询里排除
 （`WHERE NOT e.uuid IN $deleted`）可以让过滤与分页/上限在同一层生效。若读回来再
 过滤，`limit` 会先把已删除的算进去——「取最近 20 条」可能实际只剩 3 条可见，
 这不是等价变换。
@@ -30,20 +30,20 @@ from campfire.modules.memory.models import (
 #: 单次查询取回的已删 key 上界（CORE-11：读路径在应急首字时延上，不能无界拉取）。
 #: 10k 远超一期单账号记忆量（参数表 `emergency_memory_limit` 为 20 条量级）。
 #:
-#: **触顶时的行为是「显式失败」而不是「返回前 N 条」**（2026-09-29 修正）：
+#: 触顶时的行为是「显式失败」而不是「返回前 N 条」（2026-09-29 修正）：
 #: 截断意味着「部分已删记忆仍会被返回」——即删除静默失效，直接违反 `RQ-MEM-03`。
 #: 宁可明确报错并提示需要物理清理，也不返回用户已删除的内容。
 #:
-#: **已知风险（2026-09-29 评审指出）**：账本写入**无 per-account 配额**（任何 uuid
-#: 都能记一行），而读侧是**全量拉取** + 触顶**整体失败**——三者叠加使单账号账本涨到
-#: 上界后，该账号的**两条读路径都不可用**（哪怕它只是想读记忆）。这是有意的
+#: 已知风险（2026-09-29 评审指出）：账本写入无 per-account 配额（任何 uuid
+#: 都能记一行），而读侧是全量拉取 + 触顶整体失败——三者叠加使单账号账本涨到
+#: 上界后，该账号的两条读路径都不可用（哪怕它只是想读记忆）。这是有意的
 #: fail-closed（好过静默失效），但代价是「删除账本」成了可影响读的单点。
 #: 待办：补 per-account 配额或分页（登记于 TODO `TECH-22`）。
 DELETED_KEYS_LIMIT: Final[int] = 10_000
 
 
 class DeletionOutcome(StrEnum):
-    """记录删除的结果。**区分「本次真的记了」与「之前已记过」**。
+    """记录删除的结果。区分「本次真的记了」与「之前已记过」。
 
     删除是幂等的（同一条重复删不产生第二行），但调用方需要知道是「刚刚删除成功」
     还是「此前已删除」——两者的用户可见文案与审计含义不同。静默返回同一种结果会
@@ -60,15 +60,15 @@ class DeletionOutcome(StrEnum):
 class DeletionRecord:
     """一次删除记录请求的结果。
 
-    ``outcome`` 说明本次是新记还是幂等命中；``owner_account_id`` 在幂等命中时
-    给出**原记录的归属账号**，供调用方判断是否为异常（见 `record_deletion`）。
+    `outcome` 说明本次是新记还是幂等命中；`owner_account_id` 在幂等命中时
+    给出原记录的归属账号，供调用方判断是否为异常（见 `record_deletion`）。
     """
 
     episode_key: str
     outcome: DeletionOutcome
-    #: 该记录在账本中的**实际**原因。
+    #: 该记录在账本中的实际原因。
     #:
-    #: **幂等命中时是原记录的原因，不是本次请求传的原因**（2026-09-29 明确）：
+    #: 幂等命中时是原记录的原因，不是本次请求传的原因（2026-09-29 明确）：
     #: 一条记忆先按 `correction` 删除、之后又收到一次 `user_request` 删除请求时，
     #: 账本里仍是 `correction`。如实回报原原因，避免审计读到「本次请求的原因」
     #: 这种与账本不符的信息。
@@ -80,7 +80,7 @@ class DeletionRecord:
 async def deleted_episode_keys(session: AsyncSession, account_id: AccountId | str) -> list[str]:
     """取该账号已删除的 episode key 列表（按删除时间升序，稳定）。
 
-    参数**在入口校验**（与 `record_deletion` 同一理由：脏账号键会让读侧按错误的
+    参数在入口校验（与 `record_deletion` 同一理由：脏账号键会让读侧按错误的
     分区过滤，把「已删记忆」当成「未删」返回，或反之）。
 
     Args:
@@ -88,11 +88,11 @@ async def deleted_episode_keys(session: AsyncSession, account_id: AccountId | st
         account_id: 账号标识（与 `group_id` 同源）。
 
     Returns:
-        已删 `episode_key`；无删除记录时为空列表（**正常状态，不是错误**）。
+        已删 `episode_key`；无删除记录时为空列表（正常状态，不是错误）。
 
     Raises:
         AccountIdError: 账号标识不合法。
-        MemoryDataError: 该账号的删除记录**超过** ``DELETED_KEYS_LIMIT``。此时无法
+        MemoryDataError: 该账号的删除记录超过 `DELETED_KEYS_LIMIT`。此时无法
             完整排除已删内容，返回部分结果等于让删除静默失效（见常量说明）；
             需先按账号做物理清理。
     """
@@ -125,17 +125,17 @@ async def record_deletion(
 ) -> DeletionRecord:
     """把一条记忆记入删除账本（幂等）。
 
-    **幂等落在存储约束上**，不是「先查后写」：`episode_key` 有唯一约束，这里用
+    幂等落在存储约束上，不是「先查后写」：`episode_key` 有唯一约束，这里用
     `INSERT ... ON CONFLICT DO NOTHING`——并发重复删除也只有一行。先查后写在并发下
     会双写（两个请求同时查不到、同时插入），那不是幂等。
 
     Args:
-        session: 关系库会话（**调用方负责提交事务**）。
+        session: 关系库会话（调用方负责提交事务）。
         account_id: 归属账号（分区键同源）。
         episode_key: 确定性 episode uuid（`identity.derive_episode_uuid` 的产物）。
         reason: 删除原因，取值见 `DELETION_REASONS`。
         deleted_by: 发起删除的账号；一期与 `account_id` 同值。
-        derived_uuids: 删除时已知的派生物清单（尽力记录，**不作过滤依据**）。
+        derived_uuids: 删除时已知的派生物清单（尽力记录，不作过滤依据）。
 
     Returns:
         `DeletionRecord`：本次新记还是幂等命中。
@@ -145,18 +145,18 @@ async def record_deletion(
             或命中框架哨兵）。
         MemoryDataError: `reason` 不在词表内；或 `episode_key` 为空、非字符串、
             超长、非合法 UUID（形状校验见 `identity.to_episode_key`）。
-        MemoryDataError: `episode_key` 已被**其它账号**记录删除。此时静默幂等会让
+        MemoryDataError: `episode_key` 已被其它账号记录删除。此时静默幂等会让
             本账号的删除看起来成功、实际不生效，故显式失败。
 
     Note:
-        **跨账号共用 `episode_key` 的成因（2026-09-29 评审更正）**：此前这里写
-        「由 uuid4 派生，正常不可能发生」——**该理由不成立**。`episode_key` 实际由
-        `derive_episode_uuid` 用 **uuid5** 从 `pending_id` 派生，而 `pending_id` 只要求
-        「非空、≤64 字符的字符串」，**代码里没有任何地方强制它来自 `pending_write.id`
-        的 uuid4**，且账本的唯一约束是**全局**的。因此两个账号若拿到同一个
-        `pending_id`，就会派生出同一个 `episode_key`——这是**可能发生**的。
-        守卫本身（fail-closed）仍然正确（优于静默幂等），但它是**应用层判据**，
-        且一旦触发，第二个账号**无法删除该 episode**，恢复路径（人工清账本行）尚未成文。
+        跨账号共用 `episode_key` 的成因（2026-09-29 评审更正）：此前这里写
+        「由 uuid4 派生，正常不可能发生」——该理由不成立。`episode_key` 实际由
+        `derive_episode_uuid` 用 uuid5 从 `pending_id` 派生，而 `pending_id` 只要求
+        「非空、≤64 字符的字符串」，代码里没有任何地方强制它来自 `pending_write.id`
+        的 uuid4，且账本的唯一约束是全局的。因此两个账号若拿到同一个
+        `pending_id`，就会派生出同一个 `episode_key`——这是可能发生的。
+        守卫本身（fail-closed）仍然正确（优于静默幂等），但它是应用层判据，
+        且一旦触发，第二个账号无法删除该 episode，恢复路径（人工清账本行）尚未成文。
     """
     if reason not in DELETION_REASONS:
         raise MemoryDataError(
@@ -165,10 +165,10 @@ async def record_deletion(
             detail=f"合法取值={sorted(DELETION_REASONS)}",
         )
 
-    # **两个标识都在入口校验**（2026-09-29 评审发现的阻断级：此前只校验 episode_key）。
-    # 为什么 account_id 必须校验（实测后果）：一条 `account_id=''` 的行**既不被任何真实
-    # 账号读到**（读路径按 account_id 过滤），又因 `episode_key` 的**全局**唯一约束
-    # 永久占用该 key——于是合法账号删除那条记忆会撞上下面的跨账号守卫而**永久失败**，
+    # 两个标识都在入口校验（2026-09-29 评审发现的阻断级：此前只校验 episode_key）。
+    # 为什么 account_id 必须校验（实测后果）：一条 `account_id=''` 的行既不被任何真实
+    # 账号读到（读路径按 account_id 过滤），又因 `episode_key` 的全局唯一约束
+    # 永久占用该 key——于是合法账号删除那条记忆会撞上下面的跨账号守卫而永久失败，
     # 且没有任何 API 能清掉这行（不可恢复的毒化行）。这正是本模块要防的「删除静默失效」。
     # 超长值此前还会退化成裸 `StringDataRightTruncationError`（非领域错误）。
     account_id = to_account_id(account_id)
@@ -198,9 +198,9 @@ async def record_deletion(
     if inserted is not None:
         return DeletionRecord(episode_key=episode_key, outcome=DeletionOutcome.RECORDED, reason=reason)
 
-    # 未插入 = 已存在。查它的归属账号**与原因**：
+    # 未插入 = 已存在。查它的归属账号与原因：
     #   - 归属账号用于区分「同账号幂等」与「跨账号异常」；
-    #   - 原因是**账本里的原原因**，不是本次请求传的原因（见 DeletionRecord 说明），
+    #   - 原因是账本里的原原因，不是本次请求传的原因（见 DeletionRecord 说明），
     #     调用方的审计与文案必须按账本事实回报。
     existing = (
         await session.execute(

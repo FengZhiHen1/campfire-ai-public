@@ -1,12 +1,12 @@
 """skill 的数据形状与字段校验。
 
-字段约束的真源是 docs/项目结构设计.md 第 4 节（Agent Skills 开放标准）：``name``
-≤64 字符且只含小写字母、数字与连字符；``description`` ≤1024 字符、非空；
-``compatibility`` ≤500 字符；``metadata`` 是 string→string 的自由映射；
-``allowed-tools`` 是空格分隔的预授权列表。
+字段约束的真源是 docs/项目结构设计.md 第 4 节（Agent Skills 开放标准）：`name`
+≤64 字符且只含小写字母、数字与连字符；`description` ≤1024 字符、非空；
+`compatibility` ≤500 字符；`metadata` 是 string→string 的自由映射；
+`allowed-tools` 是空格分隔的预授权列表。
 
-本项目自有的元数据放在 ``metadata`` 下（不改标准格式），基座读取但**不送入模型**：
-``autoload``（是否允许模型自动匹配）与 ``surface``（所属面，供目录预算分组）。
+本项目自有的元数据放在 `metadata` 下（不改标准格式），基座读取但不送入模型：
+`autoload`（是否允许模型自动匹配）与 `surface`（所属面，供目录预算分组）。
 """
 
 from __future__ import annotations
@@ -28,9 +28,9 @@ _DESCRIPTION_MAX_LENGTH = 1024
 _COMPATIBILITY_MAX_LENGTH = 500
 # allowed-tools 的单个工具名：与工具池注册名同形。
 #
-# 契约放在这里而不是 ``agent/tools``：``allowed-tools`` 是作者写下工具名的地方，而
-# ``agent/tools`` 的池子要读 ``Skill``；把契约放这边，两个子包就不必互相 import。
-# 工具池复用本常量（``agent.tools.spec``），不另写一条正则。
+# 契约放在这里而不是 `agent/tools`：`allowed-tools` 是作者写下工具名的地方，而
+# `agent/tools` 的池子要读 `Skill`；把契约放这边，两个子包就不必互相 import。
+# 工具池复用本常量（`agent.tools.spec`），不另写一条正则。
 #
 # 同样用 fullmatch 校验：`$` 会放过尾随换行，而工具名里的换行足以撑破 <tool_availability>。
 TOOL_NAME_PATTERN = re.compile(r"[a-z][a-z0-9_]*")
@@ -43,8 +43,8 @@ _METADATA_SURFACE = "surface"
 def _ensure_encodable(value: str, field: str, path: str) -> str:
     """拒绝无法编码为 UTF-8 的字符串（孤代理对）。
 
-    YAML 允许 ``"\\ud83d"`` 这种落单的代理项；它在加载期一切正常，却会在落库或
-    SSE 编码时才抛 ``UnicodeEncodeError``——错误离现场很远，且那时已无法定位到文件。
+    YAML 允许 `"\\ud83d"` 这种落单的代理项；它在加载期一切正常，却会在落库或
+    SSE 编码时才抛 `UnicodeEncodeError`——错误离现场很远，且那时已无法定位到文件。
     与其让它在远处炸，不如在这里拒绝。
     """
     try:
@@ -58,7 +58,7 @@ def _ensure_encodable(value: str, field: str, path: str) -> str:
 
 
 def _require_str(frontmatter: Mapping[object, object], field: str, path: str, *, required: bool) -> str | None:
-    """取一个字符串字段；缺省时按 ``required`` 决定报错还是返回 ``None``。"""
+    """取一个字符串字段；缺省时按 `required` 决定报错还是返回 `None`。"""
     if field not in frontmatter:
         if required:
             raise SkillFrontmatterError(path, f"缺少必填字段 {field}")
@@ -92,7 +92,7 @@ def _validate_description(description: str, path: str) -> str:
 
 
 def _parse_metadata(frontmatter: Mapping[object, object], path: str) -> Mapping[str, str]:
-    """校验 ``metadata``：string→string 的自由映射，自有键在这里读取。"""
+    """校验 `metadata`：string→string 的自由映射，自有键在这里读取。"""
     raw = frontmatter.get("metadata")
     if raw is None:
         return MappingProxyType({})
@@ -110,7 +110,7 @@ def _parse_metadata(frontmatter: Mapping[object, object], path: str) -> Mapping[
             )
         parsed[_ensure_encodable(key, "metadata 的键", path)] = _ensure_encodable(value, f"metadata.{key}", path)
 
-    # 自有键在**加载时**校验，不留到读取属性时才炸：那时已经离错误来源很远了。
+    # 自有键在加载时校验，不留到读取属性时才炸：那时已经离错误来源很远了。
     autoload = parsed.get(_METADATA_AUTOLOAD)
     if autoload is not None and autoload not in {"true", "false"}:
         raise SkillFrontmatterError(path, f'metadata.autoload 只接受 "true" 或 "false"，实际是 {autoload!r}')
@@ -122,7 +122,7 @@ def _parse_metadata(frontmatter: Mapping[object, object], path: str) -> Mapping[
 
 
 def _parse_allowed_tools(frontmatter: Mapping[object, object], path: str) -> frozenset[str]:
-    """校验 ``allowed-tools``：空格分隔的预授权工具名列表。"""
+    """校验 `allowed-tools`：空格分隔的预授权工具名列表。"""
     raw = _require_str(frontmatter, "allowed-tools", path, required=False)
     if raw is None:
         return frozenset()
@@ -143,7 +143,7 @@ def _parse_allowed_tools(frontmatter: Mapping[object, object], path: str) -> fro
 class SkillMetadata:
     """一个 skill 的 frontmatter 事实。
 
-    ``metadata`` 与 ``allowed_tools`` 都是不可变容器：加载后的元数据不得被就地改写，
+    `metadata` 与 `allowed_tools` 都是不可变容器：加载后的元数据不得被就地改写，
     否则「同一个 skill 在不同轮次看到不同工具集」这类问题无法追查。
     """
 
@@ -156,17 +156,17 @@ class SkillMetadata:
 
     @property
     def autoload(self) -> bool:
-        """是否允许模型按 ``description`` 自动匹配激活。
+        """是否允许模型按 `description` 自动匹配激活。
 
-        缺省为 ``True``（标准里 skill 的默认语义就是可被模型选择）；本项目用
-        ``metadata.autoload: "false"`` 把只能由程序注入的 skill 排除在自动匹配之外。
+        缺省为 `True`（标准里 skill 的默认语义就是可被模型选择）；本项目用
+        `metadata.autoload: "false"` 把只能由程序注入的 skill 排除在自动匹配之外。
         """
         # 取值已在 _parse_metadata 中校验过，这里只做解读。
         return self.metadata.get(_METADATA_AUTOLOAD, "true") == "true"
 
     @property
     def surface(self) -> str | None:
-        """所属面（供目录预算分组）；``None`` 表示不限定面，对所有面可见。"""
+        """所属面（供目录预算分组）；`None` 表示不限定面，对所有面可见。"""
         return self.metadata.get(_METADATA_SURFACE)
 
 
@@ -187,7 +187,7 @@ class Skill:
 def build_metadata(frontmatter: Mapping[object, object], *, path: str, directory_name: str) -> SkillMetadata:
     """把 frontmatter 映射校验成 :class:`SkillMetadata`。
 
-    ``directory_name`` 用于执行标准里的「``name`` 必须与父目录同名」——这一条只有
+    `directory_name` 用于执行标准里的「`name` 必须与父目录同名」——这一条只有
     发现阶段知道目录名，所以在这里收口，避免两个地方各判一次。
 
     Raises:

@@ -1,13 +1,13 @@
 """待处理写入记录的表与状态词表。
 
-归属（2026-09-29 用户裁决）：`pending_write` 是 **profile 与 memory 共用**的事实表，
-因此归 `core/`。依据是依赖白名单（[项目结构设计](../../../../../../docs/项目结构设计.md)第 7 节）：
-`modules/*` **只能**依赖 `core/*`、**且模块之间不得互相 import**——共用表若放在任一
+归属（2026-09-29 用户裁决）：`pending_write` 是 profile 与 memory 共用的事实表，
+因此归 `core/`。依据是依赖白名单（见 docs/项目结构设计.md 第 7 节）：
+`modules/*` 只能依赖 `core/*`、且模块之间不得互相 import——共用表若放在任一
 业务模块里，另一个模块就用不上。这也是 `core/` 里唯一带业务词表（`kind`）的表，
-属**有意的例外**：它的形状由[写入路径](../../../../../../docs/技术设计/technical-details/写入路径.md)
+属有意的例外：它的形状由 docs/技术设计/technical-details/写入路径.md
 第 3 节拥有，词表是契约的一部分。
 
-## 状态机（第 3、6 节）
+状态机（第 3、6 节）：
 
     pending ──领取──> processing ──成功──> done
        ^                  │
@@ -15,11 +15,11 @@
        └──────────────────┘
                           └──超过重试上限──> dead
 
-**不变量**：**「没写进去」不得被当作「写进去了」**——只有 `state = done` 才算写入
+不变量：「没写进去」不得被当作「写进去了」——只有 `state = done` 才算写入
 成功，其余状态一律视为未写入（第 2 节）。因此本模块不提供「看起来成功」的便捷返回：
 状态推进函数都要求显式给出目标状态。
 
-租约（`lease_owner` + `lease_expires_at`）用于**领取**：第 4 节明确「不使用先查后改的
+租约（`lease_owner` + `lease_expires_at`）用于领取：第 4 节明确「不使用先查后改的
 无锁流程」。租约过期视为可重新领取——Worker 崩溃不该让记录永久卡在 `processing`。
 """
 
@@ -34,7 +34,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from campfire.core.db import Base, new_uuid
 
-#: 记录种类。**只有这两种**（第 3 节）：档案条目与记忆片段。
+#: 记录种类。只有这两种（第 3 节）：档案条目与记忆片段。
 KIND_PROFILE_ITEM = "profile_item"
 KIND_MEMORY_EPISODE = "memory_episode"
 KINDS: frozenset[str] = frozenset({KIND_PROFILE_ITEM, KIND_MEMORY_EPISODE})
@@ -53,29 +53,29 @@ ORIGINS: frozenset[str] = frozenset(
     }
 )
 
-#: 账号标识的**列宽**（与 `identity.MAX_ACCOUNT_ID_LENGTH` 一致）。
+#: 账号标识的列宽（与 `identity.MAX_ACCOUNT_ID_LENGTH` 一致）。
 #: 定义在本层（而不是 import 业务模块）的原因见 `PendingWrite.account_id` 的说明。
 MAX_ACCOUNT_ID_LENGTH = 128
 
 STATE_PENDING = "pending"
 STATE_PROCESSING = "processing"
 STATE_DONE = "done"
-#: **当前无产生者**（2026-09-29 评审 R-1 实测：全仓生产代码与测试无一处写入 `failed`）。
+#: 当前无产生者（2026-09-29 评审 R-1 实测：全仓生产代码与测试无一处写入 `failed`）。
 #: 保留原因：设计第 3 节的词表列了它，而第 6 节规定「可重试失败回 `pending`」——
-#: **两者本身不一致**，删掉它需要先改设计词表并落一次 CHECK 迁移（改共享表 schema，
+#: 两者本身不一致，删掉它需要先改设计词表并落一次 CHECK 迁移（改共享表 schema，
 #: 超出本轮范围）。此处如实标注「无产生者」，不做静默清理。
-#: 影响：`UNFINISHED_STATES` 含它、`claimable` 视它为可领，因此**历史数据**里若出现
+#: 影响：`UNFINISHED_STATES` 含它、`claimable` 视它为可领，因此历史数据里若出现
 #: `failed` 会被当作可重试——这是安全的（它不是 `done`，不会被当成写入成功）。
 #: 待办：定夺其产生者或从词表删除，登记于 TODO `TECH-22`。
 STATE_FAILED = "failed"
 STATE_DEAD = "dead"
 STATES: frozenset[str] = frozenset({STATE_PENDING, STATE_PROCESSING, STATE_DONE, STATE_FAILED, STATE_DEAD})
 
-#: 尚未终结的状态（可被重新领取/重试）。它们**都还不是写入成功**——这是核心不变量
+#: 尚未终结的状态（可被重新领取/重试）。它们都还不是写入成功——这是核心不变量
 #: 在词表上的表达：只有 `done` 不在本集合里。
 UNFINISHED_STATES: frozenset[str] = frozenset({STATE_PENDING, STATE_PROCESSING, STATE_FAILED})
 
-#: 用于 `CHECK` 的 SQL 字面量。**从上面的集合派生**，避免两份清单漂移；排序保证文本稳定。
+#: 用于 `CHECK` 的 SQL 字面量。从上面的集合派生，避免两份清单漂移；排序保证文本稳定。
 _KINDS_SQL = ", ".join(f"'{value}'" for value in sorted(KINDS))
 _ORIGINS_SQL = ", ".join(f"'{value}'" for value in sorted(ORIGINS))
 _STATES_SQL = ", ".join(f"'{value}'" for value in sorted(STATES))
@@ -90,26 +90,26 @@ class PendingWrite(Base):
 
     __tablename__ = "campfire_pending_write"
 
-    #: 幂等键，**在请求事务内生成**（第 3 节）。图库侧的确定性 episode 标识由它派生
+    #: 幂等键，在请求事务内生成（第 3 节）。图库侧的确定性 episode 标识由它派生
     #: （见 `modules/memory/identity.derive_episode_uuid`）。
     id: Mapped[UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=new_uuid)
     #: 记录种类，决定消费路径与归属字段要求（见下方 `support_object_id`）。
     kind: Mapped[str] = mapped_column(String(32), nullable=False)
-    #: 发起者。**记忆的分区键即此值**（`group_id = account_id`，第 3 节）。
-    #: 宽度与 `identity.MAX_ACCOUNT_ID_LENGTH` 一致。**形状判据不在本层**：账号键的
-    #: 合法来源是 Graphiti 的 `^[a-zA-Z0-9_-]+$`，而本包是 profile 与 memory **共用**
+    #: 发起者。记忆的分区键即此值（`group_id = account_id`，第 3 节）。
+    #: 宽度与 `identity.MAX_ACCOUNT_ID_LENGTH` 一致。形状判据不在本层：账号键的
+    #: 合法来源是 Graphiti 的 `^[a-zA-Z0-9_-]+$`，而本包是 profile 与 memory 共用
     #: 的事实表，不得依赖任一业务模块（依赖白名单：`core/*` 只能依赖 `core/*`）。
-    #: 因此本层只保证「**落库不会因超宽而抛裸 `DBAPIError`**」（见 `enqueue` 的长度校验），
+    #: 因此本层只保证「落库不会因超宽而抛裸 `DBAPIError`」（见 `enqueue` 的长度校验），
     #: 形状校验由各自的业务模块在入口做（memory 侧是 `identity.to_account_id`）。
     account_id: Mapped[str] = mapped_column(String(MAX_ACCOUNT_ID_LENGTH), nullable=False)
-    #: 归属支持对象。**仅 `profile_item` 需要**；`memory_episode` 必须为空
-    #: （记忆属账号，不随对象分区——见[通用记忆](../../../../../../docs/技术设计/technical-details/通用记忆.md)第 1 节）。
-    #: 该「按 kind 区分必填/可空」的判据**由 CHECK 约束在存储层承载**：
+    #: 归属支持对象。仅 `profile_item` 需要；`memory_episode` 必须为空
+    #: （记忆属账号，不随对象分区——见 docs/技术设计/technical-details/通用记忆.md 第 1 节）。
+    #: 该「按 kind 区分必填/可空」的判据由 CHECK 约束在存储层承载：
     #: `(kind = 'profile_item') = (support_object_id IS NOT NULL)`，见 `__table_args__`。
     #: 用 CHECK 而不是只在应用层校验，是因为「记忆被误设了对象」这类错误一旦落库，
     #: 后续所有按账号取记忆的查询都会漏掉它（静默）。
     support_object_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
-    #: 写入所需的最小载荷（JSONB）。**自足**：Worker 只凭它与 `kind` 就能完成写入，
+    #: 写入所需的最小载荷（JSONB）。自足：Worker 只凭它与 `kind` 就能完成写入，
     #: 不回查业务用例、不依赖请求上下文（第 3 节）。
     payload: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
     #: 生成方式，取值见 `ORIGINS`。
@@ -117,7 +117,7 @@ class PendingWrite(Base):
     #: 来源（会话 id、消息 seq、工具名、时间）。JSONB：形状随 kind 不同，
     #: 第 3 节只要求「最小载荷之外的来源信息」，不规定固定键。
     source: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
-    #: 处理状态，取值见 `STATES`。**只有 `done` 算写入成功**。
+    #: 处理状态，取值见 `STATES`。只有 `done` 算写入成功。
     state: Mapped[str] = mapped_column(
         String(16), nullable=False, default=STATE_PENDING, server_default=sql_text(f"'{STATE_PENDING}'")
     )
@@ -129,7 +129,7 @@ class PendingWrite(Base):
     lease_owner: Mapped[str | None] = mapped_column(String(128), nullable=True)
     #: 租约到期时间；过期即可被重新领取（Worker 崩溃不该让记录永久卡住）。
     lease_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    #: 最后一次失败的摘要。**只记摘要，不复述连接串或凭据**（AGENTS.md 安全条款）。
+    #: 最后一次失败的摘要。只记摘要，不复述连接串或凭据（AGENTS.md 安全条款）。
     last_error: Mapped[str | None] = mapped_column(String(512), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=sql_text("now()")
@@ -149,15 +149,15 @@ class PendingWrite(Base):
         Index("ix_campfire_pending_write_lease_expires_at", "lease_expires_at"),
         # 按账号排查（记忆与档案都按账号定位发起者）。
         Index("ix_campfire_pending_write_account_created", "account_id", "created_at"),
-        # --- 词表与归属判据落在**存储层**（CORE-05：不变量要落最强可行通道）---
+        # --- 词表与归属判据落在存储层（CORE-05：不变量要落最强可行通道）---
         # 这些词表进审计与「按 kind 分派」，静默写入未知值会让分派无声走空。
-        # **名字一律用短名**，由 `core/db` 的 NAMING_CONVENTION 展开为
+        # 名字一律用短名，由 `core/db` 的 NAMING_CONVENTION 展开为
         # `ck_campfire_pending_write_<name>`（实测：写完整名会被再套一层前缀并截断到
         # 63 字符，与工作区那段已修的账本约束同一个坑）。
         CheckConstraint(f"kind IN ({_KINDS_SQL})", name="kind"),
         CheckConstraint(f"origin IN ({_ORIGINS_SQL})", name="origin"),
         CheckConstraint(f"state IN ({_STATES_SQL})", name="state"),
-        # **归属字段按 kind 的必填/可空**（第 3 节的硬要求）：`profile_item` 必须有
+        # 归属字段按 kind 的必填/可空（第 3 节的硬要求）：`profile_item` 必须有
         # `support_object_id`；`memory_episode` 必须为空。用「等价」而不是两条独立断言，
         # 是为了让「记忆被误设了对象」与「档案缺了对象」都撞在同一处。
         CheckConstraint(

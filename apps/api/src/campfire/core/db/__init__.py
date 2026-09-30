@@ -1,14 +1,14 @@
 """数据主库（PostgreSQL 17 + pgvector）的跨切能力。
 
 归属（见 docs/项目结构设计.md 第 6 节）：提供连接与事务边界；
-表结构与用例服务归各自的 ``modules/*``。
+表结构与用例服务归各自的 `modules/*`。
 
-边界：``core/*`` 不得依赖 ``agent/*``、``surfaces/*``、``modules/*``（第 7 节）。
+边界：`core/*` 不得依赖 `agent/*`、`surfaces/*`、`modules/*`（第 7 节）。
 
-**表名前缀**：业务表统一用 ``campfire_`` 前缀，避免与 SuperTokens core 在自己库里
-建的表、以及 SDK 自建表撞名——这是 ``docs/项目结构设计.md`` 第 10 节「表归属与
-模块同名」的可执行形式。**``data_`` 前缀保留给 LlamaIndex 的 ``PGVectorStore``**
-（它把 ``table_name`` 渲染为 ``data_<table_name>``，见 RAG 策略第 2 节），本项目
+表名前缀：业务表统一用 `campfire_` 前缀，避免与 SuperTokens core 在自己库里
+建的表、以及 SDK 自建表撞名——这是 `docs/项目结构设计.md` 第 10 节「表归属与
+模块同名」的可执行形式。`data_` 前缀保留给 LlamaIndex 的 `PGVectorStore`
+（它把 `table_name` 渲染为 `data_<table_name>`，见 RAG 策略第 2 节），本项目
 自己的模型不得使用该前缀。
 """
 
@@ -26,7 +26,7 @@ from sqlalchemy.orm import DeclarativeBase
 from campfire.core.config import Settings
 from campfire.core.health import ComponentHealth, Status
 
-#: 统一命名约定：让迁移脚本与约束名可预测，避免 ``--autogenerate`` 因默认名漂移
+#: 统一命名约定：让迁移脚本与约束名可预测，避免 `--autogenerate` 因默认名漂移
 #: 反复生成改名迁移。
 NAMING_CONVENTION = {
     "ix": "ix_%(table_name)s_%(column_0_N_name)s",
@@ -46,7 +46,7 @@ class Base(DeclarativeBase):
     metadata = metadata
 
 
-#: 向量列类型的再导出：各模块从 ``core/db`` 取，避免各自 import 上游包。
+#: 向量列类型的再导出：各模块从 `core/db` 取，避免各自 import 上游包。
 __all__ = [
     "Base",
     "Vector",
@@ -70,7 +70,7 @@ def create_engine(settings: Settings) -> AsyncEngine:
     """按配置创建新的异步引擎（调用方负责释放）。
 
     Raises:
-        RuntimeError: 未配置 ``DATABASE_URL`` 时——宁可显式失败，也不静默连到别处。
+        RuntimeError: 未配置 `DATABASE_URL` 时——宁可显式失败，也不静默连到别处。
     """
     if not settings.database_url:
         raise RuntimeError("未配置 DATABASE_URL，无法创建数据库引擎")
@@ -79,10 +79,10 @@ def create_engine(settings: Settings) -> AsyncEngine:
 
 
 def to_sync_url(async_url: str) -> str:
-    """把异步连接串转成同步驱动形式（``+asyncpg`` → 驱动默认）。
+    """把异步连接串转成同步驱动形式（`+asyncpg` → 驱动默认）。
 
-    之所以存在：LlamaIndex 的 ``PGVectorStore`` 要求**同时**提供同步与异步引擎
-    （实测 ``ValueError: Both engine and async_engine must be provided``），
+    之所以存在：LlamaIndex 的 `PGVectorStore` 要求同时提供同步与异步引擎
+    （实测 `ValueError: Both engine and async_engine must be provided`），
     而本项目运行期只用 asyncpg。同步引擎仅用于该框架组件的写入路径。
     """
     return async_url.replace("postgresql+asyncpg://", "postgresql://")
@@ -92,7 +92,7 @@ def create_sync_engine(settings: Settings) -> Engine:
     """按配置创建同步引擎（供需要同步驱动的框架组件使用）。
 
     Raises:
-        RuntimeError: 未配置 ``DATABASE_URL`` 时。
+        RuntimeError: 未配置 `DATABASE_URL` 时。
     """
     if not settings.database_url:
         raise RuntimeError("未配置 DATABASE_URL，无法创建数据库引擎")
@@ -110,7 +110,7 @@ def get_engine(settings: Settings) -> AsyncEngine:
 def get_session_factory(settings: Settings) -> async_sessionmaker[AsyncSession]:
     """返回进程内共享的会话工厂。
 
-    ``expire_on_commit=False``：提交后仍可读取对象属性，避免在事务边界外
+    `expire_on_commit=False`：提交后仍可读取对象属性，避免在事务边界外
     触发懒加载（那会在 async 上下文里报缺少 greenlet）。
     """
     global _session_factory
@@ -123,7 +123,7 @@ def get_session_factory(settings: Settings) -> async_sessionmaker[AsyncSession]:
 async def session_scope(settings: Settings) -> AsyncIterator[AsyncSession]:
     """事务边界：正常退出提交，异常回滚。
 
-    用例服务经此获得会话，不各自 ``commit``——撤下要求「同时改条目状态与删除
+    用例服务经此获得会话，不各自 `commit`——撤下要求「同时改条目状态与删除
     该条目的节点」在同一事务内完成（RAG 策略第 2 节）。
 
     Raises:
@@ -154,11 +154,11 @@ def new_uuid() -> uuid.UUID:
 
 
 async def check_database(settings: Settings) -> ComponentHealth:
-    """探测主库可用性：建立连接并执行一次 ``SELECT 1``。
+    """探测主库可用性：建立连接并执行一次 `SELECT 1`。
 
     失败时只回报异常类型，不复述连接串——连接串含凭据。
 
-    实现说明：探针按调用创建并释放引擎，**不复用共享引擎**——健康检查不应被
+    实现说明：探针按调用创建并释放引擎，不复用共享引擎——健康检查不应被
     业务侧连接池状态影响，也不应为了探活把连接池拉起来。
     """
     if not settings.database_url:
