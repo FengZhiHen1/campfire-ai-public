@@ -47,7 +47,7 @@ export class LoadProfileUseCase {
    * 前置: 无
    * 后置: 返回对象列表与选中对象的摘要/条目；无对象时 selectedObjectId 为 null、
    *      摘要与条目为空数组
-   * 异常: 不吞端口异常——对象列表失败由调用方整页报错，单对象详情失败由调用方
+   * @throws 端口异常原样抛出——对象列表失败由调用方整页报错，单对象详情失败由调用方
    *      只报内容区错误（对象切换器保持可用，档案页状态覆盖表）
    */
   async execute(preferredObjectId: string | null): Promise<ProfileSnapshot> {
@@ -63,7 +63,7 @@ export class LoadProfileUseCase {
    * 只加载一个对象的内容区（切换对象与刷新内容共用这一条）。
    *
    * 后置: 返回摘要与两组条目；候选层只取第一页（它是「待确认」小分组，不是可分页的流）
-   * 异常: 端口异常原样抛出
+   * @throws 端口异常原样抛出
    */
   async loadObject(objectId: string): Promise<Omit<ProfileSnapshot, 'objects' | 'selectedObjectId'>> {
     const [summary, listed] = await Promise.all([
@@ -95,7 +95,10 @@ export function pickObjectId(objects: readonly SupportObject[], preferred: strin
 export class ConfirmItemUseCase {
   constructor(private readonly port: ProfilePort) {}
 
-  /** 后置: 成功后该条目进稳定层；异常: 端口异常原样抛出（重复确认会被服务端拒为 422）。 */
+  /**
+ * 后置: 成功后该条目进稳定层
+ * @throws 端口异常原样抛出（重复确认会被服务端拒为 422）
+ */
   async execute(itemId: string): Promise<void> {
     await this.port.confirmItem(itemId);
   }
@@ -111,17 +114,22 @@ export class DeleteItemUseCase {
   }
 }
 
-/** 纠正一条条目（契约第 4 节）：新增取代条目，旧条目转历史，不物理覆盖。 */
+/**
+ * 纠正一条条目（契约第 4 节）：新增取代条目，旧条目转历史，不物理覆盖。
+ *
+ * @throws ProfileValidationError 草稿未通过校验（未发起任何请求）
+ * @throws 端口异常原样抛出（401/404/409/422 由 domain/failures 分类）
+ */
 export class CorrectItemUseCase {
   constructor(private readonly port: ProfilePort) {}
 
   /**
    * 执行纠正。
    *
-   * 前置: draft 是**新条目的完整形状**而不是补丁；`originalDescription` 用于拦下
+   * 前置: draft 是新条目的完整形状而不是补丁；`originalDescription` 用于拦下
    *      「内容没变」的提交（服务端也会拒为 422，这里提前给出可读的原因）
    * 后置: 返回新条目标识与它取代的旧条目标识
-   * 异常: ProfileValidationError（未发起请求）；端口异常原样抛出
+   * @throws ProfileValidationError（未发起请求）；端口异常原样抛出
    */
   async execute(itemId: string, draft: ItemDraft, originalDescription: string): Promise<{ itemId: string; supersedes: string }> {
     const errors = validateItemDraft(draft, draft.description === originalDescription);
@@ -134,14 +142,19 @@ export class CorrectItemUseCase {
   }
 }
 
-/** 手动补充一条（契约第 5 节）；origin 由服务端定为 user_statement。 */
+/**
+ * 手动补充一条（契约第 5 节）；origin 由服务端定为 user_statement。
+ *
+ * @throws ProfileValidationError 草稿未通过校验（未发起任何请求）
+ * @throws 端口异常原样抛出（归档对象为 409，由 domain/failures 分类）
+ */
 export class AddItemUseCase {
   constructor(private readonly port: ProfilePort) {}
 
   /**
    * 前置: draft.domain 必须是闭集内取值（未知取值由校验拦下，不交给服务端 422）
    * 后置: 返回新条目标识
-   * 异常: ProfileValidationError（未发起请求）；端口异常原样抛出（归档对象为 409）
+   * @throws ProfileValidationError（未发起请求）；端口异常原样抛出（归档对象为 409）
    */
   async execute(objectId: string, draft: ItemDraft): Promise<string> {
     const errors = validateItemDraft(draft);
@@ -157,14 +170,19 @@ export class AddItemUseCase {
   }
 }
 
-/** 新建支持对象（契约第 2.1 节）。对话式创建是一等入口，这是补充路径。 */
+/**
+ * 新建支持对象（契约第 2.1 节）。对话式创建是一等入口，这是补充路径。
+ *
+ * @throws ProfileValidationError 名字去空白后为空（未发起任何请求）
+ * @throws 端口异常原样抛出
+ */
 export class CreateObjectUseCase {
   constructor(private readonly port: ProfilePort) {}
 
   /**
    * 前置: displayName 去空白后非空（空名由校验拦下，不弹错——单一字段不需要错误态）
    * 后置: 返回新对象
-   * 异常: ProfileValidationError（未发起请求）；端口异常原样抛出
+   * @throws ProfileValidationError（未发起请求）；端口异常原样抛出
    */
   async execute(displayName: string): Promise<SupportObject> {
     const errors = validateObjectName(displayName);
@@ -173,14 +191,19 @@ export class CreateObjectUseCase {
   }
 }
 
-/** 对象操作（改名 / 归档 / 恢复，契约第 2.2 节）。 */
+/**
+ * 对象操作（改名 / 归档 / 恢复，契约第 2.2 节）。
+ *
+ * @throws ProfileValidationError 改名时名字去空白后为空（未发起任何请求）
+ * @throws 端口异常原样抛出
+ */
 export class UpdateObjectUseCase {
   constructor(private readonly port: ProfilePort) {}
 
   /**
    * 前置: `rename` 动作的 displayName 去空白后非空
    * 后置: 返回更新后的对象；归档与恢复幂等（服务端保证）
-   * 异常: ProfileValidationError（未发起请求）；端口异常原样抛出
+   * @throws ProfileValidationError（未发起请求）；端口异常原样抛出
    */
   async execute(objectId: string, action: ObjectAction): Promise<SupportObject> {
     if (action.kind === 'archive') return this.port.patchObject(objectId, { archived: true });
