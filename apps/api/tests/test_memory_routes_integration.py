@@ -9,8 +9,8 @@
 ## 为什么注入假模型客户端
 
 实体抽取要调 TokenHub，而 `.env` 里的 `TOKENHUB_API_KEY` 是占位符（已登记
-`TECH-02`）。本文件注入假 LLM 与假嵌入器，**只验证 HTTP 形状、账本过滤与失败语义**，
-不验证抽取质量。因此本文件通过**不代表**真实抽取可用。
+`TECH-02`）。本文件注入假 LLM 与假嵌入器，只验证 HTTP 形状、账本过滤与失败语义，
+不验证抽取质量。因此本文件通过不代表真实抽取可用。
 
 假客户端经 `get_shared_memory_graph` 的接缝注入：直接给
 `campfire.modules.memory.graph._shared_graph` 赋值（模块级单例），收尾时清回
@@ -21,8 +21,8 @@
 
 1. `episode_key` 暴露、`source_session_id` 从 `source_description` 解析出来。
 2. 图库不可用 → **503**，不是 200 空数组（空与失败必须可区分，契约第 6 节）。
-3. 删除幂等：**实测重复执行两次**（第一次 `newly_deleted=true`，第二次 `false`）。
-4. 删除后**两条读路径都不再返回**（`AC-08`）：本面列表与 `read_timeline`。
+3. 删除幂等：实测重复执行两次（第一次 `newly_deleted=true`，第二次 `false`）。
+4. 删除后两条读路径都不再返回（`AC-08`）：本面列表与 `read_timeline`。
 5. 非法 `episode_key` → 422（形状校验在路由层，本包裁决 7）。
 6. 纠正两步：正常路径返回 201 且 `superseded` / `new_episode_written` 都为真；
    写新失败时返回 **200** 与 `{superseded: true, new_episode_written: false}`
@@ -129,7 +129,7 @@ async def graph(monkeypatch: pytest.MonkeyPatch) -> AsyncIterator[MemoryGraph]:
 
     清理两步都不可省：
     - 图库节点：`MATCH (n) DETACH DELETE n`（两个账号各自那张图）；
-    - 删除账本：它的 `episode_key` 是**全局唯一**约束，与图库无关，
+    - 删除账本：它的 `episode_key` 是全局唯一约束，与图库无关，
       不清会跨用例残留，让「刚写的两条」被上个用例记的删除挡掉。
     """
     import campfire.modules.memory.graph as graph_module
@@ -317,7 +317,7 @@ async def test_list_rejects_foreign_cursor(client: httpx.AsyncClient, graph: Mem
 async def test_empty_timeline_is_200_with_empty_array(
     client: httpx.AsyncClient, graph: MemoryGraph, as_account
 ) -> None:  # noqa: ANN001
-    """查询返回空**不是失败**：200 空数组，不标注降级（契约第 6 节）。"""
+    """查询返回空不是失败：200 空数组，不标注降级（契约第 6 节）。"""
     response = await client.get("/memory/episodes")
 
     assert response.status_code == 200
@@ -327,7 +327,7 @@ async def test_empty_timeline_is_200_with_empty_array(
 async def test_unavailable_graph_is_503_not_an_empty_list(
     client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch, as_account
 ) -> None:  # noqa: ANN001
-    """图库不可用 → 503，**不是** 200 空数组（契约第 6 节「空与失败必须可区分」）。
+    """图库不可用 → 503，不是 200 空数组（契约第 6 节「空与失败必须可区分」）。
 
     消融：把这条改成降级返回空数组，用例必须失败——那会把「读不到」呈现成
     「没有记忆」，使用者据此就会以为系统从未记住任何事。
@@ -358,7 +358,7 @@ async def test_unavailable_graph_is_503_not_an_empty_list(
 async def test_delete_is_idempotent_across_two_real_calls(
     client: httpx.AsyncClient, graph: MemoryGraph, as_account
 ) -> None:  # noqa: ANN001
-    """删除幂等：**实测重复执行两次**，第二次 `newly_deleted` 为假且仍返回 200。"""
+    """删除幂等：实测重复执行两次，第二次 `newly_deleted` 为假且仍返回 200。"""
     key = await _write(graph, content="要删掉的")
 
     first = await client.delete(f"/memory/episodes/{key}")
@@ -372,7 +372,7 @@ async def test_delete_is_idempotent_across_two_real_calls(
 async def test_delete_removes_the_episode_from_both_read_paths(
     client: httpx.AsyncClient, graph: MemoryGraph, as_account
 ) -> None:  # noqa: ANN001
-    """删除后**两条读路径都不再返回**（`AC-08` 的验收对象）。
+    """删除后两条读路径都不再返回（`AC-08` 的验收对象）。
 
     「两条」= 本面的列表 + 用例层入口 `store.read_timeline`。后者是工具与应急
     预注入共用的入口，因此这一条同时覆盖了「工具侧也读不到」。
@@ -480,7 +480,7 @@ async def test_correct_reports_the_intermediate_state_when_writing_new_fails(
 async def test_correct_rejects_empty_content_before_superseding(
     client: httpx.AsyncClient, graph: MemoryGraph, as_account
 ) -> None:  # noqa: ANN001
-    """空内容在入口就被拒（422），**旧记忆不被撤下**。
+    """空内容在入口就被拒（422），旧记忆不被撤下。
 
     顺序要求：若先撤下再校验内容，一次注定失败的请求会白撤掉一条有效记忆。
     """
@@ -518,7 +518,7 @@ async def test_correct_preserves_the_reason_recorded_by_correction(
 ) -> None:  # noqa: ANN001
     """纠正撤下后，再收到删除请求时 `reason` 仍是账本里的 `correction`。
 
-    契约第 4 节：`reason` 如实回报账本里的**原原因**——幂等命中不改变原记录。
+    契约第 4 节：`reason` 如实回报账本里的原原因——幂等命中不改变原记录。
     这是「审计读到的事实与账本一致」的断言。
     """
     old = await _write(graph, content="先纠正再删除")
@@ -574,7 +574,7 @@ async def test_routes_are_mounted_under_the_memory_prefix() -> None:
 
 
 async def test_endpoints_require_a_session() -> None:
-    """无会话请求记忆面端点 → 401（`RQ-ACC-01`；记忆面**无一例外**必须登录）。
+    """无会话请求记忆面端点 → 401（`RQ-ACC-01`；记忆面无一例外必须登录）。
 
     走真实 SDK，因此需要 SuperTokens core 与 API Key；缺任一跳过而不是假装通过。
     """

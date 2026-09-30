@@ -18,9 +18,9 @@ SQL、融合、聚合、撤下与聚合后的 HTTP 形状都是真实的。
 ## 本文件守住的判据
 
 1. 两库分开取数：`library=case` 只回案例、`library=knowledge` 只回资料。
-2. 撤下条目**不进列表**（`RQ-KB-04`），但 deep-link 仍可见三态中的「已撤下」。
+2. 撤下条目不进列表（`RQ-KB-04`），但 deep-link 仍可见三态中的「已撤下」。
 3. deep-link 三态：在库（完整条目）/ 已撤下（`item: null, withdrawn: true, title`）/ 404。
-4. 案例的六项必带字段 + `inferred_fields` 在列表里**都在场**（`AC-06` 的前提）。
+4. 案例的六项必带字段 + `inferred_fields` 在列表里都在场（`AC-06` 的前提）。
 5. 空与失败可区分：检索为空 → 200 空数组；两路都失败 → 503。
 6. `expand` 一次一条、内容随列表返回；`expand` 指向另一个库的条目 → 422。
 7. 未知 `library` → 422（不静默退回资料库）。
@@ -298,10 +298,10 @@ async def test_case_items_carry_the_six_mandatory_fields_and_inferred(
     """案例的六项必带字段 + `inferred_fields` 在列表里都在场（`AC-06` 的前提）。
 
     缺任一个，页面就无法如实回答「谁说的、多可信、什么时候」，列表退化为
-    无法核对的读物（资料与案例检索第 3 节）。这里断言**键在场**而不只断言
+    无法核对的读物（资料与案例检索第 3 节）。这里断言键在场而不只断言
     值非空：字段缺失与字段为空对呈现层是两件事。
 
-    `inferred_fields` 在浏览路是**空列表**而非 `None` —— 这是检索链已文档化的
+    `inferred_fields` 在浏览路是空列表而非 `None` —— 这是检索链已文档化的
     决定（`retrieval._case_fields_for_browse`：浏览路是条目级列表，没有「命中的是
     哪张卡片」，因此为空清单，不拿案例级并集冒充）。本用例因此同时钉住那条决定
     与「资料侧是 `None`」的区分：若实现把空列表折叠成 `None`，「这条案例没有
@@ -378,10 +378,10 @@ async def test_search_returns_hits_with_degradation_field(client: httpx.AsyncCli
 async def test_empty_result_is_200_with_empty_array(
     client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch, seeded: dict[str, str]
 ) -> None:  # noqa: ANN001
-    """检索为空**不是失败**：200 空数组，不标注降级（契约第 6 节）。
+    """检索为空不是失败：200 空数组，不标注降级（契约第 6 节）。
 
     为什么必须替身而不是真的搜一个不存在的词：向量路按 `similarity_top_k`
-    取最近邻、**没有相关度阈值**（`retrieval.VECTOR_TOP_K = 30`），因此库里有
+    取最近邻、没有相关度阈值（`retrieval.VECTOR_TOP_K = 30`），因此库里有
     任何节点时它总会返回若干条。也就是说「检索为空」在这条链上等价于
     「该库没有任何可检索节点」——那正是本用例要固定下来的语义：库为空
     返回 200 空数组，而不是 503。
@@ -477,7 +477,7 @@ async def test_expand_attaches_narrative_and_cards_to_that_item(
 async def test_expanded_cards_expose_high_risk_fields_and_inference(
     client: httpx.AsyncClient, seeded: dict[str, str]
 ) -> None:  # noqa: ANN001
-    """卡片的高风险字段**照旧返回**（呈现纪律不在本面，契约第 4 节），
+    """卡片的高风险字段照旧返回（呈现纪律不在本面，契约第 4 节），
     且被推断字段清单随卡片给出（「被推断的字段必须标为推断」的载体）。"""
     response = await client.get(
         "/library/items",
@@ -552,7 +552,7 @@ async def test_expand_of_item_not_on_page_is_not_an_error(client: httpx.AsyncCli
 async def test_withdrawn_case_disappears_from_list_but_deep_link_shows_three_states(
     client: httpx.AsyncClient, seeded: dict[str, str]
 ) -> None:  # noqa: ANN001
-    """撤下条目**不进列表**（`RQ-KB-04`），但 deep-link 以克制形态可见。
+    """撤下条目不进列表（`RQ-KB-04`），但 deep-link 以克制形态可见。
 
     三态一次测齐：撤下前（在库，完整条目）、撤下后（`item: null` + `withdrawn` +
     仅标题）、不存在的合法标识（404）。
@@ -704,7 +704,7 @@ async def test_routes_are_mounted_under_the_library_prefix() -> None:
 
 
 async def test_the_face_has_no_write_endpoints() -> None:
-    """本面**只有读端点**（契约第 1 节：`RQ-KB-03`/`AC-29` 已定录入与撤下只经 CLI）。
+    """本面只有读端点（契约第 1 节：`RQ-KB-03`/`AC-29` 已定录入与撤下只经 CLI）。
 
     这是一条「不存在」的断言，因此必须有对照：同一份 OpenAPI 里确实存在其它面的
     写端点（`POST /profile/objects`、`DELETE /memory/episodes/{key}`），
@@ -762,7 +762,7 @@ async def test_endpoints_require_a_session() -> None:
 
 
 async def test_parse_card_fields_keeps_multiline_values_intact() -> None:
-    """卡片文本还原按**已知字段名**起新行，因此多行值不会被拆成两半。
+    """卡片文本还原按已知字段名起新行，因此多行值不会被拆成两半。
 
     消融：把解析改成「按换行无条件切」，本用例必须失败——那会把一个字段的值
     拆开、并把后半段丢掉（静默丢内容）。
@@ -780,7 +780,7 @@ async def test_risk_class_derivation_follows_the_ingestion_rule() -> None:
     """`risk_class` 的派生判据与 `case_ingestion._card_is_high_risk` 同源。
 
     判据（公共案例库第 5 节 + `case_ingestion` 的 docstring）：`medical_criteria`
-    或 `contraindications` 非空即高风险；`caution_notes` 单独出现**不**抬高整卡等级。
+    或 `contraindications` 非空即高风险；`caution_notes` 单独出现不抬高整卡等级。
     """
     assert library_routes._card_risk_class({"caution_notes": "注意"}) == "low"  # noqa: SLF001
     assert library_routes._card_risk_class({"medical_criteria": "出现自伤即就医"}) == "high"  # noqa: SLF001
@@ -790,7 +790,7 @@ async def test_risk_class_derivation_follows_the_ingestion_rule() -> None:
 
 
 async def test_session_id_parsing_falls_back_to_the_whole_string() -> None:
-    """取不到 `session=` 词元时原样返回整串，**不**返回空串。
+    """取不到 `session=` 词元时原样返回整串，不返回空串。
 
     空串会被读成「这条记忆没有来源」，而 `write_episode` 拒绝写入无来源的记忆
     ——因此空串只可能表示解析失败，那会把一次解析缺陷伪装成缺失的来源。
@@ -805,7 +805,7 @@ async def test_session_id_parsing_falls_back_to_the_whole_string() -> None:
 async def test_paginated_created_at_ordering_is_stable() -> None:
     """两个同 `created_at` 的条目也不丢行：浏览路的 `ORDER BY created_at DESC, id`。
 
-    本用例是一项**回归观测**，不依赖库：断言的是排序键里带了 `id` 这一事实
+    本用例是一项回归观测，不依赖库：断言的是排序键里带了 `id` 这一事实
     （若无第二排序键，分页时同时间戳的行顺序不稳定，翻页会漏）。
     用真实库验证会依赖主库历史语料，因此这里只核对 SQL 文本的形状。
     """

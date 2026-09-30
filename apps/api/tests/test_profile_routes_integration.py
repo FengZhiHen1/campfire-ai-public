@@ -9,16 +9,16 @@
 ## 为什么走 ASGI 直连而不是起服务器
 
 `httpx.ASGITransport` 让请求穿过完整的 FastAPI 路由与依赖注入（含错误码映射），
-但不占端口、不需要网络。**会话依赖被显式替换**（`app.dependency_overrides`）：
+但不占端口、不需要网络。会话依赖被显式替换（`app.dependency_overrides`）：
 本文件测的是「拿到账号之后路由怎么组织」，而 `require_session` 的撤销语义有
 自己的端到端用例（`test_auth_session_lifecycle_integration`）——在每条业务用例里
 重复签署真会话只会让失败原因变得难查。401 那一条单独用真实 SDK 验证（见末节）。
 
 ## 本文件守住的判据
 
-1. 越权与不存在**逐字同文案**（不泄露存在性）；归档上的新增**文案区分**（409）。
+1. 越权与不存在逐字同文案（不泄露存在性）；归档上的新增文案区分（409）。
 2. 空名 422、`limit` 越界 422、无字段的 PATCH 422、重复确认 422、纠正无变更 422。
-3. 删除**幂等**：实测重复执行两次（第一次 `already=false`，第二次 `already=true`）。
+3. 删除幂等：实测重复执行两次（第一次 `already=false`，第二次 `already=true`）。
 4. 删掉的条目不再出现在读取里（`AC-08`）。
 5. 候选层单独成组、不进摘要（`AC-18`）；归档对象上 confirm 返回 200（可读可纠）。
 6. 补充条目的 `origin` 由服务端定为 `user_statement`。
@@ -81,7 +81,7 @@ async def client() -> AsyncIterator[httpx.AsyncClient]:
     """穿过完整应用路由的 ASGI 客户端；会话依赖替换成本文件的固定账号。
 
     SDK 必须显式初始化：`lifespan` 在 `ASGITransport` 下不会自动运行，而
-    SuperTokens 的中间件在**每个请求**上先调 `Supertokens.get_instance()`
+    SuperTokens 的中间件在每个请求上先调 `Supertokens.get_instance()`
     （实测：未初始化即抛 `GeneralError: Initialisation not done`）——中间件在
     路由与依赖之前执行，因此这一步无法靠替换依赖绕开。
 
@@ -242,7 +242,7 @@ async def test_patch_object_without_any_field_is_422(client: httpx.AsyncClient, 
 async def test_other_accounts_object_is_404_with_the_same_body_as_missing(
     client: httpx.AsyncClient, as_account
 ) -> None:  # noqa: ANN001
-    """越权与不存在的响应体**逐字相同**（不泄露存在性）。
+    """越权与不存在的响应体逐字相同（不泄露存在性）。
 
     消融：让两者文案或 code 区分开，本断言必须失败。
     """
@@ -257,7 +257,7 @@ async def test_other_accounts_object_is_404_with_the_same_body_as_missing(
 
 
 async def test_archived_object_rejects_new_items_with_a_distinct_409(client: httpx.AsyncClient, as_account) -> None:  # noqa: ANN001
-    """归档对象上新增 → 409 `object_archived`，且文案**区分**于越权（契约第 1 节）。
+    """归档对象上新增 → 409 `object_archived`，且文案区分于越权（契约第 1 节）。
 
     归档文案不是「区分了不该区分的二者」：属主自己的对象，使用者需要知道
     原因才能去恢复。
@@ -489,7 +489,7 @@ async def test_reject_removes_candidate_from_reads(client: httpx.AsyncClient, as
 
 
 async def test_delete_is_idempotent_across_two_real_calls(client: httpx.AsyncClient, as_account) -> None:  # noqa: ANN001
-    """删除幂等：**实测重复执行两次**，第二次 `already` 为真且仍返回 200。
+    """删除幂等：实测重复执行两次，第二次 `already` 为真且仍返回 200。
 
     这不是代码审阅得出的结论，而是两次真实 HTTP 调用的结果（守则要求
     「幂等类要求必须实测重复执行」）。
@@ -636,7 +636,7 @@ async def test_routes_are_mounted_under_the_profile_prefix() -> None:
 
     用 `app.openapi()["paths"]` 而不是遍历 `app.routes`：FastAPI 0.141 把
     `include_router` 的结果收成单个 `_IncludedRouter` 项（`path` 为 `None`），
-    遍历 `app.routes` 看不到子路由（实测）。OpenAPI 是路由表的**对外可观测形式**，
+    遍历 `app.routes` 看不到子路由（实测）。OpenAPI 是路由表的对外可观测形式，
     它同时覆盖「路由注册了」与「请求体模型可用」两件事。
     """
     import campfire.main as main_module
