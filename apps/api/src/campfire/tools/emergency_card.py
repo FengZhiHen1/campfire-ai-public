@@ -242,6 +242,9 @@ class EmitEmergencyActionCardArgs(BaseModel):
         不保证「是七个不同的键」——七节全填 `status` 同样能过长度校验，而那样的卡片
         在呈现上会缺六节，且缺得静默。因此这里按集合比对。
 
+        这里不判顺序：契约第 5 节的失败语义只列「缺节 / 某节为空」，乱序是合法输入，
+        由 handler 按 `SECTION_KEYS` 规范化后产出（见 `emit_emergency_action_card`）。
+
         Raises:
             ValueError: 分节键缺失或重复（pydantic 会收成正常的校验失败，
                 最终由 `ToolSpec._parse` 变成 `tool_invalid_arguments`）。
@@ -374,6 +377,12 @@ async def emit_emergency_action_card(
             message=f"缺少登录账号（装配处应在 payload 里提供 {ACCOUNT_PAYLOAD_KEY!r}）——无法发出行动卡",
         )
 
+    # 七节按规范顺序产出（契约第 2 节「按固定顺序」）。参数模型只保证七节齐全各一次，
+    # 顺序责任在生产方：基座 `ActionCard.sections` 的说明是「按呈现顺序」，前端的
+    # `.action-card` 按它渲染，乱序会让分节渲染错位。乱序不是拒绝条件——契约第 5 节的
+    # 失败语义只列「缺节 / 某节为空」，故这里排序而不是报错。
+    # 已知边界：`line_ref` 的语义是「按七节顺序摊平后的序号」，模型若按自己给的乱序算它，
+    # 排序后标注会指到另一行——契约未定义乱序输入下 `line_ref` 的对应关系（未决事项）。
     card = ActionCard(
         # `card_id` 由服务端生成、不接受模型传入：前端凭它区分新旧卡（重复评估时旧卡标失效，
         # 契约第 6 节）。让模型指定 id 会让两张不同的卡拿到同一个 id，前端的失效判定随之失效。
@@ -381,7 +390,7 @@ async def emit_emergency_action_card(
         title=CARD_TITLE,
         sections=tuple(
             ActionCardSection(key=section.key, heading=section.heading, lines=tuple(section.lines))
-            for section in args.sections
+            for section in sorted(args.sections, key=lambda section: SECTION_KEYS.index(section.key))
         ),
         states=tuple(ActionCardState(key=state.key, value=state.value) for state in args.states),
         annotations=tuple(
