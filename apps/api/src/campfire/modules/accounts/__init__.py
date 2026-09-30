@@ -34,10 +34,16 @@
 # 此前本文件写「组织标识」属该裁决之前的表述，已移除。
 #
 # 已实现（2026-09-30）：`errors.py`（异常层次）、`models.py`（邀请码表）、
-# `repository.py`（邀请码状态机：签发、原子占用、补偿释放、绑定、撤销、列举）。
+# `repository.py`（邀请码状态机：签发、原子占用、补偿释放、绑定、撤销、列举）、
+# `onboarding.py`（引导状态表的读取与触发判定，`RQ-ACC-09`）。
 #
 # 仍缺：注册复写（把邀请码校验注入身份服务的 sign-up API）、人工重置、
 # 账号注销编排，以及注销墓碑（归 `core/auth`）。它们随 SDK 装配与 CLI 子命令落地。
+#
+# `onboarding.py` 的表模型与迁移尚未落地（表形状由认证与账号第 8 节拥有）。
+# 该模块因此走带绑定参数的显式 SQL，而不是声明第二份模型——同名表的第二份定义会与
+# `core/db.metadata` 的 `--autogenerate` 差异比较打架（项目结构设计第 10 节）。
+# 模型与迁移随该表的所有者批次补上，本模块的接口形状不变。
 
 from campfire.modules.accounts.errors import (
     AccountsError,
@@ -46,6 +52,7 @@ from campfire.modules.accounts.errors import (
     InviteCodeNotFoundError,
     InviteCodeRejectedError,
     InviteCodeStateError,
+    OnboardingTriggerError,
 )
 from campfire.modules.accounts.models import (
     INVITE_CODE_ALPHABET,
@@ -58,6 +65,17 @@ from campfire.modules.accounts.models import (
     STATE_REVOKED,
     STATE_USED,
     InviteCode,
+)
+from campfire.modules.accounts.onboarding import (
+    ONBOARDING_STATES,
+    ONBOARDING_TABLE_NAME,
+    STATE_COMPLETED,
+    STATE_IN_PROGRESS,
+    STATE_SKIPPED,
+    TERMINAL_STATES,
+    onboarding_pending,
+    read_onboarding_state,
+    should_inject_onboarding,
 )
 from campfire.modules.accounts.registration import (
     EMAIL_FORM_FIELD,
@@ -90,6 +108,7 @@ __all__ = [
     "InviteCodeNotFoundError",
     "InviteCodeRejectedError",
     "InviteCodeStateError",
+    "OnboardingTriggerError",
     # 常量（词表与形状）
     "INVITE_CODE_ALPHABET",
     "INVITE_CODE_LENGTH",
@@ -102,6 +121,16 @@ __all__ = [
     "STATE_USED",
     # 表
     "InviteCode",
+    # 引导状态（一次性引导的触发判定）
+    "ONBOARDING_STATES",
+    "ONBOARDING_TABLE_NAME",
+    "STATE_COMPLETED",
+    "STATE_IN_PROGRESS",
+    "STATE_SKIPPED",
+    "TERMINAL_STATES",
+    "onboarding_pending",
+    "read_onboarding_state",
+    "should_inject_onboarding",
     # 邀请码状态机
     "LIST_DEFAULT_LIMIT",
     "LIST_MAX_LIMIT",
