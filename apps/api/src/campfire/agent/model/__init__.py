@@ -10,7 +10,7 @@
 # 白名单内。基座不含领域术语，本模块同样不含。
 #
 # 供应商约束（见 docs/技术栈设计.md 第 3 节）：腾讯云 TokenHub 是外部数据处理方。
-# `EVID-C` 未关闭前只发送虚构或经核准不可识别的样例（`RQ-LIM-03`）。
+# `EVID-C` 未关闭前只发送虚构或经核准不可识别的样例。
 #
 # 模块分工：:mod:`~campfire.agent.model.gateway` 是真实调用侧（客户端、重试预算、
 # 用途分档），:mod:`~campfire.agent.model.probe` 是健康探针，:mod:`~campfire.agent.model.errors`
