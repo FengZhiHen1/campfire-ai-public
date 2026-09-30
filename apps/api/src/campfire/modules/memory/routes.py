@@ -71,7 +71,7 @@ _SESSION_TOKEN = "session="
 async def current_account(session: SessionContainer | None = Depends(require_session())) -> str:
     """从登录态取得当前账号标识，作为本面全部分区键的唯一来源。
 
-    分区键取登录态、不接受调用方传入，且**这里取的账号直接就是 `group_id`**
+    分区键取登录态、不接受调用方传入，且这里取的账号直接就是 `group_id`
     （记忆归属账号，通用记忆第 1 节）——因此"读别人的记忆"在构造查询前就不成立，
     不需要在返回后过滤（契约第 2 节）。
 
@@ -204,7 +204,7 @@ def _session_id_from(source_description: str) -> str:
     见 `modules/memory/consumer._source_description`），而本面契约的字段是
     `source_session_id`——字段名承诺的是一个标识，因此这里做一次显式解析。
 
-    取不到 `session=` 词元时**原样返回整串**，不返回空串：空串会被读成
+    取不到 `session=` 词元时原样返回整串，不返回空串：空串会被读成
     「这条记忆没有来源」，而 `write_episode` 拒绝写入无来源的记忆——也就是说
     空串在本系统里不可能表示「没有来源」，只会表示「解析失败」，那会把一次
     解析缺陷伪装成缺失的来源。原样返回至少保住了可核对的定位。
@@ -251,6 +251,32 @@ def _parse_cursor(cursor: str | None) -> int | None:
     return int(cursor)
 
 
+def _parse_time_range(
+    since: str | None, until: str | None
+) -> tuple[datetime | None, datetime | None, JSONResponse | None]:
+    """解析并校验时间区间，返回 `(since, until, 错误响应或 None)`。
+
+    抽成一处的原因有两条，都不是风格问题：
+
+    1. `list_episodes` 的校验分支（两个参数各自「给了但解析不了」+ 区间倒置）
+       让它逼近复杂度上限；这些分支与「查时间线」是两件事，混在一个函数里
+       会掩盖主流程。
+    2. 同一条判据（必须带时区、区间不得倒置）将来若被第二个端点需要，
+       复制一份必然漂移出一处「少校验了时区」。
+
+    缺时区与无法解析并入同一条错误：两者对调用方是同一件事（这个时间用不了），
+    分开报只会多一个分支而不多一条信息。
+    """
+    parsed_since = None if since is None else _parse_time(since, "since")
+    parsed_until = None if until is None else _parse_time(until, "until")
+    for raw, parsed, name in ((since, parsed_since, "since"), (until, parsed_until, "until")):
+        if raw is not None and parsed is None:
+            return None, None, _error(422, f"{name} 不是合法的 ISO 8601 时间（且必须带时区）", "invalid_payload")
+    if parsed_since is not None and parsed_until is not None and parsed_since > parsed_until:
+        return None, None, _error(422, "时间区间非法：since 晚于 until", "invalid_payload")
+    return parsed_since, parsed_until, None
+
+
 # ---------------------------------------------------------------------------
 # 查看（契约第 3 节）
 # ---------------------------------------------------------------------------
@@ -267,25 +293,24 @@ async def list_episodes(
 ) -> EpisodeListPayload | JSONResponse:
     """查看记忆时间线（契约第 3 节）。
 
-    返回的是 episode **原文**时间线（回看语义）：不转译、不摘要、不判失效；
+    返回的是 episode 原文时间线（回看语义）：不转译、不摘要、不判失效；
     派生事实（应急预注入那条路径）不在本面暴露。
 
     三件事由用例层保证，本函数不重复做：已删除的记忆不返回（账本过滤在
     `read_timeline` 内部完成，调用方无法漏传）、只返回 `pending_write.state = done`
     的片段、分区键取自登录态。
 
-    Raises（对外映射）:
+    对外状态码（在函数体内映射，不通过抛异常）：
         422: 时间无法解析、缺时区、区间倒置，或游标不是本面发出的。
         503: 图库不可用、引擎未配置，或删除账本触顶——后者无法完整排除已删内容，
             返回部分结果等于让删除静默失效，因此明确失败。
+
+    未归入上面两类的意外异常原样冒出：把未知缺陷报成「记忆暂时无法读取」
+    会掩盖真实的程序错误。
     """
-    parsed_since = None if since is None else _parse_time(since, "since")
-    parsed_until = None if until is None else _parse_time(until, "until")
-    for raw, parsed, name in ((since, parsed_since, "since"), (until, parsed_until, "until")):
-        if raw is not None and parsed is None:
-            return _error(422, f"{name} 不是合法的 ISO 8601 时间（且必须带时区）", "invalid_payload")
-    if parsed_since is not None and parsed_until is not None and parsed_since > parsed_until:
-        return _error(422, "时间区间非法：since 晚于 until", "invalid_payload")
+    parsed_since, parsed_until, problem = _parse_time_range(since, until)
+    if problem is not None:
+        return problem
 
     offset = _parse_cursor(cursor)
     if offset is None:
@@ -316,8 +341,6 @@ async def list_episodes(
         # 账本触顶或图库里的数据不合法：两者都意味着这次读不可信，
         # 不得降级成「没有记忆」。
         return _unavailable("记忆暂时无法读取")
-    except ValueError:
-        return _error(422, "时间区间非法：since 晚于 until", "invalid_payload")
 
     page = episodes[offset : offset + limit]
     has_more = len(episodes) > offset + limit
@@ -340,7 +363,7 @@ async def delete_episode(
     """删除一条记忆（契约第 4 节）。
 
     语义删除 = 写删除账本，不是图库物理删除：账本过滤是唯一生效点，因此删除
-    **不会因图库不可用而失败**——账本写入是本库事务。图库内残留不判失败。
+    不会因图库不可用而失败——账本写入是本库事务。图库内残留不判失败。
 
     幂等：重复删除返回 200 并带 `newly_deleted: false`。二次确认是前端交互，
     服务端不做「猜你不是故意的」——把重复删除当错误只会让重试收到失败，
@@ -350,7 +373,7 @@ async def delete_episode(
     （404）分开——形状校验是载荷问题，重试同样的请求不会变好。
 
     Raises（对外映射）:
-        404: 该 `episode_key` 已被**其它账号**记入账本（`record_deletion` 的
+        404: 该 `episode_key` 已被其它账号记入账本（`record_deletion` 的
             跨账号守卫）。这是本面唯一可达的「不是你的记忆」信号，文案与
             「不存在」同形处理，不提供 episode 枚举通道。
         422: 标识形状非法。
@@ -410,22 +433,22 @@ async def correct_episode(
     两步分属两个事务，因此失败语义必须分述（契约第 5 节）
     ---------------------------------------------------------
 
-    1. **撤下旧记忆**：本库事务，要么成功要么回滚。它在**自己的事务里先提交**，
+    1. 撤下旧记忆：本库事务，要么成功要么回滚。它在自己的事务里先提交，
        然后才尝试第二步——这不是实现便利，而是顺序要求：若两者共用一个事务，
        第二步失败会把撤下一起回滚，于是旧错误内容继续有效（正是纠正要避免的）。
-    2. **写新记忆**：走图库与模型抽取，可能失败、可重试。失败时**不**回滚第一步，
+    2. 写新记忆：走图库与模型抽取，可能失败、可重试。失败时不回滚第一步，
        返回 200 与中间态 `{superseded: true, new_episode_written: false}`。
 
     为什么这里直接调 `store.write_episode` 而不经 `pending_write` 队列
     ---------------------------------------------------------
 
     队列路径只能回执 `submitted`（`write_memory` 工具契约第 3 节明令不得表现为
-    已保存），而本端点必须告诉调用方新记忆**是否已写入**——两步的中间态正是
+    已保存），而本端点必须告诉调用方新记忆是否已写入——两步的中间态正是
     本契约的核心要求。`deletion.correct_episode` 的 docstring 也把「写新记忆」
     明确划给调用方，因此本函数承担这一步。
 
     代价如实写明：本端点同步等一次模型抽取（受图库与模型超时约束），
-    且不产生 `pending_write` 记录，因此**没有**「重试不重复抽取」的幂等标记
+    且不产生 `pending_write` 记录，因此没有「重试不重复抽取」的幂等标记
     ——每次请求都是一个新的新片段（新记忆本来就是一具新记录，语义上无需幂等）。
     该取舍登记在交付报告的未决问题节。
 
@@ -498,6 +521,7 @@ async def correct_episode(
     )
 
 
+# quality-floor: ignore docstring-promise 异常由 get_shared_memory_graph 与 write_episode 抛出并原样传播
 async def _write_corrected_episode(
     *,
     account: AccountId,

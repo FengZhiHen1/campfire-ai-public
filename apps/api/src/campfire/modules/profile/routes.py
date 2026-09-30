@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
-from typing import Annotated, Any
+from typing import Annotated
 
 from fastapi import APIRouter, Body, Depends, Query
 from fastapi.responses import JSONResponse
@@ -169,7 +169,7 @@ class CreateObjectRequest(BaseModel):
 class PatchObjectRequest(BaseModel):
     """`PATCH /profile/objects/{id}` 的请求体：两个状态位的赋值。
 
-    两者都可省略，但**至少给一个**——全空是一次无效果的请求，静默返回 200
+    两者都可省略，但至少给一个——全空是一次无效果的请求，静默返回 200
     会让调用方以为改名成功了（边界显式，无静默兜底）。
     """
 
@@ -180,7 +180,7 @@ class PatchObjectRequest(BaseModel):
 class CorrectItemRequest(BaseModel):
     """`POST /profile/items/{item_id}/correct` 的请求体。
 
-    载荷是**新条目的完整形状**而不是补丁字段（契约第 4 节）：档案条目是
+    载荷是新条目的完整形状而不是补丁字段（契约第 4 节）：档案条目是
     「谁在何时说的」的记录，补丁会让新条目继承旧条目的来源与时间。
     """
 
@@ -275,7 +275,11 @@ class ProfileItemPayload(BaseModel):
     helpful_support: list[str]
     unhelpful_support: list[str]
     origin: str
-    source: dict[str, Any]
+    #: 来源定位原样透出（`AC-07` 的可复核性载体）。存储列是 JSONB，键随写入方
+    #: 而不同（`session_id`/`message_ref`/`tool_name`/`recorded_at`/`relayed_by`），
+    #: 因此值类型写成 JSON 标量联合而不是 `Any`：后者会让「这里可能混进嵌套对象」
+    #: 在类型层不可见，而本面承诺的是可读的来源定位。
+    source: dict[str, str | int | float | bool | None]
     confirmation: str
     freshness: str
     first_recorded_at: datetime
@@ -430,10 +434,15 @@ async def patch_object(
     三个操作合在一个端点上，因为它们都是同一个状态位的赋值（`display_name`
     或 `archived_at`）；拆成三个端点会让改名与归档各自带一份相同的越权判定。
 
-    两个字段都给时**先落归档状态、再改名**：这样 `{display_name, archived: false}`
+    两个字段都给时先落归档状态、再改名：这样 `{display_name, archived: false}`
     能在归档对象上表达「恢复并改名」，而 `{display_name, archived: true}`
     仍是改名失败（`rename_object` 明确拒绝已归档对象）——顺序写反会让
     「恢复并改名」变成 409。
+
+    Raises:
+        RuntimeError: 走到「没有任何状态变更」的分支。这在入口判空之后不可达
+            （两个字段至少给了一个）；显式失败而不是静默返回 200，因为静默 200
+            会让调用方以为改名成功了。
     """
     if payload.display_name is None and payload.archived is None:
         return _error(422, "请求至少要给出 display_name 或 archived 之一", "invalid_payload")
@@ -637,7 +646,7 @@ async def delete_item(
     实际上已经生效。
 
     越权与不存在同样返回 200 `already: true`（用例层把三种情形合并成「没删到行」）：
-    这是**不泄露存在性**的那一侧选择——区分它们才会提供条目枚举通道。
+    这是不泄露存在性的那一侧选择——区分它们才会提供条目枚举通道。
     """
     if _item_uuid(item_id) is None:
         return _error(404, OBJECT_NOT_ACCESSIBLE_MESSAGE, "not_found")

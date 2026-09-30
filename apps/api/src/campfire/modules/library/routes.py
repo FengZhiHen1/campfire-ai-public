@@ -13,20 +13,22 @@ Agent 运行装配（docs/项目结构设计.md 第 5 节），而资料库面�
 它只是本模块用例的 HTTP 皮肤——与认证不建面同构。
 
 为什么本面只有读端点（契约第 1 节）：`RQ-KB-03` 与 `AC-29` 已定资料与案例的导入、
-审核与知识库管理**只能**经应用内 CLI，不存在对应的 HTTP 端点与产品内界面。
+审核与知识库管理只能经应用内 CLI，不存在对应的 HTTP 端点与产品内界面。
 撤下由 CLI 打 `withdrawn` 标记，本面只负责「撤下后不再返回」。
 """
 
 from __future__ import annotations
 
+import logging
 import uuid
 from datetime import datetime
-from typing import Annotated, Any
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 from supertokens_python.recipe.session import SessionContainer
 
 from campfire.core.auth.supertokens import require_session
@@ -39,7 +41,14 @@ from campfire.modules.library.case_schema import (
     REQUIRED_CARD_STRINGS,
 )
 from campfire.modules.library.ingestion import build_vector_store
-from campfire.modules.library.models import ITEM_MODELS, LIBRARIES, LIBRARY_CASE, LIBRARY_KNOWLEDGE, CaseItem
+from campfire.modules.library.models import (
+    ITEM_MODELS,
+    LIBRARIES,
+    LIBRARY_CASE,
+    LIBRARY_KNOWLEDGE,
+    CaseItem,
+    KnowledgeItem,
+)
 from campfire.modules.library.retrieval import (
     RetrievalError,
     RetrievedItem,
@@ -51,6 +60,8 @@ from campfire.modules.library.retrieval import (
 )
 
 router = APIRouter(prefix="/library", tags=["library"])
+
+logger = logging.getLogger(__name__)
 
 #: 单页条数的默认值与上界（本包裁决 8：资料库取与会话列表一致的 50 档）。
 #:
@@ -66,8 +77,8 @@ ITEMS_MAX_LIMIT = 50
 #: 硬上界，超过它之后 `next_cursor` 为 null。
 PAGE_WINDOW_MAX = 500
 
-#: 卡片里被推断字段的键名（公共案例库第 4 节）。`_inferred` 的**内容**不参与
-#: 检索注入，因此它不在节点文本里；被推断字段的**清单**在 metadata 上。
+#: 卡片里被推断字段的键名（公共案例库第 4 节）。`_inferred` 的内容不参与
+#: 检索注入，因此它不在节点文本里；被推断字段的清单在 metadata 上。
 _INFERRED_METADATA_KEY = "inferred_fields"
 
 #: 卡片节点文本里「字段名：值」的分隔符（`case_schema.build_card_embedding_text`）。
@@ -95,7 +106,7 @@ PARSABLE_CARD_KEYS: tuple[str, ...] = tuple(
 async def current_account(session: SessionContainer | None = Depends(require_session())) -> str:
     """从登录态取得当前账号标识。
 
-    本面的数据是公共语料（两库对所有登录使用者一致），因此账号**不参与取数**；
+    本面的数据是公共语料（两库对所有登录使用者一致），因此账号不参与取数；
     它的作用是「必须登录」这一条（契约第 2 节：全部端点须登录，`RQ-ACC-01`）。
     保留依赖而不是省略，是为了让「这条路径确实要求登录」在代码里可见——
     省略它会让端点变成匿名可达，而那与 `RQ-ACC-01` 冲突。
@@ -127,7 +138,7 @@ def _error(status_code: int, message: str, code: str) -> JSONResponse:
 def _unavailable() -> JSONResponse:
     """检索不可用 → 503（契约第 6 节）。
 
-    关键区分：**两路检索都失败**才走这里，返回 503；检索为空是 200 空数组。
+    关键区分：两路检索都失败才走这里，返回 503；检索为空是 200 空数组。
     两者不得混同——把失败报成「没有找到相关内容」会让使用者以为库里没有依据，
     而真相是检索坏了（契约第 6 节的硬性区分）。文案只给类别，不复述连接串与凭据。
     """
@@ -195,7 +206,7 @@ class LibraryItemPayload(BaseModel):
     """列表里的一个条目（契约第 3.1 节）。
 
     共有八项恒在场；案例的六项必带字段与 `inferred_fields` 只在 `library = case`
-    时填充（资料侧为 `None`）。六项必带**不是可选装饰**：缺任一个，页面就无法
+    时填充（资料侧为 `None`）。六项必带不是可选装饰：缺任一个，页面就无法
     如实回答「谁说的、多可信、什么时候」，列表就退化为无法核对的读物（`AC-06`）。
 
     `narrative` 与 `cards` 只在 `expand` 命中该条目时出现——展开内容随列表一并返回
@@ -210,7 +221,9 @@ class LibraryItemPayload(BaseModel):
     applicable_scope: str
     status: str
     locator: str
-    ranking: dict[str, Any]
+    #: 值类型与 `retrieval.RetrievedItem.ranking` 一致（`str | float`）——
+    #: 不写 `Any`：那会让「这里可能混进非标量」在类型层不可见。
+    ranking: dict[str, str | float]
     authorization: str | None = None
     source_type: str | None = None
     evidence_level: str | None = None
@@ -243,7 +256,7 @@ class GetLibraryItemPayload(BaseModel):
     三态：
     - 在库：`item` 为完整条目，`withdrawn` 为假；
     - 已撤下：`item` 为 `null`、`withdrawn` 为真、只带 `title`（不带正文与其他字段）；
-    - 不存在或非法 id：**404**（不是本模型能表达的，走 `_error`）。
+    - 不存在或非法 id：404（不是本模型能表达的，走 `_error`）。
 
     已撤下返回 200 而不是 404，且只带标题：页面据此渲染单条撤下卡（标题 +
     「该来源已撤下」），不显示正文。撤下条目不进列表，只在这种定向查询下以
@@ -266,10 +279,10 @@ def _parse_card_fields(text: str) -> dict[str, str]:
     为什么可以从节点文本还原：卡片整卡是一个节点，它的 `text` 就是
     `case_schema.build_card_embedding_text(card)` 的产物——逐字段
     「字段名：值」拼接，字段边界被刻意保留（RAG 策略第 1.3 节）。因此
-    `scenario` / `immediate_action` / `medical_criteria` 一类字段的**原文**
+    `scenario` / `immediate_action` / `medical_criteria` 一类字段的原文
     在节点里是可得的；条目表只存了案例级字段，不存卡片级字段。
 
-    解析按**已知字段名**起新行，而不是按换行无条件切：卡片字段的值可能本身
+    解析按已知字段名起新行，而不是按换行无条件切：卡片字段的值可能本身
     含换行，按换行切会把一个字段拆成两半、并把后半段丢成「未知键」，那是静默
     丢内容。已知字段名来自 `case_schema` 的字段清单（`PARSABLE_CARD_KEYS`）。
 
@@ -303,7 +316,7 @@ def _parse_card_fields(text: str) -> dict[str, str]:
 def _card_risk_class(fields: dict[str, str]) -> str:
     """按字段级默认档判卡片的风险档：`high` / `low`。
 
-    这是对契约 `risk_class`（`low | mixed | high`）的**面层派生**，不是存储值
+    这是对契约 `risk_class`（`low | mixed | high`）的面层派生，不是存储值
     ——`case_ingestion._card_metadata` 未把 `risk_class` 写进节点 metadata，
     条目表也没有该列，因此库里查不到它。派生的判据取该模块自己已发布的规则：
     `medical_criteria` 或 `contraindications` 非空即视为高风险（
@@ -390,8 +403,8 @@ def _item_payload(item: RetrievedItem) -> LibraryItemPayload:
     （不变量），因此走到这里的条目一定有来源与状态——若此处出现空值，那是
     检索链的缺陷，不是本面该兜的。
 
-    案例专属字段按**库别**判定在场，不按取值真假：`inferred_fields` 在
-    「案例但没有卡片级推断」时是一个**空列表**，而资料侧根本不是案例。
+    案例专属字段按库别判定在场，不按取值真假：`inferred_fields` 在
+    「案例但没有卡片级推断」时是一个空列表，而资料侧根本不是案例。
     若用 `if item.inferred_fields else None`，空列表会被静默转成 `None`，
     于是「这条案例没有推断字段」与「这条不是案例」在响应里变得无法区分——
     而前端要据此决定是否渲染推断标注。
@@ -418,7 +431,7 @@ def _item_payload(item: RetrievedItem) -> LibraryItemPayload:
 
 
 async def _attach_expansion(
-    session: Any,  # noqa: ANN401 —— AsyncSession；避免为一个内部签名引入类型导入
+    session: AsyncSession,
     payloads: list[LibraryItemPayload],
     *,
     expand: str,
@@ -438,6 +451,7 @@ async def _attach_expansion(
     target.cards = _cards_from_nodes(rows)
 
 
+# quality-floor: ignore docstring-promise 异常由 browse / search / build_embedding 抛出并原样传播，本函数只做装配与分流
 async def _run_retrieval(
     *,
     library: str,
@@ -518,10 +532,14 @@ async def list_items(
     Returns:
         `LibraryItemsPayload`；`degraded_paths` 非空时结果不完整（契约第 6 节）。
 
-    Raises（对外映射）:
+    对外状态码（在函数体内映射，不通过抛异常）：
         422: `library` 未知、`cursor` 非法、`limit` 越界（由 FastAPI 的查询校验拒绝），
             或 `expand` 不是合法标识、或它属于另一个库。
-        503: 检索不可用（两路都失败、缺嵌入凭据），或未配置数据库。
+        503: 检索不可用（两路都失败、缺嵌入凭据），或未配置数据库，或展开失败。
+
+    Raises:
+        Exception: 未归入上面两类的意外异常原样冒出——把未知缺陷报成
+            「检索暂时不可用」会掩盖真实的程序错误。
     """
     if library not in LIBRARIES:
         return _error(422, f"未知的库别：{library!r}，合法取值：{sorted(LIBRARIES)}", "invalid_payload")
@@ -562,10 +580,13 @@ async def list_items(
         try:
             async with session_scope(get_settings()) as session:
                 await _attach_expansion(session, payloads, expand=expand)
-        except RetrievalError:
-            # 展开失败不改变「列表已取到」这一事实：这是单条附加内容缺失，
-            # 不是检索失败。返回列表（不带展开）比 503 更如实。
-            pass
+        except RetrievalError as exc:
+            # 展开失败必须让调用方知道，不得静默返回不带展开的列表：
+            # 调用方专门要求了展开，收到「200 + 该条没有 narrative/cards」会读成
+            # 「这条案例没有内容」，而真相是节点表查不到。转成与检索失败同一个
+            # 503，并在日志里留下异常类型（不复述连接串与凭据）。
+            logger.warning("资料库面展开失败：%s", type(exc).__name__)
+            return _unavailable()
 
     return LibraryItemsPayload(
         library=library,
@@ -578,7 +599,7 @@ async def list_items(
 async def _check_expand_target(expand: str, *, library: str) -> JSONResponse | None:
     """校验 `expand` 指向的条目属于本次请求的库。
 
-    非法标识 → 422；属于**另一个库** → 422（该库的列表里永远不会出现它，
+    非法标识 → 422；属于另一个库 → 422（该库的列表里永远不会出现它，
     静默忽略会让调用方以为「展开没生效」是渲染问题）。属于本库但不在当前页
     → 返回 None（由 `_attach_expansion` 安静跳过，那是正常的翻页情形）。
 
@@ -604,6 +625,40 @@ async def _check_expand_target(expand: str, *, library: str) -> JSONResponse | N
 # ---------------------------------------------------------------------------
 
 
+async def _find_item_any_library(item_uuid: uuid.UUID) -> tuple[str, KnowledgeItem | CaseItem] | None:
+    """按标识在两库里找条目（先命中的库即为它的归属）。
+
+    deep-link 没有 `library` 参数（对话页的引用跳转只带 `item_id`），因此必须
+    两库都查；`item_id` 是 UUID，跨两库不会撞，所以第一个命中的就是它。
+
+    Returns:
+        `(库别, 行)`；两库都没有该标识时返回 `None`。
+
+    Note:
+        查到的是行本身（含已撤下），不是「未撤下的条目」——撤下判定要在
+        调用方按现查结果决定，不能靠这里过滤掉（过滤掉会让已撤下的目标被报成
+        404，页面就渲染不出那张撤下卡）。
+    """
+    async with session_scope(get_settings()) as session:
+        for library, model in ITEM_MODELS.items():
+            row = (await session.execute(select(model).where(model.id == item_uuid))).scalar_one_or_none()
+            if row is not None:
+                return library, row
+    return None
+
+
+def _first_node_summary(nodes: list[tuple[str, str, dict[str, str]]]) -> tuple[str, str]:
+    """取 `(snippet, locator)`：该条目的首个节点。
+
+    与浏览路 `retrieval._first_node_per_item` 同一条取值规则（按 `node_id` 排序
+    取第一个，因而同一条目每次取到同一个节点、`snippet` 不会抖动）。
+    没有节点时返回两个空串：数量为零不是错误（条目可以尚未投影出节点）。
+    """
+    for _node_id, text, metadata in nodes:
+        return text, str(metadata.get("locator") or "")
+    return "", ""
+
+
 @router.get("/items/{item_id}", response_model=GetLibraryItemPayload)
 async def get_item(
     item_id: str,
@@ -614,7 +669,7 @@ async def get_item(
     这条路径没有 `library` 参数（对话页的引用跳转只带 `item_id`），因此两库都查：
     `item_id` 是 UUID，跨两库不会撞。
 
-    **撤下判定来自服务端现查**：历史引用是否仍可跳转，取决于这次查询的结果，
+    撤下判定来自服务端现查：历史引用是否仍可跳转，取决于这次查询的结果，
     而不是前端缓存的旧载荷（契约第 5 节）。因此本函数必须查到行本身
     （不能只查「未撤下的」），否则已撤下的目标会被报成 404，页面就渲染不出
     那张克制的撤下卡。
@@ -622,24 +677,21 @@ async def get_item(
     Returns:
         在库：`{item: {...}}`；已撤下：`{item: null, withdrawn: true, title}`。
 
-    Raises（对外映射）:
+    对外状态码（在函数体内映射，不通过抛异常）：
         404: 条目不存在，或 `item_id` 不是合法标识——页面按普通进入处理
             （不报错、不留在空页）。
         503: 取数失败。
+
+    未归入上面两类的意外异常原样冒出：把未知缺陷报成「检索暂时不可用」
+    会掩盖真实的程序错误。
     """
     try:
         item_uuid = uuid.UUID(item_id)
     except ValueError:
         return _error(404, "条目不存在", "not_found")
 
-    found: tuple[str, CaseItem | Any] | None = None
     try:
-        async with session_scope(get_settings()) as session:
-            for library, model in ITEM_MODELS.items():
-                row = (await session.execute(select(model).where(model.id == item_uuid))).scalar_one_or_none()
-                if row is not None:
-                    found = (library, row)
-                    break
+        found = await _find_item_any_library(item_uuid)
     except Exception:  # noqa: BLE001 —— 取数失败不得被呈现成「条目不存在」
         return _unavailable()
 
@@ -651,11 +703,9 @@ async def get_item(
         # 只带标题、不带正文与其他字段：页面渲染单条撤下卡，不显示正文。
         return GetLibraryItemPayload(item=None, withdrawn=True, title=str(row.title))
 
-    # 在库：组装成与列表同形的完整条目。snippet 与 locator 取该条目的**首个**节点
-    # ——与浏览路 `retrieval._first_node_per_item` 同一条取值规则（按 `node_id`
-    # 排序取第一个，因而同一条目每次取到同一个节点、`snippet` 不会抖动）。
-    # 不用聚合路取回条目是因为它要求一次「检索」或「浏览」，而 deep-link 的语义
-    # 是**按标识取一条**，借道浏览会让结果受该库的排序与分页影响。
+    # 在库：组装成与列表同形的完整条目。不用聚合路取回条目是因为它要求一次
+    # 「检索」或「浏览」，而 deep-link 的语义是按标识取一条，借道浏览会让结果
+    # 受该库的排序与分页影响。
     try:
         async with session_scope(get_settings()) as session:
             loaded = await load_items(session, [item_id], library=library)
@@ -669,11 +719,7 @@ async def get_item(
     except Exception:  # noqa: BLE001 —— 取数失败不得被呈现成「条目不存在」
         return _unavailable()
 
-    rows = nodes.get(item_id, [])
-    snippet, locator = ("", "")
-    for _node_id, text, metadata in rows:
-        snippet, locator = text, str(metadata.get("locator") or "")
-        break
+    snippet, locator = _first_node_summary(nodes.get(item_id, []))
 
     payload = LibraryItemPayload(
         item_id=item_id,
@@ -690,13 +736,16 @@ async def get_item(
     return GetLibraryItemPayload(item=payload, withdrawn=False, title=None)
 
 
-def _case_payload_fields(item: object) -> dict[str, Any]:
+def _case_payload_fields(item: object) -> dict[str, str | bool | datetime | list[str]]:
     """案例条目专属字段的透传（契约第 3.1 节的六项必带 + `inferred_fields`）。
 
     `inferred_fields` 取条目表上那一列（案例级并集）：deep-link 是单条查询、
     没有「命中的是哪张卡片」，因此与浏览路的取值规则同源（没有卡片就没有
     卡片级推断标注，不拿案例级并集冒充——见 `retrieval._case_fields_for_browse`
     的说明）。展开出的卡片各自带自己的卡片级清单。
+
+    返回类型写全（不用 `Any`）：调用方按 `**fields` 展开进载荷模型，值类型错了
+    应该在类型层可见，而不是等到序列化时才暴露。
     """
     if not isinstance(item, CaseItem):
         # 库别与模型必须一致（`ITEM_MODELS` 的映射保证）。走到这里说明映射与
