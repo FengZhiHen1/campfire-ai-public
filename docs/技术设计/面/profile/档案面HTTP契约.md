@@ -128,6 +128,7 @@ POST /profile/objects/{id}/items
 | 归属与访问判定 | `core/authz`（一期属主即允许） |
 | 咨询面的端点与 SSE | [HTTP/SSE 契约](../consult/HTTP与SSE契约.md) |
 | 记忆的查看/纠正/删除 | [记忆面契约](记忆面HTTP契约.md) |
+| 案例与资料的浏览/检索 | [资料库面契约](资料库面HTTP契约.md) |
 | 视觉与交互 | [档案页](../../../design/pages/档案页.md) |
 
 ## 8. 已知偏差与证据边界

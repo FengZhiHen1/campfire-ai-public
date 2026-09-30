@@ -96,6 +96,7 @@ POST /memory/episodes/{episode_key}/correct
 | 归属账号的裁决 | [决策记录](../../decisions/通用记忆归属为账号.md) |
 | `read_memory` / `write_memory` 的工具契约 | [咨询面 `tools/`](../consult/tools/) |
 | 档案的查看/纠正/删除 | [档案面契约](档案面HTTP契约.md) |
+| 案例与资料的浏览/检索 | [资料库面契约](资料库面HTTP契约.md) |
 | 页面视觉与交互 | **记忆页（次级页，尚未成文，登记于[设计待办](../../../TODO.md)）** |
 
 ## 8. 已知偏差与证据边界

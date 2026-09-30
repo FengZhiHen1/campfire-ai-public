@@ -1,15 +1,28 @@
 # apps/web —— React H5（一期唯一前端）
 
-## 当前状态：**只有目录占位，没有构建链**
+## 当前状态：视觉契约已就位，目录仍待搭建
 
-本目录下没有任何代码，也没有 `package.json`。这是刻意的：
+本目录**尚无代码与 `package.json`**。此前停在这里的理由已经消失：
 
-`docs/项目结构设计.md` 第 9 节规定 **`docs/design/tokens.css` 是视觉契约的唯一权威**，
-构建期同步到 `shared/styles/tokens.css` 并有断言两份逐字一致，**实现侧不得另行定义
-色值与间距**。而该契约目录当前**不存在**（v3.0 的旧契约已随基线归档，不得作为当前依据）。
+`docs/design/` 的视觉契约三件套已于 **2026-10-06 重建并经用户确认**——`DESIGN.md`（含品牌图标、手机端定调、craft 强制清单）、`tokens.css`（61 个 token）、`components.html`（1561 行，含项目组件清单）。它是唯一权威（[项目结构设计](../docs/项目结构设计.md)第 9 节），实现侧不得另行定义色值与间距。
 
-在契约重建之前动工，必然要凭感觉写死色值与间距——那正是设计明令禁止的。
-因此前端先停在占位状态。
+因此**前端可以动工**。当前缺的是工程搭建，不是设计依据：
+
+1. `package.json` 与构建链（React 19 + Vite；assistant-ui 版本在 `pnpm install` 时锁定，其 `data-*` part 等 API 已核实存在但**未在本地跑过**，落地前以实际版本复核）。
+2. token 同步与断言：构建期把 `docs/design/tokens.css` 同步到 `shared/styles/tokens.css`，并有检查断言两份逐字一致（生成物、不手改）。
+3. 线格式类型：后端产出 OpenAPI 之前可先手写于 `shared/`，就绪后切换为生成并删除手写副本。
+
+## 后端契约的现状（决定哪些页面能开工）
+
+| 页面 | 后端契约 | 能否开工 |
+|---|---|---|
+| 登录与注册 | 认证不建面，路由由 SuperTokens SDK 挂载 `/auth/*`（[认证与账号](../docs/技术设计/technical-details/认证与账号.md)第 5 节） | 能 |
+| 首页、设置页、使用说明 | 静态内容；记忆页入口在设置页 | 能 |
+| 会话列表页、对话页、应急表单页 | [咨询面 HTTP/SSE 契约](../docs/技术设计/面/consult/HTTP与SSE契约.md) | 能 |
+| 档案页、记忆页 | [档案面](../docs/技术设计/面/profile/档案面HTTP契约.md)、[记忆面](../docs/技术设计/面/profile/记忆面HTTP契约.md) | 能 |
+| 案例库浏览页 | [资料库面](../docs/技术设计/面/profile/资料库面HTTP契约.md) | 能（但案例侧未实现、`EVID-F` 未录入前只有空态） |
+
+**三个组件仍无数据来源**：提问卡、行动卡、思考区。它们的交互与页面设计已定，但 `question` / `action_card` / `reasoning_delta` 三个**事件类尚未落地**（载荷形状已由[通用基座](../docs/技术设计/technical-details/通用基座.md)第 7.1／7.2／7.3 节定义）。组件可按载荷形状先写，但无法联调。
 
 ## 目标结构（见 `docs/项目结构设计.md` 第 9 节）
 
@@ -38,8 +51,11 @@ apps/web/src/
 
 ## 开工前必须先解决
 
-1. **视觉契约缺失**：`docs/design/tokens.css`、`components.html`、`DESIGN.md` 需按
-   design-spec-workshop 的产物形态重建。这也是 CI 里视觉契约检查当前被降级为告警的原因。
-2. **页面设计文档缺失**：交互与页面视觉尚未成文；`TODO.md` 第四节仍列着
-   「支持对象的建立与切换交互」等待定项。
+1. **构建链**：`package.json`、Vite、React 19、vitest + Testing Library；assistant-ui 版本在
+   `pnpm install` 时锁定（其 `data-*` part、`ThreadHistoryAdapter` 等 API 已核实存在，
+   但**未在本地跑过**，落地前以实际版本复核）。
+2. **token 同步与断言**：构建期把 `docs/design/tokens.css` 同步到 `shared/styles/tokens.css`
+   （生成物、不手改），并有检查断言两份逐字一致。
 3. **线格式类型**：后端产出 OpenAPI 之前可先手写于 `shared/`，就绪后切换为生成并删除手写副本。
+
+> 上述三条都是**工程搭建**，不是设计缺口：视觉契约与后端契约均已成文（见上文两节）。
