@@ -77,7 +77,7 @@ docs/技术设计/面/consult/
 | 通用记忆的时间模型、读路径与删除账本 | [通用记忆](../../technical-details/通用记忆.md) |
 | 记忆归属账号（与支持对象无关）的裁决 | [决策记录](../../decisions/通用记忆归属为账号.md) |
 | 会话、记忆的写入路径 | [写入路径](../../technical-details/写入路径.md) |
-| 档案与记忆的查看/纠正/删除端点 | [档案面契约](../profile/档案面HTTP契约.md) 与 [记忆面契约](../profile/记忆面HTTP契约.md) |
+| 档案、记忆、资料库的查看/检索/确认/纠正/删除端点 | [档案面](../profile/档案面HTTP契约.md)、[记忆面](../profile/记忆面HTTP契约.md)、[资料库面](../profile/资料库面HTTP契约.md) |
 | 引导状态表 `campfire_onboarding` 的表形状 | [认证与账号](../../technical-details/认证与账号.md) |
 | 授权判定 | `core/authz`（一期"属主即允许"） |
 
