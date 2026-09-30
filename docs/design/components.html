@@ -1,0 +1,504 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>篝火智答 — 契约组件参考</title>
+    <meta name="description" content="Campfire-AI 设计契约组件参考：warm-editorial base + 火焰橙改造。所有可见值来自 docs/design/tokens.css。" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@500&display=swap" rel="stylesheet" />
+    <style>
+      /* :root 粘贴块 — 与 docs/design/tokens.css 保持同步 */
+      :root {
+        --bg: #fbf6ee;
+        --surface: #fffdf8;
+        --surface-warm: #f1e3cf;
+        --fg: #201914;
+        --fg-2: #4c4037;
+        --muted: #7a6d63;
+        --meta: #57534e;
+        --border: #ded2c3;
+        --border-soft: #eee4d7;
+        --accent: #c2410c;
+        --accent-on: #fffdf8;
+        --accent-hover: color-mix(in oklab, var(--accent), black 8%);
+        --accent-active: color-mix(in oklab, var(--accent), black 14%);
+        --success: #3f7a44;
+        --warn: #b45309;
+        --danger: #b3372f;
+        --status-stable: #3f7a44;
+        --status-unruled: #b45309;
+        --status-high: #b3372f;
+        --font-display: "Noto Serif SC", "Songti SC", "STSong", "SimSun", Georgia, serif;
+        --font-body: system-ui, -apple-system, "PingFang SC", "Hiragino Sans GB",
+          "Microsoft YaHei", sans-serif;
+        --font-mono: "SF Mono", ui-monospace, Menlo, Consolas, monospace;
+        --text-xs: 12px;
+        --text-sm: 14px;
+        --text-base: 17px;
+        --text-lg: 20px;
+        --text-xl: 28px;
+        --text-2xl: 42px;
+        --text-3xl: 64px;
+        --text-4xl: 88px;
+        --leading-body: 1.62;
+        --leading-tight: 1;
+        --tracking-display: -0.025em;
+        --space-1: 4px;
+        --space-2: 8px;
+        --space-3: 12px;
+        --space-4: 16px;
+        --space-5: 20px;
+        --space-6: 24px;
+        --space-8: 32px;
+        --space-12: 48px;
+        --radius-sm: 10px;
+        --radius-md: 16px;
+        --radius-lg: 24px;
+        --radius-pill: 9999px;
+        --elev-flat: none;
+        --elev-ring: 0 0 0 1px var(--border);
+        --elev-raised: 0 20px 52px rgba(32, 25, 20, 0.12);
+        --focus-ring: 0 0 0 4px rgba(194, 65, 12, 0.24);
+        --motion-fast: 150ms;
+        --motion-base: 240ms;
+        --motion-breath: 2000ms;
+        --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+        --container-max: 1180px;
+        --container-gutter-desktop: 36px;
+        --container-gutter-tablet: 24px;
+        --container-gutter-phone: 16px;
+        --section-y-desktop: 112px;
+        --section-y-tablet: 80px;
+        --section-y-phone: 56px;
+      }
+
+      *, *::before, *::after { box-sizing: border-box; }
+      html, body { margin: 0; padding: 0; }
+      body {
+        min-height: 100vh;
+        background: var(--bg);
+        color: var(--fg);
+        font-family: var(--font-body);
+        font-size: var(--text-base);
+        line-height: var(--leading-body);
+        -webkit-font-smoothing: antialiased;
+      }
+      .page { min-height: 100vh; background: linear-gradient(135deg, #fbf6ee 0%, #fffdf8 58%, #f1e3cf 100%); }
+      .container { max-width: var(--container-max); margin-inline: auto; padding-inline: var(--container-gutter-desktop); }
+      section { padding-block: var(--section-y-tablet); }
+      @media (max-width: 639px) { .container { padding-inline: var(--container-gutter-phone); } section { padding-block: var(--section-y-phone); } }
+      h1, h2, h3, p { margin: 0; }
+      h1, h2, h3 { font-family: var(--font-display); font-weight: 500; line-height: var(--leading-tight); letter-spacing: var(--tracking-display); }
+      h1 { max-width: 840px; font-size: var(--text-4xl); }
+      h2 { font-size: var(--text-3xl); }
+      h3 { font-size: var(--text-xl); }
+      .eyebrow { color: var(--meta); font-family: var(--font-mono); font-size: var(--text-xs); font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; }
+      .lead { max-width: 640px; color: var(--fg-2); font-size: var(--text-lg); }
+      .stack > * + * { margin-block-start: var(--space-4); }
+      .actions { display: flex; flex-wrap: wrap; gap: var(--space-3); margin-block-start: var(--space-6); }
+
+      /* ─── 按钮（@source: base(warm-editorial)） ─────────────────── */
+      .btn {
+        display: inline-flex; align-items: center; justify-content: center;
+        min-height: 44px; padding: 0 var(--space-5);
+        border: 1px solid transparent; border-radius: var(--radius-md);
+        font: 700 var(--text-sm) / 1 var(--font-body); color: inherit;
+        text-decoration: none; cursor: pointer;
+        transition: background-color var(--motion-fast) var(--ease-standard),
+          border-color var(--motion-fast) var(--ease-standard),
+          color var(--motion-fast) var(--ease-standard),
+          transform var(--motion-fast) var(--ease-standard),
+          box-shadow var(--motion-fast) var(--ease-standard);
+      }
+      .btn:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+      .btn-primary { background: var(--accent); color: var(--accent-on); }
+      .btn-primary:hover { background: var(--accent-hover); transform: translateY(-1px); }
+      .btn-primary:active { background: var(--accent-active); transform: none; }
+      .btn-secondary { background: var(--surface); color: var(--fg); border-color: var(--border); box-shadow: var(--elev-ring); }
+      .btn-secondary:hover { border-color: var(--accent); color: var(--accent); }
+      .btn-quiet { background: var(--surface-warm); color: var(--fg-2); }
+      .btn-quiet:hover { color: var(--fg); }
+      .btn-danger { background: var(--danger); color: var(--surface); }
+      .btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+
+      /* ─── 输入（@source: base(warm-editorial)） ─────────────────── */
+      .field { display: grid; gap: var(--space-2); margin-block-start: var(--space-5); }
+      label { color: var(--fg-2); font-size: var(--text-sm); font-weight: 700; }
+      input, textarea, select {
+        width: 100%; min-height: 46px; padding: var(--space-2) var(--space-4);
+        border: 1px solid var(--border); border-radius: var(--radius-sm);
+        background: var(--surface); color: var(--fg); font: inherit;
+      }
+      textarea { min-height: 96px; resize: vertical; }
+      input:focus, textarea:focus, select:focus { outline: none; box-shadow: var(--focus-ring); border-color: var(--accent); }
+      input:user-invalid, textarea:user-invalid { border-color: var(--danger); }
+      .field .hint { color: var(--muted); font-size: var(--text-sm); }
+      .field .error { color: var(--danger); font-size: var(--text-sm); }
+
+      /* ─── 卡片与面板（@source: base(warm-editorial)） ───────────── */
+      .panel {
+        background: color-mix(in oklab, var(--surface), transparent 4%);
+        border: 1px solid var(--border); border-radius: var(--radius-lg);
+        box-shadow: var(--elev-raised); overflow: hidden;
+      }
+      .panel-head {
+        display: flex; justify-content: space-between; align-items: center;
+        gap: var(--space-4); padding: var(--space-5);
+        border-bottom: 1px solid var(--border-soft);
+      }
+      .tile { padding: var(--space-5); border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface); }
+      .tile p { color: var(--muted); font-size: var(--text-sm); margin-block-start: var(--space-3); }
+      .mini-card { min-height: 148px; padding: var(--space-5); border: 1px solid var(--border-soft); border-radius: var(--radius-md); background: var(--surface-warm); }
+      .mini-card p { color: var(--muted); font-size: var(--text-sm); margin-block-start: var(--space-3); }
+      .card-row { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-4); padding: var(--space-5); }
+      @media (max-width: 860px) { .card-row { grid-template-columns: 1fr; } }
+
+      /* ─── 状态徽章（@source: base(warm-editorial)，语义色重绑） ── */
+      .status {
+        display: inline-flex; align-items: center; gap: var(--space-2);
+        color: var(--meta); font: 700 var(--text-xs) / 1 var(--font-mono);
+        text-transform: uppercase; letter-spacing: 0.08em;
+      }
+      .status::before { width: 8px; height: 8px; border-radius: var(--radius-pill); background: var(--success); content: ""; }
+      .status.stable::before { background: var(--status-stable); }
+      .status.unruled::before { color: var(--status-unruled); }
+      .status.unruled::before { background: var(--status-unruled); }
+      .status.high::before { color: var(--status-high); background: var(--status-high); }
+
+      /* ─── 链接（@source: base(warm-editorial)） ─────────────────── */
+      a { color: var(--accent); text-decoration: underline; text-decoration-color: color-mix(in oklab, var(--accent), transparent 55%); text-underline-offset: 3px; }
+      a:hover { text-decoration-color: var(--accent); }
+
+      /* ─── 排版（@source: base(warm-editorial)） ─────────────────── */
+      .hero { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(320px, 0.9fr); gap: var(--space-8); align-items: center; }
+      @media (max-width: 860px) { .hero { grid-template-columns: 1fr; } }
+
+      /* ─── 布局（@source: base(warm-editorial)） ─────────────────── */
+      .lower { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-4); }
+      @media (max-width: 860px) { .lower { grid-template-columns: 1fr; } }
+      .metric-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); border-bottom: 1px solid var(--border-soft); }
+      .metric { padding: var(--space-5); border-right: 1px solid var(--border-soft); }
+      .metric:last-child { border-right: 0; }
+      .metric strong { display: block; font-family: var(--font-display); font-size: var(--text-2xl); line-height: var(--leading-tight); }
+      .metric span { color: var(--muted); font-size: var(--text-sm); }
+      @media (max-width: 860px) { .metric-grid { grid-template-columns: 1fr; } .metric { border-right: 0; border-bottom: 1px solid var(--border-soft); } .metric:last-child { border-bottom: 0; } }
+
+      /* ─── 篝火呼吸点（@source: project — 项目唯一记忆点组件） ──── */
+      .flame-dot {
+        display: inline-block; width: 8px; height: 8px;
+        border-radius: var(--radius-pill); background: var(--accent);
+        animation: flame-breathe var(--motion-breath) ease-in-out infinite;
+      }
+      .flame-dot.sm { width: 12px; height: 12px; }
+      @keyframes flame-breathe {
+        0%, 100% { box-shadow: 0 0 0 0 color-mix(in oklab, var(--accent), transparent 30%); opacity: 1; }
+        50% { box-shadow: 0 0 0 6px color-mix(in oklab, var(--accent), transparent 82%); opacity: 0.82; }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .flame-dot { animation: none; box-shadow: 0 0 0 3px color-mix(in oklab, var(--accent), transparent 78%); }
+      }
+
+      /* ─── tab 栏（@source: project — 底部导航，四个一级页面共用） ── */
+      .tab-bar {
+        position: fixed; inset-inline: 0; bottom: 0; z-index: 40;
+        display: flex; justify-content: space-around;
+        background: color-mix(in oklab, var(--surface), transparent 5%);
+        backdrop-filter: blur(8px);
+        border-top: 1px solid var(--border);
+        padding-bottom: env(safe-area-inset-bottom, 0px);
+      }
+      .tab-item {
+        display: flex; flex-direction: column; align-items: center; justify-content: center;
+        gap: var(--space-1); min-width: 56px; min-height: 56px;
+        color: var(--fg-2); font-size: var(--text-xs);
+        background: none; border: 0; cursor: pointer;
+        transition: color var(--motion-fast) var(--ease-standard),
+          background-color var(--motion-fast) var(--ease-standard);
+      }
+      .tab-item svg { width: 22px; height: 22px; }
+      .tab-item[aria-current="page"] { color: var(--accent); }
+      .tab-item:active { background: color-mix(in oklab, var(--accent), transparent 92%); }
+
+      /* ─── 勾选行（@source: project — 应急表单多项勾选） ────────── */
+      .check-row {
+        display: flex; align-items: center; gap: var(--space-3);
+        min-height: 48px; padding-block: var(--space-2);
+        cursor: pointer; user-select: none;
+      }
+      .check-box {
+        width: 20px; height: 20px; flex: none;
+        border: 1.5px solid var(--border); border-radius: var(--radius-sm);
+        background: var(--surface);
+        display: inline-flex; align-items: center; justify-content: center;
+        transition: background-color var(--motion-fast) var(--ease-standard),
+          border-color var(--motion-fast) var(--ease-standard);
+      }
+      .check-row[aria-pressed="true"] .check-box { background: var(--accent); border-color: var(--accent); }
+      .check-row[aria-pressed="true"] .check-box::after {
+        content: ""; width: 10px; height: 6px;
+        border-left: 2px solid var(--accent-on); border-bottom: 2px solid var(--accent-on);
+        transform: rotate(-45deg) translateY(-1px);
+      }
+      .check-row span { font-size: var(--text-base); color: var(--fg); }
+
+      /* ─── 选择卡（@source: project — 应急表单三选一） ───────────── */
+      .tile.choice {
+        display: flex; align-items: center; gap: var(--space-3);
+        min-height: 52px; padding: var(--space-3) var(--space-4);
+        cursor: pointer;
+        transition: border-color var(--motion-fast) var(--ease-standard),
+          background-color var(--motion-fast) var(--ease-standard);
+      }
+      .tile.choice[aria-pressed="true"] {
+        border: 1.5px solid var(--accent);
+        background: color-mix(in oklab, var(--accent), transparent 94%);
+      }
+
+      /* ─── 细进度条（@source: project — 应急分步位置指示） ───────── */
+      .progress-track { height: 2px; background: var(--border); border-radius: var(--radius-pill); overflow: hidden; }
+      .progress-fill {
+        height: 100%; background: var(--accent);
+        transition: width var(--motion-base) var(--ease-standard);
+      }
+
+      /* ─── 使用者消息气泡（@source: project — 对话页） ───────────── */
+      .bubble-user {
+        margin-left: auto; max-width: 78%;
+        padding: var(--space-3) var(--space-4);
+        background: var(--surface-warm); color: var(--fg);
+        border-radius: var(--radius-md); border-top-right-radius: 4px;
+        font-size: var(--text-base); line-height: var(--leading-body);
+      }
+
+      /* ─── 助手消息正文容器（@source: project — 对话页，读物非气泡） ─ */
+      .msg-doc {
+        padding-left: var(--space-4);
+        border-left: 2px solid var(--border-soft);
+        font-size: var(--text-base); line-height: var(--leading-body); color: var(--fg);
+      }
+
+      /* ─── 结构化提问卡（@source: project — question 事件） ──────── */
+      .question-card { padding: var(--space-5); }
+      .question-card .q-title { font-size: var(--text-lg); color: var(--fg); margin-block-end: var(--space-4); }
+      .question-card .q-options { display: grid; gap: var(--space-2); }
+      .question-card .q-options .btn { justify-content: flex-start; min-height: 48px; }
+      .question-card .q-footer { display: flex; justify-content: space-between; margin-block-start: var(--space-4); }
+      .question-card.answered { opacity: 0.7; pointer-events: none; }
+
+      /* ─── 应急行动卡（@source: project — action_card 事件） ─────── */
+      .action-card { padding: var(--space-6); }
+      .action-card .ac-section { margin-block-start: var(--space-5); }
+      .action-card .ac-section:first-child { margin-block-start: 0; }
+      .action-card .ac-head {
+        display: flex; align-items: baseline; gap: var(--space-2);
+        font-family: var(--font-display); font-weight: 500;
+        font-size: var(--text-base); color: var(--fg);
+      }
+      .action-card .ac-item {
+        display: flex; gap: var(--space-2); align-items: baseline;
+        padding-block: var(--space-1); font-size: var(--text-base); color: var(--fg);
+      }
+      .action-card .ac-item.now svg { color: var(--accent); flex: none; align-self: center; }
+      .action-card .ac-source { font-size: var(--text-xs); color: var(--meta); }
+      .action-card .ac-confidence { font-size: var(--text-xs); color: var(--meta); }
+      .action-card.expired { border: 1px dashed var(--border); }
+      .action-card.expired .ac-expired-bar {
+        display: flex; align-items: center; gap: var(--space-2);
+        color: var(--meta); font-size: var(--text-sm); margin-block-end: var(--space-3);
+      }
+
+      /* ─── 依据区（@source: project — citation 事件，默认收起） ──── */
+      .citation-block { border-top: 1px solid var(--border-soft); margin-block-start: var(--space-4); padding-block-start: var(--space-3); }
+      .citation-head { color: var(--meta); font-size: var(--text-sm); cursor: pointer; background: none; border: 0; padding: 0; }
+      .citation-list { display: none; margin-block-start: var(--space-3); }
+      .citation-block.open .citation-list { display: grid; gap: var(--space-3); }
+      .citation-item .c-title { font-size: var(--text-sm); color: var(--fg); }
+      .citation-item .c-title a { color: var(--fg); }
+      .citation-item .c-meta { font-size: var(--text-xs); color: var(--meta); }
+      .citation-item .c-withdrawn { color: var(--meta); }
+
+      /* ─── 思考折叠行（@source: project — reasoning 事件） ───────── */
+      .reasoning-row { border-left: 2px solid var(--border-soft); padding-left: var(--space-3); }
+      .reasoning-row > summary {
+        color: var(--muted); font-size: var(--text-sm); cursor: pointer;
+        list-style: none; display: inline-flex; align-items: center; gap: var(--space-2);
+      }
+      .reasoning-row > summary::-webkit-details-marker { display: none; }
+      .reasoning-row[open] > summary { color: var(--fg-2); }
+      .reasoning-row .r-body { color: var(--muted); font-size: var(--text-sm); margin-block-start: var(--space-2); }
+
+      /* ─── 工具调用指示（@source: project — tool_call 事件） ─────── */
+      .tool-row { color: var(--meta); font-size: var(--text-xs); }
+      .tool-row > summary { cursor: pointer; list-style: none; display: inline-flex; gap: var(--space-1); }
+      .tool-row > summary::-webkit-details-marker { display: none; }
+
+      /* ─── 候选轻提示（@source: project — candidate 事件派生 UI） ── */
+      .candidate-toast {
+        display: inline-flex; align-items: center; gap: var(--space-2);
+        padding: var(--space-2) var(--space-4);
+        background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-pill);
+        color: var(--fg-2); font-size: var(--text-sm);
+        box-shadow: var(--elev-ring); cursor: pointer;
+      }
+      .candidate-toast .ct-panel {
+        display: none; position: absolute; inset-inline: 0; margin-block-start: var(--space-2);
+        padding: var(--space-4);
+        background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-md);
+        box-shadow: var(--elev-raised);
+      }
+      .candidate-toast.open { position: relative; }
+      .candidate-toast.open .ct-panel { display: block; }
+      .candidate-toast .ct-item { display: grid; gap: var(--space-1); margin-block-end: var(--space-3); }
+      .candidate-toast .ct-item .ct-text { font-size: var(--text-sm); color: var(--fg); }
+      .candidate-toast .ct-item .ct-origin { font-size: var(--text-xs); color: var(--meta); }
+
+      /* ─── 底部确认操作单（@source: project — 不可撤销操作确认） ── */
+      .confirm-sheet {
+        position: fixed; inset-inline: 0; bottom: 0; z-index: 50;
+        background: var(--surface);
+        border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+        box-shadow: var(--elev-raised);
+        padding: var(--space-6) var(--space-5) calc(var(--space-6) + env(safe-area-inset-bottom, 0px));
+      }
+      .confirm-sheet .cs-title { font-family: var(--font-display); font-weight: 500; font-size: var(--text-lg); color: var(--fg); }
+      .confirm-sheet .cs-desc { color: var(--muted); font-size: var(--text-sm); margin-block: var(--space-2) var(--space-5); }
+      .confirm-sheet .cs-actions { display: flex; gap: var(--space-3); }
+      .confirm-sheet .cs-actions .btn { flex: 1; }
+    </style>
+  </head>
+  <body>
+    <main class="page" style="padding-bottom: 96px;">
+      <section>
+        <div class="container hero">
+          <div class="stack">
+            <p class="eyebrow">Campfire-AI · 设计契约组件参考</p>
+            <h1>篝火智答契约组件</h1>
+            <p class="lead">warm-editorial 底座 × 火焰橙。所有可见值来自 tokens.css；本页为组件形状契约，非页面设计。</p>
+            <div class="actions">
+              <button class="btn btn-primary" type="button">主要操作</button>
+              <button class="btn btn-secondary" type="button">次要操作</button>
+              <button class="btn btn-quiet" type="button">静默操作</button>
+              <button class="btn btn-danger" type="button">危险操作</button>
+            </div>
+          </div>
+          <article class="panel">
+            <div class="panel-head">
+              <div><p class="eyebrow">表单</p><h3>输入与状态</h3></div>
+              <span class="status stable">在线</span>
+            </div>
+            <div class="card-row">
+              <div class="mini-card">
+                <h3>字段</h3>
+                <div class="field">
+                  <label for="demo-input">账号名</label>
+                  <input id="demo-input" placeholder="用于登录的账号名" />
+                  <p class="hint">不要求邮箱，也不会用于验证。</p>
+                </div>
+              </div>
+              <div class="mini-card">
+                <h3>状态徽章</h3>
+                <p style="display: flex; gap: var(--space-4); flex-wrap: wrap; margin-block-start: var(--space-3);">
+                  <span class="status stable">稳定</span>
+                  <span class="status unruled">未排除</span>
+                  <span class="status high">高风险</span>
+                </p>
+                <p style="display: flex; align-items: center; gap: var(--space-3); margin-block-start: var(--space-4);">
+                  <span class="flame-dot"></span>
+                  <span style="color: var(--muted); font-size: var(--text-sm);">篝火呼吸点（应急入口用）</span>
+                </p>
+              </div>
+            </div>
+          </article>
+        </div>
+      </section>
+      <section>
+        <div class="container lower">
+          <article class="tile">
+            <p class="eyebrow">卡片</p>
+            <h2>面板与平铺</h2>
+            <p>panel / tile / mini-card 三层卡片语言，圆角 16–24px。</p>
+          </article>
+          <article class="tile">
+            <p class="eyebrow">链接</p>
+            <h2>内联引用</h2>
+            <p>链接用 accent 色、弱化下划线，hover 加深——见 <a href="#">示例链接</a>。</p>
+          </article>
+          <article class="tile">
+            <p class="eyebrow">动效</p>
+            <h2>克制原则</h2>
+            <p>状态确认 150ms，进入 240ms；呼吸点是唯一循环动效，respect reduced-motion。</p>
+          </article>
+        </div>
+      </section>
+      <section>
+        <div class="container" style="max-width: 480px;">
+          <p class="eyebrow" style="margin-block-end: var(--space-4);">项目组件（页面设计修订追加）</p>
+          <div class="stack" style="margin-block-end: var(--space-6);">
+            <div class="progress-track" role="img" aria-label="第 3 题，共 8 题"><div class="progress-fill" style="width: 37.5%;"></div></div>
+            <div class="check-row" aria-pressed="true" role="button" tabindex="0"><span class="check-box"></span><span>呼吸异常</span></div>
+            <div class="check-row" aria-pressed="false" role="button" tabindex="0"><span class="check-box"></span><span>明显外伤</span></div>
+            <div class="tile choice" aria-pressed="true" role="button" tabindex="0"><span style="font-size: var(--text-base);">与平时相比：明显变化</span></div>
+          </div>
+          <div class="stack">
+            <div class="bubble-user">他刚才在超市突然捂住耳朵蹲下了，怎么都不肯走。</div>
+            <div class="msg-doc">根据你描述的情况，环境噪音可能是重要促发因素。建议先带他到相对安静的角落，等待至少 10 秒再尝试沟通。</div>
+            <div class="tile question-card">
+              <p class="q-title">他现在愿意用简单手势或写字回应吗？</p>
+              <div class="q-options">
+                <button class="btn btn-secondary" type="button">愿意</button>
+                <button class="btn btn-secondary" type="button">不愿意</button>
+              </div>
+              <div class="q-footer"><button class="btn btn-quiet" type="button">自由回答</button><button class="btn btn-quiet" type="button">跳过这题</button></div>
+            </div>
+            <div class="panel action-card">
+              <div class="ac-section">
+                <div class="ac-head">1 · 当前状态</div>
+                <div class="ac-item"><span class="ac-source">医疗风险</span><span class="status unruled">未排除</span></div>
+                <div class="ac-item"><span>与平时相比：明显变化</span><span class="ac-source">来源：家属报告</span><span class="ac-confidence">较可能</span></div>
+              </div>
+              <div class="ac-section">
+                <div class="ac-head">3 · 立即做</div>
+                <div class="ac-item now"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M3 8.5 6.5 12 13 4.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg><span>带他离开当前货架区，到入口侧安静角落</span><span class="ac-source">来源：现场观察</span></div>
+                <div class="ac-item now"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M3 8.5 6.5 12 13 4.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg><span>一次一人讲话，等待至少 10 秒</span><span class="ac-source">来源：历史记录</span></div>
+              </div>
+              <div class="citation-block open">
+                <button class="citation-head" type="button">依据 2 条</button>
+                <div class="citation-list">
+                  <div class="citation-item"><p class="c-title"><a href="#">感觉超负荷时的环境调整策略</a></p><p class="c-meta">来源：某机构公开材料 · 适用：学龄前至学龄期</p></div>
+                  <div class="citation-item"><p class="c-title">超市购物场景的支持记录</p><p class="c-meta c-withdrawn">该来源已撤下</p></div>
+                </div>
+              </div>
+            </div>
+            <details class="reasoning-row"><summary>正在分析…</summary><div class="r-body">思考过程的中间态呈现区，与正文视觉区隔。</div></details>
+            <div class="candidate-toast" role="button" tabindex="0">有 2 条待确认
+              <div class="ct-panel">
+                <div class="ct-item"><p class="ct-text">超市等嘈杂环境可能是感觉触发因素</p><p class="ct-origin">AI 归纳 · 待确认</p></div>
+                <div class="ct-item"><p class="ct-text">捂耳是他表达不适的常见方式</p><p class="ct-origin">系统观察 · 待确认</p></div>
+                <button class="btn btn-secondary" type="button">去档案确认</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+    <nav class="tab-bar" aria-label="主导航">
+      <button class="tab-item" type="button" aria-current="page">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M4 11.5 12 4l8 7.5V20a1 1 0 0 1-1 1h-5v-6h-4v6H5a1 1 0 0 1-1-1v-8.5Z" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <span>首页</span>
+      </button>
+      <button class="tab-item" type="button">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M4 5h16v11H9l-5 4V5Z" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <span>咨询</span>
+      </button>
+      <button class="tab-item" type="button">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M6 3h9l4 4v14H6V3Z" stroke-linecap="round" stroke-linejoin="round"/><path d="M9 11h7M9 15h7" stroke-linecap="round"/></svg>
+        <span>档案</span>
+      </button>
+      <button class="tab-item" type="button">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><circle cx="12" cy="8" r="4" stroke-linecap="round"/><path d="M4.5 20.5c1.5-3.5 4.5-5 7.5-5s6 1.5 7.5 5" stroke-linecap="round"/></svg>
+        <span>我的</span>
+      </button>
+    </nav>
+  </body>
+</html>
