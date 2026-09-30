@@ -679,26 +679,36 @@ async def delete_item(
     *,
     account_id: object,
     item_id: object,
-) -> bool:
+) -> ProfileItem:
     """删除一条条目（`RQ-MEM-03`、`AC-08`：删除须覆盖该内容在检索与衍生中的使用）。
 
     与 `rejected` 的区别：删除不留取代条目；`rejected` 是另一条路径
     （使用者否定一条候选），不在这里表达（档案面契约第 4 节）。
 
-    幂等：重复删除返回 `False`（调用方据此回报 `already: true`），不报错。
+    归属先判定再删，且「没删到行」不回报成功：条目不存在、不属于该账号，
+    或已被删除（条目是物理删除，库表里没有留痕）三种情形一律抛
+    `AuthorizationError`——档案面契约第 6 节要求「对象／条目越权或不存在
+    → 404，文案与『不存在』逐字相同」。2026-09-30 编排器裁决 1 明确了这一点：
+    把越权或不存在读成成功会让本面成为全应用唯一的例外。
+
+    归为同一种失败是有意的：区分它们等于提供条目枚举通道，也就泄露了
+    属主信息。
 
     Returns:
-        True 表示本次真的删掉了一行；False 表示没有删到
-        （不存在、不属于该账号，或已被删除）。
+        被删除的条目行。
 
     Raises:
+        AuthorizationError: 条目不存在、不属于该账号，或已被删除
+            （三种情形文案逐字相同）。
         ProfileDataError: 标识不合法。
     """
-    # 归属判定与删除在一条 SQL 内完成（`delete_item_scoped`）：
-    # 越权与不存在都不删任何行，因此不需要先做一次读取。
-    # 这也让「重复删除幂等」自然成立——第二次同样删不到行。
-    deleted = await repo.delete_item_scoped(session, item_id=item_id, account_id=account_id)
-    return deleted is not None
+    row = await _load_owned_item(session, account_id=account_id, item_id=item_id)
+    # 归属判定之后仍走带归属圈定的 DELETE：两道判据同源，且并发下
+    # 行被另一个请求抢先删掉时这里拿到 None——按「不可访问」报，不谎报成功。
+    deleted = await repo.delete_item_scoped(session, item_id=row.item_id, account_id=account_id)
+    if deleted is None:
+        raise AuthorizationError(OBJECT_NOT_ACCESSIBLE_MESSAGE)
+    return row
 
 
 # ============================================================================
