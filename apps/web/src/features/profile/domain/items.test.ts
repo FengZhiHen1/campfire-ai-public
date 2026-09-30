@@ -113,14 +113,16 @@ describe('按领域分组', () => {
     ]);
 
     expect(groups.map((group) => group.domain)).toEqual(['communication', 'goals_and_plans']);
-    expect(groups[0].items.map((entry) => entry.item_id)).toEqual(['b', 'c']);
+    const [first] = groups;
+    expect(first?.items.map((entry) => entry.item_id)).toEqual(['b', 'c']);
   });
 
   it('未知领域的条目落进「其他」组，不会被丢掉', () => {
     const groups = groupByDomain([item({ domain: 'brand_new_domain' })]);
     expect(groups).toHaveLength(1);
-    expect(groups[0].domain).toBe('other');
-    expect(groups[0].items).toHaveLength(1);
+    const [first] = groups;
+    expect(first?.domain).toBe('other');
+    expect(first?.items).toHaveLength(1);
   });
 
   it('空输入返回空分组', () => {

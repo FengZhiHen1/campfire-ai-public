@@ -23,7 +23,9 @@ import { RequireSession } from './RequireSession';
 import { LoginPage } from '../features/accounts/view/LoginPage';
 import { SettingsPage } from '../features/accounts/view/SettingsPage';
 import { ProfilePage } from '../features/profile/view/ProfilePage';
+import { MemoryPage } from '../features/memory/view/MemoryPage';
 import { supertokensAuthPort } from '../infrastructure/auth/authPort';
+import { httpMemoryPort } from '../infrastructure/http/memoryPort';
 import { httpProfilePort } from '../infrastructure/http/profilePort';
 
 /** 一条前端路由的描述；守卫需求是数据而不是散落在 JSX 里的条件。 */
@@ -98,6 +100,7 @@ export const APP_ROUTES: readonly AppRoute[] = [
     title: '记忆',
     description: '查看、纠正与删除属于本账号的记忆时间线。',
     requiresSession: true,
+    element: () => <MemoryPage port={httpMemoryPort} />,
   },
   {
     path: '/guide',
