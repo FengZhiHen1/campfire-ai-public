@@ -1322,6 +1322,54 @@ async def test_emergency_is_503_when_the_skill_content_is_missing(
     assert response.status_code == 503, response.text
 
 
+async def test_emergency_discards_the_session_when_the_run_fails_to_start(
+    client: httpx.AsyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """运行起步失败（503）时补偿删除这次建的会话行与绑定，账号名下 0 会话。
+
+    与上面「装配缺失不留会话」那条对称：那一条失败在任何写入之前，这一条失败在写入
+    之后——归属行、绑定与首轮注入标记都已提交，而调用方拿不到 `session_id`。不补偿就是
+    一个永远不可达的会话，且三条后果都真实（判据见 `_discard_emergency_session`）：
+    标记已为真会让该账号后续的日常消息被判成「已注入」而跳过引导告知；绑定行会参与
+    下一次新建会话的默认对象推导；前端对 503 的重试会逐次堆积。
+
+    **消融**：去掉 `except runbus.RunStartupFailure` 里的补偿删除，两条断言立即失败。
+    """
+    _install_runner(ScriptedRunner(get_settings(), fail_before_start=True))
+    _stub_memory(monkeypatch, EmergencyMemory(facts=[]))
+    object_id = await _make_object(_ACCOUNT, "小宝")
+
+    response = await client.post(
+        "/consult/emergency",
+        json={"support_object_id": object_id, "items": _intake_items()},
+    )
+    assert response.status_code == 503, response.text
+
+    async with session_scope(get_settings()) as db:
+        owners = list(
+            (
+                await db.execute(select(CampfireSession.session_id).where(CampfireSession.account_id == _ACCOUNT))
+            ).scalars()
+        )
+        bindings = list(
+            (
+                await db.execute(
+                    select(SessionObjectBinding.session_id).where(SessionObjectBinding.account_id == _ACCOUNT)
+                )
+            ).scalars()
+        )
+    assert owners == [], "起步失败不得留下不可达的会话行"
+    assert bindings == [], "起步失败不得留下孤儿绑定（它会决定下一次新建会话绑哪个对象）"
+
+    # 占位也释放了：本用例没建过别的会话，因此这个模式下不该有任何会话键。
+    cache = RedisCache(get_settings().redis_url)
+    try:
+        assert await cache.scan_keys("session:*", limit=100) == [], "起步失败必须释放会话占位"
+    finally:
+        await cache.aclose()
+
+
 # ---------------------------------------------------------------------------
 # 6 引导跳过入口
 # ---------------------------------------------------------------------------
