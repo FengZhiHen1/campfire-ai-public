@@ -42,11 +42,11 @@ from campfire.core.pending_write import (
     enqueue,
 )
 from campfire.modules.memory.consumer import consume_memory_episode
-from campfire.modules.memory.errors import MemoryDataError
+from campfire.modules.memory.errors import MemoryDataError, MemoryUnavailableError
 from campfire.modules.memory.graph import MemoryGraph, OrderedCrossEncoder
 from campfire.modules.memory.identity import PendingId, derive_episode_uuid, to_account_id
 from campfire.modules.memory.ledger import deleted_episode_keys
-from campfire.modules.memory.store import read_timeline
+from campfire.modules.memory.store import EPISODE_WRITE_STATE_PENDING, read_timeline
 
 from .conftest import connect_falkordb_or_skip
 
@@ -395,7 +395,8 @@ async def test_failed_write_leaves_no_readable_episode(memory_graph: MemoryGraph
     实测复现（修复前）：抽取抛错后 `read_timeline` 仍返回该条、`write_state='done'`、
     图库里 1 个节点。修复后：节点数 0、时间线空。
 
-    判别性：去掉 `write_episode` 里的补偿删除（`DETACH DELETE e`），本用例会失败。
+    判别性：去掉 `write_episode` 的**完成标记**（第三步的 `SET e.write_state`）与读路径的
+    标记过滤，本用例会失败——即不变量落在数据与查询上，而不是「补偿一定跑得到」。
     """
     from campfire.modules.memory.errors import MemoryUnavailableError
     from campfire.modules.memory.identity import PendingId, derive_episode_uuid
@@ -424,7 +425,7 @@ async def test_failed_write_leaves_no_readable_episode(memory_graph: MemoryGraph
         finally:
             memory_graph.graphiti.add_episode = original  # type: ignore[method-assign]
 
-        # 图库里不得残留该节点。
+        # 图库里不得残留该节点（补偿删除仍应尽力清理）。
         scoped = memory_graph.driver_for(_ACCOUNT)
         rows, _, _ = await scoped.execute_query("MATCH (e:Episodic {uuid: $uuid}) RETURN count(e) AS c", uuid=key)
         assert rows[0]["c"] == 0, "抽取失败后不得留下半写节点"
@@ -432,6 +433,89 @@ async def test_failed_write_leaves_no_readable_episode(memory_graph: MemoryGraph
         # 读路径也不得返回它（这才是契约的可观察面）。
         timeline = await read_timeline(memory_graph, to_account_id(_ACCOUNT), deleted_keys=[])
         assert timeline == [], "从未成功写入的记忆不得出现在时间线里"
+    finally:
+        await _clear()
+
+
+@pytest.mark.asyncio
+async def test_hard_kill_leftover_is_unreadable_by_both_paths(memory_graph: MemoryGraph) -> None:
+    """**硬杀（无任何清理机会）遗留的半写数据，两条读路径都不得返回**。
+
+    这是 C-1 修复的核心判别（2026-09-29 评审阻断级，独立复现）：此前「已写入」的判据是
+    「图库里存在 episode 节点」，靠失败时的补偿删除维持。**进程被 SIGKILL / 部署重启时
+    补偿代码根本不执行**，节点永久残留并被当成已写入返回。
+
+    本用例不模拟异常，而是**真的制造「预建完成、抽取未完成」的持久状态**（把
+    `add_episode` 换成「写入派生物后抛错」，再手动清掉 episode 节点以模拟硬杀后
+    无人清理的现场），然后断言：
+    - 时间线不返回它；
+    - **引用它的派生事实也不被注入**（`add_episode` 可能已写入实体与边，
+      `DETACH DELETE e` 删不掉它们——实测残留实体 2 个/边 1 条）。
+
+    判别性：去掉读路径的 `write_state` 过滤，本用例失败。
+    """
+    from campfire.modules.memory.derived import read_emergency_facts
+    from campfire.modules.memory.identity import PendingId, derive_episode_uuid
+    from campfire.modules.memory.store import write_episode
+
+    await _clear()
+    now = datetime.now(timezone.utc)
+    key = derive_episode_uuid(PendingId("hardkill-regression"))
+    scoped = memory_graph.driver_for(to_account_id(_ACCOUNT))
+    try:
+
+        async def _partial(**_kwargs):  # noqa: ANN202
+            # 模拟「派生物已落库，随后进程消失」：边引用本 episode。
+            await scoped.execute_query(
+                """
+                MERGE (a:Entity {uuid: 'hk-a'}) SET a.name = '小明', a.group_id = $g
+                MERGE (b:Entity {uuid: 'hk-b'}) SET b.name = '跑步', b.group_id = $g
+                MERGE (a)-[e:RELATES_TO {uuid: 'hk-e'}]->(b)
+                SET e.group_id = $g, e.name = 'REL', e.fact = '小明喜欢跑步',
+                    e.valid_at = $t, e.created_at = $t, e.episodes = [$ep]
+                """,
+                g=_ACCOUNT,
+                t=now.isoformat(),
+                ep=key,
+            )
+            raise RuntimeError("进程在此刻消失（后续清理永不执行）")
+
+        original = memory_graph.graphiti.add_episode
+        memory_graph.graphiti.add_episode = _partial  # type: ignore[method-assign]
+        try:
+            with pytest.raises(MemoryUnavailableError):
+                await write_episode(
+                    memory_graph,
+                    to_account_id(_ACCOUNT),
+                    key,
+                    content="硬杀遗留的那条",
+                    occurred_at=now,
+                    source_description="session=hk",
+                )
+        finally:
+            memory_graph.graphiti.add_episode = original  # type: ignore[method-assign]
+
+        # 先把 episode 节点恢复成「未完成」以忠实模拟硬杀现场（补偿删除已把它清掉，
+        # 但真实硬杀时它仍在且无完成标记）。这里直接重建一个**无完成标记**的节点，
+        # 正是硬杀后会留下的形状。
+        await scoped.execute_query(
+            """
+            MERGE (e:Episodic {uuid: $u})
+            SET e.name = 'memory', e.group_id = $g, e.content = '硬杀遗留的那条',
+                e.valid_at = $t, e.created_at = $t, e.write_state = $pending
+            """,
+            u=key,
+            g=_ACCOUNT,
+            t=now.isoformat(),
+            pending=EPISODE_WRITE_STATE_PENDING,
+        )
+
+        # 两条读路径都必须看不见它。
+        timeline = await read_timeline(memory_graph, to_account_id(_ACCOUNT), deleted_keys=[])
+        assert timeline == [], "硬杀遗留的半写 episode 不得出现在时间线"
+
+        facts = await read_emergency_facts(memory_graph, to_account_id(_ACCOUNT), deleted_keys=[])
+        assert facts.facts == [], f"引用未完成 episode 的派生事实不得被注入，实际注入 {[f.fact for f in facts.facts]}"
     finally:
         await _clear()
 

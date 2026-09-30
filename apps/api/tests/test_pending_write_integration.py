@@ -477,6 +477,247 @@ async def test_unfinished_states_are_not_treated_as_written() -> None:
 
 
 @pytest.mark.asyncio
+async def test_reclaim_does_not_revive_a_terminated_record() -> None:
+    """回收**不得把已终结的记录改回 `pending`**（2026-09-29 评审 C-2，实测复现）。
+
+    缺陷：`reclaim_expired_leases` 的 `SELECT`（选候选）与 `UPDATE`（改状态）之间是真实
+    窗口，而 `UPDATE` 此前**没有 state 守卫**。若另一事务在窗口内把记录置成 `done`，
+    回收会把它改回 `pending`（且 `finished_at` 仍保留，形成 `pending` + `finished_at`
+    非空的自相矛盾行），随后被**再次领取**——同一条记忆抽取两次。
+
+    **怎么做到确定性复现**：这是一个多语句窗口，单纯「先置 done 再回收」是**测不出**的
+    （`SELECT` 本来就只选 `processing`，压根不会把 done 选进来——我第一版就是这么写的，
+    消融验证它不判别）。因此这里用 SQL 事件钩子**在回收的 UPDATE 语句执行前**把该行改成
+    `done`，精确模拟「另一个事务在窗口内提交了终结」这一时序，从而真正走到那条 UPDATE。
+
+    判别性：去掉 `UPDATE` 的 `PendingWrite.state == STATE_PROCESSING` 守卫，本用例失败
+    （记录被改回 `pending`）。
+    """
+    from sqlalchemy import event
+
+    from campfire.core.db import get_engine
+
+    await _clear()
+    try:
+        base = datetime.now(timezone.utc)
+        pending_id = await _enqueue_memory()
+        # 制造「租约已过期」的 processing 行——它会进入回收的候选集。
+        async with session_scope(get_settings()) as session:
+            await take_for_processing(session, pending_id=pending_id, lease_owner="A", now=base)
+
+        later = base + timedelta(seconds=LEASE_SECONDS_FOR_TEST + 1)
+        engine = get_engine(get_settings())
+        fired = {"count": 0}
+
+        def _terminate_right_before_reclaim(conn, _cursor, statement, _params, _ctx, _many):  # noqa: ANN001
+            """在**本用例那条**回收 UPDATE 执行前，模拟另一事务把它终结。
+
+            必须按 id 过滤：`before_cursor_execute` 是引擎级钩子，同文件内其它测试
+            的 UPDATE 也会触发它（第一版没过滤，**全量跑时误命中别的语句而失败**，
+            单跑却通过——典型的「只在自己那条语句上成立」的陷阱）。
+            """
+            normalized = " ".join(str(statement).split()).upper()
+            if (
+                fired["count"] == 0
+                and normalized.startswith("UPDATE CAMPFIRE_PENDING_WRITE")
+                and "SET STATE" in normalized
+            ):
+                fired["count"] += 1
+                # asyncpg 的占位符是 `$1`（不是 `%s`）。
+                conn.exec_driver_sql(
+                    "UPDATE campfire_pending_write SET state = 'done', finished_at = now() WHERE id = $1",
+                    (str(pending_id),),
+                )
+
+        event.listen(engine.sync_engine, "before_cursor_execute", _terminate_right_before_reclaim)
+        try:
+            async with session_scope(get_settings()) as session:
+                reclaimed = await reclaim_expired_leases(session, now=later)
+        finally:
+            event.remove(engine.sync_engine, "before_cursor_execute", _terminate_right_before_reclaim)
+
+        assert fired["count"] == 1, "钩子未触发——本用例没有真的走到回收的 UPDATE（断言会失去判别力）"
+
+        async with session_scope(get_settings()) as session:
+            row = (await session.execute(select(PendingWrite).where(PendingWrite.id == pending_id))).scalar_one()
+        assert row.state == STATE_DONE, f"已 done 的记录被回收改成了 {row.state!r}——它会被再次领取，同一记忆抽取两次"
+        assert pending_id not in reclaimed, "被终结的记录不得出现在回收结果里"
+    finally:
+        await _clear()
+
+
+@pytest.mark.asyncio
+async def test_lease_fence_rejects_a_late_writer() -> None:
+    """**迟到响应不得改变状态**（CORE-03；2026-09-29 评审 C-3，实测复现）。
+
+    序列：A 领取 → 租约过期 → B 重领 → A 迟到调 `mark_done`。
+    缺陷：`mark_done` 此前不比对 `lease_owner`，A 会抢先成功，而**真正写入者 B 的终结
+    反而抛 `PendingWriteNotFoundError`**——制造一个假失败。
+
+    判别性：去掉 `mark_done` 的 `lease_owner` 栅栏，本用例的第一段断言失败。
+    """
+    await _clear()
+    try:
+        base = datetime.now(timezone.utc)
+        pending_id = await _enqueue_memory()
+
+        async with session_scope(get_settings()) as session:
+            await take_for_processing(session, pending_id=pending_id, lease_owner="A", now=base)
+
+        later = base + timedelta(seconds=LEASE_SECONDS_FOR_TEST + 1)
+        async with session_scope(get_settings()) as session:
+            await reclaim_expired_leases(session, now=later)
+        async with session_scope(get_settings()) as session:
+            claimed = await take_for_processing(session, pending_id=pending_id, lease_owner="B", now=later)
+        assert claimed is not None and claimed.lease_owner == "B"
+
+        # A 迟到终结 → 必须被拒。
+        async with session_scope(get_settings()) as session:
+            with pytest.raises(PendingWriteNotFoundError):
+                await mark_done(session, pending_id=pending_id, lease_owner="A")
+
+        # B 的终结仍必须成功（真写入者不被迟到者挤掉）。
+        async with session_scope(get_settings()) as session:
+            done = await mark_done(session, pending_id=pending_id, lease_owner="B")
+        assert done.state == STATE_DONE
+
+        # 不带栅栏时不校验持有者（兼容既有调用方）。
+        async with session_scope(get_settings()) as session:
+            with pytest.raises(PendingWriteNotFoundError):
+                await mark_done(session, pending_id=pending_id)
+    finally:
+        await _clear()
+
+
+@pytest.mark.asyncio
+async def test_terminal_states_clear_next_attempt_at() -> None:
+    """终态必须清掉 `next_attempt_at`（2026-09-29 评审 C-6）。
+
+    留着过期的退避时刻会让排查误判「这条还会重试」。覆盖 `done` 与 `dead` 两条路径。
+    """
+    await _clear()
+    try:
+        # done 路径：先失败一次（设了退避），再把时间推到退避之后重新领取并成功。
+        # 两个要点：① `mark_retryable_failure` 会清掉租约（回 pending 等退避），
+        # 所以必须重新领取；② `next_attempt_at` 在退避期内会**正确地**挡住领取，
+        # 因此 `now` 要越过退避（1 分钟）。
+        first = await _enqueue_memory()
+        base = datetime.now(timezone.utc)
+        async with session_scope(get_settings()) as session:
+            await take_for_processing(session, pending_id=first, lease_owner="w", now=base)
+        async with session_scope(get_settings()) as session:
+            await mark_retryable_failure(session, pending_id=first, error="临时失败", now=base)
+        after_backoff = base + timedelta(minutes=5)
+        async with session_scope(get_settings()) as session:
+            await take_for_processing(session, pending_id=first, lease_owner="w", now=after_backoff)
+        async with session_scope(get_settings()) as session:
+            done = await mark_done(session, pending_id=first, lease_owner="w", now=after_backoff)
+        assert done.next_attempt_at is None, "done 是终态，不得留下退避时刻"
+
+        # dead 路径：先失败一次（设了退避），再转 dead。
+        second = await _enqueue_memory()
+        async with session_scope(get_settings()) as session:
+            await take_for_processing(session, pending_id=second, lease_owner="w2", now=base)
+        async with session_scope(get_settings()) as session:
+            await mark_retryable_failure(session, pending_id=second, error="临时失败", now=base)
+        async with session_scope(get_settings()) as session:
+            dead = await mark_dead(session, pending_id=second, error="放弃", now=base)
+        assert dead.next_attempt_at is None, "dead 是终态，不得留下退避时刻"
+    finally:
+        await _clear()
+
+
+@pytest.mark.asyncio
+async def test_enqueue_rejects_an_overlong_account_id() -> None:
+    """超长 `account_id` 必须给出**领域异常**，而不是裸 `DBAPIError`（C-4）。
+
+    缺陷（2026-09-29 评审 C-4 实测）：`enqueue` 此前只判空，129 字符会一路走到 INSERT
+    才由 PostgreSQL 抛 `DBAPIError`——调用方拿到驱动异常，也看不出哪个字段超宽。
+    """
+    await _clear()
+    try:
+        async with session_scope(get_settings()) as session:
+            with pytest.raises(InsufficientPayloadError, match="字符上界"):
+                await enqueue(
+                    session,
+                    kind="memory_episode",
+                    account_id="a" * 129,
+                    origin="user_statement",
+                    payload={"content": "x", "occurred_at": datetime.now(timezone.utc).isoformat()},
+                    source={"session_id": "s"},
+                )
+        # 恰好 128 应被接受（边界闭区间）。用独立会话，且直接清理该行。
+        exact = "a" * 128
+        async with session_scope(get_settings()) as session:
+            await enqueue(
+                session,
+                kind="memory_episode",
+                account_id=exact,
+                origin="user_statement",
+                payload={"content": "x", "occurred_at": datetime.now(timezone.utc).isoformat()},
+                source={"session_id": "s"},
+            )
+        async with session_scope(get_settings()) as session:
+            count = (
+                await session.execute(
+                    select(func.count()).select_from(PendingWrite).where(PendingWrite.account_id == exact)
+                )
+            ).scalar_one()
+        assert count == 1, "恰好 128 字符的 account_id 应能落库"
+        async with session_scope(get_settings()) as session:
+            await session.execute(delete(PendingWrite).where(PendingWrite.account_id == exact))
+    finally:
+        await _clear()
+
+
+@pytest.mark.asyncio
+async def test_reclaim_limit_is_converged_to_a_server_cap() -> None:
+    """回收的 `limit` 必须收敛到服务端上界（CORE-11；2026-09-29 评审 R-3）。
+
+    缺陷：此前只做 `max(1, limit)`，**没有上界**——实测 `limit=10**9` 被原样放进 SQL。
+    同仓 `store.read_timeline` 与 `derived.read_emergency_facts` 都已收敛，回收漏了。
+
+    判别性：去掉 `min(limit, RECLAIM_MAX_LIMIT)`，本用例的 SQL 参数断言失败。
+    """
+    from campfire.core.pending_write.repository import RECLAIM_MAX_LIMIT
+
+    await _clear()
+    try:
+        base = datetime.now(timezone.utc)
+        pending_id = await _enqueue_memory()
+        async with session_scope(get_settings()) as session:
+            await take_for_processing(session, pending_id=pending_id, lease_owner="w", now=base)
+
+        later = base + timedelta(seconds=LEASE_SECONDS_FOR_TEST + 1)
+
+        # 拦截实际发给数据库的 LIMIT。
+        captured: list[object] = []
+        from sqlalchemy import event
+
+        from campfire.core.db import get_engine
+
+        engine = get_engine(get_settings())
+
+        def _before_execute(_conn, _cursor, statement, parameters, _context, _many):  # noqa: ANN001
+            captured.append((statement, parameters))
+
+        event.listen(engine.sync_engine, "before_cursor_execute", _before_execute)
+        try:
+            async with session_scope(get_settings()) as session:
+                await reclaim_expired_leases(session, now=later, limit=10**9)
+        finally:
+            event.remove(engine.sync_engine, "before_cursor_execute", _before_execute)
+
+        select_params = [p for s, p in captured if "campfire_pending_write" in str(s) and "LIMIT" in str(s).upper()]
+        assert select_params, "未捕获到回收的 SELECT"
+        supplied = select_params[0]
+        limit_value = supplied.get("param_1") if isinstance(supplied, dict) else supplied[-1]
+        assert limit_value == RECLAIM_MAX_LIMIT, f"limit=10**9 应被收敛为 {RECLAIM_MAX_LIMIT}，实际传入 {limit_value!r}"
+    finally:
+        await _clear()
+
+
+@pytest.mark.asyncio
 async def test_cleanup_leaves_no_rows() -> None:
     """自检：清理后本账号无残留（避免给其它测试留下脏数据）。"""
     await _clear()

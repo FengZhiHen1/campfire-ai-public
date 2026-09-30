@@ -53,15 +53,26 @@ ORIGINS: frozenset[str] = frozenset(
     }
 )
 
+#: 账号标识的**列宽**（与 `identity.MAX_ACCOUNT_ID_LENGTH` 一致）。
+#: 定义在本层（而不是 import 业务模块）的原因见 `PendingWrite.account_id` 的说明。
+MAX_ACCOUNT_ID_LENGTH = 128
+
 STATE_PENDING = "pending"
 STATE_PROCESSING = "processing"
 STATE_DONE = "done"
+#: **当前无产生者**（2026-09-29 评审 R-1 实测：全仓生产代码与测试无一处写入 `failed`）。
+#: 保留原因：设计第 3 节的词表列了它，而第 6 节规定「可重试失败回 `pending`」——
+#: **两者本身不一致**，删掉它需要先改设计词表并落一次 CHECK 迁移（改共享表 schema，
+#: 超出本轮范围）。此处如实标注「无产生者」，不做静默清理。
+#: 影响：`UNFINISHED_STATES` 含它、`claimable` 视它为可领，因此**历史数据**里若出现
+#: `failed` 会被当作可重试——这是安全的（它不是 `done`，不会被当成写入成功）。
+#: 待办：定夺其产生者或从词表删除，登记于 TODO `TECH-22`。
 STATE_FAILED = "failed"
 STATE_DEAD = "dead"
 STATES: frozenset[str] = frozenset({STATE_PENDING, STATE_PROCESSING, STATE_DONE, STATE_FAILED, STATE_DEAD})
 
-#: 尚未终结的状态（可被重新领取/重试）。`failed` 表示「刚失败、等待退避重试」，
-#: 与 `pending` 的区别只是可诊断性，**都还不是写入成功**。
+#: 尚未终结的状态（可被重新领取/重试）。它们**都还不是写入成功**——这是核心不变量
+#: 在词表上的表达：只有 `done` 不在本集合里。
 UNFINISHED_STATES: frozenset[str] = frozenset({STATE_PENDING, STATE_PROCESSING, STATE_FAILED})
 
 #: 用于 `CHECK` 的 SQL 字面量。**从上面的集合派生**，避免两份清单漂移；排序保证文本稳定。
@@ -85,7 +96,12 @@ class PendingWrite(Base):
     #: 记录种类，决定消费路径与归属字段要求（见下方 `support_object_id`）。
     kind: Mapped[str] = mapped_column(String(32), nullable=False)
     #: 发起者。**记忆的分区键即此值**（`group_id = account_id`，第 3 节）。
-    account_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    #: 宽度与 `identity.MAX_ACCOUNT_ID_LENGTH` 一致。**形状判据不在本层**：账号键的
+    #: 合法来源是 Graphiti 的 `^[a-zA-Z0-9_-]+$`，而本包是 profile 与 memory **共用**
+    #: 的事实表，不得依赖任一业务模块（依赖白名单：`core/*` 只能依赖 `core/*`）。
+    #: 因此本层只保证「**落库不会因超宽而抛裸 `DBAPIError`**」（见 `enqueue` 的长度校验），
+    #: 形状校验由各自的业务模块在入口做（memory 侧是 `identity.to_account_id`）。
+    account_id: Mapped[str] = mapped_column(String(MAX_ACCOUNT_ID_LENGTH), nullable=False)
     #: 归属支持对象。**仅 `profile_item` 需要**；`memory_episode` 必须为空
     #: （记忆属账号，不随对象分区——见[通用记忆](../../../../../../docs/技术设计/technical-details/通用记忆.md)第 1 节）。
     #: 该「按 kind 区分必填/可空」的判据**由 CHECK 约束在存储层承载**：
