@@ -45,6 +45,22 @@ pytestmark = pytest.mark.integration
 _ACCOUNT = "it_mem_del_account"
 
 
+async def _read_timeline(graph, account, **kwargs):  # noqa: ANN001, ANN003, ANN201
+    """调**公开**读入口（自动开会话取删除账本）。
+
+    2026-09-30 起读入口只收 `session`——「已删清单」由函数内部取，调用方无法漏传或
+    传空（此前传空列表会静默返回已删记忆）。本助手只替测试开会话，不绕过过滤。
+    """
+    async with session_scope(get_settings()) as session:
+        return await read_timeline(session, graph, to_account_id(account), **kwargs)
+
+
+async def _read_emergency_facts(graph, account, **kwargs):  # noqa: ANN001, ANN003, ANN201
+    """调**公开**应急读入口（同上）。"""
+    async with session_scope(get_settings()) as session:
+        return await read_emergency_facts(session, graph, to_account_id(account), **kwargs)
+
+
 @pytest_asyncio.fixture(autouse=True)
 async def _require_database() -> AsyncIterator[None]:
     """未配置 `DATABASE_URL` 时跳过——**不假装通过**。
@@ -202,21 +218,25 @@ async def test_deletion_removes_memory_from_both_read_paths(memory_graph: Memory
         )
 
         # 前置条件：删除前两条路径都能看到。
-        assert len(await read_timeline(memory_graph, to_account_id(_ACCOUNT), deleted_keys=[])) == 2
+        assert len(await _read_timeline(memory_graph, _ACCOUNT)) == 2
 
         async with session_scope(get_settings()) as session:
             result = await delete_episode(session, account_id=to_account_id(_ACCOUNT), episode_key=doomed)
         assert result.newly_deleted is True
         assert result.reason == "user_request"
 
-        # 删除后：用账本做过滤（这是两条读路径的真实用法）。
+        # 删除后：读路径自己取账本过滤（这是两条读路径的真实用法）。
+        # 这里**额外断言账本真的记了**——否则「读路径返回空」可能因为别的原因，
+        # 用例会变成假阳性（2026-09-30 改造：此前是手动取 keys 再传给读函数，
+        # 现在读函数自己取，因此把「账本有这一行」改成显式断言）。
         async with session_scope(get_settings()) as session:
             deleted_keys = await deleted_episode_keys(session, _ACCOUNT)
+        assert deleted_keys, "删除后账本应有记录（否则下面的断言不成立）"
 
-        timeline = await read_timeline(memory_graph, to_account_id(_ACCOUNT), deleted_keys=deleted_keys)
+        timeline = await _read_timeline(memory_graph, _ACCOUNT)
         assert [e.content for e in timeline] == ["保留的记忆"], "时间线仍返回已删除的记忆"
 
-        facts = await read_emergency_facts(memory_graph, to_account_id(_ACCOUNT), deleted_keys=deleted_keys)
+        facts = await _read_emergency_facts(memory_graph, _ACCOUNT)
         fact_texts = [f.fact for f in facts.facts]
         assert fact_texts == ["只引用保留记忆的事实"], "应急预注入仍返回引用已删记忆的派生事实"
     finally:
@@ -269,7 +289,8 @@ async def test_deletion_survives_graph_unavailability_by_design(memory_graph: Me
 
         async with session_scope(get_settings()) as session:
             deleted_keys = await deleted_episode_keys(session, _ACCOUNT)
-        timeline = await read_timeline(memory_graph, to_account_id(_ACCOUNT), deleted_keys=deleted_keys)
+        assert deleted_keys, "账本应有记录（否则下面的断言不成立）"
+        timeline = await _read_timeline(memory_graph, _ACCOUNT)
         assert timeline == [], "账本已记录删除，图库残留不得让读路径返回它"
     finally:
         await _clear_ledger()
@@ -305,11 +326,12 @@ async def test_correction_withdraws_the_old_episode_from_both_paths(memory_graph
 
         async with session_scope(get_settings()) as session:
             deleted_keys = await deleted_episode_keys(session, _ACCOUNT)
+        assert deleted_keys, "纠正后账本应有记录（否则下面的断言不成立）"
 
-        timeline = await read_timeline(memory_graph, to_account_id(_ACCOUNT), deleted_keys=deleted_keys)
+        timeline = await _read_timeline(memory_graph, _ACCOUNT)
         assert timeline == [], "被纠正的旧原文不得再出现在时间线"
 
-        facts = await read_emergency_facts(memory_graph, to_account_id(_ACCOUNT), deleted_keys=deleted_keys)
+        facts = await _read_emergency_facts(memory_graph, _ACCOUNT)
         assert [f.fact for f in facts.facts] == [], (
             "引用被纠正旧记忆的派生事实仍在注入——旧边不会自动失效，必须靠账本过滤"
         )
@@ -368,11 +390,11 @@ async def test_deletion_is_isolated_between_accounts(memory_graph: MemoryGraph) 
         assert other_deleted == [], "本次删除不得在另一账号的账本里留下记录"
 
         # 本账号：删掉的不再返回。
-        timeline = await read_timeline(memory_graph, to_account_id(_ACCOUNT), deleted_keys=my_deleted)
+        timeline = await _read_timeline(memory_graph, _ACCOUNT)
         assert timeline == [], "本账号已删的记忆不得返回"
 
         # 另一账号：**不受影响**（用它自己的账本读它自己的图）。
-        other_timeline = await read_timeline(memory_graph, to_account_id(other), deleted_keys=other_deleted)
+        other_timeline = await _read_timeline(memory_graph, other)
         assert [e.content for e in other_timeline] == ["另一账号的记忆"], "删本账号的记忆不得影响另一账号"
 
         # 清理另一账号的图与账本

@@ -52,8 +52,11 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import TYPE_CHECKING
 
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from campfire.modules.memory.errors import MemoryDataError, MemoryUnavailableError
 from campfire.modules.memory.identity import AccountId
+from campfire.modules.memory.ledger import deleted_episode_keys
 from campfire.modules.memory.store import EPISODE_WRITE_STATE_DONE, parse_db_datetime
 
 if TYPE_CHECKING:
@@ -113,20 +116,22 @@ class EmergencyMemory:
 
 
 async def read_emergency_facts(
+    session: AsyncSession,
     graph: MemoryGraph,
     account_id: AccountId,
     *,
-    deleted_keys: list[str],
     limit: int = EMERGENCY_MEMORY_LIMIT,
     char_budget: int = EMERGENCY_MEMORY_CHARS,
 ) -> EmergencyMemory:
     """取「当前有效」的派生事实，按时效过滤，供应急预注入。
 
+    **删除过滤的取数在本函数内完成**（2026-09-30 裁决，见通用记忆第 7 节）：调用方
+    **不传**「已删清单」，因此不存在「漏传导致已删记忆的派生事实被注入」的实现路径。
+
     Args:
+        session: 关系库会话（用于取该账号的删除账本）。
         graph: 记忆图库句柄（本函数自行切到账号那张图，并复用装配层的驱动缓存）。
         account_id: 分区键，由登录态决定。
-        deleted_keys: 该账号已删除的 episode key；**引用这些 episode 的边一律排除**
-            （第 7 节的多来源边判据）。
         limit: 条数上限。
         char_budget: 字符总量上限。
 
@@ -135,6 +140,29 @@ async def read_emergency_facts(
 
     Raises:
         MemoryUnavailableError: 图库查询失败（与"没有记忆"严格区分）。
+        MemoryDataError: 取回的数据不合法（缺 `fact` 文本），
+            或该账号的删除账本**超过上界**而无法完整排除已删内容。
+    """
+    # 取账本：必须在图库查询之前，且在本函数内完成（本函数是唯一公开入口）。
+    deleted_keys = await deleted_episode_keys(session, account_id)
+
+    return await _read_emergency_facts(
+        graph, account_id, deleted_keys=deleted_keys, limit=limit, char_budget=char_budget
+    )
+
+
+async def _read_emergency_facts(
+    graph: MemoryGraph,
+    account_id: AccountId,
+    *,
+    deleted_keys: list[str],
+    limit: int = EMERGENCY_MEMORY_LIMIT,
+    char_budget: int = EMERGENCY_MEMORY_CHARS,
+) -> EmergencyMemory:
+    """应急取数的**内部实现**：已拿到 `deleted_keys`，只管查图库（见 `store._read_timeline` 的同类说明）。
+
+    Raises:
+        MemoryUnavailableError: 图库查询失败。
         MemoryDataError: 取回的数据不合法（缺 `fact` 文本）。
     """
     conditions = ["e.group_id = $group_id", "e.invalid_at IS NULL"]
