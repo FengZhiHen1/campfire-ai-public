@@ -97,4 +97,9 @@
   --section-y-desktop: 112px;
   --section-y-tablet: 80px;
   --section-y-phone: 56px;
+
+  /* ─── 手机蒙版（仅手机端定调的契约级布局 token） ────────────────
+   * 平板/PC 视口下内容容器以 --phone-shell-max 居中，容器外为
+   * --surface-warm 蒙版底（DESIGN.md 全局定调 2026-10-06）。 */
+  --phone-shell-max: 480px;
 }
