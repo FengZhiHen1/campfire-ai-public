@@ -74,9 +74,17 @@ async def dispatch_pending_write(pending_id: str, kind: str) -> None:
         return
     try:
         await _dispatch_hook(pending_id, kind)
-    except Exception:  # noqa: BLE001 —— 投递失败由兜底扫描补救，不改变本次回执
+    except Exception as exc:  # noqa: BLE001 —— 投递失败由兜底扫描补救，不改变本次回执
         # 只记标识与异常类型：异常消息可能带连接串（AGENTS.md 安全条款）。
-        logger.warning("投递失败，记录留给兜底扫描：pending_id=%s kind=%s", pending_id, kind)
+        # 类型名是归因所需的最小信息：broker 未启动、Redis 连接被拒、队列名写错
+        # 都表现为同一条「投递失败」，没有类型名就分不出是哪一类。
+        # 不复述异常消息、也不带 exc_info——消息与回溯都可能含连接串。
+        logger.warning(
+            "投递失败，记录留给兜底扫描：pending_id=%s kind=%s 异常类型=%s",
+            pending_id,
+            kind,
+            type(exc).__name__,
+        )
 
 
 def build_broker(settings: Settings) -> ListQueueBroker:

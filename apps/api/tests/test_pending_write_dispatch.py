@@ -113,6 +113,41 @@ async def test_the_delivery_contract_carries_the_kind() -> None:
     assert seen == [("00000000-0000-4000-8000-00000000000c", KIND_PROFILE_ITEM)]
 
 
+@pytest.mark.asyncio
+async def test_a_failed_delivery_logs_the_exception_type_without_the_message(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """投递失败留下的 warning 必须可归因：带 pending_id、kind 与**异常类型**。
+
+    判别性：把格式串里的 `type(exc).__name__` 去掉，本用例失败——那正是修复前的
+    形态（注释声称记了异常类型，实际两者都没有）。没有类型名就分不出
+    「broker 未启动」「Redis 连接被拒」「队列名写错」，而这三种归因的处置完全不同。
+
+    同时钉住安全侧：异常**消息**不得进日志（AGENTS.md：日志不复述连接串），
+    因此实现只记类型名、也不带 `exc_info`。
+    """
+
+    class _BrokerDown(Exception):
+        pass
+
+    async def _explode(_pending_id: str, _kind: str) -> None:
+        raise _BrokerDown("redis://user:secret@host:6379/0 连接被拒")
+
+    pending_id = "00000000-0000-4000-8000-00000000000e"
+    set_dispatch_hook(_explode)
+    try:
+        with caplog.at_level(logging.WARNING):
+            await dispatch_pending_write(pending_id, KIND_MEMORY_EPISODE)
+    finally:
+        set_dispatch_hook(None)
+
+    assert pending_id in caplog.text and KIND_MEMORY_EPISODE in caplog.text, (
+        f"投递失败必须指名道姓（pending_id 与 kind），实际日志={caplog.text!r}"
+    )
+    assert "_BrokerDown" in caplog.text, f"warning 必须带异常类型，实际日志={caplog.text!r}"
+    assert "secret" not in caplog.text, f"异常消息可能带连接串，不得进日志，实际日志={caplog.text!r}"
+
+
 def test_api_entry_installs_the_dispatch_hook(monkeypatch: pytest.MonkeyPatch) -> None:
     """API 入口必须注入投递钩子（写入路径第 4 节第 1 条：请求事务提交后再投递）。
 
