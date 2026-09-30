@@ -197,14 +197,87 @@ def test_convert_without_title_flag_keeps_the_page_metadata(tmp_path: object) ->
 
 # ---------------------------------------------------------------- 运营子命令
 #
-# 以下用例不连库、不连 core（SDK 调用被拦截在装配层之外），钉的是
-# 2026-10-01 审查发现的两个 CLI 真实缺陷：account 子命令不初始化 SDK、
-# `purgers` 传的是工厂函数而不是它返回的列表。
+# 以下用例不连库、不连 core（SDK 调用被拦截在装配层之外）。account 子命令的两条钉的是
+# 2026-10-01 审查发现的真实缺陷：不初始化 SDK、`purgers` 传的是工厂函数而不是它返回的
+# 列表；invite 的两条钉的是「有效期不得由命令行指定」——30 天是设计定值（第 4 节）。
 
 
 def _operator_parser():
     """构造带运营子命令的解析器（复用入口的真解析器，不另写一份）。"""
     return _build_parser()
+
+
+def test_invite_issue_has_no_ttl_option(capsys: pytest.CaptureFixture[str]) -> None:
+    """``invite issue`` 不接受有效期参数：30 天是设计定值（第 4 节）。
+
+    为什么删而不是加范围校验：设计把有效期钉在 30 天（认证与账号 :68「8 位随机、
+    一次性使用、有效期 30 天」，:49「签发时按 30 天计」），第 7 节的子命令表也只写
+    ``invite issue`` 而没有参数。保留一个可指定有效期的开关，就要为它发明一套
+    区间政策；而它唯一能带来的额外能力（缩短有效期）没有任何出处。
+
+    判别性：把 ``--days`` 加回去，本用例失败（解析不再抛 ``SystemExit``）。
+    """
+    with pytest.raises(SystemExit) as excinfo:
+        _operator_parser().parse_args(["invite", "issue", "--days", "0"])
+
+    captured = capsys.readouterr()
+    assert excinfo.value.code == 2, f"参数错误必须非零退出，实际 {excinfo.value.code}"
+    assert "unrecognized arguments" in captured.err, f"须明确说参数不被接受，实际 {captured.err!r}"
+    assert "--days" in captured.err, f"须指名被拒的参数，实际 {captured.err!r}"
+
+
+def test_invite_issue_does_not_override_the_ttl(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """签发不覆盖有效期：CLI 不给领域传有效期入参，回执打印的是设计定值。
+
+    为什么必须有这一条：``--days`` 移除后，若调用处仍写着 ``ttl_days=args.days``，
+    上面的参数解析用例**看不出来**（``--days`` 已不被接受）；真实运行会先在
+    ``args.days`` 上抛 ``AttributeError``——即「改了参数层、忘了改调用层」。
+
+    判别性：把 ``ttl_days=...`` 传回去，断言失败；把回执改回 ``args.days``，
+    本用例在打印那一行就崩。
+
+    库层（``session_scope``）与领域函数都用假件替身——本用例钉的是调用形状与回执，
+    不连库。
+    """
+    import asyncio
+
+    from campfire.cli import operator
+    from campfire.modules.accounts import INVITE_CODE_TTL_DAYS
+
+    calls: list[dict[str, object]] = []
+
+    class _FakeRecord:
+        #: 形状与 `_print_invite_row` 的读取方式一致（它按属性取，取不到就显示占位符）。
+        code = "ABCD2345"
+        state = "issued"
+        expires_at = None
+        used_by_account_id = None
+
+    async def fake_issue(session, **kwargs):
+        calls.append(kwargs)
+        return _FakeRecord()
+
+    class _NullSession:
+        async def __aenter__(self):
+            return object()
+
+        async def __aexit__(self, *exc_info):
+            return False
+
+    monkeypatch.setattr(operator, "session_scope", lambda settings: _NullSession())
+    # operator.py 是 `from ... import issue_invite_code` 直接导入名字，
+    # 必须拦在 operator 模块的命名空间上（拦 repository 模块属性对它无效）。
+    monkeypatch.setattr(operator, "issue_invite_code", fake_issue)
+
+    code = asyncio.run(operator._run_invite_issue(_operator_parser().parse_args(["invite", "issue"])))
+
+    captured = capsys.readouterr()
+    assert code == 0, f"签发成功路径必须返回 0，实际 {code}（stderr={captured.err!r}）"
+    assert calls, "领域函数必须被调用一次"
+    assert "ttl_days" not in calls[0], f"CLI 不得覆盖设计定值，实际传入 {calls[0]!r}"
+    assert f"有效期：{INVITE_CODE_TTL_DAYS} 天" in captured.out, f"回执须给出有效期，实际 {captured.out!r}"
 
 
 def test_account_delete_initializes_the_sdk(monkeypatch: pytest.MonkeyPatch) -> None:
