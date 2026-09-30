@@ -53,44 +53,52 @@ const COPY = {
 export function HomePage() {
   return (
     <AppShell tab="home">
-      <header className="page-head">
-        <span className={styles.brandRow}>
-          <BrandMark size="1em" />
-          <h1 className={styles.title}>{COPY.title}</h1>
-        </span>
-      </header>
+      <div className={styles.page}>
+        <header className="page-head">
+          <span className={styles.brandRow}>
+            <BrandMark size="1em" />
+            <h1 className={styles.title}>{COPY.title}</h1>
+          </span>
+        </header>
 
-      {/* 应急入口：本页唯一 accent 重量级使用（描边 + 呼吸点 + 主按钮属同一强调单元）。 */}
-      <article className={`panel emergency-entry ${styles.emergency}`}>
-        <div className="entry-title">
-          <span className="flame-dot breathing" aria-hidden="true" />
-          <h2 className={styles.entryHeading}>{COPY.emergencyTitle}</h2>
+        {/* 应急与日常入口合成一组：设计要求这两条之间用 --space-4、其余区块用 --space-6
+         * （首页.md:21）。gap 是容器级属性、无法逐对设置，因此把这对入口放进一个 gap
+         * 更紧的组里，组外仍由 .page 的 --space-6 拉开——两组距离的差异即「两条咨询
+         * 入口 vs 次级入口行」的层级差异，不是排版偶然。 */}
+        <div className={styles.entryGroup}>
+          {/* 应急入口：本页唯一 accent 重量级使用（描边 + 呼吸点 + 主按钮属同一强调单元）。 */}
+          <article className={`panel emergency-entry ${styles.emergency}`}>
+            <div className="entry-title">
+              <span className="flame-dot breathing" aria-hidden="true" />
+              <h2 className={styles.entryHeading}>{COPY.emergencyTitle}</h2>
+            </div>
+            <p>{COPY.emergencyBody}</p>
+            <Link className="btn btn-primary block" to="/consult/emergency">
+              {COPY.emergencyAction}
+            </Link>
+          </article>
+
+          {/* 日常咨询入口：整卡可点，热区即整卡（≥44px）。 */}
+          <Link className="tile daily-entry" to="/consult">
+            <h2 className={styles.entryHeading}>{COPY.dailyTitle}</h2>
+            <p>{COPY.dailyBody}</p>
+            <span className="entry-next">{COPY.dailyNext}</span>
+          </Link>
         </div>
-        <p>{COPY.emergencyBody}</p>
-        <Link className="btn btn-primary block" to="/consult/emergency">
-          {COPY.emergencyAction}
-        </Link>
-      </article>
 
-      {/* 日常咨询入口：整卡可点，热区即整卡（≥44px）。 */}
-      <Link className="tile daily-entry" to="/consult">
-        <h2 className={styles.entryHeading}>{COPY.dailyTitle}</h2>
-        <p>{COPY.dailyBody}</p>
-        <span className="entry-next">{COPY.dailyNext}</span>
-      </Link>
-
-      <div className={styles.secondaryRow}>
-        <Link className="mini-card" to="/cases">
-          <h3 className={styles.secondaryTitle}>{COPY.casesTitle}</h3>
-          <p className={styles.secondaryBody}>{COPY.casesBody}</p>
-        </Link>
-        {/* 指向案例库的「资料」分区：页面设计写明它「→ 进案例库的资料分区」。
-         * 分区参数在案例库浏览页设计里只定义了 deep-link 的 item 参数，未定义分区参数名；
-         * 这里用 section=library 作为落点约定，并在报告未决问题节登记待 T11 回核。 */}
-        <Link className="mini-card" to="/cases?section=library">
-          <h3 className={styles.secondaryTitle}>{COPY.libraryTitle}</h3>
-          <p className={styles.secondaryBody}>{COPY.libraryBody}</p>
-        </Link>
+        <div className={styles.secondaryRow}>
+          <Link className="mini-card" to="/cases">
+            <h3 className={styles.secondaryTitle}>{COPY.casesTitle}</h3>
+            <p className={styles.secondaryBody}>{COPY.casesBody}</p>
+          </Link>
+          {/* 指向案例库的「资料」分区：页面设计写明它「→ 进案例库的资料分区」。
+           * 分区参数在案例库浏览页设计里只定义了 deep-link 的 item 参数，未定义分区参数名；
+           * 这里用 section=library 作为落点约定，并在报告未决问题节登记待 T11 回核。 */}
+          <Link className="mini-card" to="/cases?section=library">
+            <h3 className={styles.secondaryTitle}>{COPY.libraryTitle}</h3>
+            <p className={styles.secondaryBody}>{COPY.libraryBody}</p>
+          </Link>
+        </div>
       </div>
     </AppShell>
   );
