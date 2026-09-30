@@ -1,0 +1,106 @@
+/* 登录/注册页的就近样式（CSS Modules）：只消费 token 变量，不定义色值与间距。
+ * 契约组件类名（.panel/.field/.btn-primary/.field-error）刻意不在此重写——它们来自
+ * shared/styles/components.css，本文件只承载本页独有的布局与动效。 */
+
+.shell {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+  justify-content: flex-start;
+}
+
+/* 品牌区顶部另留安全区：全局 .phone-shell 已预留一次，本页品牌区是首屏第一块内容，
+ * 因此不再叠加，避免小屏上标题被推得过低。 */
+.brand {
+  display: grid;
+  gap: var(--space-2);
+  padding-top: var(--space-4);
+}
+
+.brandRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+}
+
+.title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-weight: 500;
+  font-size: var(--text-2xl);
+  line-height: var(--leading-tight);
+  letter-spacing: var(--tracking-display);
+}
+
+/* 品牌图标用 accent 着色（页面设计：品牌区计作一处 accent）。 */
+.brandMark {
+  display: inline-flex;
+  color: var(--accent);
+}
+
+.tagline {
+  margin: 0;
+  color: var(--muted);
+}
+
+.panel {
+  display: grid;
+  gap: var(--space-5);
+}
+
+.formTitle {
+  margin: 0;
+  font-size: var(--text-lg);
+}
+
+.form {
+  display: grid;
+  gap: var(--space-5);
+}
+
+/* 显示密码按钮：与输入框同宽对齐，右对齐避免挤压输入框。 */
+.passwordToggle {
+  justify-self: end;
+  margin-top: calc(-1 * var(--space-1));
+}
+
+.switchRow {
+  display: flex;
+  justify-content: center;
+  margin: 0;
+}
+
+.note {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--text-sm);
+  text-align: center;
+}
+
+.note a {
+  margin-left: var(--space-2);
+}
+
+/* 极简两级 stagger 渐入：品牌区 → 表单区（页面设计「动效意图」节，--motion-base 240ms）。
+ * 错误出现不带任何动画；循环动效为零。prefers-reduced-motion 下由 components.css 的
+ * 全局规则统一关停。 */
+@media (prefers-reduced-motion: no-preference) {
+  .brand {
+    animation: auth-fade-in var(--motion-base) var(--ease-standard) both;
+  }
+
+  .panel {
+    animation: auth-fade-in var(--motion-base) var(--ease-standard) var(--motion-base) both;
+  }
+}
+
+@keyframes auth-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
