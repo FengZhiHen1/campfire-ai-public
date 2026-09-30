@@ -16,6 +16,16 @@ norecursedirs = ["archive", "node_modules", ".venv", "dist", "build", ".dsh", ".
 markers = [
     "integration: 依赖真实 PostgreSQL/Redis 的集成测试（docker compose up -d）",
 ]
+# 事件循环作用域设为 session（2026-10-01）：pytest-asyncio 默认每个用例新建循环，
+# 而 `core/db` 的共享引擎把连接池绑在首次使用时的循环上——跨循环复用会抛
+# `RuntimeError: Event loop is closed`。此前各集成测试文件用「每个用例 dispose_engine」
+# 绕开它，代价是每个用例都重建一次 TCP 连接（实测约 28 ms/用例）。
+# 循环与整个会话同生命周期后，引擎可与循环一同存活，不再需要逐用例释放。
+#
+# 两个选项必须**同时**设为 session：只设 test 会让 async fixture 仍跑在 function
+# 循环上，于是 fixture 与用例处于不同循环，跨循环问题原样复现。
+asyncio_default_fixture_loop_scope = "session"
+asyncio_default_test_loop_scope = "session"
 
 [tool.coverage.run]
 source = ["apps/api/src/campfire"]

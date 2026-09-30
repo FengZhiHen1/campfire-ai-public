@@ -30,7 +30,7 @@ import pytest_asyncio
 from sqlalchemy import delete, func, select
 
 from campfire.core.config import get_settings
-from campfire.core.db import dispose_engine, session_scope
+from campfire.core.db import session_scope
 from campfire.core.pending_write import (
     MAX_ATTEMPTS,
     STATE_DEAD,
@@ -60,14 +60,6 @@ async def _require_database() -> AsyncIterator[None]:
     if not get_settings().database_url:
         pytest.skip("未配置 DATABASE_URL——集成测试需要 docker compose up -d postgres")
     yield
-
-
-@pytest_asyncio.fixture(autouse=True)
-async def _dispose_shared_engine() -> AsyncIterator[None]:
-    """每个用例前后释放共享引擎（跨事件循环复用会 ``Event loop is closed``）。"""
-    await dispose_engine()
-    yield
-    await dispose_engine()
 
 
 async def _clear() -> None:

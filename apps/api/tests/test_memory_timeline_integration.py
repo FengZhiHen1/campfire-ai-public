@@ -40,7 +40,7 @@ import pytest_asyncio
 
 from campfire.core.config import EMBEDDING_DIM
 from campfire.core.config import get_settings as _get_settings
-from campfire.core.db import dispose_engine, session_scope
+from campfire.core.db import session_scope
 from campfire.modules.memory.graph import MemoryGraph, OrderedCrossEncoder
 from campfire.modules.memory.identity import PendingId, derive_episode_uuid, to_account_id
 from campfire.modules.memory.store import (
@@ -82,22 +82,6 @@ async def _clear_ledger() -> None:
         await session.execute(
             delete(MemoryDeletionLedger).where(MemoryDeletionLedger.account_id.in_([_ACCOUNT_A, _ACCOUNT_B]))
         )
-
-
-@pytest_asyncio.fixture(autouse=True)
-async def _dispose_shared_engine() -> AsyncIterator[None]:
-    """每个用例前后释放 `core/db` 的全局共享引擎。
-
-    2026-09-30 加：本文件此前**不碰关系库**（「已删清单」由调用方传入），读入口改为
-    自己取账本后开始用共享引擎——而 pytest-asyncio 为每个用例新建事件循环，共享引擎的
-    连接池绑定在**首次使用时的事件循环**上，跨循环复用会抛
-    ``RuntimeError: Event loop is closed``（实测：不加本 fixture 时 11 个用例在 setup
-    阶段就 ERROR）。同一处理见 `test_memory_ledger_integration.py`（那里有完整的实测
-    依据与现象记录）。生产只有一个长驻循环，不存在该问题。
-    """
-    await dispose_engine()
-    yield
-    await dispose_engine()
 
 
 #: 两个账号：用于验证分区隔离（各自的图）。
@@ -799,19 +783,33 @@ async def test_driver_for_reuses_one_driver_per_account(memory_graph: MemoryGrap
     """
     account = "it_mem_cache_probe"
 
-    def pending_index_tasks() -> int:
-        """当前未完成的「建索引」后台任务数（驱动构造会各调度一个）。"""
-        return sum(1 for t in asyncio.all_tasks() if not t.done() and "build_indices" in repr(t.get_coro()))
+    def own_pending_index_tasks() -> int:
+        """**本图库自己的**克隆驱动里未完成的建索引任务数。
+
+        为什么不扫 `asyncio.all_tasks()`（2026-10-01 改）：事件循环作用域已设为
+        session（见 pyproject 的说明），整轮测试共用一个循环，于是 `all_tasks()`
+        会把**前序用例**残留的任务一起数进来。实测该写法会造成假失败：
+        人为在前一个用例留下一个未完成的 `build_indices` 任务后，本断言失败
+        （function 作用域下则看不到）。改看本图库自己的驱动，既隔离又仍有判别力
+        —— 裸 clone 会往 `account_drivers` 里塞新驱动，新的未完成任务随之可见。
+        """
+        return sum(
+            1
+            for driver in memory_graph.account_drivers.values()
+            if driver is not memory_graph.driver
+            and (task := getattr(driver, "_init_task", None)) is not None
+            and not task.done()
+        )
 
     # 第一次取驱动**会**新建一个驱动并调度它的建索引任务——这是允许的（首次访问）。
     first = memory_graph.driver_for(account)
-    after_first = pending_index_tasks()
+    after_first = own_pending_index_tasks()
 
     # 关键断言：**第二次**取同一账号不得再新建驱动、也不得再多一个后台任务。
     second = memory_graph.driver_for(account)
     assert first is second, "同一账号必须复用同一个驱动，否则每条查询泄漏一个驱动"
-    assert pending_index_tasks() == after_first, (
-        f"复用缓存的驱动不得新增后台任务（{after_first} -> {pending_index_tasks()}）"
+    assert own_pending_index_tasks() == after_first, (
+        f"复用缓存的驱动不得新增后台任务（{after_first} -> {own_pending_index_tasks()}）"
     )
 
     # 同库名时 clone 本就返回自身（实测），不应占用缓存名额。
@@ -856,16 +854,80 @@ async def test_driver_cache_evicts_when_full(memory_graph: MemoryGraph) -> None:
 
 @pytest.mark.asyncio
 async def test_aclose_clears_the_driver_cache(memory_graph: MemoryGraph) -> None:
-    """`aclose()` 清空驱动缓存并收口每个克隆驱动的后台任务。"""
+    """`aclose()` 清空驱动缓存，且**不留下未完成的**后台建索引任务。
+
+    ## 为什么断言只看「本图库自己的驱动」
+
+    原写法扫 `asyncio.all_tasks()` 找未完成的 `build_indices` 任务。事件循环作用域
+    改为 session 后（见 pyproject 的说明），整轮测试共用一个循环，于是 `all_tasks()`
+    把**前序用例**残留的任务一起看到——实测在前一用例留下一个未完成的
+    `build_indices` 任务后本用例失败，而 function 作用域下不会，即失败与被测代码
+    无关。改看本图库自己的驱动即可隔离。
+
+    ## 覆盖边界（本次实测结论）
+
+    这条断言**抓不到「取消被消融」**：初始化任务是对已存在索引的幂等写入，实测约
+    0.3 秒内自行 done；消融 `_cancel_driver_init_task` 后本用例在两种作用域下都
+    照样通过。「取消确实发生」由**确定性单测**覆盖——见下一条
+    `test_cancel_driver_init_task_really_cancels`，那里用不会自行结束的合成任务，
+    消融后必然失败。
+    """
     memory_graph.driver_for("it_mem_cache_probe_3")
     assert memory_graph.account_drivers, "前置条件：缓存里应已有条目"
+
+    # `aclose()` 会清空 account_drivers，故先快照本图库**自己的**克隆驱动任务。
+    clone_tasks = [
+        task
+        for driver in memory_graph.account_drivers.values()
+        if driver is not memory_graph.driver and (task := getattr(driver, "_init_task", None)) is not None
+    ]
+
     await memory_graph.aclose()
+
     assert memory_graph.account_drivers == {}, "关闭后不得留下缓存的驱动引用"
-    for task in asyncio.all_tasks():
-        if task.done():
-            continue
-        # 允许测试框架自身的任务；只要求不留「建索引」类任务（收口失败会在此暴露）。
-        assert "build_indices" not in repr(task.get_coro()), f"残留后台索引任务：{task.get_coro()}"
+    still_pending = [task for task in clone_tasks if not task.done()]
+    assert not still_pending, (
+        f"关闭后仍有 {len(still_pending)} 个后台索引任务未结束——收口失败会让它在客户端关闭后继续跑并抛 ConnectionError"
+    )
+
+
+@pytest.mark.asyncio
+async def test_cancel_driver_init_task_really_cancels() -> None:
+    """`_cancel_driver_init_task` 必须**真的取消**任务，而不是只等它自己结束。
+
+    ## 为什么用合成任务而不是真实驱动（确定性）
+
+    真实 `_init_task` 是对已存在索引的幂等写入，实测约 0.3 秒内自行 done——用真实
+    驱动写断言只能观测到「碰巧已完成」，消融掉 `task.cancel()` 也照样通过（实测：
+    该消融在 function 与 session 两种循环作用域下都不被现有用例抓到）。
+    这里用一个**永不自行结束**的任务，把「取消」变成可判定的单一变量。
+
+    判别性（实测）：注释掉 `task.cancel()` 后本用例失败（任务仍 pending），
+    恢复后通过。
+    """
+    from campfire.modules.memory.graph import _cancel_driver_init_task
+
+    started = asyncio.Event()
+
+    async def never_finishes() -> None:
+        started.set()
+        await asyncio.sleep(3600)  # 不会被真实等待，只用于模拟「长期运行的后台任务」
+
+    task = asyncio.create_task(never_finishes())
+    await asyncio.wait_for(started.wait(), timeout=5)
+
+    class _DriverWithInitTask:
+        """只带 `_init_task` 的最小替身：该函数只依赖这一个属性。"""
+
+        def __init__(self, init_task: asyncio.Task[None]) -> None:
+            self._init_task = init_task
+
+    try:
+        await _cancel_driver_init_task(_DriverWithInitTask(task))
+        assert task.cancelled(), "任务未被取消——收口只等它结束，客户端关闭后它仍会抛错"
+    finally:
+        if not task.done():
+            task.cancel()
 
 
 @pytest.mark.asyncio

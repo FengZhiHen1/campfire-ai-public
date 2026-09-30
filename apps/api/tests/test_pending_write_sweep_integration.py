@@ -16,7 +16,7 @@ import pytest_asyncio
 from sqlalchemy import delete
 
 from campfire.core.config import get_settings
-from campfire.core.db import dispose_engine, session_scope
+from campfire.core.db import session_scope
 from campfire.core.jobs import set_dispatch_hook
 from campfire.core.pending_write import (
     SWEEP_MAX_LIMIT,
@@ -42,18 +42,15 @@ async def _require_database() -> AsyncIterator[None]:
 
 @pytest_asyncio.fixture(autouse=True)
 async def _isolate() -> AsyncIterator[None]:
-    """每个用例前后：释放共享引擎、清掉本账号的记录与投递钩子。
+    """每个用例前后：清掉本账号的记录与投递钩子。
 
-    释放引擎是必须的（pytest-asyncio 每用例新建事件循环，共享引擎的连接池绑定在首次
-    使用时的循环上）——依据与实测现象见 `test_memory_ledger_integration.py`。
     清钩子是必须的：本文件会替换投递钩子，泄漏会让别的文件静默走假投递。
+    数据清理同样是必须的：`_ACCOUNT` 的记录会被跨用例读到。
     """
-    await dispose_engine()
     await _clear()
     yield
     set_dispatch_hook(None)
     await _clear()
-    await dispose_engine()
 
 
 async def _clear() -> None:
