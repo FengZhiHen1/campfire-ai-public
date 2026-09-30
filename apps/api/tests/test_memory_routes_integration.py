@@ -37,7 +37,7 @@ from __future__ import annotations
 
 import os
 import uuid
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Awaitable, Callable
 from datetime import datetime, timedelta, timezone
 
 import httpx
@@ -49,12 +49,13 @@ from campfire.core.authz import set_authorizer
 from campfire.core.config import EMBEDDING_DIM, get_settings
 from campfire.core.db import session_scope
 from campfire.modules.memory import routes as memory_routes
+from campfire.modules.memory.errors import EpisodeKeyOwnedByAnotherAccountError, MemoryDataError
 from campfire.modules.memory.graph import MemoryGraph, OrderedCrossEncoder
 from campfire.modules.memory.identity import PendingId, derive_episode_uuid, to_account_id
-from campfire.modules.memory.ledger import recorded_deletion_reason
+from campfire.modules.memory.ledger import DeletionRecord, record_deletion, recorded_deletion_reason
 from campfire.modules.memory.models import MemoryDeletionLedger
 from campfire.modules.memory.routes import NOT_FOUND_MESSAGE
-from campfire.modules.memory.store import read_timeline, write_episode
+from campfire.modules.memory.store import episode_exists, read_timeline, write_episode
 from campfire.modules.profile.authz import OwnerAuthorizer
 
 from .conftest import connect_falkordb_or_skip
@@ -626,39 +627,63 @@ async def test_other_accounts_episode_is_not_visible_and_delete_is_404(
     assert deleted.json()["code"] == "not_found"
 
 
-def _reworded_guard(*_args: object, **_kwargs: object) -> None:
-    """账本写入的测试替身：抛跨账号守卫，但措辞与实现里的文案不同（D-40）。"""
-    from campfire.modules.memory.errors import MemoryDataError
+def _reworded_guard(real: Callable[..., Awaitable[DeletionRecord]]) -> Callable[..., Awaitable[DeletionRecord]]:
+    """包装真实的账本写入：真实插入与跨账号判定照跑，只把失败消息换个措辞。
 
-    raise MemoryDataError(
-        "这条 key 属于另一个账号（措辞与实现无关）",
-        operation="record_deletion",
-        detail="测试替身",
-    )
+    这是 D-40 那句「改一个字的消融」的常驻版本：替身抛出的消息不含「已被其它账号」
+    这串关键字，若谁把路由的分派改回 `str(exc)` 子串匹配，用它的两条用例立刻变红。
+    """
+
+    async def _call(*args: object, **kwargs: object) -> DeletionRecord:
+        try:
+            return await real(*args, **kwargs)
+        except EpisodeKeyOwnedByAnotherAccountError as exc:
+            raise EpisodeKeyOwnedByAnotherAccountError(
+                "这条 key 属于另一个账号（措辞与实现无关）",
+                operation=exc.operation,
+                detail="测试替身：只改文案",
+            ) from exc
+
+    return _call
 
 
 async def _record_foreign_deletion(episode_key: str) -> None:
     """把一条 key 记进另一个账号的删除账本（跨账号守卫的触发条件）。"""
-    from campfire.modules.memory.ledger import record_deletion
-
     async with session_scope(get_settings()) as session:
         await record_deletion(session, account_id=to_account_id(_ACCOUNT_OTHER), episode_key=episode_key)
+
+
+async def test_delete_of_an_episode_recorded_by_another_account_is_404(
+    client: httpx.AsyncClient, graph: MemoryGraph, as_account
+) -> None:  # noqa: ANN001
+    """真实跨账号守卫（不打任何替身）→ 404，且这个 404 不是图库判据给的（D-40）。
+
+    触发条件是两账号因同一个 `pending_id` 派生出同一个 `episode_key`：本账号图里
+    确实有这条片段（本用例先断言这一点，否则 404 可能来自图库判据，等于没测到守卫），
+    而账本里那一行属于另一个账号（见 `record_deletion` 的 Note）。
+    """
+    shared_pending = str(uuid.uuid4())
+    key = await _write(graph, content="撞车的记忆", pending=shared_pending)
+    await _write(graph, content="撞车的记忆", account=_ACCOUNT_OTHER, pending=shared_pending)
+    await _record_foreign_deletion(key)
+
+    assert await episode_exists(graph, _ACCOUNT, episode_key=key) is True
+
+    response = await client.delete(f"/memory/episodes/{key}")
+
+    assert response.status_code == 404
+    assert response.json() == {"detail": NOT_FOUND_MESSAGE, "code": "not_found"}
 
 
 async def test_delete_dispatches_the_cross_account_guard_by_type_not_by_message(
     client: httpx.AsyncClient, graph: MemoryGraph, as_account, monkeypatch: pytest.MonkeyPatch
 ) -> None:  # noqa: ANN001
-    """跨账号账本守卫 → 404 且逐字文案，判据是异常类型而不是异常文案（D-40）。
+    """守卫消息换措辞后分派结果不变：判据是异常类型，不是异常文案（D-40）。
 
-    为什么必须有这条：`ledger.record_deletion` 对「词表外的原因」「账本状态不一致」
-    「跨账号守卫」抛的是同一个 `MemoryDataError`，而路由原先按 `"已被其它账号" in str(exc)`
-    分派——文案一改就静默降级成 422「episode 标识形状非法」，把「这条记忆不是你的」
-    说成「你的标识写错了」。本用例把守卫的消息换成不含该子串的措辞，断言分派结果不变。
+    为什么必须有这条：路由原先按 `"已被其它账号" in str(exc)` 分派——文案一改就静默
+    降级成 422「episode 标识形状非法」，把「这条记忆不是你的」说成「你的标识写错了」。
 
-    触发条件是两个账号因同一个 `pending_id` 派生出同一个 `episode_key`：本账号图里有
-    这条片段（图库判据通过），而账本里那一行属于另一个账号（见 `record_deletion` 的 Note）。
-
-    判别性：修复前本用例得到 422 `invalid_payload`，红。
+    判别性：修复前本用例得到 422 `invalid_payload`，红（见交付报告的消融日志）。
     """
     from campfire.modules.memory import deletion as deletion_module
 
@@ -666,7 +691,7 @@ async def test_delete_dispatches_the_cross_account_guard_by_type_not_by_message(
     key = await _write(graph, content="撞车的记忆", pending=shared_pending)
     await _write(graph, content="撞车的记忆", account=_ACCOUNT_OTHER, pending=shared_pending)
     await _record_foreign_deletion(key)
-    monkeypatch.setattr(deletion_module, "record_deletion", _reworded_guard)
+    monkeypatch.setattr(deletion_module, "record_deletion", _reworded_guard(record_deletion))
 
     response = await client.delete(f"/memory/episodes/{key}")
 
@@ -686,7 +711,7 @@ async def test_correct_dispatches_the_cross_account_guard_by_type_not_by_message
 
     key = str(uuid.uuid4())
     await _record_foreign_deletion(key)
-    monkeypatch.setattr(deletion_module, "record_deletion", _reworded_guard)
+    monkeypatch.setattr(deletion_module, "record_deletion", _reworded_guard(record_deletion))
 
     response = await client.post(
         f"/memory/episodes/{key}/correct",
@@ -709,7 +734,6 @@ async def test_ledger_invariant_failure_is_not_reported_as_a_payload_problem(
     判别性：修复前本用例得到 422 `invalid_payload`，红。
     """
     from campfire.modules.memory import deletion as deletion_module
-    from campfire.modules.memory.errors import MemoryDataError
 
     key = await _write(graph, content="本账号的记忆")
 

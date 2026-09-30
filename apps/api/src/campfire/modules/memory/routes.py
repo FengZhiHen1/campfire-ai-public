@@ -408,8 +408,8 @@ async def delete_episode(
     错误码按异常类型分派，不按消息文本（2026-09-30，D-40）
     ------------------------------------------------------
 
-    跨账号守卫抛 `EpisodeKeyOwnedByAnotherAccountError`（`deletion.py` 在用例边界
-    把 `record_deletion` 的跨账号失败类型化）→ 404；其余 `MemoryDataError` 是账本
+    跨账号守卫在产生判据的地方（`ledger.record_deletion`）抛
+    `EpisodeKeyOwnedByAnotherAccountError` → 404；其余 `MemoryDataError` 是账本
     不变量问题 → 503。判据不能用 `str(exc)` 做子串匹配：文案一改就会把跨账号命中
     静默降级成 422「标识形状非法」。
 

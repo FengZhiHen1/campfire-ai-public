@@ -31,7 +31,7 @@ from sqlalchemy.exc import IntegrityError
 
 from campfire.core.config import get_settings
 from campfire.core.db import session_scope
-from campfire.modules.memory.errors import MemoryDataError
+from campfire.modules.memory.errors import EpisodeKeyOwnedByAnotherAccountError, MemoryDataError
 from campfire.modules.memory.ledger import (
     DeletionOutcome,
     deleted_episode_keys,
@@ -284,6 +284,9 @@ async def test_record_deletion_rejects_a_key_owned_by_another_account() -> None:
     为什么：`episode_key` 由 uuid4 派生，跨账号共用正常不可能发生。若此时静默按
     「已存在」返回，本账号的删除会**看起来成功、实际不生效**（读路径按本账号查账本，
     查不到那条记录）——删除静默失效正是 `RQ-MEM-03` 要避免的。故必须报错。
+
+    断言的是专用子类而不是基类（D-40）：删除面按类型把它映射成 404 与「不存在」
+    同形，若这里退回基类，路由的分派就失去判据。
     """
     other = _OTHER_ACCOUNT_B
     key = _episode_key("crossacct")
@@ -292,7 +295,7 @@ async def test_record_deletion_rejects_a_key_owned_by_another_account() -> None:
             await record_deletion(session, account_id=other, episode_key=key)
 
         async with session_scope(get_settings()) as session:
-            with pytest.raises(MemoryDataError, match="其它账号"):
+            with pytest.raises(EpisodeKeyOwnedByAnotherAccountError, match="其它账号"):
                 await record_deletion(session, account_id=_ACCOUNT, episode_key=key)
     finally:
         await _cleanup()

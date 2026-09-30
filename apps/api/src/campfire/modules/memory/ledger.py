@@ -16,7 +16,7 @@ from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from campfire.modules.memory.errors import MemoryDataError
+from campfire.modules.memory.errors import EpisodeKeyOwnedByAnotherAccountError, MemoryDataError
 from campfire.modules.memory.identity import AccountId, EpisodeUuid, to_account_id, to_episode_key
 from campfire.modules.memory.models import (
     DELETION_REASON_USER_REQUEST,
@@ -190,8 +190,10 @@ async def record_deletion(
             或命中框架哨兵）。
         MemoryDataError: `reason` 不在词表内；或 `episode_key` 为空、非字符串、
             超长、非合法 UUID（形状校验见 `identity.to_episode_key`）。
-        MemoryDataError: `episode_key` 已被其它账号记录删除。此时静默幂等会让
-            本账号的删除看起来成功、实际不生效，故显式失败。
+        EpisodeKeyOwnedByAnotherAccountError: `episode_key` 已被其它账号记录删除。
+            此时静默幂等会让本账号的删除看起来成功、实际不生效，故显式失败。
+            单立一个类型是为了让调用方按类型分派（见该异常类的说明）；判据不能靠
+            错误消息文本（见 `MemoryModuleError`）。
 
     Note:
         跨账号共用 `episode_key` 的成因（2026-09-29 评审更正）：此前这里写
@@ -266,7 +268,9 @@ async def record_deletion(
     existing_owner, existing_reason = existing
 
     if existing_owner != account_id:
-        raise MemoryDataError(
+        # 类型化失败（2026-09-30，D-40）：判据在这里产生，就在这里定类型。调用方
+        # （删除面）按类型把它映射成 404 与「不存在」同形，不再靠消息子串分派。
+        raise EpisodeKeyOwnedByAnotherAccountError(
             "该 episode_key 已被其它账号记录删除，本账号的删除不会生效",
             operation="record_deletion",
             detail=f"owner={existing_owner!r} requester={account_id!r}（uuid 被跨账号共用）",
