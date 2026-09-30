@@ -28,14 +28,22 @@ KIND_MEMORY_EPISODE = "memory_episode"
 KINDS: frozenset[str] = frozenset({KIND_PROFILE_ITEM, KIND_MEMORY_EPISODE})
 
 #: 生成方式（第 3 节的 `origin`）。它决定「能不能写成已确认」这类判定，属契约一部分。
+#:
+#: 六值而不是四值（契约要求，2026-09-29 档案设计裁定）：`third_party_report`
+#: 与 `document` 同样直接进稳定层（个性化档案第 3 节），因此它们必须能被存储层接受。
+#: 此前 CHECK 只接受四值，造成「契约能传、存储拒收」。
 ORIGIN_USER_STATEMENT = "user_statement"  # 使用者自己说的
 ORIGIN_GUARDIAN_OBSERVATION = "guardian_observation"  # 监护人观察
+ORIGIN_THIRD_PARTY_REPORT = "third_party_report"  # 第三方转述
+ORIGIN_DOCUMENT = "document"  # 文档记录
 ORIGIN_SYSTEM_OBSERVATION = "system_observation"  # 系统观察
 ORIGIN_AI_INFERENCE = "ai_inference"  # 模型推断
 ORIGINS: frozenset[str] = frozenset(
     {
         ORIGIN_USER_STATEMENT,
         ORIGIN_GUARDIAN_OBSERVATION,
+        ORIGIN_THIRD_PARTY_REPORT,
+        ORIGIN_DOCUMENT,
         ORIGIN_SYSTEM_OBSERVATION,
         ORIGIN_AI_INFERENCE,
     }
@@ -177,8 +185,10 @@ __all__ = [
     "KIND_PROFILE_ITEM",
     "ORIGINS",
     "ORIGIN_AI_INFERENCE",
+    "ORIGIN_DOCUMENT",
     "ORIGIN_GUARDIAN_OBSERVATION",
     "ORIGIN_SYSTEM_OBSERVATION",
+    "ORIGIN_THIRD_PARTY_REPORT",
     "ORIGIN_USER_STATEMENT",
     "STATES",
     "STATE_DEAD",

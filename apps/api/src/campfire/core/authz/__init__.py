@@ -1,8 +1,8 @@
-"""授权判定：每个跨模块操作只有一个状态所有者下的唯一授权端口。
+"""授权判定：唯一授权端口（一期实现「属主即允许」，由装配处注入）。
 
-职责：作为 `core/authz` 的唯一授权判定端口，承载一期「属主即允许」的实现落点。
-边界：授权不得只靠角色名、前端隐藏、Agent 扩展或缓存判断；认证或授权不可用时拒绝受限操作，不降级为放行。
-参考：docs/项目结构设计.md 第 8 节、docs/技术栈设计.md 第 5 节、AGENTS.md 行为准则。
+职责：导出端口协议、错误类型与两个判定入口；承载实现的注入点。
+边界：不依赖任何业务模块——实现归 `modules/profile`，由 main/worker/cli 注入。
+参考：docs/项目结构设计.md 第 8 节、docs/技术设计/technical-details/支持对象.md 第 5 节。
 """
 
 # 归属（见 docs/项目结构设计.md 第 8 节）：`core/authz` 是唯一授权判定端口；
@@ -13,5 +13,40 @@
 # 判断；认证或授权不可用时拒绝受限操作，不降级为放行
 # （docs/技术栈设计.md 第 5 节）。
 #
-# 尚未实现：本包当前无代码——端口的形状随第一个真实调用点落地，
-# 不在此处预先发明抽象。
+# 为什么实现不在本包（支持对象 5.1）：`core/*` 不得依赖 `modules/*`，而判定要查
+# 支持对象表（属主与归档状态）。因此协议与错误类型在此、实现放 `modules/profile`、
+# 由装配处注入——与注销 purger 是同一模式。
+#
+# 二期的接入缝：`spaces` 实现同一协议并注入即可，调用点（`require_owned` /
+# `require_writable`）不变。
+
+from campfire.core.authz.errors import (
+    AUTHORIZER_UNAVAILABLE_MESSAGE,
+    OBJECT_ARCHIVED_MESSAGE,
+    OBJECT_NOT_ACCESSIBLE_MESSAGE,
+    AuthorizationError,
+    ObjectArchivedError,
+)
+from campfire.core.authz.port import (
+    Authorizer,
+    get_authorizer,
+    require_owned,
+    require_writable,
+    set_authorizer,
+)
+
+__all__ = [
+    # 端口与注入
+    "Authorizer",
+    "get_authorizer",
+    "require_owned",
+    "require_writable",
+    "set_authorizer",
+    # 错误类型
+    "AuthorizationError",
+    "ObjectArchivedError",
+    # 对外文案（契约的一部分，测试逐字断言）
+    "AUTHORIZER_UNAVAILABLE_MESSAGE",
+    "OBJECT_ARCHIVED_MESSAGE",
+    "OBJECT_NOT_ACCESSIBLE_MESSAGE",
+]

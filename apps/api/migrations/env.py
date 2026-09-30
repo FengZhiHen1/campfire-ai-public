@@ -30,6 +30,7 @@ from campfire.core.db import metadata
 from campfire.modules.accounts import models as accounts_models  # noqa: F401  —— 仅为注册副作用
 from campfire.modules.library import models  # noqa: F401  —— 仅为注册副作用
 from campfire.modules.memory import models as memory_models  # noqa: F401  —— 仅为注册副作用
+from campfire.modules.profile import models as profile_models  # noqa: F401  —— 仅为注册副作用
 
 config = context.config
 
