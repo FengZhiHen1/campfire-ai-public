@@ -30,7 +30,10 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "dea216081cea"
-down_revision: Union[str, Sequence[str], None] = "5fe0de69e768"
+# 重挂：本迁移与 `e121e242fa99`（待处理记录来源扩展为六值）同从 `5fe0de69e768`
+# 分出，两个泳道并行产出时形成双 head。按单一链的要求，后合入的挂到先合入的之后——
+# 两条改的是互不相关的表，先后不影响结果。
+down_revision: Union[str, Sequence[str], None] = "e121e242fa99"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
