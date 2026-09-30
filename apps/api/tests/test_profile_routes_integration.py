@@ -17,7 +17,8 @@
 ## 本文件守住的判据
 
 1. 越权与不存在逐字同文案（不泄露存在性）；归档上的新增文案区分（409）。
-2. 空名 422、`limit` 越界 422、无字段的 PATCH 422、重复确认 422、纠正无变更 422。
+2. 空名 422、`limit` 越界 422、无字段的 PATCH 422、重复确认 422、纠正无变更 422、
+   对已被取代的条目再次纠正 422。
 3. 删除的越权与不存在一律 404 且响应体逐字相同（裁决 1）；删除成功的响应为
    `already: false`。
 4. 删掉的条目不再出现在读取里（`AC-08`）。
@@ -496,6 +497,26 @@ async def test_correct_of_a_candidate_rebinds_it_to_the_user_statement(client: h
     assert listing["items"][0]["origin"] == "user_statement"
     assert listing["items"][0]["confirmation"] == "confirmed"
     assert listing["items"][0]["source"] == {"channel": "profile_page"}
+
+
+async def test_correct_twice_is_422_and_keeps_the_first_pointer(client: httpx.AsyncClient, as_account) -> None:  # noqa: ANN001
+    """对已被取代的条目再次纠正 → 422，且第一次的互指不被改写（第 3 节不变量 3）。
+
+    双击或弱网重试同一个纠正请求即命中：第二次会覆写旧条目的 `superseded_by`，
+    让第一次产生的取代者成为悬挂指针。
+    """
+    object_id = await _new_object()
+    old = await _propose(object_id, origin="user_statement", description="第一版描述")
+
+    first = await client.post(f"/profile/items/{old}/correct", json={"description": "第二版描述"})
+    assert first.status_code == 201, first.text
+    new = first.json()["item_id"]
+
+    second = await client.post(f"/profile/items/{old}/correct", json={"description": "第三版描述"})
+
+    assert second.status_code == 422
+    listing = (await client.get(f"/profile/objects/{object_id}/items", params={"include_candidates": "true"})).json()
+    assert [item["item_id"] for item in listing["items"]] == [new], "第二次纠正不得留下第三个条目"
 
 
 async def test_reject_removes_candidate_from_reads(client: httpx.AsyncClient, as_account) -> None:  # noqa: ANN001
