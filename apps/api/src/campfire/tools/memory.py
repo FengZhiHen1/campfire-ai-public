@@ -155,7 +155,8 @@ async def write_memory(context: ToolContext, args: WriteMemoryArgs) -> ToolResul
 
     # 必须 await：`kiq()` 返回协程，不 await 等于没有投递（mypy 抓过这个错误）。
     # 投递失败不让本次调用失败——记录已落库，由兜底扫描重投（写入路径第 4.1 节）。
-    await dispatch_pending_write(pending_id)
+    # kind 必传：投给谁由它决定（第 4 节第 3 条），省掉就只能一律投给同一个消费者。
+    await dispatch_pending_write(pending_id, KIND_MEMORY_EPISODE)
 
     return ToolResult(
         text=json.dumps({"pending_id": pending_id, "state": "submitted"}, ensure_ascii=False),

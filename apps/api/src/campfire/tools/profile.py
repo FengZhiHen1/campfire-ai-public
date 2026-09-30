@@ -434,6 +434,8 @@ async def propose_profile_item(context: ToolContext, args: ProposeProfileItemArg
     2. 落成待处理记录：只落记录，不等异步完成（契约第 4 节第 7 条）。
     3. 投递：`dispatch_pending_write`，投递失败不让本次调用失败——记录已落库，
        由兜底扫描重投（写入路径第 4.1 节；与 `write_memory` 同一处置）。
+       `kind = profile_item` 的消费者归 T12（Worker 侧尚无对应任务），当前投递方
+       显式跳过并记日志：记录留在 `pending`，不判 dead，消费者接上后由兜底扫描带回。
 
     载荷里不放 `confirmation`：确认状态由 `origin` 推导（`confirmation_on_entry`），
     而 Worker 侧还会再校验一次「推断不得是 confirmed」并拒绝构造过的载荷
@@ -504,7 +506,9 @@ async def propose_profile_item(context: ToolContext, args: ProposeProfileItemArg
         return ToolFailure(code="tool_failed", message=f"档案条目未能提交（{type(exc).__name__}）")
 
     # 必须 await：`kiq()` 返回协程，不 await 等于没有投递。
-    await dispatch_pending_write(pending_id)
+    # kind 必传：投给谁由它决定（第 4 节第 3 条）；当前 profile_item 尚无消费者，
+    # 投递方会显式跳过（记录留 pending，不判 dead）。
+    await dispatch_pending_write(pending_id, KIND_PROFILE_ITEM)
 
     return ToolResult(text=json.dumps({"pending_id": pending_id, "state": "submitted"}, ensure_ascii=False))
 

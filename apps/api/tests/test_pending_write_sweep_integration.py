@@ -19,6 +19,8 @@ from campfire.core.config import get_settings
 from campfire.core.db import session_scope
 from campfire.core.jobs import set_dispatch_hook
 from campfire.core.pending_write import (
+    KIND_PROFILE_ITEM,
+    STATE_PENDING,
     SWEEP_MAX_LIMIT,
     PendingWrite,
     enqueue,
@@ -30,6 +32,8 @@ pytestmark = pytest.mark.integration
 
 #: 本文件专用账号（与其它测试文件隔离）。
 _ACCOUNT = "it_sweep_account"
+#: `profile_item` 用例专用账号（同文件内再隔离一层，便于单独清理）。
+_ACCOUNT_PROFILE = "it_sweep_account_profile"
 
 
 @pytest_asyncio.fixture(autouse=True)
@@ -55,7 +59,7 @@ async def _isolate() -> AsyncIterator[None]:
 
 async def _clear() -> None:
     async with session_scope(get_settings()) as session:
-        await session.execute(delete(PendingWrite).where(PendingWrite.account_id == _ACCOUNT))
+        await session.execute(delete(PendingWrite).where(PendingWrite.account_id.in_((_ACCOUNT, _ACCOUNT_PROFILE))))
 
 
 async def _enqueue(*, occurred_at: str | None = None) -> str:
@@ -75,6 +79,31 @@ async def _enqueue(*, occurred_at: str | None = None) -> str:
         return str(record.id)
 
 
+async def _enqueue_profile_item() -> str:
+    """入队一条 `profile_item` 记录；返回 id 字符串。
+
+    形状照 `tools/profile.py` 的 `propose_profile_item`（`support_object_id` 必填，
+    见写入路径第 3 节）。这里不建真实支持对象：本文件的用例只看**分派与状态**，
+    不消费它——消费 `profile_item` 是 T12 的范围。
+    """
+    async with session_scope(get_settings()) as session:
+        record = await enqueue(
+            session,
+            kind=KIND_PROFILE_ITEM,
+            account_id=_ACCOUNT_PROFILE,
+            origin="user_statement",
+            payload={"domain": "communication", "topic": "扫描用例", "description": "扫描用例的档案条目"},
+            source={"session_id": "s1", "tool": "propose_profile_item"},
+            support_object_id="00000000-0000-4000-8000-000000000009",
+        )
+        return str(record.id)
+
+
+def _ids(found: list[tuple[object, str]]) -> list[str]:
+    """取出 `find_undelivered` 结果里的 id（返回的是 `(id, kind)`）。"""
+    return [str(pending_id) for pending_id, _kind in found]
+
+
 # ---------------------------------------------------------------------------
 # 候选集判据
 # ---------------------------------------------------------------------------
@@ -82,11 +111,16 @@ async def _enqueue(*, occurred_at: str | None = None) -> str:
 
 @pytest.mark.asyncio
 async def test_a_fresh_pending_record_is_found() -> None:
-    """**刚入队、从未投递**的记录必须被扫到——这是扫描存在的唯一理由。"""
+    """**刚入队、从未投递**的记录必须被扫到——这是扫描存在的唯一理由。
+
+    同时钉住返回形状是 `(id, kind)`：投递要按 kind 分派（写入路径第 4 节第 3 条），
+    只给 id 时投递方只能一律投给同一个消费者。
+    """
     pending_id = await _enqueue()
     async with session_scope(get_settings()) as session:
         found = await find_undelivered(session)
-    assert str(pending_id) in [str(x) for x in found], "从未投递的记录没被扫到——兜底形同虚设"
+    assert str(pending_id) in _ids(found), "从未投递的记录没被扫到——兜底形同虚设"
+    assert "memory_episode" in [kind for _id, kind in found], "候选集必须带上 kind"
 
 
 @pytest.mark.asyncio
@@ -105,12 +139,12 @@ async def test_a_record_waiting_for_backoff_is_not_found() -> None:
 
     async with session_scope(get_settings()) as session:
         found = await find_undelivered(session)
-    assert str(pending_id) not in [str(x) for x in found], "退避期内的记录不得被重投"
+    assert str(pending_id) not in _ids(found), "退避期内的记录不得被重投"
 
     # 退避到期后（1 分钟）就该被扫到。
     async with session_scope(get_settings()) as session:
         later = await find_undelivered(session, now=datetime.now(timezone.utc) + timedelta(minutes=5))
-    assert str(pending_id) in [str(x) for x in later], "退避到期后应重新进入扫描范围"
+    assert str(pending_id) in _ids(later), "退避到期后应重新进入扫描范围"
 
 
 @pytest.mark.asyncio
@@ -132,7 +166,7 @@ async def test_terminal_and_leased_records_are_not_swept() -> None:
         await take_for_processing(session, pending_id=leased_id, lease_owner="w2")
 
     async with session_scope(get_settings()) as session:
-        found = [str(x) for x in await find_undelivered(session)]
+        found = _ids(await find_undelivered(session))
     assert str(done_id) not in found, "已 done 的记录不得被扫描复活"
     assert str(leased_id) not in found, "租约未过期的 processing 不归扫描管（归租约回收）"
 
@@ -165,7 +199,7 @@ async def test_sweep_limit_is_converged_to_the_server_cap() -> None:
         finally:
             sqlalchemy.event.remove(engine.sync_engine, "before_cursor_execute", _capture)
 
-    assert str(pending_id) in [str(x) for x in found]
+    assert str(pending_id) in _ids(found)
     assert captured, "未捕获到扫描的 SELECT"
     params = captured[0]
     limit_value = params.get("param_1") if isinstance(params, dict) else params[-1]
@@ -186,10 +220,10 @@ async def test_sweep_once_dispatches_the_undelivered_record() -> None:
     """
     from campfire.worker import sweep_once
 
-    dispatched: list[str] = []
+    dispatched: list[tuple[str, str]] = []
 
-    async def _record(pending_id: str) -> None:
-        dispatched.append(pending_id)
+    async def _record(pending_id: str, kind: str) -> None:
+        dispatched.append((pending_id, kind))
 
     set_dispatch_hook(_record)
 
@@ -202,7 +236,7 @@ async def test_sweep_once_dispatches_the_undelivered_record() -> None:
     # 待处理记录，因此列表里出现别的 id 是正常的。
     # 「哪些不该被扫」由 `test_terminal_and_leased_records_are_not_swept` 与
     # `test_a_record_waiting_for_backoff_is_not_found` 分别钉住。
-    assert str(pending_id) in dispatched, f"扫描没有重投这条记录（实际投递={dispatched}）"
+    assert (str(pending_id), "memory_episode") in dispatched, f"扫描没有按 kind 重投这条记录（实际投递={dispatched}）"
     assert count >= 1
 
 
@@ -215,10 +249,10 @@ async def test_sweep_once_reclaims_expired_leases_before_dispatching() -> None:
     """
     from campfire.worker import sweep_once
 
-    dispatched: list[str] = []
+    dispatched: list[tuple[str, str]] = []
 
-    async def _record(pending_id: str) -> None:
-        dispatched.append(pending_id)
+    async def _record(pending_id: str, kind: str) -> None:
+        dispatched.append((pending_id, kind))
 
     set_dispatch_hook(_record)
 
@@ -233,7 +267,68 @@ async def test_sweep_once_reclaims_expired_leases_before_dispatching() -> None:
     async with session_scope(get_settings()) as session:
         await sweep_once(session, now=later)
 
-    assert str(pending_id) in dispatched, "崩溃留下的记录未被同一轮扫描救回（应先回收再重投）"
+    assert str(pending_id) in [pid for pid, _kind in dispatched], "崩溃留下的记录未被同一轮扫描救回（应先回收再重投）"
+
+
+# ---------------------------------------------------------------------------
+# 按 kind 分派（写入路径第 4 节第 3 条；2026-09-30 修复）
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_sweep_does_not_dispatch_a_kind_without_a_consumer() -> None:
+    """**没有消费者的 kind 不进候选集、也不被投给别的消费者**——本次修复的判据。
+
+    `kind = profile_item` 的消费者归 T12。在它落地之前，这些记录必须留在 `pending`：
+    修复前它们被投给记忆消费者，记忆侧按「kind 不符」抛 `MemoryDataError`，
+    Worker 捕获后 `mark_dead` —— **永久 dead**，T12 落地后也不会复活，
+    且 `last_error` 写成「记忆写入的载荷不合法」，污染 `dead` 的告警指标（第 8 节）。
+
+    判别性：把 `sweep_once` 里的 `kinds=CONSUMED_KINDS` 去掉，本用例失败
+    （`profile_item` 会出现在投递列表里）。
+    """
+    from campfire.worker import sweep_once
+
+    dispatched: list[tuple[str, str]] = []
+
+    async def _record(pending_id: str, kind: str) -> None:
+        dispatched.append((pending_id, kind))
+
+    set_dispatch_hook(_record)
+
+    profile_id = await _enqueue_profile_item()
+    memory_id = await _enqueue()
+    async with session_scope(get_settings()) as session:
+        await sweep_once(session)
+
+    dispatched_ids = [pending_id for pending_id, _kind in dispatched]
+    assert (str(memory_id), "memory_episode") in dispatched, f"有消费者的 kind 仍必须被重投（实际投递={dispatched}）"
+    assert str(profile_id) not in dispatched_ids, f"无消费者的 kind 不得被投给任何消费者（实际投递={dispatched}）"
+
+
+@pytest.mark.asyncio
+async def test_a_profile_item_stays_pending_after_a_sweep() -> None:
+    """跑过一轮扫描后，`profile_item` 仍是 `pending`（不是 `dead`、不是 `done`）。
+
+    与上一条合起来就是「不再被判 dead」的可执行形式：**扫描不会把它交给记忆消费者**，
+    而判 `dead` 只发生在消费者手里（`worker.consume_memory_episode_task` 捕获
+    `MemoryDataError` 后 `mark_dead`）。端到端的 dead/pending 对照见本包报告里的一次性探针。
+
+    判别性：把 `sweep_once` 的 kind 过滤去掉并装真实投递钩子，记录会被投进队列；
+    若再消费队列（Worker 的真实下一步）即转 `dead`。
+    """
+    from sqlalchemy import select
+
+    from campfire.worker import sweep_once
+
+    profile_id = await _enqueue_profile_item()
+    async with session_scope(get_settings()) as session:
+        await sweep_once(session)
+
+    async with session_scope(get_settings()) as session:
+        row = (await session.execute(select(PendingWrite).where(PendingWrite.id == profile_id))).scalar_one()
+    assert row.state == STATE_PENDING, f"无消费者的记录应留在 pending，实际 {row.state!r}"
+    assert row.last_error is None, "不得被记成「载荷不合法」的失败"
 
 
 @pytest.mark.asyncio

@@ -27,16 +27,30 @@ logger = logging.getLogger(__name__)
 #: 因此 `tools/*` 不得 import `campfire.worker`（`test_layer_boundaries.py` 会判失败）。
 #: 由装配处把投递函数注入本模块，工具只依赖 `core/*`，依赖方向保持单向。
 #:
+#: 钩子契约——按 `kind` 分派（写入路径第 4 节第 3 条）：
+#:
+#: 入参是 `(pending_id, kind)`，钩子据 kind 投给对应的消费者。三种结果都由钩子负责：
+#:   1. 有消费者：投出去；
+#:   2. 该 kind 尚无消费者（例如 `profile_item` 的消费分支未落地）：显式跳过并记日志，
+#:      记录留在 `pending`——不得抛错、不得终结记录，也不得改投别的消费者；
+#:   3. broker 不可用：抛错，由本模块降级为「留给兜底扫描」。
+#: 这些分支在钩子那一侧（`worker.dispatch_pending_write_to_queue`），因为「谁有消费者」
+#: 是装配处的事实。
+#:
 #: 未设置时的行为：
 #:
 #: 不抛异常，只记 warning：记录已在事务里落库，留在 `pending`，由兜底扫描重投
 #: （见 docs/技术设计/technical-details/写入路径.md 第 4.1 节）。
 #: 投递失败本来就不改变本次回执——回执承诺的是「已提交」，不是「已保存」。
-_dispatch_hook: Callable[[str], Awaitable[object]] | None = None
+_dispatch_hook: Callable[[str, str], Awaitable[object]] | None = None
 
 
-def set_dispatch_hook(hook: Callable[[str], Awaitable[object]] | None) -> None:
+def set_dispatch_hook(hook: Callable[[str, str], Awaitable[object]] | None) -> None:
     """设置（或清除）投递钩子。只在装配处调用。
+
+    两个入口都要设：Worker 侧（兜底扫描经它重投）与 API 侧（请求事务提交后投递，
+    写入路径第 4 节第 1 条）。漏设 API 侧时投递全部落进下面的 warning，所有写入
+    都要等 Worker 每 5 分钟的兜底扫描——2026-09-30 修复前正是这个状态。
 
     传 `None` 可清除——测试据此隔离彼此，避免钩子跨用例泄漏。
     """
@@ -44,20 +58,25 @@ def set_dispatch_hook(hook: Callable[[str], Awaitable[object]] | None) -> None:
     _dispatch_hook = hook
 
 
-async def dispatch_pending_write(pending_id: str) -> None:
-    """把一条待处理记录投递给队列；投递失败不让调用方失败。
+async def dispatch_pending_write(pending_id: str, kind: str) -> None:
+    """把一条待处理记录按 `kind` 投递给队列；投递失败不让调用方失败。
+
+    `kind` 是必填而不是可省：投给谁由它决定（第 4 节第 3 条）。省掉它就只能一律投给
+    同一个消费者，那会把异构的记录送进不懂它的消费者手里。
 
     失败语义（见 docs/技术栈设计.md 第 5 节）：待处理记录（PostgreSQL）是真相源，
     队列只负责投递；丢的任务必须可被检测与补救，不得静默丢弃、不得假装成功。
+    「该 kind 尚无消费者」不在这里判——那是装配处的事实，由钩子显式跳过并记日志，
+    记录留在 `pending`，不是投递失败。
     """
     if _dispatch_hook is None:
-        logger.warning("投递钩子未设置，记录留给兜底扫描：pending_id=%s", pending_id)
+        logger.warning("投递钩子未设置，记录留给兜底扫描：pending_id=%s kind=%s", pending_id, kind)
         return
     try:
-        await _dispatch_hook(pending_id)
+        await _dispatch_hook(pending_id, kind)
     except Exception:  # noqa: BLE001 —— 投递失败由兜底扫描补救，不改变本次回执
         # 只记标识与异常类型：异常消息可能带连接串（AGENTS.md 安全条款）。
-        logger.warning("投递失败，记录留给兜底扫描：pending_id=%s", pending_id)
+        logger.warning("投递失败，记录留给兜底扫描：pending_id=%s kind=%s", pending_id, kind)
 
 
 def build_broker(settings: Settings) -> ListQueueBroker:

@@ -18,6 +18,7 @@ import pytest
 
 from campfire.agent.context import CitationRecorder
 from campfire.agent.tools import ActivationState, ToolContext, ToolFailure, ToolResult
+from campfire.core.pending_write import KIND_MEMORY_EPISODE
 from campfire.tools.memory import (
     ACCOUNT_PAYLOAD_KEY,
     DEFAULT_READ_LIMIT,
@@ -181,10 +182,10 @@ def test_write_memory_returns_submitted_not_saved() -> None:
 
     from campfire.core.jobs import set_dispatch_hook
 
-    dispatched: list[str] = []
+    dispatched: list[tuple[str, str]] = []
 
-    async def _record(pending_id: str) -> None:
-        dispatched.append(pending_id)
+    async def _record(pending_id: str, kind: str) -> None:
+        dispatched.append((pending_id, kind))
 
     set_dispatch_hook(_record)
     try:
@@ -215,7 +216,9 @@ def test_write_memory_returns_submitted_not_saved() -> None:
     assert isinstance(outcome, ToolResult)
     payload = json.loads(outcome.text)
     assert payload == {"pending_id": _FakeRecord.id, "state": "submitted"}
-    assert dispatched == [_FakeRecord.id], "写入后必须投递（否则记录要等兜底扫描）"
+    # kind 必须随投递一起给出（写入路径第 4 节第 3 条：按 kind 分派）——
+    # 少了它，投递方只能一律投给同一个消费者。
+    assert dispatched == [(_FakeRecord.id, KIND_MEMORY_EPISODE)], "写入后必须按 kind 投递（否则记录要等兜底扫描）"
 
 
 def test_dispatch_failure_does_not_fail_the_call() -> None:
@@ -228,13 +231,13 @@ def test_dispatch_failure_does_not_fail_the_call() -> None:
 
     from campfire.core.jobs import dispatch_pending_write, set_dispatch_hook
 
-    async def _explode(_pending_id: str) -> None:
+    async def _explode(_pending_id: str, _kind: str) -> None:
         raise RuntimeError("Redis 不可达")
 
     set_dispatch_hook(_explode)
     try:
         # 不抛异常即为通过（异常消息可能带连接串，实现里只记 warning）。
-        asyncio.run(dispatch_pending_write("some-pending-id"))
+        asyncio.run(dispatch_pending_write("some-pending-id", KIND_MEMORY_EPISODE))
     finally:
         set_dispatch_hook(None)
 
@@ -246,4 +249,4 @@ def test_dispatch_without_a_hook_is_not_an_error() -> None:
     from campfire.core.jobs import dispatch_pending_write, set_dispatch_hook
 
     set_dispatch_hook(None)
-    asyncio.run(dispatch_pending_write("some-pending-id"))
+    asyncio.run(dispatch_pending_write("some-pending-id", KIND_MEMORY_EPISODE))
