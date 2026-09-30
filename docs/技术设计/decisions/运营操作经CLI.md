@@ -34,7 +34,7 @@
 
 - **运营操作不经 HTTP**：CLI 不挂路由、不对外；`account reset` 的撤销会话与改密**必须同时成立**，任一失败即整体失败并明确报错，**不得留下"密码已改但旧会话仍有效"**（第 8 节末行）。
 - **`cli/` 的依赖白名单因此放行 `modules/accounts`**（[项目结构设计](../../项目结构设计.md)第 7 节）——该白名单由 `apps/api/tests/test_layer_boundaries.py` 机械检查，**新增子命令必须同步该表**。
-- **core 端口与 `/auth/dashboard` 不得公网可达**：官方原文警告自托管 core 暴露到互联网则"任何人都能创建或修改 dashboard 用户"；[docker-compose.yml](../../../docker-compose.yml) 现有的 `3567:3567` 映射**只可用于本地开发**。
+- **只有 Nginx 对外监听**：api、worker 与**全部数据服务**（PostgreSQL、Redis、FalkorDB、SuperTokens core、MinIO）不得映射到公网接口，仅经 Compose 内网互联。官方原文警告自托管 core 暴露到互联网则"任何人都能创建或修改 dashboard 用户"；但**风险不止 core**——同一份编排里 PostgreSQL（全部业务数据与会话表）、Redis（队列与限流）、FalkorDB（全部记忆）、MinIO（默认 `minioadmin`）同样开着宿主端口。[docker-compose.yml](../../../docker-compose.yml) 已把全部端口绑到 `127.0.0.1`，完整约束见[技术栈设计](../../技术栈设计.md)第 6 节。
 
 ## 决定与影响
 
