@@ -73,6 +73,7 @@ from campfire.modules.memory.ledger import (
     deleted_episode_keys,
     record_deletion,
 )
+from campfire.modules.memory.purge import MemoryAccountPurger, delete_ledger_rows
 from campfire.modules.memory.store import MemoryEpisode, read_timeline, write_episode
 
 __all__ = [
@@ -108,6 +109,9 @@ __all__ = [
     "DeletionRecord",
     "deleted_episode_keys",
     "record_deletion",
+    # 账号注销时的记忆清除（实现 core/auth 的 purger 端口）
+    "MemoryAccountPurger",
+    "delete_ledger_rows",
     # 删除与纠正用例
     "DeletionResult",
     "correct_episode",
