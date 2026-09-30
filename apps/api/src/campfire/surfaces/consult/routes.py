@@ -500,10 +500,12 @@ async def send_message(
 
     从校验到启动的顺序，每一步的理由：
 
-    1. 技能校验先于一切状态写入——一个未知技能名的请求不该占住会话位再回滚；
-    2. 归属判定先于幂等与互斥——对别人的会话，任何状态码都不该泄露它是否正忙；
-    3. 首轮引导判定（契约 3.1）在读幂等之前：它只读表、没有副作用，因此后面每一条
-       提前返回的路径（幂等命中、互斥被拒、起步失败）都不必为它做清理；
+    1. 归属判定先于幂等与互斥——对别人的会话，任何状态码都不该泄露它是否正忙；
+    2. 首轮引导判定（契约 3.1）在读幂等、占位与技能校验之前：它只读表、没有副作用，
+       因此后面每一条提前返回的路径（幂等命中、互斥被拒、起步失败）都不必为它做清理；
+    3. 技能校验先于任何状态写入——一个未知技能名的请求不该占住会话位再回滚。
+       唯一的例外是首次运行：那一次 `skill` 参数被忽略（契约 4.1），因此先用不上的
+       名字把整次运行拒掉（422）是错的——校验排在首轮判定之后就是为这一条；
     4. 幂等命中直接返回原 `run_id`，不碰会话位、也不追加消息；
     5. 互斥失败回 409 且不追加消息（契约第 2 节与质量地板 ③）；
     6. 命中首轮引导时，本次运行的程序注入集合被引导替换（技能与静态告知），
@@ -513,12 +515,11 @@ async def send_message(
        `run_id`，回 202 会让前端订阅一个不存在的路径；首轮记账不写，下次运行仍会注入。
 
     Raises:
-        HTTPException: 会话不可访问（404）、载荷或技能不合法（422）、
+        HTTPException: 会话不可访问（404）、载荷不合法或非首次运行的技能未知（422）、
             会话已有在跑的运行（409），或运行器未装配、运行未能启动、
             引导状态取值漂移（503）。
     """
     account_id = session.get_user_id()
-    activated = await _activated_skill(settings, payload.skill)
 
     async with session_scope(settings) as db:
         try:
@@ -536,9 +537,14 @@ async def send_message(
     cache = get_cache(settings)
     client_message_id = payload.client_message_id
 
-    # 首轮引导判定在读幂等与占位之前：它没有副作用（记账在运行起步成功后才写），
+    # 首轮引导判定在读幂等、占位与技能校验之前：它没有副作用（记账在运行起步成功后才写），
     # 因此幂等命中与互斥被拒这两条路径都不必为它做任何清理。
     onboarding = await _first_run_injection(settings, session_id=session_id, account_id=account_id)
+
+    # 首次运行忽略 `skill`（契约 4.1）：本次运行的程序注入集合整份被引导替换，使用者的
+    # 选择不会被消费，所以这里不校验它——先校验后忽略会让一个用不上的名字拒掉整次运行。
+    # 非首次运行照旧校验（未知技能名 422）。
+    activated = () if onboarding is not None else await _activated_skill(settings, payload.skill)
 
     settled = await runbus.read_idempotent_run_id(cache, session_id=session_id, client_message_id=client_message_id)
     if settled is not None:
@@ -559,9 +565,9 @@ async def send_message(
 
     user_input = render_answers(payload.answers) if payload.answers is not None else (payload.content or "")
     if onboarding is not None:
-        # 引导注入优先于技能选择器的选择：这一次运行是引导，不是日常咨询。
-        # 判据与后果都写在这里一处，避免「注入了引导但技能集合还是用户选的那个」
-        # 这种半注入状态——那会让模型同时拿到两套互相冲突的操作纪律。
+        # 引导注入整份替换这次运行的技能集合：这一次是引导，不是日常咨询。集合与注入项
+        # 在同一支里一起定，避免「注入了引导但技能集合还是用户选的那个」这种半注入状态
+        # ——那会让模型同时拿到两套互相冲突的操作纪律（上面的 activated 初值因此是空的）。
         activated = (onboarding.skill,)
         injections = InjectionBatch(items=(onboarding.notice,))
     else:
