@@ -13,25 +13,23 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from campfire.modules.accounts.errors import OnboardingTriggerError
 
+# 状态词表与表名从表模型（`models`）再导出，本模块不声明第二份定义。两份定义并存时，
+# 漂移既不被存储层 CHECK 拦住、也不被任何检查发现：模型侧加一个状态而判定模块没跟进时，
+# 该账号每次建会话都被判成「词表外状态」；反向漂移则撞 CHECK。
+# 与设计文档取值（认证与账号第 8 节的三值）的一致由 `test_skills_content.py` 的字面量断言守门。
+#
+# 本模块仍不声明 SQLAlchemy 模型：读取走带绑定参数的显式 SQL，`core/db.metadata` 里没有
+# 本表的第二份定义（项目结构设计第 10 节）；表名取模型的 `__tablename__`，不再写字面量。
+from campfire.modules.accounts.models import (
+    ONBOARDING_COMPLETED,
+    ONBOARDING_IN_PROGRESS,
+    ONBOARDING_SKIPPED,
+    ONBOARDING_STATES,
+    CampfireOnboarding,
+)
+
 #: 引导状态表的表名。表形状由认证与账号第 8 节拥有（`account_id` 主键 / `state` / `updated_at`）。
-#:
-#: 本模块不声明 SQLAlchemy 模型：读取走带绑定参数的显式 SQL，形状由设计文档固定，
-#: 因此 `core/db.metadata` 里不会有本表的第二份定义（项目结构设计第 10 节）。
-#:
-#: 词表与表名尚未合并到模型（未决）：表模型与迁移现已落地，`models` 是本表词表与表名的真源
-#: （`ONBOARDING_*` 与 `CampfireOnboarding.__tablename__`），而下面三个状态常量、
-#: `ONBOARDING_STATES` 与 `ONBOARDING_TABLE_NAME` 是它们的第二份定义。
-#: 合并会同时改掉 `read_onboarding_state` 的读路径，而该路径的 SQL 文本是既有用例的
-#: 断言对象（`test_skills_content.py`），因此与那批用例同批处理。
-ONBOARDING_TABLE_NAME = "campfire_onboarding"
-
-#: 状态词表（认证与账号第 8 节）。词表落该表的 CHECK 约束，这里只承载判定语义。
-#: 常量名与表模型侧对齐（`ONBOARDING_<状态>`），避免合并时出现同一词表的第二套命名。
-ONBOARDING_IN_PROGRESS = "in_progress"
-ONBOARDING_COMPLETED = "completed"
-ONBOARDING_SKIPPED = "skipped"
-
-ONBOARDING_STATES: frozenset[str] = frozenset({ONBOARDING_IN_PROGRESS, ONBOARDING_COMPLETED, ONBOARDING_SKIPPED})
+ONBOARDING_TABLE_NAME: str = CampfireOnboarding.__tablename__
 
 #: 已终结的状态：引导不再注入。「终结」的判据是用户侧已有明确结论，
 #: 不是「流程走过一遍」——模型漏调 `finish_onboarding` 时状态仍是 `in_progress`，
