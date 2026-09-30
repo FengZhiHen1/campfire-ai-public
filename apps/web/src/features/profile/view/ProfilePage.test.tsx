@@ -83,6 +83,18 @@ function renderPage(profilePort: ProfilePort) {
   );
 }
 
+/**
+ * 取第一个同名按钮；找不到即显式失败。
+ *
+ * 不用 `[0]!`：那会用一个类型逃逸换掉「找不到时应该失败」这个断言，
+ * 找不到时 fireEvent 会抛一个与原因无关的错误。
+ */
+function firstButtonNamed(name: string): HTMLElement {
+  const [first] = screen.getAllByRole('button', { name });
+  if (first === undefined) throw new Error(`没有找到按钮：${name}`);
+  return first;
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
 });
@@ -190,7 +202,7 @@ describe('档案页 · 纠正流', () => {
     renderPage(p);
     await screen.findByText('关于 TA 的当前认识');
 
-    fireEvent.click(screen.getAllByRole('button', { name: '纠正' })[0]);
+    fireEvent.click(firstButtonNamed('纠正'));
     const form = (await screen.findByText('新增一条更正')).closest('section') as HTMLElement;
     const description = within(form).getByLabelText('描述');
     expect((description as HTMLTextAreaElement).value).toBe('用图片卡表达需求');
@@ -210,7 +222,7 @@ describe('档案页 · 纠正流', () => {
     renderPage(p);
     await screen.findByText('关于 TA 的当前认识');
 
-    fireEvent.click(screen.getAllByRole('button', { name: '纠正' })[0]);
+    fireEvent.click(firstButtonNamed('纠正'));
     const form = (await screen.findByText('新增一条更正')).closest('section') as HTMLElement;
     const description = within(form).getByLabelText('描述');
     fireEvent.change(description, { target: { value: '改了一半' } });
@@ -225,7 +237,7 @@ describe('档案页 · 纠正流', () => {
     renderPage(p);
     await screen.findByText('关于 TA 的当前认识');
 
-    fireEvent.click(screen.getAllByRole('button', { name: '纠正' })[0]);
+    fireEvent.click(firstButtonNamed('纠正'));
     const form = (await screen.findByText('新增一条更正')).closest('section') as HTMLElement;
     fireEvent.click(within(form).getByRole('button', { name: '纠正' }));
 
