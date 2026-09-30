@@ -199,7 +199,11 @@ describe('设置页 · 登出 · submitting', () => {
     // 提交中取消也不可用：避免用户以为取消掉了、实际登出仍在进行。
     expect((screen.getByRole('button', { name: '取消' }) as HTMLButtonElement).disabled).toBe(true);
 
+    // 让挂起的登出落地并等它渲染完：不留未决状态更新（否则会报 act() 警告）。
     release();
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog')).toBeNull();
+    });
   });
 });
 
@@ -213,7 +217,10 @@ describe('设置页 · 登出 · 失败', () => {
     expect(await screen.findByText('服务暂时不可用，请稍后再试')).toBeDefined();
     // 保留操作上下文：sheet 仍在，且按钮变成「重试」（状态覆盖表）。
     expect(screen.getByRole('dialog')).toBeDefined();
-    expect(screen.getByRole('button', { name: '重试' })).toBeDefined();
+    // 等状态更新落定后再断言按钮名，避免读到上一帧。
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: '重试' })).toBeDefined();
+    });
   });
 
   it('P0 登出失败不清本地会话（否则等于假装已登出）', async () => {
@@ -222,7 +229,7 @@ describe('设置页 · 登出 · 失败', () => {
     fireEvent.click(screen.getByRole('button', { name: '退出登录' }));
     fireEvent.click(screen.getByRole('button', { name: '退出' }));
 
-    await screen.findByText('服务暂时不可用，请稍后再试');
+    await screen.findByRole('button', { name: '重试' });
     expect(useSessionStore.getState().session.status).toBe('authenticated');
     expect(useSessionStore.getState().account).toEqual({ accountName: '阿澈的妈妈' });
   });
@@ -236,8 +243,7 @@ describe('设置页 · 登出 · 失败', () => {
 
     fireEvent.click(screen.getByRole('button', { name: '退出登录' }));
     fireEvent.click(screen.getByRole('button', { name: '退出' }));
-    await screen.findByRole('button', { name: '重试' });
-    fireEvent.click(screen.getByRole('button', { name: '重试' }));
+    fireEvent.click(await screen.findByRole('button', { name: '重试' }));
 
     expect(await screen.findByRole('heading', { name: '登录落点' })).toBeDefined();
     expect(useSessionStore.getState().session.status).toBe('anonymous');
