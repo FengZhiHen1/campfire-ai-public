@@ -311,6 +311,40 @@ async def test_batch_query_returns_only_the_deleted_ones() -> None:
 
 
 @pytest.mark.asyncio
+async def test_batch_query_rejects_a_bare_string() -> None:
+    """传 ``str`` 必须**显式拒绝**——否则逐字符校验并**静默返回空集**。
+
+    ## 为什么这是安全问题而不是参数风格问题
+
+    传 ``str`` 时 ``for value in account_ids`` 会逐字符迭代，
+    ``IN ('i','t','_')`` 匹配不到任何墓碑，于是返回**空集**——
+    即**静默回答「这些账号都没注销」**。那正是墓碑要防的「删后复活」的入口：
+    调用方少写一层 ``[ ... ]`` 就会拿到与事实相反的答案，而且**不报错**。
+
+    实测（评审）：修复前传 ``str`` 返回空集、传 ``None`` 或生成器抛裸 ``TypeError``。
+
+    判别性：去掉类型守卫，本用例失败（不抛异常，返回空集或裸 TypeError）。
+    """
+    await _clear()
+    try:
+        # 先造一个**真的已注销**的账号：这样「空集」与「正确结果」才可区分。
+        deleted = f"{_ACCOUNT}_strguard"
+        async with session_scope(get_settings()) as session:
+            await record_deletion(session, account_id=deleted)
+
+        async with session_scope(get_settings()) as session:
+            # 它不是合法输入：必须报错，不能静默给空集。
+            with pytest.raises(TombstonePayloadError, match="序列"):
+                await deleted_account_ids(session, account_ids=deleted)  # type: ignore[arg-type]
+
+            # 同样的内容放进 list 才对——证明上面拒的是**类型**，不是内容。
+            found = await deleted_account_ids(session, account_ids=[deleted])
+        assert found == {deleted}, "传 list 时必须正确返回已注销的账号"
+    finally:
+        await _clear()
+
+
+@pytest.mark.asyncio
 async def test_batch_query_is_bounded() -> None:
     """批量查询**有界**（CORE-11）：超长列表显式拒绝，不放进 SQL。"""
     from campfire.core.auth.tombstone_repository import BATCH_MAX_ACCOUNTS

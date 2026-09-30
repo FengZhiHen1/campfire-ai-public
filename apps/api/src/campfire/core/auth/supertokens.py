@@ -122,20 +122,39 @@ def init_supertokens(
     因此本模块**不 import 那个模块**，而是由装配处（``main.py``）把复写函数传进来——
     与「工具注册在装配处完成」同一种做法。
 
+    ## 为什么两个参数必须**同时**给出（否则显式拒绝）
+
+    评审实测（2026-09-30）两者单独给的效果**不对称**，而这个不对称是危险的：
+
+    | 传了 | 结果 |
+    |---|---|
+    | 只传 ``api_overrides`` | 未声明的表单字段让请求在**复写之前**被拒 → 「永远拒绝注册」（可用性问题，fail-closed） |
+    | 只传 ``sign_up_form_fields`` | **邀请码校验被彻底绕过**：实测无码、空码、乱码码**三种都注册成功**（安全缺口，**fail-open**） |
+
+    后者会静默地把「须凭邀请码注册」（``RQ-ACC-04``）变成「任何人都能注册」。
+    因此这里**不接受**单独给出二者之一：一旦给了其中一个，另一个也必须给，
+    否则抛 :class:`SuperTokensConfigurationError`。
+    让危险的组合**无法被表达**，比在文档里提醒可靠。
+
     Args:
         settings: 应用配置（唯一配置入口）。
-        api_overrides: 可选的 API 复写（如注册时校验邀请码）。为 ``None`` 时
-            **不做任何复写**——注意这意味着注册**不校验邀请码**，只应在测试或
-            明确不需要邀请码的场景下省略。
-        sign_up_form_fields: 可选的 signup **自定义表单字段声明**。**它与
-            ``api_overrides`` 是一对，缺一不可**：实测 SDK 在调用复写**之前**就校验
-            表单字段数量，未声明的字段会让请求以 400 被拒、复写根本不被调用
-            （只传 ``api_overrides`` 会得到一个「永远拒绝注册」的系统）。
+        api_overrides: API 复写（注册时校验邀请码）。**必须与**
+            ``sign_up_form_fields`` 同给同不给。
+        sign_up_form_fields: signup 自定义表单字段声明。**必须与**
+            ``api_overrides`` 同给同不给。
 
     Raises:
-        SuperTokensConfigurationError: 缺少必需的配置项。
+        SuperTokensConfigurationError: 缺少必需的配置项，或**只给了两个注册相关参数之一**。
     """
     api_key = _require_api_key(settings)
+
+    # 成对校验：见 docstring 的实测表。方向安全——漏传 api_overrides 是 fail-open。
+    if (api_overrides is None) != (sign_up_form_fields is None):
+        raise SuperTokensConfigurationError(
+            "api_overrides 与 sign_up_form_fields 必须同时给出："
+            "只给 api_overrides 会让注册永远被拒（表单字段未声明）；"
+            "只给 sign_up_form_fields 会**完全绕过邀请码校验**（任何人可注册）"
+        )
 
     override_config = InputOverrideConfig(apis=api_overrides) if api_overrides is not None else None
     sign_up_feature = InputSignUpFeature(form_fields=sign_up_form_fields()) if sign_up_form_fields is not None else None
@@ -156,7 +175,23 @@ def init_supertokens(
             api_key=api_key,
         ),
         recipe_list=[
-            session.init(anti_csrf="VIA_CUSTOM_HEADER"),
+            session.init(
+                anti_csrf="VIA_CUSTOM_HEADER",
+                # **固定为 cookie 传输**（2026-09-30 评审抓出，实测确认）。
+                #
+                # 不固定时 SDK 的默认是「按请求头决定，缺省落 header」：实测
+                # `session_request_functions.py:285-290` —— `output_transfer_method`
+                # 为 `"any"` 且无 `st-auth-mode` 头时**落成 `"header"`**。
+                # 于是注册会把 access/refresh token 放进**响应头**
+                # （实测响应头含 `st-access-token`、`Set-Cookie` 数为 0），
+                # 而响应头对前端 JavaScript 是**可读**的——与认证与账号第 5 节
+                # 「cookie 型会话，凭据**不可被前端 JavaScript 读取**」以及
+                # 项目结构设计第 9 节「前端不得读取或存储凭据」直接冲突。
+                #
+                # 固定成 cookie 后：凭据只在 `Set-Cookie` 里（HttpOnly 由 SDK 设置），
+                # 前端 JS 读不到；anti-CSRF 仍由 `VIA_CUSTOM_HEADER` 覆盖写操作。
+                get_token_transfer_method=lambda _req, _for_create, _ctx: "cookie",
+            ),
             emailpassword.init(sign_up_feature=sign_up_feature, override=override_config),
         ],
         mode="asgi",
