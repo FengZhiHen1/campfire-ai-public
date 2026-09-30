@@ -163,6 +163,7 @@ class SessionQueryError(SessionError):
         self.reason = reason
         super().__init__(f"会话查询参数不合法：{reason}")
 
+
 class OnboardingWriteError(AccountsError):
     """引导状态的写入无法完成（形状不合法、状态漂移，或存储失败）。
 
@@ -174,6 +175,7 @@ class OnboardingWriteError(AccountsError):
 
     它不是 :class:`InviteCodeError` 的子类：与邀请码无关。
     """
+
 
 __all__ = [
     # 基类
