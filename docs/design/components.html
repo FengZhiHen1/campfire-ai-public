@@ -71,13 +71,33 @@
         --section-y-desktop: 112px;
         --section-y-tablet: 80px;
         --section-y-phone: 56px;
+        --phone-shell-max: 480px;
+      }
+
+      /* ═══ 手机蒙版（仅手机端定调的契约级布局） ═══════════════════
+       * 参考页自身即蒙版的演示：>640px 视口时内容容器以
+       * --phone-shell-max 宽居中、容器外为暖沙蒙版底（DESIGN.md 定调）。 */
+      .phone-mask {
+        background: var(--surface-warm);
+        min-height: 100vh;
+        padding: 0;
+      }
+      .phone-shell {
+        max-width: var(--phone-shell-max);
+        margin-inline: auto;
+        min-height: 100vh;
+        background: linear-gradient(135deg, #fbf6ee 0%, #fffdf8 58%, #f1e3cf 100%);
+        border-inline: 1px solid var(--border);
+      }
+      @media (max-width: 640px) {
+        .phone-mask { background: transparent; }
+        .phone-shell { border-inline: 0; }
       }
 
       *, *::before, *::after { box-sizing: border-box; }
       html, body { margin: 0; padding: 0; }
       body {
-        min-height: 100vh;
-        background: var(--bg);
+        background: var(--surface-warm);
         color: var(--fg);
         font-family: var(--font-body);
         font-size: var(--text-base);
@@ -97,6 +117,21 @@
       .lead { max-width: 640px; color: var(--fg-2); font-size: var(--text-lg); }
       .stack > * + * { margin-block-start: var(--space-4); }
       .actions { display: flex; flex-wrap: wrap; gap: var(--space-3); margin-block-start: var(--space-6); }
+
+      /* ═══ 组件分组演示骨架（仅参考页使用，非契约组件） ══════════ */
+      .demo-section {
+        padding-block: var(--space-6);
+        border-bottom: 1px solid var(--border-soft);
+      }
+      .demo-section:last-of-type { border-bottom: 0; padding-bottom: calc(88px + var(--space-6)); }
+      .demo-title {
+        font-family: var(--font-display); font-weight: 500;
+        font-size: var(--text-lg); color: var(--fg);
+        margin-block-end: var(--space-1);
+      }
+      .demo-desc { color: var(--muted); font-size: var(--text-sm); margin-block-end: var(--space-4); }
+      .demo-row { display: flex; flex-wrap: wrap; gap: var(--space-3); align-items: center; }
+      .demo-col { display: grid; gap: var(--space-3); }
 
       /* ─── 按钮（@source: base(warm-editorial)） ─────────────────── */
       .btn {
@@ -121,6 +156,7 @@
       .btn-quiet:hover { color: var(--fg); }
       .btn-danger { background: var(--danger); color: var(--surface); }
       .btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+      .btn.block { width: 100%; min-height: 48px; }
 
       /* ─── 输入（@source: base(warm-editorial)） ─────────────────── */
       .field { display: grid; gap: var(--space-2); margin-block-start: var(--space-5); }
@@ -162,19 +198,32 @@
       }
       .status::before { width: 8px; height: 8px; border-radius: var(--radius-pill); background: var(--success); content: ""; }
       .status.stable::before { background: var(--status-stable); }
-      .status.unruled::before { color: var(--status-unruled); }
       .status.unruled::before { background: var(--status-unruled); }
-      .status.high::before { color: var(--status-high); background: var(--status-high); }
+      .status.high::before { background: var(--status-high); }
+      .status.off::before { background: var(--meta); }
+
+      /* ─── 弱标签 chip（@source: project — 元信息/选择器/SkillPicker） ── */
+      .tag {
+        display: inline-flex; align-items: center; gap: var(--space-1);
+        min-height: 36px; padding: var(--space-1) var(--space-4);
+        border: 1px solid var(--border); border-radius: var(--radius-pill);
+        background: var(--surface); color: var(--fg-2);
+        font-size: var(--text-sm); cursor: pointer; white-space: nowrap;
+        transition: border-color var(--motion-fast) var(--ease-standard),
+          color var(--motion-fast) var(--ease-standard),
+          background-color var(--motion-fast) var(--ease-standard);
+      }
+      .tag:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+      .tag.selected { border-color: var(--accent); color: var(--accent); background: color-mix(in oklab, var(--accent), transparent 94%); }
+      .tag.meta { background: none; border-color: var(--border-soft); color: var(--meta); min-height: 0; padding: var(--space-1) var(--space-2); font-size: var(--text-xs); cursor: default; }
 
       /* ─── 链接（@source: base(warm-editorial)） ─────────────────── */
       a { color: var(--accent); text-decoration: underline; text-decoration-color: color-mix(in oklab, var(--accent), transparent 55%); text-underline-offset: 3px; }
       a:hover { text-decoration-color: var(--accent); }
 
-      /* ─── 排版（@source: base(warm-editorial)） ─────────────────── */
+      /* ─── 排版与布局（@source: base(warm-editorial)） ──────────── */
       .hero { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(320px, 0.9fr); gap: var(--space-8); align-items: center; }
       @media (max-width: 860px) { .hero { grid-template-columns: 1fr; } }
-
-      /* ─── 布局（@source: base(warm-editorial)） ─────────────────── */
       .lower { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-4); }
       @media (max-width: 860px) { .lower { grid-template-columns: 1fr; } }
       .metric-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); border-bottom: 1px solid var(--border-soft); }
@@ -207,6 +256,7 @@
         backdrop-filter: blur(8px);
         border-top: 1px solid var(--border);
         padding-bottom: env(safe-area-inset-bottom, 0px);
+        max-width: var(--phone-shell-max); margin-inline: auto;
       }
       .tab-item {
         display: flex; flex-direction: column; align-items: center; justify-content: center;
@@ -220,12 +270,40 @@
       .tab-item[aria-current="page"] { color: var(--accent); }
       .tab-item:active { background: color-mix(in oklab, var(--accent), transparent 92%); }
 
+      /* ─── 次级页头（@source: project — 次级页面返回导航） ──────── */
+      .subpage-head {
+        position: sticky; top: 0; z-index: 30;
+        display: flex; align-items: center; gap: var(--space-3);
+        min-height: 48px; padding: var(--space-1) var(--container-gutter-phone);
+        padding-top: calc(var(--space-1) + env(safe-area-inset-top, 0px));
+        background: color-mix(in oklab, var(--bg), transparent 4%);
+        backdrop-filter: blur(8px);
+        border-bottom: 1px solid var(--border-soft);
+      }
+      .subpage-head .sp-back {
+        display: inline-flex; align-items: center; gap: var(--space-1);
+        min-height: 44px; background: none; border: 0;
+        color: var(--fg-2); font-size: var(--text-sm); font-weight: 700;
+        font-family: var(--font-body); cursor: pointer;
+      }
+      .subpage-head .sp-title { flex: 1; font-family: var(--font-display); font-weight: 500; font-size: var(--text-base); color: var(--fg); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .subpage-head .sp-tag { margin-left: auto; }
+
+      /* ─── 一级页头（@source: project — 一级页面标题行） ────────── */
+      .page-head {
+        display: flex; align-items: baseline; justify-content: space-between;
+        padding: calc(var(--space-4) + env(safe-area-inset-top, 0px)) var(--container-gutter-phone) var(--space-2);
+      }
+      .page-head h1 { font-size: var(--text-xl); }
+
       /* ─── 勾选行（@source: project — 应急表单多项勾选） ────────── */
       .check-row {
         display: flex; align-items: center; gap: var(--space-3);
         min-height: 48px; padding-block: var(--space-2);
         cursor: pointer; user-select: none;
+        border-bottom: 1px solid var(--border-soft);
       }
+      .check-row:last-child { border-bottom: 0; }
       .check-box {
         width: 20px; height: 20px; flex: none;
         border: 1.5px solid var(--border); border-radius: var(--radius-sm);
@@ -278,6 +356,37 @@
         font-size: var(--text-base); line-height: var(--leading-body); color: var(--fg);
       }
 
+      /* ─── 运行状态条（@source: project — progress 事件，时延感知） ── */
+      .run-status {
+        display: flex; align-items: center; gap: var(--space-2);
+        padding: var(--space-2) var(--space-4);
+        color: var(--fg-2); font-size: var(--text-sm);
+      }
+
+      /* ─── 骨架屏（@source: project — loading 态，与真实内容同形） ── */
+      .skeleton {
+        border-radius: var(--radius-sm);
+        background: color-mix(in oklab, var(--surface-warm), transparent 40%);
+        min-height: 16px;
+      }
+      .skeleton.row { min-height: 64px; border-radius: var(--radius-md); }
+      .skeleton.bubble { min-height: 44px; width: 62%; border-radius: var(--radius-md); border-top-right-radius: 4px; }
+      .skeleton.doc { min-height: 72px; }
+
+      /* ─── 空态卡（@source: project — empty 态） ─────────────────── */
+      .empty-state { text-align: center; padding: var(--space-8) var(--space-5); }
+      .empty-state .es-title { font-family: var(--font-display); font-weight: 500; font-size: var(--text-lg); color: var(--fg); }
+      .empty-state .es-desc { color: var(--muted); font-size: var(--text-sm); margin-block: var(--space-2) var(--space-5); }
+
+      /* ─── 错误卡（@source: project — error 态，含重试） ─────────── */
+      .error-card {
+        display: grid; gap: var(--space-3); padding: var(--space-5);
+        border: 1px solid color-mix(in oklab, var(--danger), transparent 55%);
+        border-radius: var(--radius-md); background: var(--surface);
+      }
+      .error-card .ec-title { display: flex; align-items: center; gap: var(--space-2); color: var(--danger); font-weight: 700; font-size: var(--text-base); }
+      .error-card .ec-desc { color: var(--fg-2); font-size: var(--text-sm); }
+
       /* ─── 结构化提问卡（@source: project — question 事件） ──────── */
       .question-card { padding: var(--space-5); }
       .question-card .q-title { font-size: var(--text-lg); color: var(--fg); margin-block-end: var(--space-4); }
@@ -294,6 +403,8 @@
         display: flex; align-items: baseline; gap: var(--space-2);
         font-family: var(--font-display); font-weight: 500;
         font-size: var(--text-base); color: var(--fg);
+        padding-block-end: var(--space-1);
+        border-bottom: 1px solid var(--border-soft);
       }
       .action-card .ac-item {
         display: flex; gap: var(--space-2); align-items: baseline;
@@ -360,89 +471,184 @@
         border-radius: var(--radius-lg) var(--radius-lg) 0 0;
         box-shadow: var(--elev-raised);
         padding: var(--space-6) var(--space-5) calc(var(--space-6) + env(safe-area-inset-bottom, 0px));
+        max-width: var(--phone-shell-max); margin-inline: auto;
       }
       .confirm-sheet .cs-title { font-family: var(--font-display); font-weight: 500; font-size: var(--text-lg); color: var(--fg); }
       .confirm-sheet .cs-desc { color: var(--muted); font-size: var(--text-sm); margin-block: var(--space-2) var(--space-5); }
       .confirm-sheet .cs-actions { display: flex; gap: var(--space-3); }
       .confirm-sheet .cs-actions .btn { flex: 1; }
+
+      /* ─── 列表行（@source: project — 会话/档案条目通用行） ──────── */
+      .list-row {
+        display: grid; gap: var(--space-1); padding: var(--space-4) var(--space-5);
+        border: 1px solid var(--border); border-radius: var(--radius-md);
+        background: var(--surface); cursor: pointer;
+        transition: border-color var(--motion-fast) var(--ease-standard);
+      }
+      .list-row:hover { border-color: color-mix(in oklab, var(--fg-2), transparent 55%); }
+      .list-row .lr-title { font-size: var(--text-base); color: var(--fg); font-weight: 700; }
+      .list-row .lr-sub { font-size: var(--text-sm); color: var(--muted); }
+      .list-row .lr-meta { font-size: var(--text-xs); color: var(--meta); }
+      .list-row .lr-actions { display: flex; gap: var(--space-2); margin-block-start: var(--space-2); }
+
+      /* ─── 折叠分组（@source: project — 档案领域分组、案例展开） ── */
+      .group-collapse > summary {
+        display: flex; align-items: center; gap: var(--space-2);
+        min-height: 44px; cursor: pointer; list-style: none;
+        color: var(--fg-2); font-size: var(--text-sm); font-weight: 700;
+      }
+      .group-collapse > summary::-webkit-details-marker { display: none; }
+      .group-collapse > summary .gc-arrow { transition: transform var(--motion-fast) var(--ease-standard); }
+      .group-collapse[open] > summary .gc-arrow { transform: rotate(90deg); }
+      .group-collapse .gc-body { display: grid; gap: var(--space-3); margin-block-start: var(--space-2); }
     </style>
   </head>
   <body>
-    <main class="page" style="padding-bottom: 96px;">
-      <section>
-        <div class="container hero">
-          <div class="stack">
-            <p class="eyebrow">Campfire-AI · 设计契约组件参考</p>
-            <h1>篝火智答契约组件</h1>
-            <p class="lead">warm-editorial 底座 × 火焰橙。所有可见值来自 tokens.css；本页为组件形状契约，非页面设计。</p>
-            <div class="actions">
-              <button class="btn btn-primary" type="button">主要操作</button>
-              <button class="btn btn-secondary" type="button">次要操作</button>
-              <button class="btn btn-quiet" type="button">静默操作</button>
-              <button class="btn btn-danger" type="button">危险操作</button>
-            </div>
+    <div class="phone-mask">
+      <div class="phone-shell">
+        <main class="page">
+          <div style="padding: calc(var(--space-8) + env(safe-area-inset-top, 0px)) var(--container-gutter-phone) 0;">
+            <p class="eyebrow">Campfire-AI · 契约组件</p>
+            <h1 style="font-size: var(--text-2xl); margin-block: var(--space-2) var(--space-3);">篝火智答设计契约</h1>
+            <p class="lead" style="font-size: var(--text-base); color: var(--fg-2);">warm-editorial 底座 × 火焰橙。本页为组件形状契约（480px 手机蒙版呈现），非页面设计。</p>
           </div>
-          <article class="panel">
-            <div class="panel-head">
-              <div><p class="eyebrow">表单</p><h3>输入与状态</h3></div>
-              <span class="status stable">在线</span>
+
+          <!-- ═══ 01 按钮 ═══ -->
+          <section class="demo-section" style="padding-inline: var(--container-gutter-phone);">
+            <p class="demo-title">01 · 按钮</p>
+            <p class="demo-desc">四级动作语言：primary 唯一主动作、secondary 次动作、quiet 静默、danger 危险。</p>
+            <div class="demo-row">
+              <button class="btn btn-primary" type="button">开始应急咨询</button>
+              <button class="btn btn-secondary" type="button">查看依据</button>
+              <button class="btn btn-quiet" type="button">跳过这题</button>
+              <button class="btn btn-danger" type="button">删除记录</button>
+              <button class="btn btn-primary" type="button" disabled>正在登录…</button>
             </div>
-            <div class="card-row">
-              <div class="mini-card">
-                <h3>字段</h3>
-                <div class="field">
-                  <label for="demo-input">账号名</label>
-                  <input id="demo-input" placeholder="用于登录的账号名" />
-                  <p class="hint">不要求邮箱，也不会用于验证。</p>
-                </div>
-              </div>
-              <div class="mini-card">
-                <h3>状态徽章</h3>
-                <p style="display: flex; gap: var(--space-4); flex-wrap: wrap; margin-block-start: var(--space-3);">
-                  <span class="status stable">稳定</span>
-                  <span class="status unruled">未排除</span>
-                  <span class="status high">高风险</span>
-                </p>
-                <p style="display: flex; align-items: center; gap: var(--space-3); margin-block-start: var(--space-4);">
-                  <span class="flame-dot"></span>
-                  <span style="color: var(--muted); font-size: var(--text-sm);">篝火呼吸点（应急入口用）</span>
-                </p>
-              </div>
+          </section>
+
+          <!-- ═══ 02 输入 ═══ -->
+          <section class="demo-section" style="padding-inline: var(--container-gutter-phone);">
+            <p class="demo-title">02 · 输入</p>
+            <p class="demo-desc">label 在上、focus 橙环、user-invalid 才出红边（blur 前不校验）。</p>
+            <div class="field" style="margin-block-start: 0;">
+              <label for="demo-account">账号名</label>
+              <input id="demo-account" placeholder="用于登录的账号名" />
+              <p class="hint">不要求邮箱，也不会用于验证。</p>
             </div>
-          </article>
-        </div>
-      </section>
-      <section>
-        <div class="container lower">
-          <article class="tile">
-            <p class="eyebrow">卡片</p>
-            <h2>面板与平铺</h2>
-            <p>panel / tile / mini-card 三层卡片语言，圆角 16–24px。</p>
-          </article>
-          <article class="tile">
-            <p class="eyebrow">链接</p>
-            <h2>内联引用</h2>
-            <p>链接用 accent 色、弱化下划线，hover 加深——见 <a href="#">示例链接</a>。</p>
-          </article>
-          <article class="tile">
-            <p class="eyebrow">动效</p>
-            <h2>克制原则</h2>
-            <p>状态确认 150ms，进入 240ms；呼吸点是唯一循环动效，respect reduced-motion。</p>
-          </article>
-        </div>
-      </section>
-      <section>
-        <div class="container" style="max-width: 480px;">
-          <p class="eyebrow" style="margin-block-end: var(--space-4);">项目组件（页面设计修订追加）</p>
-          <div class="stack" style="margin-block-end: var(--space-6);">
-            <div class="progress-track" role="img" aria-label="第 3 题，共 8 题"><div class="progress-fill" style="width: 37.5%;"></div></div>
-            <div class="check-row" aria-pressed="true" role="button" tabindex="0"><span class="check-box"></span><span>呼吸异常</span></div>
-            <div class="check-row" aria-pressed="false" role="button" tabindex="0"><span class="check-box"></span><span>明显外伤</span></div>
-            <div class="tile choice" aria-pressed="true" role="button" tabindex="0"><span style="font-size: var(--text-base);">与平时相比：明显变化</span></div>
-          </div>
-          <div class="stack">
-            <div class="bubble-user">他刚才在超市突然捂住耳朵蹲下了，怎么都不肯走。</div>
-            <div class="msg-doc">根据你描述的情况，环境噪音可能是重要促发因素。建议先带他到相对安静的角落，等待至少 10 秒再尝试沟通。</div>
+            <div class="field">
+              <label for="demo-invite">邀请码</label>
+              <input id="demo-invite" required value="A1B2" />
+              <p class="error" role="alert">邀请码无效或已被使用</p>
+            </div>
+            <div class="field">
+              <label for="demo-note">刚刚发生了什么（可跳过）</label>
+              <textarea id="demo-note" placeholder="一句话描述现场情况"></textarea>
+            </div>
+          </section>
+
+          <!-- ═══ 03 卡片三层 ═══ -->
+          <section class="demo-section" style="padding-inline: var(--container-gutter-phone);">
+            <p class="demo-title">03 · 卡片三层</p>
+            <p class="demo-desc">panel（抬升）> tile（平铺）> mini-card（暖沙内衬）——海拔即层级。</p>
+            <div class="panel">
+              <div class="panel-head">
+                <div><p class="eyebrow">panel</p><h3 style="font-size: var(--text-lg);">抬升面板</h3></div>
+                <span class="status stable">在线</span>
+              </div>
+              <div style="padding: var(--space-5);"><p style="color: var(--muted); font-size: var(--text-sm);">唯一带阴影层：一页摘要、应急入口、行动卡。</p></div>
+            </div>
+            <div class="tile">
+              <h3 style="font-size: var(--text-lg);">tile 平铺卡</h3>
+              <p>边框卡无阴影——列表行、入口、提问卡。</p>
+            </div>
+            <div class="mini-card">
+              <h3 style="font-size: var(--text-lg);">mini-card 暖沙内衬</h3>
+              <p>次级入口、低权重信息区。</p>
+            </div>
+          </section>
+
+          <!-- ═══ 04 状态徽章与弱标签 ═══ -->
+          <section class="demo-section" style="padding-inline: var(--container-gutter-phone);">
+            <p class="demo-title">04 · 状态徽章与弱标签</p>
+            <p class="demo-desc">三值医疗风险徽章（硬校验）；tag 元信息 chip 与选择器 chip。</p>
+            <div class="demo-row">
+              <span class="status stable">稳定</span>
+              <span class="status unruled">未排除</span>
+              <span class="status high">高风险</span>
+              <span class="status off">已撤下</span>
+            </div>
+            <div class="demo-row" style="margin-block-start: var(--space-4);">
+              <span class="tag">自动</span>
+              <span class="tag selected">日常咨询</span>
+              <span class="tag">应急咨询</span>
+            </div>
+            <div class="demo-row">
+              <span class="tag meta">已发表</span>
+              <span class="tag meta">内部</span>
+              <span class="tag meta">虚构样例</span>
+              <span class="tag meta">待确认</span>
+              <span class="tag meta">已授权</span>
+            </div>
+          </section>
+
+          <!-- ═══ 05 导航骨架 ═══ -->
+          <section class="demo-section" style="padding-inline: 0;">
+            <p class="demo-title" style="padding-inline: var(--container-gutter-phone);">05 · 导航骨架</p>
+            <p class="demo-desc" style="padding-inline: var(--container-gutter-phone);">次级页头（返回 + 标题 + 技能标签）；底部 tab 栏见页脚。</p>
+            <div class="subpage-head">
+              <button class="sp-back" type="button">← 返回</button>
+              <span class="sp-title">与平时相比的变化</span>
+              <span class="tag meta sp-tag">应急咨询</span>
+            </div>
+            <div class="page-head" style="padding-block-start: var(--space-4);">
+              <h1>档案</h1>
+            </div>
+          </section>
+
+          <!-- ═══ 06 呼吸点与进度 ═══ -->
+          <section class="demo-section" style="padding-inline: var(--container-gutter-phone);">
+            <p class="demo-title">06 · 呼吸点与进度</p>
+            <p class="demo-desc">flame-dot 项目唯一记忆点（2s 呼吸、reduced-motion 静态）；分步进度只给位置感。</p>
+            <div class="demo-row">
+              <span class="flame-dot"></span>
+              <span class="flame-dot sm"></span>
+              <span style="color: var(--muted); font-size: var(--text-sm);">8px / 12px 两档</span>
+            </div>
+            <div class="progress-track" role="img" aria-label="第 3 题，共 8 题" style="margin-block-start: var(--space-4);"><div class="progress-fill" style="width: 37.5%;"></div></div>
+          </section>
+
+          <!-- ═══ 07 采集控件 ═══ -->
+          <section class="demo-section" style="padding-inline: var(--container-gutter-phone);">
+            <p class="demo-title">07 · 采集控件</p>
+            <p class="demo-desc">应急八项的勾选行与三选一卡——整行热区 ≥48px，选中态不改变行高。</p>
+            <div class="tile" style="padding: var(--space-2) var(--space-5);">
+              <div class="check-row" aria-pressed="true" role="button" tabindex="0"><span class="check-box"></span><span>呼吸异常</span></div>
+              <div class="check-row" aria-pressed="false" role="button" tabindex="0"><span class="check-box"></span><span>明显外伤</span></div>
+              <div class="check-row" aria-pressed="false" role="button" tabindex="0"><span class="check-box"></span><span>癫痫持续或异常发作</span></div>
+            </div>
+            <div class="demo-col">
+              <div class="tile choice" aria-pressed="true" role="button" tabindex="0"><span style="font-size: var(--text-base);">明显变化</span></div>
+              <div class="tile choice" aria-pressed="false" role="button" tabindex="0"><span style="font-size: var(--text-base);">轻度变化</span></div>
+            </div>
+          </section>
+
+          <!-- ═══ 08 对话消息流 ═══ -->
+          <section class="demo-section" style="padding-inline: var(--container-gutter-phone);">
+            <p class="demo-title">08 · 对话消息流</p>
+            <p class="demo-desc">使用者是气泡、助手是读物正文——左细线区隔，17px 阅读字号。</p>
+            <div class="demo-col">
+              <div class="bubble-user">他刚才在超市突然捂住耳朵蹲下了，怎么都不肯走。</div>
+              <div class="msg-doc">根据你描述的情况，环境噪音可能是重要促发因素。建议先带他到相对安静的角落，等待至少 10 秒再尝试沟通。</div>
+              <div class="run-status"><span class="flame-dot sm"></span>正在检索资料…</div>
+              <details class="reasoning-row"><summary>正在分析…</summary><div class="r-body">思考过程的中间态呈现区，与正文视觉区隔；不是结论，不作为依据引用。</div></details>
+              <details class="tool-row"><summary>查阅资料（2 条）</summary><div style="margin-block-start: var(--space-1);">search_knowledge · search_cases 的调用摘要。</div></details>
+            </div>
+          </section>
+
+          <!-- ═══ 09 提问卡与行动卡 ═══ -->
+          <section class="demo-section" style="padding-inline: var(--container-gutter-phone);">
+            <p class="demo-title">09 · 提问卡与行动卡</p>
+            <p class="demo-desc">question 三通道（点选/自由/跳过）；action-card 七节、三值徽章、来源标注。</p>
             <div class="tile question-card">
               <p class="q-title">他现在愿意用简单手势或写字回应吗？</p>
               <div class="q-options">
@@ -451,10 +657,17 @@
               </div>
               <div class="q-footer"><button class="btn btn-quiet" type="button">自由回答</button><button class="btn btn-quiet" type="button">跳过这题</button></div>
             </div>
+            <div class="tile question-card answered">
+              <p class="q-title">是否可能疼痛？</p>
+              <div class="q-options">
+                <button class="btn btn-secondary" type="button" aria-pressed="true">不确定</button>
+              </div>
+              <div class="q-footer"><button class="btn btn-quiet" type="button" tabindex="-1">已回答 · 2026-10-06 14:32</button></div>
+            </div>
             <div class="panel action-card">
               <div class="ac-section">
                 <div class="ac-head">1 · 当前状态</div>
-                <div class="ac-item"><span class="ac-source">医疗风险</span><span class="status unruled">未排除</span></div>
+                <div class="ac-item"><span>医疗风险</span><span class="status unruled">未排除</span></div>
                 <div class="ac-item"><span>与平时相比：明显变化</span><span class="ac-source">来源：家属报告</span><span class="ac-confidence">较可能</span></div>
               </div>
               <div class="ac-section">
@@ -465,12 +678,21 @@
               <div class="citation-block open">
                 <button class="citation-head" type="button">依据 2 条</button>
                 <div class="citation-list">
-                  <div class="citation-item"><p class="c-title"><a href="#">感觉超负荷时的环境调整策略</a></p><p class="c-meta">来源：某机构公开材料 · 适用：学龄前至学龄期</p></div>
+                  <div class="citation-item"><p class="c-title"><a href="#">感觉超负荷时的环境调整策略</a></p><p class="c-meta">来源：某机构公开材料 · 适用：学龄前至学龄期 · 已发表</p></div>
                   <div class="citation-item"><p class="c-title">超市购物场景的支持记录</p><p class="c-meta c-withdrawn">该来源已撤下</p></div>
                 </div>
               </div>
             </div>
-            <details class="reasoning-row"><summary>正在分析…</summary><div class="r-body">思考过程的中间态呈现区，与正文视觉区隔。</div></details>
+            <div class="panel action-card expired">
+              <div class="ac-expired-bar"><span class="status off">已过期</span>见最新卡片</div>
+              <div class="ac-section"><div class="ac-head">1 · 当前状态</div><div class="ac-item"><span>医疗风险</span><span class="status unruled">未排除</span></div></div>
+            </div>
+          </section>
+
+          <!-- ═══ 10 候选与确认 ═══ -->
+          <section class="demo-section" style="padding-inline: var(--container-gutter-phone);">
+            <p class="demo-title">10 · 候选与确认</p>
+            <p class="demo-desc">候选轻提示（预览不进消息流）；底部确认操作单（不可撤销动作）。</p>
             <div class="candidate-toast" role="button" tabindex="0">有 2 条待确认
               <div class="ct-panel">
                 <div class="ct-item"><p class="ct-text">超市等嘈杂环境可能是感觉触发因素</p><p class="ct-origin">AI 归纳 · 待确认</p></div>
@@ -478,27 +700,67 @@
                 <button class="btn btn-secondary" type="button">去档案确认</button>
               </div>
             </div>
-          </div>
-        </div>
-      </section>
-    </main>
-    <nav class="tab-bar" aria-label="主导航">
-      <button class="tab-item" type="button" aria-current="page">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M4 11.5 12 4l8 7.5V20a1 1 0 0 1-1 1h-5v-6h-4v6H5a1 1 0 0 1-1-1v-8.5Z" stroke-linecap="round" stroke-linejoin="round"/></svg>
-        <span>首页</span>
-      </button>
-      <button class="tab-item" type="button">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M4 5h16v11H9l-5 4V5Z" stroke-linecap="round" stroke-linejoin="round"/></svg>
-        <span>咨询</span>
-      </button>
-      <button class="tab-item" type="button">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M6 3h9l4 4v14H6V3Z" stroke-linecap="round" stroke-linejoin="round"/><path d="M9 11h7M9 15h7" stroke-linecap="round"/></svg>
-        <span>档案</span>
-      </button>
-      <button class="tab-item" type="button">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><circle cx="12" cy="8" r="4" stroke-linecap="round"/><path d="M4.5 20.5c1.5-3.5 4.5-5 7.5-5s6 1.5 7.5 5" stroke-linecap="round"/></svg>
-        <span>我的</span>
-      </button>
-    </nav>
+          </section>
+
+          <!-- ═══ 11 列表与分组 ═══ -->
+          <section class="demo-section" style="padding-inline: var(--container-gutter-phone);">
+            <p class="demo-title">11 · 列表与分组</p>
+            <p class="demo-desc">会话/档案通用列表行；领域折叠分组（默认展开、带计数）。</p>
+            <div class="demo-col">
+              <div class="list-row">
+                <p class="lr-title">超市里突然捂耳朵蹲下怎么办</p>
+                <p class="lr-sub">他刚才在超市突然捂住耳朵蹲下了，怎么都不肯走…</p>
+                <p class="lr-meta">昨天 · 小宇</p>
+              </div>
+              <details class="group-collapse tile" open>
+                <summary><svg class="gc-arrow" width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M6 4l4 4-4 4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>沟通（3）</summary>
+                <div class="gc-body">
+                  <div class="list-row">
+                    <p class="lr-title">无口语时用文字或二选一</p>
+                    <p class="lr-sub">用手写字板或出示两个选项，比追问有效。</p>
+                    <p class="lr-meta">你说过 · 10-02 确认</p>
+                  </div>
+                  <div class="list-row">
+                    <p class="lr-title">等待至少 10 秒再回应</p>
+                    <p class="lr-meta">文档记录 · 09-28 确认</p>
+                  </div>
+                </div>
+              </details>
+            </div>
+          </section>
+
+          <!-- ═══ 12 三态基元 ═══ -->
+          <section class="demo-section" style="padding-inline: var(--container-gutter-phone);">
+            <p class="demo-title">12 · 三态基元</p>
+            <p class="demo-desc">骨架与真实内容同形；空态是引导时刻；错误三问（发生了什么/为什么/怎么办）。</p>
+            <div class="demo-col">
+              <div class="skeleton row"></div>
+              <div class="skeleton bubble"></div>
+              <div class="skeleton doc"></div>
+            </div>
+            <div class="tile empty-state">
+              <p class="es-title">还没有咨询记录</p>
+              <p class="es-desc">从上面开始第一次咨询</p>
+              <button class="btn btn-primary" type="button">开始新的日常咨询</button>
+            </div>
+            <div class="error-card">
+              <p class="ec-title"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><circle cx="8" cy="8" r="6.5" stroke="currentColor" stroke-width="1.6"/><path d="M8 5v4M8 11h.01" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>检索暂时不可用</p>
+              <p class="ec-desc">网络连接中断，已保留你输入的内容。</p>
+              <div><button class="btn btn-secondary" type="button">重试</button></div>
+            </div>
+          </section>
+        </main>
+      </div>
+    </div>
+
+    <!-- 确认操作单演示（固定底部，与 tab 栏同层级互斥出现） -->
+    <div class="confirm-sheet" role="dialog" aria-modal="true" aria-label="删除确认">
+      <p class="cs-title">删除这条记录？</p>
+      <p class="cs-desc">删除后咨询和检索都不会再用到它。</p>
+      <div class="cs-actions">
+        <button class="btn btn-quiet" type="button">取消</button>
+        <button class="btn btn-danger" type="button">删除</button>
+      </div>
+    </div>
   </body>
 </html>
