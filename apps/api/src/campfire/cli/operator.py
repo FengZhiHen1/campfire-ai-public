@@ -212,6 +212,7 @@ async def _run_account_reset(args: argparse.Namespace) -> int:
     失败时不留任何副作用；反过来会给使用者一个「会话被踢掉但密码没改成」的状态。
     """
     from supertokens_python.recipe.emailpassword.asyncio import update_email_or_password
+    from supertokens_python.recipe.emailpassword.interfaces import UpdateEmailOrPasswordOkResult
     from supertokens_python.types import RecipeUserId
 
     settings = get_settings()
@@ -230,9 +231,19 @@ async def _run_account_reset(args: argparse.Namespace) -> int:
         recipe_user_id=RecipeUserId(args.account),
         password=args.password,
     )
-    status = getattr(result, "status", None)
-    if status is not None and status != "OK":
-        print(f"重置失败：{status}", file=sys.stderr)
+    # 判定走类型，不走 `status` 属性。SDK 声明的是联合类型，成功值是
+    # UpdateEmailOrPasswordOkResult（一个没有 status 属性的空类）；本命令能触发的
+    # 失败值（UnknownUserIdError、PasswordPolicyViolationError）同样没有 status
+    # ——唯一带 status 的是 EmailAlreadyExistsError，而本命令不传 email，拿不到它。
+    # 实测（2026-09-30，直接构造 SDK 结果对象）：这四个类的 hasattr(status) 依次是
+    # False/False/False/True。也就是说原来的 `getattr(result, "status", None)` 守卫
+    # 一次也不会命中：账号不存在、新密码不合校验器，都会照样撤销会话并打印
+    # 「已重置密码并撤销该账号全部会话」。
+    # 按类型判定是 fail-closed 的：SDK 一旦换了结果形状，它落进「非 OK」而不是「成功」。
+    if not isinstance(result, UpdateEmailOrPasswordOkResult):
+        # 只报类型名：SDK 错误对象里可能带邮箱与自由文本的失败原因，而本命令处理的
+        # 是密码（AGENTS.md：日志与错误消息不复述凭据）。
+        print(f"重置失败：{type(result).__name__}", file=sys.stderr)
         return 1
 
     try:
