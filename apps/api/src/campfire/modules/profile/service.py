@@ -663,6 +663,8 @@ async def correct_item(
     Raises:
         AuthorizationError: 条目不存在或不属于该账号。
         ProfileDataError: 描述或主题为空，或纠正无变更（新描述与旧描述相同）。
+        ProfileItemNotFoundError: 旧条目已被取代（或不在 `current` 态）——
+            同一条目只被纠正一次，重复提交不覆写既有的取代关系。
     """
     old = await _load_owned_item(session, account_id=account_id, item_id=item_id)
     new_description = _require_change(description, old.description)
@@ -701,11 +703,20 @@ async def correct_item(
     # 先把新条目落库拿到主键，再写两条互指：`superseded_by` 需要一个真实存在的
     # 目标主键，而外键会在 flush 时校验它。
     await session.flush()
-    await repo.set_item_supersedes(session, item_id=new_item.item_id, supersedes=old.item_id)
+    # 先做带状态判据的那一步：旧条目已被取代（或不在 `current` 态）时这里拿不到行，
+    # 整笔纠正失败——不静默改写既有的取代关系，也不留下只有单向指针的半成品
+    # （第 3 节不变量 3）。这一步同时挡住「同一纠正请求被重复提交」：第二次会
+    # 覆写 `superseded_by`，让先前的取代者成为悬挂指针。
     superseded = await repo.mark_superseded(session, old_item_id=old.item_id, new_item_id=new_item.item_id)
     if superseded is None:
-        # 旧条目在同一事务内消失（并发删除）：显式失败，不留下只有单向指针的半成品。
-        raise ProfileItemNotFoundError(old.item_id, "旧条目在纠正过程中消失")
+        # 载荷里的旧状态是读取时的快照：两次纠正请求各自都能通过 `_require_change`，
+        # 只有带状态判据的这一步能分辨出来。
+        raise ProfileItemNotFoundError(
+            old.item_id,
+            f"读取时新鲜度为 {old.freshness!r}、取代指针{'非空' if old.superseded_by is not None else '为空'}："
+            "已被取代（或已在纠正过程中被删除）的条目不能再被纠正",
+        )
+    await repo.set_item_supersedes(session, item_id=new_item.item_id, supersedes=old.item_id)
     await session.refresh(new_item)
     return new_item, superseded
 
