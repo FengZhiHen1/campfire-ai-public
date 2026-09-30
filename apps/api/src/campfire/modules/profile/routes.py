@@ -321,7 +321,11 @@ class RejectPayload(BaseModel):
 
 
 class DeletePayload(BaseModel):
-    """删除响应；幂等，重复删除仍 200 且 `already` 为真（契约第 1、4 节）。"""
+    """删除响应（契约第 4 节的形状）。
+
+    `already` 是契约保留字段：本实现只在真的删到行时返回 200（`already` 恒为
+    `false`），没删到行的一律 404，因此它不再表示「此前已删除」。
+    """
 
     item_id: str
     already: bool
@@ -644,21 +648,23 @@ async def delete_item(
 ) -> DeletePayload | JSONResponse:
     """删除一条条目（契约第 4 节）。
 
-    幂等：重复删除返回 200 并带 `already: true`，不报错——二次确认是前端交互，
-    服务端不做「猜你不是故意的」，把重复删除当错误只会让重试收到失败，而删除
-    实际上已经生效。
+    越权与不存在的响应逐字相同：两者都由用例层归为「不可访问」，经
+    `_map_error` 得到同一个 404——面层不另开一条错误路径，也就没有
+    「两条路径文案漂移」的可能。
 
-    越权与不存在同样返回 200 `already: true`（用例层把三种情形合并成「没删到行」）：
-    这是不泄露存在性的那一侧选择——区分它们才会提供条目枚举通道。
+    幂等只覆盖「本账号尚未删过这条、且条目确实存在」的第一次删除：条目是物理
+    删除，库表里没有留痕，因此第二次删除与「从未存在」在服务端不可区分，一律
+    404（契约第 6 节「条目不存在 → 404」；2026-09-30 编排器裁决 1：删除的
+    越权或不存在不得返回 200）。
     """
     if _item_uuid(item_id) is None:
         return _error(404, OBJECT_NOT_ACCESSIBLE_MESSAGE, "not_found")
     try:
         async with session_scope(get_settings()) as session:
-            deleted = await service.delete_item(session, account_id=account_id, item_id=item_id)
-    except ProfileError as exc:
+            await service.delete_item(session, account_id=account_id, item_id=item_id)
+    except (AuthorizationError, ProfileError) as exc:
         return _map_error(exc)
-    return DeletePayload(item_id=item_id, already=not deleted)
+    return DeletePayload(item_id=item_id, already=False)
 
 
 # ---------------------------------------------------------------------------
