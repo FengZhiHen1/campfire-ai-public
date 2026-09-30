@@ -490,7 +490,7 @@ async def test_reject_removes_candidate_from_reads(client: httpx.AsyncClient, as
 
 
 async def test_delete_returns_404_for_foreign_and_absent_items(client: httpx.AsyncClient, as_account) -> None:  # noqa: ANN001
-    """删除的越权与不存在：**404 且响应体逐字相同**（契约第 6 节、裁决 1）。
+    """删除的越权与不存在：404 且响应体逐字相同（契约第 6 节、裁决 1）。
 
     两个场景都是真实 HTTP 实测，不是读代码推得：
     - 越权：删除他人条目；
@@ -500,7 +500,7 @@ async def test_delete_returns_404_for_foreign_and_absent_items(client: httpx.Asy
     「已被自己删掉」与「从未存在」区分开，因此同样 404、同样文案：删除的越权与
     不存在一律 404，不得返回 200（2026-09-30 编排器裁决 1）。
 
-    另外断言越权删除**没有删到任何行**：只报 404 却真把行删了同样是缺陷。
+    另外断言越权删除没有删到任何行：只报 404 却真把行删了同样是缺陷。
     """
     foreign_object = await _new_object(account=_ACCOUNT_OTHER)
     foreign_item = await _propose(foreign_object, origin="ai_inference", account=_ACCOUNT_OTHER)
@@ -618,7 +618,7 @@ async def test_create_item_rejects_unknown_domain(client: httpx.AsyncClient, as_
 
 
 async def test_endpoints_require_a_session() -> None:
-    """无会话请求档案面**每一个**端点 → 401（`RQ-ACC-01`：全应用必须登录）。
+    """无会话请求档案面每一个端点 → 401（`RQ-ACC-01`：全应用必须登录）。
 
     走真实 SDK（因此需要 SuperTokens core 与 API Key；缺任一跳过而不是假装通过）。
     不替换会话依赖——这条要验的正是依赖本身。

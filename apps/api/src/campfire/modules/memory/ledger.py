@@ -117,6 +117,7 @@ async def deleted_episode_keys(session: AsyncSession, account_id: AccountId | st
     return keys
 
 
+# quality-floor: ignore docstring-promise 异常由 to_account_id 与 to_episode_key 抛出（间接 raise），本函数只做一次查询
 async def recorded_deletion_reason(
     session: AsyncSession,
     *,
