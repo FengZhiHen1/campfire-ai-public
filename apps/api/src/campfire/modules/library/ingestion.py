@@ -242,10 +242,11 @@ async def _write_nodes(
     chunks: list[Chunk],
     vectors: list[list[float]],
 ) -> None:
-    """在同一事务里替换该条目的全部节点。
+    """写入该条目的节点（调用方先删旧节点，见 `ingest_file` 的顺序与撤下闸门）。
 
-    先删旧节点再写新节点——更新与撤下走同一套机制，且与条目表状态变更同事务
-    （RAG 策略第 2 节：撤下要能同时改状态与删节点）。
+    删旧节点不在这里：删除必须对「内容变更重写」与「已撤下条目清残留」两条路径
+    都发生，而且要在嵌入之前发生。留在调用方，两条路径共用同一句删除，不留
+    「某条分支忘了删」的余地。
 
     实现期实测得到的关键约束（2026-09-29，决定本模块的事务写法）：
 
@@ -256,8 +257,6 @@ async def _write_nodes(
     而是用我们自己的 session、经框架的表模型写节点行——这样条目表与节点表
     在同一个事务里落库，撤下时才能「同时改条目状态与删节点」（RAG 策略第 2 节）。
     """
-    await session.execute(delete(RetrievedNode).where(RetrievedNode.node_id.like(f"{item.id}:%")))
-
     table = vector_store._table_class  # noqa: SLF001 —— 框架耦合点，由集成测试守护
     for chunk, vector in zip(chunks, vectors, strict=True):
         session.add(
@@ -298,6 +297,18 @@ async def ingest_file(
 
     幂等：同 `source_path` + 同 `doc_hash` 的条目已存在则跳过，不重复嵌入。
     变了的文件：删除其旧节点后重新写入（保证「撤下/更新即刻生效」的同一套机制）。
+
+    已撤下条目的重新摄取（与案例摄取同一处置）：
+
+    - 内容哈希再变也不重建节点：先清掉该条目名下的任何残留节点即返回，不做嵌入。
+      `withdrawal.py` 用「条目状态 + 删节点」在同一事务里表达撤下，节点表是条目表
+      的投影（RAG 策略第 2 节）——为已撤下条目写回节点，等于让撤下内容的正文重新
+      落回检索存储，并把「取不到已撤下正文」重新押在每条取数路径都记得过滤
+      `withdrawn` 上；同时还会为永远不会被检索的内容付一次嵌入往返。
+    - 条目行仍随最新文件更新（含 `doc_hash`），因此重复摄取同一份文件照常按幂等
+      跳过；但写入计数为 0（本次确实没有写入节点），`headers` 为空。
+    - 一期没有「重新摄取即恢复」的语义：恢复必须是运维的显式动作，不能被文件的一次
+      重新交付悄悄完成（若将来要恢复，需要单独设计并写清语义）。
 
     设计依据（RAG 策略第 7 节）：
 
@@ -342,7 +353,6 @@ async def ingest_file(
     # 只嵌入可嵌入的块；不可分单元进人工处理队列，不截断。
     embeddable = [c for c in chunks if not c.needs_manual_review]
     manual = [c for c in chunks if c.needs_manual_review]
-    vectors = await _embed_chunks(settings, embeddable)
 
     item = existing if existing is not None else KnowledgeItem(source_path=source_path)
     item.title = title or frontmatter.get("title") or path.stem
@@ -354,6 +364,22 @@ async def ingest_file(
     if existing is None:
         session.add(item)
     await session.flush()  # 取到 item.id
+
+    # 先删该条目的旧节点再写新节点：更新与撤下走同一套机制，且与条目表状态变更同事务
+    # （RAG 策略第 2 节：撤下要能同时改状态与删节点）。
+    # 这一步对已撤下条目同样执行：撤下的承诺是「该条目没有检索节点」，重跑顺手清掉
+    # 任何残留（历史脏数据或旁路写入），而不是把它们留在库里等某条取数路径读到。
+    await session.execute(delete(RetrievedNode).where(RetrievedNode.node_id.like(f"{item.id}:%")))
+
+    if item.withdrawn:
+        # 已撤下的条目不重建节点：撤下的承诺是「该条目没有检索节点」，内容变了就写回
+        # 节点会推翻它，并把已撤下的正文重新放进检索存储（取数是否读得到就只剩
+        # 「每条路径都记得过滤 withdrawn」这一层）。一次嵌入调用都不做——为不会被
+        # 检索的内容付供应商往返是纯浪费。计数保持缺省 0：本次确实没有写入任何节点。
+        await session.flush()
+        return IngestionResult(source_path=source_path, item_id=str(item.id))
+
+    vectors = await _embed_chunks(settings, embeddable)
 
     await _write_nodes(session, vector_store, item, embeddable, vectors)
 
