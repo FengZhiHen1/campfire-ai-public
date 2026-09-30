@@ -514,6 +514,7 @@ def build_markdown(
 def convert_html_file(
     path: Path,
     *,
+    title: str | None = None,
     source: str | None = None,
     applicable_scope: str | None = None,
     license_note: str | None = None,
@@ -523,11 +524,21 @@ def convert_html_file(
     归属：数据加工属检索链的一部分，因此归 `modules/library`（与摄取链同模块，
     依据见 decisions/检索链归入library模块.md）。CLI 只负责命令行形态。
 
+    标题优先级与摄取链同一条（`ingestion.ingest_file`：`title or
+    frontmatter.get("title") or path.stem`）：显式传入的 `title` 压过页面元数据，
+    不传则用元数据——命令行覆盖必须真的有覆盖效果。
+
     Raises:
         OSError: 读取失败。
         ValueError: 正文范围无法确定。
     """
     html = path.read_text(encoding="utf-8", errors="replace")
     conversion = convert_html(html)
-    markdown = build_markdown(conversion, source=source, applicable_scope=applicable_scope, license_note=license_note)
+    markdown = build_markdown(
+        conversion,
+        title=title,
+        source=source,
+        applicable_scope=applicable_scope,
+        license_note=license_note,
+    )
     return markdown, conversion
