@@ -67,11 +67,11 @@ from campfire.modules.accounts.models import (
     InviteCode,
 )
 from campfire.modules.accounts.onboarding import (
+    ONBOARDING_COMPLETED,
+    ONBOARDING_IN_PROGRESS,
+    ONBOARDING_SKIPPED,
     ONBOARDING_STATES,
     ONBOARDING_TABLE_NAME,
-    STATE_COMPLETED,
-    STATE_IN_PROGRESS,
-    STATE_SKIPPED,
     TERMINAL_STATES,
     onboarding_pending,
     read_onboarding_state,
@@ -124,9 +124,9 @@ __all__ = [
     # 引导状态（一次性引导的触发判定）
     "ONBOARDING_STATES",
     "ONBOARDING_TABLE_NAME",
-    "STATE_COMPLETED",
-    "STATE_IN_PROGRESS",
-    "STATE_SKIPPED",
+    "ONBOARDING_COMPLETED",
+    "ONBOARDING_IN_PROGRESS",
+    "ONBOARDING_SKIPPED",
     "TERMINAL_STATES",
     "onboarding_pending",
     "read_onboarding_state",
