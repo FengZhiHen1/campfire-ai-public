@@ -40,6 +40,7 @@ import secrets
 from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import func, select, update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from campfire.modules.accounts.errors import (
@@ -67,6 +68,13 @@ from campfire.modules.accounts.models import (
 #: 死循环存在**——若码空间因配置变化被收窄（例如改短长度），必须有明确失败而不是转圈。
 MAX_CODE_GENERATION_ATTEMPTS = 5
 
+#: 唯一约束冲突的 SQLSTATE（PostgreSQL 的 ``unique_violation``）。
+#:
+#: **只对这一种完整性错误重试**（2026-09-30 评审修正）：见 :func:`issue_invite_code`。
+#: 用 SQLSTATE 而不是异常类型——``IntegrityError`` 涵盖全部完整性错误
+#: （非空、外键、CHECK…），把它们都当成「撞码了」会掩盖真实问题。
+_UNIQUE_VIOLATION_SQLSTATE = "23505"
+
 #: 单次列举的条数上界（CORE-11）。``invite list`` 是运营命令，积压时不该拖住终端。
 LIST_MAX_LIMIT = 500
 
@@ -93,6 +101,14 @@ def normalize_invite_code(raw: object) -> str:
     只剥**首尾**空白，不剥中间：``"ABCD 1234"`` 是抄写错误，应当被拒绝而不是被猜测
     修补（``CORE-07``：无静默兜底——猜错了会占用到另一个码）。
 
+    **为什么先做 ASCII 检查再 ``upper()``**（2026-09-30 评审发现，实测）：
+    ``str.upper()`` 会做 **Unicode 大小写折叠**，于是 ``'ßßßß'``（**4 个字符**）
+    会被归一成 ``'SSSSSSSS'``（8 字符）而**恰好通过** 8 位长度校验。
+    实测 ``'ßßßß'`` 与 ``'ſſſſſſſſ'`` 都被接受。这**不是安全问题**
+    （生成侧只产出 ASCII 大写的 40bit 随机码，碰撞概率不变），但它让
+    「长度必须是 8 位」这条输入契约**名不副实**——一个 4 字符的输入被当成合法码。
+    先按 ASCII 拒绝非 ASCII 输入，长度契约才真的成立。
+
     Args:
         raw: 使用者或调用方给出的邀请码，**类型未知**（运行时边界）。
 
@@ -100,12 +116,17 @@ def normalize_invite_code(raw: object) -> str:
         可用于等值比较的规范化邀请码。
 
     Raises:
-        InviteCodeFormatError: 非字符串、长度不符或含字符集外的字符。
+        InviteCodeFormatError: 非字符串、含非 ASCII 字符、长度不符或含字符集外的字符。
             **异常不携带被拒的值**（见 `errors` 模块说明）。
     """
     if not isinstance(raw, str):
         raise InviteCodeFormatError(f"必须是字符串，收到 {type(raw).__name__}")
-    normalized = raw.strip().upper()
+    stripped = raw.strip()
+    # **先拒非 ASCII**：见 docstring 里 `str.upper()` 的 Unicode 折叠实测。
+    # 报「非 ASCII」而不是报字符本身——那可能正是被拒的值的一部分。
+    if not stripped.isascii():
+        raise InviteCodeFormatError("含非 ASCII 字符（邀请码只由大写字母与数字组成）")
+    normalized = stripped.upper()
     if len(normalized) != INVITE_CODE_LENGTH:
         raise InviteCodeFormatError(f"长度必须是 {INVITE_CODE_LENGTH} 位（收到 {len(normalized)} 位）")
     invalid = sorted({character for character in normalized if character not in _ALPHABET_SET})
@@ -174,10 +195,18 @@ async def issue_invite_code(
         )
         # savepoint：主键冲突只回滚这一次尝试，不连带毁掉调用方在同一会话里
         # 已经做过的其它工作（`session.begin_nested()` 在 SQLAlchemy 2 里即 SAVEPOINT）。
+        #
+        # **只捕主键冲突（SQLSTATE 23505）**（2026-09-30 评审修正）：此前写的是
+        # `except Exception: continue`，实测会把 **`NotNullViolation` 之类的
+        # 非冲突完整性错误**也吞掉并重试，最终报成「码空间是否被收窄？」
+        # ——一个**指向错误方向**的诊断（真实原因是某个必填列没给值）。
+        # `continue` 只对「这次生成的码撞了」有意义，别的失败必须立刻冒出去。
         try:
             async with session.begin_nested():
                 session.add(record)
-        except Exception:  # noqa: BLE001 —— 只可能是唯一冲突，重试；耗尽后如实报错
+        except IntegrityError as exc:
+            if getattr(exc.orig, "sqlstate", None) != _UNIQUE_VIOLATION_SQLSTATE:
+                raise
             continue
         return record
 
@@ -239,7 +268,6 @@ async def release_invite_code(
     session: AsyncSession,
     *,
     code: object,
-    now: datetime | None = None,
 ) -> InviteCode:
     """**补偿释放**：把一次未完成的占用退回 `issued`（第 4 节步骤 3）。
 
@@ -254,7 +282,6 @@ async def release_invite_code(
     Args:
         session: 关系库会话（**调用方负责提交**）。
         code: 邀请码。
-        now: 参照时间（仅用于诊断，不写入——释放要清空 `used_at`）。
 
     Returns:
         释放后的记录（`state = issued`，`used_at` / `used_by_account_id` 已清空）。
@@ -291,7 +318,6 @@ async def bind_invite_code_account(
     *,
     code: object,
     account_id: str,
-    now: datetime | None = None,
 ) -> InviteCode:
     """把已占用的邀请码绑定到建好的账号（第 4 节步骤 2 成功后的回填）。
 
@@ -304,7 +330,6 @@ async def bind_invite_code_account(
         session: 关系库会话（**调用方负责提交**）。
         code: 邀请码。
         account_id: 建号成功得到的账号标识（即身份服务的用户标识，第 3 节）。
-        now: 参照时间（仅用于诊断，不写入——绑定不改变时间戳）。
 
     Returns:
         绑定后的记录。
