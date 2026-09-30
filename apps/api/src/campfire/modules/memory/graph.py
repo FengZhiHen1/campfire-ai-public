@@ -380,7 +380,7 @@ def build_memory_graph(settings: Settings) -> MemoryGraph:
 #:
 #: **必须复用**：每次 `build_memory_graph` 都会新建 FalkorDB 驱动（其构造函数会调度建索引
 #: 的后台任务）、三个模型客户端与一个 http 客户端；按调用重建等于每次泄漏一整套连接池
-#: （实测依据见 `MemoryGraph.aclose` 与 `store.account_driver` 的说明）。
+#: （实测依据见 `MemoryGraph.aclose` 与 `MemoryGraph.driver_for` 的说明）。
 #:
 #: 放在本模块（而不是 `worker.py`）的理由：**投递与读路径是两个入口**——Worker 消费
 #: 待处理记录、API 侧的工具读时间线，两者要共用同一个句柄；而 `tools/*` 的白名单只有

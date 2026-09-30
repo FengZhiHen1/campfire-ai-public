@@ -353,6 +353,35 @@ async def test_retryable_failure_backs_off_and_increments_attempts() -> None:
 
 
 @pytest.mark.asyncio
+async def test_concurrent_retryable_failures_each_increment_attempts() -> None:
+    """**并发两次失败各记一次**：最终 `attempts == 2`，不是 1（读-改-写会互相覆盖）。
+
+    为什么必须有这条（2026-09-30 评审补矩阵空格）：`mark_retryable_failure` 的自增
+    用 SQL 表达式（`attempts = attempts + 1`）而不是先读再写——后者在两个独立事务
+    并发失败时会**都读到旧值、各写回 +1**，最终丢一次计数。丢计数会让「是否超过
+    重试上限」的判定提前或延后成立，dead 的语义随之漂移。
+
+    判别性：把自增改成「SELECT 后在 Python 侧 +1 再 UPDATE」，两个并发事务提交后
+    的终值是 1（或 2，取决于时序）——本用例的 `== 2` 断言会失败。
+    """
+    await _clear()
+    try:
+        pending_id = await _enqueue_memory()
+
+        async def fail_once() -> None:
+            async with session_scope(get_settings()) as session:
+                await mark_retryable_failure(session, pending_id=pending_id, error="并发失败")
+
+        await asyncio.gather(fail_once(), fail_once())
+
+        async with session_scope(get_settings()) as session:
+            row = (await session.execute(select(PendingWrite).where(PendingWrite.id == pending_id))).scalar_one()
+        assert row.attempts == 2, f"并发两次失败应各记一次（attempts==2），实际 {row.attempts}"
+    finally:
+        await _clear()
+
+
+@pytest.mark.asyncio
 async def test_backoff_pushes_retry_further_out_each_time() -> None:
     """退避**递增**（第 10 节曲线 1→2→4→8→16 分钟）。
 
