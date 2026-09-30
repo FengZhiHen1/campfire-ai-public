@@ -36,6 +36,13 @@ export interface LibraryPageState {
   failure: LibraryFailure | null;
   loadingMore: boolean;
   hasMore: boolean;
+  /**
+   * 触底分页的失败。
+   *
+   * 与整页 `failure` 分开：分页失败不改整页状态（已取到的结果仍然有效），
+   * 而错误卡只在整页失败态渲染——两者混用会让分页失败在界面上零反馈。
+   */
+  loadMoreFailure: LibraryFailure | null;
   /** 当前展开的条目标识；一次只展开一条（契约第 4 节）。 */
   expandedId: string | null;
   /** deep-link 的结果；`none` 表示普通进入。 */
@@ -67,6 +74,7 @@ export function useLibraryPage(port: LibraryPort, search: string): LibraryPageSt
   const [status, setStatus] = useState<LibraryStatus>('loading');
   const [failure, setFailure] = useState<LibraryFailure | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
+  const [loadMoreFailure, setLoadMoreFailure] = useState<LibraryFailure | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [deepLink, setDeepLink] = useState<DeepLinkOutcome>({ kind: 'none' });
 
@@ -97,6 +105,8 @@ export function useLibraryPage(port: LibraryPort, search: string): LibraryPageSt
       const targetLibrary = options?.library ?? library;
       setStatus('loading');
       setFailure(null);
+      // 重取本页后上一轮的触底失败不再适用：新的一页会给出新的尾部形态。
+      setLoadMoreFailure(null);
       try {
         const page = await new SearchLibraryUseCase(port).execute({
           library: targetLibrary,
@@ -177,13 +187,17 @@ export function useLibraryPage(port: LibraryPort, search: string): LibraryPageSt
   const loadMore = useCallback(async (): Promise<void> => {
     if (cursor === null || loadingMore) return;
     setLoadingMore(true);
+    // 重试即清除上一次的失败：尾部回到「正在加载」，失败再出现时又是新的一次。
+    setLoadMoreFailure(null);
     try {
       const page = await new SearchLibraryUseCase(port).execute({ library, query, cursor });
       setItems((current) => [...current, ...page.items]);
       setCursor(page.nextCursor);
     } catch (error) {
       // 触底失败不改整页：已取到的结果仍然有效，游标留在原处让使用者再试。
-      setFailure(failureFromError(error));
+      // 失败落在自己的状态上——整页 `failure` 只在 status==='error' 时渲染错误卡，
+      // 写进那里等于把这次失败藏起来。
+      setLoadMoreFailure(failureFromError(error));
     } finally {
       setLoadingMore(false);
     }
@@ -216,6 +230,7 @@ export function useLibraryPage(port: LibraryPort, search: string): LibraryPageSt
     failure,
     loadingMore,
     hasMore: cursor !== null,
+    loadMoreFailure,
     expandedId,
     deepLink,
     setLibrary,
