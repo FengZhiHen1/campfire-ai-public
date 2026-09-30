@@ -549,6 +549,74 @@ async def test_emergency_facts_multi_source_deletion_uses_any_not_all(memory_gra
 
 
 @pytest.mark.asyncio
+async def test_edges_with_empty_episodes_are_kept_but_missing_property_is_excluded(
+    memory_graph: MemoryGraph,
+) -> None:
+    """`episodes` 的**两种空形状行为不同**，且都必须被钉住（2026-09-29 对照实验）。
+
+    为什么必须有这条：`derived.py` 原 docstring 写「没有 `episodes` 属性**或**该属性为空
+    的边都会被保留」——**前者是错的**。实测三种形状：
+
+    | `e.episodes` | 过滤后 |
+    |---|---|
+    | `[被删 uuid]` | 排除 |
+    | `[]` | **保留** |
+    | 属性缺失（`null`） | **排除** |
+
+    根因：`any()` 对空列表返回 `false`（取反为 `true` ⇒ 行满足 `WHERE`），
+    而对 `null` 返回 `null`（`NOT null` 不为 `true` ⇒ 行**不**满足 `WHERE`）。
+
+    **方法学说明**：只跑「带过滤」的实验组无法区分「被 `WHERE` 排除」与
+    「`MATCH` 没匹配到」——本用例因此**同时**断言对照组（不带过滤时三种形状都能匹配到），
+    这样「缺失属性被排除」才是被过滤造成的、而非漏查。
+    """
+    from campfire.modules.memory.derived import read_emergency_facts
+
+    now = datetime.now(timezone.utc)
+    scoped = memory_graph.driver_for(to_account_id(_ACCOUNT_A))
+
+    # `_write_edge` 总会写 episodes，因此缺失属性这一种形状需直接落库。
+    await _write_edge(
+        memory_graph,
+        _ACCOUNT_A,
+        "ef-empty-eps",
+        fact="来源为空的边",
+        valid_at=now - timedelta(days=1),
+        episodes=[],
+    )
+    await scoped.execute_query(
+        """
+        MATCH (a:Entity {uuid: $a_id})
+        MERGE (b:Entity {uuid: $b_id}) SET b.name = 'B', b.group_id = $g
+        MERGE (a)-[e:RELATES_TO {uuid: 'ef-no-eps'}]->(b)
+        SET e.group_id = $g, e.name = 'REL', e.fact = '属性缺失的边',
+            e.valid_at = $valid, e.invalid_at = null, e.created_at = $valid
+        """,
+        a_id=f"A:{_ACCOUNT_A}",
+        b_id=f"B:{_ACCOUNT_A}",
+        g=_ACCOUNT_A,
+        valid=(now - timedelta(days=2)).isoformat(),
+    )
+
+    # 对照组：不带删除过滤时，两种形状都必须能匹配到（否则下面的断言会误判）。
+    # **注意关系用 `-[e:RELATES_TO]->` 而非 `(e:RELATES_TO)`**——派生事实是**边**，
+    # 用节点语法查会静默返回空集，把「查错了」误当成「被过滤了」。
+    control, _, _ = await scoped.execute_query(
+        "MATCH (n:Entity)-[e:RELATES_TO]->(m:Entity) WHERE e.group_id = $g RETURN e.uuid AS uuid ORDER BY e.uuid",
+        g=_ACCOUNT_A,
+    )
+    control_uuids = {r["uuid"] for r in control}
+    assert {"ef-empty-eps", "ef-no-eps"} <= control_uuids, f"对照组应能匹配到两种形状的边，实际 {sorted(control_uuids)}"
+
+    result = await read_emergency_facts(memory_graph, to_account_id(_ACCOUNT_A), deleted_keys=["ep-anything"])
+    facts = [f.fact for f in result.facts]
+    assert "来源为空的边" in facts, "episodes=[] 的边应被保留（any() 对空列表返回 false）"
+    assert "属性缺失的边" not in facts, (
+        "episodes 属性缺失的边应被排除（any() 返回 null，NOT null 不为 true）——原 docstring 称它会被保留，实测推翻"
+    )
+
+
+@pytest.mark.asyncio
 async def test_emergency_facts_respects_char_budget(memory_graph: MemoryGraph) -> None:
     """**字符预算**独立于条数上限：超预算时截断并如实标注。
 
