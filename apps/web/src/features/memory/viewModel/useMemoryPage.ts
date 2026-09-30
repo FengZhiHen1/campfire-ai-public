@@ -48,6 +48,13 @@ export interface MemoryPageState {
   /** 触底分页：正在加载下一页。 */
   loadingMore: boolean;
   hasMore: boolean;
+  /**
+   * 触底分页的失败。
+   *
+   * 与 `rowFailure` 分开：它没有对应的行，需要尾部自己的可见形态承载
+   * （写成行内错误时没有任何一行能匹配上，失败会被静默吞掉）。
+   */
+  loadMoreFailure: MemoryFailure | null;
   /** 待删除确认的记忆；非空即渲染 .confirm-sheet。 */
   deleteTarget: MemoryEpisode | null;
   /** 正在删除的那一条标识。 */
@@ -86,6 +93,7 @@ export function useMemoryPage(port: MemoryPort): MemoryPageState {
   const [status, setStatus] = useState<MemoryStatus>('loading');
   const [failure, setFailure] = useState<MemoryFailure | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
+  const [loadMoreFailure, setLoadMoreFailure] = useState<MemoryFailure | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<MemoryEpisode | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [rowFailure, setRowFailure] = useState<{ episodeKey: string; failure: MemoryFailure } | null>(null);
@@ -102,6 +110,8 @@ export function useMemoryPage(port: MemoryPort): MemoryPageState {
       if (options?.initial !== true) {
         setStatus('loading');
         setFailure(null);
+        // 首页重取后上一轮的触底失败不再适用：新的一页会给出新的尾部形态。
+        setLoadMoreFailure(null);
       }
       try {
         const page = await new LoadEpisodesUseCase(port).execute();
@@ -130,14 +140,17 @@ export function useMemoryPage(port: MemoryPort): MemoryPageState {
   const loadMore = useCallback(async (): Promise<void> => {
     if (cursor === null || loadingMore) return;
     setLoadingMore(true);
+    // 重试即清除上一次的失败：尾部回到「正在加载」，失败再出现时又是新的一次。
+    setLoadMoreFailure(null);
     try {
       const page = await new LoadEpisodesUseCase(port).execute(cursor);
       // 追加而不是替换：分页是同一份时间线的延续。
       setItems((current) => [...current, ...page.items]);
       setCursor(page.nextCursor);
     } catch (error) {
-      // 触底失败不改整页状态：已加载的内容仍然有效，只把游标留在原处让使用者再试。
-      setRowFailure({ episodeKey: '', failure: failureFromError(error) });
+      // 触底失败不改整页状态：已加载的内容仍然有效，游标留在原处让使用者再试。
+      // 失败必须落在自己的状态上——它没有对应的行，写成行内错误（空键占位）永远渲染不出来。
+      setLoadMoreFailure(failureFromError(error));
     } finally {
       setLoadingMore(false);
     }
@@ -229,6 +242,7 @@ export function useMemoryPage(port: MemoryPort): MemoryPageState {
     failure,
     loadingMore,
     hasMore: cursor !== null,
+    loadMoreFailure,
     deleteTarget,
     deletingId,
     rowFailure,

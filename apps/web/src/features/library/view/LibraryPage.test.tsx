@@ -298,6 +298,36 @@ describe('案例库浏览页 · deep-link 三态', () => {
 });
 
 describe('案例库浏览页 · 触底分页', () => {
+  it('P0 触底加载下一页失败 → 列表尾部给出可见的失败与重试，不静默吞掉', async () => {
+    // 判别性：分页失败只写进 failure 而 status 仍为 ready（页面只在 status==='error'
+    // 渲染错误卡）时，alert 永不出现，本用例在 `findByRole('alert')` 处超时失败。
+    let attempt = 0;
+    const p = port({
+      listItems: vi.fn(async (params: { library: 'case' | 'knowledge'; cursor?: string }) => {
+        if (params.cursor === undefined) {
+          return { library: params.library, items: [item({ item_id: 'c1', title: '第一条' })], next_cursor: '20' };
+        }
+        attempt += 1;
+        if (attempt === 1) throw { status: 503 };
+        return { library: params.library, items: [item({ item_id: 'c2', title: '第二条' })], next_cursor: null };
+      }),
+    });
+    renderPage(p);
+    await screen.findByText('第一条');
+
+    fireEvent.click(screen.getByRole('button', { name: '加载更多' }));
+
+    const alert = await screen.findByRole('alert');
+    expect(within(alert).getByText('检索暂时不可用')).toBeDefined();
+    // 已取到的结果仍在：分页失败不改整页。
+    expect(screen.getByText('第一条')).toBeDefined();
+
+    fireEvent.click(within(alert).getByRole('button', { name: '重试' }));
+    expect(await screen.findByText('第二条')).toBeDefined();
+    expect(screen.getByText('第一条')).toBeDefined();
+    expect(p.listItems).toHaveBeenLastCalledWith(expect.objectContaining({ cursor: '20' }));
+  });
+
   it('P1 还有下一页时给出加载入口，加载后追加而不是替换', async () => {
     const p = port({
       listItems: vi.fn(async (params: { cursor?: string }) =>
