@@ -29,6 +29,7 @@ from dataclasses import dataclass, field
 
 from llama_index.core.schema import NodeWithScore, TextNode
 from llama_index.core.vector_stores.types import (
+    FilterOperator,
     MetadataFilter,
     MetadataFilters,
     VectorStoreQuery,
@@ -82,6 +83,34 @@ class RetrievedItem:
     locator: str
     #: 融合后的名次与命中来源，供排序与调试（`ranking` 字段的契约形状）。
     ranking: dict[str, str | float] = field(default_factory=dict)
+
+
+@dataclass(frozen=True, slots=True)
+class SearchOutcome:
+    """检索结果**连同降级事实**（失败语义第 5 节）。
+
+    ## 为什么不能只返回 ``list[RetrievedItem]``
+
+    契约第 5 节要求单路失败时「在结果中标注」哪一路不可用。两路都失败已经抛
+    `RetrievalError`，但**只有一路失败且没有命中**时，裸空列表无法区分：
+
+    - 「确实没找到」——模型可以说「未找到」；
+    - 「语义检索坏了、而字面路恰好没命中」——契约明令模型**不得**据此声称
+      「没有相关资料」。
+
+    这两种情形的对外处置完全不同，因此降级必须与结果同路返回，不能靠调用方
+    自己判断（它看不到两路各自的成败）。
+    """
+
+    items: list[RetrievedItem]
+    #: 不可用的检索路：``"vector"`` / ``"literal"`` 的子集；空表示两路都正常。
+    #: 两路都失败不会走到这里——`search` 直接抛 `RetrievalError`。
+    degraded_paths: tuple[str, ...]
+
+    @property
+    def is_degraded(self) -> bool:
+        """是否有某一路不可用。"""
+        return bool(self.degraded_paths)
 
 
 def _count_cjk(text_value: str) -> int:
@@ -142,7 +171,13 @@ def literal_path_is_usable(query: str) -> bool:
     return _count_cjk(query) >= MIN_CJK_FOR_TRIGRAM or _longest_word_run(query) >= MIN_CHARS_FOR_TRIGRAM
 
 
-async def literal_search(session: AsyncSession, query: str, top_k: int = LITERAL_TOP_K) -> list[tuple[str, int]]:
+async def literal_search(
+    session: AsyncSession,
+    query: str,
+    top_k: int = LITERAL_TOP_K,
+    *,
+    scope: str | None = None,
+) -> list[tuple[str, int]]:
     """字面路：在条目表的 `title`/`keywords`/`aliases` 上做 trigram 匹配。
 
     返回 ``[(item_id, rank)]``——**检索单位是条目**（RAG 策略第 4 节），
@@ -150,6 +185,10 @@ async def literal_search(session: AsyncSession, query: str, top_k: int = LITERAL
 
     **不用 `~`/`~*`**：中文正则不走 GIN 索引（实测 EXPLAIN 为 Seq Scan）。
     用 ``ILIKE '%词%'`` 才走 trigram GIN。查询词被拆成词元后逐个匹配，任一命中即算。
+
+    Args:
+        scope: 适用范围过滤（`search_knowledge` 的 `scope` 参数下推到这里）。
+            **子串匹配**，理由见 `search()` 的同名参数说明。
 
     Raises:
         RetrievalError: 数据库查询失败。
@@ -167,6 +206,12 @@ async def literal_search(session: AsyncSession, query: str, top_k: int = LITERAL
     )
     params = {f"t{i}": f"%{term}%" for i, term in enumerate(terms)}
 
+    # scope 同样走绑定参数（`:scope`）——它来自模型，绝不可拼进 SQL 文本。
+    scope_condition = ""
+    if scope is not None:
+        scope_condition = "AND applicable_scope ILIKE :scope"
+        params["scope"] = f"%{scope}%"
+
     sql = text(
         f"""
         SELECT id::text AS item_id
@@ -174,9 +219,10 @@ async def literal_search(session: AsyncSession, query: str, top_k: int = LITERAL
         WHERE withdrawn IS FALSE
           AND status = 'published'
           AND ({conditions})
+          {scope_condition}
         ORDER BY id
         LIMIT :limit
-        """  # noqa: S608 —— conditions 由上面的位置参数拼出，值全部走绑定参数
+        """  # noqa: S608 —— conditions/scope_condition 是固定片段，值全部走绑定参数
     )
     params["limit"] = top_k
 
@@ -396,7 +442,8 @@ async def search(
     *,
     embed_query: Callable[[str], Awaitable[list[float]]],
     limit: int | None = None,
-) -> list[RetrievedItem]:
+    scope: str | None = None,
+) -> SearchOutcome:
     """检索用例：两路检索 → RRF 融合 → 条目聚合。
 
     设计（资料与案例检索第 6 节）：这是两个检索工具共同调用的用例——工具只做
@@ -406,6 +453,18 @@ async def search(
         embed_query: 异步可调用，把查询文本转成向量（由调用方注入嵌入器，
             使本函数可测且不与凭据配置耦合）。
         limit: 融合后返回的条目数上限；缺省用 ``FUSED_TOP_K``。
+        scope: 适用范围过滤（`search_knowledge` 的 `scope` 参数）。
+            **子串匹配**（``ILIKE %scope%``）——`applicable_scope` 是「适用人群与
+            情境」的自由文本（如「学龄前儿童」），精确匹配会把「学龄前儿童（3-6 岁）」
+            一类写法漏掉。契约只写「按适用人群或情境过滤」未定精确/子串，此处取子串
+            并在 `test_library_retrieval.py` 钉住，待契约确认后可改。
+            **值一律走绑定参数**：见下方 ``_scope_item_ids`` 的说明。
+
+    Returns:
+        ``SearchOutcome``——结果**加上降级事实**（失败语义第 5 节要求「在结果中
+        标注」哪一路不可用）。返回裸列表时降级信息无处安放：两路都失败已抛错，但
+        **只有一路失败且结果为空**时，空列表无法区分「没找到」与「语义检索坏了」，
+        而契约明令模型不得据此声称「没有相关资料」。
 
     Raises:
         RetrievalError: 两路都失败时——**绝不返回空列表冒充「未找到」**
@@ -413,16 +472,40 @@ async def search(
     """
     top_k = limit or FUSED_TOP_K
 
+    # scope 过滤的允许集（只在这里查一次，两条路共用）。
+    # 为什么不让 scope 直接进 MetadataFilter：框架的 ``_build_filter_clause`` 用
+    # f-string 拼 SQL（``f"'%{filter_.value}%'"``），**不是绑定参数**。实测把
+    # ``x' OR '1'='1`` 当 scope 会生成
+    # ``... ILIKE '%%x' OR '1'='1%%'``，且 ``OR`` 的优先级会逃逸整个 AND 链、
+    # 连带绕过库别/撤下/状态三个过滤。既存 ``_ACTIVE_FILTERS`` 全是硬编码常量，
+    # 所以现状安全；**scope 来自模型**，一旦走那条通道就是注入。
+    # 因此：用我们自己的表 + 绑定参数算出允许的 item_id，向量路只按 item_id 过滤。
+    scope_ids: list[str] | None = None
+    if scope is not None:
+        scope_ids = await _scope_item_ids(session, scope)
+        if not scope_ids:
+            # 没有任何条目匹配该 scope：**明确是「未找到」**，不再查库。
+            # 必须提前返回——空列表进 ``IN ()`` 是 SQL 语法错误（实测）。
+            return SearchOutcome(items=[], degraded_paths=())
+
     # ---- 向量路 ----
     vector_nodes: list[NodeWithScore] = []
     vector_error: Exception | None = None
     try:
+        # 显式标注元素类型：`list()` 会把 `_ACTIVE_FILTERS`（元素是 `MetadataFilter`）
+        # 推断成 `list[MetadataFilter]`，而 `MetadataFilters` 要的是
+        # `list[MetadataFilter | MetadataFilters]`——list 不变，故必须标出来。
+        filters: list[MetadataFilter | MetadataFilters] = list(_ACTIVE_FILTERS)
+        if scope_ids is not None:
+            # 值是**我们自己表里读出的 UUID**（不是模型输入），因此这条 IN 即使
+            # 走框架的拼接通道也无法被外部控制。
+            filters.append(MetadataFilter(key="item_id", value=scope_ids, operator=FilterOperator.IN))
         query_embedding = await embed_query(query)
         result = await vector_store.aquery(
             VectorStoreQuery(
                 query_embedding=query_embedding,
                 similarity_top_k=VECTOR_TOP_K,
-                filters=MetadataFilters(filters=list(_ACTIVE_FILTERS)),
+                filters=MetadataFilters(filters=filters),
             )
         )
         vector_nodes = [
@@ -435,7 +518,7 @@ async def search(
     literal_nodes: list[NodeWithScore] = []
     literal_error: Exception | None = None
     try:
-        hits = await literal_search(session, query)
+        hits = await literal_search(session, query, scope=scope)
         if hits:
             nodes_by_item = await expand_items_to_nodes(session, [item_id for item_id, _ in hits])
             literal_nodes = build_literal_nodes([item_id for item_id, _ in hits], nodes_by_item)
@@ -452,7 +535,45 @@ async def search(
 
     item_ids = [str(n.node.metadata.get("item_id", "") or "") for n in fused]
     items = await load_items(session, [i for i in item_ids if i])
-    return aggregate_to_items(fused, items, top_k=top_k)
+    results = aggregate_to_items(fused, items, top_k=top_k)
+
+    # 降级事实（失败语义第 5 节「在结果中标注」）：哪一路不可用必须随结果带走。
+    # 只有**某一路失败**才算降级；两路都失败已在上面抛出。
+    degraded: list[str] = []
+    if vector_error is not None:
+        degraded.append("vector")
+    if literal_error is not None:
+        degraded.append("literal")
+    return SearchOutcome(items=results, degraded_paths=tuple(degraded))
+
+
+async def _scope_item_ids(session: AsyncSession, scope: str) -> list[str]:
+    """按 ``scope`` 取允许的条目 id（**绑定参数**，见 `search` 的注入说明）。
+
+    为什么单独查一次条目表而不是把 scope 交给 ``MetadataFilter``：后者的值会被
+    f-string 拼进 SQL。此处用 SQLAlchemy 的绑定参数，模型输入不进入 SQL 文本。
+
+    返回空列表表示**没有条目匹配该 scope**——调用方据此直接返回「未找到」，
+    不得把空列表送进向量路的 ``IN`` 过滤（会生成 ``IN ()`` 语法错误，实测）。
+
+    Raises:
+        RetrievalError: 查询失败——与字面路同一处置，由调用方按单路失败降级。
+    """
+    sql = text(
+        """
+        SELECT id::text AS item_id
+        FROM campfire_knowledge_item
+        WHERE withdrawn IS FALSE
+          AND status = 'published'
+          AND applicable_scope ILIKE :scope
+        ORDER BY id
+        """
+    )
+    try:
+        rows = (await session.execute(sql, {"scope": f"%{scope}%"})).all()
+    except Exception as exc:  # noqa: BLE001 —— 转译成领域错误
+        raise RetrievalError(f"scope 过滤查询失败：{type(exc).__name__}") from exc
+    return [row.item_id for row in rows]
 
 
 __all__ = [
@@ -463,6 +584,7 @@ __all__ = [
     "VECTOR_TOP_K",
     "RetrievalError",
     "RetrievedItem",
+    "SearchOutcome",
     "aggregate_to_items",
     "build_literal_nodes",
     "expand_items_to_nodes",
