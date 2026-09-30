@@ -15,6 +15,7 @@ import sys
 from datetime import datetime
 
 from campfire.core.auth.deletion import AccountDataPurger, AccountDeletionError, delete_account
+from campfire.core.authz import set_authorizer
 from campfire.core.config import Settings, get_settings
 from campfire.core.db import session_scope
 from campfire.modules.accounts.errors import AccountsError
@@ -25,6 +26,8 @@ from campfire.modules.accounts.repository import (
     revoke_invite_code,
 )
 from campfire.modules.memory.purge import MemoryAccountPurger
+from campfire.modules.profile.authz import OwnerAuthorizer
+from campfire.modules.profile.purge import ProfileAccountPurger
 
 
 def _operator() -> str:
@@ -169,9 +172,14 @@ def _purgers(settings: Settings) -> list[AccountDataPurger]:
     """本次注销要执行的领域清除者。
 
     新领域需要清除时加在这里，不改编排（见 `core/auth/deletion` 的说明）。
-    目前只有记忆（图库 + 删除账本）。
+    目前两个领域：记忆（图库 + 删除账本）与档案（条目 + 会话绑定 + 支持对象）。
+
+    `profile` 的清除者补上后，`AC-24` 的「其档案……不再存在」才真正成立
+    ——此前注销只清身份、会话、待处理记录、图库与账本，会遗留档案条目
+    （登记于 docs/TODO.md）。顺序不在此处编排：`delete_account` 逐个调用它们，
+    领域之间无依赖（档案清除在内部自己保证「先删条目再删对象」）。
     """
-    return [MemoryAccountPurger(settings)]
+    return [MemoryAccountPurger(settings), ProfileAccountPurger(settings)]
 
 
 async def _run_account_reset(args: argparse.Namespace) -> int:
@@ -246,6 +254,11 @@ async def _run_account_delete(args: argparse.Namespace) -> int:
     # 第 3 步就抛 Initialisation not done——那会把一次可重试的注销变成
     # 「不知道进行到哪」的意外失败。
     _init_supertokens_for_cli(settings)
+
+    # 授权实现在装配处注入。注销路径本身不做授权判定，但 CLI 与 API/Worker
+    # 是同一套代码的三个入口，任一入口漏注入都会让该入口上的判定 fail-closed
+    # ——拒绝一切受限操作。这里显式注入，避免「只有某个入口可用」的隐蔽差异。
+    set_authorizer(OwnerAuthorizer(settings))
 
     if args.confirm != args.account:
         print(
