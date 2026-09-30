@@ -15,7 +15,7 @@
 4. **否定不回潮**：`rejected` 不进摘要、不参与注入、不再作候选。
 5. **降权（90 天）**：不进摘要与默认读取、被检索到时标注陈旧、**未被删除**。
 6. **纠正**：新旧互指、旧条目转 `historical`、注入只含新条目。
-7. **删除幂等**且不再被取数（`AC-08`）。
+7. **删除**不再被取数（`AC-08`），且行消失后重复删除报「不可访问」（裁决 1）。
 8. **摘要覆盖性**：十二字段都能生产；只有候选条目的对象返回「无档案」而非空对象。
 9. **应急八组**：只取稳定层；某组未预存返回显式 absent；`communication` 是具名结构。
 10. **摘要 `possibly_stale`**：有未完成待处理记录时为真。
@@ -511,8 +511,7 @@ async def test_delete_removes_the_item_from_every_read_path() -> None:
     item_id = await _propose(object_id, origin="user_statement", description="这条会被删除")
 
     async with session_scope(get_settings()) as session:
-        deleted = await service.delete_item(session, account_id=_ACCOUNT, item_id=item_id)
-    assert deleted is True
+        await service.delete_item(session, account_id=_ACCOUNT, item_id=item_id)
 
     async with session_scope(get_settings()) as session:
         grouped = await service.read_items(
@@ -528,22 +527,25 @@ async def test_delete_removes_the_item_from_every_read_path() -> None:
 
 
 @pytest.mark.asyncio
-async def test_delete_is_idempotent() -> None:
-    """**删除幂等**：重复删除返回 False（调用方据此回报 `already: true`），不报错。
+async def test_delete_is_not_repeatable_after_the_row_is_gone() -> None:
+    """**删除不可重复**：行已被物理删除后，再删报「不可访问」（404 的用例层判据）。
 
-    实测重复执行两次（自检要求幂等类要求必须实测）。
+    条目表里没有留痕，因此第二次删除与「从未存在」在服务端不可区分——
+    2026-09-30 编排器裁决 1：删除的越权与不存在一律 404，不得返回 200。
+    实测重复执行三次（自检要求幂等类要求必须实测）。
     """
     object_id = await _new_object()
     item_id = await _propose(object_id, origin="user_statement")
 
     async with session_scope(get_settings()) as session:
-        first = await service.delete_item(session, account_id=_ACCOUNT, item_id=item_id)
-    async with session_scope(get_settings()) as session:
-        second = await service.delete_item(session, account_id=_ACCOUNT, item_id=item_id)
-    async with session_scope(get_settings()) as session:
-        third = await service.delete_item(session, account_id=_ACCOUNT, item_id=item_id)
+        await service.delete_item(session, account_id=_ACCOUNT, item_id=item_id)
 
-    assert (first, second, third) == (True, False, False), "只有第一次删到了行"
+    from campfire.core.authz import AuthorizationError
+
+    for _ in range(2):
+        with pytest.raises(AuthorizationError):
+            async with session_scope(get_settings()) as session:
+                await service.delete_item(session, account_id=_ACCOUNT, item_id=item_id)
 
 
 # ---------------------------------------------------------------------------
@@ -571,10 +573,10 @@ async def test_another_account_cannot_read_or_write_items() -> None:
     with pytest.raises(AuthorizationError):
         async with session_scope(get_settings()) as session:
             await service.correct_item(session, account_id=_ACCOUNT_OTHER, item_id=item_id, description="他人修改")
-    # 删除的归属判定在一条 SQL 内完成，越权时不删任何行。
-    async with session_scope(get_settings()) as session:
-        deleted = await service.delete_item(session, account_id=_ACCOUNT_OTHER, item_id=item_id)
-    assert deleted is False, "越权删除不得删到任何行"
+    # 删除先做归属判定（`_load_owned_item`），越权时报「不可访问」且不删任何行。
+    with pytest.raises(AuthorizationError):
+        async with session_scope(get_settings()) as session:
+            await service.delete_item(session, account_id=_ACCOUNT_OTHER, item_id=item_id)
 
     # 原条目完好。
     async with session_scope(get_settings()) as session:
@@ -1049,5 +1051,6 @@ async def test_write_to_archived_object_fails_with_archived_reason() -> None:
         )
     assert corrected.description == "归档后仍可纠正"
     async with session_scope(get_settings()) as session:
-        deleted = await service.delete_item(session, account_id=_ACCOUNT, item_id=str(corrected.item_id))
-    assert deleted is True, "归档对象下仍可删除条目"
+        await service.delete_item(session, account_id=_ACCOUNT, item_id=str(corrected.item_id))
+    async with session_scope(get_settings()) as session:
+        assert await repo.get_item(session, item_id=str(corrected.item_id)) is None, "归档对象下仍可删除条目"
