@@ -22,7 +22,8 @@
    `already: false`。
 4. 删掉的条目不再出现在读取里（`AC-08`）。
 5. 候选层单独成组、不进摘要（`AC-18`）；归档对象上 confirm 返回 200（可读可纠）。
-6. 补充条目的 `origin` 由服务端定为 `user_statement`。
+6. 补充条目的 `origin` 由服务端定为 `user_statement`；纠正同样重绑生成方式
+   ——纠正一条候选不会造出「推断被写成已确认」的条目。
 """
 
 from __future__ import annotations
@@ -472,6 +473,29 @@ async def test_correct_without_change_is_422(client: httpx.AsyncClient, as_accou
     response = await client.post(f"/profile/items/{old}/correct", json={"description": "同一句话"})
 
     assert response.status_code == 422
+
+
+async def test_correct_of_a_candidate_rebinds_it_to_the_user_statement(client: httpx.AsyncClient, as_account) -> None:  # noqa: ANN001
+    """纠正一条候选：新条目以 `user_statement` 进稳定层，不再标成推断来源。
+
+    这是纠正端点的零覆盖区。此前它把新条目写成 `ai_inference + confirmed` 并直接
+    进稳定层——正是 `propose_item` 与 Worker 两处硬拒、第 7 节要求「请求被拒绝」
+    的组合，同时把使用者亲手改的词标成「模型推断」。
+    """
+    object_id = await _new_object()
+    candidate = await _propose(object_id, origin="ai_inference", description="模型推断的描述")
+
+    response = await client.post(f"/profile/items/{candidate}/correct", json={"description": "使用者改写的描述"})
+
+    assert response.status_code == 201, response.text
+    new = response.json()["item_id"]
+
+    listing = (await client.get(f"/profile/objects/{object_id}/items", params={"include_candidates": "true"})).json()
+    assert listing["candidates"] == [], "被取代的候选不再作为候选呈现"
+    assert [item["item_id"] for item in listing["items"]] == [new]
+    assert listing["items"][0]["origin"] == "user_statement"
+    assert listing["items"][0]["confirmation"] == "confirmed"
+    assert listing["items"][0]["source"] == {"channel": "profile_page"}
 
 
 async def test_reject_removes_candidate_from_reads(client: httpx.AsyncClient, as_account) -> None:  # noqa: ANN001
