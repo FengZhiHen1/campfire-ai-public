@@ -43,7 +43,8 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, Union
+from collections.abc import Awaitable, Callable
+from typing import Union
 
 from supertokens_python.recipe.emailpassword import InputFormField
 from supertokens_python.recipe.emailpassword.interfaces import (
@@ -51,6 +52,7 @@ from supertokens_python.recipe.emailpassword.interfaces import (
     APIOptions,
     EmailAlreadyExistsError,
     GeneralErrorResponse,
+    SignUpPostNotAllowedResponse,
     SignUpPostOkResult,
 )
 from supertokens_python.recipe.emailpassword.types import FormField
@@ -66,6 +68,19 @@ from campfire.modules.accounts.repository import (
 )
 
 logger = logging.getLogger(__name__)
+
+#: ``sign_up_post`` 原实现/复写实现的确切返回类型（SDK ``APIInterface`` 的签名，
+#: 见 ``recipe/emailpassword/interfaces.py``）。复写必须**逐字**沿用——包装器与
+#: 原实现可互换是「包装而非重写」成立的前提。
+SignUpPostResult = Union[
+    SignUpPostOkResult, EmailAlreadyExistsError, SignUpPostNotAllowedResponse, GeneralErrorResponse
+]
+
+#: 原实现的函数类型：与 ``APIInterface.sign_up_post`` 同签名（六个位置参数按 SDK
+#: 契约，位置形态由 ``Callable[..., ...]`` 表达）。
+#: 返回侧用 ``Awaitable`` 而不是 ``Coroutine``：SDK 侧是 async def（协程），
+#: 我们的包装器也是 async def，``Awaitable`` 对两者都成立且不虚构协程细节。
+OriginalSignUpPost = Callable[..., "Awaitable[SignUpPostResult]"]
 
 #: signup 请求里承载邀请码的**自定义表单字段名**。
 #:
@@ -95,6 +110,7 @@ PASSWORD_FORM_FIELD = "password"
 #:
 #: 现在的分工：表单层**只负责把这个字段送进来**，一切判定（形状、存在性、状态）
 #: 都交给原子占用那一步，从而四种拒绝共用同一条消息。
+
 #: 一切邀请码类拒绝共用的**唯一消息**。
 #:
 #: 集中成常量而不是在多处写字面量：消息一旦分叉，就构成账号枚举渠道
@@ -133,15 +149,18 @@ def sign_up_form_fields() -> list[InputFormField]:
     ]
 
 
-def _field_value(form_fields: list[FormField], field_id: str) -> Any:
+def _field_value(form_fields: list[FormField], field_id: str) -> str | None:
     """从表单字段里取某个字段的值；不存在返回 ``None``。
 
     表单字段是**外部输入**（``CORE-04`` 数据边界），因此逐项校验类型，
-    而不是假设 SDK 一定给字符串。
+    而不是假设 SDK 一定给字符串。``FormField.value`` 的静态类型是 ``str``
+    （SDK 声明），但边界处的实际值由请求决定，调用方（如邮箱）须自行
+    ``isinstance`` 复核——见 :func:`_account_exists` 的用法。
     """
     for field in form_fields:
         if field.id == field_id:
-            return field.value
+            value = field.value
+            return value if isinstance(value, str) else None
     return None
 
 
@@ -287,8 +306,8 @@ async def _account_exists(email: object) -> bool:
 
 
 def make_sign_up_override(
-    original: Any,
-) -> Any:
+    original: OriginalSignUpPost,
+) -> OriginalSignUpPost:
     """包装身份服务**原始**的 ``sign_up_post``，注入邀请码校验。
 
     ## 为什么是「包装原实现」而不是「自己实现建号」
@@ -316,8 +335,8 @@ def make_sign_up_override(
         session: Union[SessionContainer, None],  # noqa: UP007 —— 与 SDK 签名保持一致
         should_try_linking_with_session_user: Union[bool, None],  # noqa: UP007
         api_options: APIOptions,
-        user_context: dict[str, Any],
-    ) -> Any:
+        user_context: dict[str, object],
+    ) -> SignUpPostResult:
         """先校验并占用邀请码，通过后交给原实现建号。"""
         raw_code = _field_value(form_fields, INVITE_CODE_FORM_FIELD)
 
@@ -439,7 +458,11 @@ def api_overrides(original: APIInterface) -> APIInterface:
     关闭它**不影响登录**：登录走 ``sign_in_post``，不依赖该端点。
     """
     # SDK 的 APIInterface 是抽象类实例；直接改属性即可（官方 override 的既有做法）。
-    original.sign_up_post = make_sign_up_override(original.sign_up_post)  # type: ignore[method-assign]
+    # method-assign + assignment + arg-type：给实例属性赋一个与方法同名/同签名的
+    # 函数，mypy 视为方法重绑并按精确参数列表校验——而 SDK 官方 override 机制
+    # 要求的正是这种重绑（包装器的位置形态由 Callable[...] 表达，见
+    # OriginalSignUpPost 的说明），非错误。
+    original.sign_up_post = make_sign_up_override(original.sign_up_post)  # type: ignore[method-assign,assignment,arg-type]  # SDK 官方 override 的既定形态，方法重绑即其机制
     # 关闭匿名的账号枚举端点：见 docstring 的实测依据。
     original.disable_email_exists_get = True
     return original
