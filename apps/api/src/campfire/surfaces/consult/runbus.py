@@ -69,6 +69,13 @@ SESSION_BUSY = "session_busy"
 #: 无法续传的错误码（契约 4.2）：缓冲已失效且没有可续内容，前端改走历史水合。
 RUN_NOT_RESUMABLE = "run_not_resumable"
 
+#: 运行已不在跑（取消一个已终结、或本进程里没有消费方的运行）→ 409。
+#:
+#: 契约 4.3 只写了「已终结的运行返回 409」，没给错误码；本面补一个与
+#: `session_busy` / `run_not_resumable` 都不混用的码，让前端与排查都能从 `detail`
+#: 直接读出是哪一种 409，而不是靠状态码猜。
+RUN_NOT_RUNNING = "run_not_running"
+
 #: 运行状态取值（CORE-01：状态显式化，只有两种终局）。
 RunStatus = Literal["running", "finished"]
 
@@ -489,13 +496,57 @@ class RunPump:
 #: 并在收尾时能等到它们结束——测试夹具靠它避免「上一个用例的推进写在下一个用例的库上」。
 _pump_tasks: set[asyncio.Task[None]] = set()
 
+#: 按 `run_id` 索引的在跑任务：取消端点（契约 4.3）要据此找到这条运行在本进程里的消费方。
+#:
+#: 为什么取消是「取消消费方任务」而不是另设一个停止标志：基座第 9 节的取消语义就是
+#: 消费者取消自己（停止调用、不发终态事件），而推进任务正是那个消费者。多一个标志位
+#: 等于同一件事有两个真相，且推进任务还得记得检查它。
+_pump_tasks_by_run: dict[str, asyncio.Task[None]] = {}
+
 
 def start_pump(pump: RunPump) -> asyncio.Task[None]:
-    """把推进器交给后台任务并登记它。"""
+    """把推进器交给后台任务并登记它（按 `run_id`，供取消端点查找）。
+
+    注册键取 :attr:`RunPump.run_id`（即本次请求已经回给前端的那个 `run_id`）。
+    互斥键易手时该属性为空（理论路径：键在起步期间过期并被另一个运行占走），
+    此时这次运行不进取消索引——取消它会拿到 409，而不是静默取消一个不属于本请求的
+    任务。如实写下这个代价，不用「先占位再补键」之类的写法掩盖它。
+    """
     task = asyncio.create_task(pump.drive())
+    run_id = pump.run_id
     _pump_tasks.add(task)
-    task.add_done_callback(_pump_tasks.discard)
+    if run_id is not None:
+        _pump_tasks_by_run[run_id] = task
+
+    def _forget(finished: asyncio.Task[None]) -> None:
+        """任务结束后把自己从两张表里摘掉（比对身份，避免摘掉同名的后来者）。"""
+        _pump_tasks.discard(finished)
+        if run_id is not None and _pump_tasks_by_run.get(run_id) is finished:
+            del _pump_tasks_by_run[run_id]
+
+    task.add_done_callback(_forget)
     return task
+
+
+def request_cancel(run_id: str) -> bool:
+    """请求取消该运行的推进任务；本进程里没有这条在跑的任务时返回 `False`。
+
+    返回布尔而不是直接抛错：调用方（取消端点）要把「没有可取消的任务」翻译成一个
+    明确的对外拒绝（409 `run_not_running`），而那与「内部出错了」是两件事。
+
+    取消是异步生效的：本函数只发出取消请求，收尾（落终结状态、释放会话位）在推进任务
+    的 `finally` 里完成。因此调用方不能假定取消返回后状态已经落定——契约 4.3 的
+    「取消不发终态事件」正是这个形状的后果，前端据此自行把已渲染的部分标为中断。
+
+    取消的边界（如实写明）：索引是本进程内的。同一进程收到取消、而运行在另一个进程里
+    跑时，本函数返回 `False`，端点回 409——一期是单进程 uvicorn，这个边界不成立；
+    多进程部署时它会变成一条真实的错误答复，需要把取消改成走共享信道。
+    """
+    task = _pump_tasks_by_run.get(run_id)
+    if task is None or task.done():
+        return False
+    task.cancel()
+    return True
 
 
 async def drain_pumps() -> None:

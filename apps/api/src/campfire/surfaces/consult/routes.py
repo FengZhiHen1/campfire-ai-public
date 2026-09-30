@@ -1,11 +1,12 @@
 """咨询面的 HTTP 与 SSE 路由。
 
-职责：会话创建、会话列表、历史水合、发消息受理、运行事件流订阅五条路径的
-请求解析、鉴权与归属判定、状态码映射。
+职责：会话创建、会话列表、历史水合、发消息受理、运行事件流订阅、取消、应急入口与
+引导跳过入口八条路径的请求解析、鉴权与归属判定、状态码映射，以及日常会话第一次运行的
+引导注入装配。
 边界：不做数据读写（经 `modules/*` 与 `core/*`）、不构造运行器（`assembly` 的注入点）、
 不管缓冲与互斥的实现（`runbus`）。
-参考：docs/技术设计/面/consult/HTTP与SSE契约.md 第 1、2、3、4、7、8 节；
-编排器 T07 裁决 5、6。
+参考：docs/技术设计/面/consult/HTTP与SSE契约.md 第 1、2、3、4、5、6、7、8 节；
+编排器 T07 裁决 5、6、11，T07b 裁决 6、7、9。
 
 端点顺序即处理顺序（第 2 节的通用约定）：先鉴权（401，由 `require_session` 给出），
 再归属判定（404，越权与不存在同文案），最后才是状态判定（409 / 422 / 503）。
@@ -15,7 +16,7 @@
 错误响应形状（本包统一，契约未逐字规定细节）：
 
 401 由 SuperTokens 依赖直接给出；404 与 422 的 `detail` 是一条字符串文案；
-409 的 `detail` 是错误码字符串（`session_busy` / `run_not_resumable`）；
+409 的 `detail` 是错误码字符串（`session_busy` / `run_not_resumable` / `run_not_running`）；
 503 的 `detail` 是「错误码: 说明」。用 `detail` 而不是自定义错误信封，
 是为了与 FastAPI 自身的 422（载荷校验）保持同一种可读形状——前端只需读一个字段。
 """
@@ -27,13 +28,16 @@ import logging
 import time
 import uuid
 from collections.abc import AsyncIterator, Sequence
+from dataclasses import dataclass
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Header, HTTPException, status
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, ConfigDict
+from sqlalchemy.ext.asyncio import AsyncSession
 from supertokens_python.recipe.session import SessionContainer
 
+from campfire.agent.context.injection import InjectionBatch, InjectionItem, UnavailableSource
 from campfire.agent.runtime import RunRequest
 from campfire.agent.skill_runtime import Skill
 from campfire.core.auth.supertokens import require_session
@@ -41,8 +45,17 @@ from campfire.core.authz import OBJECT_NOT_ACCESSIBLE_MESSAGE, AuthorizationErro
 from campfire.core.cache import RedisCache, get_cache
 from campfire.core.config import Settings, get_settings
 from campfire.core.db import session_scope
-from campfire.modules.accounts.errors import SessionNotFoundError, SessionQueryError
+from campfire.modules.accounts.errors import (
+    OnboardingTriggerError,
+    OnboardingWriteError,
+    SessionNotFoundError,
+    SessionQueryError,
+)
+from campfire.modules.accounts.first_run_injection import mark_first_run_injected, read_first_run_injected
 from campfire.modules.accounts.onboarding import onboarding_pending as read_onboarding_pending
+from campfire.modules.accounts.onboarding import read_onboarding_state, should_inject_onboarding
+from campfire.modules.accounts.onboarding_skip import skip_onboarding
+from campfire.modules.accounts.onboarding_start import start_onboarding
 from campfire.modules.accounts.sessions import (
     list_sessions as list_account_sessions,
 )
@@ -51,9 +64,20 @@ from campfire.modules.accounts.sessions import (
     register_session,
     require_session_owner,
 )
-from campfire.modules.profile import bind_first_object, resolve_default_object
+from campfire.modules.memory.derived import EmergencyMemory, read_emergency_facts
+from campfire.modules.memory.errors import MemoryModuleError
+from campfire.modules.memory.graph import get_shared_memory_graph
+from campfire.modules.profile import EmergencyContext, bind_first_object, emergency_context, resolve_default_object
 from campfire.surfaces.consult import assembly, runbus
 from campfire.surfaces.consult.answers import SendMessageRequest, render_answers
+from campfire.surfaces.consult.emergency import EmergencyConsultRequest
+from campfire.surfaces.consult.injections import (
+    EMERGENCY_MEMORY_SOURCE,
+    ONBOARDING_NOTICE_SOURCE,
+    build_emergency_injections,
+    render_emergency_intake,
+    render_onboarding_notice,
+)
 from campfire.surfaces.consult.object_names import read_object_names
 from campfire.surfaces.consult.sse import (
     HEARTBEAT_FRAME,
@@ -147,6 +171,16 @@ def _unprocessable(reason: str) -> HTTPException:
 def _unavailable(reason: str) -> HTTPException:
     """依赖不可用 → 503（契约第 2 节的 503 行）。"""
     return HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=reason)
+
+
+def _not_running() -> HTTPException:
+    """取消一个已终结（或本进程已无消费方）的运行 → 409 `run_not_running`（契约 4.3）。"""
+    return HTTPException(status_code=status.HTTP_409_CONFLICT, detail=runbus.RUN_NOT_RUNNING)
+
+
+#: 运行标识的长度上界（CORE-11）。基座生成的是 32 位十六进制，128 对它留有余量；
+#: 上界存在的意义是超长路径段不会变成一次超长 Redis 键查询。
+MAX_RUN_ID_CHARS = 128
 
 
 # ---------------------------------------------------------------------------
@@ -326,6 +360,125 @@ async def _activated_skill(settings: Settings, skill_name: str | None) -> tuple[
     return (registry.get(skill_name),)
 
 
+def _program_skill(settings: Settings, name: str) -> Skill:
+    """取一个由程序注入的技能（应急入口与引导注入用它）。
+
+    与 :func:`_activated_skill` 的区别是失败方向：那个是使用者给了名字（名字不在目录里
+    是载荷不合法，422），这里是服务端自己要用的技能（内容根目录里没有它属于装配不完整，
+    503）——回 422 会把一个部署缺陷说成使用者的错。
+
+    Raises:
+        HTTPException: 技能注册表不可用，或目录里没有该技能（503）。
+    """
+    try:
+        registry = assembly.get_skill_registry(settings)
+    except assembly.ConsultAssemblyError as exc:
+        raise _unavailable(f"skill_registry_unavailable: {type(exc).__name__}") from exc
+    if name not in registry.names():
+        raise _unavailable(f"skill_missing: 内容目录里没有技能 {name}")
+    return registry.get(name)
+
+
+@dataclass(frozen=True, slots=True)
+class _OnboardingInjection:
+    """日常会话第一次运行要程序注入的引导内容（技能 + 一条静态告知消息）。"""
+
+    skill: Skill
+    notice: InjectionItem
+
+
+async def _first_run_injection(
+    settings: Settings,
+    *,
+    session_id: str,
+    account_id: str,
+) -> _OnboardingInjection | None:
+    """判定本次运行要不要注入引导；要，就把注入内容准备好（契约 3.1）。
+
+    两个判据缺一不可：
+
+    - 这个会话的第一次运行（`campfire_session.first_run_injected` 为假）；
+    - 该账号的引导未终结（`campfire_onboarding` 无行或 `in_progress`）。
+
+    第二条在这里**重读**，不复用会话创建时算出的 `onboarding_pending`：那个值只对创建
+    那一刻成立，而第一次运行可能发生在很久之后——期间使用者在另一个会话里跳过了引导
+    或走完了它。按旧值注入，是在用户已经明确结束引导之后再塞一段引导。
+
+    两次读表在同一事务里，且都在归属判定之后、占位之前：判定本身没有副作用
+    （注入的记账在运行起步成功后才写，见 :func:`_settle_first_run`），因此这里
+    失败不需要回滚任何东西。
+
+    Raises:
+        HTTPException: 会话归属行消失（404，理论路径）、引导状态取值漂移（503）、
+            或技能内容缺失（503）。
+    """
+    async with session_scope(settings) as db:
+        try:
+            settled = await read_first_run_injected(db, session_id=session_id)
+        except SessionNotFoundError as exc:
+            # 上方刚判定过归属；走到这里说明行在两次查询之间消失了（并发注销）。
+            raise _session_not_found() from exc
+        except SessionQueryError as exc:
+            raise _unprocessable(str(exc)) from exc
+        if settled:
+            return None
+        try:
+            state = await read_onboarding_state(db, account_id=account_id)
+            # 判定复用 `modules/accounts` 的纯函数，不在面层重写词表语义。
+            if not should_inject_onboarding(state):
+                return None
+        except OnboardingTriggerError as exc:
+            # 状态取值漂移：注入与不注入都会掩盖漂移，因此本次运行明确失败（`CORE-07`）。
+            raise _unavailable(f"onboarding_state_unreadable: {type(exc).__name__}") from exc
+
+    return _OnboardingInjection(skill=_program_skill(settings, assembly.ONBOARDING_SKILL_NAME), notice=_notice_item())
+
+
+def _notice_item() -> InjectionItem:
+    """把静态告知包成一条注入项。
+
+    角色取 `assistant` 而不是默认的 `user`：这条告知必须让使用者真的读到，而
+    `user` 角色的注入会被水合与标题推导当成机器上下文跳过（前缀在
+    `session_items.INJECTED_MESSAGE_PREFIXES` 里就进不了历史）。取 `assistant` 之后
+    它落在会话真源里就是首条助手消息——水合按原样呈现，模型也把它当成自己说过的话，
+    于是「回执不重复念一遍告知全文」这条纪律由形状本身保证
+    （`telling-first.md` 第 2、5 节）。
+
+    代价如实写明：前端若为告知设计了专门的呈现组件，需要按 `assistant` 消息处理；
+    当前页面设计文档里没有这一条，已登记到报告「未决问题」。
+    """
+    return InjectionItem(
+        source=ONBOARDING_NOTICE_SOURCE,
+        content=render_onboarding_notice(),
+        role="assistant",
+    )
+
+
+async def _settle_first_run(settings: Settings, *, session_id: str, account_id: str) -> None:
+    """结算这次首轮注入：置会话标记 + 落账号的引导开始状态（首次触发时）。
+
+    在运行起步成功之后调用、且**只记日志不抛错**：此时 `run_id` 已经回给前端，
+    任何异常都无法再改变这个事实——把它抛出去只会让 202 变成一个假的失败
+    （调用方以为没起运行，于是重发，而会话位与幂等键都已被这次运行占着）。
+    失败的后果是下次运行可能重复注入一次引导（技能设计第 4 节接受这个代价：
+    漏注入不可恢复，重复注入只是多一段可跳过的引导），记警告供排查。
+
+    两件事写在同一个事务里：它们同属「这次注入结算了」这一个事实的两个视角
+    （会话侧：本会话不必再注入；账号侧：引导已开始）。分开提交会让一个成立而另一个
+    不成立，而两种半成品都会让后续判定做出错误结论。
+    """
+    try:
+        async with session_scope(settings) as db:
+            await mark_first_run_injected(db, session_id=session_id)
+            await start_onboarding(db, account_id=account_id)
+    except Exception as exc:  # noqa: BLE001 —— 运行已起步，这里再抛错只会伪造一次失败
+        logger.warning(
+            "首轮注入结算失败：会话=%s 异常=%s",
+            session_id,
+            type(exc).__name__,
+        )
+
+
 @router.post("/sessions/{session_id}/messages", status_code=status.HTTP_202_ACCEPTED)
 async def send_message(
     session_id: str,
@@ -342,14 +495,20 @@ async def send_message(
 
     1. 技能校验先于一切状态写入——一个未知技能名的请求不该占住会话位再回滚；
     2. 归属判定先于幂等与互斥——对别人的会话，任何状态码都不该泄露它是否正忙；
-    3. 幂等命中直接返回原 `run_id`，不碰会话位、也不追加消息；
-    4. 互斥失败回 409 且不追加消息（契约第 2 节与质量地板 ③）；
-    5. 启动失败（首个事件不是 `run_started`）时释放占位并回 503——此时没有
-       `run_id`，回 202 会让前端订阅一个不存在的路径。
+    3. 首轮引导判定（契约 3.1）在读幂等之前：它只读表、没有副作用，因此后面每一条
+       提前返回的路径（幂等命中、互斥被拒、起步失败）都不必为它做清理；
+    4. 幂等命中直接返回原 `run_id`，不碰会话位、也不追加消息；
+    5. 互斥失败回 409 且不追加消息（契约第 2 节与质量地板 ③）；
+    6. 命中首轮引导时，本次运行的程序注入集合被引导替换（技能与静态告知），
+       使用者给的 `skill` 选择被忽略——那一次是引导，不是他选的那件事；
+       记账（会话标记 + 账号引导开始）在运行**起步成功之后**才写；
+    7. 启动失败（首个事件不是 `run_started`）时释放占位并回 503——此时没有
+       `run_id`，回 202 会让前端订阅一个不存在的路径；首轮记账不写，下次运行仍会注入。
 
     Raises:
         HTTPException: 会话不可访问（404）、载荷或技能不合法（422）、
-            会话已有在跑的运行（409），或运行器未装配、运行未能启动（503）。
+            会话已有在跑的运行（409），或运行器未装配、运行未能启动、
+            引导状态取值漂移（503）。
     """
     account_id = session.get_user_id()
     activated = await _activated_skill(settings, payload.skill)
@@ -370,6 +529,10 @@ async def send_message(
     cache = get_cache(settings)
     client_message_id = payload.client_message_id
 
+    # 首轮引导判定在读幂等与占位之前：它没有副作用（记账在运行起步成功后才写），
+    # 因此幂等命中与互斥被拒这两条路径都不必为它做任何清理。
+    onboarding = await _first_run_injection(settings, session_id=session_id, account_id=account_id)
+
     settled = await runbus.read_idempotent_run_id(cache, session_id=session_id, client_message_id=client_message_id)
     if settled is not None:
         return JSONResponse(
@@ -388,10 +551,19 @@ async def send_message(
         raise _busy()
 
     user_input = render_answers(payload.answers) if payload.answers is not None else (payload.content or "")
+    if onboarding is not None:
+        # 引导注入优先于技能选择器的选择：这一次运行是引导，不是日常咨询。
+        # 判据与后果都写在这里一处，避免「注入了引导但技能集合还是用户选的那个」
+        # 这种半注入状态——那会让模型同时拿到两套互相冲突的操作纪律。
+        activated = (onboarding.skill,)
+        injections = InjectionBatch(items=(onboarding.notice,))
+    else:
+        injections = InjectionBatch()
     request = RunRequest(
         session_id=session_id,
         surface=SURFACE_NAME,
         instructions=assembly.CONSULT_INSTRUCTIONS,
+        injections=injections,
         user_input=user_input,
         activated=activated,
     )
@@ -408,6 +580,10 @@ async def send_message(
         await runbus.release_session_run(cache, lease)
         await runbus.drop_idempotency(cache, session_id=session_id, client_message_id=client_message_id)
         raise _unavailable(f"{exc.code}: {exc.detail}") from exc
+
+    if onboarding is not None:
+        # 记账放在起步成功之后：起步失败时这次注入没有发生过，标记不该被消耗掉。
+        await _settle_first_run(settings, session_id=session_id, account_id=account_id)
 
     await runbus.commit_idempotency(
         cache,
@@ -544,16 +720,272 @@ async def stream_run(
     )
 
 
+# ---------------------------------------------------------------------------
+# 4.3 取消
+# ---------------------------------------------------------------------------
+
+
+@router.post("/runs/{run_id}/cancel", status_code=status.HTTP_202_ACCEPTED)
+async def cancel_run(run_id: str, session: SessionDep, settings: SettingsDep) -> JSONResponse:
+    """取消一次运行（契约 4.3）：停掉本进程里这条运行的消费方，不发终态事件。
+
+    顺序仍是「先鉴权、再归属、最后状态」：运行元数据里带账号标识，因此归属判定不需要
+    碰事件缓冲。运行不存在与非本账号返回同一个 404。
+
+    三条约定在这里的落法：
+
+    - 已终结的运行 → 409 `run_not_running`（契约 4.3 只写了状态码，错误码是本面补的，
+      见 `runbus.RUN_NOT_RUNNING` 的说明）。先读元数据判状态、再去取消，而不是直接取消：
+      直接取消时「没有可取消的任务」既可能是「已经跑完」也可能是「运行在别的进程」，
+      两者都回 409，但只有读元数据之后才能确定前者的判据成立。
+    - 取消**不发终态事件**（基座第 9 节）：取消的是消费方任务，基座随之停掉 SDK 侧的
+      运行并把 `CancelledError` 抛出去，因此不会有人再产出 `run_finished`。
+      前端据此自行把已渲染的部分标为「本次回答中断」（契约 4.3）。
+    - 收尾（落终结状态、释放会话位）由推进任务的 `finally` 完成，故本端点返回 202 之后
+      这个会话马上就能再发消息——不必等 TTL。
+
+    Raises:
+        HTTPException: 运行不存在或不属于当前账号（404），或运行已不在跑（409）。
+    """
+    if len(run_id) > MAX_RUN_ID_CHARS:
+        # 超长的运行标识不可能存在（基座生成 32 位十六进制）：按「不存在」处理，
+        # 与 :func:`_run_not_found` 同一条文案，不给出一条形状探测通道。
+        raise _run_not_found()
+
+    account_id = session.get_user_id()
+    cache = get_cache(settings)
+    meta = await runbus.read_run_meta(cache, run_id=run_id)
+    if meta is None or meta.account_id != account_id:
+        raise _run_not_found()
+    if meta.status == runbus.RUN_STATUS_FINISHED:
+        raise _not_running()
+    if not runbus.request_cancel(run_id):
+        # 元数据说在跑，而本进程里没有它的消费方：已终结的收尾还没落状态，或运行不在
+        # 本进程（多进程部署）。两种情况都无法完成取消，如实回 409 而不是回一个
+        # 「已受理」的 202——后者会让前端以为停止按钮生效了。
+        raise _not_running()
+
+    return JSONResponse(
+        status_code=status.HTTP_202_ACCEPTED,
+        content={"run_id": run_id, "cancelled": True},
+    )
+
+
+# ---------------------------------------------------------------------------
+# 5 应急入口
+# ---------------------------------------------------------------------------
+
+
+@router.post("/emergency", status_code=status.HTTP_202_ACCEPTED)
+async def start_emergency(
+    payload: EmergencyConsultRequest,
+    session: SessionDep,
+    settings: SettingsDep,
+) -> JSONResponse:
+    """一次调用完成「建会话 → 落第一条消息 → 启动运行」（契约第 5 节）。
+
+    五件事的顺序与理由：
+
+    1. 先取应急技能（内容根目录缺失是装配不完整，503）——技能缺失时不该先把会话建出来，
+       否则会留下一个再也跑不起来的空会话；
+    2. 一个事务里落归属行、绑定支持对象、把首轮注入标记置真：三者同属「这个应急会话
+       建好了」。标记置真是必要的——应急会话**永不触发引导**（`RQ-EMG-03`），
+       而它后续的消息走 `send_message`，那里的判据正是这个标记；
+    3. 同一个事务里取档案（`emergency_context`，键是支持对象）与记忆
+       （`read_emergency_facts`，键是账号）——两条取数的分区键不同，不可混用；
+       记忆取数失败时**不构造空记忆**（那等于宣称「这个账号没有记忆」），
+       而是记一条来源不可用，由基座显式告知模型；
+    4. 八项渲染成第一条使用者消息（缺项写「未采集（未排除）」），档案与记忆作为注入
+       排在它前面——注入消息由基座追加在末尾，顺序即「档案 → 记忆 → 使用者输入」；
+    5. 会话位与新会话不可能冲突（标识刚生成），但仍按同一形状占位并启动，
+       起步失败时释放占位并回 503（没有 `run_id` 就没有可订阅的路径）。
+
+    越权与不存在的文案统一：传入的支持对象不可写或不属于当前账号时 404，
+    与「支持对象不存在」同一条文案（`OBJECT_NOT_ACCESSIBLE_MESSAGE`）。
+
+    Raises:
+        HTTPException: 传入的支持对象不可访问（404）、载荷不合法（422），
+            或技能/运行器/依赖不可用（503）。
+    """
+    account_id = session.get_user_id()
+    skill = _program_skill(settings, assembly.EMERGENCY_SKILL_NAME)
+
+    session_id = uuid.uuid4().hex
+    unavailable: list[UnavailableSource] = []
+    async with session_scope(settings) as db:
+        object_id = payload.support_object_id
+        if object_id is not None:
+            try:
+                await require_writable(account_id, object_id)
+            except AuthorizationError as exc:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail=OBJECT_NOT_ACCESSIBLE_MESSAGE,
+                ) from exc
+        else:
+            object_id = await resolve_default_object(db, account_id=account_id)
+
+        try:
+            await register_session(db, session_id=session_id, account_id=account_id)
+        except SessionQueryError as exc:  # pragma: no cover —— 标识由本层生成，形状必然合法
+            raise _unprocessable(str(exc)) from exc
+        if object_id is not None:
+            await bind_first_object(db, session_id=session_id, account_id=account_id, support_object_id=object_id)
+        try:
+            await mark_first_run_injected(db, session_id=session_id)
+        except SessionNotFoundError as exc:  # pragma: no cover —— 归属行刚在同一个事务里插入
+            raise _session_not_found() from exc
+
+        profile = await _read_emergency_profile(db, account_id=account_id, support_object_id=object_id)
+        memory = await _read_emergency_memory(db, account_id=account_id, unavailable=unavailable)
+
+    try:
+        runner = assembly.get_runner(settings)
+    except assembly.ConsultAssemblyError as exc:
+        raise _unavailable(str(exc)) from exc
+
+    cache = get_cache(settings)
+    lease = await runbus.claim_session_run(cache, session_id=session_id)
+    if lease is None:  # pragma: no cover —— 标识刚生成，不可能已有运行占位
+        raise _busy()
+
+    batch = build_emergency_injections(profile=profile, memory=memory, unavailable=unavailable)
+    request = RunRequest(
+        session_id=session_id,
+        surface=SURFACE_NAME,
+        instructions=assembly.CONSULT_INSTRUCTIONS,
+        injections=batch,
+        user_input=render_emergency_intake(payload.items),
+        activated=(skill,),
+    )
+    pump = runbus.RunPump(
+        cache=cache,
+        runner=runner,
+        request=request,
+        account_id=account_id,
+        lease=lease,
+    )
+    try:
+        run_id = await pump.begin()
+    except runbus.RunStartupFailure as exc:
+        await runbus.release_session_run(cache, lease)
+        raise _unavailable(f"{exc.code}: {exc.detail}") from exc
+
+    runbus.start_pump(pump)
+    return JSONResponse(
+        status_code=status.HTTP_202_ACCEPTED,
+        content={"session_id": session_id, "run_id": run_id},
+    )
+
+
+async def _read_emergency_profile(
+    db: AsyncSession,
+    *,
+    account_id: str,
+    support_object_id: str | None,
+) -> EmergencyContext | None:
+    """取应急档案预取；账号没有支持对象时返回 `None`（`AC-02`，不是错误）。
+
+    `emergency_context` 内部自带属主校验（`require_owned`），校验失败会抛
+    `AuthorizationError`——本函数把它翻成与「对象不存在」相同的 404 文案：
+    调用方不需要、也不该区分这两件事（支持对象第 5.3 节）。
+    """
+    if support_object_id is None:
+        return None
+    try:
+        return await emergency_context(db, account_id=account_id, support_object_id=support_object_id)
+    except AuthorizationError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=OBJECT_NOT_ACCESSIBLE_MESSAGE,
+        ) from exc
+
+
+async def _read_emergency_memory(
+    db: AsyncSession,
+    *,
+    account_id: str,
+    unavailable: list[UnavailableSource],
+) -> EmergencyMemory | None:
+    """取应急记忆预取；取数失败时登记来源不可用并返回 `None`。
+
+    为什么失败时不返回空的 `EmergencyMemory`：空结果在注入里渲染成
+    「该账号还没有可用记忆」——那是一句关于数据的事实陈述，而这里的事实是
+    「取数失败」。两者混同会让模型在缺数据时以为自己知道全部
+    （通用记忆第 6 节：图库不可用必须与没有记忆严格区分）。
+
+    `MemoryModuleError` 是记忆模块全部失败的基类：图库不可用与取回数据不合法
+    都在其中，两者对模型的处置相同（这份来源本次不可用），因此合并处理。
+    """
+    try:
+        return await read_emergency_facts(db, get_shared_memory_graph(), account_id)
+    except MemoryModuleError as exc:
+        unavailable.append(UnavailableSource(source=EMERGENCY_MEMORY_SOURCE, reason=type(exc).__name__))
+        return None
+
+
+# ---------------------------------------------------------------------------
+# 6 引导跳过入口
+# ---------------------------------------------------------------------------
+
+
+@router.post("/sessions/{session_id}/onboarding/skip")
+async def skip_session_onboarding(
+    session_id: str,
+    session: SessionDep,
+    settings: SettingsDep,
+) -> JSONResponse:
+    """把该会话所属账号的引导状态置为 `skipped`（契约第 6 节）。
+
+    幂等：已是 `skipped` 或 `completed` 时同样 200，返回**当前**状态而不是一律回
+    `skipped`——后者在已 `completed` 的账号上会陈述一个存储层并不成立的事实。
+    两条写通道互不代写（认证与账号第 8 节）：本端点不覆盖 `completed`，
+    `finish_onboarding` 也不覆盖 `skipped`。
+
+    路径上带 `session_id` 而状态是账号级的：会话标识是**归属凭据**——先按它判定
+    「这个会话是不是你的」（不是则 404，与不存在同文案），再写该账号的状态。
+    没有这一步，任何登录账号都能改别人的引导状态。
+
+    本端点只写状态，**不取消**正在跑的运行：跳过引导对话的中途退出是另一件事，
+    按契约 4.3 走取消端点（第 6 节末行）。
+
+    Raises:
+        HTTPException: 会话不存在或不属于当前账号（404），或引导状态写入失败（503）。
+    """
+    account_id = session.get_user_id()
+    async with session_scope(settings) as db:
+        try:
+            await require_session_owner(db, session_id=session_id, account_id=account_id)
+        except SessionNotFoundError as exc:
+            raise _session_not_found() from exc
+        except SessionQueryError as exc:
+            raise _unprocessable(str(exc)) from exc
+
+        try:
+            state = await skip_onboarding(db, account_id=account_id)
+        except OnboardingWriteError as exc:
+            # 写入失败明确回 503：不得回执 skipped——那会让前端以为使用者的跳过已生效，
+            # 而下次会话仍会注入引导（`finish_onboarding` 契约第 5 节末行的补救通道，
+            # 在这里就是「再点一次」，本端点是幂等的）。
+            raise _unavailable(f"onboarding_write_failed: {type(exc).__name__}") from exc
+
+    return JSONResponse(status_code=status.HTTP_200_OK, content={"state": state})
+
+
 __all__ = [
+    "MAX_RUN_ID_CHARS",
     "RUN_NOT_FOUND_MESSAGE",
     "STREAM_MAX_SECONDS",
     "STREAM_POLL_SECONDS",
     "SURFACE_NAME",
+    "cancel_run",
     "create_session",
     "hydrate_history",
     "list_sessions",
     "parse_last_event_id",
     "router",
     "send_message",
+    "skip_session_onboarding",
+    "start_emergency",
     "stream_run",
 ]
