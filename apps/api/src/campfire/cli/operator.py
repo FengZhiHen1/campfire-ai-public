@@ -141,6 +141,28 @@ async def _run_invite_list(args: argparse.Namespace) -> int:
 # ---------------------------------------------------------------------------
 
 
+def _init_supertokens_for_cli(settings: Settings) -> None:
+    """为 CLI 进程装配 SuperTokens SDK。
+
+    ## 为什么 CLI 必须自己 init（2026-10-01 审查发现的阻断级缺陷）
+
+    ``account reset`` / ``account delete`` 调用的 SDK 函数
+    （``update_email_or_password`` / ``revoke_all_sessions_for_user`` /
+    ``delete_user``）内部都要 ``SessionRecipe.get_instance()`` 或
+    ``AccountLinkingRecipe.get_instance()``——**未 init 的进程里二者直接抛**
+    ``GeneralError: Initialisation not done. Did you forget to call the
+    SuperTokens.init function?``（SDK 源码实测，``recipe.py`` 的 ``get_instance``）。
+    CLI 是独立于 Web 入口的进程，不共享 ``main.py`` 的 lifespan，因此必须在
+    命令入口处自己完成装配。
+
+    **与 Web 入口的差异**：注册复写（``api_overrides``）与表单声明**不传**——
+    CLI 不处理注册请求，挂上复写只会引入无谓的依赖面。
+    """
+    from campfire.core.auth.supertokens import init_supertokens
+
+    init_supertokens(settings)
+
+
 async def _revoke_all_sessions_for(account_id: str) -> None:
     """撤销该账号的**全部**会话（第 7 节：重置与注销都必然包含它）。
 
@@ -185,6 +207,10 @@ async def _run_account_reset(args: argparse.Namespace) -> int:
     from supertokens_python.types import RecipeUserId
 
     settings = get_settings()
+    # SDK 装配（见 _init_supertokens_for_cli 的说明）：改密走 SDK，未 init 的进程
+    # 会在第一步就抛 Initialisation not done——那是一条 500 风格的意外失败，
+    # 而不是可读的领域错误。
+    _init_supertokens_for_cli(settings)
     # 本 SDK 版本的参数名是 `recipe_user_id`（且收 `RecipeUserId` 包装），
     # **不是** `user_id`——实测签名：recipe_user_id / email / password /
     # apply_password_policy / tenant_id_for_password_policy / user_context。
@@ -213,7 +239,6 @@ async def _run_account_reset(args: argparse.Namespace) -> int:
 
     print(f"已重置密码并撤销该账号全部会话：{args.account}")
     print("  提示：使用者现在必须用新密码登录；旧会话已立即失效。")
-    del settings  # 本操作不经本库，配置仅用于保持与其他子命令一致的取用方式
     return 0
 
 
@@ -233,6 +258,10 @@ async def _run_account_delete(args: argparse.Namespace) -> int:
     这里如实打印。重试是安全的（墓碑幂等，见 ``core/auth/deletion``）。
     """
     settings = get_settings()
+    # SDK 装配：第 3、4 步（撤会话、删身份用户）都走 SDK，未 init 的进程里
+    # 第 3 步就抛 Initialisation not done——那会把一次可重试的注销变成
+    # 「不知道进行到哪」的意外失败。
+    _init_supertokens_for_cli(settings)
 
     if args.confirm != args.account:
         print(
@@ -250,7 +279,10 @@ async def _run_account_delete(args: argparse.Namespace) -> int:
                 account_id=args.account,
                 revoke_all_sessions=args._revoke_all_sessions,
                 delete_identity_user=args._delete_identity_user,
-                purgers=args._purgers,
+                # **求值工厂**（2026-10-01 审查发现）：此前直接传 ``args._purgers``
+                # ——那是**工厂函数本身**而不是它返回的列表，``delete_account`` 迭代
+                # 函数对象会抛 ``TypeError``。挂在命令上的依赖必须与消费处的形状一致。
+                purgers=args._purgers(settings),
                 confirmed=True,
             )
     except AccountDeletionError as exc:
@@ -326,8 +358,10 @@ def dispatch_operator_command(args: argparse.Namespace) -> int | None:
     返回 ``None`` 而不是抛异常：``main`` 里已有「未识别的命令 → 用法 + 退出码 2」
     这条路径，这里不重复。
 
-    Raises:
-        无：所有失败都转成退出码（CLI 的契约是退出码，不是异常）。
+    失败的传达方式是**退出码与 stderr**（CLI 的契约），本函数自身不主动抛
+    领域异常——所有已知失败分支都转成了 ``1``。两点如实注明：参数错误由
+    argparse 在 ``main`` 的解析阶段抛 ``SystemExit``（不经过本函数）；
+    ``asyncio.run`` 内部的 ``KeyboardInterrupt`` 会原样传播（Ctrl+C 的常规行为）。
     """
     if args.command == "invite":
         if args.invite_command == "issue":

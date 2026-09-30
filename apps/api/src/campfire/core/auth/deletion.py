@@ -45,6 +45,7 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from typing import Protocol, runtime_checkable
 
@@ -62,8 +63,10 @@ class AccountDeletionError(Exception):
     """账号注销过程中的失败。
 
     **任一步失败即整体失败并明确报错**（第 8 节：不留「用户已删但数据仍可读」的
-    中间态）。异常携带**已完成到哪一步**，因为注销不可逆、操作者需要知道
-    当前处于什么状态才能决定是重试还是人工介入。
+    中间态）。异常携带**已完成到哪一步**——步骤粒度到单个清除者（如
+    ``领域清除（memory）``），因为注销不可逆、操作者需要知道当前处于什么状态
+    才能决定是重试还是人工介入；purger 之间互不知晓，报告里看不出
+    「哪个领域已清过」就无法安全重试。
     """
 
     def __init__(self, step: str, detail: str, completed: tuple[str, ...] = ()) -> None:
@@ -105,7 +108,13 @@ class AccountDataPurger(Protocol):
     - **不得抛「账号不存在」类异常**：那是正常情形，不是失败。
     - 失败必须**抛出**（而不是吞掉）：注销的语义是「内容真删」，
       静默失败会让「已删除」变成一句谎话。
+    - **提供 ``name`` 属性**（领域名，如 ``"memory"``）：编排的步骤名与失败点名
+      从它取——多个清除者并存时，操作者据此分辨「哪个领域已清过、哪个失败」。
+      与 :class:`PurgeOutcome.name` 同源，勿与类名耦合。
     """
+
+    #: 清除者的领域名。编排步骤名（``领域清除（<name>）``）与失败点名共用。
+    name: str
 
     async def purge_account(self, account_id: str) -> PurgeOutcome:
         """清除该账号在本领域的全部数据。
@@ -141,8 +150,8 @@ async def delete_account(
     session: AsyncSession,
     *,
     account_id: str,
-    revoke_all_sessions: object,
-    delete_identity_user: object,
+    revoke_all_sessions: Callable[[str], Awaitable[None]],
+    delete_identity_user: Callable[[str], Awaitable[None]],
     purgers: list[AccountDataPurger] | None = None,
     reason: str = DELETION_REASON_USER_REQUEST,
     confirmed: bool = False,
@@ -173,8 +182,8 @@ async def delete_account(
     Args:
         session: 关系库会话（墓碑与待处理记录的删除用；**调用方负责提交**）。
         account_id: 要注销的账号标识。
-        revoke_all_sessions: 可调用对象，签名 ``(account_id) -> Awaitable``。
-        delete_identity_user: 可调用对象，签名 ``(account_id) -> Awaitable``。
+        revoke_all_sessions: 撤销该账号全部会话的实现，签名 ``(account_id: str) -> Awaitable[None]``。
+        delete_identity_user: 删除身份服务用户的实现，签名同上。
         purgers: 各领域的清除者。为空表示没有需要额外清除的领域。
         reason: 注销原因（词表见 ``tombstone.TOMBSTONE_REASONS``）。
         confirmed: **必须显式为真**，否则拒绝执行（见上）。
@@ -238,28 +247,36 @@ async def delete_account(
 
     # --- 第 3 步：撤销全部会话 ---
     try:
-        await revoke_all_sessions(account_id)  # type: ignore[operator]
+        await revoke_all_sessions(account_id)
     except Exception as exc:
         raise AccountDeletionError("撤销全部会话", f"{type(exc).__name__}: {exc}", tuple(completed)) from exc
     completed.append("撤销全部会话")
 
     # --- 第 4 步：删除身份服务的用户 ---
     try:
-        await delete_identity_user(account_id)  # type: ignore[operator]
+        await delete_identity_user(account_id)
     except Exception as exc:
         raise AccountDeletionError("删除身份用户", f"{type(exc).__name__}: {exc}", tuple(completed)) from exc
     completed.append("删除身份用户")
 
     # --- 第 5 步：各领域的清除者 ---
+    #
+    # **逐个完成即逐个记录**（2026-10-01 审查修正，消融：`test_partial_purger_failure_reports_completed_purger`）：
+    # 多个 purger 时第 N 个失败，前 N-1 个已真实执行但按旧写法不会出现在
+    # `completed` 里——操作者据「失败重试安全」重跑时，无法从报告区分「哪个领域
+    # 已清过」。purger 自身幂等（端口契约），重跑安全；这里把粒度做实，报告才与
+    # 事实一致。**名字取自清除者自报的 ``PurgeOutcome.name`` 所在实例**而不是类名：
+    # 同一实现类可以被实例化多次（或一个类内部区分多种领域），类名无法分辨
+    # 「哪一个实例失败」——这正是本修正要回答的问题。取不到实例名时退回类名
+    # （结构性满足 Protocol 的实现者没有 ``name`` 属性，如测试里的假件）。
     for purger in purgers or []:
-        name = type(purger).__name__
+        name = getattr(purger, "name", None) or type(purger).__name__
         try:
             outcome = await purger.purge_account(account_id)
         except Exception as exc:
             raise AccountDeletionError(f"清除 {name}", f"{type(exc).__name__}: {exc}", tuple(completed)) from exc
         report.purges.append(outcome)
-    if purgers:
-        completed.append("领域清除")
+        completed.append(f"领域清除（{name}）")
 
     # 由 `session_scope` 在退出时提交；否则由调用方提交。
     # `expire_on_commit=False`（`core/db` 的约定）保证提交后仍可读取返回值。

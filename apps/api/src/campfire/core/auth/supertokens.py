@@ -40,12 +40,12 @@ core 不可达时**拒绝**，不回退到无状态校验——决策记录明�
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable
+from collections.abc import Callable, Coroutine
 from typing import Any
 
 from supertokens_python import InputAppInfo, SupertokensConfig, init
 from supertokens_python.recipe import emailpassword, session
-from supertokens_python.recipe.emailpassword import InputOverrideConfig, InputSignUpFeature
+from supertokens_python.recipe.emailpassword import InputFormField, InputOverrideConfig, InputSignUpFeature
 from supertokens_python.recipe.emailpassword.interfaces import APIInterface
 from supertokens_python.recipe.session import SessionContainer
 from supertokens_python.recipe.session.framework.fastapi import verify_session
@@ -54,6 +54,15 @@ from campfire.core.config import Settings
 from campfire.core.health import ComponentHealth, Status
 
 logger = logging.getLogger(__name__)
+
+#: FastAPI 依赖函数的类型（即 SDK ``verify_session`` 的返回签名）。
+#:
+#: 这里的 ``Any`` 是**复刻 SDK 自己的签名**（``Callable[..., Coroutine[Any, Any, ...]]``，
+#: 见 ``recipe/session/framework/fastapi/__init__.py``）：协程的发送/投掷值类型由
+#: 事件循环决定，SDK 未收窄，我们不发明比上游更窄的谎话。
+#: ``verify_session`` 以 ``session_required=True`` 调用时函数恒返回 ``SessionContainer``
+#: （未登录即抛 ``UnauthorisedError``），但类型上含 ``None``——按 SDK 签名如实声明。
+SessionDependency = Callable[..., "Coroutine[Any, Any, SessionContainer | None]"]
 
 #: 健康检查里这一项的名字。与 `main.check_auth_core` 的项名一致，
 #: 避免同一能力出现两个标签（`core/health` 的既有约定）。
@@ -91,7 +100,7 @@ def init_supertokens(
     settings: Settings,
     *,
     api_overrides: Callable[[APIInterface], APIInterface] | None = None,
-    sign_up_form_fields: Callable[[], list[Any]] | None = None,
+    sign_up_form_fields: Callable[[], list[InputFormField]] | None = None,
 ) -> None:
     """初始化 SuperTokens SDK（**幂等**，可重复调用）。
 
@@ -198,7 +207,7 @@ def init_supertokens(
     )
 
 
-def require_session() -> Any:
+def require_session() -> SessionDependency:
     """**唯一**的会话校验依赖。FastAPI 依赖注入用。
 
     ## 为什么必须经由这个函数（而不是直接用 SDK 的 ``verify_session``）
