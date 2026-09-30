@@ -71,11 +71,15 @@ _REASONING_TEXT_KEY = "text"
 #: `<compacted-summary>` 取自 `agent/context/window.py` 的 `COMPACTED_SUMMARY_TAG`
 #: （压缩检查点同样以 `role: "user"` 落库）。
 #:
-#: 判据的边界（已知不完整，如实写明）：产品侧注入（档案摘要、检索结果、应急八项）
-#: 由各自的产出方渲染信封，而那些信封尚未定形（归后续任务）。因此本清单只覆盖
-#: 基座信封——一个产品侧信封在前缀清单之外时，那条注入会被当成使用者消息，
-#: 结果是一段注入文本成为会话标题或出现在历史里。清单以元组形式集中在此，
-#: 就是为了让补充它只有一处改动。
+#: 两个产品侧信封（2026-10-02 随 T07b 补齐）：`<emergency_profile` 与
+#: `<emergency_memory` 由 `surfaces/consult/injections.py` 产出（应急入口的档案与记忆
+#: 预注入）。它们此前不在清单里，后果正是这份说明原先预告的那一条——产品侧注入会被
+#: 当成使用者消息，会话标题静默变成摘要片段。`modules/*` 不得 import `surfaces/*`
+#: （项目结构设计第 7 节），因此这里是字面量；产出口与清单的一致性由
+#: `tests/test_consult_emergency_render.py` 的用例机械核对（两份字面量不许漂移）。
+#:
+#: 判据的边界（仍然不完整，如实写明）：档案摘要与检索结果这两个产品侧信封尚未定形
+#: （归后续任务），它们进对话时同样要在这里补一行，否则上述后果会在那两处重现。
 INJECTED_MESSAGE_PREFIXES: tuple[str, ...] = (
     "<available_skills>",
     "<skill_content",
@@ -83,6 +87,8 @@ INJECTED_MESSAGE_PREFIXES: tuple[str, ...] = (
     "<unavailable_sources>",
     "<tool_availability>",
     "<compacted-summary>",
+    "<emergency_profile",
+    "<emergency_memory",
 )
 
 # ---------------------------------------------------------------------------
