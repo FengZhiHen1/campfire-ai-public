@@ -402,10 +402,14 @@ async def load_history(session: AsyncSession, *, session_id: str, account_id: st
 class SessionAccountPurger:
     """清除某账号的会话归属行（实现 `core/auth` 的 purger 端口）。
 
-    为什么需要它：认证与账号第 8 节第 4 步要求「删除 `campfire_session` 中该账号的
-    会话归属行」，且必须早于第 6 步（删身份用户）——身份用户一旦删除，就再也无法按
-    `account_id` 定位这些行。删掉它是 fail-closed：残留的归属行会让已注销账号的会话
-    仍通过归属判定。
+    为什么需要它：[认证与账号] 第 8 节要求「删除 `campfire_session` 中该账号的会话
+    归属行」，且必须早于删身份用户。该顺序由注销编排保证（领域清除是第 4 步、删身份
+    用户是第 5 步）。删掉它是 fail-closed：残留的归属行会让已注销账号的会话仍通过
+    归属判定。
+
+    第 8 节给出的理由是「身份用户一旦删除，就再也无法按 `account_id` 定位这些行」；
+    本实现不依赖身份服务定位（`purge_account` 的入参就是 `account_id`），顺序的收益
+    是让删身份用户成为整件事的提交点——见 `core/auth/deletion` 的顺序说明。
 
     为什么不删 SDK 的两张表：那两张表的内容由 SDK 拥有，且会话撤销（第 5 步，经身份
     服务）已让它们不可达；本 purger 只负责业务侧的归属行，不越界。

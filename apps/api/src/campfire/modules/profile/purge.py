@@ -40,9 +40,9 @@ class ProfileAccountPurger:
 
     三项都必须在墓碑写入之后执行
 
-    编排（`core/auth/deletion.delete_account`）已保证这一点：purger 是最后一步，
-    而墓碑是第一步。purger 自身不检查墓碑——那是编排的职责，重复检查会让
-    「顺序」这条不变量有两处判据。
+    编排（`core/auth/deletion.delete_account`）已保证这一点：领域清除是第 4 步、
+    墓碑是第 1 步（第 5 步是删身份用户）。purger 自身不检查墓碑——那是编排的职责，
+    重复检查会让「顺序」这条不变量有两处判据。
 
     幂等
 
