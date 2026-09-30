@@ -53,7 +53,6 @@ export interface LibraryPageState {
   reload(): Promise<void>;
   loadMore(): Promise<void>;
   toggleExpand(itemId: string): Promise<void>;
-  dismissDeepLinkCard(): void;
 }
 
 /**
@@ -218,10 +217,6 @@ export function useLibraryPage(port: LibraryPort, search: string): LibraryPageSt
     [applyExpandedId, expandedId, load],
   );
 
-  const dismissDeepLinkCard = useCallback((): void => {
-    setDeepLink({ kind: 'none' });
-  }, []);
-
   return {
     library,
     query,
@@ -238,6 +233,5 @@ export function useLibraryPage(port: LibraryPort, search: string): LibraryPageSt
     reload,
     loadMore,
     toggleExpand,
-    dismissDeepLinkCard,
   };
 }
