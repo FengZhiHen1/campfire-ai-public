@@ -1,7 +1,7 @@
 """按 `kind` 分派的机械检查与分派表行为。
 
 对应 `docs/技术设计/technical-details/写入路径.md` 第 4 节第 3 条「消费：按 kind 分派」。
-本文件不连数据库、不连 Redis：它钉的是**分派表本身**——哪些 kind 有消费者、没有消费者的
+本文件不连数据库、不连 Redis：它钉的是分派表本身——哪些 kind 有消费者、没有消费者的
 kind 如何被处置，以及两个入口有没有把投递钩子装上。
 
 为什么要有这组检查（2026-09-30 修复）：投递钩子此前硬编码只投记忆任务，而
@@ -32,7 +32,7 @@ def test_every_kind_has_a_consumer() -> None:
     没有键的 kind 不会被投给任何消费者（`dispatch_pending_write_to_queue` 显式跳过），
     因此「缺少消费者」必须是被检查的事实，而不是运行期才发现。
 
-    **它不是「永远不会失败的检查」**：新增第三种 kind 却没注册消费者时 `missing`
+    它不是「永远不会失败的检查」：新增第三种 kind 却没注册消费者时 `missing`
     非空 → 失败，并给出改法。
 
     为什么不用 `xfail(strict=True)` 表达缺口：xfail 期间「新增第三种 kind」
@@ -68,7 +68,7 @@ async def test_memory_episode_is_dispatched_to_its_own_consumer(monkeypatch: pyt
 async def test_a_kind_without_a_consumer_is_skipped_and_says_so(
     monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
-    """无消费者的 kind：**不投给任何消费者**、记一条指名道姓的 warning。
+    """无消费者的 kind：不投给任何消费者、记一条指名道姓的 warning。
 
     「显式跳过」不是「静默丢弃」：日志必须带 kind 与 pending_id，运维才看得出
     「有一批写入在等消费者」。记录本身的处置是不终结（仍是 `pending`，由兜底扫描
