@@ -16,14 +16,14 @@ import subprocess
 import sys
 
 import pytest
-
-from campfire.cli.__main__ import _build_parser, main
 from supertokens_python.recipe.emailpassword.interfaces import (
     EmailAlreadyExistsError,
     PasswordPolicyViolationError,
     UnknownUserIdError,
     UpdateEmailOrPasswordEmailChangeNotAllowedError,
 )
+
+from campfire.cli.__main__ import _build_parser, main
 
 
 def test_no_subcommand_prints_usage_and_exits_two() -> None:
@@ -167,7 +167,9 @@ def test_convert_title_flag_overrides_the_page_metadata(tmp_path: object) -> Non
     assert code == 0
     text = (Path(str(tmp_path)) / "titled.md").read_text(encoding="utf-8")
     metadata, body = parse_frontmatter(text)
-    assert metadata.get("title") == "命令行标题", f"--title 被静默忽略，实际 frontmatter title={metadata.get('title')!r}"
+    assert metadata.get("title") == "命令行标题", (
+        f"--title 被静默忽略，实际 frontmatter title={metadata.get('title')!r}"
+    )
     assert body.lstrip().startswith("# 命令行标题"), f"正文根标题也未用命令行标题：{body[:80]!r}"
     assert "页面自带标题" not in text, "命令行标题应压过元数据标题，两个标题同时出现说明覆盖没生效"
 
@@ -296,8 +298,9 @@ def test_account_reset_initializes_the_sdk(monkeypatch: pytest.MonkeyPatch) -> N
     import asyncio
 
     import supertokens_python.recipe.emailpassword.asyncio as ep_asyncio
-    from campfire.cli import operator
     from supertokens_python.recipe.emailpassword.interfaces import UpdateEmailOrPasswordOkResult
+
+    from campfire.cli import operator
 
     initialized: list[bool] = []
     monkeypatch.setattr(operator, "_init_supertokens_for_cli", lambda settings: initialized.append(True))
@@ -352,6 +355,7 @@ def test_account_reset_reports_failure_for_every_non_ok_result(
     import asyncio
 
     import supertokens_python.recipe.emailpassword.asyncio as ep_asyncio
+
     from campfire.cli import operator
 
     result_name = type(failure_result).__name__
@@ -391,8 +395,9 @@ def test_account_reset_success_path_still_reports_success(
     import asyncio
 
     import supertokens_python.recipe.emailpassword.asyncio as ep_asyncio
-    from campfire.cli import operator
     from supertokens_python.recipe.emailpassword.interfaces import UpdateEmailOrPasswordOkResult
+
+    from campfire.cli import operator
 
     revocations: list[str] = []
 
@@ -416,4 +421,3 @@ def test_account_reset_success_path_still_reports_success(
     assert code == 0
     assert "已重置密码" in captured.out
     assert revocations == ["acct-w"], "改密成功后必须撤销该账号全部会话"
-
