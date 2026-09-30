@@ -1,8 +1,13 @@
 """案例条目表
 
 Revision ID: fecd059d662b
-Revises: 2d5e68935ddc
+Revises: 711fc22a40fd
 Create Date: 2026-09-30 21:02:40.422546
+
+# down_revision 由 2d5e68935ddc 重挂到 711fc22a40fd（2026-09-30 编排器）：
+# 本迁移在 t03 泳道生成时基线是 T02 合并前的 feature 分支（head 为 2d5e68935ddc）；
+# 合并时 T02 的 711fc22a40fd 已先入主仓，重挂使其串在单链 head 上。
+# 两迁移均为纯新增表、零表交集（T03 审查确认），重挂安全。
 
 业务意图（依据 docs/技术设计/technical-details/公共案例库.md 第 3、4、7 节与
 docs/技术设计/technical-details/资料与案例检索.md 第 1、3 节）：
@@ -47,7 +52,7 @@ from sqlalchemy.dialects import postgresql
 
 # revision identifiers, used by Alembic.
 revision: str = "fecd059d662b"
-down_revision: Union[str, Sequence[str], None] = "2d5e68935ddc"
+down_revision: Union[str, Sequence[str], None] = "711fc22a40fd"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
