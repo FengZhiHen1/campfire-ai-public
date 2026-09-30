@@ -39,6 +39,8 @@ import pytest
 import pytest_asyncio
 
 from campfire.core.config import EMBEDDING_DIM
+from campfire.core.config import get_settings as _get_settings
+from campfire.core.db import dispose_engine, session_scope
 from campfire.modules.memory.graph import MemoryGraph, OrderedCrossEncoder
 from campfire.modules.memory.identity import PendingId, derive_episode_uuid, to_account_id
 from campfire.modules.memory.store import (
@@ -50,6 +52,53 @@ from campfire.modules.memory.store import (
 from .conftest import connect_falkordb_or_skip
 
 pytestmark = pytest.mark.integration
+
+
+async def _read_timeline(graph, account, **kwargs):  # noqa: ANN001, ANN003, ANN201
+    """调**公开**读入口（自动开一个关系库会话取删除账本）。
+
+    2026-09-30 起 `read_timeline` 只收 `session`——「已删清单」由函数内部取，调用方
+    无法漏传（此前传空列表会静默返回已删记忆）。本助手只是替测试开会话，不绕过过滤。
+    """
+    async with session_scope(_get_settings()) as session:
+        return await read_timeline(session, graph, to_account_id(account), **kwargs)
+
+
+async def _read_emergency_facts(graph, account, **kwargs):  # noqa: ANN001, ANN003, ANN201
+    """调**公开**应急读入口（同上）。"""
+    from campfire.modules.memory.derived import read_emergency_facts
+
+    async with session_scope(_get_settings()) as session:
+        return await read_emergency_facts(session, graph, to_account_id(account), **kwargs)
+
+
+async def _clear_ledger() -> None:
+    """清掉本文件两个账号的删除账本行（读入口自己取账本后必须做，见 fixture 的说明）。"""
+    from sqlalchemy import delete
+
+    from campfire.modules.memory.models import MemoryDeletionLedger
+
+    async with session_scope(_get_settings()) as session:
+        await session.execute(
+            delete(MemoryDeletionLedger).where(MemoryDeletionLedger.account_id.in_([_ACCOUNT_A, _ACCOUNT_B]))
+        )
+
+
+@pytest_asyncio.fixture(autouse=True)
+async def _dispose_shared_engine() -> AsyncIterator[None]:
+    """每个用例前后释放 `core/db` 的全局共享引擎。
+
+    2026-09-30 加：本文件此前**不碰关系库**（「已删清单」由调用方传入），读入口改为
+    自己取账本后开始用共享引擎——而 pytest-asyncio 为每个用例新建事件循环，共享引擎的
+    连接池绑定在**首次使用时的事件循环**上，跨循环复用会抛
+    ``RuntimeError: Event loop is closed``（实测：不加本 fixture 时 11 个用例在 setup
+    阶段就 ERROR）。同一处理见 `test_memory_ledger_integration.py`（那里有完整的实测
+    依据与现象记录）。生产只有一个长驻循环，不存在该问题。
+    """
+    await dispose_engine()
+    yield
+    await dispose_engine()
+
 
 #: 两个账号：用于验证分区隔离（各自的图）。
 _ACCOUNT_A = "it_mem_acct_a"
@@ -113,6 +162,9 @@ async def memory_graph() -> AsyncIterator[MemoryGraph]:
         ),
         driver=driver,
     )
+    # 清一次账本再开始：本文件自己会清理，但**同账号的行可能来自别的测试文件的历史
+    # 运行**（账本是全局表），残留会让本文件的读断言莫名少条。
+    await _clear_ledger()
     try:
         yield graph
     finally:
@@ -121,6 +173,11 @@ async def memory_graph() -> AsyncIterator[MemoryGraph]:
         for account in (_ACCOUNT_A, _ACCOUNT_B):
             scoped = graph.driver_for(account)
             await scoped.execute_query("MATCH (n) DETACH DELETE n")
+        # **删除账本也要清**（2026-09-30）：读入口现在自己取账本，而账本是**全局唯一**
+        # 约束（`episode_key`）且与图库无关——不清就会跨用例残留，让「刚写的两条」
+        # 被上个用例记的删除挡掉（实测：`assert len(before) == 2` 变成 1）。
+        # 此前「已删清单」由调用方传入，测试可凭空构造，因此没有这个清理需求。
+        await _clear_ledger()
         await graph.aclose()
 
 
@@ -162,7 +219,7 @@ async def test_timeline_returns_newest_first_and_carries_source(memory_graph: Me
     await _write(memory_graph, _ACCOUNT_A, "tl-2", content="中间的事", occurred_at=now - timedelta(days=1))
     await _write(memory_graph, _ACCOUNT_A, "tl-3", content="最近的事", occurred_at=now, source="session=s9 message=m42")
 
-    episodes = await read_timeline(memory_graph, to_account_id(_ACCOUNT_A), deleted_keys=[])
+    episodes = await _read_timeline(memory_graph, _ACCOUNT_A)
 
     assert [e.content for e in episodes] == ["最近的事", "中间的事", "最早的事"]
     assert episodes[0].source == "session=s9 message=m42"
@@ -181,10 +238,9 @@ async def test_timeline_time_window_filters_both_ends(memory_graph: MemoryGraph)
     await _write(memory_graph, _ACCOUNT_A, "tw-2", content="区间内", occurred_at=now - timedelta(days=5))
     await _write(memory_graph, _ACCOUNT_A, "tw-3", content="区间外-晚", occurred_at=now)
 
-    episodes = await read_timeline(
+    episodes = await _read_timeline(
         memory_graph,
-        to_account_id(_ACCOUNT_A),
-        deleted_keys=[],
+        _ACCOUNT_A,
         since=now - timedelta(days=6),
         until=now - timedelta(days=1),
     )
@@ -199,12 +255,12 @@ async def test_timeline_keyword_filter_is_case_insensitive_substring(memory_grap
     await _write(memory_graph, _ACCOUNT_A, "kw-1", content="他害怕嘈杂的超市", occurred_at=now - timedelta(days=1))
     await _write(memory_graph, _ACCOUNT_A, "kw-2", content="在家很放松", occurred_at=now)
 
-    hit = await read_timeline(memory_graph, to_account_id(_ACCOUNT_A), deleted_keys=[], query="超市")
+    hit = await _read_timeline(memory_graph, _ACCOUNT_A, query="超市")
     assert [e.content for e in hit] == ["他害怕嘈杂的超市"]
 
     # 大小写不敏感：英文同样命中。
     await _write(memory_graph, _ACCOUNT_A, "kw-3", content="Sensory Overload", occurred_at=now)
-    upper = await read_timeline(memory_graph, to_account_id(_ACCOUNT_A), deleted_keys=[], query="sensory")
+    upper = await _read_timeline(memory_graph, _ACCOUNT_A, query="sensory")
     assert [e.content for e in upper] == ["Sensory Overload"]
 
 
@@ -234,7 +290,7 @@ async def test_timeline_limit_is_bounded_by_server_cap(memory_graph: MemoryGraph
 
     scoped.execute_query = spy  # type: ignore[method-assign]
     try:
-        await read_timeline(memory_graph, to_account_id(_ACCOUNT_A), deleted_keys=[], limit=10_000)
+        await _read_timeline(memory_graph, _ACCOUNT_A, limit=10_000)
     finally:
         scoped.execute_query = real_execute  # type: ignore[method-assign]
 
@@ -261,7 +317,7 @@ async def test_timeline_limit_is_honoured_when_below_the_cap(memory_graph: Memor
             occurred_at=now - timedelta(days=index),
         )
 
-    episodes = await read_timeline(memory_graph, to_account_id(_ACCOUNT_A), deleted_keys=[], limit=2)
+    episodes = await _read_timeline(memory_graph, _ACCOUNT_A, limit=2)
     assert len(episodes) == 2, "limit=2 时必须只返回 2 条（不得抬到上界）"
 
 
@@ -270,10 +326,9 @@ async def test_timeline_rejects_reversed_window(memory_graph: MemoryGraph) -> No
     """非法时间区间显式失败（契约的失败语义），不静默返回全部。"""
     now = datetime.now(timezone.utc)
     with pytest.raises(ValueError, match="since"):
-        await read_timeline(
+        await _read_timeline(
             memory_graph,
-            to_account_id(_ACCOUNT_A),
-            deleted_keys=[],
+            _ACCOUNT_A,
             since=now,
             until=now - timedelta(days=1),
         )
@@ -286,15 +341,25 @@ async def test_timeline_rejects_reversed_window(memory_graph: MemoryGraph) -> No
 
 @pytest.mark.asyncio
 async def test_deleted_key_is_excluded_from_timeline(memory_graph: MemoryGraph) -> None:
-    """账本里的 key 不出现在时间线里——删除生效点在读取侧。"""
+    """账本里的 key 不出现在时间线里——删除生效点在读取侧。
+
+    **2026-09-30 起走真实账本**：读函数的「已删清单」由函数内部取，调用方无法传入，
+    因此这里必须用 `record_deletion` 真的记一笔（此前是直接传 `deleted_keys=[gone]`
+    模拟删除——那种写法在新 API 上不可表达，正是本次加固的目的）。
+    """
+    from campfire.modules.memory.ledger import record_deletion
+
     now = datetime.now(timezone.utc)
     keep = await _write(memory_graph, _ACCOUNT_A, "del-1", content="保留的", occurred_at=now - timedelta(days=1))
     gone = await _write(memory_graph, _ACCOUNT_A, "del-2", content="要删除的", occurred_at=now)
 
-    before = await read_timeline(memory_graph, to_account_id(_ACCOUNT_A), deleted_keys=[])
+    before = await _read_timeline(memory_graph, _ACCOUNT_A)
     assert len(before) == 2
 
-    after = await read_timeline(memory_graph, to_account_id(_ACCOUNT_A), deleted_keys=[gone])
+    async with session_scope(_get_settings()) as session:
+        await record_deletion(session, account_id=to_account_id(_ACCOUNT_A), episode_key=gone, reason="user_request")
+
+    after = await _read_timeline(memory_graph, _ACCOUNT_A)
     assert [e.content for e in after] == ["保留的"]
     assert keep in [e.episode_uuid for e in after]
 
@@ -306,13 +371,22 @@ async def test_deleted_filter_is_pushed_down_not_post_filtered(memory_graph: Mem
     这条是「下推 vs 读回再过滤」的判别用例：三条记录里删掉最近两条，取 `limit=1`
     时必须返回**剩下那条**。若实现是「先取 1 条再过滤」，会取到已删除的那条、
     过滤后得到空——本用例会失败。二者的差别正是第 7 节要求下推的原因。
+
+    **2026-09-30 起走真实账本**（见上一个用例的说明）。
     """
+    from campfire.modules.memory.ledger import record_deletion
+
     now = datetime.now(timezone.utc)
     oldest = await _write(memory_graph, _ACCOUNT_A, "pd-1", content="最老的", occurred_at=now - timedelta(days=2))
     newer = await _write(memory_graph, _ACCOUNT_A, "pd-2", content="较新", occurred_at=now - timedelta(days=1))
     newest = await _write(memory_graph, _ACCOUNT_A, "pd-3", content="最新", occurred_at=now)
 
-    episodes = await read_timeline(memory_graph, to_account_id(_ACCOUNT_A), deleted_keys=[newest, newer], limit=1)
+    # 删掉最近两条：只有下推过滤才能让 limit=1 落到「最老的」上。
+    async with session_scope(_get_settings()) as session:
+        for key in (newest, newer):
+            await record_deletion(session, account_id=to_account_id(_ACCOUNT_A), episode_key=key, reason="user_request")
+
+    episodes = await _read_timeline(memory_graph, _ACCOUNT_A, limit=1)
     assert [e.episode_uuid for e in episodes] == [oldest], (
         "取 1 条时必须落在未被删除的那条上——若为空说明过滤发生在 limit 之后"
     )
@@ -335,8 +409,8 @@ async def test_accounts_are_isolated_in_separate_graphs(memory_graph: MemoryGrap
     await _write(memory_graph, _ACCOUNT_A, "iso-1", content="A 的记忆", occurred_at=now)
     await _write(memory_graph, _ACCOUNT_B, "iso-2", content="B 的记忆", occurred_at=now)
 
-    a = await read_timeline(memory_graph, to_account_id(_ACCOUNT_A), deleted_keys=[])
-    b = await read_timeline(memory_graph, to_account_id(_ACCOUNT_B), deleted_keys=[])
+    a = await _read_timeline(memory_graph, _ACCOUNT_A)
+    b = await _read_timeline(memory_graph, _ACCOUNT_B)
 
     assert [e.content for e in a] == ["A 的记忆"]
     assert [e.content for e in b] == ["B 的记忆"]
@@ -397,7 +471,7 @@ async def test_writing_same_deterministic_uuid_twice_keeps_one_episode(memory_gr
     rows, _, _ = await scoped.execute_query("MATCH (e:Episodic {uuid: $uuid}) RETURN count(e) AS c", uuid=episode_uuid)
     assert rows[0]["c"] == 1, "同 uuid 重复写入必须只留一条 episode"
 
-    episodes = await read_timeline(memory_graph, to_account_id(_ACCOUNT_A), deleted_keys=[])
+    episodes = await _read_timeline(memory_graph, _ACCOUNT_A)
     assert len(episodes) == 1
 
 
@@ -492,7 +566,6 @@ async def test_emergency_facts_exclude_invalidated_edges(memory_graph: MemoryGra
     唯一落点。`EntityEdge.get_by_group_ids` **不过滤 invalid_at**（第 4 节实测），
     因此必须自建查询——若哪天改回用上游方法，本用例会失败。
     """
-    from campfire.modules.memory.derived import read_emergency_facts
 
     now = datetime.now(timezone.utc)
     await _write_edge(
@@ -513,7 +586,7 @@ async def test_emergency_facts_exclude_invalidated_edges(memory_graph: MemoryGra
         episodes=["ep-s"],
     )
 
-    result = await read_emergency_facts(memory_graph, to_account_id(_ACCOUNT_A), deleted_keys=[])
+    result = await _read_emergency_facts(memory_graph, _ACCOUNT_A)
     facts = [f.fact for f in result.facts]
     assert facts == ["当前有效的事实"], "失效边被当成『当前认识』注入会误导输出"
     assert not result.is_empty
@@ -526,9 +599,8 @@ async def test_emergency_facts_empty_account_is_empty_not_error(memory_graph: Me
     这是第 6 节的硬要求，也是不用 `EntityEdge.get_by_group_ids` 的原因之一——
     它对空分区抛 `GroupsEdgesNotFoundError`，会把新账号误报成故障。
     """
-    from campfire.modules.memory.derived import read_emergency_facts
 
-    result = await read_emergency_facts(memory_graph, to_account_id(_ACCOUNT_B), deleted_keys=[])
+    result = await _read_emergency_facts(memory_graph, _ACCOUNT_B)
     assert result.is_empty
     assert result.facts == []
 
@@ -537,21 +609,27 @@ async def test_emergency_facts_empty_account_is_empty_not_error(memory_graph: Me
 async def test_emergency_facts_multi_source_deletion_uses_any_not_all(memory_graph: MemoryGraph) -> None:
     """**多来源边的删除判据是「至少一条来源被删即排除」**（第 7 节）。
 
-    判别性说明：边 `ef-multi` 的来源是 `[ep-a, ep-b]`，账本里只删了 `ep-b`。
+    判别性说明：边 `ef-multi` 的来源是两个 episode，账本里只删了其中一个。
     - 正确判据（any）→ 该边被排除；
     - 错判据（all，要求全部来源都被删）→ 该边**仍被注入**。
     两种实现结果不同，因此本用例真的能判别实现，不是恒过断言。
+
+    **2026-09-30 起走真实账本**：来源 key 用 `derive_episode_uuid` 派生（账本的
+    `episode_key` 是 UUID 且经 `to_episode_key` 校验，此前的 `"ep-gone"` 这类字面量
+    已无法记账）。
     """
-    from campfire.modules.memory.derived import read_emergency_facts
+    from campfire.modules.memory.ledger import record_deletion
 
     now = datetime.now(timezone.utc)
+    keep_key = derive_episode_uuid(PendingId("ef-multi-keep"))
+    gone_key = derive_episode_uuid(PendingId("ef-multi-gone"))
     await _write_edge(
         memory_graph,
         _ACCOUNT_A,
         "ef-multi",
         fact="多来源事实",
         valid_at=now - timedelta(days=1),
-        episodes=["ep-keep", "ep-gone"],
+        episodes=[keep_key, gone_key],
     )
     await _write_edge(
         memory_graph,
@@ -559,10 +637,15 @@ async def test_emergency_facts_multi_source_deletion_uses_any_not_all(memory_gra
         "ef-clean",
         fact="来源未被删的事实",
         valid_at=now - timedelta(days=2),
-        episodes=["ep-keep"],
+        episodes=[keep_key],
     )
 
-    result = await read_emergency_facts(memory_graph, to_account_id(_ACCOUNT_A), deleted_keys=["ep-gone"])
+    async with session_scope(_get_settings()) as session:
+        await record_deletion(
+            session, account_id=to_account_id(_ACCOUNT_A), episode_key=gone_key, reason="user_request"
+        )
+
+    result = await _read_emergency_facts(memory_graph, _ACCOUNT_A)
     facts = [f.fact for f in result.facts]
     assert facts == ["来源未被删的事实"], "只删了部分来源的边仍被注入——删除判据用成了『全部来源被删』"
 
@@ -588,11 +671,19 @@ async def test_edges_with_empty_episodes_are_kept_but_missing_property_is_exclud
     **方法学说明**：只跑「带过滤」的实验组无法区分「被 `WHERE` 排除」与
     「`MATCH` 没匹配到」——本用例因此**同时**断言对照组（不带过滤时三种形状都能匹配到），
     这样「缺失属性被排除」才是被过滤造成的、而非漏查。
+    **2026-09-30 起走真实账本**：账本**必须非空**，否则「删除过滤」那段条件根本不会
+    拼进查询（实现里是 `if deleted_keys:`），三种形状的对照就失去意义。因此这里真的记
+    一笔删除，用它作为「被删 uuid」那一列。
     """
-    from campfire.modules.memory.derived import read_emergency_facts
+    from campfire.modules.memory.ledger import record_deletion
 
     now = datetime.now(timezone.utc)
     scoped = memory_graph.driver_for(to_account_id(_ACCOUNT_A))
+    deleted_key = derive_episode_uuid(PendingId("ef-deleted-shape"))
+    async with session_scope(_get_settings()) as session:
+        await record_deletion(
+            session, account_id=to_account_id(_ACCOUNT_A), episode_key=deleted_key, reason="user_request"
+        )
 
     # `_write_edge` 总会写 episodes，因此缺失属性这一种形状需直接落库。
     await _write_edge(
@@ -627,7 +718,7 @@ async def test_edges_with_empty_episodes_are_kept_but_missing_property_is_exclud
     control_uuids = {r["uuid"] for r in control}
     assert {"ef-empty-eps", "ef-no-eps"} <= control_uuids, f"对照组应能匹配到两种形状的边，实际 {sorted(control_uuids)}"
 
-    result = await read_emergency_facts(memory_graph, to_account_id(_ACCOUNT_A), deleted_keys=["ep-anything"])
+    result = await _read_emergency_facts(memory_graph, _ACCOUNT_A)
     facts = [f.fact for f in result.facts]
     assert "来源为空的边" in facts, "episodes=[] 的边应被保留（any() 对空列表返回 false）"
     assert "属性缺失的边" not in facts, (
@@ -643,7 +734,6 @@ async def test_emergency_facts_respects_char_budget(memory_graph: MemoryGraph) -
     预算，验证：不超预算、且 `truncated_by_chars` 如实报告被丢掉的条数
     （静默截断会让调用方以为「已注入全部记忆」）。
     """
-    from campfire.modules.memory.derived import read_emergency_facts
 
     now = datetime.now(timezone.utc)
     for index in range(3):
@@ -656,7 +746,7 @@ async def test_emergency_facts_respects_char_budget(memory_graph: MemoryGraph) -
             episodes=[f"ep-{index}"],
         )
 
-    result = await read_emergency_facts(memory_graph, to_account_id(_ACCOUNT_A), deleted_keys=[], char_budget=45)
+    result = await _read_emergency_facts(memory_graph, _ACCOUNT_A, char_budget=45)
     assert len(result.facts) == 1, "字符预算应只放得下一条"
     assert sum(len(f.fact) for f in result.facts) <= 45
     assert result.truncated_by_chars == 2, "被截断的条数必须如实回报"
@@ -665,7 +755,6 @@ async def test_emergency_facts_respects_char_budget(memory_graph: MemoryGraph) -
 @pytest.mark.asyncio
 async def test_derived_facts_are_isolated_per_account(memory_graph: MemoryGraph) -> None:
     """派生事实同样按账号分区——另一账号的图里取不到。"""
-    from campfire.modules.memory.derived import read_emergency_facts
 
     now = datetime.now(timezone.utc)
     await _write_edge(
@@ -685,8 +774,8 @@ async def test_derived_facts_are_isolated_per_account(memory_graph: MemoryGraph)
         episodes=["ep-b"],
     )
 
-    a = await read_emergency_facts(memory_graph, to_account_id(_ACCOUNT_A), deleted_keys=[])
-    b = await read_emergency_facts(memory_graph, to_account_id(_ACCOUNT_B), deleted_keys=[])
+    a = await _read_emergency_facts(memory_graph, _ACCOUNT_A)
+    b = await _read_emergency_facts(memory_graph, _ACCOUNT_B)
 
     assert [f.fact for f in a.facts] == ["A 的事实"]
     assert [f.fact for f in b.facts] == ["B 的事实"]
