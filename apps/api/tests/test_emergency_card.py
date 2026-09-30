@@ -22,11 +22,20 @@ from typing import Any
 import pytest
 
 from campfire.agent.context import CitationRecorder
-from campfire.agent.tools import ActionCard, ActivationState, ToolContext, ToolFailure, ToolResult
+from campfire.agent.tools import (
+    ActionCard,
+    ActivationState,
+    ToolContext,
+    ToolFailure,
+    ToolPool,
+    ToolResult,
+    ToolSpec,
+)
 from campfire.tools.emergency_card import (
     ACCOUNT_PAYLOAD_KEY,
     ANNOTATION_CONFIDENCES,
     ANNOTATION_SOURCES,
+    CARD_TITLE,
     SECTION_KEYS,
     STATE_KEYS,
     STATE_VALUE_TABLE,
@@ -65,6 +74,19 @@ def _context(payload: object | None = None) -> ToolContext:
 
 def _accounted() -> ToolContext:
     return _context(payload={ACCOUNT_PAYLOAD_KEY: _ACCOUNT})
+
+
+def _scope(pool: ToolPool):
+    """把池里全部工具设为此刻可用（端到端用例用）。
+
+    为什么必须显式给范围：产品工具的可用性由激活集合决定，而 `resolve_scope(pool)`
+    在不传激活 skill 时 `active` 是空集——于是派发层返回 `tool_not_available`，
+    卡片根本到不了桥。这本身是**正确**的行为（工具可见性不是安全边界，服务端照常拒绝），
+    只是端到端用例要先把工具放进可用集合，才能测到它后面的那段路。
+    """
+    from campfire.agent.tools import resolve_scope
+
+    return resolve_scope(pool, default_active=pool.names())
 
 
 def _raw_args(**overrides: Any) -> dict[str, Any]:
@@ -494,3 +516,98 @@ async def test_a_valid_payload_reaches_the_handler_and_emits_exactly_one_card() 
     assert isinstance(outcome, ToolResult)
     assert calls == ["called"]
     assert len(outcome.cards) == 1
+
+
+# ---------------------------------------------------------------------------
+# 端到端：真工具经真桥翻成 action_card 事件（契约第 1 节「基座把工具返回的卡片
+# 翻成 action_card 事件下发」）
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_the_bridge_emits_the_action_card_event_with_matching_fields() -> None:
+    """真工具经真桥产出 `action_card` 事件，字段与卡片逐字对应。
+
+    为什么需要这一条（`test_agent_questions.py` 已用替身卡片工具测过桥的翻译）：
+    替身只能证明「桥会翻 `ToolResult.cards`」，证明不了「本工具产出的卡片形状是桥认得的
+    形状」。两处各自的测试都绿、而中间对不上——正是接口类改动最常见的失败模式。
+    这里用的是真工具、真工具池、真桥，因此那一段路是真的走通了。
+
+    判别性：把卡片只放进 `text`（写成 JSON 字符串）而不放 `cards`，本用例失败——
+    那样卡片退化成自由文本，前端要自己解析，而契约第 1 节明确否定了这条路
+    （「不由模型写自由文本再由前端解析——这是结构可校验的前提」）。
+    """
+    from campfire.agent.runtime.assembly import ToolBridge
+    from campfire.agent.runtime.events import ActionCardEvent
+    from campfire.agent.tools import ToolDispatcher, ToolPool
+
+    pool = ToolPool()
+    pool.register(
+        ToolSpec(
+            name="emit_emergency_action_card",
+            description="测试用",
+            args_model=EmitEmergencyActionCardArgs,
+            handler=emit_emergency_action_card,
+        )
+    )
+    events: list[object] = []
+    bridge = ToolBridge(
+        ToolDispatcher(pool, _scope(pool), context=_accounted()),
+        sink=events.append,
+    )
+
+    await bridge._invoke(
+        "emit_emergency_action_card",
+        None,
+        json.dumps(
+            _raw_args(annotations=[{"line_ref": 1, "source": "family_report", "confidence": "likely"}]),
+            ensure_ascii=False,
+        ),
+    )
+
+    cards = [event for event in events if isinstance(event, ActionCardEvent)]
+    assert len(cards) == 1, "一次调用发一张 action_card 事件"
+    event = cards[0]
+    assert event.card_id
+    assert event.title == CARD_TITLE
+    assert [section.key for section in event.sections] == list(SECTION_KEYS)
+    assert {state.key for state in event.states} == {"deviation", "communication", "sensory_load", "medical_risk"}
+    assert event.annotations[0].target == "1"
+    assert decode_annotation_kind(event.annotations[0].kind) == ("family_report", "likely")
+
+
+@pytest.mark.asyncio
+async def test_no_action_card_event_is_emitted_for_a_rejected_payload() -> None:
+    """契约第 6 节「不静默改写」的事件级证明：越界载荷经**真桥**不产出任何卡片事件。
+
+    与前一条同样是端到端：`ToolDispatcher.dispatch` → `ToolSpec._parse` 失败 →
+    `ToolFailure` → 桥只发 `tool_call_finished(ok=False)`，卡片事件的循环根本不被进入。
+
+    判别性：把词表校验从参数模型挪到 handler（构造出卡片再决定发不发），
+    本用例会失败——那时桥已经拿到了一张卡片。
+    """
+    from campfire.agent.runtime.assembly import ToolBridge
+    from campfire.agent.runtime.events import ActionCardEvent
+    from campfire.agent.tools import ToolDispatcher, ToolPool
+
+    pool = ToolPool()
+    pool.register(
+        ToolSpec(
+            name="emit_emergency_action_card",
+            description="测试用",
+            args_model=EmitEmergencyActionCardArgs,
+            handler=emit_emergency_action_card,
+        )
+    )
+    events: list[object] = []
+    bridge = ToolBridge(
+        ToolDispatcher(pool, _scope(pool), context=_accounted()),
+        sink=events.append,
+    )
+
+    bad = _raw_args(states=[{"key": "medical_risk", "value": "critical"}])
+    text = await bridge._invoke("emit_emergency_action_card", None, json.dumps(bad, ensure_ascii=False))
+
+    assert not [event for event in events if isinstance(event, ActionCardEvent)], "越界载荷不得产出卡片事件"
+    # 失败以明确的工具调用失败告知模型（它可据此改用文本作答，契约第 5 节）。
+    assert "tool_invalid_arguments" in text or "不符合 schema" in text
