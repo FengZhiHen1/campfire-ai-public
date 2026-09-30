@@ -374,6 +374,13 @@ input[aria-invalid='true'] {
   background: var(--surface);
 }
 
+/* 项目侧 .phone-shell（global.css）自带一份左右 gutter，契约 .subpage-head 也自带一份：
+ * 嵌套时会出现两份内缩（返回链接左边界 32px vs 卡片 16px，视觉上头部比内容更靠内）。
+ * 在 shell 内取消头部那份，让吸顶头与内容卡左对齐；脱离 shell 单独使用时行为不变。 */
+.phone-shell .subpage-head {
+  padding-inline: 0;
+}
+
 .sp-back {
   display: inline-flex;
   align-items: center;
@@ -383,6 +390,9 @@ input[aria-invalid='true'] {
   font-size: var(--text-sm);
 }
 
+/* 次级页标题的字号与字重：契约只给了字体族，字号继承正文（实测 17px/400），
+ * 而页面设计对次级页标题明文要求 `--text-xl`、500（使用说明.md:15、案例库浏览页.md:15）。
+ * 标在契约层而不是各页面：这是所有次级页共同的标题规格，页面各写一份必然漂移。 */
 .sp-title {
   flex: 1;
   min-width: 0;
@@ -390,6 +400,8 @@ input[aria-invalid='true'] {
   text-overflow: ellipsis;
   white-space: nowrap;
   font-family: var(--font-display);
+  font-size: var(--text-xl);
+  font-weight: 500;
 }
 
 .tab-bar {
@@ -433,7 +445,12 @@ input[aria-invalid='true'] {
 
 /* 一级页底部为固定 tab 栏预留高度（页设计首页的底部预留条）。
  * 选择器带 .phone-shell 是为了压过 global.css 的 `padding` 简写：两者同为单类选择器时
- * 后者（global.css 在 main.tsx 里后导入）会连 padding-bottom 一起覆盖，预留会静默失效。 */
+ * 后者（global.css 在 main.tsx 里后导入）会连 padding-bottom 一起覆盖，预留会静默失效。
+ *
+ * `has-tab-bar` 是**实现侧派生类**（由 shared/ui/AppShell 按「是否渲染 tab 栏」挂上），
+ * 不是契约修订：它没有新的视觉语言，只编码首页.md:21 已写明的「底部预留 tab 栏高度」
+ * 这条既有要求，且预留量全部由既有 token 与契约的 56px 栏高算出。契约 components.html
+ * 不收录它；若将来需要宿主感知子元素，再走 DESIGN.md 的契约修订流程改为 :has() 形态。 */
 .phone-shell.has-tab-bar {
   padding-bottom: calc(56px + var(--space-6) + env(safe-area-inset-bottom, 0px));
 }
@@ -521,10 +538,16 @@ input[aria-invalid='true'] {
 
 /* ── 底部确认单 ─────────────────────────────────────────────── */
 
+/* 底部确认单。
+ * z-index 必须高于 .tab-bar（40）：两者同为 position:fixed，否则 tab 栏会盖住 sheet 底部，
+ * 在真机高度下「取消/退出」两个按钮正好落在 tab 栏区域内而**不可点**（实测重叠 57px、
+ * 按钮中心 elementFromPoint 命中 a.tab-item）。契约未定义 z-index 层级 token，故用字面量，
+ * 与 .tab-bar 的 40 同族。 */
 .confirm-sheet {
   position: fixed;
   top: auto;
   bottom: 0;
+  z-index: 50;
   max-width: var(--phone-shell-max);
   width: 100%;
   max-height: 90svh;
@@ -546,9 +569,16 @@ input[aria-invalid='true'] {
   color: var(--fg-2);
 }
 
-/* 进入类动效统一走 --motion-base；减弱动效偏好下由下方全局规则关闭。 */
+/* 进入类动效统一走 --motion-base；减弱动效偏好下由下方全局规则关闭。
+ *
+ * 为什么选择器是 .confirm-sheet 而不是契约原文的 .confirm-sheet[open]：`[open]` 只在原生
+ * `<dialog>` 由 showModal/setAttribute 打开时成立，而本期实现用「挂载即打开」的 div
+ * （jsdom 未实现 showModal，见 SettingsPage 的 LogoutConfirmSheet 注释），从不设置 open 属性，
+ * 于是 `[open]` 版本是一条**永不命中的死规则**（实测 animationName=none）。
+ * 改挂 .confirm-sheet 对其余用法同样成立：未打开的 <dialog> 是 display:none，从 none 转为
+ * 可见时动画照常触发；打开的 <dialog> 与本期的 div 都在 DOM 中可见，两者都会播放。 */
 @media (prefers-reduced-motion: no-preference) {
-  .confirm-sheet[open] {
+  .confirm-sheet {
     animation: sheet-slide-in var(--motion-base) var(--ease-standard);
   }
 }
