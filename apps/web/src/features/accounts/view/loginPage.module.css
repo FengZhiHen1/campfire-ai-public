@@ -5,8 +5,16 @@
 .shell {
   display: flex;
   flex-direction: column;
-  gap: var(--space-6);
   justify-content: flex-start;
+}
+
+/* 区块间距 --space-6（品牌区 → 表单区 → 切换行）。
+ * 选择器带 :global(.phone-shell) 是为了压过 global.css 的 `.phone-shell { gap: var(--space-4) }`：
+ * 两者同为单类选择器时后者（global.css 在 main.tsx 里最后导入）胜出，本页声明的 24px 会静默失效
+ * （实测 16px）。复合选择器把特异性提到 (0,2,0)，与导入顺序无关。同 components.css 的
+ * `.phone-shell.has-tab-bar` 是同一手法。 */
+:global(.phone-shell).shell {
+  gap: var(--space-6);
 }
 
 /* 品牌区顶部另留安全区：全局 .phone-shell 已预留一次，本页品牌区是首屏第一块内容，
@@ -43,7 +51,18 @@
   color: var(--muted);
 }
 
-.panel {
+/* 表单容器：panel 内边距与「宽屏再收窄至 420px」。
+ * 选择器带 :global(.panel) 的理由同上面的 .shell——契约 .panel 的 --space-5 与全局表同为首位，
+ * 依赖导入顺序会让设计明文要求的 --space-6（登录与注册.md:16）静默失效。
+ *
+ * width: 100% 不能省：面板在 flex 纵向容器里，单给 max-width + margin-inline:auto 会触发
+ * shrink-to-fit——实测面板塌到内容宽 265px（表单区不再是满宽，与设计的分区结构不符）。
+ * 显式 width:100% 让窄屏取满容器宽，max-width 只在宽屏（容器 >420px）生效。 */
+:global(.panel).panel {
+  width: 100%;
+  max-width: 420px;
+  margin-inline: auto;
+  padding: var(--space-6);
   display: grid;
   gap: var(--space-5);
 }
@@ -97,10 +116,6 @@
   color: var(--muted);
   font-size: var(--text-sm);
   text-align: center;
-}
-
-.note a {
-  margin-left: var(--space-2);
 }
 
 /* 极简两级 stagger 渐入：品牌区 → 表单区（页面设计「动效意图」节，--motion-base 240ms）。

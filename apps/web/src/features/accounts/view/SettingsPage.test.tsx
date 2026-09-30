@@ -20,6 +20,7 @@ import { SettingsPage } from './SettingsPage';
 import type { AuthPort } from '../application/ports';
 import { AuthError } from '../domain/authFailure';
 import { useSessionStore } from '../viewModel/sessionStore';
+import { expectContractCssActive, injectContractCss } from '../../../test/contractCss';
 
 /** 一期边界硬文案（页面设计成稿，逐字；AC-10 的反向如实声明）。 */
 const BOUNDARY_COPY =
@@ -271,6 +272,29 @@ describe('设置页 · tab 栏与动效', () => {
     renderSettings(port());
 
     expect(screen.getByRole('link', { name: '我的' }).getAttribute('aria-current')).toBe('page');
+  });
+
+  it('P0 确认单层级高于 tab 栏（否则底部按钮被导航栏盖住、真机上不可点）', async () => {
+    injectContractCss();
+    // canary：先证明注入通道生效。若注入失败，下面两边都会读到 "auto"，
+    // 比较会得到 false 而通过——那正是这条用例要防的假阴性。
+    expectContractCssActive();
+
+    renderSettings(port());
+    fireEvent.click(screen.getByRole('button', { name: '退出登录' }));
+
+    const sheet = await screen.findByRole('dialog');
+    const tabBar = document.querySelector('.tab-bar');
+    expect(tabBar).not.toBeNull();
+
+    // 实测（headless Chromium）：两者同为 position:fixed，tab 栏 z-index 40、
+    // 修复前 sheet 为 auto → 390×844 下重叠 57px，两个按钮中心点 elementFromPoint
+    // 命中 a.tab-item。这里把「sheet 必须高于 tab 栏」钉住。
+    const sheetZ = getComputedStyle(sheet).zIndex;
+    const tabZ = getComputedStyle(tabBar as Element).zIndex;
+    expect(sheetZ).not.toBe('auto');
+    expect(tabZ).not.toBe('auto');
+    expect(Number(sheetZ)).toBeGreaterThan(Number(tabZ));
   });
 
   it('P0 页面级零动效：内容区没有动画类（本页是全产品最安静的页面）', () => {
