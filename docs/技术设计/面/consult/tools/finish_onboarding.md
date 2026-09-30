@@ -49,4 +49,4 @@ state: "completed"
 ## 7. 不在本文范围
 
 - 状态表的 DDL 与迁移（随 `modules/accounts` 实现落地）。
-- UI 跳过入口的 HTTP 契约（咨询面契约文档，未成文，登记于[TODO](../../../../TODO.md)）。
+- UI 跳过入口的 HTTP 契约（已成文：[HTTP/SSE 契约](../HTTP与SSE契约.md)第 6 节）。
