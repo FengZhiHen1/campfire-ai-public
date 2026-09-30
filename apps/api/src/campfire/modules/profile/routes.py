@@ -220,8 +220,10 @@ class SummaryEntryPayload(BaseModel):
 
     `text` 与 `freshness` 是契约未点名但下游必需的：
     `text` 是条目的可读内容（个性化档案第 4 节「条目」在本面的承载键，与
-    前端线格式类型 `ProfileSummaryEntry.text` 对齐）；`freshness` 是第 4 节
-    「`stale` 条目降权并标注时效」的可执行载体——没有它，页面无法标注时效。
+    前端线格式类型 `ProfileSummaryEntry.text` 对齐）；`freshness` 是条目的
+    当下新鲜度，但摘要只取稳定层，故这里恒为 `current`——`stale` 只在
+    `GET /profile/objects/{id}/items?include_candidates=true` 的 `candidates`
+    组里出现（`ProfileItemPayload.freshness`），页面要标注陈旧须走那条路径。
     """
 
     item_id: str

@@ -82,8 +82,10 @@ class SummaryEntry:
     origin: str
     last_confirmed_at: datetime
     description: str
-    #: 该条目的当下新鲜度：候选条目超 90 天时为 `stale`，
-    #: 第 4 节要求此类条目「在摘要与注入中降权并标注时效」。
+    #: 该条目的当下新鲜度。本结构只由摘要与应急取数填充，而这条路只取稳定层，
+    #: `stale` 又只降权非稳定层的未确认条目（第 3 节）——两者交集为空，
+    #: 因此这里恒为 `current`。被降权条目的陈旧标注在条目读取路径上
+    #: （`ItemView.freshness`，须显式检索候选）。
     freshness: str
 
 
@@ -778,8 +780,10 @@ async def summary(
     2. 候选条目不进摘要——只有候选条目的对象返回「无档案」而不是空对象（第 10 节）；
     3. 摘要不新增事实：它只选编与压缩，不产生稳定层之外的内容。
 
-    `stale` 条目按第 4 节「降权并标注时效」：仍出现在摘要里（它曾是使用者的认识），
-    但 `freshness` 标为 `stale` 供调用方降权呈现；已被取代（`historical`）的条目不出现。
+    摘要里的 `freshness` 恒为 `current`：取数只走稳定层，而 `stale` 只降权
+    非稳定层的未确认条目（第 3 节），两者交集为空——被降权的条目取不到，
+    因此这里没有可标注的 `stale`。陈旧标注在条目读取路径上
+    （`ItemView.freshness`，须显式检索候选）。已被取代（`historical`）的条目不出现。
 
     Raises:
         AuthorizationError: 对象不存在或不属于该账号。
