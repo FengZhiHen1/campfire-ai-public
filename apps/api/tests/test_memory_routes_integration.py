@@ -28,6 +28,9 @@
     越权与不存在逐字同文案；图库不可用 → 账本照记并返回 200（契约第 6 节）。
 5c. 跨账号账本守卫按异常类型分派，与异常文案无关（D-40）：删除与纠正两处各钉一条；
     账本不变量破坏不得被说成「episode 标识形状非法」。
+5d. 纠正在撤下之前先判存在性（与删除同源）：越权与不存在的 key → 404 且不动账本
+    （契约第 2 节那张整面表在纠正端点上必须可达）；图库不可用 → 撤下照做，
+    写新失败即中间态 200。
 6. 纠正两步：正常路径返回 201 且 `superseded` / `new_episode_written` 都为真；
    写新失败时返回 **200** 与 `{superseded: true, new_episode_written: false}`
    （本包裁决 3 的中间态形状）——旧记忆已撤下、新记忆未写入。
@@ -539,6 +542,96 @@ async def test_correct_reports_the_intermediate_state_when_writing_new_fails(
     assert old not in [item["episode_key"] for item in listing.json()["items"]]
 
 
+async def test_correct_returns_404_for_foreign_and_never_written_keys(
+    client: httpx.AsyncClient, graph: MemoryGraph, as_account
+) -> None:  # noqa: ANN001
+    """纠正的越权与不存在：404 且响应体逐字相同（契约第 2 节；与删除同一判据）。
+
+    为什么纠正必须与删除同形：契约第 5 节没有另列错误码，两处共用第 2 节那张
+    整面表；同一个路径形态下 DELETE 回 404 而 CORRECT 回 201，会让表里那一行在
+    纠正端点上不可达。越权与不存在的文案必须逐字相同（不提供 episode 枚举通道）。
+
+    第二个断言对象是不可逆副作用：纠正会往全局唯一的删除账本落一行
+    `reason='correction'`，而账本行没有回收路径——若该 key 事后成为真实 episode
+    （`identity.derive_episode_uuid`），它从诞生起就被账本过滤隐去。
+
+    判别性：修复前本用例得到 201 且账本多出一行，红（见交付报告的消融日志）。
+    """
+    foreign = await _write(graph, content="别人的记忆", account=_ACCOUNT_OTHER)
+    never = str(uuid.uuid4())
+
+    foreign_response = await client.post(
+        f"/memory/episodes/{foreign}/correct",
+        json={"occurred_at": _NOW.isoformat(), "content": "更正后的说法"},
+    )
+    never_response = await client.post(
+        f"/memory/episodes/{never}/correct",
+        json={"occurred_at": _NOW.isoformat(), "content": "更正后的说法"},
+    )
+
+    for response in (foreign_response, never_response):
+        assert response.status_code == 404
+        assert response.json() == {"detail": NOT_FOUND_MESSAGE, "code": "not_found"}
+    assert foreign_response.json() == never_response.json(), "越权与不存在的响应必须逐字相同"
+
+    # 两次都不得动账本：为不存在的 key 记一行是永久性的，且会隐去该 key 未来的
+    # 真实记忆（账本的唯一约束是全局的）。
+    async with session_scope(get_settings()) as session:
+        for key in (foreign, never):
+            recorded = await recorded_deletion_reason(session, account_id=to_account_id(_ACCOUNT), episode_key=key)
+            assert recorded is None, f"不得为不存在或越权的 key 落纠正账本行：{key}"
+
+
+async def test_correct_still_supersedes_when_the_graph_is_unavailable(
+    client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch, as_account
+) -> None:  # noqa: ANN001
+    """图库不可用不阻断纠正的「撤下」：账本照记，写新失败即中间态 200（契约第 6 节）。
+
+    与 404 那条并列的另一半判据：判不了存在性时不报 404，也不报 503——账本过滤
+    才是撤下的生效点，它在 PostgreSQL 侧，与图库是两回事。若这条改成 503，
+    图库故障期间使用者的纠正请求会全部失败，等于撤下静默失效。
+
+    本用例不用 `graph` fixture（它负责清账本），因此自己清这一行。
+    """
+    import campfire.modules.memory.graph as graph_module
+    from campfire.modules.memory.errors import MemoryUnavailableError
+
+    class _BrokenGraph:
+        def driver_for(self, account_id: str):  # noqa: ANN202
+            raise MemoryUnavailableError("图库不可用", operation="test", cause="ConnectionError")
+
+    monkeypatch.setattr(graph_module, "_shared_graph", _BrokenGraph())
+    key = str(uuid.uuid4())
+
+    try:
+        response = await client.post(
+            f"/memory/episodes/{key}/correct",
+            json={"occurred_at": _NOW.isoformat(), "content": "图库恢复后要写的新说法"},
+        )
+
+        assert response.status_code == 200
+        assert response.json() == {
+            "superseded": True,
+            "new_episode_written": False,
+            "episode_key": None,
+            "supersedes": key,
+        }
+
+        # 撤下真的发生了：账本落行，reason 是 correction（不是「报了成功但什么都没做」）。
+        async with session_scope(get_settings()) as session:
+            row = (
+                await session.execute(
+                    select(MemoryDeletionLedger.account_id, MemoryDeletionLedger.reason).where(
+                        MemoryDeletionLedger.episode_key == key
+                    )
+                )
+            ).one_or_none()
+        assert row is not None and row.account_id == _ACCOUNT and row.reason == "correction"
+    finally:
+        async with session_scope(get_settings()) as session:
+            await session.execute(delete(MemoryDeletionLedger).where(MemoryDeletionLedger.episode_key == key))
+
+
 async def test_correct_rejects_empty_content_before_superseding(
     client: httpx.AsyncClient, graph: MemoryGraph, as_account
 ) -> None:  # noqa: ANN001
@@ -706,11 +799,18 @@ async def test_correct_dispatches_the_cross_account_guard_by_type_not_by_message
 
     与删除同一判据，只是走 `/correct`：两处是复制的同一段分派，必须一起钉住，
     否则只修一处会留下另一处仍在按文案分派。
+
+    触发条件与删除那条同构，但不能省：本账号图里**确实有**这条片段（先断言，
+    否则 404 会来自纠正新加的存在性判据，守卫根本没被触到，用例就变成恒真）。
     """
     from campfire.modules.memory import deletion as deletion_module
 
-    key = str(uuid.uuid4())
+    shared_pending = str(uuid.uuid4())
+    key = await _write(graph, content="撞车的记忆", pending=shared_pending)
+    await _write(graph, content="撞车的记忆", account=_ACCOUNT_OTHER, pending=shared_pending)
     await _record_foreign_deletion(key)
+
+    assert await episode_exists(graph, _ACCOUNT, episode_key=key) is True, "存在性判据必须通过，404 才只能来自守卫"
     monkeypatch.setattr(deletion_module, "record_deletion", _reworded_guard(record_deletion))
 
     response = await client.post(
