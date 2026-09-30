@@ -51,6 +51,7 @@ from campfire.core.config import Settings, get_settings
 from campfire.core.db import get_engine, session_scope
 from campfire.core.db.sdk_session import AgentMessage, AgentSession
 from campfire.modules.accounts import session_repository as accounts_repo
+from campfire.modules.accounts.errors import OnboardingTriggerError
 from campfire.modules.accounts.first_run_injection import read_first_run_injected
 from campfire.modules.accounts.models import (
     ONBOARDING_COMPLETED,
@@ -415,6 +416,32 @@ async def test_create_session_rejects_unknown_fields(client: httpx.AsyncClient) 
     """多给字段是 422（静默忽略会让前端以为自己传对了）。"""
     response = await client.post("/consult/sessions", json={"supportObjectId": "x"})
     assert response.status_code == 422
+
+
+async def test_create_session_is_503_when_the_onboarding_state_drifted(
+    client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """引导状态漂移出词表时回 503，不是未映射异常的 500（契约第 2 节的 503 行）。
+
+    漂移行被 `state` 的 CHECK 约束挡在存储层，正常写入路径造不出来，因此这里替换的是
+    读表函数：被测的是面层的状态码映射，不是用例层的判词（判词另在
+    `test_onboarding_completion_integration.py` 里单独覆盖）。
+    """
+
+    async def _drifted(*_args: object, **_kwargs: object) -> bool:
+        raise OnboardingTriggerError("引导状态 'half_done' 不在词表内——表形状与设计漂移")
+
+    monkeypatch.setattr(consult_routes, "read_onboarding_pending", _drifted)
+
+    response = await client.post("/consult/sessions", json={})
+    assert response.status_code == 503, response.text
+    assert "onboarding_state_unreadable" in response.json()["detail"]
+
+    async with session_scope(get_settings()) as session:
+        leftover = list(
+            (await session.execute(select(CampfireSession).where(CampfireSession.account_id == _ACCOUNT))).scalars()
+        )
+    assert leftover == [], "503 时事务回滚，不得留下没有引导判定的半条会话"
 
 
 # ---------------------------------------------------------------------------

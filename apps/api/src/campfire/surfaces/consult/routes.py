@@ -216,7 +216,8 @@ async def create_session(
 
     Raises:
         HTTPException: 传入的支持对象不可写或不属于当前账号（404），
-            或会话标识形状不合法（422，理论路径：标识由本层生成）。
+            或会话标识形状不合法（422，理论路径：标识由本层生成），
+            或引导状态取值漂移出词表（503，与 `_first_run_injection` 同一处置）。
     """
     account_id = session.get_user_id()
     async with session_scope(settings) as db:
@@ -242,7 +243,12 @@ async def create_session(
             # 绑定在归属行落定之后：failed 的绑定不该留下一条无归属的会话。
             await bind_first_object(db, session_id=session_id, account_id=account_id, support_object_id=object_id)
 
-        pending = await read_onboarding_pending(db, account_id=account_id)
+        try:
+            pending = await read_onboarding_pending(db, account_id=account_id)
+        except OnboardingTriggerError as exc:
+            # 与 `_first_run_injection` 对同一异常同一处置：状态取值漂移不是使用者的载荷错，
+            # 也不是「引导已完成」，回 503（契约第 2 节的 503 行）而不是让未映射异常落成 500。
+            raise _unavailable(f"onboarding_state_unreadable: {type(exc).__name__}") from exc
 
     return JSONResponse(
         status_code=status.HTTP_201_CREATED,
