@@ -172,6 +172,10 @@ async def create_session(
 
     省略 `support_object_id` 时按第 6 节推导默认对象；账号一个在用对象都没有时
     返回 `null` 而不是报错（`AC-02`）：此时的正确行为是让引导对话去建第一个对象。
+
+    Raises:
+        HTTPException: 传入的支持对象不可写或不属于当前账号（404），
+            或会话标识形状不合法（422，理论路径：标识由本层生成）。
     """
     account_id = session.get_user_id()
     async with session_scope(settings) as db:
@@ -225,6 +229,9 @@ async def list_sessions(
 
     `limit` 的越界由用例层判定（`validate_limit`）并转成 422：超上界显式拒绝而不是
     截断到 50——调用方无法从响应里看出自己被截断了。
+
+    Raises:
+        HTTPException: 游标不可解析或 `limit` 越界（422）。
     """
     account_id = session.get_user_id()
     async with session_scope(settings) as db:
@@ -274,6 +281,9 @@ async def hydrate_history(session_id: str, session: SessionDep, settings: Settin
     失败与空对话必须可区分：归属不成立时 404，一条真的没有消息的会话返回
     `messages: []`——契约第 3.3 节明令「不显示空对话冒充成功」，而两者在数据层
     就是不同的结果（用例层的 `load_history` 只在前者抛错）。
+
+    Raises:
+        HTTPException: 会话不存在或不属于当前账号（404），或会话标识形状不合法（422）。
     """
     account_id = session.get_user_id()
     async with session_scope(settings) as db:
@@ -333,9 +343,13 @@ async def send_message(
     1. 技能校验先于一切状态写入——一个未知技能名的请求不该占住会话位再回滚；
     2. 归属判定先于幂等与互斥——对别人的会话，任何状态码都不该泄露它是否正忙；
     3. 幂等命中直接返回原 `run_id`，不碰会话位、也不追加消息；
-    4. 互斥失败回 409 且**不追加消息**（契约第 2 节与质量地板 ③）；
+    4. 互斥失败回 409 且不追加消息（契约第 2 节与质量地板 ③）；
     5. 启动失败（首个事件不是 `run_started`）时释放占位并回 503——此时没有
        `run_id`，回 202 会让前端订阅一个不存在的路径。
+
+    Raises:
+        HTTPException: 会话不可访问（404）、载荷或技能不合法（422）、
+            会话已有在跑的运行（409），或运行器未装配、运行未能启动（503）。
     """
     account_id = session.get_user_id()
     activated = await _activated_skill(settings, payload.skill)
@@ -508,6 +522,10 @@ async def stream_run(
     缓冲不存在的语义是「已经没有任何可续内容」（TTL 到期），回 409
     `run_not_resumable`，前端据此改走历史水合（契约第 8 节）。运行已终结但缓冲
     还在时不回 409——缓冲里的事件照发，发完关流。
+
+    Raises:
+        HTTPException: 运行不存在或不属于当前账号（404）、缓冲已失效（409），
+            或 `Last-Event-ID` 不可解析（422）。
     """
     account_id = session.get_user_id()
     after_seq = parse_last_event_id(last_event_id)

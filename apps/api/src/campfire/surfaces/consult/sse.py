@@ -68,6 +68,7 @@ TERMINAL_EVENT_TYPES: frozenset[str] = frozenset({"run_finished", "run_failed"})
 MAX_LAST_EVENT_ID = 2**31 - 1
 
 
+# quality-floor: ignore bare-any 返回值是任意 JSON 结构，静态类型表达不出来（递归联合），消费方是 json.dumps
 def to_jsonable(value: object) -> Any:
     """把事件载荷递归转成 `json.dumps` 能处理的形状。
 
@@ -100,11 +101,15 @@ def event_name(event: RunEvent) -> str:
     return event.type
 
 
+# quality-floor: ignore bare-any 理由同 to_jsonable：键名由基座事件的字段决定，此处不重复声明一遍结构
 def event_payload(event: RunEvent) -> dict[str, Any]:
     """把事件对象转成 `data` 行的 JSON 对象（含 `type` 字段）。
 
     `type` 留在载荷里是契约要求（第 4.2 节：`data` 即该事件对象的 JSON），
     且它派生的 `event` 行必须与它相等——两个值来自同一个字段，结构上不可能分叉。
+
+    Raises:
+        TypeError: 事件对象的顶层不是数据类（形状漂移）。
     """
     payload = to_jsonable(event)
     if not isinstance(payload, dict):
