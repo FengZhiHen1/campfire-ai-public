@@ -19,6 +19,7 @@ from campfire.core.config import get_settings
 from campfire.core.db import session_scope
 from campfire.core.jobs import set_dispatch_hook
 from campfire.core.pending_write import (
+    KIND_MEMORY_EPISODE,
     KIND_PROFILE_ITEM,
     STATE_PENDING,
     SWEEP_MAX_LIMIT,
@@ -301,8 +302,8 @@ async def test_sweep_dispatches_every_consumed_kind() -> None:
         await sweep_once(session)
 
     dispatched_ids = [pending_id for pending_id, _kind in dispatched]
-    assert (str(profile_id), "profile_item") in dispatched, f"profile_item 有消费者，必须被重投（实际={dispatched}）"
-    assert (str(memory_id), "memory_episode") in dispatched, f"memory_episode 必须被重投（实际={dispatched}）"
+    assert (str(profile_id), KIND_PROFILE_ITEM) in dispatched, f"profile_item 有消费者，必须被重投（实际={dispatched}）"
+    assert (str(memory_id), KIND_MEMORY_EPISODE) in dispatched, f"memory_episode 必须被重投（实际={dispatched}）"
     assert len(dispatched_ids) == len(set(dispatched_ids)), f"同一条记录不得在一轮里被投两次（实际={dispatched}）"
 
 

@@ -31,6 +31,7 @@ from campfire.core.authz import set_authorizer
 from campfire.core.config import get_settings
 from campfire.core.db import session_scope
 from campfire.core.pending_write import (
+    KIND_MEMORY_EPISODE,
     KIND_PROFILE_ITEM,
     STATE_DEAD,
     STATE_DONE,
@@ -276,6 +277,65 @@ async def test_bad_payload_is_dead() -> None:
 
 
 @pytest.mark.asyncio
+async def test_dispatch_does_not_pass_a_constant_lease_owner(monkeypatch: pytest.MonkeyPatch) -> None:
+    """投递点不带租约身份常量；领取者在自己进程里盖自己的章（侦察 D-31）。
+
+    判别性（这是本条用例的全部意义）：把 `_enqueue_profile_item` 改回
+    `kiq(pending_id, lease_owner="api")`，第一条断言立刻失败。
+
+    为什么这条必须存在：能判别租约栅栏的仓库用例用的是两个互不相同的 owner
+    （`test_pending_write_integration.py`），它们只覆盖 `repository`，覆盖不到**接线**——
+    而 D-31 的缺陷恰恰在接线上（生产唯一投递点传常量，栅栏恒真）。
+    """
+    import os
+
+    seen: list[tuple[tuple[object, ...], dict[str, object]]] = []
+
+    class _StubTask:
+        """替代 broker 任务：只记录 `kiq` 的实参。"""
+
+        async def kiq(self, *args: object, **kwargs: object) -> None:
+            seen.append((args, kwargs))
+
+    monkeypatch.setattr(worker_module, "consume_profile_item_task", _StubTask())
+
+    await worker_module._enqueue_profile_item("00000000-0000-4000-8000-0000000000aa")
+
+    assert seen == [(("00000000-0000-4000-8000-0000000000aa",), {})], (
+        f"投递不得带 lease_owner（栅栏要的是领取者的身份），实际投递={seen}"
+    )
+
+    # 消费者侧的身份随进程变化，且可排查（主机名:进程号）。
+    identity = worker_module._lease_identity()
+    assert identity.endswith(f":{os.getpid()}") and ":" in identity, f"租约身份不可排查：{identity!r}"
+    assert len(identity) <= worker_module.LEASE_IDENTITY_MAX_CHARS, "租约身份必须有上界（与列宽一致）"
+
+
+@pytest.mark.asyncio
+async def test_the_consumed_lease_owner_is_the_consumers_own_identity(monkeypatch: pytest.MonkeyPatch) -> None:
+    """端到端：不传 `lease_owner` 时，领取写库用的是本进程身份。
+
+    与上一条配对——上一条钉投递，这一条钉「领取时真的用了自己的身份」。
+    `mark_done` 在消费成功时会清空租约，因此消费后再读记录读不到它；
+    这里用一个记录型的包装器截获交给 `write_from_pending` 的实参。
+    """
+    captured: list[str] = []
+
+    async def _spy(session: object, *, pending_id: object, lease_owner: str):  # noqa: ANN202
+        captured.append(str(lease_owner))
+        return await _original(session, pending_id=pending_id, lease_owner=lease_owner)
+
+    object_id = await _new_object()
+    pending_id = await _enqueue(object_id)
+
+    _original = worker_module.write_from_pending
+    monkeypatch.setattr(worker_module, "write_from_pending", _spy)
+
+    assert await worker_module.consume_profile_item_task(pending_id) == "written"
+    assert captured == [worker_module._lease_identity()], f"领取时应盖本进程的章，实际={captured}"
+
+
+@pytest.mark.asyncio
 async def test_dispatch_table_routes_profile_item_to_its_own_task(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -284,6 +344,9 @@ async def test_dispatch_table_routes_profile_item_to_its_own_task(
     这是 2026-09-30 那条缺陷的正面覆写：此前投递硬编码只投记忆任务，
     `profile_item` 被记忆消费者按「kind 不符」判 `dead`。这里把两个投递函数都换成
     探针，断言拿到 `profile_item` 的只有档案那一个，也就是断言分派表真的按 kind 分。
+
+    用 `KIND_*` 常量而不是字面量（侦察 D-35）：kind 是闭集，散落的字面量在词表
+    变更时不会报错、只会静默走空。
     """
     calls: list[tuple[str, str]] = []
 
@@ -293,7 +356,7 @@ async def test_dispatch_table_routes_profile_item_to_its_own_task(
     async def _probe_profile(pending_id: str) -> None:
         calls.append(("profile", pending_id))
 
-    monkeypatch.setitem(worker_module._CONSUMER_DISPATCHERS, "memory_episode", _probe_memory)
+    monkeypatch.setitem(worker_module._CONSUMER_DISPATCHERS, KIND_MEMORY_EPISODE, _probe_memory)
     monkeypatch.setitem(worker_module._CONSUMER_DISPATCHERS, KIND_PROFILE_ITEM, _probe_profile)
 
     pending_id = "00000000-0000-4000-8000-0000000000ff"
