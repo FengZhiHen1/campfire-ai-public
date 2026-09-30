@@ -19,19 +19,24 @@ from campfire.modules.accounts.errors import OnboardingTriggerError
 #: 在这里再声明一份会让 `core/db.metadata` 出现同名表的第二份定义，
 #: 而 `--autogenerate` 的差异比较正以那份元数据为准（项目结构设计第 10 节）。
 #: 因此读取走带绑定参数的显式 SQL——形状由设计文档固定，不依赖模型的落地次序。
+#:
+#: 合并提示：本表模型与本模块归属同一模块。表落地后，下面三个状态常量与
+#: `ONBOARDING_STATES` 应改为从模型模块再导出（单一真源），`ONBOARDING_TABLE_NAME`
+#: 改为引用模型的 `__tablename__`；函数签名与判定语义不变。
 ONBOARDING_TABLE_NAME = "campfire_onboarding"
 
 #: 状态词表（认证与账号第 8 节）。词表落该表的 CHECK 约束，这里只承载判定语义。
-STATE_IN_PROGRESS = "in_progress"
-STATE_COMPLETED = "completed"
-STATE_SKIPPED = "skipped"
+#: 常量名与表模型侧对齐（`ONBOARDING_<状态>`），避免合并时出现同一词表的第二套命名。
+ONBOARDING_IN_PROGRESS = "in_progress"
+ONBOARDING_COMPLETED = "completed"
+ONBOARDING_SKIPPED = "skipped"
 
-ONBOARDING_STATES: frozenset[str] = frozenset({STATE_IN_PROGRESS, STATE_COMPLETED, STATE_SKIPPED})
+ONBOARDING_STATES: frozenset[str] = frozenset({ONBOARDING_IN_PROGRESS, ONBOARDING_COMPLETED, ONBOARDING_SKIPPED})
 
 #: 已终结的状态：引导不再注入。「终结」的判据是用户侧已有明确结论，
 #: 不是「流程走过一遍」——模型漏调 `finish_onboarding` 时状态仍是 `in_progress`，
 #: 下次会话重新注入，这正是该设计选择的修复通道。
-TERMINAL_STATES: frozenset[str] = frozenset({STATE_COMPLETED, STATE_SKIPPED})
+TERMINAL_STATES: frozenset[str] = frozenset({ONBOARDING_COMPLETED, ONBOARDING_SKIPPED})
 
 
 def should_inject_onboarding(state: str | None) -> bool:
@@ -127,9 +132,9 @@ __all__ = [
     # 常量
     "ONBOARDING_STATES",
     "ONBOARDING_TABLE_NAME",
-    "STATE_COMPLETED",
-    "STATE_IN_PROGRESS",
-    "STATE_SKIPPED",
+    "ONBOARDING_COMPLETED",
+    "ONBOARDING_IN_PROGRESS",
+    "ONBOARDING_SKIPPED",
     "TERMINAL_STATES",
     # 判定
     "onboarding_pending",

@@ -41,11 +41,11 @@ import pytest
 
 from campfire.modules.accounts.errors import OnboardingTriggerError
 from campfire.modules.accounts.onboarding import (
+    ONBOARDING_COMPLETED,
+    ONBOARDING_IN_PROGRESS,
+    ONBOARDING_SKIPPED,
     ONBOARDING_STATES,
     ONBOARDING_TABLE_NAME,
-    STATE_COMPLETED,
-    STATE_IN_PROGRESS,
-    STATE_SKIPPED,
     onboarding_pending,
     read_onboarding_state,
     should_inject_onboarding,
@@ -790,7 +790,7 @@ class _FakeSession:
 
 def test_onboarding_subset_of_states() -> None:
     """状态词表恰好是认证与账号第 8 节的三值，且两值属终结态。"""
-    assert ONBOARDING_STATES == {STATE_IN_PROGRESS, STATE_COMPLETED, STATE_SKIPPED}
+    assert ONBOARDING_STATES == {ONBOARDING_IN_PROGRESS, ONBOARDING_COMPLETED, ONBOARDING_SKIPPED}
 
 
 def test_table_name_carries_the_project_prefix() -> None:
@@ -802,9 +802,9 @@ def test_table_name_carries_the_project_prefix() -> None:
     ("state", "expected"),
     [
         (None, True),
-        (STATE_IN_PROGRESS, True),
-        (STATE_COMPLETED, False),
-        (STATE_SKIPPED, False),
+        (ONBOARDING_IN_PROGRESS, True),
+        (ONBOARDING_COMPLETED, False),
+        (ONBOARDING_SKIPPED, False),
     ],
 )
 def test_should_inject_onboarding_by_state(state: str | None, expected: bool) -> None:
@@ -835,8 +835,8 @@ async def test_read_onboarding_state_returns_none_when_there_is_no_row() -> None
 @pytest.mark.asyncio
 async def test_read_onboarding_state_uses_a_bound_parameter() -> None:
     """`account_id` 走绑定参数，不进语句文本（登录态可控值不拼进 SQL）。"""
-    session = _FakeSession(_FakeRow(STATE_COMPLETED))
-    assert await read_onboarding_state(session, account_id="acc-1") == STATE_COMPLETED
+    session = _FakeSession(_FakeRow(ONBOARDING_COMPLETED))
+    assert await read_onboarding_state(session, account_id="acc-1") == ONBOARDING_COMPLETED
     assert session.params == [{"account_id": "acc-1"}]
     assert session.statements[0].endswith("WHERE account_id = :account_id")
 
@@ -855,9 +855,9 @@ async def test_read_onboarding_state_rejects_an_empty_account_id() -> None:
     ("state", "expected"),
     [
         (None, True),
-        (STATE_IN_PROGRESS, True),
-        (STATE_COMPLETED, False),
-        (STATE_SKIPPED, False),
+        (ONBOARDING_IN_PROGRESS, True),
+        (ONBOARDING_COMPLETED, False),
+        (ONBOARDING_SKIPPED, False),
     ],
 )
 async def test_onboarding_pending_drives_from_the_state_table(state: str | None, expected: bool) -> None:
