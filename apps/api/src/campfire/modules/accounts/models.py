@@ -1,8 +1,10 @@
-"""邀请码表：注册准入的存储层真相源。
+"""邀请码表与会话归属、引导状态表：注册准入与会话归属的存储层真相源。
 
-职责：定义邀请码表的列、状态词表与落存储层的三条不变量（CORE-05）。
+职责：定义邀请码表的列、状态词表与落存储层的三条不变量（CORE-05）；同批定义
+`campfire_session`（会话归属的唯一判定真源）与 `campfire_onboarding`（引导状态）。
 边界：只拥有存储层真相源；占用、释放与撤销的用例在 `repository`。
-参考：docs/项目结构设计.md 第 6 节；认证与账号第 4 节（`state` 字段）。
+参考：docs/项目结构设计.md 第 6 节；认证与账号第 4、8 节；
+docs/技术设计/decisions/会话归属单立表归accounts.md。
 """
 
 from __future__ import annotations
@@ -192,6 +194,105 @@ class InviteCode(Base):
     )
 
 
+# ---------------------------------------------------------------------------
+# 会话归属（campfire_session）
+# ---------------------------------------------------------------------------
+
+#: 引导状态的词表（认证与账号第 8 节）。
+ONBOARDING_IN_PROGRESS = "in_progress"
+ONBOARDING_COMPLETED = "completed"
+ONBOARDING_SKIPPED = "skipped"
+
+#: 合法引导状态取值集合（frozenset：不可变）。
+ONBOARDING_STATES: frozenset[str] = frozenset({ONBOARDING_IN_PROGRESS, ONBOARDING_COMPLETED, ONBOARDING_SKIPPED})
+
+#: 词表的 SQL 字面量。从集合派生，排序保证文本稳定（与邀请码表同法）。
+_ONBOARDING_STATES_SQL = ", ".join(f"'{value}'" for value in sorted(ONBOARDING_STATES))
+
+#: 会话标识的列宽。SDK 的会话表该列是无界 `String`，本表显式设上界（CORE-11）：
+#: 会话标识进入 URL 与查询键，无界输入不该被接受。128 对 UUID 形态留有余量。
+MAX_SESSION_ID_LENGTH = 128
+
+
+class CampfireSession(Base):
+    """会话归属：会话属于哪个账号的唯一判定真源（决策记录）。
+
+    为什么单立这张表（2026-09-30 用户裁决，见
+    docs/技术设计/decisions/会话归属单立表归accounts.md）
+
+    对话真源是 SDK 的会话存储，其表由 SDK 拥有且没有 `account_id`；
+    而 `campfire_session_object`（`modules/profile`）只在会话已绑定对象时才有行
+    （无对象账号的会话先落「无绑定」）。两者叠加的结果是没有任何真源能判定一个
+    会话属于哪个账号——历史水合与会话列表两个端点的越权校验因此没有依据。
+
+    不存消息内容，也不存会话标题等派生值：存了就构成第二份对话真源
+    （基座第 2 节单真源），而标题由会话真源的首条使用者消息推导。
+
+    创建时机（决策记录的实现约束）：会话创建端点在写 SDK 会话之前落行；
+    写行失败则不建会话——不得出现「能读但无归属」的会话。
+    """
+
+    __tablename__ = "campfire_session"
+
+    #: 会话标识，主键。与 SDK 会话表的 `session_id` 同值，但不建外键：
+    #: 那张表由 SDK 拥有，跨表引用会让 SDK 升级牵连业务数据；且归位判定的
+    #: 权威是本表，不靠 SDK 表的存在性。
+    session_id: Mapped[str] = mapped_column(String(MAX_SESSION_ID_LENGTH), primary_key=True)
+    #: 归属账号（即身份服务的用户标识，认证与账号第 3 节）。
+    #: 不建外键——身份服务的表由 core 拥有，跨进程外键不可靠（同支持对象的取向）。
+    account_id: Mapped[str] = mapped_column(String(MAX_ACCOUNT_ID_LENGTH), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=sql_text("now()")
+    )
+
+    __table_args__ = (
+        # 会话列表按账号筛、按创建时间倒序——一条复合索引覆盖它。
+        Index("ix_campfire_session_account_created", "account_id", "created_at"),
+        {"comment": "会话归属的唯一判定真源：只存归属与登记，不存消息"},
+    )
+
+
+class CampfireOnboarding(Base):
+    """账号级引导状态（认证与账号第 8 节，`RQ-ACC-09`）。
+
+    为什么以 `account_id` 为键而不是复用会话：引导是账号级的一次性状态
+    ——「这位使用者是否已被引导过」。以会话为键会在同账号的第二个会话上重复判定，
+    而判据本身与具体会话无关。
+
+    与第 3 节「不建映射表」不冲突：该裁决反对的是第二套账号身份，
+    不是以 `account_id` 为键的业务状态（既有先例是邀请码表的 `used_by_account_id`）。
+
+    判定不推导（第 8 节）：是否触发引导只查本表，
+    不从档案或会话存在性推导——跳过对象创建的用户与未经引导建对象的用户都会被误判。
+
+    写入通道两条，互不代写：`completed` 由模型经 `finish_onboarding` 工具写入；
+    `skipped` 由对话页 UI 跳过入口（HTTP）写入。
+    """
+
+    __tablename__ = "campfire_onboarding"
+
+    #: 账号标识，主键：引导状态的唯一判定键。
+    account_id: Mapped[str] = mapped_column(String(MAX_ACCOUNT_ID_LENGTH), primary_key=True)
+    #: 状态，取值见 `ONBOARDING_STATES`。初态 `in_progress` 在首次日常会话触发注入时落行。
+    state: Mapped[str] = mapped_column(
+        String(16),
+        nullable=False,
+        default=ONBOARDING_IN_PROGRESS,
+        server_default=sql_text(f"'{ONBOARDING_IN_PROGRESS}'"),
+    )
+    #: 最近一次状态迁移时间。
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=sql_text("now()"), onupdate=sql_text("now()")
+    )
+
+    __table_args__ = (
+        # 词表落 CHECK（与邀请码表同法）：静默写入未知状态会让「是否已引导过」
+        # 的判定无声走空——而引导是「一次性」的，判定错方向会让使用者被反复引导。
+        CheckConstraint(f"state IN ({_ONBOARDING_STATES_SQL})", name="state"),
+        {"comment": "账号级引导状态：一次性引导的唯一判定依据，不从档案或会话推导"},
+    )
+
+
 __all__ = [
     # 常量
     "INVITE_CODE_ALPHABET",
@@ -200,9 +301,16 @@ __all__ = [
     "INVITE_CODE_TTL_DAYS",
     "MAX_ACCOUNT_ID_LENGTH",
     "MAX_OPERATOR_LENGTH",
+    "MAX_SESSION_ID_LENGTH",
+    "ONBOARDING_STATES",
+    "ONBOARDING_COMPLETED",
+    "ONBOARDING_IN_PROGRESS",
+    "ONBOARDING_SKIPPED",
     "STATE_ISSUED",
     "STATE_REVOKED",
     "STATE_USED",
     # 模型
+    "CampfireOnboarding",
+    "CampfireSession",
     "InviteCode",
 ]
