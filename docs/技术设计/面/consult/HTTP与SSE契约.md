@@ -94,18 +94,24 @@ GET /consult/sessions/{session_id}/messages
 
 ### 4.1 发消息
 
+请求（两种形态二选一，服务端按字段判别）：
+
 ```text
-POST /consult/sessions/{session_id}/messages
-请求：
-{
-  "content": "使用者输入",
+# 普通消息
+{ "content": "使用者输入",
   "skill": "daily-consulting，可选；缺省或 null 表示自动匹配",
-  "client_message_id": "前端生成的幂等键"
-}
-响应 202：{ "run_id": "…", "session_id": "…" }
+  "client_message_id": "前端生成的幂等键" }
+
+# 一组提问的回答（当前有待作答的问题组时）
+{ "answers": [ { "id": "题 id", "value": "选项 label 或自由文本" },
+               { "id": "题 id", "skipped": true } ],
+  "skill": "…", "client_message_id": "…" }
 ```
 
+响应 202：`{ "run_id": "…", "session_id": "…" }`
+
 - `skill` 即技能选择器的选择（`RQ-CON-08`），**发送即消费**：本次运行后前端清空选择器、回归"自动"。
+- **回答的形状归基座**第 7.2 节（逐题 `id` + 选项 label 或自由文本或显式跳过）；服务端把它渲染成一条使用者消息落进会话，保留逐题对应与显式跳过标记——跳过必须是服务端可判定的事实，不能靠前端措辞或模型推断（应急"跳过即未排除"由此成立）。一组的回答**一次发完**，不接受逐题分次提交。
 - **202 只表示已受理**：使用者消息此时尚未落库（`AGENT` 运行由 SDK 写入）。前端本地呈现，以服务端为真源；刷新后以第 3.3 节的水合结果为准。
 - 会话处于引导待注入状态时，本次运行由服务端程序注入 onboarding；`skill` 参数被忽略。
 
@@ -137,7 +143,7 @@ data: {"type":"text_delta","delta":"…"}
 | 基座事件 | 实现状态 |
 |---|---|
 | `run_started`、`text_delta`、`progress`、`tool_call_started`、`tool_call_finished`、`citation`、`candidate`、`run_finished`、`run_failed` | 已在 `agent/runtime/events.py` 定义 |
-| `reasoning_delta`、`question`、`action_card` | **基座第 7 节已声明、代码未定义**（第 10 节阻塞项）；载荷归基座拥有，本文不定义 |
+| `reasoning_delta`、`question`、`action_card` | **形状已定形，事件类未落地**（2026-09-30）。载荷归[通用基座](../../technical-details/通用基座.md)第 7.1／7.2／7.3 节拥有，本文不定义；实现前须先落事件类 |
 
 ### 4.3 取消
 
@@ -187,16 +193,16 @@ POST /consult/sessions/{session_id}/onboarding/skip
 
 ## 7. 消息 part 形状
 
-`parts` 是消息 content 的序列化，与流式事件同源同形（`question`/`action_card` 除外，见第 10 节）：
+`parts` 是消息 content 的序列化，与流式事件同源同形：
 
 | `type` | `data` 归谁 |
 |---|---|
 | `text` | 本文：`{ "text": "…" }` |
-| `reasoning` | [通用基座](../../technical-details/通用基座.md)第 7 节（代码未定义） |
+| `reasoning` | [通用基座](../../technical-details/通用基座.md)第 7.1 节 |
 | `tool_call` | 本文：`{ "tool_name": "…", "ok": true, "summary": "…" }` |
 | `citation` | [资料与案例检索](../../technical-details/资料与案例检索.md)第 3 节返回契约 |
-| `question` | [通用基座](../../technical-details/通用基座.md)第 7 节（代码未定义） |
-| `action_card` | [通用基座](../../technical-details/通用基座.md)第 7 节（代码未定义） |
+| `question` | [通用基座](../../technical-details/通用基座.md)第 7.2 节 |
+| `action_card` | [通用基座](../../technical-details/通用基座.md)第 7.3 节 |
 
 - `candidate` **不进历史**：它不进消息流（[项目结构设计](../../../项目结构设计.md)第 9 节），仅经 SSE 计数。
 - 引用（`citation`）作为 part 与所属消息同生命周期，重放与滚动都不错位。
@@ -217,6 +223,7 @@ POST /consult/sessions/{session_id}/onboarding/skip
 | 内容 | 归谁 |
 |---|---|
 | 事件的语义、载荷与产生方式 | [通用基座](../../technical-details/通用基座.md)第 7 节 |
+| 卡片与提问的领域词表及其校验 | [emit_emergency_action_card](tools/emit_emergency_action_card.md)第 4 节、[emergency-consulting](skills/emergency-consulting.md)第 3.4 节 |
 | 会话真源与落库 | [通用基座](../../technical-details/通用基座.md)第 2 节（SDK 会话存储） |
 | 支持对象实体、生命周期、会话绑定与默认推导 | [支持对象](../../technical-details/支持对象.md) |
 | 引导的触发判定与状态表 | [技能设计](../../technical-details/技能设计.md)第 4 节、[认证与账号](../../technical-details/认证与账号.md)第 8 节 |
@@ -227,9 +234,8 @@ POST /consult/sessions/{session_id}/onboarding/skip
 
 ## 10. 已知偏差与证据边界
 
-- **`question` 事件尚未存在**（阻塞）：基座第 7 节声明了它，而 `agent/runtime/events.py` 与事件表都没有——[咨询对话界面](../../technical-details/咨询对话界面.md)第 6.1 节的多题交互已获用户确认并已进页面设计，但承载它的事件未定义。归属按基座第 7 节（载荷不由本文发明），**实现前须先定事件**。
-- **`action_card` 与 `reasoning_delta` 同上**，一并阻塞应急卡片与思考区。
-- **会话归属表 `campfire_session` 尚未落地**：2026-09-30 用户裁定新增，归 `modules/accounts`，字段为 `session_id` 主键 + `account_id` + 创建时间。它的用例归属扩展、是否并入注销真删清单，属对[项目结构设计](../../../项目结构设计.md)第 6 节与[认证与账号](../../technical-details/认证与账号.md)第 8 节的定调级改动，登记于[设计待办](../../../TODO.md)，**未随本文修改**。
+- **三个事件的形状已定形、事件类未落地**（2026-09-30）：`question`（第 7.2 节，一组题）、`action_card`（第 7.3 节，通用信封）、`reasoning_delta`（第 7.1 节）的载荷由[通用基座](../../technical-details/通用基座.md)拥有并已定义，但 `agent/runtime/events.py` 的 `RunEvent` 联合里**都还没有**。实现前须先落事件类——这是提问卡、行动卡、思考区三处前端组件的数据来源。**另有一项实测前置**：`reasoning_delta` 在 SDK 事件流里的键名未实测（基座第 7.1 节），取不到时该事件不产出，不得用文本增量冒充。
+- **会话归属表 `campfire_session` 尚未落地**：2026-09-30 用户裁定新增并已写入定调（[项目结构设计](../../../项目结构设计.md)第 6 节、`accounts` 用例行）与注销处置（[认证与账号](../../technical-details/认证与账号.md)第 8 节第 4 步），决策记录见[会话归属单立表归 accounts](../../decisions/会话归属单立表归accounts.md)。仍缺的是表形状与迁移，随 `modules/accounts` 实现落地。
 - **事件缓冲的承载与保留时长待确认**：续传要求服务端持有本次运行的事件序列；Redis 已在技术栈内，但缓冲结构、TTL 与"运行已终结后保留多久"未定。
 - **SDK 会话表仍未登记**：本契约的历史水合依赖 SDK 的 `agent_sessions` / `agent_messages`，两张表的归属与命名未定（[设计待办](../../../TODO.md)）。
 - **前端文档尚未对齐本文**：[咨询对话界面](../../technical-details/咨询对话界面.md)第 3 节的 adapter 形状按"POST 直返流"写成，第 7 节的"重连上限 3 次"亦按该形状；两段式下两者需重写。登记于[设计待办](../../../TODO.md)，不在本文改动。
