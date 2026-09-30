@@ -674,7 +674,7 @@ async def get_item(
     对外状态码（在函数体内映射，不通过抛异常）：
         404: 条目不存在，或 `item_id` 不是合法标识——页面按普通进入处理
             （不报错、不留在空页）。
-        503: 取数失败。
+        503: 已知的取数失败（`RetrievalError`），或未配置数据库（`RuntimeError`）。
 
     未归入上面两类的意外异常原样冒出：把未知缺陷报成「检索暂时不可用」
     会掩盖真实的程序错误。
@@ -684,9 +684,15 @@ async def get_item(
     except ValueError:
         return _error(404, "条目不存在", "not_found")
 
+    # 只捕获已知取数失败（`RetrievalError` 与「未配置数据库」的 `RuntimeError`，
+    # 与 `list_items` 同一口径）：其余异常原样冒出，见本函数 docstring——把未知缺陷
+    # 报成「检索暂时不可用」会掩盖真实的程序错误。取数失败仍不得被呈现成
+    # 「条目不存在」（那是 404，与 503 是两件事）。
     try:
         found = await _find_item_any_library(item_uuid)
-    except Exception:  # noqa: BLE001 —— 取数失败不得被呈现成「条目不存在」
+    except RetrievalError:
+        return _unavailable()
+    except RuntimeError:
         return _unavailable()
 
     if found is None:
@@ -710,7 +716,8 @@ async def get_item(
             nodes = await expand_items_to_nodes(session, [item_id])
     except RetrievalError:
         return _unavailable()
-    except Exception:  # noqa: BLE001 —— 取数失败不得被呈现成「条目不存在」
+    except RuntimeError:
+        # 同上：只转已知失败；未知异常原样冒出。
         return _unavailable()
 
     snippet, locator = _first_node_summary(nodes.get(item_id, []))
