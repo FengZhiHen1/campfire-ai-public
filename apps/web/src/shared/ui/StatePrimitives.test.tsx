@@ -91,4 +91,18 @@ describe('ErrorCard', () => {
 
     expect(screen.getByRole('button', { name: '重试' })).toBeDefined();
   });
+
+  it('P1 默认形态不带 .form-feedback（整块错误态不变）', () => {
+    const { container } = render(<ErrorCard title="没有成功" description="原因" />);
+
+    expect(container.querySelector('.error-card')?.classList.contains('form-feedback')).toBe(false);
+  });
+
+  it('P1 variant=form 追加契约的表单内间距变体 .form-feedback', () => {
+    const { container } = render(<ErrorCard title="没有成功" description="原因" variant="form" />);
+
+    // 契约 components.html 的表单横幅形态：.error-card.form-feedback。
+    expect(container.querySelector('.error-card.form-feedback')).not.toBeNull();
+    expect(screen.getByRole('alert').className).toContain('form-feedback');
+  });
 });
