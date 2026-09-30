@@ -408,6 +408,22 @@ async def test_list_sessions_rejects_bad_limit_and_cursor(client: httpx.AsyncCli
         assert response.status_code == 422, params
 
 
+async def test_list_sessions_paginates_without_overlap(client: httpx.AsyncClient) -> None:
+    """游标翻页：翻到底不重复、不漏，末页的 `next_cursor` 为 null（契约 3.2）。"""
+    created = [await _create_session(client) for _ in range(3)]
+
+    first = (await client.get("/consult/sessions", params={"limit": 2})).json()
+    assert len(first["items"]) == 2
+    assert first["next_cursor"], "取满一页时必须给出下一页游标"
+
+    second = (await client.get("/consult/sessions", params={"limit": 2, "cursor": first["next_cursor"]})).json()
+    first_ids = {item["session_id"] for item in first["items"]}
+    second_ids = {item["session_id"] for item in second["items"]}
+    assert not (first_ids & second_ids), "翻页不得重复"
+    assert first_ids | second_ids == set(created), "翻页不得漏掉任何一条"
+    assert second["next_cursor"] is None
+
+
 # ---------------------------------------------------------------------------
 # 3.3 历史水合
 # ---------------------------------------------------------------------------
@@ -756,6 +772,8 @@ async def test_unauthenticated_requests_are_401(client: httpx.AsyncClient) -> No
         ("POST", "/consult/sessions"),
         ("GET", "/consult/sessions"),
         ("GET", f"/consult/sessions/{uuid.uuid4().hex}/messages"),
+        ("POST", f"/consult/sessions/{uuid.uuid4().hex}/messages"),
+        ("GET", f"/consult/runs/{uuid.uuid4().hex}/stream"),
     ):
         response = await client.request(method, path, json={} if method == "POST" else None)
         assert response.status_code == 401, (method, path, response.status_code, response.text)
