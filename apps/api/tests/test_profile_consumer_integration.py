@@ -15,6 +15,9 @@
 5. **推断不得冒充事实**：载荷声称 `confirmed` 但 `origin` 是推断 → 拒绝。
 6. **载荷缺键**：显式失败，不猜、不写。
 7. **kind 分派**：`memory_episode` 被本消费者拒绝。
+8. 可选字段的形状非法不得静默降级（D-41）：键缺失仍是「未提供」，但键在而形状
+   不对时与必填字段同处置（显式失败、不写残缺条目）；否则条目会以不完整内容置 `done`，
+   使用者与模型看到的是「已保存」。
 """
 
 from __future__ import annotations
@@ -432,6 +435,72 @@ async def test_optional_payload_fields_are_persisted() -> None:
     assert row.unhelpful_support == ["多人围堵"]
     assert row.person_report == "太吵了"
     assert row.probable_need == "需要安静"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("field", "bad_value"),
+    [
+        ("contexts", "商场"),
+        ("manifestations", 7),
+        ("person_report", ["太吵了"]),
+        ("probable_need", 12),
+    ],
+)
+async def test_misshaped_optional_payload_field_fails_instead_of_being_dropped(field: str, bad_value: object) -> None:
+    """可选字段形状非法时显式失败，不得静默按「未提供」处理（D-41）。
+
+    为什么必须有这条：可选字段被无声丢弃后记录仍被置 `done`，而 `done` 是「写入成功」
+    的唯一表示（写入路径第 2 节）——下游读到的是「已完成但内容缺失」的条目。
+    同一份载荷里，必填字段形状不对会抛错（第 145-155 行），可选字段因此必须同一处置。
+
+    判别性：修复前这四条都会「成功」写入（该列留空）并置 `done`，本用例红。
+    """
+    object_id = await _new_object()
+    pending_id = await _enqueue(
+        object_id,
+        payload={
+            "domain": "communication",
+            "topic": "表达方式",
+            "description": "可选字段形状非法",
+            field: bad_value,
+        },
+    )
+
+    with pytest.raises(ProfileDataError, match=field):
+        async with session_scope(get_settings()) as session:
+            await write_from_pending(session, pending_id=pending_id, lease_owner="w1")
+
+    assert await _item_count(object_id) == 0, "形状非法的载荷不得写出残缺条目"
+    assert await _pending_state(pending_id) != STATE_DONE, "条目没写成，记录不得置 done"
+
+
+@pytest.mark.asyncio
+async def test_absent_optional_payload_fields_stay_optional() -> None:
+    """可选字段真的可选：整键缺失仍写入成功，列取默认值——与「形状非法」分开。
+
+    这条是上一条的正向对照：把「形状非法」改成显式失败不得顺手把可选性也取消。
+    """
+    object_id = await _new_object()
+    pending_id = await _enqueue(
+        object_id,
+        payload={"domain": "communication", "topic": "表达方式", "description": "只有必填字段"},
+    )
+
+    async with session_scope(get_settings()) as session:
+        result = await write_from_pending(session, pending_id=pending_id, lease_owner="w1")
+    assert result.written is True
+
+    async with session_scope(get_settings()) as session:
+        row = (
+            await session.execute(select(ProfileItem).where(ProfileItem.pending_id == repo.to_item_uuid(pending_id)))
+        ).scalar_one()
+    assert row.contexts == []
+    assert row.manifestations == []
+    assert row.helpful_support == []
+    assert row.unhelpful_support == []
+    assert row.person_report is None
+    assert row.probable_need is None
 
 
 @pytest.mark.asyncio
