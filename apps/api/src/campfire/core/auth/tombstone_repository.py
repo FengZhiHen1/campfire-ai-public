@@ -1,24 +1,9 @@
-"""注销墓碑的写入与查询。
+"""注销墓碑的写入与查询——归属 `core/auth`。
 
-形状由 docs/技术设计/decisions/账号注销与墓碑.md
-与 docs/技术设计/technical-details/认证与账号.md
-第 8 节拥有。表结构见本包的 `tombstone.py`。
-
-为什么写入必须幂等，且「已存在」算成功：
-
-注销的编排者（`core/auth/deletion.delete_account`；CLI 经它调用）可能在重试时
-再次调用它（例如第 2 步失败后整体重跑）。若第二次调用报错，重试路径会把「其实已经
-写好了」当作失败——而墓碑先于所有删除动作，这会让操作者以为注销没有开始，
-转而排查一个不存在的问题。
-
-因此 :func:`record_deletion` 的语义是「确保该账号已有墓碑」：
-已存在则返回既有行，并明确告知「本次是已存在」（返回值里带 `created` 标志），
-让调用方能区分「我刚写的」与「之前就有的」——不推测、不猜测（`CORE-07`）。
-
-为什么查询要能批量：
-
-Worker 的消费路径按 `pending_id` 单条处理，但注销编排与排查需要「这批账号里
-哪些已注销」。批量查询用一条 `IN` 查询而不是循环——避免 N+1（性能维度包）。
+职责：写入幂等的墓碑（`record_deletion`）与查询（单条/存在性/批量）。
+边界：只做墓碑表的读写，不 import 业务模块；形状由决策记录与 [认证与账号] 第 8 节拥有。
+参考：docs/技术设计/decisions/账号注销与墓碑.md、
+docs/技术设计/technical-details/认证与账号.md 第 8 节；表结构见本包的 `tombstone.py`。
 """
 
 from __future__ import annotations
@@ -110,6 +95,17 @@ async def record_deletion(
     now: datetime | None = None,
 ) -> TombstoneResult:
     """确保该账号有注销墓碑（幂等）。
+
+    为什么写入必须幂等，且「已存在」算成功：
+
+    注销的编排者（`core/auth/deletion.delete_account`；CLI 经它调用）可能在重试时
+    再次调用它（例如第 2 步失败后整体重跑）。若第二次调用报错，重试路径会把「其实已经
+    写好了」当作失败——而墓碑先于所有删除动作，这会让操作者以为注销没有开始，
+    转而排查一个不存在的问题。
+
+    因此 :func:`record_deletion` 的语义是「确保该账号已有墓碑」：
+    已存在则返回既有行，并明确告知「本次是已存在」（返回值里带 `created` 标志），
+    让调用方能区分「我刚写的」与「之前就有的」——不推测、不猜测（`CORE-07`）。
 
     调用契约（不能省）：这是注销五步中的第 1 步，必须先于任何删除动作
     （[认证与账号] 第 8 节：顺序不可调换）。理由见 `tombstone.py`：墓碑是 Worker
@@ -219,6 +215,11 @@ async def deleted_account_ids(
 
     用一条 `IN` 查询而不是逐个查（避免 N+1）。
 
+    为什么查询要能批量：
+
+    Worker 的消费路径按 `pending_id` 单条处理，但注销编排与排查需要「这批账号里
+    哪些已注销」。批量查询用一条 `IN` 查询而不是循环——避免 N+1（性能维度包）。
+
     为什么入口要拒绝 `str`（2026-09-30 评审抓出的静默误报）：
 
     第一版只校验 `len()` 上界，不校验容器类型。传入 `str` 时
@@ -247,7 +248,8 @@ async def deleted_account_ids(
             f"account_ids 必须是账号标识的序列（list/tuple/set），收到 {type(account_ids).__name__}"
             "——传字符串会被逐字符校验并静默返回空集（误报「都没注销」）"
         )
-    # 先转成 list：`set`/`frozenset` 没有稳定的顺序，重复元素也不该重复查。
+    # 先转成 list：`set`/`frozenset` 没有稳定的顺序，
+    # 重复元素也不该重复查。
     candidates = list(account_ids)
     if len(candidates) > BATCH_MAX_ACCOUNTS:
         raise TombstonePayloadError(f"批量查询超过 {BATCH_MAX_ACCOUNTS} 个账号上界（实际 {len(candidates)}）")

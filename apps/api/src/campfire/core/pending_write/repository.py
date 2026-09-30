@@ -1,26 +1,8 @@
 """待处理记录的状态推进与租约领取。
 
-归属见 docs/技术设计/technical-details/写入路径.md 第 4、5、6 节。
-本模块是状态机的唯一实现：其它地方（Worker、业务模块）只调用这里，不自己写
-`UPDATE ... SET state=...`——否则状态判据会散落成多份，也就没有「唯一所有者」了。
-
-为什么领取必须走 UPDATE ... RETURNING 而不是「先查后改」：
-
-第 4 节明确「不使用先查后改的无锁流程」。两个 Worker 同时查同一条记录、
-都看到 `pending`、都去改，会双双认为领到了，于是同一条记忆被抽取两次。
-因此这里的领取是单条 SQL 的条件更新：
-
-    UPDATE ... SET state='processing', lease_owner=... WHERE id=... AND <可领取条件>
-    RETURNING ...
-
-数据库的行锁保证只有一个事务能把它从「可领取」改成「processing」；另一个更新的
-`WHERE` 不再匹配，`RETURNING` 为空 → 调用方明确知道「没领到」，而不是猜。
-
-租约过期的重新领取：
-
-`lease_expires_at` 过期即视为可领取（第 6 节：Worker 崩溃不该让记录永久卡住）。
-过期不等于失败：`attempts` 只在真正失败时 +1（见 `mark_retryable_failure`），
-崩溃重启不该消耗重试预算——否则反复崩溃会把一条本来健康的记录耗成 `dead`。
+职责：推进一条待处理记录的状态（领取、成功、可重试失败、终结、回收）。
+边界：状态判据只此一处；投递与业务消费不在本模块。
+参考：归属见 docs/技术设计/technical-details/写入路径.md 第 4、5、6 节。
 """
 
 from __future__ import annotations
@@ -51,19 +33,17 @@ MAX_ATTEMPTS = 5
 #: （见 `worker.sweep_once` 的顺序说明）：上一轮扫描之后才崩溃的 Worker，其租约最迟
 #: 在下一轮扫描执行到回收那一步时已过期（租约起点早于该轮扫描至少一个周期的情形
 #: 恒成立；同周期内刚领的租约属「在途」，本就不该被回收）。
-#: 更正（2026-09-30 评审指出）：此前注释写「短于扫描周期」——数值上两者相等
-#: （`SWEEP_INTERVAL_SECONDS` 同为 300），「短于」不成立；写成「相等 + 先回收后重投」
-#: 才与代码的实际时序一致。
+#: 不能假定它更短：数值上等于扫描周期（`SWEEP_INTERVAL_SECONDS` 同为 300）。
+#: 写成「相等 + 先回收后重投」才与代码的实际时序一致。
 LEASE_SECONDS = 300
 
 #: 退避曲线（第 10 节：1 → 2 → 4 → 8 → 16 分钟）。
 #:
-#: 实测更正（2026-09-29 评审 R-2，独立复算确认）：末档 960 秒（16 分钟）不可达。
+#: 末档 960 秒（16 分钟）不可达。
 #: 调用点是 `_backoff_for(bumped - 1)`，而第 5 次失败在应用退避之前即转 `dead`
 #: （见 `mark_retryable_failure`），故实际用到的是第 0..3 项
 #: = `[60, 120, 240, 480]`，曲线是 1→2→4→8、合计 15 分钟。
-#: 此前注释与提交说明写「1→2→4→8→16」，与实现不符（第 10 节的取值理由还写着
-#: 「约半小时内自然恢复」，实际是 15 分钟）。
+#: 第 10 节的取值理由写着「约半小时内自然恢复」，实际是 15 分钟。
 #: 保留 5 项并加说明（而不是截成 4 项）：`mark_retryable_failure` 的下标取自
 #: `attempts - 1`，截短会让「超长时取最后一项」这条兜底语义在多一点重试时越界；
 #: 且第 10 节的参数表以 5 档成文，改档位属设计变更（已登记 TODO `TECH-22`）。
@@ -87,6 +67,9 @@ class PendingWriteError(Exception):
 
     不继承 `core/db` 的异常：本模块是状态机的所有者，调用方（Worker、业务模块）
     需要能一句 `except PendingWriteError` 收口，而不必知道底层是 SQLAlchemy。
+
+    本模块是状态机的唯一实现：其它地方（Worker、业务模块）只调用这里，不自己写
+    `UPDATE ... SET state=...`——否则状态判据会散落成多份，也就没有「唯一所有者」了。
     """
 
 
@@ -171,9 +154,9 @@ async def enqueue(
     if not account_id:
         raise InsufficientPayloadError("account_id 为空")
     if len(account_id) > MAX_ACCOUNT_ID_LENGTH:
-        # 长度上界必须显式（2026-09-29 评审 C-4 实测）：此前只判空，超宽值会一路
-        # 走到 INSERT 才由 PostgreSQL 抛出裸 `DBAPIError`——调用方拿到的是驱动
-        # 异常而不是领域异常，且看不出是哪个字段的问题。
+        # 长度上界必须显式：只判空时，超宽值会一路走到 INSERT 才由 PostgreSQL
+        # 抛出裸 `DBAPIError`——调用方拿到的是驱动异常而不是领域异常，
+        # 且看不出是哪个字段的问题。
         # 形状（字符集）不在此校验：本包不得依赖业务模块，见 `PendingWrite.account_id`。
         raise InsufficientPayloadError(f"account_id 超过 {MAX_ACCOUNT_ID_LENGTH} 字符上界（实际 {len(account_id)}）")
     if not isinstance(payload, dict):
@@ -181,7 +164,8 @@ async def enqueue(
     if not isinstance(source, dict):
         raise InsufficientPayloadError(f"source 必须是对象，收到 {type(source).__name__}")
 
-    # 归属字段按 kind 的判据（第 3 节）。与存储层 CHECK 同一条规则，此处提前报错。
+    # 归属字段按 kind 的判据（第 3 节）。
+    # 与存储层 CHECK 同一条规则，此处提前报错。
     requires_object = kind == "profile_item"
     if requires_object and not support_object_id:
         raise InsufficientPayloadError(f"{kind} 必须有 support_object_id")
@@ -230,6 +214,24 @@ async def take_for_processing(
     Note:
         用「条件更新 + RETURNING」在一条 SQL 内完成判定与占用（见模块说明）：
         改成先查后改会让两个 Worker 同时认为自己领到了同一条记录。
+
+        为什么领取必须走 UPDATE ... RETURNING 而不是「先查后改」：
+
+        第 4 节明确「不使用先查后改的无锁流程」。两个 Worker 同时查同一条记录、
+        都看到 `pending`、都去改，会双双认为领到了，于是同一条记忆被抽取两次。
+        因此这里的领取是单条 SQL 的条件更新：
+
+            UPDATE ... SET state='processing', lease_owner=... WHERE id=... AND <可领取条件>
+            RETURNING ...
+
+        数据库的行锁保证只有一个事务能把它从「可领取」改成「processing」；另一个更新的
+        `WHERE` 不再匹配，`RETURNING` 为空 → 调用方明确知道「没领到」，而不是猜。
+
+        租约过期的重新领取：
+
+        `lease_expires_at` 过期即视为可领取（第 6 节：Worker 崩溃不该让记录永久卡住）。
+        过期不等于失败：`attempts` 只在真正失败时 +1（见 `mark_retryable_failure`），
+        崩溃重启不该消耗重试预算——否则反复崩溃会把一条本来健康的记录耗成 `dead`。
     """
     reference = now if now is not None else _utc_now()
     # 可领取的三种情形，与 `docstring` 一一对应：
@@ -306,7 +308,7 @@ async def mark_done(
             lease_expires_at=None,
             last_error=None,
             # 清掉退避时刻：`done` 是终态，留着过期的 `next_attempt_at` 会让排查
-            # 误判「这条还会重试」（2026-09-29 评审 C-6 实测确认此前未清）。
+            # 误判「这条还会重试」。
             next_attempt_at=None,
             updated_at=reference,
         )
@@ -398,8 +400,7 @@ async def mark_dead(
     本函数只负责状态；告警由调用方发出——本模块不引入日志/告警依赖，
     避免 `core/pending_write` 依赖可观测设施（它是状态机，不是运维组件）。
     调用方契约：`worker.consume_memory_episode_task` 是唯一调用方，它必须在
-    本函数返回后发一条 `dead` 专属告警（2026-09-29 评审 C-5 实测：此前调用方
-    只重复打可重试失败的 warning，`dead` 专属告警 0 条）。
+    本函数返回后发一条 `dead` 专属告警（不能只打可重试失败的 warning）。
 
     Raises:
         PendingWriteNotFoundError: 记录不存在，或已处于终结状态。
@@ -415,7 +416,7 @@ async def mark_dead(
             lease_expires_at=None,
             last_error=error[:MAX_LAST_ERROR_LENGTH],
             # 清掉退避时刻：`dead` 是终态，留着过期的 `next_attempt_at` 会让排查
-            # 误判「这条还会重试」（2026-09-29 评审 C-6 实测确认此前未清）。
+            # 误判「这条还会重试」。
             next_attempt_at=None,
             updated_at=reference,
         )
@@ -443,9 +444,8 @@ async def reclaim_expired_leases(
         now: 参照时间。
         limit: 单次回收条数上界。收敛到 `RECLAIM_MAX_LIMIT`（CORE-11）：扫描周期
             固定，无界回收会让一次扫描在积压时耗时不可控。
-            （2026-09-29 评审 R-3 实测发现：此前只做 `max(1, limit)`，没有上界——
-            `limit=10**9` 被原样放进 SQL。同一纪律在 `store.read_timeline` 与
-            `derived.read_emergency_facts` 都已落地，回收路径漏了。）
+            超界入参（如 `limit=10**9`）不得原样放进 SQL；同一纪律在
+            `store.read_timeline` 与 `derived.read_emergency_facts` 都已落地。
 
     Returns:
         被回收的记录 id（按 id 升序，稳定）。空列表表示没有需要回收的记录。
@@ -457,7 +457,8 @@ async def reclaim_expired_leases(
     """
     reference = now if now is not None else _utc_now()
     effective_limit = max(1, min(limit, RECLAIM_MAX_LIMIT))
-    # 先选出一批 id（有界），再按 id 更新——避免 `UPDATE ... LIMIT` 的方言差异。
+    # 先选出一批 id（有界），再按 id 更新。
+    # 避免 `UPDATE ... LIMIT` 的方言差异。
     candidates = (
         await session.execute(
             select(PendingWrite.id)
@@ -482,12 +483,11 @@ async def reclaim_expired_leases(
         update(PendingWrite)
         .where(
             PendingWrite.id.in_(ids),
-            # state 守卫（2026-09-29 评审 C-2 实测发现）：`SELECT` 与 `UPDATE` 之间
-            # 存在真实窗口，另一事务可能在该窗口内把记录置成终态。缺这个守卫时，
-            # 一条已经 `done` 的记录会被改回 `pending`（且 `finished_at` 仍保留，
-            # 形成 `pending` + `finished_at` 非空的自相矛盾行），随后被再次领取——
-            # 同一条记忆抽取两次。`mark_done`/`mark_dead` 一直是带守卫的单条 UPDATE，
-            # 回收此前漏了同一条纪律。
+            # state 守卫：`SELECT` 与 `UPDATE` 之间存在真实窗口，另一事务可能在该窗口内
+            # 把记录置成终态。缺这个守卫时，一条已经 `done` 的记录会被改回 `pending`
+            # （且 `finished_at` 仍保留，形成 `pending` + `finished_at` 非空的自相矛盾行），
+            # 随后被再次领取——同一条记忆抽取两次。
+            # `mark_done`/`mark_dead` 一直是带守卫的单条 UPDATE，回收用同一条纪律。
             PendingWrite.state == STATE_PROCESSING,
         )
         .values(

@@ -2,26 +2,9 @@
 
 归属（见写入路径（../../../../docs/技术设计/technical-details/写入路径.md）第 4、5、6 节与
 通用记忆（../../../../docs/技术设计/technical-details/通用记忆.md）第 3 节）：本模块是
-`kind = memory_episode` 的消费者。投递与状态机在 `core/pending_write`；本模块只把
-自足载荷变成图库写入，不回查业务用例、不依赖请求上下文（第 7 节的 Worker 边界）。
-
-幂等：标记就是 `state`，它承载的是「避免重复抽取」
-
-第 5 节要求「在我们自己的表里记'该 pending 已写入图库'的标记；重试前先查该标记」。
-该标记就是 `pending_write.state`：只有 `done` 才算写入成功（第 2 节的不变量），
-因此本模块的流程是
-
-    领取（processing + 租约）→ 写图库 → 置 done
-
-重试（含租约过期后的重新领取）会再走一遍。为什么这样仍然安全（2026-09-29 实测，
-假 LLM 返回固定抽取结果）：同 uuid 重复 `add_episode` 不产生重复 episode 节点、
-重复实体或重复边，`edge.episodes` 也不会被追加两次——边的消解按事实内容命中既有边。
-
-残余风险与它为什么仍需要标记：真实模型抽取不确定。重跑时若把同一件事抽成
-措辞不同的事实，它会成为一条新边，而这一层无法拦住。因此标记的价值不是防重复
-节点（`MERGE` 已保证），而是避免重复调用抽取——省一次模型成本与时间，并消除上述
-不确定性。这也是为什么本模块不在领取前额外查一次状态：那会与 `take_for_processing`
-的条件更新重复（第 4 节要求原子领取），而重复抽取的代价已由下面的流程上限收敛。
+`kind = memory_episode` 的消费者。投递与状态机在 `core/pending_write`；本模块只把自足载荷变成图库写入，不回查业务用例、不依赖请求上下文（第 7 节的 Worker 边界）。
+边界：幂等标记就是 `pending_write.state`（只有 `done` 才算写入成功），完整论证见 `consume_memory_episode` 的说明；残余风险是真实模型抽取不确定，标记避免重复调用抽取。
+参考：`docs/技术设计/technical-details/写入路径.md` 第 2、4、5、6、7 节。
 """
 
 from __future__ import annotations
@@ -89,6 +72,24 @@ async def consume_memory_episode(
     领取失败（返回 `None`）时直接返回未写入，不抛异常——「没领到」是并发的正常
     结果，把它当错误会让兜底扫描把每次竞争都记成失败。
 
+    幂等：标记就是 `state`，它承载的是「避免重复抽取」
+
+    第 5 节要求「在我们自己的表里记'该 pending 已写入图库'的标记；重试前先查该标记」。
+    该标记就是 `pending_write.state`：只有 `done` 才算写入成功（第 2 节的不变量），
+    因此本模块的流程是
+
+        领取（processing + 租约）→ 写图库 → 置 done
+
+    重试（含租约过期后的重新领取）会再走一遍。为什么这样仍然安全（2026-09-29 实测，
+    假 LLM 返回固定抽取结果）：同 uuid 重复 `add_episode` 不产生重复 episode 节点、
+    重复实体或重复边，`edge.episodes` 也不会被追加两次——边的消解按事实内容命中既有边。
+
+    残余风险与它为什么仍需要标记：真实模型抽取不确定。重跑时若把同一件事抽成
+    措辞不同的事实，它会成为一条新边，而这一层无法拦住。因此标记的价值不是防重复
+    节点（`MERGE` 已保证），而是避免重复调用抽取——省一次模型成本与时间，并消除上述
+    不确定性。这也是为什么本模块不在领取前额外查一次状态：那会与 `take_for_processing`
+    的条件更新重复（第 4 节要求原子领取），而重复抽取的代价已由下面的流程上限收敛。
+
     为什么领取后必须复查「账号是否已注销」（2026-09-30 补，决策记录的不变量 2）
 
     账号注销时可能已有记录在排队、甚至已被本 Worker 领取（注销删的是未领取的记录，
@@ -140,7 +141,7 @@ async def consume_memory_episode(
     # 置 done 与「清理租约」同一次更新（`core/pending_write` 已实现）。
     # 带租约栅栏（CORE-03）：抽取可能超过租约时长，期间记录会被另一个 Worker
     # 重领；若这里不带 `lease_owner`，先领取者的迟到 `mark_done` 会抢先成功，
-    # 把真正写入者的终结挤成失败（实测复现，2026-09-29 评审 C-3）。
+    # 把真正写入者的终结挤成失败（实测复现）。
     # 栅栏不匹配说明本次写入已不再被承认——显式失败，不假装成功。
     await mark_done(session, pending_id=pending_id, lease_owner=lease_owner)
     return ConsumeResult(pending_id=str(pending_id), written=True, episode_uuid=episode_uuid)

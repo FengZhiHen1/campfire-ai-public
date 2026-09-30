@@ -1,24 +1,8 @@
 """摄取：把处理好的 Markdown 切分、嵌入、写入条目表与节点表。
 
-设计依据（RAG 策略第 7 节）：
-
-- 入口是 CLI（`python -m campfire.cli ingest <路径>`），摄取不暴露成服务端点。
-- 一份文件一个事务：导入失败要么整份成功、要么明确失败并留下可见记录，
-  不留下「一半进去了」的静默状态。
-- 幂等与增量：按 doc_hash 判断（未变跳过、变了重新 upsert），避免重复嵌入。
-- 换嵌入模型必须整库重建：维度固定 2560，混入不同维度会让检索静默失准。
-
-实现期实测得到的关键约束（2026-09-29，决定本模块的事务写法）：
-
-框架的 `PGVectorStore.add()` 内部自建并提交 session
-（`with self._session() as session, session.begin()`），无法参与我们的外部事务。
-但 `__init__` 接受 `engine=`/`async_engine=`（两者必须同时给）注入我们自己的
-引擎，且 `store._table_class` 暴露框架的表模型。因此本模块不用 `add()`，
-而是用我们自己的 session、经框架的表模型写节点行——这样条目表与节点表
-在同一个事务里落库，撤下时才能「同时改条目状态与删节点」（RAG 策略第 2 节）。
-
-框架耦合因此被限制在两处：`_table_class` 与 `from_params` 的构造参数；
-两者都由 `apps/api/tests/test_library_schema_integration.py` 的集成测试守护。
+职责：把一份 Markdown 切成块、批量嵌入，并在一个事务里写入条目表与节点表。
+边界：只做摄取，不暴露服务端点（入口是 CLI）；缺来源或缺适用范围的元数据一律拒绝入库。
+参考：docs/技术设计/technical-details/RAG策略.md 第 1.1、1.2、2、7 节；细节见 `ingest_file`、`build_vector_store`、`_write_nodes` 的 docstring。
 """
 
 from __future__ import annotations
@@ -108,7 +92,8 @@ def parse_frontmatter(text: str) -> tuple[dict[str, str], str]:
             end = index
             break
     if end is None:
-        # 只有起始分隔符：不当作 frontmatter，按普通正文处理（宁可当正文也不错位截断）。
+        # 只有起始分隔符：不当作 frontmatter，
+        # 按普通正文处理（宁可当正文也不错位截断）。
         return {}, text
 
     metadata: dict[str, str] = {}
@@ -171,6 +156,9 @@ def build_vector_store(settings: Settings, *, engine: Engine, async_engine: Asyn
 
     Raises:
         IngestionError: 未配置 `DATABASE_URL` 时——没有库可写，明确失败。
+
+    框架耦合因此被限制在两处：`_table_class` 与 `from_params` 的构造参数；
+    两者都由 `apps/api/tests/test_library_schema_integration.py` 的集成测试守护。
     """
     if not settings.database_url:
         raise IngestionError("未配置 DATABASE_URL，无法写入节点表")
@@ -242,6 +230,15 @@ async def _write_nodes(
 
     先删旧节点再写新节点——更新与撤下走同一套机制，且与条目表状态变更同事务
     （RAG 策略第 2 节：撤下要能同时改状态与删节点）。
+
+    实现期实测得到的关键约束（2026-09-29，决定本模块的事务写法）：
+
+    框架的 `PGVectorStore.add()` 内部自建并提交 session
+    （`with self._session() as session, session.begin()`），无法参与我们的外部事务。
+    但 `__init__` 接受 `engine=`/`async_engine=`（两者必须同时给）注入我们自己的
+    引擎，且 `store._table_class` 暴露框架的表模型。因此本模块不用 `add()`，
+    而是用我们自己的 session、经框架的表模型写节点行——这样条目表与节点表
+    在同一个事务里落库，撤下时才能「同时改条目状态与删节点」（RAG 策略第 2 节）。
     """
     await session.execute(delete(RetrievedNode).where(RetrievedNode.node_id.like(f"{item.id}:%")))
 
@@ -285,6 +282,14 @@ async def ingest_file(
 
     幂等：同 `source_path` + 同 `doc_hash` 的条目已存在则跳过，不重复嵌入。
     变了的文件：删除其旧节点后重新写入（保证「撤下/更新即刻生效」的同一套机制）。
+
+    设计依据（RAG 策略第 7 节）：
+
+    - 入口是 CLI（`python -m campfire.cli ingest <路径>`），摄取不暴露成服务端点。
+    - 一份文件一个事务：导入失败要么整份成功、要么明确失败并留下可见记录，
+      不留下「一半进去了」的静默状态。
+    - 幂等与增量：按 doc_hash 判断（未变跳过、变了重新 upsert），避免重复嵌入。
+    - 换嵌入模型必须整库重建：维度固定 2560，混入不同维度会让检索静默失准。
 
     Raises:
         IngestionError: 读文件、缺必填元数据、嵌入或写库任一步失败——由调用方回滚整个事务。

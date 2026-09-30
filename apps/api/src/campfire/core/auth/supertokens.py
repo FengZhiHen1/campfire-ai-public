@@ -1,39 +1,10 @@
 """SuperTokens SDK 的装配与会话校验入口。
 
-归属（见 docs/项目结构设计.md 第 6 节）：本模块是 `core/auth` 的一部分，
-拥有会话校验的装配与唯一入口；注册、邀请码、重置、注销等用例归
-`modules/accounts`。
+职责与归属（见 docs/项目结构设计.md 第 6 节）：本模块是 `core/auth` 的一部分，拥有会话校验的
+装配与唯一入口；注册、邀请码、重置、注销等用例归 `modules/accounts`。
 
-本模块存在的唯一理由：把「逐请求查证」变成不可遗忘的默认
-
-[认证与账号] 第 6 节与决策记录要求每个受限操作都开启数据库查证
-（`check_database=True`），否则撤销不即时（`AC-17`、`RQ-ACC-06` 落空）。
-
-实测（2026-09-30，真实 core + 真实库）——这个开关的性质决定了本模块的形状：
-
-撤销会话后，用同一个 access token 校验 → 结果
-- `check_database` 不传（SDK 默认） → 仍然通过：「撤销未即时生效」
-- `check_database=True` → 被拒：`Either the session has ended or has been blacklisted`
-
-关键事实：`check_database` 不是 `session.init` 的初始化选项，而是
-每一次调用都要传的参数（实测 `session.init` 的签名里没有它；
-`recipe/session/framework/fastapi/__init__.py` 的 `verify_session` 默认值是
-`check_database: bool = False`）。
-
-因此「忘了传」不会报错，只会静默失去撤销能力——这正是决策记录那条不变量
-（「不得只在部分端点开启」）在实现层最容易被违反的方式。本模块的应对是：
-不暴露任何能绕过它的调用形态——对外只提供 :func:`require_session`，
-它在内部固定传 `True`，调用方没有机会漏传。
-
-    ❌ 不要在生产代码里直接 `from supertokens_python... import verify_session`
-       再自己传参。那样本模块的保证就被绕过了（`test_auth_supertokens` 会盯着这点）。
-
-fail-closed：
-
-core 不可达时拒绝，不回退到无状态校验——决策记录明文要求
-（「数据库查证失败一律拒绝……回退等于在故障时静默关闭撤销能力」）。
-这一点由 SDK 的行为保证（查证失败即抛 `UnauthorisedError`/异常），
-本模块不做任何兜底捕获后放行。
+边界：`check_database=True` 固定在内、core 不可达即拒；不 import `modules/*`，注册复写由装配处注入。
+参考：[认证与账号] 第 6 节与决策记录。
 """
 
 from __future__ import annotations
@@ -155,7 +126,8 @@ def init_supertokens(
     """
     api_key = _require_api_key(settings)
 
-    # 成对校验：见 docstring 的实测表。方向安全——漏传 api_overrides 是 fail-open。
+    # 成对校验：见 docstring 的实测表。
+    # 方向安全——漏传 api_overrides 是 fail-open。
     if (api_overrides is None) != (sign_up_form_fields is None):
         raise SuperTokensConfigurationError(
             "api_overrides 与 sign_up_form_fields 必须同时给出："
@@ -208,6 +180,30 @@ def init_supertokens(
 def require_session() -> SessionDependency:
     """唯一的会话校验依赖。FastAPI 依赖注入用。
 
+    本模块存在的唯一理由：把「逐请求查证」变成不可遗忘的默认
+
+    [认证与账号] 第 6 节与决策记录要求每个受限操作都开启数据库查证
+    （`check_database=True`），否则撤销不即时（`AC-17`、`RQ-ACC-06` 落空）。
+
+    实测（2026-09-30，真实 core + 真实库）——这个开关的性质决定了本模块的形状：
+
+    撤销会话后，用同一个 access token 校验 → 结果
+    - `check_database` 不传（SDK 默认） → 仍然通过：「撤销未即时生效」
+    - `check_database=True` → 被拒：`Either the session has ended or has been blacklisted`
+
+    关键事实：`check_database` 不是 `session.init` 的初始化选项，而是
+    每一次调用都要传的参数（实测 `session.init` 的签名里没有它；
+    `recipe/session/framework/fastapi/__init__.py` 的 `verify_session` 默认值是
+    `check_database: bool = False`）。
+
+    因此「忘了传」不会报错，只会静默失去撤销能力——这正是决策记录那条不变量
+    （「不得只在部分端点开启」）在实现层最容易被违反的方式。本模块的应对是：
+    不暴露任何能绕过它的调用形态——对外只提供 :func:`require_session`，
+    它在内部固定传 `True`，调用方没有机会漏传。
+
+        ❌ 不要在生产代码里直接 `from supertokens_python... import verify_session`
+           再自己传参。那样本模块的保证就被绕过了（`test_auth_supertokens` 会盯着这点）。
+
     为什么必须经由这个函数（而不是直接用 SDK 的 `verify_session`）：
 
     SDK 的 `verify_session` 默认 `check_database=False`，且它是每次调用的参数
@@ -225,6 +221,13 @@ def require_session() -> SessionDependency:
 
     `session_required=True` 是刻意的：全应用必须登录（`RQ-ACC-01`），
     不存在匿名可达的业务路径（唯一例外是运维探针 `GET /health`，它不经过本依赖）。
+
+    fail-closed：
+
+    core 不可达时拒绝，不回退到无状态校验——决策记录明文要求
+    （「数据库查证失败一律拒绝……回退等于在故障时静默关闭撤销能力」）。
+    这一点由 SDK 的行为保证（查证失败即抛 `UnauthorisedError`/异常），
+    本模块不做任何兜底捕获后放行。
     """
     return verify_session(
         # 这两个默认值都由 SDK 决定，不在此处覆盖：

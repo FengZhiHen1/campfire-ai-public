@@ -1,41 +1,10 @@
 """检索侧产品工具：`search_knowledge`。
 
-归属（docs/项目结构设计.md第 6 节）：`tools/` 把
-`modules/` 的能力包装成基座可调用的工具。本模块只做包装——两路检索、RRF 融合、
-条目聚合、撤下过滤、降级判定都在 `modules/library`，此处不重复实现，也不直接碰表。
-
-契约真源：
-
-- docs/技术设计/面/consult/tools/search_knowledge.md
-- 检索链的对外行为（返回契约字段、撤下传播、失败语义）：
-  docs/技术设计/technical-details/资料与案例检索.md
-
-为什么只有 `search_knowledge`（2026-09-30 实测）：
-
-`search_cases` 在当前代码库里不可实现，因此本模块没有它——不是遗漏，是依赖不存在：
-
-1. 案例条目表不存在。`modules/library/models.py` 只有 `campfire_knowledge_item`
-   （`LIBRARY_CASE` 常量被定义却没有任何使用点，实测全库 grep 只有它自己的定义行），
-   迁移 `113a04901d24` 也只建了资料条目表与节点表。
-2. 7 个案例专属返回字段在表里不存在：`authorization`、`source_type`、
-   `evidence_level`、`review_status`、`interview_at`、`makes_claims_high_risk`、
-   `inferred_fields`。这些不是可选装饰——[资料与案例检索] 第 3 节明说前五个是
-   [公共案例库] 第 8 节呈现规则能落地的前提（缺任一个，输出就无法如实回答
-   「谁说的、多可信、什么时候」），`inferred_fields` 是「被推断的字段必须标为推断」
-   的前提。缺字段就返回（同文第 1 节不变量）意味着现在只能返回空集，
-   那比不实现更糟：模型会把它读成「没有相关案例」。
-3. 检索链只查资料库：`retrieval._ACTIVE_FILTERS` 硬编码
-   `MetadataFilter(key="library", value=LIBRARY_KNOWLEDGE)`，字面路的 SQL 也写死
-   查 `campfire_knowledge_item`——因此按现状直接调用 `search()` 永远得不到案例。
-
-落地前置因此是：案例条目表与迁移（含上述7字段）→ 检索链按库别参数化 →
-`search_cases`。这三步属 `modules/library` 的独立工作，不在记忆模块批次内。
-
-依赖白名单：
-
-`tools/*` 允许依赖 `agent/tools`、`modules/*`、`core/*`；禁止 import
-`surfaces/*`，禁止绕过用例服务直接写表（第 7 节）。因此本模块调
-`modules.library.retrieval.search`，没有一条直接构造 SQL。
+职责：把 `modules/library` 的检索链包装成基座可调用的 `search_knowledge` 工具。
+边界：只做包装——两路检索、RRF 融合、条目聚合、撤下过滤、降级判定都在 `modules/library`，
+此处不重复实现，也不直接碰表；禁止 import `surfaces/*`。
+参考：docs/技术设计/面/consult/tools/search_knowledge.md；
+docs/技术设计/technical-details/资料与案例检索.md；docs/项目结构设计.md 第 6、7 节。
 """
 
 from __future__ import annotations
@@ -143,6 +112,43 @@ def _degradation_note(degraded: tuple[str, ...]) -> str | None:
 
 async def search_knowledge(context: ToolContext, args: SearchKnowledgeArgs) -> ToolResult | ToolFailure:
     """在专业资料库里检索，为建议找依据（契约第 1 节）。
+
+    归属（docs/项目结构设计.md第 6 节）：`tools/` 把
+    `modules/` 的能力包装成基座可调用的工具。本模块只做包装——两路检索、RRF 融合、
+    条目聚合、撤下过滤、降级判定都在 `modules/library`，此处不重复实现，也不直接碰表。
+
+    契约真源：
+
+    - docs/技术设计/面/consult/tools/search_knowledge.md
+    - 检索链的对外行为（返回契约字段、撤下传播、失败语义）：
+      docs/技术设计/technical-details/资料与案例检索.md
+
+    为什么只有 `search_knowledge`（2026-09-30 实测）：
+
+    `search_cases` 在当前代码库里不可实现，因此本模块没有它——不是遗漏，是依赖不存在：
+
+    1. 案例条目表不存在。`modules/library/models.py` 只有 `campfire_knowledge_item`
+       （`LIBRARY_CASE` 常量被定义却没有任何使用点，实测全库 grep 只有它自己的定义行），
+       迁移 `113a04901d24` 也只建了资料条目表与节点表。
+    2. 7 个案例专属返回字段在表里不存在：`authorization`、`source_type`、
+       `evidence_level`、`review_status`、`interview_at`、`makes_claims_high_risk`、
+       `inferred_fields`。这些不是可选装饰——[资料与案例检索] 第 3 节明说前五个是
+       [公共案例库] 第 8 节呈现规则能落地的前提（缺任一个，输出就无法如实回答
+       「谁说的、多可信、什么时候」），`inferred_fields` 是「被推断的字段必须标为推断」
+       的前提。缺字段就返回（同文第 1 节不变量）意味着现在只能返回空集，
+       那比不实现更糟：模型会把它读成「没有相关案例」。
+    3. 检索链只查资料库：`retrieval._ACTIVE_FILTERS` 硬编码
+       `MetadataFilter(key="library", value=LIBRARY_KNOWLEDGE)`，字面路的 SQL 也写死
+       查 `campfire_knowledge_item`——因此按现状直接调用 `search()` 永远得不到案例。
+
+    落地前置因此是：案例条目表与迁移（含上述7字段）→ 检索链按库别参数化 →
+    `search_cases`。这三步属 `modules/library` 的独立工作，不在记忆模块批次内。
+
+    依赖白名单：
+
+    `tools/*` 允许依赖 `agent/tools`、`modules/*`、`core/*`；禁止 import
+    `surfaces/*`，禁止绕过用例服务直接写表（第 7 节）。因此本模块调
+    `modules.library.retrieval.search`，没有一条直接构造 SQL。
 
     只查资料库，不混入案例（契约第 4 节）。撤下、状态、库别三个过滤在
     `modules.library` 的 SQL 层完成，本函数不重复做。

@@ -1,11 +1,8 @@
 """FastAPI 入口：路由装配、中间件、健康检查与工具注册。
 
-装配职责见 docs/项目结构设计.md 第 2 节与第 7 节：工具注册与复写注入在装配处完成，
-因此 `core/auth` 不需要 import `modules/accounts`。
-
-一期只有 `/health` 一条自有路由。咨询面的 HTTP 与 SSE 契约归 `surfaces/consult`；
-认证面（`/auth/*`）由 SuperTokens 中间件挂载，其契约归
-docs/技术设计/technical-details/认证与账号.md 第 5 节。
+职责：装配 FastAPI 应用、SuperTokens 中间件与工具注册，并暴露自有路由。
+边界：只做入口装配；面的 HTTP 与 SSE 契约不属于本模块。
+参考：docs/项目结构设计.md 第 2、7 节。
 """
 
 import asyncio
@@ -32,6 +29,13 @@ logger = logging.getLogger("campfire")
 @asynccontextmanager
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     """进程级生命周期：初始化日志与认证 SDK，停止时记录一条结束日志。
+
+    装配职责见 docs/项目结构设计.md 第 2 节与第 7 节：工具注册与复写注入在装配处完成，
+    因此 `core/auth` 不需要 import `modules/accounts`。
+
+    一期只有 `/health` 一条自有路由。咨询面的 HTTP 与 SSE 契约归 `surfaces/consult`；
+    认证面（`/auth/*`）由 SuperTokens 中间件挂载，其契约归
+    docs/技术设计/technical-details/认证与账号.md 第 5 节。
 
     一期不在启动时连数据库或模型——健康检查按请求探测，避免启动顺序耦合。
     认证 SDK 是例外：它必须在应用开始处理请求之前完成装配，否则 `/auth/*`

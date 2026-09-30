@@ -1,27 +1,33 @@
 """工具注册形状与调用上下文。
 
-依据 docs/技术设计/technical-details/通用基座.md 第 5 节：
-
-代码块（text）：
-ToolSpec:
-    name
-    description
-    parameters      # JSON Schema
-    handler         # 由产品侧注册
-    risk            # low | medium | high（一期全为 low）
-    requires_approval: bool
-
-三处刻意的收口：
-
-1. JSON Schema 与参数校验同源：`parameters` 由 `args_model` 的 Pydantic 模型
-   导出，而不是手写一份 schema 再单独写一份校验。手写两份必然漂移，而漂移的方向恰好是
-   最坏的方向——schema 说必填、校验说可选。
-2. 工具名的形状契约定义在 `skill_runtime.skill`，本模块复用它（不另写一条正则）：
-   `allowed-tools` 是作者写下工具名的地方，契约放那一侧可避免两个子包互相 import。
-   校验用 `fullmatch`——`$` 会放过尾随换行，而带换行的工具名足以撑破
-   `<tool_availability>` 信封。
-3. 工具名字面量不含任何领域词：基座不知道自己被用在哪件事上。
+职责：定义工具的注册形状（:class:`ToolSpec`）、结构类型（:class:`Tool`）与单次
+调用上下文（:class:`ToolContext`）。
+边界：参数 JSON Schema 与校验同源（由 `args_model` 导出）；工具名字面量不含任何
+领域词——基座不知道自己被用在哪件事上。
+参考：docs/技术设计/technical-details/通用基座.md 第 5 节。
 """
+
+# 依据 docs/技术设计/technical-details/通用基座.md 第 5 节：
+#
+# 代码块（text）：
+# ToolSpec:
+#     name
+#     description
+#     parameters      # JSON Schema
+#     handler         # 由产品侧注册
+#     risk            # low | medium | high（一期全为 low）
+#     requires_approval: bool
+#
+# 三处刻意的收口：
+#
+# 1. JSON Schema 与参数校验同源：`parameters` 由 `args_model` 的 Pydantic 模型
+#    导出，而不是手写一份 schema 再单独写一份校验。手写两份必然漂移，而漂移的方向恰好是
+#    最坏的方向——schema 说必填、校验说可选。
+# 2. 工具名的形状契约定义在 `skill_runtime.skill`，本模块复用它（不另写一条正则）：
+#    `allowed-tools` 是作者写下工具名的地方，契约放那一侧可避免两个子包互相 import。
+#    校验用 `fullmatch`——`$` 会放过尾随换行，而带换行的工具名足以撑破
+#    `<tool_availability>` 信封。
+# 3. 工具名字面量不含任何领域词：基座不知道自己被用在哪件事上。
 
 from __future__ import annotations
 

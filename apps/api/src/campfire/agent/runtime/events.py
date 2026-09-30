@@ -1,19 +1,8 @@
 """流式事件：一次运行对外的唯一输出形状。
 
-依据 docs/技术设计/technical-details/通用基座.md 第 7 节：事件类型一期经 SSE 传输，
-名称与语义对齐 AG-UI 以便升级。因此这里的 `type` 取值就是线上契约，改名等于改契约。
-
-第一次看到这个模块的人常问三件事，答案都写在这里：
-
-1. 为什么事件类型不直接暴露 SDK 的类型？ 这些事件要过 SSE 到前端、要进运行记录，
-   两处都不该跟着 SDK 的版本漂移。所以 `RunUsage`、`CitationRecord` 等是基座自己的
-   形状，SDK 类型在 `runner` 里被翻译一次。
-2. `run_finished` 与 `run_failed` 怎么分？ 第 9 节把「触顶（步数/token/时间）」与
-   「运行被取消」都归为以明确原因结束并保留已产生的引用，所以它们是 `run_finished`
-   的 `reason`（`completed` / `timeout` / `cancelled`）；模型不可用、会话写入失败
-   这类「本次运行明确失败」才是 `run_failed`。
-3. 为什么有 `progress`？ 第 7 节要求长等待（例如检索中）有进度提示；它由装配处
-   在等待期间发出，不承载业务语义。
+职责：定义运行输出的事件类型与语义，不做翻译、不发事件（发出点在 runner 与装配处）。
+边界：`type` 取值即线上契约；不直接暴露 SDK 的类型（见 :class:`RunUsage`）。
+参考：docs/技术设计/technical-details/通用基座.md 第 7 节。
 """
 
 from __future__ import annotations
@@ -26,7 +15,13 @@ from campfire.agent.model import ModelFailureReason
 from campfire.agent.tools import Candidate, ToolErrorCode
 
 RunEndReason = Literal["completed", "timeout", "cancelled"]
-"""结束后原因（`run_finished`）。三者都会保留已产生的引用（第 9 节）。"""
+"""结束后原因（`run_finished`）。三者都会保留已产生的引用（第 9 节）。
+
+2. `run_finished` 与 `run_failed` 怎么分？ 第 9 节把「触顶（步数/token/时间）」与
+   「运行被取消」都归为以明确原因结束并保留已产生的引用，所以它们是 `run_finished`
+   的 `reason`（`completed` / `timeout` / `cancelled`）；模型不可用、会话写入失败
+   这类「本次运行明确失败」才是 `run_failed`。
+"""
 
 RunFailureCode = Literal[
     "model_unavailable",
@@ -56,6 +51,12 @@ class RunUsage:
 
     用提供方返回的 usage（见压缩策略第 9 节：不用字符数折算），SDK 的响应事件里带。
     多次模型调用在同一运行内累加。
+
+    第一次看到这个模块的人常问三件事，答案都写在这里：
+
+    1. 为什么事件类型不直接暴露 SDK 的类型？ 这些事件要过 SSE 到前端、要进运行记录，
+       两处都不该跟着 SDK 的版本漂移。所以 `RunUsage`、`CitationRecord` 等是基座自己的
+       形状，SDK 类型在 `runner` 里被翻译一次。
     """
 
     requests: int = 0
@@ -97,7 +98,11 @@ class TextDeltaEvent:
 
 @dataclass(frozen=True, slots=True)
 class ProgressEvent:
-    """进度提示，用于长等待。"""
+    """进度提示，用于长等待。
+
+    3. 为什么有 `progress`？ 第 7 节要求长等待（例如检索中）有进度提示；它由装配处
+       在等待期间发出，不承载业务语义。
+    """
 
     message: str
     type: Literal["progress"] = field(default="progress", init=False)
@@ -224,4 +229,8 @@ RunEvent = Union[
     RunFinishedEvent,
     RunFailedEvent,
 ]
-"""一次运行可能发出的事件全集（判别联合，按 `type` 区分）。"""
+"""一次运行可能发出的事件全集（判别联合，按 `type` 区分）。
+
+依据第 7 节：事件类型一期经 SSE 传输，名称与语义对齐 AG-UI 以便升级。因此这里的
+`type` 取值就是线上契约，改名等于改契约。
+"""

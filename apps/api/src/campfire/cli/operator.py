@@ -1,29 +1,9 @@
 """运营子命令：邀请码的发放/撤销/查看，人工重置，账号注销。
 
-归属：`cli/`（本地运维入口，不暴露成服务端点）。形态由
-决策记录（../../../../docs/技术设计/decisions/运营操作经CLI.md）与
+职责：命令行形态 + 调用顺序。
+边界（归属）：`cli/`（本地运维入口，不暴露成服务端点）。
+参考：形态由 决策记录（../../../../docs/技术设计/decisions/运营操作经CLI.md）与
 认证与账号（../../../../docs/技术设计/technical-details/认证与账号.md）第 7、8 节拥有。
-
-为什么运营操作是 CLI 而不是 web 后台
-
-第 7 节：一期运营量极小（`RQ-ACC-06` 的自助找回重访条件是「真实用户数 ≥50，或
-每周 ≥1 次找回请求」，反过来说明重置预期是个位数次数）。为个位数操作建一个
-浏览器可达、能重置任意密码与建任意账号的界面，攻击面与收益不成比例。
-
-运营者身份就是「能执行该 CLI 的人」，即服务器的操作系统访问权——本期不引入
-应用层运营者身份与审计表。代价如实写明：无法回答「是哪位运营者重置了谁的密码」，
-追责只能依赖 OS 层日志。
-
-本模块只做「命令行形态 + 调用顺序」
-
-邀请码状态机在 `modules/accounts`、注销编排在 `core/auth/deletion`。这里不重复
-它们的判据，只负责：参数解析、为缺省值找到合理的默认（如运营者标识取当前 OS 用户）、
-把领域异常翻译成可读的失败信息与非零退出码。
-
-退出码
-
-与既有子命令一致：`0` 成功、`1` 失败（含参数错误与领域拒绝）、`2` 未实现的子命令。
-失败必须非零——运营脚本依赖它判断成败。
 """
 
 from __future__ import annotations
@@ -50,8 +30,12 @@ from campfire.modules.memory.purge import MemoryAccountPurger
 def _operator() -> str:
     """运营者标识：当前操作系统的用户名。
 
+    运营者身份就是「能执行该 CLI 的人」，即服务器的操作系统访问权——本期不引入
+    应用层运营者身份与审计表。代价如实写明：无法回答「是哪位运营者重置了谁的密码」，
+    追责只能依赖 OS 层日志。
+
     它不是应用层身份（第 7 节：本期不引入应用层运营者身份与审计表），
-    只是「这条记录是哪台机器的哪个 OS 用户产生的」。追责依赖 OS 层日志。
+    只是「这条记录是哪台机器的哪个 OS 用户产生的」。
 
     取不到时用 `"unknown"` 而不是报错：这个值只用于留痕，不该让一次
     合法的运营操作因为它失败。
@@ -279,9 +263,9 @@ async def _run_account_delete(args: argparse.Namespace) -> int:
                 account_id=args.account,
                 revoke_all_sessions=args._revoke_all_sessions,
                 delete_identity_user=args._delete_identity_user,
-                # 求值工厂（2026-10-01 审查发现）：此前直接传 `args._purgers`
-                # ——那是工厂函数本身而不是它返回的列表，`delete_account` 迭代
-                # 函数对象会抛 `TypeError`。挂在命令上的依赖必须与消费处的形状一致。
+                # `args._purgers` 是求值工厂，必须调用后再传：`delete_account` 迭代的
+                # 是它返回的列表，直接传函数对象会抛 `TypeError`。
+                # 挂在命令上的依赖必须与消费处的形状一致。
                 purgers=args._purgers(settings),
                 confirmed=True,
             )
@@ -313,6 +297,18 @@ async def _run_account_delete(args: argparse.Namespace) -> int:
 
 def add_operator_subcommands(sub: argparse._SubParsersAction) -> None:  # noqa: SLF001 —— argparse 的既定形态
     """把运营子命令挂到既有的子命令解析器上。
+
+    本模块只做「命令行形态 + 调用顺序」
+
+    邀请码状态机在 `modules/accounts`、注销编排在 `core/auth/deletion`。这里不重复
+    它们的判据，只负责：参数解析、为缺省值找到合理的默认（如运营者标识取当前 OS 用户）、
+    把领域异常翻译成可读的失败信息与非零退出码。
+
+    为什么运营操作是 CLI 而不是 web 后台
+
+    第 7 节：一期运营量极小（`RQ-ACC-06` 的自助找回重访条件是「真实用户数 ≥50，或
+    每周 ≥1 次找回请求」，反过来说明重置预期是个位数次数）。为个位数操作建一个
+    浏览器可达、能重置任意密码与建任意账号的界面，攻击面与收益不成比例。
 
     单独抽成函数（而不是写在 `_build_parser` 里）：运营子命令与摄取子命令
     互不相关，分开便于各自演进，也让 `_build_parser` 保持可读。
@@ -354,6 +350,11 @@ def add_operator_subcommands(sub: argparse._SubParsersAction) -> None:  # noqa: 
 
 def dispatch_operator_command(args: argparse.Namespace) -> int | None:
     """执行运营子命令；不是运营命令时返回 `None`，交由调用方继续分派。
+
+    退出码
+
+    与既有子命令一致：`0` 成功、`1` 失败（含参数错误与领域拒绝）、`2` 未实现的子命令。
+    失败必须非零——运营脚本依赖它判断成败。
 
     返回 `None` 而不是抛异常：`main` 里已有「未识别的命令 → 用法 + 退出码 2」
     这条路径，这里不重复。

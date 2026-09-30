@@ -1,23 +1,17 @@
 """账号模块的异常层次。
 
-归属：`modules/accounts`（见 docs/项目结构设计.md 第 6 节）。
-
-为什么单独一份层次：
-
-调用方（CLI、认证端点）需要能一句 `except AccountsError` 收口，而不必知道底层是
-SQLAlchemy、Redis 还是身份服务的 Python SDK。分叉依据是「调用方该不该重试」，
-不是「错误来自哪个依赖」——这一点与 `core/pending_write`、
-`modules/memory` 的既有分层同一种思路（邻近一致性）：
-
-- 调用方给错了（码格式不对、状态不匹配）→ 不该重试，属明确拒绝；
-- 依赖不可用（core 连不上）→ 可重试，且必须 fail-closed（认证文档第 2 节）。
-
-刻意不放进异常里的东西：
-
-邀请码本身不进异常消息、不进日志。它是一次性准入凭据，把它写进异常文本会让它
-随日志扩散；而`AC-15` 只要求「明确拒绝」，不要求把被拒的值回报出来。
-这条与 `core/pending_write` 对 `last_error` 的纪律同源（不复述凭据）。
+职责：定义 `modules/accounts` 的异常基类与邀请码相关的失败类型。
+边界：只定义失败类型，不含重试策略，不复述凭据（见下方「模块说明」）。
+参考：docs/项目结构设计.md 第 6 节；分层理由见 :class:`AccountsError`。
 """
+
+# 归属：`modules/accounts`（见 docs/项目结构设计.md 第 6 节）。
+#
+# 模块说明（刻意不放进异常里的东西）：
+#
+# 邀请码本身不进异常消息、不进日志。它是一次性准入凭据，把它写进异常文本会让它
+# 随日志扩散；而`AC-15` 只要求「明确拒绝」，不要求把被拒的值回报出来。
+# 这条与 `core/pending_write` 对 `last_error` 的纪律同源（不复述凭据）。
 
 from __future__ import annotations
 
@@ -27,6 +21,16 @@ class AccountsError(Exception):
 
     存在的意义是让上层能用一次 `except` 收口本模块的全部失败，
     而不必逐个列举内部实现可能抛出的类型。
+
+    为什么单独一份层次：
+
+    调用方（CLI、认证端点）需要能一句 `except AccountsError` 收口，而不必知道底层是
+    SQLAlchemy、Redis 还是身份服务的 Python SDK。分叉依据是「调用方该不该重试」，
+    不是「错误来自哪个依赖」——这一点与 `core/pending_write`、
+    `modules/memory` 的既有分层同一种思路（邻近一致性）：
+
+    - 调用方给错了（码格式不对、状态不匹配）→ 不该重试，属明确拒绝；
+    - 依赖不可用（core 连不上）→ 可重试，且必须 fail-closed（认证文档第 2 节）。
     """
 
 

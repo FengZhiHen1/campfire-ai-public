@@ -1,26 +1,10 @@
 """记忆侧产品工具：`write_memory` / `read_memory`。
 
-归属（docs/项目结构设计.md第 6 节）：`tools/` 把
-`modules/` 的能力包装成基座可调用的工具。本模块只做包装——读写语义、删除账本、
-时间模型都在 `modules/memory`，此处不重复实现，也不直接碰表。
-
-契约真源：
-
-- docs/技术设计/面/consult/tools/write_memory.md
-- docs/技术设计/面/consult/tools/read_memory.md
-
-删除与纠正不在这里（2026-09-30 裁决）：
-
-记忆的查看 / 纠正 / 删除由记忆面的 HTTP 契约承载，不是模型可见工具——与档案侧
-`confirm` / `correct` / `delete` 同一分工（见决策记录（docs/技术设计/decisions/记忆删除走用户确认入口.md））。
-因此本模块没有 `delete_memory`；`modules/memory` 的 `delete_episode` /
-`correct_episode` 由记忆面调用。
-
-依赖白名单：
-
-`tools/*` 允许依赖 `modules/*`、`core/*`；禁止 import `surfaces/*`，禁止绕过
-用例服务直接写表（第 7 节）。因此本模块：写走 `core.pending_write.enqueue`（待处理
-记录是真相源），读走 `modules.memory` 的用例函数——没有一条直接构造 SQL。
+职责：把 `modules/memory` 的读写用例包装成基座可调用的 `write_memory` / `read_memory` 工具。
+边界：只做包装——读写语义、删除账本、时间模型都在 `modules/memory`，此处不重复实现，
+也不直接碰表；禁止 import `surfaces/*`。
+参考：docs/技术设计/面/consult/tools/write_memory.md、read_memory.md；
+docs/项目结构设计.md 第 6、7 节；删除与纠正的归属见下方说明。
 """
 
 from __future__ import annotations
@@ -122,6 +106,18 @@ class ReadMemoryArgs(BaseModel):
 async def write_memory(context: ToolContext, args: WriteMemoryArgs) -> ToolResult | ToolFailure:
     """`write_memory` 的实现：把一条记忆提交为待处理记录。
 
+    归属（docs/项目结构设计.md第 6 节）：`tools/` 把
+    `modules/` 的能力包装成基座可调用的工具。本模块只做包装——读写语义、删除账本、
+    时间模型都在 `modules/memory`，此处不重复实现，也不直接碰表。
+
+    依赖白名单：
+
+    `tools/*` 允许依赖 `modules/*`、`core/*`；禁止 import `surfaces/*`，禁止绕过
+    用例服务直接写表（第 7 节）。因此本模块：写走 `core.pending_write.enqueue`（待处理
+    记录是真相源），读走 `modules.memory` 的用例函数——没有一条直接构造 SQL。
+
+    契约真源：docs/技术设计/面/consult/tools/write_memory.md
+
     按契约第 4 节，本函数只做两件事，且与业务数据同一事务：
     1. 落一条 `pending_write`（真相源）；
     2. 事务提交后投递 Taskiq 任务（投递失败不影响已提交的记录，由兜底扫描重投）。
@@ -169,6 +165,8 @@ async def write_memory(context: ToolContext, args: WriteMemoryArgs) -> ToolResul
 async def read_memory(context: ToolContext, args: ReadMemoryArgs) -> ToolResult | ToolFailure:
     """`read_memory` 的实现：时间线回看。
 
+    契约真源：docs/技术设计/面/consult/tools/read_memory.md
+
     按契约第 4 节：只读、不返回档案条目、被删除的记忆不返回（删除过滤在
     `modules.memory.store.read_timeline` 内部完成，调用方无法绕过）。
 
@@ -187,7 +185,8 @@ async def read_memory(context: ToolContext, args: ReadMemoryArgs) -> ToolResult 
         async with session_scope(get_settings()) as session:
             episodes = await read_timeline(
                 session,
-                # 进程内共享句柄（`modules/memory/graph.py`）：每次重建会泄漏一整套连接池。
+                # 进程内共享句柄（`modules/memory/graph.py`）：
+                # 每次重建会泄漏一整套连接池。
                 get_shared_memory_graph(),
                 account_id,
                 since=since,
@@ -243,6 +242,12 @@ def _parse_optional_time(raw: str | None, name: str):  # noqa: ANN202
     return value
 
 
+# 删除与纠正不在这里（2026-09-30 裁决）：
+#
+# 记忆的查看 / 纠正 / 删除由记忆面的 HTTP 契约承载，不是模型可见工具——与档案侧
+# `confirm` / `correct` / `delete` 同一分工（见决策记录（docs/技术设计/decisions/记忆删除走用户确认入口.md））。
+# 因此本模块没有 `delete_memory`；`modules/memory` 的 `delete_episode` /
+# `correct_episode` 由记忆面调用。
 __all__ = [
     "ACCOUNT_PAYLOAD_KEY",
     "DEFAULT_READ_LIMIT",

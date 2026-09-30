@@ -2,25 +2,8 @@
 
 归属（见 docs/技术设计/technical-details/通用记忆.md 第 7 节）：本模块拥有
 「删除一条记忆」与「纠正一条记忆」两个用例，是 `RQ-MEM-03` / `AC-08` 的承载。
-
-为什么删除只需要写账本：
-
-账本过滤是语义删除的唯一生效点（第 7 节），图库物理删除不是。因此删除的
-正确性不依赖任何图库操作：把 key 记入账本后，两条读路径（`store.read_timeline`
-与 `derived.read_emergency_facts`）在下一次查询时就已经看不到它了。
-
-这带来一个重要性质：删除不会因为图库不可用而失败。若把图库操作放进删除路径，
-一个正常的删除请求会因基础设施故障而不可用——而账本写入是本库（PostgreSQL）的
-事务，与图库是两回事。因此本模块不调图库，`derived_uuids` 只做尽力记录
-（第 7 节已明确它「不作过滤依据」）。
-
-纠正为什么是「删旧 + 写新」而不是「改」：
-
-第 7 节：纠正 = 删除旧 episode + `write_memory` 写新 episode（`occurred_at` 用纠正
-所指的发生时间）。不能指望旧派生边自动失效——已实测（2026-09-29，纯函数
-`resolve_edge_contradictions`）：只有新事实 `valid_at` 严格更晚时旧边才被置
-`invalid_at`，更早或同时间都不失效，而纠正恰恰允许更早。因此纠正的正确性同样
-落在账本过滤上：旧 episode 一进账本，引用它的派生边就不再注入。
+边界：只写账本、不调图库——账本过滤是语义删除的唯一生效点（理由见 `delete_episode`）；纠正 = 删旧 + 写新（见 `correct_episode`）。
+参考：`docs/技术设计/technical-details/通用记忆.md` 第 7 节。
 """
 
 from __future__ import annotations
@@ -44,7 +27,7 @@ class DeletionResult:
     """
 
     episode_key: str
-    #: 本次是否真的新记入了账本（False = 此前已删除，幂等命中）。
+    #: 本次是否真的新记入了账本（`False` = 此前已删除，幂等命中）。
     newly_deleted: bool
     #: 删除原因（`user_request` / `correction` / `account_deletion`）。
     reason: str
@@ -60,6 +43,17 @@ async def delete_episode(
     derived_uuids: list[str] | None = None,
 ) -> DeletionResult:
     """删除一条记忆（幂等）：记入账本后，两条读路径都不再返回它。
+
+    为什么删除只需要写账本：
+
+    账本过滤是语义删除的唯一生效点（第 7 节），图库物理删除不是。因此删除的
+    正确性不依赖任何图库操作：把 key 记入账本后，两条读路径（`store.read_timeline`
+    与 `derived.read_emergency_facts`）在下一次查询时就已经看不到它了。
+
+    这带来一个重要性质：删除不会因为图库不可用而失败。若把图库操作放进删除路径，
+    一个正常的删除请求会因基础设施故障而不可用——而账本写入是本库（PostgreSQL）的
+    事务，与图库是两回事。因此本模块不调图库，`derived_uuids` 只做尽力记录
+    （第 7 节已明确它「不作过滤依据」）。
 
     Args:
         session: 关系库会话（调用方负责提交事务）。
@@ -99,6 +93,14 @@ async def correct_episode(
     derived_uuids: list[str] | None = None,
 ) -> DeletionResult:
     """纠正一条记忆的第一步：把旧 episode 记入账本（原因 `correction`）。
+
+    纠正为什么是「删旧 + 写新」而不是「改」：
+
+    第 7 节：纠正 = 删除旧 episode + `write_memory` 写新 episode（`occurred_at` 用纠正
+    所指的发生时间）。不能指望旧派生边自动失效——已实测（2026-09-29，纯函数
+    `resolve_edge_contradictions`）：只有新事实 `valid_at` 严格更晚时旧边才被置
+    `invalid_at`，更早或同时间都不失效，而纠正恰恰允许更早。因此纠正的正确性同样
+    落在账本过滤上：旧 episode 一进账本，引用它的派生边就不再注入。
 
     本函数只做「撤下旧记忆」这一步；写新记忆是调用方的责任
     （`store.write_episode` + 写入路径的幂等标记，见写入路径.md 第 5 节）。

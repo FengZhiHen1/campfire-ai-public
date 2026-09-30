@@ -2,11 +2,8 @@
 
 归属（见 docs/技术设计/technical-details/通用记忆.md 第 7 节）：账本过滤是语义
 删除的唯一生效点，图库物理删除不是。两条读路径都必须先经这里。
-
-为什么是「取 key 再传给图库」而不是「读回来再过滤」：先在图库查询里排除
-（`WHERE NOT e.uuid IN $deleted`）可以让过滤与分页/上限在同一层生效。若读回来再
-过滤，`limit` 会先把已删除的算进去——「取最近 20 条」可能实际只剩 3 条可见，
-这不是等价变换。
+边界：把已删 key 取出并交给图库侧排除（理由见 `deleted_episode_keys`）；写入幂等落在唯一约束上。
+参考：`docs/技术设计/technical-details/通用记忆.md` 第 7 节；`DeletionOutcome` 区分「本次新记」与「幂等命中」。
 """
 
 from __future__ import annotations
@@ -30,7 +27,7 @@ from campfire.modules.memory.models import (
 #: 单次查询取回的已删 key 上界（CORE-11：读路径在应急首字时延上，不能无界拉取）。
 #: 10k 远超一期单账号记忆量（参数表 `emergency_memory_limit` 为 20 条量级）。
 #:
-#: 触顶时的行为是「显式失败」而不是「返回前 N 条」（2026-09-29 修正）：
+#: 触顶时的行为是「显式失败」而不是「返回前 N 条」：
 #: 截断意味着「部分已删记忆仍会被返回」——即删除静默失效，直接违反 `RQ-MEM-03`。
 #: 宁可明确报错并提示需要物理清理，也不返回用户已删除的内容。
 #:
@@ -83,6 +80,11 @@ async def deleted_episode_keys(session: AsyncSession, account_id: AccountId | st
     参数在入口校验（与 `record_deletion` 同一理由：脏账号键会让读侧按错误的
     分区过滤，把「已删记忆」当成「未删」返回，或反之）。
 
+    为什么是「取 key 再传给图库」而不是「读回来再过滤」：先在图库查询里排除
+    （`WHERE NOT e.uuid IN $deleted`）可以让过滤与分页/上限在同一层生效。若读回来再
+    过滤，`limit` 会先把已删除的算进去——「取最近 20 条」可能实际只剩 3 条可见，
+    这不是等价变换。
+
     Args:
         session: 关系库会话。
         account_id: 账号标识（与 `group_id` 同源）。
@@ -97,7 +99,8 @@ async def deleted_episode_keys(session: AsyncSession, account_id: AccountId | st
             需先按账号做物理清理。
     """
     account_id = to_account_id(account_id)
-    # 多取一条用于检测「还有更多」——只看 == LIMIT 无法区分「恰好这么多」与「被截断」。
+    # 多取一条用于检测「还有更多」——只看 == LIMIT 无法区分
+    # 「恰好这么多」与「被截断」。
     result = await session.execute(
         select(MemoryDeletionLedger.episode_key)
         .where(MemoryDeletionLedger.account_id == account_id)
@@ -165,12 +168,12 @@ async def record_deletion(
             detail=f"合法取值={sorted(DELETION_REASONS)}",
         )
 
-    # 两个标识都在入口校验（2026-09-29 评审发现的阻断级：此前只校验 episode_key）。
-    # 为什么 account_id 必须校验（实测后果）：一条 `account_id=''` 的行既不被任何真实
-    # 账号读到（读路径按 account_id 过滤），又因 `episode_key` 的全局唯一约束
-    # 永久占用该 key——于是合法账号删除那条记忆会撞上下面的跨账号守卫而永久失败，
-    # 且没有任何 API 能清掉这行（不可恢复的毒化行）。这正是本模块要防的「删除静默失效」。
-    # 超长值此前还会退化成裸 `StringDataRightTruncationError`（非领域错误）。
+    # 两个标识都在入口校验。为什么 account_id 必须校验（实测后果）：一条
+    # `account_id=''` 的行既不被任何真实账号读到（读路径按 account_id 过滤），
+    # 又因 `episode_key` 的全局唯一约束永久占用该 key——于是合法账号删除那条记忆
+    # 会撞上下面的跨账号守卫而永久失败，且没有任何 API 能清掉这行（不可恢复的毒化行）。
+    # 这正是本模块要防的「删除静默失效」。
+    # 超长值不校验会退化成裸 `StringDataRightTruncationError`（非领域错误）。
     account_id = to_account_id(account_id)
 
     # 归一为规范 UUID 文本（大小写/花括号形式不一致会让同一条记忆在写入与读取两侧

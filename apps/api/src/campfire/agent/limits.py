@@ -1,5 +1,15 @@
 """基座级的上界：只有一个数字，以及为什么只有它。
 
+职责：定义通用响应上限 `AGENT_RUN_TIMEOUT_SECONDS`。
+边界：这是基座唯一的上限，不设步数与 token 上限（理由见下方常量注释）。
+参考：docs/技术设计/technical-details/通用基座.md 第 2 节「上限」（2026-09-29 定）。
+"""
+
+from __future__ import annotations
+
+AGENT_RUN_TIMEOUT_SECONDS = 180.0
+"""一条通用响应上限（秒）。超过即按基座第 9 节以明确原因结束，并保留已产生的引用。
+
 依据 docs/技术设计/technical-details/通用基座.md 第 2 节「上限」（2026-09-29 定）：
 
 > 只设一条通用响应上限 180 秒。不另设步数上限与 token 上限——步数上限是防死循环的
@@ -16,8 +26,3 @@
    从中间砍断，失败原因会从「模型不可用」变成「运行超时」（见 `agent.model`）；
 3. 一次运行内不设 token 上限；上下文压力由窗口与压缩处理（压缩策略）。
 """
-
-from __future__ import annotations
-
-AGENT_RUN_TIMEOUT_SECONDS = 180.0
-"""一条通用响应上限（秒）。超过即按基座第 9 节以明确原因结束，并保留已产生的引用。"""

@@ -3,59 +3,8 @@
 归属（见 docs/技术设计/technical-details/通用记忆.md 第 8 节与
 docs/技术设计/decisions/通用记忆归属为账号.md）：连接与客户端装配归 `modules/memory`；
 连接配置的唯一真源是 `core/config`（第 10 节「配置唯一入口」）。
-
-为什么需要这一层（四个实测得到的约束）
-
-设计文档把记忆的存储写作「Graphiti + FalkorDB」，但构造一个可用的 Graphiti
-实例有四处必须显式处理，照默认值走会直接失败或静默连错供应商：
-
-1. `cross_encoder` 必须显式传入（实测 0.30.2）：默认值 `OpenAIRerankerClient()`
-   在构造时即建 `AsyncOpenAI(api_key=None)` 并抛 `OpenAIError: Missing credentials`
-   ——连 Graphiti 都构造不出来。一期不用重排（通用记忆第 6 节：应急预注入不走
-   `search()`），因此传一个「保持原序」的空实现。
-2. `llm_client` / `embedder` 必须显式传入：否则回落到 `OpenAIClient()` /
-   `OpenAIEmbedder()` 去读 `OPENAI_API_KEY`，即绕过 TokenHub。项目纪律是
-   「全应用单一模型」（技术栈设计第 3 节），记忆侧也必须走同一个供应商与向量模型
-   （RAG 策略第 11 节）。
-3. `small_model` 必须一并显式传入（2026-09-29 评审发现，实测确认）：只传
-   `model` 时 `LLMConfig.small_model` 保持 `None`，而 `LLMClient` 在
-   `ModelSize.small` 时回落到上游硬编码的 `gpt-4.1-nano`（实测
-   `_get_model_for_size(small) == 'gpt-4.1-nano'`）。Graphiti 有 7 处抽取/消解
-   调用走 `ModelSize.small`，全都`add_episode` 必经——这等于绕过 TokenHub 的
-   单一模型纪律，且是同一类「静默回落」缺陷的第二个入口。因此两个档位都指向
-   `settings.model_name`：一期只有一个模型，不存在「便宜档」。
-4. `store_raw_episode_content` 必须为 `True`：置 `False` 会清空 episode 的
-   `content`，而「时间线回看」读的就是该字段（通用记忆第 2 节）。
-
-超时的落法（两条腿都要有界，缺一条等于没有）
-
-图库腿：`FalkorDriver` 自己没有超时参数，但它接受一个已构造的 `falkordb`
-客户端（`falkor_db=`），该客户端有 `socket_timeout` / `socket_connect_timeout`。
-我们据此把 `falkordb_timeout_seconds` 落到 socket 层。
-
-模型腿（2026-09-29 评审发现，实测确认）：只设图库超时时，两个模型客户端仍取
-openai SDK 的默认值——实测 `timeout=Timeout(connect=5.0, read=600, write=600,
-pool=600)`、`max_retries=2`，再叠加 Graphiti 自身的 `MAX_RETRIES` 重试循环。
-读超时 600 秒会直接顶掉 `RQ-EMG-03` 的 10 秒首字预算。因此这里显式设
-`timeout=settings.model_request_timeout_seconds` 与 `max_retries=0`，与
-`agent/model/gateway` 的既有纪律一致（那里还额外把该契约断言出来，见
-`build_model_settings`）。
-
-代理豁免：为什么用注入而不是改写 `os.environ`
-
-宿主机 `no_proxy` 含带方括号的 IPv6 字面量（如 `[::1]`）时，openai 用的
-`httpx2` 在构造客户端时即抛 `InvalidURL: Invalid port: ':1]'`（见
-`apps/api/tests/conftest.py` 的留档），使记忆模块根本无法构造。
-
-此前做法是就地改写 `os.environ['no_proxy']`——已废弃（2026-09-29 评审指出
-两个问题）：(a) 它改的是进程全局，会波及同进程内一切 httpx 消费者
-（`agent/model/gateway`、`modules/library/embedding` 等），一个 builder 函数
-制造隐藏全局副作用；(b) 它只 `replace("[::1]", "")`，对 `[::2]`、
-`[2001:db8::1]` 等形态无效（实测这些同样会让构造失败），属半修。
-
-现改为显式构造不读代理环境的客户端并注入（`trust_env=False`），与
-`modules/library/embedding.py` 已有做法一致。代价是服务端到服务端调用不继承
-桌面代理豁免——这正是嵌入侧已确立的判断：企业网络需要代理时应显式配置。
+边界：照默认值构造 Graphiti 会失败或静默连错供应商——四条实测约束、超时落法与代理豁免的完整论证见 `build_memory_graph` 的模块说明。
+参考：`docs/技术设计/technical-details/通用记忆.md` 第 6、8、10 节。
 """
 
 from __future__ import annotations
@@ -95,7 +44,7 @@ class OrderedCrossEncoder(CrossEncoderClient):
     """不做重排的重排器：保持传入顺序。
 
     存在的唯一理由是 `Graphiti` 的 `cross_encoder` 默认值会在构造时抛错
-    （见模块说明第 1 条）。一期不做重排——应急预注入按时间取数、不走 `search()`
+    （见 `build_memory_graph` 的模块说明第 1 条）。一期不做重排——应急预注入按时间取数、不走 `search()`
     （通用记忆第 6 节）；将来启用语义检索时，这里换成真正的重排实现即可，
     调用点不变。
     """
@@ -235,7 +184,7 @@ class MemoryGraph:
         # 并关闭共享的 falkordb 客户端（唯一一次）。
         await self.graphiti.close()
         # 克隆出来的驱动各有自己的后台索引任务（每个 clone 各调度一个，实测），
-        # 但客户端是共享的——只取消任务，不再关客户端。
+        # 但客户端是共享的：只取消任务，不关客户端。
         for scoped in self.account_drivers.values():
             if scoped is not self.driver:
                 await _cancel_driver_init_task(scoped)
@@ -279,6 +228,59 @@ async def _cancel_driver_init_task(driver: GraphDriver) -> None:
 def build_memory_graph(settings: Settings) -> MemoryGraph:
     """按配置装配记忆图库：驱动 + TokenHub 三客户端 + Graphiti 实例。
 
+    为什么需要这一层（四个实测得到的约束）
+
+    设计文档把记忆的存储写作「Graphiti + FalkorDB」，但构造一个可用的 Graphiti
+    实例有四处必须显式处理，照默认值走会直接失败或静默连错供应商：
+
+    1. `cross_encoder` 必须显式传入（实测 0.30.2）：默认值 `OpenAIRerankerClient()`
+       在构造时即建 `AsyncOpenAI(api_key=None)` 并抛 `OpenAIError: Missing credentials`
+       ——连 Graphiti 都构造不出来。一期不用重排（通用记忆第 6 节：应急预注入不走
+       `search()`），因此传一个「保持原序」的空实现。
+    2. `llm_client` / `embedder` 必须显式传入：否则回落到 `OpenAIClient()` /
+       `OpenAIEmbedder()` 去读 `OPENAI_API_KEY`，即绕过 TokenHub。项目纪律是
+       「全应用单一模型」（技术栈设计第 3 节），记忆侧也必须走同一个供应商与向量模型
+       （RAG 策略第 11 节）。
+    3. `small_model` 必须一并显式传入（2026-09-29 评审发现，实测确认）：只传
+       `model` 时 `LLMConfig.small_model` 保持 `None`，而 `LLMClient` 在
+       `ModelSize.small` 时回落到上游硬编码的 `gpt-4.1-nano`（实测
+       `_get_model_for_size(small) == 'gpt-4.1-nano'`）。Graphiti 有 7 处抽取/消解
+       调用走 `ModelSize.small`，全都`add_episode` 必经——这等于绕过 TokenHub 的
+       单一模型纪律，且是同一类「静默回落」缺陷的第二个入口。因此两个档位都指向
+       `settings.model_name`：一期只有一个模型，不存在「便宜档」。
+    4. `store_raw_episode_content` 必须为 `True`：置 `False` 会清空 episode 的
+       `content`，而「时间线回看」读的就是该字段（通用记忆第 2 节）。
+
+    超时的落法（两条腿都要有界，缺一条等于没有）
+
+    图库腿：`FalkorDriver` 自己没有超时参数，但它接受一个已构造的 `falkordb`
+    客户端（`falkor_db=`），该客户端有 `socket_timeout` / `socket_connect_timeout`。
+    我们据此把 `falkordb_timeout_seconds` 落到 socket 层。
+
+    模型腿（2026-09-29 评审发现，实测确认）：只设图库超时时，两个模型客户端仍取
+    openai SDK 的默认值——实测 `timeout=Timeout(connect=5.0, read=600, write=600,
+    pool=600)`、`max_retries=2`，再叠加 Graphiti 自身的 `MAX_RETRIES` 重试循环。
+    读超时 600 秒会直接顶掉 `RQ-EMG-03` 的 10 秒首字预算。因此这里显式设
+    `timeout=settings.model_request_timeout_seconds` 与 `max_retries=0`，与
+    `agent/model/gateway` 的既有纪律一致（那里还额外把该契约断言出来，见
+    `build_model_settings`）。
+
+    代理豁免：为什么用注入而不是改写 `os.environ`
+
+    宿主机 `no_proxy` 含带方括号的 IPv6 字面量（如 `[::1]`）时，openai 用的
+    `httpx2` 在构造客户端时即抛 `InvalidURL: Invalid port: ':1]'`（见
+    `apps/api/tests/conftest.py` 的留档），使记忆模块根本无法构造。
+
+    就地改写 `os.environ['no_proxy']` 的做法已废弃（2026-09-29 评审指出
+    两个问题）：(a) 它改的是进程全局，会波及同进程内一切 httpx 消费者
+    （`agent/model/gateway`、`modules/library/embedding` 等），一个 builder 函数
+    制造隐藏全局副作用；(b) 它只 `replace("[::1]", "")`，对 `[::2]`、
+    `[2001:db8::1]` 等形态无效（实测这些同样会让构造失败），属半修。
+
+    现改为显式构造不读代理环境的客户端并注入（`trust_env=False`），与
+    `modules/library/embedding.py` 已有做法一致。代价是服务端到服务端调用不继承
+    桌面代理豁免——这正是嵌入侧已确立的判断：企业网络需要代理时应显式配置。
+
     Raises:
         MemoryConfigurationError: 未配置 `TOKENHUB_API_KEY` 时——记忆的实体抽取与
             嵌入都要调模型，缺凭据时显式失败，不静默降级（同
@@ -300,14 +302,14 @@ def build_memory_graph(settings: Settings) -> MemoryGraph:
     driver = FalkorDriver(falkor_db=client, database=settings.falkordb_database)
 
     # trust_env=False：不继承宿主机 no_proxy（含 [::1] 一类 IPv6 字面量时 httpx2 构造
-    # 即抛 InvalidURL）。见模块说明「代理豁免」一节：注入而非改写 os.environ。
+    # 即抛 InvalidURL）。见 `build_memory_graph` 的模块说明「代理豁免」一节：注入而非改写 os.environ。
     # 超时与重试与 agent/model/gateway 的纪律一致：超时有界、重试唯一所有者不在 SDK。
     http_client = httpx2.AsyncClient(
         trust_env=False,
         timeout=settings.model_request_timeout_seconds,
     )
     # 两个档位都指向同一个模型：一期只有一个模型，没有「便宜档」。
-    # 不传 small_model 会回落到上游硬编码的 gpt-4.1-nano（见模块说明第 3 条）。
+    # 不传 small_model 会回落到上游硬编码的 gpt-4.1-nano（见 `build_memory_graph` 的模块说明第 3 条）。
     llm_config = LLMConfig(
         api_key=api_key,
         model=settings.model_name,
@@ -362,9 +364,11 @@ def build_memory_graph(settings: Settings) -> MemoryGraph:
         graph_driver=driver,
         llm_client=llm_client,
         embedder=embedder,
-        # 必须显式传入：默认值会构造 OpenAI 客户端并抛错（模块说明第 1 条）。
+        # 必须显式传入：默认值会构造 OpenAI 客户端并抛错
+        # （见 `build_memory_graph` 的模块说明第 1 条）。
         cross_encoder=OrderedCrossEncoder(),
-        # 必须为 True：False 会清空 episode content，时间线回看失效（模块说明第 4 条）。
+        # 必须为 True：False 会清空 episode content，时间线回看失效
+        # （见 `build_memory_graph` 的模块说明第 4 条）。
         store_raw_episode_content=True,
         max_coroutines=settings.falkordb_max_coroutines,
     )

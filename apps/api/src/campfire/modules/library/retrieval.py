@@ -1,23 +1,8 @@
 """检索链：两路检索、RRF 融合、条目聚合与检索用例。
 
-归属（见 docs/技术设计/decisions/检索链归入library模块.md）：整条链在本模块。
-
-对外行为与内部机制的权威划分（改代码前先读）：
-
-- 对外行为（两库边界、返回契约、撤下传播、失败语义）→
-  `docs/技术设计/technical-details/资料与案例检索.md`
-- 内部机制与参数（合并规则、候选数、中文约束、投影清单）→
-  `docs/技术设计/technical-details/RAG策略.md`
-
-实现期实测得到的四条约束（2026-09-29，都有对应测试）：
-
-1. `QueryFusionRetriever` 的 RRF 按 `node.hash`（内容哈希） 融合，不是按
-   node_id——因此字面路展开出的节点必须与向量路内容一致才能合并。
-2. 字面路必须用 `LIKE`/`ILIKE`；`~`/`~*` 走顺序扫描（实测 EXPLAIN）。
-   查询词需 ≥3 个连续汉字才有可用三元组。
-3. 过滤必须在 SQL 内完成；`MetadataFilter.value` 的类型联合不含 bool，
-   因此 `withdrawn` 以字符串 `"true"`/`"false"` 存与查。
-4. 一期不建向量索引：几万节点内精确检索既够快又保证召回 100%。
+职责：实现检索用例——向量路与字面路检索、RRF 融合、按条目聚合后返回。
+边界：只读，不写入条目或节点；不把检索失败伪装成「未找到」。
+参考：docs/技术设计/technical-details/资料与案例检索.md；docs/技术设计/technical-details/RAG策略.md；docs/技术设计/decisions/检索链归入library模块.md；细节见 `search` 的 docstring。
 """
 
 from __future__ import annotations
@@ -205,7 +190,8 @@ async def literal_search(
     )
     params = {f"t{i}": f"%{term}%" for i, term in enumerate(terms)}
 
-    # scope 同样走绑定参数（`:scope`）——它来自模型，绝不可拼进 SQL 文本。
+    # scope 同样走绑定参数（`:scope`）——它来自模型，
+    # 绝不可拼进 SQL 文本。
     scope_condition = ""
     if scope is not None:
         scope_condition = "AND applicable_scope ILIKE :scope"
@@ -448,6 +434,25 @@ async def search(
     设计（资料与案例检索第 6 节）：这是两个检索工具共同调用的用例——工具只做
     契约映射（参数、返回形状），检索链的实现归本模块。
 
+    归属（见 docs/技术设计/decisions/检索链归入library模块.md）：整条链在本模块。
+
+    对外行为与内部机制的权威划分（改代码前先读）：
+
+    - 对外行为（两库边界、返回契约、撤下传播、失败语义）→
+      `docs/技术设计/technical-details/资料与案例检索.md`
+    - 内部机制与参数（合并规则、候选数、中文约束、投影清单）→
+      `docs/技术设计/technical-details/RAG策略.md`
+
+    实现期实测得到的四条约束（2026-09-29，都有对应测试）：
+
+    1. `QueryFusionRetriever` 的 RRF 按 `node.hash`（内容哈希） 融合，不是按
+       node_id——因此字面路展开出的节点必须与向量路内容一致才能合并。
+    2. 字面路必须用 `LIKE`/`ILIKE`；`~`/`~*` 走顺序扫描（实测 EXPLAIN）。
+       查询词需 ≥3 个连续汉字才有可用三元组。
+    3. 过滤必须在 SQL 内完成；`MetadataFilter.value` 的类型联合不含 bool，
+       因此 `withdrawn` 以字符串 `"true"`/`"false"` 存与查。
+    4. 一期不建向量索引：几万节点内精确检索既够快又保证召回 100%。
+
     Args:
         embed_query: 异步可调用，把查询文本转成向量（由调用方注入嵌入器，
             使本函数可测且不与凭据配置耦合）。
@@ -483,7 +488,7 @@ async def search(
     if scope is not None:
         scope_ids = await _scope_item_ids(session, scope)
         if not scope_ids:
-            # 没有任何条目匹配该 scope：明确是「未找到」，不再查库。
+            # 没有任何条目匹配该 scope：这就是「未找到」，直接返回。
             # 必须提前返回——空列表进 `IN ()` 是 SQL 语法错误（实测）。
             return SearchOutcome(items=[], degraded_paths=())
 

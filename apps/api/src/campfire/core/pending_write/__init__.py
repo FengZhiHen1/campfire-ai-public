@@ -1,18 +1,22 @@
 """待处理写入记录：表、仓储与状态推进。
 
-归属（2026-09-29 用户裁决）：`pending_write` 是 profile 与 memory 共用的事实表，
-因此归 `core/`。依据是依赖白名单（见 docs/项目结构设计.md 第 7 节）：
-`modules/*` 只能依赖 `core/*`、且模块之间不得互相 import——共用表若放在任一
-业务模块里，另一个模块就用不上。
-
-设计真源是 docs/技术设计/technical-details/写入路径.md：
-形状见其第 3 节、投递与消费见第 4 节、幂等见第 5 节、失败语义见第 6 节。
-本包只实现表与状态机；投递（Taskiq）在 `core/jobs`，业务消费在各自的模块
-（`modules/memory` 等）。
-
-不变量：「没写进去」不得被当作「写进去了」——只有 `state = done` 才算成功。
+职责：对外导出本包的表、词表、参数与仓储函数。
+边界：只实现表与状态机；投递（Taskiq）在 `core/jobs`，业务消费在各自的模块。
+参考：docs/技术设计/technical-details/写入路径.md（形状第 3 节、投递与消费第 4 节、
+    幂等第 5 节、失败语义第 6 节）。
 """
 
+# 归属（2026-09-29 用户裁决）：`pending_write` 是 profile 与 memory 共用的事实表，
+# 因此归 `core/`。依据是依赖白名单（见 docs/项目结构设计.md 第 7 节）：
+# `modules/*` 只能依赖 `core/*`、且模块之间不得互相 import——共用表若放在任一
+# 业务模块里，另一个模块就用不上。
+#
+# 不变量：「没写进去」不得被当作「写进去了」——只有 `state = done` 才算成功。
+#
+# 设计真源是 docs/技术设计/technical-details/写入路径.md：
+# 形状见其第 3 节、投递与消费见第 4 节、幂等见第 5 节、失败语义见第 6 节。
+# 本包只实现表与状态机；投递（Taskiq）在 `core/jobs`，业务消费在各自的模块
+# （`modules/memory` 等）。
 from campfire.core.pending_write.models import (
     KIND_MEMORY_EPISODE,
     KIND_PROFILE_ITEM,

@@ -1,15 +1,8 @@
 """数据主库（PostgreSQL 17 + pgvector）的跨切能力。
 
-归属（见 docs/项目结构设计.md 第 6 节）：提供连接与事务边界；
-表结构与用例服务归各自的 `modules/*`。
-
-边界：`core/*` 不得依赖 `agent/*`、`surfaces/*`、`modules/*`（第 7 节）。
-
-表名前缀：业务表统一用 `campfire_` 前缀，避免与 SuperTokens core 在自己库里
-建的表、以及 SDK 自建表撞名——这是 `docs/项目结构设计.md` 第 10 节「表归属与
-模块同名」的可执行形式。`data_` 前缀保留给 LlamaIndex 的 `PGVectorStore`
-（它把 `table_name` 渲染为 `data_<table_name>`，见 RAG 策略第 2 节），本项目
-自己的模型不得使用该前缀。
+职责：提供连接与事务边界。
+边界：表结构与用例服务归各自的 `modules/*`；`core/*` 不得依赖 `agent/*`、`surfaces/*`、`modules/*`。
+参考：docs/项目结构设计.md 第 6 节、第 7 节、第 10 节（表名前缀见下方说明）。
 """
 
 import uuid
@@ -25,6 +18,17 @@ from sqlalchemy.orm import DeclarativeBase
 
 from campfire.core.config import Settings
 from campfire.core.health import ComponentHealth, Status
+
+# 归属（见 docs/项目结构设计.md 第 6 节）：提供连接与事务边界；
+# 表结构与用例服务归各自的 `modules/*`。
+#
+# 边界：`core/*` 不得依赖 `agent/*`、`surfaces/*`、`modules/*`（第 7 节）。
+#
+# 表名前缀：业务表统一用 `campfire_` 前缀，避免与 SuperTokens core 在自己库里
+# 建的表、以及 SDK 自建表撞名——这是 `docs/项目结构设计.md` 第 10 节「表归属与
+# 模块同名」的可执行形式。`data_` 前缀保留给 LlamaIndex 的 `PGVectorStore`
+# （它把 `table_name` 渲染为 `data_<table_name>`，见 RAG 策略第 2 节），本项目
+# 自己的模型不得使用该前缀。
 
 #: 统一命名约定：让迁移脚本与约束名可预测，避免 `--autogenerate` 因默认名漂移
 #: 反复生成改名迁移。

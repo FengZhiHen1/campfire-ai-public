@@ -1,24 +1,14 @@
-"""模型侧激活：`skill` 工具。
+"""模型侧激活：`skill` 工具（基座机制工具，保留名、恒可用）。
 
-依据 docs/技术设计/technical-details/通用基座.md 第 3 节「激活（模型侧）」：模型调用
-`skill({ name })` 工具，工具结果消息携带 `<skill_content>`（`SKILL.md` 正文）与
-资源指引，正文由此进入对话。应用侧激活用同一个渲染函数，因此两种形态同形。
-
-放在 `runtime/` 而不是 `skill_runtime/`：这个模块要同时用到「工具注册形状」（`tools`）
-与「skill 注册表」（`skill_runtime`），而 `tools` 反过来要读 `Skill`——把文件放在
-`skill_runtime` 会形成 `tools → skill_runtime → tools` 的部分初始化环。运行编排本来
-就是两者的装配处，放这里没有额外依赖方向。
-
-三条行为约定：
-
-- 未知名字 → `tool_not_registered`：错误码与基座其它路径一致，说明里带上已注册的名字，
-  模型可以据此换一个名字重试（第 9 节：工具失败作为结果回给模型，可恢复）。
-- `autoload: "false"` 的 skill 拒绝模型激活 → `tool_not_available`：这类 skill 只能
-  由应用注入激活（技能设计第 69 行「应急验证『注入即激活』且不被自动匹配」）。目录里
-  不列它只是第一道；模型若从历史或猜测里拿到名字，这里仍然挡住。
-- 正文由 :func:`~campfire.agent.skill_runtime.render_activation` 渲染，与注入路径同一份
-  实现——同形由此保证，而不是靠两处对齐。
+职责：把激活载荷（`SKILL.md` 正文 + 资源指引）作为工具结果送回模型，正文由此进入对话。
+边界：只查注册表与渲染，不读会话、不落库；两种拒绝路径见 :func:`build_skill_tool`。
+参考：docs/技术设计/technical-details/通用基座.md 第 3 节「激活（模型侧）」。
 """
+
+# 放在 `runtime/` 而不是 `skill_runtime/`：这个模块要同时用到「工具注册形状」（`tools`）
+# 与「skill 注册表」（`skill_runtime`），而 `tools` 反过来要读 `Skill`——把文件放在
+# `skill_runtime` 会形成 `tools → skill_runtime → tools` 的部分初始化环。运行编排本来
+# 就是两者的装配处，放这里没有额外依赖方向。
 
 from __future__ import annotations
 
@@ -81,6 +71,18 @@ def build_skill_tool(registry: SkillRegistry) -> ToolSpec[ActivateSkillArgs]:
     可用性判定要它）。只并名字会让它的工具一件都放行不了；只并工具则无法回答「激活了
     哪些 skill」。不需要构造期回调：`ToolContext` 本来就会交给 handler，运行中的激活
     状态由此可达，且每次运行一份（state 在 runner 里按运行创建）。
+
+    三条行为约定（依据第 3 节「激活（模型侧）」，模型调用 `skill({ name })`，工具结果
+    消息携带 `<skill_content>`（`SKILL.md` 正文）与资源指引；应用侧激活用同一个渲染
+    函数，因此两种形态同形）：
+
+    - 未知名字 → `tool_not_registered`：错误码与基座其它路径一致，说明里带上已注册的
+      名字，模型可以据此换一个名字重试（第 9 节：工具失败作为结果回给模型，可恢复）。
+    - `autoload: "false"` 的 skill 拒绝模型激活 → `tool_not_available`：这类 skill 只能
+      由应用注入激活（技能设计第 69 行「应急验证『注入即激活』且不被自动匹配」）。目录里
+      不列它只是第一道；模型若从历史或猜测里拿到名字，这里仍然挡住。
+    - 正文由 :func:`~campfire.agent.skill_runtime.render_activation` 渲染，与注入路径同一份
+      实现——同形由此保证，而不是靠两处对齐。
     """
 
     async def handler(context: ToolContext, args: ActivateSkillArgs) -> ToolOutcome:

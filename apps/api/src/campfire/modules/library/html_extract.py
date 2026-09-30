@@ -1,30 +1,8 @@
 """HTML → Markdown 加工：把网页原件整理成可摄取的语料件（RAG 策略第 1.1 节）。
 
-为什么需要这一层：设计规定"系统不解析 PDF"、「HTML 同样在链外清理」——
-语料必须已处理好的 Markdown 或 HTML 才进系统，而"分块依赖标题层级"
-（`MarkdownNodeParser` 靠 `#` 写 `header_path`）。原始网页是导航、页脚、脚本
-与正文混杂的树，直接入库会让噪声进入检索、并让正文失去层级。
-
-归属：数据加工属检索链的一部分，因此归 `modules/library`（与摄取链同模块，
-依据见 decisions/检索链归入library模块.md）。CLI 只负责命令行形态。
-
-为什么自己写序列化而不找现成转换库（2026-09-29 定）：
-
-- 需要完全控制标题层级（`h1–h6` → `#–######`）——它是分块链的硬依赖，
-  转换库的层级约定不一定等于 Markdown 的 ATX 标题；
-- 需要表格转 Markdown 表格且与 `chunking.py` 的表格行识别（`|...|`）
-  保持一致；
-- 需要对丢弃的内容留痕（图片、未选中的容器）——通用转换库静默丢内容，
-  而"不静默丢弃"是本项目的铁律；
-- 需要从出版方元数据生成 frontmatter（`citation_*`/`DC.*`），把出处、
-  DOI、许可随语料一起带走（`EVID-B` 的判据）。
-
-BeautifulSoup 只承担"解析成树"这一纯通用件，遍历与序列化由本模块持有。
-
-许可与内容身份：本模块只做机械转换，不判断许可、不判断内容是否为所需。
-从 `citation_*` meta 抽出的 DOI/标题写入 frontmatter 供人工核对——采集清单里
-有过"凭猜测的 PMC 编号抓回完全无关文献且 HTTP 200"的实例，身份校验不能只看
-"文件在不在"。
+职责：把网页原件转成带 frontmatter 的 Markdown 语料件（正文、出处、丢弃记账）。
+边界：只做机械转换，不判断许可、不判断内容是否为所需；不读文件、不写文件、不连库、不调模型（文件入口除外）。
+参考：docs/技术设计/technical-details/RAG策略.md 第 1.1 节；docs/技术设计/decisions/检索链归入library模块.md；细节见 `convert_html`、`_render_block`、`_extract_metadata` 的 docstring。
 """
 
 from __future__ import annotations
@@ -243,7 +221,19 @@ def _render_list(list_tag: Tag, report: HtmlConversion, depth: int = 0) -> str:
 
 
 def _render_block(tag: Tag, report: HtmlConversion, out: list[str]) -> None:
-    """按块级元素递归渲染。"""
+    """按块级元素递归渲染。
+
+    为什么自己写序列化而不找现成转换库（2026-09-29 定）：
+
+    - 需要完全控制标题层级（`h1–h6` → `#–######`）——它是分块链的硬依赖，
+      转换库的层级约定不一定等于 Markdown 的 ATX 标题；
+    - 需要表格转 Markdown 表格且与 `chunking.py` 的表格行识别（`|...|`）
+      保持一致；
+    - 需要对丢弃的内容留痕（图片、未选中的容器）——通用转换库静默丢内容，
+      而"不静默丢弃"是本项目的铁律；
+    - 需要从出版方元数据生成 frontmatter（`citation_*`/`DC.*`），把出处、
+      DOI、许可随语料一起带走（`EVID-B` 的判据）。
+    """
     if _is_noise(tag):
         report.noise_dropped += 1
         return
@@ -354,6 +344,11 @@ def _extract_metadata(soup: BeautifulSoup) -> dict[str, str]:
     用出版方自己的元数据而非人工转写：出处、DOI、日期由发布方标注，
     转写会引入错误。同时它是内容身份校验的材料——采集过程出现过
     "编号猜错、抓回完全无关文献且 HTTP 200"的实例。
+
+    许可与内容身份：本模块只做机械转换，不判断许可、不判断内容是否为所需。
+    从 `citation_*` meta 抽出的 DOI/标题写入 frontmatter 供人工核对——采集清单里
+    有过"凭猜测的 PMC 编号抓回完全无关文献且 HTTP 200"的实例，身份校验不能只看
+    "文件在不在"。
     """
 
     def meta(*names: str) -> str:
@@ -396,7 +391,8 @@ def _extract_metadata(soup: BeautifulSoup) -> dict[str, str]:
     if url:
         metadata["source_url"] = url
 
-    # 许可：站点常用 DC.Rights / citation_* 标注，原样带出供人工判定。
+    # 许可：站点常用 DC.Rights / citation_* 标注，
+    # 原样带出供人工判定。
     rights = meta("DC.Rights", "DC.Rights.Copyright", "citation_license")
     if rights:
         metadata["license_statement"] = rights
@@ -406,6 +402,13 @@ def _extract_metadata(soup: BeautifulSoup) -> dict[str, str]:
 
 def convert_html(html: str) -> HtmlConversion:
     """把 HTML 转成 Markdown 正文与元数据。
+
+    为什么需要这一层：设计规定"系统不解析 PDF"、「HTML 同样在链外清理」——
+    语料必须已处理好的 Markdown 或 HTML 才进系统，而"分块依赖标题层级"
+    （`MarkdownNodeParser` 靠 `#` 写 `header_path`）。原始网页是导航、页脚、脚本
+    与正文混杂的树，直接入库会让噪声进入检索、并让正文失去层级。
+
+    BeautifulSoup 只承担"解析成树"这一纯通用件，遍历与序列化由本模块持有。
 
     纯度：不读文件、不写文件、不连库、不调模型——便于测试与复用，
     也保证"转换"这一步零成本、可先审后喂。
@@ -516,6 +519,9 @@ def convert_html_file(
     license_note: str | None = None,
 ) -> tuple[str, HtmlConversion]:
     """读一个 HTML 文件并转成语料件文本。
+
+    归属：数据加工属检索链的一部分，因此归 `modules/library`（与摄取链同模块，
+    依据见 decisions/检索链归入library模块.md）。CLI 只负责命令行形态。
 
     Raises:
         OSError: 读取失败。
