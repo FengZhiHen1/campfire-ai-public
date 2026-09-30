@@ -137,7 +137,8 @@ async def test_literal_path_matches_chinese_keywords(tmp_path: Path, monkeypatch
         store = build_vector_store(settings, engine=sync_engine, async_engine=async_engine)
 
         async with session_scope(settings) as session:
-            results = await search(session, store, "孤独症", embed_query=_fake_embed_query)
+            outcome = await search(session, store, "孤独症", embed_query=_fake_embed_query)
+        results = outcome.items
 
         assert results, "应能检索到已入库的条目"
         titles = [r.title for r in results]
@@ -170,7 +171,8 @@ async def test_short_query_skips_literal_path_but_still_searches(
         store = build_vector_store(settings, engine=sync_engine, async_engine=async_engine)
 
         async with session_scope(settings) as session:
-            results = await search(session, store, "干预", embed_query=_fake_embed_query)
+            outcome = await search(session, store, "干预", embed_query=_fake_embed_query)
+        results = outcome.items
 
         assert results, "短查询应仍走向量路，而不是返回空"
 
@@ -198,7 +200,8 @@ async def test_both_paths_merge_when_text_matches(tmp_path: Path, monkeypatch: p
 
         # 「孤独症」既是关键词（字面路命中），也语义相关（向量路命中）。
         async with session_scope(settings) as session:
-            results = await search(session, store, "孤独症", embed_query=_fake_embed_query)
+            outcome = await search(session, store, "孤独症", embed_query=_fake_embed_query)
+        results = outcome.items
 
         assert results, "应有结果"
         hits = {r.ranking.get("hit_paths") for r in results}
@@ -233,7 +236,8 @@ async def test_locator_points_to_a_section_not_just_the_document(
         store = build_vector_store(settings, engine=sync_engine, async_engine=async_engine)
 
         async with session_scope(settings) as session:
-            results = await search(session, store, "孤独症", embed_query=_fake_embed_query)
+            outcome = await search(session, store, "孤独症", embed_query=_fake_embed_query)
+        results = outcome.items
 
         locators = [r.locator for r in results if r.locator]
         assert locators, "结果应带 locator"
@@ -257,7 +261,7 @@ async def test_withdrawn_item_is_immediately_unsearchable(tmp_path: Path, monkey
         store = build_vector_store(settings, engine=sync_engine, async_engine=async_engine)
 
         async with session_scope(settings) as session:
-            before = await search(session, store, "孤独症", embed_query=_fake_embed_query)
+            before = (await search(session, store, "孤独症", embed_query=_fake_embed_query)).items
         assert any(r.title == "视觉支持策略" for r in before)
 
         # 撤下：同一事务内改条目状态与删节点（RAG 策略第 2 节）。
@@ -269,7 +273,7 @@ async def test_withdrawn_item_is_immediately_unsearchable(tmp_path: Path, monkey
             await session.execute(RetrievedNode.__table__.delete().where(RetrievedNode.node_id.like(f"{item.id}:%")))
 
         async with session_scope(settings) as session:
-            after = await search(session, store, "孤独症", embed_query=_fake_embed_query)
+            after = (await search(session, store, "孤独症", embed_query=_fake_embed_query)).items
 
         assert not any(r.title == "视觉支持策略" for r in after), "撤下后不应再检索到该条目"
 
@@ -302,3 +306,105 @@ async def test_both_paths_failing_raises_instead_of_returning_empty() -> None:
             "孤独症",
             embed_query=_boom_embed,
         )
+
+
+# ---------------------------------------------------------------------------
+# scope 过滤（search_knowledge 的第三个参数）
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_scope_filters_both_paths(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """`scope` 在**两条路**上都生效，不是只过滤一边。
+
+    夹具里两份资料的 `applicable_scope` 分别是「学龄前儿童」与「学龄期儿童」。
+    给 `scope="学龄前"` 时应只得前者。
+
+    **为什么必须两条路都测**：只给向量路加过滤、字面路不过滤，会把另一范围的条目
+    从字面路漏进来——这条用例单看向量路结果会通过，看汇总标题才会失败。
+    """
+    paths = await _seed(tmp_path, monkeypatch)
+    settings = get_settings()
+    try:
+        sync_engine = create_sync_engine(settings)
+        async_engine = create_engine(settings)
+        store = build_vector_store(settings, engine=sync_engine, async_engine=async_engine)
+
+        async with session_scope(settings) as session:
+            outcome = await search(session, store, "儿童", embed_query=_fake_embed_query, scope="学龄前")
+
+        titles = {r.title for r in outcome.items}
+        assert "视觉支持策略" in titles, f"本范围内的条目应返回（实际 {titles}）"
+        assert "行为应对指南" not in titles, "范围外的条目不得返回"
+
+        await async_engine.dispose()
+        sync_engine.dispose()
+    finally:
+        await _cleanup(paths)
+
+
+@pytest.mark.asyncio
+async def test_scope_matching_nothing_returns_empty_not_an_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """没有任何条目匹配 `scope` 时返回**空结果**，而不是报错或退回「不过滤」。
+
+    这一格容易写错：空允许集若被送进向量路的 `IN` 过滤，会生成
+    ``metadata_->>'item_id' IN ()`` —— **SQL 语法错误**（实测）。实现因此提前返回。
+
+    判别性：去掉 `search()` 里 `if not scope_ids: return ...` 的提前返回，
+    本用例会因 `IN ()` 报错而失败。
+    """
+    paths = await _seed(tmp_path, monkeypatch)
+    settings = get_settings()
+    try:
+        sync_engine = create_sync_engine(settings)
+        async_engine = create_engine(settings)
+        store = build_vector_store(settings, engine=sync_engine, async_engine=async_engine)
+
+        async with session_scope(settings) as session:
+            outcome = await search(session, store, "孤独症", embed_query=_fake_embed_query, scope="不存在的范围")
+
+        assert outcome.items == []
+        # 这是**正常空结果**，不是降级——两路都正常，只是没有匹配。
+        assert outcome.degraded_paths == ()
+
+        await async_engine.dispose()
+        sync_engine.dispose()
+    finally:
+        await _cleanup(paths)
+
+
+@pytest.mark.asyncio
+async def test_scope_value_cannot_inject_sql(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """`scope` 里的引号与 `OR` **不得**改变查询语义（注入防护）。
+
+    实测背景：框架的 `MetadataFilter` 用 f-string 拼 SQL（无绑定参数），把值包成
+    ``'%{value}%'``。payload 用 ``x' OR 1=1 --``：``--`` 把框架补在尾部的 ``%%'``
+    注释掉，剩下的 ``OR 1=1`` 恒真，且 `OR` 的优先级会**逃逸整个 AND 链**、
+    连带绕过库别/撤下/状态三个过滤（实测生成
+    ``... ILIKE '%%x' OR 1=1 --%%'``）。
+
+    ⚠️ **payload 的选择是有讲究的**：我第一版用 ``x' OR '1'='1``，它渲染成
+    ``'1'='1%'``（尾部多了 ``%``）——**恒假**，注入根本不会生效。那条用例因此
+    「实现与天真实现都通过」，消融时暴露为**假阴性**。`OR 1=1 --` 才真正逃逸。
+
+    断言注入串被当成**普通子串**：没有条目含这段文本，因此结果必须为空；
+    若注入生效，`OR 1=1` 会让所有条目都返回。
+    """
+    paths = await _seed(tmp_path, monkeypatch)
+    settings = get_settings()
+    try:
+        sync_engine = create_sync_engine(settings)
+        async_engine = create_engine(settings)
+        store = build_vector_store(settings, engine=sync_engine, async_engine=async_engine)
+
+        async with session_scope(settings) as session:
+            outcome = await search(session, store, "孤独症", embed_query=_fake_embed_query, scope="x' OR 1=1 --")
+
+        assert outcome.items == [], f"注入串必须被当作普通子串（实际返回 {[r.title for r in outcome.items]}）"
+
+        await async_engine.dispose()
+        sync_engine.dispose()
+    finally:
+        await _cleanup(paths)

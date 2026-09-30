@@ -19,6 +19,7 @@ from campfire.modules.library.models import KnowledgeItem
 from campfire.modules.library.retrieval import (
     MIN_CHARS_FOR_TRIGRAM,
     MIN_CJK_FOR_TRIGRAM,
+    SearchOutcome,
     _reciprocal_rank_fuse,
     aggregate_to_items,
     literal_path_is_usable,
@@ -195,3 +196,48 @@ def test_aggregation_respects_top_k() -> None:
     results = aggregate_to_items(nodes, items, top_k=3)
 
     assert len(results) == 3
+
+
+# ---------------------------------------------------------------------------
+# 降级事实（失败语义第 5 节：单路失败必须「在结果中标注」）
+# ---------------------------------------------------------------------------
+
+
+def test_search_outcome_reports_degradation() -> None:
+    """`SearchOutcome` 把「哪一路不可用」与结果一起带走。
+
+    契约第 5 节要求单路失败时标注。**只返回裸列表时这条信息无处安放**：两路都失败
+    已抛错，但「只有一路失败且没命中」与「确实没找到」在空列表上无法区分，而契约
+    明令模型不得据此声称「没有相关资料」。
+    """
+    outcome = SearchOutcome(items=[], degraded_paths=("vector",))
+    assert outcome.is_degraded is True
+    assert outcome.degraded_paths == ("vector",)
+
+
+def test_search_outcome_is_not_degraded_when_both_paths_work() -> None:
+    """两路都正常时不算降级——不得把正常空结果也标成降级（那会让模型不敢说「未找到」）。"""
+    outcome = SearchOutcome(items=[], degraded_paths=())
+    assert outcome.is_degraded is False
+
+
+def test_scope_condition_is_bound_parameter_not_interpolated() -> None:
+    """`scope` 走绑定参数，**绝不进 SQL 文本**——这是防注入的判据。
+
+    实测背景：框架的 `MetadataFilter` 用 f-string 拼 SQL（``f"'%{value}%'"``，无绑定
+    参数），把 ``x' OR '1'='1`` 当 scope 会生成
+    ``... ILIKE '%%x' OR '1'='1%%'``，且 `OR` 优先级逃逸整个 AND 链、连带绕过库别/
+    撤下/状态三个过滤。`search()` 因此不给 `MetadataFilter` 传 scope，而是先用绑定
+    参数算出允许的 item_id。
+
+    判别性：把 `literal_search` 的 `:scope` 改回字符串拼接，本用例失败。
+    """
+    import inspect
+
+    from campfire.modules.library import retrieval
+
+    source = inspect.getsource(retrieval.literal_search)
+    assert ":scope" in source, "scope 必须以绑定参数形式出现在 SQL 里"
+    assert 'params["scope"]' in source, "scope 的值必须进 params 而不是 SQL 文本"
+    # scope 的值必须**不**出现在 SQL 模板的 f-string 部分。
+    assert "ILIKE :scope" in source
