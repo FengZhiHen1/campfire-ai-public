@@ -58,10 +58,32 @@
   gap: var(--space-5);
 }
 
-/* 显示密码按钮：与输入框同宽对齐，右对齐避免挤压输入框。 */
+/* 登录/注册切换：同屏已有主 CTA，链接降级为 --fg 色 + accent 下划线
+ * （页面设计「组件选用」节的 craft color 纪律：链接计数入 accent 配额，
+ * 因此不整条染成 accent，只给下划线）。44px 热区守移动端底线。 */
+.switchLink {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  min-width: 44px;
+  padding: var(--space-2) 0;
+  border: 0;
+  background: none;
+  color: var(--fg);
+  font-size: var(--text-sm);
+  text-decoration: underline;
+  text-decoration-color: var(--accent);
+  text-underline-offset: var(--space-1);
+}
+
+/* 显示密码按钮：设计给定「.btn-quiet 小号、min-height 44px，不做眼睛 emoji」。
+ * 用小号文字按钮形态而不是 .btn.btn-quiet：后者是 48px 的带底按钮，与密码框并列时
+ * 会变成第二颗按钮、抢主 CTA 的重量；文字按钮保留 quiet 语义与 44px 热区。 */
 .passwordToggle {
   justify-self: end;
   margin-top: calc(-1 * var(--space-1));
+  color: var(--fg-2);
+  font-size: var(--text-sm);
 }
 
 .switchRow {

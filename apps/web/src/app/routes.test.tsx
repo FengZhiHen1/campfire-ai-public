@@ -40,15 +40,15 @@ describe('路由守卫', () => {
     setSession('anonymous');
     renderAt('/');
 
-    expect(screen.getByRole('heading', { name: '登录篝火智答' })).toBeDefined();
-    expect(screen.queryByText('首页：应急入口与日常咨询的起点。')).toBeNull();
+    expect(screen.getByRole('heading', { name: '篝火智答', level: 1 })).toBeDefined();
+    expect(screen.queryByRole('heading', { name: '现在需要帮助' })).toBeNull();
   });
 
   it('P0 未登录访问 /profile 同样转到登录页', () => {
     setSession('anonymous');
     renderAt('/profile');
 
-    expect(screen.getByRole('heading', { name: '登录篝火智答' })).toBeDefined();
+    expect(screen.getByRole('heading', { name: '篝火智答', level: 1 })).toBeDefined();
   });
 
   it('P1 已登录访问 /profile 渲染档案占位页', () => {
@@ -59,12 +59,48 @@ describe('路由守卫', () => {
     expect(screen.getByText('支持对象档案：当前认识、待确认候选与补充。')).toBeDefined();
   });
 
+  it('P1 已登录访问 / 渲染首页的真实内容而不是占位', () => {
+    setSession('authenticated');
+    renderAt('/');
+
+    expect(screen.getByRole('heading', { name: '现在需要帮助' })).toBeDefined();
+    expect(screen.queryByText('本页尚在建设中。')).toBeNull();
+  });
+
+  it('P1 已登录访问 /settings 渲染设置页真实内容，且无建设中占位', () => {
+    setSession('authenticated');
+    renderAt('/settings');
+
+    expect(screen.getByRole('heading', { name: '我的', level: 1 })).toBeDefined();
+    expect(screen.getByText('个人账号 · 邀请码注册')).toBeDefined();
+    expect(screen.queryByText('本页尚在建设中。')).toBeNull();
+  });
+
+  it('P1 已登录访问 /guide 渲染使用说明页真实内容，且无 tab 栏（次级页）', () => {
+    setSession('authenticated');
+    renderAt('/guide');
+
+    expect(screen.getByText('应急咨询')).toBeDefined();
+    // 次级页面不渲染 tab 栏（首页页设计的契约修订节：全局唯一，次级页不渲染）。
+    expect(screen.queryByRole('navigation', { name: '一级导航' })).toBeNull();
+  });
+
+  it('P1 一级页面渲染 tab 栏且当前项标为当前页', () => {
+    setSession('authenticated');
+    renderAt('/');
+
+    const nav = screen.getByRole('navigation', { name: '一级导航' });
+    expect(nav).toBeDefined();
+    expect(screen.getByRole('link', { name: '首页' }).getAttribute('aria-current')).toBe('page');
+    expect(screen.getByRole('link', { name: '我的' }).getAttribute('aria-current')).toBeNull();
+  });
+
   it('P1 unknown 态不跳登录页，显示等待态', () => {
     setSession('unknown');
     renderAt('/profile');
 
     expect(screen.getByText('正在确认登录状态…')).toBeDefined();
-    expect(screen.queryByRole('heading', { name: '登录篝火智答' })).toBeNull();
+    expect(screen.queryByRole('heading', { name: '篝火智答', level: 1 })).toBeNull();
   });
 
   it('P2 未匹配路径渲染「页面不存在」而不是空白', () => {
@@ -96,6 +132,6 @@ describe('路由守卫', () => {
     setSession('anonymous');
     renderAt('/login');
 
-    expect(screen.getByRole('heading', { name: '登录篝火智答' })).toBeDefined();
+    expect(screen.getByRole('heading', { name: '篝火智答', level: 1 })).toBeDefined();
   });
 });
