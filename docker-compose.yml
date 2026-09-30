@@ -9,6 +9,18 @@
 #
 # 部署目标（api、web、worker、nginx 入编排）见 docs/技术栈设计.md 第 6 节；
 # 那是另一份产物，本文件只覆盖本地开发。
+#
+# ⚠️ 端口一律绑回环（`127.0.0.1:`），**不得省略**：
+# 这些服务大多没有强凭据（FalkorDB 与 Redis 默认无密码、MinIO 默认 minioadmin），
+# 而本文件是仓库里唯一的编排。绑 0.0.0.0 时，同一网段的任何主机都能直连
+# ——SuperTokens core 官方文档明确警告：core 暴露到互联网则「任何人都能创建或
+# 修改 dashboard 用户」；PostgreSQL 的 5432 更是全部业务数据与会话表。
+# 绑回环对本地开发**零影响**：api/worker 跑在宿主机、经 localhost 连（见
+# core/config.py 的默认值），容器之间走 compose 服务名而非宿主端口。
+# 若确实需要从局域网访问某个服务，请只针对该服务显式放开，并先补上凭据。
+#
+# ⚠️ 这份编排**不是部署产物**：真部署编排须满足 docs/技术栈设计.md 第 6 节
+# 的约束（数据服务不对外暴露、仅经容器内网互联、所有模板占位符必须替换）。
 # ============================================================
 
 services:
@@ -22,7 +34,7 @@ services:
     environment:
       POSTGRES_USER: campfire
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     volumes:
       - pgdata_dev:/var/lib/postgresql/data
     healthcheck:
@@ -44,7 +56,7 @@ services:
     restart: unless-stopped
     env_file: .env
     ports:
-      - "6379:6379"
+      - "127.0.0.1:6379:6379"
     volumes:
       - redis_data_dev:/data
     healthcheck:
@@ -70,7 +82,7 @@ services:
     restart: unless-stopped
     env_file: .env
     ports:
-      - "6380:6379"
+      - "127.0.0.1:6380:6379"
     volumes:
       - falkordb_data_dev:/data
     healthcheck:
@@ -101,7 +113,7 @@ services:
       POSTGRESQL_CONNECTION_URI: postgresql://${POSTGRES_USER:-campfire}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-campfire}
       API_KEYS: ${SUPERTOKENS_API_KEY}
     ports:
-      - "3567:3567"
+      - "127.0.0.1:3567:3567"
     depends_on:
       postgres:
         condition: service_healthy
@@ -112,6 +124,9 @@ services:
         max-file: "3"
 
   # --- MinIO 对象存储（一期不依赖）---
+  # 一期需求无附件，因此本服务**当前无消费者**：它只有风险、没有收益
+  # （9001 是管理 console，默认凭据 minioadmin/minioadmin）。
+  # 保留在编排里是为了开放附件时可直接启用；**部署编排不应包含它**。
   minio:
     image: minio/minio
     container_name: campfire-minio
@@ -124,8 +139,8 @@ services:
       MINIO_ROOT_USER: ${MINIO_ACCESS_KEY:-minioadmin}
       MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY:-minioadmin}
     ports:
-      - "9000:9000"
-      - "9001:9001"
+      - "127.0.0.1:9000:9000"
+      - "127.0.0.1:9001:9001"
     volumes:
       - minio_data_dev:/data
     healthcheck:
