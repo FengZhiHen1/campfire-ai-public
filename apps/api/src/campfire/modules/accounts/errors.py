@@ -111,14 +111,72 @@ class OnboardingTriggerError(AccountsError):
     """
 
 
+class SessionError(AccountsError):
+    """会话归属相关失败的基类（登记、越权判定、列表与水合）。"""
+
+
+class SessionNotFoundError(SessionError):
+    """会话不可访问：不存在，或存在但不属于当前账号。
+
+    两种情形合并为一个类型、一条文案，且只有一条文案（与
+    `core/authz` 的 `OBJECT_NOT_ACCESSIBLE_MESSAGE` 同一条纪律）：
+    区分「这个会话不存在」与「这个会话存在但不是你的」，等于给出一条会话枚举
+    通道——攻击者据此可以确认某个 `session_id` 是否真实存在。因此本类型不携带
+    任何能分辨二者的字段，文案是类常量而不是常量池里的可选项（只有一个字面量，
+    就不存在两处文案漂移的可能）。
+
+    调用方（面层）把它翻译成 404，而不是 403：越权与不存在必须给出同一个响应
+    （HTTP 契约第 3.3 节：水合失败不得暴露会话是否存在）。
+    """
+
+    #: 对外文案。不存在与属主不符共用它——见上方说明。
+    MESSAGE = "会话不存在或不属于当前账号"
+
+    def __init__(self) -> None:
+        """不携带会话标识：异常会经日志扩散，而 `session_id` 是越权探测的目标。"""
+        super().__init__(self.MESSAGE)
+
+
+class SessionRegistrationError(SessionError):
+    """登记会话时前提不成立。
+
+    目前只有一种情形：该 `session_id` 已登记在另一个账号名下。属主是不可变的
+    ——允许改属主等于允许把别人的会话据为己有（整个归属表的意义就此消失）。
+    因此重复登记同属主是幂等的无操作，换属主是显式错误，不是「更新成功」。
+    """
+
+    def __init__(self) -> None:
+        """不携带会话标识与账号标识：两者都是可枚举的敏感值（同 :class:`SessionNotFoundError`）。"""
+        super().__init__("该会话已登记在另一个账号名下，属主不可变更")
+
+
+class SessionQueryError(SessionError):
+    """查询参数不合法（游标无法解析、分页上限越界）。
+
+    这是 `CORE-04`（数据边界运行时解析）的拒绝分支：不合法输入必须在边界处变成
+    显式状态，而不是被当成「没有下一页」或「从头开始」静默兜底——那两种兜底都会
+    让调用方拿到貌似正常的结果（`CORE-07`：无静默兜底）。
+    """
+
+    def __init__(self, reason: str) -> None:
+        """记录不合法的原因（不回显原始游标文本——它可能被伪造且无诊断价值）。"""
+        self.reason = reason
+        super().__init__(f"会话查询参数不合法：{reason}")
+
+
 __all__ = [
     # 基类
     "AccountsError",
     "InviteCodeError",
+    "SessionError",
     # 形状
     "InviteCodeFormatError",
     # 对外拒绝
     "InviteCodeRejectedError",
+    "SessionNotFoundError",
+    "SessionRegistrationError",
+    # 查询参数
+    "SessionQueryError",
     # 内部状态与查找
     "InviteCodeNotFoundError",
     "InviteCodeStateError",

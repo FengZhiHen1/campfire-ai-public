@@ -25,6 +25,7 @@ from campfire.modules.accounts.repository import (
     list_invite_codes,
     revoke_invite_code,
 )
+from campfire.modules.accounts.sessions import SessionAccountPurger
 from campfire.modules.memory.purge import MemoryAccountPurger
 from campfire.modules.profile.authz import OwnerAuthorizer
 from campfire.modules.profile.purge import ProfileAccountPurger
@@ -172,14 +173,24 @@ def _purgers(settings: Settings) -> list[AccountDataPurger]:
     """本次注销要执行的领域清除者。
 
     新领域需要清除时加在这里，不改编排（见 `core/auth/deletion` 的说明）。
-    目前两个领域：记忆（图库 + 删除账本）与档案（条目 + 会话绑定 + 支持对象）。
+    目前三个领域：记忆（图库 + 删除账本）、档案（条目 + 会话绑定 + 支持对象）、
+    会话归属（`campfire_session` 的归属行）。
 
     `profile` 的清除者补上后，`AC-24` 的「其档案……不再存在」才真正成立
     ——此前注销只清身份、会话、待处理记录、图库与账本，会遗留档案条目
     （登记于 docs/TODO.md）。顺序不在此处编排：`delete_account` 逐个调用它们，
     领域之间无依赖（档案清除在内部自己保证「先删条目再删对象」）。
+
+    会话归属清除者（2026-09-30，T06）对应认证与账号第 8 节第 4 步。它必须早于
+    第 6 步（删身份用户）——身份用户一旦删除，就再也无法按 `account_id` 定位这些行。
+    编排层的顺序在 `core/auth/deletion`，而那里第 3 步（领域清除）先于第 4 步（删身份
+    用户），因此本条要求已由顺序满足；此处只负责把清除者交出去。
     """
-    return [MemoryAccountPurger(settings), ProfileAccountPurger(settings)]
+    return [
+        MemoryAccountPurger(settings),
+        ProfileAccountPurger(settings),
+        SessionAccountPurger(settings),
+    ]
 
 
 async def _run_account_reset(args: argparse.Namespace) -> int:
