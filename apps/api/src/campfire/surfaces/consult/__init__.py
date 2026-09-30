@@ -4,7 +4,19 @@
 边界：`surfaces/*` 允许依赖 `agent/*`、`tools/*`、`modules/*`、`core/*`；
 禁止直接访问数据库表、禁止实现方法论（docs/项目结构设计.md 第 7 节）。
 参考：docs/技术设计/面/consult/README.md；技能设计第 4 节。
+
+已实现（2026-10-02，T07a）：日常会话侧的五条路径——创建会话、会话列表、
+历史水合、发消息受理、运行事件流订阅。它们逐条对应
+docs/技术设计/面/consult/HTTP与SSE契约.md 第 3、4.1、4.2 节。
+尚未实现：应急入口（第 5 节）、取消（第 4.3 节）与引导跳过入口（第 6 节）
+——三段归后续任务；产物形状（第 7 节）中的 `citation` / `question` /
+`action_card` 三种 part 没有持久化表示，水合不产出它们（见
+`modules/accounts/session_items.py` 的边界说明）。
 """
+
+from campfire.surfaces.consult.routes import router
+
+__all__ = ["router"]
 
 # 归属（见 docs/技术设计/面/consult/README.md）：本面包含两个常驻入口与
 # 一个一次性触发，它们共用同一套基座与工具池，差别只在第一条消息怎么构造：
@@ -23,5 +35,5 @@
 # `agent/*`、`tools/*`、`modules/*`、`core/*`；禁止直接访问数据库表、
 # 禁止实现方法论。
 #
-# 尚未实现：本包当前无代码。四个 skill 的方法论与其 9 个工具的契约仍在
-# `docs/技术设计/面/consult/` 下待确认，落地前不在此处发明端点。
+# 原文末段「尚未实现：本包当前无代码」已随 T07a 的实现作废，如实替换为上方的
+# 「已实现 / 尚未实现」两段——技能内容与工具契约本身早已落地，缺的是端点。
