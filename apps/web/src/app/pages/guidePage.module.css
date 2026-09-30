@@ -1,5 +1,25 @@
 /* 使用说明页就近样式（CSS Modules）：只消费 token 变量，零 accent。 */
 
+/* 小节标题行：图标 + 标题，图标是「不靠颜色」的第一重层次（页面设计第 52 行的双通道）。 */
+.sectionHead {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+/* 图标着色为 --fg-2（页面设计「组件选用」节指定），因此本页即使零 accent，
+ * 四小节仍有图标 + 标题两重标识；svg 用 currentColor，颜色由这里给。 */
+.sectionIcon {
+  display: inline-flex;
+  flex: none;
+  color: var(--fg-2);
+}
+
+.sectionIcon svg {
+  width: var(--space-6);
+  height: var(--space-6);
+}
+
 .sectionTitle {
   margin: 0;
   font-family: var(--font-display);
@@ -19,6 +39,26 @@
   margin: var(--space-3) 0 0;
   color: var(--muted);
   font-size: var(--text-sm);
+}
+
+/* 数据与隐私小节的链接行：让内联链接成为 44px 热区的可点行。
+ *
+ * 为什么在实现侧就地补：契约对正文里的裸 `a` 只给了颜色与下划线，没有 min-height
+ * （desktop 上内联链接保持行内高度是常见做法），因此实测该链接高 21px——低于移动端
+ * 44px 底线。给整个 <p> 一个 flex 行并让链接撑满行高，既保住「内联链接」的视觉形态
+ * （文字大小、下划线、随文排版不变），又拿到真实热区；不改契约是因为收紧裸 a 会同时
+ * 影响正文中所有内联链接的排版（本页只是一期里唯一的内联链接落点）。
+ * 语义上仍是一个语义化 <a>，没有把它改成按钮或卡片。 */
+.privacyRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.privacyRow a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
 }
 
 .tailNote {

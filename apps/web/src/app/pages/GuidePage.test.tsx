@@ -39,6 +39,19 @@ describe('使用说明 · 页头', () => {
 
     expect(screen.getByRole('link', { name: '← 返回' }).getAttribute('href')).toBe('/settings');
   });
+
+  it('P0 标题走次级页头结构 .subpage-head + .sp-title（返回控件与吸顶头由契约提供）', () => {
+    const { container } = renderGuide();
+
+    // 设计原文此处写 .page-head，但该页声明自己是次级页、契约把返回控件定义在
+    // .subpage-head 上，其余四个次级页设计也均写 .subpage-head（编排器裁决为原文笔误）。
+    // 这条断言把这个裁决钉住：谁改回 .page-head，这里就会红——返回控件的定位会一起坏掉。
+    const head = container.querySelector('header.subpage-head');
+    expect(head).not.toBeNull();
+    expect(head?.querySelector('.sp-back')).not.toBeNull();
+    expect(head?.querySelector('.sp-title')?.textContent).toBe('使用说明');
+    expect(container.querySelector('.page-head')).toBeNull();
+  });
 });
 
 describe('使用说明 · 四条路', () => {
@@ -93,12 +106,73 @@ describe('使用说明 · 四条路', () => {
   });
 });
 
+describe('使用说明 · 小节图标', () => {
+  /** 四小节的标题（顺序即页面自上而下的顺序）。 */
+  const TITLES = ['应急咨询', '日常咨询', '档案与记忆', '数据与隐私'] as const;
+
+  it('P0 四个小节各有一枚图标（设计把「图标 + 标题」列为该页不靠颜色的层次手段）', () => {
+    const { container } = renderGuide();
+
+    const tiles = [...container.querySelectorAll('.tile')];
+    expect(tiles).toHaveLength(TITLES.length);
+    for (const tile of tiles) {
+      expect(tile.querySelector('svg')).not.toBeNull();
+    }
+  });
+
+  it('P0 四枚图标均带图标容器、1.6px 描边且不参与可访问树', () => {
+    const { container } = renderGuide();
+
+    // CSS Modules 会给类名加哈希（实测形如 `_sectionIcon_2d552b`），因此按子串匹配；
+    // 直接写 `.sectionIcon` 在 jsdom 里恒不命中（本包踩过：断言会假红）。
+    const icons = [...container.querySelectorAll('[class*="sectionIcon"] svg')];
+    expect(icons).toHaveLength(TITLES.length);
+    for (const svg of icons) {
+      expect(svg.getAttribute('stroke-width')).toBe('1.6');
+      // 图标是装饰：语义由标题承担，故不进可访问树（避免标题被读两遍）。
+      expect(svg.getAttribute('aria-hidden')).toBe('true');
+      // 契约要求描边用 currentColor 上色（颜色由 .sectionIcon 给 --fg-2）。
+      expect(svg.getAttribute('stroke')).toBe('currentColor');
+      expect(svg.getAttribute('fill')).toBe('none');
+    }
+  });
+
+  it('P0 四枚图标形状互不相同（同形会让「不靠颜色」的区分退化成装饰）', () => {
+    const { container } = renderGuide();
+
+    const paths = [...container.querySelectorAll('[class*="sectionIcon"] svg')].map((svg) =>
+      [...svg.querySelectorAll('path, circle, ellipse, rect')]
+        .map((shape) => shape.getAttribute('d') ?? shape.getAttribute('cx') ?? '')
+        .join('|'),
+    );
+
+    expect(paths).toHaveLength(TITLES.length);
+    // 形状串两两不同；canary 是下面那条「拿同一形状复制四份必然相等」的对照。
+    expect(new Set(paths).size).toBe(TITLES.length);
+
+    const duplicated = [paths[0], paths[0], paths[0], paths[0]];
+    expect(new Set(duplicated).size).toBe(1);
+  });
+});
+
 describe('使用说明 · 响应式与懒性', () => {
   it('P0 小节卡不可点跳转（说明卡不是入口卡；入口在首页与对话页）', () => {
     const { container } = renderGuide();
 
     // 全页只有两个链接：返回与设置页内联链接。
     expect(container.querySelectorAll('a')).toHaveLength(2);
+  });
+
+  it('P0 数据与隐私的链接行是 44px 热区（裸 a 无 min-height，实现侧就地补）', () => {
+    const { container } = renderGuide();
+
+    // 类名带 CSS Modules 哈希，故按子串匹配。
+    const row = container.querySelector('[class*="privacyRow"]');
+    expect(row).not.toBeNull();
+    expect(row?.querySelector('a')).not.toBeNull();
+    // 实际像素高度由 CSS 决定，而 jsdom 不解析 CSS Modules（vitest 默认 css:false），
+    // 因此这里断言的是「承载热区的结构存在」；真实高度由视觉走查量测（见报告返工记录）。
+    expect(container.querySelectorAll('[class*="privacyRow"]')).toHaveLength(1);
   });
 
   it('P0 页面级零动效、零 accent', () => {
