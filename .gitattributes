@@ -7,3 +7,9 @@
 *.sh text eol=lf
 *.yml text eol=lf
 *.yaml text eol=lf
+
+# token 守卫逐字比对真源与副本（tokens.test.ts）：写死 LF，
+# 使任意检出（含本机 core.autocrlf=true）下两份都不出现 CR，
+# 否则守卫会随「本次是否跑过 build」在红绿之间漂移。
+docs/design/tokens.css text eol=lf
+apps/web/src/shared/styles/tokens.css text eol=lf
