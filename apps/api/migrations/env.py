@@ -7,12 +7,16 @@
 - **元数据唯一来源是 ``core/db.metadata``**；各模块的模型经
   ``campfire.modules.library.models`` 注册进去，迁移与运行期共用同一份。
 - **禁用 ``--autogenerate`` 删除不归本项目管理的表**：SuperTokens core 在自己的库内
-  建表（技术栈设计第 4 节），SDK 也会建 ``agent_sessions``/``agent_messages``。这些表
-  与 Alembic 自己的 ``alembic_version`` 都必须排除在比较之外，否则一次自动生成就会
-  产出删表迁移——这是 AGENTS.md 明文禁止的。
+  建表（技术栈设计第 4 节）。这些表与 Alembic 自己的 ``alembic_version`` 都必须排除在
+  比较之外，否则一次自动生成就会产出删表迁移——这是 AGENTS.md 明文禁止的。
   **实测更正（2026-09-29）**：这些表**没有前缀**，按前缀排除的实现在本库完全失效
   （实测 56 张无前缀表会被判为「该删掉」）。过滤器因此改为白名单，判据与理由见
   ``include_object``。若将来接入第二个外部组件，**不要**给它加前缀名单——白名单已覆盖。
+- **SDK 的两张会话表已纳入管理**（2026-09-30）：``agent_sessions`` / ``agent_messages``
+  的形状由 ``core/db/sdk_session.py`` 声明，与其它业务表走同一条路径——迁移建表、
+  运行期 ``create_tables=False``。它们经白名单判据「在 ``core/db.metadata`` 里才管理」
+  被放行，因此**必须**保持上面那行导入：去掉它，autogenerate 会认为这两张表该删。
+  归属与命名的论证见该模块的文件头。
 """
 
 from logging.config import fileConfig
@@ -27,6 +31,7 @@ from campfire.core import pending_write as pending_write_models  # noqa: F401  �
 from campfire.core.auth import tombstone as auth_tombstone_models  # noqa: F401  —— 仅为注册副作用
 from campfire.core.config import get_settings
 from campfire.core.db import metadata
+from campfire.core.db import sdk_session as sdk_session_models  # noqa: F401  —— 仅为注册副作用
 from campfire.modules.accounts import models as accounts_models  # noqa: F401  —— 仅为注册副作用
 from campfire.modules.library import models  # noqa: F401  —— 仅为注册副作用
 from campfire.modules.memory import models as memory_models  # noqa: F401  —— 仅为注册副作用
@@ -77,8 +82,8 @@ def include_object(_object: object, name: str | None, type_: str, reflected: boo
         True 表示纳入 autogenerate 的比较范围。
     """
     if type_ == "table" and reflected:
-        # 只放行我方元数据里声明过的表；其余（SuperTokens 的 56 张、SDK 自建表、
-        # alembic_version）全部排除在比较之外。
+        # 只放行我方元数据里声明过的表；其余（SuperTokens 的 56 张、alembic_version）全部
+        # 排除在比较之外。SDK 的两张会话表已声明进元数据，因此从「外部表」变为「我方表」。
         return name in target_metadata.tables
     return True
 
