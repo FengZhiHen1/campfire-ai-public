@@ -1,0 +1,71 @@
+/* 首页就近样式（CSS Modules）：只消费 token 变量。
+ * 契约组件类名（.page-head/.panel/.tile/.mini-card/.flame-dot）来自
+ * shared/styles/components.css，本文件只承载本页独有的布局与加载动效。 */
+
+.brandRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  color: var(--accent);
+}
+
+.title {
+  margin: 0;
+  color: var(--fg);
+  font-family: var(--font-display);
+  font-weight: 500;
+  font-size: var(--text-xl);
+  line-height: 1.3;
+  letter-spacing: var(--tracking-display);
+}
+
+.entryHeading {
+  margin: 0;
+  font-size: var(--text-lg);
+}
+
+/* 次级入口行：两张并列卡片。窄屏也保持两列——它们是低权重入口，
+ * 纵向堆叠会让首页在拇指区堆出第三块大卡，与页面设计的层级意图相反。 */
+.secondaryRow {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-3);
+}
+
+.secondaryRow a {
+  display: grid;
+  gap: var(--space-2);
+  min-height: 44px;
+  color: var(--fg-2);
+  text-decoration: none;
+}
+
+.secondaryTitle {
+  margin: 0;
+  font-size: var(--text-base);
+}
+
+.secondaryBody {
+  margin: 0;
+  color: var(--fg-2);
+  font-size: var(--text-sm);
+}
+
+/* 页面加载动效：应急入口卡先出现（240ms 渐入 + 4px 上移）。
+ * 其余区块不做 stagger——这是导航页，不是叙事页（首页页设计动效意图节）。 */
+@media (prefers-reduced-motion: no-preference) {
+  .emergency {
+    animation: home-emergency-in var(--motion-base) var(--ease-standard) both;
+  }
+}
+
+@keyframes home-emergency-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
