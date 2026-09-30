@@ -20,6 +20,8 @@ from typing import Literal
 
 from campfire.agent.context import CitationRecord
 
+from .payloads import ActionCard, Question
+
 ToolErrorCode = Literal[
     "tool_not_registered",
     "tool_not_available",
@@ -73,6 +75,23 @@ class ToolResult:
 
     candidates: tuple[Candidate, ...] = ()
     """本次产出产生的未确认候选。"""
+
+    cards: tuple[ActionCard, ...] = ()
+    """本次产出发出的结构化卡片（基座第 7.3 节的通用信封）。
+
+    为什么走这条通道（与 `question` 走工具即结束运行不对称，判据在基座 7.3 节）：
+    卡片不需要「结束本次运行」这一只有基座能给的编排行为——工具返回后运行自然继续，
+    因此复用既有的工具结果通道即可（与 `citations`、`candidates` 同一种做法），
+    基座把它翻成 `action_card` 事件。这样新增一种卡片是新增一个产品侧工具，基座不动。
+    """
+
+    question: Question | None = None
+    """本次工具调用要向使用者发起的一组提问（基座第 7.2 节）；`None` 表示这次调用不提问。
+
+    只有 `ask_user` 会填它，且填了就意味着**本次运行就此结束**：运行编排在工具边界把它翻成
+    `question` 事件，并让 SDK 停下（不再回到模型）——提问是运行的中止方式（基座 7.2 节），
+    所以这一条通道与 `cards` 那条（运行继续）在语义上不同，不能合并成一个字段。
+    """
 
 
 @dataclass(frozen=True, slots=True)
