@@ -48,6 +48,8 @@ from campfire.modules.memory.identity import PendingId, derive_episode_uuid, to_
 from campfire.modules.memory.ledger import deleted_episode_keys
 from campfire.modules.memory.store import read_timeline
 
+from .conftest import connect_falkordb_or_skip
+
 pytestmark = pytest.mark.integration
 
 _ACCOUNT = "it_mem_write_account"
@@ -72,8 +74,6 @@ async def _dispose_shared_engine() -> AsyncIterator[None]:
 @pytest_asyncio.fixture
 async def memory_graph() -> AsyncIterator[MemoryGraph]:
     """使用假模型客户端的记忆图库句柄（不调真实供应商）。"""
-    from falkordb.asyncio import FalkorDB
-    from graphiti_core.driver.falkordb_driver import FalkorDriver
     from graphiti_core.embedder.client import EmbedderClient
     from graphiti_core.graphiti import Graphiti
     from graphiti_core.llm_client.client import LLMClient
@@ -104,16 +104,10 @@ async def memory_graph() -> AsyncIterator[MemoryGraph]:
                 return {name: [] for name in response_model.model_fields}
             return {}
 
-    client = FalkorDB(host="localhost", port=6380)
-    driver = FalkorDriver(falkor_db=client, database="campfire")
-    try:
-        await driver.execute_query("RETURN 1 AS ok")
-    except (ConnectionError, ConnectionRefusedError, ConnectionResetError, TimeoutError, OSError) as exc:
-        await client.aclose()
-        pytest.skip(f"FalkorDB 不可用（{type(exc).__name__}）——先 docker compose up -d falkordb")
-    except Exception:
-        await client.aclose()
-        raise
+    # 连容器：`FalkorDB(...)` **构造函数本身发网络 I/O**，且它抛的是
+    # `redis.exceptions.ConnectionError`（**不是**内建类型）——两者都由
+    # `conftest.connect_falkordb_or_skip` 统一处理，避免每个文件各踩一次。
+    driver, client = connect_falkordb_or_skip()
 
     graph = MemoryGraph(
         graphiti=Graphiti(

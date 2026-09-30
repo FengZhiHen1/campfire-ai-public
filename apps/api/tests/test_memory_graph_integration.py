@@ -44,33 +44,42 @@ GROUP = "it_memory_probe"
 
 #: 「容器没起」这一类异常。**只把这些**成跳过（CORE-07：边界显式）：
 #: 其它异常（查询语法错、装配坏、协议变更）必须让用例**失败**。
-#: 此前是裸 ``except Exception → skip``，实测会把我们自己造成的
-#: ``ConnectionError``（客户端被提前关闭）也吞成 skip，整个文件不失败。
-_UNAVAILABLE_ERRORS = (
-    ConnectionError,
-    ConnectionRefusedError,
-    ConnectionResetError,
-    TimeoutError,
-    OSError,
-)
+#:
+#: **为什么用 conftest 里那份而不是就地写内建类型**（2026-09-29 实测修正）：
+#: FalkorDB 连不上时抛的是 **`redis.exceptions.ConnectionError`**，它继承
+#: `RedisError` → `Exception`，**不是**内建 `ConnectionError`/`ConnectionRefusedError`/
+#: `OSError` 的任何一个（实测逐个 `isinstance` 全为 False）。此前该元组只含内建类型，
+#: 因此 `except` **匹配不到**——容器不可用时该文件 4 个用例**全部 FAILED**，
+#: 而 docstring 却宣称「容器不可用则跳过」。共用一份实现避免再次踩同一个坑。
+from .conftest import FALKOR_UNAVAILABLE_ERRORS as _UNAVAILABLE_ERRORS
 
 
 async def _graph():  # noqa: ANN202 —— 返回 MemoryGraph，此处避免 import 循环
-    """构造记忆图库；**仅当容器不可用**时跳过，其余异常照常抛出。"""
+    """构造记忆图库；**仅当容器不可用**时跳过，其余异常照常抛出。
+
+    **构造必须在 try 内**（2026-09-29 实测修正）：`build_memory_graph` 内部的
+    `FalkorDB(...)` **构造函数本身发网络 I/O**——它内部会探测集群模式，指向死端口时
+    构造期即抛 `redis.exceptions.ConnectionError`。此前把构造写在 try 之外，
+    容器不可用时整个文件 4 个用例全部 FAILED（而非按 docstring 宣称的 skip）。
+    """
+    from campfire.modules.memory.errors import MemoryConfigurationError
+
     settings = get_settings()
     if settings.tokenhub_api_key is None:
         pytest.skip("未配置 TOKENHUB_API_KEY——装配需要它（不实际调用模型）")
-    graph = build_memory_graph(settings)
+
     try:
+        graph = build_memory_graph(settings)
         # 一次真实往返：连不上就跳过，而不是让整套用例以误导性的方式失败。
         await graph.driver.execute_query("RETURN 1 AS ok")
     except _UNAVAILABLE_ERRORS as exc:
         # 只把「连不上」当环境问题；其余异常直接冒泡成失败。
-        await graph.aclose()
         pytest.skip(f"FalkorDB 不可用（{type(exc).__name__}）——先 docker compose up -d falkordb")
+    except MemoryConfigurationError:
+        # 配置缺失属环境问题（且已在上面按凭据判过一次，这里是兜底）。
+        pytest.skip("记忆装配缺少配置——检查 .env 的 TOKENHUB_* 与 FALKORDB_*")
     except Exception:
         # 非连接类异常说明装配或查询真的坏了，必须先关资源再让用例失败。
-        await graph.aclose()
         raise
     return graph
 

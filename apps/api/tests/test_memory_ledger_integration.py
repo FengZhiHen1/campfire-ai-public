@@ -400,6 +400,59 @@ async def test_deleted_episode_keys_rejects_invalid_account_id() -> None:
 
 
 @pytest.mark.asyncio
+async def test_reaching_the_key_ceiling_fails_closed_instead_of_truncating() -> None:
+    """账本触顶时**显式失败**，而不是静默返回前 N 条（CORE-11 的触界行为）。
+
+    为什么必须有这条（2026-09-29 自查发现）：`DELETED_KEYS_LIMIT` 的触界行为此前
+    **只写在注释里、没有任何测试**——而那是一个安全性关键选择：
+    - 静默截断 ⇒ 部分已删记忆仍会被返回 ⇒ **删除静默失效**（违反 `RQ-MEM-03`）；
+    - 显式失败 ⇒ 该账号两条读路径都不可用（有意的 fail-closed）。
+
+    实测确认后果链：`deleted_episode_keys` 抛错 → 两条读路径的第一步就是取账本 keys
+    → 该账号**读不到自己的任何记忆**。这是**已知且有意接受**的取舍（好过静默返回
+    用户已删除的内容），代价是账本成了可影响读的单点；缺 per-account 配额已登记
+    于 TODO `TECH-22`。
+
+    判别性：把 `deleted_episode_keys` 里的触顶检查改回「返回前 N 条」，本用例会失败。
+    """
+    from campfire.modules.memory import ledger as ledger_module
+
+    original_cap = ledger_module.DELETED_KEYS_LIMIT
+    cap = 3
+    ledger_module.DELETED_KEYS_LIMIT = cap
+
+    key_prefix = "ceiling"
+    try:
+        async with session_scope(get_settings()) as session:
+            for index in range(cap + 1):
+                session.add(
+                    MemoryDeletionLedger(
+                        episode_key=_episode_key(f"{key_prefix}{index}"),
+                        account_id=_ACCOUNT,
+                        reason=DELETION_REASON_USER_REQUEST,
+                    )
+                )
+
+        async with session_scope(get_settings()) as session:
+            with pytest.raises(MemoryDataError, match="超过"):
+                await deleted_episode_keys(session, _ACCOUNT)
+
+        # 恰好等于上界时**不应**报错（边界是闭区间，避免 off-by-one 把合法量挡掉）。
+        async with session_scope(get_settings()) as session:
+            await session.execute(
+                delete(MemoryDeletionLedger).where(
+                    MemoryDeletionLedger.episode_key == _episode_key(f"{key_prefix}{cap}")
+                )
+            )
+        async with session_scope(get_settings()) as session:
+            keys = await deleted_episode_keys(session, _ACCOUNT)
+        assert len(keys) == cap, f"恰好 {cap} 条应正常返回，实际 {len(keys)}"
+    finally:
+        ledger_module.DELETED_KEYS_LIMIT = original_cap
+        await _cleanup()
+
+
+@pytest.mark.asyncio
 async def test_deleted_episode_keys_is_empty_for_untouched_account() -> None:
     """没有删除记录的账号返回空列表——**正常状态，不是错误**。"""
     async with session_scope(get_settings()) as session:
