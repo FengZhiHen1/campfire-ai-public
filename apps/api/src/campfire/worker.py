@@ -25,6 +25,7 @@ from datetime import datetime, timezone
 from sqlalchemy.ext.asyncio import AsyncSession
 from taskiq import TaskiqEvents
 
+from campfire.core.authz import set_authorizer
 from campfire.core.config import get_settings
 from campfire.core.db import session_scope
 from campfire.core.jobs import build_broker, dispatch_pending_write, set_dispatch_hook
@@ -39,10 +40,17 @@ from campfire.core.pending_write import (
 from campfire.modules.memory.consumer import consume_memory_episode
 from campfire.modules.memory.errors import MemoryDataError
 from campfire.modules.memory.graph import MemoryGraph, get_shared_memory_graph
+from campfire.modules.profile.authz import OwnerAuthorizer
 
 logger = logging.getLogger(__name__)
 
 broker = build_broker(get_settings())
+
+# 装配点：授权实现（`core/authz` 的端口）由本入口注入。
+# Worker 侧必须注入：`write_from_pending` 在领取 `profile_item` 时按第 6 节
+# 重新做一次授权判定，而该判定经 `core/authz` 的端口——未注入时端口 fail-closed
+# （拒绝），不会静默放行（`core/authz.port` 的 `_require_injected`）。
+set_authorizer(OwnerAuthorizer(get_settings()))
 
 #: 记忆图库句柄：懒构造并复用（每次任务重建会新建驱动与连接池，
 #: 见 `modules/memory/graph.py` 的实测说明）。
