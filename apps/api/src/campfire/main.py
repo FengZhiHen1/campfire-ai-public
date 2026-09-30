@@ -24,6 +24,7 @@ from campfire.core.health import ComponentHealth, HealthReport, Status
 from campfire.core.jobs import check_queue
 from campfire.modules.accounts.registration import api_overrides, sign_up_form_fields
 from campfire.modules.profile.authz import OwnerAuthorizer
+from campfire.modules.profile.routes import router as profile_router
 
 logger = logging.getLogger("campfire")
 
@@ -86,6 +87,17 @@ app = FastAPI(title="篝火智答 API", version="0.1.0", lifespan=lifespan)
 # 中间件而非 `include_router`：SDK 内部按 path 前缀分派，且需要读写 cookie，
 # 用中间件才能保持它的原生行为。
 app.add_middleware(get_middleware())
+
+# 非 Agent 面的自有路由：档案面、记忆面、资料库面。
+#
+# 这三个面不装配 Agent 运行（docs/项目结构设计.md 第 5 节），因此不建 `surfaces/`，
+# 路由就放在各自的业务模块里（`modules/<m>/routes.py`）——契约的用例就在该模块，
+# 路由是用例的 HTTP 皮肤。这与「认证不建面、契约归认证与账号」同构。
+#
+# 它们经 `include_router` 挂载而不是中间件：这些是我们自建的普通业务端点，
+# 路径前缀由各自的 router 声明（认证面那条 `/auth/*` 是 SDK 提供的路由，
+# 必须走中间件，见上）。
+app.include_router(profile_router)
 
 
 @app.get("/health")
