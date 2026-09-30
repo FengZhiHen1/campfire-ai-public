@@ -878,6 +878,31 @@ async def test_first_daily_run_injects_onboarding_and_ignores_skill(client: http
     assert ONBOARDING_NOTICE_PREFIX in first["parts"][0]["text"]
 
 
+async def test_first_run_ignores_an_unknown_skill_instead_of_rejecting_it(client: httpx.AsyncClient) -> None:
+    """首次运行忽略 `skill`（契约 4.1）：未知技能名在这一支不产生 422。
+
+    「先校验后忽略」与「忽略即不校验」有可观测差异：这次运行本来就不消费使用者的选择，
+    先校验会让一个用不上的名字把整次运行拒掉，而契约明写该次运行忽略这个参数。
+
+    后半段把校验仍在的边界钉住：同一个会话的第二次运行照旧对未知技能名回 422——
+    否则「把校验整段删掉」也能让前半段通过。
+
+    **消融**：把 `_activated_skill` 挪回首轮判定之前（或去掉条件分支），
+    前半段立即变成 422，本用例失败。
+    """
+    runner = ScriptedRunner(get_settings())
+    _install_runner(runner)
+    session_id = await _create_session(client)
+
+    first = await _send(client, session_id, content="你好", skill="no-such-skill")
+    assert first.status_code == 202, first.text
+    await drain_pumps()
+    assert [skill.name for skill in runner.requests[-1].activated] == ["onboarding"], "首次运行仍然注入引导"
+
+    second = await _send(client, session_id, content="第二次", skill="no-such-skill")
+    assert second.status_code == 422, "非首次运行的技能校验不得被放松"
+
+
 async def test_second_run_of_the_same_session_does_not_inject_onboarding(client: httpx.AsyncClient) -> None:
     """同一个会话的第二次运行不再注入引导，`skill` 参数恢复生效。"""
     runner = ScriptedRunner(get_settings())
