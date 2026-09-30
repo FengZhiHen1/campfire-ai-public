@@ -636,8 +636,15 @@ async def correct_item(
 
     不做物理覆盖，也不静默改写。载荷是新条目的完整形状而不是补丁字段
     （档案面契约第 4 节）：档案条目是「谁在何时说的」的记录，补丁会让新条目继承
-    旧条目的来源与时间，那才是真正的污染。因此新条目由服务端重新计算
-    `first_recorded_at` 与 `last_confirmed_at`，并如实标注它是经使用者纠正来的。
+    旧条目的来源与时间，那才是真正的污染。因此新条目由服务端重新计算生成方式、
+    来源定位、`first_recorded_at` 与 `last_confirmed_at`。
+
+    新描述的生成方式是 `user_statement`（描述由使用者在档案页写），入档即
+    `confirmed`（第 3 节的落层表），因此新条目直接进稳定层。**沿用旧条目的
+    `origin` 才是缺陷**：它会造出 `ai_inference + confirmed` 这类行——正是
+    `propose_item` 与 Worker 两处硬拒、且第 7 节要求「请求被拒绝」的组合——
+    同时把使用者亲手改的词在界面与摘要里标成「模型推断」（第 2 节：
+    `origin` 回答「谁在什么位置上说的」）。
 
     Args:
         session: 关系库会话（调用方负责提交）。
@@ -662,19 +669,27 @@ async def correct_item(
     reference = now if now is not None else _now()
 
     # 新条目：沿用旧条目的归属与领域（纠正的是内容，不是这条事实属于哪一类），
-    # 但来源与时间重新计算——见 docstring。
+    # 但生成方式、来源与时间重新计算——见 docstring。
     new_item = await repo.insert_item(
         session,
         support_object_id=old.support_object_id,
         domain=old.domain,
         topic=old.topic if topic is None else topic,
         description=new_description,
-        origin=old.origin,
-        # 纠正由使用者发起，因此新条目是已确认的：使用者亲自改写了这条认识。
-        # 这不违反「推断不得冒充事实」——新条目的 origin 仍如实是推断来源，
-        # 而 confirmation 表达的是「使用者确认过」，两者是两个字段（第 2 节）。
+        # `origin` 是「谁在什么位置上说的」，而这句话是使用者在档案页写的：
+        # `add_manual_item` 的同源入口也定 `user_statement`（契约第 5 节）。
+        origin="user_statement",
+        # 与第 3 节的落层表一致：`user_statement` 入档即 `confirmed`。它不是
+        # 「推断被写成事实」——这条新条目已经不是推断（`origin` 已改），
+        # 因此这条路径不再绕过第 7 节的硬约束，也不成为 `confirm` 之外的第二个
+        # 「候选转稳定」入口（契约第 4 节：确认才是那道闸门）。
         confirmation=CONFIRMATION_CONFIRMED,
-        source=dict(old.source or {}),
+        # 来源定位只回答「这句话在何处可复核」：纠正的请求体不含 `source`，
+        # 因此由服务端补档案页这个通道标记，与「补充一条」同源。只逐字继承旧条目
+        # 的来源才是污染——那会把使用者新写的词定位到提出旧推断的那次会话
+        # （契约第 4 节：补丁会让新条目继承旧条目的来源与时间）。旧条目的
+        # 来源仍留在旧行上，经 `supersedes` 可回看。
+        source=dict(MANUAL_ENTRY_SOURCE),
         contexts=list(contexts) if contexts is not None else list(old.contexts or []),
         manifestations=list(manifestations) if manifestations is not None else list(old.manifestations or []),
         helpful_support=list(old.helpful_support or []),

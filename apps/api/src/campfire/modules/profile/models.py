@@ -123,10 +123,11 @@ CANDIDATE_ORIGINS: frozenset[str] = frozenset({ORIGIN_SYSTEM_OBSERVATION, ORIGIN
 #: 其余四种一律 `unconfirmed`。
 CONFIRMED_ON_ENTRY_ORIGINS: frozenset[str] = frozenset({"user_statement", "guardian_observation"})
 
-#: 手动补充条目的来源标记（档案面 HTTP 契约第 5 节的「补充一条」入口）。
+#: 档案页使用者书写入口的来源标记（档案面 HTTP 契约第 5 节的「补充一条」与第 4 节的纠正）。
 #:
-#: 该入口的请求体不含 `source`，而 `AC-07` 要求条目带来源定位——因此由服务端补一个
-#: 可复核的定位。它记录的是「这条由使用者本人在档案页补充」，不是会话内来源。
+#: 两个入口的请求体都不含 `source`，而 `AC-07` 要求条目带来源定位——因此由服务端补一个
+#: 可复核的定位。它记录的是「这条由使用者在档案页写下」，不是会话内来源。
+#: 两处共用一个标记而不是各写一份：同一事实两处定义必然漂移（CORE-10）。
 MANUAL_ENTRY_SOURCE: dict[str, str] = {"channel": "profile_page"}
 
 # ---------------------------------------------------------------------------
