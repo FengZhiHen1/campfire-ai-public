@@ -210,7 +210,7 @@ def build_agent(
 ) -> Agent:
     """构造 SDK 的 Agent。
 
-    `instructions` 必须是静态字符串：技能目录、档案摘要、检索结果、时间、活跃技能
+    `instructions` 必须是静态字符串：技能目录、产品侧注入的业务上下文、时间、活跃技能
     一律不得进入系统提示（压缩策略第 8 节第 2 条），它们只能作为尾部消息注入。动态内容
     由 :class:`~campfire.agent.context.InjectionBatch` 负责，本函数不接受它。
 
@@ -230,7 +230,7 @@ def build_run_config(*, binding: ModelBinding, window: WindowCallback) -> RunCon
     """构造运行配置。
 
     `tracing_disabled` 保持默认（SDK 内置 tracing 是技术栈设计的选择），但
-    `trace_include_sensitive_data=False`：追踪默认会带上模型输入输出，而使用者资料属于
+    `trace_include_sensitive_data=False`：追踪默认会带上模型输入输出，而使用者数据属于
     外部数据处理范畴（`EVID-C` 未关闭前只允许虚构样例，见技术栈设计第 3 节）。
     真正需要用户内容的观测走我们自己的运行记录（基座第 8 节）。
     """

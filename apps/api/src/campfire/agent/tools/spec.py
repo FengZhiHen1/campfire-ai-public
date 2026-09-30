@@ -80,7 +80,7 @@ ToolHandler = Callable[["ToolContext", ArgsT], Awaitable[ToolOutcome]]
 class ToolContext:
     """一次工具调用的上下文。
 
-    基座能说的只有运行层面的事实。产品侧的领域事实（支持对象标识之类）经 `payload`
+    基座能说的只有运行层面的事实。产品侧的领域事实（业务标识之类）经 `payload`
     透传：基座不解读它，也不保证形状——产品侧 handler 必须自己显式解析，
     把「以为拿到的是 X」变成一次明确的失败，而不是一次隐性的错算。
 
@@ -250,7 +250,7 @@ class ToolSpec(Generic[ArgsT]):
             return ToolFailure(code="tool_invalid_arguments", message=self._summarize(exc))
 
     def _summarize(self, error: ValidationError) -> str:
-        """把校验错误压成一行可读说明；不回显输入值（可能含使用者资料）。"""
+        """把校验错误压成一行可读说明；不回显输入值（可能含使用者数据）。"""
         problems = "；".join(
             f"{'.'.join(str(part) for part in item['loc']) or '(根)'}: {item['type']}" for item in error.errors()
         )
