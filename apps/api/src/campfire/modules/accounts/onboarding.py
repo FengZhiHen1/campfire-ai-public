@@ -15,14 +15,14 @@ from campfire.modules.accounts.errors import OnboardingTriggerError
 
 #: 引导状态表的表名。表形状由认证与账号第 8 节拥有（`account_id` 主键 / `state` / `updated_at`）。
 #:
-#: 本模块刻意不声明 SQLAlchemy 模型：表的模型与迁移归该表的落地批次，
-#: 在这里再声明一份会让 `core/db.metadata` 出现同名表的第二份定义，
-#: 而 `--autogenerate` 的差异比较正以那份元数据为准（项目结构设计第 10 节）。
-#: 因此读取走带绑定参数的显式 SQL——形状由设计文档固定，不依赖模型的落地次序。
+#: 本模块不声明 SQLAlchemy 模型：读取走带绑定参数的显式 SQL，形状由设计文档固定，
+#: 因此 `core/db.metadata` 里不会有本表的第二份定义（项目结构设计第 10 节）。
 #:
-#: 合并提示：本表模型与本模块归属同一模块。表落地后，下面三个状态常量与
-#: `ONBOARDING_STATES` 应改为从模型模块再导出（单一真源），`ONBOARDING_TABLE_NAME`
-#: 改为引用模型的 `__tablename__`；函数签名与判定语义不变。
+#: 词表与表名尚未合并到模型（未决）：表模型与迁移现已落地，`models` 是本表词表与表名的真源
+#: （`ONBOARDING_*` 与 `CampfireOnboarding.__tablename__`），而下面三个状态常量、
+#: `ONBOARDING_STATES` 与 `ONBOARDING_TABLE_NAME` 是它们的第二份定义。
+#: 合并会同时改掉 `read_onboarding_state` 的读路径，而该路径的 SQL 文本是既有用例的
+#: 断言对象（`test_skills_content.py`），因此与那批用例同批处理。
 ONBOARDING_TABLE_NAME = "campfire_onboarding"
 
 #: 状态词表（认证与账号第 8 节）。词表落该表的 CHECK 约束，这里只承载判定语义。

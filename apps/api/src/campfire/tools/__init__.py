@@ -16,10 +16,15 @@
 # 返回 `ToolOutcome`）——不依赖基座的类型就不是基座的工具。只放行 `agent/tools`，
 # 不放行整个 `campfire.agent`；反方向（`agent/*` 不得 import `tools/*`）不变。
 #
-# 一期工具清单（见 docs/技术设计/面/consult/tools/）：`read_profile_summary`、
-# `read_profile_items`、`propose_profile_item`、`read_memory`、`write_memory`、
-# `search_knowledge`、`search_cases`——契约待确认。
+# 一期工具清单十项齐备（契约见 docs/技术设计/面/consult/tools/，待用户确认）；
+# 注册清单的真源是 `surfaces/consult/registry.py` 的 `build_product_tools`，
+# 那里逐项把工具名绑定到本目录的实现。本目录现有五个实现模块：
+# `library.py`（`search_knowledge` / `search_cases`）、
+# `memory.py`（`read_memory` / `write_memory`）、
+# `profile.py`（`read_profile_summary` / `read_profile_items` / `propose_profile_item` /
+# `create_support_object`）、
+# `onboarding.py`（`finish_onboarding`）、
+# `emergency_card.py`（`emit_emergency_action_card`）。
 #
-# 已实现：`memory.py`（`write_memory` / `read_memory`）。
 # 记忆的删除与纠正不在这里（2026-09-30 裁决）：它们由记忆面的 HTTP 契约承载，
 # 不是模型可见工具——见 docs/技术设计/decisions/记忆删除走用户确认入口.md。
