@@ -210,6 +210,8 @@ class AgentRunner:
         Raises:
             RuntimeAssemblyError: 配置自相矛盾——存在可按 `description` 自动匹配的 skill，
                 但工具池里没有模型侧激活工具（`skill`），模型将无法激活任何 skill。
+            ToolNotRegisteredError: 某个 skill 的 `allowed-tools` 指向未注册的工具。
+                校验由 :meth:`~campfire.agent.tools.ToolPool.ensure_skills_are_resolvable` 完成。
         """
         self._binding = binding
         self._tools = tools
@@ -227,6 +229,13 @@ class AgentRunner:
                 f"工具池缺少模型侧激活工具 {SKILL_TOOL_NAME}：存在可选 skill 时模型将无法激活它们。"
                 "请在装配处用 build_skill_tool(skill_registry) 注册（ToolPool.register_base）"
             )
+        # 启动期校验的调用点：skill 的 `allowed-tools` 必须全部已注册。放在装配处而不是留给
+        # 运行期——运行期要等那个 skill 第一次被激活时才会在 `resolve_scope` 里抛
+        # `ToolNotRegisteredError`，而 `run()` 会把它归成 `injection_failed`（注入渲染/准备
+        # 失败），于是 skill 作者的名字笔误被误导成注入问题。校验放在这里还有两个好处：
+        # 与上面那条装配检查同类，不新增机制；失败只挡住建这个 runner 的装配，不会让整个
+        # 进程起不来（`/health` 与不跑 Agent 的面照常可用）。
+        tools.ensure_skills_are_resolvable(tuple(skills.skills.values()))
         # 激活工具、资源读取工具与提问工具都是机制本身，必须恒可用；不参与 allowed-tools
         # 的并集。资源工具未注册不构成装配错误：它的缺失只让渐进披露退化为「清单读不到」，
         # 而激活工具缺失会让模型侧激活整个失效——两者的严重度不同，只有后者值得拒绝启动。
@@ -450,9 +459,7 @@ class AgentRunner:
 
                 overflow_attempts += 1
                 try:
-                    history, facts = await self._compact_before_run(
-                        session, history, request, force_max_reduction=True
-                    )
+                    history, facts = await self._compact_before_run(session, history, request, force_max_reduction=True)
                 except Exception as exc:  # noqa: BLE001 —— 压缩事务失败不是「压缩没发生」
                     logger.warning("压缩事务失败 run=%s error=%s", recorder.run_id, type(exc).__name__)
                     yield _compaction_failed(exc, recorder, carried, started, compactions=tuple(compactions))
@@ -485,7 +492,7 @@ class AgentRunner:
     ) -> tuple[list[TResponseInputItem], CompactionFacts | None]:
         """运行前压缩。这里不问结果——可降级的失败在 `compact` 内部已经变成降级事实。
 
-        这里**不再兜住异常**。`compact` 只把两类失败转成 `CompactionOutcome`（摘要失败 →
+        这里不再兜住异常。`compact` 只把两类失败转成 `CompactionOutcome`（摘要失败 →
         `summary_failed`、会话追加写失败 → `commit_failed`），因此能逃出 `compact` 的异常
         只剩压缩事务的记账失败与程序错误，两者都该让本次运行明确失败。记账失败按端口契约
         原样冒泡（见 `compaction.py` 的 `CompactionJournal` 与 `compact` 的 Raises：记账失败
