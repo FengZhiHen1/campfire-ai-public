@@ -97,7 +97,7 @@ describe('runStore — 事件映射（技术设计第 3 节全表）', () => {
     store.getState().applyRunEvent(runFailed('injection_failed'));
     const failure = store.getState().failure as ConsultRunState['failure'];
     expect(store.getState().connection).toBe('failed');
-    expect(failure?.title).toBe('检索或档案暂时不可用');
+    expect(failure?.title).toBe('检索暂时不可用');
     expect(failure?.message).not.toContain('未找到');
     expect(failure?.message).not.toContain('没有资料');
   });

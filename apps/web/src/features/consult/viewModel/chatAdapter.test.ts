@@ -229,11 +229,12 @@ describe('chatAdapter — 三条不变量', () => {
     expect(lastContent(result.contents).some((part) => part.type === 'text')).toBe(true);
   });
 
-  it('不变量 2：检索类失败文案是「检索或档案暂时不可用」，不是「没有资料」', async () => {
+  it('不变量 2：检索类失败文案是「检索暂时不可用」，不是「没有资料」', async () => {
     const result = await runAdapter({ events: [runFailed('injection_failed')] });
     const failure = result.failures[0] as ConsultRunFailure;
     const view = (await import('../domain/errors')).failureViewFor(failure);
-    expect(view.title).toContain('检索');
+    // 标题逐字取设计固定文案（对话页设计数据与文案节），不接受同义改写。
+    expect(view.title).toBe('检索暂时不可用');
     expect(view.message).not.toContain('未找到');
     expect(view.message).not.toContain('没有');
   });

@@ -319,7 +319,7 @@ describe('对话页 — 运行状态与失败语义', () => {
     renderChat(port);
     await send('帮我看看');
 
-    expect(await screen.findByText('检索或档案暂时不可用')).toBeDefined();
+    expect(await screen.findByText('检索暂时不可用')).toBeDefined();
     expect(screen.getByText('已经写了一半')).toBeDefined();
     expect(screen.queryByText(/未找到相关内容/)).toBeNull();
     expect(screen.getByRole('button', { name: '重试' })).toBeDefined();

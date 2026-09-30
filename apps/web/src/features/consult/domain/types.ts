@@ -49,7 +49,8 @@ export interface RunFailureView {
  * （agent/runtime/events.py:33-48 只有 model_unavailable / injection_failed /
  * session_write_failed / context_overflow / internal）。检索结果与档案预取都走注入通道，
  * 因此「检索类失败」的载体是 `injection_failed`（该码的定义就是「注入项渲染/索引写入失败，
- * 不得当作没有注入继续」）——它的文案写明「检索或档案暂时不可用」，从而满足技术设计
+ * 不得当作没有注入继续」）——标题逐字取设计固定文案「检索暂时不可用」（对话页设计数据与文案节、
+ * HTTP/SSE 契约第 8 节），说明句承担「资料或档案」的覆盖面，从而满足技术设计
  * 不变量 2（不得把检索失败读成「没有资料」）。真实后端联调时若出现独立检索码，在此补充。
  */
 export const RUN_FAILURE_VIEWS: Readonly<Record<RunFailureCode, RunFailureView>> = {
@@ -61,7 +62,7 @@ export const RUN_FAILURE_VIEWS: Readonly<Record<RunFailureCode, RunFailureView>>
   },
   injection_failed: {
     code: 'injection_failed',
-    title: '检索或档案暂时不可用',
+    title: '检索暂时不可用',
     message: '这次没能取到资料或档案，回答可能缺少依据。可以重试。',
     retryable: true,
   },
