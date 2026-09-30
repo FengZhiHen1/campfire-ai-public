@@ -17,11 +17,13 @@ from supertokens_python.framework.fastapi import get_middleware
 from campfire.agent.model import check_model_endpoint
 from campfire.core.auth import check_auth_core
 from campfire.core.auth.supertokens import init_supertokens
+from campfire.core.authz import set_authorizer
 from campfire.core.config import Settings, get_settings
 from campfire.core.db import check_database
 from campfire.core.health import ComponentHealth, HealthReport, Status
 from campfire.core.jobs import check_queue
 from campfire.modules.accounts.registration import api_overrides, sign_up_form_fields
+from campfire.modules.profile.authz import OwnerAuthorizer
 
 logger = logging.getLogger("campfire")
 
@@ -44,6 +46,11 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     注册复写在装配处注入（`api_overrides`）：邀请码的状态机在
     `modules/accounts`，而 `core/auth` 不得依赖 `modules/*`（项目结构设计第 7 节）。
     这与「工具注册在装配处完成」是同一种做法。
+
+    授权实现同样在装配处注入（`set_authorizer`）：端口与错误类型在 `core/authz`，
+    而「属主即允许」要读支持对象表、属 `modules/profile`——`core/*` 不得依赖
+    `modules/*`（支持对象第 5.1 节）。注入只需一次，判定按调用自开会话
+    （实现不能绑定某个请求的会话，见 `OwnerAuthorizer` 的说明）。
     """
     settings = get_settings()
     logging.basicConfig(
@@ -51,6 +58,7 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
         format="%(asctime)s %(levelname)s %(name)s %(message)s",
     )
     init_supertokens(settings, api_overrides=api_overrides, sign_up_form_fields=sign_up_form_fields)
+    set_authorizer(OwnerAuthorizer(settings))
     logger.info("campfire api 启动：环境=%s", settings.app_env)
     yield
     logger.info("campfire api 停止")
