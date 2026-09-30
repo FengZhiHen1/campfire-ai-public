@@ -13,7 +13,6 @@
  */
 
 import EmailPassword from 'supertokens-web-js/recipe/emailpassword';
-import STGeneralError from 'supertokens-web-js/utils/error';
 
 import { supertokensSessionPort } from './session';
 import type { AuthPort } from '../../features/accounts/application/ports';
@@ -54,6 +53,24 @@ function fieldError(formFields: { id: string; error: string }[], id: string): st
 }
 
 /**
+ * 判定抛出物是否为身份服务的 GENERAL_ERROR。
+ *
+ * 为什么用 SDK 自己的标记字段而不是 `instanceof STGeneralError`：实测在本包的
+ * 打包/测试环境里 `supertokens-web-js/utils/error` 与 SDK 内部 `require` 到的是
+ * 两份类对象，`instanceof` 恒为假——那会让所有 GENERAL_ERROR 静默落进
+ * unexpected 分支（邀请码被拒的文案因此永远显示不出来）。标记字段由 SDK 写在实例上，
+ * 跨模块身份依然成立。这个判定与 supertokens-website 的 `STGeneralError.isThisError`
+ * 同义，但不需要把类引用带进来。
+ */
+function isGeneralError(error: unknown): boolean {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    (error as { isSuperTokensGeneralError?: unknown }).isSuperTokensGeneralError === true
+  );
+}
+
+/**
  * 把任意抛出物转成 AuthError。
  *
  * 这是数据边界（CORE-04）：SDK 的抛出物有四种形状——
@@ -71,7 +88,7 @@ function fieldError(formFields: { id: string; error: string }[], id: string): st
 function toAuthError(error: unknown, context: 'login' | 'register'): AuthError {
   if (error instanceof AuthError) return error;
 
-  if (error instanceof STGeneralError) {
+  if (isGeneralError(error)) {
     // 注册路径上 GENERAL_ERROR 只由我们的复写产生：邀请码被拒（后端把四种拒绝
     // 收敛成同一条消息，见 registration.py 的 _reject）。这里换上界面文案，
     // 不透出后端文本——文案以页面设计为准，且后端文本是枚举渠道。
@@ -101,8 +118,8 @@ function toAuthError(error: unknown, context: 'login' | 'register'): AuthError {
 /**
  * AuthPort 的 SDK 实现。
  *
- * 为什么登录与注册把账号名回传给调用方：登录/注册响应里带账号名，而**冷启动刷新
- * 页面时前端没有任何可读的账号名来源**——凭据在 httpOnly cookie 里，且一期没有
+ * 为什么登录与注册把账号名回传给调用方：登录/注册响应里带账号名，而冷启动刷新
+ * 页面时前端没有任何可读的账号名来源——凭据在 httpOnly cookie 里，且一期没有
  * 账号信息查询端点（认证与账号第 5 节）。与其在设置页显示空白，不如让每次登录/注册
  * 顺手把这一个字段带进会话 store。
  */
@@ -154,19 +171,20 @@ export const supertokensAuthPort: AuthPort = {
       case 'OK':
         return { accountName: readAccountName(result.user) };
       case 'FIELD_ERROR': {
-        // SDK 把两类字段级拒绝压成同一个形状（实测 supertokens_python 的
-        // emailpassword/api/signup.py：账号名重复走 raise_form_field_exception，
-        // 字段格式不合规由 validate_form_fields_or_throw_error 抛，两者都是
-        // `{status:"FIELD_ERROR", formFields:[{id,error}]}`），因此这里只能按键分派：
-        // 邀请码字段的字段级拒绝（今天不会出现——邀请码校验器恒通过）归邀请码；
-        // 其余归「账号名已被占用」，这是设计语义下可达的那一支（账号名规则由后端拥有）。
-        const inviteError = fieldError(result.formFields, INVITE_CODE_FORM_FIELD);
-        if (inviteError !== undefined) throw new AuthError('invite-rejected');
-        const accountError = fieldError(result.formFields, ACCOUNT_FORM_FIELD);
-        if (accountError !== undefined && /password/i.test(accountError)) {
+        // 按出错字段分派，不解析错误文本：文本是服务端措辞，任何改字都会让分支静默失效。
+        // 三种 FIELD_ERROR 的来源（实测 supertokens_python 的 api/utils.py 与 api/signup.py）：
+        //   - inviteCode：邀请码校验器返回错误（今天的校验器恒通过，属预留分支）；
+        //   - password：官方默认密码校验器（长度/字母/数字）；
+        //   - email：既可能是「账号名已被占用」（signup.py 用同一个形状返回
+        //     EmailAlreadyExistsError），也可能是账号名未通过默认 email 校验器——
+        //     两者在线上形状完全相同，前端无法区分，因此合并为一条不猜测原因的文案。
+        if (fieldError(result.formFields, INVITE_CODE_FORM_FIELD) !== undefined) {
+          throw new AuthError('invite-rejected');
+        }
+        if (fieldError(result.formFields, PASSWORD_FORM_FIELD) !== undefined) {
           throw new AuthError('weak-password');
         }
-        throw new AuthError('account-taken');
+        throw new AuthError('account-unusable');
       }
       default:
         // SIGN_UP_NOT_ALLOWED：安全策略拒绝，同样没有面向使用者的原因。

@@ -34,7 +34,7 @@ export function unknownSession(): SessionSnapshot {
  *
  * 为什么账号名可以是 null 而不是空字符串：登录与注册的响应里带账号名
  * （身份服务把账号名存在 email 字段，前端 SDK 的 user 对象因此有 emails），
- * 但**冷启动刷新页面时前端没有任何可读的账号名来源**——凭据在 httpOnly cookie 里，
+ * 但冷启动刷新页面时前端没有任何可读的账号名来源——凭据在 httpOnly cookie 里，
  * 而一期没有账号信息查询端点（认证与账号第 5 节的自建端点表）。
  * 用 null 把这个「未知」显式表示出来，让界面能如实降级而不是显示空字符串（CORE-01）。
  */
