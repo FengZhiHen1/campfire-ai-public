@@ -109,18 +109,12 @@ def get_skill_registry(settings: Settings) -> SkillRegistry:
     return registry
 
 
-def registered_skill_names(settings: Settings) -> tuple[str, ...]:
-    """已注册的技能名（`skill` 字段的校验依据，裁决 11）。"""
-    return get_skill_registry(settings).names()
-
-
 __all__ = [
     "CONSULT_INSTRUCTIONS",
     "ConsultAssemblyError",
     "clear_skill_registries",
     "get_runner",
     "get_skill_registry",
-    "registered_skill_names",
     "runner_is_wired",
     "set_runner_factory",
 ]

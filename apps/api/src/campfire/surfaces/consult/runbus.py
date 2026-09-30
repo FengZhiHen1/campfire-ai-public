@@ -447,6 +447,10 @@ class RunPump:
         无论正常结束、异常还是被取消，收尾都要做（`finally`）：一次没释放的会话位
         会让这个会话在 TTL 到期之前再也发不出消息，而 TTL 是 185 秒——使用者会
         看到「刚中断的对话再也发不出去」，这正是「终结时删键」要避免的。
+
+        Raises:
+            asyncio.CancelledError: 任务被取消（进程收尾）。原样抛出——收尾在
+                `finally` 里已经做过，吞掉它会让取消看起来像正常结束。
         """
         run_id = self._lease.run_id
         if run_id is None:  # pragma: no cover —— drive 只在 begin 成功后调用

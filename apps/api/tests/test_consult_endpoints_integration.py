@@ -5,7 +5,7 @@
     docker compose up -d postgres redis
     uv run pytest -m integration apps/api/tests/test_consult_endpoints_integration.py
 
-## 这里钉住的五类事
+这里钉住的五类事
 
 1. 会话端点：默认对象推导、显式对象的可写校验、列表的字段与分页边界、水合的空对话
    与失败的区别。
@@ -13,9 +13,9 @@
 3. 202 的语义：只表示受理；`run_id` 可订阅；使用者消息由运行写入真源。
 4. 并发与幂等：同会话真并发两 POST（`asyncio.gather`）恰好一 202 一 409；
    同 `client_message_id` 重发返回原 `run_id` 且消息只落一条。
-5. SSE 线格式：断言**原始字节**的三行制、心跳与终态关流，以及 `Last-Event-ID` 续传。
+5. SSE 线格式：断言原始字节的三行制、心跳与终态关流，以及 `Last-Event-ID` 续传。
 
-## 为什么用一个脚本化运行器
+为什么用一个脚本化运行器
 
 被测的是面（受理、状态码、缓冲、线格式），不是模型调用。脚本化运行器按固定脚本产出
 基座事件，并像真实运行那样把使用者消息写进 SDK 会话真源——后者是幂等与并发用例能
@@ -126,7 +126,7 @@ class ScriptedRunner:
         self.started.append(run_id)
         if self._append_user_message:
             sdk = build_sqlalchemy_session(request.session_id, engine=get_engine(self._settings))
-            await sdk.add_items([{"role": "user", "content": request.user_input or ""}])  # type: ignore[arg-type]
+            await sdk.add_items([{"role": "user", "content": request.user_input or ""}])  # type: ignore[arg-type]  # SDK 的 add_items 收 SDK 自有条目类型，测试传字面量 dict
 
         yield RunStartedEvent(
             run_id=run_id,
@@ -269,7 +269,7 @@ async def _purge_redis() -> None:
 
 def _install_runner(runner: ScriptedRunner) -> None:
     """把脚本化运行器装进面装配（替换模型与工具，不替换被测的写入路径）。"""
-    consult_assembly.set_runner_factory(lambda _settings: runner)  # type: ignore[arg-type,return-value]
+    consult_assembly.set_runner_factory(lambda _settings: runner)  # type: ignore[arg-type,return-value]  # 替身只实现 run()，与 AgentRunner 的完整形状不同
 
 
 async def _make_object(account_id: str, name: str = "小宝") -> str:
@@ -384,7 +384,7 @@ async def test_list_sessions_shows_title_preview_and_only_own_sessions(client: h
         )
 
     sdk = build_sqlalchemy_session(mine, engine=get_engine(get_settings()))
-    await sdk.add_items(  # type: ignore[arg-type]
+    await sdk.add_items(  # type: ignore[arg-type]  # SDK 的 add_items 收 SDK 自有条目类型，测试传字面量 dict
         [
             {"role": "user", "content": "孩子最近睡不好，怎么办"},
             {"role": "assistant", "content": [{"type": "output_text", "text": "可以先记录一周的作息。"}]},
@@ -710,7 +710,7 @@ async def test_stream_frames_emit_heartbeat_while_idle(
     心跳的真实间隔是 15 秒（`sse.HEARTBEAT_INTERVAL_SECONDS`，由单元用例钉住），
     这里改小到 50 毫秒——否则这条用例要跑 15 秒才拿到一个字节。
 
-    **为什么直接驱动帧生成器而不是发一个真请求**：`httpx.ASGITransport` 不支持
+    为什么直接驱动帧生成器而不是发一个真请求：`httpx.ASGITransport` 不支持
     增量到达——它在 `handle_async_request` 里等应用把响应体全部产出后才返回
     （实测 `_transports/asgi.py:185-187`：`ASGIResponseStream` 只 `yield b"".join(body_parts)`）。
     因此「字节何时到达」在本进程内不可观测，能观测的是「产出了哪些字节、顺序如何」。
