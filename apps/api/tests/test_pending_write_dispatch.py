@@ -1,7 +1,7 @@
 """按 `kind` 分派的机械检查与分派表行为。
 
 对应 `docs/技术设计/technical-details/写入路径.md` 第 4 节第 3 条「消费：按 kind 分派」。
-本文件不连数据库、不连 Redis：它钉的是**分派表本身**——哪些 kind 有消费者、没有消费者的
+本文件不连数据库、不连 Redis：它钉的是分派表本身——哪些 kind 有消费者、没有消费者的
 kind 如何被处置，以及两个入口有没有把投递钩子装上。
 
 为什么要有这组检查（2026-09-30 修复）：投递钩子此前硬编码只投记忆任务，而
@@ -25,29 +25,27 @@ from campfire.core.jobs import dispatch_pending_write, set_dispatch_hook
 from campfire.core.pending_write import KIND_MEMORY_EPISODE, KIND_PROFILE_ITEM, KINDS
 
 
-def test_every_kind_has_a_consumer_except_the_known_t12_gap() -> None:
-    """`KINDS` 的每个取值都必须有消费者；当前唯一允许缺的是 `profile_item`（归 T12）。
+def test_every_kind_has_a_consumer() -> None:
+    """`KINDS` 的每个取值都必须有消费者（T12 已给 `profile_item` 接上，缺口清零）。
 
     这条防的是「将来加第三种 kind 时忘了分派」：分派表是 `worker._CONSUMER_DISPATCHERS`，
     没有键的 kind 不会被投给任何消费者（`dispatch_pending_write_to_queue` 显式跳过），
     因此「缺少消费者」必须是被检查的事实，而不是运行期才发现。
 
-    **它不是「永远不会失败的检查」**，两个方向都会失败并给出改法：
+    它不是「永远不会失败的检查」：新增第三种 kind 却没注册消费者时 `missing`
+    非空 → 失败，并给出改法。
 
-    - 新增第三种 kind 却没注册消费者：`missing` 变成两个值 → 失败；
-    - T12 给 `profile_item` 接上消费者：`missing` 变成空集 → 失败，此时把断言改成
-      `assert not missing` 即可（这句就是本检查的目标形态）。
-
-    为什么不用 `xfail(strict=True)` 表达这个缺口：xfail 期间「新增第三种 kind」
+    为什么不用 `xfail(strict=True)` 表达缺口：xfail 期间「新增第三种 kind」
     仍然只会是 XFAIL（静默通过），本检查防第二种情形的能力会被一起锁掉。
-    现在这个写法把缺口写成可执行断言：集合不等于「已知的唯一缺口」就失败。
+    T12 之前这里钉的是已知唯一缺口 `{KIND_PROFILE_ITEM}`；接上消费者后按当时的
+    注释改成 `assert not missing`，缺口到期即收口。
     """
     missing = KINDS - worker_module.CONSUMED_KINDS
 
-    assert missing == {KIND_PROFILE_ITEM}, (
-        f"缺消费者的 kind = {sorted(missing)}；当前唯一允许缺的是 {KIND_PROFILE_ITEM!r}（T12）。"
-        "新增了 kind：请在 worker._CONSUMER_DISPATCHERS 里注册它的消费者。"
-        "刚给 profile_item 接上消费者：把本断言改成 `assert not missing`。"
+    assert not missing, (
+        f"缺消费者的 kind = {sorted(missing)}。"
+        "新增了 kind：请在 worker._CONSUMER_DISPATCHERS 里注册它的消费者；"
+        "否则这些记录会一直停在 pending，且每轮兜底扫描都为它们白占条数预算。"
     )
 
 
@@ -70,25 +68,35 @@ async def test_memory_episode_is_dispatched_to_its_own_consumer(monkeypatch: pyt
 async def test_a_kind_without_a_consumer_is_skipped_and_says_so(
     monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
-    """无消费者的 kind：**不投给任何消费者**、记一条指名道姓的 warning。
+    """无消费者的 kind：不投给任何消费者、记一条指名道姓的 warning。
 
     「显式跳过」不是「静默丢弃」：日志必须带 kind 与 pending_id，运维才看得出
     「有一批写入在等消费者」。记录本身的处置是不终结（仍是 `pending`，由兜底扫描
     在消费者接上后带回）——这一点由
     `apps/api/tests/test_pending_write_sweep_integration.py` 的两条集成用例钉住。
+
+    为什么用一个不在 `KINDS` 里的 kind 而不是 `profile_item`：T12 已给 `profile_item`
+    接上消费者，它不再是「无消费者的 kind」；拿它有消费者的事实去测跳过分支，
+    测的会是分派表命中那条路。而跳过分支的输入本就是「一个没有键的 kind」，
+    造一个这样的 kind 才与分支的判据同构（`KINDS` 是闭集，
+    `enqueue` 不会写进非法 kind，因此这一分支在真实数据下由「尚未注册的新 kind」触发）。
     """
     pending_id = "00000000-0000-4000-8000-00000000000b"
+    kind_without_consumer = "kind_not_yet_registered"
 
     async def _must_not_be_called(called_with: str) -> None:
         raise AssertionError(f"无消费者的 kind 不得投给别的消费者：{called_with}")
 
+    assert kind_without_consumer not in worker_module._CONSUMER_DISPATCHERS, (
+        "构造的前提失效：这个 kind 已经有消费者了，本用例就测不到跳过分支"
+    )
     for kind in list(worker_module._CONSUMER_DISPATCHERS):
         monkeypatch.setitem(worker_module._CONSUMER_DISPATCHERS, kind, _must_not_be_called)
 
     with caplog.at_level(logging.WARNING):
-        await worker_module.dispatch_pending_write_to_queue(pending_id, KIND_PROFILE_ITEM)
+        await worker_module.dispatch_pending_write_to_queue(pending_id, kind_without_consumer)
 
-    assert pending_id in caplog.text and KIND_PROFILE_ITEM in caplog.text, (
+    assert pending_id in caplog.text and kind_without_consumer in caplog.text, (
         f"跳过必须是显式的（日志带 kind 与 pending_id），实际日志={caplog.text!r}"
     )
 

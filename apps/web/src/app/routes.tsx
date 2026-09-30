@@ -42,6 +42,13 @@ const consultPort = createConsultApi({
     useSessionStore.getState().markAnonymous();
   },
 });
+import { ProfilePage } from '../features/profile/view/ProfilePage';
+import { MemoryPage } from '../features/memory/view/MemoryPage';
+import { LibraryPage } from '../features/library/view/LibraryPage';
+import { supertokensAuthPort } from '../infrastructure/auth/authPort';
+import { httpLibraryPort } from '../infrastructure/http/libraryPort';
+import { httpMemoryPort } from '../infrastructure/http/memoryPort';
+import { httpProfilePort } from '../infrastructure/http/profilePort';
 
 /** 一条前端路由的描述；守卫需求是数据而不是散落在 JSX 里的条件。 */
 export interface AppRoute {
@@ -103,12 +110,14 @@ export const APP_ROUTES: readonly AppRoute[] = [
     title: '档案',
     description: '支持对象档案：当前认识、待确认候选与补充。',
     requiresSession: true,
+    element: () => <ProfilePage port={httpProfilePort} />,
   },
   {
     path: '/cases',
     title: '案例库',
     description: '公开案例浏览与检索，支持从引用跳转定位。',
     requiresSession: true,
+    element: () => <LibraryPage port={httpLibraryPort} />,
   },
   {
     path: '/settings',
@@ -122,6 +131,7 @@ export const APP_ROUTES: readonly AppRoute[] = [
     title: '记忆',
     description: '查看、纠正与删除属于本账号的记忆时间线。',
     requiresSession: true,
+    element: () => <MemoryPage port={httpMemoryPort} />,
   },
   {
     path: '/guide',

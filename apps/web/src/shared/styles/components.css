@@ -89,6 +89,17 @@ strong {
   gap: var(--space-4);
 }
 
+/* 列表尾部的触底分页容器（记忆页与案例库浏览页共用，见 shared/ui/ListTail）。
+ * 它不是契约组件：契约只给了呼吸点与按钮，容器是两页共用的排布，
+ * 与上面的 .stack 同属本文件里的组合助手。 */
+.list-tail {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: var(--space-2);
+  padding-block: var(--space-4);
+}
+
 .panel {
   padding: var(--space-5);
   border: 1px solid var(--border);
@@ -142,6 +153,18 @@ strong {
   border-radius: var(--radius-pill);
   color: var(--meta);
   font-size: var(--text-xs);
+}
+
+/* 可点选的 tag（对象切换 chip、库别切换 chip）：选中态是「当前项」的唯一视觉通道。
+ * 为什么按钮式的 tag 要有自己的类：.tag 只是静态徽章，没有按压与选中语义。 */
+.tag.selected {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: color-mix(in oklab, var(--accent), transparent 94%);
+}
+
+.tag.meta {
+  color: var(--meta);
 }
 
 /* ── 按钮 ───────────────────────────────────────────────────── */
@@ -495,6 +518,45 @@ input[aria-invalid='true'] {
   font-size: var(--text-xs);
 }
 
+/* 条目行尾的操作区。「确认/删除」并排时各占一半宽度：确认是高频正向操作、
+ * 删除是低频危险操作，两者都不该挤在同一拇指滑动路径上（档案页第 96 行）。 */
+.list-row .lr-actions {
+  display: flex;
+  gap: var(--space-3);
+  margin-top: var(--space-2);
+}
+
+.list-row .lr-actions .btn {
+  flex: 1;
+  min-width: 0;
+}
+
+/* 待确认候选行：与稳定条目同一行结构，但用独立边框把「还没被确认」这件事框出来。 */
+.candidate-record {
+  padding: var(--space-4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+
+.candidate-record > .status {
+  margin-bottom: var(--space-2);
+}
+
+/* 折叠分组（领域分组、日期分组、待确认分组）。折叠体自身不画边框——
+ * 外层由 .tile / .group-collapse 承载。 */
+.group-collapse .gc-body {
+  padding-top: var(--space-3);
+}
+
+/* 面板内的一行说明 + 标题（一页摘要区的头部）。 */
+.record-head {
+  margin-bottom: var(--space-4);
+}
+
+.record-head p {
+  margin-top: var(--space-2);
+}
+
 .entry-title {
   display: flex;
   align-items: center;
@@ -531,6 +593,12 @@ input[aria-invalid='true'] {
   border-radius: var(--radius-pill);
   background: var(--accent);
   flex: none;
+}
+
+/* 小号呼吸点：触底分页的加载指示（记忆页第 28 行、案例库浏览页第 34 行指定 12px）。 */
+.flame-dot.sm {
+  width: var(--space-3);
+  height: var(--space-3);
 }
 
 /* 唯一循环动效：篝火呼吸点（页面设计首页的动效意图，周期取 token --motion-breath）。 */

@@ -1,12 +1,12 @@
 """集成测试：`write_from_pending` 消费链路（待处理记录 → 档案条目）。
 
-对应 ``docs/技术设计/technical-details/写入路径.md`` 第 4、5、6 节与
-``docs/技术设计/technical-details/个性化档案.md`` 第 7、8 节。
+对应 `docs/技术设计/technical-details/写入路径.md` 第 4、5、6 节与
+`docs/技术设计/technical-details/个性化档案.md` 第 7、8 节。
 
     docker compose up -d postgres
     uv run pytest -m integration apps/api/tests/test_profile_consumer_integration.py
 
-## 本文件守住的判据
+本文件守住的判据
 
 1. **主链路**：入队 → 消费 → 档案出现条目，`pending_id` 就是幂等键。
 2. **授权在领取时重新判定**（第 6 节）：对象在排队期间被归档 → **不写入**。
@@ -184,7 +184,7 @@ async def test_pending_record_becomes_a_profile_item() -> None:
 
 @pytest.mark.asyncio
 async def test_inferred_pending_record_lands_in_the_candidate_layer() -> None:
-    """推断来源的待处理记录只进候选层——**确认状态由 `origin` 推导**，不取载荷。"""
+    """推断来源的待处理记录只进候选层——确认状态由 `origin` 推导，不取载荷。"""
     object_id = await _new_object()
     pending_id = await _enqueue(object_id, origin="ai_inference")
 
@@ -207,7 +207,7 @@ async def test_inferred_pending_record_lands_in_the_candidate_layer() -> None:
 
 @pytest.mark.asyncio
 async def test_object_archived_while_queued_blocks_the_write() -> None:
-    """**消融**：对象在排队期间被归档 → 领取时判定不成立，**不写入**（第 6 节末段）。
+    """消融：对象在排队期间被归档 → 领取时判定不成立，不写入（第 6 节末段）。
 
     这条把「授权不靠缓存判断」落到了异步路径上：记录里带着发起时的对象标识，
     但判定必须在领取时按当前态重做。
@@ -230,7 +230,7 @@ async def test_object_archived_while_queued_blocks_the_write() -> None:
 
 @pytest.mark.asyncio
 async def test_deleted_account_is_discarded_without_writing() -> None:
-    """账号已注销（墓碑存在）→ **删除该记录、不写条目**（墓碑的唯一运行时用途）。
+    """账号已注销（墓碑存在）→ 删除该记录、不写条目（墓碑的唯一运行时用途）。
 
     与记忆侧同一处置：用 `done` 会是谎话（什么都没写），用 `dead` 会污染
     「重试耗尽」的告警流（这不是失败，是预期内的丢弃）。
@@ -259,7 +259,7 @@ async def test_deleted_account_is_discarded_without_writing() -> None:
 
 @pytest.mark.asyncio
 async def test_consume_without_authorizer_fails_closed() -> None:
-    """端口未注入时消费失败（fail-closed），**且不写入**——最不能容忍的失败方向。"""
+    """端口未注入时消费失败（fail-closed），且不写入——最不能容忍的失败方向。"""
     object_id = await _new_object()
     pending_id = await _enqueue(object_id)
     set_authorizer(None)
@@ -281,10 +281,10 @@ async def test_consume_without_authorizer_fails_closed() -> None:
 
 @pytest.mark.asyncio
 async def test_repeated_consumption_does_not_create_a_second_item() -> None:
-    """**重复消费不产生第二条目**：第二次消费因记录已 `done` 而领取失败（`written=False`）。
+    """重复消费不产生第二条目：第二次消费因记录已 `done` 而领取失败（`written=False`）。
 
     再模拟「记录被放回 pending 后重跑」（租约过期回收的场景）：第二次必须以
-    幂等键命中并**安静跳过**，而不是再插一条。
+    幂等键命中并安静跳过，而不是再插一条。
     """
     object_id = await _new_object()
     pending_id = await _enqueue(object_id)
@@ -321,9 +321,9 @@ async def test_repeated_consumption_does_not_create_a_second_item() -> None:
 
 @pytest.mark.asyncio
 async def test_inferred_payload_claiming_confirmed_is_rejected() -> None:
-    """载荷声称 `confirmed` 但 `origin` 是推断 → **拒绝**，且不写库。
+    """载荷声称 `confirmed` 但 `origin` 是推断 → 拒绝，且不写库。
 
-    载荷是 Worker 的唯一输入，因此它**不可信**：确认状态必须由 `origin` 推导，
+    载荷是 Worker 的唯一输入，因此它不可信：确认状态必须由 `origin` 推导，
     不能采信载荷里的任何确认状态（那会让一条被构造的载荷把推断写成事实）。
     """
     object_id = await _new_object()
@@ -346,7 +346,7 @@ async def test_inferred_payload_claiming_confirmed_is_rejected() -> None:
 
 @pytest.mark.asyncio
 async def test_payload_missing_required_keys_fails_without_writing() -> None:
-    """载荷缺必填键 → 显式失败且**不写入**（不猜、不用默认值）。"""
+    """载荷缺必填键 → 显式失败且不写入（不猜、不用默认值）。"""
     object_id = await _new_object()
     pending_id = await _enqueue(object_id, payload={"domain": "communication"})
 
@@ -391,7 +391,7 @@ async def test_memory_episode_kind_is_rejected_by_the_profile_consumer() -> None
 
 @pytest.mark.asyncio
 async def test_unknown_pending_id_is_skipped_not_an_error() -> None:
-    """消费不存在的 `pending_id` 返回 `written=False`，**不抛异常**。
+    """消费不存在的 `pending_id` 返回 `written=False`，不抛异常。
 
     「没领到」是并发下的正常结果（已被他人领取、已终结、或记录不存在）；
     把它当异常会让兜底扫描把每次竞争都记成失败。
@@ -503,17 +503,15 @@ async def test_absent_optional_payload_fields_stay_optional() -> None:
     assert row.probable_need is None
 
 
-@pytest.mark.asyncio
-async def test_worker_task_is_not_registered_for_profile_items() -> None:
-    """**范围声明**：worker 的 `kind = profile_item` 消费分支**不在本包**（T12 承担）。
+async def test_worker_task_is_registered_for_profile_items() -> None:
+    """T12 收口：worker 的 `kind = profile_item` 消费分支已接上。
 
-    本包只提供 `write_from_pending` 用例。这条用例把边界写成可执行的断言：
-    它**解析** `worker.py` 的语法树，确认其中没有 import 或调用 `write_from_pending`
-    ——若谁在本包范围内顺手接上 Worker，本用例失败并提醒那是 T12 的范围。
+    本用例是本包早期那条「范围声明」用例的到期反转：那一条解析 `worker.py` 的
+    语法树、断言其中没有 import 或调用 `write_from_pending`（当时那是 T12 的范围）；
+    T12 落地后它必须反过来断言「接上了」，否则它防的就不是缺口而是修复本身。
 
-    为什么用 AST 而不是子串搜索：注释里提到这个函数名是正常的（说明边界在哪），
-    子串搜索会把「注释里的说明」误判成「已经接上」。只有真实的 import 与调用
-    才是「接上了」的证据。
+    为什么仍然用 AST 而不是子串搜索：注释里提到这个函数名是正常的（说明边界在哪），
+    子串搜索会把「注释里的说明」误判成「已经接上」。只有真实的 import 与调用才是证据。
     """
     import ast
     from pathlib import Path
@@ -521,30 +519,28 @@ async def test_worker_task_is_not_registered_for_profile_items() -> None:
     worker_source = Path(__file__).resolve().parents[1] / "src" / "campfire" / "worker.py"
     tree = ast.parse(worker_source.read_text(encoding="utf-8"), filename=str(worker_source))
 
-    # 1) 不得 import profile 的消费链路。
+    # 1) 必须 import profile 的消费链路。
     imported: list[str] = []
     for node in ast.walk(tree):
         if isinstance(node, ast.ImportFrom) and node.module and "profile" in node.module:
             imported.extend(alias.name for alias in node.names)
         elif isinstance(node, ast.Import):
             imported.extend(alias.name for alias in node.names if "profile" in alias.name)
-    assert "write_from_pending" not in imported, "worker 不应在本包内 import profile 的消费用例（那是 T12 的范围）"
+    assert "write_from_pending" in imported, "worker 必须接上 profile 的消费用例（T12 的范围）"
 
-    # 2) 不得在代码里调用它（注释里的提及不算）。
+    # 2) 必须在代码里调用它（注释里的提及不算）。
     called = {
         node.func.id for node in ast.walk(tree) if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
     } | {
         node.func.attr for node in ast.walk(tree) if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
     }
-    assert "write_from_pending" not in called, (
-        "worker 不应在本包内接上 profile_item 消费（那是 T12 的范围）；若确要接上，需同步更新本断言与任务边界"
-    )
+    assert "write_from_pending" in called, "worker 必须真的调用 write_from_pending，而不只是 import 它"
 
-    # 正向对照：同一份解析逻辑对「已接上」的形状应当能发现它，
-    # 否则上面的断言可能只是「解析没工作」。
-    sample = ast.parse("from x import write_from_pending\nwrite_from_pending(1)\n")
+    # 正向对照：同一份解析逻辑必须能从样本里提取出名字，
+    # 否则上面的断言可能只是「解析没工作」（提取恒为空集，两个断言都会通过）。
+    sample = ast.parse("from x import something_else\nsomething_else(1)\n")
     sample_names = {alias.name for node in ast.walk(sample) if isinstance(node, ast.ImportFrom) for alias in node.names}
-    assert "write_from_pending" in sample_names, "解析逻辑没有工作——上面的断言无效"
+    assert "something_else" in sample_names, "解析逻辑没有工作——上面的断言无效"
 
 
 @pytest.mark.asyncio
