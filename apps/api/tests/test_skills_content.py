@@ -39,6 +39,7 @@ from typing import Mapping
 
 import pytest
 
+from campfire.modules.accounts import models as accounts_models
 from campfire.modules.accounts.errors import OnboardingTriggerError
 from campfire.modules.accounts.onboarding import (
     ONBOARDING_COMPLETED,
@@ -46,6 +47,7 @@ from campfire.modules.accounts.onboarding import (
     ONBOARDING_SKIPPED,
     ONBOARDING_STATES,
     ONBOARDING_TABLE_NAME,
+    TERMINAL_STATES,
     onboarding_pending,
     read_onboarding_state,
     should_inject_onboarding,
@@ -808,13 +810,20 @@ class _FakeSession:
 
 
 def test_onboarding_subset_of_states() -> None:
-    """状态词表恰好是认证与账号第 8 节的三值，且两值属终结态。"""
-    assert ONBOARDING_STATES == {ONBOARDING_IN_PROGRESS, ONBOARDING_COMPLETED, ONBOARDING_SKIPPED}
+    """状态词表恰好是认证与账号第 8 节的三值，终结态是其中恰定的两值，且与表模型真源一致。"""
+    # 三值在这里写成字面量：它代表设计文档一侧的取值（认证与账号第 8 节第 187 行）。
+    # 为什么不用判定模块或模型里的常量来拼这个集合：那样两侧同源，加第四态、改名都不会红。
+    assert ONBOARDING_STATES == {"in_progress", "completed", "skipped"}
+    # 判定模块的词表必须是模型真源的同一个取值集合：它若被重新分叉成第三份定义，这里红。
+    assert ONBOARDING_STATES == accounts_models.ONBOARDING_STATES
+    assert TERMINAL_STATES == {"completed", "skipped"}
+    assert TERMINAL_STATES < ONBOARDING_STATES, "终结态必须是词表的真子集"
 
 
 def test_table_name_carries_the_project_prefix() -> None:
-    """表名带 `campfire_` 前缀（避免与身份服务自建的无前缀表撞名）。"""
+    """表名带 `campfire_` 前缀（避免与身份服务自建的无前缀表撞名），且就是模型的 `__tablename__`。"""
     assert ONBOARDING_TABLE_NAME == "campfire_onboarding"
+    assert ONBOARDING_TABLE_NAME == accounts_models.CampfireOnboarding.__tablename__
 
 
 @pytest.mark.parametrize(
