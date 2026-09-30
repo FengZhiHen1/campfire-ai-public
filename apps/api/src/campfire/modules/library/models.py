@@ -7,7 +7,7 @@
 
 from datetime import datetime
 
-from sqlalchemy import BigInteger, Boolean, DateTime, Index, String, Text, UniqueConstraint
+from sqlalchemy import BigInteger, Boolean, CheckConstraint, DateTime, Index, String, Text, UniqueConstraint
 from sqlalchemy import text as sql_text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
@@ -19,16 +19,61 @@ from campfire.core.db import Base, Vector, new_uuid
 #: 因为检索链与记忆侧必须共用同一维度，而 `modules/*` 之间不得互相 import）；
 #: 此处只转出，供迁移与调用方从本模块取用。
 __all__ = [
+    # 常量
+    "CASE_STATUSES",
     "EMBEDDING_DIM",
+    "EVIDENCE_LEVELS",
+    "ITEM_MODELS",
+    "ITEM_TABLES",
+    "LIBRARIES",
     "LIBRARY_CASE",
     "LIBRARY_KNOWLEDGE",
+    "NODE_TABLE",
+    "REVIEW_STATUSES",
+    "SUBJECT_TYPES",
+    # 模型
+    "CaseItem",
     "KnowledgeItem",
     "RetrievedNode",
+    # 库别映射
+    "as_case_item",
 ]
 
 #: 库别：资料库与案例库是两个独立集合，不合并成一张表加类型标签（`RQ-KB-01`）。
 LIBRARY_KNOWLEDGE = "knowledge"
 LIBRARY_CASE = "case"
+
+# ---------------------------------------------------------------------------
+# 案例专属字段的取值域（公共案例库第 3、4、7 节）
+# ---------------------------------------------------------------------------
+#
+# 为什么这些值域不只是在 Python 里校验、还要落成 CHECK 约束（CORE-05：不变量落
+# 最强可行通道）：它们驱动「多可信、谁说的」的呈现判定（review_status 决定能否
+# 作为依据、evidence_level 决定信任度），静默写入未知值会让呈现规则无声失效——
+# 写入者包含将来的运维旁路与手工 SQL，CHECK 是唯一能一并拒绝它们的通道。
+
+#: 案例状态。`fictional` 是虚构样例：它与真实案例必须可辨（`AC-06`），
+#: 因此取值域是封闭的——多出第四种状态就没有对应的呈现规则。
+CASE_STATUSES: frozenset[str] = frozenset({"published", "internal", "fictional"})
+
+#: 审阅状态（第 7 节三档）。`owner` 不等于专业审阅，系统不得把它显示为专业审阅。
+REVIEW_STATUSES: frozenset[str] = frozenset({"professional", "owner", "pending"})
+
+#: 循证等级（沿用上游值域，公共案例库第 4 节「值域不重写」）。
+EVIDENCE_LEVELS: frozenset[str] = frozenset({"EBP", "INSTITUTIONAL", "OBSERVATIONAL"})
+
+#: 被访谈对象的类型（第 3 节）。
+SUBJECT_TYPES: frozenset[str] = frozenset({"家长", "老师", "专业人员", "其他"})
+
+#: 用于 `CHECK` 的 SQL 字面量。从上面的集合派生，避免两份清单漂移；排序保证文本稳定。
+_CASE_STATUSES_SQL = ", ".join(f"'{value}'" for value in sorted(CASE_STATUSES))
+_REVIEW_STATUSES_SQL = ", ".join(f"'{value}'" for value in sorted(REVIEW_STATUSES))
+_EVIDENCE_LEVELS_SQL = ", ".join(f"'{value}'" for value in sorted(EVIDENCE_LEVELS))
+_SUBJECT_TYPES_SQL = ", ".join(f"'{value}'" for value in sorted(SUBJECT_TYPES))
+
+#: 检索节点表名。两库共用一张节点表，库别写在节点 metadata 的 `library` 键上
+#: （节点表本身没有 library 列，因此加字段只需投影，不需要改表结构）。
+NODE_TABLE = "data_campfire_node"
 
 
 class KnowledgeItem(Base):
@@ -104,6 +149,131 @@ class KnowledgeItem(Base):
     )
 
 
+class CaseItem(Base):
+    """案例条目（访谈得来的实践经验），与 `KnowledgeItem` 同构并扩展案例专属字段。
+
+    为什么另立一张表而不是给资料表加一个库别列（本包裁决 1、`RQ-KB-01`）：
+    两库是两个独立集合，各自带来源与状态。合并成一张表加类型标签会让
+    「资料库查询」与「案例库查询」共用一套列，而案例的必带字段（授权、循证等级、
+    审阅状态、访谈时间）对资料无意义、资料的版本号对案例也无意义——结果只能是
+    大量可空列与「看库别才知道该读哪几列」的隐式约定，且两库的过滤条件再也无法
+    在 SQL 层静态确定。分开建表后，库别是表身份而非一个可被写错的列值。
+
+    不变量（`RQ-KB-02`、[资料与案例检索] 第 1 节）：缺来源或缺适用范围的条目
+    不进入检索结果，不补默认值——因此在表上把 `source` 与 `applicable_scope`
+    声明为 NOT NULL，并在检索的 SQL 里一并过滤（见 `retrieval._active_filters`）。
+
+    字段依据：[公共案例库] 第 3 节（我们侧的真源形状）、第 7 节（审阅三档）、
+    第 8 节（呈现规则）；[资料与案例检索] 第 3 节（返回契约的案例必带项）。
+
+    归属：与资料条目、检索链同属 `modules/library`（[项目结构设计] 第 6 节）。
+    """
+
+    __tablename__ = "campfire_case_item"
+
+    id: Mapped[UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=new_uuid)
+    #: 上游目录名（如 `2026-05-25_1448_respecting-pace-asd`）。不重写，用于追溯
+    #: （第 3、10 节「追溯」）。唯一：同一上游目录重复导入应被幂等拦下。
+    external_key: Mapped[str] = mapped_column(String(200), nullable=False, unique=True)
+    title: Mapped[str] = mapped_column(String(500), nullable=False)
+    #: 出处。案例侧由 manifest 的 `authorization` 与 `source_type` 共同承载
+    #: 「谁说的」，此处存可读的出处串以复用共有的返回契约字段。
+    source: Mapped[str] = mapped_column(Text, nullable=False)
+    applicable_scope: Mapped[str] = mapped_column(Text, nullable=False)
+
+    # --- 案例专属七字段（本包裁决 1；返回契约的必带项，见资料与案例检索第 3 节）---
+    #: 素材授权状态（`RQ-KB-02`：真实案例与虚构样例必须可辨）。
+    authorization: Mapped[str] = mapped_column(Text, nullable=False)
+    #: 来源类型。一期只有「专家访谈转写」一种（第 3 节）。
+    source_type: Mapped[str] = mapped_column(String(50), nullable=False)
+    #: 循证等级，取值见 `EVIDENCE_LEVELS`。
+    evidence_level: Mapped[str] = mapped_column(String(20), nullable=False)
+    #: 审阅状态，取值见 `REVIEW_STATUSES`。`owner` 不等于专业审阅（第 7 节）。
+    review_status: Mapped[str] = mapped_column(String(20), nullable=False)
+    #: 访谈时间（上游目录名里的时间戳）。「什么时候」是三个必答问题之一，
+    #: 缺失即不得作为依据，因此 NOT NULL。
+    interview_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    #: 是否含高风险内容（第 5 节）。为真的案例在检索返回时必须带该标记，
+    #: 供 skill 决定呈现方式（转述语而非祈使句）。
+    makes_claims_high_risk: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=sql_text("false"))
+    #: 被推断字段的清单（第 4 节）。「被推断的字段必须标为推断」的可执行载体；
+    #: `_inferred` 的内容本身也保留，但不参与检索注入/嵌入。
+    inferred_fields: Mapped[list[str]] = mapped_column(JSONB, nullable=False, server_default=sql_text("'[]'::jsonb"))
+
+    # --- 与资料条目共有的字段 ---
+    #: 被访谈对象类型，取值见 `SUBJECT_TYPES`。
+    subject_type: Mapped[str] = mapped_column(String(20), nullable=False)
+    #: 同意范围与记录时间（第 3、5 节）。由用户确认覆盖到 AI 检索与建议。
+    consent_scope: Mapped[str] = mapped_column(String(50), nullable=False)
+    consent_recorded_at: Mapped[str | None] = mapped_column(Text, nullable=True)
+    #: 仅 `review_status = professional` 时必填（具名，第 7 节）。该「按状态必填」
+    #: 的判据由 CHECK 承载，见 `__table_args__`。
+    reviewer: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    #: 上游转写稿引用。不复制转写原文入库（第 3 节）：转写稿可能含未脱敏内容
+    #: 且属于上游，案例库只存抽取后的案例与卡片并以此回指。
+    transcript_ref: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    version: Mapped[str] = mapped_column(String(100), nullable=False, server_default=sql_text("'1'"))
+    withdrawn: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=sql_text("false"))
+    withdrawn_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    withdrawn_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    #: 状态，取值见 `CASE_STATUSES`。默认 `internal` 而非 `published`：案例属于
+    #: 访谈得来的经验，不是经同行评议的结论（第 1 节），默认不对外发布。
+    status: Mapped[str] = mapped_column(String(20), nullable=False, server_default=sql_text("'internal'"))
+    #: 字面路字段，与资料侧同形（文本列、空格分隔多值）。理由见 `KnowledgeItem`。
+    keywords: Mapped[str] = mapped_column(Text, nullable=False, server_default=sql_text("''"))
+    aliases: Mapped[str] = mapped_column(Text, nullable=False, server_default=sql_text("''"))
+    #: 摄取来源目录与 manifest 内容哈希，供撤下时回溯（RAG 策略第 7 节纪律 3）。
+    source_path: Mapped[str | None] = mapped_column(Text, nullable=True)
+    doc_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=sql_text("now()")
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=sql_text("now()")
+    )
+
+    __table_args__ = (
+        # 字面路三个 GIN trigram 索引，与资料侧同形（RAG 策略第 3.1 节）。
+        Index(
+            "ix_campfire_case_item_title_trgm",
+            "title",
+            postgresql_using="gin",
+            postgresql_ops={"title": "gin_trgm_ops"},
+        ),
+        Index(
+            "ix_campfire_case_item_keywords_trgm",
+            "keywords",
+            postgresql_using="gin",
+            postgresql_ops={"keywords": "gin_trgm_ops"},
+        ),
+        Index(
+            "ix_campfire_case_item_aliases_trgm",
+            "aliases",
+            postgresql_using="gin",
+            postgresql_ops={"aliases": "gin_trgm_ops"},
+        ),
+        # 检索的 SQL 内过滤维度（不变量：过滤在 SQL 内完成）。
+        Index("ix_campfire_case_item_withdrawn_status", "withdrawn", "status"),
+        # 摄取幂等：同一上游目录同一 hash 不重复入库（RAG 策略第 7 节）。
+        UniqueConstraint("source_path", "doc_hash", name="uq_campfire_case_item_source_doc"),
+        # --- 值域与必填判据落存储层（CORE-05）---
+        # 名字用短名，由 `core/db` 的 NAMING_CONVENTION 展开为
+        # `ck_campfire_case_item_<name>`。
+        CheckConstraint(f"status IN ({_CASE_STATUSES_SQL})", name="status"),
+        CheckConstraint(f"review_status IN ({_REVIEW_STATUSES_SQL})", name="review_status"),
+        CheckConstraint(f"evidence_level IN ({_EVIDENCE_LEVELS_SQL})", name="evidence_level"),
+        CheckConstraint(f"subject_type IN ({_SUBJECT_TYPES_SQL})", name="subject_type"),
+        # 具名审阅者只在 `professional` 档必填（第 7 节）：`owner` 与 `pending`
+        # 出现具名审阅者会把「项目所有者核准」冒充成专业审阅。
+        CheckConstraint(
+            "(review_status = 'professional') = (reviewer IS NOT NULL)",
+            name="reviewer_by_status",
+        ),
+        {"comment": "案例条目：事实真源（访谈得来的实践经验，非同行评议结论）"},
+    )
+
+
 class RetrievedNode(Base):
     """检索节点表：条目表的投影，结构必须与 `PGVectorStore` 期望的一致。
 
@@ -156,3 +326,44 @@ class RetrievedNode(Base):
         # ORM 侧已声明 comment：metadata 与库内实际一致，autogenerate 不再漂移。
         {"comment": "检索节点：条目表的投影，供 PGVectorStore 读写（perform_setup=False）"},
     )
+
+
+# ---------------------------------------------------------------------------
+# 库别 → 条目模型/表名（检索链按库取数的唯一映射处）
+# ---------------------------------------------------------------------------
+#
+# 为什么用映射表而不是一串 if/elif：字面路与条目装载都要「按库别取表名/模型」，
+# 两处各写一份分支就会漂移（新增第三个库时必漏一处）。集中成一份 dict 后，
+# `LIBRARIES` 即合法取值域，非法库别由 `retrieval` 在入口拒绝。
+#
+# 注意：节点表不分库——两库共用 `data_campfire_node`，库别写在节点 metadata 的
+# `library` 键上。因此此处只映条目侧，节点侧不参与。
+
+#: 库别 → 条目 ORM 模型。
+ITEM_MODELS: dict[str, type[KnowledgeItem | CaseItem]] = {
+    LIBRARY_KNOWLEDGE: KnowledgeItem,
+    LIBRARY_CASE: CaseItem,
+}
+
+#: 库别 → 条目表名（字面路 SQL 用它参数化表名，见 `retrieval.literal_search`）。
+#: 表名取自模型而非手写字符串，避免与模型声明漂移。
+ITEM_TABLES: dict[str, str] = {library: model.__tablename__ for library, model in ITEM_MODELS.items()}
+
+#: 合法库别集合。检索入口据此拒绝非法取值（本包质量地板校验点 ③）。
+LIBRARIES: frozenset[str] = frozenset(ITEM_MODELS)
+
+
+def as_case_item(value: object) -> CaseItem:
+    """把 `ITEM_MODELS` 取出的条目收窄为 `CaseItem`，供案例聚合消费。
+
+    为什么需要它：`ITEM_MODELS` 的值类型是 `KnowledgeItem | CaseItem` 的联合，
+    而案例聚合要读案例专属字段。用 `isinstance` 收窄而不是 `cast`——后者会
+    把类型错误变成运行期的 `AttributeError`（PY-11：类型阻抗用适配器/收窄）。
+
+    Raises:
+        TypeError: 传入的不是案例条目。调用方（`retrieval`）已按库别取值，
+            走到这里说明映射表与聚合逻辑不一致，属编程错误，应尽早暴露。
+    """
+    if not isinstance(value, CaseItem):
+        raise TypeError(f"期望案例条目，实际 {type(value).__name__}")
+    return value

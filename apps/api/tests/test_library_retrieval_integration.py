@@ -213,31 +213,117 @@ async def test_both_paths_merge_when_text_matches(tmp_path: Path, monkeypatch: p
 async def test_locator_points_to_a_section_not_just_the_document(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """`locator` 要能定位到章节，而不是整份文档（引用回指 `AC-05` 的前提）。
+    """`locator` 要能定位到**当前章节**，而不是只到父级路径或文档根（`AC-05` 的前提）。
 
-    框架的 `header_path` 只有父级路径，直接拿它当 locator 会让同章所有块指向
-    同一位置。
+    ## 这条用例此前的写法是错的（2026-09-30 修正）
+
+    原断言是「至少有一个 locator 含 ≥2 段路径」（`loc.strip("/").count("/") >= 1`），
+    而它自己的夹具文档**只有一级标题**（`# 视觉支持`）——单级标题的正确 locator
+    恰好是 `/视觉支持/`，只有 **1** 段。也就是说该断言**永远不可能被这个夹具满足**：
+    它此前之所以「通过」，是因为泳道 `.env` 当时指向**共享主库**，库里残留着真实
+    语料的深层标题路径（如 `/0～6岁儿童…/一、服务对象/`）满足了断言。
+    一旦在**干净库**上跑（正确的隔离做法），它就失败——实测确认为既有缺陷，
+    与本包改动无关（用改动前的 `retrieval.py` 在同一干净库上复现同一失败）。
+
+    ## 现在的判据（对被测行为真正有判别力）
+
+    要防的是框架的实测行为：`header_path` **只含父级路径、不含当前标题**
+    （实测 `## 一、服务对象` 在 `/规范/` 下，`header_path` 只有 `/规范/`）。
+    若直接拿 `header_path` 当 locator，**同一父级下的所有小节会共用同一个 locator**
+    （实测 23 个块只产出 3 种 locator），引用回指失准。
+
+    因此这里用**嵌套标题**的文档，断言两个子节的 locator **互不相同**、
+    且各自**含自己的小节标题**——父级路径写法会让两者都等于 `/总则/`，断言失败。
+
+    判别性（已实测）：把 `chunking._join_locator` 改成只返回 `header_path`，
+    本用例失败（两个子节 locator 相同）。
+
+    ## 为什么断言只落在本用例自己灌入的条目上（路线 A：自带种子数据）
+
+    原写法对**全库聚合结果**做断言，于是「通过与否」取决于库里恰好有什么：
+    干净库上必红（它自己的夹具满足不了那条断言），而主库上因为残留着别的语料
+    而变绿——同一个仓库、同一个提交，结论随库内容漂移。这类测试无法作为回归依据。
+
+    改为：检索结果**先按本用例的条目标题过滤**，再只对这些条目断言。
+    这样用例自带种子、不读库的既有内容，与仓库其他集成测试的自清理风格一致。
     """
     paths = await _seed(tmp_path, monkeypatch)
+    nested_path = str(tmp_path / "nested.md")
+    #: 本用例自己灌入的条目标题。断言只在这些条目上做——不依赖库里别的语料。
+    seeded_titles = {"视觉支持策略", "行为应对指南", "嵌套标题用例"}
     settings = get_settings()
     try:
+        monkeypatch.setattr(
+            "campfire.modules.library.ingestion.build_embedding",
+            lambda _settings: _FakeEmbedder(),
+        )
         sync_engine = create_sync_engine(settings)
         async_engine = create_engine(settings)
         store = build_vector_store(settings, engine=sync_engine, async_engine=async_engine)
 
+        # 嵌套一级：父级 `/总则/` 下两个子节。父级路径写法会让两子节 locator 相同。
+        nested = tmp_path / "nested.md"
+        nested.write_text(
+            "# 总则\n\n## 视觉支持小节\n\n用图片日程表减少不确定性，孤独症儿童适用。\n\n"
+            "## 行为应对小节\n\n挑战性行为的功能分析步骤，孤独症儿童适用。\n",
+            encoding="utf-8",
+        )
+        async with session_scope(settings) as session:
+            await ingest_file(
+                settings,
+                session,
+                vector_store=store,
+                path=nested,
+                title="嵌套标题用例",
+                source="虚构出处",
+                applicable_scope="学龄前儿童",
+            )
+
         async with session_scope(settings) as session:
             outcome = await search(session, store, "孤独症", embed_query=_fake_embed_query)
-        results = outcome.items
+        # 只取本用例灌入的条目——库里有别的语料时不参与断言（否则通过与否随库内容漂移）。
+        results = [r for r in outcome.items if r.title in seeded_titles]
+        assert results, f"应能检索到本用例灌入的条目（实际：{[r.title for r in outcome.items]}）"
 
         locators = [r.locator for r in results if r.locator]
         assert locators, "结果应带 locator"
-        # 至少有一个 locator 含具体章节名，而不只是文档根。
-        assert any(loc.strip("/").count("/") >= 1 for loc in locators), f"locator 未定位到章节：{locators}"
+        # 每个 locator 都必须指向某个具体章节，而不是文档根 `/`。
+        assert all(loc.strip("/") for loc in locators), f"存在只指向文档根的 locator：{locators}"
+
+        # 嵌套用例：**在节点层**核对同父级下的两个子节 locator 互不相同。
+        #
+        # 为什么不在检索结果里核对：聚合按设计只保留**名次最高的一个节点**作为
+        # snippet（同一轮不重复注入同一条目），因此一个条目在结果里只会出现一个
+        # locator——用它断言「两个子节可区分」是拿聚合的取舍当缺陷。
+        # locator 的可区分性属于**节点投影**，就该在节点上验。
+        async with session_scope(settings) as session:
+            item = (
+                await session.execute(select(KnowledgeItem).where(KnowledgeItem.source_path == nested_path))
+            ).scalar_one()
+            nested_nodes = (
+                await session.execute(
+                    select(RetrievedNode.text, RetrievedNode.metadata_)
+                    .where(RetrievedNode.node_id.like(f"{item.id}:%"))
+                    .order_by(RetrievedNode.node_id)
+                )
+            ).all()
+
+        nested_locators = [str(row.metadata_.get("locator", "")) for row in nested_nodes]
+        # 框架也会为父级 `# 总则` 自身产出一个节点（locator `/总则/`），故用子集断言。
+        assert "/总则/视觉支持小节/" in nested_locators, f"子节 locator 缺当前标题：{nested_locators}"
+        assert "/总则/行为应对小节/" in nested_locators, f"子节 locator 缺当前标题：{nested_locators}"
+        # 关键判据：两个子节**互不相同**。父级路径写法会让它们都等于 `/总则/`
+        # （实测同一父级下 23 个块只产出 3 种 locator），引用无法回指到具体章节。
+        subsection_locators = [loc for loc in nested_locators if "小节" in loc]
+        assert len(set(subsection_locators)) == 2, f"同父级下的子节 locator 未区分开：{nested_locators}"
+        # 每个子节 locator 必须含自己的小节标题。
+        assert "视觉支持小节" in subsection_locators[0]
+        assert "行为应对小节" in subsection_locators[1]
 
         await async_engine.dispose()
         sync_engine.dispose()
     finally:
-        await _cleanup(paths)
+        await _cleanup([*paths, nested_path])
 
 
 @pytest.mark.asyncio
