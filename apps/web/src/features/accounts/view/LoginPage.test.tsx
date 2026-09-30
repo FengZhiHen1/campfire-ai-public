@@ -201,7 +201,12 @@ describe('登录页 · submitting', () => {
     expect(input('账号名').disabled).toBe(true);
     expect(input('密码').disabled).toBe(true);
 
+    // 让挂起的提交落地并等它渲染完：不留未决状态更新，否则测试结束后 React 会
+    // 报 act() 警告，而那种警告会掩盖真实的竞态问题。
     gate.resolve({ accountName: '阿澈的妈妈' });
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: '登录' })).toBeDefined();
+    });
   });
 
   it('P0 提交中通过礼貌 live region 公告「正在登录…」', async () => {
@@ -216,6 +221,9 @@ describe('登录页 · submitting', () => {
     expect(status.textContent).toBe('正在登录…');
 
     gate.resolve({ accountName: '阿澈的妈妈' });
+    await waitFor(() => {
+      expect(screen.getByRole('status').textContent).toBe('');
+    });
   });
 
   it('P1 并发闸门在动作函数体内：提交中再次提交不发起第二次请求', async () => {
@@ -231,6 +239,8 @@ describe('登录页 · submitting', () => {
     await waitFor(() => {
       expect(submitLogin).toHaveBeenCalledTimes(1);
     });
+    // 用例结束时提交仍在挂起：jsdom 会连同未决 Promise 一起销毁，不产生 act 警告；
+    // 这里刻意不 resolve，因为要断言的是「第二次提交根本没有调用端口」。
   });
 });
 
