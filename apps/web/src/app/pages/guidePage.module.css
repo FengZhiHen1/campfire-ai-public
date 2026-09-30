@@ -1,0 +1,28 @@
+/* 使用说明页就近样式（CSS Modules）：只消费 token 变量，零 accent。 */
+
+.sectionTitle {
+  margin: 0;
+  font-family: var(--font-display);
+  font-weight: 500;
+  font-size: var(--text-lg);
+  line-height: 1.3;
+  letter-spacing: var(--tracking-display);
+}
+
+.sectionBody {
+  margin: var(--space-3) 0 0;
+  color: var(--fg-2);
+}
+
+/* 硬文案用 --muted 而非 accent：emergency 小节的边界提示是提醒，不是强调（本页零 accent）。 */
+.sectionNote {
+  margin: var(--space-3) 0 0;
+  color: var(--muted);
+  font-size: var(--text-sm);
+}
+
+.tailNote {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--text-sm);
+}
