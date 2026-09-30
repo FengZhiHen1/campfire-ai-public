@@ -52,6 +52,13 @@ from campfire.modules.accounts.models import (
     STATE_USED,
     InviteCode,
 )
+from campfire.modules.accounts.registration import (
+    EMAIL_FORM_FIELD,
+    INVITE_CODE_FORM_FIELD,
+    InviteCodeRequired,
+    api_overrides,
+    make_sign_up_override,
+)
 from campfire.modules.accounts.repository import (
     LIST_DEFAULT_LIMIT,
     LIST_MAX_LIMIT,
@@ -103,4 +110,10 @@ __all__ = [
     # 纯函数
     "generate_invite_code",
     "normalize_invite_code",
+    # 注册复写（注入身份服务的 sign-up API）
+    "EMAIL_FORM_FIELD",
+    "INVITE_CODE_FORM_FIELD",
+    "InviteCodeRequired",
+    "api_overrides",
+    "make_sign_up_override",
 ]
