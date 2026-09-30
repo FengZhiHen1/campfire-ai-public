@@ -42,6 +42,7 @@ from campfire.core.pending_write import (
     enqueue,
 )
 from campfire.modules.memory.consumer import consume_memory_episode
+from campfire.modules.memory.derived import read_emergency_facts
 from campfire.modules.memory.errors import MemoryDataError, MemoryUnavailableError
 from campfire.modules.memory.graph import MemoryGraph, OrderedCrossEncoder
 from campfire.modules.memory.identity import PendingId, derive_episode_uuid, to_account_id
@@ -53,6 +54,22 @@ from .conftest import connect_falkordb_or_skip
 pytestmark = pytest.mark.integration
 
 _ACCOUNT = "it_mem_write_account"
+
+
+async def _read_timeline(graph, account, **kwargs):  # noqa: ANN001, ANN003, ANN201
+    """调**公开**读入口（自动开会话取删除账本）。
+
+    2026-09-30 起读入口只收 `session`——「已删清单」由函数内部取，调用方无法漏传或
+    传空列表（此前那样会静默返回已删记忆）。本助手只替测试开会话，不绕过过滤。
+    """
+    async with session_scope(get_settings()) as session:
+        return await read_timeline(session, graph, to_account_id(account), **kwargs)
+
+
+async def _read_emergency_facts(graph, account, **kwargs):  # noqa: ANN001, ANN003, ANN201
+    """调**公开**应急读入口（同上）。"""
+    async with session_scope(get_settings()) as session:
+        return await read_emergency_facts(session, graph, to_account_id(account), **kwargs)
 
 
 @pytest_asyncio.fixture(autouse=True)
@@ -184,7 +201,7 @@ async def test_pending_record_becomes_an_episode_with_the_derived_uuid(
         async with session_scope(get_settings()) as session:
             before = (await session.execute(select(PendingWrite).where(PendingWrite.id == pending_id))).scalar_one()
         assert before.state == STATE_PENDING
-        assert await read_timeline(memory_graph, to_account_id(_ACCOUNT), deleted_keys=[]) == []
+        assert await _read_timeline(memory_graph, _ACCOUNT) == []
 
         async with session_scope(get_settings()) as session:
             result = await consume_memory_episode(session, memory_graph, pending_id=pending_id, lease_owner="worker-1")
@@ -200,7 +217,7 @@ async def test_pending_record_becomes_an_episode_with_the_derived_uuid(
         assert after.finished_at is not None
         assert after.lease_owner is None, "完成后必须清租约"
 
-        episodes = await read_timeline(memory_graph, to_account_id(_ACCOUNT), deleted_keys=[])
+        episodes = await _read_timeline(memory_graph, _ACCOUNT)
         assert [e.content for e in episodes] == ["他喜欢早上跑步"]
         assert episodes[0].episode_uuid == expected_uuid
     finally:
@@ -221,7 +238,7 @@ async def test_source_session_id_round_trips_via_source_description(memory_graph
         async with session_scope(get_settings()) as session:
             await consume_memory_episode(session, memory_graph, pending_id=pending_id, lease_owner="w")
 
-        episodes = await read_timeline(memory_graph, to_account_id(_ACCOUNT), deleted_keys=[])
+        episodes = await _read_timeline(memory_graph, _ACCOUNT)
         assert len(episodes) == 1
         assert "session=session-42" in episodes[0].source
         # pending 标识也在来源里，便于从图库反查是哪条待处理记录写的。
@@ -363,15 +380,16 @@ async def test_deleted_memory_is_not_returned_after_write_path_completes(
             await consume_memory_episode(session, memory_graph, pending_id=pending_id, lease_owner="w")
 
         episode_uuid = derive_episode_uuid(PendingId(pending_id))
-        episodes = await read_timeline(memory_graph, to_account_id(_ACCOUNT), deleted_keys=[])
+        episodes = await _read_timeline(memory_graph, _ACCOUNT)
         assert len(episodes) == 1
 
         async with session_scope(get_settings()) as session:
             await delete_episode(session, account_id=to_account_id(_ACCOUNT), episode_key=episode_uuid)
         async with session_scope(get_settings()) as session:
             keys = await deleted_episode_keys(session, _ACCOUNT)
+        assert keys, "删除后账本应有记录（否则下面的断言不成立）"
 
-        after = await read_timeline(memory_graph, to_account_id(_ACCOUNT), deleted_keys=keys)
+        after = await _read_timeline(memory_graph, _ACCOUNT)
         assert after == [], "写入后删除的记忆不得再出现在时间线"
     finally:
         await _clear()
@@ -431,7 +449,7 @@ async def test_failed_write_leaves_no_readable_episode(memory_graph: MemoryGraph
         assert rows[0]["c"] == 0, "抽取失败后不得留下半写节点"
 
         # 读路径也不得返回它（这才是契约的可观察面）。
-        timeline = await read_timeline(memory_graph, to_account_id(_ACCOUNT), deleted_keys=[])
+        timeline = await _read_timeline(memory_graph, _ACCOUNT)
         assert timeline == [], "从未成功写入的记忆不得出现在时间线里"
     finally:
         await _clear()
@@ -454,7 +472,6 @@ async def test_hard_kill_leftover_is_unreadable_by_both_paths(memory_graph: Memo
 
     判别性：去掉读路径的 `write_state` 过滤，本用例失败。
     """
-    from campfire.modules.memory.derived import read_emergency_facts
     from campfire.modules.memory.identity import PendingId, derive_episode_uuid
     from campfire.modules.memory.store import write_episode
 
@@ -511,10 +528,10 @@ async def test_hard_kill_leftover_is_unreadable_by_both_paths(memory_graph: Memo
         )
 
         # 两条读路径都必须看不见它。
-        timeline = await read_timeline(memory_graph, to_account_id(_ACCOUNT), deleted_keys=[])
+        timeline = await _read_timeline(memory_graph, _ACCOUNT)
         assert timeline == [], "硬杀遗留的半写 episode 不得出现在时间线"
 
-        facts = await read_emergency_facts(memory_graph, to_account_id(_ACCOUNT), deleted_keys=[])
+        facts = await _read_emergency_facts(memory_graph, _ACCOUNT)
         assert facts.facts == [], f"引用未完成 episode 的派生事实不得被注入，实际注入 {[f.fact for f in facts.facts]}"
     finally:
         await _clear()
@@ -578,7 +595,7 @@ async def test_retry_of_a_written_episode_does_not_downgrade_the_marker(memory_g
         assert rows[0]["ws"] == EPISODE_WRITE_STATE_DONE, (
             f"重试把已成功的标记降级成了 {rows[0]['ws']!r}——原本可读的记忆变得不可读"
         )
-        timeline = await read_timeline(memory_graph, to_account_id(_ACCOUNT), deleted_keys=[])
+        timeline = await _read_timeline(memory_graph, _ACCOUNT)
         assert [e.episode_uuid for e in timeline] == [key], "已成功写入的记忆必须仍可读"
     finally:
         await _clear()

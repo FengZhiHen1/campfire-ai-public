@@ -33,9 +33,11 @@ from typing import TYPE_CHECKING
 
 from graphiti_core.driver.driver import GraphDriver
 from graphiti_core.nodes import EpisodeType
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from campfire.modules.memory.errors import MemoryDataError, MemoryUnavailableError
 from campfire.modules.memory.identity import AccountId, EpisodeUuid
+from campfire.modules.memory.ledger import deleted_episode_keys
 
 if TYPE_CHECKING:
     # 仅为类型标注：`graph.py` 是装配层，本模块只消费它构造出的句柄。
@@ -156,25 +158,29 @@ def account_driver(driver: GraphDriver, account_id: AccountId) -> GraphDriver:
 
 
 async def read_timeline(
+    session: AsyncSession,
     graph: MemoryGraph,
     account_id: AccountId,
     *,
-    deleted_keys: list[str],
     since: datetime | None = None,
     until: datetime | None = None,
     query: str | None = None,
     limit: int = TIMELINE_DEFAULT_LIMIT,
 ) -> list[MemoryEpisode]:
-    """时间线回看：按 `valid_at` 倒序取 episode 原文，排除已删除的。
+    """时间线回看：按 `valid_at` 倒序取 episode 原文，**排除已删除的**。
 
     自建 Cypher 而非 `retrieve_episodes`：后者没有时间区间与关键词参数（第 4 节实测）。
     删除过滤**下推到查询**（`NOT e.uuid IN $deleted`）：读回来再过滤会让 `limit`
     把已删除的算进配额，语义不等价（见 `ledger.py` 说明）。
 
+    **删除过滤的取数在本函数内完成**（2026-09-30 裁决，见通用记忆第 7 节）：调用方
+    **不传**「已删清单」，因此不存在「漏传导致用户已删除的记忆被返回」的实现路径——
+    此前 `deleted_keys` 是调用方的必填参数，传空列表就会**静默返回已删内容**（实测）。
+
     Args:
+        session: 关系库会话（用于取该账号的删除账本）。
         graph: 记忆图库句柄（本函数自行切到账号那张图）。
         account_id: 分区键，由登录态决定。
-        deleted_keys: 该账号已删除的 episode key（`ledger.deleted_episode_keys`）。
         since: 可选起始时间（含）。
         until: 可选结束时间（含）。
         query: 可选关键词，对 `content` 做**子串**匹配（大小写不敏感）。
@@ -185,12 +191,42 @@ async def read_timeline(
 
     Raises:
         MemoryUnavailableError: 图库查询失败。
-        MemoryDataError: 图库里的数据不合法（必填字段缺失或时间无法解析）。
+        MemoryDataError: 图库里的数据不合法（必填字段缺失或时间无法解析），
+            或该账号的删除账本**超过上界**而无法完整排除已删内容。
         ValueError: 时间区间非法（`since > until`）。
     """
     if since is not None and until is not None and since > until:
         raise ValueError("时间区间非法：since 晚于 until")
 
+    # 取账本：**必须**在图库查询之前，且在此函数内完成（本函数是唯一公开入口）。
+    deleted_keys = await deleted_episode_keys(session, account_id)
+
+    return await _read_timeline(
+        graph, account_id, deleted_keys=deleted_keys, since=since, until=until, query=query, limit=limit
+    )
+
+
+async def _read_timeline(
+    graph: MemoryGraph,
+    account_id: AccountId,
+    *,
+    deleted_keys: list[str],
+    since: datetime | None = None,
+    until: datetime | None = None,
+    query: str | None = None,
+    limit: int = TIMELINE_DEFAULT_LIMIT,
+) -> list[MemoryEpisode]:
+    """时间线查询的**内部实现**：已经拿到 `deleted_keys`，只管查图库。
+
+    私有（前缀下划线）：不导出、不进入 `__all__`。保留它而不是把代码合并进
+    `read_timeline`，是为了让「图库查询」这一层能脱离关系库被**单独测试**（现有集成
+    测试大多只需构造图库数据、不关心账本）。公开入口只有 `read_timeline`，
+    因此「忘记过滤」在对外 API 上不可表达。
+
+    Raises:
+        MemoryUnavailableError: 图库查询失败。
+        MemoryDataError: 图库里的数据不合法（必填字段缺失或时间无法解析）。
+    """
     # 上界收敛：不信任调用方给的上限（CORE-11）。
     effective_limit = max(1, min(limit, TIMELINE_MAX_LIMIT))
 
@@ -479,6 +515,8 @@ async def write_episode(
 
 __all__ = [
     "EPISODE_SOURCE",
+    "EPISODE_WRITE_STATE_DONE",
+    "EPISODE_WRITE_STATE_PENDING",
     "TIMELINE_DEFAULT_LIMIT",
     "TIMELINE_MAX_LIMIT",
     "MemoryEpisode",
