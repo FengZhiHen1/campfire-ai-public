@@ -399,8 +399,9 @@ describe('登录页 · 注册态与可达性', () => {
   it('P0 不出现自助找回入口（一期无邮箱即无自助通道）', () => {
     renderLogin(port());
 
-    expect(screen.getByText('忘记密码？请联系运营者人工重置。')).toBeDefined();
-    // 反向：不得有「找回密码」这类假入口。断言按按钮/链接角色与「找回」字样查。
+    // 正向那句「忘记密码？请联系运营者人工重置」的归属是设置页（设置页设计第 25 行），
+    // 由 SettingsPage.test 逐字守；登录页设计只列三个区块，故本页不再渲染它，这里只守反向：
+    // 不得出现「找回密码」这类假入口（断言按按钮/链接角色与「找回」字样查）。
     expect(screen.queryByRole('button', { name: /找回/ })).toBeNull();
     expect(screen.queryByRole('link', { name: /找回/ })).toBeNull();
   });
