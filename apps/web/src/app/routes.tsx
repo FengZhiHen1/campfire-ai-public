@@ -27,6 +27,12 @@ import { ChatPage } from '../features/consult/view/ChatPage';
 import { ConsultListPage } from '../features/consult/view/ConsultListPage';
 import { EmergencyFormPage } from '../features/consult/view/EmergencyFormPage';
 import { supertokensAuthPort } from '../infrastructure/auth/authPort';
+import { ProfilePage } from '../features/profile/view/ProfilePage';
+import { MemoryPage } from '../features/memory/view/MemoryPage';
+import { LibraryPage } from '../features/library/view/LibraryPage';
+import { httpLibraryPort } from '../infrastructure/http/libraryPort';
+import { httpMemoryPort } from '../infrastructure/http/memoryPort';
+import { httpProfilePort } from '../infrastructure/http/profilePort';
 import { createConsultApi } from '../infrastructure/consult/consultPort';
 
 /**
@@ -42,13 +48,6 @@ const consultPort = createConsultApi({
     useSessionStore.getState().markAnonymous();
   },
 });
-import { ProfilePage } from '../features/profile/view/ProfilePage';
-import { MemoryPage } from '../features/memory/view/MemoryPage';
-import { LibraryPage } from '../features/library/view/LibraryPage';
-import { supertokensAuthPort } from '../infrastructure/auth/authPort';
-import { httpLibraryPort } from '../infrastructure/http/libraryPort';
-import { httpMemoryPort } from '../infrastructure/http/memoryPort';
-import { httpProfilePort } from '../infrastructure/http/profilePort';
 
 /** 一条前端路由的描述；守卫需求是数据而不是散落在 JSX 里的条件。 */
 export interface AppRoute {
