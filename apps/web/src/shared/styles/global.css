@@ -1,0 +1,84 @@
+/* 全局基础样式：只消费 shared/styles/tokens.css 里的变量。
+ * 视觉契约（docs/design/DESIGN.md）的唯一权威是 token 层；本文件不得定义色值与间距。
+ * 一期只适配手机端：宽屏视口下内容容器以 --phone-shell-max 居中，容器外为暖沙蒙版底。 */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+}
+
+body {
+  background: var(--surface-warm);
+  color: var(--fg);
+  font: var(--text-base) / var(--leading-body) var(--font-body);
+  -webkit-font-smoothing: antialiased;
+}
+
+#root {
+  min-height: 100svh;
+}
+
+.phone-shell {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  max-width: var(--phone-shell-max);
+  width: 100%;
+  min-height: 100svh;
+  margin-inline: auto;
+  padding: calc(var(--space-6) + env(safe-area-inset-top, 0px)) var(--container-gutter-phone)
+    calc(var(--space-6) + env(safe-area-inset-bottom, 0px));
+  background: var(--bg);
+  box-shadow: var(--elev-ring);
+}
+
+.page-title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-weight: 500;
+  font-size: var(--text-xl);
+  line-height: 1.3;
+  letter-spacing: var(--tracking-display);
+}
+
+.page-note {
+  margin: 0;
+  color: var(--muted);
+}
+
+.entry-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.entry-link {
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  color: var(--fg);
+  text-decoration: none;
+}
+
+.entry-link:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: var(--space-1);
+}
+
+.status-note {
+  margin: 0;
+  color: var(--meta);
+}
