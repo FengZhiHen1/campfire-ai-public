@@ -10,6 +10,9 @@
 
 - ``consume_memory_episode``：消费 ``kind = memory_episode`` 的待处理记录
   （写入链路见 docs/技术设计/technical-details/写入路径.md 第 4、5、6 节）。
+- **兜底扫描**（第 4.1 节）：Worker 启动时拉起一个常驻周期任务，回收过期租约并把
+  「该处理却没被处理」的记录重新投递。**跑在 Worker 进程内、不新增部署单元**
+  （2026-09-30 裁决；重访条件见 `_start_sweep` 的 docstring）。
 
 ## 失败语义（第 6 节）
 
@@ -17,19 +20,30 @@
 超过上限转 ``dead`` 并告警。**图库故障不等于写入成功**——记录留在 ``pending``/``dead``，
 「没写进去」绝不能被当作「写进去了」（第 2 节的不变量）。
 
+**兜底扫描的失败语义相反**：单轮失败**不得**终止循环（只记日志、下一轮继续）——
+一次数据库抖动就让扫描永久停止，等于把「丢的任务可被检测」这条兼底控制静默关掉。
+
 启动方式：``uv run taskiq worker campfire.worker:broker``
 """
 
+import asyncio
 import logging
+from contextlib import suppress
+from datetime import datetime, timezone
+
+from sqlalchemy.ext.asyncio import AsyncSession
+from taskiq import TaskiqEvents
 
 from campfire.core.config import get_settings
 from campfire.core.db import session_scope
-from campfire.core.jobs import build_broker, set_dispatch_hook
+from campfire.core.jobs import build_broker, dispatch_pending_write, set_dispatch_hook
 from campfire.core.pending_write import (
     MAX_ATTEMPTS,
     STATE_DEAD,
+    find_undelivered,
     mark_dead,
     mark_retryable_failure,
+    reclaim_expired_leases,
 )
 from campfire.modules.memory.consumer import consume_memory_episode
 from campfire.modules.memory.errors import MemoryDataError
@@ -156,3 +170,86 @@ async def _register_retryable_failure(pending_id: str, exc: BaseException) -> No
                 record.attempts,
                 record.last_error,
             )
+
+
+# ---------------------------------------------------------------------------
+# 兜底扫描（写入路径第 4.1 节）
+# ---------------------------------------------------------------------------
+
+#: 扫描周期（第 10 节：**5 分钟**）。
+SWEEP_INTERVAL_SECONDS = 300
+
+#: 常驻扫描任务句柄；`None` 表示未启动。
+_sweep_task: asyncio.Task[None] | None = None
+
+
+async def sweep_once(session: AsyncSession | None = None, *, now: datetime | None = None) -> int:
+    """跑一轮兜底扫描：回收过期租约 + 重投没人处理的记录。返回重投条数。
+
+    两件事的顺序有讲究：**先回收租约、再重投**。回收把「领取后崩溃」的记录放回
+    `pending`，紧接着的查询就能把它们一并重投——否则它们要等下一周期（5 分钟）。
+
+    Args:
+        session: 关系库会话；省略则自行开一个（周期任务走这条）。
+        now: 参照时间，**显式可传**以便测试租约过期与退避到期的确定性
+            （与 `reclaim_expired_leases` / `find_undelivered` 的同一约定）。
+
+    Returns:
+        本轮重投的记录条数。
+
+    **失败语义**：本函数**不吞异常**（调用方 `_sweep_forever` 负责隔离）。
+    吞掉会让「扫描一直失败」变成静默——那正是本机制要防的事。
+    """
+    if session is None:
+        async with session_scope(get_settings()) as opened:
+            return await sweep_once(opened, now=now)
+    reference = now if now is not None else datetime.now(timezone.utc)
+    reclaimed = await reclaim_expired_leases(session, now=reference)
+    if reclaimed:
+        logger.info("兜底扫描：回收 %d 条过期租约", len(reclaimed))
+    undelivered = await find_undelivered(session, now=reference)
+    for pending_id in undelivered:
+        await dispatch_pending_write(str(pending_id))
+    if undelivered:
+        logger.info("兜底扫描：重投 %d 条待处理记录", len(undelivered))
+    return len(undelivered)
+
+
+async def _sweep_forever() -> None:
+    """周期跑扫描，直到被取消。
+
+    **单轮失败不得终止循环**：一次数据库抖动就让扫描永久停止，等于把「丢的任务可被
+    检测」这条兼底控制静默关掉。因此每轮各自捕获异常，只记日志并继续。
+    """
+    while True:
+        try:
+            await sweep_once()
+        except asyncio.CancelledError:
+            raise
+        except Exception:  # noqa: BLE001 —— 单轮失败继续下一轮，绝不静默停止扫描
+            logger.exception("兜底扫描本轮失败，%d 秒后重试", SWEEP_INTERVAL_SECONDS)
+        await asyncio.sleep(SWEEP_INTERVAL_SECONDS)
+
+
+@broker.on_event(TaskiqEvents.WORKER_STARTUP)
+async def _start_sweep(_state: object) -> None:
+    """Worker 启动时拉起常驻扫描任务。
+
+    **为什么跑在 Worker 进程内**（2026-09-30 裁决，见第 4.1 节）：一期是**单个** worker
+    服务，独立 `taskiq scheduler` 的扩容与隔离收益为零，而它会把部署单元从 8 个加到 9 个
+    （[技术栈设计](../../docs/技术栈设计.md)第 6 节）、与已确认的定调文档冲突。
+    重访条件：worker 要水平扩容到多副本时改独立 scheduler。
+    """
+    global _sweep_task
+    _sweep_task = asyncio.create_task(_sweep_forever())
+
+
+@broker.on_event(TaskiqEvents.WORKER_SHUTDOWN)
+async def _stop_sweep(_state: object) -> None:
+    """Worker 停止时收口扫描任务（取消并等它真正结束）。"""
+    global _sweep_task
+    if _sweep_task is not None:
+        _sweep_task.cancel()
+        with suppress(asyncio.CancelledError):
+            await _sweep_task
+        _sweep_task = None
