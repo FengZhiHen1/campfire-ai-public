@@ -30,7 +30,7 @@ from __future__ import annotations
 
 import json
 import uuid
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -39,7 +39,7 @@ import pytest
 import pytest_asyncio
 from sqlalchemy import select
 
-from campfire.core.config import EMBEDDING_DIM, get_settings
+from campfire.core.config import EMBEDDING_DIM, Settings, get_settings
 from campfire.core.db import create_engine, create_sync_engine, session_scope
 from campfire.modules.library import routes as library_routes
 from campfire.modules.library.case_ingestion import NARRATIVE_SECTIONS, ingest_case_package
@@ -649,6 +649,117 @@ async def test_expand_of_item_not_on_page_is_not_an_error(client: httpx.AsyncCli
 
     assert response.status_code == 200
     assert response.json()["items"] == []
+
+
+def _point_library_routes_at(monkeypatch: pytest.MonkeyPatch, settings: Settings) -> Callable[[], None]:
+    """把本面读到的设置换成 `settings`；返回一个把 `core.db` 进程内缓存还原的函数。
+
+    还原必须由用例在自己的体内显式调用：请求路径会把按 `settings` 建出的引擎与会话
+    工厂写进 `core.db` 的模块级缓存，而 `monkeypatch` 要等夹具（含 `seeded`）收尾之后
+    才撤销——那时 `seeded` 正要用真设置删掉自己写入的语料，读到坏缓存就会清理失败、
+    在库里留下脏行（本次实测踩过，已手工清理）。
+    """
+    import campfire.core.db as core_db
+
+    original = (core_db._engine, core_db._session_factory)
+    monkeypatch.setattr(library_routes, "get_settings", lambda: settings)
+    core_db._engine = None
+    core_db._session_factory = None
+
+    def _restore() -> None:
+        core_db._engine, core_db._session_factory = original
+
+    return _restore
+
+
+async def test_expand_fetch_failure_is_503_with_and_without_expand(
+    client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch, seeded: dict[str, str]
+) -> None:  # noqa: ANN001
+    """同一失败原因下，带不带 `expand` 同码 503（契约第 2 节的错误码表里没有 500）。
+
+    失败是真实的驱动失败、不是替身异常：把本面读到的设置换成指向无人监听的端口，
+    并清掉 `core.db` 进程内缓存的引擎与会话工厂，于是逃出来的是生产里「数据库不可用」
+    的同一异常类型——探针实测：裸 `load_items` 抛 `ConnectionRefusedError`，而检索路
+    把它转译成 `RetrievalError`。
+
+    两次请求只差 `expand` 一个参数，因此两条断言是「同因同码」的对照。
+
+    消融：修复前 `_check_expand_target` 的取数在 `try` 之外，带 `expand` 的那次让
+    `ConnectionRefusedError` 原样冒出（生产里由 Starlette 的 ServerErrorMiddleware
+    兜成 500），不带的那次走检索链的转译 → 503；本用例因异常未被接住而红。
+    """
+    dead = Settings(database_url="postgresql+asyncpg://campfire:campfire@127.0.0.1:1/campfire")
+    restore = _point_library_routes_at(monkeypatch, dead)
+    try:
+        without_expand = await client.get("/library/items", params={"library": "case"})
+        with_expand = await client.get("/library/items", params={"library": "case", "expand": seeded["case_item_id"]})
+    finally:
+        restore()
+
+    assert without_expand.status_code == 503
+    assert with_expand.status_code == 503
+    assert with_expand.json()["code"] == "retrieval_unavailable"
+
+
+async def test_expand_with_unconfigured_database_is_503_for_both_requests(
+    client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch, seeded: dict[str, str]
+) -> None:  # noqa: ANN001
+    """未配置 `DATABASE_URL` 时同样同码 503（`RuntimeError` 这一类）。
+
+    `core.db.create_engine` 在缺配置时抛 `RuntimeError`，它发生在取得会话之前：
+    不带 `expand` 的请求由检索路的 `except RuntimeError` 接住，带 `expand` 的请求
+    原先没有任何 `except` 接它。两次请求一起断，钉住「同因同码」。
+    """
+    unconfigured = Settings(database_url=None)
+    restore = _point_library_routes_at(monkeypatch, unconfigured)
+    try:
+        without_expand = await client.get("/library/items", params={"library": "case"})
+        with_expand = await client.get("/library/items", params={"library": "case", "expand": seeded["case_item_id"]})
+    finally:
+        restore()
+
+    assert without_expand.status_code == 503
+    assert with_expand.status_code == 503
+    assert with_expand.json()["code"] == "retrieval_unavailable"
+
+
+async def test_expand_maps_known_retrieval_failure_to_503(
+    client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch, seeded: dict[str, str]
+) -> None:  # noqa: ANN001
+    """`expand` 校验里的已知取数失败（`RetrievalError`）→ 503，与列表路同形。"""
+    from campfire.modules.library.retrieval import RetrievalError
+
+    async def _fail(*args, **kwargs):  # noqa: ANN002, ANN003
+        raise RetrievalError("虚构取数失败：条目表不可达")
+
+    monkeypatch.setattr(library_routes, "load_items", _fail)
+
+    response = await client.get("/library/items", params={"library": "case", "expand": seeded["case_item_id"]})
+
+    assert response.status_code == 503
+    assert response.json()["code"] == "retrieval_unavailable"
+
+
+async def test_expand_lets_unknown_errors_bubble_instead_of_reporting_503(
+    client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch, seeded: dict[str, str]
+) -> None:  # noqa: ANN001
+    """`expand` 校验里的未知编程错误原样冒出，不冒充「检索暂时不可用」。
+
+    与 `get_item` 同一条纪律：改名／契约漂移类的缺陷被报成 503 时，使用者会照提示
+    重试、运维会按依赖故障排查，而真相是代码缺陷。ASGI 传输把未捕获异常原样抛回
+    测试，因此这里断言异常类型——它等价于生产里的 500（由 ServerErrorMiddleware
+    兜底），而不是 503。
+
+    消融：把捕获放宽成 `except Exception`，本用例收不到异常、响应是 503，必红。
+    """
+
+    async def _boom(*args, **kwargs):  # noqa: ANN002, ANN003
+        raise AttributeError("虚构的编程错误：条目模型改名后取数处未同步")
+
+    monkeypatch.setattr(library_routes, "load_items", _boom)
+
+    with pytest.raises(AttributeError):
+        await client.get("/library/items", params={"library": "case", "expand": seeded["case_item_id"]})
 
 
 # ---------------------------------------------------------------------------

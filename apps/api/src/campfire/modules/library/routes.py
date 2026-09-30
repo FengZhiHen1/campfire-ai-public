@@ -27,6 +27,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Query
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 from supertokens_python.recipe.session import SessionContainer
 
@@ -542,7 +543,10 @@ async def list_items(
     对外状态码（在函数体内映射，不通过抛异常）：
         422: `library` 未知、`cursor` 非法、`limit` 越界（由 FastAPI 的查询校验拒绝），
             或 `expand` 不是合法标识、或它属于另一个库。
-        503: 检索不可用（两路都失败、缺嵌入凭据），或未配置数据库，或展开失败。
+        503: 已知的取数失败——`RetrievalError`（检索链转译的查询失败）、`SQLAlchemyError`
+            与 `OSError`（驱动／连接层直抛）、缺嵌入凭据（`EmbeddingConfigurationError`），
+            或未配置数据库（`RuntimeError`）。带不带 `expand` 都是这一个码：失败原因
+            相同，状态码不得随请求形状而变。
 
     Raises:
         Exception: 未归入上面两类的意外异常原样冒出——把未知缺陷报成
@@ -556,7 +560,14 @@ async def list_items(
         return _error(422, "cursor 不是本面发出的游标", "invalid_payload")
 
     if expand is not None:
-        problem = await _check_expand_target(expand, library=library)
+        # 校验取数与主取数同一失败口径：库不可达或未配置数据库时，状态码不得因请求
+        # 带不带 `expand` 而异。`_check_expand_target` 自己取数，不经过检索链那层
+        # 「查询失败 → `RetrievalError`」的转译，因此驱动与连接层的异常要在这里认。
+        # 只转已知的取数失败；未知缺陷原样冒出，见本函数 docstring。
+        try:
+            problem = await _check_expand_target(expand, library=library)
+        except (RetrievalError, RuntimeError, SQLAlchemyError, OSError):
+            return _unavailable()
         if problem is not None:
             return problem
 
