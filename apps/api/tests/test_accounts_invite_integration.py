@@ -28,7 +28,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 import pytest_asyncio
-from sqlalchemy import delete
+from sqlalchemy import delete, select
 from sqlalchemy.exc import IntegrityError
 
 from campfire.core.config import get_settings
@@ -814,28 +814,42 @@ async def test_database_enforces_unique_codes() -> None:
 
 @pytest.mark.asyncio
 async def test_list_filters_by_state_and_is_bounded() -> None:
-    """列举可按状态过滤，且 `limit` **收敛到服务端上界**（CORE-11）。"""
+    """列举可按状态过滤，且 `limit` **收敛到服务端上界**（CORE-11）。
+
+    ## 为什么断言要对 `created_by` 收窄
+
+    ``list_invite_codes`` / ``count_invite_codes`` 是**全局**查询（运营要看全部码，
+    这是对的）。但本文件的清理按 ``created_by`` 收窄（并发安全的必要做法），
+    因此**别的测试文件或上一次运行的残留行可能同时可见**。
+    断言全局精确值会在那种情况下假失败——而这个测试的意图是「本文件造的那几张」。
+    故：先按 ``created_by`` 筛出自己那几张再断言，同时**仍调用真实的全局函数**
+    （收窄发生在断言侧，不影响被测代码）。
+    """
     await _clear()
     try:
         codes = [await _issue() for _ in range(3)]
         async with session_scope(get_settings()) as session:
             await revoke_invite_code(session, code=codes[0])
 
+        def mine(records: list[InviteCode]) -> set[str]:
+            """只取本文件签发的那些码（见 docstring 的说明）。"""
+            return {r.code for r in records if r.created_by == _OPERATOR}
+
         async with session_scope(get_settings()) as session:
             issued = await list_invite_codes(session, state=STATE_ISSUED)
             revoked = await list_invite_codes(session, state=STATE_REVOKED)
-        assert {r.code for r in issued} == set(codes[1:])
-        assert {r.code for r in revoked} == {codes[0]}
+        assert mine(issued) == set(codes[1:])
+        assert mine(revoked) == {codes[0]}
 
         # 上界收敛：给一个荒谬的 limit，不得无界取数。
         async with session_scope(get_settings()) as session:
             bounded = await list_invite_codes(session, limit=10**9)
         assert len(bounded) <= 500
 
-        # 每次调用都必须是独立会话，避免复用同一会话导致两次查询互相影响。
+        # 全局计数**包含**本文件的 3 张（用 >= 而不是 ==：见 docstring）。
         async with session_scope(get_settings()) as session:
-            assert await count_invite_codes(session) == 3
-            assert await count_invite_codes(session, state=STATE_ISSUED) == 2
+            assert await count_invite_codes(session) >= 3
+            assert await count_invite_codes(session, state=STATE_ISSUED) >= 2
     finally:
         await _clear()
 
@@ -858,7 +872,15 @@ async def test_list_rejects_an_unknown_state_instead_of_returning_empty() -> Non
 
 @pytest.mark.asyncio
 async def test_cleanup_leaves_no_rows() -> None:
-    """自检：清理后本表无残留（避免给其它测试留下脏数据）。"""
+    """自检：清理后**本文件签发的**行无残留（避免给其它测试留下脏数据）。
+
+    断言范围是 ``created_by == _OPERATOR`` 而不是全表：清理本身就是按这个范围收窄的
+    （并发安全的必要做法，见 `_clear`），而全表计数会看到别的测试文件的行，
+    那种断言会在并发运行时假失败。
+    """
     await _clear()
     async with session_scope(get_settings()) as session:
-        assert await count_invite_codes(session) == 0
+        leftover = list(
+            (await session.execute(select(InviteCode.code).where(InviteCode.created_by == _OPERATOR))).scalars()
+        )
+    assert leftover == [], f"清理后仍残留本文件签发的邀请码：{leftover}"
