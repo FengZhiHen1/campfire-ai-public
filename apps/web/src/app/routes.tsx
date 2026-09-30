@@ -22,7 +22,9 @@ import { PlaceholderPage } from './PlaceholderPage';
 import { RequireSession } from './RequireSession';
 import { LoginPage } from '../features/accounts/view/LoginPage';
 import { SettingsPage } from '../features/accounts/view/SettingsPage';
+import { ProfilePage } from '../features/profile/view/ProfilePage';
 import { supertokensAuthPort } from '../infrastructure/auth/authPort';
+import { httpProfilePort } from '../infrastructure/http/profilePort';
 
 /** 一条前端路由的描述；守卫需求是数据而不是散落在 JSX 里的条件。 */
 export interface AppRoute {
@@ -76,6 +78,7 @@ export const APP_ROUTES: readonly AppRoute[] = [
     title: '档案',
     description: '支持对象档案：当前认识、待确认候选与补充。',
     requiresSession: true,
+    element: () => <ProfilePage port={httpProfilePort} />,
   },
   {
     path: '/cases',
