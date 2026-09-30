@@ -234,11 +234,14 @@ def _episode_payload(episode: MemoryEpisode) -> MemoryEpisodePayload:
     )
 
 
-def _parse_time(raw: str, field: str) -> datetime | None:
+def _parse_time(raw: str) -> datetime | None:
     """解析 ISO 8601 时间；非法或缺少时区返回 None 由调用方转 422。
 
     不接受朴素时间：记忆的时间线要跨机器与跨时区看，没有时区的时间会被解释成
     不同瞬间，而时间顺序正是回看的组织方式（与 `tools/memory` 同一立场）。
+
+    只有「给了但用不了」这一种失败：本函数不拼错误文案——参数名与文案由调用方
+    掌握（它才知道这是 `since` 还是 `occurred_at`），因此不接受字段名形参。
     """
     try:
         parsed = datetime.fromisoformat(raw)
@@ -274,8 +277,8 @@ def _parse_time_range(
     缺时区与无法解析并入同一条错误：两者对调用方是同一件事（这个时间用不了），
     分开报只会多一个分支而不多一条信息。
     """
-    parsed_since = None if since is None else _parse_time(since, "since")
-    parsed_until = None if until is None else _parse_time(until, "until")
+    parsed_since = None if since is None else _parse_time(since)
+    parsed_until = None if until is None else _parse_time(until)
     for raw, parsed, name in ((since, parsed_since, "since"), (until, parsed_until, "until")):
         if raw is not None and parsed is None:
             return None, None, _error(422, f"{name} 不是合法的 ISO 8601 时间（且必须带时区）", "invalid_payload")
@@ -492,7 +495,7 @@ async def correct_episode(
     except MemoryDataError:
         return _error(422, "episode 标识形状非法", "invalid_payload")
 
-    occurred_at = _parse_time(payload.occurred_at, "occurred_at")
+    occurred_at = _parse_time(payload.occurred_at)
     if occurred_at is None:
         return _error(422, "occurred_at 不是合法的 ISO 8601 时间（且必须带时区）", "invalid_payload")
     if not payload.content.strip():
