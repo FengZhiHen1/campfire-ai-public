@@ -1,0 +1,172 @@
+{
+  "task": "T01",
+  "title": "基座事件类补齐与 ask_user 基座工具",
+  "lane": "lane/t01",
+  "worktree": "E:\\Project\\Web_Development\\campfire-wt\\t01",
+  "base_commit": "d04b1b3",
+  "commit": "7eb0a59",
+  "commit_subject": "补齐三个基座事件类与 ask_user 基座工具",
+  "commit_file_count": 11,
+  "commit_insertions": 1356,
+  "commit_deletions": 16,
+  "working_tree_clean": true,
+
+  "delivered": {
+    "events": [
+      { "name": "ReasoningDeltaEvent", "type": "reasoning_delta", "payload": ["delta"], "design_ref": "基座 7.1" },
+      { "name": "QuestionEvent", "type": "question", "payload": ["batch_id", "items"], "design_ref": "基座 7.2" },
+      { "name": "ActionCardEvent", "type": "action_card", "payload": ["card_id", "title", "sections", "states", "annotations"], "design_ref": "基座 7.3" }
+    ],
+    "base_tool": {
+      "name": "ask_user",
+      "registration_channel": "register_base",
+      "reserved_name": true,
+      "always_available": true,
+      "args": ["items"],
+      "batch_id_generated_tool_side": true,
+      "ends_run": true,
+      "emits": "question"
+    },
+    "new_files": [
+      "apps/api/src/campfire/agent/tools/payloads.py",
+      "apps/api/src/campfire/agent/runtime/ask_user_tool.py",
+      "apps/api/tests/test_agent_questions.py"
+    ],
+    "modified_files": [
+      "apps/api/src/campfire/agent/runtime/events.py",
+      "apps/api/src/campfire/agent/runtime/assembly.py",
+      "apps/api/src/campfire/agent/runtime/runner.py",
+      "apps/api/src/campfire/agent/runtime/__init__.py",
+      "apps/api/src/campfire/agent/tools/pool.py",
+      "apps/api/src/campfire/agent/tools/results.py",
+      "apps/api/src/campfire/agent/tools/__init__.py",
+      "apps/api/src/campfire/agent/observability/records.py"
+    ]
+  },
+
+  "self_check": {
+    "environment_protocol": "v2: PYTHONPATH + UV_PROJECT_ENVIRONMENT + explicit DATABASE_URL from lane .env",
+    "lane_db": {
+      "database": "campfire_t01",
+      "table_count": 7,
+      "tables": [
+        "alembic_version",
+        "campfire_account_deletion_tombstone",
+        "campfire_invite_code",
+        "campfire_knowledge_item",
+        "campfire_memory_deletion_ledger",
+        "campfire_pending_write",
+        "data_campfire_node"
+      ],
+      "alembic_head": "2d5e68935ddc",
+      "note": "编排器预估 ≈13 张；实际 7 张，因 711fc22a40fd 迁移只存在于主仓库、不在本 lane 基线内。修复前该库为 0 张表且无 alembic_version。"
+    },
+    "pytest": {
+      "command": "uv run --project apps/api pytest",
+      "result": "1 failed, 748 passed, 1 warning in 38.99s",
+      "collected": 749,
+      "baseline_collected": 716,
+      "added_by_this_pack": 33,
+      "failure": {
+        "test": "apps/api/tests/test_library_retrieval_integration.py::test_locator_points_to_a_section_not_just_the_document",
+        "pre_existing": true,
+        "ablation": "git stash push --include-untracked 后在基线重跑，同样失败；该文件不 import campfire.agent",
+        "class": "既有失败（数据相关），非本包引入"
+      }
+    },
+    "ruff_check": { "command": "uv run --project apps/api ruff check .", "result": "All checks passed!" },
+    "ruff_format_check": {
+      "command": "uv run --project apps/api ruff format --check .",
+      "result": "1 file would be reformatted, 145 files already formatted",
+      "note": "test_library_chunking.py 非本包文件（git diff --name-only 为空），既有问题"
+    },
+    "quality_floor": {
+      "command": "uv run --project apps/api python .dsh/skills/code-craft/scripts/quality_floor.py --root apps/api/src/campfire/agent",
+      "result": "verdict=fail, error=2, warning=1",
+      "errors": [
+        { "rule": "todo-residue", "location": "observability/__init__.py:30", "pre_existing": true },
+        { "rule": "todo-residue", "location": "skill_runtime/__init__.py:38", "pre_existing": true }
+      ],
+      "warnings": [
+        { "rule": "high-complexity", "location": "runtime/runner.py:558", "pre_existing": true, "note": "基线在 548 行，行号平移因上方插入代码" }
+      ],
+      "new_findings_from_this_pack": 0,
+      "note": "过程中曾出现 6 条 comment-markup（注释里写 **强调**），已全部改写去除"
+    },
+    "domain_term_scan": {
+      "scope": "apps/api/src/campfire/agent/ 新增与被改文件，词表 咨询|档案|案例|支持对象",
+      "hits_found_and_fixed": 1,
+      "detail": "ask_user_tool.py 工具说明原写「能用已有资料与档案回答的问题不要问使用者」，已改写为「能从已有上下文或工具读出答案的问题，不要问使用者」",
+      "diff_added_lines_hits": 0
+    }
+  },
+
+  "open_questions": [
+    {
+      "id": "T01-Q1",
+      "title": "ask_user 尚无装配点",
+      "detail": "build_ask_user_tool 全仓库仅出现在 ask_user_tool.py 自身与 runtime/__init__.py 的再导出；surfaces/ 仍是占位包，无构造 AgentRunner 并装配工具池的代码。真实运行中 ask_user 不在池里则模型无从调用、不会有 question 事件。装配处调用 pool.register_base(build_ask_user_tool()) 属 surfaces/，是本包红线。",
+      "needed_decision": "由哪个包负责在装配点注册 ask_user（T04？T07？T11？）",
+      "mitigation": "runner.py 已做成：注册了即恒可用，未注册不报装配错误——无论谁注册都无需再改 agent/"
+    },
+    {
+      "id": "T01-Q2",
+      "title": "action_card 载荷通道选择待复核",
+      "detail": "据基座 7.3「复用既有 ToolResult 通道，与 citations／candidates 并列」，在 ToolResult 新增 cards 字段，未改 ToolContext。若 T04 预期另一种通道（如 ToolContext.payload），需在 T04 开工前对齐。"
+    },
+    {
+      "id": "T01-Q3",
+      "title": "RunEvent 穷尽性仍靠人工维持",
+      "detail": "RunEvent 是 typing.Union，新增成员后没有任何机械检查会因 records.py 漏分流而失败。人工补齐了三个分支，但未加自动化守卫（需 get_args 遍历 + 反射断言，无既有先例，未擅自引入）。"
+    },
+    {
+      "id": "T01-Q4",
+      "title": "文档未发现错误",
+      "detail": "必读文档与实测未发现矛盾。基座 7.1 的 raw.type「待验证」经实测确认为 response.reasoning_summary_text.delta（reasoning_content）与 response.reasoning_text.delta（第三方 reasoning），即文档如实标注，非文档错误。"
+    }
+  ],
+
+  "negative_evidence": [
+    {
+      "claim": "既有失败与本包无关",
+      "channel": "git stash push --include-untracked → 同环境重跑 → git stash pop",
+      "canary": "stash 后 git status --short 完全为空（证明工作树确实回到基线）；恢复后再次列出 11 项",
+      "result": "该用例在基线上同样失败"
+    },
+    {
+      "claim": "泳道库此前连错",
+      "channel": "直接查询 pg_tables 与 alembic_version，而非读退出码或日志文本",
+      "canary": "同一次查询列出全部 campfire* 库表数（campfire=68/t02=12/t03=8/t05=7/t06=12/t09=0/t10=0/review2=7），证明查询确实逐库生效；campfire_t01 当时为 0",
+      "corroboration": "未设 DATABASE_URL 的 alembic upgrade 报出的 revision 711fc22a40fd 在我 worktree 的 migrations/versions/ 中不存在（Select-String 无命中），而该文件存在于主仓库"
+    },
+    {
+      "claim": "action_card 事件数为 0 是权限门正确拒绝，而非翻译逻辑缺失",
+      "channel": "初次运行该用例时 ActionCardEvent 计数为 0",
+      "canary": "补 default_active_tools=(\"emit_card_alpha\",) 后计数变为 1——若翻译逻辑缺失，补可用集合后仍会是 0"
+    },
+    {
+      "claim": "reasoning_delta 取不到就不产出",
+      "channel": "断言 ReasoningDeltaEvent 列表为空",
+      "canary": "同文件正向用例（提供方返回 reasoning_content）断言增量为 [\"先想一下。\", \"再想一下。\"]，且同一用例断言正文 TextDeltaEvent == [\"结论。\"]——正向有产出、负向零产出，排除断言恒真"
+    }
+  ],
+
+  "unverified": [
+    "未在真实 TokenHub 端点上验证 reasoning_content 流：全部证据来自 httpx.MockTransport + SDK 0.22.3 实测。真实提供方是否返回该字段未联网核实。基座 7.1 的「待验证」在生产侧仍应保留。",
+    "未做端到端（SSE 到前端）验证：本包只到 RunEvent 产出，面侧映射与前端消费属其它 lane。",
+    "本包未新增第三方依赖，pyproject.toml 未改动。"
+  ],
+
+  "design_decisions": {
+    "reasoning_delta_source": "reasoning_content -> response.reasoning_summary_text.delta；第三方 reasoning -> response.reasoning_text.delta。取不到时产出空，绝不用 output_text.delta 冒充（基座 7.1）",
+    "run_ending_mechanism": "可调用 tool_use_behavior（返回 ToolsToFinalOutputResult），而非 stop_at_tool_names——实测后者只看工具名，参数不合法也照样结束运行，会留下「运行断了但没有问题」的空洞；判据改为「本次调用是否真的产出了提问」（QuestionGate）",
+    "payload_location": "载荷值对象放 agent/tools/payloads.py 而非 runtime/events.py，避免 agent.runtime 与 agent.tools 的 import 环（与既有 Candidate 同一种安排）",
+    "shape_validation": "形状约束写在各 dataclass 的 __post_init__，工具参数模型与事件构造点共用同一份定义；实测 pydantic 会把 dataclass 的 ValueError 收成正常校验错误",
+    "payload_layout": "平铺而非嵌套，以 T09 的 apps/web/src/shared/types/sse.ts 为准，佐以 docs/design/pages/对话页.md:53；HTTP 契约 4.2 的 data 恒等映射意味着字段名即线上契约"
+  },
+
+  "outward_commitments": {
+    "to_T04": "RunEvent 联合已含三个事件类（字段名逐字对齐）；ask_user 恒可用、参数为 question 的 items、batch_id 工具侧生成；action_card 经 ToolResult.cards 通道返回，T04 只需在 args_model 上做词表校验",
+    "to_T07_T11": "SSE 映射为恒等（event 名 == data.type == 事件名）；三个事件的载荷形状已定形可消费"
+  }
+}
