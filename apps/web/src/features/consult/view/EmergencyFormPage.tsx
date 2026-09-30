@@ -21,6 +21,9 @@ import { SKIP_SEMANTICS_COPY } from '../domain/emergency';
 import { useEmergencyForm } from '../viewModel/useEmergencyForm';
 import { consultChatPath, CONSULT_LIST_PATH } from './consultRoutes';
 import styles from './emergencyFormPage.module.css';
+// 选择卡（.selection/.check-box）与进度条（.progress-track）的契约规则在本表里，
+// 不 import 就只剩浏览器默认外观（原生 radio 可见、进度条 0px）。
+import './consultComponents.css';
 
 /** 应急表单页 props。 */
 export interface EmergencyFormPageProps {

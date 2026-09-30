@@ -20,6 +20,9 @@ import type { ConsultPort } from '../application/ports';
 import { useConsultSession } from '../viewModel/useConsultSession';
 import { ChatWorkspace } from './ChatWorkspace';
 import styles from './chatPage.module.css';
+// 对话面的契约组件样式（.bubble-user/.msg-doc/.question-card/.action-card…）是全局类名表：
+// 它必须由消费它的页面模块 import 才会进产物，漏了它对话面的组件全部退化为浏览器默认外观。
+import './consultComponents.css';
 
 /** 对话页 props。 */
 export interface ChatPageProps {
