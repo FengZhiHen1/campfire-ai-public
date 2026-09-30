@@ -40,7 +40,8 @@ from campfire.modules.memory.identity import (
     to_account_id,
     to_episode_key,
 )
-from campfire.modules.memory.store import MemoryEpisode, read_timeline, write_episode
+from campfire.modules.memory.ledger import recorded_deletion_reason
+from campfire.modules.memory.store import MemoryEpisode, episode_exists, read_timeline, write_episode
 
 router = APIRouter(prefix="/memory", tags=["memory"])
 
@@ -61,6 +62,12 @@ PAGE_WINDOW_MAX = 200
 #: `source_description` 里承载来源会话标识的键名。写入侧由
 #: `modules/memory/consumer._source_description` 拼成 `session=<id> message=<seq> …`。
 _SESSION_TOKEN = "session="
+
+#: 「episode 不存在或不属于当前账号」的统一文案（契约第 2 节的 404 行）。
+#:
+#: 越权与不存在必须逐字相同（本项目被机械守卫的不变量）：区分它们等于提供
+#: episode 枚举通道。本文件里出现 404 的地方一律引用本常量，不另写文案。
+NOT_FOUND_MESSAGE = "该记忆不存在"
 
 
 # ---------------------------------------------------------------------------
@@ -365,17 +372,26 @@ async def delete_episode(
     语义删除 = 写删除账本，不是图库物理删除：账本过滤是唯一生效点，因此删除
     不会因图库不可用而失败——账本写入是本库事务。图库内残留不判失败。
 
+    两个判据分开判定，顺序不可换（2026-09-30 编排器裁决 2）
+    ------------------------------------------------------
+
+    1. 账本判据（先做）：本账号已把这条 key 记入账本 → 幂等命中，200 与
+       `newly_deleted: false`。必须先看账本——账本过滤会让已删记忆从时间线里
+       消失，只看图库会把「重复删除」误判成「不存在」。
+    2. 图库判据：这条 episode 在本账号的时间线里不存在 → 404，文案与「不存在」
+       逐字相同（越权与不存在同形，不提供 episode 枚举通道）。
+    3. 判不了（图库未配置或不可用）**不阻断删除**：契约第 6 节要求「图库不可用时
+       删除的撤下步骤仍可用」。此时账本照记并返回成功——因为图库故障而让使用者
+       的删除请求失败，等于让一次本该生效的删除静默失效。
+
     幂等：重复删除返回 200 并带 `newly_deleted: false`。二次确认是前端交互，
-    服务端不做「猜你不是故意的」——把重复删除当错误只会让重试收到失败，
-    而删除实际上已经生效。
+    服务端不做「猜你不是故意的」。
 
     标识形状在入口校验（本包裁决 7）：非法形状 → 422，与「episode 不存在」
     （404）分开——形状校验是载荷问题，重试同样的请求不会变好。
 
     Raises（对外映射）:
-        404: 该 `episode_key` 已被其它账号记入账本（`record_deletion` 的
-            跨账号守卫）。这是本面唯一可达的「不是你的记忆」信号，文案与
-            「不存在」同形处理，不提供 episode 枚举通道。
+        404: 该 episode 不存在，或不属于当前账号（越权与不存在逐字同文案）。
         422: 标识形状非法。
         503: 本库（账本）不可用。
     """
@@ -391,12 +407,27 @@ async def delete_episode(
 
     try:
         async with session_scope(get_settings()) as session:
+            recorded = await recorded_deletion_reason(session, account_id=account, episode_key=key)
+            if recorded is not None:
+                return DeleteEpisodePayload(episode_key=key, newly_deleted=False, reason=recorded)
+
+            # `None` = 图库判定不了（未配置或不可用）：不报 404，也不报 503，
+            # 继续走账本写入——见函数说明第 3 条。
+            exists: bool | None
+            try:
+                exists = await episode_exists(get_shared_memory_graph(), account, episode_key=key)
+            except (MemoryConfigurationError, MemoryUnavailableError):
+                exists = None
+            if exists is False:
+                return _error(404, NOT_FOUND_MESSAGE, "not_found")
+
             result = await deletion.delete_episode(session, account_id=account, episode_key=key)
     except MemoryDataError as exc:
-        # 跨账号守卫（`record_deletion`）：这个 key 已被别人记入账本。
-        # 与「不存在」同形处理——不区分「存在但不是你的」与「根本不存在」。
+        # 跨账号守卫（`record_deletion`）的兜底：账本判据通过之后，同一 key 仍可能
+        # 被别的账号抢先写进账本（`episode_key` 由 uuid5 派生，可跨账号撞车，
+        # 见 `record_deletion` 的 Note）。与「不存在」同形处理。
         if "已被其它账号" in str(exc):
-            return _error(404, "该记忆不存在", "not_found")
+            return _error(404, NOT_FOUND_MESSAGE, "not_found")
         return _error(422, "episode 标识形状非法", "invalid_payload")
     except MemoryConfigurationError:  # pragma: no cover —— 删除不构造图库，防御性保留
         return _unavailable("记忆图库暂时不可用")
@@ -480,7 +511,7 @@ async def correct_episode(
             superseded = await deletion.correct_episode(session, account_id=account, corrected_episode_key=key)
     except MemoryDataError as exc:
         if "已被其它账号" in str(exc):
-            return _error(404, "该记忆不存在", "not_found")
+            return _error(404, NOT_FOUND_MESSAGE, "not_found")
         return _error(422, "episode 标识形状非法", "invalid_payload")
     except MemoryConfigurationError:  # pragma: no cover —— 撤下不构造图库，防御性保留
         return _unavailable("记忆图库暂时不可用")
