@@ -78,6 +78,17 @@ EPISODE_SOURCE = EpisodeType.message
 #: **fail-closed 方向**：无标记的节点（含改造前写入的老数据）一律**不返回**。
 #: 实测确认该过滤生效。代价是历史数据需回填标记——一期尚无生产数据，登记于
 #: TODO `TECH-22`。
+#:
+#: ## 与「实测约束四」的关系（勿误读为矛盾）
+#:
+#: 通用记忆第 3 节的实测约束四写着「我方『已写入』标记**绝不能放在图节点上**」——
+#: 那是针对**幂等标记**说的：`add_episode` 的整节点替换（`SET n = {...}`）会把先写的
+#: 自定义属性抹掉，因此**幂等**判据必须落在 `pending_write.state`（PostgreSQL 侧）。
+#: 本标记**不承担幂等职责**（幂等仍由 `pending_write.state` 负责），只承担
+#: 「**读路径可见性**」判据，且写在 `add_episode` **之后**，故与被抹掉无关。
+#: 而「会被抹掉」这一实测事实正是本标记**降级缺陷**的根因（重试已成功的 episode 时，
+#: 预建的整节点替换会把 `done` 覆盖成 `pending`）——已在 `write_episode` 里以
+#: `already_done` 处置。两个结论并不矛盾，是**两个不同的标记、两种不同的职责**。
 EPISODE_WRITE_STATE_PENDING = "pending"
 
 #: 见 `EPISODE_WRITE_STATE_PENDING` 的说明。只有带本标记的 episode 才被读路径返回。
@@ -366,9 +377,20 @@ async def write_episode(
     # 在 MERGE 之前查，避免把「上一次成功写入的节点」误删。
     try:
         existing, _, _ = await scoped.execute_query(
-            "MATCH (e:Episodic {uuid: $uuid}) RETURN count(e) AS c", uuid=episode_uuid
+            "MATCH (e:Episodic {uuid: $uuid}) RETURN e.write_state AS ws LIMIT 1", uuid=episode_uuid
         )
-        node_predates_this_call = bool(existing) and existing[0]["c"] > 0
+        node_predates_this_call = bool(existing)
+        # 该节点此前**已经写入成功**（已带完成标记）。
+        # 2026-09-29 实测发现的边界：重试一条已成功的 episode 时，下面的整节点替换会把
+        # `write_state` 从 `done` **降级成 `pending`**；若这次 `add_episode` 又失败，
+        # 一条**原本可读的记忆会变成不可读**（方向是 fail-closed，但确实是数据可见性缺陷）。
+        # 处置：已成功过就**不降级**——保留 `done`。理由：
+        # ① 幂等语义要求「重跑不改变已生效的结果」（第 5 节）；
+        # ② 本函数成功时会把标记写成 `done`，失败时保持 `done` 也不会伪造成功——
+        #    因为**上一次确实成功过**，图库内容就是那次的结果；
+        # ③ 内容以本次为准（`SET e = {...}` 会覆盖 `content`），但正文改写不影响
+        #    「这条记忆存在且可读」这一事实。
+        already_done = bool(existing) and existing[0].get("ws") == EPISODE_WRITE_STATE_DONE
     except Exception as exc:  # noqa: BLE001 —— 驱动异常统一转记忆侧语义
         raise MemoryUnavailableError(
             "写入记忆片段失败",
@@ -379,9 +401,9 @@ async def write_episode(
     try:
         # 第一步：预建节点。`MERGE` 保证同 uuid 只一个节点；`SET e = {...}` 与
         # Graphiti 自己的写法一致（它也是整节点替换），因此重跑不会残留旧属性。
-        # `write_state = 'pending'`：**显式写成未完成**，第三步才改成 `done`。
-        # 显式写（而不是省掉让属性缺失）是为了让「半写」状态在数据里**可查**，
-        # 排查时不必靠「属性是否存在」推断。
+        # `write_state`：**首次**写 `pending`（显式写成未完成，第三步才改成 `done`；
+        # 显式写而不是省掉属性，是为了让「半写」在数据里**可查**）；
+        # 已成功过的记录保持 `done`（见上方 `already_done` 的说明，避免降级）。
         await scoped.execute_query(
             """
             MERGE (e:Episodic {uuid: $uuid})
@@ -399,7 +421,7 @@ async def write_episode(
             content=content,
             created_at=created_at,
             valid_at=valid_at,
-            write_state=EPISODE_WRITE_STATE_PENDING,
+            write_state=(EPISODE_WRITE_STATE_DONE if already_done else EPISODE_WRITE_STATE_PENDING),
         )
 
         # 第二步：让 Graphiti 抽取派生事实。它会从图库加载刚预建的节点
