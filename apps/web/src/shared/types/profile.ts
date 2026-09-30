@@ -112,6 +112,15 @@ export interface ProfileSummaryEntry {
 /** 摘要响应。形状见档案面契约第 3 节；只取稳定层。 */
 export interface ProfileSummaryResponse {
   fields: ProfileSummaryField[];
+  /**
+   * 该对象是否已有档案。
+   *
+   * 契约第 3 节只写了 `fields`，但仅凭 `fields: []` 无法区分「还没有任何条目」与
+   * 「有条目但都还在候选层」——个性化档案第 10 节要求前者返回「无档案」而不是空对象。
+   * 后端已作为非契约点名字段返回（`modules/profile/routes.SummaryPayload.has_profile`），
+   * 这里如实登记；可选是因为它是契约外的补充，缺失时前端按 `fields` 有无降级判断。
+   */
+  has_profile?: boolean;
 }
 
 /**
