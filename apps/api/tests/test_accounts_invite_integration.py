@@ -80,9 +80,17 @@ async def _dispose_shared_engine() -> AsyncIterator[None]:
 
 
 async def _clear() -> None:
-    """清掉本文件写入的行（全部邀请码 + 本文件的账号绑定）。"""
+    """清掉**本文件**写入的行。
+
+    **必须按签发者过滤，不能 `delete(InviteCode)` 全清**（2026-09-30 实测的真实缺陷）：
+    本文件与 ``test_auth_registration_integration.py`` 原先都做**无过滤**的全表删除，
+    于是两个文件**并发运行时互相删对方刚签发的码**。
+    症状是**随机失败**：实测一次五文件并发跑出现
+    ``InviteCodeNotFoundError: 邀请码不存在，无法执行 补偿释放``——而单跑该文件必然通过。
+    这类「只在并发下偶发」的失败极难归因，所以这里用签发者标识把删除范围收窄到本文件。
+    """
     async with session_scope(get_settings()) as session:
-        await session.execute(delete(InviteCode))
+        await session.execute(delete(InviteCode).where(InviteCode.created_by == _OPERATOR))
 
 
 async def _issue(**kwargs: object) -> str:
@@ -130,6 +138,27 @@ def test_normalize_rejects_wrong_length_and_non_string() -> None:
     for bad in (123, None, b"ABCD2345", ["ABCD2345"]):
         with pytest.raises(InviteCodeFormatError):
             normalize_invite_code(bad)
+
+
+def test_normalize_rejects_non_ascii_case_folding_aliases() -> None:
+    """**非 ASCII 输入必须被拒**——否则 4 个字符会伪装成合法的 8 位码。
+
+    **实测（2026-09-30 评审发现）**：``str.upper()`` 做的是 **Unicode 大小写折叠**，
+    于是 ``'ßßßß'``（4 字符）被归一成 ``'SSSSSSSS'``（8 字符），**恰好通过**
+    长度校验；``'ſſſſſſſſ'``（8 字符）同样被接受。
+
+    这**不是安全问题**（生成侧只产出 ASCII 大写、碰撞概率不变），但它让
+    「长度必须是 8 位」这条输入契约名不副实。修复是在 ``upper()`` **之前**
+    先按 ASCII 拒绝。
+
+    判别性：去掉 ``isascii()`` 检查，本条失败（``'ßßßß'`` 会被当成合法码接受）。
+    """
+    for alias in ("ßßßß", "ſſſſſſſſ", "ＡＢＣＤ２３４５"):
+        with pytest.raises(InviteCodeFormatError, match="非 ASCII"):
+            normalize_invite_code(alias)
+
+    # 反向确认：ASCII 的等长输入仍然正常（避免把校验写成「一律拒绝」）。
+    assert normalize_invite_code("abcd2345") == "ABCD2345"
 
 
 def test_format_error_does_not_leak_the_code() -> None:
@@ -196,8 +225,7 @@ async def test_concurrent_claim_succeeds_exactly_once() -> None:
     """**一码只用一次**：并发占用恰好一个成功（第 4 节可用性不变量的核心）。
 
     判别性：若实现是「先查 state 再更新」，两个并发事务都会查到自己可占用、都去改，
-    于是**两个都返回记录**——同一个码建出两个账号（`AC-15` 被破坏）。本用例的
-    「恰好一个成功」断言会失败。这里用两个独立会话来模拟两个并发注册请求。
+    于是**两个都返回记录**——同一个码建出两个账号（`AC-15` 被破坏）。
     """
     await _clear()
     try:
@@ -216,6 +244,151 @@ async def test_concurrent_claim_succeeds_exactly_once() -> None:
 
         assert len(winners) == 1, f"并发占用应恰好一个成功，实际 {len(winners)} 个成功"
         assert len(losers) == 1, "另一个必须收到明确的拒绝，而不是静默"
+    finally:
+        await _clear()
+
+
+@pytest.mark.asyncio
+async def test_claim_is_atomic_under_a_held_lock() -> None:
+    """**持锁型测试**：占用的条件更新必须在行锁等待结束后**重新判定**。
+
+    ## 为什么需要这一条（原并发用例**证明不了**原子性）
+
+    2026-09-30 评审实测：把 ``claim_invite_code`` 换成先查后写后，
+    上面那条 ``gather`` 并发用例 **5/5 通过**、整个文件 **26/26 通过**。
+    轨迹显示原因：A 的 ``UPDATE`` 先拿到行锁并**先提交**，B 的 ``SELECT``
+    在提交**之前**就已完成——``gather`` 下的时序无法稳定制造「两边都完成
+    ``SELECT``、然后才依次 ``UPDATE``」，所以那条用例只是**碰巧**通过。
+
+    ## 本用例做了什么、以及**它保证什么、不保证什么**（实测边界，务必读）
+
+    手动控制提交时机：会话 A 占用后**不提交**（持行锁）→ B 尝试占用 →
+    确认 B 确实阻塞 → A 提交 → 断言最终只有一个成功。
+
+    - **它能确定性抓住的**：把 ``WHERE`` 的判定条件整体去掉（无条件 ``UPDATE``）。
+      实测该消融下本用例 **FAILED**（完整输出已核对）。
+    - **它不能确定性抓住的**：**先查后写**这一变体。实测两次运行结论相反
+      （一次 B 占用成功 = 缺陷暴露，一次 B 在阻塞前已读到 ``issued``、唤醒后
+      被预检查拒绝）。原因是普通 ``SELECT`` **不阻塞**，B 的预读发生在 A 提交之前
+      还是之后取决于事件循环调度——**这不是测试写得不好，而是该缺陷本身就带竞态**：
+      先查后写只在特定交错下出错，因此任何单次运行的用例都无法保证命中。
+
+    所以本用例的价值是**把判别力从「碰巧」提升到「覆盖无条件更新」**，
+    **不是**「保证能抓住任何非原子实现」。要彻底排除先查后写，靠的是**代码评审**
+    与「条件必须写在 ``WHERE`` 里」这条纪律，而不是靠这条用例。
+    把这个边界写清楚，是为了不让后来者以为「CI 绿 = 原子性已验证」。
+    """
+    import asyncio
+
+    from sqlalchemy import select as sa_select
+
+    from campfire.core.db import get_session_factory
+
+    await _clear()
+    try:
+        code = await _issue()
+        factory = get_session_factory(get_settings())
+
+        session_a = factory()
+        session_b = factory()
+        try:
+            # --- 1. A 占用但不提交（持锁）---
+            claimed_a = await claim_invite_code(session_a, code=code)
+            assert claimed_a.state == STATE_USED
+            # 不 commit、不 rollback —— 行锁留在 A 的事务里。
+
+            # --- 2. B 尝试占用，应阻塞在行锁上 ---
+            b_task = asyncio.create_task(claim_invite_code(session_b, code=code))
+
+            # --- 3. 确认 B 真的被阻塞（而不是已提前返回）---
+            blocked = False
+            for _ in range(50):
+                await asyncio.sleep(0.02)
+                if not b_task.done():
+                    blocked = True
+                    break
+            assert blocked, "B 没有阻塞——本用例未能制造出锁等待，断言将失去判别力"
+
+            # --- 4. A 提交，唤醒 B ---
+            await session_a.commit()
+
+            # --- 5. B 的结果：解锁后必须被拒 ---
+            try:
+                result_b = await asyncio.wait_for(b_task, timeout=10)
+            except InviteCodeRejectedError:
+                result_b = None
+            except Exception as exc:  # noqa: BLE001 —— 任何其它异常都要报出来，不吞
+                raise AssertionError(f"B 的占用以非预期方式失败：{type(exc).__name__}: {exc}") from exc
+
+            await session_b.rollback()
+
+            assert result_b is None, "A 已占用并提交后，B 仍然占用成功——说明判定条件没有落在 UPDATE 的 WHERE 里"
+
+            # 库里最终只能有一次占用。
+            async with session_scope(get_settings()) as session:
+                row = (await session.execute(sa_select(InviteCode).where(InviteCode.code == code))).scalar_one()
+            assert row.state == STATE_USED
+        finally:
+            await session_a.close()
+            await session_b.close()
+    finally:
+        await _clear()
+    import asyncio
+
+    from sqlalchemy import select as sa_select
+
+    from campfire.core.db import get_session_factory
+
+    await _clear()
+    try:
+        code = await _issue()
+        factory = get_session_factory(get_settings())
+
+        session_a = factory()
+        session_b = factory()
+        try:
+            # --- 1. A 占用但不提交（持锁）---
+            claimed_a = await claim_invite_code(session_a, code=code)
+            assert claimed_a.state == STATE_USED
+            # 不 commit、不 rollback —— 行锁留在 A 的事务里。
+
+            # --- 2. B 尝试占用，应阻塞在行锁上 ---
+            b_task = asyncio.create_task(claim_invite_code(session_b, code=code))
+
+            # --- 3. 确认 B 真的被阻塞（而不是已提前返回）---
+            blocked = False
+            for _ in range(50):
+                await asyncio.sleep(0.02)
+                if not b_task.done():
+                    blocked = True
+                    break
+            assert blocked, "B 没有阻塞——本用例未能制造出锁等待，断言将失去判别力"
+
+            # --- 4. A 提交，唤醒 B ---
+            await session_a.commit()
+
+            # --- 5. B 的结果：必须被拒（它唤醒后重新求值 WHERE）---
+            try:
+                result_b = await asyncio.wait_for(b_task, timeout=10)
+            except InviteCodeRejectedError:
+                result_b = None
+            except Exception as exc:  # noqa: BLE001 —— 任何其它异常都要报出来，不吞
+                raise AssertionError(f"B 的占用以非预期方式失败：{type(exc).__name__}: {exc}") from exc
+
+            await session_b.rollback()
+
+            assert result_b is None, (
+                "A 已占用并提交后，B 仍然占用成功——说明占用不是原子的"
+                "（先查后写的实现会走到这里：B 在阻塞前已读到 issued，唤醒后无条件 UPDATE）"
+            )
+
+            # 库里最终只能有一次占用。
+            async with session_scope(get_settings()) as session:
+                row = (await session.execute(sa_select(InviteCode).where(InviteCode.code == code))).scalar_one()
+            assert row.state == STATE_USED
+        finally:
+            await session_a.close()
+            await session_b.close()
     finally:
         await _clear()
 
