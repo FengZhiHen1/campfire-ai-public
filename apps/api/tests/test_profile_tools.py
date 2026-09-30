@@ -28,6 +28,7 @@ from campfire.core.authz import (
     AuthorizationError,
     ObjectArchivedError,
 )
+from campfire.core.pending_write import KIND_PROFILE_ITEM
 from campfire.modules.profile import (
     DOMAINS,
     MAX_DISPLAY_NAME_LENGTH,
@@ -545,10 +546,10 @@ async def test_propose_submits_a_pending_record_and_says_submitted(monkeypatch: 
     """
     from campfire.core.jobs import set_dispatch_hook
 
-    dispatched: list[str] = []
+    dispatched: list[tuple[str, str]] = []
 
-    async def _record(pending_id: str) -> None:
-        dispatched.append(pending_id)
+    async def _record(pending_id: str, kind: str) -> None:
+        dispatched.append((pending_id, kind))
 
     seen: dict[str, Any] = {}
 
@@ -577,7 +578,8 @@ async def test_propose_submits_a_pending_record_and_says_submitted(monkeypatch: 
 
     assert isinstance(outcome, ToolResult)
     assert json.loads(outcome.text) == {"pending_id": _FakeRecord.id, "state": "submitted"}
-    assert dispatched == [_FakeRecord.id], "落库后必须投递（否则要等兜底扫描）"
+    # kind 必须随投递一起给出（写入路径第 4 节第 3 条：按 kind 分派）。
+    assert dispatched == [(_FakeRecord.id, KIND_PROFILE_ITEM)], "落库后必须按 kind 投递（否则要等兜底扫描）"
     assert seen["kind"] == "profile_item"
     assert seen["support_object_id"] == _OBJECT
     assert seen["origin"] == "guardian_observation"
