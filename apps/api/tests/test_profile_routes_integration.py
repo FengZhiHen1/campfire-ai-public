@@ -658,6 +658,74 @@ async def test_create_item_rejects_unknown_domain(client: httpx.AsyncClient, as_
 
 
 # ---------------------------------------------------------------------------
+# topic 的长度上界（D-63）
+# ---------------------------------------------------------------------------
+
+
+async def test_topic_over_the_storage_width_is_422_not_500(as_account) -> None:  # noqa: ANN001
+    """`topic` 超过存储列宽 → 422（不是 500）；恰好等于列宽 → 正常写入且不截断。
+
+    列宽是 `String(200)`（`modules/profile/models.py` 的 `ProfileItem.topic`），
+    工具入口同值有界（`tools/profile.py` 的 `max_length=200`），而两条 HTTP 写路径
+    此前完全不收界：201 字的载荷一路走到 asyncpg 抛 `StringDataRightTruncationError`，
+    未映射异常原样冒泡（`_map_error` 末尾的 `raise exc`）→ 500。契约第 1 节的 422
+    表达的是「这次请求本身有问题」，而 500 会让调用方以为服务端故障、重试同一份载荷。
+
+    两条写路径都要收界（补充条目的 `topic` 必填、纠正的 `topic` 可选）：同一字段的
+    两条入口对同一约束有两种实现，正是本条要钉住的漂移，只修一半等于没修。
+    用 201 与 200 这一对相邻长度做判别——上界大于 200 时 201 字会被接受，小于 200 时
+    200 字会被拒绝，只有真正按 200 收界的实现能同时满足两端。
+
+    这里自建 `raise_app_exceptions=False` 的客户端、并按末节 401 用例的写法自行
+    初始化 SDK：ASGITransport 默认把未处理异常重新抛出，那样超长载荷只会表现为
+    测试报错、看不到实际状态码——而本条要钉住的正是「错误码是 422 不是 500」。
+    """
+    import campfire.main as main_module
+    from campfire.core.auth.supertokens import init_supertokens
+    from campfire.modules.accounts.registration import api_overrides, sign_up_form_fields
+
+    init_supertokens(get_settings(), api_overrides=api_overrides, sign_up_form_fields=sign_up_form_fields)
+
+    object_id = await _new_object()
+    at_limit = "主" * 200
+    over_limit = "主" * 201
+
+    transport = httpx.ASGITransport(app=main_module.app, raise_app_exceptions=False)
+    async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as raw:
+        created = await raw.post(
+            f"/profile/objects/{object_id}/items",
+            json={"domain": "communication", "topic": at_limit, "description": "边界内的主题"},
+        )
+        assert created.status_code == 201, created.text
+        listing = await raw.get(f"/profile/objects/{object_id}/items")
+        stored = next(entry for entry in listing.json()["items"] if entry["item_id"] == created.json()["item_id"])
+        assert stored["topic"] == at_limit, "恰好 200 字必须完整落库，不被截断"
+
+        too_long = await raw.post(
+            f"/profile/objects/{object_id}/items",
+            json={"domain": "communication", "topic": over_limit, "description": "超宽主题"},
+        )
+        assert too_long.status_code == 422, too_long.text
+        assert [error for error in too_long.json()["detail"] if error["loc"][-1] == "topic"], too_long.text
+
+        # 纠正的先超长后边界内：反过来的顺序会让条目先被取代，第二次请求便因
+        # D-64 的状态判据返回 422——那样这条断言就不再指向长度上界。
+        old = await _propose(object_id, origin="user_statement", description="待纠正")
+        over_correct = await raw.post(
+            f"/profile/items/{old}/correct",
+            json={"description": "改写", "topic": over_limit},
+        )
+        assert over_correct.status_code == 422, over_correct.text
+        assert [error for error in over_correct.json()["detail"] if error["loc"][-1] == "topic"], over_correct.text
+
+        at_limit_correct = await raw.post(
+            f"/profile/items/{old}/correct",
+            json={"description": "改写", "topic": at_limit},
+        )
+        assert at_limit_correct.status_code == 201, at_limit_correct.text
+
+
+# ---------------------------------------------------------------------------
 # 401：全端点须登录（真实 SDK，需 core）
 # ---------------------------------------------------------------------------
 
