@@ -114,19 +114,35 @@ class Tool(Protocol):
 
     存在的理由是类型而不是抽象：:class:`ToolSpec` 对参数模型是泛型的，而工具池要装
     不同参数模型的工具。有了这个不含泛型参数的结构类型，工具池不必退化成 ``Any``。
+
+    **四个属性都声明为只读**（``@property``）：实现方 :class:`ToolSpec` 是
+    ``frozen=True`` 的 dataclass，属性不可写。Protocol 若声明成可变属性（``name: str``），
+    mypy 会要求实现方**可写**，于是连基座自己的 ``ToolSpec`` 都不满足它——
+    实测把 ``ToolSpec`` 放进 ``list[Tool]`` 会报 4 处
+    ``Protocol member Tool.name expected settable variable, got read-only attribute``。
+    运行时一直是兼容的（结构类型只看属性是否存在），冲突只在静态声明层面；
+    因此按真实契约声明成只读。池不修改工具的任何属性，只读声明不会漏掉需要的能力。
     """
 
-    name: str
-    """工具名。"""
+    @property
+    def name(self) -> str:
+        """工具名。"""
+        ...
 
-    description: str
-    """给模型看的说明。"""
+    @property
+    def description(self) -> str:
+        """给模型看的说明。"""
+        ...
 
-    risk: RiskLevel
-    """风险档。"""
+    @property
+    def risk(self) -> RiskLevel:
+        """风险档。"""
+        ...
 
-    requires_approval: bool
-    """是否需要人工审批。"""
+    @property
+    def requires_approval(self) -> bool:
+        """是否需要人工审批。"""
+        ...
 
     @property
     def parameters(self) -> dict[str, object]:
