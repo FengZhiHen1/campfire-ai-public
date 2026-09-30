@@ -29,6 +29,13 @@ Worker 只允许 import ``core/*`` 与 ``modules/{profile,memory}`` 且禁止回
 
 import httpx
 
+from campfire.core.auth.deletion import (
+    AccountDataPurger,
+    AccountDeletionError,
+    DeletionReport,
+    PurgeOutcome,
+    delete_account,
+)
 from campfire.core.auth.tombstone import (
     DELETION_REASON_USER_REQUEST,
     MAX_ACCOUNT_ID_LENGTH,
@@ -67,6 +74,12 @@ __all__ = [
     "get_tombstone",
     "is_account_deleted",
     "record_deletion",
+    # 注销编排（五步）与领域清除端口
+    "AccountDataPurger",
+    "AccountDeletionError",
+    "DeletionReport",
+    "PurgeOutcome",
+    "delete_account",
 ]
 
 

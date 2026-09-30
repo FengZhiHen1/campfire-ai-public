@@ -26,11 +26,14 @@
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from datetime import datetime
 
+from sqlalchemy import delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from campfire.core.auth.tombstone_repository import is_account_deleted
 from campfire.core.pending_write import (
     KIND_MEMORY_EPISODE,
     PendingWrite,
@@ -41,6 +44,8 @@ from campfire.modules.memory.errors import MemoryDataError
 from campfire.modules.memory.graph import MemoryGraph
 from campfire.modules.memory.identity import PendingId, derive_episode_uuid, to_account_id
 from campfire.modules.memory.store import write_episode
+
+logger = logging.getLogger(__name__)
 
 #: 载荷里必须存在的键（第 3 节：载荷**自足**，Worker 不回查业务用例）。
 PAYLOAD_CONTENT = "content"
@@ -57,11 +62,16 @@ class ConsumeResult:
 
     ``written`` 为 False 表示**本次没有领取到记录**（已被他人领取、租约未到期、
     或已是终结态）——这不是错误，是并发下的正常结果，调用方跳过即可。
+
+    ``discarded`` 为 True 表示**领取到了、但因账号已注销而不写入**（见
+    :func:`consume_memory_episode` 的说明）。它与「没领到」是**两件不同的事**，
+    必须能区分——否则运维看不出「有多少写入因为注销被丢弃」。
     """
 
     pending_id: str
     written: bool
     episode_uuid: str | None = None
+    discarded: bool = False
 
 
 # quality-floor: ignore docstring-promise 异常由 _write_record_to_graph 抛出并原样传播，函数体只做编排
@@ -74,9 +84,26 @@ async def consume_memory_episode(
 ) -> ConsumeResult:
     """领取并消费一条 `memory_episode`（Worker 侧用例）。
 
-    流程严格按第 4 节：**原子领取**（`take_for_processing`）→ 写图库 → 置 `done`。
+    流程严格按第 4 节：**原子领取**（`take_for_processing`）→ **复查账号是否已注销**
+    → 写图库 → 置 `done`。
     领取失败（返回 `None`）时**直接返回未写入**，不抛异常——「没领到」是并发的正常
     结果，把它当错误会让兜底扫描把每次竞争都记成失败。
+
+    ## 为什么领取后必须复查「账号是否已注销」（2026-09-30 补，决策记录的不变量 2）
+
+    账号注销时可能已有记录在排队、甚至已被本 Worker 领取（注销删的是**未领取**的记录，
+    见[认证与账号](../../../../docs/技术设计/technical-details/认证与账号.md)第 8 节第 2 步）。
+    若不在写入前复查，数据会被写回一个**已注销账号**的图——即
+    **「删后复活」**，而墓碑正是为了阻止它而存在的
+    （见[决策记录](../../../../docs/技术设计/decisions/账号注销与墓碑.md)）。
+
+    **判据是墓碑**：这也是墓碑唯一的运行时用途——没有它，Worker 查不到账号时
+    **无法区分「已注销」与「账号从不存」**。
+
+    **发现已注销时怎么处置**：**删除该记录，不写图、不置 done**。
+    理由：这条记录属于一个已不存在的账号，与第 8 节第 2 步「删除该账号的待处理记录」
+    是同一个动作（它只是恰好已被领取）。用 `done` 会是谎话（**什么都没写**）；
+    用 `dead` 会污染「重试耗尽」的告警流（这不是失败，是预期内的丢弃）。
 
     Args:
         session: 关系库会话（**调用方负责提交事务**）。
@@ -85,7 +112,8 @@ async def consume_memory_episode(
         lease_owner: Worker 标识。
 
     Returns:
-        `ConsumeResult`。``written=False`` 表示本次未领取到。
+        `ConsumeResult`。``written=False`` 表示本次未领取到或已按注销丢弃
+        （用 ``discarded`` 区分）。
 
     Raises:
         MemoryDataError: 载荷缺必填键，或记录的形状不合法。
@@ -96,6 +124,16 @@ async def consume_memory_episode(
     record = await take_for_processing(session, pending_id=pending_id, lease_owner=lease_owner)
     if record is None:
         return ConsumeResult(pending_id=str(pending_id), written=False)
+
+    # --- 复查账号是否已注销（写入之前，不可省）---
+    if await is_account_deleted(session, account_id=record.account_id):
+        logger.info(
+            "账号已注销，丢弃待处理记录（不写图库）：pending_id=%s 账号=%s",
+            pending_id,
+            record.account_id,
+        )
+        await session.execute(delete(PendingWrite).where(PendingWrite.id == record.id))
+        return ConsumeResult(pending_id=str(pending_id), written=False, discarded=True)
 
     episode_uuid = await _write_record_to_graph(graph, record)
 
