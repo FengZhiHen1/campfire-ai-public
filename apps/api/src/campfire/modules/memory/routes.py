@@ -31,6 +31,7 @@ from supertokens_python.recipe.session import SessionContainer
 from campfire.core.auth.supertokens import require_session
 from campfire.core.config import get_settings
 from campfire.core.db import session_scope
+from campfire.core.pagination import parse_offset_cursor
 from campfire.modules.memory import deletion
 from campfire.modules.memory.errors import (
     EpisodeKeyOwnedByAnotherAccountError,
@@ -289,15 +290,6 @@ def _parse_time(raw: str) -> datetime | None:
     return parsed
 
 
-def _parse_cursor(cursor: str | None) -> int | None:
-    """把游标解析成偏移量；None 表示非法（由调用方转 422）。"""
-    if cursor is None:
-        return 0
-    if not cursor.isdigit():
-        return None
-    return int(cursor)
-
-
 def _parse_time_range(
     since: str | None, until: str | None
 ) -> tuple[datetime | None, datetime | None, JSONResponse | None]:
@@ -359,7 +351,7 @@ async def list_episodes(
     if problem is not None:
         return problem
 
-    offset = _parse_cursor(cursor)
+    offset = parse_offset_cursor(cursor)
     if offset is None:
         return _error(422, "cursor 不是本面发出的游标", "invalid_payload")
 

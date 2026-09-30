@@ -324,6 +324,30 @@ async def test_list_rejects_foreign_cursor(client: httpx.AsyncClient, graph: Mem
     assert response.status_code == 422
 
 
+async def test_list_rejects_cursor_the_parser_cannot_parse(
+    client: httpx.AsyncClient, graph: MemoryGraph, as_account
+) -> None:  # noqa: ANN001
+    """游标的形状闸门必须与解析器同域：解析不了的游标一律 422，不得 500。
+
+    契约那张整面表里 422 = 载荷不合法，而「游标不是本面发出的」属于载荷不合法
+    （`list_episodes` 的 docstring 已写明这一条）。三种取值钉住「闸门比解析器宽」
+    的两个方向——修复前的实测状态：
+
+    - `²`（Unicode 上标数字）：`str.isdigit()` 为真而 `int()` 抛 `ValueError`；
+      未捕获的异常在生产上是 500，而本面要 422；
+    - `１２３`（全角数字）：两者都「成功」，于是本面从未发出过的偏移量 123 被静默
+      接受（200）——「游标只由本面发出」这条不变量没有被真的守住；
+    - 5000 位数字串：`isdigit()` 为真，但 `int()` 撞上 CPython 的整数串转换上限
+      （4300 位）又抛 `ValueError`——同一个洞的第二条 500 路径。
+
+    消融：修复前这三种取值分别得到「异常冒出（生产 500）／200／异常冒出（生产 500）」，
+    三条断言全红。
+    """
+    for cursor in ("²", "１２３", "1" * 5000):
+        response = await client.get("/memory/episodes", params={"cursor": cursor})
+        assert response.status_code == 422, f"cursor={cursor[:8]!r} 得到 {response.status_code}"
+
+
 async def test_empty_timeline_is_200_with_empty_array(
     client: httpx.AsyncClient, graph: MemoryGraph, as_account
 ) -> None:  # noqa: ANN001
