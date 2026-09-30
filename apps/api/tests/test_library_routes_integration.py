@@ -421,6 +421,25 @@ async def test_rejects_out_of_range_limit_and_foreign_cursor(client: httpx.Async
     assert bad_cursor.status_code == 422
 
 
+async def test_rejects_cursor_the_parser_cannot_parse(client: httpx.AsyncClient, seeded: dict[str, str]) -> None:  # noqa: ANN001
+    """游标的形状闸门必须与解析器同域：解析不了的游标一律 422，不得 500。
+
+    三种取值钉住「闸门比解析器宽」的两个方向（修复前实测的状态）：
+
+    - `²`（Unicode 上标数字）：`str.isdigit()` 为真而 `int()` 抛 `ValueError`
+      ——未捕获的异常在生产上是 500，而契约第 2 节要 422；
+    - `１２３`（全角数字）：两者都「成功」，于是面从未发出过的偏移量 123 被静默
+      接受（200）——「只由本面产生」的游标形状没有被真正守住；
+    - 5000 位数字串：`isdigit()` 为真，但 `int()` 撞上 CPython 的整数串转换上限
+      （4300 位）又抛 `ValueError`——同一个洞的第二条 500 路径。
+
+    消融：修复前这三种取值分别得到 500 / 200 / 500，三条断言全红。
+    """
+    for cursor in ("²", "１２３", "1" * 5000):
+        response = await client.get("/library/items", params={"library": "case", "cursor": cursor})
+        assert response.status_code == 422, f"cursor={cursor[:8]!r} 得到 {response.status_code}"
+
+
 async def test_browse_pagination_walks_without_repeats(client: httpx.AsyncClient, seeded: dict[str, str]) -> None:  # noqa: ANN001
     """浏览路按游标翻页不重不漏；翻到尾部 `next_cursor` 为 null。
 

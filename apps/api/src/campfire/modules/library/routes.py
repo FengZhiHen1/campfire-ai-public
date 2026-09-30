@@ -33,6 +33,7 @@ from supertokens_python.recipe.session import SessionContainer
 from campfire.core.auth.supertokens import require_session
 from campfire.core.config import get_settings
 from campfire.core.db import create_sync_engine, get_engine, session_scope
+from campfire.core.pagination import parse_offset_cursor
 from campfire.modules.library.case_schema import (
     OPTIONAL_CARD_STRINGS,
     REQUIRED_CARD_ARRAYS,
@@ -142,15 +143,6 @@ def _unavailable() -> JSONResponse:
     而真相是检索坏了（契约第 6 节的硬性区分）。文案只给类别，不复述连接串与凭据。
     """
     return _error(503, "检索暂时不可用", "retrieval_unavailable")
-
-
-def _parse_cursor(cursor: str | None) -> int | None:
-    """把游标解析成偏移量；None 表示非法（由调用方转 422）。"""
-    if cursor is None:
-        return 0
-    if not cursor.isdigit():
-        return None
-    return int(cursor)
 
 
 # ---------------------------------------------------------------------------
@@ -543,7 +535,7 @@ async def list_items(
     if library not in LIBRARIES:
         return _error(422, f"未知的库别：{library!r}，合法取值：{sorted(LIBRARIES)}", "invalid_payload")
 
-    offset = _parse_cursor(cursor)
+    offset = parse_offset_cursor(cursor)
     if offset is None:
         return _error(422, "cursor 不是本面发出的游标", "invalid_payload")
 
