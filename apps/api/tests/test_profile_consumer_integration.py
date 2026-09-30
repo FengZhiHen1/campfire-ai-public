@@ -503,6 +503,7 @@ async def test_absent_optional_payload_fields_stay_optional() -> None:
     assert row.probable_need is None
 
 
+@pytest.mark.asyncio
 async def test_worker_task_is_registered_for_profile_items() -> None:
     """T12 收口：worker 的 `kind = profile_item` 消费分支已接上。
 
