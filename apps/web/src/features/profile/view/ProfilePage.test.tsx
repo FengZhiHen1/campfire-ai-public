@@ -197,6 +197,34 @@ describe('档案页 · 候选条目操作', () => {
 });
 
 describe('档案页 · 纠正流', () => {
+  it('P0 摘要区每条尾部带「纠正」按钮，点击进入该条的纠正流并走到同一条端点', async () => {
+    // 设计第 20 行：摘要每条尾部「纠正」文字按钮（.btn-quiet 小号），点击进入该条的纠正流。
+    // 判别性：把摘要条目里的按钮去掉，本用例第一行查询就失败——条目行上那个「纠正」
+    // 救不了它（两者在同一个页面上，但入口与预填对象必须是这条摘要对应的那一条）。
+    const p = port();
+    renderPage(p);
+    await screen.findByText('关于 TA 的当前认识');
+
+    const summary = screen.getByRole('region', { name: '关于 TA 的当前认识' });
+    const summaryCorrect = within(summary).getByRole('button', { name: '纠正：用图片卡表达需求' });
+    expect(summaryCorrect.textContent).toBe('纠正');
+    expect(summaryCorrect.className).toContain('btn-quiet');
+
+    fireEvent.click(summaryCorrect);
+
+    // 走的是既有纠正流：同一张内联表单、同一套预填。
+    const form = (await screen.findByText('新增一条更正')).closest('section') as HTMLElement;
+    const description = within(form).getByLabelText('描述');
+    expect((description as HTMLTextAreaElement).value).toBe('用图片卡表达需求');
+
+    fireEvent.change(description, { target: { value: '改用图片卡 + 手势' } });
+    fireEvent.click(within(form).getByRole('button', { name: '纠正' }));
+
+    await waitFor(() => {
+      expect(p.correctItem).toHaveBeenCalledWith('i1', expect.objectContaining({ description: '改用图片卡 + 手势' }));
+    });
+  });
+
   it('P0 纠正表单预填原描述，提交调纠正端点并给出「不再作为依据」的提示', async () => {
     const p = port();
     renderPage(p);
