@@ -43,13 +43,15 @@ from campfire.agent.model import ModelBinding, ModelFailureReason, classify_mode
 from campfire.agent.skill_runtime import Skill, SkillRegistry, render_activation
 from campfire.agent.tools import ActivationState, ToolContext, ToolDispatcher, ToolPool, ToolScope, resolve_scope
 
-from .assembly import ToolBridge, WindowCallback, build_agent, build_run_config
+from .ask_user_tool import ASK_USER_TOOL_NAME
+from .assembly import QuestionGate, ToolBridge, WindowCallback, build_agent, build_run_config, stop_after_question
 from .errors import RuntimeAssemblyError
 from .events import (
     SUMMARY_LIMIT,
     CitationEvent,
     CompactionFacts,
     ProgressEvent,
+    ReasoningDeltaEvent,
     RunEndReason,
     RunEvent,
     RunFailedEvent,
@@ -225,12 +227,15 @@ class AgentRunner:
                 f"工具池缺少模型侧激活工具 {SKILL_TOOL_NAME}：存在可选 skill 时模型将无法激活它们。"
                 "请在装配处用 build_skill_tool(skill_registry) 注册（ToolPool.register_base）"
             )
-        # 激活工具与资源读取工具都是机制本身，必须恒可用；不参与 allowed-tools 的并集。
-        # 资源工具未注册不构成装配错误：它的缺失只让渐进披露退化为「清单读不到」，
+        # 激活工具、资源读取工具与提问工具都是机制本身，必须恒可用；不参与 allowed-tools
+        # 的并集。资源工具未注册不构成装配错误：它的缺失只让渐进披露退化为「清单读不到」，
         # 而激活工具缺失会让模型侧激活整个失效——两者的严重度不同，只有后者值得拒绝启动。
+        # 提问工具同理不拒绝启动：未注册时模型问不了使用者（能力缺失），而运行本身照常。
         always: list[str] = [SKILL_TOOL_NAME] if has_activation_tool else []
         if READ_SKILL_RESOURCE_TOOL_NAME in tools.names():
             always.append(READ_SKILL_RESOURCE_TOOL_NAME)
+        if ASK_USER_TOOL_NAME in tools.names():
+            always.append(ASK_USER_TOOL_NAME)
         self._always_active: tuple[str, ...] = tuple(always)
 
     def _resolve_scope(self, request: RunRequest) -> ToolScope:
@@ -337,12 +342,17 @@ class AgentRunner:
             ),
             activation_state=activation_state,
         )
-        bridge = ToolBridge(dispatcher, sink=buffer.append)
+        # 提问闸门按运行创建：它记的是「本次运行问出问题了没有」，跨运行共享会让上一次的
+        # 提问把下一次的运行提前结束。桥与 agent 共用同一个闸门，因此
+        # 「发出 question 事件」与「运行结束在提问处」由同一件事触发，不会只有其一发生。
+        gate = QuestionGate()
+        bridge = ToolBridge(dispatcher, sink=buffer.append, gate=gate)
         agent = build_agent(
             name=self._agent_name,
             instructions=request.instructions,
             model=self._binding.model,
             tools=bridge.function_tools(),
+            tool_use_behavior=stop_after_question(gate),
         )
         run_config = build_run_config(binding=self._binding, window=_window_callback())
 
@@ -781,13 +791,31 @@ async def _drain(result: RunResultStreaming, budget: _Budget) -> AsyncIterator[_
 
 
 def _translate(event: object) -> tuple[list[RunEvent], RunUsage]:
-    """把一个 SDK 事件翻译成零个或多个基座事件（外加可能的用量增量）。"""
+    """把一个 SDK 事件翻译成零个或多个基座事件（外加可能的用量增量）。
+
+    思考增量的两条来路（基座 7.1 节的「待验证」项，实测结论写在这里）：
+
+    `chatcmpl_converter` 把 Chat Completions 的思考字段捕获成 `ReasoningItem`，流式阶段
+    经 `chatcmpl_stream_handler` 发出两种原始事件——`reasoning_content` 走
+    `response.reasoning_summary_text.delta`（SDK 视为「思考摘要」），第三方平台的
+    `reasoning` 字段走 `response.reasoning_text.delta`（SDK 视为「思考正文」）。两条都携带
+    增量文本，因此都在这里翻译成 `reasoning_delta`。
+
+    仍保留「取不到就不产出」这条兜底：任何别的 `raw.type`（含 SDK 未来改名或本提供方
+    不返回思考字段的情形）都返回空列表。绝不用 `response.output_text.delta`（正文增量）
+    冒充思考增量——基座 7.1 节明确禁止，思考区是「中间态、非结论」，混入正文会让使用者
+    把推理过程当成正式回答。这条兜底有单测钉住（`test_agent_runtime` 的思考增量用例），
+    构造方式是让提供方只返回正文而不返回任何思考字段。
+    """
     if isinstance(event, RawResponsesStreamEvent):
         raw = event.data
         kind = getattr(raw, "type", "")
         if kind == "response.output_text.delta":
             delta = getattr(raw, "delta", "")
             return ([TextDeltaEvent(delta=str(delta))] if delta else []), RunUsage()
+        if kind in _REASONING_DELTA_KINDS:
+            delta = getattr(raw, "delta", "")
+            return ([ReasoningDeltaEvent(delta=str(delta))] if delta else []), RunUsage()
         if kind == "response.completed":
             return [], _usage_of(raw)
         return [], RunUsage()
@@ -797,6 +825,23 @@ def _translate(event: object) -> tuple[list[RunEvent], RunUsage]:
         return [ToolCallStartedEvent(tool_name=name, call_id=call_id)], RunUsage()
 
     return [], RunUsage()
+
+
+_REASONING_DELTA_KINDS = frozenset(
+    {
+        # DeepSeek 的 `reasoning_content`：SDK 捕获为思考摘要（ReasoningItem.summary）。
+        # 实测 SDK 0.22.3 + chatcmpl_stream_handler。
+        "response.reasoning_summary_text.delta",
+        # 第三方平台的 `reasoning` 字段：SDK 捕获为思考正文（ReasoningItem.content）。
+        "response.reasoning_text.delta",
+    }
+)
+"""承载思考增量的原始事件类型。
+
+两种都收，是因为它们对应提供方两个不同的思考字段（`reasoning_content` 与 `reasoning`），
+而对使用者来说都是「模型的思考过程」——只收一种会让另一种提供方的思考区永远空白。
+增量的正文语义（摘要还是正文）不影响本事件的形状：基座 7.1 节只有一个 `delta` 字段。
+"""
 
 
 def _tool_call_identity(item: object) -> tuple[str, str]:
