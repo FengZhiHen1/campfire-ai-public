@@ -43,7 +43,8 @@
   letter-spacing: var(--tracking-display);
 }
 
-/* 品牌图标用 accent 着色（页面设计：品牌区计作一处 accent）。 */
+/* 品牌图标用 accent 着色：图标源是 #C2410C 的单色标记（DESIGN.md 品牌图标节），本站取 --accent 的当前值。
+ * accent 计数只写到「首页页头图标」这一处（DESIGN.md）；本页设计未把品牌图标计入配额。 */
 .brandMark {
   display: inline-flex;
   color: var(--accent);
