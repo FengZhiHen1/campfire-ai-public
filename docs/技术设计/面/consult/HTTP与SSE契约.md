@@ -230,7 +230,7 @@ POST /consult/sessions/{session_id}/onboarding/skip
 | 八项采集的措辞与判据、Action Card 取值 | [emergency-consulting](skills/emergency-consulting.md) |
 | 引用条目的字段 | [资料与案例检索](../../technical-details/资料与案例检索.md)第 3 节 |
 | 事件的 UI 映射与 adapter | [咨询对话界面](../../technical-details/咨询对话界面.md) |
-| 档案与记忆的查看/纠正/删除端点 | 档案面与记忆面契约（**独立文档，本文档不拥有**） |
+| 档案与记忆的查看/纠正/删除端点 | [档案面契约](../profile/档案面HTTP契约.md) 与 [记忆面契约](../profile/记忆面HTTP契约.md) |
 
 ## 10. 已知偏差与证据边界
 
