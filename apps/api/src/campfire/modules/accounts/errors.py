@@ -166,8 +166,8 @@ class SessionQueryError(SessionError):
 class OnboardingWriteError(AccountsError):
     """引导状态的写入无法完成（形状不合法、状态漂移，或存储失败）。
 
-    与 :class:`OnboardingTriggerError` 分开：那个是**判定**给不出结论（读路径），
-    这个是**写入**没能成立（写路径）。两者的调用方与补救通道都不同——
+    与 :class:`OnboardingTriggerError` 分开：那个是「判定」给不出结论（读路径），
+    这个是「写入」没能成立（写路径）。两者的调用方与补救通道都不同——
     判定失败时本次会话不注入引导（可重试），写入失败时工具必须明确失败而不是回执
     `completed`，因为回执了会让模型以为引导已收束、而下次会话又会重新注入
     （`finish_onboarding` 契约第 5 节末行：UI 跳过入口仍是补救通道）。
