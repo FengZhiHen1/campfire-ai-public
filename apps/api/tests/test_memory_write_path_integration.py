@@ -47,6 +47,7 @@ from campfire.modules.memory.errors import MemoryDataError, MemoryUnavailableErr
 from campfire.modules.memory.graph import MemoryGraph, OrderedCrossEncoder
 from campfire.modules.memory.identity import PendingId, derive_episode_uuid, to_account_id
 from campfire.modules.memory.ledger import deleted_episode_keys
+from campfire.modules.memory.models import MemoryDeletionLedger
 from campfire.modules.memory.store import EPISODE_WRITE_STATE_PENDING, read_timeline
 
 from .conftest import connect_falkordb_or_skip
@@ -145,9 +146,18 @@ async def memory_graph() -> AsyncIterator[MemoryGraph]:
 
 
 async def _clear() -> None:
-    """清掉本文件账号的待处理记录。"""
+    """清掉本文件账号的待处理记录**与删除账本行**。
+
+    为什么账本也要清（2026-09-30 评审实测发现）：本文件的删除协同用例
+    （`test_deleted_memory_is_not_returned_after_write_path_completes`）每跑一次就记
+    一行账本；而 `episode_key` 有**全局唯一约束**、账本是**多测试文件共用**的表——
+    残留会让别的文件（或下一次运行）在同 key 上撞 `UniqueViolationError`、或让读
+    断言莫名少条。实测该缺陷曾累积 68 行残留。与
+    `test_memory_timeline_integration._clear_ledger` 的既有做法对齐。
+    """
     async with session_scope(get_settings()) as session:
         await session.execute(delete(PendingWrite).where(PendingWrite.account_id == _ACCOUNT))
+        await session.execute(delete(MemoryDeletionLedger).where(MemoryDeletionLedger.account_id == _ACCOUNT))
 
 
 async def _enqueue(

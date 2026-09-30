@@ -19,7 +19,12 @@ Create Date: 2026-09-29 21:43:51.550322
   再收窄是另一次迁移的决定，届时应有真实依据。
 
 **升级方向安全**：`uuid → varchar` 不需要 `USING`（实测有数据时也可直接 ALTER，
-值是规范 UUID 文本）。
+值是规范 UUID 文本）。**为什么「有数据」不构成额外前提**（2026-09-30 评审复核补记）：
+源头列类型是 `uuid`——PostgreSQL 从一开始就**只接受合法 UUID 值**进入该列，普通
+INSERT 无法写入非 UUID 文本；而 uuid 的文本形式恰是 varchar 可无损承载的。因此
+「不需要 USING」不是碰巧成立，是源头列类型保证的。唯一的理论旁路是运维用
+`pg_cast` 类手段往 uuid 列塞过畸形值，那属于 schema 层面之外的操作，不在迁移的
+保证范围内。
 
 **回滚方向有真实风险，必须知情**：`varchar → uuid` 在**存在非 UUID 值时会失败**
 （实测 PG 报 `column "v" cannot be cast automatically to type uuid`）。因此

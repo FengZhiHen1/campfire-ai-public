@@ -31,7 +31,6 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
-from graphiti_core.driver.driver import GraphDriver
 from graphiti_core.nodes import EpisodeType
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -111,15 +110,17 @@ class MemoryEpisode:
     occurred_at: datetime
     #: 来源会话标识。承载在 `source_description` 上（`episode_metadata` 不落库，实测）。
     source: str
-    #: 写入状态。**当前是字面量 `done`**，不是真的回查 `pending_write.state`——
-    #: 它表达的是「图库里存在 episode 节点 ⇒ 已写入」这一**约定**，而该约定之所以
-    #: 成立，是因为 `write_episode` 在抽取失败时会**补偿删除**刚建的节点
-    #: （见该函数的失败分支；实测复现过「半写节点被当成已写入返回」）。
+    #: 写入状态。值恒为 `done`——但**不是硬编码的约定**，而是查询判据的产物：
+    #: 读路径按 `e.write_state = 'done'` 过滤（见 `_read_timeline`），该标记由
+    #: `write_episode` 在 `add_episode` 成功后写入（见模块级
+    #: `EPISODE_WRITE_STATE_*` 的说明）。**失败时的补偿删除只是尽力清理，
+    #: 不是本字段成立的依据**——无标记的半写节点（硬杀残留、抽取中途失败）
+    #: 从一开始就不满足过滤条件，读不到（实测复现，见
+    #: `test_hard_kill_leftover_is_unreadable_by_both_paths`）。
     #:
-    #: **该字段的前提条件（改动写入形状前必读）**：若将来写入改成多阶段
-    #: （例如「先落节点、异步补齐派生事实」），这个常量就不再成立——读路径会返回
-    #: 未完成的记录。届时本字段必须改为**真的回查** `pending_write.state`，
-    #: 而不是继续用约定。契约依据：`read_memory` 第 3 节要求非 `done` 不出现在返回里。
+    #: **前提条件（改动写入形状前必读）**：若将来写入改成多阶段（例如「先落节点、
+    #: 异步补齐派生事实」），`done` 的写入时机必须随之重新定义，本字段的语义与
+    #: 契约依据（`read_memory` 第 3 节「非 `done` 不出现在返回里」）才保持一致。
     write_state: str = "done"
 
 
@@ -135,26 +136,6 @@ def _utc_iso(value: datetime) -> str:
         # （那会引入宿主机依赖），而是明确按 UTC 解释并在下方比较中保持一致。
         value = value.replace(tzinfo=timezone.utc)
     return value.astimezone(timezone.utc).isoformat()
-
-
-def account_driver(driver: GraphDriver, account_id: AccountId) -> GraphDriver:
-    """返回指向**该账号那张图**的驱动（第 1 节实测的分区语义）。
-
-    ⚠️ **这是无缓存的裸 ``clone``，在热路径上直接调用会泄漏**（2026-09-29 实测）：
-    ``clone(database=X)`` 在 X 与当前库名不同时构造**新的 ``FalkorDriver``**，而它的
-    ``__init__`` 会调度一个建索引的后台任务——实测同一账号连续两次取驱动返回两个
-    **不同对象**、pending task 计数 2→3→4，即每条查询泄漏一个驱动 + 一个后台任务。
-    **热路径请用 ``MemoryGraph.driver_for()``**（按账号缓存、缓存有界、关闭时逐个收口）。
-
-    保留本函数是为了让「哪张图」这条事实有一个不依赖装配层的表达（测试、以及需要
-    一次性驱动的场景）。参数与返回都用基类 ``GraphDriver``（上游 ``clone`` 的声明
-    形状）：调用方只依赖 ``execute_query`` 与 ``clone`` 两条接口。
-
-    Note:
-        不做缓存：缓存属于装配层的职责（``graph.py`` 的 ``MemoryGraph``），
-        本函数只表达「哪张图」这一个事实。
-    """
-    return driver.clone(database=account_id)
 
 
 async def read_timeline(
@@ -520,7 +501,6 @@ __all__ = [
     "TIMELINE_DEFAULT_LIMIT",
     "TIMELINE_MAX_LIMIT",
     "MemoryEpisode",
-    "account_driver",
     "parse_db_datetime",
     "read_timeline",
     "write_episode",
