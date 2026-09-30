@@ -30,7 +30,7 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.exc import IntegrityError
 
 from campfire.core.config import get_settings
-from campfire.core.db import dispose_engine, session_scope
+from campfire.core.db import session_scope
 from campfire.modules.memory.errors import MemoryDataError
 from campfire.modules.memory.ledger import (
     DeletionOutcome,
@@ -67,21 +67,6 @@ async def _require_database() -> AsyncIterator[None]:
     if not get_settings().database_url:
         pytest.skip("未配置 DATABASE_URL——集成测试需要 docker compose up -d postgres")
     yield
-
-
-@pytest_asyncio.fixture(autouse=True)
-async def _dispose_shared_engine() -> AsyncIterator[None]:
-    """每个用例前后释放 ``core/db`` 的全局共享引擎。
-
-    原因（实测）：pytest-asyncio 为每个用例新建事件循环，而共享引擎的连接池绑定在
-    **首次使用时的事件循环**上——跨循环复用会抛 ``RuntimeError: Event loop is closed``，
-    并在 teardown 留下一串 ``AsyncAdaptedQueuePool: Exception terminating connection``，
-    把真正的失败原因埋掉。生产只有一个长驻循环，不存在该问题。
-    同一处理见 ``test_library_ingestion_integration.py``。
-    """
-    await dispose_engine()
-    yield
-    await dispose_engine()
 
 
 def _episode_key(suffix: str) -> str:

@@ -9,16 +9,14 @@
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator
 from pathlib import Path
 
 import pytest
-import pytest_asyncio
 from llama_index.core.vector_stores.types import MetadataFilter, MetadataFilters, VectorStoreQuery
 from sqlalchemy import func, select
 
 from campfire.core.config import get_settings
-from campfire.core.db import create_engine, create_sync_engine, dispose_engine, session_scope
+from campfire.core.db import create_engine, create_sync_engine, session_scope
 from campfire.modules.library.embedding import EMBEDDING_DIM
 from campfire.modules.library.ingestion import IngestionError, build_vector_store, ingest_file
 from campfire.modules.library.models import KnowledgeItem, RetrievedNode
@@ -46,22 +44,6 @@ def _patched_embedding(monkeypatch: pytest.MonkeyPatch) -> None:
         "campfire.modules.library.ingestion.build_embedding",
         lambda _settings: _FakeEmbedder(),
     )
-
-
-@pytest_asyncio.fixture(autouse=True)
-async def _dispose_shared_engine() -> AsyncIterator[None]:
-    """每个用例前后释放 ``core/db`` 的全局共享引擎。
-
-    原因（实测）：pytest-asyncio 为每个用例新建事件循环，而共享引擎的连接池
-    绑定在**首次使用时的事件循环**上——跨循环复用会抛
-    ``RuntimeError: Event loop is closed``，并在 teardown 留下一串
-    ``AsyncAdaptedQueuePool: Exception terminating connection``。
-    生产只有一个长驻循环，不存在该问题；测试必须显式释放，否则失败原因会被
-    teardown 噪音掩盖（本文件初版即如此）。
-    """
-    await dispose_engine()
-    yield
-    await dispose_engine()
 
 
 def _require_db() -> str:

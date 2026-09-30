@@ -34,7 +34,7 @@ from sqlalchemy import delete
 from supertokens_python.recipe.emailpassword.types import FormField
 
 from campfire.core.config import Settings, get_settings
-from campfire.core.db import dispose_engine, session_scope
+from campfire.core.db import session_scope
 from campfire.modules.accounts import (
     INVITE_CODE_FORM_FIELD,
     STATE_ISSUED,
@@ -75,14 +75,6 @@ def _normalise_env_for_sdk(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     yield
 
 
-@pytest_asyncio.fixture
-async def _dispose_shared_engine() -> AsyncIterator[None]:
-    """每个用例前后释放共享引擎（跨事件循环复用会 ``Event loop is closed``）。"""
-    await dispose_engine()
-    yield
-    await dispose_engine()
-
-
 def _settings_or_skip() -> Settings:
     """取配置；缺库或缺 API Key 时跳过——**不假装通过**。"""
     settings = get_settings()
@@ -94,7 +86,7 @@ def _settings_or_skip() -> Settings:
 
 
 @pytest_asyncio.fixture
-async def client(_dispose_shared_engine: None) -> AsyncIterator[object]:
+async def client() -> AsyncIterator[object]:
     """返回一个穿过**完整应用**（含 SuperTokens 中间件）的 ASGI 客户端。
 
     core 不可达时跳过：那时注册失败的原因是环境，不是被测代码。
