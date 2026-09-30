@@ -22,9 +22,9 @@ import { AuthError } from '../domain/authFailure';
 import { useSessionStore } from '../viewModel/sessionStore';
 import { expectContractCssActive, injectContractCss } from '../../../test/contractCss';
 
-/** 一期边界硬文案（页面设计成稿，逐字；AC-10 的反向如实声明）。 */
+/** 一期边界硬文案（页面设计成稿，逐字；AC-10 的反向如实声明）。引号在句末句号之前闭合，故本条不含句号。 */
 const BOUNDARY_COPY =
-  '本应用尚未经专业审阅，不能替代专业服务；遇到紧急医疗情况请直接就医或拨打急救电话。';
+  '本应用尚未经专业审阅，不能替代专业服务；遇到紧急医疗情况请直接就医或拨打急救电话';
 
 /** 构造一个可控的认证端口替身。 */
 function port(overrides: Partial<AuthPort> = {}): AuthPort {
