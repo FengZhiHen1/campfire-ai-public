@@ -35,6 +35,6 @@ skills/<skill-name>/assets/       # 可选：模板与数据
 
 ## 状态
 
-**一期 skill 尚未落地**：三个 skill（`emergency-consulting`、`daily-consulting`、
-`profile-curation`）的方法论与 `SKILL.md` 正文要点仍在
+**一期 skill 尚未落地**：四个 skill（`emergency-consulting`、`daily-consulting`、
+`profile-curation`、`onboarding`）的方法论与 `SKILL.md` 正文要点仍在
 `docs/技术设计/面/consult/skills/` 下待确认。确认后每个 skill 在此建一个自包含目录。
