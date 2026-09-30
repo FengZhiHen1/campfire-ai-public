@@ -56,7 +56,7 @@ from campfire.agent.runtime import (
 )
 from campfire.agent.runtime.events import CitationEvent, RunUsage
 from campfire.agent.skill_runtime import SkillRegistry
-from campfire.agent.tools import ToolContext, ToolPool, ToolResult, ToolSpec
+from campfire.agent.tools import ToolContext, ToolNotRegisteredError, ToolPool, ToolResult, ToolSpec
 
 BASE_URL = "https://tokenhub.test/v1"
 MODEL_NAME = "test-model"
@@ -1141,6 +1141,31 @@ async def test_usage_accumulates_across_model_calls() -> None:
     assert isinstance(finished, RunFinishedEvent)
     assert finished.usage.requests >= 2
     assert finished.usage.total_tokens >= 8
+
+
+def test_runner_assembly_validates_skill_allowed_tools(tmp_path: Path) -> None:
+    """启动期校验有真实调用者：装配 `AgentRunner` 时就核对 skill 的 `allowed-tools`。
+
+    判别性：去掉 `AgentRunner.__init__` 里那一行校验，skill 作者的笔误要等到该 skill 第一次被
+    激活、`resolve_scope` 解析范围时才抛 `ToolNotRegisteredError`，并被 `run()` 归成
+    `injection_failed`——配置错误被误导成注入问题，且要等一次真实运行才暴露（D-25）。
+    本用例断言的是装配期就拒绝，不依赖任何一次运行。
+    """
+    registry = _skill_root(tmp_path)  # 该 skill 的 allowed-tools 是 read_alpha
+    pool = ToolPool([write_tool()])  # 池里只有 write_beta
+    # 先满足既有那条装配检查（存在可选 skill 就必须有激活工具），把失败隔离到 allowed-tools 校验上
+    pool.register_base(build_skill_tool(registry))
+
+    with pytest.raises(ToolNotRegisteredError) as failure:
+        AgentRunner(
+            binding=_binding(ScriptedChat([text_reply("好")])),
+            tools=pool,
+            skills=registry,
+            citations=FakeCitationIndex(),
+            sessions=lambda session_id: FakeSession(session_id),
+        )
+
+    assert "read_alpha" in str(failure.value)
 
 
 def test_usage_addition_is_commutative_on_totals() -> None:
