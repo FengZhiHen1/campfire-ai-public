@@ -233,6 +233,38 @@ describe('案例库浏览页 · deep-link 三态', () => {
     });
   });
 
+  it('P0 目标在库：定位并带 expand 重取本页，展开正文真的渲染出来', async () => {
+    // 「定位并展开」的展开那一半：只切分区、只置 expandedId 而不带 expand 重取列表时，
+    // 展开内容永远不出现（展开内容随列表返回，契约第 4 节）。
+    // 判别性：去掉 `load({ library, expand })` 里的 expand（或去掉 deep-link 那次重取），
+    // 「资料正文」查不到，本用例立刻失败。
+    const focused = item({ item_id: 'k9', library: 'knowledge' as const, title: '一篇资料' });
+    const p = port({
+      getItem: vi.fn(async () => ({ item: focused })),
+      listItems: vi.fn(async (params: { library: 'case' | 'knowledge'; expand?: string }) => ({
+        library: params.library,
+        items:
+          params.expand === 'k9'
+            ? [
+                item({
+                  item_id: 'k9',
+                  library: 'knowledge' as const,
+                  title: '一篇资料',
+                  narrative: { sections: [{ key: 's1', heading: '情境', text: '资料正文' }] },
+                }),
+              ]
+            : [focused],
+        next_cursor: null,
+      })),
+    });
+    renderPage(p, '?item=k9');
+
+    expect(await screen.findByText('资料正文')).toBeDefined();
+    await waitFor(() => {
+      expect(p.listItems).toHaveBeenLastCalledWith(expect.objectContaining({ library: 'knowledge', expand: 'k9' }));
+    });
+  });
+
   it('P0 目标已撤下：单条撤下卡只带标题，不显示正文', async () => {
     renderPage(
       port({
