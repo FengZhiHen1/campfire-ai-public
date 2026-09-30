@@ -91,10 +91,12 @@ export function HomePage() {
             <h3 className={styles.secondaryTitle}>{COPY.casesTitle}</h3>
             <p className={styles.secondaryBody}>{COPY.casesBody}</p>
           </Link>
-          {/* 指向案例库的「资料」分区：页面设计写明它「→ 进案例库的资料分区」。
-           * 分区参数在案例库浏览页设计里只定义了 deep-link 的 item 参数，未定义分区参数名；
-           * 这里用 section=library 作为落点约定，并在报告未决问题节登记待 T11 回核。 */}
-          <Link className="mini-card" to="/cases?section=library">
+          {/* 指向案例库浏览页的「资料」分区：首页页设计写明这个入口「→ 进案例库的资料分区」，
+           * 而该页的库切换只有「案例」/「资料」两档，其中「资料」就是 knowledge 库
+           * （资料库面契约第 2 节：library 取 knowledge | case）。
+           * 分区参数名在页面设计里没有定义，沿用该页 deep-link 已有的 section 参数，
+           * 取值用库别原值——写别的值会被解析成「没给分区」而静默落到案例分区。 */}
+          <Link className="mini-card" to="/cases?section=knowledge">
             <h3 className={styles.secondaryTitle}>{COPY.libraryTitle}</h3>
             <p className={styles.secondaryBody}>{COPY.libraryBody}</p>
           </Link>
