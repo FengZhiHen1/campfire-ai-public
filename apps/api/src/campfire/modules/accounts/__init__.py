@@ -40,11 +40,17 @@
 # `session_items.py`（SDK 会话条目 → parts/标题/预览的解析）、
 # `session_repository.py`（会话归属行的读写与 SDK 两表的只读查询）、
 # `sessions.py`（会话归属四个用例与注销清除）、
-# `onboarding_completion.py`（引导收束写入：置 `completed`，`finish_onboarding` 的用例层）。
+# `onboarding_completion.py`（引导收束写入：置 `completed`，`finish_onboarding` 的用例层）、
+# `onboarding_skip.py`（引导跳过写入：置 `skipped`，UI 跳过入口的用例层）、
+# `onboarding_start.py`（引导开始写入：置 `in_progress`，首次注入引导时落行）、
+# `first_run_injection.py`（会话首轮注入的结算标记读写，判据是
+# `campfire_session.first_run_injected`）。
 #
 # 会话归属的数据链（2026-09-30，T06）：`campfire_session` 只存归属与登记，不存消息
 # ——存消息就构成第二份对话真源（基座第 2 节）。会话列表的标题与末条预览都从 SDK 的
 # 会话存储算出来（`session_items`），不落库：派生值落库会造出第二个可写真源。
+# 唯一的例外是 `first_run_injected`：它记的是服务端已替该会话结算过一次性注入这一
+# 历史事实，无法从消息内容可靠反推（见该字段的说明），因此不是派生值。
 # 对象名经注入回调取（`sessions.ObjectNameReader`），因为对象归 `modules/profile`，
 # 而模块之间禁止互相 import（项目结构设计第 7 节）。
 #
@@ -72,6 +78,10 @@ from campfire.modules.accounts.errors import (
     SessionNotFoundError,
     SessionQueryError,
     SessionRegistrationError,
+)
+from campfire.modules.accounts.first_run_injection import (
+    mark_first_run_injected,
+    read_first_run_injected,
 )
 from campfire.modules.accounts.models import (
     INVITE_CODE_ALPHABET,
@@ -103,6 +113,8 @@ from campfire.modules.accounts.onboarding_completion import (
     SKIPPED_SECTIONS,
     complete_onboarding,
 )
+from campfire.modules.accounts.onboarding_skip import skip_onboarding
+from campfire.modules.accounts.onboarding_start import start_onboarding
 from campfire.modules.accounts.registration import (
     EMAIL_FORM_FIELD,
     INVITE_CODE_FORM_FIELD,
@@ -206,6 +218,13 @@ __all__ = [
     # 引导收束（唯一写 `completed` 的用例；`skipped` 归 UI 跳过入口）
     "SKIPPED_SECTIONS",
     "complete_onboarding",
+    # 引导跳过（唯一写 `skipped` 的用例；`completed` 归 finish_onboarding 通道）
+    "skip_onboarding",
+    # 引导开始（唯一写 `in_progress` 的用例；首次注入引导时落行）
+    "start_onboarding",
+    # 会话首轮注入的结算标记（一次运行只注入一次的判据）
+    "mark_first_run_injected",
+    "read_first_run_injected",
     # 邀请码状态机
     "LIST_DEFAULT_LIMIT",
     "LIST_MAX_LIMIT",
