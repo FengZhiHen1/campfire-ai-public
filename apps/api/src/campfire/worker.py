@@ -219,7 +219,7 @@ async def consume_profile_item_task(pending_id: str, lease_owner: str = "worker"
     失败分档（第 6 节）——档案侧不可重试的失败有两种，不是一种：
 
     - `ProfileDataError`：载荷缺键或形状不合法。重试不会变好，转 `dead`。
-    - `AuthorizationError`：**领取时重新判定**发现授权已不成立——对象被归档、
+    - `AuthorizationError`：领取时重新判定发现授权已不成立——对象被归档、
       对象不属于该账号，或授权端口不可用。第 6 节要求「不写入、转 `dead` 并记原因」；
       重试同样不会变好（归档要使用者显式恢复），因此不留 `pending` 反复重试。
       收口用基类即可：`ObjectArchivedError` 是它的子类，两者处置相同——
@@ -227,7 +227,7 @@ async def consume_profile_item_task(pending_id: str, lease_owner: str = "worker"
       这里两者都只是「不写入、记原因」。
 
     其余一切（数据库、未知异常）按可重试处理，到上限自动转 `dead`。
-    **不得**用 `except ProfileError` 收口：`ProfileDataError` 只是它的子类之一，
+    不得用 `except ProfileError` 收口：`ProfileDataError` 只是它的子类之一，
     用基类收口会把将来新增的可重试档案异常一并判死。
 
     Returns:
