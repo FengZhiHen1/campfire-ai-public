@@ -407,7 +407,7 @@ async def test_delete_fails_on_malformed_key(client: httpx.AsyncClient, graph: M
 async def test_delete_returns_404_for_foreign_and_never_written_keys(
     client: httpx.AsyncClient, graph: MemoryGraph, as_account
 ) -> None:  # noqa: ANN001
-    """删除的越权与不存在：**404 且响应体逐字相同**（契约第 2、4 节；裁决 2）。
+    """删除的越权与不存在：404 且响应体逐字相同（契约第 2、4 节；裁决 2）。
 
     两个场景都是真实 HTTP 实测：
     - 越权：删除他人账号时间线里的 episode（本账号的图里没有、账本里也没有）；
@@ -439,7 +439,7 @@ async def test_delete_still_works_when_the_graph_is_unavailable(
 ) -> None:  # noqa: ANN001
     """图库不可用不阻断删除：账本照记并返回 200（契约第 6 节、裁决 2）。
 
-    与 404 那条并列的另一半判据：**判不了存在性时不报 404，也不报 503**——
+    与 404 那条并列的另一半判据：判不了存在性时不报 404，也不报 503——
     账本过滤才是语义删除的生效点，它在 PostgreSQL 侧，与图库是两回事。
     若这条改成 503，图库故障期间使用者的删除请求会全部失败，等于删除静默失效。
 
@@ -605,7 +605,7 @@ async def test_other_accounts_episode_is_not_visible_and_delete_is_404(
 ) -> None:  # noqa: ANN001
     """记忆按账号分区：他人的片段不出现在列表里，删除他的 `episode_key` → 404。
 
-    这条的 404 来自**归属判定**：该 key 虽已被他人记入账本，但本账号账本里没有它，
+    这条的 404 来自归属判定：该 key 虽已被他人记入账本，但本账号账本里没有它，
     本账号的时间线里也没有这条片段（分区键取登录态，见路由 `current_account`），
     因此与「不存在」同形处置。跨账号账本守卫（`record_deletion` 的 fail-closed）
     仍是兜底，但它不再是本面唯一的「不是你的记忆」信号。
