@@ -12,7 +12,14 @@ from typing import Literal, Union
 
 from campfire.agent.context import CitationRecord
 from campfire.agent.model import ModelFailureReason
-from campfire.agent.tools import Candidate, ToolErrorCode
+from campfire.agent.tools import (
+    ActionCardAnnotation,
+    ActionCardSection,
+    ActionCardState,
+    Candidate,
+    QuestionItem,
+    ToolErrorCode,
+)
 
 RunEndReason = Literal["completed", "timeout", "cancelled"]
 """结束后原因（`run_finished`）。三者都会保留已产生的引用（第 9 节）。
@@ -146,6 +153,65 @@ class CandidateEvent:
 
 
 @dataclass(frozen=True, slots=True)
+class ReasoningDeltaEvent:
+    """模型思考过程的文本增量（中间态，非结论）。
+
+    基座第 7.1 节。来源是 DeepSeek 思考模式的 `reasoning_content` 流式增量；取不到时
+    本事件不产出（思考区无内容），不得用文本增量冒充——思考区是「非结论」，把正文
+    混进去会让使用者把推理过程当成正式回答（第 7.1 节待验证项）。产出点在
+    :func:`~campfire.agent.runtime.runner._translate`。
+    """
+
+    delta: str
+    type: Literal["reasoning_delta"] = field(default="reasoning_delta", init=False)
+
+
+@dataclass(frozen=True, slots=True)
+class QuestionEvent:
+    """Agent 向使用者发起的一组结构化提问（第 7.2 节）。
+
+    为什么是「组」而不是「题」：一次性可提出多题、逐题作答、整组统一提交已经用户确认。
+    若事件只能表达一道题，前端要靠多次事件自行拼组，而「整组提交」就失去服务端可校验的
+    对象——组是提交单位，因此是事件单位。单题即长度为 1 的组，不另设形状。
+
+    运行结束于提问而非暂停：发出后本次运行正常结束（`run_finished`），回答作为下一条
+    使用者消息到达（第 7.2 节与第 2 节「注入只发生在运行边界」的运行模型相容）。
+
+    载荷字段名与第 7.2 节逐字一致（`batch_id` / `items` / `id` / `prompt` / `options` /
+    `allow_skip`）：面侧契约把事件的 `data` 定义成该事件对象的 JSON，键名即线上契约。
+    `batch_id` 由工具侧生成，不接受模型传入——运行内唯一性由机制保证，不信任模型给的标识。
+    """
+
+    batch_id: str
+    items: tuple[QuestionItem, ...]
+    type: Literal["question"] = field(default="question", init=False)
+
+
+@dataclass(frozen=True, slots=True)
+class ActionCardEvent:
+    """一次结构化的卡片段输出；第 7.3 节的通用信封。
+
+    为什么是通用信封：基座不得出现领域术语（第 1 节不变量），而卡片的取值词表
+    （医疗风险三值、来源六类、置信四档）是领域事实。因此基座只承载「分节文本 + 键值状态 +
+    逐条标注」这三种与领域无关的形状，领域词汇与词表由产品侧定义并在工具的参数模型上校验
+    （决策记录见 docs/技术设计/decisions/应急卡片由产品侧工具产出.md）。
+
+    运行不因此结束（第 7.3 节）：卡片之后可继续输出追问或收尾文字；同一会话内可出现
+    多张，按时间顺序排列。
+
+    载荷字段名与第 7.3 节逐字一致（`card_id` / `title` / `sections` / `states` /
+    `annotations`）。`states` 与 `annotations` 可为空数组。
+    """
+
+    card_id: str
+    title: str
+    sections: tuple[ActionCardSection, ...]
+    states: tuple[ActionCardState, ...] = ()
+    annotations: tuple[ActionCardAnnotation, ...] = ()
+    type: Literal["action_card"] = field(default="action_card", init=False)
+
+
+@dataclass(frozen=True, slots=True)
 class CompactionFacts:
     """一次压缩的计量（压缩策略第 9 节），只带计数与用量、不带摘要正文。
 
@@ -220,12 +286,15 @@ class RunFailedEvent:
 
 RunEvent = Union[
     RunStartedEvent,
+    ReasoningDeltaEvent,
     TextDeltaEvent,
     ProgressEvent,
     ToolCallStartedEvent,
     ToolCallFinishedEvent,
     CitationEvent,
     CandidateEvent,
+    QuestionEvent,
+    ActionCardEvent,
     RunFinishedEvent,
     RunFailedEvent,
 ]

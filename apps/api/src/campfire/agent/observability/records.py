@@ -29,9 +29,12 @@ from typing import Literal
 
 from campfire.agent.context import CitationRecord
 from campfire.agent.runtime import (
+    ActionCardEvent,
     CandidateEvent,
     CitationEvent,
     CompactionFacts,
+    QuestionEvent,
+    ReasoningDeltaEvent,
     RunEvent,
     RunFailedEvent,
     RunFinishedEvent,
@@ -123,6 +126,20 @@ class RunRecord:
 
     candidate_count: int = 0
     """候选产出条数（内容进业务侧候选列表，不在这里存副本）。"""
+
+    reasoning_deltas: int = 0
+    """思考增量的条数（不是内容），与 :attr:`text_deltas` 同理。
+
+    与文本增量分开计数是有用的：两者都为 0 时说明这次运行什么都没说；只有文本为 0 而思考
+    大于 0，说明运行产出了思考却没给结论——基座第 7.1 节不允许用文本增量冒充思考增量，
+    这两档因此必须能区分。
+    """
+
+    question_batches: int = 0
+    """向使用者提问的批次条数（题面与选项正文留在会话真源里，不在这里存副本）。"""
+
+    action_cards: int = 0
+    """结构化卡片条数（卡片正文留在会话真源里，不在这里存副本）。"""
 
     compactions: tuple[CompactionFacts, ...] = ()
     """本次运行做过的压缩计量（压缩策略第 9 节）。"""
@@ -231,6 +248,12 @@ class RunRecorder:
             record.citations = _merged_citations(record.citations, (CitationRef.of(event.citation),))
         elif isinstance(event, CandidateEvent):
             record.candidate_count += 1
+        elif isinstance(event, ReasoningDeltaEvent):
+            record.reasoning_deltas += 1
+        elif isinstance(event, QuestionEvent):
+            record.question_batches += 1
+        elif isinstance(event, ActionCardEvent):
+            record.action_cards += 1
         elif isinstance(event, RunFinishedEvent):
             # `RunEndReason` 含 `"cancelled"`，而本记录的 `end_reason` 刻意不含它
             # （见字段 docstring）：取消走 `cancelled` 标志那条通道。这个分流是显式的，

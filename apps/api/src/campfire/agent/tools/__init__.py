@@ -31,6 +31,15 @@ import `tools/*`；与 SDK 的接线属运行编排的装配细节。
 from .activation_state import ActivationState
 from .dispatch import ToolDispatcher
 from .errors import ToolError, ToolNotRegisteredError, ToolRegistrationError, ToolSpecError
+from .payloads import (
+    ActionCard,
+    ActionCardAnnotation,
+    ActionCardSection,
+    ActionCardState,
+    Question,
+    QuestionItem,
+    QuestionOption,
+)
 from .pool import RESERVED_TOOL_NAMES, ToolPool
 from .results import Candidate, ToolErrorCode, ToolFailure, ToolOutcome, ToolResult
 from .scope import AVAILABILITY_SOURCE, ToolScope, resolve_scope
@@ -38,9 +47,16 @@ from .spec import TOOL_NAME_PATTERN, RiskLevel, Tool, ToolContext, ToolHandler, 
 
 __all__ = [
     "AVAILABILITY_SOURCE",
+    "ActionCard",
+    "ActionCardAnnotation",
+    "ActionCardSection",
+    "ActionCardState",
     "ActivationState",
     "RESERVED_TOOL_NAMES",
     "Candidate",
+    "Question",
+    "QuestionItem",
+    "QuestionOption",
     "RiskLevel",
     "TOOL_NAME_PATTERN",
     "Tool",

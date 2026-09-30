@@ -10,7 +10,14 @@ from __future__ import annotations
 
 from collections.abc import Callable, Sequence
 
-from agents import Agent, FunctionTool, RunConfig
+from agents import (
+    Agent,
+    FunctionTool,
+    FunctionToolResult,
+    RunConfig,
+    RunContextWrapper,
+    ToolsToFinalOutputResult,
+)
 from agents.items import TResponseInputItem
 from agents.models.interface import Model
 
@@ -19,8 +26,10 @@ from campfire.agent.tools import Tool, ToolDispatcher, ToolFailure
 
 from .events import (
     SUMMARY_LIMIT,
+    ActionCardEvent,
     CandidateEvent,
     CitationEvent,
+    QuestionEvent,
     RunEvent,
     ToolCallFinishedEvent,
 )
@@ -39,6 +48,60 @@ WORKFLOW_NAME = "campfire"
 """SDK tracing 的工作流名；用于在追踪里区分本应用。"""
 
 
+class QuestionGate:
+    """「本次运行问出问题了没有」的唯一事实来源。
+
+    为什么需要它，而不直接用 SDK 现成的机制：让运行结束在提问处要给 SDK 一个
+    `tool_use_behavior` 回调，而回调只能拿到工具结果的字符串，字符串里分不出
+    「问成了」与「参数不合法的工具错误」。文档里更省事的
+    `tool_use_behavior={"stop_at_tool_names": ["ask_user"]}` 有更严重的缺陷：它只看工具名，
+    失败也停——实测模型给一组不合法参数（`items` 为空）时该机制照样结束运行，
+    而没有任何 `question` 事件发出，使用者的表现是「回复突然断掉，界面上什么都没有」。
+    因此判据只能来自「这次调用是否真的产出了提问」，而那件事只有工具桥知道。
+    """
+
+    def __init__(self) -> None:
+        """初始状态：本次运行还没有问出问题，运行照常继续。"""
+        self._asked_text: str | None = None
+
+    def note_question(self, *, text: str) -> None:
+        """记下「一次提问成功产出」以及它回给模型的那句话。
+
+        `text` 同时用作运行结束时的 `final_output`：提问之后不再有模型轮次，`final_output`
+        就是这次运行的最终产出，用它自己给模型的话比另编一句更诚实（SDK 不会把它写成
+        单独的助手消息，实测会话里只有 function_call 与 function_call_output 两项）。
+        """
+        self._asked_text = text
+
+    def final_output(self) -> str | None:
+        """运行应结束在提问处时返回最终产出；`None` 表示本次工具批次要照常回到模型。"""
+        return self._asked_text
+
+
+def stop_after_question(
+    gate: QuestionGate,
+) -> Callable[[RunContextWrapper[object], list[FunctionToolResult]], ToolsToFinalOutputResult]:
+    """构造 `Agent.tool_use_behavior`：真的问出问题就结束本次运行。
+
+    依据基座第 7.2 节「模型调用它即结束本次运行并发出该事件」。判据取自
+    :class:`QuestionGate`（见该类的说明：按工具名停会在参数不合法时静默截断运行）。
+    没有问出问题时返回 `is_final_output=False`，SDK 的行为与默认的 `run_llm_again` 相同
+    （工具结果照常回到模型，它可据错误提示改一次参数）。
+    """
+
+    def behavior(
+        _context: RunContextWrapper[object],
+        tool_results: list[FunctionToolResult],
+    ) -> ToolsToFinalOutputResult:
+        """只看「有没有真的产出提问」，不看工具名、不看字符串。"""
+        text = gate.final_output() if tool_results else None
+        if text is None:
+            return ToolsToFinalOutputResult(is_final_output=False, final_output=None)
+        return ToolsToFinalOutputResult(is_final_output=True, final_output=text)
+
+    return behavior
+
+
 class ToolBridge:
     """把基座工具翻译成 SDK 的 `FunctionTool`。
 
@@ -52,10 +115,16 @@ class ToolBridge:
       产出）。一件事只有一个发出点。
     """
 
-    def __init__(self, dispatcher: ToolDispatcher, *, sink: EventSink) -> None:
-        """绑定权限门与事件出口。"""
+    def __init__(self, dispatcher: ToolDispatcher, *, sink: EventSink, gate: QuestionGate | None = None) -> None:
+        """绑定权限门、事件出口与提问闸门。
+
+        `gate` 不传时提问仍会产出 `question` 事件，只是运行不会停在提问处（照常回到模型）——
+        便于单测只验证事件翻译；真实运行由 :class:`~campfire.agent.runtime.runner.AgentRunner`
+        传入闸门，使「结束本次运行」与「发出事件」两件事由同一个事实触发。
+        """
         self._dispatcher = dispatcher
         self._sink = sink
+        self._gate = gate
 
     def function_tools(self) -> list[FunctionTool]:
         """按稳定声明顺序构造 SDK 工具。"""
@@ -100,6 +169,23 @@ class ToolBridge:
             self._sink(CitationEvent(citation=record))
         for candidate in outcome.candidates:
             self._sink(CandidateEvent(candidate=candidate))
+        for card in outcome.cards:
+            self._sink(
+                ActionCardEvent(
+                    card_id=card.card_id,
+                    title=card.title,
+                    sections=card.sections,
+                    states=card.states,
+                    annotations=card.annotations,
+                )
+            )
+        if outcome.question is not None:
+            # 事件的字段名与载荷逐字一致（基座 7.2 节），所以这里是平铺搬运，不是重新命名。
+            self._sink(QuestionEvent(batch_id=outcome.question.batch_id, items=outcome.question.items))
+            if self._gate is not None:
+                # 与事件同源：闸门只在「确实产出了提问」时被打开，因此运行不会因为一次参数
+                # 不合法的调用而静默截断（见 QuestionGate 的说明）。
+                self._gate.note_question(text=outcome.text)
 
         self._sink(
             ToolCallFinishedEvent(
@@ -119,14 +205,25 @@ def build_agent(
     instructions: str,
     model: Model,
     tools: Sequence[FunctionTool],
+    tool_use_behavior: Callable[[RunContextWrapper[object], list[FunctionToolResult]], ToolsToFinalOutputResult]
+    | None = None,
 ) -> Agent:
     """构造 SDK 的 Agent。
 
     `instructions` 必须是静态字符串：技能目录、档案摘要、检索结果、时间、活跃技能
     一律不得进入系统提示（压缩策略第 8 节第 2 条），它们只能作为尾部消息注入。动态内容
     由 :class:`~campfire.agent.context.InjectionBatch` 负责，本函数不接受它。
+
+    `tool_use_behavior` 不传即 SDK 默认的 `run_llm_again`（工具结果回到模型继续跑）；
+    运行编排传入 :func:`stop_after_question` 以支持「运行结束于提问」（基座第 7.2 节）。
     """
-    return Agent(name=name, instructions=instructions, model=model, tools=list(tools))
+    return Agent(
+        name=name,
+        instructions=instructions,
+        model=model,
+        tools=list(tools),
+        tool_use_behavior=tool_use_behavior or "run_llm_again",
+    )
 
 
 def build_run_config(*, binding: ModelBinding, window: WindowCallback) -> RunConfig:

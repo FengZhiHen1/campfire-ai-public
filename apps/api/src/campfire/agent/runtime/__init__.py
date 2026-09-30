@@ -5,13 +5,17 @@
 参考：docs/项目结构设计.md 第 3 节；docs/技术设计/technical-details/通用基座.md 第 2 节。
 """
 
-from .assembly import ToolBridge, build_agent, build_run_config
+from .ask_user_tool import ASK_USER_TOOL_NAME, AskUserArgs, build_ask_user_tool
+from .assembly import QuestionGate, ToolBridge, build_agent, build_run_config, stop_after_question
 from .errors import RuntimeAssemblyError, SessionConfigurationError
 from .events import (
+    ActionCardEvent,
     CandidateEvent,
     CitationEvent,
     CompactionFacts,
     ProgressEvent,
+    QuestionEvent,
+    ReasoningDeltaEvent,
     RunEndReason,
     RunEvent,
     RunFailedEvent,
@@ -47,20 +51,30 @@ from .summarizer import ModelSummarizer
 # :mod:`~campfire.agent.runtime.session` 只做会话装配，
 # :mod:`~campfire.agent.runtime.assembly` 只做「基座形状 → SDK 对象」的翻译，
 # :mod:`~campfire.agent.runtime.runner` 是运行编排本身。
+#
+# 三个机制工具（`skill` / `read_skill_resource` / `ask_user`）都放在本包，而不是
+# `agent/tools`：它们都要用到运行编排的知识（激活状态、提问即结束运行），而
+# `agent/tools` 只承载与产品侧共用的注册形状。
 
 __all__ = [
     "SESSION_IO_DETAIL",
     "SKILL_TOOL_NAME",
     "READ_SKILL_RESOURCE_TOOL_NAME",
+    "ASK_USER_TOOL_NAME",
     "ActivateSkillArgs",
-    "ReadSkillResourceArgs",
+    "ActionCardEvent",
     "AgentRunner",
+    "AskUserArgs",
     "CandidateEvent",
     "CitationEvent",
     "CompactionFacts",
     "CompactionWiring",
     "ModelSummarizer",
     "ProgressEvent",
+    "QuestionEvent",
+    "QuestionGate",
+    "ReadSkillResourceArgs",
+    "ReasoningDeltaEvent",
     "RunEndReason",
     "RunEvent",
     "RunFailedEvent",
@@ -77,8 +91,10 @@ __all__ = [
     "ToolCallFinishedEvent",
     "ToolCallStartedEvent",
     "build_agent",
+    "build_ask_user_tool",
     "build_read_skill_resource_tool",
     "build_run_config",
     "build_skill_tool",
     "build_sqlalchemy_session",
+    "stop_after_question",
 ]
