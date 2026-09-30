@@ -618,10 +618,14 @@ async def test_create_item_rejects_unknown_domain(client: httpx.AsyncClient, as_
 
 
 async def test_endpoints_require_a_session() -> None:
-    """无会话请求受限端点 → 401（`RQ-ACC-01`：全应用必须登录）。
+    """无会话请求档案面**每一个**端点 → 401（`RQ-ACC-01`：全应用必须登录）。
 
     走真实 SDK（因此需要 SuperTokens core 与 API Key；缺任一跳过而不是假装通过）。
     不替换会话依赖——这条要验的正是依赖本身。
+
+    清单不手写残缺版：期望集合与实际路由表（OpenAPI 是它的对外可观测形式）
+    逐项比对，两端都必须相等——新增端点而忘了同步时这条会失败，而不是
+    「只测了旧的一半」却显示通过。
     """
     import campfire.main as main_module
     from campfire.core.auth import check_auth_core
@@ -637,17 +641,33 @@ async def test_endpoints_require_a_session() -> None:
 
     init_supertokens(settings, api_overrides=api_overrides, sign_up_form_fields=sign_up_form_fields)
 
+    expected = {
+        ("GET", "/profile/objects"),
+        ("POST", "/profile/objects"),
+        ("PATCH", "/profile/objects/{support_object_id}"),
+        ("GET", "/profile/objects/{support_object_id}/summary"),
+        ("GET", "/profile/objects/{support_object_id}/items"),
+        ("POST", "/profile/objects/{support_object_id}/items"),
+        ("POST", "/profile/items/{item_id}/confirm"),
+        ("POST", "/profile/items/{item_id}/correct"),
+        ("POST", "/profile/items/{item_id}/reject"),
+        ("DELETE", "/profile/items/{item_id}"),
+    }
+    operations = {
+        (method.upper(), template)
+        for template, spec in main_module.app.openapi()["paths"].items()
+        if template.startswith("/profile/")
+        for method in spec
+    }
+    assert operations == expected, "401 覆盖清单与档案面路由表不一致——同步本条后再跑"
+
+    item_id = "3f2504e0-4f89-41d3-9a0c-0305e82c3302"
     transport = httpx.ASGITransport(app=main_module.app)
     async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as async_client:
-        for method, path in (
-            ("GET", "/profile/objects"),
-            ("POST", "/profile/objects"),
-            ("GET", "/profile/objects/3f2504e0-4f89-41d3-9a0c-0305e82c3302/summary"),
-            ("GET", "/profile/objects/3f2504e0-4f89-41d3-9a0c-0305e82c3302/items"),
-            ("DELETE", "/profile/items/3f2504e0-4f89-41d3-9a0c-0305e82c3302"),
-        ):
-            response = await async_client.request(method, path, json={} if method == "POST" else None)
-            assert response.status_code == 401, f"{method} {path} 未要求登录"
+        for method, template in sorted(operations):
+            path = template.replace("{support_object_id}", item_id).replace("{item_id}", item_id)
+            response = await async_client.request(method, path, json={} if method in ("POST", "PATCH") else None)
+            assert response.status_code == 401, f"{method} {template} 未要求登录"
 
 
 async def test_routes_are_mounted_under_the_profile_prefix() -> None:
