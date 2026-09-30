@@ -438,7 +438,12 @@ async def count_session_items(session: AsyncSession, *, session_id: str) -> int:
 
 
 async def delete_session_owner(session: AsyncSession, *, session_id: str) -> int:
-    """删除一条会话归属行，返回删除条数（测试与运维用）。"""
+    """删除一条会话归属行，返回删除条数。
+
+    三个调用场景：测试清理、运维手工清理，以及「会话刚建好就注定不存在」的补偿删除
+    （应急入口的运行起步失败——那次请求的 `session_id` 没有回给调用方，留下的归属行
+    永久不可达，而它的首轮注入标记已为真）。命中 0 行不报错，重复调用安全。
+    """
     normalized = validate_session_id(session_id)
     result = await session.execute(delete(CampfireSession).where(CampfireSession.session_id == normalized))
     return int(getattr(result, "rowcount", 0) or 0)

@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import CheckConstraint, DateTime, Index, String
+from sqlalchemy import Boolean, CheckConstraint, DateTime, Index, String
 from sqlalchemy import text as sql_text
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -227,6 +227,7 @@ class CampfireSession(Base):
 
     不存消息内容，也不存会话标题等派生值：存了就构成第二份对话真源
     （基座第 2 节单真源），而标题由会话真源的首条使用者消息推导。
+    `first_run_injected` 是这条规则的唯一例外，理由是它不是派生值（见该字段的说明）。
 
     创建时机（决策记录的实现约束）：会话创建端点在写 SDK 会话之前落行；
     写行失败则不建会话——不得出现「能读但无归属」的会话。
@@ -241,6 +242,22 @@ class CampfireSession(Base):
     #: 归属账号（即身份服务的用户标识，认证与账号第 3 节）。
     #: 不建外键——身份服务的表由 core 拥有，跨进程外键不可靠（同支持对象的取向）。
     account_id: Mapped[str] = mapped_column(String(MAX_ACCOUNT_ID_LENGTH), nullable=False)
+    #: 本会话的首次运行是否已由服务端程序注入（日常会话的 onboarding、应急会话的应急上下文）。
+    #:
+    #: 为什么它不是派生值，因而可以落库：
+    #: 它记录的是「服务端已经替这个会话结算过那一次程序注入」这一历史事实，
+    #: 而不是任何能从会话内容算出来的显示值。按内容反推并不可靠——注入正文可能被
+    #: 压缩改写、可能因该次运行起步失败而根本没落进会话真源、也无从与使用者自己
+    #: 写下的同文内容区分；而「按内容推断触发与否」正是判定不推导这条纪律要挡住的
+    #: 做法（认证与账号第 8 节：是否触发引导只查状态表，不从档案或会话存在性推导）。
+    #: 落库后它是单调的：只在注入结算那一刻由 false 变 true，不回落。
+    #:
+    #: 与账号级的 campfire_onboarding.state 互补而不重复：后者回答「这个账号还要不要
+    #: 引导」，本列回答「这个会话的那一次注入结算了没有」。应急会话在建会话时即为真，
+    #: 于是它后续的消息不会再被注入引导（应急会话永不触发引导）。
+    first_run_injected: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=sql_text("false")
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=sql_text("now()")
     )

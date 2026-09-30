@@ -404,6 +404,23 @@ async def insert_session_binding(
     return (await session.execute(statement)).scalar_one_or_none()
 
 
+async def delete_session_binding(session: AsyncSession, *, session_id: object) -> int:
+    """删除某会话的对象绑定，返回删除条数。
+
+    只在会话本身被丢弃时用（应急入口的运行起步失败补偿）：绑定行不随会话归属行消失，
+    留着它会成为 :func:`latest_bound_object_id` 的输入——一个从未存在过的会话就此
+    决定该账号下一次新建会话绑哪个对象。
+
+    `DELETE ... WHERE` 命中 0 行不报错，因此本函数天然幂等：会话没有绑定时调用安全。
+
+    Raises:
+        ProfileDataError: 会话标识不合法。
+    """
+    normalized = _validate_session_id(session_id)
+    result = await session.execute(delete(SessionObjectBinding).where(SessionObjectBinding.session_id == normalized))
+    return int(getattr(result, "rowcount", 0) or 0)
+
+
 async def latest_bound_object_id(session: AsyncSession, *, account_id: object) -> uuid.UUID | None:
     """推导该账号「上一次的选择」：取 `bound_at` 最大的那条绑定的对象（第 6 节）。
 

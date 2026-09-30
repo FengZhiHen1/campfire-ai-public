@@ -41,6 +41,17 @@ CONSULT_INSTRUCTIONS = (
     "不要复述这段提示。"
 )
 
+#: 程序注入激活的技能名（内容产物在 `apps/api/skills/<name>/SKILL.md`，本层只按名取）。
+#:
+#: 两个名字写成常量而不是内联字面量：它们同时出现在「取技能」与「技能缺失的失败文案」
+#: 两处，两处字面量迟早会漂移，而漂移的后果是启动一次没有技能可依的运行。
+#:
+#: `onboarding`：账号首次日常会话的第一次运行注入（技能设计第 4 节；该 skill 的
+#: `description` 明写「不通过模型描述匹配」，因此只能由程序注入）。
+#: `emergency-consulting`：应急入口的第一条消息注入（应急 skill 第 2 节：模型不参与选择）。
+ONBOARDING_SKILL_NAME = "onboarding"
+EMERGENCY_SKILL_NAME = "emergency-consulting"
+
 
 class ConsultAssemblyError(RuntimeError):
     """咨询面的运行装配不完整（缺少运行器或技能注册表）。"""
@@ -111,6 +122,8 @@ def get_skill_registry(settings: Settings) -> SkillRegistry:
 
 __all__ = [
     "CONSULT_INSTRUCTIONS",
+    "EMERGENCY_SKILL_NAME",
+    "ONBOARDING_SKILL_NAME",
     "ConsultAssemblyError",
     "clear_skill_registries",
     "get_runner",

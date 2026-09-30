@@ -545,6 +545,39 @@ async def test_binding_is_not_inferred_from_another_table() -> None:
     assert binding is None
 
 
+@pytest.mark.asyncio
+async def test_discarding_a_session_binding_touches_only_that_session_and_is_idempotent() -> None:
+    """丢弃会话时的绑定删除：只删该会话那一行，删不存在的绑定不报错。
+
+    唯一合法调用点是应急入口的运行起步失败补偿（那个会话的 `session_id` 从未回给
+    调用方，永久不可达）。两条前提都在这里钉住：只删该会话（按账号全删会把账号下
+    其它会话的绑定一起打掉），以及幂等（补偿路径可能重试，第二次是在删一个已经不存在
+    的行）。
+
+    **消融**：把实现换成按账号删除（`delete_session_bindings_for_account`），
+    第二条断言（另一个会话的绑定还在）立即失败。
+    """
+    x = await _make_object(_ACCOUNT_A, "小宝")
+    async with session_scope(get_settings()) as session:
+        await service.bind_first_object(session, session_id="s-discard", account_id=_ACCOUNT_A, support_object_id=x)
+        await service.bind_first_object(session, session_id="s-keep", account_id=_ACCOUNT_A, support_object_id=x)
+
+    async with session_scope(get_settings()) as session:
+        deleted = await service.discard_session_binding(session, session_id="s-discard")
+    assert deleted == 1
+
+    async with session_scope(get_settings()) as session:
+        gone = await repo.get_session_binding(session, session_id="s-discard")
+        kept = await repo.get_session_binding(session, session_id="s-keep")
+    assert gone is None, "被丢弃的会话不得留下绑定"
+    assert kept is not None and str(kept.support_object_id) == x, "别的会话的绑定不得被牵连"
+
+    async with session_scope(get_settings()) as session:
+        again = await service.discard_session_binding(session, session_id="s-discard")
+    assert again == 0, "删一个已经不存在的绑定不报错，返回 0"
+    assert await _count_bindings(_ACCOUNT_A) == 1
+
+
 # ---------------------------------------------------------------------------
 # 7. 注销真删（第 7 节、AC-24）
 # ---------------------------------------------------------------------------
