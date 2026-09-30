@@ -18,6 +18,7 @@ from campfire.modules.memory.derived import (
     read_emergency_facts,
 )
 from campfire.modules.memory.errors import (
+    EpisodeKeyOwnedByAnotherAccountError,
     MemoryConfigurationError,
     MemoryDataError,
     MemoryModuleError,
@@ -81,6 +82,7 @@ from campfire.modules.memory.store import MemoryEpisode, read_timeline, write_ep
 #: 这些用例，登记于 TODO `TECH-22`。图库物理清理延期（账本过滤已保证语义删除生效）。
 __all__ = [
     # 异常
+    "EpisodeKeyOwnedByAnotherAccountError",
     "MemoryConfigurationError",
     "MemoryDataError",
     "MemoryModuleError",

@@ -77,7 +77,25 @@ class MemoryDataError(MemoryModuleError):
         super().__init__(message)
 
 
+class EpisodeKeyOwnedByAnotherAccountError(MemoryDataError):
+    """该 `episode_key` 已被别的账号记入删除账本：本账号的删除不会生效。
+
+    为什么单立一个类型：删除面要把它映射成 404 与「不存在」同形（越权与不存在必须
+    逐字同文案），而同一个基类的其它成员（形状非法、账本状态不一致）不该被这样说。
+    两者的判据只能是异常类型，不能靠错误消息文本（见 `MemoryModuleError`）——
+    靠文案匹配时改一个字的措辞就会让跨账号命中静默降级成「标识形状非法」。
+
+    成因：`episode_key` 由 uuid5 从 `pending_id` 派生，而 `pending_id` 只要求是
+    非空短字符串，账本的唯一约束又是全局的。因此两个账号拿到同一个 `pending_id`
+    时会派生出同一个 key（见 `ledger.record_deletion` 的 Note）。
+
+    失败是 fail-closed 的：宁可让第二个账号删不掉并如实报「不存在」，
+    也不能静默幂等——那会让一次没生效的删除看起来成功。
+    """
+
+
 __all__ = [
+    "EpisodeKeyOwnedByAnotherAccountError",
     "MemoryConfigurationError",
     "MemoryDataError",
     "MemoryModuleError",

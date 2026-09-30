@@ -10,11 +10,17 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from campfire.modules.memory.identity import AccountId, EpisodeUuid
+from campfire.modules.memory.errors import EpisodeKeyOwnedByAnotherAccountError, MemoryDataError
+from campfire.modules.memory.identity import AccountId, EpisodeUuid, to_account_id, to_episode_key
 from campfire.modules.memory.ledger import DeletionOutcome, DeletionRecord, record_deletion
-from campfire.modules.memory.models import DELETION_REASON_CORRECTION, DELETION_REASON_USER_REQUEST
+from campfire.modules.memory.models import (
+    DELETION_REASON_CORRECTION,
+    DELETION_REASON_USER_REQUEST,
+    MemoryDeletionLedger,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -33,7 +39,7 @@ class DeletionResult:
     reason: str
 
 
-# quality-floor: ignore docstring-promise 异常由 record_deletion 抛出并原样传播，函数体只做编排
+# quality-floor: ignore docstring-promise 异常由 _record 与 record_deletion 抛出并原样传播，函数体只做编排
 async def delete_episode(
     session: AsyncSession,
     *,
@@ -66,14 +72,15 @@ async def delete_episode(
         `DeletionResult`，含「是否本次真的新删除」。
 
     Raises:
-        MemoryDataError: `episode_key` 形状非法，或该 key 已被其它账号记录删除
-            （见 `ledger.record_deletion`）。
+        EpisodeKeyOwnedByAnotherAccountError: 该 key 已被其它账号记入删除账本
+            （fail-closed，见 `ledger.record_deletion` 的 Note）。
+        MemoryDataError: `episode_key` 形状非法，或删除原因不在词表内。
 
     Note:
         重复删除不是错误：`newly_deleted=False` 表示此前已删除。把幂等命中当错误
         会让调用方在重试时收到失败，而删除实际上已经生效。
     """
-    record = await record_deletion(
+    record = await _record(
         session,
         account_id=account_id,
         episode_key=episode_key,
@@ -84,6 +91,7 @@ async def delete_episode(
     return _to_result(record)
 
 
+# quality-floor: ignore docstring-promise 异常由 _record 抛出并原样传播，函数体只做编排
 async def correct_episode(
     session: AsyncSession,
     *,
@@ -122,8 +130,12 @@ async def correct_episode(
 
     Returns:
         旧记忆的账本记录结果。
+
+    Raises:
+        EpisodeKeyOwnedByAnotherAccountError: 该 key 已被其它账号记入删除账本
+            （fail-closed，见 `ledger.record_deletion` 的 Note）。
     """
-    record = await record_deletion(
+    record = await _record(
         session,
         account_id=account_id,
         episode_key=corrected_episode_key,
@@ -132,6 +144,75 @@ async def correct_episode(
         derived_uuids=derived_uuids,
     )
     return _to_result(record)
+
+
+async def _record(
+    session: AsyncSession,
+    *,
+    account_id: AccountId,
+    episode_key: EpisodeUuid | str,
+    reason: str,
+    deleted_by: str | None = None,
+    derived_uuids: list[str] | None = None,
+) -> DeletionRecord:
+    """记一次删除，并把「该 key 已被别的账号记过」翻译成类型化失败。
+
+    为什么需要这一层翻译（2026-09-30）：`record_deletion` 对三种失败抛的是同一个
+    `MemoryDataError`——原因不在词表、账本状态不一致、跨账号守卫。而调用方（删除面
+    路由）必须把跨账号守卫报成 404（越权与不存在逐字同文案），其余两种是形状或
+    存储不变量问题，不能混为一谈。判据只能是异常类型，不能靠错误消息文本
+    （见 `MemoryModuleError`）；靠文案匹配时改一个字的措辞就会让跨账号命中静默
+    降级成 422「标识形状非法」。
+
+    为什么落在这里：`delete_episode` / `correct_episode` 的 Raises 契约本来就声明了
+    「该 key 已被其它账号记录删除」这一失败模式，把它类型化是用例的职责。
+    分类依据是账本事实本身（该 `episode_key` 的那一行归属谁），不是异常文案；
+    这也是本模块唯一读账本归属的地方——写入端仍然只有 `record_deletion` 一处。
+
+    Raises:
+        EpisodeKeyOwnedByAnotherAccountError: 账本里该 key 属于别的账号。
+        MemoryDataError: 其余失败原样上抛（形状非法、原因不在词表、账本状态不一致）。
+        其它异常同样原样上抛。
+    """
+    try:
+        return await record_deletion(
+            session,
+            account_id=account_id,
+            episode_key=episode_key,
+            reason=reason,
+            deleted_by=deleted_by,
+            derived_uuids=derived_uuids,
+        )
+    except MemoryDataError as exc:
+        if not await _owned_by_another_account(session, account_id=account_id, episode_key=episode_key):
+            raise
+        raise EpisodeKeyOwnedByAnotherAccountError(
+            "该 episode_key 已被其它账号记录删除，本账号的删除不会生效",
+            operation="record_deletion",
+            detail="账本里该 episode_key 的归属账号不是请求账号（uuid 被跨账号共用）",
+        ) from exc
+
+
+async def _owned_by_another_account(
+    session: AsyncSession,
+    *,
+    account_id: AccountId,
+    episode_key: EpisodeUuid | str,
+) -> bool:
+    """账本里这条 key 是否属于别的账号——给 `record_deletion` 的失败定性用。
+
+    标识形状非法时返回假：那种失败原样上抛，不冒充跨账号（否则一次载荷问题会被
+    报成「这条记忆不是你的」）。`episode_key` 全局唯一，因此这里是一次索引命中。
+    """
+    try:
+        key = to_episode_key(episode_key)
+        account = to_account_id(account_id)
+    except MemoryDataError:
+        return False
+    owner = (
+        await session.execute(select(MemoryDeletionLedger.account_id).where(MemoryDeletionLedger.episode_key == key))
+    ).scalar_one_or_none()
+    return owner is not None and owner != account
 
 
 def _to_result(record: DeletionRecord) -> DeletionResult:
