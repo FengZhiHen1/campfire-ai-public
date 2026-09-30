@@ -33,12 +33,14 @@
 # 组织与机构协作整体推迟到二期（见 docs/技术设计/decisions/一期只做个人账号.md）。
 # 此前本文件写「组织标识」属该裁决之前的表述，已移除。
 #
-# 已实现（2026-09-30）：`errors.py`（异常层次）、`models.py`（邀请码表、会话归属表、
-# 引导状态表）、`repository.py`（邀请码状态机：签发、原子占用、补偿释放、绑定、撤销、列举）、
+# 已实现（2026-09-30）：`errors.py`（异常层次）、`models.py`（邀请码表、会话归属表
+# `campfire_session`、引导状态表 `campfire_onboarding`）、
+# `repository.py`（邀请码状态机：签发、原子占用、补偿释放、绑定、撤销、列举）、
 # `onboarding.py`（引导状态表的读取与触发判定，`RQ-ACC-09`）、
 # `session_items.py`（SDK 会话条目 → parts/标题/预览的解析）、
 # `session_repository.py`（会话归属行的读写与 SDK 两表的只读查询）、
-# `sessions.py`（会话归属四个用例与注销清除）。
+# `sessions.py`（会话归属四个用例与注销清除）、
+# `onboarding_completion.py`（引导收束写入：置 `completed`，`finish_onboarding` 的用例层）。
 #
 # 会话归属的数据链（2026-09-30，T06）：`campfire_session` 只存归属与登记，不存消息
 # ——存消息就构成第二份对话真源（基座第 2 节）。会话列表的标题与末条预览都从 SDK 的
@@ -49,10 +51,13 @@
 # 仍缺：注册复写（把邀请码校验注入身份服务的 sign-up API）、人工重置、账号注销编排，
 # 以及注销墓碑（归 `core/auth`）。它们随 SDK 装配与 CLI 子命令落地。
 #
-# `onboarding.py` 的表模型与迁移尚未落地（表形状由认证与账号第 8 节拥有）。
-# 该模块因此走带绑定参数的显式 SQL，而不是声明第二份模型——同名表的第二份定义会与
-# `core/db.metadata` 的 `--autogenerate` 差异比较打架（项目结构设计第 10 节）。
-# 模型与迁移随该表的所有者批次补上，本模块的接口形状不变。
+# 引导状态表的模型与迁移已落地（2026-09-30）：`models.CampfireOnboarding` 已在
+# `core/db.metadata` 里，迁移随该批生成。`onboarding.py` 因此不再需要「走显式 SQL
+# 以避免第二份模型定义」——那条说明的前置已满足（该改动不在 T04 范围内，
+# 在该文件里原样保留，已作为未决问题上报；读写语义与接口形状不受影响）。
+#
+# `onboarding_completion.py` 走模型而非显式 SQL：它只做写入，没有「先于模型存在」的
+# 历史包袱，直接建在 `CampfireOnboarding` 上。
 
 from campfire.modules.accounts.errors import (
     AccountsError,
@@ -62,6 +67,7 @@ from campfire.modules.accounts.errors import (
     InviteCodeRejectedError,
     InviteCodeStateError,
     OnboardingTriggerError,
+    OnboardingWriteError,
     SessionError,
     SessionNotFoundError,
     SessionQueryError,
@@ -92,6 +98,10 @@ from campfire.modules.accounts.onboarding import (
     onboarding_pending,
     read_onboarding_state,
     should_inject_onboarding,
+)
+from campfire.modules.accounts.onboarding_completion import (
+    SKIPPED_SECTIONS,
+    complete_onboarding,
 )
 from campfire.modules.accounts.registration import (
     EMAIL_FORM_FIELD,
@@ -163,6 +173,7 @@ __all__ = [
     "InviteCodeRejectedError",
     "InviteCodeStateError",
     "OnboardingTriggerError",
+    "OnboardingWriteError",
     "SessionError",
     "SessionNotFoundError",
     "SessionQueryError",
@@ -192,6 +203,9 @@ __all__ = [
     "onboarding_pending",
     "read_onboarding_state",
     "should_inject_onboarding",
+    # 引导收束（唯一写 `completed` 的用例；`skipped` 归 UI 跳过入口）
+    "SKIPPED_SECTIONS",
+    "complete_onboarding",
     # 邀请码状态机
     "LIST_DEFAULT_LIMIT",
     "LIST_MAX_LIMIT",

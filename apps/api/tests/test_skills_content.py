@@ -85,12 +85,10 @@ SKILLS_WITH_SHARED_BLOCK = ("daily-consulting", "emergency-consulting", "profile
 
 #: 一期十个工具的**全集**（技能设计第 3 节总表）。
 #:
-#: `allowed-tools` 必须是它的子集。之所以取「全集」而不是「当前已注册的集合」：
-#: 注册表目前只有 3 个工具（T04 未并入本泳道），拿它当上界会让合法的
-#: `allowed-tools`（`search_cases`、`finish_onboarding` 等）被判越界——
-#: 那是在检查注册进度，不是在检查内容产物。
-#:
-#: **待复验**：注册表全量注册后，应把本断言收紧为「`allowed-tools` ⊆ 已注册集合 ∩ 全集」。
+#: 2026-09-30 收紧：注册表已全量注册（T04 并入本泳道），因此 `allowed-tools` 现在同时受
+#: 两条约束——是全集子集，且是**已注册集合**的子集（见
+#: `test_allowed_tools_are_all_registered`）。此前只能拿全集当上界，因为注册表只有 3 个
+#: 工具，拿它当上界会让合法的 `allowed-tools`（`search_cases` 等）被误判越界。
 FULL_TOOL_SET = frozenset(
     {
         "create_support_object",
@@ -472,13 +470,34 @@ def test_registry_does_not_drift_out_of_the_full_tool_set() -> None:
     与上面的子集检查合起来，两个方向都关上：内容不得发明工具名，
     实现也不得新增一个技能设计不知道的工具。
 
-    **待复验**：当前注册表只有 3 个工具（T04 未并入本泳道），因此这条是
-    「已注册 ⊆ 全集」；全量注册后应连同「`allowed-tools` ⊆ 已注册」一起收紧。
+    2026-09-30 收紧（原「待复验」项已复验）：注册表已十工具齐备，
+    因此这里同时断言「已注册 == 全集」——多一个或少一个都会失败。
     """
     registered = {tool.name for tool in build_product_tools()}
     unknown = registered - FULL_TOOL_SET
     assert not unknown, f"注册表含技能设计第 3 节总表之外的工具：{sorted(unknown)}"
-    assert registered, "注册表为空——反方向检查会空跑"
+    assert registered == FULL_TOOL_SET, f"注册表与技能设计第 3 节总表不一致：缺 {sorted(FULL_TOOL_SET - registered)}"
+
+
+def test_allowed_tools_are_all_registered() -> None:
+    """`allowed-tools` 里出现的每个工具都**真的在注册表里**（原「待复验」的收紧项）。
+
+    为什么需要这一条（原先只有「⊆ 全集」是不够的）：全集是设计文档里的目标清单，
+    而注册表是实现事实。一个被 skill 声明、却从未注册的工具，在实际运行中的表现是
+    「模型看得见这个工具名（在 allowed-tools 里），但调用返回 tool_not_registered」
+    ——那是一条只在真实对话里才暴露的失败，两个方向各自的子集检查都放过它。
+
+    判别性：从注册表里删掉任一工具（而不动 skill 内容），本用例失败。
+    """
+    registered = {tool.name for tool in build_product_tools()}
+    for name in EXPECTED_SKILL_NAMES:
+        frontmatter = _parse_frontmatter(
+            _split_frontmatter(_read(SKILL_ROOT / name / "SKILL.md"), path=SKILL_ROOT / name / "SKILL.md")[0],
+            path=SKILL_ROOT / name / "SKILL.md",
+        )
+        declared = set(str(frontmatter["allowed-tools"]).split())
+        missing = declared - registered
+        assert not missing, f"{name} 声明了未注册的工具：{sorted(missing)}"
 
 
 # --- 5. 内容完整性与忠实转写抽查 -----------------------------------------------------

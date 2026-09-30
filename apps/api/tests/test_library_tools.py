@@ -1,10 +1,12 @@
 """`tools/library.py` 的单元测试：参数形状、返回契约映射、失败与空结果语义。
 
-对应契约：[search_knowledge](../../../docs/技术设计/面/consult/tools/search_knowledge.md)
+对应契约：[search_knowledge](../../../docs/技术设计/面/consult/tools/search_knowledge.md)、
+[search_cases](../../../docs/技术设计/面/consult/tools/search_cases.md)
 与[资料与案例检索](../../../docs/技术设计/technical-details/资料与案例检索.md)第 3、5 节。
 
 **不连库**：检索链本身由 `test_library_retrieval*.py` 覆盖；本文件只钉**工具层自己的
-职责**——参数上界、返回契约字段、降级与「未找到」的对外说法、失败不冒充空结果。
+职责**——参数上界、返回契约字段、降级与「未找到」的对外说法、失败不冒充空结果、
+库别不混。
 """
 
 from __future__ import annotations
@@ -17,14 +19,17 @@ import pytest
 
 from campfire.agent.context import CitationRecorder
 from campfire.agent.tools import ActivationState, ToolContext, ToolFailure, ToolResult
-from campfire.modules.library.retrieval import RetrievedItem, SearchOutcome
+from campfire.modules.library.retrieval import LIBRARY_CASE, LIBRARY_KNOWLEDGE, RetrievedItem, SearchOutcome
 from campfire.tools.library import (
     DEFAULT_RESULT_LIMIT,
     MAX_RESULT_LIMIT,
     SNIPPET_MAX_CHARS,
+    SearchCasesArgs,
     SearchKnowledgeArgs,
     _degradation_note,
+    _render_case_item,
     _render_item,
+    search_cases,
     search_knowledge,
 )
 
@@ -247,6 +252,235 @@ async def test_degraded_result_is_flagged_in_the_payload(monkeypatch: pytest.Mon
     assert payload["degraded"] is True
     assert payload["degraded_paths"] == ["vector"]
     assert "没有相关资料" in payload["notice"]
+
+
+def _case_item(**overrides: Any) -> RetrievedItem:
+    """一条带全部案例专属字段的命中（契约第 3 节 + 公共案例库第 8 节）。"""
+    base: dict[str, Any] = {
+        "item_id": "22222222-2222-4222-8222-222222222222",
+        "library": "case",
+        "title": "把日程表贴在冰箱上后出门前的崩溃减少",
+        "snippet": "出门前十分钟开始预告，并把图片日程表贴在他够得到的位置。",
+        "source": "专家访谈转写 · 2026-03",
+        "applicable_scope": "学龄前 · 语言理解尚可",
+        "status": "published",
+        "locator": "/案例/日程/",
+        "ranking": {"fused_score": 0.7, "hit_paths": "both"},
+        "authorization": "已授权",
+        "source_type": "expert_interview",
+        "evidence_level": "OBSERVATIONAL",
+        "review_status": "professional",
+        "interview_at": datetime(2026, 3, 1, 12, 0, tzinfo=timezone.utc),
+        "makes_claims_high_risk": False,
+        "inferred_fields": ["age_range"],
+    }
+    base.update(overrides)
+    return RetrievedItem(**base)
+
+
+# ---------------------------------------------------------------------------
+# search_cases：参数形状与返回契约（search_cases 契约第 2、3 节）
+# ---------------------------------------------------------------------------
+
+
+def test_search_cases_parameter_names_match_the_contract() -> None:
+    """参数名与契约逐字一致：`query` / `limit` / `authorization`。
+
+    判别性：多写一个 `scope`（资料侧的过滤维度）或漏掉 `authorization`，本用例失败
+    ——契约第 2 节明确只暴露这三个，一期不向模型暴露卡片级过滤维度。
+    """
+    assert set(SearchCasesArgs.model_fields) == {"query", "limit", "authorization"}
+
+
+def test_search_cases_has_no_library_parameter() -> None:
+    """**没有**库别参数：库别由工具写死（契约第 4 节「只查案例库，不混入专业资料」）。
+
+    判别性：谁将来加一个 `library` 参数，本用例失败——那会让模型把这条硬约束
+    改成「查资料库」，「不混库」就不再是机械保证。
+    """
+    assert "library" not in SearchCasesArgs.model_fields
+
+
+def test_search_cases_limit_has_the_same_server_side_cap() -> None:
+    """`limit` 上界与资料侧同值（CORE-11）。"""
+    with pytest.raises(Exception):  # noqa: B017
+        SearchCasesArgs.model_validate({"query": "日程表", "limit": MAX_RESULT_LIMIT + 1})
+
+
+def test_render_case_item_carries_every_shared_and_case_field() -> None:
+    """案例返回 = 共用字段 + 七个案例专属字段，**一个都不能省**（契约第 3 节）。
+
+    `authorization` 与 `status` 是「真实案例与虚构样例可辨」（`AC-06`）的全部依据；
+    `review_status`/`evidence_level`/`interview_at` 是「谁说的、多可信、什么时候」；
+    `makes_claims_high_risk`/`inferred_fields` 是高风险主张与被推断字段的标注。
+
+    判别性：删掉任一字段，本用例失败。
+    """
+    rendered = _render_case_item(_case_item())
+    for field in (
+        # 共用（资料与案例检索第 3 节）
+        "item_id",
+        "library",
+        "title",
+        "snippet",
+        "source",
+        "applicable_scope",
+        "status",
+        "locator",
+        "ranking",
+        # 案例专属七字段
+        "authorization",
+        "source_type",
+        "evidence_level",
+        "review_status",
+        "interview_at",
+        "makes_claims_high_risk",
+        "inferred_fields",
+    ):
+        assert field in rendered, f"案例返回契约字段 {field} 缺失"
+
+
+def test_render_case_item_keeps_missing_case_fields_as_none() -> None:
+    """案例字段缺失时如实保留 `None`，不补默认值（不变量：不补默认值）。
+
+    判别性：把 `None` 换成空串或 `False`，本用例失败——那会让「未记录」看起来
+    像「已记录为否」，例如 `makes_claims_high_risk=False` 会被读成「已核实无高风险主张」。
+    """
+    rendered = _render_case_item(
+        _case_item(
+            authorization=None,
+            evidence_level=None,
+            review_status=None,
+            interview_at=None,
+            makes_claims_high_risk=None,
+            inferred_fields=[],
+        )
+    )
+    assert rendered["authorization"] is None
+    assert rendered["evidence_level"] is None
+    assert rendered["review_status"] is None
+    assert rendered["interview_at"] is None
+    assert rendered["makes_claims_high_risk"] is None
+    assert rendered["inferred_fields"] == []
+
+
+def test_render_case_item_serializes_interview_at() -> None:
+    """`interview_at` 转成 ISO 8601 字符串——返回要走 `json.dumps`，`datetime` 会抛 `TypeError`。
+
+    判别性：直接透传 `datetime`，本用例（以及任何真实调用）在序列化时失败。
+    """
+    rendered = _render_case_item(_case_item())
+    assert rendered["interview_at"] == "2026-03-01T12:00:00+00:00"
+    json.dumps(rendered)  # 不抛错 = 可序列化
+
+
+@pytest.mark.asyncio
+async def test_search_cases_asks_the_case_library_only(monkeypatch: pytest.MonkeyPatch) -> None:
+    """`search_cases` 传的库别是 `case`（契约第 4 节「只查案例库」的机械落点）。
+
+    判别性：把 `LIBRARY_CASE` 改成 `LIBRARY_KNOWLEDGE`，本用例失败——那会让
+    「不混库」失效，而这是契约第 6 节的验证项之一。
+    """
+    seen: dict[str, Any] = {}
+
+    async def _capture(_settings: object, **kwargs: Any) -> SearchOutcome:
+        seen.update(kwargs)
+        return SearchOutcome(items=[_case_item()], degraded_paths=())
+
+    monkeypatch.setattr("campfire.tools.library._run_search", _capture)
+
+    outcome = await search_cases(_context(), SearchCasesArgs(query="出门前崩溃"))
+
+    assert isinstance(outcome, ToolResult)
+    assert seen["library"] == LIBRARY_CASE, "案例工具必须只查案例库"
+    assert seen["library"] != LIBRARY_KNOWLEDGE
+
+
+@pytest.mark.asyncio
+async def test_search_cases_passes_authorization_filter_through(monkeypatch: pytest.MonkeyPatch) -> None:
+    """`authorization` 透传到检索链（契约第 2 节；过滤在 SQL 层用绑定参数完成）。"""
+    seen: dict[str, Any] = {}
+
+    async def _capture(_settings: object, **kwargs: Any) -> SearchOutcome:
+        seen.update(kwargs)
+        return SearchOutcome(items=[_case_item()], degraded_paths=())
+
+    monkeypatch.setattr("campfire.tools.library._run_search", _capture)
+
+    await search_cases(_context(), SearchCasesArgs(query="日程表", authorization="已授权"))
+
+    assert seen["authorization"] == "已授权"
+
+
+@pytest.mark.asyncio
+async def test_search_cases_does_not_pass_scope(monkeypatch: pytest.MonkeyPatch) -> None:
+    """`scope` 不是案例侧参数，因此**不传**（传了等于把资料侧的过滤维度偷渡进来）。"""
+    seen: dict[str, Any] = {}
+
+    async def _capture(_settings: object, **kwargs: Any) -> SearchOutcome:
+        seen.update(kwargs)
+        return SearchOutcome(items=[], degraded_paths=())
+
+    monkeypatch.setattr("campfire.tools.library._run_search", _capture)
+
+    await search_cases(_context(), SearchCasesArgs(query="日程表"))
+
+    assert seen.get("scope") is None
+    assert seen["library"] == LIBRARY_CASE
+
+
+@pytest.mark.asyncio
+async def test_search_cases_empty_result_does_not_overclaim(monkeypatch: pytest.MonkeyPatch) -> None:
+    """案例检索为空时明确「未找到」，且不得升级成「没有这种情形」（契约第 5 节同源纪律）。"""
+
+    async def _empty(*_args: object, **_kwargs: object) -> SearchOutcome:
+        return SearchOutcome(items=[], degraded_paths=())
+
+    monkeypatch.setattr("campfire.tools.library._run_search", _empty)
+
+    outcome = await search_cases(_context(), SearchCasesArgs(query="日程表"))
+
+    assert isinstance(outcome, ToolResult)
+    payload = json.loads(outcome.text)
+    assert payload["count"] == 0
+    assert "未找到" in payload["notice"]
+    assert "不等于" in payload["notice"]
+
+
+@pytest.mark.asyncio
+async def test_search_cases_failure_does_not_pretend_no_cases(monkeypatch: pytest.MonkeyPatch) -> None:
+    """两路都失败时返回 `ToolFailure`，**绝不**返回空列表冒充「没有相关案例」。
+
+    判别性：把失败分支改成 `ToolResult(text="[]")`，本用例失败。
+    """
+    from campfire.modules.library.retrieval import RetrievalError
+
+    async def _boom(*_args: object, **_kwargs: object) -> SearchOutcome:
+        raise RetrievalError("两路检索均失败")
+
+    monkeypatch.setattr("campfire.tools.library._run_search", _boom)
+
+    outcome = await search_cases(_context(), SearchCasesArgs(query="日程表"))
+
+    assert isinstance(outcome, ToolFailure)
+    assert outcome.code == "tool_failed"
+    assert "没有相关案例" in outcome.message, "必须明确禁止把失败说成「没有相关案例」"
+
+
+@pytest.mark.asyncio
+async def test_search_cases_failure_message_does_not_leak_details(monkeypatch: pytest.MonkeyPatch) -> None:
+    """失败消息不复述底层细节（安全条款）。"""
+
+    async def _boom(*_args: object, **_kwargs: object) -> SearchOutcome:
+        raise RuntimeError("postgresql://user:secret@host:5432/db 连接失败")
+
+    monkeypatch.setattr("campfire.tools.library._run_search", _boom)
+
+    outcome = await search_cases(_context(), SearchCasesArgs(query="日程表"))
+
+    assert isinstance(outcome, ToolFailure)
+    assert "secret" not in outcome.message
+    assert "postgresql" not in outcome.message
 
 
 def test_default_limit_matches_the_retrieval_chain_default() -> None:
