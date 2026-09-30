@@ -27,11 +27,12 @@ from campfire.core.db import session_scope
 from campfire.core.jobs import build_broker
 from campfire.core.pending_write import (
     MAX_ATTEMPTS,
+    STATE_DEAD,
     mark_dead,
     mark_retryable_failure,
 )
 from campfire.modules.memory.consumer import consume_memory_episode
-from campfire.modules.memory.errors import MemoryDataError, MemoryUnavailableError
+from campfire.modules.memory.errors import MemoryDataError
 from campfire.modules.memory.graph import MemoryGraph, build_memory_graph
 
 logger = logging.getLogger(__name__)
@@ -77,14 +78,6 @@ async def consume_memory_episode_task(pending_id: str, lease_owner: str = "worke
     try:
         async with session_scope(get_settings()) as session:
             result = await consume_memory_episode(session, graph, pending_id=pending_id, lease_owner=lease_owner)
-    except MemoryUnavailableError as exc:
-        # **可重试**：图库/查询暂时不可用（第 6 节的「Worker 处理失败（可重试）」）。
-        # ⚠️ 这个分支必须在 `MemoryModuleError` **之前**（2026-09-29 自查发现，实测确认）：
-        # `MemoryUnavailableError` 是 `MemoryModuleError` 的子类，若只写基类分支，
-        # 图库一次瞬时故障就会被归成「载荷不合法」而直接转 `dead`——**一条本来健康的
-        # 记录被永久判死**。按类型分档时，子类分支必须排在父类之前。
-        await _register_retryable_failure(pending_id, exc)
-        raise
     except MemoryDataError as exc:
         # **不可重试**：载荷/形状不合法，重试不会变好，直接转 `dead`
         # （第 6 节：不得静默丢弃）。`session_scope` 已回滚，故另开会话登记终结状态。
@@ -96,8 +89,17 @@ async def consume_memory_episode_task(pending_id: str, lease_owner: str = "worke
                 logger.exception("登记 dead 失败：pending_id=%s", pending_id)
         raise
     except Exception as exc:
-        # 其它一切（含数据库不可用）：按可重试处理——**宁可多重试几次，也不要把可能
-        # 瞬时的失败判成永久 dead**。到上限会自动转 dead（第 6 节）。
+        # 其它一切按可重试处理——**宁可多重试几次，也不要把可能瞬时的失败判成永久 dead**。
+        # 到上限会自动转 dead（第 6 节）。
+        #
+        # ⚠️ **不得在此之上加 `except MemoryModuleError` 收口**（2026-09-29 评审 S-1 实测）：
+        # `MemoryUnavailableError`（图库瞬时不可用，**应可重试**）**是**
+        # `MemoryModuleError` 的子类。若用基类收口，图库一次瞬时故障就会走「载荷不合法」
+        # 那条路被**永久判死**。因此这里只放两个精确分支：
+        # `MemoryDataError`（不可重试）→ 前面的 `dead` 分支；
+        # 其余（含 `MemoryUnavailableError`）→ 落到本分支当可重试。
+        # 本轮曾写过一个显式的 `except MemoryUnavailableError` 分支，消融验证它是**冗余的**
+        # （删掉后 3 条分档用例仍全绿），故改为本条注释——保留教训、不留无效结构（CORE-09）。
         await _register_retryable_failure(pending_id, exc)
         raise
 
@@ -118,10 +120,26 @@ async def _register_retryable_failure(pending_id: str, exc: BaseException) -> No
 
     登记本身失败**不能掩盖原始错误**：调用方紧接着会重新抛出 `exc`，这里只记日志。
     错误摘要**只写类型名与消息**，不复述连接串或凭据（AGENTS.md 安全条款）。
+
+    **`dead` 必须发专属告警**（第 6 节「转 `dead` **并告警**」、第 8 节「`dead` 数量
+    必须告警」）。2026-09-29 评审 C-5 实测发现：此前这里只打可重试失败的 warning，
+    连打 5 条一模一样、**`dead` 专属告警 0 条**——重试耗尽这件事在日志里看不出来。
+    `mark_retryable_failure` 的返回值就是「本次是否转 dead」的权威信号，直接据它判定，
+    不再单独查库（避免多一次往返与竞态）。
     """
     logger.warning("记忆写入失败（可重试）：pending_id=%s cause=%s", pending_id, type(exc).__name__)
     async with session_scope(get_settings()) as session:
         try:
-            await mark_retryable_failure(session, pending_id=pending_id, error=f"{type(exc).__name__}: {exc}")
+            record = await mark_retryable_failure(session, pending_id=pending_id, error=f"{type(exc).__name__}: {exc}")
         except Exception:  # noqa: BLE001 —— 登记失败不能掩盖原始错误
             logger.exception("登记可重试失败失败：pending_id=%s", pending_id)
+            return
+        if record.state == STATE_DEAD:
+            # 专属告警：可被日志告警规则单独匹配，与普通重试 warning 区分开。
+            logger.error(
+                "[alert] 记忆写入重试耗尽，已转 dead：pending_id=%s attempts=%d last_error=%s"
+                "（需人工排查，dead 保留 30 天）",
+                pending_id,
+                record.attempts,
+                record.last_error,
+            )

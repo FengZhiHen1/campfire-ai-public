@@ -56,6 +56,33 @@ TIMELINE_DEFAULT_LIMIT = 50
 #: （第 3 节实测的陷阱）。
 EPISODE_SOURCE = EpisodeType.message
 
+#: episode 节点上的**完成标记属性**名与取值。
+#:
+#: ## 为什么需要它（2026-09-29 评审 C-1 实测后改为标记制）
+#:
+#: 「已写入」此前靠「图库里存在 episode 节点」这一**约定**，配合失败时的补偿删除。
+#: 实测证明该约定**不成立**，有两种残留：
+#:
+#: 1. **进程被硬杀（SIGKILL / 部署重启）**：补偿代码根本不执行，预建节点永久残留；
+#:    实测用 `CancelledError` 复现（它继承 `BaseException`，原 `except Exception`
+#:    接不住）→ 残留节点 1 个，`read_timeline` 仍返回它且 `write_state='done'`。
+#: 2. **抽取中途失败**：`add_episode` 可能**已经写入实体与边**，它们不挂在 episode
+#:    节点上，`DETACH DELETE e` 删不掉——实测残留实体 2 个/边 1 条，且
+#:    `read_emergency_facts` 会把那条从未成功写入的事实**注入**。
+#:
+#: 因此正确性依据改为：**预建节点不带标记，`add_episode` 成功后写标记；两条读路径
+#: 只认带标记的节点/边**。这样即使进程被硬杀、即使派生物已落库，未完成的写入
+#: **永远不会被读到**——补偿删除退化为尽力清理，不再是正确性依据（CORE-05：不变量
+#: 落在数据与查询上，而不是落在「异常处理一定跑得到」这个假设上）。
+#:
+#: **fail-closed 方向**：无标记的节点（含改造前写入的老数据）一律**不返回**。
+#: 实测确认该过滤生效。代价是历史数据需回填标记——一期尚无生产数据，登记于
+#: TODO `TECH-22`。
+EPISODE_WRITE_STATE_PENDING = "pending"
+
+#: 见 `EPISODE_WRITE_STATE_PENDING` 的说明。只有带本标记的 episode 才被读路径返回。
+EPISODE_WRITE_STATE_DONE = "done"
+
 
 @dataclass(frozen=True, slots=True)
 class MemoryEpisode:
@@ -156,8 +183,18 @@ async def read_timeline(
     # 上界收敛：不信任调用方给的上限（CORE-11）。
     effective_limit = max(1, min(limit, TIMELINE_MAX_LIMIT))
 
-    conditions = ["e.group_id = $group_id"]
-    params: dict[str, object] = {"group_id": account_id, "limit": effective_limit}
+    conditions = [
+        "e.group_id = $group_id",
+        # **完成标记过滤**（C-1 修复的落点）：只有 `add_episode` 成功后才写该标记，
+        # 因此未完成的写入（硬杀残留、抽取中途失败的半写节点）**永远不会被读到**。
+        # 这是「没写进去不得被当作写进去了」的实际判据，不再依赖补偿删除跑得到。
+        "e.write_state = $write_state",
+    ]
+    params: dict[str, object] = {
+        "group_id": account_id,
+        "limit": effective_limit,
+        "write_state": EPISODE_WRITE_STATE_DONE,
+    }
 
     if since is not None:
         conditions.append("e.valid_at >= $since")
@@ -342,13 +379,17 @@ async def write_episode(
     try:
         # 第一步：预建节点。`MERGE` 保证同 uuid 只一个节点；`SET e = {...}` 与
         # Graphiti 自己的写法一致（它也是整节点替换），因此重跑不会残留旧属性。
+        # `write_state = 'pending'`：**显式写成未完成**，第三步才改成 `done`。
+        # 显式写（而不是省掉让属性缺失）是为了让「半写」状态在数据里**可查**，
+        # 排查时不必靠「属性是否存在」推断。
         await scoped.execute_query(
             """
             MERGE (e:Episodic {uuid: $uuid})
             SET e = {uuid: $uuid, name: $name, group_id: $group_id,
                      source: $source, source_description: $source_description,
                      content: $content, entity_edges: [],
-                     created_at: $created_at, valid_at: $valid_at}
+                     created_at: $created_at, valid_at: $valid_at,
+                     write_state: $write_state}
             """,
             uuid=episode_uuid,
             name=f"memory:{episode_uuid}",
@@ -358,6 +399,7 @@ async def write_episode(
             content=content,
             created_at=created_at,
             valid_at=valid_at,
+            write_state=EPISODE_WRITE_STATE_PENDING,
         )
 
         # 第二步：让 Graphiti 抽取派生事实。它会从图库加载刚预建的节点
@@ -372,18 +414,33 @@ async def write_episode(
             uuid=episode_uuid,
             group_id=account_id,
         )
-    except Exception as exc:  # noqa: BLE001 —— 驱动/框架异常统一转记忆侧语义
+
+        # 第三步：**写完成标记**——这是「已写入」的唯一判据（见模块级说明）。
+        # 必须在 `add_episode` **之后**：它对 episode 节点做整节点替换
+        # （`SET n = {...}`），实测会把先写的自定义属性抹掉。
+        await scoped.execute_query(
+            "MATCH (e:Episodic {uuid: $uuid}) SET e.write_state = $state",
+            uuid=episode_uuid,
+            state=EPISODE_WRITE_STATE_DONE,
+        )
+    except BaseException as exc:  # noqa: BLE001 —— 含取消/超时；驱动异常统一转记忆侧语义
         # **补偿：删掉本次新建的半写节点**（2026-09-29 实测发现的缺陷）。
-        # 为什么必须补：读路径把「图库里存在 episode 节点」当作已写入（`write_state`
-        # 就是靠这一点成立的）。而写入分两步——先预建节点、再抽取；**第二步失败时节点
-        # 已经存在**，于是读路径会把一条从未成功写入的记忆当成已写入返回，直接违反
-        # `read_memory` 契约第 3 节与写入路径第 2 节的不变量。
-        # 实测复现：抽取抛错后 `read_timeline` 仍返回该条且 `write_state='done'`。
-        # 只删**本次新建**的节点：若它本来就在（重试场景），保留原状——
-        # 破坏既有数据比留下半写节点更糟。
+        # 为什么必须补：写入分三步，第二步失败时节点已经存在。只删**本次新建**的节点：
+        # 若它本来就在（重试场景），保留原状——破坏既有数据比留下半写节点更糟。
+        #
+        # ⚠️ **补偿不是正确性依据**（2026-09-29 评审 C-1 实测）：进程被硬杀
+        # （SIGKILL）时代码根本不执行，任何补偿都跑不到；而且抽取可能**已经写入
+        # 实体与边**，它们不挂在 episode 节点上，`DETACH DELETE` 删不掉——实测：
+        # 取消后残留 episode=1，抽取中途失败后实体=2/边=1 残留，且
+        # `read_emergency_facts` 会把那条从未成功写入的事实注入。
+        # **正确性依据是第三步的完成标记 + 两条读路径的标记过滤**；这里只做尽力清理。
+        # 捕获 `BaseException` 而非 `Exception`：`CancelledError` 是 `BaseException`,
+        # 只写 `except Exception` 会漏掉取消路径（实测）。
         if not node_predates_this_call:
             with suppress(Exception):
                 await scoped.execute_query("MATCH (e:Episodic {uuid: $uuid}) DETACH DELETE e", uuid=episode_uuid)
+        if isinstance(exc, (MemoryDataError, MemoryUnavailableError)):
+            raise
         raise MemoryUnavailableError(
             "写入记忆片段失败",
             operation="write_episode",

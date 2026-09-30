@@ -443,8 +443,27 @@ async def _write_edge(
     invalid_at: datetime | None = None,
     episodes: list[str] | None = None,
 ) -> None:
-    """直接落一条派生事实边（不走抽取——假 LLM 不产出实体，见文件头说明）。"""
+    """直接落一条派生事实边（不走抽取——假 LLM 不产出实体，见文件头说明）。
+
+    **同时为每个来源 episode 建一个带完成标记的 Episodic 节点**（2026-09-29 加）：
+    派生事实的注入现在要求「至少一条来源 episode **已完成**」（`write_state='done'`，
+    见 `derived.read_emergency_facts` 的说明）。真实流程里这些节点由 `write_episode`
+    预建并在 `add_episode` 成功后打标记；此前本夹具只写边、不写节点，是一种
+    **现实中不存在的形状**——而且恰好等于「抽取中途失败、补偿删掉 episode 但残留了边」
+    这一危险形状（评审 C-1b）。补上节点后夹具才代表「已成功写入的记忆」。
+    """
     scoped = graph.driver.clone(database=account)
+    for episode_uuid in episodes or []:
+        await scoped.execute_query(
+            """
+            MERGE (x:Episodic {uuid: $uuid})
+            SET x.name = 'ep', x.group_id = $g, x.content = '来源片段',
+                x.valid_at = $t, x.created_at = $t, x.write_state = 'done'
+            """,
+            uuid=episode_uuid,
+            g=account,
+            t=valid_at.isoformat(),
+        )
     await scoped.execute_query(
         """
         MERGE (a:Entity {uuid: $a_id}) SET a.name = 'A', a.group_id = $g

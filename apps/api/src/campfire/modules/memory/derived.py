@@ -54,7 +54,7 @@ from typing import TYPE_CHECKING
 
 from campfire.modules.memory.errors import MemoryDataError, MemoryUnavailableError
 from campfire.modules.memory.identity import AccountId
-from campfire.modules.memory.store import parse_db_datetime
+from campfire.modules.memory.store import EPISODE_WRITE_STATE_DONE, parse_db_datetime
 
 if TYPE_CHECKING:
     # 仅为类型标注：装配层（graph.py）是本模块的依赖方向上游，运行期不 import 它，
@@ -142,7 +142,11 @@ async def read_emergency_facts(
     # `max(1, limit)`，实测 `limit=10**9` 被原样接受——即「条数上界」不成立。
     # 与 `store.read_timeline` 的 `TIMELINE_MAX_LIMIT` 收敛对称。
     effective_limit = max(1, min(limit, EMERGENCY_MEMORY_LIMIT_MAX))
-    params: dict[str, object] = {"group_id": account_id, "limit": effective_limit}
+    params: dict[str, object] = {
+        "group_id": account_id,
+        "limit": effective_limit,
+        "write_state": EPISODE_WRITE_STATE_DONE,
+    }
 
     if deleted_keys:
         # 多来源边判据（第 7 节）：**至少一条**来源 episode 在账本中即排除。
@@ -150,9 +154,18 @@ async def read_emergency_facts(
         conditions.append("NOT any(ep IN $deleted WHERE ep IN e.episodes)")
         params["deleted"] = deleted_keys
 
+    # **完成标记过滤**（C-1 修复的落点）：只有引用**至少一条已完成 episode** 的边才注入。
+    # 没有这一步时，抽取中途失败留下的实体与边会被注入——实测该缺陷可复现
+    # （`read_emergency_facts` 返回了一条从未成功写入的事实）。
+    # 用 `OPTIONAL MATCH` + `count`：FalkorDB 不支持 `EXISTS { ... }` 子查询（实测）。
+    # `size(e.episodes) = 0` 保留原有已实测的语义（空 `episodes` 的边保留、
+    # 属性缺失的边因 `size(null)` 为 null 而被排除，见模块 docstring 的对照实验）。
     cypher = (
         "MATCH (n:Entity)-[e:RELATES_TO]->(m:Entity) WHERE "
         + " AND ".join(conditions)
+        + " OPTIONAL MATCH (x:Episodic) WHERE x.uuid IN e.episodes AND x.write_state = $write_state"
+        + " WITH e, count(x) AS done_count"
+        + " WHERE size(e.episodes) = 0 OR done_count > 0"
         + " RETURN e.uuid AS uuid, e.fact AS fact, e.valid_at AS valid_at,"
         + " e.episodes AS episodes ORDER BY e.valid_at DESC LIMIT $limit"
     )

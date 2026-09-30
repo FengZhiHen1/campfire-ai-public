@@ -33,6 +33,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from campfire.core.pending_write.models import (
     KINDS,
+    MAX_ACCOUNT_ID_LENGTH,
     ORIGINS,
     STATE_DEAD,
     STATE_DONE,
@@ -49,9 +50,22 @@ MAX_ATTEMPTS = 5
 #: 好让 Worker 崩溃能在一次扫描内被发现。
 LEASE_SECONDS = 300
 
-#: 退避曲线（第 10 节：1 → 2 → 4 → 8 → 16 分钟）。按 `attempts` 取第 n 项，
-#: 超出长度时取最后一项（上限行为显式，不外推成无限增长）。
+#: 退避曲线（第 10 节：1 → 2 → 4 → 8 → 16 分钟）。
+#:
+#: **实测更正（2026-09-29 评审 R-2，独立复算确认）**：末档 960 秒（16 分钟）**不可达**。
+#: 调用点是 `_backoff_for(bumped - 1)`，而第 5 次失败在应用退避**之前**即转 `dead`
+#: （见 `mark_retryable_failure`），故实际用到的是第 0..3 项
+#: = `[60, 120, 240, 480]`，曲线是 **1→2→4→8**、合计 **15 分钟**。
+#: 此前注释与提交说明写「1→2→4→8→16」，与实现不符（第 10 节的取值理由还写着
+#: 「约半小时内自然恢复」，实际是 15 分钟）。
+#: **保留 5 项并加说明**（而不是截成 4 项）：`mark_retryable_failure` 的下标取自
+#: `attempts - 1`，截短会让「超长时取最后一项」这条兜底语义在多一点重试时越界；
+#: 且第 10 节的参数表以 5 档成文，改档位属设计变更（已登记 TODO `TECH-22`）。
 _BACKOFF_SECONDS = (60, 120, 240, 480, 960)
+
+#: 单次租约回收的条数上界（CORE-11）。与 `store.TIMELINE_MAX_LIMIT` 同一纪律：
+#: 调用方给多大都收敛到该上界，避免一次兜底扫描在积压时耗时不可控。
+RECLAIM_MAX_LIMIT = 1000
 
 #: `last_error` 的长度上界，与列宽一致。**截断而不是报错**：错误摘要是诊断信息，
 #: 因它写入失败会让「失败记录」本身丢失，反而更难排查。
@@ -136,9 +150,9 @@ async def enqueue(
         已加入会话的记录（**尚未提交**）。
 
     Raises:
-        InsufficientPayloadError: 词表外的取值，或归属字段与 `kind` 不匹配。
-            这些判据在存储层也有 CHECK 约束；这里**提前**拒绝是为了给出可读的错误，
-            而不是让调用方读到数据库的约束名。
+        InsufficientPayloadError: 词表外的取值、归属字段与 `kind` 不匹配，
+            或 `account_id` 超宽。这些判据在存储层也有 CHECK/宽度约束；这里**提前**
+            拒绝是为了给出可读的错误，而不是让调用方读到数据库的约束名。
     """
     if kind not in KINDS:
         raise InsufficientPayloadError(f"kind 不在词表内：{kind!r}（合法取值={sorted(KINDS)}）")
@@ -146,6 +160,12 @@ async def enqueue(
         raise InsufficientPayloadError(f"origin 不在词表内：{origin!r}（合法取值={sorted(ORIGINS)}）")
     if not account_id:
         raise InsufficientPayloadError("account_id 为空")
+    if len(account_id) > MAX_ACCOUNT_ID_LENGTH:
+        # 长度上界必须**显式**（2026-09-29 评审 C-4 实测）：此前只判空，超宽值会一路
+        # 走到 INSERT 才由 PostgreSQL 抛出**裸 `DBAPIError`**——调用方拿到的是驱动
+        # 异常而不是领域异常，且看不出是哪个字段的问题。
+        # **形状**（字符集）不在此校验：本包不得依赖业务模块，见 `PendingWrite.account_id`。
+        raise InsufficientPayloadError(f"account_id 超过 {MAX_ACCOUNT_ID_LENGTH} 字符上界（实际 {len(account_id)}）")
     if not isinstance(payload, dict):
         raise InsufficientPayloadError(f"payload 必须是对象，收到 {type(payload).__name__}")
     if not isinstance(source, dict):
@@ -236,37 +256,58 @@ async def mark_done(
     session: AsyncSession,
     *,
     pending_id: uuid.UUID | str,
+    lease_owner: str | None = None,
     now: datetime | None = None,
 ) -> PendingWrite:
     """标记写入成功（第 4 节）：置 `done`、记 `finished_at`，**并清理租约**。
 
     同一事务内清理租约是第 4 节的要求：留着租约会让排查时看不出「这条已经不归谁管了」。
 
+    Args:
+        session: 关系库会话。
+        pending_id: 待处理记录标识。
+        lease_owner: **租约栅栏**（CORE-03 迟到响应守卫）。给了就要求与库中记录一致，
+            不一致则显式失败。为什么需要（2026-09-29 评审 C-3 实测）：慢抽取（超过
+            5 分钟租约）会让租约过期、记录被**另一个 Worker 重领**；此时先领取者的
+            迟到 `mark_done` 会抢先成功，而真正写入者的终结反而抛
+            `PendingWriteNotFoundError`——制造一个**假失败**（Taskiq 记为失败、丢摘要）。
+            实测复现该序列。
+        now: 参照时间。
+
     Raises:
-        PendingWriteNotFoundError: 记录不存在，或**已处于终结状态**。
-            重复标记不是错误数据，但**必须让调用方知道本次没有推进任何东西**——
+        PendingWriteNotFoundError: 记录不存在、**已处于终结状态**，或**租约已被他人持有**
+            （`lease_owner` 不匹配）。三者都必须让调用方知道本次没有推进任何东西——
             静默返回成功会让「刚才那个 done 是谁标的」无从查起。
     """
     reference = now if now is not None else _utc_now()
+    conditions = [
+        PendingWrite.id == pending_id,
+        PendingWrite.state.notin_((STATE_DONE, STATE_DEAD)),
+    ]
+    if lease_owner is not None:
+        conditions.append(PendingWrite.lease_owner == lease_owner)
     statement = (
         update(PendingWrite)
-        .where(
-            PendingWrite.id == pending_id,
-            PendingWrite.state.notin_((STATE_DONE, STATE_DEAD)),
-        )
+        .where(*conditions)
         .values(
             state=STATE_DONE,
             finished_at=reference,
             lease_owner=None,
             lease_expires_at=None,
             last_error=None,
+            # 清掉退避时刻：`done` 是终态，留着过期的 `next_attempt_at` 会让排查
+            # 误判「这条还会重试」（2026-09-29 评审 C-6 实测确认此前未清）。
+            next_attempt_at=None,
             updated_at=reference,
         )
         .returning(PendingWrite)
     )
     record = (await session.execute(statement)).scalar_one_or_none()
     if record is None:
-        raise PendingWriteNotFoundError(pending_id, "不存在，或已是 done/dead（不可重复终结）")
+        detail = "不存在，或已是 done/dead（不可重复终结）"
+        if lease_owner is not None:
+            detail = f"{detail}，或租约已不属于 {lease_owner!r}（迟到响应不得改变状态）"
+        raise PendingWriteNotFoundError(pending_id, detail)
     return record
 
 
@@ -346,6 +387,9 @@ async def mark_dead(
 
     本函数只负责状态；**告警由调用方发出**——本模块不引入日志/告警依赖，
     避免 `core/pending_write` 依赖可观测设施（它是状态机，不是运维组件）。
+    **调用方契约**：`worker.consume_memory_episode_task` 是唯一调用方，它必须在
+    本函数返回后发一条 `dead` 专属告警（2026-09-29 评审 C-5 实测：此前调用方
+    只重复打可重试失败的 warning，`dead` 专属告警 0 条）。
 
     Raises:
         PendingWriteNotFoundError: 记录不存在，或已处于终结状态。
@@ -360,6 +404,9 @@ async def mark_dead(
             lease_owner=None,
             lease_expires_at=None,
             last_error=error[:MAX_LAST_ERROR_LENGTH],
+            # 清掉退避时刻：`dead` 是终态，留着过期的 `next_attempt_at` 会让排查
+            # 误判「这条还会重试」（2026-09-29 评审 C-6 实测确认此前未清）。
+            next_attempt_at=None,
             updated_at=reference,
         )
         .returning(PendingWrite)
@@ -384,13 +431,22 @@ async def reclaim_expired_leases(
     Args:
         session: 关系库会话。
         now: 参照时间。
-        limit: 单次回收条数上界。**有界**（CORE-11）：扫描周期固定，无界回收会让
-            一次扫描在积压时耗时不可控。
+        limit: 单次回收条数上界。**收敛到 `RECLAIM_MAX_LIMIT`**（CORE-11）：扫描周期
+            固定，无界回收会让一次扫描在积压时耗时不可控。
+            （2026-09-29 评审 R-3 实测发现：此前只做 `max(1, limit)`，**没有上界**——
+            `limit=10**9` 被原样放进 SQL。同一纪律在 `store.read_timeline` 与
+            `derived.read_emergency_facts` 都已落地，回收路径漏了。）
 
     Returns:
         被回收的记录 id（按 id 升序，稳定）。空列表表示没有需要回收的记录。
+
+    Note:
+        **只回收仍处于 `processing` 的记录**：`SELECT` 与 `UPDATE` 之间有窗口，
+        期间记录可能已被正常终结；恢复 `pending` 会把已完成的记忆重新排队
+        （同一记忆被抽取两次），故 `UPDATE` 也带 state 守卫。
     """
     reference = now if now is not None else _utc_now()
+    effective_limit = max(1, min(limit, RECLAIM_MAX_LIMIT))
     # 先选出一批 id（有界），再按 id 更新——避免 `UPDATE ... LIMIT` 的方言差异。
     candidates = (
         await session.execute(
@@ -401,16 +457,29 @@ async def reclaim_expired_leases(
                 PendingWrite.lease_expires_at < reference,
             )
             .order_by(PendingWrite.id)
-            .limit(max(1, limit))
+            .limit(effective_limit)
         )
     ).scalars()
     ids = list(candidates)
     if not ids:
         return []
 
-    await session.execute(
+    # `RETURNING id` 而不是直接返回 `ids`：加了 state 守卫后，窗口内被终结的记录会被
+    # UPDATE 跳过，而**返回值必须只含真正回收成功的**——否则调用方会以为某条被回收了
+    # （进而可能重复投递），与库里实际状态不符（2026-09-29 实测：守卫生效但返回值仍含
+    # 那条已被终结的记录）。
+    result = await session.execute(
         update(PendingWrite)
-        .where(PendingWrite.id.in_(ids))
+        .where(
+            PendingWrite.id.in_(ids),
+            # **state 守卫**（2026-09-29 评审 C-2 实测发现）：`SELECT` 与 `UPDATE` 之间
+            # 存在真实窗口，另一事务可能在该窗口内把记录置成终态。缺这个守卫时，
+            # 一条已经 `done` 的记录会被改回 `pending`（且 `finished_at` 仍保留，
+            # 形成 `pending` + `finished_at` 非空的自相矛盾行），随后被**再次领取**——
+            # 同一条记忆抽取两次。`mark_done`/`mark_dead` 一直是带守卫的单条 UPDATE，
+            # 回收此前漏了同一条纪律。
+            PendingWrite.state == STATE_PROCESSING,
+        )
         .values(
             state=STATE_PENDING,
             lease_owner=None,
@@ -419,8 +488,9 @@ async def reclaim_expired_leases(
             next_attempt_at=None,
             updated_at=reference,
         )
+        .returning(PendingWrite.id)
     )
-    return ids
+    return list(result.scalars())
 
 
 __all__ = [
