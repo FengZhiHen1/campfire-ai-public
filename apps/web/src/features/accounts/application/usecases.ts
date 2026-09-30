@@ -51,9 +51,12 @@ export class ResolveSessionUseCase {
 /**
  * 登录用例。
  *
- * 为什么校验放用例而不是 viewModel：校验规则是领域规则（域名与密码形状），
+ * 为什么校验放用例而不是 viewModel：校验规则是领域规则（账号名与密码形状），
  * 而 viewModel 只负责「什么时候展示错误」；同一份规则还必须被注册用例复用，
  * 放在 viewModel 会变成两份（FE-04：内部校验不可绕过）。
+ *
+ * @throws ValidationError 字段级校验未通过（未发起任何请求）
+ * @throws AuthError 端口拒绝（凭据错误、服务不可用、限流等）
  */
 export class SubmitLoginUseCase {
   constructor(private readonly auth: AuthPort) {}
@@ -77,6 +80,9 @@ export class SubmitLoginUseCase {
  *
  * 与登录用例分开而不是合成一个带 mode 参数的用例：两条路径的字段集合与失败语义
  * 不同（注册多一个邀请码拒绝分支），合并后每个调用点都要带着一个恒真的分支参数。
+ *
+ * @throws ValidationError 字段级校验未通过（未发起任何请求）
+ * @throws AuthError 端口拒绝（邀请码被拒、账号名不可用、限流等）
  */
 export class SubmitRegisterUseCase {
   constructor(private readonly auth: AuthPort) {}
@@ -101,6 +107,8 @@ export class SubmitRegisterUseCase {
  * 为什么登出失败要抛而不是静默：登出是安全语义的操作（会话撤销），
  * 把它记成成功会让使用者以为已登出而实际仍持有可用会话；设置页因此要求
  * 「登出失败 → sheet 内联错误 + 重试」（设置页状态覆盖表）。
+ *
+ * @throws AuthError 端口拒绝或结果未知（登出不得被记成成功）
  */
 export class LogoutUseCase {
   constructor(private readonly auth: AuthPort) {}

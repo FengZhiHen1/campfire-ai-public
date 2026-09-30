@@ -16,7 +16,7 @@
 export type AuthFailureKind =
   | 'invalid-credentials'
   | 'invite-rejected'
-  | 'account-taken'
+  | 'account-unusable'
   | 'weak-password'
   | 'rate-limited'
   | 'service-unavailable'
@@ -25,17 +25,20 @@ export type AuthFailureKind =
 /**
  * 对外文案表。
  *
- * 为什么文案集中在这里而不是由服务端下发：文案是产品契约的一部分（页面设计逐字给定），
- * 且后端拒绝消息里含字段名与英文句子——透出它既不符合本产品的语言，也把「服务端如何
- * 描述这次拒绝」变成了可被外部观察的枚举渠道（认证与账号第 9 节）。
+ * 为什么文案集中在这里而不是由服务端下发：文案是产品契约的一部分，且后端拒绝消息里
+ * 含字段名与英文句子——透出它既不符合本产品的语言，也把「服务端如何描述这次拒绝」
+ * 变成了可被外部观察的枚举渠道（认证与账号第 9 节）。
  *
- * 前两条与限流一条是页面设计的逐字成稿；其余三条是设计文档未给定、但失败语义要求
- * 「明确拒绝并明确报错」时的最小中文表达，实现说明中已单列供复核。
+ * 前两条与限流一条是页面设计的逐字成稿；其余是设计文档未给定、但失败语义要求
+ * 「明确拒绝并明确报错」时的最小中文表达（实现说明的未决问题节已单列供复核）。
  */
 export const AUTH_FAILURE_MESSAGES: Readonly<Record<AuthFailureKind, string>> = {
   'invalid-credentials': '账号名或密码不正确',
   'invite-rejected': '邀请码无效或已被使用',
-  'account-taken': '该账号名已被占用',
+  // 刻意合并两类原因：身份服务对「账号名已被占用」与「账号名格式不被接受」返回的是
+  // 同一个形状（都是 FIELD_ERROR 落在 email 字段，实测 supertokens_python 的
+  // api/signup.py 与 api/utils.py），前端无法区分，也不应假装能区分。
+  'account-unusable': '该账号名无法使用，请换一个',
   'weak-password': '密码至少 8 位，且同时包含字母与数字',
   'rate-limited': '尝试次数过多，请稍后再试',
   'service-unavailable': '服务暂时不可用，请稍后再试',

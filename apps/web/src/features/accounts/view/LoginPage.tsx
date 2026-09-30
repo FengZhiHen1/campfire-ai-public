@@ -157,7 +157,7 @@ export function LoginPage({ auth, initialMode = 'login' }: LoginPageProps) {
               onBlur={() => form.blurField('password')}
             />
             <button
-              className={`btn btn-quiet text-button ${styles.passwordToggle}`}
+              className={`text-button ${styles.passwordToggle}`}
               type="button"
               onClick={() => setShowPassword((current) => !current)}
             >
@@ -205,11 +205,11 @@ export function LoginPage({ auth, initialMode = 'login' }: LoginPageProps) {
 
       <p className={styles.switchRow}>
         {mode === 'login' ? (
-          <button className="text-button" type="button" onClick={() => setMode('register')}>
+          <button className={styles.switchLink} type="button" onClick={() => setMode('register')}>
             {COPY.toRegister}
           </button>
         ) : (
-          <button className="text-button" type="button" onClick={() => setMode('login')}>
+          <button className={styles.switchLink} type="button" onClick={() => setMode('login')}>
             {COPY.toLogin}
           </button>
         )}
