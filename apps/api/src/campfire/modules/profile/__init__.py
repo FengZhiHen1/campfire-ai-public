@@ -23,7 +23,6 @@ from campfire.modules.profile.errors import (
     ProfileDataError,
     ProfileError,
     ProfileItemNotFoundError,
-    SupportObjectStateError,
 )
 from campfire.modules.profile.models import (
     CANDIDATE_ORIGINS,
@@ -151,5 +150,4 @@ __all__ = [
     "ProfileDataError",
     "ProfileError",
     "ProfileItemNotFoundError",
-    "SupportObjectStateError",
 ]

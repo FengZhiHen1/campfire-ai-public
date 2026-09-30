@@ -47,25 +47,6 @@ class InferredCannotBeConfirmedError(ProfileDataError):
     """
 
 
-class SupportObjectStateError(ProfileError):
-    """支持对象的状态不允许该操作。
-
-    目前只有一种情形经此处：对象已归档而调用方是写路径——但那一条由
-    `core/authz` 的 `ObjectArchivedError` 承载（它属于授权判定的失败语义）。
-    本类型保留给不经授权端口的状态错误（如对不存在的条目做纠正）。
-
-    诊断字段:
-      - entity: 出错的实体标识；
-      - reason: 为什么不允许。
-    """
-
-    def __init__(self, entity: object, reason: str) -> None:
-        """记录实体标识与原因。"""
-        self.entity = entity
-        self.reason = reason
-        super().__init__(f"{entity!r} 的状态不允许该操作：{reason}")
-
-
 class ProfileItemNotFoundError(ProfileError):
     """条目不存在，或其状态不允许该操作。
 
@@ -91,5 +72,4 @@ __all__ = [
     "ProfileDataError",
     "ProfileError",
     "ProfileItemNotFoundError",
-    "SupportObjectStateError",
 ]
