@@ -465,6 +465,94 @@ async def test_browse_pagination_walks_without_repeats(client: httpx.AsyncClient
     assert len(seen) == len(set(seen))
 
 
+async def test_search_page_size_is_the_single_page_limit(
+    client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch, seeded: dict[str, str]
+) -> None:  # noqa: ANN001
+    """检索路的单页条数就是 `limit`：不多探一条，也不多发一条。
+
+    `window = offset + limit + 1` 是浏览路为判断「还有没有下一页」多探一条而设计的，
+    而检索路没有对应的切片（只按 `is_browse` 切），于是这个值被原样当成单页条数
+    传下去——`limit=1` 会回 2 条，与 docstring「`limit`：单页条数」相反。
+
+    替身按收到的 `limit` 截断结果，因此「检索链收到多少」是可观察的。
+
+    同时钉住检索路不可翻页这个已文档化的决定（见 `list_items` 内注释）：
+    `cursor` 不参与取数，`next_cursor` 恒为 null——本用例只要求它「不假装能翻页」，
+    不要求它翻页。
+
+    消融：修复前替身收到 2（`offset 0 + limit 1 + 1`）、响应回 2 条，两条断言都红。
+    """
+    from campfire.modules.library.retrieval import RetrievedItem, SearchOutcome
+
+    received: list[int] = []
+
+    def _item(index: int) -> RetrievedItem:
+        return RetrievedItem(
+            item_id=str(uuid.uuid5(uuid.NAMESPACE_URL, f"library-page-{index}")),
+            library="case",
+            title=f"虚构条目 {index}",
+            snippet="虚构片段",
+            source="虚构来源",
+            applicable_scope="不限",
+            status="internal",
+            locator="loc",
+            ranking={"fused_score": 0.1},
+        )
+
+    async def _search(*args, **kwargs):  # noqa: ANN002, ANN003
+        received.append(kwargs["limit"])
+        return SearchOutcome(items=[_item(index) for index in range(3)][: kwargs["limit"]], degraded_paths=())
+
+    monkeypatch.setattr(library_routes, "search", _search)
+
+    response = await client.get("/library/items", params={"library": "case", "query": "结构化活动", "limit": 1})
+
+    assert response.status_code == 200
+    assert received == [1], "检索链收到的必须是单页条数，不是「多探一条」的窗口"
+    assert len(response.json()["items"]) == 1, "单页条数就是 limit，不得多发一条"
+    assert response.json()["next_cursor"] is None
+
+
+async def test_search_ignores_cursor_visibly_rather_than_pretending_to_page(
+    client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch, seeded: dict[str, str]
+) -> None:  # noqa: ANN001
+    """非空 `query` 下的 `cursor` 不参与取数，且响应明确 `next_cursor: null`。
+
+    这是 `list_items` 内注释写下的决定（检索路是融合后的 top-K 名次列表，没有
+    「第 K 名之后」的谓词，因此不假装能翻页），本用例把它固定成可观察行为：
+    带 `cursor` 重取得到与首页相同的结果，调用方据 `next_cursor: null` 知道
+    这里没有下一页——而不是把它读成「已到末页」的翻页结果。
+    """
+    from campfire.modules.library.retrieval import RetrievedItem, SearchOutcome
+
+    def _item() -> RetrievedItem:
+        return RetrievedItem(
+            item_id=str(uuid.uuid5(uuid.NAMESPACE_URL, "library-cursor-0")),
+            library="case",
+            title="虚构条目",
+            snippet="虚构片段",
+            source="虚构来源",
+            applicable_scope="不限",
+            status="internal",
+            locator="loc",
+            ranking={"fused_score": 0.1},
+        )
+
+    async def _search(*args, **kwargs):  # noqa: ANN002, ANN003
+        return SearchOutcome(items=[_item()], degraded_paths=())
+
+    monkeypatch.setattr(library_routes, "search", _search)
+
+    first = await client.get("/library/items", params={"library": "case", "query": "结构化活动", "limit": 1})
+    with_cursor = await client.get(
+        "/library/items", params={"library": "case", "query": "结构化活动", "limit": 1, "cursor": "1"}
+    )
+
+    assert first.status_code == with_cursor.status_code == 200
+    assert with_cursor.json()["items"] == first.json()["items"]
+    assert with_cursor.json()["next_cursor"] is None
+
+
 # ---------------------------------------------------------------------------
 # 展开（契约第 4 节）
 # ---------------------------------------------------------------------------

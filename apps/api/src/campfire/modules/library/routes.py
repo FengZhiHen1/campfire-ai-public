@@ -493,6 +493,21 @@ async def _run_retrieval(
 # ---------------------------------------------------------------------------
 
 
+def _retrieval_window(*, offset: int, limit: int, pageable: bool) -> int:
+    """算出本次向检索链要的条数（CORE-11：有界）。
+
+    `pageable` 为真（空 `query` 的浏览路）时多探一条，用于判断「还有没有下一页」
+    ——只看 `len(items) > offset + limit` 无法区分「恰好这么多」与「被截断」。
+
+    检索路不可翻页（见 `list_items` 的说明）：浏览路多探的那条在检索路没有对应的
+    切片，会原样发给调用方——`limit=20` 时回 21 条，与「`limit`：单页条数」相反。
+    因此检索路只收单页条数 `limit`。
+    """
+    if not pageable:
+        return limit
+    return min(offset + limit + 1, PAGE_WINDOW_MAX)
+
+
 @router.get("/items", response_model=LibraryItemsPayload)
 async def list_items(
     _account_id: Annotated[str, Depends(current_account)],
@@ -516,7 +531,8 @@ async def list_items(
     Args:
         library: 库别，取值见 `LIBRARIES`。
         query: 检索词；空即浏览。
-        cursor: 上一页返回的游标。
+        cursor: 上一页返回的游标；只对空 `query` 的浏览流有效（检索路不可翻页，见
+            函数体内的说明）。
         limit: 单页条数，上界 `ITEMS_MAX_LIMIT`。
         expand: 要就地展开的条目标识（一次一条）。
 
@@ -544,7 +560,14 @@ async def list_items(
         if problem is not None:
             return problem
 
-    window = min(offset + limit + 1, PAGE_WINDOW_MAX)
+    # 浏览路是可按游标翻页的流；检索路是融合后的 top-K 名次列表——它没有
+    # 「第 K 名之后」的谓词（检索链只接 limit），因此不假装能翻页：非空 `query`
+    # 时 `cursor` 不参与取数，`next_cursor` 恒为 null。契约第 3 节未定义该组合的
+    # 语义，因此这里只把它写成当下事实，不替契约新增 4xx；调用方也不可能正常
+    # 拿到这种请求——本面对检索路从不发游标。
+    is_browse = not query.strip()
+
+    window = _retrieval_window(offset=offset, limit=limit, pageable=is_browse)
     try:
         outcome = await _run_retrieval(library=library, query=query, limit=window)
     except RetrievalError:
@@ -560,9 +583,6 @@ async def list_items(
             return _unavailable()
         raise
 
-    # 浏览路是可按游标翻页的流；检索路是融合后的 top-K 名次列表——它没有
-    # 「第 K 名之后」的谓词（检索链只接 limit），因此不假装能翻页。
-    is_browse = not query.strip()
     page = outcome.items[offset : offset + limit] if is_browse else outcome.items
     has_more = is_browse and len(outcome.items) > offset + limit
 
