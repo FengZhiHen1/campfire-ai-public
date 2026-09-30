@@ -13,18 +13,7 @@
  *   - 禁止把 owner 显示成「已审阅」（同文第 7、8 节：必须能显示为「项目所有者核准」）
  */
 
-import type { EvidenceLevel, LibraryItemStatus, LibraryKind, ReviewStatus, RiskClass } from '../../../shared/types/library';
-
-/** 库别措辞（两库分开取数，界面上是两个分区）。 */
-const LIBRARY_LABELS: Readonly<Record<LibraryKind, string>> = {
-  case: '案例',
-  knowledge: '资料',
-};
-
-/** 取库别措辞。 */
-export function libraryLabel(kind: LibraryKind): string {
-  return LIBRARY_LABELS[kind];
-}
+import type { EvidenceLevel, LibraryItemStatus, ReviewStatus, RiskClass } from '../../../shared/types/library';
 
 /**
  * 条目状态措辞。

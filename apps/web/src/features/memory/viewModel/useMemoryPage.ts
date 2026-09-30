@@ -24,8 +24,6 @@ import {
   CORRECTION_WRITTEN_COPY,
   type MemoryFailure,
   failureFromError,
-  memoryFailureDescription,
-  memoryFailureTitle,
 } from '../domain/failures';
 
 /** 页面加载状态。 */
@@ -75,11 +73,6 @@ export interface MemoryPageState {
   updateCorrectionDraft(patch: Partial<CorrectionDraft>): void;
   submitCorrection(): Promise<void>;
   dismissNotice(): void;
-}
-
-/** 失败的可读文案（整页与行内共用一句）。 */
-export function failureMessage(failure: MemoryFailure): string {
-  return `${memoryFailureTitle(failure)}——${memoryFailureDescription(failure)}`;
 }
 
 /**
