@@ -95,6 +95,22 @@ class InviteCodeNotFoundError(InviteCodeError):
         super().__init__(f"邀请码不存在，无法执行 {operation}")
 
 
+class OnboardingTriggerError(AccountsError):
+    """一次性引导的触发判定无法给出结论。
+
+    出现它的两种情形都不是「用户做错了什么」：
+
+    - 状态取值漂移：引导状态表的 `state` 有 CHECK 约束，读到词表外的值只可能来自
+      表形状与设计的漂移。此时「注入还是不注入」没有正确答案——两个方向都会掩盖漂移；
+    - 调用方错误：缺 `account_id`。空值在等值查询里必然查不到行，而「查不到行」
+      的语义是「从未引导过」，于是调用方错误会被伪装成一个合法的业务判定。
+
+    单独一个类型而不是复用 :class:`InviteCodeStateError`：后者的语义是「邀请码状态机
+    的前提不成立」，与引导状态无关；混用会让排查方向偏到邀请码上。它不是
+    :class:`InviteCodeError` 的子类，理由相同——它不涉及任何邀请码。
+    """
+
+
 __all__ = [
     # 基类
     "AccountsError",
@@ -106,4 +122,6 @@ __all__ = [
     # 内部状态与查找
     "InviteCodeNotFoundError",
     "InviteCodeStateError",
+    # 引导状态
+    "OnboardingTriggerError",
 ]
