@@ -44,11 +44,6 @@ ITEM_TYPE_FUNCTION_CALL = "function_call"
 #: 工具结果条目的类型。
 ITEM_TYPE_FUNCTION_CALL_OUTPUT = "function_call_output"
 
-#: 认得的条目类型集合（词表落这里，供「认不出」的判定引用）。
-KNOWN_ITEM_TYPES: frozenset[str] = frozenset(
-    {ITEM_TYPE_MESSAGE, ITEM_TYPE_REASONING, ITEM_TYPE_FUNCTION_CALL, ITEM_TYPE_FUNCTION_CALL_OUTPUT}
-)
-
 #: 算作文本的部件类型。必须与 `agent/context/window.py` 的同名集合一致：
 #: 两处解析同一种持久化格式，集合不一致会让同一条消息在一侧被认作文本、另一侧不被认作。
 _TEXT_PART_TYPES: frozenset[str] = frozenset({"text", "input_text", "output_text"})
@@ -666,7 +661,6 @@ __all__ = [
     "ITEM_TYPE_FUNCTION_CALL_OUTPUT",
     "ITEM_TYPE_MESSAGE",
     "ITEM_TYPE_REASONING",
-    "KNOWN_ITEM_TYPES",
     # 注入信封
     "INJECTED_MESSAGE_PREFIXES",
     # part 形状
