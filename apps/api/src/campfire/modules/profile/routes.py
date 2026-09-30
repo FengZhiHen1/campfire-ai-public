@@ -21,7 +21,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Body, Depends, Query
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from supertokens_python.recipe.session import SessionContainer
 
 from campfire.core.auth.supertokens import require_session
@@ -160,6 +160,17 @@ def _page_window(offset: int, limit: int) -> int:
 # ---------------------------------------------------------------------------
 
 
+#: `topic` 的长度上界，与存储列同宽（`models.ProfileItem.topic` 的 `String(200)`），
+#: 也与工具入口同口径（`tools/profile.py` 的 `ProposeProfileItemArgs.topic` 取
+#: `max_length=200`）。
+#:
+#: 收在载荷层而不是只靠数据库拒绝：超宽载荷到驱动层会抛
+#: `StringDataRightTruncationError`，它不是领域异常，而 `_map_error` 只认
+#: `ProfileError`/`AuthorizationError`（其余原样冒泡）——契约第 1 节的 422 于是
+#: 变成 500。收在这里，拒绝发生在触库之前。
+TOPIC_MAX_LENGTH = 200
+
+
 class CreateObjectRequest(BaseModel):
     """`POST /profile/objects` 的请求体。属主取登录态，不接受调用方传入。"""
 
@@ -185,7 +196,7 @@ class CorrectItemRequest(BaseModel):
     """
 
     description: str
-    topic: str | None = None
+    topic: Annotated[str | None, Field(max_length=TOPIC_MAX_LENGTH)] = None
     contexts: list[str] | None = None
     manifestations: list[str] | None = None
 
@@ -198,7 +209,7 @@ class CreateItemRequest(BaseModel):
     """
 
     domain: str
-    topic: str
+    topic: Annotated[str, Field(max_length=TOPIC_MAX_LENGTH)]
     description: str
     contexts: list[str] | None = None
     manifestations: list[str] | None = None
