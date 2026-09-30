@@ -35,6 +35,33 @@ skills/<skill-name>/assets/       # 可选：模板与数据
 
 ## 状态
 
-**一期 skill 尚未落地**：四个 skill（`emergency-consulting`、`daily-consulting`、
-`profile-curation`、`onboarding`）的方法论与 `SKILL.md` 正文要点仍在
-`docs/技术设计/面/consult/skills/` 下待确认。确认后每个 skill 在此建一个自包含目录。
+**一期的四个 skill 已落地**（2026-09-30）。内容正本在 `docs/技术设计/面/consult/skills/`，
+本目录是它的内容产物——改内容须先改设计文档，再同步过来。
+
+| 目录 | 定位 | 激活 | `references/` |
+|---|---|---|---|
+| `emergency-consulting` | 突发情境的即时咨询：六层闸门 → 现场 Action Card | 程序注入（`autoload: "false"`） | `gates.md`、`action-card.md` |
+| `daily-consulting` | 日常咨询：澄清、带依据的建议 | 模型匹配 / 使用者选定 | `clarification.md`、`evidence-and-options.md` |
+| `profile-curation` | 把对话中出现的信息整理成档案候选 | 模型匹配 / 使用者选定 | `extraction-rules.md`、`source-and-status.md` |
+| `onboarding` | 首次日常会话的一次性引导 | 程序注入（`autoload: "false"`） | `seed-questions.md`、`telling-first.md` |
+
+三条共同纪律（有据才给建议、目标不等于服从、专业判断与可读解释并给）在
+`emergency-consulting`、`daily-consulting`、`profile-curation` 的正文里以
+`<!-- shared:evidence-discipline -->` 标记块承载，三份**逐字一致**；
+`onboarding` **不含**该标记块（语义前提不成立，豁免一致性检查）。
+
+## 工程检查
+
+`apps/api/tests/test_skills_content.py` 把上面几条变成可执行断言：
+目录扫描 0 个 skill 即失败、六字段校验、标记块逐字一致、`allowed-tools` 与
+[技能设计](../../../docs/技术设计/technical-details/技能设计.md)第 3 节的工具总表互查。
+
+标准参照实现 `skills-ref validate` 的调用方式：CLI 在 PATH 上时由该测试直接调用；
+不在 PATH 上时改用测试内的等价校验（判据对齐参照实现的规则），两种情形都在测试里
+写明探测结论——**不留一条「校验了 0 个、因此必然通过」的真空闸门**。
+
+手动跑参照实现：
+
+```bash
+npx --yes skills-ref@latest validate apps/api/skills/emergency-consulting
+```
