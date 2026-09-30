@@ -16,7 +16,7 @@
 4. **重试安全**：墓碑幂等，重跑会看到「已存在」并继续完成后续步骤。
 5. **只删未领取的待处理记录**：``processing`` 的放过（可能正被 Worker 持有），
    由 Worker 按墓碑丢弃。
-6. **执行顺序**：用假实现记录调用序，断言墓碑确实先于身份删除与领域清除。
+6. **执行顺序**：用假实现记录调用序，断言墓碑先于一切、领域清除先于删身份用户。
 
 本文件用**假的** ``revoke_all_sessions`` / ``delete_identity_user`` / purger
 ——编排只关心顺序与失败语义，不需要真实 core（那需要 supertokens 容器，
@@ -411,12 +411,141 @@ async def test_purge_outcomes_are_reported() -> None:
         assert len(report.purges) == 1
         assert report.purges[0].name == "_FakePurger", "展示名缺省取类名（与编排的失败点名同源）"
         assert any("领域清除" in step for step in report.completed_steps)
-        # 调用顺序：墓碑 → （删记录）→ 撤会话 → 删用户 → 清除
+        # 调用顺序：墓碑 → （删记录）→ 撤会话 → 领域清除 → 删用户
         assert recorder.calls == [
             f"revoke_sessions:{account}",
-            f"delete_user:{account}",
             f"purge:_FakePurger:{account}",
+            f"delete_user:{account}",
         ]
+    finally:
+        await _clear()
+
+
+# ---------------------------------------------------------------------------
+# 领域清除必须早于删身份用户（第 8 节的语义顺序）
+# ---------------------------------------------------------------------------
+
+
+class _OrderProbePurger:
+    """在被调用时探一次「身份用户是否已经删了」的假清除者。
+
+    判据是**状态时序**而不是调用顺序：清除执行的那一刻，删身份用户**必须还没发生**。
+    """
+
+    def __init__(self, recorder: _Recorder, observed: dict[str, bool]) -> None:
+        self._recorder = recorder
+        self._observed = observed
+        self.name = "order-probe"
+
+    async def purge_account(self, account_id: str) -> PurgeOutcome:
+        """记录一次清除，并记下此刻身份用户是否已被删除。"""
+        self._recorder.calls.append(f"purge:{self.name}:{account_id}")
+        self._observed["identity_deleted_at_purge"] = f"delete_user:{account_id}" in self._recorder.calls
+        return PurgeOutcome(name=self.name, detail="已清除")
+
+
+@pytest.mark.asyncio
+async def test_purgers_run_before_identity_user_is_deleted() -> None:
+    """**领域清除必须早于删身份用户**（[认证与账号] 第 8 节的语义顺序）。
+
+    删身份用户是本流程唯一不可逆、且对外宣告「该账号不存在了」的动作，是整件事的
+    提交点；排在领域清除之前，清除者随后失败就会留下「账号已消失、清除仍欠着」
+    的状态（第 8 节要求不留中间态）。
+
+    判别性：把领域清除挪回删身份用户之后（旧实现），``identity_deleted_at_purge``
+    变成 ``True``，本用例失败。
+    """
+    await _clear()
+    account = _account("purgeorder")
+    recorder = _Recorder()
+    observed: dict[str, bool] = {}
+    try:
+        async with session_scope(get_settings()) as session:
+            report = await delete_account(
+                session,
+                account_id=account,
+                revoke_all_sessions=recorder.revoke_all_sessions,
+                delete_identity_user=recorder.delete_identity_user,
+                purgers=[_OrderProbePurger(recorder, observed)],
+                confirmed=True,
+            )
+
+        assert observed.get("identity_deleted_at_purge") is False, (
+            "清除执行时身份用户已经不在了——领域清除被排在删身份用户之后，与第 8 节的顺序相反"
+        )
+        assert recorder.calls.index(f"purge:order-probe:{account}") < recorder.calls.index(f"delete_user:{account}")
+        assert report.completed_steps[-1] == "删除身份用户", f"删身份用户必须是最后一步，实际 {report.completed_steps}"
+    finally:
+        await _clear()
+
+
+@pytest.mark.asyncio
+async def test_purger_failure_leaves_identity_user_in_place() -> None:
+    """领域清除失败时**身份用户必须原封不动**——失败点落在不可逆动作之前。
+
+    这是「提交点靠后」的可判定含义：删除失败报告里不出现「删除身份用户」，操作者
+    重试时面对的是一个仍然完整存在的账号，而不是一个已消失的账号加上一堆欠清理
+    的残留行。
+
+    判别性：把领域清除挪回删身份用户之后（旧实现），``delete_user`` 已被调用，
+    本用例失败。
+    """
+    await _clear()
+    account = _account("purgefailorder")
+    recorder = _Recorder()
+    try:
+        async with session_scope(get_settings()) as session:
+            with pytest.raises(AccountDeletionError, match="清除") as excinfo:
+                await delete_account(
+                    session,
+                    account_id=account,
+                    revoke_all_sessions=recorder.revoke_all_sessions,
+                    delete_identity_user=recorder.delete_identity_user,
+                    purgers=[_FakePurger(recorder, fail=True, name="boom")],
+                    confirmed=True,
+                )
+
+        assert f"delete_user:{account}" not in recorder.calls, (
+            "领域清除失败，身份用户却已经被删除——失败点落在不可逆动作之后，账号无法回到可重试的状态"
+        )
+        assert "删除身份用户" not in excinfo.value.completed, "报告不得声称删了身份用户"
+        assert f"revoke_sessions:{account}" in recorder.calls, "撤销会话应先于领域清除完成"
+    finally:
+        await _clear()
+
+
+@pytest.mark.asyncio
+async def test_pending_write_deletion_survives_a_failed_purger_rollback() -> None:
+    """领域清除失败、调用方事务回滚后，第 2 步删掉的待处理记录**不得复活**。
+
+    D-14：第 2 步原本留在调用方的事务里，而 purger 各自开事务独立提交。任一 purger
+    失败时调用方的 `session_scope` 回滚，那条删除随之消失，但失败报告里仍然写着
+    「已完成：删除待处理记录」——报告虚报了一个并未发生的动作。
+
+    判别性：把第 2 步的 `session.commit()` 去掉，本用例失败（记录复活）。
+    """
+    await _clear()
+    account = _account("d14rollback")
+    pending_id = await _enqueue(account)
+    recorder = _Recorder()
+    try:
+        # 让异常穿过 `session_scope`——它才会真回滚。
+        with pytest.raises(AccountDeletionError, match="清除"):
+            async with session_scope(get_settings()) as session:
+                await delete_account(
+                    session,
+                    account_id=account,
+                    revoke_all_sessions=recorder.revoke_all_sessions,
+                    delete_identity_user=recorder.delete_identity_user,
+                    purgers=[_FakePurger(recorder, fail=True, name="boom")],
+                    confirmed=True,
+                )
+
+        async with session_scope(get_settings()) as session:
+            left = (
+                await session.execute(select(PendingWrite.id).where(PendingWrite.id == pending_id))
+            ).scalar_one_or_none()
+        assert left is None, "调用方回滚后待处理记录又回来了——失败报告里的「删除待处理记录」是虚报"
     finally:
         await _clear()
 

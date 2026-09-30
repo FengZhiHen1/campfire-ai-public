@@ -137,15 +137,32 @@ async def delete_account(
 
     这样新增一个需要清除的领域时，不改编排，只多提供一个 purger。
 
-    五步顺序不可调换：
+    五步顺序不可调换（第 1 步最先、删身份用户最后）：
 
-    [认证与账号] 第 8 节定义的五步，第 1 步必须先于最后一步：
+    [认证与账号] 第 8 节要求领域清除早于删身份用户，五步按此落成：
 
     1. 先写墓碑——使在途记录立即失去写入资格；
     2. 删除该账号未领取的 `pending_write` 记录；
     3. 撤销该账号全部会话；
-    4. 删除身份服务的用户；
-    5. 丢弃该账号的图库数据（经 purger）。
+    4. 清除各领域数据（经 purger：档案条目、支持对象、会话‑对象绑定、会话归属行、
+       记忆图与删除账本）；
+    5. 删除身份服务的用户——最后一步。
+
+    为什么领域清除必须早于删身份用户：
+
+    第 8 节给的理由是「身份用户一旦删除，就再也无法按 `account_id` 定位这些行」。
+    该理由在本实现里不成立：`account_id` 由调用方传入，各 purger 只认这个入参，
+    从不回查身份服务（见 `cli/operator.py` 的注入处与各 purger 的签名）。顺序本身
+    仍须遵守，收益是另一条与实现无关的排序纪律：删身份用户是本流程里唯一不可逆、
+    且对外宣告「该账号不存在了」的动作，也就是整件事的提交点，必须排在所有可能
+    失败的工作之后。排在前面会留下第 8 节要排除的残余状态：清除者随后失败时，
+    账号已不可恢复地消失，而清除工作仍欠着——欠账的凭据只剩操作者屏幕上的一行
+    报错，之后没有任何可判定的依据能说出「哪些账号的清除没做完」。
+
+    已知代价（如实写明）：领域清除失败时身份用户仍在，账号的凭据未被删除——使用者
+    仍能用密码登录（第 3 步已撤销会话，但登录会新建会话），从而看到被部分清除的
+    数据。这是把「数据残留但不可读」换成了「数据可读但不一致」；两者都不是数据
+    泄露，取舍取提交点靠后、失败可续做。
 
     为什么墓碑必须先写：注销时可能已有 `pending_write` 在排队、甚至已被 Worker
     领取。若账号删得无迹可寻，Worker 写入时查不到账号——而「查不到」与
@@ -154,11 +171,16 @@ async def delete_account(
 
     已知残余窗口（如实写明，不假装不存在）：
 
-    第 1 步与第 5 步之间仍有极窄竞态：Worker 可能在「读墓碑（尚无）」之后、
+    第 1 步与第 4 步之间仍有极窄竞态：Worker 可能在「读墓碑（尚无）」之后、
     图被丢弃之前完成写入，从而重建该账号的图。
 
-    后果有界：该账号已不存在、无人能以其身份登录，读路径一律按登录态取数，
-    因此重建的图不可经应用读取——属存储残留（`EVID-D`），不是数据泄露。
+    后果有界：流程走完后该账号已不存在、无人能以其身份登录，读路径一律按登录态
+    取数，因此重建的图此后不可经应用读取——属存储残留（`EVID-D`），不是数据
+    泄露。唯一新增的可读片段在第 4 步与第 5 步之间：图已丢弃、身份用户尚在，
+    此刻若 Worker 恰好重建该图，账号仍能登录把它读出来——窗口是一次删身份用户
+    调用的时长。领域清除排在删身份用户之后时不存在这个片段（丢弃是最后一步，
+    那时账号已经没了），它是本次顺序调整的代价，如实写明。
+
     彻底闭合需每账号锁或「注销前排空队列」，一期不做；已登记待实测。
 
     为什么外部操作是参数：
@@ -183,7 +205,8 @@ async def delete_account(
     方向安全。
 
     Args:
-        session: 关系库会话（墓碑与待处理记录的删除用；调用方负责提交）。
+        session: 关系库会话（墓碑与待处理记录的删除用；这两步各自立即提交，
+            不依赖调用方的事务结局）。
         account_id: 要注销的账号标识。
         revoke_all_sessions: 撤销该账号全部会话的实现，签名 `(account_id: str) -> Awaitable[None]`。
         delete_identity_user: 删除身份服务用户的实现，签名同上。
@@ -244,6 +267,14 @@ async def delete_account(
         # （mypy 实测抓到）。`session.execute` 对 DML 返回的正是 `CursorResult`，
         # 但静态类型是 `Result`，故此处显式取属性并给出安全默认值。
         report.pending_writes_deleted = int(getattr(result, "rowcount", 0) or 0)
+        # 立即提交（理由与第 1 步同源：效力不能挂在别人的事务结局上）：各 purger
+        # 各自开事务独立提交（`modules/*/purge.py`），任一 purger 失败时调用方的
+        # `session_scope` 会回滚。本步若留在那个事务里，这条删除会随回滚消失，而
+        # `completed` 已经记上「删除待处理记录」——报告就会虚报一个并未发生的动作。
+        # 提交之后本步不再取决于调用方的事务结局，报告才无条件为真。
+        # 代价有界：未领取的记录被提前删掉，而墓碑已使该账号的写入失去资格，
+        # 早删晚删不影响正确性。
+        await session.commit()
     except Exception as exc:
         raise AccountDeletionError("删除待处理记录", f"{type(exc).__name__}: {exc}", tuple(completed)) from exc
     completed.append("删除待处理记录")
@@ -255,14 +286,7 @@ async def delete_account(
         raise AccountDeletionError("撤销全部会话", f"{type(exc).__name__}: {exc}", tuple(completed)) from exc
     completed.append("撤销全部会话")
 
-    # --- 第 4 步：删除身份服务的用户 ---
-    try:
-        await delete_identity_user(account_id)
-    except Exception as exc:
-        raise AccountDeletionError("删除身份用户", f"{type(exc).__name__}: {exc}", tuple(completed)) from exc
-    completed.append("删除身份用户")
-
-    # --- 第 5 步：各领域的清除者 ---
+    # --- 第 4 步：各领域的清除者 ---
     #
     # 逐个完成即逐个记录（2026-10-01 审查修正，消融：`test_partial_purger_failure_reports_completed_purger`）：
     # 多个 purger 时第 N 个失败，前 N-1 个已真实执行但按旧写法不会出现在
@@ -272,6 +296,8 @@ async def delete_account(
     # 同一实现类可以被实例化多次（或一个类内部区分多种领域），类名无法分辨
     # 「哪一个实例失败」——这正是本修正要回答的问题。取不到实例名时退回类名
     # （结构性满足 Protocol 的实现者没有 `name` 属性，如测试里的假件）。
+    #
+    # 必须早于第 5 步（删身份用户）：顺序说明见函数文档。
     for purger in purgers or []:
         name = getattr(purger, "name", None) or type(purger).__name__
         try:
@@ -281,8 +307,20 @@ async def delete_account(
         report.purges.append(outcome)
         completed.append(f"领域清除（{name}）")
 
-    # 由 `session_scope` 在退出时提交；否则由调用方提交。
-    # `expire_on_commit=False`（`core/db` 的约定）保证提交后仍可读取返回值。
+    # --- 第 5 步：删除身份服务的用户 ---
+    #
+    # 必须最后（顺序说明见函数文档）：它是唯一不可逆、且对外宣告「该账号不存在了」
+    # 的动作，即整件事的提交点。排在领域清除之前，会让「清除失败」留下一个账号
+    # 已消失、清除仍欠着且无从判定的状态。
+    try:
+        await delete_identity_user(account_id)
+    except Exception as exc:
+        raise AccountDeletionError("删除身份用户", f"{type(exc).__name__}: {exc}", tuple(completed)) from exc
+    completed.append("删除身份用户")
+
+    # 第 1、2 步已各自提交；此后编排不再写入本会话，结束时的提交由 `session_scope`
+    # 或调用方完成（`expire_on_commit=False`——`core/db` 的约定——保证提交后仍可读取
+    # 返回值）。
     report.completed_steps = completed
     logger.info(
         "账号注销完成：标识=%s 墓碑新建=%s 待处理记录删除=%d 清除者=%d",

@@ -163,7 +163,7 @@ async def _revoke_all_sessions_for(account_id: str) -> None:
 
 
 async def _delete_identity_user(account_id: str) -> None:
-    """删除身份服务里的用户（第 8 节第 4 步）。"""
+    """删除身份服务里的用户（[认证与账号] 第 8 节；注销编排的最后一步）。"""
     from supertokens_python.asyncio import delete_user
 
     await delete_user(account_id)
@@ -181,10 +181,15 @@ def _purgers(settings: Settings) -> list[AccountDataPurger]:
     （登记于 docs/TODO.md）。顺序不在此处编排：`delete_account` 逐个调用它们，
     领域之间无依赖（档案清除在内部自己保证「先删条目再删对象」）。
 
-    会话归属清除者（2026-09-30，T06）对应认证与账号第 8 节第 4 步。它必须早于
-    第 6 步（删身份用户）——身份用户一旦删除，就再也无法按 `account_id` 定位这些行。
-    编排层的顺序在 `core/auth/deletion`，而那里第 3 步（领域清除）先于第 4 步（删身份
-    用户），因此本条要求已由顺序满足；此处只负责把清除者交出去。
+    会话归属清除者对应 [认证与账号] 第 8 节的「删除 `campfire_session` 中该账号的
+    会话归属行」，该节要求它早于删身份用户。这条顺序由 `core/auth/deletion` 的编排
+    保证：那里领域清除是第 4 步、删身份用户是第 5 步（最后一步），因此要求已满足；
+    此处只负责把清除者交出去。
+
+    第 8 节给出的理由是「身份用户一旦删除，就再也无法按 `account_id` 定位这些行」。
+    该理由在本实现里不成立——清除者只认调用方传入的 `account_id`，从不回查身份
+    服务。顺序仍然要守，收益是让删身份用户成为整件事的提交点（见 `core/auth/deletion`
+    的顺序说明）。
     """
     return [
         MemoryAccountPurger(settings),
