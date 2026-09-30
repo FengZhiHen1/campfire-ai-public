@@ -43,10 +43,11 @@ def build_sqlalchemy_session(
     """按会话标识造一个 SDK 会话。
 
     `create_tables=True` 会让 SDK 建它自己的两张表（`agent_sessions` /
-    `agent_messages`）。这两张表目前没有登记在任何设计文档与迁移里，而
-    docs/项目结构设计.md 第 187 行要求表归属与模块同名——因此默认关闭，只在本地开发与
-    测试里显式打开；生产路径必须由 Alembic 迁移建表（技术栈设计第 1 节），并先为这两张表
-    定下归属与命名。登记于 docs/TODO.md。
+    `agent_messages`）。这两张表已登记进 `core/db.metadata`
+    （`campfire/core/db/sdk_session.py`）并由 Alembic 迁移建出，因此默认关闭：
+    生产路径必须由迁移建表（技术栈设计第 1 节），让 SDK 自己建会得到一张没有中文
+    业务注释、也没有审阅记录的表。置 `True` 只用于本地一次性试验——此时它建的表
+    与迁移建的表同名同形状，两者不会并存成两套。
 
     Raises:
         SessionConfigurationError: `session_id` 为空或只有空白——没有标识就无法保证两次

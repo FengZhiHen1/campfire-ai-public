@@ -33,12 +33,21 @@
 # 组织与机构协作整体推迟到二期（见 docs/技术设计/decisions/一期只做个人账号.md）。
 # 此前本文件写「组织标识」属该裁决之前的表述，已移除。
 #
-# 已实现（2026-09-30）：`errors.py`（异常层次）、`models.py`（邀请码表）、
-# `repository.py`（邀请码状态机：签发、原子占用、补偿释放、绑定、撤销、列举）、
-# `onboarding.py`（引导状态表的读取与触发判定，`RQ-ACC-09`）。
+# 已实现（2026-09-30）：`errors.py`（异常层次）、`models.py`（邀请码表、会话归属表、
+# 引导状态表）、`repository.py`（邀请码状态机：签发、原子占用、补偿释放、绑定、撤销、列举）、
+# `onboarding.py`（引导状态表的读取与触发判定，`RQ-ACC-09`）、
+# `session_items.py`（SDK 会话条目 → parts/标题/预览的解析）、
+# `session_repository.py`（会话归属行的读写与 SDK 两表的只读查询）、
+# `sessions.py`（会话归属四个用例与注销清除）。
 #
-# 仍缺：注册复写（把邀请码校验注入身份服务的 sign-up API）、人工重置、
-# 账号注销编排，以及注销墓碑（归 `core/auth`）。它们随 SDK 装配与 CLI 子命令落地。
+# 会话归属的数据链（2026-09-30，T06）：`campfire_session` 只存归属与登记，不存消息
+# ——存消息就构成第二份对话真源（基座第 2 节）。会话列表的标题与末条预览都从 SDK 的
+# 会话存储算出来（`session_items`），不落库：派生值落库会造出第二个可写真源。
+# 对象名经注入回调取（`sessions.ObjectNameReader`），因为对象归 `modules/profile`，
+# 而模块之间禁止互相 import（项目结构设计第 7 节）。
+#
+# 仍缺：注册复写（把邀请码校验注入身份服务的 sign-up API）、人工重置、账号注销编排，
+# 以及注销墓碑（归 `core/auth`）。它们随 SDK 装配与 CLI 子命令落地。
 #
 # `onboarding.py` 的表模型与迁移尚未落地（表形状由认证与账号第 8 节拥有）。
 # 该模块因此走带绑定参数的显式 SQL，而不是声明第二份模型——同名表的第二份定义会与
@@ -53,6 +62,10 @@ from campfire.modules.accounts.errors import (
     InviteCodeRejectedError,
     InviteCodeStateError,
     OnboardingTriggerError,
+    SessionError,
+    SessionNotFoundError,
+    SessionQueryError,
+    SessionRegistrationError,
 )
 from campfire.modules.accounts.models import (
     INVITE_CODE_ALPHABET,
@@ -61,9 +74,12 @@ from campfire.modules.accounts.models import (
     INVITE_CODE_TTL_DAYS,
     MAX_ACCOUNT_ID_LENGTH,
     MAX_OPERATOR_LENGTH,
+    MAX_SESSION_ID_LENGTH,
     STATE_ISSUED,
     STATE_REVOKED,
     STATE_USED,
+    CampfireOnboarding,
+    CampfireSession,
     InviteCode,
 )
 from campfire.modules.accounts.onboarding import (
@@ -99,6 +115,44 @@ from campfire.modules.accounts.repository import (
     release_invite_code,
     revoke_invite_code,
 )
+from campfire.modules.accounts.session_items import (
+    INJECTED_MESSAGE_PREFIXES,
+    TITLE_FALLBACK,
+    TITLE_MAX_CHARS,
+    HydratedMessage,
+    MessagePart,
+    StoredItem,
+    build_messages,
+    build_preview,
+    build_title,
+)
+from campfire.modules.accounts.session_repository import (
+    LIST_SCAN_MAX_ITEMS,
+    SessionListRow,
+    delete_session_owners_for_account,
+    get_session_owner,
+    insert_session_owner,
+    is_session_owned_by,
+    list_session_owners,
+    read_all_items,
+    read_first_items,
+    read_last_items,
+)
+from campfire.modules.accounts.sessions import (
+    ObjectNameReader,
+    SessionAccountPurger,
+    SessionHistory,
+    SessionOwner,
+    SessionPage,
+    SessionSummaryView,
+    decode_cursor,
+    encode_cursor,
+    list_sessions,
+    load_history,
+    register_session,
+    require_session_owner,
+    validate_limit,
+)
 
 __all__ = [
     # 异常
@@ -109,6 +163,10 @@ __all__ = [
     "InviteCodeRejectedError",
     "InviteCodeStateError",
     "OnboardingTriggerError",
+    "SessionError",
+    "SessionNotFoundError",
+    "SessionQueryError",
+    "SessionRegistrationError",
     # 常量（词表与形状）
     "INVITE_CODE_ALPHABET",
     "INVITE_CODE_LENGTH",
@@ -116,10 +174,13 @@ __all__ = [
     "INVITE_CODE_TTL_DAYS",
     "MAX_ACCOUNT_ID_LENGTH",
     "MAX_OPERATOR_LENGTH",
+    "MAX_SESSION_ID_LENGTH",
     "STATE_ISSUED",
     "STATE_REVOKED",
     "STATE_USED",
     # 表
+    "CampfireOnboarding",
+    "CampfireSession",
     "InviteCode",
     # 引导状态（一次性引导的触发判定）
     "ONBOARDING_STATES",
@@ -152,4 +213,39 @@ __all__ = [
     "InviteCodeRequired",
     "api_overrides",
     "make_sign_up_override",
+    # 会话条目解析（SDK 持久化格式 → parts/标题/预览）
+    "INJECTED_MESSAGE_PREFIXES",
+    "TITLE_FALLBACK",
+    "TITLE_MAX_CHARS",
+    "HydratedMessage",
+    "MessagePart",
+    "StoredItem",
+    "build_messages",
+    "build_preview",
+    "build_title",
+    # 会话归属的存储层（归属行读写 + SDK 两表只读）
+    "LIST_SCAN_MAX_ITEMS",
+    "SessionListRow",
+    "delete_session_owners_for_account",
+    "get_session_owner",
+    "insert_session_owner",
+    "is_session_owned_by",
+    "list_session_owners",
+    "read_all_items",
+    "read_first_items",
+    "read_last_items",
+    # 会话归属的用例层
+    "ObjectNameReader",
+    "SessionAccountPurger",
+    "SessionHistory",
+    "SessionOwner",
+    "SessionPage",
+    "SessionSummaryView",
+    "decode_cursor",
+    "encode_cursor",
+    "list_sessions",
+    "load_history",
+    "register_session",
+    "require_session_owner",
+    "validate_limit",
 ]
