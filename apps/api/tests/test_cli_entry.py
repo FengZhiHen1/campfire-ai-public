@@ -18,6 +18,12 @@ import sys
 import pytest
 
 from campfire.cli.__main__ import _build_parser, main
+from supertokens_python.recipe.emailpassword.interfaces import (
+    EmailAlreadyExistsError,
+    PasswordPolicyViolationError,
+    UnknownUserIdError,
+    UpdateEmailOrPasswordEmailChangeNotAllowedError,
+)
 
 
 def test_no_subcommand_prints_usage_and_exits_two() -> None:
@@ -281,24 +287,26 @@ def test_account_reset_initializes_the_sdk(monkeypatch: pytest.MonkeyPatch) -> N
 
     判别性：去掉 ``_run_account_reset`` 里的初始化调用，本用例失败。
     SDK 函数本身用假件替身（本用例不连 core），初始化的**事实**才是断言对象。
+
+    假件返回 SDK **真实**的成功结果类型：修复前它是一个 ``status = "OK"`` 的自造类，
+    而 SDK 的 ``UpdateEmailOrPasswordOkResult`` 根本没有 ``status`` 属性（实测），
+    旧实现靠 ``getattr(..., None)`` 兜底才「碰巧」把成功认出来。判定改成类型之后，
+    假件必须与真实形状一致——否则本用例测的是不存在的形状。
     """
     import asyncio
 
+    import supertokens_python.recipe.emailpassword.asyncio as ep_asyncio
     from campfire.cli import operator
+    from supertokens_python.recipe.emailpassword.interfaces import UpdateEmailOrPasswordOkResult
 
     initialized: list[bool] = []
     monkeypatch.setattr(operator, "_init_supertokens_for_cli", lambda settings: initialized.append(True))
 
-    class _OkResult:
-        status = "OK"
-
     async def fake_update(**kwargs):
-        return _OkResult()
+        return UpdateEmailOrPasswordOkResult()
 
     async def fake_revoke(account_id: str) -> None:
         return None
-
-    import supertokens_python.recipe.emailpassword.asyncio as ep_asyncio
 
     monkeypatch.setattr(ep_asyncio, "update_email_or_password", fake_update)
     monkeypatch.setattr(operator, "_revoke_all_sessions_for", fake_revoke)
@@ -311,3 +319,101 @@ def test_account_reset_initializes_the_sdk(monkeypatch: pytest.MonkeyPatch) -> N
 
     assert code == 0
     assert initialized == [True], "account reset 必须先初始化 SDK 再改密"
+
+
+#: `update_email_or_password` 声明联合类型里除 OK 以外的全部成员（在只传 password 的
+#: 调用形态下都能从 SDK 拿到）。逐项覆盖，而不是只测「账号不存在」一种。
+_RESET_FAILURE_RESULTS = [
+    pytest.param(UnknownUserIdError(), id="账号不存在"),
+    pytest.param(PasswordPolicyViolationError("密码不合校验器"), id="新密码不合校验器"),
+    pytest.param(UpdateEmailOrPasswordEmailChangeNotAllowedError("账号接管风险"), id="不允许改邮箱"),
+    pytest.param(EmailAlreadyExistsError(), id="邮箱已被占用"),
+]
+
+
+@pytest.mark.parametrize("failure_result", _RESET_FAILURE_RESULTS)
+def test_account_reset_reports_failure_for_every_non_ok_result(
+    monkeypatch: pytest.MonkeyPatch, failure_result: object, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """改密返回任何非 OK 结果都必须**显式失败**，且不得撤销会话。
+
+    判别性：把判定改回 ``getattr(result, "status", None)``，四个参数里三个失败
+    （``UnknownUserIdError``/``PasswordPolicyViolationError``/改邮箱不允许都没有
+    ``status`` 属性，会被当成成功）；只有带 ``status`` 的 ``EmailAlreadyExistsError``
+    侥幸通过。
+
+    为什么四个都要测：原判据在属性缺失时 fail-open，而「属性缺失」不是个别分支的
+    特性——联合类型里只有 ``EmailAlreadyExistsError`` 带 ``status``。逐项覆盖才能
+    保住「联合类型的每个成员都被显式处置」这条契约。
+
+    失败时还必须**什么都没做**：会话撤销不可逆，密码没改成却撤了会话，使用者就
+    被锁在门外而新密码从未生效（改密排在撤会话之前，正是为杜绝这个状态）。
+    """
+    import asyncio
+
+    import supertokens_python.recipe.emailpassword.asyncio as ep_asyncio
+    from campfire.cli import operator
+
+    result_name = type(failure_result).__name__
+    revocations: list[str] = []
+
+    async def fake_update(**kwargs):
+        return failure_result
+
+    async def fake_revoke(account_id: str) -> None:
+        revocations.append(account_id)
+
+    monkeypatch.setattr(ep_asyncio, "update_email_or_password", fake_update)
+    monkeypatch.setattr(operator, "_revoke_all_sessions_for", fake_revoke)
+    monkeypatch.setattr(operator, "_init_supertokens_for_cli", lambda settings: None)
+
+    code = asyncio.run(
+        operator._run_account_reset(
+            _operator_parser().parse_args(["account", "reset", "acct-z", "--password", "probePass123"])
+        )
+    )
+
+    captured = capsys.readouterr()
+    assert code == 1, f"{result_name} 必须是非零退出码，实际 {code}"
+    assert result_name in captured.err, f"失败原因必须指名结果类型，实际 stderr={captured.err!r}"
+    assert "已重置密码" not in captured.out, f"不得打印成功回执，实际 stdout={captured.out!r}"
+    assert revocations == [], f"改密未成功就撤销了会话：{revocations!r}"
+
+
+def test_account_reset_success_path_still_reports_success(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """成功路径仍然打印成功回执——防止把判定改成「一律失败」也算通过。
+
+    SDK 的成功结果没有 ``status`` 属性（实测），因此本用例同时钉住：
+    「成功」不能靠某个属性存在与否来判断。
+    """
+    import asyncio
+
+    import supertokens_python.recipe.emailpassword.asyncio as ep_asyncio
+    from campfire.cli import operator
+    from supertokens_python.recipe.emailpassword.interfaces import UpdateEmailOrPasswordOkResult
+
+    revocations: list[str] = []
+
+    async def fake_update(**kwargs):
+        return UpdateEmailOrPasswordOkResult()
+
+    async def fake_revoke(account_id: str) -> None:
+        revocations.append(account_id)
+
+    monkeypatch.setattr(ep_asyncio, "update_email_or_password", fake_update)
+    monkeypatch.setattr(operator, "_revoke_all_sessions_for", fake_revoke)
+    monkeypatch.setattr(operator, "_init_supertokens_for_cli", lambda settings: None)
+
+    code = asyncio.run(
+        operator._run_account_reset(
+            _operator_parser().parse_args(["account", "reset", "acct-w", "--password", "probePass123"])
+        )
+    )
+
+    captured = capsys.readouterr()
+    assert code == 0
+    assert "已重置密码" in captured.out
+    assert revocations == ["acct-w"], "改密成功后必须撤销该账号全部会话"
+
