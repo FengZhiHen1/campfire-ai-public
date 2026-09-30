@@ -14,7 +14,8 @@
 3. **候选隔离**：候选不混进 `items`（由返回结构保证，`AC-18`）。
 4. **否定不回潮**：`rejected` 不进摘要、不参与注入、不再作候选。
 5. **降权（90 天）**：不进摘要与默认读取、被检索到时标注陈旧、**未被删除**。
-6. **纠正**：新旧互指、旧条目转 `historical`、注入只含新条目。
+6. **纠正**：新旧互指、旧条目转 `historical`、注入只含新条目；纠正推断来源的条目
+   把生成方式重绑为 `user_statement`，不造出「推断被写成已确认」的行。
 7. 删除不再被取数（`AC-08`），且行消失后重复删除报「不可访问」（裁决 1）。
 8. **摘要覆盖性**：十二字段都能生产；只有候选条目的对象返回「无档案」而非空对象。
 9. **应急八组**：只取稳定层；某组未预存返回显式 absent；`communication` 是具名结构。
@@ -494,6 +495,66 @@ async def test_correction_keeps_the_old_item_readable_as_history() -> None:
         row = await repo.get_item(session, item_id=old_id)
     assert row is not None, "旧条目不得被物理删除"
     assert row.description == "旧描述"
+
+
+@pytest.mark.parametrize("already_confirmed", [False, True])
+@pytest.mark.asyncio
+async def test_correction_rebinds_an_inferred_item_to_the_user_statement(already_confirmed: bool) -> None:
+    """纠正一条推断来源的条目：新条目的生成方式重绑为 `user_statement`（零覆盖区）。
+
+    两种起点都要走：未确认的候选，以及**已被确认的候选**——后者在档案页属
+    「已确认条目」，是界面给出「纠正」入口的形态（档案页第 3.4 节）。
+    断言四件事：
+
+    ① 新条目 `origin = user_statement` 且 `confirmation = confirmed`（第 2、3 节）；
+    ② 库中**本次纠正新写入的那一条**不是「候选来源 + `confirmed`」——`propose_item`
+       与 Worker 对同一组合都是硬拒，第 7 节要求这种请求被拒绝而不是被写进库
+       （起点是已确认候选时，旧条目本身处于该组合，那是 `confirm` 入口的合法结果，
+       不属本次纠正写入的行）；
+    ③ 新条目的 `source` 是档案页通道，不继承旧条目的会话来源（契约第 4 节：
+       补丁式的继承会让新条目继承旧条目的来源）；
+    ④ 旧条目转 `historical` 并互指，取数只含新条目。
+    """
+    object_id = await _new_object()
+    old_id = await _propose(object_id, origin="ai_inference", description="模型推断的描述")
+    if already_confirmed:
+        async with session_scope(get_settings()) as session:
+            await service.confirm_item(session, account_id=_ACCOUNT, item_id=old_id)
+
+    async with session_scope(get_settings()) as session:
+        new_item, superseded = await service.correct_item(
+            session, account_id=_ACCOUNT, item_id=old_id, description="使用者改写的描述"
+        )
+    new_id = str(new_item.item_id)
+
+    assert new_item.origin == "user_statement", "新描述是使用者写的，origin 不得沿用推断来源"
+    assert new_item.confirmation == "confirmed"
+    assert new_item.source == {"channel": "profile_page"}, "来源定位不得继承旧条目的会话来源"
+    assert superseded.freshness == "historical"
+    assert str(superseded.superseded_by) == new_id
+    assert str(new_item.supersedes) == old_id
+
+    async with session_scope(get_settings()) as session:
+        rows = list(
+            (
+                await session.execute(
+                    select(ProfileItem).where(ProfileItem.support_object_id == repo.to_object_uuid(object_id))
+                )
+            ).scalars()
+        )
+        grouped = await service.read_items(
+            session, account_id=_ACCOUNT, support_object_id=object_id, include_candidates=True
+        )
+
+    offenders = [
+        row.origin
+        for row in rows
+        if str(row.item_id) != old_id and row.origin in _CANDIDATE_ORIGINS and row.confirmation == "confirmed"
+    ]
+    assert len(rows) == 2, "纠正只新增一条条目（不留下第三个半成品）"
+    assert offenders == [], "纠正不得造出「推断被写成已确认」的行（第 7 节的硬约束）"
+    assert grouped.candidates == [], "被取代的旧候选不再作为候选呈现"
+    assert [item.description for item in grouped.items] == ["使用者改写的描述"]
 
 
 # ---------------------------------------------------------------------------
