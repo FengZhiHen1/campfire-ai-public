@@ -23,6 +23,7 @@ from campfire.core.db import check_database
 from campfire.core.health import ComponentHealth, HealthReport, Status
 from campfire.core.jobs import check_queue
 from campfire.modules.accounts.registration import api_overrides, sign_up_form_fields
+from campfire.modules.memory.routes import router as memory_router
 from campfire.modules.profile.authz import OwnerAuthorizer
 from campfire.modules.profile.routes import router as profile_router
 
@@ -98,6 +99,7 @@ app.add_middleware(get_middleware())
 # 路径前缀由各自的 router 声明（认证面那条 `/auth/*` 是 SDK 提供的路由，
 # 必须走中间件，见上）。
 app.include_router(profile_router)
+app.include_router(memory_router)
 
 
 @app.get("/health")
