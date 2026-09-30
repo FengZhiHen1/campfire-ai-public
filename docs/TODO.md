@@ -50,6 +50,7 @@
 
 | 事项 | 说明 |
 |---|---|
+| 统一多题提问的工具与事件接入 | **交互已确认（2026-09-30）**：只保留同一种 `QuestionCard`，单次可提出多题，逐题保留作答，整组统一提交。现有[咨询对话界面](技术设计/technical-details/咨询对话界面.md)第 6.1 节仍是单题载荷草案；实施前须同步对齐 `ask_user` 参数、`question` 事件的批次形状、历史水合与回答关联，并验证显式跳过按未排除处理。本轮仅完成本地虚构交互预览，不修改已实现的基座事件或后端接口 |
 | 咨询面后端 HTTP/SSE 契约未成文 | [咨询对话界面](技术设计/technical-details/咨询对话界面.md)（前端技术设计）已定，但其依赖的后端接口（`POST /consult/sessions/:id/messages`、会话历史、取消端点、应急启动端点）属 `surfaces/consult/` 的契约文档，尚未成文；前端文档中的路径为占位命名，落地前须对齐（2026-09-29 前端设计时发现）。**2026-09-30 新增同批缺口**：引导的 UI 跳过入口（写 `campfire_onboarding.state = skipped`）与引导注入的触发判定端点也在这一批 |
 | 引导种子问题集的精确题数与措辞 | [onboarding](技术设计/面/consult/skills/onboarding.md) 已定「以 `emergency_context` 八组为纲、6–8 问」的框架；具体题数（6 还是 8）与每题措辞在 `references/seed-questions.md` 成文时定，须与[应急 skill](技术设计/面/consult/skills/emergency-consulting.md) 的追问判据互查口径（哪些项引导问过、应急就不再问） |
 | 案例检索查询改写桥的评测验证 | [RAG 策略](技术设计/technical-details/RAG策略.md)第 8.1 节的改写引导**已按用户 2026-09-29 指令写入**两个咨询 skill（日常 3.4 节、应急第 6 节）；评测集第五类"家长口语改写"仍须量化鸿沟幅度与改写有效性，**评测显示改写无效则回退 skill 引导**；字面路口语别名与 `ebp_tags` 反向映射为条件项（后者需先核验 NCAEP 值域）（2026-09-29 审查发现） |
