@@ -82,6 +82,15 @@ async def write_from_pending(session: AsyncSession, *, pending_id: object, lease
     Worker 只消费显式载荷，因此这里沿用载荷里的 `origin` 与它推导出的确认状态，
     并再校验一次「推断不得是 confirmed」——载荷可能是历史版本或被手工构造的。
 
+    可选键：缺键是「未提供」，形状非法是失败（2026-09-30，D-41）
+    ------------------------------------------------------
+
+    六个可选键（情境、表现、有效支持、无效支持、本人陈述、可能需求）形状不对时
+    显式失败，与必填键同一处置；只有「键缺失或值为 `None`」才算未提供。
+    放宽成「形状不对也按未提供处理」会把载荷里本该落库的内容静默丢掉，而记录仍被
+    置 `done`——`done` 是「写入成功」的唯一表示（写入路径第 2 节），下游于是读到
+    「已完成但内容缺失」的条目。判据见 `_optional_list` / `_optional_text`。
+
     Args:
         session: 关系库会话（调用方负责提交）。
         pending_id: 待处理记录标识。
@@ -91,8 +100,8 @@ async def write_from_pending(session: AsyncSession, *, pending_id: object, lease
         :class:`ProfileWriteResult`。
 
     Raises:
-        ProfileDataError: 载荷缺必填键或形状不合法。这类失败重试无用，
-            由调用方转 `dead`。
+        ProfileDataError: 载荷缺必填键，或任一字段（含可选键）形状不合法。
+            这类失败重试无用，由调用方转 `dead`。
         AuthorizationError: 对象已归档或不属于该账号（含已注销）。
             由调用方按第 6 节转 `dead` 并记原因。
         PendingWriteNotFoundError: 记录在领取后消失（极端并发）。
@@ -171,6 +180,14 @@ async def write_from_pending(session: AsyncSession, *, pending_id: object, lease
             detail=f"pending_id={record.id}",
         )
 
+    # 可选键先定性再写：形状非法与「未提供」分开（见 `_optional_list`）。
+    contexts = _optional_list(payload, PAYLOAD_CONTEXTS, record.id)
+    manifestations = _optional_list(payload, PAYLOAD_MANIFESTATIONS, record.id)
+    helpful_support = _optional_list(payload, PAYLOAD_HELPFUL_SUPPORT, record.id)
+    unhelpful_support = _optional_list(payload, PAYLOAD_UNHELPFUL_SUPPORT, record.id)
+    person_report = _optional_text(payload, PAYLOAD_PERSON_REPORT, record.id)
+    probable_need = _optional_text(payload, PAYLOAD_PROBABLE_NEED, record.id)
+
     item = await insert_item(
         session,
         support_object_id=record.support_object_id,
@@ -180,12 +197,12 @@ async def write_from_pending(session: AsyncSession, *, pending_id: object, lease
         origin=origin,
         confirmation=confirmation,
         source=dict(record.source or {}),
-        contexts=_list_or_none(payload.get(PAYLOAD_CONTEXTS)),
-        manifestations=_list_or_none(payload.get(PAYLOAD_MANIFESTATIONS)),
-        helpful_support=_list_or_none(payload.get(PAYLOAD_HELPFUL_SUPPORT)),
-        unhelpful_support=_list_or_none(payload.get(PAYLOAD_UNHELPFUL_SUPPORT)),
-        person_report=_text_or_none(payload.get(PAYLOAD_PERSON_REPORT)),
-        probable_need=_text_or_none(payload.get(PAYLOAD_PROBABLE_NEED)),
+        contexts=contexts,
+        manifestations=manifestations,
+        helpful_support=helpful_support,
+        unhelpful_support=unhelpful_support,
+        person_report=person_report,
+        probable_need=probable_need,
         pending_id=record.id,
     )
     # 置 done 与清理租约同一次更新；带租约栅栏（CORE-03）：写入可能超过租约时长，
@@ -194,18 +211,49 @@ async def write_from_pending(session: AsyncSession, *, pending_id: object, lease
     return ProfileWriteResult(pending_id=str(pending_id), written=True, item_id=str(item.item_id))
 
 
-def _list_or_none(raw: object) -> list | None:
-    """把载荷里的可选列表键收窄成 list；不是列表时按「未提供」处理。
+def _optional_list(payload: dict, key: str, pending_id: object) -> list | None:
+    """取载荷里的可选列表键：键缺失或值为 `None` → 「未提供」；形状不对 → 显式失败。
 
-    不抛错：载荷形状由工具层保证，而这里宽松处理只是少存一个可选字段，
-    不会产生错误事实。反之若因此失败，一次本可成功的写入会被判死。
+    为什么不把形状非法也算「未提供」（2026-09-30，D-41）：那会静默丢掉一段本该
+    落库的内容，而条目随即被置 `done`，下游只看到「已完成但内容缺失」。同一份载荷里
+    必填键形状不对会抛错，可选键因此同一处置（写入路径第 6 节：不得静默丢弃）。
+    载荷按第 3 节是自足的，形状不对说明它被手工构造或来自旧版本——重试无用，
+    由调用方转 `dead` 并告警。
+
+    Raises:
+        ProfileDataError: 键在而值不是列表。
     """
-    return list(raw) if isinstance(raw, list) else None
+    raw = payload.get(key)
+    if raw is None:
+        return None
+    if not isinstance(raw, list):
+        raise ProfileDataError(
+            f"载荷的可选键形状非法：{key} 不是列表",
+            operation="write_from_pending",
+            detail=f"pending_id={pending_id} key={key} type={type(raw).__name__}",
+        )
+    return list(raw)
 
 
-def _text_or_none(raw: object) -> str | None:
-    """把载荷里的可选文本键收窄成 str；不是字符串时按「未提供」处理。"""
-    return raw if isinstance(raw, str) and raw else None
+def _optional_text(payload: dict, key: str, pending_id: object) -> str | None:
+    """取载荷里的可选文本键：键缺失、`None` 或空串 → 「未提供」；形状不对 → 显式失败。
+
+    空串按「未提供」处理不是形状问题（类型是对的），与必填键的判据一致——它同样
+    把空串当缺失。其余理由见 `_optional_list`。
+
+    Raises:
+        ProfileDataError: 键在而值不是字符串。
+    """
+    raw = payload.get(key)
+    if raw is None:
+        return None
+    if not isinstance(raw, str):
+        raise ProfileDataError(
+            f"载荷的可选键形状非法：{key} 不是字符串",
+            operation="write_from_pending",
+            detail=f"pending_id={pending_id} key={key} type={type(raw).__name__}",
+        )
+    return raw or None
 
 
 def to_pending_uuid(raw: object) -> uuid.UUID:
