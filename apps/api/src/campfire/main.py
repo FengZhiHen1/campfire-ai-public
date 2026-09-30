@@ -18,12 +18,16 @@ from campfire.agent.model import check_model_endpoint
 from campfire.core.auth import check_auth_core
 from campfire.core.auth.supertokens import init_supertokens
 from campfire.core.authz import set_authorizer
+from campfire.core.cache import close_cache, get_cache
 from campfire.core.config import Settings, get_settings
 from campfire.core.db import check_database
 from campfire.core.health import ComponentHealth, HealthReport, Status
 from campfire.core.jobs import check_queue
 from campfire.modules.accounts.registration import api_overrides, sign_up_form_fields
 from campfire.modules.profile.authz import OwnerAuthorizer
+from campfire.surfaces.consult import router as consult_router
+from campfire.surfaces.consult.assembly import runner_is_wired
+from campfire.surfaces.consult.runbus import cancel_pumps
 
 logger = logging.getLogger("campfire")
 
@@ -59,8 +63,18 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     )
     init_supertokens(settings, api_overrides=api_overrides, sign_up_form_fields=sign_up_form_fields)
     set_authorizer(OwnerAuthorizer(settings))
+    # Redis 客户端按进程建一次（连接池复用；见 core/cache 的说明）。这里只是让
+    # 「第一次请求才建池」提前到启动，池的构造本身不发连接，因此不影响启动顺序。
+    get_cache(settings)
+    if not runner_is_wired():  # pragma: no cover —— 生产装配缺失时的启动期提示
+        # 咨询面的运行器由装配处注入，而它需要引用索引的持久化实现（全仓库尚无）。
+        # 这里只记一条警告：发消息端点会回 503，而不是回一个调用不了的 202。
+        logger.warning("咨询面运行器尚未装配：发消息端点将回 503（见 surfaces/consult/assembly.py）")
     logger.info("campfire api 启动：环境=%s", settings.app_env)
     yield
+    # 收尾顺序：先停后台推进任务（它们会继续写 Redis），再关连接池。
+    cancel_pumps()
+    await close_cache()
     logger.info("campfire api 停止")
 
 
@@ -86,6 +100,14 @@ app = FastAPI(title="篝火智答 API", version="0.1.0", lifespan=lifespan)
 # 中间件而非 `include_router`：SDK 内部按 path 前缀分派，且需要读写 cookie，
 # 用中间件才能保持它的原生行为。
 app.add_middleware(get_middleware())
+
+# 咨询面的自有路由（HTTP 与 SSE 契约第 3、4 节）。`include_router` 而不是中间件：
+# 这些是普通业务端点，鉴权由各自的 `require_session` 依赖完成；SDK 的 `/auth/*`
+# 走中间件是因为它需要控制 cookie 与路径前缀的原生行为。
+#
+# 按面分组是因为路径前缀（`/consult`）就是面的边界，且将来的应急面与档案面各有
+# 自己的路由表——一个 `include_router` 一行，装配处一眼能看出哪些面已挂载。
+app.include_router(consult_router)
 
 
 @app.get("/health")
