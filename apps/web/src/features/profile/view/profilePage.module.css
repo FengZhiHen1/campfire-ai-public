@@ -1,0 +1,46 @@
+/* 档案页私有布局。视觉契约的唯一权威是 tokens 层与 components.css；
+ * 本文件只放页面级排布（切换器滚动、摘要区的分隔），不定义色值与间距数值。 */
+
+.heading {
+  font-family: var(--font-serif);
+  font-size: var(--text-xl);
+  font-weight: 500;
+}
+
+/* 对象切换 chip 行：横向滚动不换行。切换是平级单选，滚动比换行堆叠语义更准。 */
+.switcher {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  overflow-x: auto;
+  padding-block: var(--space-2);
+  scrollbar-width: none;
+}
+
+.switcher::-webkit-scrollbar {
+  display: none;
+}
+
+.switcher > .tag {
+  flex: none;
+  gap: var(--space-2);
+}
+
+/* 摘要字段：字段之间用软分隔线，字段内部条目紧凑排布（摘要是一页速览，不是列表）。 */
+.summaryField + .summaryField {
+  margin-top: var(--space-4);
+}
+
+.summaryLabel {
+  color: var(--meta);
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+
+.summaryItem {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+  color: var(--fg-2);
+}
