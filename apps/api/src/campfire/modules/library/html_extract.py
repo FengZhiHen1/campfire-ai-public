@@ -1,27 +1,27 @@
 """HTML → Markdown 加工：把网页原件整理成可摄取的语料件（RAG 策略第 1.1 节）。
 
-**为什么需要这一层**：设计规定"系统不解析 PDF"、「HTML 同样在链外清理」——
-语料必须**已处理好的 Markdown 或 HTML** 才进系统，而"分块依赖标题层级"
+为什么需要这一层：设计规定"系统不解析 PDF"、「HTML 同样在链外清理」——
+语料必须已处理好的 Markdown 或 HTML 才进系统，而"分块依赖标题层级"
 （`MarkdownNodeParser` 靠 `#` 写 `header_path`）。原始网页是导航、页脚、脚本
 与正文混杂的树，直接入库会让噪声进入检索、并让正文失去层级。
 
-**归属**：数据加工属检索链的一部分，因此归 ``modules/library``（与摄取链同模块，
+归属：数据加工属检索链的一部分，因此归 `modules/library`（与摄取链同模块，
 依据见 decisions/检索链归入library模块.md）。CLI 只负责命令行形态。
 
-**为什么自己写序列化而不找现成转换库**（2026-09-29 定）：
+为什么自己写序列化而不找现成转换库（2026-09-29 定）：
 
-- 需要**完全控制标题层级**（`h1–h6` → `#–######`）——它是分块链的硬依赖，
+- 需要完全控制标题层级（`h1–h6` → `#–######`）——它是分块链的硬依赖，
   转换库的层级约定不一定等于 Markdown 的 ATX 标题；
-- 需要**表格转 Markdown 表格**且与 `chunking.py` 的表格行识别（`|...|`）
+- 需要表格转 Markdown 表格且与 `chunking.py` 的表格行识别（`|...|`）
   保持一致；
-- 需要**对丢弃的内容留痕**（图片、未选中的容器）——通用转换库静默丢内容，
+- 需要对丢弃的内容留痕（图片、未选中的容器）——通用转换库静默丢内容，
   而"不静默丢弃"是本项目的铁律；
-- 需要**从出版方元数据生成 frontmatter**（`citation_*`/`DC.*`），把出处、
+- 需要从出版方元数据生成 frontmatter（`citation_*`/`DC.*`），把出处、
   DOI、许可随语料一起带走（`EVID-B` 的判据）。
 
 BeautifulSoup 只承担"解析成树"这一纯通用件，遍历与序列化由本模块持有。
 
-**许可与内容身份**：本模块只做机械转换，**不判断许可、不判断内容是否为所需**。
+许可与内容身份：本模块只做机械转换，不判断许可、不判断内容是否为所需。
 从 `citation_*` meta 抽出的 DOI/标题写入 frontmatter 供人工核对——采集清单里
 有过"凭猜测的 PMC 编号抓回完全无关文献且 HTTP 200"的实例，身份校验不能只看
 "文件在不在"。
@@ -40,7 +40,7 @@ from bs4 import BeautifulSoup, Tag
 #:   实测 80,523 字符 vs `<article>` 的 87,195——后者含 front-matter 的作者与单位，
 #:   那些会被渲染成 `###` 标题、把后续正文错误嵌套）；
 #: - 一般页面用 `<article>` 可覆盖全文文本的 83–86%，是有效边界；
-#: - 都找不到时退回 `body`，并在报告里标注（**不假装选到了正文**）。
+#: - 都找不到时退回 `body`，并在报告里标注（不假装选到了正文）。
 _CONTENT_SELECTORS = (
     "section.body.main-article-body",
     "div.main-article-body",
@@ -90,7 +90,7 @@ _IMAGE_MARKER = "（此处原件有图片，一期不支持图片，未接入）
 class HtmlConversion:
     """一次 HTML 转换的产物与如实记账。"""
 
-    #: 转换出的 Markdown 正文（**不含 frontmatter**，由调用方拼接）。
+    #: 转换出的 Markdown 正文（不含 frontmatter，由调用方拼接）。
     markdown: str
     #: 选中的正文容器选择器；退回 `body` 时是 `"body"`。
     container: str
@@ -105,14 +105,14 @@ class HtmlConversion:
 
 
 def _pick_container(soup: BeautifulSoup) -> tuple[Tag, str]:
-    """选正文容器：按候选**优先级**取第一个命中的选择器，取其文本最多的匹配。
+    """选正文容器：按候选优先级取第一个命中的选择器，取其文本最多的匹配。
 
     为什么按优先级而不是全局取最大（2026-09-29 实测教训）：学术出版页的
-    `<article>` 比正文容器**更大**（含 front-matter 的作者与单位，实测 87,195
+    `<article>` 比正文容器更大（含 front-matter 的作者与单位，实测 87,195
     vs 80,523 字符）。若一律取"文本最多"，更精确的语义容器永远赢不了，
     作者名会被渲染成 `###` 标题并错误嵌套后续正文。
 
-    优先级耗尽后退回 `body` 并在返回值中标注——**不假装选到了正文**。
+    优先级耗尽后退回 `body` 并在返回值中标注——不假装选到了正文。
     """
     for selector in _CONTENT_SELECTORS:
         candidates = soup.select(selector)
@@ -185,7 +185,7 @@ def _inline_text(tag: Tag) -> str:
 def _table_to_markdown(table: Tag, report: HtmlConversion) -> str:
     """把 `<table>` 转成 Markdown 表格。
 
-    行内单元格数不一致时**以首行为列数补齐/截断**——Markdown 表格要求矩形；
+    行内单元格数不一致时以首行为列数补齐/截断——Markdown 表格要求矩形；
     这是有损的，因此把不一致的行数记账到报告（不静默）。
     """
     rows: list[list[str]] = []
@@ -296,12 +296,12 @@ def _render_block(tag: Tag, report: HtmlConversion, out: list[str]) -> None:
         return
 
     if name == "a":
-        # 块级链接：文本是正文内容的一部分，**必须保留**。
+        # 块级链接：文本是正文内容的一部分，必须保留。
         # 实测教训（2026-09-29）：早先这里直接 return，导致 PMC 页面里
-        # 「Supplementary file1 (PDF 160 KB)」这类补充材料链接**整条消失**——
+        # 「Supplementary file1 (PDF 160 KB)」这类补充材料链接整条消失——
         # 是真实内容丢失，不是噪声（守恒对账抓到了它）。
         #
-        # 例外：**界面控件**。实测该类链接的结构特征是带 `target="_blank"` 与
+        # 例外：界面控件。实测该类链接的结构特征是带 `target="_blank"` 与
         # `rel="noopener"`（如「Open in a new tab」，它打开的是图片查看面板，
         # href 指向 `figure/Fig1/` 而非内容）。这是通用网页约定，不是站点特定
         # class 名——按 class 判会随站点改版失效。父级是 `figure` 同样视为控件。
@@ -316,7 +316,7 @@ def _render_block(tag: Tag, report: HtmlConversion, out: list[str]) -> None:
 
     if name in {"figure", "figcaption"}:
         # 图与图注：图片本身留痕，图注文本保留（常含关键信息）。
-        # **递归而不是整体取文本**：整体取文本会把 figure 内的交互控件
+        # 递归而不是整体取文本：整体取文本会把 figure 内的交互控件
         # （如「Open in a new tab」）也带进来，而控件应由 `<a>` 分支按结构丢弃。
         inner: list[str] = []
         for child in tag.children:
@@ -351,8 +351,8 @@ def _render_block(tag: Tag, report: HtmlConversion, out: list[str]) -> None:
 def _extract_metadata(soup: BeautifulSoup) -> dict[str, str]:
     """从出版方元数据标签抽 frontmatter 字段。
 
-    **用出版方自己的元数据而非人工转写**：出处、DOI、日期由发布方标注，
-    转写会引入错误。同时它是**内容身份校验的材料**——采集过程出现过
+    用出版方自己的元数据而非人工转写：出处、DOI、日期由发布方标注，
+    转写会引入错误。同时它是内容身份校验的材料——采集过程出现过
     "编号猜错、抓回完全无关文献且 HTTP 200"的实例。
     """
 
@@ -407,7 +407,7 @@ def _extract_metadata(soup: BeautifulSoup) -> dict[str, str]:
 def convert_html(html: str) -> HtmlConversion:
     """把 HTML 转成 Markdown 正文与元数据。
 
-    纯度：**不读文件、不写文件、不连库、不调模型**——便于测试与复用，
+    纯度：不读文件、不写文件、不连库、不调模型——便于测试与复用，
     也保证"转换"这一步零成本、可先审后喂。
 
     Raises:
@@ -440,13 +440,13 @@ def _yaml_value(value: str) -> str:
 
     三条规则都来自实测（2026-09-29 用 PyYAML 验证）：
 
-    - **含 `#` 必须加引号**：不加会被当成注释，实测 `"带 # 井号"` 读回只有 `"带"`
-      ——**静默截断**，比报错更危险；
-    - **含半角 `:` 必须加引号**：会让解析器认为是嵌套映射（`ScannerError`）；
-    - **换行必须压成空格**：frontmatter 是「一key一行」的格式（读侧按行切），
+    - 含 `#` 必须加引号：不加会被当成注释，实测 `"带 # 井号"` 读回只有 `"带"`
+      ——静默截断，比报错更危险；
+    - 含半角 `:` 必须加引号：会让解析器认为是嵌套映射（`ScannerError`）；
+    - 换行必须压成空格：frontmatter 是「一key一行」的格式（读侧按行切），
       带换行的值会破坏结构。标题与出处里的换行本就是排版换行，压成空格无损。
 
-    全角冒号 `：` 在 YAML 里是普通字符，**不需要引号**（实测确认）。
+    全角冒号 `：` 在 YAML 里是普通字符，不需要引号（实测确认）。
     """
     normalized = re.sub(r"\s*\n\s*", " ", value).strip()
     if any(ch in normalized for ch in (":", "#", '"', "'")) or normalized != value:
@@ -467,7 +467,7 @@ def build_markdown(
 
     frontmatter 的键与摄取链的约定一致（`source`/`applicable_scope`/`title` 等，
     见 ingestion.parse_frontmatter）；`derivation` 记录加工方式与丢弃的内容，
-    让"做了什么加工"随语料存活——**不静默丢弃**。
+    让"做了什么加工"随语料存活——不静默丢弃。
     """
     meta = dict(conversion.metadata)
     if title:

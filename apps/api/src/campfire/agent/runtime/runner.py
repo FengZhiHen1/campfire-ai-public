@@ -1,48 +1,46 @@
 """运行编排：一次运行的全部行为与失败语义。
 
 依据 docs/技术设计/technical-details/通用基座.md 第 2、3、4、5、7、9 节。这个模块把前面
-几步的零件装成一次运行，形状如下：
+几步的零件装成一次运行，形状如下（text 代码块）：
 
-```text
-读历史 ──► 决定要追加哪些注入消息（目录/激活/可用性：与历史里最后一条同名消息不同才追加）
-        ──► 渲染注入项（写引用索引）──► 派生本轮模型窗口 ──► 交给 SDK 流式运行
-        ──► 把 SDK 事件翻译成基座事件 ──► 结束（含原因与引用清单）
-```
+    读历史 ──► 决定要追加哪些注入消息（目录/激活/可用性：与历史里最后一条同名消息不同才追加）
+            ──► 渲染注入项（写引用索引）──► 派生本轮模型窗口 ──► 交给 SDK 流式运行
+            ──► 把 SDK 事件翻译成基座事件 ──► 结束（含原因与引用清单）
 
-## 六条刻意写清楚的边界
+六条刻意写清楚的边界：
 
-1. **注入项就是消息，而且只加在末尾**（压缩策略第 8 节第 1 条：只在末尾追加）。目录、
+1. 注入项就是消息，而且只加在末尾（压缩策略第 8 节第 1 条：只在末尾追加）。目录、
    激活内容、工具可用性都在「与历史里最后一条同名消息不同」时才追加——这条判断只依赖
    会话历史本身，因此不需要另存「窗口配方」或「上次注入集合」这类第二真相。
-2. **注入失败分两类，处置相反**：取数失败由面用 ``UnavailableSource`` 表达，基座**标注该
-   来源不可用并继续**（第 9 节）；而**渲染或引用索引写入失败**是持久化失败，基座以
-   ``injection_failed`` 结束本次运行——索引里可能已有记录而窗口里没有，继续下去会让
-   ``run_finished`` 报出模型从未看到的依据。
-3. **窗口只裁模型输入，不动落库**：裁剪经 ``RunConfig.session_input_callback`` 表达，
+2. 注入失败分两类，处置相反：取数失败由面用 `UnavailableSource` 表达，基座标注该
+   来源不可用并继续（第 9 节）；而渲染或引用索引写入失败是持久化失败，基座以
+   `injection_failed` 结束本次运行——索引里可能已有记录而窗口里没有，继续下去会让
+   `run_finished` 报出模型从未看到的依据。
+3. 窗口只裁模型输入，不动落库：裁剪经 `RunConfig.session_input_callback` 表达，
    会话里仍是完整历史（第 2 节）。
-4. **上界只有 180 秒**（第 2 节）：用**每次拉取流事件的剩余预算**实现，而不是给整个
+4. 上界只有 180 秒（第 2 节）：用每次拉取流事件的剩余预算实现，而不是给整个
    生成器套一层超时——后者的定时器会在生成器把事件交给消费方（例如慢速 SSE 客户端）时
-   继续走，最后取消的是**消费方的任务**，那是错误的处置对象。触顶按第 9 节以
-   ``run_finished(reason="timeout")`` 结束并保留已产生的引用。
-5. **取消不发事件**：消费者取消自己的任务后收不到任何后续事件，发了也是空的。取消路径
-   只做两件事——停掉 SDK 侧的运行、把 ``CancelledError`` 继续抛出去（第 9 节：
+   继续走，最后取消的是消费方的任务，那是错误的处置对象。触顶按第 9 节以
+   `run_finished(reason="timeout")` 结束并保留已产生的引用。
+5. 取消不发事件：消费者取消自己的任务后收不到任何后续事件，发了也是空的。取消路径
+   只做两件事——停掉 SDK 侧的运行、把 `CancelledError` 继续抛出去（第 9 节：
    运行被取消 → 立即停止调用）。
-6. **模型失败与内部失败分开报码**：模型侧的异常（超时、限流、供应商错误、认证）归
-   ``model_unavailable`` 并带上细分原因；其余归 ``internal``。分类器在
+6. 模型失败与内部失败分开报码：模型侧的异常（超时、限流、供应商错误、认证）归
+   `model_unavailable` 并带上细分原因；其余归 `internal`。分类器在
    :mod:`campfire.agent.model`，判定顺序在那里有说明。
 
-## 已知缺口（登记于 docs/TODO.md）
+已知缺口（登记于 docs/TODO.md）：
 
-- **基座不做工具级重试**：第 9 节写「工具失败 → 作为结果回给模型；重试耗尽则以明确失败
-  结束本次运行」，但一期没有任何工具级重试策略——重试的循环是**模型自己**（它会看到
-  ``tool_failed`` 再决定要不要换个参数重试）。真的反复失败会一直走到 180 秒上限，
-  以 ``timeout`` 结束。接入真实工具后再评估是否要加重试策略。
-- **会话写入失败靠异常检出**：SDK 会 ``await`` 会话写入，写入抛错即本次运行失败；但一个
+- 基座不做工具级重试：第 9 节写「工具失败 → 作为结果回给模型；重试耗尽则以明确失败
+  结束本次运行」，但一期没有任何工具级重试策略——重试的循环是模型自己（它会看到
+  `tool_failed` 再决定要不要换个参数重试）。真的反复失败会一直走到 180 秒上限，
+  以 `timeout` 结束。接入真实工具后再评估是否要加重试策略。
+- 会话写入失败靠异常检出：SDK 会 `await` 会话写入，写入抛错即本次运行失败；但一个
   「不抛错也不写」的会话实现不会被发现。这条已登记为待验证事实（TECH-16）。
 
-## 为什么不调用 SDK 的压缩能力
+为什么不调用 SDK 的压缩能力：
 
-第 2 节明确不使用 ``OpenAIResponsesCompactionSession``：它会清空并重写历史，在单真源下
+第 2 节明确不使用 `OpenAIResponsesCompactionSession`：它会清空并重写历史，在单真源下
 等于改写用户可见的历史。上下文压力只由窗口与（尚未实现的）压缩机制处理。
 """
 
@@ -127,7 +125,7 @@ class RunRequest:
     """当前面，用于按面收窄技能目录。"""
 
     instructions: str
-    """**静态**系统提示（压缩策略第 8 节第 2 条）。"""
+    """静态系统提示（压缩策略第 8 节第 2 条）。"""
 
     injections: InjectionBatch = field(default_factory=InjectionBatch)
     """本轮的业务注入项（档案摘要、检索结果…）与取数失败的来源。"""
@@ -139,7 +137,7 @@ class RunRequest:
     """未激活任何 skill 时面配置的默认可用工具集（一期只含只读类）。"""
 
     user_input: str | None = None
-    """本轮使用者输入；纯注入（无用户消息）时可为 ``None``。"""
+    """本轮使用者输入；纯注入（无用户消息）时可为 `None`。"""
 
     context_payload: object | None = None
     """透传给产品侧工具的领域事实；基座不解读。"""
@@ -160,7 +158,7 @@ class CompactionWiring:
     """压缩的协作者与参数（装配处提供）。
 
     单独成包而不是四个平铺参数，是为了让「压缩要不要接线」在构造点一眼可见：不传它，
-    运行编排就不做压缩（窗口退化为全量历史——**安全方向**，但压缩策略第 2 节的触发不存在）。
+    运行编排就不做压缩（窗口退化为全量历史——安全方向，但压缩策略第 2 节的触发不存在）。
     """
 
     def __init__(
@@ -174,8 +172,8 @@ class CompactionWiring:
     ) -> None:
         """绑定参数、摘要实现、记账端口与指令。
 
-        ``instruction`` 的内容由产品侧拥有（压缩策略第 4 节的六节结构属领域约定）。
-        ``manual`` 对应第 2 节的手动触发：**仅供运维与调试，不暴露给使用者**。
+        `instruction` 的内容由产品侧拥有（压缩策略第 4 节的六节结构属领域约定）。
+        `manual` 对应第 2 节的手动触发：仅供运维与调试，不暴露给使用者。
         """
         self.settings = settings
         self.summarizer = summarizer
@@ -212,8 +210,8 @@ class AgentRunner:
         """绑定协作者。会话工厂与引用索引由装配处提供（基座不拥有连接池与表）。
 
         Raises:
-            RuntimeAssemblyError: 配置自相矛盾——存在可按 ``description`` 自动匹配的 skill，
-                但工具池里没有模型侧激活工具（``skill``），模型将无法激活任何 skill。
+            RuntimeAssemblyError: 配置自相矛盾——存在可按 `description` 自动匹配的 skill，
+                但工具池里没有模型侧激活工具（`skill`），模型将无法激活任何 skill。
         """
         self._binding = binding
         self._tools = tools
@@ -251,8 +249,8 @@ class AgentRunner:
     async def run(self, request: RunRequest) -> AsyncIterator[RunEvent]:
         """执行一次运行，逐个产出事件。
 
-        生成器结束即运行结束；正常情况下最后一个事件是 ``run_finished`` 或 ``run_failed``。
-        消费者取消自己的任务时不会收到结束事件（取消以 ``CancelledError`` 表达）。
+        生成器结束即运行结束；正常情况下最后一个事件是 `run_finished` 或 `run_failed`。
+        消费者取消自己的任务时不会收到结束事件（取消以 `CancelledError` 表达）。
         """
         started = time.monotonic()
         run_id = uuid.uuid4().hex
@@ -291,9 +289,9 @@ class AgentRunner:
             )
             return
         except Exception as exc:  # noqa: BLE001 —— 注入侧的准备失败也是「本次运行明确失败」
-            # 实测：技能目录超预算（``SkillCatalogOverflowError``）会从这里裸冒出去——0 次模型
-            # 请求、没有 ``run_failed``，调用方只能看到异常。注入侧的一切准备失败都归
-            # ``injection_failed``（基座第 4 节：注入是基座的职责，失败要说清是它）。
+            # 实测：技能目录超预算（`SkillCatalogOverflowError`）会从这里裸冒出去——0 次模型
+            # 请求、没有 `run_failed`，调用方只能看到异常。注入侧的一切准备失败都归
+            # `injection_failed`（基座第 4 节：注入是基座的职责，失败要说清是它）。
             logger.warning("注入准备失败 run=%s error=%s", run_id, type(exc).__name__)
             yield _failure(
                 "injection_failed",
@@ -321,7 +319,7 @@ class AgentRunner:
         for record in recorder.issued:
             yield CitationEvent(citation=record)
         if facts is not None and facts.performed:
-            # 放在 run_started **之后**：事件流以 run_started 为首项是第 7 节的形状约定，
+            # 放在 run_started 之后：事件流以 run_started 为首项是第 7 节的形状约定，
             # 压缩提示不该抢在它前面（实测第一版就是 ProgressEvent 排第一）。
             yield ProgressEvent(message="上下文压力偏高，已压缩较早的历史。")
 
@@ -385,7 +383,7 @@ class AgentRunner:
         单独成方法有两个理由：一是让 :meth:`run` 只剩「准备 → 交付」两步；二是溢出恢复需要
         「重跑整次 SDK 调用」，那是一个循环，混在准备逻辑里会让人看不出这个循环的边界。
 
-        **已知代价（写清楚，不藏）**：重试会把本轮新增项（注入 + 使用者消息）再交给 SDK 一次；
+        已知代价（写清楚，不藏）：重试会把本轮新增项（注入 + 使用者消息）再交给 SDK 一次；
         若首次尝试已经把这批项部分落库，会话里可能出现重复消息。要彻底消除需要会话事务，
         而会话级重写是压缩策略第 10 节明确一期不做的范围。溢出是一期几乎不会走的路径
         （阈值约 80 万 token），因此接受这个代价并在此标注。
@@ -456,18 +454,18 @@ class AgentRunner:
         *,
         force_max_reduction: bool = False,
     ) -> tuple[list[TResponseInputItem], CompactionFacts | None]:
-        """运行前压缩，并把**任何**失败如实转成降级事实（绝不裸异常冒给调用方）。
+        """运行前压缩，并把任何失败如实转成降级事实（绝不裸异常冒给调用方）。
 
-        为什么在这里兜住：``compact`` 会经过记账端口与会话写入两处外部 I/O，任一失败若冒到
-        调用方，调用方拿到的是裸异常而不是 ``run_failed`` 事件（基座第 9 节要求会话写入失败
+        为什么在这里兜住：`compact` 会经过记账端口与会话写入两处外部 I/O，任一失败若冒到
+        调用方，调用方拿到的是裸异常而不是 `run_failed` 事件（基座第 9 节要求会话写入失败
         必须表现为「本次运行明确失败」）。这里把所有异常收成一个带原因的降级事实：
 
-        - **窗口未被改写**（机制保证只在落库成功后才算压缩完成），对话完好；
-        - 因此继续跑一次**未压缩**的运行，比因为观测/记账表不可用就让使用者答不了话更合理；
-        - 降级必须可见：记 warning，且 ``CompactionFacts.reason`` 会进运行记录。
+        - 窗口未被改写（机制保证只在落库成功后才算压缩完成），对话完好；
+        - 因此继续跑一次未压缩的运行，比因为观测/记账表不可用就让使用者答不了话更合理；
+        - 降级必须可见：记 warning，且 `CompactionFacts.reason` 会进运行记录。
 
-        与基座第 9 节「会话写入失败 → 本次运行明确失败」的关系：那一条针对的是**对话本身**
-        没落库（下面由 SDK 的会话写入异常照旧转成 ``session_write_failed``）；压缩的追加写
+        与基座第 9 节「会话写入失败 → 本次运行明确失败」的关系：那一条针对的是对话本身
+        没落库（下面由 SDK 的会话写入异常照旧转成 `session_write_failed`）；压缩的追加写
         失败不会留下半截状态，故按降级处理。这是明确的设计取舍，登记在压缩策略「已知偏差」。
         """
         try:
@@ -499,9 +497,9 @@ class AgentRunner:
         *,
         force_max_reduction: bool = False,
     ) -> tuple[list[TResponseInputItem], CompactionFacts | None]:
-        """按需压缩；追加内容由机制通过 ``commit`` 端口在本事务内写回会话。
+        """按需压缩；追加内容由机制通过 `commit` 端口在本事务内写回会话。
 
-        压缩发生在**派生窗口之前**（压缩策略第 2 节的触发时机）。落库交给机制而不是这里，
+        压缩发生在派生窗口之前（压缩策略第 2 节的触发时机）。落库交给机制而不是这里，
         是为了让「记结束」排在落库之后（第 7 节：不留假装压缩完成的结束记录）。
         """
         wiring = self._compaction
@@ -555,13 +553,13 @@ class AgentRunner:
         与 :meth:`run` 分开是为了让「准备」和「流式消费」各自可读：前者是装配与注入，
         后者是事件循环与失败处置，混在一个函数里既难读也难改。
 
-        ``carried`` 是**上一次尝试**（溢出重试前）已产生的用量，最终用量是两者之和。
+        `carried` 是上一次尝试（溢出重试前）已产生的用量，最终用量是两者之和。
 
         Raises:
             asyncio.CancelledError: 消费者取消时原样抛出（第 9 节：立即停止调用）；
                 此时不产出结束事件，因为取消自己的消费者收不到任何后续事件。
             _ContextOverflow: 提供方明确报上下文溢出——交给 :meth:`run` 做一次最大头部缩减后
-                重试（压缩策略第 7 节），因此不在这里变成 ``run_failed``。
+                重试（压缩策略第 7 节），因此不在这里变成 `run_failed`。
         """
         run_id = recorder.run_id
         usage = carried if carried is not None else RunUsage()
@@ -622,7 +620,7 @@ class AgentRunner:
             yield _failed_from_exception(exc, recorder, usage, started, compactions=compactions)
             return
         finally:
-            # 消费者放弃这个流（``aclose()`` / ``break`` + GC）时也要停掉 SDK 侧的运行：
+            # 消费者放弃这个流（`aclose()` / `break` + GC）时也要停掉 SDK 侧的运行：
             # 否则它会继续调模型、继续写会话（实测 aclose 后 1.2 秒又发了一次请求、
             # 会话从 2 条涨到 5 条）。第 9 节：取消要立即停止调用。
             if not getattr(result, "is_complete", False):
@@ -655,7 +653,7 @@ class AgentRunner:
         """正常收尾：交出缓冲的事件 → 给被打断的调用补结束事件 → 产终态事件。
 
         单独成方法是为了让 :meth:`_stream` 的三条出口（触顶、完成、失败）各自一眼可读——
-        并且让「触顶」与「完成」走**同一段**收尾代码，避免两条路径慢慢分叉。
+        并且让「触顶」与「完成」走同一段收尾代码，避免两条路径慢慢分叉。
         """
         yield from tracker.flush(buffer)
         yield from tracker.interrupted_finishes(reason=interrupted)
@@ -678,7 +676,7 @@ class AgentRunner:
         只追加「与历史里最后一条同名消息不同」的那些（压缩策略第 8 节第 1 条：只在末尾追加，
         不原地替换）。判断完全由会话历史推导，不依赖进程内记忆。
 
-        **判据只看窗口，不看整段历史**：压缩之后，目录/可用性/激活内容都可能落在被摘要覆盖的
+        判据只看窗口，不看整段历史：压缩之后，目录/可用性/激活内容都可能落在被摘要覆盖的
         那一段里——那里已经不进窗口了。若继续按整段历史判断，模型会在压缩后丢掉技能目录，
         而基座还以为「已经注入过」。
         """
@@ -721,7 +719,7 @@ class AgentRunner:
 
 @dataclass(frozen=True, slots=True)
 class _SdkEvent:
-    """包一层，避免把 SDK 的事件类型与 ``_TimedOut`` 混在一起判断。"""
+    """包一层，避免把 SDK 的事件类型与 `_TimedOut` 混在一起判断。"""
 
     value: object
 
@@ -733,10 +731,10 @@ class _TimedOut:
 
 @dataclass(slots=True)
 class _Budget:
-    """运行预算：**模型与工具侧**耗时的上限。
+    """运行预算：模型与工具侧耗时的上限。
 
     刻意做成可变对象而不是传一个 float：交付事件给消费方的挂起时间要从预算里还回来
-    （第 2 节的上限针对的是模型与工具，不是慢速 SSE 客户端）。传 float 的话 ``_drain``
+    （第 2 节的上限针对的是模型与工具，不是慢速 SSE 客户端）。传 float 的话 `_drain`
     拿到的是当时那个值，还回来的时间它看不见。
     """
 
@@ -753,7 +751,7 @@ class _Budget:
 
 
 async def _drain(result: RunResultStreaming, budget: _Budget) -> AsyncIterator[_SdkEvent | _TimedOut]:
-    """按**剩余预算**逐次拉取 SDK 事件。
+    """按剩余预算逐次拉取 SDK 事件。
 
     每次拉取单独设超时，而不是把整个循环套进一个超时上下文：生成器把事件交给消费方时可能
     长时间挂起（慢速 SSE 客户端），那不是模型或工具在耗时，不该计入运行预算，更不该因此
@@ -803,7 +801,7 @@ def _tool_call_identity(item: object) -> tuple[str, str]:
 
 
 def _usage_of(raw: object) -> RunUsage:
-    """从 ``response.completed`` 事件里取提供方返回的用量（不折算字符）。"""
+    """从 `response.completed` 事件里取提供方返回的用量（不折算字符）。"""
     usage = getattr(getattr(raw, "response", None), "usage", None)
     if usage is None:
         return RunUsage(requests=1)
@@ -818,8 +816,8 @@ def _usage_of(raw: object) -> RunUsage:
 class _ToolCallTracker:
     """跟踪工具调用的开始与结束，保证事件成对。
 
-    单独成类是因为它是一份**跨事件的状态**：``tool_call_started`` 来自 SDK 的事件流，
-    ``tool_call_finished`` 来自工具桥的缓冲；两者要在运行编排里对齐，而模型编出不存在的
+    单独成类是因为它是一份跨事件的状态：`tool_call_started` 来自 SDK 的事件流，
+    `tool_call_finished` 来自工具桥的缓冲；两者要在运行编排里对齐，而模型编出不存在的
     工具名时 SDK 会自己处置那次调用（不经过基座的权限门），需要补一条失败结束事件。
     """
 
@@ -845,8 +843,8 @@ class _ToolCallTracker:
     def orphan_finish(self, event: object) -> ToolCallFinishedEvent | None:
         """为「SDK 自己处置、没经过基座权限门」的调用补一条失败结束事件。
 
-        目前唯一的来路是模型编出不存在的工具名：``RunConfig.tool_not_found_behavior``
-        设成 ``return_error_to_model``，SDK 直接把错误交回模型继续跑。若不补，面会看到
+        目前唯一的来路是模型编出不存在的工具名：`RunConfig.tool_not_found_behavior`
+        设成 `return_error_to_model`，SDK 直接把错误交回模型继续跑。若不补，面会看到
         一次只有开始没有结束的调用。
         """
         call_id = _tool_output_call_id(event)
@@ -866,10 +864,10 @@ class _ToolCallTracker:
     def interrupted_finishes(self, *, reason: str) -> Iterator[ToolCallFinishedEvent]:
         """为所有「已开始但永远不会结束」的调用补结束事件。
 
-        为什么必须有：SDK 在**执行工具之前**就发出 ``tool_called``，因此工具执行到一半触顶时
-        事件序列是 ``run_started → tool_call_started → run_finished``（实测）。不补的话面会看到
+        为什么必须有：SDK 在执行工具之前就发出 `tool_called`，因此工具执行到一半触顶时
+        事件序列是 `run_started → tool_call_started → run_finished`（实测）。不补的话面会看到
         一个永远转圈的工具指示器，而「事件成对」是第 7 节的形状要求（本类 docstring 也这么承诺）。
-        合成事件带 ``ok=False`` 与 ``tool_interrupted``，让消费方能一眼看出是中断而非失败。
+        合成事件带 `ok=False` 与 `tool_interrupted`，让消费方能一眼看出是中断而非失败。
         """
         for call_id, tool_name in list(self._pending.items()):
             self._finished.add(call_id)
@@ -884,7 +882,7 @@ class _ToolCallTracker:
 
 
 def _tool_output_call_id(event: object) -> str | None:
-    """取 ``tool_output`` 事件对应的调用标识；不是这类事件时返回 ``None``。"""
+    """取 `tool_output` 事件对应的调用标识；不是这类事件时返回 `None`。"""
     if not isinstance(event, RunItemStreamEvent) or event.name != "tool_output":
         return None
     raw = getattr(event.item, "raw_item", None)
@@ -896,7 +894,7 @@ def _tool_output_call_id(event: object) -> str | None:
 
 
 def _window_callback() -> WindowCallback:
-    """构造 ``session_input_callback``：窗口 = 由会话历史派生的裁剪 + 本轮新增项。"""
+    """构造 `session_input_callback`：窗口 = 由会话历史派生的裁剪 + 本轮新增项。"""
 
     def window(history: list[TResponseInputItem], new_items: list[TResponseInputItem]) -> list[TResponseInputItem]:
         """把 SDK 给的历史与本轮新增项按窗口策略合成模型输入。"""
@@ -908,8 +906,8 @@ def _window_callback() -> WindowCallback:
 def history_from(items: Sequence[TResponseInputItem]) -> list[Item]:
     """把 SDK 的输入项交给压缩机制。
 
-    运行时两者都是普通 dict；这里显式转一次，是因为 ``TypedDict`` 在静态类型上并不是
-    ``Mapping[str, object]`` 的子类型——用一个明确的转换代替类型逃逸。
+    运行时两者都是普通 dict；这里显式转一次，是因为 `TypedDict` 在静态类型上并不是
+    `Mapping[str, object]` 的子类型——用一个明确的转换代替类型逃逸。
     """
     return [dict(item) for item in items]
 
@@ -917,8 +915,8 @@ def history_from(items: Sequence[TResponseInputItem]) -> list[Item]:
 def _as_items(items: Sequence[Item]) -> list[TResponseInputItem]:
     """把基座项形状交回 SDK（写入会话时用）。
 
-    ``Item`` 是 ``Mapping[str, object]``，SDK 的输入项是 TypedDict 联合——静态类型看不穿
-    这层「运行时形状一致」，故此处豁免（实测错误码是 ``misc``，不是 ``list-item``）。
+    `Item` 是 `Mapping[str, object]`，SDK 的输入项是 TypedDict 联合——静态类型看不穿
+    这层「运行时形状一致」，故此处豁免（实测错误码是 `misc`，不是 `list-item`）。
     """
     return [dict(item) for item in items]  # type: ignore[misc]  # 运行时形状一致，TypedDict 无法从 Mapping 静态推导
 
@@ -954,9 +952,9 @@ def _as_input_item(message: InjectionMessage) -> TResponseInputItem:
 
 
 def _last_content(history: Sequence[object], prefix: str) -> str | None:
-    """取历史里最后一条以 ``prefix`` 开头的消息内容；没有返回 ``None``。
+    """取历史里最后一条以 `prefix` 开头的消息内容；没有返回 `None`。
 
-    靠内容而不是靠位置：SDK 未把 ``limit=None`` 的读回顺序写成硬保证（基座文档「已知偏差」）。
+    靠内容而不是靠位置：SDK 未把 `limit=None` 的读回顺序写成硬保证（基座文档「已知偏差」）。
     """
     found: str | None = None
     for item in history:
@@ -982,7 +980,7 @@ def _failed_from_exception(
     *,
     compactions: tuple[CompactionFacts, ...] = (),
 ) -> RunFailedEvent:
-    """把一次未捕获的异常变成 ``run_failed``：模型侧问题与内部问题分开报码。"""
+    """把一次未捕获的异常变成 `run_failed`：模型侧问题与内部问题分开报码。"""
     reason = classify_model_failure(error)
     if reason == "unknown":
         return _failure(
@@ -1015,7 +1013,7 @@ def _failure(
     *,
     compactions: tuple[CompactionFacts, ...] = (),
 ) -> RunFailedEvent:
-    """造一个 ``run_failed`` 事件；模型失败额外带上细分原因。"""
+    """造一个 `run_failed` 事件；模型失败额外带上细分原因。"""
     reason: ModelFailureReason | None = None
     if code == "model_unavailable" and cause is not None:
         reason = classify_model_failure(cause)

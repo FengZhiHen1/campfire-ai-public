@@ -1,10 +1,10 @@
 """skill 机制的错误类型。
 
 集中定义是为了让「不合法即拒绝加载」这条纪律只有一个失败形状：调用方捕获
-``SkillError`` 即可区分「skill 内容有问题」与「基础设施出错」，不必认识每个细节。
+`SkillError` 即可区分「skill 内容有问题」与「基础设施出错」，不必认识每个细节。
 
 依据 docs/技术设计/technical-details/通用基座.md 第 3 节与第 9 节：frontmatter
-不合法必须**拒绝加载并在启动/校验时报错**，不得以空元数据静默加载。
+不合法必须拒绝加载并在启动/校验时报错，不得以空元数据静默加载。
 """
 
 from __future__ import annotations
@@ -17,7 +17,7 @@ class SkillError(Exception):
 class SkillFrontmatterError(SkillError):
     """frontmatter 不合法：缺字段、类型不符、自创字段、超长或重复键。
 
-    ``detail`` 面向 skill 作者，必须指明「期望形状」而不只是「错了」。
+    `detail` 面向 skill 作者，必须指明「期望形状」而不只是「错了」。
     """
 
     def __init__(self, path: str, detail: str) -> None:
@@ -44,7 +44,7 @@ class SkillDiscoveryError(SkillError):
 class SkillNotFoundError(SkillError):
     """按名字取 skill 时不存在。
 
-    这是**可恢复**错误：模型调用 ``skill({name})`` 传了未注册的名字时，它应当作为
+    这是可恢复错误：模型调用 `skill({name})` 传了未注册的名字时，它应当作为
     工具结果回给模型（见基座文档第 5 节失败语义），而不是中断本次运行。
     """
 

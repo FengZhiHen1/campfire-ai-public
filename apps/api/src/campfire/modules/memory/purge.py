@@ -1,24 +1,24 @@
-"""账号注销时清除该账号的**图库数据**（实现 ``core/auth`` 的 purger 端口）。
+"""账号注销时清除该账号的图库数据（实现 `core/auth` 的 purger 端口）。
 
-归属：``modules/memory``（图库是它的存储）。端口定义在
-``core/auth/deletion.py``——见那里的说明：``core/*`` 不得依赖 ``modules/*``，
-因此**实现放这边、由装配处注入**。
+归属：`modules/memory`（图库是它的存储）。端口定义在
+`core/auth/deletion.py`——见那里的说明：`core/*` 不得依赖 `modules/*`，
+因此实现放这边、由装配处注入。
 
-## 为什么账号级删除比单条删除干净
+为什么账号级删除比单条删除干净：
 
-[通用记忆] 第 1 节实测：在 FalkorDB 后端 **``group_id`` 就是图名**
-（``driver.clone(database=group_id)``）。因此「删除该账号的全部记忆」是
-**丢掉整张图**——一次完整操作，不受单条删除的两条约束（共享边不重算、
+[通用记忆] 第 1 节实测：在 FalkorDB 后端 `group_id` 就是图名
+（`driver.clone(database=group_id)`）。因此「删除该账号的全部记忆」是
+丢掉整张图——一次完整操作，不受单条删除的两条约束（共享边不重算、
 物理清理延期）牵连。这正是决策记录里「账号级删除在技术上比单条删除更干净」的依据。
 
-## 为什么用 ``GRAPH.DELETE`` 而不是逐条删
+为什么用 `GRAPH.DELETE` 而不是逐条删：
 
-逐条删要枚举节点与边、还要处理共享实体，既慢又不完备（``remove_episode``
+逐条删要枚举节点与边、还要处理共享实体，既慢又不完备（`remove_episode`
 只删独占实体，见[通用记忆]第 7 节）。图级删除是存储层提供的原子操作。
 
-## 与删除账本的关系
+与删除账本的关系：
 
-**该账号的账本行也要删**（第 8 节：内容真删）。账本在关系库，不在图库，
+该账号的账本行也要删（第 8 节：内容真删）。账本在关系库，不在图库，
 因此本 purger 一并处理——它是「该账号在记忆领域的全部数据」的清除者，
 图与账本都属于记忆领域。
 """
@@ -40,20 +40,20 @@ logger = logging.getLogger(__name__)
 
 
 class MemoryAccountPurger:
-    """清除某账号的记忆数据：**图库整图 + 关系库的删除账本**。
+    """清除某账号的记忆数据：图库整图 + 关系库的删除账本。
 
     实现 :class:`campfire.core.auth.deletion.AccountDataPurger`（结构性满足，
     不显式继承——Protocol 的用法）。
 
-    ## 幂等
+    幂等：
 
-    账号没有图、账本没有行时都**正常返回**（「无数据可清」），不报错——
+    账号没有图、账本没有行时都正常返回（「无数据可清」），不报错——
     重试注销是正常路径（第一次可能在后续步骤失败）。
-    实测依据：``GRAPH.DELETE`` 对不存在的图不报错；``DELETE ... WHERE`` 命中 0 行
+    实测依据：`GRAPH.DELETE` 对不存在的图不报错；`DELETE ... WHERE` 命中 0 行
     也不报错。
 
-    ``name`` 属性（``"memory"``）：注销编排的步骤名从它取（如
-    ``领域清除（memory）``），与 :class:`PurgeOutcome` 的 ``name`` 同源——
+    `name` 属性（`"memory"`）：注销编排的步骤名从它取（如
+    `领域清除（memory）`），与 :class:`PurgeOutcome` 的 `name` 同源——
     多个清除者并存时，操作者据此分辨「哪个领域已清过」。
     """
 
@@ -72,13 +72,13 @@ class MemoryAccountPurger:
         """丢弃该账号的整张图，并删除其删除账本行。
 
         Args:
-            account_id: 账号标识（在 FalkorDB 后端即**图名**）。
+            account_id: 账号标识（在 FalkorDB 后端即图名）。
 
         Returns:
             :class:`PurgeOutcome`，说明图与账本各自的处置结果。
 
         Raises:
-            Exception: 图库或关系库操作失败。**不吞**——注销的语义是「内容真删」，
+            Exception: 图库或关系库操作失败。不吞——注销的语义是「内容真删」，
                 静默失败会让「已删除」成为谎话（见端口的实现者契约）。
         """
         graph_detail = await self._drop_graph(account_id)
@@ -95,7 +95,7 @@ class MemoryAccountPurger:
             # `driver._database` 是实际图名（Graphiti 的私有属性，实测存在且就是
             # 传入的 group_id）。用它而不是 account_id：当 account_id 恰好等于
             # 配置库名时 `clone` 返回 base 驱动，图名仍是同一个值，因此两者一致；
-            # 但显式取 `_database` 能保证我们删的是**驱动真正指向的那张图**。
+            # 但显式取 `_database` 能保证我们删的是驱动真正指向的那张图。
             graph_name = getattr(driver, "_database", account_id)
             falkor_db = getattr(driver, "client", None)
             if falkor_db is None:
@@ -111,7 +111,7 @@ class MemoryAccountPurger:
     async def _delete_ledger_rows(self, account_id: str) -> int:
         """删除该账号的删除账本行，返回删除条数。
 
-        **为什么删账本行**（第 8 节「内容真删」）：账本记录「某条 episode 被删」，
+        为什么删账本行（第 8 节「内容真删」）：账本记录「某条 episode 被删」，
         属于该账号的数据。留着它会让「已删除全部内容」不成立。
         """
         async with session_scope(self._settings) as session:
