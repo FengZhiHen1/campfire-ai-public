@@ -1083,13 +1083,7 @@ async def test_emergency_builds_session_message_and_run_in_one_call(
     runner = ScriptedRunner(get_settings())
     _install_runner(runner)
     object_id = await _make_object(_ACCOUNT, "小宝")
-    # 记忆取数替身：本用例测的是装配（档案 + 记忆 + 八项 + 技能），不是图库查询。
-    # 不替身时它会去连 FalkorDB——那会让「面装配得对不对」依赖另一个容器是否在跑。
-    monkeypatch.setattr(
-        consult_routes,
-        "read_emergency_facts",
-        _fake_memory_reader(EmergencyMemory(facts=[])),
-    )
+    _stub_memory(monkeypatch, EmergencyMemory(facts=[]))
 
     response = await client.post(
         "/consult/emergency",
@@ -1120,9 +1114,7 @@ async def test_emergency_builds_session_message_and_run_in_one_call(
     async with session_scope(get_settings()) as db:
         owner = await get_session_owner(db, session_id=body["session_id"])
         binding = (
-            await db.execute(
-                select(SessionObjectBinding).where(SessionObjectBinding.session_id == body["session_id"])
-            )
+            await db.execute(select(SessionObjectBinding).where(SessionObjectBinding.session_id == body["session_id"]))
         ).scalar_one_or_none()
     assert owner is not None and owner.account_id == _ACCOUNT
     assert binding is not None and str(binding.support_object_id) == object_id
@@ -1136,6 +1128,18 @@ def _fake_memory_reader(memory: EmergencyMemory):  # noqa: ANN202 —— 返回�
         return memory
 
     return _reader
+
+
+def _stub_memory(monkeypatch: pytest.MonkeyPatch, memory: EmergencyMemory) -> None:
+    """把应急记忆取数整条路径换成替身（本面的用例测装配，不测图库查询）。
+
+    连 `get_shared_memory_graph` 一起替掉，而不是只替 `read_emergency_facts`：
+    真实调用会构造 FalkorDB 驱动并在后台起建索引任务（`build_indices_and_constraints`），
+    于是用例既依赖另一个容器是否在跑，又会在那条连接被关掉时留下一条与断言无关的
+    报错日志（实测：全量跑时出现 network ConnectionError 的 future 异常日志）。
+    """
+    monkeypatch.setattr(consult_routes, "get_shared_memory_graph", lambda *_: object())
+    monkeypatch.setattr(consult_routes, "read_emergency_facts", _fake_memory_reader(memory))
 
 
 async def test_emergency_marks_unavailable_memory_instead_of_empty_memory(
@@ -1162,10 +1166,14 @@ async def test_emergency_marks_unavailable_memory_instead_of_empty_memory(
     assert len(status) == 1 and 'name="emergency-memory"' in status[0]
 
 
-async def test_emergency_session_never_triggers_onboarding(client: httpx.AsyncClient) -> None:
+async def test_emergency_session_never_triggers_onboarding(
+    client: httpx.AsyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """应急会话永不触发引导（`RQ-EMG-03`）：它后续的消息走日常路径也不注入引导。"""
     runner = ScriptedRunner(get_settings())
     _install_runner(runner)
+    _stub_memory(monkeypatch, EmergencyMemory(facts=[]))
     emergency = await client.post("/consult/emergency", json={"items": _intake_items()})
     assert emergency.status_code == 202, emergency.text
     await drain_pumps()
@@ -1246,6 +1254,40 @@ async def test_emergency_rejects_unknown_keys_and_bad_shapes(client: httpx.Async
     for payload in cases:
         response = await client.post("/consult/emergency", json=payload)
         assert response.status_code == 422, (payload, response.status_code, response.text)
+
+
+async def test_emergency_is_503_without_creating_a_session_when_not_assembled(
+    client: httpx.AsyncClient,
+) -> None:
+    """运行器没装配时 503，且不留下一个跑不起来的空会话。
+
+    判据是「尝试失败后账号名下仍没有会话」——把会话先建出来再回 503 会让前端重试时
+    不断堆积空会话，而其中没有一个能跑。
+    """
+    consult_assembly.set_runner_factory(None)
+    response = await client.post("/consult/emergency", json={"items": _intake_items()})
+    assert response.status_code == 503, response.text
+
+    async with session_scope(get_settings()) as db:
+        owners = (
+            await db.execute(select(CampfireSession.session_id).where(CampfireSession.account_id == _ACCOUNT))
+        ).scalars()
+    assert list(owners) == [], "装配缺失的请求不得留下会话"
+
+
+async def test_emergency_is_503_when_the_skill_content_is_missing(
+    client: httpx.AsyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """内容目录里没有应急 skill 时 503（服务端自己的依赖缺失，不是使用者的载荷错）。"""
+    _install_runner(ScriptedRunner(get_settings()))
+
+    def _explode(_settings: object) -> object:
+        raise consult_assembly.ConsultAssemblyError("技能内容根目录不可用（测试）")
+
+    monkeypatch.setattr(consult_assembly, "get_skill_registry", _explode)
+    response = await client.post("/consult/emergency", json={"items": _intake_items()})
+    assert response.status_code == 503, response.text
 
 
 # ---------------------------------------------------------------------------

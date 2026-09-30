@@ -22,7 +22,7 @@ docs/技术设计/面/consult/skills/emergency-consulting.md 第 2 节；编排�
   当成使用者说的话。
 - 使用者可见的机器渲染消息（引导的静态告知、应急八项现场采集）：使用者必须看见
   （告知的价值在于知情后才决定给什么；八项是他自己填的表单），因此前缀是与
-  `answers.ANSWERS_HEADER` 同一种中文标签，**不进** `INJECTED_MESSAGE_PREFIXES`。
+  `answers.ANSWERS_HEADER` 同一种中文标签，不进 `INJECTED_MESSAGE_PREFIXES`。
 """
 
 from __future__ import annotations
@@ -35,7 +35,7 @@ from campfire.modules.memory.derived import EmergencyMemory
 from campfire.modules.profile import EmergencyContext, SummaryEntry
 from campfire.surfaces.consult.emergency import EMERGENCY_INTAKE_KEYS, EmergencyItem
 
-#: 引导的静态告知的前缀。取中文标签而不是尖括号信封：这条消息是**使用者可见**的
+#: 引导的静态告知的前缀。取中文标签而不是尖括号信封：这条消息是使用者可见的
 #: （它就是要让使用者读到告知），尖括号标签会当作正文一起显示在对话里。
 ONBOARDING_NOTICE_PREFIX = "【应用告知】"
 
@@ -58,7 +58,7 @@ EMERGENCY_PROFILE_PREFIX = "<emergency_profile"
 EMERGENCY_MEMORY_PREFIX = "<emergency_memory"
 
 #: 应急八项现场采集的首条消息的表头（与 `answers.ANSWERS_HEADER` 同一种中文标签）。
-#: 它是使用者**可见**的消息：八项是他自己填的表单，会话标题因此也带着这个标签
+#: 它是使用者可见的消息：八项是他自己填的表单，会话标题因此也带着这个标签
 #: （「【应急现场采集】① 医疗红灯：…」），而不是一段无法归因的片段。
 EMERGENCY_INTAKE_PREFIX = "【应急现场采集】"
 
@@ -182,7 +182,7 @@ def build_emergency_injections(
     三个入参各表示什么，不重叠也不含糊：
 
     - `profile=None` 表示该账号没有支持对象（`AC-02`）：注入里明写「本次未使用个性化档案」；
-    - `memory=None` 表示记忆取数**失败**：此时不注入记忆信封（注入一条空记忆等于宣称
+    - `memory=None` 表示记忆取数失败：此时不注入记忆信封（注入一条空记忆等于宣称
       「这个账号没有记忆」），改用 `unavailable` 里的来源不可用告知；
     - `unavailable` 是取数失败的来源清单，由调用方在取数处登记，本函数只负责把它
       交给基座（基座第 4 节：注入失败必须显式标注该来源不可用，不得静默当作没有该信息）。
