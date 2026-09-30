@@ -40,7 +40,6 @@ const COPY = {
   retry: '重试',
   withdrawn: '该来源已撤下',
   withdrawnBody: '这条资料已不再作为依据使用',
-  expandHint: '展开',
   collapseHint: '收起',
   loadMore: '加载更多',
   loadingMore: '正在加载…',
@@ -233,7 +232,7 @@ function ItemRow({ item, expanded, focused, onToggle }: ItemRowProps) {
       className={`list-row ${styles.card} ${expanded ? styles.reading : ''} ${focused ? styles.focused : ''}`}
     >
       <button className={styles.cardButton} onClick={onToggle} type="button">
-        <ItemRowBody expanded={expanded} item={item} />
+        <ItemRowBody expanded={expanded} item={item} onToggle={onToggle} />
       </button>
       {expanded && item.narrative !== undefined && (
         <div className="gc-body">
@@ -274,6 +273,12 @@ function ItemRowBody({
   /** 只接基础条目：deep-link 定位卡拿到的是不带展开内容的那一份。 */
   item: LibraryItem;
   expanded: boolean;
+  /**
+   * 行所在卡片是否可点（提示的开关）。
+   *
+   * 点击动作挂在卡片按钮上，本组件不调用它；传入即表示这一行位于可点卡片内，
+   * 于是展开/收起提示随之出现。deep-link 定位卡不是可点卡片，显式传 undefined。
+   */
   onToggle?: (() => void) | undefined;
 }) {
   return (
