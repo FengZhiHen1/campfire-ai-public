@@ -24,6 +24,7 @@ from sqlalchemy.ext.asyncio import async_engine_from_config
 
 # 导入模型以注册进 metadata：不导入则 autogenerate 认为「表全都该删」。
 from campfire.core import pending_write as pending_write_models  # noqa: F401  —— 仅为注册副作用
+from campfire.core.auth import tombstone as auth_tombstone_models  # noqa: F401  —— 仅为注册副作用
 from campfire.core.config import get_settings
 from campfire.core.db import metadata
 from campfire.modules.accounts import models as accounts_models  # noqa: F401  —— 仅为注册副作用
