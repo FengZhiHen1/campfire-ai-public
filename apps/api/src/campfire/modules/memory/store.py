@@ -1,27 +1,8 @@
 """记忆的图库读写：episode 写入与时间线回看。
 
-归属（见 docs/技术设计/technical-details/通用记忆.md 第 1、3、4、7 节）：本模块拥有
-时间线回看这条读路径与 episode 的写入；应急预注入（派生事实）见 `derived.py`。
-
-三条实测约束塑造了这里的写法（都不是推断）
-
-1. `group_id` 在 FalkorDB 后端是图名（第 1 节实测）：写入与读取都必须落到
-   `driver.clone(database=account_id)` 那张图。在默认图上按 `group_id` 属性过滤会
-   读成空——「写进去了但读不到」的静默失败。
-2. `add_episode(uuid=X)` 要求节点已存在，且忽略 `episode_body`、只用库里
-   的 `content`；它还会用 `SET n = {...}` 抹掉自定义属性（第 3 节实测）。
-   因此写入必须先预建节点（含正文与 `source_description`），再 `add_episode`。
-3. `episode_metadata` 不落库：来源会话标识只能走 `source_description`。
-
-时间线为什么是自建查询
-
-`retrieve_episodes(reference_time, last_n, group_ids, source, saga)` 只有「某时间点
-之前最近 N 条」这一种形状——没有时间区间、没有关键词（第 4 节实测）。而
-`read_memory` 契约承诺 `since`/`until`/`query`/`limit`，因此本模块自己写 Cypher。
-
-时间比较的注意点（实测）：FalkorDB 把 datetime 存成 ISO 字符串，Graphiti 自己在
-写入前会 `ensure_utc(...).isoformat()`。字符串比较只在偏移一致时成立，所以本模块
-的时间参数一律先归一为 UTC ISO 字符串再比较，并统一用 `Z`/`+00:00` 同一种写法。
+职责：本模块拥有时间线回看这条读路径与 episode 的写入；应急预注入见 `derived.py`。
+边界：只做图库读写与 UTC 归一；幂等判据落在 `pending_write.state`，不在这里。
+参考：通用记忆.md 第 1、3、4、7 节、`EPISODE_WRITE_STATE_PENDING`、`read_timeline`。
 """
 
 from __future__ import annotations
@@ -44,6 +25,19 @@ if TYPE_CHECKING:
     # 避免将来 graph 侧引用本模块时形成环。
     from campfire.modules.memory.graph import MemoryGraph
 
+# 归属（见 docs/技术设计/technical-details/通用记忆.md 第 1、3、4、7 节）：本模块拥有
+# 时间线回看这条读路径与 episode 的写入；应急预注入（派生事实）见 `derived.py`。
+#
+# 三条实测约束塑造了这里的写法（都不是推断）
+#
+# 1. `group_id` 在 FalkorDB 后端是图名（第 1 节实测）：写入与读取都必须落到
+#    `driver.clone(database=account_id)` 那张图。在默认图上按 `group_id` 属性过滤会
+#    读成空——「写进去了但读不到」的静默失败。
+# 2. `add_episode(uuid=X)` 要求节点已存在，且忽略 `episode_body`、只用库里
+#    的 `content`；它还会用 `SET n = {...}` 抹掉自定义属性（第 3 节实测）。
+#    因此写入必须先预建节点（含正文与 `source_description`），再 `add_episode`。
+# 3. `episode_metadata` 不落库：来源会话标识只能走 `source_description`。
+
 #: 时间线单次返回的条数上界。有界（CORE-11）：`read_memory` 的 `limit` 由模型给出，
 #: 但模型可能给很大或省略；服务端必须有兜底上界，否则「回看全部历史」会无界拉取。
 #: 200 条足以覆盖一期单账号的记忆量，且远大于工具契约的常规用量。
@@ -59,9 +53,9 @@ EPISODE_SOURCE = EpisodeType.message
 
 #: episode 节点上的完成标记属性名与取值。
 #:
-#: 为什么需要它（2026-09-29 评审 C-1 实测后改为标记制）
+#: 为什么需要它
 #:
-#: 「已写入」此前靠「图库里存在 episode 节点」这一约定，配合失败时的补偿删除。
+#: 「已写入」不能靠「图库里存在 episode 节点」这一约定，也不能靠失败时的补偿删除。
 #: 实测证明该约定不成立，有两种残留：
 #:
 #: 1. 进程被硬杀（SIGKILL / 部署重启）：补偿代码根本不执行，预建节点永久残留；
@@ -71,9 +65,9 @@ EPISODE_SOURCE = EpisodeType.message
 #:    节点上，`DETACH DELETE e` 删不掉——实测残留实体 2 个/边 1 条，且
 #:    `read_emergency_facts` 会把那条从未成功写入的事实注入。
 #:
-#: 因此正确性依据改为：预建节点不带标记，`add_episode` 成功后写标记；两条读路径
+#: 因此正确性依据是：预建节点不带标记，`add_episode` 成功后写标记；两条读路径
 #: 只认带标记的节点/边。这样即使进程被硬杀、即使派生物已落库，未完成的写入
-#: 永远不会被读到——补偿删除退化为尽力清理，不再是正确性依据（CORE-05：不变量
+#: 永远不会被读到——补偿删除只是尽力清理，不是正确性依据（CORE-05：不变量
 #: 落在数据与查询上，而不是落在「异常处理一定跑得到」这个假设上）。
 #:
 #: fail-closed 方向：无标记的节点（含改造前写入的老数据）一律不返回。
@@ -127,6 +121,10 @@ class MemoryEpisode:
 def _utc_iso(value: datetime) -> str:
     """把时间归一为 UTC ISO 字符串，与 Graphiti 写入时的写法一致。
 
+    时间比较的注意点（实测）：FalkorDB 把 datetime 存成 ISO 字符串，Graphiti 自己在
+    写入前会 `ensure_utc(...).isoformat()`。字符串比较只在偏移一致时成立，所以本模块
+    的时间参数一律先归一为 UTC ISO 字符串再比较，并统一用 `Z`/`+00:00` 同一种写法。
+
     FalkorDB 以字符串存时间并按字典序比较（实测），因此偏移必须一致：
     `2026-01-01T00:00:00+08:00` 与 `2026-01-01T00:00:00+00:00` 的字典序不反映真实
     先后。统一转 UTC 是与 Graphiti 的 `ensure_utc(...).isoformat()` 对齐。
@@ -151,12 +149,17 @@ async def read_timeline(
     """时间线回看：按 `valid_at` 倒序取 episode 原文，排除已删除的。
 
     自建 Cypher 而非 `retrieve_episodes`：后者没有时间区间与关键词参数（第 4 节实测）。
+
+    时间线为什么是自建查询
+
+    `retrieve_episodes(reference_time, last_n, group_ids, source, saga)` 只有「某时间点
+    之前最近 N 条」这一种形状——没有时间区间、没有关键词（第 4 节实测）。而
+    `read_memory` 契约承诺 `since`/`until`/`query`/`limit`，因此本模块自己写 Cypher。
     删除过滤下推到查询（`NOT e.uuid IN $deleted`）：读回来再过滤会让 `limit`
     把已删除的算进配额，语义不等价（见 `ledger.py` 说明）。
 
     删除过滤的取数在本函数内完成（2026-09-30 裁决，见通用记忆第 7 节）：调用方
-    不传「已删清单」，因此不存在「漏传导致用户已删除的记忆被返回」的实现路径——
-    此前 `deleted_keys` 是调用方的必填参数，传空列表就会静默返回已删内容（实测）。
+    不传「已删清单」，因此不存在「漏传导致用户已删除的记忆被返回」的实现路径。
 
     Args:
         session: 关系库会话（用于取该账号的删除账本）。
@@ -215,7 +218,7 @@ async def _read_timeline(
         "e.group_id = $group_id",
         # 完成标记过滤（C-1 修复的落点）：只有 `add_episode` 成功后才写该标记，
         # 因此未完成的写入（硬杀残留、抽取中途失败的半写节点）永远不会被读到。
-        # 这是「没写进去不得被当作写进去了」的实际判据，不再依赖补偿删除跑得到。
+        # 这是「没写进去不得被当作写进去了」的实际判据；补偿删除不是依据。
         "e.write_state = $write_state",
     ]
     params: dict[str, object] = {
@@ -234,7 +237,8 @@ async def _read_timeline(
         conditions.append("NOT e.uuid IN $deleted")
         params["deleted"] = deleted_keys
     if query:
-        # FalkorDB 的 toLower + CONTAINS 做子串匹配；一期不建全文索引。
+        # FalkorDB 的 toLower + CONTAINS 做子串匹配；
+        # 一期不建全文索引。
         conditions.append("toLower(e.content) CONTAINS toLower($query)")
         params["query"] = query
 
@@ -287,7 +291,8 @@ def _to_episode(record: dict[str, object]) -> MemoryEpisode:
         episode_uuid=str(record.get("uuid") or ""),
         content=str(content),
         occurred_at=occurred_at,
-        # 来源会话标识承载在 source_description 上（episode_metadata 不落库，实测）。
+        # 来源会话标识承载在 source_description 上
+        # （episode_metadata 不落库，实测）。
         source=str(record.get("source_description") or ""),
     )
 
@@ -342,7 +347,6 @@ async def write_episode(
 
     幂等的实测边界（2026-09-29 实测修正）
 
-    此前这里写「不保证派生事实不重复」——该说法未经实测，且实测不支持它。
     实测（假 LLM 返回固定的实体与边，即两轮抽取结果完全一致）：
 
     项 → 第一次 → 第二次 → 是否重复
@@ -386,7 +390,8 @@ async def write_episode(
     # 用 driver_for 而非裸 clone：后者每条查询泄漏一个驱动与一个后台任务（实测）。
     scoped = graph.driver_for(account_id)
     valid_at = _utc_iso(occurred_at)
-    # created_at 用真实入库时间；valid_at 用发生时间（第 2 节的时间语义）。
+    # created_at 用真实入库时间；valid_at 用发生时间
+    # （第 2 节的时间语义）。
     created_at = _utc_iso(datetime.now(timezone.utc))
 
     # 预建节点是否本来不存在：失败时据此决定要不要回滚（见下方补偿说明）。
@@ -396,8 +401,8 @@ async def write_episode(
             "MATCH (e:Episodic {uuid: $uuid}) RETURN e.write_state AS ws LIMIT 1", uuid=episode_uuid
         )
         node_predates_this_call = bool(existing)
-        # 该节点此前已经写入成功（已带完成标记）。
-        # 2026-09-29 实测发现的边界：重试一条已成功的 episode 时，下面的整节点替换会把
+        # 该节点已经写入成功（已带完成标记）。
+        # 重试一条已成功的 episode 时，下面的整节点替换会把
         # `write_state` 从 `done` 降级成 `pending`；若这次 `add_episode` 又失败，
         # 一条原本可读的记忆会变成不可读（方向是 fail-closed，但确实是数据可见性缺陷）。
         # 处置：已成功过就不降级——保留 `done`。理由：
@@ -462,11 +467,11 @@ async def write_episode(
             state=EPISODE_WRITE_STATE_DONE,
         )
     except BaseException as exc:  # noqa: BLE001 —— 含取消/超时；驱动异常统一转记忆侧语义
-        # 补偿：删掉本次新建的半写节点（2026-09-29 实测发现的缺陷）。
+        # 补偿：删掉本次新建的半写节点。
         # 为什么必须补：写入分三步，第二步失败时节点已经存在。只删本次新建的节点：
         # 若它本来就在（重试场景），保留原状——破坏既有数据比留下半写节点更糟。
         #
-        # ⚠️ 补偿不是正确性依据（2026-09-29 评审 C-1 实测）：进程被硬杀
+        # ⚠️ 补偿不是正确性依据：进程被硬杀
         # （SIGKILL）时代码根本不执行，任何补偿都跑不到；而且抽取可能已经写入
         # 实体与边，它们不挂在 episode 节点上，`DETACH DELETE` 删不掉——实测：
         # 取消后残留 episode=1，抽取中途失败后实体=2/边=1 残留，且

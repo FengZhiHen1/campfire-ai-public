@@ -1,17 +1,8 @@
 """skill 发现与注册表。
 
-依据 docs/技术设计/technical-details/通用基座.md 第 3 节「发现」行：扫描配置根目录
-下的 `*/SKILL.md`、解析 frontmatter，不合法即拒绝加载并在启动时失败，不得以
-空元数据静默加载。根目录由配置指定（`Settings.skill_root`，环境变量 `SKILL_ROOT`，
-默认应用内 `skills/`）。
-
-两条纪律的具体落法：
-
-- 一次报全部问题：所有不合法的 skill 聚合成一个 :class:`SkillDiscoveryError`
-  抛出，而不是改一个报一个。
-- 非致命问题不静默：目录缺少 `SKILL.md`、正文过长这类「可疑但不非法」的情况
-  记为 :class:`SkillWarning` 挂在注册表上，由装配处决定怎么记录——不吞掉，也不假装
-  是错误。
+职责：扫描配置根目录下的 `*/SKILL.md`、解析 frontmatter 并注册。
+边界：不合法即拒绝加载并在启动时失败，不得以空元数据静默加载；非致命问题告警。
+参考：docs/技术设计/technical-details/通用基座.md 第 3 节「发现」行。
 """
 
 from __future__ import annotations
@@ -38,6 +29,13 @@ _WARNING_BODY_TOO_LONG = "skill_body_too_long"
 _WARNING_BODY_TOO_LARGE = "skill_body_too_large"
 
 
+# 两条纪律的具体落法：
+#
+# - 一次报全部问题：所有不合法的 skill 聚合成一个 :class:`SkillDiscoveryError`
+#   抛出，而不是改一个报一个。
+# - 非致命问题不静默：目录缺少 `SKILL.md`、正文过长这类「可疑但不非法」的情况
+#   记为 :class:`SkillWarning` 挂在注册表上，由装配处决定怎么记录——不吞掉，也不假装
+#   是错误。
 @dataclass(frozen=True, slots=True)
 class SkillWarning:
     """一条非致命的加载期发现。"""
@@ -69,6 +67,11 @@ class SkillRegistry:
     @classmethod
     def discover(cls, root: Path | str) -> SkillRegistry:
         """扫描根目录并加载全部 skill；任何一个不合法都让整体失败。
+
+        依据 docs/技术设计/technical-details/通用基座.md 第 3 节「发现」行：扫描配置根目录
+        下的 `*/SKILL.md`、解析 frontmatter，不合法即拒绝加载并在启动时失败，不得以
+        空元数据静默加载。根目录由配置指定（`Settings.skill_root`，环境变量 `SKILL_ROOT`，
+        默认应用内 `skills/`）。
 
         Raises:
             SkillDiscoveryError: 根目录不存在，或存在不合法的 skill（problems 携带全部明细）。

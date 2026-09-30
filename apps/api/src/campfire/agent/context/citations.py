@@ -1,21 +1,8 @@
 """引用索引：让每条「可引用依据」都能回指到业务条目。
 
-依据 docs/技术设计/technical-details/通用基座.md 第 4 节：
-
-- 每条注入消息在引用索引表里留一条对应记录（来源、时间、指向的业务标识），
-  输出里的引用要靠它回指。
-- 不变量：没有索引记录的注入消息不得成为「可引用依据」。
-
-这条不变量靠形状而不是靠纪律来守：可引用的凭据通道只有 :class:`CitationRecorder`
-一条——它每次产出之前都先写索引，因此「拿着凭据却没写索引」在结构上不可表示。
-
-（精确说法：`CitationRecord` 类型本身仍可被直接构造——索引的读回实现必须能从行记录
-重建它，那是合法且必需的能力。因此不变量保证的是「经 recorder 发出的凭据必然有索引记录」，
-而不是「这个类型无法在别处被构造」；后者既做不到，也不该做。）
-
-索引的持久化实现不在基座内：`agent/*` 只允许依赖 `core/config`
-（docs/项目结构设计.md 第 7 节），而 `core/*` 反过来不得依赖 `agent/*`，
-所以实现由装配处（`main.py` / `surfaces` 一侧）提供，基座只声明端口。
+职责：写入引用记录并发放可引用凭据（:class:`CitationRecorder`）。
+边界：只声明端口，持久化实现由装配处提供；理由见 :class:`CitationIndex`。
+参考：docs/技术设计/technical-details/通用基座.md 第 4 节。
 """
 
 from __future__ import annotations
@@ -42,6 +29,16 @@ def _new_citation_id() -> str:
 @dataclass(frozen=True, slots=True)
 class CitationRecord:
     """引用索引里的一条记录。
+
+    依据 docs/技术设计/technical-details/通用基座.md 第 4 节：
+
+    - 每条注入消息在引用索引表里留一条对应记录（来源、时间、指向的业务标识），
+      输出里的引用要靠它回指。
+    - 不变量：没有索引记录的注入消息不得成为「可引用依据」。
+
+    （精确说法：`CitationRecord` 类型本身仍可被直接构造——索引的读回实现必须能从行记录
+    重建它，那是合法且必需的能力。因此不变量保证的是「经 recorder 发出的凭据必然有索引记录」，
+    而不是「这个类型无法在别处被构造」；后者既做不到，也不该做。）
 
     本类型只应由 :class:`CitationRecorder` 构造；直接 new 出来的记录没有索引写入，
     违反第 4 节的不变量。
@@ -70,6 +67,10 @@ class CitationRecord:
 class CitationIndex(Protocol):
     """引用索引的持久化端口。
 
+    索引的持久化实现不在基座内：`agent/*` 只允许依赖 `core/config`
+    （docs/项目结构设计.md 第 7 节），而 `core/*` 反过来不得依赖 `agent/*`，
+    所以实现由装配处（`main.py` / `surfaces` 一侧）提供，基座只声明端口。
+
     实现必须让 `list_for_run` 读回 `add` 写入的全部记录；写入失败必须抛异常——
     「没写进去」不得被当作「写进去了」（技术栈设计第 5 节第 2 条）。
 
@@ -90,6 +91,9 @@ class CitationIndex(Protocol):
 
 class CitationRecorder:
     """本轮运行的引用写入端：记录一次，返回一次可引用凭据。
+
+    这条不变量靠形状而不是靠纪律来守：可引用的凭据通道只有 :class:`CitationRecorder`
+    一条——它每次产出之前都先写索引，因此「拿着凭据却没写索引」在结构上不可表示。
 
     `issued` 是本轮已发出的引用清单，供 `run_finished` 事件与运行记录使用；
     它只反映真正写进索引的那些记录。

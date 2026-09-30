@@ -1,48 +1,9 @@
 """模型网关：模型名与客户端在本仓库的唯一组装处。
 
-依据 docs/技术设计/technical-details/通用基座.md 第 6 节「模型路由」：
-
-- 统一配置入口，业务代码不得硬编码模型名；接口保留用途分档（一期只有一个值）。
-- 失败语义：超时、限流与供应商错误按策略重试；重试耗尽则本次运行失败并给出原因。
-  不得用缓存或旧结果冒充当前结果。
-
-以及 docs/技术栈设计.md 第 2 节与本仓库已核实的事实：TokenHub 提供 OpenAI 兼容接口，
-Base URL 固定 `https://tokenhub.tencentmaas.com/v1`，且按开通地域选择接口、不支持
-跨地域调用；SDK 侧走 Chat Completions 模型类（不是 Responses）。
-
-三处刻意的决定：
-
-1. 重试交给 SDK 的 runner-managed retry，客户端自身的重试关掉（`max_retries=0`）。
-SDK 提供 `ModelRetrySettings` 与 `retry_policies` 策略 DSL，它自己处理「响应是否已经
-开始流出」这类重放安全问题；而 OpenAI 客户端也有自己的重试。实测（按 500 响应计 HTTP
-请求数）：客户端不设 `max_retries` 时一次调用最多发 3 个请求，设为 0 后只发 1 个。
-两者都开时并非简单相乘——SDK 在第二次尝试起会禁用 provider 管理重试
-（`agents/run_internal/model_retry.py:516-549`），实测「客户端 2 + SDK 2」= 5 个请求、
-「客户端 2 + SDK 3」= 6 个，而不是 9。结论不变（客户端必须是 0），但理由要说准：
-首次尝试会额外带上客户端的请求，而那一部分不在我们的预算算术里。
-
-2. 重试预算必须落在 180 秒通用响应上限之内。 否则模型重试会被运行上限从中间砍断，
-失败原因从「模型不可用」变成「运行超时」——那是最难排查的一类误报。构造时即校验
-（:func:`worst_case_model_seconds`），不合法就抛 :class:`ModelConfigurationError`。
-
-3. 客户端由装配处构造一次并复用。 每次运行新建 `AsyncOpenAI` 会新建连接池与
-TLS 握手，代价直接落在应急路径的首字时延上（`RQ-EMG-03`）。因此这里是长生命周期
-对象：由装配处持有，运行编排按次取 `model`。
-
-已核实的宿主机环境陷阱（会在这里以明确错误暴露）：
-
-构造任何开启 `trust_env` 的客户端时，若 `no_proxy` 含带方括号的 IPv6 字面量
-（例如 `no_proxy=127.0.0.1,localhost,::1,[::1]`），URL 解析会在构造期抛
-`InvalidURL: Invalid port: ':1]'`。实测复现：本机 `no_proxy` 值即含 `[::1]`，
-`httpx.AsyncClient()` 与 `openai.AsyncOpenAI(...)` 都在构造期失败；去掉 `[::1]` 即恢复。
-
-归因要说准：`openai` 客户端用的是 httpx2（`openai/_base_client.py:37`
-`import httpx2`），与探针自用的 httpx 0.28.1 是两个独立包，两者的 `InvalidURL`
-实测互不为子类、也不是同一个类。因此排查时不能只看 `httpx` 的版本。
-
-我们仍然保留 `trust_env`：TokenHub 是外部服务，企业网络下可能需要经代理访问
-（与健康探针同一取舍）。代价是这个环境问题会表现为构造失败，因此构造异常一律转成
-:class:`ModelConfigurationError` 并给出可操作的提示，而不是把裸 `InvalidURL` 抛出去。
+职责：按用途解析模型名（:func:`resolve_model_name`），构造并持有进程内复用的模型客户端与重试配置。
+边界：业务代码不得硬编码模型名，只经本模块取值；基座不含领域术语，本模块同样不含。
+参考：docs/技术设计/technical-details/通用基座.md 第 6 节「模型路由」、docs/技术栈设计.md 第 2 节。
+重试归属、180 秒预算、客户端复用三处刻意的决定与宿主机环境陷阱，各自下沉到被引用的定义处。
 """
 
 from __future__ import annotations
@@ -73,7 +34,8 @@ ModelPurpose = Literal["default"]
 把「只有一个」写死：等出现第二个档位时，分发逻辑加在 :func:`resolve_model_name` 里，
 调用点不动（技术栈设计第 3 节）。"""
 
-# 退避倍数固定为 2：它只是一个上界参数，没有第二个消费者要调它，因此不做成配置项。
+# 退避倍数固定为 2：它只是一个上界参数，没有第二个消费者要调它，
+# 因此不做成配置项。
 _BACKOFF_MULTIPLIER = 2.0
 
 # SDK 的抖动上界。依据 `agents/run_internal/model_retry.py:204`：
@@ -95,6 +57,14 @@ _RETRYABLE_STATUS_CODES = frozenset({408, 409, 429, 500, 502, 503, 504})
 
 def resolve_model_name(settings: Settings, purpose: ModelPurpose = "default") -> str:
     """按用途取模型名。业务代码只经此函数取模型名（项目结构设计第 10 节）。
+
+    依据 docs/技术设计/technical-details/通用基座.md 第 6 节「模型路由」：
+
+    - 统一配置入口，业务代码不得硬编码模型名；接口保留用途分档（一期只有一个值）。
+
+    以及 docs/技术栈设计.md 第 2 节与本仓库已核实的事实：TokenHub 提供 OpenAI 兼容接口，
+    Base URL 固定 `https://tokenhub.tencentmaas.com/v1`，且按开通地域选择接口、不支持
+    跨地域调用；SDK 侧走 Chat Completions 模型类（不是 Responses）。
 
     Raises:
         ModelConfigurationError: 传入了一期不存在的用途档。
@@ -165,6 +135,22 @@ def worst_case_model_seconds(settings: Settings) -> float:
 
 def build_retry_settings(settings: Settings) -> ModelRetrySettings:
     """构造 SDK 的 runner-managed 重试配置。
+
+    1. 重试交给 SDK 的 runner-managed retry，客户端自身的重试关掉（`max_retries=0`）。
+    SDK 提供 `ModelRetrySettings` 与 `retry_policies` 策略 DSL，它自己处理「响应是否已经
+    开始流出」这类重放安全问题；而 OpenAI 客户端也有自己的重试。实测（按 500 响应计 HTTP
+    请求数）：客户端不设 `max_retries` 时一次调用最多发 3 个请求，设为 0 后只发 1 个。
+    两者都开时并非简单相乘——SDK 在第二次尝试起会禁用 provider 管理重试
+    （`agents/run_internal/model_retry.py:516-549`），实测「客户端 2 + SDK 2」= 5 个请求、
+    「客户端 2 + SDK 3」= 6 个，而不是 9。结论不变（客户端必须是 0），但理由要说准：
+    首次尝试会额外带上客户端的请求，而那一部分不在我们的预算算术里。
+
+    2. 重试预算必须落在 180 秒通用响应上限之内。 否则模型重试会被运行上限从中间砍断，
+    失败原因从「模型不可用」变成「运行超时」——那是最难排查的一类误报。构造时即校验
+    （:func:`worst_case_model_seconds`），不合法就抛 :class:`ModelConfigurationError`。
+
+    失败语义：超时、限流与供应商错误按策略重试；重试耗尽则本次运行失败并给出原因。
+    不得用缓存或旧结果冒充当前结果。
 
     Raises:
         ModelConfigurationError: 重试相关配置非法，或其预算达到/超过 180 秒通用响应上限。
@@ -261,11 +247,30 @@ class ModelBinding:
 class ModelGateway:
     """进程内复用的模型网关：一次构造，按次取用。
 
+    3. 客户端由装配处构造一次并复用。 每次运行新建 `AsyncOpenAI` 会新建连接池与
+    TLS 握手，代价直接落在应急路径的首字时延上（`RQ-EMG-03`）。因此这里是长生命周期
+    对象：由装配处持有，运行编排按次取 `model`。
+
     装配处（`main.py` / `worker.py`）持有它，并在进程结束时 `aclose()`。
     """
 
     def __init__(self, settings: Settings) -> None:
         """校验配置并构造客户端。
+
+        已核实的宿主机环境陷阱（会在这里以明确错误暴露）：
+
+        构造任何开启 `trust_env` 的客户端时，若 `no_proxy` 含带方括号的 IPv6 字面量
+        （例如 `no_proxy=127.0.0.1,localhost,::1,[::1]`），URL 解析会在构造期抛
+        `InvalidURL: Invalid port: ':1]'`。实测复现：本机 `no_proxy` 值即含 `[::1]`，
+        `httpx.AsyncClient()` 与 `openai.AsyncOpenAI(...)` 都在构造期失败；去掉 `[::1]` 即恢复。
+
+        归因要说准：`openai` 客户端用的是 httpx2（`openai/_base_client.py:37`
+        `import httpx2`），与探针自用的 httpx 0.28.1 是两个独立包，两者的 `InvalidURL`
+        实测互不为子类、也不是同一个类。因此排查时不能只看 `httpx` 的版本。
+
+        我们仍然保留 `trust_env`：TokenHub 是外部服务，企业网络下可能需要经代理访问
+        （与健康探针同一取舍）。代价是这个环境问题会表现为构造失败，因此构造异常一律转成
+        :class:`ModelConfigurationError` 并给出可操作的提示，而不是把裸 `InvalidURL` 抛出去。
 
         Raises:
             ModelConfigurationError: 未配置凭据、重试预算越界，或客户端无法构造
@@ -283,7 +288,8 @@ class ModelGateway:
                 base_url=settings.tokenhub_base_url,
                 api_key=api_key.get_secret_value(),
                 timeout=settings.model_request_timeout_seconds,
-                # 重试的唯一所有者是 SDK 的 runner-managed retry，见模块 docstring。
+                # 重试的唯一所有者是 SDK 的 runner-managed retry，
+                # 见模块 docstring。
                 max_retries=0,
             )
         except Exception as exc:  # noqa: BLE001 —— 构造期异常一律转成可操作的配置错误
@@ -294,7 +300,7 @@ class ModelGateway:
             ) from exc
 
         # 把「客户端必须自己不重试」这条契约在构造期核实，而不是只写在 docstring 里：
-        # 客户端真的带上了重试的话，重试就有两个所有者，预算算术也不再成立。
+        # 客户端带上重试就有两个所有者，预算算术不成立。
         if self._client.max_retries != 0:
             raise ModelConfigurationError(
                 f"模型客户端未按契约关闭自身重试（max_retries={self._client.max_retries}）："

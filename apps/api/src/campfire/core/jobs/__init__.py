@@ -1,13 +1,8 @@
 """后台执行：Taskiq broker 装配与队列积压探测。
 
-归属（见 docs/项目结构设计.md 第 6 节）：Worker 侧的投递与消费入口。
-
-失败语义（见 docs/技术栈设计.md 第 5 节）：待处理记录（PostgreSQL）是真相源，
-队列只负责投递；丢的任务必须可被检测与补救，不得静默丢弃、不得假装成功。
-
-broker 选择 `ListQueueBroker`（Redis 列表）而非 `RedisStreamBroker`：
-真相源不在队列，积压与丢失由待处理记录的记账发现，队列无需自带消费组与 ack
-语义。重访条件：出现列表模型无法表达的投递保证需求。
+职责：装配 broker、投递待处理记录、探测队列可达性与积压。
+边界：队列只负责投递，不是真相源；本模块不判断积压是否异常。
+参考：`docs/项目结构设计.md` 第 6 节；`docs/技术栈设计.md` 第 5 节。
 """
 
 import logging
@@ -50,7 +45,11 @@ def set_dispatch_hook(hook: Callable[[str], Awaitable[object]] | None) -> None:
 
 
 async def dispatch_pending_write(pending_id: str) -> None:
-    """把一条待处理记录投递给队列；投递失败不让调用方失败。"""
+    """把一条待处理记录投递给队列；投递失败不让调用方失败。
+
+    失败语义（见 docs/技术栈设计.md 第 5 节）：待处理记录（PostgreSQL）是真相源，
+    队列只负责投递；丢的任务必须可被检测与补救，不得静默丢弃、不得假装成功。
+    """
     if _dispatch_hook is None:
         logger.warning("投递钩子未设置，记录留给兜底扫描：pending_id=%s", pending_id)
         return
@@ -62,7 +61,14 @@ async def dispatch_pending_write(pending_id: str) -> None:
 
 
 def build_broker(settings: Settings) -> ListQueueBroker:
-    """构造 Taskiq broker。装配处（`main.py` / `worker.py`）各自调用一次。"""
+    """构造 Taskiq broker。装配处（`main.py` / `worker.py`）各自调用一次。
+
+    归属（见 docs/项目结构设计.md 第 6 节）：Worker 侧的投递与消费入口。
+
+    broker 选择 `ListQueueBroker`（Redis 列表）而非 `RedisStreamBroker`：
+    真相源不在队列，积压与丢失由待处理记录的记账发现，队列无需自带消费组与 ack
+    语义。重访条件：出现列表模型无法表达的投递保证需求。
+    """
     return ListQueueBroker(url=settings.redis_url, queue_name=settings.taskiq_queue_name)
 
 

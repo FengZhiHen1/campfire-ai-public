@@ -1,28 +1,8 @@
 """通用记忆的表结构：删除账本。
 
-归属（见 docs/项目结构设计.md 第 6 节与
-docs/技术设计/technical-details/通用记忆.md 第 7 节）：本模块拥有「通用记忆的写入
-与读取、时间演变与失效判定」。episode 与派生事实存在 Graphiti 的图库里，
-关系库侧只有这一张表——删除账本。
-
-为什么需要删除账本（不是可选的记账）：
-
-Graphiti 的 `remove_episode` 只删该 episode 独占的实体与边：共享实体的摘要
-不重算、被它强化过的边残留、它标记失效的边保留失效标记（源码实读，见通用记忆第 7 节）。
-纯 `remove_episode` 无法满足 `RQ-MEM-03`「删除须覆盖检索与衍生中的使用」。
-
-因此语义删除的生效点是本账本，不是图库：两条读路径读图库前先按本表过滤。
-图库内的物理残留只是存储问题，登记为扩展缝（通用记忆第 11 节）。
-
-两个设计要点（都在通用记忆第 7 节有依据）：
-
-1. `episode_key` 是确定性 episode uuid（由 `pending_id` 派生，与
-   `pending_write` 的幂等键同源）——不是 `name`。图库的身份是 `uuid`
-   （`MERGE (n:Episodic {uuid: $uuid})`，实测），`name` 只是属性。
-2. `derived_uuids` 是「尽力清单」：删除时能查到的派生物 uuid（边与节点）。
-   它不是过滤依据——过滤走「来源 episode 在账本中」这一判据，因为一条边可以
-   带多个来源 episode（`EntityEdge.episodes` 是列表，实测），靠 uuid 清单无法
-   覆盖「删除后又被合法复用」的边。
+职责：本模块拥有「通用记忆的写入与读取、时间演变与失效判定」，关系库侧只有这一张表。
+边界：episode 与派生事实存在 Graphiti 的图库里，不在关系库。
+参考：docs/技术设计/technical-details/通用记忆.md 第 7、11 节。
 """
 
 from datetime import datetime
@@ -63,6 +43,30 @@ class MemoryDeletionLedger(Base):
 
     读取侧按 `episode_key` 过滤 episode 时间线；按「来源 episode 在账本中」过滤
     派生事实（见 `store.py`）。物理清理图库是另一个动作，不在这张表的语义内。
+
+    归属（见 docs/项目结构设计.md 第 6 节与
+    docs/技术设计/technical-details/通用记忆.md 第 7 节）：本模块拥有「通用记忆的写入
+    与读取、时间演变与失效判定」。episode 与派生事实存在 Graphiti 的图库里，
+    关系库侧只有这一张表——删除账本。
+
+    为什么需要删除账本（不是可选的记账）：
+
+    Graphiti 的 `remove_episode` 只删该 episode 独占的实体与边：共享实体的摘要
+    不重算、被它强化过的边残留、它标记失效的边保留失效标记（源码实读，见通用记忆第 7 节）。
+    纯 `remove_episode` 无法满足 `RQ-MEM-03`「删除须覆盖检索与衍生中的使用」。
+
+    因此语义删除的生效点是本账本，不是图库：两条读路径读图库前先按本表过滤。
+    图库内的物理残留只是存储问题，登记为扩展缝（通用记忆第 11 节）。
+
+    两个设计要点（都在通用记忆第 7 节有依据）：
+
+    1. `episode_key` 是确定性 episode uuid（由 `pending_id` 派生，与
+       `pending_write` 的幂等键同源）——不是 `name`。图库的身份是 `uuid`
+       （`MERGE (n:Episodic {uuid: $uuid})`，实测），`name` 只是属性。
+    2. `derived_uuids` 是「尽力清单」：删除时能查到的派生物 uuid（边与节点）。
+       它不是过滤依据——过滤走「来源 episode 在账本中」这一判据，因为一条边可以
+       带多个来源 episode（`EntityEdge.episodes` 是列表，实测），靠 uuid 清单无法
+       覆盖「删除后又被合法复用」的边。
     """
 
     __tablename__ = "campfire_memory_deletion_ledger"
@@ -73,10 +77,10 @@ class MemoryDeletionLedger(Base):
     episode_key: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
     #: 归属账号：分区键同源（`group_id = account_id`）。账号级清理按它筛。
     #:
-    #: 为什么是 String 而不是 UUID（2026-09-29 评审复核修正）：`identity.to_account_id`
+    #: 为什么是 String 而不是 UUID：`identity.to_account_id`
     #: 接受的字符集是 Graphiti 的 `group_id` 判据（`[a-zA-Z0-9_-]`），不只 UUID——
     #: 而 `accounts/` 仍是占位包、账号标识的形态尚未决定（技术栈设计称标识存在
-    #: SuperTokens 的 `email` 字段里，业务账号名形态未定）。此前列类型定为 UUID，与
+    #: SuperTokens 的 `email` 字段里，业务账号名形态未定）。列类型定为 UUID 会与
     #: 本校验直接冲突：实测 `'acct_aaa'::uuid` 报 `invalid input syntax for type uuid`，
     #: 即「合法账号键无法落库」，删除与纠正对该类账号不可实现。
     #: 改为 String 后，UUID 形态的账号同样可用（36 字符 < 上界），不预先收窄契约；
@@ -90,10 +94,8 @@ class MemoryDeletionLedger(Base):
     deleted_by: Mapped[str | None] = mapped_column(String(128), nullable=True)
     #: 删除原因，取值见 `DELETION_REASONS`。
     #:
-    #: 判据落在 CHECK 约束上（2026-09-29 评审指出，实测当时只有注释承诺）：
-    #: 词表是闭集（调用方按原因区分处置：`account_deletion` 是账号级清理，其余是单条
-    #: 语义删除），而此前 `pg_constraint` 里只有 PK 与 UNIQUE——探针插入
-    #: `reason='not_a_valid_reason'` 成功，即存储层可写入任意字符串，注释承诺的
+    #: 判据落在 CHECK 约束上：词表是闭集（调用方按原因区分处置：`account_deletion`
+    #: 是账号级清理，其余是单条语义删除）。没有该约束时存储层可写入任意字符串，
     #: 词表形同不存在（CORE-05：不变量要落最强可行通道）。
     #: 代价是词表变更需要一次迁移，这是有意接受的：删除原因进审计，静默写入未知
     #: 原因比一次迁移昂贵得多。

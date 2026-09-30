@@ -1,20 +1,9 @@
 """记忆的身份与派生标识。
 
-归属（见 docs/技术设计/technical-details/通用记忆.md 第 1、3 节与
-docs/技术设计/decisions/通用记忆归属为账号.md）：分区键是账号，且
-episode 的确定性标识由 `pending_id` 派生。
-
-两个必须集中在此处的理由：
-
-1. 账号标识必须在入口处校验：唯一依据是 Graphiti 的 `validate_group_id`
-   （`^[a-zA-Z0-9_-]+$`）。更正（2026-09-29 评审）：此前此处写「还有 FalkorDB 的
-   图名约束」——该说法不成立（实测 FalkorDB 图名无字符集限制，唯一真实限制是
-   空图名）。但分区语义仍然关键：在 FalkorDB 后端 `group_id` 就是图名
-   （`driver.clone(database=group_id)`），不是同图内的属性分区；不合法或不存在的账号
-   会变成「写入成功、读取为空」这类难查的失败，因此在入口处转成显式错误。
-2. 确定性 uuid 是幂等的唯一依据（第 3 节实测）：图库的身份是 `uuid` 而非 `name`，
-   但同一个 uuid 不能直接交给 `add_episode(uuid=...)`（该参数要求节点已存在）。
-   把「派生」与「写入」分开，是为了让写入侧能先查我方幂等标记再决定要不要碰图库。
+职责：校验账号分区键，且由 `pending_id` 派生确定性的 episode 标识。
+边界：分区键由登录态决定，不接受调用方传入；本模块不触碰图库。
+参考：见 docs/技术设计/technical-details/通用记忆.md 第 1、3 节与
+docs/技术设计/decisions/通用记忆归属为账号.md。
 """
 
 from __future__ import annotations
@@ -46,13 +35,22 @@ PendingId = NewType("PendingId", str)
 # 输出约束: 防止与 AccountId / PendingId 混用
 EpisodeUuid = NewType("EpisodeUuid", str)
 
+#: 归属（见 docs/技术设计/technical-details/通用记忆.md 第 1、3 节与
+#: docs/技术设计/decisions/通用记忆归属为账号.md）：分区键是账号，且
+#: episode 的确定性标识由 `pending_id` 派生。
+#:
+#: 两个必须集中在此处的理由：
+#: 1. 账号标识必须在入口处校验：唯一依据是 Graphiti 的 `validate_group_id`
+#:    （`^[a-zA-Z0-9_-]+$`）。但分区语义仍然关键：在 FalkorDB 后端 `group_id` 就是图名
+#:    （`driver.clone(database=group_id)`），不是同图内的属性分区；不合法或不存在的账号
+#:    会变成「写入成功、读取为空」这类难查的失败，因此在入口处转成显式错误。
+#:
 #: 账号标识的合法字符集。依据是 Graphiti 的 `validate_group_id`
 #: （源码 `helpers.py`：`re.match(r'^[a-zA-Z0-9_-]+$', group_id)`，不合法即抛
 #: `GroupIdValidationError`）——账号键最终要作为 `group_id` 传给 Graphiti，不满足它
 #: 就会在写入时失败。
 #:
-#: 实测更正（2026-09-29，评审复核）：此前本节声称还有「FalkorDB 图名约束」这第二道，
-#: 该说法不成立——FalkorDB 图名没有字符集限制（逐值实测 `acct.aaa`、`acct aaa`、
+#: FalkorDB 图名没有字符集限制（逐值实测 `acct.aaa`、`acct aaa`、
 #: `账号一号`、`acct:aaa`、`acct/aaa`、`_` 全部建图成功）；客户端唯一真实的限制是
 #: 空图名（`falkordb/asyncio/falkordb.py` 抛 `TypeError: Expected a string parameter`）。
 #: 因此本判断的唯一依据是 Graphiti 的正则，它同时也覆盖了「空值」——我们另行显式
@@ -63,7 +61,7 @@ EpisodeUuid = NewType("EpisodeUuid", str)
 #: 属安全方向：宁可少收一个畸形键，也不让尾随换行进入图名。
 _ACCOUNT_ID_PATTERN = re.compile(r"^[a-zA-Z0-9_-]+$")
 
-#: 账号标识的长度上界（CORE-11：外部输入必须有界）。实测此前无上界——100000 字符的
+#: 账号标识的长度上界（CORE-11：外部输入必须有界）。没有上界时 100000 字符的
 #: 键会被接受并成为 Redis 的图名。128 与账本列宽（`campfire_memory_deletion_ledger`
 #: 的 `account_id`）一致；SuperTokens 的用户标识是 36 字符 UUID，128 留有充分余量。
 MAX_ACCOUNT_ID_LENGTH = 128
@@ -140,7 +138,7 @@ def to_episode_key(raw: object) -> EpisodeUuid:
             operation="validate_episode_key",
             detail=f"length={len(raw)}",
         )
-    # 显式拒绝含空白字符的输入（2026-09-29 评审发现，实测复现）：`uuid.UUID()` 内部
+    # 显式拒绝含空白字符的输入：`uuid.UUID()` 内部
     # 先剥连字符再 `int(s, 16)`，而 `int()` 会剥离首尾空白（`int(" ff ", 16) == 255`）。
     # 于是「长度不变、用一个空白顶替某位 hex」的畸形串会被接受并归一到另一个 UUID
     # ——形如 `3f2504e0-4f89-41d3-9a0c-0305e82c330` + 空格会被当成完全不同的 key。
@@ -196,8 +194,13 @@ def to_account_id(raw: object) -> AccountId:
 def derive_episode_uuid(pending_id: PendingId) -> EpisodeUuid:
     """由 `pending_id` 派生确定性的 episode uuid。
 
-    同一 pending_id 永远得到同一 uuid——这是重复投递不产生第二条 episode 的
-    唯一依据（图库的 `MERGE` 是覆盖语义，没有「已存在则跳过」，见通用记忆第 3 节）。
+    2. 确定性 uuid 是幂等的唯一依据（第 3 节实测）：图库的身份是 `uuid` 而非 `name`，
+       但同一个 uuid 不能直接交给 `add_episode(uuid=...)`（该参数要求节点已存在）。
+       把「派生」与「写入」分开，是为了让写入侧能先查我方幂等标记再决定要不要碰图库。
+
+    由此得到本函数的核心承诺：同一 pending_id 永远得到同一 uuid——这是重复投递不产生
+    第二条 episode 的唯一依据（图库的 `MERGE` 是覆盖语义，没有「已存在则跳过」，
+    见通用记忆第 3 节）。
 
     安全性前提（不可省）：UUID5 基于 SHA-1，对选择前缀碰撞已不牢靠。本设计成立
     完全依赖「`pending_id` 永远由我们自己的 uuid4 主键生成、不接受调用方传入」——

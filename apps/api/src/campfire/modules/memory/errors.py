@@ -1,13 +1,10 @@
 """通用记忆的异常层次。
 
-归属（见 docs/项目结构设计.md 第 6 节）：本模块拥有「通用记忆的写入与读取、
-时间演变与失效判定」。失败语义的真源是
+归属（见 docs/项目结构设计.md 第 6 节）：本模块拥有「通用记忆的写入与读取、时间演变与失效判定」。失败语义的真源是
 `docs/技术设计/technical-details/通用记忆.md` 第 4、6、7 节与
 `docs/技术设计/technical-details/写入路径.md` 第 6 节。
-
-为什么需要统一基类：调用方（工具层与应急预注入）需要一句话区分
-「图库不可用」与「没有记忆」——前者必须降级标注，后者是正常空值。
-两者的判据只能是异常类型，不能靠错误消息文本。
+边界：调用方（工具层与应急预注入）靠异常类型区分「图库不可用」与「没有记忆」——理由见 `MemoryModuleError`。
+参考：`docs/技术设计/technical-details/通用记忆.md` 第 4、6、7 节。
 """
 
 from __future__ import annotations
@@ -15,6 +12,10 @@ from __future__ import annotations
 
 class MemoryModuleError(Exception):
     """通用记忆的统一异常基类，便于上层一句 `except MemoryModuleError` 收口。
+
+    为什么需要统一基类：调用方（工具层与应急预注入）需要一句话区分
+    「图库不可用」与「没有记忆」——前者必须降级标注，后者是正常空值。
+    两者的判据只能是异常类型，不能靠错误消息文本。
 
     为什么不叫 `MemoryError`：那是 Python 内建异常的名字，同名会遮蔽它——
     本模块内任何 `except MemoryError` 都会捕捉到错误的对象（内建语义是内存耗尽），

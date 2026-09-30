@@ -1,12 +1,8 @@
 """技能目录：把已加载的 skill 渲染成一条只含 name 与 description 的注入消息内容。
 
-依据 docs/技术设计/technical-details/通用基座.md 第 3 节：
-
-- 目录注入只含 `name` 与 `description`；正文与资源在激活时才进入对话。
-- 目录预算上限 4000 token（2026-09-29 定）；超出时按 `metadata.surface` 分组，
-  只注入当前面可见的 skill。
-- 按面筛选后仍超出时显式失败，不截断：截断会让模型看到一份看似完整实为残缺的
-  技能清单，那属于基座文档第 9 节禁止的静默降级。
+职责：把已加载的 skill 渲染成注入消息内容，只含 `name` 与 `description`。
+边界：目录预算上限 4000 token；按面收窄后仍超出即显式失败，不截断。
+参考：docs/技术设计/technical-details/通用基座.md 第 3 节。
 """
 
 from __future__ import annotations
@@ -24,12 +20,14 @@ CATALOG_BUDGET_TOKENS = 4000
 
 # ASCII 的经验比例基准：约 4 字符 1 token（只用于散文）。
 _ASCII_CHARS_PER_TOKEN = 4
-# ASCII 词段的权重：BPE 会把长词切成多段，按段数乘 1.5 才不至于低估。
+# ASCII 词段的权重：BPE 会把长词切成多段，按段数乘 1.5
+# 才不至于低估。
 _ASCII_RUN_WEIGHT = 3 / 2
 # CJK 每字符 1.25 token：实测中文字符在 cl100k 下约 1.0–1.25 token/字符，
 # 取偏高一侧，让目录预算宁可早失败也不溢出。
 _CJK_WEIGHT = 5 / 4
-# 非 ASCII 且非 CJK 的字符（emoji、符号）按 3 token/字符计：实测 emoji 为 2，取 3 留余量。
+# 非 ASCII 且非 CJK 的字符（emoji、符号）按 3 token/字符计：
+# 实测 emoji 为 2，取 3 留余量。
 _WIDE_NON_CJK_TOKENS = 3
 
 
@@ -130,6 +128,12 @@ def render_catalog(
 
     顺序按 `name` 排序，保证同一组 skill 每次渲染逐字一致——目录会作为消息落进
     会话历史，不稳定的顺序会让模型前缀缓存从目录处失效。
+
+    目录注入只含 `name` 与 `description`；正文与资源在激活时才进入对话。
+    目录预算上限 4000 token（2026-09-29 定）；超出时按 `metadata.surface` 分组，
+    只注入当前面可见的 skill。
+    按面筛选后仍超出时显式失败，不截断：截断会让模型看到一份看似完整实为残缺的
+    技能清单，那属于基座文档第 9 节禁止的静默降级。
 
     超预算时先按 `surface` 收窄一次；仍超出则抛
     :class:`SkillCatalogOverflowError`。两条路径都返回/抛出确定结果，没有中间态。
