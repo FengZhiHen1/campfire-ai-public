@@ -28,6 +28,8 @@ import json
 
 import pytest
 
+from campfire.agent.context import window
+from campfire.modules.accounts import session_items
 from campfire.modules.accounts.session_items import (
     INJECTED_MESSAGE_PREFIXES,
     INTERRUPTED_TOOL_SUMMARY,
@@ -523,3 +525,27 @@ def test_candidate_cannot_appear_in_hydration() -> None:
 
     assert all(part["type"] != "candidate" for part in parts)
     assert parts == [{"type": "text", "text": "候选：某条推断"}]
+
+
+# ---------------------------------------------------------------------------
+# 跨模块：文本部件词表不许单侧漂移
+# ---------------------------------------------------------------------------
+
+#: 分片 content 里算作文本的部件类型；两处实现各自的集合都必须等于它。
+#:
+#: 写成字面量而不是取任一侧来互比：拿一侧当基准时，两侧一起漂移就仍然全绿。它不是
+#: 第三份定义——它是这条跨模块相等关系的比对基准，只在本节出现。
+TEXT_PART_TYPES = frozenset({"text", "input_text", "output_text"})
+
+
+def test_text_part_types_agree_across_the_two_parsers() -> None:
+    """两处解析同一种持久化格式，文本部件词表必须一致（`session_items` 文件头的承诺）。
+
+    `modules/*` 不得 import `agent/*`（项目结构设计第 7 节），因此这份词表必须在两处
+    各写一份，相等关系只能靠本用例机械守住。漂移方向是不对称且静默的：一侧把某部件
+    当文本、另一侧不当，两侧模块自己的用例都仍然自洽——基座侧遇到认不出的部件整体
+    返回 `None`（压缩漏检，方向安全），本模块侧丢掉该部件（历史少一段）。因此两侧都
+    与上面那个字面量互比，不互相 import。
+    """
+    assert window._TEXT_PART_TYPES == TEXT_PART_TYPES
+    assert session_items._TEXT_PART_TYPES == TEXT_PART_TYPES
