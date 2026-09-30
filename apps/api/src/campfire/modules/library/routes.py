@@ -27,7 +27,6 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Query
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from supertokens_python.recipe.session import SessionContainer
 
@@ -612,10 +611,11 @@ async def _check_expand_target(expand: str, *, library: str) -> JSONResponse | N
         return _error(422, "expand 不是合法的条目标识", "invalid_payload")
 
     other = LIBRARY_KNOWLEDGE if library == LIBRARY_CASE else LIBRARY_CASE
-    model = ITEM_MODELS[other]
     async with session_scope(get_settings()) as session:
-        found = (await session.execute(select(model.id).where(model.id == item_uuid))).scalar_one_or_none()
-    if found is not None:
+        # 走本模块用例取数（`load_items` 按库别取条目表），面层不直接查表：
+        # 否则「哪个库用哪张表、id 怎么归一」这份知识会散到面层，两处各写一份。
+        found = await load_items(session, [str(item_uuid)], library=other)
+    if found:
         return _error(422, f"该条目属于 {other} 库，不能在 {library} 库的列表里展开", "invalid_payload")
     return None
 
@@ -640,8 +640,10 @@ async def _find_item_any_library(item_uuid: uuid.UUID) -> tuple[str, KnowledgeIt
         404，页面就渲染不出那张撤下卡）。
     """
     async with session_scope(get_settings()) as session:
-        for library, model in ITEM_MODELS.items():
-            row = (await session.execute(select(model).where(model.id == item_uuid))).scalar_one_or_none()
+        # 与 `_check_expand_target` 同法：经本模块用例（`load_items`）按库别取条目，
+        # 面层不直接 `select` 条目表。
+        for library in ITEM_MODELS:
+            row = (await load_items(session, [str(item_uuid)], library=library)).get(str(item_uuid))
             if row is not None:
                 return library, row
     return None
