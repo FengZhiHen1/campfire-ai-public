@@ -1121,6 +1121,38 @@ async def test_emergency_builds_session_message_and_run_in_one_call(
     assert await _first_run_injected(body["session_id"]) is True
 
 
+async def test_emergency_profile_with_object_but_no_items_is_marked_absent(
+    client: httpx.AsyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """对象存在但一条档案条目都没有时，档案注入标注「本次未使用个性化档案」（`AC-02`）。
+
+    与上面那条的差别只在「有没有档案内容」：`EmergencyContext.has_profile` 由
+    `emergency_context` 按稳定层条目算出来，为假表示这份上下文整份不可用。忽略它的
+    后果是把「无档案」注入成「有档案（八组都没内容）」——模型据此以为拿到了档案。
+
+    **消融**：去掉 `render_emergency_profile` 里 `not context.has_profile` 那一支，
+    信封回到 `state="present"`，本用例失败。
+    """
+    runner = ScriptedRunner(get_settings())
+    _install_runner(runner)
+    _stub_memory(monkeypatch, EmergencyMemory(facts=[]))
+    object_id = await _make_object(_ACCOUNT, "空档案对象")
+
+    response = await client.post(
+        "/consult/emergency",
+        json={"support_object_id": object_id, "items": _intake_items()},
+    )
+    assert response.status_code == 202, response.text
+    await drain_pumps()
+
+    profile = runner.requests[-1].injections.items[0]
+    assert profile.source == "emergency-profile"
+    assert profile.content.startswith(EMERGENCY_PROFILE_PREFIX)
+    assert 'state="absent"' in profile.content
+    assert "本次未使用个性化档案" in profile.content
+
+
 def _fake_memory_reader(memory: EmergencyMemory):  # noqa: ANN202 —— 返回替身协程函数
     """造一个「按给定结果返回」的记忆取数替身（签名与 `read_emergency_facts` 的后两参一致）。"""
 
