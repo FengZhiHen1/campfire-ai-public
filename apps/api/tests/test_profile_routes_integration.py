@@ -18,7 +18,8 @@
 
 1. 越权与不存在逐字同文案（不泄露存在性）；归档上的新增文案区分（409）。
 2. 空名 422、`limit` 越界 422、无字段的 PATCH 422、重复确认 422、纠正无变更 422。
-3. 删除幂等：实测重复执行两次（第一次 `already=false`，第二次 `already=true`）。
+3. 删除的越权与不存在一律 404 且响应体逐字相同（裁决 1）；删除成功的响应为
+   `already: false`。
 4. 删掉的条目不再出现在读取里（`AC-08`）。
 5. 候选层单独成组、不进摘要（`AC-18`）；归档对象上 confirm 返回 200（可读可纠）。
 6. 补充条目的 `origin` 由服务端定为 `user_statement`。
@@ -488,21 +489,42 @@ async def test_reject_removes_candidate_from_reads(client: httpx.AsyncClient, as
     assert listing.json()["candidates"] == []
 
 
-async def test_delete_is_idempotent_across_two_real_calls(client: httpx.AsyncClient, as_account) -> None:  # noqa: ANN001
-    """删除幂等：实测重复执行两次，第二次 `already` 为真且仍返回 200。
+async def test_delete_returns_404_for_foreign_and_absent_items(client: httpx.AsyncClient, as_account) -> None:  # noqa: ANN001
+    """删除的越权与不存在：**404 且响应体逐字相同**（契约第 6 节、裁决 1）。
 
-    这不是代码审阅得出的结论，而是两次真实 HTTP 调用的结果（守则要求
-    「幂等类要求必须实测重复执行」）。
+    两个场景都是真实 HTTP 实测，不是读代码推得：
+    - 越权：删除他人条目；
+    - 不存在：删除一个从未存在过的合法标识。
+
+    第三次调用是「自己的条目删过之后再来一次」——条目是物理删除，服务端无法把
+    「已被自己删掉」与「从未存在」区分开，因此同样 404、同样文案：删除的越权与
+    不存在一律 404，不得返回 200（2026-09-30 编排器裁决 1）。
+
+    另外断言越权删除**没有删到任何行**：只报 404 却真把行删了同样是缺陷。
     """
-    object_id = await _new_object()
-    item_id = await _propose(object_id, origin="user_statement")
+    foreign_object = await _new_object(account=_ACCOUNT_OTHER)
+    foreign_item = await _propose(foreign_object, origin="ai_inference", account=_ACCOUNT_OTHER)
+    mine = await _new_object(name="我的对象")
+    my_item = await _propose(mine, origin="user_statement")
+    missing = "3f2504e0-4f89-41d3-9a0c-0305e82c3301"
 
-    first = await client.delete(f"/profile/items/{item_id}")
-    second = await client.delete(f"/profile/items/{item_id}")
+    foreign = await client.delete(f"/profile/items/{foreign_item}")
+    absent = await client.delete(f"/profile/items/{missing}")
+    mine_first = await client.delete(f"/profile/items/{my_item}")
+    mine_again = await client.delete(f"/profile/items/{my_item}")
 
-    assert first.status_code == second.status_code == 200
-    assert first.json() == {"item_id": item_id, "already": False}
-    assert second.json() == {"item_id": item_id, "already": True}
+    assert mine_first.status_code == 200
+    assert mine_first.json() == {"item_id": my_item, "already": False}
+
+    for response in (foreign, absent, mine_again):
+        assert response.status_code == 404
+        assert response.json() == {"detail": OBJECT_NOT_ACCESSIBLE_MESSAGE, "code": "not_found"}
+    assert foreign.json() == absent.json() == mine_again.json(), "越权与不存在的响应必须逐字相同"
+
+    # 越权删除不得删到行（他人条目完好）。
+    async with session_scope(get_settings()) as session:
+        survivor = await repo.get_item(session, item_id=foreign_item)
+    assert survivor is not None and survivor.description == "可观察的描述"
 
 
 async def test_deleted_item_is_gone_from_items_and_summary(client: httpx.AsyncClient, as_account) -> None:  # noqa: ANN001
