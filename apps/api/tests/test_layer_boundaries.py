@@ -49,12 +49,19 @@ ALLOWED: dict[str, set[str]] = {
     # `cli/*` 当作**一层**，层内文件互相引用（`__main__` 用 `operator`）不构成跨层依赖；
     # 而 `_owner_prefix` 对层根下的文件只放行到 `cli/<文件名>`，**不放行兄弟文件**，
     # 故必须显式列出。
+    #
+    # **为什么放行 profile**（2026-09-30，随 `modules/profile` 落地）：注销要满足
+    # `AC-24`「其档案……不再存在」，因此 CLI 必须注入档案侧的 purger
+    # （`modules/profile/purge.ProfileAccountPurger`），与 memory 侧同一种做法。
+    # 该注入是 docs/TODO.md「`cli` 白名单与注销编排的冲突」一条明确预告的后续动作
+    # （原文：「档案模块落地时须补一个 purger 并注入 CLI」）。
     "cli": {
         "campfire.cli",
         "campfire.core",
         "campfire.modules.accounts",
         "campfire.modules.library",
         "campfire.modules.memory",
+        "campfire.modules.profile",
     },
 }
 

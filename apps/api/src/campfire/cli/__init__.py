@@ -17,15 +17,18 @@
 # 条目与检索节点在同一事务内落库。
 
 # 依赖白名单（项目结构设计第 7 节）：`cli` 入口允许依赖 `core/*` 与
-# `modules/{library,accounts,memory}`；禁止 import `surfaces/*`、禁止暴露成服务端点、
-# 禁止绕过条目表直接写节点。摄取流水线、分块链与嵌入适配的实现归
+# `modules/{library,accounts,memory,profile}`；禁止 import `surfaces/*`、禁止暴露成
+# 服务端点、禁止绕过条目表直接写节点。摄取流水线、分块链与嵌入适配的实现归
 # `modules/library`（见 docs/技术设计/technical-details/RAG策略.md 第 7 节），
 # 本入口只负责命令行形态与调用顺序。
 
-# 为什么放行 `accounts` 与 `memory`（2026-09-30 定调级修正）：`accounts` 是邀请码
-# 与账号状态机的归属（运营子命令直接调用）；`memory` 放行是因为账号注销的编排在
-# `core/auth`，而 `core/*` 不得依赖 `modules/*`——因此「清除该账号的记忆数据」
-# 的实现放 `modules/memory/purge.py`，由本入口注入给编排，与其他领域的清除者同一种做法。
+# 为什么放行 `accounts`、`memory` 与 `profile`（2026-09-30 定调级修正 + 随模块落地）：
+# `accounts` 是邀请码与账号状态机的归属（运营子命令直接调用）；`memory` 与 `profile`
+# 放行是因为账号注销的编排在 `core/auth`，而 `core/*` 不得依赖 `modules/*`——
+# 因此「清除该账号的某个领域的数据」的实现放各模块的 `purge.py`，
+# 由本入口注入给编排，与其他领域的清除者同一种做法。
+# 三处声明（本节、`docs/项目结构设计.md` 第 7 节的 `cli` 行、机械检查
+# `apps/api/tests/test_layer_boundaries.py`）必须保持同一份清单。
 
 # 四条与「本地跑」绑定的纪律（RAG 策略第 7 节）：
 # 1. 凭据与环境：与运行同一套环境变量入口（`core/config`）。
