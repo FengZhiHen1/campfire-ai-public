@@ -18,7 +18,7 @@ docs/技术设计/technical-details/资料与案例检索.md；docs/项目结构
   只写一处，改一处两个工具同时生效——抄两份必然漂移；
 - 不共用的部分只有一个：库别（`library=`）与案例专属字段的渲染。
 
-两库**不互相混入**：库别由各自的工具写死传入，模型无法改（契约第 4 节「只查案例库」
+两库不互相混入：库别由各自的工具写死传入，模型无法改（契约第 4 节「只查案例库」
 对 `search_cases` 与「只查资料库」对 `search_knowledge` 是同一件事的两种说法）。
 """
 
@@ -26,7 +26,6 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -103,7 +102,7 @@ class SearchCasesArgs(BaseModel):
     )
 
 
-def _render_item(item: RetrievedItem) -> dict[str, Any]:
+def _render_item(item: RetrievedItem) -> dict[str, object]:
     """把检索结果映射为返回契约（资料与案例检索第 3 节）的字段。
 
     字段名与契约逐字一致：`item_id` / `library` / `title` / `snippet` /
@@ -127,7 +126,7 @@ def _render_item(item: RetrievedItem) -> dict[str, Any]:
     }
 
 
-def _render_case_item(item: RetrievedItem) -> dict[str, Any]:
+def _render_case_item(item: RetrievedItem) -> dict[str, object]:
     """案例条目的返回映射 = 共用字段 + 七个案例专属字段（资料与案例检索第 3 节）。
 
     为什么这七个字段一个都不能省（契约第 3 节、公共案例库第 8 节）：
@@ -262,7 +261,7 @@ async def search_cases(context: ToolContext, args: SearchCasesArgs) -> ToolResul
 
     硬约束（契约第 4 节）：
 
-    1. **只查案例库**，不混入专业资料。库别由本函数写死传 `LIBRARY_CASE`，
+    1. 只查案例库，不混入专业资料。库别由本函数写死传 `LIBRARY_CASE`，
        参数模型里没有库别字段——模型无法把这条约束改成「查资料库」。
     2. 结果侧约束（`status` / `authorization` 随结果返回、真实案例与虚构样例可辨、
        撤下即不返回）不在工具层重做：它们在检索链与返回映射里落地
@@ -276,7 +275,7 @@ async def search_cases(context: ToolContext, args: SearchCasesArgs) -> ToolResul
     合法取值域由存储与检索侧决定。
 
     失败语义与 `search_knowledge` 同源（契约第 5 节：不归本文拥有）：
-    两路都失败时明确失败，**绝不**返回空列表冒充「没有相关案例」——那会让模型
+    两路都失败时明确失败，绝不返回空列表冒充「没有相关案例」——那会让模型
     对使用者说「没有类似的案例」，而事实是检索没跑成。
 
     Returns:
@@ -323,7 +322,7 @@ async def search_cases(context: ToolContext, args: SearchCasesArgs) -> ToolResul
 
 
 def _result_payload(
-    items: list[dict[str, Any]],
+    items: list[dict[str, object]],
     degraded_paths: tuple[str, ...],
     *,
     empty_notice: str,
@@ -334,7 +333,7 @@ def _result_payload(
     改一处忘另一处就会让其中一个工具悄悄丢掉降级提示——而「不得把检索不完整
     说成没有资料」正是靠那句话成立的。
     """
-    payload: dict[str, Any] = {"results": items, "count": len(items)}
+    payload: dict[str, object] = {"results": items, "count": len(items)}
     note = _degradation_note(degraded_paths)
     if note is not None:
         payload["degraded"] = True
