@@ -1,0 +1,638 @@
+/* 契约组件样式：类名与规则对应 docs/design/components.html，只消费 shared/styles/tokens.css 的变量。
+ * 为什么是全局表而不是 CSS Modules：CSS Modules 会给类名加哈希，DOM 类名随即不再等于契约类名
+ * （.panel/.field/.btn-primary），与「组件类名匹配 components.html」直接冲突；
+ * 页面私有布局仍走就近的 *.module.css。视觉契约唯一权威是 token 层，本文件不定义色值与间距。 */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+[hidden] {
+  display: none !important;
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+}
+
+button,
+select,
+summary,
+label {
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+a {
+  color: var(--fg);
+  text-underline-offset: var(--space-1);
+}
+
+h1,
+h2,
+h3,
+.brand-name {
+  font-family: var(--font-display);
+  font-weight: 500;
+  line-height: 1.3;
+  letter-spacing: var(--tracking-display);
+}
+
+h1,
+h2 {
+  font-size: var(--text-xl);
+}
+
+h3 {
+  font-size: var(--text-lg);
+}
+
+p,
+li,
+strong,
+summary {
+  overflow-wrap: anywhere;
+}
+
+strong {
+  font-weight: 600;
+}
+
+:where(a, button, input, textarea, select, summary):focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: var(--space-1);
+}
+
+:where(h2, [tabindex='-1']):focus {
+  outline: none;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* ── 布局与层级 ─────────────────────────────────────────────── */
+
+.stack {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.panel {
+  padding: var(--space-5);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  box-shadow: var(--elev-raised);
+}
+
+.panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding-bottom: var(--space-4);
+  border-bottom: 1px solid var(--border-soft);
+}
+
+.tile {
+  padding: var(--space-5);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+}
+
+.mini-card {
+  padding: var(--space-4);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-md);
+  background: var(--surface-warm);
+}
+
+.hint {
+  margin-top: var(--space-2);
+  color: var(--meta);
+  font-size: var(--text-sm);
+}
+
+.meta {
+  color: var(--meta);
+  font-size: var(--text-xs);
+  line-height: 1.6;
+  letter-spacing: 0.01em;
+}
+
+.tag {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-pill);
+  color: var(--meta);
+  font-size: var(--text-xs);
+}
+
+/* ── 按钮 ───────────────────────────────────────────────────── */
+
+.btn {
+  display: inline-flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 48px;
+  min-width: 44px;
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  color: var(--fg);
+  font: 700 var(--text-sm) / 1.5 var(--font-body);
+  letter-spacing: 0.02em;
+  text-decoration: none;
+  transition:
+    background-color var(--motion-fast) var(--ease-standard),
+    border-color var(--motion-fast) var(--ease-standard);
+}
+
+.btn.block {
+  width: 100%;
+}
+
+.btn-primary {
+  background: var(--accent);
+  color: var(--accent-on);
+  border-color: var(--accent);
+}
+
+.btn-primary:active {
+  background: var(--accent-active);
+}
+
+.btn-secondary {
+  background: var(--surface);
+  color: var(--fg);
+  border-color: var(--border);
+}
+
+.btn-quiet {
+  background: var(--surface-warm);
+  border-color: transparent;
+  color: var(--fg-2);
+}
+
+.btn-danger {
+  background: var(--danger);
+  color: var(--surface);
+  border-color: var(--danger);
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.button-row {
+  display: flex;
+  gap: var(--space-3);
+}
+
+.button-row > .btn {
+  flex: 1;
+  min-width: 0;
+}
+
+.text-button {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  min-width: 44px;
+  padding: var(--space-2) 0;
+  border: 0;
+  background: none;
+  color: var(--fg-2);
+  font-size: var(--text-sm);
+  text-decoration: underline;
+  text-underline-offset: var(--space-1);
+}
+
+/* ── 表单 ───────────────────────────────────────────────────── */
+
+.field {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.field label {
+  color: var(--fg-2);
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+
+.field .hint {
+  margin: 0;
+}
+
+input:not([type='checkbox'], [type='radio']) {
+  width: 100%;
+  min-height: 48px;
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--fg);
+}
+
+input:not([type='checkbox'], [type='radio']):focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: var(--focus-ring);
+}
+
+/* 无效态用 aria-invalid 而不是 :user-invalid：前者由状态显式驱动，可在 jsdom 下断言，
+ * 且与 :user-invalid 表达同一意图（页面设计登录页的无效边框）。 */
+input[aria-invalid='true'] {
+  border-color: var(--danger);
+}
+
+.field-error {
+  color: var(--danger);
+  font-size: var(--text-sm);
+}
+
+/* 空错误容器不占位：未触发校验时不得留下可见空白。 */
+.field-error:empty {
+  display: none;
+}
+
+/* ── 三态基元 ───────────────────────────────────────────────── */
+
+.skeleton {
+  min-height: 16px;
+  border-radius: var(--radius-sm);
+  background: color-mix(in oklab, var(--surface-warm), transparent 40%);
+}
+
+.skeleton.row {
+  min-height: calc(var(--space-12) * 2);
+  border-radius: var(--radius-md);
+}
+
+.skeleton.bubble {
+  min-height: 44px;
+  width: 62%;
+  border-top-right-radius: var(--space-1);
+}
+
+.skeleton.doc {
+  min-height: 72px;
+}
+
+.empty-state {
+  padding: var(--space-6) var(--space-4);
+  text-align: center;
+}
+
+.empty-state .es-title {
+  font-family: var(--font-display);
+  font-weight: 500;
+  font-size: var(--text-lg);
+}
+
+.empty-state p {
+  margin-block: var(--space-3) var(--space-5);
+  color: var(--fg-2);
+}
+
+.error-card {
+  display: grid;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border: 1px solid color-mix(in oklab, var(--danger), transparent 55%);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+}
+
+.error-card .ec-title {
+  color: var(--danger);
+  font-size: var(--text-base);
+  font-weight: 600;
+}
+
+.error-card p {
+  color: var(--fg-2);
+}
+
+/* 表单内错误横幅的间距变体（components.html 的 .form-feedback）。 */
+.form-feedback {
+  margin-block: var(--space-4);
+}
+
+.form-status {
+  margin-top: var(--space-4);
+  color: var(--fg-2);
+}
+
+.form-status:empty {
+  display: none;
+}
+
+/* ── 页头与导航 ─────────────────────────────────────────────── */
+
+.page-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-4) 0;
+}
+
+.page-head :is(h1, h2, h3) {
+  font-size: var(--text-xl);
+}
+
+.subpage-head {
+  position: sticky;
+  top: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: 48px;
+  padding: var(--space-2) var(--container-gutter-phone);
+  padding-top: calc(var(--space-2) + env(safe-area-inset-top, 0px));
+  border-bottom: 1px solid var(--border-soft);
+  background: var(--surface);
+}
+
+/* 项目侧 .phone-shell（global.css）自带一份左右 gutter，契约 .subpage-head 也自带一份：
+ * 嵌套时会出现两份内缩（返回链接左边界 32px vs 卡片 16px，视觉上头部比内容更靠内）。
+ * 在 shell 内取消头部那份，让吸顶头与内容卡左对齐；脱离 shell 单独使用时行为不变。 */
+.phone-shell .subpage-head {
+  padding-inline: 0;
+}
+
+.sp-back {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  min-width: 44px;
+  color: var(--fg-2);
+  font-size: var(--text-sm);
+}
+
+/* 次级页标题的字号与字重：契约只给了字体族，字号继承正文（实测 17px/400），
+ * 而页面设计对次级页标题明文要求 `--text-xl`、500（使用说明.md:15、案例库浏览页.md:15）。
+ * 标在契约层而不是各页面：这是所有次级页共同的标题规格，页面各写一份必然漂移。 */
+.sp-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-display);
+  font-size: var(--text-xl);
+  font-weight: 500;
+}
+
+.tab-bar {
+  position: fixed;
+  inset-inline: 0;
+  bottom: 0;
+  z-index: 40;
+  display: flex;
+  justify-content: space-around;
+  max-width: var(--phone-shell-max);
+  margin-inline: auto;
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+  border-top: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.tab-item {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-1);
+  min-width: 56px;
+  min-height: 56px;
+  color: var(--fg-2);
+  font-size: var(--text-xs);
+  text-decoration: none;
+}
+
+.tab-item svg {
+  width: var(--space-5);
+  height: var(--space-5);
+}
+
+.tab-item[aria-current='page'] {
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: var(--space-1);
+}
+
+/* 一级页底部为固定 tab 栏预留高度（页设计首页的底部预留条）。
+ * 选择器带 .phone-shell 是为了压过 global.css 的 `padding` 简写：两者同为单类选择器时
+ * 后者（global.css 在 main.tsx 里后导入）会连 padding-bottom 一起覆盖，预留会静默失效。
+ *
+ * `has-tab-bar` 是**实现侧派生类**（由 shared/ui/AppShell 按「是否渲染 tab 栏」挂上），
+ * 不是契约修订：它没有新的视觉语言，只编码首页.md:21 已写明的「底部预留 tab 栏高度」
+ * 这条既有要求，且预留量全部由既有 token 与契约的 56px 栏高算出。契约 components.html
+ * 不收录它；若将来需要宿主感知子元素，再走 DESIGN.md 的契约修订流程改为 :has() 形态。 */
+.phone-shell.has-tab-bar {
+  padding-bottom: calc(56px + var(--space-6) + env(safe-area-inset-bottom, 0px));
+}
+
+/* ── 列表与入口 ─────────────────────────────────────────────── */
+
+.list-row {
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-4) 0;
+  border-top: 1px solid var(--border-soft);
+}
+
+.list-row .lr-title {
+  font-size: var(--text-base);
+  font-weight: 600;
+}
+
+.list-row .lr-sub {
+  color: var(--muted);
+  font-size: var(--text-sm);
+}
+
+.list-row .lr-meta {
+  color: var(--meta);
+  font-size: var(--text-xs);
+}
+
+.entry-title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.emergency-entry {
+  border: 1.5px solid var(--accent);
+}
+
+.emergency-entry p {
+  margin-block: var(--space-3) var(--space-5);
+  color: var(--fg-2);
+}
+
+.daily-entry {
+  display: grid;
+  gap: var(--space-3);
+  text-decoration: none;
+}
+
+.daily-entry p {
+  color: var(--fg-2);
+}
+
+.entry-next {
+  color: var(--meta);
+  font-size: var(--text-sm);
+}
+
+.flame-dot {
+  width: var(--space-2);
+  height: var(--space-2);
+  border-radius: var(--radius-pill);
+  background: var(--accent);
+  flex: none;
+}
+
+/* 唯一循环动效：篝火呼吸点（页面设计首页的动效意图，周期取 token --motion-breath）。 */
+@media (prefers-reduced-motion: no-preference) {
+  .flame-dot.breathing {
+    animation: flame-breath var(--motion-breath) var(--ease-standard) infinite;
+  }
+}
+
+@keyframes flame-breath {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.55;
+    transform: scale(0.82);
+  }
+}
+
+/* ── 底部确认单 ─────────────────────────────────────────────── */
+
+/* 底部确认单。
+ * z-index 必须高于 .tab-bar（40）：两者同为 position:fixed，否则 tab 栏会盖住 sheet 底部，
+ * 在真机高度下「取消/退出」两个按钮正好落在 tab 栏区域内而**不可点**（实测重叠 57px、
+ * 按钮中心 elementFromPoint 命中 a.tab-item）。契约未定义 z-index 层级 token，故用字面量，
+ * 与 .tab-bar 的 40 同族。 */
+.confirm-sheet {
+  position: fixed;
+  top: auto;
+  bottom: 0;
+  z-index: 50;
+  max-width: var(--phone-shell-max);
+  width: 100%;
+  max-height: 90svh;
+  margin: 0 auto;
+  padding: var(--space-6) var(--space-5) calc(var(--space-6) + env(safe-area-inset-bottom, 0px));
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+  background: var(--surface);
+  color: var(--fg);
+  box-shadow: var(--elev-raised);
+}
+
+.confirm-sheet::backdrop {
+  background: color-mix(in oklab, var(--bg), transparent 20%);
+}
+
+.confirm-sheet p {
+  margin-block: var(--space-3) var(--space-5);
+  color: var(--fg-2);
+}
+
+/* 进入类动效统一走 --motion-base；减弱动效偏好下由下方全局规则关闭。
+ *
+ * 为什么选择器是 .confirm-sheet 而不是契约原文的 .confirm-sheet[open]：`[open]` 只在原生
+ * `<dialog>` 由 showModal/setAttribute 打开时成立，而本期实现用「挂载即打开」的 div
+ * （jsdom 未实现 showModal，见 SettingsPage 的 LogoutConfirmSheet 注释），从不设置 open 属性，
+ * 于是 `[open]` 版本是一条**永不命中的死规则**（实测 animationName=none）。
+ * 改挂 .confirm-sheet 对其余用法同样成立：未打开的 <dialog> 是 display:none，从 none 转为
+ * 可见时动画照常触发；打开的 <dialog> 与本期的 div 都在 DOM 中可见，两者都会播放。 */
+@media (prefers-reduced-motion: no-preference) {
+  .confirm-sheet {
+    animation: sheet-slide-in var(--motion-base) var(--ease-standard);
+  }
+}
+
+@keyframes sheet-slide-in {
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+
+/* ── 状态徽章 ───────────────────────────────────────────────── */
+
+.status {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--meta);
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+
+.status::before {
+  content: '';
+  width: var(--space-2);
+  height: var(--space-2);
+  border-radius: var(--radius-pill);
+  background: var(--meta);
+  flex: none;
+}
+
+.status.stable::before {
+  background: var(--status-stable);
+}
+
+.status.unruled::before {
+  background: var(--status-unruled);
+}
+
+.status.high::before {
+  background: var(--status-high);
+}
+
+.status.off::before {
+  background: var(--border);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition: none !important;
+    animation: none !important;
+  }
+}

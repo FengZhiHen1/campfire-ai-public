@@ -6,6 +6,20 @@
     <meta name="color-scheme" content="light" />
     <meta name="description" content="篝火智答：面向孤独症人士及其支持网络的情境支持平台。" />
     <title>篝火智答</title>
+    <!--
+      标题字体：思源宋体（Noto Serif SC）weight 500（DESIGN.md 字体栈节）。
+      为什么走 Google Fonts 官方源而不是自托管：设计文档把「国内加载可靠性」明确标为
+      待实现期验证（可换镜像或自托管），一期先接官方源把调性落地；若国内实测不可靠，
+      换镜像或自托管只需改这里的两行 URL，token 层的 --font-display 回退栈不动。
+      display=swap：宋体未就绪时先用系统宋体回退渲染文字，不出现长时间空白标题。
+      正文不加载 webfont（DESIGN.md：正文用系统无衬线栈，零加载成本）。
+    -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@500&display=swap"
+    />
   </head>
   <body>
     <div id="root"></div>
