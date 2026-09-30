@@ -24,6 +24,8 @@
 3. 删除幂等：实测重复执行两次（第一次 `newly_deleted=true`，第二次 `false`）。
 4. 删除后两条读路径都不再返回（`AC-08`）：本面列表与 `read_timeline`。
 5. 非法 `episode_key` → 422（形状校验在路由层，本包裁决 7）。
+5b. 删除的两个判据各钉一条（裁决 2）：图库可用且本账号没有这条片段 → 404，
+    越权与不存在逐字同文案；图库不可用 → 账本照记并返回 200（契约第 6 节）。
 6. 纠正两步：正常路径返回 201 且 `superseded` / `new_episode_written` 都为真；
    写新失败时返回 **200** 与 `{superseded: true, new_episode_written: false}`
    （本包裁决 3 的中间态形状）——旧记忆已撤下、新记忆未写入。
@@ -39,7 +41,7 @@ from datetime import datetime, timedelta, timezone
 import httpx
 import pytest
 import pytest_asyncio
-from sqlalchemy import delete
+from sqlalchemy import delete, select
 
 from campfire.core.authz import set_authorizer
 from campfire.core.config import EMBEDDING_DIM, get_settings
@@ -47,7 +49,9 @@ from campfire.core.db import session_scope
 from campfire.modules.memory import routes as memory_routes
 from campfire.modules.memory.graph import MemoryGraph, OrderedCrossEncoder
 from campfire.modules.memory.identity import PendingId, derive_episode_uuid, to_account_id
+from campfire.modules.memory.ledger import recorded_deletion_reason
 from campfire.modules.memory.models import MemoryDeletionLedger
+from campfire.modules.memory.routes import NOT_FOUND_MESSAGE
 from campfire.modules.memory.store import read_timeline, write_episode
 from campfire.modules.profile.authz import OwnerAuthorizer
 
@@ -392,7 +396,7 @@ async def test_delete_removes_the_episode_from_both_read_paths(
 async def test_delete_fails_on_malformed_key(client: httpx.AsyncClient, graph: MemoryGraph, as_account) -> None:  # noqa: ANN001
     """非法 `episode_key` 形状 → 422（本包裁决 7：形状校验在路由层）。
 
-    与「不存在」（200 幂等命中）分开：形状问题是载荷问题，重试同样的请求不会变好。
+    与「不存在」（404）分开：形状问题是载荷问题，重试同样的请求不会变好。
     用与记忆模块同源的校验函数（`identity.to_episode_key`），不另写一份规则。
     """
     for bad in ("not-a-uuid", "  3f2504e0-4f89-41d3-9a0c-0305e82c3300", "3f2504e0-4f89-41d3-9a0c-0305e82c330 0"):
@@ -400,21 +404,76 @@ async def test_delete_fails_on_malformed_key(client: httpx.AsyncClient, graph: M
         assert response.status_code == 422, bad
 
 
-async def test_delete_of_never_written_key_is_idempotent_200(
+async def test_delete_returns_404_for_foreign_and_never_written_keys(
     client: httpx.AsyncClient, graph: MemoryGraph, as_account
 ) -> None:  # noqa: ANN001
-    """删除一条从未写过的合法标识：账本照记且返回 200，不报错。
+    """删除的越权与不存在：**404 且响应体逐字相同**（契约第 2、4 节；裁决 2）。
 
-    这是契约第 4 节的语义落点：删除是「记入账本」，它的正确性不依赖图库里
-    是否真有这条片段——因此对一条（可能已被物理清理的）历史标识重放删除请求
-    同样成功，这正是重试安全所需要的。
+    两个场景都是真实 HTTP 实测：
+    - 越权：删除他人账号时间线里的 episode（本账号的图里没有、账本里也没有）；
+    - 不存在：删除一条从未写过的合法标识。
+
+    与「图库不可用时删除仍成功」是两个判据（各有一条用例）：这里图库可用，
+    「本账号有没有这条片段」判定得了，因此必须 404，而不是照记账本。
     """
+    foreign = await _write(graph, content="别人的记忆", account=_ACCOUNT_OTHER)
     never = str(uuid.uuid4())
 
-    response = await client.delete(f"/memory/episodes/{never}")
+    foreign_response = await client.delete(f"/memory/episodes/{foreign}")
+    never_response = await client.delete(f"/memory/episodes/{never}")
 
-    assert response.status_code == 200
-    assert response.json() == {"episode_key": never, "newly_deleted": True, "reason": "user_request"}
+    for response in (foreign_response, never_response):
+        assert response.status_code == 404
+        assert response.json() == {"detail": NOT_FOUND_MESSAGE, "code": "not_found"}
+    assert foreign_response.json() == never_response.json(), "越权与不存在的响应必须逐字相同"
+
+    # 越权那次不得写账本：账本的唯一约束是全局的，替他账号占住 key 会把属主
+    # 自己的删除永久挡掉。
+    async with session_scope(get_settings()) as session:
+        recorded = await recorded_deletion_reason(session, account_id=to_account_id(_ACCOUNT), episode_key=foreign)
+    assert recorded is None, "越权删除不得动账本"
+
+
+async def test_delete_still_works_when_the_graph_is_unavailable(
+    client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch, as_account
+) -> None:  # noqa: ANN001
+    """图库不可用不阻断删除：账本照记并返回 200（契约第 6 节、裁决 2）。
+
+    与 404 那条并列的另一半判据：**判不了存在性时不报 404，也不报 503**——
+    账本过滤才是语义删除的生效点，它在 PostgreSQL 侧，与图库是两回事。
+    若这条改成 503，图库故障期间使用者的删除请求会全部失败，等于删除静默失效。
+
+    本用例不用 `graph` fixture（它负责清账本），因此自己清这一行。
+    """
+    import campfire.modules.memory.graph as graph_module
+    from campfire.modules.memory.errors import MemoryUnavailableError
+
+    class _BrokenGraph:
+        def driver_for(self, account_id: str):  # noqa: ANN202
+            raise MemoryUnavailableError("图库不可用", operation="test", cause="ConnectionError")
+
+    monkeypatch.setattr(graph_module, "_shared_graph", _BrokenGraph())
+    key = str(uuid.uuid4())
+
+    try:
+        response = await client.delete(f"/memory/episodes/{key}")
+
+        assert response.status_code == 200
+        assert response.json() == {"episode_key": key, "newly_deleted": True, "reason": "user_request"}
+
+        # 账本真的写进去了：不是「报了成功但什么都没发生」。
+        async with session_scope(get_settings()) as session:
+            row = (
+                await session.execute(
+                    select(MemoryDeletionLedger.account_id, MemoryDeletionLedger.reason).where(
+                        MemoryDeletionLedger.episode_key == key
+                    )
+                )
+            ).one_or_none()
+        assert row is not None and row.account_id == _ACCOUNT and row.reason == "user_request"
+    finally:
+        async with session_scope(get_settings()) as session:
+            await session.execute(delete(MemoryDeletionLedger).where(MemoryDeletionLedger.episode_key == key))
 
 
 # ---------------------------------------------------------------------------
@@ -546,9 +605,10 @@ async def test_other_accounts_episode_is_not_visible_and_delete_is_404(
 ) -> None:  # noqa: ANN001
     """记忆按账号分区：他人的片段不出现在列表里，删除他的 `episode_key` → 404。
 
-    删除的 404 来自账本的跨账号守卫（`record_deletion` 的 fail-closed）：
-    该 `episode_key` 已被别的账号记入账本时，本账号的删除不会生效，因此必须
-    显式失败而不是静默幂等——静默幂等会让「删不掉」看起来像「删掉了」。
+    这条的 404 来自**归属判定**：该 key 虽已被他人记入账本，但本账号账本里没有它，
+    本账号的时间线里也没有这条片段（分区键取登录态，见路由 `current_account`），
+    因此与「不存在」同形处置。跨账号账本守卫（`record_deletion` 的 fail-closed）
+    仍是兜底，但它不再是本面唯一的「不是你的记忆」信号。
     """
     from campfire.modules.memory import deletion
 
