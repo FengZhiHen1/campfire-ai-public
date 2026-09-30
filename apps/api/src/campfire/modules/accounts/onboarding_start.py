@@ -18,6 +18,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 
 from sqlalchemy import select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from campfire.modules.accounts.errors import OnboardingWriteError
@@ -61,6 +62,8 @@ async def start_onboarding(
     互不代写」在本用例里的含义——一次 `in_progress` 的记账不该把使用者已经明确给出的
     结论（`completed`）或跳过决定（`skipped`）覆盖回进行中。落到这个分支的现实路径是
     并发或重试：第一次注入已经落行，第二条消息又走了一次本用例。
+    并发下这条不变量由主键冲突承载（`DO NOTHING` 后重读既有行），而不是「先读一次再判定」
+    ——后者在并发下会让第二个调用撞主键（见实现处说明）。
 
     为什么初次落行直接写 `in_progress` 而不是「先建行再改」：初态就是它，
     一次 INSERT 足够（与 `complete_onboarding` 初次直接写 `completed` 同法）。
@@ -75,25 +78,39 @@ async def start_onboarding(
 
     Raises:
         OnboardingWriteError: 账号标识不合法，或表里读到了词表外的状态（表形状漂移，
-            此时不猜也不覆盖——`CORE-07`）。
+            此时不猜也不覆盖——`CORE-07`），或键冲突后重读不到状态行。
     """
     normalized = _validate_account_id(account_id)
     reference = now if now is not None else _utc_now()
 
-    existing = (
-        await session.execute(select(CampfireOnboarding).where(CampfireOnboarding.account_id == normalized))
+    # 写靠主键冲突判定，不先查后写（与 `session_repository.insert_session_owner` 同法）：
+    # 先查后写会让两个并发调用都读到自己该落行，第二个 INSERT 撞主键（23505）。
+    # 冲突即什么都不做，随后重读既有行原样回报——「已有行时一个字节都不写」
+    # 由 `DO NOTHING` 在存储层成立，不需要先读一次来判定。
+    statement = (
+        pg_insert(CampfireOnboarding)
+        .values(account_id=normalized, state=ONBOARDING_IN_PROGRESS, updated_at=reference)
+        .on_conflict_do_nothing(index_elements=[CampfireOnboarding.account_id])
+        .returning(CampfireOnboarding.state)
+    )
+    inserted = (await session.execute(statement)).scalar_one_or_none()
+    if inserted is not None:
+        return ONBOARDING_IN_PROGRESS
+
+    # 未插入 = 该账号已有行（另一条通道先落了行，或本次是重试）。重读它并原样回报，
+    # 不把它改写成 `in_progress`——那会抹掉 `completed` / `skipped` 这两个明确结论。
+    existing_state = (
+        await session.execute(select(CampfireOnboarding.state).where(CampfireOnboarding.account_id == normalized))
     ).scalar_one_or_none()
 
-    if existing is not None:
-        if existing.state not in ONBOARDING_STATES:
-            raise OnboardingWriteError(
-                f"引导状态 {existing.state!r} 不在词表内（{sorted(ONBOARDING_STATES)}）——"
-                "表形状与设计漂移，无法记录引导开始"
-            )
-        return existing.state
-
-    session.add(CampfireOnboarding(account_id=normalized, state=ONBOARDING_IN_PROGRESS, updated_at=reference))
-    return ONBOARDING_IN_PROGRESS
+    if existing_state is None:
+        # 理论上不可达（未插入意味着冲突行存在）。显式失败而不是编造一个状态。
+        raise OnboardingWriteError("引导状态行在键冲突后既未插入也重读不到——表形状与设计漂移，无法记录引导开始")
+    if existing_state not in ONBOARDING_STATES:
+        raise OnboardingWriteError(
+            f"引导状态 {existing_state!r} 不在词表内（{sorted(ONBOARDING_STATES)}）——表形状与设计漂移，无法记录引导开始"
+        )
+    return existing_state
 
 
 __all__ = ["start_onboarding"]

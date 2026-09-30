@@ -25,13 +25,14 @@ from __future__ import annotations
 from datetime import datetime, timezone
 
 from sqlalchemy import select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from campfire.modules.accounts.errors import OnboardingWriteError
 from campfire.modules.accounts.models import (
     MAX_ACCOUNT_ID_LENGTH,
     ONBOARDING_COMPLETED,
-    ONBOARDING_SKIPPED,
+    ONBOARDING_IN_PROGRESS,
     ONBOARDING_STATES,
     CampfireOnboarding,
 )
@@ -81,6 +82,8 @@ async def complete_onboarding(
     契约第 4 节的四条逐一落在这里：
 
     1. 幂等：已 `completed` 时不报错，直接返回当前状态（也不重复刷新时间戳，见下）。
+       并发调用同一账号时同样成立：幂等承载在主键冲突上（一条带终结态谓词的条件语句），
+       不靠「先读一次再决定写不写」——后者在并发下会让第二个调用撞主键（见实现处说明）。
     2. 已 `skipped` 时同样成功返回 `skipped`——不把它改写成 `completed`。
        为什么：两条通道互不代写（认证与账号第 8 节）。使用者经 UI 明确跳过了引导，
        模型的收束调用不该覆盖那个决定；而报错也不对——契约第 4 节第 2 条要的是幂等，
@@ -107,35 +110,49 @@ async def complete_onboarding(
         写入后的状态：`completed`（本次置位）或 `skipped`（此前已被 UI 跳过）。
 
     Raises:
-        OnboardingWriteError: 账号标识不合法、状态取值漂移，或会话里读到了词表外的状态。
+        OnboardingWriteError: 账号标识不合法、状态取值漂移（含键冲突后重读不到状态行）。
     """
     normalized = _validate_account_id(account_id)
     reference = now if now is not None else _utc_now()
 
-    # 先查：区分「需要写入」与「已是终结态」。这一步不是可以省掉的优化——
-    # 幂等语义要求「已 skipped 时返回 skipped 而不是改成 completed」，
-    # 而盲写 UPSERT 会把 skipped 覆盖成 completed。
-    existing = (
-        await session.execute(select(CampfireOnboarding).where(CampfireOnboarding.account_id == normalized))
-    ).scalar_one_or_none()
-
-    if existing is not None:
-        if existing.state not in ONBOARDING_STATES:
-            # CHECK 约束挡住词表外的值，走到这里说明表形状与设计漂移。
-            # 不猜：既不能把它当已终结，也不能覆盖——两者都会掩盖漂移（`CORE-07`）。
-            raise OnboardingWriteError(
-                f"引导状态 {existing.state!r} 不在词表内（{sorted(ONBOARDING_STATES)}）——表形状与设计漂移，无法完成引导"
-            )
-        if existing.state in (ONBOARDING_COMPLETED, ONBOARDING_SKIPPED):
-            # 幂等：不报错、不改写、不刷新时间戳（理由见 docstring）。
-            return existing.state
-        # `in_progress` → `completed`：状态迁移，刷新时间戳。
-        existing.state = ONBOARDING_COMPLETED
-        existing.updated_at = reference
+    # 写靠主键冲突判定，不先查后写（与 `session_repository.insert_session_owner`、
+    # `memory.ledger.record_deletion` 同法）。先查后写会让两个并发调用都读到自己该写，
+    # 第二个 INSERT 撞主键（23505）——那正是本用例 docstring 承诺的幂等在并发下失效的地方。
+    #
+    # 一条语句承担三种情形，幂等与「两条通道互不代写」都落在存储层（`CORE-05` 的通道阶梯）：
+    #   无行 → 落 `completed`（初态直接写终结态，一次 INSERT 而不是 INSERT+UPDATE）；
+    #   行是 `in_progress` → 条件更新为 `completed` 并刷新 `updated_at`（真实的状态迁移）；
+    #   行已终结（`completed` / `skipped`）→ `WHERE` 不中，一个字节都不写（含 `updated_at`）。
+    # 条件更新而不是盲写 UPSERT：后者会把使用者的 `skipped` 覆盖成 `completed`。
+    statement = (
+        pg_insert(CampfireOnboarding)
+        .values(account_id=normalized, state=ONBOARDING_COMPLETED, updated_at=reference)
+        .on_conflict_do_update(
+            index_elements=[CampfireOnboarding.account_id],
+            set_={"state": ONBOARDING_COMPLETED, "updated_at": reference},
+            where=CampfireOnboarding.state == ONBOARDING_IN_PROGRESS,
+        )
+        .returning(CampfireOnboarding.state)
+    )
+    written = (await session.execute(statement)).scalar_one_or_none()
+    if written is not None:
         return ONBOARDING_COMPLETED
 
-    session.add(CampfireOnboarding(account_id=normalized, state=ONBOARDING_COMPLETED, updated_at=reference))
-    return ONBOARDING_COMPLETED
+    # 未写入 = 冲突行已处于终结态（`WHERE` 不中），本次调用只回报它的结论。
+    existing_state = (
+        await session.execute(select(CampfireOnboarding.state).where(CampfireOnboarding.account_id == normalized))
+    ).scalar_one_or_none()
+
+    if existing_state is None:
+        # 理论上不可达（未写入意味着冲突行存在）。显式失败而不是编造一个状态。
+        raise OnboardingWriteError("引导状态行在键冲突后既未写入也重读不到——表形状与设计漂移，无法完成引导")
+    if existing_state not in ONBOARDING_STATES:
+        # CHECK 约束挡住词表外的值，走到这里说明表形状与设计漂移。
+        # 不猜：既不能把它当已终结，也不能覆盖——两者都会掩盖漂移（`CORE-07`）。
+        raise OnboardingWriteError(
+            f"引导状态 {existing_state!r} 不在词表内（{sorted(ONBOARDING_STATES)}）——表形状与设计漂移，无法完成引导"
+        )
+    return existing_state
 
 
 __all__ = [
