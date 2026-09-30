@@ -40,10 +40,13 @@ core 不可达时**拒绝**，不回退到无状态校验——决策记录明�
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from typing import Any
 
 from supertokens_python import InputAppInfo, SupertokensConfig, init
 from supertokens_python.recipe import emailpassword, session
+from supertokens_python.recipe.emailpassword import InputOverrideConfig, InputSignUpFeature
+from supertokens_python.recipe.emailpassword.interfaces import APIInterface
 from supertokens_python.recipe.session import SessionContainer
 from supertokens_python.recipe.session.framework.fastapi import verify_session
 
@@ -84,7 +87,12 @@ def _require_api_key(settings: Settings) -> str:
     return settings.supertokens_api_key.get_secret_value()
 
 
-def init_supertokens(settings: Settings) -> None:
+def init_supertokens(
+    settings: Settings,
+    *,
+    api_overrides: Callable[[APIInterface], APIInterface] | None = None,
+    sign_up_form_fields: Callable[[], list[Any]] | None = None,
+) -> None:
     """初始化 SuperTokens SDK（**幂等**，可重复调用）。
 
     幂等性由 SDK 保证（实测 ``Supertokens.init`` 只在 ``__instance is None`` 时构造），
@@ -99,7 +107,7 @@ def init_supertokens(settings: Settings) -> None:
       ``get_session``，SDK 会抛异常（「can't check the CSRF token」）——那是**预期的**
       设计行为，不是缺陷：走 FastAPI 依赖（本模块的 ``require_session``）时请求上下文
       存在，CSRF 校验正常进行。
-    - ``emailpassword.init()``：账号名 + 密码（账号名**存放在 ``email`` 字段**，
+    - ``emailpassword.init(...)``：账号名 + 密码（账号名**存放在 ``email`` 字段**，
       ``TECH-08`` 的已知偏差）。**采用官方默认密码校验器**（≥8 字符、含小写字母与数字），
       不自定规则（认证与账号第 4 节）。
     - **不启用 Account Linking**：它会使主用户 ID 变更（官方《User Object》原文：
@@ -107,13 +115,30 @@ def init_supertokens(settings: Settings) -> None:
       而 ``account_id`` 是记忆分区键与图名（认证与账号第 3 节）——启用等于让全部记忆
       与账本失联。**刻意不初始化该配方**：不初始化即不可能被启用。
 
+    ## 注册复写为什么是**注入**而不是本模块 import
+
+    注册须校验邀请码（认证与账号第 4 节），而邀请码的存储与状态机在
+    ``modules/accounts``。**``core/*`` 不得依赖 ``modules/*``**（项目结构设计第 7 节），
+    因此本模块**不 import 那个模块**，而是由装配处（``main.py``）把复写函数传进来——
+    与「工具注册在装配处完成」同一种做法。
+
     Args:
         settings: 应用配置（唯一配置入口）。
+        api_overrides: 可选的 API 复写（如注册时校验邀请码）。为 ``None`` 时
+            **不做任何复写**——注意这意味着注册**不校验邀请码**，只应在测试或
+            明确不需要邀请码的场景下省略。
+        sign_up_form_fields: 可选的 signup **自定义表单字段声明**。**它与
+            ``api_overrides`` 是一对，缺一不可**：实测 SDK 在调用复写**之前**就校验
+            表单字段数量，未声明的字段会让请求以 400 被拒、复写根本不被调用
+            （只传 ``api_overrides`` 会得到一个「永远拒绝注册」的系统）。
 
     Raises:
         SuperTokensConfigurationError: 缺少必需的配置项。
     """
     api_key = _require_api_key(settings)
+
+    override_config = InputOverrideConfig(apis=api_overrides) if api_overrides is not None else None
+    sign_up_feature = InputSignUpFeature(form_fields=sign_up_form_fields()) if sign_up_form_fields is not None else None
 
     init(
         app_info=InputAppInfo(
@@ -132,7 +157,7 @@ def init_supertokens(settings: Settings) -> None:
         ),
         recipe_list=[
             session.init(anti_csrf="VIA_CUSTOM_HEADER"),
-            emailpassword.init(),
+            emailpassword.init(sign_up_feature=sign_up_feature, override=override_config),
         ],
         mode="asgi",
     )
