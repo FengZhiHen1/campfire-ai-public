@@ -36,6 +36,7 @@ from campfire.core.db import session_scope
 from campfire.modules.accounts import (
     INVITE_CODE_ALPHABET,
     INVITE_CODE_LENGTH,
+    INVITE_CODE_TTL_DAYS,
     InviteCode,
     InviteCodeFormatError,
     InviteCodeNotFoundError,
@@ -203,6 +204,51 @@ async def test_issue_rejects_empty_operator() -> None:
         async with session_scope(get_settings()) as session:
             with pytest.raises(InviteCodeFormatError, match="签发者"):
                 await issue_invite_code(session, created_by="")
+    finally:
+        await _clear()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("ttl_days", [0, -1, INVITE_CODE_TTL_DAYS + 1, 10**9])
+async def test_issue_rejects_out_of_range_ttl(ttl_days: int) -> None:
+    """有效期天数越界 → 领域异常，而不是「签发即失效」的码或 `OverflowError`。
+
+    两个方向都是这条判定的真实失败来源：0 与负值让「签发成功」与「立即失效」
+    同时成立（占用判据是 `expires_at > now()`，第 4 节），而 10**9 会让
+    `datetime + timedelta` 抛 `OverflowError`——它不是 `AccountsError`，
+    调用方（运营 CLI）的收口接不住，运营看到的是裸 traceback。
+    `INVITE_CODE_TTL_DAYS + 1` 这一档钉住上界正好落在设计定值上，
+    而不是「比它大很多才拒」。
+
+    判别性：撤掉 `issue_invite_code` 里的区间判定，0/-1 照常写入（红在
+    `pytest.raises` 未命中），另外两档以别的异常类型冒出去。
+    """
+    await _clear()
+    try:
+        async with session_scope(get_settings()) as session:
+            with pytest.raises(InviteCodeFormatError, match="有效期天数"):
+                await issue_invite_code(session, created_by=_OPERATOR, ttl_days=ttl_days)
+    finally:
+        await _clear()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("ttl_days", [1, INVITE_CODE_TTL_DAYS])
+async def test_issue_accepts_ttl_within_the_design_range(ttl_days: int) -> None:
+    """区间内的取值必须被接受：下界 1 与设计定值 30 都合法。
+
+    判别性：把上界判定写成 `<` 而漏掉等号，30 这一档失败；下界写成 `<= 0`
+    之外的形状（例如 `< 0`）则 0 那档漏放。
+    """
+    await _clear()
+    try:
+        base = datetime(2026, 9, 30, 12, 0, tzinfo=timezone.utc)
+        code = await _issue(now=base, ttl_days=ttl_days)
+
+        async with session_scope(get_settings()) as session:
+            record = await get_invite_code(session, code=code)
+        assert record is not None
+        assert record.expires_at == base + timedelta(days=ttl_days)
     finally:
         await _clear()
 

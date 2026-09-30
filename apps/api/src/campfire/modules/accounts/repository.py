@@ -39,6 +39,13 @@ from campfire.modules.accounts.models import (
 #: 死循环存在——若码空间因配置变化被收窄（例如改短长度），必须有明确失败而不是转圈。
 MAX_CODE_GENERATION_ATTEMPTS = 5
 
+#: 有效期天数的下界。上界是设计定值 `INVITE_CODE_TTL_DAYS` 本身，判据见 :func:`issue_invite_code`。
+#:
+#: 为什么是 1 而不是 0：`timedelta` 接受 0 与负值，于是「签发成功」与「立即失效」可以
+#: 同时成立——运营看到一张已签发的码，而它从出生起就不满足占用判据
+#: `expires_at > now()`（第 4 节）。天粒度下 1 就是最小正值，没有更小的合法取值。
+_MIN_TTL_DAYS = 1
+
 #: 唯一约束冲突的 SQLSTATE（PostgreSQL 的 `unique_violation`）。
 #:
 #: 只对这一种完整性错误重试（2026-09-30 评审修正）：见 :func:`issue_invite_code`。
@@ -140,25 +147,47 @@ async def issue_invite_code(
     唯一真源（`CORE-05`：不变量落最强通道）。为避免把整个会话置于失败状态，
     每次尝试前用 `savepoint` 隔离冲突。
 
+    为什么有效期天数在这里判、且在算术之前
+
+    `ttl_days` 是调用方能直接指定的入参，两个方向都必须显式拒绝而不是顺其自然：
+    0 或负值会产出「签发成功但立即失效」的码（占用判据是 `expires_at > now()`，
+    第 4 节），而极大值会在 `datetime + timedelta` 抛 `OverflowError`——它不是
+    `AccountsError`，调用方的 `except AccountsError` 收不住，运营看到的是裸
+    traceback。这一层是邀请码唯一的产生点，判定放在算术与触库之前，越界于是成为
+    可判别的领域异常（`CORE-07`：边界显式，无静默兜底）。区间两端都有出处：
+    下界见 `_MIN_TTL_DAYS`，上界即设计定值（第 4 节：有效期 30 天）。
+
     Args:
         session: 关系库会话（调用方负责提交）。
         created_by: 签发者标识（运营者）。见 `models.MAX_OPERATOR_LENGTH` 的说明：
             这不是审计身份，只是「哪台机器的哪个 OS 用户签发的」。
         now: 参照时间，默认当前 UTC。签发时间即此值。
-        ttl_days: 有效期天数（默认 `INVITE_CODE_TTL_DAYS`）。
+        ttl_days: 有效期天数，取值区间 `[_MIN_TTL_DAYS, INVITE_CODE_TTL_DAYS]`。
+            上界是设计定值：加长有效期是设计决定（第 4 节），不是调用方自由。
         max_attempts: 生成重试上界。
 
     Returns:
         已加入会话的邀请码记录（尚未提交）。
 
     Raises:
-        InviteCodeFormatError: `created_by` 为空或超宽——属配置/调用方错误。
+        InviteCodeFormatError: `created_by` 为空或超宽、`ttl_days` 越界——属配置/调用方错误。
         InviteCodeStateError: 连续 `max_attempts` 次都碰撞（码空间或被配置收窄）。
     """
     if not created_by:
         raise InviteCodeFormatError("签发者标识（created_by）不得为空")
     if len(created_by) > MAX_OPERATOR_LENGTH:
         raise InviteCodeFormatError(f"签发者标识超过 {MAX_OPERATOR_LENGTH} 字符上界")
+    if ttl_days < _MIN_TTL_DAYS:
+        # 回显天数：它不是凭据，且「为什么被拒」正是运营需要的判别信息。
+        raise InviteCodeFormatError(
+            f"有效期天数至少 {_MIN_TTL_DAYS} 天（收到 {ttl_days}）——"
+            "0 或负值会产出一张签发即失效的码，而它仍会被列为已签发"
+        )
+    if ttl_days > INVITE_CODE_TTL_DAYS:
+        raise InviteCodeFormatError(
+            f"有效期天数不得超过设计定值 {INVITE_CODE_TTL_DAYS} 天（收到 {ttl_days}）："
+            "加长有效期是设计决定（第 4 节），须先改设计而不是从这里带过"
+        )
 
     reference = now if now is not None else _utc_now()
     expires_at = reference + timedelta(days=ttl_days)

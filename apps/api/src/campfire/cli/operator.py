@@ -74,18 +74,15 @@ async def _run_invite_issue(args: argparse.Namespace) -> int:
     settings = get_settings()
     try:
         async with session_scope(settings) as session:
-            record = await issue_invite_code(
-                session,
-                created_by=_operator(),
-                ttl_days=args.days,
-            )
+            # 不传有效期：取领域默认值（设计定值 30 天），CLI 不覆盖它。
+            record = await issue_invite_code(session, created_by=_operator())
     except AccountsError as exc:
         print(f"签发失败：{exc}", file=sys.stderr)
         return 1
 
     print("已签发邀请码（**一次性**，请立即转交使用者）：")
     _print_invite_row(record)
-    print(f"  有效期：{args.days} 天")
+    print(f"  有效期：{INVITE_CODE_TTL_DAYS} 天")
     return 0
 
 
@@ -356,8 +353,10 @@ def add_operator_subcommands(sub: argparse._SubParsersAction) -> None:  # noqa: 
     invite = sub.add_parser("invite", help="邀请码的发放、撤销与查看（运营操作）")
     invite_sub = invite.add_subparsers(dest="invite_command")
 
-    issue = invite_sub.add_parser("issue", help="签发一张一次性邀请码")
-    issue.add_argument("--days", type=int, default=INVITE_CODE_TTL_DAYS, help="有效期天数（默认 30）")
+    # 不提供有效期参数：30 天是设计定值（第 4 节：8 位随机、一次性使用、有效期 30 天），
+    # 运营不需要这个自由度。可指定就意味着要么接受「签发即失效」的码，要么在 CLI 里
+    # 另发明一套区间政策——两者都不该发生；有效期是设计决定，要改先改设计。
+    invite_sub.add_parser("issue", help="签发一张一次性邀请码（有效期固定 30 天）")
 
     revoke = invite_sub.add_parser("revoke", help="撤销一张邀请码（撤销后立即不可用）")
     revoke.add_argument("code", help="要撤销的邀请码")
