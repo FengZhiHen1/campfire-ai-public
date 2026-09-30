@@ -139,12 +139,15 @@ async def consume_memory_episode(
     episode_uuid = await _write_record_to_graph(graph, record)
 
     # 置 done 与「清理租约」同一次更新（`core/pending_write` 已实现）。
-    # 带租约栅栏（CORE-03）：抽取可能超过租约时长，期间记录会被另一个 Worker
-    # 重领；不带 `lease_owner` 时先领取者的迟到 `mark_done` 会抢先成功，
-    # 把真正写入者的终结挤成失败（实测复现）。
+    # 带租约栅栏（CORE-03）：不带 `lease_owner` 时先领取者的迟到 `mark_done` 会抢先
+    # 成功，把真正写入者的终结挤成失败（仓库层实测复现）。
     # 栅栏可判别的前提是两任领取者的 `lease_owner` 不同——调用方必须传每次领取
     # 独一无二的身份（`worker._lease_identity`）；传一个常量（例如投递点的 `"api"`）
     # 会让这条比对在「租约过期后被重领」这条序列上恒真，栅栏等于没接。
+    # 生产可达性（2026-09-30 实测）：本函数与调用方的领取写在同一个事务里
+    # （`session_scope` 异常回滚），提取期间不会有第二任领取者——另一个事务看到的是
+    # 上一次提交的 `pending`，它的领取 UPDATE 被行锁挡住。因此这条守卫当前尚未被触发，
+    # 它拦的是「领取被单独提交」形态下的迟到终结。
     # 栅栏不匹配说明本次写入已不再被承认——显式失败，不假装成功。
     await mark_done(session, pending_id=pending_id, lease_owner=lease_owner)
     return ConsumeResult(pending_id=str(pending_id), written=True, episode_uuid=episode_uuid)
