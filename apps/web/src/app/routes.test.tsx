@@ -10,7 +10,7 @@
  *   - 禁止断言「守卫等于授权」（本用例只断言体验层行为）
  */
 
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { MemoryRouter, useRoutes } from 'react-router';
 
@@ -51,12 +51,22 @@ describe('路由守卫', () => {
     expect(screen.getByRole('heading', { name: '篝火智答', level: 1 })).toBeDefined();
   });
 
-  it('P1 已登录访问 /profile 渲染档案占位页', () => {
+  it('P1 已登录访问 /profile 渲染档案页而不是占位', () => {
     setSession('authenticated');
-    renderAt('/profile');
+    // 档案页在挂载时经端口取对象列表；这里把 fetch 替成空列表，
+    // 让页面确定性地停在「还没有记录」而不是去连真实后端。
+    const fetchStub = vi.fn(async () => ({ ok: true, status: 200, json: async () => ({ items: [] }) }));
+    vi.stubGlobal('fetch', fetchStub);
+    try {
+      renderAt('/profile');
 
-    expect(screen.getByRole('heading', { name: '档案' })).toBeDefined();
-    expect(screen.getByText('支持对象档案：当前认识、待确认候选与补充。')).toBeDefined();
+      expect(screen.getByRole('heading', { name: '档案' })).toBeDefined();
+      // 对象切换器是真实页面的结构，占位页没有它——这条才是「不是占位」的判据。
+      expect(screen.getByRole('group', { name: '支持对象' })).toBeDefined();
+      expect(screen.queryByText('支持对象档案：当前认识、待确认候选与补充。')).toBeNull();
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   it('P1 已登录访问 / 渲染首页的真实内容而不是占位', () => {
