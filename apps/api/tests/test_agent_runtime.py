@@ -1359,6 +1359,49 @@ async def test_compaction_failure_does_not_break_the_conversation() -> None:
 
 
 @pytest.mark.asyncio
+async def test_journal_failure_fails_the_run_instead_of_reading_as_no_compaction() -> None:
+    """记账失败不得被吞成「压缩没发生」（`CompactionJournal` 端口契约）。
+
+    修复前的行为：`_compact_before_run` 把记账异常收成 `performed=False,
+    reason="journal_failed", detail="…窗口未改动"` 的降级事实，然后照常跑一次未压缩的运行。
+    而 `_attempt` 的顺序是「落库 → 记结束」，`record_finished` 失败时检查点已经写进会话——
+    「窗口未改动」与真源相反，运行记录因此不可信。
+    """
+
+    class BrokenJournal(FakeJournal):
+        """记账收尾失败：开始记上了，结束记不上。"""
+
+        async def record_finished(self, marker: str, outcome: object) -> None:
+            raise RuntimeError("账本不可用")
+
+    chat = ScriptedChat([text_reply("不该跑到模型")])
+    session = FakeSession("s-1", _long_history())
+
+    events = await _collect(
+        AgentRunner(
+            binding=_binding(chat),
+            tools=ToolPool([read_tool()]),
+            skills=SkillRegistry.discover(_empty_root()),
+            citations=FakeCitationIndex(),
+            sessions=lambda session_id: session,
+            compaction=_wiring(journal=BrokenJournal()),
+        ),
+        _request(),
+    )
+
+    failed = events[-1]
+    assert isinstance(failed, RunFailedEvent), f"记账失败必须明确失败，实际：{failed}"
+    assert "RuntimeError" in failed.detail
+    assert "窗口未改动" not in failed.detail, "检查点已落库，不得声称窗口未改动"
+    assert not any(isinstance(event, RunFinishedEvent) for event in events)
+    # 「压缩没发生」的判据是照常跑一次未压缩的运行——模型一次请求都不该发出
+    assert chat.requests == []
+    # 检查点确实已经落库：这正是旧降级事实与真源相反的证据（不是我们想保留的状态，
+    # 而是「落库 → 记结束」这个既定顺序在记账失败时的必然结果）
+    assert any("<compacted-summary>" in str(item.get("content", "")) for item in session.items)
+
+
+@pytest.mark.asyncio
 async def test_skill_catalog_is_reinjected_after_compaction(tmp_path: Path) -> None:
     """压缩后窗口不再包含旧目录 → 必须重新注入。
 
