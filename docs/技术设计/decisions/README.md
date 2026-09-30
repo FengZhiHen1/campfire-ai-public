@@ -19,6 +19,8 @@
 | [记忆删除走用户确认入口](./记忆删除走用户确认入口.md) | 记忆的查看/纠正/删除（`RQ-MEM-03`）由**记忆面 HTTP 契约**承载，**不新增 `delete_memory` 模型工具**（与档案侧 `confirm`/`correct`/`delete` 同一分工）；`AC-08` 的验收对象是读路径，不要求模型能触发删除 | 通用记忆第 7 节；技能设计第 3 节（工具表不新增）；咨询面第 5 节；profile-curation 第 3.2 节；TODO `TECH-22 ②` |
 | [支持对象实体归 profile](./支持对象实体归profile.md) | 支持对象立为独立实体（`campfire_support_object`），归 `modules/profile`；生命周期为创建／改名／归档／恢复（**无删除**）；授权经 `core/authz` 的 `require_owned` / `require_writable`；会话绑定另立表 | 新增支持对象（全文）；个性化档案第 9、11 节；认证与账号第 8 节（真删清单补档案与对象、处置顺序五步变六步）；项目结构设计第 6 节 `profile` 用例行；TODO（`cli` 白名单定调级冲突） |
 | [一次性引导对话](./一次性引导对话.md) | 账号首次日常会话程序注入一次性引导（应急永不触发）；四件事（告知/建对象/八组种子/使用者认知）+ 使用说明跳转；`campfire_onboarding` 状态表（accounts）承载一次性，`finish_onboarding` 工具与 UI 跳过双通道；引导会话延续为日常对话，首对象补绑会话绑定；工具池 7→9 | 功能需求与验收（`RQ-ACC-09`、`AC-25`）；技能设计第 1、3、4、5 节；咨询面第 1、3、6 节；新增 onboarding skill 与两份工具契约；支持对象第 6、9 节；认证与账号第 8 节；新增使用说明页；TODO |
+| [会话归属单立表归 accounts](./会话归属单立表归accounts.md) | 新增 `campfire_session`（`session_id` + `account_id`），归 `modules/accounts`，作为会话归属的唯一判定真源；只存归属、不存消息（对话仍唯一归 SDK 会话存储）；注销真删 | 项目结构设计第 6 节；认证与账号第 8 节；HTTP/SSE 契约第 2、3 节；支持对象第 6 节；TODO |
+| [应急卡片由产品侧工具产出](./应急卡片由产品侧工具产出.md) | `action_card` 改由产品侧工具 `emit_emergency_action_card` 产出（不再由基座保留工具发出）；基座只定通用信封、不含领域词；工具池 9→10；领域词表的机械校验落参数模型枚举，而非提示词 | 通用基座第 7 节及新增 7.1／7.2／7.3；技能设计第 3 节；新增 emit_emergency_action_card 契约；咨询面文件索引；emergency-consulting 第 3.4、6 节；HTTP/SSE 契约第 4.2、7 节；TODO |
 
 ## 已知偏差与证据边界
 

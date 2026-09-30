@@ -50,7 +50,8 @@ docs/技术设计/面/consult/
     ├── write_memory.md
     ├── finish_onboarding.md
     ├── search_knowledge.md
-    └── search_cases.md
+    ├── search_cases.md
+    └── emit_emergency_action_card.md
 ```
 
 每个 skill 文档 = **设计说明 + 可直接落盘的 `SKILL.md` 正文要点**（含 frontmatter 六字段取值）**+ 其 `references/` 两份文件的内容边界**。每个工具文档 = **契约**（参数、返回形状、工具侧硬约束、验证方式）；内部实现与失败语义指向已有机制文档，不重抄——失败语义归机制文档的（如两个检索工具），本文档只作边界声明。
