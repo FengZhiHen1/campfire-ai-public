@@ -63,7 +63,9 @@
     },
     "pytest": {
       "command": "uv run --project apps/api pytest",
-      "result": "1 failed, 748 passed, 1 warning in 38.99s",
+      "result": "1 failed, 748 passed, 1 warning in 39.12s",
+      "result_before_final_edit": "1 failed, 748 passed, 1 warning in 38.99s",
+      "note": "定稿前最后一次源码改动后，全部自检命令在已提交状态上复跑；此处引用与提交一一对应的那次",
       "collected": 749,
       "baseline_collected": 716,
       "added_by_this_pack": 33,
