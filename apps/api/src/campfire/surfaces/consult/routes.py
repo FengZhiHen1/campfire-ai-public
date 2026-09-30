@@ -400,7 +400,7 @@ async def _first_run_injection(
     - 这个会话的第一次运行（`campfire_session.first_run_injected` 为假）；
     - 该账号的引导未终结（`campfire_onboarding` 无行或 `in_progress`）。
 
-    第二条在这里**重读**，不复用会话创建时算出的 `onboarding_pending`：那个值只对创建
+    第二条在这里重读，不复用会话创建时算出的 `onboarding_pending`：那个值只对创建
     那一刻成立，而第一次运行可能发生在很久之后——期间使用者在另一个会话里跳过了引导
     或走完了它。按旧值注入，是在用户已经明确结束引导之后再塞一段引导。
 
@@ -457,7 +457,7 @@ def _notice_item() -> InjectionItem:
 async def _settle_first_run(settings: Settings, *, session_id: str, account_id: str) -> None:
     """结算这次首轮注入：置会话标记 + 落账号的引导开始状态（首次触发时）。
 
-    在运行起步成功之后调用、且**只记日志不抛错**：此时 `run_id` 已经回给前端，
+    在运行起步成功之后调用、且只记日志不抛错：此时 `run_id` 已经回给前端，
     任何异常都无法再改变这个事实——把它抛出去只会让 202 变成一个假的失败
     （调用方以为没起运行，于是重发，而会话位与幂等键都已被这次运行占着）。
     失败的后果是下次运行可能重复注入一次引导（技能设计第 4 节接受这个代价：
@@ -501,7 +501,7 @@ async def send_message(
     5. 互斥失败回 409 且不追加消息（契约第 2 节与质量地板 ③）；
     6. 命中首轮引导时，本次运行的程序注入集合被引导替换（技能与静态告知），
        使用者给的 `skill` 选择被忽略——那一次是引导，不是他选的那件事；
-       记账（会话标记 + 账号引导开始）在运行**起步成功之后**才写；
+       记账（会话标记 + 账号引导开始）在运行起步成功之后才写；
     7. 启动失败（首个事件不是 `run_started`）时释放占位并回 503——此时没有
        `run_id`，回 202 会让前端订阅一个不存在的路径；首轮记账不写，下次运行仍会注入。
 
@@ -738,7 +738,7 @@ async def cancel_run(run_id: str, session: SessionDep, settings: SettingsDep) ->
       见 `runbus.RUN_NOT_RUNNING` 的说明）。先读元数据判状态、再去取消，而不是直接取消：
       直接取消时「没有可取消的任务」既可能是「已经跑完」也可能是「运行在别的进程」，
       两者都回 409，但只有读元数据之后才能确定前者的判据成立。
-    - 取消**不发终态事件**（基座第 9 节）：取消的是消费方任务，基座随之停掉 SDK 侧的
+    - 取消不发终态事件（基座第 9 节）：取消的是消费方任务，基座随之停掉 SDK 侧的
       运行并把 `CancelledError` 抛出去，因此不会有人再产出 `run_finished`。
       前端据此自行把已渲染的部分标为「本次回答中断」（契约 4.3）。
     - 收尾（落终结状态、释放会话位）由推进任务的 `finally` 完成，故本端点返回 202 之后
@@ -784,16 +784,25 @@ async def start_emergency(
 ) -> JSONResponse:
     """一次调用完成「建会话 → 落第一条消息 → 启动运行」（契约第 5 节）。
 
-    五件事的顺序与理由：
+    顺序按第 2 节的通用约定排：鉴权（401，依赖给出）→ 归属（404）→ 装配与状态
+    （503）→ 写入。因此下面的取技能与取运行器放在归属判定之后、任何写入之前：
 
-    1. 先取应急技能（内容根目录缺失是装配不完整，503）——技能缺失时不该先把会话建出来，
-       否则会留下一个再也跑不起来的空会话；
+    - 放在归属之后：对别人的对象，任何状态码都不该泄露它的存在性——先取装配会让
+      一次越权请求拿到 503 而不是 404，状态码本身就成了旁证（与 `send_message`
+      的「归属判定先于幂等与互斥」同一条纪律）；
+    - 放在写入之前：技能内容或运行器缺失时这次请求根本跑不起来，先把会话建出来会留下
+      一个再也跑不起来的空会话（前端重试还会不断堆积）。
+
+    随后五件事的顺序与理由：
+
+    1. 解析支持对象：传入时以 `require_writable` 校验（归档对象不得绑定新会话，
+       越权与不存在共用同一条 404 文案），省略时按支持对象第 6 节推导默认对象；
     2. 一个事务里落归属行、绑定支持对象、把首轮注入标记置真：三者同属「这个应急会话
-       建好了」。标记置真是必要的——应急会话**永不触发引导**（`RQ-EMG-03`），
+       建好了」。标记置真是必要的——应急会话永不触发引导（`RQ-EMG-03`），
        而它后续的消息走 `send_message`，那里的判据正是这个标记；
     3. 同一个事务里取档案（`emergency_context`，键是支持对象）与记忆
        （`read_emergency_facts`，键是账号）——两条取数的分区键不同，不可混用；
-       记忆取数失败时**不构造空记忆**（那等于宣称「这个账号没有记忆」），
+       记忆取数失败时不构造空记忆（那等于宣称「这个账号没有记忆」），
        而是记一条来源不可用，由基座显式告知模型；
     4. 八项渲染成第一条使用者消息（缺项写「未采集（未排除）」），档案与记忆作为注入
        排在它前面——注入消息由基座追加在末尾，顺序即「档案 → 记忆 → 使用者输入」；
@@ -808,8 +817,6 @@ async def start_emergency(
             或技能/运行器/依赖不可用（503）。
     """
     account_id = session.get_user_id()
-    skill = _program_skill(settings, assembly.EMERGENCY_SKILL_NAME)
-
     session_id = uuid.uuid4().hex
     unavailable: list[UnavailableSource] = []
     async with session_scope(settings) as db:
@@ -825,6 +832,13 @@ async def start_emergency(
         else:
             object_id = await resolve_default_object(db, account_id=account_id)
 
+        # 归属已成立、且到这里还没有写过一个字节：装配缺失只回 503，不留会话。
+        skill = _program_skill(settings, assembly.EMERGENCY_SKILL_NAME)
+        try:
+            runner = assembly.get_runner(settings)
+        except assembly.ConsultAssemblyError as exc:
+            raise _unavailable(str(exc)) from exc
+
         try:
             await register_session(db, session_id=session_id, account_id=account_id)
         except SessionQueryError as exc:  # pragma: no cover —— 标识由本层生成，形状必然合法
@@ -838,11 +852,6 @@ async def start_emergency(
 
         profile = await _read_emergency_profile(db, account_id=account_id, support_object_id=object_id)
         memory = await _read_emergency_memory(db, account_id=account_id, unavailable=unavailable)
-
-    try:
-        runner = assembly.get_runner(settings)
-    except assembly.ConsultAssemblyError as exc:
-        raise _unavailable(str(exc)) from exc
 
     cache = get_cache(settings)
     lease = await runbus.claim_session_run(cache, session_id=session_id)
@@ -937,16 +946,16 @@ async def skip_session_onboarding(
 ) -> JSONResponse:
     """把该会话所属账号的引导状态置为 `skipped`（契约第 6 节）。
 
-    幂等：已是 `skipped` 或 `completed` 时同样 200，返回**当前**状态而不是一律回
+    幂等：已是 `skipped` 或 `completed` 时同样 200，返回当前状态而不是一律回
     `skipped`——后者在已 `completed` 的账号上会陈述一个存储层并不成立的事实。
     两条写通道互不代写（认证与账号第 8 节）：本端点不覆盖 `completed`，
     `finish_onboarding` 也不覆盖 `skipped`。
 
-    路径上带 `session_id` 而状态是账号级的：会话标识是**归属凭据**——先按它判定
+    路径上带 `session_id` 而状态是账号级的：会话标识是归属凭据——先按它判定
     「这个会话是不是你的」（不是则 404，与不存在同文案），再写该账号的状态。
     没有这一步，任何登录账号都能改别人的引导状态。
 
-    本端点只写状态，**不取消**正在跑的运行：跳过引导对话的中途退出是另一件事，
+    本端点只写状态，不取消正在跑的运行：跳过引导对话的中途退出是另一件事，
     按契约 4.3 走取消端点（第 6 节末行）。
 
     Raises:
