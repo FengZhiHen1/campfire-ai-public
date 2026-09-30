@@ -105,6 +105,10 @@ export function ProfilePage({ port }: ProfilePageProps) {
   const selected = page.objects.find((object) => object.id === page.selectedObjectId) ?? null;
   const groups = groupByDomain(page.items);
   const hasEntries = page.items.length > 0 || page.candidates.length > 0;
+  // 摘要条目的纠正入口要靠条目列表里的那一条完整记录：摘要载荷只带 item_id、origin
+  // 与时间（档案面契约第 3 节），而纠正流要预填原主题与原描述。两者取自同一份稳定层
+  // （摘要只取稳定层且不含已取代条目），因此按 item_id 就能对上。
+  const itemsById = new Map(page.items.map((item) => [item.item_id, item]));
 
   return (
     <AppShell tab="profile">
@@ -204,17 +208,39 @@ export function ProfilePage({ port }: ProfilePageProps) {
               page.summary.map((field) => (
                 <div className={styles.summaryField} key={field.key}>
                   <h3 className={styles.summaryLabel}>{field.label}</h3>
-                  {field.items.map((entryItem) => (
-                    <p className={styles.summaryItem} key={entryItem.item_id}>
-                      <span>{entryItem.text}</span>
-                      <span className="meta">
-                        {originLabel(entryItem.origin)}
-                        {entryItem.last_confirmed_at === null
-                          ? ' · 时间未知'
-                          : ` · ${formatMonthDay(entryItem.last_confirmed_at)} 确认`}
-                      </span>
-                    </p>
-                  ))}
+                  {field.items.map((entryItem) => {
+                    // 取不到完整条目时不放这个按钮：纠正流要预填原主题与原描述，
+                    // 只有 item_id 的摘要条目开出来的会是一张改错对象的表单。
+                    // 条目列表有服务端上界（档案面契约第 3 节要求未传 limit 时必须有上界，
+                    // 当前实现默认 20 条），超出上界的摘要条目就不在列表里——此时宁可不给
+                    // 入口，也不给一个会写错条目的入口。
+                    const fullItem = itemsById.get(entryItem.item_id);
+                    return (
+                      <p className={styles.summaryItem} key={entryItem.item_id}>
+                        <span>{entryItem.text}</span>
+                        <span className="meta">
+                          {originLabel(entryItem.origin)}
+                          {entryItem.last_confirmed_at === null
+                            ? ' · 时间未知'
+                            : ` · ${formatMonthDay(entryItem.last_confirmed_at)} 确认`}
+                        </span>
+                        {fullItem !== undefined && (
+                          // aria-label 让同名的多个「纠正」各有可区分的可访问名
+                          // （可见文字仍是设计里的「纠正」）。
+                          <button
+                            aria-label={`${COPY.correct}：${entryItem.text}`}
+                            className="btn btn-quiet"
+                            onClick={() => {
+                              entry.openCorrect(fullItem);
+                            }}
+                            type="button"
+                          >
+                            {COPY.correct}
+                          </button>
+                        )}
+                      </p>
+                    );
+                  })}
                 </div>
               ))
             )}
