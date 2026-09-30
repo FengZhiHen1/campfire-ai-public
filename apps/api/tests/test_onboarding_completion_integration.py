@@ -215,19 +215,21 @@ async def test_completion_does_not_touch_another_account() -> None:
 async def test_an_unknown_state_is_rejected_not_overwritten() -> None:
     """表里读到词表外的状态时显式报错：不猜、不覆盖。
 
-    怎么造出这种行：`state` 有 CHECK 约束，正常写入路径造不出来。这里用一条绕过
-    约束的裸 SQL（先删约束再插——太重）改成**直接构造模型对象**并 monkeypatch 掉
-    查询结果：本用例要验的是用例函数的判据，而不是数据库能不能存下这个值。
+    怎么造出这种行：`state` 有 CHECK 约束，正常写入路径造不出来。这里**直接用桩会话**
+    给出两次 `execute` 的返回值：第一次（条件写入）返回空集表示「未写入」，
+    第二次（重读既有行）返回那个词表外的状态——本用例要验的是用例函数的判据，
+    而不是数据库能不能存下这个值。
     """
     from unittest.mock import AsyncMock, MagicMock
 
     from campfire.modules.accounts import onboarding_completion as module
 
-    drifted = CampfireOnboarding(account_id=_ACCOUNT, state="half_done", updated_at=_NOW)
+    not_written = MagicMock()
+    not_written.scalar_one_or_none = MagicMock(return_value=None)
+    drifted = MagicMock()
+    drifted.scalar_one_or_none = MagicMock(return_value="half_done")
     session = MagicMock()
-    result = MagicMock()
-    result.scalar_one_or_none = MagicMock(return_value=drifted)
-    session.execute = AsyncMock(return_value=result)
+    session.execute = AsyncMock(side_effect=[not_written, drifted])
 
     with pytest.raises(OnboardingWriteError, match="不在词表内"):
         await module.complete_onboarding(session, account_id=_ACCOUNT, now=_NOW)

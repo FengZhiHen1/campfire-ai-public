@@ -21,12 +21,13 @@ from __future__ import annotations
 from datetime import datetime, timezone
 
 from sqlalchemy import select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from campfire.modules.accounts.errors import OnboardingWriteError
 from campfire.modules.accounts.models import (
     MAX_ACCOUNT_ID_LENGTH,
-    ONBOARDING_COMPLETED,
+    ONBOARDING_IN_PROGRESS,
     ONBOARDING_SKIPPED,
     ONBOARDING_STATES,
     CampfireOnboarding,
@@ -64,6 +65,8 @@ async def skip_onboarding(
     契约第 6 节的三条逐一落在这里：
 
     1. 幂等：已 `skipped` 或已 `completed` 时不报错，返回当前状态。
+       并发调用同一账号时同样成立：幂等承载在主键冲突上（一条带终结态谓词的条件语句），
+       不靠「先读一次再决定写不写」——后者在并发下会让第二个调用撞主键（见实现处说明）。
        为什么返回当前状态而不是一律回 `skipped`：本端点与 `complete_onboarding`
        共用一条纪律——不代写。已 `completed` 时若回 `skipped`，响应就在陈述一个
        存储层并不成立的事实，而调用方（前端）据此显示「已跳过」也是错的。
@@ -87,31 +90,49 @@ async def skip_onboarding(
         （此前已由模型经 `finish_onboarding` 收束）。
 
     Raises:
-        OnboardingWriteError: 账号标识不合法、状态取值漂移，或存储层拒绝了写入。
+        OnboardingWriteError: 账号标识不合法、状态取值漂移（含键冲突后重读不到状态行），
+            或存储层拒绝了写入。
     """
     normalized = _validate_account_id(account_id)
     reference = now if now is not None else _utc_now()
 
-    # 先查再写：幂等语义要求「已 completed 时返回 completed 而不是改成 skipped」，
-    # 盲写 UPSERT 会把那个结论覆盖掉。
-    existing = (
-        await session.execute(select(CampfireOnboarding).where(CampfireOnboarding.account_id == normalized))
-    ).scalar_one_or_none()
-
-    if existing is not None:
-        if existing.state not in ONBOARDING_STATES:
-            # CHECK 约束挡住词表外的值，走到这里说明表形状与设计漂移（`CORE-07`：不猜）。
-            raise OnboardingWriteError(
-                f"引导状态 {existing.state!r} 不在词表内（{sorted(ONBOARDING_STATES)}）——表形状与设计漂移，无法记录跳过"
-            )
-        if existing.state in (ONBOARDING_COMPLETED, ONBOARDING_SKIPPED):
-            return existing.state
-        existing.state = ONBOARDING_SKIPPED
-        existing.updated_at = reference
+    # 写靠主键冲突判定，不先查后写（与 `session_repository.insert_session_owner`、
+    # `memory.ledger.record_deletion` 同法）：先查后写会让两个并发调用都读到自己该写，
+    # 第二个 INSERT 撞主键（23505）——本端点在与首轮注入结算并发时就会走到这一步。
+    #
+    # 一条语句承担三种情形，幂等与「不代写」都落在存储层（`CORE-05` 的通道阶梯）：
+    #   无行 → 落 `skipped`（初态直接写终结态，一次 INSERT 而不是 INSERT+UPDATE）；
+    #   行是 `in_progress` → 条件更新为 `skipped` 并刷新 `updated_at`（真实的状态迁移）；
+    #   行已终结（`completed` / `skipped`）→ `WHERE` 不中，一个字节都不写（含 `updated_at`）。
+    # 条件更新而不是盲写 UPSERT：后者会把模型的 `completed` 覆盖成 `skipped`。
+    statement = (
+        pg_insert(CampfireOnboarding)
+        .values(account_id=normalized, state=ONBOARDING_SKIPPED, updated_at=reference)
+        .on_conflict_do_update(
+            index_elements=[CampfireOnboarding.account_id],
+            set_={"state": ONBOARDING_SKIPPED, "updated_at": reference},
+            where=CampfireOnboarding.state == ONBOARDING_IN_PROGRESS,
+        )
+        .returning(CampfireOnboarding.state)
+    )
+    written = (await session.execute(statement)).scalar_one_or_none()
+    if written is not None:
         return ONBOARDING_SKIPPED
 
-    session.add(CampfireOnboarding(account_id=normalized, state=ONBOARDING_SKIPPED, updated_at=reference))
-    return ONBOARDING_SKIPPED
+    # 未写入 = 冲突行已处于终结态（`WHERE` 不中），本次调用只回报它的结论。
+    existing_state = (
+        await session.execute(select(CampfireOnboarding.state).where(CampfireOnboarding.account_id == normalized))
+    ).scalar_one_or_none()
+
+    if existing_state is None:
+        # 理论上不可达（未写入意味着冲突行存在）。显式失败而不是编造一个状态。
+        raise OnboardingWriteError("引导状态行在键冲突后既未写入也重读不到——表形状与设计漂移，无法记录跳过")
+    if existing_state not in ONBOARDING_STATES:
+        # CHECK 约束挡住词表外的值，走到这里说明表形状与设计漂移（`CORE-07`：不猜）。
+        raise OnboardingWriteError(
+            f"引导状态 {existing_state!r} 不在词表内（{sorted(ONBOARDING_STATES)}）——表形状与设计漂移，无法记录跳过"
+        )
+    return existing_state
 
 
 __all__ = ["skip_onboarding"]

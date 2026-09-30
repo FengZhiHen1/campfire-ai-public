@@ -51,7 +51,7 @@ from campfire.core.config import Settings, get_settings
 from campfire.core.db import get_engine, session_scope
 from campfire.core.db.sdk_session import AgentMessage, AgentSession
 from campfire.modules.accounts import session_repository as accounts_repo
-from campfire.modules.accounts.errors import OnboardingTriggerError
+from campfire.modules.accounts.errors import OnboardingTriggerError, OnboardingWriteError
 from campfire.modules.accounts.first_run_injection import read_first_run_injected
 from campfire.modules.accounts.models import (
     ONBOARDING_COMPLETED,
@@ -1505,3 +1505,27 @@ async def test_skip_does_not_cancel_a_running_run(client: httpx.AsyncClient) -> 
     runner.gate.set()
     await drain_pumps()
     assert (await client.post(f"/consult/runs/{run_id}/cancel")).status_code == 409
+
+
+async def test_skip_maps_a_write_failure_to_503(
+    client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """写入失败明确回 503，不得回 200（契约第 6 节）。
+
+    为什么必须回 5xx 而不是「当成功」：回 200 会让前端以为使用者的跳过已生效，
+    而下一次会话仍会注入引导——把一次存储层失败伪装成一个业务结论。
+
+    判别性：把端点里的 `except OnboardingWriteError` 去掉，这条未映射异常落成 500，
+    本用例失败（503 是契约里写明的映射，不是任意 5xx）。
+    """
+    session_id = await _create_session(client)
+
+    async def _boom(*_args: object, **_kwargs: object) -> str:
+        raise OnboardingWriteError("存储层拒绝了写入")
+
+    monkeypatch.setattr(consult_routes, "skip_onboarding", _boom)
+
+    response = await client.post(f"/consult/sessions/{session_id}/onboarding/skip")
+
+    assert response.status_code == 503, response.text
+    assert "onboarding_write_failed" in response.json()["detail"]
