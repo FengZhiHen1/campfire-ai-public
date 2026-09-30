@@ -64,8 +64,10 @@ export function useAuthFields(mode: AuthMode): AuthFieldsController {
   const [errors, setErrors] = useState<FieldErrors>({});
   const [touched, setTouched] = useState<ReadonlySet<AuthFieldName>>(() => new Set());
 
-  // touched 的镜像：setField 需要在同一次事件里读到最新集合决定是否即时校验，
-  // 而 state 的更新要到下次渲染才可见。镜像只在事件处理函数里读写，不与渲染竞争。
+  // values 与 touched 的镜像：state 的更新要到下次渲染才可见，而同一任务内的连续事件
+  // （浏览器自动填充/密码管理器会一次填多个字段）必须在闭包之外读到「含本次写入」的最新值。
+  // 镜像只在事件处理函数里读写，不与渲染竞争；写入点与 setValues 同处，不另开路径。
+  const valuesRef = useRef<AuthFormValues>(EMPTY_VALUES);
   const touchedRef = useRef<ReadonlySet<AuthFieldName>>(new Set());
 
   const applyTouched = (next: ReadonlySet<AuthFieldName>): void => {
@@ -78,15 +80,23 @@ export function useAuthFields(mode: AuthMode): AuthFieldsController {
     errors,
     touched,
     setField(field, value) {
-      const nextValues = { ...values, [field]: value };
-      setValues(nextValues);
+      // 函数式更新：同一任务内连续两次 setField 各自基于前一次的结果。
+      // 若写成 `{ ...values, [field]: value }`（闭包旧值），两次更新落在同一批次时
+      // 第二次会把第一次的字段值覆盖掉——字段被静默清空（同批次两次写入的守卫见 useAuthFields.test）。
+      setValues((prev) => ({ ...prev, [field]: value }));
+      // 即时重校验要读含本次写入的最新值；函数式更新的新值在 updater 外拿不到，
+      // 故用与 state 同步的镜像算出同一份新值。
+      const nextValues = { ...valuesRef.current, [field]: value };
+      valuesRef.current = nextValues;
       if (touchedRef.current.has(field)) {
         setErrors(validate(mode, nextValues));
       }
     },
     blurField(field) {
       applyTouched(new Set(touchedRef.current).add(field));
-      setErrors(validate(mode, values));
+      // 读镜像而不是闭包里的 values：同一任务内「写入 → 失焦」时闭包值还是旧的，
+      // 会把刚填好的字段误判成空（与 setField 同一类陈旧读）。
+      setErrors(validate(mode, valuesRef.current));
     },
     applyErrors(nextErrors) {
       const nextTouched = new Set(touchedRef.current);
