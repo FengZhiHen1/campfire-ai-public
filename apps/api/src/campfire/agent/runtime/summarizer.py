@@ -1,24 +1,8 @@
 """摘要调用的实现：用与主调用同一模型同一路由的一次独立调用写摘要。
 
-依据 docs/技术设计/technical-details/压缩策略.md 第 4 节：
-
-- 由模型写，且必须与主调用同一模型与路由——否则不共享前缀缓存；
-- 逐字回放热前缀：系统提示、上次路由请求的工具声明、被遮蔽范围的消息逐字回放，
-  压缩指令作为最后一条 user 消息追加；
-- 摘要输出受 `maxTokens` 限制；只有返回文本进入检查点，推理与工具调用一律排除；
-- 已有检查点时要求合并（合并要求由 :mod:`campfire.agent.context.compaction` 追加，不在这里）。
-
-两处必须写明的实现取舍：
-
-1. 工具声明照旧带上，但 `tool_choice="none"`。带上是为了让前缀与主调用逐字一致
-   （第 4 节的缓存要求）；禁止调用工具是为了让「工具调用一律排除」由构造保证，而不是靠
-   事后过滤——顺带也避免压缩时真的去执行一次检索。这是对提供方的假设：OpenAI 兼容端点
-   支持 `tool_choice="none"`（未在 TokenHub 上核实，登记为待验证项）。
-2. 截断用 `output_tokens >= maxTokens` 判定，是启发式。SDK 的 `ModelResponse` 不暴露
-   `finish_reason`（实测字段只有 output/usage/response_id/request_id/raw_usage），因此拿不到
-   「因长度而停」的官方信号。判错的代价是不对称的：把完整摘要误判为截断只是不改窗口
-   （第 7 节的安全方向），把截断摘要误判为完整则会把半截摘要写进检查点、丢掉没被摘要的
-   历史。所以这里从严。
+职责：回放热前缀、发起一次独立模型调用、把摘要正文与用量交给压缩机制。
+边界：不写会话、不执行工具，也不判定是否该压缩（合并要求由压缩机制追加）；失败原样冒泡。
+参考：docs/技术设计/technical-details/压缩策略.md 第 4 节。
 """
 
 from __future__ import annotations
@@ -40,7 +24,15 @@ _TRACE_WORKFLOW = "campfire-compaction"
 
 
 class ModelSummarizer:
-    """用一次独立模型调用写摘要（不写会话、不执行工具）。"""
+    """用一次独立模型调用写摘要（不写会话、不执行工具）。
+
+    两处必须写明的实现取舍：
+
+    取舍 1：工具声明照旧带上，但 `tool_choice="none"`。带上是为了让前缀与主调用逐字一致
+    （第 4 节的缓存要求）；禁止调用工具是为了让「工具调用一律排除」由构造保证，而不是靠
+    事后过滤——顺带也避免压缩时真的去执行一次检索。这是对提供方的假设：OpenAI 兼容端点
+    支持 `tool_choice="none"`（未在 TokenHub 上核实，登记为待验证项）。
+    """
 
     def __init__(
         self,
@@ -50,6 +42,11 @@ class ModelSummarizer:
         agent_name: str = DEFAULT_AGENT_NAME,
     ) -> None:
         """绑定模型与声明。
+
+        依据压缩策略第 4 节：由模型写，且必须与主调用同一模型与路由——否则不共享前缀缓存；
+        逐字回放热前缀：系统提示、上次路由请求的工具声明、被遮蔽范围的消息逐字回放，
+        压缩指令作为最后一条 user 消息追加；摘要输出受 `maxTokens` 限制；只有返回文本进入
+        检查点，推理与工具调用一律排除。
 
         系统提示不在这里：它由 :class:`~campfire.agent.context.SummaryRequest` 承载
         （主运行的静态系统提示）。第一版把摘要器自己的提示当系统消息，于是接口根本无法保证
@@ -108,7 +105,16 @@ class ModelSummarizer:
 
 
 def _replay(request: SummaryRequest) -> list[TResponseInputItem]:
-    """把热前缀逐字回放，并把压缩指令作为最后一条 user 消息追加（第 4 节）。"""
+    """把热前缀逐字回放，并把压缩指令作为最后一条 user 消息追加（第 4 节）。
+
+    依据 docs/技术设计/technical-details/压缩策略.md 第 4 节：
+
+    - 由模型写，且必须与主调用同一模型与路由——否则不共享前缀缓存；
+    - 逐字回放热前缀：系统提示、上次路由请求的工具声明、被遮蔽范围的消息逐字回放，
+      压缩指令作为最后一条 user 消息追加；
+    - 摘要输出受 `maxTokens` 限制；只有返回文本进入检查点，推理与工具调用一律排除；
+    - 已有检查点时要求合并（合并要求由 :mod:`campfire.agent.context.compaction` 追加，不在这里）。
+    """
     replayed: list[TResponseInputItem] = []
     for item in request.prefix:
         replayed.append(dict(item))  # type: ignore[arg-type]  # 逐字回放：只复制，不改写
@@ -118,6 +124,12 @@ def _replay(request: SummaryRequest) -> list[TResponseInputItem]:
 
 def _looks_truncated(output_tokens: int, max_tokens: int) -> bool:
     """摘要是否疑似被 `max_tokens` 截断。
+
+    取舍 2：截断用 `output_tokens >= maxTokens` 判定，是启发式。SDK 的 `ModelResponse` 不暴露
+    `finish_reason`（实测字段只有 output/usage/response_id/request_id/raw_usage），因此拿不到
+    「因长度而停」的官方信号。判错的代价是不对称的：把完整摘要误判为截断只是不改窗口
+    （第 7 节的安全方向），把截断摘要误判为完整则会把半截摘要写进检查点、丢掉没被摘要的
+    历史。所以这里从严。
 
     两种情形都算疑似：
 

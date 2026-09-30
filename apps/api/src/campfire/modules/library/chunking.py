@@ -1,23 +1,8 @@
 """分块后处理：框架不保证的部分（RAG 策略第 1.2 节）。
 
-为什么必须有这一层（2026-09-29 在真实产物上实测）：
-
-- 框架的 `MarkdownNodeParser` 按 `#` 层级切分并写出 `metadata["header_path"]`，
-  但它不对超长 section 二次切分——实测一个 2248 字符的 section 原样成为一个
-  节点，而 TokenHub 嵌入接口单条文本硬上限 2000 字符。不切就会在嵌入处失败。
-- 表格与列表在本样本上未被切断（框架按 heading 边界切，天然不切进表格/列表
-  内部）；但这是框架的实现细节而非书面承诺，因此这里仍做结构保护：超长切分
-  只在段落/句子边界进行，绝不切进表格行或列表项之间。
-
-设计约束（RAG 策略第 1.2 节与第 10 节参数表）：
-
-- 目标块长 400–800 字符；硬上限 2000 字符。
-- 结构边界处不重叠（重叠会让同一内容在引用里出现两次，也让 `locator` 含混）。
-- 超限的不可分单元（例如整页表格）标记为「未嵌入」并进人工处理队列，
-  不静默截断——截断会制造错误依据。
-
-字符计数用 `len(str)`（Unicode 码点）而非框架 `SentenceSplitter` 的 token 计数：
-嵌入接口的限制是字符，中文下 token 与字符不是一回事（设计已指出该陷阱）。
+职责：对框架切好的 section 做块长归一化，超长时在安全边界二次切分。
+边界：只做块长与结构保护，不解析 Markdown 语义、不改动块内容。
+参考：docs/技术设计/technical-details/RAG策略.md 第 1.2 节与第 10 节参数表；细节见 `chunk_markdown_section`、`_split_oversized` 的 docstring。
 """
 
 from __future__ import annotations
@@ -26,6 +11,13 @@ import re
 from dataclasses import dataclass, field
 
 #: 目标块长（字符）。RAG 策略第 10 节参数表。
+#:
+#: 设计约束（RAG 策略第 1.2 节与第 10 节参数表）：
+#:
+#: - 目标块长 400–800 字符；硬上限 2000 字符。
+#: - 结构边界处不重叠（重叠会让同一内容在引用里出现两次，也让 `locator` 含混）。
+#: - 超限的不可分单元（例如整页表格）标记为「未嵌入」并进人工处理队列，
+#:   不静默截断——截断会制造错误依据。
 TARGET_MIN_CHARS = 400
 TARGET_MAX_CHARS = 800
 
@@ -192,6 +184,9 @@ def _split_oversized(text: str, limit: int) -> tuple[list[str], str | None]:
     2. 句子边界——段落本身仍超限时。
     3. 结构行不可切：若单个段落由表格行/列表项构成且自身超限，不切，
        返回失败原因交由调用方标记为需人工处理（静默截断会制造错误依据）。
+
+    字符计数用 `len(str)`（Unicode 码点）而非框架 `SentenceSplitter` 的 token 计数：
+    嵌入接口的限制是字符，中文下 token 与字符不是一回事（设计已指出该陷阱）。
     """
     if len(text) <= limit:
         return [text], None
@@ -278,6 +273,15 @@ def chunk_markdown_section(
     `section_title` 由调用方在节点粒度给出：超长 section 会被切成多块，
     只有首块还带着标题行，因此不能从块文本里现取（那样后续块的章节路径会丢）。
     缺省时回退为从文本首行取。
+
+    为什么必须有这一层（2026-09-29 在真实产物上实测）：
+
+    - 框架的 `MarkdownNodeParser` 按 `#` 层级切分并写出 `metadata["header_path"]`，
+      但它不对超长 section 二次切分——实测一个 2248 字符的 section 原样成为一个
+      节点，而 TokenHub 嵌入接口单条文本硬上限 2000 字符。不切就会在嵌入处失败。
+    - 表格与列表在本样本上未被切断（框架按 heading 边界切，天然不切进表格/列表
+      内部）；但这是框架的实现细节而非书面承诺，因此这里仍做结构保护：超长切分
+      只在段落/句子边界进行，绝不切进表格行或列表项之间。
     """
     report = ChunkingReport()
 

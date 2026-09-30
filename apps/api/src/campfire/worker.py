@@ -1,30 +1,21 @@
 """Taskiq Worker 入口。
 
-归属（见 docs/项目结构设计.md 第 7 节）：worker 入口允许依赖 `core/*` 与
-`modules/{profile,memory}`；禁止 import `surfaces/*`，禁止回查业务用例。
-
-运行模型（见 docs/技术栈设计.md 第 5 节）：全异步，不引入同步与异步之间的
-桥接；broker 与 HTTP 入口共用同一份构造（`core/jobs.build_broker`）。
-
-已注册的任务：
-
-- `consume_memory_episode`：消费 `kind = memory_episode` 的待处理记录
-  （写入链路见 docs/技术设计/technical-details/写入路径.md 第 4、5、6 节）。
-- 兜底扫描（第 4.1 节）：Worker 启动时拉起一个常驻周期任务，回收过期租约并把
-  「该处理却没被处理」的记录重新投递。跑在 Worker 进程内、不新增部署单元
-  （2026-09-30 裁决；重访条件见 `_start_sweep` 的 docstring）。
-
-失败语义（第 6 节）：
-
-任务不吞异常：可重试失败由本入口按状态机记 `attempts + 1` 与退避，
-超过上限转 `dead` 并告警。图库故障不等于写入成功——记录留在 `pending`/`dead`，
-「没写进去」绝不能被当作「写进去了」（第 2 节的不变量）。
-
-兜底扫描的失败语义相反：单轮失败不得终止循环（只记日志、下一轮继续）——
-一次数据库抖动就让扫描永久停止，等于把「丢的任务可被检测」这条兼底控制静默关掉。
-
+职责：消费 `kind = memory_episode` 待处理记录 + 常驻兜底扫描（第 4.1 节）。
+边界：只依赖 `core/*` 与 `modules/{profile,memory}`；禁止 import `surfaces/*`。
+参考：写入路径第 4、5、6 节。
 启动方式：`uv run taskiq worker campfire.worker:broker`
 """
+
+# 归属（见 docs/项目结构设计.md 第 7 节）：worker 入口允许依赖 `core/*` 与
+# `modules/{profile,memory}`；禁止 import `surfaces/*`，禁止回查业务用例。
+#
+# 已注册的任务：
+#
+# - `consume_memory_episode`：消费 `kind = memory_episode` 的待处理记录
+#   （写入链路见 docs/技术设计/technical-details/写入路径.md 第 4、5、6 节）。
+# - 兜底扫描（第 4.1 节）：Worker 启动时拉起一个常驻周期任务，回收过期租约并把
+#   「该处理却没被处理」的记录重新投递。跑在 Worker 进程内、不新增部署单元
+#   （2026-09-30 裁决；重访条件见 `_start_sweep` 的 docstring）。
 
 import asyncio
 import logging
@@ -70,18 +61,27 @@ def _get_memory_graph() -> MemoryGraph:
 async def _dispatch_to_queue(pending_id: str) -> None:
     """投递一条待处理记录（装配处注入 `core/jobs` 的钩子）。
 
+    运行模型（见 docs/技术栈设计.md 第 5 节）：全异步，不引入同步与异步之间的
+    桥接；broker 与 HTTP 入口共用同一份构造（`core/jobs.build_broker`）。
+
     必须 await：`kiq()` 返回协程，不 await 等于没有投递（mypy 抓过这个错误）。
     """
     await consume_memory_episode_task.kiq(pending_id, lease_owner="api")
 
 
-# 装配点：产品侧工具（`tools/`）只依赖 `core/jobs`，不 import 本入口模块（层白名单）。
+# 装配点：产品侧工具（`tools/`）只依赖 `core/jobs`，
+# 不 import 本入口模块（层白名单）。
 set_dispatch_hook(_dispatch_to_queue)
 
 
 @broker.task
 async def consume_memory_episode_task(pending_id: str, lease_owner: str = "worker") -> str:
     """消费一条记忆待处理记录。
+
+    失败语义（第 6 节）：
+    任务不吞异常：可重试失败由本入口按状态机记 `attempts + 1` 与退避，
+    超过上限转 `dead` 并告警。图库故障不等于写入成功——记录留在 `pending`/`dead`，
+    「没写进去」绝不能被当作「写进去了」（第 2 节的不变量）。
 
     返回状态字符串（`written` / `skipped`），供 Taskiq 记录与排查。
 
@@ -125,8 +125,8 @@ async def consume_memory_episode_task(pending_id: str, lease_owner: str = "worke
         # 那条路被永久判死。因此这里只放两个精确分支：
         # `MemoryDataError`（不可重试）→ 前面的 `dead` 分支；
         # 其余（含 `MemoryUnavailableError`）→ 落到本分支当可重试。
-        # 本轮曾写过一个显式的 `except MemoryUnavailableError` 分支，消融验证它是冗余的
-        # （删掉后 3 条分档用例仍全绿），故改为本条注释——保留教训、不留无效结构（CORE-09）。
+        # 不需要显式的 `except MemoryUnavailableError` 分支：它是冗余的
+        # （删掉后 3 条分档用例仍全绿；CORE-09）。
         await _register_retryable_failure(pending_id, exc)
         raise
 
@@ -220,6 +220,9 @@ async def _sweep_forever() -> None:
 
     单轮失败不得终止循环：一次数据库抖动就让扫描永久停止，等于把「丢的任务可被
     检测」这条兼底控制静默关掉。因此每轮各自捕获异常，只记日志并继续。
+
+    兜底扫描的失败语义相反：单轮失败不得终止循环（只记日志、下一轮继续）——
+    一次数据库抖动就让扫描永久停止，等于把「丢的任务可被检测」这条兼底控制静默关掉。
     """
     while True:
         try:

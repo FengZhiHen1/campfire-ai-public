@@ -1,12 +1,8 @@
 """skill 的数据形状与字段校验。
 
-字段约束的真源是 docs/项目结构设计.md 第 4 节（Agent Skills 开放标准）：`name`
-≤64 字符且只含小写字母、数字与连字符；`description` ≤1024 字符、非空；
-`compatibility` ≤500 字符；`metadata` 是 string→string 的自由映射；
-`allowed-tools` 是空格分隔的预授权列表。
-
-本项目自有的元数据放在 `metadata` 下（不改标准格式），基座读取但不送入模型：
-`autoload`（是否允许模型自动匹配）与 `surface`（所属面，供目录预算分组）。
+职责：承载 skill 与 metadata 的数据形状，并校验各字段取值。
+边界：不做文件发现与文本解析；自有元数据放 `metadata`，基座读取但不送入模型。
+参考：docs/项目结构设计.md 第 4 节（Agent Skills 开放标准）。
 """
 
 from __future__ import annotations
@@ -36,6 +32,9 @@ _COMPATIBILITY_MAX_LENGTH = 500
 TOOL_NAME_PATTERN = re.compile(r"[a-z][a-z0-9_]*")
 
 # 自有元数据键（见基座文档第 3 节末行）。
+#
+# 本项目自有的元数据放在 `metadata` 下（不改标准格式），基座读取但不送入模型：
+# `autoload`（是否允许模型自动匹配）与 `surface`（所属面，供目录预算分组）。
 _METADATA_AUTOLOAD = "autoload"
 _METADATA_SURFACE = "surface"
 
@@ -142,6 +141,11 @@ def _parse_allowed_tools(frontmatter: Mapping[object, object], path: str) -> fro
 @dataclass(frozen=True, slots=True)
 class SkillMetadata:
     """一个 skill 的 frontmatter 事实。
+
+    字段约束的真源是 docs/项目结构设计.md 第 4 节（Agent Skills 开放标准）：`name`
+    ≤64 字符且只含小写字母、数字与连字符；`description` ≤1024 字符、非空；
+    `compatibility` ≤500 字符；`metadata` 是 string→string 的自由映射；
+    `allowed-tools` 是空格分隔的预授权列表。
 
     `metadata` 与 `allowed_tools` 都是不可变容器：加载后的元数据不得被就地改写，
     否则「同一个 skill 在不同轮次看到不同工具集」这类问题无法追查。

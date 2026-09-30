@@ -1,13 +1,9 @@
 """SKILL.md 的 frontmatter 解析。
 
-只做「文本 → 映射」这一层，字段语义与校验在 :mod:`campfire.agent.skill_runtime.skill`。
-
-严格性的三条来源（docs/项目结构设计.md 第 4 节、通用基座第 3 节）：
-
-1. frontmatter 只用标准的六个字段，出现自创字段即拒绝——否则拼错的字段名会被
-   静默忽略，skill 的行为与作者预期不一致。
-2. 重复键即拒绝：PyYAML 默认静默保留最后一个，等于悄悄丢数据。
-3. 非映射根（例如整段是字符串或列表）即拒绝，而不是当作空元数据。
+职责：只做「文本 → 映射」这一层，字段语义与校验在
+:mod:`campfire.agent.skill_runtime.skill`。
+边界：自创字段、重复键、非映射根一律拒绝，不静默接受。
+参考：docs/项目结构设计.md 第 4 节、通用基座第 3 节。
 """
 
 from __future__ import annotations
@@ -18,6 +14,13 @@ import yaml
 
 from .errors import SkillFrontmatterError
 
+# 严格性的三条来源（docs/项目结构设计.md 第 4 节、通用基座第 3 节）：
+#
+# 1. frontmatter 只用标准的六个字段，出现自创字段即拒绝——否则拼错的字段名会被
+#    静默忽略，skill 的行为与作者预期不一致。
+# 2. 重复键即拒绝：PyYAML 默认静默保留最后一个，等于悄悄丢数据。
+# 3. 非映射根（例如整段是字符串或列表）即拒绝，而不是当作空元数据。
+#
 # Agent Skills 开放标准的六个字段；顺序即文档顺序。
 STANDARD_FIELDS: tuple[str, ...] = (
     "name",
@@ -31,7 +34,8 @@ STANDARD_FIELDS: tuple[str, ...] = (
 _FRONTMATTER_DELIMITERS = ("---", "...")
 _UTF8_BOM = "\ufeff"
 
-# 正文首行以标准字段开头的样子（`metadata:` / `allowed-tools: …`）。
+# 正文首行以标准字段开头的样子
+# （`metadata:` / `allowed-tools: …`）。
 _BODY_LOOKS_LIKE_FRONTMATTER = re.compile(
     r"^(name|description|license|compatibility|metadata|allowed-tools)\s*:",
 )

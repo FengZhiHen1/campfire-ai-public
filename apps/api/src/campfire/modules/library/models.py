@@ -1,19 +1,8 @@
 """专业资料与案例的表结构：条目（事实真源）与检索节点（投影）。
 
-归属（见 docs/项目结构设计.md 第 6 节与
-docs/技术设计/decisions/检索链归入library模块.md）：条目表与检索链同属本模块。
-
-两张表的关系（RAG 策略第 2 节）：条目表是事实真源——状态、撤下、来源、
-适用范围、`keywords`/`aliases` 都由它拥有；节点表是它的投影，供向量检索使用。
-投影不是第二真源，但需要在 SQL 层过滤的字段必须同时写进节点 metadata，
-否则过滤会掉到应用层，违反「过滤在 SQL 内完成」的不变量。
-
-节点表为什么不用 ORM 声明：它由 LlamaIndex 的 `PGVectorStore` 自带表结构
-（表名 `data_<table_name>`、`id bigint` + sequence 自增、`metadata_ jsonb`、
-`embedding vector(N)`），已实测（TECH-19，2026-09-29）。我们用 Alembic 建出
-与之逐列一致的结构并令 `perform_setup=False`，因此该表在这里只导出
-供迁移使用的 SQLAlchemy 表对象，不注册进 `Base.metadata` 之外的 ORM 映射——
-避免两处定义漂移。
+职责：声明条目表与检索节点表的映射、索引与约束，供迁移与检索链使用。
+边界：不定义检索行为；节点表结构必须与 `PGVectorStore` 期望的逐列一致。
+参考：docs/项目结构设计.md 第 6 节；docs/技术设计/technical-details/RAG策略.md 第 2 节；docs/技术设计/decisions/检索链归入library模块.md；细节见 `KnowledgeItem` 与 `RetrievedNode` 的 docstring。
 """
 
 from datetime import datetime
@@ -48,6 +37,9 @@ class KnowledgeItem(Base):
     字段依据：`docs/技术设计/technical-details/资料与案例检索.md` 第 1 节
     「每个条目必须有：来源、适用范围、状态、版本与撤下标记」（`RQ-KB-02`），
     以及 RAG 策略第 1.4 节（`keywords`/`aliases` 供字面路使用）。
+
+    归属（见 docs/项目结构设计.md 第 6 节与
+    docs/技术设计/decisions/检索链归入library模块.md）：条目表与检索链同属本模块。
     """
 
     __tablename__ = "campfire_knowledge_item"
@@ -120,6 +112,18 @@ class RetrievedNode(Base):
     因为框架按这些名字读写；改动必须同步框架版本并重跑集成测试。
 
     表名 `data_campfire_node` → 框架渲染为 `data_` 前缀的约定见 RAG 策略第 2 节。
+
+    两张表的关系（RAG 策略第 2 节）：条目表是事实真源——状态、撤下、来源、
+    适用范围、`keywords`/`aliases` 都由它拥有；节点表是它的投影，供向量检索使用。
+    投影不是第二真源，但需要在 SQL 层过滤的字段必须同时写进节点 metadata，
+    否则过滤会掉到应用层，违反「过滤在 SQL 内完成」的不变量。
+
+    节点表为什么不用 ORM 声明：它由 LlamaIndex 的 `PGVectorStore` 自带表结构
+    （表名 `data_<table_name>`、`id bigint` + sequence 自增、`metadata_ jsonb`、
+    `embedding vector(N)`），已实测（TECH-19，2026-09-29）。我们用 Alembic 建出
+    与之逐列一致的结构并令 `perform_setup=False`，因此该表在这里只导出
+    供迁移使用的 SQLAlchemy 表对象，不注册进 `Base.metadata` 之外的 ORM 映射——
+    避免两处定义漂移。
     """
 
     __tablename__ = "data_campfire_node"
@@ -149,6 +153,6 @@ class RetrievedNode(Base):
         # 表注释必须在此声明：迁移 113a04901d24 建表时写了 comment，而 ORM 未声明，
         # 于是 `--autogenerate` 会反复产出「drop_table_comment」——一个与本次改动
         # 无关的破坏性操作（2026-09-29 实测：生成删除账本迁移时同时产出两条）。
-        # 在 ORM 侧补齐后，metadata 与库内实际一致，autogenerate 不再漂移。
+        # ORM 侧已声明 comment：metadata 与库内实际一致，autogenerate 不再漂移。
         {"comment": "检索节点：条目表的投影，供 PGVectorStore 读写（perform_setup=False）"},
     )

@@ -1,14 +1,19 @@
 """工具池：注册、稳定声明与启动期校验。
 
-依据 docs/技术设计/technical-details/通用基座.md 第 5 节与 docs/项目结构设计.md 第 7 节：
-
-- 工具注册在装配处完成（`main.py` / `worker.py`），因此 `agent/*` 不需要
-  import `tools/*`（产品侧工具包）。
-- 声明保持稳定：请求里的 `tools` 数组在一条对话内不变（超集）。这是缓存纪律的
-  要求——声明一变前缀就变，缓存从变化处失效。因此 :meth:`ToolPool.declared` 按名字
-  排序返回固定顺序，而不是跟随注册顺序。
-- 工具池是超集：`allowed-tools` 不限制池子，它只选出「此刻可用」的子集。
+职责：注册工具、给出稳定声明顺序，并在启动期校验名字与描述的形状。
+边界：工具池是超集，`allowed-tools` 不限制池子，只选出「此刻可用」的子集；
+产品侧工具不得占用基座保留名。
+参考：docs/技术设计/technical-details/通用基座.md 第 5 节；docs/项目结构设计.md 第 7 节。
 """
+
+# 依据 docs/技术设计/technical-details/通用基座.md 第 5 节与 docs/项目结构设计.md 第 7 节：
+#
+# - 工具注册在装配处完成（`main.py` / `worker.py`），因此 `agent/*` 不需要
+#   import `tools/*`（产品侧工具包）。
+# - 声明保持稳定：请求里的 `tools` 数组在一条对话内不变（超集）。这是缓存纪律的
+#   要求——声明一变前缀就变，缓存从变化处失效。因此 :meth:`ToolPool.declared` 按名字
+#   排序返回固定顺序，而不是跟随注册顺序。
+# - 工具池是超集：`allowed-tools` 不限制池子，它只选出「此刻可用」的子集。
 
 from __future__ import annotations
 

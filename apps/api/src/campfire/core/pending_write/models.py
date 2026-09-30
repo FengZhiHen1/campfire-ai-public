@@ -1,26 +1,8 @@
 """待处理写入记录的表与状态词表。
 
-归属（2026-09-29 用户裁决）：`pending_write` 是 profile 与 memory 共用的事实表，
-因此归 `core/`。依据是依赖白名单（见 docs/项目结构设计.md 第 7 节）：
-`modules/*` 只能依赖 `core/*`、且模块之间不得互相 import——共用表若放在任一
-业务模块里，另一个模块就用不上。这也是 `core/` 里唯一带业务词表（`kind`）的表，
-属有意的例外：它的形状由 docs/技术设计/technical-details/写入路径.md
-第 3 节拥有，词表是契约的一部分。
-
-状态机（第 3、6 节）：
-
-    pending ──领取──> processing ──成功──> done
-       ^                  │
-       │                  ├──可重试失败（attempts+1、退避）──> pending
-       └──────────────────┘
-                          └──超过重试上限──> dead
-
-不变量：「没写进去」不得被当作「写进去了」——只有 `state = done` 才算写入
-成功，其余状态一律视为未写入（第 2 节）。因此本模块不提供「看起来成功」的便捷返回：
-状态推进函数都要求显式给出目标状态。
-
-租约（`lease_owner` + `lease_expires_at`）用于领取：第 4 节明确「不使用先查后改的
-无锁流程」。租约过期视为可重新领取——Worker 崩溃不该让记录永久卡在 `processing`。
+职责：定义 `campfire_pending_write` 表与状态/种类/来源词表。
+边界：只放表与词表；状态推进在 `repository`，投递与消费不在本包。
+参考：docs/技术设计/technical-details/写入路径.md 第 3、6 节。
 """
 
 from __future__ import annotations
@@ -35,6 +17,12 @@ from sqlalchemy.orm import Mapped, mapped_column
 from campfire.core.db import Base, new_uuid
 
 #: 记录种类。只有这两种（第 3 节）：档案条目与记忆片段。
+#: 归属（2026-09-29 用户裁决）：`pending_write` 是 profile 与 memory 共用的事实表，
+#: 因此归 `core/`。依据是依赖白名单（见 docs/项目结构设计.md 第 7 节）：
+#: `modules/*` 只能依赖 `core/*`、且模块之间不得互相 import——共用表若放在任一
+#: 业务模块里，另一个模块就用不上。这也是 `core/` 里唯一带业务词表（`kind`）的表，
+#: 属有意的例外：它的形状由 docs/技术设计/technical-details/写入路径.md
+#: 第 3 节拥有，词表是契约的一部分。
 KIND_PROFILE_ITEM = "profile_item"
 KIND_MEMORY_EPISODE = "memory_episode"
 KINDS: frozenset[str] = frozenset({KIND_PROFILE_ITEM, KIND_MEMORY_EPISODE})
@@ -57,6 +45,13 @@ ORIGINS: frozenset[str] = frozenset(
 #: 定义在本层（而不是 import 业务模块）的原因见 `PendingWrite.account_id` 的说明。
 MAX_ACCOUNT_ID_LENGTH = 128
 
+# 状态机（第 3、6 节）：
+#
+#     pending ──领取──> processing ──成功──> done
+#        ^                  │
+#        │                  ├──可重试失败（attempts+1、退避）──> pending
+#        └──────────────────┘
+#                           └──超过重试上限──> dead
 STATE_PENDING = "pending"
 STATE_PROCESSING = "processing"
 STATE_DONE = "done"
@@ -118,6 +113,9 @@ class PendingWrite(Base):
     #: 第 3 节只要求「最小载荷之外的来源信息」，不规定固定键。
     source: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
     #: 处理状态，取值见 `STATES`。只有 `done` 算写入成功。
+    #: 不变量：「没写进去」不得被当作「写进去了」——只有 `state = done` 才算写入
+    #: 成功，其余状态一律视为未写入（第 2 节）。因此本模块不提供「看起来成功」的便捷返回：
+    #: 状态推进函数都要求显式给出目标状态。
     state: Mapped[str] = mapped_column(
         String(16), nullable=False, default=STATE_PENDING, server_default=sql_text(f"'{STATE_PENDING}'")
     )
@@ -128,6 +126,8 @@ class PendingWrite(Base):
     #: 处理中的 Worker 标识（仅 `processing` 阶段）。
     lease_owner: Mapped[str | None] = mapped_column(String(128), nullable=True)
     #: 租约到期时间；过期即可被重新领取（Worker 崩溃不该让记录永久卡住）。
+    #: 租约（`lease_owner` + `lease_expires_at`）用于领取：第 4 节明确「不使用先查后改的
+    #: 无锁流程」。租约过期视为可重新领取——Worker 崩溃不该让记录永久卡在 `processing`。
     lease_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     #: 最后一次失败的摘要。只记摘要，不复述连接串或凭据（AGENTS.md 安全条款）。
     last_error: Mapped[str | None] = mapped_column(String(512), nullable=True)
@@ -164,7 +164,8 @@ class PendingWrite(Base):
             "(kind = 'profile_item') = (support_object_id IS NOT NULL)",
             name="support_object_by_kind",
         ),
-        # `attempts` 不得为负：负值会让「是否超过重试上限」的判定提前成立/永不成立。
+        # `attempts` 不得为负。
+        # 负值会让「是否超过重试上限」的判定提前成立/永不成立。
         CheckConstraint("attempts >= 0", name="attempts_non_negative"),
         {"comment": "待写入事实的真相源：只有 state=done 才算写入成功"},
     )

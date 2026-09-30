@@ -1,45 +1,9 @@
 """账号注销墓碑：一次注销的、不含任何用户内容的记录。
 
-归属（2026-09-29 用户裁决，见
-docs/技术设计/decisions/账号注销与墓碑.md）：本表归 `core/auth`，不新建模块、
-不并入删除账本。
-
-为什么它必须在 `core/auth` 而不是 `modules/accounts`：
-
-判据是依赖白名单，不是偏好（[项目结构设计] 第 7 节）：
-
-- 墓碑的读者是 Worker——它要回答「这条在途写入的账号是否已注销」；
-- 而 Worker 只允许 import `core/*` 与 `modules/{profile,memory}`，
-  且禁止回查业务用例；
-- `modules/*` 之间又禁止互相依赖，因此 `modules/memory` 的消费路径
-  读不到 `modules/accounts` 里的表。
-
-请求路径与 Worker 都要读它——「跨界可读」正是它唯一的归属理由，
-也让它是 `core/` 里第二张带业务语义的表（第一张是 `core/pending_write`，
-两者都是有意的例外，各自的形状由设计文档拥有）。
-
-为什么不并入删除账本：
-
-`campfire_memory_deletion_ledger` 的 `episode_key` 是 `NOT NULL` 且 UNIQUE、
-语义是「某条 episode 被删」（实测 `models.py` 的列约束）。账号墓碑不对应任何
-episode，塞进去会破坏该列的不变量。
-
-为什么必须有它（不是可选记账）：
-
-注销时可能已有 `pending_write` 在排队、甚至已被 Worker 领取。若账号删得无迹可寻，
-Worker 写入时查不到账号——而「查不到」与「账号从不存在」无法区分，于是数据被
-写回已注销账号的图（删后复活）。墓碑是 Worker 识别「已注销」的唯一依据。
-
-内容边界（硬要求）：
-
-只含账号标识、时间、原因，不含任何用户内容。由此有一条对外表述纪律：
-
-    不得声称「已删除全部数据」；
-    准确表述是「已删除全部内容，并保留一条不含内容的注销记录」。
-
-理由：墓碑保留了 `account_id`（一个不透明 UUID）。它本身不含内容，但它是关于该
-账号的一条记录——把「连记录都不剩」说成事实会是虚假陈述。若将来要求字面删净，
-须一并删除墓碑并补「注销前排空队列」的机制（见决策记录的重访条件）。
+职责：定义墓碑表 `AccountDeletionTombstone` 与注销原因词表，供请求路径与 Worker 共同读取。
+边界：归 `core/auth`（不新建模块、不并入删除账本）；只含账号标识、时间、原因，不含用户内容。
+参考：决策记录 docs/技术设计/decisions/账号注销与墓碑.md、[项目结构设计] 第 7 节；
+表结构与归属理由见本文件 `AccountDeletionTombstone` 处。
 """
 
 from __future__ import annotations
@@ -75,6 +39,47 @@ class AccountDeletionTombstone(Base):
 
     一行 = 一个已注销账号。表名用 `campfire_` 前缀（`core/db` 的约定），
     避免与 SuperTokens core 自建表（实测 56 张、无前缀）撞名。
+
+    归属（2026-09-29 用户裁决，见
+    docs/技术设计/decisions/账号注销与墓碑.md）：本表归 `core/auth`，不新建模块、
+    不并入删除账本。
+
+    为什么它必须在 `core/auth` 而不是 `modules/accounts`：
+
+    判据是依赖白名单，不是偏好（[项目结构设计] 第 7 节）：
+
+    - 墓碑的读者是 Worker——它要回答「这条在途写入的账号是否已注销」；
+    - 而 Worker 只允许 import `core/*` 与 `modules/{profile,memory}`，
+      且禁止回查业务用例；
+    - `modules/*` 之间又禁止互相依赖，因此 `modules/memory` 的消费路径
+      读不到 `modules/accounts` 里的表。
+
+    请求路径与 Worker 都要读它——「跨界可读」正是它唯一的归属理由，
+    也让它是 `core/` 里第二张带业务语义的表（第一张是 `core/pending_write`，
+    两者都是有意的例外，各自的形状由设计文档拥有）。
+
+    为什么不并入删除账本：
+
+    `campfire_memory_deletion_ledger` 的 `episode_key` 是 `NOT NULL` 且 UNIQUE、
+    语义是「某条 episode 被删」（实测 `models.py` 的列约束）。账号墓碑不对应任何
+    episode，塞进去会破坏该列的不变量。
+
+    为什么必须有它（不是可选记账）：
+
+    注销时可能已有 `pending_write` 在排队、甚至已被 Worker 领取。若账号删得无迹可寻，
+    Worker 写入时查不到账号——而「查不到」与「账号从不存在」无法区分，于是数据被
+    写回已注销账号的图（删后复活）。墓碑是 Worker 识别「已注销」的唯一依据。
+
+    内容边界（硬要求）：
+
+    只含账号标识、时间、原因，不含任何用户内容。由此有一条对外表述纪律：
+
+        不得声称「已删除全部数据」；
+        准确表述是「已删除全部内容，并保留一条不含内容的注销记录」。
+
+    理由：墓碑保留了 `account_id`（一个不透明 UUID）。它本身不含内容，但它是关于该
+    账号的一条记录——把「连记录都不剩」说成事实会是虚假陈述。若将来要求字面删净，
+    须一并删除墓碑并补「注销前排空队列」的机制（见决策记录的重访条件）。
     """
 
     __tablename__ = "campfire_account_deletion_tombstone"

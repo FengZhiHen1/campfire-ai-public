@@ -1,15 +1,8 @@
 """skill 资源的列举与按需读取。
 
-依据 docs/技术设计/technical-details/通用基座.md 第 3 节：`references/` 与
-`assets/` 按需读取；相对路径、一层深，不做多级引用链。
-
-四条边界都是显式的：
-
-- 只认 `references/<文件名>` 与 `assets/<文件名>` 两种形状，多一层即拒绝；
-- 拒绝绝对路径、`..`、NUL 与 `:`（越界或不可移植的读取不是「找不到」，是明确的拒绝）；
-- 单文件体积上限，避免一次读取把上下文挤爆（有界性要求）；
-- 列举与读取用同一组判据：列举时就把不合格的条目标成「不可用」并带上原因，而不是
-  列出一份读不到的清单——第 4 节要求注入失败显式标注该来源不可用。
+职责：列举 `references/` 与 `assets/` 下的资源，并按需读取一份。
+边界：只认一层深的相对路径；拒绝绝对路径、`..`、NUL 与 `:`；单文件体积有上限。
+参考：docs/技术设计/technical-details/通用基座.md 第 3 节、第 4 节。
 """
 
 from __future__ import annotations
@@ -20,9 +13,18 @@ from pathlib import Path
 from .errors import SkillResourceError
 from .skill import Skill
 
+# 四条边界都是显式的：
+#
+# - 只认 `references/<文件名>` 与 `assets/<文件名>` 两种形状，多一层即拒绝；
+# - 相对路径、一层深，不做多级引用链。
+# - 拒绝绝对路径、`..`、NUL 与 `:`（越界或不可移植的读取不是「找不到」，是明确的拒绝）；
+# - 列举与读取用同一组判据：列举时就把不合格的条目标成「不可用」并带上原因，而不是
+#   列出一份读不到的清单——第 4 节要求注入失败显式标注该来源不可用。
+#
 # 按需读取的资源根目录；顺序即资源指引中的展示顺序。
 RESOURCE_DIRECTORIES: tuple[str, ...] = ("references", "assets")
 
+# 单文件体积上限，避免一次读取把上下文挤爆（有界性要求）。
 # 单个资源的体积上限（256 KiB）。取值理由：资源是给人读的文档片段，
 # 超过这个量级说明该拆分或改由检索通道供给，而不是整份塞进对话。
 MAX_RESOURCE_BYTES = 256 * 1024
@@ -96,7 +98,8 @@ def read_resource(skill: Skill, relative_path: str, *, max_bytes: int = MAX_RESO
     except UnicodeDecodeError as exc:
         raise SkillResourceError(f"资源 {relative_path!r} 不是 UTF-8 文本") from exc
     except OSError as exc:
-        # 权限、被占用、读一半被删——都归成同一个显式拒绝，不让裸 OSError 逃出去。
+        # 权限、被占用、读一半被删——都归成同一个显式
+        # 拒绝，不让裸 OSError 逃出去。
         raise SkillResourceError(f"资源 {relative_path!r} 读取失败（{type(exc).__name__}）") from exc
 
 

@@ -3,24 +3,8 @@
 归属：`modules/memory`（图库是它的存储）。端口定义在
 `core/auth/deletion.py`——见那里的说明：`core/*` 不得依赖 `modules/*`，
 因此实现放这边、由装配处注入。
-
-为什么账号级删除比单条删除干净：
-
-[通用记忆] 第 1 节实测：在 FalkorDB 后端 `group_id` 就是图名
-（`driver.clone(database=group_id)`）。因此「删除该账号的全部记忆」是
-丢掉整张图——一次完整操作，不受单条删除的两条约束（共享边不重算、
-物理清理延期）牵连。这正是决策记录里「账号级删除在技术上比单条删除更干净」的依据。
-
-为什么用 `GRAPH.DELETE` 而不是逐条删：
-
-逐条删要枚举节点与边、还要处理共享实体，既慢又不完备（`remove_episode`
-只删独占实体，见[通用记忆]第 7 节）。图级删除是存储层提供的原子操作。
-
-与删除账本的关系：
-
-该账号的账本行也要删（第 8 节：内容真删）。账本在关系库，不在图库，
-因此本 purger 一并处理——它是「该账号在记忆领域的全部数据」的清除者，
-图与账本都属于记忆领域。
+边界：图用 `GRAPH.DELETE` 整图丢弃；账本行一并删（理由与依据见 `MemoryAccountPurger` 的说明）。
+参考：`docs/技术设计/technical-details/通用记忆.md` 第 1、7、8 节。
 """
 
 from __future__ import annotations
@@ -44,6 +28,24 @@ class MemoryAccountPurger:
 
     实现 :class:`campfire.core.auth.deletion.AccountDataPurger`（结构性满足，
     不显式继承——Protocol 的用法）。
+
+    为什么账号级删除比单条删除干净：
+
+    [通用记忆] 第 1 节实测：在 FalkorDB 后端 `group_id` 就是图名
+    （`driver.clone(database=group_id)`）。因此「删除该账号的全部记忆」是
+    丢掉整张图——一次完整操作，不受单条删除的两条约束（共享边不重算、
+    物理清理延期）牵连。这正是决策记录里「账号级删除在技术上比单条删除更干净」的依据。
+
+    为什么用 `GRAPH.DELETE` 而不是逐条删：
+
+    逐条删要枚举节点与边、还要处理共享实体，既慢又不完备（`remove_episode`
+    只删独占实体，见[通用记忆]第 7 节）。图级删除是存储层提供的原子操作。
+
+    与删除账本的关系：
+
+    该账号的账本行也要删（第 8 节：内容真删）。账本在关系库，不在图库，
+    因此本 purger 一并处理——它是「该账号在记忆领域的全部数据」的清除者，
+    图与账本都属于记忆领域。
 
     幂等：
 
@@ -100,7 +102,8 @@ class MemoryAccountPurger:
             falkor_db = getattr(driver, "client", None)
             if falkor_db is None:
                 return "未取到图库客户端，未丢弃图"
-            # `select_graph(name).delete()` 即 `GRAPH.DELETE`（实测：对不存在的图不报错）。
+            # `select_graph(name).delete()` 即 `GRAPH.DELETE`
+            # （实测：对不存在的图不报错）。
             await falkor_db.select_graph(graph_name).delete()
             return f"已丢弃图 {graph_name!r}"
         finally:
