@@ -15,6 +15,7 @@ from pathlib import Path
 from campfire.cli.operator import add_operator_subcommands, dispatch_operator_command
 from campfire.core.config import get_settings
 from campfire.core.db import create_engine, session_scope
+from campfire.modules.library.case_ingestion import CaseIngestionError, ingest_case_package
 from campfire.modules.library.embedding import EmbeddingConfigurationError
 from campfire.modules.library.html_extract import convert_html_file
 from campfire.modules.library.ingestion import (
@@ -22,12 +23,15 @@ from campfire.modules.library.ingestion import (
     build_vector_store,
     ingest_file,
 )
+from campfire.modules.library.models import LIBRARIES, LIBRARY_CASE, LIBRARY_KNOWLEDGE
 
 _USAGE = """campfire.cli —— 本地运维入口（不暴露成服务端点）
 
 资料子命令：
   convert <input.html>   把网页原件转成可摄取的 Markdown（不连库、可先审后喂）
   ingest  <路径>         摄取处理好的 Markdown 文件到资料库
+  ingest  <案例包目录> --library case
+                         摄取上游案例包（manifest.json + L1 叙事 + L2 卡片）
 
 运营子命令（见 docs/技术设计/decisions/运营操作经CLI.md）：
   invite issue          签发一张一次性邀请码
@@ -39,6 +43,7 @@ _USAGE = """campfire.cli —— 本地运维入口（不暴露成服务端点）
 示例：
   python -m campfire.cli convert corpus/guide.html --out corpus/guide.md
   python -m campfire.cli ingest corpus/guide.md --source "WHO 2024" --scope "学龄前儿童"
+  python -m campfire.cli ingest exports/case-extraction/2026-05-25_1448_pace/ --library case
   python -m campfire.cli invite issue
   python -m campfire.cli account reset 8f3a... --password '新密码'
   python -m campfire.cli account delete 8f3a... --confirm 8f3a...
@@ -68,8 +73,14 @@ def _build_parser() -> argparse.ArgumentParser:
     convert.add_argument("--license", dest="license_note", default=None, help="许可结论；缺省带出页面声明")
     convert.add_argument("--title", default=None, help="标题；缺省用页面元数据")
 
-    ingest = sub.add_parser("ingest", help="摄取 Markdown 文件到资料库")
-    ingest.add_argument("path", type=Path, help="待摄取的 Markdown 文件")
+    ingest = sub.add_parser("ingest", help="摄取 Markdown 文件到资料库，或摄取案例包到案例库")
+    ingest.add_argument("path", type=Path, help="待摄取的 Markdown 文件（资料库）或案例包目录（案例库）")
+    ingest.add_argument(
+        "--library",
+        choices=sorted(LIBRARIES),
+        default=LIBRARY_KNOWLEDGE,
+        help="目标库别：knowledge（默认，单个 Markdown 文件）或 case（案例包目录，含 manifest.json）",
+    )
     ingest.add_argument(
         "--source",
         default=None,
@@ -137,7 +148,109 @@ def _run_convert(args: argparse.Namespace) -> int:
 
 
 async def _run_ingest(args: argparse.Namespace) -> int:
-    """执行摄取：一份文件一个事务（失败即整份回滚）。"""
+    """执行摄取：一份文件（或一个案例包）一个事务（失败即整份回滚）。"""
+    if args.library == LIBRARY_CASE:
+        return await _run_ingest_case(args)
+    return await _run_ingest_knowledge(args)
+
+
+def _reject_knowledge_only_flags(args: argparse.Namespace) -> int | None:
+    """案例库里用不到的参数若被显式传入，明确拒绝。
+
+    为什么不是静默忽略（CORE-07 无静默兜底）：`--source`/`--scope`/`--title`
+    在案例库语境下不生效（案例的出处与适用范围来自 manifest，见公共案例库第 6 节）。
+    静默忽略会让运维以为自己覆盖了出处，而库里存的是 manifest 的值——
+    这类「看着成功、其实没生效」的差异事后极难发现。
+
+    Returns:
+        退出码 1（有参数被显式传入）；全部未传入时返回 None（继续执行）。
+    """
+    offender = None
+    for name, value in (("--source", args.source), ("--scope", args.scope), ("--title", args.title)):
+        if value is not None:
+            offender = name
+            break
+    for name, value in (("--keywords", args.keywords), ("--aliases", args.aliases)):
+        if value:
+            offender = name
+            break
+    if offender is None:
+        return None
+
+    print(
+        f"摄取失败：{offender} 在 --library case 下不生效——"
+        "案例的出处、适用范围、标题与关键词都来自案例包的 manifest.json（公共案例库第 6 节）。"
+        "请改 manifest.json 或去掉该参数，不要依赖静默忽略。",
+        file=sys.stderr,
+    )
+    return 1
+
+
+async def _run_ingest_case(args: argparse.Namespace) -> int:
+    """摄取案例包：`--library case`。
+
+    路径是案例包目录（含 `manifest.json`），不是单个文件——manifest 是入库的
+    必需一环（公共案例库第 6 节：上游把元数据写在 L1 页脚，机器不可读）。
+    """
+    rejected = _reject_knowledge_only_flags(args)
+    if rejected is not None:
+        return rejected
+
+    settings = get_settings()
+    package_dir: Path = args.path
+
+    if not package_dir.is_dir():
+        print(f"摄取失败：案例包路径不存在或不是目录 → {package_dir}", file=sys.stderr)
+        return 1
+    if not (package_dir / "manifest.json").is_file():
+        print(
+            f"摄取失败：{package_dir} 下没有 manifest.json——案例包必须含 manifest"
+            "（公共案例库第 6 节：上游元数据在 L1 页脚里，机器不可读）",
+            file=sys.stderr,
+        )
+        return 1
+
+    engine = create_engine(settings)
+    sync_engine = None
+    try:
+        from campfire.core.db import create_sync_engine
+
+        sync_engine = create_sync_engine(settings)
+        vector_store = build_vector_store(settings, engine=sync_engine, async_engine=engine)
+
+        async with session_scope(settings) as session:
+            result = await ingest_case_package(
+                settings,
+                session,
+                vector_store=vector_store,
+                package_dir=package_dir,
+            )
+    except EmbeddingConfigurationError as exc:
+        print(f"摄取失败：{exc}", file=sys.stderr)
+        return 1
+    except CaseIngestionError as exc:
+        print(f"摄取失败：{exc}", file=sys.stderr)
+        return 1
+    finally:
+        await engine.dispose()
+        if sync_engine is not None:
+            sync_engine.dispose()
+
+    if result.skipped:
+        print(f"跳过（内容未变）：{result.source_path}")
+    else:
+        print(f"已摄取案例包：{result.source_path}")
+        print(f"  案例 id：{result.item_id}")
+        print(f"  上游标识：{result.external_key}")
+        print(f"  写入卡片：{result.cards_written}")
+        print(f"  写入叙事小节：{result.narrative_nodes}")
+    if result.needs_manual_review:
+        print(f"  ⚠ 需人工处理（超限且不可分，未嵌入）：{result.needs_manual_review} 块", file=sys.stderr)
+    return 0
+
+
+async def _run_ingest_knowledge(args: argparse.Namespace) -> int:
+    """执行资料摄取：一份文件一个事务（失败即整份回滚）。"""
     settings = get_settings()
     path: Path = args.path
 
