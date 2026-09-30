@@ -155,9 +155,7 @@ def test_intake_renders_uncollected_and_skipped_differently() -> None:
 
 def test_intake_joins_multi_values() -> None:
     """多值项的取值按固定连接符渲染在一行里。"""
-    text = render_emergency_intake(
-        [EmergencyItem(key="sensory_environment", values=["噪音", "强光"])]
-    )
+    text = render_emergency_intake([EmergencyItem(key="sensory_environment", values=["噪音", "强光"])])
     assert "sensory_environment：噪音、强光" in text
 
 
