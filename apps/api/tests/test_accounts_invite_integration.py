@@ -1,23 +1,23 @@
 """邀请码状态机的存储层行为（真实 PostgreSQL）。
 
-对应 ``docs/技术设计/technical-details/认证与账号.md`` 第 4 节。这里锁住的都是
-**数据库行为**（条件更新的原子性、CHECK 约束、唯一约束），因此带 ``integration`` marker。
+对应 `docs/技术设计/technical-details/认证与账号.md` 第 4 节。这里锁住的都是
+数据库行为（条件更新的原子性、CHECK 约束、唯一约束），因此带 `integration` marker。
 
     docker compose up -d postgres
     uv run pytest -m integration apps/api/tests/test_accounts_invite_integration.py
 
-## 逐条对应设计
+逐条对应设计：
 
-1. **一码只用一次**（第 4 节可用性不变量）：并发占用只有一个成功——这是邀请码
-   「一次性」的**唯一**依据，也是 `AC-15` 的核心。
-2. **无效码绝不建号**：占用失败时**一切都未发生**（第 1 步就拒绝，不触碰身份服务）。
-3. **过期即不可占用**，且判定在 `WHERE` 里（不先查后写）。
-4. **补偿释放只释放未完成的占用**：已绑定账号的码不可释放——否则同一个码能建两个账号。
-5. **已绑定账号的码不可撤销**：那是已完成的注册，改成 `revoked` 是篡改记录。
-6. **词表与状态一致性落 CHECK**：非法 `state`、状态与时间戳矛盾的行都被**存储层**拒绝。
-7. **占用后 `used_by_account_id` 仍为 NULL**（历史缺陷的回归测试）：第 4 节的顺序是
-   「先占用、后建号」，因此占用那一刻账号**尚不存在**。这一条钉住下面这个真实缺陷：
-   把该列纳入 `state = used` 的必填判据后，**每一次注册都无法占用**。
+1. 一码只用一次（第 4 节可用性不变量）：并发占用只有一个成功——这是邀请码
+   「一次性」的唯一依据，也是 `AC-15` 的核心。
+2. 无效码绝不建号：占用失败时一切都未发生（第 1 步就拒绝，不触碰身份服务）。
+3. 过期即不可占用，且判定在 `WHERE` 里（不先查后写）。
+4. 补偿释放只释放未完成的占用：已绑定账号的码不可释放——否则同一个码能建两个账号。
+5. 已绑定账号的码不可撤销：那是已完成的注册，改成 `revoked` 是篡改记录。
+6. 词表与状态一致性落 CHECK：非法 `state`、状态与时间戳矛盾的行都被存储层拒绝。
+7. 占用后 `used_by_account_id` 仍为 NULL（历史缺陷的回归测试）：第 4 节的顺序是
+   「先占用、后建号」，因此占用那一刻账号尚不存在。这一条钉住下面这个真实缺陷：
+   把该列纳入 `state = used` 的必填判据后，每一次注册都无法占用。
 """
 
 from __future__ import annotations
@@ -66,20 +66,20 @@ _OPERATOR = "it_operator"
 
 @pytest_asyncio.fixture(autouse=True)
 async def _require_database() -> AsyncIterator[None]:
-    """未配置 `DATABASE_URL` 时跳过——**不假装通过**（仓库既有集成测试的统一做法）。"""
+    """未配置 `DATABASE_URL` 时跳过——不假装通过（仓库既有集成测试的统一做法）。"""
     if not get_settings().database_url:
         pytest.skip("未配置 DATABASE_URL——集成测试需要 docker compose up -d postgres")
     yield
 
 
 async def _clear() -> None:
-    """清掉**本文件**写入的行。
+    """清掉本文件写入的行。
 
-    **必须按签发者过滤，不能 `delete(InviteCode)` 全清**（2026-09-30 实测的真实缺陷）：
-    本文件与 ``test_auth_registration_integration.py`` 原先都做**无过滤**的全表删除，
-    于是两个文件**并发运行时互相删对方刚签发的码**。
-    症状是**随机失败**：实测一次五文件并发跑出现
-    ``InviteCodeNotFoundError: 邀请码不存在，无法执行 补偿释放``——而单跑该文件必然通过。
+    必须按签发者过滤，不能 `delete(InviteCode)` 全清（2026-09-30 实测的真实缺陷）：
+    本文件与 `test_auth_registration_integration.py` 原先都做无过滤的全表删除，
+    于是两个文件并发运行时互相删对方刚签发的码。
+    症状是随机失败：实测一次五文件并发跑出现
+    `InviteCodeNotFoundError: 邀请码不存在，无法执行 补偿释放`——而单跑该文件必然通过。
     这类「只在并发下偶发」的失败极难归因，所以这里用签发者标识把删除范围收窄到本文件。
     """
     async with session_scope(get_settings()) as session:
@@ -99,9 +99,9 @@ async def _issue(*, now: datetime | None = None, ttl_days: int = INVITE_CODE_TTL
 
 
 def test_generated_code_matches_the_declared_shape() -> None:
-    """生成的码必须符合声明的形状：长度、字符集、且**不含形近字符**。
+    """生成的码必须符合声明的形状：长度、字符集、且不含形近字符。
 
-    形近字符是真实失败来源——码由运营**口述或手抄**发给使用者（一期没有可主动触达
+    形近字符是真实失败来源——码由运营口述或手抄发给使用者（一期没有可主动触达
     的通道，见第 3 节）。若生成侧产出 `I`/`O`/`0`/`1`，口述歧义会直接变成注册失败。
     """
     codes = {generate_invite_code() for _ in range(200)}
@@ -115,7 +115,7 @@ def test_generated_code_matches_the_declared_shape() -> None:
 
 
 def test_normalize_accepts_case_and_surrounding_whitespace() -> None:
-    """归一：大小写不敏感 + 剥首尾空白（口述/手抄噪声），但**不剥中间**。"""
+    """归一：大小写不敏感 + 剥首尾空白（口述/手抄噪声），但不剥中间。"""
     assert normalize_invite_code("  abcd2345  ") == "ABCD2345"
 
     # 中间空白是抄写错误，必须被拒绝而不是被猜测修补（CORE-07：无静默兜底）。
@@ -124,7 +124,7 @@ def test_normalize_accepts_case_and_surrounding_whitespace() -> None:
 
 
 def test_normalize_rejects_wrong_length_and_non_string() -> None:
-    """长度不符与非字符串都在边界处变成**领域异常**（不是 TypeError / DBAPIError）。"""
+    """长度不符与非字符串都在边界处变成领域异常（不是 TypeError / DBAPIError）。"""
     for bad in ("ABC", "ABCDEFGHI", ""):
         with pytest.raises(InviteCodeFormatError):
             normalize_invite_code(bad)
@@ -134,17 +134,17 @@ def test_normalize_rejects_wrong_length_and_non_string() -> None:
 
 
 def test_normalize_rejects_non_ascii_case_folding_aliases() -> None:
-    """**非 ASCII 输入必须被拒**——否则 4 个字符会伪装成合法的 8 位码。
+    """非 ASCII 输入必须被拒——否则 4 个字符会伪装成合法的 8 位码。
 
-    **实测（2026-09-30 评审发现）**：``str.upper()`` 做的是 **Unicode 大小写折叠**，
-    于是 ``'ßßßß'``（4 字符）被归一成 ``'SSSSSSSS'``（8 字符），**恰好通过**
-    长度校验；``'ſſſſſſſſ'``（8 字符）同样被接受。
+    实测（2026-09-30 评审发现）：`str.upper()` 做的是 Unicode 大小写折叠，
+    于是 `'ßßßß'`（4 字符）被归一成 `'SSSSSSSS'`（8 字符），恰好通过
+    长度校验；`'ſſſſſſſſ'`（8 字符）同样被接受。
 
-    这**不是安全问题**（生成侧只产出 ASCII 大写、碰撞概率不变），但它让
-    「长度必须是 8 位」这条输入契约名不副实。修复是在 ``upper()`` **之前**
+    这不是安全问题（生成侧只产出 ASCII 大写、碰撞概率不变），但它让
+    「长度必须是 8 位」这条输入契约名不副实。修复是在 `upper()` 之前
     先按 ASCII 拒绝。
 
-    判别性：去掉 ``isascii()`` 检查，本条失败（``'ßßßß'`` 会被当成合法码接受）。
+    判别性：去掉 `isascii()` 检查，本条失败（`'ßßßß'` 会被当成合法码接受）。
     """
     for alias in ("ßßßß", "ſſſſſſſſ", "ＡＢＣＤ２３４５"):
         with pytest.raises(InviteCodeFormatError, match="非 ASCII"):
@@ -155,12 +155,12 @@ def test_normalize_rejects_non_ascii_case_folding_aliases() -> None:
 
 
 def test_format_error_does_not_leak_the_code() -> None:
-    """**形状异常不得复述邀请码本身**——它是准入凭据，会随日志扩散。
+    """形状异常不得复述邀请码本身——它是准入凭据，会随日志扩散。
 
     判别性：若实现把 `raw` 拼进消息，本用例失败。
 
     注意字符选择：字母表刻意剔除了 `I`/`O`/`0`/`1`（形近字符，见 `models` 的说明），
-    所以这些正是天然的「字符集外」样本——用 `X` 之类**在**字母表内的字符构造不出
+    所以这些正是天然的「字符集外」样本——用 `X` 之类在字母表内的字符构造不出
     非法输入（第一版就是这么写错的：`"ABCD234x"` 归一为大写后合法，于是压根不抛）。
     """
     for secret in ("ABCD234I", "abcd234o", "ABCD0234"):
@@ -260,10 +260,10 @@ async def test_issue_accepts_ttl_within_the_design_range(ttl_days: int) -> None:
 
 @pytest.mark.asyncio
 async def test_concurrent_claim_succeeds_exactly_once() -> None:
-    """**一码只用一次**：并发占用恰好一个成功（第 4 节可用性不变量的核心）。
+    """一码只用一次：并发占用恰好一个成功（第 4 节可用性不变量的核心）。
 
     判别性：若实现是「先查 state 再更新」，两个并发事务都会查到自己可占用、都去改，
-    于是**两个都返回记录**——同一个码建出两个账号（`AC-15` 被破坏）。
+    于是两个都返回记录——同一个码建出两个账号（`AC-15` 被破坏）。
     """
     await _clear()
     try:
@@ -288,32 +288,32 @@ async def test_concurrent_claim_succeeds_exactly_once() -> None:
 
 @pytest.mark.asyncio
 async def test_claim_is_atomic_under_a_held_lock() -> None:
-    """**持锁型测试**：占用的条件更新必须在行锁等待结束后**重新判定**。
+    """持锁型测试：占用的条件更新必须在行锁等待结束后重新判定。
 
-    ## 为什么需要这一条（原并发用例**证明不了**原子性）
+    为什么需要这一条（原并发用例证明不了原子性）：
 
-    2026-09-30 评审实测：把 ``claim_invite_code`` 换成先查后写后，
-    上面那条 ``gather`` 并发用例 **5/5 通过**、整个文件 **26/26 通过**。
-    轨迹显示原因：A 的 ``UPDATE`` 先拿到行锁并**先提交**，B 的 ``SELECT``
-    在提交**之前**就已完成——``gather`` 下的时序无法稳定制造「两边都完成
-    ``SELECT``、然后才依次 ``UPDATE``」，所以那条用例只是**碰巧**通过。
+    2026-09-30 评审实测：把 `claim_invite_code` 换成先查后写后，
+    上面那条 `gather` 并发用例 5/5 通过、整个文件 26/26 通过。
+    轨迹显示原因：A 的 `UPDATE` 先拿到行锁并先提交，B 的 `SELECT`
+    在提交之前就已完成——`gather` 下的时序无法稳定制造「两边都完成
+    `SELECT`、然后才依次 `UPDATE`」，所以那条用例只是碰巧通过。
 
-    ## 本用例做了什么、以及**它保证什么、不保证什么**（实测边界，务必读）
+    本用例做了什么、以及它保证什么、不保证什么（实测边界，务必读）：
 
-    手动控制提交时机：会话 A 占用后**不提交**（持行锁）→ B 尝试占用 →
+    手动控制提交时机：会话 A 占用后不提交（持行锁）→ B 尝试占用 →
     确认 B 确实阻塞 → A 提交 → 断言最终只有一个成功。
 
-    - **它能确定性抓住的**：把 ``WHERE`` 的判定条件整体去掉（无条件 ``UPDATE``）。
-      实测该消融下本用例 **FAILED**（完整输出已核对）。
-    - **它不能确定性抓住的**：**先查后写**这一变体。实测两次运行结论相反
-      （一次 B 占用成功 = 缺陷暴露，一次 B 在阻塞前已读到 ``issued``、唤醒后
-      被预检查拒绝）。原因是普通 ``SELECT`` **不阻塞**，B 的预读发生在 A 提交之前
-      还是之后取决于事件循环调度——**这不是测试写得不好，而是该缺陷本身就带竞态**：
+    - 它能确定性抓住的：把 `WHERE` 的判定条件整体去掉（无条件 `UPDATE`）。
+      实测该消融下本用例 `FAILED`（完整输出已核对）。
+    - 它不能确定性抓住的：先查后写这一变体。实测两次运行结论相反
+      （一次 B 占用成功 = 缺陷暴露，一次 B 在阻塞前已读到 `issued`、唤醒后
+      被预检查拒绝）。原因是普通 `SELECT` 不阻塞，B 的预读发生在 A 提交之前
+      还是之后取决于事件循环调度——这不是测试写得不好，而是该缺陷本身就带竞态：
       先查后写只在特定交错下出错，因此任何单次运行的用例都无法保证命中。
 
-    所以本用例的价值是**把判别力从「碰巧」提升到「覆盖无条件更新」**，
-    **不是**「保证能抓住任何非原子实现」。要彻底排除先查后写，靠的是**代码评审**
-    与「条件必须写在 ``WHERE`` 里」这条纪律，而不是靠这条用例。
+    所以本用例的价值是把判别力从「碰巧」提升到「覆盖无条件更新」，
+    不是「保证能抓住任何非原子实现」。要彻底排除先查后写，靠的是代码评审
+    与「条件必须写在 `WHERE` 里」这条纪律，而不是靠这条用例。
     把这个边界写清楚，是为了不让后来者以为「CI 绿 = 原子性已验证」。
     """
     import asyncio
@@ -433,13 +433,13 @@ async def test_claim_is_atomic_under_a_held_lock() -> None:
 
 @pytest.mark.asyncio
 async def test_claim_marks_used_but_leaves_account_null() -> None:
-    """占用后 `state = used`、`used_at` 已填，但 **`used_by_account_id` 仍为 NULL**。
+    """占用后 `state = used`、`used_at` 已填，但 `used_by_account_id` 仍为 NULL。
 
-    **这是第 4 节顺序的必然结果，不是遗漏**：步骤 1（占用）发生在步骤 2（建号）之前，
-    账号此刻尚不存在。该 NULL 同时是「码已占用但账号未建」这一中间态的**排查信号**。
+    这是第 4 节顺序的必然结果，不是遗漏：步骤 1（占用）发生在步骤 2（建号）之前，
+    账号此刻尚不存在。该 NULL 同时是「码已占用但账号未建」这一中间态的排查信号。
 
     判别性：把 `used_by_account_id` 纳入 `state = used` 的必填判据（或写成 NOT NULL），
-    本用例失败——而线上表现是**每一次注册都无法占用**。
+    本用例失败——而线上表现是每一次注册都无法占用。
     """
     await _clear()
     try:
@@ -471,7 +471,7 @@ async def test_claim_rejects_a_used_code() -> None:
 
 @pytest.mark.asyncio
 async def test_claim_rejects_an_expired_code() -> None:
-    """**过期即不可占用**，且判定在 `WHERE` 里（不先查后写）。
+    """过期即不可占用，且判定在 `WHERE` 里（不先查后写）。
 
     判别性：若实现把过期判定写在应用层（先查出来再比时间），并发下两个请求会都读到
     「我没过期」；本用例用「签发时间早于 30 天」构造过期，仍能证明判定生效。
@@ -491,7 +491,7 @@ async def test_claim_rejects_an_expired_code() -> None:
 
 @pytest.mark.asyncio
 async def test_claim_rejects_revoked_and_unknown_codes() -> None:
-    """已撤销的码与不存在的码都被拒绝，且**拒绝类型相同**（不可枚举）。"""
+    """已撤销的码与不存在的码都被拒绝，且拒绝类型相同（不可枚举）。"""
     await _clear()
     try:
         code = await _issue()
@@ -510,9 +510,9 @@ async def test_claim_rejects_revoked_and_unknown_codes() -> None:
 
 @pytest.mark.asyncio
 async def test_rejection_does_not_distinguish_the_four_reasons() -> None:
-    """**四种拒绝情形返回同一个异常类型与同一段消息**（`AC-15` 要求不泄露存在性）。
+    """四种拒绝情形返回同一个异常类型与同一段消息（`AC-15` 要求不泄露存在性）。
 
-    这是**有意的**设计（见 `errors.InviteCodeRejectedError`）：可区分的错误会让调用方
+    这是有意的设计（见 `errors.InviteCodeRejectedError`）：可区分的错误会让调用方
     逐字判断出「这个码存在但过期」与「这个码不存在」——那就是账号枚举渠道。
     """
     await _clear()
@@ -563,7 +563,7 @@ async def test_rejection_does_not_distinguish_the_four_reasons() -> None:
 
 @pytest.mark.asyncio
 async def test_release_returns_an_unfinished_claim_to_issued() -> None:
-    """**补偿释放**：建号失败时把未完成的占用退回 `issued`，该码可再次被占用。"""
+    """补偿释放：建号失败时把未完成的占用退回 `issued`，该码可再次被占用。"""
     await _clear()
     try:
         code = await _issue()
@@ -586,7 +586,7 @@ async def test_release_returns_an_unfinished_claim_to_issued() -> None:
 
 @pytest.mark.asyncio
 async def test_release_refuses_a_code_that_is_bound_to_an_account() -> None:
-    """**已绑定账号的码不可释放**——否则同一个码能建出两个账号。
+    """已绑定账号的码不可释放——否则同一个码能建出两个账号。
 
     判别性：去掉 `release_invite_code` 的 `used_by_account_id IS NULL` 条件，本用例
     失败（释放成功、码回到 issued、可再次占用）。
@@ -659,7 +659,7 @@ async def test_bind_records_the_account_once() -> None:
 
 @pytest.mark.asyncio
 async def test_revoke_makes_an_issued_code_unusable() -> None:
-    """撤销后**立即不可再用**（第 4 节）。"""
+    """撤销后立即不可再用（第 4 节）。"""
     await _clear()
     try:
         code = await _issue()
@@ -677,10 +677,10 @@ async def test_revoke_makes_an_issued_code_unusable() -> None:
 
 @pytest.mark.asyncio
 async def test_revoke_refuses_a_code_bound_to_an_account() -> None:
-    """**已绑定账号的码不可撤销**——那是已完成的注册。
+    """已绑定账号的码不可撤销——那是已完成的注册。
 
     判别性：若允许撤销，历史会变成「这张码被撤销了」，而事实是「有个账号用它注册过」；
-    两者对排查的含义相反，属**篡改记录**。去掉 `revoke_invite_code` 的第二个条件，
+    两者对排查的含义相反，属篡改记录。去掉 `revoke_invite_code` 的第二个条件，
     本用例失败。
     """
     await _clear()
@@ -704,7 +704,7 @@ async def test_revoke_refuses_a_code_bound_to_an_account() -> None:
 
 @pytest.mark.asyncio
 async def test_revoke_accepts_an_unclaimed_occupation() -> None:
-    """**可从「已占用未建号」撤销**：第 4 节说该中间态「由运营在撤销/重发时处理」。
+    """可从「已占用未建号」撤销：第 4 节说该中间态「由运营在撤销/重发时处理」。
 
     判别性：若撤销只允许 `issued`，运营就无法清理那些「码被占用了但建号失败」的残留
     ——本用例失败。
@@ -748,7 +748,7 @@ async def test_revoke_reports_missing_and_already_revoked() -> None:
 
 @pytest.mark.asyncio
 async def test_database_rejects_an_unknown_state() -> None:
-    """非法 `state` 被**存储层**拒绝（词表是闭集）。"""
+    """非法 `state` 被存储层拒绝（词表是闭集）。"""
     await _clear()
     try:
         with pytest.raises(IntegrityError, match="ck_campfire_invite_code_state"):
@@ -767,13 +767,13 @@ async def test_database_rejects_an_unknown_state() -> None:
 
 @pytest.mark.asyncio
 async def test_database_rejects_state_timestamp_contradictions() -> None:
-    """**状态与时间戳矛盾的行被存储层拒绝**。
+    """状态与时间戳矛盾的行被存储层拒绝。
 
     判别性：去掉对应的 CHECK，矛盾行就能落库，变成静默脏数据。
 
-    三条判据的**方向性由状态机决定**，不是随意选的（见 `models` 的说明）：
+    三条判据的方向性由状态机决定，不是随意选的（见 `models` 的说明）：
     `issued` 是「无历史」态，两个时间戳都必须为空；`revoked` 是吸收态，反向也成立；
-    而 `used_at` **只能单向蕴含**——`used` 可迁到 `revoked`，届时 `used_at` 作为
+    而 `used_at` 只能单向蕴含——`used` 可迁到 `revoked`，届时 `used_at` 作为
     历史事实保留，等价断言会误杀该迁移（实测报 CheckViolationError）。
     """
     await _clear()
@@ -816,7 +816,7 @@ async def test_database_rejects_state_timestamp_contradictions() -> None:
             async with session_scope(get_settings()) as session:
                 session.add(InviteCode(code="DDDD2345", state=STATE_REVOKED, expires_at=future, created_by=_OPERATOR))
 
-        # 反向确认：**合法的 `used → revoked` 迁移不得被约束误杀**。
+        # 反向确认：合法的 `used → revoked` 迁移不得被约束误杀。
         # 这条把上面那处实测缺陷钉死——等价断言在这里会失败。
         code = await _issue()
         async with session_scope(get_settings()) as session:
@@ -852,15 +852,15 @@ async def test_database_enforces_unique_codes() -> None:
 
 @pytest.mark.asyncio
 async def test_list_filters_by_state_and_is_bounded() -> None:
-    """列举可按状态过滤，且 `limit` **收敛到服务端上界**（CORE-11）。
+    """列举可按状态过滤，且 `limit` 收敛到服务端上界（CORE-11）。
 
-    ## 为什么断言要对 `created_by` 收窄
+    为什么断言要对 `created_by` 收窄：
 
-    ``list_invite_codes`` / ``count_invite_codes`` 是**全局**查询（运营要看全部码，
-    这是对的）。但本文件的清理按 ``created_by`` 收窄（并发安全的必要做法），
-    因此**别的测试文件或上一次运行的残留行可能同时可见**。
+    `list_invite_codes` / `count_invite_codes` 是全局查询（运营要看全部码，
+    这是对的）。但本文件的清理按 `created_by` 收窄（并发安全的必要做法），
+    因此别的测试文件或上一次运行的残留行可能同时可见。
     断言全局精确值会在那种情况下假失败——而这个测试的意图是「本文件造的那几张」。
-    故：先按 ``created_by`` 筛出自己那几张再断言，同时**仍调用真实的全局函数**
+    故：先按 `created_by` 筛出自己那几张再断言，同时仍调用真实的全局函数
     （收窄发生在断言侧，不影响被测代码）。
     """
     await _clear()
@@ -884,7 +884,7 @@ async def test_list_filters_by_state_and_is_bounded() -> None:
             bounded = await list_invite_codes(session, limit=10**9)
         assert len(bounded) <= 500
 
-        # 全局计数**包含**本文件的 3 张（用 >= 而不是 ==：见 docstring）。
+        # 全局计数包含本文件的 3 张（用 >= 而不是 ==：见 docstring）。
         async with session_scope(get_settings()) as session:
             assert await count_invite_codes(session) >= 3
             assert await count_invite_codes(session, state=STATE_ISSUED) >= 2
@@ -894,7 +894,7 @@ async def test_list_filters_by_state_and_is_bounded() -> None:
 
 @pytest.mark.asyncio
 async def test_list_rejects_an_unknown_state_instead_of_returning_empty() -> None:
-    """状态打错字必须**显式拒绝**，不能静默返回空列表。
+    """状态打错字必须显式拒绝，不能静默返回空列表。
 
     判别性：静默返回空会让「这个状态下没有码」与「我把状态名打错了」无法区分——
     运营据此判断「邀请码用完了」是危险的。
@@ -910,9 +910,9 @@ async def test_list_rejects_an_unknown_state_instead_of_returning_empty() -> Non
 
 @pytest.mark.asyncio
 async def test_cleanup_leaves_no_rows() -> None:
-    """自检：清理后**本文件签发的**行无残留（避免给其它测试留下脏数据）。
+    """自检：清理后本文件签发的行无残留（避免给其它测试留下脏数据）。
 
-    断言范围是 ``created_by == _OPERATOR`` 而不是全表：清理本身就是按这个范围收窄的
+    断言范围是 `created_by == _OPERATOR` 而不是全表：清理本身就是按这个范围收窄的
     （并发安全的必要做法，见 `_clear`），而全表计数会看到别的测试文件的行，
     那种断言会在并发运行时假失败。
     """

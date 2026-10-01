@@ -1,12 +1,12 @@
 """模型网关：唯一组装处、重试归属、重试预算与失败分类。
 
 对应 docs/技术设计/technical-details/通用基座.md 第 6 节与第 9 节。
-本组用例全部离线：不发起任何真实模型调用（``TECH-02`` 未核实，且不得把使用者资料
+本组用例全部离线：不发起任何真实模型调用（`TECH-02` 未核实，且不得把使用者资料
 发给外部处理方）。
 
-**测试环境自保**：构造 httpx/openai 客户端时会读取宿主机的 ``no_proxy``；实测本机
-``no_proxy`` 含 ``[::1]`` 时 httpx 0.28.1 在构造期抛 ``InvalidURL``。归一化在
-``tests/conftest.py`` 里统一做，本文件不再重复（这条陷阱本身也有一条用例）。
+测试环境自保：构造 httpx/openai 客户端时会读取宿主机的 `no_proxy`；实测本机
+`no_proxy` 含 `[::1]` 时 httpx 0.28.1 在构造期抛 `InvalidURL`。归一化在
+`tests/conftest.py` 里统一做，本文件不再重复（这条陷阱本身也有一条用例）。
 """
 
 from __future__ import annotations
@@ -47,8 +47,8 @@ def _settings(**overrides: object) -> Settings:
 async def _retry_decision(policy: RetryPolicy, context: RetryPolicyContext) -> bool:
     """调用重试策略并取出「要不要重试」。
 
-    策略返回 ``bool | RetryDecision``，而 ``RetryDecision`` 是 dataclass——实例本身恒为
-    真值，因此必须读它的 ``retry`` 字段而不是 ``bool(...)``，否则「不重试」会被读成重试。
+    策略返回 `bool | RetryDecision`，而 `RetryDecision` 是 dataclass——实例本身恒为
+    真值，因此必须读它的 `retry` 字段而不是 `bool(...)`，否则「不重试」会被读成重试。
     """
     decision = policy(context)
     if asyncio.iscoroutine(decision):
@@ -120,7 +120,7 @@ async def test_gateway_closes_its_client() -> None:
 def test_gateway_rejects_a_client_that_keeps_its_own_retries(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """重试只能有一个所有者：客户端若没接受 ``max_retries=0``，构造期就要失败。"""
+    """重试只能有一个所有者：客户端若没接受 `max_retries=0`，构造期就要失败。"""
 
     class StubbornClient:
         """忽略我们传入的 max_retries。"""
@@ -141,9 +141,9 @@ def test_client_construction_failure_becomes_an_actionable_configuration_error(
 ) -> None:
     """任何构造期异常都必须转成可操作的配置错误。
 
-    用**通用**异常而不是某个具体传输异常：真实路径上 openai 用的是 **httpx2**，
-    它的 ``InvalidURL`` 与 ``httpx`` 0.28.1 的 ``InvalidURL`` 是两个类（实测互不为子类），
-    因此拿 ``httpx.InvalidURL`` 造夹具其实没覆盖真实陷阱，只是被 ``except Exception`` 兜住。
+    用通用异常而不是某个具体传输异常：真实路径上 openai 用的是 `httpx2`，
+    它的 `InvalidURL` 与 `httpx` 0.28.1 的 `InvalidURL` 是两个类（实测互不为子类），
+    因此拿 `httpx.InvalidURL` 造夹具其实没覆盖真实陷阱，只是被 `except Exception` 兜住。
     """
     from openai import APIConnectionError
 
@@ -159,9 +159,9 @@ def test_client_construction_failure_becomes_an_actionable_configuration_error(
 def test_real_no_proxy_trap_is_translated_into_a_configuration_error(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """宿主机 ``no_proxy`` 含 ``[::1]`` 这条真实陷阱必须被翻译成配置错误。
+    """宿主机 `no_proxy` 含 `[::1]` 这条真实陷阱必须被翻译成配置错误。
 
-    **本用例自带失效条件**：它锁住的是 httpx2 当前对 ``no_proxy`` 里带方括号的 IPv6
+    本用例自带失效条件：它锁住的是 httpx2 当前对 `no_proxy` 里带方括号的 IPv6
     字面量的解析行为。若将来 httpx2 修好这个解析，构造会成功、本用例会失败——那时删掉它，
     并把「陷阱已消失」记进文档，而不是放宽断言。
     """
@@ -177,8 +177,8 @@ def test_real_no_proxy_trap_is_translated_into_a_configuration_error(
 def test_default_retry_budget_fits_inside_the_run_cap() -> None:
     """重试预算必须落在 180 秒通用响应上限内，否则重试会被运行上限砍断。
 
-    退避按 **SDK 的抖动上界**算（每次延迟最多 1.125 倍，见
-    ``agents/run_internal/model_retry.py:204``）：只按名义值算会低估，第一版就是这么错的。
+    退避按 SDK 的抖动上界算（每次延迟最多 1.125 倍，见
+    `agents/run_internal/model_retry.py:204`）：只按名义值算会低估，第一版就是这么错的。
     """
     worst_case = worst_case_model_seconds(_settings())
 
@@ -206,8 +206,8 @@ def test_retry_budget_counts_the_jitter_upper_bound() -> None:
 def test_retry_budget_is_allowed_to_reach_the_cap_exactly_is_rejected() -> None:
     """恰好等于上限也要拒绝：那时最后一次重试与运行上限同时到期，失败原因会摇摆。
 
-    用 ``timeout=58.875`` 让最坏耗时**确实**恰好等于 180.0（实测：2 次重试 + 抖动上界后
-    的退避和正好是 3.375，与 3×58.875 相加为 180.0）。第一版写 ``59.0``，实际得到 180.375
+    用 `timeout=58.875` 让最坏耗时确实恰好等于 180.0（实测：2 次重试 + 抖动上界后
+    的退避和正好是 3.375，与 3×58.875 相加为 180.0）。第一版写 `59.0`，实际得到 180.375
     ——那测的是「超过上限」，与用例名宣称的精确边界不是一回事。
     """
     exact = _settings(model_request_timeout_seconds=58.875, model_max_retries=2)
@@ -230,7 +230,7 @@ def test_retry_budget_is_allowed_to_reach_the_cap_exactly_is_rejected() -> None:
 def test_illegal_retry_numbers_are_rejected_at_config_load(field: str, value: float) -> None:
     """负数重试会把「最坏耗时」算成 0 秒、让闸门对任何超时值放行——加载期就要失败。
 
-    实测反例：``model_max_retries=-1`` 配 ``timeout=1000`` 曾能构造成功。
+    实测反例：`model_max_retries=-1` 配 `timeout=1000` 曾能构造成功。
     """
     from pydantic import ValidationError
 
@@ -308,12 +308,12 @@ async def test_retry_policy_retries_network_and_timeout_failures() -> None:
 @pytest.mark.asyncio
 @pytest.mark.parametrize("retry_after", [600.0, 3600.0])
 async def test_supplier_retry_after_is_clamped_to_the_configured_max_delay(retry_after: float) -> None:
-    """供应商给的 ``Retry-After`` 必须被夹到退避上界内——否则预算闸门对它形同不存在。
+    """供应商给的 `Retry-After` 必须被夹到退避上界内——否则预算闸门对它形同不存在。
 
-    SDK 原生的 ``retry_after()`` 把该值原样当 delay 睡掉（``agents/retry.py:348-355`` →
-    ``run_internal/model_retry.py:483-491`` → ``:678``），于是 ``Retry-After: 600`` 会让一次
+    SDK 原生的 `retry_after()` 把该值原样当 delay 睡掉（`agents/retry.py:348-355` →
+    `run_internal/model_retry.py:483-491` → `:678`），于是 `Retry-After: 600` 会让一次
     重试睡 600 秒，被 180 秒运行预算砍断，失败原因从「模型不可用」变成「运行超时」。
-    这里断言**延迟本身**有界（只断言「会重试」会漏掉这个缺陷——上面那条参数化用例正是如此）。
+    这里断言延迟本身有界（只断言「会重试」会漏掉这个缺陷——上面那条参数化用例正是如此）。
     """
     settings = _settings(model_retry_max_delay_seconds=8.0)
     policy = build_retry_settings(settings).policy
@@ -396,7 +396,7 @@ def test_classify_openai_failures() -> None:
 
 
 def test_timeout_is_not_misclassified_as_a_connection_problem() -> None:
-    """``APITimeoutError`` 是 ``APIConnectionError`` 的子类，判定顺序错了就会误报。"""
+    """`APITimeoutError` 是 `APIConnectionError` 的子类，判定顺序错了就会误报。"""
     import openai
 
     timeout_error = openai.APITimeoutError(request=_request())

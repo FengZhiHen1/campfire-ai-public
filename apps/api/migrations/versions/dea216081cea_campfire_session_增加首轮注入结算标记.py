@@ -6,7 +6,7 @@ Create Date: 2026-10-01 01:45:11.337875
 
 业务意图（依据编排器 T07b 裁决 9 与 docs/技术设计/面/consult/HTTP与SSE契约.md 第 3.1 节）：
 
-- 契约 3.1 规定：`onboarding_pending` 为真时，该会话的**第一次运行**由服务端程序注入
+- 契约 3.1 规定：`onboarding_pending` 为真时，该会话的第一次运行由服务端程序注入
   onboarding skill 与静态告知文本。判定「是不是第一次运行」需要一个每会话只翻一次
   的开关，本迁移把它加到会话归属表上。
 - 为什么在 `campfire_session` 而不是账号级的 `campfire_onboarding`：两者的粒度不同。

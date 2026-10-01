@@ -2,13 +2,13 @@
 
 对应 [公共案例库] 第 3、4、6、7 节与 [RAG 策略] 第 1.3 节：
 
-- manifest **缺字段即整包拒绝**（第 6 节），且错误信息要指出缺的是哪个字段；
+- manifest 缺字段即整包拒绝（第 6 节），且错误信息要指出缺的是哪个字段；
 - 卡片值域越界必须被拒（第 4 节「值域不重写」：沿用上游 `validate_l2.py` 的约束）；
 - `review_status` 三档与「具名审阅者只在 professional 档」的判据（第 7 节）；
 - `inferred_fields` 由 `_inferred` 的键推出（第 4 节）；
-- 卡片嵌入文本**不含** `_inferred` 与标识字段（第 1.3 节）。
+- 卡片嵌入文本不含 `_inferred` 与标识字段（第 1.3 节）。
 
-**不连库**：这些是纯函数，落库行为由 `test_library_case_integration.py` 覆盖。
+不连库：这些是纯函数，落库行为由 `test_library_case_integration.py` 覆盖。
 """
 
 from __future__ import annotations
@@ -376,7 +376,7 @@ def test_embedding_text_excludes_inferred_and_identifiers() -> None:
 
 
 def test_embedding_text_keeps_high_risk_fields() -> None:
-    """高风险字段**参与**嵌入（第 1.3 节）。
+    """高风险字段参与嵌入（第 1.3 节）。
 
     不嵌入它们的话，应急查询反而命不中对应卡片，分层支持策略就落空了。
     """

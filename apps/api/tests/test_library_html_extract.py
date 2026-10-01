@@ -1,10 +1,10 @@
 """HTML → Markdown 加工的单元测试（不连库、不调模型）。
 
 覆盖 RAG 策略第 1.1 节对语料加工的要求：标题层级保留（分块链的硬依赖）、
-表格转 Markdown、正文容器优先级、噪声与元信息剔除、**丢弃内容必须留痕**、
+表格转 Markdown、正文容器优先级、噪声与元信息剔除、丢弃内容必须留痕、
 frontmatter 从出版方元数据生成。
 
-反空壳取向：每个用例都断言**具体内容**（层级、单元格文字、留痕文案），
+反空壳取向：每个用例都断言具体内容（层级、单元格文字、留痕文案），
 而不是只断言"没抛异常"——后者是永远不会失败的检查。
 """
 
@@ -77,7 +77,7 @@ def test_body_main_article_body_wins_over_larger_article() -> None:
 
 
 def test_falls_back_to_body_and_reports_it() -> None:
-    """没有正文容器时退回 `body`，并**如实报告**用了兜底（不假装选到正文）。"""
+    """没有正文容器时退回 `body`，并如实报告用了兜底（不假装选到正文）。"""
     html = "<html><body><div><p>裸正文</p></div></body></html>"
 
     result = convert_html(html)
@@ -124,7 +124,7 @@ def test_table_becomes_markdown_table() -> None:
 
 
 def test_ragged_table_rows_are_padded_and_disclosed() -> None:
-    """单元格数不一致的行按列数补齐，并**留痕**（Markdown 表格要求矩形）。"""
+    """单元格数不一致的行按列数补齐，并留痕（Markdown 表格要求矩形）。"""
     body = "<table><tr><th>甲</th><th>乙</th></tr><tr><td>只有一个</td></tr></table>"
 
     result = convert_html(_page(body))
@@ -187,7 +187,7 @@ def test_noise_tags_are_dropped_and_counted() -> None:
 
 
 def test_image_is_replaced_by_a_visible_marker() -> None:
-    """图片不接线（一期不支持），但**必须留痕**——不静默丢弃。"""
+    """图片不接线（一期不支持），但必须留痕——不静默丢弃。"""
     result = convert_html(_page('<p>前</p><img src="a.png" alt="图"/><p>后</p>'))
 
     assert result.images_dropped == 1
@@ -215,7 +215,7 @@ def test_code_block_is_fenced() -> None:
 
 
 def test_block_level_link_keeps_its_text() -> None:
-    """块级链接的文本是正文内容，**必须保留**。
+    """块级链接的文本是正文内容，必须保留。
 
     已修缺陷的回归（2026-09-29）：早先 `<a>` 一律直接 return，导致 PMC 页面里
     「Supplementary file1 (PDF 160 KB)」这类补充材料链接整条消失——守恒对账
@@ -367,10 +367,10 @@ def test_build_markdown_does_not_duplicate_existing_h1() -> None:
 
 
 def test_yaml_values_round_trip_through_the_reader() -> None:
-    """frontmatter 值的写入必须能被读回——用**往返**断言而不是文本匹配。
+    """frontmatter 值的写入必须能被读回——用往返断言而不是文本匹配。
 
     这是已修缺陷的回归（2026-09-29 实测）：写侧把 `"` 转义成 `\\"`，读侧只
-    `strip('"')`，读回的值就多一个反斜杠——**语料里的标题被静默改写**。
+    `strip('"')`，读回的值就多一个反斜杠——语料里的标题被静默改写。
     用文本匹配写死格式抓不到这类问题（我第一版断言正是错在这里：全角冒号
     在 YAML 里其实不需要引号）。
     """

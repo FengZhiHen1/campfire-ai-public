@@ -39,14 +39,14 @@ LAYERS = ("agent", "surfaces", "tools", "modules", "core", "cli")
 # 依据 docs/项目结构设计.md 第 7 节的表。
 ALLOWED: dict[str, set[str]] = {
     # 基座只允许 core/config（设计另列 core/logging，但该模块在目录设计中不存在）。
-    # ``campfire.agent`` 自身在列：第 7 节的表把 agent/* 当作**一层**，层内子包
+    # `campfire.agent` 自身在列：第 7 节的表把 agent/* 当作一层，层内子包
     # （runtime、skill_runtime、tools…）互相引用不构成跨层依赖；而 _owner_prefix
     # 只放行到 agent/<子包>，不放行兄弟子包，故必须显式列出。
     "agent": {"campfire.core.config", "campfire.agent"},
     "surfaces": {"campfire.agent", "campfire.tools", "campfire.modules", "campfire.core"},
-    # 产品侧工具**实现**基座定义的接口：`ToolHandler` 收 `ToolContext`、返回
+    # 产品侧工具实现基座定义的接口：`ToolHandler` 收 `ToolContext`、返回
     # `ToolOutcome`（两者都在 `agent/tools`）。不依赖基座的类型就不是基座的工具，
-    # 因此放行 `campfire.agent.tools`——**只放行它**，不放行整个 `campfire.agent`
+    # 因此放行 `campfire.agent.tools`——只放行它，不放行整个 `campfire.agent`
     # （运行编排、模型网关、运行记录与产品工具无关）。反方向不变：`agent/*` 仍不得
     # 依赖 `tools/*`（见上一行）。依据见 docs/项目结构设计.md 第 7 节。
     "tools": {"campfire.agent.tools", "campfire.modules", "campfire.core"},
@@ -54,22 +54,22 @@ ALLOWED: dict[str, set[str]] = {
     "core": {"campfire.core"},
     # 本地运维入口：禁止 import surfaces、禁止暴露成服务端点。
     #
-    # **为什么放行 memory 与 accounts**（2026-09-30 定调级修正）：账号注销的编排
+    # 为什么放行 memory 与 accounts（2026-09-30 定调级修正）：账号注销的编排
     # （`core/auth/deletion`）需要一个「清除该账号在记忆领域的数据」的实现，
     # 而 `core/*` 不得依赖 `modules/*`。因此实现放 `modules/memory/purge.py`、
-    # **由装配处（CLI）注入**给编排——与其他领域的清除者同一种做法。
+    # 由装配处（CLI）注入给编排——与其他领域的清除者同一种做法。
     # 邀请码与账号状态机在 `modules/accounts`（运营子命令直接调用）。
     # CLI 是运维编排点，放行它符合既有定调。
     # 该修正同时同步《项目结构设计》第 7 节与 `cli/__init__.py` 的 docstring
     # quality-floor: ignore todo-residue 此处引用的是待办登记文档本身，不是未处理的代码残留
     # （三者此前互不一致，见 docs/TODO.md 的定调级条目）。
     #
-    # `campfire.cli` 自身在列，理由与 `agent` 那一行**完全相同**：第 7 节的表把
-    # `cli/*` 当作**一层**，层内文件互相引用（`__main__` 用 `operator`）不构成跨层依赖；
-    # 而 `_owner_prefix` 对层根下的文件只放行到 `cli/<文件名>`，**不放行兄弟文件**，
+    # `campfire.cli` 自身在列，理由与 `agent` 那一行完全相同：第 7 节的表把
+    # `cli/*` 当作一层，层内文件互相引用（`__main__` 用 `operator`）不构成跨层依赖；
+    # 而 `_owner_prefix` 对层根下的文件只放行到 `cli/<文件名>`，不放行兄弟文件，
     # 故必须显式列出。
     #
-    # **为什么放行 profile**（2026-09-30，随 `modules/profile` 落地）：注销要满足
+    # 为什么放行 profile（2026-09-30，随 `modules/profile` 落地）：注销要满足
     # `AC-24`「其档案……不再存在」，因此 CLI 必须注入档案侧的 purger
     # （`modules/profile/purge.ProfileAccountPurger`），与 memory 侧同一种做法。
     # quality-floor: ignore todo-residue 此处引用的是待办登记文档本身，不是未处理的代码残留
@@ -151,7 +151,7 @@ REQUIREMENT_CODE = re.compile(r"RQ-[A-Z]{2,}-\d+")
 
 
 def _layer_of(relative: Path) -> str | None:
-    """返回模块所属的层；``main.py``、``worker.py`` 等入口不属于任何层。"""
+    """返回模块所属的层；`main.py`、`worker.py` 等入口不属于任何层。"""
     first = relative.parts[0]
     return first if first in LAYERS else None
 

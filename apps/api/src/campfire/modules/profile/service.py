@@ -718,8 +718,8 @@ async def correct_item(
     来源定位、`first_recorded_at` 与 `last_confirmed_at`。
 
     新描述的生成方式是 `user_statement`（描述由使用者在档案页写），入档即
-    `confirmed`（第 3 节的落层表），因此新条目直接进稳定层。**沿用旧条目的
-    `origin` 才是缺陷**：它会造出 `ai_inference + confirmed` 这类行——正是
+    `confirmed`（第 3 节的落层表），因此新条目直接进稳定层。沿用旧条目的
+    `origin` 才是缺陷：它会造出 `ai_inference + confirmed` 这类行——正是
     `propose_item` 与 Worker 两处硬拒、且第 7 节要求「请求被拒绝」的组合——
     同时把使用者亲手改的词在界面与摘要里标成「模型推断」（第 2 节：
     `origin` 回答「谁在什么位置上说的」）。

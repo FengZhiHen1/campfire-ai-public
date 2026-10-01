@@ -1,18 +1,18 @@
 """集成测试：迁移建出的表与 LlamaIndex 框架的实际协作。
 
 对应 docs/技术设计/technical-details/RAG策略.md 第 2 节与 TODO `TECH-19` 的已实测
-结论。这些事实**只能在真实 PostgreSQL 上验证**，因此带 `integration` marker，
+结论。这些事实只能在真实 PostgreSQL 上验证，因此带 `integration` marker，
 默认不在 `uv run pytest` 中运行（见根 pyproject.toml 的 addopts），
-显式跑法：``uv run pytest -m integration``，需先 ``docker compose up -d postgres``。
+显式跑法：`uv run pytest -m integration`，需先 `docker compose up -d postgres`。
 
 锁住的是三条「迁移与框架之间没有书面契约」的约定——任一条失效都会让摄取或检索
 在运行期静默出问题，而不是在测试里失败：
 
-1. **表名约定**：框架把 `table_name` 渲染成 `data_<table_name>`；迁移必须建出同名表。
-2. **结构约定**：`id bigint` + sequence 自增、`text`/`metadata_`/`node_id`/`embedding`
+1. 表名约定：框架把 `table_name` 渲染成 `data_<table_name>`；迁移必须建出同名表。
+2. 结构约定：`id bigint` + sequence 自增、`text`/`metadata_`/`node_id`/`embedding`
    的列名与类型必须与框架期望一致，否则写入报错或读空。
-3. **过滤语义**：metadata 过滤真的下推到 SQL；且 `withdrawn` 这类布尔语义**必须以
-   字符串存**——`MetadataFilter.value` 的类型联合不含 `bool`（实测传 `False` 被
+3. 过滤语义：metadata 过滤真的下推到 SQL；且 `withdrawn` 这类布尔语义必须以
+   字符串存——`MetadataFilter.value` 的类型联合不含 `bool`（实测传 `False` 被
    pydantic 严格模式拒绝）。
 """
 
@@ -77,7 +77,7 @@ async def _table_exists(table: str) -> bool:
 async def _cleanup_nodes(node_ids: list[str]) -> None:
     """按 node_id 清理本文件写入的节点。
 
-    注意：**框架只会删除一条匹配的行**，而 `node_id` 上没有唯一约束（框架自己
+    注意：框架只会删除一条匹配的行，而 `node_id` 上没有唯一约束（框架自己
     也不建，加了会让重复写入由「覆盖」变「报错」），因此重复跑测试会累积多行。
     这里直接按 id 全删，保证跑完不留残留。
     """

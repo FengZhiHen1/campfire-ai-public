@@ -12,13 +12,13 @@ Create Date: 2026-09-30 21:02:40.422546
 业务意图（依据 docs/技术设计/technical-details/公共案例库.md 第 3、4、7 节与
 docs/技术设计/technical-details/资料与案例检索.md 第 1、3 节）：
 
-- 本迁移补上**案例库缺的那张条目表**。此前 `campfire_knowledge_item` 是唯一的
+- 本迁移补上案例库缺的那张条目表。此前 `campfire_knowledge_item` 是唯一的
   条目表，`LIBRARY_CASE` 常量被定义却没有使用点，检索链硬编码只查资料库——
   因此 `search_cases` 在现状下不可实现（见 TODO 的「案例条目表不存在」条）。
-- **另立一张表而不是给资料表加库别列**：两库是两个独立集合（`RQ-KB-01`），
+- 另立一张表而不是给资料表加库别列：两库是两个独立集合（`RQ-KB-01`），
   合并成一张表加类型标签会让两库的过滤条件再也无法在 SQL 层静态确定，而案例的
   必带字段（授权、循证等级、审阅状态、访谈时间）对资料无意义——只能是大量可空列
-  加「看库别才知道读哪几列」的隐式约定。分开建表后，**库别是表身份而非可写错的列值**。
+  加「看库别才知道读哪几列」的隐式约定。分开建表后，库别是表身份而非可写错的列值。
 - 七个案例专属字段（`authorization`、`source_type`、`evidence_level`、
   `review_status`、`interview_at`、`makes_claims_high_risk`、`inferred_fields`）
   是返回契约的必带项：前五个是公共案例库第 8 节呈现规则能落地的前提——缺任一个，
@@ -30,16 +30,16 @@ docs/技术设计/technical-details/资料与案例检索.md 第 1、3 节）：
   `(review_status = 'professional') = (reviewer IS NOT NULL)`，让「owner/pending
   却填了 reviewer」（冒充专业审阅）与「professional 却没填」（无法追溯谁审的）
   撞在同一处。
-- **`source` 与 `applicable_scope` 为 NOT NULL**：缺来源或缺适用范围的条目
+- `source` 与 `applicable_scope` 为 NOT NULL：缺来源或缺适用范围的条目
   「不进入检索结果、不补默认值」是不变量（资料与案例检索第 1 节、`RQ-KB-02`），
   存储层的 NOT NULL 是它的第一道闸门。
-- 三个字面路 GIN trigram 索引与资料侧同形（RAG 策略第 3.1 节）。**用文本列而非
-  数组**：`gin_trgm_ops` 不接受 `text[]`（2026-09-29 实测）。
-- 本迁移**不加节点表列**：两库共用 `data_campfire_node`，库别与案例过滤维度都写在
+- 三个字面路 GIN trigram 索引与资料侧同形（RAG 策略第 3.1 节）。用文本列而非
+  数组：`gin_trgm_ops` 不接受 `text[]`（2026-09-29 实测）。
+- 本迁移不加节点表列：两库共用 `data_campfire_node`，库别与案例过滤维度都写在
   节点 metadata 上，因此「节点表加 library 列」不需要——加列反而会让同一事实
   出现两处（列与 metadata）。
 
-⚠️ 本迁移**只增表**：不改动 `campfire_knowledge_item` 与 `data_campfire_node`，
+⚠️ 本迁移只增表：不改动 `campfire_knowledge_item` 与 `data_campfire_node`，
 因此对既有资料检索零影响。`--autogenerate` 未提议任何 remove_table（白名单过滤器
 正常工作，排除了 SuperTokens core 的 56 张无前缀表）。
 """
@@ -89,7 +89,7 @@ def upgrade() -> None:
         sa.Column("consent_scope", sa.String(length=50), nullable=False),
         sa.Column("consent_recorded_at", sa.Text(), nullable=True),
         sa.Column("reviewer", sa.String(length=200), nullable=True),
-        #: 转写稿引用；**不复制转写原文入库**（公共案例库第 3 节）。
+        #: 转写稿引用；不复制转写原文入库（公共案例库第 3 节）。
         sa.Column("transcript_ref", sa.Text(), nullable=True),
         sa.Column("version", sa.String(length=100), server_default=sa.text("'1'"), nullable=False),
         sa.Column("withdrawn", sa.Boolean(), server_default=sa.text("false"), nullable=False),
@@ -168,7 +168,7 @@ def upgrade() -> None:
 def downgrade() -> None:
     """回滚：删案例条目表及其索引。
 
-    **不触碰资料条目表与节点表**：本迁移只建新表，回滚它不该影响到两库共用的
+    不触碰资料条目表与节点表：本迁移只建新表，回滚它不该影响到两库共用的
     节点表（删节点表会连带删掉资料侧的检索数据）。
     """
     op.drop_index("ix_campfire_case_item_withdrawn_status", table_name="campfire_case_item")

@@ -2,20 +2,20 @@
 
 设计要点（见 docs/项目结构设计.md 第 10 节与 docs/TODO.md 第五节）：
 
-- **连接串唯一来源是 ``core/config``**，不在 ``alembic.ini`` 里写 URL——避免配置
+- 连接串唯一来源是 `core/config`，不在 `alembic.ini` 里写 URL——避免配置
   出现第二真相。
-- **元数据唯一来源是 ``core/db.metadata``**；各模块的模型经
-  ``campfire.modules.library.models`` 注册进去，迁移与运行期共用同一份。
-- **禁用 ``--autogenerate`` 删除不归本项目管理的表**：SuperTokens core 在自己的库内
-  建表（技术栈设计第 4 节）。这些表与 Alembic 自己的 ``alembic_version`` 都必须排除在
+- 元数据唯一来源是 `core/db.metadata`；各模块的模型经
+  `campfire.modules.library.models` 注册进去，迁移与运行期共用同一份。
+- 禁用 `--autogenerate` 删除不归本项目管理的表：SuperTokens core 在自己的库内
+  建表（技术栈设计第 4 节）。这些表与 Alembic 自己的 `alembic_version` 都必须排除在
   比较之外，否则一次自动生成就会产出删表迁移——这是 AGENTS.md 明文禁止的。
-  **实测更正（2026-09-29）**：这些表**没有前缀**，按前缀排除的实现在本库完全失效
+  实测更正（2026-09-29）：这些表没有前缀，按前缀排除的实现在本库完全失效
   （实测 56 张无前缀表会被判为「该删掉」）。过滤器因此改为白名单，判据与理由见
-  ``include_object``。若将来接入第二个外部组件，**不要**给它加前缀名单——白名单已覆盖。
-- **SDK 的两张会话表已纳入管理**（2026-09-30）：``agent_sessions`` / ``agent_messages``
-  的形状由 ``core/db/sdk_session.py`` 声明，与其它业务表走同一条路径——迁移建表、
-  运行期 ``create_tables=False``。它们经白名单判据「在 ``core/db.metadata`` 里才管理」
-  被放行，因此**必须**保持上面那行导入：去掉它，autogenerate 会认为这两张表该删。
+  `include_object`。若将来接入第二个外部组件，不要给它加前缀名单——白名单已覆盖。
+- SDK 的两张会话表已纳入管理（2026-09-30）：`agent_sessions` / `agent_messages`
+  的形状由 `core/db/sdk_session.py` 声明，与其它业务表走同一条路径——迁移建表、
+  运行期 `create_tables=False`。它们经白名单判据「在 `core/db.metadata` 里才管理」
+  被放行，因此必须保持上面那行导入：去掉它，autogenerate 会认为这两张表该删。
   归属与命名的论证见该模块的文件头。
 """
 
@@ -46,36 +46,36 @@ target_metadata = metadata
 
 
 def include_object(_object: object, name: str | None, type_: str, reflected: bool, _compare_to: object) -> bool:
-    """autogenerate 的比较过滤器：**只管理本项目自己的表**（白名单）。
+    """autogenerate 的比较过滤器：只管理本项目自己的表（白名单）。
 
-    ## 为什么是白名单，而不是「排除外部表名前缀」
+    为什么是白名单，而不是「排除外部表名前缀」：
 
-    原实现按前缀排除（``supertokens_``、``agent_sessions``…）。**2026-09-29 实测该实现
-    完全失效**：SuperTokens core 建的表**没有前缀**——实测本库有 56 张无前缀表
-    （``session_info``、``emailpassword_users``、``tenants``、``apps``、
-    ``all_auth_recipe_users``、``webauthn_users``…），前缀一个都没命中。因此
-    ``--autogenerate`` 会产出 **56 条 remove_table + 106 条 remove_index** 的删表迁移，
+    原实现按前缀排除（`supertokens_`、`agent_sessions`…）。2026-09-29 实测该实现
+    完全失效：SuperTokens core 建的表没有前缀——实测本库有 56 张无前缀表
+    （`session_info`、`emailpassword_users`、`tenants`、`apps`、
+    `all_auth_recipe_users`、`webauthn_users`…），前缀一个都没命中。因此
+    `--autogenerate` 会产出 56 条 remove_table + 106 条 remove_index 的删表迁移，
     正好是 AGENTS.md 与 [项目结构设计] 第 10 节明文禁止的事（一次自动生成即摧毁全部
     身份与会话数据）。
 
-    前缀法还有个结构性缺陷：它要求我们**穷举**外部组件的表名，而外部组件的表集随版本
-    增长（本次实测的 56 张里含 webauthn/saml/oauth/totp 等本项目**根本不用**的 recipe）。
+    前缀法还有个结构性缺陷：它要求我们穷举外部组件的表名，而外部组件的表集随版本
+    增长（本次实测的 56 张里含 webauthn/saml/oauth/totp 等本项目根本不用的 recipe）。
     每升级一次 core 就可能多出一批新表要补进名单，漏一个就是一次删表迁移。
 
-    改为白名单后，判据反转为**「在 ``core/db.metadata`` 里才管理」**：任何不在我方
+    改为白名单后，判据反转为「在 `core/db.metadata` 里才管理」：任何不在我方
     元数据里的表（外部组件的、Alembic 自己的、将来第三方加的）一律不碰。判据从
     「我知道哪些不是我的」变成「我只动我声明过的」，与模块边界同一种思路。
 
-    **取舍（显式写入）**：删表不再由 ``--autogenerate`` 提出——从模型里去掉一张表后，
-    autogenerate 不会生成 ``drop_table``，**删除迁移必须手写**。这是**有意**的代价：
+    取舍（显式写入）：删表不再由 `--autogenerate` 提出——从模型里去掉一张表后，
+    autogenerate 不会生成 `drop_table`，删除迁移必须手写。这是有意的代价：
     本项目历史上没有任何一次「由 autogenerate 删表」是安全的，而漏一次删表只是多一次
     人工动作。新增与改列不受影响（那是 metadata 侧的表）。
 
     Args:
         _object: 被比较的对象（表/索引/列）。
         name: 对象名。
-        type_: 对象类型（``table`` / ``index`` / ``column`` …）。
-        reflected: True 表示该对象来自**数据库反射**（而非我方元数据）。
+        type_: 对象类型（`table` / `index` / `column` …）。
+        reflected: True 表示该对象来自数据库反射（而非我方元数据）。
         _compare_to: 比较对象，本过滤器不关心。
 
     Returns:
@@ -89,7 +89,7 @@ def include_object(_object: object, name: str | None, type_: str, reflected: boo
 
 
 def _database_url() -> str:
-    """从 ``core/config`` 取连接串（``postgresql+asyncpg://``）。
+    """从 `core/config` 取连接串（`postgresql+asyncpg://`）。
 
     迁移与运行期用同一个 asyncpg 驱动，不引入第二套同步驱动依赖。
     """
@@ -115,7 +115,7 @@ def run_migrations_offline() -> None:
 
 
 def do_run_migrations(connection: Connection) -> None:
-    """在给定连接上执行迁移（异步引擎经 ``run_sync`` 调用到此）。"""
+    """在给定连接上执行迁移（异步引擎经 `run_sync` 调用到此）。"""
     context.configure(
         connection=connection,
         target_metadata=target_metadata,

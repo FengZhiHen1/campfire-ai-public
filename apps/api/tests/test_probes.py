@@ -1,11 +1,11 @@
 """探针的失败语义：区分「未配置」「配置非法」与「不可达」。
 
-这组用例来自一次实测：宿主机 ``NO_PROXY`` 含 IPv6 字面量（``[::1]``）时，
-httpx 解析代理豁免列表抛 ``InvalidURL: Invalid port``，而当时的探针把它统一
+这组用例来自一次实测：宿主机 `NO_PROXY` 含 IPv6 字面量（`[::1]`）时，
+httpx 解析代理豁免列表抛 `InvalidURL: Invalid port`，而当时的探针把它统一
 报成「core 不可达」——把排查者引向网络问题。下面用实测确认过的触发值锁住行为：
 
-- 坏端口 → ``httpx.InvalidURL``
-- 缺协议头 / 错协议 → ``httpx.UnsupportedProtocol``
+- 坏端口 → `httpx.InvalidURL`
+- 缺协议头 / 错协议 → `httpx.UnsupportedProtocol`
 """
 
 import httpx
@@ -68,7 +68,7 @@ async def test_model_probe_reports_not_configured_without_key() -> None:
     assert "TOKENHUB_API_KEY" in report.detail
 
 
-# --- 模型探针的「200 不等于可达」（此前的成功路径**零覆盖**） ------------------
+# --- 模型探针的「200 不等于可达」（此前的成功路径零覆盖） ------------------
 #
 # 假客户端只替掉 HTTP 出口：被验证的仍是探针自己的判定逻辑。
 

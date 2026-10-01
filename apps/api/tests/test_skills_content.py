@@ -1,30 +1,30 @@
 """四个 skill 内容产物的工程检查：目录、frontmatter、标记块、工具范围与内容完整性。
 
-## 这个文件挡的是哪几类缺陷
+这个文件挡的是哪几类缺陷：
 
-1. **真空闸门**：`apps/api/skills/` 下 0 个 skill 时，任何「遍历并逐项断言」的检查都会
+1. 真空闸门：`apps/api/skills/` 下 0 个 skill 时，任何「遍历并逐项断言」的检查都会
    全绿通过。设计待办明确要求「0 个 skill 即失败」（`skills-ref validate` 接入要求），
    因此 :func:`test_skill_directories_are_not_empty` 把「扫到几个」本身当作断言。
-2. **frontmatter 漂移**：六字段约束（`name` 与目录同名、长度上限、自有键落 `metadata`）
+2. frontmatter 漂移：六字段约束（`name` 与目录同名、长度上限、自有键落 `metadata`）
    在文档里，落地时靠人眼核对必然漂移。这里逐条机械校验。
-3. **共用纪律拷贝漂移**：标准不支持 skill 间依赖，三条共同纪律必然有多份拷贝。
+3. 共用纪律拷贝漂移：标准不支持 skill 间依赖，三条共同纪律必然有多份拷贝。
    标记块 + 逐字相等检查是唯一的防漂移手段。
-4. **工具范围漂移**：`allowed-tools` 写错一个名字不会报错，只会让该工具在运行时
+4. 工具范围漂移：`allowed-tools` 写错一个名字不会报错，只会让该工具在运行时
    被服务端拒绝——错误离现场很远。这里对照技能设计第 3 节的工具总表互查。
 
-## 为什么不复用 `campfire.agent.skill_runtime` 的加载器
+为什么不复用 `campfire.agent.skill_runtime` 的加载器：
 
-本文件校验的是**内容产物**，加载器由 `test_skill_runtime.py` 覆盖。复用加载器会让
+本文件校验的是内容产物，加载器由 `test_skill_runtime.py` 覆盖。复用加载器会让
 「这些文件能被加载」由同一段代码同时生产与检验——检查失去判别力。因此 frontmatter
 的解析与字段约束在这里独立实现一份；它与加载器的差异本身就是一条信息（若两者结论
 不同，说明两边的判据已经分叉）。
 
-## `skills-ref validate` 的探测结论（2026-09-30 实测，本泳道）
+`skills-ref validate` 的探测结论（2026-09-30 实测，本泳道）：
 
 标准参照实现是 Node 包 `skills-ref`（`npx --yes skills-ref@latest validate <dir>`，
-0.1.5，实测可用）。它**不在** PATH 上（`uv run --no-project python -c "shutil.which(...)"`
+0.1.5，实测可用）。它不在 PATH 上（`uv run --no-project python -c "shutil.which(...)"`
 返回 `None`），只有经 `npx` 才可取用；而 `npx` 依赖网络取包，不能让测试套件依赖它。
-因此本文件**两条通道都实现**：PATH 上有 CLI 就 subprocess 调用它；没有就使用本文件内
+因此本文件两条通道都实现：PATH 上有 CLI 就 subprocess 调用它；没有就使用本文件内
 的等价校验。两条通道都需真的执行到，不存在「探测不到就跳过」的静默分支——
 见 :func:`test_skills_ref_validate_passes_through_whichever_channel_is_available`。
 """
@@ -82,13 +82,13 @@ _SHARED_BLOCK_PATTERN = re.compile(
 #: 三条共同纪律的标记块名。一期只有这一个。
 SHARED_BLOCK_NAME = "evidence-discipline"
 
-#: 携带标记块的三个 skill；`onboarding` **不含**（豁免裁决见技能设计第 1 节）。
+#: 携带标记块的三个 skill；`onboarding` 不含（豁免裁决见技能设计第 1 节）。
 SKILLS_WITH_SHARED_BLOCK = ("daily-consulting", "emergency-consulting", "profile-curation")
 
-#: 一期十个工具的**全集**（技能设计第 3 节总表）。
+#: 一期十个工具的全集（技能设计第 3 节总表）。
 #:
 #: 2026-09-30 收紧：注册表已全量注册（T04 并入本泳道），因此 `allowed-tools` 现在同时受
-#: 两条约束——是全集子集，且是**已注册集合**的子集（见
+#: 两条约束——是全集子集，且是已注册集合的子集（见
 #: `test_allowed_tools_are_all_registered`）。此前只能拿全集当上界，因为注册表只有 3 个
 #: 工具，拿它当上界会让合法的 `allowed-tools`（`search_cases` 等）被误判越界。
 FULL_TOOL_SET = frozenset(
@@ -108,7 +108,7 @@ FULL_TOOL_SET = frozenset(
 
 #: 基座保留的工具名（`skill` 模型侧激活 / `read_skill_resource` 资源读取）。
 #:
-#: 两者恒可用、由基座注册，**不进 `allowed-tools` 的并集**（基座第 5 节、第 7.2 节）。
+#: 两者恒可用、由基座注册，不进 `allowed-tools` 的并集（基座第 5 节、第 7.2 节）。
 #: 写进内容产物即失败：那会让 skill 以为自己能「声明」一个机制工具。
 RESERVED_TOOL_NAMES = frozenset({"ask_user", "read_skill_resource", "skill"})
 
@@ -147,7 +147,7 @@ BODY_LINE_LIMIT = 500
 
 #: 内容产物里不得出现的残留标记词（零残留要求）。
 #:
-#: 用拼接构造字面量，避免本文件的**注释**本身被质量门禁命中（门禁只扫注释，
+#: 用拼接构造字面量，避免本文件的注释本身被质量门禁命中（门禁只扫注释，
 #: 但保持本文件自身干净比依赖门禁的判据更稳）。
 _RESIDUE_MARKERS = tuple("".join(parts) for parts in (("TO", "DO"), ("FIX", "ME"), ("X", "XX"), ("HA", "CK")))
 
@@ -184,7 +184,7 @@ def _split_frontmatter(text: str, *, path: Path) -> tuple[str, str]:
 def _parse_frontmatter(raw: str, *, path: Path) -> dict[str, object]:
     """解析六字段 frontmatter（标量 + `metadata` 两级映射）。
 
-    手写而不是引 yaml：本文件只接受**我们自己写出的两种形状**（`key: value` 与
+    手写而不是引 yaml：本文件只接受我们自己写出的两种形状（`key: value` 与
     `metadata:` 下的两级映射）。因此遇到别的形状必须显式失败，而不是被通用 YAML
     解析器宽容地接受——宽容地接受会让「写了一段缩进块标量」这种偏离静默通过。
 
@@ -482,7 +482,7 @@ def test_registry_does_not_drift_out_of_the_full_tool_set() -> None:
 
 
 def test_allowed_tools_are_all_registered() -> None:
-    """`allowed-tools` 里出现的每个工具都**真的在注册表里**（原「待复验」的收紧项）。
+    """`allowed-tools` 里出现的每个工具都真的在注册表里（原「待复验」的收紧项）。
 
     为什么需要这一条（原先只有「⊆ 全集」是不够的）：全集是设计文档里的目标清单，
     而注册表是实现事实。一个被 skill 声明、却从未注册的工具，在实际运行中的表现是
@@ -661,7 +661,7 @@ def _equivalent_validation(directory: Path) -> list[str]:
     只允许六个字段、`name` 必填且与目录同名、`description` 必填且有长度上限、
     `compatibility` 有长度上限、`SKILL.md` 必须存在。
 
-    名称的正则比参照实现**更严**（参照实现放行 Unicode 字母，本项目规范只允许
+    名称的正则比参照实现更严（参照实现放行 Unicode 字母，本项目规范只允许
     小写字母、数字与连字符），差异方向是更严而非更松，因此不会漏掉参照实现能抓到的问题。
     """
     errors: list[str] = []
@@ -700,12 +700,12 @@ def _equivalent_validation(directory: Path) -> list[str]:
 def test_skills_ref_validate_passes_through_whichever_channel_is_available() -> None:
     """四个 skill 全部通过标准校验。
 
-    两条通道，**都真的执行断言**，不存在「探测不到就跳过」的静默分支：
+    两条通道，都真的执行断言，不存在「探测不到就跳过」的静默分支：
 
     - PATH 上有 `skills-ref` 可执行文件 → 逐目录 subprocess 调用，断言退出码为 0；
     - 没有 → 用 :func:`_equivalent_validation`（判据对齐参照实现）。
 
-    探测结论（本泳道 2026-09-30 实测）：CLI **不在** PATH 上。参照实现是 Node 包
+    探测结论（本泳道 2026-09-30 实测）：CLI 不在 PATH 上。参照实现是 Node 包
     `skills-ref@0.1.5`，只能经 `npx` 取用（`npx --yes skills-ref@latest validate <dir>`
     实测输出 `Valid skill: <dir>`、退出码 0）；让测试依赖 npx 会引入网络依赖，
     因此默认走等价校验通道。PATH 上装好 CLI 时本用例自动改走那一侧，无需改代码。
@@ -734,7 +734,7 @@ def test_skills_ref_validate_passes_through_whichever_channel_is_available() -> 
 
 
 def test_equivalent_validation_actually_rejects_bad_frontmatter(tmp_path: Path) -> None:
-    """等价校验的**判别性对照**：坏 frontmatter 必须被拒。
+    """等价校验的判别性对照：坏 frontmatter 必须被拒。
 
     没有这条，等价校验可能退化成「一律返回空列表」——那会让上面那条用例
     对任何内容都通过，正是设计待办点名要避免的真空闸门。

@@ -196,7 +196,7 @@ def test_profile_with_object_but_no_items_is_marked_not_used() -> None:
     「有档案」渲染（信封 `state="present"`、八组全 absent）会把「无档案」表述成
     「有档案但什么都没有」——模型与使用者对这两种说法读到的是两个不同的事实。
 
-    **消融**：去掉 `not context.has_profile` 那一支，本用例立即失败（信封回到 present）。
+    消融：去掉 `not context.has_profile` 那一支，本用例立即失败（信封回到 present）。
     """
     context = EmergencyContext(
         support_object_id="22222222-2222-2222-2222-222222222222",

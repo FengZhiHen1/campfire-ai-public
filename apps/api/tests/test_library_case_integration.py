@@ -3,13 +3,13 @@
 对应 [公共案例库] 第 2、6、8 节与 [资料与案例检索] 第 1、3、4、5 节，覆盖本包的
 质量地板校验点：
 
-1. 缺 `source` 的案例条目**被结果排除**（不补默认值）；
-2. 撤下条目**不返回**（`AC-09`），且从**两路**（向量 + 字面）都消失；
+1. 缺 `source` 的案例条目被结果排除（不补默认值）；
+2. 撤下条目不返回（`AC-09`），且从两路（向量 + 字面）都消失；
 3. `library` 非法取值被拒（不静默退回资料库）；
-4. 案例六字段在检索返回里**必带**；
+4. 案例六字段在检索返回里必带；
 5. 对抗：空 query（全量浏览路）、只命中卡片不命中标题的检索、manifest 缺字段整包拒绝。
 
-**只用虚构样例数据**：`EVID-B` 未关闭前不得录真实素材（任务包红线）；上游真实
+只用虚构样例数据：`EVID-B` 未关闭前不得录真实素材（任务包红线）；上游真实
 案例包只用于单元测试的形状核对，不落库。
 
 嵌入用确定性替身（`TOKENHUB_API_KEY` 未配置），SQL、融合、聚合与撤下都是真实的。
@@ -113,7 +113,7 @@ def build_case_package(
     status: str = "internal",
     review_status: str = "owner",
 ) -> Path:
-    """造一个**虚构**案例包（manifest + L1 叙事 + 一张 L2 卡片）。
+    """造一个虚构案例包（manifest + L1 叙事 + 一张 L2 卡片）。
 
     刻意不做成通用工厂：参数只覆盖各用例真正需要的差异，避免长出一层
     「测试夹具框架」（元原则·最小实现）。
@@ -273,7 +273,7 @@ async def test_card_node_carries_card_level_metadata(tmp_path: Path, _patched_em
         # 返回契约消费的字段
         for key in ("authorization", "source_type", "evidence_level", "review_status", "interview_at"):
             assert key in metadata, f"卡片节点缺少返回契约字段 {key}"
-        # 标识字段不参与嵌入（此处断言它们不在**文本**里）
+        # 标识字段不参与嵌入（此处断言它们不在文本里）
         assert "card_id" not in rows[0].node_id.split(":")[-1]
     finally:
         await _cleanup_case([str(package)])
@@ -283,7 +283,7 @@ async def test_card_node_carries_card_level_metadata(tmp_path: Path, _patched_em
 
 @pytest.mark.asyncio
 async def test_manifest_missing_field_rejects_whole_package(tmp_path: Path, _patched_embedding: None) -> None:
-    """manifest 缺字段 → **整包拒绝**且不留半个案例（第 6 节）。
+    """manifest 缺字段 → 整包拒绝且不留半个案例（第 6 节）。
 
     判别性：把 `load_manifest` 的必填校验删掉，本用例的写入断言失败。
     """
@@ -442,7 +442,7 @@ def test_invalid_library_is_rejected_by_literal_search() -> None:
 async def test_case_search_never_returns_knowledge_items(tmp_path: Path, _patched_embedding: None) -> None:
     """案例检索不混入资料条目，反之亦然（`RQ-KB-01` 两库分离）。
 
-    **这条用例必须两库都有数据才有判别力**：库为空时「结果里没有资料条目」
+    这条用例必须两库都有数据才有判别力：库为空时「结果里没有资料条目」
     是无意义的真。因此这里先灌一份资料与一份案例，再断言各自只回自己的。
     """
     _require_db()
@@ -553,16 +553,16 @@ async def test_case_results_carry_every_contract_field(tmp_path: Path, _patched_
 
 @pytest.mark.asyncio
 async def test_card_hits_aggregate_into_a_single_case_entry(tmp_path: Path, _patched_embedding: None) -> None:
-    """卡片级命中**聚合回案例条目**，同一案例只出现一条（第 2 节）。
+    """卡片级命中聚合回案例条目，同一案例只出现一条（第 2 节）。
 
     「呈现单位是案例、检索单位是卡片」的可测部分：一个案例有 1 张卡片 + 5 个叙事
-    小节，共 6 个节点；检索命中其中多个时，结果里必须**只有一条**该案例
+    小节，共 6 个节点；检索命中其中多个时，结果里必须只有一条该案例
     （否则同一个案例会以多行出现，使用者看到重复的依据）。
     判别性：把 `aggregate_to_items` 的 `item_id` 聚合改成按 `node_id` 出条目，
     本用例的「只出现一条」断言失败。
 
-    ⚠️ **本用例不断言 snippet 来自卡片**：snippet 取的是「名次最高的节点」，
-    而本文件用确定性**假**嵌入（没有 TOKENHUB_API_KEY），名次与语义无关、
+    ⚠️ 本用例不断言 snippet 来自卡片：snippet 取的是「名次最高的节点」，
+    而本文件用确定性假嵌入（没有 TOKENHUB_API_KEY），名次与语义无关、
     哪条节点胜出是任意的。断言「卡片胜出」会是一条时真时假的检查——那比不测更糟。
     卡片是否真的成为可检索节点由下面那条用例直接核对节点层。
     """
@@ -588,9 +588,9 @@ async def test_card_hits_aggregate_into_a_single_case_entry(tmp_path: Path, _pat
         # 六字段在该条目上仍在场（聚合补字段的路径覆盖到案例分支）。
         hit = outcome.items[0]
         assert hit.review_status == "owner"
-        # inferred_fields 的契约是「**该 snippet 所属卡片**的推断清单」：命中卡片时
+        # inferred_fields 的契约是「该 snippet 所属卡片的推断清单」：命中卡片时
         # 为该卡片的清单，命中叙事小节时为空。假嵌入下胜出节点是任意的，因此这里
-        # 断言的是**取值只能落在这两个合法状态之一**，不能是别的东西
+        # 断言的是取值只能落在这两个合法状态之一，不能是别的东西
         # （例如案例级并集或畸形字符串）——恒真或恒假的断言都没有价值。
         assert hit.inferred_fields in ([], ["severity_level"]), f"推断清单取值非法：{hit.inferred_fields}"
         assert result.cards_written == 1
@@ -604,7 +604,7 @@ async def test_card_hits_aggregate_into_a_single_case_entry(tmp_path: Path, _pat
 async def test_card_body_is_indexed_as_its_own_node(tmp_path: Path, _patched_embedding: None) -> None:
     """卡片正文真的进了节点表（检索单位是卡片的可执行证据）。
 
-    只断言节点层：卡片节点的文本含卡片字段内容，且**不含** `_inferred` 的值
+    只断言节点层：卡片节点的文本含卡片字段内容，且不含 `_inferred` 的值
     （推断依据不参与嵌入，RAG 策略第 1.3 节）。
     """
     _require_db()
@@ -653,10 +653,10 @@ async def test_card_body_is_indexed_as_its_own_node(tmp_path: Path, _patched_emb
 
 @pytest.mark.asyncio
 async def test_item_without_source_is_excluded_from_results(tmp_path: Path, _patched_embedding: None) -> None:
-    """缺 `source` 的案例条目**被结果排除**，不补默认值（质量地板校验点 ①）。
+    """缺 `source` 的案例条目被结果排除，不补默认值（质量地板校验点 ①）。
 
     做法：先正常入库，再把条目表的 `source` 直接在库里清空（模拟旁路写入/脏数据），
-    然后断言检索与浏览都不返回它。表上是 NOT NULL，因此这里用**临时解除约束**的
+    然后断言检索与浏览都不返回它。表上是 NOT NULL，因此这里用临时解除约束的
     方式构造该状态——它正是「不变量必须由代码兜住、不能只靠存储层」的理由：
     约束变更、历史数据、将来的运维旁路都可能绕开 NOT NULL。
     """
@@ -703,9 +703,9 @@ async def test_item_without_source_is_excluded_from_results(tmp_path: Path, _pat
 
 @pytest.mark.asyncio
 async def test_withdrawn_case_disappears_from_both_paths(tmp_path: Path, _patched_embedding: None) -> None:
-    """撤下后**两路**（向量 + 字面）都查不到，浏览路也不返回（`AC-09`）。
+    """撤下后两路（向量 + 字面）都查不到，浏览路也不返回（`AC-09`）。
 
-    **为什么必须分两路断言**：向量路靠「查询时过滤 `withdrawn`」，字面路靠条目表的
+    为什么必须分两路断言：向量路靠「查询时过滤 `withdrawn`」，字面路靠条目表的
     `WHERE withdrawn IS FALSE`。只删节点不置标记，字面路仍会命中条目；
     只置标记不删节点，向量路在聚合前就已过滤、看似安全——但节点会一直被召回并
     占用候选槽位。两条路各断言一次，才覆盖这两种半吊子实现。
@@ -767,7 +767,7 @@ async def test_withdrawn_case_disappears_from_both_paths(tmp_path: Path, _patche
 
 @pytest.mark.asyncio
 async def test_withdrawal_is_idempotent(tmp_path: Path, _patched_embedding: None) -> None:
-    """撤下**重复执行两次**：第二次不报错、标 `already_withdrawn`（幂等实测）。
+    """撤下重复执行两次：第二次不报错、标 `already_withdrawn`（幂等实测）。
 
     任务包自检要求「撤下幂等实测两次」；这里就是那两次连续调用。
     """
@@ -881,7 +881,7 @@ async def test_reingest_after_withdrawal_does_not_rebuild_nodes(tmp_path: Path, 
 async def test_reingest_unchanged_after_withdrawal_clears_residual_nodes(
     tmp_path: Path, _patched_embedding: None
 ) -> None:
-    """撤下后重新交付**同一份**包（哈希不变）：幂等跳过也要清掉残留节点。
+    """撤下后重新交付同一份包（哈希不变）：幂等跳过也要清掉残留节点。
 
     与 `test_reingest_after_withdrawal_does_not_rebuild_nodes` 互补：那条走「改了卡片
     再重摄取」分支（哈希变化），本用例一个字节都不改，落在幂等早返回分支上——上游最
@@ -999,7 +999,7 @@ async def test_empty_query_browses_all_cases_by_recency(tmp_path: Path, _patched
 
 @pytest.mark.asyncio
 async def test_authorization_filter_applies_to_both_paths(tmp_path: Path, _patched_embedding: None) -> None:
-    """`authorization` 过滤在**两条路**上都生效，且走绑定参数（第 3 节、工具契约第 6 节）。
+    """`authorization` 过滤在两条路上都生效，且走绑定参数（第 3 节、工具契约第 6 节）。
 
     为什么必须两条路都测：只给向量路加过滤、字面路不过滤，会把未授权条目从字面路
     漏进结果——单看向量路结果会通过，看汇总标题才会失败。
@@ -1074,7 +1074,7 @@ async def test_scope_matching_nothing_returns_empty_not_an_error(tmp_path: Path,
     """没有任何案例匹配 `scope` 时返回空结果，而不是报错（空 `IN ()` 的护栏）。
 
     这一格容易写错：空允许集若被送进向量路的 `IN` 过滤，会生成
-    ``metadata_->>'item_id' IN ()`` —— **SQL 语法错误**（实测）。实现因此提前返回。
+    `metadata_->>'item_id' IN ()` —— SQL 语法错误（实测）。实现因此提前返回。
     """
     _require_db()
     package = build_case_package(tmp_path, slug="scope-none")
@@ -1099,10 +1099,10 @@ async def test_scope_matching_nothing_returns_empty_not_an_error(tmp_path: Path,
 
 @pytest.mark.asyncio
 async def test_authorization_value_cannot_inject_sql(tmp_path: Path, _patched_embedding: None) -> None:
-    """`authorization` 里的引号与 `OR` **不得**改变查询语义（注入防护）。
+    """`authorization` 里的引号与 `OR` 不得改变查询语义（注入防护）。
 
     实测背景：框架的 `MetadataFilter` 用 f-string 拼 SQL（无绑定参数）。payload 用
-    ``x' OR 1=1 --`` 会逃逸整个 AND 链、连带绕过库别/撤下/状态三个过滤。
+    `x' OR 1=1 --` 会逃逸整个 AND 链、连带绕过库别/撤下/状态三个过滤。
     本实现因此把「模型可控值」拦在 MetadataFilter 之外（先用绑定参数算允许集）。
 
     判别性：把 `_item_filters_sql` 的 `:authorization` 改回字符串拼接，本用例失败。

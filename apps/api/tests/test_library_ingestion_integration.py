@@ -1,7 +1,7 @@
 """摄取流水线的集成测试（真实 PostgreSQL，模拟嵌入）。
 
-**为什么模拟嵌入**：`TOKENHUB_API_KEY` 在开发环境未配置，真实嵌入调用跑不了。
-本文件因此**只验证嵌入之外的整条链**：分块 → 条目表与节点表**同事务**落库 →
+为什么模拟嵌入：`TOKENHUB_API_KEY` 在开发环境未配置，真实嵌入调用跑不了。
+本文件因此只验证嵌入之外的整条链：分块 → 条目表与节点表同事务落库 →
 幂等 → 节点可被向量存储读回。真实嵌入调用属未验证项，明确登记在交付说明里。
 
 对应 RAG 策略第 7 节的纪律：一份文件一个事务、幂等、不留「一半进去了」的状态。
@@ -215,7 +215,7 @@ async def test_ingest_is_idempotent_for_unchanged_file(tmp_path: Path, _patched_
 async def test_frontmatter_supplies_item_metadata_and_stays_out_of_nodes(
     tmp_path: Path, _patched_embedding: None
 ) -> None:
-    """文件 frontmatter 提供条目元数据，**不进入节点正文**。
+    """文件 frontmatter 提供条目元数据，不进入节点正文。
 
     这是与语料加工件的接口：出处与适用范围写在文件里比命令行参数更不易错配，
     但 YAML 若被当作正文嵌入，就会污染检索内容（本用例的第二个断言）。
@@ -271,7 +271,7 @@ async def test_frontmatter_supplies_item_metadata_and_stays_out_of_nodes(
 
 @pytest.mark.asyncio
 async def test_ingest_rejects_file_without_source_or_scope(tmp_path: Path, _patched_embedding: None) -> None:
-    """缺来源或适用范围的文件**拒绝入库**（不变量：缺来源不进入检索）。
+    """缺来源或适用范围的文件拒绝入库（不变量：缺来源不进入检索）。
 
     这是 `RQ-KB-02` 与 `RQ-CON-03` 在入口处的闸门——校验必须在写库之前发生，
     否则「先入库再发现缺字段」就要靠清理补救。
@@ -308,12 +308,12 @@ async def test_ingest_rejects_file_without_source_or_scope(tmp_path: Path, _patc
 async def test_failure_after_item_write_rolls_back_the_item_too(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """**写条目之后**节点写入失败，条目也必须回滚。
+    """写条目之后节点写入失败，条目也必须回滚。
 
     与下一个用例的区别（这里补的是一个验证缺口）：那个用例的失败发生在嵌入
     阶段，即在任何写入之前——它只能证明「失败时没有写入」。真正要守的不变量是
     「不留一半进去了的状态」：条目已 flush 进事务、节点写入才失败时，条目同样
-    不能留下。本用例在 ``_write_nodes`` 处注入故障来覆盖该路径。
+    不能留下。本用例在 `_write_nodes` 处注入故障来覆盖该路径。
     """
     _require_db()
     doc = tmp_path / "partial.md"
@@ -356,7 +356,7 @@ async def test_failure_after_item_write_rolls_back_the_item_too(
 
 @pytest.mark.asyncio
 async def test_ingest_failure_rolls_back_everything(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """嵌入失败时整份回滚：**不留「一半进去了」的状态**（RAG 策略第 7 节）。"""
+    """嵌入失败时整份回滚：不留「一半进去了」的状态（RAG 策略第 7 节）。"""
     _require_db()
     doc = tmp_path / "boom.md"
     doc.write_text("# 标题\n\n这份文件的嵌入会失败。\n", encoding="utf-8")
@@ -582,7 +582,7 @@ async def test_reingest_after_withdrawal_clears_residual_nodes(tmp_path: Path, _
 async def test_reingest_unchanged_after_withdrawal_clears_residual_nodes(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """撤下后重新交付**同一份**文件（哈希不变）：幂等跳过也要清掉残留节点。
+    """撤下后重新交付同一份文件（哈希不变）：幂等跳过也要清掉残留节点。
 
     为什么要与上一条分开：`test_reingest_after_withdrawal_clears_residual_nodes`
     走的是「改了内容再重摄取」分支（哈希变化，清理发生在写新节点之前）；而上游最常见的

@@ -1,29 +1,29 @@
 """集成测试：档案工具层到库的落层分流（真实 PostgreSQL，工具层直调再查库）。
 
-对应 ``docs/技术设计/面/consult/tools/propose_profile_item.md`` 第 4、6 节与
-``docs/技术设计/technical-details/个性化档案.md`` 第 3、7 节。
+对应 `docs/技术设计/面/consult/tools/propose_profile_item.md` 第 4、6 节与
+`docs/技术设计/technical-details/个性化档案.md` 第 3、7 节。
 
     docker compose up -d postgres
     uv run pytest -m integration apps/api/tests/test_profile_tools_integration.py
 
-## 为什么在工具层调、而不是直接调用例层
+为什么在工具层调、而不是直接调用例层：
 
 `test_profile_items_integration.py` 已经覆盖了用例层的落层分流。本文件要证明的是
-**多出来的那一段**：工具层写的待处理记录载荷，经 Worker 消费后落到的层与契约一致。
+多出来的那一段：工具层写的待处理记录载荷，经 Worker 消费后落到的层与契约一致。
 两处的差别不是重复劳动——工具层是载荷的构造者（哪些键进 payload、`confirmation` 带不带），
 而 Worker 只消费载荷、不回查用例。载荷构造错了，用例层的测试全绿也看不出来。
 
-## 本文件守住的核心判据
+本文件守住的核心判据：
 
-1. **六值落层分流**（契约第 6 节第一项）：四种非推断 `origin` 各提交一条 → 稳定层；
-   两种推断 → 只进候选层。断言方式是**直接查库**读 `confirmation`/`origin`，
+1. 六值落层分流（契约第 6 节第一项）：四种非推断 `origin` 各提交一条 → 稳定层；
+   两种推断 → 只进候选层。断言方式是直接查库读 `confirmation`/`origin`，
    不经过任何用例层的加工（避免用被测代码验证被测代码）。
-2. **确认状态由 `origin` 推导**：`user_statement`/`guardian_observation` → `confirmed`；
+2. 确认状态由 `origin` 推导：`user_statement`/`guardian_observation` → `confirmed`；
    其余四种 → `unconfirmed`。
-3. **推断不得冒充事实**（质量地板校验点③）：`ai_inference` + `confirmed` 被拒绝，
-   且**没有落库**（待处理记录与条目都不存在）。
-4. **越权拒绝且未落库**：跨账号的对象被拒，且没有产生待处理记录。
-5. **归档对象拒绝**：不产生「已受理但永远写不进去」的回执。
+3. 推断不得冒充事实（质量地板校验点③）：`ai_inference` + `confirmed` 被拒绝，
+   且没有落库（待处理记录与条目都不存在）。
+4. 越权拒绝且未落库：跨账号的对象被拒，且没有产生待处理记录。
+5. 归档对象拒绝：不产生「已受理但永远写不进去」的回执。
 """
 
 from __future__ import annotations
@@ -49,7 +49,7 @@ pytestmark = pytest.mark.integration
 _ACCOUNT = "it_profile_tools_account"
 _ACCOUNT_OTHER = "it_profile_tools_other"
 
-#: 六种 `origin` 与契约第 4 节第 1 条的落层表的对应关系（**逐字抄自契约**，
+#: 六种 `origin` 与契约第 4 节第 1 条的落层表的对应关系（逐字抄自契约，
 #: 不从实现派生——否则两处定义漂移时测试会跟着漂移）。
 #: 来源：docs/技术设计/面/consult/tools/propose_profile_item.md 第 4 节。
 CONTRACT_LAYER_TABLE: dict[str, tuple[str, str]] = {
@@ -238,14 +238,14 @@ def test_the_contract_table_covers_both_origin_sets() -> None:
 
 @pytest.mark.asyncio
 async def test_inference_cannot_be_submitted_as_confirmed_and_nothing_is_persisted() -> None:
-    """`ai_inference` + `confirmed` 被拒绝，且**没有落库**（待处理记录与条目都不存在）。
+    """`ai_inference` + `confirmed` 被拒绝，且没有落库（待处理记录与条目都不存在）。
 
-    怎么造出这个调用：参数模型里**没有** `confirmation` 字段（那是有意的，
+    怎么造出这个调用：参数模型里没有 `confirmation` 字段（那是有意的，
     见 `ProposeProfileItemArgs` 的说明），因此正常路径下这个组合表达不出来。
     这里直接往载荷里手工塞一个 `confirmation: confirmed`，模拟「绕过参数模型的调用方」
     ——而那正是 Worker 侧要再拒一次的情形（载荷可能是历史版本或被手工构造的）。
 
-    **质量地板校验点③**要求「拒绝且未落库」：只断言返回失败是不够的，还要断言库里干净。
+    质量地板校验点③要求「拒绝且未落库」：只断言返回失败是不够的，还要断言库里干净。
     """
     object_id = await _new_object()
     args = _args(object_id, origin="ai_inference")
@@ -294,7 +294,7 @@ async def test_inference_cannot_be_submitted_as_confirmed_and_nothing_is_persist
 
 @pytest.mark.asyncio
 async def test_the_tool_never_puts_a_confirmation_into_the_payload() -> None:
-    """工具写的载荷里**没有** `confirmation` 键（确认状态由 `origin` 推导）。
+    """工具写的载荷里没有 `confirmation` 键（确认状态由 `origin` 推导）。
 
     与上一条互补：上一条测「构造过的载荷会被拒」，这一条测「工具不会构造那样的载荷」。
     判别性：往 `payload` 里加 `confirmation`，本用例失败。
@@ -322,7 +322,7 @@ async def test_the_tool_never_puts_a_confirmation_into_the_payload() -> None:
 
 @pytest.mark.asyncio
 async def test_cross_account_write_is_denied_and_nothing_is_persisted() -> None:
-    """以账号 A 的登录态写账号 B 的对象 → 拒绝，且**没有待处理记录**。
+    """以账号 A 的登录态写账号 B 的对象 → 拒绝，且没有待处理记录。
 
     判别性：把 `require_writable` 从 handler 里去掉，本用例失败（记录会被落下，
     直到 Worker 领取时才失败——那是「接口回执成功、实际永远写不进去」）。
@@ -338,7 +338,7 @@ async def test_cross_account_write_is_denied_and_nothing_is_persisted() -> None:
 
 @pytest.mark.asyncio
 async def test_archived_object_write_is_denied_with_a_distinct_message() -> None:
-    """归档对象 → 拒绝，文案**区分**于越权，且没有待处理记录（支持对象第 5.3 节）。"""
+    """归档对象 → 拒绝，文案区分于越权，且没有待处理记录（支持对象第 5.3 节）。"""
     from campfire.modules.profile import service
 
     object_id = await _new_object()
@@ -359,7 +359,7 @@ async def test_archived_object_write_is_denied_with_a_distinct_message() -> None
 
 @pytest.mark.asyncio
 async def test_the_same_content_can_be_submitted_twice() -> None:
-    """同一内容重复提交**不报错**（幂等由 `pending_id` 承担，契约第 5 节末行）。
+    """同一内容重复提交不报错（幂等由 `pending_id` 承担，契约第 5 节末行）。
 
     两次得到不同的 `pending_id`（各自一条记录），因此消费后是两条并列条目——
     「不覆盖已有条目」正是契约第 4 节第 3 条。

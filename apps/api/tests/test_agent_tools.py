@@ -2,7 +2,7 @@
 
 对应 docs/技术设计/technical-details/通用基座.md 第 5 节与第 11 节的验证方式，以及
 docs/技术设计/technical-details/技能设计.md 第 5 节「断言应急激活时写工具被服务端拒绝」。
-重点在拒绝路径：权限拒绝必须返回明确错误码，且**实现根本没有被调用**。
+重点在拒绝路径：权限拒绝必须返回明确错误码，且实现根本没有被调用。
 """
 
 from __future__ import annotations
@@ -92,7 +92,7 @@ def _spec(
     requires_approval: bool = False,
     calls: list[str] | None = None,
 ) -> ToolSpec[ReadArgs]:
-    """造一个读类工具；``calls`` 非空时记录实现被调用的次数。"""
+    """造一个读类工具；`calls` 非空时记录实现被调用的次数。"""
 
     async def handler(_context: ToolContext, args: ReadArgs) -> ToolResult:
         if calls is not None:
@@ -140,11 +140,11 @@ def test_tool_description_is_required() -> None:
 
 
 def test_open_object_parameters_are_rejected_at_registration() -> None:
-    """参数 schema 含开放对象时，**注册期**就要失败（SDK 的严格模式不接受它）。
+    """参数 schema 含开放对象时，注册期就要失败（SDK 的严格模式不接受它）。
 
-    实测：``ensure_strict_json_schema`` 由 SDK 在构造工具时调用，而那一刻运行已经发出
-    ``run_started``——参数模型含 ``dict[str, X]`` 或 ``extra="allow"`` 时抛裸 ``UserError``，
-    事件流只到 ``run_started`` 就断，调用方拿不到任何 ``run_failed``。
+    实测：`ensure_strict_json_schema` 由 SDK 在构造工具时调用，而那一刻运行已经发出
+    `run_started`——参数模型含 `dict[str, X]` 或 `extra="allow"` 时抛裸 `UserError`，
+    事件流只到 `run_started` 就断，调用方拿不到任何 `run_failed`。
     """
 
     class OpenArgs(BaseModel):
@@ -177,10 +177,10 @@ def test_closed_object_parameters_are_accepted() -> None:
 
 
 def test_pool_rejects_a_duck_typed_tool_with_empty_name_or_description() -> None:
-    """池接受结构类型，但**校验不能靠结构**：空名字/空描述必须被拒。
+    """池接受结构类型，但校验不能靠结构：空名字/空描述必须被拒。
 
-    实测：一个鸭子类型对象带 ``name=""``、``description=""`` 能进池并进请求体，而名字是权限
-    判定与 ``allowed-tools`` 的键、描述是模型选工具的唯一依据。
+    实测：一个鸭子类型对象带 `name=""`、`description=""` 能进池并进请求体，而名字是权限
+    判定与 `allowed-tools` 的键、描述是模型选工具的唯一依据。
     """
 
     class Duck:
@@ -221,7 +221,7 @@ def test_duplicate_registration_fails_instead_of_overwriting() -> None:
 
 
 def test_reserved_tool_name_cannot_be_squatted_by_product_code() -> None:
-    """``skill`` 是模型侧激活工具的保留名：产品侧不得占用（否则激活机制被顶掉）。"""
+    """`skill` 是模型侧激活工具的保留名：产品侧不得占用（否则激活机制被顶掉）。"""
     pool = ToolPool()
 
     with pytest.raises(ToolRegistrationError, match="保留名"):
@@ -505,9 +505,9 @@ def _dispatcher_with_runtime_activation(
 
 @pytest.mark.asyncio
 async def test_runtime_activation_makes_the_skills_allowed_tools_usable() -> None:
-    """运行中激活后，该 skill 的 ``allowed-tools`` 必须真的可用（基座第 5 节）。
+    """运行中激活后，该 skill 的 `allowed-tools` 必须真的可用（基座第 5 节）。
 
-    第一版把 skill 名当工具名判定，于是这里会得到 ``tool_not_available``——激活成功、
+    第一版把 skill 名当工具名判定，于是这里会得到 `tool_not_available`——激活成功、
     工具却用不了，是「宣称的语义没有代码承载」。
     """
     calls: list[str] = []
@@ -522,10 +522,10 @@ async def test_runtime_activation_makes_the_skills_allowed_tools_usable() -> Non
 
 @pytest.mark.asyncio
 async def test_runtime_activation_does_not_authorize_a_same_named_tool() -> None:
-    """激活一个与工具同名的 skill，**不得**因此放行那个工具（AG-02）。
+    """激活一个与工具同名的 skill，不得因此放行那个工具（AG-02）。
 
-    第一版只存一个名字集合，激活 skill ``search`` 会让工具 ``search`` 被无条件放行——
-    等价于「激活 skill 即授权同名工具」，而该 skill 的 ``allowed-tools`` 是空的。
+    第一版只存一个名字集合，激活 skill `search` 会让工具 `search` 被无条件放行——
+    等价于「激活 skill 即授权同名工具」，而该 skill 的 `allowed-tools` 是空的。
     """
     calls: list[str] = []
     pool = ToolPool([_spec("search", calls=calls)])
@@ -572,7 +572,7 @@ async def test_dispatch_rejects_unknown_tool() -> None:
 
 @pytest.mark.asyncio
 async def test_dispatch_rejects_out_of_scope_tool_without_calling_it() -> None:
-    """越界调用是硬边界；被拒绝时实现**一次都不能被调用**。"""
+    """越界调用是硬边界；被拒绝时实现一次都不能被调用。"""
     calls: list[str] = []
     pool = ToolPool([_spec("read_alpha", calls=calls), _spec("write_beta", calls=calls)])
 

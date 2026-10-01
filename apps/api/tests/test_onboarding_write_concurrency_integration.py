@@ -8,7 +8,7 @@
     docker compose up -d postgres
     uv run pytest -m integration apps/api/tests/test_onboarding_write_concurrency_integration.py
 
-## 两层并发用例，各自回答不同的问题
+两层并发用例，各自回答不同的问题：
 
 1. `asyncio.gather` 两个写入：回答「两个真并发调用会不会互相撞死、会不会各自谎报」。
    它不保证交错真的发生——两个协程可能被调度成先后完成。

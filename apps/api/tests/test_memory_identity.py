@@ -1,14 +1,14 @@
 """单元测试：记忆的身份与派生标识。
 
-对应 ``docs/技术设计/technical-details/通用记忆.md`` 第 1、3 节与
-``docs/技术设计/decisions/通用记忆归属为账号.md``。
+对应 `docs/技术设计/technical-details/通用记忆.md` 第 1、3 节与
+`docs/技术设计/decisions/通用记忆归属为账号.md`。
 
-这里锁的是三个**实测得到的硬约束**（都不需要真实图库）：
+这里锁的是三个实测得到的硬约束（都不需要真实图库）：
 
 1. 分区键要满足 Graphiti 的 `validate_group_id`——实测 `group_id` 在 FalkorDB 后端
-   **就是图名**，不合法的键会变成「写入成功、读取为空」的静默失败，因此在入口拒绝。
-   **注意**：FalkorDB 图名本身**没有**字符集限制（实测），约束的唯一来源是 Graphiti。
-2. episode 的确定性标识必须**稳定**：同一 `pending_id` 永远派生出同一 uuid
+   就是图名，不合法的键会变成「写入成功、读取为空」的静默失败，因此在入口拒绝。
+   注意：FalkorDB 图名本身没有字符集限制（实测），约束的唯一来源是 Graphiti。
+2. episode 的确定性标识必须稳定：同一 `pending_id` 永远派生出同一 uuid
    （幂等唯一依据），不同 `pending_id` 必须不同（否则两条记忆会撞成一条）。
 3. 外部传入的 episode 标识（删除路径的入口参数）必须是合法 UUID——账本里的脏 key
    不会报错，只会让某条记忆永远删不掉、或误删不到（静默失效）。
@@ -43,7 +43,7 @@ def test_uuid_account_id_is_accepted() -> None:
 def test_underscore_and_hyphen_account_ids_are_accepted() -> None:
     """下划线与连字符均在判据内（与 Graphiti 的 `validate_group_id` 一致）。
 
-    这两类的**落库能力**由 `test_memory_ledger_integration` 用真实 PG 证明
+    这两类的落库能力由 `test_memory_ledger_integration` 用真实 PG 证明
     （账本列已放宽为 varchar；此前是 uuid 列，会拒绝 `acct_aaa`）。
     """
     for raw in ("acct_aaa", "acct-bbb", "Acct123"):
@@ -57,7 +57,7 @@ def test_account_id_must_match_graphiti_group_id_rule() -> None:
     `GroupIdValidationError`（`helpers.py` 的 `re.match`）；在入口拒绝比在图库
     写入时失败更易定位。
 
-    **注意**：FalkorDB 图名本身**没有**字符集限制（实测这些值都能建图），
+    注意：FalkorDB 图名本身没有字符集限制（实测这些值都能建图），
     所以约束的唯一来源是 Graphiti——此处不断言 FalkorDB 的行为。
     """
     for bad in ("acct.aaa", "acct aaa", "账号一号", "acct/aaa", "acct:aaa"):
@@ -79,9 +79,9 @@ def test_trailing_newline_is_rejected_even_though_graphiti_allows_it() -> None:
 def test_empty_account_id_is_rejected() -> None:
     """空账号被拒绝。
 
-    **理由（2026-09-29 评审更正）**：此前写「空串在 Graphiti 里代表默认分区」——
-    该说法**不成立**。Graphiti 的 `validate_group_id('')` 确实放行，但随后
-    `clone(database='')` 会造出一个**空图名的坏驱动**，其建索引任务抛
+    理由（2026-09-29 评审更正）：此前写「空串在 Graphiti 里代表默认分区」——
+    该说法不成立。Graphiti 的 `validate_group_id('')` 确实放行，但随后
+    `clone(database='')` 会造出一个空图名的坏驱动，其建索引任务抛
     `TypeError: Expected a string parameter`。真正回落到默认分区的是
     `group_id=None`（属性为 `'_'`、图仍是配置库）。
     因此「拒绝空值」的正当理由是：它既不是合法图名，也不是框架的默认分区语义，
@@ -94,7 +94,7 @@ def test_empty_account_id_is_rejected() -> None:
 def test_framework_sentinel_account_id_is_rejected() -> None:
     """框架哨兵 `'_'` 被拒绝（`FalkorDriver.default_group_id`）。
 
-    理由：`clone(database='_')` 会走「等于 default_group_id」分支、**落到 `default_db`**
+    理由：`clone(database='_')` 会走「等于 default_group_id」分支、落到 `default_db`
     （实测），与我方写 `'_'` 那张图不是同一个图。允许账号叫 `_` 会造成
     「我方写 A 图、框架写 B 图」的静默分叉。
     """
@@ -142,7 +142,7 @@ def test_account_id_error_is_a_memory_data_error() -> None:
 
 
 def test_same_pending_id_derives_the_same_uuid() -> None:
-    """**幂等的核心断言**：同一 pending_id 永远得到同一 uuid。
+    """幂等的核心断言：同一 pending_id 永远得到同一 uuid。
 
     若这条不成立，重复投递就会在图库里产生第二条 episode（图库的 MERGE 是覆盖
     语义，不会替我们去重）。
@@ -161,7 +161,7 @@ def test_different_pending_ids_derive_different_uuids() -> None:
 
 
 def test_derived_uuid_is_a_parseable_uuid() -> None:
-    """派生结果必须是**合法 uuid**：图库以 uuid 为身份，格式不对会写入失败。"""
+    """派生结果必须是合法 uuid：图库以 uuid 为身份，格式不对会写入失败。"""
     derived = derive_episode_uuid(PendingId("33333333-3333-4333-8333-333333333333"))
     parsed = uuid.UUID(derived)
     assert str(parsed) == derived
@@ -170,7 +170,7 @@ def test_derived_uuid_is_a_parseable_uuid() -> None:
 def test_derived_uuid_is_stable_across_calls_and_processes() -> None:
     """同一 pending_id 反复派生得到同一结果（确定性，不依赖进程状态）。
 
-    UUID 版本号是判据之一：**5 = 基于名字的确定性派生**，4 = 随机。
+    UUID 版本号是判据之一：5 = 基于名字的确定性派生，4 = 随机。
     """
     first = derive_episode_uuid(PendingId("fixed-pending-id"))
     second = derive_episode_uuid(PendingId("fixed-pending-id"))
@@ -179,11 +179,11 @@ def test_derived_uuid_is_stable_across_calls_and_processes() -> None:
 
 
 def test_derived_uuid_matches_a_pinned_golden_vector() -> None:
-    """**黄金向量**：把命名空间常量真正接到派生输出上。
+    """黄金向量：把命名空间常量真正接到派生输出上。
 
     为什么必须有这条（2026-09-29 评审发现的真实漏洞）：原有断言只查「版本 == 5」
     与「常量字面值」，而把 `EPISODE_UUID_NAMESPACE` 换成 `uuid.NAMESPACE_DNS` 时
-    **两条都仍然通过**（实测消融）——派生值已漂移、测试却全绿。后果是所有历史
+    两条都仍然通过（实测消融）——派生值已漂移、测试却全绿。后果是所有历史
     `pending_id` 派生出不同的 uuid：重复投递不再幂等、删除账本对不上旧记录。
 
     这条把「常量 → 输出」的接线钉住：改常量或改派生方式都会让它失败。
@@ -192,7 +192,7 @@ def test_derived_uuid_matches_a_pinned_golden_vector() -> None:
 
 
 def test_derived_uuid_does_not_use_a_standard_namespace() -> None:
-    """反向断言：换成标准命名空间会得到**不同**结果。
+    """反向断言：换成标准命名空间会得到不同结果。
 
     与黄金向量互补——黄金向量防「实现被改」，这条防「常量被换成标准命名空间却
     看起来仍然合理」（例如有人顺手改用 `NAMESPACE_URL`）。
@@ -215,7 +215,7 @@ def test_episode_uuid_namespace_is_pinned() -> None:
     被同一条待处理记录认出，幂等与删除账本同时失效。此断言把该常量钉住。
 
     Note:
-        这条只钉**常量值**；「常量被真正接到派生输出上」由黄金向量
+        这条只钉常量值；「常量被真正接到派生输出上」由黄金向量
         `test_derived_uuid_matches_a_pinned_golden_vector` 负责（2026-09-29 评审
         发现只有这条时，换命名空间不会让任何测试失败）。
     """
@@ -240,7 +240,7 @@ def test_episode_key_accepts_a_canonical_uuid() -> None:
 def test_episode_key_normalizes_non_canonical_uuid_forms() -> None:
     """非规范形式被归一为小写连字符形式。
 
-    为什么重要：账本按 `episode_key` **等值**过滤。若大小写或花括号形式不一致，
+    为什么重要：账本按 `episode_key` 等值过滤。若大小写或花括号形式不一致，
     「同一条记忆」在写入与读取两侧会被当成两个 key——删除记了却过滤不到。
     """
     from campfire.modules.memory.identity import to_episode_key
@@ -251,11 +251,11 @@ def test_episode_key_normalizes_non_canonical_uuid_forms() -> None:
 
 
 def test_episode_key_rejects_whitespace_that_would_silently_remap_it() -> None:
-    """含空白的 episode 标识被拒绝——**不能被静默改写成另一个 key**。
+    """含空白的 episode 标识被拒绝——不能被静默改写成另一个 key。
 
     为什么必须有这条（2026-09-29 评审发现，实测复现）：`uuid.UUID()` 内部先剥连字符
-    再 `int(s, 16)`，而 `int()` **会剥离首尾空白**。于是「长度不变、用一个空白顶替某位
-    hex」的畸形串会被**接受并归一到另一个 UUID**：
+    再 `int(s, 16)`，而 `int()` 会剥离首尾空白。于是「长度不变、用一个空白顶替某位
+    hex」的畸形串会被接受并归一到另一个 UUID：
 
         "3f2504e0-4f89-41d3-9a0c-0305e82c330" + " "  →  03f2504e-04f8-941d-39a0-c0305e82c330
 
