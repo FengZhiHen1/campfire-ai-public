@@ -75,6 +75,9 @@ jobs:
       packages: write
     outputs:
       image_tag: ${{ steps.tag.outputs.image_tag }}
+      # 镜像仓库路径（不含 tag）。下游 `release` 要把它们写进目标机的 `.env.prod`，
+      # 让 compose 的 `image:` 与实际推送的引用同名——否则 `pull` 拉不到（见 release 说明）。
+      image_base: ${{ steps.repo.outputs.base }}
     steps:
       - uses: actions/checkout@v7
 
@@ -218,14 +221,35 @@ jobs:
           GHCR_USER: ${{ github.actor }}
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           IMAGE_TAG: ${{ needs.build-and-push.outputs.image_tag }}
+          # 镜像仓库路径也要写进生产 `.env.prod`：compose 的 `image:` 由
+          # `IMAGE_API`/`IMAGE_WEB` + `IMAGE_TAG` 拼成。此前 compose 写死本地名
+          # （`campfire-api`），与 GHCR 上推的 `ghcr.io/<owner>/<repo>/api` 不同名，
+          # `pull` 永远拉不到——发布链路根本不工作（2026-10-01 修正）。
+          IMAGE_API: ${{ env.REGISTRY }}/${{ needs.build-and-push.outputs.image_base }}/api
+          IMAGE_WEB: ${{ env.REGISTRY }}/${{ needs.build-and-push.outputs.image_base }}/web
         run: |
-          # 目标机上执行：写入 IMAGE_TAG，登录 GHCR，拉镜像。
+          # 目标机上执行：写入三个镜像变量，登录 GHCR，拉镜像。
           # 用 stdin 传脚本而不是把命令拼在命令行里——凭据不进入目标机的进程列表。
-          ssh -i ~/.ssh/id_deploy "$DEPLOY_USER@$DEPLOY_HOST" \
-            "cd '$DEPLOY_PATH' && \
-             sed -i 's/^IMAGE_TAG=.*/IMAGE_TAG=$IMAGE_TAG/' .env.prod && \
-             echo '$GHCR_TOKEN' | docker login ghcr.io -u '$GHCR_USER' --password-stdin && \
-             docker compose -f docker-compose.prod.yml --env-file .env.prod pull"
+          #
+          # 用 `sed` 就地改 `.env.prod` 的既有行；若该行不存在（首次部署）则追加，
+          # 否则首发的 pull 会因为 compose 找不到镜像名而回落到本地构建。
+          ssh -i ~/.ssh/id_deploy "$DEPLOY_USER@$DEPLOY_HOST" bash -s <<REMOTE
+          set -euo pipefail
+          cd '$DEPLOY_PATH'
+          set_kv() {
+            key="\$1"; value="\$2"
+            if grep -q "^\${key}=" .env.prod; then
+              sed -i "s|^\${key}=.*|\${key}=\${value}|" .env.prod
+            else
+              printf '%s=%s\n' "\$key" "\$value" >> .env.prod
+            fi
+          }
+          set_kv IMAGE_TAG '$IMAGE_TAG'
+          set_kv IMAGE_API '$IMAGE_API'
+          set_kv IMAGE_WEB '$IMAGE_WEB'
+          echo '$GHCR_TOKEN' | docker login ghcr.io -u '$GHCR_USER' --password-stdin
+          docker compose -f docker-compose.prod.yml --env-file .env.prod pull
+          REMOTE
 
       - name: 发布前快照（迁移之前的回滚点）
         env:

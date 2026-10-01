@@ -42,6 +42,11 @@ dist/
 coverage.xml
 htmlcov/
 
+# 工具运行的原始证据产物（pytest/mypy/ruff 的 XML 与 JSON、HTML 标记提取等）。
+# 这些是**可重新生成**的中间证据，不是设计权威，也不是任何检查的输入；
+# 留在工作区供人复核，但不进版本库（否则每次跑质量门禁都会污染提交）。
+reports/
+
 # ngrok 公网地址（自动生成，每次启动不同）
 .ngrok-url
 
