@@ -279,8 +279,18 @@ services:
       - "443:443"
     volumes:
       # TLS 证书由运维挂载（仓库内没有任何证书；.gitignore 已忽略 **/nginx/ssl/）。
-      # 目录不存在时 Docker 会创建一个空目录，nginx 仍能启动（TLS 块默认关闭）。
+      # 目录不存在时 Docker 会创建一个空目录，不影响启动。
       - ./infrastructure/nginx/ssl:/etc/nginx/ssl:ro
+      # TLS 启用片段：里面放 443 的 server 块。**空目录时 nginx 照常启动**，
+      # 因此首次部署不必先有证书（通配 include 匹配零个文件，实测 `nginx -t` 通过）。
+      - ./infrastructure/nginx/ssl.d:/etc/nginx/ssl.d:ro
+      # 80→443 跳转片段。**只在 443 真的可达之后写入**——详见 nginx.conf 里的说明：
+      # 云安全组没放行 443 时（本机首次部署即如此），加了跳转会让站点从「能用」
+      # 变成「完全打不开」。空目录 = 不跳转，这是刻意的默认。
+      - ./infrastructure/nginx/redirect.d:/etc/nginx/redirect.d:ro
+      # ACME HTTP-01 的 webroot（读写）：certbot 往这里写验证文件，nginx 读。
+      # 必须可写，否则签发失败。内容无害（一次性随机串），不需要持久化语义。
+      - ./certbot-www:/var/www/certbot
     healthcheck:
       # 打 `/nginx-health`（nginx 直接应答的本地端点），**不是** `/livez`。
       #
