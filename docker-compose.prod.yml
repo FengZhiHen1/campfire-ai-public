@@ -1,0 +1,269 @@
+# ============================================================
+# 篝火智答 (Campfire-AI) — 生产编排
+#
+# 与 `docker-compose.yml`（本地开发）的区别，逐条都是刻意的：
+#
+# 1. **数据服务不暴露任何宿主端口**。dev 那份绑回环（`127.0.0.1:`）是对的取舍，
+#    但生产不需要宿主访问——只有 api/worker 经容器内网连它们。完全不写 `ports`
+#    比写回环更安全：回环也仍是宿主上的一个开放端口，任何能在宿主上执行命令的
+#    进程都能直连数据库。容器之间用服务名互通，因此不写 ports 零影响。
+# 2. **只有 web（nginx）对外暴露端口**，它是唯一入口，承担 TLS 与反代。
+# 3. **api 单 worker**（不使用 `--workers N`）：取消路径的索引在进程内
+#    （`surfaces/consult/runbus.py` 明写「一期是单进程 uvicorn，这个边界不成立；
+#    多进程部署时需要把取消改成走共享信道」）。多 worker 会让取消端点返回 409 假阴性。
+#    需要横向扩容时应先实现共享取消信道，而不是直接加 worker 数。
+# 4. **凭据一律经 `.env.prod`**（不进版本库）。dev 的 `.env` 含占位凭据
+#    （实测 `POSTGRES_PASSWORD=changeme`、`SUPERTOKENS_API_KEY=change-me-to-a-random-secret`），
+#    **不得直接用于生产**——见下方 `env_file` 处的警告。
+#
+# 启动：docker compose -f docker-compose.prod.yml --env-file .env.prod up -d
+# 迁移：docker compose -f docker-compose.prod.yml run --rm api alembic upgrade head
+#   （HTTP 容器默认 RUN_MIGRATIONS=1 会自己跑，但发布流程通常想先迁移再切流量）
+#
+# ⚠️ 未定项（如实声明，不编造）：域名、TLS 证书来源、目标服务器在仓库中**不存在
+#    任何事实**（docs/服务器选型事实基线.md 与 docs/TODO.md 都写「未定」）。
+#    下面凡涉及它们的都用 `${VAR:?}` 形式强制显式提供，缺失即启动失败——
+#    这比填一个看似合理的默认值安全：默认值会静默生效，而缺值会立刻报错。
+# ============================================================
+
+name: campfire
+
+services:
+  # --- PostgreSQL 17 + pgvector（业务数据、会话、SuperTokens core 的表）---
+  postgres:
+    image: pgvector/pgvector:pg17
+    container_name: campfire-postgres
+    restart: unless-stopped
+    # 容器内网互相访问需要容器名可解析；不暴露宿主端口（见文件头第 1 条）。
+    expose:
+      - "5432"
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-campfire}
+      # 强制显式提供：占位值在生产等于没有密码。
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?生产必须显式设置 POSTGRES_PASSWORD（不得用 changeme）}
+      POSTGRES_DB: ${POSTGRES_DB:-campfire}
+    volumes:
+      - pgdata_prod:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-campfire} -d ${POSTGRES_DB:-campfire}"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 30s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+  # --- Redis 7（缓存、限流与 Taskiq 队列）---
+  redis:
+    image: redis:7-alpine
+    container_name: campfire-redis
+    restart: unless-stopped
+    # Redis 无强凭据时不得暴露；这里同时不写 ports 且要求显式密码。
+    command: ["redis-server", "--requirepass", "${REDIS_PASSWORD:?生产必须显式设置 REDIS_PASSWORD}"]
+    expose:
+      - "6379"
+    volumes:
+      - redis_data_prod:/data
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a \"$$REDIS_PASSWORD\" ping | grep -q PONG"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?生产必须显式设置 REDIS_PASSWORD}
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # --- FalkorDB（Graphiti 长期记忆）---
+  falkordb:
+    image: falkordb/falkordb:v4.20.7-alpine
+    container_name: campfire-falkordb
+    restart: unless-stopped
+    # 容器内端口是 6379（dev 那份映射到宿主 6380 是为了避开 Redis 的 6379；
+    # 生产不映射宿主端口，因此容器内直接用 6379，`FALKORDB_PORT` 也按 6379 配）。
+    expose:
+      - "6379"
+    environment:
+      # FalkorDB 基于 Redis，支持 requirepass。dev 那份未设（本地容器默认无密码），
+      # 生产必须设（见 `FALKORDB_PASSWORD`）。
+      REDIS_ARGS: "--requirepass ${FALKORDB_PASSWORD:?生产必须显式设置 FALKORDB_PASSWORD}"
+    volumes:
+      - falkordb_data_prod:/data
+    healthcheck:
+      # dev 那份的 healthcheck 自注「未实测」；这里用带密码的 ping。
+      test: ["CMD-SHELL", "redis-cli -p 6379 -a \"$$FALKORDB_PASSWORD\" ping | grep -q PONG"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 15s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # --- SuperTokens core（鉴权关键路径：它不可用则全部受限操作不可用，fail-closed）---
+  supertokens:
+    image: supertokens/supertokens-postgresql:12.2.0
+    container_name: campfire-supertokens
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    expose:
+      - "3567"
+    environment:
+      POSTGRESQL_CONNECTION_URI: postgresql://${POSTGRES_USER:-campfire}:${POSTGRES_PASSWORD:?}@postgres:5432/${POSTGRES_DB:-campfire}
+      API_KEYS: ${SUPERTOKENS_API_KEY:?生产必须显式设置 SUPERTOKENS_API_KEY}
+    healthcheck:
+      # dev 那份**没有** healthcheck，而它在鉴权关键路径上——没有它，
+      # `depends_on: service_healthy` 无从表达「等 core 起来再给流量」。
+      # `/hello` 不需要 API key（实测），因此这里不传凭据。
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3567/hello || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 20s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # --- API（FastAPI + 咨询面 Agent 运行）---
+  api:
+    build:
+      context: .
+      dockerfile: infrastructure/docker/Dockerfile.api
+    image: campfire-api:${IMAGE_TAG:-local}
+    container_name: campfire-api
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      falkordb:
+        condition: service_healthy
+      supertokens:
+        condition: service_healthy
+    # 生产凭据所在。**不得指向 dev 的 `.env`**——那份含占位凭据（changeme 等）。
+    env_file:
+      - .env.prod
+    environment:
+      # 服务名寻址（容器内网），覆盖 .env.prod 里可能写着的 localhost。
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-campfire}:${POSTGRES_PASSWORD:?}@postgres:5432/${POSTGRES_DB:-campfire}
+      REDIS_URL: redis://:${REDIS_PASSWORD:?}@redis:6379/0
+      FALKORDB_HOST: falkordb
+      FALKORDB_PORT: "6379"
+      FALKORDB_PASSWORD: ${FALKORDB_PASSWORD:?}
+      SUPERTOKENS_CONNECTION_URI: http://supertokens:3567
+      APP_ENV: production
+      # 迁移由本容器执行（Worker 设为 0，避免两个容器并发改 schema）。
+      RUN_MIGRATIONS: "1"
+    expose:
+      - "8000"
+    healthcheck:
+      # 用 `/readyz` 而不是 `/health`：两者口径相同，但 `/readyz` 的名字表达了用途
+      # （部署系统判据）。**刻意不用 `/livez`**——那只看进程活着，会让「装配失败、
+      # 核心端点必回 503」的版本被判健康，那正是本次修掉的假健康。
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8000/readyz || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      # 装配要构造模型网关并读 skill 目录，给它一点时间；期内失败不计入 retries。
+      start_period: 40s
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "5"
+
+  # --- Worker（Taskiq 消费待处理写入与兜底扫描）---
+  worker:
+    build:
+      context: .
+      dockerfile: infrastructure/docker/Dockerfile.api
+    image: campfire-api:${IMAGE_TAG:-local}
+    container_name: campfire-worker
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      falkordb:
+        condition: service_healthy
+      # 等 api 健康再起 Worker：api 会跑迁移，Worker 依赖迁移后的 schema。
+      api:
+        condition: service_healthy
+    env_file:
+      - .env.prod
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-campfire}:${POSTGRES_PASSWORD:?}@postgres:5432/${POSTGRES_DB:-campfire}
+      REDIS_URL: redis://:${REDIS_PASSWORD:?}@redis:6379/0
+      FALKORDB_HOST: falkordb
+      FALKORDB_PORT: "6379"
+      FALKORDB_PASSWORD: ${FALKORDB_PASSWORD:?}
+      SUPERTOKENS_CONNECTION_URI: http://supertokens:3567
+      APP_ENV: production
+      # 迁移不在这里跑（见 api 的说明）：两个容器并发 `alembic upgrade head`
+      # 会并发改 schema，而 Alembic 的版本表不为此加锁。
+      RUN_MIGRATIONS: "0"
+    command: ["taskiq", "worker", "campfire.worker:broker"]
+    # Worker 没有 HTTP 端点，因此**没有 healthcheck**。它的存活由 restart 策略与
+    # 待处理记录的记账（兜底扫描）保证——硬塞一个 `pgrep` 式的检查只会制造
+    # 「进程在但消费卡住」的假健康。
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "5"
+
+  # --- Web（Nginx：SPA 静态托管 + 反代，唯一对外入口）---
+  web:
+    build:
+      context: .
+      dockerfile: infrastructure/docker/Dockerfile.web
+      args:
+        # 构建期内联（见 Dockerfile.web 文件头第 2 条）。必须是外部可访问的站点地址。
+        VITE_API_DOMAIN: ${PUBLIC_BASE_URL:?生产必须显式设置 PUBLIC_BASE_URL（对外站点地址）}
+    image: campfire-web:${IMAGE_TAG:-local}
+    container_name: campfire-web
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+    ports:
+      # 唯一对外暴露的服务。80 供反代/跳转；启用 TLS 后 443 也从这里出去
+      # （nginx.conf 里的 TLS server 块默认注释，证书就位后打开）。
+      - "80:80"
+      - "443:443"
+    volumes:
+      # TLS 证书由运维挂载（仓库内没有任何证书；.gitignore 已忽略 **/nginx/ssl/）。
+      # 目录不存在时 Docker 会创建一个空目录，nginx 仍能启动（TLS 块默认关闭）。
+      - ./infrastructure/nginx/ssl:/etc/nginx/ssl:ro
+    healthcheck:
+      # 用 `/livez`：它只证明 nginx 在服务，不依赖后端——后端不可用时 nginx 本身
+      # 没坏，重启它没有意义（那正是区分 livez/readyz 的理由）。
+      test: ["CMD-SHELL", "wget -qO- http://localhost/livez || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  # 生产卷名与 dev 的 `*_dev` 区分开：两者互不影响，误指向 dev 卷不会污染生产数据。
+  pgdata_prod:
+  redis_data_prod:
+  falkordb_data_prod:

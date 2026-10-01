@@ -1,0 +1,93 @@
+# 后端镜像：HTTP（uvicorn）与 Worker（taskiq）共用同一个镜像，只是启动命令不同。
+#
+# 两条决定与理由（都不是风格偏好）：
+#
+# 1. **镜像内必须保持仓库目录层级** `<root>/apps/api/src/campfire/...`。
+#    `core/config.py` 用 `Path(__file__).resolve().parents[5]` 当仓库根、
+#    `parents[3]` 当 apps/api，据此定位 `.env` 与 `skill_root`。若把包装进
+#    site-packages（`pip install`），这两个下标会指向 `/usr/local/lib/python3.12`
+#    与 `/usr/local`，`.env` 与 skill 目录全错。因此这里复制的是**目录树**，
+#    并在原位置执行，而不是安装成包。
+#
+# 2. **`apps/api/skills/` 必须单独复制**。它在 `src/campfire` 之外，而 hatch 的
+#    wheel 只打包 `packages = ["src/campfire"]`——skills 不随包走。缺了它
+#    `skill_root` 找不到 4 个 skill，`/readyz` 的 `skills` 项会报不可用，
+#    且模型没有任何技能可依。
+#
+# `alembic.ini` 在仓库根（`script_location = %(here)s/apps/api/migrations`），
+# 因此迁移必须在仓库根执行——镜像的 WORKDIR 就是仓库根，与文档一致。
+
+# --- 依赖层：只依赖 lock 与 pyproject，改源码不触发重装 ---
+FROM python:3.12-slim AS deps
+
+# uv 的官方静态二进制。钉版本而不是用 latest：镜像构建应当可重复。
+COPY --from=ghcr.io/astral-sh/uv:0.9.7 /uv /uvx /bin/
+
+ENV UV_LINK_MODE=copy \
+    UV_COMPILE_BYTECODE=1 \
+    UV_PYTHON_DOWNLOADS=never
+
+WORKDIR /app
+
+# 先只放依赖清单：这一层在源码改动时命中缓存。
+# uv 工作空间根是仓库根的 pyproject.toml，成员是 apps/api，因此两份都要在。
+# uv.lock 必须一起进——`--frozen` 要求 lock 与清单一致，否则直接失败（这是我们要的：
+# 镜像不该偷偷解析出与开发环境不同的版本）。
+COPY pyproject.toml uv.lock ./
+COPY apps/api/pyproject.toml apps/api/
+
+# `--no-install-project`：这一步只装第三方依赖，不装本项目（本项目经目录树提供）。
+# `--no-dev`：生产镜像不带 ruff/mypy/pytest 等开发依赖。
+RUN uv sync --frozen --no-dev --no-install-project
+
+# --- 运行层 ---
+FROM python:3.12-slim AS runtime
+
+# 运行期只装 curl（容器健康检查用）。不装构建工具：依赖已在 deps 层装好。
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# 非 root 运行。用固定 uid/gid（10001）而不是 useradd 的默认值：
+# 固定值让宿主上的卷属主可预测（运维需要知道该给数据目录什么属主）。
+RUN groupadd --gid 10001 campfire \
+    && useradd --uid 10001 --gid 10001 --create-home --shell /usr/sbin/nologin campfire
+
+COPY --from=ghcr.io/astral-sh/uv:0.9.7 /uv /uvx /bin/
+
+# 虚拟环境从 deps 层整体复制（路径一致：/app/.venv），因此里面的 shebang 仍然有效。
+COPY --from=deps /app/.venv /app/.venv
+
+WORKDIR /app
+
+# 目录树（保持层级，见文件头第 1 条）。只复制运行需要的东西：
+# 迁移、后端源码、技能内容、以及三个入口共同依赖的配置。
+COPY pyproject.toml uv.lock alembic.ini ./
+COPY apps/api/pyproject.toml apps/api/
+COPY apps/api/src apps/api/src
+COPY apps/api/migrations apps/api/migrations
+# skills 单独复制（见文件头第 2 条）
+COPY apps/api/skills apps/api/skills
+COPY infrastructure/docker/entrypoint-api.sh /usr/local/bin/entrypoint-api.sh
+
+RUN chmod +x /usr/local/bin/entrypoint-api.sh \
+    && chown -R campfire:campfire /app
+
+ENV PATH="/app/.venv/bin:$PATH" \
+    PYTHONPATH="/app/apps/api/src" \
+    PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    # 默认生产环境标识。可被运行时环境变量覆盖。
+    APP_ENV=production
+
+USER campfire
+
+# 文档端口（uvicorn 默认 8000）。Worker 不使用它。
+EXPOSE 8000
+
+# 默认入口是 HTTP。Worker 用 `command: ["taskiq", "worker", "campfire.worker:broker"]` 覆盖。
+#
+# 健康检查**不放在这里**：compose 里按角色分别声明（HTTP 用 `/readyz`，Worker 没有
+# HTTP 端点）。放在镜像里会让 Worker 也去探一个它没有的端口。
+ENTRYPOINT ["/usr/local/bin/entrypoint-api.sh"]
+CMD ["uvicorn", "campfire.main:app", "--host", "0.0.0.0", "--port", "8000"]

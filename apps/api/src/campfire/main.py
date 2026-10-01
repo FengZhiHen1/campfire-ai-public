@@ -8,7 +8,7 @@
 import asyncio
 import logging
 from collections.abc import AsyncIterator, Awaitable, Callable
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 
 from falkordb.asyncio import FalkorDB  # type: ignore[import-untyped]  # 上游无 py.typed；行为由集成测试锁定
 from fastapi import FastAPI
@@ -171,20 +171,32 @@ async def check_falkordb(settings: Settings) -> ComponentHealth:
     而探针不该为了探活把生产资源拉起来。探针按调用建连、用毕即关。
 
     失败只回报异常类型：FalkorDB 的报错文本可能含主机与端口。
+
+    构造也必须在 `try` 内（实测教训，2026-10-01）：`FalkorDB(...)` 的构造函数**本身就
+    发网络 I/O**——图库不可达时它在构造期就抛 `ConnectionError`。第一版把构造写在
+    `try` 之外，于是 `/readyz` 在图库挂掉时回 **500**（未捕获异常）而不是「503 且
+    falkordb 项不可用」。这正好毁掉这个探针存在的意义：让健康检查如实报告，
+    而不是把自己炸掉。同一教训在 `tests/conftest.py` 的
+    `connect_falkordb_or_skip` 里已有记录（那里也是为此把构造放进 try）。
     """
-    client = FalkorDB(
-        host=settings.falkordb_host,
-        port=settings.falkordb_port,
-        password=(settings.falkordb_password.get_secret_value() if settings.falkordb_password else None),
-        socket_timeout=settings.falkordb_timeout_seconds,
-        socket_connect_timeout=settings.falkordb_timeout_seconds,
-    )
+    client: FalkorDB | None = None
     try:
+        client = FalkorDB(
+            host=settings.falkordb_host,
+            port=settings.falkordb_port,
+            password=(settings.falkordb_password.get_secret_value() if settings.falkordb_password else None),
+            socket_timeout=settings.falkordb_timeout_seconds,
+            socket_connect_timeout=settings.falkordb_timeout_seconds,
+        )
         await client.connection.ping()
     except Exception as exc:  # noqa: BLE001 —— 探针吞掉一切驱动异常并如实上报
         return ComponentHealth("falkordb", Status.UNAVAILABLE, f"图库不可达（{type(exc).__name__}）")
     finally:
-        await client.connection.aclose()
+        # 构造失败时 client 仍为 None，故先判空；关闭失败不得掩盖上面那条结论
+        # （探针的返回值已经确定，收尾异常只吞掉，否则健康检查会因清理失败而 500）。
+        if client is not None:
+            with suppress(Exception):
+                await client.connection.aclose()
     return ComponentHealth("falkordb", Status.OK, "连接正常")
 
 
