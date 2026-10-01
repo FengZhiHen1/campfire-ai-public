@@ -21,6 +21,8 @@
 9. **应急八组**：只取稳定层；某组未预存返回显式 absent；`communication` 是具名结构。
 10. **摘要 `possibly_stale`**：有未完成待处理记录时为真。
 11. **幂等键**：`pending_id` 唯一，重复消费不产生第二条目。
+12. **历史回看开关**：`include_superseded` 只放开「已被取代」这一条轴
+    ——`rejected` 与候选层都不受影响，注入路径不接它。
 """
 
 from __future__ import annotations
@@ -495,6 +497,62 @@ async def test_correction_keeps_the_old_item_readable_as_history() -> None:
         row = await repo.get_item(session, item_id=old_id)
     assert row is not None, "旧条目不得被物理删除"
     assert row.description == "旧描述"
+
+
+@pytest.mark.asyncio
+async def test_superseded_gate_is_independent_of_the_candidate_axis() -> None:
+    """`include_superseded` 与 `include_candidates` 是两条独立的轴，互斥不成立。
+
+    ① 稳定侧：只开 `include_superseded` 就能回看被取代的旧条目；
+    ② 候选侧：同样只开 `include_superseded` 时，被取代的**候选**仍取不到
+       ——历史回看不越过候选层（未确认内容不得混进稳定列表）；
+    ③ 两个开关都开：被取代的候选也返回，且进 `items` 而不进 `candidates`
+       ——候选组是「待确认」，确认一条已被取代的条目没有意义；
+    ④ 注入路径不接这个开关：`resolve_for_context` 取不到任何历史条目
+       （历史条目「此后不参与注入」）。
+    """
+    stable_object = await _new_object(name="稳定侧对象")
+    stable_old = await _propose(stable_object, origin="user_statement", description="旧的稳定条目")
+    async with session_scope(get_settings()) as session:
+        await service.correct_item(session, account_id=_ACCOUNT, item_id=stable_old, description="改写后的稳定条目")
+
+    candidate_object = await _new_object(name="候选侧对象")
+    candidate_old = await _propose(candidate_object, origin="ai_inference", description="旧的候选推断")
+    async with session_scope(get_settings()) as session:
+        await service.correct_item(session, account_id=_ACCOUNT, item_id=candidate_old, description="改写后的候选推断")
+
+    # ① + ④ 稳定侧。
+    async with session_scope(get_settings()) as session:
+        stable_view = await service.read_items(
+            session, account_id=_ACCOUNT, support_object_id=stable_object, include_superseded=True
+        )
+        injected = await service.resolve_for_context(
+            session, account_id=_ACCOUNT, support_object_id=stable_object, include_candidates=True
+        )
+    assert [item.description for item in stable_view.items] == ["改写后的稳定条目", "旧的稳定条目"]
+    assert stable_view.candidates == []
+    assert [item.description for item in injected] == ["改写后的稳定条目"], "注入路径不接历史回看开关"
+
+    # ② 候选侧：候选轴关着，历史回看不放行。
+    async with session_scope(get_settings()) as session:
+        candidate_closed = await service.read_items(
+            session, account_id=_ACCOUNT, support_object_id=candidate_object, include_superseded=True
+        )
+    assert [item.description for item in candidate_closed.items] == ["改写后的候选推断"]
+
+    # ③ 两条轴都开：被取代的候选返回，且不改它「未确认」的标记与本组归属。
+    async with session_scope(get_settings()) as session:
+        candidate_open = await service.read_items(
+            session,
+            account_id=_ACCOUNT,
+            support_object_id=candidate_object,
+            include_candidates=True,
+            include_superseded=True,
+        )
+    assert [item.description for item in candidate_open.items] == ["改写后的候选推断", "旧的候选推断"]
+    assert candidate_open.candidates == [], "已被取代的条目不得混进「待确认」分组"
+    assert candidate_open.items[1].confirmation == "unconfirmed", "历史回看不改写确认状态"
+    assert candidate_open.items[1].freshness == "historical"
 
 
 @pytest.mark.parametrize("already_confirmed", [False, True])

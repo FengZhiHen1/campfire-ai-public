@@ -527,6 +527,7 @@ async def list_items(
     account_id: Annotated[str, Depends(current_account)],
     domain: Annotated[list[str] | None, Query(description="领域过滤，可重复传入")] = None,
     include_candidates: Annotated[bool, Query()] = False,
+    include_superseded: Annotated[bool, Query(description="是否一并返回已被取代的历史条目（默认不返回）")] = False,
     cursor: Annotated[str | None, Query()] = None,
     limit: Annotated[int, Query(ge=1, le=ITEMS_MAX_LIMIT)] = ITEMS_DEFAULT_LIMIT,
 ) -> ItemsPayload | JSONResponse:
@@ -538,6 +539,13 @@ async def list_items(
     `candidates` 只在第一页返回：候选层是「待确认」小分组、不是可分页的流，
     而 `items` 才是被游标分页的那一条流。把两者混在一个游标里需要「合并后的
     原始顺序」，而用例层的返回结构已经把它们分成两组、丢失了交错关系。
+
+    已被取代的历史条目默认不返回。`include_superseded = true` 时它们随 `items`
+    返回（带 `freshness = historical` 与互指的 `superseded_by`／`supersedes`），
+    由档案页出行首「已更正」标——与 `items` 同一条流、同一个排序，因此历史条目
+    按既有的首次记录时间倒序插在它原本的位置上。这个开关只放宽「已被取代」，
+    `confirmation = rejected` 的条目一律不返回，历史回看不适用于被否定的内容。
+    `include_candidates` 管的是另一条轴（候选层是否返回），两者不互斥。
     """
     # 游标是本面自定的不透明串（十进制偏移量），只由本面产生、只被本面消费。
     # 用偏移量而不是键集游标：用例层只接 `limit`（不接「从某键之后」的谓词），
@@ -555,6 +563,7 @@ async def list_items(
                 support_object_id=support_object_id,
                 domains=domain,
                 include_candidates=include_candidates,
+                include_superseded=include_superseded,
                 limit=_page_window(offset, limit),
             )
     except (AuthorizationError, ProfileError) as exc:
