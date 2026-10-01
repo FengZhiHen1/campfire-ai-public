@@ -114,6 +114,27 @@ STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
 DEST="$OUT_DIR/$STAMP"
 mkdir -p "$DEST"
 
+# 把 env 文件里的密码读进**本脚本自己的环境**（2026-10-01 真机踩到的第二个缺陷）。
+#
+# ⚠️ `--env-file` 只喂给 `docker compose`，**不会**导出到脚本进程。此前 `falkor_cli`
+# 判断的是 `${FALKORDB_PASSWORD:-}`，而那个变量在本脚本里**始终为空**，于是永远走
+# 「不带密码」的分支 → `redis-cli` 返回 `NOAUTH`。
+#
+# 后果很隐蔽：`NOAUTH Authentication required.` 这行文本被当成 `LASTSAVE` 的值，
+# 而 `redis-cli` 在未认证时**退出码仍是 0**（实测），所以：
+#   - 守卫 `if ! falkor_cli PING` 抓不到（退出码 0，看起来成功）；
+#   - `before` 与轮询到的 `now` 是同一行错误文本，永远相等；
+#   → 必然报「30 秒内未完成 BGSAVE」，**看起来像持久化卡住，实际是没认证**。
+#
+# 用 `set -a` + `.` 把文件里的变量导出（与 compose 读的是同一个文件，不会漂移）；
+# 文件不存在就跳过——后续的 PING 守卫会以清晰的报错兜住。
+if [ -n "$ENV_FILE" ] && [ -f "$ENV_FILE" ]; then
+    set -a
+    # shellcheck disable=SC1090
+    . "./$ENV_FILE" 2>/dev/null || . "$ENV_FILE" 2>/dev/null || true
+    set +a
+fi
+
 echo "备份目录：$DEST"
 echo
 
@@ -178,10 +199,16 @@ falkor_cli() {
 }
 
 # 先探一次，把「未认证」这类问题**在开始轮询之前**就报出来，而不是伪装成超时。
-if ! falkor_cli PING > /dev/null 2>&1; then
-    echo "错误：FalkorDB PING 失败——检查 FALKORDB_PASSWORD 是否与容器一致。" >&2
-    echo "      （未认证时 redis-cli 返回 NOAUTH，而轮询 LASTSAVE 会把它误报成超时）" >&2
-    falkor_cli PING >&2 || true
+#
+# ⚠️ 不能只看退出码（2026-10-01 真机踩到）：`redis-cli` 在未认证时打印
+# `NOAUTH Authentication required.` 但**退出码仍是 0**（实测），因此
+# `if ! falkor_cli PING` 这个写法永远为假，守卫形同虚设。改为**检查输出内容**是否
+# 恰好是 `PONG`——这才是「认证通过且服务可用」的判据。
+falkor_ping="$(falkor_cli PING 2>&1 | tr -d '\r' | tail -n 1)"
+if [ "$falkor_ping" != "PONG" ]; then
+    echo "错误：FalkorDB PING 未返回 PONG（实际：$falkor_ping）" >&2
+    echo "      常见原因：FALKORDB_PASSWORD 与容器内不一致，或 env 文件未被读到。" >&2
+    echo "      注意 redis-cli 未认证时退出码为 0，所以这里判的是**输出**而非退出码。" >&2
     exit 2
 fi
 
