@@ -1,30 +1,30 @@
 """集成测试：档案条目的落层分流、确认/纠正/删除、摘要与应急取数（真实 PostgreSQL）。
 
-对应 ``docs/技术设计/technical-details/个性化档案.md`` 第 2、3、4、8 节与
-``docs/技术设计/面/profile/档案面HTTP契约.md`` 第 3、4、5 节。
+对应 `docs/技术设计/technical-details/个性化档案.md` 第 2、3、4、8 节与
+`docs/技术设计/面/profile/档案面HTTP契约.md` 第 3、4、5 节。
 
     docker compose up -d postgres
     uv run pytest -m integration apps/api/tests/test_profile_items_integration.py
 
-## 本文件守住的核心判据
+本文件守住的核心判据：
 
-1. **落层分流六用例**（第 10 节验证方式）：四种非推断 `origin` 各提交一条进稳定层；
-   两种推断 `origin` 只进候选层、**摘要中不出现**。
-2. **推断不得自认已确认**：`ai_inference` + `confirmed` 被**拒绝**且**未落库**。
-3. **候选隔离**：候选不混进 `items`（由返回结构保证，`AC-18`）。
-4. **否定不回潮**：`rejected` 不进摘要、不参与注入、不再作候选。
-5. **降权（90 天）**：不进摘要与默认读取、被检索到时标注陈旧、**未被删除**。
-6. **纠正**：新旧互指、旧条目转 `historical`、注入只含新条目；纠正推断来源的条目
+1. 落层分流六用例（第 10 节验证方式）：四种非推断 `origin` 各提交一条进稳定层；
+   两种推断 `origin` 只进候选层、摘要中不出现。
+2. 推断不得自认已确认：`ai_inference` + `confirmed` 被拒绝且未落库。
+3. 候选隔离：候选不混进 `items`（由返回结构保证，`AC-18`）。
+4. 否定不回潮：`rejected` 不进摘要、不参与注入、不再作候选。
+5. 降权（90 天）：不进摘要与默认读取、被检索到时标注陈旧、未被删除。
+6. 纠正：新旧互指、旧条目转 `historical`、注入只含新条目；纠正推断来源的条目
    把生成方式重绑为 `user_statement`，不造出「推断被写成已确认」的行。
 7. 删除不再被取数（`AC-08`），且行消失后重复删除报「不可访问」（裁决 1）。
-8. **摘要覆盖性**：十二字段都能生产；只有候选条目的对象返回「无档案」而非空对象。
-9. **应急八组**：只取稳定层；某组未预存返回显式 absent；`communication` 是具名结构。
-10. **摘要 `possibly_stale`**：有未完成待处理记录时为真。
-11. **幂等键**：`pending_id` 唯一，重复消费不产生第二条目。
-12. **历史回看开关**：`include_superseded` 只放开「已被取代」这一条轴
+8. 摘要覆盖性：十二字段都能生产；只有候选条目的对象返回「无档案」而非空对象。
+9. 应急八组：只取稳定层；某组未预存返回显式 absent；`communication` 是具名结构。
+10. 摘要 `possibly_stale`：有未完成待处理记录时为真。
+11. 幂等键：`pending_id` 唯一，重复消费不产生第二条目。
+12. 历史回看开关：`include_superseded` 只放开「已被取代」这一条轴
     ——`rejected` 与候选层都不受影响，注入路径不接它；历史条目的归组按它曾属哪一层
     （未确认的系统推断即便被取代也归 `candidates`）。
-13. **历史条目只可回看**：已被取代的条目不得被确认、也不得被否定（两处守卫；
+13. 历史条目只可回看：已被取代的条目不得被确认、也不得被否定（两处守卫；
     此前对「已取代 + 未确认」的行两者都会成功）；删除不受影响（`RQ-MEM-03` 的删）。
 """
 
@@ -165,7 +165,7 @@ async def _superseded_unconfirmed_candidate(object_id: str) -> tuple[str, str]:
 
 @pytest.mark.asyncio
 async def test_the_four_non_inferred_origins_land_in_the_stable_layer() -> None:
-    """四种非推断 `origin` **各提交一条**，全部直接进稳定层（第 3 节的落层表）。
+    """四种非推断 `origin` 各提交一条，全部直接进稳定层（第 3 节的落层表）。
 
     注意 `third_party_report` 与 `document`：它们进稳定层，但 `confirmation`
     仍是 `unconfirmed`——「直接稳定层」说的是参与取数，不是「已确认」。
@@ -192,7 +192,7 @@ async def test_the_four_non_inferred_origins_land_in_the_stable_layer() -> None:
 
 @pytest.mark.asyncio
 async def test_the_two_inferred_origins_land_only_in_the_candidate_layer() -> None:
-    """两种推断 `origin` 各提交一条，**只进候选层**且**摘要中不出现**（`AC-18`）。
+    """两种推断 `origin` 各提交一条，只进候选层且摘要中不出现（`AC-18`）。
 
     「不出现」是本条的关键：候选不得以事实语气进入摘要——这是 `RQ-MEM-04`
     的可观察面，也是 `AC-18` 的验收对象。
@@ -221,9 +221,9 @@ async def test_the_two_inferred_origins_land_only_in_the_candidate_layer() -> No
 
 @pytest.mark.asyncio
 async def test_candidates_are_not_mixed_into_items_by_default() -> None:
-    """`include_candidates=False` 时**不得混入候选**（`read_profile_items` 契约第 4 节）。
+    """`include_candidates=False` 时不得混入候选（`read_profile_items` 契约第 4 节）。
 
-    这是候选隔离的服务端侧保证：由**返回结构**保证，而不是靠前端自己分。
+    这是候选隔离的服务端侧保证：由返回结构保证，而不是靠前端自己分。
     """
     object_id = await _new_object()
     await _propose(object_id, origin="user_statement", description="已确认的事实")
@@ -244,9 +244,9 @@ async def test_candidates_are_not_mixed_into_items_by_default() -> None:
 
 @pytest.mark.asyncio
 async def test_inferred_with_confirmed_is_rejected_and_not_persisted() -> None:
-    """`ai_inference` + `confirmed` 被**拒绝**且**未落库**（`RQ-MEM-04`）。
+    """`ai_inference` + `confirmed` 被拒绝且未落库（`RQ-MEM-04`）。
 
-    两件事都要断言：拒绝（请求被拒，不是降级改写），以及**没有落库**
+    两件事都要断言：拒绝（请求被拒，不是降级改写），以及没有落库
     ——只断言异常时，一个「先写后校验」的实现仍会通过。
     """
     object_id = await _new_object()
@@ -294,7 +294,7 @@ async def test_inferred_with_confirmed_is_rejected_and_not_persisted() -> None:
 
 @pytest.mark.asyncio
 async def test_user_statement_with_confirmed_is_accepted() -> None:
-    """**正向对照**：`user_statement` + `confirmed` 合法——陈述本身即确认。
+    """正向对照：`user_statement` + `confirmed` 合法——陈述本身即确认。
 
     没有这条，上面的「拒绝」可能只是「一切 confirmed 都被拒」。
     """
@@ -334,7 +334,7 @@ async def test_confirm_moves_a_candidate_into_the_stable_layer() -> None:
 
 @pytest.mark.asyncio
 async def test_confirm_only_applies_to_unconfirmed_items() -> None:
-    """确认**只能作用于候选条目**；对已确认或已否定的条目失败（契约第 4 节）。"""
+    """确认只能作用于候选条目；对已确认或已否定的条目失败（契约第 4 节）。"""
     object_id = await _new_object()
     # 已确认的条目（user_statement 入档即 confirmed）。
     stable_id = await _propose(object_id, origin="user_statement")
@@ -354,10 +354,10 @@ async def test_confirm_only_applies_to_unconfirmed_items() -> None:
 
 @pytest.mark.asyncio
 async def test_rejected_candidate_never_comes_back() -> None:
-    """**否定不回潮**：`rejected` 不进摘要、不参与注入、不再作候选（第 2 节）。
+    """否定不回潮：`rejected` 不进摘要、不参与注入、不再作候选（第 2 节）。
 
     三处一次断言：摘要不含、`resolve_for_context(include_candidates=True)` 不含、
-    `read_items(include_candidates=True)` 不含。否定**不物理删除**行。
+    `read_items(include_candidates=True)` 不含。否定不物理删除行。
     """
     object_id = await _new_object()
     item_id = await _propose(object_id, origin="ai_inference", description="被否定的一条推断")
@@ -402,7 +402,7 @@ async def test_reject_only_applies_to_candidates() -> None:
 
 @pytest.mark.asyncio
 async def test_confirm_is_rejected_on_a_superseded_unconfirmed_item() -> None:
-    """已被取代 + 未确认的条目 → 确认被拒，且状态**没有落库**。
+    """已被取代 + 未确认的条目 → 确认被拒，且状态没有落库。
 
     设计对历史条目的话是「可回看」（第 5 节第 5 条），回看即只读；`RQ-MEM-03`
     给使用者的条目能力是「查 / 纠 / 删」，没有「确认一条已被取代的条目」。
@@ -437,7 +437,7 @@ async def test_confirm_is_rejected_on_a_superseded_unconfirmed_item() -> None:
 
 @pytest.mark.asyncio
 async def test_reject_is_rejected_on_a_superseded_unconfirmed_item() -> None:
-    """已被取代 + 未确认的条目 → 否定被拒，且**仍可回看**。
+    """已被取代 + 未确认的条目 → 否定被拒，且仍可回看。
 
     否定比确认更有破坏性：读路径一律排除 `rejected`，因此否定一条历史行会让它
     从所有读路径消失，连「可回看」这条被设计认可的能力也一并失去。
@@ -470,7 +470,7 @@ async def test_reject_is_rejected_on_a_superseded_unconfirmed_item() -> None:
 
 @pytest.mark.asyncio
 async def test_unsubstituted_candidates_still_confirmable_and_rejectable() -> None:
-    """**防一刀切**：未被取代的候选，确认与否定都照旧成功。
+    """防一刀切：未被取代的候选，确认与否定都照旧成功。
 
     没有这条，上面两条可能只是「一切都被拒」——而 `RQ-MEM-03` 的「纠」与
     第 3 节的「候选经使用者确认进稳定层」都依赖这两条路径可用。
@@ -490,7 +490,7 @@ async def test_unsubstituted_candidates_still_confirmable_and_rejectable() -> No
 
 @pytest.mark.asyncio
 async def test_delete_is_still_allowed_on_a_superseded_item() -> None:
-    """新增的守卫**不得误伤删除**：已取代条目仍可删（`RQ-MEM-03` 的「删」）。
+    """新增的守卫不得误伤删除：已取代条目仍可删（`RQ-MEM-03` 的「删」）。
 
     确认与否定两处加的是 `superseded_by IS NULL`；`delete_item` 的判据只有归属，
     本轮不碰它。这条用例把「删除对历史条目仍允许」钉住，避免日后的守卫被
@@ -520,8 +520,8 @@ async def test_downgraded_candidate_is_excluded_but_not_deleted() -> None:
     """把候选条目的 `last_confirmed_at` 置为 90 天前，验证：
 
     - 不进摘要与默认读取；
-    - **被检索到时标注陈旧**（`freshness = stale`，不是消失）；
-    - **未被删除**（第 3 节：不删除）。
+    - 被检索到时标注陈旧（`freshness = stale`，不是消失）；
+    - 未被删除（第 3 节：不删除）。
     """
     object_id = await _new_object()
     item_id = await _propose(object_id, origin="ai_inference", description="很久没确认的推断")
@@ -544,7 +544,7 @@ async def test_downgraded_candidate_is_excluded_but_not_deleted() -> None:
         summary = await service.summary(session, account_id=_ACCOUNT, support_object_id=object_id, now=_NOW)
     assert summary.has_profile is False
 
-    # 但**显式检索候选时它仍在**，且新鲜度标注为 stale（「被检索到时须标注其陈旧」）。
+    # 但显式检索候选时它仍在，且新鲜度标注为 stale（「被检索到时须标注其陈旧」）。
     async with session_scope(get_settings()) as session:
         grouped = await service.read_items(
             session, account_id=_ACCOUNT, support_object_id=object_id, include_candidates=True, now=_NOW
@@ -561,7 +561,7 @@ async def test_downgraded_candidate_is_excluded_but_not_deleted() -> None:
 
 @pytest.mark.asyncio
 async def test_confirmed_item_is_not_downgraded_even_when_old() -> None:
-    """**正向对照**：已确认的条目即使很久没再确认，也不降权（第 3 节的用意）。"""
+    """正向对照：已确认的条目即使很久没再确认，也不降权（第 3 节的用意）。"""
     object_id = await _new_object()
     item_id = await _propose(object_id, origin="user_statement", description="早已确认的事实")
     old = _NOW - timedelta(days=STALE_AFTER_DAYS * 5)
@@ -584,7 +584,7 @@ async def test_confirmed_item_is_not_downgraded_even_when_old() -> None:
 
 @pytest.mark.asyncio
 async def test_correction_creates_a_new_item_and_points_both_ways() -> None:
-    """纠正 = 新增取代条目 + 旧条目转 `historical` 并**互指**，注入只含新条目。
+    """纠正 = 新增取代条目 + 旧条目转 `historical` 并互指，注入只含新条目。
 
     三处断言：① 两个指针都在（`superseded_by` 与 `supersedes`）；
     ② 旧条目 `freshness = historical`；③ 取数只含新条目。
@@ -615,7 +615,7 @@ async def test_correction_creates_a_new_item_and_points_both_ways() -> None:
 
 @pytest.mark.asyncio
 async def test_correction_rejects_a_no_change_patch() -> None:
-    """纠正**无变更**被拒（契约第 1 节：422）。
+    """纠正无变更被拒（契约第 1 节：422）。
 
     没有这条，一次空转的纠正会把一条有效认识白白变成历史态。
     """
@@ -628,7 +628,7 @@ async def test_correction_rejects_a_no_change_patch() -> None:
 
 @pytest.mark.asyncio
 async def test_correction_keeps_the_old_item_readable_as_history() -> None:
-    """旧条目**可回看**（纠正不物理覆盖，第 5 节第 5 条）。"""
+    """旧条目可回看（纠正不物理覆盖，第 5 节第 5 条）。"""
     object_id = await _new_object()
     old_id = await _propose(object_id, origin="user_statement", description="旧描述")
     async with session_scope(get_settings()) as session:
@@ -644,7 +644,7 @@ async def test_superseded_gate_is_independent_of_the_candidate_axis() -> None:
     """`include_superseded` 与 `include_candidates` 是两条独立的轴，互斥不成立。
 
     ① 稳定侧：只开 `include_superseded` 就能回看被取代的旧条目；
-    ② 候选侧：同样只开 `include_superseded` 时，被取代的**候选**仍取不到
+    ② 候选侧：同样只开 `include_superseded` 时，被取代的候选仍取不到
        ——历史回看不越过候选层（未确认内容不得混进稳定列表）；
     ③ 两个开关都开：被取代的候选也返回，且归 `candidates`——它仍是未确认的
        系统推断，`AC-18` 要求这类内容只能出现在「待确认」分组，归组不看它是否历史；
@@ -774,12 +774,12 @@ async def test_history_is_grouped_by_the_layer_it_belonged_to() -> None:
 async def test_correction_rebinds_an_inferred_item_to_the_user_statement(already_confirmed: bool) -> None:
     """纠正一条推断来源的条目：新条目的生成方式重绑为 `user_statement`（零覆盖区）。
 
-    两种起点都要走：未确认的候选，以及**已被确认的候选**——后者在档案页属
+    两种起点都要走：未确认的候选，以及已被确认的候选——后者在档案页属
     「已确认条目」，是界面给出「纠正」入口的形态（档案页第 3.4 节）。
     断言四件事：
 
     ① 新条目 `origin = user_statement` 且 `confirmation = confirmed`（第 2、3 节）；
-    ② 库中**本次纠正新写入的那一条**不是「候选来源 + `confirmed`」——`propose_item`
+    ② 库中本次纠正新写入的那一条不是「候选来源 + `confirmed`」——`propose_item`
        与 Worker 对同一组合都是硬拒，第 7 节要求这种请求被拒绝而不是被写进库
        （起点是已确认候选时，旧条目本身处于该组合，那是 `confirm` 入口的合法结果，
        不属本次纠正写入的行）；
@@ -876,7 +876,7 @@ async def test_correcting_an_already_superseded_item_fails_without_rewriting_poi
 
 @pytest.mark.asyncio
 async def test_delete_removes_the_item_from_every_read_path() -> None:
-    """删除后该内容**不再被取数**（`AC-08`：删除须覆盖检索与衍生中的使用）。
+    """删除后该内容不再被取数（`AC-08`：删除须覆盖检索与衍生中的使用）。
 
     三条读路径都要断言：列表、摘要、上下文注入。
     """
@@ -959,7 +959,7 @@ async def test_another_account_cannot_read_or_write_items() -> None:
 
 @pytest.mark.asyncio
 async def test_items_of_two_objects_are_mutually_invisible() -> None:
-    """同一账号的两个对象：档案**互不可见**（`AC-22`）。"""
+    """同一账号的两个对象：档案互不可见（`AC-22`）。"""
     first = await _new_object(_ACCOUNT, "对象一")
     second = await _new_object(_ACCOUNT, "对象二")
     await _propose(first, origin="user_statement", description="属于对象一的条目")
@@ -979,7 +979,7 @@ async def test_items_of_two_objects_are_mutually_invisible() -> None:
 
 @pytest.mark.asyncio
 async def test_summary_only_includes_stable_layer_items() -> None:
-    """摘要**只从稳定层取数**，且每条带来源与时间（第 4 节）。"""
+    """摘要只从稳定层取数，且每条带来源与时间（第 4 节）。"""
     object_id = await _new_object()
     await _propose(object_id, origin="user_statement", domain="communication", description="稳定的一条")
     await _propose(object_id, origin="ai_inference", domain="communication", description="候选的一条")
@@ -1028,7 +1028,7 @@ async def test_summary_marks_possibly_stale_when_writes_are_pending() -> None:
 
 @pytest.mark.asyncio
 async def test_summary_of_a_fresh_object_reports_no_profile() -> None:
-    """全新对象：返回「无档案」标记而**不是空对象**（`AC-02`、第 10 节验证项）。
+    """全新对象：返回「无档案」标记而不是空对象（`AC-02`、第 10 节验证项）。
 
     调用方据此在输出里标注「本次未使用个性化档案」——空对象无法表达这个区别。
     """
@@ -1043,7 +1043,7 @@ async def test_summary_of_a_fresh_object_reports_no_profile() -> None:
 
 @pytest.mark.asyncio
 async def test_summary_field_domains_produce_their_fields() -> None:
-    """**摘要覆盖性**：十二个字段都能从领域取值生产出来（第 10 节验证项）。
+    """摘要覆盖性：十二个字段都能从领域取值生产出来（第 10 节验证项）。
 
     本用例为每个摘要字段的取数领域各写一条，然后断言字段确实被填上
     ——「字段有映射」与「映射真能生产出内容」是两件事。
@@ -1065,7 +1065,7 @@ async def test_summary_field_domains_produce_their_fields() -> None:
 
 @pytest.mark.asyncio
 async def test_missing_domain_is_not_reported_as_absent_fact() -> None:
-    """**缺项不被当作否定**（第 10 节验证项）：某领域无条目时，输出不声称「该情况不存在」。
+    """缺项不被当作否定（第 10 节验证项）：某领域无条目时，输出不声称「该情况不存在」。
 
     本实现的可观察面：该字段根本不出现在摘要里——没有字段就无从表达「没有这种情况」，
     而不是给出一个空的 `items: []`（那读起来像「确实没有」）。
@@ -1089,7 +1089,7 @@ async def test_missing_domain_is_not_reported_as_absent_fact() -> None:
 
 @pytest.mark.asyncio
 async def test_emergency_context_returns_all_eight_groups_with_absent_marked() -> None:
-    """八组键总是存在；**未预存的组显式返回 absent（None）**，不为空列表（第 8 节）。
+    """八组键总是存在；未预存的组显式返回 absent（None），不为空列表（第 8 节）。
 
     `None` 与 `[]` 的区别正是本用例的判据：调用方据此写「未预存」，
     而不是让模型顺着空列表推断「没有这种情况」。
@@ -1132,14 +1132,14 @@ async def test_emergency_context_returns_all_eight_groups_with_absent_marked() -
 
 @pytest.mark.asyncio
 async def test_emergency_strategy_groups_are_taken_from_the_paired_fields() -> None:
-    """`proven_strategies` 与 `unhelpful_strategies` 取的是条目里**成对相反的字段**。
+    """`proven_strategies` 与 `unhelpful_strategies` 取的是条目里成对相反的字段。
 
     这两组与 `known_triggers` 同属「触发因素与支持策略」领域，但语义是
     `helpful_support` 与 `unhelpful_support` 两个字段。若按领域取数，
     同一条条目会同时落进三组——「有效支持」与「无效支持」本是相反的两类内容，
     三者重复会让应急注入变成噪声。
 
-    本用例的判据：一条同时带两个字段的条目，**必须只出现在它对应的那一组**里；
+    本用例的判据：一条同时带两个字段的条目，必须只出现在它对应的那一组里；
     `known_triggers` 收条目级内容，两个策略组收字段级清单。
     """
     object_id = await _new_object()
@@ -1165,7 +1165,7 @@ async def test_emergency_strategy_groups_are_taken_from_the_paired_fields() -> N
     assert triggers is not None and len(triggers) == 1
     assert triggers[0].description == "嘈杂时捂耳"
 
-    # 有效支持组：字段级清单（两条），且**不含**无效支持。
+    # 有效支持组：字段级清单（两条），且不含无效支持。
     proven = context.groups["proven_strategies"]
     assert proven is not None
     assert [entry.description for entry in proven] == ["降噪耳机", "提前离开"]
@@ -1227,7 +1227,7 @@ async def test_emergency_context_communication_is_a_named_structure() -> None:
 
 @pytest.mark.asyncio
 async def test_emergency_context_only_takes_the_stable_layer() -> None:
-    """应急预取**只取稳定层**：候选条目不得出现在任何一组里（第 8 节）。"""
+    """应急预取只取稳定层：候选条目不得出现在任何一组里（第 8 节）。"""
     object_id = await _new_object()
     await _propose(object_id, origin="ai_inference", domain="communication", topic="baseline", description="推断")
 
@@ -1270,7 +1270,7 @@ async def test_emergency_context_requires_ownership() -> None:
 
 @pytest.mark.asyncio
 async def test_pending_id_unique_constraint_blocks_duplicate_items() -> None:
-    """同一条待处理记录**不得产生第二条目**（写入路径第 5 节：幂等键就是 `pending_id`）。
+    """同一条待处理记录不得产生第二条目（写入路径第 5 节：幂等键就是 `pending_id`）。
 
     用真实唯一约束验证：两次带同一个 `pending_id` 的插入，第二次必须被存储层拒绝。
     """
@@ -1311,7 +1311,7 @@ async def test_pending_id_unique_constraint_blocks_duplicate_items() -> None:
 
 @pytest.mark.asyncio
 async def test_manual_items_have_no_pending_id_and_are_not_blocked() -> None:
-    """手动补充条目**不经待处理记录**（`pending_id` 为空），因此可以有多条。
+    """手动补充条目不经待处理记录（`pending_id` 为空），因此可以有多条。
 
     这验证了「唯一约束 + 可空」这两个要求能同时成立：PostgreSQL 的唯一约束
     允许多个 NULL。
@@ -1342,7 +1342,7 @@ async def test_manual_items_have_no_pending_id_and_are_not_blocked() -> None:
 
 @pytest.mark.asyncio
 async def test_unknown_domain_filter_fails_instead_of_returning_empty() -> None:
-    """未知领域名**明确失败**，不静默返回空列表（`read_profile_items` 契约第 5 节）。
+    """未知领域名明确失败，不静默返回空列表（`read_profile_items` 契约第 5 节）。
 
     静默返回空会让打错字的过滤看起来像「这个领域没有条目」。
     """
@@ -1356,7 +1356,7 @@ async def test_unknown_domain_filter_fails_instead_of_returning_empty() -> None:
 
 @pytest.mark.asyncio
 async def test_unknown_domain_on_write_fails() -> None:
-    """写入时未知领域名明确失败，**不静默归入「其他」**（`propose_profile_item` 第 4 节）。"""
+    """写入时未知领域名明确失败，不静默归入「其他」（`propose_profile_item` 第 4 节）。"""
     object_id = await _new_object()
     with pytest.raises(ProfileDataError, match="领域"):
         async with session_scope(get_settings()) as session:
@@ -1392,7 +1392,7 @@ async def test_missing_source_is_rejected() -> None:
 
 @pytest.mark.asyncio
 async def test_write_to_archived_object_fails_with_archived_reason() -> None:
-    """归档对象上的写入失败，且原因是**已归档**而不是越权（第 5.3 节，`AC-22` 的邻居）。"""
+    """归档对象上的写入失败，且原因是已归档而不是越权（第 5.3 节，`AC-22` 的邻居）。"""
     object_id = await _new_object()
     async with session_scope(get_settings()) as session:
         await service.archive_object(session, account_id=_ACCOUNT, support_object_id=object_id)
@@ -1410,7 +1410,7 @@ async def test_write_to_archived_object_fails_with_archived_reason() -> None:
                 source={"session_id": "s1"},
             )
 
-    # 但**归档对象仍可纠正与删除条目**（第 4 节：归档对象可读，RQ-MEM-03 不因归档失效）。
+    # 但归档对象仍可纠正与删除条目（第 4 节：归档对象可读，RQ-MEM-03 不因归档失效）。
     async with session_scope(get_settings()) as session:
         await service.restore_object(session, account_id=_ACCOUNT, support_object_id=object_id)
     item_id = await _propose(object_id, origin="user_statement", description="归档前写入的条目")

@@ -288,7 +288,7 @@ async def test_dispatch_does_not_pass_a_constant_lease_owner(monkeypatch: pytest
     `kiq(pending_id, lease_owner="api")`，第一条断言立刻失败。
 
     为什么这条必须存在：能判别租约栅栏的仓库用例用的是两个互不相同的 owner
-    （`test_pending_write_integration.py`），它们只覆盖 `repository`，覆盖不到**接线**——
+    （`test_pending_write_integration.py`），它们只覆盖 `repository`，覆盖不到接线——
     而 D-31 的缺陷恰恰在接线上（生产唯一投递点传常量，栅栏恒真）。
     """
     import os

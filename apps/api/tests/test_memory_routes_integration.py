@@ -1,12 +1,12 @@
 """集成测试：记忆面 HTTP 端点的形状、幂等与「空与失败可区分」（真实 FalkorDB + PostgreSQL）。
 
-对应 ``docs/技术设计/面/profile/记忆面HTTP契约.md`` 第 3～6 节与
-``docs/技术设计/technical-details/通用记忆.md`` 第 3、4、7 节。
+对应 `docs/技术设计/面/profile/记忆面HTTP契约.md` 第 3～6 节与
+`docs/技术设计/technical-details/通用记忆.md` 第 3、4、7 节。
 
     docker compose up -d postgres falkordb
     uv run pytest -m integration apps/api/tests/test_memory_routes_integration.py
 
-## 为什么注入假模型客户端
+为什么注入假模型客户端：
 
 实体抽取要调 TokenHub，而 `.env` 里的 `TOKENHUB_API_KEY` 是占位符（已登记
 `TECH-02`）。本文件注入假 LLM 与假嵌入器，只验证 HTTP 形状、账本过滤与失败语义，
@@ -17,10 +17,10 @@
 `None` 并关闭句柄——这与 `write_memory` / `read_memory` 工具走的是同一个句柄，
 因此测的是生产路径上真正被用到的那一个。
 
-## 本文件守住的判据
+本文件守住的判据：
 
 1. `episode_key` 暴露、`source_session_id` 从 `source_description` 解析出来。
-2. 图库不可用 → **503**，不是 200 空数组（空与失败必须可区分，契约第 6 节）。
+2. 图库不可用 → `503`，不是 200 空数组（空与失败必须可区分，契约第 6 节）。
 3. 删除幂等：实测重复执行两次（第一次 `newly_deleted=true`，第二次 `false`）。
 4. 删除后两条读路径都不再返回（`AC-08`）：本面列表与 `read_timeline`。
 5. 非法 `episode_key` → 422（形状校验在路由层，本包裁决 7）。
@@ -32,7 +32,7 @@
     （契约第 2 节那张整面表在纠正端点上必须可达）；图库不可用 → 撤下照做，
     写新失败即中间态 200。
 6. 纠正两步：正常路径返回 201 且 `superseded` / `new_episode_written` 都为真；
-   写新失败时返回 **200** 与 `{superseded: true, new_episode_written: false}`
+   写新失败时返回 `200` 与 `{superseded: true, new_episode_written: false}`
    （本包裁决 3 的中间态形状）——旧记忆已撤下、新记忆未写入。
 """
 
@@ -537,7 +537,7 @@ async def test_correct_supersedes_old_and_writes_new(client: httpx.AsyncClient, 
 async def test_correct_reports_the_intermediate_state_when_writing_new_fails(
     client: httpx.AsyncClient, graph: MemoryGraph, monkeypatch: pytest.MonkeyPatch, as_account
 ) -> None:  # noqa: ANN001
-    """撤下成功而写新失败 → **200** 与 `{superseded: true, new_episode_written: false}`。
+    """撤下成功而写新失败 → `200` 与 `{superseded: true, new_episode_written: false}`。
 
     这是本包裁决 3 的对外承诺形状（契约第 5 节只写「明确的中间态」未定字段名）。
     消融：把它改成笼统 5xx 或笼统 201，用例必须失败——前者会让使用者以为纠正
@@ -824,7 +824,7 @@ async def test_correct_dispatches_the_cross_account_guard_by_type_not_by_message
     与删除同一判据，只是走 `/correct`：两处是复制的同一段分派，必须一起钉住，
     否则只修一处会留下另一处仍在按文案分派。
 
-    触发条件与删除那条同构，但不能省：本账号图里**确实有**这条片段（先断言，
+    触发条件与删除那条同构，但不能省：本账号图里确实有这条片段（先断言，
     否则 404 会来自纠正新加的存在性判据，守卫根本没被触到，用例就变成恒真）。
     """
     from campfire.modules.memory import deletion as deletion_module

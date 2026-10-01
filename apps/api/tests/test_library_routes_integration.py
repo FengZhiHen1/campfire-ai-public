@@ -1,12 +1,12 @@
 """集成测试：资料库面 HTTP 端点的形状、两库分流、展开与 deep-link 三态（真实 PostgreSQL）。
 
-对应 ``docs/技术设计/面/profile/资料库面HTTP契约.md`` 第 2～6 节与
-``docs/技术设计/technical-details/资料与案例检索.md`` 第 3、4、5 节。
+对应 `docs/技术设计/面/profile/资料库面HTTP契约.md` 第 2～6 节与
+`docs/技术设计/technical-details/资料与案例检索.md` 第 3、4、5 节。
 
     docker compose up -d postgres
     uv run pytest -m integration apps/api/tests/test_library_routes_integration.py
 
-## 只用虚构样例数据
+只用虚构样例数据：
 
 `EVID-B` 未关闭前不得录真实素材（项目红线）。本文件的案例包前缀是 `2098-`，
 与 `test_library_case_integration` 的 `2099-` 分开，因此两个文件并发跑时互不
@@ -15,7 +15,7 @@
 嵌入用确定性替身（`TOKENHUB_API_KEY` 是 `.env.example` 的占位符，登记于 `TECH-02`），
 SQL、融合、聚合、撤下与聚合后的 HTTP 形状都是真实的。
 
-## 本文件守住的判据
+本文件守住的判据：
 
 1. 两库分开取数：`library=case` 只回案例、`library=knowledge` 只回资料。
 2. 撤下条目不进列表（`RQ-KB-04`），但 deep-link 仍可见三态中的「已撤下」。
@@ -890,7 +890,7 @@ async def test_withdrawn_knowledge_also_returns_200_with_title_only(
 async def test_both_paths_failing_is_503_not_an_empty_list(
     client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch, seeded: dict[str, str]
 ) -> None:  # noqa: ANN001
-    """两路检索都失败 → **503**，不得写成「没有找到相关内容」（契约第 6 节）。
+    """两路检索都失败 → `503`，不得写成「没有找到相关内容」（契约第 6 节）。
 
     消融：把这条改成降级返回空数组，用例必须失败——那会让使用者以为库里
     没有依据，而真相是检索坏了。
@@ -914,7 +914,7 @@ async def test_both_paths_failing_is_503_not_an_empty_list(
 async def test_single_path_failure_still_returns_200_with_degraded_flag(
     client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch, seeded: dict[str, str]
 ) -> None:  # noqa: ANN001
-    """单路失败 → **200** 且在结果内标注降级（契约第 6 节：照常呈现）。
+    """单路失败 → `200` 且在结果内标注降级（契约第 6 节：照常呈现）。
 
     没有 `degraded_paths` 时调用方拿到 200 就无从知道结果不完整——那是契约
     第 6 节「单路失败在结果内标注」在 HTTP 层的落点。

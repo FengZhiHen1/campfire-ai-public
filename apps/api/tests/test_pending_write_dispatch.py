@@ -125,13 +125,13 @@ async def test_the_delivery_contract_carries_the_kind() -> None:
 async def test_a_failed_delivery_logs_the_exception_type_without_the_message(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """投递失败留下的 warning 必须可归因：带 pending_id、kind 与**异常类型**。
+    """投递失败留下的 warning 必须可归因：带 pending_id、kind 与异常类型。
 
     判别性：把格式串里的 `type(exc).__name__` 去掉，本用例失败——那正是修复前的
     形态（注释声称记了异常类型，实际两者都没有）。没有类型名就分不出
     「broker 未启动」「Redis 连接被拒」「队列名写错」，而这三种归因的处置完全不同。
 
-    同时钉住安全侧：异常**消息**不得进日志（AGENTS.md：日志不复述连接串），
+    同时钉住安全侧：异常消息不得进日志（AGENTS.md：日志不复述连接串），
     因此实现只记类型名、也不带 `exc_info`。
     """
 

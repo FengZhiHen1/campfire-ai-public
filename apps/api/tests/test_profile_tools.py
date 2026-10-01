@@ -1,12 +1,12 @@
 """`tools/profile.py` 的单元测试：参数形状、账号校验、错误码映射与返回契约字段。
 
-对应契约：[read_profile_summary](../../../docs/技术设计/面/consult/tools/read_profile_summary.md)、
-[read_profile_items](../../../docs/技术设计/面/consult/tools/read_profile_items.md)、
-[propose_profile_item](../../../docs/技术设计/面/consult/tools/propose_profile_item.md)、
-[create_support_object](../../../docs/技术设计/面/consult/tools/create_support_object.md)。
+对应契约：docs/技术设计/面/consult/tools/read_profile_summary.md、
+docs/技术设计/面/consult/tools/read_profile_items.md、
+docs/技术设计/面/consult/tools/propose_profile_item.md、
+docs/技术设计/面/consult/tools/create_support_object.md。
 
-**不连库**：真正的取数、落层与授权判定在 `modules/profile`（由
-`test_profile_items_integration.py` 等覆盖）。本文件只钉**工具层自己的职责**——
+不连库：真正的取数、落层与授权判定在 `modules/profile`（由
+`test_profile_items_integration.py` 等覆盖）。本文件只钉工具层自己的职责——
 参数形状（含「哪些参数不该存在」）、账号缺失时的明确失败、异常到错误码的映射、
 返回体的契约字段。落层分流与「拒绝且未落库」的库侧断言见
 `test_profile_tools_integration.py`。
@@ -190,7 +190,7 @@ def test_parameter_names_match_the_contracts() -> None:
 
 
 def test_no_profile_tool_accepts_an_account_id() -> None:
-    """**四个工具都不收 `account_id`**：属主取登录态（支持对象第 4 节不变量）。
+    """四个工具都不收 `account_id`：属主取登录态（支持对象第 4 节不变量）。
 
     判别性：谁将来为了「方便」加一个 `account_id` 参数，本用例失败——那会让模型
     有通道把档案写到别的账号或从别的账号读。
@@ -205,7 +205,7 @@ def test_no_profile_tool_accepts_an_account_id() -> None:
 
 
 def test_propose_has_no_confirmation_parameter() -> None:
-    """**没有 `confirmation` 参数**：确认状态由 `origin` 决定（个性化档案第 3、7 节）。
+    """没有 `confirmation` 参数：确认状态由 `origin` 决定（个性化档案第 3、7 节）。
 
     判别性：加上这个参数，模型就能把推断标成已确认——契约第 4 节第 2 条要拒绝的正是
     这件事。不设参数比「接受再拒绝」更强：不存在的通道无法被绕过。
@@ -214,7 +214,7 @@ def test_propose_has_no_confirmation_parameter() -> None:
 
 
 def test_domain_enum_rejects_values_outside_the_vocabulary() -> None:
-    """领域名落参数枚举：词表外的值在**解析期**被拒（契约第 5 节：不静默归入「其他」）。
+    """领域名落参数枚举：词表外的值在解析期被拒（契约第 5 节：不静默归入「其他」）。
 
     判别性：把 `domain` 从 `Literal` 改回 `str`，本用例失败。
     """
@@ -281,7 +281,7 @@ def test_source_rejects_unknown_keys() -> None:
 
 @pytest.mark.asyncio
 async def test_every_tool_fails_without_an_account_in_payload() -> None:
-    """`payload` 里没有账号时**明确失败**，而不是猜一个默认账号。
+    """`payload` 里没有账号时明确失败，而不是猜一个默认账号。
 
     猜默认会把档案写到错误的账号下——使用者看不到异常，只是数据不在自己名下。
     四个工具都要有这条守卫（质量地板校验点④「未登录/无 account → 明确失败」）。
@@ -371,7 +371,7 @@ async def test_summary_flags_possibly_stale(monkeypatch: pytest.MonkeyPatch) -> 
 
 @pytest.mark.asyncio
 async def test_summary_maps_cross_account_denial_to_the_shared_message(monkeypatch: pytest.MonkeyPatch) -> None:
-    """越权（对象不存在或不属于当前账号）映射成**同一句**文案，且不冒充「没有档案」。
+    """越权（对象不存在或不属于当前账号）映射成同一句文案，且不冒充「没有档案」。
 
     判别性：把两种情形分开成不同文案，本用例失败——区分二者等于提供对象枚举通道。
     """
@@ -389,7 +389,7 @@ async def test_summary_maps_cross_account_denial_to_the_shared_message(monkeypat
 
 @pytest.mark.asyncio
 async def test_summary_failure_does_not_pretend_no_profile(monkeypatch: pytest.MonkeyPatch) -> None:
-    """取数失败时明确失败，**不得**静默当作没有档案（契约第 5 节末行）。
+    """取数失败时明确失败，不得静默当作没有档案（契约第 5 节末行）。
 
     判别性：把 `except Exception` 分支改成返回 `has_profile=False` 的正常结果，
     本用例失败——那会让模型对使用者说「没有你的档案」。
@@ -481,7 +481,7 @@ async def test_items_hide_candidates_when_not_requested(monkeypatch: pytest.Monk
 
 @pytest.mark.asyncio
 async def test_items_unknown_domain_fails_loudly(monkeypatch: pytest.MonkeyPatch) -> None:
-    """领域词表外的值明确失败，**不静默忽略条件**（契约第 5 节）。
+    """领域词表外的值明确失败，不静默忽略条件（契约第 5 节）。
 
     参数枚举是第一道（模型侧），用例层的 `ProfileDataError` 是第二道——覆盖绕过
     参数模型直接调用本函数的情形。这里直接构造 `ReadProfileItemsArgs` 会先被枚举拒绝，
@@ -503,7 +503,7 @@ async def test_items_unknown_domain_fails_loudly(monkeypatch: pytest.MonkeyPatch
 
 @pytest.mark.asyncio
 async def test_items_failure_does_not_return_partial_results(monkeypatch: pytest.MonkeyPatch) -> None:
-    """取数失败明确失败，**不返回部分结果冒充完整结果**（契约第 5 节末行）。"""
+    """取数失败明确失败，不返回部分结果冒充完整结果（契约第 5 节末行）。"""
 
     async def _boom(_session: object, **_kwargs: object) -> GroupedItems:
         raise RuntimeError("连接中断")
@@ -586,7 +586,7 @@ async def test_propose_submits_a_pending_record_and_says_submitted(monkeypatch: 
 
 @pytest.mark.asyncio
 async def test_propose_payload_never_carries_a_confirmation(monkeypatch: pytest.MonkeyPatch) -> None:
-    """载荷里**没有** `confirmation`：确认状态由 `origin` 推导（个性化档案第 3、7 节）。
+    """载荷里没有 `confirmation`：确认状态由 `origin` 推导（个性化档案第 3、7 节）。
 
     判别性：把 `confirmation` 放进载荷，本用例失败——那等于让一个可构造的载荷指定落层，
     正是契约第 4 节第 2 条要拒绝的事（Worker 侧还会再拒一次，这里是不制造它的第一道）。
@@ -617,7 +617,7 @@ async def test_propose_payload_never_carries_a_confirmation(monkeypatch: pytest.
 
 @pytest.mark.asyncio
 async def test_propose_carries_the_source_with_the_server_side_tool_name(monkeypatch: pytest.MonkeyPatch) -> None:
-    """来源带会话、消息序号、转述者，且工具名由**服务端**补（不让模型自报）。
+    """来源带会话、消息序号、转述者，且工具名由服务端补（不让模型自报）。
 
     判别性：把 `tool` 改成取模型的输入，本用例失败——工具名是服务端事实，
     让模型自报会得到一个可以撒谎的来源定位。
@@ -654,7 +654,7 @@ async def test_propose_carries_the_source_with_the_server_side_tool_name(monkeyp
 
 @pytest.mark.asyncio
 async def test_propose_omits_optional_keys_it_was_not_given(monkeypatch: pytest.MonkeyPatch) -> None:
-    """未给的可选字段**不进载荷**：空数组与「没提到」语义不同，补默认值会制造假事实。"""
+    """未给的可选字段不进载荷：空数组与「没提到」语义不同，补默认值会制造假事实。"""
     seen: dict[str, object] = {}
 
     class _FakeRecord:
@@ -681,7 +681,7 @@ async def test_propose_omits_optional_keys_it_was_not_given(monkeypatch: pytest.
 
 @pytest.mark.asyncio
 async def test_propose_maps_archived_object_to_a_distinct_message(monkeypatch: pytest.MonkeyPatch) -> None:
-    """归档对象明确失败，且文案**区分**于越权（支持对象第 5.3 节）。
+    """归档对象明确失败，且文案区分于越权（支持对象第 5.3 节）。
 
     判别性：把两个分支的文案合成一句，本用例失败——属主自己的对象，告知归档状态
     不泄露信息，而使用者需要知道原因才能去恢复。
@@ -717,7 +717,7 @@ async def test_propose_denies_cross_account_with_the_shared_message(monkeypatch:
 
 @pytest.mark.asyncio
 async def test_propose_write_failure_does_not_receipt_submitted(monkeypatch: pytest.MonkeyPatch) -> None:
-    """待处理记录写入失败 → 明确失败，**不回执 submitted**（契约第 5 节）。
+    """待处理记录写入失败 → 明确失败，不回执 submitted（契约第 5 节）。
 
     判别性：把 `except Exception` 分支改成返回 `state="submitted"`，本用例失败。
     """
@@ -744,7 +744,7 @@ async def test_propose_write_failure_does_not_receipt_submitted(monkeypatch: pyt
 
 @pytest.mark.asyncio
 async def test_propose_checks_the_object_before_writing(monkeypatch: pytest.MonkeyPatch) -> None:
-    """权限判定发生在**写入之前**：归档对象不得先收到一次「已受理」再异步失败。
+    """权限判定发生在写入之前：归档对象不得先收到一次「已受理」再异步失败。
 
     判别性：把 `require_writable` 从 handler 里去掉，本用例失败（`enqueue` 会被调用）。
     """
@@ -846,7 +846,7 @@ async def test_create_object_uses_the_login_account_not_a_parameter(monkeypatch:
 
 @pytest.mark.asyncio
 async def test_create_object_rejects_a_blank_name_without_substituting(monkeypatch: pytest.MonkeyPatch) -> None:
-    """空白名明确失败，**不静默填默认名**（契约第 4 节第 1 条、存储层 CHECK 兜底）。
+    """空白名明确失败，不静默填默认名（契约第 4 节第 1 条、存储层 CHECK 兜底）。
 
     这里构造「绕过参数模型」的调用（`model_construct`）以覆盖用例层判据：
     `min_length=1` 挡不住 `"   "`（长度 3 但去空白为空），那条由
@@ -866,7 +866,7 @@ async def test_create_object_rejects_a_blank_name_without_substituting(monkeypat
 
 @pytest.mark.asyncio
 async def test_create_object_failure_does_not_receipt_an_id(monkeypatch: pytest.MonkeyPatch) -> None:
-    """创建失败明确失败，**不回执一个标识**——回执了模型会把它当成已建成的对象用。"""
+    """创建失败明确失败，不回执一个标识——回执了模型会把它当成已建成的对象用。"""
 
     async def _boom(_session: object, **_kwargs: object) -> object:
         raise RuntimeError("连接中断")

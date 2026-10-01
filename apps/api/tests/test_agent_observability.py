@@ -2,8 +2,8 @@
 
 对应 docs/技术设计/technical-details/通用基座.md 第 8 节。两组用例：
 
-- **纯事件驱动**（多数）：直接喂事件，验证记录字段与 ``outcome`` 的五档映射；
-- **端到端一条**：用真实运行编排 + 假 Chat Completions 服务跑一次，验证记录确实来自
+- 纯事件驱动（多数）：直接喂事件，验证记录字段与 `outcome` 的五档映射；
+- 端到端一条：用真实运行编排 + 假 Chat Completions 服务跑一次，验证记录确实来自
   真实事件流（而不是只在手造事件上成立）。
 """
 
@@ -73,7 +73,7 @@ def _started(*, activated: tuple[str, ...] = ("daily-consulting",)) -> RunStarte
 
 
 def test_record_is_incomplete_until_a_terminal_event_arrives() -> None:
-    """没有终态事件就是 ``incomplete``：不得把「没跑完」记成成功。"""
+    """没有终态事件就是 `incomplete`：不得把「没跑完」记成成功。"""
     recorder = RunRecorder(started_at=STARTED_AT)
     recorder.apply(_started())
 
@@ -128,7 +128,7 @@ def test_record_never_carries_tool_result_or_citation_text() -> None:
     """记录不存对话与业务正文（第 2 节单真源 + 模块 docstring 第 1 条）。
 
     第一版把工具结果摘要与引用摘要原样存进记录——实测一条含口令的连接串会原样进记录。
-    这条用例专门盯**真正会把正文带进记录**的两条通道（此前只测了 `text_delta` 这条
+    这条用例专门盯真正会把正文带进记录的两条通道（此前只测了 `text_delta` 这条
     根本不进记录的通道）。
     """
     secret = "postgresql://appuser:s3cretpw@10.0.0.5:5432/campfire"  # quality-floor: ignore hardcoded-secret 虚构值，只作泄漏哨兵；它必须像一个真凭据，否则下面的断言不再有判别性
@@ -155,8 +155,8 @@ def test_record_never_carries_tool_result_or_citation_text() -> None:
 def test_record_keeps_tool_calls_that_never_finished() -> None:
     """被打断的工具调用也必须留痕（第 8 节要求记「工具调用」）。
 
-    实测触顶时事件序列是 ``run_started → tool_call_started → run_finished``：第一版只处理结束
-    事件，于是记录里**完全没有**这次调用。
+    实测触顶时事件序列是 `run_started → tool_call_started → run_finished`：第一版只处理结束
+    事件，于是记录里完全没有这次调用。
     """
     recorder = RunRecorder(started_at=STARTED_AT)
     recorder.apply(ToolCallStartedEvent(tool_name="read_alpha", call_id="c9"))
@@ -170,7 +170,7 @@ def test_record_keeps_tool_calls_that_never_finished() -> None:
 
 
 def test_cancelled_run_gets_a_measured_elapsed_and_no_fabricated_end() -> None:
-    """取消的运行不得写一个伪造的结束时间（``elapsed=0`` 且 ``finished_at == started_at``）。"""
+    """取消的运行不得写一个伪造的结束时间（`elapsed=0` 且 `finished_at == started_at`）。"""
     recorder = RunRecorder(started_at=STARTED_AT)
 
     recorder.mark_cancelled()
@@ -209,7 +209,7 @@ def test_terminate_then_apply_is_ignored() -> None:
 
 
 def test_finish_returns_a_snapshot_not_the_live_object() -> None:
-    """``finish()`` 返回副本：交付之后再改内部对象不影响已写出去的那一份。"""
+    """`finish()` 返回副本：交付之后再改内部对象不影响已写出去的那一份。"""
     recorder = RunRecorder(started_at=STARTED_AT)
     recorder.apply(_started())
     record = recorder.finish()
@@ -225,7 +225,7 @@ def test_finish_returns_a_snapshot_not_the_live_object() -> None:
 
 
 def test_citations_from_events_are_merged_not_overwritten() -> None:
-    """终态事件的引用清单与先到的引用事件**按 id 合并**，不是整体覆盖。"""
+    """终态事件的引用清单与先到的引用事件按 id 合并，不是整体覆盖。"""
     recorder = RunRecorder(started_at=STARTED_AT)
     recorder.apply(CitationEvent(citation=_citation(citation_id="cit-1", reference="kb-1")))
     recorder.apply(RunFinishedEvent(reason="completed", citations=(), usage=RunUsage(), elapsed_seconds=1.0))
@@ -266,11 +266,11 @@ def test_outcome_mapping(events: Sequence[RunEvent], cancelled: bool, expected: 
 
 
 def test_cancelled_terminal_event_goes_to_the_flag_not_the_end_reason() -> None:
-    """``reason="cancelled"`` 的终态事件落进 ``cancelled`` 标志，不写进 ``end_reason``。
+    """`reason="cancelled"` 的终态事件落进 `cancelled` 标志，不写进 `end_reason`。
 
-    ``RunEndReason`` 含 ``"cancelled"`` 而记录的 ``end_reason`` 刻意不含它——这条纪律必须由
+    `RunEndReason` 含 `"cancelled"` 而记录的 `end_reason` 刻意不含它——这条纪律必须由
     显式分流承载：直接赋值的话，未来某条 cancelled 终态会让字段与其 docstring 自相矛盾
-    （而且 ``end_reason`` 的类型收不下它）。
+    （而且 `end_reason` 的类型收不下它）。
     """
     recorder = RunRecorder(started_at=STARTED_AT)
     recorder.apply(RunFinishedEvent(reason="cancelled", citations=(), usage=RunUsage(), elapsed_seconds=0.5))
@@ -370,11 +370,11 @@ async def test_record_stream_forwards_events_unchanged_and_writes_one_record() -
 async def test_record_without_run_started_warns_about_the_missing_run_identity(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """事件流没有 ``run_started`` 时，记录无法回指到运行——这个观测缺口必须显式告警。
+    """事件流没有 `run_started` 时，记录无法回指到运行——这个观测缺口必须显式告警。
 
-    来路：运行编排在 ``run_started`` 之前就会以 ``run_failed`` 结束（会话读取失败、注入
-    渲染/准备失败）。那类运行派生不出 ``run_id``，落库后无法回答「这是谁的运行失败了」。
-    缺口的**结构性**修复要动 §7 的对外事件形状，因此这里只保证它不被静默吞掉。
+    来路：运行编排在 `run_started` 之前就会以 `run_failed` 结束（会话读取失败、注入
+    渲染/准备失败）。那类运行派生不出 `run_id`，落库后无法回答「这是谁的运行失败了」。
+    缺口的结构性修复要动 §7 的对外事件形状，因此这里只保证它不被静默吞掉。
     """
     writer = _FakeWriter()
     incoming = [
@@ -397,7 +397,7 @@ async def test_record_without_run_started_warns_about_the_missing_run_identity(
 
 @pytest.mark.asyncio
 async def test_record_with_run_started_does_not_warn(caplog: pytest.LogCaptureFixture) -> None:
-    """正常路径（有 ``run_started``）不得产生这条告警——否则告警会退化成噪音被忽略。"""
+    """正常路径（有 `run_started`）不得产生这条告警——否则告警会退化成噪音被忽略。"""
     writer = _FakeWriter()
     incoming = [
         _started(),
@@ -460,7 +460,7 @@ async def test_cancellation_is_marked_on_the_record_and_re_raised() -> None:
 
 @pytest.mark.asyncio
 async def test_closing_the_stream_mid_way_records_incomplete_not_completed() -> None:
-    """生成器被关闭（消费者提前断开）时，记录是 ``incomplete``——不假装成功。"""
+    """生成器被关闭（消费者提前断开）时，记录是 `incomplete`——不假装成功。"""
     writer = _FakeWriter()
     hold = asyncio.Event()
 

@@ -1,13 +1,13 @@
 """会话归属数据链（真实 PostgreSQL + 真实 SDK 会话存储）。
 
-对应 ``docs/技术设计/decisions/会话归属单立表归accounts.md``、
-``docs/技术设计/面/consult/HTTP与SSE契约.md`` 第 3.2／3.3 节、
-``docs/项目结构设计.md`` 第 6／10 节。
+对应 `docs/技术设计/decisions/会话归属单立表归accounts.md`、
+`docs/技术设计/面/consult/HTTP与SSE契约.md` 第 3.2／3.3 节、
+`docs/项目结构设计.md` 第 6／10 节。
 
     docker compose up -d postgres
     uv run pytest -m integration apps/api/tests/test_accounts_sessions_integration.py
 
-## 这里钉住的四类事（都不是「实现细节的回归」）
+这里钉住的四类事（都不是「实现细节的回归」）：
 
 1. 归属判定：不存在与属主不符必须逐字同文案。区分二者等于提供会话枚举通道
    （与 T02 的 `core/authz` 同一纪律，支持对象 5.3）。
@@ -16,15 +16,15 @@
 3. 列表与水合：游标分页边界、空列表、无消息行的会话（标题回退）、注入消息不算
    首条使用者消息、真实 SDK 落库的条目能被水合出来。
 4. SDK 两表与迁移的一致性：本文件把 SDK 自己建的表反射出来，与
-   ``core/db/sdk_session.py`` 的声明逐列比对——两侧不一致时 ``--autogenerate``
+   `core/db/sdk_session.py` 的声明逐列比对——两侧不一致时 `--autogenerate`
    会提议改列迁移，而改 SDK 的表正是决策记录否决过的做法。
 
-## 为什么用真实 SDK 落库，而不是手写 `INSERT`
+为什么用真实 SDK 落库，而不是手写 `INSERT`：
 
 手写 JSON 只能验证「我按自己设想的形状解析」。真实 SDK 的条目形状是外部契约，
 本任务实测过它与设想有出入（使用者消息没有 `type` 字段、助手消息的 content 是分片
 数组、思考文本在 `summary` 里）。因此关键用例（`test_hydration_...sdk...`）走
-``SQLAlchemySession.add_items`` 真实落库，再经我们的读取路径读回。
+`SQLAlchemySession.add_items` 真实落库，再经我们的读取路径读回。
 """
 
 from __future__ import annotations
