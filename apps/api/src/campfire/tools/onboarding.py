@@ -41,11 +41,15 @@ logger = logging.getLogger(__name__)
 ACCOUNT_PAYLOAD_KEY = "account_id"
 
 
-#: 段名词表从用例模块派生（不另抄一份字面量）：三段的语义所有者是 skill 的引导流程，
-#: 而词表常量放在 `modules/accounts/onboarding_completion.py`——工具层只取用。
-#: 展开 `tuple(sorted(...))` 而不是手写三个字面量：那样词表就有两处定义，增删一段时
-#: 必然漏掉一处（`CORE-10`）。
-_SectionName = Literal[*tuple(sorted(SKIPPED_SECTIONS))]
+#: 段名词表。语义所有者是 `modules/accounts/onboarding_completion.SKIPPED_SECTIONS`
+#: （三段由 skill 的引导流程拥有），这里是一份受机械守住的镜像。
+#:
+#: 为什么不能 `Literal[*tuple(sorted(SKIPPED_SECTIONS))]` 派生：`Literal` 只接受字面量
+#: 表达式，该写法被 mypy 判 `valid-type`（`Final` 常量同样不行，实测 mypy 2.1.0），
+#: 于是整个参数模型的取值域在静态上不可用。镜像的漂移由
+#: `test_onboarding_tools.py` 的 `test_section_enum_mirrors_the_module_vocabulary_exactly`
+#: 断言双向相等来守住：模块侧增删一段而这里没跟着改，用例即失败。
+_SectionName = Literal["onboarding", "profile_seed", "memory_seed"]
 
 
 class FinishOnboardingArgs(BaseModel):

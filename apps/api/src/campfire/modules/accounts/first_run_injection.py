@@ -76,7 +76,12 @@ async def mark_first_run_injected(session: AsyncSession, *, session_id: str) -> 
     result = await session.execute(
         update(CampfireSession).where(CampfireSession.session_id == normalized).values(first_run_injected=True)
     )
-    if result.rowcount == 0:
+    # `rowcount` 只在 `CursorResult` 上声明，而 `AsyncSession.execute` 的静态类型是 `Result`
+    # （SQLAlchemy 存根缺口，全仓同一处置：`memory/purge.py`、`core/auth/deletion.py` 等）。
+    # DML 实际返回的正是 `CursorResult`，故显式取属性；缺失时按 0 行处理（fail-closed，
+    # 与「这个会话没有归属行」同一结论）。
+    rowcount = int(getattr(result, "rowcount", 0) or 0)
+    if rowcount == 0:
         raise SessionNotFoundError()
 
 

@@ -17,6 +17,8 @@ from campfire.modules.library.manual_review import delete_manual_reviews
 from campfire.modules.library.models import (
     ITEM_MODELS,
     LIBRARIES,
+    CaseItem,
+    KnowledgeItem,
     RetrievedNode,
 )
 from campfire.modules.library.retrieval import as_uuid
@@ -100,6 +102,13 @@ async def withdraw_item(
     if item is None:
         raise WithdrawalError(f"条目不存在：{library}/{item_id}")
 
+    # 收窄到具体模型：`ITEM_MODELS` 的值类型是 `KnowledgeItem | CaseItem`，两者只共享
+    # `Base`（撤下那组列各自声明了一遍），静态上联合成员没有共同属性。用 `isinstance`
+    # 收窄而不是 cast——与 `models.as_case_item` 同一手法（PY-11）：映射表与这里不一致时
+    # 立即显式失败，而不是把类型错误推迟成运行期的 `AttributeError`。
+    if not isinstance(item, (KnowledgeItem, CaseItem)):
+        raise WithdrawalError(f"条目模型与库别映射不一致：{library} → {type(item).__name__}")
+
     already = bool(item.withdrawn)
     if not already:
         item.withdrawn = True
@@ -111,6 +120,10 @@ async def withdraw_item(
     # 用 node_id 前缀而不是 metadata_->>'item_id'：前者是写入时的既有约定
     # （`<item_id>:<chunk_index>`），且能走 `ix_data_campfire_node_node_id`。
     result = await session.execute(delete(RetrievedNode).where(RetrievedNode.node_id.like(f"{item_uuid}:%")))
+    # `rowcount` 在 `CursorResult` 上；`session.execute` 的静态类型是更宽的 `Result`
+    # （它没有该属性）。DML 实际返回的正是 `CursorResult`，故按既有惯例用 getattr 取值：
+    # 与 `modules/memory/purge.py`、`core/auth/deletion.py` 同一写法。
+    nodes_deleted = int(getattr(result, "rowcount", 0) or 0)
 
     # 复核件是同一批投影的另一半（不能嵌入的块），随条目撤下一起清掉：条目已撤下，
     # 待处理的正文没有意义，留着反而把撤下内容的摘录继续留在库里。
@@ -121,7 +134,7 @@ async def withdraw_item(
         item_id=item_id,
         library=library,
         already_withdrawn=already,
-        nodes_deleted=result.rowcount or 0,
+        nodes_deleted=nodes_deleted,
         manual_reviews_deleted=manual_reviews_deleted,
     )
 

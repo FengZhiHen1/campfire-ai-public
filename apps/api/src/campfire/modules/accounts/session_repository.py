@@ -23,7 +23,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
-from sqlalchemy import delete, func, select, tuple_
+from sqlalchemy import delete, func, literal, select, tuple_
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -281,8 +281,11 @@ async def list_session_owners(
         cursor_marker, cursor_session = before
         # 行值比较（row value comparison）：等价于「按 (时间, 标识) 全序严格小于游标」，
         # 比手写 OR 展开更难写错。
+        # 右侧是游标「值」而不是「列表达式」，故经 `literal()` 显式标注为绑定字面量。
+        # 实测两者生成的 SQL 文本与绑定参数类型逐字相同，区别只在静态：`tuple_` 的形参
+        # 声明只接受列表达式，值不经 `literal()` 就对不上（运行期本可隐式转换）。
         statement = statement.where(
-            tuple_(effective, CampfireSession.session_id) < tuple_(cursor_marker, cursor_session)
+            tuple_(effective, CampfireSession.session_id) < tuple_(literal(cursor_marker), literal(cursor_session))
         )
     statement = statement.order_by(effective.desc(), CampfireSession.session_id.desc()).limit(limit)
 

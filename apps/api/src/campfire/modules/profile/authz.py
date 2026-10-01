@@ -7,6 +7,8 @@
 
 from __future__ import annotations
 
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from campfire.core.authz import (
     OBJECT_ARCHIVED_MESSAGE,
     OBJECT_NOT_ACCESSIBLE_MESSAGE,
@@ -105,7 +107,7 @@ class OwnerAuthorizer:
             raise ObjectArchivedError(OBJECT_ARCHIVED_MESSAGE)
 
 
-async def _load(session: object, support_object_id: object) -> SupportObject | None:
+async def _load(session: AsyncSession, support_object_id: object) -> SupportObject | None:
     """按标识取对象；畸形标识归入「不可访问」。
 
     `get_support_object` 对非法 UUID 抛 `ProfileDataError`。这里把它转成

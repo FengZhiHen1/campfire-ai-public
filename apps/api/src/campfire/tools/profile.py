@@ -42,9 +42,8 @@ from campfire.core.authz import (
 from campfire.core.config import get_settings
 from campfire.core.db import session_scope
 from campfire.core.jobs import dispatch_pending_write
-from campfire.core.pending_write import KIND_PROFILE_ITEM, ORIGINS, enqueue
+from campfire.core.pending_write import KIND_PROFILE_ITEM, enqueue
 from campfire.modules.profile import (
-    DOMAINS,
     MAX_DISPLAY_NAME_LENGTH,
     GroupedItems,
     ItemView,
@@ -80,13 +79,47 @@ ACCOUNT_PAYLOAD_KEY = "account_id"
 DEFAULT_ITEMS_LIMIT = ITEMS_DEFAULT_LIMIT
 MAX_ITEMS_LIMIT = ITEMS_MAX_LIMIT
 
-#: 领域取值词表，从 `modules/profile.DOMAINS` 派生（不另写一份）。
-#: 落在参数枚举上而不是提示词里：契约第 5 节要求「领域名非法明确失败，不静默归入『其他』」，
-#: 而提示词层约束可以绕过（`RQ-LIM-05` 已明确该层不构成安全边界）。
-Domain = Literal[*tuple(sorted(DOMAINS))]
+#: 领域取值词表。语义所有者仍是 `modules/profile.DOMAINS`（个性化档案第 6 节），
+#: 这里是一份受机械守住的镜像，不是第二处定义。
+#:
+#: 为什么必须写出来而不能 `Literal[*tuple(sorted(DOMAINS))]` 派生：`Literal` 的参数
+#: 只接受字面量表达式，mypy 2.1.0 对 `*tuple(...)` 与 `Final` 常量都判 `valid-type`
+#: （实测）。派生写法在运行时确实成立（pydantic 能解析），但静态上等于把整个参数模型
+#: 的取值域退化成「类型别名非法」——那正是 CI 把 mypy 当 NewType 与枚举唯一机器通道
+#: 时最不该出现的情形。
+#:
+#: 镜像的漂移由用例机械守住：`test_profile_tools.py` 的
+#: `test_domain_enum_mirrors_the_module_vocabulary_exactly` 断言本 Literal 的取值集合
+#: 与 `DOMAINS` 双向相等（多一个、少一个都会失败）。这正是原先派生写法想达到的
+#: 效果——词表增删时不可能只改一处而不被发现。
+Domain = Literal[
+    "basic_identity",
+    "about_self",
+    "communication",
+    "sensory_processing",
+    "routines_and_change",
+    "emotional_regulation",
+    "triggers_and_support",
+    "executive_function",
+    "daily_living",
+    "social_relationships",
+    "physical_medical",
+    "learning_and_work",
+    "risk_and_crisis",
+    "goals_and_plans",
+    "other",
+]
 
-#: 生成方式词表，取自 `core.pending_write.ORIGINS`（六值的所有者是写入路径第 3 节）。
-Origin = Literal[*tuple(sorted(ORIGINS))]
+#: 生成方式词表。语义所有者是 `core.pending_write.ORIGINS`（写入路径第 3 节），
+#: 同样是受守住的镜像，理由与 `Domain` 完全相同。
+Origin = Literal[
+    "user_statement",
+    "guardian_observation",
+    "third_party_report",
+    "document",
+    "system_observation",
+    "ai_inference",
+]
 
 
 class _Source(BaseModel):
@@ -157,8 +190,8 @@ class ProposeProfileItemArgs(BaseModel):
 
     support_object_id: Annotated[str, Field(min_length=1, max_length=64, description="支持对象标识（UUID）")]
     domain: Annotated[Domain, Field(description="领域：十四个一级模块之一或「其他」；词表外的值被拒绝")]
-    topic: Annotated[str, Field(min_length=1, max_length=200, description="该领域下的主题")] = ...
-    description: Annotated[str, Field(min_length=1, description="一条可观察的事实描述，不要写成宽泛标签")] = ...
+    topic: Annotated[str, Field(min_length=1, max_length=200, description="该领域下的主题")]
+    description: Annotated[str, Field(min_length=1, description="一条可观察的事实描述，不要写成宽泛标签")]
     origin: Annotated[Origin, Field(description="这条认识是怎么来的；落层由它决定，不由调用方指定")]
     source: Annotated[_Source, Field(description="来源定位：会话标识，可带消息序号与转述者")]
     contexts: Annotated[list[str] | None, Field(default=None, description="什么情境下出现（可选）")] = None

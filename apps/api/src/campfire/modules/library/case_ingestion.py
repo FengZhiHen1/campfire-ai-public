@@ -118,6 +118,21 @@ def _compute_package_hash(manifest_path: Path, card_paths: list[Path], narrative
     return digest.hexdigest()
 
 
+def _card_title(card: dict[str, object]) -> str:
+    """取卡片 `title` 并收窄成 `str`。
+
+    卡片是从 `json.loads` 读出的 `dict[str, object]`，静态类型看不穿
+    `validate_card` 的动态校验；而 `title` 在 `REQUIRED_CARD_STRINGS` 里，
+    `_load_cards` 已对每张卡片跑过校验并按错误清单拒绝——因此这里只是把
+    「已在别处校验」这一事实转述给类型检查器，不是二次校验。
+    集中成一个函数而不是在两个调用点各收窄一次：不变量只留一个落点，
+    将来 `title` 的约束变了（例如允许为空），只需改这里。
+    """
+    title = card["title"]
+    assert isinstance(title, str)  # 由 _load_cards 的 validate_card 保证
+    return title
+
+
 def _card_metadata(
     manifest: CaseManifest,
     item_id: str,
@@ -528,7 +543,7 @@ async def ingest_case_package(
     table = vector_store._table_class  # noqa: SLF001 —— 框架耦合点，由集成测试守护
     high_risk = item.makes_claims_high_risk
     for index, (card, card_id, text, vector) in enumerate(zip(cards, card_ids, card_texts, card_vectors, strict=True)):
-        metadata = _card_metadata(manifest, item_id, card, card_id, locator=card["title"], withdrawn=item.withdrawn)
+        metadata = _card_metadata(manifest, item_id, card, card_id, locator=_card_title(card), withdrawn=item.withdrawn)
         # 案例级高风险一旦为真，逐卡也标为真：叙事与卡片的标记口径必须一致，
         # 否则同一案例的卡片说「低风险」而案例说「高风险」，skill 无从判断该信哪个。
         if high_risk:
@@ -574,7 +589,7 @@ async def ingest_case_package(
         cards_written=len(cards),
         narrative_nodes=len(embeddable_narrative),
         needs_manual_review=manual_reviews,
-        locators=[card["title"] for card in cards] + [chunk.locator for chunk in embeddable_narrative],
+        locators=[_card_title(card) for card in cards] + [chunk.locator for chunk in embeddable_narrative],
     )
 
 

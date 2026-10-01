@@ -195,6 +195,40 @@ def test_image_is_replaced_by_a_visible_marker() -> None:
     assert "前" in result.markdown and "后" in result.markdown
 
 
+def test_figure_image_is_counted_exactly_once() -> None:
+    """`<figure>` 里的图片只记一张、只留一条痕（2026-10-01 修）。
+
+    `figure` 分支会递归渲染子节点，而 `<img>` 子节点在 `img` 分支里已经计过数并追加
+    过标记；该分支原先又无条件补一次，于是 `<figure><img></figure>` 被记成 2 张、
+    正文里出现 2 条相同留痕。这不是「多一个标记」的小事：
+
+    - `images_dropped` 是打印给运维的「不静默丢弃」记账数（`cli/__main__.py`），
+      虚报让守恒对账失真；
+    - 重复留痕是可见的产物污染，读者会以为原件里真有两张图。
+
+    判别性：去掉 figure 分支里「递归前后计数有没有涨」的判断（恢复无条件补一次），
+    本用例失败——下面每个形状都会得到 2 而不是 1。
+
+    覆盖直接子节点与几种包装形态（`picture`/`div`/`a`）：判据必须是通用的
+    「递归有没有已经记过」，而不是只对某一种嵌套有效。
+    """
+    for body in (
+        '<figure><img src="a.png"/></figure>',
+        '<figure><img src="a.png"/><figcaption>图注</figcaption></figure>',
+        '<figure><picture><img src="a.png"/></picture></figure>',
+        '<figure><div><img src="a.png"/></div></figure>',
+        '<figure><a href="x"><img src="a.png"/></a></figure>',
+    ):
+        result = convert_html(_page(body))
+        assert result.images_dropped == 1, f"应只记一张图：{body}"
+        assert result.markdown.count(_IMAGE_MARKER) == 1, f"应只留一条痕：{body}"
+
+    # 对照：两张图必须记两张，说明上面的 1 不是「计数被写死」。
+    two = convert_html(_page('<figure><img src="a.png"/></figure><figure><img src="b.png"/></figure>'))
+    assert two.images_dropped == 2
+    assert two.markdown.count(_IMAGE_MARKER) == 2
+
+
 def test_inline_formatting_is_preserved() -> None:
     """粗体、斜体、行内代码保留 Markdown 语义。"""
     body = "<p>这是<strong>重点</strong>与<em>强调</em>以及<code>代码</code>。</p>"
