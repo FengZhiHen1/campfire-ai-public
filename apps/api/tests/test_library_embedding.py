@@ -1,11 +1,13 @@
 """嵌入适配的单元测试（不调用真实嵌入服务）。
 
-锁定三件事：
+锁定四件事：
 
 1. **自定义模型名能装进框架适配器**——`model=` 会被枚举校验拒绝，必须用
    `model_name=`；这是接入 TokenHub 的前提（2026-09-29 实测）。
 2. **缺凭据显式失败**，不静默降级。
 3. **单条超限在送入之前就被拦下**——静默截断会制造错误的检索依据。
+4. **送供应商的每次请求不超过建议批量**——案例摄取自己不分批，这条约束因此
+   只在 `build_embedding` 落实（D-84）。
 """
 
 from __future__ import annotations
@@ -42,10 +44,49 @@ def test_build_embedding_uses_custom_model_name() -> None:
 
 
 def test_build_embedding_batch_size_matches_interface_recommendation() -> None:
-    """批量大小按接口建议值设定（≤128 条/请求）。"""
+    """批量大小按接口建议值设定（单请求 ≤128 条，RAG 策略第 10 节）。
+
+    第一条断言写死字面值：只与常量互比是循环论证——常量被一起改大就无人察觉，
+    而 128 是接口（供应商）侧的建议值，调大它须先有新的接口依据并同步设计文档。
+    """
     embedding = build_embedding(_settings())
 
+    assert RECOMMENDED_BATCH_SIZE == 128, "接口建议值被改大：请先确认供应商侧不再有 ≤128 条的建议"
     assert embedding.embed_batch_size == RECOMMENDED_BATCH_SIZE
+
+
+@pytest.mark.asyncio
+async def test_provider_requests_are_split_at_recommended_batch_size(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """送入供应商的每次请求都不超过 `RECOMMENDED_BATCH_SIZE`，且切片不丢文本（D-84）。
+
+    为什么钉住框架行为：案例摄取把全部卡片与叙事块一次交给 `embed_texts`（自己
+    不分批），「单请求建议 ≤128 条」这条约束因此完全落在 `build_embedding` 的
+    `embed_batch_size=RECOMMENDED_BATCH_SIZE` 上——框架在 `aget_text_embedding_batch`
+    里按它切片，每片一次供应商请求。若有人删掉那个参数、或升级框架后切片行为消失，
+    本用例会失败，而不是等到某个大案例包被供应商拒绝、整包回滚时才发现。
+
+    判别性（消融实测）：删掉 `build_embedding` 里的 `embed_batch_size=RECOMMENDED_BATCH_SIZE`
+    后，框架回落到自己的默认值 10，请求分片变为 27 个 10 条，本用例失败。
+    """
+    embedder = build_embedding(_settings())
+    batches: list[int] = []
+
+    async def spy(_self: object, texts: list[str]) -> list[list[float]]:
+        batches.append(len(texts))
+        # 只断言切片形状，不建 2560 维数组（本用例不碰向量内容）。
+        return [[0.0] for _ in texts]
+
+    monkeypatch.setattr(type(embedder), "_aget_text_embeddings", spy)
+
+    total = RECOMMENDED_BATCH_SIZE * 2 + 7
+    vectors = await embedder.aget_text_embedding_batch([f"文本 {i}" for i in range(total)])
+
+    assert batches == [RECOMMENDED_BATCH_SIZE, RECOMMENDED_BATCH_SIZE, 7], (
+        f"框架未按 embed_batch_size 切片，供应商请求分片为 {batches}"
+    )
+    assert len(vectors) == total, "切片不得丢文本——条数错位会让向量与文本对不上"
 
 
 def test_missing_credentials_fail_loudly() -> None:
