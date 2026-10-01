@@ -642,19 +642,27 @@ async def confirm_item(
 ) -> ProfileItem:
     """确认一条候选条目：此后进稳定层（第 3 节：候选 → 使用者确认 → 稳定档案）。
 
-    只能作用于候选条目（`confirmation = unconfirmed`）：对已确认或已否定的
-    条目返回失败（档案面契约第 4 节：422）。
+    只能作用于未被取代的候选条目（`confirmation = unconfirmed` 且
+    `superseded_by IS NULL`）：对已确认或已否定的条目返回失败
+    （档案面契约第 4 节：422）；对已被取代的条目同样返回失败，因为设计给历史
+    条目的话是「可回看」（第 5 节第 5 条），而 `RQ-MEM-03` 给使用者的条目能力是
+    「查 / 纠 / 删」——没有「确认一条已被取代的条目」。
 
     Raises:
         AuthorizationError: 条目不存在或不属于该账号（经对象归属判定）。
-        ProfileItemNotFoundError: 条目不存在，或当前不是 `unconfirmed`。
+        ProfileItemNotFoundError: 条目不存在，或当前不是 `unconfirmed`，或已被取代。
     """
     row = await _load_owned_item(session, account_id=account_id, item_id=item_id)
     updated = await repo.confirm_item(session, item_id=item_id, now=now)
     if updated is None:
+        # 载荷里是读取时的快照：三种失败（已确认/已否定、已被取代）共用一条
+        # 异常类型，因此原因里把状态事实带上，读日志的人不必再查一次库
+        # （与 `correct_item` 同一口径）。
         raise ProfileItemNotFoundError(
             row.item_id,
-            f"当前确认状态为 {row.confirmation!r}，只有候选条目（unconfirmed）可确认",
+            f"读取时确认状态为 {row.confirmation!r}、新鲜度为 {row.freshness!r}、"
+            f"取代指针{'非空' if row.superseded_by is not None else '为空'}："
+            "只有未被取代的候选条目（unconfirmed）可确认",
         )
     return updated
 
@@ -667,16 +675,23 @@ async def reject_item(
 ) -> ProfileItem:
     """否定一条候选：不物理删除，此后不进摘要、不参与注入、不再作为候选提出（第 2 节）。
 
+    只能作用于未被取代的候选（`confirmation = unconfirmed` 且 `superseded_by IS NULL`）：
+    已被取代的行若被否定会置 `rejected`，而读路径一律排除 `rejected`
+    ——那条历史行连「可回看」（第 5 节第 5 条）也不再成立。
+
     Raises:
         AuthorizationError: 条目不存在或不属于该账号。
-        ProfileItemNotFoundError: 条目不存在，或当前不是 `unconfirmed`。
+        ProfileItemNotFoundError: 条目不存在，或当前不是 `unconfirmed`，或已被取代。
     """
     row = await _load_owned_item(session, account_id=account_id, item_id=item_id)
     updated = await repo.reject_item(session, item_id=item_id)
     if updated is None:
+        # 与 `confirm_item` 同一口径：把读取时的状态事实带进原因。
         raise ProfileItemNotFoundError(
             row.item_id,
-            f"当前确认状态为 {row.confirmation!r}，只有候选条目（unconfirmed）可否定",
+            f"读取时确认状态为 {row.confirmation!r}、新鲜度为 {row.freshness!r}、"
+            f"取代指针{'非空' if row.superseded_by is not None else '为空'}："
+            "只有未被取代的候选条目（unconfirmed）可否定",
         )
     return updated
 

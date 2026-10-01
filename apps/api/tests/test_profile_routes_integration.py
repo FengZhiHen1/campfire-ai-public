@@ -18,7 +18,7 @@
 
 1. 越权与不存在逐字同文案（不泄露存在性）；归档上的新增文案区分（409）。
 2. 空名 422、`limit` 越界 422、无字段的 PATCH 422、重复确认 422、纠正无变更 422、
-   对已被取代的条目再次纠正 422。
+   对已被取代的条目再次纠正 422、对已被取代的条目确认/否定 422。
 3. 删除的越权与不存在一律 404 且响应体逐字相同（裁决 1）；删除成功的响应为
    `already: false`。
 4. 删掉的条目不再出现在读取里（`AC-08`）。
@@ -158,6 +158,18 @@ async def _propose(
             source=dict(_SOURCE),
         )
     return str(item.item_id)
+
+
+async def _superseded_unconfirmed_candidate(client: httpx.AsyncClient, object_id: str) -> tuple[str, str]:
+    """经 HTTP 造一条「已被取代 + 未确认」的条目，返回 `(旧条目, 新条目)`。
+
+    提交 `ai_inference` 候选（未确认）后用纠正端点取代它：旧条目转 `historical`
+    并写上 `superseded_by`，`confirmation` 仍是 `unconfirmed`。
+    """
+    candidate = await _propose(object_id, origin="ai_inference", description="被取代的推断")
+    corrected = await client.post(f"/profile/items/{candidate}/correct", json={"description": "使用者改写的描述"})
+    assert corrected.status_code == 201, corrected.text
+    return candidate, corrected.json()["item_id"]
 
 
 # ---------------------------------------------------------------------------
@@ -696,6 +708,76 @@ async def test_reject_removes_candidate_from_reads(client: httpx.AsyncClient, as
     listing = await client.get(f"/profile/objects/{object_id}/items", params={"include_candidates": "true"})
     assert listing.json()["items"] == []
     assert listing.json()["candidates"] == []
+
+
+async def test_confirm_of_a_superseded_item_is_422(client: httpx.AsyncClient, as_account) -> None:  # noqa: ANN001
+    """对已被取代的条目确认 → 422（历史条目只可回看，`RQ-MEM-03` 无此能力）。
+
+    消融：去掉 `repository.confirm_item` 的 `superseded_by IS NULL` 判据，
+    本用例必红——探针实测此前返回 200，且该行按归组判据从 `candidates` 移进 `items`。
+    """
+    object_id = await _new_object()
+    old, new = await _superseded_unconfirmed_candidate(client, object_id)
+
+    response = await client.post(f"/profile/items/{old}/confirm")
+
+    assert response.status_code == 422, response.text
+    assert response.json()["code"] == "invalid_payload"
+    listing = (
+        await client.get(
+            f"/profile/objects/{object_id}/items",
+            params={"include_superseded": "true", "include_candidates": "true"},
+        )
+    ).json()
+    assert [item["item_id"] for item in listing["candidates"]] == [old], "被拒绝的确认不得改变归组"
+    assert [item["item_id"] for item in listing["items"]] == [new]
+    assert listing["candidates"][0]["confirmation"] == "unconfirmed"
+
+
+async def test_reject_of_a_superseded_item_is_422(client: httpx.AsyncClient, as_account) -> None:  # noqa: ANN001
+    """对已被取代的条目否定 → 422，且它仍可回看（否定会让它从所有读路径消失）。
+
+    消融：去掉 `repository.reject_item` 的 `superseded_by IS NULL` 判据，
+    本用例必红——探针实测此前返回 200，该行此后连
+    `include_superseded=true` 也取不到。
+    """
+    object_id = await _new_object()
+    old, new = await _superseded_unconfirmed_candidate(client, object_id)
+
+    response = await client.post(f"/profile/items/{old}/reject")
+
+    assert response.status_code == 422, response.text
+    listing = (
+        await client.get(
+            f"/profile/objects/{object_id}/items",
+            params={"include_superseded": "true", "include_candidates": "true"},
+        )
+    ).json()
+    assert [item["item_id"] for item in listing["candidates"]] == [old], "历史行必须仍可回看"
+    assert listing["candidates"][0]["confirmation"] == "unconfirmed"
+
+
+async def test_delete_of_a_superseded_item_is_still_200(client: httpx.AsyncClient, as_account) -> None:  # noqa: ANN001
+    """已取代条目仍可删除（`RQ-MEM-03` 的「删」）：新增守卫只落在确认与否定两处。
+
+    没有这条，守卫可能被顺手扩散成「历史条目一概只读」，而删除对历史条目
+    仍然合法——那是与纠正、确认都不同的一条路径。
+    """
+    object_id = await _new_object()
+    old, new = await _superseded_unconfirmed_candidate(client, object_id)
+
+    response = await client.delete(f"/profile/items/{old}")
+
+    assert response.status_code == 200, response.text
+    assert response.json() == {"item_id": old, "already": False}
+    listing = (
+        await client.get(
+            f"/profile/objects/{object_id}/items",
+            params={"include_superseded": "true", "include_candidates": "true"},
+        )
+    ).json()
+    assert [item["item_id"] for item in listing["candidates"]] == [], "删掉的历史行不再出现"
+    assert [item["item_id"] for item in listing["items"]] == [new]
 
 
 async def test_delete_returns_404_for_foreign_and_absent_items(client: httpx.AsyncClient, as_account) -> None:  # noqa: ANN001
