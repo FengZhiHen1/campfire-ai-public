@@ -13,6 +13,7 @@
  */
 
 import SuperTokens from 'supertokens-web-js';
+import EmailPassword from 'supertokens-web-js/recipe/emailpassword';
 import Session from 'supertokens-web-js/recipe/session';
 
 import type { SessionPort } from '../../features/accounts/application/ports';
@@ -47,6 +48,23 @@ let initialized = false;
  * 为什么 init 只做一次：SDK 的 init 会把全局 fetch 换成带刷新重试与 anti-CSRF 注入的
  * 版本；重复 init 在页面上堆叠拦截器，会让一次 401 触发多轮刷新。
  * init 不发网络请求，因此后端未启动不会使本调用失败。
+ *
+ * ⚠️ **`EmailPassword.init()` 必须在这个列表里**（2026-10-01 真机抓到的缺陷）。
+ *
+ * 此前这里只有 `Session.init()`，而 `authPort.ts` 调用 `EmailPassword.signIn/signUp`。
+ * SDK 的 `Recipe.getInstanceOrThrow()` 在 recipe 未初始化时**直接抛异常**
+ * （`supertokens-web-js/lib/build/recipe/emailpassword/recipe.js`：
+ * "No instance of EmailPassword found. Ensure that the 'EmailPassword.init' method
+ * is called within the 'SuperTokens.init' recipeList."）。
+ *
+ * 症状很有误导性，记下来以免重犯：**点击登录/注册后界面立即报「操作没有成功，
+ * 请稍后重试」，但服务端与浏览器网络面板里都看不到任何请求**——因为异常发生在
+ * 发请求之前。它看起来像网络问题或后端问题，实际是前端漏了一个 init。
+ *
+ * 单测没抓到它的原因也记下来：`authPort.test.ts` 把
+ * `supertokens-web-js/recipe/emailpassword` 与 `./session` 都 `vi.mock` 了，
+ * 于是「recipe 是否真的注册过」这一事实在测试里根本不存在。
+ * 这类缺陷只有真实浏览器 + 真实 SDK 才会暴露。
  */
 export function initSession(): void {
   if (initialized) return;
@@ -56,7 +74,9 @@ export function initSession(): void {
       apiDomain: API_DOMAIN,
       apiBasePath: API_BASE_PATH,
     },
-    recipeList: [Session.init()],
+    // 两个 recipe 都要：`Session` 承担令牌刷新与登出，`EmailPassword` 承担
+    // 登录/注册。漏掉后者会让 `EmailPassword.signIn` 在发起请求前抛异常。
+    recipeList: [Session.init(), EmailPassword.init()],
   });
   initialized = true;
 }
