@@ -29,6 +29,8 @@ Redis 不承载长期业务状态，丢失不恢复已撤销状态（技术栈�
 
 from __future__ import annotations
 
+from typing import cast
+
 import redis.asyncio as aioredis
 
 from campfire.core.config import Settings
@@ -51,6 +53,14 @@ class RedisCache:
     `decode_responses=True`：事件缓冲里存的是 SSE 行与游标，调用方需要 `str`。
     不开启时同一个 key 在不同调用点会是 `bytes` 与 `str` 两种类型，而这是一个
     只能靠运行期发现的差异。
+
+    这个开关同时决定读方法的静态类型，因此 `get` 与 `lrange` 各有一处 `cast`
+    把返回收窄成 `str`。收窄可靠的唯一依据是构造参数：开了 `decode_responses`，
+    redis-py 的响应回调已把字节解成 `str`；stub 帮不上忙——redis-py 8.1.0 的
+    `Redis` 不是泛型类（`Redis[str]` 实测 `TypeError`），也没有区分该开关的重载，
+    只能把 `GET`/`LRANGE` 一律标成 `bytes | str | None`。
+    该前提由 `tests/test_cache.py::test_pool_decodes_responses` 机械钉住：
+    删掉开关或改成 `False` 会让它失败。
     """
 
     def __init__(self, redis_url: str) -> None:
@@ -70,7 +80,8 @@ class RedisCache:
     async def get(self, key: str) -> str | None:
         """取一个键的值；键不存在时返回 `None`。"""
         client = aioredis.Redis(connection_pool=self._pool)
-        return await client.get(key)
+        # cast 的依据：池开了 `decode_responses`（见类说明），响应必是 `str` 而非 `bytes`。
+        return cast("str | None", await client.get(key))
 
     async def set(self, key: str, value: str, *, ttl_seconds: int) -> None:
         """置值并同时设定过期时间。
@@ -115,7 +126,8 @@ class RedisCache:
         因为那个区别只有调用方在决定要不要报 409 时才需要，而它可以先看键是否存在。
         """
         client = aioredis.Redis(connection_pool=self._pool)
-        return list(await client.lrange(key, start, stop))
+        # cast 的依据同 `get`：池开了 `decode_responses`，列表元素必是 `str`。
+        return cast("list[str]", list(await client.lrange(key, start, stop)))
 
     async def expire(self, key: str, ttl_seconds: int) -> bool:
         """给已存在的键续期；返回「键是否存在（因而被续期）」。"""
