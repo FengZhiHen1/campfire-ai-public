@@ -185,10 +185,7 @@ def test_oversized_table_splits_by_rows_and_repeats_header() -> None:
     而"有哪些循证实践"正是最可能的提问。结构保护的本意是不切断**行内**，
     按行分段并重复表头产出的每片仍是合法且自解释的表格。
     """
-    rows = [
-        f"| 实践{i} | 这是第{i}种循证实践的定义说明文字，需要足够长以避免碎片并撑过硬上限 |"
-        for i in range(60)
-    ]
+    rows = [f"| 实践{i} | 这是第{i}种循证实践的定义说明文字，需要足够长以避免碎片并撑过硬上限 |" for i in range(60)]
     table = "\n".join(["| 实践 | 定义 |", "|---|---|", *rows])
     assert len(table) > HARD_MAX_CHARS, "本用例需要超长表格"
 
