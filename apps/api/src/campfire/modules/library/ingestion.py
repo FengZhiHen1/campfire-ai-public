@@ -184,6 +184,11 @@ async def embed_texts(settings: Settings, texts: list[str]) -> list[list[float]]
     批量嵌入就会漂移出「一处校验长度、一处不校验」这类差异，而漏掉的长度校验
     会让供应商拒绝或静默截断（截断即制造错误的检索依据）。
 
+    条数上界不在此处实现：「单请求建议 ≤128 条」由 `build_embedding` 的
+    `embed_batch_size=RECOMMENDED_BATCH_SIZE` 落实——框架在 `aget_text_embedding_batch`
+    里按它切片后逐批调用，因此任意长度的入参都只会产生不超过该值的请求。
+    本函数负责的是另一件事：返回顺序与入参一一对应（条数不符即报错，见下）。
+
     Raises:
         EmbeddingConfigurationError: 缺凭据（透传，调用方需区别于普通失败）。
         IngestionError: 供应商报错，或返回条数与请求不符（后者会静默错配向量与文本）。
