@@ -69,6 +69,7 @@ export const httpProfilePort: ProfilePort = {
     request<ListProfileItemsResponse>(
       `${objectPath(objectId)}/items${query([
         ['include_candidates', options?.includeCandidates === true ? 'true' : undefined],
+        ['include_superseded', options?.includeSuperseded === true ? 'true' : undefined],
         ['cursor', options?.cursor],
       ])}`,
     ),

@@ -43,8 +43,17 @@ export interface ProfilePort {
   patchObject(objectId: string, patch: PatchSupportObjectRequest): Promise<SupportObject>;
   /** 一页摘要，只取稳定层（契约第 3 节）。 */
   getSummary(objectId: string): Promise<ProfileSummaryResponse>;
-  /** 读取条目；候选层单独成组返回（契约第 3 节）。 */
-  listItems(objectId: string, options?: { includeCandidates?: boolean; cursor?: string }): Promise<ListProfileItemsResponse>;
+  /**
+   * 读取条目；候选层单独成组返回（契约第 3 节）。
+   *
+   * `includeSuperseded` 为真时历史（已被取代）条目随 `items` 返回，档案页据此出行首「已更正」标
+   * （档案页第 62 行）；缺省为假，与服务端 `include_superseded = false` 对齐。
+   * 它与 `includeCandidates` 是两条独立的轴（时效 / 层），不互斥。
+   */
+  listItems(
+    objectId: string,
+    options?: { includeCandidates?: boolean; includeSuperseded?: boolean; cursor?: string },
+  ): Promise<ListProfileItemsResponse>;
   /** 确认一条候选（契约第 4 节）；只能作用于未确认条目。 */
   confirmItem(itemId: string): Promise<ConfirmProfileItemResponse>;
   /** 纠正 = 新增取代条目（契约第 4 节）。 */
