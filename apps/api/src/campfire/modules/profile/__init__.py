@@ -72,6 +72,7 @@ from campfire.modules.profile.service import (
     list_objects,
     propose_item,
     read_items,
+    read_session_bindings,
     reject_item,
     rename_object,
     resolve_default_object,
@@ -139,6 +140,7 @@ __all__ = [
     "reject_item",
     # 取数
     "emergency_context",
+    "read_session_bindings",
     "resolve_for_context",
     "summary",
     # 授权实现（装配处注入 core/authz）
