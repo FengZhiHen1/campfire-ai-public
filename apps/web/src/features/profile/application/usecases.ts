@@ -24,8 +24,9 @@ export interface ProfileSnapshot {
   summary: ProfileSummaryField[];
   hasProfile: boolean;
   /**
-   * 完整条目区的条目：稳定层，外加历史（已被取代）条目——后者在 `include_superseded` 打开时返回。
-   * 历史条目按 `AC-18` 归 `items` 而不是「待确认」分组（服务端的分组保证，前端不重做）。
+   * 完整条目区的条目：稳定层，外加曾属稳定层的历史（已被取代）条目。
+   * 历史条目在 `include_superseded` 打开时返回；归组由服务端判（`AC-18` 的服务端侧保证，
+   * 前端不重做）：历史且未确认的系统推断归 `candidates`，不落在这里。
    */
   items: ProfileItem[];
   /** 候选层条目；由服务端单独成组返回（`AC-18` 的服务端侧保证）。 */

@@ -422,8 +422,9 @@ interface StableRowProps {
  * `isStale` 恒为假——在这里判就是一条死分支。「已降权」标与描述默认收起挂在候选行上（见 CandidateRow）。
  *
  * 历史条目由 `include_superseded = true` 随条目流返回（`LoadProfileUseCase.loadObject`
- * 显式打开该开关），与本行同一结构；行首出「已更正」标（档案页第 33、62 行），
- * 落位与候选行的「已降权」标一致：标题之后、描述之前。
+ * 显式打开该开关），归 `items` 的那些落在本行、行首出「已更正」标（档案页第 33、62 行），
+ * 落位与候选行的「已降权」标一致：标题之后、描述之前；未确认的系统推断即便已被取代
+ * 也归 `candidates`，由候选行呈现（见 CandidateRow）。
  *
  * 历史条目不给「纠正」：已被取代的条目不再是纠正的对象（服务端 `mark_superseded`
  * 的判据要求 `freshness = current` 且 `superseded_by` 为空），这个入口必然失败；
@@ -483,9 +484,10 @@ interface CandidateRowProps {
  * 不再重复写时效措辞。
  *
  * 「已被取代的候选」（历史条目落在候选组，可达：纠正一条未确认的候选）不给「确认」：
- * 确认不会解除取代关系，服务端仍按 `freshness = historical` 归组，条目照旧带「已更正」
- * 且不进摘要，这个入口点了没有任何可观察变化。它不是「必败」而是「无效果」，藏它的理由
- * 因此要写清楚——判据仍是 `isHistorical`。「删除」不动：删除路径只判归属，对本行照常生效。
+ * 服务端 `confirm_item` 的 `WHERE` 要求 `superseded_by IS NULL`，对已被取代的条目一律失败
+ * （`ProfileItemNotFoundError`，档案面契约第 1 节映射为 422 `invalid_payload`），是必败入口。
+ * 判据仍是 `isHistorical`，不在这里另写一条取代判断。
+ * 「删除」不动：删除路径只判归属，对本行照常生效。
  */
 function CandidateRow({ item, busy, expanded, failure, onConfirm, onDelete, onToggleExpand }: CandidateRowProps) {
   const stale = isStale(item);
