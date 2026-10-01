@@ -494,3 +494,159 @@ def test_account_reset_success_path_still_reports_success(
     assert code == 0
     assert "已重置密码" in captured.out
     assert revocations == ["acct-w"], "改密成功后必须撤销该账号全部会话"
+
+
+# ---------------------------------------------------------------- 撤下（RQ-KB-04）
+#
+# 撤下是 CLI 独有的写路径：资料库面只有读端点（`RQ-KB-03`、`AC-29`）。
+# quality-floor: ignore todo-residue 此处引用的是待办登记文档本身，不是未处理的代码残留
+# 依据见 docs/TODO.md 的资料库面一条。这组用例钉的是「入口真的存在、真的走到
+# `withdraw_item`」——D-81 的缺陷形态正是能力完整（打标记 + 删节点同事务、
+# 幂等）却没有生产入口，调用点全在测试里。
+
+_ITEM_ID = "8f3a1c2e-5b7d-4a90-9c11-2d3e4f5a6b7c"
+
+
+def _install_fake_withdraw_runtime(monkeypatch: pytest.MonkeyPatch, withdraw: object) -> None:
+    """把 CLI 的会话边界与撤下用例换成假件（本组用例不连库）。
+
+    `get_settings` 一并替换：用例因此不依赖 `.env` 里的连接串。领域函数本身
+    由 `test_library_*_integration` 覆盖，这里只钉 CLI 的调用形状与呈现。
+    """
+    import campfire.cli.__main__ as cli_main
+
+    class _NullSession:
+        async def __aenter__(self):
+            return object()
+
+        async def __aexit__(self, *exc_info):
+            return False
+
+    monkeypatch.setattr(cli_main, "get_settings", lambda: object())
+    monkeypatch.setattr(cli_main, "session_scope", lambda settings: _NullSession())
+    monkeypatch.setattr(cli_main, "withdraw_item", withdraw)
+
+
+def test_withdraw_takes_library_item_and_reason() -> None:
+    """`withdraw` 的入参：库别、条目 id、`--reason`（`RQ-KB-04` 要求记录原因）。"""
+    args = _build_parser().parse_args(["withdraw", "case", _ITEM_ID, "--reason", "上游撤回该案例"])
+
+    assert args.library == "case"
+    assert args.item_id == _ITEM_ID
+    assert args.reason == "上游撤回该案例"
+
+
+@pytest.mark.parametrize("bad", ["cases", "Knowledge", "profile", ""])
+def test_withdraw_rejects_unknown_library_by_the_parser(bad: str) -> None:
+    """非法库别被 argparse 的 choices 拒绝（退出码 2），不静默回退到某个库。
+
+    退出码 2 是 argparse 对参数层面错误的既有行为；命令自己捕获的领域失败
+    （条目不存在、id 非法）是 1——两者不混。
+    """
+    with pytest.raises(SystemExit) as excinfo:
+        _build_parser().parse_args(["withdraw", bad, _ITEM_ID])
+
+    assert excinfo.value.code == 2
+
+
+def test_withdraw_dispatches_to_the_use_case_and_prints_the_result(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`main(["withdraw", ...])` 真的走到 `withdraw_item`，并按既有形状打印结果。
+
+    判别性：删掉 `main` 里的 withdraw 分派，本用例返回 2（落到用法输出）而不是 0。
+    """
+    from campfire.modules.library.withdrawal import WithdrawalResult
+
+    calls: list[dict[str, object]] = []
+
+    async def fake_withdraw(session, **kwargs):
+        calls.append(kwargs)
+        return WithdrawalResult(
+            item_id=kwargs["item_id"],
+            library=kwargs["library"],
+            already_withdrawn=False,
+            nodes_deleted=7,
+        )
+
+    _install_fake_withdraw_runtime(monkeypatch, fake_withdraw)
+
+    code = main(["withdraw", "case", _ITEM_ID, "--reason", "上游撤回该案例"])
+
+    captured = capsys.readouterr()
+    assert code == 0, f"撤下成功路径必须返回 0，实际 {code}（stderr={captured.err!r}）"
+    assert calls == [{"library": "case", "item_id": _ITEM_ID, "reason": "上游撤回该案例"}], (
+        f"库别、条目 id 与原因必须原样透传给 withdraw_item，实际 {calls!r}"
+    )
+    assert f"已撤下：case/{_ITEM_ID}" in captured.out
+    assert "删除检索节点：7" in captured.out
+    assert captured.err == "", f"首次撤下不该有幂等提示，实际 {captured.err!r}"
+
+
+def test_withdraw_reports_already_withdrawn_on_a_rerun(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """重复撤下：退出码 0，且明确说出「此前已撤下」——幂等在 CLI 层可辨。
+
+    判别性：去掉 `already_withdrawn` 分支，本用例失败（重跑与首次变更无法区分）。
+    """
+    from campfire.modules.library.withdrawal import WithdrawalResult
+
+    async def fake_withdraw(session, **kwargs):
+        return WithdrawalResult(
+            item_id=kwargs["item_id"],
+            library=kwargs["library"],
+            already_withdrawn=True,
+            nodes_deleted=0,
+        )
+
+    _install_fake_withdraw_runtime(monkeypatch, fake_withdraw)
+
+    code = main(["withdraw", "knowledge", _ITEM_ID])
+
+    captured = capsys.readouterr()
+    assert code == 0
+    assert f"已撤下：knowledge/{_ITEM_ID}" in captured.out
+    assert "删除检索节点：0" in captured.out
+    assert "此前已撤下" in captured.err, f"重复撤下必须可辨，实际 stderr={captured.err!r}"
+
+
+def test_withdraw_maps_a_domain_failure_to_exit_one(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """条目不存在 → 退出码 1 + stderr 说明原因，且不打印成功回执。"""
+    from campfire.modules.library.withdrawal import WithdrawalError
+
+    async def fake_withdraw(session, **kwargs):
+        raise WithdrawalError(f"条目不存在：{kwargs['library']}/{kwargs['item_id']}")
+
+    _install_fake_withdraw_runtime(monkeypatch, fake_withdraw)
+
+    code = main(["withdraw", "case", _ITEM_ID])
+
+    captured = capsys.readouterr()
+    assert code == 1
+    assert "撤下失败" in captured.err, f"失败原因必须写在 stderr，实际 {captured.err!r}"
+    assert "条目不存在" in captured.err
+    assert "已撤下" not in captured.out, f"失败不得打印成功回执，实际 stdout={captured.out!r}"
+
+
+def test_withdraw_maps_an_invalid_item_id_to_exit_one(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """条目 id 不是合法 UUID → 退出码 1，不是未捕获的 traceback。
+
+    判别性：把 `RetrievalError` 从 except 元组里去掉，本用例以异常失败。
+    """
+    from campfire.modules.library.retrieval import RetrievalError
+
+    async def fake_withdraw(session, **kwargs):
+        raise RetrievalError(f"非法条目 id：{kwargs['item_id']!r}")
+
+    _install_fake_withdraw_runtime(monkeypatch, fake_withdraw)
+
+    code = main(["withdraw", "knowledge", "not-a-uuid"])
+
+    captured = capsys.readouterr()
+    assert code == 1
+    assert "撤下失败" in captured.err and "not-a-uuid" in captured.err

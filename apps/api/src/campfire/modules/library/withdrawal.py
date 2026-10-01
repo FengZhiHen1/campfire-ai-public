@@ -1,7 +1,7 @@
 """撤下用例：打 `withdrawn` 标记并在同一事务内删除该条目的检索节点。
 
 职责：实现 `RQ-KB-04` 的撤下——条目状态变更与节点删除在一个事务里完成。
-边界：不提供服务端点（撤下由 CLI/运维触发，`RQ-KB-03`）；不做异步清理——那会让撤下与「即刻不可检索」之间出现窗口。
+边界：不提供服务端点（撤下经 CLI：`python -m campfire.cli withdraw <库别> <条目id>`，`RQ-KB-03`）；不做异步清理——那会让撤下与「即刻不可检索」之间出现窗口。
 参考：docs/技术设计/technical-details/资料与案例检索.md 第 4 节；docs/技术设计/technical-details/RAG 策略.md 第 2 节；细节见 `withdraw_item` 的 docstring。
 """
 

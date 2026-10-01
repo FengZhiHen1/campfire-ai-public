@@ -14,7 +14,7 @@ Agent 运行装配（docs/项目结构设计.md 第 5 节），而资料库面�
 
 为什么本面只有读端点（契约第 1 节）：`RQ-KB-03` 与 `AC-29` 已定资料与案例的导入、
 审核与知识库管理只能经应用内 CLI，不存在对应的 HTTP 端点与产品内界面。
-撤下由 CLI 打 `withdrawn` 标记，本面只负责「撤下后不再返回」。
+撤下由 CLI 打 `withdrawn` 标记（`python -m campfire.cli withdraw <库别> <条目id>`），本面只负责「撤下后不再返回」。
 """
 
 from __future__ import annotations
