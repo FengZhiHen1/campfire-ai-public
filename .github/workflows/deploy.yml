@@ -193,18 +193,22 @@ jobs:
           printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > ~/.ssh/known_hosts
           chmod 644 ~/.ssh/known_hosts
 
-      - name: 上传生产编排与 Docker 产物
+      - name: 上传生产编排与运维脚本
         env:
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
           DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
           DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
         run: |
-          # 只上传编排与 Dockerfile；`.env.prod` **不上传**（它含真实凭据，由运维在
-          # 目标机上维护）。这样发布不会覆盖生产凭据。
+          # 只上传编排、Docker 产物与运维脚本；`.env.prod` **不上传**（它含真实凭据，
+          # 由运维在目标机上维护）。这样发布不会覆盖生产凭据。
+          #
+          # `scripts/` 必须上传：下面「发布前快照」这一步要在目标机上跑 `backup.sh`。
           ssh -i ~/.ssh/id_deploy "$DEPLOY_USER@$DEPLOY_HOST" "mkdir -p '$DEPLOY_PATH'"
           scp -i ~/.ssh/id_deploy -r \
-            docker-compose.prod.yml infrastructure \
+            docker-compose.prod.yml infrastructure scripts \
             "$DEPLOY_USER@$DEPLOY_HOST:$DEPLOY_PATH/"
+          ssh -i ~/.ssh/id_deploy "$DEPLOY_USER@$DEPLOY_HOST" \
+            "chmod +x '$DEPLOY_PATH'/scripts/*.sh"
 
       - name: 登录 GHCR 并拉取新镜像
         env:
@@ -223,15 +227,42 @@ jobs:
              echo '$GHCR_TOKEN' | docker login ghcr.io -u '$GHCR_USER' --password-stdin && \
              docker compose -f docker-compose.prod.yml --env-file .env.prod pull"
 
+      - name: 发布前快照（迁移之前的回滚点）
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+        run: |
+          # 这一步是发布流程里**最不能省**的一步，理由：
+          #
+          # 迁移是本次发布中唯一**不可逆**的动作。镜像可以换回去，代码可以回滚，
+          # 但 `alembic upgrade head` 删掉的一列、改掉的一个类型，回退不回来。
+          # 因此必须在迁移之前留下一个可恢复的快照。
+          #
+          # 用仓库里的 `backup.sh`（不另写一份）——它已实测过：两个数据服务都触发
+          # BGSAVE 并等 LASTSAVE 变化再拷，产物带 sha256，且会用 pg_restore --list
+          # 校验转储可解析。这三条正是「快照可信」的判据。
+          #
+          # 快照失败即中止发布：一个「没有回滚点的迁移」比不发布更危险。
+          #
+          # 落盘位置用 DEPLOY_PATH 下的 backups/（与 compose 同目录，运维容易找到）；
+          # 保留策略由运维按 docs/运维/发布与回滚.md 执行，脚本本身不删任何东西。
+          ssh -i ~/.ssh/id_deploy "$DEPLOY_USER@$DEPLOY_HOST" \
+            "cd '$DEPLOY_PATH' && \
+             ./scripts/backup.sh \
+               --out-dir './backups' \
+               --compose-file docker-compose.prod.yml \
+               --env-file .env.prod"
+
       - name: 先迁移，再切流量
         env:
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
           DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
           DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
         run: |
-          # 顺序是刻意的：迁移在前、切换在后。反过来的话，新代码会先面对旧 schema
-          # 一段时间（那些请求要么 500、要么静默写错）。迁移必须保持向后兼容一版，
-          # 这样「迁移完成、切换失败」时旧容器仍能正常工作。
+          # 顺序是刻意的：快照 → 迁移 → 切换。反过来（先切换）会让新代码先面对旧
+          # schema 一段时间（那些请求要么 500、要么静默写错）。迁移必须保持向后兼容
+          # 一版，这样「迁移完成、切换失败」时旧容器仍能正常工作。
           ssh -i ~/.ssh/id_deploy "$DEPLOY_USER@$DEPLOY_HOST" \
             "cd '$DEPLOY_PATH' && \
              docker compose -f docker-compose.prod.yml --env-file .env.prod run --rm api alembic upgrade head"
