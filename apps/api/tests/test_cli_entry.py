@@ -1,12 +1,12 @@
 """本地摄取入口的命令行契约。
 
-设计（RAG 策略第 7 节）把入口形态定成 ``python -m campfire.cli ingest <路径>``，
-且明确「不暴露成服务端点」。本组用例锁住入口的命令行行为——**不触网、不连库**：
+设计（RAG 策略第 7 节）把入口形态定成 `python -m campfire.cli ingest <路径>`，
+且明确「不暴露成服务端点」。本组用例锁住入口的命令行行为——不触网、不连库：
 
 1. 无子命令时打印用法并以退出码 2 结束（不是静默成功）；
 2. 参数缺失时 argparse 报错、退出码非 0；
-3. 路径不存在时**明确失败**（退出码 1），不假装成功；
-4. 入口能真正通过 ``-m`` 跑到 ``main()``。
+3. 路径不存在时明确失败（退出码 1），不假装成功；
+4. 入口能真正通过 `-m` 跑到 `main()`。
 """
 
 from __future__ import annotations
@@ -56,11 +56,11 @@ def test_ingest_missing_file_fails_loudly(tmp_path: object) -> None:
 
 
 def test_cli_module_is_runnable_via_dash_m() -> None:
-    """``python -m campfire.cli`` 必须真的能跑（否则入口形态形同虚设）。
+    """`python -m campfire.cli` 必须真的能跑（否则入口形态形同虚设）。
 
-    两侧编码都显式固定。被测进程的输出编码受 ``PYTHONIOENCODING`` 影响，而
-    ``text=True`` 用 locale 解码（Windows 上是 GBK）；不固定的话，环境里设了
-    ``PYTHONIOENCODING=utf-8`` 就会让这条断言假失败——本用例初版正是如此，
+    两侧编码都显式固定。被测进程的输出编码受 `PYTHONIOENCODING` 影响，而
+    `text=True` 用 locale 解码（Windows 上是 GBK）；不固定的话，环境里设了
+    `PYTHONIOENCODING=utf-8` 就会让这条断言假失败——本用例初版正是如此，
     实测在设该变量的 shell 中失败、干净 shell 中通过。
     """
     completed = subprocess.run(
@@ -80,7 +80,7 @@ def test_cli_module_is_runnable_via_dash_m() -> None:
 
 
 def test_convert_writes_markdown_beside_input(tmp_path: object) -> None:
-    """`convert` 是**纯转换**：写出 .md，不连库、不调模型。
+    """`convert` 是纯转换：写出 .md，不连库、不调模型。
 
     与 ingest 分成两条命令是设计要求（RAG 策略第 1.1 节「链外准备＋人工核对」）
     ——产物必须先审再喂。
@@ -116,7 +116,7 @@ def test_convert_missing_file_fails_loudly() -> None:
 
 
 def test_convert_does_not_ingest(tmp_path: object) -> None:
-    """转换**不落库**——它不 import 数据库会话，因此无需凭据也能跑。
+    """转换不落库——它不 import 数据库会话，因此无需凭据也能跑。
 
     这是"先审后喂"能成立的前提；若 convert 顺带入库，人工核对就没有意义了。
     """
@@ -208,14 +208,14 @@ def _operator_parser():
 
 
 def test_invite_issue_has_no_ttl_option(capsys: pytest.CaptureFixture[str]) -> None:
-    """``invite issue`` 不接受有效期参数：30 天是设计定值（第 4 节）。
+    """`invite issue` 不接受有效期参数：30 天是设计定值（第 4 节）。
 
     为什么删而不是加范围校验：设计把有效期钉在 30 天（认证与账号 :68「8 位随机、
     一次性使用、有效期 30 天」，:49「签发时按 30 天计」），第 7 节的子命令表也只写
-    ``invite issue`` 而没有参数。保留一个可指定有效期的开关，就要为它发明一套
+    `invite issue` 而没有参数。保留一个可指定有效期的开关，就要为它发明一套
     区间政策；而它唯一能带来的额外能力（缩短有效期）没有任何出处。
 
-    判别性：把 ``--days`` 加回去，本用例失败（解析不再抛 ``SystemExit``）。
+    判别性：把 `--days` 加回去，本用例失败（解析不再抛 `SystemExit`）。
     """
     with pytest.raises(SystemExit) as excinfo:
         _operator_parser().parse_args(["invite", "issue", "--days", "0"])
@@ -231,14 +231,14 @@ def test_invite_issue_does_not_override_the_ttl(
 ) -> None:
     """签发不覆盖有效期：CLI 不给领域传有效期入参，回执打印的是设计定值。
 
-    为什么必须有这一条：``--days`` 移除后，若调用处仍写着 ``ttl_days=args.days``，
-    上面的参数解析用例**看不出来**（``--days`` 已不被接受）；真实运行会先在
-    ``args.days`` 上抛 ``AttributeError``——即「改了参数层、忘了改调用层」。
+    为什么必须有这一条：`--days` 移除后，若调用处仍写着 `ttl_days=args.days`，
+    上面的参数解析用例看不出来（`--days` 已不被接受）；真实运行会先在
+    `args.days` 上抛 `AttributeError`——即「改了参数层、忘了改调用层」。
 
-    判别性：把 ``ttl_days=...`` 传回去，断言失败；把回执改回 ``args.days``，
+    判别性：把 `ttl_days=...` 传回去，断言失败；把回执改回 `args.days`，
     本用例在打印那一行就崩。
 
-    库层（``session_scope``）与领域函数都用假件替身——本用例钉的是调用形状与回执，
+    库层（`session_scope`）与领域函数都用假件替身——本用例钉的是调用形状与回执，
     不连库。
     """
     import asyncio
@@ -281,17 +281,17 @@ def test_invite_issue_does_not_override_the_ttl(
 
 
 def test_account_delete_initializes_the_sdk(monkeypatch: pytest.MonkeyPatch) -> None:
-    """``account delete`` 必须在执行前初始化 SuperTokens SDK。
+    """`account delete` 必须在执行前初始化 SuperTokens SDK。
 
-    **背景（阻断级，2026-10-01 审查发现）**：第 3、4 步（撤会话、删身份用户）走
-    SDK，而 SDK 的 ``SessionRecipe.get_instance()`` 在未 init 的进程里直接抛
-    ``GeneralError: Initialisation not done``（源码实测）。CLI 不共享 Web 入口的
-    lifespan，不初始化就意味着 ``account delete`` **必然**在第一步成功后崩掉。
+    背景（阻断级，2026-10-01 审查发现）：第 3、4 步（撤会话、删身份用户）走
+    SDK，而 SDK 的 `SessionRecipe.get_instance()` 在未 init 的进程里直接抛
+    `GeneralError: Initialisation not done`（源码实测）。CLI 不共享 Web 入口的
+    lifespan，不初始化就意味着 `account delete` 必然在第一步成功后崩掉。
 
-    判别性：去掉 ``_run_account_delete`` 里的 ``_init_supertokens_for_cli`` 调用，
-    本用例失败（``initialized`` 不会被置真）。
+    判别性：去掉 `_run_account_delete` 里的 `_init_supertokens_for_cli` 调用，
+    本用例失败（`initialized` 不会被置真）。
 
-    库层（``session_scope``）与编排（``delete_account``）都用假件替身——本用例
+    库层（`session_scope`）与编排（`delete_account`）都用假件替身——本用例
     钉的是「init 先于执行」与「purgers 已求值」两件事，不连库。
     """
     import asyncio
@@ -329,7 +329,7 @@ def test_account_delete_initializes_the_sdk(monkeypatch: pytest.MonkeyPatch) -> 
         confirmed=False,
     ):
         calls.append("delete_account")
-        # purgers 必须是**列表**：修复前传进来的是工厂函数本身，迭代它会抛 TypeError。
+        # purgers 必须是列表：修复前传进来的是工厂函数本身，迭代它会抛 TypeError。
         assert isinstance(purgers, list), f"purgers 应为已求值的列表，实际 {type(purgers).__name__}"
         assert all(hasattr(p, "purge_account") for p in purgers), "列表成员必须是清除者"
         return deletion.DeletionReport(account_id=account_id)
@@ -358,14 +358,14 @@ def test_account_delete_initializes_the_sdk(monkeypatch: pytest.MonkeyPatch) -> 
 
 
 def test_account_reset_initializes_the_sdk(monkeypatch: pytest.MonkeyPatch) -> None:
-    """``account reset`` 同样必须初始化 SDK（改密走 ``update_email_or_password``）。
+    """`account reset` 同样必须初始化 SDK（改密走 `update_email_or_password`）。
 
-    判别性：去掉 ``_run_account_reset`` 里的初始化调用，本用例失败。
-    SDK 函数本身用假件替身（本用例不连 core），初始化的**事实**才是断言对象。
+    判别性：去掉 `_run_account_reset` 里的初始化调用，本用例失败。
+    SDK 函数本身用假件替身（本用例不连 core），初始化的事实才是断言对象。
 
-    假件返回 SDK **真实**的成功结果类型：修复前它是一个 ``status = "OK"`` 的自造类，
-    而 SDK 的 ``UpdateEmailOrPasswordOkResult`` 根本没有 ``status`` 属性（实测），
-    旧实现靠 ``getattr(..., None)`` 兜底才「碰巧」把成功认出来。判定改成类型之后，
+    假件返回 SDK 真实的成功结果类型：修复前它是一个 `status = "OK"` 的自造类，
+    而 SDK 的 `UpdateEmailOrPasswordOkResult` 根本没有 `status` 属性（实测），
+    旧实现靠 `getattr(..., None)` 兜底才「碰巧」把成功认出来。判定改成类型之后，
     假件必须与真实形状一致——否则本用例测的是不存在的形状。
     """
     import asyncio
@@ -411,18 +411,18 @@ _RESET_FAILURE_RESULTS = [
 def test_account_reset_reports_failure_for_every_non_ok_result(
     monkeypatch: pytest.MonkeyPatch, failure_result: object, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """改密返回任何非 OK 结果都必须**显式失败**，且不得撤销会话。
+    """改密返回任何非 OK 结果都必须显式失败，且不得撤销会话。
 
-    判别性：把判定改回 ``getattr(result, "status", None)``，四个参数里三个失败
-    （``UnknownUserIdError``/``PasswordPolicyViolationError``/改邮箱不允许都没有
-    ``status`` 属性，会被当成成功）；只有带 ``status`` 的 ``EmailAlreadyExistsError``
+    判别性：把判定改回 `getattr(result, "status", None)`，四个参数里三个失败
+    （`UnknownUserIdError`/`PasswordPolicyViolationError`/改邮箱不允许都没有
+    `status` 属性，会被当成成功）；只有带 `status` 的 `EmailAlreadyExistsError`
     侥幸通过。
 
     为什么四个都要测：原判据在属性缺失时 fail-open，而「属性缺失」不是个别分支的
-    特性——联合类型里只有 ``EmailAlreadyExistsError`` 带 ``status``。逐项覆盖才能
+    特性——联合类型里只有 `EmailAlreadyExistsError` 带 `status`。逐项覆盖才能
     保住「联合类型的每个成员都被显式处置」这条契约。
 
-    失败时还必须**什么都没做**：会话撤销不可逆，密码没改成却撤了会话，使用者就
+    失败时还必须什么都没做：会话撤销不可逆，密码没改成却撤了会话，使用者就
     被锁在门外而新密码从未生效（改密排在撤会话之前，正是为杜绝这个状态）。
     """
     import asyncio
@@ -462,7 +462,7 @@ def test_account_reset_success_path_still_reports_success(
 ) -> None:
     """成功路径仍然打印成功回执——防止把判定改成「一律失败」也算通过。
 
-    SDK 的成功结果没有 ``status`` 属性（实测），因此本用例同时钉住：
+    SDK 的成功结果没有 `status` 属性（实测），因此本用例同时钉住：
     「成功」不能靠某个属性存在与否来判断。
     """
     import asyncio

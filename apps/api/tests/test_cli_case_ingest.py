@@ -5,8 +5,8 @@
 
 1. `--library` 缺省仍是资料库（默认值不得漂移成案例库）；
 2. 非法库别由 argparse 拒绝（退出码非 0），不静默回退；
-3. 案例库路径必须是含 manifest 的**目录**，缺失即明确失败（退出码 1）；
-4. 资料库专属参数在 `--library case` 下**显式拒绝**而不静默忽略。
+3. 案例库路径必须是含 manifest 的目录，缺失即明确失败（退出码 1）；
+4. 资料库专属参数在 `--library case` 下显式拒绝而不静默忽略。
 """
 
 from __future__ import annotations
@@ -64,7 +64,7 @@ def test_case_ingest_rejects_knowledge_only_flags(tmp_path: Path, capsys: pytest
     的差异事后极难发现。
 
     判别性：去掉 `_reject_knowledge_only_flags` 的调用后，本用例会因为 manifest
-    只有 `{}`（缺必填字段）也返回 1——因此这里**同时断言错误信息里出现 `--source`**，
+    只有 `{}`（缺必填字段）也返回 1——因此这里同时断言错误信息里出现 `--source`，
     让「因别的原因返回 1」不会冒充通过。
     """
     package = tmp_path / "pkg"

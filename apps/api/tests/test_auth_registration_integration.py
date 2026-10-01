@@ -1,26 +1,26 @@
-"""端到端：注册经 HTTP 走通邀请码校验，且**无效码绝不建号**。
+"""端到端：注册经 HTTP 走通邀请码校验，且无效码绝不建号。
 
     docker compose up -d postgres supertokens
     uv run pytest -m integration apps/api/tests/test_auth_registration_integration.py
 
-## 这个文件钉住的是 `AC-15` 的**核心断言**
+这个文件钉住的是 `AC-15` 的核心断言：
 
-`AC-15` 要求「无码或无效码拒绝注册；撤销后不可用；**校验在自己的后端**」。
-仅断言「HTTP 返回了错误」是不够的——真正要证明的是「**身份服务侧没有新建用户**」，
+`AC-15` 要求「无码或无效码拒绝注册；撤销后不可用；校验在自己的后端」。
+仅断言「HTTP 返回了错误」是不够的——真正要证明的是「身份服务侧没有新建用户」，
 因为「拒绝」与「建了号再报错」在响应上看起来可以一样，而后者已经消耗了邀请码
-并留下了用户记录。因此本文件的每条拒绝用例都**回查身份服务**确认账号不存在。
+并留下了用户记录。因此本文件的每条拒绝用例都回查身份服务确认账号不存在。
 
-## 为什么用 ASGI 直连而不是起一个真服务器
+为什么用 ASGI 直连而不是起一个真服务器：
 
-`httpx.ASGITransport` 让请求穿过**完整的 FastAPI 应用**（含 SuperTokens 中间件、
+`httpx.ASGITransport` 让请求穿过完整的 FastAPI 应用（含 SuperTokens 中间件、
 cookie 处理、路由分派），但不占端口、不需要网络。这比「起 uvicorn 再打 localhost」
 更可靠（没有端口冲突与启动竞态），且仍然覆盖中间件行为——中间件是这一步的实现本身。
 
-## 覆盖边界（诚实声明）
+覆盖边界（诚实声明）：
 
-- **CI 不执行本文件**：它需要真实 postgres 与 supertokens，而 CI 的 backend 作业
+- CI 不执行本文件：它需要真实 postgres 与 supertokens，而 CI 的 backend 作业
   两者都没有（缺口已登记于 `docs/TODO.md`）。
-- 本文件**不校验** anti-CSRF 自定义头的真实生效——那是 signin/refresh 路径的行为，
+- 本文件不校验 anti-CSRF 自定义头的真实生效——那是 signin/refresh 路径的行为，
   且需要从前端 SDK 的调用形态出发构造；注册路径的 CSRF 语义不在本文件范围内。
 """
 
@@ -55,7 +55,7 @@ _EMAIL_DOMAIN = "registration-e2e.test"
 #: 测试密码：满足官方默认校验器（≥8 字符 + 小写字母 + 数字）。
 _PASSWORD = "probePass123"
 
-#: 本文件签发邀请码时使用的运营者标识。**它同时是清理的过滤条件**——
+#: 本文件签发邀请码时使用的运营者标识。它同时是清理的过滤条件——
 #: 见 :func:`_clear`（不能全表删除，否则并发跑时会删掉别的测试文件刚签发的码）。
 _OPERATOR = "it_registration"
 
@@ -64,10 +64,10 @@ _OPERATOR = "it_registration"
 def _normalise_env_for_sdk(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     """清掉宿主机代理变量——SDK 的 httpx 客户端在构造期就会被它弄坏。
 
-    实测：本机 ``no_proxy`` 含 ``[::1]``，httpx 构造客户端即抛
-    ``InvalidURL: Invalid port: ':1]'``；SDK 的 querier 自己 new ``AsyncClient``
-    （未传 ``trust_env=False``），因此必须清掉代理本身。属**测试环境适配**，
-    生产由部署编排给出正确的 ``no_proxy``。
+    实测：本机 `no_proxy` 含 `[::1]`，httpx 构造客户端即抛
+    `InvalidURL: Invalid port: ':1]'`；SDK 的 querier 自己 new `AsyncClient`
+    （未传 `trust_env=False`），因此必须清掉代理本身。属测试环境适配，
+    生产由部署编排给出正确的 `no_proxy`。
     """
     for name in ("HTTP_PROXY", "HTTPS_PROXY", "http_proxy", "https_proxy"):
         monkeypatch.delenv(name, raising=False)
@@ -77,7 +77,7 @@ def _normalise_env_for_sdk(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
 
 
 def _settings_or_skip() -> Settings:
-    """取配置；缺库或缺 API Key 时跳过——**不假装通过**。"""
+    """取配置；缺库或缺 API Key 时跳过——不假装通过。"""
     settings = get_settings()
     if not settings.database_url:
         pytest.skip("未配置 DATABASE_URL——集成测试需要 docker compose up -d postgres")
@@ -88,7 +88,7 @@ def _settings_or_skip() -> Settings:
 
 @pytest_asyncio.fixture
 async def client() -> AsyncIterator[httpx.AsyncClient]:
-    """返回一个穿过**完整应用**（含 SuperTokens 中间件）的 ASGI 客户端。
+    """返回一个穿过完整应用（含 SuperTokens 中间件）的 ASGI 客户端。
 
     core 不可达时跳过：那时注册失败的原因是环境，不是被测代码。
     """
@@ -114,14 +114,14 @@ async def client() -> AsyncIterator[httpx.AsyncClient]:
 async def _clear() -> None:
     """清掉本文件写入的邀请码行。
 
-    **必须按签发者过滤，不能全表删除**（2026-09-30 实测的真实缺陷）：本文件与
-    ``test_accounts_invite_integration.py`` 原先都做无过滤的 ``delete(InviteCode)``，
-    于是并发运行时**互相删对方刚签发的码**——实测一次并发跑出现
-    ``InviteCodeNotFoundError``（补偿释放找不到码），而单跑必然通过。
+    必须按签发者过滤，不能全表删除（2026-09-30 实测的真实缺陷）：本文件与
+    `test_accounts_invite_integration.py` 原先都做无过滤的 `delete(InviteCode)`，
+    于是并发运行时互相删对方刚签发的码——实测一次并发跑出现
+    `InviteCodeNotFoundError`（补偿释放找不到码），而单跑必然通过。
     签发者标识把删除范围收窄到本文件。
 
-    **账号不能清**：它们在 SuperTokens core 的库里，而本文件不实现删除用户的用例
-    （那是账号注销的功能，属另一次改动）。因此**账号名必须每次唯一**——
+    账号不能清：它们在 SuperTokens core 的库里，而本文件不实现删除用户的用例
+    （那是账号注销的功能，属另一次改动）。因此账号名必须每次唯一——
     见 :func:`_unique_email`；否则第二次跑同一用例会因「账号已存在」而失败，
     表现为「注册测试不稳定」而不是「环境有残留」。
     """
@@ -132,8 +132,8 @@ async def _clear() -> None:
 def _unique_email(prefix: str = "acct") -> str:
     """生成唯一的账号名。
 
-    **必须唯一**：SuperTokens core 会永久记住账号（本文件不清理它们），
-    固定名字会让「第二次运行」变成「账号已存在」——而那是**建号失败**路径，
+    必须唯一：SuperTokens core 会永久记住账号（本文件不清理它们），
+    固定名字会让「第二次运行」变成「账号已存在」——而那是建号失败路径，
     于是拒绝类用例会以错误的原因通过（假通过）。
     """
     import uuid
@@ -149,15 +149,15 @@ async def _issue_code() -> str:
 
 
 def _signup_payload(email: str, invite_code: str | None) -> dict[str, object]:
-    """构造身份服务 signup 的表单体（**SDK 的线格式**）。
+    """构造身份服务 signup 的表单体（SDK 的线格式）。
 
-    **实测格式**：身份服务的 signup 端点是 ``{"formFields": [{"id": ..., "value": ...}]}``，
-    **不是**扁平的 JSON 对象。第一版按扁平对象构造，实测全部请求返回 200 +
-    ``FIELD_ERROR``「Field is not optional」——即请求压根没到达我们的复写。
+    实测格式：身份服务的 signup 端点是 `{"formFields": [{"id": ..., "value": ...}]}`，
+    不是扁平的 JSON 对象。第一版按扁平对象构造，实测全部请求返回 200 +
+    `FIELD_ERROR`「Field is not optional」——即请求压根没到达我们的复写。
     测试用错格式会制造「以为在测拒绝路径、实际在测字段缺失」的假象。
 
-    邀请码作为**自定义字段**一并放进 ``formFields``（字段名见
-    ``INVITE_CODE_FORM_FIELD``），这正是前端要照做的形状。
+    邀请码作为自定义字段一并放进 `formFields`（字段名见
+    `INVITE_CODE_FORM_FIELD`），这正是前端要照做的形状。
     """
     form_fields = [
         {"id": "email", "value": email},
@@ -169,9 +169,9 @@ def _signup_payload(email: str, invite_code: str | None) -> dict[str, object]:
 
 
 def _status_of(response: httpx.Response) -> str:
-    """取响应体里的 ``status``（身份服务的**业务结果**字段）。
+    """取响应体里的 `status`（身份服务的业务结果字段）。
 
-    **它不是 HTTP 状态码**：实测拒绝也是 200，见模块说明。
+    它不是 HTTP 状态码：实测拒绝也是 200，见模块说明。
     """
     body = response.json()
     assert isinstance(body, dict), f"身份服务返回了非对象响应体：{body!r}"
@@ -181,30 +181,30 @@ def _status_of(response: httpx.Response) -> str:
 
 
 def _is_ok(response: httpx.Response) -> bool:
-    """注册是否成功（``status == "OK"``）。"""
+    """注册是否成功（`status == "OK"`）。"""
     return _status_of(response) == "OK"
 
 
 def _is_rejected(response: httpx.Response) -> bool:
-    """注册是否被**我们**拒绝（``GENERAL_ERROR``）。
+    """注册是否被我们拒绝（`GENERAL_ERROR`）。
 
-    **刻意不接受 ``FIELD_ERROR``**：那是 SDK 的表单校验失败（字段缺失或格式错），
-    意味着请求**没有到达我们的复写**。把它当成「拒绝生效」，会让用例在
+    刻意不接受 `FIELD_ERROR`：那是 SDK 的表单校验失败（字段缺失或格式错），
+    意味着请求没有到达我们的复写。把它当成「拒绝生效」，会让用例在
     「复写压根没被调用」时通过——那正是第一版的实际情形。
     """
     return _status_of(response) == "GENERAL_ERROR"
 
 
 async def _account_exists(email: str) -> bool:
-    """**回查身份服务**：该账号名是否真的存在。
+    """回查身份服务：该账号名是否真的存在。
 
     这是本文件的核心判据——「拒绝」必须意味着「没有创建用户」，
     而不只是「响应看起来像失败」。
 
-    **为什么用 ``GET /recipe/user?email=``**：实测该端点可用（返回
-    ``{"status":"OK","user":{...}}``；无此用户时 status 非 OK）。第一版用的
-    ``/recipe/emailpassword/email/exists`` 实测 **404**——那是 SDK 内部的常量路径，
-    **不是** core 的公开 Management API 路径。写错端点的后果是「探针永远失败」，
+    为什么用 `GET /recipe/user?email=`：实测该端点可用（返回
+    `{"status":"OK","user":{...}}`；无此用户时 status 非 OK）。第一版用的
+    `/recipe/emailpassword/email/exists` 实测 `404`——那是 SDK 内部的常量路径，
+    不是 core 的公开 Management API 路径。写错端点的后果是「探针永远失败」，
     而失败信息看起来像被测代码出了问题。
     """
     import httpx
@@ -227,7 +227,7 @@ async def _account_exists(email: str) -> bool:
 
 
 def _signup_path(settings: Settings) -> str:
-    """signup 的实际路径（``api_base_path`` + SDK 的 ``/signup``）。"""
+    """signup 的实际路径（`api_base_path` + SDK 的 `/signup`）。"""
     return f"{settings.supertokens_api_base_path.rstrip('/')}/signup"
 
 
@@ -238,7 +238,7 @@ def _signup_path(settings: Settings) -> str:
 
 @pytest.mark.asyncio
 async def test_valid_code_creates_the_account(client: httpx.AsyncClient) -> None:
-    """正向对照：**有效码**注册成功，且账号真的建出来了。
+    """正向对照：有效码注册成功，且账号真的建出来了。
 
     没有这条，下面所有「拒绝」用例都可能是「注册根本不通」造成的假通过。
     """
@@ -258,7 +258,7 @@ async def test_valid_code_creates_the_account(client: httpx.AsyncClient) -> None
 
 @pytest.mark.asyncio
 async def test_missing_code_is_rejected_and_creates_no_user(client: httpx.AsyncClient) -> None:
-    """**不带邀请码** → 拒绝，且身份服务里**没有**该账号（``AC-15``）。"""
+    """不带邀请码 → 拒绝，且身份服务里没有该账号（`AC-15`）。"""
     settings = _settings_or_skip()
     await _clear()
     try:
@@ -274,7 +274,7 @@ async def test_missing_code_is_rejected_and_creates_no_user(client: httpx.AsyncC
 
 @pytest.mark.asyncio
 async def test_unknown_code_is_rejected_and_creates_no_user(client: httpx.AsyncClient) -> None:
-    """**不存在的邀请码** → 拒绝，且**不留下任何用户记录**。
+    """不存在的邀请码 → 拒绝，且不留下任何用户记录。
 
     判别性：若实现是「先建号再校验」，本用例的第二条断言失败——而响应看起来
     可能同样是错误码，所以只断言状态码是不足以发现该缺陷的。
@@ -294,7 +294,7 @@ async def test_unknown_code_is_rejected_and_creates_no_user(client: httpx.AsyncC
 
 @pytest.mark.asyncio
 async def test_revoked_code_is_rejected_and_creates_no_user(client: httpx.AsyncClient) -> None:
-    """**已撤销的邀请码** → 拒绝，且不建号（``AC-15``「撤销后不可用」）。"""
+    """已撤销的邀请码 → 拒绝，且不建号（`AC-15`「撤销后不可用」）。"""
     settings = _settings_or_skip()
     await _clear()
     try:
@@ -313,7 +313,7 @@ async def test_revoked_code_is_rejected_and_creates_no_user(client: httpx.AsyncC
 
 @pytest.mark.asyncio
 async def test_used_code_is_rejected_the_second_time(client: httpx.AsyncClient) -> None:
-    """**一码只用一次**：同一张码第二次注册被拒，且第二个账号不存在。"""
+    """一码只用一次：同一张码第二次注册被拒，且第二个账号不存在。"""
     settings = _settings_or_skip()
     await _clear()
     try:
@@ -333,10 +333,10 @@ async def test_used_code_is_rejected_the_second_time(client: httpx.AsyncClient) 
 
 @pytest.mark.asyncio
 async def test_duplicate_account_name_releases_the_code(client: httpx.AsyncClient) -> None:
-    """**建号失败 → 补偿释放**：账号名重复时该码回到可用状态（第 4 节步骤 3）。
+    """建号失败 → 补偿释放：账号名重复时该码回到可用状态（第 4 节步骤 3）。
 
-    **判别性**：若实现漏了补偿释放，该码会永久停在「已占用」，使用者拿到一个新码
-    也救不回这张——本用例断言**同一张码**在失败后仍可成功注册。
+    判别性：若实现漏了补偿释放，该码会永久停在「已占用」，使用者拿到一个新码
+    也救不回这张——本用例断言同一张码在失败后仍可成功注册。
     """
     settings = _settings_or_skip()
     await _clear()
@@ -347,7 +347,7 @@ async def test_duplicate_account_name_releases_the_code(client: httpx.AsyncClien
         ok = await client.post(_signup_path(settings), json=_signup_payload(email, first_code))
         assert _is_ok(ok), f"首次注册应成功：{ok.text[:300]}"
 
-        # 用**新码** + 同一个账号名 → 建号失败（账号已存在），该新码应被释放。
+        # 用新码 + 同一个账号名 → 建号失败（账号已存在），该新码应被释放。
         second_code = await _issue_code()
         conflict = await client.post(_signup_path(settings), json=_signup_payload(email, second_code))
         assert not _is_ok(conflict), f"重复账号名必须失败：{conflict.text[:300]}"
@@ -371,33 +371,33 @@ async def test_duplicate_account_name_releases_the_code(client: httpx.AsyncClien
 
 @pytest.mark.asyncio
 async def test_non_ok_result_with_account_created_does_not_release_the_code() -> None:
-    """**账号已建但结果非 OK 时，不得释放邀请码**（2026-09-30 审查发现的重要缺陷）。
+    """账号已建但结果非 OK 时，不得释放邀请码（2026-09-30 审查发现的重要缺陷）。
 
-    ## 这条用例守的是什么
+    这条用例守的是什么：
 
-    第 4 节的补偿释放依赖「建号失败」。但**「原实现返回非 OK」≠「没有建号」**：
-    实测已装 SDK 的源码（``recipe/emailpassword/api/implementation.py``）顺序是
-    ``:738`` 建号 → ``:755`` ``post_auth_checks`` → ``:766`` 不通过则返回
-    ``SignUpPostNotAllowedResponse``（**非 OK**）。即存在
-    「**账号已建、结果却不是 OK**」的真实路径。
+    第 4 节的补偿释放依赖「建号失败」。但「原实现返回非 OK」≠「没有建号」：
+    实测已装 SDK 的源码（`recipe/emailpassword/api/implementation.py`）顺序是
+    `:738` 建号 → `:755` `post_auth_checks` → `:766` 不通过则返回
+    `SignUpPostNotAllowedResponse`（非 OK）。即存在
+    「账号已建、结果却不是 OK」的真实路径。
 
-    修复前代码对此**无条件**释放，于是同一个码可以再建一个账号——
-    「一码只用一次」（``AC-15``）被破坏，且第一张码的记录会被第二次绑定覆盖，
-    运营**看不出发生过两次注册**。
+    修复前代码对此无条件释放，于是同一个码可以再建一个账号——
+    「一码只用一次」（`AC-15`）被破坏，且第一张码的记录会被第二次绑定覆盖，
+    运营看不出发生过两次注册。
 
-    ## 为什么这层用「直接调用复写函数」而不是 HTTP 端到端
+    为什么这层用「直接调用复写函数」而不是 HTTP 端到端：
 
-    实测 ``Supertokens.reset()`` 之后再次 ``init`` 会抛
-    ``GeneralError: Session recipe has already been initialised``——SDK 的 reset
-    只重置 Supertokens 实例、不重置各 recipe，**同一进程内换一套复写不可行**。
+    实测 `Supertokens.reset()` 之后再次 `init` 会抛
+    `GeneralError: Session recipe has already been initialised`——SDK 的 reset
+    只重置 Supertokens 实例、不重置各 recipe，同一进程内换一套复写不可行。
     因此这里直接调用 :func:`make_sign_up_override` 返回的包装函数，传入一个
-    **假的 original**：它真的建一个账号（走 SDK），然后返回非 OK。
-    这精确复现了目标组合，且不依赖 ``post_auth_checks`` 的内部触发条件。
+    假的 original：它真的建一个账号（走 SDK），然后返回非 OK。
+    这精确复现了目标组合，且不依赖 `post_auth_checks` 的内部触发条件。
 
-    顺带的好处：它同时**绕开了 HTTP 层**，因此不需要 core 之外的任何夹具。
+    顺带的好处：它同时绕开了 HTTP 层，因此不需要 core 之外的任何夹具。
 
-    判别性：把 ``registration.py`` 里 ``_account_exists`` 那层判断去掉
-    （恢复为无条件释放），本用例失败——码会回到 ``issued``、可被再次占用。
+    判别性：把 `registration.py` 里 `_account_exists` 那层判断去掉
+    （恢复为无条件释放），本用例失败——码会回到 `issued`、可被再次占用。
     """
     # 仅用于「未配置库/API Key 即跳过」的前置检查。
     _settings_or_skip()
@@ -414,7 +414,7 @@ async def test_non_ok_result_with_account_created_does_not_release_the_code() ->
         async def fake_original(  # noqa: ANN202 —— 模拟 SDK：先建号，再返回非 OK
             form_fields, tenant_id, session, linking, api_options, user_context
         ):
-            """复现 SDK 的真实顺序：**建号成功**，但结果是非 OK。"""
+            """复现 SDK 的真实顺序：建号成功，但结果是非 OK。"""
             created = await sign_up(tenant_id, email, _PASSWORD)
             assert type(created).__name__.startswith("SignUpOk"), f"构造失败，账号没建出来：{created}"
             return SignUpPostNotAllowedResponse(reason="testing")
@@ -430,10 +430,10 @@ async def test_non_ok_result_with_account_created_does_not_release_the_code() ->
         )
 
         assert type(result).__name__ == "SignUpPostNotAllowedResponse", "本用例要构造的是非 OK 结果"
-        # 前置确认：账号**确实**建出来了（否则本用例没有判别力）。
+        # 前置确认：账号确实建出来了（否则本用例没有判别力）。
         assert await _account_exists(email) is True, "构造失败：账号没建出来，本用例失去判别力"
 
-        # 核心断言：该码**不得**回到 issued（它已被一次真实注册用掉）。
+        # 核心断言：该码不得回到 issued（它已被一次真实注册用掉）。
         async with session_scope(get_settings()) as session:
             record = await get_invite_code(session, code=normalize_invite_code(code))
         assert record is not None
@@ -447,24 +447,24 @@ async def test_non_ok_result_with_account_created_does_not_release_the_code() ->
 
 @pytest.mark.asyncio
 async def test_exception_after_account_created_does_not_release_the_code(client: httpx.AsyncClient) -> None:
-    """**建号成功后 original 抛异常时，不得释放邀请码**（阻断级缺陷的回归测试）。
+    """建号成功后 original 抛异常时，不得释放邀请码（阻断级缺陷的回归测试）。
 
-    ## 这条守的是什么
+    这条守的是什么：
 
-    SDK 的顺序是 ``implementation.py:738`` **建号** → ``:755`` ``post_auth_checks``
-    → 再 ``create_new_session``——**建号之后仍有会抛异常的步骤**。
-    修复前 ``except Exception`` 分支**无条件**释放邀请码，于是存在真实路径：
-    「账号已建、随后抛异常」→ 码退回 ``issued`` → 同一张码再建第二个账号
-    （``AC-15``「一码只用一次」被破坏）。
+    SDK 的顺序是 `implementation.py:738` 建号 → `:755` `post_auth_checks`
+    → 再 `create_new_session`——建号之后仍有会抛异常的步骤。
+    修复前 `except Exception` 分支无条件释放邀请码，于是存在真实路径：
+    「账号已建、随后抛异常」→ 码退回 `issued` → 同一张码再建第二个账号
+    （`AC-15`「一码只用一次」被破坏）。
 
-    评审实测复现方式：劫持 ``create_new_session`` 令其抛错，走完整 HTTP 注册，
-    得到「账号已建但码回到 issued」。本用例用**假的 original**（真的建号、然后抛错）
+    评审实测复现方式：劫持 `create_new_session` 令其抛错，走完整 HTTP 注册，
+    得到「账号已建但码回到 issued」。本用例用假的 original（真的建号、然后抛错）
     复现同一组合，无需劫持 SDK 内部函数。
 
-    判别性：把 ``except`` 分支改回无条件 ``_release_quietly(code)``，本用例失败
-    （码会回到 ``issued``）。
+    判别性：把 `except` 分支改回无条件 `_release_quietly(code)`，本用例失败
+    （码会回到 `issued`）。
     """
-    # client 夹具已负责「未配置即跳过」并**初始化 SDK**——本用例直接调复写函数，
+    # client 夹具已负责「未配置即跳过」并初始化 SDK——本用例直接调复写函数，
     # 因此必须依赖它完成的 SDK 装配（第一版漏了这个参数，实测报
     # GeneralError: Initialisation not done）。
     await _clear()
@@ -476,7 +476,7 @@ async def test_exception_after_account_created_does_not_release_the_code(client:
         email = _unique_email("exc")
         code = await _issue_code()
 
-        async def fake_original(  # noqa: ANN202 —— 模拟 SDK：**先建号**，再抛异常
+        async def fake_original(  # noqa: ANN202 —— 模拟 SDK：先建号，再抛异常
             form_fields, tenant_id, session, linking, api_options, user_context
         ):
             created = await sign_up(tenant_id, email, _PASSWORD)
@@ -498,10 +498,10 @@ async def test_exception_after_account_created_does_not_release_the_code(client:
                 {},
             )
 
-        # 前置确认：账号**确实**建出来了（否则本用例没有判别力）。
+        # 前置确认：账号确实建出来了（否则本用例没有判别力）。
         assert await _account_exists(email) is True, "构造失败：账号没建出来，本用例失去判别力"
 
-        # 核心断言：码**不得**回到 issued。
+        # 核心断言：码不得回到 issued。
         async with session_scope(get_settings()) as session:
             record = await get_invite_code(session, code=normalize_invite_code(code))
         assert record is not None
@@ -512,15 +512,15 @@ async def test_exception_after_account_created_does_not_release_the_code(client:
 
 @pytest.mark.asyncio
 async def test_session_credentials_go_to_cookies_not_headers(client: httpx.AsyncClient) -> None:
-    """**会话凭据必须走 cookie，不得出现在响应头**（2026-09-30 评审抓出的重要级）。
+    """会话凭据必须走 cookie，不得出现在响应头（2026-09-30 评审抓出的重要级）。
 
-    ## 为什么这是设计冲突而不是风格问题
+    为什么这是设计冲突而不是风格问题：
 
-    认证与账号第 5 节定的是「**cookie 型会话，凭据不可被前端 JavaScript 读取**」，
+    认证与账号第 5 节定的是「cookie 型会话，凭据不可被前端 JavaScript 读取」，
     项目结构设计第 9 节也写「前端不得读取或存储凭据」。而 SDK 的默认传输方式是
-    「按 `st-auth-mode` 头决定，缺省落 **header**」——实测
-    `session_request_functions.py:285-290`：`"any"` 且无该头时**落成 `"header"`**。
-    于是注册会把 access/refresh token 放进响应头（**JS 可读**），与上述两条冲突。
+    「按 `st-auth-mode` 头决定，缺省落 `header`」——实测
+    `session_request_functions.py:285-290`：`"any"` 且无该头时落成 `"header"`。
+    于是注册会把 access/refresh token 放进响应头（JS 可读），与上述两条冲突。
 
     判别性：去掉 `session.init` 里的 `get_token_transfer_method` 固定，
     本用例失败（响应头会重新出现 `st-access-token`、`Set-Cookie` 数为 0）。
@@ -547,11 +547,11 @@ async def test_session_credentials_go_to_cookies_not_headers(client: httpx.Async
 
 @pytest.mark.asyncio
 async def test_anonymous_account_existence_endpoint_is_disabled(client: httpx.AsyncClient) -> None:
-    """**匿名的账号存在性端点必须关闭**（2026-09-30 评审抓出）。
+    """匿名的账号存在性端点必须关闭（2026-09-30 评审抓出）。
 
-    SDK 默认挂载 ``GET /auth/signup/email/exists``（``disable_email_exists_get``
-    默认 ``False``），**无需会话**即可回答「某账号名是否存在」。评审用真实 uvicorn
-    实测：已存在 → ``200 {"exists":true}``、不存在 → ``exists:false``——**可区分**。
+    SDK 默认挂载 `GET /auth/signup/email/exists`（`disable_email_exists_get`
+    默认 `False`），无需会话即可回答「某账号名是否存在」。评审用真实 uvicorn
+    实测：已存在 → `200 {"exists":true}`、不存在 → `exists:false`——可区分。
     这与第 5 节「不区分『账号不存在』与『密码错误』」（防账号枚举）是同一条纪律的反面。
 
     判别性：去掉 `api_overrides` 里的 `disable_email_exists_get = True`，
@@ -560,7 +560,7 @@ async def test_anonymous_account_existence_endpoint_is_disabled(client: httpx.As
     settings = _settings_or_skip()
     await _clear()
     try:
-        # 先造一个**确实存在**的账号，让「可区分」有判别力。
+        # 先造一个确实存在的账号，让「可区分」有判别力。
         existing = _unique_email("exists")
         code = await _issue_code()
         created = await client.post(_signup_path(settings), json=_signup_payload(existing, code))
@@ -569,7 +569,7 @@ async def test_anonymous_account_existence_endpoint_is_disabled(client: httpx.As
         base = settings.supertokens_api_base_path.rstrip("/")
         for email in (existing, _unique_email("absent")):
             response = await client.get(f"{base}/signup/email/exists", params={"email": email})
-            # 端点关闭后应**不可用**（404 或等价），绝不能返回存在性。
+            # 端点关闭后应不可用（404 或等价），绝不能返回存在性。
             assert response.status_code != 200, (
                 f"匿名存在性端点仍可用（HTTP {response.status_code}，body={response.text[:160]}）"
                 "——任何人都能查任意账号名是否存在"
@@ -580,7 +580,7 @@ async def test_anonymous_account_existence_endpoint_is_disabled(client: httpx.As
 
 @pytest.mark.asyncio
 async def test_rejection_message_does_not_distinguish_reasons(client: httpx.AsyncClient) -> None:
-    """四种拒绝（缺失/不存在/已撤销/已用）的**响应体一致**——不可枚举。
+    """四种拒绝（缺失/不存在/已撤销/已用）的响应体一致——不可枚举。
 
     判别性：若实现把四种原因写成不同消息，调用方可逐字区分「码存在但过期」与
     「码不存在」——那就是账号枚举渠道（认证与账号第 5 节同一条纪律）。

@@ -1,24 +1,24 @@
-"""集成测试：记忆的写入链路（``pending_write`` → Worker 消费，端到端）。
+"""集成测试：记忆的写入链路（`pending_write` → Worker 消费，端到端）。
 
-对应 ``docs/技术设计/technical-details/写入路径.md`` 第 3、4、5、6 节与
-``write_memory`` 契约（`docs/技术设计/面/consult/tools/write_memory.md`）。
+对应 `docs/技术设计/technical-details/写入路径.md` 第 3、4、5、6 节与
+`write_memory` 契约（`docs/技术设计/面/consult/tools/write_memory.md`）。
 
-这是**跨两个存储**的测试：PostgreSQL（待处理记录的状态机）与 FalkorDB（episode）。
+这是跨两个存储的测试：PostgreSQL（待处理记录的状态机）与 FalkorDB（episode）。
 因此需要两个容器：
 
     docker compose up -d postgres falkordb
     uv run pytest -m integration apps/api/tests/test_memory_write_path_integration.py
 
-**图库侧用假模型客户端**（抽取要调 TokenHub，当前凭据是占位符——见 `TECH-02`），
-因此本文件验证的是**链路与状态推进**，不验证抽取质量（那是 `TECH-18`）。
+图库侧用假模型客户端（抽取要调 TokenHub，当前凭据是占位符——见 `TECH-02`），
+因此本文件验证的是链路与状态推进，不验证抽取质量（那是 `TECH-18`）。
 
 锁住的行为：
-1. 入队一条记忆记录 → 消费 → 图库里出现 episode，且**派生的 uuid 与 pending_id 对应**
+1. 入队一条记忆记录 → 消费 → 图库里出现 episode，且派生的 uuid 与 pending_id 对应
    （幂等依据是派生的确定性 uuid，不是 `name`）。
-2. **只有 `done` 算写入成功**：消费前是 `pending`，消费后是 `done` 且 `finished_at` 有值。
-3. **重复消费不产生第二条 episode**（第 5 节幂等）。
-4. **来源会话标识经 `source_description` 往返**（`episode_metadata` 不落库，第 3 节实测）。
-5. **载荷缺必填键时显式失败**，且**不产生** episode（不猜时间、不猜来源）。
+2. 只有 `done` 算写入成功：消费前是 `pending`，消费后是 `done` 且 `finished_at` 有值。
+3. 重复消费不产生第二条 episode（第 5 节幂等）。
+4. 来源会话标识经 `source_description` 往返（`episode_metadata` 不落库，第 3 节实测）。
+5. 载荷缺必填键时显式失败，且不产生 episode（不猜时间、不猜来源）。
 6. 非 `memory_episode` 的 kind 被本消费者拒绝。
 """
 
@@ -58,7 +58,7 @@ _ACCOUNT = "it_mem_write_account"
 
 
 async def _read_timeline(graph, account, **kwargs):  # noqa: ANN001, ANN003, ANN201
-    """调**公开**读入口（自动开会话取删除账本）。
+    """调公开读入口（自动开会话取删除账本）。
 
     2026-09-30 起读入口只收 `session`——「已删清单」由函数内部取，调用方无法漏传或
     传空列表（此前那样会静默返回已删记忆）。本助手只替测试开会话，不绕过过滤。
@@ -68,7 +68,7 @@ async def _read_timeline(graph, account, **kwargs):  # noqa: ANN001, ANN003, ANN
 
 
 async def _read_emergency_facts(graph, account, **kwargs):  # noqa: ANN001, ANN003, ANN201
-    """调**公开**应急读入口（同上）。"""
+    """调公开应急读入口（同上）。"""
     async with session_scope(get_settings()) as session:
         return await read_emergency_facts(session, graph, to_account_id(account), **kwargs)
 
@@ -114,8 +114,8 @@ async def memory_graph() -> AsyncIterator[MemoryGraph]:
                 return {name: [] for name in response_model.model_fields}
             return {}
 
-    # 连容器：`FalkorDB(...)` **构造函数本身发网络 I/O**，且它抛的是
-    # `redis.exceptions.ConnectionError`（**不是**内建类型）——两者都由
+    # 连容器：`FalkorDB(...)` 构造函数本身发网络 I/O，且它抛的是
+    # `redis.exceptions.ConnectionError`（不是内建类型）——两者都由
     # `conftest.connect_falkordb_or_skip` 统一处理，避免每个文件各踩一次。
     driver, client = connect_falkordb_or_skip()
 
@@ -138,11 +138,11 @@ async def memory_graph() -> AsyncIterator[MemoryGraph]:
 
 
 async def _clear() -> None:
-    """清掉本文件账号的待处理记录**与删除账本行**。
+    """清掉本文件账号的待处理记录与删除账本行。
 
     为什么账本也要清（2026-09-30 评审实测发现）：本文件的删除协同用例
     （`test_deleted_memory_is_not_returned_after_write_path_completes`）每跑一次就记
-    一行账本；而 `episode_key` 有**全局唯一约束**、账本是**多测试文件共用**的表——
+    一行账本；而 `episode_key` 有全局唯一约束、账本是多测试文件共用的表——
     残留会让别的文件（或下一次运行）在同 key 上撞 `UniqueViolationError`、或让读
     断言莫名少条。实测该缺陷曾累积 68 行残留。与
     `test_memory_timeline_integration._clear_ledger` 的既有做法对齐。
@@ -189,9 +189,9 @@ async def _enqueue(
 async def test_pending_record_becomes_an_episode_with_the_derived_uuid(
     memory_graph: MemoryGraph,
 ) -> None:
-    """**主链路**：入队 → 消费 → 图库出现 episode，uuid 由 `pending_id` 派生。
+    """主链路：入队 → 消费 → 图库出现 episode，uuid 由 `pending_id` 派生。
 
-    幂等依据必须是**派生的确定性 uuid**（`write_memory` 契约第 4 节），不是 `name`。
+    幂等依据必须是派生的确定性 uuid（`write_memory` 契约第 4 节），不是 `name`。
     这条同时验证「消费前的记录是 pending（未写入）」与「消费后是 done」。
     """
     await _clear()
@@ -230,7 +230,7 @@ async def test_pending_record_becomes_an_episode_with_the_derived_uuid(
 async def test_source_session_id_round_trips_via_source_description(memory_graph: MemoryGraph) -> None:
     """来源会话标识经 `source_description` 往返。
 
-    为什么必须断言：`episode_metadata` **不落库**（通用记忆第 3 节实测），所以来源只能
+    为什么必须断言：`episode_metadata` 不落库（通用记忆第 3 节实测），所以来源只能
     走 `source_description`。若哪天改成依赖 `episode_metadata`，来源会静默丢失。
     """
     await _clear()
@@ -251,9 +251,9 @@ async def test_source_session_id_round_trips_via_source_description(memory_graph
 
 @pytest.mark.asyncio
 async def test_repeated_consumption_does_not_create_a_second_episode(memory_graph: MemoryGraph) -> None:
-    """**重复消费不产生第二条 episode**（第 5 节幂等 / 契约的「重复提交」一行）。
+    """重复消费不产生第二条 episode（第 5 节幂等 / 契约的「重复提交」一行）。
 
-    第二次消费会因租约仍有效而**领取失败**（`written=False`）——这本身就是幂等的一道
+    第二次消费会因租约仍有效而领取失败（`written=False`）——这本身就是幂等的一道
     防线。为排除「只是租约挡住了」，这里额外验证：即使绕过租约直接重写同一 uuid，
     图库里的 episode 数仍是 1（`MERGE` 按 uuid，通用记忆第 3 节实测）。
     """
@@ -284,7 +284,7 @@ async def test_repeated_consumption_does_not_create_a_second_episode(memory_grap
 
 @pytest.mark.asyncio
 async def test_missing_occurred_at_fails_without_writing(memory_graph: MemoryGraph) -> None:
-    """载荷缺 `occurred_at` **显式失败且不写图库**——不猜「就是现在」。
+    """载荷缺 `occurred_at` 显式失败且不写图库——不猜「就是现在」。
 
     猜时间会污染时间线（记忆回看的唯一载体），因此宁可失败。
     """
@@ -347,7 +347,7 @@ async def test_profile_item_kind_is_rejected_by_the_memory_consumer(memory_graph
 async def test_consuming_an_unknown_pending_id_is_skipped_not_an_error(
     memory_graph: MemoryGraph,
 ) -> None:
-    """消费一个不存在的 `pending_id` 返回 `written=False`，**不抛异常**。
+    """消费一个不存在的 `pending_id` 返回 `written=False`，不抛异常。
 
     「没领到」是并发下的正常结果（已被他人领取、已终结、或记录不存在）；把它当异常会让
     兜底扫描把每次竞争都记成失败。
@@ -369,7 +369,7 @@ async def test_deleted_memory_is_not_returned_after_write_path_completes(
 ) -> None:
     """写入链路与删除账本协同：写完再删，读路径不再返回它。
 
-    这条把步骤 6（删除）与步骤 7（写入）接起来——两者分别可测，但**串起来**才是
+    这条把步骤 6（删除）与步骤 7（写入）接起来——两者分别可测，但串起来才是
     `AC-08` 在真实时序下的形态（先写入，后删除）。
     """
     from campfire.modules.memory.deletion import delete_episode
@@ -404,18 +404,18 @@ async def test_deleted_memory_is_not_returned_after_write_path_completes(
 
 @pytest.mark.asyncio
 async def test_failed_write_leaves_no_readable_episode(memory_graph: MemoryGraph) -> None:
-    """**抽取失败后，不得留下能被读路径返回的 episode**。
+    """抽取失败后，不得留下能被读路径返回的 episode。
 
     为什么必须有这条（2026-09-29 实测发现的缺陷）：写入分两步——先预建节点（正文落库），
-    再 `add_episode` 抽取派生事实。**第二步失败时节点已经存在**，而读路径把「图库里存在
+    再 `add_episode` 抽取派生事实。第二步失败时节点已经存在，而读路径把「图库里存在
     episode 节点」当作已写入（`MemoryEpisode.write_state` 就是靠这一点成立的），
-    于是**一条从未成功写入的记忆会被当成已写入返回**——直接违反 `read_memory` 契约
+    于是一条从未成功写入的记忆会被当成已写入返回——直接违反 `read_memory` 契约
     第 3 节（非 `done` 不得返回）与写入路径第 2 节的不变量。
 
     实测复现（修复前）：抽取抛错后 `read_timeline` 仍返回该条、`write_state='done'`、
     图库里 1 个节点。修复后：节点数 0、时间线空。
 
-    判别性：去掉 `write_episode` 的**完成标记**（第三步的 `SET e.write_state`）与读路径的
+    判别性：去掉 `write_episode` 的完成标记（第三步的 `SET e.write_state`）与读路径的
     标记过滤，本用例会失败——即不变量落在数据与查询上，而不是「补偿一定跑得到」。
     """
     from campfire.modules.memory.errors import MemoryUnavailableError
@@ -459,17 +459,17 @@ async def test_failed_write_leaves_no_readable_episode(memory_graph: MemoryGraph
 
 @pytest.mark.asyncio
 async def test_hard_kill_leftover_is_unreadable_by_both_paths(memory_graph: MemoryGraph) -> None:
-    """**硬杀（无任何清理机会）遗留的半写数据，两条读路径都不得返回**。
+    """硬杀（无任何清理机会）遗留的半写数据，两条读路径都不得返回。
 
     这是 C-1 修复的核心判别（2026-09-29 评审阻断级，独立复现）：此前「已写入」的判据是
-    「图库里存在 episode 节点」，靠失败时的补偿删除维持。**进程被 SIGKILL / 部署重启时
-    补偿代码根本不执行**，节点永久残留并被当成已写入返回。
+    「图库里存在 episode 节点」，靠失败时的补偿删除维持。进程被 SIGKILL / 部署重启时
+    补偿代码根本不执行，节点永久残留并被当成已写入返回。
 
-    本用例不模拟异常，而是**真的制造「预建完成、抽取未完成」的持久状态**（把
+    本用例不模拟异常，而是真的制造「预建完成、抽取未完成」的持久状态（把
     `add_episode` 换成「写入派生物后抛错」，再手动清掉 episode 节点以模拟硬杀后
     无人清理的现场），然后断言：
     - 时间线不返回它；
-    - **引用它的派生事实也不被注入**（`add_episode` 可能已写入实体与边，
+    - 引用它的派生事实也不被注入（`add_episode` 可能已写入实体与边，
       `DETACH DELETE e` 删不掉它们——实测残留实体 2 个/边 1 条）。
 
     判别性：去掉读路径的 `write_state` 过滤，本用例失败。
@@ -515,7 +515,7 @@ async def test_hard_kill_leftover_is_unreadable_by_both_paths(memory_graph: Memo
             memory_graph.graphiti.add_episode = original  # type: ignore[method-assign]  # 还原被替换的方法，避免影响同进程的其他用例
 
         # 先把 episode 节点恢复成「未完成」以忠实模拟硬杀现场（补偿删除已把它清掉，
-        # 但真实硬杀时它仍在且无完成标记）。这里直接重建一个**无完成标记**的节点，
+        # 但真实硬杀时它仍在且无完成标记）。这里直接重建一个无完成标记的节点，
         # 正是硬杀后会留下的形状。
         await scoped.execute_query(
             """
@@ -541,15 +541,15 @@ async def test_hard_kill_leftover_is_unreadable_by_both_paths(memory_graph: Memo
 
 @pytest.mark.asyncio
 async def test_retry_of_a_written_episode_does_not_downgrade_the_marker(memory_graph: MemoryGraph) -> None:
-    """重试**已成功写入**的 episode 不得把完成标记降级（2026-09-29 自查，实测发现）。
+    """重试已成功写入的 episode 不得把完成标记降级（2026-09-29 自查，实测发现）。
 
     场景：第一次 `write_episode` 的 `add_episode` 成功、标记已写 `done`，但随后
     `mark_done` 因数据库抖动失败 → 记录仍是 `processing` → 租约过期 → 回收 → 重试。
-    重试第一步是 `MERGE ... SET e = {...}`（**整节点替换**），实测会把 `write_state`
-    从 `done` 覆盖成 `pending`；若这次 `add_episode` 又失败，**一条原本可读的记忆会
-    变成不可读**（方向是 fail-closed，但属数据可见性缺陷）。
+    重试第一步是 `MERGE ... SET e = {...}`（整节点替换），实测会把 `write_state`
+    从 `done` 覆盖成 `pending`；若这次 `add_episode` 又失败，一条原本可读的记忆会
+    变成不可读（方向是 fail-closed，但属数据可见性缺陷）。
 
-    修法：预建时若该节点已带完成标记，则**保持** `done`，不降级。
+    修法：预建时若该节点已带完成标记，则保持 `done`，不降级。
 
     判别性：把预建的 `write_state` 无条件写成 `pending`，本用例失败。
     """
@@ -609,15 +609,15 @@ async def test_retry_of_a_written_episode_does_not_downgrade_the_marker(memory_g
 
 
 def test_error_classes_are_disjoint_for_the_worker_classification() -> None:
-    """**可重试与不可重试的两类错误必须分得开**（第 6 节的失败语义）。
+    """可重试与不可重试的两类错误必须分得开（第 6 节的失败语义）。
 
     为什么必须有这条（2026-09-29 自查发现，实测确认）：`worker.py` 按类型分档——
     `MemoryUnavailableError` → 可重试（图库瞬时故障），`MemoryDataError` → 转 `dead`
-    （载荷不合法，重试无用）。而 `MemoryUnavailableError` **是** `MemoryModuleError`
-    的子类，所以若只按基类分档、或把两个分支的顺序写反，**图库一次瞬时故障就会把一条
-    本来健康的记录永久判死**。
+    （载荷不合法，重试无用）。而 `MemoryUnavailableError` 是 `MemoryModuleError`
+    的子类，所以若只按基类分档、或把两个分支的顺序写反，图库一次瞬时故障就会把一条
+    本来健康的记录永久判死。
 
-    这条断言把「两类可分」写进测试：`MemoryUnavailableError` **不是** `MemoryDataError`，
+    这条断言把「两类可分」写进测试：`MemoryUnavailableError` 不是 `MemoryDataError`，
     反之亦然。若将来有人把 `MemoryUnavailableError` 改成继承 `MemoryDataError`
     （例如为了复用诊断字段），本用例会失败并提醒分档逻辑失效。
     """
@@ -635,11 +635,11 @@ def test_error_classes_are_disjoint_for_the_worker_classification() -> None:
 
 @pytest.mark.asyncio
 async def test_worker_classifies_graph_failure_as_retryable_not_dead(memory_graph: MemoryGraph) -> None:
-    """图库故障必须被记成**可重试失败**（`attempts+1`、回 `pending`），不能转 `dead`。
+    """图库故障必须被记成可重试失败（`attempts+1`、回 `pending`），不能转 `dead`。
 
     这是上一条的端到端版本：直接调 `worker` 里那个任务函数，让图库调用抛
     `MemoryUnavailableError`（用一个「写入即失败」的图库替身），然后断言记录
-    **仍是 `pending` 且 `attempts == 1`**，而不是 `dead`。
+    仍是 `pending` 且 `attempts == 1`，而不是 `dead`。
     """
     from campfire import worker as worker_module
     from campfire.modules.memory.errors import MemoryUnavailableError
@@ -676,7 +676,7 @@ async def test_worker_classifies_graph_failure_as_retryable_not_dead(memory_grap
 
 @pytest.mark.asyncio
 async def test_worker_classifies_bad_payload_as_dead(memory_graph: MemoryGraph) -> None:
-    """载荷不合法（`MemoryDataError`）→ **转 `dead`**：重试不会变好，不得无声重试。
+    """载荷不合法（`MemoryDataError`）→ 转 `dead`：重试不会变好，不得无声重试。
 
     与上一条配对：两条一起把 Worker 的分档钉死（一类可重试、一类终结）。
     """

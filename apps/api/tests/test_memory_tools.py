@@ -1,10 +1,10 @@
 """`tools/memory.py` 的单元测试：参数形状、归属校验、失败语义与投递纪律。
 
-对应契约：[write_memory](../../../../docs/技术设计/面/consult/tools/write_memory.md)、
-[read_memory](../../../../docs/技术设计/面/consult/tools/read_memory.md)。
+对应契约：docs/技术设计/面/consult/tools/write_memory.md、
+docs/技术设计/面/consult/tools/read_memory.md。
 
-**不连库、不连图库**：这两个工具的实现把真正的读写委托给 `modules/memory` 与
-`core/pending_write`，因此本文件只钉住**工具层自己的职责**——参数解析、账号校验、
+不连库、不连图库：这两个工具的实现把真正的读写委托给 `modules/memory` 与
+`core/pending_write`，因此本文件只钉住工具层自己的职责——参数解析、账号校验、
 失败码、投递调用。读写语义本身由 `test_memory_*` 的集成测试覆盖。
 """
 
@@ -79,7 +79,7 @@ def test_write_memory_requires_origin() -> None:
 
 
 def test_write_memory_rejects_an_origin_outside_the_vocabulary() -> None:
-    """词表外的 `origin` 在**参数层**就被拒（与存储层 CHECK 同一份取值）。"""
+    """词表外的 `origin` 在参数层就被拒（与存储层 CHECK 同一份取值）。"""
     with pytest.raises(Exception):  # noqa: B017
         _write_args(origin="made_up_origin")
 
@@ -106,7 +106,7 @@ def test_read_memory_limit_has_a_server_side_cap() -> None:
 
 @pytest.mark.asyncio
 async def test_tools_fail_without_an_account_in_payload() -> None:
-    """`payload` 里没有账号时**明确失败**，而不是猜一个默认账号。
+    """`payload` 里没有账号时明确失败，而不是猜一个默认账号。
 
     猜默认会把记忆写到错误的图里（`group_id` 就是图名），属静默错分。
     两个工具都要有这条守卫。
@@ -120,9 +120,9 @@ async def test_tools_fail_without_an_account_in_payload() -> None:
 
 @pytest.mark.asyncio
 async def test_tools_fail_on_an_illegal_account_id() -> None:
-    """非法账号标识（含空白、空串）明确失败，**不复述原始值**（安全条款）。
+    """非法账号标识（含空白、空串）明确失败，不复述原始值（安全条款）。
 
-    空串与「缺账号」走同一条分支（都不是有效账号），因此只对**非空**的非法值断言
+    空串与「缺账号」走同一条分支（都不是有效账号），因此只对非空的非法值断言
     「不回显」——`'' in msg` 恒真，断言它没有意义（第一版就写错在这里）。
     """
     for bad in ("", "bad account", "acct\n"):
@@ -135,7 +135,7 @@ async def test_tools_fail_on_an_illegal_account_id() -> None:
 
 @pytest.mark.asyncio
 async def test_read_memory_rejects_a_naive_datetime() -> None:
-    """朴素时间**明确拒绝**：它会被解释成不同瞬间，破坏区间比较。
+    """朴素时间明确拒绝：它会被解释成不同瞬间，破坏区间比较。
 
     与 `consumer` 对 `occurred_at` 的严格立场一致（那边也拒绝朴素时间）。
     判别性：去掉 `value.tzinfo is None` 的检查，本用例失败（会被静默按本地时区接受）。
@@ -151,7 +151,7 @@ async def test_read_memory_rejects_a_naive_datetime() -> None:
 
 @pytest.mark.asyncio
 async def test_read_memory_rejects_an_unparseable_time() -> None:
-    """非空但无法解析的时间**明确失败**，不静默当成「没传」。"""
+    """非空但无法解析的时间明确失败，不静默当成「没传」。"""
     outcome = await read_memory(
         _context(payload={ACCOUNT_PAYLOAD_KEY: _ACCOUNT}),
         ReadMemoryArgs(until="昨天"),
@@ -174,7 +174,7 @@ def test_write_memory_contract_shape_matches_the_document() -> None:
 def test_write_memory_returns_submitted_not_saved() -> None:
     """回执只承诺 `submitted`（契约第 3 节）——不得让模型以为已经保存。
 
-    这里只断言**渲染形状与投递被调用**：真正的落库由集成测试覆盖。
+    这里只断言渲染形状与投递被调用：真正的落库由集成测试覆盖。
     """
     # ToolResult 的 text 是给模型看的 JSON；键名与契约第 3 节一致。
     import asyncio
@@ -221,7 +221,7 @@ def test_write_memory_returns_submitted_not_saved() -> None:
 
 
 def test_dispatch_failure_does_not_fail_the_call() -> None:
-    """**投递失败不让本次调用失败**（第 4 节）：记录已落库，由兜底扫描重投。
+    """投递失败不让本次调用失败（第 4 节）：记录已落库，由兜底扫描重投。
 
     判别性：把 `dispatch_pending_write` 里的 `except Exception` 去掉，
     钩子抛错会冒泡成工具失败，本用例失败。
@@ -242,7 +242,7 @@ def test_dispatch_failure_does_not_fail_the_call() -> None:
 
 
 def test_dispatch_without_a_hook_is_not_an_error() -> None:
-    """未设置钩子时**不抛异常**：记录留给兜底扫描，回执仍然成立。"""
+    """未设置钩子时不抛异常：记录留给兜底扫描，回执仍然成立。"""
     import asyncio
 
     from campfire.core.jobs import dispatch_pending_write, set_dispatch_hook

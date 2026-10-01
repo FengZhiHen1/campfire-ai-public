@@ -1,15 +1,15 @@
 """`tools/emergency_card.py` 的单元测试：词表硬校验、七节完整性、不静默改写。
 
-对应契约：[emit_emergency_action_card](../../../docs/技术设计/面/consult/tools/emit_emergency_action_card.md)
-第 4、5、6 节，与[通用基座](../../../docs/技术设计/technical-details/通用基座.md)第 7.3 节。
+对应契约：docs/技术设计/面/consult/tools/emit_emergency_action_card.md
+第 4、5、6 节，与 docs/技术设计/technical-details/通用基座.md 第 7.3 节。
 
-**契约第 6 节验证方式逐条落在这里**：取值枚举（含越界的 `critical`）、七节完整、
+契约第 6 节验证方式逐条落在这里：取值枚举（含越界的 `critical`）、七节完整、
 不静默改写（被拒后没有卡片）、`unknown` 不误读（不在此处——那是前端呈现）、
 重复评估 `card_id` 不同。事件层的断言（`action_card` 事件确实发出）由
-`test_agent_questions.py` 一类的运行编排测试覆盖；本文件钉的是**工具侧**：
+`test_agent_questions.py` 一类的运行编排测试覆盖；本文件钉的是工具侧：
 越界载荷到不了 `ToolResult`。
 
-**不连库**：本工具不读写业务数据，没有集成测试——这是它的诚实边界。
+不连库：本工具不读写业务数据，没有集成测试——这是它的诚实边界。
 """
 
 from __future__ import annotations
@@ -80,7 +80,7 @@ def _scope(pool: ToolPool):
 
     为什么必须显式给范围：产品工具的可用性由激活集合决定，而 `resolve_scope(pool)`
     在不传激活 skill 时 `active` 是空集——于是派发层返回 `tool_not_available`，
-    卡片根本到不了桥。这本身是**正确**的行为（工具可见性不是安全边界，服务端照常拒绝），
+    卡片根本到不了桥。这本身是正确的行为（工具可见性不是安全边界，服务端照常拒绝），
     只是端到端用例要先把工具放进可用集合，才能测到它后面的那段路。
     """
     from campfire.agent.tools import resolve_scope
@@ -150,7 +150,7 @@ def test_parameter_names_match_the_contract() -> None:
 
 
 def test_does_not_accept_a_support_object_id() -> None:
-    """**不收 `support_object_id`**（契约第 2 节末行）：卡片的取数在注入侧已完成。
+    """不收 `support_object_id`（契约第 2 节末行）：卡片的取数在注入侧已完成。
 
     判别性：加上这个参数，本用例失败——它会让调用方以为本工具做了一次取数。
     """
@@ -160,7 +160,7 @@ def test_does_not_accept_a_support_object_id() -> None:
 def test_contract_state_tables_match_the_document() -> None:
     """四个状态键的取值词表与契约第 4 节的表逐值一致。
 
-    这是**两处定义之间的比对**：词表写在参数模型的 `Literal` 里（校验真源），
+    这是两处定义之间的比对：词表写在参数模型的 `Literal` 里（校验真源），
     `STATE_VALUE_TABLE` 是它的可读投影。漂移会让模型看到一个与契约不符的 schema。
 
     判别性：删掉某个取值或加一个契约里没有的取值，本用例失败。
@@ -174,7 +174,7 @@ def test_contract_state_tables_match_the_document() -> None:
     [(key, value) for key, values in CONTRACT_STATE_VALUES.items() for value in values],
 )
 def test_every_legal_state_value_is_accepted(key: str, value: str) -> None:
-    """契约第 6 节「取值枚举」的前半：**每个合法取值都能通过**。
+    """契约第 6 节「取值枚举」的前半：每个合法取值都能通过。
 
     逐值参数化而不是只测一个：漏掉一个合法取值会让模型在正确取值上被拒，
     而那种失败只在真实应急里出现。
@@ -197,7 +197,7 @@ def test_out_of_range_medical_risk_is_rejected() -> None:
 
 
 def test_a_state_value_from_another_key_is_rejected() -> None:
-    """跨键取词也被拒：`medical_risk: mild` 不是「词表内」，是**另一个键**的词表。
+    """跨键取词也被拒：`medical_risk: mild` 不是「词表内」，是另一个键的词表。
 
     判别性：把四个状态变体合并成一个「key 枚举 + value 自由字符串」，本用例失败
     ——那正是本工具最核心的一条机械保证。
@@ -477,7 +477,7 @@ async def test_emit_fails_without_an_account() -> None:
 
 
 def test_every_out_of_range_payload_fails_validation_not_rewriting() -> None:
-    """契约第 6 节「不静默改写」：越界载荷被拒，**没有一个**被改成合法值。
+    """契约第 6 节「不静默改写」：越界载荷被拒，没有一个被改成合法值。
 
     逐项构造越界载荷并断言「抛错」，而不是「得到一个被改写的卡片」——
     契约第 5 节的原话是「不静默替换成合法值」，因为一张「看起来合法但值是猜的」
@@ -502,7 +502,7 @@ def test_every_out_of_range_payload_fails_validation_not_rewriting() -> None:
 
 @pytest.mark.asyncio
 async def test_a_rejected_payload_produces_no_card_through_the_spec_path() -> None:
-    """**质量地板校验点①的对抗用例**：越界载荷经 `ToolSpec.invoke` 得到
+    """质量地板校验点①的对抗用例：越界载荷经 `ToolSpec.invoke` 得到
     `tool_invalid_arguments`，且返回的不是 `ToolResult`——因此事件流里不会有 `action_card`。
 
     走 `ToolSpec.invoke`（真实的模型调用路径）而不是直接 `model_validate`：
@@ -626,7 +626,7 @@ async def test_the_bridge_emits_the_action_card_event_with_matching_fields() -> 
 
 @pytest.mark.asyncio
 async def test_no_action_card_event_is_emitted_for_a_rejected_payload() -> None:
-    """契约第 6 节「不静默改写」的事件级证明：越界载荷经**真桥**不产出任何卡片事件。
+    """契约第 6 节「不静默改写」的事件级证明：越界载荷经真桥不产出任何卡片事件。
 
     与前一条同样是端到端：`ToolDispatcher.dispatch` → `ToolSpec._parse` 失败 →
     `ToolFailure` → 桥只发 `tool_call_finished(ok=False)`，卡片事件的循环根本不被进入。

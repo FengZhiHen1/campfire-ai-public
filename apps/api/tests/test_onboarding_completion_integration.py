@@ -1,19 +1,19 @@
 """集成测试：引导收束用例的幂等与双通道语义（真实 PostgreSQL）。
 
-对应 ``docs/技术设计/面/consult/tools/finish_onboarding.md`` 第 4、6 节与
-``docs/技术设计/technical-details/认证与账号.md`` 第 8 节（双通道）。
+对应 `docs/技术设计/面/consult/tools/finish_onboarding.md` 第 4、6 节与
+`docs/技术设计/technical-details/认证与账号.md` 第 8 节（双通道）。
 
     docker compose up -d postgres
     uv run pytest -m integration apps/api/tests/test_onboarding_completion_integration.py
 
-## 本文件守住的核心判据
+本文件守住的核心判据：
 
-1. **置位**：无行时创建并写 `completed`；`in_progress` 时迁移为 `completed`。
-2. **幂等**：重复调用不报错，且**不刷新** `updated_at`（它不是状态迁移）。
-3. **不代写**：已 `skipped` 时返回 `skipped`，**不**改写成 `completed`
+1. 置位：无行时创建并写 `completed`；`in_progress` 时迁移为 `completed`。
+2. 幂等：重复调用不报错，且不刷新 `updated_at`（它不是状态迁移）。
+3. 不代写：已 `skipped` 时返回 `skipped`，不改写成 `completed`
    ——UI 通道与工具通道互不代写。
-4. **状态表驱动**：收束后 `onboarding_pending` 为假（后续日常会话不再注入引导）。
-5. **词表外状态显式报错**：不猜、不覆盖（`CORE-07` 无静默兜底）。
+4. 状态表驱动：收束后 `onboarding_pending` 为假（后续日常会话不再注入引导）。
+5. 词表外状态显式报错：不猜、不覆盖（`CORE-07` 无静默兜底）。
 """
 
 from __future__ import annotations
@@ -156,7 +156,7 @@ async def test_repeated_calls_are_idempotent() -> None:
 
 @pytest.mark.asyncio
 async def test_repeated_calls_do_not_refresh_the_timestamp() -> None:
-    """重复调用**不刷新** `updated_at`：它的语义是「最近一次状态迁移」，不是「最近一次被调用」。
+    """重复调用不刷新 `updated_at`：它的语义是「最近一次状态迁移」，不是「最近一次被调用」。
 
     判别性：去掉「已终结态直接返回」，本用例失败——而每次调用都刷新会让
     「这个账号什么时候真的完成引导的」这个问题永远读不到答案（读到的是最后一次重试的时间）。
@@ -178,7 +178,7 @@ async def test_repeated_calls_do_not_refresh_the_timestamp() -> None:
 
 @pytest.mark.asyncio
 async def test_a_skipped_onboarding_is_not_rewritten_to_completed() -> None:
-    """已 `skipped`（使用者经 UI 明确跳过）时返回 `skipped`，**不改写**。
+    """已 `skipped`（使用者经 UI 明确跳过）时返回 `skipped`，不改写。
 
     判别性：把 `existing.state in (COMPLETED, SKIPPED)` 的分支去掉（盲写 `completed`），
     本用例失败——那会抹掉使用者的显式决定。两条通道互不代写。
@@ -215,7 +215,7 @@ async def test_completion_does_not_touch_another_account() -> None:
 async def test_an_unknown_state_is_rejected_not_overwritten() -> None:
     """表里读到词表外的状态时显式报错：不猜、不覆盖。
 
-    怎么造出这种行：`state` 有 CHECK 约束，正常写入路径造不出来。这里**直接用桩会话**
+    怎么造出这种行：`state` 有 CHECK 约束，正常写入路径造不出来。这里直接用桩会话
     给出两次 `execute` 的返回值：第一次（条件写入）返回空集表示「未写入」，
     第二次（重读既有行）返回那个词表外的状态——本用例要验的是用例函数的判据，
     而不是数据库能不能存下这个值。

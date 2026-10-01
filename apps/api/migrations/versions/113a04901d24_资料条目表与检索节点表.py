@@ -7,14 +7,14 @@ Create Date: 2026-09-29 19:36:18.728803
 业务意图（依据 docs/技术设计/technical-details/RAG策略.md 第 2 节与
 docs/技术设计/decisions/检索链归入library模块.md）：
 
-- 本迁移建出检索链的两张表：**条目表是事实真源**（状态、撤下、来源、适用范围、
-  `keywords`/`aliases`），**节点表是它的投影**（供向量检索），两者同库同事务——
+- 本迁移建出检索链的两张表：条目表是事实真源（状态、撤下、来源、适用范围、
+  `keywords`/`aliases`），节点表是它的投影（供向量检索），两者同库同事务——
   撤下可在一个事务里同时改条目状态与删节点，`RQ-KB-04` 的「撤下即刻不可检索」成立。
-- 节点表结构必须与 LlamaIndex `PGVectorStore` 期望的**逐列一致**（表名 `data_`
+- 节点表结构必须与 LlamaIndex `PGVectorStore` 期望的逐列一致（表名 `data_`
   前缀、`id bigint` + sequence、`metadata_ jsonb`、`embedding vector(2560)`）；
   取用方以 `perform_setup=False` 使用它，DDL 由本迁移拥有（实测见 TODO `TECH-19`）。
-- 三个字面路 GIN trigram 索引建在 `title`/`keywords`/`aliases` 上。**用文本列而非
-  数组**：`gin_trgm_ops` 不接受 `text[]`，`array_to_string` 表达式索引又非 IMMUTABLE
+- 三个字面路 GIN trigram 索引建在 `title`/`keywords`/`aliases` 上。用文本列而非
+  数组：`gin_trgm_ops` 不接受 `text[]`，`array_to_string` 表达式索引又非 IMMUTABLE
   （2026-09-29 实测）。
 - 中文约束已实测：本库 locale `en_US.utf8`，汉字被认作词字符；`LIKE` 走 GIN、
   `~` 正则走顺序扫描。
@@ -139,7 +139,7 @@ def upgrade() -> None:
 def downgrade() -> None:
     """回滚：删两张表。
 
-    **不删扩展**：`vector` 与 `pg_trgm` 可能被本项目其他表或后续迁移复用，
+    不删扩展：`vector` 与 `pg_trgm` 可能被本项目其他表或后续迁移复用，
     回滚单个迁移不该影响它们（删扩展会连带删除依赖它的列与索引）。
     """
     op.drop_index("ix_data_campfire_node_withdrawn", table_name="data_campfire_node")

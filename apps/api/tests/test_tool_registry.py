@@ -1,6 +1,6 @@
 """装配处的工具注册清单（`surfaces/consult/registry.py`）。
 
-钉住的是**「池里有什么」这一份清单**，以及它与设计文档的对应关系。工具实现本身由
+钉住的是「池里有什么」这一份清单，以及它与设计文档的对应关系。工具实现本身由
 `test_memory_tools.py` / `test_library_tools.py` / `test_profile_tools.py` /
 `test_emergency_card.py` / `test_onboarding_tools.py` 覆盖，本文件不重复。
 """
@@ -44,7 +44,7 @@ def test_registers_all_ten_phase_one_tools() -> None:
 
 
 def test_does_not_register_a_delete_memory_tool() -> None:
-    """**不得**有 `delete_memory`（决策记录：记忆删除走用户确认入口，不是模型工具）。
+    """不得有 `delete_memory`（决策记录：记忆删除走用户确认入口，不是模型工具）。
 
     判别性：谁将来顺手加一个 `delete_memory`，本用例会拦下——那会绕过使用者的确认。
     """
@@ -54,7 +54,7 @@ def test_does_not_register_a_delete_memory_tool() -> None:
 
 
 def test_does_not_register_base_reserved_names() -> None:
-    """产品清单里**没有**基座保留名（`skill` / `read_skill_resource` / `ask_user`）。
+    """产品清单里没有基座保留名（`skill` / `read_skill_resource` / `ask_user`）。
 
     它们走 `register_base` 通道（恒可用、不进 `allowed-tools` 的并集）。
     判别性：把 `ask_user` 混进产品清单，本用例失败——它会变成受 skill 范围控制的工具，
@@ -74,7 +74,7 @@ def test_register_base_tools_registers_ask_user() -> None:
     register_base_tools(pool)
     assert pool.names() == ("ask_user",)
 
-    # 反向：产品通道**不能**注册保留名（池会拒）。
+    # 反向：产品通道不能注册保留名（池会拒）。
     with pytest.raises(ToolRegistrationError):
         ToolPool().register(
             build_product_tools()[0].__class__(
@@ -128,7 +128,7 @@ def test_registration_puts_all_tools_in_the_pool() -> None:
 
 
 def test_double_registration_is_rejected_not_silently_ignored() -> None:
-    """重复注册抛错——**不得静默覆盖**：重名会让权限判定面对含义不明的名字。
+    """重复注册抛错——不得静默覆盖：重名会让权限判定面对含义不明的名字。
 
     （池自己有此纪律，本用例确认装配处走的是会被校验的那条通道。）
     """

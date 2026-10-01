@@ -10,45 +10,45 @@ docs/技术设计/technical-details/认证与账号.md 第 8 节；
 docs/技术设计/decisions/会话归属单立表归accounts.md）：
 
 - `campfire_support_object`：档案的归属主体。生命周期只有创建/改名/归档/恢复，
-  **没有删除**——归档而非删除，是为了让在途写入不会遇到「查不到≠从未存在」的歧义
-  （行始终存在，因此本表不需要墓碑）。`display_name` 的非空判据落**存储层 CHECK**：
+  没有删除——归档而非删除，是为了让在途写入不会遇到「查不到≠从未存在」的歧义
+  （行始终存在，因此本表不需要墓碑）。`display_name` 的非空判据落存储层 CHECK：
   「先查后写」挡不住并发与直连写入，而空名会让切换器出现无法辨认的条目。
   不建唯一约束：同一账号下两个对象同名是真实情形（两个人都叫「小宝」）。
 - `profile_item`：档案条目。四个字段分工不合并——`origin`（谁在什么位置上说的）、
   `source`（何处可复核）、`confirmation`（是否被确认过）、`freshness`（是否仍是
-  当前认识）。`pending_id` 上的**唯一约束就是幂等键**（写入路径第 5 节）：
+  当前认识）。`pending_id` 上的唯一约束就是幂等键（写入路径第 5 节）：
   它对可空列生效，而 PostgreSQL 的唯一约束允许多个 NULL，因此「唯一」与
   「手动补充条目不经待处理记录」同时成立。`superseded_by` 与 `supersedes`
-  是一对**互指**外键（纠正 = 新增取代条目 + 旧条目转 historical，不物理覆盖），
+  是一对互指外键（纠正 = 新增取代条目 + 旧条目转 historical，不物理覆盖），
   两者都带 `ON DELETE SET NULL`：两个指针互相引用，用默认的 `NO ACTION` 时
   删除任一侧都会被另一侧挡住，而 `AC-08` 要求删除真的生效。指针是说明性的，
   删掉对方后置空即可，不该让历史指针否决一次删除。
-- `campfire_session`：**会话归属的唯一判定真源**（归 `modules/accounts`）。
+- `campfire_session`：会话归属的唯一判定真源（归 `modules/accounts`）。
   对话真源是 SDK 的会话存储，其表没有 `account_id`；而 `campfire_session_object`
   只在会话已绑定对象时才有行。两者叠加导致「这个会话属于哪个账号」无处可问，
-  历史水合与会话列表的越权校验因此没有依据。本表**只存归属与登记、不存消息**。
+  历史水合与会话列表的越权校验因此没有依据。本表只存归属与登记、不存消息。
 - `campfire_session_object`：会话与对象的绑定。主键是 `session_id`
   ——一个会话恰好一个对象，「可切换」影响的是后续新建的会话，不是进行中的会话。
-- `campfire_onboarding`：账号级引导状态（`RQ-ACC-09`）。判定**不推导**：
+- `campfire_onboarding`：账号级引导状态（`RQ-ACC-09`）。判定不推导：
   是否触发引导只查本表，不从档案或会话存在性推导。
-- 补 `campfire_pending_write.origin` 的 CHECK 为**六值**：契约与档案字段已取六值
+- 补 `campfire_pending_write.origin` 的 CHECK 为六值：契约与档案字段已取六值
   （补 `third_party_report`、`document`，两者同样直接进稳定层），
   而 `5e27503214c3` 建的约束只接受四值——「契约能传、存储拒收」。
 
-**三处空白判据用正则而不是 `length(btrim(...)) > 0`**：PostgreSQL 的 `btrim` 默认
+三处空白判据用正则而不是 `length(btrim(...)) > 0`：PostgreSQL 的 `btrim` 默认
 只剥空格，不含制表与换行（实测 `length(btrim(E'\t')) = 1`），字面照搬那条写法会让
 「纯制表符」的名字与描述通过——而设计要求的是「空名或全空白都明确失败」。
 `[[:space:]]` 覆盖空格、制表、换行、回车、换页与垂直制表。
 
-**本迁移的 `create_table` 部分是 `--autogenerate` 的产物**（已逐条核对：只含本批
-五张表，无任何 `remove_*` 项）。`pending_write.origin` 的约束更新是**手工编写**的：
-实测 Alembic 的自动检测在**给已存在的表改 CHECK 约束**时不产出任何操作
+本迁移的 `create_table` 部分是 `--autogenerate` 的产物（已逐条核对：只含本批
+五张表，无任何 `remove_*` 项）。`pending_write.origin` 的约束更新是手工编写的：
+实测 Alembic 的自动检测在给已存在的表改 CHECK 约束时不产出任何操作
 （详见 `760b797c8bab` 的说明），因此这一半必须手写，否则会得到一次
 「声称补齐了而实际什么都没做」的假迁移。
 
-**回滚方向**：删五张表，并把 `pending_write.origin` 的约束退回四值。
+回滚方向：删五张表，并把 `pending_write.origin` 的约束退回四值。
 `profile_item` 与 `campfire_session_object` 都引用 `campfire_support_object`，
-因此删表必须**先删引用方**（`profile_item`、`campfire_session_object`）
+因此删表必须先删引用方（`profile_item`、`campfire_session_object`）
 再删被引用方，否则外键会拒绝。回滚会丢失全部档案与对象数据——它们没有其它副本。
 """
 
@@ -78,7 +78,7 @@ _ORIGINS_SIX = (
 #: `5e27503214c3` 建的四值快照（回滚时退回它）。
 _ORIGINS_FOUR = ("ai_inference", "guardian_observation", "system_observation", "user_statement")
 
-#: 约束名用**短名**：`core/db` 的 NAMING_CONVENTION 会展开为
+#: 约束名用短名：`core/db` 的 NAMING_CONVENTION 会展开为
 #: `ck_campfire_pending_write_origin`。写完整名会被再套一层前缀并截断到 63 字符
 #: （`760b797c8bab` 实测踩过两次），两侧写法不一致会让 autogenerate 反复产出噪音。
 _ORIGIN_CONSTRAINT = "origin"
@@ -237,7 +237,7 @@ def upgrade() -> None:
 
     # --- 手工部分：把 pending_write.origin 的 CHECK 从四值补到六值 ---
     #
-    # 为什么手工：实测 autogenerate 只在**新建表**时带上 CHECK，给**既有表**改 CHECK
+    # 为什么手工：实测 autogenerate 只在新建表时带上 CHECK，给既有表改 CHECK
     # 时它产出空操作（`760b797c8bab` 的说明）。不手写就会得到一条声称补齐、
     # 实际什么都没做的迁移。
     #
@@ -245,7 +245,7 @@ def upgrade() -> None:
     # （`third_party_report` 与 `document` 同样直接进稳定层），
     # 而 `5e27503214c3` 建的约束只接受四值——档案条目会在写入时被存储层拒收。
     #
-    # 与既有数据的兼容：新约束只**放宽**取值集合（四值是六值的子集），
+    # 与既有数据的兼容：新约束只放宽取值集合（四值是六值的子集），
     # 因此库中已存在的任何合法行都仍然合法。若库中存在词表外的历史值，
     # PostgreSQL 会拒绝重建约束并报错——那是有意的：宁可失败并要求人工确认，
     # 也不做隐式的数据改写。
@@ -259,7 +259,7 @@ def downgrade() -> None:
     # 先把 origin 约束退回四值：此时五张表里的 profile_item 即将被删除，
     # 因此退回到四值不会与任何现存行冲突（本迁移建的表在下面被删掉）。
     #
-    # 注意方向：这是**收紧**取值集合。若已有档案写入过 `third_party_report`
+    # 注意方向：这是收紧取值集合。若已有档案写入过 `third_party_report`
     # 或 `document` 的待处理记录，PostgreSQL 会拒绝加约束并报错——
     # 那是有意的：回滚前须由人工确认那些行该怎么归类，迁移不擅自改写业务数据。
     op.drop_constraint(_ORIGIN_CONSTRAINT, _PENDING_WRITE_TABLE, type_="check")

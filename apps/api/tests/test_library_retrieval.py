@@ -7,7 +7,7 @@
 - 同一轮不重复注入同一条目；
 - 缺来源或状态的条目不进入结果（不补默认值）；
 - <3 个连续汉字的查询不走字面路；
-- **每个库的向量路过滤器是硬编码常量**（`MetadataFilter` 是字符串拼接的注入面）；
+- 每个库的向量路过滤器是硬编码常量（`MetadataFilter` 是字符串拼接的注入面）；
 - 非法库别被拒，不静默退回资料库。
 """
 
@@ -213,7 +213,7 @@ def test_aggregation_respects_top_k() -> None:
 def test_search_outcome_reports_degradation() -> None:
     """`SearchOutcome` 把「哪一路不可用」与结果一起带走。
 
-    契约第 5 节要求单路失败时标注。**只返回裸列表时这条信息无处安放**：两路都失败
+    契约第 5 节要求单路失败时标注。只返回裸列表时这条信息无处安放：两路都失败
     已抛错，但「只有一路失败且没命中」与「确实没找到」在空列表上无法区分，而契约
     明令模型不得据此声称「没有相关资料」。
     """
@@ -229,15 +229,15 @@ def test_search_outcome_is_not_degraded_when_both_paths_work() -> None:
 
 
 def test_scope_condition_is_bound_parameter_not_interpolated() -> None:
-    """`scope` 走绑定参数，**绝不进 SQL 文本**——这是防注入的判据。
+    """`scope` 走绑定参数，绝不进 SQL 文本——这是防注入的判据。
 
-    实测背景：框架的 `MetadataFilter` 用 f-string 拼 SQL（``f"'%{value}%'"``，无绑定
-    参数），把 ``x' OR '1'='1`` 当 scope 会生成
-    ``... ILIKE '%%x' OR '1'='1%%'``，且 `OR` 优先级逃逸整个 AND 链、连带绕过库别/
+    实测背景：框架的 `MetadataFilter` 用 f-string 拼 SQL（`f"'%{value}%'"`，无绑定
+    参数），把 `x' OR '1'='1` 当 scope 会生成
+    `... ILIKE '%%x' OR '1'='1%%'`，且 `OR` 优先级逃逸整个 AND 链、连带绕过库别/
     撤下/状态三个过滤。`search()` 因此不给 `MetadataFilter` 传 scope，而是先用绑定
     参数算出允许的 item_id。
 
-    条件构造在 `_item_filters_sql`（字面路与允许集查询**共用**），因此断言点在那里：
+    条件构造在 `_item_filters_sql`（字面路与允许集查询共用），因此断言点在那里：
     两处各写一份条件就会漂移成「向量路过滤了、字面路没过滤」，而那种缺陷在功能
     测试里看不出来（结果照常有，只是多出范围外条目）。
 
@@ -264,7 +264,7 @@ def test_scope_condition_is_bound_parameter_not_interpolated() -> None:
 
 
 def test_each_library_has_a_hardcoded_constant_filter_set() -> None:
-    """每个库的向量路过滤器是**硬编码常量**，两库的库别判据互不相同。
+    """每个库的向量路过滤器是硬编码常量，两库的库别判据互不相同。
 
     这是注入面的红线（TODO「MetadataFilter 注入面」）：框架的
     `_build_filter_clause` 用 f-string 拼 SQL、无绑定参数，因此过滤器里的值
@@ -285,7 +285,7 @@ def test_each_library_has_a_hardcoded_constant_filter_set() -> None:
 
 
 def test_case_filter_does_not_pin_status_to_published() -> None:
-    """案例侧的 `status` 过滤**不锁定 `published`**（虚构样例必须可检索）。
+    """案例侧的 `status` 过滤不锁定 `published`（虚构样例必须可检索）。
 
     这是本包一个有意的差异：资料侧状态恒 `published`，过滤它是过滤异常数据；
     而案例侧是 `published | internal | fictional` 三值且三者都要可检索——
@@ -327,14 +327,14 @@ def test_literal_search_sql_uses_the_table_by_library() -> None:
 def test_authorization_column_is_quoted_in_raw_sql() -> None:
     """原生 SQL 里的 `authorization` 必须加双引号。
 
-    **实测（2026-09-30）**：`authorization` 是 PostgreSQL 的保留字
+    实测（2026-09-30）：`authorization` 是 PostgreSQL 的保留字
     （`pg_get_keywords()` 报 catcode=T "reserved"）。不加引号的
     `SELECT authorization FROM ...` 直接报 `syntax error at or near "from"`。
     SQLAlchemy 的 ORM 查询会自动加引号，只有手写原生 SQL 需要显式写。
 
-    **断言的是生成物而不是源码文本**：初版用 `inspect.getsource` 找 `"authorization"`，
+    断言的是生成物而不是源码文本：初版用 `inspect.getsource` 找 `"authorization"`，
     而该函数的注释里也含这个字符串——注掉代码、留下注释，用例照样通过。
-    这是「永远不会失败」的检查（消融实测发现），因此改为直接校验**返回的条件片段**。
+    这是「永远不会失败」的检查（消融实测发现），因此改为直接校验返回的条件片段。
 
     判别性（已实测）：把 `'"authorization" = :authorization'` 的双引号去掉，
     本用例失败。
@@ -446,7 +446,7 @@ def test_case_aggregation_carries_the_six_required_fields_plus_inferred() -> Non
 
 
 def test_case_aggregation_inferred_fields_come_from_the_hit_node() -> None:
-    """`inferred_fields` 取**该命中节点**的清单，不是案例级并集（第 3 节）。
+    """`inferred_fields` 取该命中节点的清单，不是案例级并集（第 3 节）。
 
     命中叙事小节（节点上没有 `inferred_fields`）时必须为空——叙事不是卡片，
     用案例级并集会变成「这一节里有推断」的猜测。

@@ -1,12 +1,12 @@
 """集成测试：档案面 HTTP 端点的形状、状态码与失败语义（真实 PostgreSQL）。
 
-对应 ``docs/技术设计/面/profile/档案面HTTP契约.md`` 第 2～6 节与
-``docs/技术设计/technical-details/个性化档案.md`` 第 2～5 节。
+对应 `docs/技术设计/面/profile/档案面HTTP契约.md` 第 2～6 节与
+`docs/技术设计/technical-details/个性化档案.md` 第 2～5 节。
 
     docker compose up -d postgres
     uv run pytest -m integration apps/api/tests/test_profile_routes_integration.py
 
-## 为什么走 ASGI 直连而不是起服务器
+为什么走 ASGI 直连而不是起服务器：
 
 `httpx.ASGITransport` 让请求穿过完整的 FastAPI 路由与依赖注入（含错误码映射），
 但不占端口、不需要网络。会话依赖被显式替换（`app.dependency_overrides`）：
@@ -14,7 +14,7 @@
 自己的端到端用例（`test_auth_session_lifecycle_integration`）——在每条业务用例里
 重复签署真会话只会让失败原因变得难查。401 那一条单独用真实 SDK 验证（见末节）。
 
-## 本文件守住的判据
+本文件守住的判据：
 
 1. 越权与不存在逐字同文案（不泄露存在性）；归档上的新增文案区分（409）。
 2. 空名 422、`limit` 越界 422、无字段的 PATCH 422、重复确认 422、纠正无变更 422、

@@ -3,7 +3,7 @@
 对应 RAG 策略第 1.2 节的三条要求与第 10 节参数表：
 
 1. 超长 section 必须二次切分（框架不做，实测 2248 字符原样输出）；
-2. **不静默截断**——不可分单元标记为需人工处理；
+2. 不静默截断——不可分单元标记为需人工处理；
 3. 结构边界处不切断表格与列表项；块长落在目标区间且绝不超过硬限。
 
 这些是纯函数测试，不依赖数据库或网络。
@@ -58,11 +58,11 @@ def test_header_path_is_prepended_and_counts_toward_limit() -> None:
 
 
 def test_oversized_table_is_split_not_truncated() -> None:
-    """超长表格按行切分，**内容一行不少**（不截断是硬要求）。
+    """超长表格按行切分，内容一行不少（不截断是硬要求）。
 
     本用例原先断言"超长表格进人工队列"。2026-09-29 改为按行切分（依据见
     `test_oversized_table_splits_by_rows_and_repeats_header`），因此断言随之
-    更新——但**"不截断"这条不变量不变**：切分只改变分块边界，不丢行。
+    更新——但"不截断"这条不变量不变：切分只改变分块边界，不丢行。
     """
     rows = "\n".join(f"| 9:{i:02d} | 活动{i} | 说明文字若干 |" for i in range(120))
     table = f"| 时间 | 活动 | 说明 |\n|---|---|---|\n{rows}"
@@ -148,7 +148,7 @@ def test_locator_nests_under_appendix() -> None:
 
 
 def test_locator_keeps_section_title_across_split_pieces() -> None:
-    """超长 section 切成多块时，**每一块**都保留章节标题，而不是只有首块。
+    """超长 section 切成多块时，每一块都保留章节标题，而不是只有首块。
 
     切分后标题行只在首块里，因此章节名必须在切分前取好并传入——否则后续块的
     locator 会退化成父级路径，多块指向同一位置。
@@ -178,11 +178,11 @@ def test_locator_handles_root_header() -> None:
 
 
 def test_oversized_table_splits_by_rows_and_repeats_header() -> None:
-    """超长表格**按行切分、每片重复表头**——不整块判为"不可分"。
+    """超长表格按行切分、每片重复表头——不整块判为"不可分"。
 
     已修缺陷的回归（2026-09-29）：早先一律判"以表格为主，切断会破坏结构"，
-    导致 PMC 论文的 27 种循证实践清单（Table 2，8,487 字符）**不进检索**——
-    而"有哪些循证实践"正是最可能的提问。结构保护的本意是不切断**行内**，
+    导致 PMC 论文的 27 种循证实践清单（Table 2，8,487 字符）不进检索——
+    而"有哪些循证实践"正是最可能的提问。结构保护的本意是不切断行内，
     按行分段并重复表头产出的每片仍是合法且自解释的表格。
     """
     rows = [f"| 实践{i} | 这是第{i}种循证实践的定义说明文字，需要足够长以避免碎片并撑过硬上限 |" for i in range(60)]
@@ -229,7 +229,7 @@ def test_oversized_list_is_not_silently_dropped() -> None:
 
 
 def test_frontmatter_is_split_from_body() -> None:
-    """frontmatter 被解析为元数据，**不进入正文**（进正文会污染检索内容）。"""
+    """frontmatter 被解析为元数据，不进入正文（进正文会污染检索内容）。"""
     text = "---\ntitle: 测试标题\nsource: WHO 2024\napplicable_scope: 学龄前儿童\n---\n\n# 正文标题\n\n正文内容。\n"
 
     metadata, body = parse_frontmatter(text)

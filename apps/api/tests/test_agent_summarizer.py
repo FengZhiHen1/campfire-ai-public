@@ -37,11 +37,11 @@ def _chunk(delta: Mapping[str, object], finish_reason: str | None = None) -> str
 
 
 class ScriptedChat:
-    """假服务：按请求的 ``stream`` 决定回 SSE 还是普通 JSON，并记录每次请求体。
+    """假服务：按请求的 `stream` 决定回 SSE 还是普通 JSON，并记录每次请求体。
 
-    摘要调用是**非流式**的（``Runner.run`` 而非 ``run_streamed``），所以替身必须两种形状都会答；
-    第一版只答 SSE，SDK 解析出来的东西没有 ``choices``，报出的是一句与真实原因无关的
-    ``AttributeError``。
+    摘要调用是非流式的（`Runner.run` 而非 `run_streamed`），所以替身必须两种形状都会答；
+    第一版只答 SSE，SDK 解析出来的东西没有 `choices`，报出的是一句与真实原因无关的
+    `AttributeError`。
     """
 
     def __init__(
@@ -159,10 +159,10 @@ def _request(
 
 @pytest.mark.asyncio
 async def test_system_prompt_is_the_main_run_prompt_replayed_verbatim() -> None:
-    """第 4 节 + 第 8 节：**主运行**的系统提示逐字回放。
+    """第 4 节 + 第 8 节：主运行的系统提示逐字回放。
 
     这条是缓存能否命中的前提：前缀缓存要求「完整匹配一个已持久化的前缀单元」，第 0 条消息
-    就不同的话整个前缀都不命中。第一版把摘要器自己的提示放在系统位，接口**无法承载**主运行
+    就不同的话整个前缀都不命中。第一版把摘要器自己的提示放在系统位，接口无法承载主运行
     的系统提示——只能靠装配处碰巧传同一个字符串。
     """
     chat = ScriptedChat("摘要正文")
@@ -175,7 +175,7 @@ async def test_system_prompt_is_the_main_run_prompt_replayed_verbatim() -> None:
 
 @pytest.mark.asyncio
 async def test_instruction_comes_last_after_the_replayed_prefix() -> None:
-    """第 4 节：热前缀逐字回放，压缩指令作为**最后一条 user 消息**追加。"""
+    """第 4 节：热前缀逐字回放，压缩指令作为最后一条 user 消息追加。"""
     chat = ScriptedChat("摘要正文")
     summarizer = ModelSummarizer(binding=_binding(chat))
     prefix = [
@@ -278,7 +278,7 @@ async def test_usage_and_elapsed_are_reported() -> None:
 
 @pytest.mark.asyncio
 async def test_summary_hitting_the_cap_is_flagged_as_truncated() -> None:
-    """截断从严：``output_tokens >= maxTokens`` 即视为疑似截断，让机制拒绝落检查点。"""
+    """截断从严：`output_tokens >= maxTokens` 即视为疑似截断，让机制拒绝落检查点。"""
     chat = ScriptedChat("半截摘要", output_tokens=512)
 
     result = await ModelSummarizer(binding=_binding(chat)).summarize(_request(max_tokens=512))
@@ -288,9 +288,9 @@ async def test_summary_hitting_the_cap_is_flagged_as_truncated() -> None:
 
 @pytest.mark.asyncio
 async def test_cache_tokens_are_taken_from_raw_usage() -> None:
-    """第 9 节：压缩记录要带 ``prompt_cache_hit/miss_tokens``（第 12 节用它断言缓存仍有效）。
+    """第 9 节：压缩记录要带 `prompt_cache_hit/miss_tokens`（第 12 节用它断言缓存仍有效）。
 
-    SDK 的聚合 ``Usage`` 不带这两个字段，因此必须读 ``ModelResponse.raw_usage``。
+    SDK 的聚合 `Usage` 不带这两个字段，因此必须读 `ModelResponse.raw_usage`。
     提供方不给时保持 0——不编造计量。
     """
     chat = ScriptedChat("摘要", output_tokens=7, with_cache=True)
@@ -305,8 +305,8 @@ async def test_cache_tokens_are_taken_from_raw_usage() -> None:
 async def test_no_cache_details_means_no_observed_hits() -> None:
     """提供方不报缓存明细时：命中 0、未命中等于全部输入 token。
 
-    这只表达「我们没看到命中」，**不区分**「确实没有缓存」与「提供方不报」——口径与边界写在
-    ``_cache_tokens`` 的 docstring 里，不在这里编造一个 0。
+    这只表达「我们没看到命中」，不区分「确实没有缓存」与「提供方不报」——口径与边界写在
+    `_cache_tokens` 的 docstring 里，不在这里编造一个 0。
     """
     chat = ScriptedChat("摘要", output_tokens=7)
 
@@ -318,9 +318,9 @@ async def test_no_cache_details_means_no_observed_hits() -> None:
 
 @pytest.mark.asyncio
 async def test_missing_usage_is_treated_as_suspect_not_as_complete() -> None:
-    """提供方**没给用量**时必须按不安全方向处理。
+    """提供方没给用量时必须按不安全方向处理。
 
-    ``output_tokens`` 缺失时它是 0：第一版把它算成「完整」，等于把「没有数据」当成了
+    `output_tokens` 缺失时它是 0：第一版把它算成「完整」，等于把「没有数据」当成了
     「没截断」的正面证据——而判错代价是不对称的（误判为完整会把半截摘要写进检查点、
     丢掉没被摘要的历史）。
     """

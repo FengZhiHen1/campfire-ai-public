@@ -5,8 +5,8 @@
 - 字面路真的走 `ILIKE` 且命中中文标题/关键词（含 ≥3 连续汉字）；
 - 1–2 字查询被闸门跳过字面路，仍能走向量路；
 - 两路结果经 RRF 融合后聚合为条目；
-- **撤下即刻不可检索**（查询时过滤，不依赖索引清理）；
-- 两路都失败时抛 `RetrievalError`，**不返回空列表冒充「未找到」**。
+- 撤下即刻不可检索（查询时过滤，不依赖索引清理）；
+- 两路都失败时抛 `RetrievalError`，不返回空列表冒充「未找到」。
 
 嵌入用确定性替身（TOKENHUB_API_KEY 未配置），但 SQL、融合与聚合都是真实的。
 """
@@ -176,10 +176,10 @@ async def test_short_query_skips_literal_path_but_still_searches(
 async def test_both_paths_merge_when_text_matches(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """两路命中同一份内容时，必须合并为一条并标 `both`。
 
-    **已修复缺陷的回归测试**（2026-09-29）：框架 ``TextNode.hash`` 由「文本 +
+    已修复缺陷的回归测试（2026-09-29）：框架 `TextNode.hash` 由「文本 +
     metadata」共同决定；字面路若只带文本构造节点，哈希与向量路不同，RRF 就永远
     判不出「两路都命中」——实测 23 个节点 text 全同、hash 全不同，`hit_paths`
-    恒为 ``vector``，融合退化成只有向量路。
+    恒为 `vector`，融合退化成只有向量路。
     """
     paths = await _seed(tmp_path, monkeypatch)
     settings = get_settings()
@@ -213,38 +213,38 @@ async def test_both_paths_merge_when_text_matches(tmp_path: Path, monkeypatch: p
 async def test_locator_points_to_a_section_not_just_the_document(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """`locator` 要能定位到**当前章节**，而不是只到父级路径或文档根（`AC-05` 的前提）。
+    """`locator` 要能定位到当前章节，而不是只到父级路径或文档根（`AC-05` 的前提）。
 
-    ## 这条用例此前的写法是错的（2026-09-30 修正）
+    这条用例此前的写法是错的（2026-09-30 修正）：
 
     原断言是「至少有一个 locator 含 ≥2 段路径」（`loc.strip("/").count("/") >= 1`），
-    而它自己的夹具文档**只有一级标题**（`# 视觉支持`）——单级标题的正确 locator
-    恰好是 `/视觉支持/`，只有 **1** 段。也就是说该断言**永远不可能被这个夹具满足**：
-    它此前之所以「通过」，是因为泳道 `.env` 当时指向**共享主库**，库里残留着真实
+    而它自己的夹具文档只有一级标题（`# 视觉支持`）——单级标题的正确 locator
+    恰好是 `/视觉支持/`，只有 `1` 段。也就是说该断言永远不可能被这个夹具满足：
+    它此前之所以「通过」，是因为泳道 `.env` 当时指向共享主库，库里残留着真实
     语料的深层标题路径（如 `/0～6岁儿童…/一、服务对象/`）满足了断言。
-    一旦在**干净库**上跑（正确的隔离做法），它就失败——实测确认为既有缺陷，
+    一旦在干净库上跑（正确的隔离做法），它就失败——实测确认为既有缺陷，
     与本包改动无关（用改动前的 `retrieval.py` 在同一干净库上复现同一失败）。
 
-    ## 现在的判据（对被测行为真正有判别力）
+    现在的判据（对被测行为真正有判别力）：
 
-    要防的是框架的实测行为：`header_path` **只含父级路径、不含当前标题**
+    要防的是框架的实测行为：`header_path` 只含父级路径、不含当前标题
     （实测 `## 一、服务对象` 在 `/规范/` 下，`header_path` 只有 `/规范/`）。
-    若直接拿 `header_path` 当 locator，**同一父级下的所有小节会共用同一个 locator**
+    若直接拿 `header_path` 当 locator，同一父级下的所有小节会共用同一个 locator
     （实测 23 个块只产出 3 种 locator），引用回指失准。
 
-    因此这里用**嵌套标题**的文档，断言两个子节的 locator **互不相同**、
-    且各自**含自己的小节标题**——父级路径写法会让两者都等于 `/总则/`，断言失败。
+    因此这里用嵌套标题的文档，断言两个子节的 locator 互不相同、
+    且各自含自己的小节标题——父级路径写法会让两者都等于 `/总则/`，断言失败。
 
     判别性（已实测）：把 `chunking._join_locator` 改成只返回 `header_path`，
     本用例失败（两个子节 locator 相同）。
 
-    ## 为什么断言只落在本用例自己灌入的条目上（路线 A：自带种子数据）
+    为什么断言只落在本用例自己灌入的条目上（路线 A：自带种子数据）：
 
-    原写法对**全库聚合结果**做断言，于是「通过与否」取决于库里恰好有什么：
+    原写法对全库聚合结果做断言，于是「通过与否」取决于库里恰好有什么：
     干净库上必红（它自己的夹具满足不了那条断言），而主库上因为残留着别的语料
     而变绿——同一个仓库、同一个提交，结论随库内容漂移。这类测试无法作为回归依据。
 
-    改为：检索结果**先按本用例的条目标题过滤**，再只对这些条目断言。
+    改为：检索结果先按本用例的条目标题过滤，再只对这些条目断言。
     这样用例自带种子、不读库的既有内容，与仓库其他集成测试的自清理风格一致。
     """
     paths = await _seed(tmp_path, monkeypatch)
@@ -290,12 +290,12 @@ async def test_locator_points_to_a_section_not_just_the_document(
         # 每个 locator 都必须指向某个具体章节，而不是文档根 `/`。
         assert all(loc.strip("/") for loc in locators), f"存在只指向文档根的 locator：{locators}"
 
-        # 嵌套用例：**在节点层**核对同父级下的两个子节 locator 互不相同。
+        # 嵌套用例：在节点层核对同父级下的两个子节 locator 互不相同。
         #
-        # 为什么不在检索结果里核对：聚合按设计只保留**名次最高的一个节点**作为
+        # 为什么不在检索结果里核对：聚合按设计只保留名次最高的一个节点作为
         # snippet（同一轮不重复注入同一条目），因此一个条目在结果里只会出现一个
         # locator——用它断言「两个子节可区分」是拿聚合的取舍当缺陷。
-        # locator 的可区分性属于**节点投影**，就该在节点上验。
+        # locator 的可区分性属于节点投影，就该在节点上验。
         async with session_scope(settings) as session:
             item = (
                 await session.execute(select(KnowledgeItem).where(KnowledgeItem.source_path == nested_path))
@@ -312,7 +312,7 @@ async def test_locator_points_to_a_section_not_just_the_document(
         # 框架也会为父级 `# 总则` 自身产出一个节点（locator `/总则/`），故用子集断言。
         assert "/总则/视觉支持小节/" in nested_locators, f"子节 locator 缺当前标题：{nested_locators}"
         assert "/总则/行为应对小节/" in nested_locators, f"子节 locator 缺当前标题：{nested_locators}"
-        # 关键判据：两个子节**互不相同**。父级路径写法会让它们都等于 `/总则/`
+        # 关键判据：两个子节互不相同。父级路径写法会让它们都等于 `/总则/`
         # （实测同一父级下 23 个块只产出 3 种 locator），引用无法回指到具体章节。
         subsection_locators = [loc for loc in nested_locators if "小节" in loc]
         assert len(set(subsection_locators)) == 2, f"同父级下的子节 locator 未区分开：{nested_locators}"
@@ -361,7 +361,7 @@ async def test_withdrawn_item_is_immediately_unsearchable(tmp_path: Path, monkey
 
 @pytest.mark.asyncio
 async def test_both_paths_failing_raises_instead_of_returning_empty() -> None:
-    """两路都失败时抛错——**不得返回空列表让模型以为「没有相关资料」**。"""
+    """两路都失败时抛错——不得返回空列表让模型以为「没有相关资料」。"""
     _require_db()
 
     class _BoomStore:
@@ -391,12 +391,12 @@ async def test_both_paths_failing_raises_instead_of_returning_empty() -> None:
 
 @pytest.mark.asyncio
 async def test_scope_filters_both_paths(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """`scope` 在**两条路**上都生效，不是只过滤一边。
+    """`scope` 在两条路上都生效，不是只过滤一边。
 
     夹具里两份资料的 `applicable_scope` 分别是「学龄前儿童」与「学龄期儿童」。
     给 `scope="学龄前"` 时应只得前者。
 
-    **为什么必须两条路都测**：只给向量路加过滤、字面路不过滤，会把另一范围的条目
+    为什么必须两条路都测：只给向量路加过滤、字面路不过滤，会把另一范围的条目
     从字面路漏进来——这条用例单看向量路结果会通过，看汇总标题才会失败。
     """
     paths = await _seed(tmp_path, monkeypatch)
@@ -423,10 +423,10 @@ async def test_scope_filters_both_paths(tmp_path: Path, monkeypatch: pytest.Monk
 async def test_scope_matching_nothing_returns_empty_not_an_error(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """没有任何条目匹配 `scope` 时返回**空结果**，而不是报错或退回「不过滤」。
+    """没有任何条目匹配 `scope` 时返回空结果，而不是报错或退回「不过滤」。
 
     这一格容易写错：空允许集若被送进向量路的 `IN` 过滤，会生成
-    ``metadata_->>'item_id' IN ()`` —— **SQL 语法错误**（实测）。实现因此提前返回。
+    `metadata_->>'item_id' IN ()` —— SQL 语法错误（实测）。实现因此提前返回。
 
     判别性：去掉 `search()` 里 `if not scope_ids: return ...` 的提前返回，
     本用例会因 `IN ()` 报错而失败。
@@ -442,7 +442,7 @@ async def test_scope_matching_nothing_returns_empty_not_an_error(
             outcome = await search(session, store, "孤独症", embed_query=_fake_embed_query, scope="不存在的范围")
 
         assert outcome.items == []
-        # 这是**正常空结果**，不是降级——两路都正常，只是没有匹配。
+        # 这是正常空结果，不是降级——两路都正常，只是没有匹配。
         assert outcome.degraded_paths == ()
 
         await async_engine.dispose()
@@ -453,19 +453,19 @@ async def test_scope_matching_nothing_returns_empty_not_an_error(
 
 @pytest.mark.asyncio
 async def test_scope_value_cannot_inject_sql(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """`scope` 里的引号与 `OR` **不得**改变查询语义（注入防护）。
+    """`scope` 里的引号与 `OR` 不得改变查询语义（注入防护）。
 
     实测背景：框架的 `MetadataFilter` 用 f-string 拼 SQL（无绑定参数），把值包成
-    ``'%{value}%'``。payload 用 ``x' OR 1=1 --``：``--`` 把框架补在尾部的 ``%%'``
-    注释掉，剩下的 ``OR 1=1`` 恒真，且 `OR` 的优先级会**逃逸整个 AND 链**、
+    `'%{value}%'`。payload 用 `x' OR 1=1 --`：`--` 把框架补在尾部的 `%%'`
+    注释掉，剩下的 `OR 1=1` 恒真，且 `OR` 的优先级会逃逸整个 AND 链、
     连带绕过库别/撤下/状态三个过滤（实测生成
-    ``... ILIKE '%%x' OR 1=1 --%%'``）。
+    `... ILIKE '%%x' OR 1=1 --%%'`）。
 
-    ⚠️ **payload 的选择是有讲究的**：我第一版用 ``x' OR '1'='1``，它渲染成
-    ``'1'='1%'``（尾部多了 ``%``）——**恒假**，注入根本不会生效。那条用例因此
-    「实现与天真实现都通过」，消融时暴露为**假阴性**。`OR 1=1 --` 才真正逃逸。
+    ⚠️ payload 的选择是有讲究的：我第一版用 `x' OR '1'='1`，它渲染成
+    `'1'='1%'`（尾部多了 `%`）——恒假，注入根本不会生效。那条用例因此
+    「实现与天真实现都通过」，消融时暴露为假阴性。`OR 1=1 --` 才真正逃逸。
 
-    断言注入串被当成**普通子串**：没有条目含这段文本，因此结果必须为空；
+    断言注入串被当成普通子串：没有条目含这段文本，因此结果必须为空；
     若注入生效，`OR 1=1` 会让所有条目都返回。
     """
     paths = await _seed(tmp_path, monkeypatch)

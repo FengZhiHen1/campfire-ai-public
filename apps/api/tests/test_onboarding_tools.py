@@ -1,10 +1,10 @@
 """`tools/onboarding.py` 的单元测试：参数形状、账号校验与失败码映射。
 
-对应契约：[finish_onboarding](../../../docs/技术设计/面/consult/tools/finish_onboarding.md)。
+对应契约：docs/技术设计/面/consult/tools/finish_onboarding.md。
 
-**不连库**：状态机的幂等语义与「不代写 skipped」由
+不连库：状态机的幂等语义与「不代写 skipped」由
 `test_onboarding_completion_integration.py` 在真实 PostgreSQL 上覆盖；
-本文件只钉**工具层自己的职责**——参数形状（含「状态取值不该是参数」）、
+本文件只钉工具层自己的职责——参数形状（含「状态取值不该是参数」）、
 缺账号时的明确失败、写入失败不回执 `completed`、状态透传到返回体。
 """
 
@@ -65,7 +65,7 @@ def test_parameter_names_match_the_contract() -> None:
 
 
 def test_does_not_accept_account_id_or_state() -> None:
-    """**不收 `account_id`，也不收 `state`**（契约第 2 节）。
+    """不收 `account_id`，也不收 `state`（契约第 2 节）。
 
     判别性：加上 `state`，模型就有了选择 `skipped` 的通道，而契约第 1 节明写
     「本工具只写 `completed`，两条通道互不代写」——不设参数比「接受再拒绝」更强：
@@ -100,7 +100,7 @@ def test_skipped_sections_is_a_closed_vocabulary() -> None:
 
 @pytest.mark.asyncio
 async def test_fails_without_an_account_in_payload() -> None:
-    """`payload` 里没有账号时**明确失败**，不猜一个默认账号（`RQ-ACC-01`）。
+    """`payload` 里没有账号时明确失败，不猜一个默认账号（`RQ-ACC-01`）。
 
     猜默认会把引导状态写到别的账号上——使用者看不到异常，只是自己的引导一直没结束。
     """
@@ -135,7 +135,7 @@ async def test_returns_the_state_written_by_the_use_case(monkeypatch: pytest.Mon
 
 @pytest.mark.asyncio
 async def test_returns_skipped_when_the_ui_already_skipped(monkeypatch: pytest.MonkeyPatch) -> None:
-    """此前已被 UI 跳过时返回 `skipped`，**不报错也不改写**（契约第 4 节第 2 条）。
+    """此前已被 UI 跳过时返回 `skipped`，不报错也不改写（契约第 4 节第 2 条）。
 
     判别性：把用例层的「已 skipped 直接返回」改成覆盖写 `completed`，本用例失败
     ——那会抹掉使用者的显式决定（两条通道互不代写，认证与账号第 8 节）。
@@ -156,7 +156,7 @@ async def test_returns_skipped_when_the_ui_already_skipped(monkeypatch: pytest.M
 
 @pytest.mark.asyncio
 async def test_write_failure_does_not_receipt_completed(monkeypatch: pytest.MonkeyPatch) -> None:
-    """状态表写入失败 → 明确失败，**不回执 `completed`**（契约第 5 节末行）。
+    """状态表写入失败 → 明确失败，不回执 `completed`（契约第 5 节末行）。
 
     判别性：把 `except` 分支改成返回 `{"state": "completed"}`，本用例失败——
     模型会以为引导已收束，而下次会话仍会重新注入，两边都说自己是对的。

@@ -1152,7 +1152,7 @@ async def test_first_run_ignores_an_unknown_skill_instead_of_rejecting_it(client
     后半段把校验仍在的边界钉住：同一个会话的第二次运行照旧对未知技能名回 422——
     否则「把校验整段删掉」也能让前半段通过。
 
-    **消融**：把 `_activated_skill` 挪回首轮判定之前（或去掉条件分支），
+    消融：把 `_activated_skill` 挪回首轮判定之前（或去掉条件分支），
     前半段立即变成 422，本用例失败。
     """
     runner = ScriptedRunner(get_settings())
@@ -1421,7 +1421,7 @@ async def test_emergency_profile_with_object_but_no_items_is_marked_absent(
     `emergency_context` 按稳定层条目算出来，为假表示这份上下文整份不可用。忽略它的
     后果是把「无档案」注入成「有档案（八组都没内容）」——模型据此以为拿到了档案。
 
-    **消融**：去掉 `render_emergency_profile` 里 `not context.has_profile` 那一支，
+    消融：去掉 `render_emergency_profile` 里 `not context.has_profile` 那一支，
     信封回到 `state="present"`，本用例失败。
     """
     runner = ScriptedRunner(get_settings())
@@ -1468,7 +1468,7 @@ async def test_emergency_marks_unavailable_memory_instead_of_empty_memory(
     client: httpx.AsyncClient,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """记忆取数失败时标注来源不可用，**不**注入一条「该账号还没有可用记忆」。"""
+    """记忆取数失败时标注来源不可用，不注入一条「该账号还没有可用记忆」。"""
     runner = ScriptedRunner(get_settings())
     _install_runner(runner)
 
@@ -1624,7 +1624,7 @@ async def test_emergency_discards_the_session_when_the_run_fails_to_start(
     标记已为真会让该账号后续的日常消息被判成「已注入」而跳过引导告知；绑定行会参与
     下一次新建会话的默认对象推导；前端对 503 的重试会逐次堆积。
 
-    **消融**：去掉 `except runbus.RunStartupFailure` 里的补偿删除，两条断言立即失败。
+    消融：去掉 `except runbus.RunStartupFailure` 里的补偿删除，两条断言立即失败。
     """
     _install_runner(ScriptedRunner(get_settings(), fail_before_start=True))
     _stub_memory(monkeypatch, EmergencyMemory(facts=[]))

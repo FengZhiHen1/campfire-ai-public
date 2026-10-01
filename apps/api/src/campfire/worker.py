@@ -129,7 +129,7 @@ async def _enqueue_memory_episode(pending_id: str) -> None:
 async def _enqueue_profile_item(pending_id: str) -> None:
     """把一条 `profile_item` 投给档案消费者任务。
 
-    投递时**不带**租约身份：租约是领取者自己盖的章，由消费者在自己的进程里取
+    投递时不带租约身份：租约是领取者自己盖的章，由消费者在自己的进程里取
     （见 `consume_profile_item_task` 与 `_lease_identity`）。投递点在这里填一个常量
     会让「领取」与「终结」用同一个常量回比，栅栏恒真——2026-09-30 侦察 D-31 实测：
     生产唯一投递点此前传常量 `"api"`，`lease_owner` 列永远读作 `"api"`，

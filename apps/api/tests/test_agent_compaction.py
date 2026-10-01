@@ -1,7 +1,7 @@
 """压缩机制：参数校验、范围选择、保留尾部、事务与失败语义。
 
 对应 docs/技术设计/technical-details/压缩策略.md 第 2、3、5、6、7、10、12 节。
-本文件用替身摘要器，**不打网络**：机制本身与「谁来写摘要」是两件事。
+本文件用替身摘要器，不打网络：机制本身与「谁来写摘要」是两件事。
 """
 
 from __future__ import annotations
@@ -161,7 +161,7 @@ def test_default_parameters_match_the_design_numbers() -> None:
     ],
 )
 def test_invalid_settings_are_rejected_at_construction(kwargs: dict[str, object], fragment: str) -> None:
-    """非法配置在**加载时**失败，而不是在压缩时才发现（第 10 节）。"""
+    """非法配置在加载时失败，而不是在压缩时才发现（第 10 节）。"""
     base: dict[str, object] = {"context_window_tokens": 1000, "output_reserve_tokens": 100, "headroom_tokens": 100}
     base.update(kwargs)
 
@@ -257,12 +257,12 @@ def _pair_ids(item: dict[str, object]) -> set[str]:
 
 
 def test_range_selection_does_not_split_a_chat_completions_tool_pair() -> None:
-    """Chat Completions 形态的**多调用**助手消息也不得被切开。
+    """Chat Completions 形态的多调用助手消息也不得被切开。
 
-    这条形态是实测缺陷的来路（见 ``compaction._call_ids`` 的说明）：一条助手消息可以同时
-    发起多个调用，只读第一个配对键会让边界检查漏掉其余配对。构造刻意让**第二个**调用
-    （``c2``）成为边界上的那个：朴素边界落在 ``c2`` 的结果上，而 ``c2`` 只出现在助手消息的
-    ``tool_calls`` 列表第二位——只读第一位就会判定「安全」，把 ``c2`` 的调用与结果切开。
+    这条形态是实测缺陷的来路（见 `compaction._call_ids` 的说明）：一条助手消息可以同时
+    发起多个调用，只读第一个配对键会让边界检查漏掉其余配对。构造刻意让第二个调用
+    （`c2`）成为边界上的那个：朴素边界落在 `c2` 的结果上，而 `c2` 只出现在助手消息的
+    `tool_calls` 列表第二位——只读第一位就会判定「安全」，把 `c2` 的调用与结果切开。
     """
     assistant = {
         "role": "assistant",
@@ -288,7 +288,7 @@ def test_range_selection_does_not_split_a_chat_completions_tool_pair() -> None:
 
 
 def test_item_text_counts_chat_completions_tool_call_arguments() -> None:
-    """助手消息的 ``tool_calls[*].function.arguments`` 必须计入估算。
+    """助手消息的 `tool_calls[*].function.arguments` 必须计入估算。
 
     第一版没读它，于是一条 arguments 上千字的助手消息被计成 0 token——估算偏低到失真，
     而这条估算正是压缩阈值的判据。
@@ -389,7 +389,7 @@ async def test_manual_compaction_runs_below_threshold() -> None:
     """手动压缩仅供运维与调试：低于阈值也执行（第 2 节）。
 
     历史必须长到「有可压缩的范围」：整段都能塞进保留预算时，正确行为是
-    ``no_safe_range``（见下一条用例）。
+    `no_safe_range`（见下一条用例）。
     """
     summarizer = FakeSummarizer()
     items = [_filler(index) for index in range(30)]  # 约 180 token < 阈值 800，但 > 保留预算 144
@@ -424,7 +424,7 @@ def _long_history(count: int) -> list[dict[str, object]]:
 async def test_compaction_appends_and_never_rewrites_history() -> None:
     """第 5 节：只追加，不改写、不删除。
 
-    追加的内容是「检查点 + 尾部原文」（见 ``compaction`` 模块 docstring 的落地形状：
+    追加的内容是「检查点 + 尾部原文」（见 `compaction` 模块 docstring 的落地形状：
     第 5、6、8 节三条要求同时成立的唯一形状）。
     """
     items = _long_history(60)
@@ -474,7 +474,7 @@ async def test_compaction_reports_released_tokens_and_counts() -> None:
 async def test_existing_summary_is_required_to_be_merged() -> None:
     """第 4 节：已有 `<compacted-summary>` 时要求合并，不是照抄。
 
-    检查点必须**落在窗口内且窗口仍超阈值**：因此把它放在历史中段，后面接足够长的历史。
+    检查点必须落在窗口内且窗口仍超阈值：因此把它放在历史中段，后面接足够长的历史。
     """
     items = [
         _message("system", "静态系统提示"),
@@ -516,9 +516,9 @@ async def test_summary_request_carries_the_replay_prefix_and_max_tokens() -> Non
 
 @pytest.mark.asyncio
 async def test_repeated_compaction_keeps_appending_checkpoints() -> None:
-    """第二次压缩合并上一份摘要，且**不得把已被摘要覆盖的原文搬回窗口**。
+    """第二次压缩合并上一份摘要，且不得把已被摘要覆盖的原文搬回窗口。
 
-    压缩后窗口已落到阈值内（这是压缩成功的样子），因此第二次用 ``manual`` 触发。
+    压缩后窗口已落到阈值内（这是压缩成功的样子），因此第二次用 `manual` 触发。
     """
     items = _long_history(60)
     history, _outcome = await _compact(items)
@@ -531,7 +531,7 @@ async def test_repeated_compaction_keeps_appending_checkpoints() -> None:
     assert history2[: len(history)] == history  # 仍然只追加
     assert summarizer.requests[0].previous_summary is not None
 
-    # 第二次压缩的范围从上一份检查点开始；新窗口的尾部必须仍属于**上一次的窗口**，
+    # 第二次压缩的范围从上一份检查点开始；新窗口的尾部必须仍属于上一次的窗口，
     # 也就是不得把「已被摘要覆盖、又不在保留尾部里」的原文搬回来。
     #
     # 注意判据不能写成「新尾部不在第一次检查点之前」：保留尾部按落地形状会在历史里出现
@@ -585,7 +585,7 @@ async def test_empty_summary_is_not_committed() -> None:
 
 @pytest.mark.asyncio
 async def test_stopping_after_the_first_attempt_reports_one_attempt() -> None:
-    """``attempts`` 必须是**真实**尝试次数，不是「允许的次数」。
+    """`attempts` 必须是真实尝试次数，不是「允许的次数」。
 
     第一版把 `attempts` 记成允许值，于是 `compaction_retries=2` 的配置在一次尝试就降到阈值
     以下时仍然报告 3 次——计量失真（第 9 节要求真实计量），而用例里那句
@@ -609,15 +609,15 @@ async def test_stopping_after_the_first_attempt_reports_one_attempt() -> None:
 
 @pytest.mark.asyncio
 async def test_retry_reduces_the_retention_budget_instead_of_dropping_the_tail() -> None:
-    """重试按比例缩小保留预算，而**不是**绕过保留策略丢掉整段尾部。
+    """重试按比例缩小保留预算，而不是绕过保留策略丢掉整段尾部。
 
-    「绕过阈值与保留策略」在第 2 节是**溢出恢复**的专属手段；常规重试动用它会让代价付了、
+    「绕过阈值与保留策略」在第 2 节是溢出恢复的专属手段；常规重试动用它会让代价付了、
     目的还没达成（实测第一版：重试后保留 0 项，窗口仍高于阈值）。
 
-    构造：``retain_tokens=790``（< 阈值 800，合法）让第一次压缩后窗口仍约 862 token，
-    因而**必须**走第二次尝试；重试把保留预算按 ``retain_scale`` 缩到一半后降到约 442。
-    第一版用 ``retain_ratio=0.5``：那个构造第一次尝试就达标（实测窗口 547 < 800），
-    重试路径从未进入，末句 ``attempts == 1 or retained_items > 0`` 经左支路恒真——
+    构造：`retain_tokens=790`（< 阈值 800，合法）让第一次压缩后窗口仍约 862 token，
+    因而必须走第二次尝试；重试把保留预算按 `retain_scale` 缩到一半后降到约 442。
+    第一版用 `retain_ratio=0.5`：那个构造第一次尝试就达标（实测窗口 547 < 800），
+    重试路径从未进入，末句 `attempts == 1 or retained_items > 0` 经左支路恒真——
     用例名与断言都在宣称一件没发生的事。
     """
     items = _long_history(40)
@@ -689,7 +689,7 @@ async def test_commit_failure_does_not_claim_compaction_and_leaves_window_untouc
     """第 7 节：写不进去就不能记成「压缩完成」，且窗口保持原样。
 
     第一版的顺序是「记结束 → 调用方落库」，于是落库失败会留下一条闭合的
-    ``performed=True`` 记录——正是第 7 节点名禁止的「假装压缩完成的结束记录」。
+    `performed=True` 记录——正是第 7 节点名禁止的「假装压缩完成的结束记录」。
     """
     journal = FakeJournal()
     items = _long_history(60)
@@ -736,7 +736,7 @@ async def test_successful_commit_happens_before_the_transaction_closes() -> None
 
 
 class _OverflowLikeError(Exception):
-    """带 ``status_code`` 的异常（模拟提供方错误）。"""
+    """带 `status_code` 的异常（模拟提供方错误）。"""
 
     def __init__(self, message: str, status_code: int) -> None:
         super().__init__(message)
@@ -761,10 +761,10 @@ class _OverflowLikeError(Exception):
     ],
 )
 def test_overflow_classification_matrix(message: str, status_code: int, expected: bool) -> None:
-    """溢出判定矩阵（第 7 节：只在提供方**明确分类**窗口溢出时触发）。
+    """溢出判定矩阵（第 7 节：只在提供方明确分类窗口溢出时触发）。
 
     这条判定的误判代价不对称：误判为溢出会走「绕过阈值与保留策略」的最大头部缩减，
-    **永久改动窗口**；因此宁可漏判。此前这条函数**一个用例都没有**。
+    永久改动窗口；因此宁可漏判。此前这条函数一个用例都没有。
     """
     from campfire.agent.context import is_context_overflow
 
@@ -772,14 +772,14 @@ def test_overflow_classification_matrix(message: str, status_code: int, expected
 
 
 def test_overflow_decision_does_not_use_our_window_estimate() -> None:
-    """判定只看提供方的状态码与措辞，**不看**我们的窗口估算（一次显式裁决）。
+    """判定只看提供方的状态码与措辞，不看我们的窗口估算（一次显式裁决）。
 
     两位审查者在这里给出了相反的建议：一位要求「窗口估算 ≥ 上限一半」以防假阳性，另一位指出
-    那会把提供方**明确**报的溢出降级成 ``model_unavailable``，与第 7 节「溢出恢复只在提供方
+    那会把提供方明确报的溢出降级成 `model_unavailable`，与第 7 节「溢出恢复只在提供方
     明确分类窗口溢出时触发」冲突。按文档裁决：不加否决门槛。
 
-    理由：本模块的估算有**已知的系统性偏低**（刻意不计工具声明、认不出的形状计 0），拿它去
-    否决提供方的明确信号，会把真实溢出变成更难排查的模型故障；而假阳性由**措辞收紧**挡住
+    理由：本模块的估算有已知的系统性偏低（刻意不计工具声明、认不出的形状计 0），拿它去
+    否决提供方的明确信号，会把真实溢出变成更难排查的模型故障；而假阳性由措辞收紧挡住
     （不含 "too long" 这类泛词，见判定矩阵）。
     """
     from campfire.agent.context import is_context_overflow

@@ -1,7 +1,7 @@
 """上下文层：引用索引不变量、注入项排序与失败告知、窗口派生。
 
 对应 docs/技术设计/technical-details/通用基座.md 第 4 节、第 11 节与
-docs/技术设计/technical-details/压缩策略.md 第 3、5、8 节。重点在**不变量与拒绝路径**：
+docs/技术设计/technical-details/压缩策略.md 第 3、5、8 节。重点在不变量与拒绝路径：
 「没有索引记录不得成为可引用依据」「注入失败必须显式标注」「不得做滑动窗口」。
 """
 
@@ -163,8 +163,8 @@ async def test_render_is_empty_without_items() -> None:
 def test_injection_rejects_roles_outside_the_allowed_set(role: str) -> None:
     """系统提示必须静态：注入消息不得借 system 角色改写它（压缩策略第 8 节）。
 
-    静态类型已排除 ``system``，但装配处的调用方不一定经过类型检查，因此运行期同样校验，
-    并且挡住 ``tool`` 这类不属于注入消息的角色。
+    静态类型已排除 `system`，但装配处的调用方不一定经过类型检查，因此运行期同样校验，
+    并且挡住 `tool` 这类不属于注入消息的角色。
     """
     with pytest.raises(InjectionError, match="不被允许"):
         InjectionItem(source="catalog", content="x", role=role)  # type: ignore[arg-type]  # 故意传词表外的角色：本用例测的就是运行期也拦（调用方不一定过类型检查）
@@ -237,7 +237,7 @@ async def test_unavailable_notice_is_a_status_level_item_appended_last() -> None
 async def test_partial_render_failure_reports_what_already_reached_the_index() -> None:
     """写到一半失败不得被当作成功：已落索引的引用必须随错误一起交出来。
 
-    否则索引里有记录、窗口里没有消息，``run_finished`` 会报出一条模型从未看到的依据。
+    否则索引里有记录、窗口里没有消息，`run_finished` 会报出一条模型从未看到的依据。
     """
     index = FakeCitationIndex()
     recorder = _recorder(index)
@@ -271,7 +271,7 @@ async def test_rendering_the_same_batch_twice_is_refused() -> None:
     """同一批次渲染两次必须被拒：渲染会写索引，重复渲染产出重复引用。
 
     类 docstring 承诺「也只做一次」；没有守卫时第二次调用会静默再写一轮索引，
-    而 ``run_finished`` 报出的引用清单与实际注入的消息就对不上了。
+    而 `run_finished` 报出的引用清单与实际注入的消息就对不上了。
     """
     index = FakeCitationIndex()
     batch = InjectionBatch([InjectionItem(source="retrieved", content="资料", reference="kb-1")])
@@ -285,7 +285,7 @@ async def test_rendering_the_same_batch_twice_is_refused() -> None:
 
 @pytest.mark.asyncio
 async def test_a_failed_render_can_be_retried() -> None:
-    """渲染**失败**不算「渲染过」：索引恢复后换个 recorder 重试同一批次应当被允许。
+    """渲染失败不算「渲染过」：索引恢复后换个 recorder 重试同一批次应当被允许。
 
     失败时窗口与索引都还没有这份内容，因此重试不会产生重复引用；把守卫在失败路径也置位
     会让调用方永远无法补上这次注入。
@@ -363,7 +363,7 @@ def test_leading_system_messages_are_never_shadowed() -> None:
 def test_checkpoint_is_located_by_tag_not_by_position() -> None:
     """读回顺序不是硬保证，因此靠内容标签定位最后一条摘要。
 
-    用例刻意让**真正的检查点不在末位**：若实现改成「取最后一条消息」，它会失败。
+    用例刻意让真正的检查点不在末位：若实现改成「取最后一条消息」，它会失败。
     """
     history = [
         _message("user", "m0"),
@@ -376,7 +376,7 @@ def test_checkpoint_is_located_by_tag_not_by_position() -> None:
 
 
 def test_quoting_the_tag_in_normal_content_is_not_a_checkpoint() -> None:
-    """正文提到标签**不得**成为检查点：那会在没有任何摘要的情况下裁掉历史。
+    """正文提到标签不得成为检查点：那会在没有任何摘要的情况下裁掉历史。
 
     初版用子串包含判定，于是使用者问一句「你上一轮写的 <compacted-summary> 是什么」
     就会触发一次窗口裁剪，被裁掉的内容当次看不到——压缩策略第 8 节第 1 条禁止滑动窗口。
@@ -421,7 +421,7 @@ def test_message_text_reads_both_content_shapes() -> None:
     """两种 content 形状都要能取到文本。
 
     实测：使用者消息是字符串，而 SDK 落库的助手消息是分片数组
-    （``[{"type": "output_text", "text": "…"}]``）。只认字符串会让检查点在分片形状上
+    （`[{"type": "output_text", "text": "…"}]`）。只认字符串会让检查点在分片形状上
     永远漏检——方向安全（不裁剪历史），但压缩会静默失效。
     """
     assert message_text({"role": "user", "content": "纯文本"}) == "纯文本"

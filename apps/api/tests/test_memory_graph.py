@@ -1,20 +1,20 @@
 """单元测试：记忆模块的异常层次与 Graphiti/FalkorDB 装配。
 
-对应 ``docs/技术设计/technical-details/通用记忆.md`` 第 8 节与
-``docs/技术设计/decisions/通用记忆归属为账号.md``。
+对应 `docs/技术设计/technical-details/通用记忆.md` 第 8 节与
+`docs/技术设计/decisions/通用记忆归属为账号.md`。
 
-这里锁的是**实测得到的四个装配约束**（见 ``graph.py`` 模块说明）——它们是
+这里锁的是实测得到的四个装配约束（见 `graph.py` 模块说明）——它们是
 「照默认值走就失败」的坑，且失败形态与原因不直观：
 
-1. ``cross_encoder`` 必须显式传入，否则 ``Graphiti`` 构造时抛 ``OpenAIError``；
-2. ``llm_client`` / ``embedder`` 必须显式传入，否则回落到读 ``OPENAI_API_KEY``
+1. `cross_encoder` 必须显式传入，否则 `Graphiti` 构造时抛 `OpenAIError`；
+2. `llm_client` / `embedder` 必须显式传入，否则回落到读 `OPENAI_API_KEY`
    的 OpenAI 客户端（等于绕过 TokenHub 的单一供应商纪律）；
-3. ``small_model`` 必须一并显式传入，否则抽取路径回落到上游硬编码的
-   ``gpt-4.1-nano``——同一类「静默回落」的第二个入口；
-4. ``store_raw_episode_content`` 必须为 ``True``，否则 episode 原文被清空。
+3. `small_model` 必须一并显式传入，否则抽取路径回落到上游硬编码的
+   `gpt-4.1-nano`——同一类「静默回落」的第二个入口；
+4. `store_raw_episode_content` 必须为 `True`，否则 episode 原文被清空。
 
-装配测试**不连真实图库**：只验证构造出的对象带上了我们要的参数。
-真实连通性由 ``test_memory_graph_integration.py`` 承担。
+装配测试不连真实图库：只验证构造出的对象带上了我们要的参数。
+真实连通性由 `test_memory_graph_integration.py` 承担。
 """
 
 from __future__ import annotations
@@ -74,8 +74,8 @@ def test_memory_error_does_not_shadow_the_builtin() -> None:
     这条断言把「不遮蔽」钉成可执行事实，而不是模块 docstring 里的承诺。
 
     Note:
-        这里**不写** ``assert not issubclass(MemoryError, MemoryModuleError)``：
-        要让内建 ``MemoryError`` 继承一个项目类，只能靠改 ``__bases__`` 或猴补丁，
+        这里不写 `assert not issubclass(MemoryError, MemoryModuleError)`：
+        要让内建 `MemoryError` 继承一个项目类，只能靠改 `__bases__` 或猴补丁，
         那条断言在实践中恒真（2026-09-29 评审指出），属「永远不会失败的检查」。
     """
     assert MemoryModuleError.__name__ != "MemoryError"
@@ -145,15 +145,15 @@ async def test_build_memory_graph_wires_all_three_clients_to_tokenhub() -> None:
 
 @pytest.mark.asyncio
 async def test_small_model_does_not_fall_back_to_the_upstream_default() -> None:
-    """**两个模型档位都必须指向 TokenHub 的同一模型。**
+    """两个模型档位都必须指向 TokenHub 的同一模型。
 
-    为什么必须有这条（2026-09-29 评审发现的真实缺陷）：只传 ``model`` 时
-    ``LLMConfig.small_model`` 保持 ``None``，``LLMClient`` 在 ``ModelSize.small``
-    时回落到上游硬编码的 ``gpt-4.1-nano``。Graphiti 有 7 处抽取/消解调用走
-    ``ModelSize.small``（``add_episode`` 必经），因此实体抽取会去请求一个
-    **TokenHub 上不存在**的模型名——而原测试只断言 ``config.model``，看不出问题。
+    为什么必须有这条（2026-09-29 评审发现的真实缺陷）：只传 `model` 时
+    `LLMConfig.small_model` 保持 `None`，`LLMClient` 在 `ModelSize.small`
+    时回落到上游硬编码的 `gpt-4.1-nano`。Graphiti 有 7 处抽取/消解调用走
+    `ModelSize.small`（`add_episode` 必经），因此实体抽取会去请求一个
+    TokenHub 上不存在的模型名——而原测试只断言 `config.model`，看不出问题。
 
-    断言分两层：配置字段已对齐，且**实际解析结果**不再是上游默认名
+    断言分两层：配置字段已对齐，且实际解析结果不再是上游默认名
     （后者才是有行为意义的那一层）。
     """
     graph = build_memory_graph(_settings())
@@ -171,15 +171,15 @@ async def test_small_model_does_not_fall_back_to_the_upstream_default() -> None:
 
 @pytest.mark.asyncio
 async def test_model_clients_have_bounded_timeout_and_no_sdk_retries() -> None:
-    """**两条腿都要有界**：模型客户端的超时与重试都必须显式设过。
+    """两条腿都要有界：模型客户端的超时与重试都必须显式设过。
 
     为什么必须有这条（2026-09-29 评审发现的真实缺陷）：只设图库超时时，两个
-    openai 客户端取 SDK 默认——实测 ``read=600`` 秒、``max_retries=2``，直接顶掉
-    ``RQ-EMG-03`` 的 10 秒首字预算。原测试对超时**零断言**，有界性只活在注释里。
+    openai 客户端取 SDK 默认——实测 `read=600` 秒、`max_retries=2`，直接顶掉
+    `RQ-EMG-03` 的 10 秒首字预算。原测试对超时零断言，有界性只活在注释里。
 
-    断言的是**有行为意义的事实**（不是 SDK 默认值、且等于配置值），而不是复述代码。
-    ``openai`` 客户端的 ``timeout`` 有两种形态：显式传数值时是 ``float``，
-    未传时是 ``Timeout`` 对象（``read`` 默认 600）——两种都要能判。
+    断言的是有行为意义的事实（不是 SDK 默认值、且等于配置值），而不是复述代码。
+    `openai` 客户端的 `timeout` 有两种形态：显式传数值时是 `float`，
+    未传时是 `Timeout` 对象（`read` 默认 600）——两种都要能判。
     """
     settings = _settings()
     graph = build_memory_graph(settings)
@@ -200,12 +200,12 @@ async def test_model_clients_have_bounded_timeout_and_no_sdk_retries() -> None:
 
 @pytest.mark.asyncio
 async def test_aclose_releases_the_driver_background_task_and_clients() -> None:
-    """``aclose()`` 必须收口**全部**资源，包括驱动的后台索引任务。
+    """`aclose()` 必须收口全部资源，包括驱动的后台索引任务。
 
-    为什么必须有这条（2026-09-29 评审发现的真实缺陷）：``FalkorDriver.__init__``
-    会调度一个建索引的后台任务，只关 ``driver.client`` 会让该任务在客户端关闭后
-    继续跑、抛 ``ConnectionError`` 且异常无人取回（实测 pytest 打印
-    ``Task exception was never retrieved``）。
+    为什么必须有这条（2026-09-29 评审发现的真实缺陷）：`FalkorDriver.__init__`
+    会调度一个建索引的后台任务，只关 `driver.client` 会让该任务在客户端关闭后
+    继续跑、抛 `ConnectionError` 且异常无人取回（实测 pytest 打印
+    `Task exception was never retrieved`）。
     """
     graph = build_memory_graph(_settings())
     task = graph.driver._init_task

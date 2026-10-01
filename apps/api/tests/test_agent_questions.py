@@ -5,15 +5,15 @@ docs/技术设计/面/consult/HTTP与SSE契约.md 第 4.2 节的「事件到 SSE
 
 本文件盯四件容易悄悄坏掉的事：
 
-1. **载荷字段名就是线上契约**（恒等映射下 `data` 即该事件对象的 JSON），所以字段名集合
+1. 载荷字段名就是线上契约（恒等映射下 `data` 即该事件对象的 JSON），所以字段名集合
    逐字断死；改名、加字段都会在这里失败。
-2. **提问的形状边界**：空组、空题面、模型自带 `batch_id`、题标识重复都必须被拒——它们
+2. 提问的形状边界：空组、空题面、模型自带 `batch_id`、题标识重复都必须被拒——它们
    都能让「整组提交」失去可校验的对象（第 7.2 节：组是提交单位）。
-3. **运行结束于提问**：真问出问题就结束，且**参数不合法时不结束**。后者是重点：
+3. 运行结束于提问：真问出问题就结束，且参数不合法时不结束。后者是重点：
    SDK 文档里更省事的 `tool_use_behavior={"stop_at_tool_names": [...]}` 只看工具名，
    实测参数不合法也照样结束运行，于是没有任何 `question` 事件、使用者的表现是「回复突然
    断掉」。本文件用一个「先给坏参数、再给好参数」的脚本把这个差异钉住。
-4. **思考增量取不到就不产出**：绝不用正文增量冒充（第 7.1 节明令禁止），因此既要测
+4. 思考增量取不到就不产出：绝不用正文增量冒充（第 7.1 节明令禁止），因此既要测
    「有思考字段时产出」，也要测「只有正文时一条都不产出」。
 """
 
@@ -284,7 +284,7 @@ def _wire(event: object) -> object:
     """把事件压成线上 `data` 的样子：可 JSON 序列化的纯 list/dict 结构。
 
     比直接比 `asdict` 更贴契约——面侧把 `data` 定义成「该事件对象的 JSON」，所以元组会变成
-    数组、字段顺序无关紧要、而**字段名与嵌套键名必须逐字一致**。这里断言的就是后者。
+    数组、字段顺序无关紧要、而字段名与嵌套键名必须逐字一致。这里断言的就是后者。
     """
     return json.loads(json.dumps(asdict(event), ensure_ascii=False))
 
@@ -503,7 +503,7 @@ async def test_ask_user_generates_a_different_batch_id_each_call() -> None:
 
 @pytest.mark.asyncio
 async def test_ask_user_rejects_invalid_arguments_with_a_recoverable_code() -> None:
-    """参数不合法是**可恢复**失败：带明确错误码回给模型（第 9 节）。"""
+    """参数不合法是可恢复失败：带明确错误码回给模型（第 9 节）。"""
     outcome = await build_ask_user_tool().invoke(_context(), json.dumps({"items": []}))
 
     assert isinstance(outcome, ToolFailure)
@@ -544,7 +544,7 @@ def test_stop_after_question_stops_once_a_question_exists() -> None:
 async def test_ask_user_ends_the_run_and_emits_a_question_event() -> None:
     """调用 `ask_user` 即结束本次运行并发出 `question`（基座 7.2 节）。
 
-    结束的证据是脚本被消费的条数：第三次应答（一句正文）必须**没有**被请求到——如果运行
+    结束的证据是脚本被消费的条数：第三次应答（一句正文）必须没有被请求到——如果运行
     没停，SDK 会回到模型再问一轮，那条正文就会出现在事件流里。
     """
     chat = ScriptedChat(
@@ -582,7 +582,7 @@ async def test_ask_user_ends_the_run_and_emits_a_question_event() -> None:
 
 @pytest.mark.asyncio
 async def test_an_invalid_ask_user_call_does_not_end_the_run() -> None:
-    """参数不合法时运行**不**结束：模型拿到错误码后可以改一次参数再问。
+    """参数不合法时运行不结束：模型拿到错误码后可以改一次参数再问。
 
     这条用例盯的是 SDK 那条更省事的机制（`stop_at_tool_names`）的缺陷——它只看工具名，
     实测参数不合法也照样结束运行，于是事件流里没有任何 `question`，使用者的表现是
@@ -659,7 +659,7 @@ async def test_reasoning_content_streams_become_reasoning_delta_events() -> None
 
 @pytest.mark.asyncio
 async def test_no_reasoning_delta_when_the_provider_returns_no_thinking() -> None:
-    """只有正文时一条思考事件都不产出：**绝不用文本增量冒充**（基座 7.1 节明令禁止）。
+    """只有正文时一条思考事件都不产出：绝不用文本增量冒充（基座 7.1 节明令禁止）。
 
     这是「取不到就不产出」的兜底路径：本提供方不返回思考字段时，思考区应当没有内容，
     而不是把正文复制一份进思考区。
@@ -689,7 +689,7 @@ async def test_a_failed_run_emits_no_reasoning_delta() -> None:
 
 @pytest.mark.asyncio
 async def test_action_cards_from_a_tool_result_become_events_and_the_run_continues() -> None:
-    """卡片经 `ToolResult` 交回、翻成 `action_card` 事件，且**运行不结束**（基座 7.3 节）。
+    """卡片经 `ToolResult` 交回、翻成 `action_card` 事件，且运行不结束（基座 7.3 节）。
 
     与 `question` 不对称的判据在此：卡片不需要「结束本次运行」，所以工具返回后模型还能
     继续输出（这里就是那句「卡片之后的收尾文字」）。
@@ -723,7 +723,7 @@ async def test_action_cards_from_a_tool_result_become_events_and_the_run_continu
     )
     runner = _runner(chat, pool=_pool(extra=[spec]))
 
-    # 卡片工具是**产品侧**工具（基座 7.3 节：卡片由产品侧工具产出，不是保留工具），
+    # 卡片工具是产品侧工具（基座 7.3 节：卡片由产品侧工具产出，不是保留工具），
     # 因此它要像别的产品工具那样先进入可用集合，而 `ask_user` 不需要这一步。
     events = await _collect(runner, _request(default_active_tools=("emit_card_alpha",)))
 

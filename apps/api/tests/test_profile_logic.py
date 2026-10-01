@@ -1,12 +1,12 @@
 """个性化档案的纯逻辑：落层判据、降权时限、词表闭集与授权文案纪律。
 
-这些用例**不需要数据库**：它们钉住的是纯函数判据，因此可以在任何环境跑
+这些用例不需要数据库：它们钉住的是纯函数判据，因此可以在任何环境跑
 （含 CI，那里的集成测试会被 skip）。
 
-对应 ``docs/技术设计/technical-details/个性化档案.md`` 第 3 节与
-``docs/技术设计/technical-details/支持对象.md`` 第 5.3 节。
+对应 `docs/技术设计/technical-details/个性化档案.md` 第 3 节与
+`docs/技术设计/technical-details/支持对象.md` 第 5.3 节。
 
-为什么纯逻辑值得单独测：落层判据是**唯一判据**（第 3 节），而它有两个表达
+为什么纯逻辑值得单独测：落层判据是唯一判据（第 3 节），而它有两个表达
 （Python 谓词与 SQL 过滤）。集成测试覆盖 SQL 侧，本文件覆盖谓词侧——
 两者不一致时必有一个失败。
 """
@@ -52,7 +52,7 @@ _NOW = datetime(2026, 9, 30, 12, 0, tzinfo=timezone.utc)
 
 
 def test_origin_vocabulary_is_six_values() -> None:
-    """`origin` 必须是**六值**。
+    """`origin` 必须是六值。
 
     契约（`propose_profile_item` 第 2 节）取六值，而 `5e27503214c3` 建的存储约束
     此前只有四值——「契约能传、存储拒收」。本用例钉住应用侧集合是六值，
@@ -115,7 +115,7 @@ def test_confirmation_on_entry_follows_the_layer_table(origin: str, expected: st
 
 @pytest.mark.parametrize("origin", sorted(STABLE_ORIGINS))
 def test_non_inferred_origins_land_in_the_stable_layer(origin: str) -> None:
-    """四种非推断来源直接进稳定层——**包括**仍是 `unconfirmed` 的两种。
+    """四种非推断来源直接进稳定层——包括仍是 `unconfirmed` 的两种。
 
     「直接稳定层」说的是它参与取数，不是「已确认」：`third_party_report` 与
     `document` 进稳定层却仍是 `unconfirmed`（第 3 节）。
@@ -129,7 +129,7 @@ def test_non_inferred_origins_land_in_the_stable_layer(origin: str) -> None:
 
 @pytest.mark.parametrize("origin", sorted(CANDIDATE_ORIGINS))
 def test_inferred_origins_do_not_land_in_the_stable_layer(origin: str) -> None:
-    """系统观察与推断在未确认时**不进**稳定层（`AC-18` 的判据）。"""
+    """系统观察与推断在未确认时不进稳定层（`AC-18` 的判据）。"""
     assert not lands_in_stable_layer(
         origin=origin,
         confirmation=CONFIRMATION_UNCONFIRMED,
@@ -141,7 +141,7 @@ def test_inferred_origins_do_not_land_in_the_stable_layer(origin: str) -> None:
 def test_inferred_becomes_stable_after_the_user_confirms_it(origin: str) -> None:
     """使用者确认后，推断进稳定层——这是「确认才成事实」的落点（第 3 节）。
 
-    它同时说明为什么「推断不得写成 confirmed」这条硬约束必须在**写入路径**上卡，
+    它同时说明为什么「推断不得写成 confirmed」这条硬约束必须在写入路径上卡，
     而不能做成存储层 CHECK：确认入口正是要把 `ai_inference` 的行置为 `confirmed`，
     存储层若禁止这个组合，确认功能就无法实现。
     """
@@ -183,7 +183,7 @@ def test_candidate_is_downgraded_after_ninety_days() -> None:
 
 
 def test_candidate_just_under_the_limit_is_not_downgraded() -> None:
-    """**边界**：差一点点到 90 天不降权（判据是 `>=`，不是 `>`）。
+    """边界：差一点点到 90 天不降权（判据是 `>=`，不是 `>`）。
 
     没有这条，一个 `>` 与 `>=` 的笔误不会被任何用例发现。
     """
@@ -201,7 +201,7 @@ def test_candidate_just_under_the_limit_is_not_downgraded() -> None:
 
 
 def test_downgraded_candidate_is_marked_not_deleted() -> None:
-    """降权只是**标记**，不改存储值、更不删数据（第 3 节：不删除）。
+    """降权只是标记，不改存储值、更不删数据（第 3 节：不删除）。
 
     本用例断言的是函数的返回值语义：它返回 `stale` 而不修改输入，
     因此「降权」在存储上是一次读期判定，行仍在库里、`freshness` 仍是被传入的那个值。
@@ -221,7 +221,7 @@ def test_downgraded_candidate_is_marked_not_deleted() -> None:
 
 
 def test_confirmed_item_is_never_downgraded_by_time() -> None:
-    """已确认的事实**不因时间推移降权**：没人再点一次确认不等于它失效。
+    """已确认的事实不因时间推移降权：没人再点一次确认不等于它失效。
 
     这条区分了两个容易混淆的概念——「长期未确认的推断」与「早已确认的事实」。
     """
@@ -241,7 +241,7 @@ def test_confirmed_item_is_never_downgraded_by_time() -> None:
 def test_third_party_report_is_not_downgraded() -> None:
     """`third_party_report` 虽 `unconfirmed`，但不属「未经确认的推断」，不降权。
 
-    它是**明确提供的信息**（第 3 节），只是没经本人确认——与 `ai_inference`
+    它是明确提供的信息（第 3 节），只是没经本人确认——与 `ai_inference`
     的「系统归纳」是两类东西。这条钉住 `effective_freshness` 里那个易错的例外分支。
     """
     ancient = _NOW - timedelta(days=STALE_AFTER_DAYS * 10)
@@ -271,7 +271,7 @@ def test_summary_has_twelve_fields_all_covered_by_domains() -> None:
 
 
 def test_summary_coverability_check_is_discriminating(monkeypatch: pytest.MonkeyPatch) -> None:
-    """**判别性**：把映射改成 11 个字段，检查必须失败。
+    """判别性：把映射改成 11 个字段，检查必须失败。
 
     没有这条，「覆盖性检查」可能是一只永远通过的闸门。
     """
@@ -291,19 +291,19 @@ def test_summary_coverability_check_is_discriminating(monkeypatch: pytest.Monkey
 def test_archived_error_is_a_subclass_of_authorization_error() -> None:
     """归档错误仍是授权错误的子类：调用方一句 `except AuthorizationError` 收口。
 
-    同时它必须**可以**被单独分辨（对外状态码不同：409 与 404）。
+    同时它必须可以被单独分辨（对外状态码不同：409 与 404）。
     """
     assert issubclass(ObjectArchivedError, AuthorizationError)
 
 
 def test_archived_message_differs_from_the_unauthorized_message() -> None:
-    """归档文案与越权文案**必须不同**（第 5.3 节）。"""
+    """归档文案与越权文案必须不同（第 5.3 节）。"""
     assert OBJECT_ARCHIVED_MESSAGE != OBJECT_NOT_ACCESSIBLE_MESSAGE
     assert "已归档" in OBJECT_ARCHIVED_MESSAGE
 
 
 def test_unauthorized_message_is_a_single_constant() -> None:
-    """「不存在」与「不属于你」共用**一个常量**——因此两者不可能漂移。
+    """「不存在」与「不属于你」共用一个常量——因此两者不可能漂移。
 
     逐字相同的文案纪律（第 5.3 节）靠「只有一份字面量」落实；
     若哪天有人为两种情形各写一句，本用例会失败（常量被拆开后
