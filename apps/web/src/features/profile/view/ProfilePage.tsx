@@ -418,6 +418,11 @@ interface StableRowProps {
  * 这一行不判时效：稳定层取数按 `freshness=current` 过滤（服务端的降权只作用于
  * 未确认的候选条目），落在稳定层的行 `isStale` 恒为假——在这里判就是一条死分支。
  * 「已降权」标与描述默认收起因此都挂在候选行上（见 CandidateRow）。
+ *
+ * 已更正（`historical`）的条目也到不了这里：纠正后的旧条目在取数层就不返回
+ * （`repository.list_items` 的 `freshness != historical` 与 `superseded_by is null`
+ * 两道条件，纠正同时置这两个字段）。设计第 33/62 行要求它出行首「已更正」标，
+ * 而当前没有渲染出口——如需回看历史条目，得先有取数通道，不能靠界面凭空造标。
  */
 function StableRow({ item, busy, failure, onCorrect, onDelete }: StableRowProps) {
   return (
@@ -462,6 +467,7 @@ interface CandidateRowProps {
  * 已降权（stale，90 天）的条目在本行上带「已降权」标、且描述默认收起（档案页第 25 行）：
  * 降权是「可能不再准」的信号，把描述折起来能让人先看到别的，需要核对时再点开。
  * 降权只可能是候选条目——稳定层取数按 `freshness=current` 过滤，落在稳定层的行时效恒为 current。
+ * 该标是本行唯一的一处时效出口：元信息行（`itemMetaLine`）不再重复写时效措辞。
  */
 function CandidateRow({ item, busy, expanded, failure, onConfirm, onDelete, onToggleExpand }: CandidateRowProps) {
   const stale = isStale(item);
