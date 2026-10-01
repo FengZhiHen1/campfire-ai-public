@@ -78,7 +78,16 @@ from campfire.surfaces.consult.injections import (
     EMERGENCY_PROFILE_PREFIX,
     ONBOARDING_NOTICE_PREFIX,
 )
-from campfire.surfaces.consult.runbus import RUN_NOT_RUNNING, cancel_pumps, drain_pumps, events_key, mutex_key
+from campfire.surfaces.consult.runbus import (
+    RUN_NOT_RUNNING,
+    RUN_STATUS_RUNNING,
+    RunMeta,
+    cancel_pumps,
+    drain_pumps,
+    events_key,
+    mutex_key,
+    write_run_meta,
+)
 
 # 本文件的用例全是 async（仓库未开 pytest-asyncio 的 auto 模式，逐个加标记是既有做法）。
 pytestmark = [pytest.mark.integration, pytest.mark.asyncio]
@@ -779,6 +788,77 @@ async def test_stream_rejects_unknown_and_foreign_run_with_same_404(client: http
     foreign = await client.get(f"/consult/runs/{foreign_run}/stream")
     assert missing.status_code == foreign.status_code == 404
     assert missing.json() == foreign.json()
+
+
+async def test_overlong_run_id_is_404_on_both_endpoints_without_any_overlong_key_query(
+    client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """超长运行标识在订阅端与取消端同口径：按「不存在」回 404，且不进 Redis（D-85）。
+
+    上界给出的唯一理由是「超长路径段不会变成一次超长 Redis 键查询」，所以判据不能只看
+    状态码：超长与恰好等于上界的标识都不存在，都回 404，看状态码分不出上界有没有生效。
+    判别物有两个，都只认事实：
+
+    1. 经过缓存的两类键查询被记录（`RedisCache.get` 与 `RedisCache.exists` 换成记录器），
+       超长标识的键名一个都不许出现；
+    2. 在超长标识下预置一条形状合法的运行元数据。修复前订阅端会读到它并回 409
+       `run_not_resumable`——上界判定发生在那次读之前，这条断言才成立。
+
+    正控：恰好等于上界（128）的标识必须仍进 Redis 查一次（闭区间上界，不能把合法长度
+    挡在门外）。少了它，一个「把所有 run_id 都挡掉」的实现也能让本用例通过，
+    那道闸就成了永远不开的门。
+
+    消融（实测，原文见交付报告）：把订阅端的 `_require_run_meta` 调用换回修复前的裸
+    `runbus.read_run_meta`，本用例在第一条断言处失败——订阅端读到预置元数据后回 409
+    `run_not_resumable` 而不是 404，即超长标识确实进了 Redis。
+    """
+    _install_runner(ScriptedRunner(get_settings()))
+    overlong = "a" * (consult_routes.MAX_RUN_ID_CHARS + 1)
+    at_bound = "a" * consult_routes.MAX_RUN_ID_CHARS
+
+    seed = RedisCache(get_settings().redis_url)
+    try:
+        await write_run_meta(
+            seed,
+            RunMeta(
+                run_id=overlong,
+                session_id=uuid.uuid4().hex,
+                account_id=_ACCOUNT,
+                status=RUN_STATUS_RUNNING,
+            ),
+        )
+    finally:
+        await seed.aclose()
+
+    queried: list[str] = []
+    real_get = RedisCache.get
+    real_exists = RedisCache.exists
+
+    async def recording_get(cache: RedisCache, key: str) -> str | None:
+        queried.append(key)
+        return await real_get(cache, key)
+
+    async def recording_exists(cache: RedisCache, key: str) -> bool:
+        queried.append(key)
+        return await real_exists(cache, key)
+
+    monkeypatch.setattr(RedisCache, "get", recording_get)
+    monkeypatch.setattr(RedisCache, "exists", recording_exists)
+
+    missing = await client.get(f"/consult/runs/{uuid.uuid4().hex}/stream")
+    overlong_stream = await client.get(f"/consult/runs/{overlong}/stream")
+    overlong_cancel = await client.post(f"/consult/runs/{overlong}/cancel")
+    boundary_stream = await client.get(f"/consult/runs/{at_bound}/stream")
+
+    assert overlong_stream.status_code == 404, overlong_stream.text
+    assert overlong_cancel.status_code == 404, overlong_cancel.text
+    assert overlong_stream.json() == missing.json(), "超长标识与「不存在」必须逐字同文案"
+    assert overlong_cancel.json() == missing.json()
+
+    touched = [key for key in queried if overlong in key]
+    assert touched == [], f"超长标识产生了 Redis 键查询：{touched}"
+    assert f"run:{at_bound}:meta" in queried, "恰好等于上界的标识必须仍进 Redis（上界是闭区间）"
+    assert boundary_stream.status_code == 404, boundary_stream.text
 
 
 async def test_stream_returns_409_when_the_buffer_is_gone(client: httpx.AsyncClient) -> None:
