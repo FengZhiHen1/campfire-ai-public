@@ -229,6 +229,36 @@ def test_figure_image_is_counted_exactly_once() -> None:
     assert two.markdown.count(_IMAGE_MARKER) == 2
 
 
+def test_inline_image_is_not_silently_dropped() -> None:
+    """行内元素里的图片同样要计数并留痕（2026-10-01 修）。
+
+    块级 `<img>` 走 `_render_block` 的 `img` 分支，会计数并留痕；但图片也可以出现在
+    行内元素里——`<p>文字<img></p>`、`<h2>标题<img></h2>`、`<li><img></li>`、
+    `<td><img></td>`。这些位置经由 `_inline_text` 取文本，而它此前完全忽略
+    `<img>`：既不计数也不留痕，读者只看到文字，跟原件对不上，运维的守恒对账也失真。
+
+    这正是本模块 docstring 里写的判据所禁止的——「不静默丢弃是本项目的铁律，
+    通用转换库静默丢内容，所以这一层自己写」。所以行内路径必须和块级路径同待遇。
+
+    判别性：把 `_inline_text` 里的 `img` 分支去掉（恢复「静默忽略」），本用例失败。
+    """
+    for body in (
+        '<p>前<img src="a.png"/>后</p>',
+        '<h2>标题<img src="a.png"/></h2>',
+        '<ul><li>文字<img src="a.png"/></li></ul>',
+        '<table><tr><td>字<img src="a.png"/></td></tr></table>',
+        '<table><tr><th><img src="a.png"/></th></tr></table>',
+    ):
+        result = convert_html(_page(body))
+        assert result.images_dropped == 1, f"行内图片必须计数：{body}"
+        assert result.markdown.count(_IMAGE_MARKER) == 1, f"行内图片必须留痕：{body}"
+
+    # 对照：同一行内两个图必须各记一次，说明没被合并成一次。
+    two_inline = convert_html(_page('<p><img src="a.png"/><img src="b.png"/></p>'))
+    assert two_inline.images_dropped == 2
+    assert two_inline.markdown.count(_IMAGE_MARKER) == 2
+
+
 def test_inline_formatting_is_preserved() -> None:
     """粗体、斜体、行内代码保留 Markdown 语义。"""
     body = "<p>这是<strong>重点</strong>与<em>强调</em>以及<code>代码</code>。</p>"
