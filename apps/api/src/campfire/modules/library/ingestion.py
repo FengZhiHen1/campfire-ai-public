@@ -1,6 +1,6 @@
 """摄取：把处理好的 Markdown 切分、嵌入、写入条目表与节点表。
 
-职责：把一份 Markdown 切成块、批量嵌入，并在一个事务里写入条目表与节点表。
+职责：把一份 Markdown 切成块、批量嵌入，并在一个事务里写入条目表、节点表与人工处理队列。
 边界：只做摄取，不暴露服务端点（入口是 CLI）；缺来源或缺适用范围的元数据一律拒绝入库。
 参考：docs/技术设计/technical-details/RAG策略.md 第 1.1、1.2、2、7 节；细节见 `ingest_file`、`build_vector_store`、`_write_nodes` 的 docstring。
 """
@@ -26,6 +26,10 @@ from campfire.modules.library.embedding import (
     EmbeddingConfigurationError,
     assert_text_within_limit,
     build_embedding,
+)
+from campfire.modules.library.manual_review import (
+    delete_manual_reviews,
+    record_manual_reviews,
 )
 from campfire.modules.library.models import (
     LIBRARY_KNOWLEDGE,
@@ -53,7 +57,8 @@ class IngestionResult:
     #: 未变而跳过的文件（幂等）：True 时没有写入任何行。
     skipped: bool = False
     chunks_written: int = 0
-    #: 因超限且不可分而未嵌入的块数——它们进人工处理队列（不静默截断）。
+    #: 因超限且不可分而未嵌入的块数——它们已逐块落进人工处理队列
+    #: （`campfire_manual_review`，见 `manual_review.record_manual_reviews`），不静默截断。
     needs_manual_review: int = 0
     #: 逐块的定位信息，便于撤下时回溯。
     headers: list[str] = field(default_factory=list)
@@ -356,14 +361,17 @@ async def ingest_file(
             # 生效的机制（`withdrawal.py` 同事务删节点），而「上游重新交付同一份内容」
             # 是最常见的重交付形态。在此直接返回会把历史脏数据或旁路写入的残留节点
             # 一直留在库里，等某条取数路径读到；清理本身仍在跳过语义内——不嵌入、不写节点。
+            # 复核件是同一批投影的一部分（不能嵌入的块），随节点一起清掉：条目已撤下，
+            # 待处理的正文没有意义，留着反而把撤下内容的摘录继续留在库里。
             await session.execute(delete(RetrievedNode).where(RetrievedNode.node_id.like(f"{existing.id}:%")))
+            await delete_manual_reviews(session, library=LIBRARY_KNOWLEDGE, item_id=existing.id)
         return IngestionResult(source_path=source_path, item_id=str(existing.id), skipped=True)
 
     chunks = split_markdown(body)
     if not chunks:
         raise IngestionError("文件未产生任何块（空文件或不含可检索内容）")
 
-    # 只嵌入可嵌入的块；不可分单元进人工处理队列，不截断。
+    # 只嵌入可嵌入的块；不可分单元逐块落进人工处理队列（`campfire_manual_review`），不截断。
     embeddable = [c for c in chunks if not c.needs_manual_review]
     manual = [c for c in chunks if c.needs_manual_review]
 
@@ -383,6 +391,9 @@ async def ingest_file(
     # 这一步对已撤下条目同样执行：撤下的承诺是「该条目没有检索节点」，重跑顺手清掉
     # 任何残留（历史脏数据或旁路写入），而不是把它们留在库里等某条取数路径读到。
     await session.execute(delete(RetrievedNode).where(RetrievedNode.node_id.like(f"{item.id}:%")))
+    # 复核件与节点同生共死：两者都是该条目在存储层的投影，一次重摄取要么一起换掉、
+    # 要么一起回滚。删在插入之前，因此「上一次有不可分块、这一次没有」时队列也会清空。
+    await delete_manual_reviews(session, library=LIBRARY_KNOWLEDGE, item_id=item.id)
 
     if item.withdrawn:
         # 已撤下的条目不重建节点：撤下的承诺是「该条目没有检索节点」，内容变了就写回
@@ -396,10 +407,22 @@ async def ingest_file(
 
     await _write_nodes(session, vector_store, item, embeddable, vectors)
 
+    # 不可分块逐块落进人工处理队列：这是「不静默截断」的实质落点。只给一个条数，
+    # 运维既不知道是哪一份文件、哪一节，也拿不到正文与原因（RAG 策略第 1.2 节）。
+    # 计数取写入函数的返回值而不是 `len(manual)`：CLI 打印的「已记入队列 N 条」
+    # 因此与实际落库行数同源。
+    manual_reviews = await record_manual_reviews(
+        session,
+        library=LIBRARY_KNOWLEDGE,
+        item_id=item.id,
+        source_path=source_path,
+        chunks=manual,
+    )
+
     return IngestionResult(
         source_path=source_path,
         item_id=str(item.id),
         chunks_written=len(embeddable),
-        needs_manual_review=len(manual),
+        needs_manual_review=manual_reviews,
         headers=[c.header_path for c in embeddable],
     )

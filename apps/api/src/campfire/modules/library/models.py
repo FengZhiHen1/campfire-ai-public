@@ -28,12 +28,14 @@ __all__ = [
     "LIBRARIES",
     "LIBRARY_CASE",
     "LIBRARY_KNOWLEDGE",
+    "MANUAL_REVIEW_TABLE",
     "NODE_TABLE",
     "REVIEW_STATUSES",
     "SUBJECT_TYPES",
     # 模型
     "CaseItem",
     "KnowledgeItem",
+    "ManualReviewItem",
     "RetrievedNode",
     # 库别映射
     "as_case_item",
@@ -351,6 +353,82 @@ ITEM_TABLES: dict[str, str] = {library: model.__tablename__ for library, model i
 
 #: 合法库别集合。检索入口据此拒绝非法取值（本包质量地板校验点 ③）。
 LIBRARIES: frozenset[str] = frozenset(ITEM_MODELS)
+
+#: 用于 `CHECK` 的库别 SQL 字面量。从 `LIBRARIES` 派生，避免两份清单漂移；
+#: 排序保证文本稳定。它与上面四个案例值域字面量同一手法，只是那个要等
+#: `LIBRARIES` 落地后才能派生，故写在这里。
+_LIBRARIES_SQL = ", ".join(f"'{value}'" for value in sorted(LIBRARIES))
+
+# ---------------------------------------------------------------------------
+# 人工处理队列（RAG 策略第 1.2 节：不可分块的可移交复核件）
+# ---------------------------------------------------------------------------
+#
+# 为什么单立一张表而不是只打印一个计数（RAG 策略第 1.2 节「仍不可分的单元标记
+# `needs_manual_review` 并计入人工处理队列，不静默截断」）：这条纪律的全部内容是
+# 「有人来收拾」，而「不静默截断」的替代品是一份可移交的复核件——既要能回答
+# 「是哪一份文件、哪一节」，也要拿得到正文与原因。计数在进程退出后消失，
+# 因此它不能是唯一的落点。
+#
+# 为什么跨两库共用一张表而条目表分两张：条目表分表的理由是「两库的必带字段与
+# 过滤条件不同」（见 `CaseItem` 的 docstring）；复核件的字段与用途对两库完全一致
+# （定位 + 正文 + 原因），分表只会让「今天有多少待人工处理」变成两次查询。
+# 库别因此是列（`library`）而不是表身份，由 CHECK 约束封住取值域。
+#
+# 为什么没有指向条目表的外键：一条复核件可能属于资料条目或案例条目，两条外键
+# 只能二者必有其一（可空 + CHECK），而条目表删除时复核件按什么语义消失尚无裁决
+# ——撤下走的是「显式删行」（见 `manual_review.delete_manual_reviews`），
+# 不是级联。等这条语义有裁决时再谈外键，不为将来加约束。
+
+#: 人工处理队列表名。
+MANUAL_REVIEW_TABLE = "campfire_manual_review"
+
+
+class ManualReviewItem(Base):
+    """一条待人工处理的复核件：某个不可嵌入的块及其定位与原因。
+
+    行身份是「某条目当前无法嵌入的块」这一集合的成员，不是历史账本：
+    重摄取时该条目的复核件整批替换（`manual_review.record_manual_reviews`），
+    因此「同一条目多轮摄取堆出多份重复行」不会发生。
+
+    为什么 `excerpt` 存正文摘录而不是全文：它是给复核人看的定位材料，
+    不是第二份语料（真源仍是源文件）。上界与截断留痕见
+    `manual_review.MANUAL_REVIEW_EXCERPT_CHARS`。
+
+    归属：与本模块的条目表、节点表同属 `modules/library`
+    （docs/项目结构设计.md 第 6、10 节「表归属与模块同名」）——不可分块的判定、
+    摄取与撤下都在本模块，复核件是它们共同的产物，放到别的模块会逼出跨模块写入。
+    """
+
+    __tablename__ = MANUAL_REVIEW_TABLE
+
+    id: Mapped[UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=new_uuid)
+    #: 库别（`LIBRARIES` 的取值）：复核件属于哪个库的条目。
+    library: Mapped[str] = mapped_column(String(20), nullable=False)
+    #: 所属条目的 id。不加外键：条目可能来自两张表（见本节说明）。
+    item_id: Mapped[UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    #: 摄取来源路径（资料侧是文件、案例侧是包目录），运维据此定位原件。
+    source_path: Mapped[str] = mapped_column(Text, nullable=False)
+    #: 该块在源文件里的位置（`Chunk.locator`，章节路径）。无标题的源文件取 `/`——
+    #: 这不是编出来的定位，而是「该文件没有章节路径」的如实表示。
+    locator: Mapped[str] = mapped_column(Text, nullable=False)
+    #: 正文摘录（超上界时截断并在文末写明原文总长，见 `manual_review.build_excerpt`）。
+    excerpt: Mapped[str] = mapped_column(Text, nullable=False)
+    #: 为什么这个块没能嵌入（`Chunk.review_reason`，由分块后处理给出）。
+    review_reason: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=sql_text("now()")
+    )
+
+    __table_args__ = (
+        # 重摄取时按条目整批替换，删除条件就是这两列；查询「这个条目还有什么待处理」
+        # 也走它。不建 `created_at` 索引：表规模是本轮摄取的不可分块，量级在条级，
+        # 排序走全表扫描即可。
+        Index("ix_campfire_manual_review_library_item", "library", "item_id"),
+        # 库别取值域落存储层（CORE-05）：库别在这里是列而不是表身份，写错一个值
+        # 就会产出一条任何按库取的查询都看不到的孤儿复核件。
+        CheckConstraint(f"library IN ({_LIBRARIES_SQL})", name="library"),
+        {"comment": "人工处理队列：超限且不可分、未嵌入的块（不静默截断的落点）"},
+    )
 
 
 def as_case_item(value: object) -> CaseItem:

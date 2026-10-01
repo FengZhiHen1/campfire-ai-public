@@ -23,7 +23,12 @@ from campfire.modules.library.ingestion import (
     build_vector_store,
     ingest_file,
 )
-from campfire.modules.library.models import LIBRARIES, LIBRARY_CASE, LIBRARY_KNOWLEDGE
+from campfire.modules.library.models import (
+    LIBRARIES,
+    LIBRARY_CASE,
+    LIBRARY_KNOWLEDGE,
+    MANUAL_REVIEW_TABLE,
+)
 from campfire.modules.library.retrieval import RetrievalError
 from campfire.modules.library.withdrawal import WithdrawalError, withdraw_item
 
@@ -171,6 +176,30 @@ async def _run_ingest(args: argparse.Namespace) -> int:
     return await _run_ingest_knowledge(args)
 
 
+def _print_manual_review_notice(count: int, source_path: str) -> None:
+    """打印「需人工处理」的条数，并给出能查到明细的查询方式。
+
+    为什么不能只给一个数字（RAG 策略第 1.2 节「不静默截断」）：这条纪律的全部内容是
+    「有人来收拾」，而一个条数既说不出是哪一份文件、哪一节，也拿不到正文与原因，
+    进程退出后彻底消失——那实际上就是静默丢弃。明细落在人工处理队列表里，这里把
+    「有多少」与「到哪里取」一起给出来。
+
+    查询条件用 `source_path` 而不是 `item_id`：运维手上就是刚输入的那条路径，
+    且它对资料侧文件与案例侧包目录是同一种写法，不必复制 UUID。
+
+    Args:
+        count: 本次摄取落进队列的条数。
+        source_path: 本次摄取的来源路径（文件或案例包目录）。
+    """
+    print(f"  ⚠ 需人工处理（超限且不可分，未嵌入）：{count} 块", file=sys.stderr)
+    print(f"    已记入人工处理队列（{MANUAL_REVIEW_TABLE}）：{count} 条", file=sys.stderr)
+    print(
+        "    查询明细：SELECT library, item_id, locator, review_reason, excerpt"
+        f" FROM {MANUAL_REVIEW_TABLE} WHERE source_path = '{source_path}';",
+        file=sys.stderr,
+    )
+
+
 def _reject_knowledge_only_flags(args: argparse.Namespace) -> int | None:
     """案例库里用不到的参数若被显式传入，明确拒绝。
 
@@ -262,7 +291,7 @@ async def _run_ingest_case(args: argparse.Namespace) -> int:
         print(f"  写入卡片：{result.cards_written}")
         print(f"  写入叙事小节：{result.narrative_nodes}")
     if result.needs_manual_review:
-        print(f"  ⚠ 需人工处理（超限且不可分，未嵌入）：{result.needs_manual_review} 块", file=sys.stderr)
+        _print_manual_review_notice(result.needs_manual_review, result.source_path)
     return 0
 
 
@@ -316,8 +345,8 @@ async def _run_ingest_knowledge(args: argparse.Namespace) -> int:
         print(f"  条目 id：{result.item_id}")
         print(f"  写入节点：{result.chunks_written}")
     if result.needs_manual_review:
-        # 不静默截断：明确告知有人工处理队列（RAG 策略第 1.2 节）。
-        print(f"  ⚠ 需人工处理（超限且不可分，未嵌入）：{result.needs_manual_review} 块", file=sys.stderr)
+        # 不静默截断：条数与「到哪里查明细」一起给出（RAG 策略第 1.2 节）。
+        _print_manual_review_notice(result.needs_manual_review, result.source_path)
     return 0
 
 
