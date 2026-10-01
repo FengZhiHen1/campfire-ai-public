@@ -42,6 +42,7 @@ from campfire.modules.profile.models import (
     EMERGENCY_GROUPS,
     EMERGENCY_STRATEGY_DOMAIN,
     EMERGENCY_STRATEGY_FIELDS,
+    FRESHNESS_HISTORICAL,
     MANUAL_ENTRY_SOURCE,
     ProfileItem,
     SessionObjectBinding,
@@ -563,12 +564,22 @@ async def read_items(
     support_object_id: object,
     domains: list[str] | None = None,
     include_candidates: bool = False,
+    include_superseded: bool = False,
     limit: int = repo.ITEMS_DEFAULT_LIMIT,
     now: datetime | None = None,
 ) -> GroupedItems:
     """读取条目，候选层单独成组（`read_profile_items` 契约）。
 
     `include_candidates = False` 时不得混入候选（契约第 4 节）。
+
+    `include_superseded = False`（缺省）时历史条目不返回；为真时它们随 `items`
+    返回，带 `freshness = historical` 与互指的 `superseded_by`／`supersedes`，
+    档案页据此在行首出「已更正」标。`rejected` 条目不受这个开关影响，一律不返回
+    ——否定过的内容不得再进入对话，那是绝对的（契约第 3、4.1 节）。
+
+    `include_superseded` 与 `include_candidates` 是两条独立的轴（时效 / 层）：
+    前者只管「已被取代的旧条目可回看」，后者只管「未确认的候选是否返回」。
+    两者都真时，「已被取代的候选」也会返回——它不是互斥组合。
 
     Raises:
         AuthorizationError: 对象不存在或不属于该账号。不得用空结果冒充
@@ -580,6 +591,7 @@ async def read_items(
         session,
         support_object_id=support_object_id,
         include_candidates=include_candidates,
+        include_superseded=include_superseded,
         domains=domains,
         limit=limit,
     )
@@ -593,12 +605,21 @@ def _group(rows: list[ProfileItem], *, now: datetime) -> GroupedItems:
     归组判据是 `lands_in_stable_layer`（第 3 节的唯一判据），
     与 SQL 侧的过滤表达同一件事——因此 SQL 只负责缩小范围，
     最终分组由纯函数决定，两处不会给出互相矛盾的结论。
+
+    历史条目（`freshness = historical`）是这条判据的唯一例外，且归 `items`：
+    它因新鲜度不为 `current` 必然落在落层判据之外，但「已更正」的旧条目属完整条目区
+    （档案页第 62 行：原条目转历史态出「已更正」标），不是「待确认」分组。
+    把它归进候选组会让档案页在待确认分组里给它出确认入口，而它已被取代、确认它没有意义。
+    它只可能在调用方打开 `include_superseded` 时出现在这里，因此缺省路径的分组结果不变。
     """
     stable: list[ItemView] = []
     candidates: list[ItemView] = []
     for row in rows:
         view = _to_view(row, now=now)
-        if lands_in_stable_layer(origin=row.origin, confirmation=row.confirmation, freshness=row.freshness):
+        is_history = row.freshness == FRESHNESS_HISTORICAL
+        if is_history or lands_in_stable_layer(
+            origin=row.origin, confirmation=row.confirmation, freshness=row.freshness
+        ):
             stable.append(view)
         else:
             candidates.append(view)
@@ -926,6 +947,10 @@ async def resolve_for_context(
 
     `include_candidates` 为真时，候选条目必须带 `confirmation = unconfirmed` 标记
     ——调用方与模型都不得把它当作事实。`rejected` 条目一律不返回。
+
+    已被取代的历史条目同样不返回，且这条路径不接 `read_items` 的回看开关：
+    历史条目「此后不参与注入」（个性化档案第 122 行），历史回看只开给给人看的读路径。
+    注入路径上没有「打开历史」的入参，因此这条约束在参数形状里就不可表达。
 
     参数 `situation` 不在此实现：第 8 节的签名收了它，但第 4 节没有定义任何
     与情境相关的取数判据（取数完全由领域映射决定）。为一个没有判据的参数

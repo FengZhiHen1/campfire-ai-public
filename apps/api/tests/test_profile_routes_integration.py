@@ -369,6 +369,114 @@ async def test_items_without_include_candidates_omits_candidates(client: httpx.A
     assert body["candidates"] == []
 
 
+# ---------------------------------------------------------------------------
+# 历史条目（已被取代）的 opt-in 读通道
+# ---------------------------------------------------------------------------
+
+
+async def _correct(client: httpx.AsyncClient, item_id: str, description: str) -> str:
+    """走 HTTP 纠正一条条目并返回新条目标识。"""
+    response = await client.post(f"/profile/items/{item_id}/correct", json={"description": description})
+    assert response.status_code == 201, response.text
+    return response.json()["item_id"]
+
+
+async def test_items_without_include_superseded_omits_the_superseded_history(  # noqa: ANN001
+    client: httpx.AsyncClient, as_account
+) -> None:
+    """默认（不传 `include_superseded`）历史条目不出现在任何一组——与改动前逐条相同。
+
+    两种读法都断言：默认读法，以及只开候选层的读法——历史条目不是候选，
+    不该被候选开关带出来。
+    """
+    object_id = await _new_object()
+    old = await _propose(object_id, origin="user_statement", description="旧描述")
+    new = await _correct(client, old, "新描述")
+
+    default = (await client.get(f"/profile/objects/{object_id}/items")).json()
+    candidates_only = (
+        await client.get(f"/profile/objects/{object_id}/items", params={"include_candidates": "true"})
+    ).json()
+
+    for body in (default, candidates_only):
+        assert [item["item_id"] for item in body["items"]] == [new]
+        assert body["candidates"] == []
+        assert old not in [item["item_id"] for item in [*body["items"], *body["candidates"]]]
+
+
+async def test_include_superseded_returns_the_history_with_both_pointers(  # noqa: ANN001
+    client: httpx.AsyncClient, as_account
+) -> None:
+    """`include_superseded=true` → 已被取代的旧条目随 `items` 返回，互指完整。
+
+    四件事：① 旧条目出现且 `freshness = historical`；② 互指两侧都在
+    （旧条目 `superseded_by` 指向新条目、新条目 `supersedes` 指回旧条目）；
+    ③ 它进 `items` 而不进 `candidates`——档案页第 62 行的「已更正」标落在完整条目区，
+    候选组是「待确认」，已被取代的条目不属于那里；
+    ④ 排序照既有规则（首次记录时间倒序）：新条目后写，因此排在旧条目之前。
+    """
+    object_id = await _new_object()
+    old = await _propose(object_id, origin="user_statement", description="旧描述")
+    new = await _correct(client, old, "新描述")
+
+    body = (await client.get(f"/profile/objects/{object_id}/items", params={"include_superseded": "true"})).json()
+
+    assert [item["item_id"] for item in body["items"]] == [new, old], "同一排序规则下的插入位置"
+    assert body["candidates"] == []
+    history = body["items"][1]
+    assert history["freshness"] == "historical"
+    assert history["description"] == "旧描述"
+    assert history["superseded_by"] == new
+    assert body["items"][0]["supersedes"] == old
+
+
+async def test_include_superseded_still_excludes_rejected_items(  # noqa: ANN001
+    client: httpx.AsyncClient, as_account
+) -> None:
+    """`include_superseded=true` 不放开 `rejected`——否定过的内容不得回看。
+
+    用最强的形态：一条既被否定、又被取代的条目（先否定一条候选，再纠正它；
+    纠正把它置 `historical` 并写 `superseded_by`）。它同时命中两个开关的放宽条件，
+    因此「开闸开过头、连被否定的内容一起放」的实现在此变红。
+    同时留一条对照（同一对象里被取代的稳定条目必须出现），证明本用例不是因为
+    整个闸没开才通过。
+    """
+    object_id = await _new_object()
+    rejected = await _propose(object_id, origin="ai_inference", description="被否定的推断")
+    rejected_response = await client.post(f"/profile/items/{rejected}/reject")
+    assert rejected_response.status_code == 200
+    rewritten = await _correct(client, rejected, "使用者改写的描述")
+
+    old_stable = await _propose(object_id, origin="user_statement", description="旧的稳定条目")
+    corrected = await _correct(client, old_stable, "更正后的稳定条目")
+
+    body = (
+        await client.get(
+            f"/profile/objects/{object_id}/items",
+            params={"include_superseded": "true", "include_candidates": "true"},
+        )
+    ).json()
+
+    returned = [item["item_id"] for item in [*body["items"], *body["candidates"]]]
+    assert rejected not in returned, "被否定的条目不得因 include_superseded 而回看"
+    assert old_stable in returned, "对照：被取代的稳定条目必须出现（闸确实开了）"
+    assert rewritten in returned
+    assert corrected in returned
+
+
+async def test_items_rejects_a_non_boolean_include_superseded(client: httpx.AsyncClient, as_account) -> None:  # noqa: ANN001
+    """`include_superseded` 非布尔 → 422（与本面既有的入参校验风格一致）。
+
+    与 `include_candidates` 同形：由查询参数的 bool 解析把关，非法取值明确失败，
+    不静默当成 `false`——静默降级会让「传错了」看起来像「没有历史条目」。
+    """
+    object_id = await _new_object()
+
+    for raw in ("maybe", "", "2"):
+        response = await client.get(f"/profile/objects/{object_id}/items", params={"include_superseded": raw})
+        assert response.status_code == 422, f"include_superseded={raw!r} 得到 {response.status_code}"
+
+
 async def test_items_rejects_out_of_range_limit(client: httpx.AsyncClient, as_account) -> None:  # noqa: ANN001
     """`limit` 越界 → 422（契约第 2 节错误码表：`limit` 越界归载荷不合法）。"""
     object_id = await _new_object()

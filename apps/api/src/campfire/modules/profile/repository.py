@@ -650,25 +650,35 @@ async def list_items(
     *,
     support_object_id: object,
     include_candidates: bool = False,
+    include_superseded: bool = False,
     domains: list[str] | None = None,
     limit: int = ITEMS_DEFAULT_LIMIT,
 ) -> list[ProfileItem]:
     """列出某对象的条目，候选层单独成组由调用方按 `confirmation` 分流。
 
-    三条硬约束（档案面契约第 3 节、`read_profile_items` 契约第 4 节）：
+    四条取数约束（档案面契约第 3 节、`read_profile_items` 契约第 4 节）：
 
     1. `confirmation = rejected` 的条目一律不返回：使用者否定过的内容不得再作为
-       上下文进入对话；
-    2. `superseded_by` 非空的条目默认不返回（已被替代）；
-    3. `freshness = historical` 的不返回——纠正后的旧条目可回看，但不参与默认读取。
+       上下文进入对话。这条没有开关——它连 `include_superseded` 也不放开，
+       因为它管的是「否定过的内容不得回看」，与「已取代的旧条目可回看」是两件事；
+    2. `superseded_by` 非空的条目不返回，`include_superseded` 为真时返回；
+    3. `freshness = historical` 的条目不返回，`include_superseded` 为真时返回；
+    4. 第 2、3 条是同一件事的两侧：纠正一次同时置这两个字段并互指，因此开关
+       必须同时管住两道——只放一道仍取不到任何历史条目。
+
+    第 2、3 条的开关只服务给人看的读路径（档案页的行首「已更正」标）：历史条目
+    「此后不参与注入」，模型侧不接这个参数，`include_superseded` 缺省即模型侧行为。
 
     候选条目是否返回由 `include_candidates` 决定；返回时自带候选标记
     （`confirmation = unconfirmed`），调用方与模型都不得把它当作事实。
+    它与 `include_superseded` 是两条独立的轴（候选层 / 时效），不互斥：
+    「已被取代的候选」是可达状态（纠正一条未确认的候选），两个开关都真时返回它。
 
     Args:
         session: 关系库会话。
         support_object_id: 归属对象（调用方须先经 `require_owned` 判定）。
         include_candidates: 为真时一并返回未确认条目。
+        include_superseded: 为真时一并返回已被取代的历史条目。
         domains: 可选的领域过滤；未知领域名显式拒绝而不是静默返回空列表
             ——后者会让打错字的过滤看起来像「这个领域没有条目」。
         limit: 条数上界，收敛到 `ITEMS_MAX_LIMIT`。
@@ -692,13 +702,15 @@ async def list_items(
     effective_limit = max(1, min(limit, ITEMS_MAX_LIMIT))
     conditions = [
         ProfileItem.support_object_id == parsed,
-        # 已取代的条目不返回（第 3 节不变量 3）。
-        ProfileItem.superseded_by.is_(None),
-        # 被否定的条目一律不返回（第 2 节的 rejected 语义）。
+        # 被否定的条目一律不返回（第 2 节的 rejected 语义）；这一条没有开关。
         ProfileItem.confirmation != "rejected",
-        # 历史条目不参与:默认读取（纠正后的旧条目可回看，走另一条路径）。
-        ProfileItem.freshness != FRESHNESS_HISTORICAL,
     ]
+    if not include_superseded:
+        # 已取代的条目不返回（第 3 节不变量 3）。
+        conditions.append(ProfileItem.superseded_by.is_(None))
+        # 历史条目不返回（纠正后的旧条目可回看，但不参与默认读取）。
+        # 与上一条成对：纠正同时置这两个字段，只放开一道仍取不到历史条目。
+        conditions.append(ProfileItem.freshness != FRESHNESS_HISTORICAL)
     if not include_candidates:
         # 只看稳定层：非推断来源，或已被确认。
         conditions.append(_stable_layer_clause())
