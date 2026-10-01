@@ -154,15 +154,46 @@ echo "      $(wc -c < "$DEST/postgres.dump" | tr -d ' ') 字节，pg_restore 可
 FALKOR_SERVICE="falkordb"
 echo "[2/3] FalkorDB：BGSAVE + 拷贝 dump.rdb"
 
+# FalkorDB 是 Redis 分支，生产必须设密码（见 compose 的 `REDIS_ARGS: --requirepass`）。
+#
+# **这是实测踩到的缺陷**（2026-10-01 第一次在生产上跑）：此前这里的四条 `redis-cli`
+# 调用都没带密码，只在本地 dev 验证过——而 dev 的 FalkorDB 没有密码，所以「通过」了。
+# 生产上不带密码得到的是：
+#     NOAUTH Authentication required.
+# 于是 `before` 与轮询到的 `now` 都是这行同样的错误文本、永远相等，
+# 脚本必然报「30 秒内未完成 BGSAVE」——**看起来像持久化卡住，实际是没通过认证**。
+#
+# 密码来源：优先 `FALKORDB_PASSWORD` 环境变量（.env.prod / compose 都会注入），
+# 没有则回调 `docker compose exec` 到容器里读它自己的 `$FALKORDB_PASSWORD`
+# （compose 现在显式传给容器，见 docker-compose.prod.yml 的说明）。
+falkor_cli() {
+    if [ -n "${FALKORDB_PASSWORD:-}" ]; then
+        compose exec -T "$FALKOR_SERVICE" redis-cli -a "$FALKORDB_PASSWORD" --no-auth-warning "$@"
+    elif [ -n "${REDIS_PASSWORD:-}" ]; then
+        # 兜底：compose 文件里若只给了 REDIS_PASSWORD（dev 形态），仍能工作。
+        compose exec -T "$FALKOR_SERVICE" redis-cli -a "$REDIS_PASSWORD" --no-auth-warning "$@"
+    else
+        compose exec -T "$FALKOR_SERVICE" redis-cli "$@"
+    fi
+}
+
+# 先探一次，把「未认证」这类问题**在开始轮询之前**就报出来，而不是伪装成超时。
+if ! falkor_cli PING > /dev/null 2>&1; then
+    echo "错误：FalkorDB PING 失败——检查 FALKORDB_PASSWORD 是否与容器一致。" >&2
+    echo "      （未认证时 redis-cli 返回 NOAUTH，而轮询 LASTSAVE 会把它误报成超时）" >&2
+    falkor_cli PING >&2 || true
+    exit 2
+fi
+
 # 先触发后台保存，再等 LASTSAVE 变化——保证拷到的是**已落盘**的快照，
 # 而不是一个正在被写的文件（那会得到一个损坏的 RDB）。
-before="$(compose exec -T "$FALKOR_SERVICE" redis-cli LASTSAVE | tr -d '\r')"
-compose exec -T "$FALKOR_SERVICE" redis-cli BGSAVE > /dev/null
+before="$(falkor_cli LASTSAVE | tr -d '\r')"
+falkor_cli BGSAVE > /dev/null
 
 saved=""
 for _ in $(seq 1 30); do
     sleep 1
-    now="$(compose exec -T "$FALKOR_SERVICE" redis-cli LASTSAVE | tr -d '\r')"
+    now="$(falkor_cli LASTSAVE | tr -d '\r')"
     if [ "$now" != "$before" ]; then saved="$now"; break; fi
 done
 
@@ -176,8 +207,8 @@ echo "      BGSAVE 完成（LASTSAVE=$saved）"
 # 数据目录是 `/var/lib/falkordb/data`，不是 Redis 惯用的 `/data`——按 `/data` 读会得到
 # `cat: can't open '/data/dump.rdb': No such file or directory`，而 BGSAVE 明明成功了。
 # 用 `CONFIG GET dir` 问出来的路径对 dev 与 prod 两种镜像都成立，也不会随上游改路径而失效。
-falkor_dir="$(compose exec -T "$FALKOR_SERVICE" redis-cli CONFIG GET dir | tail -n 1 | tr -d '\r')"
-falkor_file="$(compose exec -T "$FALKOR_SERVICE" redis-cli CONFIG GET dbfilename | tail -n 1 | tr -d '\r')"
+falkor_dir="$(falkor_cli CONFIG GET dir | tail -n 1 | tr -d '\r')"
+falkor_file="$(falkor_cli CONFIG GET dbfilename | tail -n 1 | tr -d '\r')"
 if [ -z "$falkor_dir" ] || [ -z "$falkor_file" ]; then
     echo "错误：无法从 FalkorDB 取得持久化路径（CONFIG GET dir/dbfilename 为空）" >&2
     exit 2
