@@ -1,36 +1,294 @@
 name: Deploy
 
-# ⚠️ 已停用（2026-09-26）。
+# 发布链路（2026-10-01 重建）。
 #
-# 原流程在 push 到 master 时通过 self-hosted runner 对生产目录执行
-# `git reset --hard origin/master`，再调用 scripts/deploy-remote.sh。
-# 旧实现与 scripts/ 已整体归档至 archive/，该脚本在仓库根已不存在；
-# 若继续触发，部署会在硬重置之后、脚本调用处失败，使生产目录停在半更新状态。
+# ## 为什么是「手动触发」而不是「push master 自动发布」
 #
-# 恢复条件：目标实现落地并使 scripts/deploy-remote.sh 重新可用后，
-# 取消下面的 if: false 并复核部署脚本、镜像构建路径与回滚步骤。
+# 旧链路在 push master 时自动对生产目录执行 `git reset --hard origin/master`，
+# 再调用 `scripts/deploy-remote.sh`（2026-09-26 停用，脚本已随旧实现归档）。它有两个
+# 结构性问题，重建时都不继承：
 #
-# 原触发条件保留在注释中以便恢复：
-#   on:
-#     workflow_run:
-#       workflows: [CI]
-#       types: [completed]
-#       branches: [main, master]
-#     workflow_dispatch:
+# 1. **硬重置生产目录**：任何在生产机上做过的、未提交的操作都会被无声抹掉，且失败时
+#    目录停在半更新状态（文件已换、服务未重启）。镜像发布没有这个问题——镜像要么
+#    完整推送成功，要么没有，生产目录始终由 compose 指向某个确定 tag。
+# 2. **自动发布没有人工闸门**：master 上一次合并即上线。本项目尚未做发布验收，
+#    因此恢复为**显式手动触发**（`workflow_dispatch`），由人决定何时发、发哪个提交。
+#
+# 旧文件的恢复条件（「目标实现落地并使 scripts/deploy-remote.sh 重新可用后，取消
+# if: false」）已由本实现取代：**不再需要该脚本**，部署动作是「推送镜像 + 在目标机
+# 上 compose pull/up」，由下方 job 直接表达，不引入第二份脚本真相。
+#
+# ## 未定项（如实声明，不编造）
+#
+# 目标服务器、域名与 TLS 证书在仓库中**不存在任何事实**（docs/服务器选型事实基线.md
+# 与 docs/TODO.md 都写「未定」）。因此：
+#
+# - `build-and-push` **不依赖任何服务器**，只要本仓库即可运行、可验证；
+# - `release` 需要下列 Secrets，缺失时它**不会静默跳过**——见该 job 的说明。
+#
+# 需要运维提供的 Secrets：
+#   DEPLOY_HOST          目标服务器地址
+#   DEPLOY_USER          部署用户
+#   DEPLOY_SSH_KEY       部署私钥（OpenSSH 格式）
+#   DEPLOY_PATH          服务器上的 compose 目录（含 docker-compose.prod.yml 与 .env.prod）
+#   DEPLOY_KNOWN_HOSTS   目标主机公钥（用于 StrictHostKeyChecking；不要用 no-verify）
+#
+# ## 回滚
+#
+# 见 docs/运维/发布与回滚.md。要点：镜像按 git SHA 打 tag，回滚即把目标机的
+# `IMAGE_TAG` 改回上一个 SHA 并 `compose up -d`；数据库**不做**自动 downgrade
+# （理由见该文档），因此迁移必须保持向后兼容一版。
 
 on:
   workflow_dispatch:
+    inputs:
+      image_tag:
+        description: "镜像 tag（默认取当前提交 SHA 前 12 位）"
+        required: false
+        type: string
+      deploy:
+        description: "推送到服务器（需先配好 DEPLOY_* Secrets；不勾选则只构建并推送镜像）"
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: read
 
+# 发布不做并发：两次同时发布会让「哪一版在生产」失去确定答案。
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  REGISTRY: ghcr.io
+  # GHCR 的镜像路径必须小写；仓库名含大写时直接拼会失败。
+  IMAGE_BASE: ${{ github.repository }}
+
 jobs:
-  deploy-disabled:
-    if: false
+  build-and-push:
+    name: 构建并推送镜像到 GHCR
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      # 推送镜像需要它。只给这个 job，不给整个 workflow。
+      packages: write
+    outputs:
+      image_tag: ${{ steps.tag.outputs.image_tag }}
     steps:
-      - name: 部署已停用
+      - uses: actions/checkout@v7
+
+      - name: 计算镜像 tag
+        id: tag
+        # 默认取提交 SHA 前 12 位：它是**可回滚的锚点**（能从 tag 反查出是哪个提交），
+        # 比 `latest` 或时间戳更有用。允许手动覆盖以便重发同一提交。
         run: |
-          echo "Deploy 已停用：旧部署链路依赖已归档的 scripts/deploy-remote.sh。"
-          echo "见 .github/workflows/deploy.yml 顶部说明。"
+          tag="${{ inputs.image_tag }}"
+          if [ -z "$tag" ]; then
+            tag="$(echo '${{ github.sha }}' | cut -c1-12)"
+          fi
+          echo "image_tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "本次镜像 tag：$tag"
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: 登录 GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # 镜像路径统一小写（GHCR 要求）。用 shell 转换而不是依赖仓库名恰好小写。
+      - name: 归一镜像路径为小写
+        id: repo
+        run: echo "base=$(echo '${{ env.IMAGE_BASE }}' | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_OUTPUT"
+
+      - name: 构建并推送 API 镜像（HTTP 与 Worker 共用）
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: infrastructure/docker/Dockerfile.api
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ steps.repo.outputs.base }}/api:${{ steps.tag.outputs.image_tag }}
+            ${{ env.REGISTRY }}/${{ steps.repo.outputs.base }}/api:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: 构建并推送 Web 镜像
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: infrastructure/docker/Dockerfile.web
+          push: true
+          # `VITE_API_DOMAIN` 是**构建期内联**的（见 Dockerfile.web 文件头第 2 条），
+          # 因此它必须在构建时给出，不能靠运行时环境变量。取 PUBLIC_BASE_URL secret；
+          # 未配置时回落到同源相对路径的占位（业务请求走同源，该值只用于
+          # supertokens-web-js 的 init）。
+          build-args: |
+            VITE_API_DOMAIN=${{ secrets.PUBLIC_BASE_URL || 'https://localhost' }}
+          tags: |
+            ${{ env.REGISTRY }}/${{ steps.repo.outputs.base }}/web:${{ steps.tag.outputs.image_tag }}
+            ${{ env.REGISTRY }}/${{ steps.repo.outputs.base }}/web:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: 发布摘要
+        run: |
+          {
+            echo "### 镜像已推送"
+            echo ""
+            echo "- tag: \`${{ steps.tag.outputs.image_tag }}\`"
+            echo "- api: \`${{ env.REGISTRY }}/${{ steps.repo.outputs.base }}/api:${{ steps.tag.outputs.image_tag }}\`"
+            echo "- web: \`${{ env.REGISTRY }}/${{ steps.repo.outputs.base }}/web:${{ steps.tag.outputs.image_tag }}\`"
+            echo ""
+            echo "回滚即把目标机 \`.env.prod\` 的 \`IMAGE_TAG\` 改回上一个 SHA。"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  release:
+    name: 发布到服务器（需要 DEPLOY_* Secrets）
+    needs: build-and-push
+    # 只有显式勾选 deploy 才跑。**这不是「静默跳过」**：勾选与否是人做的一次显式选择，
+    # 且默认值 false 意味着「只构建推送」是清晰可预期的行为，而不是「因为缺 secret
+    # 所以什么也没发生」。若勾选了却缺 secret，下面的第一步会硬失败并点名缺哪个。
+    if: ${{ inputs.deploy }}
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: 校验部署所需 Secrets 都已提供
+        # 显式逐个点名，避免出现「连上了但路径不对」这类需要翻日志的失败。
+        # 这是**故意会失败**的检查：勾了发布却没配 secret，就该停在这里。
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+        run: |
+          missing=""
+          for name in DEPLOY_HOST DEPLOY_USER DEPLOY_SSH_KEY DEPLOY_PATH DEPLOY_KNOWN_HOSTS; do
+            if [ -z "$(printenv "$name")" ]; then missing="$missing $name"; fi
+          done
+          if [ -n "$missing" ]; then
+            echo "缺少部署 Secrets：$missing" >&2
+            echo "见本文件顶部「需要运维提供的 Secrets」一节。" >&2
+            exit 1
+          fi
+          echo "部署 Secrets 齐备。"
+
+      - name: 准备 SSH
+        env:
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+        run: |
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/id_deploy
+          chmod 600 ~/.ssh/id_deploy
+          # 用固定的 known_hosts 而不是 StrictHostKeyChecking=no：后者会接受任何主机密钥，
+          # 等于放弃对「连的是不是目标机」的校验。
+          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 644 ~/.ssh/known_hosts
+
+      - name: 上传生产编排与 Docker 产物
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+        run: |
+          # 只上传编排与 Dockerfile；`.env.prod` **不上传**（它含真实凭据，由运维在
+          # 目标机上维护）。这样发布不会覆盖生产凭据。
+          ssh -i ~/.ssh/id_deploy "$DEPLOY_USER@$DEPLOY_HOST" "mkdir -p '$DEPLOY_PATH'"
+          scp -i ~/.ssh/id_deploy -r \
+            docker-compose.prod.yml infrastructure \
+            "$DEPLOY_USER@$DEPLOY_HOST:$DEPLOY_PATH/"
+
+      - name: 登录 GHCR 并拉取新镜像
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+          GHCR_USER: ${{ github.actor }}
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          IMAGE_TAG: ${{ needs.build-and-push.outputs.image_tag }}
+        run: |
+          # 目标机上执行：写入 IMAGE_TAG，登录 GHCR，拉镜像。
+          # 用 stdin 传脚本而不是把命令拼在命令行里——凭据不进入目标机的进程列表。
+          ssh -i ~/.ssh/id_deploy "$DEPLOY_USER@$DEPLOY_HOST" \
+            "cd '$DEPLOY_PATH' && \
+             sed -i 's/^IMAGE_TAG=.*/IMAGE_TAG=$IMAGE_TAG/' .env.prod && \
+             echo '$GHCR_TOKEN' | docker login ghcr.io -u '$GHCR_USER' --password-stdin && \
+             docker compose -f docker-compose.prod.yml --env-file .env.prod pull"
+
+      - name: 先迁移，再切流量
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+        run: |
+          # 顺序是刻意的：迁移在前、切换在后。反过来的话，新代码会先面对旧 schema
+          # 一段时间（那些请求要么 500、要么静默写错）。迁移必须保持向后兼容一版，
+          # 这样「迁移完成、切换失败」时旧容器仍能正常工作。
+          ssh -i ~/.ssh/id_deploy "$DEPLOY_USER@$DEPLOY_HOST" \
+            "cd '$DEPLOY_PATH' && \
+             docker compose -f docker-compose.prod.yml --env-file .env.prod run --rm api alembic upgrade head"
+
+      - name: 启动新版本
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+        run: |
+          ssh -i ~/.ssh/id_deploy "$DEPLOY_USER@$DEPLOY_HOST" \
+            "cd '$DEPLOY_PATH' && \
+             docker compose -f docker-compose.prod.yml --env-file .env.prod up -d"
+
+      - name: 发布验证：轮询 /readyz 直到就绪
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+        run: |
+          # 在目标机上从容器网络内部探——不依赖域名与 TLS 已就绪，因此这一步验的是
+          # 「应用真的能服务」，而不是「DNS 与证书配好了没」。
+          #
+          # 判据用 /readyz 而不是 /livez：后者只看进程活着，一个「装配失败、核心端点
+          # 必回 503」的版本在它眼里是健康的——那正是本项目修掉过的假健康。
+          # 也刻意不用 /health：两者口径相同，但 /readyz 的名字表达了它是部署判据。
+          #
+          # 120 秒上界：镜像已拉好，`compose up -d` 后 start_period 是 40 秒。
+          ssh -i ~/.ssh/id_deploy "$DEPLOY_USER@$DEPLOY_HOST" bash -s <<'REMOTE'
+          set -euo pipefail
+          cd "${{ secrets.DEPLOY_PATH }}"
+          for attempt in $(seq 1 40); do
+            code=$(docker compose -f docker-compose.prod.yml exec -T api \
+              curl -s -o /dev/null -w '%{http_code}' http://localhost:8000/readyz || echo 000)
+            if [ "$code" = "200" ]; then
+              echo "readyz 返回 200（第 $attempt 次探测）"
+              exit 0
+            fi
+            echo "第 $attempt 次：readyz 返回 $code，等待 3 秒"
+            sleep 3
+          done
+          echo "发布验证失败：readyz 在 120 秒内未返回 200" >&2
+          echo "--- api 容器最近日志 ---" >&2
+          docker compose -f docker-compose.prod.yml logs --tail 60 api >&2 || true
+          echo "--- 请按 docs/运维/发布与回滚.md 回滚 ---" >&2
           exit 1
+          REMOTE
+
+      - name: 失败时提示回滚
+        if: failure()
+        run: |
+          {
+            echo "### 发布失败"
+            echo ""
+            echo "回滚步骤见 \`docs/运维/发布与回滚.md\`。最短路径："
+            echo "把目标机 \`.env.prod\` 的 \`IMAGE_TAG\` 改回上一个 SHA，然后"
+            echo "\`docker compose -f docker-compose.prod.yml --env-file .env.prod up -d\`。"
+            echo ""
+            echo "注意：**不要**用 \`alembic downgrade\` 回滚数据库（理由见该文档）。"
+          } >> "$GITHUB_STEP_SUMMARY"
