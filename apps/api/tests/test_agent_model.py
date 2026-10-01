@@ -176,7 +176,7 @@ def test_no_proxy_trap_does_not_block_gateway_construction(
         并把「陷阱已消失」记进文档，而不是放宽断言。
 
     现在正是那个时刻，但成因不是 httpx2 修好了，而是我们在构造窗口内做了规范化
-    （`agent/model/proxy_env`）。**变化的意义比原用例大**：原先网关在含 `[::1]` 的
+    （`agent/model/proxy_env`）。变化的意义比原用例大：原先网关在含 `[::1]` 的
     宿主机上根本建不起来，于是生产组合根装配失败、产品端点稳定 503——把「陷阱」
     翻成一个可操作的配置错误，只是让失败变得可读，并没有让系统能用。现在它是真的能用。
 
@@ -198,7 +198,7 @@ def test_no_proxy_trap_does_not_block_gateway_construction(
 def test_proxy_normalisation_preserves_the_exemption_semantics() -> None:
     """规范化只改词法，不改「哪些主机豁免代理」。
 
-    判据取自实测：`[::1]` 与 `::1` 两种写法经 httpx2 解析出的豁免模式**完全相同**
+    判据取自实测：`[::1]` 与 `::1` 两种写法经 httpx2 解析出的豁免模式完全相同
     （都是 `all://[::1]`），差别只在后者不会在解析期崩。因此规范化必须做到
     「去掉方括号」而「不动其它任何取值」。
     """

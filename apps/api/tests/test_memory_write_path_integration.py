@@ -84,13 +84,13 @@ async def _require_database() -> AsyncIterator[None]:
 def _require_tokenhub_or_skip() -> None:
     """未配置 `TOKENHUB_API_KEY` 时跳过。
 
-    只有**经 Worker 入口消费**的用例需要它：Worker 用的是
+    只有经 Worker 入口消费的用例需要它：Worker 用的是
     `modules/memory/graph.get_shared_memory_graph()`（真实装配，抽取与嵌入都要调模型），
     而不是本文件 `memory_graph` 夹具里那个用假模型客户端的句柄。因此这条依赖是真实的，
     不是测试写法问题。
 
     实测（2026-10-01，CI 环境无此凭据）：不加这道守卫时
-    `test_worker_classifies_bad_payload_as_dead` 会 **failed**，报文是
+    `test_worker_classifies_bad_payload_as_dead` 会 failed，报文是
     `MemoryConfigurationError: 未配置 TOKENHUB_API_KEY`——那看起来像代码缺陷，
     实际是环境未就绪。该用例要验的是「载荷不合法转 dead」这条分档逻辑，
     与凭据无关，故按环境 skip 更贴近事实。

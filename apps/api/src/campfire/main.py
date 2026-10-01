@@ -174,7 +174,7 @@ async def check_falkordb(settings: Settings) -> ComponentHealth:
 
     构造也必须在 `try` 内（实测教训，2026-10-01）：`FalkorDB(...)` 的构造函数**本身就
     发网络 I/O**——图库不可达时它在构造期就抛 `ConnectionError`。第一版把构造写在
-    `try` 之外，于是 `/readyz` 在图库挂掉时回 **500**（未捕获异常）而不是「503 且
+    `try` 之外，于是 `/readyz` 在图库挂掉时回 500（未捕获异常）而不是「503 且
     falkordb 项不可用」。这正好毁掉这个探针存在的意义：让健康检查如实报告，
     而不是把自己炸掉。同一教训在 `tests/conftest.py` 的
     `connect_falkordb_or_skip` 里已有记录（那里也是为此把构造放进 try）。
@@ -276,7 +276,7 @@ async def readyz() -> JSONResponse:
     """就绪探针：全部依赖与装配都可用才 200，否则 503。
 
     这是给部署系统用的判据（Docker healthcheck、Nginx upstream、CD 发布验证），
-    与 `/health` 的区别是它**必须覆盖核心业务链**——尤其是 Agent 装配：
+    与 `/health` 的区别是它必须覆盖核心业务链——尤其是 Agent 装配：
     缺了那一项，一个核心咨询功能必然 503 的版本会被判为健康。
 
     探测并发执行，避免串行累加超时。

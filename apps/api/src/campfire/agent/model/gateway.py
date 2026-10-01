@@ -314,7 +314,7 @@ class ModelGateway:
 
         try:
             # 构造窗口内规范化 no_proxy（见 `proxy_env` 的模块说明）：宿主机若把 IPv6
-            # 字面量写成 `[::1]`，httpx2 会在**构造期**抛 InvalidURL，那会让整个网关
+            # 字面量写成 `[::1]`，httpx2 会在构造期抛 InvalidURL，那会让整个网关
             # 建不起来、依赖它的产品端点稳定 503——而规范化不改变任何豁免匹配结果。
             with normalized_no_proxy_environment():
                 self._client = AsyncOpenAI(**client_kwargs)  # type: ignore[arg-type]  # kwargs 逐键与构造签名对应，见上方注释

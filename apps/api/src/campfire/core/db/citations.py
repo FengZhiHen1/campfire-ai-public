@@ -10,7 +10,7 @@
 - 端口 `CitationIndex` 与记录形状 `CitationRecord` 属基座（`agent/context/citations.py`），
   但 `agent/*` 只允许依赖 `core/config`——基座不持有连接池、也不建表（该模块的
   docstring 明写「持久化实现由装配处提供」）。
-- `core/*` 不得依赖 `agent/*`，因此本模块**不 import `CitationRecord`**，只声明列。
+- `core/*` 不得依赖 `agent/*`，因此本模块不 import `CitationRecord`，只声明列。
   「行 ↔ 记录」的转换由装配处的实现做（先例：`core/db/sdk_session.py` 声明 SDK 的表，
   映射由读它的模块做）。
 - 表没有单一业务模块所有者：引用的回指对象可以是资料、案例、档案条目或记忆条目，
