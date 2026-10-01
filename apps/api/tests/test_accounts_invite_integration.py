@@ -128,9 +128,11 @@ def test_normalize_rejects_wrong_length_and_non_string() -> None:
     for bad in ("ABC", "ABCDEFGHI", ""):
         with pytest.raises(InviteCodeFormatError):
             normalize_invite_code(bad)
-    for bad in (123, None, b"ABCD2345", ["ABCD2345"]):
+    # 另用一名：上面那个循环已把 `bad` 推断成 `str`，而这里的取值刻意是异质的
+    # （非字符串输入），复用同一名字会让静态类型与「刻意越界」的意图冲突。
+    for raw in (123, None, b"ABCD2345", ["ABCD2345"]):
         with pytest.raises(InviteCodeFormatError):
-            normalize_invite_code(bad)
+            normalize_invite_code(raw)
 
 
 def test_normalize_rejects_non_ascii_case_folding_aliases() -> None:

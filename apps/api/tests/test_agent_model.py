@@ -13,10 +13,16 @@ from __future__ import annotations
 
 import asyncio
 
-import httpx
+import httpx2
 import pytest
 from agents.exceptions import ModelTimeoutError
-from agents.retry import ModelRetryNormalizedError, RetryDecision, RetryPolicy, RetryPolicyContext
+from agents.retry import (
+    ModelRetryBackoffSettings,
+    ModelRetryNormalizedError,
+    RetryDecision,
+    RetryPolicy,
+    RetryPolicyContext,
+)
 from pydantic import SecretStr
 
 from campfire.agent.limits import AGENT_RUN_TIMEOUT_SECONDS
@@ -101,7 +107,9 @@ def test_gateway_injects_retry_settings() -> None:
 
     assert retry is not None
     assert retry.max_retries == 4
-    assert retry.backoff is not None
+    # `backoff` 的声明类型是 `ModelRetryBackoffSettings | dict[str, Any]`；这里连形状一起断死：
+    # 网关必须产出 pydantic 数据类，而不是把字典原样透传给 SDK。
+    assert isinstance(retry.backoff, ModelRetryBackoffSettings)
     assert retry.backoff.initial_delay == 0.5
     assert retry.backoff.jitter is True
 
@@ -361,12 +369,12 @@ async def test_supplier_retry_after_smaller_than_the_cap_is_kept_verbatim() -> N
 # --- 失败分类 ---------------------------------------------------------------
 
 
-def _request() -> httpx.Request:
-    return httpx.Request("POST", "https://tokenhub.example/v1/chat/completions")
+def _request() -> httpx2.Request:
+    return httpx2.Request("POST", "https://tokenhub.example/v1/chat/completions")
 
 
-def _response(status_code: int) -> httpx.Response:
-    return httpx.Response(status_code, request=_request())
+def _response(status_code: int) -> httpx2.Response:
+    return httpx2.Response(status_code, request=_request())
 
 
 @pytest.mark.parametrize(
@@ -374,7 +382,9 @@ def _response(status_code: int) -> httpx.Response:
     [
         (TimeoutError("slow"), "timeout"),
         (ModelTimeoutError(30.0), "timeout"),
-        (httpx.ReadTimeout("slow"), "unknown"),
+        # httpx2 的 `ReadTimeout` 不是内建 `TimeoutError` 的子类（实测 MRO 不含它）：提供方
+        # 之外的传输超时无法归因，只能落 `unknown`。
+        (httpx2.ReadTimeout("slow"), "unknown"),
         (ValueError("boom"), "unknown"),
     ],
 )

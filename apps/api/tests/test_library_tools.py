@@ -12,11 +12,12 @@ docs/技术设计/面/consult/tools/search_cases.md
 from __future__ import annotations
 
 import json
+from collections.abc import Sequence
 from datetime import datetime, timezone
 
 import pytest
 
-from campfire.agent.context import CitationRecorder
+from campfire.agent.context import CitationRecord, CitationRecorder
 from campfire.agent.tools import ActivationState, ToolContext, ToolFailure, ToolResult
 from campfire.modules.library.retrieval import LIBRARY_CASE, LIBRARY_KNOWLEDGE, RetrievedItem, SearchOutcome
 from campfire.tools.library import (
@@ -34,7 +35,15 @@ from campfire.tools.library import (
 
 
 class _FakeIndex:
-    def add(self, *_args: object, **_kwargs: object) -> None: ...
+    """最小引用索引替身：本文件不产生引用，只需满足 `CitationIndex` 的完整形状。"""
+
+    async def add(self, _record: CitationRecord) -> None:
+        """不落任何东西——本文件的工具层不写引用。"""
+        return None
+
+    async def list_for_run(self, _run_id: str) -> Sequence[CitationRecord]:
+        """空列表——本文件没有引用可读回。"""
+        return []
 
 
 def _context() -> ToolContext:
@@ -131,6 +140,9 @@ def test_long_snippet_is_truncated_and_flagged() -> None:
     判别性：去掉 `snippet_truncated` 的标记，本用例失败。
     """
     rendered = _render_item(_item(snippet="x" * (SNIPPET_MAX_CHARS + 500)))
+    # 收窄取值类型：`_render_item` 返回 `dict[str, object]`，而本断言要读它的长度；
+    # 顺带钉住 `snippet` 确实是字符串（不是被包成别的形状）。
+    assert isinstance(rendered["snippet"], str), "snippet 必须是字符串"
     assert len(rendered["snippet"]) == SNIPPET_MAX_CHARS
     assert rendered["snippet_truncated"] is True
 

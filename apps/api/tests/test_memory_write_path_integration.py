@@ -431,7 +431,9 @@ async def test_failed_write_leaves_no_readable_episode(memory_graph: MemoryGraph
             raise RuntimeError("模拟抽取失败")
 
         original = memory_graph.graphiti.add_episode
-        memory_graph.graphiti.add_episode = _boom  # type: ignore[method-assign]  # 替身故意替换实例上的 add_episode，注入抽取阶段失败
+        # 错误码是 assignment 而不是 method-assign：这里换掉的是实例属性上的可调用体，
+        # mypy 判的是「形状是否还是那个 API」，替身换了形状属刻意注入失败。
+        memory_graph.graphiti.add_episode = _boom  # type: ignore[assignment]  # 替身故意替换实例上的 add_episode，注入抽取阶段失败
         try:
             with pytest.raises(MemoryUnavailableError):
                 await write_episode(
@@ -500,7 +502,7 @@ async def test_hard_kill_leftover_is_unreadable_by_both_paths(memory_graph: Memo
             raise RuntimeError("进程在此刻消失（后续清理永不执行）")
 
         original = memory_graph.graphiti.add_episode
-        memory_graph.graphiti.add_episode = _partial  # type: ignore[method-assign]  # 替身故意替换实例上的 add_episode，模拟「节点已写、完成标记未写」
+        memory_graph.graphiti.add_episode = _partial  # type: ignore[assignment]  # 替身故意替换实例上的 add_episode，模拟「节点已写、完成标记未写」
         try:
             with pytest.raises(MemoryUnavailableError):
                 await write_episode(
@@ -578,7 +580,9 @@ async def test_retry_of_a_written_episode_does_not_downgrade_the_marker(memory_g
             raise RuntimeError("重试时抽取失败")
 
         original = memory_graph.graphiti.add_episode
-        memory_graph.graphiti.add_episode = _boom  # type: ignore[method-assign]  # 替身故意替换实例上的 add_episode，注入抽取阶段失败
+        # 错误码是 assignment 而不是 method-assign：这里换掉的是实例属性上的可调用体，
+        # mypy 判的是「形状是否还是那个 API」，替身换了形状属刻意注入失败。
+        memory_graph.graphiti.add_episode = _boom  # type: ignore[assignment]  # 替身故意替换实例上的 add_episode，注入抽取阶段失败
         try:
             with pytest.raises(MemoryUnavailableError):
                 await write_episode(
@@ -634,12 +638,19 @@ def test_error_classes_are_disjoint_for_the_worker_classification() -> None:
 
 
 @pytest.mark.asyncio
-async def test_worker_classifies_graph_failure_as_retryable_not_dead(memory_graph: MemoryGraph) -> None:
+async def test_worker_classifies_graph_failure_as_retryable_not_dead(
+    memory_graph: MemoryGraph, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """图库故障必须被记成可重试失败（`attempts+1`、回 `pending`），不能转 `dead`。
 
     这是上一条的端到端版本：直接调 `worker` 里那个任务函数，让图库调用抛
     `MemoryUnavailableError`（用一个「写入即失败」的图库替身），然后断言记录
     仍是 `pending` 且 `attempts == 1`，而不是 `dead`。
+
+    替身经 `monkeypatch.setattr` 挂上（与 `test_memory_worker_task_integration`
+    同做法）：直接赋值会让静态检查判两次「形状不匹配」（`assignment` 与
+    `return-value`），而本用例要的是「取图函数返回一个坏图库」这一行为，
+    不是要复刻 `MemoryGraph` 的完整形状；monkeypatch 还免掉了手工还原。
     """
     from campfire import worker as worker_module
     from campfire.modules.memory.errors import MemoryUnavailableError
@@ -656,13 +667,9 @@ async def test_worker_classifies_graph_failure_as_retryable_not_dead(memory_grap
                 raise MemoryUnavailableError("图库不可用", operation="probe", cause="ConnectionError")
 
         # 让任务用这个替身，而不是真实图库。
-        original = worker_module._get_memory_graph
-        worker_module._get_memory_graph = lambda: _BrokenGraph()  # type: ignore[assignment]  # 用替身替换模块级取图函数：`_BrokenGraph` 只实现本用例走得通的那部分
-        try:
-            with pytest.raises(MemoryUnavailableError):
-                await worker_module.consume_memory_episode_task(pending_id, lease_owner="w")
-        finally:
-            worker_module._get_memory_graph = original
+        monkeypatch.setattr(worker_module, "_get_memory_graph", lambda: _BrokenGraph())
+        with pytest.raises(MemoryUnavailableError):
+            await worker_module.consume_memory_episode_task(pending_id, lease_owner="w")
 
         async with session_scope(get_settings()) as session:
             row = (await session.execute(select(PendingWrite).where(PendingWrite.id == pending_id))).scalar_one()

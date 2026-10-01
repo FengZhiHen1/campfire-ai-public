@@ -21,7 +21,9 @@ from __future__ import annotations
 
 import pytest
 from graphiti_core.cross_encoder.openai_reranker_client import OpenAIRerankerClient
+from graphiti_core.embedder.openai import OpenAIEmbedder
 from graphiti_core.llm_client.client import ModelSize
+from graphiti_core.llm_client.openai_client import OpenAIClient
 
 from campfire.core.config import EMBEDDING_DIM, Settings
 from campfire.modules.memory.errors import (
@@ -52,7 +54,10 @@ def _settings(**overrides: object) -> Settings:
     }
     base.update(overrides)
     # _env_file=None：不读仓库根的 .env；配合上面钉住 base_url，结果与宿主机配置无关。
-    return Settings(_env_file=None, **base)  # type: ignore[arg-type]  # pydantic 的 **kwargs 形状，字段值已逐项给定
+    # 下面两个错误码的理由必须写在同一行——质量地板只从行内注释取理由：
+    # arg-type 是 `**base` 的 dict 展开静态不收敛，call-arg 是本仓未启用 pydantic 的
+    # mypy 插件、其合成签名只含字段而不含 `_env_file`。
+    return Settings(_env_file=None, **base)  # type: ignore[arg-type,call-arg]  # **base 展开静态不收敛；_env_file 不在合成签名里
 
 
 # ---------------------------------------------------------------------------
@@ -133,10 +138,17 @@ async def test_build_memory_graph_wires_all_three_clients_to_tokenhub() -> None:
     """
     graph = build_memory_graph(_settings())
     try:
-        assert graph.graphiti.llm_client.config.model == "deepseek-v4.1-flash"
-        assert graph.graphiti.llm_client.config.base_url == _TOKENHUB_BASE_URL
-        assert graph.graphiti.embedder.config.embedding_model == "kinfra-text-embedding-4b"
-        assert graph.graphiti.embedder.config.embedding_dim == EMBEDDING_DIM
+        # 收窄到具体客户端：`Graphiti` 把它们声明成基类（`LLMClient` / `EmbedderClient`），
+        # 而本用例要断言的正是「装的是 TokenHub 的 OpenAI 系列实现」——这层收窄本身
+        # 就是判别性断言（若装配退回基类或别的实现，这里直接失败）。
+        llm = graph.graphiti.llm_client
+        embedder = graph.graphiti.embedder
+        assert isinstance(llm, OpenAIClient), "LLM 客户端不是 OpenAI 系列实现"
+        assert isinstance(embedder, OpenAIEmbedder), "嵌入客户端不是 OpenAI 系列实现"
+        assert llm.config.model == "deepseek-v4.1-flash"
+        assert llm.config.base_url == _TOKENHUB_BASE_URL
+        assert embedder.config.embedding_model == "kinfra-text-embedding-4b"
+        assert embedder.config.embedding_dim == EMBEDDING_DIM
         assert isinstance(graph.graphiti.cross_encoder, OrderedCrossEncoder)
         assert not isinstance(graph.graphiti.cross_encoder, OpenAIRerankerClient)
     finally:
@@ -159,6 +171,10 @@ async def test_small_model_does_not_fall_back_to_the_upstream_default() -> None:
     graph = build_memory_graph(_settings())
     try:
         llm = graph.graphiti.llm_client
+        # 收窄到具体客户端：`_get_model_for_size` 与 `config` 都声明在
+        # `BaseOpenAIClient` / `OpenAIClient` 上，基类 `LLMClient` 看不到它们。
+        # 这条收窄同时钉住「装配装的就是 OpenAI 系列实现」。
+        assert isinstance(llm, OpenAIClient), "LLM 客户端不是 OpenAI 系列实现"
         assert llm.config.small_model == "deepseek-v4.1-flash"
         resolved = llm._get_model_for_size(ModelSize.small)
         assert resolved != "gpt-4.1-nano", "small 档位回落到上游默认模型，会绕过 TokenHub"
@@ -185,11 +201,20 @@ async def test_model_clients_have_bounded_timeout_and_no_sdk_retries() -> None:
     graph = build_memory_graph(settings)
     try:
         configured = settings.model_request_timeout_seconds
+        # 收窄到具体客户端：注入的 `client` 只声明在 OpenAI 系列实现上，
+        # 基类 `LLMClient` / `EmbedderClient` 不声明它（见 `aclose` 的说明）。
+        llm = graph.graphiti.llm_client
+        embedder = graph.graphiti.embedder
+        assert isinstance(llm, OpenAIClient), "LLM 客户端不是 OpenAI 系列实现"
+        assert isinstance(embedder, OpenAIEmbedder), "嵌入客户端不是 OpenAI 系列实现"
         for label, client in (
-            ("llm", graph.graphiti.llm_client.client),
-            ("embedder", graph.graphiti.embedder.client),
+            ("llm", llm.client),
+            ("embedder", embedder.client),
         ):
             timeout = client.timeout
+            # 超时不得为空：`build_memory_graph` 显式传入配置值，None 意味着这条腿
+            # 取 SDK 默认（实测读超时 600 秒），正是本用例要拦的形态。
+            assert timeout is not None, f"{label} 客户端未配置超时，会取 SDK 默认读超时"
             effective = timeout if isinstance(timeout, (int, float)) else timeout.read
             assert effective == configured, f"{label} 客户端超时不是配置值 {configured}"
             assert effective != 600.0, f"{label} 客户端仍是 SDK 默认读超时 600 秒"
@@ -212,8 +237,15 @@ async def test_aclose_releases_the_driver_background_task_and_clients() -> None:
     await graph.aclose()
     if task is not None:
         assert task.done(), "驱动的后台索引任务未被收口——应走 driver.close() 而非只关 client"
-    assert graph.graphiti.llm_client.client.is_closed(), "LLM 客户端未关闭"
-    assert graph.graphiti.embedder.client.is_closed(), "嵌入客户端未关闭"
+    llm = graph.graphiti.llm_client
+    embedder = graph.graphiti.embedder
+    assert isinstance(llm, OpenAIClient), "LLM 客户端不是 OpenAI 系列实现"
+    assert isinstance(embedder, OpenAIEmbedder), "嵌入客户端不是 OpenAI 系列实现"
+    assert llm.client.is_closed(), "LLM 客户端未关闭"
+    assert embedder.client.is_closed(), "嵌入客户端未关闭"
+    # 注入的 http 客户端必须存在（`build_memory_graph` 总会造一个）：断言里不能
+    # 容忍 None，否则「没造出来」会被静默当成「已关闭」。
+    assert graph.http_client is not None, "未注入 http 客户端，本断言失去对象"
     assert graph.http_client.is_closed, "注入的 http 客户端未关闭"
 
 
@@ -222,9 +254,13 @@ async def test_episode_content_is_stored_and_dim_is_pinned() -> None:
     """episode 原文必须落库（时间线回看依赖它），维度固定 2560。"""
     graph = build_memory_graph(_settings())
     try:
+        embedder = graph.graphiti.embedder
+        llm = graph.graphiti.llm_client
+        assert isinstance(embedder, OpenAIEmbedder), "嵌入客户端不是 OpenAI 系列实现"
+        assert isinstance(llm, OpenAIClient), "LLM 客户端不是 OpenAI 系列实现"
         assert graph.graphiti.store_raw_episode_content is True
-        assert graph.graphiti.embedder.config.embedding_dim == 2560
-        assert graph.graphiti.llm_client.max_tokens == LLM_MAX_TOKENS
+        assert embedder.config.embedding_dim == 2560
+        assert llm.max_tokens == LLM_MAX_TOKENS
     finally:
         await graph.aclose()
 

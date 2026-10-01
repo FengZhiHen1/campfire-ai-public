@@ -27,7 +27,7 @@ from datetime import datetime, timezone
 
 import pytest
 import pytest_asyncio
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, select, update
 
 from campfire.core.auth.tombstone_repository import record_deletion
 from campfire.core.authz import set_authorizer
@@ -302,8 +302,10 @@ async def test_repeated_consumption_does_not_create_a_second_item() -> None:
     # 强行把记录放回 pending（模拟租约过期后的重新领取），再跑一次：
     # 必须靠幂等键跳过，仍只有一条。
     async with session_scope(get_settings()) as session:
+        # 用 `update(模型)` 而不是 `PendingWrite.__table__.update()`：后者在静态上是
+        # `FromClause`（`__table__` 的声明类型），没有 `update`。与 `repository.py` 同法。
         await session.execute(
-            PendingWrite.__table__.update()
+            update(PendingWrite)
             .where(PendingWrite.id == repo.to_item_uuid(pending_id))
             .values(state=STATE_PENDING, lease_owner=None, lease_expires_at=None, finished_at=None)
         )
@@ -400,6 +402,28 @@ async def test_unknown_pending_id_is_skipped_not_an_error() -> None:
         result = await write_from_pending(session, pending_id="00000000-0000-4000-8000-000000000000", lease_owner="w")
     assert result.written is False
     assert result.discarded is False
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("bad_id", ["not-a-uuid", "", "  ", None, 123])
+async def test_malformed_pending_id_is_a_data_error_not_a_raw_driver_error(bad_id: object) -> None:
+    """畸形 `pending_id` 在入口被解析成 `ProfileDataError`（CORE-04 边界解析）。
+
+    为什么必须有这条：`to_pending_uuid` 此前零调用点，投递方的未知值被原样透传给
+    `take_for_processing`，畸形标识以裸驱动错误穿透（实测消融：`123` 得到
+    `sqlalchemy.exc.ProgrammingError`，asyncpg 报
+    `operator does not exist: uuid = integer`）。worker 只把 `ProfileDataError` /
+    `AuthorizationError` 转 `dead`，其余走可重试登记——而登记又拿同一个畸形标识去
+    查库、抛错被吞成日志，于是这条记录既不 `dead` 也永不成功。本函数 docstring
+    早已承诺「形状不合法 → `ProfileDataError`」，本用例把这条承诺钉住。
+
+    判别性：去掉 `write_from_pending` 入口的 `to_pending_uuid` 调用（或把它换回裸
+    `pending_id`），本用例收到的会是驱动异常/`StatementError`，不是
+    `ProfileDataError`，因此失败。
+    """
+    async with session_scope(get_settings()) as session:
+        with pytest.raises(ProfileDataError):
+            await write_from_pending(session, pending_id=bad_id, lease_owner="w1")
 
 
 @pytest.mark.asyncio
@@ -557,7 +581,7 @@ async def test_consumer_does_not_write_when_lease_is_held_by_another_worker() ->
         first = await write_from_pending(session, pending_id=pending_id, lease_owner="w1")
         # 同事务内第二条记录：先把状态放回 processing 且租约未过期，模拟另一 Worker 持租约。
         await session.execute(
-            PendingWrite.__table__.update()
+            update(PendingWrite)
             .where(PendingWrite.id == repo.to_item_uuid(pending_id))
             .values(
                 state="processing",

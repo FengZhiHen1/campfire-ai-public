@@ -11,11 +11,12 @@ docs/技术设计/面/consult/tools/read_memory.md。
 from __future__ import annotations
 
 import json
+from collections.abc import Sequence
 from datetime import datetime, timezone
 
 import pytest
 
-from campfire.agent.context import CitationRecorder
+from campfire.agent.context import CitationRecord, CitationRecorder
 from campfire.agent.tools import ActivationState, ToolContext, ToolFailure, ToolResult
 from campfire.core.pending_write import KIND_MEMORY_EPISODE
 from campfire.tools.memory import (
@@ -31,9 +32,22 @@ _ACCOUNT = "tool_test_account"
 
 
 class _FakeIndex:
-    """最小引用索引；本文件不产生引用，只需满足构造。"""
+    """最小引用索引；本文件不产生引用，只需满足构造。
 
-    def add(self, *_args: object, **_kwargs: object) -> None: ...
+    显式实现 `CitationIndex` 协议的两个成员（`add` / `list_for_run`）：协议是
+    `runtime_checkable` 的 `Protocol`，只实现半数成员会被静态检查拒绝，而那正是
+    「这个替身够不够格当索引」的真实判据——不能靠 ignore 抹掉。
+    写入本文件的用例从不产生引用，因此两者都是空实现。
+    """
+
+    async def add(self, record: CitationRecord) -> None:
+        """接受写入但不落任何地方：本文件不产生引用。"""
+        del record  # 显式声明未使用：替身只需形状正确
+
+    async def list_for_run(self, run_id: str) -> Sequence[CitationRecord]:
+        """永远返回空：没有写入，就没有可读回的记录。"""
+        del run_id
+        return []
 
 
 def _context(payload: object | None = None) -> ToolContext:
@@ -109,11 +123,15 @@ async def test_tools_fail_without_an_account_in_payload() -> None:
     """`payload` 里没有账号时明确失败，而不是猜一个默认账号。
 
     猜默认会把记忆写到错误的图里（`group_id` 就是图名），属静默错分。
-    两个工具都要有这条守卫。
+    两个工具都要有这条守卫——因此两个都断言，不用同构循环：两个 handler 的
+    参数类型本就不同（`WriteMemoryArgs` / `ReadMemoryArgs`），把它们塞进一个
+    `(handler, args)` 序列会退化成联合类型，反而看不出「各自都被覆盖」。
     """
-    for handler, args in ((write_memory, _write_args()), (read_memory, ReadMemoryArgs())):
-        outcome = await handler(_context(payload=None), args)
-        assert isinstance(outcome, ToolFailure), f"{handler.__name__} 缺账号时不得成功"
+    write_outcome = await write_memory(_context(payload=None), _write_args())
+    read_outcome = await read_memory(_context(payload=None), ReadMemoryArgs())
+
+    for label, outcome in (("write_memory", write_outcome), ("read_memory", read_outcome)):
+        assert isinstance(outcome, ToolFailure), f"{label} 缺账号时不得成功"
         assert outcome.code == "tool_failed"
         assert ACCOUNT_PAYLOAD_KEY in outcome.message
 
@@ -171,10 +189,15 @@ def test_write_memory_contract_shape_matches_the_document() -> None:
     assert set(ReadMemoryArgs.model_fields) == {"since", "until", "query", "limit"}
 
 
-def test_write_memory_returns_submitted_not_saved() -> None:
+def test_write_memory_returns_submitted_not_saved(monkeypatch: pytest.MonkeyPatch) -> None:
     """回执只承诺 `submitted`（契约第 3 节）——不得让模型以为已经保存。
 
     这里只断言渲染形状与投递被调用：真正的落库由集成测试覆盖。
+
+    替身经 `monkeypatch.setattr` 的字符串形态挂上：直接赋值会把 `enqueue` /
+    `session_scope` 换成签名不同的可调用体，静态检查判的是「形状是否还是那个
+    API」（`assignment` / `return-value`），而本用例要测的是「投递被调用 + 回执形状」，
+    替身换了形状是刻意的；走 monkeypatch 还免掉了手工还原（原写法靠 `finally`）。
     """
     # ToolResult 的 text 是给模型看的 JSON；键名与契约第 3 节一致。
     import asyncio
@@ -203,12 +226,9 @@ def test_write_memory_returns_submitted_not_saved() -> None:
         async def _fake_enqueue(*_args: object, **_kwargs: object) -> _FakeRecord:
             return _FakeRecord()
 
-        original_enqueue, original_scope = tool_module.enqueue, tool_module.session_scope
-        tool_module.enqueue, tool_module.session_scope = _fake_enqueue, lambda _s: _FakeSession()
-        try:
-            outcome = asyncio.run(write_memory(_context(payload={ACCOUNT_PAYLOAD_KEY: _ACCOUNT}), _write_args()))
-        finally:
-            tool_module.enqueue, tool_module.session_scope = original_enqueue, original_scope
+        monkeypatch.setattr(tool_module, "enqueue", _fake_enqueue)
+        monkeypatch.setattr(tool_module, "session_scope", lambda _s: _FakeSession())
+        outcome = asyncio.run(write_memory(_context(payload={ACCOUNT_PAYLOAD_KEY: _ACCOUNT}), _write_args()))
     finally:
         set_dispatch_hook(None)
 

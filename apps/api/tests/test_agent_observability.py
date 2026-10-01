@@ -12,13 +12,13 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from collections.abc import AsyncIterator, Sequence
+from collections.abc import AsyncGenerator, AsyncIterator, Sequence
 from datetime import UTC, datetime
 from pathlib import Path
 
-import httpx
+import httpx2
 import pytest
-from agents import ModelSettings
+from agents import ModelSettings, SessionSettings
 from agents.items import TResponseInputItem
 from agents.models.openai_chatcompletions import OpenAIChatCompletionsModel
 from pydantic import BaseModel
@@ -353,7 +353,7 @@ async def _events(*items: RunEvent) -> AsyncIterator[RunEvent]:
 @pytest.mark.asyncio
 async def test_record_stream_forwards_events_unchanged_and_writes_one_record() -> None:
     writer = _FakeWriter()
-    incoming = [
+    incoming: list[RunEvent] = [
         _started(),
         TextDeltaEvent(delta="a"),
         RunFinishedEvent(reason="completed", citations=(), usage=RunUsage(), elapsed_seconds=0.2),
@@ -377,7 +377,7 @@ async def test_record_without_run_started_warns_about_the_missing_run_identity(
     缺口的结构性修复要动 §7 的对外事件形状，因此这里只保证它不被静默吞掉。
     """
     writer = _FakeWriter()
-    incoming = [
+    incoming: list[RunEvent] = [
         RunFailedEvent(
             code="injection_failed",
             detail="注入渲染失败（RuntimeError）",
@@ -399,7 +399,7 @@ async def test_record_without_run_started_warns_about_the_missing_run_identity(
 async def test_record_with_run_started_does_not_warn(caplog: pytest.LogCaptureFixture) -> None:
     """正常路径（有 `run_started`）不得产生这条告警——否则告警会退化成噪音被忽略。"""
     writer = _FakeWriter()
-    incoming = [
+    incoming: list[RunEvent] = [
         _started(),
         RunFinishedEvent(reason="completed", citations=(), usage=RunUsage(), elapsed_seconds=0.2),
     ]
@@ -471,6 +471,9 @@ async def test_closing_the_stream_mid_way_records_incomplete_not_completed() -> 
     stream = record_stream(gated(), writer=writer)
     assert isinstance(await anext(stream), RunStartedEvent)
 
+    # `record_stream` 是异步生成器函数，返回对象本就是生成器；声明类型只有 `AsyncIterator`
+    # 这一个方法，收窄后才拿得到 `aclose`。这也是本用例的前提：靠显式关闭结束流。
+    assert isinstance(stream, AsyncGenerator)
     await stream.aclose()
 
     assert len(writer.records) == 1
@@ -485,7 +488,9 @@ class _FakeSession:
 
     def __init__(self) -> None:
         self.session_id = "s-1"
-        self.session_settings = None
+        # 必须显式标注：SDK 的 `Session` 协议把该属性声明成 `SessionSettings | None`，
+        # 不给注解时推断出的 `None` 与协议不兼容，替身就不再是合法的 `Session`。
+        self.session_settings: SessionSettings | None = None
         self.items: list[TResponseInputItem] = []
 
     async def get_items(self, limit: int | None = None) -> list[TResponseInputItem]:
@@ -557,8 +562,8 @@ def _search_tool(index: _FakeIndex) -> ToolSpec[_Args]:
 async def test_record_reflects_a_real_run(tmp_path: Path) -> None:
     """跑一次真实运行（假 HTTP 出口），确认记录里的字段确实来自事件流。"""
 
-    def handler(_request: httpx.Request) -> httpx.Response:
-        return httpx.Response(
+    def handler(_request: httpx2.Request) -> httpx2.Response:
+        return httpx2.Response(
             200,
             headers={"content-type": "text/event-stream"},
             content=_text_reply("答", usage={"prompt_tokens": 9, "completion_tokens": 4, "total_tokens": 13}),
@@ -566,7 +571,7 @@ async def test_record_reflects_a_real_run(tmp_path: Path) -> None:
 
     from openai import AsyncOpenAI
 
-    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    client = httpx2.AsyncClient(transport=httpx2.MockTransport(handler))
     binding = ModelBinding(
         name="test-model",
         model=OpenAIChatCompletionsModel(

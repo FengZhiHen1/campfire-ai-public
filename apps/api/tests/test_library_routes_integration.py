@@ -37,7 +37,7 @@ from pathlib import Path
 import httpx
 import pytest
 import pytest_asyncio
-from sqlalchemy import select
+from sqlalchemy import delete, select
 
 from campfire.core.config import EMBEDDING_DIM, Settings, get_settings
 from campfire.core.db import create_engine, create_sync_engine, session_scope
@@ -106,7 +106,7 @@ async def _cleanup_case(source_path: str) -> None:
     async with session_scope(get_settings()) as session:
         items = (await session.execute(select(CaseItem).where(CaseItem.source_path == source_path))).scalars().all()
         for item in items:
-            await session.execute(RetrievedNode.__table__.delete().where(RetrievedNode.node_id.like(f"{item.id}:%")))
+            await session.execute(delete(RetrievedNode).where(RetrievedNode.node_id.like(f"{item.id}:%")))
             await session.delete(item)
 
 
@@ -119,7 +119,7 @@ async def _cleanup_knowledge(title: str) -> None:
             .all()
         )
         for item in items:
-            await session.execute(RetrievedNode.__table__.delete().where(RetrievedNode.node_id.like(f"{item.id}:%")))
+            await session.execute(delete(RetrievedNode).where(RetrievedNode.node_id.like(f"{item.id}:%")))
             await session.delete(item)
     del title
 
@@ -450,7 +450,9 @@ async def test_browse_pagination_walks_without_repeats(client: httpx.AsyncClient
     seen: list[str] = []
     cursor: str | None = None
     for _ in range(10):  # 上界防止游标不推进时无限循环（CORE-11）
-        params: dict[str, object] = {"library": "case", "limit": 1}
+        # 取值类型写实：`limit` 是整数、`library`/`cursor` 是字符串。写成 `object` 会
+        # 与 httpx 的查询参数取值联合不兼容，而那本来也不是真实取值域。
+        params: dict[str, str | int] = {"library": "case", "limit": 1}
         if cursor is not None:
             params["cursor"] = cursor
         response = await client.get("/library/items", params=params)

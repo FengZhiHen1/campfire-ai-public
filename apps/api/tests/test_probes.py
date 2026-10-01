@@ -10,11 +10,16 @@ httpx 解析代理豁免列表抛 `InvalidURL: Invalid port`，而当时的探�
 
 import httpx
 import pytest
+from pydantic import SecretStr
 
 from campfire.agent.model import check_model_endpoint
 from campfire.core.auth import check_auth_core, core_hello_url
 from campfire.core.config import Settings
 from campfire.core.health import Status
+
+#: 探针用例用的假凭据。`tokenhub_api_key` 声明为 `SecretStr`（避免密钥被日志/回溯
+#: 原样带出），因此这里也必须包一层——与 `test_agent_model.py` 同一写法。
+_TEST_API_KEY = SecretStr("test-key-not-a-secret")
 
 
 def test_core_hello_url_strips_trailing_slash() -> None:
@@ -50,7 +55,7 @@ async def test_auth_probe_reports_invalid_config_not_unreachable(configured: str
     ],
 )
 async def test_model_probe_reports_invalid_config(configured: str) -> None:
-    settings = Settings(tokenhub_base_url=configured, tokenhub_api_key="test-key-not-a-secret")
+    settings = Settings(tokenhub_base_url=configured, tokenhub_api_key=_TEST_API_KEY)
 
     report = await check_model_endpoint(settings)
 
@@ -114,7 +119,7 @@ def _patch_probe_client(monkeypatch: pytest.MonkeyPatch, response: _FakeResponse
 
 
 def _settings_with_key() -> Settings:
-    return Settings(tokenhub_api_key="test-key-not-a-secret")
+    return Settings(tokenhub_api_key=_TEST_API_KEY)
 
 
 @pytest.mark.asyncio

@@ -35,9 +35,10 @@ import re
 import shutil
 import subprocess
 from pathlib import Path
-from typing import Mapping
+from typing import Mapping, cast
 
 import pytest
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from campfire.modules.accounts import models as accounts_models
 from campfire.modules.accounts.errors import OnboardingTriggerError
@@ -794,7 +795,7 @@ class _FakeResult:
 
 
 class _FakeSession:
-    """关系库会话的替身：记录语句与绑定参数，返回预置结果。"""
+    """关系库会话的替身：记录语句与绑定参数，返回预置结果（不连库）。"""
 
     def __init__(self, row: _FakeRow | None) -> None:
         """记录本次查询应返回的行。"""
@@ -807,6 +808,18 @@ class _FakeSession:
         self.statements.append(str(statement))
         self.params.append(params)
         return _FakeResult(self._row)
+
+
+def _as_session(session: _FakeSession) -> AsyncSession:
+    """把读表替身交给被测用例：替身与真会话只在 `execute` 一处相交。
+
+    这里用 `cast` 而不是让替身继承 `AsyncSession`：读取用例只用到 `execute`，
+    继承会宣称替身拥有会话的其余能力（那正是它没有的），而覆写 `execute` 的入参与
+    返回类型与父类的重载联合必然冲突，只能再压一条 `type: ignore`。
+    `cast` 把「这是替身」这一事实留在这里，代价是不做运行期校验——被测代码只触碰
+    `execute`，用例本身即该前提的证据（用别的方法会 `AttributeError` 当场失败）。
+    """
+    return cast(AsyncSession, session)
 
 
 def test_onboarding_subset_of_states() -> None:
@@ -856,7 +869,7 @@ def test_unknown_state_does_not_silently_pass_the_pending_check() -> None:
 async def test_read_onboarding_state_returns_none_when_there_is_no_row() -> None:
     """无行返回 `None`——「从未引导」的判据来源。"""
     session = _FakeSession(None)
-    assert await read_onboarding_state(session, account_id="acc-1") is None
+    assert await read_onboarding_state(_as_session(session), account_id="acc-1") is None
     assert session.statements and "SELECT state FROM campfire_onboarding" in session.statements[0]
 
 
@@ -864,7 +877,7 @@ async def test_read_onboarding_state_returns_none_when_there_is_no_row() -> None
 async def test_read_onboarding_state_uses_a_bound_parameter() -> None:
     """`account_id` 走绑定参数，不进语句文本（登录态可控值不拼进 SQL）。"""
     session = _FakeSession(_FakeRow(ONBOARDING_COMPLETED))
-    assert await read_onboarding_state(session, account_id="acc-1") == ONBOARDING_COMPLETED
+    assert await read_onboarding_state(_as_session(session), account_id="acc-1") == ONBOARDING_COMPLETED
     assert session.params == [{"account_id": "acc-1"}]
     assert session.statements[0].endswith("WHERE account_id = :account_id")
 
@@ -874,7 +887,7 @@ async def test_read_onboarding_state_rejects_an_empty_account_id() -> None:
     """空账号标识显式拒绝：空值在等值查询里必然查不到行，会把调用方错误伪装成业务判定。"""
     session = _FakeSession(None)
     with pytest.raises(OnboardingTriggerError, match="不得为空"):
-        await read_onboarding_state(session, account_id="")
+        await read_onboarding_state(_as_session(session), account_id="")
     assert session.statements == [], "拒绝路径不得发出任何查询"
 
 
@@ -891,4 +904,4 @@ async def test_read_onboarding_state_rejects_an_empty_account_id() -> None:
 async def test_onboarding_pending_drives_from_the_state_table(state: str | None, expected: bool) -> None:
     """`onboarding_pending` 的判定完全由状态表驱动（不从档案或会话推导）。"""
     session = _FakeSession(None if state is None else _FakeRow(state))
-    assert await onboarding_pending(session, account_id="acc-1") is expected
+    assert await onboarding_pending(_as_session(session), account_id="acc-1") is expected
