@@ -111,6 +111,31 @@ async def client() -> AsyncIterator[httpx.AsyncClient]:
         yield async_client
 
 
+async def _require_core_and_init() -> Settings:
+    """校验环境并完成 SDK 装配；core 不可达即跳过。
+
+    从 `client` 夹具里抽出来，供**不用该夹具**的用例复用（它们直接调复写函数，
+    原因见 `test_non_ok_result_with_account_created_does_not_release_the_code` 的说明）。
+
+    为什么必须抽出来而不是各写一遍：漏掉 `init_supertokens` 的后果是
+    `GeneralError: Initialisation not done`——那看起来像代码缺陷，实际是装配缺失。
+    实测在无 core 的 CI 环境里，漏掉它的那条用例是 failed 而不是 skipped。
+    """
+    from campfire.core.auth import check_auth_core
+    from campfire.core.health import Status
+
+    settings = _settings_or_skip()
+    if (await check_auth_core(settings)).status is not Status.OK:
+        pytest.skip("SuperTokens core 不可达——集成测试需要 docker compose up -d supertokens")
+
+    # 应用装配（lifespan 不会在 ASGITransport 下自动运行，故显式初始化 SDK）。
+    from campfire.core.auth.supertokens import init_supertokens
+    from campfire.modules.accounts.registration import api_overrides, sign_up_form_fields
+
+    init_supertokens(settings, api_overrides=api_overrides, sign_up_form_fields=sign_up_form_fields)
+    return settings
+
+
 async def _clear() -> None:
     """清掉本文件写入的邀请码行。
 
@@ -399,8 +424,14 @@ async def test_non_ok_result_with_account_created_does_not_release_the_code() ->
     判别性：把 `registration.py` 里 `_account_exists` 那层判断去掉
     （恢复为无条件释放），本用例失败——码会回到 `issued`、可被再次占用。
     """
-    # 仅用于「未配置库/API Key 即跳过」的前置检查。
-    _settings_or_skip()
+    # 前置检查用 `_settings_or_skip()`；但本用例**不走 `client` 夹具**（它直接调用复写
+    # 函数，见上文理由），因此必须自己完成 SDK 装配——否则 `sign_up` 会抛
+    # `GeneralError: Initialisation not done`。
+    #
+    # 这是实测踩到的缺陷（2026-10-01）：在没有真实 core 的环境（CI）里，本用例因为
+    # 少了这一步而 **failed**，看起来像代码缺陷，实际是「夹具没被用到、初始化就漏了」。
+    # 补上之后它在无 core 环境下会正确地 skip（`_core_reachable` 判定）。
+    await _require_core_and_init()
     await _clear()
     try:
         from supertokens_python.recipe.emailpassword.asyncio import sign_up

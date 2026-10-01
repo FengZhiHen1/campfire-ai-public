@@ -3,9 +3,7 @@ name: CI
 # 仓库结构见 docs/项目结构设计.md：唯一的 Python 应用在 apps/api（HTTP 与 Worker
 # 两个入口），唯一前端在 apps/web。
 #
-# 分支策略见 AGENTS.md：dev 日常开发（本文件在此把关），master 仅保留稳定版本，
-# 推送 master 由 deploy.yml 触发部署。原文件只在 main/master 上跑，dev 的开发提交
-# 反而没有 CI，故补上 dev。
+# 分支策略见 AGENTS.md：dev 日常开发（本文件在此把关），master 仅保留稳定版本。
 on:
   push:
     branches: [dev, main, master]
@@ -37,6 +35,77 @@ jobs:
   backend:
     name: 后端 lint 与测试
     runs-on: ubuntu-latest
+
+    # --- 集成测试依赖的数据服务 ---
+    #
+    # 为什么必须有 service（2026-10-01）：此前本 job 没有数据库，于是 34 个带
+    # `integration` marker 的文件**全部在 `_require_database` 处 skip**——CI 全绿，
+    # 但从来没有跑过任何集成测试。这不是「测试通过」，是「测试没跑」。
+    #
+    # 实测（本机忠实模拟 CI：排除 .env、只给这些服务）：
+    #   无 service            → tests=1602 failures=10 errors=159 skipped=21
+    #   有 service + 一个 key → tests=1602 failures=0  errors=0   skipped=20
+    #
+    # **SuperTokens core 刻意不起**：实测它不是必需的——它的 Python SDK 在多数用例里
+    # 只要配置了 `SUPERTOKENS_API_KEY` 就能完成装配；把 `SUPERTOKENS_CONNECTION_URI`
+    # 指向一个死端口后，`test_consult_endpoints_integration.py` 仍然 55 passed。
+    # 只有一条用例真的需要 core 在跑（`test_auth_registration_integration` 的一条，
+    # 见下方说明），为它起一个 Java 容器不划算——那条按环境 skip。
+    #
+    # 端口必须用宿主映射：`apps/api/tests/conftest.py` 的 `connect_falkordb_or_skip`
+    # 硬编码连 `localhost:6380`（实测该行），而 FalkorDB 镜像内部监听 6379。
+    # 若按容器端口直接映射，那批 FalkorDB 用例会 skip 而不是跑。
+    services:
+      postgres:
+        image: pgvector/pgvector:pg17
+        env:
+          POSTGRES_USER: campfire
+          POSTGRES_PASSWORD: ci-not-a-secret
+          POSTGRES_DB: campfire
+        ports:
+          - 5432:5432
+        # 镜像必须带 pgvector：迁移里有 `CREATE EXTENSION vector` / `pg_trgm`，
+        # 用官方 postgres 镜像会在迁移处失败。
+        options: >-
+          --health-cmd "pg_isready -U campfire"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+
+      falkordb:
+        image: falkordb/falkordb:v4.20.7-alpine
+        ports:
+          # 6380（宿主）→ 6379（容器），见上面 conftest 硬编码端口的说明。
+          - 6380:6379
+        options: >-
+          --health-cmd "redis-cli -p 6379 ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      # 与本地 dev 的连接串形状一致（`postgresql+asyncpg://`）。
+      DATABASE_URL: postgresql+asyncpg://campfire:ci-not-a-secret@127.0.0.1:5432/campfire
+      REDIS_URL: redis://127.0.0.1:6379/0
+      FALKORDB_HOST: 127.0.0.1
+      FALKORDB_PORT: "6380"
+      FALKORDB_DATABASE: campfire
+      # 给一个**假**的 SuperTokens key：它的作用只是让 `init_supertokens` 通过装配期
+      # 校验（缺它会让 55+38+31+28 条用例从 skip 变成 ERROR）。它是假值且不会发到任何
+      # 真实服务——core 未起，需要 core 真在跑的那条用例按环境 skip。
+      SUPERTOKENS_API_KEY: ci-not-a-secret
+      # **刻意不设 TOKENHUB_API_KEY**（见下方「为什么不能给假模型 key」）。
+
     steps:
       - uses: actions/checkout@v7
 
@@ -53,7 +122,7 @@ jobs:
       - name: ruff format --check
         run: uv run ruff format --check .
 
-      # 类型检查是 NewType 语义类型（如 AccountId/PendingId/EpisodeUuid）的**唯一机器通道**。
+      # 类型检查是 NewType 语义类型（如 AccountId/PendingId/EpisodeUuid）的唯一机器通道。
       # 不跑它，那些类型就只是注释——混用不会被任何东西拦下（2026-09-29 评审指出）。
       #
       # 范围已放宽到整个 src 与整个 tests（2026-10-01）。此前只列 agent/core/
@@ -75,10 +144,56 @@ jobs:
           apps/api/src/campfire
           apps/api/tests
 
+      - name: 应用数据库迁移（集成测试依赖迁移后的 schema）
+        run: uv run alembic upgrade head
+
+      - name: 检查迁移无漂移（模型与迁移不一致即失败）
+        run: uv run alembic check
+
+      # 为什么不能给假 TOKENHUB_API_KEY（实测）：给了之后，那些「按环境 skip」的用例
+      # 会变成「真去调模型拿 401 而 fail」——`test_memory_*_integration` 的守卫判的是
+      # `tokenhub_api_key is None`，假值让它以为配置齐全。实测注入假 key 时
+      # `2 failed, 583 passed`，而不注入时 `0 failed`。
+      #
+      # 代价（如实写明）：依赖记忆侧模型的用例（`test_memory_resurrect_integration` 3 条
+      # 等）在 CI 里按环境 skip，实测约 20 条。关闭它们的条件是**提供真实 TokenHub 凭据**
+      # 作为 CI secret——但那样会消耗额度、且受供应商限流影响（实测本机连续跑会触发
+      # `RateLimitError`），是否值得由发布策略决定，不在这里预设。
       - name: pytest
         run: uv run pytest
 
-  # 前端作业待 apps/web 具备构建链后再加：
-  #   pnpm install --frozen-lockfile && pnpm --filter web lint && pnpm --filter web build
-  # apps/web 目前只有目录占位——视觉契约（docs/design/）未重建，故不引入构建链，
-  # 详见 apps/web/README.md。
+  frontend:
+    name: 前端 lint、类型、测试与构建
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      # pnpm 版本由根 package.json 的 `packageManager` 字段决定，不在这里另写版本号
+      # （两处写版本必然漂移）。
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          # 与 apps/web 的 devDeps 匹配：vite 7 / vitest 3 要求 Node ≥ 20。
+          # 选 22（当前 LTS 线）而不是 24（本机版本，非 LTS），让 CI 跑在长期支持版本上。
+          node-version: "22"
+          cache: pnpm
+
+      - name: 安装依赖（lockfile 为准）
+        run: pnpm install --frozen-lockfile
+
+      - name: oxlint
+        run: pnpm --dir apps/web lint
+
+      - name: tsc --noEmit
+        run: pnpm --dir apps/web typecheck
+
+      # 397 个用例（实测），覆盖表单校验、页面渲染与 SSE 解析。
+      - name: vitest
+        run: pnpm --dir apps/web test
+
+      # `build` 内含 `sync-tokens`（读 docs/design/tokens.css）+ tsc + vite build +
+      # 契约类名检查。**因此构建需要仓库完整检出**（默认 checkout 就是完整的）。
+      # 构建失败此前完全不进 CI——那意味着「前端无法编译」也能全绿。
+      - name: 构建（含契约样式断言）
+        run: pnpm --dir apps/web build

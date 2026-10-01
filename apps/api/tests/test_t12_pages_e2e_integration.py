@@ -68,6 +68,22 @@ async def _require_database() -> AsyncIterator[None]:
     yield
 
 
+def _require_tokenhub_or_skip() -> None:
+    """未配置 `TOKENHUB_API_KEY` 时跳过。
+
+    只有「记忆页」那一段需要它：`/memory/episodes` 读的是真实记忆图库
+    （`get_shared_memory_graph`，构造期要求该凭据）。
+
+    实测（2026-10-01，CI 环境无此凭据）：不加守卫时该端点在记忆图库不可用时回
+    **503 `memory_unavailable`**，而本用例断言 200——于是 failed。
+    那个 503 是**正确的产品行为**（图库不可用要如实报，不是假装空集），
+    所以这里该按环境 skip，而不是把断言放宽成「200 或 503」——后者会把
+    「图库挂了」和「真的没有记忆」混为一谈，而本文件存在的意义之一正是区分这两者。
+    """
+    if get_settings().tokenhub_api_key is None:
+        pytest.skip("未配置 TOKENHUB_API_KEY——记忆页读端点需要真实记忆图库")
+
+
 @pytest_asyncio.fixture(autouse=True)
 async def _authorizer() -> AsyncIterator[None]:
     """注入授权实现（Worker 消费分支在领取时要重新判定授权）。"""
@@ -266,6 +282,7 @@ async def test_pages_flow_from_empty_profile_to_library(client: httpx.AsyncClien
     assert other.status_code == 404
 
     # ── 记忆页：查看端点的契约形状（空即 200 空数组，不是失败） ────────────
+    _require_tokenhub_or_skip()
     response = await client.get("/memory/episodes")
     assert response.status_code == 200, response.text
     body = response.json()
