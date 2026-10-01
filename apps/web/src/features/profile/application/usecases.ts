@@ -23,7 +23,10 @@ export interface ProfileSnapshot {
   selectedObjectId: string | null;
   summary: ProfileSummaryField[];
   hasProfile: boolean;
-  /** 稳定层条目（已确认、未取代）。 */
+  /**
+   * 完整条目区的条目：稳定层，外加历史（已被取代）条目——后者在 `include_superseded` 打开时返回。
+   * 历史条目按 `AC-18` 归 `items` 而不是「待确认」分组（服务端的分组保证，前端不重做）。
+   */
   items: ProfileItem[];
   /** 候选层条目；由服务端单独成组返回（`AC-18` 的服务端侧保证）。 */
   candidates: ProfileItem[];
@@ -63,12 +66,14 @@ export class LoadProfileUseCase {
    * 只加载一个对象的内容区（切换对象与刷新内容共用这一条）。
    *
    * 后置: 返回摘要与两组条目；候选层只取第一页（它是「待确认」小分组，不是可分页的流）
+   * 请求形状: 两个开关都打开——候选层是页面的一等分组，历史（已被取代）条目按档案页第 62 行
+   *      必须在列表里可见（行首「已更正」标）；只开前者会让纠正后的旧条目凭空消失。
    * @throws 端口异常原样抛出
    */
   async loadObject(objectId: string): Promise<Omit<ProfileSnapshot, 'objects' | 'selectedObjectId'>> {
     const [summary, listed] = await Promise.all([
       this.port.getSummary(objectId),
-      this.port.listItems(objectId, { includeCandidates: true }),
+      this.port.listItems(objectId, { includeCandidates: true, includeSuperseded: true }),
     ]);
     return {
       summary: summary.fields,

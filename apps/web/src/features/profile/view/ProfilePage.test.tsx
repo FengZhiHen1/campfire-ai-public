@@ -173,14 +173,20 @@ describe('档案页 · 加载与候选层不变量', () => {
     expect(await within(row).findByText('出行前先说清流程')).toBeDefined();
   });
 
-  it('P1 「已更正」标无渲染出口：historical 条目到不了任何行（档案页第 33、62 行的已知缺口）', async () => {
-    // 这不是「设计不要这个标」，而是取数层就不返回 historical 条目：
-    // `repository.list_items` 有 `freshness != historical` 与 `superseded_by is null`
-    // 两道条件，而纠正同时置这两个字段（`mark_superseded` → freshness + superseded_by；
-    // `correct_item` 另写新条目的 supersedes）。参数 `include_candidates` 只放宽稳定层过滤，
-    // 放宽不了这两道——因此它只可能是「防回归」断言，不构成实现证据。
-    // 待裁决：设计第 33/62 行要求历史条目的行首「已更正」标，当前无渲染出口；
-    // 要落地得先有取数通道（如显式请求历史条目的开关），不能在界面凭空造标。
+  it('P1 默认读法（服务端未返回历史条目）下页面不出现「已更正」——标随数据出现，不凭空造', async () => {
+    // 后端缺省 `include_superseded = false`：历史条目不返回（648cab8 的既定行为）。
+    // 这一条是对照组：没有历史条目这条数据时，界面上不得出现「已更正」标。
+    const { container } = renderPage(port());
+    await screen.findByText('关于 TA 的当前认识');
+
+    expect(countOccurrences(container.textContent ?? '', '已更正')).toBe(0);
+  });
+
+  it('P0 opt-in 后历史条目随 items 返回：行首「已更正」标且全页只有一处（档案页第 33、62 行）', async () => {
+    // 替身照后端既定闸门返回（648cab8）：只有 `include_superseded=true` 时 items 里才有历史条目。
+    // 判别性（消融实测）：撤掉 `LoadProfileUseCase.loadObject` 的 `includeSuperseded`，替身走缺省
+    // 分支，本用例的标与计数断言全红；把 StableRow 的「已更正」标撤掉同样全红。
+    // 历史条目归完整条目区（不是「待确认」分组）：归候选组会让档案页给已被取代的条目出「确认」入口。
     const historical = item({
       item_id: 'h1',
       topic: '旧的说法',
@@ -190,15 +196,47 @@ describe('档案页 · 加载与候选层不变量', () => {
       freshness: 'historical',
       superseded_by: 'i2',
     });
+    const staleCandidate = item({
+      item_id: 'c1',
+      topic: '提前知道结束时间',
+      origin: 'ai_inference',
+      confirmation: 'unconfirmed',
+      freshness: 'stale',
+    });
     const p = port({
-      listItems: vi.fn(async () => ({ items: [item(), historical], candidates: [], next_cursor: null })),
+      listItems: vi.fn(async (_objectId: string, options?: { includeSuperseded?: boolean }) => ({
+        items: options?.includeSuperseded === true ? [item(), historical] : [item()],
+        candidates: [staleCandidate],
+        next_cursor: null,
+      })),
     });
     const { container } = renderPage(p);
     await screen.findByText('关于 TA 的当前认识');
 
-    // 结果：该页根本收不到 historical 条目，「已更正」无处出现。
-    expect(container.textContent ?? '').not.toContain('已更正');
-    expect(countOccurrences(container.textContent ?? '', '已更正')).toBe(0);
+    // 页面必须显式 opt-in：缺省时服务端不返回历史条目，标也就无从出现。
+    expect(p.listItems).toHaveBeenCalledWith('o1', {
+      includeCandidates: true,
+      includeSuperseded: true,
+    });
+
+    // 历史条目落在完整条目区（领域分组里），不在「待确认」分组。
+    const candidateGroup = screen.getByText(/^待确认（1）$/).closest('details') as HTMLElement;
+    expect(within(candidateGroup).queryByText('旧的说法')).toBeNull();
+
+    const row = (await screen.findByText('旧的说法')).closest('article') as HTMLElement;
+    const badge = within(row).getByText('已更正');
+    expect(badge.className).toContain('tag');
+    expect(badge.className).toContain('meta');
+
+    // 直接验收点：数是 1 不是「存在」——标只出一处（元信息行不收时效措辞）。
+    expect(countOccurrences(row.textContent ?? '', '已更正')).toBe(1);
+    expect(countOccurrences(container.textContent ?? '', '已更正')).toBe(1);
+    expect(row.querySelector('.lr-meta')?.textContent ?? '').not.toContain('已更正');
+
+    // 候选行的「已降权」标未受影响，历史标也不漏进候选行。
+    const candidateRow = (await screen.findByText('提前知道结束时间')).closest('article') as HTMLElement;
+    expect(countOccurrences(candidateRow.textContent ?? '', '已降权')).toBe(1);
+    expect(countOccurrences(candidateRow.textContent ?? '', '已更正')).toBe(0);
   });
 
   it('P1 对象为空 → 空态引导新建对象，不显示内容区', async () => {
