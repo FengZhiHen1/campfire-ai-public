@@ -1,41 +1,23 @@
 # Campfire-AI — 篝火智答
 
-> **设计基线已确认；业务实现已基本成形，当前处于「生产装配」阶段。** 需求、技术栈与
-> 项目结构已于 2026-09-29 经用户确认，真源在 `docs/`。`archive/` 是已废弃的旧实现与
-> 旧设计，仅作参考，不构成任何当前依据。
+> **设计基线已确认，业务实现与生产装配均已落地。** 需求、技术栈与项目结构真源在
+> `docs/`（2026-09-29 经用户确认）；`archive/` 是已废弃的旧实现与旧设计，仅供参考，
+> 不构成任何当前依据。
 >
-> 以下状态于 2026-10-01 按源码逐目录核对（不是沿用旧结论），此前那段「业务实现刚开始 /
-> 多数仍是占位包」的描述已与事实不符，故整段替换：
+> **已实现**（按模块，细节见 `docs/`，此处不复制）：`agent/` 通用 Agent 基座（运行编排、
+> skill 机制、工具池与权限门、注入项与引用索引、模型网关、上下文压缩、运行记录）；
+> `modules/` 四个业务模块（`library` RAG 检索链与案例库、`memory` Graphiti 记忆、
+> `accounts` 邀请码与账号、`profile` 支持对象与档案分层）；`core/` 跨切能力；
+> `surfaces/consult` 咨询面（HTTP/SSE 契约与生产组合根）；`tools/` 10 个产品工具；
+> `cli/` 运营命令；`apps/web/` React H5；`infrastructure/` 生产 Docker/Compose/Nginx。
 >
-> **已实现**：`agent/`（通用 Agent 基座：运行编排、skill 机制、工具池与权限门、注入项与
-> 引用索引、模型网关、上下文压缩、运行记录）；`modules/library`（RAG 检索链 + 案例库：
-> 条目与节点表、分块后处理、嵌入适配、摄取流水线、两路检索与 RRF 融合、HTML→Markdown
-> 加工）；`modules/memory`（Graphiti 记忆：身份、时间线、派生事实、删除账本）；
-> `modules/accounts`（邀请码、登录会话、归属登记、引导、注销编排）；`modules/profile`
-> （支持对象、档案条目、候选层与稳定层、纠正与删除、应急上下文）；`core/` 的
-> `config`、`db`、`cache`、`auth`（含注销墓碑）、`authz`、`jobs`、`health`、
-> `pending_write`；`surfaces/consult`（HTTP/SSE 契约、应急与引导入口、生产装配）；
-> `tools/`（10 个产品工具）；`cli/`（`convert`、`ingest`、`withdraw`、`invite`、`account`）；
-> `apps/web/`（React H5：首页、咨询、对话、应急、档案、案例、设置、记忆、指南）；
-> `infrastructure/`（生产 Dockerfile、compose.prod、nginx.conf）。
+> **仍未闭合**：压缩记账端口 `CompactionJournal` 尚无持久化实现（不接线的后果是窗口
+> 退化为全量历史——安全方向，不丢内容）；发布闸门 `EVID-A`～`EVID-D` 未处理（面向真实
+> 使用者前必须逐项关闭），见 [docs/TODO.md](docs/TODO.md)。
 >
-> **生产装配已于 2026-10-01 闭合**：`surfaces/consult/composition.py` 是生产组合根，
-> `main.py` 的 lifespan 注入 `set_runner_factory`；引用索引落 `campfire_citation`。
-> 健康检查分 `/livez`（liveness）、`/readyz`（就绪，七项含 Agent 装配）、`/health`（诊断）。
->
-> **仍未闭合**：压缩（`CompactionWiring`）未接线——其记账端口 `CompactionJournal` 尚无
-> 持久化实现，不接线的后果是窗口退化为全量历史（安全方向，不丢内容）；
-> 发布闸门 `EVID-A`～`EVID-D` 未处理（面向真实使用者前必须逐项关闭）。
->
-> **生产环境已于 2026-10-01 落地并启用 HTTPS**（此前本条写「TLS/域名/服务器不存在任何
-> 事实」，已失实）：
-> **<https://campfire.wenran.me>** → `43.161.195.236`（腾讯云 HK，部署目录 `/opt/campfire`）；
-> Let's Encrypt 证书已签发（至 2026-12-30），**自动续期已配置**（systemd timer
-> `campfire-tls-renew.timer`，每日跑，实测演练续期成功）；80→443 跳转已启用；
-> 七个容器全部 healthy。
-> 运维脚本：`scripts/tls-issue-cert.sh`（签发/续期）、`tls-enable-redirect.sh`
-> （开启跳转，五项验证全过才动配置）、`tls-renew.sh`、`tls-install-renew-timer.sh`。
-> 验收流程见 [docs/运维/上线验收测试流程.md](docs/运维/上线验收测试流程.md)。
+> **已上线**：<https://campfire.wenran.me>（HTTP 会 301 跳转），七个容器 healthy，
+> Let's Encrypt 证书自动续期已配置（systemd timer）。**但默认不在云端开发**——见下方
+> 「开发与部署的边界」。
 
 ## Stack
 
@@ -57,33 +39,81 @@
 全部在仓库根执行。
 
 ```bash
-# 依赖与质量门禁
+# --- 本地开发闭环（默认就在这里做完，不要碰云端）---
 uv sync                       # 或 uv sync --frozen（lock 必须同步）
-uv run ruff check .           # 可加 --fix
-uv run ruff format --check .
-uv run pytest
+docker compose up -d          # 本地数据服务：PostgreSQL、Redis、FalkorDB、SuperTokens
 
-# apps/api 的三个运行入口
 uv run uvicorn campfire.main:app --reload      # HTTP
 uv run taskiq worker campfire.worker:broker    # Worker，需 Redis
-uv run python -m campfire.cli convert <x.html> # 本地：HTML → 可摄取 Markdown（不连库）
-uv run python -m campfire.cli ingest <x.md>    # 本地：摄取到资料库（条目与节点同事务）
+pnpm install && pnpm --filter @campfire/web dev # 前端（含 token 同步）
 
-# 设计文档一致性（与 CI 跑同一份脚本）
+# --- 质量门禁（提交前必跑；与 CI 同一组）---
+uv run ruff check . && uv run ruff format --check .
+uv run mypy apps/api/src/campfire apps/api/tests   # 两个路径必须同时给，见下方说明
+uv run pytest
 uv run python scripts/check_design_docs.py
+pnpm --filter @campfire/web lint && pnpm --filter @campfire/web typecheck
+pnpm --filter @campfire/web test && pnpm --filter @campfire/web build
 
-# 前端与基础设施
-pnpm install
-docker compose up -d          # PostgreSQL、Redis、FalkorDB、SuperTokens、MinIO
-
-# 生产（部署目录 /opt/campfire；.env.prod 里有真实凭据，不入库）
-# 首次/本地构建用 --build；在**只有编排没有源码**的部署目录里务必 --no-build——
-# 否则 compose 会回落到本地构建，可能静默复用旧镜像（详见 deploy.yml 的说明）。
-docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --build
-curl -fsS https://campfire.wenran.me/readyz   # 发布验证判据（不要用 /livez）
+# --- 本地摄取（不连生产库；CLI 不暴露成服务端点）---
+uv run python -m campfire.cli convert <x.html> # HTML → 可摄取 Markdown（不连库）
+uv run python -m campfire.cli ingest <x.md>    # 摄取到资料库（条目与节点同事务）
 ```
 
+`mypy` 只传 `apps/api/tests` 会因 `conftest` 被当成两个模块而中止（
+`Source file found twice under different module names`）——**始终同时传 src 与 tests 两个路径**。
+
 测试集中在 `apps/api/tests`；`archive/` 不参与收集。
+
+**生产镜像的构建参数**（仅部署链路需要，本地不需要）：`VITE_API_DOMAIN` 是**构建期内联**
+的，不是运行期环境变量。它在生产由 `PUBLIC_BASE_URL` 提供；前端会把它与当前页面
+host 比较后改用 `location.origin`，因此协议跟随页面、切 HTTPS 不需要重新构建。
+
+## 开发与部署的边界
+
+**默认在本地完成开发闭环。部署到云端只在用户明确要求时进行。**
+
+展开前的自检（任一不过就先补，不要拿云当验证环境）：
+
+- [ ] 门禁全绿（上面那一组）；新行为有能失败的回归测试
+- [ ] 关键路径**已用真实依赖端到端跑通**——本地起数据服务 + 真实浏览器/HTTP 走一遍，
+      而不是只跑 mock 单测。**这条不是形式要求**：本项目三个 P0 都只在真实运行时暴露
+      （缺 `EmailPassword.init()`、明文 HTTP 下 `crypto.randomUUID` 不存在、
+      产物写死协议导致 mixed content），而单测全绿。
+- [ ] 已想清回滚：改动是否可逆、是否需要迁移（迁移是唯一不可逆动作）
+
+部署是**真实的生产变更**，且**必须两步**：
+
+```bash
+# 1. 推送并等 CI 绿（push master 只触发 CI，不会部署）
+git push origin HEAD:master && gh run list --limit 3
+
+# 2. 显式触发发布——`deploy=true` 才会真的上线（默认 false 只构建推送镜像）
+gh workflow run deploy.yml --ref master -f deploy=true
+gh run watch <run-id>          # 全程约 5 分钟（构建 ~3.5，发布 ~1.5）
+```
+
+**为什么默认不自动部署**：合并代码与发布到生产风险等级不同——合并可回退，发布要动生产。
+人工闸门是刻意保留的，不是没接完。**也不要绕过它手工 ssh 到服务器改文件**：那会让
+「生产在跑哪个版本」失去确定答案（这条路我走过，代价是服务器源码与仓库产生漂移）。
+
+部署后必须验收（发布流程自身已轮询 `/readyz`，这里补业务面）：
+
+```bash
+curl -fsS https://campfire.wenran.me/readyz    # 判据用 /readyz，不要用 /livez
+uv run --no-project python scripts/acceptance_probe.py
+```
+
+`acceptance_probe.py` 覆盖静态资源、9 条页面**深链**、未登录 401 边界（退出码非 0 即失败）。
+它只覆盖第 1 节——**登录之后的链路必须用真实浏览器**（依赖 httpOnly cookie），
+完整清单见 [docs/运维/上线验收测试流程.md](docs/运维/上线验收测试流程.md)。
+
+**看到「发布验证失败」先判断是不是误报**，再决定回滚：曾发生「部署其实成功、
+验证步骤因漏 `--env-file` 而报失败」，回滚一个正常版本会把小事变成事故。
+
+服务端事实：`https://campfire.wenran.me`（腾讯云 HK），部署目录 `/opt/campfire`，
+凭据在服务器 `.env.prod`（**不入库**，也不由发布流程上传）。CORS、域名与 TLS 的
+运维脚本见 `scripts/tls-*.sh`，操作说明见 [docs/运维/发布与回滚.md](docs/运维/发布与回滚.md)。
 
 ## Architecture
 
@@ -167,7 +197,9 @@ amend、不 rebase，即使它们的写法与本规范不符。
 - ❌ 禁止：在回复中完整复述密码或服务器凭证
 - ❌ 禁止：把服务器凭证上传给第三方服务
 - ❌ 禁止：健康检查、日志或错误消息复述连接串与凭据（探针只回报异常类型）
-- 服务器操作详见：`archive/docs-运营/远程服务器操作指引.md`（历史资料，执行前须重新核实）
+- 服务器操作：**默认不做**（见上方「开发与部署的边界」）。确需运维时，脚本与判据见
+  [docs/运维/发布与回滚.md](docs/运维/发布与回滚.md) 与 `archive/docs-运营/远程服务器操作指引.md`
+  （后者是历史资料，**执行前须重新核实**，不要照抄）。
 
 ## Git Workflow
 
@@ -175,13 +207,13 @@ amend、不 rebase，即使它们的写法与本规范不符。
 - CI（`.github/workflows/ci.yml`）在 push 与 PR 到 `dev`、`main`、`master` 时跑三个 job：
   设计文档一致性、后端（ruff + mypy + 迁移门禁 + pytest，**带 PostgreSQL/Redis/FalkorDB
   三个 service**）、前端（oxlint + tsc + vitest + build）
-- **发布是手动的**：`deploy.yml` 为 `workflow_dispatch`，构建推送镜像到 GHCR 并按需发布到
-  服务器；推送 `master` **不会**自动部署（理由见该文件顶部）。发布后轮询 `/readyz` 验证
+- **部署见上方「开发与部署的边界」**——默认本地闭环，云端只在用户明确要求时发布
 - 备份/恢复/回滚：`scripts/{backup,restore,rollback}.sh`，操作说明见
   [docs/运维/发布与回滚.md](docs/运维/发布与回滚.md)
 - 仓库：`https://github.com/FengZhiHen1/Campfire-AI.git`
 - ❌ 禁止：直接在 `master` 上开发或提交
 - ❌ 禁止：一个 commit 塞多个无关主题的改动
+- ❌ 禁止：未经用户明确要求就执行 `deploy.yml` 的发布（`deploy=true`）——那是生产变更
 
 ## Design Docs
 
