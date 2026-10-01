@@ -26,7 +26,7 @@ from __future__ import annotations
 import asyncio
 import re
 import uuid
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Mapping, Sequence
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -787,8 +787,10 @@ async def test_reclaim_limit_is_converged_to_a_server_cap() -> None:
 
         later = base + timedelta(seconds=LEASE_SECONDS_FOR_TEST + 1)
 
-        # 拦截实际发给数据库的 LIMIT。
-        captured: list[object] = []
+        # 拦截实际发给数据库的 LIMIT。逐条记下 (语句, 参数)：语句用来筛出回收那条
+        # SELECT，参数用来断言 LIMIT 真的被收敛。参数类型收窄到「映射或序列」——
+        # SQLAlchemy 两种形态都可能传，`object` 则连索引都不允许。
+        captured: list[tuple[str, Mapping[str, object] | Sequence[object]]] = []
         from sqlalchemy import event
 
         from campfire.core.db import get_engine
@@ -808,7 +810,8 @@ async def test_reclaim_limit_is_converged_to_a_server_cap() -> None:
         select_params = [p for s, p in captured if "campfire_pending_write" in str(s) and "LIMIT" in str(s).upper()]
         assert select_params, "未捕获到回收的 SELECT"
         supplied = select_params[0]
-        limit_value = supplied.get("param_1") if isinstance(supplied, dict) else supplied[-1]
+        # 字典形态按参数名取，元组形态取末位（编译后的 SQL 里 LIMIT 是最后一个占位符）。
+        limit_value = supplied.get("param_1") if isinstance(supplied, Mapping) else supplied[-1]
         assert limit_value == RECLAIM_MAX_LIMIT, f"limit=10**9 应被收敛为 {RECLAIM_MAX_LIMIT}，实际传入 {limit_value!r}"
     finally:
         await _clear()

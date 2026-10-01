@@ -28,9 +28,9 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, TypeVar
 
-import httpx
+import httpx2
 import pytest
-from agents import ModelSettings
+from agents import FunctionTool, FunctionToolResult, ModelSettings, RunContextWrapper, SessionSettings
 from agents.items import TResponseInputItem
 from agents.models.openai_chatcompletions import OpenAIChatCompletionsModel
 from pydantic import BaseModel, ValidationError
@@ -88,7 +88,9 @@ class FakeSession:
 
     def __init__(self, session_id: str, items: Sequence[TResponseInputItem] | None = None) -> None:
         self.session_id = session_id
-        self.session_settings = None
+        # 必须显式标注：SDK 的 `Session` 协议把该属性声明成 `SessionSettings | None`，
+        # 不给注解时推断出的 `None` 与协议不兼容，替身就不再是合法的 `Session`。
+        self.session_settings: SessionSettings | None = None
         self.items: list[TResponseInputItem] = list(items or [])
 
     async def get_items(self, limit: int | None = None) -> list[TResponseInputItem]:
@@ -194,14 +196,14 @@ class ScriptedChat:
         # quality-floor: ignore bare-any 值来自 json.loads，类型在源头就已丢失
         self.requests: list[dict[str, Any]] = []
 
-    async def handler(self, request: httpx.Request) -> httpx.Response:
+    async def handler(self, request: httpx2.Request) -> httpx2.Response:
         self.requests.append(json.loads(request.content))
         body = self._script.pop(0) if self._script else text_reply("（脚本已用尽）")
-        return httpx.Response(200, headers={"content-type": "text/event-stream"}, content=body)
+        return httpx2.Response(200, headers={"content-type": "text/event-stream"}, content=body)
 
 
 def _binding(chat: ScriptedChat) -> ModelBinding:
-    client = httpx.AsyncClient(transport=httpx.MockTransport(chat.handler))
+    client = httpx2.AsyncClient(transport=httpx2.MockTransport(chat.handler))
     from openai import AsyncOpenAI
 
     return ModelBinding(
@@ -286,6 +288,9 @@ def _wire(event: object) -> object:
     比直接比 `asdict` 更贴契约——面侧把 `data` 定义成「该事件对象的 JSON」，所以元组会变成
     数组、字段顺序无关紧要、而字段名与嵌套键名必须逐字一致。这里断言的就是后者。
     """
+    # `asdict` 只接受 dataclass 实例：先断言再调用，既收窄类型，也让「传进来的不是事件对象」
+    # 变成一条显式失败，而不是一个与契约无关的 TypeError。
+    assert dataclasses.is_dataclass(event) and not isinstance(event, type)
     return json.loads(json.dumps(asdict(event), ensure_ascii=False))
 
 
@@ -464,8 +469,10 @@ def test_duplicate_ask_user_registration_is_rejected() -> None:
 def test_ask_user_tool_declares_no_model_supplied_batch_id() -> None:
     """参数 schema 里没有 `batch_id`：模型在结构上就无法提供批次标识。"""
     spec = build_ask_user_tool()
+    properties = spec.parameters["properties"]
+    assert isinstance(properties, dict)  # schema 的 `properties` 必须是对象，不是别的形状
 
-    assert set(spec.parameters["properties"]) == {"items"}
+    assert set(properties) == {"items"}
     assert spec.parameters["required"] == ["items"]
 
 
@@ -519,10 +526,35 @@ def test_question_gate_stays_closed_until_a_question_is_really_produced() -> Non
     assert gate.final_output() == "已提问"
 
 
+def _tool_results() -> list[FunctionToolResult]:
+    """一次工具调用的结果列表。
+
+    `stop_after_question` 的判据是「闸门里有没有真产出提问」，与工具结果的载荷无关；
+    但形状仍按真实的 `FunctionToolResult` 造——用一个任意对象顶替会让回调的签名
+    与真实调用点脱钩，正是类型检查要拦住的那种「看起来能跑」。
+    """
+
+    async def _never(_context: object, _arguments: str) -> None:
+        return None
+
+    tool = FunctionTool(
+        name="stub_tool",
+        description="占位工具",
+        params_json_schema={"type": "object", "properties": {}},
+        on_invoke_tool=_never,
+    )
+    return [FunctionToolResult(tool=tool, output=None, run_item=None)]
+
+
+def _run_context() -> RunContextWrapper[object]:
+    """一次工具调用所在的运行上下文；回调不用它，但签名要求真实的上下文对象。"""
+    return RunContextWrapper(context=None)
+
+
 def test_stop_after_question_does_not_stop_without_a_question() -> None:
     """没有提问时行为与 SDK 默认的 `run_llm_again` 相同（工具结果照常回到模型）。"""
     behavior = stop_after_question(QuestionGate())
-    result = behavior(None, [object()])  # type: ignore[arg-type]  # 回调只读闸门，不用上下文
+    result = behavior(_run_context(), _tool_results())
 
     assert result.is_final_output is False
 
@@ -531,7 +563,7 @@ def test_stop_after_question_stops_once_a_question_exists() -> None:
     """真问出问题就结束运行，并把工具回给模型的那句话作为最终产出。"""
     gate = QuestionGate()
     gate.note_question(text="已提问")
-    result = stop_after_question(gate)(None, [object()])  # type: ignore[arg-type]  # 回调只读闸门，不用上下文
+    result = stop_after_question(gate)(_run_context(), _tool_results())
 
     assert result.is_final_output is True
     assert result.final_output == "已提问"

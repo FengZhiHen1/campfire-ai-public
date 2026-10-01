@@ -40,7 +40,7 @@ from __future__ import annotations
 
 import os
 import uuid
-from collections.abc import AsyncIterator, Awaitable, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable, Iterator
 from datetime import datetime, timedelta, timezone
 
 import httpx
@@ -174,8 +174,8 @@ async def client() -> AsyncIterator[httpx.AsyncClient]:
 
 
 @pytest.fixture
-def as_account() -> AsyncIterator[object]:
-    """把登录态账号切换成给定值。"""
+def as_account() -> Iterator[Callable[[str], None]]:
+    """把登录态账号切换成给定值；返回切换函数供用例改账号。"""
     import campfire.main as main_module
 
     def _set(account: str) -> None:
@@ -301,7 +301,9 @@ async def test_list_pagination_walks_the_whole_timeline(
     seen: list[str] = []
     cursor: str | None = None
     for _ in range(10):  # 上界防止游标不推进时无限循环（CORE-11）
-        params: dict[str, object] = {"limit": 5}
+        # 值类型收窄到 httpx 接受的查询参数标量：`dict[str, object]` 会被拒
+        # （`object` 不保证可编码成 query string）。
+        params: dict[str, str | int] = {"limit": 5}
         if cursor is not None:
             params["cursor"] = cursor
         response = await client.get("/memory/episodes", params=params)
@@ -784,7 +786,7 @@ async def test_delete_of_an_episode_recorded_by_another_account_is_404(
     await _write(graph, content="撞车的记忆", account=_ACCOUNT_OTHER, pending=shared_pending)
     await _record_foreign_deletion(key)
 
-    assert await episode_exists(graph, _ACCOUNT, episode_key=key) is True
+    assert await episode_exists(graph, to_account_id(_ACCOUNT), episode_key=key) is True
 
     response = await client.delete(f"/memory/episodes/{key}")
 
@@ -834,7 +836,9 @@ async def test_correct_dispatches_the_cross_account_guard_by_type_not_by_message
     await _write(graph, content="撞车的记忆", account=_ACCOUNT_OTHER, pending=shared_pending)
     await _record_foreign_deletion(key)
 
-    assert await episode_exists(graph, _ACCOUNT, episode_key=key) is True, "存在性判据必须通过，404 才只能来自守卫"
+    assert await episode_exists(graph, to_account_id(_ACCOUNT), episode_key=key) is True, (
+        "存在性判据必须通过，404 才只能来自守卫"
+    )
     monkeypatch.setattr(deletion_module, "record_deletion", _reworded_guard(record_deletion))
 
     response = await client.post(

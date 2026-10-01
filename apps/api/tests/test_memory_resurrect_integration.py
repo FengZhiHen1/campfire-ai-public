@@ -38,6 +38,7 @@ from campfire.core.config import get_settings
 from campfire.core.db import session_scope
 from campfire.core.pending_write import PendingWrite, enqueue
 from campfire.modules.memory.consumer import consume_memory_episode
+from campfire.modules.memory.graph import MemoryGraph
 
 pytestmark = pytest.mark.integration
 
@@ -54,7 +55,7 @@ async def _require_database() -> AsyncIterator[None]:
 
 
 @pytest_asyncio.fixture
-async def graph_or_skip() -> AsyncIterator[object]:
+async def graph_or_skip() -> AsyncIterator[MemoryGraph]:
     """连上 FalkorDB 并返回图库句柄；容器不可用则跳过。
 
     用仓库既有的 `conftest.connect_falkordb_or_skip`：它把一个真实踩坑固化了
@@ -63,6 +64,9 @@ async def graph_or_skip() -> AsyncIterator[object]:
 
     该辅助返回 `(driver, client)`，这里只把它当可用性探针用，随即关闭客户端；
     实际写入经 `build_memory_graph` 自己的连接（避免把探针的驱动塞进生产路径）。
+
+    返回类型写 `MemoryGraph` 而不是 `object`：这层形状就是「探针通过后交出的东西」，
+    写成 `object` 会让下游每处调用点都要自己收窄，等于把损失分散到用例里。
     """
     from campfire.modules.memory.graph import build_memory_graph
 
@@ -119,7 +123,7 @@ async def _pending_state(pending_id: uuid.UUID) -> str | None:
 
 
 @pytest.mark.asyncio
-async def test_deleted_account_write_is_discarded_not_written(graph_or_skip: object) -> None:
+async def test_deleted_account_write_is_discarded_not_written(graph_or_skip: MemoryGraph) -> None:
     """账号已注销 → 在途写入被丢弃，且记录被删除（不留 `done` 谎言）。
 
     构造的时序正是设计关心的那一个：
@@ -156,7 +160,7 @@ async def test_deleted_account_write_is_discarded_not_written(graph_or_skip: obj
 
 
 @pytest.mark.asyncio
-async def test_control_group_without_tombstone_the_write_proceeds(graph_or_skip: object) -> None:
+async def test_control_group_without_tombstone_the_write_proceeds(graph_or_skip: MemoryGraph) -> None:
     """对照（即设计要求的消融）：没有墓碑时，同一条记录照常写入。
 
     为什么必须有这一条：
@@ -191,7 +195,7 @@ async def test_control_group_without_tombstone_the_write_proceeds(graph_or_skip:
 
 
 @pytest.mark.asyncio
-async def test_non_deleted_account_is_unaffected(graph_or_skip: object) -> None:
+async def test_non_deleted_account_is_unaffected(graph_or_skip: MemoryGraph) -> None:
     """别的账号已注销不影响本账号：墓碑按账号过滤。
 
     判别性：若复查写成了「只要存在任何墓碑就丢弃」，本用例失败——

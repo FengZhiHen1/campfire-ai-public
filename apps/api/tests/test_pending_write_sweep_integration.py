@@ -8,7 +8,8 @@
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator
+import uuid
+from collections.abc import AsyncIterator, Mapping, Sequence
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -100,8 +101,13 @@ async def _enqueue_profile_item() -> str:
         return str(record.id)
 
 
-def _ids(found: list[tuple[object, str]]) -> list[str]:
-    """取出 `find_undelivered` 结果里的 id（返回的是 `(id, kind)`）。"""
+def _ids(found: Sequence[tuple[uuid.UUID, str]]) -> list[str]:
+    """取出 `find_undelivered` 结果里的 id（返回的是 `(id, kind)`）。
+
+    入参声明成 `Sequence`（协变）而不是 `list`：`list` 不变，`list[tuple[UUID, str]]`
+    传给 `list[tuple[object, str]]` 会被拒；而本函数只读不写，`Sequence` 才是它
+    真实的契约宽度。
+    """
     return [str(pending_id) for pending_id, _kind in found]
 
 
@@ -184,7 +190,9 @@ async def test_sweep_limit_is_converged_to_the_server_cap() -> None:
         # 并用 SQL 参数级别的检查（下面的 event 钩子）确认收敛。
         import sqlalchemy
 
-        captured: list[object] = []
+        # 记录实际发给数据库的参数。类型收窄到「映射或序列」：SQLAlchemy 传下来的
+        # 可能是命名参数字典或位置参数元组，两者都要能读——`object` 则连索引都不允许。
+        captured: list[Mapping[str, object] | Sequence[object]] = []
 
         from campfire.core.db import get_engine
 
@@ -203,7 +211,8 @@ async def test_sweep_limit_is_converged_to_the_server_cap() -> None:
     assert str(pending_id) in _ids(found)
     assert captured, "未捕获到扫描的 SELECT"
     params = captured[0]
-    limit_value = params.get("param_1") if isinstance(params, dict) else params[-1]
+    # 字典形态按参数名取，元组形态取末位（编译后的 SQL 里 LIMIT 是最后一个占位符）。
+    limit_value = params.get("param_1") if isinstance(params, Mapping) else params[-1]
     assert limit_value == SWEEP_MAX_LIMIT, f"limit=10**9 应收敛为 {SWEEP_MAX_LIMIT}，实际 {limit_value!r}"
 
 

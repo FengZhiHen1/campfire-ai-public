@@ -152,10 +152,12 @@ async def test_concurrent_recording_yields_exactly_one_row() -> None:
     """
     import asyncio
 
+    from campfire.core.auth import TombstoneResult
+
     await _clear()
     try:
 
-        async def record() -> object:
+        async def record() -> TombstoneResult:
             async with session_scope(get_settings()) as session:
                 return await record_deletion(session, account_id=_ACCOUNT)
 

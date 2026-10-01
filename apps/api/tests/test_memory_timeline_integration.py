@@ -34,9 +34,12 @@ import os
 import uuid
 from collections.abc import AsyncIterator
 from datetime import datetime, timedelta, timezone
+from typing import cast
 
 import pytest
 import pytest_asyncio
+from graphiti_core.driver.driver import GraphDriver
+from graphiti_core.driver.falkordb_driver import FalkorDriver
 
 from campfire.core.config import EMBEDDING_DIM
 from campfire.core.config import get_settings as _get_settings
@@ -267,11 +270,13 @@ async def test_timeline_limit_is_bounded_by_server_cap(memory_graph: MemoryGraph
     real_execute = scoped.execute_query
     seen_limits: list[object] = []
 
-    async def spy(cypher, **params):  # noqa: ANN001, ANN202
-        if "limit" in params:
-            seen_limits.append(params["limit"])
-        return await real_execute(cypher, **params)
+    async def spy(cypher_query_: str, **kwargs: object) -> object:
+        if "limit" in kwargs:
+            seen_limits.append(kwargs["limit"])
+        return await real_execute(cypher_query_, **kwargs)
 
+    # `method-assign` 是「往实例上挂方法」这条独立规则，属替身刻意为之。
+    # （换掉的是实例属性，mypy 只按 `method-assign` 判；曾经的 `assignment` 已不触发。）
     scoped.execute_query = spy  # type: ignore[method-assign]  # 替身故意替换实例上的查询方法，用来观察发给图库的 LIMIT
     try:
         await _read_timeline(memory_graph, _ACCOUNT_A, limit=10_000)
@@ -923,7 +928,11 @@ async def test_cancel_driver_init_task_really_cancels() -> None:
             self._init_task = init_task
 
     try:
-        await _cancel_driver_init_task(_DriverWithInitTask(task))
+        # cast 的理由：该函数只读 `_init_task` 一个属性（模块 docstring 把「只依赖
+        # 这一点」写成了显式设计），而这里要验的正是「只依赖它就够」——因此替身
+        # 故意不实现 `GraphDriver` 的其余成员。补齐那些成员会把本用例变成
+        # 「一个假驱动的形状检查」，与「取消真的发生」这条判据无关。
+        await _cancel_driver_init_task(cast(GraphDriver, _DriverWithInitTask(task)))
         assert task.cancelled(), "任务未被取消——收口只等它结束，客户端关闭后它仍会抛错"
     finally:
         if not task.done():
@@ -946,10 +955,16 @@ async def test_aclose_closes_the_shared_client_exactly_once(memory_graph: Memory
     for account in ("it_mem_close_a", "it_mem_close_b", "it_mem_close_c"):
         memory_graph.driver_for(account)
 
-    client = memory_graph.driver.client
+    # `client` 只声明在 `FalkorDriver` 上（基类 `GraphDriver` 不声明它），因此先
+    # 收窄到具体驱动类型——本用例的前提本就是「这是 FalkorDB 驱动、客户端共享」。
+    base_driver = memory_graph.driver
+    assert isinstance(base_driver, FalkorDriver), "装配出来的不是 FalkorDB 驱动"
+    client = base_driver.client
     # 前置条件：三个缓存驱动的客户端确实是同一个对象（本用例的前提）。
     for account in ("it_mem_close_a", "it_mem_close_b", "it_mem_close_c"):
-        assert memory_graph.driver_for(account).client is client
+        scoped = memory_graph.driver_for(account)
+        assert isinstance(scoped, FalkorDriver), "克隆出来的不是 FalkorDB 驱动"
+        assert scoped.client is client
 
     calls: list[str] = []
     original = client.aclose

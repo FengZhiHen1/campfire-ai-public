@@ -35,7 +35,13 @@ def test_report_exposes_degraded_components_individually() -> None:
 
     assert report.is_ready is False
     assert [item.name for item in report.degraded] == ["model"]
-    assert report.as_dict()["components"]["model"]["status"] == "not_configured"
+    # 逐层收窄：`as_dict()` 的声明是 `dict[str, object]`（顶层同时放布尔与嵌套字典），
+    # 因此要读嵌套值必须先确认形状——顺带钉住这里确实是「按能力名索引的嵌套字典」。
+    components = report.as_dict()["components"]
+    assert isinstance(components, dict), "components 必须是以能力名为键的字典"
+    model = components["model"]
+    assert isinstance(model, dict), "每项能力必须给出一份字典"
+    assert model["status"] == "not_configured"
 
 
 def test_report_with_no_components_is_not_ready() -> None:

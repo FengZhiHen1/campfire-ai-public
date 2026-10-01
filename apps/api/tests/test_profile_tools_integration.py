@@ -28,14 +28,14 @@
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Sequence
 from datetime import datetime, timezone
 
 import pytest
 import pytest_asyncio
 from sqlalchemy import delete, select
 
-from campfire.agent.context import CitationRecorder
+from campfire.agent.context import CitationRecord, CitationRecorder
 from campfire.agent.tools import ActivationState, ToolContext, ToolFailure, ToolResult
 from campfire.core.authz import set_authorizer
 from campfire.core.config import get_settings
@@ -64,7 +64,19 @@ CONTRACT_LAYER_TABLE: dict[str, tuple[str, str]] = {
 
 
 class _FakeIndex:
-    def add(self, *_args: object, **_kwargs: object) -> None: ...
+    """引用索引替身：本文件只钉落层分流与「拒绝且未落库」，索引不落任何东西。
+
+    形状与 `CitationIndex` 端口逐字一致（`add` 是协程、`list_for_run` 按运行读回），
+    否则它不是一个合法的端口实现。
+    """
+
+    async def add(self, record: CitationRecord) -> None:
+        """不落任何东西。"""
+        return None
+
+    async def list_for_run(self, run_id: str) -> Sequence[CitationRecord]:
+        """空列表。"""
+        return []
 
 
 def _context(account: str = _ACCOUNT) -> ToolContext:

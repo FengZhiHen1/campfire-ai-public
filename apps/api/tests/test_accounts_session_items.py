@@ -305,6 +305,8 @@ def test_hydration_marks_tool_failure_from_result_envelope() -> None:
 
     parts = build_messages(items)[1]["parts"]
 
+    # 判别字段必须先断言：`MessagePart` 是判别联合，只写下标取值在静态上看不出是哪一种。
+    assert parts[0]["type"] == "tool_call"
     assert parts[0]["ok"] is False
     assert parts[0]["summary"] == "后端炸了"
 
@@ -319,6 +321,8 @@ def test_hydration_fills_interrupted_tool_call() -> None:
 
     parts = build_messages(items)[1]["parts"]
 
+    # 同上：先钉住判别字段，后取该 part 独有的键。
+    assert parts[0]["type"] == "tool_call"
     assert parts[0]["ok"] is False
     assert parts[0]["summary"] == INTERRUPTED_TOOL_SUMMARY
 
@@ -377,6 +381,7 @@ def test_tool_name_falls_back_to_named_placeholder() -> None:
 
     parts = build_messages(items)[1]["parts"]
 
+    assert parts[0]["type"] == "tool_call"
     assert parts[0]["tool_name"] == UNKNOWN_TOOL_NAME
 
 
@@ -389,7 +394,10 @@ def test_tool_summary_is_bounded() -> None:
         _stored(3, _function_output("c1", long_output)),
     ]
 
-    summary = build_messages(items)[1]["parts"][0]["summary"]
+    parts = build_messages(items)[1]["parts"]
+
+    assert parts[0]["type"] == "tool_call"
+    summary = parts[0]["summary"]
 
     assert len(summary) == TOOL_SUMMARY_MAX_CHARS
 

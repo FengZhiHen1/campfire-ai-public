@@ -15,11 +15,14 @@ docs/技术设计/面/consult/tools/create_support_object.md。
 from __future__ import annotations
 
 import json
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from datetime import datetime, timezone
+from typing import get_args
 
 import pytest
+from pydantic import BaseModel
 
-from campfire.agent.context import CitationRecorder
+from campfire.agent.context import CitationRecord, CitationRecorder
 from campfire.agent.tools import ActivationState, ToolContext, ToolFailure, ToolResult
 from campfire.core.authz import (
     OBJECT_ARCHIVED_MESSAGE,
@@ -27,7 +30,7 @@ from campfire.core.authz import (
     AuthorizationError,
     ObjectArchivedError,
 )
-from campfire.core.pending_write import KIND_PROFILE_ITEM
+from campfire.core.pending_write import KIND_PROFILE_ITEM, ORIGINS
 from campfire.modules.profile import (
     DOMAINS,
     MAX_DISPLAY_NAME_LENGTH,
@@ -43,6 +46,8 @@ from campfire.tools.profile import (
     DEFAULT_ITEMS_LIMIT,
     MAX_ITEMS_LIMIT,
     CreateSupportObjectArgs,
+    Domain,
+    Origin,
     ProposeProfileItemArgs,
     ReadProfileItemsArgs,
     ReadProfileSummaryArgs,
@@ -57,7 +62,19 @@ _OBJECT = "11111111-1111-4111-8111-111111111111"
 
 
 class _FakeIndex:
-    def add(self, *_args: object, **_kwargs: object) -> None: ...
+    """引用索引替身：本文件只关心工具层的参数形状与错误码映射。
+
+    形状与 `CitationIndex` 端口逐字一致，因此 `CitationRecorder` 的构造真的接受它——
+    写成宽口径的 `*_args` 会绕过端口契约，`CitationRecorder` 的写入路径就没被替身掉。
+    """
+
+    async def add(self, record: CitationRecord) -> None:
+        """不落任何东西。"""
+        return None
+
+    async def list_for_run(self, run_id: str) -> Sequence[CitationRecord]:
+        """空列表。"""
+        return []
 
 
 def _context(payload: object | None = None) -> ToolContext:
@@ -69,6 +86,11 @@ def _context(payload: object | None = None) -> ToolContext:
         citations=CitationRecorder(_FakeIndex(), run_id="run-1", clock=lambda: datetime.now(timezone.utc)),
         payload=payload,
     )
+
+
+#: 工具处理器的收口签名：四个工具的参数模型各不相同，用 `...` 取它们的公共形状
+#: （与 `agent.tools.spec.ToolHandler` 同一写法）。
+_Handler = Callable[..., Awaitable[ToolResult | ToolFailure]]
 
 
 def _accounted() -> ToolContext:
@@ -226,6 +248,30 @@ def test_domain_enum_rejects_values_outside_the_vocabulary() -> None:
         assert _propose_args(domain=domain).domain == domain
 
 
+def test_domain_enum_mirrors_the_module_vocabulary_exactly() -> None:
+    """工具层的 `Domain` 枚举与 `modules.profile.DOMAINS` 双向相等。
+
+    工具层把词表写成字面量 `Literal` 而不是从 `DOMAINS` 派生：`Literal` 只接受字面量
+    表达式，`Literal[*tuple(sorted(DOMAINS))]` 会被 mypy 判 `valid-type`（`Final` 常量
+    同样不行，实测 mypy 2.1.0）。派生写法的好处是「不可能漂移」，改成镜像后这份好处
+    必须由本用例接管——所以断言取集合相等而不是子集：
+
+    - 少一个 → 模块侧新增了领域而工具层收不到，模型无法表达它；
+    - 多一个 → 工具层放行了一个模块侧不认的值，解析通过但落库被 CHECK 拒。
+
+    判别性：任改一侧一个取值，本用例失败。
+    """
+    assert set(get_args(Domain)) == set(DOMAINS)
+
+
+def test_origin_enum_mirrors_the_module_vocabulary_exactly() -> None:
+    """工具层的 `Origin` 枚举与 `core.pending_write.ORIGINS` 双向相等。
+
+    理由与上一条完全相同（同为「派生改镜像 + 由用例接管不漂移」）。
+    """
+    assert set(get_args(Origin)) == set(ORIGINS)
+
+
 def test_origin_enum_covers_the_six_generation_methods() -> None:
     """`origin` 六值全部可表达，第七种表达不出来（词表的所有者是写入路径第 3 节）。"""
     for origin in (
@@ -286,16 +332,18 @@ async def test_every_tool_fails_without_an_account_in_payload() -> None:
     猜默认会把档案写到错误的账号下——使用者看不到异常，只是数据不在自己名下。
     四个工具都要有这条守卫（质量地板校验点④「未登录/无 account → 明确失败」）。
     """
-    cases = (
-        (read_profile_summary, ReadProfileSummaryArgs(support_object_id=_OBJECT)),
-        (read_profile_items, ReadProfileItemsArgs(support_object_id=_OBJECT)),
-        (propose_profile_item, _propose_args()),
-        (create_support_object, CreateSupportObjectArgs(display_name="小宝")),
+    # 工具名单列一列而不是取 `handler.__name__`：四者的参数模型不同，收口成 `_Handler`
+    # 之后 `__name__` 不在 Callable 的静态形状里（真跑时在，静态上看不出）。
+    cases: tuple[tuple[str, _Handler, BaseModel], ...] = (
+        ("read_profile_summary", read_profile_summary, ReadProfileSummaryArgs(support_object_id=_OBJECT)),
+        ("read_profile_items", read_profile_items, ReadProfileItemsArgs(support_object_id=_OBJECT)),
+        ("propose_profile_item", propose_profile_item, _propose_args()),
+        ("create_support_object", create_support_object, CreateSupportObjectArgs(display_name="小宝")),
     )
-    for handler, args in cases:
+    for name, handler, args in cases:
         for payload in (None, {}, {ACCOUNT_PAYLOAD_KEY: ""}, {ACCOUNT_PAYLOAD_KEY: "   "}):
             outcome = await handler(_context(payload=payload), args)
-            assert isinstance(outcome, ToolFailure), f"{handler.__name__} 缺账号时不得成功"
+            assert isinstance(outcome, ToolFailure), f"{name} 缺账号时不得成功"
             assert outcome.code == "tool_failed"
             assert ACCOUNT_PAYLOAD_KEY in outcome.message
 
@@ -612,7 +660,10 @@ async def test_propose_payload_never_carries_a_confirmation(monkeypatch: pytest.
 
     await propose_profile_item(_accounted(), _propose_args(origin="ai_inference"))
 
-    assert "confirmation" not in seen["payload"]
+    # `seen` 的值是 `object`（真实载荷在运行时才成形），断言前先收窄成映射。
+    payload = seen["payload"]
+    assert isinstance(payload, Mapping)
+    assert "confirmation" not in payload
 
 
 @pytest.mark.asyncio
@@ -646,10 +697,12 @@ async def test_propose_carries_the_source_with_the_server_side_tool_name(monkeyp
         _propose_args(source={"session_id": "s1", "message_seq": 7, "relayed_by": "妈妈"}),
     )
 
-    assert seen["source"]["session_id"] == "s1"
-    assert seen["source"]["message_seq"] == 7
-    assert seen["source"]["relayed_by"] == "妈妈"
-    assert seen["source"]["tool"] == "propose_profile_item"
+    source = seen["source"]
+    assert isinstance(source, Mapping)
+    assert source["session_id"] == "s1"
+    assert source["message_seq"] == 7
+    assert source["relayed_by"] == "妈妈"
+    assert source["tool"] == "propose_profile_item"
 
 
 @pytest.mark.asyncio
@@ -676,7 +729,9 @@ async def test_propose_omits_optional_keys_it_was_not_given(monkeypatch: pytest.
 
     await propose_profile_item(_accounted(), _propose_args())
 
-    assert set(seen["payload"]) == {"domain", "topic", "description"}
+    payload = seen["payload"]
+    assert isinstance(payload, Mapping)
+    assert set(payload) == {"domain", "topic", "description"}
 
 
 @pytest.mark.asyncio

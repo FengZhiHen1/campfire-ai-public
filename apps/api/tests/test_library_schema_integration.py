@@ -120,7 +120,9 @@ async def test_pgvector_store_can_write_and_query_migration_table() -> None:
     try:
         store.add([node])
         result = await store.aquery(VectorStoreQuery(query_embedding=_FAKE_VECTOR, similarity_top_k=5))
-        texts = [n.text for n in (result.nodes or [])]
+        # `get_content()` 是 `BaseNode` 上的公开取值接口，`text` 只声明在 `TextNode` 上；
+        # 向量存储返回的节点静态类型是 `BaseNode`（与 `modules/library/ingestion.py` 同一取舍）。
+        texts = [n.get_content() for n in (result.nodes or [])]
         assert "集成测试节点" in texts
     finally:
         await _cleanup_nodes(["it-migration-1"])

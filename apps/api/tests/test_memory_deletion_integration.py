@@ -32,7 +32,7 @@ from campfire.core.db import session_scope
 from campfire.modules.memory.deletion import correct_episode, delete_episode
 from campfire.modules.memory.derived import read_emergency_facts
 from campfire.modules.memory.graph import MemoryGraph, OrderedCrossEncoder
-from campfire.modules.memory.identity import PendingId, derive_episode_uuid, to_account_id
+from campfire.modules.memory.identity import PendingId, derive_episode_uuid, to_account_id, to_episode_key
 from campfire.modules.memory.ledger import deleted_episode_keys
 from campfire.modules.memory.models import MemoryDeletionLedger
 from campfire.modules.memory.store import read_timeline, write_episode
@@ -355,7 +355,10 @@ async def test_deletion_is_isolated_between_accounts(memory_graph: MemoryGraph) 
 
         # 两个账号各写一条记忆（各自图里）。
         mine_key = await _write_episode(memory_graph, "iso-mine", "我的记忆", now)
-        other_key = str(uuid.uuid4())
+        # 另一账号的 key 用 `to_episode_key` 收窄：`write_episode` 的入参是
+        # `EpisodeUuid`（uuid 文本的语义类型），裸 `str(uuid.uuid4())` 只是「恰好
+        # 长得像」，走校验入口才把「这是合法 episode 标识」变成已证事实。
+        other_key = to_episode_key(str(uuid.uuid4()))
         await write_episode(
             memory_graph,
             to_account_id(other),
