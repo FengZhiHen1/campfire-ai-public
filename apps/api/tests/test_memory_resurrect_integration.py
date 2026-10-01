@@ -67,6 +67,11 @@ async def graph_or_skip() -> AsyncIterator[MemoryGraph]:
 
     返回类型写 `MemoryGraph` 而不是 `object`：这层形状就是「探针通过后交出的东西」，
     写成 `object` 会让下游每处调用点都要自己收窄，等于把损失分散到用例里。
+
+    为什么还要自己判一次 `TOKENHUB_API_KEY`（2026-10-01 实测补上）：`build_memory_graph`
+    要求它（`MemoryConfigurationError`），而 **CI 环境没有该凭据**。缺失时原先会在夹具
+    里抛错——3 条用例变成 **ERROR**，看起来像代码坏了，实际是环境未就绪。
+    本文件的假模型客户端只在「写入」那一侧替换，图库句柄仍需真实凭据才能构造。
     """
     from campfire.modules.memory.graph import build_memory_graph
 
@@ -76,6 +81,11 @@ async def graph_or_skip() -> AsyncIterator[MemoryGraph]:
     del driver  # 只作可用性探针
     await client.aclose()
 
+    if get_settings().tokenhub_api_key is None:
+        pytest.skip("未配置 TOKENHUB_API_KEY——本文件要构造真实记忆图库（抽取与嵌入都调模型）")
+
+    # 构造也在 try 之外**是安全的**，因为上面已判过凭据；但仍写成先构造后 yield，
+    # 以便 `aclose` 只在构造成功后才执行（否则 finally 会操作未绑定的名字）。
     graph = build_memory_graph(get_settings())
     try:
         yield graph
