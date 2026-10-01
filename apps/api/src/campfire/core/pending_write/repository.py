@@ -403,8 +403,15 @@ async def mark_dead(
 
     本函数只负责状态；告警由调用方发出——本模块不引入日志/告警依赖，
     避免 `core/pending_write` 依赖可观测设施（它是状态机，不是运维组件）。
-    调用方契约：`worker.consume_memory_episode_task` 是唯一调用方，它必须在
-    本函数返回后发一条 `dead` 专属告警（不能只打可重试失败的 warning）。
+
+    调用方契约：每个调用方都必须保证这条记录进 `dead` 时有专属告警，
+    不能只打可重试失败的 warning。实测的调用点共三处（2026-09-30 核实）：
+
+    - `repository.mark_retryable_failure`（重试耗尽）：告警在其调用方
+      `worker._register_retryable_failure` 里依返回值 `state == STATE_DEAD` 发出；
+    - `worker.consume_memory_episode_task`（记忆侧不可重试的 `MemoryDataError`）；
+    - `worker._mark_dead_and_alert`（档案侧不可重试的载荷不合法与授权不成立，
+      由 `worker.consume_profile_item_task` 的两条分支调用）。
 
     Raises:
         PendingWriteNotFoundError: 记录不存在，或已处于终结状态。
