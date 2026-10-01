@@ -186,7 +186,8 @@ describe('档案页 · 加载与候选层不变量', () => {
     // 替身照后端既定闸门返回（648cab8）：只有 `include_superseded=true` 时 items 里才有历史条目。
     // 判别性（消融实测）：撤掉 `LoadProfileUseCase.loadObject` 的 `includeSuperseded`，替身走缺省
     // 分支，本用例的标与计数断言全红；把 StableRow 的「已更正」标撤掉同样全红。
-    // 历史条目归完整条目区（不是「待确认」分组）；该行不给「纠正」（已被取代的条目纠正必然失败）。
+    // 本用例这条已确认的历史条目归完整条目区（不是「待确认」分组）；该行不给「纠正」
+    // （已被取代的条目纠正必然失败）。未确认的系统推断型历史条目归候选组，见下方对应用例。
     const historical = item({
       item_id: 'h1',
       topic: '旧的说法',
@@ -219,7 +220,7 @@ describe('档案页 · 加载与候选层不变量', () => {
       includeSuperseded: true,
     });
 
-    // 历史条目落在完整条目区（领域分组里），不在「待确认」分组。
+    // 这条已确认的历史条目落在完整条目区（领域分组里），不在「待确认」分组。
     const candidateGroup = screen.getByText(/^待确认（1）$/).closest('details') as HTMLElement;
     expect(within(candidateGroup).queryByText('旧的说法')).toBeNull();
 
