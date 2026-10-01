@@ -164,6 +164,7 @@ async def record_deletion(
     )
 
 
+# quality-floor: ignore docstring-promise 异常由 _validate_account_id 抛出（间接 raise），本函数只做查询
 async def get_tombstone(
     session: AsyncSession,
     *,
@@ -177,13 +178,13 @@ async def get_tombstone(
     Raises:
         TombstonePayloadError: 账号标识不合法（长度/空值/类型）。
     """
-    # quality-floor: ignore docstring-promise 异常由 _validate_account_id 抛出（间接 raise），本函数只做查询
     normalized = _validate_account_id(account_id)
     return (
         await session.execute(select(AccountDeletionTombstone).where(AccountDeletionTombstone.account_id == normalized))
     ).scalar_one_or_none()
 
 
+# quality-floor: ignore docstring-promise 异常由 _validate_account_id 抛出（间接 raise），本函数只做查询
 async def is_account_deleted(session: AsyncSession, *, account_id: object) -> bool:
     """该账号是否已注销（最常用的问法，只取存在性、不取整行）。
 
@@ -193,7 +194,6 @@ async def is_account_deleted(session: AsyncSession, *, account_id: object) -> bo
     Raises:
         TombstonePayloadError: 账号标识不合法（长度/空值/类型）。
     """
-    # quality-floor: ignore docstring-promise 异常由 _validate_account_id 抛出（间接 raise），本函数只做查询
     normalized = _validate_account_id(account_id)
     found = (
         await session.execute(
