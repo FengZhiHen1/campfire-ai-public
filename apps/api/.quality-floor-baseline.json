@@ -1,0 +1,559 @@
+{
+  "version": 1,
+  "generated_by": "quality_floor --update-baseline",
+  "entries": [
+    {
+      "file": "src\\campfire\\agent\\observability\\__init__.py",
+      "rule": "todo-residue",
+      "hash": "93a2b349f245",
+      "count": 1,
+      "sample_line": 30
+    },
+    {
+      "file": "src\\campfire\\agent\\skill_runtime\\__init__.py",
+      "rule": "todo-residue",
+      "hash": "67c8ab5dca02",
+      "count": 1,
+      "sample_line": 38
+    },
+    {
+      "file": "src\\campfire\\modules\\accounts\\__init__.py",
+      "rule": "todo-residue",
+      "hash": "ed8a1056354c",
+      "count": 1,
+      "sample_line": 30
+    },
+    {
+      "file": "tests\\test_accounts_invite_integration.py",
+      "rule": "type-ignore-no-reason",
+      "hash": "a8b922d706eb",
+      "count": 1,
+      "sample_line": 92
+    },
+    {
+      "file": "tests\\test_accounts_sessions_integration.py",
+      "rule": "type-ignore-no-reason",
+      "hash": "a8b922d706eb",
+      "count": 1,
+      "sample_line": 139
+    },
+    {
+      "file": "tests\\test_agent_compaction.py",
+      "rule": "type-ignore-no-reason",
+      "hash": "a8b922d706eb",
+      "count": 7,
+      "sample_line": 166
+    },
+    {
+      "file": "tests\\test_agent_compaction.py",
+      "rule": "type-ignore-no-reason",
+      "hash": "de4054b2166e",
+      "count": 1,
+      "sample_line": 724
+    },
+    {
+      "file": "tests\\test_agent_context.py",
+      "rule": "type-ignore-no-reason",
+      "hash": "a8b922d706eb",
+      "count": 1,
+      "sample_line": 170
+    },
+    {
+      "file": "tests\\test_agent_context.py",
+      "rule": "type-ignore-no-reason",
+      "hash": "de4054b2166e",
+      "count": 1,
+      "sample_line": 258
+    },
+    {
+      "file": "tests\\test_agent_model.py",
+      "rule": "type-ignore-no-reason",
+      "hash": "2777c27224c3",
+      "count": 1,
+      "sample_line": 54
+    },
+    {
+      "file": "tests\\test_agent_model.py",
+      "rule": "type-ignore-no-reason",
+      "hash": "34592311dce2",
+      "count": 1,
+      "sample_line": 78
+    },
+    {
+      "file": "tests\\test_agent_model.py",
+      "rule": "type-ignore-no-reason",
+      "hash": "a8b922d706eb",
+      "count": 2,
+      "sample_line": 45
+    },
+    {
+      "file": "tests\\test_agent_observability.py",
+      "rule": "bare-any",
+      "hash": "4c73f8f08608",
+      "count": 1,
+      "sample_line": 465
+    },
+    {
+      "file": "tests\\test_agent_observability.py",
+      "rule": "bare-any",
+      "hash": "9d3b18138e9d",
+      "count": 1,
+      "sample_line": 442
+    },
+    {
+      "file": "tests\\test_agent_observability.py",
+      "rule": "bare-any",
+      "hash": "dc3234e73661",
+      "count": 1,
+      "sample_line": 547
+    },
+    {
+      "file": "tests\\test_agent_observability.py",
+      "rule": "bare-any",
+      "hash": "ea7f3b460f6a",
+      "count": 1,
+      "sample_line": 348
+    },
+    {
+      "file": "tests\\test_agent_observability.py",
+      "rule": "bare-any",
+      "hash": "f8ad61d8dd0b",
+      "count": 1,
+      "sample_line": 522
+    },
+    {
+      "file": "tests\\test_agent_observability.py",
+      "rule": "hardcoded-secret",
+      "hash": "e9604c9a008b",
+      "count": 1,
+      "sample_line": 134
+    },
+    {
+      "file": "tests\\test_agent_observability.py",
+      "rule": "type-ignore-no-reason",
+      "hash": "a8b922d706eb",
+      "count": 1,
+      "sample_line": 261
+    },
+    {
+      "file": "tests\\test_agent_questions.py",
+      "rule": "bare-any",
+      "hash": "14dfd28331bc",
+      "count": 1,
+      "sample_line": 133
+    },
+    {
+      "file": "tests\\test_agent_questions.py",
+      "rule": "bare-any",
+      "hash": "36470f9b5ee2",
+      "count": 1,
+      "sample_line": 270
+    },
+    {
+      "file": "tests\\test_agent_questions.py",
+      "rule": "bare-any",
+      "hash": "566c89e6d0e4",
+      "count": 1,
+      "sample_line": 265
+    },
+    {
+      "file": "tests\\test_agent_questions.py",
+      "rule": "bare-any",
+      "hash": "65345173c0d1",
+      "count": 1,
+      "sample_line": 192
+    },
+    {
+      "file": "tests\\test_agent_questions.py",
+      "rule": "bare-any",
+      "hash": "6b5e4b1d4b76",
+      "count": 1,
+      "sample_line": 251
+    },
+    {
+      "file": "tests\\test_agent_questions.py",
+      "rule": "bare-any",
+      "hash": "afb05a5573b6",
+      "count": 1,
+      "sample_line": 167
+    },
+    {
+      "file": "tests\\test_agent_questions.py",
+      "rule": "bare-any",
+      "hash": "ba4b141ca20b",
+      "count": 1,
+      "sample_line": 250
+    },
+    {
+      "file": "tests\\test_agent_questions.py",
+      "rule": "bare-any",
+      "hash": "ecaeaeae01dc",
+      "count": 1,
+      "sample_line": 225
+    },
+    {
+      "file": "tests\\test_agent_questions.py",
+      "rule": "type-ignore-no-reason",
+      "hash": "a8b922d706eb",
+      "count": 1,
+      "sample_line": 521
+    },
+    {
+      "file": "tests\\test_agent_runtime.py",
+      "rule": "bare-any",
+      "hash": "14dfd28331bc",
+      "count": 1,
+      "sample_line": 117
+    },
+    {
+      "file": "tests\\test_agent_runtime.py",
+      "rule": "bare-any",
+      "hash": "1e3282c1a129",
+      "count": 1,
+      "sample_line": 181
+    },
+    {
+      "file": "tests\\test_agent_runtime.py",
+      "rule": "bare-any",
+      "hash": "65345173c0d1",
+      "count": 1,
+      "sample_line": 171
+    },
+    {
+      "file": "tests\\test_agent_runtime.py",
+      "rule": "bare-any",
+      "hash": "6b5e4b1d4b76",
+      "count": 1,
+      "sample_line": 290
+    },
+    {
+      "file": "tests\\test_agent_runtime.py",
+      "rule": "bare-any",
+      "hash": "7f249791f551",
+      "count": 1,
+      "sample_line": 417
+    },
+    {
+      "file": "tests\\test_agent_runtime.py",
+      "rule": "bare-any",
+      "hash": "820ea1b9ff9b",
+      "count": 1,
+      "sample_line": 145
+    },
+    {
+      "file": "tests\\test_agent_runtime.py",
+      "rule": "bare-any",
+      "hash": "b4d45027d354",
+      "count": 1,
+      "sample_line": 414
+    },
+    {
+      "file": "tests\\test_agent_runtime.py",
+      "rule": "bare-any",
+      "hash": "ba4b141ca20b",
+      "count": 1,
+      "sample_line": 289
+    },
+    {
+      "file": "tests\\test_agent_runtime.py",
+      "rule": "bare-any",
+      "hash": "cd8969552d44",
+      "count": 1,
+      "sample_line": 198
+    },
+    {
+      "file": "tests\\test_agent_runtime.py",
+      "rule": "type-ignore-no-reason",
+      "hash": "a8b922d706eb",
+      "count": 2,
+      "sample_line": 419
+    },
+    {
+      "file": "tests\\test_agent_runtime.py",
+      "rule": "type-ignore-no-reason",
+      "hash": "ffe563c1d883",
+      "count": 1,
+      "sample_line": 1268
+    },
+    {
+      "file": "tests\\test_agent_summarizer.py",
+      "rule": "bare-any",
+      "hash": "14dfd28331bc",
+      "count": 1,
+      "sample_line": 28
+    },
+    {
+      "file": "tests\\test_agent_summarizer.py",
+      "rule": "bare-any",
+      "hash": "65345173c0d1",
+      "count": 1,
+      "sample_line": 59
+    },
+    {
+      "file": "tests\\test_agent_summarizer.py",
+      "rule": "bare-any",
+      "hash": "6c7a3c07158a",
+      "count": 1,
+      "sample_line": 104
+    },
+    {
+      "file": "tests\\test_agent_summarizer.py",
+      "rule": "bare-any",
+      "hash": "a8aeb2e1ddb2",
+      "count": 1,
+      "sample_line": 79
+    },
+    {
+      "file": "tests\\test_agent_summarizer.py",
+      "rule": "type-ignore-no-reason",
+      "hash": "a8b922d706eb",
+      "count": 1,
+      "sample_line": 148
+    },
+    {
+      "file": "tests\\test_agent_tools.py",
+      "rule": "type-ignore-no-reason",
+      "hash": "2bab8c839b4d",
+      "count": 1,
+      "sample_line": 239
+    },
+    {
+      "file": "tests\\test_auth_registration_integration.py",
+      "rule": "type-ignore-no-reason",
+      "hash": "34592311dce2",
+      "count": 21,
+      "sample_line": 177
+    },
+    {
+      "file": "tests\\test_auth_tombstone_integration.py",
+      "rule": "type-ignore-no-reason",
+      "hash": "a8b922d706eb",
+      "count": 1,
+      "sample_line": 330
+    },
+    {
+      "file": "tests\\test_emergency_card.py",
+      "rule": "bare-any",
+      "hash": "31d9ce5ce34f",
+      "count": 2,
+      "sample_line": 61
+    },
+    {
+      "file": "tests\\test_emergency_card.py",
+      "rule": "bare-any",
+      "hash": "367a88582624",
+      "count": 1,
+      "sample_line": 120
+    },
+    {
+      "file": "tests\\test_emergency_card.py",
+      "rule": "bare-any",
+      "hash": "3befc42bae12",
+      "count": 1,
+      "sample_line": 471
+    },
+    {
+      "file": "tests\\test_emergency_card.py",
+      "rule": "bare-any",
+      "hash": "d2a3659127ba",
+      "count": 1,
+      "sample_line": 94
+    },
+    {
+      "file": "tests\\test_emergency_card.py",
+      "rule": "bare-any",
+      "hash": "facfac6f8101",
+      "count": 2,
+      "sample_line": 92
+    },
+    {
+      "file": "tests\\test_layer_boundaries.py",
+      "rule": "todo-residue",
+      "hash": "a3545a90b7f2",
+      "count": 1,
+      "sample_line": 74
+    },
+    {
+      "file": "tests\\test_layer_boundaries.py",
+      "rule": "todo-residue",
+      "hash": "b95a2c61c2c9",
+      "count": 1,
+      "sample_line": 64
+    },
+    {
+      "file": "tests\\test_library_case_integration.py",
+      "rule": "type-ignore-no-reason",
+      "hash": "a8b922d706eb",
+      "count": 3,
+      "sample_line": 420
+    },
+    {
+      "file": "tests\\test_library_embedding.py",
+      "rule": "type-ignore-no-reason",
+      "hash": "a8b922d706eb",
+      "count": 1,
+      "sample_line": 36
+    },
+    {
+      "file": "tests\\test_library_retrieval.py",
+      "rule": "type-ignore-no-reason",
+      "hash": "a8b922d706eb",
+      "count": 17,
+      "sample_line": 45
+    },
+    {
+      "file": "tests\\test_library_retrieval.py",
+      "rule": "type-ignore-no-reason",
+      "hash": "b7b3d3345855",
+      "count": 3,
+      "sample_line": 50
+    },
+    {
+      "file": "tests\\test_library_retrieval_integration.py",
+      "rule": "type-ignore-no-reason",
+      "hash": "a8b922d706eb",
+      "count": 2,
+      "sample_line": 380
+    },
+    {
+      "file": "tests\\test_library_schema_integration.py",
+      "rule": "type-ignore-no-reason",
+      "hash": "a8b922d706eb",
+      "count": 1,
+      "sample_line": 166
+    },
+    {
+      "file": "tests\\test_library_tools.py",
+      "rule": "bare-any",
+      "hash": "31d9ce5ce34f",
+      "count": 2,
+      "sample_line": 38
+    },
+    {
+      "file": "tests\\test_library_tools.py",
+      "rule": "bare-any",
+      "hash": "33201c726bea",
+      "count": 1,
+      "sample_line": 257
+    },
+    {
+      "file": "tests\\test_library_tools.py",
+      "rule": "bare-any",
+      "hash": "5d2ec27255c9",
+      "count": 1,
+      "sample_line": 51
+    },
+    {
+      "file": "tests\\test_library_tools.py",
+      "rule": "bare-any",
+      "hash": "9ef4faea05d8",
+      "count": 3,
+      "sample_line": 386
+    },
+    {
+      "file": "tests\\test_library_tools.py",
+      "rule": "bare-any",
+      "hash": "cb0641b58c86",
+      "count": 3,
+      "sample_line": 384
+    },
+    {
+      "file": "tests\\test_library_tools.py",
+      "rule": "bare-any",
+      "hash": "d2a3659127ba",
+      "count": 2,
+      "sample_line": 52
+    },
+    {
+      "file": "tests\\test_memory_timeline_integration.py",
+      "rule": "type-ignore-no-reason",
+      "hash": "de4054b2166e",
+      "count": 3,
+      "sample_line": 275
+    },
+    {
+      "file": "tests\\test_memory_tools.py",
+      "rule": "bare-any",
+      "hash": "31d9ce5ce34f",
+      "count": 2,
+      "sample_line": 37
+    },
+    {
+      "file": "tests\\test_memory_write_path_integration.py",
+      "rule": "type-ignore-no-reason",
+      "hash": "b7b3d3345855",
+      "count": 2,
+      "sample_line": 660
+    },
+    {
+      "file": "tests\\test_memory_write_path_integration.py",
+      "rule": "type-ignore-no-reason",
+      "hash": "de4054b2166e",
+      "count": 6,
+      "sample_line": 434
+    },
+    {
+      "file": "tests\\test_onboarding_tools.py",
+      "rule": "bare-any",
+      "hash": "31d9ce5ce34f",
+      "count": 2,
+      "sample_line": 33
+    },
+    {
+      "file": "tests\\test_profile_tools.py",
+      "rule": "bare-any",
+      "hash": "31d9ce5ce34f",
+      "count": 2,
+      "sample_line": 61
+    },
+    {
+      "file": "tests\\test_profile_tools.py",
+      "rule": "bare-any",
+      "hash": "a80e3a5fbfb7",
+      "count": 1,
+      "sample_line": 787
+    },
+    {
+      "file": "tests\\test_profile_tools.py",
+      "rule": "bare-any",
+      "hash": "cb0641b58c86",
+      "count": 7,
+      "sample_line": 468
+    },
+    {
+      "file": "tests\\test_profile_tools.py",
+      "rule": "type-ignore-no-reason",
+      "hash": "a8b922d706eb",
+      "count": 2,
+      "sample_line": 116
+    },
+    {
+      "file": "tests\\test_profile_tools_integration.py",
+      "rule": "bare-any",
+      "hash": "31d9ce5ce34f",
+      "count": 2,
+      "sample_line": 68
+    },
+    {
+      "file": "tests\\test_profile_tools_integration.py",
+      "rule": "bare-any",
+      "hash": "5bda96f1d069",
+      "count": 1,
+      "sample_line": 82
+    },
+    {
+      "file": "tests\\test_profile_tools_integration.py",
+      "rule": "bare-any",
+      "hash": "d2a3659127ba",
+      "count": 1,
+      "sample_line": 83
+    },
+    {
+      "file": "tests\\test_skill_runtime.py",
+      "rule": "type-ignore-no-reason",
+      "hash": "a8b922d706eb",
+      "count": 1,
+      "sample_line": 556
+    }
+  ]
+}
