@@ -355,10 +355,14 @@ async def test_production_composition_builds_a_complete_runner(clean_assembly: N
 
     # 端到端装配：这一步会跑 AgentRunner.__init__ 的两条装配期校验
     # （缺 skill 激活工具、skill 的 allowed-tools 指向未注册工具，都在这里抛）
-    gateway = ModelGateway(settings, http_transport=httpx2.MockTransport(_never_called))
+    # 用 `_settings_for_assembly()` 而不是 `get_settings()`：CI 无 .env 时
+    # `tokenhub_api_key` 为 None，`ModelGateway` 构造期即抛错（实测），
+    # 而本用例要验的是装配形状、与凭据无关。
+    assembly_settings = _settings_for_assembly()
+    gateway = ModelGateway(assembly_settings, http_transport=httpx2.MockTransport(_never_called))
     try:
-        engine = get_engine(settings)
-        runner = composition.build_runner_factory(engine=engine, gateway=gateway)(settings)
+        engine = get_engine(assembly_settings)
+        runner = composition.build_runner_factory(engine=engine, gateway=gateway)(assembly_settings)
         assert type(runner).__name__ == "AgentRunner"
     finally:
         await gateway.aclose()
