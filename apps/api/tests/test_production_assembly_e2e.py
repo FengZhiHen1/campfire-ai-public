@@ -8,17 +8,17 @@
   `AgentRunner`**，因此「生产组合根能不能装出来」它答不了；
 - `test_agent_runtime.py` 用真 `AgentRunner`，但工具池是自造的、skill 根是空目录、
   引用索引是内存替身，因此「真工具池 / 真 skill / 真引用索引」这条链它答不了；
-- 生产装配此前**根本不存在**（`assembly.set_runner_factory` 只有测试调用点），所以这条链
+- 生产装配此前根本不存在（`assembly.set_runner_factory` 只有测试调用点），所以这条链
   在 2026-10-01 之前没有任何测试覆盖过——这正是「部署出来核心端点稳定 503」能潜伏至今的原因。
 
-本文件刻意只在**与外部世界的边界**上替换：模型供应商换成脚本化 SSE 响应。
+本文件刻意只在与外部世界的边界上替换：模型供应商换成脚本化 SSE 响应。
 其余全部是真的——真 `ModelGateway`（只注入 `MockTransport`）、真 `ToolPool`（10 个产品工具
 + 3 个保留名工具）、真 `SkillRegistry`（`apps/api/skills` 下 4 个 skill）、
 真 `SqlCitationIndex`（写进 `campfire_citation` 表）、真 SDK 会话（写进 `agent_sessions` /
 `agent_messages`）。
 
 替换模型是必要而非偷懒：真实 TokenHub 调用会消耗额度、结果不确定、且实测会限流
-（`RateLimitError`），把它纳入测试会让用例随外部服务抖动。但**接线本身必须是真的**——
+（`RateLimitError`），把它纳入测试会让用例随外部服务抖动。但接线本身必须是真的——
 本文件断言的就是接线。
 
 标记 `integration`：需要 PostgreSQL（引用索引与会话表都在库里）。
@@ -38,7 +38,7 @@ import pytest_asyncio
 from sqlalchemy import delete, text
 
 from campfire.agent.model import ModelGateway
-from campfire.agent.runtime import RunEvent, RunRequest
+from campfire.agent.runtime import AgentRunner, RunEvent, RunRequest
 from campfire.core.config import Settings, get_settings
 from campfire.core.db import get_engine, session_scope
 from campfire.core.db.citations import Citation
@@ -85,6 +85,9 @@ class ScriptedChat:
 
     def __init__(self, *bodies: bytes) -> None:
         self._bodies = list(bodies)
+        # 请求体是 json.loads 的返回：源头就是动态 JSON，没有更精确的类型可标；
+        # 断言里按 Chat Completions 的已知形状取值。
+        # quality-floor: ignore bare-any 值来自 json.loads，类型在源头就已丢失
         self.requests: list[dict[str, Any]] = []
 
     def queue(self, *bodies: bytes) -> None:
@@ -97,11 +100,13 @@ class ScriptedChat:
         return httpx2.Response(200, headers={"content-type": "text/event-stream"}, content=body)
 
     @property
+    # quality-floor: ignore bare-any 逐条消息取自请求体的 JSON，形状由 SDK 决定
     def messages_seen(self) -> list[list[dict[str, Any]]]:
         """每次请求里模型看到的 messages。"""
         return [list(request.get("messages", [])) for request in self.requests]
 
 
+# quality-floor: ignore bare-any delta 是 Chat Completions 分片的片段，形状由上游协议决定
 def _chunk(delta: dict[str, Any], finish_reason: str | None = None) -> str:
     payload = {
         "id": "chatcmpl-e2e",
@@ -116,6 +121,7 @@ def _chunk(delta: dict[str, Any], finish_reason: str | None = None) -> str:
 def _sse(*chunks: str, usage: dict[str, int] | None = None) -> bytes:
     body = "".join(chunks)
     if usage is not None:
+        # quality-floor: ignore bare-any 组装待回放的 JSON 报文，与供应商协议同形
         tail: dict[str, Any] = {
             "id": "chatcmpl-e2e",
             "object": "chat.completion.chunk",
@@ -138,6 +144,7 @@ def _text_reply(text_: str, *, usage: dict[str, int] | None = None) -> bytes:
     )
 
 
+# quality-floor: ignore bare-any 工具实参是模型给出的 JSON，形状由各工具 schema 决定
 def _tool_call_reply(*, call_id: str, name: str, arguments: dict[str, Any]) -> bytes:
     """一次工具调用的 SSE 脚本（OpenAI 流式工具调用的形状）。"""
     return _sse(
@@ -166,7 +173,7 @@ def _settings_for_assembly() -> Settings:
     """装配用的配置：缺失的凭据补一个假值。
 
     为什么需要它（2026-10-01 实测）：`ModelGateway` 构造期要求 `TOKENHUB_API_KEY`
-    （未配置即抛 `ModelConfigurationError`），而 **GitHub CI 里没有 `.env`**，因此
+    （未配置即抛 `ModelConfigurationError`），而 GitHub CI 里没有 `.env`，因此
     真实配置的该字段是 `None`。本文件的模型传输是 `MockTransport`，不会发出任何真实
     请求，所以假凭据在这里不产生外部影响——它的作用只是让「装配」这一段能在无凭据的
     CI 上跑起来（否则本文件在 CI 里必失败，而它要验的接线恰恰与凭据无关）。
@@ -202,14 +209,18 @@ def _install_production_runner(gateway: ModelGateway) -> None:
     composition.install(_settings_for_assembly(), gateway=gateway)
 
 
-def _current_runner(settings: Settings) -> Any:
-    """从注入点取运行器——与端点 `routes.py` 取用的是同一个口。"""
+def _current_runner(settings: Settings) -> AgentRunner:
+    """从注入点取运行器——与端点 `routes.py` 取用的是同一个口。
+
+    返回类型写精确的 `AgentRunner` 而不是 `Any`：`assembly.get_runner` 的签名就是它，
+    写成 `Any` 会让下面每处调用点都失去检查（例如 `runner.run(request)` 的参数形状）。
+    """
     from campfire.surfaces.consult import assembly
 
     return assembly.get_runner(settings)
 
 
-async def _collect(runner: Any, request: RunRequest) -> list[RunEvent]:
+async def _collect(runner: AgentRunner, request: RunRequest) -> list[RunEvent]:
     return [event async for event in runner.run(request)]
 
 
@@ -242,7 +253,7 @@ def _database_is_reachable_sync() -> bool:
     """本机 PostgreSQL 是否可达（同步探测，供 session 级 guard 用）。
 
     为什么需要它：本文件的全部用例都要真实数据库（引用索引与会话表）。没有数据库时
-    ——例如 GitHub CI 的当前配置——应当**明确跳过**，而不是让 fixture 在收集后抛
+    ——例如 GitHub CI 的当前配置——应当明确跳过，而不是让 fixture 在收集后抛
     `RuntimeError` 把整批用例变成 ERROR。ERROR 与 skip 的区别是判读者要的：前者看起来
     像「代码坏了」，后者是「环境不满足」，而 CI 的输出会被很多人看到。
 
@@ -271,10 +282,10 @@ def _require_database() -> None:
 
     为什么用 autouse fixture 而不是别的写法：
 
-    - `@pytest.mark.skipif` 的条件在**模块导入期**求值，而本仓的
+    - `@pytest.mark.skipif` 的条件在模块导入期求值，而本仓的
       `conftest.pytest_configure` 会把 `localhost` 归一成 `127.0.0.1` 并清
       `get_settings` 缓存——导入期读到的是归一之前的配置。
-    - 在本文件里定义 `pytest_collection_modifyitems` **不会生效**（实测）：
+    - 在本文件里定义 `pytest_collection_modifyitems` 不会生效（实测）：
       pytest 只从 conftest 与插件收集钩子，测试模块里的同名函数不是钩子。
       这正是我第一版尝试失败的原因（5 条用例仍是 ERROR/FAILED，没有 skip）。
 
