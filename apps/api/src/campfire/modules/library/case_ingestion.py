@@ -1,6 +1,6 @@
 """案例摄取：把上游案例包（manifest + L1 叙事 + L2 卡片）切分、嵌入、写入。
 
-职责：按公共案例库第 4、6 节读一个案例包，校验后把卡片与叙事写进条目表与节点表（同事务）。
+职责：按公共案例库第 4、6 节读一个案例包，校验后把卡片与叙事写进条目表与节点表，不可分块写进人工处理队列（同事务）。
 边界：只做摄取，不暴露服务端点；manifest 缺字段或卡片越界整包拒绝，不做部分导入。
 参考：docs/技术设计/technical-details/公共案例库.md 第 2、4、6 节；docs/技术设计/technical-details/RAG策略.md 第 1.3、2、7 节；细节见 `ingest_case_package` 的 docstring。
 """
@@ -35,6 +35,10 @@ from campfire.modules.library.ingestion import (
     IngestionError,
     embed_texts,
     parse_frontmatter,
+)
+from campfire.modules.library.manual_review import (
+    delete_manual_reviews,
+    record_manual_reviews,
 )
 from campfire.modules.library.models import (
     LIBRARY_CASE,
@@ -81,7 +85,9 @@ class CaseIngestionResult:
     cards_written: int = 0
     #: 写入的叙事节点数（按五节切分）。
     narrative_nodes: int = 0
-    #: 因超限且不可分而未嵌入的块数——它们进人工处理队列（不静默截断）。
+    #: 因超限且不可分而未嵌入的叙事块数——它们已逐块落进人工处理队列
+    #: （`campfire_manual_review`，见 `manual_review.record_manual_reviews`），不静默截断。
+    #: 卡片超限不在此列：它整包拒绝（`_assert_cards_within_limits`），不落复核件。
     needs_manual_review: int = 0
     #: 逐块的定位信息，便于撤下时回溯。
     locators: list[str] = field(default_factory=list)
@@ -434,7 +440,10 @@ async def ingest_case_package(
             # 生效的机制（`withdrawal.py` 同事务删节点），而「上游重新交付同一份内容」
             # 是最常见的重交付形态。在此直接返回会把历史脏数据或旁路写入的残留节点
             # 一直留在库里，等某条取数路径读到；清理本身仍在跳过语义内——不嵌入、不写节点。
+            # 复核件是同一批投影的一部分（不能嵌入的块），随节点一起清掉：条目已撤下，
+            # 待处理的正文没有意义，留着反而把撤下内容的摘录继续留在库里。
             await session.execute(delete(RetrievedNode).where(RetrievedNode.node_id.like(f"{existing.id}:%")))
+            await delete_manual_reviews(session, library=LIBRARY_CASE, item_id=existing.id)
         return CaseIngestionResult(
             source_path=source_path,
             item_id=str(existing.id),
@@ -484,6 +493,9 @@ async def ingest_case_package(
     # 这一步对已撤下条目同样执行：撤下的承诺是「该条目没有检索节点」，重跑顺手清掉
     # 任何残留（历史脏数据或旁路写入），而不是把它们留在库里等某条取数路径读到。
     await session.execute(delete(RetrievedNode).where(RetrievedNode.node_id.like(f"{item_id}:%")))
+    # 复核件与节点同生共死：两者都是该条目在存储层的投影，一次重摄取要么一起换掉、
+    # 要么一起回滚。删在插入之前，因此「上一次有不可分块、这一次没有」时队列也会清空。
+    await delete_manual_reviews(session, library=LIBRARY_CASE, item_id=item.id)
 
     if item.withdrawn:
         # 已撤下的条目不重建节点：撤下在向量路上唯一生效的机制就是「节点不存在」，
@@ -543,13 +555,25 @@ async def ingest_case_package(
         )
     await session.flush()
 
+    # 不可分块逐块落进人工处理队列：这是「不静默截断」的实质落点。只给一个条数，
+    # 运维既不知道是哪个包的哪一节，也拿不到正文与原因（RAG 策略第 1.2 节）。
+    # 计数取写入函数的返回值而不是 `len(manual)`：CLI 打印的「已记入队列 N 条」
+    # 因此与实际落库行数同源。
+    manual_reviews = await record_manual_reviews(
+        session,
+        library=LIBRARY_CASE,
+        item_id=item.id,
+        source_path=source_path,
+        chunks=manual,
+    )
+
     return CaseIngestionResult(
         source_path=source_path,
         item_id=item_id,
         external_key=manifest.external_key,
         cards_written=len(cards),
         narrative_nodes=len(embeddable_narrative),
-        needs_manual_review=len(manual),
+        needs_manual_review=manual_reviews,
         locators=[card["title"] for card in cards] + [chunk.locator for chunk in embeddable_narrative],
     )
 
