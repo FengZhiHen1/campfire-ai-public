@@ -14,7 +14,17 @@ __pycache__/
 .wfctl_identity.json
 
 # 环境变量（含密钥）
+#
+# `.env` 只覆盖那一个文件名，而生产用的是 `.env.prod`（见 docker-compose.prod.yml）
+# ——实测 `.env.prod` 不被 `.env` 这条规则命中，会以未跟踪文件的形式被 `git add .`
+# 带进提交，而它装的是真实数据库口令与 SuperTokens/TokenHub 凭据。
+# 因此按**模式**忽略所有 `.env*`，再显式放行模板（`!` 规则）：
+# 模板里只有占位符，必须能提交，否则别人无法照着配。
 .env
+.env.*
+# 放行两个模板：`.env.example`（开发）与 `.env.example.prod`（生产）。
+!.env.example
+!.env.example.prod
 
 # 微信小程序本地私有配置（含 appid）
 **/mini-program/project.private.config.json

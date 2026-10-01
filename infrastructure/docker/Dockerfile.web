@@ -1,0 +1,62 @@
+# 前端镜像：Node 构建 → Nginx 静态服务。
+#
+# 三条决定与理由：
+#
+# 1. **构建上下文必须是仓库根，且要包含 `docs/`**。`apps/web/package.json` 的
+#    `build` 第一步是 `node scripts/sync-tokens.mjs`，它读 `docs/design/tokens.css`
+#    并逐字节写 `apps/web/src/shared/styles/tokens.css`。只把 `apps/web` 当上下文会
+#    在第一步就失败（实测缺 docs 即失败）。
+#
+# 2. **`VITE_API_DOMAIN` 是构建期 ARG，不是运行期环境变量**。它经 `import.meta.env`
+#    被内联进产物（实测现有 dist 里是字面量 `localhost:8000`）。因此「同一个镜像换环境
+#    变量跑」对它是无效的——必须按目标环境重新构建。业务请求本身走**同源相对路径**，
+#    所以生产只要同源反代，这个值填对外站点地址即可（用于 supertokens-web-js 的 init）。
+#
+# 3. **静态资源用独立 Nginx**，与反代是同一个 nginx.conf：
+#    生产形态下只有一个对外入口，因此反代与静态由同一份配置承担。这样 SPA 的
+#    `try_files` 与 `/api` 反代的优先级只有一个地方定义，不会两份配置打架。
+
+# --- 构建层 ---
+FROM node:24-slim AS build
+
+# corepack 让 pnpm 版本由根 package.json 的 `packageManager` 字段决定，
+# 而不是在这里另写一个版本号——两处写版本必然漂移。
+RUN corepack enable
+
+WORKDIR /repo
+
+# 只放清单：依赖层在源码改动时命中缓存。
+# pnpm-workspace.yaml 必须一起进——`pnpm install` 按它解析工作空间。
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY apps/web/package.json apps/web/
+
+RUN pnpm install --frozen-lockfile
+
+# 源码与构建期需要的仓库根文件（见文件头第 1 条）。
+COPY apps/web apps/web
+COPY docs/design docs/design
+
+# 构建期变量（见文件头第 2 条）。默认值只是占位，生产必须在构建时显式传入。
+ARG VITE_API_DOMAIN=http://localhost:8000
+ENV VITE_API_DOMAIN=${VITE_API_DOMAIN}
+
+RUN pnpm --dir apps/web build
+
+# --- 运行层 ---
+FROM nginx:1.27-alpine AS runtime
+
+# 反代 + 静态由同一份配置承担（见文件头第 3 条）。
+# 用 `nginx.conf` 整体替换而不是往 conf.d 里塞片段：需要的每一项
+# （events/http 段、SSE 的 buffering 设置、gzip）都在同一个文件里可见。
+COPY infrastructure/docker/nginx.conf /etc/nginx/nginx.conf
+
+COPY --from=build /repo/apps/web/dist /usr/share/nginx/html
+
+# TLS 证书目录的挂载点。仓库里**没有任何证书**（.gitignore 已忽略
+# `**/nginx/ssl/`、`*.pem`、`*.key`、`*.crt`），由运维在部署时挂载。
+# 不创建它也不会导致启动失败——nginx.conf 里 TLS 相关的 server 块默认关闭。
+VOLUME ["/etc/nginx/ssl"]
+
+EXPOSE 80 443
+
+CMD ["nginx", "-g", "daemon off;"]

@@ -213,6 +213,52 @@ def test_agent_assembly_probe_reports_ok_only_when_wired(monkeypatch: pytest.Mon
     monkeypatch.setattr(consult_assembly, "_runner_factory", None)
 
 
+def test_falkordb_probe_reports_unavailable_instead_of_raising(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """图库不可达时探针必须**返回**不可用，而不是抛异常。
+
+    这条锁的是一个真实缺陷（2026-10-01 在容器里实测到）：`FalkorDB(...)` 的构造函数
+    **本身就发网络 I/O**，图库挂掉时它在构造期就抛 `ConnectionError`。第一版把构造写在
+    `try` 之外，于是 `/readyz` 在图库挂掉时回 **500**（未捕获异常）而不是
+    「503 且 falkordb 项不可用」——恰好毁掉探针存在的意义：让健康检查如实报告，
+    而不是把自己炸掉。
+
+    判别性：把 `FalkorDB(...)` 的构造移回 `try` 之外，本用例失败（抛异常而非返回结论）。
+    """
+    import asyncio
+
+    def exploding_falkordb(*_args: object, **_kwargs: object) -> object:
+        raise ConnectionRefusedError("图库不可达（测试替身）")
+
+    monkeypatch.setattr(main_module, "FalkorDB", exploding_falkordb)
+
+    result = asyncio.run(main_module.check_falkordb(get_settings_for_probe()))
+
+    assert result.status is Status.UNAVAILABLE
+    assert result.name == "falkordb"
+    assert "ConnectionRefusedError" in result.detail
+
+
+def test_readiness_endpoint_is_503_not_500_when_a_probe_explodes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """任何探针炸掉时端点都必须是 503（可判读的结论），而不是 500。
+
+    部署系统只看状态码：503 表示「暂时不可服务，别给流量」，500 表示「服务自己坏了」。
+    把「依赖不可达」报成 500 会让编排层与告警误判方向。
+
+    这里覆盖 `falkordb` 这一项（它是实际踩到的那个），但断言的是端点的整体行为。
+    """
+    _install_probes(monkeypatch, failing="falkordb")
+
+    with TestClient(main_module.app) as client:
+        response = client.get("/readyz")
+
+    assert response.status_code == 503
+    assert response.json()["components"]["falkordb"]["status"] == "unavailable"
+
+
 def get_settings_for_probe() -> Settings:
-    """探针只读 `Settings` 的少数字段；这里给一份默认配置，不依赖宿主机 .env 的取值。"""
+    """探针只读 `Settings` 的少数字段；给一份默认配置，不依赖宿主机 .env 的取值。"""
     return Settings(_env_file=None)  # type: ignore[call-arg]  # `_env_file` 是 BaseSettings 的公开参数，合成签名里没有它
