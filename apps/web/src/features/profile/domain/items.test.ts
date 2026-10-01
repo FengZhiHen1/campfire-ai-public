@@ -15,7 +15,7 @@ import { describe, expect, it } from 'vitest';
 
 import type { ProfileItem } from '../../../shared/types/profile';
 import { DOMAIN_LABELS, DOMAIN_ORDER, domainLabel, toProfileDomain } from './domains';
-import { freshnessLabel, groupByDomain, isCandidate, isStale, itemMetaLine, originLabel } from './items';
+import { groupByDomain, isCandidate, isStale, itemMetaLine, originLabel } from './items';
 
 /** 造一条条目；只覆盖断言需要的字段，其余给契约形状的默认值。 */
 function item(overrides: Partial<ProfileItem> = {}): ProfileItem {
@@ -70,10 +70,18 @@ describe('档案条目呈现规则', () => {
     expect(originLabel('ai_inference')).toBe('AI 归纳');
   });
 
-  it('时效措辞只在需要提醒时出现', () => {
-    expect(freshnessLabel('current')).toBeNull();
-    expect(freshnessLabel('stale')).toBe('已降权');
-    expect(freshnessLabel('historical')).toBe('已更正');
+  it('元信息行只写来源 + 确认状态 + 时间，不写时效措辞（档案页第 23 行）', () => {
+    // 判别性：判据是「`.lr-meta` 不含时效措辞」，因此三种时效取值都要断言。
+    // 曾把 `已降权` 追加进本行尾部，使一条降权候选行同时出现两处「已降权」
+    // （行首标一处、本行尾部一处）；只断言 `historical` 会漏掉那条。
+    expect(itemMetaLine(item({ freshness: 'stale' }))).not.toContain('已降权');
+    expect(itemMetaLine(item({ freshness: 'historical' }))).not.toContain('已更正');
+    expect(itemMetaLine(item({ freshness: 'current' }))).not.toContain('已降权');
+    // 别把时效去掉时连内容一起去掉：来源仍在，未确认时确认状态仍在。
+    const candidate = itemMetaLine(item({ confirmation: 'unconfirmed', last_confirmed_at: null, freshness: 'stale' }));
+    expect(candidate).toContain('你说过');
+    expect(candidate).toContain('待确认');
+    expect(candidate).toContain('记录');
   });
 
   it('候选判定看 confirmation 而不是来源是否属推断', () => {

@@ -95,6 +95,17 @@ function firstButtonNamed(name: string): HTMLElement {
   return first;
 }
 
+/**
+ * 数一段文本里出现某短语的次数（重叠不重复计）。
+ *
+ * 为什么不用 `getByText` 的存在性：「同一句话在页面上出现几次」正是本页一条验收点
+ * （时效措辞曾经两个出口），而 `getByText('已降权')` 对「标一处 + 元信息行尾部一处」
+ * 依然通过——默认匹配是整元素文本相等，长串里的子串不算命中。要数次数就只能数文本。
+ */
+function countOccurrences(haystack: string, needle: string): number {
+  return haystack.split(needle).length - 1;
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
 });
@@ -119,10 +130,10 @@ describe('档案页 · 加载与候选层不变量', () => {
     expect(within(summary).queryByText('提前知道结束时间')).toBeNull();
   });
 
-  it('P0 候选 + 已降权：该行出「已降权」标且描述默认收起，展开后可见（档案页第 25 行）', async () => {
+  it('P0 候选 + 已降权：该行只出现一处「已降权」标，且元信息行不含时效措辞（档案页第 23、25、33 行）', async () => {
     // 判别性：判据与呈现都必须落在候选行上。修复前标与折叠挂在稳定行——而稳定层的
     // isStale 恒为假（服务端按 freshness=current 取稳定层），那是一整条死分支。
-    // 把标与折叠放回稳定行后，本用例三条断言全红：候选行没有标、描述直接可见、
+    // 把标与折叠放回稳定行后，本用例的标与折叠断言全红：候选行没有标、描述直接可见、
     // 也没有「展开内容」入口。
     const staleCandidate = item({
       item_id: 'c1',
@@ -135,21 +146,59 @@ describe('档案页 · 加载与候选层不变量', () => {
     const p = port({
       listItems: vi.fn(async () => ({ items: [item()], candidates: [staleCandidate], next_cursor: null })),
     });
-    renderPage(p);
+    // 这个容器只装本用例渲染的页面：数次数时才不会被上个用例的残留 DOM 干扰。
+    const { container } = renderPage(p);
 
     const group = (await screen.findByText(/^待确认（1）$/)).closest('details') as HTMLElement;
     const row = within(group).getByText('提前知道结束时间').closest('article') as HTMLElement;
 
-    // 「已降权」标是 .tag.meta（与切换 chip 上的「已归档」标同一契约类）；
-    // lr-meta 里的时效措辞是长串的一部分，不会冒充这个标。
+    // 「已降权」标是 .tag.meta（与切换 chip 上的「已归档」标同一契约类）。
     const badge = within(row).getByText('已降权');
     expect(badge.className).toContain('tag');
     expect(badge.className).toContain('meta');
+
+    // 直接验收点：数是 1 不是「存在」。把时效措辞加回 itemMetaLine 后这里变 2 而变红。
+    expect(countOccurrences(row.textContent ?? '', '已降权')).toBe(1);
+    expect(countOccurrences(container.textContent ?? '', '已降权')).toBe(1);
+
+    // 元信息行只留来源 + 确认状态 + 时间（档案页第 23 行）。
+    const metaText = row.querySelector('.lr-meta')?.textContent ?? '';
+    expect(metaText).toContain('AI 归纳');
+    expect(metaText).not.toContain('已降权');
+    expect(metaText).not.toContain('已更正');
 
     // 默认收起：描述不以正文出现，只给一个展开入口；点开后描述可见。
     expect(within(row).queryByText('出行前先说清流程')).toBeNull();
     fireEvent.click(within(row).getByRole('button', { name: '展开内容' }));
     expect(await within(row).findByText('出行前先说清流程')).toBeDefined();
+  });
+
+  it('P1 「已更正」标无渲染出口：historical 条目到不了任何行（档案页第 33、62 行的已知缺口）', async () => {
+    // 这不是「设计不要这个标」，而是取数层就不返回 historical 条目：
+    // `repository.list_items` 有 `freshness != historical` 与 `superseded_by is null`
+    // 两道条件，而纠正同时置这两个字段（`mark_superseded` → freshness + superseded_by；
+    // `correct_item` 另写新条目的 supersedes）。参数 `include_candidates` 只放宽稳定层过滤，
+    // 放宽不了这两道——因此它只可能是「防回归」断言，不构成实现证据。
+    // 待裁决：设计第 33/62 行要求历史条目的行首「已更正」标，当前无渲染出口；
+    // 要落地得先有取数通道（如显式请求历史条目的开关），不能在界面凭空造标。
+    const historical = item({
+      item_id: 'h1',
+      topic: '旧的说法',
+      description: '旧描述',
+      origin: 'user_statement',
+      confirmation: 'confirmed',
+      freshness: 'historical',
+      superseded_by: 'i2',
+    });
+    const p = port({
+      listItems: vi.fn(async () => ({ items: [item(), historical], candidates: [], next_cursor: null })),
+    });
+    const { container } = renderPage(p);
+    await screen.findByText('关于 TA 的当前认识');
+
+    // 结果：该页根本收不到 historical 条目，「已更正」无处出现。
+    expect(container.textContent ?? '').not.toContain('已更正');
+    expect(countOccurrences(container.textContent ?? '', '已更正')).toBe(0);
   });
 
   it('P1 对象为空 → 空态引导新建对象，不显示内容区', async () => {

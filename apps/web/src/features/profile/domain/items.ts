@@ -1,8 +1,9 @@
 /**
  * 模块: features/profile/domain/items
- * 职责: 档案条目的呈现规则——来源/确认/时效措辞、候选层与稳定层的划分、按领域分组
+ * 职责: 档案条目的呈现规则——来源措辞、候选与降权判定、按领域分组
  * 数据来源:
- *   - docs/design/pages/档案页.md: MUST — 第 23～26 行（分组、待确认分组、降权与已更正标）
+ *   - docs/design/pages/档案页.md: MUST — 第 23 行（`.lr-meta` = 来源类型 + 确认状态 + 时间）、
+ *     第 25 行（降权条目的行首标与描述折叠）
  *   - docs/技术设计/面/profile/档案面HTTP契约.md: MUST — 第 3 节（items 与 candidates 分开返回）
  *   - docs/技术设计/technical-details/个性化档案.md: MUST — 第 2 节条目字段、第 3 节时效
  * 边界:
@@ -11,9 +12,10 @@
  * 禁止行为:
  *   - 禁止在界面层自行判断「哪条算候选」（候选由返回结构给出，见下方 isCandidate 的说明）
  *   - 禁止把未确认条目混进摘要（候选层视觉不变量，AC-18）
+ *   - 禁止把时效措辞写进元信息行（`已降权`/`已更正` 是 `.tag.meta` 标，不是 `.lr-meta` 的内容）
  */
 
-import type { ProfileFreshness, ProfileItem, ProfileOrigin } from '../../../shared/types/profile';
+import type { ProfileItem, ProfileOrigin } from '../../../shared/types/profile';
 import { DOMAIN_ORDER, type ProfileDomain, toProfileDomain } from './domains';
 
 /** 来源类型的界面措辞（档案页第 50 行的六类映射，逐字使用）。 */
@@ -32,18 +34,6 @@ export function originLabel(origin: ProfileOrigin): string {
 }
 
 /**
- * 时效措辞：只在需要提醒时返回，`current` 返回 null。
- *
- * 为什么 `current` 不出标：每条都挂一个「当前」徽章等于没有信息量，
- * 而「已降权」「已更正」才是需要使用者留意的事实。
- */
-export function freshnessLabel(freshness: ProfileFreshness): string | null {
-  if (freshness === 'stale') return '已降权';
-  if (freshness === 'historical') return '已更正';
-  return null;
-}
-
-/**
  * 是否为候选（待确认）条目。
  *
  * 判据是 `confirmation === 'unconfirmed'`，不是 origin 是否属推断：
@@ -55,7 +45,7 @@ export function isCandidate(item: ProfileItem): boolean {
   return item.confirmation === 'unconfirmed';
 }
 
-/** 是否为已降权（90 天）条目：行首出「已降权」标，描述默认折叠。 */
+/** 是否为已降权（90 天）条目：行组件据此出行首「已降权」标并把描述默认折叠（档案页第 25 行）。 */
 export function isStale(item: ProfileItem): boolean {
   return item.freshness === 'stale';
 }
@@ -93,6 +83,11 @@ export function groupByDomain(items: readonly ProfileItem[]): DomainGroup[] {
 /**
  * 组成条目行的元信息行：来源 + 确认状态 + 时间。
  *
+ * 三者就是设计给 `.lr-meta` 的全部内容（档案页第 23 行），因此这里不收时效：
+ * `已降权` 是条目行首的 `.tag.meta` 标（第 25、33 行），由 `isStale` 在行组件里判。
+ * 时效措辞曾一度追加在本行尾部，使一条降权候选行同时出现两处「已降权」——
+ * 同一事实两处出口，且违反第 23 行对 `.lr-meta` 的定义。
+ *
  * 时间用 `last_confirmed_at`（最近确认时间，档案页第 19 行：「本人自述（经监护人转述）· 10-02 确认」）；
  * 未确认条目没有确认时间，改用 `first_recorded_at` 并标成记录时间——两者语义不同，
  * 不能共用一句「10-02」。
@@ -108,8 +103,6 @@ export function itemMetaLine(item: ProfileItem): string {
     parts.push(`${formatMonthDay(item.first_recorded_at)} 记录`);
   }
   if (isCandidate(item)) parts.push('待确认');
-  const freshness = freshnessLabel(item.freshness);
-  if (freshness !== null) parts.push(freshness);
   return parts.join(' · ');
 }
 
