@@ -54,6 +54,14 @@
 # 对象名经注入回调取（`sessions.ObjectNameReader`），因为对象归 `modules/profile`，
 # 而模块之间禁止互相 import（项目结构设计第 7 节）。
 #
+# 包级导出只放用例层与数据形状，不导出存储层函数：会话归属的存储层
+# （`session_repository`：归属行读写与 SDK 两表只读）需要它的调用方直接 import 该模块
+# （`sessions.py` 即如此）。判据是包级名字看不出定义层次——`from campfire.modules.accounts
+# import X` 里 X 是从用例层还是存储层来的无从分辨，再导出存储层函数就等于给
+# 「绕过用例服务直连仓储」开出与 `import <模块>` 同效的第二条路（项目结构设计第 5 节：
+# 面层不直接访问数据库表，经 modules 的用例服务）。该路径由
+# `tests/test_layer_boundaries.py` 的面层守门规则盯着。
+#
 # 仍缺：注册复写（把邀请码校验注入身份服务的 sign-up API）、人工重置、账号注销编排，
 # 以及注销墓碑（归 `core/auth`）。它们随 SDK 装配与 CLI 子命令落地。
 #
@@ -147,18 +155,6 @@ from campfire.modules.accounts.session_items import (
     build_messages,
     build_preview,
     build_title,
-)
-from campfire.modules.accounts.session_repository import (
-    LIST_SCAN_MAX_ITEMS,
-    SessionListRow,
-    delete_session_owners_for_account,
-    get_session_owner,
-    insert_session_owner,
-    is_session_owned_by,
-    list_session_owners,
-    read_all_items,
-    read_first_items,
-    read_last_items,
 )
 from campfire.modules.accounts.sessions import (
     ObjectNameReader,
@@ -257,17 +253,6 @@ __all__ = [
     "build_messages",
     "build_preview",
     "build_title",
-    # 会话归属的存储层（归属行读写 + SDK 两表只读）
-    "LIST_SCAN_MAX_ITEMS",
-    "SessionListRow",
-    "delete_session_owners_for_account",
-    "get_session_owner",
-    "insert_session_owner",
-    "is_session_owned_by",
-    "list_session_owners",
-    "read_all_items",
-    "read_first_items",
-    "read_last_items",
     # 会话归属的用例层
     "ObjectNameReader",
     "SessionAccountPurger",
