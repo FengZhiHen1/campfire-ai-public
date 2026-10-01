@@ -49,13 +49,23 @@ FROM nginx:1.27-alpine AS runtime
 # 用 `nginx.conf` 整体替换而不是往 conf.d 里塞片段：需要的每一项
 # （events/http 段、SSE 的 buffering 设置、gzip）都在同一个文件里可见。
 COPY infrastructure/docker/nginx.conf /etc/nginx/nginx.conf
+# 应用路由表（80 与 443 共用）。放在镜像里而不是挂载：它是仓库产物（路由契约），
+# 与 nginx.conf 同级变化；挂载会让「哪个版本的路由在生产」变成需要额外核对的事。
+COPY infrastructure/docker/app-locations.conf /etc/nginx/app-locations.conf
 
 COPY --from=build /repo/apps/web/dist /usr/share/nginx/html
 
 # TLS 证书目录的挂载点。仓库里**没有任何证书**（.gitignore 已忽略
 # `**/nginx/ssl/`、`*.pem`、`*.key`、`*.crt`），由运维在部署时挂载。
-# 不创建它也不会导致启动失败——nginx.conf 里 TLS 相关的 server 块默认关闭。
+# 不创建它也不会导致启动失败——本文件不含 443 的 server 块，
+# 它由挂载进来的 `ssl.d` 片段提供（见 nginx.conf 文末说明）。
 VOLUME ["/etc/nginx/ssl"]
+# TLS 启用片段目录。空目录时通配 include 匹配零个文件，nginx 照常启动并提供 HTTP。
+VOLUME ["/etc/nginx/ssl.d"]
+# 80→443 跳转片段目录。空目录 = 不跳转（443 未放行时站点仍可用）。
+VOLUME ["/etc/nginx/redirect.d"]
+# ACME HTTP-01 挑战的 webroot：certbot 往这里写验证文件，nginx 直接读（不经后端）。
+VOLUME ["/var/www/certbot"]
 
 EXPOSE 80 443
 
