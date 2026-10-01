@@ -24,6 +24,8 @@ from campfire.modules.library.ingestion import (
     ingest_file,
 )
 from campfire.modules.library.models import LIBRARIES, LIBRARY_CASE, LIBRARY_KNOWLEDGE
+from campfire.modules.library.retrieval import RetrievalError
+from campfire.modules.library.withdrawal import WithdrawalError, withdraw_item
 
 _USAGE = """campfire.cli —— 本地运维入口（不暴露成服务端点）
 
@@ -32,6 +34,8 @@ _USAGE = """campfire.cli —— 本地运维入口（不暴露成服务端点）
   ingest  <路径>         摄取处理好的 Markdown 文件到资料库
   ingest  <案例包目录> --library case
                          摄取上游案例包（manifest.json + L1 叙事 + L2 卡片）
+  withdraw <库别> <条目id> [--reason <原因>]
+                         撤下一个条目：打 withdrawn 标记并删除其检索节点（不可逆）
 
 运营子命令（见 docs/技术设计/decisions/运营操作经CLI.md）：
   invite issue          签发一张一次性邀请码
@@ -44,6 +48,7 @@ _USAGE = """campfire.cli —— 本地运维入口（不暴露成服务端点）
   python -m campfire.cli convert corpus/guide.html --out corpus/guide.md
   python -m campfire.cli ingest corpus/guide.md --source "WHO 2024" --scope "学龄前儿童"
   python -m campfire.cli ingest exports/case-extraction/2026-05-25_1448_pace/ --library case
+  python -m campfire.cli withdraw knowledge 8f3a... --reason "上游撤回该指南"
   python -m campfire.cli invite issue
   python -m campfire.cli account reset 8f3a... --password '新密码'
   python -m campfire.cli account delete 8f3a... --confirm 8f3a...
@@ -94,6 +99,15 @@ def _build_parser() -> argparse.ArgumentParser:
     ingest.add_argument("--title", default=None, help="标题；缺省用 frontmatter 的 title，再缺省用文件名")
     ingest.add_argument("--keywords", default="", help="字面路关键词，空格分隔（覆盖 frontmatter）")
     ingest.add_argument("--aliases", default="", help="字面路别名，空格分隔（覆盖 frontmatter）")
+
+    # 撤下（RQ-KB-04）与 ingest 同处这个入口：资料库面只有读端点，撤下不在 HTTP 面上。
+    # quality-floor: ignore todo-residue 此处引用的是待办登记文档本身，不是未处理的代码残留
+    # 依据是资料与案例检索第 4 节，以及 docs/TODO.md 的资料库面一条（撤下与导入并列为
+    # CLI 动作），因此它不进 operator 的运营子命令组——那组是账号与邀请码的运营操作。
+    withdraw = sub.add_parser("withdraw", help="撤下一个条目：打 withdrawn 标记并删除其检索节点（不可逆）")
+    withdraw.add_argument("library", choices=sorted(LIBRARIES), help="库别：knowledge（资料库）或 case（案例库）")
+    withdraw.add_argument("item_id", help="条目 id（UUID）")
+    withdraw.add_argument("--reason", default=None, help="撤下原因（RQ-KB-04 要求记录时间与原因）")
 
     # 运营子命令（邀请码、账号）由 operator 模块提供——见该模块的说明。
     add_operator_subcommands(sub)
@@ -307,11 +321,57 @@ async def _run_ingest_knowledge(args: argparse.Namespace) -> int:
     return 0
 
 
+async def _run_withdraw(args: argparse.Namespace) -> int:
+    """执行撤下：打 `withdrawn` 标记并删除该条目的检索节点（`RQ-KB-04`）。
+
+    会话与事务边界照 `_run_ingest_knowledge`：`session_scope` 正常退出即提交，
+    标记与节点删除因此落在同一个提交点上（否则会出现「节点还在、条目已被过滤」
+    或反过来的窗口，见 `withdraw_item` 的说明）。
+
+    本命令只改条目表、删节点表，不做嵌入，因此不建同步引擎与向量库——那两样是
+    摄取路径为嵌入写入才需要的。
+
+    幂等由 `withdraw_item` 承担：本层如实呈现 `already_withdrawn` 与
+    `nodes_deleted`，不改写「首次时间与原因不可覆盖」的语义。
+
+    Args:
+        args: 含 `library`、`item_id`、`reason` 的命名空间。
+
+    Returns:
+        退出码：0 成功（含重复撤下）；1 条目不存在、条目 id 不是合法 UUID。
+        非法库别由 argparse 的 choices 在解析层以 2 退出，不经过本函数。
+    """
+    settings = get_settings()
+    try:
+        async with session_scope(settings) as session:
+            result = await withdraw_item(
+                session,
+                library=args.library,
+                item_id=args.item_id,
+                reason=args.reason,
+            )
+    except (WithdrawalError, RetrievalError) as exc:
+        print(f"撤下失败：{exc}", file=sys.stderr)
+        return 1
+
+    print(f"已撤下：{result.library}/{result.item_id}")
+    print(f"  删除检索节点：{result.nodes_deleted}")
+    if result.already_withdrawn:
+        # 幂等不是错误，但必须可辨：重跑脚本的运维要知道这次没有改动状态。
+        print(
+            "  ⚠ 该条目此前已撤下：撤下时间与原因保持首次的值（本次只清理了残留节点）",
+            file=sys.stderr,
+        )
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     """入口点。返回退出码而不是 `sys.exit`，便于测试直接断言。
 
-    退出码：0 成功、1 失败（含参数错误）、2 未实现的子命令。失败时说明原因，
-    不静默成功——摄取失败的可见性是设计要求的（「不留下『一半进去了』的静默状态」）。
+    退出码：0 成功、1 本文件各命令自己捕获的失败（含领域拒绝）、2 未实现的子命令。
+    参数层面的错误（缺参数、未知参数、非法取值）由 argparse 自己以 2 退出，
+    不经过本函数。失败时说明原因，不静默成功——摄取失败的可见性是设计要求的
+    （「不留下『一半进去了』的静默状态」）。
     """
     parser = _build_parser()
     args = parser.parse_args(argv if argv is not None else sys.argv[1:])
@@ -321,6 +381,9 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "ingest":
         return asyncio.run(_run_ingest(args))
+
+    if args.command == "withdraw":
+        return asyncio.run(_run_withdraw(args))
 
     # 运营子命令（邀请码、账号）——它们的实现与解析在 `cli/operator.py`，
     # 与摄取子命令互不相关，各自演进。返回 None 表示「不是运营命令」。
