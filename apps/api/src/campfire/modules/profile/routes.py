@@ -540,11 +540,14 @@ async def list_items(
     而 `items` 才是被游标分页的那一条流。把两者混在一个游标里需要「合并后的
     原始顺序」，而用例层的返回结构已经把它们分成两组、丢失了交错关系。
 
-    已被取代的历史条目默认不返回。`include_superseded = true` 时它们随 `items`
-    返回（带 `freshness = historical` 与互指的 `superseded_by`／`supersedes`），
-    由档案页出行首「已更正」标——与 `items` 同一条流、同一个排序，因此历史条目
-    按既有的首次记录时间倒序插在它原本的位置上。这个开关只放宽「已被取代」，
-    `confirmation = rejected` 的条目一律不返回，历史回看不适用于被否定的内容。
+    已被取代的历史条目默认不返回。`include_superseded = true` 时它们一并返回
+    （带 `freshness = historical` 与互指的 `superseded_by`／`supersedes`），
+    由档案页出行首「已更正」标。归组由用例层的 `_group` 决定，不是「历史一律进
+    `items`」：历史条目的新鲜度先按 `current` 归一，再走落层判据——未确认的系统推断
+    即便已被取代也归 `candidates`（`AC-18`），已确认或非推断来源的才归 `items`。
+    落在 `items` 里的历史条目与 `items` 同一条流、同一个排序，按既有的首次记录时间
+    倒序插在它原本的位置上。这个开关只放宽「已被取代」，`confirmation = rejected`
+    的条目一律不返回，历史回看不适用于被否定的内容。
     `include_candidates` 管的是另一条轴（候选层是否返回），两者不互斥。
     """
     # 游标是本面自定的不透明串（十进制偏移量），只由本面产生、只被本面消费。
