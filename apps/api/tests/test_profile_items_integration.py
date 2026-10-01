@@ -22,7 +22,8 @@
 10. **摘要 `possibly_stale`**：有未完成待处理记录时为真。
 11. **幂等键**：`pending_id` 唯一，重复消费不产生第二条目。
 12. **历史回看开关**：`include_superseded` 只放开「已被取代」这一条轴
-    ——`rejected` 与候选层都不受影响，注入路径不接它。
+    ——`rejected` 与候选层都不受影响，注入路径不接它；历史条目的归组按它曾属哪一层
+    （未确认的系统推断即便被取代也归 `candidates`）。
 """
 
 from __future__ import annotations
@@ -506,8 +507,8 @@ async def test_superseded_gate_is_independent_of_the_candidate_axis() -> None:
     ① 稳定侧：只开 `include_superseded` 就能回看被取代的旧条目；
     ② 候选侧：同样只开 `include_superseded` 时，被取代的**候选**仍取不到
        ——历史回看不越过候选层（未确认内容不得混进稳定列表）；
-    ③ 两个开关都开：被取代的候选也返回，且进 `items` 而不进 `candidates`
-       ——候选组是「待确认」，确认一条已被取代的条目没有意义；
+    ③ 两个开关都开：被取代的候选也返回，且归 `candidates`——它仍是未确认的
+       系统推断，`AC-18` 要求这类内容只能出现在「待确认」分组，归组不看它是否历史；
     ④ 注入路径不接这个开关：`resolve_for_context` 取不到任何历史条目
        （历史条目「此后不参与注入」）。
     """
@@ -540,7 +541,8 @@ async def test_superseded_gate_is_independent_of_the_candidate_axis() -> None:
         )
     assert [item.description for item in candidate_closed.items] == ["改写后的候选推断"]
 
-    # ③ 两条轴都开：被取代的候选返回，且不改它「未确认」的标记与本组归属。
+    # ③ 两条轴都开：被取代的候选返回，且不改它「未确认」的标记与归组
+    #    ——未确认的系统推断只能出现在「待确认」分组（`AC-18`）。
     async with session_scope(get_settings()) as session:
         candidate_open = await service.read_items(
             session,
@@ -549,10 +551,83 @@ async def test_superseded_gate_is_independent_of_the_candidate_axis() -> None:
             include_candidates=True,
             include_superseded=True,
         )
-    assert [item.description for item in candidate_open.items] == ["改写后的候选推断", "旧的候选推断"]
-    assert candidate_open.candidates == [], "已被取代的条目不得混进「待确认」分组"
-    assert candidate_open.items[1].confirmation == "unconfirmed", "历史回看不改写确认状态"
-    assert candidate_open.items[1].freshness == "historical"
+    assert [item.description for item in candidate_open.items] == ["改写后的候选推断"]
+    assert [item.description for item in candidate_open.candidates] == ["旧的候选推断"]
+    assert candidate_open.candidates[0].confirmation == "unconfirmed", "历史回看不改写确认状态"
+    assert candidate_open.candidates[0].freshness == "historical"
+
+
+@pytest.mark.asyncio
+async def test_history_is_grouped_by_the_layer_it_belonged_to() -> None:
+    """历史条目的归组问「它曾属哪一层」，不问新鲜度（`AC-18` 的服务端侧保证）。
+
+    三格逐格断言，第四格是缺省路径的回归（非历史的两格由上面两条落层分流用例钉住）：
+
+    ① 既历史又未确认的系统推断 → `candidates`。修复前它被 `is_history` 短路进
+       `items`，档案页会把一条未确认的推断当完整条目区的内容呈现；
+    ② 历史且已确认（用户陈述纠正后旧条目仍是 confirmed）→ `items`：
+       档案页第 62 行的「已更正」标路径；
+    ③ 历史且未确认但属稳定来源（`document`）→ `items`：落层判据（第 3 节）把
+       `third_party_report` 与 `document` 放进稳定层，「历史」只改新鲜度、
+       不改它曾属哪一层；这一格同时钉住「未确认一律进候选组」这个过度改法；
+    ④ 缺省路径（`include_superseded = false`）历史条目根本不出现，两组与改动前逐条相同。
+    """
+    # ① 历史 + 未确认 + 系统推断。
+    inferred_object = await _new_object(name="历史候选对象")
+    inferred_old = await _propose(inferred_object, origin="ai_inference", description="被取代的推断")
+    async with session_scope(get_settings()) as session:
+        await service.correct_item(session, account_id=_ACCOUNT, item_id=inferred_old, description="改写后的推断")
+
+    # ② 历史 + 已确认（用户陈述纠正后旧条目仍是 confirmed）。
+    stated_object = await _new_object(name="历史陈述对象")
+    stated_old = await _propose(stated_object, origin="user_statement", description="被取代的陈述")
+    async with session_scope(get_settings()) as session:
+        await service.correct_item(session, account_id=_ACCOUNT, item_id=stated_old, description="改写后的陈述")
+
+    # ③ 历史 + 未确认 + 稳定来源（document 入档即未确认，却属稳定层）。
+    document_object = await _new_object(name="历史文档对象")
+    document_old = await _propose(document_object, origin="document", description="被取代的文档条目")
+    async with session_scope(get_settings()) as session:
+        await service.correct_item(session, account_id=_ACCOUNT, item_id=document_old, description="改写后的文档条目")
+
+    async with session_scope(get_settings()) as session:
+        inferred = await service.read_items(
+            session,
+            account_id=_ACCOUNT,
+            support_object_id=inferred_object,
+            include_candidates=True,
+            include_superseded=True,
+        )
+        stated = await service.read_items(
+            session,
+            account_id=_ACCOUNT,
+            support_object_id=stated_object,
+            include_candidates=True,
+            include_superseded=True,
+        )
+        document = await service.read_items(
+            session,
+            account_id=_ACCOUNT,
+            support_object_id=document_object,
+            include_candidates=True,
+            include_superseded=True,
+        )
+        # ④ 缺省路径：历史条目根本不出现（`include_superseded = false`），与改动前逐条相同。
+        default = await service.read_items(session, account_id=_ACCOUNT, support_object_id=inferred_object)
+
+    assert [item.description for item in inferred.items] == ["改写后的推断"]
+    assert [item.description for item in inferred.candidates] == ["被取代的推断"]
+    assert inferred.candidates[0].freshness == "historical"
+    assert inferred.candidates[0].confirmation == "unconfirmed"
+
+    assert [item.description for item in stated.items] == ["改写后的陈述", "被取代的陈述"]
+    assert stated.candidates == []
+
+    assert [item.description for item in document.items] == ["改写后的文档条目", "被取代的文档条目"]
+    assert document.candidates == []
+
+    assert [item.description for item in default.items] == ["改写后的推断"]
+    assert default.candidates == []
 
 
 @pytest.mark.parametrize("already_confirmed", [False, True])
