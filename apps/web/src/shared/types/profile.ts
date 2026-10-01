@@ -133,7 +133,14 @@ export interface ListProfileItemsResponse {
   next_cursor: string | null;
 }
 
-/** 确认响应。形状见档案面契约第 4 节；只能作用于候选条目。 */
+/**
+ * 确认响应。形状见档案面契约第 4 节。
+ *
+ * 确认能否成功由条目状态决定（`confirmation = unconfirmed` 且未被取代），
+ * 不由条目落在哪一组决定：
+ * - 历史候选落在 `candidates` 里却不能确认，`superseded_by` 非空即 422 失败；
+ * - `third_party_report`／`document` 的未确认条目落在 `items` 里，确认照常成功。
+ */
 export interface ConfirmProfileItemResponse {
   item_id: string;
   confirmation: 'confirmed';
