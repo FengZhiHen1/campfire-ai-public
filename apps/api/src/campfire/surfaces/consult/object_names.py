@@ -7,12 +7,11 @@ docs/项目结构设计.md 第 7 节（依赖白名单）。
 
 为什么需要单独一个模块：`list_sessions` 的签名收一个回调（对象名归 `modules/profile`，
 而模块之间禁止互相 import），实现必须由装配处提供。这里就是那个实现，
-且它是本包唯一一处需要读 profile 数据的地方——集中在一处，将来补齐用例层时只有一处要改。
+且它是本包唯一一处需要读 profile 数据的地方——集中在一处，profile 侧的取数只有这里要改。
 
-为什么批量取对象名、逐会话取绑定：对象表一次查询就能覆盖整页（一个账号的对象数量级是
-个位数），而绑定表当前只有按单会话取数的仓储函数。逐会话取绑定会让一页 20 条产生 20 次
-查询，这是本包如实记录的已知代价（见报告「未决问题」：建议在 `modules/profile` 补一个
-「按会话标识批量取绑定」的用例函数，此后本模块改为一次查询）。
+为什么两张表都批量取：对象表经 `list_objects` 一次查询覆盖整页（一个账号的对象数量级
+是个位数），绑定表经 `read_session_bindings` 同样一次查询覆盖整页——逐会话取绑定会让
+一页 20 条产生 20 次查询。
 """
 
 from __future__ import annotations
@@ -21,8 +20,7 @@ from collections.abc import Sequence
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from campfire.modules.profile import list_objects
-from campfire.modules.profile.repository import get_session_binding
+from campfire.modules.profile import list_objects, read_session_bindings
 
 
 async def read_object_names(
@@ -43,9 +41,10 @@ async def read_object_names(
     if not session_ids:
         return {}
     names = {str(record.id): record.display_name for record in await list_objects(session, account_id=account_id)}
+    bindings = await read_session_bindings(session, session_ids=session_ids)
     resolved: dict[str, str] = {}
     for session_id in session_ids:
-        binding = await get_session_binding(session, session_id=session_id)
+        binding = bindings.get(session_id)
         if binding is None:
             continue
         display_name = names.get(str(binding.support_object_id))

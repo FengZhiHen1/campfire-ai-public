@@ -31,6 +31,7 @@ from collections.abc import AsyncIterator, Sequence
 import httpx
 import pytest
 import pytest_asyncio
+import sqlalchemy
 from sqlalchemy import delete, select
 
 import campfire.main as main_module
@@ -67,7 +68,8 @@ from campfire.modules.accounts.session_items import message_text
 from campfire.modules.accounts.session_repository import get_session_owner
 from campfire.modules.memory.derived import EmergencyMemory
 from campfire.modules.memory.errors import MemoryUnavailableError
-from campfire.modules.profile import archive_object, create_object
+from campfire.modules.profile import ProfileDataError, archive_object, create_object, read_session_bindings
+from campfire.modules.profile import repository as profile_repo
 from campfire.modules.profile.authz import OwnerAuthorizer
 from campfire.modules.profile.models import SessionObjectBinding, SupportObject
 from campfire.surfaces.consult import assembly as consult_assembly
@@ -78,6 +80,7 @@ from campfire.surfaces.consult.injections import (
     EMERGENCY_PROFILE_PREFIX,
     ONBOARDING_NOTICE_PREFIX,
 )
+from campfire.surfaces.consult.object_names import read_object_names
 from campfire.surfaces.consult.runbus import (
     RUN_NOT_RUNNING,
     RUN_STATUS_RUNNING,
@@ -506,6 +509,83 @@ async def test_list_sessions_paginates_without_overlap(client: httpx.AsyncClient
     assert not (first_ids & second_ids), "翻页不得重复"
     assert first_ids | second_ids == set(created), "翻页不得漏掉任何一条"
     assert second["next_cursor"] is None
+
+
+# ---------------------------------------------------------------------------
+# 3.2 对象名取数：整页只查一次绑定表（D-87）
+# ---------------------------------------------------------------------------
+
+
+async def test_object_names_cover_the_page_with_a_single_binding_query(client: httpx.AsyncClient) -> None:
+    """整页对象名 = 对象表一次 + 绑定表一次；缺绑定与取不到名字的会话不落映射。
+
+    判别性（消融）：把 `read_object_names` 退回逐会话取绑定
+    （`profile_repo.get_session_binding`），绑定表的 SELECT 会随会话数增长到 7 次，
+    本用例失败——这正是 D-87 要消掉的 N+1。
+
+    为什么这条不放在 `test_layer_boundaries.py`：那份白名单按包前缀放行
+    （`surfaces` 允许 `campfire.modules` 整支），因此「面层直接 import 别模块的
+    repository」这一类它拦不下。这里改用可观测的查询次数与映射内容来钉住修复。
+
+    空集合与非法标识也在这一个采样窗口里：前者的承诺是「不发查询」，
+    后者的承诺是「与逐条版同一判据」。
+    """
+    own = await _make_object(_ACCOUNT, "小宝")
+    other_own = await _make_object(_ACCOUNT, "大宝")
+    foreign = await _make_object(_OTHER_ACCOUNT, "别人的孩子")
+
+    bound = [await _create_session(client, own) for _ in range(4)]
+    bound.append(await _create_session(client, other_own))
+
+    async with session_scope(get_settings()) as session:
+        # 无绑定的会话：归属行真实存在但没有绑定行（无对象账号的会话是正常情形）。
+        unbound, _created = await accounts_repo.insert_session_owner(
+            session, session_id=f"it-consult-unbound-{uuid.uuid4().hex[:8]}", account_id=_ACCOUNT
+        )
+        # 数据漂移：绑定指向别的账号的对象（正常写入路径造不出来），用于钉住
+        # 「名字取不到则不落映射」——批量取数不得因此多一行、也不得凭空补名字。
+        drifted_id = f"it-consult-drifted-{uuid.uuid4().hex[:8]}"
+        await profile_repo.insert_session_binding(
+            session, session_id=drifted_id, account_id=_ACCOUNT, support_object_id=foreign
+        )
+
+    page_ids = [*bound, unbound.session_id, drifted_id]
+    expected = {session_id: "小宝" for session_id in bound[:4]}
+    expected[bound[4]] = "大宝"
+
+    statements: list[str] = []
+    engine = get_engine(get_settings())
+
+    def _capture(_conn, _cursor, statement, _parameters, _ctx, _many):  # noqa: ANN001 —— 引擎钩子签名固定
+        statements.append(str(statement))
+
+    sqlalchemy.event.listen(engine.sync_engine, "before_cursor_execute", _capture)
+    try:
+        async with session_scope(get_settings()) as session:
+            resolved = await read_object_names(session, account_id=_ACCOUNT, session_ids=page_ids)
+            assert await read_session_bindings(session, session_ids=[]) == {}
+            with pytest.raises(ProfileDataError):
+                await read_session_bindings(session, session_ids=["it-consult-ok", ""])
+    finally:
+        sqlalchemy.event.remove(engine.sync_engine, "before_cursor_execute", _capture)
+
+    binding_selects = [statement for statement in statements if "campfire_session_object" in statement]
+    assert len(binding_selects) == 1, (
+        f"绑定表应一次查询覆盖整页（{len(page_ids)} 个会话），实际 {len(binding_selects)} 次：\n"
+        + "\n".join(binding_selects)
+    )
+    assert resolved == expected
+    assert unbound.session_id not in resolved, "无绑定的会话不落映射（缺行不出现）"
+    assert drifted_id not in resolved, "名字取不到的会话不落映射"
+
+    # 批量取绑定与逐条取绑定取到的是同一行（语义一致的直接判据）。
+    async with session_scope(get_settings()) as session:
+        rows = await read_session_bindings(session, session_ids=page_ids)
+        for session_id in page_ids:
+            single = await profile_repo.get_session_binding(session, session_id=session_id)
+            assert (session_id in rows) == (single is not None), session_id
+            if single is not None:
+                assert rows[session_id].support_object_id == single.support_object_id, session_id
 
 
 # ---------------------------------------------------------------------------
