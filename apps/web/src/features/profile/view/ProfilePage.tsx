@@ -424,6 +424,13 @@ interface StableRowProps {
  * 历史条目由 `include_superseded = true` 随条目流返回（`LoadProfileUseCase.loadObject`
  * 显式打开该开关），与本行同一结构；行首出「已更正」标（档案页第 33、62 行），
  * 落位与候选行的「已降权」标一致：标题之后、描述之前。
+ *
+ * 历史条目不给「纠正」：已被取代的条目不再是纠正的对象（服务端 `mark_superseded`
+ * 的判据要求 `freshness = current` 且 `superseded_by` 为空），这个入口必然失败；
+ * 它又能经 `include_superseded` 真的出现在页面上，因此要在行上判掉而不是指望它不出现。
+ * 判据用 `isHistorical`，不在这里新写时效判断——同一判据的第二份出口已经栽过三次。
+ * 「删除」保留：服务端的删除路径只有归属判据（契约第 1 节还写明已归档对象仍可删除条目），
+ * 对被取代的条目照常生效，删自己的条目是正当能力（`RQ-MEM-03` 的查/纠/删）。
  */
 function StableRow({ item, busy, failure, onCorrect, onDelete }: StableRowProps) {
   return (
@@ -433,9 +440,11 @@ function StableRow({ item, busy, failure, onCorrect, onDelete }: StableRowProps)
       <p className="lr-sub">{item.description}</p>
       <p className="lr-meta">{itemMetaLine(item)}</p>
       <div className="lr-actions">
-        <button className="btn btn-secondary" disabled={busy} onClick={onCorrect} type="button">
-          {COPY.correct}
-        </button>
+        {!isHistorical(item) && (
+          <button className="btn btn-secondary" disabled={busy} onClick={onCorrect} type="button">
+            {COPY.correct}
+          </button>
+        )}
         <button className="btn btn-quiet" disabled={busy} onClick={onDelete} type="button">
           {COPY.delete}
         </button>
@@ -472,14 +481,21 @@ interface CandidateRowProps {
  * `effective_freshness`），而完整条目区里的行要么是 `current` 的稳定层、要么是 `historical`
  * 的历史条目，两者都不是 `stale`。该标是本行唯一的一处时效出口：元信息行（`itemMetaLine`）
  * 不再重复写时效措辞。
+ *
+ * 「已被取代的候选」（历史条目落在候选组，可达：纠正一条未确认的候选）不给「确认」：
+ * 确认不会解除取代关系，服务端仍按 `freshness = historical` 归组，条目照旧带「已更正」
+ * 且不进摘要，这个入口点了没有任何可观察变化。它不是「必败」而是「无效果」，藏它的理由
+ * 因此要写清楚——判据仍是 `isHistorical`。「删除」不动：删除路径只判归属，对本行照常生效。
  */
 function CandidateRow({ item, busy, expanded, failure, onConfirm, onDelete, onToggleExpand }: CandidateRowProps) {
   const stale = isStale(item);
+  const historical = isHistorical(item);
   const showDescription = !stale || expanded;
   return (
     <article className="list-row candidate-record">
       <span className="status unruled">待确认 · {originLabel(item.origin)}</span>
       <strong className="lr-title">{item.topic}</strong>
+      {historical && <span className="tag meta">{COPY.historicalTag}</span>}
       {stale && <span className="tag meta">已降权</span>}
       {showDescription ? (
         <p className="lr-sub">{item.description}</p>
@@ -491,9 +507,11 @@ function CandidateRow({ item, busy, expanded, failure, onConfirm, onDelete, onTo
       <p className="lr-meta">{itemMetaLine(item)}</p>
       <div className="lr-actions">
         {/* 确认是高频正向操作、删除是低频危险操作：并排但间距 ≥12px（.lr-actions 的 gap）。 */}
-        <button className="btn btn-secondary" disabled={busy} onClick={onConfirm} type="button">
-          {COPY.confirm}
-        </button>
+        {!historical && (
+          <button className="btn btn-secondary" disabled={busy} onClick={onConfirm} type="button">
+            {COPY.confirm}
+          </button>
+        )}
         <button className="btn btn-quiet" disabled={busy} onClick={onDelete} type="button">
           {COPY.delete}
         </button>

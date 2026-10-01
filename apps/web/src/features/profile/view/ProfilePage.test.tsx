@@ -186,7 +186,7 @@ describe('档案页 · 加载与候选层不变量', () => {
     // 替身照后端既定闸门返回（648cab8）：只有 `include_superseded=true` 时 items 里才有历史条目。
     // 判别性（消融实测）：撤掉 `LoadProfileUseCase.loadObject` 的 `includeSuperseded`，替身走缺省
     // 分支，本用例的标与计数断言全红；把 StableRow 的「已更正」标撤掉同样全红。
-    // 历史条目归完整条目区（不是「待确认」分组）：归候选组会让档案页给已被取代的条目出「确认」入口。
+    // 历史条目归完整条目区（不是「待确认」分组）；该行不给「纠正」（已被取代的条目纠正必然失败）。
     const historical = item({
       item_id: 'h1',
       topic: '旧的说法',
@@ -237,6 +237,87 @@ describe('档案页 · 加载与候选层不变量', () => {
     const candidateRow = (await screen.findByText('提前知道结束时间')).closest('article') as HTMLElement;
     expect(countOccurrences(candidateRow.textContent ?? '', '已降权')).toBe(1);
     expect(countOccurrences(candidateRow.textContent ?? '', '已更正')).toBe(0);
+  });
+
+  it('P0 历史（已更正）行没有「纠正」——必败入口；非历史行仍有，删除都保留', async () => {
+    // 判别性（消融实测见报告）：判据是行自己的 freshness，不是「页面上有没有历史条目」。
+    // 消融把「纠正」加回历史行 → 本用例的历史行按钮数与端点断言同时变红；一刀切把
+    // 「纠正」从所有行撤掉 → 非历史行那两条断言变红。历史行在 items 里是可达的
+    // （`include_superseded = true`），因此这不是防御死分支。
+    const historical = item({
+      item_id: 'h1',
+      topic: '旧的说法',
+      description: '旧描述',
+      freshness: 'historical',
+      superseded_by: 'i2',
+    });
+    const p = port({
+      listItems: vi.fn(async (_objectId: string, options?: { includeSuperseded?: boolean }) => ({
+        items: options?.includeSuperseded === true ? [item(), historical] : [item()],
+        candidates: [],
+        next_cursor: null,
+      })),
+    });
+    const { container } = renderPage(p);
+    await screen.findByText('关于 TA 的当前认识');
+
+    const historicalRow = (await screen.findByText('旧的说法')).closest('article') as HTMLElement;
+    // 用派生计数而不是写死 1：动作集随后增删也不会让这条断言变成空断言。
+    expect(historicalRow.querySelectorAll('.lr-actions button').length).toBe(1);
+    expect(within(historicalRow).queryByRole('button', { name: '纠正' })).toBeNull();
+    expect(within(historicalRow).getByRole('button', { name: '删除' })).toBeDefined();
+
+    // 非历史行不受影响（防「一刀切藏掉」）。这条行与摘要条目的描述逐字相同，
+    // 不能用 findByText 定位（会命中两处）——改按类名取那一条行。
+    const stableRow = container.querySelector('article.list-row:not(.candidate-record)') as HTMLElement;
+    expect(within(stableRow).getByText('用图片卡表达需求')).toBeDefined();
+    expect(within(stableRow).getByRole('button', { name: '纠正' })).toBeDefined();
+    expect(within(stableRow).getByRole('button', { name: '删除' })).toBeDefined();
+    // 全页只剩非历史行那一个「纠正」入口：历史行的那个确实不在，不是被别名藏起来。
+    expect(screen.getAllByRole('button', { name: '纠正' })).toHaveLength(1);
+  });
+
+  it('P0 历史候选行（已被取代且未确认）不出「确认」：确认不解除取代关系，点了没有可观察变化', async () => {
+    // 这个组合可达：纠正一条未确认的候选 → 该行同时是 historical 与 unconfirmed，
+    // 按 AC-18 归 candidates（分组由返回结构保证，前端不自己挪组）。
+    // 判别性（消融实测见报告）：把「确认」加回历史候选行 → 本用例的端点未调用与
+    // 按钮为空断言变红；一刀切让所有候选行都不出「确认」→ 非历史候选行那两条断言变红。
+    // 「待确认」「已更正」两个标是状态事实，仍要可见——藏按钮不等于把状态也藏起来。
+    const historicalCandidate = item({
+      item_id: 'hc1',
+      topic: '旧的推断',
+      description: '旧推断描述',
+      origin: 'ai_inference',
+      confirmation: 'unconfirmed',
+      freshness: 'historical',
+      last_confirmed_at: null,
+      superseded_by: 'i9',
+    });
+    const normalCandidate = item({
+      item_id: 'c1',
+      topic: '提前知道结束时间',
+      origin: 'ai_inference',
+      confirmation: 'unconfirmed',
+      freshness: 'current',
+    });
+    const p = port({
+      listItems: vi.fn(async () => ({ items: [item()], candidates: [historicalCandidate, normalCandidate], next_cursor: null })),
+    });
+    renderPage(p);
+
+    const group = (await screen.findByText(/^待确认（2）$/)).closest('details') as HTMLElement;
+    const historicalRow = within(group).getByText('旧的推断').closest('article') as HTMLElement;
+    expect(within(historicalRow).getByText('已更正').className).toContain('tag');
+    expect(historicalRow.querySelectorAll('.lr-actions button').length).toBe(1);
+    expect(within(historicalRow).queryByRole('button', { name: '确认' })).toBeNull();
+    expect(within(historicalRow).getByRole('button', { name: '删除' })).toBeDefined();
+    // 点不到就等于不会调：确认端点一次都不该被调。
+    expect(p.confirmItem).not.toHaveBeenCalled();
+
+    // 普通候选行不受影响（防「一刀切藏掉」）。
+    const normalRow = within(group).getByText('提前知道结束时间').closest('article') as HTMLElement;
+    expect(within(normalRow).getByRole('button', { name: '确认' })).toBeDefined();
+    expect(within(normalRow).getByRole('button', { name: '删除' })).toBeDefined();
   });
 
   it('P1 对象为空 → 空态引导新建对象，不显示内容区', async () => {
