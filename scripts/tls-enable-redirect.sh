@@ -98,21 +98,38 @@ sudo docker compose -f docker-compose.prod.yml --env-file "$ENV_FILE" up -d --no
 echo
 echo "--- 4b. 写入 80 -> 443 跳转 ---"
 mkdir -p "$REDIRECT_DIR"
-cat > "$REDIRECT_DIR/redirect.conf" <<'EOF'
-# 由部署流程在 443 可达性三重校验通过后生成。
-# 内容：把 80 上的非 ACME 流量跳到 HTTPS。
 #
-# ACME 挑战必须豁免且**必须优先于 redirect**：否则证书续期时，验证请求会被
-# 301 到 HTTPS，而某些 ACME 客户端不跟随跨协议的跳转，续期会静默失败——
-# 等到证书过期才发现。
-location ^~ /.well-known/acme-challenge/ {
-    root      /var/www/certbot;
-    default_type "text/plain";
-    access_log off;
-}
+# 必须是**完整的独立 server 块**，不能只写 `location /`（2026-10-01 真机踩到）：
+# 80 的 server 块已经 `include app-locations.conf`，而那里有 SPA 的 `location /`。
+# nginx 不允许同一 server 内重复 location，实测直接拒绝启动：
+#     [emerg] duplicate location "/" in /etc/nginx/app-locations.conf:107
+# 独立 server 块改按 server_name 精确匹配取胜，且能保留「用 IP 直连仍可排障」。
+cat > "$REDIRECT_DIR/redirect.conf" <<'EOF'
+# 由 scripts/tls-enable-redirect.sh 在 443 可达性三重校验通过后生成。
+#
+# 为什么是独立 server 块而不是往 80 的块里加 `location /`：
+# 那个块已经 include app-locations.conf（含 SPA 的 `location /`），
+# 同一 server 内重复 location 会让 nginx 拒绝启动
+# （实测 [emerg] duplicate location "/" ...app-locations.conf）。
+# 独立块靠 server_name 精确匹配优先于 `_` 兜底块，因此只影响真实域名，
+# 用 IP 直连（运维排障）仍走原来那个块。
+server {
+    listen       80;
+    listen       [::]:80;
+    server_name  campfire.wenran.me;
 
-location / {
-    return 301 https://$host$request_uri;
+    # ACME 挑战必须豁免且**必须优先于 redirect**：否则证书续期时验证请求会被 301
+    # 到 HTTPS，而某些 ACME 客户端不跟随跨协议跳转，续期会静默失败——
+    # 等到证书过期才发现。用 `^~` 确保优先于正则 location。
+    location ^~ /.well-known/acme-challenge/ {
+        root      /var/www/certbot;
+        default_type "text/plain";
+        access_log off;
+    }
+
+    location / {
+        return 301 https://$host$request_uri;
+    }
 }
 EOF
 
@@ -120,7 +137,7 @@ echo "  已写入 $REDIRECT_DIR/redirect.conf"
 echo
 echo "=== 校验并 reload ==="
 if ! sudo docker exec campfire-web nginx -t 2>&1 | tail -1; then
-  echo "  !! nginx 配置校验失败，回滚跳转文件以免影响线上" >&2
+  echo "  !! nginx 配置校验失败，回滚跳转文件以免影响线上（error 见上）" >&2
   rm -f "$REDIRECT_DIR/redirect.conf"
   exit 1
 fi
@@ -128,7 +145,13 @@ sudo docker exec campfire-web nginx -s reload
 echo "  已 reload"
 
 echo
-echo "=== 验证（四项，全看才说明真的切过去了）==="
+echo "=== 验证（五项，全看才说明真的切过去了）==="
+#
+# 关于 curl 的跳转行为（2026-10-01 实测，纠正我先前的错误理解）：
+#   curl **默认不跟随**重定向，`%{http_code}` 就是第一跳的状态码。
+#   我先前以为它默认跟随、并据此加了 `--max-redirs 0`——那是错的，而且
+#   `--max-redirs 0` 会让下面那条「跟随跳转」的检查直接失败（它禁止了唯一的跳转）。
+#   要跟随必须显式 `-L`。判据用 `%{num_redirects}` 区分：0 = 没跟随，≥1 = 跟随过。
 printf "  http://%s/          -> " "$DOMAIN"
 curl -s -o /dev/null -w '%{http_code}（301 = 已跳转）\n' --max-time 10 "http://$DOMAIN/"
 printf "  ACME 路径豁免        -> "
@@ -136,16 +159,28 @@ curl -s -o /dev/null -w '%{http_code}（404 = 未被跳转，正确）\n' --max-
   "http://$DOMAIN/.well-known/acme-challenge/nonexistent"
 printf "  https://%s/readyz   -> " "$DOMAIN"
 curl -s -o /dev/null -w '%{http_code}（200 = HTTPS 上的应用就绪）\n' --max-time 15 "https://$DOMAIN/readyz"
-printf "  会话 cookie 带 Secure -> "
-# 这一步查的是上面 4a 有没有真的生效。判据：登录响应里的会话 cookie 必须带 `Secure`；
-# 缺了它，浏览器在 HTTPS 下仍可能用明文回传凭据（安全降级），而且不会报错。
-# 这里只回报告"有/无"，不复述 cookie 值。
-secure="$(curl -s -D - -o /dev/null --max-time 15 -X POST "https://$DOMAIN/api/auth/signin" \
-  -H 'Content-Type: application/json' -H 'rid: emailpassword' \
-  --data '{"formFields":[{"id":"email","value":"__probe_nonexistent__"},{"id":"password","value":"x"}]}' \
-  | grep -i '^set-cookie:.*sAccessToken' | grep -ci 'secure' || true)"
-if [ "${secure:-0}" -ge 1 ]; then
-  echo "有（配置切换已生效）"
+printf "  跟随跳转后的最终页    -> "
+# 这一条是「用户实际体验」：显式 -L 跟随 301 后，应拿到 HTTPS 上的 SPA（200 + https）。
+curl -sL -o /dev/null -w '%{http_code} @ %{url_effective}（跟随 %{num_redirects} 跳）\n' \
+  --max-time 20 "http://$DOMAIN/"
+printf "  配置三项已是 https   -> "
+# 这一步查的是上面 4a 有没有真的落到文件里。
+#
+# 为什么不在这里直接验证「cookie 带 Secure」（2026-10-01 踩到）：那需要一次**成功的**
+# 登录，而脚本不该持有真实账号凭据；我先前用不存在的账号探测，signin 必然失败、
+# 自然拿不到 Set-Cookie，于是恒报「无」——**一个永远失败的检查比没有检查更糟**，
+# 因为它会让人以为配置没生效。
+#
+# 改为直接判据：Secure 属性由 SuperTokens 按其 api_domain 推导，因此**这三个值就是
+# 决定因素**，检查它们既确定又无需凭据。
+#
+# 真实的 cookie 属性验证（需要凭据）放在验收流程里，那里会用真账号登录并读
+# `Set-Cookie` 原文（注意不能用 urllib：它合并多个 Set-Cookie，会误报 HttpOnly=False）。
+non_https="$(grep -E '^(SUPERTOKENS_API_DOMAIN|SUPERTOKENS_WEBSITE_DOMAIN|PUBLIC_BASE_URL)=' "$ENV_FILE" \
+  | grep -v '=https://' || true)"
+if [ -z "$non_https" ]; then
+  echo "是"
 else
-  echo "无 —— 请人工确认：登录一个真实账号再看，或检查 SUPERTOKENS_*_DOMAIN"
+  echo "否 —— 以下项仍是 http，Secure 属性不会生效："
+  printf '%s\n' "$non_https" | sed 's/^/      /'
 fi
