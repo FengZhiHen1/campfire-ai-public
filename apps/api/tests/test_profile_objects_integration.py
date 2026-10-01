@@ -758,6 +758,7 @@ async def test_object_timestamps_are_timezone_aware() -> None:
     async with session_scope(get_settings()) as session:
         record = await repo.get_support_object(session, support_object_id=object_x)
         # 数据库返回带时区的 datetime；`tzinfo` 不得为空。
+        assert record is not None, "刚创建的对象必须读得回来"
         assert record.created_at.tzinfo is not None
         assert record.updated_at.tzinfo is not None
         assert isinstance(record.created_at, datetime)

@@ -551,7 +551,8 @@ async def test_items_pagination_walks_the_whole_list_without_repeats(client: htt
     seen: list[str] = []
     cursor: str | None = None
     for _ in range(10):  # 上界防止游标不推进时无限循环（CORE-11）
-        params: dict[str, object] = {"limit": 10}
+        # `dict[str, str | int]`：httpx 的查询参数只接受标量联合，`object` 会被判不兼容。
+        params: dict[str, str | int] = {"limit": 10}
         if cursor is not None:
             params["cursor"] = cursor
         response = await client.get(f"/profile/objects/{object_id}/items", params=params)

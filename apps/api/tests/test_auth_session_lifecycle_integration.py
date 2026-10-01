@@ -30,9 +30,15 @@ SDK 的默认行为固定成可复核的事实——一旦上游改了默认值�
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import pytest
 
 from campfire.core.config import Settings, get_settings
+
+if TYPE_CHECKING:
+    from supertokens_python.recipe.emailpassword.interfaces import SignUpOkResult
+    from supertokens_python.recipe.session.interfaces import SessionContainer
 
 pytestmark = pytest.mark.integration
 
@@ -107,14 +113,23 @@ def sdk(monkeypatch: pytest.MonkeyPatch) -> Settings:
     return settings
 
 
-async def _create_account(email: str, password: str) -> object:
-    """建一个账号（经 SDK 的公开 API，走真实 core）。"""
+async def _create_account(email: str, password: str) -> SignUpOkResult:
+    """建一个账号（经 SDK 的公开 API，走真实 core）。
+
+    `sign_up` 的返回是「成功 | 邮箱已存在 | 链接到会话用户失败」的联合；断言收窄成
+    `SignUpOkResult` 而不是声明 `object`——后者会让调用方丢掉 `user`，而本文件后面
+    要用 `signup.user.id` 撤销该用户的全部会话。收窄同时是一条真判据：建号失败即失败，
+    不静默带着一个「不是成功结果」的东西继续跑。
+    """
     from supertokens_python.recipe.emailpassword.asyncio import sign_up
+    from supertokens_python.recipe.emailpassword.interfaces import SignUpOkResult
 
-    return await sign_up("public", email, password)
+    result = await sign_up("public", email, password)
+    assert isinstance(result, SignUpOkResult), f"建号未成功：{result}"
+    return result
 
 
-async def _sign_in_and_open_session(email: str, password: str) -> object:
+async def _sign_in_and_open_session(email: str, password: str) -> SessionContainer:
     """登录并建立一个会话，返回 `SessionContainer`。
 
     注意：本 SDK 版本的 `sign_in` 不返回会话对象（实测 `SignInOkResult`
@@ -122,10 +137,11 @@ async def _sign_in_and_open_session(email: str, password: str) -> object:
     `create_new_session_without_request_response` 建立。
     """
     from supertokens_python.recipe.emailpassword.asyncio import sign_in
+    from supertokens_python.recipe.emailpassword.interfaces import SignInOkResult
     from supertokens_python.recipe.session.asyncio import create_new_session_without_request_response
 
     signin = await sign_in("public", email, password)
-    assert type(signin).__name__.startswith("SignInOk"), f"登录未成功：{signin}"
+    assert isinstance(signin, SignInOkResult), f"登录未成功：{signin}"
     return await create_new_session_without_request_response("public", signin.recipe_user_id)
 
 

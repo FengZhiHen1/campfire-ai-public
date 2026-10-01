@@ -45,7 +45,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 import pytest_asyncio
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, update
 
 from campfire import worker as worker_module
 from campfire.core.authz import AuthorizationError, set_authorizer
@@ -175,9 +175,10 @@ async def _expire_backoff(row_id: object) -> None:
     """
     past = datetime.now(timezone.utc) - timedelta(seconds=1)
     async with session_scope(get_settings()) as session:
-        await session.execute(
-            PendingWrite.__table__.update().where(PendingWrite.id == row_id).values(next_attempt_at=past)
-        )
+        # 用 ORM 的 `update(PendingWrite)` 而不是 `PendingWrite.__table__.update()`：
+        # 后者在类型上是 `FromClause`（不声明 update），且 ORM 形态让会话知道
+        # 这条 UPDATE 打在哪个映射实体上（与 `select(PendingWrite)` 同一层级）。
+        await session.execute(update(PendingWrite).where(PendingWrite.id == row_id).values(next_attempt_at=past))
 
 
 def _alert_lines(caplog: pytest.LogCaptureFixture, pending_id: str) -> list[str]:

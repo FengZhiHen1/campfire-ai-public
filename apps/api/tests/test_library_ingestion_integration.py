@@ -15,7 +15,7 @@ from pathlib import Path
 
 import pytest
 from llama_index.core.vector_stores.types import MetadataFilter, MetadataFilters, VectorStoreQuery
-from sqlalchemy import func, select, text
+from sqlalchemy import delete, func, select, text
 
 from campfire.core.config import get_settings
 from campfire.core.db import create_engine, create_sync_engine, session_scope
@@ -81,7 +81,7 @@ async def _cleanup(source_path: str) -> None:
             .all()
         )
         for item in items:
-            await session.execute(RetrievedNode.__table__.delete().where(RetrievedNode.node_id.like(f"{item.id}:%")))
+            await session.execute(delete(RetrievedNode).where(RetrievedNode.node_id.like(f"{item.id}:%")))
             await session.delete(item)
 
 
@@ -163,7 +163,9 @@ async def test_ingest_writes_item_and_nodes_in_one_transaction(tmp_path: Path, _
         assert hits, "向量存储应能读回刚写入的节点"
         assert all(h.metadata.get("library") == "knowledge" for h in hits)
         assert all(h.metadata.get("item_id") == result.item_id for h in hits)
-        assert any("干预" in h.text for h in hits), f"节点文本应含原文内容：{[h.text for h in hits]}"
+        # `get_content()` 而非 `.text`：向量存储读回的节点静态类型是 `BaseNode`，
+        # `text` 只声明在子类 `TextNode` 上（与 `modules/library/ingestion.py` 同一取舍）。
+        assert any("干预" in h.get_content() for h in hits), f"节点文本应含原文内容：{[h.get_content() for h in hits]}"
 
         await async_engine.dispose()
         sync_engine.dispose()

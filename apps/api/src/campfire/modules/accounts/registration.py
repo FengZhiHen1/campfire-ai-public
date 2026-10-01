@@ -461,11 +461,10 @@ def api_overrides(original: APIInterface) -> APIInterface:
     关闭它不影响登录：登录走 `sign_in_post`，不依赖该端点。
     """
     # SDK 的 APIInterface 是抽象类实例；直接改属性即可（官方 override 的既有做法）。
-    # method-assign + assignment + arg-type：给实例属性赋一个与方法同名/同签名的
-    # 函数，mypy 视为方法重绑并按精确参数列表校验——而 SDK 官方 override 机制
-    # 要求的正是这种重绑（包装器的位置形态由 Callable[...] 表达，见
-    # OriginalSignUpPost 的说明），非错误。
-    original.sign_up_post = make_sign_up_override(original.sign_up_post)  # type: ignore[method-assign,assignment,arg-type]  # SDK 官方 override 的既定形态，方法重绑即其机制
+    # method-assign + assignment：给实例属性赋一个与方法同名/同签名的函数，mypy 视为
+    # 方法重绑并按精确参数列表校验——而 SDK 官方 override 机制要求的正是这种重绑
+    # （包装器的位置形态由 Callable[...] 表达，见 OriginalSignUpPost 的说明），非错误。
+    original.sign_up_post = make_sign_up_override(original.sign_up_post)  # type: ignore[method-assign,assignment]  # SDK 官方 override 的既定形态，方法重绑即其机制
     # 关闭匿名的账号枚举端点：见 docstring 的实测依据。
     original.disable_email_exists_get = True
     return original

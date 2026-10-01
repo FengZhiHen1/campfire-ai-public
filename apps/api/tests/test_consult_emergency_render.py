@@ -119,9 +119,22 @@ def test_request_rejects_empty_and_duplicated_items() -> None:
 
 
 def test_request_rejects_unknown_fields() -> None:
-    """多给的字段是 422（前端字段名写错时不该静默落到默认对象上）。"""
-    with pytest.raises(ValidationError):
-        EmergencyConsultRequest(items=[EmergencyItem(key="distress", value="高")], supportObjectId="x")
+    """多给的字段是 422（前端字段名写错时不该静默落到默认对象上）。
+
+    走 `model_validate` 而不是关键字构造：要断言的是「解析器拒绝这个键」，
+    而 `supportObjectId` 本来就不是 `EmergencyConsultRequest` 的合法参数名——
+    用构造器表达时，静态检查在运行 pytest 之前就会先报未知实参（那测的是签名，
+    不是 `extra="forbid"`）。`test_consult_transport.py` 的同类用例同法。
+    断言带 `match`：只断言「抛了 ValidationError」的话，拼错的合法字段名也会通过。
+    """
+    with pytest.raises(ValidationError, match="supportObjectId"):
+        EmergencyConsultRequest.model_validate({"items": [{"key": "distress", "value": "高"}], "supportObjectId": "x"})
+
+    # 判别性对照：同一个载荷把键写成契约名就必须通过——否则上面的拒绝可能只是「一切都被拒」。
+    accepted = EmergencyConsultRequest.model_validate(
+        {"items": [{"key": "distress", "value": "高"}], "support_object_id": "x"}
+    )
+    assert accepted.support_object_id == "x"
 
 
 # ---------------------------------------------------------------------------

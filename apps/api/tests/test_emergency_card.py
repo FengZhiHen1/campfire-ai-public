@@ -16,16 +16,18 @@ from __future__ import annotations
 
 import dataclasses
 import json
+from collections.abc import Sequence
 from datetime import datetime, timezone
 
 import pytest
 
-from campfire.agent.context import CitationRecorder
+from campfire.agent.context import CitationRecord, CitationRecorder
 from campfire.agent.tools import (
     ActionCard,
     ActivationState,
     ToolContext,
     ToolFailure,
+    ToolOutcome,
     ToolPool,
     ToolResult,
     ToolSpec,
@@ -57,7 +59,14 @@ CONTRACT_STATE_VALUES = {
 
 
 class _FakeIndex:
-    def add(self, *_args: object, **_kwargs: object) -> None: ...
+    """引用索引替身：满足 `CitationIndex` 端口，本工具不产出引用，因此不落任何东西。"""
+
+    async def add(self, _record: CitationRecord) -> None:
+        """不落任何东西（本工具不产出引用）。"""
+
+    async def list_for_run(self, _run_id: str) -> Sequence[CitationRecord]:
+        """空列表。"""
+        return []
 
 
 def _context(payload: object | None = None) -> ToolContext:
@@ -548,7 +557,7 @@ async def test_a_valid_payload_reaches_the_handler_and_emits_exactly_one_card() 
 
     calls: list[str] = []
 
-    async def _handler(context: ToolContext, args: EmitEmergencyActionCardArgs) -> ToolResult:
+    async def _handler(context: ToolContext, args: EmitEmergencyActionCardArgs) -> ToolOutcome:
         calls.append("called")
         return await emit_emergency_action_card(context, args)
 

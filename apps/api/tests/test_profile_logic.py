@@ -13,6 +13,7 @@
 
 from __future__ import annotations
 
+import uuid
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -24,6 +25,7 @@ from campfire.core.authz import (
     ObjectArchivedError,
 )
 from campfire.core.pending_write import ORIGINS
+from campfire.modules.profile.consumer import to_pending_uuid
 from campfire.modules.profile.errors import InferredCannotBeConfirmedError, ProfileDataError
 from campfire.modules.profile.models import (
     CANDIDATE_ORIGINS,
@@ -367,6 +369,33 @@ def test_valid_uuid_is_parsed_and_normalized() -> None:
     parsed = to_object_uuid("3F2504E0-4F89-41D3-9A0C-0305E82C3301")
     assert str(parsed) == "3f2504e0-4f89-41d3-9a0c-0305e82c3301"
     assert to_item_uuid(str(parsed)) == parsed
+
+
+@pytest.mark.parametrize("value", ["not-a-uuid", "", "  ", None, 123, [], object()])
+def test_malformed_pending_id_is_rejected_as_a_domain_error(value: object) -> None:
+    """`to_pending_uuid` 对畸形输入抛 `ProfileDataError`（CORE-04）。
+
+    为什么这条必须存在：该解析器曾在 `consumer.py` 写好并导出，却零调用点
+    （「写好没接线」）。`write_from_pending` 入口现在显式调它，本用例钉住解析器
+    本身的行为——即便将来消费用例又绕开它，解析器仍有覆盖，不会退化成死码。
+
+    判别性：把解析器里的 `isinstance` 校验换成直接调 `uuid.UUID(raw)`，
+    `None`/`123`/`[]`/`object()` 会抛 `TypeError`/`AttributeError` 而非
+    `ProfileDataError`，本用例失败。
+
+    与 `test_malformed_object_id_is_rejected_as_a_domain_error` 同一判据：
+    畸形标识必须是领域错误，不是让裸驱动/内建异常穿透。
+    """
+    with pytest.raises(ProfileDataError):
+        to_pending_uuid(value)
+
+
+def test_valid_pending_id_is_parsed() -> None:
+    """合法输入（字符串或已是 `UUID`）被解析成 `UUID`，且归一化一致。"""
+    expected = uuid.UUID("3f2504e0-4f89-41d3-9a0c-0305e82c3301")
+    assert to_pending_uuid("3F2504E0-4F89-41D3-9A0C-0305E82C3301") == expected
+    assert to_pending_uuid(expected) == expected
+    assert isinstance(to_pending_uuid(str(expected)), uuid.UUID)
 
 
 # ---------------------------------------------------------------------------

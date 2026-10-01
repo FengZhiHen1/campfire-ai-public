@@ -47,7 +47,7 @@ def _item(item_id: str, **overrides: object) -> KnowledgeItem:
         applicable_scope=overrides.pop("applicable_scope", "范围"),
         status=overrides.pop("status", "published"),
     )
-    item.id = uuid.UUID(item_id)  # type: ignore[assignment]  # `id` 是主键列，静态类型是 SQLCoreOperations[UUID] | UUID，实例赋值必然不匹配
+    item.id = uuid.UUID(item_id)
     item.withdrawn = bool(overrides.pop("withdrawn", False))
     return item
 
@@ -124,7 +124,10 @@ def test_fusion_ranks_items_hit_by_both_paths_first() -> None:
 
     fused = _reciprocal_rank_fuse([both, only_vector], [both, only_literal])
 
-    assert fused[0].node.text == "两路都命中"
+    # 用 `get_content()` 而不是 `.text`：融合的返回类型是 `list[NodeWithScore]`，
+    # 其 `node` 声明为 `BaseNode`，而 `text` 只声明在子类 `TextNode` 上
+    # （与 `modules/library/ingestion.py` 同一处取舍）。取到的文本相同。
+    assert fused[0].node.get_content() == "两路都命中"
 
 
 def test_fusion_handles_one_empty_path() -> None:
@@ -133,7 +136,7 @@ def test_fusion_handles_one_empty_path() -> None:
 
     fused = _reciprocal_rank_fuse(vector, [])
 
-    assert [n.node.text for n in fused] == ["甲", "乙"]
+    assert [n.node.get_content() for n in fused] == ["甲", "乙"]
 
 
 # ---------------------------------------------------------------- 条目聚合
@@ -197,7 +200,12 @@ def test_aggregation_carries_return_contract_fields() -> None:
 
 def test_aggregation_respects_top_k() -> None:
     """返回条目数受 top_k 限制。"""
-    items = {f"{i:08d}-0000-0000-0000-000000000000": _item(f"{i:08d}-0000-0000-0000-000000000000") for i in range(5)}
+    # 显式标成联合值类型：`aggregate_to_items` 的入参是 `dict[str, KnowledgeItem | CaseItem]`，
+    # 而 dict 在值类型上不变——推导成 `dict[str, KnowledgeItem]` 会因不变性被拒
+    # （条目仍只由 `_item()` 造出，这里放宽的只是静态声明）。
+    items: dict[str, KnowledgeItem | CaseItem] = {
+        f"{i:08d}-0000-0000-0000-000000000000": _item(f"{i:08d}-0000-0000-0000-000000000000") for i in range(5)
+    }
     nodes = [_node(f"内容{i}", f"{i:08d}-0000-0000-0000-000000000000", 1.0 - i * 0.1) for i in range(5)]
 
     results = aggregate_to_items(nodes, items, top_k=3)
@@ -409,7 +417,7 @@ def _case_item(item_id: str, **overrides: object) -> CaseItem:
         consent_scope=overrides.pop("consent_scope", "ai_retrieval_and_advice"),
         status=overrides.pop("status", "internal"),
     )
-    item.id = uuid.UUID(item_id)  # type: ignore[assignment]  # `id` 是主键列，静态类型是 SQLCoreOperations[UUID] | UUID，实例赋值必然不匹配
+    item.id = uuid.UUID(item_id)
     item.withdrawn = bool(overrides.pop("withdrawn", False))
     item.makes_claims_high_risk = bool(overrides.pop("makes_claims_high_risk", False))
     inferred = overrides.pop("inferred_fields", [])

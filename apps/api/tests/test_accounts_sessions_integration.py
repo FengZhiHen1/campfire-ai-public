@@ -714,7 +714,9 @@ async def test_declared_sdk_models_match_the_real_tables() -> None:
 
     比对的判据：列名集合、主键、可空性、外键的 `ondelete`、索引列。
     """
-    from sqlalchemy import create_engine
+    from typing import cast
+
+    from sqlalchemy import Table, create_engine
 
     url = get_settings().database_url
     assert url, "未配置 DATABASE_URL"
@@ -723,8 +725,12 @@ async def test_declared_sdk_models_match_the_real_tables() -> None:
         inspector = inspect(engine)
         for model in (AgentSession, AgentMessage):
             table = model.__tablename__
+            # `declarative_base().__table__` 的静态类型是 `FromClause`（SQLAlchemy 存根
+            # 未按声明式模型收窄），而这里要用的 `primary_key` / `indexes` 只在 `Table` 上。
+            # 真跑时它确实是 `Table`（声明式模型必然由 Table 承载），故此处收窄而非改判据。
+            declared_table = cast(Table, model.__table__)
             actual_columns = {column["name"]: column for column in inspector.get_columns(table)}
-            declared_columns = {column.name: column for column in model.__table__.columns}
+            declared_columns = {column.name: column for column in declared_table.columns}
 
             assert set(actual_columns) == set(declared_columns), (
                 f"{table} 的列集合与声明不符：库里 {sorted(actual_columns)}，声明 {sorted(declared_columns)}"
@@ -734,19 +740,19 @@ async def test_declared_sdk_models_match_the_real_tables() -> None:
                 assert actual["nullable"] == declared.nullable, f"{table}.{name} 的可空性与声明不符"
 
             assert set(inspector.get_pk_constraint(table)["constrained_columns"]) == {
-                column.name for column in model.__table__.primary_key.columns
+                column.name for column in declared_table.primary_key.columns
             }, f"{table} 的主键与声明不符"
 
             actual_fks = {
                 (fk["constrained_columns"][0], fk["referred_table"], fk["options"].get("ondelete"))
                 for fk in inspector.get_foreign_keys(table)
             }
-            declared_fks = {(fk.parent.name, fk.column.table.name, fk.ondelete) for fk in model.__table__.foreign_keys}
+            declared_fks = {(fk.parent.name, fk.column.table.name, fk.ondelete) for fk in declared_table.foreign_keys}
             assert actual_fks == declared_fks, f"{table} 的外键与声明不符：{actual_fks} vs {declared_fks}"
 
             actual_indexes = {(index["name"], tuple(index["column_names"])) for index in inspector.get_indexes(table)}
             declared_indexes = {
-                (index.name, tuple(column.name for column in index.columns)) for index in model.__table__.indexes
+                (index.name, tuple(column.name for column in index.columns)) for index in declared_table.indexes
             }
             assert actual_indexes == declared_indexes, f"{table} 的索引与声明不符"
     finally:

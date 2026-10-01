@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from datetime import UTC, datetime
+from typing import cast
 
 import pytest
 
@@ -20,6 +21,7 @@ from campfire.agent.context import (
     InjectionBatch,
     InjectionError,
     InjectionItem,
+    InjectionMessage,
     InjectionPriority,
     InjectionRenderError,
     UnavailableSource,
@@ -260,8 +262,13 @@ async def test_partial_render_failure_reports_what_already_reached_the_index() -
     with pytest.raises(InjectionRenderError) as error:
         await batch.render(recorder)
 
-    assert [record.reference for record in error.value.recorded] == ["ref-1"]
-    assert [message["content"] for message in error.value.rendered] == ["第一条"]
+    # `InjectionRenderError` 刻意把这两个字段标成 `object`（源码里给了环依赖的理由）：
+    # 真类型由错误自身的契约决定，测试按该契约收窄，而不是把断言放宽成「只看类型」。
+    recorded = cast("tuple[CitationRecord, ...]", error.value.recorded)
+    rendered = cast("tuple[InjectionMessage, ...]", error.value.rendered)
+
+    assert [record.reference for record in recorded] == ["ref-1"]
+    assert [message["content"] for message in rendered] == ["第一条"]
     # 没有「部分成功」的返回值可用，调用方只能按失败处置
     assert "RuntimeError" in str(error.value)
 

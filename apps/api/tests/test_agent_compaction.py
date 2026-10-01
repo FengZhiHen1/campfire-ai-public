@@ -264,7 +264,7 @@ def test_range_selection_does_not_split_a_chat_completions_tool_pair() -> None:
     （`c2`）成为边界上的那个：朴素边界落在 `c2` 的结果上，而 `c2` 只出现在助手消息的
     `tool_calls` 列表第二位——只读第一位就会判定「安全」，把 `c2` 的调用与结果切开。
     """
-    assistant = {
+    assistant: dict[str, object] = {
         "role": "assistant",
         "content": None,
         "tool_calls": [
@@ -272,7 +272,7 @@ def test_range_selection_does_not_split_a_chat_completions_tool_pair() -> None:
             {"id": "c2", "type": "function", "function": {"name": "read", "arguments": '{"q": "y"}'}},
         ],
     }
-    items = [
+    items: list[dict[str, object]] = [
         _filler(0),
         _filler(1),
         assistant,
@@ -341,7 +341,7 @@ def test_retained_after_last_checkpoint_is_the_verbatim_tail() -> None:
 # --- 触发与跳过（第 2 节） ---------------------------------------------------
 
 
-async def _compact(items: list[dict[str, object]], **kwargs: object) -> tuple[list[object], CompactionOutcome]:
+async def _compact(items: Sequence[Item], **kwargs: object) -> tuple[list[Item], CompactionOutcome]:
     settings = kwargs.pop("settings", SMALL)
     summarizer = kwargs.pop("summarizer", FakeSummarizer())
     journal = kwargs.pop("journal", FakeJournal())
@@ -720,7 +720,7 @@ async def test_successful_commit_happens_before_the_transaction_closes() -> None
     committed: list[Item] = []
     original_finish = journal.record_finished
 
-    async def record_finished(marker: str, outcome: object) -> None:
+    async def record_finished(marker: str, outcome: CompactionOutcome) -> None:
         order.append("finish")
         await original_finish(marker, outcome)
 

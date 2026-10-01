@@ -25,7 +25,8 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 import pytest_asyncio
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, select, update
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from campfire import worker as worker_module
 from campfire.core.authz import set_authorizer
@@ -43,8 +44,8 @@ from campfire.core.pending_write import (
     mark_done,
     take_for_processing,
 )
+from campfire.modules.profile import ProfileWriteResult, service
 from campfire.modules.profile import repository as repo
-from campfire.modules.profile import service
 from campfire.modules.profile.authz import OwnerAuthorizer
 from campfire.modules.profile.models import ProfileItem, SupportObject
 
@@ -214,8 +215,10 @@ async def test_replay_after_lease_is_reclaimed_is_still_idempotent() -> None:
 
     # 人为把记录放回 pending（模拟 mark_done 丢失），租约清空。
     async with session_scope(get_settings()) as session:
+        # 用 `update(模型)` 而不是 `PendingWrite.__table__.update()`：后者在静态上是
+        # `FromClause`（`__table__` 的声明类型），没有 `update`。与 `repository.py` 同法。
         await session.execute(
-            PendingWrite.__table__.update()
+            update(PendingWrite)
             .where(PendingWrite.id == repo.to_item_uuid(pending_id))
             .values(state=STATE_PENDING, finished_at=None, lease_owner=None, lease_expires_at=None)
         )
@@ -348,7 +351,7 @@ async def test_lease_fence_holds_when_the_same_process_reclaims() -> None:
     # 租约过期（模拟慢写入超过 5 分钟租约）。
     async with session_scope(get_settings()) as session:
         await session.execute(
-            PendingWrite.__table__.update()
+            update(PendingWrite)
             .where(PendingWrite.id == repo.to_item_uuid(pending_id))
             .values(lease_expires_at=datetime.now(timezone.utc) - timedelta(seconds=1))
         )
@@ -384,7 +387,9 @@ async def test_the_consumed_lease_owner_is_the_consumers_own_identity(monkeypatc
     """
     captured: list[str] = []
 
-    async def _spy(session: object, *, pending_id: object, lease_owner: str):  # noqa: ANN202
+    # 签名与 `write_from_pending` 逐字一致：`session` 是真库会话（这里如实声明，
+    # 不用 `object` 糊过去），返回值也照抄，否则这处替身无法与原函数互换。
+    async def _spy(session: AsyncSession, *, pending_id: object, lease_owner: str) -> ProfileWriteResult:
         captured.append(str(lease_owner))
         return await _original(session, pending_id=pending_id, lease_owner=lease_owner)
 

@@ -7,9 +7,11 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 import pytest
 
-from campfire.agent.tools import RESERVED_TOOL_NAMES, ToolPool, ToolRegistrationError
+from campfire.agent.tools import RESERVED_TOOL_NAMES, ToolPool, ToolRegistrationError, ToolSpec
 from campfire.surfaces.consult.registry import (
     build_product_tools,
     register_base_tools,
@@ -75,15 +77,12 @@ def test_register_base_tools_registers_ask_user() -> None:
     assert pool.names() == ("ask_user",)
 
     # 反向：产品通道不能注册保留名（池会拒）。
+    # 取一个真实工具只改名成保留名——用 `replace` 而不是重新构造：后者要逐字段抄
+    # `args_model` / `handler`，抄漏任何一个都变成「测另一个形状」而不是「测保留名」。
+    spec = build_product_tools()[0]
+    assert isinstance(spec, ToolSpec), "产品清单的元素必须是 ToolSpec，本用例靠它改名复用其余字段"
     with pytest.raises(ToolRegistrationError):
-        ToolPool().register(
-            build_product_tools()[0].__class__(
-                name="ask_user",
-                description="占位",
-                args_model=build_product_tools()[0].args_model,
-                handler=build_product_tools()[0].handler,
-            )
-        )
+        ToolPool().register(replace(spec, name="ask_user"))
 
 
 def test_every_tool_has_a_usable_description() -> None:

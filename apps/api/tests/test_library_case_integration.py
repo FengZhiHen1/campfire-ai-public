@@ -22,7 +22,7 @@ import uuid
 from pathlib import Path
 
 import pytest
-from sqlalchemy import func, select, text
+from sqlalchemy import delete, func, select, text
 
 from campfire.core.config import get_settings
 from campfire.core.db import create_engine, create_sync_engine, session_scope
@@ -159,9 +159,7 @@ async def _cleanup_case(paths: list[str]) -> None:
         for source_path in paths:
             items = (await session.execute(select(CaseItem).where(CaseItem.source_path == source_path))).scalars().all()
             for item in items:
-                await session.execute(
-                    RetrievedNode.__table__.delete().where(RetrievedNode.node_id.like(f"{item.id}:%"))
-                )
+                await session.execute(delete(RetrievedNode).where(RetrievedNode.node_id.like(f"{item.id}:%")))
                 await session.delete(item)
 
 
@@ -492,9 +490,7 @@ async def test_case_search_never_returns_knowledge_items(tmp_path: Path, _patche
                 .all()
             )
             for item in items:
-                await session.execute(
-                    RetrievedNode.__table__.delete().where(RetrievedNode.node_id.like(f"{item.id}:%"))
-                )
+                await session.execute(delete(RetrievedNode).where(RetrievedNode.node_id.like(f"{item.id}:%")))
                 await session.delete(item)
         await async_engine.dispose()
         sync_engine.dispose()
@@ -1178,9 +1174,7 @@ async def test_knowledge_path_still_works_unchanged(tmp_path: Path, _patched_emb
                 .all()
             )
             for item in items:
-                await session.execute(
-                    RetrievedNode.__table__.delete().where(RetrievedNode.node_id.like(f"{item.id}:%"))
-                )
+                await session.execute(delete(RetrievedNode).where(RetrievedNode.node_id.like(f"{item.id}:%")))
                 await session.delete(item)
         await async_engine.dispose()
         sync_engine.dispose()

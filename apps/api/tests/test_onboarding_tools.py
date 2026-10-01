@@ -11,17 +11,20 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Sequence
 from datetime import datetime, timezone
+from typing import get_args
 
 import pytest
 
-from campfire.agent.context import CitationRecorder
+from campfire.agent.context import CitationRecord, CitationRecorder
 from campfire.agent.tools import ActivationState, ToolContext, ToolFailure, ToolResult
 from campfire.modules.accounts.errors import OnboardingWriteError
 from campfire.tools.onboarding import (
     ACCOUNT_PAYLOAD_KEY,
     SKIPPED_SECTIONS,
     FinishOnboardingArgs,
+    _SectionName,
     finish_onboarding,
 )
 
@@ -29,7 +32,30 @@ _ACCOUNT = "tool_test_account"
 
 
 class _FakeIndex:
-    def add(self, *_args: object, **_kwargs: object) -> None: ...
+    """引用索引替身：本文件只钉工具层的参数形状与失败码，索引不落任何东西。
+
+    形状与 `CitationIndex` 端口逐字一致（`add` 是协程、`list_for_run` 按运行读回）。
+    写宽口径的 `*_args` 会让它不是一个合法的端口实现——那等于绕开被测的写入路径。
+    """
+
+    async def add(self, record: CitationRecord) -> None:
+        """不落任何东西。"""
+        return None
+
+    async def list_for_run(self, run_id: str) -> Sequence[CitationRecord]:
+        """空列表。"""
+        return []
+
+
+def _default_args() -> FinishOnboardingArgs:
+    """取默认参数（只给 `skipped_sections=[]`，等价于省略它）。
+
+    为什么不写 `FinishOnboardingArgs()`：mypy 合成的 `__init__` 认不出 pydantic 的
+    `default_factory`（本仓未启用 `pydantic.mypy` 插件），会把它判成必填。
+    显式传空列表与默认值语义相同（默认值是 `list`，无共享可变状态风险），
+    且不依赖插件行为。默认值本身仍由 `test_skipped_sections_defaults_to_empty` 钉住。
+    """
+    return FinishOnboardingArgs(skipped_sections=[])
 
 
 def _context(payload: object | None = None) -> ToolContext:
@@ -93,6 +119,20 @@ def test_skipped_sections_is_a_closed_vocabulary() -> None:
         FinishOnboardingArgs.model_validate({"skipped_sections": ["对象创建"]})
 
 
+def test_section_enum_mirrors_the_module_vocabulary_exactly() -> None:
+    """工具层的 `_SectionName` 与 `SKIPPED_SECTIONS` 双向相等。
+
+    工具层把段名写成字面量 `Literal` 而不是从 `SKIPPED_SECTIONS` 派生：`Literal` 只接受
+    字面量表达式，`Literal[*tuple(sorted(SKIPPED_SECTIONS))]` 被 mypy 判 `valid-type`
+    （`Final` 常量同样不行，实测 mypy 2.1.0）。派生写法「不可能漂移」的好处改由本用例
+    接管，因此断言取集合相等而不是子集：少一个则模型表达不出新版段名，多一个则解析
+    放行了模块侧不认的段名。
+
+    判别性：任改一侧一个段名，本用例失败。
+    """
+    assert set(get_args(_SectionName)) == set(SKIPPED_SECTIONS)
+
+
 # ---------------------------------------------------------------------------
 # 账号校验（未登录 → 明确失败）
 # ---------------------------------------------------------------------------
@@ -105,7 +145,7 @@ async def test_fails_without_an_account_in_payload() -> None:
     猜默认会把引导状态写到别的账号上——使用者看不到异常，只是自己的引导一直没结束。
     """
     for payload in (None, {}, {ACCOUNT_PAYLOAD_KEY: ""}, {ACCOUNT_PAYLOAD_KEY: "   "}):
-        outcome = await finish_onboarding(_context(payload=payload), FinishOnboardingArgs())
+        outcome = await finish_onboarding(_context(payload=payload), _default_args())
         assert isinstance(outcome, ToolFailure), "缺账号时不得成功"
         assert outcome.code == "tool_failed"
         assert ACCOUNT_PAYLOAD_KEY in outcome.message
@@ -127,7 +167,7 @@ async def test_returns_the_state_written_by_the_use_case(monkeypatch: pytest.Mon
     monkeypatch.setattr(tool_module, "session_scope", lambda _s: _FakeSession())
     monkeypatch.setattr(tool_module, "complete_onboarding", _fake_complete)
 
-    outcome = await finish_onboarding(_accounted(), FinishOnboardingArgs())
+    outcome = await finish_onboarding(_accounted(), _default_args())
 
     assert isinstance(outcome, ToolResult)
     assert json.loads(outcome.text) == {"state": "completed"}
@@ -148,7 +188,7 @@ async def test_returns_skipped_when_the_ui_already_skipped(monkeypatch: pytest.M
     monkeypatch.setattr(tool_module, "session_scope", lambda _s: _FakeSession())
     monkeypatch.setattr(tool_module, "complete_onboarding", _fake_complete)
 
-    outcome = await finish_onboarding(_accounted(), FinishOnboardingArgs())
+    outcome = await finish_onboarding(_accounted(), _default_args())
 
     assert isinstance(outcome, ToolResult)
     assert json.loads(outcome.text) == {"state": "skipped"}
@@ -169,7 +209,7 @@ async def test_write_failure_does_not_receipt_completed(monkeypatch: pytest.Monk
     monkeypatch.setattr(tool_module, "session_scope", lambda _s: _FakeSession())
     monkeypatch.setattr(tool_module, "complete_onboarding", _boom)
 
-    outcome = await finish_onboarding(_accounted(), FinishOnboardingArgs())
+    outcome = await finish_onboarding(_accounted(), _default_args())
 
     assert isinstance(outcome, ToolFailure)
     assert outcome.code == "tool_failed"
@@ -188,7 +228,7 @@ async def test_failure_message_does_not_leak_details(monkeypatch: pytest.MonkeyP
     monkeypatch.setattr(tool_module, "session_scope", lambda _s: _FakeSession())
     monkeypatch.setattr(tool_module, "complete_onboarding", _boom)
 
-    outcome = await finish_onboarding(_accounted(), FinishOnboardingArgs())
+    outcome = await finish_onboarding(_accounted(), _default_args())
 
     assert isinstance(outcome, ToolFailure)
     assert "secret" not in outcome.message

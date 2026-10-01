@@ -18,7 +18,7 @@ import json
 from pathlib import Path
 
 import pytest
-from sqlalchemy import select, text
+from sqlalchemy import delete, select, text
 
 from campfire.core.config import get_settings
 from campfire.core.db import create_engine, create_sync_engine, session_scope
@@ -181,9 +181,10 @@ async def _cleanup(source_path: str) -> None:
         for model in (KnowledgeItem, CaseItem):
             items = (await session.execute(select(model).where(model.source_path == source_path))).scalars().all()
             for item in items:
-                await session.execute(
-                    RetrievedNode.__table__.delete().where(RetrievedNode.node_id.like(f"{item.id}:%"))
-                )
+                # 收窄到两种条目之一：`model` 是类型对象而非类的联合，静态类型只能给出
+                # 两者的公共基类 `Base`，而 `id` 声明在各自的具体类上。
+                assert isinstance(item, (KnowledgeItem, CaseItem)), "查询只可能返回这两种条目"
+                await session.execute(delete(RetrievedNode).where(RetrievedNode.node_id.like(f"{item.id}:%")))
                 await session.delete(item)
 
 

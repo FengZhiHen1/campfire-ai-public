@@ -187,7 +187,9 @@ def test_pool_rejects_a_duck_typed_tool_with_empty_name_or_description() -> None
         def __init__(self, name: str, description: str) -> None:
             self.name = name
             self.description = description
-            self.risk = "low"
+            # 标成 `RiskLevel` 而不是让字面量推断成 `str`：鸭子类型的重点是「形状对得上
+            # `Tool` 协议」，风险档本就该是那三个字面量之一（测试侧不该比协议更宽）。
+            self.risk: RiskLevel = "low"
             self.requires_approval = False
 
         @property
@@ -208,9 +210,11 @@ def test_parameters_schema_is_derived_from_the_args_model() -> None:
     spec = _spec()
 
     schema = spec.parameters
+    properties = schema["properties"]
+    assert isinstance(properties, dict)  # schema 的 `properties` 必须是对象，不是别的形状
 
     assert schema["required"] == ["query"]
-    assert set(schema["properties"]) == {"query", "limit"}
+    assert set(properties) == {"query", "limit"}
 
 
 def test_duplicate_registration_fails_instead_of_overwriting() -> None:

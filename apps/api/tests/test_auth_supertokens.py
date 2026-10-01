@@ -94,8 +94,18 @@ def _call_keywords(source: str, function_name: str, callee_suffix: str) -> list[
     return found
 
 
-def _literal(node: ast.expr) -> object:
-    """取常量实参的值；非字面量返回一个可读的占位符（避免用例因不可解析而空转）。"""
+def _literal(node: ast.expr | None) -> object:
+    """取常量实参的值；非字面量返回一个可读的占位符（避免用例因不可解析而空转）。
+
+    `None`（该关键字实参不存在）单独给一个说法：调用方用 `call.get(...)` 取值，
+    缺键就是 `None`。这与「实参是真实存在但非字面量」不同，必须能分辨，
+    否则「压根没传这个参数」会被读成「传了个怪东西」。
+
+    Raises:
+        AssertionError: 传进来的实参节点不存在——缺参数本身就是失败，
+            不能靠 `ast.unparse(None)` 抛 `AttributeError` 来暴露（那是崩溃，不是判据）。
+    """
+    assert node is not None, "该调用没有传这个关键字实参——本用例检查的目标不存在"
     try:
         return ast.literal_eval(node)
     except ValueError:
@@ -257,14 +267,16 @@ def test_sign_up_parameters_must_be_provided_together() -> None:
     判别性：去掉 `init_supertokens` 里的成对校验，本用例失败（不抛异常）。
     """
     import pytest
+    from pydantic import SecretStr
+    from supertokens_python.recipe.emailpassword import InputFormField
     from supertokens_python.recipe.emailpassword.interfaces import APIInterface
 
-    settings = Settings(supertokens_api_key="x")
+    settings = Settings(supertokens_api_key=SecretStr("x"))
 
     def _noop_overrides(original: APIInterface) -> APIInterface:
         return original
 
-    def _noop_fields() -> list[object]:
+    def _noop_fields() -> list[InputFormField]:
         return []
 
     # 只给 api_overrides
@@ -278,6 +290,8 @@ def test_sign_up_parameters_must_be_provided_together() -> None:
 
 def test_configuration_check_reports_missing_key() -> None:
     """配置自检不发起网络请求，且如实报告缺失项（not_configured 而不是伪装可用）。"""
+    from pydantic import SecretStr
+
     from campfire.core.health import Status
 
     missing = st.check_supertokens_configuration(Settings(supertokens_api_key=None))
@@ -285,5 +299,5 @@ def test_configuration_check_reports_missing_key() -> None:
     assert "SUPERTOKENS_API_KEY" in missing.detail
 
     # 配齐时报告 OK（注意：这不代表 core 真的可达——那是 check_auth_core 的职责）。
-    ok = st.check_supertokens_configuration(Settings(supertokens_api_key="x"))
+    ok = st.check_supertokens_configuration(Settings(supertokens_api_key=SecretStr("x")))
     assert ok.status is Status.OK

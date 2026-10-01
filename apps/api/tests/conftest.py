@@ -163,7 +163,9 @@ def connect_falkordb_or_skip():  # noqa: ANN202 —— 返回 FalkorDriver；避
     Raises:
         pytest.skip.Exception: 容器不可用（通过 `pytest.skip` 抛出）。
     """
-    from falkordb.asyncio import FalkorDB
+    # 上游无 py.typed：这个 ignore 与 `modules/memory/graph.py` 的同一处一致，
+    # 运行时行为由集成测试锁定（本函数本身就是那层守卫）。
+    from falkordb.asyncio import FalkorDB  # type: ignore[import-untyped]  # 上游无 py.typed 标记，非本仓类型缺陷
     from graphiti_core.driver.falkordb_driver import FalkorDriver
 
     client = None

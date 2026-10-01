@@ -32,6 +32,7 @@ from sqlalchemy.exc import IntegrityError
 from campfire.core.config import get_settings
 from campfire.core.db import session_scope
 from campfire.modules.memory.errors import EpisodeKeyOwnedByAnotherAccountError, MemoryDataError
+from campfire.modules.memory.identity import to_account_id
 from campfire.modules.memory.ledger import (
     DeletionOutcome,
     deleted_episode_keys,
@@ -48,12 +49,16 @@ pytestmark = pytest.mark.integration
 #: 本文件专用的账号标识。故意用非 UUID 形态：账本列此前是 `uuid`，而
 #: `identity.to_account_id` 接受 `[a-zA-Z0-9_-]`（不只 UUID）——两者冲突会让
 #: 「合法账号键无法落库」。用下划线形态正是为了把这个缺陷钉住（2026-09-29 评审发现）。
-_ACCOUNT = "cd_it_account_001"
+#:
+#: 三个常量都过 `to_account_id` 收敛成 `AccountId`：`record_deletion` 的入参是
+#: `AccountId`（它内部会再校验一次），而这三个值本就是「已校验的合法账号」。
+#: 用裸 `str` 会掩盖「调用方没走校验入口就传进来」这一类真实缺陷。
+_ACCOUNT = to_account_id("cd_it_account_001")
 
 #: 本文件用到的另外两个账号（跨账号场景）。集中定义：用例里不再就地写字面量，
 #: 这样 `_ALL_ACCOUNTS` 不可能漏掉某个账号（2026-09-29 评审发现的清理漂移）。
-_OTHER_ACCOUNT_A = "cd_it_account_002"
-_OTHER_ACCOUNT_B = "cd_it_account_003"
+_OTHER_ACCOUNT_A = to_account_id("cd_it_account_002")
+_OTHER_ACCOUNT_B = to_account_id("cd_it_account_003")
 
 
 @pytest_asyncio.fixture(autouse=True)
@@ -353,10 +358,14 @@ async def test_record_deletion_rejects_invalid_account_ids() -> None:
     await _cleanup()
     key = _episode_key("badacct")
     try:
-        for bad in ("", "_", "acct.aaa", "a" * 200):
+        # 负例：本用例测的就是「运行期入口校验拒绝非法账号」，因此必须真的把
+        # `AccountId` 契约之外的裸字符串递进去——这正是类型系统要拦的调用形态，
+        # 但拦住它就等于删掉这条用例的判别性（见上方「判别性」说明）。
+        bad_accounts: tuple[str, ...] = ("", "_", "acct.aaa", "a" * 200)
+        for bad in bad_accounts:
             async with session_scope(get_settings()) as session:
                 with pytest.raises(AccountIdError):
-                    await record_deletion(session, account_id=bad, episode_key=key)
+                    await record_deletion(session, account_id=bad, episode_key=key)  # type: ignore[arg-type]  # 负例：传非法账号
 
         # 被拒的请求不得留下任何账本行（毒化行的定义就是「留下了」）。
         async with session_scope(get_settings()) as session:
@@ -388,7 +397,7 @@ async def test_deleted_episode_keys_rejects_invalid_account_id() -> None:
 
 
 @pytest.mark.asyncio
-async def test_reaching_the_key_ceiling_fails_closed_instead_of_truncating() -> None:
+async def test_reaching_the_key_ceiling_fails_closed_instead_of_truncating(monkeypatch: pytest.MonkeyPatch) -> None:
     """账本触顶时显式失败，而不是静默返回前 N 条（CORE-11 的触界行为）。
 
     为什么必须有这条（2026-09-29 自查发现）：`DELETED_KEYS_LIMIT` 的触界行为此前
@@ -402,12 +411,16 @@ async def test_reaching_the_key_ceiling_fails_closed_instead_of_truncating() -> 
     于 TODO `TECH-22`。
 
     判别性：把 `deleted_episode_keys` 里的触顶检查改回「返回前 N 条」，本用例会失败。
+
+    用 `monkeypatch.setattr` 的字符串形态收窄上限：`DELETED_KEYS_LIMIT` 声明为
+    `Final`，直接赋值会被静态检查拒绝（`Cannot assign to final name`）；而这里要改的
+    正是「把上界压到 3 以便触界」，属测试对模块常量的合法改写，走 monkeypatch 还顺带
+    免掉了手工还原（原写法在 `finally` 里还原，一旦断言前抛错就靠它兜底）。
     """
     from campfire.modules.memory import ledger as ledger_module
 
-    original_cap = ledger_module.DELETED_KEYS_LIMIT
     cap = 3
-    ledger_module.DELETED_KEYS_LIMIT = cap
+    monkeypatch.setattr(ledger_module, "DELETED_KEYS_LIMIT", cap)
 
     key_prefix = "ceiling"
     try:
@@ -436,7 +449,6 @@ async def test_reaching_the_key_ceiling_fails_closed_instead_of_truncating() -> 
             keys = await deleted_episode_keys(session, _ACCOUNT)
         assert len(keys) == cap, f"恰好 {cap} 条应正常返回，实际 {len(keys)}"
     finally:
-        ledger_module.DELETED_KEYS_LIMIT = original_cap
         await _cleanup()
 
 

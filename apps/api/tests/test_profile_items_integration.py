@@ -35,7 +35,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 import pytest_asyncio
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, select, update
 
 from campfire.core.authz import ObjectArchivedError, set_authorizer
 from campfire.core.config import get_settings
@@ -302,6 +302,7 @@ async def test_user_statement_with_confirmed_is_accepted() -> None:
     item_id = await _propose(object_id, origin="user_statement", confirmation="confirmed")
     async with session_scope(get_settings()) as session:
         record = await repo.get_item(session, item_id=item_id)
+    assert record is not None, "刚写入的条目必须读得回来"
     assert record.confirmation == "confirmed"
 
 
@@ -528,10 +529,10 @@ async def test_downgraded_candidate_is_excluded_but_not_deleted() -> None:
 
     old = _NOW - timedelta(days=STALE_AFTER_DAYS + 1)
     async with session_scope(get_settings()) as session:
+        # 用 `update(模型)` 而不是 `ProfileItem.__table__.update()`：后者在静态上是
+        # `FromClause`（`__table__` 的声明类型），没有 `update`。与 `repository.py` 同法。
         await session.execute(
-            ProfileItem.__table__.update()
-            .where(ProfileItem.item_id == repo.to_item_uuid(item_id))
-            .values(last_confirmed_at=old)
+            update(ProfileItem).where(ProfileItem.item_id == repo.to_item_uuid(item_id)).values(last_confirmed_at=old)
         )
 
     # 默认读取（include_candidates=False）不返回它。
@@ -567,9 +568,7 @@ async def test_confirmed_item_is_not_downgraded_even_when_old() -> None:
     old = _NOW - timedelta(days=STALE_AFTER_DAYS * 5)
     async with session_scope(get_settings()) as session:
         await session.execute(
-            ProfileItem.__table__.update()
-            .where(ProfileItem.item_id == repo.to_item_uuid(item_id))
-            .values(last_confirmed_at=old)
+            update(ProfileItem).where(ProfileItem.item_id == repo.to_item_uuid(item_id)).values(last_confirmed_at=old)
         )
     async with session_scope(get_settings()) as session:
         grouped = await service.read_items(session, account_id=_ACCOUNT, support_object_id=object_id, now=_NOW)

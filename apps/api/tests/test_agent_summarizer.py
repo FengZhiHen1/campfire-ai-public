@@ -10,13 +10,13 @@ import json
 from collections.abc import Mapping, Sequence
 from typing import Any
 
-import httpx
+import httpx2
 import pytest
 from agents import ModelSettings
 from agents.models.openai_chatcompletions import OpenAIChatCompletionsModel
 from pydantic import BaseModel
 
-from campfire.agent.context import SummaryRequest
+from campfire.agent.context import CitationRecord, SummaryRequest
 from campfire.agent.model import ModelBinding
 from campfire.agent.runtime import ModelSummarizer, ToolBridge
 from campfire.agent.tools import ToolContext, ToolDispatcher, ToolPool, ToolResult, ToolSpec, resolve_scope
@@ -60,14 +60,14 @@ class ScriptedChat:
         # quality-floor: ignore bare-any 值来自 json.loads，类型在源头就已丢失
         self.requests: list[dict[str, Any]] = []
 
-    async def handler(self, request: httpx.Request) -> httpx.Response:
+    async def handler(self, request: httpx2.Request) -> httpx2.Response:
         body = json.loads(request.content)
         self.requests.append(body)
         if self._status != 200:
-            return httpx.Response(self._status, json={"error": {"message": "boom"}})
+            return httpx2.Response(self._status, json={"error": {"message": "boom"}})
         if body.get("stream"):
-            return httpx.Response(200, headers={"content-type": "text/event-stream"}, content=self._stream_body())
-        return httpx.Response(200, json=self._json_body())
+            return httpx2.Response(200, headers={"content-type": "text/event-stream"}, content=self._stream_body())
+        return httpx2.Response(200, json=self._json_body())
 
     def _stream_body(self) -> bytes:
         """流式应答（主运行用得到，摘要调用不用）。"""
@@ -113,7 +113,7 @@ class ScriptedChat:
 def _binding(chat: ScriptedChat) -> ModelBinding:
     from openai import AsyncOpenAI
 
-    client = httpx.AsyncClient(transport=httpx.MockTransport(chat.handler))
+    client = httpx2.AsyncClient(transport=httpx2.MockTransport(chat.handler))
     return ModelBinding(
         name=MODEL_NAME,
         model=OpenAIChatCompletionsModel(
@@ -178,7 +178,7 @@ async def test_instruction_comes_last_after_the_replayed_prefix() -> None:
     """第 4 节：热前缀逐字回放，压缩指令作为最后一条 user 消息追加。"""
     chat = ScriptedChat("摘要正文")
     summarizer = ModelSummarizer(binding=_binding(chat))
-    prefix = [
+    prefix: list[dict[str, object]] = [
         {"role": "user", "content": "第一段历史"},
         {"role": "assistant", "content": "第二段历史"},
     ]
@@ -202,7 +202,7 @@ async def test_replayed_items_are_copied_not_mutated() -> None:
     """「逐字回放」不只是措辞：原项不得被就地修改。"""
     chat = ScriptedChat("摘要")
     summarizer = ModelSummarizer(binding=_binding(chat))
-    original = {"role": "user", "content": "历史"}
+    original: dict[str, object] = {"role": "user", "content": "历史"}
 
     await summarizer.summarize(_request(prefix=[original]))
 
@@ -213,11 +213,10 @@ async def test_replayed_items_are_copied_not_mutated() -> None:
 class _FakeIndex:
     """引用索引替身（本文件只关心工具声明是否照旧带上）。"""
 
-    async def add(self, _record: object) -> None:
+    async def add(self, _record: CitationRecord) -> None:
         """不落任何东西。"""
-        return None
 
-    async def list_for_run(self, _run_id: str) -> Sequence[object]:
+    async def list_for_run(self, _run_id: str) -> Sequence[CitationRecord]:
         """空列表。"""
         return []
 

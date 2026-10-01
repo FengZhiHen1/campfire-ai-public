@@ -1,6 +1,6 @@
 """运行编排：端到端跑通 SDK 的真实调用路径，但不打网络。
 
-做法是给 `AsyncOpenAI` 装一个 `httpx.MockTransport`，按 OpenAI Chat Completions 的
+做法是给 `AsyncOpenAI` 装一个 `httpx2.MockTransport`，按 OpenAI Chat Completions 的
 SSE 格式放脚本。这样被验证的是真实链路：真实模型类 → 真实流式转换 → 真实运行循环 →
 真实会话写入，只有 HTTP 出口是假的。用手写假模型替身则会绕过转换层，测不到窗口是否真的
 生效、工具结果是否真的回到模型。
@@ -17,9 +17,9 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-import httpx
+import httpx2
 import pytest
-from agents import ModelSettings, RunConfig
+from agents import ModelSettings, RunConfig, SessionSettings
 from agents.items import TResponseInputItem
 from agents.memory.session import Session
 from agents.models.openai_chatcompletions import OpenAIChatCompletionsModel
@@ -74,7 +74,9 @@ class FakeSession:
 
     def __init__(self, session_id: str, items: Sequence[TResponseInputItem] | None = None) -> None:
         self.session_id = session_id
-        self.session_settings = None
+        # 必须显式标注：SDK 的 `Session` 协议把该属性声明成 `SessionSettings | None`，
+        # 不给注解时推断出的 `None` 与协议不兼容，替身就不再是合法的 `Session`。
+        self.session_settings: SessionSettings | None = None
         self.items: list[TResponseInputItem] = list(items or [])
 
     async def get_items(self, limit: int | None = None) -> list[TResponseInputItem]:
@@ -176,12 +178,12 @@ class ScriptedChat:
         # quality-floor: ignore bare-any 值来自 json.loads，类型在源头就已丢失
         self.requests: list[dict[str, Any]] = []
 
-    async def handler(self, request: httpx.Request) -> httpx.Response:
+    async def handler(self, request: httpx2.Request) -> httpx2.Response:
         self.requests.append(json.loads(request.content))
         if self._delay:
             await asyncio.sleep(self._delay)
         body = self._script.pop(0) if self._script else text_reply("（脚本已用尽）")
-        return httpx.Response(200, headers={"content-type": "text/event-stream"}, content=body)
+        return httpx2.Response(200, headers={"content-type": "text/event-stream"}, content=body)
 
     # 与 `requests` 同源：各用例按 Chat Completions 的 messages 形状取值。
     @property
@@ -192,7 +194,7 @@ class ScriptedChat:
 
 
 def _binding(chat: ScriptedChat, *, settings: ModelSettings | None = None) -> ModelBinding:
-    client = httpx.AsyncClient(transport=httpx.MockTransport(chat.handler))
+    client = httpx2.AsyncClient(transport=httpx2.MockTransport(chat.handler))
     return ModelBinding(
         name=MODEL_NAME,
         model=OpenAIChatCompletionsModel(
@@ -203,7 +205,7 @@ def _binding(chat: ScriptedChat, *, settings: ModelSettings | None = None) -> Mo
     )
 
 
-def _openai_client(http_client: httpx.AsyncClient) -> AsyncOpenAI:
+def _openai_client(http_client: httpx2.AsyncClient) -> AsyncOpenAI:
     from openai import AsyncOpenAI
 
     return AsyncOpenAI(api_key="test-key", base_url=BASE_URL, max_retries=0, http_client=http_client)
@@ -215,7 +217,7 @@ def read_tool(*, calls: list[str] | None = None, citations: list[str] | None = N
     async def handler(context: ToolContext, args: ReadArgs) -> ToolResult:
         if calls is not None:
             calls.append(args.query)
-        produced = ()
+        produced: tuple[CitationRecord, ...] = ()
         if citations:
             produced = tuple([await context.citations.record(source="knowledge", reference=ref) for ref in citations])
         return ToolResult(text=f"读到 {args.query}", citations=produced)
@@ -1061,10 +1063,10 @@ async def test_catalog_overflow_fails_the_run_instead_of_escaping(
 
 @pytest.mark.asyncio
 async def test_model_failure_is_reported_as_model_unavailable() -> None:
-    def handler(_request: httpx.Request) -> httpx.Response:
-        return httpx.Response(500, json={"error": {"message": "boom"}})
+    def handler(_request: httpx2.Request) -> httpx2.Response:
+        return httpx2.Response(500, json={"error": {"message": "boom"}})
 
-    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    client = httpx2.AsyncClient(transport=httpx2.MockTransport(handler))
     binding = ModelBinding(
         name=MODEL_NAME,
         model=OpenAIChatCompletionsModel(model=MODEL_NAME, openai_client=_openai_client(client)),
@@ -1484,11 +1486,11 @@ async def test_context_overflow_triggers_a_max_head_reduction_and_retry() -> Non
         def __init__(self) -> None:
             super().__init__([text_reply("重试成功")])
 
-        async def handler(self, request: httpx.Request) -> httpx.Response:
+        async def handler(self, request: httpx2.Request) -> httpx2.Response:
             self.requests.append(json.loads(request.content))
             if len(self.requests) == 1:
-                return httpx.Response(400, content=overflow, headers={"content-type": "application/json"})
-            return httpx.Response(200, headers={"content-type": "text/event-stream"}, content=self._script.pop(0))
+                return httpx2.Response(400, content=overflow, headers={"content-type": "application/json"})
+            return httpx2.Response(200, headers={"content-type": "text/event-stream"}, content=self._script.pop(0))
 
     chat = OverflowThenOk()
     # 约 654 token：低于阈值 800（运行前不压缩），但 ≥ 窗口上限 1000 的一半（证据成立）
@@ -1531,9 +1533,9 @@ async def test_overflow_that_never_clears_fails_explicitly_without_looping() -> 
         def __init__(self) -> None:
             super().__init__([])
 
-        async def handler(self, request: httpx.Request) -> httpx.Response:
+        async def handler(self, request: httpx2.Request) -> httpx2.Response:
             self.requests.append(json.loads(request.content))
-            return httpx.Response(400, content=overflow, headers={"content-type": "application/json"})
+            return httpx2.Response(400, content=overflow, headers={"content-type": "application/json"})
 
     chat = AlwaysOverflow()
     session = FakeSession("s-1", [{"role": "user", "content": "很短的历史"}])
@@ -1567,9 +1569,9 @@ async def test_context_overflow_without_progress_fails_explicitly() -> None:
         def __init__(self) -> None:
             super().__init__([])
 
-        async def handler(self, request: httpx.Request) -> httpx.Response:
+        async def handler(self, request: httpx2.Request) -> httpx2.Response:
             self.requests.append(json.loads(request.content))
-            return httpx.Response(400, content=overflow, headers={"content-type": "application/json"})
+            return httpx2.Response(400, content=overflow, headers={"content-type": "application/json"})
 
     chat = AlwaysOverflow()
     session = FakeSession("s-1", _long_history())
@@ -1597,10 +1599,10 @@ async def test_overflow_without_compaction_wiring_fails_with_its_own_code() -> N
     """没接线压缩时，溢出就是一次明确的失败——不当成「没发生」。"""
     overflow = json.dumps({"error": {"message": "maximum context length exceeded"}}).encode()
 
-    def handler(_request: httpx.Request) -> httpx.Response:
-        return httpx.Response(400, content=overflow, headers={"content-type": "application/json"})
+    def handler(_request: httpx2.Request) -> httpx2.Response:
+        return httpx2.Response(400, content=overflow, headers={"content-type": "application/json"})
 
-    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    client = httpx2.AsyncClient(transport=httpx2.MockTransport(handler))
     binding = ModelBinding(
         name=MODEL_NAME,
         model=OpenAIChatCompletionsModel(model=MODEL_NAME, openai_client=_openai_client(client)),

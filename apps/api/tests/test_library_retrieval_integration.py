@@ -16,7 +16,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-from sqlalchemy import select
+from sqlalchemy import delete, select
 
 from campfire.core.config import get_settings
 from campfire.core.db import create_engine, create_sync_engine, session_scope
@@ -58,9 +58,7 @@ async def _cleanup(paths: list[str]) -> None:
                 .all()
             )
             for item in items:
-                await session.execute(
-                    RetrievedNode.__table__.delete().where(RetrievedNode.node_id.like(f"{item.id}:%"))
-                )
+                await session.execute(delete(RetrievedNode).where(RetrievedNode.node_id.like(f"{item.id}:%")))
                 await session.delete(item)
 
 
@@ -346,7 +344,7 @@ async def test_withdrawn_item_is_immediately_unsearchable(tmp_path: Path, monkey
                 await session.execute(select(KnowledgeItem).where(KnowledgeItem.source_path == paths[0]))
             ).scalar_one()
             item.withdrawn = True
-            await session.execute(RetrievedNode.__table__.delete().where(RetrievedNode.node_id.like(f"{item.id}:%")))
+            await session.execute(delete(RetrievedNode).where(RetrievedNode.node_id.like(f"{item.id}:%")))
 
         async with session_scope(settings) as session:
             after = (await search(session, store, "孤独症", embed_query=_fake_embed_query)).items

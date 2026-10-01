@@ -29,11 +29,13 @@ import json
 import logging
 import uuid
 from collections.abc import AsyncIterator, Sequence
+from typing import cast
 
 import httpx
 import pytest
 import pytest_asyncio
 import sqlalchemy
+from agents.items import TResponseInputItem
 from sqlalchemy import delete, select
 
 import campfire.main as main_module
@@ -475,10 +477,18 @@ async def test_list_sessions_shows_title_preview_and_only_own_sessions(client: h
         )
 
     sdk = build_sqlalchemy_session(mine, engine=get_engine(get_settings()))
+    # 助手消息的分片 content（`[{"type": "output_text", ...}]`）是实测的真实落库形状，
+    # 但 SDK 的输入项联合类型对「同一 dict 同时像 EasyInputMessageParam 与 Message」
+    # 判不出唯一成员。这里收窄成 `TResponseInputItem`：喂的就是 SDK 自己的序列化形状，
+    # 与 `test_accounts_sessions_integration.py` 喂原始 JSON 的处置同源。
+    assistant_item = cast(
+        TResponseInputItem,
+        {"role": "assistant", "content": [{"type": "output_text", "text": "可以先记录一周的作息。"}]},
+    )
     await sdk.add_items(
         [
             {"role": "user", "content": "孩子最近睡不好，怎么办"},
-            {"role": "assistant", "content": [{"type": "output_text", "text": "可以先记录一周的作息。"}]},
+            assistant_item,
         ]
     )
 
@@ -1232,13 +1242,21 @@ async def test_completed_onboarding_is_not_injected_on_the_first_run(client: htt
 # ---------------------------------------------------------------------------
 
 
-async def _start_gated_run(client: httpx.AsyncClient, runner: ScriptedRunner) -> str:
-    """起一次挂在闸门上的运行，返回 `run_id`（用例自己负责放行或取消）。"""
-    runner.gate = asyncio.Event()
+async def _start_gated_run(client: httpx.AsyncClient, runner: ScriptedRunner) -> tuple[str, asyncio.Event]:
+    """起一次挂在闸门上的运行。
+
+    Returns:
+        `(run_id, gate)`：闸门随 `run_id` 一起返回，而不是让调用方再读一次
+        `runner.gate`——那个属性的静态类型是 `asyncio.Event | None`（默认无闸门），
+        但本函数刚给它赋了值，因此调用方拿到的必然可用。把这条事实放在返回值里，
+        比在每个调用点写 `assert runner.gate is not None` 更少重复，也更不容易漏。
+    """
+    gate = asyncio.Event()
+    runner.gate = gate
     session_id = await _create_session(client)
     response = await _send(client, session_id, content="跑起来")
     assert response.status_code == 202, response.text
-    return response.json()["run_id"]
+    return response.json()["run_id"], gate
 
 
 async def test_cancel_returns_202_and_the_stream_ends_without_a_terminal_event(
@@ -1251,7 +1269,7 @@ async def test_cancel_returns_202_and_the_stream_ends_without_a_terminal_event(
     """
     runner = ScriptedRunner(get_settings())
     _install_runner(runner)
-    run_id = await _start_gated_run(client, runner)
+    run_id, gate = await _start_gated_run(client, runner)
 
     cancel_response, streamed = await asyncio.gather(
         client.post(f"/consult/runs/{run_id}/cancel"),
@@ -1265,7 +1283,7 @@ async def test_cancel_returns_202_and_the_stream_ends_without_a_terminal_event(
     assert b"event: run_finished" not in streamed.content
     assert b"event: run_failed" not in streamed.content
 
-    runner.gate.set()
+    gate.set()
     await drain_pumps()
 
 
@@ -1313,7 +1331,7 @@ async def test_concurrent_cancels_never_both_succeed_and_never_error(client: htt
     """两条取消真并发：都不报错，且至少一条 202（另一条可能已看到终结状态而 409）。"""
     runner = ScriptedRunner(get_settings())
     _install_runner(runner)
-    run_id = await _start_gated_run(client, runner)
+    run_id, gate = await _start_gated_run(client, runner)
 
     first, second = await asyncio.gather(
         client.post(f"/consult/runs/{run_id}/cancel"),
@@ -1323,7 +1341,7 @@ async def test_concurrent_cancels_never_both_succeed_and_never_error(client: htt
     assert set(statuses) <= {202, 409}, (first.text, second.text)
     assert statuses[0] == 202, "第一次取消必须成功"
 
-    runner.gate.set()
+    gate.set()
     await drain_pumps()
 
 
@@ -1331,7 +1349,7 @@ async def test_cancel_other_accounts_run_is_404_with_the_same_body(client: httpx
     """越权与不存在逐字同文案同状态码（项目不变量）。"""
     runner = ScriptedRunner(get_settings())
     _install_runner(runner)
-    run_id = await _start_gated_run(client, runner)
+    run_id, gate = await _start_gated_run(client, runner)
 
     main_module.app.dependency_overrides[consult_routes._session_dependency] = _auth_as(_OTHER_ACCOUNT)
     try:
@@ -1342,7 +1360,7 @@ async def test_cancel_other_accounts_run_is_404_with_the_same_body(client: httpx
 
     assert foreign.status_code == missing.status_code == 404
     assert foreign.json() == missing.json()
-    runner.gate.set()
+    gate.set()
     await drain_pumps()
 
 
@@ -1565,7 +1583,8 @@ async def test_emergency_with_foreign_or_archived_object_is_404_with_the_same_me
 async def test_emergency_rejects_unknown_keys_and_bad_shapes(client: httpx.AsyncClient) -> None:
     """载荷不合法一律 422（契约第 2 节的 422 行）。"""
     _install_runner(ScriptedRunner(get_settings()))
-    cases = (
+    # 载荷是异质 JSON（每例的非法点不同），`dict[str, object]` 如实描述「逐例的形状不同」。
+    cases: tuple[dict[str, object], ...] = (
         {"items": []},
         {"items": [{"key": "no_such_item", "value": "x", "skipped": False}]},
         {"items": [{"key": "medical_red_flags", "value": "意识改变", "skipped": False}]},
