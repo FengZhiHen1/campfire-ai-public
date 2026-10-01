@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import unicodedata
 import uuid
+from collections.abc import Sequence
 from datetime import datetime, timezone
 
 from sqlalchemy import delete, func, or_, select, update
@@ -361,6 +362,40 @@ async def get_session_binding(session: AsyncSession, *, session_id: object) -> S
     return (
         await session.execute(select(SessionObjectBinding).where(SessionObjectBinding.session_id == normalized))
     ).scalar_one_or_none()
+
+
+async def list_session_bindings(
+    session: AsyncSession,
+    *,
+    session_ids: Sequence[object],
+) -> list[SessionObjectBinding]:
+    """按会话标识批量取绑定：一次查询覆盖整页。
+
+    与 :func:`get_session_binding` 是同一件事的批量形态。逐会话取绑定会让一页
+    20 条产生 20 次查询（会话列表的对象名取数正是这种页级调用）。
+
+    每行与逐条版取到的是同一行：`session_id` 是绑定表主键，一个会话至多一行，
+    因此这里既不需要 `order_by`，也不存在「取第一条」的选取规则。
+
+    空集合不发查询：`IN ()` 没有语义，早返回让调用方少一次往返。
+
+    Args:
+        session: 关系库会话。
+        session_ids: 会话标识集合。条数上界由调用方给出（会话列表一页的上界是
+            `modules/accounts/session_repository.LIST_MAX_LIMIT`），本层不再另设
+            一道上界——另设会把「页有多大」这一事实复制成两处。
+
+    Returns:
+        命中的绑定行；没有绑定的会话不出现。
+
+    Raises:
+        ProfileDataError: 任一会话标识不合法（与逐条版同一判据与顺序）。
+    """
+    if not session_ids:
+        return []
+    normalized = [_validate_session_id(session_id) for session_id in session_ids]
+    statement = select(SessionObjectBinding).where(SessionObjectBinding.session_id.in_(normalized))
+    return list((await session.execute(statement)).scalars())
 
 
 async def insert_session_binding(
@@ -1057,6 +1092,7 @@ __all__ = [
     "insert_support_object",
     "latest_bound_object_id",
     "list_items",
+    "list_session_bindings",
     "list_support_objects",
     "mark_superseded",
     "normalize_display_name",

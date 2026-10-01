@@ -10,6 +10,7 @@ docs/技术设计/面/profile/档案面HTTP契约.md。
 from __future__ import annotations
 
 import uuid
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import NamedTuple
@@ -43,6 +44,7 @@ from campfire.modules.profile.models import (
     EMERGENCY_STRATEGY_FIELDS,
     MANUAL_ENTRY_SOURCE,
     ProfileItem,
+    SessionObjectBinding,
     SupportObject,
     confirmation_on_entry,
     effective_freshness,
@@ -335,6 +337,34 @@ async def discard_session_binding(session: AsyncSession, *, session_id: object) 
         ProfileDataError: 会话标识不合法。
     """
     return await repo.delete_session_binding(session, session_id=session_id)
+
+
+async def read_session_bindings(
+    session: AsyncSession,
+    *,
+    session_ids: Sequence[object],
+) -> dict[str, SessionObjectBinding]:
+    """按会话标识批量取绑定，返回「会话标识 → 绑定行」。
+
+    会话列表的对象名取数入口（`surfaces/consult` 的 `ObjectNameReader` 实现用它）：
+    一页最多 `modules/accounts/session_repository.LIST_MAX_LIMIT` 条，逐会话取绑定会
+    让整页产生同等次数的查询，这里一次查询覆盖整页。
+
+    与逐条取（`repo.get_session_binding`）取到的是同一行：`session_id` 是绑定表主键，
+    一个会话至多一行，因此批量读既不需要排序也没有选取歧义。
+
+    不做归属判定（与逐条版一致）：绑定行不带对象名，调用方拿它去查自己账号的对象名，
+    别的账号的绑定在那里必然取不到名字，因此不构成越权读取。
+
+    Returns:
+        命中的绑定行，键是会话标识；没有绑定的会话不出现在映射里——调用方据此
+        区分「无对象」与「对象名为空」。
+
+    Raises:
+        ProfileDataError: 任一会话标识不合法（与逐条版同一判据）。
+    """
+    rows = await repo.list_session_bindings(session, session_ids=session_ids)
+    return {row.session_id: row for row in rows}
 
 
 # ============================================================================
@@ -1117,6 +1147,7 @@ __all__ = [
     "list_objects",
     "propose_item",
     "read_items",
+    "read_session_bindings",
     "reject_item",
     "rename_object",
     "resolve_default_object",
