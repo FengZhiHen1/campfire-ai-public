@@ -29,11 +29,14 @@ from campfire.core.pending_write.models import (
 #: 重试上限（第 10 节参数表：5 次）。达到即转 `dead` 并告警，不静默丢弃。
 MAX_ATTEMPTS = 5
 
-#: 租约时长（第 10 节：5 分钟）。取值理由：与兜底扫描周期相等（都是 300 秒）。
-#: 崩溃仍能在一次扫描内被发现——`sweep_once` 每轮先回收过期租约、再重投
+#: 租约时长（第 10 节：5 分钟）。取值理由：与兜底扫描周期相等（都是 300 秒），
+#: 好在回收承重时一次扫描内就能发现崩溃——`sweep_once` 每轮先回收过期租约、再重投
 #: （见 `worker.sweep_once` 的顺序说明）：上一轮扫描之后才崩溃的 Worker，其租约最迟
 #: 在下一轮扫描执行到回收那一步时已过期（租约起点早于该轮扫描至少一个周期的情形
 #: 恒成立；同周期内刚领的租约属「在途」，本就不该被回收）。
+#: 当前接线下崩溃是另一个机制接住的：事务回滚把行留成 `pending`，由
+#: `find_undelivered` 在下一轮扫描重投——同样一次扫描内被发现，且不依赖本常量
+#: （实测与理由见 `reclaim_expired_leases`）。
 #: 不能假定它更短：数值上等于扫描周期（`SWEEP_INTERVAL_SECONDS` 同为 300）。
 #: 写成「相等 + 先回收后重投」才与代码的实际时序一致。
 LEASE_SECONDS = 300
@@ -440,6 +443,39 @@ async def reclaim_expired_leases(
     不增加 `attempts`：Worker 崩溃不是「尝试失败」，消耗重试预算会让反复崩溃的
     环境把健康记录耗成 `dead`。
 
+    生产可达性：当前接线下恒返回空（2026-09-30 实测，不是推断）
+
+    判据是「存在已提交的 `processing` 行」。当前没有产生者：
+
+    - 两个消费者（`modules/memory/consumer.consume_memory_episode`、
+      `modules/profile/consumer.write_from_pending`）的「领取 → 写 → 置 `done`」
+      在同一个 `session_scope` 事务里，`take_for_processing` 与 `mark_done` 收的是
+      调用方那一个会话；
+    - 全仓的 `session.commit()` 只出现在 `core/db.session_scope` 与
+      `core/auth/deletion.py`，两处消费者都不自行提交；
+    - 因此 `state='processing'` 只在未提交的事务里存在，提交时它已经是 `done`
+      或被回滚成上一次提交的 `pending`。
+
+    实测（第二个连接观测，看图库写入期间的消费事务）：观测到
+    `state=pending`、`lease_owner=None`；第二个事务的领取 `UPDATE` 被行锁挡住，
+    1.5 秒 `statement_timeout` 到期抛 `DBAPIError`；消费提交后同一行才是 `done`。
+    所以崩溃的 Worker 留下的是提交过的 `pending`，不是 `processing`。
+
+    真实崩溃恢复走的是 `find_undelivered` 重投那条路
+
+    连接断开 → 事务回滚 → 行仍是 `pending` → 兜底扫描（`worker.sweep_once`）
+    按 `pending` 重投。本函数的逻辑因此不承重，但仍在每轮扫描里先跑一次。
+
+    为何保留它（纵深，不是死代码）
+
+    若将来「领取」改成单独提交（例如为了让租约栅栏承重），库里立刻会出现已提交的
+    `processing` 行，本函数随即承重——同一判断也是 `mark_done` 的租约栅栏
+    （D-31）保留的理由。删掉它会让那次改动没有回收者，记录永久卡在 `processing`。
+    本说明与 `tests/test_pending_write_sweep_integration.py` 的
+    `test_sweep_once_reclaims_expired_leases_before_dispatching` 不冲突：
+    那条用例钉的是机制本身（用已提交的 `processing` 行构造前提），
+    钉的不是「生产上会出现这种行」。
+
     Args:
         session: 关系库会话。
         now: 参照时间。
@@ -524,7 +560,9 @@ async def find_undelivered(
     - `state = pending` 且 `next_attempt_at` 已到（或为空）——含从未成功投递的，
       以及退避到期的；
     - 不含 `processing`：租约过期的属于「领取后 Worker 崩溃」，由
-      `reclaim_expired_leases` 处理（那条路径不消耗 `attempts`，语义不同）；
+      `reclaim_expired_leases` 处理（那条路径不消耗 `attempts`，语义不同）。
+      当前接线下不会出现已提交的 `processing` 行，故崩溃恢复实际走的是本函数
+      重投 `pending` 那条路——理由与实测见 `reclaim_expired_leases` 的说明；
     - 不含 `done`/`dead`：终态不得被复活（`mark_done`/`mark_dead`/回收都有 state
       守卫，这里是同一纪律的第一道）。
 

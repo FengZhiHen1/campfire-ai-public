@@ -422,6 +422,12 @@ async def sweep_once(session: AsyncSession | None = None, *, now: datetime | Non
     两件事的顺序有讲究：先回收租约、再重投。回收把「领取后崩溃」的记录放回
     `pending`，紧接着的查询就能把它们一并重投——否则它们要等下一周期（5 分钟）。
 
+    当前接线下回收恒回收 0 条：消费的「领取 → 写 → 置 done」在同一事务里，
+    库里没有已提交的 `processing` 行，崩溃恢复走 `find_undelivered` 重投
+    `pending`。这一步保留为纵深，理由与实测见
+    `core/pending_write/repository.reclaim_expired_leases` 的说明。
+    顺序仍必须是这样：领取若改成单独提交，回收就要在同轮先于重投生效。
+
     候选集按 `CONSUMED_KINDS` 过滤（写入路径第 4 节第 3 条）：没有消费者的 kind
     重投也没人接，而且它们会一直停在 `pending`、按 `created_at` 排在最前，于是每轮
     占满条数预算，把该重投的记忆记录挤出候选集。消费者接上后无需改这里——
