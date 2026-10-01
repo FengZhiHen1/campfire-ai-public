@@ -119,6 +119,39 @@ describe('档案页 · 加载与候选层不变量', () => {
     expect(within(summary).queryByText('提前知道结束时间')).toBeNull();
   });
 
+  it('P0 候选 + 已降权：该行出「已降权」标且描述默认收起，展开后可见（档案页第 25 行）', async () => {
+    // 判别性：判据与呈现都必须落在候选行上。修复前标与折叠挂在稳定行——而稳定层的
+    // isStale 恒为假（服务端按 freshness=current 取稳定层），那是一整条死分支。
+    // 把标与折叠放回稳定行后，本用例三条断言全红：候选行没有标、描述直接可见、
+    // 也没有「展开内容」入口。
+    const staleCandidate = item({
+      item_id: 'c1',
+      topic: '提前知道结束时间',
+      description: '出行前先说清流程',
+      origin: 'ai_inference',
+      confirmation: 'unconfirmed',
+      freshness: 'stale',
+    });
+    const p = port({
+      listItems: vi.fn(async () => ({ items: [item()], candidates: [staleCandidate], next_cursor: null })),
+    });
+    renderPage(p);
+
+    const group = (await screen.findByText(/^待确认（1）$/)).closest('details') as HTMLElement;
+    const row = within(group).getByText('提前知道结束时间').closest('article') as HTMLElement;
+
+    // 「已降权」标是 .tag.meta（与切换 chip 上的「已归档」标同一契约类）；
+    // lr-meta 里的时效措辞是长串的一部分，不会冒充这个标。
+    const badge = within(row).getByText('已降权');
+    expect(badge.className).toContain('tag');
+    expect(badge.className).toContain('meta');
+
+    // 默认收起：描述不以正文出现，只给一个展开入口；点开后描述可见。
+    expect(within(row).queryByText('出行前先说清流程')).toBeNull();
+    fireEvent.click(within(row).getByRole('button', { name: '展开内容' }));
+    expect(await within(row).findByText('出行前先说清流程')).toBeDefined();
+  });
+
   it('P1 对象为空 → 空态引导新建对象，不显示内容区', async () => {
     const p = port({ listObjects: vi.fn(async () => ({ items: [] })) });
     renderPage(p);

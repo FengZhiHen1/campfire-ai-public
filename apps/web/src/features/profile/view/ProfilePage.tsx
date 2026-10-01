@@ -98,8 +98,8 @@ export function ProfilePage({ port }: ProfilePageProps) {
     page.objects.find((object) => object.id === page.selectedObjectId) ?? null,
     page.reload,
   );
-  // 描述展开状态：已降权条目默认收起（档案页第 25 行）。存的是被展开的行，不是被收起的行——
-  // 这样默认值（不收）不必随条目增删同步。
+  // 描述展开状态：已降权（stale）条目默认收起（档案页第 25 行）。存的是被展开的行，
+  // 不是被收起的行——这样默认值（不收）不必随条目增删同步。
   const [expanded, setExpanded] = useState<readonly string[]>([]);
 
   const selected = page.objects.find((object) => object.id === page.selectedObjectId) ?? null;
@@ -270,6 +270,7 @@ export function ProfilePage({ port }: ProfilePageProps) {
                 {page.candidates.map((candidate) => (
                   <CandidateRow
                     busy={entry.busyItemId === candidate.item_id}
+                    expanded={expanded.includes(candidate.item_id)}
                     failure={inlineFailureFor(entry.rowFailure, candidate.item_id)}
                     item={candidate}
                     key={candidate.item_id}
@@ -278,6 +279,13 @@ export function ProfilePage({ port }: ProfilePageProps) {
                     }}
                     onDelete={() => {
                       entry.askDelete(candidate);
+                    }}
+                    onToggleExpand={() => {
+                      setExpanded((current) =>
+                        current.includes(candidate.item_id)
+                          ? current.filter((id) => id !== candidate.item_id)
+                          : [...current, candidate.item_id],
+                      );
                     }}
                   />
                 ))}
@@ -294,7 +302,6 @@ export function ProfilePage({ port }: ProfilePageProps) {
                 {group.items.map((item) => (
                   <StableRow
                     busy={entry.busyItemId === item.item_id}
-                    expanded={expanded.includes(item.item_id)}
                     failure={inlineFailureFor(entry.rowFailure, item.item_id)}
                     item={item}
                     key={item.item_id}
@@ -303,13 +310,6 @@ export function ProfilePage({ port }: ProfilePageProps) {
                     }}
                     onDelete={() => {
                       entry.askDelete(item);
-                    }}
-                    onToggleExpand={() => {
-                      setExpanded((current) =>
-                        current.includes(item.item_id)
-                          ? current.filter((id) => id !== item.item_id)
-                          : [...current, item.item_id],
-                      );
                     }}
                   />
                 ))}
@@ -407,33 +407,23 @@ export function ProfilePage({ port }: ProfilePageProps) {
 interface StableRowProps {
   item: ProfileItem;
   busy: boolean;
-  expanded: boolean;
   failure: string | null;
   onCorrect(): void;
   onDelete(): void;
-  onToggleExpand(): void;
 }
 
 /**
- * 渲染一条已确认条目。
+ * 渲染一条稳定层条目。
  *
- * 已降权条目（90 天）描述默认收起：降权是「可能不再准」的信号，
- * 把它折起来能让人先看到别的，需要核对时再点开（档案页第 25 行）。
+ * 这一行不判时效：稳定层取数按 `freshness=current` 过滤（服务端的降权只作用于
+ * 未确认的候选条目），落在稳定层的行 `isStale` 恒为假——在这里判就是一条死分支。
+ * 「已降权」标与描述默认收起因此都挂在候选行上（见 CandidateRow）。
  */
-function StableRow({ item, busy, expanded, failure, onCorrect, onDelete, onToggleExpand }: StableRowProps) {
-  const stale = isStale(item);
-  const showDescription = !stale || expanded;
+function StableRow({ item, busy, failure, onCorrect, onDelete }: StableRowProps) {
   return (
     <article className="list-row">
       <strong className="lr-title">{item.topic}</strong>
-      {stale && <span className="tag meta">已降权</span>}
-      {showDescription ? (
-        <p className="lr-sub">{item.description}</p>
-      ) : (
-        <button className="text-button" onClick={onToggleExpand} type="button">
-          展开内容
-        </button>
-      )}
+      <p className="lr-sub">{item.description}</p>
       <p className="lr-meta">{itemMetaLine(item)}</p>
       <div className="lr-actions">
         <button className="btn btn-secondary" disabled={busy} onClick={onCorrect} type="button">
@@ -456,9 +446,11 @@ function StableRow({ item, busy, expanded, failure, onCorrect, onDelete, onToggl
 interface CandidateRowProps {
   item: ProfileItem;
   busy: boolean;
+  expanded: boolean;
   failure: string | null;
   onConfirm(): void;
   onDelete(): void;
+  onToggleExpand(): void;
 }
 
 /**
@@ -466,13 +458,26 @@ interface CandidateRowProps {
  *
  * 与稳定条目的差别不是样式而是位置与操作集合：只出现在「待确认」分组、
  * 只带「待确认」标、只给「确认」与「删除」两个操作（档案页第 89 行的三个呈现位置）。
+ *
+ * 已降权（stale，90 天）的条目在本行上带「已降权」标、且描述默认收起（档案页第 25 行）：
+ * 降权是「可能不再准」的信号，把描述折起来能让人先看到别的，需要核对时再点开。
+ * 降权只可能是候选条目——稳定层取数按 `freshness=current` 过滤，落在稳定层的行时效恒为 current。
  */
-function CandidateRow({ item, busy, failure, onConfirm, onDelete }: CandidateRowProps) {
+function CandidateRow({ item, busy, expanded, failure, onConfirm, onDelete, onToggleExpand }: CandidateRowProps) {
+  const stale = isStale(item);
+  const showDescription = !stale || expanded;
   return (
     <article className="list-row candidate-record">
       <span className="status unruled">待确认 · {originLabel(item.origin)}</span>
       <strong className="lr-title">{item.topic}</strong>
-      <p className="lr-sub">{item.description}</p>
+      {stale && <span className="tag meta">已降权</span>}
+      {showDescription ? (
+        <p className="lr-sub">{item.description}</p>
+      ) : (
+        <button className="text-button" onClick={onToggleExpand} type="button">
+          展开内容
+        </button>
+      )}
       <p className="lr-meta">{itemMetaLine(item)}</p>
       <div className="lr-actions">
         {/* 确认是高频正向操作、删除是低频危险操作：并排但间距 ≥12px（.lr-actions 的 gap）。 */}
