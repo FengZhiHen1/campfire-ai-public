@@ -31,10 +31,10 @@
 ### 2.1 列表与创建
 
 ```text
-GET  /profile/objects
+GET  /api/profile/objects
 响应 200：{ "items": [ { "id": "uuid", "display_name": "…", "archived_at": null } ] }
 
-POST /profile/objects
+POST /api/profile/objects
 请求：{ "display_name": "…" }
 响应 201：{ "id": "uuid", "display_name": "…", "archived_at": null }
 ```
@@ -46,7 +46,7 @@ POST /profile/objects
 ### 2.2 改名、归档、恢复
 
 ```text
-PATCH /profile/objects/{id}
+PATCH /api/profile/objects/{id}
 请求：{ "display_name": "…", "archived": true | false }
 响应 200：{ "id": "uuid", "display_name": "…", "archived_at": "… 或 null" }
 ```
@@ -58,10 +58,10 @@ PATCH /profile/objects/{id}
 ## 3. 档案读取端点
 
 ```text
-GET /profile/objects/{id}/summary
+GET /api/profile/objects/{id}/summary
 响应 200：{ "fields": [ { "key": "...", "label": "...", "items": [ … ] } ] }
 
-GET /profile/objects/{id}/items?domain=&include_candidates=&cursor=&limit=
+GET /api/profile/objects/{id}/items?domain=&include_candidates=&cursor=&limit=
 响应 200：{ "items": [ … ], "candidates": [ … ], "next_cursor": null }
 ```
 
@@ -75,14 +75,14 @@ GET /profile/objects/{id}/items?domain=&include_candidates=&cursor=&limit=
 三个动作都是**使用者显式意图**，经 HTTP 承载（[个性化档案](../../technical-details/个性化档案.md)第 8 节：调用方是档案面与对话页的确认入口，**不是模型可见工具**）。
 
 ```text
-POST /profile/items/{item_id}/confirm
+POST /api/profile/items/{item_id}/confirm
 响应 200：{ "item_id": "…", "confirmation": "confirmed" }
 
-POST /profile/items/{item_id}/correct
+POST /api/profile/items/{item_id}/correct
 请求：{ "description": "…", "topic": "… 可选", "contexts": [...], "manifestations": [...] }
 响应 201：{ "item_id": "新条目", "supersedes": "旧条目 item_id" }
 
-DELETE /profile/items/{item_id}
+DELETE /api/profile/items/{item_id}
 响应 200：{ "item_id": "…", "already": false }
 ```
 
@@ -94,7 +94,7 @@ DELETE /profile/items/{item_id}
 ### 4.1 否定（拒绝一条候选）
 
 ```text
-POST /profile/items/{item_id}/reject
+POST /api/profile/items/{item_id}/reject
 响应 200：{ "item_id": "…", "confirmation": "rejected" }
 ```
 
@@ -103,7 +103,7 @@ POST /profile/items/{item_id}/reject
 ## 5. 补充条目
 
 ```text
-POST /profile/objects/{id}/items
+POST /api/profile/objects/{id}/items
 请求：{ "domain": "…", "topic": "…", "description": "…", "contexts": [], "manifestations": [] }
 响应 201：{ "item_id": "…" }
 ```

@@ -26,8 +26,14 @@ import type { SessionPort } from '../../features/accounts/application/ports';
  */
 const API_DOMAIN: string = import.meta.env.VITE_API_DOMAIN ?? 'http://localhost:8000';
 
-/** 身份服务挂载路径；后端 FastAPI 按固定的 apiBasePath 挂载 /auth/*。 */
-const API_BASE_PATH = '/auth';
+/**
+ * 身份服务挂载路径；后端 FastAPI 按固定的 apiBasePath 挂载 `/api/auth/*`。
+ *
+ * 与 `core/config.py` 的 `supertokens_api_base_path` 必须一致：一处是后端的挂载点，
+ * 一处是前端 SDK 拼 URL 的依据，不一致会让登录/刷新请求打到 404。
+ * 2026-10-01 起两者一起从 `/auth` 改为 `/api/auth`（统一收进 /api 前缀）。
+ */
+const API_BASE_PATH = '/api/auth';
 
 let initialized = false;
 

@@ -275,7 +275,10 @@ async def client() -> AsyncIterator[httpx.AsyncClient]:
     consult_assembly.set_runner_factory(None)
     main_module.app.dependency_overrides[consult_routes._session_dependency] = _auth_as(_ACCOUNT)
     transport = httpx.ASGITransport(app=main_module.app)
-    async with httpx.AsyncClient(transport=transport, base_url="http://consult.test") as http_client:
+    # base_url 带上 `/api`：业务接口统一挂在该前缀下（`main.py` 的 `_API_PREFIX`），
+    # 于是下面各用例继续只写业务资源路径（`/consult/sessions`），与各 router 的声明一致。
+    # 根上的基础设施端点（`/health` 等）不走这个 client，需用绝对 URL——见对应用例。
+    async with httpx.AsyncClient(transport=transport, base_url="http://consult.test/api") as http_client:
         yield http_client
     main_module.app.dependency_overrides.clear()
     consult_assembly.set_runner_factory(None)
@@ -1111,7 +1114,10 @@ async def test_unauthenticated_requests_are_401(client: httpx.AsyncClient) -> No
     ):
         response = await client.request(method, path, json={} if method == "POST" else None)
         assert response.status_code == 401, (method, path, response.status_code, response.text)
-    assert (await client.get("/health")).status_code in (200, 503)
+    # `/health` 在根上（不带 `/api`，它是基础设施判据而不是业务接口），而本文件的
+    # client 的 base_url 带了 `/api`——因此这里必须用绝对 URL，否则会请求到
+    # `/api/health` 而 404。这是本文件唯一一个非业务路径的调用点。
+    assert (await client.get("http://consult.test/health")).status_code in (200, 503)
 
 
 # ---------------------------------------------------------------------------

@@ -168,7 +168,7 @@ async def client() -> AsyncIterator[httpx.AsyncClient]:
     init_supertokens(get_settings(), api_overrides=api_overrides, sign_up_form_fields=sign_up_form_fields)
 
     transport = httpx.ASGITransport(app=main_module.app)
-    async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as async_client:
+    async with httpx.AsyncClient(transport=transport, base_url="http://testserver/api") as async_client:
         yield async_client
     main_module.app.dependency_overrides.clear()
 
@@ -887,7 +887,11 @@ async def test_routes_are_mounted_under_the_memory_prefix() -> None:
     import campfire.main as main_module
 
     paths = set(main_module.app.openapi()["paths"])
-    assert {"/memory/episodes", "/memory/episodes/{episode_key}", "/memory/episodes/{episode_key}/correct"} <= paths
+    assert {
+        "/api/memory/episodes",
+        "/api/memory/episodes/{episode_key}",
+        "/api/memory/episodes/{episode_key}/correct",
+    } <= paths
 
 
 async def test_endpoints_require_a_session() -> None:
@@ -910,7 +914,7 @@ async def test_endpoints_require_a_session() -> None:
     init_supertokens(settings, api_overrides=api_overrides, sign_up_form_fields=sign_up_form_fields)
 
     transport = httpx.ASGITransport(app=main_module.app)
-    async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as async_client:
+    async with httpx.AsyncClient(transport=transport, base_url="http://testserver/api") as async_client:
         for method, path in (
             ("GET", "/memory/episodes"),
             ("DELETE", "/memory/episodes/3f2504e0-4f89-41d3-9a0c-0305e82c3303"),
