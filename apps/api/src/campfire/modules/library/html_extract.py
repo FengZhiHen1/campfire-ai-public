@@ -133,14 +133,23 @@ def _clean_text(text: str) -> str:
     return re.sub(r"\s+", " ", text).strip()
 
 
-def _inline_text(tag: Tag) -> str:
-    """取行内文本，保留代码与强调的 Markdown 语义。"""
+def _inline_text(tag: Tag, report: HtmlConversion) -> str:
+    """取行内文本，保留代码与强调的 Markdown 语义。
+
+    带 `report` 是因为行内元素里也可能有图片：`<p>文字<img></p>`、`<td><img></td>`、
+    `<li><img></li>` 里的图片此前会被静默丢掉（既不计数也不留痕），只剩空文本。
+    本模块的判据明写「不静默丢弃是本项目的铁律，通用转换库静默丢内容所以我们自己写」，
+    因此这里必须与块级 `img` 分支一样记账并留痕。
+    """
     pieces: list[str] = []
     for child in tag.children:
         if isinstance(child, Tag):
             if child.name in {"script", "style", "noscript"}:
                 continue
-            if child.name == "code":
+            if child.name == "img":
+                report.images_dropped += 1
+                pieces.append(_IMAGE_MARKER)
+            elif child.name == "code":
                 pieces.append(f"`{_clean_text(child.get_text())}`")
             elif child.name in {"strong", "b"}:
                 inner = _clean_text(child.get_text())
@@ -151,9 +160,9 @@ def _inline_text(tag: Tag) -> str:
             elif child.name == "br":
                 pieces.append(" ")
             elif child.name == "a":
-                pieces.append(_inline_text(child))
+                pieces.append(_inline_text(child, report))
             else:
-                pieces.append(_inline_text(child))
+                pieces.append(_inline_text(child, report))
         else:
             pieces.append(_clean_text(str(child)))
     # 压掉重复空格（逐元素拼接会留下多处空白）。
@@ -171,7 +180,7 @@ def _table_to_markdown(table: Tag, report: HtmlConversion) -> str:
         cells = tr.find_all(["th", "td"])
         if not cells:
             continue
-        rows.append([_inline_text(cell) for cell in cells])
+        rows.append([_inline_text(cell, report) for cell in cells])
 
     if not rows:
         return ""
@@ -210,7 +219,7 @@ def _render_list(list_tag: Tag, report: HtmlConversion, depth: int = 0) -> str:
         for n in nested:
             n.extract()
 
-        text = _inline_text(li)
+        text = _inline_text(li, report)
         if text:
             lines.append(f"{'  ' * depth}{marker} {text}")
         for n in nested:
@@ -242,13 +251,13 @@ def _render_block(tag: Tag, report: HtmlConversion, out: list[str]) -> None:
 
     if name in {"h1", "h2", "h3", "h4", "h5", "h6"}:
         level = min(int(name[1]), _MAX_HEADING_LEVEL)
-        text = _inline_text(tag)
+        text = _inline_text(tag, report)
         if text:
             out.append(f"{'#' * level} {text}")
         return
 
     if name == "p":
-        text = _inline_text(tag)
+        text = _inline_text(tag, report)
         if text:
             out.append(text)
         return
@@ -301,7 +310,7 @@ def _render_block(tag: Tag, report: HtmlConversion, out: list[str]) -> None:
         is_control = tag.get("target") == "_blank" or any(ancestor.name == "figure" for ancestor in tag.parents)
         if is_control:
             return
-        text = _inline_text(tag)
+        text = _inline_text(tag, report)
         if text:
             out.append(text)
         report.links_seen += 1
