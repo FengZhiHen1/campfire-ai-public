@@ -1,15 +1,32 @@
 # Campfire-AI — 篝火智答
 
-> **设计基线已确认；仓库有可运行的骨架，业务实现刚开始。** 需求、技术栈与项目结构
-> 已于 2026-09-29 经用户确认，真源在 `docs/`。`archive/` 是已废弃的旧实现与旧设计，
-> 仅作参考，不构成任何当前依据。
+> **设计基线已确认；业务实现已基本成形，当前处于「生产装配」阶段。** 需求、技术栈与
+> 项目结构已于 2026-09-29 经用户确认，真源在 `docs/`。`archive/` 是已废弃的旧实现与
+> 旧设计，仅作参考，不构成任何当前依据。
+>
+> 以下状态于 2026-10-01 按源码逐目录核对（不是沿用旧结论），此前那段「业务实现刚开始 /
+> 多数仍是占位包」的描述已与事实不符，故整段替换：
+>
 > **已实现**：`agent/`（通用 Agent 基座：运行编排、skill 机制、工具池与权限门、注入项与
-> 引用索引、模型网关、上下文压缩、运行记录）；`modules/library`（**RAG 检索链**：条目与
-> 节点表、分块后处理、嵌入适配、摄取流水线、两路检索与 RRF 融合、HTML→Markdown 加工）；
-> `modules/memory`（Graphiti 记忆：身份、时间线、派生事实、删除账本）；`core/` 的
-> `config`、`db`、`health`；`cli/`（`convert` 与 `ingest`）。
-> **仍是占位包**：`surfaces/`、`tools/`（产品侧工具）、`modules/{accounts,profile}`、
-> `core/{cache,auth,authz,jobs}`、`apps/web/`、`infrastructure/`。
+> 引用索引、模型网关、上下文压缩、运行记录）；`modules/library`（RAG 检索链 + 案例库：
+> 条目与节点表、分块后处理、嵌入适配、摄取流水线、两路检索与 RRF 融合、HTML→Markdown
+> 加工）；`modules/memory`（Graphiti 记忆：身份、时间线、派生事实、删除账本）；
+> `modules/accounts`（邀请码、登录会话、归属登记、引导、注销编排）；`modules/profile`
+> （支持对象、档案条目、候选层与稳定层、纠正与删除、应急上下文）；`core/` 的
+> `config`、`db`、`cache`、`auth`（含注销墓碑）、`authz`、`jobs`、`health`、
+> `pending_write`；`surfaces/consult`（HTTP/SSE 契约、应急与引导入口、生产装配）；
+> `tools/`（10 个产品工具）；`cli/`（`convert`、`ingest`、`withdraw`、`invite`、`account`）；
+> `apps/web/`（React H5：首页、咨询、对话、应急、档案、案例、设置、记忆、指南）；
+> `infrastructure/`（生产 Dockerfile、compose.prod、nginx.conf）。
+>
+> **生产装配已于 2026-10-01 闭合**：`surfaces/consult/composition.py` 是生产组合根，
+> `main.py` 的 lifespan 注入 `set_runner_factory`；引用索引落 `campfire_citation`。
+> 健康检查分 `/livez`（liveness）、`/readyz`（就绪，七项含 Agent 装配）、`/health`（诊断）。
+>
+> **仍未闭合**：压缩（`CompactionWiring`）未接线——其记账端口 `CompactionJournal` 尚无
+> 持久化实现，不接线的后果是窗口退化为全量历史（安全方向，不丢内容）；
+> TLS 证书、生产域名与目标服务器在仓库中**不存在任何事实**（由运维提供）；
+> 发布闸门 `EVID-A`～`EVID-D` 未处理（面向真实使用者前必须逐项关闭）。
 
 ## Stack
 
@@ -49,6 +66,10 @@ uv run python scripts/check_design_docs.py
 # 前端与基础设施
 pnpm install
 docker compose up -d          # PostgreSQL、Redis、FalkorDB、SuperTokens、MinIO
+
+# 生产（见 infrastructure/README.md；凭据与域名由运维提供）
+docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --build
+curl -fsS https://<域名>/readyz   # 发布验证判据（不要用 /livez）
 ```
 
 测试集中在 `apps/api/tests`；`archive/` 不参与收集。
@@ -68,11 +89,12 @@ apps/api/              — 唯一的 Python 应用
     modules/           — 业务数据与用例：accounts、library（含检索链）、profile、memory
     core/              — 跨切能力：config、db、cache、auth、authz、jobs
   tests/
-apps/web/              — React H5（当前只有目录占位）
-infrastructure/        — docker、nginx（占位）
-scripts/               — 仓库级运维脚本（部署等）；资料摄取不在此处
+apps/web/              — React H5（React 19 + Vite + React Router + Zustand）
+infrastructure/        — 生产 docker/nginx 产物（见 infrastructure/README.md）
+scripts/               — 仓库级运维脚本（部署、备份、回滚）；资料摄取不在此处
 archive/               — 已归档实现与设计，废弃物，仅供参考
 docker-compose.yml     — 本地基础设施编排
+docker-compose.prod.yml — 生产编排（数据服务不暴露宿主端口，仅 web 对外）
 ```
 
 模块边界与依赖方向的真源是 [docs/项目结构设计.md](docs/项目结构设计.md)。其白名单由
@@ -139,9 +161,13 @@ amend、不 rebase，即使它们的写法与本规范不符。
 ## Git Workflow
 
 - 分支策略：`dev` 日常开发，`master` 仅保留稳定版本
-- CI 在 push 与 PR 到 `dev`、`main`、`master` 时运行：设计文档一致性 + 后端 lint/测试
-- **部署当前已停用**：`deploy.yml` 的作业是 `if: false`，旧链路依赖已归档的 `scripts/deploy-remote.sh`——
-  推送 `master` **不会**自动部署；恢复条件见该文件顶部
+- CI（`.github/workflows/ci.yml`）在 push 与 PR 到 `dev`、`main`、`master` 时跑三个 job：
+  设计文档一致性、后端（ruff + mypy + 迁移门禁 + pytest，**带 PostgreSQL/Redis/FalkorDB
+  三个 service**）、前端（oxlint + tsc + vitest + build）
+- **发布是手动的**：`deploy.yml` 为 `workflow_dispatch`，构建推送镜像到 GHCR 并按需发布到
+  服务器；推送 `master` **不会**自动部署（理由见该文件顶部）。发布后轮询 `/readyz` 验证
+- 备份/恢复/回滚：`scripts/{backup,restore,rollback}.sh`，操作说明见
+  [docs/运维/发布与回滚.md](docs/运维/发布与回滚.md)
 - 仓库：`https://github.com/FengZhiHen1/Campfire-AI.git`
 - ❌ 禁止：直接在 `master` 上开发或提交
 - ❌ 禁止：一个 commit 塞多个无关主题的改动
@@ -155,7 +181,13 @@ amend、不 rebase，即使它们的写法与本规范不符。
 - **待办唯一登记处**：[docs/TODO.md](docs/TODO.md)（可扩展方向、发布前置、待验证事实、待确认事项）
 - 未确认内容不得写入权威文档，也不得据此开始实现；发现设计不一致时先提出，不得静默沿用旧行为。
 - ❌ 禁止：把 `archive/` 中的「有效」「目标态」等字样当作新目标实现要求。
-- ⚠️ 已知缺口：`docs/design/` 视觉契约尚未重建，前端样式层在此之前不得动工；另有若干已确认需求尚无验收行——**数量与清单以 `uv run python scripts/check_design_docs.py` 的当前输出为准**，本文件不写死数字：需求基线仍在演进，写死必然漂移（本条初稿写「9 条」，当天即因需求新增变为 7 条）。
+- ✅ 视觉契约已重建：`docs/design/` 三件套（`tokens.css` / `components.html` / `DESIGN.md`）
+  与页面设计文档齐备，前端样式层以此为准（不要绕过 token 直接写死颜色与间距——`apps/web`
+  的 `build` 里有契约类名断言会把关）。
+- 需求与验收行的一一对应由 `scripts/check_design_docs.py` 机械检查（当前：需求 38 项、
+  验收行 32 条，全部通过；脚本对「未覆盖需求」是**失败**而非告警）。**具体数字以该脚本的
+  当前输出为准**，本文件不写死数字：需求基线仍在演进，写死必然漂移（本条初稿写「9 条」，
+  当天即因需求新增变为 7 条）。
 
 ## Behavioral Guidelines
 
