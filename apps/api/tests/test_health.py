@@ -3,6 +3,17 @@
 对应 docs/项目结构设计.md 第 10 节的要求：分别报告各项能力，不用一个全绿接口
 表示所有能力安全。因此这里既断言 All-OK 时 200，也断言局部不可用时 503 且
 其余能力仍被如实报告。
+
+2026-10-01 起分三个端点，本文件把三者的分工钉住：
+
+- `/livez`：进程活着就 200，不探依赖——依赖挂了重启进程没有意义；
+- `/readyz`：面向部署机器判据，覆盖核心业务链（含 Agent 装配）；
+- `/health`：面向人排查，与 `/readyz` 同一口径（同一份探针清单）。
+
+`/readyz` 的探针清单由 `main._READINESS_PROBES` 拥有，测试替换整个清单（而不是逐个
+替换探针函数）：清单是模块导入期构造的元组、持有对函数的直接引用，逐个 monkeypatch
+`main.check_*` 不会影响已经构造好的元组——那样写的测试会在「全部替换了」的错觉下
+测到真实探针。
 """
 
 from collections.abc import Awaitable, Callable
@@ -14,8 +25,8 @@ from campfire import main as main_module
 from campfire.core.config import Settings
 from campfire.core.health import ComponentHealth, HealthReport, Status
 
-# 端点报告的四个能力名，与 main.health 的装配顺序无关（断言用集合）
-EXPECTED_COMPONENTS = {"auth", "database", "model", "queue"}
+#: 就绪探针报告的能力名（与 `main._READINESS_PROBES` 的键一致，断言用集合）。
+EXPECTED_COMPONENTS = {"auth", "database", "queue", "model", "falkordb", "agent_assembly", "skills"}
 
 
 def test_report_is_ready_only_when_every_component_is_ok() -> None:
@@ -62,12 +73,19 @@ def test_report_with_no_components_is_not_ready() -> None:
 
 
 def _install_probes(monkeypatch: pytest.MonkeyPatch, *, failing: str | None) -> None:
-    """替换四个探针为测试替身，避免测试依赖网络与基础设施。"""
-    attributes = {
+    """替换整份就绪探针清单为测试替身，避免测试依赖网络与基础设施。
+
+    替换整个元组而不是逐个替换 `main.check_*`：`_READINESS_PROBES` 在导入期就持有
+    函数引用，逐个替换不会生效（见文件头说明）。
+    """
+    attribute_names = {
         "auth": "check_auth_core",
         "database": "check_database",
-        "model": "check_model",
         "queue": "check_queue",
+        "model": "check_model",
+        "falkordb": "check_falkordb",
+        "agent_assembly": "check_agent_assembly",
+        "skills": "check_skill_registry",
     }
 
     def make(name: str) -> Callable[[Settings], Awaitable[ComponentHealth]]:
@@ -78,8 +96,13 @@ def _install_probes(monkeypatch: pytest.MonkeyPatch, *, failing: str | None) -> 
 
         return probe
 
-    for component, attribute in attributes.items():
-        monkeypatch.setattr(main_module, attribute, make(component))
+    monkeypatch.setattr(
+        main_module,
+        "_READINESS_PROBES",
+        tuple((name, make(name)) for name in attribute_names),
+    )
+    # 同时把清单里的名字钉住：清单被改名/漏项时本函数立刻报错，而不是静默只测了子集。
+    assert {name for name, _ in main_module._READINESS_PROBES} == EXPECTED_COMPONENTS
 
 
 def test_health_returns_200_when_all_capabilities_are_up(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -111,3 +134,85 @@ def test_health_returns_503_and_still_reports_the_healthy_ones(
     assert body["components"]["database"]["status"] == "ok"
     assert body["components"]["queue"]["status"] == "ok"
     assert body["components"]["auth"]["status"] == "ok"
+
+
+def test_readyz_reports_the_same_set_as_health(monkeypatch: pytest.MonkeyPatch) -> None:
+    """`/readyz` 与 `/health` 同一口径——两个路径回答同一个问题，不该有两套结论。"""
+    _install_probes(monkeypatch, failing=None)
+
+    with TestClient(main_module.app) as client:
+        ready = client.get("/readyz")
+        health = client.get("/health")
+
+    assert ready.status_code == 200
+    assert ready.json() == health.json()
+
+
+def test_readyz_is_503_when_agent_runner_is_not_assembled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """核心业务链缺装配时必须 503——这条是这次修掉的「假健康」。
+
+    修复前的真实故障形状（文件头与 `check_agent_assembly` 都记了）：
+
+        GET /health   → 200 OK      （四项依赖都通）
+        POST /consult → 503          （运行器没接线）
+
+    部署系统据此认为一个核心咨询功能必然失败的版本已经健康。本用例断言
+    `agent_assembly` 是就绪判据的一部分，且它不可用时整体不就绪。
+
+    判别性：把 `("agent_assembly", check_agent_assembly)` 从 `_READINESS_PROBES`
+    里去掉，本用例失败（那正是修复前的状态）。
+    """
+    _install_probes(monkeypatch, failing="agent_assembly")
+
+    with TestClient(main_module.app) as client:
+        response = client.get("/readyz")
+
+    assert response.status_code == 503
+    body = response.json()
+    assert body["ready"] is False
+    assert body["components"]["agent_assembly"]["status"] == "unavailable"
+    # 其余依赖仍如实报告为可用——否则「为什么没就绪」会指向错误的方向
+    assert body["components"]["database"]["status"] == "ok"
+
+
+def test_livez_ignores_every_dependency(monkeypatch: pytest.MonkeyPatch) -> None:
+    """`/livez` 不探任何依赖：依赖全挂时它仍必须 200。
+
+    判别性：把 `/livez` 改成复用 `/readyz`，本用例失败（依赖不可用时会给 503）。
+    这一条是「依赖抖动不该触发容器重启」的实现判据——重启进程修不好下游服务。
+    """
+    for name in EXPECTED_COMPONENTS:
+        _install_probes(monkeypatch, failing=name)
+        with TestClient(main_module.app) as client:
+            response = client.get("/livez")
+        assert response.status_code == 200, f"{name} 不可用时 /livez 仍须 200"
+        assert response.json() == {"status": "ok"}
+
+
+def test_agent_assembly_probe_reports_ok_only_when_wired(monkeypatch: pytest.MonkeyPatch) -> None:
+    """装配探针直读注入点：未装配报 unavailable，装配后报 ok。
+
+    直接测探针本身（不经过端点），因为它就是「假健康」那条防线的最小单元：
+    端点那一侧已经由 `test_readyz_is_503_when_agent_runner_is_not_assembled` 覆盖。
+    """
+    import asyncio
+
+    from campfire.surfaces.consult import assembly as consult_assembly
+
+    monkeypatch.setattr(consult_assembly, "_runner_factory", None)
+    unwired = asyncio.run(main_module.check_agent_assembly(get_settings_for_probe()))
+    assert unwired.status is Status.UNAVAILABLE
+    assert "未装配" in unwired.detail
+
+    monkeypatch.setattr(consult_assembly, "_runner_factory", lambda _settings: object())
+    wired = asyncio.run(main_module.check_agent_assembly(get_settings_for_probe()))
+    assert wired.status is Status.OK
+
+    monkeypatch.setattr(consult_assembly, "_runner_factory", None)
+
+
+def get_settings_for_probe() -> Settings:
+    """探针只读 `Settings` 的少数字段；这里给一份默认配置，不依赖宿主机 .env 的取值。"""
+    return Settings(_env_file=None)  # type: ignore[call-arg]  # `_env_file` 是 BaseSettings 的公开参数，合成签名里没有它

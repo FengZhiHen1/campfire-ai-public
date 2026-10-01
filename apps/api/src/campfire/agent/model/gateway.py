@@ -11,6 +11,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Literal
 
+import httpx2
 from agents import ModelSettings
 from agents.models.interface import Model
 from agents.models.openai_chatcompletions import OpenAIChatCompletionsModel
@@ -28,6 +29,7 @@ from campfire.agent.limits import AGENT_RUN_TIMEOUT_SECONDS
 from campfire.core.config import Settings
 
 from .errors import ModelConfigurationError
+from .proxy_env import normalized_no_proxy_environment
 
 ModelPurpose = Literal["default"]
 """用途分档。一期全应用单一模型，因此只有一个值——保留这个形参是为了不让调用点
@@ -254,8 +256,18 @@ class ModelGateway:
     装配处（`main.py` / `worker.py`）持有它，并在进程结束时 `aclose()`。
     """
 
-    def __init__(self, settings: Settings) -> None:
+    def __init__(self, settings: Settings, *, http_transport: httpx2.AsyncBaseTransport | None = None) -> None:
         """校验配置并构造客户端。
+
+        `http_transport` 是测试缝：传入时把它交给 `AsyncOpenAI` 作为传输层，使端到端测试
+        能走完整的装配链（真工具池、真 skill、真引用索引、真会话）而只把外部模型供应商
+        换成脚本化响应。这个缝刻意开在「与外部世界的边界」上——那是测试唯一该替换的东西；
+        把缝开得更靠内（替换 `Model` 或 `AgentRunner`）会让测试绕过我们自己的装配代码，
+        而那正是端到端测试要覆盖的部分。生产路径不传它。
+
+        传传输层而不是传客户端：`AsyncOpenAI` 自己拥有 `http_client` 的构造（超时、
+        重试、代理与 mount 都在它内部装配），我们只替换最底下的传输。传一个外部客户端
+        会要求我们复现那些装配细节，那反而制造了「测试用的客户端与生产不是同一个」的偏差。
 
         已核实的宿主机环境陷阱（会在这里以明确错误暴露）：
 
@@ -263,6 +275,8 @@ class ModelGateway:
         （例如 `no_proxy=127.0.0.1,localhost,::1,[::1]`），URL 解析会在构造期抛
         `InvalidURL: Invalid port: ':1]'`。实测复现：本机 `no_proxy` 值即含 `[::1]`，
         `httpx.AsyncClient()` 与 `openai.AsyncOpenAI(...)` 都在构造期失败；去掉 `[::1]` 即恢复。
+        2026-10-01：该规范化已由 `proxy_env.normalized_no_proxy_environment` 在构造窗口内
+        自动完成，因此这个陷阱不再让网关建不起来（它曾让依赖本网关的产品端点稳定 503）。
 
         归因要说准：`openai` 客户端用的是 httpx2（`openai/_base_client.py:37`
         `import httpx2`），与探针自用的 httpx 0.28.1 是两个独立包，两者的 `InvalidURL`
@@ -283,20 +297,33 @@ class ModelGateway:
 
         self._settings = build_model_settings(settings)
 
+        # 传输层的选择显式分成两支，不用 `**dict` 解包：后者会让 SDK 的构造签名
+        # 在静态上失去逐参数对应关系（mypy 实测报一串 arg-type）。
+        client_kwargs: dict[str, object] = {
+            "base_url": settings.tokenhub_base_url,
+            "api_key": api_key.get_secret_value(),
+            "timeout": settings.model_request_timeout_seconds,
+            # 重试的唯一所有者是 SDK 的 runner-managed retry，见模块 docstring。
+            "max_retries": 0,
+        }
+        if http_transport is not None:
+            # 测试缝：把假传输交给 SDK，由它照常装配客户端（超时、mount、代理都在它内部）。
+            # 传传输层而不是传客户端，是为了不让我们复现那些装配细节——那会制造
+            # 「测试用的客户端与生产不是同一个」的偏差。
+            client_kwargs["http_client"] = httpx2.AsyncClient(transport=http_transport)
+
         try:
-            self._client = AsyncOpenAI(
-                base_url=settings.tokenhub_base_url,
-                api_key=api_key.get_secret_value(),
-                timeout=settings.model_request_timeout_seconds,
-                # 重试的唯一所有者是 SDK 的 runner-managed retry，
-                # 见模块 docstring。
-                max_retries=0,
-            )
+            # 构造窗口内规范化 no_proxy（见 `proxy_env` 的模块说明）：宿主机若把 IPv6
+            # 字面量写成 `[::1]`，httpx2 会在**构造期**抛 InvalidURL，那会让整个网关
+            # 建不起来、依赖它的产品端点稳定 503——而规范化不改变任何豁免匹配结果。
+            with normalized_no_proxy_environment():
+                self._client = AsyncOpenAI(**client_kwargs)  # type: ignore[arg-type]  # kwargs 逐键与构造签名对应，见上方注释
         except Exception as exc:  # noqa: BLE001 —— 构造期异常一律转成可操作的配置错误
             # 不带原始消息：底层异常文本可能包含代理 URL（其中可能含凭据）。
             raise ModelConfigurationError(
                 f"模型客户端构造失败（{type(exc).__name__}）：请检查 TOKENHUB_BASE_URL 与宿主机代理配置"
-                "（已知陷阱：no_proxy 里的 [::1] 会让 httpx2 在构造期失败，见模块 docstring）"
+                "（已知陷阱：no_proxy 里的 [::1] 会让 httpx2 在构造期失败，"
+                "已由 agent/model/proxy_env 在构造窗口内规范化）"
             ) from exc
 
         # 把「客户端必须自己不重试」这条契约在构造期核实，而不是只写在 docstring 里：

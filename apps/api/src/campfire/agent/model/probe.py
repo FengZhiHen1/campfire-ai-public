@@ -14,6 +14,7 @@ from pydantic import SecretStr
 from campfire.core.config import Settings
 
 from .gateway import resolve_model_name
+from .proxy_env import normalized_no_proxy_environment
 
 _PROBE_TIMEOUT_SECONDS = 5.0
 """探针单次请求的时间上界。
@@ -83,8 +84,14 @@ async def check_model_endpoint(settings: Settings) -> ModelEndpointReport:
         # 与内网探针不同，这里保留 trust_env：TokenHub 是外部服务，
         # 企业网络下可能需要经代理访问。代价是宿主机代理配置异常时探针也会失败，
         # 故下面把 InvalidURL 单独区分出来。
-        async with httpx.AsyncClient(timeout=_PROBE_TIMEOUT_SECONDS) as client:
-            response = await client.get(url, headers=headers)
+        #
+        # 构造窗口内规范化 no_proxy（与 `gateway.py` 同一处置、同一理由）：宿主机把
+        # IPv6 字面量写成 `[::1]` 时 httpx 在构造期抛 InvalidURL，而规范化不改变
+        # 任何豁免匹配结果。不修的话探针会把自己的词法问题报成「模型端点不可达」，
+        # 让排查者去查 TokenHub——这正是本条 detail 文案要避免的误导。
+        with normalized_no_proxy_environment():
+            async with httpx.AsyncClient(timeout=_PROBE_TIMEOUT_SECONDS) as client:
+                response = await client.get(url, headers=headers)
     except (httpx.InvalidURL, httpx.UnsupportedProtocol):
         # 配置问题，不是可达性问题。实测两类都要覆盖：坏端口抛 InvalidURL，
         # 缺协议头/错协议抛 UnsupportedProtocol。已知实例：no_proxy 含 [::1]。
