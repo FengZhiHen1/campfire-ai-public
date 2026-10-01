@@ -498,7 +498,10 @@ async def ingest_case_package(
             external_key=manifest.external_key,
         )
 
-    # 嵌入：卡片与叙事块一起批量送，减少往返（单请求建议 ≤128 条）。
+    # 嵌入：卡片与叙事块一次交给 embed_texts，此处不分批——「单请求建议 ≤128 条」由
+    # build_embedding 的 embed_batch_size=RECOMMENDED_BATCH_SIZE 落实（框架按它切片后
+    # 逐批调用，每批一次供应商请求）。此处再切一遍就是第二处实现，而且每个子批都会经
+    # build_embedding 新建一个 HTTP 客户端。本函数负责的是文本顺序与卡片、小节一一对应。
     all_texts = [*card_texts, *(chunk.text for chunk in embeddable_narrative)]
     try:
         vectors = await embed_texts(settings, all_texts)
