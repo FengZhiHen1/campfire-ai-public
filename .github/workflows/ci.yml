@@ -109,7 +109,11 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - uses: astral-sh/setup-uv@v10
+      # 版本号必须是**真实存在的 tag**。`@v10` 看似合理但不存在——setup-uv 没有
+      # 主性别名，只有 `v10.2.0` 这类具体 tag。写错的表现是 CI 在 "Set up job"
+      # 阶段直接失败（`Unable to resolve action`），连 lint 都没跑到。
+      # 本地跑不了 Actions，因此这类引用只能靠推送后 CI 反馈——已用脚本逐个核对过。
+      - uses: astral-sh/setup-uv@v10.2.0
         with:
           enable-cache: true
 
@@ -170,9 +174,12 @@ jobs:
 
       # pnpm 版本由根 package.json 的 `packageManager` 字段决定，不在这里另写版本号
       # （两处写版本必然漂移）。
-      - uses: pnpm/action-setup@v4
+      #
+      # 用 v6/v7 而不是 v4：v4 目标运行时是 Node 20，而 GitHub 已弃用它并会打印
+      # 弃用警告（实测 CI 输出里就有）。版本号同样逐个核对过存在性。
+      - uses: pnpm/action-setup@v6
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           # 与 apps/web 的 devDeps 匹配：vite 7 / vitest 3 要求 Node ≥ 20。
           # 选 22（当前 LTS 线）而不是 24（本机版本，非 LTS），让 CI 跑在长期支持版本上。
