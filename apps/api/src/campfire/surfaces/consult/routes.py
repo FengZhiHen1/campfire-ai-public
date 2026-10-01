@@ -190,6 +190,31 @@ def _not_running() -> HTTPException:
 MAX_RUN_ID_CHARS = 128
 
 
+async def _require_run_meta(cache: RedisCache, *, run_id: str, account_id: str) -> runbus.RunMeta:
+    """读运行元数据并判定归属；「不可访问」的三种情形共用同一条 404。
+
+    三条路径的顺序就是处理顺序（第 2 节的通用约定）：先按形状拒掉不可能存在的
+    标识，再读元数据，最后比归属。长度上界只在这里写一份，订阅端与取消端都
+    经它进 Redis——上界的理由（:data:`MAX_RUN_ID_CHARS`）是「超长路径段不会变成
+    一次超长 Redis 键查询」，而这个形状的路径段两端一模一样，一处写一处漏就等于
+    上界在那一端不存在。
+
+    超长标识按「不存在」处理而不是 422：基座生成的是 32 位十六进制，超长值不可能
+    对应任何一次运行；与 :func:`_run_not_found` 同一条文案，不给出一条形状探测通道
+    （契约第 2 节的 404 行；422 那一行指的是载荷不合法，而路径段不是载荷）。
+
+    Raises:
+        HTTPException: 标识超过 :data:`MAX_RUN_ID_CHARS`、运行不存在，或不属于
+            当前账号（三者都是同一个 404 与同一条文案）。
+    """
+    if len(run_id) > MAX_RUN_ID_CHARS:
+        raise _run_not_found()
+    meta = await runbus.read_run_meta(cache, run_id=run_id)
+    if meta is None or meta.account_id != account_id:
+        raise _run_not_found()
+    return meta
+
+
 # ---------------------------------------------------------------------------
 # 3.1 创建会话
 # ---------------------------------------------------------------------------
@@ -726,9 +751,7 @@ async def stream_run(
     after_seq = parse_last_event_id(last_event_id)
 
     cache = get_cache(settings)
-    meta = await runbus.read_run_meta(cache, run_id=run_id)
-    if meta is None or meta.account_id != account_id:
-        raise _run_not_found()
+    await _require_run_meta(cache, run_id=run_id, account_id=account_id)
     if not await cache.exists(runbus.events_key(run_id)):
         raise _not_resumable()
 
@@ -766,16 +789,9 @@ async def cancel_run(run_id: str, session: SessionDep, settings: SettingsDep) ->
     Raises:
         HTTPException: 运行不存在或不属于当前账号（404），或运行已不在跑（409）。
     """
-    if len(run_id) > MAX_RUN_ID_CHARS:
-        # 超长的运行标识不可能存在（基座生成 32 位十六进制）：按「不存在」处理，
-        # 与 :func:`_run_not_found` 同一条文案，不给出一条形状探测通道。
-        raise _run_not_found()
-
     account_id = session.get_user_id()
     cache = get_cache(settings)
-    meta = await runbus.read_run_meta(cache, run_id=run_id)
-    if meta is None or meta.account_id != account_id:
-        raise _run_not_found()
+    meta = await _require_run_meta(cache, run_id=run_id, account_id=account_id)
     if meta.status == runbus.RUN_STATUS_FINISHED:
         raise _not_running()
     if not runbus.request_cancel(run_id):
