@@ -22,7 +22,7 @@ from __future__ import annotations
 import logging
 import uuid
 from datetime import datetime
-from typing import Annotated
+from typing import Annotated, TypedDict
 
 from fastapi import APIRouter, Depends, Query
 from fastapi.responses import JSONResponse
@@ -227,6 +227,42 @@ class LibraryItemPayload(BaseModel):
     cards: list[CaseCardPayload] | None = None
 
 
+class CaseItemPayloadFields(TypedDict):
+    """`LibraryItemPayload` 上案例专属的那七项（契约第 3.1 节的六项必带 + 被推断清单）。
+
+    单独定义而不是复用 `LibraryItemPayload` 本身：这七项只用于按库别条件展开，
+    其余八项恒在场、不由 `_case_payload_fields` 产出。写成 TypedDict 而不是
+    `dict[str, object]` 的理由见 `_case_payload_fields`——调用方按它展开进载荷模型，
+    键与值类型必须在类型层可见。
+    """
+
+    authorization: str
+    source_type: str
+    evidence_level: str
+    review_status: str
+    interview_at: datetime
+    makes_claims_high_risk: bool
+    inferred_fields: list[str]
+
+
+# quality-floor: ignore comment-markup 下文引号内的 `**` 是在讨论解包运算符本身，不是粗体强调
+class NoCaseItemPayloadFields(TypedDict):
+    """空字段集：资料库条目不带任何案例专属字段。
+
+    存在的理由是 `**` 展开需要两侧同型：`**(_case_payload_fields(item) if ... else {})`
+    里的裸 `{}` 会被推导成 `dict[str, object]`，于是「这里可能混进任意键值」在类型层
+    不可见。实测该写法让展开实参位对六个期望类型各报一次错（`str | None`、
+    `datetime | None`、`bool | None`、`list[str] | None`、`NarrativePayload | None`、
+    `list[CaseCardPayload] | None`）——同一个实参位上并列全部候选目标类型。
+    用一个空 TypedDict 表达「本分支一个字段都不加」，
+    比在调用点写 cast 更贴近事实：类型上确实没有额外键。
+
+    上面那个 `**` 会被 comment-markup 当成粗体标记——它是在讨论展开运算符本身，
+    不是强调。规则明写「关键字参数解包不报」，此处因两侧是反引号与空格而落进粗体
+    正则，属误报，故由类定义上方的豁免注释显式豁免。
+    """
+
+
 class LibraryItemsPayload(BaseModel):
     """浏览与检索响应（契约第 3 节）。
 
@@ -338,8 +374,11 @@ def _cards_from_nodes(nodes: list[tuple[str, str, dict[str, str]]]) -> list[Case
         if metadata.get("node_kind") != "card":
             continue
         fields = _parse_card_fields(text)
-        raw_inferred = metadata.get(_INFERRED_METADATA_KEY)
-        inferred = [str(entry) for entry in raw_inferred] if isinstance(raw_inferred, list) else []
+        # 读成 `object` 而不是 `metadata.get(...)` 的静态类型：metadata 由 JSONB 反序列化而来，
+        # `dict[str, str]` 只覆盖字符串值，被推断字段清单本身是 JSON 数组——按 `str | None`
+        # 读会让下面的 `isinstance(..., list)` 在类型层不可达，收窄因此失效（CORE-04 边界显式）。
+        raw_inferred: object = metadata.get(_INFERRED_METADATA_KEY)
+        inferred: list[str] = [str(entry) for entry in raw_inferred] if isinstance(raw_inferred, list) else []
         cards.append(
             CaseCardPayload(
                 card_id=str(metadata.get("card_id") or ""),
@@ -753,6 +792,11 @@ async def get_item(
 
     snippet, locator = _first_node_summary(nodes.get(item_id, []))
 
+    # 两个分支必须同型才能展开（见 `NoCaseItemPayloadFields`）：资料库走空字段集，
+    # 案例库走 `_case_payload_fields` 的七项，两者都是 TypedDict，键与值类型在类型层可见。
+    case_fields: CaseItemPayloadFields | NoCaseItemPayloadFields = (
+        _case_payload_fields(item) if library == LIBRARY_CASE else NoCaseItemPayloadFields()
+    )
     payload = LibraryItemPayload(
         item_id=item_id,
         library=library,
@@ -763,12 +807,12 @@ async def get_item(
         status=item.status,
         locator=locator,
         ranking={"order": "deep_link"},
-        **(_case_payload_fields(item) if library == LIBRARY_CASE else {}),
+        **case_fields,
     )
     return GetLibraryItemPayload(item=payload, withdrawn=False, title=None)
 
 
-def _case_payload_fields(item: object) -> dict[str, str | bool | datetime | list[str]]:
+def _case_payload_fields(item: object) -> CaseItemPayloadFields:
     """案例条目专属字段的透传（契约第 3.1 节的六项必带 + `inferred_fields`）。
 
     `inferred_fields` 取条目表上那一列（案例级并集）：deep-link 是单条查询、
@@ -776,8 +820,8 @@ def _case_payload_fields(item: object) -> dict[str, str | bool | datetime | list
     卡片级推断标注，不拿案例级并集冒充——见 `retrieval._case_fields_for_browse`
     的说明）。展开出的卡片各自带自己的卡片级清单。
 
-    返回类型写全（不用 `Any`）：调用方按 `**fields` 展开进载荷模型，值类型错了
-    应该在类型层可见，而不是等到序列化时才暴露。
+    返回类型是 `CaseItemPayloadFields`（不是裸 `dict`）：调用方按 `**fields` 展开进
+    载荷模型，键名拼错或值类型不对应该在类型层可见，而不是等到序列化时才暴露。
     """
     if not isinstance(item, CaseItem):
         # 库别与模型必须一致（`ITEM_MODELS` 的映射保证）。走到这里说明映射与

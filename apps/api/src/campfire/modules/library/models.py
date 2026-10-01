@@ -6,10 +6,12 @@
 """
 
 from datetime import datetime
+from uuid import UUID
 
 from sqlalchemy import BigInteger, Boolean, CheckConstraint, DateTime, Index, String, Text, UniqueConstraint
 from sqlalchemy import text as sql_text
-from sqlalchemy.dialects.postgresql import JSONB, UUID
+from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from campfire.core.config import EMBEDDING_DIM
@@ -91,7 +93,7 @@ class KnowledgeItem(Base):
 
     __tablename__ = "campfire_knowledge_item"
 
-    id: Mapped[UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=new_uuid)
+    id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, default=new_uuid)
     title: Mapped[str] = mapped_column(String(500), nullable=False)
     #: 出处：机构、年份、链接或文件引用。缺来源的条目不进入检索（不变量）。
     source: Mapped[str] = mapped_column(Text, nullable=False)
@@ -173,7 +175,7 @@ class CaseItem(Base):
 
     __tablename__ = "campfire_case_item"
 
-    id: Mapped[UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=new_uuid)
+    id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, default=new_uuid)
     #: 上游目录名（如 `2026-05-25_1448_respecting-pace-asd`）。不重写，用于追溯
     #: （第 3、10 节「追溯」）。唯一：同一上游目录重复导入应被幂等拦下。
     external_key: Mapped[str] = mapped_column(String(200), nullable=False, unique=True)
@@ -401,11 +403,11 @@ class ManualReviewItem(Base):
 
     __tablename__ = MANUAL_REVIEW_TABLE
 
-    id: Mapped[UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=new_uuid)
+    id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, default=new_uuid)
     #: 库别（`LIBRARIES` 的取值）：复核件属于哪个库的条目。
     library: Mapped[str] = mapped_column(String(20), nullable=False)
     #: 所属条目的 id。不加外键：条目可能来自两张表（见本节说明）。
-    item_id: Mapped[UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    item_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
     #: 摄取来源路径（资料侧是文件、案例侧是包目录），运维据此定位原件。
     source_path: Mapped[str] = mapped_column(Text, nullable=False)
     #: 该块在源文件里的位置（`Chunk.locator`，章节路径）。无标题的源文件取 `/`——

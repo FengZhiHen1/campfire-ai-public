@@ -6,10 +6,12 @@
 """
 
 from datetime import datetime
+from uuid import UUID
 
 from sqlalchemy import CheckConstraint, DateTime, Index, String
 from sqlalchemy import text as sql_text
-from sqlalchemy.dialects.postgresql import JSONB, UUID
+from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from campfire.core.db import Base, new_uuid
@@ -71,7 +73,7 @@ class MemoryDeletionLedger(Base):
 
     __tablename__ = "campfire_memory_deletion_ledger"
 
-    id: Mapped[UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=new_uuid)
+    id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, default=new_uuid)
     #: 确定性 episode uuid（由 pending_id 派生）。唯一：同一条记忆重复删除
     #: 不产生第二行——删除本身也必须是幂等的。
     episode_key: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)

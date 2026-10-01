@@ -115,10 +115,15 @@ class ProfileSummary:
     #: 是否有可用的稳定层内容。False 时调用方须在输出里标注「本次未使用个性化档案」
     #: （`AC-02`），而不是把它当成「这个人没有任何特征」。
     has_profile: bool
+    #: 生成时间。契约第 3 节把它列为必带字符串字段，且唯一构造点
+    #: （`read_profile_summary`）无论 `now` 是否传入都会填一个时刻——因此这里不是
+    #: 可选值。原先标成 `datetime | None = None` 是过宽的声明，会把「必带字段」的判据
+    #: 降级成「可能没有」，下游 `_isoformat` 也就被迫接受 None
+    #: （`test_profile_items_integration.py` 已断言它非 None）。
+    generated_at: datetime
     fields: list[SummaryField] = field(default_factory=list)
     #: 参与摘要的条目数（`read_profile_summary` 契约第 3 节的 `item_count`）。
     item_count: int = 0
-    generated_at: datetime | None = None
     #: 摘要可能未含最新写入（写入是异步的）。有未完成的待处理记录时为真
     #: （`read_profile_summary` 契约第 4 节）。
     possibly_stale: bool = False

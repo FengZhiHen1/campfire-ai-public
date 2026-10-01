@@ -24,7 +24,7 @@ import json
 import logging
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from typing import Literal, TypedDict
+from typing import Literal, TypedDict, TypeGuard
 
 logger = logging.getLogger(__name__)
 
@@ -163,6 +163,19 @@ class HydratedMessage(TypedDict):
     id: str
     role: str
     parts: list[MessagePart]
+
+
+def _is_tool_call_part(part: MessagePart) -> TypeGuard[ToolCallPart]:
+    """`part` 是不是工具调用 part。
+
+    判别联合靠 `type` 字段区分，但 `part["type"] == "tool_call"` 这个写法在静态上
+    并不能收窄——字典下标取出来仍是整个 `MessagePart` 联合。回填 `ok`/`summary` 时
+    就会被判成「联合里另外两个成员没有这两个键」。
+
+    写成 `TypeGuard` 而不是在调用点加断言：收窄规则只此一份，且它同时是可执行判据
+    （真跑时也据此分流），不是只给检查器看的谎话。
+    """
+    return part["type"] == "tool_call"
 
 
 # ---------------------------------------------------------------------------
@@ -409,7 +422,7 @@ class _Hydration:
         """
         for index in self._pending_calls.values():
             part = self._parts[index]
-            if isinstance(part, dict) and part.get("type") == "tool_call":
+            if _is_tool_call_part(part):
                 part["ok"] = False
                 part["summary"] = INTERRUPTED_TOOL_SUMMARY
         if self._parts and self._first_row_id is not None:
@@ -480,7 +493,7 @@ class _Hydration:
             logger.warning("水合跳过一条找不到对应调用的工具结果：行=%s", stored.row_id)
             return
         part = self._parts[index]
-        if isinstance(part, dict) and part.get("type") == "tool_call":
+        if _is_tool_call_part(part):
             failure = tool_failure_message(output)
             part["ok"] = failure is None
             part["summary"] = (output if failure is None else failure)[:TOOL_SUMMARY_MAX_CHARS]

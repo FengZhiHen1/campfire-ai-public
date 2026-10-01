@@ -13,6 +13,7 @@ from pathlib import Path
 
 from llama_index.core import Document
 from llama_index.core.node_parser import MarkdownNodeParser
+from llama_index.core.schema import MetadataMode
 from llama_index.vector_stores.postgres import PGVectorStore
 from sqlalchemy import delete, select
 from sqlalchemy.engine import Engine
@@ -147,7 +148,16 @@ def split_markdown(text: str) -> list[Chunk]:
         header_path = str(node.metadata.get("header_path", "") or "")
         # 章节标题在节点粒度取值：超长 section 会被切成多块，只有首块带标题行，
         # 因此必须在切分前取好并传给每一块（否则后续块的 locator 会丢章节）。
-        report = chunk_markdown_section(header_path, node.text, start_index=index)
+        # 用 `get_content(metadata_mode=NONE)` 而不是 `node.text`：后者只声明在子类
+        # `TextNode` 上，而 `get_nodes_from_documents` 的返回类型标注是 `list[BaseNode]`。
+        #
+        # `metadata_mode` 必须显式给 NONE，不能依赖默认值：`BaseNode.get_content` 声明的
+        # 默认是 ALL，`TextNode` 覆写成了 NONE——静态类型是 `BaseNode` 时「默认」是不确定的
+        # （实测：带 metadata 的节点在 ALL 下会得到 `locator: /a/\n\n正文`）。这里要的正是
+        # 纯正文，写死 NONE 才与 `TextNode.text` 等价，且不受 metadata 增删影响。
+        report = chunk_markdown_section(
+            header_path, node.get_content(metadata_mode=MetadataMode.NONE), start_index=index
+        )
         chunks.extend(report.chunks)
         index += len(report.chunks)
     return chunks

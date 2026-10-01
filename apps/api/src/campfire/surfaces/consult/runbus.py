@@ -166,7 +166,17 @@ class RunMeta:
         session_id = payload.get("session_id")
         account_id = payload.get("account_id")
         status = payload.get("status")
-        if not all(isinstance(value, str) and value for value in (run_id, session_id, account_id)):
+        # 每个值与它自己的非空判定配对写在同一个合取里，而不是 `all()` 套生成器：
+        # `all()` 的结论静态上回灌不到被检变量（mypy 不会因此收窄），于是下面 `RunMeta`
+        # 的三个 `str` 字段看起来仍是 `Any | None`。判据与原来逐字相同，只是写法让收窄成立。
+        if not (
+            isinstance(run_id, str)
+            and run_id
+            and isinstance(session_id, str)
+            and session_id
+            and isinstance(account_id, str)
+            and account_id
+        ):
             return None
         if status not in (RUN_STATUS_RUNNING, RUN_STATUS_FINISHED):
             return None

@@ -266,11 +266,14 @@ def _render_block(tag: Tag, report: HtmlConversion, out: list[str]) -> None:
         return
 
     if name == "blockquote":
-        inner: list[str] = []
+        # 变量名带分支前缀：本函数的局部作用域只有一个，两个分支各写一个 `inner`
+        # 会让第二次定义成为对同一名字的重定义（mypy no-redef），
+        # 读代码时也看不出它属于哪个分支。
+        quote_lines: list[str] = []
         for child in tag.children:
             if isinstance(child, Tag):
-                _render_block(child, report, inner)
-        for line in "\n".join(inner).splitlines():
+                _render_block(child, report, quote_lines)
+        for line in "\n".join(quote_lines).splitlines():
             out.append(f"> {line}" if line else ">")
         return
 
@@ -309,6 +312,7 @@ def _render_block(tag: Tag, report: HtmlConversion, out: list[str]) -> None:
         # 递归而不是整体取文本：整体取文本会把 figure 内的交互控件
         # （如「Open in a new tab」）也带进来，而控件应由 `<a>` 分支按结构丢弃。
         inner: list[str] = []
+        images_before = report.images_dropped
         for child in tag.children:
             if isinstance(child, Tag):
                 _render_block(child, report, inner)
@@ -316,7 +320,18 @@ def _render_block(tag: Tag, report: HtmlConversion, out: list[str]) -> None:
                 text = _clean_text(str(child))
                 if text:
                     inner.append(text)
-        if tag.name == "figure" and tag.find("img") is not None:
+        # 兜底：figure 里有 img，但递归没有产生任何留痕。
+        #
+        # 为什么必须有这个判断（2026-10-01 实测）：递归渲染到 `<img>` 时，`img` 分支
+        # 已经计过数并追加过标记。若这里无条件再加一次，`<figure><img></figure>` 会被
+        # 记成 2 张图、正文里出现 2 条相同留痕（裸 `<img>` 才是 1 张）。`images_dropped`
+        # 是「不静默丢弃」的记账数，直接打印给运维做守恒对账（见 cli/__main__.py），
+        # 虚报会让对账失真；重复留痕则是可见的产物污染。
+        #
+        # 兜底真正要覆盖的是「递归没能走到 img」的情形：例如 img 藏在 `picture`/`div`
+        # 里而该分支未递归，或有子节点把渲染吞掉。判据取「递归前后计数有没有涨」，
+        # 而不是再查一次 `tag.find("img")`——后者无法区分「已经计过」与「还没计」。
+        if tag.name == "figure" and tag.find("img") is not None and report.images_dropped == images_before:
             report.images_dropped += 1
             inner.append(_IMAGE_MARKER)
         out.extend(block for block in inner if block.strip())

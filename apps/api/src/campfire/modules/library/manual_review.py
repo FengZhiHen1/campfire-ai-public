@@ -10,6 +10,7 @@ from __future__ import annotations
 from uuid import UUID
 
 from sqlalchemy import delete
+from sqlalchemy.engine import CursorResult
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from campfire.modules.library.chunking import TARGET_MAX_CHARS, Chunk
@@ -149,6 +150,12 @@ async def delete_manual_reviews(session: AsyncSession, *, library: str, item_id:
             ManualReviewItem.item_id == item_id,
         )
     )
+    # `AsyncSession.execute` 的静态返回类型只声明 `Result`，而 DML 在运行期返回
+    # `CursorResult`——`rowcount` 只在那上面（实测 sqlalchemy 2.0.54：DML 的
+    # `type(result)` 为 `CursorResult`，`rowcount` 可读）。这里按实际类型收窄，
+    # 而不是 `getattr(result, "rowcount", 0)` 兜底：兜底会把「上游换了返回类型」
+    # 静默折成 0，于是删除行数虚报成「一行没删」，而撤下正是靠这个数判断清理是否完整。
+    assert isinstance(result, CursorResult)  # 上游存根缺口，见上
     return result.rowcount or 0
 
 

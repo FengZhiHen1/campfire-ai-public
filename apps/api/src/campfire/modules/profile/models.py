@@ -10,10 +10,12 @@ docs/技术设计/technical-details/个性化档案.md 第 2、3 节。
 from __future__ import annotations
 
 from datetime import datetime, timedelta
+from uuid import UUID
 
 from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Index, String, Text
 from sqlalchemy import text as sql_text
-from sqlalchemy.dialects.postgresql import JSONB, UUID
+from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from campfire.core.db import Base, new_uuid
@@ -306,7 +308,7 @@ class SupportObject(Base):
     __tablename__ = "campfire_support_object"
 
     #: 业务主键。不外露为账号或分区键——它是档案的归属键，不是任何图库分区键。
-    id: Mapped[UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=new_uuid)
+    id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, default=new_uuid)
     #: 属主账号（即身份服务的用户标识，认证与账号第 3 节）。
     #:
     #: 不建外键到身份服务表：身份服务的表由 core 拥有，跨进程外键不可靠
@@ -360,11 +362,11 @@ class ProfileItem(Base):
     __tablename__ = "profile_item"
 
     #: 条目标识。
-    item_id: Mapped[UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=new_uuid)
+    item_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, default=new_uuid)
     #: 归属支持对象。外键落在存储层：跨对象的条目混入会让「两个对象的档案互不可见」
     #: （AC-22）失去最后一道兜底；注销时须先删条目再删对象（支持对象第 7 节）。
     support_object_id: Mapped[UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("campfire_support_object.id"), nullable=False
+        PG_UUID(as_uuid=True), ForeignKey("campfire_support_object.id"), nullable=False
     )
     #: 领域取值，见 `DOMAINS`（十四个一级模块之一或「其他」）。
     domain: Mapped[str] = mapped_column(String(32), nullable=False)
@@ -417,7 +419,7 @@ class ProfileItem(Base):
     #: 删除真的生效。指针是说明性的（「这条取代了那条」），删掉对方后
     #: 把它置空即可，不该让历史指针否决一次删除。
     superseded_by: Mapped[UUID | None] = mapped_column(
-        UUID(as_uuid=True),
+        PG_UUID(as_uuid=True),
         ForeignKey("profile_item.item_id", ondelete="SET NULL"),
         nullable=True,
     )
@@ -425,7 +427,7 @@ class ProfileItem(Base):
     #: 档案面契约第 4 节纠正的响应带 `supersedes`，因此这一侧必须落地。
     #: `ondelete="SET NULL"` 的理由同上。
     supersedes: Mapped[UUID | None] = mapped_column(
-        UUID(as_uuid=True),
+        PG_UUID(as_uuid=True),
         ForeignKey("profile_item.item_id", ondelete="SET NULL"),
         nullable=True,
     )
@@ -434,7 +436,7 @@ class ProfileItem(Base):
     #:
     #: 可空且这是必然：手动补充条目（档案面契约第 5 节）不经待处理记录。
     #: PostgreSQL 的唯一约束允许多个 NULL，因此「唯一」与「可空」正好同时成立。
-    pending_id: Mapped[UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True, unique=True)
+    pending_id: Mapped[UUID | None] = mapped_column(PG_UUID(as_uuid=True), nullable=True, unique=True)
 
     __table_args__ = (
         # 按对象取条目（列表、摘要、应急取数的主查询）。
@@ -476,7 +478,7 @@ class SessionObjectBinding(Base):
     account_id: Mapped[str] = mapped_column(String(MAX_ACCOUNT_ID_LENGTH), nullable=False)
     #: 绑定的支持对象。
     support_object_id: Mapped[UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("campfire_support_object.id"), nullable=False
+        PG_UUID(as_uuid=True), ForeignKey("campfire_support_object.id"), nullable=False
     )
     #: 绑定时间。用于推导「上一次的选择」（取该账号 `bound_at` 最大的那条绑定）。
     bound_at: Mapped[datetime] = mapped_column(

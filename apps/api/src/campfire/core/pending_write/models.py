@@ -8,10 +8,12 @@
 from __future__ import annotations
 
 from datetime import datetime
+from uuid import UUID
 
 from sqlalchemy import CheckConstraint, DateTime, Index, Integer, String
 from sqlalchemy import text as sql_text
-from sqlalchemy.dialects.postgresql import JSONB, UUID
+from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from campfire.core.db import Base, new_uuid
@@ -95,7 +97,7 @@ class PendingWrite(Base):
 
     #: 幂等键，在请求事务内生成（第 3 节）。图库侧的确定性 episode 标识由它派生
     #: （见 `modules/memory/identity.derive_episode_uuid`）。
-    id: Mapped[UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=new_uuid)
+    id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, default=new_uuid)
     #: 记录种类，决定消费路径与归属字段要求（见下方 `support_object_id`）。
     kind: Mapped[str] = mapped_column(String(32), nullable=False)
     #: 发起者。记忆的分区键即此值（`group_id = account_id`，第 3 节）。

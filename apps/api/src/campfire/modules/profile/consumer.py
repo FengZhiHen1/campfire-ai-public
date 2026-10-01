@@ -106,19 +106,23 @@ async def write_from_pending(session: AsyncSession, *, pending_id: object, lease
             由调用方按第 6 节转 `dead` 并记原因。
         PendingWriteNotFoundError: 记录在领取后消失（极端并发）。
     """
-    record = await take_for_processing(session, pending_id=pending_id, lease_owner=lease_owner)
+    # 边界解析先于一切（CORE-04）：Taskiq 载荷、兜底扫描与测试传进来的都是未知形状的
+    # 值，先收窄成 `UUID`，本函数其余部分与下游只传 `UUID`。畸形标识在此抛
+    # `ProfileDataError`——它是载荷问题（重试不会变好），正是调用方转 `dead` 的那一档。
+    parsed_id = to_pending_uuid(pending_id)
+    record = await take_for_processing(session, pending_id=parsed_id, lease_owner=lease_owner)
     if record is None:
-        return ProfileWriteResult(pending_id=str(pending_id), written=False)
+        return ProfileWriteResult(pending_id=str(parsed_id), written=False)
 
     # --- 复查账号是否已注销（写入之前，不可省）---
     if await is_account_deleted(session, account_id=record.account_id):
         logger.info(
             "账号已注销，删除待处理记录（不写档案）：pending_id=%s 账号=%s",
-            pending_id,
+            parsed_id,
             record.account_id,
         )
         await session.execute(delete(PendingWrite).where(PendingWrite.id == record.id))
-        return ProfileWriteResult(pending_id=str(pending_id), written=False, discarded=True)
+        return ProfileWriteResult(pending_id=str(parsed_id), written=False, discarded=True)
 
     if record.kind != KIND_PROFILE_ITEM:
         raise ProfileDataError(
@@ -142,10 +146,10 @@ async def write_from_pending(session: AsyncSession, *, pending_id: object, lease
     # --- 幂等：先查该 pending 是否已写成条目（第 5 节）---
     existing = await find_item_by_pending_id(session, pending_id=record.id)
     if existing is not None:
-        logger.info("该待处理记录已写成条目，跳过：pending_id=%s item=%s", pending_id, existing.item_id)
+        logger.info("该待处理记录已写成条目，跳过：pending_id=%s item=%s", parsed_id, existing.item_id)
         # 已写过：清理租约并置 done（重放不是错误，也不是「本次写入」）。
-        await mark_done(session, pending_id=pending_id, lease_owner=lease_owner)
-        return ProfileWriteResult(pending_id=str(pending_id), written=False, item_id=str(existing.item_id))
+        await mark_done(session, pending_id=parsed_id, lease_owner=lease_owner)
+        return ProfileWriteResult(pending_id=str(parsed_id), written=False, item_id=str(existing.item_id))
 
     payload = record.payload or {}
     domain = payload.get(PAYLOAD_DOMAIN)
@@ -207,8 +211,8 @@ async def write_from_pending(session: AsyncSession, *, pending_id: object, lease
     )
     # 置 done 与清理租约同一次更新；带租约栅栏（CORE-03）：写入可能超过租约时长，
     # 期间记录会被另一个 Worker 重领，先领取者的迟到 mark_done 不得抢先成功。
-    await mark_done(session, pending_id=pending_id, lease_owner=lease_owner)
-    return ProfileWriteResult(pending_id=str(pending_id), written=True, item_id=str(item.item_id))
+    await mark_done(session, pending_id=parsed_id, lease_owner=lease_owner)
+    return ProfileWriteResult(pending_id=str(parsed_id), written=True, item_id=str(item.item_id))
 
 
 def _optional_list(payload: dict, key: str, pending_id: object) -> list | None:

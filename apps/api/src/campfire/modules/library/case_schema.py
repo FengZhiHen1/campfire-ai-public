@@ -350,9 +350,15 @@ def _validate_card_shape(payload: dict[str, object], card_label: str) -> list[st
     for field in REQUIRED_CARD_STRINGS:
         if field not in payload:
             errors.append(f"{card_label} 缺少必填字段：{field}")
-        elif not isinstance(payload[field], str):
-            errors.append(f"{card_label} 的 {field} 应为 string，实际 {type(payload[field]).__name__}")
-        elif not payload[field].strip():
+            continue
+        # 先取出再收窄：`payload[field]` 的键是循环变量，mypy 不把上一条 `elif`
+        # 里对 `payload[field]` 的 `isinstance` 结果沿用到下一条分支——重复下标会让
+        # 收窄丢失（下标表达式的类型只能按语句推一次）。取值到局部变量后，
+        # `isinstance` 的收窄对后续分支成立，空串判定也就看到了 `str`。
+        value = payload[field]
+        if not isinstance(value, str):
+            errors.append(f"{card_label} 的 {field} 应为 string，实际 {type(value).__name__}")
+        elif not value.strip():
             errors.append(f"{card_label} 的 {field} 不能为空")
 
     for field in REQUIRED_CARD_ARRAYS:
