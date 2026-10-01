@@ -21,7 +21,7 @@ import { EmptyState, ErrorCard, Skeleton } from '../../../shared/ui/StatePrimiti
 import type { ProfilePort } from '../application/ports';
 import { DOMAIN_LABELS, DOMAIN_ORDER } from '../domain/domains';
 import { isRetryable, profileFailureDescription, profileFailureInline, profileFailureTitle } from '../domain/failures';
-import { formatMonthDay, groupByDomain, isStale, itemMetaLine, originLabel } from '../domain/items';
+import { formatMonthDay, groupByDomain, isHistorical, isStale, itemMetaLine, originLabel } from '../domain/items';
 import { useProfileEntryActions, inlineFailureFor } from '../viewModel/useProfileEntryActions';
 import { useProfileObjectActions } from '../viewModel/useProfileObjectActions';
 import { useProfilePage } from '../viewModel/useProfilePage';
@@ -36,6 +36,7 @@ const COPY = {
   createObjectAction: '新建对象',
   moreLabel: '⋯',
   archivedTag: '已归档',
+  historicalTag: '已更正',
   summaryTitle: '关于 TA 的当前认识',
   summaryHint: '摘要只收你直接说过或确认过的内容',
   summaryEmpty: '摘要中还没有记录，确认或补充后会出现。',
@@ -106,8 +107,9 @@ export function ProfilePage({ port }: ProfilePageProps) {
   const groups = groupByDomain(page.items);
   const hasEntries = page.items.length > 0 || page.candidates.length > 0;
   // 摘要条目的纠正入口要靠条目列表里的那一条完整记录：摘要载荷只带 item_id、origin
-  // 与时间（档案面契约第 3 节），而纠正流要预填原主题与原描述。两者取自同一份稳定层
-  // （摘要只取稳定层且不含已取代条目），因此按 item_id 就能对上。
+  // 与时间（档案面契约第 3 节），而纠正流要预填原主题与原描述。摘要只取稳定层，
+  // 稳定层条目必在 `page.items` 里（该列表是稳定层加上 opt-in 取回的历史条目），
+  // 因此按 item_id 就能对上；历史条目不会出现在摘要里，只会多出来，不会对错。
   const itemsById = new Map(page.items.map((item) => [item.item_id, item]));
 
   return (
@@ -413,21 +415,21 @@ interface StableRowProps {
 }
 
 /**
- * 渲染一条稳定层条目。
+ * 渲染一条完整条目区的条目（稳定层条目，或历史（已被取代）条目）。
  *
- * 这一行不判时效：稳定层取数按 `freshness=current` 过滤（服务端的降权只作用于
- * 未确认的候选条目），落在稳定层的行 `isStale` 恒为假——在这里判就是一条死分支。
- * 「已降权」标与描述默认收起因此都挂在候选行上（见 CandidateRow）。
+ * 这一行不判降权：`isStale` 只对 `freshness = current` 的条目成立（降权由服务端的
+ * `effective_freshness` 在取数期算，历史条目带的是 `historical`），因此落在本行的
+ * `isStale` 恒为假——在这里判就是一条死分支。「已降权」标与描述默认收起挂在候选行上（见 CandidateRow）。
  *
- * 已更正（`historical`）的条目也到不了这里：纠正后的旧条目在取数层就不返回
- * （`repository.list_items` 的 `freshness != historical` 与 `superseded_by is null`
- * 两道条件，纠正同时置这两个字段）。设计第 33/62 行要求它出行首「已更正」标，
- * 而当前没有渲染出口——如需回看历史条目，得先有取数通道，不能靠界面凭空造标。
+ * 历史条目由 `include_superseded = true` 随条目流返回（`LoadProfileUseCase.loadObject`
+ * 显式打开该开关），与本行同一结构；行首出「已更正」标（档案页第 33、62 行），
+ * 落位与候选行的「已降权」标一致：标题之后、描述之前。
  */
 function StableRow({ item, busy, failure, onCorrect, onDelete }: StableRowProps) {
   return (
     <article className="list-row">
       <strong className="lr-title">{item.topic}</strong>
+      {isHistorical(item) && <span className="tag meta">{COPY.historicalTag}</span>}
       <p className="lr-sub">{item.description}</p>
       <p className="lr-meta">{itemMetaLine(item)}</p>
       <div className="lr-actions">
@@ -466,8 +468,10 @@ interface CandidateRowProps {
  *
  * 已降权（stale，90 天）的条目在本行上带「已降权」标、且描述默认收起（档案页第 25 行）：
  * 降权是「可能不再准」的信号，把描述折起来能让人先看到别的，需要核对时再点开。
- * 降权只可能是候选条目——稳定层取数按 `freshness=current` 过滤，落在稳定层的行时效恒为 current。
- * 该标是本行唯一的一处时效出口：元信息行（`itemMetaLine`）不再重复写时效措辞。
+ * 降权只可能是候选条目：降权判定只作用于 `freshness = current` 的未确认条目（服务端的
+ * `effective_freshness`），而完整条目区里的行要么是 `current` 的稳定层、要么是 `historical`
+ * 的历史条目，两者都不是 `stale`。该标是本行唯一的一处时效出口：元信息行（`itemMetaLine`）
+ * 不再重复写时效措辞。
  */
 function CandidateRow({ item, busy, expanded, failure, onConfirm, onDelete, onToggleExpand }: CandidateRowProps) {
   const stale = isStale(item);

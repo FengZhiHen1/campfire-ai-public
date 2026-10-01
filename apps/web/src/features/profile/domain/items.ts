@@ -1,9 +1,9 @@
 /**
  * 模块: features/profile/domain/items
- * 职责: 档案条目的呈现规则——来源措辞、候选与降权判定、按领域分组
+ * 职责: 档案条目的呈现规则——来源措辞、候选/降权/历史判定、按领域分组
  * 数据来源:
  *   - docs/design/pages/档案页.md: MUST — 第 23 行（`.lr-meta` = 来源类型 + 确认状态 + 时间）、
- *     第 25 行（降权条目的行首标与描述折叠）
+ *     第 25 行（降权条目的行首标与描述折叠）、第 62 行（纠正后原条目转历史态，行首「已更正」标）
  *   - docs/技术设计/面/profile/档案面HTTP契约.md: MUST — 第 3 节（items 与 candidates 分开返回）
  *   - docs/技术设计/technical-details/个性化档案.md: MUST — 第 2 节条目字段、第 3 节时效
  * 边界:
@@ -48,6 +48,18 @@ export function isCandidate(item: ProfileItem): boolean {
 /** 是否为已降权（90 天）条目：行组件据此出行首「已降权」标并把描述默认折叠（档案页第 25 行）。 */
 export function isStale(item: ProfileItem): boolean {
   return item.freshness === 'stale';
+}
+
+/**
+ * 是否为历史（已被取代）条目：行组件据此出行首「已更正」标（档案页第 33、62 行）。
+ *
+ * 判据只由 `freshness` 承担，与 `isStale` 同形：`superseded_by` 是同一件事的另一侧指针
+ * （纠正一次同时置两者并互指），再判一次就是同一事实的两个出口。
+ * 历史条目由服务端在 `include_superseded = true` 时随 `items` 返回（档案页第 62 行
+ * 「原条目转历史态……新条目进入列表」），不归「待确认」分组。
+ */
+export function isHistorical(item: ProfileItem): boolean {
+  return item.freshness === 'historical';
 }
 
 /** 一个领域分组：领域取值 + 该组条目。 */

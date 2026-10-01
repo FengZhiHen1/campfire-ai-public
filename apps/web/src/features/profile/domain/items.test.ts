@@ -15,7 +15,7 @@ import { describe, expect, it } from 'vitest';
 
 import type { ProfileItem } from '../../../shared/types/profile';
 import { DOMAIN_LABELS, DOMAIN_ORDER, domainLabel, toProfileDomain } from './domains';
-import { groupByDomain, isCandidate, isStale, itemMetaLine, originLabel } from './items';
+import { groupByDomain, isCandidate, isHistorical, isStale, itemMetaLine, originLabel } from './items';
 
 /** 造一条条目；只覆盖断言需要的字段，其余给契约形状的默认值。 */
 function item(overrides: Partial<ProfileItem> = {}): ProfileItem {
@@ -94,6 +94,14 @@ describe('档案条目呈现规则', () => {
   it('降权判定只看 freshness', () => {
     expect(isStale(item({ freshness: 'stale' }))).toBe(true);
     expect(isStale(item({ freshness: 'current' }))).toBe(false);
+  });
+
+  it('历史判定只看 freshness：被取代的条目出行首「已更正」标', () => {
+    expect(isHistorical(item({ freshness: 'historical' }))).toBe(true);
+    // 两条时效标互斥：同一行不可能既「已更正」又「已降权」，判据不能互相穿透。
+    expect(isHistorical(item({ freshness: 'current' }))).toBe(false);
+    expect(isHistorical(item({ freshness: 'stale' }))).toBe(false);
+    expect(isStale(item({ freshness: 'historical' }))).toBe(false);
   });
 
   it('元信息行区分「确认时间」与「记录时间」', () => {
