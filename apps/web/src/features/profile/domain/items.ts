@@ -37,7 +37,8 @@ export function originLabel(origin: ProfileOrigin): string {
  * 是否为候选（待确认）条目。
  *
  * 判据是 `confirmation === 'unconfirmed'`，不是 origin 是否属推断：
- * 使用者的自述也可以未被确认（服务端由 origin 推导确认状态，前端不重做这一步）。
+ * 确认状态由服务端按 origin 推导后下发，前端只读字段、不重做这一步。
+ * 自述入档即 `confirmed`，生产侧没有「自述 + 未确认」的产出路径。
  * 分组仍由服务端返回结构决定（`candidates` 数组），本函数只用于行内呈现，
  * 不用于把 items 拆成两组——那是 `AC-18` 的服务端侧保证，前端重做会掩盖它的失效。
  */
