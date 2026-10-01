@@ -1,7 +1,7 @@
 """会话归属的用例层：登记、越权判定、会话列表与历史水合。
 
-职责：会话归属的四个用例（`register_session` / `require_session_owner` /
-`list_sessions` / `load_history`）与账号注销时的归属行清除。
+职责：会话归属的五个用例（`register_session` / `require_session_owner` /
+`discard_session_owner` / `list_sessions` / `load_history`）与账号注销时的归属行清除。
 边界：只管归属与呈现的编排；消息的存储归 SDK，对象名经注入回调取，越权文案由本层统一。
 参考：docs/技术设计/decisions/会话归属单立表归accounts.md；
 docs/技术设计/面/consult/HTTP与SSE契约.md 第 3.2、3.3、7 节；
@@ -116,7 +116,7 @@ class SessionHistory:
 
 
 # ---------------------------------------------------------------------------
-# 归属登记与判定
+# 归属的登记、判定与补偿删除
 # ---------------------------------------------------------------------------
 
 
@@ -182,6 +182,37 @@ async def require_session_owner(session: AsyncSession, *, session_id: str, accou
     owned = await repo.is_session_owned_by(session, session_id=session_id, account_id=account_id)
     if not owned:
         raise SessionNotFoundError()
+
+
+# quality-floor: ignore docstring-promise 异常由仓储层的 validate_session_id 间接抛出，本函数只做转发
+async def discard_session_owner(session: AsyncSession, *, session_id: str) -> int:
+    """丢弃一条会话归属行，返回删除条数（「会话刚建好就注定不存在」的补偿删除）。
+
+    唯一的调用点是应急入口的补偿删除：它在同一个事务里落归属行、对象绑定与首轮注入
+    标记，而运行起步失败时调用方拿不到 `session_id`——那个会话没有任何入口可达，
+    留下的归属行是永久残留（绑定行与注入标记都已按「这个会话存在」结算过）。绑定行
+    由 `modules/profile` 的 `discard_session_binding` 清：两个模块各清自己的行，
+    模块之间不互相 import（项目结构设计第 7 节）。
+
+    幂等：`DELETE ... WHERE` 命中 0 行不报错，重复调用安全——补偿路径可以被重试。
+
+    与 :class:`SessionAccountPurger` 的分工：那个按账号清空全部归属行（注销编排用），
+    这个只清单个会话。
+
+    为什么面层调用的是本函数而不是仓储层的同名函数：归属行的删除也要经用例层暴露，
+    面层不直接访问数据库表（项目结构设计第 5 节）。
+
+    Args:
+        session: 关系库会话（调用方负责事务边界）。
+        session_id: 要丢弃的会话标识。
+
+    Returns:
+        实际删除的条数；该会话没有归属行时为 0（不是错误）。
+
+    Raises:
+        SessionQueryError: 会话标识形状不合法（判据与仓储层同源）。
+    """
+    return await repo.delete_session_owner(session, session_id=session_id)
 
 
 # ---------------------------------------------------------------------------
@@ -463,7 +494,8 @@ __all__ = [
     "SessionOwner",
     "SessionPage",
     "SessionSummaryView",
-    # 登记与判定
+    # 登记、判定与补偿删除
+    "discard_session_owner",
     "register_session",
     "require_session_owner",
     # 列表

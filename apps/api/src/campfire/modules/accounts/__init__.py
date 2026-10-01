@@ -39,7 +39,7 @@
 # `onboarding.py`（引导状态表的读取与触发判定，`RQ-ACC-09`）、
 # `session_items.py`（SDK 会话条目 → parts/标题/预览的解析）、
 # `session_repository.py`（会话归属行的读写与 SDK 两表的只读查询）、
-# `sessions.py`（会话归属四个用例与注销清除）、
+# `sessions.py`（会话归属的五个用例与注销清除）、
 # `onboarding_completion.py`（引导收束写入：置 `completed`，`finish_onboarding` 的用例层）、
 # `onboarding_skip.py`（引导跳过写入：置 `skipped`，UI 跳过入口的用例层）、
 # `onboarding_start.py`（引导开始写入：置 `in_progress`，首次注入引导时落行）、
@@ -168,6 +168,7 @@ from campfire.modules.accounts.sessions import (
     SessionPage,
     SessionSummaryView,
     decode_cursor,
+    discard_session_owner,
     encode_cursor,
     list_sessions,
     load_history,
@@ -275,6 +276,7 @@ __all__ = [
     "SessionPage",
     "SessionSummaryView",
     "decode_cursor",
+    "discard_session_owner",
     "encode_cursor",
     "list_sessions",
     "load_history",
