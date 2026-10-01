@@ -146,7 +146,7 @@ services:
       # 写了 wget 会让健康检查一直报 `/bin/sh: 1: wget: not found` → 永远 unhealthy
       # → `api` 因 depends_on 健康条件而起不来。这是 2026-10-01 真机部署时抓到的缺陷
       # （实测该镜像里有 curl，`curl -s http://localhost:3567/hello` 返回 `Hello`）。
-      test: ["CMD-SHELL", "curl -fsS --max-time 4 http://localhost:3567/hello || exit 1"]
+      test: ["CMD-SHELL", "curl -fsS --max-time 4 http://127.0.0.1:3567/hello || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 6
@@ -201,7 +201,10 @@ services:
       # 用 `/readyz` 而不是 `/health`：两者口径相同，但 `/readyz` 的名字表达了用途
       # （部署系统判据）。**刻意不用 `/livez`**——那只看进程活着，会让「装配失败、
       # 核心端点必回 503」的版本被判健康，那正是本次修掉的假健康。
-      test: ["CMD-SHELL", "curl -fsS http://localhost:8000/readyz || exit 1"]
+      # 同样用 `127.0.0.1`：uvicorn 绑 `0.0.0.0`（IPv4），而容器内 `localhost` 先解析到
+      # `::1`。curl 有 happy-eyeballs 回退所以现在能过，但把它写死成 IPv4 字面量更稳
+      # ——不依赖「这个镜像里的 curl 恰好会回退」。
+      test: ["CMD-SHELL", "curl -fsS --max-time 5 http://127.0.0.1:8000/readyz || exit 1"]
       interval: 15s
       timeout: 10s
       retries: 5
@@ -285,7 +288,13 @@ services:
       # `/health` 都是 `proxy_pass` 到 api 的，因此打 `/livez` 实际在验「后端是否活着」。
       # 那会让「后端挂了」把 web 容器标成 unhealthy 并被重启——而重启 nginx 对后端
       # 毫无帮助（这正是区分 livez/readyz 的理由）。本容器的健康只应反映它自己。
-      test: ["CMD-SHELL", "wget -qO- http://localhost/nginx-health | grep -q ok || exit 1"]
+      # 用 `127.0.0.1` 而不是 `localhost`（2026-10-01 真机部署时抓到）：
+      # 容器内 `/etc/hosts` 把 `localhost` 同时指向 `::1` 与 `127.0.0.1`，而 busybox 的
+      # wget 会**先试 IPv6**、失败后不回退；nginx 只监听 IPv4 的 `0.0.0.0:80`，
+      # 于是健康检查恒报 `wget: can't connect to remote host: Connection refused`，
+      # 容器永远 unhealthy——而 nginx 其实工作正常（`\dt` 之外的请求都 200）。
+      # 写死 IPv4 字面量可绕开解析顺序，也免掉「取决于基础镜像用什么 wget」的不确定性。
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1/nginx-health | grep -q ok || exit 1"]
       interval: 15s
       timeout: 5s
       retries: 5
