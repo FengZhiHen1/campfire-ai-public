@@ -45,8 +45,8 @@ curl -fsS https://<你的域名>/readyz
 范围内**。于是存在这种状态——
 
 ```
-GET /health   → 200 OK
-POST /consult → 503        # 运行器没装配
+GET /health          → 200 OK
+POST /api/consult/... → 503        # 运行器没装配
 ```
 
 部署系统会认为一个核心咨询功能必然失败的版本已经健康。`agent_assembly` 项就是为堵这一点。
