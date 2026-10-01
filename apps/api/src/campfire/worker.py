@@ -223,7 +223,7 @@ async def consume_memory_episode_task(pending_id: str, lease_owner: str | None =
 
     Raises:
         MemoryDataError: 载荷不合法（形状错误）。这类失败重试无用，因此直接转
-            `dead` 并抛出，让 Taskiq 记录失败。
+            `dead`、发出 `[alert]` 告警后抛出，让 Taskiq 记录失败。
         Exception: 基础设施类失败（图库/数据库不可用，含 `MemoryUnavailableError`）
             按第 6 节记 `attempts + 1` 与退避后原样抛出——吞掉它会让队列以为
             任务成功。
@@ -236,12 +236,18 @@ async def consume_memory_episode_task(pending_id: str, lease_owner: str | None =
     except MemoryDataError as exc:
         # 不可重试：载荷/形状不合法，重试不会变好，直接转 `dead`
         # （第 6 节：不得静默丢弃）。`session_scope` 已回滚，故另开会话登记终结状态。
-        logger.warning("记忆写入的载荷不合法，转 dead：pending_id=%s cause=%s", pending_id, type(exc).__name__)
-        async with session_scope(get_settings()) as session:
-            try:
-                await mark_dead(session, pending_id=pending_id, error=f"{type(exc).__name__}: {exc}")
-            except Exception:  # noqa: BLE001 —— 登记失败不能掩盖原始错误
-                logger.exception("登记 dead 失败：pending_id=%s", pending_id)
+        #
+        # 走 `_mark_dead_and_alert` 而不是自己登记：告警是 `dead` 的必要组成，
+        # 与档案侧两条不可重试路径同一处置（第 6 节「转 `dead` 并告警」、
+        # 第 8 节「`dead` 数量必须告警」）。此处此前只有 warning、没有 `[alert]`，
+        # 于是这条 `dead` 对告警规则不可见——正是第 8 节警告的「坏了没人知道」。
+        #
+        # 为什么级别是 error 而不是 warning（与另两条 `dead` 路径一致）：
+        # 判据是「这条没写进去且不再重试、需要人工排查」，与成因是否为
+        # 「预期内的坏输入」无关。降级成 warning 会让它在按级别过滤的告警规则下漏掉，
+        # 而 `dead` 的保留期（30 天）与人工处置成本并不因成因不同而改变。
+        # 机械守门见 apps/api/tests/test_pending_write_dead_alert_integration.py。
+        await _mark_dead_and_alert(pending_id, exc, subject="记忆写入的载荷不合法")
         raise
     except Exception as exc:
         # 其它一切按可重试处理——宁可多重试几次，也不要把可能瞬时的失败判成永久 dead。

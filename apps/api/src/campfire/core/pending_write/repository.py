@@ -409,9 +409,9 @@ async def mark_dead(
 
     - `repository.mark_retryable_failure`（重试耗尽）：告警在其调用方
       `worker._register_retryable_failure` 里依返回值 `state == STATE_DEAD` 发出；
-    - `worker.consume_memory_episode_task`（记忆侧不可重试的 `MemoryDataError`）；
-    - `worker._mark_dead_and_alert`（档案侧不可重试的载荷不合法与授权不成立，
-      由 `worker.consume_profile_item_task` 的两条分支调用）。
+    - `worker._mark_dead_and_alert`（不可重试的终结：记忆侧载荷不合法、档案侧
+      载荷不合法与授权不成立），由两个消费者的三条分支调用——记忆侧那条分支
+      经它收口，唯一的 `mark_dead` 调用点因此都带告警。
 
     Raises:
         PendingWriteNotFoundError: 记录不存在，或已处于终结状态。
