@@ -55,8 +55,9 @@ export function isStale(item: ProfileItem): boolean {
  *
  * 判据只由 `freshness` 承担，与 `isStale` 同形：`superseded_by` 是同一件事的另一侧指针
  * （纠正一次同时置两者并互指），再判一次就是同一事实的两个出口。
- * 历史条目由服务端在 `include_superseded = true` 时随 `items` 返回（档案页第 62 行
- * 「原条目转历史态……新条目进入列表」），不归「待确认」分组。
+ * 历史条目由服务端在 `include_superseded = true` 时随条目流返回（档案页第 62 行
+ * 「原条目转历史态……新条目进入列表」）；落哪一组不由本判据决定——已确认或非推断来源的
+ * 归 `items`，未确认的系统推断即便已被取代也归 `candidates`（`AC-18`）。两组都用本判据出行首标。
  */
 export function isHistorical(item: ProfileItem): boolean {
   return item.freshness === 'historical';
