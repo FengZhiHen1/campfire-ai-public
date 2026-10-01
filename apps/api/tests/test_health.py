@@ -16,13 +16,13 @@
 测到真实探针。
 """
 
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Iterator
 
 import pytest
 from fastapi.testclient import TestClient
 
 from campfire import main as main_module
-from campfire.core.config import Settings
+from campfire.core.config import Settings, get_settings
 from campfire.core.health import ComponentHealth, HealthReport, Status
 
 #: 就绪探针报告的能力名（与 `main._READINESS_PROBES` 的键一致，断言用集合）。
@@ -103,6 +103,34 @@ def _install_probes(monkeypatch: pytest.MonkeyPatch, *, failing: str | None) -> 
     )
     # 同时把清单里的名字钉住：清单被改名/漏项时本函数立刻报错，而不是静默只测了子集。
     assert {name for name, _ in main_module._READINESS_PROBES} == EXPECTED_COMPONENTS
+
+
+@pytest.fixture(autouse=True)
+def _provide_startup_configuration(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
+    """给 lifespan 提供它要求的配置，让本文件**不依赖宿主机 `.env`**。
+
+    为什么需要它（2026-10-01 实测，这是一条真实的 CI 阻塞）：
+
+    本文件的用例用 `with TestClient(app)` 发请求，而带 `with` 的 `TestClient` **会跑
+    `lifespan`**；`lifespan` 调 `init_supertokens(...)`，后者要求
+    `SUPERTOKENS_API_KEY`，缺失即抛 `SuperTokensConfigurationError`。
+
+    GitHub Actions 上没有 `.env` 文件（实测：把配好的本机 `.env` 排除后，本文件 6 条
+    用例全部 ERROR，**在本次改动之前就已如此**——用会话前的提交 `1c00ce1` 建 worktree
+    复现确认过）。也就是说 CI 一直是红的，只是本机的 `.env` 把它盖住了。
+
+    这里给的是假凭据，不会产生任何真实外部调用：本文件的所有探针都被
+    `_install_probes` 替换成替身，因此没有请求会发到 SuperTokens core 或模型端点。
+    `SUPERTOKENS_API_KEY` 只用于 `init_supertokens` 的装配期校验。
+
+    `get_settings` 是 `lru_cache` 的，故设完环境变量后必须清缓存。
+    """
+    monkeypatch.setenv("SUPERTOKENS_API_KEY", "health-test-key-not-a-secret")
+    monkeypatch.setenv("TOKENHUB_API_KEY", "health-test-key-not-a-secret")
+    monkeypatch.setenv("DATABASE_URL", "postgresql+asyncpg://health:health@127.0.0.1:5432/health_test")
+    get_settings.cache_clear()
+    yield
+    get_settings.cache_clear()
 
 
 def test_health_returns_200_when_all_capabilities_are_up(monkeypatch: pytest.MonkeyPatch) -> None:
