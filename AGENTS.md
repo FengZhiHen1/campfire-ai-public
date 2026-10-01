@@ -27,15 +27,14 @@
 > 持久化实现，不接线的后果是窗口退化为全量历史（安全方向，不丢内容）；
 > 发布闸门 `EVID-A`～`EVID-D` 未处理（面向真实使用者前必须逐项关闭）。
 >
-> **生产环境已于 2026-10-01 落地**（此前本条写「TLS/域名/服务器不存在任何事实」，已失实）：
-> `campfire.wenran.me` → `43.161.195.236`（腾讯云 HK，`/opt/campfire`）；
-> Let's Encrypt 证书已签发（至 2026-12-30，**自动续期未配置**）；
-> 七个容器全部 healthy。**443 仍被云安全组拦着**（80 通、443 超时；Docker 的 DNAT 规则
-> 对两者对称、本机 iptables 无 443 的 DROP，已定位为云侧），因此当前只能用 HTTP 访问，
-> 80→443 跳转**刻意未启用**（443 不通时启用会让站点完全打不开）。
-> 放行 443 后执行 [scripts/tls-enable-redirect.sh](scripts/tls-enable-redirect.sh)（它先验
-> TCP 可连 + 证书链 + HTTPS 上的 `/readyz`，三条全过才写入跳转；任一不过就保持不跳转）；
-> 证书签发/续期用 [scripts/tls-issue-cert.sh](scripts/tls-issue-cert.sh)。
+> **生产环境已于 2026-10-01 落地并启用 HTTPS**（此前本条写「TLS/域名/服务器不存在任何
+> 事实」，已失实）：
+> **<https://campfire.wenran.me>** → `43.161.195.236`（腾讯云 HK，部署目录 `/opt/campfire`）；
+> Let's Encrypt 证书已签发（至 2026-12-30），**自动续期已配置**（systemd timer
+> `campfire-tls-renew.timer`，每日跑，实测演练续期成功）；80→443 跳转已启用；
+> 七个容器全部 healthy。
+> 运维脚本：`scripts/tls-issue-cert.sh`（签发/续期）、`tls-enable-redirect.sh`
+> （开启跳转，五项验证全过才动配置）、`tls-renew.sh`、`tls-install-renew-timer.sh`。
 > 验收流程见 [docs/运维/上线验收测试流程.md](docs/运维/上线验收测试流程.md)。
 
 ## Stack
