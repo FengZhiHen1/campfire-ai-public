@@ -117,7 +117,7 @@ async def client() -> AsyncIterator[httpx.AsyncClient]:
     init_supertokens(get_settings(), api_overrides=api_overrides, sign_up_form_fields=sign_up_form_fields)
 
     transport = httpx.ASGITransport(app=main_module.app)
-    async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as async_client:
+    async with httpx.AsyncClient(transport=transport, base_url="http://testserver/api") as async_client:
         yield async_client
     main_module.app.dependency_overrides.clear()
 

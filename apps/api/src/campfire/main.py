@@ -131,6 +131,13 @@ async def check_model(settings: Settings) -> ComponentHealth:
 
 app = FastAPI(title="篝火智答 API", version="0.1.0", lifespan=lifespan)
 
+#: 业务接口的统一前缀。见下面 `include_router` 处的说明：它让接口路径与前端**页面**路径
+#: 不再可能相撞（页面在 `/consult`，接口在 `/api/consult`）。
+#:
+#: 存活/就绪/诊断三个探针**不**加这个前缀：它们是基础设施判据，Docker healthcheck、
+#: Nginx 与 CD 都按固定短路径访问，把部署机器人的地址绑到业务前缀上只会让两侧都更难改。
+_API_PREFIX = "/api"
+
 # SuperTokens 中间件：它负责挂载 `/auth/*`（signup、signin、refresh、signout、
 # 密码重置等由 SDK 提供的路由）。认证面的接入点由「SDK 挂载的路由」与「我们自建的
 # 业务端点」两部分组成（认证与账号第 5 节），这是前者。
@@ -148,16 +155,30 @@ app.add_middleware(get_middleware())
 # 它们经 `include_router` 挂载而不是中间件：这些是我们自建的普通业务端点，
 # 路径前缀由各自的 router 声明（认证面那条 `/auth/*` 是 SDK 提供的路由，
 # 必须走中间件，见上）。
-app.include_router(profile_router)
-app.include_router(memory_router)
-app.include_router(library_router)
+# 业务路由统一挂在 /api 下（2026-10-01 修正）。
+#
+# 为什么必须加这一层前缀（实测缺陷，不是风格偏好）：此前四个面的路由直接挂在根
+# （`/consult/*`、`/profile/*`、`/memory/*`、`/library/*`），而前端**页面路由**用了
+# 同样的前缀（`/consult`、`/consult/sessions/:id`、`/consult/emergency`、`/profile`）。
+# Nginx 里「转发给 API」的 location 是正则 `^/(auth|consult|profile|memory|library)(/|$)`，
+# 而 nginx 的正则 location 优先级高于 SPA 的 `location /`——于是这四个页面被转发给 API：
+# 实测 `/consult` → 404 JSON、`/profile` → 404 JSON、`/consult/emergency` → 405 JSON。
+# 用户直接访问或刷新对话页/档案页会看到裸的 API 错误，而不是应用界面。
+#
+# 加 /api 使两类路径不再可能相撞：页面在 `/consult`，接口在 `/api/consult`。
+#
+# `include_router(prefix=...)` 而不是改各 router 声明：面的前缀（`/profile` 等）是面的
+# 边界，属于各模块；对外暴露路径是装配决策，属于这里。两者分开，模块不必知道部署形态。
+app.include_router(profile_router, prefix=_API_PREFIX)
+app.include_router(memory_router, prefix=_API_PREFIX)
+app.include_router(library_router, prefix=_API_PREFIX)
 # 咨询面的自有路由（HTTP 与 SSE 契约第 3、4 节）。`include_router` 而不是中间件：
 # 这些是普通业务端点，鉴权由各自的 `require_session` 依赖完成；SDK 的 `/auth/*`
 # 走中间件是因为它需要控制 cookie 与路径前缀的原生行为。
 #
 # 按面分组是因为路径前缀（`/consult`）就是面的边界，且将来的应急面与档案面各有
 # 自己的路由表——一个 `include_router` 一行，装配处一眼能看出哪些面已挂载。
-app.include_router(consult_router)
+app.include_router(consult_router, prefix=_API_PREFIX)
 
 
 async def check_falkordb(settings: Settings) -> ComponentHealth:

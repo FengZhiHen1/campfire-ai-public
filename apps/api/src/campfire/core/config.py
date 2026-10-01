@@ -117,7 +117,13 @@ class Settings(BaseSettings):
     supertokens_website_domain: str = "http://localhost:5173"
     # 身份服务路由的挂载路径（SDK 的 `api_base_path`）。契约的一部分：
     # 前端与运维文档据此拼 URL（认证与账号第 5 节的 `/auth/*`）。
-    supertokens_api_base_path: str = "/auth"
+    #
+    # 2026-10-01 起为 `/api/auth`（此前是 `/auth`）：与四个业务面一起收进 `/api` 前缀，
+    # 让接口路径与前端页面路径不可能相撞（页面在 `/consult`，接口在 `/api/consult`）。
+    # 此前 `/auth` 恰好没与页面路由冲突，但把认证单独留在根会让「哪些路径是接口」这条
+    # 规则出现例外——例外正是下次踩坑的地方。
+    # 多段前缀 SDK 支持（实测 `NormalisedURLPath('/api/auth')` 可表达并参与前缀匹配）。
+    supertokens_api_base_path: str = "/api/auth"
 
     # --- 通用记忆（Graphiti + FalkorDB）---
     # 连接配置在此集中：modules/memory 不得自己读环境变量（第 10 节唯一入口）。

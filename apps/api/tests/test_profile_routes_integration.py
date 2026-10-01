@@ -98,7 +98,7 @@ async def client() -> AsyncIterator[httpx.AsyncClient]:
     init_supertokens(get_settings(), api_overrides=api_overrides, sign_up_form_fields=sign_up_form_fields)
 
     transport = httpx.ASGITransport(app=main_module.app)
-    async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as async_client:
+    async with httpx.AsyncClient(transport=transport, base_url="http://testserver/api") as async_client:
         yield async_client
     main_module.app.dependency_overrides.clear()
 
@@ -938,7 +938,7 @@ async def test_topic_over_the_storage_width_is_422_not_500(as_account) -> None: 
     over_limit = "主" * 201
 
     transport = httpx.ASGITransport(app=main_module.app, raise_app_exceptions=False)
-    async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as raw:
+    async with httpx.AsyncClient(transport=transport, base_url="http://testserver/api") as raw:
         created = await raw.post(
             f"/profile/objects/{object_id}/items",
             json={"domain": "communication", "topic": at_limit, "description": "边界内的主题"},
@@ -1001,31 +1001,37 @@ async def test_endpoints_require_a_session() -> None:
 
     init_supertokens(settings, api_overrides=api_overrides, sign_up_form_fields=sign_up_form_fields)
 
+    # 期望集合写的是**对外暴露路径**，因此带 `/api` 前缀（2026-10-01 起业务接口统一
+    # 挂在该前缀下，见 `main.py` 的 `_API_PREFIX` 说明）。写死前缀是刻意的：它让
+    # 「有人去掉前缀」或「有人把某个面错误地挂到根上」都会在这里失败。
     expected = {
-        ("GET", "/profile/objects"),
-        ("POST", "/profile/objects"),
-        ("PATCH", "/profile/objects/{support_object_id}"),
-        ("GET", "/profile/objects/{support_object_id}/summary"),
-        ("GET", "/profile/objects/{support_object_id}/items"),
-        ("POST", "/profile/objects/{support_object_id}/items"),
-        ("POST", "/profile/items/{item_id}/confirm"),
-        ("POST", "/profile/items/{item_id}/correct"),
-        ("POST", "/profile/items/{item_id}/reject"),
-        ("DELETE", "/profile/items/{item_id}"),
+        ("GET", "/api/profile/objects"),
+        ("POST", "/api/profile/objects"),
+        ("PATCH", "/api/profile/objects/{support_object_id}"),
+        ("GET", "/api/profile/objects/{support_object_id}/summary"),
+        ("GET", "/api/profile/objects/{support_object_id}/items"),
+        ("POST", "/api/profile/objects/{support_object_id}/items"),
+        ("POST", "/api/profile/items/{item_id}/confirm"),
+        ("POST", "/api/profile/items/{item_id}/correct"),
+        ("POST", "/api/profile/items/{item_id}/reject"),
+        ("DELETE", "/api/profile/items/{item_id}"),
     }
     operations = {
         (method.upper(), template)
         for template, spec in main_module.app.openapi()["paths"].items()
-        if template.startswith("/profile/")
+        if template.startswith("/api/profile/")
         for method in spec
     }
     assert operations == expected, "401 覆盖清单与档案面路由表不一致——同步本条后再跑"
 
     item_id = "3f2504e0-4f89-41d3-9a0c-0305e82c3302"
     transport = httpx.ASGITransport(app=main_module.app)
-    async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as async_client:
+    async with httpx.AsyncClient(transport=transport, base_url="http://testserver/api") as async_client:
         for method, template in sorted(operations):
-            path = template.replace("{support_object_id}", item_id).replace("{item_id}", item_id)
+            # `operations` 来自 OpenAPI，路径**已含** `/api` 前缀；而本 client 的 base_url
+            # 也以 `/api` 结尾，直接传会拼成 `/api/api/...` 而 404（实测踩到）。
+            # 去掉前缀后再传，语义是「相对 API 根的路径」。
+            path = template.removeprefix("/api").replace("{support_object_id}", item_id).replace("{item_id}", item_id)
             response = await async_client.request(method, path, json={} if method in ("POST", "PATCH") else None)
             assert response.status_code == 401, f"{method} {template} 未要求登录"
 
@@ -1045,14 +1051,14 @@ async def test_routes_are_mounted_under_the_profile_prefix() -> None:
 
     paths = set(main_module.app.openapi()["paths"])
     assert {
-        "/profile/objects",
-        "/profile/objects/{support_object_id}",
-        "/profile/objects/{support_object_id}/summary",
-        "/profile/objects/{support_object_id}/items",
-        "/profile/items/{item_id}/confirm",
-        "/profile/items/{item_id}/correct",
-        "/profile/items/{item_id}/reject",
-        "/profile/items/{item_id}",
+        "/api/profile/objects",
+        "/api/profile/objects/{support_object_id}",
+        "/api/profile/objects/{support_object_id}/summary",
+        "/api/profile/objects/{support_object_id}/items",
+        "/api/profile/items/{item_id}/confirm",
+        "/api/profile/items/{item_id}/correct",
+        "/api/profile/items/{item_id}/reject",
+        "/api/profile/items/{item_id}",
     } <= paths
 
 

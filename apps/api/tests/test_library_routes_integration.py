@@ -249,7 +249,7 @@ async def client() -> AsyncIterator[httpx.AsyncClient]:
     init_supertokens(get_settings(), api_overrides=api_overrides, sign_up_form_fields=sign_up_form_fields)
 
     transport = httpx.ASGITransport(app=main_module.app)
-    async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as async_client:
+    async with httpx.AsyncClient(transport=transport, base_url="http://testserver/api") as async_client:
         yield async_client
     main_module.app.dependency_overrides.clear()
 
@@ -962,7 +962,7 @@ async def test_routes_are_mounted_under_the_library_prefix() -> None:
     import campfire.main as main_module
 
     paths = set(main_module.app.openapi()["paths"])
-    assert {"/library/items", "/library/items/{item_id}"} <= paths
+    assert {"/api/library/items", "/api/library/items/{item_id}"} <= paths
 
 
 async def test_the_face_has_no_write_endpoints() -> None:
@@ -975,13 +975,13 @@ async def test_the_face_has_no_write_endpoints() -> None:
     import campfire.main as main_module
 
     schema = main_module.app.openapi()["paths"]
-    library_methods = {method for path, ops in schema.items() if path.startswith("/library") for method in ops}
+    library_methods = {method for path, ops in schema.items() if path.startswith("/api/library") for method in ops}
     assert library_methods == {"get"}
 
     other_writes = {
         method
         for path, ops in schema.items()
-        if not path.startswith("/library")
+        if not path.startswith("/api/library")
         for method in ops
         if method in {"post", "patch", "delete", "put"}
     }
@@ -1012,7 +1012,7 @@ async def test_endpoints_require_a_session() -> None:
     main_module.app.dependency_overrides.clear()
 
     transport = httpx.ASGITransport(app=main_module.app)
-    async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as async_client:
+    async with httpx.AsyncClient(transport=transport, base_url="http://testserver/api") as async_client:
         for path in ("/library/items", f"/library/items/{uuid.uuid4()}"):
             response = await async_client.get(path)
             assert response.status_code == 401, path

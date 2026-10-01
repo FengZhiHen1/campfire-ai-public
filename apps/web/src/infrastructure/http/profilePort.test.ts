@@ -49,7 +49,8 @@ describe('httpProfilePort.listItems — 历史条目的 opt-in 开关', () => {
 
     await httpProfilePort.listItems('o1');
 
-    expect(seen).toEqual(['/profile/objects/o1/items']);
+    // 断言实际请求 URL，含 `/api` 前缀（2026-10-01 起业务接口统一在该前缀下）。
+    expect(seen).toEqual(['/api/profile/objects/o1/items']);
   });
 
   it('opt-in 后请求带上 include_superseded=true，且与候选开关可同时出现', async () => {
@@ -58,6 +59,6 @@ describe('httpProfilePort.listItems — 历史条目的 opt-in 开关', () => {
 
     await httpProfilePort.listItems('o1', { includeCandidates: true, includeSuperseded: true });
 
-    expect(seen).toEqual(['/profile/objects/o1/items?include_candidates=true&include_superseded=true']);
+    expect(seen).toEqual(['/api/profile/objects/o1/items?include_candidates=true&include_superseded=true']);
   });
 });

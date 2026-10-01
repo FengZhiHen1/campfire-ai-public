@@ -10,9 +10,9 @@
 一次运行分两个请求：先发消息拿 `run_id`，再订阅该运行的事件流。
 
 ```text
-POST /consult/sessions/{id}/messages   →  202 {run_id}        # 受理，使用者消息尚未落库
-GET  /consult/runs/{run_id}/stream     →  SSE（可续传）        # 事件流
-POST /consult/runs/{run_id}/cancel    →  202                  # 取消（可选）
+POST /api/consult/sessions/{id}/messages   →  202 {run_id}        # 受理，使用者消息尚未落库
+GET  /api/consult/runs/{run_id}/stream     →  SSE（可续传）        # 事件流
+POST /api/consult/runs/{run_id}/cancel    →  202                  # 取消（可选）
 ```
 
 **为什么分两段**：对话真源是 SDK 的会话存储，一段式（POST 直返流）下连接中断即运行中断，重连等于重放一次运行——会把使用者消息二次追加进真源，并把运行跑第二遍。分段后订阅可带 `Last-Event-ID` 续传，且应急表单提交后跳页不再断流（[应急表单页](../../../design/pages/应急表单页.md)第 22 行的 `navigate` 即需要这一性质）。
@@ -43,7 +43,7 @@ POST /consult/runs/{run_id}/cancel    →  202                  # 取消（可�
 ### 3.1 创建会话
 
 ```text
-POST /consult/sessions
+POST /api/consult/sessions
 请求：{ "support_object_id": "uuid，可选" }
 响应 201：
 {
@@ -60,7 +60,7 @@ POST /consult/sessions
 ### 3.2 会话列表
 
 ```text
-GET /consult/sessions?cursor=&limit=20        # limit 默认 20、上限 50
+GET /api/consult/sessions?cursor=&limit=20        # limit 默认 20、上限 50
 响应 200：
 {
   "items": [
@@ -76,7 +76,7 @@ GET /consult/sessions?cursor=&limit=20        # limit 默认 20、上限 50
 ### 3.3 历史水合
 
 ```text
-GET /consult/sessions/{session_id}/messages
+GET /api/consult/sessions/{session_id}/messages
 响应 200：
 {
   "session_id": "…",
@@ -118,7 +118,7 @@ GET /consult/sessions/{session_id}/messages
 ### 4.2 订阅事件流
 
 ```text
-GET /consult/runs/{run_id}/stream
+GET /api/consult/runs/{run_id}/stream
 头：Last-Event-ID: <seq>（可选，断线续传用）
 ```
 
@@ -148,7 +148,7 @@ data: {"type":"text_delta","delta":"…"}
 ### 4.3 取消
 
 ```text
-POST /consult/runs/{run_id}/cancel → 202
+POST /api/consult/runs/{run_id}/cancel → 202
 ```
 
 - 对应"停止"按钮与 `abortSignal`；已终结的运行返回 **409**。
@@ -157,7 +157,7 @@ POST /consult/runs/{run_id}/cancel → 202
 ## 5. 应急入口
 
 ```text
-POST /consult/emergency
+POST /api/consult/emergency
 请求：
 {
   "support_object_id": "uuid，可选",
@@ -183,7 +183,7 @@ POST /consult/emergency
 ## 6. 引导跳过入口
 
 ```text
-POST /consult/sessions/{session_id}/onboarding/skip
+POST /api/consult/sessions/{session_id}/onboarding/skip
 响应 200：{ "state": "skipped" }
 ```
 

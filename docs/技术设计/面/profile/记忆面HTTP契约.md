@@ -38,7 +38,7 @@
 ## 3. 查看
 
 ```text
-GET /memory/episodes?since=&until=&query=&cursor=&limit=
+GET /api/memory/episodes?since=&until=&query=&cursor=&limit=
 响应 200：
 {
   "items": [
@@ -57,7 +57,7 @@ GET /memory/episodes?since=&until=&query=&cursor=&limit=
 ## 4. 删除
 
 ```text
-DELETE /memory/episodes/{episode_key}
+DELETE /api/memory/episodes/{episode_key}
 响应 200：{ "episode_key": "…", "newly_deleted": true, "reason": "user_request" }
 ```
 
@@ -69,7 +69,7 @@ DELETE /memory/episodes/{episode_key}
 ## 5. 纠正
 
 ```text
-POST /memory/episodes/{episode_key}/correct
+POST /api/memory/episodes/{episode_key}/correct
 请求：{ "occurred_at": "…", "content": "…" }
 响应 201：{ "episode_key": "新记忆的标识", "supersedes": "…" }
 ```

@@ -51,10 +51,10 @@ describe('createConsultApi — 端点形状', () => {
     const fetchImpl = (async (input: RequestInfo | URL, init?: RequestInit) => {
       calls.push({ url: String(input), init });
       if (String(input).endsWith('/cancel')) return new Response('', { status: 202 });
-      if (String(input) === '/consult/sessions') {
+      if (String(input) === '/api/consult/sessions') {
         return jsonResponse({ session_id: 's1', support_object_id: null, onboarding_pending: false }, 201);
       }
-      if (String(input) === '/consult/sessions/s1/messages') {
+      if (String(input) === '/api/consult/sessions/s1/messages') {
         return jsonResponse({ run_id: 'run-1', session_id: 's1' }, 202);
       }
       return jsonResponse({ session_id: 's-emg', run_id: 'run-emg' }, 202);
@@ -69,11 +69,14 @@ describe('createConsultApi — 端点形状', () => {
     expect(await api.emergencyStart({ items: [] })).toEqual({ session_id: 's-emg', run_id: 'run-emg' });
     await api.cancelRun('run-1');
 
+    // 期望的是**实际发出的 URL**，因此含 `/api` 前缀（2026-10-01 起业务接口统一在该前缀下）。
+    // 这里写全路径是刻意的：它是「前端确实按契约拼了带前缀的地址」的唯一证据，
+    // 用模糊匹配会让「少拼或多拼一层前缀」这类缺陷静默通过。
     expect(calls.map((call) => call.url)).toEqual([
-      '/consult/sessions',
-      '/consult/sessions/s1/messages',
-      '/consult/emergency',
-      '/consult/runs/run-1/cancel',
+      '/api/consult/sessions',
+      '/api/consult/sessions/s1/messages',
+      '/api/consult/emergency',
+      '/api/consult/runs/run-1/cancel',
     ]);
     expect(JSON.parse(String(calls[0]?.init?.body))).toEqual({});
     expect(JSON.parse(String(calls[1]?.init?.body))).toEqual({
@@ -97,9 +100,9 @@ describe('createConsultApi — 端点形状', () => {
     await api.loadHistory('a b/c');
 
     expect(urls).toEqual([
-      '/consult/sessions?cursor=c1&limit=20',
-      '/consult/sessions',
-      '/consult/sessions/a%20b%2Fc/messages',
+      '/api/consult/sessions?cursor=c1&limit=20',
+      '/api/consult/sessions',
+      '/api/consult/sessions/a%20b%2Fc/messages',
     ]);
   });
 
