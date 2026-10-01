@@ -40,9 +40,48 @@ export class ConsultRequestError extends Error {
   }
 }
 
-/** 前端生成的幂等键；同一会话内重复提交同一键值不会二次追加使用者消息（契约第 2 节）。 */
+/**
+ * 前端生成的幂等键；同一会话内重复提交同一键值不会二次追加使用者消息（契约第 2 节）。
+ *
+ * ⚠️ 不能直接用 `crypto.randomUUID()`（2026-10-01 真机抓到的缺陷）。
+ *
+ * `crypto.randomUUID` 是 **secure context 专有** API：只在 HTTPS（或 localhost）
+ * 下存在，明文 HTTP 下它是 `undefined`。直接调用会抛
+ * `TypeError: crypto.randomUUID is not a function`。
+ *
+ * 实测证据（真实浏览器，`http://campfire.wenran.me`）：
+ *     window.isSecureContext       = false
+ *     typeof crypto.randomUUID     = "undefined"
+ *     typeof crypto.getRandomValues = "function"
+ *     crypto.randomUUID()          -> TypeError
+ *
+ * 症状之所以难查：异常发生在**发请求之前**，因此服务端日志与浏览器网络面板里
+ * 什么都看不到，界面上只出现一条笼统的「出现了未预期的错误」；而同一份代码在
+ * 本地 `localhost` 开发时又完全正常（localhost 属 secure context）——
+ * 典型的「只在生产暴露」。
+ *
+ * 兜底用 `crypto.getRandomValues`（**在非安全上下文也可用**，已实测）自行拼 UUIDv4。
+ * 不降级成 `Math.random`：那会让幂等键的随机性变弱——幂等键碰撞会导致
+ * 「两条不同的消息被当成同一条」，是数据正确性问题，而不只是概率问题。
+ */
 export function newClientMessageId(): string {
-  return globalThis.crypto.randomUUID();
+  const webCrypto = globalThis.crypto;
+  if (typeof webCrypto?.randomUUID === 'function') {
+    return webCrypto.randomUUID();
+  }
+  // 按 RFC 4122 的 v4 布局填充：第 7 字节高 4 位固定 0100（版本 4），
+  // 第 9 字节高 2 位固定 10（变体）。
+  // 用位掩码赋值而不是 `bytes[6]! &= ...`：`noUncheckedIndexedAccess` 下下标访问
+  // 的静态类型含 undefined，而 oxlint 禁止非空断言（`!`）。先读进局部变量再写回，
+  // 既避开断言，也不依赖「索引一定在界内」的隐含假设。
+  const bytes = new Uint8Array(16);
+  webCrypto.getRandomValues(bytes);
+  const versionByte = bytes[6] ?? 0;
+  const variantByte = bytes[8] ?? 0;
+  bytes[6] = (versionByte & 0x0f) | 0x40;
+  bytes[8] = (variantByte & 0x3f) | 0x80;
+  const hex = Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 }
 
 /**
@@ -146,7 +185,7 @@ export interface SendConsultMessageInput {
   answers?: QuestionAnswer[];
   /** 技能选择（发送即消费；null = 自动匹配）。 */
   skill?: string | null;
-  /** 幂等键生成器；默认 crypto.randomUUID（测试注入固定值）。 */
+  /** 幂等键生成器；默认 newClientMessageId（测试注入固定值）。 */
   newId?: () => string;
 }
 
