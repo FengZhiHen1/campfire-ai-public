@@ -64,7 +64,7 @@ class SqlCitationIndex:
 
     超时：端口契约（`agent/context/citations.py` 的 `CitationIndex` docstring）要求
     实现自带超时上界，理由是超时属「结果未知」。本实现同时满足契约给出的两条出路：
-    写入按 `citation_id` 幂等（`ON CONFLICT DO NOTHING`），因此超时后**重试是安全的**
+    写入按 `citation_id` 幂等（`ON CONFLICT DO NOTHING`），因此超时后重试是安全的
     ——不会产生重复记录。
     """
 
@@ -77,6 +77,7 @@ class SqlCitationIndex:
         self._settings = settings
         self._timeout_seconds = settings.citation_timeout_seconds if timeout_seconds is None else timeout_seconds
 
+    # quality-floor: ignore docstring-promise 异常由 _validate 与 _run 抛出并原样传播，函数体只做组装
     async def add(self, record: CitationRecord) -> None:
         """写入一条引用记录（按 `citation_id` 幂等）。
 
@@ -103,6 +104,7 @@ class SqlCitationIndex:
         )
         await self._run("写入", self._execute_add(statement), detail=record.citation_id)
 
+    # quality-floor: ignore docstring-promise 异常由 _run 抛出并原样传播，函数体只做转发
     async def list_for_run(self, run_id: str) -> Sequence[CitationRecord]:
         """按运行读回引用记录，顺序为写入顺序（按自增序号）。
 

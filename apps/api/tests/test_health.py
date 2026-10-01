@@ -107,7 +107,7 @@ def _install_probes(monkeypatch: pytest.MonkeyPatch, *, failing: str | None) -> 
 
 @pytest.fixture(autouse=True)
 def _provide_startup_configuration(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
-    """给 lifespan 提供它要求的配置，让本文件**不依赖宿主机 `.env`**。
+    """给 lifespan 提供它要求的配置，让本文件不依赖宿主机 `.env`。
 
     为什么需要它（2026-10-01 实测，这是一条真实的 CI 阻塞）：
 
@@ -116,7 +116,7 @@ def _provide_startup_configuration(monkeypatch: pytest.MonkeyPatch) -> Iterator[
     `SUPERTOKENS_API_KEY`，缺失即抛 `SuperTokensConfigurationError`。
 
     GitHub Actions 上没有 `.env` 文件（实测：把配好的本机 `.env` 排除后，本文件 6 条
-    用例全部 ERROR，**在本次改动之前就已如此**——用会话前的提交 `1c00ce1` 建 worktree
+    用例全部 ERROR，在本次改动之前就已如此——用会话前的提交 `1c00ce1` 建 worktree
     复现确认过）。也就是说 CI 一直是红的，只是本机的 `.env` 把它盖住了。
 
     这里给的是假凭据，不会产生任何真实外部调用：本文件的所有探针都被
@@ -244,11 +244,11 @@ def test_agent_assembly_probe_reports_ok_only_when_wired(monkeypatch: pytest.Mon
 def test_falkordb_probe_reports_unavailable_instead_of_raising(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """图库不可达时探针必须**返回**不可用，而不是抛异常。
+    """图库不可达时探针必须返回不可用，而不是抛异常。
 
     这条锁的是一个真实缺陷（2026-10-01 在容器里实测到）：`FalkorDB(...)` 的构造函数
-    **本身就发网络 I/O**，图库挂掉时它在构造期就抛 `ConnectionError`。第一版把构造写在
-    `try` 之外，于是 `/readyz` 在图库挂掉时回 **500**（未捕获异常）而不是
+    本身就发网络 I/O，图库挂掉时它在构造期就抛 `ConnectionError`。第一版把构造写在
+    `try` 之外，于是 `/readyz` 在图库挂掉时回 500（未捕获异常）而不是
     「503 且 falkordb 项不可用」——恰好毁掉探针存在的意义：让健康检查如实报告，
     而不是把自己炸掉。
 

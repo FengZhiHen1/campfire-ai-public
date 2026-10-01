@@ -17,7 +17,7 @@
    因此它是长生命周期对象：本模块持有，`aclose()` 在进程收尾时调用。
 2. 工具池按请求重造（很便宜：只是赋值与集合运算，无 I/O），而技能注册表复用
    `assembly.get_skill_registry` 的按路径缓存——`AgentRunner.__init__` 会校验
-   `allowed-tools` 全部已注册，喂给它和 `build_skill_tool` 的必须是**同一个**注册表
+   `allowed-tools` 全部已注册，喂给它和 `build_skill_tool` 的必须是同一个注册表
    实例，否则那条校验验的不是实际生效的那个池。
 3. `skill` 与 `read_skill_resource` 两个保留名工具在池里注册：项目里有 `autoload=true`
    的 skill（`daily-consulting`、`profile-curation`），因此 `AgentRunner` 会强制要求池里
@@ -25,7 +25,7 @@
 4. 压缩暂不接线（`compaction=None`）：它的记账端口 `CompactionJournal` 与引用索引一样
    没有持久化实现。不接线的后果是窗口退化为全量历史——这是安全方向（不丢内容），
    代价是上下文压力没有自动缓解。接线它属另一主题（需要一张记账表），本轮不做，
-   已登记在册。**这不会让运行失败**：`compaction=None` 时运行编排跳过压缩分支。
+   已登记在册。这不会让运行失败：`compaction=None` 时运行编排跳过压缩分支。
 """
 
 from __future__ import annotations
@@ -88,6 +88,7 @@ def build_runner_factory(
     """
 
     def factory(settings: Settings) -> AgentRunner:
+        """按配置造一个运行器（工厂交给 `assembly` 持有）。"""
         skills = get_skill_registry(settings)
         return AgentRunner(
             binding=gateway.binding,
@@ -100,11 +101,12 @@ def build_runner_factory(
     return factory
 
 
+# quality-floor: ignore docstring-promise 异常由 ModelGateway/SkillRegistry/AgentRunner 构造期抛出并原样传播
 def install(settings: Settings, *, gateway: ModelGateway | None = None) -> None:
     """装配生产运行器并把工厂注入 `assembly`（进程启动时调用一次）。
 
     `gateway` 是测试缝：不传时按配置构造真网关（生产路径）；传入时用它——
-    端到端测试据此**走完全相同的装配代码**，只把外部模型供应商换掉。这与
+    端到端测试据此走完全相同的装配代码，只把外部模型供应商换掉。这与
     「测试里自己拼一个 `AgentRunner`」有本质区别：后者会让测试通过而生产路径仍旧
     缺失，那正是本次要修的缺陷形状（`set_runner_factory` 曾经只有测试调用点）。
 

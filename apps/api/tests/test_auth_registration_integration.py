@@ -114,7 +114,7 @@ async def client() -> AsyncIterator[httpx.AsyncClient]:
 async def _require_core_and_init() -> Settings:
     """校验环境并完成 SDK 装配；core 不可达即跳过。
 
-    从 `client` 夹具里抽出来，供**不用该夹具**的用例复用（它们直接调复写函数，
+    从 `client` 夹具里抽出来，供不用该夹具的用例复用（它们直接调复写函数，
     原因见 `test_non_ok_result_with_account_created_does_not_release_the_code` 的说明）。
 
     为什么必须抽出来而不是各写一遍：漏掉 `init_supertokens` 的后果是
@@ -424,12 +424,12 @@ async def test_non_ok_result_with_account_created_does_not_release_the_code() ->
     判别性：把 `registration.py` 里 `_account_exists` 那层判断去掉
     （恢复为无条件释放），本用例失败——码会回到 `issued`、可被再次占用。
     """
-    # 前置检查用 `_settings_or_skip()`；但本用例**不走 `client` 夹具**（它直接调用复写
+    # 前置检查用 `_settings_or_skip()`；但本用例不走 `client` 夹具（它直接调用复写
     # 函数，见上文理由），因此必须自己完成 SDK 装配——否则 `sign_up` 会抛
     # `GeneralError: Initialisation not done`。
     #
     # 这是实测踩到的缺陷（2026-10-01）：在没有真实 core 的环境（CI）里，本用例因为
-    # 少了这一步而 **failed**，看起来像代码缺陷，实际是「夹具没被用到、初始化就漏了」。
+    # 少了这一步而 failed，看起来像代码缺陷，实际是「夹具没被用到、初始化就漏了」。
     # 补上之后它在无 core 环境下会正确地 skip（`_core_reachable` 判定）。
     await _require_core_and_init()
     await _clear()
