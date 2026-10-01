@@ -878,6 +878,57 @@ async def test_reingest_after_withdrawal_does_not_rebuild_nodes(tmp_path: Path, 
 
 
 @pytest.mark.asyncio
+async def test_reingest_unchanged_after_withdrawal_clears_residual_nodes(tmp_path: Path, _patched_embedding: None) -> None:
+    """撤下后重新交付**同一份**包（哈希不变）：幂等跳过也要清掉残留节点。
+
+    与 `test_reingest_after_withdrawal_does_not_rebuild_nodes` 互补：那条走「改了卡片
+    再重摄取」分支（哈希变化），本用例一个字节都不改，落在幂等早返回分支上——上游最
+    常见的重交付形态正是同一份包再送一次。
+
+    对未修复实现：`skipped` 为真，但残留节点仍在（节点数断言是 (1, 1) 而非 (0, 0)）。
+    """
+    _require_db()
+    package = build_case_package(tmp_path, slug="withdraw-unchanged")
+    settings, sync_engine, async_engine, store = _store()
+
+    try:
+        async with session_scope(settings) as session:
+            first = await ingest_case_package(settings, session, vector_store=store, package_dir=package)
+
+        async with session_scope(settings) as session:
+            await withdraw_item(session, library="case", item_id=first.item_id, reason="虚构测试撤下")
+        assert await _node_counts(first.item_id) == (0, 0), "前置：撤下应清空节点"
+
+        # 造出「撤下之后节点又出现」的状态：旁路写入一条声称未撤下的节点。
+        async with session_scope(settings) as session:
+            table = store._table_class  # noqa: SLF001 —— 与摄取写节点同一张框架表模型
+            session.add(
+                table(
+                    node_id=f"{first.item_id}:stray",
+                    text="旁路写入的残留正文",
+                    embedding=_fake_vector("旁路写入的残留正文"),
+                    metadata_={"item_id": first.item_id, "library": "case", "withdrawn": "false"},
+                )
+            )
+        assert await _node_counts(first.item_id) == (1, 1), "前置：应已注入一条声称未撤下的残留节点"
+
+        # 包内文件一个字节都不改：这次走的是幂等「内容未变」分支。
+        async with session_scope(settings) as session:
+            second = await ingest_case_package(settings, session, vector_store=store, package_dir=package)
+
+        assert second.skipped is True, "前置：内容未变的包应被幂等跳过"
+        assert (second.cards_written, second.narrative_nodes) == (0, 0), "跳过语义不变：不写节点"
+        assert await _node_counts(first.item_id) == (0, 0), (
+            "哈希未变的重复摄取没有清掉已撤下案例的残留节点——"
+            "「撤下后该条目没有节点」这条承诺在这条路径上不成立"
+        )
+    finally:
+        await _cleanup_case([str(package)])
+        await async_engine.dispose()
+        sync_engine.dispose()
+
+
+@pytest.mark.asyncio
 async def test_withdraw_rejects_invalid_library_and_unknown_item(tmp_path: Path, _patched_embedding: None) -> None:
     """撤下拒绝非法库别与不存在的条目（不静默成功）。"""
     _require_db()
