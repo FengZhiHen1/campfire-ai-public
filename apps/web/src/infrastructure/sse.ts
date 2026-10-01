@@ -16,7 +16,7 @@
  */
 
 import type { RunEvent, RunEventName, SseFrame } from '../shared/types/sse';
-import { HttpError } from './http/client';
+import { HttpError, withApiPrefix } from './http/client';
 
 /** 事件名全集；用于拒绝契约外的 event 名（改名等于改契约，不得静默放行）。 */
 const RUN_EVENT_NAMES: readonly RunEventName[] = [
@@ -353,7 +353,9 @@ async function* requestRunFrames(
   const headers: Record<string, string> = { Accept: 'text/event-stream' };
   if (lastEventId !== undefined) headers['Last-Event-ID'] = String(lastEventId);
 
-  const response = await fetchImpl(`/consult/runs/${encodeURIComponent(options.runId)}/stream`, {
+  // 走 withApiPrefix 而不是自己拼 `/api`：前缀规则在 client.ts 里只有一份，
+  // 且本模块继续只写业务路径（`/consult/runs/...`），与后端 router 的声明一致。
+  const response = await fetchImpl(withApiPrefix(`/consult/runs/${encodeURIComponent(options.runId)}/stream`), {
     method: 'GET',
     headers,
     // 会话凭据经 httpOnly cookie 自动携带；anti-CSRF 头由 supertokens-web-js 的 fetch 包装注入

@@ -29,6 +29,38 @@ export class HttpError extends Error {
 let unauthorizedHandler: UnauthorizedHandler | null = null;
 
 /**
+ * 业务接口的统一前缀。
+ *
+ * 为什么要有它（2026-10-01 修正，实测缺陷）：后端四个面的接口此前直接挂在根
+ * （`/consult/*`、`/profile/*`），而前端**页面路由**用了同样的前缀。Nginx 把
+ * `^/(consult|profile|...)` 转给 API，且正则 location 优先于 SPA 的 `location /`，
+ * 于是 `/consult`、`/profile` 这些页面被转发给 API，用户直接访问或刷新会拿到
+ * JSON 404/405 而不是应用界面。
+ *
+ * 现在接口在 `/api/*`、页面在 `/consult`，两类路径不可能再相撞。
+ *
+ * 前缀只在这一处拼（而不是各端口各写一遍）：端口里的路径继续表达**业务资源**
+ * （`/consult/sessions`），与后端各 router 自己的 prefix 一致；「对外暴露在哪个
+ * 前缀下」是部署决策，属于这一层。后端同样如此（`include_router(prefix=...)`）。
+ */
+const API_PREFIX = '/api';
+
+/**
+ * 把业务路径拼成实际请求路径。
+ *
+ * 导出供 SSE 传输层复用（`infrastructure/sse.ts` 的 fetch 不经 `request()`，因为它要读
+ * 响应体流而不是 JSON）。前缀规则只有这一份——两处各写一遍必然漂移。
+ *
+ * @param path 业务路径，形如 `/consult/sessions`；已是绝对 URL 时原样返回。
+ * @returns 带 `/api` 前缀的请求路径。
+ */
+export function withApiPrefix(path: string): string {
+  // 绝对 URL 与协议相对地址不拼前缀：调用方显式给了完整地址，说明它知道要去哪。
+  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(path) || path.startsWith('//')) return path;
+  return `${API_PREFIX}${path.startsWith('/') ? path : `/${path}`}`;
+}
+
+/**
  * 装配 401 处置回调。
  *
  * @param handler 收到 401 时要执行的动作；传入新值即替换旧值。
@@ -73,14 +105,14 @@ function readDetailField(raw: string): string | null {
 /**
  * 发起一次带凭据的业务请求。
  *
- * @param path 业务路径，形如 `/consult/sessions`（后端路由不带 /api 前缀）。
+ * @param path 业务路径，形如 `/consult/sessions`（后端路由各自声明面前缀，本函数补 `/api`）。
  * @param init 额外请求配置；未提供 body 时不发送 Content-Type。
  * @returns 2xx 响应的 JSON 载荷。
  * @throws HttpError 非 2xx；401 会先触发已装配的处置回调再抛。
  * @throws SyntaxError 2xx 响应不是合法 JSON（服务端违约，不能当作空数据继续）。
  */
 export async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const response = await fetch(path, {
+  const response = await fetch(withApiPrefix(path), {
     ...init,
     // 会话凭据经 httpOnly cookie 自动携带（认证与账号第 5 节）；
     // anti-CSRF 头由 supertokens-web-js 包装过的 fetch 注入，此处不重复实现。

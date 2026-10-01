@@ -31,7 +31,7 @@
 ## 3. 浏览与检索
 
 ```text
-GET /library/items?library=case|knowledge&query=&cursor=&limit=
+GET /api/library/items?library=case|knowledge&query=&cursor=&limit=
 响应 200：
 {
   "library": "case",
@@ -61,7 +61,7 @@ GET /library/items?library=case|knowledge&query=&cursor=&limit=
 页面设计为**就地展开**（[案例库浏览页](../../../design/pages/案例库浏览页.md)第 22 行：无详情页）。因此展开内容随列表一并返回，而不是再发一次请求：
 
 ```text
-GET /library/items?...&expand=<item_id>
+GET /api/library/items?...&expand=<item_id>
 响应中的该条目额外带：
 {
   "narrative": { "sections": [ { "key": "…", "heading": "…", "text": "…" } ] },
@@ -79,7 +79,7 @@ GET /library/items?...&expand=<item_id>
 对话页的引用跳转落到 `/cases?item=<item_id>`（[对话页](../../../design/pages/对话页.md)第 46 行）。三种结果：
 
 ```text
-GET /library/items/{item_id}
+GET /api/library/items/{item_id}
 响应 200：{ "item": { … } }                          # 在库
 响应 200：{ "item": null, "withdrawn": true, "title": "…" }   # 已撤下
 响应 404：                                            # 不存在或非法 id

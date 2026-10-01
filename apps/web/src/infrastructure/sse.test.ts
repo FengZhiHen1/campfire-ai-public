@@ -161,7 +161,8 @@ describe('subscribeRunEvents — 订阅、续传与重连', () => {
 
     expect(events).toEqual(['run_started', 'text_delta', 'progress', 'text_delta', 'run_finished']);
     expect(calls).toHaveLength(1);
-    expect(calls[0]?.url).toBe('/consult/runs/r1/stream');
+    // 实际请求 URL 含 `/api` 前缀（2026-10-01 起业务接口统一在该前缀下）。
+    expect(calls[0]?.url).toBe('/api/consult/runs/r1/stream');
     expect(calls[0]?.init?.headers).toMatchObject({ Accept: 'text/event-stream' });
   });
 
