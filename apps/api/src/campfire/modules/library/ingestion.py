@@ -301,6 +301,8 @@ async def ingest_file(
     已撤下条目的重新摄取（与案例摄取同一处置）：
 
     - 内容哈希再变也不重建节点：先清掉该条目名下的任何残留节点即返回，不做嵌入。
+      哈希未变的重复摄取（幂等跳过）对已撤下条目做同一次清理——清理不依赖哈希变化，
+      因为「同一份内容再交付一次」正是最常见的重交付形态。
       `withdrawal.py` 用「条目状态 + 删节点」在同一事务里表达撤下，节点表是条目表
       的投影（RAG 策略第 2 节）——为已撤下条目写回节点，等于让撤下内容的正文重新
       落回检索存储，并把「取不到已撤下正文」重新押在每条取数路径都记得过滤
@@ -344,6 +346,12 @@ async def ingest_file(
     ).scalar_one_or_none()
 
     if existing is not None and existing.doc_hash == doc_hash:
+        if existing.withdrawn:
+            # 已撤下条目的残留清理不因哈希未变而跳过：节点不存在是撤下在向量路上唯一
+            # 生效的机制（`withdrawal.py` 同事务删节点），而「上游重新交付同一份内容」
+            # 是最常见的重交付形态。在此直接返回会把历史脏数据或旁路写入的残留节点
+            # 一直留在库里，等某条取数路径读到；清理本身仍在跳过语义内——不嵌入、不写节点。
+            await session.execute(delete(RetrievedNode).where(RetrievedNode.node_id.like(f"{existing.id}:%")))
         return IngestionResult(source_path=source_path, item_id=str(existing.id), skipped=True)
 
     chunks = split_markdown(body)

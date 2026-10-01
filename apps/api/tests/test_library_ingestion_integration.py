@@ -576,3 +576,72 @@ async def test_reingest_after_withdrawal_clears_residual_nodes(tmp_path: Path, _
         await _cleanup(source_path)
         await async_engine.dispose()
         sync_engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_reingest_unchanged_after_withdrawal_clears_residual_nodes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """撤下后重新交付**同一份**文件（哈希不变）：幂等跳过也要清掉残留节点。
+
+    为什么要与上一条分开：`test_reingest_after_withdrawal_clears_residual_nodes`
+    走的是「改了内容再重摄取」分支（哈希变化，清理发生在写新节点之前）；而上游最常见的
+    重交付形态正是同一份内容再送一次（哈希不变），这条路径此前在幂等早返回处就结束，
+    清理一次都不执行。
+
+    对未修复实现：`skipped` 为真，但残留节点仍在（节点数断言是 (1, 1) 而非 (0, 0)）。
+    """
+    _require_db()
+    embedder = _CountingEmbedder()
+    monkeypatch.setattr("campfire.modules.library.ingestion.build_embedding", lambda _settings: embedder)
+
+    doc = tmp_path / "stray-unchanged.md"
+    doc.write_text("# 残留用例（内容不变）\n\n第一版正文：结构化环境与图片日程表。\n", encoding="utf-8")
+    settings = get_settings()
+    source_path = str(doc)
+
+    sync_engine = create_sync_engine(settings)
+    async_engine = create_engine(settings)
+    store = build_vector_store(settings, engine=sync_engine, async_engine=async_engine)
+
+    try:
+        async with session_scope(settings) as session:
+            first = await ingest_file(
+                settings, session, vector_store=store, path=doc, source="出处", applicable_scope="范围"
+            )
+        assert embedder.calls == 1, "前置：首次摄取应嵌入一次"
+
+        async with session_scope(settings) as session:
+            await withdraw_item(session, library="knowledge", item_id=first.item_id, reason="集成测试撤下")
+        assert await _node_counts(first.item_id) == (0, 0), "前置：撤下应清空节点"
+
+        # 造出「撤下之后节点又出现」的状态：旁路写入一条声称未撤下的节点。
+        async with session_scope(settings) as session:
+            table = store._table_class  # noqa: SLF001 —— 与摄取写节点同一张框架表模型
+            session.add(
+                table(
+                    node_id=f"{first.item_id}:stray",
+                    text="旁路写入的残留正文",
+                    embedding=_fake_vector("旁路写入的残留正文"),
+                    metadata_={"item_id": first.item_id, "library": "knowledge", "withdrawn": "false"},
+                )
+            )
+        assert await _node_counts(first.item_id) == (1, 1), "前置：应已注入一条声称未撤下的残留节点"
+
+        # 文件一个字节都不改：这次走的是幂等「内容未变」分支。
+        async with session_scope(settings) as session:
+            second = await ingest_file(
+                settings, session, vector_store=store, path=doc, source="出处", applicable_scope="范围"
+            )
+
+        assert second.skipped is True, "前置：内容未变应被幂等跳过"
+        assert (second.chunks_written, second.headers) == (0, []), "跳过语义不变：不写节点、不报定位"
+        assert embedder.calls == 1, "幂等跳过不得嵌入"
+        assert await _node_counts(first.item_id) == (0, 0), (
+            "哈希未变的重复摄取没有清掉已撤下条目的残留节点——"
+            "「撤下后该条目没有节点」这条承诺在这条路径上不成立"
+        )
+    finally:
+        await _cleanup(source_path)
+        await async_engine.dispose()
+        sync_engine.dispose()

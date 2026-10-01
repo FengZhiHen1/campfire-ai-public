@@ -380,6 +380,8 @@ async def ingest_case_package(
       该条目名下的任何残留节点。撤下的承诺是「该条目没有检索节点」（`withdrawal.py`
       同事务删除节点），写回节点会推翻它；而节点元数据是写入时刻的状态快照，
       为已撤下条目写节点等于把「撤下生效」重新押在装配层记得过滤上。
+      哈希未变的重复摄取（幂等跳过）对已撤下条目做同一次清理——清理不依赖哈希变化，
+      因为「同一份包再交付一次」正是最常见的重交付形态。
     - 条目行仍随最新包更新（含 `doc_hash`），因此重复摄取同一份包照常按幂等跳过；
       但写入计数为 0，结果对象不虚报。
     - 一期没有「重新摄取即恢复」的语义：恢复必须是运维的显式动作，
@@ -427,6 +429,12 @@ async def ingest_case_package(
 
     existing = (await session.execute(select(CaseItem).where(CaseItem.source_path == source_path))).scalar_one_or_none()
     if existing is not None and existing.doc_hash == doc_hash:
+        if existing.withdrawn:
+            # 已撤下条目的残留清理不因哈希未变而跳过：节点不存在是撤下在向量路上唯一
+            # 生效的机制（`withdrawal.py` 同事务删节点），而「上游重新交付同一份内容」
+            # 是最常见的重交付形态。在此直接返回会把历史脏数据或旁路写入的残留节点
+            # 一直留在库里，等某条取数路径读到；清理本身仍在跳过语义内——不嵌入、不写节点。
+            await session.execute(delete(RetrievedNode).where(RetrievedNode.node_id.like(f"{existing.id}:%")))
         return CaseIngestionResult(
             source_path=source_path,
             item_id=str(existing.id),
