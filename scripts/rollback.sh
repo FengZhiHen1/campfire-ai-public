@@ -136,7 +136,7 @@ if [ "$ASSUME_YES" != "1" ]; then
     echo "将要执行（**尚未改变任何东西**）："
     echo "  1. 在 $HOST:$PATH_DIR/$ENV_FILE 把 $current 改为 IMAGE_TAG=$TARGET_SHA"
     echo "  2. 拉取该版本镜像：docker compose pull"
-    echo "  3. 重启：docker compose up -d"
+    echo "  3. 重启：docker compose up -d --no-build"
     echo "  4. 轮询 /readyz 直到 200（最多 120 秒）"
     echo
     echo "⚠️ 不改数据库（迁移必须向后兼容一版）。"
@@ -170,7 +170,12 @@ fi
 # --- 3. 重启 ------------------------------------------------------------
 
 echo "[3/4] 重启"
-ssh_cmd "cd '$PATH_DIR' && docker compose -f '$COMPOSE_FILE' --env-file '$ENV_FILE' up -d"
+# `--no-build` 是刻意的（2026-10-01 真机踩到后加的，与 deploy.yml 同一理由）：
+# compose 里 web/api 同时有 `build:` 与 `image:`，而发布目录只放 compose 与
+# infrastructure、**没有源码**。默认行为下若镜像没拉到，`up -d` 会回落到本地构建——
+# 要么失败，要么更糟：复用遗留的同名镜像，让「回滚成功」的其实不是目标版本。
+# 回滚路径上尤其不能这样：它的全部意义就是确定地回到某个已知版本。
+ssh_cmd "cd '$PATH_DIR' && docker compose -f '$COMPOSE_FILE' --env-file '$ENV_FILE' up -d --no-build"
 
 # --- 4. 验证 ------------------------------------------------------------
 
