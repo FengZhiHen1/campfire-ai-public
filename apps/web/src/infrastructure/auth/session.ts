@@ -24,8 +24,42 @@ import type { SessionPort } from '../../features/accounts/application/ports';
  * 开发态走 Vite dev 代理时同源，用相对路径反而更稳；但身份服务要求显式 apiDomain
  * （授权与 anti-CSRF 判定基于它），因此这里保留环境变量入口，默认开发态指向本地 API
  * （认证与账号第 5 节本地开发条：端口不同但同为 localhost，属 same-site）。
+ *
+ * ⚠️ **不要按配置里的协议原样使用**（2026-10-01 发现的隐患）。
+ *
+ * `VITE_API_DOMAIN` 是**构建期**常量。若把它原样当作 apiDomain，产物里就会写死一个
+ * 协议——于是在 `http://` 下构建的产物被拿到 `https://` 上服务时，页面会去请求
+ * `http://` 接口，被浏览器以 **mixed content** 直接拦掉（不是 404、不是 CORS，
+ * 而是请求根本不发出去），登录与所有接口一起失效。反过来同理。
+ *
+ * 本项目的部署形态是「nginx 同源托管 SPA + 反代 `/api`」，因此**同源永远正确**，
+ * 而且天然跟随页面协议：HTTP 页面调 HTTP，HTTPS 页面调 HTTPS。
+ *
+ * 因此规则是：
+ *   - 配置项的 **host** 与当前页面 host 相同（或配置为空）→ 用 `location.origin`，
+ *     协议跟随页面；
+ *   - host 不同（接口确实在别的域上，例如本地 `localhost:8000`）→ 尊重配置原值。
+ *
+ * 这样部署切换协议时**不需要重新构建前端**——那是这类隐患最容易漏掉的地方。
  */
-const API_DOMAIN: string = import.meta.env.VITE_API_DOMAIN ?? 'http://localhost:8000';
+function resolveApiDomain(): string {
+  const configured = import.meta.env.VITE_API_DOMAIN;
+  const origin = globalThis.location?.origin;
+  if (origin === undefined || origin === 'null' || origin === '') {
+    return configured ?? 'http://localhost:8000';
+  }
+  if (configured === undefined || configured === '') return origin;
+  try {
+    // host 相同 → 同源部署，交给 location.origin（协议跟随页面）。
+    if (new URL(configured, origin).host === globalThis.location.host) return origin;
+  } catch {
+    // 配置不是合法 URL（例如写成相对路径）→ 视为同源。
+    return origin;
+  }
+  return configured;
+}
+
+const API_DOMAIN: string = resolveApiDomain();
 
 /**
  * 身份服务挂载路径；后端 FastAPI 按固定的 apiBasePath 挂载 `/api/auth/*`。
