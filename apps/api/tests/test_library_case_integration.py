@@ -878,7 +878,9 @@ async def test_reingest_after_withdrawal_does_not_rebuild_nodes(tmp_path: Path, 
 
 
 @pytest.mark.asyncio
-async def test_reingest_unchanged_after_withdrawal_clears_residual_nodes(tmp_path: Path, _patched_embedding: None) -> None:
+async def test_reingest_unchanged_after_withdrawal_clears_residual_nodes(
+    tmp_path: Path, _patched_embedding: None
+) -> None:
     """撤下后重新交付**同一份**包（哈希不变）：幂等跳过也要清掉残留节点。
 
     与 `test_reingest_after_withdrawal_does_not_rebuild_nodes` 互补：那条走「改了卡片
@@ -919,8 +921,7 @@ async def test_reingest_unchanged_after_withdrawal_clears_residual_nodes(tmp_pat
         assert second.skipped is True, "前置：内容未变的包应被幂等跳过"
         assert (second.cards_written, second.narrative_nodes) == (0, 0), "跳过语义不变：不写节点"
         assert await _node_counts(first.item_id) == (0, 0), (
-            "哈希未变的重复摄取没有清掉已撤下案例的残留节点——"
-            "「撤下后该条目没有节点」这条承诺在这条路径上不成立"
+            "哈希未变的重复摄取没有清掉已撤下案例的残留节点——「撤下后该条目没有节点」这条承诺在这条路径上不成立"
         )
     finally:
         await _cleanup_case([str(package)])
