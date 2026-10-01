@@ -33,8 +33,9 @@
 > 七个容器全部 healthy。**443 仍被云安全组拦着**（80 通、443 超时；Docker 的 DNAT 规则
 > 对两者对称、本机 iptables 无 443 的 DROP，已定位为云侧），因此当前只能用 HTTP 访问，
 > 80→443 跳转**刻意未启用**（443 不通时启用会让站点完全打不开）。
-> 放行 443 后执行 `.tmp/enable-redirect.sh` 的等价步骤（它先验 TCP 可连 + 证书链 +
-> HTTPS 上的 `/readyz`，三条全过才写入跳转）。
+> 放行 443 后执行 [scripts/tls-enable-redirect.sh](scripts/tls-enable-redirect.sh)（它先验
+> TCP 可连 + 证书链 + HTTPS 上的 `/readyz`，三条全过才写入跳转；任一不过就保持不跳转）；
+> 证书签发/续期用 [scripts/tls-issue-cert.sh](scripts/tls-issue-cert.sh)。
 > 验收流程见 [docs/运维/上线验收测试流程.md](docs/运维/上线验收测试流程.md)。
 
 ## Stack
