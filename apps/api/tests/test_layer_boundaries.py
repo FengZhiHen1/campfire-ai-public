@@ -61,6 +61,7 @@ ALLOWED: dict[str, set[str]] = {
     # 邀请码与账号状态机在 `modules/accounts`（运营子命令直接调用）。
     # CLI 是运维编排点，放行它符合既有定调。
     # 该修正同时同步《项目结构设计》第 7 节与 `cli/__init__.py` 的 docstring
+    # quality-floor: ignore todo-residue 此处引用的是待办登记文档本身，不是未处理的代码残留
     # （三者此前互不一致，见 docs/TODO.md 的定调级条目）。
     #
     # `campfire.cli` 自身在列，理由与 `agent` 那一行**完全相同**：第 7 节的表把
@@ -71,6 +72,7 @@ ALLOWED: dict[str, set[str]] = {
     # **为什么放行 profile**（2026-09-30，随 `modules/profile` 落地）：注销要满足
     # `AC-24`「其档案……不再存在」，因此 CLI 必须注入档案侧的 purger
     # （`modules/profile/purge.ProfileAccountPurger`），与 memory 侧同一种做法。
+    # quality-floor: ignore todo-residue 此处引用的是待办登记文档本身，不是未处理的代码残留
     # 该注入是 docs/TODO.md「`cli` 白名单与注销编排的冲突」一条明确预告的后续动作
     # （原文：「档案模块落地时须补一个 purger 并注入 CLI」）。
     "cli": {

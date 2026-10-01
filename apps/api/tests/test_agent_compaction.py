@@ -6,12 +6,15 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+
 import pytest
 
 from campfire.agent.context import (
     CompactionError,
     CompactionOutcome,
     CompactionSettings,
+    Item,
     SummaryRequest,
     SummaryResult,
     build_checkpoint,
@@ -163,7 +166,7 @@ def test_invalid_settings_are_rejected_at_construction(kwargs: dict[str, object]
     base.update(kwargs)
 
     with pytest.raises(CompactionError, match=fragment):
-        CompactionSettings(**base)  # type: ignore[arg-type]
+        CompactionSettings(**base)  # type: ignore[arg-type]  # 夹具以 object 组合非法配置再交给 dataclass，静态类型看不出这层收敛
 
 
 def test_absolute_retention_is_accepted_when_below_threshold() -> None:
@@ -345,12 +348,12 @@ async def _compact(items: list[dict[str, object]], **kwargs: object) -> tuple[li
     system_prompt = kwargs.pop("system_prompt", "静态系统提示")
     return await compact(
         items,
-        settings=settings,  # type: ignore[arg-type]
-        summarizer=summarizer,  # type: ignore[arg-type]
+        settings=settings,  # type: ignore[arg-type]  # `kwargs.pop` 的结果是 object：默认值与调用点共同锁定实际类型
+        summarizer=summarizer,  # type: ignore[arg-type]  # 同上：默认值是 FakeSummarizer，调用点可覆盖
         instruction="把历史压成摘要。",
-        journal=journal,  # type: ignore[arg-type]
-        system_prompt=system_prompt,  # type: ignore[arg-type]
-        **kwargs,  # type: ignore[arg-type]
+        journal=journal,  # type: ignore[arg-type]  # 同上：默认值是 FakeJournal，调用点可覆盖
+        system_prompt=system_prompt,  # type: ignore[arg-type]  # 同上：默认值是字面量，调用点可覆盖
+        **kwargs,  # type: ignore[arg-type]  # 透传余下的具名参数（如 commit），类型由调用点决定
     )
 
 
@@ -710,18 +713,18 @@ async def test_successful_commit_happens_before_the_transaction_closes() -> None
     journal = FakeJournal()
     items = _long_history(60)
 
-    async def commit(appended: object) -> None:
+    async def commit(appended: Sequence[Item]) -> None:
         order.append("commit")
-        committed.extend(appended)  # type: ignore[arg-type]
+        committed.extend(appended)
 
-    committed: list[object] = []
+    committed: list[Item] = []
     original_finish = journal.record_finished
 
     async def record_finished(marker: str, outcome: object) -> None:
         order.append("finish")
         await original_finish(marker, outcome)
 
-    journal.record_finished = record_finished  # type: ignore[method-assign]
+    journal.record_finished = record_finished  # type: ignore[method-assign]  # 替身故意替换实例上的方法：用来观察记账闭合的顺序
 
     history, outcome = await _compact(items, journal=journal, commit=commit)
 

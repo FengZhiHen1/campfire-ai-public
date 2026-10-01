@@ -16,7 +16,6 @@ from __future__ import annotations
 
 import json
 from datetime import datetime, timezone
-from typing import Any
 
 import pytest
 
@@ -58,7 +57,7 @@ _OBJECT = "11111111-1111-4111-8111-111111111111"
 
 
 class _FakeIndex:
-    def add(self, *_args: Any, **_kwargs: Any) -> None: ...
+    def add(self, *_args: object, **_kwargs: object) -> None: ...
 
 
 def _context(payload: object | None = None) -> ToolContext:
@@ -113,7 +112,7 @@ def _summary_result(**overrides: object) -> ProfileSummary:
         "possibly_stale": False,
     }
     base.update(overrides)
-    return ProfileSummary(**base)  # type: ignore[arg-type]
+    return ProfileSummary(**base)  # type: ignore[arg-type]  # 夹具以 object 组合再交给 dataclass，静态类型看不出这层收敛
 
 
 def _item_view(**overrides: object) -> ItemView:
@@ -138,7 +137,7 @@ def _item_view(**overrides: object) -> ItemView:
         "supersedes": None,
     }
     base.update(overrides)
-    return ItemView(**base)  # type: ignore[arg-type]
+    return ItemView(**base)  # type: ignore[arg-type]  # 夹具以 object 组合再交给 dataclass，静态类型看不出这层收敛
 
 
 class _FakeSession:
@@ -465,7 +464,7 @@ async def test_items_keep_candidates_in_a_separate_group(monkeypatch: pytest.Mon
 @pytest.mark.asyncio
 async def test_items_hide_candidates_when_not_requested(monkeypatch: pytest.MonkeyPatch) -> None:
     """`include_candidates=false` 时返回里没有候选（用例层不再返回它们）。"""
-    seen: dict[str, Any] = {}
+    seen: dict[str, object] = {}
 
     async def _fake_read(_session: object, **kwargs: object) -> GroupedItems:
         seen.update(kwargs)
@@ -520,7 +519,7 @@ async def test_items_failure_does_not_return_partial_results(monkeypatch: pytest
 @pytest.mark.asyncio
 async def test_items_limit_defaults_to_the_module_default(monkeypatch: pytest.MonkeyPatch) -> None:
     """不给 `limit` 时用模块侧默认值（与仓储同源，不另写一份数字）。"""
-    seen: dict[str, Any] = {}
+    seen: dict[str, object] = {}
 
     async def _fake_read(_session: object, **kwargs: object) -> GroupedItems:
         seen.update(kwargs)
@@ -551,7 +550,7 @@ async def test_propose_submits_a_pending_record_and_says_submitted(monkeypatch: 
     async def _record(pending_id: str, kind: str) -> None:
         dispatched.append((pending_id, kind))
 
-    seen: dict[str, Any] = {}
+    seen: dict[str, object] = {}
 
     class _FakeRecord:
         id = "33333333-3333-4333-8333-333333333333"
@@ -592,7 +591,7 @@ async def test_propose_payload_never_carries_a_confirmation(monkeypatch: pytest.
     判别性：把 `confirmation` 放进载荷，本用例失败——那等于让一个可构造的载荷指定落层，
     正是契约第 4 节第 2 条要拒绝的事（Worker 侧还会再拒一次，这里是不制造它的第一道）。
     """
-    seen: dict[str, Any] = {}
+    seen: dict[str, object] = {}
 
     class _FakeRecord:
         id = "33333333-3333-4333-8333-333333333333"
@@ -623,7 +622,7 @@ async def test_propose_carries_the_source_with_the_server_side_tool_name(monkeyp
     判别性：把 `tool` 改成取模型的输入，本用例失败——工具名是服务端事实，
     让模型自报会得到一个可以撒谎的来源定位。
     """
-    seen: dict[str, Any] = {}
+    seen: dict[str, object] = {}
 
     class _FakeRecord:
         id = "33333333-3333-4333-8333-333333333333"
@@ -656,7 +655,7 @@ async def test_propose_carries_the_source_with_the_server_side_tool_name(monkeyp
 @pytest.mark.asyncio
 async def test_propose_omits_optional_keys_it_was_not_given(monkeypatch: pytest.MonkeyPatch) -> None:
     """未给的可选字段**不进载荷**：空数组与「没提到」语义不同，补默认值会制造假事实。"""
-    seen: dict[str, Any] = {}
+    seen: dict[str, object] = {}
 
     class _FakeRecord:
         id = "33333333-3333-4333-8333-333333333333"
@@ -784,7 +783,7 @@ async def test_create_object_returns_the_persisted_name_and_binds_the_session(mo
 
     判别性：去掉补绑调用，本用例失败——首对象补绑是引导期的组成部分（支持对象第 6 节）。
     """
-    bound: list[dict[str, Any]] = []
+    bound: list[dict[str, object]] = []
 
     class _FakeObject:
         id = "44444444-4444-4444-8444-444444444444"
@@ -818,7 +817,7 @@ async def test_create_object_returns_the_persisted_name_and_binds_the_session(mo
 @pytest.mark.asyncio
 async def test_create_object_uses_the_login_account_not_a_parameter(monkeypatch: pytest.MonkeyPatch) -> None:
     """属主取登录态（支持对象第 4 节）：用例收到的 `account_id` 来自 payload。"""
-    seen: dict[str, Any] = {}
+    seen: dict[str, object] = {}
 
     class _FakeObject:
         id = "44444444-4444-4444-8444-444444444444"

@@ -16,7 +16,7 @@ import asyncio
 import httpx
 import pytest
 from agents.exceptions import ModelTimeoutError
-from agents.retry import ModelRetryNormalizedError, RetryDecision, RetryPolicyContext
+from agents.retry import ModelRetryNormalizedError, RetryDecision, RetryPolicy, RetryPolicyContext
 from pydantic import SecretStr
 
 from campfire.agent.limits import AGENT_RUN_TIMEOUT_SECONDS
@@ -41,17 +41,16 @@ def _settings(**overrides: object) -> Settings:
         "model_name": "deepseek-v4.1-flash",
     }
     values.update(overrides)
-    # 夹具以 object 组合再交给 pydantic 收敛校验，静态类型看不出这层收敛，故豁免
-    return Settings(**values)  # type: ignore[arg-type]
+    return Settings(**values)  # type: ignore[arg-type]  # 夹具以 object 组合再交给 pydantic 收敛校验，静态类型看不出这层收敛
 
 
-async def _retry_decision(policy: object, context: RetryPolicyContext) -> bool:
+async def _retry_decision(policy: RetryPolicy, context: RetryPolicyContext) -> bool:
     """调用重试策略并取出「要不要重试」。
 
     策略返回 ``bool | RetryDecision``，而 ``RetryDecision`` 是 dataclass——实例本身恒为
     真值，因此必须读它的 ``retry`` 字段而不是 ``bool(...)``，否则「不重试」会被读成重试。
     """
-    decision = policy(context)  # type: ignore[operator]
+    decision = policy(context)
     if asyncio.iscoroutine(decision):
         decision = await decision
     return decision.retry if isinstance(decision, RetryDecision) else bool(decision)
@@ -67,7 +66,7 @@ def test_gateway_requires_an_api_key() -> None:
 
 def test_unknown_purpose_fails_instead_of_falling_back_to_the_default_model() -> None:
     with pytest.raises(ModelConfigurationError, match="未知的模型用途档"):
-        resolve_model_name(_settings(), purpose="emergency")  # type: ignore[arg-type]
+        resolve_model_name(_settings(), purpose="emergency")  # type: ignore[arg-type]  # 故意传词表外的用途档：本用例测的就是它在装载期失败
 
 
 def test_gateway_uses_the_configured_model_name_and_base_url() -> None:
@@ -75,7 +74,7 @@ def test_gateway_uses_the_configured_model_name_and_base_url() -> None:
 
     assert gateway.model_name == "deepseek-v4.1-flash"
     # Model 接口不暴露 model 属性，这里断言的是具体实现回填了配置的模型名
-    assert gateway.model.model == "deepseek-v4.1-flash"  # type: ignore[attr-defined]
+    assert gateway.model.model == "deepseek-v4.1-flash"  # type: ignore[attr-defined]  # `Model` 接口不暴露 model，断言的是具体实现回填的模型名
     assert str(gateway.client.base_url).startswith("https://tokenhub.example/v1")
 
 

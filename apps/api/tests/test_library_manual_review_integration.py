@@ -391,7 +391,6 @@ async def test_case_ingest_records_the_manual_review_rows(tmp_path: Path, _patch
 
 
 @pytest.mark.asyncio
-# quality-floor: ignore docstring-promise 本用例故意在摄取后抛错，用来模拟提交前的失败
 async def test_a_rolled_back_ingest_leaves_no_rows(tmp_path: Path, _patched_embedding: None) -> None:
     """摄取所在事务回滚时，复核件一行都不留——它与条目、节点同事务。
 

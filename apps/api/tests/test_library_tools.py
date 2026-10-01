@@ -13,7 +13,6 @@ from __future__ import annotations
 
 import json
 from datetime import datetime, timezone
-from typing import Any
 
 import pytest
 
@@ -35,7 +34,7 @@ from campfire.tools.library import (
 
 
 class _FakeIndex:
-    def add(self, *_args: Any, **_kwargs: Any) -> None: ...
+    def add(self, *_args: object, **_kwargs: object) -> None: ...
 
 
 def _context() -> ToolContext:
@@ -48,8 +47,13 @@ def _context() -> ToolContext:
     )
 
 
-def _item(**overrides: Any) -> RetrievedItem:
-    base: dict[str, Any] = {
+def _item(**overrides: object) -> RetrievedItem:
+    """一条资料侧命中的默认形状，`overrides` 用来替换本文件关心的字段。
+
+    为什么是 `dict[str, object]` 而不是 `Any`：值本来就是异质的，`object` 如实描述
+    「取值未知」，`Any` 则宣称「随便用」，会把类型错误一起放行。
+    """
+    base: dict[str, object] = {
         "item_id": "11111111-1111-4111-8111-111111111111",
         "library": "knowledge",
         "title": "视觉支持策略",
@@ -61,7 +65,7 @@ def _item(**overrides: Any) -> RetrievedItem:
         "ranking": {"fused_score": 0.5, "hit_paths": "both"},
     }
     base.update(overrides)
-    return RetrievedItem(**base)
+    return RetrievedItem(**base)  # type: ignore[arg-type]  # dataclass 不接受 dict[str, object] 展开；键名与取值由下方逐字段断言锁定
 
 
 # ---------------------------------------------------------------------------
@@ -254,9 +258,9 @@ async def test_degraded_result_is_flagged_in_the_payload(monkeypatch: pytest.Mon
     assert "没有相关资料" in payload["notice"]
 
 
-def _case_item(**overrides: Any) -> RetrievedItem:
+def _case_item(**overrides: object) -> RetrievedItem:
     """一条带全部案例专属字段的命中（契约第 3 节 + 公共案例库第 8 节）。"""
-    base: dict[str, Any] = {
+    base: dict[str, object] = {
         "item_id": "22222222-2222-4222-8222-222222222222",
         "library": "case",
         "title": "把日程表贴在冰箱上后出门前的崩溃减少",
@@ -275,7 +279,7 @@ def _case_item(**overrides: Any) -> RetrievedItem:
         "inferred_fields": ["age_range"],
     }
     base.update(overrides)
-    return RetrievedItem(**base)
+    return RetrievedItem(**base)  # type: ignore[arg-type]  # dataclass 不接受 dict[str, object] 展开；键名与取值由下方逐字段断言锁定
 
 
 # ---------------------------------------------------------------------------
@@ -381,9 +385,9 @@ async def test_search_cases_asks_the_case_library_only(monkeypatch: pytest.Monke
     判别性：把 `LIBRARY_CASE` 改成 `LIBRARY_KNOWLEDGE`，本用例失败——那会让
     「不混库」失效，而这是契约第 6 节的验证项之一。
     """
-    seen: dict[str, Any] = {}
+    seen: dict[str, object] = {}
 
-    async def _capture(_settings: object, **kwargs: Any) -> SearchOutcome:
+    async def _capture(_settings: object, **kwargs: object) -> SearchOutcome:
         seen.update(kwargs)
         return SearchOutcome(items=[_case_item()], degraded_paths=())
 
@@ -399,9 +403,9 @@ async def test_search_cases_asks_the_case_library_only(monkeypatch: pytest.Monke
 @pytest.mark.asyncio
 async def test_search_cases_passes_authorization_filter_through(monkeypatch: pytest.MonkeyPatch) -> None:
     """`authorization` 透传到检索链（契约第 2 节；过滤在 SQL 层用绑定参数完成）。"""
-    seen: dict[str, Any] = {}
+    seen: dict[str, object] = {}
 
-    async def _capture(_settings: object, **kwargs: Any) -> SearchOutcome:
+    async def _capture(_settings: object, **kwargs: object) -> SearchOutcome:
         seen.update(kwargs)
         return SearchOutcome(items=[_case_item()], degraded_paths=())
 
@@ -415,9 +419,9 @@ async def test_search_cases_passes_authorization_filter_through(monkeypatch: pyt
 @pytest.mark.asyncio
 async def test_search_cases_does_not_pass_scope(monkeypatch: pytest.MonkeyPatch) -> None:
     """`scope` 不是案例侧参数，因此**不传**（传了等于把资料侧的过滤维度偷渡进来）。"""
-    seen: dict[str, Any] = {}
+    seen: dict[str, object] = {}
 
-    async def _capture(_settings: object, **kwargs: Any) -> SearchOutcome:
+    async def _capture(_settings: object, **kwargs: object) -> SearchOutcome:
         seen.update(kwargs)
         return SearchOutcome(items=[], degraded_paths=())
 

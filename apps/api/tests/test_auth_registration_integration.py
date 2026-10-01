@@ -28,6 +28,7 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator, Iterator
 
+import httpx
 import pytest
 import pytest_asyncio
 from sqlalchemy import delete
@@ -86,13 +87,11 @@ def _settings_or_skip() -> Settings:
 
 
 @pytest_asyncio.fixture
-async def client() -> AsyncIterator[object]:
+async def client() -> AsyncIterator[httpx.AsyncClient]:
     """返回一个穿过**完整应用**（含 SuperTokens 中间件）的 ASGI 客户端。
 
     core 不可达时跳过：那时注册失败的原因是环境，不是被测代码。
     """
-    import httpx
-
     from campfire.core.auth import check_auth_core
     from campfire.core.health import Status
 
@@ -169,24 +168,24 @@ def _signup_payload(email: str, invite_code: str | None) -> dict[str, object]:
     return {"formFields": form_fields}
 
 
-def _status_of(response: object) -> str:
+def _status_of(response: httpx.Response) -> str:
     """取响应体里的 ``status``（身份服务的**业务结果**字段）。
 
     **它不是 HTTP 状态码**：实测拒绝也是 200，见模块说明。
     """
-    body = response.json()  # type: ignore[attr-defined]
+    body = response.json()
     assert isinstance(body, dict), f"身份服务返回了非对象响应体：{body!r}"
     status = body.get("status")
     assert isinstance(status, str), f"响应体里没有 status 字段：{body!r}"
     return status
 
 
-def _is_ok(response: object) -> bool:
+def _is_ok(response: httpx.Response) -> bool:
     """注册是否成功（``status == "OK"``）。"""
     return _status_of(response) == "OK"
 
 
-def _is_rejected(response: object) -> bool:
+def _is_rejected(response: httpx.Response) -> bool:
     """注册是否被**我们**拒绝（``GENERAL_ERROR``）。
 
     **刻意不接受 ``FIELD_ERROR``**：那是 SDK 的表单校验失败（字段缺失或格式错），
@@ -238,7 +237,7 @@ def _signup_path(settings: Settings) -> str:
 
 
 @pytest.mark.asyncio
-async def test_valid_code_creates_the_account(client: object) -> None:
+async def test_valid_code_creates_the_account(client: httpx.AsyncClient) -> None:
     """正向对照：**有效码**注册成功，且账号真的建出来了。
 
     没有这条，下面所有「拒绝」用例都可能是「注册根本不通」造成的假通过。
@@ -249,7 +248,7 @@ async def test_valid_code_creates_the_account(client: object) -> None:
         email = _unique_email("ok")
         code = await _issue_code()
 
-        response = await client.post(_signup_path(settings), json=_signup_payload(email, code))  # type: ignore[attr-defined]
+        response = await client.post(_signup_path(settings), json=_signup_payload(email, code))
 
         assert _is_ok(response), f"有效码注册应成功，实际 {_status_of(response)}: {response.text[:400]}"
         assert await _account_exists(email) is True, "注册返回成功但身份服务里没有该账号"
@@ -258,14 +257,14 @@ async def test_valid_code_creates_the_account(client: object) -> None:
 
 
 @pytest.mark.asyncio
-async def test_missing_code_is_rejected_and_creates_no_user(client: object) -> None:
+async def test_missing_code_is_rejected_and_creates_no_user(client: httpx.AsyncClient) -> None:
     """**不带邀请码** → 拒绝，且身份服务里**没有**该账号（``AC-15``）。"""
     settings = _settings_or_skip()
     await _clear()
     try:
         email = _unique_email("nocode")
 
-        response = await client.post(_signup_path(settings), json=_signup_payload(email, None))  # type: ignore[attr-defined]
+        response = await client.post(_signup_path(settings), json=_signup_payload(email, None))
 
         assert _is_rejected(response), f"缺少邀请码时必须被我们的复写拒绝，实际 {_status_of(response)}"
         assert await _account_exists(email) is False, "被拒绝的注册却建出了账号——AC-15 落空"
@@ -274,7 +273,7 @@ async def test_missing_code_is_rejected_and_creates_no_user(client: object) -> N
 
 
 @pytest.mark.asyncio
-async def test_unknown_code_is_rejected_and_creates_no_user(client: object) -> None:
+async def test_unknown_code_is_rejected_and_creates_no_user(client: httpx.AsyncClient) -> None:
     """**不存在的邀请码** → 拒绝，且**不留下任何用户记录**。
 
     判别性：若实现是「先建号再校验」，本用例的第二条断言失败——而响应看起来
@@ -285,7 +284,7 @@ async def test_unknown_code_is_rejected_and_creates_no_user(client: object) -> N
     try:
         email = _unique_email("badcode")
 
-        response = await client.post(_signup_path(settings), json=_signup_payload(email, "ZZZZZZZZ"))  # type: ignore[attr-defined]
+        response = await client.post(_signup_path(settings), json=_signup_payload(email, "ZZZZZZZZ"))
 
         assert _is_rejected(response), f"无效邀请码必须拒绝，实际 {_status_of(response)}"
         assert await _account_exists(email) is False, "无效码的注册建出了账号——AC-15 落空"
@@ -294,7 +293,7 @@ async def test_unknown_code_is_rejected_and_creates_no_user(client: object) -> N
 
 
 @pytest.mark.asyncio
-async def test_revoked_code_is_rejected_and_creates_no_user(client: object) -> None:
+async def test_revoked_code_is_rejected_and_creates_no_user(client: httpx.AsyncClient) -> None:
     """**已撤销的邀请码** → 拒绝，且不建号（``AC-15``「撤销后不可用」）。"""
     settings = _settings_or_skip()
     await _clear()
@@ -304,7 +303,7 @@ async def test_revoked_code_is_rejected_and_creates_no_user(client: object) -> N
             await revoke_invite_code(session, code=code)
 
         email = _unique_email("revoked")
-        response = await client.post(_signup_path(settings), json=_signup_payload(email, code))  # type: ignore[attr-defined]
+        response = await client.post(_signup_path(settings), json=_signup_payload(email, code))
 
         assert _is_rejected(response), f"已撤销的邀请码必须拒绝，实际 {_status_of(response)}"
         assert await _account_exists(email) is False, "已撤销码的注册建出了账号"
@@ -313,7 +312,7 @@ async def test_revoked_code_is_rejected_and_creates_no_user(client: object) -> N
 
 
 @pytest.mark.asyncio
-async def test_used_code_is_rejected_the_second_time(client: object) -> None:
+async def test_used_code_is_rejected_the_second_time(client: httpx.AsyncClient) -> None:
     """**一码只用一次**：同一张码第二次注册被拒，且第二个账号不存在。"""
     settings = _settings_or_skip()
     await _clear()
@@ -322,10 +321,10 @@ async def test_used_code_is_rejected_the_second_time(client: object) -> None:
         first = _unique_email("first")
         second = _unique_email("second")
 
-        first_response = await client.post(_signup_path(settings), json=_signup_payload(first, code))  # type: ignore[attr-defined]
+        first_response = await client.post(_signup_path(settings), json=_signup_payload(first, code))
         assert _is_ok(first_response), f"首次注册应成功：{first_response.text[:300]}"
 
-        second_response = await client.post(_signup_path(settings), json=_signup_payload(second, code))  # type: ignore[attr-defined]
+        second_response = await client.post(_signup_path(settings), json=_signup_payload(second, code))
         assert _is_rejected(second_response), f"同一张邀请码不得用第二次，实际 {_status_of(second_response)}"
         assert await _account_exists(second) is False, "第二次注册建出了账号——一码多用"
     finally:
@@ -333,7 +332,7 @@ async def test_used_code_is_rejected_the_second_time(client: object) -> None:
 
 
 @pytest.mark.asyncio
-async def test_duplicate_account_name_releases_the_code(client: object) -> None:
+async def test_duplicate_account_name_releases_the_code(client: httpx.AsyncClient) -> None:
     """**建号失败 → 补偿释放**：账号名重复时该码回到可用状态（第 4 节步骤 3）。
 
     **判别性**：若实现漏了补偿释放，该码会永久停在「已占用」，使用者拿到一个新码
@@ -345,12 +344,12 @@ async def test_duplicate_account_name_releases_the_code(client: object) -> None:
         email = _unique_email("dup")
         first_code = await _issue_code()
 
-        ok = await client.post(_signup_path(settings), json=_signup_payload(email, first_code))  # type: ignore[attr-defined]
+        ok = await client.post(_signup_path(settings), json=_signup_payload(email, first_code))
         assert _is_ok(ok), f"首次注册应成功：{ok.text[:300]}"
 
         # 用**新码** + 同一个账号名 → 建号失败（账号已存在），该新码应被释放。
         second_code = await _issue_code()
-        conflict = await client.post(_signup_path(settings), json=_signup_payload(email, second_code))  # type: ignore[attr-defined]
+        conflict = await client.post(_signup_path(settings), json=_signup_payload(email, second_code))
         assert not _is_ok(conflict), f"重复账号名必须失败：{conflict.text[:300]}"
 
         # 关键断言：那张码已回到 issued，可再次使用（换一个账号名）。
@@ -364,7 +363,7 @@ async def test_duplicate_account_name_releases_the_code(client: object) -> None:
         )
 
         another = _unique_email("dup2")
-        reuse = await client.post(_signup_path(settings), json=_signup_payload(another, second_code))  # type: ignore[attr-defined]
+        reuse = await client.post(_signup_path(settings), json=_signup_payload(another, second_code))
         assert _is_ok(reuse), f"被释放的码应可再次使用：{reuse.text[:300]}"
     finally:
         await _clear()
@@ -447,7 +446,7 @@ async def test_non_ok_result_with_account_created_does_not_release_the_code() ->
 
 
 @pytest.mark.asyncio
-async def test_exception_after_account_created_does_not_release_the_code(client: object) -> None:
+async def test_exception_after_account_created_does_not_release_the_code(client: httpx.AsyncClient) -> None:
     """**建号成功后 original 抛异常时，不得释放邀请码**（阻断级缺陷的回归测试）。
 
     ## 这条守的是什么
@@ -512,7 +511,7 @@ async def test_exception_after_account_created_does_not_release_the_code(client:
 
 
 @pytest.mark.asyncio
-async def test_session_credentials_go_to_cookies_not_headers(client: object) -> None:
+async def test_session_credentials_go_to_cookies_not_headers(client: httpx.AsyncClient) -> None:
     """**会话凭据必须走 cookie，不得出现在响应头**（2026-09-30 评审抓出的重要级）。
 
     ## 为什么这是设计冲突而不是风格问题
@@ -532,24 +531,22 @@ async def test_session_credentials_go_to_cookies_not_headers(client: object) -> 
         email = _unique_email("cookie")
         code = await _issue_code()
 
-        response = await client.post(_signup_path(settings), json=_signup_payload(email, code))  # type: ignore[attr-defined]
+        response = await client.post(_signup_path(settings), json=_signup_payload(email, code))
 
-        assert _is_ok(response), f"有效码注册应成功：{response.text[:300]}"  # type: ignore[attr-defined]
+        assert _is_ok(response), f"有效码注册应成功：{response.text[:300]}"
 
-        header_names = {name.lower() for name in response.headers}  # type: ignore[attr-defined]
+        header_names = {name.lower() for name in response.headers}
         assert "st-access-token" not in header_names, (
             "access token 出现在响应头里——前端 JS 可读，与「凭据不可被前端读取」冲突"
         )
         assert "st-refresh-token" not in header_names, "refresh token 出现在响应头里"
-        assert len(response.headers.get_list("set-cookie")) > 0, (  # type: ignore[attr-defined]
-            "注册未下发任何 Set-Cookie——凭据没有走 cookie 传输"
-        )
+        assert len(response.headers.get_list("set-cookie")) > 0, "注册未下发任何 Set-Cookie——凭据没有走 cookie 传输"
     finally:
         await _clear()
 
 
 @pytest.mark.asyncio
-async def test_anonymous_account_existence_endpoint_is_disabled(client: object) -> None:
+async def test_anonymous_account_existence_endpoint_is_disabled(client: httpx.AsyncClient) -> None:
     """**匿名的账号存在性端点必须关闭**（2026-09-30 评审抓出）。
 
     SDK 默认挂载 ``GET /auth/signup/email/exists``（``disable_email_exists_get``
@@ -566,12 +563,12 @@ async def test_anonymous_account_existence_endpoint_is_disabled(client: object) 
         # 先造一个**确实存在**的账号，让「可区分」有判别力。
         existing = _unique_email("exists")
         code = await _issue_code()
-        created = await client.post(_signup_path(settings), json=_signup_payload(existing, code))  # type: ignore[attr-defined]
-        assert _is_ok(created), f"前置账号创建失败：{created.text[:300]}"  # type: ignore[attr-defined]
+        created = await client.post(_signup_path(settings), json=_signup_payload(existing, code))
+        assert _is_ok(created), f"前置账号创建失败：{created.text[:300]}"
 
         base = settings.supertokens_api_base_path.rstrip("/")
         for email in (existing, _unique_email("absent")):
-            response = await client.get(f"{base}/signup/email/exists", params={"email": email})  # type: ignore[attr-defined]
+            response = await client.get(f"{base}/signup/email/exists", params={"email": email})
             # 端点关闭后应**不可用**（404 或等价），绝不能返回存在性。
             assert response.status_code != 200, (
                 f"匿名存在性端点仍可用（HTTP {response.status_code}，body={response.text[:160]}）"
@@ -582,7 +579,7 @@ async def test_anonymous_account_existence_endpoint_is_disabled(client: object) 
 
 
 @pytest.mark.asyncio
-async def test_rejection_message_does_not_distinguish_reasons(client: object) -> None:
+async def test_rejection_message_does_not_distinguish_reasons(client: httpx.AsyncClient) -> None:
     """四种拒绝（缺失/不存在/已撤销/已用）的**响应体一致**——不可枚举。
 
     判别性：若实现把四种原因写成不同消息，调用方可逐字区分「码存在但过期」与
@@ -594,33 +591,25 @@ async def test_rejection_message_does_not_distinguish_reasons(client: object) ->
         bodies: set[str] = set()
 
         # 1) 不存在
-        response = await client.post(  # type: ignore[attr-defined]
-            _signup_path(settings), json=_signup_payload(_unique_email("a1"), "ZZZZZZZZ")
-        )
+        response = await client.post(_signup_path(settings), json=_signup_payload(_unique_email("a1"), "ZZZZZZZZ"))
         bodies.add(response.text)
 
         # 2) 已撤销
         revoked = await _issue_code()
         async with session_scope(get_settings()) as session:
             await revoke_invite_code(session, code=revoked)
-        response = await client.post(  # type: ignore[attr-defined]
-            _signup_path(settings), json=_signup_payload(_unique_email("a2"), revoked)
-        )
+        response = await client.post(_signup_path(settings), json=_signup_payload(_unique_email("a2"), revoked))
         bodies.add(response.text)
 
         # 3) 已占用
         used = await _issue_code()
         async with session_scope(get_settings()) as session:
             await claim_invite_code(session, code=used)
-        response = await client.post(  # type: ignore[attr-defined]
-            _signup_path(settings), json=_signup_payload(_unique_email("a3"), used)
-        )
+        response = await client.post(_signup_path(settings), json=_signup_payload(_unique_email("a3"), used))
         bodies.add(response.text)
 
         # 4) 形状不合法（长度不对）
-        response = await client.post(  # type: ignore[attr-defined]
-            _signup_path(settings), json=_signup_payload(_unique_email("a4"), "ABC")
-        )
+        response = await client.post(_signup_path(settings), json=_signup_payload(_unique_email("a4"), "ABC"))
         bodies.add(response.text)
 
         assert len(bodies) == 1, (

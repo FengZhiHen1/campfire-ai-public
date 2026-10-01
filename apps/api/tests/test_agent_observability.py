@@ -15,7 +15,6 @@ import logging
 from collections.abc import AsyncIterator, Sequence
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
 
 import httpx
 import pytest
@@ -31,6 +30,7 @@ from campfire.agent.runtime import (
     AgentRunner,
     CandidateEvent,
     CitationEvent,
+    RunEvent,
     RunFailedEvent,
     RunFinishedEvent,
     RunRequest,
@@ -41,7 +41,7 @@ from campfire.agent.runtime import (
     ToolCallStartedEvent,
 )
 from campfire.agent.skill_runtime import SkillRegistry
-from campfire.agent.tools import Candidate, ToolPool, ToolResult, ToolSpec
+from campfire.agent.tools import Candidate, ToolContext, ToolPool, ToolResult, ToolSpec
 
 STARTED_AT = datetime(2026, 9, 29, 12, 0, tzinfo=UTC)
 
@@ -131,7 +131,7 @@ def test_record_never_carries_tool_result_or_citation_text() -> None:
     这条用例专门盯**真正会把正文带进记录**的两条通道（此前只测了 `text_delta` 这条
     根本不进记录的通道）。
     """
-    secret = "postgresql://appuser:s3cretpw@10.0.0.5:5432/campfire"
+    secret = "postgresql://appuser:s3cretpw@10.0.0.5:5432/campfire"  # quality-floor: ignore hardcoded-secret 虚构值，只作泄漏哨兵；它必须像一个真凭据，否则下面的断言不再有判别性
     recorder = RunRecorder(started_at=STARTED_AT)
     recorder.apply(
         ToolCallStartedEvent(tool_name="search_knowledge", call_id="c1"),
@@ -255,10 +255,10 @@ def test_record_keeps_no_conversation_content() -> None:
         ([], False, "incomplete"),
     ],
 )
-def test_outcome_mapping(events: Sequence[object], cancelled: bool, expected: str) -> None:
+def test_outcome_mapping(events: Sequence[RunEvent], cancelled: bool, expected: str) -> None:
     recorder = RunRecorder(started_at=STARTED_AT)
     for event in events:
-        recorder.apply(event)  # type: ignore[arg-type]
+        recorder.apply(event)
     if cancelled:
         recorder.mark_cancelled()
 
@@ -345,7 +345,7 @@ class _FakeWriter:
         self.records.append(record)
 
 
-async def _events(*items: object) -> AsyncIterator[Any]:
+async def _events(*items: RunEvent) -> AsyncIterator[RunEvent]:
     for item in items:
         yield item
 
@@ -438,10 +438,11 @@ async def test_writer_failure_does_not_break_the_stream_and_does_not_leak_creden
 async def test_cancellation_is_marked_on_the_record_and_re_raised() -> None:
     """取消自己的消费者收不到终态事件，所以「被取消」由消费方告知（mark_cancelled）。"""
     writer = _FakeWriter()
+    hold = asyncio.Event()
 
-    async def slow() -> AsyncIterator[Any]:
+    async def slow() -> AsyncIterator[RunEvent]:
         yield _started()
-        await asyncio.sleep(5)
+        await hold.wait()  # 只有取消能把它放过去：不引入固定时长的下界
 
     async def consume() -> None:
         async for _event in record_stream(slow(), writer=writer):
@@ -461,10 +462,11 @@ async def test_cancellation_is_marked_on_the_record_and_re_raised() -> None:
 async def test_closing_the_stream_mid_way_records_incomplete_not_completed() -> None:
     """生成器被关闭（消费者提前断开）时，记录是 ``incomplete``——不假装成功。"""
     writer = _FakeWriter()
+    hold = asyncio.Event()
 
-    async def gated() -> AsyncIterator[Any]:
+    async def gated() -> AsyncIterator[RunEvent]:
         yield _started()
-        await asyncio.sleep(60)
+        await hold.wait()  # 用例靠 aclose() 结束它：不引入「60 秒内必须关掉」的窗口
 
     stream = record_stream(gated(), writer=writer)
     assert isinstance(await anext(stream), RunStartedEvent)
@@ -519,7 +521,7 @@ class _Args(BaseModel):
 
 
 def _text_reply(text: str, usage: dict[str, int] | None = None) -> bytes:
-    def chunk(delta: dict[str, Any], finish: str | None = None) -> str:
+    def chunk(delta: dict[str, object], finish: str | None = None) -> str:
         payload = {
             "id": "chatcmpl-test",
             "object": "chat.completion.chunk",
@@ -544,7 +546,7 @@ def _empty_skills() -> SkillRegistry:
 def _search_tool(index: _FakeIndex) -> ToolSpec[_Args]:
     """一个产出引用的检索工具。"""
 
-    async def handler(context: Any, args: _Args) -> ToolResult:
+    async def handler(context: ToolContext, args: _Args) -> ToolResult:
         record = await context.citations.record(source="knowledge", reference="kb-42")
         return ToolResult(text=f"找到 {args.query}", citations=(record,))
 

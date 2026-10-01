@@ -177,9 +177,9 @@ class ScriptedRunner:
             # 这里不写引用索引：本面的注入项都没有业务回指（`reference is None`），
             # 渲染结果就是逐条的消息正文。
             for item in request.injections.ordered():
-                await sdk.add_items([{"role": item.role, "content": item.content}])  # type: ignore[arg-type]  # SDK 的 add_items 收 SDK 自有条目类型，测试传字面量 dict
+                await sdk.add_items([{"role": item.role, "content": item.content}])
         if self._append_user_message:
-            await sdk.add_items([{"role": "user", "content": request.user_input or ""}])  # type: ignore[arg-type]  # SDK 的 add_items 收 SDK 自有条目类型，测试传字面量 dict
+            await sdk.add_items([{"role": "user", "content": request.user_input or ""}])
 
         yield RunStartedEvent(
             run_id=run_id,
@@ -475,7 +475,7 @@ async def test_list_sessions_shows_title_preview_and_only_own_sessions(client: h
         )
 
     sdk = build_sqlalchemy_session(mine, engine=get_engine(get_settings()))
-    await sdk.add_items(  # type: ignore[arg-type]  # SDK 的 add_items 收 SDK 自有条目类型，测试传字面量 dict
+    await sdk.add_items(
         [
             {"role": "user", "content": "孩子最近睡不好，怎么办"},
             {"role": "assistant", "content": [{"type": "output_text", "text": "可以先记录一周的作息。"}]},

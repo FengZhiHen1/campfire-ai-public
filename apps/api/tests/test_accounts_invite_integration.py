@@ -86,10 +86,10 @@ async def _clear() -> None:
         await session.execute(delete(InviteCode).where(InviteCode.created_by == _OPERATOR))
 
 
-async def _issue(**kwargs: object) -> str:
+async def _issue(*, now: datetime | None = None, ttl_days: int = INVITE_CODE_TTL_DAYS) -> str:
     """签发一张码并返回它（已提交）。"""
     async with session_scope(get_settings()) as session:
-        record = await issue_invite_code(session, created_by=_OPERATOR, **kwargs)  # type: ignore[arg-type]
+        record = await issue_invite_code(session, created_by=_OPERATOR, now=now, ttl_days=ttl_days)
         return record.code
 
 

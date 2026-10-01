@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import json
 from datetime import datetime, timezone
-from typing import Any
 
 import pytest
 
@@ -34,7 +33,7 @@ _ACCOUNT = "tool_test_account"
 class _FakeIndex:
     """最小引用索引；本文件不产生引用，只需满足构造。"""
 
-    def add(self, *_args: Any, **_kwargs: Any) -> None: ...
+    def add(self, *_args: object, **_kwargs: object) -> None: ...
 
 
 def _context(payload: object | None = None) -> ToolContext:

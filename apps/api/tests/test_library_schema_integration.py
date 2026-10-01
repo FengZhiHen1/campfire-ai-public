@@ -163,6 +163,6 @@ async def test_metadata_filter_is_applied_and_booleans_are_rejected() -> None:
 
         # 布尔值必须被拒绝——若某天框架接受 bool，本断言会失败，那时可放宽。
         with pytest.raises(ValidationError):
-            MetadataFilters(filters=[MetadataFilter(key="withdrawn", value=False)])  # type: ignore[arg-type]
+            MetadataFilters(filters=[MetadataFilter(key="withdrawn", value=False)])
     finally:
         await _cleanup_nodes(["it-filter-a", "it-filter-b"])

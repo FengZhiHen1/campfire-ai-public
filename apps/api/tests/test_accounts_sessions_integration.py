@@ -136,7 +136,8 @@ async def _add_sdk_items(session_id: str, items: list[dict]) -> None:
     from campfire.core.db import get_engine
 
     sdk_session = SQLAlchemySession(session_id, engine=get_engine(get_settings()), create_tables=False)
-    await sdk_session.add_items(items)  # type: ignore[arg-type]
+    # 传的是测试构造的 JSON 条目（故意保留原始形状）；SDK 收的是它自有的条目类型联合
+    await sdk_session.add_items(items)  # type: ignore[arg-type]  # SDK 的自有类型是 30 多个 TypedDict 的联合，测试这里就是要喂原始 JSON 形状
 
 
 async def _list(
