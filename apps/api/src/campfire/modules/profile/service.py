@@ -42,6 +42,7 @@ from campfire.modules.profile.models import (
     EMERGENCY_GROUPS,
     EMERGENCY_STRATEGY_DOMAIN,
     EMERGENCY_STRATEGY_FIELDS,
+    FRESHNESS_CURRENT,
     FRESHNESS_HISTORICAL,
     MANUAL_ENTRY_SOURCE,
     ProfileItem,
@@ -606,20 +607,26 @@ def _group(rows: list[ProfileItem], *, now: datetime) -> GroupedItems:
     与 SQL 侧的过滤表达同一件事——因此 SQL 只负责缩小范围，
     最终分组由纯函数决定，两处不会给出互相矛盾的结论。
 
-    历史条目（`freshness = historical`）是这条判据的唯一例外，且归 `items`：
-    它因新鲜度不为 `current` 必然落在落层判据之外，但「已更正」的旧条目属完整条目区
-    （档案页第 62 行：原条目转历史态出「已更正」标），不是「待确认」分组。
-    把它归进候选组会让档案页在待确认分组里给它出确认入口，而它已被取代、确认它没有意义。
-    它只可能在调用方打开 `include_superseded` 时出现在这里，因此缺省路径的分组结果不变。
+    历史条目（`freshness = historical`）按「它曾属哪一层」判，与新鲜度无关：
+    未确认的系统推断（`system_observation`／`ai_inference`）即便已被取代也归 `candidates`
+    （`AC-18`：输出与摘要中不出现任何未确认的系统推断，未确认的内容以「待确认」单独呈现）。
+    历史且曾属稳定层的（四种非推断来源，或已确认）归 `items`：那是档案页第 62 行
+    「已更正」标的路径，落在完整条目区。
+
+    为什么由服务端定组：候选单独成组是候选层视觉不变量的服务端侧保证
+    （档案面契约第 3 节：由返回结构保证，而不是靠前端自己分）。
+    历史条目只可能在调用方打开 `include_superseded` 时出现在这里，
+    因此缺省路径（`include_superseded = false`）的分组结果不变。
     """
     stable: list[ItemView] = []
     candidates: list[ItemView] = []
     for row in rows:
         view = _to_view(row, now=now)
         is_history = row.freshness == FRESHNESS_HISTORICAL
-        if is_history or lands_in_stable_layer(
-            origin=row.origin, confirmation=row.confirmation, freshness=row.freshness
-        ):
+        # 历史条目只把新鲜度这一项按 `current` 判：它是历史只因被取代，不代表它曾属候选层。
+        # 归组判据因此仍只有 `lands_in_stable_layer` 一条。
+        layer_freshness = FRESHNESS_CURRENT if is_history else row.freshness
+        if lands_in_stable_layer(origin=row.origin, confirmation=row.confirmation, freshness=layer_freshness):
             stable.append(view)
         else:
             candidates.append(view)

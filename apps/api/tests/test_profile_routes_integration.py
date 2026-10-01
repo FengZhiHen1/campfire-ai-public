@@ -430,6 +430,38 @@ async def test_include_superseded_returns_the_history_with_both_pointers(  # noq
     assert body["items"][0]["supersedes"] == old
 
 
+async def test_include_superseded_keeps_unconfirmed_history_in_candidates(  # noqa: ANN001
+    client: httpx.AsyncClient, as_account
+) -> None:
+    """被取代的候选仍归 `candidates`（`AC-18` 的服务端侧保证，端到端断言）。
+
+    纠正一条未确认的推断：新条目进 `items`，旧条目（历史 + 未确认）进 `candidates`
+    ——它仍是未确认的系统推断，不得因为「已被取代」而被当成完整条目区的内容。
+    同时断言只开历史回看（`include_candidates=false`）时它根本不出现：缺省路径不变，
+    候选组也不会在没请求候选时凭空多出内容。
+    """
+    object_id = await _new_object()
+    old = await _propose(object_id, origin="ai_inference", description="被取代的推断")
+    new = await _correct(client, old, "使用者改写的描述")
+
+    body = (
+        await client.get(
+            f"/profile/objects/{object_id}/items",
+            params={"include_superseded": "true", "include_candidates": "true"},
+        )
+    ).json()
+    assert [item["item_id"] for item in body["items"]] == [new]
+    assert [item["item_id"] for item in body["candidates"]] == [old]
+    assert body["candidates"][0]["freshness"] == "historical"
+    assert body["candidates"][0]["confirmation"] == "unconfirmed"
+
+    stable_only = (
+        await client.get(f"/profile/objects/{object_id}/items", params={"include_superseded": "true"})
+    ).json()
+    assert [item["item_id"] for item in stable_only["items"]] == [new]
+    assert stable_only["candidates"] == [], "没开候选开关时候选组必须为空"
+
+
 async def test_include_superseded_still_excludes_rejected_items(  # noqa: ANN001
     client: httpx.AsyncClient, as_account
 ) -> None:
