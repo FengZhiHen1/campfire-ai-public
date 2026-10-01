@@ -12,6 +12,7 @@ import uuid
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from datetime import datetime
+from typing import TypedDict
 
 from llama_index.core.schema import NodeWithScore, TextNode
 from llama_index.core.vector_stores.types import (
@@ -431,7 +432,6 @@ def build_literal_nodes(
     return results
 
 
-# quality-floor: ignore docstring-promise 异常由 _require_library 与 as_uuid 抛出（间接 raise）
 async def load_items(
     session: AsyncSession,
     item_ids: list[str],
@@ -441,14 +441,25 @@ async def load_items(
     """批量取条目（用于填充返回契约字段），按库别取对应的条目表。
 
     Raises:
-        RetrievalError: 库别非法，或 item_id 不是合法 UUID。
+        RetrievalError: 库别非法，item_id 不是合法 UUID，或取出的行不是
+            `KnowledgeItem`/`CaseItem`（模型映射与库别不一致）。
     """
     if not item_ids:
         return {}
 
     model = ITEM_MODELS[_require_library(library)]
     rows = (await session.execute(select(model).where(model.id.in_([as_uuid(i) for i in item_ids])))).scalars()
-    return {str(item.id): item for item in rows}
+    # 逐行 isinstance 收窄而不是 cast（与 `withdrawal.withdraw_item`、`models.as_case_item` 同一
+    # 手法，PY-11）：`ITEM_MODELS` 的值是 `KnowledgeItem | CaseItem`，两者只共享 `Base`，
+    # 而 SQLAlchemy 的 `select()` 重载以 `Type[_T]` 推断实体类型，联合入参只能塌缩成 `Base`，
+    # 于是 `Base` 上既没有 `id` 也没有条目字段。收窄让映射表与现实不一致时立即显式失败，
+    # 而不是把类型错误推迟成运行期的 `AttributeError`。
+    loaded: dict[str, KnowledgeItem | CaseItem] = {}
+    for item in rows:
+        if not isinstance(item, (KnowledgeItem, CaseItem)):
+            raise RetrievalError(f"条目模型与库别映射不一致：{library} → {type(item).__name__}")
+        loaded[str(item.id)] = item
+    return loaded
 
 
 def as_uuid(value: str) -> uuid.UUID:
@@ -466,7 +477,25 @@ def as_uuid(value: str) -> uuid.UUID:
         raise RetrievalError(f"非法条目 id：{value!r}") from exc
 
 
-def _case_fields(item: CaseItem, node: NodeWithScore) -> dict[str, object]:
+class _CaseFields(TypedDict, total=False):
+    """案例专属字段的载荷（检索路与浏览路共用，`**` 解包进 `RetrievedItem`）。
+
+    `total=False` 是必须的：资料侧不产生任何一项，那条路径传的就是空载荷；同时它
+    又保留了逐字段的类型约束——`**` 解包若声明成 `dict[str, object]`，每个字段的
+    类型信息会在解包处丢失，`inferred_fields: list[str]` 之类的约束就再也拦不住
+    写错类型的生产者。键名与 `RetrievedItem` 的可选案例字段一一对应。
+    """
+
+    authorization: str | None
+    source_type: str | None
+    evidence_level: str | None
+    review_status: str | None
+    interview_at: datetime | None
+    makes_claims_high_risk: bool | None
+    inferred_fields: list[str]
+
+
+def _case_fields(item: CaseItem, node: NodeWithScore) -> _CaseFields:
     """案例条目的专属返回字段（资料与案例检索第 3 节）。
 
     `inferred_fields` 的取值规则（第 3 节）：该结果 snippet 所属卡片的被推断
@@ -544,7 +573,7 @@ def aggregate_to_items(
         if not item.source or not item.status or item.withdrawn:
             continue
 
-        extra: dict[str, object] = {}
+        extra: _CaseFields = {}
         if library == LIBRARY_CASE:
             extra = _case_fields(as_case_item(item), node)
 
@@ -553,7 +582,12 @@ def aggregate_to_items(
                 item_id=item_id,
                 library=library,
                 title=item.title,
-                snippet=node.node.text,
+                # 取文本走 `NodeWithScore.text` 这个公开属性，不写 `node.node.text`：
+                # `node` 的静态类型是 `BaseNode`，`text` 只声明在子类 `TextNode` 上，
+                # 直接访问会被类型检查器判为属性缺失。该属性是框架自己的取值口
+                # （非 `TextNode` 时抛 `ValueError`，不静默返回空串），因此既能通过
+                # 检查，也保留「拿不到文本即显式失败」的语义。
+                snippet=node.text,
                 source=item.source,
                 applicable_scope=item.applicable_scope,
                 status=item.status,
@@ -694,8 +728,13 @@ async def browse(
     """
     table = ITEM_TABLES[_require_library(library)]
     status_sql = _STATUS_SQL_BY_LIBRARY[library]
-    clauses, params = _item_filters_sql(scope=scope, authorization=authorization)
+    clauses, filter_params = _item_filters_sql(scope=scope, authorization=authorization)
     extra = "".join(f"\n          AND {clause}" for clause in clauses)
+    # 本函数的绑定参数字典同时装字符串过滤值（scope/authorization）与整数 limit，
+    # 因此按最宽的实际取值标注为 object。`_item_filters_sql` 的 `dict[str, str]`
+    # 只描述它自己产出的那部分，不能当作整张字典的类型——照抄它才是这里原先
+    # 把 int 写进 `dict[str, str]` 的由来。
+    params: dict[str, object] = dict(filter_params)
     params["limit"] = limit
 
     sql = text(
@@ -732,7 +771,7 @@ async def browse(
         if not item.source or not item.status or item.withdrawn:
             continue
         snippet, locator = snippets.get(row.item_id, ("", ""))
-        extra_fields: dict[str, object] = {}
+        extra_fields: _CaseFields = {}
         if isinstance(item, CaseItem):
             extra_fields = _case_fields_for_browse(item)
         items.append(
@@ -753,7 +792,7 @@ async def browse(
     return SearchOutcome(items=items, degraded_paths=())
 
 
-def _case_fields_for_browse(item: CaseItem) -> dict[str, object]:
+def _case_fields_for_browse(item: CaseItem) -> _CaseFields:
     """浏览路的案例专属字段。
 
     与检索路 `_case_fields` 的唯一差别是 `inferred_fields`：浏览路是条目级列表，

@@ -68,6 +68,7 @@ from campfire.modules.accounts.sessions import (
 from campfire.modules.memory.derived import EmergencyMemory, read_emergency_facts
 from campfire.modules.memory.errors import MemoryModuleError
 from campfire.modules.memory.graph import get_shared_memory_graph
+from campfire.modules.memory.identity import to_account_id
 from campfire.modules.profile import (
     EmergencyContext,
     bind_first_object,
@@ -1001,9 +1002,19 @@ async def _read_emergency_memory(
 
     `MemoryModuleError` 是记忆模块全部失败的基类：图库不可用与取回数据不合法
     都在其中，两者对模型的处置相同（这份来源本次不可用），因此合并处理。
+
+    `account_id` 来自登录态，是裸 `str`，而取数的分区键要求 `AccountId`。此前裸 `str`
+    直接穿过函数边界，校验实际由 `read_emergency_facts` 内部的 `deleted_episode_keys`
+    代做（那里抛 `AccountIdError`，是 `MemoryModuleError` 的子类，被同一个 `except`
+    收口）。这里在边界处显式构造 `AccountId`，并且与取图库句柄的先后顺序保持原样
+    （先取句柄、再校验账号）：两句都只抛 `MemoryModuleError` 子类，顺序只影响
+    `reason` 记下哪个异常类型，保持原序即保持这一处诊断不变。转换一旦提到 `try`
+    之外，非法账号标识就会变成未捕获异常（500），那是对外行为的变化。
     """
     try:
-        return await read_emergency_facts(db, get_shared_memory_graph(), account_id)
+        graph = get_shared_memory_graph()
+        account = to_account_id(account_id)
+        return await read_emergency_facts(db, graph, account)
     except MemoryModuleError as exc:
         unavailable.append(UnavailableSource(source=EMERGENCY_MEMORY_SOURCE, reason=type(exc).__name__))
         return None
