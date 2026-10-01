@@ -24,6 +24,15 @@
 #    任何事实**（docs/服务器选型事实基线.md 与 docs/TODO.md 都写「未定」）。
 #    下面凡涉及它们的都用 `${VAR:?}` 形式强制显式提供，缺失即启动失败——
 #    这比填一个看似合理的默认值安全：默认值会静默生效，而缺值会立刻报错。
+#
+# 镜像引用（2026-10-01）：
+#    `IMAGE_API` / `IMAGE_WEB` 是**仓库地址**（不含 tag），`IMAGE_TAG` 是版本。
+#    CD 发布时由 `.env.prod` 提供，值为 GHCR 上的路径，例如
+#      IMAGE_API=ghcr.io/<owner>/<repo>/api
+#      IMAGE_WEB=ghcr.io/<owner>/<repo>/web
+#      IMAGE_TAG=<提交 SHA 前 12 位>
+#    不设时回落到本地名（`campfire-api` / `campfire-web`）+ `local` tag，
+#    便于在没有仓库的环境用 `up --build` 直接起。
 # ============================================================
 
 name: campfire
@@ -141,7 +150,14 @@ services:
     build:
       context: .
       dockerfile: infrastructure/docker/Dockerfile.api
-    image: campfire-api:${IMAGE_TAG:-local}
+    # 镜像引用由 `IMAGE_API`（仓库地址）+ `IMAGE_TAG`（提交 SHA）拼成。
+    #
+    # 为什么不是写死的 `campfire-api`（2026-10-01 修正）：CD 把镜像推到
+    # `ghcr.io/<owner>/<repo>/api:<sha>`，而这里原写 `campfire-api:<sha>`——
+    # 两个引用不同名，`docker compose pull` 永远拉不到自己刚推的镜像，
+    # 发布链路**根本不工作**（docker 会把裸名当成 docker.io/library/campfire-api）。
+    # 改成变量后，同一份编排既能本地 `--build`，也能在生产 `pull` 仓库镜像。
+    image: ${IMAGE_API:-campfire-api}:${IMAGE_TAG:-local}
     container_name: campfire-api
     restart: unless-stopped
     depends_on:
@@ -190,7 +206,8 @@ services:
     build:
       context: .
       dockerfile: infrastructure/docker/Dockerfile.api
-    image: campfire-api:${IMAGE_TAG:-local}
+    # 与 api 同一镜像（同一 Dockerfile，只是 command 不同），因此共用 `IMAGE_API`。
+    image: ${IMAGE_API:-campfire-api}:${IMAGE_TAG:-local}
     container_name: campfire-worker
     restart: unless-stopped
     depends_on:
@@ -234,7 +251,7 @@ services:
       args:
         # 构建期内联（见 Dockerfile.web 文件头第 2 条）。必须是外部可访问的站点地址。
         VITE_API_DOMAIN: ${PUBLIC_BASE_URL:?生产必须显式设置 PUBLIC_BASE_URL（对外站点地址）}
-    image: campfire-web:${IMAGE_TAG:-local}
+    image: ${IMAGE_WEB:-campfire-web}:${IMAGE_TAG:-local}
     container_name: campfire-web
     restart: unless-stopped
     depends_on:
