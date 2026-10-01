@@ -102,11 +102,18 @@ services:
       # FalkorDB 基于 Redis，支持 requirepass。dev 那份未设（本地容器默认无密码），
       # 生产必须设（见 `FALKORDB_PASSWORD`）。
       REDIS_ARGS: "--requirepass ${FALKORDB_PASSWORD:?生产必须显式设置 FALKORDB_PASSWORD}"
+      # 健康检查要读到密码。**必须显式传进来**：容器里原本只有 `REDIS_ARGS`
+      # （那条字符串里含密码），并没有名为 `FALKORDB_PASSWORD` 的环境变量。
+      # 健康检查写成 `redis-cli -a "$$FALKORDB_PASSWORD"` 时它展开成空串 →
+      # `AUTH failed: WRONGPASS` → 容器永远 unhealthy → `api` 因 depends_on
+      # 健康条件而起不来。这是 2026-10-01 真机部署时抓到的缺陷。
+      FALKORDB_PASSWORD: ${FALKORDB_PASSWORD:?}
     volumes:
       - falkordb_data_prod:/data
     healthcheck:
-      # dev 那份的 healthcheck 自注「未实测」；这里用带密码的 ping。
-      test: ["CMD-SHELL", "redis-cli -p 6379 -a \"$$FALKORDB_PASSWORD\" ping | grep -q PONG"]
+      # 用 `-a` 带密码 ping。注意 `$$` 是交给**容器内** shell 展开的转义
+      # （单个 `$` 会被 compose 在解析时展开成本机环境变量）。
+      test: ["CMD-SHELL", "redis-cli -p 6379 -a \"$$FALKORDB_PASSWORD\" --no-auth-warning ping | grep -q PONG"]
       interval: 10s
       timeout: 5s
       retries: 6
@@ -134,7 +141,12 @@ services:
       # dev 那份**没有** healthcheck，而它在鉴权关键路径上——没有它，
       # `depends_on: service_healthy` 无从表达「等 core 起来再给流量」。
       # `/hello` 不需要 API key（实测），因此这里不传凭据。
-      test: ["CMD-SHELL", "wget -qO- http://localhost:3567/hello || exit 1"]
+      #
+      # 用 `curl` 而不是 `wget`：本镜像（supertokens-postgresql:12.2.0）**不含 wget**，
+      # 写了 wget 会让健康检查一直报 `/bin/sh: 1: wget: not found` → 永远 unhealthy
+      # → `api` 因 depends_on 健康条件而起不来。这是 2026-10-01 真机部署时抓到的缺陷
+      # （实测该镜像里有 curl，`curl -s http://localhost:3567/hello` 返回 `Hello`）。
+      test: ["CMD-SHELL", "curl -fsS --max-time 4 http://localhost:3567/hello || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 6
@@ -267,9 +279,13 @@ services:
       # 目录不存在时 Docker 会创建一个空目录，nginx 仍能启动（TLS 块默认关闭）。
       - ./infrastructure/nginx/ssl:/etc/nginx/ssl:ro
     healthcheck:
-      # 用 `/livez`：它只证明 nginx 在服务，不依赖后端——后端不可用时 nginx 本身
-      # 没坏，重启它没有意义（那正是区分 livez/readyz 的理由）。
-      test: ["CMD-SHELL", "wget -qO- http://localhost/livez || exit 1"]
+      # 打 `/nginx-health`（nginx 直接应答的本地端点），**不是** `/livez`。
+      #
+      # 为什么（2026-10-01 真机部署时抓到）：nginx.conf 里的 `/livez`、`/readyz`、
+      # `/health` 都是 `proxy_pass` 到 api 的，因此打 `/livez` 实际在验「后端是否活着」。
+      # 那会让「后端挂了」把 web 容器标成 unhealthy 并被重启——而重启 nginx 对后端
+      # 毫无帮助（这正是区分 livez/readyz 的理由）。本容器的健康只应反映它自己。
+      test: ["CMD-SHELL", "wget -qO- http://localhost/nginx-health | grep -q ok || exit 1"]
       interval: 15s
       timeout: 5s
       retries: 5
