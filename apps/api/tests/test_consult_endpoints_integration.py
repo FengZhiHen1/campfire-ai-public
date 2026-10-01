@@ -25,6 +25,8 @@
 from __future__ import annotations
 
 import asyncio
+import json
+import logging
 import uuid
 from collections.abc import AsyncIterator, Sequence
 
@@ -82,6 +84,7 @@ from campfire.surfaces.consult.injections import (
 )
 from campfire.surfaces.consult.object_names import read_object_names
 from campfire.surfaces.consult.runbus import (
+    MAX_FRAME_CHARS,
     RUN_NOT_RUNNING,
     RUN_STATUS_RUNNING,
     RunMeta,
@@ -91,6 +94,7 @@ from campfire.surfaces.consult.runbus import (
     mutex_key,
     write_run_meta,
 )
+from campfire.surfaces.consult.sse import encode_frame
 
 # 本文件的用例全是 async（仓库未开 pytest-asyncio 的 auto 模式，逐个加标记是既有做法）。
 pytestmark = [pytest.mark.integration, pytest.mark.asyncio]
@@ -821,6 +825,80 @@ async def test_stream_raw_bytes_are_three_line_frames(client: httpx.AsyncClient)
     assert frames[0].split("\n")[1] == "event: run_started"
     assert frames[-1].split("\n")[1] == "event: run_finished", "终态事件后必须关流"
     assert text.endswith("\n\n")
+
+
+def _split_frames(text: str) -> list[str]:
+    """把整条流按空行切成帧，并把结尾空行补回去（补回去才能逐字节比对）。
+
+    心跳是空注释行，不成帧形状但会被切成一个非空块——出现时 `_frame_ids` 会直接报错，
+    这是刻意的：本文件的用例都在运行终结后才读流，正常路径上不该有心跳。
+    """
+    return [chunk + "\n\n" for chunk in text.split("\n\n") if chunk]
+
+
+def _frame_ids(frames: Sequence[str]) -> list[int]:
+    """各帧 `id` 行的序号——序号是帧顺序与「有没有帧被丢掉」的可观测凭据。"""
+    return [int(frame.split("\n")[0][4:]) for frame in frames]
+
+
+async def test_oversized_event_is_dropped_instead_of_delivered_as_half_json(
+    client: httpx.AsyncClient, caplog: pytest.LogCaptureFixture
+) -> None:
+    """超长帧不得以「半截 JSON」上线：客户端要么收到完整帧，要么收不到这一条。
+
+    判别性用例（修复前会红）。脚本化运行器产出一条超过 `MAX_FRAME_CHARS` 的文本增量：
+    修复前它按上界切片后原样上线，`data` 行的 JSON 被拦腰切断，前端只能得到一次
+    `JSON.parse` 失败；修复后它在缓冲读侧被丢弃。四条断言各钉一件事：
+
+    1. 送出的每一帧的 `data` 行都能 JSON 解析——判别性就在这里；
+    2. 序号出现一个缺口（1、3）：契约 4.2 的 `id` 是运行内单调递增的序号，
+       缺口本身就是客户端可判定的「有一条事件没送达」的检测通道；
+    3. 追加侧与丢弃侧各有一条 warning，都带运行标识——服务端并非无信号；
+    4. 正控：终态帧逐字节等于编码器输出；另一次「帧长恰好等于上界」的运行三帧齐全、
+       且那条大帧逐字节等于编码器输出——检测只针对截断，不针对长度，
+       正常帧路径未被改动。
+    """
+    oversized_delta = "超长" * (MAX_FRAME_CHARS // 2)
+    assert len(encode_frame(2, TextDeltaEvent(delta=oversized_delta))) > MAX_FRAME_CHARS, (
+        "用例前提：这条事件必须真的超过上界"
+    )
+    runner = ScriptedRunner(get_settings(), deltas=(oversized_delta,))
+    _install_runner(runner)
+    session_id = await _create_session(client)
+    accepted = await _send(client, session_id, content="你好")
+    run_id = accepted.json()["run_id"]
+
+    with caplog.at_level(logging.WARNING):
+        await drain_pumps()
+        response = await _read_stream(client, run_id)
+    assert response.status_code == 200
+
+    frames = _split_frames(response.content.decode("utf-8"))
+    # 判据先行：这一条就是「客户端不会收到半截 JSON」，修复前它先红。
+    for frame in frames:
+        lines = frame.split("\n")
+        payload = json.loads(lines[2][6:])
+        assert payload["type"] == lines[1][7:], f"恒等映射不得被这条路径破坏：{frame[:80]!r}"
+    assert _frame_ids(frames) == [1, 3], f"超长帧必须被丢弃、其余帧照发：{_frame_ids(frames)}"
+
+    assert "事件帧超长" in caplog.text and run_id in caplog.text, caplog.text
+    assert "事件缓冲里有一条解析不出的帧，已丢弃" in caplog.text, caplog.text
+
+    assert frames[-1] == encode_frame(
+        3,
+        RunFinishedEvent(reason="completed", citations=(), usage=RunUsage(), elapsed_seconds=0.01),
+    ), "终态帧必须与编码器输出逐字节一致"
+
+    # 正控：帧长恰好等于上界（append_event 不截断）时照常送达，字节不变。
+    overhead = len(encode_frame(2, TextDeltaEvent(delta="")))
+    at_bound_delta = "x" * (MAX_FRAME_CHARS - overhead)
+    _install_runner(ScriptedRunner(get_settings(), deltas=(at_bound_delta,)))
+    control_session = await _create_session(client)
+    control = await _send(client, control_session, content="你好")
+    await drain_pumps()
+    control_frames = _split_frames((await _read_stream(client, control.json()["run_id"])).content.decode("utf-8"))
+    assert _frame_ids(control_frames) == [1, 2, 3]
+    assert control_frames[1] == encode_frame(2, TextDeltaEvent(delta=at_bound_delta))
 
 
 async def test_stream_resumes_from_last_event_id(client: httpx.AsyncClient) -> None:
