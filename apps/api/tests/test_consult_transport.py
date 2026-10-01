@@ -32,6 +32,7 @@ from campfire.surfaces.consult.answers import (
 )
 from campfire.surfaces.consult.routes import parse_last_event_id
 from campfire.surfaces.consult.runbus import (
+    MAX_FRAME_CHARS,
     RUN_NOT_RESUMABLE,
     SESSION_BUSY,
     RunMeta,
@@ -106,6 +107,41 @@ def test_decode_rejects_frames_it_did_not_write(raw: str) -> None:
     """认不出的原文显式报错——静默跳过会让续传从错误的序号开始。"""
     with pytest.raises(ValueError):
         decode_frame(raw)
+
+
+def test_truncated_frame_is_rejected_instead_of_passing_as_half_a_json_frame() -> None:
+    """超长帧被切片后必须解析失败：半截 JSON 一旦解析成功就会被原样送给客户端。
+
+    判别性用例（`append_event` 的截断不动时会红）。两种切法都要盖住：
+
+    - 切点落在 `data` 行中间——JSON 少了收尾大括号，解析必然失败；
+    - 帧长恰好是上界 +1（切片只切掉最后一个换行），`data` 行本身仍然完整——
+      这种切法只有「帧必须以空行收尾」这条校验才拦得住。
+    """
+    oversized = encode_frame(7, TextDeltaEvent(delta="x" * (2 * MAX_FRAME_CHARS)))
+    assert len(oversized) > MAX_FRAME_CHARS
+    with pytest.raises(ValueError):
+        decode_frame(oversized[:MAX_FRAME_CHARS])
+
+    overhead = len(encode_frame(7, TextDeltaEvent(delta="")))
+    edge = encode_frame(7, TextDeltaEvent(delta="x" * (MAX_FRAME_CHARS + 1 - overhead)))
+    assert len(edge) == MAX_FRAME_CHARS + 1
+    with pytest.raises(ValueError):
+        decode_frame(edge[:MAX_FRAME_CHARS])
+
+
+def test_a_frame_at_the_bound_still_decodes_byte_for_byte() -> None:
+    """正控：只是「大」而没超界的帧照常解析，字节与编码器输出逐字一致。
+
+    这条是为「把大帧一律拒掉」的实现准备的：那种实现能让上一条用例通过，却会让恰好
+    等于上界（`append_event` 不截断）的帧也送不出去。它同时钉住正常帧路径没被改动。
+    """
+    overhead = len(encode_frame(7, TextDeltaEvent(delta="")))
+    frame = encode_frame(7, TextDeltaEvent(delta="x" * (MAX_FRAME_CHARS - overhead)))
+    assert len(frame) == MAX_FRAME_CHARS
+    assert decode_frame(frame) == (7, "text_delta")
+    assert frame.startswith('id: 7\nevent: text_delta\ndata: {"delta":"xxx')
+    assert frame.endswith('","type":"text_delta"}\n\n')
 
 
 def test_unknown_payload_type_is_an_explicit_error() -> None:

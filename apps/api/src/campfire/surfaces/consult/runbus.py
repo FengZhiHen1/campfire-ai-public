@@ -84,7 +84,9 @@ RUN_STATUS_FINISHED: RunStatus = "finished"
 
 #: 事件缓冲里单条帧的长度上界（CORE-11）。一条事件本身就是模型增量或工具摘要，
 #: 基座侧已有摘要长度上界（`SUMMARY_LIMIT`）；这里兜的是「万一某个载荷失控」，
-#: 超界的帧会被截断并记警告，而不是让一次 RPUSH 写入兆字节。
+#: 超界的帧会被截断并记警告，而不是让一次 RPUSH 写入兆字节。截断的帧只在缓冲里
+#: 占位：它的 `data` 行已是半截 JSON，读侧解析不出，因此会丢弃它并再记一条警告——
+#: 宁可少送达一条事件，也不把半截 JSON 送给客户端（读侧见 :func:`read_events_after`）。
 MAX_FRAME_CHARS = 256 * 1024
 
 
@@ -312,7 +314,16 @@ async def append_event(cache: RedisCache, *, run_id: str, seq: int, event: RunEv
     """
     frame = encode_frame(seq, event)
     if len(frame) > MAX_FRAME_CHARS:
-        logger.warning("事件帧超长，已截断：运行=%s 序号=%s 长度=%s", run_id, seq, len(frame))
+        # 超长的帧切片后仍然占一个缓冲元素，而不是不写：缓冲的下标与序号一一对应
+        # （换算见 read_events_after），少写一条会让其后所有帧的序号与下标错位，续传
+        # 于是跳过没发过的事件。这条残缺帧只当占位——它的 data 行是被切断的 JSON，
+        # 读侧据此丢弃并记日志，半截 JSON 不会上线（见 sse.decode_frame）。
+        logger.warning(
+            "事件帧超长，已按上界截断并占位（读侧会丢弃它）：运行=%s 序号=%s 长度=%s",
+            run_id,
+            seq,
+            len(frame),
+        )
         frame = frame[:MAX_FRAME_CHARS]
     await cache.rpush(events_key(run_id), frame, ttl_seconds=RUN_BUFFER_TTL_SECONDS)
     await cache.expire(meta_key(run_id), RUN_BUFFER_TTL_SECONDS)
@@ -320,6 +331,10 @@ async def append_event(cache: RedisCache, *, run_id: str, seq: int, event: RunEv
 
 async def read_events_after(cache: RedisCache, *, run_id: str, after_seq: int) -> list[tuple[int, str]]:
     """读序号大于 `after_seq` 的帧（含序号与原文），按序号升序。
+
+    解析不出的帧不进返回列表：调用方拿到帧就送上线，而缓冲里解析不出的帧只可能是
+    被截断的超长帧（见 :func:`append_event`）或别的东西占用了同名键——两种都不该
+    送给客户端。
 
     列表下标与序号的换算：序号从 1 开始，列表下标从 0 开始（第 n 条的下标是 n-1），
     因此「序号大于 after_seq」的下标起点就是 `after_seq`。这条换算只写在这里一处。
@@ -332,16 +347,21 @@ async def read_events_after(cache: RedisCache, *, run_id: str, after_seq: int) -
         try:
             seq, _name = decode_frame(raw)
         except ValueError:
-            logger.warning("事件缓冲里有一条解析不出的帧，已跳过：运行=%s", run_id)
+            # 丢弃是显式的：长度与运行标识都进日志，与 append_event 那条 warning 一起
+            # 构成「哪次运行的哪一条事件没能送达」的完整信号（契约没有可告诉客户端的
+            # 帧类型，这条链路的可观测性只能落在这里）。
+            logger.warning("事件缓冲里有一条解析不出的帧，已丢弃：运行=%s 长度=%s", run_id, len(raw))
             continue
-        # 截断过的帧会解析失败（json 行不完整由调用方按需处理）：它仍带正确的 id 行，
-        # 因此按原样交给调用方，由它决定怎么送给客户端。
         frames.append((seq, raw))
     return frames
 
 
 async def last_event_seq(cache: RedisCache, *, run_id: str) -> int:
-    """缓冲里最后一条事件的序号；缓冲为空或不存在时返回 0。"""
+    """缓冲里最后一条事件的序号；没有可读的帧时返回 0。
+
+    没有可读的帧包括两种：缓冲为空或不存在，以及最后一条是被截断的超长帧——后者的
+    正文已经不在缓冲里，它的序号不再代表任何可送达的内容。
+    """
     frames = await cache.lrange(events_key(run_id), -1, -1)
     if not frames:
         return 0

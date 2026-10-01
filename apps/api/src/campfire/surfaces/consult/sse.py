@@ -137,8 +137,16 @@ def decode_frame(raw: str) -> tuple[int, str]:
     格式的两端，放在同一个模块里——分开两处时，改了一处忘另一处会得到
     「续传从错误的序号开始」这种只在断线后出现的缺陷。
 
+    三行都要读到，`data` 行不完整即判为截断帧。只读 `id` 与 `event` 时，被截断过的
+    帧（`runbus.append_event` 在超过 `MAX_FRAME_CHARS` 时按上界切片）会解析成功，
+    于是半截 JSON 被原样送给客户端，前端只能得到一次 `JSON.parse` 失败；而没被截断的
+    帧一律由 :func:`encode_frame` 写出，它的 `data` 行总是完整的 JSON。切片切在 `data`
+    行中间时 JSON 解析必然失败（载荷是对象，它的收尾大括号已被切掉），切点恰好落在
+    结尾空行之前时 JSON 仍完整——因此还要单独校验帧以空行收尾，两种切法都盖得住。
+
     Raises:
-        ValueError: 原文不是本模块写出的三行帧。
+        ValueError: 原文不是本模块写出的三行帧，或它已被截断（`data` 行不是完整
+            JSON、帧尾缺空行）。
     """
     lines = raw.split("\n")
     if len(lines) < 3 or not lines[0].startswith("id: "):
@@ -149,4 +157,12 @@ def decode_frame(raw: str) -> tuple[int, str]:
         raise ValueError("事件帧的 id 行不是整数") from exc
     if not lines[1].startswith("event: "):
         raise ValueError("事件帧的第二行不是 event 行")
+    if not lines[2].startswith("data: "):
+        raise ValueError("事件帧的第三行不是 data 行")
+    try:
+        json.loads(lines[2][6:])
+    except json.JSONDecodeError as exc:
+        raise ValueError("事件帧的 data 行不是完整的 JSON（帧被截断过）") from exc
+    if not raw.endswith("\n\n"):
+        raise ValueError("事件帧缺少结尾空行（帧被截断过）")
     return seq, lines[1][7:]

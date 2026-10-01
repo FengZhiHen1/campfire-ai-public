@@ -696,11 +696,11 @@ async def _stream_frames(
         for seq, raw in frames:
             cursor = max(cursor, seq)
             yield raw
-            try:
-                _seq, name = decode_frame(raw)
-            except ValueError:
-                # 截断过的帧：id 行仍可读时按事件送出去，读不出就当它不存在。
-                continue
+            # 这里不再捕获解析异常：能读出来的帧都已经过 read_events_after 的解析过滤
+            # （被截断的超长帧在那里就被丢弃并记了日志），所以这一段拿到的原文必然是
+            # 本模块编码出的完整帧。真出现解析失败就是编解码分叉，那要显式暴露，
+            # 而不是在流里静默略过——静默正是「半截 JSON 被送出去」的成因。
+            _seq, name = decode_frame(raw)
             if name in TERMINAL_EVENT_TYPES:
                 terminal_seen = True
                 break
