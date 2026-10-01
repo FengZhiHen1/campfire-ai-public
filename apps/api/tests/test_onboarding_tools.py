@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import json
 from datetime import datetime, timezone
-from typing import Any
 
 import pytest
 
@@ -30,7 +29,7 @@ _ACCOUNT = "tool_test_account"
 
 
 class _FakeIndex:
-    def add(self, *_args: Any, **_kwargs: Any) -> None: ...
+    def add(self, *_args: object, **_kwargs: object) -> None: ...
 
 
 def _context(payload: object | None = None) -> ToolContext:

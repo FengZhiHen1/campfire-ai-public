@@ -550,10 +550,10 @@ def test_read_failure_is_aggregated_instead_of_escaping(tmp_path: Path, monkeypa
     _make_skill(tmp_path, "sample")
     original_read_text = Path.read_text
 
-    def flaky_read_text(self: Path, *args: object, **kwargs: object) -> str:
+    def flaky_read_text(self: Path, encoding: str | None = None, errors: str | None = None) -> str:
         if self.name == SKILL_FILE_NAME:
             raise PermissionError(13, "Permission denied")
-        return original_read_text(self, *args, **kwargs)  # type: ignore[arg-type]
+        return original_read_text(self, encoding=encoding, errors=errors)
 
     monkeypatch.setattr(Path, "read_text", flaky_read_text)
 

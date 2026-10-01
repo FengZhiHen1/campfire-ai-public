@@ -377,8 +377,8 @@ async def test_both_paths_failing_raises_instead_of_returning_empty() -> None:
 
     with pytest.raises(RetrievalError):
         await search(
-            _BoomSession(),  # type: ignore[arg-type]
-            _BoomStore(),  # type: ignore[arg-type]
+            _BoomSession(),  # type: ignore[arg-type]  # 最小替身：只用来让两条路各抛一次，不是真会话
+            _BoomStore(),  # type: ignore[arg-type]  # 同上：只用来让向量路抛错
             "孤独症",
             embed_query=_boom_embed,
         )

@@ -167,7 +167,7 @@ def test_injection_rejects_roles_outside_the_allowed_set(role: str) -> None:
     并且挡住 ``tool`` 这类不属于注入消息的角色。
     """
     with pytest.raises(InjectionError, match="不被允许"):
-        InjectionItem(source="catalog", content="x", role=role)  # type: ignore[arg-type]
+        InjectionItem(source="catalog", content="x", role=role)  # type: ignore[arg-type]  # 故意传词表外的角色：本用例测的就是运行期也拦（调用方不一定过类型检查）
 
 
 def test_injection_rejects_empty_source_or_content() -> None:
@@ -255,7 +255,7 @@ async def test_partial_render_failure_reports_what_already_reached_the_index() -
             raise RuntimeError("索引写入失败")
         await original_add(record)
 
-    index.add = flaky_add  # type: ignore[method-assign]
+    index.add = flaky_add  # type: ignore[method-assign]  # 替身故意替换实例上的方法，注入一次索引写入失败
 
     with pytest.raises(InjectionRenderError) as error:
         await batch.render(recorder)

@@ -17,7 +17,6 @@ from __future__ import annotations
 import dataclasses
 import json
 from datetime import datetime, timezone
-from typing import Any
 
 import pytest
 
@@ -58,7 +57,7 @@ CONTRACT_STATE_VALUES = {
 
 
 class _FakeIndex:
-    def add(self, *_args: Any, **_kwargs: Any) -> None: ...
+    def add(self, *_args: object, **_kwargs: object) -> None: ...
 
 
 def _context(payload: object | None = None) -> ToolContext:
@@ -89,9 +88,9 @@ def _scope(pool: ToolPool):
     return resolve_scope(pool, default_active=pool.names())
 
 
-def _raw_args(**overrides: Any) -> dict[str, Any]:
+def _raw_args(**overrides: object) -> dict[str, object]:
     """一份合法的原始参数（未过模型），供各用例叠加越界项。"""
-    base: dict[str, Any] = {
+    base: dict[str, object] = {
         "sections": [
             {
                 "key": "status",
@@ -117,8 +116,27 @@ def _raw_args(**overrides: Any) -> dict[str, Any]:
     return base
 
 
-def _args(**overrides: Any) -> EmitEmergencyActionCardArgs:
+def _args(**overrides: object) -> EmitEmergencyActionCardArgs:
     return EmitEmergencyActionCardArgs.model_validate(_raw_args(**overrides))
+
+
+def _sections(payload: dict[str, object]) -> list[dict[str, object]]:
+    """取出载荷的 `sections` 并断言它是节对象的列表。
+
+    载荷用 `dict[str, object]` 描述（值本就异质，`Any` 会把类型错误一起放行），
+    而用例要在它上面增删改；形状由这里的断言钉住，而不是当作已知事实信任。
+    """
+    sections = payload["sections"]
+    assert isinstance(sections, list), "样本自身的 sections 必须是列表"
+    assert all(isinstance(section, dict) for section in sections), "每节必须是对象"
+    return sections
+
+
+def _line_count(section: dict[str, object]) -> int:
+    """某一节的 `lines` 条数；顺带钉住它必须是列表（计数用例只需要长度）。"""
+    lines = section["lines"]
+    assert isinstance(lines, list), "每节的 lines 必须是列表"
+    return len(lines)
 
 
 # ---------------------------------------------------------------------------
@@ -234,7 +252,7 @@ def test_missing_a_section_is_rejected() -> None:
     """
     for missing in SECTION_KEYS:
         raw = _raw_args()
-        raw["sections"] = [section for section in raw["sections"] if section["key"] != missing]
+        raw["sections"] = [section for section in _sections(raw) if section["key"] != missing]
         with pytest.raises(Exception):  # noqa: B017
             EmitEmergencyActionCardArgs.model_validate(raw)
 
@@ -254,7 +272,7 @@ def test_duplicated_section_key_is_rejected_even_with_seven_sections() -> None:
 def test_an_empty_section_is_rejected() -> None:
     """某节没有行 → 拒绝（契约第 5 节：「某节为空」是 `tool_invalid_arguments`）。"""
     raw = _raw_args()
-    raw["sections"][3]["lines"] = []
+    _sections(raw)[3]["lines"] = []
     with pytest.raises(Exception):  # noqa: B017
         EmitEmergencyActionCardArgs.model_validate(raw)
 
@@ -262,7 +280,7 @@ def test_an_empty_section_is_rejected() -> None:
 def test_a_blank_line_is_rejected() -> None:
     """空白行被拒：它是一条呈现上不存在的「动作」，会让一节看起来有内容而实际没有。"""
     raw = _raw_args()
-    raw["sections"][2]["lines"] = [""]
+    _sections(raw)[2]["lines"] = [""]
     with pytest.raises(Exception):  # noqa: B017
         EmitEmergencyActionCardArgs.model_validate(raw)
 
@@ -305,7 +323,7 @@ def test_an_annotation_pointing_outside_the_card_is_rejected() -> None:
     判别性：去掉 `_require_annotations_point_inside_the_card`，本用例失败——
     那条标注最终要么被丢弃（来源静默消失），要么被错配到别的行。
     """
-    total_lines = sum(len(section["lines"]) for section in _raw_args()["sections"])
+    total_lines = sum(_line_count(section) for section in _sections(_raw_args()))
 
     # 边界内（最后一行）合法。
     _args(annotations=[{"line_ref": total_lines, "source": "history", "confidence": "possible"}])
@@ -396,7 +414,7 @@ async def test_a_shuffled_payload_is_emitted_in_the_canonical_section_order() ->
 
     判别性：去掉 handler 里的排序，本用例失败——产出顺序会与模型给的乱序一致。
     """
-    shuffled = list(reversed(_raw_args()["sections"]))
+    shuffled = list(reversed(_sections(_raw_args())))
     assert [section["key"] for section in shuffled] != list(SECTION_KEYS), "样本必须真的乱序"
 
     outcome = await emit_emergency_action_card(_accounted(), _args(sections=shuffled))
@@ -468,7 +486,7 @@ def test_every_out_of_range_payload_fails_validation_not_rewriting() -> None:
     判别性：把任一枚举换成 `str` 并在 handler 里加一个 `.get(value, "unknown")` 兜底，
     本用例失败。
     """
-    out_of_range_payloads: list[dict[str, Any]] = [
+    out_of_range_payloads: list[dict[str, object]] = [
         _raw_args(states=[{"key": "medical_risk", "value": "critical"}]),
         _raw_args(states=[{"key": "deviation", "value": "severe"}]),
         _raw_args(states=[{"key": "communication", "value": "none"}]),

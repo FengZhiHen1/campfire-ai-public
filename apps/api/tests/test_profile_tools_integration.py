@@ -30,7 +30,6 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator
 from datetime import datetime, timezone
-from typing import Any
 
 import pytest
 import pytest_asyncio
@@ -65,7 +64,7 @@ CONTRACT_LAYER_TABLE: dict[str, tuple[str, str]] = {
 
 
 class _FakeIndex:
-    def add(self, *_args: Any, **_kwargs: Any) -> None: ...
+    def add(self, *_args: object, **_kwargs: object) -> None: ...
 
 
 def _context(account: str = _ACCOUNT) -> ToolContext:
@@ -79,8 +78,8 @@ def _context(account: str = _ACCOUNT) -> ToolContext:
     )
 
 
-def _args(object_id: str, **overrides: Any) -> ProposeProfileItemArgs:
-    base: dict[str, Any] = {
+def _args(object_id: str, **overrides: object) -> ProposeProfileItemArgs:
+    base: dict[str, object] = {
         "support_object_id": object_id,
         "domain": "communication",
         "topic": "表达需求的方式",

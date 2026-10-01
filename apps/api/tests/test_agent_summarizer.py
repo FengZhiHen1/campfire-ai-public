@@ -7,7 +7,7 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from typing import Any
 
 import httpx
@@ -25,7 +25,7 @@ BASE_URL = "https://tokenhub.test/v1"
 MODEL_NAME = "test-model"
 
 
-def _chunk(delta: dict[str, Any], finish_reason: str | None = None) -> str:
+def _chunk(delta: Mapping[str, object], finish_reason: str | None = None) -> str:
     payload = {
         "id": "chatcmpl-summary",
         "object": "chat.completion.chunk",
@@ -56,6 +56,8 @@ class ScriptedChat:
         self._output_tokens = output_tokens
         self._status = status_code
         self._with_cache = with_cache
+        # 请求体是 json.loads 的返回：源头就是动态 JSON，没有更精确的类型可标。
+        # quality-floor: ignore bare-any 值来自 json.loads，类型在源头就已丢失
         self.requests: list[dict[str, Any]] = []
 
     async def handler(self, request: httpx.Request) -> httpx.Response:
@@ -76,7 +78,7 @@ class ScriptedChat:
             + "data: [DONE]\n\n"
         ).encode()
 
-    def _json_body(self) -> dict[str, Any]:
+    def _json_body(self) -> dict[str, object]:
         """非流式应答：摘要调用走这条。"""
         return {
             "id": "chatcmpl-summary",
@@ -101,6 +103,8 @@ class ScriptedChat:
         }
 
     @property
+    # 与 `requests` 同源：各用例按 Chat Completions 的请求形状取值。
+    # quality-floor: ignore bare-any 值来自 json.loads，类型在源头就已丢失
     def body(self) -> dict[str, Any]:
         """第一次请求的请求体。"""
         return self.requests[0]
@@ -145,7 +149,7 @@ def _request(
     system_prompt: str = SYSTEM_PROMPT,
 ) -> SummaryRequest:
     return SummaryRequest(
-        prefix=tuple(prefix),  # type: ignore[arg-type]
+        prefix=tuple(prefix),
         system_prompt=system_prompt,
         instruction="把历史压成六节摘要。",
         previous_summary=None,

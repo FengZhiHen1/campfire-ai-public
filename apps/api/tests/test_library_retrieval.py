@@ -42,12 +42,12 @@ def _node(text: str, item_id: str, score: float) -> NodeWithScore:
 
 def _item(item_id: str, **overrides: object) -> KnowledgeItem:
     item = KnowledgeItem(
-        title=overrides.pop("title", "标题"),  # type: ignore[arg-type]
-        source=overrides.pop("source", "出处"),  # type: ignore[arg-type]
-        applicable_scope=overrides.pop("applicable_scope", "范围"),  # type: ignore[arg-type]
-        status=overrides.pop("status", "published"),  # type: ignore[arg-type]
+        title=overrides.pop("title", "标题"),
+        source=overrides.pop("source", "出处"),
+        applicable_scope=overrides.pop("applicable_scope", "范围"),
+        status=overrides.pop("status", "published"),
     )
-    item.id = uuid.UUID(item_id)  # type: ignore[assignment]
+    item.id = uuid.UUID(item_id)  # type: ignore[assignment]  # `id` 是主键列，静态类型是 SQLCoreOperations[UUID] | UUID，实例赋值必然不匹配
     item.withdrawn = bool(overrides.pop("withdrawn", False))
     return item
 
@@ -158,7 +158,7 @@ def test_aggregation_excludes_items_missing_source_or_status() -> None:
     """缺来源或状态的条目不进入结果——不补默认值（不变量）。"""
     item_id = "22222222-2222-2222-2222-222222222222"
     no_source = _item(item_id)
-    no_source.source = ""  # type: ignore[assignment]
+    no_source.source = ""
     nodes = [_node("内容", item_id, 0.9)]
 
     results = aggregate_to_items(nodes, {item_id: no_source})
@@ -396,23 +396,25 @@ def test_as_uuid_accepts_valid_id() -> None:
 def _case_item(item_id: str, **overrides: object) -> CaseItem:
     """构造一个案例条目（字段值全部虚构）。"""
     item = CaseItem(
-        external_key=overrides.pop("external_key", f"key-{item_id}"),  # type: ignore[arg-type]
-        title=overrides.pop("title", "虚构案例标题"),  # type: ignore[arg-type]
-        source=overrides.pop("source", "虚构出处"),  # type: ignore[arg-type]
-        applicable_scope=overrides.pop("applicable_scope", "虚构范围"),  # type: ignore[arg-type]
-        authorization=overrides.pop("authorization", "虚构样例"),  # type: ignore[arg-type]
-        source_type=overrides.pop("source_type", "专家访谈转写"),  # type: ignore[arg-type]
-        evidence_level=overrides.pop("evidence_level", "INSTITUTIONAL"),  # type: ignore[arg-type]
-        review_status=overrides.pop("review_status", "owner"),  # type: ignore[arg-type]
-        interview_at=overrides.pop("interview_at", datetime(2099, 1, 1, tzinfo=timezone.utc)),  # type: ignore[arg-type]
-        subject_type=overrides.pop("subject_type", "家长"),  # type: ignore[arg-type]
-        consent_scope=overrides.pop("consent_scope", "ai_retrieval_and_advice"),  # type: ignore[arg-type]
-        status=overrides.pop("status", "internal"),  # type: ignore[arg-type]
+        external_key=overrides.pop("external_key", f"key-{item_id}"),
+        title=overrides.pop("title", "虚构案例标题"),
+        source=overrides.pop("source", "虚构出处"),
+        applicable_scope=overrides.pop("applicable_scope", "虚构范围"),
+        authorization=overrides.pop("authorization", "虚构样例"),
+        source_type=overrides.pop("source_type", "专家访谈转写"),
+        evidence_level=overrides.pop("evidence_level", "INSTITUTIONAL"),
+        review_status=overrides.pop("review_status", "owner"),
+        interview_at=overrides.pop("interview_at", datetime(2099, 1, 1, tzinfo=timezone.utc)),
+        subject_type=overrides.pop("subject_type", "家长"),
+        consent_scope=overrides.pop("consent_scope", "ai_retrieval_and_advice"),
+        status=overrides.pop("status", "internal"),
     )
-    item.id = uuid.UUID(item_id)  # type: ignore[assignment]
+    item.id = uuid.UUID(item_id)  # type: ignore[assignment]  # `id` 是主键列，静态类型是 SQLCoreOperations[UUID] | UUID，实例赋值必然不匹配
     item.withdrawn = bool(overrides.pop("withdrawn", False))
     item.makes_claims_high_risk = bool(overrides.pop("makes_claims_high_risk", False))
-    item.inferred_fields = list(overrides.pop("inferred_fields", []))  # type: ignore[arg-type]
+    inferred = overrides.pop("inferred_fields", [])
+    assert isinstance(inferred, list), "样本自身的 inferred_fields 必须是列表"
+    item.inferred_fields = list(inferred)
     return item
 
 

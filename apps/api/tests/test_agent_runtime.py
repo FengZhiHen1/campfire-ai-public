@@ -13,13 +13,13 @@ from __future__ import annotations
 
 import asyncio
 import json
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import httpx
 import pytest
-from agents import ModelSettings
+from agents import ModelSettings, RunConfig
 from agents.items import TResponseInputItem
 from agents.memory.session import Session
 from agents.models.openai_chatcompletions import OpenAIChatCompletionsModel
@@ -57,6 +57,10 @@ from campfire.agent.runtime import (
 from campfire.agent.runtime.events import CitationEvent, RunUsage
 from campfire.agent.skill_runtime import SkillRegistry
 from campfire.agent.tools import ToolContext, ToolNotRegisteredError, ToolPool, ToolResult, ToolSpec
+
+if TYPE_CHECKING:
+    # 只为标注 `_openai_client` 的返回类型；运行时仍按本文件惯例在函数内 import。
+    from openai import AsyncOpenAI
 
 BASE_URL = "https://tokenhub.test/v1"
 MODEL_NAME = "test-model"
@@ -114,7 +118,7 @@ class SearchArgs(BaseModel):
     query: str
 
 
-def _chunk(delta: dict[str, Any], finish_reason: str | None = None) -> str:
+def _chunk(delta: Mapping[str, object], finish_reason: str | None = None) -> str:
     payload = {
         "id": "chatcmpl-test",
         "object": "chat.completion.chunk",
@@ -142,7 +146,7 @@ def text_reply(text: str, *, usage: dict[str, int] | None = None) -> bytes:
     )
 
 
-def tool_call_reply(name: str, arguments: dict[str, Any], *, call_id: str = "call-1") -> bytes:
+def tool_call_reply(name: str, arguments: Mapping[str, object], *, call_id: str = "call-1") -> bytes:
     """一次工具调用的 SSE 脚本。"""
     return _sse(
         _chunk({"role": "assistant", "content": None}),
@@ -168,6 +172,8 @@ class ScriptedChat:
     def __init__(self, script: Sequence[bytes], *, delay_seconds: float = 0.0) -> None:
         self._script = list(script)
         self._delay = delay_seconds
+        # 请求体是 json.loads 的返回：源头就是动态 JSON，没有更精确的类型可标。
+        # quality-floor: ignore bare-any 值来自 json.loads，类型在源头就已丢失
         self.requests: list[dict[str, Any]] = []
 
     async def handler(self, request: httpx.Request) -> httpx.Response:
@@ -177,7 +183,9 @@ class ScriptedChat:
         body = self._script.pop(0) if self._script else text_reply("（脚本已用尽）")
         return httpx.Response(200, headers={"content-type": "text/event-stream"}, content=body)
 
+    # 与 `requests` 同源：各用例按 Chat Completions 的 messages 形状取值。
     @property
+    # quality-floor: ignore bare-any 值来自 json.loads，类型在源头就已丢失
     def messages_seen(self) -> list[list[dict[str, Any]]]:
         """每次请求里模型看到的 messages。"""
         return [list(request.get("messages", [])) for request in self.requests]
@@ -195,7 +203,7 @@ def _binding(chat: ScriptedChat, *, settings: ModelSettings | None = None) -> Mo
     )
 
 
-def _openai_client(http_client: httpx.AsyncClient) -> Any:
+def _openai_client(http_client: httpx.AsyncClient) -> AsyncOpenAI:
     from openai import AsyncOpenAI
 
     return AsyncOpenAI(api_key="test-key", base_url=BASE_URL, max_retries=0, http_client=http_client)
@@ -286,15 +294,15 @@ async def _collect(runner: AgentRunner, request: RunRequest) -> list[object]:
     return [event async for event in runner.run(request)]
 
 
-def _request(**overrides: Any) -> RunRequest:
-    values: dict[str, Any] = {
+def _request(**overrides: object) -> RunRequest:
+    values: dict[str, object] = {
         "session_id": "s-1",
         "surface": "consult",
         "instructions": "静态系统提示",
         "user_input": "你好",
     }
     values.update(overrides)
-    return RunRequest(**values)
+    return RunRequest(**values)  # type: ignore[arg-type]  # dataclass 不接受 dict[str, object] 展开；字段名与取值由各用例的断言锁定
 
 
 # --- 请求形状校验 -----------------------------------------------------------
@@ -411,19 +419,21 @@ async def test_run_uses_no_turn_limit_and_installs_the_window_callback(monkeypat
     from agents import Runner
 
     chat = ScriptedChat([text_reply("好")])
-    captured: dict[str, Any] = {}
+    captured: dict[str, object] = {}
     original = Runner.run_streamed
 
-    def spy(starting_agent: object, input: object = None, **kwargs: Any) -> object:
+    def spy(starting_agent: object, input: object = None, **kwargs: object) -> object:
         captured.update(kwargs)
-        return original(starting_agent, input, **kwargs)  # type: ignore[arg-type]
+        return original(starting_agent, input, **kwargs)  # type: ignore[arg-type]  # 逐字转发 SDK 自己的调用参数，签名由 SDK 定义
 
     monkeypatch.setattr(Runner, "run_streamed", spy)
 
     await _collect(_runner(binding=_binding(chat), session=FakeSession("s-1")), _request())
 
     assert captured["max_turns"] is None
-    assert callable(captured["run_config"].session_input_callback)
+    run_config = captured["run_config"]
+    assert isinstance(run_config, RunConfig), "装配处必须传 SDK 自己的 RunConfig"
+    assert callable(run_config.session_input_callback)
 
 
 # --- 技能目录、激活与工具可用性 ---------------------------------------------
@@ -1260,12 +1270,12 @@ def _compaction_settings(**overrides: object) -> CompactionSettings:
         "headroom_tokens": 100,
     }
     values.update(overrides)
-    return CompactionSettings(**values)  # type: ignore[arg-type]
+    return CompactionSettings(**values)  # type: ignore[arg-type]  # 夹具以 object 组合再交给 dataclass，静态类型看不出这层收敛
 
 
 def _long_history(count: int = 60) -> list[TResponseInputItem]:
     """一段足够越过阈值的历史。"""
-    return [{"role": "user", "content": f"历史 {index} " + "字" * 80} for index in range(count)]  # type: ignore[list-item]
+    return [{"role": "user", "content": f"历史 {index} " + "字" * 80} for index in range(count)]
 
 
 def _wiring(

@@ -431,7 +431,7 @@ async def test_failed_write_leaves_no_readable_episode(memory_graph: MemoryGraph
             raise RuntimeError("模拟抽取失败")
 
         original = memory_graph.graphiti.add_episode
-        memory_graph.graphiti.add_episode = _boom  # type: ignore[method-assign]
+        memory_graph.graphiti.add_episode = _boom  # type: ignore[method-assign]  # 替身故意替换实例上的 add_episode，注入抽取阶段失败
         try:
             with pytest.raises(MemoryUnavailableError):
                 await write_episode(
@@ -443,7 +443,7 @@ async def test_failed_write_leaves_no_readable_episode(memory_graph: MemoryGraph
                     source_description="session=s1",
                 )
         finally:
-            memory_graph.graphiti.add_episode = original  # type: ignore[method-assign]
+            memory_graph.graphiti.add_episode = original  # type: ignore[method-assign]  # 还原被替换的方法，避免影响同进程的其他用例
 
         # 图库里不得残留该节点（补偿删除仍应尽力清理）。
         scoped = memory_graph.driver_for(_ACCOUNT)
@@ -500,7 +500,7 @@ async def test_hard_kill_leftover_is_unreadable_by_both_paths(memory_graph: Memo
             raise RuntimeError("进程在此刻消失（后续清理永不执行）")
 
         original = memory_graph.graphiti.add_episode
-        memory_graph.graphiti.add_episode = _partial  # type: ignore[method-assign]
+        memory_graph.graphiti.add_episode = _partial  # type: ignore[method-assign]  # 替身故意替换实例上的 add_episode，模拟「节点已写、完成标记未写」
         try:
             with pytest.raises(MemoryUnavailableError):
                 await write_episode(
@@ -512,7 +512,7 @@ async def test_hard_kill_leftover_is_unreadable_by_both_paths(memory_graph: Memo
                     source_description="session=hk",
                 )
         finally:
-            memory_graph.graphiti.add_episode = original  # type: ignore[method-assign]
+            memory_graph.graphiti.add_episode = original  # type: ignore[method-assign]  # 还原被替换的方法，避免影响同进程的其他用例
 
         # 先把 episode 节点恢复成「未完成」以忠实模拟硬杀现场（补偿删除已把它清掉，
         # 但真实硬杀时它仍在且无完成标记）。这里直接重建一个**无完成标记**的节点，
@@ -578,7 +578,7 @@ async def test_retry_of_a_written_episode_does_not_downgrade_the_marker(memory_g
             raise RuntimeError("重试时抽取失败")
 
         original = memory_graph.graphiti.add_episode
-        memory_graph.graphiti.add_episode = _boom  # type: ignore[method-assign]
+        memory_graph.graphiti.add_episode = _boom  # type: ignore[method-assign]  # 替身故意替换实例上的 add_episode，注入抽取阶段失败
         try:
             with pytest.raises(MemoryUnavailableError):
                 await write_episode(
@@ -590,7 +590,7 @@ async def test_retry_of_a_written_episode_does_not_downgrade_the_marker(memory_g
                     source_description="session=1",
                 )
         finally:
-            memory_graph.graphiti.add_episode = original  # type: ignore[method-assign]
+            memory_graph.graphiti.add_episode = original  # type: ignore[method-assign]  # 还原被替换的方法，避免影响同进程的其他用例
 
         # 关键断言：原本可读的记忆必须仍然可读。
         rows, _, _ = await scoped.execute_query("MATCH (e:Episodic {uuid: $u}) RETURN e.write_state AS ws", u=key)
@@ -657,12 +657,12 @@ async def test_worker_classifies_graph_failure_as_retryable_not_dead(memory_grap
 
         # 让任务用这个替身，而不是真实图库。
         original = worker_module._get_memory_graph
-        worker_module._get_memory_graph = lambda: _BrokenGraph()  # type: ignore[assignment]
+        worker_module._get_memory_graph = lambda: _BrokenGraph()  # type: ignore[assignment]  # 用替身替换模块级取图函数：`_BrokenGraph` 只实现本用例走得通的那部分
         try:
             with pytest.raises(MemoryUnavailableError):
                 await worker_module.consume_memory_episode_task(pending_id, lease_owner="w")
         finally:
-            worker_module._get_memory_graph = original  # type: ignore[assignment]
+            worker_module._get_memory_graph = original
 
         async with session_scope(get_settings()) as session:
             row = (await session.execute(select(PendingWrite).where(PendingWrite.id == pending_id))).scalar_one()

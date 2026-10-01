@@ -272,11 +272,11 @@ async def test_timeline_limit_is_bounded_by_server_cap(memory_graph: MemoryGraph
             seen_limits.append(params["limit"])
         return await real_execute(cypher, **params)
 
-    scoped.execute_query = spy  # type: ignore[method-assign]
+    scoped.execute_query = spy  # type: ignore[method-assign]  # 替身故意替换实例上的查询方法，用来观察发给图库的 LIMIT
     try:
         await _read_timeline(memory_graph, _ACCOUNT_A, limit=10_000)
     finally:
-        scoped.execute_query = real_execute  # type: ignore[method-assign]
+        scoped.execute_query = real_execute  # type: ignore[method-assign]  # 还原被替换的方法，避免影响同进程的其他用例
 
     assert seen_limits, "前置条件：查询必须带着 limit 参数发给图库"
     assert seen_limits[0] == TIMELINE_MAX_LIMIT, (
@@ -958,7 +958,7 @@ async def test_aclose_closes_the_shared_client_exactly_once(memory_graph: Memory
         calls.append("aclose")
         return await original()
 
-    client.aclose = counting_aclose  # type: ignore[method-assign]
+    client.aclose = counting_aclose
     await memory_graph.aclose()
 
     assert len(calls) == 1, f"共享客户端应只关一次，实际关了 {len(calls)} 次"
