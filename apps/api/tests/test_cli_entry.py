@@ -536,15 +536,54 @@ def test_withdraw_takes_library_item_and_reason() -> None:
     assert args.reason == "上游撤回该案例"
 
 
+def test_withdraw_requires_a_reason(capsys: pytest.CaptureFixture[str]) -> None:
+    """`--reason` 必填：缺了它 argparse 以退出码 2 拒绝，走不到撤下用例。
+
+    为什么必填（`RQ-KB-04`）：撤下不可逆，设计要求在条目上记录时间与原因；做成可选时
+    `withdraw knowledge <id>` 会成功并把原因留成 NULL——「撤下过」从此查不出理由。
+
+    判别性：把 `required=True` 去掉，本用例因 SystemExit 未抛出而失败。
+    """
+    with pytest.raises(SystemExit) as excinfo:
+        _build_parser().parse_args(["withdraw", "knowledge", _ITEM_ID])
+
+    assert excinfo.value.code == 2
+    assert "--reason" in capsys.readouterr().err, "拒绝理由必须点名缺的是 --reason"
+
+
+@pytest.mark.parametrize("blank", ["", "   "])
+def test_withdraw_rejects_a_blank_reason(blank: str) -> None:
+    """空原因不算「给了原因」：`withdraw_item` 的 `if reason` 判假会把它留成 NULL。
+
+    `required=True` 只保证参数出现，不保证有内容；空白入参同样按参数错误（退出码 2）拒绝。
+
+    判别性：去掉 `type=_withdraw_reason`，本用例因 SystemExit 未抛出而失败。
+    """
+    with pytest.raises(SystemExit) as excinfo:
+        _build_parser().parse_args(["withdraw", "knowledge", _ITEM_ID, "--reason", blank])
+
+    assert excinfo.value.code == 2
+
+
+def test_withdraw_passes_the_reason_through_verbatim() -> None:
+    """原因原文透传（只校验、不去空白）：审计文本不该被 CLI 悄悄改写。"""
+    args = _build_parser().parse_args(["withdraw", "case", _ITEM_ID, "--reason", "  上游 撤回  "])
+
+    assert args.reason == "  上游 撤回  "
+
+
 @pytest.mark.parametrize("bad", ["cases", "Knowledge", "profile", ""])
 def test_withdraw_rejects_unknown_library_by_the_parser(bad: str) -> None:
     """非法库别被 argparse 的 choices 拒绝（退出码 2），不静默回退到某个库。
 
     退出码 2 是 argparse 对参数层面错误的既有行为；命令自己捕获的领域失败
     （条目不存在、id 非法）是 1——两者不混。
+
+    用例带上合法的 `--reason`：否则「未知库别」与该参数缺失都退 2，
+    断言会为错误的理由通过。
     """
     with pytest.raises(SystemExit) as excinfo:
-        _build_parser().parse_args(["withdraw", bad, _ITEM_ID])
+        _build_parser().parse_args(["withdraw", bad, _ITEM_ID, "--reason", "上游撤回该案例"])
 
     assert excinfo.value.code == 2
 
@@ -567,6 +606,7 @@ def test_withdraw_dispatches_to_the_use_case_and_prints_the_result(
             library=kwargs["library"],
             already_withdrawn=False,
             nodes_deleted=7,
+            manual_reviews_deleted=3,
         )
 
     _install_fake_withdraw_runtime(monkeypatch, fake_withdraw)
@@ -580,6 +620,9 @@ def test_withdraw_dispatches_to_the_use_case_and_prints_the_result(
     )
     assert f"已撤下：case/{_ITEM_ID}" in captured.out
     assert "删除检索节点：7" in captured.out
+    assert "清理人工处理队列：3" in captured.out, (
+        f"撤下顺手清掉的复核件数必须打印（与删除检索节点并列），实际 stdout={captured.out!r}"
+    )
     assert captured.err == "", f"首次撤下不该有幂等提示，实际 {captured.err!r}"
 
 
@@ -602,12 +645,13 @@ def test_withdraw_reports_already_withdrawn_on_a_rerun(
 
     _install_fake_withdraw_runtime(monkeypatch, fake_withdraw)
 
-    code = main(["withdraw", "knowledge", _ITEM_ID])
+    code = main(["withdraw", "knowledge", _ITEM_ID, "--reason", "第二次（不得覆盖首次原因）"])
 
     captured = capsys.readouterr()
     assert code == 0
     assert f"已撤下：knowledge/{_ITEM_ID}" in captured.out
     assert "删除检索节点：0" in captured.out
+    assert "清理人工处理队列：0" in captured.out
     assert "此前已撤下" in captured.err, f"重复撤下必须可辨，实际 stderr={captured.err!r}"
 
 
@@ -622,7 +666,7 @@ def test_withdraw_maps_a_domain_failure_to_exit_one(
 
     _install_fake_withdraw_runtime(monkeypatch, fake_withdraw)
 
-    code = main(["withdraw", "case", _ITEM_ID])
+    code = main(["withdraw", "case", _ITEM_ID, "--reason", "上游撤回该案例"])
 
     captured = capsys.readouterr()
     assert code == 1
@@ -645,7 +689,7 @@ def test_withdraw_maps_an_invalid_item_id_to_exit_one(
 
     _install_fake_withdraw_runtime(monkeypatch, fake_withdraw)
 
-    code = main(["withdraw", "knowledge", "not-a-uuid"])
+    code = main(["withdraw", "knowledge", "not-a-uuid", "--reason", "上游撤回该案例"])
 
     captured = capsys.readouterr()
     assert code == 1

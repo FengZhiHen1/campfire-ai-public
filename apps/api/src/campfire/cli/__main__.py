@@ -39,8 +39,8 @@ _USAGE = """campfire.cli —— 本地运维入口（不暴露成服务端点）
   ingest  <路径>         摄取处理好的 Markdown 文件到资料库
   ingest  <案例包目录> --library case
                          摄取上游案例包（manifest.json + L1 叙事 + L2 卡片）
-  withdraw <库别> <条目id> [--reason <原因>]
-                         撤下一个条目：打 withdrawn 标记并删除其检索节点（不可逆）
+  withdraw <库别> <条目id> --reason <原因>
+                         撤下一个条目：打 withdrawn 标记并删除其检索节点（不可逆，须给原因）
 
 运营子命令（见 docs/技术设计/decisions/运营操作经CLI.md）：
   invite issue          签发一张一次性邀请码
@@ -58,6 +58,30 @@ _USAGE = """campfire.cli —— 本地运维入口（不暴露成服务端点）
   python -m campfire.cli account reset 8f3a... --password '新密码'
   python -m campfire.cli account delete 8f3a... --confirm 8f3a...
 """
+
+
+def _withdraw_reason(value: str) -> str:
+    """校验命令行给出的撤下原因非空，并把原文交回。
+
+    为什么在解析层挡（`RQ-KB-04` 要求撤下记录时间与原因）：「必填」只保证参数出现，
+    不保证有内容——`--reason ""` 会让 `withdraw_item` 的 `if reason` 判假，原因落成
+    NULL，「撤下过」从此查不出理由。空串与只含空白的入参因此按参数错误拒绝（退出码 2），
+    与其它参数错误同一个出口。
+
+    只校验、不去空白：原因是审计文本，CLI 不替运维改写它写下的字。
+
+    Args:
+        value: 命令行给出的原因原文。
+
+    Returns:
+        原样返回的 `value`。
+
+    Raises:
+        argparse.ArgumentTypeError: 原因为空或只含空白。
+    """
+    if not value.strip():
+        raise argparse.ArgumentTypeError("撤下原因不能为空（RQ-KB-04 要求记录时间与原因）")
+    return value
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -112,7 +136,16 @@ def _build_parser() -> argparse.ArgumentParser:
     withdraw = sub.add_parser("withdraw", help="撤下一个条目：打 withdrawn 标记并删除其检索节点（不可逆）")
     withdraw.add_argument("library", choices=sorted(LIBRARIES), help="库别：knowledge（资料库）或 case（案例库）")
     withdraw.add_argument("item_id", help="条目 id（UUID）")
-    withdraw.add_argument("--reason", default=None, help="撤下原因（RQ-KB-04 要求记录时间与原因）")
+    # 原因在 CLI 层必填、在领域层保持可选：`RQ-KB-04` 要求撤下记录时间与原因
+    # （资料与案例检索第 4 节），但「必须给理由」是运维入口的策略，不是撤下用例本身的
+    # 判据——`withdraw_item` 还有别的调用方（集成测试、将来的批量脚本），低层不替它们
+    # 定策略。强制记录因此落在唯一的生产入口这一层，`withdrawal.py` 的判据不动。
+    withdraw.add_argument(
+        "--reason",
+        required=True,
+        type=_withdraw_reason,
+        help="撤下原因（必填；RQ-KB-04 要求记录时间与原因）",
+    )
 
     # 运营子命令（邀请码、账号）由 operator 模块提供——见该模块的说明。
     add_operator_subcommands(sub)
@@ -351,24 +384,28 @@ async def _run_ingest_knowledge(args: argparse.Namespace) -> int:
 
 
 async def _run_withdraw(args: argparse.Namespace) -> int:
-    """执行撤下：打 `withdrawn` 标记并删除该条目的检索节点（`RQ-KB-04`）。
+    """执行撤下：打 `withdrawn` 标记并删除该条目的检索节点与人工处理队列行（`RQ-KB-04`）。
 
     会话与事务边界照 `_run_ingest_knowledge`：`session_scope` 正常退出即提交，
     标记与节点删除因此落在同一个提交点上（否则会出现「节点还在、条目已被过滤」
     或反过来的窗口，见 `withdraw_item` 的说明）。
 
-    本命令只改条目表、删节点表，不做嵌入，因此不建同步引擎与向量库——那两样是
-    摄取路径为嵌入写入才需要的。
+    本命令只改条目表、删节点表与人工处理队列表，不做嵌入，因此不建同步引擎与
+    向量库——那两样是摄取路径为嵌入写入才需要的。
 
-    幂等由 `withdraw_item` 承担：本层如实呈现 `already_withdrawn` 与
-    `nodes_deleted`，不改写「首次时间与原因不可覆盖」的语义。
+    幂等由 `withdraw_item` 承担：本层如实呈现 `already_withdrawn`、`nodes_deleted` 与
+    `manual_reviews_deleted`，不改写「首次时间与原因不可覆盖」的语义。
+
+    撤下原因由解析层强制给出（`--reason` 必填且非空），本层原样透传给用例；原因是否
+    真的落库、落成什么值由 `withdraw_item` 决定，本层不代它复述——回显入参会在
+    「重复撤下不覆盖首次原因」时说出一个并未生效的原因。
 
     Args:
-        args: 含 `library`、`item_id`、`reason` 的命名空间。
+        args: 含 `library`、`item_id` 的命名空间；`reason` 由 `--reason` 保证有非空值。
 
     Returns:
         退出码：0 成功（含重复撤下）；1 条目不存在、条目 id 不是合法 UUID。
-        非法库别由 argparse 的 choices 在解析层以 2 退出，不经过本函数。
+        非法库别、缺 `--reason` 与空原因由 argparse 在解析层以 2 退出，不经过本函数。
     """
     settings = get_settings()
     try:
@@ -385,6 +422,10 @@ async def _run_withdraw(args: argparse.Namespace) -> int:
 
     print(f"已撤下：{result.library}/{result.item_id}")
     print(f"  删除检索节点：{result.nodes_deleted}")
+    # 与 `nodes_deleted` 并列打印、分开计数：撤下顺手清掉了多少条人工处理队列行，
+    # 是运维判断「这次撤下还带走了什么」的另一半证据；只报检索节点，队列里的摘录
+    # 是否清干净就不可见，而两者同属该条目的投影、同一次撤下里清掉。
+    print(f"  清理人工处理队列：{result.manual_reviews_deleted}")
     if result.already_withdrawn:
         # 幂等不是错误，但必须可辨：重跑脚本的运维要知道这次没有改动状态。
         print(
