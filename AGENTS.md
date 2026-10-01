@@ -25,8 +25,17 @@
 >
 > **仍未闭合**：压缩（`CompactionWiring`）未接线——其记账端口 `CompactionJournal` 尚无
 > 持久化实现，不接线的后果是窗口退化为全量历史（安全方向，不丢内容）；
-> TLS 证书、生产域名与目标服务器在仓库中**不存在任何事实**（由运维提供）；
 > 发布闸门 `EVID-A`～`EVID-D` 未处理（面向真实使用者前必须逐项关闭）。
+>
+> **生产环境已于 2026-10-01 落地**（此前本条写「TLS/域名/服务器不存在任何事实」，已失实）：
+> `campfire.wenran.me` → `43.161.195.236`（腾讯云 HK，`/opt/campfire`）；
+> Let's Encrypt 证书已签发（至 2026-12-30，**自动续期未配置**）；
+> 七个容器全部 healthy。**443 仍被云安全组拦着**（80 通、443 超时；Docker 的 DNAT 规则
+> 对两者对称、本机 iptables 无 443 的 DROP，已定位为云侧），因此当前只能用 HTTP 访问，
+> 80→443 跳转**刻意未启用**（443 不通时启用会让站点完全打不开）。
+> 放行 443 后执行 `.tmp/enable-redirect.sh` 的等价步骤（它先验 TCP 可连 + 证书链 +
+> HTTPS 上的 `/readyz`，三条全过才写入跳转）。
+> 验收流程见 [docs/运维/上线验收测试流程.md](docs/运维/上线验收测试流程.md)。
 
 ## Stack
 
@@ -67,9 +76,11 @@ uv run python scripts/check_design_docs.py
 pnpm install
 docker compose up -d          # PostgreSQL、Redis、FalkorDB、SuperTokens、MinIO
 
-# 生产（见 infrastructure/README.md；凭据与域名由运维提供）
+# 生产（部署目录 /opt/campfire；.env.prod 里有真实凭据，不入库）
+# 首次/本地构建用 --build；在**只有编排没有源码**的部署目录里务必 --no-build——
+# 否则 compose 会回落到本地构建，可能静默复用旧镜像（详见 deploy.yml 的说明）。
 docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --build
-curl -fsS https://<域名>/readyz   # 发布验证判据（不要用 /livez）
+curl -fsS https://campfire.wenran.me/readyz   # 发布验证判据（不要用 /livez）
 ```
 
 测试集中在 `apps/api/tests`；`archive/` 不参与收集。
