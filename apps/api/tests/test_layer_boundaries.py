@@ -14,9 +14,12 @@ docs/项目结构设计.md 第 7 节要求「依赖方向无环，并用白名�
 - `test_agent_layer_does_not_cite_product_side_docs`：禁引产品面的契约与产品
   决策记录，也禁用产品需求编号为自己的决策立论。
 
-不覆盖的部分（诚实声明）：表中「绕过用例服务直接写表」「直接访问数据库表」
-「模块间不得互相依赖业务用例」三项既不是 import 关系也不是词面关系，
-无法由本文件证明，需要各自的用例测试或审查。
+不覆盖的部分（诚实声明）：表中「直接访问数据库表」只被覆盖了一半——面层 import
+存储层模块（`repository` / `store` / `ledger` / `models`）由
+`test_surfaces_do_not_import_storage_modules` 拦下，而在面层直接写 SQLAlchemy
+语句仍拦不下；「绕过用例服务直接写表」「模块间不得互相依赖业务用例」两项同样既不是
+import 关系也不是词面关系，无法由本文件证明，需要各自的用例测试或审查。该规则的
+层范围与残余缺口写在 `GUARDED_LAYERS` 处。
 """
 
 import ast
@@ -236,6 +239,151 @@ def test_cli_layer_does_not_import_surfaces() -> None:
     for path in cli_modules:
         for target in _campfire_imports(path):
             assert not target.startswith("campfire.surfaces"), f"cli 越界依赖：{path.name} -> {target}"
+
+
+# ---------------------------------------------------------------------------
+# 面层不得直连存储层模块（第 5 节「不直接访问数据库表」）。
+#
+# 上面的白名单按前缀放行整支 `campfire.modules` / `campfire.core`：「面层经用例服务
+# 取数」与「面层绕过用例服务直连仓储」在它眼里是同一种 import。这一段把后者变成
+# 可执行断言，判据是模块路径的命名。
+#
+# 覆盖：`surfaces/*` import 别的层里名字属于存储层的模块。词表取自本仓的实际用法
+# ——`repository` / `*_repository`（`accounts.session_repository`、
+# `profile.repository`）、`store`（`memory.store`）、`ledger`（`memory.ledger`）、
+# `models`（`accounts.models`）。改名即改约定，这里跟着改。
+#
+# 「模块」按事实判：候选路径必须在 `src/campfire` 下真的落在 `.py` 文件或包上。只按
+# 名字字面判会把函数当模块——`modules.library.ingestion.build_vector_store` 末段以
+# `_store` 结尾，而它是摄取链里的一个函数（`tools/library.py` 就 import 了它）。
+# ---------------------------------------------------------------------------
+
+GUARDED_LAYERS: tuple[str, ...] = ("surfaces",)
+"""受本规则约束的层。
+
+只列 `surfaces`：`tools/` 与 `cli/` 里现有同类穿透（分别 import 了 `modules.*` 的
+`repository` / `store` / `models`），把它们纳入要先修掉那些存量——那是一次独立的
+改动，不是本规则的附带结果。
+"""
+
+_INTERNAL_MODULE_NAMES: frozenset[str] = frozenset({"store", "ledger", "models"})
+"""按路径段精确比对的存储层模块名。"""
+
+_INTERNAL_MODULE_SUFFIXES: tuple[str, ...] = ("_store", "_ledger", "_models")
+"""带前缀的同义模块名（`sdk_models` 这类）。"""
+
+_INTERNAL_MODULE_SUBSTRING = "repository"
+"""含此子串的路径段一律算存储层（`repository`、`session_repository`、`repositories`）。"""
+
+
+def _is_internal_implementation(target: str) -> bool:
+    """该 import 目标是否落在存储层模块上。
+
+    逐段比对而不是只看最后一段：`campfire.modules.x.repository.helpers` 这种更深的
+    路径同样属于存储层。开头两段（`campfire` 与层名）跳过，免得层名之类的位置撞上词表。
+    """
+    for segment in target.split(".")[2:]:
+        lowered = segment.lower()
+        if _INTERNAL_MODULE_SUBSTRING in lowered:
+            return True
+        if lowered in _INTERNAL_MODULE_NAMES or lowered.endswith(_INTERNAL_MODULE_SUFFIXES):
+            return True
+    return False
+
+
+def _is_campfire_module(target: str) -> bool:
+    """该 import 路径在本仓真的落在模块上（`.py` 文件或包）。
+
+    用来把「模块名」与同名的函数、常量分开：`modules.library.ingestion.build_vector_store`
+    的末段以 `_store` 结尾，但它是摄取链里的一个函数，不是存储层模块——只看字面会把它
+    当成穿透。module 路径本身（`...repository`）与展开出来的成员路径都过这一关。
+    """
+    path = SRC_ROOT.joinpath(*target.split(".")[1:])
+    return path.with_suffix(".py").is_file() or (path / "__init__.py").is_file()
+
+
+def _module_paths_in_source(source: str) -> set[str]:
+    """一段源码可能触碰的同项目模块路径。
+
+    比 :func:`_campfire_imports` 多展开一层：`from campfire.modules.accounts import
+    session_repository` 的模块路径是 `campfire.modules.accounts`（看着像包级取用），
+    而被引入的 `session_repository` 正是要盯的存储层模块——不展开就会漏掉这种写法。
+    """
+    found: set[str] = set()
+    for node in ast.walk(ast.parse(source)):
+        if isinstance(node, ast.Import):
+            found.update(alias.name for alias in node.names if _is_project_module(alias.name))
+        elif isinstance(node, ast.ImportFrom):
+            # node.level > 0 是包内相对导入，必然同包，不构成跨模块引用
+            if node.level or not node.module or not _is_project_module(node.module):
+                continue
+            found.add(node.module)
+            found.update(f"{node.module}.{alias.name}" for alias in node.names)
+    return found
+
+
+def _storage_import_violations() -> list[str]:
+    """受约束层里直连存储层模块的 import。"""
+    violations: list[str] = []
+    for path in _iter_layered_modules():
+        relative = path.relative_to(SRC_ROOT)
+        layer = _layer_of(relative)
+        if layer not in GUARDED_LAYERS:
+            continue
+        own_prefix = f"{SRC_MODULE_ROOT}.{layer}"
+        for target in sorted(_module_paths_in_source(path.read_text(encoding="utf-8"))):
+            # 同层文件互相引用不算跨模块（与白名单的 _owner_prefix 同一口径）
+            if target == own_prefix or target.startswith(f"{own_prefix}."):
+                continue
+            if _is_campfire_module(target) and _is_internal_implementation(target):
+                violations.append(f"{relative.as_posix()} 直连了存储层模块 {target}")
+    return violations
+
+
+def test_storage_import_guard_detects_its_patterns() -> None:
+    """防止守门退化为空跑：判定与收集都必须真的认得出样例。"""
+    assert _is_internal_implementation("campfire.modules.accounts.session_repository")
+    assert _is_internal_implementation("campfire.modules.profile.repository")
+    assert _is_internal_implementation("campfire.modules.memory.store")
+    assert _is_internal_implementation("campfire.modules.memory.ledger")
+    assert _is_internal_implementation("campfire.modules.accounts.models")
+    # 合法的目标不得命中：假红会逼着后来人放宽规则
+    assert not _is_internal_implementation("campfire.modules.accounts")
+    assert not _is_internal_implementation("campfire.modules.accounts.sessions")
+    assert not _is_internal_implementation("campfire.modules.profile.service")
+    assert not _is_internal_implementation("campfire.core.config")
+
+    aliased = _module_paths_in_source("from campfire.modules.accounts import session_repository\n")
+    assert "campfire.modules.accounts.session_repository" in aliased
+    assert any(_is_campfire_module(target) and _is_internal_implementation(target) for target in aliased)
+
+    legal = _module_paths_in_source("from campfire.modules.accounts import register_session\n")
+    assert not [target for target in legal if _is_internal_implementation(target)]
+
+    # 模块判定按事实：真模块认得出，同名的函数不算穿透
+    assert _is_campfire_module("campfire.modules.accounts.session_repository")
+    assert _is_campfire_module("campfire.modules.profile.repository")
+    assert _is_campfire_module("campfire.modules.accounts")
+    assert not _is_campfire_module("campfire.modules.library.ingestion.build_vector_store")
+    assert not _is_campfire_module("campfire.modules.profile.repository.ITEMS_DEFAULT_LIMIT")
+
+
+def test_surfaces_do_not_import_storage_modules() -> None:
+    """面层不得 import 其它模块的存储层模块（第 5 节「不直接访问数据库表」）。
+
+    取数一律经用例层：调用 `modules/*` 的用例模块，或它所在包的包级导出。
+    """
+    guarded = [path for path in _iter_layered_modules() if _layer_of(path.relative_to(SRC_ROOT)) in GUARDED_LAYERS]
+
+    assert guarded, "受约束的层没有任何模块，检查会空跑"
+
+    # 收集器在真实文件上必须看得见东西，否则下面那条断言只是在空集合上成立
+    scanned = {target for path in guarded for target in _module_paths_in_source(path.read_text(encoding="utf-8"))}
+    assert scanned, "受约束层的 import 一个都没解析出来，守门会空跑"
+
+    violations = _storage_import_violations()
+
+    assert not violations, "面层直连了存储层模块，应改经用例层取数：\n" + "\n".join(violations)
 
 
 def _iter_agent_modules() -> list[Path]:
