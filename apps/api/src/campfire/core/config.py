@@ -55,6 +55,11 @@ class Settings(BaseSettings):
     # --- 数据主库（PostgreSQL 17 + pgvector）---
     # 含凭据，故无默认值；未配置时健康检查报 not_configured 而非伪装可用。
     database_url: str | None = None
+    # 引用索引的单次操作超时（秒）。端口契约（`agent/context/citations.py`）要求
+    # 实现自带超时上界，理由是这个写入在注入渲染的路径上：它慢就会拖住整次运行，
+    # 而运行另有 180 秒通用上限（基座第 2 节），无界等待会让上限失效。
+    # 有界且远小于 180 秒：DB 侧异常应尽快落进明确失败，而不是把预算耗在等待上。
+    citation_timeout_seconds: float = Field(default=5.0, gt=0)
 
     # --- 缓存与队列 broker（Redis 7）---
     redis_url: str = "redis://localhost:6379/0"

@@ -30,6 +30,7 @@ from sqlalchemy.ext.asyncio import async_engine_from_config
 from campfire.core import pending_write as pending_write_models  # noqa: F401  —— 仅为注册副作用
 from campfire.core.auth import tombstone as auth_tombstone_models  # noqa: F401  —— 仅为注册副作用
 from campfire.core.config import get_settings
+from campfire.core.db import citations as citation_models  # noqa: F401  —— 仅为注册副作用
 from campfire.core.db import metadata
 from campfire.core.db import sdk_session as sdk_session_models  # noqa: F401  —— 仅为注册副作用
 from campfire.modules.accounts import models as accounts_models  # noqa: F401  —— 仅为注册副作用

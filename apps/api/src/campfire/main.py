@@ -7,9 +7,10 @@
 
 import asyncio
 import logging
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 
+from falkordb.asyncio import FalkorDB  # type: ignore[import-untyped]  # 上游无 py.typed；行为由集成测试锁定
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 from supertokens_python.framework.fastapi import get_middleware
@@ -20,7 +21,7 @@ from campfire.core.auth.supertokens import init_supertokens
 from campfire.core.authz import set_authorizer
 from campfire.core.cache import close_cache, get_cache
 from campfire.core.config import Settings, get_settings
-from campfire.core.db import check_database
+from campfire.core.db import check_database, dispose_engine
 from campfire.core.health import ComponentHealth, HealthReport, Status
 from campfire.core.jobs import check_queue, set_dispatch_hook
 from campfire.modules.accounts.registration import api_overrides, sign_up_form_fields
@@ -28,8 +29,9 @@ from campfire.modules.library.routes import router as library_router
 from campfire.modules.memory.routes import router as memory_router
 from campfire.modules.profile.authz import OwnerAuthorizer
 from campfire.modules.profile.routes import router as profile_router
+from campfire.surfaces.consult import composition as consult_composition
 from campfire.surfaces.consult import router as consult_router
-from campfire.surfaces.consult.assembly import runner_is_wired
+from campfire.surfaces.consult.assembly import ConsultAssemblyError, get_skill_registry, runner_is_wired
 from campfire.surfaces.consult.runbus import cancel_pumps
 
 # 投递钩子的实现属于 Worker 入口（任务对象 `consume_memory_episode_task` 定义在那里），
@@ -83,15 +85,34 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     # Redis 客户端按进程建一次（连接池复用；见 core/cache 的说明）。这里只是让
     # 「第一次请求才建池」提前到启动，池的构造本身不发连接，因此不影响启动顺序。
     get_cache(settings)
-    if not runner_is_wired():  # pragma: no cover —— 生产装配缺失时的启动期提示
-        # 咨询面的运行器由装配处注入，而它需要引用索引的持久化实现（全仓库尚无）。
-        # 这里只记一条警告：发消息端点会回 503，而不是回一个调用不了的 202。
-        logger.warning("咨询面运行器尚未装配：发消息端点将回 503（见 surfaces/consult/assembly.py）")
+    # 咨询面的生产装配（2026-10-01）：构造模型网关、工具池、技能注册表、引用索引与会话
+    # 工厂，装成 AgentRunner 并注入注入点。此前这里只记一条 warning，发消息端点在生产
+    # 路径上必然回 503。
+    #
+    # 装配失败不让进程起不来（刻意取舍）：`/health`、档案面、记忆面、资料库面都不跑 Agent，
+    # 它们照常可用；而 `install` 失败会留下未注入状态，`/readyz` 因此报 503
+    # （见 `check_agent_assembly`）——部署系统据此不给流量，运维则仍能 curl `/health`
+    # 看到失败原因。若在这里直接抛，容器会反复重启，连诊断入口都没有。
+    try:
+        consult_composition.install(settings)
+    except Exception as exc:  # noqa: BLE001 —— 装配失败是启动期可诊断状态，不是崩溃
+        # 只记异常类型名，可能带上可操作的一行：模型网关的配置错误文案本身不含凭据
+        # （见 `ModelConfigurationError` 的构造点），而底层驱动异常可能含代理 URL。
+        logger.error(
+            "咨询面运行器装配失败（%s）：发消息端点将回 503，/readyz 会报 agent_assembly 不可用",
+            type(exc).__name__,
+        )
     logger.info("campfire api 启动：环境=%s", settings.app_env)
     yield
-    # 收尾顺序：先停后台推进任务（它们会继续写 Redis），再关连接池。
+    # 收尾顺序（有依赖方向，不可随意交换）：
+    # 1. 先停后台推进任务——它们会继续写 Redis，且在途的运行还要用模型网关；
+    # 2. 再关模型网关的 HTTP 连接池（此时已无运行在用）;
+    # 3. 再关 Redis 连接池；
+    # 4. 最后释放数据库引擎（会话工厂由它派生，先放它会留下悬空引擎引用）。
     cancel_pumps()
+    await consult_composition.aclose()
     await close_cache()
+    await dispose_engine()
     logger.info("campfire api 停止")
 
 
@@ -139,31 +160,140 @@ app.include_router(library_router)
 app.include_router(consult_router)
 
 
-@app.get("/health")
-async def health() -> JSONResponse:
-    """分别报告各项能力；有不可用时返回 503。
+async def check_falkordb(settings: Settings) -> ComponentHealth:
+    """探测 FalkorDB 图库可达性（`PING`）。
 
-    这是全应用唯一的未登录可达端点（`AC-01`）：Nginx 上游检查与容器健康检查
-    不持会话，因此它必须匿名可达；但它不构成业务能力，且只回报组件状态与异常
-    类型，不复述连接串、凭据或内部拓扑。
+    为什么需要它：记忆面（时间线、纠正、删除）与应急预注入都要读图库，而它此前不在
+    任何健康项里——图库挂了 `/health` 仍可能全绿，直到使用者第一次回看记忆才暴露。
 
-    四项对应 docs/项目结构设计.md 第 10 节。其中设计所写的「公开内容可达」与
-    「全应用必须登录」（`RQ-ACC-01`）冲突——已不存在未登录可达的内容路径——
-    故此处报告「认证 core 可达」。
+    用底层驱动的 `PING` 而不构造 `MemoryGraph`：后者会建三个模型客户端与一个 HTTP
+    客户端（`build_memory_graph` 的 docstring 记录了每次重建泄漏一整套连接池），
+    而探针不该为了探活把生产资源拉起来。探针按调用建连、用毕即关。
 
-    四项探测并发执行，避免串行累加超时。
+    失败只回报异常类型：FalkorDB 的报错文本可能含主机与端口。
+    """
+    client = FalkorDB(
+        host=settings.falkordb_host,
+        port=settings.falkordb_port,
+        password=(settings.falkordb_password.get_secret_value() if settings.falkordb_password else None),
+        socket_timeout=settings.falkordb_timeout_seconds,
+        socket_connect_timeout=settings.falkordb_timeout_seconds,
+    )
+    try:
+        await client.connection.ping()
+    except Exception as exc:  # noqa: BLE001 —— 探针吞掉一切驱动异常并如实上报
+        return ComponentHealth("falkordb", Status.UNAVAILABLE, f"图库不可达（{type(exc).__name__}）")
+    finally:
+        await client.connection.aclose()
+    return ComponentHealth("falkordb", Status.OK, "连接正常")
+
+
+async def check_agent_assembly(_settings: Settings) -> ComponentHealth:
+    """报告咨询面运行器是否已完成生产装配。
+
+    为什么这一项必须进 readiness（2026-10-01）：`AgentRunner` 的装配此前只在启动日志里
+    留一条 warning，于是存在这种完全可能的生产状态——
+
+        GET /health → 200 OK
+        POST /consult/... → 503 runner not wired
+
+    部署系统据此认为一个不能提供核心业务的版本已经健康，Docker healthcheck、
+    Nginx upstream 与 CD 发布验证全都被骗过。把装配状态变成一个探针，这条假健康就
+    在机器层面不成立。
+
+    只看注入点是否就绪（`runner_is_wired`），不在这里构造运行器：构造要连库与建工具池，
+    而那是启动期已经做过的事；探针只回答「那时候成没成」。
+    """
+    if not runner_is_wired():
+        return ComponentHealth(
+            "agent_assembly",
+            Status.UNAVAILABLE,
+            "咨询面运行器未装配：发消息端点会回 503（见 surfaces/consult/composition.py）",
+        )
+    return ComponentHealth("agent_assembly", Status.OK, "运行器已装配")
+
+
+async def check_skill_registry(settings: Settings) -> ComponentHealth:
+    """探测技能内容根目录可发现（skill 是产品方法论的载体，缺了运行照跑但没技能可用）。
+
+    与 `check_agent_assembly` 分开（理由见 `_READINESS_PROBES` 的说明）：注册表发现失败
+    的文案能直接指向内容目录，而并入装配项后那句文案会被「运行器没接线」掩盖。
+
+    发现结果按路径缓存在 `assembly`，因此这个探针在稳态下不重复读盘。
+    """
+    try:
+        registry = get_skill_registry(settings)
+    except ConsultAssemblyError as exc:
+        return ComponentHealth("skills", Status.UNAVAILABLE, str(exc))
+    return ComponentHealth("skills", Status.OK, f"已发现 {len(registry.names())} 个 skill")
+
+
+#: readiness 探测的能力清单。`/readyz` 与 `/health` 共用它，因此两处口径不会漂移。
+#:
+#: 七项对应 docs/项目结构设计.md 第 10 节与上线前清单：认证 core、主库、队列（Redis）、
+#: 模型、图库、Agent 装配、skill 注册表。
+#:
+#: 为什么 skill 注册表单独一项而不是并入 agent_assembly：技能内容坏掉（畸形 frontmatter）
+#: 时装配会整体失败，但那时「哪一半坏的」看不出来；而注册表发现失败有单独的异常路径
+#: （`ConsultAssemblyError` 的文案区分「运行器没接线」与「内容根目录不可用」），
+#: 分开报能让排查直接指向内容而不是代码。
+_READINESS_PROBES: tuple[tuple[str, Callable[[Settings], Awaitable[ComponentHealth]]], ...] = (
+    ("auth", check_auth_core),
+    ("database", check_database),
+    ("queue", check_queue),
+    ("model", check_model),
+    ("falkordb", check_falkordb),
+    ("agent_assembly", check_agent_assembly),
+    ("skills", check_skill_registry),
+)
+
+
+@app.get("/livez")
+async def livez() -> JSONResponse:
+    """存活探针：进程还活着就 200，不探测任何依赖。
+
+    与 `/readyz` 分开的理由是两者的故障语义相反：依赖不可用时进程本身没坏，
+    重启它没有意义（还可能有损），而容器编排需要能区分这两种状态——
+    只有分开，才能在「主库短时抖动」时不触发一轮无谓重启。
+    """
+    return JSONResponse(content={"status": "ok"}, status_code=200)
+
+
+@app.get("/readyz")
+async def readyz() -> JSONResponse:
+    """就绪探针：全部依赖与装配都可用才 200，否则 503。
+
+    这是给部署系统用的判据（Docker healthcheck、Nginx upstream、CD 发布验证），
+    与 `/health` 的区别是它**必须覆盖核心业务链**——尤其是 Agent 装配：
+    缺了那一项，一个核心咨询功能必然 503 的版本会被判为健康。
+
+    探测并发执行，避免串行累加超时。
     """
     settings = get_settings()
     components: tuple[ComponentHealth, ...] = tuple(
-        await asyncio.gather(
-            check_auth_core(settings),
-            check_database(settings),
-            check_model(settings),
-            check_queue(settings),
-        )
+        await asyncio.gather(*(probe(settings) for _, probe in _READINESS_PROBES))
     )
     report = HealthReport(components)
     return JSONResponse(
         content=report.as_dict(),
         status_code=200 if report.is_ready else 503,
     )
+
+
+@app.get("/health")
+async def health() -> JSONResponse:
+    """组件诊断：分别报告各项能力，有不可用时返回 503。
+
+    保留它与 `/health` 这个路径，是因为既有部署脚本、探针与前端都可能引用它
+    （`test_consult_endpoints_integration.py` 也断言它未登录可达）。语义上与
+    `/readyz` 相同（同一份探针清单），差别只在用途命名：`/readyz` 面向机器判据，
+    `/health` 面向人排查——因此这里额外回报每项的 detail。
+
+    未登录可达（`AC-01`）：Nginx 上游检查与容器健康检查不持会话。它不构成业务能力，
+    且只回报组件状态与异常类型，不复述连接串、凭据或内部拓扑。
+
+    七项对应 docs/项目结构设计.md 第 10 节与上线前清单。其中设计所写的「公开内容可达」
+    与「全应用必须登录」（`RQ-ACC-01`）冲突——已不存在未登录可达的内容路径——
+    故此处报告「认证 core 可达」。
+    """
+    return await readyz()
