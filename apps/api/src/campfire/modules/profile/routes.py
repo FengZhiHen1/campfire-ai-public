@@ -592,8 +592,9 @@ async def confirm_item(
 ) -> ConfirmPayload | JSONResponse:
     """确认一条候选条目，此后进稳定层（契约第 4 节）。
 
-    只能作用于 `confirmation = unconfirmed` 的条目；对已确认或已否定的条目
-    由用例层拒绝并映射 422（重复确认是调用方的错误，不是幂等操作）。
+    只能作用于未被取代、且 `confirmation = unconfirmed` 的条目；对已确认、
+    已否定或已被取代的条目由用例层拒绝并映射 422（重复确认是调用方的错误，
+    不是幂等操作；历史条目只可回看，没有确认这条能力）。
     """
     if _item_uuid(item_id) is None:
         return _error(404, OBJECT_NOT_ACCESSIBLE_MESSAGE, "not_found")

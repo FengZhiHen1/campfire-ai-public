@@ -819,12 +819,19 @@ async def confirm_item(
     对已确认或已否定的条目返回 422」。把该判据放进 `WHERE` 而不是先查后改，
     并发下也不会把一条已被否定的条目改回确认态。
 
+    为什么还要求未被取代：设计给历史条目的话是「可回看」（第 5 节第 5 条），
+    回看即只读；`RQ-MEM-03` 给使用者的条目能力是「查 / 纠 / 删」，
+    没有「确认一条已被取代的条目」。而被取代的条目仍可能停在 `unconfirmed`
+    ——推断被取代时不会顺带确认它——确认它会按归组判据把这条历史行
+    从 `candidates` 移进 `items`，成一次设计未认可的状态转移。
+    判据与 `mark_superseded` 同法放进 `WHERE`，不留先查后改的竞态窗口。
+
     刷新 `last_confirmed_at` 是必须的：它既是「最近确认时间」的展示值，
     也是降权 90 天的计时起点（第 3 节）。
 
     Returns:
-        更新后的记录；`None` 表示条目不存在或当前不是 `unconfirmed`
-        （两种情形对调用方都是「不能确认」，由用例层转成统一的 404/422）。
+        更新后的记录；`None` 表示条目不存在、当前不是 `unconfirmed`，或已被取代
+        （对调用方都是「不能确认」，由用例层转成统一的失败语义）。
 
     Raises:
         ProfileDataError: 标识不合法。
@@ -836,6 +843,7 @@ async def confirm_item(
         .where(
             ProfileItem.item_id == parsed,
             ProfileItem.confirmation == "unconfirmed",
+            ProfileItem.superseded_by.is_(None),
         )
         .values(confirmation="confirmed", last_confirmed_at=reference)
         .returning(ProfileItem)
@@ -849,8 +857,14 @@ async def reject_item(session: AsyncSession, *, item_id: object) -> ProfileItem 
     「使用者否定过这件事」本身是可追溯事实，因此不删行；此后它不进摘要、
     不参与注入、不得再次作为候选提出——后两条由读路径的过滤承载。
 
+    未被取代也是必要条件（与 `confirm_item` 同判据）：历史条目只可回看
+    （第 5 节第 5 条），而 `RQ-MEM-03` 没有「否定一条已被取代的条目」这条能力。
+    已取代的行仍可能停在 `unconfirmed`，否定它会置 `rejected`，
+    而读路径把 `rejected` 一律排除——这条历史行于是从所有读路径消失，
+    连「可回看」也不再成立。判据放进 `WHERE`，不留先查后改的竞态窗口。
+
     Returns:
-        更新后的记录；`None` 表示条目不存在或当前不是 `unconfirmed`。
+        更新后的记录；`None` 表示条目不存在、当前不是 `unconfirmed`，或已被取代。
 
     Raises:
         ProfileDataError: 标识不合法。
@@ -861,6 +875,7 @@ async def reject_item(session: AsyncSession, *, item_id: object) -> ProfileItem 
         .where(
             ProfileItem.item_id == parsed,
             ProfileItem.confirmation == "unconfirmed",
+            ProfileItem.superseded_by.is_(None),
         )
         .values(confirmation="rejected")
         .returning(ProfileItem)
