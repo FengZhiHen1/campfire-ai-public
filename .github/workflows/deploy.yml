@@ -339,11 +339,25 @@ jobs:
           # 也刻意不用 /health：两者口径相同，但 /readyz 的名字表达了它是部署判据。
           #
           # 120 秒上界：镜像已拉好，`compose up -d` 后 start_period 是 40 秒。
+          #
+          # ⚠️ `--env-file .env.prod` **不能省**（2026-10-01 首次真实发布踩到）。
+          #
+          # 少它时 `docker compose exec` 在**解析 compose 文件阶段**就失败，因为文件里
+          # 多处用了强制变量语法（`${POSTGRES_PASSWORD:?…}`、`${REDIS_PASSWORD:?…}`、
+          # `${PUBLIC_BASE_URL:?…}` 等）。实测报错形如：
+          #
+          #     error while interpolating services.redis.command.[]:
+          #     required variable REDIS_PASSWORD is missing a value
+          #
+          # 于是 `code` 恒为 `000`，循环 40 次后报「readyz 在 120 秒内未返回 200」——
+          # **而应用其实是健康的**（同一时刻 `curl http://127.0.0.1/readyz` 返回 200，
+          # 七个容器全部 healthy）。这是最坏的一类发布失败：它把「部署成功」报成失败，
+          # 会诱使人去回滚一个本来正常的版本。
           ssh -i ~/.ssh/id_deploy "$DEPLOY_USER@$DEPLOY_HOST" bash -s <<'REMOTE'
           set -euo pipefail
           cd "${{ secrets.DEPLOY_PATH }}"
           for attempt in $(seq 1 40); do
-            code=$(docker compose -f docker-compose.prod.yml exec -T api \
+            code=$(docker compose -f docker-compose.prod.yml --env-file .env.prod exec -T api \
               curl -s -o /dev/null -w '%{http_code}' http://localhost:8000/readyz || echo 000)
             if [ "$code" = "200" ]; then
               echo "readyz 返回 200（第 $attempt 次探测）"
@@ -354,7 +368,10 @@ jobs:
           done
           echo "发布验证失败：readyz 在 120 秒内未返回 200" >&2
           echo "--- api 容器最近日志 ---" >&2
-          docker compose -f docker-compose.prod.yml logs --tail 60 api >&2 || true
+          # 这一条同样必须带 `--env-file`：少了它，恰恰在「需要看日志」的时刻 compose
+          # 会因为解析不出强制变量而报错，把真正的失败原因盖掉。`|| true` 只兜住退出码，
+          # 兜不住「日志没打出来」。
+          docker compose -f docker-compose.prod.yml --env-file .env.prod logs --tail 60 api >&2 || true
           echo "--- 请按 docs/运维/发布与回滚.md 回滚 ---" >&2
           exit 1
           REMOTE
