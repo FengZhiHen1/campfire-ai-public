@@ -158,6 +158,19 @@ jobs:
     if: ${{ inputs.deploy }}
     runs-on: ubuntu-latest
     environment: production
+    permissions:
+      contents: read
+      # ⚠️ **必须有这一条**（2026-10-01 自查发现）。
+      #
+      # 目标机要用 `GITHUB_TOKEN` 登录 GHCR 拉镜像。而 GitHub 的规则是：workflow
+      # 一旦**显式声明** `permissions`，未列出的权限就全部是 `none`——顶层只给了
+      # `contents: read`，因此本任务原本拿不到 `packages: read`。
+      #
+      # 包是私有的，缺这个权限时 `docker pull` 返回 403（不是「包不存在」这种好懂的
+      # 报错，而是 `unexpected status from HEAD request ... 403 Forbidden`，看着像
+      # 仓库路径写错了）。实测印证这条链路对权限敏感：用本机 token 登录 GHCR 成功，
+      # 但 pull 同样 403，因为那个 token 也缺 `read:packages`。
+      packages: read
     steps:
       - uses: actions/checkout@v7
 
