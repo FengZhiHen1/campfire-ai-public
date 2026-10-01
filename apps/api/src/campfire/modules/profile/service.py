@@ -573,10 +573,13 @@ async def read_items(
 
     `include_candidates = False` 时不得混入候选（契约第 4 节）。
 
-    `include_superseded = False`（缺省）时历史条目不返回；为真时它们随 `items`
-    返回，带 `freshness = historical` 与互指的 `superseded_by`／`supersedes`，
-    档案页据此在行首出「已更正」标。`rejected` 条目不受这个开关影响，一律不返回
-    ——否定过的内容不得再进入对话，那是绝对的（契约第 3、4.1 节）。
+    `include_superseded = False`（缺省）时历史条目不返回；为真时它们一并返回，
+    带 `freshness = historical` 与互指的 `superseded_by`／`supersedes`，
+    档案页据此在行首出「已更正」标。落哪一组不由「是否历史」决定：归组把历史条目的
+    新鲜度按 `current` 归一后仍走落层判据，因此未确认的系统推断即便已被取代也归
+    `candidates`，已确认或非推断来源的才归 `items`（见 `_group`）。
+    `rejected` 条目不受这个开关影响，一律不返回——否定过的内容不得再进入对话，
+    那是绝对的（契约第 3、4.1 节）。
 
     `include_superseded` 与 `include_candidates` 是两条独立的轴（时效 / 层）：
     前者只管「已被取代的旧条目可回看」，后者只管「未确认的候选是否返回」。
