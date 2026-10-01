@@ -162,13 +162,34 @@ async def _never_called(_request: httpx2.Request) -> httpx2.Response:  # pragma:
     raise AssertionError("本用例不应发起模型请求")
 
 
+def _settings_for_assembly() -> Settings:
+    """装配用的配置：缺失的凭据补一个假值。
+
+    为什么需要它（2026-10-01 实测）：`ModelGateway` 构造期要求 `TOKENHUB_API_KEY`
+    （未配置即抛 `ModelConfigurationError`），而 **GitHub CI 里没有 `.env`**，因此
+    真实配置的该字段是 `None`。本文件的模型传输是 `MockTransport`，不会发出任何真实
+    请求，所以假凭据在这里不产生外部影响——它的作用只是让「装配」这一段能在无凭据的
+    CI 上跑起来（否则本文件在 CI 里必失败，而它要验的接线恰恰与凭据无关）。
+
+    `supertokens_api_key` 同理：`composition.install` 不碰它，但 `Settings` 的构造
+    不应因它而受影响——这里显式给出，避免测试依赖宿主机的 `.env`。
+    """
+    base = get_settings().model_dump()
+    base["tokenhub_api_key"] = "e2e-test-key-not-a-secret"
+    base.setdefault("supertokens_api_key", "e2e-test-key-not-a-secret")
+    return Settings(**base)  # type: ignore[arg-type]  # 由 model_dump 往返构造，键值形状与字段一致
+
+
 def _scripted_gateway(chat: ScriptedChat) -> ModelGateway:
     """真 `ModelGateway`，只把 HTTP 传输换成 `MockTransport`。
 
     `ModelGateway` 内部用 `AsyncOpenAI`（其底层是 httpx2），因此 `MockTransport` 替换的
     正是「与外部世界的那一段」——我们自己的装配代码全部照常执行。
     """
-    return ModelGateway(get_settings(), http_transport=httpx2.MockTransport(chat.handle_async_request))
+    return ModelGateway(
+        _settings_for_assembly(),
+        http_transport=httpx2.MockTransport(chat.handle_async_request),
+    )
 
 
 def _install_production_runner(gateway: ModelGateway) -> None:
@@ -178,7 +199,7 @@ def _install_production_runner(gateway: ModelGateway) -> None:
     仍旧缺失——那正是本次修的缺陷形状（`set_runner_factory` 曾只有测试调用点）。
     `install` 的 `gateway=` 参数就是为这条留的缝。
     """
-    composition.install(get_settings(), gateway=gateway)
+    composition.install(_settings_for_assembly(), gateway=gateway)
 
 
 def _current_runner(settings: Settings) -> Any:
@@ -215,6 +236,56 @@ def _content_text(payload: str) -> str:
             part.get("text", "") for part in content if isinstance(part, dict) and isinstance(part.get("text"), str)
         )
     return ""
+
+
+def _database_is_reachable_sync() -> bool:
+    """本机 PostgreSQL 是否可达（同步探测，供 session 级 guard 用）。
+
+    为什么需要它：本文件的全部用例都要真实数据库（引用索引与会话表）。没有数据库时
+    ——例如 GitHub CI 的当前配置——应当**明确跳过**，而不是让 fixture 在收集后抛
+    `RuntimeError` 把整批用例变成 ERROR。ERROR 与 skip 的区别是判读者要的：前者看起来
+    像「代码坏了」，后者是「环境不满足」，而 CI 的输出会被很多人看到。
+
+    用同步 socket 探测而不是 async：guard 要跑在 fixture 建立之前，用 asyncio 会与
+    pytest-asyncio 的循环作用域纠缠。这里只判「端口通不通」，不建库连接。
+    """
+    import socket
+    from urllib.parse import urlparse
+
+    url = get_settings().database_url
+    if not url:
+        return False
+    parsed = urlparse(url)
+    host = parsed.hostname or "127.0.0.1"
+    port = parsed.port or 5432
+    try:
+        with socket.create_connection((host, port), timeout=2.0):
+            return True
+    except OSError:
+        return False
+
+
+@pytest.fixture(autouse=True)
+def _require_database() -> None:
+    """数据库不可达时跳过本文件的用例。
+
+    为什么用 autouse fixture 而不是别的写法：
+
+    - `@pytest.mark.skipif` 的条件在**模块导入期**求值，而本仓的
+      `conftest.pytest_configure` 会把 `localhost` 归一成 `127.0.0.1` 并清
+      `get_settings` 缓存——导入期读到的是归一之前的配置。
+    - 在本文件里定义 `pytest_collection_modifyitems` **不会生效**（实测）：
+      pytest 只从 conftest 与插件收集钩子，测试模块里的同名函数不是钩子。
+      这正是我第一版尝试失败的原因（5 条用例仍是 ERROR/FAILED，没有 skip）。
+
+    用 fixture 则天然在导入之后、用例之前执行，时机正确且不依赖钩子机制。
+
+    `autouse=True` 覆盖本文件全部用例——它们都要真实数据库（引用索引与会话表）。
+    跳过而不是失败，是因为「没有数据库」是环境不满足，而不是代码坏了；把前者报成
+    ERROR 会让 CI 输出看起来像缺陷。
+    """
+    if not _database_is_reachable_sync():
+        pytest.skip("PostgreSQL 不可达——本文件需要真实数据库（docker compose up -d postgres）")
 
 
 async def _sessions_tables_exist() -> bool:
