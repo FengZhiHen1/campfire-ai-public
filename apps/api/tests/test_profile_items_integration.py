@@ -24,6 +24,8 @@
 12. **历史回看开关**：`include_superseded` 只放开「已被取代」这一条轴
     ——`rejected` 与候选层都不受影响，注入路径不接它；历史条目的归组按它曾属哪一层
     （未确认的系统推断即便被取代也归 `candidates`）。
+13. **历史条目只可回看**：已被取代的条目不得被确认、也不得被否定（两处守卫；
+    此前对「已取代 + 未确认」的行两者都会成功）；删除不受影响（`RQ-MEM-03` 的删）。
 """
 
 from __future__ import annotations
@@ -132,6 +134,28 @@ async def _propose(
             confirmation=confirmation,
         )
     return str(item.item_id)
+
+
+async def _superseded_unconfirmed_candidate(object_id: str) -> tuple[str, str]:
+    """造一条「已被取代 + 未确认」的条目，返回 `(旧条目, 取代它的新条目)`。
+
+    走的是一条合法路径而不是直接改库：提交一条 `ai_inference` 候选（未确认），
+    再用 `correct_item` 纠正它——旧条目转 `historical` 并写上 `superseded_by`，
+    而 `confirmation` 保持 `unconfirmed`（纠正不会顺带确认旧的推断）。
+    正是这个状态组合让「确认/否定」两处的守卫成为必要条件：
+    单看 `confirmation` 判据，它看起来仍是一条可确认的候选。
+    """
+    old_id = await _propose(object_id, origin="ai_inference", description="被取代的推断")
+    async with session_scope(get_settings()) as session:
+        new_item, _ = await service.correct_item(
+            session, account_id=_ACCOUNT, item_id=old_id, description="使用者改写的描述"
+        )
+    async with session_scope(get_settings()) as session:
+        row = await repo.get_item(session, item_id=old_id)
+    assert row is not None
+    assert row.confirmation == "unconfirmed", "前提：这条被取代的条目仍停在未确认"
+    assert row.superseded_by is not None and str(row.superseded_by) == str(new_item.item_id)
+    return old_id, str(new_item.item_id)
 
 
 # ---------------------------------------------------------------------------
@@ -369,6 +393,121 @@ async def test_reject_only_applies_to_candidates() -> None:
     with pytest.raises(ProfileItemNotFoundError):
         async with session_scope(get_settings()) as session:
             await service.reject_item(session, account_id=_ACCOUNT, item_id=stable_id)
+
+
+# ---------------------------------------------------------------------------
+# 3.1 已被取代的条目不得被确认、也不得被否定（第 5 节第 5 条：历史条目只可回看）
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_confirm_is_rejected_on_a_superseded_unconfirmed_item() -> None:
+    """已被取代 + 未确认的条目 → 确认被拒，且状态**没有落库**。
+
+    设计对历史条目的话是「可回看」（第 5 节第 5 条），回看即只读；`RQ-MEM-03`
+    给使用者的条目能力是「查 / 纠 / 删」，没有「确认一条已被取代的条目」。
+    只按 `confirmation = 'unconfirmed'` 判会放行——这条行看起来仍是一条候选。
+
+    消融：去掉 `repository.confirm_item` 的 `superseded_by IS NULL` 判据，
+    本用例必红（实测：探针会拿到成功回执，且该行按归组判据从 `candidates`
+    移进 `items`——一次设计未认可、且结果可观察的状态转移）。
+    """
+    object_id = await _new_object()
+    old_id, new_id = await _superseded_unconfirmed_candidate(object_id)
+
+    with pytest.raises(ProfileItemNotFoundError, match="未被取代"):
+        async with session_scope(get_settings()) as session:
+            await service.confirm_item(session, account_id=_ACCOUNT, item_id=old_id)
+
+    async with session_scope(get_settings()) as session:
+        row = await repo.get_item(session, item_id=old_id)
+        grouped = await service.read_items(
+            session,
+            account_id=_ACCOUNT,
+            support_object_id=object_id,
+            include_superseded=True,
+            include_candidates=True,
+        )
+
+    assert row is not None and row.confirmation == "unconfirmed", "被拒绝的确认不得落库"
+    assert row.freshness == "historical" and row.superseded_by is not None
+    assert [item.item_id for item in grouped.candidates] == [old_id], "它仍只在候选组"
+    assert [item.item_id for item in grouped.items] == [new_id], "未被取代的新条目不受影响"
+
+
+@pytest.mark.asyncio
+async def test_reject_is_rejected_on_a_superseded_unconfirmed_item() -> None:
+    """已被取代 + 未确认的条目 → 否定被拒，且**仍可回看**。
+
+    否定比确认更有破坏性：读路径一律排除 `rejected`，因此否定一条历史行会让它
+    从所有读路径消失，连「可回看」这条被设计认可的能力也一并失去。
+
+    消融：去掉 `repository.reject_item` 的 `superseded_by IS NULL` 判据，
+    本用例必红（实测：探针会拿到成功回执，该行此后连
+    `include_superseded=true` 也取不到）。
+    """
+    object_id = await _new_object()
+    old_id, new_id = await _superseded_unconfirmed_candidate(object_id)
+
+    with pytest.raises(ProfileItemNotFoundError, match="未被取代"):
+        async with session_scope(get_settings()) as session:
+            await service.reject_item(session, account_id=_ACCOUNT, item_id=old_id)
+
+    async with session_scope(get_settings()) as session:
+        row = await repo.get_item(session, item_id=old_id)
+        grouped = await service.read_items(
+            session,
+            account_id=_ACCOUNT,
+            support_object_id=object_id,
+            include_superseded=True,
+            include_candidates=True,
+        )
+
+    assert row is not None and row.confirmation == "unconfirmed", "被拒绝的否定不得落库"
+    assert [item.item_id for item in grouped.candidates] == [old_id], "历史行仍可回看，不是消失"
+    assert [item.item_id for item in grouped.items] == [new_id]
+
+
+@pytest.mark.asyncio
+async def test_unsubstituted_candidates_still_confirmable_and_rejectable() -> None:
+    """**防一刀切**：未被取代的候选，确认与否定都照旧成功。
+
+    没有这条，上面两条可能只是「一切都被拒」——而 `RQ-MEM-03` 的「纠」与
+    第 3 节的「候选经使用者确认进稳定层」都依赖这两条路径可用。
+    """
+    object_id = await _new_object()
+    to_confirm = await _propose(object_id, origin="ai_inference", description="待确认的推断")
+    to_reject = await _propose(object_id, origin="ai_inference", description="待否定的推断")
+
+    async with session_scope(get_settings()) as session:
+        confirmed = await service.confirm_item(session, account_id=_ACCOUNT, item_id=to_confirm)
+    async with session_scope(get_settings()) as session:
+        rejected = await service.reject_item(session, account_id=_ACCOUNT, item_id=to_reject)
+
+    assert confirmed.confirmation == "confirmed"
+    assert rejected.confirmation == "rejected"
+
+
+@pytest.mark.asyncio
+async def test_delete_is_still_allowed_on_a_superseded_item() -> None:
+    """新增的守卫**不得误伤删除**：已取代条目仍可删（`RQ-MEM-03` 的「删」）。
+
+    确认与否定两处加的是 `superseded_by IS NULL`；`delete_item` 的判据只有归属，
+    本轮不碰它。这条用例把「删除对历史条目仍允许」钉住，避免日后的守卫被
+    顺手扩散成「历史条目只读」。
+    """
+    object_id = await _new_object()
+    old_id, new_id = await _superseded_unconfirmed_candidate(object_id)
+
+    async with session_scope(get_settings()) as session:
+        await service.delete_item(session, account_id=_ACCOUNT, item_id=old_id)
+
+    async with session_scope(get_settings()) as session:
+        gone = await repo.get_item(session, item_id=old_id)
+        kept = await repo.get_item(session, item_id=new_id)
+
+    assert gone is None, "已取代条目必须仍可被物理删除"
+    assert kept is not None, "取代它的新条目不受影响"
 
 
 # ---------------------------------------------------------------------------
