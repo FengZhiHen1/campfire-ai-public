@@ -297,9 +297,20 @@ jobs:
           DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
           DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
         run: |
+          # `--no-build` 是刻意的（2026-10-01 真机踩到后加的）：
+          #
+          # compose 文件里 web/api 同时有 `build:` 与 `image:`。发布目录
+          # `$DEPLOY_PATH` 只放 compose 与 infrastructure，**没有源码**
+          # （build context 指向该目录，而那里没有 apps/）。默认行为下，若镜像
+          # 因故没被拉到，`up -d` 会**回落到本地构建**——于是要么直接失败，
+          # 要么更糟：复用上一次遗留的同名镜像，让「发布成功」的其实是很旧的版本，
+          # 而日志看不出异常。
+          #
+          # 加上它之后，镜像缺失就**响亮地失败**，而不是静默用错版本。
+          # 发布路径上「失败」永远优于「不确定地成功」。
           ssh -i ~/.ssh/id_deploy "$DEPLOY_USER@$DEPLOY_HOST" \
             "cd '$DEPLOY_PATH' && \
-             docker compose -f docker-compose.prod.yml --env-file .env.prod up -d"
+             docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --no-build"
 
       - name: 发布验证：轮询 /readyz 直到就绪
         env:
