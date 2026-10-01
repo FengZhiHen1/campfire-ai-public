@@ -2,7 +2,7 @@
 
 对应 docs/技术设计/technical-details/通用基座.md 第 3 节与第 11 节的验证方式：
 非法 frontmatter 有拒绝加载的用例；目录只含 name 与 description；同形激活；
-资源一层深。这些用例刻意覆盖**拒绝路径**——一个只测成功路径的 skill 加载器无法
+资源一层深。这些用例刻意覆盖拒绝路径——一个只测成功路径的 skill 加载器无法
 证明它真的会拒绝。
 """
 
@@ -41,9 +41,9 @@ allowed-tools: read_alpha write_beta
 
 
 def _make_skill(root: Path, name: str, *, frontmatter: str | None = None, body: str = "正文指令。\n") -> Path:
-    """在 ``root`` 下造一个 skill 目录，返回 ``SKILL.md`` 路径。
+    """在 `root` 下造一个 skill 目录，返回 `SKILL.md` 路径。
 
-    ``frontmatter`` 缺省时用合法模板（其中的 ``{name}`` 以目录名填充）；显式传入时
+    `frontmatter` 缺省时用合法模板（其中的 `{name}` 以目录名填充）；显式传入时
     原样使用——非法样例需要保持自己写的那份文本不变。
     """
     directory = root / name
@@ -168,7 +168,7 @@ INVALID_DOCUMENTS: dict[str, tuple[str, str]] = {
 
 @pytest.mark.parametrize("case", sorted(INVALID_DOCUMENTS), ids=sorted(INVALID_DOCUMENTS))
 def test_invalid_frontmatter_is_rejected_with_the_expected_reason(tmp_path: Path, case: str) -> None:
-    """每条非法样例都断言**具体原因**——只断言「被拒绝」无法区分按规则拒绝与因别的原因失败。"""
+    """每条非法样例都断言具体原因——只断言「被拒绝」无法区分按规则拒绝与因别的原因失败。"""
     document, expected = INVALID_DOCUMENTS[case]
     _make_skill(tmp_path, "sample", frontmatter=document.format(name="sample"), body="")
 
@@ -284,7 +284,7 @@ def test_catalog_order_is_deterministic(tmp_path: Path) -> None:
 
 
 def test_catalog_narrows_by_surface_when_over_budget(tmp_path: Path) -> None:
-    """超预算时按 ``metadata.surface`` 收窄到当前面可见的 skill。"""
+    """超预算时按 `metadata.surface` 收窄到当前面可见的 skill。"""
     for index in range(6):
         _make_skill(tmp_path, f"consult-{index}")
     other = VALID_FRONTMATTER.format(name="other-one").replace("surface: consult", "surface: other")
@@ -354,7 +354,7 @@ def test_activation_contains_body_and_resource_guide(tmp_path: Path) -> None:
 def test_activation_wraps_the_body_verbatim(tmp_path: Path) -> None:
     """激活载荷的正文必须与 SKILL.md 正文逐字一致（不是摘要、不是重写）。
 
-    「模型侧工具与应用侧注入同形」的**跨路径**断言要等运行编排落地才能写（两条路径
+    「模型侧工具与应用侧注入同形」的跨路径断言要等运行编排落地才能写（两条路径
     都要先存在）；这里先锁住内容契约，免得同形断言退化成自比自。
     """
     _make_skill(tmp_path, "sample")
@@ -469,7 +469,7 @@ def test_frontmatter_error_carries_path_and_detail(tmp_path: Path) -> None:
 
 
 def test_crlf_bom_and_document_end_marker_are_tolerated(tmp_path: Path) -> None:
-    """结束行允许 ``...``（YAML 文档结束符），并容忍 CRLF 与 BOM。"""
+    """结束行允许 `...`（YAML 文档结束符），并容忍 CRLF 与 BOM。"""
     directory = tmp_path / "sample"
     directory.mkdir()
     text = "\ufeff---\r\nname: sample\r\ndescription: 描述\r\n...\r\n正文\r\n"
@@ -482,7 +482,7 @@ def test_crlf_bom_and_document_end_marker_are_tolerated(tmp_path: Path) -> None:
 
 
 def test_build_metadata_rejects_non_string_license(tmp_path: Path) -> None:
-    """非字符串字段必须报错而不是强转（``name: yes`` 曾会被转成 ``True``）。"""
+    """非字符串字段必须报错而不是强转（`name: yes` 曾会被转成 `True`）。"""
     from campfire.agent.skill_runtime.skill import build_metadata
 
     with pytest.raises(SkillFrontmatterError, match="必须是字符串"):
@@ -496,15 +496,15 @@ def test_build_metadata_rejects_non_string_license(tmp_path: Path) -> None:
 # --- 对抗性审查回归：曾经静默通过的缺陷 -------------------------------------
 #
 # 下面每条都对应一次实测发现的缺陷。它们曾经「加载成功、无告警」，因此用例的要点是
-# **断言加载结果本身**，而不是断言「没有抛异常」。
+# 断言加载结果本身，而不是断言「没有抛异常」。
 
 
 def test_indented_delimiters_inside_block_scalars_do_not_end_frontmatter(tmp_path: Path) -> None:
     """块标量里的缩进 `---` / `...` 不是分隔符。
 
-    初版按 ``line.strip()`` 找结束行，于是下面这份文档会在这里提前收尾：``metadata``
-    与 ``allowed-tools`` 被静默吞进正文，``autoload: "false"`` 随之丢失——本该只由程序
-    注入的 skill 变成可被模型自动匹配，且**没有任何告警**。
+    初版按 `line.strip()` 找结束行，于是下面这份文档会在这里提前收尾：`metadata`
+    与 `allowed-tools` 被静默吞进正文，`autoload: "false"` 随之丢失——本该只由程序
+    注入的 skill 变成可被模型自动匹配，且没有任何告警。
     """
     document = (
         "---\n"
@@ -562,10 +562,10 @@ def test_read_failure_is_aggregated_instead_of_escaping(tmp_path: Path, monkeypa
 
 
 def test_skill_file_name_must_match_case_exactly(tmp_path: Path) -> None:
-    """``skill.md`` 在大小写不敏感的文件系统上会被 ``is_file()`` 认成 ``SKILL.md``。
+    """`skill.md` 在大小写不敏感的文件系统上会被 `is_file()` 认成 `SKILL.md`。
 
     行为必须与平台无关：只认精确文件名，其余当作「目录缺少 SKILL.md」并告警。
-    因此这里**无条件**断言未加载——如果实现退回 ``(entry / SKILL_FILE_NAME).is_file()``，
+    因此这里无条件断言未加载——如果实现退回 `(entry / SKILL_FILE_NAME).is_file()`，
     本条会在 Windows 上失败（把目录里的小写文件当成 skill 加载）。
     """
     directory = tmp_path / "sample"
@@ -580,7 +580,7 @@ def test_skill_file_name_must_match_case_exactly(tmp_path: Path) -> None:
 
 @pytest.mark.parametrize("relative_path", ["references/x\x00.md", "references/guide.md:hidden"])
 def test_read_resource_rejects_unportable_characters(tmp_path: Path, relative_path: str) -> None:
-    """NUL 会让 Path 操作抛裸 ValueError；``:`` 在 Windows 上指 NTFS 备用数据流。"""
+    """NUL 会让 Path 操作抛裸 ValueError；`:` 在 Windows 上指 NTFS 备用数据流。"""
     _make_skill(tmp_path, "sample")
     references = tmp_path / "sample" / "references"
     references.mkdir()
@@ -625,11 +625,11 @@ def test_symlink_escaping_the_skill_directory_is_marked(tmp_path: Path) -> None:
 
 
 def test_column_zero_delimiter_inside_block_scalar_fails_loudly(tmp_path: Path) -> None:
-    """顶格 `---` / `...` 落在块标量里时，必须**明确失败**而不是静默丢字段。
+    """顶格 `---` / `...` 落在块标量里时，必须明确失败而不是静默丢字段。
 
-    这类文档按 YAML 规范会让块标量在该行结束，于是其后的 ``metadata``、``allowed-tools``
+    这类文档按 YAML 规范会让块标量在该行结束，于是其后的 `metadata`、`allowed-tools`
     落到 frontmatter 之外、被当成正文吞掉。实测（含 `|1` 显式缩进指示符）能把
-    ``autoload: "false"`` 吞掉，使本该只由程序注入的 skill 变成可被模型自动匹配，
+    `autoload: "false"` 吞掉，使本该只由程序注入的 skill 变成可被模型自动匹配，
     而且既不报错也不告警——正是「不得静默加载」禁止的处置。
     """
     document = (
@@ -669,7 +669,7 @@ def test_column_zero_end_marker_inside_block_scalar_fails_loudly(tmp_path: Path)
 
 
 def test_body_may_mention_standard_fields_after_the_first_line(tmp_path: Path) -> None:
-    """正文**中间**出现标准字段是合法内容（指令里举例很常见），不得误伤。"""
+    """正文中间出现标准字段是合法内容（指令里举例很常见），不得误伤。"""
     body = "用法示例：\nmetadata:\n  surface: consult\n\n以上是举例。\n"
     _make_skill(tmp_path, "sample", body=body)
 
@@ -679,9 +679,9 @@ def test_body_may_mention_standard_fields_after_the_first_line(tmp_path: Path) -
 
 
 def test_tool_name_pattern_rejects_trailing_newline() -> None:
-    """``$`` 会匹配「结尾或结尾前换行」，所以必须用 fullmatch 校验。
+    """`$` 会匹配「结尾或结尾前换行」，所以必须用 fullmatch 校验。
 
-    带换行的工具名会被原样写进 ``<tool_availability>`` 信封，把信封撑破。
+    带换行的工具名会被原样写进 `<tool_availability>` 信封，把信封撑破。
     """
     from campfire.agent.skill_runtime.skill import TOOL_NAME_PATTERN
 
@@ -691,16 +691,19 @@ def test_tool_name_pattern_rejects_trailing_newline() -> None:
 
 
 def test_skill_name_pattern_rejects_trailing_newline() -> None:
-    """与工具名同理：``$`` 会放过尾随换行，必须用 fullmatch。"""
+    """与工具名同理：`$` 会放过尾随换行，必须用 fullmatch。"""
     from campfire.agent.skill_runtime.skill import NAME_PATTERN
 
     assert NAME_PATTERN.match("daily\n") is not None
     assert NAME_PATTERN.fullmatch("daily\n") is None
     assert NAME_PATTERN.fullmatch("daily-consulting") is not None
-    """按代理分词器（tiktoken ``cl100k_base``）实测值校准的三条下界断言。
 
-    数字是**实测值**，不是拍的阈值：``a `` ×200 → 201、emoji ×100 → 200、
-    ``中文`` ×80 → 160。断言「估算 ≥ 实测」，否则 4000 token 那条预算就不是上界。
+
+def test_estimate_tokens_matches_the_proxy_tokenizer_measurements() -> None:
+    """按代理分词器（tiktoken `cl100k_base`）实测值校准的三条下界断言。
+
+    数字是实测值，不是拍的阈值：`a ` ×200 → 201、emoji ×100 → 200、
+    `中文` ×80 → 160。断言「估算 ≥ 实测」，否则 4000 token 那条预算就不是上界。
     """
     assert estimate_tokens("a " * 200) >= 201
     assert estimate_tokens("🙂" * 100) >= 200
@@ -726,10 +729,10 @@ def test_estimate_tokens_on_the_shape_the_catalog_actually_has() -> None:
 
 
 def test_estimate_tokens_may_underestimate_punctuation_heavy_ascii() -> None:
-    """已知的**低估**形状：标点密集的中英混排（含文件路径）实测比值 0.95。
+    """已知的低估形状：标点密集的中英混排（含文件路径）实测比值 0.95。
 
     这条断言是刻意的：`estimate_tokens` 的 docstring 说它是「估算不是上界」，
-    如果哪天有人把权重调回「必上界」，这条会先失败——它守住的是**声明与实际一致**。
+    如果哪天有人把权重调回「必上界」，这条会先失败——它守住的是声明与实际一致。
     """
     sample = "应急咨询 skill 的第一层闸门：先排除医疗危险（见 references/gates.md）。" * 10
 
