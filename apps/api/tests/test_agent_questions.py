@@ -22,11 +22,11 @@ from __future__ import annotations
 import dataclasses
 import json
 import tempfile
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import asdict
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, TypeVar
 
 import httpx
 import pytest
@@ -130,7 +130,7 @@ def _context() -> ToolContext:
     )
 
 
-def _chunk(delta: dict[str, Any], finish_reason: str | None = None) -> str:
+def _chunk(delta: Mapping[str, object], finish_reason: str | None = None) -> str:
     payload = {
         "id": "chatcmpl-test",
         "object": "chat.completion.chunk",
@@ -164,7 +164,7 @@ def reasoning_reply(*parts: str) -> bytes:
     )
 
 
-def tool_call_reply(name: str, arguments: dict[str, Any], *, call_id: str) -> bytes:
+def tool_call_reply(name: str, arguments: Mapping[str, object], *, call_id: str) -> bytes:
     """一次工具调用的脚本。`call_id` 必须每次不同：SDK 会拒绝复用已完成的调用标识。"""
     return _sse(
         _chunk({"role": "assistant", "content": None}),
@@ -189,6 +189,9 @@ class ScriptedChat:
 
     def __init__(self, script: Sequence[bytes]) -> None:
         self._script = list(script)
+        # 请求体是 json.loads 的返回：源头就是动态 JSON，没有更精确的类型可标；
+        # 断言里按 Chat Completions 的已知形状取值。
+        # quality-floor: ignore bare-any 值来自 json.loads，类型在源头就已丢失
         self.requests: list[dict[str, Any]] = []
 
     async def handler(self, request: httpx.Request) -> httpx.Response:
@@ -222,6 +225,9 @@ def _empty_root() -> Path:
     return _EMPTY_ROOT
 
 
+# `ToolSpec[ArgsT]` 不协变（`ArgsT` 同时出现在参数模型与 handler 签名里），异构 spec 序列
+# 没有共同的精确参数类型：这里逐个注册，参数类型本就各不相同。
+# quality-floor: ignore bare-any 异构工具池，没有共同的精确参数类型
 def _pool(*, with_ask_user: bool = True, extra: Sequence[ToolSpec[Any]] = ()) -> ToolPool:
     """建一个工具池；默认按装配处的做法注册提问工具（保留名走 register_base）。"""
     pool = ToolPool(list(extra))
@@ -247,27 +253,34 @@ def _runner(
     )
 
 
-def _request(**overrides: Any) -> RunRequest:
-    values: dict[str, Any] = {
+def _request(**overrides: object) -> RunRequest:
+    values: dict[str, object] = {
         "session_id": "s-1",
         "surface": "consult",
         "instructions": "静态系统提示",
         "user_input": "你好",
     }
     values.update(overrides)
-    return RunRequest(**values)
+    return RunRequest(**values)  # type: ignore[arg-type]  # dataclass 不接受 dict[str, object] 展开；字段名与取值由各用例的断言锁定
 
 
 async def _collect(runner: AgentRunner, request: RunRequest) -> list[RunEvent]:
     return [event async for event in runner.run(request)]
 
 
-def _of(events: Sequence[RunEvent], kind: type) -> list[Any]:
-    """按类型筛事件（测试里读起来比列表推导清楚）。"""
+_EventT = TypeVar("_EventT", bound=RunEvent)
+
+
+def _of(events: Sequence[RunEvent], kind: type[_EventT]) -> list[_EventT]:
+    """按类型筛事件（测试里读起来比列表推导清楚）。
+
+    返回类型跟着 `kind` 收窄：`_of(events, QuestionEvent)` 得到 `list[QuestionEvent]`。
+    这比 `list[Any]` 强的地方正是本文件的用例在断言的那些字段名——写错了要能看见。
+    """
     return [event for event in events if isinstance(event, kind)]
 
 
-def _wire(event: object) -> Any:
+def _wire(event: object) -> object:
     """把事件压成线上 `data` 的样子：可 JSON 序列化的纯 list/dict 结构。
 
     比直接比 `asdict` 更贴契约——面侧把 `data` 定义成「该事件对象的 JSON」，所以元组会变成
@@ -518,7 +531,7 @@ def test_stop_after_question_stops_once_a_question_exists() -> None:
     """真问出问题就结束运行，并把工具回给模型的那句话作为最终产出。"""
     gate = QuestionGate()
     gate.note_question(text="已提问")
-    result = stop_after_question(gate)(None, [object()])  # type: ignore[arg-type]
+    result = stop_after_question(gate)(None, [object()])  # type: ignore[arg-type]  # 回调只读闸门，不用上下文
 
     assert result.is_final_output is True
     assert result.final_output == "已提问"

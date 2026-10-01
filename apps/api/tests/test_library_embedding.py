@@ -33,7 +33,7 @@ def _settings(**overrides: object) -> Settings:
         "embedding_model_name": "kinfra-text-embedding-4b",
     }
     base.update(overrides)
-    return Settings(**base)  # type: ignore[arg-type]
+    return Settings(**base)  # type: ignore[arg-type]  # 夹具以 object 组合再交给 pydantic 收敛校验，静态类型看不出这层收敛
 
 
 def test_build_embedding_uses_custom_model_name() -> None:

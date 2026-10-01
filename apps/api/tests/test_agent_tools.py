@@ -236,7 +236,7 @@ def test_tool_pool_view_is_read_only() -> None:
     pool = ToolPool([_spec("read_alpha")])
 
     with pytest.raises(TypeError):
-        pool.tools["x"] = _spec("x")  # type: ignore[index]
+        pool.tools["x"] = _spec("x")  # type: ignore[index]  # 本用例故意改只读视图：赋值被拒正是被测事实
 
 
 def test_always_active_tools_do_not_depend_on_allowed_tools() -> None:

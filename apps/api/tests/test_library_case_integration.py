@@ -417,8 +417,8 @@ def test_invalid_library_is_rejected(bad_library: str) -> None:
     with pytest.raises(RetrievalError, match="非法库别"):
         asyncio.run(
             search(
-                _NoSession(),  # type: ignore[arg-type]
-                _NoStore(),  # type: ignore[arg-type]
+                _NoSession(),  # type: ignore[arg-type]  # 最小替身：非法库别必须在触到查询之前就被拒，不需要真会话
+                _NoStore(),  # type: ignore[arg-type]  # 同上：向量路连碰都不该被碰到
                 "查询",
                 library=bad_library,
                 embed_query=_fake_embed_query,
@@ -435,7 +435,7 @@ def test_invalid_library_is_rejected_by_literal_search() -> None:
             raise AssertionError("非法库别不应走到查库")
 
     with pytest.raises(RetrievalError, match="非法库别"):
-        asyncio.run(literal_search(_NoSession(), "虚构查询", library="bogus"))  # type: ignore[arg-type]
+        asyncio.run(literal_search(_NoSession(), "虚构查询", library="bogus"))  # type: ignore[arg-type]  # 最小替身：非法库别必须在触到查询之前就被拒
 
 
 @pytest.mark.asyncio

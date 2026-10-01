@@ -327,7 +327,7 @@ async def test_batch_query_rejects_a_bare_string() -> None:
         async with session_scope(get_settings()) as session:
             # 它不是合法输入：必须报错，不能静默给空集。
             with pytest.raises(TombstonePayloadError, match="序列"):
-                await deleted_account_ids(session, account_ids=deleted)  # type: ignore[arg-type]
+                await deleted_account_ids(session, account_ids=deleted)
 
             # 同样的内容放进 list 才对——证明上面拒的是**类型**，不是内容。
             found = await deleted_account_ids(session, account_ids=[deleted])
