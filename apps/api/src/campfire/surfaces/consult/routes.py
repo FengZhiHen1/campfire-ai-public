@@ -45,6 +45,7 @@ from campfire.core.authz import OBJECT_NOT_ACCESSIBLE_MESSAGE, AuthorizationErro
 from campfire.core.cache import RedisCache, get_cache
 from campfire.core.config import Settings, get_settings
 from campfire.core.db import session_scope
+from campfire.modules.accounts import discard_session_owner
 from campfire.modules.accounts.errors import (
     OnboardingTriggerError,
     OnboardingWriteError,
@@ -56,7 +57,6 @@ from campfire.modules.accounts.onboarding import onboarding_pending as read_onbo
 from campfire.modules.accounts.onboarding import read_onboarding_state, should_inject_onboarding
 from campfire.modules.accounts.onboarding_skip import skip_onboarding
 from campfire.modules.accounts.onboarding_start import start_onboarding
-from campfire.modules.accounts.session_repository import delete_session_owner
 from campfire.modules.accounts.sessions import (
     list_sessions as list_account_sessions,
 )
@@ -958,7 +958,7 @@ async def _discard_emergency_session(settings: Settings, *, session_id: str) -> 
             # 先删子行（绑定）再删归属行：两行没有外键，删的顺序不影响结果，
             # 但读代码的人不该去推「先删哪一行才对」。
             await discard_session_binding(db, session_id=session_id)
-            await delete_session_owner(db, session_id=session_id)
+            await discard_session_owner(db, session_id=session_id)
     except Exception as exc:  # noqa: BLE001 —— 503 必须照回，删不掉只记日志供人工清理
         logger.warning("应急会话补偿删除失败：会话=%s 异常=%s", session_id, type(exc).__name__)
 
