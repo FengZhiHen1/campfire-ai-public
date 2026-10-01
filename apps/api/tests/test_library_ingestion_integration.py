@@ -638,8 +638,7 @@ async def test_reingest_unchanged_after_withdrawal_clears_residual_nodes(
         assert (second.chunks_written, second.headers) == (0, []), "跳过语义不变：不写节点、不报定位"
         assert embedder.calls == 1, "幂等跳过不得嵌入"
         assert await _node_counts(first.item_id) == (0, 0), (
-            "哈希未变的重复摄取没有清掉已撤下条目的残留节点——"
-            "「撤下后该条目没有节点」这条承诺在这条路径上不成立"
+            "哈希未变的重复摄取没有清掉已撤下条目的残留节点——「撤下后该条目没有节点」这条承诺在这条路径上不成立"
         )
     finally:
         await _cleanup(source_path)
