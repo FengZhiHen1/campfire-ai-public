@@ -2,11 +2,11 @@
 name: profile-curation
 description: 用于在对话过程中把使用者已经说出或明确提供的信息整理成支持对象的个性化档案条目：当出现值得长期记住的情境、表现、可能的需要或有效的支持方式时使用。可以为已经出现过的信息记录观察与推断，但推断只进候选层并如实标注来源，交使用者确认；不做推断补全，不写入任何未经确认的推断。
 license: 项目内部内容，随应用发布，不单独授权
-compatibility: 依赖 read_profile_items、propose_profile_item、read_memory、write_memory；不依赖脚本与外部二进制
+compatibility: 依赖 create_support_object、read_profile_items、propose_profile_item、read_memory、write_memory；不依赖脚本与外部二进制
 metadata:
   surface: "consult"
   autoload: "true"
-allowed-tools: read_profile_items propose_profile_item read_memory write_memory
+allowed-tools: create_support_object read_profile_items propose_profile_item read_memory write_memory
 ---
 
 # profile-curation
@@ -49,6 +49,7 @@ allowed-tools: read_profile_items propose_profile_item read_memory write_memory
 
 - `propose_profile_item` 是档案的**唯一写入口**，落层由 `origin` 分流：陈述类 `origin` 直接进稳定层，`system_observation` 与 `ai_inference` 只进候选层、**确认才进稳定层**。工具实现层必须硬卡：后两者**不得**写成 `confirmation = confirmed`，请求被拒绝而不是被降级改写。
 - **推断必须带自己的 `origin`**：不得用 `user_statement` 提交自己的归纳——那是冒充来源，而来源是可核对的验收对象。**为什么这条要硬卡**：推断一旦被标成 `user_statement`，它就同时获得了「直接进稳定层」与「零确认」两项待遇，使用者再也没有机会发现那不是自己说过的话。
+- `create_support_object`：只在使用者**明确表达**要为一位新的支持对象建档时创建（对话中说出称呼即可）；名称取使用者给的称呼，空名会被拒绝；不主动提议创建。同一会话再建第二个对象不改变会话绑定。
 - `write_memory` 写通用记忆，`read_memory` 读它；两者都不得用来绕过档案的确认流程。**两者都属账号、不收 `support_object_id`**（记忆是关于使用者自身的经验）——凡是关于支持对象的事实必须走档案，不得借记忆通道绕过确认。
 - 写入是**异步**的（经待处理记录与 Worker），所以回执只能承诺「已提交」，**不得**声称「已保存」。
 

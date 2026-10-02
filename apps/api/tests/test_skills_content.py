@@ -122,7 +122,10 @@ EXPECTED_ALLOWED_TOOLS: Mapping[str, frozenset[str]] = {
     "daily-consulting": frozenset(
         {"read_profile_summary", "read_profile_items", "read_memory", "search_knowledge", "search_cases"}
     ),
-    "profile-curation": frozenset({"read_profile_items", "propose_profile_item", "read_memory", "write_memory"}),
+    # 2026-10-01 裁决：create_support_object 入本 skill（跨会话建对象的授权来源）。
+    "profile-curation": frozenset(
+        {"create_support_object", "read_profile_items", "propose_profile_item", "read_memory", "write_memory"}
+    ),
     "onboarding": frozenset(
         {
             "create_support_object",
