@@ -40,7 +40,13 @@ from campfire.agent.context import (
 )
 from campfire.agent.limits import AGENT_RUN_TIMEOUT_SECONDS
 from campfire.agent.model import ModelBinding, ModelFailureReason, classify_model_failure
-from campfire.agent.skill_runtime import Skill, SkillRegistry, render_activation
+from campfire.agent.skill_runtime import (
+    Skill,
+    SkillNotFoundError,
+    SkillRegistry,
+    activation_names_from_history,
+    render_activation,
+)
 from campfire.agent.tools import ActivationState, ToolContext, ToolDispatcher, ToolPool, ToolScope, resolve_scope
 
 from .ask_user_tool import ASK_USER_TOOL_NAME
@@ -95,6 +101,16 @@ class RunRequest:
 
     activated: tuple[Skill, ...] = ()
     """程序注入的激活集合（例如产品侧在运行入口直接指定要激活的 skill）。"""
+
+    activated_record: tuple[TResponseInputItem, ...] = ()
+    """应用侧合成激活记录对（function_call + 结果），放进本轮 input 随运行落库。
+
+    授权真源是会话历史里的激活记录（通用基座第 3 节「激活记录即授权真源」）：
+    面在触发条件成立时合成记录对，本字段承载它；与
+    `activated` 的分工——`activated` 决定本轮 scope（授权即时生效），
+    `activated_record` 让授权随记录落库、跨运行持续。两个都给时同名 skill
+    落一条记录即可（授权不重复累计）。
+    """
 
     default_active_tools: tuple[str, ...] = ()
     """未激活任何 skill 时面配置的默认可用工具集（一期只含只读类）。"""
@@ -247,14 +263,36 @@ class AgentRunner:
             always.append(ASK_USER_TOOL_NAME)
         self._always_active: tuple[str, ...] = tuple(always)
 
-    def _resolve_scope(self, request: RunRequest) -> ToolScope:
-        """按请求解析工具范围（唯一入口，避免两处各算一次而分叉）。"""
+    def _resolve_scope(self, request: RunRequest, historical: Sequence[Skill]) -> ToolScope:
+        """按请求解析工具范围（唯一入口，避免两处各算一次而分叉）。
+
+        `historical` 是从会话历史的激活记录推导的已激活 skill（授权真源的读取端，
+        见 `activation_names_from_history`）；与本轮 `activated` 取并集——授权
+        只增不减，默认可用集只在并集为空时兜底。
+        """
         return resolve_scope(
             self._tools,
             activated=request.activated,
+            historical=historical,
             default_active=request.default_active_tools,
             always_active=self._always_active,
         )
+
+    def _historical_skills(self, history: Sequence[object]) -> tuple[Skill, ...]:
+        """把历史激活记录的名字翻成 skill 对象；未注册的名字跳过并记日志。
+
+        名字在历史里而注册表里没有，只可能是 skill 下线或改名后旧会话仍在——
+        那份授权的对象已不存在，跳过是唯一诚实处置（静默丢授权方向安全：该
+        skill 的工具由服务端照常拒绝）。不抛错：一次下线不该让存量会话全部 503。
+        """
+        names = activation_names_from_history(history)  # type: ignore[arg-type]  # SDK 读回项是 dict，Mapping 契约由该函数逐字段校验
+        skills: list[Skill] = []
+        for name in names:
+            try:
+                skills.append(self._skills.get(name))
+            except SkillNotFoundError:
+                logger.warning("历史激活记录指向未注册的 skill，授权作废：skill=%s", name)
+        return tuple(skills)
 
     async def run(self, request: RunRequest) -> AsyncIterator[RunEvent]:
         """执行一次运行，逐个产出事件。
@@ -285,7 +323,8 @@ class AgentRunner:
             compactions.append(facts)
 
         try:
-            scope = self._resolve_scope(request)
+            historical = self._historical_skills(history)
+            scope = self._resolve_scope(request, historical)
             batch = InjectionBatch(
                 [*self._pending_injections(history, request, scope), *request.injections.items],
                 request.injections.unavailable,
@@ -318,7 +357,8 @@ class AgentRunner:
             )
             return
 
-        new_items: list[TResponseInputItem] = [_as_input_item(message) for message in rendered]
+        new_items: list[TResponseInputItem] = [record for record in request.activated_record]
+        new_items.extend(_as_input_item(message) for message in rendered)
         if request.user_input is not None:
             new_items.append({"role": "user", "content": request.user_input})
 
@@ -327,7 +367,7 @@ class AgentRunner:
             session_id=request.session_id,
             surface=request.surface,
             model=self._binding.name,
-            activated_skills=tuple(skill.name for skill in request.activated),
+            activated_skills=tuple(dict.fromkeys(skill.name for skill in (*historical, *request.activated))),
             injection_sources=tuple(item.source for item in batch.ordered()),
             appended_messages=len(new_items),
         )
@@ -339,10 +379,12 @@ class AgentRunner:
             yield ProgressEvent(message="上下文压力偏高，已压缩较早的历史。")
 
         buffer: list[RunEvent] = []
-        # 运行时激活状态：初始 = 请求携带的激活 skill 名；模型侧激活（skill 工具）在运行中
-        # 并入（连同它的 allowed-tools）。dispatcher 读工具名并集，ToolContext 读 skill 名。
+        # 运行时激活状态：初始 = 历史推导 + 请求携带的激活 skill 名（授权只增不减，
+        # 历史推导的名字也在其中——read_skill_resource 等按 skill 判定的工具依赖它）；
+        # 模型侧激活（skill 工具）在运行中并入（连同它的 allowed-tools）。
+        # dispatcher 读工具名并集，ToolContext 读 skill 名。
         activation_state = ActivationState()
-        activation_state.seed(scope.activated_skills)
+        activation_state.seed((*(skill.name for skill in historical), *(skill.name for skill in request.activated)))
         dispatcher = ToolDispatcher(
             self._tools,
             scope,
@@ -700,6 +742,9 @@ class AgentRunner:
         判据只看窗口，不看整段历史：压缩之后，目录/可用性/激活内容都可能落在被摘要覆盖的
         那一段里——那里已经不进窗口了。若继续按整段历史判断，模型会在压缩后丢掉技能目录，
         而基座还以为「已经注入过」。
+
+        激活内容只对本轮新增的 `request.activated` 注入：历史推导的授权来自历史里
+        已有的激活记录（正文已在会话里），再注入一份就是重复。
         """
         window = derive_window(history)
         pending: list[InjectionItem] = []
