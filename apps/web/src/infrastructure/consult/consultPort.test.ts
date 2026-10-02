@@ -113,9 +113,9 @@ describe('createConsultApi — 端点形状', () => {
     await expect(createConsultApi({ fetchImpl }).cancelRun('run-1')).resolves.toBeUndefined();
   });
 
-  it('技能目录按已确认的三个技能标识返回（契约无目录端点的替身点）', async () => {
+  it('技能目录只含可手选的两个技能（值域裁决：应急走表单入口，不进选择器）', async () => {
     const skills = await createConsultApi().listSkills();
-    expect(skills.map((skill) => skill.id)).toEqual(['daily-consulting', 'emergency-consulting', 'profile-curation']);
+    expect(skills.map((skill) => skill.id)).toEqual(['daily-consulting', 'profile-curation']);
   });
 });
 
