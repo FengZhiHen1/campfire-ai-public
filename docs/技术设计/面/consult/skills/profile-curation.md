@@ -24,11 +24,11 @@
 name: profile-curation
 description: 用于在对话过程中把使用者已经说出或明确提供的信息整理成支持对象的个性化档案条目：当出现值得长期记住的情境、表现、可能的需要或有效的支持方式时使用。可以为已经出现过的信息记录观察与推断，但推断只进候选层并如实标注来源，交使用者确认；不做推断补全，不写入任何未经确认的推断。
 license: 项目内部内容，随应用发布，不单独授权
-compatibility: 依赖 read_profile_items、propose_profile_item、read_memory、write_memory；不依赖脚本与外部二进制
+compatibility: 依赖 create_support_object、read_profile_items、propose_profile_item、read_memory、write_memory；不依赖脚本与外部二进制
 metadata:
   surface: "consult"
   autoload: "true"
-allowed-tools: read_profile_items propose_profile_item read_memory write_memory
+allowed-tools: create_support_object read_profile_items propose_profile_item read_memory write_memory
 ```
 
 ### 3.2 方法论（正文主体）
@@ -59,6 +59,7 @@ allowed-tools: read_profile_items propose_profile_item read_memory write_memory
 
 - `propose_profile_item` 是档案的**唯一写入口**，落层由 `origin` 分流（[个性化档案](../../../technical-details/个性化档案.md)第 3 节）：陈述类 `origin` 直接进稳定层，`system_observation` 与 `ai_inference` 只进候选层、**确认才进稳定层**。工具实现层必须硬卡：后两者**不得**写成 `confirmation = confirmed`，请求被拒绝而不是被降级改写。
 - **推断必须带自己的 `origin`**：不得用 `user_statement` 提交自己的归纳——那是冒充来源，而来源是 `AC-07` 的验收对象。
+- `create_support_object`（**2026-10-01 裁决新增**）：只在使用者**明确表达**要为一位新的支持对象建档时创建——对话中说出称呼即可；名称取使用者给的称呼，空名会被拒绝；**不主动提议创建**。同一会话再建第二个对象不改变会话绑定。该工具入本 skill 的裁决理由：对象创建是档案整理的前置事实（「这是个新对象，从零建档」），沉淀语义自然涵盖；「对话式创建是一等入口」的既有裁决由此在 skill 层落实——引导之外的对话中建后续对象不再无授权来源。
 - `write_memory` 写通用记忆，`read_memory` 读它；两者都不得用来绕过档案的确认流程。**两者都属账号、不收 `support_object_id`**（记忆是关于使用者自身的经验，[决策记录](../../../decisions/通用记忆归属为账号.md)）——凡是关于支持对象的事实必须走档案，不得借记忆通道绕过确认。
 - 写入是**异步**的（经待处理记录与 Worker），所以回执只能承诺"已提交"，**不得**声称"已保存"。
 
@@ -75,6 +76,7 @@ allowed-tools: read_profile_items propose_profile_item read_memory write_memory
 - **推断如实标注**：构造需要归纳的输入，验证产出的条目标 `origin = ai_inference`（或 `system_observation`），而非 `user_statement`。
 - **陈述零确认入档**：使用者直接陈述后，验证条目进稳定层、且未被要求确认。
 - **推断不越权**：尝试把推断写成已确认，服务端拒绝。
+- **建对象有明确表达**（2026-10-01 裁决新增）：使用者说出新对象称呼时创建成功且回执对象名；未提及新对象时模型不得主动调用 `create_support_object`。
 - **一次观察即可成候选**：单次观察即产出候选条目，验证其不带"重复 ≥2 次"的额外门槛。
 - **否定不回潮**：否定一条候选后，验证同一内容不再被提为候选。
 - **冲突并列**：构造监护者观察与本人自述冲突的输入，验证两条都在、未互相覆盖。
