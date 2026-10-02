@@ -756,6 +756,25 @@ async def test_send_message_rejects_unknown_skill_and_accepts_registered_one(
     assert b"daily-consulting" in streamed.content, "程序注入的激活集合必须出现在 run_started 里"
 
 
+async def test_skill_parameter_rejects_program_injected_skills(client: httpx.AsyncClient) -> None:
+    """`skill` 值域 = 模型可见目录集：应急与引导经此参数手选一律 422。
+
+    依据 docs/技术设计/decisions/激活记录即授权真源.md：值域外传名（含
+    `emergency-consulting`、`onboarding`）回 422 而不是静默忽略——新机制下
+    `skill` 会写一条合成激活记录进历史，静默放行应急等于绕过表单入口的八项采集，
+    放行引导等于绕过引导状态机的触发条件。
+    """
+    _install_runner(ScriptedRunner(get_settings()))
+    session_id = await _create_session(client)
+    async with session_scope(get_settings()) as db:
+        await complete_onboarding(db, account_id=_ACCOUNT)
+
+    for name in ("emergency-consulting", "onboarding"):
+        response = await _send(client, session_id, content="x", skill=name)
+        assert response.status_code == 422, (name, response.status_code, response.text)
+        assert "不可手选" in response.json()["detail"]
+
+
 async def test_send_message_rejects_empty_content_and_empty_answers(client: httpx.AsyncClient) -> None:
     """两种形态各自的载荷不合法（对抗用例：空正文、空回答数组）。"""
     _install_runner(ScriptedRunner(get_settings()))
@@ -1185,13 +1204,26 @@ async def test_first_run_ignores_an_unknown_skill_instead_of_rejecting_it(client
 
 
 async def test_second_run_of_the_same_session_does_not_inject_onboarding(client: httpx.AsyncClient) -> None:
-    """同一个会话的第二次运行不再注入引导，`skill` 参数恢复生效。"""
+    """第二次运行不再注入引导告知；引导授权改由历史激活记录承载（语义反转）。
+
+    原用例把「第二次 `activated` 为空」钉成正确行为——那是缺陷行为：引导跨运行
+    需要工具授权，旧实现授权只活一次运行（docs/技术设计/decisions/激活记录即授权真源.md）。
+    反转后的判据：第一次运行的请求带合成激活记录（落会话历史），第二次运行不再
+    带引导注入（告知只注入一次）也不带本轮 `activated`——授权由基座从历史推导，
+    那一段归 test_agent_runtime 的跨运行用例。
+    """
     runner = ScriptedRunner(get_settings())
     _install_runner(runner)
     session_id = await _create_session(client)
 
     assert (await _send(client, session_id, content="第一次")).status_code == 202
     await drain_pumps()
+    first = runner.requests[0]
+    assert [skill.name for skill in first.activated] == ["onboarding"]
+    assert any(
+        item.get("type") == "function_call" and item.get("name") == "skill" for item in first.activated_record
+    ), "首次运行必须带引导的合成激活记录（授权落历史）"
+
     second = await _send(client, session_id, content="第二次", skill="daily-consulting")
     assert second.status_code == 202, second.text
     await drain_pumps()
@@ -1199,6 +1231,15 @@ async def test_second_run_of_the_same_session_does_not_inject_onboarding(client:
     request = runner.requests[-1]
     assert [skill.name for skill in request.activated] == ["daily-consulting"]
     assert request.injections.ordered() == (), "第二次运行不该再带引导注入"
+    assert all(
+        not (
+            item.get("type") == "function_call"
+            and item.get("name") == "skill"
+            and str(item.get("call_id", "")).startswith("app-")
+        )
+        or "daily-consulting" in str(item.get("arguments", ""))
+        for item in request.activated_record
+    ), "第二次运行只带本轮手选的记录，不带引导记录"
 
 
 async def test_first_run_injection_is_not_consumed_when_the_run_fails_to_start(

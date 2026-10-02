@@ -55,7 +55,7 @@ from campfire.agent.runtime import (
     build_sqlalchemy_session,
 )
 from campfire.agent.runtime.events import CitationEvent, RunUsage
-from campfire.agent.skill_runtime import SkillRegistry
+from campfire.agent.skill_runtime import SkillRegistry, build_activation_record
 from campfire.agent.tools import ToolContext, ToolNotRegisteredError, ToolPool, ToolResult, ToolSpec
 
 if TYPE_CHECKING:
@@ -486,6 +486,201 @@ async def test_application_side_activation_injects_skill_content_once(tmp_path: 
     second = [message["content"] for message in chat.messages_seen[1]]
     assert sum(1 for content in first if content and content.startswith("<skill_content")) == 1
     assert sum(1 for content in second if content and content.startswith("<skill_content")) == 1
+
+
+# --- 授权跨运行（激活记录即授权真源）-----------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_activation_authorization_survives_across_runs(tmp_path: Path) -> None:
+    """激活授权跨运行持续：首次运行激活的 skill，其工具在第二次运行照常可用。
+
+    这是生产缺陷的回归用例（docs/技术设计/decisions/激活记录即授权真源.md）：
+    引导「一次一问 + 提问即中止」必然跨多次运行，而旧实现授权只活一次运行
+    ——第二次运行里 `create_support_object` 被拒、`finish_onboarding` 永不可达。
+
+    第一轮走真实链路：模型调 `skill` 激活（记录由 SDK 落进会话）；第二轮不携带
+    任何激活，模型直接调该 skill 的工具——授权只能来自历史推导。
+    """
+    registry = _skill_root(tmp_path)
+    calls: list[str] = []
+    pool = ToolPool([read_tool(calls=calls)])
+    pool.register_base(build_skill_tool(registry))
+    chat = ScriptedChat(
+        [
+            tool_call_reply(SKILL_TOOL_NAME, {"name": "daily-consulting"}),
+            text_reply("已激活"),
+            tool_call_reply("read_alpha", {"query": "第二次运行的问题"}, call_id="call-2"),
+            text_reply("第二次照常可用"),
+        ]
+    )
+    session = FakeSession("s-1")
+    runner = AgentRunner(
+        binding=_binding(chat),
+        tools=pool,
+        skills=registry,
+        citations=FakeCitationIndex(),
+        sessions=lambda session_id: session,
+    )
+
+    first_events = await _collect(runner, _request())
+    second_events = await _collect(runner, _request())
+
+    # 第一轮：激活成功（模型侧真实调用）。
+    first_finishes = [event for event in first_events if isinstance(event, ToolCallFinishedEvent)]
+    assert [(event.tool_name, event.ok) for event in first_finishes] == [(SKILL_TOOL_NAME, True)]
+    # 第二轮：不带激活，read_alpha 只能凭历史推导的授权执行。
+    second_finishes = [event for event in second_events if isinstance(event, ToolCallFinishedEvent)]
+    assert [(event.tool_name, event.ok, event.error_code) for event in second_finishes] == [("read_alpha", True, None)]
+    assert calls == ["第二次运行的问题"]
+    # run_started 报的是生效集合（历史推导），不是「本轮新增」。
+    started = second_events[0]
+    assert isinstance(started, RunStartedEvent)
+    assert started.activated_skills == ("daily-consulting",)
+
+
+@pytest.mark.asyncio
+async def test_activation_record_grants_authorization_in_the_next_run(tmp_path: Path) -> None:
+    """应用侧合成激活记录落历史后，下一次运行从历史推导出工具授权。
+
+    与上一条互补：上一条验模型侧记录，这一条验应用侧合成记录（`activated_record`）。
+    引导/应急的授权续期正是走这条路。
+    """
+    registry = _skill_root(tmp_path)
+    calls: list[str] = []
+    pool = ToolPool([read_tool(calls=calls)])
+    pool.register_base(build_skill_tool(registry))
+    skill = registry.get("daily-consulting")
+
+    call, output = build_activation_record(skill, call_id="app-activate-1")
+    # 第一轮：带合成记录（不请求模型调用工具，只确认记录真的写进会话）。
+    chat_first = ScriptedChat([text_reply("一")])
+    session = FakeSession("s-1")
+    runner_first = AgentRunner(
+        binding=_binding(chat_first),
+        tools=pool,
+        skills=registry,
+        citations=FakeCitationIndex(),
+        sessions=lambda session_id: session,
+    )
+    await _collect(runner_first, _request(activated=(skill,), activated_record=(call, output)))
+    assert any(
+        isinstance(item, dict) and item.get("type") == "function_call" and item.get("name") == "skill"
+        for item in session.items
+    ), "合成记录必须随运行写进会话"
+
+    # 第二轮：不带任何激活，模型直接调 read_alpha——授权只能来自历史推导。
+    chat_second = ScriptedChat(
+        [
+            tool_call_reply("read_alpha", {"query": "续期"}, call_id="call-1"),
+            text_reply("好"),
+        ]
+    )
+    runner_second = AgentRunner(
+        binding=_binding(chat_second),
+        tools=pool,
+        skills=registry,
+        citations=FakeCitationIndex(),
+        sessions=lambda session_id: session,
+    )
+    events = await _collect(runner_second, _request())
+
+    finishes = [event for event in events if isinstance(event, ToolCallFinishedEvent)]
+    assert [(event.tool_name, event.ok, event.error_code) for event in finishes] == [("read_alpha", True, None)]
+    assert calls == ["续期"], "历史推导的授权必须真的放行工具（不是只在声明里可见）"
+    # run_started 报的是生效集合（历史推导 ∪ 本轮新增）
+    started = events[0]
+    assert isinstance(started, RunStartedEvent)
+    assert started.activated_skills == ("daily-consulting",)
+
+
+@pytest.mark.asyncio
+async def test_default_active_tools_are_used_only_without_any_activation(tmp_path: Path) -> None:
+    """默认可用集是「历史并集为空」时的兜底：历史有激活记录后不再叠加。
+
+    防止两套来源叠加出「激活 skill 却还带着默认集工具」的范围漂移。
+    """
+    registry = _skill_root(tmp_path, name="pure-method", autoload="true")
+    # pure-method 的 allowed-tools 是 read_alpha？——_skill_root 固定写 read_alpha。
+    # 这里换个办法：用一个 allowed-tools 为空的纯方法论 skill 激活后验证默认集消失。
+    root = tmp_path / "skills"
+    directory = root / "pure-method"
+    directory.mkdir(parents=True, exist_ok=True)
+    (directory / "SKILL.md").write_text(
+        "---\nname: pure-method\ndescription: 纯方法论技能。\n---\n正文。\n",
+        encoding="utf-8",
+    )
+    registry = SkillRegistry.discover(root)
+    skill = registry.get("pure-method")
+    call, output = build_activation_record(skill, call_id="app-activate-1")
+    pool = ToolPool([read_tool()])
+    pool.register_base(build_skill_tool(registry))
+
+    chat_first = ScriptedChat([text_reply("一")])
+    session = FakeSession("s-1")
+    runner_first = AgentRunner(
+        binding=_binding(chat_first),
+        tools=pool,
+        skills=registry,
+        citations=FakeCitationIndex(),
+        sessions=lambda session_id: session,
+    )
+    await _collect(runner_first, _request(activated=(skill,), activated_record=(call, output)))
+
+    chat_second = ScriptedChat([text_reply("二")])
+    runner_second = AgentRunner(
+        binding=_binding(chat_second),
+        tools=pool,
+        skills=registry,
+        citations=FakeCitationIndex(),
+        sessions=lambda session_id: session,
+    )
+    await _collect(runner_second, _request(default_active_tools=("read_alpha",)))
+
+    # 第二次请求里的可用性告知：默认集不得与历史激活并集叠加。
+    # 历史activated的是 allowed-tools 为空的纯方法论 skill → 并集为空，
+    # read_alpha 即使在 default_active_tools 里也不得出现，且必须列进不可用区。
+    second = [message["content"] for message in chat_second.messages_seen[0]]
+    availability = [content for content in second if content and "<tool_availability>" in content]
+    assert availability, "可用性告知必须注入"
+    available_block = availability[0].split("<unavailable_tools>")[0]
+    assert '<tool name="read_alpha" />' not in available_block, "默认集不得与历史激活并集叠加"
+    assert "<unavailable_tools>" in availability[0]
+    assert '<tool name="read_alpha" />' in availability[0]
+
+
+def test_activation_names_from_history_reads_only_succeeded_records(tmp_path: Path) -> None:
+    """授权读取端的判据：只认配对到成功载荷的 skill 调用，坏记录与失败调用作废。"""
+    from campfire.agent.skill_runtime import activation_names_from_history, render_activation
+
+    registry = _skill_root(tmp_path)
+    payload = render_activation(registry.get("daily-consulting"))
+
+    history: list[dict[str, object]] = [
+        # 成功的模型侧调用（function_call + 成功载荷结果）
+        {"type": "function_call", "call_id": "c1", "name": "skill", "arguments": '{"name": "daily-consulting"}'},
+        {"type": "function_call_output", "call_id": "c1", "output": payload},
+        # 被拒绝的调用（autoload 门拒绝，结果是失败信封）——不构成激活
+        {"type": "function_call", "call_id": "c2", "name": "skill", "arguments": '{"name": "onboarding"}'},
+        {
+            "type": "function_call_output",
+            "call_id": "c2",
+            "output": '<tool_error code="tool_not_available">…</tool_error>',
+        },
+        # 没有配对结果的调用（运行被打断）——不构成激活
+        {"type": "function_call", "call_id": "c3", "name": "skill", "arguments": '{"name": "emergency-consulting"}'},
+        # 参数不是合法 JSON——作废
+        {"type": "function_call", "call_id": "c4", "name": "skill", "arguments": "{broken"},
+        {"type": "function_call_output", "call_id": "c4", "output": payload},
+        # 其它工具的调用——与授权无关
+        {"type": "function_call", "call_id": "c5", "name": "read_alpha", "arguments": "{}"},
+        {"type": "function_call_output", "call_id": "c5", "output": "读到"},
+        # 普通消息——没有 type 字段
+        {"role": "user", "content": "你好"},
+    ]
+
+    assert activation_names_from_history(history) == ("daily-consulting",)
+    assert activation_names_from_history([]) == ()
 
 
 @pytest.mark.asyncio
