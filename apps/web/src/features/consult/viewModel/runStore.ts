@@ -39,8 +39,8 @@ export interface ConsultRunState {
   pendingSkill: string | null;
   /** 待发送的整组回答；发送被受理后清空。 */
   pendingAnswers: QuestionAnswer[] | null;
-  /** 本次运行激活的技能（run_started.activated_skills 的首个）。 */
-  activeSkill: string | null;
+  /** 本次运行生效的技能集合（run_started.activated_skills：历史推导 ∪ 本轮新增）。 */
+  activeSkills: string[];
   /** 待确认候选（不进消息流，只供轻提示与预览面板）。 */
   candidates: CandidateView[];
   /** 提问草稿：批次 id → 草稿（未提交的旧卡要保留自己的草稿）。 */
@@ -94,7 +94,7 @@ const INITIAL_DATA = {
   skills: [],
   pendingSkill: null,
   pendingAnswers: null,
-  activeSkill: null,
+  activeSkills: [],
   candidates: [],
   questionDrafts: {},
   activeBatchId: null,
@@ -156,7 +156,7 @@ export function createConsultRunStore() {
         case 'run_started':
           set({
             connection: 'streaming',
-            activeSkill: event.activated_skills[0] ?? null,
+            activeSkills: [...event.activated_skills],
             progressText: null,
             failure: null,
             interrupted: false,

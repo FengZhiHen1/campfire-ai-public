@@ -107,7 +107,10 @@ export function ChatWorkspace({ sessionId, initialMessages, consult }: ChatWorks
     [sendAnswers, newestCardId],
   );
 
-  const activeSkillLabel = useMemo(() => skillLabel(store.skills, store.activeSkill), [store.activeSkill, store.skills]);
+  const activeSkillLabels = useMemo(
+    () => store.activeSkills.map((id) => skillLabel(store.skills, id)).filter((label): label is string => label !== null),
+    [store.activeSkills, store.skills],
+  );
 
   const submitDraft = (): void => {
     if (sending.current) return;
@@ -152,7 +155,13 @@ export function ChatWorkspace({ sessionId, initialMessages, consult }: ChatWorks
               ← 返回
             </Link>
             <span className="sp-title">咨询</span>
-            {activeSkillLabel === null ? null : <span className="tag meta sp-tag">{activeSkillLabel}</span>}
+            {activeSkillLabels.length === 0
+              ? null
+              : activeSkillLabels.map((label) => (
+                  <span key={label} className="tag meta sp-tag">
+                    {label}
+                  </span>
+                ))}
           </header>
 
           {store.candidates.length === 0 ? null : (
@@ -251,7 +260,7 @@ export function ChatWorkspace({ sessionId, initialMessages, consult }: ChatWorks
                     发送
                   </button>
                 </form>
-                <p className="meta">技能只作用于下一条消息，发送后回归「自动」。</p>
+                <p className="meta">技能只作用于下一条消息；应急求助请返回首页走应急入口。</p>
               </>
             )}
           </div>

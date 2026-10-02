@@ -141,15 +141,15 @@ export function useConsultRuntime(options: {
     hasTextRef.current = hasText;
   }, [hasText]);
   const runStartedAt = useRunStore((state) => state.runStartedAt);
-  const activeSkill = useRunStore((state) => state.activeSkill);
+  const activeSkills = useRunStore((state) => state.activeSkills);
 
   useEffect(() => {
-    if (runStartedAt === null || activeSkill !== EMERGENCY_SKILL_ID) return;
+    if (runStartedAt === null || !activeSkills.includes(EMERGENCY_SKILL_ID)) return;
     const timer = setTimeout(() => {
       if (!hasTextRef.current) useRunStore.getState().setSlowRun(true);
     }, EMERGENCY_FIRST_TOKEN_BUDGET_MS);
     return () => clearTimeout(timer);
-  }, [runStartedAt, activeSkill]);
+  }, [runStartedAt, activeSkills]);
 
   const slowRun = useRunStore((state) => state.slowRun);
   useEffect(() => {
