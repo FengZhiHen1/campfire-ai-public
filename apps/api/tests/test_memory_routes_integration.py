@@ -138,7 +138,8 @@ async def graph(monkeypatch: pytest.MonkeyPatch) -> AsyncIterator[MemoryGraph]:
     """把共享句柄换成假客户端的句柄，收尾清场并复位。
 
     清理两步都不可省：
-    - 图库节点：`MATCH (n) DETACH DELETE n`（两个账号各自那张图）；
+    - 图库：`GRAPH.DELETE` 删两个账号的图键（清节点的「清空后重写」形状会让
+      字符串范围查询返回过期结果，见 conftest.drop_falkordb_graph 的说明）；
     - 删除账本：它的 `episode_key` 是全局唯一约束，与图库无关，
       不清会跨用例残留，让「刚写的两条」被上个用例记的删除挡掉。
     """
@@ -151,9 +152,9 @@ async def graph(monkeypatch: pytest.MonkeyPatch) -> AsyncIterator[MemoryGraph]:
     try:
         yield handle
     finally:
-        for account in (_ACCOUNT, _ACCOUNT_OTHER):
-            scoped = handle.driver_for(account)
-            await scoped.execute_query("MATCH (n) DETACH DELETE n")
+        from .conftest import drop_falkordb_graph
+
+        await drop_falkordb_graph(handle.driver, _ACCOUNT, _ACCOUNT_OTHER)
         await _clear_ledger()
         await handle.aclose()
 

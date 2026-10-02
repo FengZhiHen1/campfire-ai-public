@@ -183,3 +183,35 @@ def connect_falkordb_or_skip():  # noqa: ANN202 —— 返回 FalkorDriver；避
             with suppress(Exception):
                 client.aclose()
         raise
+
+
+async def drop_falkordb_graph(client_or_driver: object, *graph_names: str) -> None:
+    """彻底删除一张或多张图（`GRAPH.DELETE`），供测试夹具的清理使用。
+
+    为什么不用 `MATCH (n) DETACH DELETE n`（2026-10-01 实测，FalkorDB v4.20.7）：
+    清空节点后同图重新写入，带字符串范围条件（`>=` / `<=`）的查询会返回过期
+    结果——「写入 → 清图 → 重写 → 窗查询」稳定复现（until 过滤失效，窗外记录
+    出现在结果里），而 `GRAPH.DELETE` 删除图键后重建不复现。该缺陷只影响
+    测试夹具的「清图重写」形状；生产路径无此形状（纯增量写入），不受影响。
+
+    删除不存在的图键会报错，这里统一吞掉（幂等清理）。
+
+    Args:
+        client_or_driver: `falkordb.asyncio.FalkorDB` 客户端或持有 `.client` 的
+            `FalkorDriver`（夹具与用例手里往往是后者）。
+        graph_names: 要删除的图名（通常是测试账号名）。
+    """
+    client = client_or_driver
+    # FalkorDriver 的 `.client` 是属性（持有底层客户端）；FalkorDB 客户端自己没有
+    # `.client` 属性。两种入参都收，让夹具与用例各用手里最顺手的那个。
+    inner = getattr(client_or_driver, "client", None)
+    if inner is not None:
+        client = inner
+    execute = getattr(client, "execute_command", None)
+    if not callable(execute):
+        return
+    for name in graph_names:
+        try:
+            await execute("GRAPH.DELETE", name)
+        except Exception:  # noqa: BLE001 —— 图不存在或已删除：幂等清理，删空图无业务后果
+            continue

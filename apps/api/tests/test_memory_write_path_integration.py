@@ -135,7 +135,8 @@ async def memory_graph() -> AsyncIterator[MemoryGraph]:
     # 连容器：`FalkorDB(...)` 构造函数本身发网络 I/O，且它抛的是
     # `redis.exceptions.ConnectionError`（不是内建类型）——两者都由
     # `conftest.connect_falkordb_or_skip` 统一处理，避免每个文件各踩一次。
-    driver, client = connect_falkordb_or_skip()
+    # 收尾走 `drop_falkordb_graph(graph.driver, ...)`（客户端由驱动持有）。
+    driver, _client = connect_falkordb_or_skip()
 
     graph = MemoryGraph(
         graphiti=Graphiti(
@@ -150,8 +151,11 @@ async def memory_graph() -> AsyncIterator[MemoryGraph]:
     try:
         yield graph
     finally:
-        scoped = graph.driver_for(_ACCOUNT)
-        await scoped.execute_query("MATCH (n) DETACH DELETE n")
+        # 清图用 GRAPH.DELETE（FalkorDB v4.20.7 对「清空后重写 + 字符串范围查询」
+        # 返回过期结果，见 conftest.drop_falkordb_graph 的说明）。
+        from .conftest import drop_falkordb_graph
+
+        await drop_falkordb_graph(graph.driver, _ACCOUNT)
         await graph.aclose()
 
 
