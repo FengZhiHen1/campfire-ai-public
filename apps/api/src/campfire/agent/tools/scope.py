@@ -97,6 +97,7 @@ def resolve_scope(
     pool: ToolPool,
     *,
     activated: Sequence[Skill] = (),
+    historical: Sequence[Skill] = (),
     default_active: Iterable[str] = (),
     always_active: Iterable[str] = (),
 ) -> ToolScope:
@@ -105,14 +106,19 @@ def resolve_scope(
     `always_active` 是「机制本身」需要的工具（当前只有模型侧激活工具 `skill`）：
     它必须恒可用，否则模型连第一个 skill 都激活不了。
 
+    `historical` 是从会话历史的激活记录推导出的已激活 skill
+    （通用基座第 3 节「激活记录即授权真源」）：授权跨运行、只增不减，
+    与 `activated`（本轮新增）取并集。默认可用集只在并集为空时兜底。
+
     Raises:
         ToolNotRegisteredError: 激活 skill 的 `allowed-tools`、`default_active` 或
             `always_active` 里出现了未注册的工具名。
     """
     names = pool.names()
 
-    if activated:
-        active = frozenset(name for skill in activated for name in skill.metadata.allowed_tools)
+    union = (*activated, *historical)
+    if union:
+        active = frozenset(name for skill in union for name in skill.metadata.allowed_tools)
     else:
         active = frozenset(default_active)
 
@@ -122,5 +128,5 @@ def resolve_scope(
     return ToolScope(
         declared=names,
         active=active | always,
-        activated_skills=frozenset(skill.name for skill in activated),
+        activated_skills=frozenset(skill.name for skill in union),
     )

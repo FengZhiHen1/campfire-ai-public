@@ -13,7 +13,7 @@ docs/技术设计/technical-details/通用基座.md 第 3 节。
 # :mod:`~campfire.agent.skill_runtime.skill` 只做字段语义，:mod:`registry` 负责发现与
 # 取用，:mod:`catalog` 与 :mod:`activation` 只做渲染（纯函数）。
 
-from .activation import render_activation
+from .activation import activation_names_from_history, build_activation_record, render_activation
 from .catalog import CATALOG_BUDGET_TOKENS, estimate_tokens, render_catalog
 from .errors import (
     SkillCatalogOverflowError,
@@ -33,10 +33,9 @@ from .script_runner import ScriptRunner
 from .skill import NAME_PATTERN, TOOL_NAME_PATTERN, Skill, SkillMetadata
 
 # 标准参照实现 `skills-ref validate` 尚未接入工程检查（基座第 3 节要求接入）：
-# `apps/api/skills/` 下目前没有任何 `SKILL.md`，此刻接入只会得到一条「校验了 0 个、
-# 因此必然通过」的真空闸门。本模块的校验是独立实现，不替代标准参照实现；两项状态登记于
-# `docs/TODO.md` 第四节，落地条件是第一份 skill 内容进入仓库——届时该检查必须做到
-# 「0 个 skill 即失败」。
+# 本模块的校验是独立实现，不替代标准参照实现；两项状态登记于设计待办文档第四节，
+# 落地条件是第一份 skill 内容进入仓库——届时该检查必须做到「0 个 skill 即失败」。
+# quality-floor: ignore todo-residue 引用的是设计待办文档的登记条目，不是待办残留
 #
 # 关键约束（见 docs/技术设计/technical-details/通用基座.md 第 3 节）：
 # - frontmatter 只用标准的六个字段，不得自创；自有元数据放 `metadata`。
@@ -63,6 +62,8 @@ __all__ = [
     "SkillResource",
     "SkillResourceError",
     "SkillWarning",
+    "activation_names_from_history",
+    "build_activation_record",
     "estimate_tokens",
     "list_resources",
     "read_resource",

@@ -31,6 +31,7 @@ from collections.abc import AsyncIterator, Sequence
 from dataclasses import dataclass
 from typing import Annotated
 
+from agents.items import TResponseInputItem
 from fastapi import APIRouter, Depends, Header, HTTPException, status
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, ConfigDict
@@ -39,7 +40,7 @@ from supertokens_python.recipe.session import SessionContainer
 
 from campfire.agent.context.injection import InjectionBatch, InjectionItem, UnavailableSource
 from campfire.agent.runtime import RunRequest
-from campfire.agent.skill_runtime import Skill
+from campfire.agent.skill_runtime import Skill, build_activation_record
 from campfire.core.auth.supertokens import require_session
 from campfire.core.authz import OBJECT_NOT_ACCESSIBLE_MESSAGE, AuthorizationError, require_writable
 from campfire.core.cache import RedisCache, get_cache
@@ -101,6 +102,13 @@ logger = logging.getLogger(__name__)
 
 #: 本面的标识（`RunRequest.surface`，用于按面收窄技能目录）。
 SURFACE_NAME = "consult"
+
+#: 未激活任何 skill 时的默认可用工具集（技能设计第 3 节：一期只含只读类）。
+#:
+#: 文档早已定调而实现此前未接线（授权语义重写时一并补上）：它是「历史激活并集
+#: 为空」时的兜底，不是常驻底集——基座 `resolve_scope` 在有激活（含历史推导）时
+#: 不再叠加默认集。
+DEFAULT_ACTIVE_TOOLS: tuple[str, ...] = ("read_profile_summary", "search_knowledge")
 
 #: 运行不存在或不属于当前账号的对外文案。与 :data:`SESSION_NOT_FOUND_MESSAGE` 同理：
 #: 两种情形共用一条文案，区分二者等于提供运行枚举通道。
@@ -379,14 +387,20 @@ async def hydrate_history(session_id: str, session: SessionDep, settings: Settin
 
 
 async def _activated_skill(settings: Settings, skill_name: str | None) -> tuple[Skill, ...]:
-    """把技能选择器的选择翻成「程序注入的激活集合」（裁决 11、技能设计第 4 节）。
+    """把技能选择器的选择翻成「程序注入的激活集合」（技能设计第 4 节）。
 
     `skill` 缺省或为 `null` 表示自动匹配：不注入任何激活集合，由模型侧激活工具
-    按描述自行选择（`activated=()`）。给了名字就必须是已注册的技能，未知值 422
-    ——静默忽略会让使用者以为自己选中的技能起了作用，而运行其实跑在自动模式上。
+    按描述自行选择（`activated=()`）。给了名字就必须落在合法值域——模型可见
+    目录集（`daily-consulting`、`profile-curation`），值域外（含
+    `emergency-consulting`、`onboarding` 与未知名）一律 422
+    （docs/技术设计/decisions/激活记录即授权真源.md）：
 
-    「发送即消费」（契约 4.1）由本函数的形状保证：它只在本次请求里生效，
-    不写任何持久状态，因此下一次发消息默认回到自动。
+    - 静默忽略会让使用者以为自己选中的技能起了作用，而运行其实跑在自动模式上；
+    - 应急与引导是 `autoload: "false"` 的程序注入技能，经此参数手选等于绕过
+      它们的触发条件（入口唯一性）。
+
+    「发送即消费」（契约 4.1）说的是选择器 UI 与本次激活，不是授权：激活记录
+    落会话历史后授权跨运行持续（见 `send_message` 的装配）。
     """
     if skill_name is None:
         return ()
@@ -394,15 +408,18 @@ async def _activated_skill(settings: Settings, skill_name: str | None) -> tuple[
         registry = assembly.get_skill_registry(settings)
     except assembly.ConsultAssemblyError as exc:
         raise _unavailable(str(exc)) from exc
-    if skill_name not in registry.names():
-        raise _unprocessable(f"未知的技能：{skill_name}")
+    selectable = {skill.name for skill in registry.activation_candidates()}
+    if skill_name not in selectable:
+        raise _unprocessable(
+            f"技能 {skill_name} 不可手选：可选值为 {sorted(selectable)}（应急与引导由入口触发，不经选择器）"
+        )
     return (registry.get(skill_name),)
 
 
 def _program_skill(settings: Settings, name: str) -> Skill:
     """取一个由程序注入的技能（应急入口与引导注入用它）。
 
-    与 :func:`_activated_skill` 的区别是失败方向：那个是使用者给了名字（名字不在目录里
+    与 :func:`_activated_skill` 的区别是失败方向：那个是使用者给了名字（名字不在值域里
     是载荷不合法，422），这里是服务端自己要用的技能（内容根目录里没有它属于装配不完整，
     503）——回 422 会把一个部署缺陷说成使用者的错。
 
@@ -416,6 +433,23 @@ def _program_skill(settings: Settings, name: str) -> Skill:
     if name not in registry.names():
         raise _unavailable(f"skill_missing: 内容目录里没有技能 {name}")
     return registry.get(name)
+
+
+def _activation_records(skills: tuple[Skill, ...]) -> tuple[TResponseInputItem, ...]:
+    """把本轮程序注入的激活集合翻成合成激活记录对（授权真源的写入端）。
+
+    依据 docs/技术设计/decisions/激活记录即授权真源.md：激活记录落会话历史，
+    授权跨运行、只增不减。手选与程序注入（引导/应急）都经这里；记录对由
+    `build_activation_record` 合成，与模型侧 `skill` 工具的真实调用同形。
+    """
+    records: list[TResponseInputItem] = []
+    for index, skill in enumerate(skills, start=1):
+        call, output = build_activation_record(skill, call_id=f"app-activate-{index}")
+        # 类型逃逸与 runner._as_items 同理：`Item` 是 Mapping[str, object]，SDK 的输入项
+        # 是 TypedDict 联合——静态类型看不穿这层「运行时形状一致」，显式转一次。
+        records.append(dict(call))  # type: ignore[arg-type]  # 运行时形状与 SDK 的 function_call 条目一致
+        records.append(dict(output))  # type: ignore[arg-type]  # 同上
+    return tuple(records)
 
 
 @dataclass(frozen=True, slots=True)
@@ -596,14 +630,17 @@ async def send_message(
         raise _busy()
 
     user_input = render_answers(payload.answers) if payload.answers is not None else (payload.content or "")
+    activated_record: tuple[TResponseInputItem, ...] = ()
     if onboarding is not None:
         # 引导注入整份替换这次运行的技能集合：这一次是引导，不是日常咨询。集合与注入项
         # 在同一支里一起定，避免「注入了引导但技能集合还是用户选的那个」这种半注入状态
         # ——那会让模型同时拿到两套互相冲突的操作纪律（上面的 activated 初值因此是空的）。
         activated = (onboarding.skill,)
         injections = InjectionBatch(items=(onboarding.notice,))
+        activated_record = _activation_records(activated)
     else:
         injections = InjectionBatch()
+        activated_record = _activation_records(activated)
     request = RunRequest(
         session_id=session_id,
         surface=SURFACE_NAME,
@@ -611,6 +648,8 @@ async def send_message(
         injections=injections,
         user_input=user_input,
         activated=activated,
+        activated_record=activated_record,
+        default_active_tools=DEFAULT_ACTIVE_TOOLS,
     )
     pump = runbus.RunPump(
         cache=cache,
@@ -905,6 +944,7 @@ async def start_emergency(
         injections=batch,
         user_input=render_emergency_intake(payload.items),
         activated=(skill,),
+        activated_record=_activation_records((skill,)),
     )
     pump = runbus.RunPump(
         cache=cache,
