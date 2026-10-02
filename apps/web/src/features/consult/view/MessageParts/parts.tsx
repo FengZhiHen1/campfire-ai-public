@@ -80,8 +80,8 @@ function TextPart({ text }: { text: string }) {
 /** 思考段渲染：文案与呈现纪律取自 store 的运行态（应急收为一行）。 */
 function ReasoningPart({ text }: { text: string }) {
   const streaming = useRunStore((state) => state.connection === 'streaming' || state.connection === 'subscribing');
-  const activeSkill = useRunStore((state) => state.activeSkill);
-  return <ReasoningDisclosure text={text} streaming={streaming} emergency={activeSkill === EMERGENCY_SKILL_ID} />;
+  const isEmergency = useRunStore((state) => state.activeSkills.includes(EMERGENCY_SKILL_ID));
+  return <ReasoningDisclosure text={text} streaming={streaming} emergency={isEmergency} />;
 }
 
 /** 依据区渲染（聚合后的多条引用）。 */

@@ -36,12 +36,17 @@ describe('runStore — 事件映射（技术设计第 3 节全表）', () => {
     store = newStore();
   });
 
-  it('run_started：置运行中、记录激活技能与开始时刻', () => {
+  it('run_started：置运行中、记录生效技能集合与开始时刻', () => {
     store.getState().applyRunEvent(runStarted(['emergency-consulting']), 1000);
     expect(store.getState().connection).toBe('streaming');
-    expect(store.getState().activeSkill).toBe('emergency-consulting');
+    expect(store.getState().activeSkills).toEqual(['emergency-consulting']);
     expect(store.getState().runStartedAt).toBe(1000);
     expect(store.getState().failure).toBeNull();
+  });
+
+  it('run_started：生效集合可以是多个技能（历史推导 ∪ 本轮新增）', () => {
+    store.getState().applyRunEvent(runStarted(['daily-consulting', 'profile-curation']), 1000);
+    expect(store.getState().activeSkills).toEqual(['daily-consulting', 'profile-curation']);
   });
 
   it('progress：写状态条文案；text_delta 到达即清空文案', () => {

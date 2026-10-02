@@ -355,18 +355,37 @@ describe('对话页 — 运行状态与失败语义', () => {
 describe('对话页 — 技能选择器', () => {
   it('发送即消费：选择只作用于下一条消息，发送后回归「自动」', async () => {
     const port = createConsultPortStub({ history: historyResponse([]) });
-    port.script([runStarted(['emergency-consulting']), textDelta('好的'), runFinished()]);
+    port.script([runStarted(['daily-consulting']), textDelta('好的'), runFinished()]);
     renderChat(port);
     await screen.findByLabelText('发送消息');
 
-    fireEvent.click(screen.getByRole('button', { name: '应急咨询' }));
-    expect(screen.getByRole('button', { name: '应急咨询' }).getAttribute('aria-pressed')).toBe('true');
+    fireEvent.click(screen.getByRole('button', { name: '日常咨询' }));
+    expect(screen.getByRole('button', { name: '日常咨询' }).getAttribute('aria-pressed')).toBe('true');
 
-    await send('他突然捂住耳朵');
+    await send('他最近总是睡不好');
 
     await waitFor(() => expect(port.sendCalls).toHaveLength(1));
-    expect(port.sendCalls[0]?.payload).toMatchObject({ skill: 'emergency-consulting' });
+    expect(port.sendCalls[0]?.payload).toMatchObject({ skill: 'daily-consulting' });
     await waitFor(() => expect(useRunStore.getState().peekPendingSkill()).toBeNull());
     expect(screen.getByRole('button', { name: '自动' }).getAttribute('aria-pressed')).toBe('true');
+  });
+
+  it('应急不在选择器里（值域裁决：应急只走表单入口，skill 参数传它回 422）', () => {
+    const port = createConsultPortStub({ history: historyResponse([]) });
+    renderChat(port);
+
+    expect(screen.queryByRole('button', { name: '应急咨询' })).toBeNull();
+  });
+
+  it('多技能生效集合在页头串联展示（历史推导 ∪ 本轮新增）', async () => {
+    const port = createConsultPortStub({ history: historyResponse([]) });
+    port.script([runStarted(['daily-consulting', 'profile-curation']), textDelta('好'), runFinished()]);
+    renderChat(port);
+    await screen.findByLabelText('发送消息');
+
+    await send('整理一下刚才说的');
+
+    expect((await screen.findAllByText('日常咨询')).length).toBeGreaterThan(0);
+    expect((await screen.findAllByText('档案整理')).length).toBeGreaterThan(0);
   });
 });
