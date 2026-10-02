@@ -121,8 +121,11 @@ async def memory_graph() -> AsyncIterator[MemoryGraph]:
     try:
         yield graph
     finally:
-        scoped = graph.driver_for(_ACCOUNT)
-        await scoped.execute_query("MATCH (n) DETACH DELETE n")
+        # 清图用 GRAPH.DELETE（FalkorDB v4.20.7 对「清空后重写 + 字符串范围查询」
+        # 返回过期结果，见 conftest.drop_falkordb_graph 的说明）。
+        from .conftest import drop_falkordb_graph
+
+        await drop_falkordb_graph(graph.driver, _ACCOUNT)
         await graph.aclose()
 
 
@@ -346,12 +349,14 @@ async def test_deletion_is_isolated_between_accounts(memory_graph: MemoryGraph) 
     try:
         async with session_scope(get_settings()) as session:
             await session.execute(delete(MemoryDeletionLedger).where(MemoryDeletionLedger.account_id == other))
-        # 开测前先清另一账号的图：本用例会往里写数据，若上次运行在断言处失败，
+        # 开测前先删另一账号的图（GRAPH.DELETE）：本用例会往里写数据，若上次运行在断言处失败，
         # 收尾的清理不会执行，残留会让下一次运行看到多条内容而假失败
         # （实测踩过：连续 3 次消融运行后该账号积了 3 条）。清理放在 try 内、
-        # 写入之前，使用例可重复运行。
-        other_scoped = memory_graph.driver_for(other)
-        await other_scoped.execute_query("MATCH (n) DETACH DELETE n")
+        # 写入之前，使用例可重复运行。用删图键而不是清节点，理由见
+        # conftest.drop_falkordb_graph（「清空后重写」会让范围查询返回过期结果）。
+        from .conftest import drop_falkordb_graph
+
+        await drop_falkordb_graph(memory_graph.driver, other)
 
         # 两个账号各写一条记忆（各自图里）。
         mine_key = await _write_episode(memory_graph, "iso-mine", "我的记忆", now)
@@ -388,8 +393,9 @@ async def test_deletion_is_isolated_between_accounts(memory_graph: MemoryGraph) 
         assert [e.content for e in other_timeline] == ["另一账号的记忆"], "删本账号的记忆不得影响另一账号"
 
         # 清理另一账号的图与账本
-        scoped = memory_graph.driver_for(other)
-        await scoped.execute_query("MATCH (n) DETACH DELETE n")
+        from .conftest import drop_falkordb_graph
+
+        await drop_falkordb_graph(memory_graph.driver, other)
         async with session_scope(get_settings()) as session:
             await session.execute(delete(MemoryDeletionLedger).where(MemoryDeletionLedger.account_id == other))
     finally:

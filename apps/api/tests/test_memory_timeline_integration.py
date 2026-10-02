@@ -137,7 +137,9 @@ async def memory_graph() -> AsyncIterator[MemoryGraph]:
 
     # 连容器：构造 `FalkorDB(...)` 本身发网络 I/O，因此它必须在 try 内——
     # 细节与实测依据见 `conftest.connect_falkordb_or_skip`。
-    driver, client = connect_falkordb_or_skip()
+    # 客户端由驱动持有（`driver.client`），收尾走 `drop_falkordb_graph(graph.driver, ...)`
+    # 发 GRAPH.DELETE，因此这里不需要单独留一个 client 引用。
+    driver, _client = connect_falkordb_or_skip()
 
     graph = MemoryGraph(
         graphiti=Graphiti(
@@ -155,11 +157,13 @@ async def memory_graph() -> AsyncIterator[MemoryGraph]:
     try:
         yield graph
     finally:
-        # 走 driver_for 复用缓存驱动（而不是裸 clone）：裸 clone 每次新建驱动 +
-        # 后台任务，清理阶段反复 clone 本身就是被测代码里那个泄漏的同一个坑。
-        for account in (_ACCOUNT_A, _ACCOUNT_B):
-            scoped = graph.driver_for(account)
-            await scoped.execute_query("MATCH (n) DETACH DELETE n")
+        # 清图用 GRAPH.DELETE（删图键）而不是 DETACH DELETE（清节点）：后者在
+        # 「清空后重写」形状下会让字符串范围查询返回过期结果（2026-10-01 实测，
+        # 见 conftest.drop_falkordb_graph 的说明）。驱动对象随图键删除一并作废——
+        # 缓存里的 scoped 驱动指向已删除的图，但本 fixture 到此结束，无人再用。
+        from .conftest import drop_falkordb_graph
+
+        await drop_falkordb_graph(graph.driver, _ACCOUNT_A, _ACCOUNT_B)
         # 删除账本也要清（2026-09-30）：读入口现在自己取账本，而账本是全局唯一
         # 约束（`episode_key`）且与图库无关——不清就会跨用例残留，让「刚写的两条」
         # 被上个用例记的删除挡掉（实测：`assert len(before) == 2` 变成 1）。
