@@ -1,6 +1,7 @@
 /* 全局基础样式：只消费 shared/styles/tokens.css 里的变量。
  * 视觉契约（docs/design/DESIGN.md）的唯一权威是 token 层；本文件不得定义色值与间距。
- * 一期只适配手机端：宽屏视口下内容容器以 --phone-shell-max 居中，容器外为暖沙蒙版底。 */
+ * 一期只适配手机端：窄视口下容器满幅；宽视口下把内容渲染进设备外壳
+ * （手机蒙版 + 真实外壳，见文件末尾「设备外壳」段落），容器外为暖沙蒙版底。 */
 
 *,
 *::before,
@@ -20,9 +21,12 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
+/* 舞台容器：视口单位在这里是正确的——它是外壳**之外**的容器，高度基准就是视口。 */
 #root {
   min-height: 100svh;
 }
+
+/* ── 页面基础容器 ───────────────────────────────────────────── */
 
 .phone-shell {
   display: flex;
@@ -81,4 +85,196 @@ body {
 .status-note {
   margin: 0;
   color: var(--meta);
+}
+
+/* ── 设备外壳（宽视口） ─────────────────────────────────────────
+ *
+ * 2026-10-02 用户授权定型的规格（见 docs/design/DESIGN.md「布局与 posture 要点」）：
+ * 宽视口下把应用渲染进一台手机的外壳，使 PC/平板上的观感是「在一台手机里运行的应用」，
+ * 而不是「一个居中的窄列」。几何字面量（390 / 844 / 12 / 56）集中声明在下面——
+ * 它们是实现级派生值，不进 docs/design/tokens.css（契约 token 层归设计方，本轮不新增 token）。
+ *
+ * 三层职责
+ *   .device-stage   居中舞台：占满视口高并把外壳摆到正中
+ *   .device         外壳本体：bezel（边框）+ 圆角 + 投影，并充当 fixed 后代的包含块
+ *   .device-screen  屏幕区：外壳内唯一的滚动容器
+ *
+ * 为什么先声明 display: contents，再由 ≥560px 覆盖
+ *
+ * 三层包裹即使只是纯 div 也会生成盒子，从而引入原先不存在的块级格式化上下文与滚动
+ * 容器——在真实手机上这会改变 position: sticky 的吸附基准、fixed 元素的包含块，并把
+ * 「整页滚动」变成「容器内滚动」。所以窄视口下让三层退化为不生成盒子。
+ *
+ * 刻意不写成 @media (max-width: 559.98px)：两条断点式媒体查询会留下
+ * 559.98px < w < 560px 的空隙，落进去的视口两头都不命中。默认中和 + 单侧覆盖没有空隙。
+ * 三个被中和的元素都是无语义的纯 div，display: contents 不会让有意义的内容离开无障碍树。
+ *
+ * 本段必须在 .phone-shell 基础规则**之后**：下面 .phone-shell 的 min-height 覆盖与基础
+ * 规则同为单类选择器，靠文档顺序取胜；放到前面会静默失效。
+ */
+.device-stage,
+.device,
+.device-screen {
+  display: contents;
+}
+
+@media (min-width: 560px) {
+  .device-stage {
+    display: grid;
+    place-items: center;
+    min-height: 100svh;
+    padding: var(--space-6);
+  }
+
+  .device {
+    --device-screen-width: 390px;
+    --device-screen-height: 844px;
+    --device-bezel-width: 12px;
+    --device-screen-radius: 56px;
+    /* 暖深色 bezel：从 --fg（暖墨）朝 --accent（火焰橙）混 8% 得到，保留暖色底调与彩度。
+     * 不用冷黑（#2a2a2a 一类）：本设计系统是暖米纸 + 火焰橙，冷黑会与调性冲突。
+     *
+     * 为什么不混 --surface-warm（改前的写法）：那是往 --fg 里掺**浅暖色**，
+     * 在 oklab 里会同时抬高亮度并**拉低彩度**——实测混 18% 得到的 #403830 饱和度只有 14%，
+     * 比 --fg 自身（23%）还低，bezel 因此发灰、接近冷黑观感，与本设计系统的暖调不符。
+     * 改掺 --accent（本身就是高彩度暖橙）后实测 #2e1b15：R>G>B 成立，饱和度回到 23%。 */
+    --device-bezel-color: color-mix(in oklab, var(--fg), var(--accent) 8%);
+
+    display: block;
+    width: var(--device-screen-width);
+    height: var(--device-screen-height);
+    /* content-box：bezel 的 12px 加在 390×844 之外，屏幕内容区恰为设计渲染视图的
+     * 390×844（全局重置是 border-box，此处必须显式改回）。 */
+    box-sizing: content-box;
+    border: var(--device-bezel-width) solid var(--device-bezel-color);
+    border-radius: var(--device-screen-radius);
+    background: var(--bg);
+    overflow: hidden;
+    /* 承重属性，不得删除。transform 让 .device 成为其后代 position: fixed 元素的包含块，
+     * 于是契约里的 .tab-bar 与 .confirm-sheet 无需从 fixed 改成 absolute 就会收进外壳。
+     * 移除它，两者立刻逃到视口（宽度变成视口宽、底边贴浏览器底边）。
+     * 这不是可以按「清理无用样式」删掉的声明。 */
+    transform: translateZ(0);
+    /* 外投影消费 token 的 --elev-raised（0 20px 52px rgba(32,25,20,0.12)），细边收窄到 1px。
+     *
+     * 改前是硬编码的 0 24px 64px rgba(32,25,20,0.20) + 0 0 0 2px（细边取的是上界）。
+     * 两处都绕过 token 直接写死色值与间距，正是 AGENTS.md 禁止的
+     * （「不要绕过 token 直接写死颜色与间距」）——而且 24/64/0.20 这三个数在设计契约里
+     * 没有任何出处。对齐后外壳的投影与站内其它抬升面同源。
+     * 细边 2px → 1px：2px 是在 --elev-ring（1px）基础上的加倍，无依据；
+     * 它只是让 bezel 外缘多一圈深色，视觉上无正收益。 */
+    box-shadow:
+      var(--elev-raised),
+      0 0 0 1px color-mix(in oklab, var(--fg), transparent 86%);
+  }
+
+  .device-screen {
+    position: relative;
+    display: block;
+    width: var(--device-screen-width);
+    height: var(--device-screen-height);
+    overflow-y: auto;
+  }
+
+  /* 外壳内不得再用视口单位作尺寸基准：100svh 解析为**视口**高而不是外壳高，
+   * 在 1000px 高的视口里会把 844px 的屏幕撑出 156px 的无谓滚动——短内容页面因此
+   * 凭空多出一条滚动条。改成相对屏幕区的百分比。 */
+  .phone-shell {
+    min-height: 100%;
+  }
+
+  /* .phone-shell 的 --elev-ring 在外壳内是**死声明**：它的 1px 外描边落在 .phone-shell
+   * 的边界上，而 .phone-shell 在屏幕区里是满宽的，四条边被 .device 的 overflow: hidden
+   * 全部裁掉（实测外壳内找不到 #DED2C3 过渡像素）。留着它会让后来者以为这条描边生效、
+   * 并据此推断容器边界——而实际渲染里没有这层边界。
+   * 窄视口下它仍然生效（那时 .phone-shell 是页面容器，没有外壳来裁它），故只在 ≥560px 里关掉。 */
+  .phone-shell {
+    box-shadow: none;
+  }
+
+  /* ── 矮窗口：外壳等比缩小（zoom 阶梯）─────────────────────────────
+   *
+   * 问题：外壳需要 916px 竖向空间（844 屏 + 2×12 bezel + 2×48 stage padding）。
+   * 视口更矮时 .device-stage 的 place-items: center 退化为顶对齐并向下溢出——
+   * 1366×640 实测裁掉 252px、768 裁 124px，且 tab 项中心 elementFromPoint 返回 null
+   * （主导航在首屏点不到），滚动页面时外壳还会整体上移。1366×768 / 1280×800 / 1440×900
+   * 都是常见笔记本可视高，不是长尾。
+   *
+   * 为什么用 zoom 而不是 transform: scale()
+   *
+   * scale() 是**绘制期**变换，不改变布局盒：外壳布局高仍 868、文档仍可滚、tab 仍点不到，
+   * 只是把手机「画小」并留下空白（本仓实测：加 scale 后文档仍溢出 276px、滚页面外壳仍位移
+   * -276px）。zoom 参与布局，外壳的布局盒真的变小 ⇒ 装得下、可点、且宽高比不变。
+   *
+   * 为什么是离散阶梯而不是连续公式
+   *
+   * 连续写法可以是一条 `zoom: min(1, tan(atan2(calc(100svh - 48px), 868px)))`
+   * （tan/atan2 把长度相除成无单位数，本仓 Chromium 实测可用），但 atan2() 的基线是
+   * Chrome 111+ / Safari 15.4+ / Firefox 108+，而 zoom 本身是 Baseline 2024
+   * （Chrome 4+ / Safari 4+ / Firefox 126+）——用阶梯可以把**两处**支持面都收窄到 zoom 的基线，
+   * 代价只是档位边界处一次 ≤8px 的尺寸跳变（占外壳高 0.93%，肉眼不可察）。
+   *
+   * 档位怎么算
+   *
+   * 外壳布局高 = 868 × zoom + 48。每档必须装下**该档最小的那个视口高**，故
+   *   zoom(档) = floor4((档下界 − 48) / 868)      ← 必须向下取整，否则整档最矮处仍溢出
+   * 例如 max-height: 867px 档覆盖 vh ≤ 867，取 868 那档的最小值 860：
+   * (860 − 48) / 868 = 0.9354… → 0.9354，外壳高 859.93 ≤ 860 ✓。
+   * 档位表由 .tmp 的 gen-zoom-ladder.py 生成并逐档核验（55 档，0 失败）。
+   * ≥916px 不缩放（原生放得下，保持 1:1 与「屏幕区恰 390×844」）。 */
+  @media (max-height: 915px) { .device { zoom: 0.9907; } }
+  @media (max-height: 907px) { .device { zoom: 0.9815; } }
+  @media (max-height: 899px) { .device { zoom: 0.9723; } }
+  @media (max-height: 891px) { .device { zoom: 0.9631; } }
+  @media (max-height: 883px) { .device { zoom: 0.9539; } }
+  @media (max-height: 875px) { .device { zoom: 0.9447; } }
+  @media (max-height: 867px) { .device { zoom: 0.9354; } }
+  @media (max-height: 859px) { .device { zoom: 0.9262; } }
+  @media (max-height: 851px) { .device { zoom: 0.917; } }
+  @media (max-height: 843px) { .device { zoom: 0.9078; } }
+  @media (max-height: 835px) { .device { zoom: 0.8986; } }
+  @media (max-height: 827px) { .device { zoom: 0.8894; } }
+  @media (max-height: 819px) { .device { zoom: 0.8801; } }
+  @media (max-height: 811px) { .device { zoom: 0.8709; } }
+  @media (max-height: 803px) { .device { zoom: 0.8617; } }
+  @media (max-height: 795px) { .device { zoom: 0.8525; } }
+  @media (max-height: 787px) { .device { zoom: 0.8433; } }
+  @media (max-height: 779px) { .device { zoom: 0.8341; } }
+  @media (max-height: 771px) { .device { zoom: 0.8248; } }
+  @media (max-height: 763px) { .device { zoom: 0.8156; } }
+  @media (max-height: 755px) { .device { zoom: 0.8064; } }
+  @media (max-height: 747px) { .device { zoom: 0.7972; } }
+  @media (max-height: 739px) { .device { zoom: 0.788; } }
+  @media (max-height: 731px) { .device { zoom: 0.7788; } }
+  @media (max-height: 723px) { .device { zoom: 0.7695; } }
+  @media (max-height: 715px) { .device { zoom: 0.7603; } }
+  @media (max-height: 707px) { .device { zoom: 0.7511; } }
+  @media (max-height: 699px) { .device { zoom: 0.7419; } }
+  @media (max-height: 691px) { .device { zoom: 0.7327; } }
+  @media (max-height: 683px) { .device { zoom: 0.7235; } }
+  @media (max-height: 675px) { .device { zoom: 0.7142; } }
+  @media (max-height: 667px) { .device { zoom: 0.705; } }
+  @media (max-height: 659px) { .device { zoom: 0.6958; } }
+  @media (max-height: 651px) { .device { zoom: 0.6866; } }
+  @media (max-height: 643px) { .device { zoom: 0.6774; } }
+  @media (max-height: 635px) { .device { zoom: 0.6682; } }
+  @media (max-height: 627px) { .device { zoom: 0.6589; } }
+  @media (max-height: 619px) { .device { zoom: 0.6497; } }
+  @media (max-height: 611px) { .device { zoom: 0.6405; } }
+  @media (max-height: 603px) { .device { zoom: 0.6313; } }
+  @media (max-height: 595px) { .device { zoom: 0.6221; } }
+  @media (max-height: 587px) { .device { zoom: 0.6129; } }
+  @media (max-height: 579px) { .device { zoom: 0.6036; } }
+  @media (max-height: 571px) { .device { zoom: 0.5944; } }
+  @media (max-height: 563px) { .device { zoom: 0.5852; } }
+  @media (max-height: 555px) { .device { zoom: 0.576; } }
+  @media (max-height: 547px) { .device { zoom: 0.5668; } }
+  @media (max-height: 539px) { .device { zoom: 0.5576; } }
+  @media (max-height: 531px) { .device { zoom: 0.5483; } }
+  @media (max-height: 523px) { .device { zoom: 0.5391; } }
+  @media (max-height: 515px) { .device { zoom: 0.5299; } }
+  @media (max-height: 507px) { .device { zoom: 0.5207; } }
+  @media (max-height: 499px) { .device { zoom: 0.5115; } }
+  @media (max-height: 491px) { .device { zoom: 0.5023; } }
+  @media (max-height: 483px) { .device { zoom: 0.4976; } }
 }

@@ -2,18 +2,22 @@
  * 模块: shared/ui/AppShell
  * 职责: 手机蒙版外壳与底部 tab 栏——一级页面共用导航容器
  * 数据来源:
- *   - docs/design/DESIGN.md: MUST — 布局与 posture 要点（仅手机端、--phone-shell-max 蒙版）
+ *   - docs/design/DESIGN.md: MUST — 布局与 posture 要点（仅手机端、--phone-shell-max 蒙版、
+ *     宽视口设备外壳）
  *   - docs/design/pages/首页.md: MUST — 契约修订节（.tab-bar / .tab-item 四页共用、次级页不渲染）
  * 边界:
- *   - 依赖: react-router 的 NavLink（导航状态来自 URL，不另设本地状态）
+ *   - 依赖: react-router 的 NavLink（导航状态来自 URL，不另设本地状态）、shared/ui/DeviceFrame
  *   - 被依赖: app 的页面装配
  * 禁止行为:
  *   - 禁止在次级页面渲染 tab 栏（返回导航由页头承担，页面设计首页契约修订节）
+ *   - 禁止把 tab 栏渲染到 DeviceFrame 之外（见下面组件注释里的包含块理由）
  *   - 禁止用 emoji 作图标（DESIGN.md 反模式）
  */
 
 import type { ReactNode } from 'react';
 import { NavLink } from 'react-router';
+
+import { DeviceFrame } from './DeviceFrame';
 
 /** tab 项的标识；与页面设计的一级页面集合一一对应。 */
 export type TabKey = 'home' | 'consult' | 'profile' | 'settings';
@@ -78,12 +82,20 @@ export interface AppShellProps {
  * 渲染手机蒙版外壳（+ 可选 tab 栏）。
  *
  * 前置: 无
- * 后置: 输出 --phone-shell-max 限宽的容器；tab 为真时输出四项导航并给内容区预留底部高度
+ * 后置: 输出 DeviceFrame 包裹的 --phone-shell-max 限宽容器；tab 为真时在屏幕区内输出
+ *       四项导航并给内容区预留底部高度
  * 异常: 无
+ *
+ * 为什么 tab 栏放进 DeviceFrame 内部
+ *
+ * .tab-bar 是 position: fixed。宽视口下它的包含块被 .device 的 transform 收成外壳内容盒
+ * （global.css 的承重属性），因此底边贴外壳底边而不是浏览器视口底边；窄视口下外壳三层
+ * 退化为 display: contents，包含块回到视口，行为与设备外壳落地前一致。
+ * 反过来，把它留在 DeviceFrame 之外就等于绕过外壳——外壳落地前后它都贴在视口上。
  */
 export function AppShell({ children, tab }: AppShellProps) {
   return (
-    <>
+    <DeviceFrame>
       <div className={tab === undefined ? 'phone-shell' : 'phone-shell has-tab-bar'}>{children}</div>
       {tab !== undefined && (
         <nav className="tab-bar" aria-label="一级导航">
@@ -95,6 +107,6 @@ export function AppShell({ children, tab }: AppShellProps) {
           ))}
         </nav>
       )}
-    </>
+    </DeviceFrame>
   );
 }

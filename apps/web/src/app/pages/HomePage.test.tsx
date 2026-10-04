@@ -3,8 +3,9 @@
  * 职责: 首页的组件用例——入口可达性、文案逐字、静态区块无三态与 tab 栏当前态
  * 数据来源:
  *   - docs/design/pages/首页.md: MUST — 布局结构、数据与文案、状态覆盖表、响应式与平台（tab 栏）
+ *   - docs/design/DESIGN.md: MUST — 布局与 posture 要点（宽视口设备外壳的三层结构）
  * 边界:
- *   - 依赖: app/pages/HomePage、shared/ui/AppShell、react-router 的内存路由
+ *   - 依赖: app/pages/HomePage、shared/ui（AppShell、DeviceFrame）、react-router 的内存路由
  *   - 被依赖: 无（回归守卫）
  * 禁止行为:
  *   - 禁止断言「最近会话预览」有加载态或空态（设计明确不渲染该区块）
@@ -114,5 +115,25 @@ describe('首页 · tab 栏', () => {
     const { container } = renderHome();
 
     expect(container.querySelector('.phone-shell')?.className).toContain('has-tab-bar');
+  });
+
+  it('P0 tab 栏在设备外壳的屏幕区内（否则 fixed 会逃出外壳、贴到浏览器视口底边）', () => {
+    renderHome();
+
+    const screenArea = document.querySelector('.device-screen');
+    const tabBar = document.querySelector('.tab-bar');
+    expect(screenArea).not.toBeNull();
+    expect(tabBar).not.toBeNull();
+    // 判据是 DOM 层级而不是 CSS：外壳靠 .device 的 translateZ(0) 做 fixed 后代的包含块，
+    // tab 栏必须是 .device-screen 的后代才收得进去。
+    expect(screenArea?.contains(tabBar)).toBe(true);
+  });
+
+  it('P0 页面内容装在设备外壳三层结构内', () => {
+    const { container } = renderHome();
+
+    const stage = container.querySelector('.device-stage');
+    expect(stage).not.toBeNull();
+    expect(stage?.querySelector('.device > .device-screen > .phone-shell')).not.toBeNull();
   });
 });

@@ -1,17 +1,73 @@
 /* 对话页就近布局（CSS Modules）：只消费 token 变量。
  *
  * 组件视觉（气泡、正文、提问卡、行动卡、依据区）在 features/consult/view/consultComponents.css
- * ——那些类名是设计契约的一部分；这里只放页面级布局：让消息流占满、输入区贴底。 */
+ * ——那些类名是设计契约的一部分；这里只放页面级布局：让消息流占满、输入区贴底。
+ *
+ * 本页与其余 9 页的差别：它不套 .phone-shell（消息是满幅画布，气泡与正文块各自自带
+ * 内边距，排版靠它们而不是页级留白）。因此外层不带 gutter，外壳内需要把等价的内边距补回来
+ * ——页头自带一份（基础规则就有），消息流与输入区由文件末尾的媒体查询补。全部补丁都在
+ * ≥560px 的媒体查询里。画布色是唯一窄视口也生效的补丁，理由见 .workspace 上方。 */
 
+/* 画布色必须在本页显式给：本页是 10 页里唯一不套 .phone-shell 的，拿不到它的 --bg。
+ *
+ * 为什么不给就等于没有边界：其余 9 页的画布色由 .phone-shell 的 --bg 提供；本页没有它，
+ * 画布就落到 body 的 --surface-warm，而使用者气泡 .bubble-user 的底色恰是同一个
+ * --surface-warm（契约值，见 docs/design/components.html）⇒ 手机上两者同色、气泡边界消失。
+ * 外壳内因为 .device 铺了 --bg 反而有边界，这是 PC 比手机好看的反常形态。
+ *
+ * 取 --bg 不是自由选择：对话页.md 布局结构第 2 条明文要求助手正文「直接落在 --bg 纸面上」，
+ * 即本页纸面就是 --bg。不改 .bubble-user 的底色（契约值）；也不给本页套 .phone-shell——
+ * 它自带外边距、内边距、gap 与 box-shadow，且 .phone-shell .subpage-head 会取消页头内边距，
+ * 四条都会改窄视口既有版式。 */
 .workspace {
   display: flex;
   flex: 1 1 auto;
   flex-direction: column;
   gap: 0;
   min-height: 0;
+  /* 底座必须显式满高，不能用百分数。
+   *
+   * 窄视口下 .device-screen 是 display: contents（global.css 的基础规则，≥560px 才恢复盒子），
+   * 本元素的盒子父级因此退到 #root，而 #root 只有 min-height、height 仍是 auto。
+   * 对高度不确定的包含块，height: 100% 按 auto 处理 —— 底座塌成内容高：
+   *   短会话实测 .workspace = 754.125 < 视口 844，
+   *   底部 89.875px 露出 body 的 --surface-warm，输入区悬空、不贴屏幕底边。
+   * 那 89.875px 无任何 token 对应，且与 对话页.md:20「输入区（常驻底部）」冲突。
+   *
+   * 为什么是 height 而不是 min-height：本页是「满高 flex + 内部滚动 + 输入区贴底」，
+   * 内部滚动要求容器高度有界。min-height 只抬高下界，长会话时底座仍随内容长高
+   * ⇒ .thread 不产生溢出 ⇒ 滚动落到文档上，输入区被滚出视口（实测长会话 4843px）。
+   * height 让 .thread 承担滚动，输入区在短、长两种会话下都常驻底边。
+   *
+   * 为什么用 dvh 而不是 svh：本页要钉住的是「可见视口」而不是「最矮视口」。
+   * svh 取下限，移动端地址栏收起后视口变高，底座仍停在 svh ⇒ 底部又露出缝隙，
+   * 正是本条要修的那个形态。dvh 跟随当前视口，始终填满可见区。
+   * dvh 的支持面不成问题：契约自己就用它（components.html 的 .chat-sheet 是 height: 100dvh）。
+   * 为什么窄视口可以用视口单位：视口单位只有在外壳内才失真（外壳高 844 ≠ 视口高），
+   * 窄视口没有外壳，视口就是高度基准。外壳内的等价声明在下面 ≥560px 的媒体查询里。 */
+  height: 100dvh;
+  background: var(--bg);
 }
 
-/* 消息流：剩余空间内独立滚动（对话页布局结构第 2 节）。 */
+/* 上面那条满高只对「没有壳」的路径成立（水合成功、工作面直挂 DeviceFrame）。
+ *
+ * ChatPage 的 loading 与 error 两态走 `<AppShell>`，`.workspace` 因此落在 `.phone-shell`
+ * 内；而 `.phone-shell` 是「min-height: 100svh + 上下各 24px 内边距」的列向 flex 容器，
+ * 其内容盒只有 844 − 48 = 796。此时视口高 844 比内容盒高 48px ⇒ 壳被撑到 892、
+ * 文档多出 48px 可滚（实测 loading/error 两态 docScrollHeight 844 → 892）。
+ *
+ * 壳内不需要这条高度：`.workspace` 的 flex: 1 1 auto 在列向 flex 容器里已被拉伸填满
+ * （实测两态高度 796，与内容盒相等）。归零成 auto 即回到壳的拉伸行为。
+ * 特异性 (0,2,0) 高于媒体查询里的 `.workspace`（(0,1,0)），外壳内两条路径都取本条。 */
+:global(.phone-shell) .workspace {
+  height: auto;
+}
+
+/* 消息流：剩余空间内独立滚动（对话页布局结构第 2 节）。
+ *
+ * 外壳落地后仍由本元素承担滚动（而不是让 .device-screen 滚）：吸顶页头与输入区是它的
+ * 兄弟节点，本元素滚动时两者都不动，因此页头常驻顶部、输入区常驻底部——这正是
+ * 对话页设计要的「输入区常驻、拇指可达」。 */
 .thread {
   display: flex;
   flex: 1 1 auto;
@@ -33,4 +89,37 @@
   padding-bottom: calc(var(--space-3) + env(safe-area-inset-bottom, 0px));
   border-top: 1px solid var(--border-soft);
   background: var(--surface);
+}
+
+/* ── 设备外壳内（≥560px）────────────────────────────────────────
+ *
+ * 本页没有 `.phone-shell` 可继承 gutter（见文件头：加它会改窄视口版式），
+ * 而真机应用的内容不会贴到屏幕边缘——贴边在视觉上就是「没做完」。
+ * 因此外壳内必须把与其余 9 页等价的横向内边距补回来。三条改动，窄视口一律不生效：
+ *
+ * 1. `height: 100%` 而不是 `min-height: 100svh`：外壳的屏幕区是 844 高的定高盒，本页要
+ *    占满它才能把输入区摆到屏幕底边。用视口单位会解析成视口高——在 1000px 高的视口里
+ *    比屏幕还高 156px，把输入区顶出屏幕（与 .phone-shell 的 100svh → 100% 同一机制）。
+ *    窄视口下屏幕区不生成盒子，100% 退化为内容高，由文档承担滚动，与外壳落地前一致。
+ * 2. 消息流与输入区各补一份左右内边距，取 --container-gutter-phone（16px）——与其余 9 页
+ *    的页内 gutter 同值。
+ *    - 只补 `.thread` 与 `.footer`，不补 `.workspace`：footer 的 `border-top` 通栏分隔线
+ *      与 `--surface` 底应当照旧铺满屏幕宽（设计上就该通栏），补在 `.workspace` 上会把它
+ *      两侧各缩进 16px，露出发灰的缝。
+ *    - 页头不在此列：`.subpage-head` 的基础规则（components.css:403）本就自带
+ *      `padding: 0 var(--container-gutter-phone)`，本页没有 `.phone-shell` 去取消它
+ *      （`.phone-shell .subpage-head` 那条会把页头内缩清零，本页不套 shell 故不触发）。
+ *      删掉 r2 里那条 `:global(.subpage-head)` 覆盖规则不损失任何内缩——那正是审查者
+ *      登记的 P2 作用域隐患，故一并移除。
+ *    - 通栏元素不受影响：`.tab-bar` 是 `position: fixed`，其包含块是 `.device`
+ *      （`transform: translateZ(0)`）而非本页任何被打内边距的盒子；本页是次级页，不渲染它。 */
+@media (min-width: 560px) {
+  .workspace {
+    height: 100%;
+  }
+
+  .thread,
+  .footer {
+    padding-inline: var(--container-gutter-phone);
+  }
 }

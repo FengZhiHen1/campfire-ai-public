@@ -17,6 +17,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router';
 
 import { BrandMark } from '../../../shared/ui/BrandMark';
+import { DeviceFrame } from '../../../shared/ui/DeviceFrame';
 import { ErrorCard } from '../../../shared/ui/StatePrimitives';
 import type { AuthPort } from '../application/ports';
 import type { AuthFieldName } from '../domain/formValidation';
@@ -63,7 +64,8 @@ function autocompleteFor(field: AuthFieldName, mode: AuthMode): string {
  * 渲染登录/注册页。
  *
  * 前置: 认证端口已装配（SDK init 由 app 层负责）
- * 后置: 提交成功后写入会话 store 并转首页；失败时保留输入并呈现错误
+ * 后置: 输出 DeviceFrame 包裹的登录/注册页；提交成功后写入会话 store 并转首页，
+ *       失败时保留输入并呈现错误
  * 异常: 无（端口异常已由 viewModel 转成服务端错误态）
  *
  * 为什么提交成功后直接导航而不等会话查证：登录响应本身就证明会话已签发，
@@ -88,137 +90,139 @@ export function LoginPage({ auth, initialMode = 'login' }: LoginPageProps) {
     form.touched.has(field) ? form.errors[field] : undefined;
 
   return (
-    <div className={`phone-shell ${styles.shell}`}>
-      <section className={styles.brand} aria-labelledby="auth-title">
-        <div className={styles.brandRow}>
-          <span className={styles.brandMark}>
-            <BrandMark size="1.2em" />
-          </span>
-          <h1 className={styles.title} id="auth-title">
-            {COPY.title}
-          </h1>
-        </div>
-        <p className={styles.tagline}>{COPY.tagline}</p>
-      </section>
-
-      <section className={`panel ${styles.panel}`} aria-labelledby="auth-form-title">
-        <h2 className={styles.formTitle} id="auth-form-title">
-          {mode === 'login' ? '登录' : '注册账号'}
-        </h2>
-
-        {/* server-error 与限流共用这一个横幅位置（页面设计状态覆盖表两行同形态）。
-            variant="form" 落实设计第 46 行的「`.error-card` 紧凑变体」——契约里的表单横幅是 .error-card.form-feedback。 */}
-        {form.serverError !== null && (
-          <ErrorCard
-            variant="form"
-            title={form.serverError.kind === 'rate-limited' ? '暂时无法继续' : '没有成功'}
-            description={form.serverError.message}
-          />
-        )}
-
-        <form
-          className={styles.form}
-          noValidate
-          onSubmit={(event) => {
-            event.preventDefault();
-            void form.submit();
-          }}
-        >
-          <div className="field">
-            <label htmlFor="auth-account">账号名</label>
-            <input
-              id="auth-account"
-              name="account"
-              type="text"
-              autoComplete={autocompleteFor('account', mode)}
-              value={form.values.account}
-              disabled={form.submitting}
-              aria-invalid={errorFor('account') !== undefined}
-              aria-describedby={errorFor('account') === undefined ? undefined : 'auth-account-error'}
-              onChange={(event) => form.setField('account', event.target.value)}
-              onBlur={() => form.blurField('account')}
-            />
-            <span className="field-error" id="auth-account-error" role="alert">
-              {errorFor('account')}
+    <DeviceFrame>
+      <div className={`phone-shell ${styles.shell}`}>
+        <section className={styles.brand} aria-labelledby="auth-title">
+          <div className={styles.brandRow}>
+            <span className={styles.brandMark}>
+              <BrandMark size="1.2em" />
             </span>
+            <h1 className={styles.title} id="auth-title">
+              {COPY.title}
+            </h1>
           </div>
+          <p className={styles.tagline}>{COPY.tagline}</p>
+        </section>
 
-          <div className="field">
-            <label htmlFor="auth-password">密码</label>
-            <input
-              id="auth-password"
-              name="password"
-              type={showPassword ? 'text' : 'password'}
-              autoComplete={autocompleteFor('password', mode)}
-              value={form.values.password}
-              disabled={form.submitting}
-              aria-invalid={errorFor('password') !== undefined}
-              aria-describedby={errorFor('password') === undefined ? undefined : 'auth-password-error'}
-              onChange={(event) => form.setField('password', event.target.value)}
-              onBlur={() => form.blurField('password')}
+        <section className={`panel ${styles.panel}`} aria-labelledby="auth-form-title">
+          <h2 className={styles.formTitle} id="auth-form-title">
+            {mode === 'login' ? '登录' : '注册账号'}
+          </h2>
+
+          {/* server-error 与限流共用这一个横幅位置（页面设计状态覆盖表两行同形态）。
+              variant="form" 落实设计第 46 行的「`.error-card` 紧凑变体」——契约里的表单横幅是 .error-card.form-feedback。 */}
+          {form.serverError !== null && (
+            <ErrorCard
+              variant="form"
+              title={form.serverError.kind === 'rate-limited' ? '暂时无法继续' : '没有成功'}
+              description={form.serverError.message}
             />
-            <button
-              className={`text-button ${styles.passwordToggle}`}
-              type="button"
-              onClick={() => setShowPassword((current) => !current)}
-            >
-              {showPassword ? COPY.passwordHide : COPY.passwordShow}
-            </button>
-            <span className="field-error" id="auth-password-error" role="alert">
-              {errorFor('password')}
-            </span>
-          </div>
-
-          {mode === 'register' && (
-            <div className="field">
-              <label htmlFor="auth-invite">邀请码</label>
-              <input
-                id="auth-invite"
-                name="inviteCode"
-                type="text"
-                autoComplete="off"
-                value={form.values.inviteCode}
-                disabled={form.submitting}
-                aria-invalid={errorFor('inviteCode') !== undefined}
-                aria-describedby="auth-invite-hint auth-invite-error"
-                onChange={(event) => form.setField('inviteCode', event.target.value)}
-                onBlur={() => form.blurField('inviteCode')}
-              />
-              <span className="hint" id="auth-invite-hint">
-                {COPY.inviteHint}
-              </span>
-              <span className="field-error" id="auth-invite-error" role="alert">
-                {errorFor('inviteCode')}
-              </span>
-            </div>
           )}
 
-          <button className="btn btn-primary block" type="submit" disabled={form.submitting}>
-            {form.submitting ? pendingLabel : submitLabel}
-          </button>
+          <form
+            className={styles.form}
+            noValidate
+            onSubmit={(event) => {
+              event.preventDefault();
+              void form.submit();
+            }}
+          >
+            <div className="field">
+              <label htmlFor="auth-account">账号名</label>
+              <input
+                id="auth-account"
+                name="account"
+                type="text"
+                autoComplete={autocompleteFor('account', mode)}
+                value={form.values.account}
+                disabled={form.submitting}
+                aria-invalid={errorFor('account') !== undefined}
+                aria-describedby={errorFor('account') === undefined ? undefined : 'auth-account-error'}
+                onChange={(event) => form.setField('account', event.target.value)}
+                onBlur={() => form.blurField('account')}
+              />
+              <span className="field-error" id="auth-account-error" role="alert">
+                {errorFor('account')}
+              </span>
+            </div>
 
-          {/* 提交中的礼貌公告：按钮文字变化对屏幕阅读器不总是即时可闻（页面设计 submitting 行）。 */}
-          <p className="form-status" role="status" aria-live="polite">
-            {form.submitting ? pendingLabel : ''}
-          </p>
-        </form>
-      </section>
+            <div className="field">
+              <label htmlFor="auth-password">密码</label>
+              <input
+                id="auth-password"
+                name="password"
+                type={showPassword ? 'text' : 'password'}
+                autoComplete={autocompleteFor('password', mode)}
+                value={form.values.password}
+                disabled={form.submitting}
+                aria-invalid={errorFor('password') !== undefined}
+                aria-describedby={errorFor('password') === undefined ? undefined : 'auth-password-error'}
+                onChange={(event) => form.setField('password', event.target.value)}
+                onBlur={() => form.blurField('password')}
+              />
+              <button
+                className={`text-button ${styles.passwordToggle}`}
+                type="button"
+                onClick={() => setShowPassword((current) => !current)}
+              >
+                {showPassword ? COPY.passwordHide : COPY.passwordShow}
+              </button>
+              <span className="field-error" id="auth-password-error" role="alert">
+                {errorFor('password')}
+              </span>
+            </div>
 
-      <p className={styles.switchRow}>
-        {mode === 'login' ? (
-          <button className={styles.switchLink} type="button" onClick={() => setMode('register')}>
-            {COPY.toRegister}
-          </button>
-        ) : (
-          <button className={styles.switchLink} type="button" onClick={() => setMode('login')}>
-            {COPY.toLogin}
-          </button>
-        )}
-      </p>
+            {mode === 'register' && (
+              <div className="field">
+                <label htmlFor="auth-invite">邀请码</label>
+                <input
+                  id="auth-invite"
+                  name="inviteCode"
+                  type="text"
+                  autoComplete="off"
+                  value={form.values.inviteCode}
+                  disabled={form.submitting}
+                  aria-invalid={errorFor('inviteCode') !== undefined}
+                  aria-describedby="auth-invite-hint auth-invite-error"
+                  onChange={(event) => form.setField('inviteCode', event.target.value)}
+                  onBlur={() => form.blurField('inviteCode')}
+                />
+                <span className="hint" id="auth-invite-hint">
+                  {COPY.inviteHint}
+                </span>
+                <span className="field-error" id="auth-invite-error" role="alert">
+                  {errorFor('inviteCode')}
+                </span>
+              </div>
+            )}
 
-      {/* 「忘记密码？请联系运营者人工重置」的归属是设置页（设置页设计第 25 行），本页设计只列三个区块。
-          这里不再重复呈现：同一句话两页各说一遍会各自漂移（此前本页那份多一个句末句号）。
-          本页只守「不放假的找回入口」——一期无邮箱即无自助通道。 */}
-    </div>
+            <button className="btn btn-primary block" type="submit" disabled={form.submitting}>
+              {form.submitting ? pendingLabel : submitLabel}
+            </button>
+
+            {/* 提交中的礼貌公告：按钮文字变化对屏幕阅读器不总是即时可闻（页面设计 submitting 行）。 */}
+            <p className="form-status" role="status" aria-live="polite">
+              {form.submitting ? pendingLabel : ''}
+            </p>
+          </form>
+        </section>
+
+        <p className={styles.switchRow}>
+          {mode === 'login' ? (
+            <button className={styles.switchLink} type="button" onClick={() => setMode('register')}>
+              {COPY.toRegister}
+            </button>
+          ) : (
+            <button className={styles.switchLink} type="button" onClick={() => setMode('login')}>
+              {COPY.toLogin}
+            </button>
+          )}
+        </p>
+
+        {/* 「忘记密码？请联系运营者人工重置」的归属是设置页（设置页设计第 25 行），本页设计只列三个区块。
+            这里不再重复呈现：同一句话两页各说一遍会各自漂移（此前本页那份多一个句末句号）。
+            本页只守「不放假的找回入口」——一期无邮箱即无自助通道。 */}
+      </div>
+    </DeviceFrame>
   );
 }
