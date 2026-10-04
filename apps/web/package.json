@@ -12,6 +12,7 @@
     "test:watch": "vitest",
     "lint": "oxlint",
     "typecheck": "tsc --noEmit",
+    "shots": "playwright test",
     "sync-tokens": "node scripts/sync-tokens.mjs"
   },
   "dependencies": {
@@ -23,6 +24,7 @@
     "zustand": "5.0.15"
   },
   "devDependencies": {
+    "@playwright/test": "1.63.0",
     "@testing-library/dom": "10.4.2",
     "@testing-library/react": "16.3.3",
     "@types/node": "24.19.0",
