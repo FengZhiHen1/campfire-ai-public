@@ -122,7 +122,7 @@ describe('记忆页 · 空与失败必须可区分', () => {
     renderPage(port({ listEpisodes: vi.fn(async () => ({ items: [], next_cursor: null })) }));
 
     expect(await screen.findByText('还没有记录')).toBeDefined();
-    expect(screen.getByText('你在咨询中说过的事，会记在这里。')).toBeDefined();
+    expect(screen.getByText('你在咨询中说过的事，会记在这里')).toBeDefined();
     expect(screen.queryByRole('alert')).toBeNull();
   });
 
