@@ -564,6 +564,32 @@ describe('档案页 · 支持对象管理', () => {
     });
   });
 
+  it('P0 菜单单换成表单单后焦点进入新单（换单 = 重新挂载，不是就地换内容）', async () => {
+    /**
+     * 判别性：这条用例专抓「ObjectSheet 复用同一 DOM 节点」这个缺陷。
+     * 不加 key 时 React 复用节点 ⇒ ConfirmSheet 的挂载副作用不重跑 ⇒
+     * 「点改名字」后 activeElement 落在被替换掉的按钮上（jsdom 里表现为 body），
+     * 焦点不在单内，下面第一条断言即失败。删掉 ProfilePage 里的 key 可复现。
+     *
+     * jsdom 支持程序化 focus 与 activeElement，因此这条判据在单测里有效
+     * （与 Tab 陷阱不同——那条依赖真实焦点顺序，只能靠浏览器探针）。
+     */
+    renderPage(port());
+    await screen.findByText('关于 TA 的当前认识');
+
+    fireEvent.click(screen.getByRole('button', { name: '对象操作' }));
+    const menu = await screen.findByRole('dialog');
+    expect(menu.contains(document.activeElement)).toBe(true);
+
+    fireEvent.click(within(menu).getByRole('button', { name: '改名字' }));
+
+    const form = await screen.findByRole('dialog');
+    expect(form.contains(document.activeElement)).toBe(true);
+    // 换单后是新节点，不是同一张单就地换内容。
+    expect(form).not.toBe(menu);
+    expect(within(form).getByRole('button', { name: '保存名字' })).toBeDefined();
+  });
+
   it('P1 切换对象只重取该对象的内容，不重取对象列表', async () => {
     const p = port({
       listObjects: vi.fn(async () => ({ items: [object('o1', '小宝'), object('o2', '小满')] })),
