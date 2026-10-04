@@ -17,6 +17,7 @@ import { useState } from 'react';
 
 import type { ProfileItem } from '../../../shared/types/profile';
 import { AppShell } from '../../../shared/ui/AppShell';
+import { ConfirmSheet } from '../../../shared/ui/ConfirmSheet';
 import { EmptyState, ErrorCard, Skeleton } from '../../../shared/ui/StatePrimitives';
 import type { ProfilePort } from '../application/ports';
 import { DOMAIN_LABELS, DOMAIN_ORDER } from '../domain/domains';
@@ -360,7 +361,7 @@ export function ProfilePage({ port }: ProfilePageProps) {
       )}
 
       {entry.deleteTarget !== null && (
-        <div className="confirm-sheet" role="dialog" aria-modal="false" aria-labelledby="profile-delete-title">
+        <ConfirmSheet labelledBy="profile-delete-title" onDismiss={entry.cancelDelete}>
           <h2 id="profile-delete-title">{COPY.deleteSheetTitle}</h2>
           <p>{COPY.deleteSheetBody}</p>
           <div className="button-row">
@@ -377,11 +378,19 @@ export function ProfilePage({ port }: ProfilePageProps) {
               {COPY.deleteConfirm}
             </button>
           </div>
-        </div>
+        </ConfirmSheet>
       )}
 
       {objectActions.sheet !== null && (
+        /*
+          key 必须是 kind：菜单单与表单单是两张用途不同的单，共用同一个 ObjectSheet
+          位置。不加 key 时 React 复用同一个 DOM 节点，ConfirmSheet 的挂载副作用不会重跑，
+          于是「点改名字」把内容换成表单后焦点留在被替换掉的按钮上（浏览器实测：
+          activeElement 变成 body，焦点不在单内）。加 key 让它重新挂载——与「新的单滑入」
+          的语义一致，焦点也随之进入新单的第一个可聚焦元素。
+        */
         <ObjectSheet
+          key={objectActions.sheet.kind}
           archived={selected !== null && selected.archived_at !== null}
           displayName={selected?.display_name ?? ''}
           errors={objectActions.sheet.errors}
@@ -632,9 +641,13 @@ interface ObjectSheetProps {
 /**
  * 渲染对象操作单（契约组件 .confirm-sheet，底部滑入）。
  *
- * 为什么不用原生 `<dialog>.showModal()`：jsdom 未实现 showModal（T10 实测），
- * 而前端测试环境是 jsdom；`role="dialog"` + `aria-modal="false"` 与设置页的登出确认
- * 同一做法，不声称模态语义（焦点陷阱、Esc 关闭未实现也未验证）。
+ * 为什么不用原生 `<dialog>.showModal()`：jsdom 未实现 showModal/close/show
+ * （三者全为 undefined），而前端测试环境是 jsdom；且 `showModal()` 的 top layer
+ * 会把包含块从 .device-screen 换成视口，确认单在宽视口下变成 `--phone-shell-max` 宽
+ * （实测 left 445 → 400、width 390 → 480）而甩出手机外壳——那条 transform 是
+ * global.css 的承重属性，其注释明文点名它存在的目的之一就是让 .confirm-sheet 收进外壳。
+ * 模态语义由 shared/ui/ConfirmSheet 手工补齐（遮罩、焦点进入、焦点陷阱、Esc 关闭、背景 inert），
+ * 并如实声称 `aria-modal="true"`。已知残余（比原生模态少一项）：层级由 z-index 而非 top layer 保证。
  *
  * 为什么归档要在单内二次确认、改名与恢复不用：归档改变后续会话的默认对象，
  * 而改名可再改、恢复可逆。
@@ -643,7 +656,7 @@ function ObjectSheet(props: ObjectSheetProps) {
   const { kind } = props;
   if (kind === 'menu') {
     return (
-      <div className="confirm-sheet" role="dialog" aria-modal="false" aria-labelledby="profile-object-title">
+      <ConfirmSheet labelledBy="profile-object-title" onDismiss={props.onCancel}>
         <h2 id="profile-object-title">{props.displayName}</h2>
         <div className="button-row">
           <button className="btn btn-secondary" onClick={props.onRename} type="button">
@@ -664,7 +677,7 @@ function ObjectSheet(props: ObjectSheetProps) {
             {COPY.cancel}
           </button>
         </div>
-      </div>
+      </ConfirmSheet>
     );
   }
 
@@ -686,7 +699,7 @@ function ObjectSheet(props: ObjectSheetProps) {
           : null;
 
   return (
-    <div className="confirm-sheet" role="dialog" aria-modal="false" aria-labelledby="profile-object-form-title">
+    <ConfirmSheet labelledBy="profile-object-form-title" onDismiss={props.onCancel}>
       <h2 id="profile-object-form-title">{title}</h2>
       {body !== null && <p>{body}</p>}
       {kind === 'create' || kind === 'rename' ? (
@@ -726,6 +739,6 @@ function ObjectSheet(props: ObjectSheetProps) {
                 : COPY.restoreSubmit}
         </button>
       </div>
-    </div>
+    </ConfirmSheet>
   );
 }

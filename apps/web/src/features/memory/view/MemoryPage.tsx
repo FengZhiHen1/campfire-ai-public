@@ -17,6 +17,7 @@ import { useCallback, useState } from 'react';
 import { Link } from 'react-router';
 
 import { AppShell } from '../../../shared/ui/AppShell';
+import { ConfirmSheet } from '../../../shared/ui/ConfirmSheet';
 import { ListTail } from '../../../shared/ui/ListTail';
 import { EmptyState, ErrorCard, Skeleton } from '../../../shared/ui/StatePrimitives';
 import type { MemoryPort } from '../application/ports';
@@ -274,7 +275,7 @@ export function MemoryPage({ port }: MemoryPageProps) {
       )}
 
       {page.deleteTarget !== null && (
-        <div className="confirm-sheet" role="dialog" aria-modal="false" aria-labelledby="memory-delete-title">
+        <ConfirmSheet labelledBy="memory-delete-title" onDismiss={page.cancelDelete}>
           <h2 id="memory-delete-title">{COPY.deleteSheetTitle}</h2>
           <p>{COPY.deleteSheetBody}</p>
           <div className="button-row">
@@ -291,7 +292,7 @@ export function MemoryPage({ port }: MemoryPageProps) {
               {COPY.deleteConfirm}
             </button>
           </div>
-        </div>
+        </ConfirmSheet>
       )}
     </AppShell>
   );

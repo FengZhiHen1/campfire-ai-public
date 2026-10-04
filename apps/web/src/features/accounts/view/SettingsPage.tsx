@@ -16,6 +16,7 @@
 import { Link, useNavigate } from 'react-router';
 
 import { AppShell } from '../../../shared/ui/AppShell';
+import { ConfirmSheet } from '../../../shared/ui/ConfirmSheet';
 import { useSessionStore } from '../viewModel/sessionStore';
 import { useLogout } from '../viewModel/useLogout';
 import type { AuthPort } from '../application/ports';
@@ -150,19 +151,22 @@ interface LogoutConfirmSheetProps {
 /**
  * 渲染登出确认单（契约组件 .confirm-sheet）。
  *
- * 为什么不用原生 `<dialog>.showModal()`：jsdom 未实现 showModal（本包实测
- * `typeof dialog.showModal === 'undefined'`），而本包的前端测试环境是 jsdom；
- * 用 open 属性驱动的非模态呈现可以在同一环境下被断言，且结构、类名与可访问属性
- * 与契约一致。原生模态的真实行为（焦点陷阱、Esc 关闭）留给后续包在有浏览器
- * 的环境里补验——本包不声称它有模态语义。
+ * 为什么不用原生 `<dialog>.showModal()`：jsdom 未实现 showModal/close/show
+ * （三者全为 undefined），而前端测试环境是 jsdom；且 `showModal()` 的 top layer
+ * 会把包含块从 .device-screen 换成视口，确认单在宽视口下变成 `--phone-shell-max`
+ * 宽（实测 left 445 → 400、width 390 → 480）而甩出手机外壳——那条 transform 是
+ * global.css 的承重属性，其注释明文点名它存在的目的之一就是让 .confirm-sheet 收进外壳。
+ * 模态语义（遮罩、焦点进入、焦点陷阱、Esc 关闭、背景 inert）因此由
+ * shared/ui/ConfirmSheet 手工补齐，并如实声称 `aria-modal="true"`。
+ * 已知残余（比原生模态少一项）：层级由 z-index 而非 top layer 保证。
  *
  * 前置: 无
- * 后置: 输出 .confirm-sheet 容器；提交中按钮进入 loading；有错误时内联呈现并保留「重试」
+ * 后置: 输出 .confirm-sheet 容器与遮罩层；提交中按钮进入 loading；有错误时内联呈现并保留「重试」
  * 异常: 无
  */
 function LogoutConfirmSheet({ submitting, error, onCancel, onConfirm }: LogoutConfirmSheetProps) {
   return (
-    <div className="confirm-sheet" role="dialog" aria-modal="false" aria-labelledby="logout-sheet-title">
+    <ConfirmSheet labelledBy="logout-sheet-title" onDismiss={onCancel}>
       <h2 id="logout-sheet-title">{COPY.sheetTitle}</h2>
       <p>{COPY.sheetBody}</p>
       {error !== null && (
@@ -178,6 +182,6 @@ function LogoutConfirmSheet({ submitting, error, onCancel, onConfirm }: LogoutCo
           {submitting ? COPY.logoutPending : error === null ? COPY.sheetConfirm : '重试'}
         </button>
       </div>
-    </div>
+    </ConfirmSheet>
   );
 }
