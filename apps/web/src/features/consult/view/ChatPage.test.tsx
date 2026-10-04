@@ -389,3 +389,99 @@ describe('对话页 — 技能选择器', () => {
     expect((await screen.findAllByText('档案整理')).length).toBeGreaterThan(0);
   });
 });
+
+describe('对话页 — 页头技能标签折叠（授权语义：宽度不足时整体折叠为「技能 N 个」）', () => {
+  /**
+   * 取页头里的技能标签文本。
+   *
+   * 必须限定在 .subpage-head 内：SkillPicker 的 chip 用的是同一批中文技能名，
+   * 全局查询会把选择器的 chip 也算进来，断言便不再指向页头（假阳性）。
+   */
+  const headTagTexts = (container: HTMLElement): string[] =>
+    Array.from(container.querySelectorAll('.subpage-head .sp-tag')).map((el) => el.textContent ?? '');
+
+  /** 直接写入生效技能集合（run_started 的等价路径，与 line 347 同法）。 */
+  const setActiveSkills = (ids: readonly string[]): void => {
+    act(() => {
+      useRunStore.getState().applyRunEvent(runStarted(ids));
+    });
+  };
+
+  it('非折叠态：3 个标签仍逐个串联展示，不出现汇总标签', async () => {
+    const port = createConsultPortStub({ history: historyResponse([]) });
+    const { container } = renderChat(port);
+    await screen.findByLabelText('发送消息');
+
+    // 3 个 = 实测「标题不截断」的上界（合计 199.45px，标题仍余 64.39px）。
+    setActiveSkills(['daily-consulting', 'profile-curation', 'unknown-skill-c']);
+
+    const tags = headTagTexts(container);
+    expect(tags).toEqual(['日常咨询', '档案整理', 'unknown-skill-c']);
+    expect(tags.some((tag) => tag.startsWith('技能 '))).toBe(false);
+  });
+
+  it('折叠态：4 个标签（实测标题开始被截断的那一档）整体折叠为「技能 4 个」，不出现任何单个技能名', async () => {
+    const port = createConsultPortStub({ history: historyResponse([]) });
+    const { container } = renderChat(port);
+    await screen.findByLabelText('发送消息');
+
+    setActiveSkills(['daily-consulting', 'profile-curation', 'unknown-skill-c', 'unknown-skill-d']);
+
+    const tags = headTagTexts(container);
+    expect(tags).toEqual(['技能 4 个']);
+    // 授权语义明确否定「+N 徽标」形态：这里同时钉住它不是徽标写法。
+    expect(tags[0]).not.toMatch(/^\+\d+$/);
+  });
+});
+
+describe('对话页 — 设备外壳（宽视口）', () => {
+  /**
+   * 对话页是唯一不经 .phone-shell 的页面（消息满幅画布），因此它在外壳里的位置必须
+   * 由结构钉住：三态都要落在 DeviceFrame 的屏幕区内，否则宽视口下会退回满幅网页。
+   * jsdom 不算布局，这里只断言 DOM 归属——几何与可点性由浏览器探针覆盖。
+   */
+  it('P0 水合成功态装在设备外壳的屏幕区内（与其余 9 页一致）', async () => {
+    const port = createConsultPortStub({
+      history: historyResponse([hydratedAssistant('m1', [{ type: 'text', text: '历史回答' }])]),
+    });
+    const { container } = renderChat(port);
+    await screen.findByLabelText('发送消息');
+
+    const screenArea = container.querySelector('.device-screen');
+    const workspace = container.querySelector('[class*="workspace"]');
+    expect(screenArea).not.toBeNull();
+    expect(workspace).not.toBeNull();
+    expect(screenArea?.contains(workspace)).toBe(true);
+  });
+
+  it('P0 消息流与输入区同在外壳屏幕区内（滚动与贴底的前提）', async () => {
+    const port = createConsultPortStub({
+      history: historyResponse([hydratedAssistant('m1', [{ type: 'text', text: '历史回答' }])]),
+    });
+    const { container } = renderChat(port);
+    await screen.findByLabelText('发送消息');
+
+    const screenArea = container.querySelector('.device-screen');
+    const thread = container.querySelector('[class*="thread"]');
+    const composer = container.querySelector('.chat-compose');
+    expect(thread).not.toBeNull();
+    expect(composer).not.toBeNull();
+    expect(screenArea?.contains(thread)).toBe(true);
+    expect(screenArea?.contains(composer)).toBe(true);
+  });
+
+  it('P0 水合中与失败两态同样在外壳内（三态一致，不出现满幅态）', async () => {
+    const loading = createConsultPortStub();
+    vi.mocked(loading.loadHistory).mockReturnValue(pending<ListMessagesResponse>());
+    const loadingView = renderChat(loading);
+    expect(screen.getByText('正在载入这段对话…')).toBeDefined();
+    expect(loadingView.container.querySelector('.device-screen')).not.toBeNull();
+    loadingView.unmount();
+
+    const failed = createConsultPortStub();
+    vi.mocked(failed.loadHistory).mockRejectedValueOnce(new ConsultError('unavailable', '服务暂时不可用'));
+    const failedView = renderChat(failed);
+    await screen.findByRole('button', { name: '重试' });
+    expect(failedView.container.querySelector('.device-screen')).not.toBeNull();
+  });
+});
