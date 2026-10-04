@@ -59,7 +59,7 @@ describe('应急表单页 — 分步流', () => {
 
   it('跳过语义写在界面上（不得弱化成「暂时跳过」）', () => {
     renderForm(createConsultPortStub());
-    expect(screen.getByText('跳过 = 未排除，不会当作正常。')).toBeDefined();
+    expect(screen.getByText('跳过 = 未排除，不会当作正常')).toBeDefined();
   });
 
   it('下一题/上一题可来回，作答与跳过标记保留', () => {

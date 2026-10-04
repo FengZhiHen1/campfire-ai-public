@@ -79,7 +79,7 @@ describe('会话列表页 — 三态', () => {
   it('empty：空态说明而不是一片白', async () => {
     renderList(createConsultPortStub());
     expect(await screen.findByText('还没有咨询记录')).toBeDefined();
-    expect(screen.getByText('从上面开始第一次咨询。')).toBeDefined();
+    expect(screen.getByText('从上面开始第一次咨询')).toBeDefined();
   });
 
   it('error：错误卡 + 重试；重试成功后渲染列表（不把失败显示成空列表）', async () => {

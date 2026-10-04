@@ -47,7 +47,7 @@ const COPY = {
   candidateGroup: '待确认',
   addEntry: '补充一条',
   emptyTitle: '还没有记录',
-  emptyDescription: '咨询中你说的关于 TA 的事，会自动记在这里；也可以现在补充一条。',
+  emptyDescription: '咨询中你说的关于 TA 的事，会自动记在这里；也可以现在补充一条',
   noObjectTitle: '还没有记录',
   noObjectDescription: '先给 TA 起个称呼，之后咨询中说的相关事情会记在这里。',
   addEntryTitle: '补充一条记录',

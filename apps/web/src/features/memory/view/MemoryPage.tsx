@@ -32,7 +32,7 @@ const COPY = {
   title: '我提过的事',
   ownership: '这些是你自己在咨询中说过或经历过的事，关于你本人；与孩子档案分开保存，不随切换对象变化。',
   emptyTitle: '还没有记录',
-  emptyDescription: '你在咨询中说过的事，会记在这里。',
+  emptyDescription: '你在咨询中说过的事，会记在这里',
   retry: '重试',
   correct: '纠正',
   delete: '删除',
