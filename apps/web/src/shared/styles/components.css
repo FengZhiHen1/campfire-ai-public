@@ -156,15 +156,46 @@ strong {
 }
 
 /* 可点选的 tag（对象切换 chip、库别切换 chip）：选中态是「当前项」的唯一视觉通道。
- * 为什么按钮式的 tag 要有自己的类：.tag 只是静态徽章，没有按压与选中语义。 */
+ * 为什么按钮式的 tag 要有自己的类：.tag 只是静态徽章，没有按压与选中语义。
+ *
+ * 与契约的第 7 处单侧差异（本包新增）：契约源 components.html:288 是 `color: var(--accent)`，
+ * 这里改成 accent 掺 8% 黑。理由见下面的对比度实测。 */
 .tag.selected {
   border-color: var(--accent);
-  color: var(--accent);
+  /* 文字色不能直接用 --accent。
+   *
+   * 选中态背景是 6% 的 accent 叠在纸底上，实测合成值 rgb(247,235,225)；
+   * --accent 在其上的对比度只有 4.42:1，低于 WCAG 2.x 正文（小字号）要求的 4.5:1。
+   * 这是全站唯一一处不达标的文本对比度，且字号恰是 --text-xs 的 12px（最不利的小字）。
+   *
+   * 为什么掺 8% 黑而不是刚好过线：掺 2% 时取劣值 4.62:1，余量仅 0.12——
+   * 而合成背景在不同 Chromium 版本/色彩管理下会有 ±2 的通道级差异（本项实测模型值与
+   * 浏览器光栅化值逐通道最多差 2），阈值附近的余量不足以吸收该噪声。掺 8% 后取劣 5.33:1。
+   * 为什么不再深：边框与背景仍留给 --accent，文字只做最小必要加深，
+   * 「当前项」的语义通道（accent 边框 + accent 底）没有被削弱。
+   *
+   * 只有文字色改：边框、背景保持 --accent 不变，避免演变成改 --accent 本身（那会波及全站）。
+   * 掺黑而不是改色相：保持同一火焰橙族，选中态与品牌色仍读作一体。 */
+  color: color-mix(in oklab, var(--accent), black 8%);
   background: color-mix(in oklab, var(--accent), transparent 94%);
 }
 
 .tag.meta {
   color: var(--meta);
+}
+
+/* 按钮式 tag 的 44px 热区（契约源 docs/design/components.html:290）。
+ *
+ * 为什么是复合选择器 `button.tag` 而不是 `.tag`：`.tag` 一族里既有静态徽章（`<span class="tag">`）
+ * 也有可点选的按钮（`LibraryPage.tsx:101`/`:103` 的库别切换、`ProfilePage.tsx:124`/`:126` 的对象
+ * 切换与 `:147` 的新建入口）。契约只给**按钮形态**要求 44px 最小热区——静态徽章不需要，
+ * 给它加会把 24px 高的徽章撑到 44px、改掉列表行高。所以这条不能写进 `.tag` 基础规则。
+ *
+ * 为什么这条此前整条不在产物里：只 grep 类名 `tag` 会命中 `.tag{…}` 而漏掉它，
+ * 正是本包加固的闸门 B（复合选择器规则）要拦的形态。 */
+button.tag {
+  min-height: 44px;
+  min-width: 44px;
 }
 
 /* ── 按钮 ───────────────────────────────────────────────────── */
@@ -249,6 +280,21 @@ strong {
   text-underline-offset: var(--space-1);
 }
 
+/* 禁用态（契约源 docs/design/components.html:98，与 `.btn:disabled` 合并为一条声明）。
+ *
+ * 为什么必须单独写 `.text-button:disabled`：`.btn` 与 `.text-button` 是**两个并列的基类**
+ * （前者是 48px 带底按钮，后者是 44px 文字按钮），没有共同的祖先类——契约那条 `,` 合并声明
+ * 在本文件里只能各写一份。`.btn:disabled` 已存在（本文件上方），这里补另一份。
+ *
+ * **实测依据**：改前 `EmergencyFormPage.tsx:64` 第 1 题的「上一题」按钮 `disabled=true` 时，
+ * 计算样式仍是 `opacity: 1` / `cursor: pointer`（浏览器实测，见
+ * `T05-assets/probe-{before,after}/a1-candidates-mobile.json`）⇒ 禁用态在视觉上完全看不出来；
+ * 改后为 `opacity: 0.5` / `cursor: not-allowed`。 */
+.text-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 /* ── 表单 ───────────────────────────────────────────────────── */
 
 .field {
@@ -260,6 +306,50 @@ strong {
   color: var(--fg-2);
   font-size: var(--text-sm);
   font-weight: 600;
+}
+
+/* 多行输入的**元素级**基础样式（契约源 docs/design/components.html:133-137）。
+ *
+ * 为什么必须补这一段：本仓有 4 处 `<textarea>` 连 `className` 都没有
+ * （EmergencyFormPage.tsx:91/:123、MemoryPage.tsx:207、ProfilePage.tsx:588），
+ * 对应的三个 *.module.css 里 `textarea` 规则数为 0 ⇒ 它们此前渲染的是 **Chrome 的 UA 默认
+ * textarea**（灰底、原生边框、非本设计 fonts），落在暖米纸 + 宋体设计里。
+ * 另外两处（QuestionCard.tsx:128、ChatWorkspace.tsx:272）有 scoped 规则，本段不覆盖它们的
+ * 专属声明：`.chat-compose textarea` / `.question-card textarea` 特异性更高（0,1,1 > 0,0,1），
+ * 因此 `resize`/`min-height`/`padding` 的页面级取值仍归它们——这是契约里就有的分层
+ * （契约 164 与 268 行同样给这两处 scoped 覆盖）。
+ *
+ * 顺序与契约一致（133 → 137）：`textarea[aria-invalid="true"]` 与 `textarea:focus` 特异性相同
+ * （0,1,1），靠源序决胜——契约里无效态在后，故「聚焦时仍是危险色边框」是有意行为。 */
+textarea {
+  width: 100%;
+  min-height: 120px;
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--fg);
+  font: inherit;
+  resize: vertical;
+}
+
+textarea::placeholder {
+  color: var(--muted);
+  opacity: 1;
+}
+
+textarea:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: var(--focus-ring);
+}
+
+textarea[aria-invalid='true'] {
+  border-color: var(--danger);
+}
+
+textarea:read-only {
+  background: var(--bg);
 }
 
 .field .hint {
@@ -410,9 +500,20 @@ input[aria-invalid='true'] {
  *
  * 为什么偏离契约源：项目侧 .phone-shell（global.css）自带一份左右 gutter，契约 .subpage-head
  * 也自带一份，嵌套时会出现两份内缩（返回链接左边界 32px vs 卡片 16px，视觉上头部比内容更靠内）。
- * 在 shell 内取消头部那份，让吸顶头与内容卡左对齐；脱离 shell 单独使用时行为不变。 */
+ * 在 shell 内让页头的内容左对齐内容卡，同时把页头自身的底色与分隔线铺到屏幕边缘。
+ *
+ * 为什么不能只写 padding-inline: 0：那只把内容推到 shell 的内容盒左边缘（x=16），
+ * 页头的 --surface 底色与 border-bottom 也跟着从 x=16 起，于是吸顶头两侧各留 16px 露纸底、
+ * 通栏分隔线断成中段（实测 guide 页底色起点 x=16，而同一视觉族的 .tab-bar 是通栏的）。
+ * 负外边距把页头的盒子扩到 shell 的内边距区之外，再用内边距把内容推回 16px：
+ * 底色与分隔线因此通栏（x=0），内容位置与原来一致（仍 16px）。
+ *
+ * 为什么两值必须成对：只写负外边距会把内容顶到 x=0（内容贴边，另一个缺陷）；
+ * 只写 padding-inline 又回到两份内缩。两者是一组「铺满盒子 + 收回内容」的搭配。
+ * 为什么脱离 shell 时不受影响：本规则带 .phone-shell 前缀，独立使用 .subpage-head 的场合不命中。 */
 .phone-shell .subpage-head {
-  padding-inline: 0;
+  margin-inline: calc(var(--container-gutter-phone) * -1);
+  padding-inline: var(--container-gutter-phone);
 }
 
 .sp-back {
@@ -441,6 +542,18 @@ input[aria-invalid='true'] {
   font-size: var(--text-xl);
   font-weight: 500;
   line-height: 1.3;
+}
+
+/* 页头里的技能徽章（契约源 docs/design/components.html:302）。
+ *
+ * 为什么必须有 `flex: none`：`.subpage-head` 是 `display: flex`，而 `.sp-title` 是
+ * `flex: 1; min-width: 0`。`.tag` 作为 flex 子项的 `flex-shrink` 默认 1 ⇒ 技能多时徽章
+ * 会被压到逐字竖排、页头从 48px 涨到 87.8px（T03 的 P1-2 实测：4 个技能时
+ * `tags[0].w=39.9 h=86.8`、`head.h=87.8`）；`.sp-title` 的自适应宽度也因此失去意义。
+ * 契约这条就是为此而设，且只在**页头场景**成立（`.tag` 基础规则不能加 `flex: none`——
+ * `.tag.meta` 在别处是行内流子项，加了会改变既有换行行为）。 */
+.sp-tag {
+  flex: none;
 }
 
 .tab-bar {
@@ -637,7 +750,16 @@ input[aria-invalid='true'] {
  * 的子元素，静态位置就落在内容盒左边界上，于是整体右移一个 gutter：390 视口实测 x=16 w=390
  * （右边界 406 被裁掉 16px，左右不对称、右上圆角不可见）；900 视口实测 shell 210..690、
  * sheet 226..706，同样偏右 16px。补 inset-inline:0 后 sheet 与契约同族的 .tab-bar 一致
- * （后者契约源就带这条，实测 x=0 w=390）。契约源缺这条属漏项，已登记回写（审查报告回写清单 f）。 */
+ * （后者契约源就带这条，实测 x=0 w=390）。契约源缺这条属漏项，已登记回写（审查报告回写清单 f）。
+ *
+ * max-height 的基准是「包含块」而不是视口
+ *
+ * 取 90%：宽视口下本元素的包含块被 .device 的 transform 收成外壳内容盒（高 844），
+ * 于是上限是外壳的 90%，确认单不会长到超出屏幕。写 90svh 会解析为**视口**高——
+ * 在 1000px 高的视口里上限变成 900px，比外壳还高，确认单会溢出外壳被裁掉
+ * （同 global.css 里 .phone-shell 的 100svh → 100% 是同一个机制）。
+ * 窄视口下外壳三层退化为 display: contents、不生成盒子，包含块回到视口，
+ * 90% 与 90svh 在此等价。 */
 .confirm-sheet {
   position: fixed;
   inset-inline: 0;
@@ -646,7 +768,7 @@ input[aria-invalid='true'] {
   z-index: 50;
   max-width: var(--phone-shell-max);
   width: 100%;
-  max-height: 90svh;
+  max-height: 90%;
   margin: 0 auto;
   padding: var(--space-6) var(--space-5) calc(var(--space-6) + env(safe-area-inset-bottom, 0px));
   border: 1px solid var(--border);
@@ -657,6 +779,29 @@ input[aria-invalid='true'] {
 }
 
 .confirm-sheet::backdrop {
+  background: color-mix(in oklab, var(--bg), transparent 20%);
+}
+
+/* 遮罩层：契约 .confirm-sheet::backdrop 的等价实现。
+ *
+ * 为什么需要真实元素而不是只用 ::backdrop：`::backdrop` 只在 top layer 元素上生成盒子，
+ * 而本实现不是 top layer——`showModal()` 会让元素的包含块从 .device-screen 变成视口，
+ * 于是确认单在宽视口下变成 480px 宽并甩出手机外壳（实测 left 445 → 400、width 390 → 480）。
+ * 那条 transform 是 global.css 的承重属性，其注释明文点名它存在的目的之一就是让
+ * .confirm-sheet 收进外壳。⇒ 保留在包含块内的普通元素，此处用一个真实元素承担遮罩。
+ *
+ * 与契约的第 7 处单侧差异：契约源 components.html:226 把这条背景写在 `.confirm-sheet::backdrop`
+ * 上，本表新增 `.confirm-sheet-scrim` 这个类名。
+ * 为什么偏离契约源：见上（top layer 与外壳几何不可兼得）；**取值未偏离**——
+ * background 逐字取自契约 :226 的 color-mix，tap 关闭的交互归组件层。
+ *
+ * z-index 取 45：必须高于 .tab-bar（40，见上方第 3 处差异）否则遮罩盖不住 tab 栏，
+ * 又必须低于 .confirm-sheet（50）否则遮罩会盖住确认单自身。
+ * position/inset 与 .confirm-sheet 同族：包含块同源，窄视口下随外壳退化为视口。 */
+.confirm-sheet-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 45;
   background: color-mix(in oklab, var(--bg), transparent 20%);
 }
 
