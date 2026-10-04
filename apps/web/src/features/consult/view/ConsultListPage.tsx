@@ -87,7 +87,7 @@ export function ConsultListPage({ consult }: ConsultListPageProps) {
       ) : null}
 
       {list.state.status === 'ready' && list.state.rows.length === 0 ? (
-        <EmptyState title="还没有咨询记录" description="从上面开始第一次咨询。" />
+        <EmptyState title="还没有咨询记录" description="从上面开始第一次咨询" />
       ) : null}
 
       {list.state.status === 'ready' && list.state.rows.length > 0 ? (

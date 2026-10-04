@@ -163,7 +163,7 @@ export interface EmergencyAnswerDraft {
 export type EmergencyDraft = Readonly<Record<string, EmergencyAnswerDraft>>;
 
 /** 跳过语义的固定文案（页面设计第 43 行；不得弱化为「暂时跳过」）。 */
-export const SKIP_SEMANTICS_COPY = '跳过 = 未排除，不会当作正常。';
+export const SKIP_SEMANTICS_COPY = '跳过 = 未排除，不会当作正常';
 
 /** 一个空草稿。 */
 const EMPTY_ANSWER: EmergencyAnswerDraft = { selected: [], note: '', skipped: false };
