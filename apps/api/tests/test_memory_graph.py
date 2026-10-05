@@ -19,11 +19,19 @@
 
 from __future__ import annotations
 
+import ast
+import inspect
+import json
+import textwrap
+from collections.abc import Callable
+
+import httpx2
 import pytest
 from graphiti_core.cross_encoder.openai_reranker_client import OpenAIRerankerClient
-from graphiti_core.embedder.openai import OpenAIEmbedder
+from graphiti_core.embedder.openai import OpenAIEmbedder, OpenAIEmbedderConfig
 from graphiti_core.llm_client.client import ModelSize
 from graphiti_core.llm_client.openai_client import OpenAIClient
+from openai import AsyncOpenAI
 
 from campfire.core.config import EMBEDDING_DIM, Settings
 from campfire.modules.memory.errors import (
@@ -32,7 +40,12 @@ from campfire.modules.memory.errors import (
     MemoryModuleError,
     MemoryUnavailableError,
 )
-from campfire.modules.memory.graph import LLM_MAX_TOKENS, OrderedCrossEncoder, build_memory_graph
+from campfire.modules.memory.graph import (
+    LLM_MAX_TOKENS,
+    OrderedCrossEncoder,
+    TokenHubEmbedder,
+    build_memory_graph,
+)
 
 #: 装配测试用的假凭据：不调用任何真实服务，只需要「已配置」这一事实。
 _FAKE_KEY = "test-key-not-a-real-secret"  # noqa: S105 —— 测试用假值，非真实凭据
@@ -273,3 +286,315 @@ async def test_graph_uses_the_configured_database_not_a_default() -> None:
         assert graph.driver._database == "campfire_test"
     finally:
         await graph.aclose()
+
+
+# ---------------------------------------------------------------------------
+# 嵌入请求体：`encoding_format` 必须是 float（P1 缺陷的回归闸门）
+# ---------------------------------------------------------------------------
+
+
+def _recording_transport(sink: list[dict[str, object]], dim: int = 3000) -> httpx2.MockTransport:
+    """造一个记录请求体、并按输入条数回向量的假传输。
+
+    向量故意长于 `EMBEDDING_DIM`（3000 > 2560）：这样「按 config 截断」这一步
+    也被覆盖到——若实现漏了截断，`len(...) == 2560` 的断言会失败。
+    必须**按输入条数**回：`create_batch` 的语义是「一批进、一批出」，
+    只回一条会让「批量」这一步的断言失去对象（实测踩过：误报成实现少了一条）。
+    """
+
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        body = json.loads(request.content)
+        sink.append(body)
+        raw_input = body["input"]
+        count = len(raw_input) if isinstance(raw_input, list) else 1
+        return httpx2.Response(
+            200,
+            json={
+                "object": "list",
+                "model": "kinfra-text-embedding-4b",
+                "data": [{"object": "embedding", "index": index, "embedding": [0.25] * dim} for index in range(count)],
+            },
+        )
+
+    return httpx2.MockTransport(handler)
+
+
+@pytest.mark.asyncio
+async def test_embedder_body_carries_float_encoding_format() -> None:
+    """真实装配出的 embedder，其**请求体**必须带 `encoding_format="float"`。
+
+    为什么不能只断言构造代码（2026-10-02 实测确认的产品缺陷就长这样）：
+    上游 `graphiti_core` 的 `OpenAIEmbedder.create()` / `create_batch()` 只传
+    `input` + `model`，而 OpenAI SDK 在请求体层面补 `encoding_format="base64"`
+    （`openai/resources/embeddings.py:110-111`），TokenHub 只接受 `float` ⇒
+    真实端点稳定 `400001`，`add_episode` 必失败、记忆写入路径整体不可用。
+    「代码里看着传了、body 里其实没有」正是本项目吃过的亏，因此本用例断言
+    **实际发出的 JSON body**，而不是构造参数。
+
+    撤掉修复（把 `build_memory_graph` 里的 `TokenHubEmbedder` 换回
+    `OpenAIEmbedder`）⇒ 本用例必然红：body 会变回 `"base64"`（实测）。
+    """
+    graph = build_memory_graph(_settings())
+    bodies: list[dict[str, object]] = []
+    try:
+        # 换掉最底层的传输：`httpx2` 没有公开的 transport 读写口，而这里要断言的是
+        # 「请求真的长这样」，只能从传输层截获。测试里访问私有属性在本仓已有先例
+        # （`graph.driver._init_task` / `graph.driver._database`）。
+        assert graph.http_client is not None, "未注入 http 客户端，本断言失去对象"
+        graph.http_client._transport = _recording_transport(bodies)  # type: ignore[attr-defined]  # httpx2 无公开 transport 读写口
+
+        embedder = graph.graphiti.embedder
+        assert isinstance(embedder, TokenHubEmbedder), "装配未使用 TokenHubEmbedder，等于回到 400001"
+
+        vector = await embedder.create("一条记忆片段")
+        assert len(bodies) == 1, "未捕获到请求体，本断言失去对象"
+        assert bodies[0]["encoding_format"] == "float", (
+            f"单条嵌入的请求体 encoding_format={bodies[0].get('encoding_format')!r}，"
+            "必须是 'float'（SDK 默认注入 base64，TokenHub 会拒 400001）"
+        )
+        assert len(vector) == EMBEDDING_DIM == 2560, "维度契约被破坏"
+
+        batch = await embedder.create_batch(["第一条", "第二条"])
+        assert len(bodies) == 2, "未捕获到批量请求体"
+        assert bodies[1]["encoding_format"] == "float", (
+            f"批量嵌入的请求体 encoding_format={bodies[1].get('encoding_format')!r}，必须是 'float'"
+        )
+        assert [len(v) for v in batch] == [EMBEDDING_DIM, EMBEDDING_DIM], "批量维度契约被破坏"
+    finally:
+        await graph.aclose()
+
+
+@pytest.mark.asyncio
+async def test_tokenhub_embedder_differs_from_upstream_only_in_encoding_format() -> None:
+    """与上游逐字对照：唯一差异是 `encoding_format`，其余行为必须一致。
+
+    为什么要有这条对照（防止「修一个坑、挖另一个坑」）：本类是对上游两个方法的重写，
+    若上游改了切片、去空格或多条返回顺序，我们的副本会静默偏离。这里把两个实现
+    挂在同一个假传输上跑同一批输入，断言：
+
+    1. **输出完全相同**（向量与截断行为未被改动）；
+    2. **上游的 body 是 base64、我们的是 float**——即差异被限定在该字段上，
+       同时证明「上游确实会发 base64」这一缺陷前提仍然成立。
+
+    第 2 条同时是一条会随上游修复而失败的哨兵：若将来 `graphiti_core` 自己补了
+    `encoding_format`，上游 body 会变成 float，用例会红——那时应当删掉本类而不是
+    继续叠一层。
+    """
+    bodies: list[dict[str, object]] = []
+    http_client = httpx2.AsyncClient(transport=_recording_transport(bodies))
+    client = AsyncOpenAI(
+        api_key=_FAKE_KEY,
+        base_url=_TOKENHUB_BASE_URL,
+        http_client=http_client,
+        max_retries=0,
+    )
+    config = OpenAIEmbedderConfig(
+        embedding_dim=EMBEDDING_DIM,
+        embedding_model="kinfra-text-embedding-4b",
+        api_key=_FAKE_KEY,
+        base_url=_TOKENHUB_BASE_URL,
+    )
+    upstream = OpenAIEmbedder(config=config, client=client)
+    ours = TokenHubEmbedder(config=config, client=client)
+    try:
+        upstream_batch = await upstream.create_batch(["甲", "乙"])
+        ours_batch = await ours.create_batch(["甲", "乙"])
+        upstream_one = await upstream.create("丙")
+        ours_one = await ours.create("丙")
+
+        assert upstream_batch == ours_batch, "批量输出与上游不一致——本类引入了额外行为差异"
+        assert upstream_one == ours_one, "单条输出与上游不一致——本类引入了额外行为差异"
+        assert [len(v) for v in ours_batch] == [EMBEDDING_DIM, EMBEDDING_DIM]
+
+        # 差异必须**只在** encoding_format 这一个键上。
+        for upstream_body, ours_body in ((bodies[0], bodies[1]), (bodies[2], bodies[3])):
+            assert upstream_body["encoding_format"] == "base64", (
+                "上游不再注入 base64——缺陷前提变了，应重新评估是否还需要本类"
+            )
+            assert ours_body["encoding_format"] == "float"
+            assert {k: v for k, v in ours_body.items() if k != "encoding_format"} == {
+                k: v for k, v in upstream_body.items() if k != "encoding_format"
+            }, "除 encoding_format 外还有其它差异"
+    finally:
+        await client.close()
+        await http_client.aclose()
+
+
+# ---------------------------------------------------------------------------
+# 覆盖完备性守卫：上游若新增「发请求的方法」，子类必须同步覆盖（P2-R1）
+# ---------------------------------------------------------------------------
+
+
+def _call_chain_paths(tree: ast.AST) -> list[str]:
+    """列出 AST 子树里全部属性调用链，形如 `self.client.embeddings.create`。
+
+    只认「整条链的根是一个 `Name`」的调用（`self`、局部变量都算）——链根是其它
+    形态（下标、再调用结果）时丢弃，避免把 `x[0].create` 一类误当嵌入请求。
+    """
+    paths: list[str] = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        segments: list[str] = []
+        cursor: ast.expr = node.func
+        while isinstance(cursor, ast.Attribute):
+            segments.append(cursor.attr)
+            cursor = cursor.value
+        if isinstance(cursor, ast.Name):
+            segments.append(cursor.id)
+            paths.append(".".join(reversed(segments)))
+    return paths
+
+
+def _embedding_request_call(function: Callable[..., object]) -> str | None:
+    """函数体是否**直接**调用嵌入端点；是则返回那条调用链，否则 `None`。
+
+    判据（本守卫的全部定义在此，不写死方法名）：
+    **函数体里存在一条调用链，其最后一段是 `create`、且 `create` 之前的链段里含
+    `embeddings`**（即 `...embeddings.create(...)`）。
+
+    为什么这样界定（正反两向都给出理由）：
+
+    - **正向（在）**：`create` / `create_batch` 的方法体是
+      `await self.client.embeddings.create(...)` —— 它们是**唯一**直接到达
+      `openai` SDK embeddings 资源、因而由 SDK 决定请求体的方法。SDK 注入
+      `encoding_format="base64"` 就发生在这一层，所以「绕过子类覆盖」的风险
+      恰好只属于这一类方法。
+    - **反向（不在）**：`__init__` 落在外面，因为它构造的是 `AsyncOpenAI(...)`，
+      调用链是 `OpenAIEmbedderConfig` / `AsyncOpenAI`，不含 `embeddings.create`
+      （实测）。**关键的是**：上游若新增 `async def foo(self): return await
+      self.create(x)` 这种**委派**方法，它同样落在外面——这是有意的，因为
+      `self.create` 在子类实例上会**动态派发到我方覆盖**，不存在静默复发。
+      （同理，基类 `EmbedderClient` 上的非嵌入成员也不会被算进来。）
+    - **不比「方法名黑名单」松，也不比它紧**：名字完全由上游决定，判据只看
+      方法体到达了哪个资源。
+
+    已知边界（诚实声明，见测试报告「证据边界」）：本判据只认**方法体内直接出现**
+    的调用链——即链尾是 `create`、且链段里含 `embeddings`。三种上游重构会削弱它：
+
+    1. 上游把**全部**嵌入调用改成间接形态（模块级辅助函数，或先取别名
+       `emb = self.client.embeddings` 再 `emb.create(...)`）⇒ 自省结果为空集
+       ⇒ 用例里的「检测器自检」断言失败 ⇒ **红**（响亮失效，不是静默通过）。
+    2. 上游**保留**现有两个方法不动、只**新增**一个走间接形态的发请求方法
+       ⇒ 自省看不到那个新方法 ⇒ **本条漏报**。
+    3. 上游把 embeddings 资源改名（不再含 `embeddings` 字样）⇒ 两条现有方法都
+       识别不到 ⇒ 自省为空集 ⇒ 按第 1 条变红，由人工裁决。
+
+    第 2 条是真实残余，本包不宣称覆盖：要在不执行上游代码的前提下判定「某个方法
+    是否发请求」只能靠静态形态，而静态形态无法穷尽间接调用。**它不构成「永远不会
+    失败的检查」**：第 1、3 条下本守卫是红的，且真上游上的两个方法一旦被改动
+    也会经由 `test_tokenhub_embedder_differs_from_upstream_only_in_encoding_format`
+    的逐值对照暴露。
+    """
+    source = textwrap.dedent(inspect.getsource(function))
+    for path in _call_chain_paths(ast.parse(source)):
+        segments = path.split(".")
+        if segments[-1] == "create" and "embeddings" in segments[:-1]:
+            return path
+    return None
+
+
+def _as_plain_function(member: object) -> Callable[..., object] | None:
+    """取出可被 `inspect.getsource` 读取的**真函数**；取不到就返回 `None`。
+
+    为什么不能直接用 `inspect.isfunction`（实测踩到）：`vars(cls)` 里
+    `@staticmethod` / `@classmethod` 存的是 **descriptor 包装对象**
+    （实测 `inspect.isfunction` 对它们均为 `False`），直接过滤会把这类方法整个
+    漏掉。漏掉的方向不对称，必须分别纠正：
+
+    - 在**上游**侧漏掉 ⇒ 新方法不被识别 ⇒ 守卫**假绿**（这正是本包要防的失效）；
+    - 在**我方**侧漏掉 ⇒ 已覆盖被误判为未覆盖 ⇒ 守卫**假红**。
+
+    因此这里显式拆开包装（`.__func__`），只接受「拆开后是函数」的成员；
+    其它形态（`property`、普通实例属性、`functools.partial`）一律返回 `None`
+    ——它们不是「方法体里有调用链」这种对象，`_embedding_request_call` 也读不了。
+    """
+    unwrapped = member.__func__ if isinstance(member, (staticmethod, classmethod)) else member
+    if inspect.isfunction(unwrapped):
+        return unwrapped
+    return None
+
+
+def _effective_methods(cls: type) -> dict[str, Callable[..., object]]:
+    """该类实例实际可见的全部纯 Python 函数（含继承），按 MRO 从基到派生累计。
+
+    为什么要走 MRO 而不是 `vars(cls)`：上游的发请求方法可能定义在基类
+    （实测 0.30.2 的 `create` 是抽象方法、`create_batch` 也定义在
+    `EmbedderClient` 上），只查 `vars(OpenAIEmbedder)` 会漏掉它们。
+    """
+    effective: dict[str, Callable[..., object]] = {}
+    for klass in reversed(cls.__mro__):
+        for name, member in vars(klass).items():
+            function = _as_plain_function(member)
+            if function is not None:
+                effective[name] = function
+    return effective
+
+
+def _upstream_request_methods(cls: type) -> dict[str, str]:
+    """自省得到「直接发嵌入请求的方法」→「它用的那条调用链」。"""
+    return {
+        name: chain
+        for name, function in _effective_methods(cls).items()
+        if (chain := _embedding_request_call(function)) is not None
+    }
+
+
+def _missing_request_method_coverage(upstream: type, ours: type) -> dict[str, str]:
+    """上游发嵌入请求、而我方子类**没有自己定义**的方法（继承不算覆盖）。
+
+    用 `vars(ours)` 而不是 `hasattr`：`hasattr` 会把「继承自上游的实现」
+    也算成已覆盖——那正是本守卫要拦的形态（继承来的实现带 `base64`）。
+    """
+    ours_own = {name for name, member in vars(ours).items() if _as_plain_function(member) is not None}
+    return {name: chain for name, chain in _upstream_request_methods(upstream).items() if name not in ours_own}
+
+
+def test_tokenhub_embedder_overrides_every_upstream_request_method() -> None:
+    """`TokenHubEmbedder` 必须覆盖上游**全部**发嵌入请求的方法。
+
+    为什么必须有这条（2026-10-02 复查提出，编排器裁定「做」）：本类是对上游方法
+    的**副本**——它的正确性依赖「集合恰好相等」。上游若新增第三个发请求的方法
+    （例如 `create_batch_iter`），那个方法会**绕回上游实现**（只传 `input` + `model`
+    ⇒ SDK 注入 `encoding_format="base64"`）⇒ **本包修掉的 400001 缺陷静默复发**，
+    而当时 14 条用例**没有一条枚举该集合**（它们只调用 `create` / `create_batch`）
+    ⇒ 上游加方法后不会变红。
+
+    判据**完全来自上游自省**（见 `_embedding_request_call`）：**不写死方法名**。
+    写死 `{"create", "create_batch"}` 就等于没做——上游新增方法时那种断言不会红，
+    而「上游新增方法时变红」正是本条唯一的存在理由。
+
+    为什么不会误红（真上游上必须绿）：判据要求「方法体里出现
+    `...embeddings.create(...)` 调用链」。实测上游 0.30.2 沿 MRO 合计只有 3 个
+    函数（`__init__` / `create` / `create_batch`），其中只有后两个命中
+    （`__init__` 的调用链是 `OpenAIEmbedderConfig` / `AsyncOpenAI`，不含
+    `embeddings.create`），我方两个都自定义 ⇒ 真上游上缺口为空，用例绿。
+    反向风险也已实测排除：委派方法（`return await self.create(...)`）、
+    `client.chat.completions.create`、`client.files.create` 三类都不被判为
+    发请求方法（见测试报告第 2 节）。**「能红」的证明见测试报告第 3 节**
+    （在 `tmp/` 副本里给上游动态加一个发请求方法 ⇒ 本用例红）。
+
+    下面的「检测器自检」不是装饰：若上游把调用搬进模块级辅助函数，自省结果为
+    空集，本条会以「判据失效」失败，而不是静默变成一条永远通过的检查。
+
+    Note:
+        **本守卫只管「覆盖了没有」，不管「覆盖得对不对」。** 实测确认这一残余：
+        上游新增 + 我方照抄上游地覆盖（漏传 `encoding_format="float"`）时，本守卫
+        **绿**，而请求体确实是 `base64`。那种形态由
+        `test_embedder_body_carries_float_encoding_format` 按 body 断言拦下
+        ——但它只覆盖 `create` / `create_batch` 两个方法。**两半缺一不可**：
+        本条保证「新方法不会被漏掉」，body 断言保证「已覆盖的方法真的发了 float」。
+    """
+    upstream_methods = _upstream_request_methods(OpenAIEmbedder)
+    assert upstream_methods, (
+        "未在上游 OpenAIEmbedder 上识别出任何发嵌入请求的方法——判据已失效"
+        "（上游可能改成间接调用），本守卫已失去对象，必须人工复查而不是当它通过"
+    )
+
+    missing = _missing_request_method_coverage(OpenAIEmbedder, TokenHubEmbedder)
+    assert not missing, (
+        f"上游这些发嵌入请求的方法未被 TokenHubEmbedder 覆盖：{sorted(missing)}"
+        f"（对应调用链 {missing}）。未覆盖 = 沿用上游实现 = 请求体回到 "
+        "encoding_format='base64' ⇒ TokenHub 400001 ⇒ 记忆写入路径整体不可用。"
+        "请在 TokenHubEmbedder 里按上游签名补上覆盖（显式传 encoding_format='float'）。"
+    )
