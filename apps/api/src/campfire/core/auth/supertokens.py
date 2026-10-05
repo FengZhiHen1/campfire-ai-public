@@ -20,7 +20,7 @@ from supertokens_python.recipe.emailpassword.interfaces import APIInterface
 from supertokens_python.recipe.session import SessionContainer
 from supertokens_python.recipe.session.framework.fastapi import verify_session
 
-from campfire.core.config import Settings
+from campfire.core.config import Settings, apply_no_proxy_normalization
 from campfire.core.health import ComponentHealth, Status
 
 logger = logging.getLogger(__name__)
@@ -124,6 +124,31 @@ def init_supertokens(
     Raises:
         SuperTokensConfigurationError: 缺少必需的配置项，或只给了两个注册相关参数之一。
     """
+    # 进程级规范化 no_proxy（2026-10-05，T18 修）：这是本仓**唯一**的 SDK 装配入口，
+    # 因此 **API 与 CLI** 的装配都经它——API 走 `main.py` 的 lifespan，
+    # CLI 走 `cli/operator._init_supertokens_for_cli`。放在这里而不是各入口各调一次，
+    # 与 `require_session` 固定 `check_database=True` 是同一种做法：**让正确的行为
+    # 无法被遗忘**——「记得在启动器里设环境变量」正是此前失败的形态。
+    #
+    # ⚠ **Worker 不在此列**（2026-10-06 订正，T18 复查发现的 P2）：`worker.py` **不调**
+    # `init_supertokens`（Worker 不需要 SDK 的 emailpassword recipe），它靠**自己模块导入期**
+    # 那一句 `apply_no_proxy_normalization()`（`worker.py:47`）覆盖同一件事。
+    # 订正这句话不是为了措辞准确而已：**原先的「三进程都经它」会让后来者以为 Worker
+    # 的入口调用是多余的、从而删掉它**——而删掉之后 Worker 侧会重新暴露在同一个代理陷阱下。
+    # 两个入口各自独立地做这件事是**刻意的**（见 `worker.py:41-46` 的「入口级保证」论证）。
+    #
+    # 为什么必须有它：SDK 的 querier 在**每次请求**里自己
+    # `AsyncClient(timeout=30.0)`（`querier.py:110`，**未传 `trust_env=False`**），
+    # 因此「构造窗口」式的临时规范化覆盖不到它——宿主机 `no_proxy` 含 `[::1]` 时，
+    # 注册与登录的第一步就在 httpx 构造期抛 `InvalidURL: Invalid port: ':1]'` ⇒ 整体 500，
+    # 而 `/readyz` 的 auth 探针（`trust_env=False`）与 `agent/model` 的网关
+    # （构造窗口规范化）**两条路径都不覆盖它** ⇒ 探针绿而功能坏。
+    #
+    # 时序：本语句在 SDK `init(...)` 之前执行，而 querier 的 `AsyncClient` 在**请求期**
+    # 才构造 ⇒ 规范化必然早于任何 querier 客户端构造。机械证据（含「撤掉本语句 ⇒ 用例红」）
+    # 见 `apps/api/tests/test_proxy_env_normalization.py`。
+    apply_no_proxy_normalization()
+
     api_key = _require_api_key(settings)
 
     # 成对校验：见 docstring 的实测表。
