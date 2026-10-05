@@ -288,6 +288,56 @@ async def test_graph_uses_the_configured_database_not_a_default() -> None:
         await graph.aclose()
 
 
+@pytest.mark.asyncio
+async def test_memory_graph_builds_its_embedder_through_the_factory(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """**承重用例（T19）**：生产装配**经** `build_memory_embedder` 构造嵌入器。
+
+    为什么这条是承重的（而不是「顺手测个内部函数」）：深度就绪探针
+    （`campfire.main.check_embedding` → `/readyz/deep`）用的是**同一个工厂**。
+    这层共享只有在「生产路径真的走它」时才成立——若有人把构造**内联回**
+    `build_memory_graph`，探针就会开始探一份**与生产不同的**配置，
+    而症状是「探针绿、生产坏」：那正是本探针存在的理由被悄悄撤销。
+
+    判据有两条，缺一不可：
+
+    1. 工厂被调用**恰好一次**（证明路径经过它，而不是重复调用）；
+    2. `graph.graphiti.embedder` **就是**工厂返回的那个对象（`is` 同一性，
+       证明结果被真正采用，而不是调了却丢弃、自己另造一个）；
+    3. 注入的 `http_client` 是 `build_memory_graph` 自己那条连接池
+       （证明「生产与 llm 共用一条池」这个既有行为没被搬走时改掉）。
+
+    判别性（消融，实测）：把 `build_memory_graph` 里那行
+    `memory_embedder = build_memory_embedder(settings, http_client=http_client)`
+    换回内联的 `TokenHubEmbedder(...)` 构造，本用例**必然红**
+    ——那时 `calls` 为空列表，第一条断言就失败。
+    """
+    import campfire.modules.memory.graph as memory_graph
+
+    real_factory = memory_graph.build_memory_embedder
+    calls: list[dict[str, object]] = []
+
+    def spy(settings: Settings, **kwargs: object) -> object:
+        calls.append(kwargs)
+        return real_factory(settings, **kwargs)  # type: ignore[arg-type]  # 原样转交
+
+    monkeypatch.setattr(memory_graph, "build_memory_embedder", spy)
+
+    graph = build_memory_graph(_settings())
+    try:
+        assert len(calls) == 1, (
+            f"build_memory_graph 调用嵌入器工厂 {len(calls)} 次，期望恰好 1 次——"
+            "生产路径没有走 build_memory_embedder（探针与生产已分叉）"
+        )
+        assert isinstance(graph.graphiti.embedder, TokenHubEmbedder), "装配未使用 TokenHubEmbedder"
+        assert calls[0].get("http_client") is graph.http_client, (
+            "嵌入器没有复用 build_memory_graph 的连接池——那是既有行为（与 llm 客户端共用一条池）"
+        )
+    finally:
+        await graph.aclose()
+
+
 # ---------------------------------------------------------------------------
 # 嵌入请求体：`encoding_format` 必须是 float（P1 缺陷的回归闸门）
 # ---------------------------------------------------------------------------
