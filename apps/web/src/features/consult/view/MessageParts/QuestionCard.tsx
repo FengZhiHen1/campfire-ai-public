@@ -13,7 +13,7 @@
  *   - 禁止把「跳过」写成模糊措辞（记录里显式写「（跳过）」）
  */
 
-import { useState } from 'react';
+import { useId, useState } from 'react';
 
 import type { QuestionBatchController } from '../../viewModel/useQuestionBatch';
 
@@ -35,6 +35,9 @@ export interface QuestionCardProps {
 export function QuestionCard({ controller }: QuestionCardProps) {
   const [collapsed, setCollapsed] = useState(false);
   const [freeOpen, setFreeOpen] = useState(false);
+  // 自由回答输入框的 DOM id：同一条消息流里可能有多张**可作答**的卡（T31 之后未作答的
+  // 历史卡也可作答），因此 id 必须按**组件实例**唯一，不能按 mode + 题标识拼。
+  const freeFieldId = `question-free-${useId()}`;
 
   const current = controller.items[controller.index];
   if (current === undefined) {
@@ -53,12 +56,13 @@ export function QuestionCard({ controller }: QuestionCardProps) {
     <div className={`tile question-card${controller.submitted ? ' answered' : ''}`}>
       <div className="question-head">
         {/*
-          历史水合（mode === 'record'）**不能**说「已提交」：`question` part 里没有
-          「已作答」标记（通用基座 7.2 节的载荷没有这个字段，前端不得发明），因此水合
-          根本不知道这组题有没有被回答过。说「已提交」是在断一件前端不知道的事——
-          实测（T27 §6）一组**从未被回答**的提问就是这样被显示成「已提交 / 这组问题
-          已经处理过」的，正是本项目「看起来像成功、其实没做成」那种形态。
-          改成中性的「提问记录」：它只陈述确定的事实（这是当时提出的一组题）。
+          三种状态各有各的措辞，且都不许断言前端不知道的事：
+          - **待作答**（`下一步`）：可以答。这是本卡的主要形态；
+          - **已作答**（`已提交`）：服务端判明这组题被答过 ⇒ 只读；
+          - **无法判定**（`提问记录`）：服务端判不出来 ⇒ 也只读（fail-closed），
+            但**不能说「已提交」**——那是在断一件没人知道的事。
+          T27 §6 的缺陷现场正是：一组**从未被回答**的提问被显示成「已提交 / 这组问题已经
+          处理过」。中性措辞（`提问记录`）只陈述确定的事实（这是当时提出的一组题）。
         */}
         <span className="meta">
           {controller.submitted ? (controller.mode === 'record' ? '提问记录' : '已提交') : '下一步'}
@@ -81,7 +85,7 @@ export function QuestionCard({ controller }: QuestionCardProps) {
         <div className="question-body" data-question-record>
           <p className="hint">
             {controller.mode === 'record'
-              ? // 只作指引，不断言作答存在或不存在（水合无从判定——见上面那段说明）。
+              ? // 只作指引，不断言作答存在或不存在（无法判定时水合不知道答案在哪一条）。
                 '这是当时向你提出的问题，当时的作答见对话里的相关消息。'
               : '整组已提交，不能再修改。'}
           </p>
@@ -135,9 +139,17 @@ export function QuestionCard({ controller }: QuestionCardProps) {
           </button>
           {freeOpen ? (
             <div className="field">
-              <label htmlFor={`question-free-${controller.mode}-${current.id}`}>你的回答</label>
+              {/*
+                ★ 这里用 `useId()` 而不是 `${controller.mode}-${current.id}`（T31 修正）。
+                原先的写法在「同一会话里只有一张活卡」时是安全的：历史卡一律 `mode='record'`、
+                题标识相同也只出现在**一张**可作答的卡上。T31 让**多张历史卡**都可能可作答
+                （未作答的都可作答），于是两张卡会给出同一个 `id` ⇒ `htmlFor` 指向第一个
+                textarea ⇒ 点第二张卡的标签会把焦点给到第一张卡。`useId()` 是每个组件实例
+                唯一的，且 SSR/CSR 一致。
+              */}
+              <label htmlFor={freeFieldId}>你的回答</label>
               <textarea
-                id={`question-free-${controller.mode}-${current.id}`}
+                id={freeFieldId}
                 value={freeText}
                 onChange={(event) => controller.setFreeText(event.target.value)}
                 placeholder="也可以提出其他方向……"

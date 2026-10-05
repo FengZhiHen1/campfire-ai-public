@@ -43,7 +43,11 @@ export interface QuestionRecordRow {
 
 /** 提问卡的视图契约（View 只依赖这些字段与操作）。 */
 export interface QuestionBatchController {
-  /** live = 运行中待作答；record = 历史水合的静态记录。 */
+  /**
+   * **有效**呈现模式（已把服务端的 `answered` 判定折算进去）：
+   * - `live` = 可作答（运行中刚发出的提问，或历史里**未被作答**的提问）；
+   * - `record` = 只读记录（已作答，或无法判定 ⇒ fail-closed）。
+   */
   mode: 'live' | 'record';
   items: readonly QuestionItem[];
   /** 当前题号（0 起）。 */
@@ -78,21 +82,41 @@ const UNANSWERED: AnswerDraft = { kind: 'unanswered' };
  *
  * @param options.batchId 批次 id（草稿键）
  * @param options.items 题面（来自 question 事件或历史 part）
- * @param options.mode 呈现模式
+ * @param options.mode 呈现来源：`live` = 运行中刚发出；`record` = 历史水合
+ * @param options.answered 服务端对**历史**提问的三态判定（仅 `mode === 'record'` 时有意义）：
+ *   `true` = 已作答 ⇒ 只读；`false` = 未作答 ⇒ **可作答**（刷新后仍能补答）；`null` = 无法判定
+ *   ⇒ 只读（**fail-closed**）。缺省 `undefined` 与 `null` 同处置——「没拿到判定」不是
+ *   「未作答」，猜错方向的代价是使用者对同一组题作答两次。
  * @param options.onSubmit 整组提交后追加使用者消息（由工作面注入）
  */
 export function useQuestionBatch(options: {
   batchId: string;
   items: readonly QuestionItem[];
   mode: 'live' | 'record';
+  answered?: boolean | null;
   onSubmit?: (displayText: string) => void;
 }): QuestionBatchController {
-  const { batchId, items, mode, onSubmit } = options;
+  // 选项名与「当前题的草稿」都叫 answered，这里把服务端判定改名为 serverVerdict，
+  // 免去两处同名（同名会让下面的 `const answered = draft.answers[...]` 直接编译失败，
+  // 但即使编译器不报，读代码的人也无法分辨哪一个是「服务端说的」）。
+  const { batchId, items, mode, answered: serverVerdict, onSubmit } = options;
   const stored = useRunStore((state) => state.questionDrafts[batchId]);
   const setQuestionDraft = useRunStore((state) => state.setQuestionDraft);
   const setActiveBatch = useRunStore((state) => state.setActiveBatch);
   const setPendingAnswers = useRunStore((state) => state.setPendingAnswers);
   const submitting = useRef(false);
+
+  /**
+   * ★ 可作答的唯一判据。两个来源合取：
+   * - 运行中刚发出的提问（`live`）**按定义**是可作答的（它刚被发出，不可能已有作答）；
+   * - 历史水合的提问（`record`）**只有服务端明确判为未作答**（`answered === false`）才可作答。
+   *
+   * `true` 与 `null`（以及缺省）一律只读：前者是「已经答过」，后者是「判不出来」。
+   * 两者都归只读的依据是**失败方向**——猜成可作答会让使用者重复作答，猜成只读最多少修一点。
+   */
+  const answerable = mode === 'live' || serverVerdict === false;
+  /** 折算后的有效模式：View 与下面各处只看它，判定只有上面一处。 */
+  const effectiveMode: 'live' | 'record' = answerable ? 'live' : 'record';
 
   // 草稿缺失时按未作答渲染（此时不写 store；首次操作才把它写进 store）。
   const draft: QuestionBatchDraft = stored ?? createDraft(batchId, items);
@@ -118,7 +142,7 @@ export function useQuestionBatch(options: {
   const next = (): void => write(nextItem(draft));
 
   const submit = (): void => {
-    if (mode !== 'live') return;
+    if (!answerable) return;
     if (submitting.current) return;
     if (draft.submitted) return;
     // 未完成禁提交：闸门在这里，按钮 disabled 只是展示提示。
@@ -138,19 +162,19 @@ export function useQuestionBatch(options: {
   const currentId = draft.items[draft.index]?.id ?? '';
   const answered = draft.answers[currentId] ?? UNANSWERED;
   const records: QuestionRecordRow[] =
-    mode === 'record'
+    effectiveMode === 'record'
       ? // 历史水合：问题事件载荷里没有答案（答案由服务端渲染成下一条使用者消息）。
         draft.items.map((item) => ({ prompt: item.prompt, answer: null, skipped: false }))
       : recordLines(draft);
 
   return {
-    mode,
+    mode: effectiveMode,
     items: draft.items,
     index: draft.index,
     handled: handledCount(draft),
     total: draft.items.length,
     complete: isComplete(draft),
-    submitted: mode === 'record' || draft.submitted,
+    submitted: effectiveMode === 'record' || draft.submitted,
     isFirst: draft.index === 0,
     isLast: draft.index >= draft.items.length - 1,
     answered,
