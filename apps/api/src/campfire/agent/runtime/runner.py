@@ -13,6 +13,7 @@ import time
 import uuid
 from collections.abc import AsyncIterator, Iterator, Sequence
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 
 from agents import Agent, RunConfig, Runner
 from agents.items import TResponseInputItem
@@ -78,6 +79,47 @@ logger = logging.getLogger("campfire.agent.runtime")
 _CATALOG_PREFIX = "<available_skills>"
 _ACTIVATION_PREFIX_TEMPLATE = '<skill_content name="{name}">'
 _AVAILABILITY_PREFIX = "<tool_availability>"
+_CURRENT_TIME_PREFIX = "<current_time>"
+
+CURRENT_TIME_SOURCE = "current-time"
+"""当前时间注入的来源名。"""
+
+
+def _render_current_time(now: datetime) -> str:
+    """把「现在」渲染成一条注入消息。
+
+    为什么需要它（2026-10-06，T27）：模型**没有时钟**。实测（T24 §5-⑥）它在
+    `write_memory` 里把「两分钟前刚说的话」标成半年前，而它自己的 reasoning 里写着
+    「That's fabricating.」然后还是编了——因为工具的参数模型**要求**它提供一个发生时间。
+    只靠服务端兜底（缺省取现在）修不了这一半：兜底只知道「不能是未来」，
+    分不出「昨天」与「半年前」，而模型编的恰是一个**过去**的时间。
+
+    为什么是消息而不是系统提示：压缩策略第 8 节第 2 条把系统提示钉死为静态
+    （技能目录、业务上下文、**时间**、活跃技能一律只能作为尾部消息）。这里按那条纪律
+    落在尾部注入上。
+
+    形状与其余注入项一致（尖括号信封），且**登记进
+    `modules/accounts/session_items.INJECTED_MESSAGE_PREFIXES`**：不登记它会被水合当成
+    使用者消息，会话标题会静默变成一段时间戳。
+
+    时区取 UTC 并显式写出来（`+00:00`）：模型要把它填进 `occurred_at`，而那个字段拒绝
+    朴素时间；写清偏移量它才能换算或不换算地照抄。
+
+    ★ **为什么正文里要写「以最后一条为准」**：注入只能追加、不能原地替换
+    （压缩策略第 8 节第 1 条），因此同一会话里会**累积**多条 `current_time` 信封
+    ——上一轮的注入留在会话与窗口里。它们每一句都是「现在是 X」，而 X 已经过期。
+    不处理这件事，模型就有一份自相矛盾的上下文（两个「现在」）。
+    处置是把消歧判据**写进正文**（这条信息跟着消息走，不需要第二处状态），
+    而不是改成替换式注入：替换会破坏「只在末尾追加」这条更基本的不变量。
+    累积本身的代价是每轮约百字符，超阈值时由压缩机制收敛。
+    """
+    return (
+        f"{_CURRENT_TIME_PREFIX}\n"
+        f"  现在是 {now.isoformat()}（UTC）。需要填写时间时以它为准，不要凭印象猜日期。\n"
+        f"  若这段对话里出现过更早的 {_CURRENT_TIME_PREFIX}，它们已经过期——以最后一条为准。\n"
+        f"</current_time>"
+    )
+
 
 SESSION_IO_DETAIL = "对话真源不可用（读取或写入会话失败）"
 """会话读写失败的说明。表名沿用设计里的「会话写入失败」：读写同属一类——对话真源不可用。"""
@@ -745,9 +787,22 @@ class AgentRunner:
 
         激活内容只对本轮新增的 `request.activated` 注入：历史推导的授权来自历史里
         已有的激活记录（正文已在会话里），再注入一份就是重复。
+
+        当前时间是**每轮都注入**的：`_last_content` 的判据（与历史里最后一条同名消息
+        不同才追加）对它的结论恒为「不同」——时间总在走。这是刻意的：上一轮的时间对这一轮
+        是错的，而「以为现在还是昨天」正是这条注入要消灭的失败模式。代价是每轮多一条
+        几十字符的消息，远小于它避免的「刚说的事被标成半年前」。
         """
         window = derive_window(history)
         pending: list[InjectionItem] = []
+
+        pending.append(
+            InjectionItem(
+                source=CURRENT_TIME_SOURCE,
+                content=_render_current_time(datetime.now(UTC)),
+                priority=InjectionPriority.STATUS,
+            )
+        )
 
         if self._skills.activation_candidates():  # 没有任何可选 skill 时，空目录是噪音
             catalog = self._skills.catalog(surface=request.surface)
