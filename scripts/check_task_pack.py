@@ -213,6 +213,15 @@ def check_scope_matches_body(text: str) -> list[str]:
     #: **⇒ 只看路径不看动词，必然把"读"当成"改"。**
     read_only_markers = ("先读", "只读", "读一下", "参见", "见 `", "依据", "参考")
 
+    #: "这句话是【叫你去运行】某个脚本，不是叫你去改它" 的标记。
+    #:
+    #: ⚠ 为什么还需要它（`(z204)`，本检查的第三个误报类）：T31 的 §第 4 步 写
+    #: 「`uv run python scripts/check_design_docs.py` / 前端 `lint`+`typecheck`…」——
+    #: 那是**门禁命令**，而 `scripts/check_design_docs.py` 是**仓库既有的脚本**，
+    #: 执行者只是**运行**它，**根本不在本包的授权范围内**（也不该在）。
+    #: **⇒ 只看路径不看【那行的谓语】，必然把"运行"也当成"改"。**
+    run_only_markers = ("uv run", "python -m", "pytest", "pnpm", "npm run", "运行", "跑一次", "命令")
+
     #: 找 §"要做什么"这一段的起点标记（本仓任务包的既有写法）。
     body_markers = ("要做的", "你要做", "修法", "第 0 步", "第 1 步")
     scope_markers = ("授权范围", "你可以改")
@@ -269,6 +278,10 @@ def check_scope_matches_body(text: str) -> list[str]:
         window_lines = body_lines[max(0, line_no - 2) : line_no + 1]
         window = "\n".join(window_lines)
         if any(m in window for m in read_only_markers):
+            continue
+        # 运行豁免：该路径是用门禁命令点名的（`uv run python scripts/…` 之类），
+        # 说明这是叫执行者去**运行**它，不是去**改**它。
+        if any(m in window for m in run_only_markers):
             continue
         problems.append(
             f":{line_no} 正文点名了 `{path}`，但它不在 §授权范围里 "
