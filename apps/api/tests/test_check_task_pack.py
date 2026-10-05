@@ -202,6 +202,23 @@ class TestGateCatchesBodyPathsMissingFromScope:
         )
         assert gate.check_scope_matches_body(text) == []
 
+    def test_run_only_command_is_not_flagged(self, gate: ModuleType) -> None:
+        """「跑一下某个既有脚本」是门禁命令，不是「要改它」。
+
+        ⚠ 第三个误报类（`(z204)`）：T31 的 §第 4 步 写
+        「`uv run python scripts/check_design_docs.py` / 前端 `lint`+`typecheck`…」——
+        那是**运行**仓库既有脚本，`scripts/check_design_docs.py` 根本不在该包授权范围内
+        （也不该在）⇒ 只看路径不看谓语，必然把"运行"当成"改"。
+        """
+        text = (
+            "## 三、你要做的\n"
+            "跑门禁：`uv run python scripts/check_design_docs.py`。\n"
+            "\n"
+            "## 五、授权范围\n"
+            "**你可以改**：`apps/api/src/campfire/modules/accounts/session_items.py`。\n"
+        )
+        assert gate.check_scope_matches_body(text) == []
+
     def test_pack_without_scope_section_is_not_flagged(self, gate: ModuleType) -> None:
         """没有 §授权范围 的任务包无法判这一条 ⇒ 不报（避免对旧包误伤）。"""
         text = "## 三、你要做的\n你要改 `apps/api/src/campfire/tools/memory.py`。\n"
