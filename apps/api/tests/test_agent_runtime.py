@@ -14,6 +14,7 @@ from __future__ import annotations
 import asyncio
 import json
 from collections.abc import Mapping, Sequence
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -386,6 +387,81 @@ async def test_user_input_and_injections_reach_the_model_and_the_session() -> No
     assert "你好" in stored
     # 助手消息落库后 content 是分片数组（实测），message_text 负责两种形状统一取文本
     assert any(text and "好的" in text for text in stored)
+
+
+@pytest.mark.asyncio
+async def test_current_time_is_injected_so_the_model_has_a_clock() -> None:
+    """★ 当前时间必须有注入（T27 三之二①：模型编 `occurred_at` 的根因是它没有时钟）。
+
+    判据是**端到端可见性**：注入的内容必须真的到达模型输入，且必须落进会话。
+    只断言「渲染函数返回了字符串」不够——真正要防的是「渲染了但没接进 `pending`」
+    （`_pending_injections` 的返回列表才是生效点）。
+
+    判别性：把 `_pending_injections` 里 append 当前时间那几行删掉 ⇒ 本用例红。
+    """
+    chat = ScriptedChat([text_reply("好的")])
+    session = FakeSession("s-1")
+
+    await _collect(_runner(binding=_binding(chat), session=session), _request())
+
+    seen = [message["content"] for message in chat.messages_seen[0]]
+    stamped = [content for content in seen if content.startswith("<current_time>")]
+    assert len(stamped) == 1, "每轮必须注入且只注入一条当前时间"
+    # 必须带 UTC 偏移量：`occurred_at` 拒绝朴素时间，模型要能照抄。
+    assert "+00:00" in stamped[0]
+    # 也必须落进会话（单真源：注入项与使用者消息一样是消息）。
+    assert any(text and text.startswith("<current_time>") for text in (message_text(item) for item in session.items))
+
+
+@pytest.mark.asyncio
+async def test_current_time_is_injected_every_run_not_once() -> None:
+    """当前时间**每轮都注入**，且每一份都自带消歧判据。
+
+    ★ 这条用例是**实测修正**出来的（第一版断言「窗口里只有一条」→ 实测 2 条）：注入只能
+    追加、不能原地替换（压缩策略第 8 节第 1 条），因此同一会话里会**累积**多条
+    `current_time` 信封。它们每一句都是「现在是 X」，而 X 已经过期——不处理这件事，模型
+    就有一份自相矛盾的上下文（两个「现在」）。
+
+    因此正确的契约不是「只留一条」（那要求替换式注入，与更基本的追加不变量冲突），
+    而是：**每轮都有一条新的，且每一条都告诉模型「以最后一条为准」**。本用例同时防住
+    两个方向，各自独立可红：
+
+    - 把注入挪成「仅首次」（第二轮没有新的）⇒ 红；
+    - 去掉正文里的消歧句（累积多条却不说明哪条算数）⇒ 红。
+    """
+    chat = ScriptedChat([text_reply("一"), text_reply("二")])
+    session = FakeSession("s-1")
+    runner = _runner(binding=_binding(chat), session=session)
+
+    await _collect(runner, _request(user_input="第一轮"))
+    await _collect(runner, _request(user_input="第二轮"))
+
+    assert len(chat.messages_seen) == 2, "应当跑了两次运行"
+    for index, messages in enumerate(chat.messages_seen):
+        stamped = [message["content"] for message in messages if message["content"].startswith("<current_time>")]
+        assert stamped, f"第 {index + 1} 轮没有注入当前时间"
+        # 第二轮里会累积上一轮那份（追加式注入的必然结果）——每一份都要说明哪条算数。
+        for content in stamped:
+            assert "以最后一条为准" in content, "累积的当前时间注入必须自带消歧句，否则模型会看到两个互相矛盾的「现在」"
+
+
+def test_current_time_envelope_is_registered_as_an_injected_message() -> None:
+    """渲染出的信封前缀必须登记进 `INJECTED_MESSAGE_PREFIXES`。
+
+    不登记时这条注入会被历史水合当成**使用者消息**：会话标题会静默变成一段时间戳
+    （与 T07b 修的那次「产品侧注入冒充使用者消息」同一种后果）。两处各一份字面量
+    （`modules/*` 不得 import `agent/*`），因此只能由用例机械核对。
+
+    判别性：改 `_render_current_time` 的尖括号标签而不改清单 ⇒ 本用例红。
+    """
+    from campfire.agent.runtime.runner import _render_current_time
+    from campfire.modules.accounts.session_items import INJECTED_MESSAGE_PREFIXES
+
+    rendered = _render_current_time(datetime.now(UTC))
+
+    assert any(rendered.startswith(prefix) for prefix in INJECTED_MESSAGE_PREFIXES), (
+        f"当前时间注入的前缀不在清单里，会被水合当成使用者消息：{rendered.splitlines()[0]!r}"
+    )
 
 
 @pytest.mark.asyncio
