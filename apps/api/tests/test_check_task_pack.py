@@ -219,10 +219,95 @@ class TestGateCatchesBodyPathsMissingFromScope:
         )
         assert gate.check_scope_matches_body(text) == []
 
-    def test_pack_without_scope_section_is_not_flagged(self, gate: ModuleType) -> None:
-        """没有 §授权范围 的任务包无法判这一条 ⇒ 不报（避免对旧包误伤）。"""
+    def test_pack_without_scope_section_reports_undecidable(self, gate: ModuleType) -> None:
+        """没有 §授权范围 的任务包 ⇒ `check_*` 返回空（不是 findings），
+        但 `_undecidable_notices` 必须报出「判不了」这件事。
+
+        ⚠ 为什么两件事要分开（第五种漏法的修法）：
+        ① 旧包（37 份里 26 份没有这一节）**不能判失败** —— 那是早期写法；
+        ② 但**静默跳过会让本检查在旧包上恒绿**，而"恒绿"与"通过"读数完全一样
+           （`(z155)`）。
+        ⇒ 取中间态：**提示可见、但不改退出码**。
+        """
         text = "## 三、你要做的\n你要改 `apps/api/src/campfire/tools/memory.py`。\n"
+        # 不产生 findings（不误伤旧包）
         assert gate.check_scope_matches_body(text) == []
+        # 但必须可见
+        notices = gate._undecidable_notices(text)
+        assert len(notices) == 1
+        assert "判不了" in notices[0]
+
+    def test_undecidable_notice_does_not_change_exit_code(self, gate: ModuleType, tmp_path: Path) -> None:
+        """「判不了」的提示不得让退出码变成非 0（否则 26 份旧包全红）。"""
+        p = tmp_path / "旧包.md"
+        p.write_text(
+            "## 三、你要做的\n你要改 `apps/api/src/campfire/tools/memory.py`。\n",
+            encoding="utf-8",
+        )
+        assert gate.main(["check_task_pack.py", str(p)]) == 0
+
+    def test_module_level_markers_match_the_check(self, gate: ModuleType) -> None:
+        """模块级 `_SCOPE_MARKERS`/`_BODY_MARKERS` 必须与检查体里用的两份一致。
+
+        ⚠ 这是防"两份定义漂移"的自检：它们描述同一件事，却存在于两处。
+        """
+        assert gate._SCOPE_MARKERS == ("授权范围", "你可以改")
+        assert gate._BODY_MARKERS == ("要做的", "你要做", "修法", "第 0 步", "第 1 步")
+        # 一致性：同一个"无授权节 + 有正文标记"的输入，两边都得认为它没有授权节
+        text = "## 三、你要做的\n你要改 `apps/api/src/campfire/tools/memory.py`。\n"
+        assert not any(m in text for m in gate._SCOPE_MARKERS)
+        assert any(m in text for m in gate._BODY_MARKERS)
+
+    def test_note_without_body_markers_stays_silent(self, gate: ModuleType) -> None:
+        """不是任务包（没有正文标记）的文档 ⇒ 保持静默，不对随手笔记报提示。"""
+        text = "# 随手记\n今天看了 `apps/api/src/campfire/tools/memory.py`，没别的事。\n"
+        assert gate.check_scope_matches_body(text) == []
+        assert gate._undecidable_notices(text) == []
+
+    def test_scope_section_before_body_is_still_checked(self, gate: ModuleType) -> None:
+        """§授权范围 写在正文【之前】时，正文仍要检查。
+
+        ⚠ 第四种漏法（`(z204)`）：第一版取 `lines[:scope_start]` 当正文 ⇒
+        授权节在前时正文是空串 ⇒ **检查恒绿**（而"恒绿"与"通过"读数一样）。
+        """
+        text = (
+            "## 五、授权范围\n"
+            "**你可以改**：`apps/api/src/campfire/modules/accounts/session_items.py`。\n"
+            "\n"
+            "## 三、你要做的\n"
+            "你要改 `apps/api/src/campfire/tools/memory.py`。\n"
+        )
+        problems = gate.check_scope_matches_body(text)
+        assert len(problems) == 1
+        assert "memory.py" in problems[0]
+
+    def test_bare_directory_in_scope_covers_its_files(self, gate: ModuleType) -> None:
+        """授权以裸目录 `…/consult/` 给出时，它下面的文件算已授权（第六种漏法）。"""
+        text = (
+            "## 三、你要做的\n"
+            "你要改 `apps/api/src/campfire/surfaces/consult/answers.py`。\n"
+            "\n"
+            "## 五、授权范围\n"
+            "**你可以改**：`apps/api/src/campfire/surfaces/consult/`。\n"
+        )
+        assert gate.check_scope_matches_body(text) == []
+
+    def test_same_file_both_allowed_and_forbidden_is_flagged(self, gate: ModuleType) -> None:
+        """同一文件同时列在「可以改」与「不要碰」⇒ 自相矛盾（第七种漏法）。
+
+        ⚠ 它比"正文点名但未授权"更隐蔽：执行者照哪一句做都会被另一句判成越界。
+        """
+        text = (
+            "## 三、你要做的\n"
+            "你要改 `apps/api/src/campfire/modules/accounts/session_items.py`。\n"
+            "\n"
+            "## 五、授权范围\n"
+            "**你可以改**：`apps/api/src/campfire/modules/accounts/session_items.py`。\n"
+            "**⚠ 不要碰**：`apps/api/src/campfire/modules/accounts/session_items.py`。\n"
+        )
+        problems = gate.check_scope_matches_body(text)
+        assert len(problems) == 1
+        assert "自相矛盾" in problems[0]
 
 
 class TestGateExitCodes:
