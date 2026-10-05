@@ -33,11 +33,23 @@ from collections.abc import Awaitable, Callable
 from contextlib import suppress
 from datetime import datetime, timezone
 
+from campfire.core.config import apply_no_proxy_normalization, get_settings
+
+# 进程级规范化 `no_proxy` 家族（2026-10-05，T18 修）——与 `main.py` 同一处置、同一理由：
+# 卡在一切 httpx/openai 消费者之前。Worker 侧同样会构造这些客户端（记忆图库的
+# `httpx2.AsyncClient` 与两个 `AsyncOpenAI`，见 `modules/memory/graph.build_memory_graph`），
+# 而它们**目前**都传了 `trust_env=False`；这里仍然显式调一次，是为了让「本进程不读
+# 宿主机代理豁免列表」成为**入口级保证**，而不是散落在各构造点上、等下一个不带
+# `trust_env=False` 的消费者出现时再坏一次——那正是本案的成因。
+#
+# 幂等（见 `core/config.apply_no_proxy_normalization`），因此与 `init_supertokens` 那次
+# 叠加也没有副作用。
+apply_no_proxy_normalization()
+
 from sqlalchemy.ext.asyncio import AsyncSession
 from taskiq import TaskiqEvents
 
 from campfire.core.authz import AuthorizationError, set_authorizer
-from campfire.core.config import get_settings
 from campfire.core.db import session_scope
 from campfire.core.jobs import build_broker, dispatch_pending_write, set_dispatch_hook
 from campfire.core.pending_write import (

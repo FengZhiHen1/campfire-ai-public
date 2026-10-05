@@ -1,10 +1,14 @@
 """配置唯一入口：应用读取环境变量的唯一位置。
 
-职责：定义 `Settings`，集中承载本应用的全部环境变量配置。
+职责：定义 `Settings`，集中承载本应用的全部环境变量配置；并拥有进程环境里
+`no_proxy` 家族的规范化（见本模块末尾一节）。
 边界：其它模块不得各自读取环境变量；密钥只经环境注入，含密钥字段一律无默认值。
 参考：docs/项目结构设计.md 第 10 节；完整规则与理由见 :class:`Settings`。
 """
 
+import os
+from collections.abc import Iterator
+from contextlib import contextmanager
 from functools import lru_cache
 from pathlib import Path
 
@@ -157,3 +161,156 @@ class Settings(BaseSettings):
 def get_settings() -> Settings:
     """返回进程内唯一的配置实例。"""
     return Settings()
+
+
+# ---------------------------------------------------------------------------
+# 进程环境的 no_proxy 规范化
+#
+# 为什么它归 `core/config`：配置唯一入口的职责是「进程怎么读环境」。`no_proxy` 的
+# 取值形态会让 httpx/openai 在**构造客户端**时崩，那是环境读入侧的问题，与谁在构造
+# 客户端无关。放在 `core/config` 的第二个理由是层白名单：`agent/*` 只放行
+# `campfire.core.config`（docs/项目结构设计.md 第 7 节，机械检查见
+# `apps/api/tests/test_layer_boundaries.py`），因此下沉到这里，`agent/model/proxy_env`
+# 可以照旧复用同一份实现，而不必新增一条白名单（新增会与文档产生第二真源）。
+#
+# 缺陷（2026-10-01 实测，2026-10-05 由 T18 修为进程级）：
+#
+# 宿主机 `no_proxy` 含**带方括号的 IPv6 字面量**（如 `127.0.0.1,localhost,::1,[::1]`）时，
+# `httpx` 的 `get_environment_proxies()` 把它拼成 `all://*[::1]`，`URLPattern` 构造期
+# 把 `:1]` 当端口 ⇒ 抛 `InvalidURL: Invalid port: ':1]'`。httpx 0.28.1 与 httpx2 2.13.1
+# **两个包都会崩**（`openai` 用的是 httpx2，且两者的 `InvalidURL` 互不为子类）。
+#
+# 而这发生在**客户端构造期**，于是 SuperTokens 的 querier（`querier.py:110` 自己
+# `AsyncClient(timeout=30.0)`，**未传 `trust_env=False`**）让注册与登录的**第一步就 500**。
+# 产品侧曾经的防护只覆盖了两条不重合的路径：`core/auth` 的探针用 `trust_env=False`
+# 绕开（所以 `/readyz` 的 `auth` 项**仍报 ok**），`agent/model/gateway.py` 用构造窗口
+# 规范化——**querier 不在任何一条上**。「探针绿而功能坏」正是这样来的。
+#
+# 为什么是「进程内、两个大小写键都写」，而不是在启动脚本里设环境变量：
+#
+# Windows 上进程环境块里 `NO_PROXY` 与 `no_proxy` **可以并存**，而
+# `os.py::_createenviron` 的 nt 分支做 `data[key.upper()] = value`——**按块内顺序折叠，
+# 后出现的那条胜出**（本机实测 `no_proxy` 在后，故小写那条胜出）。而
+# `SetEnvironmentVariableW` 大小写不敏感地匹配**首个**条目并保留其原有大小写，
+# 于是从 shell（cmd/PowerShell）无论设大写还是小写，改动都落在大写那条上，
+# **Python 子进程读到的仍是被继承的旧小写值**（实测：shell 设完，子进程
+# `os.environ['no_proxy']` 仍是旧值）。⇒ 唯一可靠的修法是在**本进程内**把两个键
+# 都写进 `os.environ`：`encodekey` 会双双落到 `NO_PROXY`，本进程此后读到的即新值。
+#
+# 边界（诚实声明，实测）：这**不能**修正已经在环境块里的那条残留小写条目，因此
+# **子进程**（如本进程再 spawn 的 Python）折叠后仍可能读到旧值——本修法的作用域是
+# 「本进程内的 httpx/openai 消费者」，那正是产品路径出问题的地方。
+# ---------------------------------------------------------------------------
+
+#: 参与规范化的环境变量名。大小写两种都要：`urllib.getproxies_environment` 的
+#: 第二遍只认全小写（故小写优先），而部分平台/工具只设大写。
+PROXY_ENV_NAMES: tuple[str, ...] = ("no_proxy", "NO_PROXY")
+
+#: httpx 解析不了带方括号的 IPv6 字面量，因此把它们去掉方括号。
+#:
+#: 判据写成「以 `[` 开头、以 `]` 结尾且中间含 `:`」而不是匹配固定几个取值：
+#: 任何 IPv6 字面量在 no_proxy 里都可能被这样写（`[2001:db8::1]` 同样会让解析器崩），
+#: 而只处理 `[::1]` 会把同类问题留给下一个地址。
+_IPV6_BRACKET_PREFIX = "["
+_IPV6_BRACKET_SUFFIX = "]"
+
+
+def normalize_no_proxy(value: str) -> str:
+    """把一个 `no_proxy` 取值里的方括号 IPv6 字面量规范化。
+
+    保留分隔符与顺序（逗号分隔，含空项与前后空白原样保留），只改「方括号包 IPv6」
+    这一种形态；其余取值（域名、IPv4、通配、CIDR）逐字不动。
+
+    判别性：输入 `127.0.0.1,[::1],example.com` → `127.0.0.1,::1,example.com`；
+    输入 `example.com,10.0.0.0/8` → 原样返回。
+
+    为什么是无方括号形式：不带方括号的 IPv6 字面量正是 httpx 自己 `URLPattern` 的输出
+    形式（实测 `[::1]` 与 `::1` 解析出的豁免模式**完全相同**，都是 `all://[::1]`），
+    即它就是「解析器想要的输入」。因此本函数只改词法，不改任何豁免匹配结果。
+    """
+    parts: list[str] = []
+    for raw in value.split(","):
+        token = raw.strip()
+        if token.startswith(_IPV6_BRACKET_PREFIX) and token.endswith(_IPV6_BRACKET_SUFFIX):
+            inner = token[len(_IPV6_BRACKET_PREFIX) : -len(_IPV6_BRACKET_SUFFIX)]
+            # 含 `:` 才是 IPv6 字面量；`[host]` 这类别的写法不动它（不猜）。
+            if ":" in inner:
+                # 保留原取值的前后空白形状，只替换中间那一段。
+                leading = raw[: len(raw) - len(raw.lstrip())]
+                trailing = raw[len(raw.rstrip()) :]
+                parts.append(f"{leading}{inner}{trailing}")
+                continue
+        parts.append(raw)
+    return ",".join(parts)
+
+
+def apply_no_proxy_normalization() -> str | None:
+    """进程级一次性规范化：`no_proxy` 家族**大小写两个键都写**成规范化后的值。
+
+    在三个地方调用，且都必须在任何 httpx/openai 消费者**构造客户端**之前：
+
+    1. `main.py` 与 `worker.py` 的**模块导入期**（排在项目内其它 import 之前）
+       ——入口级时序保证；
+    2. `core/auth/supertokens.py` 的 `init_supertokens` 里、SDK `init(...)` 之前
+       ——那是本仓唯一的 SDK 装配入口，**API 与 CLI** 两个进程经它，
+       因此「谁忘了在入口调一次」不会让 querier 重新坏掉。
+
+    ⚠ **Worker 不调 `init_supertokens`**（2026-10-06 订正，T18 复查发现的 P2）——
+    它由上面第 1 条覆盖。**别把 Worker 的入口调用当成多余的删掉**：
+    删掉之后 Worker 侧会重新暴露在同一个代理陷阱下。
+
+    为什么是进程级、且不回滚：SuperTokens 的 querier 在**任意请求时刻**才
+    `AsyncClient(timeout=30.0)`（`querier.py:110`），构造窗口式的临时规范化覆盖不到它。
+    这正是原实现（`agent/model/proxy_env` 的上下文管理器）修不了产品侧路径的原因。
+
+    幂等：重复调用得到同一结果。
+
+    Returns:
+        写入的规范化取值；两个键都没有设置时返回 `None`（此时**什么都不写**——
+        把「未设置」变成「设置为空」会改变 httpx 的行为，空串与未设置不是一回事）。
+    """
+    current = os.environ.get(PROXY_ENV_NAMES[0])
+    if current is None:
+        # 只有大写键存在（POSIX 上可能如此）：以它的值为准，但结果仍写两个键。
+        current = os.environ.get(PROXY_ENV_NAMES[1])
+    if current is None:
+        return None
+
+    normalized = normalize_no_proxy(current)
+    # 两个键都写：见本节开头「为什么是两个大小写键都写」。在 Windows 上两次写入
+    # 经 `encodekey` 折叠到同一个条目，故顺序无关；在 POSIX 上是两个条目，
+    # 而 `urllib` 以小写为准，故先写大写、后写小写，让「最后一次写入」也是权威那个。
+    for name in reversed(PROXY_ENV_NAMES):
+        os.environ[name] = normalized
+    return normalized
+
+
+@contextmanager
+def normalized_no_proxy_environment() -> Iterator[None]:
+    """在块内把 `no_proxy` 家族规范化，退出时逐字还原。
+
+    这是**构造窗口**式的纵深防护，保留给「不在装配路径上构造客户端」的调用方
+    （CLI 命令、单元测试，以及 `agent/model` 里两处构造）。产品路径靠
+    :func:`apply_no_proxy_normalization` 的进程级规范化——两者不互相替代：
+    前者覆盖任意时刻的构造，后者覆盖「有人没走装配路径」。
+
+    还原是精确的：某个变量原本不存在，退出后仍然不存在（不被写成空串）——见
+    :func:`apply_no_proxy_normalization` 对「未设置 ≠ 空串」的同一说明。
+
+    线程安全说明（如实声明残余风险）：`os.environ` 是进程级的，窗口期内若有别的线程
+    同时构造客户端，它也会看到规范化后的取值——那对它同样是修复而非破坏（规范化
+    不改变语义，只让解析不崩），因此这个窗口是可接受的。
+    """
+    saved: dict[str, str | None] = {name: os.environ.get(name) for name in PROXY_ENV_NAMES}
+    try:
+        for name in PROXY_ENV_NAMES:
+            current = saved[name]
+            if current is not None:
+                os.environ[name] = normalize_no_proxy(current)
+        yield
+    finally:
+        for name, original in saved.items():
+            if original is None:
+                os.environ.pop(name, None)
+            else:
+                os.environ[name] = original
