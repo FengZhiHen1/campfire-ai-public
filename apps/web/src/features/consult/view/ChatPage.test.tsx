@@ -104,7 +104,16 @@ describe('对话页 — 历史水合三态', () => {
     });
     renderChat(port);
 
-    expect(await screen.findByText('这组问题已经处理过，记录如下（回答见当时的对话）。')).toBeDefined();
+    // ★ 措辞判据（T27 修正）：水合**不知道**这组题有没有被回答过——`question` part 的
+    // 载荷里没有「已作答」标记（通用基座 7.2 节的形状没有这个字段，前端不得发明）。
+    // 因此它不能说「已经处理过」/「已提交」：那是断一件前端不知道的事。
+    // 实测（T27 §6）一组**从未被回答**的提问就是这样被显示成「已提交 / 这组问题已经
+    // 处理过」的——看起来像成功、其实没做成。
+    expect(await screen.findByText('这是当时向你提出的问题，当时的作答见对话里的相关消息。')).toBeDefined();
+    expect(screen.getByText('提问记录')).toBeDefined();
+    // 反空断言：旧的失实措辞必须**不再**出现（否则这次修正等于没做）。
+    expect(screen.queryByText('这组问题已经处理过，记录如下（回答见当时的对话）。')).toBeNull();
+    expect(screen.queryByText('已提交')).toBeNull();
     expect(screen.queryByRole('button', { name: '提交' })).toBeNull();
   });
 });
