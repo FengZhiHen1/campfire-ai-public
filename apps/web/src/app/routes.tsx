@@ -142,25 +142,38 @@ export const APP_ROUTES: readonly AppRoute[] = [
 ];
 
 /**
+ * 取一条路由要渲染的元素：已建成用它的工厂，未建成渲染**标明「建设中」**的占位页。
+ *
+ * 前置: 无
+ * 后置: route.element 存在时返回它调用的结果；省略时返回 reason 为 'building' 的
+ *       PlaceholderPage（即输出「本页尚在建设中。」）
+ * 异常: 无
+ *
+ * 为什么把这一段抽成导出的函数而不是留在 JSX 三元里：当前 APP_ROUTES 的 9 条路由
+ * **全部**有 element 工厂，所以「省略 element」这条分支在走路由表的用例里**不可达**
+ * ——它会在没有任何守卫的情况下腐坏（腐烂的形态正是丢掉「建设中」那句，也就是
+ * 撞上「占位必须说明自己为何没内容」那条禁止行为）。抽出来之后，用例可以拿一条
+ * 省略 element 的真实 AppRoute 走**产品自己的这段逻辑**，而不是在用例里复制一份映射。
+ */
+export function routeElement(route: AppRoute): ReactElement {
+  if (route.element !== undefined) return route.element();
+  return <PlaceholderPage title={route.title} description={route.description} reason="building" />;
+}
+
+/**
  * 生成 React Router 的路由对象数组。
  *
  * 前置: APP_ROUTES 非空（静态配置保证）
  * 后置: 返回覆盖 /login、APP_ROUTES 全部路径与通配路径的路由数组；
- *       requiresSession 为真的项包在 RequireSession 下；未建成页面渲染占位，
- *       未匹配路径渲染「页面不存在」占位
+ *       requiresSession 为真的项包在 RequireSession 下；未建成页面渲染「建设中」占位，
+ *       未匹配路径渲染「页面不存在」占位（**不带**「建设中」，见下面的 reason）
  * 异常: 无
  */
 export function buildRouteObjects(): RouteObject[] {
   const businessRoutes: RouteObject[] = APP_ROUTES.map((route) => ({
     path: route.path,
     element: (
-      <RequireSession enabled={route.requiresSession}>
-        {route.element === undefined ? (
-          <PlaceholderPage title={route.title} description={route.description} />
-        ) : (
-          route.element()
-        )}
-      </RequireSession>
+      <RequireSession enabled={route.requiresSession}>{routeElement(route)}</RequireSession>
     ),
   }));
 
@@ -170,7 +183,15 @@ export function buildRouteObjects(): RouteObject[] {
     ...businessRoutes,
     {
       path: '*',
-      element: <PlaceholderPage title="页面不存在" description="这个地址没有对应页面，请从首页重新进入。" />,
+      // reason='missing'：路径不存在与「本页尚在建设中。」不能并置——前者说没有这一页，
+      // 后者说这一页有、只是没做完，同时出现会让使用者不知道该不该重试（T24 的观察）。
+      element: (
+        <PlaceholderPage
+          title="页面不存在"
+          description="这个地址没有对应页面，请从首页重新进入。"
+          reason="missing"
+        />
+      ),
     },
   ];
 }
