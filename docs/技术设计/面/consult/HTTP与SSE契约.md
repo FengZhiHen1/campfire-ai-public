@@ -144,7 +144,7 @@ data: {"type":"text_delta","delta":"…"}
 | 基座事件 | 实现状态 |
 |---|---|
 | `run_started`、`text_delta`、`progress`、`tool_call_started`、`tool_call_finished`、`citation`、`candidate`、`run_finished`、`run_failed` | 已在 `agent/runtime/events.py` 定义 |
-| `reasoning_delta`、`question`、`action_card` | **形状已定形，事件类未落地**（2026-09-30）。载荷归[通用基座](../../technical-details/通用基座.md)第 7.1／7.2／7.3 节拥有，本文不定义；实现前须先落事件类 |
+| `reasoning_delta`、`question`、`action_card` | **已在 `agent/runtime/events.py` 定义**（2026-10-06 订正：三个事件类均已落地——`ReasoningDeltaEvent`／`QuestionEvent`（`:187`）／`ActionCardEvent`（`:191`）；发出方分别是文本增量路径、`assembly.py:184` 与 `tools/emergency_card.py`）。载荷归[通用基座](../../technical-details/通用基座.md)第 7.1／7.2／7.3 节拥有，本文不定义。**实测依据**：T27 抓取的原始 SSE 帧里含 `reasoning_delta` × 2134、`question` × 2 |
 
 ### 4.3 取消
 
@@ -235,7 +235,10 @@ POST /api/consult/sessions/{session_id}/onboarding/skip
 
 ## 10. 已知偏差与证据边界
 
-- **三个事件的形状已定形、事件类未落地**（2026-09-30）：`question`（第 7.2 节，一组题）、`action_card`（第 7.3 节，通用信封）、`reasoning_delta`（第 7.1 节）的载荷由[通用基座](../../technical-details/通用基座.md)拥有并已定义，但 `agent/runtime/events.py` 的 `RunEvent` 联合里**都还没有**。实现前须先落事件类——这是提问卡、行动卡、思考区三处前端组件的数据来源。**另有一项实测前置**：`reasoning_delta` 在 SDK 事件流里的键名未实测（基座第 7.1 节），取不到时该事件不产出，不得用文本增量冒充。
+- ~~**三个事件的形状已定形、事件类未落地**（2026-09-30）~~ ⇒ **已落地（2026-10-06 订正）**：`question`（第 7.2 节，一组题）、`action_card`（第 7.3 节，通用信封）、`reasoning_delta`（第 7.1 节）三个事件类**都已在 `agent/runtime/events.py` 的 `RunEvent` 联合里**（`QuestionEvent :187`、`ActionCardEvent :191`），发出方分别是 `assembly.py:184`、`tools/emergency_card.py` 与文本增量路径。**实测依据**：T27 抓取的原始 SSE 帧含 `reasoning_delta` × 2134、`question` × 2。**⇒ 提问卡、行动卡、思考区三处前端组件的数据来源均已具备。**
+  **⚠ 其中一项前置也已实测解除**（2026-10-06）：原文写「`reasoning_delta` 在 SDK 事件流里的键名未实测」——
+  **T27 抓取的原始 SSE 帧里 `reasoning_delta` 出现 2134 次** ⇒ **键名已确证为 `reasoning_delta`**，
+  「取不到时该事件不产出、不得用文本增量冒充」这条约束**仍然有效**（它是对**未来实现**的要求，不是对现状的描述）。
 - **会话归属表 `campfire_session` 尚未落地**：2026-09-30 用户裁定新增并已写入定调（[项目结构设计](../../../项目结构设计.md)第 6 节、`accounts` 用例行）与注销处置（[认证与账号](../../technical-details/认证与账号.md)第 8 节第 4 步），决策记录见[会话归属单立表归 accounts](../../decisions/会话归属单立表归accounts.md)。仍缺的是表形状与迁移，随 `modules/accounts` 实现落地。
 - **事件缓冲的承载与保留时长待确认**：续传要求服务端持有本次运行的事件序列；Redis 已在技术栈内，但缓冲结构、TTL 与"运行已终结后保留多久"未定。
 - **SDK 会话表仍未登记**：本契约的历史水合依赖 SDK 的 `agent_sessions` / `agent_messages`，两张表的归属与命名未定（[设计待办](../../../TODO.md)）。

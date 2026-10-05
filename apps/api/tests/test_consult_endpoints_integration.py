@@ -2028,7 +2028,12 @@ async def test_daily_run_payload_lets_memory_and_onboarding_write(
                 "content": "家庭偏好先给两个可选活动，用简短步骤沟通",
                 "occurred_at": datetime.now(timezone.utc).isoformat(),
                 "origin": "user_statement",
-                "source": {"session_id": session_id, "message_seq": None},
+                # ⚠ 2026-10-06 订正：此处曾传 `{"session_id": …, "message_seq": None}` ——
+                # `session_id` 已从 `_Source` 里去掉（改由服务端从 `ToolContext.session_id` 填，
+                # 与 `ask_user` 的 `batch_id` 同一原则：不信任模型传标识）；
+                # 而 `_Source` 是 `extra="forbid"` ⇒ 旧写法现在得 `extra_forbidden`。
+                # 这条正是"契约改了、调用点没跟上"的实例（由全量 pytest 抓到）。
+                "source": {"message_seq": None},
             }
         ),
     )
