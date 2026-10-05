@@ -77,11 +77,16 @@ describe('设置页 · 账号与说明卡', () => {
     expect(screen.getByText('个人账号 · 邀请码注册')).toBeDefined();
   });
 
-  it('P0 冷启动拿不到账号名 → 如实降级，不显示空白也不编造', () => {
+  it('P0 冷启动拿不到账号名 → 如实说明恢复动作，不显示空白也不编造', () => {
     useSessionStore.setState({ session: { status: 'authenticated' }, account: null });
     renderSettings(port());
 
-    expect(screen.getByRole('heading', { name: '账号名暂不可用' })).toBeDefined();
+    // 文案说「怎么才能看到」而不是「不可用」：后者读起来像账号出了问题（QA-02 的形态），
+    // 而真实处境只是账号名只在登录/注册当次响应里带得回来，整页加载后没跟着回来。
+    // 用精确可访问名断言：把文案改回「账号名暂不可用」这类措辞，本用例立刻变红。
+    expect(screen.getByRole('heading', { name: '账号名需重新登录后显示' })).toBeDefined();
+    // 账号卡仍在（会话有效，不是登出），下方说明行照常呈现。
+    expect(screen.getByText('个人账号 · 邀请码注册')).toBeDefined();
   });
 
   it('P0 「关于你的数据」三行要点逐字', () => {

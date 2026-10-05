@@ -32,7 +32,7 @@ export interface SettingsPageProps {
 const COPY = {
   heading: '我的',
   accountSub: '个人账号 · 邀请码注册',
-  accountFallback: '账号名暂不可用',
+  accountFallback: '账号名需重新登录后显示',
   dataGroup: '关于你的数据',
   usageTitle: '咨询记录怎么用',
   usageBody: '本次输入的内容用于生成回答，并按你的确认累积到档案与记忆',
@@ -62,9 +62,12 @@ const COPY = {
  * 后置: 输出账号卡、两张说明卡与操作区；登出成功后清会话状态并转登录页
  * 异常: 无（登出异常在确认单内呈现，见 useLogout）
  *
- * 账号名为什么可能显示降级文案：冷启动刷新页面时前端读不到账号名
- * （凭据在 httpOnly cookie，一期无账号信息查询端点），store 里是 null。
- * 此时如实说明「暂不可用」，而不是显示空白或编造一个名字。
+ * 账号名什么时候会显示降级文案：整页加载（含冷启动刷新）之后。
+ * 账号名只在登录与注册的当次响应里带得回来，而凭据在 httpOnly cookie、
+ * 一期没有账号信息查询端点，因此整页加载后 store 里是 null。
+ *
+ * 降级文案说的是这个状态本身，不说账号出了问题：裸「暂不可用」读起来像故障，
+ * 而真实处境只是「名字这次没跟着回来」——说出恢复动作，使用者据此能自救。
  */
 export function SettingsPage({ auth }: SettingsPageProps) {
   const navigate = useNavigate();
