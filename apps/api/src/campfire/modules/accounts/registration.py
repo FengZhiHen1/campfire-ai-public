@@ -3,6 +3,12 @@
 职责：在 sign-up 复写法内先原子占用邀请码，通过后再调用原实现建号。
 边界：不自建注册端点、不自己签发会话；占用与释放都落 `repository`。
 参考：docs/项目结构设计.md 第 6 节；认证与账号第 4 节（docs/技术设计/technical-details/认证与账号.md）。
+
+账号名不要求邮箱格式（`RQ-ACC-05`）：设计真源要求「复写 email 校验器使账号名通过校验」，
+落点是 :func:`sign_up_form_fields` 里为 `email` 字段显式给出 `validate`
+（:func:`_validate_account_name`）。身份服务的默认邮箱校验器（要求 `@`）**只在该字段
+没有 `validate` 时才生效**（实测 `supertokens_python/recipe/emailpassword/utils.py:111-119`），
+因此这一个声明就是「账号名」与「邮箱」的分界点。缺陷 `PROD-01` 的成因正是该声明从未落地。
 """
 
 from __future__ import annotations
@@ -63,6 +69,9 @@ INVITE_CODE_FORM_FIELD = "inviteCode"
 #: 账号名字段的字段名（身份服务沿用 `email` 字段承载账号名，`TECH-08` 已知偏差）。
 #:
 #: 刻意不在这里改名：该字段名由身份服务的 SDK 契约决定，我们只读取它。
+#:
+#: ⚠️ 它同时是**唯一**的账号名字段：身份服务的 sign-up 与 sign-in 都只认这一个
+#: 字段名，没有第二处可以挂账号名。
 EMAIL_FORM_FIELD = "email"
 
 #: 密码字段名（同样由 SDK 契约决定）。
@@ -85,9 +94,57 @@ PASSWORD_FORM_FIELD = "password"
 #: （见 :func:`_reject`）。有测试断言四种拒绝的响应体完全一致。
 _REJECTION_MESSAGE = "邀请码无效或已不可用"
 
+#: 账号名为空或纯空白时的表单错误文本。
+#:
+#: 刻意写实：空账号名会建出一个无法登录、也无法被使用者理解的账号，
+#: 且 `AC-16` 已经去掉了邮箱字段（界面只有一个「账号名」输入框），
+#: 「请填写账号名」是可据以自救的提示。
+#:
+#: 它**不构成账号枚举**渠道：消息只取决于调用方自己发来的字符串是否为空，
+#: 与账号是否存在于身份服务无关（与邀请码拒绝消息的取舍不同，见 `_REJECTION_MESSAGE`）。
+#:
+#: ⚠️ 实测这条消息**不会真的发给使用者**（保留作直接调校验器的语义说明）：
+#: 身份服务在调用 `validate` 之前就把空值判掉了——`api/utils.py:47-52` 对
+#: 「缺失或值为 `""`」且 `optional=False` 的字段直接产出 `Field is not optional`
+#: 并 `continue`，校验器根本不会被调用；且 email 字段在 `:105-106` 先被 `strip()`，
+#: 所以 `"  "` 也先变成 `""`、同样在 `validate` 之前被拒。
+#: 即「拒绝空/纯空白」这件事由 SDK 的非可选判定与归一化共同承担，见 :func:`_validate_account_name`。
+_EMPTY_ACCOUNT_NAME_MESSAGE = "请填写账号名"
+
+
+async def _validate_account_name(value: str, _tenant_id: str) -> str | None:
+    """账号名校验器：接受任意非空字符串，拒绝空与纯空白（`RQ-ACC-05`）。
+
+    这是「账号名」与「邮箱」的分界点（见模块说明）：SDK 对 `id == "email"` 的字段
+    **给了 `validate` 就用它**，只有不给时才回落 `default_email_validator`
+    （实测 `recipe/emailpassword/utils.py:111-119`）。因此本函数的存在本身
+    就移除了「必须含 `@`」的正则约束，而**不需要**改 SDK 或共享层。
+
+    为什么在这里显式判空（即使 SDK 已经拦住了）：
+    `InputFormField.optional` 对 `id == "email"` 的分支被 SDK **硬编码忽略**
+    （`utils.py:117-119` 恒传 `False`，见 :func:`sign_up_form_fields` 的说明），
+    即「拒绝空值」实际靠 SDK 的非可选判定。把判空写进本函数，
+    是为了让 `validate` 自身也是安全的——校验器将来若被别处直接调用
+    （或 SDK 某版本改变归一化顺序），空账号名仍被拒绝，而不是静默放行
+    `""` 建出一个无法登录的账号。两处判空不冲突：SDK 先拒，本函数是兜底。
+
+    归一化注记：入参可能仍是带空白的字符串（SDK 只对 email 字段 `strip()`，
+    见 `api/utils.py:105-106`），因此用 `strip()` 判空而不是只比 `""`。
+
+    Args:
+        value: 账号名原值（身份服务的表单字段值）。
+        _tenant_id: SDK 契约要求的租户标识；本校验与租户无关，刻意忽略。
+
+    Returns:
+        `None` 表示通过；否则返回给使用者看的错误文本。
+    """
+    if not isinstance(value, str) or not value.strip():
+        return _EMPTY_ACCOUNT_NAME_MESSAGE
+    return None
+
 
 def sign_up_form_fields() -> list[InputFormField]:
-    """声明 signup 表单额外的自定义字段（邀请码）。
+    """声明 signup 表单额外的自定义字段（邀请码）与账号名字段。
 
     这一步不能省：实测 SDK 的 `validate_form_or_throw_error` 在
     `len(config_form_fields) < len(inputs)` 时直接抛
@@ -95,13 +152,38 @@ def sign_up_form_fields() -> list[InputFormField]:
     就被拒，我们的复写（:func:`api_overrides`）根本不会被调用。
     第一版实现漏了它，实测表现是「带邀请码注册返回 400，而复写里的日志一条都没有」。
 
-    `optional=True` 且校验器恒通过（见上方常量的说明）：
+    邀请码字段的 `optional=True` 且校验器恒通过（见上方常量的说明）：
     - `optional=True`：缺失邀请码时走到我们自己的拒绝分支（统一消息），
       而不是让 SDK 报「字段不能为空」——后者泄露字段存在性且响应形状不同；
     - 校验器恒通过：所有判定集中在原子占用那一步，保证四种拒绝响应完全一致。
+    **本次改动刻意不动它**（见下方「为什么不改邀请码字段」）。
+
+    账号名字段（`EMAIL_FORM_FIELD`，承载账号名）为什么必须在这里声明：
+
+    - **覆盖默认邮箱校验器**：不声明该字段时，SDK 会自动补一个 `email` 字段并挂上
+      `default_email_validator`（要求含 `@`），`小安`/`xiaoshi`/`a@b` 全被拒——
+      这就是 `PROD-01`。声明并给出 `validate` 后，默认正则不再生效。
+    - **sign-in 会复用同一个校验器（已实测，不是推断）**：sign-in 的字段表由
+      sign-up 的字段表派生，对 `email` 取的是同一个 `validate`
+      （`utils.py:160-175`，`y.validate if y.id == FORM_FIELD_EMAIL_ID`）。
+      探针实测两者是**同一个函数对象**：`signup_email.validate is signin_email.validate`
+      为 `True`。因此本声明同时修好注册与登录，**不会**出现「能注册但登录不了」。
+    - 同一份校验器还被密码重置的「生成 token」表单复用（`utils.py:206-213`）；
+      对「任意非空账号名」而言这是正确行为——重置链接必须能发给非邮箱账号名。
+
+    为什么不设 `optional`：账号名是必填。刻意显式写 `optional=False` 表达意图并
+    留下文档锚点，尽管实测它对 `id == "email"` 无实际作用——SDK 在该分支
+    **忽略**传入的 `optional`，恒按非可选处理（`utils.py:117-119` 硬编码 `False`）。
+    即「必填」的真实承重点在 SDK 的非可选分支，这里写下来是为了让意图可读、
+    并让「哪天 SDK 改了这条」这件事有一个明确的检查点。
+
+    为什么不改邀请码字段的校验器去「顺手」处理账号名：两者职责不同。
+    邀请码恒通过是**有意**的（判定集中在原子占用，保证四种拒绝同形）；
+    账号名是另一件事，改它会把表单层拒绝引入邀请码路径，破坏 `:85` 那条既约。
 
     Returns:
-        自定义字段声明列表。
+        自定义字段声明列表（邀请码 + 账号名）。顺序无关：身份服务按 `id` 查字段
+        （`api/utils.py:44-46` 用 `find_first_occurrence_in_list`）。
     """
 
     async def accept_any_string(_value: str, _tenant_id: str) -> str | None:
@@ -113,7 +195,14 @@ def sign_up_form_fields() -> list[InputFormField]:
             id=INVITE_CODE_FORM_FIELD,
             validate=accept_any_string,
             optional=True,
-        )
+        ),
+        InputFormField(
+            id=EMAIL_FORM_FIELD,
+            validate=_validate_account_name,
+            # 账号名必填：显式写出意图。实测该值对 email 字段不生效
+            # （SDK 硬编码非可选），见 docstring 的说明。
+            optional=False,
+        ),
     ]
 
 

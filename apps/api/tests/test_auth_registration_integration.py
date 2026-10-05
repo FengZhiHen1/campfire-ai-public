@@ -648,3 +648,180 @@ async def test_rejection_message_does_not_distinguish_reasons(client: httpx.Asyn
         )
     finally:
         await _clear()
+
+
+# ---------------------------------------------------------------------------
+# 账号名不要求邮箱格式（PROD-01 / RQ-ACC-05）—— 端到端
+# ---------------------------------------------------------------------------
+
+
+def _unique_name(prefix: str = "acct") -> str:
+    """生成唯一的**非邮箱**账号名（无 `@`、含中文）。
+
+    与 `_unique_email` 同样是「每次唯一」：身份服务 core 永久记住账号，
+    固定名字会让第二次运行变成「账号已存在」。
+    """
+    import uuid
+
+    return f"{prefix}小安{uuid.uuid4().hex[:10]}"
+
+
+async def _signin(client: httpx.AsyncClient, account_name: str) -> httpx.Response:
+    """用账号名 + 密码登录（signin 的表单体与 signup 同形）。"""
+    settings = get_settings()
+    path = f"{settings.supertokens_api_base_path.rstrip('/')}/signin"
+    return await client.post(
+        path,
+        json={
+            "formFields": [
+                {"id": "email", "value": account_name},
+                {"id": "password", "value": _PASSWORD},
+            ]
+        },
+    )
+
+
+@pytest.mark.asyncio
+async def test_non_email_account_name_can_register_and_sign_in(client: httpx.AsyncClient) -> None:
+    """★ 本缺陷最关键的端到端判据：非邮箱账号名**能注册、且能用它登录**。
+
+    为什么必须验登录侧：修复方式是给 sign-up 的 `email` 字段声明一个校验器，
+    而身份服务的 sign-in 字段表由 sign-up 派生、对 `email` 取同一个 `validate`
+    （实测 `utils.py:160-175`）。因此「只改了注册、登录仍被默认邮箱正则拦下」
+    是一个真实可能出现的错误修法（会表现成「能注册但登录不了」）。
+
+    判别性：把 `sign_up_form_fields()` 里新增的 email 字段删掉 ⇒ 注册这一步就被
+    默认邮箱校验器拒绝（`FIELD_ERROR: Email is not valid`），本用例失败。
+    """
+    settings = _settings_or_skip()
+    await _clear()
+    try:
+        account_name = _unique_name("e2e")
+        code = await _issue_code()
+
+        signup = await client.post(_signup_path(settings), json=_signup_payload(account_name, code))
+        assert _is_ok(signup), (
+            f"非邮箱账号名 {account_name!r} 应可注册（RQ-ACC-05），实际 {_status_of(signup)}：{signup.text[:300]}"
+        )
+        assert await _account_exists(account_name) is True, "注册返回成功但身份服务里没有该账号"
+
+        signin = await _signin(client, account_name)
+        assert _is_ok(signin), (
+            f"用刚注册的非邮箱账号名 {account_name!r} 登录必须成功——"
+            f"若这里失败，说明只改了注册而登录仍被默认邮箱校验器拦下（能注册但登录不了）：{signin.text[:300]}"
+        )
+        assert len(signin.headers.get_list("set-cookie")) > 0, "登录成功却没有下发会话 cookie"
+    finally:
+        await _clear()
+
+
+@pytest.mark.asyncio
+async def test_ascii_account_name_without_at_sign_can_register_and_sign_in(
+    client: httpx.AsyncClient,
+) -> None:
+    """同样验无 `@` 的纯 ASCII 账号名（`xiaoshi` 形态）。"""
+    settings = _settings_or_skip()
+    await _clear()
+    try:
+        import uuid
+
+        account_name = f"xiaoshi{uuid.uuid4().hex[:10]}"
+        code = await _issue_code()
+
+        signup = await client.post(_signup_path(settings), json=_signup_payload(account_name, code))
+        assert _is_ok(signup), f"无 @ 的账号名应可注册，实际 {_status_of(signup)}：{signup.text[:300]}"
+
+        signin = await _signin(client, account_name)
+        assert _is_ok(signin), f"无 @ 的账号名应可登录：{signin.text[:300]}"
+    finally:
+        await _clear()
+
+
+@pytest.mark.asyncio
+async def test_email_shaped_account_name_still_works(client: httpx.AsyncClient) -> None:
+    """兼容性：邮箱形态的账号名修后仍可注册与登录（不影响已有账号）。"""
+    settings = _settings_or_skip()
+    await _clear()
+    try:
+        account_name = _unique_email("compat")
+        code = await _issue_code()
+
+        signup = await client.post(_signup_path(settings), json=_signup_payload(account_name, code))
+        assert _is_ok(signup), f"邮箱形态的账号名必须仍可注册，实际 {_status_of(signup)}：{signup.text[:300]}"
+
+        signin = await _signin(client, account_name)
+        assert _is_ok(signin), f"邮箱形态的账号名必须仍可登录：{signin.text[:300]}"
+    finally:
+        await _clear()
+
+
+@pytest.mark.asyncio
+async def test_blank_account_name_is_rejected_on_sign_up(client: httpx.AsyncClient) -> None:
+    """空与纯空白账号名必须被拒，且不给出会话（不得建出「空账号名」）。
+
+    带**有效邀请码**：这样拒绝就必定来自账号名这一侧，而不是「缺码」那一条路径。
+    拒绝形状是 SDK 的表单错误（`FIELD_ERROR`、`email` 字段、`Field is not optional`），
+    与邀请码类拒绝（`GENERAL_ERROR` + 统一消息）不同——两者不会互相混淆。
+    """
+    settings = _settings_or_skip()
+    await _clear()
+    try:
+        for blank in ("", "   ", "\t\n"):
+            code = await _issue_code()
+            response = await client.post(_signup_path(settings), json=_signup_payload(blank, code))
+
+            assert _is_ok(response) is False, f"空/纯空白账号名 {blank!r} 不得注册成功"
+            body = response.json()
+            errors = [field.get("error") for field in body.get("formFields", [])]
+            assert errors, f"空/空白账号名 {blank!r} 应返回表单错误，实际：{response.text[:300]}"
+            assert len(response.headers.get_list("set-cookie")) == 0, f"空/空白账号名 {blank!r} 被拒却下发了会话 cookie"
+    finally:
+        await _clear()
+
+
+@pytest.mark.asyncio
+async def test_invite_code_rejections_stay_identical_after_account_name_change(
+    client: httpx.AsyncClient,
+) -> None:
+    """账号名改动不得破坏「四种邀请码拒绝响应完全一致」这条既约。
+
+    与 `test_rejection_message_does_not_distinguish_reasons` 同判据，但**账号名改用
+    非邮箱形态**：新增的账号名字段若不慎把表单层拒绝引入邀请码路径，
+    这里会看到多种响应体。
+    """
+    settings = _settings_or_skip()
+    await _clear()
+    try:
+        bodies: set[str] = set()
+
+        # 1) 不存在
+        response = await client.post(_signup_path(settings), json=_signup_payload(_unique_name("b1"), "ZZZZZZZZ"))
+        bodies.add(response.text)
+
+        # 2) 已撤销
+        revoked = await _issue_code()
+        async with session_scope(get_settings()) as session:
+            await revoke_invite_code(session, code=revoked)
+        response = await client.post(_signup_path(settings), json=_signup_payload(_unique_name("b2"), revoked))
+        bodies.add(response.text)
+
+        # 3) 已占用
+        used = await _issue_code()
+        async with session_scope(get_settings()) as session:
+            await claim_invite_code(session, code=used)
+        response = await client.post(_signup_path(settings), json=_signup_payload(_unique_name("b3"), used))
+        bodies.add(response.text)
+
+        # 4) 形状不合法（长度不对）
+        response = await client.post(_signup_path(settings), json=_signup_payload(_unique_name("b4"), "ABC"))
+        bodies.add(response.text)
+
+        # 5) 缺码（账号名为非邮箱形态）——共五种拒绝，仍须同形
+        response = await client.post(_signup_path(settings), json=_signup_payload(_unique_name("b5"), None))
+        bodies.add(response.text)
+
+        assert len(bodies) == 1, (
+            f"五种邀请码类拒绝的响应体必须完全一致（否则构成账号枚举渠道），实测 {len(bodies)} 种：{sorted(bodies)}"
+        )
+    finally:
+        await _clear()
