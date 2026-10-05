@@ -113,9 +113,33 @@ function LiveQuestionPart({ data }: { data: { batch_id: string; items: readonly 
   return <QuestionCard controller={controller} />;
 }
 
-/** 历史水合的提问记录（静态、禁重复提交）。 */
-function QuestionRecordPart({ data }: { data: { batch_id: string; items: readonly QuestionItem[] } }) {
-  const controller = useQuestionBatch({ batchId: data.batch_id, items: data.items, mode: 'record' });
+/**
+ * 历史水合的提问记录。
+ *
+ * ★ `answered` 是**服务端**的三态判定，这里只搬运、不推断：
+ * - `false` ⇒ 控制器折算成可作答（刷新后仍能补答，这正是本包修的那条）；
+ * - `true`  ⇒ 只读记录；
+ * - `null`/缺省 ⇒ 只读记录（fail-closed）。
+ *
+ * **刻意不把它设为「当前活跃批次」**（与运行中刚发出的提问不同）：`activeBatchId`
+ * 非空会让工作面**整体收起输入区**（`ChatWorkspace` 的 `answering` 闸门）。一条**历史**里
+ * 未作答的提问可能在很多轮之前，用它全局堵住输入区会把「可以补答」变成「必须先补答」——
+ * 那是本包没被要求、也不可逆的行为改动（一次刷新后使用者只能答那一组题）。
+ * 补答仍然可用：卡片自己带提交按钮，提交走与运行中同一条 `submitAnswers`。
+ */
+function QuestionRecordPart({
+  data,
+}: {
+  data: { batch_id: string; items: readonly QuestionItem[]; answered?: boolean | null };
+}) {
+  const { submitAnswers } = useConsultThread();
+  const controller = useQuestionBatch({
+    batchId: data.batch_id,
+    items: data.items,
+    mode: 'record',
+    answered: data.answered,
+    onSubmit: submitAnswers,
+  });
   return <QuestionCard controller={controller} />;
 }
 

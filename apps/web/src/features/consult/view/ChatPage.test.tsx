@@ -96,25 +96,98 @@ describe('对话页 — 历史水合三态', () => {
     expect(screen.getByLabelText('发送消息')).toBeDefined();
   });
 
-  it('历史里的提问是静态记录（不接受再次作答）', async () => {
+  it('历史里【已作答】的提问是只读记录（不接受再次作答）', async () => {
     const port = createConsultPortStub({
       history: historyResponse([
-        hydratedAssistant('m1', [{ type: 'question', batch_id: 'b1', items: [...QUESTION_ITEMS] }]),
+        hydratedAssistant('m1', [
+          { type: 'question-record', batch_id: 'b1', items: [...QUESTION_ITEMS], answered: true },
+        ]),
       ]),
     });
     renderChat(port);
 
-    // ★ 措辞判据（T27 修正）：水合**不知道**这组题有没有被回答过——`question` part 的
-    // 载荷里没有「已作答」标记（通用基座 7.2 节的形状没有这个字段，前端不得发明）。
-    // 因此它不能说「已经处理过」/「已提交」：那是断一件前端不知道的事。
-    // 实测（T27 §6）一组**从未被回答**的提问就是这样被显示成「已提交 / 这组问题已经
-    // 处理过」的——看起来像成功、其实没做成。
+    // ★ 措辞判据（T27 修正 / T31 沿革）：服务端判为已作答 ⇒ 只读。
     expect(await screen.findByText('这是当时向你提出的问题，当时的作答见对话里的相关消息。')).toBeDefined();
     expect(screen.getByText('提问记录')).toBeDefined();
     // 反空断言：旧的失实措辞必须**不再**出现（否则这次修正等于没做）。
     expect(screen.queryByText('这组问题已经处理过，记录如下（回答见当时的对话）。')).toBeNull();
     expect(screen.queryByText('已提交')).toBeNull();
     expect(screen.queryByRole('button', { name: '提交' })).toBeNull();
+  });
+
+  it('历史里【无法判定】的提问也只读（fail-closed）', async () => {
+    const port = createConsultPortStub({
+      history: historyResponse([
+        hydratedAssistant('m1', [
+          { type: 'question-record', batch_id: 'b1', items: [...QUESTION_ITEMS], answered: null },
+        ]),
+      ]),
+    });
+    renderChat(port);
+
+    // 判不出来 ⇒ 只读记录（猜成可作答会让使用者重复作答）。
+    expect(await screen.findByText('这是当时向你提出的问题，当时的作答见对话里的相关消息。')).toBeDefined();
+    expect(screen.queryByRole('button', { name: '提交' })).toBeNull();
+  });
+
+  it('★ 历史里【未作答】的提问可以补答（本包修的那条）', async () => {
+    const port = createConsultPortStub({
+      history: historyResponse([
+        hydratedAssistant('m1', [
+          { type: 'question-record', batch_id: 'b1', items: [...QUESTION_ITEMS], answered: false },
+        ]),
+      ]),
+    });
+    renderChat(port);
+
+    // 刷新后提问卡必须仍然可作答：题干在，且卡是**可交互**的（选项 + 下一题）。
+    // 首题不是末题，因此这里出现的是「下一题」而不是「提交」——提交按钮在末题上。
+    expect(await screen.findByText(QUESTION_ITEMS[0]?.prompt ?? '')).toBeDefined();
+    expect(screen.getByRole('button', { name: /可以/ })).toBeDefined();
+    expect(screen.getByRole('button', { name: '下一题' })).toBeDefined();
+    fireEvent.click(screen.getByRole('button', { name: '下一题' }));
+    expect(screen.getByRole('button', { name: '提交' })).toBeDefined();
+    // 中性措辞不得出现（那是「静态记录」态的文案）。
+    expect(screen.queryByText('提问记录')).toBeNull();
+  });
+
+  it('★ 两张历史卡都可作答时，自由回答输入框的 id 不重复（T31 引入的可达缺陷）', async () => {
+    // 背景：T31 之前历史卡一律 `mode='record'` ⇒ 同一条消息流里最多只有一张卡可作答，
+    // 因此输入框 id 用 `${mode}-${题标识}` 拼是安全的。T31 让**每张未作答的历史卡**都可作答，
+    // 于是「同一条会话里两组题都未作答」会让两张卡拼出同一个 id ⇒ 第二张卡的 `<label for>`
+    // 指到第一张卡的 textarea。改用 `useId()` 后每个实例唯一。
+    const port = createConsultPortStub({
+      history: historyResponse([
+        hydratedAssistant('m1', [
+          { type: 'question-record', batch_id: 'b1', items: [...QUESTION_ITEMS], answered: false },
+        ]),
+        hydratedAssistant('m2', [
+          { type: 'question-record', batch_id: 'b2', items: [...QUESTION_ITEMS], answered: false },
+        ]),
+      ]),
+    });
+    renderChat(port);
+
+    // 两张卡的题面相同 ⇒ 用 findAllByText（findByText 会因命中两个而报错）。
+    const titles = await screen.findAllByText(QUESTION_ITEMS[0]?.prompt ?? '');
+    expect(titles).toHaveLength(2);
+    const toggles = screen.getAllByRole('button', { name: /用自己的话回答/ });
+    expect(toggles).toHaveLength(2);
+    // 两张卡都展开自由回答通道
+    for (const toggle of toggles) fireEvent.click(toggle);
+
+    const boxes = Array.from(document.querySelectorAll('.question-card textarea'));
+    expect(boxes).toHaveLength(2);
+    const ids = boxes.map((box) => box.id);
+    expect(ids.every((id) => id !== '')).toBe(true);
+    expect(new Set(ids).size).toBe(2); // ★ 唯一性：重复会让 label 指错输入框
+
+    // 每个 label 的 htmlFor 必须指向同一条卡里的 textarea（而不是另一张卡的）。
+    for (const box of boxes) {
+      const card = box.closest('.question-card');
+      const label = card?.querySelector('label');
+      expect(label?.htmlFor).toBe(box.id);
+    }
   });
 });
 

@@ -65,13 +65,29 @@ function convertAssistantPart(part: MessagePart, diagnostics: string[]): PartCon
     case 'citation':
       return { kind: 'citation', citation: part.citation };
     case 'question':
-      // 历史提问是静态已提交记录（技术设计 6.1 节末：历史水合使用同一记录形态）。
+      // 流出侧（事件）形状：`partAccumulator.addQuestion` 已经把它映射成可作答的活卡，
+      // 因此这条分支不该在水合响应里出现。真出现了也要**可作答**吗？——不。
+      // 水合的提问一律由服务端带 `answered` 判定（`question-record`）；一条没有判定的
+      // `question` 落在历史里意味着服务端产出了契约外的形状。按 fail-closed 处置：
+      // 当只读记录，并留诊断（不许前端猜「它没被作答」从而让使用者重复作答）。
+      diagnostics.push('水合响应里出现了流出侧的 question part（历史应为 question-record），按只读记录处置');
       return {
         kind: 'part',
         part: {
           type: 'data',
           name: PART_NAME.questionRecord,
-          data: { batch_id: part.batch_id, items: part.items },
+          data: { batch_id: part.batch_id, items: part.items, answered: null },
+        },
+      };
+    case 'question-record':
+      // ★ 历史提问的**服务端判定**：`answered` 三态由后端给出，这里只做搬运。
+      // 前端不得自行推断（契约第 7 节与硬边界：不许让前端猜）。
+      return {
+        kind: 'part',
+        part: {
+          type: 'data',
+          name: PART_NAME.questionRecord,
+          data: { batch_id: part.batch_id, items: part.items, answered: part.answered },
         },
       };
     case 'action_card':

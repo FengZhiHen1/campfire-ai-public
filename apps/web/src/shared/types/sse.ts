@@ -279,6 +279,7 @@ export type MessagePart =
   | ToolCallPart
   | CitationPart
   | QuestionPart
+  | QuestionRecordPart
   | ActionCardPart;
 
 /** 文本 part。形状见 HTTP与SSE契约第 7 节 text 行。 */
@@ -307,11 +308,34 @@ export interface CitationPart {
   citation: CitationRecord;
 }
 
-/** 提问 part。形状见 HTTP与SSE契约第 7 节 question 行与通用基座第 7.2 节。 */
+/**
+ * 提问 part（**流出侧 / 事件**形状）。形状见 HTTP与SSE契约第 7 节 question 行与通用基座第 7.2 节。
+ *
+ * 它描述「刚向使用者发出、尚未作答」的提问——发出即结束运行，因此载荷里**没有**
+ * 「已作答」字段。历史水合的提问是另一个 part 类型（见 `QuestionRecordPart`）。
+ */
 export interface QuestionPart {
   type: 'question';
   batch_id: string;
   items: QuestionItem[];
+}
+
+/**
+ * 水合侧专有的提问记录 part。形状见 HTTP与SSE契约第 7 节 `question-record` 行。
+ *
+ * 与 `QuestionPart` 的唯一差别是多一个三态的 `answered`：
+ * - `true`  ⇒ 已作答 ⇒ 只读记录；
+ * - `false` ⇒ 未作答 ⇒ **可作答**（刷新后仍能补答，这是本 part 存在的理由）；
+ * - `null`  ⇒ **无法判定** ⇒ 只读记录（**fail-closed**）。
+ *
+ * `answered` **由服务端判定**，前端只读、不得自行推断（契约 §三 硬边界：
+ * 「不许让前端猜」）。前端尤其不得用「后面没有消息就算未作答」这类自算。
+ */
+export interface QuestionRecordPart {
+  type: 'question-record';
+  batch_id: string;
+  items: QuestionItem[];
+  answered: boolean | null;
 }
 
 /** 行动卡 part。形状见 HTTP与SSE契约第 7 节 action_card 行与通用基座第 7.3 节。 */
