@@ -202,11 +202,40 @@ POST /api/consult/sessions/{session_id}/onboarding/skip
 | `reasoning` | [通用基座](../../technical-details/通用基座.md)第 7.1 节 |
 | `tool_call` | 本文：`{ "tool_name": "…", "ok": true, "summary": "…" }` |
 | `citation` | [资料与案例检索](../../technical-details/资料与案例检索.md)第 3 节返回契约 |
-| `question` | [通用基座](../../technical-details/通用基座.md)第 7.2 节 |
+| `question` | [通用基座](../../technical-details/通用基座.md)第 7.2 节（**仅在事件流里出现**，见下） |
+| `question-record` | 本文：`{ "batch_id": "…", "items": […], "answered": true \| false \| null }`（**仅在水合响应里出现**） |
 | `action_card` | [通用基座](../../technical-details/通用基座.md)第 7.3 节 |
 
 - `candidate` **不进历史**：它不进消息流（[项目结构设计](../../../项目结构设计.md)第 9 节），仅经 SSE 计数。
 - 引用（`citation`）作为 part 与所属消息同生命周期，重放与滚动都不错位。
+
+### 7.1 `question` 与 `question-record` 为什么是两个 part 类型
+
+两者的**载荷形状**在 `batch_id` / `items` 上相同（`items` 的元素归基座 7.2 节），
+差别只有一个三态字段 `answered`。分成两个 `type` 而不是给 `question` 加一个字段，理由是
+**它们描述的是两个不同时刻的事实**：
+
+- `question` 是**流出侧**（事件）的 part：它按定义描述「刚向使用者发出、尚未作答」的提问——
+  基座 7.2 节的形状里没有「已作答」，因为发出即结束运行，那一刻**不可能**有答案。
+  因此它**只在事件流里出现**，水合不产出它；
+- `question-record` 是**回看侧**（水合）的 part：它要回答的是「这组题当时被作答了吗」。
+  把回看侧的字段塞进流出侧载荷，等于把两个时刻的事实挤进一个结构（且事件侧的字段集合
+  被逐字断死，见 `apps/api/tests/test_agent_questions.py`）。
+
+`answered` 是**三态**，语义与前端处置如下（判定**由服务端给出**，前端只读、不得自行推断）：
+
+| 取值 | 含义 | 前端呈现 |
+|---|---|---|
+| `true` | 已作答 | 只读记录（**不得**再次可提交） |
+| `false` | 未作答 | **可作答**（刷新后仍能补答） |
+| `null` | **无法判定** | 只读记录（**fail-closed**） |
+
+为什么 `null` 必须存在而不是归入 `false`：判据（某次提问之后、下一次提问之前的窗口内
+是否有一条以作答表头开头的使用者消息）在两种情形下**没有依据**——压缩会把被保留的尾部
+**复述**一遍（`agent/context/compaction.py` 的 `appended_items` 追加「检查点 + 尾部原文」，
+被保留的尾部因此在历史里存在两份），以及有一条使用者消息读不出文本。
+猜成「可作答」会让使用者**对同一组题作答两次**；猜成「只读」最多少修一点。
+**失败方向选安全的那边**（与第 8 节的失败语义同一取向）。
 
 ## 8. 失败语义
 

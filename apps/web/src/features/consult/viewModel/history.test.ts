@@ -25,14 +25,14 @@ import {
 } from '../test/fixtures';
 
 describe('hydrateHistory — 六种 part 的映射', () => {
-  it('text / reasoning / tool_call / citation / question / action_card 全部映射到视图 part', () => {
+  it('text / reasoning / tool_call / citation / question-record / action_card 全部映射到视图 part', () => {
     const actionCard = actionCardEvent();
     const parts: MessagePart[] = [
       { type: 'text', text: '历史回答' },
       { type: 'reasoning', delta: '当时的思考' },
       { type: 'tool_call', tool_name: 'search_knowledge', ok: true, summary: '找到 2 条' },
       { type: 'citation', citation: citation() },
-      { type: 'question', batch_id: 'b1', items: [...QUESTION_ITEMS] },
+      { type: 'question-record', batch_id: 'b1', items: [...QUESTION_ITEMS], answered: false },
       {
         type: 'action_card',
         card_id: actionCard.card_id,
@@ -59,8 +59,41 @@ describe('hydrateHistory — 六种 part 的映射', () => {
       'data:citations',
     ]);
     expect(content[1]).toMatchObject({ type: 'reasoning', text: '当时的思考' });
+    // ★ 服务端的三态判定必须**逐字搬运**，前端不得自行推断（硬边界：不许让前端猜）。
+    expect(content[3]).toMatchObject({ type: 'data', name: 'question-record', data: { answered: false } });
     // 依据区在消息尾聚合（历史里逐条的 citation 合成一块「依据 N 条」）。
     expect(content.at(-1)).toMatchObject({ type: 'data', name: 'citations' });
+  });
+
+  it('★ question-record 的 answered 三态逐个搬运，一个都不改写', () => {
+    const cases: readonly (boolean | null)[] = [true, false, null];
+    for (const answered of cases) {
+      const hydrated = hydrateHistory(
+        historyResponse([
+          hydratedAssistant('m1', [
+            { type: 'question-record', batch_id: 'b1', items: [...QUESTION_ITEMS], answered },
+          ]),
+        ]),
+      );
+      const content = hydrated.messages[0]?.content;
+      if (!Array.isArray(content)) throw new Error('应是 part 数组');
+      expect(content[0]).toMatchObject({ type: 'data', name: 'question-record', data: { answered } });
+      expect(hydrated.diagnostics).toEqual([]);
+    }
+  });
+
+  it('★ 水合响应里出现流出侧的 question part ⇒ 按只读处置并留诊断', () => {
+    // 水合的提问一律应是 `question-record`（服务端带判定）。一条没有判定的 `question`
+    // 意味着服务端产出了契约外的形状——**不能**当成「未作答」（那会让使用者重复作答）。
+    const hydrated = hydrateHistory(
+      historyResponse([
+        hydratedAssistant('m1', [{ type: 'question', batch_id: 'b1', items: [...QUESTION_ITEMS] }]),
+      ]),
+    );
+    const content = hydrated.messages[0]?.content;
+    if (!Array.isArray(content)) throw new Error('应是 part 数组');
+    expect(content[0]).toMatchObject({ type: 'data', name: 'question-record', data: { answered: null } });
+    expect(hydrated.diagnostics.join('\n')).toContain('question-record');
   });
 
   it('使用者消息只保留文本；契约外的 part 进诊断', () => {
