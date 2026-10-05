@@ -292,8 +292,59 @@ describe('对话页 — 思考区与工具行', () => {
       return node;
     });
     expect(row.hasAttribute('open')).toBe(false);
-    expect(row.textContent).toContain('search_knowledge · 已结束');
+    // OBS-01：工具行显示面向使用者的中文名，不显示线上标识符（设计真源：对话页.md:60）。
+    expect(row.textContent).toContain('查阅资料 · 已结束');
+    expect(row.textContent).not.toContain('search_knowledge');
     expect(row.textContent).toContain('找到 2 条');
+  });
+
+  it('未加映射的工具名走中性兜底，仍不把标识符显示给使用者', async () => {
+    const port = createConsultPortStub({ history: historyResponse([]) });
+    port.script([
+      runStarted(),
+      { type: 'tool_call_started', tool_name: 'a_brand_new_tool', call_id: 'c1' },
+      { type: 'tool_call_finished', tool_name: 'a_brand_new_tool', call_id: 'c1', ok: true, error_code: null, summary: '完成' },
+      runFinished(),
+    ]);
+    renderChat(port);
+    await send('试一下');
+
+    const row = await waitFor(() => {
+      const node = document.querySelector('details.tool-row');
+      if (node === null) throw new Error('工具行还没渲染');
+      return node;
+    });
+    // 兜底文案 + 状态后缀；标识符一个字母都不露出（这正是 OBS-01 的形态）。
+    expect(row.textContent).toContain('其他操作 · 已结束');
+    expect(row.textContent).not.toContain('a_brand_new_tool');
+  });
+
+  it('OBS-01 原始形态：失败的工具行显示「建立支持对象 · 未完成」，不再是 create_support_object', async () => {
+    // 测试人员报告里的原话是 `create_support_object · 未完成`（建档失败那一张卡）。
+    const port = createConsultPortStub({ history: historyResponse([]) });
+    port.script([
+      runStarted(['onboarding']),
+      { type: 'tool_call_started', tool_name: 'create_support_object', call_id: 'c1' },
+      {
+        type: 'tool_call_finished',
+        tool_name: 'create_support_object',
+        call_id: 'c1',
+        ok: false,
+        error_code: 'tool_failed',
+        summary: '缺少登录账号',
+      },
+      runFinished(),
+    ]);
+    renderChat(port);
+    await send('建档');
+
+    const row = await waitFor(() => {
+      const node = document.querySelector('details.tool-row');
+      if (node === null) throw new Error('工具行还没渲染');
+      return node;
+    });
+    expect(row.textContent).toContain('建立支持对象 · 未完成');
+    expect(row.textContent).not.toContain('create_support_object');
   });
 });
 
@@ -431,6 +482,40 @@ describe('对话页 — 页头技能标签折叠（授权语义：宽度不足�
     expect(tags).toEqual(['技能 4 个']);
     // 授权语义明确否定「+N 徽标」形态：这里同时钉住它不是徽标写法。
     expect(tags[0]).not.toMatch(/^\+\d+$/);
+  });
+
+  it('OBS-01：页头技能标签显示中文名，不把 onboarding / emergency-consulting 标识符露给使用者', async () => {
+    const port = createConsultPortStub({ history: historyResponse([]) });
+    const { container } = renderChat(port);
+    await screen.findByLabelText('发送消息');
+
+    // 这两个是测试人员在页头上真实看到的原始名称（引导首轮 / 应急首轮）。
+    setActiveSkills(['onboarding', 'emergency-consulting']);
+
+    const tags = headTagTexts(container);
+    expect(tags).toEqual(['一次性引导', '应急咨询']);
+    // 不变量：页头上一个标识符形状的拉丁词都不能出现。
+    for (const tag of tags) {
+      expect(tag).not.toContain('onboarding');
+      expect(tag).not.toContain('emergency-consulting');
+    }
+  });
+
+  it('OBS-01：技能选择器的可选项里【没有】程序注入的两个技能（防可手选漏洞）', async () => {
+    const port = createConsultPortStub({ history: historyResponse([]) });
+    renderChat(port);
+    await screen.findByLabelText('发送消息');
+
+    // 选择器只渲染「自动」+ 目录里的可手选项（SkillPicker 遍历 store.skills）。
+    const picker = screen.getByRole('group', { name: '下一条消息使用的技能' });
+    const chips = Array.from(picker.querySelectorAll('.skill-chip')).map((el) => el.textContent ?? '');
+
+    expect(chips).toEqual(['自动', '日常咨询', '档案整理']);
+    // 这两个传入服务端即 422，因此不能出现在可手选入口里。
+    expect(chips).not.toContain('onboarding');
+    expect(chips).not.toContain('emergency-consulting');
+    expect(chips).not.toContain('一次性引导');
+    expect(chips).not.toContain('应急咨询');
   });
 });
 
