@@ -25,20 +25,30 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Sequence
+from pathlib import Path
+from typing import get_args, get_type_hints
 
 import pytest
 
-from campfire.agent.context import window
+from campfire.agent.context import CitationRecord, window
+from campfire.agent.runtime.ask_user_tool import ASK_USER_TOOL_NAME, build_ask_user_tool
+from campfire.agent.tools import ToolResult
+from campfire.agent.tools.pool import RESERVED_TOOL_NAMES
 from campfire.modules.accounts import session_items
 from campfire.modules.accounts.session_items import (
+    ASK_USER_SUCCESS_OUTPUT,
     INJECTED_MESSAGE_PREFIXES,
     INTERRUPTED_TOOL_SUMMARY,
     PREVIEW_MAX_CHARS,
+    QUESTION_BATCH_ID_PREFIX,
+    QUESTION_ITEMS_MAX,
     TITLE_ELLIPSIS,
     TITLE_FALLBACK,
     TITLE_MAX_CHARS,
     TOOL_SUMMARY_MAX_CHARS,
     UNKNOWN_TOOL_NAME,
+    MessagePart,
     StoredItem,
     build_messages,
     build_preview,
@@ -50,13 +60,47 @@ from campfire.modules.accounts.session_items import (
     message_text,
     normalize_inline_text,
     parse_item,
+    question_part,
     reasoning_text,
     tool_failure_message,
 )
 
+# 反向判据（工具是否真的已装配）要读装配处的注册清单。这里是**测试**，
+# 不受 `modules/*` 的白名单约束——被测的正是「模块里那句注释与装配处的事实是否一致」，
+# 因此这个跨层 import 是判据本身的一部分，不是穿透。
+from campfire.surfaces.consult.registry import build_product_tools
+
 # ---------------------------------------------------------------------------
 # 实测形状的样本
 # ---------------------------------------------------------------------------
+
+#: 产品源码根（「防注释过期」那条用例要读 `session_items.py` 本身的文本）。
+SRC_ROOT = Path(__file__).resolve().parents[1] / "src" / "campfire"
+
+
+def _message_part_type_names() -> set[str]:
+    """取 `MessagePart` 联合里各成员的 part 类型名（从 `type` 字段的 `Literal` 取值）。
+
+    为什么需要这个函数、而且它必须能失败：**这是「台账与事实一致」那条用例的测量仪**。
+    测不准（返回空集或返回一堆 `ForwardRef` 之类的东西）时，用例会变成一道恒真的空闸门
+    ——这正是本包要防的形态。因此下面逐条断言解析结果，而不是直接把集合丢给调用方。
+
+    实测坑（第一版就踩了）：`MessagePart` 是 `typing.Union[...]`，其 `__args__` 里是
+    **TypedDict 类**，直接取 `__annotations__["type"]` 拿到的是 `typing.Literal['text']`
+    这类 **`ForwardRef`**（本文件开了 `from __future__ import annotations`，注解是字符串），
+    必须经 `typing.get_type_hints` 求值后才能取出字面量。
+
+    Returns:
+        形如 `{"text", "reasoning", "tool_call", "question"}` 的集合。
+    """
+    names: set[str] = set()
+    for member in getattr(MessagePart, "__args__", ()):
+        hints = get_type_hints(member)
+        literal = hints.get("type")
+        for value in get_args(literal):
+            if isinstance(value, str):
+                names.add(value)
+    return names
 
 
 def _stored(row_id: int, payload: dict) -> StoredItem:
@@ -557,3 +601,331 @@ def test_text_part_types_agree_across_the_two_parsers() -> None:
     """
     assert window._TEXT_PART_TYPES == TEXT_PART_TYPES
     assert session_items._TEXT_PART_TYPES == TEXT_PART_TYPES
+
+
+# ---------------------------------------------------------------------------
+# 提问的水合（★ T27 的主缺陷：刷新后提问卡消失）
+#
+# 实测（T27 第 0 步，真实栈 + 真实浏览器）：
+#   - 运行结束后（未刷新）：`.question-card` = 1（live 通路是好的，不必修）；
+#   - 刷新后：`.question-card` = 0、`[data-question-submit]` = 0 ⇒ 提问卡消失、无法作答。
+# 根因是 `MessagePart` 联合里没有 `question`（见该联合的说明）。
+# ---------------------------------------------------------------------------
+
+#: `ask_user` 调用参数的实测形状（T27 第 0 步从真实会话取回，逐字）。
+_ASK_USER_ARGUMENTS = json.dumps(
+    {
+        "items": [
+            {
+                "id": "object_name",
+                "prompt": "你平时怎么称呼这孩子？（小名、昵称、随便一个称呼都行，不用真实姓名）",
+                "options": [],
+                "allow_skip": True,
+            }
+        ]
+    },
+    ensure_ascii=False,
+)
+
+_ASK_USER_CALL_ID = "call_00_hmnfjj03n9utxqi42dgoxyq7"
+
+
+def _ask_user_call(call_id: str = _ASK_USER_CALL_ID, arguments: str = _ASK_USER_ARGUMENTS) -> dict:
+    """实测形状的 `ask_user` 调用条目。"""
+    return {
+        "arguments": arguments,
+        "call_id": call_id,
+        "name": "ask_user",
+        "type": "function_call",
+        "id": "__fake_id__",
+    }
+
+
+def _ask_user_output(call_id: str = _ASK_USER_CALL_ID, output: str = ASK_USER_SUCCESS_OUTPUT) -> dict:
+    """实测形状的 `ask_user` 结果条目。"""
+    return {"call_id": call_id, "output": output, "type": "function_call_output"}
+
+
+#: 会话真源里那条 assistant 消息的条目序列（T27 第 0 步实测的裁剪版）：
+#: 助手正文 → 思考 → 调用 → 结果。真实会话里前面还有 skill 激活对与两次
+#: `read_skill_resource`，它们不影响本节的判据。
+def _question_turn_items() -> list[StoredItem]:
+    return [
+        _stored(1, _user("我家孩子5岁，最近在超市里一听到广播声就会捂住耳朵、蹲在地上不肯走。")),
+        _stored(2, _reasoning("先想一下。")),
+        _stored(3, _assistant("收到——我先花几步把档案开头建起来。")),
+        _stored(4, _ask_user_call()),
+        _stored(5, _ask_user_output()),
+    ]
+
+
+def test_ask_user_success_output_matches_the_tool_handler() -> None:
+    """`ASK_USER_SUCCESS_OUTPUT` 必须与真实的 `ask_user` 回执逐字一致。
+
+    这条是**判据的判据**：水合靠这句话判定「这次提问真的产出了」。它一旦漂移，
+    提问会在水合里静默消失——回到本包修的那个缺陷，而且没有任何用例会红。
+    因此这里直接调用真实 handler，而不是再抄一份字面量。
+
+    判别性：改 `ask_user_tool.handler` 的返回文案（或改本模块的常量）⇒ 本用例红。
+    """
+    import asyncio
+
+    from campfire.agent.context import CitationRecorder
+    from campfire.agent.tools import ActivationState, ToolContext
+
+    class _Index:
+        """最小引用索引；本用例不产生引用，只需满足构造。
+
+        显式实现协议的两个成员并给出**正确的返回类型**（`Sequence[CitationRecord]`）——
+        返回 `list[object]` 会被 mypy 判成「这个替身不够格当索引」，而那正是
+        「替身必须满足真实契约」的判据，不能靠类型逃逸抹掉。
+        """
+
+        async def add(self, record: CitationRecord) -> None:
+            del record
+
+        async def list_for_run(self, run_id: str) -> Sequence[CitationRecord]:
+            del run_id
+            return []
+
+    tool = build_ask_user_tool()
+    context = ToolContext(
+        run_id="run-1",
+        session_id="session-1",
+        surface="consult",
+        activation_state=ActivationState(),
+        citations=CitationRecorder(_Index(), run_id="run-1"),
+    )
+    outcome = asyncio.run(tool.invoke(context, _ASK_USER_ARGUMENTS))
+
+    assert isinstance(outcome, ToolResult)
+    assert outcome.text == ASK_USER_SUCCESS_OUTPUT
+    assert outcome.question is not None
+    # 工具名常量也要与基座一致：`modules/*` 不得 import `agent/*`，只能是字面量。
+    assert tool.name == ASK_USER_TOOL_NAME
+    assert tool.name == session_items.ASK_USER_TOOL_NAME
+
+
+def test_hydration_rebuilds_a_question_part() -> None:
+    """★ 主用例：带 `ask_user` 调用对的历史，水合后必须出现提问 part。
+
+    这就是 T27 的缺陷现场——刷新后 `.question-card` 消失，因为后端从不产出
+    `question` part（`history.ts` 的 `case 'question'` 因此永不命中）。
+
+    判别性：把 `MessagePart` 联合里新加的 `QuestionPart` 去掉（或删掉
+    `add_tool_output` 里追加 part 的那三行）⇒ 本用例在第一处断言就失败。
+    """
+    parts = build_messages(_question_turn_items())[1]["parts"]
+
+    questions = [part for part in parts if part["type"] == "question"]
+
+    assert len(questions) == 1, "刷新后必须仍有且只有一个提问 part（T24 的缺陷现场）"
+    question = questions[0]
+    assert question["batch_id"].startswith(QUESTION_BATCH_ID_PREFIX)
+    assert _ASK_USER_CALL_ID in question["batch_id"], "批次标识必须能从调用标识追溯回来"
+    assert [item["id"] for item in question["items"]] == ["object_name"]
+    # 题干逐字保留：使用者要读的正是这句话。
+    assert "你平时怎么称呼这孩子" in question["items"][0]["prompt"]
+    assert question["items"][0]["allow_skip"] is True
+
+
+def test_hydration_question_part_shape_matches_the_wire_contract() -> None:
+    """水合出的 `question` part 形状必须与契约第 7 节逐字一致（前端两侧共用一组键）。
+
+    前端 `history.ts` 的 `case 'question'` 读的是 `batch_id` / `items`，
+    而 `parts.tsx` 的 `QuestionRecordPart` 再逐项读 `id` / `prompt` / `options`
+    / `allow_skip`。少一个键或改一个名字，水合出的卡就是空的——
+    而那种失败在浏览器里只表现为「卡片不出现」，不会报错。
+    """
+    parts = build_messages(_question_turn_items())[1]["parts"]
+    question = next(part for part in parts if part["type"] == "question")
+
+    assert set(question) == {"type", "batch_id", "items"}
+    assert set(question["items"][0]) == {"id", "prompt", "options", "allow_skip"}
+
+
+def test_hydration_rebuilds_options_when_present() -> None:
+    """选项被保留（含可选 `description`）：提问卡的三条通道里有一半靠它。"""
+    arguments = json.dumps(
+        {
+            "items": [
+                {
+                    "id": "start_choice",
+                    "prompt": "你想从哪个开始？",
+                    "options": [
+                        {"label": "先建档", "description": "大约七八个问题"},
+                        {"label": "先回答我的问题"},
+                    ],
+                    "allow_skip": False,
+                }
+            ]
+        },
+        ensure_ascii=False,
+    )
+    items = [_stored(1, _user("问")), _stored(2, _ask_user_call(arguments=arguments)), _stored(3, _ask_user_output())]
+
+    question = next(part for part in build_messages(items)[1]["parts"] if part["type"] == "question")
+
+    assert question["items"][0]["options"] == [
+        {"label": "先建档", "description": "大约七八个问题"},
+        {"label": "先回答我的问题"},
+    ]
+    assert question["items"][0]["allow_skip"] is False
+
+
+def test_hydration_does_not_rebuild_a_question_from_a_failed_call() -> None:
+    """★ 反伪造：参数不合法的那次 `ask_user` **没有**向使用者呈现过任何东西。
+
+    基座的 `QuestionGate` 刻意不因参数错误结束运行、也不发 `question` 事件
+    （见 `agent/runtime/assembly.py` 的说明）。若水合只看参数形状，就会给一张
+    「当时从未出现过」的提问卡——那是本模块明确禁止的伪造。
+
+    判别性：把 `question_part` 里 `output != ASK_USER_SUCCESS_OUTPUT` 那一句去掉，
+    本用例失败（会凭空造出一张卡）。
+    """
+    items = [
+        _stored(1, _user("问")),
+        _stored(2, _ask_user_call()),
+        _stored(3, _ask_user_output(output='<tool_error code="tool_invalid_arguments">items 为空</tool_error>')),
+    ]
+
+    parts = build_messages(items)[1]["parts"]
+
+    assert [part["type"] for part in parts] == ["tool_call"], "失败的调用不得产出提问 part"
+    # 判别字段必须先断言：`MessagePart` 是判别联合，只写下标取值在静态上看不出是哪一种
+    # （与文件里既有用例同一写法）。
+    first = parts[0]
+    assert first["type"] == "tool_call"
+    assert first["ok"] is False
+
+
+def test_question_part_rejects_bad_input() -> None:
+    """`question_part` 的每一条判据都各有一个「喂坏输入 ⇒ 立刻失败」的对照。
+
+    这是任务书要求的**反空断言**：完整性断言（「每个 question 事件都能水合」）若是
+    恒真的空闸门就毫无价值。这里逐条喂坏输入，断言它返回 `None` 而不是造一张卡。
+    """
+    call_id = "call-1"
+    good_arguments = _ASK_USER_ARGUMENTS
+
+    cases = {
+        "没有调用标识": ("", good_arguments, ASK_USER_SUCCESS_OUTPUT),
+        "产出是工具错误": (call_id, good_arguments, '<tool_error code="tool_failed">炸了</tool_error>'),
+        "产出是空串": (call_id, good_arguments, ""),
+        "参数不是 JSON": (call_id, "{不是 JSON", ASK_USER_SUCCESS_OUTPUT),
+        "参数不是对象": (call_id, "[1, 2]", ASK_USER_SUCCESS_OUTPUT),
+        "参数里没有 items": (call_id, json.dumps({"other": 1}), ASK_USER_SUCCESS_OUTPUT),
+        "items 是空数组": (call_id, json.dumps({"items": []}), ASK_USER_SUCCESS_OUTPUT),
+        "参数不是字符串": (call_id, {"items": []}, ASK_USER_SUCCESS_OUTPUT),
+        "题没有题干": (
+            call_id,
+            json.dumps({"items": [{"id": "a", "prompt": "   "}]}),
+            ASK_USER_SUCCESS_OUTPUT,
+        ),
+        "题没有标识": (call_id, json.dumps({"items": [{"prompt": "问"}]}), ASK_USER_SUCCESS_OUTPUT),
+        "题数超上界": (
+            call_id,
+            json.dumps({"items": [{"id": f"i{n}", "prompt": "问"} for n in range(QUESTION_ITEMS_MAX + 1)]}),
+            ASK_USER_SUCCESS_OUTPUT,
+        ),
+    }
+
+    # 对照组：同一形状的好输入必须**不**返回 None——否则「一切都返回 None」也能全绿。
+    assert question_part(call_id, good_arguments, ASK_USER_SUCCESS_OUTPUT) is not None
+
+    for label, (given_call_id, arguments, output) in cases.items():
+        assert question_part(given_call_id, arguments, output) is None, f"{label} 必须重建不出提问"
+
+
+def test_hydration_keeps_the_tool_call_row_next_to_the_question() -> None:
+    """提问 part 与那次工具调用同在一条助手消息里（不是新开一条消息）。
+
+    依据是契约第 7 节的分组规则：一次运行的产出合成一条助手消息。分成两条会让
+    刷新前后的消息条数变化（流式期间 1 条、刷新后 2 条）。
+    """
+    messages = build_messages(_question_turn_items())
+
+    assert len(messages) == 2, "一条使用者 + 一条助手"
+    parts = messages[1]["parts"]
+    types = [part["type"] for part in parts]
+    assert types == ["reasoning", "text", "tool_call", "question"]
+    # 工具行仍在（它是「向你提问 · 已结束」那句话的来源，T24 靠它看见「已结束」）。
+    # 判别字段先断言再取该 part 独有的键（同文件既有用例的写法）。
+    tool_part = parts[2]
+    assert tool_part["type"] == "tool_call"
+    assert tool_part["tool_name"] == ASK_USER_TOOL_NAME
+
+
+def test_part_ledger_agrees_with_the_code_facts() -> None:
+    """★ 防注释过期（本缺陷的成因）：能力台账必须与代码事实一致。
+
+    **为什么不按字面扫某个词**：这条守卫最初就是这么写的，结果**误伤了它自己的说明
+    文字**——命中的 5 处全是「为什么旧注释是错的」的订正说明。判「某个能力存在吗」要
+    区分**载体**与**使它成立的东西**：字面出现 ≠ 断言存在。按字面扫还有更坏的后果：
+    绕过它最省事的办法是**删掉那段说明**，而说明正是防止下一个人的唯一线索。
+
+    因此判据改成**语义一致性**：本模块声明两份台账（`PART_PROVENANCE` /
+    `NOT_REBUILT_PARTS`），本用例断言台账与代码事实逐条一致——注释怎么措辞都不影响结论。
+
+    判别性（四条各自独立可红）：
+    1. 往 `PART_PROVENANCE` 加一个不在 `MessagePart` 联合里的名字 ⇒ 红；
+    2. 把 `question` 从联合摘掉但留在台账里 ⇒ 红（同上一条路径）；
+    3. 往 `NOT_REBUILT_PARTS` 加一个**已在**联合里的名字 ⇒ 红；
+    4. `NOT_REBUILT_PARTS` 的某条理由写成空串 ⇒ 红（「未做」与「忘了做」必须可分）。
+    """
+    union_part_types = _message_part_type_names()
+
+    # 反空跑：解析必须真的看到东西，否则下面的断言只是在空集合上成立。
+    assert union_part_types, "没能从 MessagePart 联合里解析出任何 part 类型，本用例会空跑"
+    assert session_items.PART_PROVENANCE, "能力台账为空，本用例会空跑"
+
+    declared_rebuildable = set(session_items.PART_PROVENANCE)
+    declared_not_rebuilt = set(session_items.NOT_REBUILT_PARTS)
+
+    # 判据 1：台账说可重建的，必须真的在联合里。
+    assert declared_rebuildable <= union_part_types, (
+        "PART_PROVENANCE 声明了可重建、但 MessagePart 联合里没有的 part："
+        f"{sorted(declared_rebuildable - union_part_types)}——这正是旧注释那种「说的与做的不一致」"
+    )
+
+    # 判据 2：台账说不重建的，必须真的不在联合里。
+    assert not (declared_not_rebuilt & union_part_types), (
+        "NOT_REBUILT_PARTS 声明了不重建、但它其实已经在 MessagePart 联合里："
+        f"{sorted(declared_not_rebuilt & union_part_types)}——那份「未重建」说明已经过期"
+    )
+
+    # 判据 3：联合里的每个 part 都必须在台账里有归属（漏登记 = 没人负责）。
+    assert union_part_types == declared_rebuildable, (
+        "MessagePart 联合与能力台账不一致。"
+        f"只在联合里：{sorted(union_part_types - declared_rebuildable)}；"
+        f"只在台账里：{sorted(declared_rebuildable - union_part_types)}"
+    )
+
+    # 判据 4：不重建的每一条都必须写明理由。
+    empty_reasons = [name for name, reason in session_items.NOT_REBUILT_PARTS.items() if not reason.strip()]
+    assert not empty_reasons, f"这些 part 声明未重建但没写理由：{empty_reasons}"
+
+    # 判据 5：台账里点名的工具必须真的已装配——把「工具已装配」与「台账说它不存在」
+    # 变成不可能同时为真。这是本缺陷的核心：旧注释说工具没实现，而工具早就装好了。
+    assert ASK_USER_TOOL_NAME in RESERVED_TOOL_NAMES
+    assert session_items.ASK_USER_TOOL_NAME == ASK_USER_TOOL_NAME
+    registered = {tool.name for tool in build_product_tools()}
+    assert session_items.EMERGENCY_ACTION_CARD_TOOL_NAME in registered, (
+        "台账（NOT_REBUILT_PARTS）用这个名字陈述「载荷可重建」；若它已不在注册清单里，那份说明就成了新的过期断言"
+    )
+
+
+def test_part_ledger_covers_the_six_parts_of_the_contract() -> None:
+    """台账必须覆盖契约第 7 节列的六种 part（一个不漏）。
+
+    没有这一条，「两张表都空了」也能让上面那条通过——而空台账正是**最彻底的过期**：
+    它连「这里曾经有什么」都不再说。
+    """
+    contract_parts = {"text", "reasoning", "tool_call", "citation", "question", "action_card"}
+
+    covered = set(session_items.PART_PROVENANCE) | set(session_items.NOT_REBUILT_PARTS)
+
+    assert covered == contract_parts, (
+        f"契约第 7 节的六种 part 与台账不一致：未覆盖 {sorted(contract_parts - covered)}，"
+        f"多出 {sorted(covered - contract_parts)}"
+    )

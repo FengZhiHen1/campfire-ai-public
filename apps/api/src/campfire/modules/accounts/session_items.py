@@ -83,6 +83,11 @@ INJECTED_MESSAGE_PREFIXES: tuple[str, ...] = (
     "<skill_resources>",
     "<unavailable_sources>",
     "<tool_availability>",
+    # 当前时间（2026-10-06 随 T27 加入，产出口是
+    # `agent/runtime/runner.py` 的 `_render_current_time`）。不登记它会被当成使用者
+    # 消息：会话标题会静默变成一段时间戳。产出口与清单的一致性由
+    # `tests/test_agent_runtime.py` 的用例机械核对。
+    "<current_time>",
     "<compacted-summary>",
     "<emergency_profile",
     "<emergency_memory",
@@ -113,6 +118,63 @@ UNKNOWN_TOOL_NAME = "unknown_tool"
 #: 与事件流的取法一致——`agent/runtime/assembly.py` 用基座的 `SUMMARY_LIMIT`
 #: 截断工具说明，这里取同一个数，让水合与流式的摘要长度相同。
 TOOL_SUMMARY_MAX_CHARS = 200
+
+# ---------------------------------------------------------------------------
+# 提问（`ask_user`）的重建
+# ---------------------------------------------------------------------------
+
+#: 提问工具名。与 `agent/runtime/ask_user_tool.ASK_USER_TOOL_NAME` 同值：
+#: `modules/*` 不得 import `agent/*`（项目结构设计第 7 节），故只能是字面量；
+#: 两处相等由 `tests/test_accounts_session_items.py` 机械核对。
+ASK_USER_TOOL_NAME = "ask_user"
+
+#: `ask_user` 成功时的工具产出原文。与 `ask_user_tool.handler` 返回的 `text` 逐字相同。
+#:
+#: 为什么用它当「这次提问真的产出了」的判据（而不是只看参数能不能解析出题）：
+#: `AskUserArgs` 的校验发生在工具层，一次**参数不合法**的调用会得到
+#: `<tool_error code="tool_invalid_arguments">…</tool_error>`，而基座的 `QuestionGate`
+#: 刻意不因这种调用结束运行、也不发 `question` 事件（见 `agent/runtime/assembly.py`
+#: 的 `QuestionGate` 说明）。若只看参数形状，水合会给一张「当时从未呈现给使用者」的
+#: 提问卡——那正是本模块禁止的伪造。因此判据必须取自产出侧。
+#:
+#: 边界（如实写明）：这句原文若被改写，判据会失效（提问在水合里再次消失）。两处
+#: 相等由 `tests/test_accounts_session_items.py` 直接比对常量与 handler 的返回值守住
+#: ——它比「记一句注释」强：改文案的人会立刻看到一条红。
+ASK_USER_SUCCESS_OUTPUT = "已向使用者发出提问，本次运行到此结束；回答会作为下一条消息到达。"
+
+#: 应急行动卡的工具名。与 `tools/emergency_card.py` 注册的名字同值；理由同上
+#: （`modules/*` 不得 import `tools/*`）。台账（`NOT_REBUILT_PARTS`）用它陈述
+#: 「载荷其实可重建、只是本包未做」——这个名字一旦写错，那份说明就成了新的过期断言，
+#: 因此它的存在由 `tests/test_accounts_session_items.py` 与注册清单核对。
+EMERGENCY_ACTION_CARD_TOOL_NAME = "emit_emergency_action_card"
+
+#: 水合提问的 `batch_id` 前缀。`batch_id` 由工具侧生成、**不落库**，因此水合不能取回
+#: 原值；用调用标识派生一个稳定值。
+#:
+#: 为什么用前缀而不是裸 `call_id`：`batch_id` 是回答回传时的关联键（契约 4.1），
+#: 一个可见来源的前缀让「这个批次是水合重建的」在排障时可辨——原值不会以
+#: `hydrated-` 开头，两者不会混淆。前缀同时保证与任何真实 `batch_id`
+#: （`uuid4().hex`）都不相等。
+QUESTION_BATCH_ID_PREFIX = "hydrated-"
+
+#: 提问 part 里 `options` 的元素形状。选项与题面字段名取自通用基座第 7.2 节。
+_QUESTION_ITEM_ID_KEY = "id"
+_QUESTION_ITEM_PROMPT_KEY = "prompt"
+_QUESTION_ITEM_OPTIONS_KEY = "options"
+_QUESTION_ITEM_ALLOW_SKIP_KEY = "allow_skip"
+_QUESTION_OPTION_DESCRIPTION_KEY = "description"
+
+#: 水合提问时的题数上界（CORE-11）。工具侧一次问出的题数是小规模（`ask_user` 的描述
+#: 要求「一次问完」），这里兜的是**落库条目被替换成超大载荷**的情形——一次水合不该
+#: 因为一条历史调用把响应体撑大。超界的调用整体跳过并记警告，不截断成「少几道题的
+#: 提问卡」：一张缺题的卡会让使用者以为自己漏看了什么。
+QUESTION_ITEMS_MAX = 32
+
+#: 题干与选项文案的长度上界（同上）。逐字段截断而不是整体跳过：一条超长的题干仍然
+#: 是一道能作答的题，而丢掉整组提问的代价更大。
+QUESTION_TEXT_MAX_CHARS = 500
+QUESTION_OPTION_LABEL_MAX_CHARS = 200
+QUESTION_OPTION_DESCRIPTION_MAX_CHARS = 500
 
 # ---------------------------------------------------------------------------
 # parts 形状（HTTP 与 SSE 契约第 7 节的三个可重建 part）
@@ -147,14 +209,135 @@ class ToolCallPart(TypedDict):
     summary: str
 
 
-MessagePart = TextPart | ReasoningPart | ToolCallPart
+class QuestionOptionPart(TypedDict, total=False):
+    """提问选项 part。形状归通用基座第 7.2 节 `options` 的元素。"""
+
+    label: str
+    description: str
+
+
+class QuestionItemPart(TypedDict):
+    """提问里的一道题。形状归通用基座第 7.2 节 `items` 的元素。"""
+
+    id: str
+    prompt: str
+    options: list[QuestionOptionPart]
+    allow_skip: bool
+
+
+class QuestionPart(TypedDict):
+    """提问 part。形状归 HTTP 与 SSE 契约第 7 节的 `question` 行（载荷归通用基座第 7.2 节）。
+
+    字段名与流式路径逐字一致（`batch_id` / `items`）：前端两侧读的是同一组键
+    （`partAccumulator.addQuestion` 与 `history.ts` 的 `case 'question'`），
+    水合与流式因此不可能对同一次提问给出两种形状。
+    """
+
+    type: Literal["question"]
+    batch_id: str
+    items: list[QuestionItemPart]
+
+
+MessagePart = TextPart | ReasoningPart | ToolCallPart | QuestionPart
 """能被重建的 part 类型。
 
-另外三种（`citation` / `question` / `action_card`）没有持久化表示：它们的载荷在
-事件流里产出，不落在 SDK 的会话存储里——`citation` 只在引用索引（一个按 `run_id`
-组织的端口），`question` / `action_card` 的产出工具尚未实现。从会话真源里
-读不出它们，故本模块不产出、也不伪造。
+四种 part 各有各的真源，**都能从会话真源重建**（2026-10-06 修正，见下）：
+
+- `text` / `reasoning` / `tool_call`：直接来自 SDK 落库的条目（消息 content 与
+  reasoning/function_call 条目）；
+- `question`：来自 `ask_user` 那对条目的**参数与产出**。SDK 会话存储里确实没有名为
+  `question` 的条目，但这不等于「读不出来」——提问的载荷（`items`）逐字保存在
+  `function_call.arguments` 里，而「这次提问真的产出了」由 `function_call_output.output`
+  的成功回执判定（判据见 :data:`ASK_USER_SUCCESS_OUTPUT`）。两者都在真源里，因此不需要
+  第二种真源、也不伪造任何东西。
+
+  `batch_id` 不在会话存储里（它由工具侧生成、不落库），因此水合时由调用标识派生：
+  调用标识在同一次会话内唯一且跨刷新稳定，正是「这一组题」的稳定身份（见
+  :data:`QUESTION_BATCH_ID_PREFIX`）。
+
+## 2026-10-06 订正（原文的理由已过期，这是本缺陷的成因）
+
+本节此前写「`question` / `action_card` 的产出工具尚未实现」——**它不是事实**：
+`agent/runtime/ask_user_tool.py` 与 `tools/emergency_card.py` 都已存在、都已装配
+（`surfaces/consult/registry.py` 的 `register_base_tools` / `build_product_tools`），
+事件也在发（`agent/runtime/assembly.py` 的 `ToolBridge._invoke`）。结论「不产出、
+也不伪造」因此把一个**已实现**的能力说成了不可达，前端 `history.ts` 的
+`case 'question'` 与 `parts.tsx` 的 `QuestionRecordPart` 就此等一个永不出现的数据。
+
+**这类「某能力尚未实现」的断言必须有失效检查**——它写下的那一刻是真的，之后没人
+会回来改它。
+
+### 守法：一份能力台账 + 与事实的机械比对（而不是禁用某些字样）
+
+守法**不是**「扫描本文件里有没有某个词」。判「某个能力存在吗」时要区分**载体**与
+**使它成立的东西**：字面出现 ≠ 断言存在。一句解释「为什么旧注释是错的」的说明，
+与那句旧注释本身用的是同一批字，按字面扫会把说明一并判红——那是自指误伤，而且
+它会逼着后来人**把说明删掉**（把守卫绕过去的最省事办法），恰好毁掉它的目的。
+
+因此改为**语义一致性检查**（判据在 `tests/test_accounts_session_items.py`）：
+本模块声明 :data:`PART_PROVENANCE` 与 :data:`NOT_REBUILT_PARTS` 两份台账，
+用例断言台账与**代码事实**一致——
+
+1. 台账里声明「可重建」的 part 类型，必须**真的**在 `MessagePart` 联合里；
+2. 台账里声明「不重建」的 part 类型，必须**不在**联合里，且必须写明理由；
+3. 台账里说「由某个工具产出」的，那个工具必须**真的**在工具注册表里
+   （`ask_user` 在 `RESERVED_TOOL_NAMES`、`emit_emergency_action_card` 在
+   `build_product_tools()`）。
+
+⇒ 于是「注释说 X 不存在」与「X 已装配」不可能同时为真，**无论那句话怎么措辞**。
+反过来，解释性文字可以自由书写、自由引用旧句子——这正是本节能把它写出来的原因。
+
+## 仍未重建的一种：`action_card`
+
+**如实写明**（这不是「尚未实现」，而是「本包的范围内未做」）：`emit_emergency_action_card`
+的载荷同样保存在 `function_call.arguments` 里，因此与 `question` 一样**可以**重建；
+本包只修了已被旅程实测到的 `question` 一条路径，`action_card` 的 `card_id` 需要与
+`batch_id` 同样的派生处理，且 `annotations` 需要一个「来源:置信」的解码（逻辑在产品侧
+`tools/emergency_card.py`，而 `modules/*` 不得 import `tools/*`，判据见项目结构设计第 7 节）。
+登记为残余，不在本包伪造一个半截实现。
+
+`citation` 仍不在本模块：它的真源是引用索引（一个按 `run_id` 组织的端口），
+不在会话条目里——这是结构事实，不是能力缺失。
 """
+
+#: 能力台账：part 类型 → 重建它的真源与产出工具。
+#:
+#: **为什么需要这份台账**（而不是靠注释）：本模块曾因一句「产出工具尚未实现」的注释
+#: 让 `question` 在历史水合里消失（前端等一个永不出现的数据）。那句注释写下时是真的，
+#: 工具装配好之后没人回来撤销它。台账把它变成**可机械核对的事实**：
+#: `tests/test_accounts_session_items.py` 断言这里的每一条与代码事实一致——
+#: 声明可重建的必须在 `MessagePart` 联合里、声明由某工具产出的那个工具必须真的已注册。
+#: 于是台账与事实不可能同时成立而互相矛盾，**与注释怎么写无关**。
+#:
+#: 加一个 part 时：先把它加进 `MessagePart`，再在这里登记一行；漏登记会有用例红。
+PART_PROVENANCE: dict[str, str] = {
+    "text": "SDK 助手消息的 content 分片",
+    "reasoning": "SDK reasoning 条目的 summary",
+    "tool_call": "SDK function_call/function_call_output 条目对",
+    "question": f"{ASK_USER_TOOL_NAME} 调用的参数与成功回执",
+}
+
+#: 未重建的 part 类型 → 理由。**必须写明理由**，否则「不重建」与「忘了做」无法区分
+#: （用例会断言每一项都有非空理由）。
+#:
+#: 与 `PART_PROVENANCE` 合起来构成一份完整清单：三个来源（`agent/runtime/events.py`
+#: 的 `ActionCardEvent`/`CitationEvent`、以及 `MessagePart` 的四项）里，
+#: 契约第 7 节列的六种 part 一个不漏地出现在两张表之一。
+NOT_REBUILT_PARTS: dict[str, str] = {
+    "citation": (
+        "真源是引用索引（`agent/context/citations.py` 的 `CitationIndex`，按 run_id 组织），"
+        "不在会话条目里——结构事实，与会话存储的形状无关。"
+    ),
+    "action_card": (
+        f"{EMERGENCY_ACTION_CARD_TOOL_NAME} 的载荷与 `question` 一样保存在 "
+        "function_call.arguments 里、因此**可以**重建；本包只修了旅程实测到的 question "
+        "一条路径。未做的具体原因：`card_id` 需要与 batch_id 同样的派生处理，"
+        "且 `annotations` 的 `kind` 是 `来源:置信` 的编码串，解码逻辑在产品侧 "
+        "`tools/emergency_card.py`（`decode_annotation_kind`），而 modules/* 不得 import "
+        "tools/*（项目结构设计第 7 节）——要么在装配处注入解码器，要么把编码规则下沉。"
+        "登记为残余，不在本包伪造一个半截实现。"
+    ),
+}
 
 
 class HydratedMessage(TypedDict):
@@ -385,6 +568,98 @@ def is_displayable_assistant_message(item: Mapping[str, object]) -> bool:
 
 
 # ---------------------------------------------------------------------------
+# 提问载荷的解析
+# ---------------------------------------------------------------------------
+
+
+def _question_options(raw: object) -> list[QuestionOptionPart]:
+    """解析 `options` 数组：只保留有合法 `label` 的选项。
+
+    没有文案的选项在界面上是一个点不动的空按钮（基座 `QuestionOption.__post_init__`
+    的判据），因此这里与事件路径同一条处置：丢掉它，而不是渲染一个空按钮。
+    """
+    if not isinstance(raw, list):
+        return []
+    options: list[QuestionOptionPart] = []
+    for entry in raw:
+        if not isinstance(entry, Mapping):
+            continue
+        label = entry.get("label")
+        if not isinstance(label, str) or not label.strip():
+            continue
+        option: QuestionOptionPart = {"label": truncate(label, QUESTION_OPTION_LABEL_MAX_CHARS)}
+        description = entry.get(_QUESTION_OPTION_DESCRIPTION_KEY)
+        if isinstance(description, str) and description.strip():
+            option["description"] = truncate(description, QUESTION_OPTION_DESCRIPTION_MAX_CHARS)
+        options.append(option)
+    return options
+
+
+def question_part(call_id: str, arguments: object, output: str) -> QuestionPart | None:
+    """从一次 `ask_user` 调用重建提问 part；重建不出来时返回 `None`。
+
+    两个判据缺一不可（理由见 :data:`ASK_USER_SUCCESS_OUTPUT`）：
+
+    1. **产出是成功回执**——参数不合法的那次调用没有向使用者呈现过任何东西；
+    2. **参数能解析出至少一道有题干的题**——解析不出的载荷只可能是形状漂移。
+
+    两个判据都不满足时**不产出 part，也不伪造一张空卡**：调用方（`build_messages`）
+    记警告，读路径上「缺一段」比「给一张假卡」更接近事实。
+
+    Args:
+        call_id: 这次调用的标识；用作 `batch_id` 的派生来源（同一次会话内唯一且稳定）。
+        arguments: `function_call.arguments` 的原文（JSON 字符串，内含 `items`）。
+        output: `function_call_output.output` 的原文。
+
+    Returns:
+        提问 part；判据不成立时 `None`。
+    """
+    if not call_id or output != ASK_USER_SUCCESS_OUTPUT:
+        return None
+    if not isinstance(arguments, str):
+        return None
+    try:
+        decoded = json.loads(arguments)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(decoded, Mapping):
+        return None
+    raw_items = decoded.get("items")
+    if not isinstance(raw_items, list) or not raw_items:
+        return None
+    if len(raw_items) > QUESTION_ITEMS_MAX:
+        # 整体跳过而不是截断：一张缺题的提问卡会让使用者以为自己漏看了什么。
+        logger.warning("水合跳过一组题数超上界的提问：调用=%s 题数=%s", call_id, len(raw_items))
+        return None
+
+    items: list[QuestionItemPart] = []
+    for entry in raw_items:
+        if not isinstance(entry, Mapping):
+            continue
+        item_id = entry.get(_QUESTION_ITEM_ID_KEY)
+        prompt = entry.get(_QUESTION_ITEM_PROMPT_KEY)
+        # 题标识为空会让回答无从关联、题干为空会让使用者看到一张没有问题的卡片
+        # （基座 `QuestionItem.__post_init__` 的两条判据）。
+        if not isinstance(item_id, str) or not item_id.strip():
+            continue
+        if not isinstance(prompt, str) or not prompt.strip():
+            continue
+        items.append(
+            QuestionItemPart(
+                id=item_id,
+                prompt=truncate(prompt, QUESTION_TEXT_MAX_CHARS),
+                options=_question_options(entry.get(_QUESTION_ITEM_OPTIONS_KEY)),
+                # 缺省 `False` 与基座 `QuestionItem.allow_skip` 的默认值一致：模型漏给时
+                # 事件路径是「不可跳过」，水合必须给出同一个答案。
+                allow_skip=entry.get(_QUESTION_ITEM_ALLOW_SKIP_KEY) is True,
+            )
+        )
+    if not items:
+        return None
+    return QuestionPart(type="question", batch_id=f"{QUESTION_BATCH_ID_PREFIX}{call_id}", items=items)
+
+
+# ---------------------------------------------------------------------------
 # 水合：条目序列 → 消息序列
 # ---------------------------------------------------------------------------
 
@@ -408,6 +683,18 @@ class _Hydration:
         #: 尚未配到结果的工具调用：call_id → parts 下标。工具结果总在调用之后到达，
         #: 因此 part 先占位、拿到结果再回填。
         self._pending_calls: dict[str, int] = {}
+        #: 尚未配到结果的工具调用的**参数原文**：call_id → `arguments`。
+        #: 提问的重建需要它（`question_part` 读 `items`，而参数只落在**调用**条目里），
+        #: 而 parts 里只留了名字与摘要——没有这张表就得从 `ToolCallPart` 反查，那是
+        #: 把它当成了参数的第二个存放处。
+        self._pending_arguments: dict[str, object] = {}
+
+    def _forget_call(self, stored: StoredItem) -> None:
+        """把一个读不出产出的结果条目对应的待配状态清掉（不留悬挂登记）。"""
+        call_id = stored.data.get("call_id")
+        if isinstance(call_id, str):
+            self._pending_calls.pop(call_id, None)
+            self._pending_arguments.pop(call_id, None)
 
     def _start_assistant(self, row_id: int) -> None:
         """记下当前助手消息的行标识（只记第一个贡献条目——它就是这条消息的 id）。"""
@@ -430,6 +717,7 @@ class _Hydration:
         self._parts = []
         self._first_row_id = None
         self._pending_calls = {}
+        self._pending_arguments = {}
 
     def add_user(self, stored: StoredItem) -> None:
         """收一条使用者消息；读不出文本时记警告并跳过。"""
@@ -468,6 +756,7 @@ class _Hydration:
         name = item.get("name")
         self._start_assistant(stored.row_id)
         self._pending_calls[call_id] = len(self._parts)
+        self._pending_arguments[call_id] = item.get("arguments")
         self._parts.append(
             ToolCallPart(
                 type="tool_call",
@@ -480,23 +769,50 @@ class _Hydration:
         )
 
     def add_tool_output(self, stored: StoredItem) -> None:
-        """用工具结果回填对应的调用 part（`ok` 与 `summary`）。"""
+        """用工具结果回填对应的调用 part（`ok` 与 `summary`）。
+
+        ★ `ask_user` 的成功产出在这里**额外**产出一个 `question` part（2026-10-06 修正）。
+
+        为什么落在这一支而不是新增一个条目类型：SDK 会话存储里没有「提问」这种条目
+        ——提问的真源就是这对 `function_call` / `function_call_output`。把它挂在这里，
+        「一次提问」只有一处重建点，且它与那次工具调用天然同属一条助手消息。
+
+        顺序：先回填 `tool_call`、再追加 `question`。事件流里两者是反的（`ToolBridge._invoke`
+        先 sink `QuestionEvent` 再 sink `ToolCallFinishedEvent`），这里刻意相反——水合出来的
+        工具行是一句「向你提问 · 已结束」的记录，让可作答的卡片排在它之后更接近
+        「记录 → 结果」的读法。该差别不影响任何签名要求：两侧唯一的硬要求是
+        「`question` part 存在且载荷同形」（前端 `parts.tsx` 按 `data.by_name` 注册，
+        与顺序无关）。
+        """
         item = stored.data
         output = item.get("output")
         if not isinstance(output, str):
+            self._forget_call(stored)
             logger.warning("水合跳过一条读不出产出的工具结果：行=%s", stored.row_id)
             return
         call_id = item.get("call_id")
         index = self._pending_calls.pop(call_id, None) if isinstance(call_id, str) else None
+        arguments = self._pending_arguments.pop(call_id, None) if isinstance(call_id, str) else None
         if index is None:
             # 没有对应调用的结果：SDK 存储里不应出现（结果由调用派生）。
             logger.warning("水合跳过一条找不到对应调用的工具结果：行=%s", stored.row_id)
             return
         part = self._parts[index]
-        if _is_tool_call_part(part):
-            failure = tool_failure_message(output)
-            part["ok"] = failure is None
-            part["summary"] = (output if failure is None else failure)[:TOOL_SUMMARY_MAX_CHARS]
+        if not _is_tool_call_part(part):
+            return
+        failure = tool_failure_message(output)
+        part["ok"] = failure is None
+        part["summary"] = (output if failure is None else failure)[:TOOL_SUMMARY_MAX_CHARS]
+
+        if part["tool_name"] != ASK_USER_TOOL_NAME or not part["ok"]:
+            return
+        # 参数在**调用**条目里，不在结果条目里，因此回填时要靠 add_tool_call 留下的原文
+        # （`_pending_arguments`）——从 parts 下标反查会把参数再拼一遍，多一份要维护的形状。
+        question = question_part(call_id if isinstance(call_id, str) else "", arguments, output)
+        if question is None:
+            logger.warning("水合跳过一条重建不出的提问：调用=%s 行=%s", call_id, stored.row_id)
+            return
+        self._parts.append(question)
 
 
 def build_messages(items: Sequence[StoredItem]) -> list[HydratedMessage]:
@@ -674,10 +990,24 @@ __all__ = [
     "ITEM_TYPE_FUNCTION_CALL_OUTPUT",
     "ITEM_TYPE_MESSAGE",
     "ITEM_TYPE_REASONING",
+    # 提问重建
+    "ASK_USER_SUCCESS_OUTPUT",
+    "ASK_USER_TOOL_NAME",
+    "EMERGENCY_ACTION_CARD_TOOL_NAME",
+    "NOT_REBUILT_PARTS",
+    "PART_PROVENANCE",
+    "QUESTION_BATCH_ID_PREFIX",
+    "QUESTION_ITEMS_MAX",
+    "QUESTION_OPTION_DESCRIPTION_MAX_CHARS",
+    "QUESTION_OPTION_LABEL_MAX_CHARS",
+    "QUESTION_TEXT_MAX_CHARS",
     # 注入信封
     "INJECTED_MESSAGE_PREFIXES",
     # part 形状
     "MessagePart",
+    "QuestionItemPart",
+    "QuestionOptionPart",
+    "QuestionPart",
     "ReasoningPart",
     "TextPart",
     "ToolCallPart",
@@ -705,6 +1035,7 @@ __all__ = [
     "message_text",
     "normalize_inline_text",
     "parse_item",
+    "question_part",
     "reasoning_text",
     "tool_failure_message",
     "truncate",
