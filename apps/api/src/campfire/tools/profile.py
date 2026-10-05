@@ -539,8 +539,11 @@ async def propose_profile_item(context: ToolContext, args: ProposeProfileItemArg
         return ToolFailure(code="tool_failed", message=f"档案条目未能提交（{type(exc).__name__}）")
 
     # 必须 await：`kiq()` 返回协程，不 await 等于没有投递。
-    # kind 必传：投给谁由它决定（第 4 节第 3 条）；当前 profile_item 尚无消费者，
-    # 投递方会显式跳过（记录留 pending，不判 dead）。
+    # kind 必传：投给谁由它决定（第 4 节第 3 条）。
+    # ⚠ 2026-10-06 订正：此处原写「当前 profile_item 尚无消费者，投递方会显式跳过」——
+    # 该陈述已过期：`worker.py` 的 `_CONSUMER_DISPATCHERS` 已把 `KIND_PROFILE_ITEM`
+    # 投给 `_enqueue_profile_item` → `consume_profile_item_task`（落成档案条目）。
+    # 保留 kind 参数的理由不变（分派表按 kind 路由），但**不存在"被跳过"的现状**。
     await dispatch_pending_write(pending_id, KIND_PROFILE_ITEM)
 
     return ToolResult(text=json.dumps({"pending_id": pending_id, "state": "submitted"}, ensure_ascii=False))

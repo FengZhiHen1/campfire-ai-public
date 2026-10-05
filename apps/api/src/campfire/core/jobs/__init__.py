@@ -35,8 +35,15 @@ logger = logging.getLogger(__name__)
 #:
 #: 入参是 `(pending_id, kind)`，钩子据 kind 投给对应的消费者。三种结果都由钩子负责：
 #:   1. 有消费者：投出去；
-#:   2. 该 kind 尚无消费者（例如 `profile_item` 的消费分支未落地）：显式跳过并记日志，
+#:   2. 该 kind 尚无消费者：显式跳过并记日志，
 #:      记录留在 `pending`——不得抛错、不得终结记录，也不得改投别的消费者；
+#:      **⚠ 当前两个 kind（`memory_episode`、`profile_item`）【都有】消费者**
+#:      （`worker.py` 的 `_CONSUMER_DISPATCHERS`：`_enqueue_memory_episode` / `_enqueue_profile_item`
+#:      分别投给 `consume_memory_episode_task` / `consume_profile_item_task`）⇒
+#:      **本分支是【为将来新增 kind 留的】，不是描述现状**。
+#:      （2026-10-06 订正：此处原写「例如 `profile_item` 的消费分支未落地」——
+#:      该陈述在写下时是事实，此后 `consume_profile_item_task` 已落地并接线，
+#:      而这句注释没人撤销。本仓已多次因这类过期注释误判，故在此写明当前事实。）
 #:   3. broker 不可用：抛错，由本模块降级为「留给兜底扫描」。
 #: 这些分支在钩子那一侧（`worker.dispatch_pending_write_to_queue`），因为「谁有消费者」
 #: 是装配处的事实。

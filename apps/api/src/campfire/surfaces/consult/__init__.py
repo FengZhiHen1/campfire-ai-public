@@ -10,8 +10,10 @@
 T07b 补齐另外三条：取消（第 4.3 节）、应急入口（第 5 节）与引导跳过入口（第 6 节），
 并落地契约第 3.1 节的后果——首次日常会话的第一次运行由服务端注入 onboarding skill 与
 静态告知文本（见 `injections.py`）。产物形状（第 7 节）中的 `citation` / `question` /
-`action_card` 三种 part 没有持久化表示，水合不产出它们（见
-`modules/accounts/session_items.py` 的边界说明）。
+`action_card` 三种 part：**`question` 已可水合重建**（2026-10-06，T27 从 `agent_messages`
+的 `ask_user` 调用对重建，见 `modules/accounts/session_items.py`）；
+**`action_card` 与 `citation` 仍未做**——前者与 `question` 同理但未实现；
+后者的真源在引用索引（按 `run_id` 组织）而不在会话条目里（见同一处的边界说明）。
 """
 
 from campfire.surfaces.consult.routes import router

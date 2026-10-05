@@ -14,10 +14,19 @@
 
 ```text
 content: string          # 要记住的内容：一件值得记住的事，一个 episode
-occurred_at: string      # 这件事发生的时间（不是提交时间）
+occurred_at: string      # 可选；这件事发生的时间（不是提交时间）。缺省时服务端取当前时间
 origin: string           # 生成方式，取值见第 4 节
-source: object           # 会话 id、消息定位、时间
+source: object           # 来源：消息定位（**会话标识由服务端填，不由模型传**）
 ```
+
+**⚠ 2026-10-06 订正（T27）**：`occurred_at` 与 `source.session_id` 原为**模型必填**，
+而**模型既没有时钟、也不知道会话标识**——实测（T24 报告 §5-⑥/⑦）它把"两分钟前刚说的话"
+标成半年前、把会话标识填成 `"current-session"`。**⇒ 参数模型要求模型提供它拿不到的事实。**
+现在：**`occurred_at` 可选**（缺省取服务端当前时间，且受"不得晚于现在"的边界）；
+**`source` 不含 `session_id`**（一律由服务端从 `ToolContext.session_id` 填，
+与 `ask_user` 的 `batch_id` 同一原则：**不信任模型传标识**）。
+**⚠ 残余**：边界只挡"未来"，挡不住"模型仍编一个更早的过去"——那一半靠注入当前时间
+（`runner.py` 的尾部注入）+ 呈现层兜底，**写入层不拒绝**；见[通用记忆](../../../technical-details/通用记忆.md)第 3 节。
 
 ## 3. 返回
 
