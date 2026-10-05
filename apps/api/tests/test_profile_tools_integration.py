@@ -28,6 +28,7 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import AsyncIterator, Sequence
 from datetime import datetime, timezone
 
@@ -41,13 +42,28 @@ from campfire.core.authz import set_authorizer
 from campfire.core.config import get_settings
 from campfire.core.db import session_scope
 from campfire.core.pending_write import PendingWrite
-from campfire.modules.profile.models import CANDIDATE_ORIGINS, STABLE_ORIGINS, ProfileItem, SupportObject
-from campfire.tools.profile import ACCOUNT_PAYLOAD_KEY, ProposeProfileItemArgs, propose_profile_item
+from campfire.modules.profile.models import (
+    CANDIDATE_ORIGINS,
+    STABLE_ORIGINS,
+    ProfileItem,
+    SessionObjectBinding,
+    SupportObject,
+)
+from campfire.tools.profile import (
+    ACCOUNT_PAYLOAD_KEY,
+    CreateSupportObjectArgs,
+    ProposeProfileItemArgs,
+    create_support_object,
+    propose_profile_item,
+)
 
 pytestmark = pytest.mark.integration
 
 _ACCOUNT = "it_profile_tools_account"
 _ACCOUNT_OTHER = "it_profile_tools_other"
+
+#: 建档用例的会话标识（`create_support_object` 要用它做首对象补绑）。
+_SESSION = "it-session-1"
 
 #: 六种 `origin` 与契约第 4 节第 1 条的落层表的对应关系（逐字抄自契约，
 #: 不从实现派生——否则两处定义漂移时测试会跟着漂移）。
@@ -135,6 +151,8 @@ async def _clear() -> None:
         await session.execute(delete(PendingWrite).where(PendingWrite.account_id.in_(accounts)))
         owned = select(SupportObject.id).where(SupportObject.account_id.in_(accounts))
         await session.execute(delete(ProfileItem).where(ProfileItem.support_object_id.in_(owned)))
+        # 绑定行要先于对象删（对象被外键引用）；建档用例会补建首对象绑定。
+        await session.execute(delete(SessionObjectBinding).where(SessionObjectBinding.account_id.in_(accounts)))
         await session.execute(delete(SupportObject).where(SupportObject.account_id.in_(accounts)))
 
 
@@ -399,3 +417,74 @@ async def test_the_same_content_can_be_submitted_twice() -> None:
             ).scalars()
         )
     assert len(items) == 2, "冲突时并列新增，不覆盖既有条目"
+
+
+# ---------------------------------------------------------------------------
+# `create_support_object` 的真实落库路径（QA-01 的第二根因）
+#
+# 为什么必须有一条真实库用例：`test_profile_tools.py` 里 `create_support_object` 的三条用例
+# 全部用 `_FakeObject`（固定 id 字符串）替身掉 `create_object`，而**没有任何**
+# `*integration*.py` 调过真实的 `create_support_object`（本节之前 0 命中）。
+# 于是「`create_object` 返回的 `SupportObject.id` 在 flush 之前是 `None`」这件事
+# 从未被任何测试碰到——它潜伏在生产里，只被 payload 缺陷掩盖（`_account_from` 先失败，
+# 走不到读 id 那一行）。
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_create_support_object_really_persists_the_object() -> None:
+    """真实落库路径：建档成功、对象行真的写进库、并返回一个**可用**的 uuid。
+
+    三处断言各自对应用户可见的一环：
+
+    1. 回执是 `ToolResult`——失败时前端那张 `create_support_object` 卡片就是「未完成」；
+    2. `support_object_id` 能被 `uuid.UUID(...)` 解析——替换成 `'None'` 时本断言先红，
+       这就是缺陷的真实形态（「支持对象标识不是合法 UUID」）；
+    3. 库里真的有一行、属主是登录账号，且 `id` 与回执一致——「档案页真的出现该支持对象」
+       这条判据的库侧依据。第 2 条单看可能被「返回了一个合法 uuid 但没落库」绕过，
+       因此必须查库。
+
+    判别性：删掉 `tools/profile.py` 里那一行 `await session.flush()`，本用例红，
+    报错形态为 `ToolFailure(... '支持对象标识不是合法 UUID')`——且对象行也不落库
+    （异常与建对象同事务，整笔回滚）。
+    """
+    import uuid as _uuid
+
+    outcome = await create_support_object(_context(), CreateSupportObjectArgs(display_name="小篝"))
+
+    assert isinstance(outcome, ToolResult), f"建档必须成功，实际：{outcome!r}"
+    payload = json.loads(outcome.text)
+    # 缺陷形态下这里是字符串 'None'，`uuid.UUID` 会抛 ValueError。
+    returned_id = _uuid.UUID(payload["support_object_id"])
+
+    async with session_scope(get_settings()) as session:
+        row = (await session.execute(select(SupportObject).where(SupportObject.id == returned_id))).scalar_one_or_none()
+
+    assert row is not None, "对象必须真的落库（档案页「还没有记录」的成因就是它没落）"
+    assert row.account_id == _ACCOUNT, "属主必须是登录账号，不能取参数"
+    assert row.display_name == "小篝"
+
+
+@pytest.mark.asyncio
+async def test_create_support_object_binds_the_first_object_to_the_session() -> None:
+    """同一次调用里的首对象补绑也成功了（同一个事务、依赖这次 flush）。
+
+    补绑是**读取 `created.id` 的下游**：id 拿不到时它先抛错，整笔事务连对象行一起回滚。
+    因此本用例与上一条不是重复——上一条钉「对象落了」，这条钉「补绑也落了」，
+    而两者失败在缺陷形态下是同一件事（都回滚）。
+
+    判别性：删掉 `flush()`，本用例红且绑定行为 0 行。
+    """
+    from campfire.modules.profile.models import SessionObjectBinding
+
+    outcome = await create_support_object(_context(), CreateSupportObjectArgs(display_name="小宝"))
+
+    assert isinstance(outcome, ToolResult), f"建档必须成功，实际：{outcome!r}"
+    async with session_scope(get_settings()) as session:
+        binding = (
+            await session.execute(select(SessionObjectBinding).where(SessionObjectBinding.session_id == _SESSION))
+        ).scalar_one_or_none()
+
+    assert binding is not None, "本会话此前没有绑定，首对象必须补建绑定（支持对象第 6 节）"
+    assert str(binding.support_object_id) == json.loads(outcome.text)["support_object_id"]
+    assert binding.account_id == _ACCOUNT

@@ -110,6 +110,40 @@ SURFACE_NAME = "consult"
 #: 不再叠加默认集。
 DEFAULT_ACTIVE_TOOLS: tuple[str, ...] = ("read_profile_summary", "search_knowledge")
 
+#: 透传给产品侧工具的领域事实的键（`RunRequest.context_payload` → `ToolContext.payload`）。
+#:
+#: 键的所有者是**装配处**（本模块），不是工具层——`tools/*` 的依赖白名单禁止兄弟工具模块
+#: 互相 import（`tests/test_layer_boundaries.py`），因此 `tools/profile.py`、`tools/memory.py`、
+#: `tools/onboarding.py`、`tools/emergency_card.py` 各写了一份同值常量，取值一律以本处为准；
+#: 五处是否一致由回归测试钉住（漂移的表现是「工具全部回缺少登录账号」）。
+#:
+#: 为什么必须传（QA-01 的根因）：这四个工具都是**账号级**的（建档、记忆、引导、应急卡），
+#: 属主取登录态而不是取参数——参数通道一开，模型就能把数据写到别人名下。登录态进入工具
+#: 可见范围的唯一通道就是这个 `payload`；不给它，四个工具一律回「缺少登录账号」。
+ACCOUNT_PAYLOAD_KEY = "account_id"
+
+
+def _tool_context_payload(account_id: str) -> dict[str, str]:
+    """构造 `RunRequest.context_payload`：把登录态放进工具可见的领域事实。
+
+    `payload` 的形状由产品侧拥有（基座不解读，见 `agent/tools/spec.py` 的
+    `ToolContext.payload`）：本期只需要一个键，值是**登录态的原样字符串**，四个账号级工具
+    读的都是它——`profile`（建档）、`memory`（记忆）、`onboarding`（引导）、
+    `emergency_card`（应急卡）各有一份 `_account_from`，除 `account_id` 外**不读任何其他键**
+    （逐个查过，无第二个必需字段）。
+
+    为什么不做 `to_account_id` 归一化：`profile` 的账号键是列值，判据只是「非空字符串」
+    （`tools/profile.py` 的 `_account_from` 已写明不套用记忆侧的字符集规则），记忆侧自己的
+    `_account_from` 会做那次转换。在这里预先校验会让一个对档案合法的账号键被记忆侧规则拒掉，
+    把两处不同的边界混成一处。`account_id` 的来源是身份服务的用户标识（[认证与账号]第 3 节，
+    UUID v4 文本），落库与 Graphiti 图名两侧都已按同一判据收口，因此不需要在这里改写它。
+
+    传的是裸 `str` 而不是对象或元组：四个工具的判据都是 `isinstance(raw, str)`——
+    传包装类型会让它们走进「缺少登录账号」分支，与不传同效。
+    """
+    return {ACCOUNT_PAYLOAD_KEY: account_id}
+
+
 #: 运行不存在或不属于当前账号的对外文案。与 :data:`SESSION_NOT_FOUND_MESSAGE` 同理：
 #: 两种情形共用一条文案，区分二者等于提供运行枚举通道。
 RUN_NOT_FOUND_MESSAGE = "运行不存在或不属于当前账号"
@@ -650,6 +684,10 @@ async def send_message(
         activated=activated,
         activated_record=activated_record,
         default_active_tools=DEFAULT_ACTIVE_TOOLS,
+        # 登录态进工具可见通道：这一轮激活的引导 skill 会调 create_support_object /
+        # write_memory / finish_onboarding，三者都按账号归属取数；不给 payload 就是 QA-01
+        # 的建档失败（工具回「缺少登录账号」）与引导无法收束。
+        context_payload=_tool_context_payload(account_id),
     )
     pump = runbus.RunPump(
         cache=cache,
@@ -945,6 +983,12 @@ async def start_emergency(
         user_input=render_emergency_intake(payload.items),
         activated=(skill,),
         activated_record=_activation_records((skill,)),
+        # 同一个根因的第二个落点，必须一起修：应急 skill 的输出工具
+        # `emit_emergency_action_card` 与日常侧那三个工具一样按登录态取账号
+        # （`tools/emergency_card.py` 的 `_account_from` 读同一个键）。只改 `send_message`
+        # 会留下「日常咨询能用、应急咨询发不出行动卡」的半修——而应急卡是本 skill 唯一的
+        # 结构化输出通道，缺 payload 的表现是「卡发不出去」而不是任何可见的装配错误。
+        context_payload=_tool_context_payload(account_id),
     )
     pump = runbus.RunPump(
         cache=cache,
