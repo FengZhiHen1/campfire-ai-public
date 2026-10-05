@@ -163,12 +163,21 @@ def _item_view(**overrides: object) -> ItemView:
 
 
 class _FakeSession:
-    """最小的会话替身：本文件不落库，只需满足 `async with`。"""
+    """最小的会话替身：本文件不落库，只需满足 `async with` 与 `flush()`。
+
+    `flush()` 之所以要有（2026-10-02 QA-01）：`create_support_object` 会在补绑前
+    `await session.flush()`——`SupportObject.id` 是列默认，flush 时才填，而它紧接着要读
+    `created.id`。替身缺这个方法时，工具走到那里抛 `AttributeError` 被收成
+    `tool_failed`，用例红的是替身而不是被测行为。
+    """
 
     async def __aenter__(self) -> "_FakeSession":
         return self
 
     async def __aexit__(self, *_exc: object) -> None: ...
+
+    async def flush(self) -> None:
+        """不落库（替身的 flush 无副作用；真实 flush 的行为由集成用例覆盖）。"""
 
 
 def _patch(monkeypatch: pytest.MonkeyPatch, module: str, **replacements: object) -> None:

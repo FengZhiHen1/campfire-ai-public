@@ -29,6 +29,7 @@ import json
 import logging
 import uuid
 from collections.abc import AsyncIterator, Sequence
+from datetime import datetime, timezone
 from typing import cast
 
 import httpx
@@ -39,6 +40,7 @@ from agents.items import TResponseInputItem
 from sqlalchemy import delete, select
 
 import campfire.main as main_module
+from campfire.agent.context import CitationRecord, CitationRecorder
 from campfire.agent.runtime import (
     RunEvent,
     RunFailedEvent,
@@ -49,12 +51,17 @@ from campfire.agent.runtime import (
     TextDeltaEvent,
 )
 from campfire.agent.runtime.session import build_sqlalchemy_session
+from campfire.agent.tools import ActivationState, ToolContext, ToolFailure, ToolResult
 from campfire.core.auth.supertokens import init_supertokens
 from campfire.core.authz import OBJECT_NOT_ACCESSIBLE_MESSAGE, set_authorizer
 from campfire.core.cache import RedisCache, set_cache
 from campfire.core.config import Settings, get_settings
 from campfire.core.db import get_engine, session_scope
 from campfire.core.db.sdk_session import AgentMessage, AgentSession
+from campfire.core.pending_write import (
+    KIND_MEMORY_EPISODE,
+    PendingWrite,
+)
 from campfire.modules.accounts import session_repository as accounts_repo
 from campfire.modules.accounts.errors import OnboardingTriggerError, OnboardingWriteError
 from campfire.modules.accounts.first_run_injection import read_first_run_injected
@@ -97,6 +104,14 @@ from campfire.surfaces.consult.runbus import (
     write_run_meta,
 )
 from campfire.surfaces.consult.sse import encode_frame
+from campfire.tools import emergency_card as emergency_card_module
+from campfire.tools import memory as memory_module
+from campfire.tools import onboarding as onboarding_module
+from campfire.tools import profile as profile_module
+from campfire.tools.emergency_card import EmitEmergencyActionCardArgs, emit_emergency_action_card
+from campfire.tools.memory import WriteMemoryArgs, write_memory
+from campfire.tools.onboarding import FinishOnboardingArgs, finish_onboarding
+from campfire.tools.profile import CreateSupportObjectArgs, create_support_object
 
 # 本文件的用例全是 async（仓库未开 pytest-asyncio 的 auto 模式，逐个加标记是既有做法）。
 pytestmark = [pytest.mark.integration, pytest.mark.asyncio]
@@ -305,6 +320,10 @@ async def _purge_db() -> None:
         await session.execute(delete(SessionObjectBinding).where(SessionObjectBinding.account_id.in_(accounts)))
         await session.execute(delete(SupportObject).where(SupportObject.account_id.in_(accounts)))
         await session.execute(delete(CampfireOnboarding).where(CampfireOnboarding.account_id.in_(accounts)))
+        # 待处理写入：QA-01 一节的用例真的调 `write_memory` 落这一行（不是替身），
+        # 而上面的清单原先不含它。不清会让同一账号的行跨用例累积——
+        # 实测表现是「本用例期望 1 行、拿到 2 行」，那是测试自身的残留，不是产品行为。
+        await session.execute(delete(PendingWrite).where(PendingWrite.account_id.in_(accounts)))
 
 
 async def _purge_redis() -> None:
@@ -1831,3 +1850,227 @@ async def test_skip_maps_a_write_failure_to_503(client: httpx.AsyncClient, monke
 
     assert response.status_code == 503, response.text
     assert "onboarding_write_failed" in response.json()["detail"]
+
+
+# ---------------------------------------------------------------------------
+# 运行上下文里的登录账号（QA-01）
+#
+# 缺陷形状：`RunRequest.context_payload` 在面里从未被赋值（默认 `None`），于是四个账号级
+# 产品的工具（`create_support_object` / `write_memory` / `finish_onboarding` /
+# `emit_emergency_action_card`）读 `payload.get("account_id")` 一律拿到 `None`，全部回
+# 「缺少登录账号（装配处应在 payload 里提供 'account_id'）」。根因只有一个，落点有两处
+# ——日常 `send_message` 与应急入口各建一个 `RunRequest`，两处都漏。
+#
+# 下面的断言全部**基于行为**，不是「源码里出现了某个字面量」：把面构造出来的
+# `RunRequest.context_payload` 原样喂给**真实的工具 handler**，看它是否真的能完成
+# 它声称要做的事（建档落库 / 记忆落库 / 引导收束）。因此「把 payload 换成对象、元组、
+# 空串，或只改一处」都会让它们变红。
+# ---------------------------------------------------------------------------
+
+
+class _FakeCitationIndex:
+    """引用索引替身：本节的工具都不产出引用，只需要满足端口形状。"""
+
+    async def add(self, _record: CitationRecord) -> None:
+        """不落任何东西。"""
+
+    async def list_for_run(self, _run_id: str) -> Sequence[CitationRecord]:
+        """空列表。"""
+        return []
+
+
+def _tool_context(request: RunRequest) -> ToolContext:
+    """按基座的接线方式，把面构造的 `RunRequest` 变成一次工具调用的上下文。
+
+    这是**复刻 `AgentRunner` 的那一行**（`runner.py`：`ToolContext(..., payload=request.context_payload)`），
+    而不是另造一份语义：本节的证明目标是「面放进 `RunRequest` 的东西，工具真的能拿到」，
+    因此中间这一跳必须与生产同形。`run_id` 取会话标识只为满足形状，工具不使用它。
+    """
+    return ToolContext(
+        run_id="run-1",
+        session_id=request.session_id,
+        surface=request.surface,
+        activation_state=ActivationState(),
+        citations=CitationRecorder(_FakeCitationIndex(), run_id="run-1", clock=lambda: datetime.now(timezone.utc)),
+        payload=request.context_payload,
+    )
+
+
+def _card_args() -> EmitEmergencyActionCardArgs:
+    """一份合法的七节应急卡参数（本工具要在有账号时才产出卡片）。
+
+    只为本节的「账号可见性」判定服务，因此不复刻 `test_emergency_card.py` 的全部词表用例。
+    """
+    return EmitEmergencyActionCardArgs.model_validate(
+        {
+            "sections": [
+                {"key": "status", "heading": "当前状态", "lines": ["当前沟通较平时明显减少"]},
+                {"key": "communicate", "heading": "立即怎么沟通", "lines": ["一次只让一个人讲话"]},
+                {"key": "do_now", "heading": "立即做", "lines": ["把灯光调暗，减少在场人数"]},
+                {"key": "avoid", "heading": "不要做", "lines": ["不要突然触碰"]},
+                {"key": "medical_checks", "heading": "需要的医疗检查", "lines": ["需要确认有无疼痛来源"]},
+                {"key": "safety", "heading": "安全措施", "lines": ["移开通道上的障碍物"]},
+                {"key": "when_to_escalate", "heading": "何时升级", "lines": ["出现意识改变时立即求助"]},
+            ],
+            "states": [
+                {"key": "deviation", "value": "marked"},
+                {"key": "communication", "value": "reduced"},
+                {"key": "sensory_load", "value": "high"},
+                {"key": "medical_risk", "value": "uncertain"},
+            ],
+        }
+    )
+
+
+def _assert_account_visible(request: RunRequest) -> None:
+    """断言这个请求里的账号与登录账号一致，且形状是工具期望的裸字符串。
+
+    形状断言不是多余的：四个工具的判据都是 `isinstance(raw, str)`，传对象/元组会让它们
+    与「不传」同效——而那种回归在只断言「键存在」的用例里看不见。
+    """
+    payload = request.context_payload
+    assert isinstance(payload, dict), f"context_payload 必须是工具直接解析的映射，实际是 {type(payload).__name__}"
+    assert payload[consult_routes.ACCOUNT_PAYLOAD_KEY] == _ACCOUNT
+    assert isinstance(payload[consult_routes.ACCOUNT_PAYLOAD_KEY], str)
+
+
+async def test_daily_run_carries_the_logged_in_account_to_tools(client: httpx.AsyncClient) -> None:
+    """日常咨询的运行把登录账号放进工具可见通道（QA-01 的第一处落点）。
+
+    两段断言分工：前者钉住面这一跳（`context_payload` 的形状与取值），后者钉住**这一跳
+    真的被工具读到**——把同一个上下文交给真实的 `create_support_object`，它必须认出登录
+    账号，而不是回「缺少登录账号（装配处应在 payload 里提供 'account_id'）」。
+
+    ⚠ 本用例**只**钉 payload 这一条通道，因此不断言建档成功：修好 payload 之后建档**仍会
+    失败**（`tools/profile.py` 在 `flush` 之前读 `created.id`，拿到 `'None'` ⇒
+    「支持对象标识不是合法 UUID」⇒ 与补绑同事务整体回滚）。那是**第二个独立根因**，
+    在 `origin/master` 上同样存在、只被 payload 缺陷掩盖——单独立案，不在本用例里假装它不存在。
+    这里断言「不再是缺少登录账号」而不是 `isinstance(..., ToolResult)`，正是为了让本用例的
+    判别性只落在「账号有没有送到工具手里」这一件事上。
+
+    判别性：去掉面里的 `context_payload=`，第一段断言失败；把值换成 `None`、对象或元组，
+    第二段立刻回到「缺少登录账号」。
+    """
+    runner = ScriptedRunner(get_settings())
+    _install_runner(runner)
+    session_id = await _create_session(client)
+    assert (await _send(client, session_id, content="你好")).status_code == 202
+    await drain_pumps()
+
+    request = runner.requests[-1]
+    _assert_account_visible(request)
+
+    # 同一个上下文交给真实工具：它必须认出登录账号（而不是报告账号缺失）。
+    outcome = await create_support_object(_tool_context(request), CreateSupportObjectArgs(display_name="小篝"))
+    assert not (isinstance(outcome, ToolFailure) and "缺少登录账号" in outcome.message), (
+        f"工具没拿到登录账号——payload 通道没接通，实际：{outcome!r}"
+    )
+
+
+async def test_emergency_run_carries_the_logged_in_account_to_tools(
+    client: httpx.AsyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """应急入口的运行同样带上登录账号（QA-01 的第二处落点）。
+
+    为什么这条必须单独存在：两处 `RunRequest` 是独立的构造点，只改一处会留下
+    「日常咨询能用、应急咨询发不出行动卡」的半修，而应急卡是应急 skill 唯一的
+    结构化输出通道——半修的表现不是任何装配错误，只是卡片静默发不出去。
+    应急侧适用的账号级工具是 `emit_emergency_action_card`（应急 skill 的
+    `allowed-tools` 里唯一按账号判定的那个），因此这里验同一个 payload 能让它发卡。
+
+    判别性：只回滚 `_create_emergency_run` 那一处，本用例失败而日常用例仍过。
+    """
+    runner = ScriptedRunner(get_settings())
+    _install_runner(runner)
+    object_id = await _make_object(_ACCOUNT, "小宝")
+    _stub_memory(monkeypatch, EmergencyMemory(facts=[]))
+
+    response = await client.post(
+        "/consult/emergency",
+        json={"support_object_id": object_id, "items": _intake_items()},
+    )
+    assert response.status_code == 202, response.text
+    await drain_pumps()
+
+    request = runner.requests[-1]
+    _assert_account_visible(request)
+
+    outcome = await emit_emergency_action_card(_tool_context(request), _card_args())
+    assert isinstance(outcome, ToolResult), f"应急卡必须发得出去，实际：{outcome!r}"
+    assert outcome.cards, "卡片必须随结果产出（本工具的唯一结构化输出通道）"
+
+
+async def test_daily_run_payload_lets_memory_and_onboarding_write(
+    client: httpx.AsyncClient,
+) -> None:
+    """同一个 payload 还要能让记忆落库与引导收束——一个根因的三个后果。
+
+    只验建档会让「只给建档工具补数据」这类半修蒙混过关（比如把 payload 换成只被
+    `profile` 认得的形状）。这里用**另外两个**账号级工具的落库结果把同一件事钉住：
+    `write_memory` 要落一条 `pending_write`，`finish_onboarding` 要把引导状态置为
+    `completed`（QA-01 里页面停在 `onboarding` 的成因）。
+
+    判别性：payload 为空时两条都返回 `ToolFailure`，且库里的行数与引导状态都不变。
+    """
+    runner = ScriptedRunner(get_settings())
+    _install_runner(runner)
+    session_id = await _create_session(client)
+    assert (await _send(client, session_id, content="你好")).status_code == 202
+    await drain_pumps()
+
+    context = _tool_context(runner.requests[-1])
+
+    written = await write_memory(
+        context,
+        WriteMemoryArgs.model_validate(
+            {
+                "content": "家庭偏好先给两个可选活动，用简短步骤沟通",
+                "occurred_at": datetime.now(timezone.utc).isoformat(),
+                "origin": "user_statement",
+                "source": {"session_id": session_id, "message_seq": None},
+            }
+        ),
+    )
+    assert isinstance(written, ToolResult), f"记忆必须提交成功，实际：{written!r}"
+
+    finished = await finish_onboarding(context, FinishOnboardingArgs(skipped_sections=[]))
+    assert isinstance(finished, ToolResult), f"引导必须能收束，实际：{finished!r}"
+    assert json.loads(finished.text)["state"] == ONBOARDING_COMPLETED
+
+    async with session_scope(get_settings()) as db:
+        rows = list(
+            (
+                await db.execute(
+                    select(PendingWrite).where(
+                        PendingWrite.account_id == _ACCOUNT, PendingWrite.kind == KIND_MEMORY_EPISODE
+                    )
+                )
+            ).scalars()
+        )
+    assert len(rows) == 1, "记忆待处理记录必须落在登录账号名下"
+    assert rows[0].payload["content"].startswith("家庭偏好")
+    assert await _onboarding_state(_ACCOUNT) == ONBOARDING_COMPLETED
+
+
+async def test_the_account_key_is_the_one_the_tools_read() -> None:
+    """面声明的键必须与四个工具各自读的键一致（同值常量的漂移检测）。
+
+    `tools/*` 的依赖白名单不允许四个工具模块互相 import（`test_layer_boundaries.py`），
+    因此 `"account_id"` 在 `surfaces/consult/routes.py` 与四个工具模块里各有一份。
+    漂移的表现是「键名改了、工具全部回缺少登录账号」——那正是 QA-01 的用户可见症状，
+    所以这条断言的意义不是「源码里有这个字面量」，而是「两处定义必须相等」。
+
+    判别性：把 `routes.ACCOUNT_PAYLOAD_KEY` 改成别的字符串，本用例失败。
+
+    声明成 `async def` 只为与文件级的 `pytest.mark.asyncio` 一致（本文件全篇 async）；
+    判定本身不碰 I/O。
+    """
+    keys = {
+        consult_routes.ACCOUNT_PAYLOAD_KEY,
+        profile_module.ACCOUNT_PAYLOAD_KEY,
+        memory_module.ACCOUNT_PAYLOAD_KEY,
+        onboarding_module.ACCOUNT_PAYLOAD_KEY,
+        emergency_card_module.ACCOUNT_PAYLOAD_KEY,
+    }
+    assert keys == {consult_routes.ACCOUNT_PAYLOAD_KEY}, f"账号键在多处定义间漂移：{sorted(keys)}"

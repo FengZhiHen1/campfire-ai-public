@@ -583,6 +583,26 @@ async def create_support_object(context: ToolContext, args: CreateSupportObjectA
     try:
         async with session_scope(get_settings()) as session:
             created = await create_object(session, account_id=account_id, display_name=args.display_name)
+            # ⚠ 这一行 `flush()` 不是冗余，删掉会让建档【整体失败】：
+            #
+            # `SupportObject.id` 是**列默认**（`models.py` 的 `default=new_uuid`），而列默认
+            # 由 SQLAlchemy 在 flush 时才填——`create_object` 返回的是一个**尚未 flush 的
+            # 待插入对象**，此刻 `created.id` 是 `None`。下一行的补绑要把它转成 uuid
+            # （`bind_first_object` → `to_object_uuid`），于是 `str(created.id)` 得到的是
+            # 字面量字符串 `'None'`，而 `to_object_uuid("None")` 抛 `ProfileDataError`
+            # （「支持对象标识不是合法 UUID」）。该异常与建对象同处一个事务，被下面的
+            # `except ProfileDataError` 收成失败回执 ⇒ **整笔回滚，对象行也不落库**。
+            #
+            # 为什么档案面路由不需要这一行：`modules/profile/routes.py` 的
+            # `create_object` 端点（`POST /objects`）在
+            # `session_scope` **退出之后**才读 `record.id`（退出时 flush/commit），
+            # 时机天然正确。同一仓库函数、两种读取时机、一对一错——差别只在「读的时候
+            # flush 过没有」。别处若要复用这个模式，判据是「我读 id 时 flush 过没有」，
+            # 不是「别人有没有写这一行」。
+            #
+            # 为什么不用改模型层（在 `__init__` 期生成 id）代替：列默认是本仓两个模块的
+            # 既有共同约定（`core/pending_write/models.py` 同样写法），改它会放大改动面。
+            await session.flush()
             object_id = str(created.id)
             display_name = created.display_name
             # 补绑与创建同一次会话/事务：分两次事务时，创建成功而补绑失败会留下一个
