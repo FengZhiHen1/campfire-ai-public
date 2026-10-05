@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Sequence
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
@@ -24,6 +24,8 @@ from campfire.tools.memory import (
     DEFAULT_READ_LIMIT,
     ReadMemoryArgs,
     WriteMemoryArgs,
+    _resolve_occurred_at,
+    _Source,
     read_memory,
     write_memory,
 )
@@ -66,7 +68,8 @@ def _write_args(**overrides: object) -> WriteMemoryArgs:
         "content": "他今天主动说了想喝水",
         "occurred_at": "2026-09-30T08:00:00+00:00",
         "origin": "user_statement",
-        "source": {"session_id": "s1"},
+        # `source` 里不再有 `session_id`（2026-10-06 起由服务端填，见 `_Source`）。
+        "source": {"message_seq": 1},
     }
     base.update(overrides)
     return WriteMemoryArgs.model_validate(base)
@@ -98,10 +101,165 @@ def test_write_memory_rejects_an_origin_outside_the_vocabulary() -> None:
         _write_args(origin="made_up_origin")
 
 
-def test_write_memory_source_requires_a_session_id() -> None:
-    """来源必填：`AC-07` 要求可核对，来源无法从其他参数还原。"""
-    with pytest.raises(Exception):  # noqa: B017
-        _write_args(source={})
+def test_write_memory_source_requires_the_object_but_not_a_session_id() -> None:
+    """`source` 不再要求任何字段：会话标识由服务端填，`message_seq` 可选。
+
+    旧断言（`source={}` 必须报错）已被本包**有意推翻**：它钉住的是「模型必须给出会话
+    标识」这条正是缺陷的约束。取而代之的判据在
+    :func:`test_write_memory_fills_session_id_from_the_run_context`（模型值到不了落库）。
+
+    判别性：`source` 改回必填（无 `default_factory`）时，本用例第一行失败。
+    """
+    assert _write_args(source={}).source.message_seq is None
+
+
+def test_write_memory_does_not_accept_a_model_supplied_session_id() -> None:
+    """`source_session_id` 必须由服务端填：模型不得在参数里表达会话标识。
+
+    与 `ask_user` 的 `batch_id` 同一原则（`runtime/ask_user_tool.py:52-58`「不信任模型传
+    标识」）：模型既不知道当前会话，写进去的值就只可能是编的。实测（T24 §6-⑦）模型
+    传了 `"current-session"`，而真实会话是 `4993067c8ae34f3db0feb8e9031b44b0`。
+
+    判别性：参数模型里保留 `source.session_id` 时本用例失败（那条通道存在即会被使用）。
+    """
+    assert "session_id" not in _Source.model_fields
+
+
+def test_occurred_at_is_optional_and_defaults_to_none() -> None:
+    """`occurred_at` 改为可选，缺省 `None` 由工具层补当前时间。
+
+    根因（T27 §3）：原设计让模型**必须**提供 `occurred_at`，而模型没有时钟——实测它
+    传了 `2025-06-10`（真实时间 `2026-10-05`），并在自己的 reasoning 里写着
+    "That's fabricating." 然后还是编了。字段必填就等于要求模型编一个它拿不到的事实。
+
+    判别性：把 `occurred_at` 改回必填（`min_length=1` 无默认值），本用例失败。
+    """
+    args = WriteMemoryArgs.model_validate({"content": "他今天主动说了想喝水", "origin": "user_statement"})
+
+    assert args.occurred_at is None, "缺省应是 None（由工具层补当前时间），而不是模型填的字符串"
+    # `source` 也整体可选：模型连来源都不用给（会话标识由服务端填）。
+    assert args.source.message_seq is None
+
+
+def test_occurred_at_rejects_a_value_far_in_the_future() -> None:
+    """`occurred_at` 不得是「还没发生」的时间（判据 `_occurred_at_problem`，解析期拒）。
+
+    这是**反空断言的第一半**：喂一个明显越界的值必须被拒——否则这条约束只是一道
+    恒真的空闸门。下一条用例是对照组（合理值必须被接受），只有拒绝没有接受时
+    「一切都被拒」也能让本用例通过。
+    """
+    future = (datetime.now(timezone.utc) + timedelta(days=30)).isoformat()
+
+    with pytest.raises(Exception, match="晚于现在"):  # noqa: B017 —— pydantic 的 ValidationError
+        _write_args(occurred_at=future)
+
+
+def test_occurred_at_accepts_a_recent_and_a_naive_value_is_rejected() -> None:
+    """对照组：刚发生的时刻被接受；朴素时间（无时区）被拒。
+
+    与上一条成对。朴素时间这一半与消费侧 `_parse_occurred_at` 同一立场——没有时区的
+    时间会被解释成不同瞬间，污染时间线顺序。
+    """
+    recent = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
+    assert _write_args(occurred_at=recent).occurred_at == recent
+
+    with pytest.raises(Exception, match="必须带时区"):  # noqa: B017
+        _write_args(occurred_at="2026-10-06T10:00:00")
+
+    with pytest.raises(Exception, match="不是合法的 ISO 8601"):  # noqa: B017
+        _write_args(occurred_at="昨天")
+
+
+def test_write_memory_fills_session_id_from_the_run_context(monkeypatch: pytest.MonkeyPatch) -> None:
+    """★ 端到端判据：模型传的会话标识**到不了**落库的 `source`，服务端用自己的。
+
+    做法是捕获 `enqueue` 的关键字参数（与 `test_write_memory_returns_submitted_not_saved`
+    同一种替身方式），断言 `source["session_id"]` 等于 `ToolContext.session_id`。
+
+    判别性（三重，各自独立可红）：
+    1. 把 `source["session_id"]` 改回 `args.source.session_id` ⇒ 本用例红（模型值进库）；
+    2. 把 `_resolve_occurred_at` 的缺省分支去掉 ⇒ `occurred_at` 为 None 会一路走到
+       `enqueue`，断言「是带时区的 ISO 8601」失败；
+    3. 把 `context.session_id` 换成常量 ⇒ 与 `_context()` 的 "session-1" 不符，断言失败。
+    """
+    import asyncio
+
+    from campfire.core.jobs import set_dispatch_hook
+
+    captured: list[dict[str, object]] = []
+
+    async def _capture(*_args: object, **kwargs: object) -> object:
+        captured.append(dict(kwargs))
+
+        class _Record:
+            id = "00000000-0000-4000-8000-000000000002"
+
+        return _Record()
+
+    async def _no_dispatch(_pending_id: str, _kind: str) -> None: ...
+
+    set_dispatch_hook(_no_dispatch)
+    try:
+        import campfire.tools.memory as tool_module
+
+        class _FakeSession:
+            async def __aenter__(self) -> "_FakeSession":
+                return self
+
+            async def __aexit__(self, *_exc: object) -> None: ...
+
+        monkeypatch.setattr(tool_module, "enqueue", _capture)
+        monkeypatch.setattr(tool_module, "session_scope", lambda _s: _FakeSession())
+        # 模型仍多传一个 session_id：它必须被忽略（参数模型里已无该字段，会被拒）；
+        # 这里改为只传 message_seq，另有一条用例专门钉住「多传即拒」。
+        outcome = asyncio.run(
+            write_memory(
+                _context(payload={ACCOUNT_PAYLOAD_KEY: _ACCOUNT}),
+                WriteMemoryArgs.model_validate(
+                    {
+                        "content": "他今天主动说了想喝水",
+                        "origin": "user_statement",
+                        "source": {"message_seq": 3},
+                    }
+                ),
+            )
+        )
+    finally:
+        set_dispatch_hook(None)
+
+    assert isinstance(outcome, ToolResult)
+    assert len(captured) == 1
+    source = captured[0]["source"]
+    assert isinstance(source, dict)
+    assert source["session_id"] == "session-1", "会话标识必须取自运行上下文，不是模型给的值"
+    assert source["message_seq"] == 3, "消息序号是模型能如实给出的信息，照常采用"
+
+    payload = captured[0]["payload"]
+    assert isinstance(payload, dict)
+    occurred_at = payload["occurred_at"]
+    assert isinstance(occurred_at, str)
+    # 缺省取当前时间：必须是带时区的 ISO 8601（消费侧拒绝朴素时间）。
+    assert datetime.fromisoformat(occurred_at).tzinfo is not None
+    assert abs((datetime.now(timezone.utc) - datetime.fromisoformat(occurred_at)).total_seconds()) < 60
+
+
+def test_write_memory_rejects_a_model_supplied_session_id_in_arguments() -> None:
+    """模型若仍按旧 schema 传 `session_id`，参数层直接拒（`extra="forbid"`）。
+
+    为什么必须显式拒绝而不是静默忽略：静默忽略会让「模型以为自己指明了一条来源」这件
+    事在日志里查不到，而 reject 会让它在下一轮改对。严格模式（SDK 的
+    `ensure_strict_json_schema` + pydantic）本来就把多给的字段变成
+    `tool_invalid_arguments`——本用例钉住这条行为不被关掉。
+    """
+    with pytest.raises(Exception, match="session_id"):  # noqa: B017
+        WriteMemoryArgs.model_validate(
+            {
+                "content": "x",
+                "occurred_at": "2026-09-30T08:00:00+00:00",
+                "origin": "user_statement",
+                "source": {"session_id": "current-session"},
+            }
+        )
 
 
 def test_read_memory_limit_has_a_server_side_cap() -> None:
@@ -111,6 +269,29 @@ def test_read_memory_limit_has_a_server_side_cap() -> None:
     """
     with pytest.raises(Exception):  # noqa: B017
         ReadMemoryArgs.model_validate({"limit": DEFAULT_READ_LIMIT + 1})
+
+
+def test_resolve_occurred_at_bounds() -> None:
+    """补值函数的边界各自可判定：缺省补当前时间、合法值透传、未来值拒、朴素值拒。
+
+    这一条与参数模型上的校验器**成对**（后者见
+    `test_occurred_at_rejects_a_value_far_in_the_future`）：参数模型是正常路径上的闸门，
+    `_resolve_occurred_at` 是 `model_construct` 之类绕开校验时的兜底。两条分开写，
+    一路失效时另一路不会替它顶绿。
+    """
+    given = "2026-09-30T08:00:00+00:00"
+
+    assert _resolve_occurred_at(given) == given
+    resolved = _resolve_occurred_at(None)
+    assert isinstance(resolved, str)
+    # 缺省必须补一个**带时区**的时间（消费侧拒绝朴素时间）。
+    assert datetime.fromisoformat(resolved).tzinfo is not None
+    assert abs((datetime.now(timezone.utc) - datetime.fromisoformat(resolved)).total_seconds()) < 60
+
+    far_future = (datetime.now(timezone.utc) + timedelta(days=30)).isoformat()
+    assert isinstance(_resolve_occurred_at(far_future), ToolFailure)
+    assert isinstance(_resolve_occurred_at("2026-09-30T08:00:00"), ToolFailure)
+    assert isinstance(_resolve_occurred_at("昨天"), ToolFailure)
 
 
 # ---------------------------------------------------------------------------
