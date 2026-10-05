@@ -52,7 +52,17 @@ export function QuestionCard({ controller }: QuestionCardProps) {
   return (
     <div className={`tile question-card${controller.submitted ? ' answered' : ''}`}>
       <div className="question-head">
-        <span className="meta">{controller.submitted ? '已提交' : '下一步'}</span>
+        {/*
+          历史水合（mode === 'record'）**不能**说「已提交」：`question` part 里没有
+          「已作答」标记（通用基座 7.2 节的载荷没有这个字段，前端不得发明），因此水合
+          根本不知道这组题有没有被回答过。说「已提交」是在断一件前端不知道的事——
+          实测（T27 §6）一组**从未被回答**的提问就是这样被显示成「已提交 / 这组问题
+          已经处理过」的，正是本项目「看起来像成功、其实没做成」那种形态。
+          改成中性的「提问记录」：它只陈述确定的事实（这是当时提出的一组题）。
+        */}
+        <span className="meta">
+          {controller.submitted ? (controller.mode === 'record' ? '提问记录' : '已提交') : '下一步'}
+        </span>
         {controller.submitted ? null : (
           <button
             type="button"
@@ -71,14 +81,15 @@ export function QuestionCard({ controller }: QuestionCardProps) {
         <div className="question-body" data-question-record>
           <p className="hint">
             {controller.mode === 'record'
-              ? '这组问题已经处理过，记录如下（回答见当时的对话）。'
+              ? // 只作指引，不断言作答存在或不存在（水合无从判定——见上面那段说明）。
+                '这是当时向你提出的问题，当时的作答见对话里的相关消息。'
               : '整组已提交，不能再修改。'}
           </p>
           <ol className="question-record-list">
             {controller.records.map((record) => (
               <li key={record.prompt}>
                 <p>{record.prompt}</p>
-                <span className="meta">{record.answer === null ? '（回答见下一条消息）' : record.answer}</span>
+                <span className="meta">{record.answer === null ? '（作答见当时的对话）' : record.answer}</span>
               </li>
             ))}
           </ol>
