@@ -120,6 +120,18 @@ describe('路由守卫', () => {
     expect(screen.getByRole('heading', { name: '页面不存在' })).toBeDefined();
   });
 
+  it('P2 未匹配路径不再自相矛盾：说了「页面不存在」就不再说「建设中」', () => {
+    setSession('authenticated');
+    renderAt('/nope');
+
+    // 正方向：标题与说明必须仍在（404 不许因为修矛盾而丢失信息）。
+    expect(screen.getByRole('heading', { name: '页面不存在' })).toBeDefined();
+    expect(screen.getByText('这个地址没有对应页面，请从首页重新进入。')).toBeDefined();
+    // 反方向：路径不存在与「本页尚在建设中」不能并置——前者说没有这个页面，
+    // 后者说这个页面有、只是没做完。两句话同时出现会让使用者不知道该不该重试。
+    expect(screen.queryByText('本页尚在建设中。')).toBeNull();
+  });
+
   it('P3 任务裁决的十个路径都在路由表里', () => {
     const paths = buildRouteObjects().map((route) => route.path);
     for (const expected of [
