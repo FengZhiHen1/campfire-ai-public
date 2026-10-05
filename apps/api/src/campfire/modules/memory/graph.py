@@ -103,6 +103,98 @@ class TokenHubEmbedder(OpenAIEmbedder):
         return [embedding.embedding[: self.config.embedding_dim] for embedding in result.data]
 
 
+@dataclass(frozen=True, slots=True)
+class MemoryEmbedder:
+    """记忆侧嵌入器，以及本处创建、需由持有者收口的 openai 客户端。
+
+    存在的理由是**单一真源**（2026-10-05，T19）：嵌入器的构造参数里有两处曾经出过真实缺陷
+    ——`TokenHubEmbedder`（不是上游 `OpenAIEmbedder`）与它显式传的
+    `encoding_format="float"`。若探针另写一份构造，那两处就有了第二真源，而
+    「探针与生产走不同构造」正是这类探针最典型的失效形态（探绿而生产坏）。
+    因此生产装配（:func:`build_memory_graph`）与深度就绪探针（`campfire.main.check_embedding`）
+    都经 :func:`build_memory_embedder` 构造，本结构就是那条路径的返回值。
+
+    两个字段的所有权（与 :class:`MemoryGraph` 同一纪律：谁创建谁持有）：
+    `client` 由本结构创建，因此由 :meth:`aclose` 关闭；`embedder` 持有 `client` 的引用，
+    不单独关闭。`http_client` 可能是调用方注入的（生产与 llm 客户端共用一条连接池，
+    见 :func:`build_memory_graph`），故不由本结构负责——关闭 `client` 会级联关闭它
+    （实测），那是复用同一池的既有行为。
+    """
+
+    embedder: TokenHubEmbedder
+    client: AsyncOpenAI
+
+    async def aclose(self) -> None:
+        """关闭本结构创建的 openai 客户端（幂等；级联关闭它注入的 http 客户端）。"""
+        await self.client.close()
+
+
+def build_memory_embedder(
+    settings: Settings,
+    *,
+    http_client: httpx2.AsyncClient | None = None,
+    timeout_seconds: float | None = None,
+) -> MemoryEmbedder:
+    """构造记忆侧的嵌入器（**生产装配与探针的唯一构造处**）。
+
+    为什么单独成一个函数（2026-10-05，T19）：`/readyz` 的 `model` 项只探 chat 端点，
+    而记忆写入路径的嵌入缺陷（`encoding_format` 漏传 ⇒ TokenHub `400001` ⇒ 写入整体不可用）
+    在它眼里完全不可见——该缺陷真实发生过，表现为「健康检查全绿而记忆写入全坏」。
+    修法是一次真实嵌入探针，而**探针必须走生产同一条构造**：否则探针探的是另一份配置，
+    改坏生产也不会让它变红（等于没覆盖）。因此构造搬到这里，两个调用方共用它。
+
+    参数与既有行为逐字一致（本函数只是把 `build_memory_graph` 里原来的那段搬出来）：
+    模型名取 `settings.embedding_model_name`、维度取常量 `EMBEDDING_DIM`、客户端
+    `max_retries=0`（重试的唯一所有者是本模块），并沿用 :class:`TokenHubEmbedder`
+    （它显式传 `encoding_format="float"`，见该类的 docstring）。
+
+    Args:
+        settings: 应用配置。
+        http_client: 注入的 httpx2 客户端。省略则自建一个 `trust_env=False` 的
+            ——生产传入与 llm 客户端共用的那一个（见 `build_memory_graph`），
+            探针自建（它是服务端到服务端调用，不继承桌面代理豁免表；
+            且探针要有自己的短超时，不能借用生产的 45 秒）。
+        timeout_seconds: 单次请求超时。省略则取 `settings.model_request_timeout_seconds`
+            （生产取值）；探针传自己的有界值。
+
+    Raises:
+        MemoryConfigurationError: 未配置 `TOKENHUB_API_KEY` 时——显式失败，不静默降级。
+
+    Note:
+        `http_client` 省略时自建的那个**没有**独立的收口点：它被注入给 openai 客户端，
+        由 :meth:`MemoryEmbedder.aclose` 经级联关闭（实测 `AsyncOpenAI.close()` 会关闭
+        注入的 http 客户端）。
+    """
+    if settings.tokenhub_api_key is None:
+        raise MemoryConfigurationError("未配置 TOKENHUB_API_KEY，无法调用记忆侧的模型")
+
+    api_key = settings.tokenhub_api_key.get_secret_value()
+    base_url = settings.tokenhub_base_url
+    resolved_timeout = settings.model_request_timeout_seconds if timeout_seconds is None else timeout_seconds
+    if http_client is None:
+        # trust_env=False：与 `build_memory_graph` 注入的那个同一纪律（宿主机 no_proxy
+        # 含 `[::1]` 时 httpx2 构造期即崩；见 `build_memory_graph` 的「代理豁免」一节）。
+        http_client = httpx2.AsyncClient(trust_env=False, timeout=resolved_timeout)
+
+    client = AsyncOpenAI(
+        api_key=api_key,
+        base_url=base_url,
+        http_client=http_client,
+        timeout=resolved_timeout,
+        max_retries=0,
+    )
+    embedder = TokenHubEmbedder(
+        config=OpenAIEmbedderConfig(
+            embedding_dim=EMBEDDING_DIM,
+            embedding_model=settings.embedding_model_name,
+            api_key=api_key,
+            base_url=base_url,
+        ),
+        client=client,
+    )
+    return MemoryEmbedder(embedder=embedder, client=client)
+
+
 class OrderedCrossEncoder(CrossEncoderClient):
     """不做重排的重排器：保持传入顺序。
 
@@ -399,27 +491,19 @@ def build_memory_graph(settings: Settings) -> MemoryGraph:
         timeout=settings.model_request_timeout_seconds,
         max_retries=0,
     )
-    embed_openai = AsyncOpenAI(
-        api_key=api_key,
-        base_url=base_url,
-        http_client=http_client,
-        timeout=settings.model_request_timeout_seconds,
-        max_retries=0,
-    )
     llm_client = OpenAIClient(
         config=llm_config,
         max_tokens=LLM_MAX_TOKENS,
         client=llm_openai,
     )
-    embedder = TokenHubEmbedder(
-        config=OpenAIEmbedderConfig(
-            embedding_dim=EMBEDDING_DIM,
-            embedding_model=settings.embedding_model_name,
-            api_key=api_key,
-            base_url=base_url,
-        ),
-        client=embed_openai,
-    )
+    # 嵌入器的构造经 `build_memory_embedder`（**必须走它**）：那里是「记忆侧嵌入器怎么造」
+    # 的唯一真源，深度就绪探针（`campfire.main.check_embedding`）用的是同一个函数。
+    # 生产路径若在这里自己再写一份构造，探针就会与生产分叉——而「探针探的是另一份配置」
+    # 正是本探针最典型的失效形态（见该函数的 docstring）。
+    # 注入共用的 http_client：与 llm 客户端同一条连接池（理由见本函数说明）。
+    memory_embedder = build_memory_embedder(settings, http_client=http_client)
+    embedder = memory_embedder.embedder
+    embed_openai = memory_embedder.client
 
     # 契约断言（同 agent/model/gateway.build_model_settings 的做法）：两个档位必须是
     # 同一个模型、重试必须已关。不留「靠上游默认值恰好正确」的活口。
@@ -493,10 +577,12 @@ async def aclose_shared_memory_graph() -> None:
 
 __all__ = [
     "LLM_MAX_TOKENS",
+    "MemoryEmbedder",
     "MemoryGraph",
     "OrderedCrossEncoder",
     "TokenHubEmbedder",
     "aclose_shared_memory_graph",
+    "build_memory_embedder",
     "build_memory_graph",
     "get_shared_memory_graph",
 ]

@@ -10,9 +10,41 @@ import logging
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager, suppress
 
+from campfire.core.config import Settings, apply_no_proxy_normalization, get_settings
+
+# 进程级规范化 `no_proxy` 家族（2026-10-05，T18 修）——**必须早于一切 httpx 消费者**。
+#
+# 为什么卡在「项目的其它 import 之前」而不是放进 lifespan：lifespan 要等 ASGI 服务器把
+# 应用拉起来，而**客户端构造可以发生在导入期或 `app` 构造期**。放在这里，本模块之后
+# 导入的每一个模块、以及此后的 `app` 构造、lifespan、请求处理，**在时序上都必然在它之后**
+# ——这是最强的位置，也给得出最省事的证明（不需要逐模块论证「它导入时建不建客户端」）。
+# 唯一的前置 import 是 `core/config` 自身，它只依赖标准库与 pydantic，不构造任何客户端。
+#
+# 为什么需要它：宿主机 `no_proxy` 含带方括号的 IPv6 字面量（`[::1]`）时，httpx 与 httpx2
+# 都在**客户端构造期**抛 `InvalidURL: Invalid port: ':1]'`。既有两处防护**都不覆盖**
+# SuperTokens 的 querier（它在每次请求里自己建客户端，未传 `trust_env=False`）——
+# 于是注册/登录整体 500，而 `/readyz` 的 auth 探针（`trust_env=False`）仍报 ok。
+#
+# 与 `core/auth/supertokens.py` 里那次调用的关系（**两处都要，不是重复**）：
+#
+# - 这里给的是**入口级时序**：本进程任何 httpx/openai 消费者都在其后；
+# - 那次给的是**不可遗忘**：`init_supertokens` 是唯一的 SDK 装配入口，**API 与 CLI**
+#   两个进程都经它，因此「谁忘了在入口调一次」不会让 querier 重新坏掉。
+#   而那正是这条缺陷此前的形态——防护只存在于两个不覆盖 querier 的路径上。
+#
+# ⚠ **Worker 不在此列**（2026-10-06 订正，T18 复查发现的 P2）：`worker.py` **不调**
+# `init_supertokens`，它靠**自己模块导入期**的 `apply_no_proxy_normalization()` 覆盖
+# 同一件事（`worker.py:47` 与它上方 41-46 行的「入口级保证」论证）。
+# **订正这句不是为了措辞准确**：原先的「三进程都经它」会让后来者以为 Worker 的入口调用
+# 是多余的、从而删掉它，而删掉之后 Worker 侧会重新暴露在同一个代理陷阱下。
+#
+# 幂等，因此两处都调没有副作用（见 `core/config.apply_no_proxy_normalization`）。
+apply_no_proxy_normalization()
+
 from falkordb.asyncio import FalkorDB  # type: ignore[import-untyped]  # 上游无 py.typed；行为由集成测试锁定
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
+from openai import APIConnectionError, APIStatusError, APITimeoutError
 from supertokens_python.framework.fastapi import get_middleware
 
 from campfire.agent.model import check_model_endpoint
@@ -20,12 +52,14 @@ from campfire.core.auth import check_auth_core
 from campfire.core.auth.supertokens import init_supertokens
 from campfire.core.authz import set_authorizer
 from campfire.core.cache import close_cache, get_cache
-from campfire.core.config import Settings, get_settings
+from campfire.core.config import EMBEDDING_DIM
 from campfire.core.db import check_database, dispose_engine
 from campfire.core.health import ComponentHealth, HealthReport, Status
 from campfire.core.jobs import check_queue, set_dispatch_hook
 from campfire.modules.accounts.registration import api_overrides, sign_up_form_fields
 from campfire.modules.library.routes import router as library_router
+from campfire.modules.memory.errors import MemoryConfigurationError
+from campfire.modules.memory.graph import build_memory_embedder
 from campfire.modules.memory.routes import router as memory_router
 from campfire.modules.profile.authz import OwnerAuthorizer
 from campfire.modules.profile.routes import router as profile_router
@@ -261,6 +295,108 @@ async def check_skill_registry(settings: Settings) -> ComponentHealth:
     return ComponentHealth("skills", Status.OK, f"已发现 {len(registry.names())} 个 skill")
 
 
+_EMBEDDING_PROBE_TIMEOUT_SECONDS = 5.0
+"""嵌入探针单次请求的时间上界（与 `agent/model/probe.py` 的 5 秒同一论证）。
+
+理由：这是聚合等待的一端，不该吃掉调用方的容忍度；5 秒比一次真实运行的 180 秒上限
+低一个半数量级，而一次极短输入的嵌入往返远快于它。**探针构造出的客户端
+`max_retries=0`**（见 `build_memory_embedder`）⇒ 这个上界真是「一次请求」的上界，
+不会被 SDK 重试放大成若干倍。"""
+
+_EMBEDDING_PROBE_INPUT = "campfire readiness probe"
+"""探针送入的文本：**固定字面量**，不含任何使用者数据，且远短于接口硬限。
+
+为什么必须真的送一条：`GET /models` 只证明 chat 端点可达，抓不到**参数级**缺陷——
+本项目真实踩过的那次是「embedder 未传 `encoding_format` ⇒ SDK 注入 `base64` ⇒
+TokenHub 只接受 `float` ⇒ 400001 ⇒ 记忆写入路径整体不可用」，而当时 `/readyz` 全绿。"""
+
+
+async def check_embedding(settings: Settings) -> ComponentHealth:
+    """深度探针：真实发一次嵌入请求，并校验返回维度与常量一致。
+
+    **为什么它不在 `/readyz` 里**（这是端点形状的决定性理由，不是疏忽）：
+    这是一个**有成本**的探测——它会真的调用供应商、消耗配额。生产 healthcheck 是
+    **每 15 秒**一次，把真实嵌入调用放进去约等于 **5760 次/天**。因此它与
+    `/readyz` 分开，只在**发布验收与人工诊断**时按需调用（`/readyz/deep`）。
+
+    **为什么必须有它**（同一形态的缺陷已真实发生两次）：
+    `/readyz` 的 `model` 项只探 chat 端点（`GET /models`），而 chat 与 embedding 是两条
+    独立链路。于是「健康检查全绿而记忆写入整体不可用」这类状态探不到——它发生过两次：
+    宿主机 `no_proxy` 形态（注册/登录 500 而 `auth` 项绿）与 Graphiti embedder 漏传
+    `encoding_format`（记忆写入全坏而 `model` 项绿）。
+
+    覆盖的是**记忆写入路径**的嵌入器，而不是另建一个：构造经
+    `modules/memory/graph.build_memory_embedder`——那是「记忆侧嵌入器怎么造」的唯一真源，
+    生产装配（`build_memory_graph`）用的是同一个函数。若探针另写一份构造，就会与生产
+    分叉，改坏生产也不会让它变红（那正是这类探针最典型的失效形态）。
+
+    失败只回报异常类型与状态码，**不复述连接串、凭据或供应商响应体**（AGENTS.md 安全条款；
+    与 `agent/model/probe.py` 的处置一致）。
+
+    Note:
+        维度断言的边界（实测，2026-10-05）：`TokenHubEmbedder.create()` 会把返回向量
+        截断到 `EMBEDDING_DIM`。因此**「服务端返回更长」会被静默截掉而探不到**
+        （实测 3072 → 返回 2560，探针绿），而「服务端返回更短」如实暴露为不一致
+        （实测 2048 → 返回 2048，探针红）。这是本探针的已知残余，不是本包引入的：
+        截断是 `TokenHubEmbedder` 的既有契约（该类的 docstring 明写「维度仍按
+        `config.embedding_dim` 截断」），探针无法在不绕过生产构造的前提下绕过它。
+    """
+    try:
+        # 自建客户端（不注入生产的 http_client）：探针要有自己的短超时，
+        # 且它是服务端到服务端调用，不继承桌面代理豁免表（trust_env=False）。
+        memory_embedder = build_memory_embedder(settings, timeout_seconds=_EMBEDDING_PROBE_TIMEOUT_SECONDS)
+    except MemoryConfigurationError as exc:
+        # 缺凭据：配置问题，不是可达性问题（与 `check_model` 的 not_configured 同形）。
+        return ComponentHealth("embedding", Status.NOT_CONFIGURED, str(exc))
+    except Exception as exc:  # noqa: BLE001 —— 构造失败（含代理词法问题）如实上报，不让端点 500
+        return ComponentHealth(
+            "embedding",
+            Status.UNAVAILABLE,
+            f"嵌入器构造失败（{type(exc).__name__}）",
+        )
+
+    model_name = settings.embedding_model_name
+    try:
+        vector = await memory_embedder.embedder.create(_EMBEDDING_PROBE_INPUT)
+    except APITimeoutError as exc:
+        # 顺序有讲究：实测 `APITimeoutError` 是 `APIConnectionError` 的子类，先判连接会把
+        # 超时误报成网络问题——两者对排查者的含义完全不同（与 `agent/model/errors` 的
+        # `classify_model_failure` 同一处判定、同一理由）。
+        return ComponentHealth("embedding", Status.UNAVAILABLE, f"{model_name} 嵌入端点超时（{type(exc).__name__}）")
+    except APIStatusError as exc:
+        # **参数级缺陷落在这一档**：embedder 漏传 `encoding_format` 时 TokenHub 回
+        # 400001（HTTP 400）⇒ `BadRequestError`（`APIStatusError` 的子类）。
+        # 只报状态码与类型名：**不复述响应体**（可能含连接串/凭据片段）也不复述请求体。
+        return ComponentHealth(
+            "embedding",
+            Status.UNAVAILABLE,
+            f"{model_name} 嵌入端点返回 {exc.status_code}（{type(exc).__name__}）",
+        )
+    except APIConnectionError as exc:
+        # 只把传输类异常说成不可达：其余异常（探针自身的编程错误）不得被描述成网络问题，
+        # 否则会把排查者引向错误方向。
+        return ComponentHealth("embedding", Status.UNAVAILABLE, f"{model_name} 嵌入端点不可达（{type(exc).__name__}）")
+    except Exception as exc:  # noqa: BLE001 —— 但仍如实说明「这不是可达性结论」
+        return ComponentHealth(
+            "embedding",
+            Status.UNAVAILABLE,
+            f"探针自身异常（{type(exc).__name__}），无法判定嵌入端点状态",
+        )
+    finally:
+        # 收口本探针创建的连接（`aclose` 级联关闭注入的 httpx2 客户端，实测）。
+        # 关闭失败不得掩盖上面那条结论——探针的返回值已经确定。
+        with suppress(Exception):
+            await memory_embedder.aclose()
+
+    if len(vector) != EMBEDDING_DIM:
+        return ComponentHealth(
+            "embedding",
+            Status.UNAVAILABLE,
+            f"{model_name} 返回 {len(vector)} 维，与常量 EMBEDDING_DIM={EMBEDDING_DIM} 不一致",
+        )
+    return ComponentHealth("embedding", Status.OK, f"{model_name} 返回 {EMBEDDING_DIM} 维")
+
+
 #: readiness 探测的能力清单。`/readyz` 与 `/health` 共用它，因此两处口径不会漂移。
 #:
 #: 七项对应 docs/项目结构设计.md 第 10 节与上线前清单：认证 core、主库、队列（Redis）、
@@ -330,3 +466,75 @@ async def health() -> JSONResponse:
     故此处报告「认证 core 可达」。
     """
     return await readyz()
+
+
+#: 深度探针比 readiness 多出来的那一项。单独成一个常量，让「多了什么」一眼可见。
+_EMBEDDING_PROBE: tuple[str, Callable[[Settings], Awaitable[ComponentHealth]]] = ("embedding", check_embedding)
+
+
+def _deep_probes() -> tuple[tuple[str, Callable[[Settings], Awaitable[ComponentHealth]]], ...]:
+    """深度探针清单 = `_READINESS_PROBES` **加上**真实嵌入探测。
+
+    **刻意与 `_READINESS_PROBES` 分开**（这是本包的核心决定，不是重复）：
+    `check_embedding` 会真的调用供应商、消耗配额，而 `_READINESS_PROBES` 是
+    **周期性**判据——生产 healthcheck 每 15 秒跑一次，把它并进去约等于 5760 次/天。
+    分开之后，`/readyz` 与 `/health` 的口径逐字未变（仍是那七项、仍全 ok 才 200），
+    而真实嵌入探测只在 `/readyz/deep` 这条**按需**路径上发生。
+
+    为什么是函数、**按调用时读取** `_READINESS_PROBES`，而不是在导入期算成一个常量：
+    导入期快照会与「运行时被替换过的清单」脱节（`apps/api/tests/test_health.py` 的
+    文件头正是为同一个坑写的）。按调用时展开，readiness 清单增删一项时 `/readyz/deep`
+    自动跟上，不会静默少探一项。
+
+    同名去重（**先出现者胜**）是刻意的防御：万一有人把 `embedding` 挪进了
+    `_READINESS_PROBES`（本包明确不许可的那种改法），这里也不会把它探**两次**
+    ——重复探测意味着双倍配额成本，而它正是本包要避免的成本形态。
+    """
+    seen: set[str] = set()
+    probes: list[tuple[str, Callable[[Settings], Awaitable[ComponentHealth]]]] = []
+    for name, probe in (*_READINESS_PROBES, _EMBEDDING_PROBE):
+        if name in seen:
+            continue
+        seen.add(name)
+        probes.append((name, probe))
+    return tuple(probes)
+
+
+@app.get("/readyz/deep")
+async def readyz_deep() -> JSONResponse:
+    """深度就绪探针：`/readyz` 的全部项，**外加一次真实的嵌入探测**。
+
+    **⚠ 只供发布验收与人工诊断按需调用，绝不可进入周期性健康检查。**
+    本端点会真的调用 TokenHub 的嵌入端点（一次极短输入的请求），因此**有配额成本**：
+    按生产 healthcheck 的 15 秒节奏计算约 5760 次/天。Docker healthcheck、Nginx
+    upstream 检查与 CD 的发布轮询都**不得**指向这里——它们继续用 `/readyz`。
+
+    为什么需要它：`/readyz` 的 `model` 项只探 chat 端点（`GET /models`）。chat 与
+    embedding 是两条独立链路，而「探针只覆盖前者」这一盲区**已真实造成两次**
+    「健康检查全绿而业务整体不可用」——最近一次是记忆侧的 embedder 漏传
+    `encoding_format`（TokenHub `400001` ⇒ 记忆写入路径整体不可用）。参数的形状
+    缺陷 `GET /models` 抓不到，只有真发一次请求才抓得到。
+
+    与 `/readyz` 的关系：判据是「全部项 ok 才 200，否则 503」，与 `/readyz` 同形；
+    差别只在组件集合多了 `embedding` 一项。**未登录可达**：它与 `/readyz`、`/health`
+    同属运维探针端点（`AC-01` 的「运维探针端点除外」），Nginx 上游检查与人工诊断
+    都不持会话。
+
+    安全（AGENTS.md）：只发一条固定字面量（不含任何使用者数据），失败只回报异常类型与
+    HTTP 状态码，**不复述连接串、凭据或供应商响应体**。
+
+    Note:
+        生产经 Nginx 访问需要额外一条 `location = /readyz/deep`（见
+        `infrastructure/docker/app-locations.conf`）。**未配置时该路径会落到 SPA 的
+        `location /` 并被 `try_files` 回成 `index.html` ⇒ HTTP 200 + HTML**，
+        比 404 更难辨认。这是**已确认的部署前置条件**，不是本端点的实现缺陷。
+    """
+    settings = get_settings()
+    components: tuple[ComponentHealth, ...] = tuple(
+        await asyncio.gather(*(probe(settings) for _, probe in _deep_probes()))
+    )
+    report = HealthReport(components)
+    return JSONResponse(
+        content=report.as_dict(),
+        status_code=200 if report.is_ready else 503,
+    )
