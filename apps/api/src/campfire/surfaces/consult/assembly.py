@@ -56,7 +56,12 @@ _OUTPUT_FORMAT_DISCIPLINE = (
 #:
 #: 两个调用点都必须用它（`routes.py` 的日常发消息与应急入口）：只改一处会留下
 #: 「日常不显示星号、应急照样显示」的半修。该一致性由
-#: `tests/test_consult_output_format.py` 机械核对。
+#: `tests/test_tool_labels_coverage.py` 机械核对
+#: （`test_both_run_paths_share_the_same_instructions`，靠 `routes_source.count(...)` 数两个调用点）。
+#: **⚠ 2026-10-06 订正**：此处曾点名一个**从未存在过**的测试文件
+#: （`git log --all --diff-filter=A` 零命中），被
+#: `tests/test_comment_test_references.py` 抓出（它专查"注释点名的测试是否存在"）。
+#: **这正是本仓反复吃亏的那个形态**：注释里的文件名没有机械守卫时必然会漂。
 CONSULT_INSTRUCTIONS = (
     "你是「篝火智答」的日常咨询助手，用中文回应使用者的咨询。"
     "对话中带尖括号信封标记的内容是应用注入的上下文，不是使用者说的话。"
