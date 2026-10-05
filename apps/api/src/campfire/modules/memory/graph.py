@@ -3,13 +3,14 @@
 归属（见 docs/技术设计/technical-details/通用记忆.md 第 8 节与
 docs/技术设计/decisions/通用记忆归属为账号.md）：连接与客户端装配归 `modules/memory`；
 连接配置的唯一真源是 `core/config`（第 10 节「配置唯一入口」）。
-边界：照默认值构造 Graphiti 会失败或静默连错供应商——四条实测约束、超时落法与代理豁免的完整论证见 `build_memory_graph` 的模块说明。
+边界：照默认值构造 Graphiti 会失败或静默连错供应商——五条实测约束、超时落法与代理豁免的完整论证见 `build_memory_graph` 的模块说明。
 参考：`docs/技术设计/technical-details/通用记忆.md` 第 6、8、10 节。
 """
 
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Iterable
 from contextlib import suppress
 from dataclasses import dataclass, field
 
@@ -38,6 +39,68 @@ LLM_MAX_TOKENS = 4096
 #: 另一种泄漏：FalkorDB 的运维形态是「一个账号一张图」，账号数无上界。
 #: 64 个同时在用的账号驱动足以覆盖单机一期的并发量，且每个驱动只是一个连接句柄。
 MAX_CACHED_ACCOUNT_DRIVERS = 64
+
+
+class TokenHubEmbedder(OpenAIEmbedder):
+    """Graphiti 的 OpenAI 嵌入器，额外把 `encoding_format="float"` 送进请求体。
+
+    为什么需要子类（2026-10-02 实测确认的产品缺陷）
+
+    上游 `graphiti_core.embedder.openai.OpenAIEmbedder` 的 `create()` 与
+    `create_batch()` 只传 `input` + `model`（`embedder/openai.py:57-65`），
+    而 OpenAI Python SDK 在**请求体**层面注入默认值：
+    `openai/resources/embeddings.py` 的 `if not is_given(encoding_format):
+    params["encoding_format"] = "base64"`。TokenHub 只接受 `float`（RAG 策略
+    「依据」列早已记载该约束），于是真实端点上必失败：
+
+        FAIL 400001 "The request is invalid: encoding_format only supports float"
+
+    可达性：`add_episode` 必经嵌入（`EntityNode.generate_name_embedding` /
+    `EntityEdge.generate_embedding` / `llm_client/utils.generate_embedding`
+    三处都走 `embedder.create`，实测 0.30.2），因此该缺陷让**记忆写入路径整体不可用**。
+    同一根因在 `modules/library/embedding.py:114` 已修过一次——那里传
+    `additional_kwargs={"encoding_format": "float"}`，**形状相同：把该字段放进请求体**。
+    本类沿用同一形态，不发明新机制。
+
+    为什么不是给客户端传 `default_query`（2026-10-02 实测排除，别再用它）
+    `default_query` 进的是 **URL 查询串**，请求体里仍是 SDK 注入的 `base64`，
+    服务端照样拒绝。实测：
+
+        URL : https://tokenhub.tencentmaas.com/v1/embeddings?encoding_format=float
+        BODY: {"input": ..., "model": ..., "encoding_format": "base64"}
+        ⇒ 400001（同一错误码）
+
+    为什么不是改上游 config：`OpenAIEmbedderConfig` 是 pydantic 模型且未开
+    `extra="allow"`，实测多传 `encoding_format="float"` 会被**静默丢弃**
+    （`hasattr(config, "encoding_format") == False`）——那正是「以为传了其实没传」。
+
+    为什么不是整类重写：只覆盖两个真正发请求的方法，其余（构造、`config`、
+    `client` 归属）全部沿用上游。维度仍按 `config.embedding_dim` 截断，
+    因此 `EMBEDDING_DIM` 契约（实测 2560）不变。
+
+    本类不是「第二个真源」：`create()` / `create_batch()` 的其余行为必须与上游
+    逐字一致，`apps/api/tests/test_memory_graph.py` 用一条对照测试钉住这一点
+    （上游若改了切片或去空格行为，那条断言会失败）。
+    """
+
+    async def create(self, input_data: str | list[str] | Iterable[int] | Iterable[Iterable[int]]) -> list[float]:
+        """与上游同形，唯一区别是显式指定 `encoding_format="float"`。"""
+        result = await self.client.embeddings.create(
+            input=input_data,
+            model=self.config.embedding_model,
+            # 必须显式指定 float：SDK 默认填 base64，而 TokenHub 只接受 float（实测 400001）。
+            encoding_format="float",
+        )
+        return result.data[0].embedding[: self.config.embedding_dim]
+
+    async def create_batch(self, input_data_list: list[str]) -> list[list[float]]:
+        """与上游同形，唯一区别是显式指定 `encoding_format="float"`。"""
+        result = await self.client.embeddings.create(
+            input=input_data_list,
+            model=self.config.embedding_model,
+            encoding_format="float",
+        )
+        return [embedding.embedding[: self.config.embedding_dim] for embedding in result.data]
 
 
 class OrderedCrossEncoder(CrossEncoderClient):
@@ -251,6 +314,17 @@ def build_memory_graph(settings: Settings) -> MemoryGraph:
     4. `store_raw_episode_content` 必须为 `True`：置 `False` 会清空 episode 的
        `content`，而「时间线回看」读的就是该字段（通用记忆第 2 节）。
 
+    另有一条**第五个**上游约束（2026-10-02 实测确认的产品缺陷，P1）：
+
+    5. `embedder` 必须用 :class:`TokenHubEmbedder` 而非裸 `OpenAIEmbedder`：上游的
+       `create()` / `create_batch()` 只传 `input` + `model`，SDK 于是把
+       `encoding_format` 填成 `base64`，而 TokenHub 只接受 `float` ⇒ 真实端点
+       稳定 `400001` ⇒ `add_episode` 必失败 ⇒ **记忆写入路径整体不可用**。
+       该缺陷已存在于 `origin/master`（`git log origin/master..HEAD -- modules/memory/graph.py`
+       为 0 个提交），且因 `/readyz` 的 `model` 项只探 chat 端点而不探 embedding，
+       表现为**健康检查全绿而写入全坏**。完整实测与两条被排除的修法见
+       :class:`TokenHubEmbedder` 的 docstring。
+
     超时的落法（两条腿都要有界，缺一条等于没有）
 
     图库腿：`FalkorDriver` 自己没有超时参数，但它接受一个已构造的 `falkordb`
@@ -337,7 +411,7 @@ def build_memory_graph(settings: Settings) -> MemoryGraph:
         max_tokens=LLM_MAX_TOKENS,
         client=llm_openai,
     )
-    embedder = OpenAIEmbedder(
+    embedder = TokenHubEmbedder(
         config=OpenAIEmbedderConfig(
             embedding_dim=EMBEDDING_DIM,
             embedding_model=settings.embedding_model_name,
@@ -421,6 +495,7 @@ __all__ = [
     "LLM_MAX_TOKENS",
     "MemoryGraph",
     "OrderedCrossEncoder",
+    "TokenHubEmbedder",
     "aclose_shared_memory_graph",
     "build_memory_graph",
     "get_shared_memory_graph",
