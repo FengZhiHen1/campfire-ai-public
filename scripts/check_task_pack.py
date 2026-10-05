@@ -162,10 +162,126 @@ def check_counts_verified(text: str) -> list[str]:
     return problems
 
 
+def check_scope_matches_body(text: str) -> list[str]:
+    """§"要做什么"里点名的代码文件，是否都出现在 §"授权范围"里。
+
+    ## 为什么加这一条（它来自一次真实的失败，`(z161)`）
+
+    T27 的任务包里，§三之二（要做什么）**明确要求改** `tools/memory.py` 与
+    `agent/runtime/runner.py`（我引了它们的代码行、给了判据），
+    而 §五（授权范围）**没有列这两个文件** ——
+    **⇒ 执行者面临两难：照正文做 = 越界；照清单做 = 没完成。**
+    **它选了"照正文做且不碰硬禁区"（正确），但这是靠它的判断力兜住的，不是靠任务包。**
+
+    **⇒ 本检查把那条纪律变成会失败的检查。**
+
+    ## 判定方式（保守，只报"正文点名了但授权里没有"）
+
+    1. 从 §"要做什么/修法/判据"这类正文里抽出**形如代码路径**的串
+       （`apps/...`、`scripts/...`、`infrastructure/...`，含反引号包裹）；
+    2. 从 §"授权范围"里抽出同样的串（含通配写法 `apps/web/src/features/consult/**`）；
+    3. **正文里有、授权里没有（且不被任何通配覆盖）⇒ 报问题。**
+
+    ## ⚠ 边界（它防得住什么、防不住什么）
+
+    - **防得住**：我漏列一个正文点名的文件（T27 那种）；
+    - **防不住**：① 我**两边都漏**（正文没点名、授权也没有，而实际需要改）；
+      ② 路径写得不成形状（如只写"那个文件"）⇒ 抽不出来；
+      ③ 正文里提到某文件只是**作为现状描述**（不是"要改它"）⇒ 会误报。
+    **⇒ 因此它报出来的是【待人工确认】，不是"必须改"** ——
+    但对第 ③ 种情况，**正确做法是在正文里写清"该文件只读"**，那也算本检查的收益。
+    """
+    problems: list[str] = []
+
+    #: 代码路径的形态：以这些前缀开头、可含通配。
+    #:
+    #: ⚠ 两处必须同时支持（记一次真实的失败，本检查第一版漏了它们、于是【误报】了 T28）：
+    #: ① **带扩展名的具体文件**：`apps/.../answers.py`；
+    #: ② **以 `/**` 结尾的通配**：`apps/api/src/campfire/surfaces/consult/**` ——
+    #:    第一版的正则要求"以扩展名结尾"，**于是通配写法抽不出来** ⇒
+    #:    `scope_globs` 恒空 ⇒ **通配覆盖失效** ⇒ 把被通配覆盖的文件误报成"不在授权里"。
+    path_re = re.compile(
+        r"`?((?:apps|scripts|infrastructure|docs)/[\w./\-*]+?"
+        r"(?:/\*\*|\.(?:py|ts|tsx|md|conf|yml|yaml|sh)))`?"
+    )
+
+    #: "这句话只是【叫你去读】某个文件，不是叫你去改它" 的标记。
+    #:
+    #: ⚠ 为什么需要它（同一个失败的另一半）：T28 正文里写
+    #: 「**先读** `docs/技术设计/…HTTP与SSE契约.md` 与通用基座 7.2 节」——
+    #: 那是**只读**指引，而被第一版判成"点名了但没授权"。
+    #: **⇒ 只看路径不看动词，必然把"读"当成"改"。**
+    read_only_markers = ("先读", "只读", "读一下", "参见", "见 `", "依据", "参考")
+
+    #: 找 §"要做什么"这一段的起点标记（本仓任务包的既有写法）。
+    body_markers = ("要做的", "你要做", "修法", "第 0 步", "第 1 步")
+    scope_markers = ("授权范围", "你可以改")
+
+    lines = text.splitlines()
+    scope_start = None
+    for i, line in enumerate(lines):
+        if any(m in line for m in scope_markers):
+            scope_start = i
+            break
+    if scope_start is None:
+        # 没有授权范围节 ⇒ 这一条无法判（不报问题，避免对旧任务包误伤）。
+        return problems
+
+    # 授权范围一直到下一个同级或更高级标题为止。
+    scope_end = len(lines)
+    scope_heading = len(lines[scope_start]) - len(lines[scope_start].lstrip("#"))
+    for j in range(scope_start + 1, len(lines)):
+        s = lines[j]
+        if s.startswith("#"):
+            level = len(s) - len(s.lstrip("#"))
+            if level <= scope_heading and s.strip():
+                scope_end = j
+                break
+    scope_text = "\n".join(lines[scope_start:scope_end])
+    scope_paths = set(path_re.findall(scope_text))
+
+    # 通配前缀（如 apps/web/src/features/consult/**）⇒ 它能覆盖的子路径。
+    scope_globs = [p[:-3] for p in scope_paths if p.endswith("/**")]
+    #: 授权里写"相应的测试文件"这类统称时，放开对 test_*.py 的检查。
+    tests_blanket = any(k in scope_text for k in ("相应的测试文件", "对应测试", "及其测试"))
+
+    body_text = "\n".join(lines[:scope_start])
+    seen: set[str] = set()
+    body_lines = body_text.splitlines()
+    for hit in path_re.finditer(body_text):
+        path = hit.group(1)
+        if path in seen:
+            continue
+        seen.add(path)
+        if path in scope_paths:
+            continue
+        if any(path.startswith(g) for g in scope_globs):
+            continue
+        # 测试文件的统称豁免（正文常写 `test_x.py` 而授权写"相应的测试文件"）。
+        name = path.rsplit("/", 1)[-1]
+        if tests_blanket and name.startswith("test_"):
+            continue
+        if not any(m in body_text for m in body_markers):
+            continue
+        # 只读豁免：该路径所在的那一行（加前后各一行）里若有"先读/参见"类词，
+        # 说明这是叫执行者去**看**它，不是去**改**它。
+        line_no = body_text[: hit.start()].count("\n") + 1
+        window_lines = body_lines[max(0, line_no - 2) : line_no + 1]
+        window = "\n".join(window_lines)
+        if any(m in window for m in read_only_markers):
+            continue
+        problems.append(
+            f":{line_no} 正文点名了 `{path}`，但它不在 §授权范围里 "
+            f"⇒ 执行者会面临「照正文做 = 越界 / 照清单做 = 没完成」的两难（(z161) 的教训）"
+        )
+    return problems
+
+
 CHECKS = (
     ("候选方案已标注验证状态", check_options_annotated),
     ("「必须 X」区分结果与机制", check_requirement_kind),
     ("声称的完成数要求当场核实", check_counts_verified),
+    ("正文点名的文件都在授权范围内", check_scope_matches_body),
 )
 
 

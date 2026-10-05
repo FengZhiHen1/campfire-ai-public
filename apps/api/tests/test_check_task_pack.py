@@ -126,6 +126,88 @@ class TestGateCatchesUnverifiedCompletionClaims:
         assert gate.check_counts_verified(text) == []
 
 
+class TestGateCatchesBodyPathsMissingFromScope:
+    """`(z161)` 的教训：T27 的 §正文点名了两个文件，§授权范围却没列它们。
+
+    ⇒ 执行者会面临「照正文做 = 越界 / 照清单做 = 没完成」的两难。
+    它当时选了"照正文做且不碰硬禁区"（对），但那是靠它的判断力兜住的。
+    """
+
+    #: 一份"正文点名了 memory.py / runner.py，授权里只有 session_items.py"的合成包。
+    _MISMATCHED = (
+        "## 三、你要做的\n"
+        "你要改 `apps/api/src/campfire/tools/memory.py` 与\n"
+        "`apps/api/src/campfire/agent/runtime/runner.py`。\n"
+        "\n"
+        "## 五、授权范围\n"
+        "**你可以改**：`apps/api/src/campfire/modules/accounts/session_items.py`、\n"
+        "相应的测试文件。\n"
+        "**⚠ 不要碰**：`docs/**`。\n"
+    )
+
+    def test_body_path_absent_from_scope_is_flagged(self, gate: ModuleType) -> None:
+        """正文点名、授权未列 ⇒ 必须报出（这正是 `(z161)` 那次）。"""
+        problems = gate.check_scope_matches_body(self._MISMATCHED)
+        joined = "\n".join(problems)
+        assert "memory.py" in joined, f"闸门漏掉了正文点名的 memory.py：{problems}"
+        assert "runner.py" in joined, f"闸门漏掉了正文点名的 runner.py：{problems}"
+
+    def test_body_path_listed_in_scope_passes(self, gate: ModuleType) -> None:
+        """同一个文件既在正文又在授权 ⇒ 不该报。"""
+        text = self._MISMATCHED.replace(
+            "**你可以改**：`apps/api/src/campfire/modules/accounts/session_items.py`、",
+            "**你可以改**：`apps/api/src/campfire/tools/memory.py`、\n"
+            "`apps/api/src/campfire/agent/runtime/runner.py`、",
+        )
+        assert gate.check_scope_matches_body(text) == []
+
+    def test_glob_in_scope_covers_body_path(self, gate: ModuleType) -> None:
+        """授权里的 `/**` 通配应当覆盖它下面的文件。
+
+        ⚠ 这条来自一次真实的失败：本检查第一版的正则要求"以扩展名结尾"，
+        **于是 `.../consult/**` 这种写法抽不出来** ⇒ 通配失效 ⇒
+        **把已被通配覆盖的 `answers.py` 误报成"不在授权里"**。
+        """
+        text = (
+            "## 三、你要做的\n"
+            "你要改 `apps/api/src/campfire/surfaces/consult/answers.py`。\n"
+            "\n"
+            "## 五、授权范围\n"
+            "**你可以改**：`apps/api/src/campfire/surfaces/consult/**`。\n"
+        )
+        assert gate.check_scope_matches_body(text) == []
+
+    def test_read_only_reference_is_not_flagged(self, gate: ModuleType) -> None:
+        """「**先读** 某文档」是只读指引，不是"要改它"。
+
+        ⚠ 同一个失败的第三半：只看路径不看动词，必然把"读"当成"改"。
+        """
+        text = (
+            "## 三、你要做的\n"
+            "**⚠ 若要新增**，**先读 `docs/技术设计/面/consult/HTTP与SSE契约.md`**。\n"
+            "\n"
+            "## 五、授权范围\n"
+            "**你可以改**：`apps/api/src/campfire/modules/accounts/session_items.py`。\n"
+        )
+        assert gate.check_scope_matches_body(text) == []
+
+    def test_test_file_covered_by_blanket_phrase_passes(self, gate: ModuleType) -> None:
+        """授权写「相应的测试文件」时，不该逐个要求列出 `test_*.py`。"""
+        text = (
+            "## 三、你要做的\n"
+            "你要改 `apps/api/tests/test_memory_tools.py`。\n"
+            "\n"
+            "## 五、授权范围\n"
+            "**你可以改**：`apps/api/src/campfire/tools/memory.py`、相应的测试文件。\n"
+        )
+        assert gate.check_scope_matches_body(text) == []
+
+    def test_pack_without_scope_section_is_not_flagged(self, gate: ModuleType) -> None:
+        """没有 §授权范围 的任务包无法判这一条 ⇒ 不报（避免对旧包误伤）。"""
+        text = "## 三、你要做的\n你要改 `apps/api/src/campfire/tools/memory.py`。\n"
+        assert gate.check_scope_matches_body(text) == []
+
+
 class TestGateExitCodes:
     """退出码语义：发现问题必须【非 0】（CI 风格，不是告警）。"""
 
