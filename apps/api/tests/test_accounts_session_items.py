@@ -37,9 +37,12 @@ from campfire.agent.tools import ToolResult
 from campfire.agent.tools.pool import RESERVED_TOOL_NAMES
 from campfire.modules.accounts import session_items
 from campfire.modules.accounts.session_items import (
+    ANSWERS_HEADER,
     ASK_USER_SUCCESS_OUTPUT,
+    COMPACTED_SUMMARY_TAG,
     INJECTED_MESSAGE_PREFIXES,
     INTERRUPTED_TOOL_SUMMARY,
+    PART_TYPE_QUESTION_RECORD,
     PREVIEW_MAX_CHARS,
     QUESTION_BATCH_ID_PREFIX,
     QUESTION_ITEMS_MAX,
@@ -49,6 +52,7 @@ from campfire.modules.accounts.session_items import (
     TOOL_SUMMARY_MAX_CHARS,
     UNKNOWN_TOOL_NAME,
     MessagePart,
+    QuestionPart,
     StoredItem,
     build_messages,
     build_preview,
@@ -60,7 +64,8 @@ from campfire.modules.accounts.session_items import (
     message_text,
     normalize_inline_text,
     parse_item,
-    question_part,
+    question_answered_verdicts,
+    question_record_part,
     reasoning_text,
     tool_failure_message,
 )
@@ -706,18 +711,21 @@ def test_ask_user_success_output_matches_the_tool_handler() -> None:
     assert tool.name == session_items.ASK_USER_TOOL_NAME
 
 
-def test_hydration_rebuilds_a_question_part() -> None:
+def test_hydration_rebuilds_a_question_record_part() -> None:
     """★ 主用例：带 `ask_user` 调用对的历史，水合后必须出现提问 part。
 
     这就是 T27 的缺陷现场——刷新后 `.question-card` 消失，因为后端从不产出
-    `question` part（`history.ts` 的 `case 'question'` 因此永不命中）。
+    提问 part（`history.ts` 因此永不命中）。
 
-    判别性：把 `MessagePart` 联合里新加的 `QuestionPart` 去掉（或删掉
+    判别性：把 `MessagePart` 联合里新加的 `QuestionRecordPart` 去掉（或删掉
     `add_tool_output` 里追加 part 的那三行）⇒ 本用例在第一处断言就失败。
+
+    ⚠ T31 之后它叫 `question-record`（不再复用事件侧的 `question`，理由见
+    `PART_TYPE_QUESTION_RECORD`），且**必须**带服务端判定的 `answered`。
     """
     parts = build_messages(_question_turn_items())[1]["parts"]
 
-    questions = [part for part in parts if part["type"] == "question"]
+    questions = [part for part in parts if part["type"] == PART_TYPE_QUESTION_RECORD]
 
     assert len(questions) == 1, "刷新后必须仍有且只有一个提问 part（T24 的缺陷现场）"
     question = questions[0]
@@ -727,21 +735,43 @@ def test_hydration_rebuilds_a_question_part() -> None:
     # 题干逐字保留：使用者要读的正是这句话。
     assert "你平时怎么称呼这孩子" in question["items"][0]["prompt"]
     assert question["items"][0]["allow_skip"] is True
+    # ★ 这组题后面没有任何使用者消息 ⇒ 未作答 ⇒ **可作答**（本包修的那条）。
+    assert question["answered"] is False
 
 
-def test_hydration_question_part_shape_matches_the_wire_contract() -> None:
-    """水合出的 `question` part 形状必须与契约第 7 节逐字一致（前端两侧共用一组键）。
+def test_hydration_question_record_part_shape_matches_the_wire_contract() -> None:
+    """水合出的 `question-record` part 形状必须与契约第 7 节逐字一致。
 
-    前端 `history.ts` 的 `case 'question'` 读的是 `batch_id` / `items`，
+    前端 `history.ts` 的 `case 'question-record'` 读的是 `batch_id` / `items` / `answered`，
     而 `parts.tsx` 的 `QuestionRecordPart` 再逐项读 `id` / `prompt` / `options`
     / `allow_skip`。少一个键或改一个名字，水合出的卡就是空的——
     而那种失败在浏览器里只表现为「卡片不出现」，不会报错。
+
+    ★ 与 `test_question_event_part_shape_stays_wire_exact` 是**两条都承重**的用例：
+    事件侧断 `{type, batch_id, items}`、水合侧断 `{type, batch_id, items, answered}`。
+    去掉任一条，另一侧的「多一个字段」就没人看得见（那正是 T31 要防的
+    「把回看侧字段塞进流出侧载荷」）。
     """
     parts = build_messages(_question_turn_items())[1]["parts"]
-    question = next(part for part in parts if part["type"] == "question")
+    question = next(part for part in parts if part["type"] == PART_TYPE_QUESTION_RECORD)
 
-    assert set(question) == {"type", "batch_id", "items"}
+    assert set(question) == {"type", "batch_id", "items", "answered"}
     assert set(question["items"][0]) == {"id", "prompt", "options", "allow_skip"}
+
+
+def test_question_event_part_shape_stays_wire_exact() -> None:
+    """事件侧的 `question` part 形状**一字未动**：`{type, batch_id, items}` 三项。
+
+    这是 T31 硬边界第 4 条（不许改动流出侧载荷）的机械守卫。`question` 描述的是
+    「刚发出、尚未作答」的提问——发出即结束运行（基座 7.2 节），因此它的载荷里
+    不可能有「已作答」。若有人把 `answered` 加到它上面，本用例红。
+
+    判别性：往 `QuestionPart` 加一个字段（或把它换成 `QuestionRecordPart`）⇒ 红。
+    """
+    assert set(QuestionPart.__annotations__) == {"type", "batch_id", "items"}
+    # 强判据：事件侧类型不在水合 parts 的取值域里（否则「水合会不会产出它」就没有答案）。
+    assert "question" not in _message_part_type_names()
+    assert "question" in session_items.NOT_REBUILT_PARTS
 
 
 def test_hydration_rebuilds_options_when_present() -> None:
@@ -764,7 +794,7 @@ def test_hydration_rebuilds_options_when_present() -> None:
     )
     items = [_stored(1, _user("问")), _stored(2, _ask_user_call(arguments=arguments)), _stored(3, _ask_user_output())]
 
-    question = next(part for part in build_messages(items)[1]["parts"] if part["type"] == "question")
+    question = next(part for part in build_messages(items)[1]["parts"] if part["type"] == PART_TYPE_QUESTION_RECORD)
 
     assert question["items"][0]["options"] == [
         {"label": "先建档", "description": "大约七八个问题"},
@@ -780,7 +810,7 @@ def test_hydration_does_not_rebuild_a_question_from_a_failed_call() -> None:
     （见 `agent/runtime/assembly.py` 的说明）。若水合只看参数形状，就会给一张
     「当时从未出现过」的提问卡——那是本模块明确禁止的伪造。
 
-    判别性：把 `question_part` 里 `output != ASK_USER_SUCCESS_OUTPUT` 那一句去掉，
+    判别性：把 `question_record_part` 里 `output != ASK_USER_SUCCESS_OUTPUT` 那一句去掉，
     本用例失败（会凭空造出一张卡）。
     """
     items = [
@@ -799,8 +829,8 @@ def test_hydration_does_not_rebuild_a_question_from_a_failed_call() -> None:
     assert first["ok"] is False
 
 
-def test_question_part_rejects_bad_input() -> None:
-    """`question_part` 的每一条判据都各有一个「喂坏输入 ⇒ 立刻失败」的对照。
+def test_question_record_part_rejects_bad_input() -> None:
+    """`question_record_part` 的每一条判据都各有一个「喂坏输入 ⇒ 立刻失败」的对照。
 
     这是任务书要求的**反空断言**：完整性断言（「每个 question 事件都能水合」）若是
     恒真的空闸门就毫无价值。这里逐条喂坏输入，断言它返回 `None` 而不是造一张卡。
@@ -831,10 +861,12 @@ def test_question_part_rejects_bad_input() -> None:
     }
 
     # 对照组：同一形状的好输入必须**不**返回 None——否则「一切都返回 None」也能全绿。
-    assert question_part(call_id, good_arguments, ASK_USER_SUCCESS_OUTPUT) is not None
+    assert question_record_part(call_id, good_arguments, ASK_USER_SUCCESS_OUTPUT, answered=False) is not None
 
     for label, (given_call_id, arguments, output) in cases.items():
-        assert question_part(given_call_id, arguments, output) is None, f"{label} 必须重建不出提问"
+        assert question_record_part(given_call_id, arguments, output, answered=False) is None, (
+            f"{label} 必须重建不出提问"
+        )
 
 
 def test_hydration_keeps_the_tool_call_row_next_to_the_question() -> None:
@@ -848,12 +880,381 @@ def test_hydration_keeps_the_tool_call_row_next_to_the_question() -> None:
     assert len(messages) == 2, "一条使用者 + 一条助手"
     parts = messages[1]["parts"]
     types = [part["type"] for part in parts]
-    assert types == ["reasoning", "text", "tool_call", "question"]
+    assert types == ["reasoning", "text", "tool_call", PART_TYPE_QUESTION_RECORD]
     # 工具行仍在（它是「向你提问 · 已结束」那句话的来源，T24 靠它看见「已结束」）。
     # 判别字段先断言再取该 part 独有的键（同文件既有用例的写法）。
     tool_part = parts[2]
     assert tool_part["type"] == "tool_call"
     assert tool_part["tool_name"] == ASK_USER_TOOL_NAME
+
+
+# ---------------------------------------------------------------------------
+# T31：`answered` 的三态判定（★ 本包的主承重区）
+#
+# 这条路要修的是 T27 自己登记的残余（其报告 §8.1-1）：
+# **刷新后提问卡不能继续作答** ⇒ 一组**从未被作答**的提问在功能上永久丢失。
+#
+# 三个状态的呈现由前端决定，但**判定必须由服务端给出**（硬边界 1：不许让前端猜）。
+# 下面每条用例都对应一个具体的失败方向，其中两条是**互相反向**的误判。
+# ---------------------------------------------------------------------------
+
+
+def _answer(text_ids: Sequence[str] = ("object_name",)) -> dict:
+    """一条实测形状的作答消息（逐字对齐 `answers.render_answers` 的产出形状）。"""
+    lines = [ANSWERS_HEADER] + [f"{item_id}：可以" for item_id in text_ids]
+    return {"role": "user", "content": "\n".join(lines)}
+
+
+def _current_time_injection() -> dict:
+    """一条每轮都会注入的 T27 时间信封（T31 实测的坑 1 的载体）。
+
+    名字带 `current_time` 而不是 `_injection`：后者是本文件既有的辅助函数
+    （`_injection(content)`），同名会**静默覆盖**它并让「每个声明的前缀都被识别」
+    那条用例以 TypeError 失败——那看起来像实现坏了，其实是本函数抢了名字。
+    """
+    return {
+        "role": "user",
+        "content": "<current_time>\n  现在是 2026-10-06T00:00:00+00:00（UTC）。\n</current_time>",
+    }
+
+
+def test_question_answered_header_matches_the_renderer() -> None:
+    """★ `ANSWERS_HEADER` 必须与 `answers.render_answers` 的产出逐字一致。
+
+    这是**判据的判据**：水合靠这句话判定「这组题被作答了」。它一旦与渲染器漂移，
+    **已作答**的组会被判成**未作答** ⇒ 使用者重复作答（任务书 §三 点名的
+    「最危险的失败方向」），而且没有任何用例会红。
+
+    因此这里直接跑真实渲染器，而不是再抄一份字面量。
+    """
+    from campfire.surfaces.consult.answers import AnswerItem, render_answers
+
+    rendered = render_answers([AnswerItem(id="object_name", value="可以")])
+    assert rendered.split("\n")[0] == ANSWERS_HEADER
+    assert rendered.startswith(ANSWERS_HEADER)
+
+
+def test_question_answered_checkpoint_tag_matches_the_compaction_parser() -> None:
+    """★ `COMPACTED_SUMMARY_TAG` 必须与 `agent/context/window` 的同名常量一致。
+
+    `modules/*` 不得 import `agent/*`（项目结构设计第 7 节），因此这份字面量必须在两处
+    各写一份，相等关系只能靠本用例机械守住。漂移的后果是**静默**的：判据认不出复述块，
+    于是把「无法判定」当成「未作答」，或在反向把它当成作答。
+    """
+    assert COMPACTED_SUMMARY_TAG == window.COMPACTED_SUMMARY_TAG
+
+
+def test_question_answered_true_when_followed_by_the_answers_message() -> None:
+    """**已作答** ⇒ `True`（★ 反向误判的靶子：这一条判错会让使用者重复作答）。"""
+    items = [
+        _stored(1, _user("问")),
+        _stored(2, _ask_user_call()),
+        _stored(3, _ask_user_output()),
+        _stored(4, _answer()),
+        _stored(5, _assistant("收到。")),
+    ]
+
+    assert question_answered_verdicts(items) == {_ASK_USER_CALL_ID: True}
+
+
+def test_question_answered_true_when_the_answer_came_after_another_message() -> None:
+    """★ 判据取「存在作答」而不是「第一条就是作答」（失败方向选安全的那边）。
+
+    窗口里可能先出现一条新话题、**之后**才出现作答（使用者先说了别的，再回头把那组题答了）。
+    按「第一条」判会给出 `False` ⇒ 卡片重新变成可作答 ⇒ **使用者对同一组题作答两次**
+    （任务书 §三 点名的方向）；按「存在」判给出 `True` ⇒ 只读。
+
+    反向的代价对比：这个读法唯一漏掉的是「先发新话题、再回头作答」的组被当成已作答——
+    而那组**确实是被作答了**，只读是正确的。两种读法在真实库 60 组上读数相同
+    （T31 实测：31/29/0 两者一致），因此这条只能靠构造用例证明。
+
+    判别性：把 `_window_verdict` 的 `any(...)` 改回 `bodies[0].lstrip().startswith(...)` ⇒ 红。
+    """
+    items = [
+        _stored(1, _user("问")),
+        _stored(2, _ask_user_call()),
+        _stored(3, _ask_user_output()),
+        _stored(4, _user("我先说个别的：昨天他又不肯出门。")),
+        _stored(5, _answer()),
+    ]
+
+    assert question_answered_verdicts(items) == {_ASK_USER_CALL_ID: True}
+
+
+def test_question_answered_false_when_the_user_moved_on() -> None:
+    """**未作答**（使用者忽略提问去问别的）⇒ `False`。
+
+    这一条正是**表头那一半承重**的地方：只按「后面有没有使用者消息」判会把它误判成
+    已作答 ⇒ **永久失去补答能力**（本包要修的那个缺陷换了张脸回来）。
+    """
+    items = [
+        _stored(1, _user("问")),
+        _stored(2, _ask_user_call()),
+        _stored(3, _ask_user_output()),
+        _stored(4, _user("换个话题：我想先说说别的。")),
+    ]
+
+    assert question_answered_verdicts(items) == {_ASK_USER_CALL_ID: False}
+
+
+def test_question_answered_false_when_nothing_follows() -> None:
+    """**未作答**（提问后什么都没有）⇒ `False` ⇒ 前端可作答（本包修的那条）。"""
+    items = [_stored(1, _user("问")), _stored(2, _ask_user_call()), _stored(3, _ask_user_output())]
+
+    assert question_answered_verdicts(items) == {_ASK_USER_CALL_ID: False}
+    # 端到端：水合出的 part 也必须是 `answered=False`（前端据此渲染成可作答）。
+    part = next(p for p in build_messages(items)[1]["parts"] if p["type"] == PART_TYPE_QUESTION_RECORD)
+    assert part["answered"] is False
+
+
+def test_question_answered_skips_injected_rows_before_the_user_message() -> None:
+    """★ 坑 1：注入排在本次使用者消息**之前**（`runner.py:402-405`）。
+
+    实测的落库顺序是 `activated_record → 注入 → 使用者消息`。若判据把注入当成
+    「后继使用者消息」，它会看到那条 `<current_time>`（不是作答）⇒ 把**已作答**
+    判成**未作答** ⇒ 使用者重复作答。
+
+    判别性：把 `_window_verdict` 里的 `is_injected_message` 跳过那句删掉 ⇒ 本用例红
+    （注入进 bodies ⇒ 重复检测/表头判定给出 `None` 或 `False`）。
+    """
+    items = [
+        _stored(1, _user("问")),
+        _stored(2, _ask_user_call()),
+        _stored(3, _ask_user_output()),
+        _stored(4, _current_time_injection()),
+        _stored(5, _answer()),
+    ]
+
+    assert question_answered_verdicts(items) == {_ASK_USER_CALL_ID: True}
+
+
+def test_question_answered_ignores_repeated_identical_injections() -> None:
+    """★ 注入不参与「复述」判据：同一段注入出现两次**不是**压缩复述。
+
+    这是「跳过注入」那一半真正承重的地方（它的价值不在「第一条是谁」，而在**别把注入
+    算进复述检测**）：一次窗口里可能落进两轮的注入，而技能目录注入在目录不变时**逐字相同**。
+    若不跳过注入，重复检测会把它当成复述 ⇒ 返回 `None` ⇒ **一组其实已作答的题变成只读**
+    （方向上是安全的，但它是一次凭空的误判，会把可补答的组错误地锁住）。
+
+    真实库里当前没有实例（T31 实测：60 个窗口里含重复注入正文的 = 0；全库含重复注入正文的
+    会话 = 0），但机制在——`runner._render_current_time` 是**每轮**注入的。因此这条只能靠
+    构造用例证明。
+
+    判别性：把 `_window_verdict` 里的 `if is_injected_message(item): continue` 删掉 ⇒ 红
+    （重复检测命中 ⇒ 返回 `None` 而不是 `True`）。
+    """
+    items = [
+        _stored(1, _user("第一轮")),
+        _stored(2, _ask_user_call(call_id="call-A")),
+        _stored(3, _ask_user_output(call_id="call-A")),
+        # 下一轮的注入：两条**逐字相同**的技能目录信封（目录没变）。
+        _stored(4, _injection()),
+        _stored(5, _injection()),
+        _stored(6, _answer()),
+    ]
+
+    assert question_answered_verdicts(items) == {"call-A": True}
+
+
+def test_question_answered_separates_two_batches_with_identical_items() -> None:
+    """★ 位置那一半承重：两组题**题标识完全相同**，A 已作答 / B 未作答。
+
+    只按「历史里有没有作答消息」判会把 A 的作答算到 B 头上 ⇒ B 被判成已作答
+    ⇒ **永久失去补答能力**。位置窗口正是为了分开它们。
+
+    判别性：把 `question_answered_verdicts` 的窗口起点（`start`）改成 0（扫整段历史）⇒ 红。
+    """
+    items = [
+        _stored(1, _user("第一轮")),
+        _stored(2, _ask_user_call(call_id="call-A")),
+        _stored(3, _ask_user_output(call_id="call-A")),
+        _stored(4, _answer()),
+        _stored(5, _user("第二轮")),
+        _stored(6, _ask_user_call(call_id="call-B")),
+        _stored(7, _ask_user_output(call_id="call-B")),
+        _stored(8, _user("我还有个新问题，先不回答这组。")),
+    ]
+
+    assert question_answered_verdicts(items) == {"call-A": True, "call-B": False}
+
+
+def test_question_answered_null_when_a_late_answer_lands_in_a_later_window() -> None:
+    """★ 跨窗口的迟到作答 ⇒ A 判 `None`（而不是 `False`）。
+
+    构造（产品代码实测复现，T31 r3）：
+
+        call(A) → out(A) → user("换个话题") → call(B) → out(B) → user(作答)
+
+    真值是「那条作答是给 **A** 的迟到作答」（使用者在 B 提问之后才回头把 A 答了），
+    B 并未被作答。而按「本组窗口里有没有表头消息」判会给出 `A=False`、`B=True`：
+
+    - `A=False` ⇒ A 的卡片重新变成可作答 ⇒ 使用者**对 A 重复作答**（本包要消除的方向）；
+    - `B=True` ⇒ B 永久失去补答（服务端无法区分，见报告「残余」一节，本包不修）。
+
+    A 侧可以判：那条表头消息**落在比 A 更晚的提问的窗口里**，因此它完全可能就是 A 的
+    迟到作答 ⇒ 服务端不得断言「A 未被作答」⇒ `None`（fail-closed，只读）。
+
+    判别性：撤掉 `question_answered_verdicts` 里那句跨窗口迟到作答的检查 ⇒ 本用例红
+    （A 变回 `False`）。它只把 `False` 降级成 `None`，因此**不会**制造新的
+    「永久失去补答」——B 的 `True` 不受影响（这是本包明确登记、不修的残余）。
+    """
+    items = [
+        _stored(1, _user("问 A")),
+        _stored(2, _ask_user_call(call_id="call-A")),
+        _stored(3, _ask_user_output(call_id="call-A")),
+        _stored(4, _user("换个话题：我想先说说别的。")),
+        _stored(5, _ask_user_call(call_id="call-B")),
+        _stored(6, _ask_user_output(call_id="call-B")),
+        _stored(7, _answer()),
+    ]
+
+    verdicts = question_answered_verdicts(items)
+
+    # 核心断言：A 绝不能是 `False`（那会让使用者重复作答）。
+    assert verdicts["call-A"] is not False, "A 被误判为未作答 ⇒ 卡片可作答 ⇒ 使用者会对 A 重复作答"
+    # B 的 `True` 是本包不修的残余（无法区分，见报告）；这里把它钉成事实记录。
+    assert verdicts["call-B"] is True
+
+
+def test_question_answered_null_when_a_compaction_checkpoint_is_in_the_window() -> None:
+    """★ 坑 2：压缩会**复述**旧尾部 ⇒ 无法判定 ⇒ `None`（fail-closed）。
+
+    `compaction.appended_items` 追加「[检查点] + [尾部原文]」，被保留的尾部因此在历史里
+    存在**两份**（`compaction.py:468` 自己写明这个代价）。当前库里没有实例
+    （T31 实测 `<compacted-summary>` = 0），但这是必然机制。
+
+    这一条的**方向**是关键：复述块里的旧作答消息与本组的作答在形状上无法区分 ⇒
+    猜成 `True` 会让本组**永久无法补答**；猜成 `False` 会让使用者**重复作答**。
+    **两边都不许猜** ⇒ `None` ⇒ 前端只读。
+
+    ★ 构造的形状是**两轮提问**，这一点是承重的前提：A 组的作答（第 4 条）落在 B 组的
+    窗口**之外**（窗口从 B 的回执之后开始），因此窗口里那条表头消息**只有一份**
+    ——「同一正文出现两份」那条检测**抓不到它**，只有「窗口里出现检查点」这一条能抓。
+    若把检查点判成「跳过」（而不是返回 `None`），它会落到
+    `is_injected_message` 上被静默跳过（`<compacted-summary>` 也登记在
+    `INJECTED_MESSAGE_PREFIXES` 里），于是 bodies = [复述的作答, 新话题] ⇒ 返回 `True`
+    ⇒ **未作答被误判成已作答**。
+
+    判别性：把 `_window_verdict` 里 `if _is_compaction_checkpoint(item): return None`
+    改成 `continue` ⇒ 本用例红。
+    """
+    items = [
+        _stored(1, _user("第一轮")),
+        _stored(2, _ask_user_call(call_id="call-A")),
+        _stored(3, _ask_user_output(call_id="call-A")),
+        _stored(4, _answer()),
+        _stored(5, _user("第二轮")),
+        _stored(6, _ask_user_call(call_id="call-B")),
+        _stored(7, _ask_user_output(call_id="call-B")),
+        # 压缩发生在这里：检查点 + 被保留的尾部（含 A 组的那条作答）被**整块追加**。
+        _stored(8, {"role": "user", "content": f"{COMPACTED_SUMMARY_TAG}\n旧摘要\n</compacted-summary>"}),
+        _stored(9, _answer()),
+        _stored(10, _user("压缩之后我发了一条新话题。")),
+    ]
+
+    verdicts = question_answered_verdicts(items)
+
+    # A 组的窗口里就是那条原始作答 ⇒ 已作答。
+    assert verdicts["call-A"] is True
+    # B 组：窗口里那条表头消息是**复述**的（不是 B 组的作答）⇒ 判不出来 ⇒ 只读。
+    assert verdicts["call-B"] is None
+
+
+def test_question_answered_null_when_the_user_body_repeats() -> None:
+    """★ 坑 2 的第二种表现：窗口里同一段使用者正文出现**两次** ⇒ `None`。
+
+    复述块的边界恰好落在窗口内部时，检查点本身不在窗口里，但复述的事实仍然可见
+    （同一段正文两份）。判据必须看得见它——否则会把复述里的旧作答当成本组的作答。
+
+    判别性：把 `_window_verdict` 里的重复检测删掉 ⇒ 红。
+    """
+    body = _answer()
+    items = [
+        _stored(1, _user("问")),
+        _stored(2, _ask_user_call()),
+        _stored(3, _ask_user_output()),
+        _stored(4, dict(body)),
+        _stored(5, dict(body)),
+    ]
+
+    assert question_answered_verdicts(items) == {_ASK_USER_CALL_ID: None}
+
+
+def test_question_answered_null_when_a_user_message_has_no_readable_text() -> None:
+    """★ 判据看不到内容时**不猜** ⇒ `None`（fail-closed）。
+
+    这是「反空断言」的另一面：若把「读不出文本」当成「不是作答」，判据就在**没有依据**时
+    给出一个看起来确定的结论。三条 fail-closed 路径都必须有用例。
+    """
+    items = [
+        _stored(1, _user("问")),
+        _stored(2, _ask_user_call()),
+        _stored(3, _ask_user_output()),
+        _stored(4, {"role": "user", "content": [{"type": "image_url", "image_url": {"url": "x"}}]}),
+    ]
+
+    assert question_answered_verdicts(items) == {_ASK_USER_CALL_ID: None}
+
+
+def test_question_answered_ignores_a_failed_ask_user_call() -> None:
+    """★ 失败的 `ask_user`（参数不合法）**不作为窗口终点**。
+
+    它从未向使用者呈现过任何东西（`QuestionGate` 也不为它结束运行），因此不产生 part。
+    若把它算作终点，一次「先失败一次、再成功一次」的会话会把上一组的窗口切碎——
+    上一组的真实作答落到窗口之外 ⇒ 判成未作答 ⇒ **使用者重复作答**。
+
+    判别性：把 `_ask_user_turns` 里 `output != ASK_USER_SUCCESS_OUTPUT` 那句删掉 ⇒ 红。
+    """
+    items = [
+        _stored(1, _user("问")),
+        _stored(2, _ask_user_call(call_id="call-ok")),
+        _stored(3, _ask_user_output(call_id="call-ok")),
+        # 一次失败的调用（参数不合法）夹在窗口里，且**在**真实作答之前。
+        _stored(4, _ask_user_call(call_id="call-bad")),
+        _stored(
+            5,
+            _ask_user_output(
+                call_id="call-bad",
+                output='<tool_error code="tool_invalid_arguments">items 为空</tool_error>',
+            ),
+        ),
+        _stored(6, _answer()),
+    ]
+
+    verdicts = question_answered_verdicts(items)
+
+    # 失败的调用不进结论（它没有 part）。
+    assert verdicts == {"call-ok": True}
+
+
+def test_question_answered_null_when_the_same_call_appears_twice() -> None:
+    """★ 同一次提问在历史里出现两份（复述的最坏形态）⇒ `None`（两侧一起 fail-closed）。
+
+    「哪一份的窗口才是本组的窗口」没有答案。判据不得任选一份——选错任一边的代价都是
+    上面两条点名的失败方向之一。
+    """
+    items = [
+        _stored(1, _user("问")),
+        _stored(2, _ask_user_call()),
+        _stored(3, _ask_user_output()),
+        _stored(4, _answer()),
+        # 复述：整对调用/结果（连同作答）再出现一次。
+        _stored(5, _ask_user_call()),
+        _stored(6, _ask_user_output()),
+    ]
+
+    assert question_answered_verdicts(items) == {_ASK_USER_CALL_ID: None}
+
+
+def test_question_answered_empty_input_yields_no_verdicts() -> None:
+    """**反空断言**：喂空集 ⇒ 立刻空结果（而不是一条恒真的完整性断言）。
+
+    若判据实现成「每组都必定有一个结论」，它就必须在空集上撒一个值出来——
+    这里明确断言**不撒**：没有提问就没有结论，调用方（`_Hydration`）按缺键 fail-closed。
+    """
+    assert question_answered_verdicts([]) == {}
+    # 非 0 正例对照：同一函数在真实形状上必须给出非空结论（否则上面的空集断言恒真）。
+    assert question_answered_verdicts(_question_turn_items()) == {_ASK_USER_CALL_ID: False}
 
 
 def test_part_ledger_agrees_with_the_code_facts() -> None:
@@ -915,17 +1316,22 @@ def test_part_ledger_agrees_with_the_code_facts() -> None:
     )
 
 
-def test_part_ledger_covers_the_six_parts_of_the_contract() -> None:
-    """台账必须覆盖契约第 7 节列的六种 part（一个不漏）。
+def test_part_ledger_covers_the_seven_parts_of_the_contract() -> None:
+    """台账必须覆盖契约第 7 节列的七种 part（一个不漏）。
 
     没有这一条，「两张表都空了」也能让上面那条通过——而空台账正是**最彻底的过期**：
     它连「这里曾经有什么」都不再说。
+
+    ★ T31 之后是**七种**：六种原有 part 加 `question-record`（水合侧专有）。
+    事件侧的 `question` 也在契约表里，因此两张表合起来必须同时含 `question` 与
+    `question-record`——前者在 `NOT_REBUILT_PARTS`（它不在水合 parts 的取值域里），
+    后者在 `PART_PROVENANCE`。
     """
-    contract_parts = {"text", "reasoning", "tool_call", "citation", "question", "action_card"}
+    contract_parts = {"text", "reasoning", "tool_call", "citation", "question", "question-record", "action_card"}
 
     covered = set(session_items.PART_PROVENANCE) | set(session_items.NOT_REBUILT_PARTS)
 
     assert covered == contract_parts, (
-        f"契约第 7 节的六种 part 与台账不一致：未覆盖 {sorted(contract_parts - covered)}，"
+        f"契约第 7 节的七种 part 与台账不一致：未覆盖 {sorted(contract_parts - covered)}，"
         f"多出 {sorted(covered - contract_parts)}"
     )

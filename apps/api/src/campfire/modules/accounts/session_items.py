@@ -24,7 +24,7 @@ import json
 import logging
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from typing import Literal, TypedDict, TypeGuard
+from typing import Final, Literal, TypeAlias, TypedDict, TypeGuard
 
 logger = logging.getLogger(__name__)
 
@@ -148,6 +148,48 @@ ASK_USER_SUCCESS_OUTPUT = "已向使用者发出提问，本次运行到此结�
 #: 因此它的存在由 `tests/test_accounts_session_items.py` 与注册清单核对。
 EMERGENCY_ACTION_CARD_TOOL_NAME = "emit_emergency_action_card"
 
+# ---------------------------------------------------------------------------
+# 「这一组题被作答了吗」的判据（2026-10-06 随 T31 加入）
+# ---------------------------------------------------------------------------
+
+#: 一组回答渲染出的正文表头。与 `surfaces/consult/answers.ANSWERS_HEADER` 逐字相同。
+#:
+#: 为什么在这里再写一份字面量：`modules/*` 不得 import `surfaces/*`（项目结构设计第 7 节），
+#: 因此那一处是**产出**、这一处是**判据的输入端**（水合要认出「这条消息是对提问的作答」）。
+#: 两处相等由 `tests/test_accounts_session_items.py` 直接比对常量守住——改文案的人会立刻
+#: 看到一条红，而不是让「已作答」静默变成「从未作答」（那会让使用者重复作答）。
+ANSWERS_HEADER = "以下是对提问的作答"
+
+#: 压缩检查点的开头标签。与 `agent/context/window.COMPACTED_SUMMARY_TAG` 同值；理由同上
+#: （`modules/*` 不得 import `agent/*`）。两处相等由用例机械核对。
+COMPACTED_SUMMARY_TAG = "<compacted-summary>"
+
+#: 压缩检查点的结尾标签。与 `agent/context/window.COMPACTED_SUMMARY_CLOSE_TAG` 同值；
+#: 理由同上。**判据要求两端都在**（见 `_is_compaction_checkpoint`）：只看开头会把
+#: 一句使用者写的、以该标签开头的普通消息误当成复述块。
+_COMPACTED_SUMMARY_CLOSE_TAG = "</compacted-summary>"
+
+#: 水合侧专有的提问 part 类型（契约第 7 节的第七行）。
+#:
+#: 为什么**不**复用 `question`（2026-10-06，T31 裁决）：`question` 是**事件**载荷的 part 类型
+#: （通用基座 7.2 节），它按定义描述「刚刚向使用者发出的、尚未作答的提问」——发出即结束运行，
+#: 因此它的载荷里**不可能有**「已作答」。而「已作答」是**回看时**的事实，只对水合路径有意义。
+#: 把回看侧的字段塞进流出侧载荷，是把两个时刻的事实挤进一个结构（且会撞上三条逐字断死
+#: 字段集合的守卫）。用两个线格式 part 类型分开之后：`question` 的载荷一字未动，
+#: `answered` 只出现在水合响应里。
+#:
+#: ⚠ 类型必须是 `Final[QuestionRecordType]`（而不是裸 `str`，也不能在 `Literal[...]` 里
+#: 引用它）。这不是风格问题，两者都会**静默**破坏 `MessagePart` 判别联合的收窄：
+#:
+#: - 裸 `str`：`part["type"] == PART_TYPE_QUESTION_RECORD` 无法把联合收窄到
+#:   `QuestionRecordPart`，于是**所有**既有用例里「先断言 type、再取该 part 独有的键」
+#:   都报 `TypedDict "TextPart" has no key ...`（实测 26 条）；
+#: - `Literal[PART_TYPE_QUESTION_RECORD]`：mypy 直接报 `valid-type`，后果同上（实测 55 条）。
+#:
+#: 两种写法都能跑通运行时、都是「看起来更 DRY」的写法，因此这个坑只有 mypy 看得见。
+QuestionRecordType: TypeAlias = Literal["question-record"]
+PART_TYPE_QUESTION_RECORD: Final[QuestionRecordType] = "question-record"
+
 #: 水合提问的 `batch_id` 前缀。`batch_id` 由工具侧生成、**不落库**，因此水合不能取回
 #: 原值；用调用标识派生一个稳定值。
 #:
@@ -226,11 +268,12 @@ class QuestionItemPart(TypedDict):
 
 
 class QuestionPart(TypedDict):
-    """提问 part。形状归 HTTP 与 SSE 契约第 7 节的 `question` 行（载荷归通用基座第 7.2 节）。
+    """提问**事件**的 part 形状（归通用基座第 7.2 节；水合不产出它）。
 
-    字段名与流式路径逐字一致（`batch_id` / `items`）：前端两侧读的是同一组键
-    （`partAccumulator.addQuestion` 与 `history.ts` 的 `case 'question'`），
-    水合与流式因此不可能对同一次提问给出两种形状。
+    保留它而不是删掉：本模块的**读数**要能说清「事件侧的形状是什么」，
+    并由用例逐字断死（`test_question_event_part_shape_stays_wire_exact`）。
+    **⚠ 它不在 `MessagePart` 联合里**（水合产出的是 `QuestionRecordPart`）——
+    一个没有生产者的联合成员正是本模块专门防的「过期断言」形态。
     """
 
     type: Literal["question"]
@@ -238,15 +281,50 @@ class QuestionPart(TypedDict):
     items: list[QuestionItemPart]
 
 
-MessagePart = TextPart | ReasoningPart | ToolCallPart | QuestionPart
-"""能被重建的 part 类型。
+class QuestionRecordPart(TypedDict):
+    """水合侧专有的提问记录 part（契约第 7 节的 `question-record` 行）。
+
+    ★ 与 :class:`QuestionPart` 的唯一差别是多一个 `answered`（三态）。
+
+    为什么分两个线格式 part 类型（2026-10-06，T31）：
+    `question` 是**流出侧**的载荷——它按定义描述「刚向使用者发出、尚未作答」的提问
+    （基座 7.2 节：发出即结束运行），因此它的载荷里**不可能**有「已作答」；
+    而「已作答」是**回看侧**的时间点事实，只对水合路径有意义。把回看侧的字段塞进
+    流出侧载荷，等于把两个时刻的事实挤进一个结构 —— 且会撞上三条逐字断死字段集合
+    的守卫。分成两个类型之后：`question` 的载荷一字未动，`answered` 只出现在水合响应里。
+
+    `answered` 是**三态**而不是 bool：
+
+    - `True`  ⇒ 已作答（只读记录，禁止再次提交）；
+    - `False` ⇒ 未作答（可作答，这正是本包修的那条：刷新后仍能补答）；
+    - `None`  ⇒ **无法判定** ⇒ 前端按只读呈现（**fail-closed**）。
+
+    为什么要 `None`（而不是把无法判定的一律归成 `False`）：猜成「可作答」会让使用者
+    对同一组题作答两次（新的「看起来像成功」）；猜成「只读」最多少修一点。
+    **失败方向要选安全的那边。**
+
+    `batch_id` 的派生规则与 T27 一致（`hydrated-<call_id>`），本包不动。
+    """
+
+    # ⚠ 这里必须引用 `QuestionRecordType`（那个 `TypeAlias`）而不是内联字面量：
+    # 它保证「常量」与「TypedDict 的 type 字段」是**同一个**字面量类型，
+    # 两边的一致性由 mypy 机械保证（内联字面量写错一个字符时
+    # `question_record_part` 的构造会被 mypy 判红）。
+    type: QuestionRecordType
+    batch_id: str
+    items: list[QuestionItemPart]
+    answered: bool | None
+
+
+MessagePart = TextPart | ReasoningPart | ToolCallPart | QuestionRecordPart
+"""水合能重建的 part 类型（**`HydratedMessage.parts` 的取值域**）。
 
 四种 part 各有各的真源，**都能从会话真源重建**（2026-10-06 修正，见下）：
 
 - `text` / `reasoning` / `tool_call`：直接来自 SDK 落库的条目（消息 content 与
   reasoning/function_call 条目）；
-- `question`：来自 `ask_user` 那对条目的**参数与产出**。SDK 会话存储里确实没有名为
-  `question` 的条目，但这不等于「读不出来」——提问的载荷（`items`）逐字保存在
+- `question-record`：来自 `ask_user` 那对条目的**参数与产出**。SDK 会话存储里确实没有
+  名为 `question` 的条目，但这不等于「读不出来」——提问的载荷（`items`）逐字保存在
   `function_call.arguments` 里，而「这次提问真的产出了」由 `function_call_output.output`
   的成功回执判定（判据见 :data:`ASK_USER_SUCCESS_OUTPUT`）。两者都在真源里，因此不需要
   第二种真源、也不伪造任何东西。
@@ -254,6 +332,9 @@ MessagePart = TextPart | ReasoningPart | ToolCallPart | QuestionPart
   `batch_id` 不在会话存储里（它由工具侧生成、不落库），因此水合时由调用标识派生：
   调用标识在同一次会话内唯一且跨刷新稳定，正是「这一组题」的稳定身份（见
   :data:`QUESTION_BATCH_ID_PREFIX`）。
+
+  `answered` 由 :func:`question_answered_verdicts` 从**位置窗口 × 表头**判定
+  （判据见该函数）——它是**服务端**的判定，前端只读（硬边界：不许让前端猜）。
 
 ## 2026-10-06 订正（原文的理由已过期，这是本缺陷的成因）
 
@@ -287,14 +368,19 @@ MessagePart = TextPart | ReasoningPart | ToolCallPart | QuestionPart
 ⇒ 于是「注释说 X 不存在」与「X 已装配」不可能同时为真，**无论那句话怎么措辞**。
 反过来，解释性文字可以自由书写、自由引用旧句子——这正是本节能把它写出来的原因。
 
-## 仍未重建的一种：`action_card`
+## 仍未重建的两种：`action_card` 与事件侧的 `question`
 
-**如实写明**（这不是「尚未实现」，而是「本包的范围内未做」）：`emit_emergency_action_card`
-的载荷同样保存在 `function_call.arguments` 里，因此与 `question` 一样**可以**重建；
-本包只修了已被旅程实测到的 `question` 一条路径，`action_card` 的 `card_id` 需要与
-`batch_id` 同样的派生处理，且 `annotations` 需要一个「来源:置信」的解码（逻辑在产品侧
-`tools/emergency_card.py`，而 `modules/*` 不得 import `tools/*`，判据见项目结构设计第 7 节）。
-登记为残余，不在本包伪造一个半截实现。
+**如实写明**（都不是「尚未实现」，而是「本包范围内未做 / 结构上不在水合路径」）：
+
+- `emit_emergency_action_card` 的载荷同样保存在 `function_call.arguments` 里，
+  因此与 `question-record` 一样**可以**重建；本包只修了已被旅程实测到的提问一条路径，
+  `action_card` 的 `card_id` 需要与 `batch_id` 同样的派生处理，且 `annotations`
+  需要一个「来源:置信」的解码（逻辑在产品侧 `tools/emergency_card.py`，而
+  `modules/*` 不得 import `tools/*`，判据见项目结构设计第 7 节）。
+  登记为残余，不在本包伪造一个半截实现。
+- `question`（事件侧形状）**不在水合路径上**：水合一律产出 `question-record`。
+  这不是「没做」，而是 T31 的裁决——「已作答」只对回看有意义，故水合的 part 类型
+  必须与事件的分开。它保留为 :class:`QuestionPart` 并由用例逐字断死。
 
 `citation` 仍不在本模块：它的真源是引用索引（一个按 `run_id` 组织的端口），
 不在会话条目里——这是结构事实，不是能力缺失。
@@ -314,28 +400,34 @@ PART_PROVENANCE: dict[str, str] = {
     "text": "SDK 助手消息的 content 分片",
     "reasoning": "SDK reasoning 条目的 summary",
     "tool_call": "SDK function_call/function_call_output 条目对",
-    "question": f"{ASK_USER_TOOL_NAME} 调用的参数与成功回执",
+    PART_TYPE_QUESTION_RECORD: f"{ASK_USER_TOOL_NAME} 调用的参数与成功回执（`answered` 由位置窗口×表头判定）",
 }
 
 #: 未重建的 part 类型 → 理由。**必须写明理由**，否则「不重建」与「忘了做」无法区分
 #: （用例会断言每一项都有非空理由）。
 #:
-#: 与 `PART_PROVENANCE` 合起来构成一份完整清单：三个来源（`agent/runtime/events.py`
-#: 的 `ActionCardEvent`/`CitationEvent`、以及 `MessagePart` 的四项）里，
-#: 契约第 7 节列的六种 part 一个不漏地出现在两张表之一。
+#: 与 `PART_PROVENANCE` 合起来构成一份完整清单：契约第 7 节的七种 part 一个不漏地
+#: 出现在两张表之一。
 NOT_REBUILT_PARTS: dict[str, str] = {
     "citation": (
         "真源是引用索引（`agent/context/citations.py` 的 `CitationIndex`，按 run_id 组织），"
         "不在会话条目里——结构事实，与会话存储的形状无关。"
     ),
     "action_card": (
-        f"{EMERGENCY_ACTION_CARD_TOOL_NAME} 的载荷与 `question` 一样保存在 "
+        f"{EMERGENCY_ACTION_CARD_TOOL_NAME} 的载荷与 `question-record` 一样保存在 "
         "function_call.arguments 里、因此**可以**重建；本包只修了旅程实测到的 question "
         "一条路径。未做的具体原因：`card_id` 需要与 batch_id 同样的派生处理，"
         "且 `annotations` 的 `kind` 是 `来源:置信` 的编码串，解码逻辑在产品侧 "
         "`tools/emergency_card.py`（`decode_annotation_kind`），而 modules/* 不得 import "
         "tools/*（项目结构设计第 7 节）——要么在装配处注入解码器，要么把编码规则下沉。"
         "登记为残余，不在本包伪造一个半截实现。"
+    ),
+    "question": (
+        "它是**流出侧**（事件）的 part 类型，不是水合产物：基座 7.2 节的载荷描述"
+        "「刚发出、尚未作答」的提问，而水合要回答的是「回看时这组题有没有被作答」"
+        "（T31 裁决）。水合一律产出 `question-record`，因此 `question` 结构上不在"
+        "`MessagePart`（水合 parts 的取值域）里。它仍由 `QuestionPart` 保留为事件侧形状，"
+        "并由 `test_question_event_part_shape_stays_wire_exact` 逐字断死。"
     ),
 }
 
@@ -595,8 +687,14 @@ def _question_options(raw: object) -> list[QuestionOptionPart]:
     return options
 
 
-def question_part(call_id: str, arguments: object, output: str) -> QuestionPart | None:
-    """从一次 `ask_user` 调用重建提问 part；重建不出来时返回 `None`。
+def question_record_part(
+    call_id: str,
+    arguments: object,
+    output: str,
+    *,
+    answered: bool | None,
+) -> QuestionRecordPart | None:
+    """从一次 `ask_user` 调用重建水合侧的提问记录 part；重建不出来时返回 `None`。
 
     两个判据缺一不可（理由见 :data:`ASK_USER_SUCCESS_OUTPUT`）：
 
@@ -610,9 +708,12 @@ def question_part(call_id: str, arguments: object, output: str) -> QuestionPart 
         call_id: 这次调用的标识；用作 `batch_id` 的派生来源（同一次会话内唯一且稳定）。
         arguments: `function_call.arguments` 的原文（JSON 字符串，内含 `items`）。
         output: `function_call_output.output` 的原文。
+        answered: 这组题是否已被作答（三态，判据见 :func:`question_answered_verdicts`）。
+            **调用方必须显式给出**，没有默认值：默认值会让「忘了判定」与「判定为无法判定」
+            在代码里长得一模一样，而这两件事的后果完全不同。
 
     Returns:
-        提问 part；判据不成立时 `None`。
+        提问记录 part；判据不成立时 `None`。
     """
     if not call_id or output != ASK_USER_SUCCESS_OUTPUT:
         return None
@@ -656,7 +757,266 @@ def question_part(call_id: str, arguments: object, output: str) -> QuestionPart 
         )
     if not items:
         return None
-    return QuestionPart(type="question", batch_id=f"{QUESTION_BATCH_ID_PREFIX}{call_id}", items=items)
+    return QuestionRecordPart(
+        type=PART_TYPE_QUESTION_RECORD,
+        batch_id=f"{QUESTION_BATCH_ID_PREFIX}{call_id}",
+        items=items,
+        answered=answered,
+    )
+
+
+# ---------------------------------------------------------------------------
+# 「这一组题被作答了吗」——位置窗口 × 表头的合取判据
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True, slots=True)
+class AskUserTurn:
+    """一次**真的向使用者发出过**的提问：调用行、它的成功回执行、派生的批次标识。
+
+    只有三样东西都齐的调用才算一次「提问」：
+    - 是一次 `ask_user` 的 `function_call`，且 `call_id` 非空；
+    - 有同 `call_id` 的 `function_call_output`；
+    - 那条产出**逐字等于** `ASK_USER_SUCCESS_OUTPUT`（参数不合法的调用从未呈现给使用者，
+      基座 `QuestionGate` 也不为它结束运行——见 :data:`ASK_USER_SUCCESS_OUTPUT`）。
+
+    **为什么按 `call_id` 配对输出，而不是取「调用行的下一行」**（T31 实测到的坑）：
+    SDK 会把同一批工具调用**连排**，再连排它们的结果。真实库里 60 次 `ask_user` 有
+    **23 次**的下一行不是自己的产出（而是同批其他调用的产出）。取「下一行」会把这 23 组
+    的窗口起点算到别人身上——读数上恰好也能给出 31/29（因为那一批的结果紧跟在后面），
+    但它是**巧合**，换一个批次形状就会错位。
+    """
+
+    call_id: str
+    call_index: int
+    output_index: int
+
+
+def _ask_user_turns(items: Sequence[StoredItem]) -> list[AskUserTurn]:
+    """按行序取出所有「真的发出过」的 `ask_user` 提问。"""
+    output_indices: dict[str, int] = {}
+    for index, stored in enumerate(items):
+        item = stored.data
+        if item_type(item) != ITEM_TYPE_FUNCTION_CALL_OUTPUT:
+            continue
+        call_id = item.get("call_id")
+        # 首次出现优先（同 `call_id` 重复是压缩复述，见 `question_answered_verdicts`）。
+        if isinstance(call_id, str) and call_id and call_id not in output_indices:
+            output_indices[call_id] = index
+
+    turns: list[AskUserTurn] = []
+    for index, stored in enumerate(items):
+        item = stored.data
+        if item_type(item) != ITEM_TYPE_FUNCTION_CALL:
+            continue
+        if item.get("name") != ASK_USER_TOOL_NAME:
+            continue
+        call_id = item.get("call_id")
+        if not isinstance(call_id, str) or not call_id:
+            continue
+        output_index = output_indices.get(call_id)
+        if output_index is None:
+            continue
+        if items[output_index].data.get("output") != ASK_USER_SUCCESS_OUTPUT:
+            continue
+        turns.append(AskUserTurn(call_id=call_id, call_index=index, output_index=output_index))
+    return turns
+
+
+def _is_compaction_checkpoint(item: Mapping[str, object]) -> bool:
+    """这条条目是不是压缩检查点（`<compacted-summary>…</compacted-summary>`）。
+
+    判据取自 `agent/context/window.is_compacted_summary` 的同一条规则（开头标签 ∧ 结尾标签），
+    但**不复用它的实现**：`modules/*` 不得 import `agent/*`（项目结构设计第 7 节）。
+    两处的标签字面量相等由 `tests/test_accounts_session_items.py` 机械核对。
+
+    为什么判据要求两端标签都在（而不只是开头匹配）：一句使用者写的、以
+    `<compacted-summary>` 开头的普通消息不该被当成复述块——那会把一次真实提问判成
+    「无法判定」，方向虽然是安全的，但它是一条凭空的误判。
+    """
+    if item.get("role") != _ROLE_USER:
+        return False
+    content = item.get("content")
+    if not isinstance(content, str):
+        return False
+    stripped = content.strip()
+    if len(stripped) < len(COMPACTED_SUMMARY_TAG) + len(_COMPACTED_SUMMARY_CLOSE_TAG):
+        return False
+    return stripped.startswith(COMPACTED_SUMMARY_TAG) and stripped.endswith(_COMPACTED_SUMMARY_CLOSE_TAG)
+
+
+def _is_answers_message(item: Mapping[str, object]) -> bool:
+    """这条条目是不是一条「对提问的作答」消息（正文以表头开头、非注入、非复述）。
+
+    与 :func:`_window_verdict` 的判据同源，但**不复用它的窗口切片**：本函数要问的是
+    「这条作答在整段历史里离哪一次提问最近」。读不出文本 / 是检查点 / 是注入的条目
+    一律返回 `False`——它们不是「看上去像作答」的消息（前两者的不可判定由窗口判据负责，
+    不在这里重复记一次）。
+    """
+    if item.get("role") != _ROLE_USER:
+        return False
+    if _is_compaction_checkpoint(item) or is_injected_message(item):
+        return False
+    text = message_text(item)
+    if text is None:
+        return False
+    return text.lstrip().startswith(ANSWERS_HEADER)
+
+
+def _nearest_turn_position(turns: Sequence[AskUserTurn], index: int) -> int | None:
+    """这条条目之前**最近的**那次提问的下标；前面没有提问时返回 `None`。
+
+    「最近」取调用行与配对输出行里更靠后的那个：一次提问占两行，作答只可能在它的
+    调用行（甚至回执行）之后到达。前面没有提问 ⇒ `None`（那条作答不属于任何一组，
+    因此不对任何组构成「可能是迟到的」）。
+    """
+    best_position: int | None = None
+    best_index = -1
+    for position, turn in enumerate(turns):
+        for candidate in (turn.call_index, turn.output_index):
+            if candidate < index and candidate > best_index:
+                best_index = candidate
+                best_position = position
+    return best_position
+
+
+def _window_verdict(window: Sequence[StoredItem]) -> bool | None:
+    """在读作「某次提问之后、下一次提问之前」的窗口上判定这组题是否已被作答。
+
+    判据（T31 裁决的合取，逐字）：**窗口里存在一条正文以 :data:`ANSWERS_HEADER` 开头的、
+    既非注入也非复述的使用者消息** ⇒ `True`；窗口里根本没有这样的消息 ⇒ `False`。
+
+    为什么是「存在」而不是「第一条」（2026-10-06，本包的一处独立判断）：
+    窗口里可能先出现一条新话题、之后才出现作答（使用者先说了别的，再回头把那组题答了）。
+    按「第一条」判会给出 `False` ⇒ 卡片重新变成可作答 ⇒ **使用者对同一组题作答两次**
+    （§三 点名的方向）。按「存在」判给出 `True` ⇒ 只读。**失败方向选安全的那边。**
+    两种读法在真实库的 60 组上给出**完全相同**的 31/29/0（本包实测）。
+
+    两半都承重，且都只能靠构造用例证明（真实库上三个判据给出完全相同的 31/29/0）：
+
+    - **表头**那一半排除「使用者忽略提问、直接发新话题」——那种组是未作答的，
+      只按「窗口里有没有使用者消息」判会把它误判成已作答（**使用者永久失去补答能力**）；
+    - **位置**那一半排除「题标识相同的另一组」/「更早某组的作答」——不取窗口、改扫整段
+      历史时，A 组的作答会被算到 B 组头上（**同样是永久失去补答能力**）。
+
+    Returns:
+        `True` / `False` / `None`。`None` = **无法判定** ⇒ 前端按只读呈现（fail-closed）。
+        返回 `None` 的三种情形都是「判据看不到事实」，而不是「事实是未作答」：
+
+        1. 窗口里出现**压缩检查点**——`compaction.appended_items` 会追加
+           「检查点 + 尾部原文」，被保留的尾部在历史里因此存在**两份**
+           （`compaction.py:468` 自己写明这个代价）。复述块里的旧作答消息与
+           「本组的作答」在形状上无法区分 ⇒ 不能选任何一边；
+        2. 窗口里同一段使用者正文出现**两次**——同上的第二种表现（复述块的边界
+           恰好落在窗口内部时，检查点可能不在窗口里）；
+        3. 窗口里有一条使用者消息**读不出文本**——判据看不到内容，就没有依据。
+    """
+    bodies: list[str] = []
+    for stored in window:
+        item = stored.data
+        if item.get("role") != _ROLE_USER:
+            continue
+        # ★ 检查点判在「注入」之前：`<compacted-summary>` 同时登记在
+        # `INJECTED_MESSAGE_PREFIXES` 里（它确实是注入），因此先判注入的话它会
+        # 被静默跳过，而复述块的存在正是本判据必须看见的东西。
+        if _is_compaction_checkpoint(item):
+            return None
+        if is_injected_message(item):
+            continue
+        text = message_text(item)
+        if text is None:
+            return None
+        bodies.append(text)
+
+    if len(bodies) != len(set(bodies)):
+        # 同一段正文两份 ⇒ 窗口跨过了一个复述块 ⇒ 复述与本组的作答不可区分。
+        return None
+    if not bodies:
+        return False
+    return any(body.lstrip().startswith(ANSWERS_HEADER) for body in bodies)
+
+
+def question_answered_verdicts(items: Sequence[StoredItem]) -> dict[str, bool | None]:
+    """逐次提问判定「这组题被作答了吗」，按 `call_id` 给出三态结论。
+
+    窗口定义：**某次提问的成功回执之后、下一次「真的发出过」的提问的调用行之前**。
+
+    两个边界取法都要说清为什么：
+
+    - **起点取「配对输出的下一行」而不是「调用行的下一行」**：见 :class:`AskUserTurn`
+      （真实库里 23/60 的下一行不是自己的产出）；
+    - **终点取「下一次真的发出过的提问」而不是「下一次 `ask_user` 调用」**：参数不合法的
+      调用从未向使用者呈现过任何东西（它产不出 part）。若把它算作窗口终点，一次
+      「先失败一次、再成功一次」的会话会把上一组的窗口切碎——上一组的真实作答就落到了
+      窗口之外 ⇒ 判成未作答 ⇒ **使用者重复作答**（`§三` 明令要防的方向）。
+
+    **同一次调用出现两次 ⇒ `None`**：压缩复述会让一个 `ask_user` 调用对在历史里出现两份。
+    此时「哪一份的窗口才是本组的窗口」没有答案，两侧一起 fail-closed（只读）——
+    **猜成可作答会让使用者重复作答，猜成只读最多少修一点。**
+
+    **跨窗口的迟到作答 ⇒ 本组不得判 `False`（判 `None`）**（2026-10-06 r3 窄修）：
+    使用者可能在**下一次提问之后**才回头作答上一组（实测构造：
+    `call(A) → out(A) → 「换个话题」 → call(B) → out(B) → 作答`）。那条作答落在 B 的
+    窗口里，A 的窗口里什么都没有 ⇒ 只按窗口判会给 `A=False` ⇒ A 的卡片重新变成可作答
+    ⇒ **使用者对 A 重复作答**。而服务端**无法区分**那条作答是「A 的迟到作答」还是
+    「B 的正常作答」（作答消息里只有题标识、没有 `batch_id`），因此 A 侧的正确结论是
+    **无法判定** ⇒ `None`（只读）。
+
+    判据：若某条以 :data:`ANSWERS_HEADER` 开头的使用者消息的**最近一次提问不是本组**
+    （用它前面最近的调用行/配对输出行定位），则本组判 `None`。方向是**严格收窄**：
+    它只把 `False` 降级成 `None`（消除重复作答），不把任何 `True` 改成别的值，
+    因此不会制造新的「永久失去补答」。
+
+    ⚠ 残余（本包**不修**，如实登记）：上例中 B 仍判 `True`，而真相是 B 未被作答
+    ⇒ B 永久失去补答。这一半**不可判定**：同一条作答消息既可能是 A 的迟到作答、也可能
+    是 B 的正常作答；根因是作答消息里只有题标识、没有 `batch_id`
+    （`surfaces/consult/answers.py` 的渲染只写题标识），两组题标识相同时内容层面也不可区分。
+    真正的修法是让作答携带 `batch_id`（改契约），超出本包范围。
+
+    Args:
+        items: 该会话的全部条目（正序）。**必须全量**：窗口要看到注入行、其他工具结果
+            与检查点，只给 `ask_user` 相关的行会漏掉判据要看的东西。
+
+    Returns:
+        `call_id` → `True` / `False` / `None`。缺键等价于 `None`（调用方据此 fail-closed）。
+    """
+    turns = _ask_user_turns(items)
+    occurrences: dict[str, int] = {}
+    for turn in turns:
+        occurrences[turn.call_id] = occurrences.get(turn.call_id, 0) + 1
+
+    # 跨窗口的迟到作答：对每条「像作答」的消息，它最近的那次提问是它的**假定**主人；
+    # 那次提问**之前**的每一次提问都可能才是它真正的对象（迟到作答）⇒ 那些组不得判 False。
+    # 只登记「更早」的组（`range(nearest)`）：一次提问不可能被一条**早于它**的消息作答，
+    # 把更晚的组也算进来会凭空制造 `None`，而 `None` 同样是永久失去补答。
+    # 一次遍历算好，避免在每组上重扫整段历史（提问数 × 条目数是二次的）。
+    late_answer_suspects: set[int] = set()
+    for index, stored in enumerate(items):
+        if not _is_answers_message(stored.data):
+            continue
+        nearest = _nearest_turn_position(turns, index)
+        if nearest is not None:
+            late_answer_suspects.update(range(nearest))
+
+    verdicts: dict[str, bool | None] = {}
+    for position, turn in enumerate(turns):
+        if occurrences[turn.call_id] > 1:
+            # 同一次提问在历史里出现两份（压缩复述）⇒ 无法判定。
+            verdicts[turn.call_id] = None
+            continue
+        start = turn.output_index + 1
+        end = turns[position + 1].call_index if position + 1 < len(turns) else len(items)
+        if end < start:
+            # 边界倒挂（下一次提问的调用行落在本次回执之前）：窗口没有定义 ⇒ 无依据。
+            verdicts[turn.call_id] = None
+            continue
+        verdict = _window_verdict(items[start:end])
+        if verdict is False and position in late_answer_suspects:
+            # 有一条更晚的作答消息，而它离某次更晚的提问更近 ⇒ 它完全可能就是本组的
+            # 迟到作答 ⇒ 服务端不得断言「本组未被作答」（fail-closed ⇒ 只读）。
+            verdict = None
+        verdicts[turn.call_id] = verdict
+    return verdicts
 
 
 # ---------------------------------------------------------------------------
@@ -675,8 +1035,14 @@ class _Hydration:
     收束与行标识由一个统一入口负责。
     """
 
-    def __init__(self) -> None:
-        """起一个空的水合过程。"""
+    def __init__(self, answered: Mapping[str, bool | None] | None = None) -> None:
+        """起一个空的水合过程。
+
+        Args:
+            answered: `call_id` → 这组题是否已被作答（三态）。由 :func:`build_messages`
+                在扫描**之前**一次算好（判据要看整段历史，不能边扫边判）。
+                缺键按 `None` 处置（fail-closed）——「没算到」与「无法判定」都只读。
+        """
         self.messages: list[HydratedMessage] = []
         self._parts: list[MessagePart] = []
         self._first_row_id: int | None = None
@@ -684,10 +1050,11 @@ class _Hydration:
         #: 因此 part 先占位、拿到结果再回填。
         self._pending_calls: dict[str, int] = {}
         #: 尚未配到结果的工具调用的**参数原文**：call_id → `arguments`。
-        #: 提问的重建需要它（`question_part` 读 `items`，而参数只落在**调用**条目里），
+        #: 提问的重建需要它（`question_record_part` 读 `items`，而参数只落在**调用**条目里），
         #: 而 parts 里只留了名字与摘要——没有这张表就得从 `ToolCallPart` 反查，那是
         #: 把它当成了参数的第二个存放处。
         self._pending_arguments: dict[str, object] = {}
+        self._answered: Mapping[str, bool | None] = answered if answered is not None else {}
 
     def _forget_call(self, stored: StoredItem) -> None:
         """把一个读不出产出的结果条目对应的待配状态清掉（不留悬挂登记）。"""
@@ -771,18 +1138,17 @@ class _Hydration:
     def add_tool_output(self, stored: StoredItem) -> None:
         """用工具结果回填对应的调用 part（`ok` 与 `summary`）。
 
-        ★ `ask_user` 的成功产出在这里**额外**产出一个 `question` part（2026-10-06 修正）。
+        ★ `ask_user` 的成功产出在这里**额外**产出一个 `question-record` part（2026-10-06）。
 
         为什么落在这一支而不是新增一个条目类型：SDK 会话存储里没有「提问」这种条目
         ——提问的真源就是这对 `function_call` / `function_call_output`。把它挂在这里，
         「一次提问」只有一处重建点，且它与那次工具调用天然同属一条助手消息。
 
-        顺序：先回填 `tool_call`、再追加 `question`。事件流里两者是反的（`ToolBridge._invoke`
-        先 sink `QuestionEvent` 再 sink `ToolCallFinishedEvent`），这里刻意相反——水合出来的
-        工具行是一句「向你提问 · 已结束」的记录，让可作答的卡片排在它之后更接近
-        「记录 → 结果」的读法。该差别不影响任何签名要求：两侧唯一的硬要求是
-        「`question` part 存在且载荷同形」（前端 `parts.tsx` 按 `data.by_name` 注册，
-        与顺序无关）。
+        顺序：先回填 `tool_call`、再追加 `question-record`。事件流里两者是反的
+        （`ToolBridge._invoke` 先 sink `QuestionEvent` 再 sink `ToolCallFinishedEvent`），
+        这里刻意相反——水合出来的工具行是一句「向你提问 · 已结束」的记录，让卡片排在
+        它之后更接近「记录 → 结果」的读法。该差别不影响任何签名要求：两侧唯一的硬要求是
+        「提问 part 存在且载荷同形」（前端 `parts.tsx` 按 `data.by_name` 注册，与顺序无关）。
         """
         item = stored.data
         output = item.get("output")
@@ -808,7 +1174,14 @@ class _Hydration:
             return
         # 参数在**调用**条目里，不在结果条目里，因此回填时要靠 add_tool_call 留下的原文
         # （`_pending_arguments`）——从 parts 下标反查会把参数再拼一遍，多一份要维护的形状。
-        question = question_part(call_id if isinstance(call_id, str) else "", arguments, output)
+        normalized_call_id = call_id if isinstance(call_id, str) else ""
+        question = question_record_part(
+            normalized_call_id,
+            arguments,
+            output,
+            # 缺键按 None（fail-closed）：判据没算到这一组时不得猜成「可作答」。
+            answered=self._answered.get(normalized_call_id),
+        )
         if question is None:
             logger.warning("水合跳过一条重建不出的提问：调用=%s 行=%s", call_id, stored.row_id)
             return
@@ -835,13 +1208,19 @@ def build_messages(items: Sequence[StoredItem]) -> list[HydratedMessage]:
     `candidate` 无需处理：它只在事件流里产出（`ToolResult.candidates`），
     不写进会话存储，因此结构上不可能出现在这里。
 
+    ★ **`answered` 在扫描之前一次算好**（2026-10-06，T31）：判据要看「某次提问之后、
+    下一次提问之前」的窗口，窗口横跨多条条目，因此不能边扫边判（一次单向扫描在读到
+    提问的那一刻还不知道后面有没有作答）。这里先调 :func:`question_answered_verdicts`
+    拿到整段历史的结论，再交给水合过程按 `call_id` 取用。
+
     Args:
         items: 按时间正序排列的条目（排序由 `session_repository` 负责）。
 
     Returns:
         水合后的消息列表，顺序即真源顺序。
     """
-    hydration = _Hydration()
+    answered = question_answered_verdicts(items)
+    hydration = _Hydration(answered)
     for stored in items:
         item = stored.data
         kind = item_type(item)
@@ -993,14 +1372,18 @@ __all__ = [
     # 提问重建
     "ASK_USER_SUCCESS_OUTPUT",
     "ASK_USER_TOOL_NAME",
+    "ANSWERS_HEADER",
+    "COMPACTED_SUMMARY_TAG",
     "EMERGENCY_ACTION_CARD_TOOL_NAME",
     "NOT_REBUILT_PARTS",
     "PART_PROVENANCE",
+    "PART_TYPE_QUESTION_RECORD",
     "QUESTION_BATCH_ID_PREFIX",
     "QUESTION_ITEMS_MAX",
     "QUESTION_OPTION_DESCRIPTION_MAX_CHARS",
     "QUESTION_OPTION_LABEL_MAX_CHARS",
     "QUESTION_TEXT_MAX_CHARS",
+    "AskUserTurn",
     # 注入信封
     "INJECTED_MESSAGE_PREFIXES",
     # part 形状
@@ -1008,6 +1391,7 @@ __all__ = [
     "QuestionItemPart",
     "QuestionOptionPart",
     "QuestionPart",
+    "QuestionRecordPart",
     "ReasoningPart",
     "TextPart",
     "ToolCallPart",
@@ -1035,7 +1419,8 @@ __all__ = [
     "message_text",
     "normalize_inline_text",
     "parse_item",
-    "question_part",
+    "question_answered_verdicts",
+    "question_record_part",
     "reasoning_text",
     "tool_failure_message",
     "truncate",
