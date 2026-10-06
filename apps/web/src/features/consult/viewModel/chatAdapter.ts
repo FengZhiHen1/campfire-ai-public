@@ -16,11 +16,12 @@
 
 import type { ChatModelAdapter, ChatModelRunResult, ThreadMessage } from '@assistant-ui/react';
 
-import type { PostMessageResponse, QuestionAnswer } from '../../../shared/types/consult';
+import type { PostMessageResponse } from '../../../shared/types/consult';
 import type { RunEvent } from '../../../shared/types/sse';
 import type { ConsultPort, StreamNotice } from '../application/ports';
 import { CancelRunUseCase, SendMessageUseCase } from '../application/usecases';
 import { ConsultRunFailure } from '../domain/errors';
+import type { AnswerSubmission } from '../domain/questionBatch';
 import { createPartAccumulator } from './partAccumulator';
 import type { ConnectionStatus } from '../domain/types';
 
@@ -33,10 +34,10 @@ export interface ConsultChatAdapterDeps {
   peekPendingSkill(): string | null;
   /** 发送被受理后清空技能选择（发送即消费）。 */
   clearPendingSkill(): void;
-  /** 读待发送的整组回答（不改变状态）。 */
-  peekPendingAnswers(): QuestionAnswer[] | null;
-  /** 发送被受理后清空整组回答。 */
-  clearPendingAnswers(): void;
+  /** 读待发送的整组回答提交件（answers + 产出它那一组的 batchId；不改变状态）。 */
+  peekPendingSubmission(): AnswerSubmission | null;
+  /** 发送被受理后清空整组回答提交件。 */
+  clearPendingSubmission(): void;
   /** 事件回流（会话级状态归 viewModel/store）。 */
   onEvent(event: RunEvent): void;
   /** 连接状态回流（重连期间状态条与输入区要变）。 */
@@ -76,7 +77,8 @@ export function createConsultChatAdapter(deps: ConsultChatAdapterDeps): ChatMode
   return {
     async *run({ messages, abortSignal }): AsyncGenerator<ChatModelRunResult, void> {
       // 拼载荷：有整组回答走 answers 形态，否则取最后一条使用者消息的正文（契约第 4.1 节）。
-      const answers = deps.peekPendingAnswers();
+      const submission = deps.peekPendingSubmission();
+      const answers = submission?.answers ?? null;
       const skill = deps.peekPendingSkill();
       const content = answers === null || answers.length === 0 ? lastUserText(messages) : '';
 
@@ -85,7 +87,10 @@ export function createConsultChatAdapter(deps: ConsultChatAdapterDeps): ChatMode
         accepted = await sendUseCase.execute({
           sessionId: deps.sessionId,
           content,
-          ...(answers === null ? {} : { answers: [...answers] }),
+          // ★ 提交件整个透传（answers 与 batchId 同在 `submission` 里），不在这一层拆开再拼——
+          // 拆开就又多一个「A 组 answers + B 组 batchId」可被组成的点，而那样传错的 batch_id
+          // 会触发服务端排他层，比不传更坏（本包关键决策清单第 2 条）。
+          ...(submission === null ? {} : { submission }),
           skill,
           ...(deps.newId === undefined ? {} : { newId: deps.newId }),
         });
@@ -105,7 +110,7 @@ export function createConsultChatAdapter(deps: ConsultChatAdapterDeps): ChatMode
 
       // 受理后才消费：发送即消费的语义点是「这条消息已经发出去了」。
       deps.clearPendingSkill();
-      deps.clearPendingAnswers();
+      deps.clearPendingSubmission();
 
       const accumulator = createPartAccumulator();
       let terminal = false;

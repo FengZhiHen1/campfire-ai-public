@@ -22,9 +22,9 @@ import type {
   ListSessionsResponse,
   PostMessageRequest,
   PostMessageResponse,
-  QuestionAnswer,
 } from '../../../shared/types/consult';
 import { validateEmergencyItems } from '../domain/emergency';
+import type { AnswerSubmission } from '../domain/questionBatch';
 import type { SkillSummary } from '../domain/types';
 import type { ConsultPort, CreateSessionInput, ListSessionsInput } from './ports';
 
@@ -45,7 +45,7 @@ export class ConsultRequestError extends Error {
  *
  * ⚠️ 不能直接用 `crypto.randomUUID()`（2026-10-01 真机抓到的缺陷）。
  *
- * `crypto.randomUUID` 是 **secure context 专有** API：只在 HTTPS（或 localhost）
+ * `crypto.randomUUID` 是 secure context 专有 API：只在 HTTPS（或 localhost）
  * 下存在，明文 HTTP 下它是 `undefined`。直接调用会抛
  * `TypeError: crypto.randomUUID is not a function`。
  *
@@ -55,12 +55,12 @@ export class ConsultRequestError extends Error {
  *     typeof crypto.getRandomValues = "function"
  *     crypto.randomUUID()          -> TypeError
  *
- * 症状之所以难查：异常发生在**发请求之前**，因此服务端日志与浏览器网络面板里
+ * 症状之所以难查：异常发生在发请求之前，因此服务端日志与浏览器网络面板里
  * 什么都看不到，界面上只出现一条笼统的「出现了未预期的错误」；而同一份代码在
  * 本地 `localhost` 开发时又完全正常（localhost 属 secure context）——
  * 典型的「只在生产暴露」。
  *
- * 兜底用 `crypto.getRandomValues`（**在非安全上下文也可用**，已实测）自行拼 UUIDv4。
+ * 兜底用 `crypto.getRandomValues`（在非安全上下文也可用，已实测）自行拼 UUIDv4。
  * 不降级成 `Math.random`：那会让幂等键的随机性变弱——幂等键碰撞会导致
  * 「两条不同的消息被当成同一条」，是数据正确性问题，而不只是概率问题。
  */
@@ -181,8 +181,15 @@ export interface SendConsultMessageInput {
   sessionId: string;
   /** 普通消息文本。 */
   content?: string;
-  /** 一组提问的回答（整组一次提交）。 */
-  answers?: QuestionAnswer[];
+  /**
+   * 一组提问的提交件（answers + 产出它的那一组的 batchId）。
+   *
+   * ★ 为什么是一个对象而不是并排的 `answers` + `batchId` 两个字段（本包关键决策）：
+   * 两个独立字段让「A 组的 answers + B 组的 batchId」成为可表达的状态，而传错组的
+   * `batch_id` 比不传更坏——它会触发服务端的排他层，把本该判 `True` 的组挡掉。
+   * `domain/questionBatch` 的 `AnswerSubmission` 把两者绑在同一个对象上，本用例是它的下游。
+   */
+  submission?: AnswerSubmission;
   /** 技能选择（发送即消费；null = 自动匹配）。 */
   skill?: string | null;
   /** 幂等键生成器；默认 newClientMessageId（测试注入固定值）。 */
@@ -209,7 +216,7 @@ export class SendMessageUseCase {
     if (input.sessionId.trim() === '') throw new ConsultRequestError('会话 id 不能为空');
 
     const content = input.content?.trim() ?? '';
-    const answers = input.answers ?? [];
+    const answers = input.submission?.answers ?? [];
     if (content === '' && answers.length === 0) {
       throw new ConsultRequestError('消息内容与回答不能同时为空');
     }
@@ -218,9 +225,29 @@ export class SendMessageUseCase {
     }
 
     const clientMessageId = (input.newId ?? newClientMessageId)();
+    // 本组批次标识（前端内部名 batchId）；空串/纯空白按「没有」处理，见下方序列化处说明。
+    const batchId = input.submission?.batchId.trim() ?? '';
     const payload: PostMessageRequest =
       answers.length > 0
-        ? { answers, skill: input.skill ?? null, client_message_id: clientMessageId }
+        ? {
+            answers,
+            // ★ 序列化边界：内部名 `batchId` → 出网键名 `batch_id`。只此一处做这个转换
+            // （契约第 4.1 节的键名逐字是 snake_case；前端惯用 camelCase，散落转换必然漂移）。
+            //
+            // 为什么用条件展开而不是写 `batch_id: input.submission?.batchId`：
+            // 后者在缺失时会发一个 `"batch_id": undefined` 的键（`JSON.stringify` 会把它整个
+            // 丢掉，但内存里那个键仍在，测试里读到的是「键存在且值为 undefined」）。而契约说的是
+            // 「字段可选」= 不带该字段。条件展开保证缺失时这个键根本不存在，与旧客户端逐字同形。
+            //
+            // ★ 为什么空串也走「不带该字段」而不是原样发 `""`（本包裁决 2 的落点）：
+            // `batch_id` 是可选字段 ⇒ 前端不得因它缺失而阻断提交。而服务端对出现但为空的
+            // `batch_id` 按非法入参处理（T39 校验点：空串按非法处理）⇒ 发 `""` 会被 422 挡回，
+            // 那正好就是「因它缺失而阻断提交」这一被禁止的后果。缺省与空串在语义上是同一件事
+            // （「我说不出是哪一组」），因此都折成「不带该字段」，由服务端退回窗口判定。
+            ...(batchId === '' ? {} : { batch_id: batchId }),
+            skill: input.skill ?? null,
+            client_message_id: clientMessageId,
+          }
         : { content, skill: input.skill ?? null, client_message_id: clientMessageId };
 
     return this.consult.sendMessage(input.sessionId, payload);
