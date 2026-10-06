@@ -201,7 +201,7 @@ POST /api/consult/sessions/{session_id}/onboarding/skip
 | `text` | 本文：`{ "text": "…" }` |
 | `reasoning` | [通用基座](../../technical-details/通用基座.md)第 7.1 节 |
 | `tool_call` | 本文：`{ "tool_name": "…", "ok": true, "summary": "…" }` |
-| `citation` | [资料与案例检索](../../technical-details/资料与案例检索.md)第 3 节返回契约 |
+| `citation` | [资料与案例检索](../../technical-details/资料与案例检索.md)第 3 节返回契约（**事件流与水合响应同形**，见 §7.1） |
 | `question` | [通用基座](../../technical-details/通用基座.md)第 7.2 节（**仅在事件流里出现**，见下） |
 | `question-record` | 本文：`{ "batch_id": "…", "items": […], "answered": true \| false \| null }`（**仅在水合响应里出现**） |
 | `action_card` | [通用基座](../../technical-details/通用基座.md)第 7.3 节（**事件流与水合响应同形**，见下） |
@@ -209,7 +209,7 @@ POST /api/consult/sessions/{session_id}/onboarding/skip
 - `candidate` **不进历史**：它不进消息流（[项目结构设计](../../../项目结构设计.md)第 9 节），仅经 SSE 计数。
 - 引用（`citation`）作为 part 与所属消息同生命周期，重放与滚动都不错位。
 
-### 7.1 `question` / `question-record` 为什么是两个 part 类型；`action_card` 为什么只有一个
+### 7.1 `question` / `question-record` 为什么是两个 part 类型；`action_card` 与 `citation` 为什么只有一个
 
 两者的**载荷形状**在 `batch_id` / `items` 上相同（`items` 的元素归基座 7.2 节），
 差别只有一个三态字段 `answered`。分成两个 `type` 而不是给 `question` 加一个字段，理由是
@@ -252,6 +252,44 @@ POST /api/consult/sessions/{session_id}/onboarding/skip
 而线格式是 `{target, kind}`（`kind = "来源:置信"`）。水合侧要做与产出侧
 `_encode_annotation_kind` 同一个转换（`str(line_ref)` + `f"{source}:{confidence}"`）——
 `target` 是「按七节顺序摊平后的 1 起序号」，因此 `sections` 也按七节规范顺序排列。
+
+**`citation` 为什么也不需要第二个 part 类型**（2026-10-07 随 T36 明确）：判据与
+`action_card` 完全相同——回看侧要说的事实与流出侧一样（同一批引用、同一组字段：
+`citation_id` / `run_id` / `source` / `reference` / `recorded_at` / `summary`，与
+`CitationEvent.citation` 逐字同形，也与前端 `shared/types/sse.ts` 的 `CitationRecord` 一致）。
+因此 `citation` 在**事件流与水合响应里字段逐字同形**，只有一个线格式 part 类型。
+
+⚠ **该 part 此前没有生产者，水合也不重建它**（`citation` 曾登记在「不重建」一侧）。
+T36 补上了两半：**生产侧**由检索工具（`search_knowledge` / `search_cases`）在返回命中
+条目时发出凭据，凭据同时进 `ToolResult.citations`（→ 事件流）；**水合侧**重建 part。
+⇒ 这也是一处**形状之外的实现约束**：引用载荷必须落在会话条目里，
+否则「刷新后引用消失」——见 §7 上方那行「与所属消息同生命周期」。
+
+**载荷落在会话里的哪个位置**（2026-10-07 T38 定稿）：助手消息**正文分片**
+（`output_text`）自己的 `annotations` 数组里，一条引用一个注解：
+
+```json
+{"type": "citation", "citation_id": "…", "run_id": "…", "source": "knowledge",
+ "reference": "knowledge:…", "recorded_at": "…", "summary": null}
+```
+
+**为什么是这里**（判据两条，都要成立）：
+
+1. **字面满足第 5 节**——`annotations` 是**消息 content 的一部分**：它与写着正文的
+   那个分片同属一个对象，不是另造的条目、也不是外挂索引；
+2. **对模型不可见**——本仓用 Chat Completions 模型（`OpenAIChatCompletionsModel`），
+   其输入转换器读 `content` 时**只取 `text`**（`chatcmpl_converter.py:746-747`），
+   `annotations` 整段被忽略。依据区是给使用者看的，不该白占模型上下文、
+   也不该让模型有机会照抄内部标识。
+
+写侧由基座在 `add_items` **落库之前**挂上（改的是尚未落库的内存条目，
+落库仍由 SDK 完成 ⇒ 会话「只追加」未破）；读侧从同一个分片读回，
+**不 import 写侧实现**，键名一致由用例机械守住。判别键取 `type == "citation"`：
+`annotations` 是共用字段，真实的辅助注解（例如 `url_citation`）也住在里面。
+
+⚠ **曾经的载体（T36，已废弃）**是工具结果 JSON 的 `citations` 顶层键。
+它的锚是天然的（`function_call_output.call_id` 与那次调用 1:1），
+但**载荷会进模型输入**——废弃的正是这一点，不是「那条路走不通」。
 
 ## 8. 失败语义
 
