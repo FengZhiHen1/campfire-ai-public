@@ -179,6 +179,137 @@ async def test_concurrent_recording_yields_exactly_one_row() -> None:
         await _clear()
 
 
+@pytest.mark.asyncio
+async def test_recording_is_atomic_under_a_held_lock() -> None:
+    """持锁型测试：墓碑的幂等判定必须在行锁等待结束后重新求值。
+
+    为什么需要这一条（原并发用例的判据取决于调度，而不是取决于实现是否原子）：
+
+    旧用例用 `asyncio.gather(record(), record())`，两条分支谁先拿到连接取决于
+    连接池冷热——实测（2026-10-06）：把 `record_deletion` 换成先查后写后，
+    同一段函数体在 pytest 里 6/6 失败、在冷池的独立进程里 1/1 通过
+    （`created=[True, False]`、恰好一行）。冷池时分支 2 的 `SELECT` 被「建连」
+    推迟到分支 1 提交之后（本机 `localhost` 先解析成 `::1`、约 2 秒才失败重试，
+    见 `conftest.py` 的实测记录），于是它读到既有行、走「已存在」分支。
+    也就是说：**旧用例的判决会随连接获取时机翻转**。
+
+    本用例做了什么（照 `test_accounts_invite_integration.py` 的
+    `test_claim_is_atomic_under_a_held_lock`）：
+
+    手动控制提交时机——会话 A 写墓碑但不提交（行锁留在 A 的事务里）→ B 尝试写
+    同一账号 → **确认 B 确实阻塞**（否则本用例只是换了个写法，判别力没变）→
+    A 提交 → 断言 B 解锁后重新求值：报告「已存在」、不改写注销时间、不抛错，
+    且库里恰好一行。这样「B 的判定发生在 A 提交之后」由行锁强制，不再依赖调度。
+
+    - 它能确定性抓住的：把幂等判定整体从 SQL 里去掉——`SELECT` 之后再无条件
+      `INSERT`（丢掉 `ON CONFLICT DO NOTHING`）。此时 B 的 `SELECT` 必然发生在
+      阻塞之前（同一协程顺序执行），解锁后 `INSERT` 必然撞主键 ⇒ 稳定失败。
+    - 它不能确定性抓住的：先查后写若保留 `ON CONFLICT DO NOTHING`（预读只是
+      冗余、写入仍由存储层仲裁），最终状态与返回值都仍然正确——那不是本用例的
+      失败，而是该形态本来就不构成缺陷。
+
+    本用例与参照用例的两点不同（都由本机实测逼出来，不是风格偏好）：
+
+    1. **预热两条物理连接**（`await session.connection()`）。参照用例的
+       「`not b_task.done()`」判据会被**建连延迟**冒充成「已阻塞」：本机
+       `localhost` 先解析成 `::1`、每次新建物理连接约 2 秒才失败重试
+       （`conftest.py` 的实测记录），于是 B 还停在「拿连接」时看起来就在阻塞。
+       实测该形态下先查后写消融有 4/6 次假通过。预热后 B 的语句即刻到达数据库。
+    2. **阻塞判据取「B 已发出 INSERT 且仍未返回」**（`before_cursor_execute`
+       监听器），而不是「B 尚未返回」。这条保证 B 真的走到了那条会等锁的语句，
+       而不是停在建连上。A 此刻【尚未提交】，因此 B 的 INSERT 只能是在等 A 的行锁。
+
+    所以本用例的价值是把判别力从「碰巧」提升到「覆盖不重新求值的实现」，
+    不是「保证能抓住任何非原子实现」。把这个边界写清楚，是为了不让后来者
+    以为「CI 绿 = 原子性已验证」。
+    """
+    import asyncio
+
+    from sqlalchemy import event
+
+    from campfire.core.auth import TombstoneResult
+    from campfire.core.db import get_engine, get_session_factory
+
+    await _clear()
+    try:
+        factory = get_session_factory(get_settings())
+        session_a = factory()
+        session_b = factory()
+        try:
+            # --- 0. 预热两条物理连接：不让「建连延迟」冒充「在等锁」---
+            await session_a.connection()
+            await session_b.connection()
+
+            # --- 1. A 写墓碑但不提交（持行锁）---
+            result_a = await record_deletion(session_a, account_id=_ACCOUNT)
+            assert result_a.created is True, "首次写入必须是「新建」"
+            # 不 commit、不 rollback —— 行锁留在 A 的事务里。
+
+            # --- 2. B 尝试写同一账号；同时记录 B 真正发出过哪些语句 ---
+            statements: list[str] = []
+
+            def _record_statement(conn: object, cursor: object, statement: str, *args: object) -> None:  # noqa: ARG001
+                if "campfire_account_deletion_tombstone" in statement:
+                    statements.append(statement.split(None, 1)[0].upper())
+
+            event.listen(get_engine(get_settings()).sync_engine, "before_cursor_execute", _record_statement)
+            try:
+                b_task = asyncio.create_task(record_deletion(session_b, account_id=_ACCOUNT))
+
+                # --- 3. 确认 B 真的走到了那条会等锁的 INSERT（而不是停在建连）---
+                reached_insert = False
+                for _ in range(150):  # 上限 3 秒（本机冷池单次建连约 2 秒）
+                    await asyncio.sleep(0.02)
+                    if b_task.done():
+                        break
+                    if "INSERT" in statements:
+                        reached_insert = True
+                        break
+                assert reached_insert, (
+                    f"B 没有走到 INSERT 就结束了——本用例未能制造出锁等待，断言将失去判别力（观察到的语句={statements}）"
+                )
+                # 再确认它确实【停】在那里：A 未提交，B 不可能返回。
+                await asyncio.sleep(0.1)
+                assert not b_task.done(), "B 在 A 提交前就返回了——它并没有被行锁挡住"
+            finally:
+                event.remove(get_engine(get_settings()).sync_engine, "before_cursor_execute", _record_statement)
+
+            # --- 4. A 提交，唤醒 B ---
+            await session_a.commit()
+
+            # --- 5. B 的结果：解锁后必须重新求值，报告「已存在」而不是报错 ---
+            try:
+                result_b: TombstoneResult = await asyncio.wait_for(b_task, timeout=10)
+            except Exception as exc:  # noqa: BLE001 —— 任何异常都要报出来，不吞
+                raise AssertionError(
+                    f"B 的写入以非预期方式失败：{type(exc).__name__}: {exc}"
+                    "（先查后写的实现会走到这里：B 在阻塞前已读到「没有墓碑」，"
+                    "解锁后无条件 INSERT 撞主键）"
+                ) from exc
+
+            await session_b.rollback()
+
+            assert result_b.created is False, "A 已提交后，B 必须报告「已存在」——说明判定没有重新求值"
+            assert result_b.deleted_at == result_a.deleted_at, "重跑不得改写注销时间"
+            assert result_b.reason == result_a.reason
+
+            # 幂等的不变量：库里最终只能有一行。
+            async with session_scope(get_settings()) as session:
+                rows = list(
+                    (
+                        await session.execute(
+                            select(AccountDeletionTombstone).where(AccountDeletionTombstone.account_id == _ACCOUNT)
+                        )
+                    ).scalars()
+                )
+            assert len(rows) == 1, f"并发注销必须只留下 1 行（实际 {len(rows)}）"
+        finally:
+            await session_a.close()
+            await session_b.close()
+    finally:
+        await _clear()
+
+
 # ---------------------------------------------------------------------------
 # 内容边界（对外表述的依据）
 # ---------------------------------------------------------------------------
