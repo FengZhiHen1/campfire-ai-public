@@ -26,6 +26,8 @@ cookie 处理、路由分派），但不占端口、不需要网络。这比「�
 
 from __future__ import annotations
 
+import json
+import uuid
 from collections.abc import AsyncIterator, Iterator
 
 import httpx
@@ -254,6 +256,22 @@ async def _account_exists(email: str) -> bool:
 def _signup_path(settings: Settings) -> str:
     """signup 的实际路径（`api_base_path` + SDK 的 `/signup`）。"""
     return f"{settings.supertokens_api_base_path.rstrip('/')}/signup"
+
+
+#: 本文件用的「不存在的租户」。刻意写死而不是随机：它必须确实不在 `tenants` 表里，
+#: 且名字要一眼看出是测试产物（真 core 里只存在 `public`）。
+_UNKNOWN_TENANT = "t40-unknown-tenant"
+
+
+def _signup_path_for_tenant(settings: Settings, tenant_id: str) -> str:
+    """带租户段的 signup 路径：`/api/auth/<tenant>/signup`。
+
+    租户**由 URL 路径承载**，不是请求头或请求体：SDK 用正则
+    `^{api_base_path}(?:/([a-zA-Z0-9-]+))?(/.*)$` 从路径上切出租户
+    （实测 `.venv/.../supertokens_python/recipe_module.py:63-77`）。
+    因此「换租户」这件事完全由调用方控制，这正是 C-3 的可探测性来源。
+    """
+    return f"{settings.supertokens_api_base_path.rstrip('/')}/{tenant_id}/signup"
 
 
 # ---------------------------------------------------------------------------
@@ -822,6 +840,199 @@ async def test_invite_code_rejections_stay_identical_after_account_name_change(
 
         assert len(bodies) == 1, (
             f"五种邀请码类拒绝的响应体必须完全一致（否则构成账号枚举渠道），实测 {len(bodies)} 种：{sorted(bodies)}"
+        )
+    finally:
+        await _clear()
+
+
+# ---------------------------------------------------------------------------
+# C-3（未知租户 + 有效码）与 C-4（账号名冲突）与其余拒绝同形
+#     —— 2026-10-07 用户裁决的两条，见 results/T40.md
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_unknown_tenant_with_valid_code_is_a_shaped_rejection_not_a_500(
+    client: httpx.AsyncClient,
+) -> None:
+    """★ C-3：未知租户 + **有效**邀请码不得裸 500，且响应与邀请码拒绝逐字同形。
+
+    这条守的是什么：
+
+    租户由 URL 路径承载（见 `_signup_path_for_tenant`），因此「租户是否存在」这件事
+    被调用方完全控制。修复前：SDK 在租户不存在时抛**裸 `Exception`**
+    （实测 `auth_utils.py:865-869`），我们的 `except` 只用它做「要不要释放」的判定、
+    然后原样 `raise` ⇒ 冒泡成 **HTTP 500**。500 本身就是「该租户不存在」的信号，
+    且匿名可达（不需要已存在的账号）。
+
+    实测（真 uvicorn + 真 core，改动前，`tmp/t40/probe-before.json`）：
+        POST /api/auth/t40-unknown-tenant/signup + 有效码 → HTTP 500 `Internal Server Error`
+
+    本用例断言的是**两件事**，缺一不可：
+      (a) 不再是 500（用户裁决「补 4xx」）；
+      (b) 形状与四类邀请码拒绝**逐字相同**——只满足 (a) 是不够的：给一个可区分的
+          4xx 等于把裸 500 换成**更明显**的租户存在性预言机。
+
+    判别性：把 `registration.py` 里 `_tenant_exists(...) is False` 那一支删掉
+    （恢复原样 `raise`），本用例失败（HTTP 500）。
+    把该支改成返回别的形状（如另造一个 4xx），(b) 部分失败。
+    """
+    settings = _settings_or_skip()
+    await _clear()
+    try:
+        # --- 未知租户 + 有效码 ---
+        unknown_code = await _issue_code()
+        unknown_response = await client.post(
+            _signup_path_for_tenant(settings, _UNKNOWN_TENANT),
+            json=_signup_payload(_unique_email("c3unknown"), unknown_code),
+        )
+
+        assert unknown_response.status_code != 500, (
+            f"未知租户 + 有效码不得裸 500（匿名可达的租户存在性信号），"
+            f"实际 HTTP {unknown_response.status_code}：{unknown_response.text[:300]}"
+        )
+
+        # --- 已知租户（public，即 `_signup_path` 走的缺省路径）+ 无效码 ---
+        known_response = await client.post(
+            _signup_path(settings), json=_signup_payload(_unique_email("c3known"), "ZZZZZZZZ")
+        )
+
+        assert unknown_response.text == known_response.text, (
+            "未知租户的响应必须与邀请码拒绝**逐字相同**——否则调用方仍能区分"
+            f"「租户不存在」与「码无效」，可探测性只是从 500 换成了另一个形状：\n"
+            f"  未知租户：HTTP {unknown_response.status_code} {unknown_response.text[:200]}\n"
+            f"  码无效：  HTTP {known_response.status_code} {known_response.text[:200]}"
+        )
+
+        # --- 该码必须被释放：本次不可能建出账号（租户不存在），码未被真实使用 ---
+        # 不释放的话，「探测未知租户」就成了烧掉邀请码的手段。
+        async with session_scope(get_settings()) as session:
+            record = await get_invite_code(session, code=normalize_invite_code(unknown_code))
+        assert record is not None
+        assert record.state == STATE_ISSUED, (
+            f"未知租户下账号不可能建出，该码应被释放回 issued，实际 {record.state}——否则探测未知租户会白白烧掉邀请码"
+        )
+    finally:
+        await _clear()
+
+
+@pytest.mark.asyncio
+async def test_duplicate_account_name_is_rejected_in_the_same_shape(client: httpx.AsyncClient) -> None:
+    """★ C-4：账号名冲突的响应必须与四类邀请码拒绝**逐字同形**。
+
+    为什么这是「改实现」而不是「改文档」：用户 2026-10-07 裁决「改实现，让第五条也同形」。
+
+    偏差在哪一层（实测逐条核过，不是转述）：
+
+    - 我们的四类拒绝走 `_reject(...)` → `GeneralErrorResponse` ⇒
+      `200 {"status":"GENERAL_ERROR","message":…}`；
+    - `EmailAlreadyExistsError` 原先在 `sign_up_post` 复写里**原样 `return result`**，
+      于是继续走 SDK 的渲染：`recipe/emailpassword/api/signup.py:99-108` 把它转成
+      `raise_form_field_exception("EMAIL_ALREADY_EXISTS_ERROR", …)` ⇒
+      `200 {"status":"FIELD_ERROR","formFields":[…]}`。
+    ⇒ **同一次请求的两个分支，线格式不同**，而调用方可逐字区分。
+
+    它为什么可被匿名利用（SDK 的测试邮箱域 + 不消耗码）：
+    `is_fake_email`（`auth_utils.py:971-974`）对 `@stfakeemail.supertokens.com` 为真，
+    `implementation.py:734-736` 在该域且为首因子时**直接**返回 `EmailAlreadyExistsError()`
+    ——不查库、不建号。而第 1 步（占用邀请码）先于它 ⇒ 本分支只在**码有效**时可达
+    ⇒ 「拿到 FIELD_ERROR」本身就证明了候选码有效，且全过程不建号、不消耗码。
+
+    实测（真 uvicorn + 真 core，改动前，`tmp/t40/probe-before.json`）：
+        POST /api/auth/signup {email: c4-before@stfakeemail.supertokens.com, inviteCode: <有效码>}
+        → 200 {"status":"FIELD_ERROR","formFields":[{"id":"email",…}]}
+    改动后（`tmp/t40/probe-after.json`）→ 200 `GENERAL_ERROR` + 统一消息。
+
+    ⚠️ 用户可见代价（如实记下）：重名注册**这条正常路径**的文案随之改变——
+    前端按 `FIELD_ERROR` + `email` 字段分派到 `account-unusable`
+    （「该账号名无法使用，请换一个」），改成 `GENERAL_ERROR` 后落进
+    `invite-rejected`（「邀请码无效或已被使用」）——**不准确**。判定与理由见
+    `registration.py` 对应注释与 `results/T40.md` 的 C-4 节。
+
+    判别性：把 `registration.py` 里 `return _reject(_REJECTION_MESSAGE)` 改回
+    `return result`，本用例失败（会看到 `FIELD_ERROR`）。
+    """
+    settings = _settings_or_skip()
+    await _clear()
+    try:
+        # 用 SDK 的测试邮箱域触发 `EmailAlreadyExistsError`：不建号、不消耗码。
+        fake_email = f"c4-{uuid.uuid4().hex[:10]}@stfakeemail.supertokens.com"
+        code = await _issue_code()
+        conflict = await client.post(_signup_path(settings), json=_signup_payload(fake_email, code))
+
+        # 参照物：四类邀请码拒绝之一（码不存在）。
+        baseline = await client.post(_signup_path(settings), json=_signup_payload(_unique_email("c4base"), "ZZZZZZZZ"))
+
+        assert conflict.text == baseline.text, (
+            "账号名冲突的响应必须与四类邀请码拒绝**逐字相同**——否则「账号名冲突」"
+            "这条分支与邀请码拒绝形状不同，配合 SDK 测试邮箱域可被用来判定候选码是否有效"
+            f"（不建号、不消耗码）：\n"
+            f"  账号名冲突：HTTP {conflict.status_code} {conflict.text[:200]}\n"
+            f"  码无效：    HTTP {baseline.status_code} {baseline.text[:200]}"
+        )
+    finally:
+        await _clear()
+
+
+@pytest.mark.asyncio
+async def test_five_rejection_shapes_are_indistinguishable(client: httpx.AsyncClient) -> None:
+    """★ C-3 + C-4 的合并守卫：**五类**拒绝的响应体逐字相同。
+
+    这五种是：① 码不存在；② 码已撤销；③ 码已占用；④ 码形状不合法；
+    ⑤ **账号名冲突**（C-4 的第五条）；另加 C-3 的 ⑥ **未知租户**。
+
+    与既有 `test_rejection_message_does_not_distinguish_reasons`（只覆盖四类邀请码）
+    和 `test_invite_code_rejections_stay_identical_after_account_name_change`（五类，
+    但第五类是「缺码」而非「账号名冲突」）都不同：**本用例是把 C-3/C-4 两条裁决
+    钉在一起的那一条**，任何一条被改回去都会在这里变红。
+
+    判别性：把 C-3 或 C-4 任一处改回原实现，则响应体集合出现 >1 种，本用例失败。
+    """
+    settings = _settings_or_skip()
+    await _clear()
+    try:
+        bodies: dict[str, str] = {}
+
+        # ① 码不存在
+        response = await client.post(_signup_path(settings), json=_signup_payload(_unique_email("f1"), "ZZZZZZZZ"))
+        bodies["① 码不存在"] = response.text
+
+        # ② 码已撤销
+        revoked = await _issue_code()
+        async with session_scope(get_settings()) as session:
+            await revoke_invite_code(session, code=revoked)
+        response = await client.post(_signup_path(settings), json=_signup_payload(_unique_email("f2"), revoked))
+        bodies["② 码已撤销"] = response.text
+
+        # ③ 码已占用
+        used = await _issue_code()
+        async with session_scope(get_settings()) as session:
+            await claim_invite_code(session, code=used)
+        response = await client.post(_signup_path(settings), json=_signup_payload(_unique_email("f3"), used))
+        bodies["③ 码已占用"] = response.text
+
+        # ④ 码形状不合法
+        response = await client.post(_signup_path(settings), json=_signup_payload(_unique_email("f4"), "ABC"))
+        bodies["④ 码形状不合法"] = response.text
+
+        # ⑤ 账号名冲突（C-4）——SDK 测试邮箱域，不建号、不消耗码
+        response = await client.post(
+            _signup_path(settings),
+            json=_signup_payload(f"f5-{uuid.uuid4().hex[:10]}@stfakeemail.supertokens.com", await _issue_code()),
+        )
+        bodies["⑤ 账号名冲突"] = response.text
+
+        # ⑥ 未知租户 + 有效码（C-3）
+        response = await client.post(
+            _signup_path_for_tenant(settings, _UNKNOWN_TENANT),
+            json=_signup_payload(_unique_email("f6"), await _issue_code()),
+        )
+        bodies["⑥ 未知租户"] = response.text
+
+        distinct = set(bodies.values())
+        assert len(distinct) == 1, (
+            "六类拒绝的响应体必须完全一致（任何差异都是可区分渠道：租户存在性 / 账号枚举 / "
+            f"邀请码有效性预言机），实测 {len(distinct)} 种：" + json.dumps(bodies, ensure_ascii=False, indent=2)
         )
     finally:
         await _clear()
