@@ -201,6 +201,15 @@ PART_TYPE_QUESTION_RECORD: Final[QuestionRecordType] = "question-record"
 #: （`uuid4().hex`）都不相等。
 QUESTION_BATCH_ID_PREFIX = "hydrated-"
 
+#: 作答正文里「本组批次标识」那一行的开头与结尾（2026-10-06 随 C-2 加入）。
+#:
+#: 与 `surfaces/consult/answers.ANSWERS_BATCH_ID_MARK_PREFIX` / `_SUFFIX` 逐字相同；
+#: 理由同 :data:`ANSWERS_HEADER`：`modules/*` 不得 import `surfaces/*`（项目结构设计第 7 节），
+#: 那一处是**产出**、这一处是**判据的输入端**。相等关系由
+#: `tests/test_accounts_session_items.py` 直接比对常量守住。
+ANSWERS_BATCH_ID_MARK_PREFIX = "（本组批次标识："
+ANSWERS_BATCH_ID_MARK_SUFFIX = "）"
+
 #: 提问 part 里 `options` 的元素形状。选项与题面字段名取自通用基座第 7.2 节。
 _QUESTION_ITEM_ID_KEY = "id"
 _QUESTION_ITEM_PROMPT_KEY = "prompt"
@@ -1506,6 +1515,73 @@ def _ask_user_turns(items: Sequence[StoredItem]) -> list[AskUserTurn]:
     return turns
 
 
+def _declared_batch_id(item: Mapping[str, object]) -> str | None:
+    """从一条「像作答」的消息里读回它声明的批次标识；未声明时返回 `None`。
+
+    与 `surfaces/consult/answers.declared_batch_id` 是**同一条判据的两份实现**
+    （`modules/*` 不得 import `surfaces/*`，项目结构设计第 7 节），因此判据必须逐字一致：
+    整行「前缀在行首 ∧ 后缀在行尾」，取**最后**一个匹配。
+
+    **为什么不复用 :func:`message_text` 的读法**：本函数要的是「有没有声明」，而声明是
+    独立于正文的一行；只要读不出文本就返回 `None`（= 未声明），由调用方按缺省处理。
+    """
+    text = message_text(item)
+    if text is None:
+        return None
+    found: str | None = None
+    for line in text.split("\n"):
+        stripped = line.strip()
+        if not (stripped.startswith(ANSWERS_BATCH_ID_MARK_PREFIX) and stripped.endswith(ANSWERS_BATCH_ID_MARK_SUFFIX)):
+            continue
+        value = stripped[len(ANSWERS_BATCH_ID_MARK_PREFIX) : -len(ANSWERS_BATCH_ID_MARK_SUFFIX)]
+        if value.strip():
+            found = value
+    return found
+
+
+def batch_id_matches_call_id(batch_id: str, call_id: str) -> bool:
+    """这份 `batch_id` 是否**正向命中了**某次调用（判定第一层：正向）。
+
+    规则逐字取自 `facts.md` §2.3 第 1 层与契约 4.1 第 4 条：**剥掉可选前缀
+    :data:`QUESTION_BATCH_ID_PREFIX` 后的余串若命中某组 `call_id`** ⇒ 命中。
+
+    - 水合路径 `hydrated-<call_id>` ⇒ 剥前缀 ⇒ `call_id` ⇒ 命中；
+    - 实时路径裸 `uuid4().hex` ⇒ 剥不掉前缀、余串等于它自己 ⇒ 不等于任何 `call_id`
+      ⇒ **不命中**（它不落库，服务端无从反查 —— 因此实时路径**只能排他、不能正向归属**，
+      这是用户 2026-10-06 的裁决，不得把它实现成能归属）。
+
+    ⚠ 前缀是**可选**的：不带前缀但逐字等于 `call_id` 的值同样命中。这是照「剥掉**可选**
+    前缀」的字面实现；它不放大实时路径的能力（实时值是 uuid hex，与 `call_id` 不同形）。
+    """
+    candidate = batch_id[len(QUESTION_BATCH_ID_PREFIX) :] if batch_id.startswith(QUESTION_BATCH_ID_PREFIX) else batch_id
+    return candidate == call_id
+
+
+def _is_verifiable_exclusion(batch_id: str, call_id: str) -> bool:
+    """这份声明能否**证明自己属于别组**（**排他层**的判据，2026-10-07 r2 P0 修复）。
+
+    只有**水合形态**（带 :data:`QUESTION_BATCH_ID_PREFIX` 前缀）能证明：剥掉前缀即得一个
+    具体的 `call_id`，与本次调用的 `call_id` 不等 ⇒ 「这条作答不是给本组的」是可证明的事实。
+
+    裸 `uuid4().hex`（实时路径）**不能证明任何事**：原值不落库（`facts.md` §3-2），
+    服务端既无法确认它属于本组（:func:`batch_id_matches_call_id` 不命中）、
+    也无法确认它属于别组。因此它**不得**被当作排他凭据 —— 旧实现正是这么做的，
+    后果是把「本组已作答」判成未作答 ⇒ 前端重新可作答 ⇒ **重复作答**（P0）。
+
+    注意本函数**只回答「能否构成排他证明」**，不回答「是否命中本组」——后者归
+    :func:`batch_id_matches_call_id`（正向层）。两者**共同**定义了三类行为：
+
+    | 声明 | 正向层 | 本函数 | 结论 |
+    |---|---|---|---|
+    | `hydrated-<本组 call_id>` | 命中 | —— | `True` |
+    | `hydrated-<别的 call_id>` | 不命中 | `True` | `False`（真排他） |
+    | 裸 uuid（实时） | 不命中 | `False` | `None`（不可验证 ⇒ fail-closed） |
+    """
+    if not batch_id.startswith(QUESTION_BATCH_ID_PREFIX):
+        return False
+    return not batch_id_matches_call_id(batch_id, call_id)
+
+
 def _is_compaction_checkpoint(item: Mapping[str, object]) -> bool:
     """这条条目是不是压缩检查点（`<compacted-summary>…</compacted-summary>`）。
 
@@ -1650,11 +1726,23 @@ def question_answered_verdicts(items: Sequence[StoredItem]) -> dict[str, bool | 
     它只把 `False` 降级成 `None`（消除重复作答），不把任何 `True` 改成别的值，
     因此不会制造新的「永久失去补答」。
 
-    ⚠ 残余（本包**不修**，如实登记）：上例中 B 仍判 `True`，而真相是 B 未被作答
-    ⇒ B 永久失去补答。这一半**不可判定**：同一条作答消息既可能是 A 的迟到作答、也可能
-    是 B 的正常作答；根因是作答消息里只有题标识、没有 `batch_id`
-    （`surfaces/consult/answers.py` 的渲染只写题标识），两组题标识相同时内容层面也不可区分。
-    真正的修法是让作答携带 `batch_id`（改契约），超出本包范围。
+    ⚠ **残余（2026-10-06 C-2 落地后的剩余边界，如实登记）**：上例（
+    `call(A) → out(A) → 「换个话题」 → call(B) → out(B) → 作答`）中，**B 是否仍被判 `True`
+    取决于那条作答有没有声明 `batch_id`**：
+
+    - **可验证地声明了**（水合形态 `hydrated-<call_id>`）⇒ 四层判定直接给出结论：
+      声明 `hydrated-A` 则 A 判 `True`（正向层）、B 因**排他**判 `False`（B 恢复可补答）；
+      A 不再依赖「迟到作答」的猜测——那条收窄只对**不可验证归属**的作答生效。
+    - **不可验证地声明了**（实时路径的裸 uuid）⇒ 该声明**只行使「不得判 `True`」的否决权**
+      ⇒ 相关组判 `None`（**既不得 `True` 也不得 `False`**）；「可能是迟到作答」的保护照旧保留
+      ——它自己的归属没有被证明，因此不能替任何一组排除可能性。
+    - **未声明**（改动前的旧客户端）⇒ 行为与 C-2 之前**逐字相同**：A 收窄成 `None`
+      （不重复作答）、B 仍判 `True`（永久失去补答）。
+      这一半**至今不可判定**：同一条作答消息既可能是 A 的迟到作答、也可能是 B 的正常作答。
+
+    ⇒ 因此契约 4.1 把 `batch_id` 定为**可选**：不传送回旧行为（可判定性有损但不破坏），
+    送了才拿到精确归属。**不得**把「未声明」也实现成能归属；**也不得**把「声明了但不可验证」
+    当成「可归属」（后者是 2026-10-07 r2 修掉的 P0）。
 
     Args:
         items: 该会话的全部条目（正序）。**必须全量**：窗口要看到注入行、其他工具结果
@@ -1673,9 +1761,23 @@ def question_answered_verdicts(items: Sequence[StoredItem]) -> dict[str, bool | 
     # 只登记「更早」的组（`range(nearest)`）：一次提问不可能被一条**早于它**的消息作答，
     # 把更晚的组也算进来会凭空制造 `None`，而 `None` 同样是永久失去补答。
     # 一次遍历算好，避免在每组上重扫整段历史（提问数 × 条目数是二次的）。
+    #
+    # ★ C-2（2026-10-06）后本登记只对「**可验证归属**的作答」失效——见下 `_turn_verdict`
+    # 的四层判定：一条**正向命中本组**（`hydrated-<本组>`）或**可证明属于别组**
+    # （`hydrated-<别组>`）的作答，归属已经确定，不再"可能属于更早的某组"
+    # ——那正是带着 `batch_id` 回传要消除的歧义。
+    #
+    # ⚠ 2026-10-07 r2 的 P0 修复同时收窄了这条：**实时裸 uuid 不在此列**。它不可验证，
+    # 因此仍然"可能属于更早的某组"，必须照旧参与迟到作答收窄——否则 S3
+    # （`call(A) → 换话题 → call(B) → 带回传实时值的作答`）会让 A 判 `False`
+    # ⇒ A 的卡片重新可作答 ⇒ **使用者对 A 重复作答**（复查者 S3 实测）。
     late_answer_suspects: set[int] = set()
     for index, stored in enumerate(items):
         if not _is_answers_message(stored.data):
+            continue
+        value = _declared_batch_id(stored.data)
+        # 只有水合形态是可验证归属的；裸 uuid 与「未声明」同等对待（都还可能是迟到作答）。
+        if value is not None and value.startswith(QUESTION_BATCH_ID_PREFIX):
             continue
         nearest = _nearest_turn_position(turns, index)
         if nearest is not None:
@@ -1693,13 +1795,127 @@ def question_answered_verdicts(items: Sequence[StoredItem]) -> dict[str, bool | 
             # 边界倒挂（下一次提问的调用行落在本次回执之前）：窗口没有定义 ⇒ 无依据。
             verdicts[turn.call_id] = None
             continue
-        verdict = _window_verdict(items[start:end])
-        if verdict is False and position in late_answer_suspects:
-            # 有一条更晚的作答消息，而它离某次更晚的提问更近 ⇒ 它完全可能就是本组的
-            # 迟到作答 ⇒ 服务端不得断言「本组未被作答」（fail-closed ⇒ 只读）。
-            verdict = None
-        verdicts[turn.call_id] = verdict
+        verdicts[turn.call_id] = _turn_verdict(
+            items, position=position, turn=turn, start=start, end=end, late_answer_suspects=late_answer_suspects
+        )
     return verdicts
+
+
+def _turn_verdict(
+    items: Sequence[StoredItem],
+    *,
+    position: int,
+    turn: AskUserTurn,
+    start: int,
+    end: int,
+    late_answer_suspects: set[int],
+) -> bool | None:
+    """对**一组**提问做**四层**判定（C-2，2026-10-06；2026-10-07 r2 回流层数）。
+
+    顺序逐字为 **正向 > `None`（不可判定） > 排他 > 缺省**。
+
+    四层**必须可区分**（各自有独立分支与独立用例）：把它们写成单一条件就无法说清
+    「为什么这一组判 `True`」，而四层的失败方向不同——正向错了会让未作答的组变只读，
+    `None` 的位置错了会让本组**永久失去补答**（`None` 被排他越过）或**重复作答**
+    （排他被 `None` 越过），排他错了会让本可补答的组永久失去补答，缺省错了等于本包没改。
+
+    1. **正向**：历史里（**扫全量，不扫窗口**）存在一条**正向命中本组**
+       （:func:`batch_id_matches_call_id`）的作答 ⇒ `True`。这是水合路径
+       （`hydrated-<call_id>`）能精确归属的那一层；实时路径的裸 uuid **不会**命中这里
+       （它不落库，服务端无从反查）。
+    2. **`None`（不可判定）**：:func:`_window_verdict` 返回 `None`（压缩检查点 /
+       同一段正文两份 / 读不出文本）⇒ 短路 `None`。**它在正向之后、排他之前**
+       ——正向是直接证据，可以越过它；而窗口内的其余判据都可能是复述来的，不得越过它。
+    3. **排他**：本组窗口里存在一条**可验证属于别组**的声明
+       （:func:`_is_verifiable_exclusion`：水合形态且不等于本组 `call_id`）⇒ `False`
+       （不得判本组被作答）。**这就是 C-2 §一的修复点**：那条作答其实属于更晚的 B 组，
+       而旧的「位置窗口 × 表头」会把 B 的作答算成本组的 ⇒ B 永久失去补答。
+       ⚠ **不可验证**的声明（实时裸 uuid）**不构成排他** ⇒ 只行使「不得判 `True`」的
+       否决权 ⇒ `None`（fail-closed）。理由与代价见本函数内该层的行内注释。
+    4. **缺省**：窗口里没有任何**可验证的**声明 ⇒ 退回现状
+       :func:`_window_verdict`（位置窗口 × 表头），行为与改动前逐字不变。
+       缺省必须显式定义：前/后端若对缺省理解分叉，同一载荷会有两种行为（契约 4.1 第 3 条）。
+
+    Returns:
+        `True` / `False` / `None`（`None` = 无法判定 ⇒ 前端只读，fail-closed）。
+    """
+    window = items[start:end]
+
+    # 第 1 层（正向）：**扫全量历史**，不扫窗口——精确归属的意义正在于此。
+    # 一条声明了「本组」的作答就是本组被作答的直接证据，无论它落在哪一段窗口里；
+    # 局限在窗口里会把「更晚才回头作答」判成未作答 ⇒ 使用者重复作答（要消除的方向）。
+    # 这一层只可能由水合路径（`hydrated-<call_id>`）命中：实时路径的裸 uuid 剥不掉前缀、
+    # 也不等于任何 `call_id`（它不落库，服务端无从反查）。
+    #
+    # ★ 有意的裁定：**正向命中优先于「窗口里有检查点 ⇒ None」**（2026-10-06）。检查点让
+    # 窗口内的证据不可信（复述块里的旧作答与本次的在形状上无法区分），但它**不削弱**
+    # 「历史里存在一条声明了本组批次的作答」这个事实——那是正向归属。反过来若让 `None`
+    # 优先，一次压缩就会把本组的结论从 `True` 降成 `None` = 只读 ⇒ **本组永久失去补答**，
+    # 正是本包要消除的方向。B 组的修复不受影响：那条声明属于 A，对 B 不构成正向命中。
+    for stored in items:
+        if not _is_answers_message(stored.data):
+            continue
+        value = _declared_batch_id(stored.data)
+        if value is not None and batch_id_matches_call_id(value, turn.call_id):
+            return True
+
+    # 第 2 层（`None`·不可判定）：在**没有正向命中**时才短路——此时任何窗口内的声明都可能
+    # 是复述来的，因此不拿它做归属（连「排他」也不做：只读方向安全）。
+    # ⚠ 层序是 **正向 > None > 排他 > 缺省**：正向层已在上方越过本层（直接证据），
+    # 而本层必须越过排他层与缺省层。
+    fallback = _window_verdict(window)
+    if fallback is None:
+        return None
+
+    # 第 3 层（排他）：**只看本组窗口**里的声明，且**只对可验证的异组声明**生效。
+    #
+    # 「可验证」的判据（2026-10-07 r2 的 P0 修复，用户预先授权自主裁决）：
+    # 声明**能证明它属于别组**才算排他。只有水合形态 `hydrated-<call_id>` 能证明
+    # （它剥前缀即得一个具体 `call_id`）；**实时裸 uuid 不能证明任何事**——它不落库、
+    # 无法与任何 `call_id` 比对，既不能证明属于本组（正向层不命中）也不能证明属于别组。
+    #
+    # ⚠ 这里曾是 P0：旧实现对本组窗口内**任何**已声明作答直接 `return False`，
+    # 于是「单组提问 + 使用者回传它从 SSE 拿到的实时 uuid」——**最常见的真实流程**——
+    # 会把**确实已作答**的组判成 `False` ⇒ 前端（`useQuestionBatch.ts:117`
+    # `answerable = mode === 'live' || serverVerdict === false`）重新可作答
+    # ⇒ **使用者重复作答**（T31 以来最被保护的不变量）。
+    # 与 `facts.md` §2.2 的授权字面也不符：授权说的是「声明了**非本组**值的作答不得算作
+    # 本组被作答」，而本组自己的实时值**不是非本组值**。
+    #
+    # 修复后的三类行为必须不同（判据可机械核）：
+    #   ① `hydrated-<本组>`        ⇒ 第 1 层已 `return True`（到不了这里）；
+    #   ② `hydrated-<别的 call_id>` ⇒ 本层 `return False`（**真正的排他，保留**）；
+    #   ③ 裸 uuid（实时，不可验证）  ⇒ **不得判 `False`** ⇒ 短路 `None`（fail-closed）。
+    #
+    # 为什么不可验证时选 `None` 而不是「视同未声明、走缺省层」：后者会让实时客户端保留
+    # C-2 要修的「B 被误判 `True`」（窗口里那条作答其实属于别组）⇒ B 永久失去补答。
+    # `None` = 只读 ⇒ **既不重复作答、也不误判已作答**，与「失败方向选安全的那边」一致。
+    # **代价如实登记**：实时路径下已作答的组会显示为只读（看不到「已作答」的确认），
+    # 这是「无法验证」的真实代价，不掩盖。
+    # 顺序无关：**可验证的异组声明优先**（它是证明，先扫完再决定）。若反过来「遇到第一个
+    # 不可验证的声明就 `None`」，那么「窗口里既有实时裸 uuid、又有 `hydrated-<别组>`」的
+    # 载荷会随**消息顺序**给出两种不同结论——同一事实两种答案，不可接受。
+    has_unverifiable = False
+    for stored in window:
+        if not _is_answers_message(stored.data):
+            continue
+        value = _declared_batch_id(stored.data)
+        if value is None:
+            continue
+        if _is_verifiable_exclusion(value, turn.call_id):
+            return False
+        # ③ 不可验证的声明（实时裸 uuid）：只行使「不得判 True」的否决权。
+        has_unverifiable = True
+    if has_unverifiable:
+        return None
+
+    # 第 4 层（缺省）：窗口里没有任何**可验证的**声明 ⇒ 退回位置窗口 × 表头，
+    # 并保留既有迟到作答收窄。行为与改动前逐字相同。
+    if fallback is False and position in late_answer_suspects:
+        # 有一条更晚的、**未声明批次**的作答消息 ⇒ 它完全可能就是本组的迟到作答
+        # ⇒ 服务端不得断言「本组未被作答」（fail-closed ⇒ 只读）。
+        return None
+    return fallback
 
 
 # ---------------------------------------------------------------------------
@@ -2083,6 +2299,8 @@ __all__ = [
     # 提问重建
     "ASK_USER_SUCCESS_OUTPUT",
     "ASK_USER_TOOL_NAME",
+    "ANSWERS_BATCH_ID_MARK_PREFIX",
+    "ANSWERS_BATCH_ID_MARK_SUFFIX",
     "ANSWERS_HEADER",
     "COMPACTED_SUMMARY_TAG",
     "EMERGENCY_ACTION_CARD_TOOL_NAME",

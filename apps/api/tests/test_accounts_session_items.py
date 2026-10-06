@@ -1198,9 +1198,425 @@ def test_question_answered_null_when_a_user_message_has_no_readable_text() -> No
     assert question_answered_verdicts(items) == {_ASK_USER_CALL_ID: None}
 
 
+# ---------------------------------------------------------------------------
+# T39（C-2）：作答携带 `batch_id` ⇒ 判定改为**四层**
+#
+#    正向 > None（不可判定） > 排他 > 缺省
+#
+# 要修的是上面那条用例 `test_question_answered_null_when_a_late_answer_lands_in_a_later_window`
+# 明文登记的残余：B 被误判 `True` ⇒ **永久失去补答**。
+#
+# ★ 为什么是【四层】而不是三层（2026-10-07 r2 回流）：`None`（不可判定）不是"兜底"，
+# 它是有位置的一层——正向层可以越过它（正向是**直接证据**），但排他层与缺省层都不能。
+# 早先的「三层（正向 → 排他 → 缺省）」表述与代码不符，已全部回流。
+#
+# ★ 函数名**不带层编号**（本包的选择，见报告）：层编号已经漂移过一次（三层 → 四层），
+# 而语义名不会再漂移。因此改法选「去掉编号、只留语义名」，不选「改对编号」。
+#
+# 四层**各自**要有能失败的用例：把它们写成单一条件时，至少有一条会红。
+# ---------------------------------------------------------------------------
+
+
+def _answer_with_batch(batch_id: str, item_ids: Sequence[str] = ("object_name",)) -> dict:
+    """一条**声明了批次**的作答消息（逐字对齐 `answers.render_answers` 的产出形状）。
+
+    声明行取自 `answers.ANSWERS_BATCH_ID_MARK_PREFIX` 的产出形状；本文件另有
+    `test_question_answered_batch_mark_matches_the_renderer` 用真实渲染器守住两处相等。
+    """
+    lines = [ANSWERS_HEADER, *[f"{item_id}：可以" for item_id in item_ids], f"（本组批次标识：{batch_id}）"]
+    return {"role": "user", "content": "\n".join(lines)}
+
+
+#: 实时路径的 `batch_id` 真值形态：`ask_user_tool._new_batch_id()` = `uuid.uuid4().hex`（裸 hex）。
+#: **它不落库**（`facts.md` §3-2），因此服务端既不能确认它属于本组、也不能确认它属于别组。
+_LIVE_BATCH_ID = "9f2c1d3e4b5a678901234567890abcde"
+
+
+def test_question_answered_batch_mark_matches_the_renderer() -> None:
+    """★ 声明行的前后缀必须与 `answers.render_answers` 的产出逐字一致。
+
+    这是**判据的判据**（与 `ANSWERS_HEADER` 那条同一种做法）：判据靠这一行认出「本组
+    声明了哪个批次」。它一旦与渲染器漂移，**声明读不回来** ⇒ 归属退回位置窗口
+    ⇒ 本包修掉的「B 被误判 True」原样回来，而且没有任何用例会红。
+
+    判别性：改 `ANSWERS_BATCH_ID_MARK_PREFIX` 的任一字 ⇒ 红。
+    """
+    from campfire.surfaces.consult.answers import (
+        ANSWERS_BATCH_ID_MARK_PREFIX,
+        ANSWERS_BATCH_ID_MARK_SUFFIX,
+        AnswerItem,
+        declared_batch_id,
+        render_answers,
+    )
+
+    rendered = render_answers([AnswerItem(id="object_name", value="可以")], batch_id="hydrated-call-Z")
+
+    assert rendered.split("\n")[-1].startswith(ANSWERS_BATCH_ID_MARK_PREFIX)
+    assert rendered.split("\n")[-1].endswith(ANSWERS_BATCH_ID_MARK_SUFFIX)
+    # 两处常量逐字相等（`modules/*` 不得 import `surfaces/*`，只能靠本用例守）。
+    assert session_items.ANSWERS_BATCH_ID_MARK_PREFIX == ANSWERS_BATCH_ID_MARK_PREFIX
+    assert session_items.ANSWERS_BATCH_ID_MARK_SUFFIX == ANSWERS_BATCH_ID_MARK_SUFFIX
+    # 往返：渲染出的声明必须能被服务端判据读回（漂移会让这条先红）。
+    assert declared_batch_id(rendered) == "hydrated-call-Z"
+    assert session_items._declared_batch_id(_answer_with_batch("hydrated-call-Z")) == "hydrated-call-Z"
+
+
+def test_question_answered_batch_prefix_matches_the_hydration_prefix() -> None:
+    """★ `hydrated-` 前缀必须与 `answers.QUESTION_BATCH_ID_PREFIX` 逐字一致。
+
+    两处各写一份字面量（`modules/*` 不得 import `surfaces/*`）。不等则**剥前缀**的
+    判据失效 ⇒ 水合路径无法正向归属（每张卡都退回窗口判定）。
+
+    判别性：把任一侧改成别的串 ⇒ 红。
+    """
+    from campfire.surfaces.consult.answers import QUESTION_BATCH_ID_PREFIX as SURFACE_PREFIX
+
+    assert session_items.QUESTION_BATCH_ID_PREFIX == SURFACE_PREFIX
+    assert session_items.QUESTION_BATCH_ID_PREFIX == "hydrated-"
+
+
+def test_question_answered_positive_attribution_by_hydrated_batch_id() -> None:
+    """**正向层**：声明「剥掉 `hydrated-` 后命中本组 `call_id`」⇒ 本组判 `True`。
+
+    这一层正是水合路径能精确归属的那一层（`hydrated-<call_id>`）。它**必须扫全量历史**
+    而不是只扫本组窗口：使用者在更晚的一次提问之后才回头作答上一组时，那条作答落在
+    别人的窗口里——只看窗口会把本组判成 `False` ⇒ 卡片变回可作答 ⇒ **重复作答**。
+
+    判别性（两条独立的红）：
+    1. 把 `_turn_verdict` 正向层改成只看 `window` ⇒ 本用例红（A 变回 `None`）；
+    2. 把 `batch_id_matches_call_id` 的前缀剥离删掉 ⇒ 本用例红（水合值不再命中）。
+    """
+    items = [
+        _stored(1, _user("问 A")),
+        _stored(2, _ask_user_call(call_id="call-A")),
+        _stored(3, _ask_user_output(call_id="call-A")),
+        _stored(4, _user("换个话题：我想先说说别的。")),
+        _stored(5, _ask_user_call(call_id="call-B")),
+        _stored(6, _ask_user_output(call_id="call-B")),
+        # 这条作答落在 B 的窗口里，但它**声明**了 A 的批次 ⇒ A 被作答。
+        _stored(7, _answer_with_batch(f"{QUESTION_BATCH_ID_PREFIX}call-A")),
+    ]
+
+    verdicts = question_answered_verdicts(items)
+
+    assert verdicts["call-A"] is True, "声明 hydrated-A 却没能正向归属到 A"
+    assert verdicts["call-B"] is False, "B 未被作答（那条作答声明的是 A），必须判 False 才能补答"
+
+
+def test_question_answered_exclusion_blocks_the_false_true() -> None:
+    """★ **排他层**（C-2 的核心修复点）：**可验证的**异组声明把误判的 `True` 挡掉。
+
+    场景就是 T31 登记的那条残余的镜像：那条作答**声明了本组之外的批次**
+    （`hydrated-<别的 call_id>`，可验证）⇒ 它不是本组的作答 ⇒ 本组未作答
+    ⇒ 判 `False`（可补答）。
+
+    **旧行为对照**：同一个场景不带声明时，`_window_verdict` 会判 `True`
+    ⇒ **永久失去补答**。本用例的第二段断言把那个旧读数钉在测试里（它就是被修掉的东西）。
+
+    判别性：删掉 `_turn_verdict` 排他层那个 `return False` ⇒ 本用例红
+    （声明了可验证的非本组值时退回窗口判定，给出 `True`）。
+    """
+    items = [
+        _stored(1, _user("问")),
+        _stored(2, _ask_user_call()),
+        _stored(3, _ask_user_output()),
+        # 这条作答声明的是**别的**组，且是**可验证**的水合形态（题标识与本组相同，内容层面本就不可区分）。
+        _stored(4, _answer_with_batch(f"{QUESTION_BATCH_ID_PREFIX}some-other-call")),
+    ]
+
+    verdict = question_answered_verdicts(items)
+
+    assert verdict == {_ASK_USER_CALL_ID: False}, "声明了可验证的非本组批次，却仍把本组当成已作答（永久失去补答）"
+    # ★ 旧行为对照：把同一条消息的声明行去掉，同一窗口就判 True —— 这正是被修掉的误判。
+    without_declaration = [
+        _stored(1, _user("问")),
+        _stored(2, _ask_user_call()),
+        _stored(3, _ask_user_output()),
+        _stored(4, _answer()),
+    ]
+    assert question_answered_verdicts(without_declaration) == {_ASK_USER_CALL_ID: True}
+
+
+def test_question_answered_live_batch_id_never_yields_false_on_a_single_group() -> None:
+    """★★ **P0 回归靶子（单组）**：回传**实时裸 uuid** 时，**已作答**的组**不得**被判 `False`。
+
+    这是 2026-10-07 r2 修掉的 P0，也是**最常见的真实流程**：
+    单组提问 → 使用者作答本组 → 前端把它从 SSE `question` 事件收到的实时 `batch_id`
+    原样回传。那条声明是**本组自己的**，但实时值不落库 ⇒ 服务端**无法验证**它。
+
+    旧实现的排他层对「窗口内任何已声明作答」直接 `return False`，于是这个场景判
+    `False` ⇒ 前端 `useQuestionBatch.ts:117` 的
+    `answerable = mode === 'live' || serverVerdict === false` 让刷新后的卡片
+    **重新可作答** ⇒ **使用者重复作答**（T31 以来最被保护的不变量）。
+
+    ★ 为什么断言 `is None` **且** `is not False`：前者钉住裁定（不可验证 ⇒ 不可判定），
+    后者是**与失败方向直接挂钩**的那一条——将来若有人把 `None` 改成别的值，这一条会
+    独立报出「重复作答」的风险，而不只是「值不符」。
+
+    判别性：把 `_is_verifiable_exclusion` 改成 `return True`（即回退到 r1 的
+    「任何声明都排他」）⇒ 本用例红（`False`）。
+    """
+    items = [
+        _stored(1, _user("问 A")),
+        _stored(2, _ask_user_call(call_id="call-A")),
+        _stored(3, _ask_user_output(call_id="call-A")),
+        # 使用者答的**就是** A 组，并回传它从 SSE 收到的实时值。
+        _stored(4, _answer_with_batch(_LIVE_BATCH_ID)),
+    ]
+
+    verdicts = question_answered_verdicts(items)
+
+    assert verdicts["call-A"] is not False, (
+        "实时声明把**本组自己的作答**判成未作答 ⇒ 前端重新可作答 ⇒ 使用者重复作答（P0 回归）"
+    )
+    assert verdicts["call-A"] is None, "不可验证的声明只行使「不得判 True」的否决权 ⇒ 该组应判 None（fail-closed）"
+
+
+def test_question_answered_live_batch_id_never_yields_false_on_two_groups() -> None:
+    """★ **P0 回归靶子（双组）**：实时声明下**不得出现任何 `False`**。
+
+    复查者实测（r1）：双组场景 `call(A) → 换话题 → call(B) → 回传实时值` 时
+    A 由 `None` **恶化**为 `False` ⇒ A 重复作答。
+
+    A 侧为什么必须 `None`（而不是 `False`）：那条实时声明**不可验证**，所以它
+    「仍可能是 A 的迟到作答」；服务端不得据此断言「A 未被作答」。
+    B 侧为什么必须 `None`（而不是 `True`）：它是非本组声明 ⇒ 不得判本组被作答。
+
+    判别性：把 `late_answer_suspects` 的登记条件改回「声明了批次就跳过」
+    （r1 的写法）⇒ A 变 `False` ⇒ 本用例红（这是 r2 修的第二处，**反馈未点名**）。
+    """
+    items = [
+        _stored(1, _user("问 A")),
+        _stored(2, _ask_user_call(call_id="call-A")),
+        _stored(3, _ask_user_output(call_id="call-A")),
+        _stored(4, _user("换个话题：我想先说说别的。")),
+        _stored(5, _ask_user_call(call_id="call-B")),
+        _stored(6, _ask_user_output(call_id="call-B")),
+        _stored(7, _answer_with_batch(_LIVE_BATCH_ID)),
+    ]
+
+    verdicts = question_answered_verdicts(items)
+
+    assert False not in verdicts.values(), f"实时声明下出现了 False ⇒ 对应组的卡片会重新可作答：{verdicts}"
+    assert verdicts == {"call-A": None, "call-B": None}
+
+
+def test_question_answered_unverifiable_declaration_keeps_the_earlier_group_protected() -> None:
+    """★★ **M2 回归靶子**（`late_answer_suspects` 的登记条件）——**与 P0 主场景是不同机制**。
+
+    P0 主场景（上一条）问的是「B 会怎样」；本条问的是「**更早的** A 组会怎样」。
+    两者由**不同的代码**决定，因此必须各有一条用例：
+
+    | 机制 | 代码位置 | 错误后果 |
+    |---|---|---|
+    | P0：排他层误判 | `_turn_verdict` 排他层 | B 判 `False` |
+    | **M2：迟到作答登记被跳过** | `question_answered_verdicts` 的 `late_answer_suspects` | **A 判 `False`** |
+
+    **M2 的机制**：`late_answer_suspects` 原本写「**声明了批次就跳过登记**」。
+    而一条**不可验证**的实时声明**仍然可能是更早某组的迟到作答**——服务端无法排除这一点。
+    跳过登记 ⇒ A 失去「它可能是该组的迟到作答」这层保护 ⇒ 从 `None` 退化成 `False`
+    ⇒ **A 的卡片重新可作答 ⇒ 使用者对 A 重复作答**。
+    ⇒ 修复：只有**可验证归属**的水合形态才跳过登记（`:func:`_is_verifiable_exclusion`` 同源判据）。
+
+    **本条同时钉住对称性**：同一条作答若改成**可验证**属别组的声明（`hydrated-<别组>`），
+    A 就**应当**判 `False`（归属已确定，不再是「可能属于 A」）——两个读数一起才说明
+    「跳过登记」的判据是按**可验证性**分的，而不是简单地「有声明就不跳过」。
+
+    判别性（两条独立的红）：
+    1. 把登记条件改回「有声明就跳过」⇒ 第一段断言红（A 从 `None` 变 `False`）；
+    2. 把登记条件改成「一律不跳过」（连水合异组也登记）⇒ 第二段断言红（A 从 `False` 变 `None`）。
+    """
+    base = [
+        _stored(1, _user("问 A")),
+        _stored(2, _ask_user_call(call_id="call-A")),
+        _stored(3, _ask_user_output(call_id="call-A")),
+        _stored(4, _user("换个话题：我想先说说别的。")),
+        _stored(5, _ask_user_call(call_id="call-B")),
+        _stored(6, _ask_user_output(call_id="call-B")),
+    ]
+
+    # ① 不可验证的实时声明 ⇒ A 必须保住「可能是它的迟到作答」这层保护 ⇒ `None`。
+    unverifiable = [*base, _stored(7, _answer_with_batch(_LIVE_BATCH_ID))]
+    assert question_answered_verdicts(unverifiable)["call-A"] is not False, (
+        "更早的 A 组失去迟到作答保护 ⇒ 判 False ⇒ A 重复作答（M2 回归）"
+    )
+    assert question_answered_verdicts(unverifiable)["call-A"] is None
+
+    # ② 可验证属别组的声明 ⇒ A 的归属已确定（那条作答**证明**不是给 A 的）⇒ `False`。
+    verifiable = [*base, _stored(7, _answer_with_batch(f"{QUESTION_BATCH_ID_PREFIX}call-B"))]
+    assert question_answered_verdicts(verifiable)["call-A"] is False, (
+        "可验证属别组的声明下，A 不再需要迟到作答保护（归属已确定）"
+    )
+
+
+def test_question_answered_exclusion_survives_for_a_verifiable_other_group() -> None:
+    """★ 证明 P0 修复**没有削弱真正的排他**：可验证的异组声明仍判 `False`。
+
+    这是 P0 修复的**对称判据**：修复只把「不可验证」的声明降级为 `None`（否决权），
+    对**能证明属于别组**的声明（`hydrated-<别的 call_id>`）行为**逐字不变** ⇒ 仍 `False`。
+
+    判别性：把 `_is_verifiable_exclusion` 改成恒定 `False`（即「一律不可验证」）⇒ 本用例红
+    （真排他被误降级成 `None` ⇒ 本组永久失去补答）。
+    """
+    for other in (f"{QUESTION_BATCH_ID_PREFIX}call-B", f"{QUESTION_BATCH_ID_PREFIX}whatever"):
+        items = [
+            _stored(1, _user("问 A")),
+            _stored(2, _ask_user_call(call_id="call-A")),
+            _stored(3, _ask_user_output(call_id="call-A")),
+            _stored(4, _answer_with_batch(other)),
+        ]
+        assert question_answered_verdicts(items) == {"call-A": False}, f"可验证的异组声明 {other} 未构成排他"
+
+
+def test_question_answered_default_unchanged_without_any_batch_id() -> None:
+    """**缺省层**：没有任何声明 ⇒ 退回位置窗口 × 表头（行为与改动前逐字相同）。
+
+    缺省必须显式定义：前/后端若对缺省理解分叉，同一载荷会有两种行为（契约 4.1 第 3 条）。
+    两种缺省结果都要钉住——「有作答」与「无作答」。
+
+    判别性：把缺省层的 `_window_verdict` 换成恒定 `True` ⇒ 第二段断言红。
+    """
+    answered = [
+        _stored(1, _user("问")),
+        _stored(2, _ask_user_call()),
+        _stored(3, _ask_user_output()),
+        _stored(4, _answer()),
+    ]
+    not_answered = [
+        _stored(1, _user("问")),
+        _stored(2, _ask_user_call()),
+        _stored(3, _ask_user_output()),
+        _stored(4, _user("我还没答，先说个别的。")),
+    ]
+
+    assert question_answered_verdicts(answered) == {_ASK_USER_CALL_ID: True}
+    assert question_answered_verdicts(not_answered) == {_ASK_USER_CALL_ID: False}
+
+
+def test_question_answered_default_still_narrows_a_late_answer_without_batch_id() -> None:
+    """★ 旧客户端（不带 `batch_id`）的**既有收窄必须保留**。
+
+    缺省层不能把 T31 那条跨窗口收窄丢掉：未声明的迟到作答仍可能属于本组
+    ⇒ 不得判 `False`（否则重复作答）。同时 B 仍判 `True`（C-2 之前的既有残余，
+    本包只对**可验证归属**的载荷消除它）。
+
+    判别性：删掉缺省层的 `late_answer_suspects` 检查 ⇒ 第一段断言红。
+    """
+    items = [
+        _stored(1, _user("问 A")),
+        _stored(2, _ask_user_call(call_id="call-A")),
+        _stored(3, _ask_user_output(call_id="call-A")),
+        _stored(4, _user("换个话题：我想先说说别的。")),
+        _stored(5, _ask_user_call(call_id="call-B")),
+        _stored(6, _ask_user_output(call_id="call-B")),
+        _stored(7, _answer()),  # 不带声明
+    ]
+
+    verdicts = question_answered_verdicts(items)
+
+    assert verdicts["call-A"] is None, "未声明的迟到作答必须收窄成 None（否则使用者对 A 重复作答）"
+    assert verdicts["call-B"] is True, "旧客户端下 B 的既有误判保留（本包不对未声明的载荷消除它）"
+
+
+def test_question_answered_undecidable_ranks_between_positive_and_exclusion() -> None:
+    """★ 四层顺序的**中间那一层**：正向 > `None`（不可判定） > 排他 > 缺省。
+
+    构造用既有那条「窗口里有压缩检查点」的形状（**两轮**提问 + 检查点 + 复述的作答），
+    原因是它让 B 组的 `_window_verdict` 返回 `None`，而窗口里**又有一条带声明的作答**：
+
+    - **A 组**：那条声明**正向命中** A 自己 ⇒ `True`。正向层**越过** `None`
+      ——这是有意的裁定（见 `_turn_verdict` 注释）：让 `None` 覆盖正向会让一次压缩
+      就把本组的结论从 `True` 降成 `None` ⇒ **本组永久失去补答**。
+    - **B 组**：那条声明属于 A（对 B 不是正向命中），B 的窗口里只有检查点
+      ⇒ 不可判定 ⇒ `None`。**若排他层判在 `None` 之前**，B 会被那条复述来的声明
+      判成 `False` ⇒ 本用例红。这就是「`None` 夹在正向与排他之间」的那一处。
+
+    ⚠ 名字不再叫 `layer2_*`（r1 的名实颠倒：名字说「排他不覆盖 None」，
+    断言实为「None 优先于排他」）——现在按**语义**命名、不带层编号。
+
+    判别性：把排他层挪到 `fallback is None` 短路**之前** ⇒ B 从 `None` 变成 `False` ⇒ 红。
+    """
+    items = [
+        _stored(1, _user("第一轮")),
+        _stored(2, _ask_user_call(call_id="call-A")),
+        _stored(3, _ask_user_output(call_id="call-A")),
+        # A 组的作答**带可验证声明**（正向归属 A）。
+        _stored(4, _answer_with_batch(f"{QUESTION_BATCH_ID_PREFIX}call-A")),
+        _stored(5, _user("第二轮")),
+        _stored(6, _ask_user_call(call_id="call-B")),
+        _stored(7, _ask_user_output(call_id="call-B")),
+        # 压缩发生在这里：检查点 + 被保留的尾部（含 A 组那条带声明的作答）被整块追加。
+        _stored(8, {"role": "user", "content": f"{COMPACTED_SUMMARY_TAG}\n旧摘要\n</compacted-summary>"}),
+        _stored(9, _answer_with_batch(f"{QUESTION_BATCH_ID_PREFIX}call-A")),
+    ]
+
+    verdicts = question_answered_verdicts(items)
+
+    # A：正向命中**优先于**检查点带来的不可判定 —— 有意的裁定，
+    # 否则一次压缩就让 A 永久失去补答（见 `_turn_verdict` 的注释）。
+    assert verdicts["call-A"] is True, "正向命中被压缩检查点压掉了 ⇒ 本组永久失去补答"
+    # B：那条声明属于 A（对 B 不是正向命中），B 的窗口里只有检查点 ⇒ 不可判定 ⇒ `None`。
+    # 若排他层判在 `None` 之前，B 会被那条复述来的声明判成 `False` ⇒ 本断言红。
+    assert verdicts["call-B"] is None, "不可判定必须优先于排他层（复述块里的声明不可信）"
+
+
+def test_question_answered_live_declaration_is_not_a_late_answer_verdict() -> None:
+    """★ 消除倒挂（复查者 S4）：**诚实回传实时值**不得比不回传更糟。
+
+    r1 的倒挂：不带声明判 `True`（可补答路径正常），带实时声明却判 `False`
+    ⇒ 「不回传更安全」 ⇒ 前端没有任何理由回传，契约的可选字段形同虚设。
+
+    修复后：不带声明 `True`／带实时声明 `None`。`None` **不构成「可作答」**
+    （前端只在 `serverVerdict === false` 时才让历史卡可作答），因此**倒挂消除**。
+
+    判别性：回退 P0 修复 ⇒ 本用例第二段红（`False`）。
+    """
+    base = [
+        _stored(1, _user("问 A")),
+        _stored(2, _ask_user_call(call_id="call-A")),
+        _stored(3, _ask_user_output(call_id="call-A")),
+    ]
+    without = [*base, _stored(4, _answer())]
+    with_live = [*base, _stored(4, _answer_with_batch(_LIVE_BATCH_ID))]
+
+    assert question_answered_verdicts(without) == {"call-A": True}
+    assert question_answered_verdicts(with_live) == {"call-A": None}
+    assert question_answered_verdicts(with_live)["call-A"] is not False, "诚实回传被惩罚（倒挂未消除）"
+
+
+def test_verifiable_exclusion_predicate_separates_the_three_shapes() -> None:
+    """排他前提本身：**只有水合形态**能构成「可验证的异组声明」。
+
+    三类行为的分界就在这里（`_is_verifiable_exclusion`）：
+    水合异组 ⇒ 可验证（排他）；水合本组 ⇒ 不是排他（正向层已判 `True`）；
+    裸 uuid ⇒ **不可验证**（既不排他、也不正向）。
+    """
+    hydrated_other = f"{QUESTION_BATCH_ID_PREFIX}call-B"
+    hydrated_same = f"{QUESTION_BATCH_ID_PREFIX}call-A"
+
+    assert session_items._is_verifiable_exclusion(hydrated_other, "call-A") is True
+    assert session_items._is_verifiable_exclusion(hydrated_same, "call-A") is False
+    # ★ 实时裸 uuid：不可验证 ⇒ 不构成排他（这正是 P0 的修复点）。
+    assert session_items._is_verifiable_exclusion(_LIVE_BATCH_ID, "call-A") is False
+    assert session_items._is_verifiable_exclusion("anything-else", "call-A") is False
+
+
+def test_batch_id_matches_call_id_is_prefix_tolerant_and_nothing_more() -> None:
+    """正向判据本身：**剥可选前缀**后余串命中 `call_id`；裸 uuid 一律不命中。
+
+    这两半必须同时成立：只做前缀剥离、不做「模糊匹配」——实时路径的裸 uuid
+    必须**不**命中任何 `call_id`（用户裁决：实时路径不能正向归属）。
+    """
+    assert session_items.batch_id_matches_call_id("hydrated-call-A", "call-A") is True
+    assert session_items.batch_id_matches_call_id("call-A", "call-A") is True
+    assert session_items.batch_id_matches_call_id("9f2c1d3e4b5a678901234567890abcde", "call-A") is False
+    assert session_items.batch_id_matches_call_id("hydrated-call-A", "call-B") is False
+    # 前缀只剥一层：`hydrated-hydrated-x` 的余串是 `hydrated-x`，不是 `x`。
+    assert session_items.batch_id_matches_call_id("hydrated-hydrated-x", "x") is False
+
+
 def test_question_answered_ignores_a_failed_ask_user_call() -> None:
     """★ 失败的 `ask_user`（参数不合法）**不作为窗口终点**。
-
     它从未向使用者呈现过任何东西（`QuestionGate` 也不为它结束运行），因此不产生 part。
     若把它算作终点，一次「先失败一次、再成功一次」的会话会把上一组的窗口切碎——
     上一组的真实作答落到窗口之外 ⇒ 判成未作答 ⇒ **使用者重复作答**。
