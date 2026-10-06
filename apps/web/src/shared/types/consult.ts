@@ -65,6 +65,21 @@ export interface SendMessageRequest {
 /** 一组提问回答形态的发消息请求。形状见 HTTP与SSE契约第 4.1 节。 */
 export interface SendAnswersRequest {
   answers: QuestionAnswer[];
+  /**
+   * 本组提问的批次标识（可选）。
+   *
+   * ★ 出网键名逐字是 `batch_id`（snake_case），与前端内部的 `batchId` 不同名是刻意的：
+   * 契约是 snake_case、前端惯用 camelCase，转换点必须在序列化边界一处完成
+   * （`application/usecases.ts` 组装载荷处），不得散落。
+   *
+   * 可选（用户 2026-10-06 裁决）：缺失时服务端退回「位置窗口 × 表头」判定，
+   * 旧客户端不得因此被拒——它不是破坏性变更。
+   *
+   * 值的两条来源语义不同（服务端职责，前端只如实回传、不做归属判断）：
+   * 实时路径是裸 uuid hex（服务端只能排除）；水合路径是 `hydrated-<call_id>`
+   * （服务端能剥前缀正向归属）。
+   */
+  batch_id?: string;
   skill?: string | null;
   client_message_id: string;
 }

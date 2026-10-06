@@ -27,7 +27,7 @@ import {
   selectOption,
   setFreeText,
   skipItem,
-  toAnswers,
+  toSubmission,
   handledCount,
   type AnswerDraft,
   type QuestionBatchDraft,
@@ -44,8 +44,8 @@ export interface QuestionRecordRow {
 /** 提问卡的视图契约（View 只依赖这些字段与操作）。 */
 export interface QuestionBatchController {
   /**
-   * **有效**呈现模式（已把服务端的 `answered` 判定折算进去）：
-   * - `live` = 可作答（运行中刚发出的提问，或历史里**未被作答**的提问）；
+   * 有效呈现模式（已把服务端的 `answered` 判定折算进去）：
+   * - `live` = 可作答（运行中刚发出的提问，或历史里未被作答的提问）；
    * - `record` = 只读记录（已作答，或无法判定 ⇒ fail-closed）。
    */
   mode: 'live' | 'record';
@@ -83,9 +83,9 @@ const UNANSWERED: AnswerDraft = { kind: 'unanswered' };
  * @param options.batchId 批次 id（草稿键）
  * @param options.items 题面（来自 question 事件或历史 part）
  * @param options.mode 呈现来源：`live` = 运行中刚发出；`record` = 历史水合
- * @param options.answered 服务端对**历史**提问的三态判定（仅 `mode === 'record'` 时有意义）：
- *   `true` = 已作答 ⇒ 只读；`false` = 未作答 ⇒ **可作答**（刷新后仍能补答）；`null` = 无法判定
- *   ⇒ 只读（**fail-closed**）。缺省 `undefined` 与 `null` 同处置——「没拿到判定」不是
+ * @param options.answered 服务端对历史提问的三态判定（仅 `mode === 'record'` 时有意义）：
+ *   `true` = 已作答 ⇒ 只读；`false` = 未作答 ⇒ 可作答（刷新后仍能补答）；`null` = 无法判定
+ *   ⇒ 只读（fail-closed）。缺省 `undefined` 与 `null` 同处置——「没拿到判定」不是
  *   「未作答」，猜错方向的代价是使用者对同一组题作答两次。
  * @param options.onSubmit 整组提交后追加使用者消息（由工作面注入）
  */
@@ -103,16 +103,16 @@ export function useQuestionBatch(options: {
   const stored = useRunStore((state) => state.questionDrafts[batchId]);
   const setQuestionDraft = useRunStore((state) => state.setQuestionDraft);
   const setActiveBatch = useRunStore((state) => state.setActiveBatch);
-  const setPendingAnswers = useRunStore((state) => state.setPendingAnswers);
+  const setPendingSubmission = useRunStore((state) => state.setPendingSubmission);
   const submitting = useRef(false);
 
   /**
    * ★ 可作答的唯一判据。两个来源合取：
-   * - 运行中刚发出的提问（`live`）**按定义**是可作答的（它刚被发出，不可能已有作答）；
-   * - 历史水合的提问（`record`）**只有服务端明确判为未作答**（`answered === false`）才可作答。
+   * - 运行中刚发出的提问（`live`）按定义是可作答的（它刚被发出，不可能已有作答）；
+   * - 历史水合的提问（`record`）只有服务端明确判为未作答（`answered === false`）才可作答。
    *
    * `true` 与 `null`（以及缺省）一律只读：前者是「已经答过」，后者是「判不出来」。
-   * 两者都归只读的依据是**失败方向**——猜成可作答会让使用者重复作答，猜成只读最多少修一点。
+   * 两者都归只读的依据是失败方向——猜成可作答会让使用者重复作答，猜成只读最多少修一点。
    */
   const answerable = mode === 'live' || serverVerdict === false;
   /** 折算后的有效模式：View 与下面各处只看它，判定只有上面一处。 */
@@ -149,8 +149,13 @@ export function useQuestionBatch(options: {
     if (!isComplete(draft)) return;
     submitting.current = true;
     try {
-      const answers = toAnswers(draft);
-      setPendingAnswers(answers);
+      // ★ `batchId` 与 `answers` 一起从本帧的 draft 对象折出（`toSubmission`），
+      // 而不是从闭包捕获的某个 `batchId` 变量或另一处 state 各取一半。
+      // 理由（本包关键决策）：多组题场景下传错组的 `batch_id` 比不传更坏——它会触发服务端
+      // 的排他层，把本该判 `True` 的组挡掉；而 `draft` 是「本组」的唯一事实源，绑在同一对象上
+      // 让它不可能与 answers 来自不同的组。
+      const submission = toSubmission(draft);
+      setPendingSubmission(submission);
       write(markSubmitted(draft));
       setActiveBatch(null);
       onSubmit?.(answersDisplayText(draft));

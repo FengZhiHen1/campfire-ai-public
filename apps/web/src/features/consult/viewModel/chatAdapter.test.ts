@@ -48,7 +48,7 @@ async function runAdapter(options: {
   messages?: readonly ThreadMessage[];
   abortSignal?: AbortSignal;
   pendingSkill?: string | null;
-  pendingAnswers?: { id: string; value?: string; skipped?: boolean }[] | null;
+  pendingSubmission?: { batchId: string; answers: { id: string; value?: string; skipped?: boolean }[] } | null;
   failStream?: unknown;
   sendError?: unknown;
 }) {
@@ -66,7 +66,7 @@ async function runAdapter(options: {
   const diagnostics: string[] = [];
   const failures: unknown[] = [];
   let skill: string | null = options.pendingSkill ?? null;
-  let answers = options.pendingAnswers ?? null;
+  let submission = options.pendingSubmission ?? null;
 
   const adapter = createConsultChatAdapter({
     consult: port,
@@ -75,9 +75,9 @@ async function runAdapter(options: {
     clearPendingSkill: () => {
       skill = null;
     },
-    peekPendingAnswers: () => answers,
-    clearPendingAnswers: () => {
-      answers = null;
+    peekPendingSubmission: () => submission,
+    clearPendingSubmission: () => {
+      submission = null;
     },
     onEvent: (event) => events.push(event),
     onConnection: (connection) => connections.push(connection),
@@ -113,7 +113,7 @@ async function runAdapter(options: {
     failures,
     thrown,
     remainingSkill: skill,
-    remainingAnswers: answers,
+    remainingSubmission: submission,
   };
 }
 
@@ -267,13 +267,16 @@ describe('chatAdapter — 两段式载荷与取消', () => {
     expect(result.remainingSkill).toBeNull();
   });
 
-  it('整组回答：POST 走 answers 形态（不发 content）', async () => {
+  it('整组回答：POST 走 answers 形态（不发 content），并带上本组的 batch_id', async () => {
     const result = await runAdapter({
       events: [textDelta('收到'), runFinished()],
-      pendingAnswers: [
-        { id: 'q1', value: '可以' },
-        { id: 'q2', skipped: true },
-      ],
+      pendingSubmission: {
+        batchId: 'batch-live-7f3a',
+        answers: [
+          { id: 'q1', value: '可以' },
+          { id: 'q2', skipped: true },
+        ],
+      },
       pendingSkill: null,
     });
 
@@ -282,10 +285,37 @@ describe('chatAdapter — 两段式载荷与取消', () => {
         { id: 'q1', value: '可以' },
         { id: 'q2', skipped: true },
       ],
+      // ★ 出网键名逐字 snake_case，值取自提交件里绑定的那一组。
+      batch_id: 'batch-live-7f3a',
       skill: null,
       client_message_id: 'fixed-id',
     });
-    expect(result.remainingAnswers).toBeNull();
+    // 实际序列化后的字节（不是内存对象）——键名以 JSON 文本为准。
+    expect(JSON.stringify(result.port.sendCalls[0]?.payload)).toContain('"batch_id":"batch-live-7f3a"');
+    expect(JSON.stringify(result.port.sendCalls[0]?.payload)).not.toContain('batchId');
+    expect(result.remainingSubmission).toBeNull();
+  });
+
+  it('★ 无 batchId 时不阻断提交：载荷里【没有】batch_id 这个键（不是 undefined、不是空串）', async () => {
+    const result = await runAdapter({
+      events: [textDelta('收到'), runFinished()],
+      // 实时路径历史上可能给不出批次标识；契约说它是可选的 ⇒ 不得因此拒发。
+      pendingSubmission: { batchId: '', answers: [{ id: 'q1', value: '可以' }] },
+    });
+
+    const payload = result.port.sendCalls[0]?.payload ?? {};
+    expect(result.port.sendCalls).toHaveLength(1);
+    expect(payload).toEqual({
+      answers: [{ id: 'q1', value: '可以' }],
+      skill: null,
+      client_message_id: 'fixed-id',
+    });
+    // 「键不存在」而不是「键存在但值为 undefined」——后者经 JSON.stringify 后同样消失，
+    // 但内存里的形状不同：用 in 断言把两者区分开。
+    expect('batch_id' in payload).toBe(false);
+    expect(JSON.stringify(payload)).toBe(
+      '{"answers":[{"id":"q1","value":"可以"}],"skill":null,"client_message_id":"fixed-id"}',
+    );
   });
 
   it('发送未被受理时：不消费技能选择、不抛异常，消息以未完成收尾', async () => {
