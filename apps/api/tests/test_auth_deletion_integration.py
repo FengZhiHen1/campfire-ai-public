@@ -31,7 +31,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 import pytest_asyncio
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 
 from campfire.core.auth import (
     AccountDeletionError,
@@ -43,6 +43,11 @@ from campfire.core.auth.tombstone_repository import get_tombstone
 from campfire.core.config import get_settings
 from campfire.core.db import session_scope
 from campfire.core.pending_write import STATE_PENDING, STATE_PROCESSING, PendingWrite, enqueue
+from campfire.modules.accounts.models import (
+    ONBOARDING_COMPLETED,
+    ONBOARDING_IN_PROGRESS,
+    CampfireOnboarding,
+)
 
 pytestmark = pytest.mark.integration
 
@@ -65,6 +70,8 @@ async def _clear() -> None:
             delete(AccountDeletionTombstone).where(AccountDeletionTombstone.account_id.like(f"{_ACCOUNT}%"))
         )
         await session.execute(delete(PendingWrite).where(PendingWrite.account_id.like(f"{_ACCOUNT}%")))
+        # 引导状态行同属本文件写入的数据（前缀收窄，不吃别的测试文件的行）。
+        await session.execute(delete(CampfireOnboarding).where(CampfireOnboarding.account_id.like(f"{_ACCOUNT}%")))
 
 
 def _account(suffix: str = "") -> str:
@@ -678,6 +685,153 @@ async def test_memory_purger_deletes_ledger_rows() -> None:
                 delete(MemoryDeletionLedger).where(MemoryDeletionLedger.account_id.like(f"{_ACCOUNT}%"))
             )
         await _clear()
+
+
+# ---------------------------------------------------------------------------
+# 第 8 步：真删该账号的引导状态行（`campfire_onboarding`）
+#
+# 设计真源：[认证与账号] 第 8 节处置顺序第 8 步逐字——「删除 `campfire_onboarding`
+# 中该账号的状态行（引导状态，见下方；注销后随内容一并真删，`RQ-ACC-09`）」。
+#
+# 本组用真实的清除者（`OnboardingAccountPurger`）而不是假件：这条缺口正是
+# 「设计与实现不一致」，只有真实实现能证伪它。**不用 `cli.operator._purgers()`
+# 的全量列表**：其中的 `MemoryAccountPurger` 走 `build_memory_graph`，需要
+# `TOKENHUB_API_KEY`（CI 刻意不给，见 ci.yml），拿它做前提会让本组在 CI 上因环境
+# 而失败而不是因代码。清除者的**注网**另由 `test_cli_entry.py` 的一条无库用例钉住。
+# ---------------------------------------------------------------------------
+
+
+async def _seed_onboarding(account_id: str, state: str = ONBOARDING_IN_PROGRESS) -> None:
+    """给该账号落一行引导状态（判据只关心行的存在与归属）。"""
+    async with session_scope(get_settings()) as session:
+        session.add(CampfireOnboarding(account_id=account_id, state=state))
+
+
+async def _onboarding_rows(account_id: str) -> int:
+    """该账号在引导状态表里的行数。"""
+    async with session_scope(get_settings()) as session:
+        return int(
+            (
+                await session.execute(
+                    select(func.count())
+                    .select_from(CampfireOnboarding)
+                    .where(CampfireOnboarding.account_id == account_id)
+                )
+            ).scalar_one()
+        )
+
+
+@pytest.mark.asyncio
+async def test_deletion_removes_the_account_onboarding_state_row() -> None:
+    """注销后该账号的引导状态行必须为 0；别的账号的行必须原样保留。
+
+    对应设计第 8 步第 8 项（`RQ-ACC-09`）。**判别性**：把清除者的删除语句去掉
+    （消融），本用例红——行数仍是 1，因为在此之前的实现里**没有任何一处**
+    删过这张表（`delete(CampfireOnboarding` 在 `apps/api/src` 零命中）。
+
+    正控（`bystander`）与目标账号同批：一条漏了 `WHERE account_id` 的 `DELETE`
+    会清空全表，而只断言目标账号为 0 时那种写法照样「通过」。
+    """
+    from campfire.modules.accounts.onboarding_purge import OnboardingAccountPurger
+
+    await _clear()
+    target = _account("onboarding")
+    bystander = _account("onboardingother")
+    recorder = _Recorder()
+    try:
+        await _seed_onboarding(target)
+        await _seed_onboarding(bystander, state=ONBOARDING_COMPLETED)
+        assert await _onboarding_rows(target) == 1, "前置失败：目标账号的引导行没落上，本用例失去判别力"
+
+        async with session_scope(get_settings()) as session:
+            report = await delete_account(
+                session,
+                account_id=target,
+                revoke_all_sessions=recorder.revoke_all_sessions,
+                delete_identity_user=recorder.delete_identity_user,
+                purgers=[OnboardingAccountPurger(get_settings())],
+                confirmed=True,
+            )
+
+        assert await _onboarding_rows(target) == 0, (
+            "注销后该账号的引导状态行仍在——设计第 8 步第 8 项（`RQ-ACC-09`）要求它随内容一并真删"
+        )
+        assert await _onboarding_rows(bystander) == 1, "不得删掉别的账号的引导状态行"
+        assert any("onboarding" in purge.name for purge in report.purges), (
+            f"领域清除的结果须如实汇总进报告，实际 {[purge.name for purge in report.purges]}"
+        )
+        assert report.purges[0].detail == "删除引导状态行 1 条", (
+            f"detail 须说清删了多少行，实际 {report.purges[0].detail!r}"
+        )
+    finally:
+        await _clear()
+
+
+@pytest.mark.asyncio
+async def test_onboarding_purger_is_idempotent() -> None:
+    """重复清除成功且报 0 行（不是异常）——重试注销是设计明确支持的路径。
+
+    判别性：若实现对「没有行」抛错，第二次 `purge_account` 会失败，而
+    `delete_account` 的重试（墓碑已存在）会把一次正常的重跑变成失败。
+    """
+    from campfire.modules.accounts.onboarding_purge import OnboardingAccountPurger
+
+    await _clear()
+    account = _account("onboardretry")
+    try:
+        await _seed_onboarding(account)
+        purger = OnboardingAccountPurger(get_settings())
+
+        first = await purger.purge_account(account)
+        second = await purger.purge_account(account)
+
+        assert first.detail == "删除引导状态行 1 条", f"首次应删 1 条，实际 {first.detail!r}"
+        assert second.detail == "删除引导状态行 0 条", (
+            f"对不存在的行，删除必须成功且报 0 条（幂等），实际 {second.detail!r}"
+        )
+        assert await _onboarding_rows(account) == 0
+    finally:
+        await _clear()
+
+
+@pytest.mark.asyncio
+async def test_onboarding_purger_does_not_swallow_a_query_failure() -> None:
+    """查询层的失败必须原样冒泡（端口契约：不吞——静默失败会让「已删除」成为谎话）。
+
+    这里**不注入任何替身**：喂一个形状非法的账号标识，让仓储层的
+    `validate_account_id` 真的抛 `SessionQueryError`。若实现把异常吞掉并回执
+    「删除引导状态行 0 条」，本用例红——而那种回执正是「已删除」变成谎话的方式。
+    """
+    from campfire.modules.accounts.errors import SessionQueryError
+    from campfire.modules.accounts.onboarding_purge import OnboardingAccountPurger
+
+    with pytest.raises(SessionQueryError):
+        await OnboardingAccountPurger(get_settings()).purge_account("x" * 200)
+
+
+@pytest.mark.asyncio
+async def test_onboarding_purger_does_not_swallow_a_session_boundary_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """事务边界（`session_scope`）失败同样必须冒泡，不得被转成「删了 0 条」。
+
+    与上一条互补：那条钉的是查询层，这条钉的是拿不到会话本身时（库不可达）
+    也不得把失败伪装成一次成功的空删除。替身只替换**事务边界**这一个点，
+    被测函数体仍是真的（与 `test_cli_entry.py` 替换 `session_scope` 同法）。
+    """
+    import campfire.modules.accounts.onboarding_purge as purge_module
+
+    class _BoomSession:
+        async def __aenter__(self):
+            raise RuntimeError("模拟数据库不可达")
+
+        async def __aexit__(self, *exc_info):
+            return False
+
+    monkeypatch.setattr(purge_module, "session_scope", lambda settings: _BoomSession())
+
+    with pytest.raises(RuntimeError, match="模拟数据库不可达"):
+        await purge_module.OnboardingAccountPurger(get_settings()).purge_account(_account("onboardboom"))
 
 
 @pytest.mark.asyncio

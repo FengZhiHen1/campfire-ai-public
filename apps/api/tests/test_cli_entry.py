@@ -357,6 +357,35 @@ def test_account_delete_initializes_the_sdk(monkeypatch: pytest.MonkeyPatch) -> 
     assert calls == ["delete_account"]
 
 
+def test_account_delete_registers_the_onboarding_purger() -> None:
+    """注销的清除者清单必须包含引导状态（设计第 8 步第 8 项，`RQ-ACC-09`）。
+
+    为什么单钉「清单里有没有它」：设计要求的这一步是**新增一个动作**，
+    最容易的失败形态不是「删错了」而是「注册漏了」——清除者写好了却没进 `_purgers()`，
+    注销路径上一个字节都不会删，而任何只测清除者自身的用例都照样绿。
+
+    本用例不连库、不连 core：四个清除者的构造函数只记录配置，
+    真正的连接发生在 `purge_account` 里。因此这里能安全的断言清单形状——
+    `MemoryAccountPurger` 走 `build_memory_graph` 需要 `TOKENHUB_API_KEY`
+    （CI 刻意不给，见 ci.yml），把它的**构造**放进本用例不会触发那条路径。
+
+    判别性：把 `OnboardingAccountPurger(settings)` 从 `_purgers()` 里删掉，本用例失败。
+    """
+    from campfire.cli import operator
+    from campfire.core.config import get_settings
+
+    purgers = operator._purgers(get_settings())
+
+    names = [purger.name for purger in purgers]
+    assert "onboarding" in names, f"注销未注册引导状态清除者，实际清单 {names}"
+    assert names.count("onboarding") == 1, f"引导状态清除者只应出现一次，实际 {names}"
+    assert all(hasattr(purger, "purge_account") for purger in purgers), "清单成员必须都是清除者"
+    # 两个领域必须可分辨：失败点名逐字对应领域（见 OnboardingAccountPurger 的 docstring）。
+    assert "session-owner" in names and "onboarding" in names, (
+        f"引导状态与会话归属是两件不同的业务事实，须各有一个失败点，实际 {names}"
+    )
+
+
 def test_account_reset_initializes_the_sdk(monkeypatch: pytest.MonkeyPatch) -> None:
     """`account reset` 同样必须初始化 SDK（改密走 `update_email_or_password`）。
 

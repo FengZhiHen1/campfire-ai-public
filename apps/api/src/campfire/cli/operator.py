@@ -20,6 +20,7 @@ from campfire.core.config import Settings, get_settings
 from campfire.core.db import session_scope
 from campfire.modules.accounts.errors import AccountsError
 from campfire.modules.accounts.models import INVITE_CODE_TTL_DAYS
+from campfire.modules.accounts.onboarding_purge import OnboardingAccountPurger
 from campfire.modules.accounts.repository import (
     issue_invite_code,
     list_invite_codes,
@@ -170,8 +171,8 @@ def _purgers(settings: Settings) -> list[AccountDataPurger]:
     """本次注销要执行的领域清除者。
 
     新领域需要清除时加在这里，不改编排（见 `core/auth/deletion` 的说明）。
-    目前三个领域：记忆（图库 + 删除账本）、档案（条目 + 会话绑定 + 支持对象）、
-    会话归属（`campfire_session` 的归属行）。
+    目前四个领域：记忆（图库 + 删除账本）、档案（条目 + 会话绑定 + 支持对象）、
+    会话归属（`campfire_session` 的归属行）、引导状态（`campfire_onboarding` 的状态行）。
 
     `profile` 的清除者补上后，`AC-24` 的「其档案……不再存在」才真正成立
     ——此前注销只清身份、会话、待处理记录、图库与账本，会遗留档案条目
@@ -187,11 +188,20 @@ def _purgers(settings: Settings) -> list[AccountDataPurger]:
     该理由在本实现里不成立——清除者只认调用方传入的 `account_id`，从不回查身份
     服务。顺序仍然要守，收益是让删身份用户成为整件事的提交点（见 `core/auth/deletion`
     的顺序说明）。
+
+    引导状态清除者对应 [认证与账号] 第 8 节的处置顺序第 8 步：「删除
+    `campfire_onboarding` 中该账号的状态行（引导状态……注销后随内容一并真删，
+    `RQ-ACC-09`）」。它与会话归属清除者是**两个领域、两个失败点**（引导状态回答
+    「是否已引导过」，与会话的存在性无关），故单立一个清除者而不是并进
+    `SessionAccountPurger`——理由见 `OnboardingAccountPurger` 的 docstring。
+    第 8 步在设计里排在最后（图丢弃之后），这里同样把它放在列表末尾，让阅读顺序
+    与设计一致；领域之间无依赖，`delete_account` 逐个调用，顺序不影响正确性。
     """
     return [
         MemoryAccountPurger(settings),
         ProfileAccountPurger(settings),
         SessionAccountPurger(settings),
+        OnboardingAccountPurger(settings),
     ]
 
 
