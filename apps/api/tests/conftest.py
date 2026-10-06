@@ -145,6 +145,72 @@ def _normalise_proxy_env(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     yield
 
 
+#: 测试进程内被拦下的投递记录：`(pending_id, kind)`，按发生顺序。
+#:
+#: 由 :func:`_isolate_queue_dispatch` 装的记录器写入。它让用例（以及看日志的人）
+#: 能断言「投递这一步真的发生过」，而不必真的把任务送进 Redis。
+_DROPPED_DELIVERIES: list[tuple[str, str]] = []
+
+
+async def _drop_delivery(pending_id: str, kind: str) -> None:
+    """只记录、不投递的投递钩子（契约与 `core/jobs` 的钩子同形）。
+
+    见 :func:`_isolate_queue_dispatch`：它的存在是为了让测试进程**永远不把任务投进
+    真实队列**，而不是让队列消费「更少见」。
+    """
+    _DROPPED_DELIVERIES.append((pending_id, kind))
+
+
+@pytest.fixture(autouse=True)
+def _isolate_queue_dispatch() -> Iterator[None]:
+    """把投递钩子钉在「只记录、不投递」的实现上，隔离测试进程与真实队列。
+
+    为什么必须有这一层（QA-04；2026-10-06 本机实测）
+
+    `import campfire.main` 会经 `main.py:75` 拉进 `campfire.worker`，而
+    `worker.py:204` 是**模块级**的 `set_dispatch_hook(...)` —— **import 即注入真钩子**。
+    于是测试进程里 `propose_profile_item` 真的把任务投进 Redis，另一端有 Worker
+    （尤其孤儿 Worker）竞速消费并把记录置 `done`，测试自己的模拟消费就领不到。
+
+    实测读数（同一组合 `test_consult_endpoints_integration.py` +
+    `test_profile_tools_integration.py`，同进程先 import `campfire.main` 才点亮钩子）：
+
+    - **无 Worker**：5 次全绿（每次 `74 passed`）；
+    - **有真 Worker**：**5 次全失败**（`3 failed`/`4 failed` 交替），
+      报错逐字为 `assert None is not None`
+      （`test_profile_tools_integration.py:223` 与 `:408`）。
+
+    两次读数之间只改了「有没有 Worker 在消费」这一个变量。
+
+    这一层让那条竞速在结构上不可能发生：钩子在每个用例开始前被换成
+    :func:`_drop_delivery`，任务永远不进队列，因此
+    **「判某集成测试失败之前必须先确认没有孤儿 Worker 在消费」这条忠告不再必要**。
+
+    ⚠ 这不是「让错误消失」：被隔离的只是**投递的目的地**。待处理记录照旧真实落库，
+    消费路径照旧在用例里真实执行（`test_profile_tools_integration._consume` 直接调
+    用例层的 `write_from_pending`），只是不再经队列绕一圈。
+    因此「写入链真的走通了」这条判据**一点没被放松**——它下面的消融读数（把消费
+    断掉后原断言立刻变红）就是这一点的人工证明。
+
+    为什么每个用例都重设一次，而不是只在会话开始设一次：测试体里会有人自己调
+    `set_dispatch_hook(...)`（`test_pending_write_dispatch.py`、`test_memory_tools.py`
+    等），而 `TestClient(app)` 的 lifespan 也会**重新装上真钩子**
+    （`main.py:118`）。逐用例重设才能保证「任何一个用例开始时钩子都是受控的」
+    ——这正是「测试自己就隔离了竞速」的含义，而不是依赖用例各自记得还原。
+
+    钩子动的是 `core/jobs` 的模块级私有装配位：该模块只提供 setter、没有 getter，
+    因此这里直接读写它（`test_pending_write_dispatch.py` 出于同一理由也直接读它）。
+    """
+    from campfire.core import jobs as jobs_module
+
+    previous = jobs_module._dispatch_hook
+    jobs_module.set_dispatch_hook(_drop_delivery)
+    try:
+        yield
+    finally:
+        jobs_module.set_dispatch_hook(previous)
+
+
 def connect_falkordb_or_skip():  # noqa: ANN202 —— 返回 FalkorDriver；避免在 conftest 顶部导入上游
     """连上本地 FalkorDB 并返回驱动；容器不可用时跳过。
 
