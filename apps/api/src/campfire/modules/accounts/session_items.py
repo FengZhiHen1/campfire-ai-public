@@ -219,7 +219,120 @@ QUESTION_OPTION_LABEL_MAX_CHARS = 200
 QUESTION_OPTION_DESCRIPTION_MAX_CHARS = 500
 
 # ---------------------------------------------------------------------------
-# parts 形状（HTTP 与 SSE 契约第 7 节的三个可重建 part）
+# 应急行动卡（`action_card`）的重建（2026-10-06 随 T32 加入）
+#
+# 载荷与提问同源：`emit_emergency_action_card` 的参数逐字保存在
+# `function_call.arguments` 里，配对 `function_call_output.output` 是它的回执。
+# 但**两处与提问不同**，它们决定了本节的实现形状，也都是实测读数（见报告 §2.4）：
+#
+# 1. **`card_id` 不需要派生**（原件说它「需要与 batch_id 同样的派生处理」——
+#    那句前提是错的）：`tools/emergency_card.py` 的成功回执**本身**是
+#    `{"card_id": "<uuid4().hex>", "state": "emitted"}`，即**真值就在回执里**
+#    并逐字落库（同库旁证：`create_support_object` 的 `{"support_object_id": …}`
+#    等 7 个工具的回执都是逐字 JSON 落库）。因此这里**取回真值**，而不是另造一个：
+#    派生值会让**同一张卡**在流出侧与回看侧拿到两个不同的 id，于是
+#    「刷新前后是不是同一张卡」失去答案（前端的旧卡失效判定正是比 `card_id`）。
+# 2. **`title` 不在参数里**：`EmitEmergencyActionCardArgs` 只有 `sections` /
+#    `states` / `annotations` 三个字段，标题由工具侧的常量给。`modules/*` 不得
+#    import `tools/*`（项目结构设计第 7 节），因此这里是字面量；两处相等由
+#    `tests/test_accounts_session_items.py` 直接比对常量守住（与
+#    `ASK_USER_SUCCESS_OUTPUT`、`COMPACTED_SUMMARY_TAG` 同法）。
+# 3. **`annotations` 的形状不对称**：落库的参数是 `{line_ref, source, confidence}`，
+#    线格式是 `{target, kind}`（`kind = "来源:置信"`）。水合必须做与工具侧
+#    `_encode_annotation_kind` 同一个转换，否则前端读到的是两个不存在的字段。
+#    详见 :func:`_card_annotations` 的说明（含为什么只需分隔约定、不需词表）。
+#
+# ⚠ **`annotations` 的 `kind` 要在这里**编**出来**（不是解码，也不能原样搬运）——
+# 这是本包唯一一处「编码约定必须在 `modules/*` 里再写一份」的地方，而它有一处
+# **实测纠正**：我第一版按「原样搬运即同形」实现，探针立刻证明**产不出任何卡片**
+# （见报告 §4.2）。原因是落库的 `arguments` 是**输入形状**、线格式是**信封形状**：
+#
+#     参数（落库）                    线格式（事件与水合 part）
+#     {line_ref: int,                  {target: str,
+#      source: str, confidence: str}    kind: str}   # kind = f"{source}:{confidence}"
+#
+# 工具侧 handler 用 `_encode_annotation_kind` 做这个转换，因此水合要做同一个。
+# ★ **但它只需要分隔约定，不需要产品侧词表**——这是与原件那个
+# 「要么在装配处注入解码器，要么把编码规则下沉」不同的第三条路：编码是**纯语法拼接**，
+# `source`/`confidence` 的合法值域**不在这里复述**（越界取值由消费侧可见地丢弃：
+# 前端 `decodeAnnotation` 查不到显示名就返回 `null`，该条标注计入 `droppedAnnotations`）。
+# 复述词表会让产出侧将来扩词表时**水合静默停止产出卡片**——正是本包要修的缺陷换张脸回来。
+#
+# `title` 不在参数里（`EmitEmergencyActionCardArgs` 只有 sections/states/annotations
+# 三个字段），由工具侧常量给 ⇒ 这里只能是字面量 + 用例绑定（同 `ASK_USER_SUCCESS_OUTPUT`）。
+# ---------------------------------------------------------------------------
+
+#: 「来源:置信」编码的分隔符。与 `tools/emergency_card.py` 的 `_encode_annotation_kind`
+#: 同值（`f"{source}:{confidence}"`）；两处相等由用例跑真实工具守住。
+_ANNOTATION_KIND_SEPARATOR = ":"
+
+#: 行动卡 part 类型（契约第 7 节的 `action_card` 行）。
+#:
+#: ⚠ 与 `PART_TYPE_QUESTION_RECORD` 同一条理由：必须是 `Final[ActionCardType]`
+#: （而不是裸 `str`，也不能在 `Literal[...]` 里引用它），否则会**静默**破坏
+#: `MessagePart` 判别联合的收窄（裸 `str` 实测 26 条报红，`Literal[常量]` 是
+#: mypy 的 `valid-type`、实测 55 条）。
+ActionCardType: TypeAlias = Literal["action_card"]
+PART_TYPE_ACTION_CARD: Final[ActionCardType] = "action_card"
+
+#: 卡片的标题。与 `tools/emergency_card.py` 的 `CARD_TITLE` 逐字相同；理由见上
+#: （`modules/*` 不得 import `tools/*`）。它**不在参数里**，因此水合只能取这份
+#: 字面量——两处相等由用例直接比对常量守住。
+ACTION_CARD_TITLE = "现场行动卡"
+
+#: 工具**成功**回执里的状态标记。取自 `tools/emergency_card.py` 的
+#: `json.dumps({"card_id": …, "state": "emitted"})`。
+#:
+#: 为什么它是判据的一半（而不是只看「参数能不能解析出卡片」）：参数不合法的调用
+#: 得到 `<tool_error code="tool_invalid_arguments">…`，**它从未向使用者呈现过任何
+#: 东西**（`ToolSpec._parse` 在解析期就把它变成失败，`ToolResult` 从不构造）。
+#: 只看参数形状会让水合造出一张「当时从未呈现给使用者的卡」——那是伪造。
+#: 判据的另一半是参数本身（见 :func:`action_card_part`），**两条缺一不可**。
+#: 两处相等由用例跑**真实工具**并断言其回执通过本判据守住（同 T31 的
+#: `test_ask_user_success_output_matches_the_tool_handler`）。
+ACTION_CARD_EMITTED_STATE = "emitted"
+
+#: 卡片的七个分节键，顺序即呈现顺序。与 `tools/emergency_card.py` 的 `SECTION_KEYS`
+#: 逐字相同（含顺序）；`modules/*` 不得 import `tools/*`，故为字面量，两处相等由用例守住。
+#:
+#: 为什么必须知道顺序、且必须按它重排：工具侧 handler 在发卡前按这七个键
+#: **规范化顺序**（`sorted(..., key=SECTION_KEYS.index)`），因此流向事件的载荷是这个
+#: 顺序；水合要不产出「与事件不同形」的 part，就必须同样重排。顺序同时是
+#: `annotations[].target`（「按七节顺序摊平后的 1 起序号」）的解释依据——前端
+#: `domain/actionCard.ts` 的 `SECTION_ORDER` 与它同源。
+#:
+#: 它同时承担「七节齐全」的检查：缺节或重复键 ⇒ **不产出 part**（见 §边界）。
+ACTION_CARD_SECTION_KEYS: tuple[str, ...] = (
+    "status",
+    "communicate",
+    "do_now",
+    "avoid",
+    "medical_checks",
+    "safety",
+    "when_to_escalate",
+)
+
+#: 卡片载荷的长度/条数上界（CORE-11：进入响应的文本必须有界）。
+#:
+#: 与提问路径的取法**相反**：提问对超长题干是**逐字段截断**（一条被截断的题干仍然
+#: 是一道能作答的题），这里一律**整体跳过并记警告**。理由是这张卡的语义与题干不同：
+#: 「不要突然触碰」截成「不要突然触」会把一条安全动作说反；而一张缺行/少字的行动卡
+#: 比「历史里没有这张卡」更危险。**宁可不产出，也不产出半截卡片**（见
+#: :data:`NOT_REBUILT_PARTS` 沿用的同一条纪律）。
+#:
+#: 它们同时兜住「落库条目被替换成超大载荷」：一次水合不该因为一条历史调用把响应体撑大。
+ACTION_CARD_TEXT_MAX_CHARS = 500
+ACTION_CARD_LINES_TOTAL_MAX = 128
+#: 状态与标注的条数上界。**刻意大于产出侧的词表规模**（状态至多四个键、标注无上限）：
+#: 这里的判据只兜「形状/规模异常」，不复述产品侧词表——复述会让产出侧扩词表时
+#: 水合静默停止产出卡片（那正是本包要修的那个缺陷换了张脸回来）。未知的键与取值
+#: **原样搬运**（前端对未知键的处置是忽略，对未知取值是丢弃该条并计数，都可见）。
+ACTION_CARD_STATES_MAX = 16
+ACTION_CARD_ANNOTATIONS_MAX = 256
+
+
+# ---------------------------------------------------------------------------
+# parts 形状（HTTP 与 SSE 契约第 7 节的四个可重建 part）
 # ---------------------------------------------------------------------------
 
 
@@ -316,10 +429,73 @@ class QuestionRecordPart(TypedDict):
     answered: bool | None
 
 
-MessagePart = TextPart | ReasoningPart | ToolCallPart | QuestionRecordPart
+class ActionCardSectionPart(TypedDict):
+    """行动卡的一个分节。形状归通用基座第 7.3 节（`{key, heading, lines}`）。"""
+
+    key: str
+    heading: str
+    lines: list[str]
+
+
+class ActionCardStatePart(TypedDict):
+    """行动卡的一个键值状态。形状归通用基座第 7.3 节（`{key, value}`）。"""
+
+    key: str
+    value: str
+
+
+class ActionCardAnnotationPart(TypedDict):
+    """行动卡的一条逐条标注。形状归通用基座第 7.3 节（`{target, kind}`）。
+
+    `target` 是「按七节顺序摊平后的 1 起序号」的**字符串**（不是 int：基座信封把它
+    定成 `str`，`tools/emergency_card.py` 用 `str(annotation.line_ref)` 产出）。
+    `kind` 是「来源:置信」的编码串（同处 `_encode_annotation_kind`）。
+
+    ⚠ 这两个字段在**落库的参数里并不存在**（那里是 `{line_ref, source, confidence}`）
+    —— 转换由 :func:`_card_annotations` 做，理由见该函数。
+    """
+
+    target: str
+    kind: str
+
+
+class ActionCardPart(TypedDict):
+    """行动卡 part（契约第 7 节的 `action_card` 行 + 通用基座第 7.3 节的通用信封）。
+
+    ★ 与**事件侧**的 `action_card` 载荷**逐字同形**（五个字段：`card_id` /
+    `title` / `sections` / `states` / `annotations`）—— 与提问那一对
+    （`question` / `question-record`）**刻意不同**。
+
+    为什么不另立一个「水合侧专有」的 part 类型（T31 对提问的做法）：
+
+    - 提问分两个类型，是因为「已作答」是**回看侧**才有的第三个时刻事实，
+      流出侧载荷里不可能有它（基座 7.2 节），硬塞进去会撞上逐字断死字段集合的守卫；
+    - 卡片**没有**这样的不对称：回看侧要说的事实与流出侧完全一样（同一张卡、同五个
+      字段）。同一个形状在两个时刻是同一个形状，就是同一个线格式 part 类型——
+      另立一个只会让前端多一条 `case`（`history.ts` 与 `partAccumulator.ts` 的
+      `action_card` 分支必须产出**同一个**视图 part，否则刷新前后同一张卡会变成两种）。
+
+    ⇒ 契约第 7 节的 `action_card` 行是**两个路径共用的**；本包因此只把
+    `action_card` 加进 `MessagePart` 联合（水合的取值域），而**不改动**它的字段集合。
+
+    ⚠ 最后一句「逐字同形」是指 **part 的五个字段与线格式逐个对上**，
+    **不是**指参数可以原样搬到 part 上：`annotations` 在参数里的形状与线格式不同
+    （`{line_ref, source, confidence}` → `{target, kind}`），转换由
+    :func:`_card_annotations` 做。sections / states / card_id / title 四项确实同形。
+    """
+
+    type: ActionCardType
+    card_id: str
+    title: str
+    sections: list[ActionCardSectionPart]
+    states: list[ActionCardStatePart]
+    annotations: list[ActionCardAnnotationPart]
+
+
+MessagePart = TextPart | ReasoningPart | ToolCallPart | QuestionRecordPart | ActionCardPart
 """水合能重建的 part 类型（**`HydratedMessage.parts` 的取值域**）。
 
-四种 part 各有各的真源，**都能从会话真源重建**（2026-10-06 修正，见下）：
+五种 part 各有各的真源，**都能从会话真源重建**（2026-10-06 修正，见下）：
 
 - `text` / `reasoning` / `tool_call`：直接来自 SDK 落库的条目（消息 content 与
   reasoning/function_call 条目）；
@@ -335,6 +511,17 @@ MessagePart = TextPart | ReasoningPart | ToolCallPart | QuestionRecordPart
 
   `answered` 由 :func:`question_answered_verdicts` 从**位置窗口 × 表头**判定
   （判据见该函数）——它是**服务端**的判定，前端只读（硬边界：不许让前端猜）。
+- `action_card`：来自 `emit_emergency_action_card` 那对条目（2026-10-06 随 T32 加入，
+  与 `question-record` 同源）。**三处与提问不同**，各自都是实测读数，详见本节上方
+  「应急行动卡的重建」注释块与 :func:`action_card_part`：
+
+  1. **`card_id` 取回真值、不派生**——成功回执本身是
+     `{"card_id": "<uuid4().hex>", "state": "emitted"}`（原件写的「需要与 batch_id
+     同样的派生处理」是错的）；派生会让同一张卡在两个时刻拿到两个 id；
+  2. **`title` 不在参数里**，由工具侧常量给（:data:`ACTION_CARD_TITLE`，字面量 + 用例绑定）；
+  3. **`annotations` 的形状在两侧不同**（参数 `{line_ref, source, confidence}` →
+     线格式 `{target, kind}`），水合要做与工具侧 `_encode_annotation_kind` 同一个转换
+     —— 只需分隔约定，**不需要**产品侧词表。
 
 ## 2026-10-06 订正（原文的理由已过期，这是本缺陷的成因）
 
@@ -368,19 +555,29 @@ MessagePart = TextPart | ReasoningPart | ToolCallPart | QuestionRecordPart
 ⇒ 于是「注释说 X 不存在」与「X 已装配」不可能同时为真，**无论那句话怎么措辞**。
 反过来，解释性文字可以自由书写、自由引用旧句子——这正是本节能把它写出来的原因。
 
-## 仍未重建的两种：`action_card` 与事件侧的 `question`
+## 仍未重建的一种：事件侧的 `question`
 
-**如实写明**（都不是「尚未实现」，而是「本包范围内未做 / 结构上不在水合路径」）：
+**如实写明**（不是「尚未实现」，而是「结构上不在水合路径」）：
 
-- `emit_emergency_action_card` 的载荷同样保存在 `function_call.arguments` 里，
+- `question`（事件侧形状）**不在水合路径上**：水合一律产出 `question-record`。
+  这不是「没做」，而是 T31 的裁决——「已作答」只对回看有意义，故水合的 part 类型
+  必须与事件的分开。它保留为 :class:`QuestionPart` 并由用例逐字断死。
+- ~~`emit_emergency_action_card` 的载荷同样保存在 `function_call.arguments` 里，
   因此与 `question-record` 一样**可以**重建；本包只修了已被旅程实测到的提问一条路径，
   `action_card` 的 `card_id` 需要与 `batch_id` 同样的派生处理，且 `annotations`
   需要一个「来源:置信」的解码（逻辑在产品侧 `tools/emergency_card.py`，而
   `modules/*` 不得 import `tools/*`，判据见项目结构设计第 7 节）。
-  登记为残余，不在本包伪造一个半截实现。
-- `question`（事件侧形状）**不在水合路径上**：水合一律产出 `question-record`。
-  这不是「没做」，而是 T31 的裁决——「已作答」只对回看有意义，故水合的 part 类型
-  必须与事件的分开。它保留为 :class:`QuestionPart` 并由用例逐字断死。
+  登记为残余，不在本包伪造一个半截实现。~~
+
+  **⇒ 已随 T32 关闭（2026-10-06）**，而上面这段登记里**有一句前提是错的**，
+  如实订正而不是静默删掉：`card_id` **不需要**任何派生——它就在成功回执里
+  （`{"card_id": …, "state": "emitted"}`，逐字落库）。`annotations` 的 `kind`
+  **也不是**「解码逻辑归产品侧」那件事：真正需要搬的是**编码**，而它只是
+  `f"{source}:{confidence}"` 这一处**语法拼接**（:func:`_card_annotations`），
+  合法取值域由消费侧可见地处置，**产品侧词表不需要下沉**。
+  **⇒ 当年「要么在装配处注入解码器，要么把编码规则下沉」这个二选一是个假两难：
+  水合既不需要解码器、也不需要词表，它只需要分隔符。** 详细理由见本节上方
+  「应急行动卡的重建」与 :func:`_card_annotations`。
 
 `citation` 仍不在本模块：它的真源是引用索引（一个按 `run_id` 组织的端口），
 不在会话条目里——这是结构事实，不是能力缺失。
@@ -401,6 +598,10 @@ PART_PROVENANCE: dict[str, str] = {
     "reasoning": "SDK reasoning 条目的 summary",
     "tool_call": "SDK function_call/function_call_output 条目对",
     PART_TYPE_QUESTION_RECORD: f"{ASK_USER_TOOL_NAME} 调用的参数与成功回执（`answered` 由位置窗口×表头判定）",
+    PART_TYPE_ACTION_CARD: (
+        f"{EMERGENCY_ACTION_CARD_TOOL_NAME} 调用的参数与成功回执"
+        "（`card_id` 取自回执、`title` 取工具侧常量、`kind` 原样搬运）"
+    ),
 }
 
 #: 未重建的 part 类型 → 理由。**必须写明理由**，否则「不重建」与「忘了做」无法区分
@@ -412,15 +613,6 @@ NOT_REBUILT_PARTS: dict[str, str] = {
     "citation": (
         "真源是引用索引（`agent/context/citations.py` 的 `CitationIndex`，按 run_id 组织），"
         "不在会话条目里——结构事实，与会话存储的形状无关。"
-    ),
-    "action_card": (
-        f"{EMERGENCY_ACTION_CARD_TOOL_NAME} 的载荷与 `question-record` 一样保存在 "
-        "function_call.arguments 里、因此**可以**重建；本包只修了旅程实测到的 question "
-        "一条路径。未做的具体原因：`card_id` 需要与 batch_id 同样的派生处理，"
-        "且 `annotations` 的 `kind` 是 `来源:置信` 的编码串，解码逻辑在产品侧 "
-        "`tools/emergency_card.py`（`decode_annotation_kind`），而 modules/* 不得 import "
-        "tools/*（项目结构设计第 7 节）——要么在装配处注入解码器，要么把编码规则下沉。"
-        "登记为残余，不在本包伪造一个半截实现。"
     ),
     "question": (
         "它是**流出侧**（事件）的 part 类型，不是水合产物：基座 7.2 节的载荷描述"
@@ -762,6 +954,253 @@ def question_record_part(
         batch_id=f"{QUESTION_BATCH_ID_PREFIX}{call_id}",
         items=items,
         answered=answered,
+    )
+
+
+# ---------------------------------------------------------------------------
+# 行动卡载荷的解析与重建
+# ---------------------------------------------------------------------------
+
+
+def _card_sections(raw: object) -> list[ActionCardSectionPart] | None:
+    """解析 `sections`：七节齐全、各出现一次、每节都有小标题与至少一行。
+
+    任何一条不成立就返回 `None`（**整体拒绝，不截断**）——理由见
+    :data:`ACTION_CARD_TEXT_MAX_CHARS`：一张被截断的行动卡会把一条安全动作说反，
+    比「历史里没有这张卡」更危险。
+
+    为什么不复用产出侧的参数模型（`EmitEmergencyActionCardArgs`）：`modules/*` 不得
+    import `tools/*`（项目结构设计第 7 节）。因此这里按**形状**判，而不是复述词表：
+    分节键的合法值域与顺序取 :data:`ACTION_CARD_SECTION_KEYS`，超出七个规范键的**不**
+    在此拒绝（那是前端忽略未知 key 的职责，且拒绝会让产出侧将来新增第八节时
+    水合静默停止产出卡片）。**七节规范键必须齐全**这一条是强度判断：卡片按七节定义，
+    缺节的卡在呈现上是「少了几节」，且缺得静默。
+    """
+    if not isinstance(raw, list):
+        return None
+
+    parsed: dict[str, ActionCardSectionPart] = {}
+    total_lines = 0
+    for entry in raw:
+        if not isinstance(entry, Mapping):
+            return None
+        key = entry.get("key")
+        heading = entry.get("heading")
+        lines_raw = entry.get("lines")
+        if not isinstance(key, str) or key not in ACTION_CARD_SECTION_KEYS:
+            return None
+        if not isinstance(heading, str) or not heading.strip():
+            return None
+        if not isinstance(lines_raw, list) or not lines_raw:
+            return None
+        lines: list[str] = []
+        for line in lines_raw:
+            if not isinstance(line, str) or not line.strip():
+                return None
+            if len(line) > ACTION_CARD_TEXT_MAX_CHARS:
+                return None
+            lines.append(line)
+        total_lines += len(lines)
+        if key in parsed:
+            # 同一个键两次 ⇒ 「这一节是什么」有两个答案（产出侧对重复键也是拒绝，
+            # 参数模型 `_require_all_seven_sections_exactly_once`）。
+            return None
+        parsed[key] = ActionCardSectionPart(key=key, heading=heading, lines=lines)
+
+    if total_lines > ACTION_CARD_LINES_TOTAL_MAX:
+        return None
+    if set(parsed) != set(ACTION_CARD_SECTION_KEYS):
+        return None
+    # ★ 按规范顺序重排：产出侧 handler 在发卡前就这样排过（`sorted(..., key=…)`），
+    # 因此事件流的载荷是这个顺序。水合必须给出同一个顺序，否则
+    # `annotations[].target`（按七节摊平的 1 起序号）在两个路径上会指向不同的行。
+    return [parsed[key] for key in ACTION_CARD_SECTION_KEYS]
+
+
+def _card_states(raw: object) -> list[ActionCardStatePart] | None:
+    """解析 `states`：键值都是非空字符串，条数有界。
+
+    **不复述产品侧词表**（`deviation` 取几值、`medical_risk` 只有三值之类）：
+    那是产出侧参数模型的职责（`modules/*` 也不得 import `tools/*`）。这里只判
+    「形状像不像一组键值」。未知的键或取值**原样搬运**——前端的处置是
+    对未知键忽略、对未知取值丢弃该条并计数（`domain/actionCard.ts` 的
+    `rejectReasonForStates` 会因此把整张卡判成 rejected），都可见。
+    在这里按词表拒绝会让产出侧将来扩词表时**水合静默停止产出卡片**，
+    正是本包要修的那个缺陷换了张脸回来。
+    """
+    if not isinstance(raw, list) or len(raw) > ACTION_CARD_STATES_MAX:
+        return None
+    states: list[ActionCardStatePart] = []
+    for entry in raw:
+        if not isinstance(entry, Mapping):
+            return None
+        key = entry.get("key")
+        value = entry.get("value")
+        if not isinstance(key, str) or not key.strip():
+            return None
+        if not isinstance(value, str) or not value.strip():
+            return None
+        states.append(ActionCardStatePart(key=key, value=value))
+    return states
+
+
+def _card_annotations(raw: object) -> list[ActionCardAnnotationPart] | None:
+    """把参数里的标注编成**线格式**的 `{target, kind}`；形状不合法时返回 `None`。
+
+    ⚠ **这里确实是本包唯一一处「编码规则要在 `modules/*` 里再写一份」的地方**，
+    如实说明它为什么不能像 `sections` / `states` 那样原样搬运（这是实测纠正的，
+    我第一版写成「原样搬运」并因此**产不出任何卡片**——见报告 §4.2）：
+
+    落库的 `function_call.arguments` 是**模型给的输入形状**，而基座 7.3 节的线格式
+    是**信封形状**，两者在最关键的一处不对称（`tools/emergency_card.py` 的
+    `_Annotation` 说明自己点明了这一点）：
+
+    | 参数（落库） | 线格式（事件与水合 part） |
+    |---|---|
+    | `{line_ref: int, source: str, confidence: str}` | `{target: str, kind: str}` |
+
+    工具侧 handler 用 `_encode_annotation_kind` 把两个字段编成一个 `kind`
+    （`f"{source}:{confidence}"`）、把 `line_ref` 转成 `str`。**⇒ 水合要产出与事件
+    同形的 part，就必须做同一个转换**，否则前端 `domain/actionCard.ts` 的
+    `annotation.target` / `annotation.kind` 读到的是两个不存在的字段
+    —— 那正是「让前端猜」。
+
+    ★ **但它只需要分隔约定，不需要产品侧词表**（这是与原件那个二选一不同的第三条路）：
+    编码是**纯粹的语法拼接**；`source` / `confidence` 的合法值域**不在这里复述**。
+    越界取值由**消费侧**处置且可见——前端 `decodeAnnotation` 查不到显示名就返回 `null`，
+    该条标注被丢弃并计入 `droppedAnnotations`（`AC-07` 的呈现纪律由那一侧承担）。
+    在这里复述六类来源与四档置信，会让产出侧将来扩词表时**水合静默停止产出卡片**
+    —— 本包要修的那个缺陷换了张脸回来。
+
+    分隔符 `:` 的正确性由用例**跑真实工具**守住：断言真实产出的
+    `{"line_ref": n, "source": s, "confidence": c}` 经本函数得到
+    `{"target": str(n), "kind": f"{s}:{c}"}`，而那个 `kind` 又能被
+    `tools/emergency_card.py` 的 `decode_annotation_kind` 解回 `(s, c)`。
+    """
+    if not isinstance(raw, list) or len(raw) > ACTION_CARD_ANNOTATIONS_MAX:
+        return None
+    annotations: list[ActionCardAnnotationPart] = []
+    for entry in raw:
+        if not isinstance(entry, Mapping):
+            return None
+        line_ref = entry.get("line_ref")
+        source = entry.get("source")
+        confidence = entry.get("confidence")
+        # `line_ref` 是「按七节摊平后的 1 起序号」（产出侧参数模型 `Field(ge=1)`）。
+        # `bool` 是 `int` 的子类，显式排除——`True` 会变成 `"True"` 这个非数字 target。
+        if not isinstance(line_ref, int) or isinstance(line_ref, bool) or line_ref < 1:
+            return None
+        if not isinstance(source, str) or not source.strip():
+            return None
+        if not isinstance(confidence, str) or not confidence.strip():
+            return None
+        annotations.append(
+            ActionCardAnnotationPart(target=str(line_ref), kind=f"{source}{_ANNOTATION_KIND_SEPARATOR}{confidence}")
+        )
+    return annotations
+
+
+def action_card_success_card_id(output: str) -> str | None:
+    """从 `emit_emergency_action_card` 的回执里取出**真实的** `card_id`；不是成功回执时返回 `None`。
+
+    ★ 这是本包**判据的产出侧一半**（与 :func:`question_record_part` 对
+    `ASK_USER_SUCCESS_OUTPUT` 的相等判定同一条纪律）。为什么必须是它：
+
+    参数不合法的调用会得到 `<tool_error code="tool_invalid_arguments">…</tool_error>`
+    （`ToolSpec._parse` 在解析期就把它变成失败，`ToolResult` 从不构造，因此事件流里
+    **没有**任何卡片）。若只看「参数能不能解析出一张卡」，水合会造出一张**当时从未
+    呈现给使用者的卡**——那是伪造。这一条把判据钉在**产出**上，而不是参数形状上。
+
+    回执形状取自 `tools/emergency_card.py:406`：
+    `json.dumps({"card_id": card.card_id, "state": "emitted"}, ensure_ascii=False)`。
+
+    **为什么在这里再解析一次 JSON 而不是用工具侧的函数**：`modules/*` 不得 import
+    `tools/*`（项目结构设计第 7 节，判据见 `tests/test_layer_boundaries.py`）。
+    两处的一致性由用例**跑真实工具**守住——它断言真实回执能被本函数解析出同一个
+    `card_id`（文案或形状漂移时立刻有红，而不是让卡片在水合里静默消失）。
+
+    Args:
+        output: `function_call_output.output` 的原文。
+
+    Returns:
+        回执里的 `card_id`；不是本工具的成功回执（工具错误、格式漂移、`card_id` 缺失
+        或为空）时返回 `None`。
+    """
+    try:
+        decoded = json.loads(output)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(decoded, Mapping):
+        return None
+    if decoded.get("state") != ACTION_CARD_EMITTED_STATE:
+        return None
+    card_id = decoded.get("card_id")
+    if not isinstance(card_id, str) or not card_id.strip():
+        return None
+    return card_id
+
+
+def action_card_part(arguments: object, output: str) -> ActionCardPart | None:
+    """从一次 `emit_emergency_action_card` 调用重建 `action_card` part；重建不出来时返回 `None`。
+
+    **两个判据缺一不可**（理由见 :func:`action_card_success_card_id`）：
+
+    1. **产出是成功回执**——回执能解析出 `state == "emitted"` 且带非空 `card_id`；
+    2. **参数能解析出合法的卡片**——七节齐全且每节至少一行、状态与标注形状合法。
+
+    任一不成立就**不产出 part、也不伪造一张半截卡**：调用方（`_Hydration`）记警告。
+    读路径上「缺一张卡」比「给一张假卡」更接近事实——而一张**残缺**的卡更糟：
+    它的「不要做」那一节可能整节消失，或某一行被截断成相反的意思。
+
+    ★ **`card_id` 取自回执、不做任何派生**（这是与提问路径的一处实质差别）：
+    回执里的值就是当年发出去的那个 id，逐字落库（同库旁证：`create_support_object`
+    等的回执都是逐字 JSON）。**⇒ 稳定性是「取回真值」的结果，而不是「派生规则不撞车」
+    的结果**：同一行数据两次水合必然得到同一个 id（输入相同、解析是纯函数），
+    且它**与事件流里那个 id 相等**——派生值做不到后一点，而前端的旧卡失效判定正是
+    在比 `card_id`（`ChatWorkspace.newestActionCardId` 与 `parts.tsx` 的 `expired`）。
+    一张刷新后的卡若换了 id，就会去和最新卡比较 ⇒ 它可能被标成「已过期」，
+    或在它才是最新卡时**不**标过期而把真正的旧卡留下的判定整个错位。
+
+    Args:
+        arguments: `function_call.arguments` 的原文（JSON 字符串，内含
+            `sections` / `states` / `annotations`，形状是**工具的输入形状**）。
+        output: `function_call_output.output` 的原文。
+
+    Returns:
+        行动卡 part；判据不成立时 `None`。
+    """
+    card_id = action_card_success_card_id(output)
+    if card_id is None:
+        return None
+    if not isinstance(arguments, str):
+        return None
+    try:
+        decoded = json.loads(arguments)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(decoded, Mapping):
+        return None
+
+    sections = _card_sections(decoded.get("sections"))
+    if sections is None:
+        return None
+    states = _card_states(decoded.get("states"))
+    if states is None:
+        return None
+    # 缺省空数组（产出侧参数模型的 `default_factory=list`，契约第 2 节「可为空」）。
+    annotations = _card_annotations(decoded.get("annotations", []))
+    if annotations is None:
+        return None
+
+    return ActionCardPart(
+        type=PART_TYPE_ACTION_CARD,
+        card_id=card_id,
+        # `title` 不在参数里、也不在回执里（回执只有 card_id 与 state）：
+        # 它由工具侧的常量给，这里只能是字面量 + 用例绑定（同 ASK_USER_SUCCESS_OUTPUT）。
+        title=ACTION_CARD_TITLE,
+        sections=sections,
+        states=states,
+        annotations=annotations,
     )
 
 
@@ -1138,17 +1577,19 @@ class _Hydration:
     def add_tool_output(self, stored: StoredItem) -> None:
         """用工具结果回填对应的调用 part（`ok` 与 `summary`）。
 
-        ★ `ask_user` 的成功产出在这里**额外**产出一个 `question-record` part（2026-10-06）。
+        ★ 两个成功产出在这里**额外**各产出一个 part（`ask_user` → `question-record`，
+        2026-10-06 T27；`emit_emergency_action_card` → `action_card`，2026-10-06 T32）。
 
-        为什么落在这一支而不是新增一个条目类型：SDK 会话存储里没有「提问」这种条目
-        ——提问的真源就是这对 `function_call` / `function_call_output`。把它挂在这里，
-        「一次提问」只有一处重建点，且它与那次工具调用天然同属一条助手消息。
+        为什么落在这一支而不是新增一个条目类型：SDK 会话存储里没有「提问」与「卡片」
+        这两种条目——它们的真源就是这对 `function_call` / `function_call_output`。
+        把它挂在这里，「一次调用」只有一处重建点，且它与那次工具调用天然同属一条助手消息。
 
-        顺序：先回填 `tool_call`、再追加 `question-record`。事件流里两者是反的
-        （`ToolBridge._invoke` 先 sink `QuestionEvent` 再 sink `ToolCallFinishedEvent`），
-        这里刻意相反——水合出来的工具行是一句「向你提问 · 已结束」的记录，让卡片排在
-        它之后更接近「记录 → 结果」的读法。该差别不影响任何签名要求：两侧唯一的硬要求是
-        「提问 part 存在且载荷同形」（前端 `parts.tsx` 按 `data.by_name` 注册，与顺序无关）。
+        顺序：先回填 `tool_call`、再追加重建出的 part。事件流里两者是反的
+        （`ToolBridge._invoke` 先 sink `QuestionEvent`/`ActionCardEvent` 再 sink
+        `ToolCallFinishedEvent`），这里刻意相反——水合出来的工具行是一句
+        「向你提问 · 已结束」/「生成行动卡 · 已完成」的记录，让卡片排在它之后更接近
+        「记录 → 结果」的读法。该差别不影响任何签名要求：两侧唯一的硬要求是
+        「part 存在且载荷同形」（前端 `parts.tsx` 按 `data.by_name` 注册，与顺序无关）。
         """
         item = stored.data
         output = item.get("output")
@@ -1170,22 +1611,32 @@ class _Hydration:
         part["ok"] = failure is None
         part["summary"] = (output if failure is None else failure)[:TOOL_SUMMARY_MAX_CHARS]
 
-        if part["tool_name"] != ASK_USER_TOOL_NAME or not part["ok"]:
+        if not part["ok"]:
             return
-        # 参数在**调用**条目里，不在结果条目里，因此回填时要靠 add_tool_call 留下的原文
-        # （`_pending_arguments`）——从 parts 下标反查会把参数再拼一遍，多一份要维护的形状。
-        normalized_call_id = call_id if isinstance(call_id, str) else ""
-        question = question_record_part(
-            normalized_call_id,
-            arguments,
-            output,
-            # 缺键按 None（fail-closed）：判据没算到这一组时不得猜成「可作答」。
-            answered=self._answered.get(normalized_call_id),
-        )
-        if question is None:
-            logger.warning("水合跳过一条重建不出的提问：调用=%s 行=%s", call_id, stored.row_id)
+
+        if part["tool_name"] == ASK_USER_TOOL_NAME:
+            # 参数在**调用**条目里，不在结果条目里，因此回填时要靠 add_tool_call 留下的原文
+            # （`_pending_arguments`）——从 parts 下标反查会把参数再拼一遍，多一份要维护的形状。
+            normalized_call_id = call_id if isinstance(call_id, str) else ""
+            question = question_record_part(
+                normalized_call_id,
+                arguments,
+                output,
+                # 缺键按 None（fail-closed）：判据没算到这一组时不得猜成「可作答」。
+                answered=self._answered.get(normalized_call_id),
+            )
+            if question is None:
+                logger.warning("水合跳过一条重建不出的提问：调用=%s 行=%s", call_id, stored.row_id)
+                return
+            self._parts.append(question)
             return
-        self._parts.append(question)
+
+        if part["tool_name"] == EMERGENCY_ACTION_CARD_TOOL_NAME:
+            card = action_card_part(arguments, output)
+            if card is None:
+                logger.warning("水合跳过一条重建不出的行动卡：调用=%s 行=%s", call_id, stored.row_id)
+                return
+            self._parts.append(card)
 
 
 def build_messages(items: Sequence[StoredItem]) -> list[HydratedMessage]:
@@ -1193,7 +1644,7 @@ def build_messages(items: Sequence[StoredItem]) -> list[HydratedMessage]:
 
     分组规则（一次运行的产出合成一条助手消息）：助手侧的条目——思考、工具调用与
     结果、助手文本——属于同一条助手消息的 `parts`，直到下一条使用者消息出现
-    才收束。依据是第 7 节把六种 part 都定义为「消息 content 的序列化，与流式事件
+    才收束。依据是第 7 节把七种 part 都定义为「消息 content 的序列化，与流式事件
     同源同形」：流式期间这些 part 累加到当前这一条助手消息上，水合必须给出同一个
     形状，否则刷新前后同一段对话的消息条数会变。
 
@@ -1384,10 +1835,24 @@ __all__ = [
     "QUESTION_OPTION_LABEL_MAX_CHARS",
     "QUESTION_TEXT_MAX_CHARS",
     "AskUserTurn",
+    # 行动卡重建
+    "ACTION_CARD_ANNOTATIONS_MAX",
+    "ACTION_CARD_EMITTED_STATE",
+    "ACTION_CARD_LINES_TOTAL_MAX",
+    "ACTION_CARD_SECTION_KEYS",
+    "ACTION_CARD_STATES_MAX",
+    "ACTION_CARD_TEXT_MAX_CHARS",
+    "ACTION_CARD_TITLE",
+    "PART_TYPE_ACTION_CARD",
+    "ActionCardType",
     # 注入信封
     "INJECTED_MESSAGE_PREFIXES",
     # part 形状
     "MessagePart",
+    "ActionCardAnnotationPart",
+    "ActionCardPart",
+    "ActionCardSectionPart",
+    "ActionCardStatePart",
     "QuestionItemPart",
     "QuestionOptionPart",
     "QuestionPart",
@@ -1407,6 +1872,8 @@ __all__ = [
     "TOOL_SUMMARY_MAX_CHARS",
     "UNKNOWN_TOOL_NAME",
     # 解析
+    "action_card_part",
+    "action_card_success_card_id",
     "build_messages",
     "build_preview",
     "build_title",
