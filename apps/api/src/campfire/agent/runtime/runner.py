@@ -248,7 +248,18 @@ class AgentRunner:
     为什么不调用 SDK 的压缩能力：
 
     第 2 节明确不使用 `OpenAIResponsesCompactionSession`：它会清空并重写历史，在单真源下
-    等于改写用户可见的历史。上下文压力只由窗口与（尚未实现的）压缩机制处理。
+    等于改写用户可见的历史。
+
+    ~~上下文压力只由窗口与（尚未实现的）压缩机制处理。~~
+
+    **⇒ 已订正（2026-10-06）**：上面划掉的那半句**指错了对象**——压缩机制**已经实现**
+    （`agent/context/compaction.py` 的 `compact()`、`CompactionSettings` 与
+    `CompactionJournal` 端口；用例见 `apps/api/tests/test_agent_compaction.py`）。
+    没做到的不是「能力」而是「装配」：生产组合根暂不接线（`compaction=None`，见
+    `surfaces/consult/composition.py` 的装配决定第 4 条），因为记账端口
+    `CompactionJournal` 还没有持久化实现。**⇒ 当前后果确实是「窗口退化为全量历史」，
+    但成因是「机制已实现、装配处未接线」**；把它读成「能力不存在」会高估接线的成本
+    （看起来像要从头开发一个能力）。接线属另一主题（需要一张记账表），已登记在册。
     """
 
     def __init__(
