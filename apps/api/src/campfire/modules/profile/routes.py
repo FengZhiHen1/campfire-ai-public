@@ -278,7 +278,18 @@ class ProfileItemPayload(BaseModel):
     #: 而不同——本批可达的两个写入方是：补充条目由服务端补
     #: `{"channel": "profile_page"}`（`MANUAL_ENTRY_SOURCE`），以及 Worker 消费
     #: `profile_item` 时原样转发待处理记录里的 `source`（其生产者
-    #: `propose_profile_item` 工具尚未实现）。因此这里不做键名归一。
+    #: ~~`propose_profile_item` 工具尚未实现~~）。因此这里不做键名归一。
+    #:
+    #: **⇒ 已订正（2026-10-06）**：上面划掉的那句**前提是错的**——`propose_profile_item`
+    #: **已实现并已注册**（工具在 `tools/profile.py`、注册点在 `surfaces/consult/registry.py`，
+    #: 落层用例在 `modules/profile/service.py` 的 `propose_item`）。**订正后结论不变，
+    #: 但理由换了**：该写入方落进 `source` 的键是 `session_id` / `tool`（外加可选的
+    #: `message_seq` / `relayed_by`），与手动入口的 `channel` **既无同名键、也不是同一个事实**
+    #: ——`channel` 答「这条是在哪个页面写下的」，`tool` 答「哪个工具写下的」；会话定位与
+    #: 转述者只对会话内写入存在（手动入口根本没有会话）。**⇒ 归一在这里只能制造假合并**
+    #: （把 `profile_page` 与 `propose_profile_item` 并进同一个键，等于断言「档案页是一个工具」），
+    #: 而两类来源的键集本来就**不相交**。**因此不做键名归一的理由是「两个写入方的键集不相交
+    #: 且语义不同」，不是「生产者尚未实现」。**
     #: 值类型写成 JSON 标量联合而不是 `Any`：后者会让「这里可能混进嵌套对象」
     #: 在类型层不可见，而本面承诺的是可读的来源定位。
     source: dict[str, str | int | float | bool | None]
