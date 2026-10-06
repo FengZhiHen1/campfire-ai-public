@@ -16,7 +16,7 @@ import json
 from collections.abc import Mapping, Sequence
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 import httpx2
 import pytest
@@ -169,6 +169,32 @@ def tool_call_reply(name: str, arguments: Mapping[str, object], *, call_id: str 
     )
 
 
+def text_and_tool_call_reply(name: str, arguments: Mapping[str, object], text: str, *, call_id: str) -> bytes:
+    """一次回复里**同时**有正文与工具调用（真实 SDK 允许，会再跑一个回合）。
+
+    为什么需要它（实测教训）：脚本写成「工具调用 → 正文 → 正文」时，SDK 在第二段正文处
+    就以 `NextStepFinalOutput` 收束，第三段脚本**从未被消费** ⇒ 落库的助手消息只有一条，
+    「多条助手消息」类断言会退化成恒真的空闸门。这个形状才真的产出两条助手正文。
+    """
+    return _sse(
+        _chunk({"role": "assistant", "content": ""}),
+        _chunk({"content": text}),
+        _chunk(
+            {
+                "tool_calls": [
+                    {
+                        "index": 0,
+                        "id": call_id,
+                        "type": "function",
+                        "function": {"name": name, "arguments": json.dumps(arguments)},
+                    }
+                ]
+            }
+        ),
+        _chunk({}, "tool_calls"),
+    )
+
+
 class ScriptedChat:
     """按脚本逐次应答的假 Chat Completions 服务。"""
 
@@ -254,6 +280,55 @@ def _skill_root(tmp_path: Path, *, name: str = "daily-consulting", autoload: str
         encoding="utf-8",
     )
     return SkillRegistry.discover(tmp_path)
+
+
+def _written_assistant_annotations(session: FakeSession) -> list[list[dict[str, Any]]]:
+    """把落库条目里每条助手消息的注解数组取出来（每条助手消息一项）。
+
+    为什么写成这个 helper 而不是在用例里就地推导：`FakeSession.items` 的静态类型是
+    SDK 的 `TResponseInputItem` 联合（三十多个 TypedDict，多数没有 `content`），
+    就地写会得到一长串 `typeddict-item` 报错。这里把「按运行期实际形状遍历」这件事
+    收在**一处**、并显式声明它产出什么；判据仍在各用例里，不含在这个 helper 中。
+
+    ⚠ 它**不做任何断言**：返回空列表本身不是失败（不同用例对「该不该有注解」期望相反）。
+    """
+    found: list[list[dict[str, Any]]] = []
+    for item in session.items:
+        if not isinstance(item, dict):
+            continue
+        if item.get("role") != "assistant":
+            continue
+        content = item.get("content")
+        if not isinstance(content, list):
+            continue
+        annotations: list[dict[str, Any]] = []
+        for chunk in content:
+            if not isinstance(chunk, dict):
+                continue
+            raw = chunk.get("annotations")
+            if isinstance(raw, list):
+                annotations.extend(entry for entry in raw if isinstance(entry, dict))
+        found.append(annotations)
+    return found
+
+
+def _written_assistant_messages(session: FakeSession) -> list[dict[str, Any]]:
+    """落库条目里的助手消息（按运行期实际形状）。同 `_written_assistant_annotations` 的理由。
+
+    `cast` 的理由：`session.items` 的元素静态类型是 SDK 的 TypedDict 联合，而 `dict` 收窄
+    只能把它变成 `dict[Any, Any]`，mypy 拒绝把这个联合的推导结果直接当 `list[dict[str, Any]]`
+    （联合里多数成员没有 `content`）。运行期形状由上面的 `isinstance` 与下面的用例断言共同锁定。
+    """
+    found: list[dict[str, Any]] = []
+    for item in session.items:
+        if not isinstance(item, dict):
+            continue
+        if item.get("role") != "assistant":
+            continue
+        if not isinstance(item.get("content"), list):
+            continue
+        found.append(cast(dict[str, Any], item))
+    return found
 
 
 def _runner(
@@ -1476,6 +1551,128 @@ async def test_runner_reports_citations_produced_by_injections() -> None:
     finished = events[-1]
     assert isinstance(finished, RunFinishedEvent)
     assert [record.reference for record in finished.citations] == ["kb-9"]
+
+
+@pytest.mark.asyncio
+async def test_runner_annotates_the_persisted_assistant_text_with_citations() -> None:
+    """★ 接线判据（T38）：一次真实运行后，**落库的助手正文分片上带着引用注解**。
+
+    这是「⑤a 载荷真的被挂上去了」的端到端接线证据（真实的 `AgentRunner.run` +
+    真实的 SDK 落库调用 + 真实的事件流），只有模型被换成了脚本化响应。
+
+    判据同时覆盖 §2.3 的两个问题：
+
+    1. **哪些引用挂到哪条 part**：该轮工具发出的引用，挂在该轮正文分片的 `annotations` 上；
+    2. **引用产生早于正文落库**：凭据在**工具执行**时发出，而落库发生在**回合结束**
+       ⇒ `add_items` 被调用的那一刻清单已经填好。本用例里模型的工具调用与正文在
+       **同一个回合**（脚本先回工具调用、再回正文），因此如果清单是「落库时才去取」
+       就会是空的——本用例正是对这条时序的判别。
+
+    判别性：把 `runner.py` 里的 `CitationAnnotatingSession(...)` 换回裸 session
+    ⇒ `annotations` 不存在，本用例红。
+    """
+    chat = ScriptedChat(
+        [
+            tool_call_reply("read_alpha", {"query": "问题"}),
+            text_reply("我查到了"),
+        ]
+    )
+    session = FakeSession("s-1")
+    runner = _runner(
+        binding=_binding(chat),
+        session=session,
+        pool=ToolPool([read_tool(calls=[], citations=["kb-1"])]),
+    )
+
+    await _collect(runner, _request(default_active_tools=("read_alpha",)))
+
+    # 落库的条目里找那条助手消息（content 是分片数组）。
+    assistant_items = _written_assistant_messages(session)
+    assert assistant_items, f"本轮的助手消息必须已落库；实际条目类型 = {[type(i) for i in session.items]}"
+
+    chunks = [chunk for item in assistant_items for chunk in item["content"] if isinstance(chunk, dict)]
+    text_chunks = [chunk for chunk in chunks if chunk.get("type") == "output_text" and chunk.get("text")]
+    assert text_chunks, "助手消息里必须有带正文的分片"
+
+    annotations = [entry for chunk in text_chunks for entry in (chunk.get("annotations") or [])]
+    assert [entry["type"] for entry in annotations] == ["citation"], "正文分片上必须挂着引用注解"
+    assert annotations[0]["reference"] == "kb-1"
+    # 六个业务字段齐全（水合侧要能只凭会话条目重建出与事件流一致的载荷）。
+    assert set(annotations[0]) == {
+        "type",
+        "citation_id",
+        "run_id",
+        "source",
+        "reference",
+        "recorded_at",
+        "summary",
+    }
+    assert isinstance(annotations[0]["recorded_at"], str)
+
+
+@pytest.mark.asyncio
+async def test_runner_does_not_annotate_when_no_citation_was_produced() -> None:
+    """对照（反空断言）：没有产生引用的运行**不得**往正文上挂任何注解。
+
+    判别性：把包装层改成「无条件挂一个空数组以外的什么东西」⇒ 本用例红。
+    """
+    chat = ScriptedChat([tool_call_reply("read_alpha", {"query": "问题"}), text_reply("我查到了")])
+    session = FakeSession("s-1")
+    runner = _runner(binding=_binding(chat), session=session, pool=ToolPool([read_tool()]))
+
+    await _collect(runner, _request(default_active_tools=("read_alpha",)))
+
+    annotations = [
+        entry for message_annotations in _written_assistant_annotations(session) for entry in message_annotations
+    ]
+    assert annotations == [], "没有引用就不该有注解"
+
+
+@pytest.mark.asyncio
+async def test_runner_annotation_is_attached_only_once_across_two_assistant_messages() -> None:
+    """★ 增量式挂载：同一次运行里落库**两条**助手正文 ⇒ 同一条引用**只挂一次**。
+
+    这是本包最容易写错的一处：累计式实现会让先挂出的引用在后续正文里再挂一次
+    ⇒ 刷新后同一批依据出现两遍（`history.ts` 会把它们都推进同一个「依据 N 条」块）。
+
+    ⚠ **场景必须真造出两条落库的助手消息**（第一版用例没有，因此是一条恒真的空闸门——
+    实测：脚本写成「工具调用 → 正文 → 正文」时，SDK 在第二段正文处就以
+    `NextStepFinalOutput` 收束，第三段脚本从未被消费，落库的助手消息只有一条）。
+    这里的形状是**一次回复里同时有正文与工具调用**，之后再来一段收束正文——
+    实测落库两条助手消息（`我先查一下。` 与 `查到了，结论是……`）。
+
+    判别性：把包装层的 `_pending()` 改成「返回 `recorder.issued` 全部」
+    ⇒ 第二段正文上也会出现 kb-1，本用例红（已实测：变异 M1 红）。
+    """
+    chat = ScriptedChat(
+        [
+            text_and_tool_call_reply("read_alpha", {"query": "问题"}, "我先查一下。", call_id="call-1"),
+            text_reply("查到了，结论是……"),
+        ]
+    )
+    session = FakeSession("s-1")
+    runner = _runner(
+        binding=_binding(chat),
+        session=session,
+        pool=ToolPool([read_tool(calls=[], citations=["kb-1"])]),
+    )
+
+    await _collect(runner, _request(default_active_tools=("read_alpha",)))
+
+    # `session.items` 的静态类型是 SDK 的 `TResponseInputItem` 联合（三十多个 TypedDict），
+    # 而这里要按**运行期实际形状**（普通 dict）遍历。因此显式收窄成 `list[dict[str, Any]]`：
+    # 这不是放宽被测量——下面两行断言才是判据，类型只影响检查器怎么看待这段遍历。
+    assistant_messages = _written_assistant_messages(session)
+    assert len(assistant_messages) >= 2, (
+        f"本用例的前提是**至少两条**助手正文落库，否则它退化成空闸门；实际 = {len(assistant_messages)}"
+    )
+
+    references = [
+        entry["reference"]
+        for message_annotations in _written_assistant_annotations(session)
+        for entry in message_annotations
+    ]
+    assert references == ["kb-1"], f"同一条引用必须恰好挂一次；实际 = {references}"
 
 
 @pytest.mark.asyncio

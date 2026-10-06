@@ -504,3 +504,216 @@ def test_default_limit_matches_the_retrieval_chain_default() -> None:
     from campfire.modules.library.retrieval import FUSED_TOP_K
 
     assert DEFAULT_RESULT_LIMIT == FUSED_TOP_K
+
+
+# ---------------------------------------------------------------------------
+# 引用的产出（★ T36：此前整个生产代码里没有任何一处调用 `recorder.record(...)`）
+# ---------------------------------------------------------------------------
+
+
+class _RecordingIndex:
+    """记账用的引用索引替身：把写入的行留下来，供断言"凭据与索引不脱钩"。"""
+
+    def __init__(self) -> None:
+        self.rows: list[CitationRecord] = []
+
+    async def add(self, record: CitationRecord) -> None:
+        self.rows.append(record)
+
+    async def list_for_run(self, run_id: str) -> Sequence[CitationRecord]:
+        return [row for row in self.rows if row.run_id == run_id]
+
+
+def _recording_context() -> tuple[ToolContext, _RecordingIndex]:
+    """一个记账的上下文：`citations` 的写入会被留下来。"""
+    index = _RecordingIndex()
+    context = ToolContext(
+        run_id="run-1",
+        session_id="session-1",
+        surface="consult",
+        activation_state=ActivationState(),
+        citations=CitationRecorder(index, run_id="run-1", clock=lambda: datetime.now(timezone.utc)),
+    )
+    return context, index
+
+
+@pytest.mark.asyncio
+async def test_citations_are_issued_for_each_hit(monkeypatch: pytest.MonkeyPatch) -> None:
+    """★ 每条命中都发一条引用凭据，且**索引里落行**（基座第 4 节的不变量）。
+
+    判别性：删掉 `_mint_citations` 的调用（回到"只回 JSON、不发凭据"的旧行为）⇒ 本用例红。
+    """
+
+    async def _hit(*_args: object, **_kwargs: object) -> SearchOutcome:
+        return SearchOutcome(items=[_item()], degraded_paths=())
+
+    monkeypatch.setattr("campfire.tools.library._run_search", _hit)
+    context, index = _recording_context()
+
+    outcome = await search_knowledge(context, SearchKnowledgeArgs(query="孤独症"))
+
+    assert isinstance(outcome, ToolResult)
+    assert len(outcome.citations) == 1
+    # ★ 「先写索引再发凭据」：拿到的凭据必然在索引里。
+    assert [row.citation_id for row in index.rows] == [outcome.citations[0].citation_id]
+    record = outcome.citations[0]
+    assert record.source == LIBRARY_KNOWLEDGE, "来源标识取库别（哪个数据通道）"
+    # 回指带库别前缀：裸 uuid 在两库之间不保证唯一，拿到它的人无法知道去哪个库查。
+    assert record.reference == f"{LIBRARY_KNOWLEDGE}:{_item().item_id}"
+    assert record.summary == "视觉支持策略"
+
+
+@pytest.mark.asyncio
+async def test_citation_payload_is_not_written_into_the_result_json(monkeypatch: pytest.MonkeyPatch) -> None:
+    """★ 结果文本里**不得**再出现引用载荷（T38 换载体后的回归闸门）。
+
+    判据是两条一起看：
+
+    1. 结果文本仍是**一份完整 JSON 文档**（不能被破坏成带尾巴的形状）；
+    2. 它**没有** `citations` 键——载荷改由会话包装挂到助手正文分片的 `annotations` 上
+       （`agent/runtime/session_annotations.py`）。工具结果文本是**模型读得到的输入**，
+       而依据区是给使用者看的；载荷留在这里就等于白占上下文、并让模型有机会照抄
+       内部标识（本包换载体的唯一收益正是消除这一点）。
+
+    凭据本身照旧从 `ToolResult.citations` 出去（事件流 + 会话写入），**没有丢**——
+    判别性：把 `_result_for` 里的 `citations=citations` 删掉 ⇒ 本用例红。
+    """
+
+    async def _hit(*_args: object, **_kwargs: object) -> SearchOutcome:
+        return SearchOutcome(items=[_item()], degraded_paths=())
+
+    monkeypatch.setattr("campfire.tools.library._run_search", _hit)
+
+    outcome = await search_knowledge(_context(), SearchKnowledgeArgs(query="孤独症"))
+
+    assert isinstance(outcome, ToolResult)
+    decoded = json.loads(outcome.text)  # 不合法即抛 JSONDecodeError
+    assert decoded["count"] == 1
+    assert decoded["results"][0]["title"] == "视觉支持策略"
+    # ★ 载荷不再进模型读得到的那段文本。
+    assert "citations" not in decoded, "引用载荷不得写进工具结果文本（那是我模型输入的一部分）"
+    # 凭据仍然从 ToolResult 出去（换了载体，不是删了功能）。
+    assert len(outcome.citations) == 1
+    assert outcome.citations[0].reference == f"knowledge:{_item().item_id}"
+    assert outcome.citations[0].summary == "视觉支持策略"
+
+
+@pytest.mark.asyncio
+async def test_no_citation_key_when_nothing_hit(monkeypatch: pytest.MonkeyPatch) -> None:
+    """没有命中时**不发凭据、索引不落行**，结果文本里也没有载荷键。
+
+    ⚠ **如实说明本用例在 T38 之后的承重变化**：「结果文本里没有 `citations` 键」这一半
+    现在是**结构性的**（载荷已经完全不写进结果文本，见上一条用例），因此它不再是一条
+    有判别力的断言——留着它是为了钉住「没有命中时也没被顺手塞进别的东西」。
+    真正承重的是**凭据侧**：没有命中就不该有索引行（第 4 节的不变量：「没有索引记录的
+    注入消息不得成为可引用依据」）。
+
+    判别性：把 `_mint_citations` 改成对空结果也发凭据 ⇒ `outcome.citations` 与
+    `index.rows` 都不为空，本用例红。
+    """
+
+    async def _empty(*_args: object, **_kwargs: object) -> SearchOutcome:
+        return SearchOutcome(items=[], degraded_paths=())
+
+    monkeypatch.setattr("campfire.tools.library._run_search", _empty)
+    context, index = _recording_context()
+
+    outcome = await search_knowledge(context, SearchKnowledgeArgs(query="孤独症"))
+
+    assert isinstance(outcome, ToolResult)
+    decoded = json.loads(outcome.text)
+    assert "citations" not in decoded
+    assert outcome.citations == ()
+    assert index.rows == []
+    # 空结果提示仍在（本包没有顺手丢掉契约第 5 节那句话）。
+    assert "未找到" in decoded["notice"]
+
+
+@pytest.mark.asyncio
+async def test_hits_without_item_id_do_not_get_a_reference(monkeypatch: pytest.MonkeyPatch) -> None:
+    """命中条目缺 `item_id` ⇒ 跳过那一条，**不编造**回指。
+
+    契约第 3 节把 `item_id` 列为必带；没有它就回指不到任何东西。造一个
+    「看起来像引用、却指不到条目」的凭据比少一条更糟——它会让使用者点不动。
+
+    判别性：把 `_mint_citations` 里 `if not isinstance(item_id, str) or not item_id`
+    的跳过改成为缺失值编一个占位 id ⇒ 本用例红。
+    """
+
+    async def _hit(*_args: object, **_kwargs: object) -> SearchOutcome:
+        return SearchOutcome(items=[_item(item_id=""), _item()], degraded_paths=())
+
+    monkeypatch.setattr("campfire.tools.library._run_search", _hit)
+    context, index = _recording_context()
+
+    outcome = await search_knowledge(context, SearchKnowledgeArgs(query="孤独症"))
+
+    assert isinstance(outcome, ToolResult)
+    assert len(outcome.citations) == 1, "只有带 item_id 的那条能发凭据"
+    assert len(index.rows) == 1
+    # 载荷不在结果文本里（T38 起载体换成会话包装的注解），但凭据照常发出。
+    assert "citations" not in json.loads(outcome.text)
+    # 缺 id 的条目仍在结果 JSON 里（不因发不出引用而丢掉检索结果本身）。
+    assert json.loads(outcome.text)["count"] == 2
+
+
+@pytest.mark.asyncio
+async def test_search_cases_issues_references_scoped_to_the_case_library(monkeypatch: pytest.MonkeyPatch) -> None:
+    """案例侧凭据的 `source` / 回指前缀都是案例库别（两库不混）。
+
+    判别性：把 `search_cases` 的 `source=LIBRARY_CASE` 改成 `LIBRARY_KNOWLEDGE`
+    ⇒ 本用例红（引用会指向资料库，而条目在案例库里）。
+    """
+    from campfire.modules.library.retrieval import LIBRARY_CASE
+
+    async def _hit(*_args: object, **_kwargs: object) -> SearchOutcome:
+        return SearchOutcome(items=[_case_item()], degraded_paths=())
+
+    monkeypatch.setattr("campfire.tools.library._run_search", _hit)
+    context, index = _recording_context()
+
+    outcome = await search_cases(context, SearchCasesArgs(query="日程表"))
+
+    assert isinstance(outcome, ToolResult)
+    assert len(outcome.citations) == 1
+    record = outcome.citations[0]
+    assert record.source == LIBRARY_CASE
+    assert record.reference.startswith(f"{LIBRARY_CASE}:")
+    assert [row.citation_id for row in index.rows] == [record.citation_id]
+
+
+@pytest.mark.asyncio
+async def test_index_write_failure_fails_the_whole_call(monkeypatch: pytest.MonkeyPatch) -> None:
+    """索引写不进去时整次调用失败，**不得**降级成「无引用，但有结果」。
+
+    依据是基座第 4 节的不变量「没有索引记录的注入消息不得成为可引用依据」：
+    若降级，模型会看到可引用的条目而索引里没有对应行——正是那条不变量要禁止的状态。
+
+    判别性：把 `_mint_citations` 的 `await context.citations.record(...)` 包进
+    `try/except` 并吞掉异常 ⇒ 本用例红（会返回一个「成功但无凭据」的 ToolResult）。
+    """
+    from campfire.tools.library import _result_for
+
+    class _FailingIndex:
+        async def add(self, _record: CitationRecord) -> None:
+            raise RuntimeError("索引写入失败")
+
+        async def list_for_run(self, _run_id: str) -> Sequence[CitationRecord]:
+            return []
+
+    context = ToolContext(
+        run_id="run-1",
+        session_id="session-1",
+        surface="consult",
+        activation_state=ActivationState(),
+        citations=CitationRecorder(_FailingIndex(), run_id="run-1", clock=lambda: datetime.now(timezone.utc)),
+    )
+
+    with pytest.raises(RuntimeError):
+        await _result_for(
+            context,
+            [_render_item(_item())],
+            (),
+            empty_notice="未找到相关资料。",
+            source=LIBRARY_KNOWLEDGE,
+        )

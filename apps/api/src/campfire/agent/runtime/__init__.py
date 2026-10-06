@@ -34,6 +34,12 @@ from .resource_tool import (
 )
 from .runner import SESSION_IO_DETAIL, AgentRunner, CompactionWiring, RunRequest
 from .session import SessionFactory, build_sqlalchemy_session
+from .session_annotations import (
+    CITATION_ANNOTATION_TYPE,
+    CitationAnnotatingSession,
+    citation_annotation,
+    citation_annotations,
+)
 from .skill_tool import SKILL_TOOL_NAME, ActivateSkillArgs, build_skill_tool
 from .summarizer import ModelSummarizer
 
@@ -49,6 +55,8 @@ from .summarizer import ModelSummarizer
 #
 # 模块分工：:mod:`~campfire.agent.runtime.events` 是唯一对外的事件形状（名称对齐 AG-UI），
 # :mod:`~campfire.agent.runtime.session` 只做会话装配，
+# :mod:`~campfire.agent.runtime.session_annotations` 只做「落库前把引用凭据挂到助手
+# 正文分片上」（纯装饰器，不写数据库、不改已落库的行），
 # :mod:`~campfire.agent.runtime.assembly` 只做「基座形状 → SDK 对象」的翻译，
 # :mod:`~campfire.agent.runtime.runner` 是运行编排本身。
 #
@@ -61,11 +69,13 @@ __all__ = [
     "SKILL_TOOL_NAME",
     "READ_SKILL_RESOURCE_TOOL_NAME",
     "ASK_USER_TOOL_NAME",
+    "CITATION_ANNOTATION_TYPE",
     "ActivateSkillArgs",
     "ActionCardEvent",
     "AgentRunner",
     "AskUserArgs",
     "CandidateEvent",
+    "CitationAnnotatingSession",
     "CitationEvent",
     "CompactionFacts",
     "CompactionWiring",
@@ -96,5 +106,7 @@ __all__ = [
     "build_run_config",
     "build_skill_tool",
     "build_sqlalchemy_session",
+    "citation_annotation",
+    "citation_annotations",
     "stop_after_question",
 ]

@@ -25,9 +25,10 @@
 from __future__ import annotations
 
 import json
+import logging
 from collections.abc import Sequence
 from pathlib import Path
-from typing import get_args, get_type_hints
+from typing import Any, cast, get_args, get_type_hints
 
 import pytest
 
@@ -42,6 +43,7 @@ from campfire.modules.accounts.session_items import (
     COMPACTED_SUMMARY_TAG,
     INJECTED_MESSAGE_PREFIXES,
     INTERRUPTED_TOOL_SUMMARY,
+    PART_TYPE_CITATION,
     PART_TYPE_QUESTION_RECORD,
     PREVIEW_MAX_CHARS,
     QUESTION_BATCH_ID_PREFIX,
@@ -1808,3 +1810,709 @@ def test_action_card_and_question_can_coexist_in_one_message() -> None:
     assert types == ["tool_call", "tool_call", PART_TYPE_QUESTION_RECORD, "action_card"], (
         f"两种产出都要在，且按结果行的顺序排列；实际 = {types}"
     )
+
+
+# ---------------------------------------------------------------------------
+# 引用的水合（★ T36/T38 的主缺陷：刷新后引用消失）
+#
+# 实测（T36 第 0 步，用**产品代码** build_messages 对一条检索调用对做水合）：
+#   现状（HEAD）产出的 part 类型 = ['tool_call']，citation 数 = 0 ⇒ 红。
+# 缺陷形态与提问卡、行动卡当初一模一样：live 通路是好的（`CitationEvent` 一直在发），
+# 只有刷新后（历史水合）引用消失。
+# 根因有两处，T36 各修一处（生产者不存在 + 联合里没有 citation）。
+#
+# ★ T38 换掉了**载体**（用户裁决）：载荷从「工具结果文本的 `citations` 键」
+# 改到「助手正文分片 `output_text` 的 `annotations` 数组」。判据不变
+# （刷新后 part 仍在、形状与事件侧逐字同形），变的是写侧挂在哪、读侧从哪里读。
+# 2026-10-07 为什么换：字面满足设计第 5 节「是消息 content 的一部分」，
+# 且载荷**对模型不可见**（Chat Completions 转换器读 content 时只取 `text`）。
+# ---------------------------------------------------------------------------
+
+#: 一条实测形状的引用载荷（六个字段与 `CitationRecord` / 前端 `CitationRecord` 逐字一致）。
+_CITATION = {
+    "citation_id": "3f2a1b0c9d8e7f605142332415061728",
+    "run_id": "aabbccddeeff00112233445566778899",
+    "source": "knowledge",
+    "reference": "knowledge:11111111-1111-4111-8111-111111111111",
+    "recorded_at": "2026-10-07T12:00:00+00:00",
+    "summary": "视觉支持策略",
+}
+
+
+def _citation_annotation(**overrides: object) -> dict:
+    """一条注解形状的引用载荷：六个业务字段 + 判别键 `type`。"""
+    return {"type": "citation", **_CITATION, **overrides}
+
+
+def _annotated_assistant(
+    text: str = "建议尽早评估。",
+    *,
+    annotations: list | None = None,
+    extra_parts: list | None = None,
+) -> dict:
+    """实测形状的助手消息条目（content 是分片数组）——带引用注解的那一种。
+
+    ⚠ **刻意不复用上面的 `_assistant`**（那是本文件既有的、给几十条无关用例用的助手
+    消息构造器）：两者参数语义不同（这里是「注解数组」，那里是 `annotations: bool`
+    的布尔开关），合并会让既有用例的含义随本包而变。名字不同、判据也就不互相牵动。
+
+    `annotations=None` 表示**不带** `annotations` 字段（对照：没挂过载荷的正文）。
+    """
+    chunk: dict = {"type": "output_text", "text": text}
+    if annotations is not None:
+        chunk["annotations"] = annotations
+    content = [chunk, *(extra_parts or [])]
+    return {"type": "message", "id": "__fake_id__", "role": "assistant", "status": "completed", "content": content}
+
+
+def _citation_turn_items(call_id: str = "call_00_t38cite00000000000000001") -> list[StoredItem]:
+    """一轮带检索的对话：先检索（工具调用对），后出正文并挂着引用注解。"""
+    return [
+        _stored(1, _user("有什么资料可以参考？")),
+        _stored(2, _search_call(call_id)),
+        _stored(3, {"type": "function_call_output", "call_id": call_id, "output": _search_result_text()}),
+        _stored(4, _annotated_assistant("建议尽早评估。", annotations=[_citation_annotation()])),
+    ]
+
+
+def _search_result_text() -> str:
+    """实测形状的检索结果文本（**不含**引用载荷——T38 起载荷不在这里）。"""
+    return json.dumps(
+        {"results": [{"item_id": "11111111-1111-4111-8111-111111111111"}], "count": 1},
+        ensure_ascii=False,
+    )
+
+
+def _search_call(call_id: str, name: str = "search_knowledge") -> dict:
+    """实测形状的检索工具调用条目。"""
+    return {
+        "type": "function_call",
+        "call_id": call_id,
+        "name": name,
+        "arguments": json.dumps({"query": "视觉支持"}, ensure_ascii=False),
+    }
+
+
+def test_hydration_rebuilds_a_citation_part() -> None:
+    """★ 主用例：正文分片上挂着引用注解的历史，水合后必须出现 `citation` part。
+
+    这就是本包的缺陷现场——刷新后「依据 N 条」消失，因为后端从不产出 citation part
+    （`history.ts` 的 `case 'citation'` 因此永不命中）。
+
+    判别性：把 `MessagePart` 联合里的 `CitationPart` 去掉，或删掉 `add_assistant_text`
+    里读回注解的那几行 ⇒ 本用例在第一处断言就失败。
+    """
+    parts = build_messages(_citation_turn_items())[1]["parts"]
+
+    citations = [part for part in parts if part["type"] == "citation"]
+
+    assert len(citations) == 1, "刷新后必须仍有且只有一条引用 part"
+    assert citations[0]["citation"] == _CITATION
+    # 正文与依据同在一条助手消息里，且正文排在依据之前（「说了什么 → 依据是什么」）。
+    assert [part["type"] for part in parts] == ["tool_call", "text", "citation"]
+
+
+def test_hydration_citation_part_shape_matches_the_wire_contract() -> None:
+    """水合出的 `citation` part 形状必须与契约第 7 节 + 前端类型逐字一致。
+
+    前端 `history.ts` 的 `case 'citation'` 读 `part.citation` 并直接交给
+    `CitationPart.tsx`，后者读 `citation_id` / `source` / `reference` / `summary`
+    （`citationDeepLink` 还前向兼容地读 `item_id`）。少一个键或改一个名字，
+    水合出的依据区就是空的——而那种失败在浏览器里只表现为「依据区不出现」，不会报错。
+
+    ★ 与**事件侧**同一形状的相等关系：本包刻意不另立「水合侧专有」的 part 类型
+    （与提问那一对相反，与行动卡相同），理由是回看侧要说的事实与流出侧完全一样。
+    因此这里断言字段集合**恰好**是 `CitationRecord` 那六个 + `type`——多一个字段就说明
+    有人把回看侧的东西塞进了流出侧载荷（判别键 `type` 只在**注解**里，不进 part）。
+    """
+    parts = build_messages(_citation_turn_items())[1]["parts"]
+    part = next(entry for entry in parts if entry["type"] == "citation")
+
+    assert set(part) == {"type", "citation"}
+    assert set(part["citation"]) == {"citation_id", "run_id", "source", "reference", "recorded_at", "summary"}
+    # 逐字段与前端 `shared/types/sse.ts` 的 `CitationRecord` 对得上（这里是值级断言）。
+    assert part["citation"]["citation_id"] == _CITATION["citation_id"]
+    assert part["citation"]["source"] == "knowledge"
+    assert part["citation"]["reference"] == _CITATION["reference"]
+    assert part["citation"]["summary"] == "视觉支持策略"
+    # `recorded_at` 是字符串（JSON 里没有日期类型）——前端类型要求的正是 string。
+    assert isinstance(part["citation"]["recorded_at"], str)
+
+
+def test_citation_is_rebuilt_regardless_of_which_tool_ran() -> None:
+    """正文上的载荷与「之前跑过哪个检索工具」无关（判据是注解，不是工具名）。
+
+    判别性：把读侧改成「工具名 == search_knowledge 才产出」⇒ 案例侧那一支红。
+    ——这正是 T38 载体带来的简化：载荷挂在**正文**上，读侧完全不看工具调用。
+    """
+    for name in ("search_knowledge", "search_cases"):
+        call_id = f"call-{name}"
+        items = [
+            _stored(1, _user("问")),
+            _stored(2, _search_call(call_id, name=name)),
+            _stored(3, {"type": "function_call_output", "call_id": call_id, "output": _search_result_text()}),
+            _stored(4, _annotated_assistant(annotations=[_citation_annotation()])),
+        ]
+        parts = build_messages(items)[1]["parts"]
+        citations = [part for part in parts if part["type"] == "citation"]
+
+        assert len(citations) == 1, f"{name} 之后产出的正文上的引用必须被重建"
+        assert citations[0]["citation"]["citation_id"] == _CITATION["citation_id"]
+
+
+def test_hydration_rebuilds_multiple_citations_from_one_message() -> None:
+    """同一条正文产出多条引用 ⇒ 注解数组里 N 条，全部重建（不是只取第一条）。
+
+    依据：同一次检索的 N 条命中属于同一个动作，数组保序；前端的「依据 N 条」
+    本就是一个聚合块。
+
+    判别性：把 `citation_parts` 里对注解数组的遍历改成只取 `raw[0]` ⇒ 本用例红。
+    """
+    second = _citation_annotation(citation_id="ffffffffffffffffffffffffffffffff", summary="第二条")
+    items = [
+        _stored(1, _user("问")),
+        _stored(2, _annotated_assistant(annotations=[_citation_annotation(), second])),
+    ]
+
+    parts = build_messages(items)[1]["parts"]
+    citations = [part for part in parts if part["type"] == "citation"]
+
+    assert [entry["citation"]["citation_id"] for entry in citations] == [
+        _CITATION["citation_id"],
+        second["citation_id"],
+    ]
+
+
+def test_a_non_citation_annotation_is_not_mistaken_for_a_reference() -> None:
+    """★ 判别键：`annotations` 是**共用**字段，真实的辅助注解住在这里，不得当引用。
+
+    Chat Completions 的 `output_text` 注解里可以出现 `url_citation` 之类的真实注解；
+    只看「注解数组非空」就会把别家的注解变成一张凭空出现、指不到东西的「依据」。
+    判据是 `type == "citation"`。
+
+    ⚠ **对照组的形状要挑过**（第一版用例是空闸门，实测教训）：注解里必须**同时**
+    带齐 `citation_id` / `source` / `reference` 三个必填键——否则 `_citation_part` 的
+    必填键检查会先把它丢掉，判别键那条分支根本没被考到，用例于是恒绿。
+
+    判别性：把读侧的 `entry.get("type") != _CITATION_ANNOTATION_TYPE` 那行删掉
+    ⇒ 本用例红（会把 url_citation 也解析成引用；已实测：变异 M3 红）。
+    """
+    # 别家的注解，但**形状上**足以骗过必填键检查（三个必填键齐全）。
+    foreign = {
+        "type": "url_citation",
+        "citation_id": "foreign-cite",
+        "source": "knowledge",
+        "reference": "knowledge:foreign",
+    }
+    items = [
+        _stored(1, _user("问")),
+        _stored(2, _annotated_assistant(annotations=[foreign, _citation_annotation()])),
+    ]
+
+    citations = [part for part in build_messages(items)[1]["parts"] if part["type"] == "citation"]
+
+    assert len(citations) == 1, "只有判别键为 citation 的注解才算引用"
+    assert citations[0]["citation"]["citation_id"] == _CITATION["citation_id"]
+
+
+def test_a_message_without_annotations_produces_no_citation() -> None:
+    """对照（反空断言）：没有注解的正文**不得**产出引用 part。
+
+    判别性：把 `citation_parts` 改成「无论如何都返回一条」⇒ 本用例红。
+    """
+    items = [
+        _stored(1, _user("问")),
+        _stored(2, _assistant("今天天气不错。")),
+    ]
+
+    types = [part["type"] for part in build_messages(items)[1]["parts"]]
+
+    assert types == ["text"], "没有注解就没有依据"
+
+
+def test_citation_parts_rejects_bad_input() -> None:
+    """**反空断言**：注解解析的每一条判据都各有一个「喂坏输入 ⇒ 不产出」的对照。
+
+    任务书 §六-6：完整性断言若是恒真的空闸门就毫无价值。这里逐条喂坏输入，
+    断言它返回 `[]` 而不是造一条**半截引用**（缺 `reference` 的引用在界面上是一张
+    指不到东西的条目，且缺得静默——本模块明令「重建不了就不产出」）。
+    """
+    good = _annotated_assistant(annotations=[_citation_annotation()])
+
+    cases: dict[str, dict] = {
+        # —— 条目层：不是助手消息、或 content 不是分片数组
+        "content 是字符串": {"type": "message", "role": "assistant", "content": "正文"},
+        "content 不是数组": {"type": "message", "role": "assistant", "content": {"a": 1}},
+        "content 里有非映射元素": {"type": "message", "role": "assistant", "content": ["x", _citation_annotation()]},
+        "使用者消息（不该有注解）": {"type": "message", "role": "user", "content": [_citation_annotation()]},
+        "没有 content 键": {"type": "message", "role": "assistant"},
+        # —— 分片层：只有正文分片才带注解
+        "注解挂在非文本分片上": {
+            "type": "message",
+            "role": "assistant",
+            "content": [{"type": "reasoning", "annotations": [_citation_annotation()]}],
+        },
+        "annotations 不是数组": _annotated_assistant(
+            annotations=None, extra_parts=[{"type": "output_text", "text": "x", "annotations": {"a": 1}}]
+        ),
+        "annotations 是字符串": _annotated_assistant(
+            annotations=None, extra_parts=[{"type": "output_text", "text": "x", "annotations": "x"}]
+        ),
+        # —— 注解数组内部
+        "条目不是对象": _annotated_assistant(annotations=["x"]),
+        "条目是数组": _annotated_assistant(annotations=[[1]]),
+        "缺判别键（type）": _annotated_assistant(annotations=[_CITATION]),
+        "判别键是别家的": _annotated_assistant(annotations=[{"type": "url_citation", **_CITATION}]),
+        # —— 必填键三缺一 / 值非法
+        "缺 citation_id": _annotated_assistant(
+            annotations=[{k: v for k, v in _citation_annotation().items() if k != "citation_id"}]
+        ),
+        "缺 source": _annotated_assistant(
+            annotations=[{k: v for k, v in _citation_annotation().items() if k != "source"}]
+        ),
+        "缺 reference": _annotated_assistant(
+            annotations=[{k: v for k, v in _citation_annotation().items() if k != "reference"}]
+        ),
+        "reference 是空串": _annotated_assistant(annotations=[_citation_annotation(reference="")]),
+        "citation_id 不是字符串": _annotated_assistant(annotations=[_citation_annotation(citation_id=7)]),
+        "source 是 null": _annotated_assistant(annotations=[_citation_annotation(source=None)]),
+    }
+
+    # 对照组：好输入必须**不**返回空——否则「一切都返回空」也能全绿。
+    assert session_items.citation_parts(good) == [_CITATION]
+
+    for label, item in cases.items():
+        assert session_items.citation_parts(item) == [], f"{label} 必须重建不出引用"
+
+
+def test_citation_parts_tolerates_missing_optional_fields() -> None:
+    """可选字段缺失时**补空值而不是丢弃**（前端类型要求键存在）。
+
+    `run_id` / `recorded_at` 缺失只影响展示，而 `summary` 本来就允许为空
+    （`CitationPart.tsx` 对 `null` 有分支）。若这里选择「缺可选键就丢整条」，
+    一条本来能显示来源与回指的引用会静默消失——比少一个展示字段糟得多。
+    """
+    minimal = {"type": "citation", "citation_id": "abc", "source": "knowledge", "reference": "knowledge:x"}
+    parts = session_items.citation_parts(_annotated_assistant(annotations=[minimal]))
+
+    assert len(parts) == 1
+    assert parts[0]["citation_id"] == "abc"
+    assert parts[0]["run_id"] == ""
+    assert parts[0]["recorded_at"] == ""
+    assert parts[0]["summary"] is None
+
+
+def test_citation_parts_caps_the_payload_length() -> None:
+    """注解条数有上界（外部伪造的超长注解不许放大水合成本）。
+
+    ⚠ **如实说明这条判据在 P1-1 修复后的定位**：现在**正常路径上读侧裁不到东西**——
+    写侧已按同一个上界先裁（见 `test_write_side_enforces_the_bound_...`）。
+    因此本用例考的是**外部写入**（伪造/迁移来的条目）那一路：它必须被兜住，
+    且**裁到时留 warning**（静默截断正是上一版的缺陷形态）。
+
+    判别性：去掉 `raw[:session_items._CITATION_ANNOTATION_MAX]` 的切片 ⇒ 本用例红。
+    """
+    limit = session_items._CITATION_ANNOTATION_MAX
+    entries = [_citation_annotation(citation_id=f"cite-{index:04d}") for index in range(limit + 5)]
+
+    parts = session_items.citation_parts(_annotated_assistant(annotations=entries))
+
+    assert len(parts) == limit
+    # 非 0 正例对照：上界之下必须全取（否则截断长度本身就成了恒真断言）。
+    assert len(session_items.citation_parts(_annotated_assistant(annotations=entries[:3]))) == 3
+
+
+def test_reader_truncation_is_not_silent(caplog: pytest.LogCaptureFixture) -> None:
+    """★ 读侧真裁到东西时**必须留 warning**（静默截断是 P1-1 的缺陷形态）。
+
+    只看 `len(parts) == limit` 分不出「裁了但静默」与「裁了且记了」——
+    而这正是上一版被打回的那一点。本用例把「不静默」本身钉住。
+
+    判别性：删掉 `citation_parts` 里那条 `logger.warning` ⇒ 本用例红。
+    """
+    limit = session_items._CITATION_ANNOTATION_MAX
+    entries = [_citation_annotation(citation_id=f"cite-{index:04d}") for index in range(limit + 1)]
+
+    with caplog.at_level(logging.WARNING, logger=session_items.__name__):
+        session_items.citation_parts(_annotated_assistant(annotations=entries))
+
+    assert any("超过读侧上界" in record.getMessage() for record in caplog.records), (
+        f"读侧截断必须留 warning；实际日志 = {[record.getMessage() for record in caplog.records]}"
+    )
+
+
+def test_write_side_truncation_is_not_silent(caplog: pytest.LogCaptureFixture) -> None:
+    """★ 写侧真裁到东西时**必须留 warning**（同一个理由，另一侧）。
+
+    判别性：删掉 `session_annotations._annotate` 里那条超界 `logger.warning` ⇒ 本用例红。
+    """
+    import asyncio
+    from datetime import UTC, datetime
+
+    from agents.memory.session_settings import SessionSettings
+
+    from campfire.agent.context import CitationRecorder
+    from campfire.agent.runtime import session_annotations as write_side
+
+    class _Inner:
+        def __init__(self) -> None:
+            self.session_id = "session-warn"
+            # 显式标注：SDK 的 `Session` 协议把该属性声明成 `SessionSettings | None`，
+            # 不给注解时推断出的 `None` 与协议不兼容。
+            self.session_settings: SessionSettings | None = None
+
+        async def get_items(self, limit: int | None = None) -> list:
+            return []
+
+        async def add_items(self, items: list) -> None:
+            return None
+
+        async def pop_item(self) -> None:
+            return None
+
+        async def clear_session(self) -> None:
+            return None
+
+    class _Index:
+        async def add(self, record: CitationRecord) -> None:
+            return None
+
+        async def list_for_run(self, run_id: str) -> Sequence[CitationRecord]:
+            return []
+
+    async def _scenario() -> None:
+        recorder = CitationRecorder(_Index(), run_id="run-warn", clock=lambda: datetime(2026, 10, 7, tzinfo=UTC))
+        session = write_side.CitationAnnotatingSession(_Inner(), recorder)
+        for number in range(write_side.CITATION_ANNOTATION_MAX + 1):
+            await recorder.record(source="knowledge", reference=f"knowledge:x-{number:04d}")
+        await session.add_items(cast(list[Any], [_annotated_assistant("正文")]))
+
+    with caplog.at_level(logging.WARNING, logger=write_side.__name__):
+        asyncio.run(_scenario())
+
+    assert any("超出单分片上界" in record.getMessage() for record in caplog.records), (
+        f"写侧截断必须留 warning；实际日志 = {[record.getMessage() for record in caplog.records]}"
+    )
+
+
+def test_citation_does_not_come_from_the_tool_result_text_anymore() -> None:
+    """★ **载体回归闸门**（T38）：工具结果文本里的 `citations` 键**不再是**引用真源。
+
+    这是本包换载体的**判别性**用例：即使一段工具结果里恰好带着形状完全合法的
+    `citations` 键，水合也**不得**从它产出引用——载荷只认助手正文分片的注解。
+    若哪天有人把旧读路径加回来（它会让载荷进模型输入，正是本包要消除的），
+    本用例会红。
+
+    判别性：把 `citation_parts` 改回「解析工具结果文本的 JSON」⇒ 本用例红。
+    """
+    call_id = "call-legacy"
+    legacy = json.dumps(
+        {"results": [{"item_id": "x"}], "count": 1, "citations": [_CITATION]},
+        ensure_ascii=False,
+    )
+    items = [
+        _stored(1, _user("问")),
+        _stored(2, _search_call(call_id)),
+        _stored(3, {"type": "function_call_output", "call_id": call_id, "output": legacy}),
+    ]
+
+    types = [part["type"] for part in build_messages(items)[1]["parts"]]
+
+    assert types == ["tool_call"], "工具结果文本里的 citations 键不得再产出引用 part"
+
+
+def test_citation_id_is_stable_across_two_hydrations() -> None:
+    """★ 同一行数据两次水合必须逐字一致（稳定性）。
+
+    与行动卡同法：稳定性来自「同样的输入、纯函数」，而不是来自派生规则恰好不撞车。
+    本包的载荷是**原样读回**的，因此这里同时钉住「没有被二次加工」。
+    """
+    first = next(p for p in build_messages(_citation_turn_items())[1]["parts"] if p["type"] == "citation")
+    second = next(p for p in build_messages(_citation_turn_items())[1]["parts"] if p["type"] == "citation")
+
+    assert first == second
+    assert first["citation"]["citation_id"] == _CITATION["citation_id"]
+    # 回指也是原样读回的（水合不做任何"补全库别"之类的加工）。
+    assert first["citation"]["reference"] == _CITATION["reference"]
+
+
+def test_citation_annotation_constants_agree_across_the_two_parsers() -> None:
+    """★ 判据的判据：写侧与读侧解析同一份注解格式，键名与**上界**必须逐字一致。
+
+    `modules/*` 不得 import `agent/*`（项目结构设计第 7 节），而读侧刻意不 import
+    `agent/runtime/session_annotations.py`（本模块只依赖已读出的条目形状，与它对
+    SDK 持久化格式的其它解析同一取向）⇒ 相等关系只能由本用例守。这与既有那条
+    `test_text_part_types_agree_across_the_two_parsers` 是同一条纪律。
+
+    ★★ **上一版这条用例守错了量**（复查者判定，我采纳并修）：
+    它的 docstring 声称守「**写侧**上界 == **读侧**上界」，实际只写
+    `assert 读侧常量 == 20` —— 一个**魔数比对**。写侧当时**根本没有上界常量**，
+    因此那个「相等关系」从未被检查，而它才是会出事的量：
+    读侧硬截断 + 写侧无上界 ⇒ 一次运行累计超过读侧上界时读侧**静默丢引用**
+    （复查者实测端到端：写 45 → 读 20，丢 25 条、零日志）。
+    ⇒ 现在两侧各有一个**具名常量**，本用例**真的比对这两个常量**。
+
+    判别性：
+    - 改写侧的 `CITATION_ANNOTATION_TYPE`（例如 `cite`）而不改读侧 ⇒ 红；
+    - 改**任一侧**的上界常量 ⇒ 红（这正是上一版守不住的那条）；
+    - 上界**失去写侧执行** ⇒ `test_write_side_enforces_the_bound_...` 红。
+    """
+    from campfire.agent.runtime.session_annotations import (
+        ANNOTATION_REFERENCE_KEY,
+        CITATION_ANNOTATION_MAX,
+        CITATION_ANNOTATION_TYPE,
+    )
+
+    assert session_items._CITATION_ANNOTATION_TYPE == CITATION_ANNOTATION_TYPE
+    assert session_items.CITATION_REFERENCE_KEY == ANNOTATION_REFERENCE_KEY
+    # ★ 真量：写侧上界 == 读侧上界。两侧都是具名常量，改任一侧都会红。
+    assert session_items._CITATION_ANNOTATION_MAX == CITATION_ANNOTATION_MAX, (
+        "写侧与读侧的注解上界必须相等，否则「写进去的读不回来」（写侧更大）或「读得比写得多」（读侧更大）"
+    )
+    # 注解里的 `type` 与线格式的 part 类型同名（三处指同一批数据）。
+    assert CITATION_ANNOTATION_TYPE == PART_TYPE_CITATION
+
+
+def test_write_side_enforces_the_bound_so_the_reader_never_truncates() -> None:
+    """★ P1-1 的修复判据：**写侧先裁**，因此正常路径上读侧**裁不到任何东西**。
+
+    这是上一版的真实缺陷：读侧有上界、写侧没有 ⇒ 写进去的读不回来（静默丢）。
+    修法是让**写侧执行同一个上界**——写进去的每一条都读得回来。
+
+    判据两条一起看（缺任一条都可能只是「把数字改大了」）：
+
+    1. 写侧真的按上界裁剪（挂上的条数 <= 上界）；
+    2. 把写侧产出的条目交给**真实读侧**，读回的条数 == 写侧实际挂上的条数
+       ⇒ 读侧**没有任何截断**。
+
+    判别性：把写侧的裁剪去掉（`attach = pending`）⇒ 写侧挂 > 上界条、
+    读侧读回 <= 上界 ⇒ 第 2 条断言红（已实测：变异 M6）。
+    """
+    import asyncio
+    from datetime import UTC, datetime
+
+    from agents.memory.session_settings import SessionSettings
+
+    from campfire.agent.context import CitationRecorder
+    from campfire.agent.runtime import session_annotations as write_side
+
+    class _Inner:
+        """内存会话（满足 `Session` 协议的四个方法）。"""
+
+        def __init__(self) -> None:
+            self.session_id = "session-cap"
+            self.session_settings: SessionSettings | None = None
+            self.written: list[Any] = []
+
+        async def get_items(self, limit: int | None = None) -> list[Any]:
+            return list(self.written)
+
+        async def add_items(self, items: list[Any]) -> None:
+            self.written.extend(items)
+
+        async def pop_item(self) -> Any:
+            return None
+
+        async def clear_session(self) -> None:
+            self.written.clear()
+
+    class _Index:
+        """内存引用索引。"""
+
+        def __init__(self) -> None:
+            self.rows: list[CitationRecord] = []
+
+        async def add(self, record: CitationRecord) -> None:
+            self.rows.append(record)
+
+        async def list_for_run(self, run_id: str) -> Sequence[CitationRecord]:
+            return list(self.rows)
+
+    # 刻意造「远超上界」的条数：这正是上一版会静默丢引用的场景。
+    total = write_side.CITATION_ANNOTATION_MAX + 37
+
+    async def _scenario() -> _Inner:
+        index = _Index()
+        recorder = CitationRecorder(index, run_id="run-cap", clock=lambda: datetime(2026, 10, 7, 12, 0, tzinfo=UTC))
+        inner = _Inner()
+        session = write_side.CitationAnnotatingSession(inner, recorder)
+        for number in range(total):
+            await recorder.record(source="knowledge", reference=f"knowledge:item-{number:04d}")
+        await session.add_items(cast(list[Any], [_user("问"), _annotated_assistant("正文")]))
+        return inner
+
+    inner = asyncio.run(_scenario())
+    written = [item for item in inner.written if isinstance(item, dict) and item.get("role") == "assistant"]
+    assert written, "助手消息必须落进会话"
+
+    chunk = written[0]["content"][0]
+    attached = chunk.get("annotations") or []
+    # 判据 1：写侧真的裁了（不会把 237 条全挂上）。
+    assert len(attached) <= write_side.CITATION_ANNOTATION_MAX, "写侧必须执行上界"
+    assert len(attached) > 0, "本用例必须至少挂上一些引用，否则是空跑"
+
+    # 判据 2：真实读侧读回的条数 == 写侧挂上的条数（读侧裁不到任何东西）。
+    read_back = session_items.citation_parts(written[0])
+    assert len(read_back) == len(attached), (
+        f"读侧不得截断写侧写进去的注解：写侧挂 {len(attached)} 条，读侧只读回 {len(read_back)} 条"
+        "（这正是 P1-1 的缺陷形态）"
+    )
+    assert read_back[0]["reference"] == "knowledge:item-0000"
+    assert read_back[-1]["reference"] == f"knowledge:item-{len(read_back) - 1:04d}"
+
+
+def test_reader_deduplicates_repeated_citation_ids() -> None:
+    """★ P2-2 的修复判据：读侧**真的**按 `citation_id` 去重（含跨分片）。
+
+    上一版的报告与注释声称「读侧仍按 `citation_id` 就地跳过重复作为纵深防御」，
+    而**代码里并没有**（复查者实测：同 id 两条返回两条）。文档与实现不符已修；
+    本用例把**现在实有的行为**钉住。
+
+    判别性：删掉读侧的 `seen` 判据 ⇒ 本用例红。
+    """
+    duplicate = [_citation_annotation(), _citation_annotation(citation_id="dup-2"), _citation_annotation()]
+    parts = session_items.citation_parts(_annotated_assistant(annotations=duplicate))
+
+    assert [part["citation_id"] for part in parts] == [_CITATION["citation_id"], "dup-2"], (
+        "同一个 citation_id 重复出现时必须只保留首次"
+    )
+
+    # 跨分片也要去重（同一条引用被挂在两个分片上）。
+    first = {"type": "output_text", "text": "第一段", "annotations": [_citation_annotation()]}
+    second = {"type": "output_text", "text": "第二段", "annotations": [_citation_annotation()]}
+    cross = {"type": "message", "role": "assistant", "content": [first, second]}
+
+    assert len(session_items.citation_parts(cross)) == 1, "跨分片的重复也必须去掉"
+
+    # 正例对照：不同 id 的不得被误删（否则「全去重成一个」也能全绿）。
+    distinct = [_citation_annotation(), _citation_annotation(citation_id="other")]
+    assert len(session_items.citation_parts(_annotated_assistant(annotations=distinct))) == 2
+
+
+def test_citation_annotation_matches_what_the_session_wrapper_actually_writes() -> None:
+    """★ 端到端一致性：**真实会话包装**写出的注解，必须能被水合读回。
+
+    这是本包最重要的一条跨层判据：写侧（`agent/runtime/session_annotations.py`）
+    与读侧（`session_items.py`）各自独立，因此只比对常量还不够——键名一致但值的形状
+    不同（例如 `recorded_at` 写成 `datetime`）时，两处常量相等而载荷读不出来。
+
+    本用例跑**真实的 `CitationAnnotatingSession`**（产品代码，含 `CitationRecorder`
+    真实发凭据），把它的输出当会话条目喂给真实 `build_messages`
+    ⇒ 整条链只有一处假：引用索引（内存替身）。
+
+    判别性：把写侧的 `recorded_at` 改成 `datetime`（不转 ISO 字符串）⇒ 注解编不出
+    JSON、本用例红；把读侧的判别键改成 `citation` 以外的值 ⇒ 本用例红。
+    """
+    import asyncio
+    from datetime import UTC, datetime
+
+    from agents.memory.session_settings import SessionSettings
+
+    from campfire.agent.context import CitationRecorder
+    from campfire.agent.runtime.session_annotations import CitationAnnotatingSession
+
+    class _Inner:
+        """内存会话：只记下被写入的条目（满足 `Session` 协议的四个方法）。"""
+
+        def __init__(self) -> None:
+            self.session_id = "session-1"
+            self.session_settings: SessionSettings | None = None
+            self.written: list[Any] = []
+
+        async def get_items(self, limit: int | None = None) -> list[Any]:
+            return list(self.written)
+
+        async def add_items(self, items: list[Any]) -> None:
+            self.written.extend(items)
+
+        async def pop_item(self) -> Any:
+            return None
+
+        async def clear_session(self) -> None:
+            self.written.clear()
+
+    class _Index:
+        """内存引用索引：记录写入，供断言"凭据与索引不脱钩"。"""
+
+        def __init__(self) -> None:
+            self.rows: list[CitationRecord] = []
+
+        async def add(self, record: CitationRecord) -> None:
+            self.rows.append(record)
+
+        async def list_for_run(self, run_id: str) -> Sequence[CitationRecord]:
+            return [row for row in self.rows if row.run_id == run_id]
+
+    async def _scenario() -> tuple[_Index, list[dict]]:
+        index = _Index()
+        recorder = CitationRecorder(
+            index,
+            run_id="run-1",
+            clock=lambda: datetime(2026, 10, 7, 12, 0, tzinfo=UTC),
+        )
+        inner = _Inner()
+        session = CitationAnnotatingSession(inner, recorder)
+        # ① 先发凭据（工具执行期），② 再落库助手正文（回合结束）——真实时序就是这个顺序。
+        await recorder.record(
+            source="knowledge",
+            reference="knowledge:11111111-1111-4111-8111-111111111111",
+            summary="视觉支持策略",
+        )
+        await session.add_items(cast(list[Any], [_user("问"), _assistant("建议尽早评估。")]))
+        return index, inner.written
+
+    index, written = asyncio.run(_scenario())
+
+    # ① 第 4 节的不变量：凭据有对应索引行。
+    assert len(index.rows) == 1
+
+    # ② 写出来的条目里，正文分片上挂着一个判别键为 citation 的注解。
+    chunk = written[1]["content"][0]
+    assert chunk["type"] == "output_text"
+    annotations = chunk["annotations"]
+    assert len(annotations) == 1
+    assert annotations[0]["type"] == "citation"
+    assert annotations[0]["recorded_at"] == "2026-10-07T12:00:00+00:00"
+
+    # ③ ★ 真实水合能把这份真实产出读回来，且六个字段与事件侧凭据逐字一致。
+    parts = build_messages(
+        [_stored(1, _user("问")), _stored(2, written[1])],
+    )[1]["parts"]
+    citations = [part for part in parts if part["type"] == "citation"]
+
+    assert len(citations) == 1, "真实包装写出的注解必须能被真实水合读回"
+    assert citations[0]["citation"]["reference"] == index.rows[0].reference
+    assert citations[0]["citation"]["summary"] == "视觉支持策略"
+    # 事件侧（`CitationEvent.citation`）与注解里的载荷逐字相同（不是两份形状）。
+    assert citations[0]["citation"] == session_items.citation_parts(written[1])[0]
+
+
+def test_citation_part_shape_stays_wire_exact() -> None:
+    """`CitationPart` 的**静态**形状与前端 `CitationRecord` 的字段集合逐字一致。
+
+    前端 `shared/types/sse.ts` 的 `CitationRecord` 是六字段的接口；`apps/web` 的
+    `tsc` 会按它收窄。若后端多产出一个字段，前端不会报错（结构化类型是宽进的），
+    但**契约第 7 节的「同形」就被悄悄破坏了**——因此这里用 `TypedDict` 的注解把
+    水合侧的形状本身断死（与 `test_question_event_part_shape_stays_wire_exact` 同法）。
+
+    判别性：给 `CitationRecordPart` 加一个字段（例如 `item_id`）⇒ 本用例红。
+    """
+    # 两份注解都必须经 `get_type_hints` 求值：本文件与 `session_items.py` 都开了
+    # `from __future__ import annotations`，直接读 `__annotations__` 拿到的是
+    # `ForwardRef`（实测：`{'type': ForwardRef('CitationType', …)}`），
+    # 拿它跟字面量比会恒不相等。
+    record_hints = get_type_hints(session_items.CitationRecordPart)
+    part_hints = get_type_hints(session_items.CitationPart)
+
+    assert set(record_hints) == {"citation_id", "run_id", "source", "reference", "recorded_at", "summary"}
+    assert set(part_hints) == {"type", "citation"}
+    # `type` 是判别字段：取值必须恰好是线格式那个字符串。
+    assert get_args(part_hints["type"]) == ("citation",)
+    assert part_hints["citation"] is session_items.CitationRecordPart
+    # 与联合里那个成员的注解同源（不是另一份长得像的类型）。
+    union_member = next(
+        member
+        for member in get_args(session_items.MessagePart)
+        if get_type_hints(member).get("type") == part_hints["type"]
+    )
+    assert union_member is session_items.CitationPart

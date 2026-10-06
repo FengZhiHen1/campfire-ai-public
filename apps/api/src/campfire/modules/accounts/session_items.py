@@ -14,7 +14,9 @@ docs/技术设计/technical-details/通用基座.md 第 2 节；
 
 两处常量的漂移风险由测试机械守住：本模块的 `_TEXT_PART_TYPES` 与
 `agent/context/window.py` 的同名集合都必须等于同一个字面量
-（`test_accounts_session_items.py` 的 `test_text_part_types_agree_across_the_two_parsers`）。
+（`test_accounts_session_items.py` 的 `test_text_part_types_agree_across_the_two_parsers`）；
+引用注解的判别键与形状同理，对 `agent/runtime/session_annotations.py` 的写侧
+（`test_citation_annotation_constants_agree_across_the_two_parsers`）。
 两侧不能合并成一份：`modules/*` 不得 import `agent/*`（同上），故相等关系只能由用例守。
 """
 
@@ -275,6 +277,41 @@ _ANNOTATION_KIND_SEPARATOR = ":"
 ActionCardType: TypeAlias = Literal["action_card"]
 PART_TYPE_ACTION_CARD: Final[ActionCardType] = "action_card"
 
+#: 引用 part 类型（契约第 7 节的 `citation` 行）。同一条 `Final[...]` 纪律，理由同上。
+CitationType: TypeAlias = Literal["citation"]
+PART_TYPE_CITATION: Final[CitationType] = "citation"
+
+#: 引用载荷所在的键：助手正文分片（`output_text`）的 `annotations` 数组。
+#: 与 `agent/runtime/session_annotations.py` 的写侧同义——载荷是**消息 content 的一部分**
+#: （设计《咨询对话界面》第 5 节），因此它住的正是 `content` 里那个分片自己的注解字段，
+#: 而不是另造的条目或外挂索引。
+_ANNOTATIONS_KEY = "annotations"
+
+#: 引用注解的判别键取值。`annotations` 数组是**共用**的：真实的辅助注解
+#: （例如 `url_citation`）也住在里面，因此必须按判别键取值，不能把整个数组当引用。
+#: 与 `agent/runtime/session_annotations.py` 的 `CITATION_ANNOTATION_TYPE` 同值，
+#: 两处相等由用例直接比对常量守住（同 `_TEXT_PART_TYPES` 那条纪律）。
+_CITATION_ANNOTATION_TYPE = "citation"
+
+#: 一次最多读回多少条引用。**必须与写侧
+#: （`agent/runtime/session_annotations.py` 的 `CITATION_ANNOTATION_MAX`）相等**，
+#: 且那个值由**写侧主动执行**（写侧先裁）——
+#: 这是本模块上一版的一处真实缺陷的修法：当时读侧有 20 条硬截断、写侧**无上界**，
+#: 于是「一次运行多次检索、累计 > 20 条」时读侧会**静默丢掉**第 21 条起
+#: （复查者实测端到端：写 45 → 水合 20，丢 25 条、零日志）。
+#:
+#: 读侧保留这个上界是为了兜住**外部写入**（伪造的条目、迁移来的旧数据）——
+#: 正常路径上写侧已经裁过，因此这里**不该**再裁到任何东西；
+#: 真裁到了就说明写侧的上界失效，故这里**必须留日志**（静默截断正是本缺陷的形态）。
+_CITATION_ANNOTATION_MAX = 200
+
+#: 引用载荷里承载「指向的业务标识」的键。与
+#: `agent/runtime/session_annotations.py` 的 `ANNOTATION_REFERENCE_KEY` 逐字相同——
+#: 两处相等由用例直接比对常量守住（`modules/*` 不得 import `agent/*`，故为字面量；
+#: 此处刻意不 import 是为了让本模块的解析只依赖已读出的条目形状，
+#: 与它对 SDK 持久化格式的其它解析同一取向）。
+CITATION_REFERENCE_KEY = "reference"
+
 #: 卡片的标题。与 `tools/emergency_card.py` 的 `CARD_TITLE` 逐字相同；理由见上
 #: （`modules/*` 不得 import `tools/*`）。它**不在参数里**，因此水合只能取这份
 #: 字面量——两处相等由用例直接比对常量守住。
@@ -492,10 +529,73 @@ class ActionCardPart(TypedDict):
     annotations: list[ActionCardAnnotationPart]
 
 
-MessagePart = TextPart | ReasoningPart | ToolCallPart | QuestionRecordPart | ActionCardPart
+class CitationRecordPart(TypedDict):
+    """引用载荷（**与事件侧 `CitationEvent.citation` 逐字同形**）。
+
+    六个字段与基座 `agent/context/citations.py` 的 `CitationRecord`、与前端
+    `apps/web/src/shared/types/sse.ts` 的 `CitationRecord` 都一致。
+    `recorded_at` 是 ISO 8601 字符串（它在会话里就是字符串——
+    见 `agent/runtime/session_annotations.py` 的 `citation_annotation`）。
+
+    `summary` 可为 `None`（`TypedDict` 的 `total=True` 只要求键存在，不要求值非空）：
+    发凭据时若条目没有标题，摘要就是 `None`，前端按
+    `CitationPart.tsx:74` 的 `citation.summary === null ? null : …` 处置。
+    """
+
+    citation_id: str
+    run_id: str
+    source: str
+    reference: str
+    recorded_at: str
+    summary: str | None
+
+
+class CitationPart(TypedDict):
+    """引用 part（契约第 7 节的 `citation` 行 + 通用基座第 4 节）。
+
+    ★ 与**事件侧**的 `CitationEvent.citation` 载荷**逐字同形**——与 `action_card`
+    同一种做法（`question`/`question-record` 那一对是相反的例子，理由见
+    `ActionCardPart` 的说明）。载荷就是 `CitationRecord` 的六个字段：
+    `citation_id` / `run_id` / `source` / `reference` / `recorded_at` / `summary`，
+    与前端 `apps/web/src/shared/types/sse.ts` 的 `CitationRecord` 逐字段一致——
+    因此刷新前后同一批引用是同一个形状，前端不需要两条分支。
+
+    **真源在哪**（这是本包的核心结论，别按注释猜）：引用载荷由**产出它的那次运行**带进会话
+    ——它是助手消息正文分片（`output_text`）自己的 `annotations`（写侧形状归
+    `agent/runtime/session_annotations.py`），因此本 part 的**水合真源就是会话条目本身**，
+    与设计《咨询对话界面》第 5 节「citation part 与所属消息同生命周期……因为它是消息
+    content 的一部分，**不是外部索引**」一致。
+
+    ⚠ **`campfire_citation` 表仍然保留**、仍按《通用基座》第 4 节的不变量写入
+    （每条可引用依据都有一行索引记录）。该表与这里的 part **各司其职**：表是
+    「回指与审计」的索引，会话条目是「刷新后重建」的真源；两者不是同一份数据的两个副本
+    ——表里有 `recorded_at` 与 `source`（审计需要），注解里有重建界面所需的同一批字段。
+    **判据是消融**：删掉表里该 run 的行，刷新后 part 必须仍在（那时读的是注解）。
+
+    **为什么载荷不再多带 `item_id` / `library` / `status` 等字段**：前端
+    `CitationPart.tsx` 的 `citationDeepLink` 对 `item_id` 做**前向兼容读取**
+    （存在才给 deep-link，缺失返回 `null` 且**不猜目标**）。契约 `HTTP与SSE契约.md:204`
+    把 citation 的 data 指向《资料与案例检索》第 3 节的八个字段，而实现（含事件侧
+    `CitationEvent`）用的是这六个——**这处契约与实现的不一致，本包【未处理】**
+    （改事件侧载荷要同时改前端类型与 `CitationPart.tsx`，会扩大范围）。
+
+    ⚠ **如实说明**：上一版这里写着「**已在交付报告登记**」，而那句话是**悬空的**——
+    交付报告里并没有这一条（复查者 grep `八个`/`item_id`/`未处理` **全部 0 命中**）。
+    本包**没有**把它登记进任何权威清单（`docs/TODO.md` 不在本包的授权改动范围内）。
+    ⇒ 因此这里改成**如实的当场陈述**：它是一处**已知未决项**，位置就在本注释；
+    谁要处理它，依据是这句话本身，而不是一个指向"某处登记"的悬空指针。
+    这里取与事件侧、与前端类型**都一致**的六个字段，好处是刷新前后的载荷同一个形状。
+    """
+
+    type: CitationType
+    citation: CitationRecordPart
+
+
+MessagePart = TextPart | ReasoningPart | ToolCallPart | QuestionRecordPart | ActionCardPart | CitationPart
 """水合能重建的 part 类型（**`HydratedMessage.parts` 的取值域**）。
 
-五种 part 各有各的真源，**都能从会话真源重建**（2026-10-06 修正，见下）：
+六种 part 各有各的真源，**都能从会话真源重建**（2026-10-06 修正，2026-10-07 随 T36
+加入第六种 `citation`，见下）：
 
 - `text` / `reasoning` / `tool_call`：直接来自 SDK 落库的条目（消息 content 与
   reasoning/function_call 条目）；
@@ -522,6 +622,18 @@ MessagePart = TextPart | ReasoningPart | ToolCallPart | QuestionRecordPart | Act
   3. **`annotations` 的形状在两侧不同**（参数 `{line_ref, source, confidence}` →
      线格式 `{target, kind}`），水合要做与工具侧 `_encode_annotation_kind` 同一个转换
      —— 只需分隔约定，**不需要**产品侧词表。
+- `citation`：来自**助手消息正文分片自己的 `annotations`**（2026-10-07 随 T36 加入，
+  同日随 T38 改为 ⑤a 载体）。载荷由写侧在 `add_items` **落库之前**挂上
+  （`agent/runtime/session_annotations.py`），因此与其它 part 一样**能从会话真源重建**
+  ——它此前登记在 `NOT_REBUILT_PARTS`（「真源是引用索引、不在会话条目里」），
+  而那句话在本包实现生产者之后**已不再是事实**（这正是本模块 docstring 反复讲的
+  「某能力尚未实现」类断言会过期的那种形状）。
+
+  ★ **为什么换载体**：原先的载体是**工具结果文本**（`function_call_output.output` 里的
+  `citations` 键）。它的锚是天然的（那次调用 1:1），但**载荷会进模型输入**——
+  而依据区是给使用者看的，不是给模型读的。现在挂在正文分片的 `annotations` 上：
+  字面满足第 5 节「是消息 content 的一部分」，且**对模型不可见**
+  （本仓用 Chat Completions 模型，其转换器读 content 时只取 `text`）。
 
 ## 2026-10-06 订正（原文的理由已过期，这是本缺陷的成因）
 
@@ -579,8 +691,14 @@ MessagePart = TextPart | ReasoningPart | ToolCallPart | QuestionRecordPart | Act
   水合既不需要解码器、也不需要词表，它只需要分隔符。** 详细理由见本节上方
   「应急行动卡的重建」与 :func:`_card_annotations`。
 
-`citation` 仍不在本模块：它的真源是引用索引（一个按 `run_id` 组织的端口），
-不在会话条目里——这是结构事实，不是能力缺失。
+~~`citation` 仍不在本模块：它的真源是引用索引（一个按 `run_id` 组织的端口），
+不在会话条目里——这是结构事实，不是能力缺失。~~
+
+**⇒ 已随 T36/T38 关闭（2026-10-07）**：上面这段登记里**有一句前提是错的**——
+「真源是引用索引、不在会话条目里」不是结构事实，而是**当时没有生产者**的后果。
+`citation` 的载荷现在就住在会话条目里（助手正文分片自己的 `annotations`），
+水合从那里重建；引用索引表仍按第 4 节的不变量写入，但它是**回指与审计**的索引，
+不是本 part 的重建来源。**⇒ 判据是消融**：删掉表里该 run 的行，刷新后 part 必须仍在。
 """
 
 #: 能力台账：part 类型 → 重建它的真源与产出工具。
@@ -602,6 +720,12 @@ PART_PROVENANCE: dict[str, str] = {
         f"{EMERGENCY_ACTION_CARD_TOOL_NAME} 调用的参数与成功回执"
         "（`card_id` 取自回执、`title` 取工具侧常量、`kind` 原样搬运）"
     ),
+    PART_TYPE_CITATION: (
+        "助手消息正文分片（`output_text`）的 `annotations` 数组里的引用注解"
+        "（写侧：`agent/runtime/session_annotations.py` 在 `add_items` 落库之前挂上）"
+        "——2026-10-07 T38 落定载体：载荷是**消息 content 的一部分**（设计《咨询对话界面》"
+        "第 5 节），且**对模型不可见**（Chat Completions 转换器读 content 时只取 `text`）"
+    ),
 }
 
 #: 未重建的 part 类型 → 理由。**必须写明理由**，否则「不重建」与「忘了做」无法区分
@@ -610,10 +734,6 @@ PART_PROVENANCE: dict[str, str] = {
 #: 与 `PART_PROVENANCE` 合起来构成一份完整清单：契约第 7 节的七种 part 一个不漏地
 #: 出现在两张表之一。
 NOT_REBUILT_PARTS: dict[str, str] = {
-    "citation": (
-        "真源是引用索引（`agent/context/citations.py` 的 `CitationIndex`，按 run_id 组织），"
-        "不在会话条目里——结构事实，与会话存储的形状无关。"
-    ),
     "question": (
         "它是**流出侧**（事件）的 part 类型，不是水合产物：基座 7.2 节的载荷描述"
         "「刚发出、尚未作答」的提问，而水合要回答的是「回看时这组题有没有被作答」"
@@ -800,6 +920,130 @@ def tool_failure_message(output: str) -> str | None:
         return None
     body = rest[separator + len(_TOOL_ERROR_CODE_END) :]
     return body[: -len(_TOOL_ERROR_CLOSE)]
+
+
+def citation_parts(item: Mapping[str, object]) -> list[CitationRecordPart]:
+    """从**助手消息条目**的正文分片注解里取回引用载荷；没有载荷时返回空列表。
+
+    **真源就是消息 content 本身**（设计《咨询对话界面》第 5 节：「citation 是消息
+    content 的一部分，不是外部索引」）：载荷住在写着正文的那个 `output_text`
+    分片的 `annotations` 数组里，因此读回时把**同一个分片**的两个字段放在一起看
+    （正文与依据同源同条，不会出现「有正文没依据」的错配）。
+
+    **判据是判别键而不是整个数组**：`annotations` 是共用字段，真实的辅助注解
+    （例如 `url_citation`）也住在里面。只认 `type == "citation"` 的那些；
+    把它们整体当引用会让一条正文凭空多出来源不明的「依据」——比少一条严重。
+
+    **同时要求该分片是正文分片**（`type` 在 `_TEXT_PART_TYPES` 里）：`annotations`
+    属于带文本的分片，别的分片即使恰好有同名字段也不是引用载荷的落点。
+
+    **容错方向是「少一条」而不是「抛异常」**：条目不是消息、`content` 不是数组、
+    注解数组里某条不是对象或缺必填键时，都只丢弃对应部分并让历史照常呈现。
+    读路径上「缺一段」比「整个历史加载失败」更接近事实，但必须留下可查的痕迹（warning）。
+
+    ★ **按 `citation_id` 去重**（跨分片，保留首次出现）：写侧用增量式记账保证
+    「每条引用恰好挂一次」，但那只覆盖**本包写出来的**条目；被伪造或迁移来的条目
+    可能把同一个标识放两遍，重复项在界面上就是「依据 N 条」里两张一样的卡。
+    （⚠ 这份去重是**现在实有这个行为**；上一版这里写到过「读侧就地跳过重复」，
+    而当时代码里**并没有**——那是文档与实现不符，已一并修正。）
+
+    ★ **有上界，且裁到时留日志**：`_CITATION_ANNOTATION_MAX` 与写侧同值，
+    正常路径上写侧已按同一个界裁过 ⇒ 这里**不该**裁到东西；
+    真裁到只有两种成因（外部伪造的超长载荷、或写侧上界失效），两者都记 warning。
+    静默截断正是本模块上一版的缺陷形态（实测：写 45 → 读 20，丢 25 条、零日志）。
+
+    **为什么在 `modules/*` 里也实现一份解析**（而不是 import
+    `agent/runtime/session_annotations.py`）：本模块承载「SDK 的持久化格式」这一外部契约的
+    **唯一解析点**（见模块 docstring），而它对 SDK 条目的其它解析（`message_text`、
+    `reasoning_text`、`tool_failure_message`）**都不 import 基座的实现**，
+    只依赖已读出的条目形状。两处的键名常量相等由用例直接比对常量守住
+    （`test_citation_annotation_constants_agree_across_the_two_parsers`）。
+
+    Args:
+        item: 一条会话条目的原文（解析后的映射）。
+
+    Returns:
+        引用载荷列表（每条含六个字段）；无载荷或载荷不合法时为空列表。
+    """
+    if item.get("role") != _ROLE_ASSISTANT:
+        return []
+    content = item.get("content")
+    if not isinstance(content, list):
+        return []
+
+    parts: list[CitationRecordPart] = []
+    # ★ 读侧去重（按 `citation_id`，跨分片）：写侧用增量式记账保证「每条引用恰好挂一次」，
+    # 但那只覆盖**本包写出来的**条目；一条被伪造/迁移来的条目完全可能把同一个
+    # `citation_id` 放两遍。重复项在界面上表现为「依据 N 条」里出现两张一样的卡
+    # ⇒ 这里就地跳过（**不是**它此前文档声称、而实现里没有的那份纵深防御）。
+    seen: set[str] = set()
+    for chunk in content:
+        if not isinstance(chunk, Mapping):
+            continue
+        if chunk.get("type") not in _TEXT_PART_TYPES:
+            continue
+        raw = chunk.get(_ANNOTATIONS_KEY)
+        if not isinstance(raw, list):
+            continue
+        if len(raw) > _CITATION_ANNOTATION_MAX:
+            # ★ **不静默**：正常路径上写侧已按同一个上界裁过，因此这里裁到东西
+            # 只有两种成因——外部伪造的超长载荷，或写侧上界失效。两者都该留下痕迹。
+            logger.warning(
+                "助手正文分片上的注解数（%d）超过读侧上界（%d），超出部分不再读回",
+                len(raw),
+                _CITATION_ANNOTATION_MAX,
+            )
+        for entry in raw[:_CITATION_ANNOTATION_MAX]:
+            if not isinstance(entry, Mapping):
+                logger.warning("引用注解里有不是对象的条目，跳过")
+                continue
+            if entry.get("type") != _CITATION_ANNOTATION_TYPE:
+                # 真实的辅助注解（`url_citation` 等）住在这个数组里，按判别键跳过它们。
+                continue
+            part = _citation_part(entry)
+            if part is None:
+                continue
+            if part["citation_id"] in seen:
+                logger.warning("引用注解里出现重复的 citation_id，跳过后续项：%s", part["citation_id"])
+                continue
+            seen.add(part["citation_id"])
+            parts.append(part)
+    return parts
+
+
+def _citation_part(entry: Mapping[str, object]) -> CitationRecordPart | None:
+    """把一条注解转成 part；缺必填键时返回 `None`（丢弃它）。
+
+    必填三项：`citation_id`（回指键）、`source`（说不清出处就不该呈现为依据）、
+    `reference`（指向的业务标识）。缺任一项的引用在界面上是一张点不动、
+    也说不清从哪来的条目——丢弃它比呈现一个残缺的依据好。
+
+    其余字段缺失时**补成空值而不是丢弃**：`run_id`/`recorded_at` 缺失只影响展示，
+    `summary` 缺失本来就是合法的（`None`）。前端类型要求这些键存在
+    （`sse.ts` 的 `CitationRecord` 六个字段都非可选），因此补 `""` 而不是省略键——
+    省略会让前端拿到 `undefined`，而类型说的是 `string`。
+    """
+    # 三个必填键逐个取出并收窄：写成 `str(value)` 会把 `None` 变成 `"None"`，
+    # 那是一条能显示却指不到东西的依据——比丢弃它更糟。
+    required: dict[str, str] = {}
+    for name in ("citation_id", "source", CITATION_REFERENCE_KEY):
+        value = entry.get(name)
+        if not isinstance(value, str) or not value:
+            logger.warning("引用载荷里的条目缺少必填键 %s，跳过：%s", name, sorted(entry))
+            return None
+        required[name] = value
+
+    run_id = entry.get("run_id")
+    recorded_at = entry.get("recorded_at")
+    summary = entry.get("summary")
+    return CitationRecordPart(
+        citation_id=required["citation_id"],
+        run_id=run_id if isinstance(run_id, str) else "",
+        source=required["source"],
+        reference=required[CITATION_REFERENCE_KEY],
+        recorded_at=recorded_at if isinstance(recorded_at, str) else "",
+        summary=summary if isinstance(summary, str) else None,
+    )
 
 
 def is_injected_message(item: Mapping[str, object]) -> bool:
@@ -1537,12 +1781,20 @@ class _Hydration:
         self.messages.append({"id": str(stored.row_id), "role": _ROLE_USER, "parts": [{"type": "text", "text": text}]})
 
     def add_assistant_text(self, stored: StoredItem) -> None:
-        """收一条助手文本消息（content 是分片数组，可能只有一个部件）。"""
+        """收一条助手文本消息（content 是分片数组，可能只有一个部件）。
+
+        ★ **引用 part 在这里产出**（2026-10-07 T38）：载荷挂在正文分片自己的
+        `annotations` 上（见 `citation_parts`），因此它的重建点就是**读这条正文的那一处**
+        ——正文与依据同源同条，不会出现错配。顺序是先正文、后依据：界面读法是
+        「说了什么 → 依据是什么」，且前端 `history.ts` 本就把依据聚合成消息尾的一块。
+        """
         texts = _content_parts(stored.data)
-        if not texts:
+        citations = citation_parts(stored.data)
+        if not texts and not citations:
             return
         self._start_assistant(stored.row_id)
         self._parts.extend(TextPart(type="text", text=text) for text in texts)
+        self._parts.extend(CitationPart(type=PART_TYPE_CITATION, citation=citation) for citation in citations)
 
     def add_reasoning(self, stored: StoredItem) -> None:
         """收一条思考条目。"""
@@ -1580,9 +1832,14 @@ class _Hydration:
         ★ 两个成功产出在这里**额外**各产出一个 part（`ask_user` → `question-record`，
         2026-10-06 T27；`emit_emergency_action_card` → `action_card`，2026-10-06 T32）。
 
-        为什么落在这一支而不是新增一个条目类型：SDK 会话存储里没有「提问」与「卡片」
-        这两种条目——它们的真源就是这对 `function_call` / `function_call_output`。
+        为什么落在这一支而不是新增一个条目类型：SDK 会话存储里没有「提问」「卡片」
+        这几种条目——它们的真源就是这对 `function_call` / `function_call_output`。
         把它挂在这里，「一次调用」只有一处重建点，且它与那次工具调用天然同属一条助手消息。
+
+        ⚠ **引用（`citation`）不在这里**（2026-10-07 T38 起）：它的载荷挂在**助手正文
+        分片的 `annotations`** 上（设计《咨询对话界面》第 5 节：citation 是消息 content
+        的一部分），因此重建点在 `add_assistant_text`。这里不再从工具结果文本里读载荷——
+        那条路会让载荷落进**模型读得到**的输入，而本载体的收益正是「载荷对模型不可见」。
 
         顺序：先回填 `tool_call`、再追加重建出的 part。事件流里两者是反的
         （`ToolBridge._invoke` 先 sink `QuestionEvent`/`ActionCardEvent` 再 sink
@@ -1609,6 +1866,9 @@ class _Hydration:
             return
         failure = tool_failure_message(output)
         part["ok"] = failure is None
+        # 工具行摘要照旧取**原文**（含信封）：`TOOL_SUMMARY_MAX_CHARS` 是 200，而信封
+        # 附在文本末尾，因此正常长度下它落不进摘要窗口。这里刻意不先切信封——切错了
+        # 会让工具输出凭空少一截，而摘要是给人看的那一行，宁可多带几个字符。
         part["summary"] = (output if failure is None else failure)[:TOOL_SUMMARY_MAX_CHARS]
 
         if not part["ok"]:
@@ -1845,6 +2105,11 @@ __all__ = [
     "ACTION_CARD_TITLE",
     "PART_TYPE_ACTION_CARD",
     "ActionCardType",
+    # 引用重建
+    "CITATION_REFERENCE_KEY",
+    "PART_TYPE_CITATION",
+    "CitationType",
+    "citation_parts",
     # 注入信封
     "INJECTED_MESSAGE_PREFIXES",
     # part 形状
@@ -1853,6 +2118,8 @@ __all__ = [
     "ActionCardPart",
     "ActionCardSectionPart",
     "ActionCardStatePart",
+    "CitationPart",
+    "CitationRecordPart",
     "QuestionItemPart",
     "QuestionOptionPart",
     "QuestionPart",

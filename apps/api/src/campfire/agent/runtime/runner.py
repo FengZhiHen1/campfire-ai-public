@@ -72,6 +72,7 @@ from .events import (
 )
 from .resource_tool import READ_SKILL_RESOURCE_TOOL_NAME
 from .session import SessionFactory
+from .session_annotations import CitationAnnotatingSession
 from .skill_tool import SKILL_TOOL_NAME
 
 logger = logging.getLogger("campfire.agent.runtime")
@@ -355,8 +356,14 @@ class AgentRunner:
         """
         started = time.monotonic()
         run_id = uuid.uuid4().hex
-        session = self._sessions(request.session_id)
+        # ★ 顺序：**先造引用写入端，再包会话**（2026-10-07 T38）。
+        # 包装层要在 `add_items` 那一刻回答「该给这条助手消息挂哪些引用」，
+        # 而它只能从本次运行的写入端读到那份清单（`SessionFactory` 只拿得到
+        # session_id，拿不到 recorder）⇒ recorder 必须先存在。
+        # 会话工厂的签名不变，包装只发生在这一个装配点；包装层改的是**尚未落库**的
+        # 内存条目，落库仍由 SDK 自己完成 ⇒ 「会话只追加」未破。
         recorder = CitationRecorder(self._citations, run_id=run_id)
+        session = CitationAnnotatingSession(self._sessions(request.session_id), recorder)
 
         try:
             history = await session.get_items()
