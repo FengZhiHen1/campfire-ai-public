@@ -204,12 +204,12 @@ POST /api/consult/sessions/{session_id}/onboarding/skip
 | `citation` | [资料与案例检索](../../technical-details/资料与案例检索.md)第 3 节返回契约 |
 | `question` | [通用基座](../../technical-details/通用基座.md)第 7.2 节（**仅在事件流里出现**，见下） |
 | `question-record` | 本文：`{ "batch_id": "…", "items": […], "answered": true \| false \| null }`（**仅在水合响应里出现**） |
-| `action_card` | [通用基座](../../technical-details/通用基座.md)第 7.3 节 |
+| `action_card` | [通用基座](../../technical-details/通用基座.md)第 7.3 节（**事件流与水合响应同形**，见下） |
 
 - `candidate` **不进历史**：它不进消息流（[项目结构设计](../../../项目结构设计.md)第 9 节），仅经 SSE 计数。
 - 引用（`citation`）作为 part 与所属消息同生命周期，重放与滚动都不错位。
 
-### 7.1 `question` 与 `question-record` 为什么是两个 part 类型
+### 7.1 `question` / `question-record` 为什么是两个 part 类型；`action_card` 为什么只有一个
 
 两者的**载荷形状**在 `batch_id` / `items` 上相同（`items` 的元素归基座 7.2 节），
 差别只有一个三态字段 `answered`。分成两个 `type` 而不是给 `question` 加一个字段，理由是
@@ -236,6 +236,22 @@ POST /api/consult/sessions/{session_id}/onboarding/skip
 被保留的尾部因此在历史里存在两份），以及有一条使用者消息读不出文本。
 猜成「可作答」会让使用者**对同一组题作答两次**；猜成「只读」最多少修一点。
 **失败方向选安全的那边**（与第 8 节的失败语义同一取向）。
+
+**`action_card` 为什么不需要第二个 part 类型**（2026-10-06 随 T32 明确）：分与不分的
+判据是「回看侧要不要说一件流出侧**不可能**说的事」。提问要（`answered` 是发出之后才可能
+出现的事实），因此必须分开；行动卡**不要**——回看侧要说的事实与流出侧完全一样
+（同一张卡、同五个字段，形状归基座 7.3 节）：卡片的 `card_id` 由工具在产出时生成
+并随成功回执落库（`{"card_id": …, "state": "emitted"}`），水合**取回那个真值**
+（不派生新值），因此刷新前后是同一个 id，前端比对 `card_id` 判旧卡失效的逻辑在两个
+路径上看到的是同一套值。
+⇒ `action_card` 在**事件流与水合响应里字段逐字同形**，只有一个线格式 part 类型。
+
+⚠ **「同形」是指（`card_id` / `title` / `sections` / `states` / `annotations`）五个字段
+与线格式逐个对上，不是「参数可以原样搬过来」**：落库的 `function_call.arguments`
+是工具的**输入形状**，其中 `annotations` 的元素是 `{line_ref, source, confidence}`，
+而线格式是 `{target, kind}`（`kind = "来源:置信"`）。水合侧要做与产出侧
+`_encode_annotation_kind` 同一个转换（`str(line_ref)` + `f"{source}:{confidence}"`）——
+`target` 是「按七节顺序摊平后的 1 起序号」，因此 `sections` 也按七节规范顺序排列。
 
 ## 8. 失败语义
 
