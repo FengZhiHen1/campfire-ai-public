@@ -1,0 +1,21 @@
+{
+  "external_key": "2026-11-06_1000_fictional-supermarket-meltdown",
+  "title": "虚构样例：超市感官过载情境的现场支持",
+  "source_type": "专家访谈转写",
+  "subject_type": "家长",
+  "interview_at": "2026-11-06T10:00:00+08:00",
+  "consent_scope": "ai_retrieval_and_advice",
+  "consent_recorded_at": null,
+  "evidence_level": "OBSERVATIONAL",
+  "review_status": "owner",
+  "reviewer": null,
+  "authorization": "虚构演示样例，非真实案例：为产品演示视频与功能走查由项目组构造（2026-11-06），不涉及真实当事人，无需同意文本。status 标为 fictional 以与真实案例区分（RQ-KB-02 / AC-06）。",
+  "transcript_ref": null,
+  "files": {
+    "narrative": "L1_fictional-supermarket-meltdown.md",
+    "cards": [
+      "L2_fictional-supermarket-meltdown_01.json"
+    ]
+  },
+  "status": "fictional"
+}
