@@ -16,10 +16,9 @@
 
 import { create } from 'zustand';
 
-import type { QuestionAnswer } from '../../../shared/types/consult';
 import type { QuestionItem, RunEvent } from '../../../shared/types/sse';
 import type { ConsultFailureView } from '../domain/errors';
-import { createDraft, type QuestionBatchDraft } from '../domain/questionBatch';
+import { createDraft, type AnswerSubmission, type QuestionBatchDraft } from '../domain/questionBatch';
 import {
   candidateView,
   runFailureView,
@@ -37,8 +36,8 @@ export interface ConsultRunState {
   skills: SkillSummary[];
   /** 待消费的技能选择；发送被受理后清空（发送即消费）。 */
   pendingSkill: string | null;
-  /** 待发送的整组回答；发送被受理后清空。 */
-  pendingAnswers: QuestionAnswer[] | null;
+  /** 待发送的整组回答（answers 与产出它那一组的 batchId 绑在同一个对象上）；发送被受理后清空。 */
+  pendingSubmission: AnswerSubmission | null;
   /** 本次运行生效的技能集合（run_started.activated_skills：历史推导 ∪ 本轮新增）。 */
   activeSkills: string[];
   /** 待确认候选（不进消息流，只供轻提示与预览面板）。 */
@@ -69,9 +68,9 @@ export interface ConsultRunState {
   /** 读走待用技能选择（不改变状态；发送被受理后由 clearPendingSkill 清）。 */
   peekPendingSkill(): string | null;
   clearPendingSkill(): void;
-  peekPendingAnswers(): QuestionAnswer[] | null;
-  setPendingAnswers(answers: QuestionAnswer[]): void;
-  clearPendingAnswers(): void;
+  peekPendingSubmission(): AnswerSubmission | null;
+  setPendingSubmission(submission: AnswerSubmission): void;
+  clearPendingSubmission(): void;
   setConnection(connection: ConnectionStatus): void;
   /** 写入失败呈现（运行失败、发送失败或连接失败共用一处错误卡）。 */
   setFailure(failure: ConsultFailureView | null): void;
@@ -93,7 +92,7 @@ const INITIAL_DATA = {
   sessionId: null,
   skills: [],
   pendingSkill: null,
-  pendingAnswers: null,
+  pendingSubmission: null,
   activeSkills: [],
   candidates: [],
   questionDrafts: {},
@@ -111,9 +110,9 @@ const INITIAL_DATA = {
   | 'selectSkill'
   | 'peekPendingSkill'
   | 'clearPendingSkill'
-  | 'peekPendingAnswers'
-  | 'setPendingAnswers'
-  | 'clearPendingAnswers'
+  | 'peekPendingSubmission'
+  | 'setPendingSubmission'
+  | 'clearPendingSubmission'
   | 'setConnection'
   | 'setFailure'
   | 'setSlowRun'
@@ -143,9 +142,9 @@ export function createConsultRunStore() {
     selectSkill: (skillId) => set({ pendingSkill: skillId }),
     peekPendingSkill: () => get().pendingSkill,
     clearPendingSkill: () => set({ pendingSkill: null }),
-    peekPendingAnswers: () => get().pendingAnswers,
-    setPendingAnswers: (answers) => set({ pendingAnswers: answers }),
-    clearPendingAnswers: () => set({ pendingAnswers: null }),
+    peekPendingSubmission: () => get().pendingSubmission,
+    setPendingSubmission: (submission) => set({ pendingSubmission: submission }),
+    clearPendingSubmission: () => set({ pendingSubmission: null }),
     setConnection: (connection) => set({ connection }),
     setFailure: (failure) => set({ failure }),
     setSlowRun: (slow) => set({ slowRun: slow }),

@@ -166,6 +166,38 @@ export function markSubmitted(draft: QuestionBatchDraft): QuestionBatchDraft {
   return { ...draft, submitted: true };
 }
 
+/**
+ * 一次整组作答的提交件：answers 与产出它的那一组的 `batchId` 绑在同一个对象上。
+ *
+ * ★ 为什么把两者绑成一个对象而不是各传各的（本包关键决策）：
+ *
+ * 「传错组的 `batch_id`」比「不传」更坏——服务端的排他层会把本该判 `True` 的组挡掉。
+ * 拆成两个参数/两个 store 字段时，「A 组 answers + B 组 batchId」是可表达的状态，
+ * 而这个状态一旦出现就是错判。绑成一个对象后，它在类型上不可表达
+ * （`toSubmission` 是唯一构造点，两个字段都取自同一个 draft）。
+ *
+ * `batchId` 是前端内部名（camelCase）；出网键名逐字是 `batch_id`（snake_case），
+ * 转换点只在 `application/usecases` 组装载荷那一处（见该文件 `why` 注释）。
+ */
+export interface AnswerSubmission {
+  /** 产出这批回答的那一组提问的批次标识（来自服务端的 `batch_id`）。 */
+  batchId: string;
+  answers: QuestionAnswer[];
+}
+
+/**
+ * 把当前组的草稿折成提交件（answers + 本组 batchId）。
+ *
+ * 前置: isComplete(draft) 为真且未提交
+ * 后置: answers 逐题一条；batchId 恒等于 本 draft 的 batchId
+ * 异常: QuestionBatchError（未处理完或已提交，闸门在 toAnswers 内）
+ *
+ * @throws QuestionBatchError 未处理完，或本组已提交
+ */
+export function toSubmission(draft: QuestionBatchDraft): AnswerSubmission {
+  return { batchId: draft.batchId, answers: toAnswers(draft) };
+}
+
 /** 静态记录行（已提交态与历史水合的呈现形态）。 */
 export function recordLines(draft: QuestionBatchDraft): QuestionRecordLine[] {
   return draft.items.map((item) => {

@@ -109,7 +109,7 @@ describe('对话页 — 历史水合三态', () => {
     // ★ 措辞判据（T27 修正 / T31 沿革）：服务端判为已作答 ⇒ 只读。
     expect(await screen.findByText('这是当时向你提出的问题，当时的作答见对话里的相关消息。')).toBeDefined();
     expect(screen.getByText('提问记录')).toBeDefined();
-    // 反空断言：旧的失实措辞必须**不再**出现（否则这次修正等于没做）。
+    // 反空断言：旧的失实措辞必须不再出现（否则这次修正等于没做）。
     expect(screen.queryByText('这组问题已经处理过，记录如下（回答见当时的对话）。')).toBeNull();
     expect(screen.queryByText('已提交')).toBeNull();
     expect(screen.queryByRole('button', { name: '提交' })).toBeNull();
@@ -140,7 +140,7 @@ describe('对话页 — 历史水合三态', () => {
     });
     renderChat(port);
 
-    // 刷新后提问卡必须仍然可作答：题干在，且卡是**可交互**的（选项 + 下一题）。
+    // 刷新后提问卡必须仍然可作答：题干在，且卡是可交互的（选项 + 下一题）。
     // 首题不是末题，因此这里出现的是「下一题」而不是「提交」——提交按钮在末题上。
     expect(await screen.findByText(QUESTION_ITEMS[0]?.prompt ?? '')).toBeDefined();
     expect(screen.getByRole('button', { name: /可以/ })).toBeDefined();
@@ -153,7 +153,7 @@ describe('对话页 — 历史水合三态', () => {
 
   it('★ 两张历史卡都可作答时，自由回答输入框的 id 不重复（T31 引入的可达缺陷）', async () => {
     // 背景：T31 之前历史卡一律 `mode='record'` ⇒ 同一条消息流里最多只有一张卡可作答，
-    // 因此输入框 id 用 `${mode}-${题标识}` 拼是安全的。T31 让**每张未作答的历史卡**都可作答，
+    // 因此输入框 id 用 `${mode}-${题标识}` 拼是安全的。T31 让每张未作答的历史卡都可作答，
     // 于是「同一条会话里两组题都未作答」会让两张卡拼出同一个 id ⇒ 第二张卡的 `<label for>`
     // 指到第一张卡的 textarea。改用 `useId()` 后每个实例唯一。
     const port = createConsultPortStub({
@@ -255,14 +255,66 @@ describe('对话页 — 提问卡（活卡）', () => {
         { id: 'q1', value: '可以' },
         { id: 'q2', value: '不确定' },
       ],
+      // ★ 出网键名逐字 snake_case；值 = 这一组的 batchId（askQuestions 用的是 questionEvent 的 b1）。
+      batch_id: 'b1',
       skill: null,
       client_message_id: expect.any(String),
     });
+    // 实际序列化后的文本（不是内存对象）：键名以 JSON 字节为准，且不得漏出内部名 batchId。
+    expect(JSON.stringify(port.sendCalls[1]?.payload)).toContain('"batch_id":"b1"');
+    expect(JSON.stringify(port.sendCalls[1]?.payload)).not.toContain('batchId');
 
     // 提交后成为静态已提交记录，输入区恢复。
     expect(await screen.findByText('整组已提交，不能再修改。')).toBeDefined();
     expect(screen.queryByRole('button', { name: '提交' })).toBeNull();
     expect(await screen.findByLabelText('发送消息')).toBeDefined();
+  });
+
+  it('★ 多组题：先提交第二组再提交第一组，各次载荷带的是【自己那一组】的 batch_id', async () => {
+    // 判别力设计（本包最关键的一条）：两组提问同时可作答，先提交后一组、再提交前一组。
+    // 若实现把 batchId 取成「最后一次 question 事件的批次」（全局指针/陈旧闭包旧值），
+    // 两次载荷会带同一个 id ⇒ 本用例变红。两组 id 不同且顺序被打乱，因此「恰好蒙对」不可能。
+    const port = createConsultPortStub({ history: historyResponse([]) });
+    port.script([
+      runStarted(),
+      questionEvent(QUESTION_ITEMS, 'b1'),
+      questionEvent(QUESTION_ITEMS, 'b2'),
+      runFinished(),
+    ]);
+    renderChat(port);
+    await send('先把情况说一遍');
+    await waitFor(() => expect(document.querySelectorAll('.question-card')).toHaveLength(2));
+
+    /** 在指定序号的提问卡内完成作答并提交。 */
+    const answerAndSubmit = async (cardIndex: number): Promise<void> => {
+      const card = document.querySelectorAll('.question-card')[cardIndex];
+      if (card === null || card === undefined) throw new Error(`第 ${cardIndex} 张提问卡不存在`);
+      const clickIn = (name: string | RegExp): void => {
+        const button = Array.from(card.querySelectorAll('button')).find((candidate) =>
+          typeof name === 'string' ? candidate.textContent === name : name.test(candidate.textContent ?? ''),
+        );
+        if (button === undefined) throw new Error(`卡内找不到按钮 ${String(name)}`);
+        fireEvent.click(button);
+      };
+      clickIn(/可以/);
+      clickIn('下一题');
+      clickIn(/不确定/);
+      await act(async () => {
+        clickIn('提交');
+      });
+    };
+
+    await answerAndSubmit(1); // 先提交第二组
+    await waitFor(() => expect(port.sendCalls).toHaveLength(2));
+    await answerAndSubmit(0); // 再提交第一组
+    await waitFor(() => expect(port.sendCalls).toHaveLength(3));
+
+    const second = port.sendCalls[1]?.payload as { batch_id?: string };
+    const first = port.sendCalls[2]?.payload as { batch_id?: string };
+    expect(second.batch_id).toBe('b2');
+    expect(first.batch_id).toBe('b1');
+    // 陈旧旧值/全局指针形态的对照：那会让两次载荷带同一个 id。这里显式钉住「必须不同」。
+    expect(second.batch_id).not.toBe(first.batch_id);
   });
 
   it('跳过通道写入显式「（跳过）」记录，未提交时草稿留在卡上', async () => {

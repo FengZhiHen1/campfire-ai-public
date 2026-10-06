@@ -117,13 +117,18 @@ describe('runStore — 技能消费、取消与重置', () => {
     expect(store.getState().peekPendingSkill()).toBeNull();
   });
 
-  it('整组回答：peek / set / clear', () => {
+  it('整组回答：peek / set / clear（answers 与 batchId 绑在同一个提交件里）', () => {
     const store = newStore();
-    expect(store.getState().peekPendingAnswers()).toBeNull();
-    store.getState().setPendingAnswers([{ id: 'q1', value: '可以' }]);
-    expect(store.getState().peekPendingAnswers()).toEqual([{ id: 'q1', value: '可以' }]);
-    store.getState().clearPendingAnswers();
-    expect(store.getState().peekPendingAnswers()).toBeNull();
+    expect(store.getState().peekPendingSubmission()).toBeNull();
+    // ★ 提交件把 batchId 与 answers 绑在一起：store 里不存在「有 answers 但没有组」的中间态，
+    // 因此传错组的 batch_id 这个缺陷形态在本层不可表达（T43 关键决策）。
+    store.getState().setPendingSubmission({ batchId: 'b1', answers: [{ id: 'q1', value: '可以' }] });
+    expect(store.getState().peekPendingSubmission()).toEqual({
+      batchId: 'b1',
+      answers: [{ id: 'q1', value: '可以' }],
+    });
+    store.getState().clearPendingSubmission();
+    expect(store.getState().peekPendingSubmission()).toBeNull();
   });
 
   it('取消：标中断并回到空闲（不显示成完整回答）', () => {

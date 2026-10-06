@@ -76,8 +76,8 @@ export function useConsultRuntime(options: {
         // 直接闭包捕获 store 快照会让它读到过期值。
         peekPendingSkill: () => useRunStore.getState().peekPendingSkill(),
         clearPendingSkill: () => useRunStore.getState().clearPendingSkill(),
-        peekPendingAnswers: () => useRunStore.getState().peekPendingAnswers(),
-        clearPendingAnswers: () => useRunStore.getState().clearPendingAnswers(),
+        peekPendingSubmission: () => useRunStore.getState().peekPendingSubmission(),
+        clearPendingSubmission: () => useRunStore.getState().clearPendingSubmission(),
         onEvent: (event) => useRunStore.getState().applyRunEvent(event),
         onConnection: (connection) => useRunStore.getState().setConnection(connection),
         onFailure: (error) => useRunStore.getState().setFailure(failureViewFor(error)),
