@@ -103,7 +103,21 @@ async def _clear() -> None:
 
 
 async def _new_object(account: str = _ACCOUNT, name: str = "小宝") -> str:
-    """建一个对象并返回标识（提交后读，见 test_profile_objects 的说明）。"""
+    """建一个对象并返回标识（提交后读）。
+
+    标识必须在事务提交之后读：`id` 的默认值由 `core/db.new_uuid` 在 flush 时求值
+    （它是 Python 侧默认值，不是数据库默认值），提交前读到的是 `None`。
+
+    ~~见 `test_profile_objects` 的说明。~~
+
+    **⇒ 已订正（2026-10-02）**：上面划掉的那个名字**既不是文件也不是用例**——
+    文件叫 `test_profile_objects_integration.py`；而**扫描面内没有**
+    去掉 `_integration` 后缀的同名 `def`
+    （判据：`git grep 'def <上面划掉的那个名字>' -- apps/api/tests` 的读数为**空**；
+    **命令里的名字同样写成占位**，否则它会给本守卫制造一条新的悬挂引用）。
+    **实际指向**：`test_profile_objects_integration.py` 的
+    `_make_object`，那里有这段「提交后读」的完整理由。
+    """
     async with session_scope(get_settings()) as session:
         record = await service.create_object(session, account_id=account, display_name=name)
     return str(record.id)

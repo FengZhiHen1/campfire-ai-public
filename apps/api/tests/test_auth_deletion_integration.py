@@ -649,8 +649,30 @@ async def test_pending_write_state_is_untouched_for_bystanders() -> None:
 async def test_memory_purger_deletes_ledger_rows() -> None:
     """记忆清除者删除该账号的删除账本行（第 8 节「内容真删」的一部分）。
 
-    本用例只验证账本这一半——图库那一半需要 FalkorDB 容器，
-    由 `test_memory_purge_integration.py` 覆盖（那里能连上就测、连不上就跳过）。
+    ~~本用例只验证账本这一半——图库那一半需要 FalkorDB 容器，由 `test_memory_purge_integration.py` 覆盖（那里能连上就测、连不上就跳过）。~~
+
+    **⇒ 已订正（2026-10-02）**：上面划掉的那句**点名了一个不存在的测试文件**——
+    **该名字从未作为【文件】存在过**：`git log --all -- '*memory_purge*'` 的读数是**空**
+    （这是判「文件是否出现过」的正确命令）。
+    **⚠ 如实区分两条命令**：不带路径限定的
+    `git log --all -S "<上面划掉的那个名字>"` **会命中 1 个提交（`6343e8a`）**——
+    但那是**写出这句坏引用的那个提交**在该处新增的**注释文本**里提到过它，
+    **不是文件被创建过**。**⇒ 「名字被提到过」与「文件存在过」是两回事**，
+    只有后者才能支撑「由它覆盖」这句承诺。因此「由它覆盖」是一句**不成立的承诺**：
+    它读起来像「图库那一半已有测试守着」，而事实是**没有任何用例覆盖它**。
+    （此处不重复那个名字：旧名留在划掉的那句里，钉死一个不存在的名字
+    只会给本守卫制造新的悬挂引用。）
+
+    **图库那一半的实际状态**：`MemoryAccountPurger.purge_account` 的整图丢弃
+    （`GRAPH.DELETE`）**当前无任何自动化覆盖**——扫描面内没有第二个用例 import 或构造
+    `MemoryAccountPurger`（`git grep 'MemoryAccountPurger' -- apps/api/tests` 的命中
+    **全部来自本段文字自身**）；本用例只覆盖 `delete_ledger_rows`（账本这一半）。
+    **⚠ 这条「无覆盖」是【说明】，不是一个由本守卫核对的断言**：
+    它描述的是「用例的构造方式」，而本守卫只核对「注释点名的测试是否存在」。
+    **该缺口已登记**：见 `docs/TODO.md` 第 129 行「运营 CLI 未做端到端集成测试」，
+    那里写明 `account delete` 的**真删**没有端到端用例，原因是需要真实 core 与图库
+    **同时**可用，且它会真的删除数据、不宜对共享环境执行。
+    **本用例不声称覆盖图库那一半，也不承诺将来会补。**
     """
     from campfire.modules.memory.models import MemoryDeletionLedger
     from campfire.modules.memory.purge import delete_ledger_rows

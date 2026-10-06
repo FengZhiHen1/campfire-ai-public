@@ -755,9 +755,30 @@ async def test_send_message_rejects_unknown_skill_and_accepts_registered_one(
     """`skill` 必须是已注册技能（裁决 11）；已注册时该次运行程序注入它。
 
     先把账号的引导状态收束掉再发消息：否则这是会话的第一次运行，服务端会按契约 3.1
-    程序注入 onboarding 并忽略 `skill`（T07b 落地的后果，用例见
-    `test_consult_emergency_integration.py`）。本用例只回答「`skill` 参数怎么被校验与消费」，
-    因此它必须跑在引导已终结的账号上。
+    程序注入 onboarding 并忽略 `skill`（T07b 落地的后果）。
+
+    ~~用例见 `test_consult_emergency_integration.py`。本用例只回答「`skill` 参数怎么被校验与消费」，因此它必须跑在引导已终结的账号上。~~
+
+    **⇒ 已订正（2026-10-02）**：上面划掉的那句**点名了一个不存在的测试文件**——
+    **该名字从未作为【文件】存在过**：`git log --all -- '*emergency_integration*'` 只命中
+    `archive/` 那棵归档树里**另一个名字、另一棵树**的文件（判定「文件是否存在」应用路径型命令）。
+    **⚠ 如实区分两条命令**：不带路径限定的
+    `git log --all -S "<上面划掉的那个名字>"` **会命中 1 个提交（`e40180b`）**——
+    而 `e40180b` **正是写出这句坏引用的那个提交**（它在本文件的新增注释里提到过该名字）。
+    **⇒ 「名字被提到过」与「文件存在过」是两回事**，只有后者能支撑「用例见 …」这句指向。
+    **容易混淆的是本目录下的 `test_consult_emergency_render.py`：它真实存在，
+    但它是 T07b 的纯单元用例**（应急请求形状、四条注入的前缀与渲染、告知文本口径），
+    **不含任何「首次运行注入引导并忽略 `skill`」的用例**。
+    （此处不重复那个名字，理由同上一条订正。）
+
+    **实际覆盖**：本文件自己的
+    `test_first_daily_run_injects_onboarding_and_ignores_skill` 与
+    `test_first_run_ignores_an_unknown_skill_instead_of_rejecting_it`
+    才是钉住该后果的用例——**它们就在同一个文件里**，不是另一份文件。
+    **⚠ 这里刻意不写行号**：本文件在演进，行号会随任何一次编辑漂移，
+    而「引用了过期的行号」与本包要修的「引用了不存在的东西」是同一族缺陷
+    （用例名是本文件的稳定标识，行号不是）。
+    本用例只回答「`skill` 参数怎么被校验与消费」，因此它必须跑在引导已终结的账号上。
     """
     runner = ScriptedRunner(get_settings())
     _install_runner(runner)
