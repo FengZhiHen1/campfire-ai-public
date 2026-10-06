@@ -88,10 +88,20 @@ PASSWORD_FORM_FIELD = "password"
 #: 现在的分工：表单层只负责把这个字段送进来，一切判定（形状、存在性、状态）
 #: 都交给原子占用那一步，从而四种拒绝共用同一条消息。
 
-#: 一切邀请码类拒绝共用的唯一消息。
+#: 一切「注册被拒」共用的唯一消息。
 #:
 #: 集中成常量而不是在多处写字面量：消息一旦分叉，就构成账号枚举渠道
 #: （见 :func:`_reject`）。有测试断言四种拒绝的响应体完全一致。
+#:
+#: ⚠️ 2026-10-07（C-3/C-4）后，它的覆盖面**已超出邀请码**：除原有的四类邀请码拒绝
+#: （缺失 / 不存在或形状不合法 / 已撤销 / 已占用）外，**租户不存在**与**账号名已被占用**
+#: 也共用它。这是**刻意的**，不是命名失准：
+#:   - 「租户不存在」若给一个可区分的响应，就成了租户存在性预言机（C-3）；
+#:   - 「账号名已被占用」原先走 `FIELD_ERROR`，与四类拒绝形状不同，配合 SDK 的测试
+#:     邮箱域可以**不建号、不消耗码**地判定一张候选码是否有效（C-4）。
+#: 两处都靠「响应体逐字相同」关闭可区分性，而**逐字相同**要求 `status` 与 `message`
+#: 都不分叉——因此只能共用同一个常量。代价（尤其是「账号名重复」的可见文案被改成
+#: 「邀请码无效」）已在各自的落点写明。
 _REJECTION_MESSAGE = "邀请码无效或已不可用"
 
 #: 账号名为空或纯空白时的表单错误文本。
@@ -362,6 +372,54 @@ async def _account_exists(email: object) -> bool:
     return len(users) > 0
 
 
+async def _tenant_exists(tenant_id: object) -> bool | None:
+    """问身份服务：该租户是否存在。三态返回，`None` 表示**判定不了**。
+
+    为什么必须有这个能力（C-3，2026-10-07 用户裁决「补 4xx」）：
+
+    身份服务在租户不存在时抛的是**裸 `Exception`**，不是某个可 `isinstance`
+    的业务异常——实测源码 `.venv/.../supertokens_python/auth_utils.py:865-869`：
+
+        if valid_res == "TENANT_NOT_FOUND_ERROR":
+            if has_session:
+                raise UnauthorisedError("Tenant not found")
+            else:
+                raise Exception("Tenant not found error.")   # ← 注册路径走这一支
+
+    因此「按异常类型识别」不可行，而「按异常消息字符串识别」是脆的（SDK 改字即失效，
+    且失败方向是静默的：识别不到就退回裸 500）。本函数改用 SDK 自己的**语义**判据：
+    `get_tenant` 对 `TENANT_NOT_FOUND_ERROR` 返回 `None`
+    （`recipe/multitenancy/recipe_implementation.py:183-184`），不依赖任何字符串。
+
+    为什么是三态而不是 `bool`：
+
+    「查不动」与「不存在」必须分开。若把查询失败当成「不存在」，调用方会据此把它当
+    业务拒绝返回——而真实原因可能是 core 抖动，此时**账号可能已经建出来了**，
+    谎报「邀请码无效」会把用户引向重试（重试再因账号已存在失败，死循环）。
+    实测（真 core，`tmp/t40/probe_tenant_api.py`）：`public` → `TenantConfig`；
+    `t40-unknown-tenant` → `None`。
+
+    Args:
+        tenant_id: SDK 交给复写的租户标识（来自 URL 路径的第 1 段，见
+            `recipe_module.py:63-77`）。
+
+    Returns:
+        `True` 存在；`False` 确定不存在；`None` 无法判定（查询抛异常）。
+    """
+    from supertokens_python.recipe.multitenancy.asyncio import get_tenant
+
+    if not isinstance(tenant_id, str) or not tenant_id:
+        return None
+    try:
+        config = await get_tenant(tenant_id)
+    except Exception:  # noqa: BLE001 —— 判定不了就如实返回 None，绝不猜成「不存在」
+        logger.warning(
+            "无法确认租户是否存在（按「判定不了」处理，不改变异常路径）：tenant=%s", tenant_id, exc_info=True
+        )
+        return None
+    return config is not None
+
+
 def make_sign_up_override(
     original: OriginalSignUpPost,
 ) -> OriginalSignUpPost:
@@ -474,6 +532,34 @@ def make_sign_up_override(
             # 判据与非 OK 分支共用 `_account_exists`（直接问身份服务），
             # 而不是看 `used_by_account_id`——后者在占用时必然是 NULL，无法区分
             # 「还没建号」与「建了号但没回填」。
+            #
+            # --- C-3（2026-10-07 用户裁决「补 4xx」）---
+            # 上面那套判据回答的是「要不要释放」，**不回答「给调用方什么响应」**：
+            # 它之后原样 `raise`，于是异常冒泡成**匿名可达的裸 500**——而触发它的
+            # 条件（把租户名换成 URL 路径的一段）完全由调用方控制，因此 500 本身
+            # 就是「该租户不存在」的信号：
+            #     实测（真 uvicorn + 真 core，`tmp/t40/probe-before.json`）
+            #     POST /api/auth/t40-unknown-tenant/signup + 有效码 → HTTP 500
+            #     `Internal Server Error`；同一张码改打 /api/auth/（public）→ 200 OK。
+            # SDK 抛的是**裸 `Exception`**（`auth_utils.py:869`），所以这里只能用
+            # `_tenant_exists` 的语义判据识别，不能用异常类型。
+            #
+            # 刻意的形状选择：**与四类邀请码拒绝逐字同形**（`_reject(_REJECTION_MESSAGE)`），
+            # 而不是另造一个 4xx。理由是任务判据本身——若给「租户不存在」一个可区分的
+            # 响应，就只是把裸 500 换成一个**更明显的**租户存在性预言机
+            # （500 至少不告诉你这是业务拒绝）。同形之后，未知租户在响应上与
+            # 「码无效」不可区分，可探测性被收敛回与邀请码同一档。
+            #
+            # 释放语义为什么在这里是安全的：`get_tenant` 为 None 意味着该租户不存在，
+            # 而账号只能建在租户里 ⇒ **本次不可能建出账号**，这张码没有被真实使用，
+            # 必须释放（否则每次探测都白白烧掉一张码，变成对运营的 DoS）。
+            # ⚠️ 这也正是不能把「判定不了」（`_tenant_exists` 返回 None）并入这一支的
+            # 原因：那时账号**可能**已经建出来了，释放会放行一次真实占用。
+            if await _tenant_exists(tenant_id) is False:
+                logger.warning("signup 打到不存在的租户——按统一拒绝响应返回（不外泄租户存在性）：tenant=%s", tenant_id)
+                await _release_quietly(code)
+                return _reject(_REJECTION_MESSAGE)
+
             if not await _account_exists(_field_value(form_fields, EMAIL_FORM_FIELD)):
                 await _release_quietly(code)
             else:
@@ -514,7 +600,53 @@ def make_sign_up_override(
         # （重名时它同样返回 True），这正是需要先分类结果类型的原因。
         if isinstance(result, EmailAlreadyExistsError):
             await _release_quietly(code)
-            return result
+            # --- C-4（2026-10-07 用户裁决「改实现，让第五条也同形」）---
+            # 原先这里 `return result`，于是它继续走 SDK 的渲染，落在
+            # `raise_form_field_exception("EMAIL_ALREADY_EXISTS_ERROR", …)`
+            # （`recipe/emailpassword/api/signup.py:99-108`）⇒ 线格式是
+            # `200 {"status":"FIELD_ERROR","formFields":[…]}`，与四类邀请码拒绝的
+            # `200 {"status":"GENERAL_ERROR","message":…}` **形状不同**。
+            #
+            # 那个差异可被匿名利用（邀请码有效性预言机）：
+            # SDK 的 `is_fake_email`（`auth_utils.py:971-974`）对
+            # `@stfakeemail.supertokens.com` 为真，而 `implementation.py:734-736`
+            # 在该域且为首因子时**直接**返回 `EmailAlreadyExistsError()`——
+            # **不查库、不建号、不消耗邀请码**。而第 1 步（占用邀请码）先于它执行，
+            # 因此本分支只在**码有效**时可达 ⇒ 它的出现本身证明了「候选码有效」，
+            # 而这正是预言机：拿一张候选码打一次即可判定真伪，且不消耗任何资源。
+            #
+            # 实测（真 uvicorn + 真 core，`tmp/t40/probe-before.json`）：
+            #     POST /api/auth/signup  {email: c4-before@stfakeemail.supertokens.com,
+            #                             inviteCode: <有效码>}
+            #     → 200 {"status":"FIELD_ERROR","formFields":[{"id":"email",…}]}
+            #   改动后同一请求（`tmp/t40/probe-after.json`）：
+            #     → 200 {"status":"GENERAL_ERROR","message":"邀请码无效或已不可用"}
+            #
+            # 与四类同形的代价（**如实记下，这是本裁决的用户可见影响**）：
+            # 「账号名已被占用」这条**正常路径**的响应从表单错误变成一般错误，
+            # 前端 `apps/web/src/infrastructure/auth/authPort.ts:173-187` 按
+            # `FIELD_ERROR` + `email` 字段分派，落到 `account-unusable`
+            # （文案「该账号名无法使用，请换一个」）。改成 `GENERAL_ERROR` 后，注册
+            # 路径上的 GENERAL_ERROR 在**同文件 :91-95** 被统一定为
+            # `invite-rejected`（文案「邀请码无效或已被使用」）⇒
+            # **使用者重名注册时会看到「邀请码无效或已被使用」，而那是不准确的**：
+            # 他的邀请码没问题，问题在账号名。
+            #
+            # 为什么仍然按裁决做（我认为这个改变**可接受但不理想**）：
+            #   1. 重名是**用户可自纠**的（换个账号名即可），且第 2 步占用已成功、
+            #      码已在本次失败中被 `_release_quietly` 退回 issued ⇒ 不烧码、
+            #      不锁定，用户拿同一张码换名重试即可成功（有既有用例
+            #      `test_duplicate_account_name_releases_the_code` 守着这条）；
+            #   2. 文案不准确是**可用性**代价，而 C-4 关掉的是**安全**渠道；
+            #      两者的方向与不可逆性不同（前者可事后改文案，后者一旦被利用
+            #      无法回溯）；
+            #   3. 消除差异不引入新的可区分性：改动后五类拒绝的响应体逐字相同。
+            # ⚠️ 未决（留给复查者与用户）：更准确的形状是「保留 FIELD_ERROR 的
+            # 字段语义、但让它与邀请码拒绝不可区分」——这两件事在 SD K的线格式下
+            # 无法同时成立（FIELD_ERROR 必须带 formFields，GENERAL_ERROR 不带），
+            # 因此本裁决的实质是**二选一**，我按裁决选了安全侧。前端文案若要跟上，
+            # 是另一处改动（`authPort.ts` 的注册分支），不在本包授权范围内。
+            return _reject(_REJECTION_MESSAGE)
 
         account_email = _field_value(form_fields, EMAIL_FORM_FIELD)
         if await _account_exists(account_email):
