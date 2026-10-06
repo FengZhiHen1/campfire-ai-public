@@ -663,7 +663,11 @@ async def send_message(
         await runbus.drop_idempotency(cache, session_id=session_id, client_message_id=client_message_id)
         raise _busy()
 
-    user_input = render_answers(payload.answers) if payload.answers is not None else (payload.content or "")
+    user_input = (
+        render_answers(payload.answers, batch_id=payload.resolve_batch_id())
+        if payload.answers is not None
+        else (payload.content or "")
+    )
     activated_record: tuple[TResponseInputItem, ...] = ()
     if onboarding is not None:
         # 引导注入整份替换这次运行的技能集合：这一次是引导，不是日常咨询。集合与注入项
