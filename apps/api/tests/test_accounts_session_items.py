@@ -1326,6 +1326,10 @@ def test_part_ledger_covers_the_seven_parts_of_the_contract() -> None:
     事件侧的 `question` 也在契约表里，因此两张表合起来必须同时含 `question` 与
     `question-record`——前者在 `NOT_REBUILT_PARTS`（它不在水合 parts 的取值域里），
     后者在 `PART_PROVENANCE`。
+
+    ★ T32 之后 `action_card` 从 `NOT_REBUILT_PARTS` 移到 `PART_PROVENANCE`：
+    它现在真的在水合 parts 的取值域里。**本用例的集合不变**（七种仍是七种）——
+    变的只是它落在哪张表，而那由上面那条用例的判据 1/2/3 机械守住。
     """
     contract_parts = {"text", "reasoning", "tool_call", "citation", "question", "question-record", "action_card"}
 
@@ -1334,4 +1338,473 @@ def test_part_ledger_covers_the_seven_parts_of_the_contract() -> None:
     assert covered == contract_parts, (
         f"契约第 7 节的七种 part 与台账不一致：未覆盖 {sorted(contract_parts - covered)}，"
         f"多出 {sorted(covered - contract_parts)}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# 行动卡的水合（★ T32 的主缺陷：刷新后行动卡消失）
+#
+# 实测（T32 第 0 步，用**产品代码** build_messages 对一条调用对做水合）：
+#   现状（HEAD）产出的 part 类型 = ['tool_call']，action_card 数 = 0 ⇒ 红。
+# 缺陷形态与提问卡当初一模一样：live 通路是好的，只有刷新后（历史水合）卡片消失。
+# 根因是 `MessagePart` 联合里没有 `action_card`（见该联合的说明）。
+# ---------------------------------------------------------------------------
+
+#: 一条真实的 `emit_emergency_action_card` 参数（形状取自 `EmitEmergencyActionCardArgs`；
+#: `annotations` 用**输入形状** `{line_ref, source, confidence}`——这正是落库的形状，
+#: 也是本包第一版实现踩过的坑，见 `_card_annotations` 的说明）。
+_CARD_ARGUMENTS = json.dumps(
+    {
+        "sections": [
+            {"key": "status", "heading": "当前状态", "lines": ["当前沟通较平时明显减少，等待至少 10 秒"]},
+            {"key": "communicate", "heading": "立即怎么沟通", "lines": ["一次只让一个人讲话"]},
+            {"key": "do_now", "heading": "立即做", "lines": ["把灯光调暗，减少在场人数"]},
+            {"key": "avoid", "heading": "不要做", "lines": ["不要突然触碰"]},
+            {"key": "medical_checks", "heading": "需要的医疗检查", "lines": ["需要确认有无疼痛来源"]},
+            {"key": "safety", "heading": "安全措施", "lines": ["移开通道上的障碍物"]},
+            {"key": "when_to_escalate", "heading": "何时升级", "lines": ["出现意识改变时立即求助"]},
+        ],
+        "states": [
+            {"key": "deviation", "value": "marked"},
+            {"key": "communication", "value": "reduced"},
+            {"key": "sensory_load", "value": "high"},
+            {"key": "medical_risk", "value": "uncertain"},
+        ],
+        "annotations": [{"line_ref": 2, "source": "ai_inference", "confidence": "possible"}],
+    },
+    ensure_ascii=False,
+)
+
+_CARD_CALL_ID = "call_00_t32jbhu0000000000000001"
+#: 成功回执里那个 `card_id` 的实测取值形状（`uuid4().hex`，32 位小写十六进制）。
+_CARD_ID = "7794fb3c041c44c291ebd0bc879755fa"
+
+
+def _card_call(call_id: str = _CARD_CALL_ID, arguments: str = _CARD_ARGUMENTS) -> dict:
+    """实测形状的 `emit_emergency_action_card` 调用条目。"""
+    return {
+        "type": "function_call",
+        "call_id": call_id,
+        "name": "emit_emergency_action_card",
+        "arguments": arguments,
+    }
+
+
+def _card_output(call_id: str = _CARD_CALL_ID, output: str | None = None) -> dict:
+    """实测形状的行动卡结果条目（成功回执原文，取自 `tools/emergency_card.py:406`）。"""
+    receipt = (
+        output if output is not None else json.dumps({"card_id": _CARD_ID, "state": "emitted"}, ensure_ascii=False)
+    )
+    return {"type": "function_call_output", "call_id": call_id, "output": receipt}
+
+
+def _card_turn_items() -> list[StoredItem]:
+    return [
+        _stored(1, _user("他现在在商场里捂着耳朵蹲下了，我该怎么办？")),
+        _stored(2, _reasoning("先判断现场变量。")),
+        _stored(3, _card_call()),
+        _stored(4, _card_output()),
+    ]
+
+
+def test_action_card_title_and_sections_match_the_tool() -> None:
+    """★ 判据的判据：两份字面量必须与**真实工具**逐字一致。
+
+    与 `test_ask_user_success_output_matches_the_tool_handler` 同法，而不是再抄一份
+    字面量互比（那样两侧一起漂移仍然全绿）。`modules/*` 不得 import `tools/*`
+    （项目结构设计第 7 节），因此相等关系只能由本用例守。
+
+    它同时**跑真实工具**并把真实回执喂给 `action_card_success_card_id`——于是
+    「回执格式」这一份跨层约定也被钉住：改回执的键名或 `state` 取值 ⇒ 本用例红。
+
+    判别性：改 `tools/emergency_card.py` 的 `CARD_TITLE` / `SECTION_KEYS` /
+    回执键名 / `state` 取值 ⇒ 本用例红（而水合会静默停止产出卡片，若不跑工具就没人看得见）。
+    """
+    import asyncio
+
+    from campfire.agent.context import CitationRecorder
+    from campfire.agent.tools import ActivationState, ToolContext
+    from campfire.tools.emergency_card import CARD_TITLE, SECTION_KEYS
+
+    class _Index:
+        """最小引用索引（本工具不产出引用，故不落任何东西）。"""
+
+        async def add(self, record: CitationRecord) -> None:
+            del record
+
+        async def list_for_run(self, run_id: str) -> Sequence[CitationRecord]:
+            del run_id
+            return []
+
+    tool = _product_tool("emit_emergency_action_card")
+    context = ToolContext(
+        run_id="run-1",
+        session_id="session-1",
+        surface="consult",
+        activation_state=ActivationState(),
+        citations=CitationRecorder(_Index(), run_id="run-1"),
+        payload={"account_id": "acct-1"},
+    )
+    # ★ 走**真实 ToolSpec**（含参数模型的解析与词表校验），而不是直接调 handler：
+    # 判据要断的是「产出侧真的产出了什么」。
+    outcome = asyncio.run(tool.invoke(context, _CARD_ARGUMENTS))
+
+    assert isinstance(outcome, ToolResult)
+    card = outcome.cards[0]
+
+    # 1) 标题字面量。
+    assert card.title == CARD_TITLE
+    assert session_items.ACTION_CARD_TITLE == CARD_TITLE
+    # 2) 七节的键与**顺序**。
+    assert tuple(section.key for section in card.sections) == SECTION_KEYS
+    assert session_items.ACTION_CARD_SECTION_KEYS == SECTION_KEYS
+    # 3) 回执格式：我的判据必须能从**真实回执**里取出那个 card_id。
+    assert session_items.action_card_success_card_id(outcome.text) == card.card_id
+    # 4) 工具名常量也要与注册清单一致。
+    assert tool.name == session_items.EMERGENCY_ACTION_CARD_TOOL_NAME
+
+
+def _product_tool(name: str):
+    """按名字取一个已装配的产品工具（判据要跑真实工具，而不是它的替身）。"""
+    for tool in build_product_tools():
+        if tool.name == name:
+            return tool
+    raise AssertionError(f"工具 {name!r} 不在产品工具注册清单里")
+
+
+def test_hydration_rebuilds_an_action_card_part() -> None:
+    """★ 主用例：带 `emit_emergency_action_card` 调用对的历史，水合后必须出现行动卡 part。
+
+    这就是本包的缺陷现场——刷新后 `.action-card` 消失，因为后端从不产出行动卡 part
+    （`history.ts` 的 `case 'action_card'` 因此永不命中）。
+
+    判别性：把 `MessagePart` 联合里的 `ActionCardPart` 去掉（或删掉 `add_tool_output`
+    里分派 `emit_emergency_action_card` 的那几行）⇒ 本用例在第一处断言就失败。
+    """
+    parts = build_messages(_card_turn_items())[1]["parts"]
+
+    cards = [part for part in parts if part["type"] == "action_card"]
+
+    assert len(cards) == 1, "刷新后必须仍有且只有一个行动卡 part"
+    card = cards[0]
+    # ★ `card_id` 取自回执真值，**不是**派生值——前端凭它与最新卡比较判旧卡失效，
+    # 派生值会让同一张卡在两个时刻拿到两个 id。
+    assert card["card_id"] == _CARD_ID
+    assert card["title"] == "现场行动卡"
+    assert [section["key"] for section in card["sections"]] == [
+        "status",
+        "communicate",
+        "do_now",
+        "avoid",
+        "medical_checks",
+        "safety",
+        "when_to_escalate",
+    ]
+    assert card["states"] == [
+        {"key": "deviation", "value": "marked"},
+        {"key": "communication", "value": "reduced"},
+        {"key": "sensory_load", "value": "high"},
+        {"key": "medical_risk", "value": "uncertain"},
+    ]
+    # ★ 标注必须是**线格式**（`{target, kind}`），不是落库的输入形状。
+    assert card["annotations"] == [{"target": "2", "kind": "ai_inference:possible"}]
+    # 题干逐字保留：使用者要读的正是这些行。
+    assert "把灯光调暗" in card["sections"][2]["lines"][0]
+
+
+def test_hydration_action_card_part_shape_matches_the_wire_contract() -> None:
+    """水合出的 `action_card` part 形状必须与契约第 7 节 + 基座 7.3 节逐字一致。
+
+    前端 `history.ts` 的 `case 'action_card'` 读的是 `card_id` / `title` / `sections` /
+    `states` / `annotations`，而 `parts.tsx` 的 `ActionCardPart` 再逐项读
+    `key` / `heading` / `lines` 与 `target` / `kind`。少一个键或改一个名字，
+    水合出的卡就是空的——而那种失败在浏览器里只表现为「卡片不出现」，不会报错。
+
+    ★ 与**事件侧**的同一形状的相等关系：本包刻意不另立「水合侧专有」的 part 类型
+    （与提问那一对相反），理由是回看侧要说的事实与流出侧完全一样。因此这里断言
+    字段集合**恰好**是基座 7.3 节那五个 + `type`——多一个字段就说明有人把回看侧的
+    东西塞进了流出侧载荷（那正是 T31 对提问明确禁止的形态）。
+    """
+    parts = build_messages(_card_turn_items())[1]["parts"]
+    card = next(part for part in parts if part["type"] == "action_card")
+
+    assert set(card) == {"type", "card_id", "title", "sections", "states", "annotations"}
+    assert set(card["sections"][0]) == {"key", "heading", "lines"}
+    assert set(card["states"][0]) == {"key", "value"}
+    assert set(card["annotations"][0]) == {"target", "kind"}
+    # 事件侧的形状是本模块**不产出**的一份读数，它同样按基座 7.3 节断死。
+    assert {state["key"] for state in card["states"]} <= {
+        "deviation",
+        "communication",
+        "sensory_load",
+        "medical_risk",
+    }
+
+
+def test_hydration_does_not_rebuild_an_action_card_from_a_failed_call() -> None:
+    """参数不合法的那次调用**没有**呈现过任何东西 ⇒ 不得产出行动卡。
+
+    参数不合法的调用在 `ToolSpec._parse` 就得到
+    `<tool_error code="tool_invalid_arguments">…</tool_error>`，`ToolResult` **从不构造**，
+    因此事件流里**没有**任何卡片（`test_emergency_card.py` 的
+    `test_no_action_card_event_is_emitted_for_a_rejected_payload` 断的就是这一条）。
+    若水合不管产出、只看参数形状，就会给一张「当时从未出现过」的行动卡——那是伪造。
+
+    ⚠ **本条用例实际承重的是哪一处，我实测过并如实写明**（消融读数见报告 §5.2）：
+    拦下它的是 `add_tool_output` 里的 **`ok` 闸门**（`failure is not None` ⇒ 提前返回），
+    **不是** `action_card_part` 内部的回执判据——因为 `ok=False` 时根本走不到那里。
+    我最初的写法以为它测的是后者，**消融 A 证明它没有变红**（那正是「判据无用」的读数）。
+    因此这一条留着（它确实钉住了一个真实分支），而**隔离回执判据**由下面那条用例承担。
+    """
+    items = [
+        _stored(1, _user("问")),
+        _stored(2, _card_call()),
+        _stored(
+            3,
+            _card_output(
+                output=(
+                    '<tool_error code="tool_invalid_arguments">'
+                    "工具 emit_emergency_action_card 的参数不符合 schema：sections: too_short</tool_error>"
+                )
+            ),
+        ),
+    ]
+
+    parts = build_messages(items)[1]["parts"]
+
+    assert [part["type"] for part in parts] == ["tool_call"], "失败的调用不得产出行动卡 part"
+    first = parts[0]
+    assert first["type"] == "tool_call"
+    assert first["ok"] is False
+
+
+def test_action_card_requires_a_success_receipt_not_just_parsable_arguments() -> None:
+    """★ **判据必须取自产出侧**：参数完全合法、但产出不是成功回执 ⇒ 不得产出行动卡。
+
+    ★ 这是本包对 T27 核心裁决的直接落实，而且是**隔离**的那一条
+    （上面那条被 `ok` 闸门提前拦下，测不到这里）。本用例刻意用
+    **不是工具错误信封**的产出，于是 `ok` 闸门放行、**只有**回执判据能拦住它：
+
+    - 产出是任意成功文本（例如工具其实只发了一半就崩了，或形状漂移）；
+    - 产出是 `state` 不是 `emitted` 的 JSON；
+    - 产出是没有 `card_id` 的 JSON。
+
+    判别性（**实测，见报告 §5.2 的消融 A**）：把 `action_card_part` 开头的
+    `card_id = action_card_success_card_id(output); if card_id is None: return None`
+    换成「只看参数形状」的读法 ⇒ 本用例红——水合会造出一张当时从未呈现给使用者的卡。
+    """
+
+    def args_only_items(output: str) -> list[StoredItem]:
+        return [_stored(1, _user("问")), _stored(2, _card_call()), _stored(3, _card_output(output=output))]
+
+    not_success_receipts = {
+        # 成功文本但**不是**本工具的回执格式（`ok` 闸门会放行它）。
+        "任意成功文本": "已发出行动卡",
+        # state 是产出侧另一个取值（本工具只产 `emitted`；这条挡「别人写的同源回执」）。
+        "state 不是 emitted": json.dumps({"card_id": _CARD_ID, "state": "rejected"}, ensure_ascii=False),
+        # 有 state 但没有真值 id ⇒ 无法稳定标识这张卡 ⇒ 不产出（不让前端拿到空 id）。
+        "没有 card_id": json.dumps({"state": "emitted"}, ensure_ascii=False),
+        "card_id 是空串": json.dumps({"card_id": "", "state": "emitted"}, ensure_ascii=False),
+        "card_id 不是字符串": json.dumps({"card_id": 7, "state": "emitted"}, ensure_ascii=False),
+    }
+
+    # 对照组（非 0 正例）：同一条调用配**真正的**成功回执时必须产出卡片——
+    # 否则「一律不产出」也能让上面全部通过。
+    assert (
+        len(
+            [
+                p
+                for p in build_messages(args_only_items(_card_output()["output"]))[1]["parts"]
+                if p["type"] == "action_card"
+            ]
+        )
+        == 1
+    )
+
+    for label, output in not_success_receipts.items():
+        parts = build_messages(args_only_items(output))[1]["parts"]
+        types = [part["type"] for part in parts]
+        assert types == ["tool_call"], f"{label} ⇒ 不得产出行动卡（实际 part 类型：{types}）"
+        # 工具行本身仍是成功的（产出不是错误信封）——这正是本用例隔离出回执判据的证据；
+        # 若这里 ok 是 False，那就说明 ok 闸门先拦下了，本用例不再隔离任何东西。
+        tool_part = parts[0]
+        assert tool_part["type"] == "tool_call"
+        assert tool_part["ok"] is True, f"{label}：ok 闸门先拦下了，本用例没有隔离到回执判据"
+
+
+def test_action_card_id_is_stable_across_two_hydrations() -> None:
+    """★ `card_id` 在同一行数据上两次水合必须一致（稳定性）。
+
+    编排者硬边界第 4 条要求「稳定且可重复的派生值」。本包的做法**不是派生**，
+    而是**取回回执里的真值**——稳定性因此来自「同样的输入、纯函数」，
+    而不是来自「派生规则恰好不撞车」。本用例同时钉住这两件事：
+    id 稳定，且它**等于回执里的那个值**。
+    """
+    first = next(p for p in build_messages(_card_turn_items())[1]["parts"] if p["type"] == "action_card")
+    second = next(p for p in build_messages(_card_turn_items())[1]["parts"] if p["type"] == "action_card")
+
+    assert first["card_id"] == second["card_id"]
+    assert first["card_id"] == _CARD_ID
+    # 非 0 正例对照：整张卡也必须逐字一致（不是只有 id 一样）。
+    assert first == second
+
+
+def test_action_card_part_rejects_bad_input() -> None:
+    """**反空断言**：`action_card_part` 的每一条判据都各有一个「喂坏输入 ⇒ 立刻失败」的对照。
+
+    任务书 §六-6：完整性断言若是恒真的空闸门就毫无价值。这里逐条喂坏输入，
+    断言它返回 `None` 而不是造一张**半截卡**（缺节的卡在界面上是「少了几节」，
+    且缺得静默——本模块明令「重建不了就不产出」）。
+    """
+    good_output = json.dumps({"card_id": _CARD_ID, "state": "emitted"}, ensure_ascii=False)
+    sections = json.loads(_CARD_ARGUMENTS)["sections"]
+
+    def args_with(**overrides: object) -> str:
+        payload = json.loads(_CARD_ARGUMENTS)
+        payload.update(overrides)
+        return json.dumps(payload, ensure_ascii=False)
+
+    cases = {
+        "回执是工具错误": (_CARD_ARGUMENTS, '<tool_error code="tool_failed">炸了</tool_error>'),
+        "回执 state 不是 emitted": (_CARD_ARGUMENTS, json.dumps({"card_id": _CARD_ID, "state": "rejected"})),
+        "回执没有 card_id": (_CARD_ARGUMENTS, json.dumps({"state": "emitted"})),
+        "回执 card_id 是空串": (_CARD_ARGUMENTS, json.dumps({"card_id": "", "state": "emitted"})),
+        "回执不是 JSON": (_CARD_ARGUMENTS, "已发卡"),
+        "回执是空串": (_CARD_ARGUMENTS, ""),
+        "参数不是 JSON": ("{不是 JSON", good_output),
+        "参数不是对象": ("[1, 2]", good_output),
+        "参数不是字符串": ({"sections": []}, good_output),
+        "缺 sections": (json.dumps({"states": [], "annotations": []}), good_output),
+        # 七节是硬结构：少一节就是一张残缺的卡（缺节得静默，比缺整张卡更危险）。
+        "只有六节": (args_with(sections=sections[:6]), good_output),
+        # 同一节出现两次 ⇒ 「这一节是什么」有两个答案。
+        "某节重复": (args_with(sections=[*sections, sections[0]]), good_output),
+        # 未知的节键：不在七个规范键里 ⇒ 拒绝（否则七节不齐，且顺序语义崩掉）。
+        "合同外的节键": (
+            args_with(sections=[*sections[:6], {"key": "future", "heading": "x", "lines": ["y"]}]),
+            good_output,
+        ),
+        "某节没有行": (
+            args_with(sections=[{**sections[0], "lines": []}, *sections[1:]]),
+            good_output,
+        ),
+        "某节小标题为空": (
+            args_with(sections=[{**sections[0], "heading": "  "}, *sections[1:]]),
+            good_output,
+        ),
+        "某行不是字符串": (
+            args_with(sections=[{**sections[0], "lines": [1]}, *sections[1:]]),
+            good_output,
+        ),
+        "某行超长（不截断，整体跳过）": (
+            args_with(
+                sections=[
+                    {**sections[0], "lines": ["长" * (session_items.ACTION_CARD_TEXT_MAX_CHARS + 1)]},
+                    *sections[1:],
+                ]
+            ),
+            good_output,
+        ),
+        "states 不是数组": (args_with(states="x"), good_output),
+        "state 缺 value": (args_with(states=[{"key": "deviation"}]), good_output),
+        "state 的 value 为空": (args_with(states=[{"key": "deviation", "value": ""}]), good_output),
+        "annotations 不是数组": (args_with(annotations="x"), good_output),
+        # 标注是**输入形状**：线格式的 {target, kind} 在参数里是形状漂移，不得当合法。
+        "标注用了线格式的键": (args_with(annotations=[{"target": "2", "kind": "x:y"}]), good_output),
+        "标注缺 source": (args_with(annotations=[{"line_ref": 1, "confidence": "likely"}]), good_output),
+        "标注 line_ref 是 0": (
+            args_with(annotations=[{"line_ref": 0, "source": "history", "confidence": "likely"}]),
+            good_output,
+        ),
+        "标注 line_ref 是字符串": (
+            args_with(annotations=[{"line_ref": "1", "source": "history", "confidence": "likely"}]),
+            good_output,
+        ),
+    }
+
+    # 对照组：同一形状的好输入必须**不**返回 None——否则「一切都返回 None」也能全绿。
+    assert session_items.action_card_part(_CARD_ARGUMENTS, good_output) is not None
+
+    for label, (arguments, output) in cases.items():
+        assert session_items.action_card_part(arguments, output) is None, f"{label} 必须重建不出行动卡"
+
+
+def test_action_card_annotations_are_encoded_like_the_tool_does() -> None:
+    """★ `annotations` 必须被**编码**成线格式 `{target, kind}`，而不是原样搬运。
+
+    这是本包一处**由实测纠正**的判断（第一版按「原样搬运」实现，探针证明它产不出
+    任何卡片）。落库的参数是 `{line_ref: int, source, confidence}`，线格式是
+    `{target: str, kind: "来源:置信"}`；工具侧 handler 用
+    `_encode_annotation_kind` 做这个转换，水合必须做同一个。
+
+    **它只需要分隔约定、不需要产品侧词表**：本用例因此同时断言
+    ① 我的编码能被**工具侧的** `decode_annotation_kind` 解回（分隔符与词表口径一致），
+    ② 词表外的取值**不被**我拒绝（那是消费侧可见的处置，不是水合该猜的事）。
+
+    判别性：把 `_card_annotations` 的编码改回「原样搬运 target/kind」⇒ 本用例红。
+    """
+    from campfire.tools.emergency_card import ANNOTATION_CONFIDENCES, ANNOTATION_SOURCES, decode_annotation_kind
+
+    part = session_items.action_card_part(_CARD_ARGUMENTS, _card_output()["output"])
+
+    assert part is not None
+    assert part["annotations"] == [{"target": "2", "kind": "ai_inference:possible"}]
+    # ① 反向：工具侧的还原函数认得出它（分隔符与两段词表口径一致）。
+    assert decode_annotation_kind(part["annotations"][0]["kind"]) == ("ai_inference", "possible")
+
+    # ② 词表口径一致性的**非 0 正例**：产出侧的词表确实是我这份编码的取值域来源。
+    assert "ai_inference" in ANNOTATION_SOURCES
+    assert "possible" in ANNOTATION_CONFIDENCES
+
+    # ③ 词表外的取值**不**被水合拒绝（不在这里复述词表 ⇒ 不制造静默消失）。
+    drifted = json.loads(_CARD_ARGUMENTS)
+    drifted["annotations"] = [{"line_ref": 1, "source": "future_source", "confidence": "future_level"}]
+    part_drifted = session_items.action_card_part(json.dumps(drifted, ensure_ascii=False), _card_output()["output"])
+
+    assert part_drifted is not None, "词表外的取值不得让整张卡消失（前端会可见地丢弃那一条）"
+    assert part_drifted["annotations"] == [{"target": "1", "kind": "future_source:future_level"}]
+
+
+def test_hydration_keeps_the_tool_call_row_next_to_the_action_card() -> None:
+    """行动卡 part 与那次工具调用同在一条助手消息里（不是新开一条消息）。
+
+    依据是契约第 7 节的分组规则：一次运行的产出合成一条助手消息。分成两条会让
+    刷新前后的消息条数变化（流式期间 1 条、刷新后 2 条）。
+    """
+    messages = build_messages(_card_turn_items())
+
+    assert len(messages) == 2, "一条使用者 + 一条助手"
+    parts = messages[1]["parts"]
+    assert [part["type"] for part in parts] == ["reasoning", "tool_call", "action_card"]
+    tool_part = parts[1]
+    assert tool_part["type"] == "tool_call"
+    assert tool_part["tool_name"] == session_items.EMERGENCY_ACTION_CARD_TOOL_NAME
+    assert tool_part["ok"] is True
+
+
+def test_action_card_and_question_can_coexist_in_one_message() -> None:
+    """★ 同一批工具调用里两种产出并存时，两个 part 都必须产出（互不吞掉）。
+
+    这是「分派分支」这一处最可能的实现错误：把两个 `if` 写成一个 `if/elif`
+    或过早 `return`，于是后出现的那个静默消失。真实运行里两者可以在同一条运行里
+    先后出现（卡片之后模型可以继续输出，基座 7.3 节）。
+
+    判别性：把 `add_tool_output` 里 `ask_user` 分支末尾的 `return` 去掉但改成
+    `if/elif` ⇒ 本用例红（少一个 part）。
+    """
+    # SDK 会把同批调用**连排**、再连排它们的结果（T31/T32 实测：23/62 的
+    # 「下一行」不是自己的输出）——本用例刻意用这个真实形状，而不是紧邻形状。
+    items = [
+        _stored(1, _user("问")),
+        _stored(2, _ask_user_call(call_id="call-ask")),
+        _stored(3, _card_call(call_id="call-card")),
+        _stored(4, _ask_user_output(call_id="call-ask")),
+        _stored(5, _card_output(call_id="call-card")),
+    ]
+
+    parts = build_messages(items)[1]["parts"]
+    types = [part["type"] for part in parts]
+
+    assert types == ["tool_call", "tool_call", PART_TYPE_QUESTION_RECORD, "action_card"], (
+        f"两种产出都要在，且按结果行的顺序排列；实际 = {types}"
     )
