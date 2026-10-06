@@ -102,6 +102,142 @@ class SearchCasesArgs(BaseModel):
     )
 
 
+async def _result_for(
+    context: ToolContext,
+    items: list[dict[str, object]],
+    degraded_paths: tuple[str, ...],
+    *,
+    empty_notice: str,
+    source: str,
+) -> ToolResult:
+    """两个检索工具共用的返回打包：发引用凭据 → 拼结果文本 → 交 `ToolResult`。
+
+    抽成一处是因为这几条对外说法（含措辞纪律、引用凭据的两个出口）是同一份契约：
+    两处各写一遍，改一处忘另一处就会让其中一个工具悄悄丢掉降级提示或丢掉引用
+    ——而「不得把检索不完整说成没有资料」正是靠那句话成立的。
+
+    Args:
+        context: 工具上下文；`citations` 是引用写入端。
+        items: 本次命中的已渲染条目。
+        degraded_paths: 降级事实（哪几路检索不可用）。
+        empty_notice: 空结果时给模型的那句话（两库措辞不同）。
+        source: 库别标识（`knowledge` / `case`）。
+
+    Returns:
+        `ToolResult`：文本 = 契约 JSON（**不含引用载荷**）；`citations` = 本次发出的凭据。
+    """
+    citations = await _mint_citations(context, items, source=source)
+    return ToolResult(
+        text=_result_text(
+            items,
+            degraded_paths,
+            empty_notice=empty_notice,
+        ),
+        citations=citations,
+    )
+
+
+async def _mint_citations(
+    context: ToolContext,
+    items: list[dict[str, object]],
+    *,
+    source: str,
+):
+    """给本次检索命中的条目各发一条引用凭据，返回凭据元组。
+
+    **为什么生产侧必须做这件事**（编号：这不是可选的附赠品）：
+
+    设计《通用基座》第 4 节有两条同时成立的要求——①「每条注入消息在引用索引表里留一条
+    对应记录（来源、时间、指向的业务标识），因为输出里的引用要靠它回指」；②不变量
+    「没有索引记录的注入消息不得成为『可引用依据』」。而《咨询对话界面》第 5 节要求
+    「citation part 与所属消息**同生命周期**……因为它是消息 content 的一部分，
+    **不是外部索引**」。
+
+    实测缺口（本包开工前的现状）：整个生产代码里**没有任何一处**调用
+    `CitationRecorder.record(...)`——唯一那一处在 `agent/context/injection.py`，
+    被 `if item.reference is not None` 守住，而生产侧的 `InjectionItem(...)`
+    从不传 `reference`。⇒ 检索是以**工具**形式返回 JSON 文本的，
+    第 4 节那条链**整条没接线**：表里不落行、会话里也没有可重建 citation part 的载荷。
+
+    因此本次调用做三件**同一个动作的三个半边**（缺任一半都会造出不一致）：
+
+    1. 经基座的写入端（`context.citations`，即 `CitationRecorder`）发凭据——
+       它**先写索引再发凭据**，「拿着凭据却没写索引」在结构上不可表示（第 4 节①）；
+    2. 把返回的凭据放进 `ToolResult.citations` ⇒ 运行编排把它翻成 `CitationEvent`
+       进**实时事件流**（`agent/runtime/assembly.py` 的 `_invoke`）；
+    3. **把凭据留给本次运行的会话写入**（**不是**放进工具结果文本）⇒ 它随助手正文
+       落进会话，刷新时由水合从正文分片的 `annotations` 重建出同一个 part。
+
+    ⚠ **第 3 步曾经的做法（T36，已废弃）**是把凭据编进工具结果 JSON 的 `citations` 键。
+    它被换掉的原因**只有一个**：工具结果文本是**模型读得到的输入**，而依据区是给使用者
+    看的、不是给模型读的（载荷对模型可见会白占上下文，也让模型有机会照抄内部标识）。
+    现在由 `agent/runtime/session_annotations.py` 在 `add_items` **落库之前**把凭据挂到
+    助手正文分片的 `annotations` 上——「是消息 content 的一部分」由此字面成立，
+    且对模型不可见。
+
+    **第 2 与第 3 步缺任一个都会造出「刷新前后不一致」**：只做 3 则实时看不到依据区、
+    刷新后才出现；只做 2 则实时可见、刷新后消失（那正是本包要修的现状缺陷）。
+    设计第 5 节要的正是「滚动、重放、历史水合都不错位」。
+
+    **来源标识取库别**（`knowledge` / `case`），因为凭据的 `source` 语义是
+    「哪个数据通道」，而两个工具各查一个库（契约第 6 节）。
+
+    **回指取 `item_id` 前缀库别**（形如 `knowledge:<uuid>`）：`reference` 的语义是
+    「指向的业务标识，权威在业务条目本身」。条目 id 在两库之间不保证全局唯一
+    （两张表各有自己的 uuid），因此必须带库别才是**可解析的**回指——
+    只给裸 uuid 时，拿到它的人无法知道该去资料库还是案例库查。
+
+    **发往索引失败必须让整次调用失败**（不吞异常）：第 4 节的不变量是
+    「没有索引记录的注入消息不得成为可引用依据」。若在这里降级成「无引用」继续返回，
+    模型就会看到可以引用的条目、而索引里没有对应行——正是那条不变量要禁止的状态。
+    异常照旧由 `ToolSpec.invoke` 转成 `tool_failed` 回给模型（失败语义第 5 节）。
+
+    **为什么返回值不写注解**（这是刻意的，不是漏写）：凭据类型
+    `CitationRecord` 定义在 `agent/context/citations.py`，而 `tools/*` 的依赖白名单
+    只放行 `campfire.agent.tools`（docs/项目结构设计.md 第 7 节）⇒ **写不出那个类型名**。
+    省略返回注解时 mypy 由 `record(...)` 的返回值**推断**出
+    `tuple[CitationRecord, ...]`，于是调用方仍然拿到完整类型、且不必 `Any`
+    （`ToolResult.citations` 接受的正是这个类型，实测通过）。
+    给列表写空字面量注解或 `# type: ignore` 都是更差的选项：前者要写出类型名，
+    后者会把真实的类型错误一起吞掉。
+
+    Args:
+        context: 工具上下文；`citations` 是引用写入端。
+        items: 本次命中的已渲染条目（含 `item_id`）。
+        source: 库别标识（`knowledge` / `case`）。
+
+    Returns:
+        发出的凭据（按命中顺序）；没有可回指条目时为空元组。
+    """
+    # 先算出「可回指的条目」，再统一发凭据：`record` 是异步的，推导式里 await 要求
+    # 列表推导（3.12 起支持）——但那样会把「缺 id ⇒ 跳过」的警告埋进表达式里，
+    # 因此先过滤成 `targets` 再做映射，判据与告警都在一眼可见的地方。
+    targets: list[tuple[str, str | None]] = []
+    for item in items:
+        item_id = item.get("item_id")
+        if not isinstance(item_id, str) or not item_id:
+            # 没有条目 id 就无法回指（契约第 3 节把 `item_id` 列为必带）。
+            # 不猜、不编造回指：跳过这一条，而不是产出一条指不到东西的依据。
+            logger.warning("检索结果缺少条目标识，跳过它的引用：%s", sorted(item))
+            continue
+        title = item.get("title")
+        # 摘要取标题：它是使用者能在「依据」区一眼认出那条来源的最短信息。
+        targets.append((item_id, title if isinstance(title, str) and title else None))
+
+    records = [
+        await context.citations.record(
+            source=source,
+            # 回指带库别前缀（形如 `knowledge:<uuid>`）：条目 id 在两库之间不保证全局
+            # 唯一（两张表各有自己的 uuid），只给裸 uuid 时拿到它的人无法知道该去哪个
+            # 库查——那就不再是「可解析的回指」。
+            reference=f"{source}:{item_id}",
+            summary=summary,
+        )
+        for item_id, summary in targets
+    ]
+    return tuple(records)
+
+
 def _render_item(item: RetrievedItem) -> dict[str, object]:
     """把检索结果映射为返回契约（资料与案例检索第 3 节）的字段。
 
@@ -239,10 +375,12 @@ async def search_knowledge(context: ToolContext, args: SearchKnowledgeArgs) -> T
         )
 
     items = [_render_item(item) for item in outcome.items]
-    return _result_payload(
+    return await _result_for(
+        context,
         items,
         outcome.degraded_paths,
         empty_notice="未找到相关资料。这**不等于**该做法不存在或没有风险——只能说本资料库当前没有可引用的依据。",
+        source=LIBRARY_KNOWLEDGE,
     )
 
 
@@ -314,24 +452,30 @@ async def search_cases(context: ToolContext, args: SearchCasesArgs) -> ToolResul
 
     items = [_render_case_item(item) for item in outcome.items]
     # 空结果的措辞针对案例侧：不得让模型把「案例库没有命中」说成「没有这种情形」。
-    return _result_payload(
+    return await _result_for(
+        context,
         items,
         outcome.degraded_paths,
         empty_notice=("未找到相关案例。这**不等于**没有其他家庭遇到过类似情形——只能说本案例库当前没有可引用的记录。"),
+        source=LIBRARY_CASE,
     )
 
 
-def _result_payload(
+def _result_text(
     items: list[dict[str, object]],
     degraded_paths: tuple[str, ...],
     *,
     empty_notice: str,
-) -> ToolResult:
-    """两个检索工具共用的返回打包：条目、条数、降级说明、空结果提示。
+) -> str:
+    """两个检索工具共用的结果文本打包：条目、条数、降级说明、空结果提示。
 
-    抽出一处是因为这四条对外说法（含措辞纪律）是同一份契约：两处各写一遍，
+    抽出一处是因为这几条对外说法（含措辞纪律）是同一份契约：两处各写一遍，
     改一处忘另一处就会让其中一个工具悄悄丢掉降级提示——而「不得把检索不完整
     说成没有资料」正是靠那句话成立的。
+
+    **引用载荷不在这里**（T38 起）：这段文本是**模型读得到**的输入，而依据区是给使用者
+    看的。凭据经 `ToolResult.citations` 出去（事件流 + 会话写入），不混进给模型的 JSON。
+    这也让工具结果回到「纯粹是检索结果的结构化文档」这一个职责上。
     """
     payload: dict[str, object] = {"results": items, "count": len(items)}
     note = _degradation_note(degraded_paths)
@@ -343,7 +487,7 @@ def _result_payload(
         # 契约第 5 节第 4 行：检索为空要明确「未找到」，且不得解释为
         # 「该做法不存在或没有风险」。这句必须进返回文本，否则模型只能自己猜。
         payload["notice"] = empty_notice
-    return ToolResult(text=json.dumps(payload, ensure_ascii=False))
+    return json.dumps(payload, ensure_ascii=False)
 
 
 async def _run_search(
