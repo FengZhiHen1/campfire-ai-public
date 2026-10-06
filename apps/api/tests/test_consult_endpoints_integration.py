@@ -75,7 +75,7 @@ from campfire.modules.accounts.models import (
 from campfire.modules.accounts.onboarding import read_onboarding_state
 from campfire.modules.accounts.onboarding_completion import complete_onboarding
 from campfire.modules.accounts.registration import api_overrides, sign_up_form_fields
-from campfire.modules.accounts.session_items import message_text
+from campfire.modules.accounts.session_items import StoredItem, message_text
 from campfire.modules.accounts.session_repository import get_session_owner
 from campfire.modules.memory.derived import EmergencyMemory
 from campfire.modules.memory.errors import MemoryUnavailableError
@@ -2100,3 +2100,325 @@ async def test_the_account_key_is_the_one_the_tools_read() -> None:
         emergency_card_module.ACCOUNT_PAYLOAD_KEY,
     }
     assert keys == {consult_routes.ACCOUNT_PAYLOAD_KEY}, f"账号键在多处定义间漂移：{sorted(keys)}"
+
+
+# ---------------------------------------------------------------------------
+# 4.1 的 `batch_id`（T39 / C-2）：真栈上「提问 → 作答（带 batch_id）→ 水合」的归属
+#
+# 这一节用的是**真实依赖**：真 PostgreSQL（`docker compose up -d postgres`）里真实的
+# SDK 会话表（`AgentSession` / `AgentMessage`）、真实的 `session_repository.read_all_items`
+# 读路径、真实的水合端点与真实的 `QUESTION_BATCH_ID_PREFIX` 派生规则。
+# **被替换的只有模型与工具**（`ScriptedRunner`）——那是既有集成文件的统一做法，
+# 替换的不是被测的写入/读取/归属判定路径（同文件模块 docstring 第 18 节的说明）。
+# ---------------------------------------------------------------------------
+
+
+async def _seed_ask_user_round_trip(session_id: str, call_id: str, *, batch_id: str | None) -> None:
+    """往**真实** SDK 会话表里写入一次「提问 → 回执」以及（可选）一条作答。
+
+    写入用的是真实 `SQLAlchemySession.add_items`（与运行时同一条写入路径），
+    因此读回来的是真实的落库形状，不是构造出来的假条目。
+    """
+    sdk = build_sqlalchemy_session(session_id, engine=get_engine(get_settings()))
+    items: list[TResponseInputItem] = [_it_ask_call(call_id), _it_ask_output(call_id)]
+    if batch_id is not None:
+        # 作答正文逐字对齐 `answers.render_answers` 的产出形状（含声明行）。
+        lines = ["以下是对提问的作答", "object_name：可以", f"（本组批次标识：{batch_id}）"]
+        items.append({"role": "user", "content": "\n".join(lines)})
+    await sdk.add_items(items)
+
+
+#: 水合能重建出提问卡所需的**真实** `ask_user` 参数形状。
+#:
+#: 为什么必须是真的载荷：`question_record_part` 要求参数能解析出至少一道**有题干**的题，
+#: 否则它按规定**不产出 part**（读路径上「缺一段」比「给一张假卡」更接近事实）。
+#: 第一版我喂了 `"{}"`，于是两次提问都重建不出卡片（实测：`answered` 的两把键都不存在）
+#: ——那正是本仓「装置自检」要拦的形态：不是断言写错，而是装置根本没进到被测分支。
+_IT_ASK_USER_ARGUMENTS = json.dumps(
+    {
+        "items": [
+            {
+                "id": "object_name",
+                "prompt": "你平时怎么称呼这孩子？（小名、昵称、随便一个称呼都行，不用真实姓名）",
+                "options": [],
+                "allow_skip": True,
+            }
+        ]
+    },
+    ensure_ascii=False,
+)
+
+
+def _it_ask_call(call_id: str) -> TResponseInputItem:
+    """一次 `ask_user` 调用（参数是**可重建**的真实载荷形状）。"""
+    from campfire.agent.runtime.ask_user_tool import ASK_USER_TOOL_NAME  # noqa: PLC0415
+
+    return cast(
+        TResponseInputItem,
+        {
+            "type": "function_call",
+            "name": ASK_USER_TOOL_NAME,
+            "call_id": call_id,
+            "arguments": _IT_ASK_USER_ARGUMENTS,
+        },
+    )
+
+
+def _it_ask_output(call_id: str) -> TResponseInputItem:
+    """一次 `ask_user` 的成功回执（水合重建提问卡的第二个判据）。"""
+    from campfire.modules.accounts.session_items import ASK_USER_SUCCESS_OUTPUT  # noqa: PLC0415
+
+    return cast(
+        TResponseInputItem,
+        {"type": "function_call_output", "call_id": call_id, "output": ASK_USER_SUCCESS_OUTPUT},
+    )
+
+
+async def test_answers_payload_with_batch_id_is_accepted_and_without_it_too(
+    client: httpx.AsyncClient,
+) -> None:
+    """★ 契约 4.1 的兼容性判据（真栈、真 HTTP）：带与不带 `batch_id` **都** 202。
+
+    这一条直接对着审查者的核对项：`AnswerItem` 的 `extra="forbid"` 必须同步放行，
+    否则 T43 前端回传该字段时**整组作答被 422 挡回**（使用者看到红字、答不出去）。
+
+    判别性：把 `SendMessageRequest.batch_id` 删掉 ⇒ 第一个 202 变 422 ⇒ 红。
+    """
+    _install_runner(ScriptedRunner(get_settings()))
+
+    # 带 batch_id（顶层，T43 前端实际发出的形状）
+    s1 = await _create_session(client)
+    r1 = await _send(
+        client,
+        s1,
+        answers=[{"id": "q1", "value": "会有"}],
+        batch_id="hydrated-call-X",
+    )
+    assert r1.status_code == 202, f"带 batch_id 被判载荷不合法：{r1.status_code} {r1.text}"
+    await drain_pumps()
+
+    # 不带 batch_id（旧客户端 / 实时路径客户端选择不回传）
+    s2 = await _create_session(client)
+    r2 = await _send(client, s2, answers=[{"id": "q1", "value": "会有"}])
+    assert r2.status_code == 202, f"旧载荷（不带 batch_id）被拒：{r2.status_code} {r2.text}"
+    await drain_pumps()
+
+    # 逐题位置也放行（任务书校验点要求 `AnswerItem` 放行）
+    s3 = await _create_session(client)
+    r3 = await _send(client, s3, answers=[{"id": "q1", "value": "会有", "batch_id": "hydrated-call-Y"}])
+    assert r3.status_code == 202, f"逐题 batch_id 被判载荷不合法：{r3.status_code} {r3.text}"
+    await drain_pumps()
+
+
+async def test_answers_batch_id_boundaries_over_http(client: httpx.AsyncClient) -> None:
+    """★ `batch_id` 的边界一律 422，且**既有**四种形态校验未被破坏（真栈读数）。
+
+    - 空串 / 全空白 ⇒ 422（**不是**静默当作缺省：缺省与空串语义不同，契约 4.1 第 1 条）；
+    - 顶层与逐题不一致 ⇒ 422（矛盾胜于猜测）；
+    - 普通消息形态带 `batch_id` ⇒ 422；
+    - **既有**四种形态（只有 id / 只有 skipped / 两者都给 / 都不给）行为不变。
+
+    判别性：把空串分支改成 `return None`（折成缺省）⇒ 本用例第一段红。
+    """
+    _install_runner(ScriptedRunner(get_settings()))
+    session_id = await _create_session(client)
+
+    cases: list[tuple[str, dict[str, object]]] = [
+        ("空串", dict(answers=[{"id": "q1", "value": "v"}], batch_id="")),
+        ("全空白", dict(answers=[{"id": "q1", "value": "v"}], batch_id="   ")),
+        (
+            "顶层与逐题不一致",
+            dict(answers=[{"id": "q1", "value": "v", "batch_id": "hydrated-a"}], batch_id="hydrated-b"),
+        ),
+        ("普通消息带 batch_id", dict(content="你好", batch_id="hydrated-a")),
+        (
+            "逐题之间不一致",
+            dict(answers=[{"id": "a", "value": "1", "batch_id": "x"}, {"id": "b", "value": "2", "batch_id": "y"}]),
+        ),
+    ]
+    for label, body in cases:
+        response = await _send(client, session_id, **body)
+        assert response.status_code == 422, f"{label} 未被拒：{response.status_code} {response.text}"
+
+    # 既有四种形态：行为逐字不变（这些校验本包不许改松）。
+    legacy: list[tuple[str, dict[str, object], int]] = [
+        ("只有 id", dict(answers=[{"id": "q1"}]), 422),
+        ("只有 skipped", dict(answers=[{"id": "q1", "skipped": True}]), 202),
+        ("两者都给", dict(answers=[{"id": "q1", "value": "v", "skipped": True}]), 422),
+        ("都不给", dict(answers=[{"id": "q1"}]), 422),
+    ]
+    for label, body, expected in legacy:
+        response = await _send(client, _fresh_session_id(await _create_session(client)), **body)
+        assert response.status_code == expected, (
+            f"{label}: 期望 {expected}，实际 {response.status_code} {response.text}"
+        )
+    await drain_pumps()
+
+
+def _fresh_session_id(session_id: str) -> str:
+    """原样返回（可读性辅助：强调每个形态用一个新会话，避免互斥干扰）。"""
+    return session_id
+
+
+async def test_hydrated_verdict_attributes_the_answer_by_batch_id(client: httpx.AsyncClient) -> None:
+    """★★ 真栈端到端：`call(A) → out(A) → 换话题 → call(B) → out(B) → 作答(声明 A)`。
+
+    走**真实** HTTP 水合端点，读 `question-record` part 的 `answered` 三态。
+    真值：那条作答是给 A 的（使用者在 B 提问之后才回头把 A 答了），B 从未被作答。
+
+    - A 必须 `True`（正是有了 `batch_id` 才能**正向归属**——旧判据给不出 `True`）；
+    - B 必须 `False`（旧判据给 `True` ⇒ B 永久失去补答，这就是被修掉的误判）。
+
+    判别性：把第 1 层正向扫窗口而不是扫全量历史 ⇒ A 变 `False` ⇒ 红。
+    """
+    _install_runner(ScriptedRunner(get_settings()))
+    session_id = await _create_session(client)
+
+    sdk = build_sqlalchemy_session(session_id, engine=get_engine(get_settings()))
+    from campfire.modules.accounts.session_items import QUESTION_BATCH_ID_PREFIX  # noqa: PLC0415
+
+    await sdk.add_items(
+        [
+            {"role": "user", "content": "第一轮：问 A"},
+            _it_ask_call("it-call-A"),
+            _it_ask_output("it-call-A"),
+            {"role": "user", "content": "换个话题：我想先说说别的。"},
+            _it_ask_call("it-call-B"),
+            _it_ask_output("it-call-B"),
+            # ★ 那条作答**声明了 A 的批次**（水合路径的值形态）。
+            {
+                "role": "user",
+                "content": "\n".join(
+                    [
+                        "以下是对提问的作答",
+                        "object_name：可以",
+                        f"（本组批次标识：{QUESTION_BATCH_ID_PREFIX}it-call-A）",
+                    ]
+                ),
+            },
+        ]
+    )
+
+    hydrated = (await client.get(f"/consult/sessions/{session_id}/messages")).json()
+    records = [
+        part for message in hydrated["messages"] for part in message["parts"] if part["type"] == "question-record"
+    ]
+    by_batch = {part["batch_id"]: part["answered"] for part in records}
+
+    assert len(records) == 2, f"两次提问应各水合出一张提问卡，实际 {len(records)}"
+    assert by_batch[f"{QUESTION_BATCH_ID_PREFIX}it-call-A"] is True, "声明了 A 的批次却没能正向归属到 A"
+    assert by_batch[f"{QUESTION_BATCH_ID_PREFIX}it-call-B"] is False, (
+        "B 未被作答（那条作答声明的是 A），必须为 False 才能补答"
+    )
+
+
+async def test_hydrated_verdict_keeps_the_old_behaviour_without_batch_id(client: httpx.AsyncClient) -> None:
+    """★ 同一真栈场景、**不带** `batch_id` ⇒ 退回旧行为（B 仍被误判 `True`）。
+
+    这是**改动前对照在真栈上的复现**（与单元层的双读数同源）：它证明本包改的是
+    「带 `batch_id` 时」的行为，而旧客户端的可判定性损失原样保留（契约 4.1 第 3 条）。
+
+    判别性：把缺省层（**第 4 层**）的判据改成恒定 `False` ⇒ B 的断言红。
+    """
+    _install_runner(ScriptedRunner(get_settings()))
+    session_id = await _create_session(client)
+    await _seed_ask_user_round_trip(session_id, "it-noBatch-C", batch_id=None)
+
+    # 另一次提问 A（带一条**未声明**的迟到作答，落在 B 的窗口里）。
+    sdk = build_sqlalchemy_session(session_id, engine=get_engine(get_settings()))
+    await sdk.add_items(
+        [
+            _it_ask_call("it-noBatch-B"),
+            _it_ask_output("it-noBatch-B"),
+            {"role": "user", "content": "以下是对提问的作答\nobject_name：可以"},
+        ]
+    )
+
+    hydrated = (await client.get(f"/consult/sessions/{session_id}/messages")).json()
+    records = [
+        part for message in hydrated["messages"] for part in message["parts"] if part["type"] == "question-record"
+    ]
+    answered = {part["batch_id"]: part["answered"] for part in records}
+    assert any(value is True for value in answered.values()), (
+        f"旧载荷（不带 batch_id）在水合里应退回窗口判定并给出 True（既有误判保留），实际 {answered}"
+    )
+
+
+async def test_hydrated_verdict_live_path_batch_id_never_yields_false(client: httpx.AsyncClient) -> None:
+    """★ 真栈·**实时路径**（裸 `uuid4().hex`）：**不得判 `False`，也不得判 `True`**。
+
+    ⚠ 本条在 2026-10-07 r2 **断言反转**：r1 曾断言「实时声明被排他层挡成 `False`」并
+    称其为「排他生效」——那正是 **P0**（把本组自己已作答的组判成未作答 ⇒ 重复作答）。
+    修复后实时声明**不可验证**，只能行使「不得判 `True`」的否决权 ⇒ 相关组一律 `None`。
+
+    - `it-live-B` 必须 `None`（不是 `False`）：那条作答**不可验证**，无法证明它属于别组；
+    - `it-live-A` 必须 `None`（不是 `True`）：实时路径**没有**正向归属能力。
+
+    判别性：把 `_is_verifiable_exclusion` 改成 `return True`（r1 行为）⇒ B 变 `False` ⇒ 红。
+    """
+    _install_runner(ScriptedRunner(get_settings()))
+    session_id = await _create_session(client)
+
+    live_batch_id = uuid.uuid4().hex  # 实时路径的真值形态（`ask_user_tool._new_batch_id`）
+    sdk = build_sqlalchemy_session(session_id, engine=get_engine(get_settings()))
+
+    await sdk.add_items(
+        [
+            {"role": "user", "content": "第一轮：问 A"},
+            _it_ask_call("it-live-A"),
+            _it_ask_output("it-live-A"),
+            {"role": "user", "content": "换个话题：我想先说说别的。"},
+            _it_ask_call("it-live-B"),
+            _it_ask_output("it-live-B"),
+            {
+                "role": "user",
+                "content": "\n".join(["以下是对提问的作答", "object_name：可以", f"（本组批次标识：{live_batch_id}）"]),
+            },
+        ]
+    )
+
+    hydrated = (await client.get(f"/consult/sessions/{session_id}/messages")).json()
+    records = [
+        part for message in hydrated["messages"] for part in message["parts"] if part["type"] == "question-record"
+    ]
+    answered = {part["batch_id"]: part["answered"] for part in records}
+    from campfire.modules.accounts.session_items import QUESTION_BATCH_ID_PREFIX  # noqa: PLC0415
+
+    assert answered[f"{QUESTION_BATCH_ID_PREFIX}it-live-B"] is not False, (
+        f"实时声明被判成 False ⇒ B 的卡片重新可作答（P0 回归）：{answered}"
+    )
+    assert answered[f"{QUESTION_BATCH_ID_PREFIX}it-live-A"] is not True, (
+        f"实时路径被错误地赋予了正向归属能力（用户裁决不许）：{answered}"
+    )
+    assert answered[f"{QUESTION_BATCH_ID_PREFIX}it-live-A"] is None
+    assert answered[f"{QUESTION_BATCH_ID_PREFIX}it-live-B"] is None
+
+
+async def test_session_items_verdicts_read_from_the_real_store(client: httpx.AsyncClient) -> None:
+    """真实依赖说明：判定函数在**真库读出的条目**上跑得出结论（证明读路径没被 mock）。
+
+    这一条不是为了再验语义（上面两条已经验了），而是为了钉住「本节的读数确实来自
+    真 PostgreSQL 的 SDK 会话表」：条目经 `read_all_items` 从库里读出，再喂给
+    `question_answered_verdicts`。若把库换成空库，本用例会因为拿不到两次提问而红。
+    """
+    _install_runner(ScriptedRunner(get_settings()))
+    session_id = await _create_session(client)
+    await _seed_ask_user_round_trip(session_id, "it-store-A", batch_id="hydrated-it-store-A")
+
+    from campfire.modules.accounts.session_repository import read_all_items  # noqa: PLC0415
+
+    async with session_scope(get_settings()) as session:
+        stored = await read_all_items(session, session_id=session_id)
+
+    assert stored, "真库里读不到条目——本用例会空跑"
+    assert any(item_type_of(item) == "function_call" for item in stored), "真库里没有 ask_user 调用行"
+
+    from campfire.modules.accounts.session_items import question_answered_verdicts  # noqa: PLC0415
+
+    verdicts = question_answered_verdicts(stored)
+    assert verdicts == {"it-store-A": True}, f"真库条目上的判定结论：{verdicts}"
+
+
+def item_type_of(item: StoredItem) -> object:
+    """取一条已解析条目的 SDK 类型（用例局部辅助，避免 import 别名混淆）。"""
+    return item.data.get("type")
