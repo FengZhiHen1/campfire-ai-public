@@ -35,8 +35,23 @@ def test_ingest_no_longer_requires_source_and_scope_flags() -> None:
     """`--source`/`--scope` 不再是命令行必填——文件 frontmatter 可提供。
 
     换成 argparse 必填会让「元数据写在文件里」的语料无法直接摄取。必填性移到
-    摄取层判定（缺来源或适用范围即拒绝入库），见
-    `test_ingest_rejects_file_without_source_in_frontmatter`。
+    摄取层判定（缺来源或适用范围即拒绝入库）。
+
+    ~~见 `test_ingest_rejects_file_without_source_in_frontmatter`。~~
+
+    **⇒ 已订正（2026-10-02）**：上面划掉的那句**点名的用例全仓不存在**——
+    **该名字从未作为用例被定义过**：`git log --all -S "def <上面划掉的那个名字>"`
+    的读数是**空**（`def` 前缀那条才是判据）。
+    **⚠ 如实补一句更精确的**：**不带 `def` 前缀的同一条命令会命中 1 个提交
+    （`5c26e6d`）**——而 `5c26e6d` 正是**写出这句坏引用的那个提交**
+    （该名字在它新增的这行注释里出现过）。**⇒ 「名字出现过」与「用例被定义过」是两回事**：
+    前者成立，后者不成立，**所以「见某条用例」仍是一句不成立的指向**。
+    （此处不重复那个名字：它只出现在上面划掉的那句里，钉死一个不存在的名字
+    只会给本守卫制造新的悬挂引用。）
+    **实际覆盖**：摄取层的这条闸门由
+    `test_library_ingestion_integration.py` 的
+    `test_ingest_rejects_file_without_source_or_scope` 承担（它断言
+    `IngestionError` 且确认未写入任何条目）；本用例只钉**命令行不再必填**这一半。
     """
     parser = _build_parser()
 
