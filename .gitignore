@@ -51,10 +51,28 @@ reports/
 .ngrok-url
 
 # 运行时数据
-data/
 logs/
 tmp/
 _tmp_test/
+
+# `data/` 是**冷启动语料**的稳定落点，因此不能整目录忽略——
+# 原规则 `data/` 让 `data/.gitkeep` 从未生效（`git check-ignore data/.gitkeep` 命中），
+# 目录在克隆后根本不存在，而它被当作语料位使用。
+#
+# 改为「忽略运行时子目录、放行语料层」：语料是人工维护的少量文本（md/json），
+# 必须进版本库并随代码一起克隆，否则 `cli ingest` 在新机器上无输入可喂（`EVID-F`）。
+# 运行时产物仍不得入库。
+/data/*.dump
+/data/*.sql
+/data/redis/
+/data/falkordb/
+/data/minio/
+/data/cache/
+/data/tmp/
+/data/originals/
+!data/README.md
+!data/knowledge/
+!data/cases/
 
 # IDE
 .vscode/
