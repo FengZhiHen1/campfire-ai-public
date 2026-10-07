@@ -13,7 +13,13 @@
  *   - 禁止把 owner 显示成「已审阅」（同文第 7、8 节：必须能显示为「项目所有者核准」）
  */
 
-import type { EvidenceLevel, LibraryItemStatus, ReviewStatus, RiskClass } from '../../../shared/types/library';
+import type {
+  EvidenceLevel,
+  LibraryItem,
+  LibraryItemStatus,
+  ReviewStatus,
+  RiskClass,
+} from '../../../shared/types/library';
 
 /**
  * 条目状态措辞。
@@ -78,6 +84,11 @@ export function riskClassLabel(risk: RiskClass): string {
   return RISK_LABELS[risk];
 }
 
+/** 值在场：线格式里「没有」是 null，旧版可能是缺键，两者都不算在场。 */
+function isPresent<T>(value: T | null | undefined): value is T {
+  return value !== null && value !== undefined;
+}
+
 /**
  * 组成案例卡的元信息行：来源 + 来源类型 + 证据等级 + 审阅状态 + 授权 + 访谈时间。
  *
@@ -85,20 +96,21 @@ export function riskClassLabel(risk: RiskClass): string {
  * 缺字段不补默认值：案例侧的六项必带字段缺任一个，页面就无法如实回答
  * 「谁说的、多可信、什么时候」（契约第 3.1 节）。因此这里只拼接存在的字段，
  * 缺失的段落直接不出现——而不是写「未知来源」这种看起来像结论的填充。
+ *
+ * 参数从 `LibraryItem` 派生而不是另写一份结构：另写的那份会悄悄落后于线格式，
+ * 于是「资料侧这几项是 null」编译器看不见（2026-10-07 实测，资料行拼出访谈 null）。
  */
-export function itemMetaParts(item: {
-  source: string;
-  source_type?: string;
-  evidence_level?: EvidenceLevel;
-  review_status?: ReviewStatus;
-  authorization?: string;
-  interview_at?: string;
-}): string[] {
+export function itemMetaParts(
+  item: Pick<
+    LibraryItem,
+    'source' | 'source_type' | 'evidence_level' | 'review_status' | 'authorization' | 'interview_at'
+  >,
+): string[] {
   const parts: string[] = [`来源：${item.source}`];
-  if (item.source_type !== undefined && item.source_type !== '') parts.push(item.source_type);
-  if (item.evidence_level !== undefined) parts.push(evidenceLevelLabel(item.evidence_level));
-  if (item.review_status !== undefined) parts.push(reviewStatusLabel(item.review_status));
-  if (item.authorization !== undefined && item.authorization !== '') parts.push(item.authorization);
-  if (item.interview_at !== undefined && item.interview_at !== '') parts.push(`访谈 ${item.interview_at}`);
+  if (isPresent(item.source_type) && item.source_type !== '') parts.push(item.source_type);
+  if (isPresent(item.evidence_level)) parts.push(evidenceLevelLabel(item.evidence_level));
+  if (isPresent(item.review_status)) parts.push(reviewStatusLabel(item.review_status));
+  if (isPresent(item.authorization) && item.authorization !== '') parts.push(item.authorization);
+  if (isPresent(item.interview_at) && item.interview_at !== '') parts.push(`访谈 ${item.interview_at}`);
   return parts;
 }
