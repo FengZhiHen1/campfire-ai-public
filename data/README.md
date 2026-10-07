@@ -159,6 +159,40 @@ docker exec campfire-api python -m campfire.cli ingest /app/data/cases/2026-05-2
 ② 先 `cli withdraw knowledge <item_id>` 撤下旧条目，再用新路径重摄取；
 ③ 直接改库内 `source_path`（**不建议**：绕过摄取链，且需手动对账 `doc_hash`）。
 
+## 四、导入记录（ledger）
+
+`RAG策略` 第 7 节纪律 3 要求记录批次 / 文件 / 条目数 / 操作者 / 时间 / 脚本版本；记账表尚未建，
+故先在此手写登记——撤下与回溯的来源就是这张表。
+
+### 2026-10-07 · 生产首次冷启动导入
+
+- 目标：生产库（`campfire-postgres`），执行环境：`campfire-api` 容器内
+  （同一镜像与 lockfile，`python -m campfire.cli ingest`，路径为容器内 `/app/data/**`）
+- 镜像 tag：`b6816df`（首次含语料层的构建）
+- 操作者：项目所有者授权的编排会话（运营者身份 = 服务器访问权，见 `docs/运维/发布与回滚.md`）
+- 摄取前基线：知识条目 0 / 案例 0 / 节点 0
+
+| 输入（`/app/data/` 下） | 条目 / 案例 id | 写入 |
+|---|---|---|
+| `knowledge/autism-corpus/nhc-0-6-autism-screening-intervention.md` | `9ad6ac7a-d02d-4faf-b7cb-5127726b7b0e` | 23 节点 |
+| `knowledge/autism-corpus/pmc-hume-third-generation-review.md` | `4be5a64d-f029-42c6-8f90-5649a343515f` | 69 节点（1 块超限不可分 → 入 `campfire_manual_review`） |
+| `knowledge/autism-md/01_孤独症谱系障碍儿童干预康复指南_2026.md` | `0d3070ef-c8f3-4bab-8b17-6f016679672a` | 8 节点 |
+| `knowledge/autism-md/02_…_文件解读.md` | `4415c490-a2b5-4a58-89b4-54d572e86e01` | 6 节点 |
+| `knowledge/autism-md/03_0-6岁儿童孤独症筛查干预服务规范_试行.md` | `295345de-d221-4159-9a24-6c35df2c8f50` | 11 节点 |
+| `knowledge/autism-md/04_…_文件解读.md` | `8d0f43db-7c76-4535-9f6a-d3dc58669291` | 5 节点 |
+| `knowledge/autism-md/11_CDC_Autism_Wandering_Is_an_Emergency.md` | `d4783455-5560-4f9e-b41c-a1a82c73eeac` | 6 节点 |
+| `cases/2026-05-25_1448_respecting-pace-asd` | `ea730d1e-3a84-4d97-90e1-1acb4fa62a8b` | 3 卡 + 5 小节 |
+| `cases/2026-05-30_2243_emotion-growth-asd` | `50dabb4c-9b63-4328-afe4-c2bb15b1afed` | 4 卡 + 5 小节 |
+| `cases/2026-05-31_0850_adult-pdd-social` | `f6fd27fc-9672-4ffd-a19c-eec996b07b8a` | 3 卡 + 5 小节 |
+
+- 摄取后：知识条目 **7** / 案例 **3** / 节点 **153**
+- 验证：`browse` 两库分别返回 7 / 3 条；真实检索（嵌入 + 向量 + 融合）两条查询均命中
+- **本次未摄取**：`autism-md` 其余 11 份（许可未裁决，`EVID-B`）；
+  `cases/…fictional-supermarket-meltdown`（虚构演示包，是否用于内测未裁决）
+- **已知重叠（待裁决）**：`autism-corpus/nhc-0-6-…`（23 节点）与 `autism-md/03_…规范_试行`
+  （11 节点）是同一份 NHC 文件的两种加工产物，条目标题相同 ⇒ 检索与浏览页会出现两条同名结果
+- 生产库内各条 `source_path` 均为上表的新路径（已核）；§三 所述「旧路径」问题只涉及本机开发库
+
 ## 未核实项（如实登记）
 
 - **`data/originals/` 中所有文件的许可**未逐份完成法律判断；本文只记录**文件自身声明**。
@@ -171,6 +205,6 @@ docker exec campfire-api python -m campfire.cli ingest /app/data/cases/2026-05-2
 - **未做检索质量评测**：`RAG策略` 第 8 节的评测集依赖 `EVID-F` 语料完整录入。
 - **`_ingest` 精修产物的 50 页 jpg 与 MinerU 原始档未搬入**
   （约 31 MB，属可重生成产物；`_verdicts.md` 等复核留痕已归入 `originals/provenance/`）。
-- **本目录内容未做端到端摄取演练**：验证止于"项目自身的校验器接受这些输入"
-  （`load_manifest` / `validate_card` / `parse_frontmatter`），
-  **未**在真实库上跑一次 `cli ingest`（那会真实写库并调用嵌入）。
+- **端到端摄取已完成（2026-10-07）**：在生产库上按 §四 的清单实跑 `cli ingest`
+  （真写库、真调嵌入），摄取后知识条目 7 / 案例 3 / 节点 153，并用真实检索验证命中。
+  仍**未做**的是检索**质量**评测（见上一条）。
