@@ -38,6 +38,17 @@ export interface EmergencyFormViewProps {
   submitting?: boolean;
   /** 提交按钮是否已按下(用于帧驱动的按压反馈) */
   submitPressed?: boolean;
+  /**
+   * 未选中项的压暗程度(0..1,帧驱动)。
+   *
+   * ★ 2026-10-07 新增(镜头卡 chip-grid-single-select-blackout 的语法):
+   *   点选之后**其余选项退到背景**,视线落在被选中的那一条上。这是选择类交互的
+   *   真实语法(与「给选中项加一圈发光」相反:后者是把注意力平摊给所有元素)。
+   *   压暗是**落位后的稳态**,不是持续脉动 —— 只做一次过渡,之后静止。
+   */
+  unselectedDim?: number;
+  /** 选中项的落位回弹(0..1,一次性;0 表示无) */
+  checkedPop?: number;
 }
 
 /**
@@ -61,6 +72,8 @@ export const EmergencyFormView: React.FC<EmergencyFormViewProps> = ({
   skipped = false,
   submitting = false,
   submitPressed = false,
+  unselectedDim = 0,
+  checkedPop = 0,
 }) => {
   const progress = (index + 1) / total;
 
@@ -122,8 +135,19 @@ export const EmergencyFormView: React.FC<EmergencyFormViewProps> = ({
               ) : (
                 question.options.map((option) => {
                   const checked = selected.includes(option.value);
+                  // 压暗只作用于**未选中**项;选中项自己有一次落位回弹。
+                  // 两者都是帧驱动的终值(过渡结束后静止),没有 animation/transition。
+                  const dim = checked ? 0 : unselectedDim;
                   return (
-                    <label className="selection" key={option.value}>
+                    <label
+                      className="selection"
+                      key={option.value}
+                      style={{
+                        opacity: 1 - dim * 0.6,
+                        transform: checked ? `scale(${String(1 + checkedPop * 0.035)})` : undefined,
+                        transformOrigin: 'left center',
+                      }}
+                    >
                       {/* 真实 input + :has(input:checked) 驱动外观 —— ✓ 与框是同一元素 */}
                       <input
                         type={question.control === 'multi' ? 'checkbox' : 'radio'}

@@ -23,6 +23,7 @@ import type {
 //   实现在 apps/web/src/features/profile/domain/domains.ts。
 import {domainLabel} from '../../../../apps/web/src/features/profile/domain/domains';
 import {FIXTURE_DATA} from '../fixtures/data.generated';
+import {MEMORY_EPISODES} from '../fixtures/memory.generated';
 
 const OBJECT: SupportObject = {
   id: FIXTURE_DATA.supportObject.id,
@@ -95,6 +96,35 @@ export function makeProfilePort() {
 /** 知识/案例条目(真实导出)。 */
 export const KNOWLEDGE_ITEMS = FIXTURE_DATA.knowledge;
 export const CASE_ITEMS = FIXTURE_DATA.cases;
+
+/**
+ * 记忆端口的内存实现(账号级时间线)。
+ *
+ * 数据来自 `memory.generated.ts` —— 由 `verify/memory-episodes.py export` 走
+ * **产品读路径**(`modules.memory.store.read_timeline`,内部做删除账本过滤)导出,
+ * 与 `data.generated.ts` 的区别只是数据源(记忆在图库、档案在关系库)。
+ *
+ * 与 `makeProfilePort` 同一条边界:只实现读路径;写路径(删除/纠正)返回成功形状
+ * 但**不改数据** —— 影片里的动作用帧驱动的视觉状态表达,不依赖真实写入
+ * (真实写入会改变账号数据,而影片只是演示)。
+ */
+export function makeMemoryPort() {
+  return {
+    listEpisodes: async () => ({items: [...MEMORY_EPISODES], next_cursor: null}),
+    deleteEpisode: async (episodeKey: string) => ({
+      episode_key: episodeKey,
+      newly_deleted: true,
+      reason: 'user_request' as const,
+    }),
+    correctEpisode: async (episodeKey: string, body: {occurred_at: string; content: string}) => ({
+      superseded: true,
+      // 影片不演「纠正已写入」的中间态,因此如实给 true;正文不回写(见上方边界)。
+      new_episode_written: true,
+      episode_key: `fixture-corrected:${body.occurred_at}`,
+      supersedes: episodeKey,
+    }),
+  };
+}
 
 /**
  * 案例库端口的内存实现。

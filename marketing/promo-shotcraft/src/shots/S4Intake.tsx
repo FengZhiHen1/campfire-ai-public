@@ -160,9 +160,10 @@ export const S4Intake: React.FC = () => {
           : frame < TAIL_END ? 3
             : 4;
 
-  // 相机:★ 带节拍的推近(lib/camera.ts)+ 分段幅度。
-  // 旧版幅度够但缺周期位移,段内仍有静止;现在两者叠加。
-  const cam = pushCamera(frame, 1.0, 1.2, t.duration, {beat: 13, beatPeriod: 26});
+  // 相机:★ 单向推近 + 分段幅度(lib/camera.ts)。
+  //   ★ 2026-10-07:周期漂移分量已删除(用户裁决);分段推近是语义运动(逐段进入
+  //     下一组题),保留。
+  const camScale = pushCamera(frame, 1.0, 1.2, t.duration).scale;
   // 分段:首页 → 第1题 → 快掠 → 自由文本 → Q7/Q8,每段额外推近(让段内也持续有位移)
   const segPush = interpolate(
     frame,
@@ -170,7 +171,7 @@ export const S4Intake: React.FC = () => {
     [1.0, 1.06, 1.12, 1.16, 1.18, 1.2],
     {extrapolateLeft: 'clamp', extrapolateRight: 'clamp', easing: Easing.linear},
   );
-  const scale = Math.max(cam.scale, segPush);
+  const scale = Math.max(camScale, segPush);
 
   // 屏内滚动:★ 必须传!初版四处 DeviceStage 都没传 scrollY,而该页需要滚动,
   // 结果第 1 题的「明显疼痛」选项卡被屏幕下缘拦腰截断、三个按钮全在屏外
@@ -199,12 +200,16 @@ export const S4Intake: React.FC = () => {
     extrapolateLeft: 'clamp', extrapolateRight: 'clamp',
   });
 
-  // ── ① 首页:应急入口高亮圈(画在真实按钮位置,用脉冲吸引注意) ──
+  // ── ① 首页:应急入口高亮圈(画在真实按钮位置,用**一次**回弹吸引注意) ──
+  //   ★ 2026-10-07:替换原先的 sin 持续脉冲(16f 周期)。圈是「锁定」的语义:
+  //     张开一次 + 收回 + 保持静止,不是一直在呼吸。
   const ringIn = interpolate(frame, t.span(0.035, 0.075), [0, 1], {
     extrapolateLeft: 'clamp', extrapolateRight: 'clamp',
     easing: Easing.bezier(0.2, 0.75, 0.3, 1),
   });
-  const ringPulse = 0.5 + 0.5 * Math.sin((frame / 16) * Math.PI * 2);
+  const ringPop = 1 - interpolate(frame, t.span(0.075, 0.115), [0, 1], {
+    extrapolateLeft: 'clamp', extrapolateRight: 'clamp',
+  });
 
   // ── ② 第 1 题:勾选「明显疼痛」(多选题第 8 项) ──
   const flagOn = interpolate(
@@ -216,6 +221,21 @@ export const S4Intake: React.FC = () => {
       easing: Easing.bezier(0.2, 0.75, 0.3, 1),
     },
   );
+
+  /**
+   * 勾选落定之后的两件事(镜头卡 chip-grid-single-select-blackout 的语法):
+   *   ① 其余 7 项**压暗到稳态** —— 视线落在被选中的那一条上;
+   *   ② 选中项一次**回弹**然后静止。
+   * 起点与 `flagOn` 的完成时刻对齐,终点按同段比例派生 —— 段长变化自动跟随。
+   */
+  const checkSettled = interpolate(
+    frame,
+    t.span(P1_END_R + (P2_END_R - P1_END_R) * 0.52, P1_END_R + (P2_END_R - P1_END_R) * 0.64),
+    [0, 1],
+    {extrapolateLeft: 'clamp', extrapolateRight: 'clamp'},
+  );
+  const unselectedDim = checkSettled;
+  const checkedPop = 1 - checkSettled;
 
   // ── ③ 快掠 ──
   const quickIdx = Math.max(0, Math.min(QUICK.length - 1, Math.floor((frame - P2_END) / QUICK_PER)));
@@ -237,7 +257,7 @@ export const S4Intake: React.FC = () => {
       <div style={{position: 'absolute', inset: 0, opacity: fadeOut}}>
         {/* ① 首页 */}
         {seg === 0 ? (
-          <DeviceStage cx={640 + cam.tx} cy={540 + cam.ty} scale={scale} scrollY={scrollY}>
+          <DeviceStage cx={640} cy={540} scale={scale} scrollY={scrollY}>
             <MemoryRouter initialEntries={['/']}>
               <HomePage />
             </MemoryRouter>
@@ -246,20 +266,22 @@ export const S4Intake: React.FC = () => {
 
         {/* ② 第 1 题 */}
         {seg === 1 ? (
-          <DeviceStage cx={640 + cam.tx} cy={540 + cam.ty} scale={scale} scrollY={scrollY}>
+          <DeviceStage cx={640} cy={540} scale={scale} scrollY={scrollY}>
             <EmergencyFormView
               question={q[0]}
               index={0}
               total={q.length}
               selected={flagOn > 0.5 ? [...RED_FLAGS] : []}
               handled={0}
+              unselectedDim={unselectedDim}
+              checkedPop={checkedPop}
             />
           </DeviceStage>
         ) : null}
 
         {/* ③ 快掠(第 2-5 题,真实会话里都是「已跳过」) */}
         {seg === 2 ? (
-          <DeviceStage cx={640 + cam.tx} cy={540 + cam.ty} scale={scale} scrollY={scrollY}>
+          <DeviceStage cx={640} cy={540} scale={scale} scrollY={scrollY}>
             <EmergencyFormView
               question={q[QUICK[quickIdx]]}
               index={QUICK[quickIdx]}
@@ -275,7 +297,7 @@ export const S4Intake: React.FC = () => {
             ★ 这一题展示**真实自由文本**(数据库逐字「在超市突然蹲下捂住耳朵」),
               并用文字逐字落位演出「写下发生了什么」的过程 —— 比勾选框更有信息量。 */}
         {seg === 3 ? (
-          <DeviceStage cx={640 + cam.tx} cy={540 + cam.ty} scale={scale} scrollY={scrollY}>
+          <DeviceStage cx={640} cy={540} scale={scale} scrollY={scrollY}>
             <EmergencyFormView
               question={q[WHAT_HAPPENED_INDEX]}
               index={WHAT_HAPPENED_INDEX}
@@ -293,7 +315,7 @@ export const S4Intake: React.FC = () => {
               这正好是右侧「跳过 = 未排除」的实证。
               收尾停在「提交，开始分析」被按下,接 S5 的流式分析。 */}
         {seg === 4 ? (
-          <DeviceStage cx={640 + cam.tx} cy={540 + cam.ty} scale={scale} scrollY={scrollY}>
+          <DeviceStage cx={640} cy={540} scale={scale} scrollY={scrollY}>
             <EmergencyFormView
               question={q[TAIL_QUESTIONS[tailIdx]]}
               index={TAIL_QUESTIONS[tailIdx]}
@@ -316,13 +338,13 @@ export const S4Intake: React.FC = () => {
           <div
             style={{
               position: 'absolute',
-              left: 640 + cam.tx - 195 + 16 - 8,
-              top: 540 + cam.ty - 422 + 116 - 8,
+              left: 640 - 195 + 16 - 8,
+              top: 540 - 422 + 116 - 8,
               width: 358 + 16,
               height: 203 + 16,
               borderRadius: 26,
               border: '3px solid var(--accent)',
-              boxShadow: `0 0 ${String(30 + ringPulse * 20)}px rgba(194,65,12,${String(0.22 + ringPulse * 0.18)})`,
+              boxShadow: `0 0 ${String(30 + ringPop * 22)}px rgba(194,65,12,${String(0.22 + ringPop * 0.2)})`,
               opacity: ringIn,
               transform: `scale(${String(1.05 - ringIn * 0.05)})`,
               transformOrigin: 'center center',

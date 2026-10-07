@@ -112,13 +112,21 @@ export const SFX: SfxEntry[] = [
   {from: at('S6', 0.76), src: 'click-camera', volume: 0.32, comment: 'S6 来源条 4'},
   {from: at('S6', 0.86), src: 'transition-soft', volume: 0.32, durationInFrames: 46, comment: 'S6 双会话对照落位'},
 
-  // ── S7 记忆与档案(26s)──
-  {from: at('S7', 0.01), src: 'whoosh-big', volume: 0.4, durationInFrames: 44, comment: 'S7 档案页浮入'},
-  {from: at('S7', 0.08), src: 'sparkle-touch', volume: 0.3, comment: 'S7 摘要字段 1'},
-  {from: at('S7', 0.2), src: 'sparkle-touch', volume: 0.3, comment: 'S7 摘要字段 2'},
-  {from: at('S7', 0.34), src: 'whoosh-fast', volume: 0.42, durationInFrames: 24, comment: 'S7 滚向待确认分组'},
-  {from: at('S7', 0.62), src: 'camera-autofocus', volume: 0.42, durationInFrames: 90, comment: 'S7 高亮圈锁定确认按钮'},
-  {from: at('S7', 0.85), src: 'ui-pop', volume: 0.48, comment: 'S7 确认状态翻转'},
+  // ── S7 记忆与档案(26s)—— ★ 2026-10-07 拆两幕:档案 15s + 记忆 11s ──
+  // 幕内比例 → 全段比例的换算:档案幕 r → r*15/26;记忆幕 r → 15/26 + r*11/26。
+  // 比例与 S7Memory.tsx 的 a()/b() 同一套,因此画面事件与音效不会脱钩。
+  {from: at('S7', 0.005), src: 'whoosh-big', volume: 0.4, durationInFrames: 44, comment: 'S7 档案页浮入'},
+  {from: at('S7', 0.05), src: 'sparkle-touch', volume: 0.3, comment: 'S7 档案说明①'},
+  {from: at('S7', 0.18), src: 'sparkle-touch', volume: 0.3, comment: 'S7 档案说明②'},
+  {from: at('S7', 0.28), src: 'whoosh-fast', volume: 0.42, durationInFrames: 24, comment: 'S7 滚向待确认分组'},
+  {from: at('S7', 0.46), src: 'camera-autofocus', volume: 0.42, durationInFrames: 90, comment: 'S7 候选条目描边 draw-on'},
+  {from: at('S7', 0.6), src: 'ui-pop', volume: 0.48, comment: 'S7 确认按下(状态翻转)'},
+  {from: at('S7', 0.585), src: 'transition-soft', volume: 0.32, durationInFrames: 34, comment: 'S7 切到记忆页'},
+  {from: at('S7', 0.661), src: 'sparkle-touch', volume: 0.3, comment: 'S7 记忆第一行落位'},
+  {from: at('S7', 0.712), src: 'sparkle-touch', volume: 0.3, comment: 'S7 记忆第二行落位'},
+  {from: at('S7', 0.831), src: 'click-camera', volume: 0.34, comment: 'S7 记忆第三行落位'},
+  {from: at('S7', 0.873), src: 'click-camera', volume: 0.36, comment: 'S7 高亮「删除」按钮'},
+  {from: at('S7', 0.949), src: 'transition-soft', volume: 0.28, durationInFrames: 30, comment: 'S7 收束交棒'},
 
   // ── S8 案例库(13s)──
   {from: at('S8', 0.02), src: 'transition-soft', volume: 0.3, durationInFrames: 40, comment: 'S8 案例库切入'},

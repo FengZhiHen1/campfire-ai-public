@@ -67,10 +67,9 @@ export const S5Analysis: React.FC = () => {
   /** 判断句打完的时刻(按字符数 × 每字帧数反推,见下方 framesPerToken) */
   const JUDGE_DONE_R = 0.5;
 
-  // 相机:★ 用带节拍的推近(见 lib/camera.ts 的说明)。
-  // 旧版把 1.00→1.14 铺满 36s → 每帧位移约 0.0001,帧差测不出、观众也看不出,
-  // 该段静止率飙到 98%(实测)。现在:分段推近 + 周期位移,
-  // 保证任意 20 帧窗口内都有可见的相机变化。
+  // 相机:★ 单向推近 + 分段推近(lib/camera.ts)。
+  //   旧版把 1.00→1.14 铺满 36s → 每帧位移约 0.0001,帧差测不出、观众也看不出,
+  //   该段静止率飙到 98%(实测)。现在:分段推近 + 单向推近,推近速率可见。
   //
   // ★ v16 二次修正:上限从 1.22 降到 **1.16**。
   //   独立终检实测推近到 1.22 的末段(f2660)设备框**下间隙只剩 2px**(上间隙 18px)——
@@ -84,30 +83,46 @@ export const S5Analysis: React.FC = () => {
   //     独立终检指出文档里同一条修正出现过 2.8% / 3.0% / 2.2% 三个值;现测为 2.6%:
   //     该段逐帧 YAVG 有 34/1200 帧 < 0.35。(阈值取 0.30 得 1.7%、0.40 得 3.3%,
   //     所以引用这类比例**必须带上阈值口径**,否则数字之间没法比。)
-  const cam = pushCamera(
-    frame,
-    1.0,
-    1.16,
-    t.duration,
-    {beat: 14, beatPeriod: 30},
-  );
+  //
+  // ★ 2026-10-07:周期漂移分量已删除(用户裁决);本段的主运动本来就是**逐 token 流式输出**。
+  const camScale = pushCamera(frame, 1.0, 1.16, t.duration).scale;
   const stageScale = stagedPush(
     frame,
     [1.0, 1.05, 1.11, 1.16],
     [0, t.at(0.3), t.at(0.52), t.at(0.83)],
   );
-  const scale = Math.max(cam.scale, stageScale);
+  const scale = Math.max(camScale, stageScale);
 
   // 屏内滚动:跟随逐 token 输出的内容增长往下走。
   // 给一个「够大」的上限再由 DeviceStage 按真实 scrollHeight 夹紧 ——
   // 对话内容高度随文本增长而变,写死像素会滑出内容底部露空白。
   // 前段(等待 + 首段涌出)停在顶部,让观众看到「正在分析…」到首句的过程。
+  //
+  // ★ 2026-10-07 改**刹车**曲线(镜头卡 scroll-brake-moves 的语法):起步快、末段
+  //   长时间减速停稳 —— 读起来是「滚到底、停住、看这一行」,而不是匀速平移。
+  //   停车点与下方的「结论行描线」同一时刻,两者是一次动作的两半。
   const scrollY = interpolate(
     frame,
     [0, t.at(0.3), t.at(0.52), t.at(0.85)],
     [0, 0, 4000, 9999],
-    {extrapolateLeft: 'clamp', extrapolateRight: 'clamp', easing: Easing.bezier(0.3, 0, 0.25, 1)},
+    {extrapolateLeft: 'clamp', extrapolateRight: 'clamp', easing: Easing.bezier(0.1, 0.6, 0.2, 1)},
   );
+
+  /**
+   * 结论行的**贴身**标注(镜头卡 scanline-annotate-focus 的语法,去掉扫描线,只留「画出依据线」)。
+   *
+   * ★ 为什么是元素相对的 ::before,而不是画布坐标上的一个框:
+   *   本项目在「另画一层」上栽过两次(S4 的圈要靠实测常量、S3 的记录写明相机缩放会让
+   *   画布坐标的圈与元素错位)。这里让标注长在**真实元素自己**身上(左缘竖线 scaleY 展开),
+   *   缩放、滚动、重排全部自动跟随,结构上不可能错位。
+   *
+   * 为什么是 draw-on 而不是常亮:它是**一次事件**(「找到了这一行」),画完就停;
+   *   常亮描边会变成又一个无声明的装饰。
+   */
+  const annotateDraw = interpolate(frame, t.span(0.84, 0.9), [0, 1], {
+    extrapolateLeft: 'clamp', extrapolateRight: 'clamp',
+    easing: Easing.bezier(0.25, 0, 0.2, 1),
+  });
 
   const fadeOut = interpolate(frame, t.span(0.972, 1), [1, 0.06], {
     extrapolateLeft: 'clamp', extrapolateRight: 'clamp',
@@ -139,7 +154,22 @@ export const S5Analysis: React.FC = () => {
   return (
     <FilmRoot>
       <div style={{position: 'absolute', inset: 0, opacity: fadeOut}}>
-        <DeviceStage cx={640 + cam.tx} cy={540 + cam.ty} scale={scale} scrollY={scrollY}>
+        {/* 结论行的贴身标注:作用在**真实段落元素**上的左缘竖线,由帧驱动展开。
+            选择器限定在 .film-root 内,不影响产品自身样式。 */}
+        <style>{`
+          .film-root .chat-message .msg-doc p:last-child { position: relative; }
+          .film-root .chat-message .msg-doc p:last-child::before {
+            content: '';
+            position: absolute;
+            left: -14px; top: 2px; bottom: 2px; width: 3px;
+            background: var(--accent);
+            border-radius: 2px;
+            transform: scaleY(${annotateDraw.toFixed(3)});
+            transform-origin: top center;
+            opacity: ${(annotateDraw * 0.9).toFixed(3)};
+          }
+        `}</style>
+        <DeviceStage cx={640} cy={540} scale={scale} scrollY={scrollY}>
           <ChatScreen skillLabels={['应急咨询']} footerHint="技能只作用于下一条消息。">
             <UserBubble text="八项现场采集已提交" start={6} />
 

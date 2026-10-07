@@ -20,7 +20,7 @@ import {LibraryPage} from '../../../../apps/web/src/features/library/view/Librar
 import {DeviceStage, FilmRoot} from '../lib/DeviceStage';
 import {NoteKicker, NoteTitle, NOTE_X} from '../lib/Shot';
 import {scrollTo, markScrollPx} from '../lib/pageScroll';
-import {pushCamera} from '../lib/camera';
+import {pushCamera, stagedPush} from '../lib/camera';
 import {useShotTiming} from '../lib/shotTiming';
 import {makeLibraryPort} from '../fixtures/ports';
 
@@ -30,8 +30,13 @@ export const S8Cases: React.FC = () => {
   const frame = useCurrentFrame();
   const t = useShotTiming();
 
-  // 相机:★ 带节拍的推近——避免「缓慢微动」。
-  const cam = pushCamera(frame, 1.0, 1.2, t.duration, {beat: 12, beatPeriod: 24});
+  // 相机:★ 三阶推近(每阶对应叙事上的下一件事:列表首屏 → 滚向虚构样例 → 标签锁定)。
+  //   ★ 2026-10-07:原为 1.00→1.20 线性铺满整段 —— 13s 里每 30 帧只有 0.0154,
+  //     低于 lib/camera.ts 的可见下限(0.02),读起来就是用户说的那种「微动」。
+  //     改为三阶后每阶位移可见,且与原周期漂移分量一并删除。
+  const camScale = pushCamera(frame, 1.0, 1.2, t.duration).scale;
+  const stageScale = stagedPush(frame, [1.0, 1.08, 1.2], [0, t.at(0.45), t.at(0.8)]);
+  const scale = Math.max(camScale, stageScale);
 
   // 屏内滚动:★ 目标由**实测元素位置**给出,不是猜的像素。
   // 实测(capture/measure-element-positions.mjs):
@@ -59,12 +64,16 @@ export const S8Cases: React.FC = () => {
       easing: Easing.bezier(0.2, 0.7, 0.25, 1),
     });
 
-  const tagPulse = 0.5 + 0.5 * Math.sin((frame / 14) * Math.PI * 2);
+  // 标签高亮:到达时一次**回弹**然后静止。
+  //   ★ 2026-10-07:替换原先的 sin 持续脉动(14f 周期)。
+  const tagPop = 1 - interpolate(frame, t.span(0.86, 0.93), [0, 1], {
+    extrapolateLeft: 'clamp', extrapolateRight: 'clamp',
+  });
 
   return (
     <FilmRoot>
       <div style={{position: 'absolute', inset: 0, opacity: fadeOut}}>
-        <DeviceStage cx={640 + cam.tx} cy={540 + cam.ty} scale={cam.scale} scrollY={scrollY}>
+        <DeviceStage cx={640} cy={540} scale={scale} scrollY={scrollY}>
           <MemoryRouter initialEntries={['/cases']}>
             <LibraryPage port={PORT} />
           </MemoryRouter>
@@ -88,9 +97,9 @@ export const S8Cases: React.FC = () => {
             inset: -4px;
             border: 2px solid var(--status-unruled);
             border-radius: 9999px;
-            opacity: ${String(0.55 + tagPulse * 0.45)};
+            opacity: ${String(0.55 + tagPop * 0.45)};
             pointer-events: none;
-            box-shadow: 0 4px 18px rgba(180, 83, 9, ${String(0.16 + tagPulse * 0.16)});
+            box-shadow: 0 4px 18px rgba(180, 83, 9, ${String(0.16 + tagPop * 0.16)});
           }
         `}</style>
 

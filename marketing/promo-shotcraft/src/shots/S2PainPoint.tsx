@@ -103,23 +103,25 @@ export const S2PainPoint: React.FC = () => {
   const inkSoft = `color-mix(in srgb, ${C.fg2} ${(1 - dim) * 100}%, #cbb89f)`;
 
   /**
-   * 暗场的**大面积运动**:一道很宽、边缘柔和的暖白光带在画面内**往返巡游**。
+   * ★★ 2026-10-07:删除「暗场宽光带 sin 往返」。
    *
-   * ★ 这个做法是三次实测淘汰出来的:
-   *   ① 底色明暗呼吸 → 帧差达标,但中段混出**灰褐浑浊**、周期接近闪烁临界(视觉不合格)
-   *   ② 径向暖光晕漂移 → 视觉干净,但梯度太平缓,**帧差测不出**(静止率 63.3%、最长 3.73s)
-   *   ③ 宽光带**单次**横穿 → 前 2/3 达标,但光带走完出画后(0.56 起)又静下来
-   *      (实测 f120-159 静止 38/40 帧)
-   *   最终:光带用 sin **在画面内往返**(不驶出画面),全程持续提供大面积位移。
-   *   频率取 2.6 个来回 / 整段 —— 约每 1.2s 一个往返,读起来是缓慢巡游而不是闪烁。
+   * 它当年是为了把**帧差指标**填满而造的(见下方历史记录:三次实验淘汰到「往返」为止),
+   * 与相机周期漂移属于同一类**无语义连续运动** —— 用户裁决那类运动「没有任何语义」。
+   * 现在门禁口径已改为**语义事件制**(verify/motion-gate.py + src/events.json):
+   * 本段的六个落位 + 转折线 + 单次扫光已经满足「任意 ≤2s 窗口内有事件」,不需要
+   * 用巡游光斑去凑帧差。
    *
-   * 颜色用低饱和暖白 rgba(245,234,217) 而不是橙色:暗场上橙色会读成污渍。
-   * 宽度 900px 让它读作「光扫过」而非「一根竖条」。
-   * 不透明度跟 dim 走:亮底阶段弱(不在亮纸上留脏斑),压暗后增强。
+   * 保留下来的两件连续元素:
+   *   · 开场**单次**暖光带横穿(0.02→0.26)——有方向、有始有终,是「场景开场」;
+   *   · 全局推近 1.00→1.08 —— 单向、减速落定。
+   *
+   * 历史记录(为什么当初会走到「往返」这一步,留档以免重蹈):
+   *   ① 底色明暗呼吸 → 帧差达标,但中段混出灰褐浑浊、周期接近闪烁临界(视觉不合格)
+   *   ② 径向暖光晕漂移 → 视觉干净,但梯度太平缓,帧差测不出(静止率 63.3%)
+   *   ③ 宽光带单次横穿 → 前 2/3 达标,光带出画后又静下来
+   *   ④ 宽光带 sin 往返 → 全程有位移(当时的最优解)
+   * 教训:①②③④ 争的都是「怎么让指标过」,而正确的问题是「观众需要看到什么」。
    */
-  const beamPhase = (frame / t.duration) * Math.PI * 2.6;
-  const beamX = interpolate(Math.sin(beamPhase), [-1, 1], [-900, 2820]);
-  const glowOpacity = 0.35 + 0.65 * dim;
 
   // 暖光带:只在**开场亮底阶段**横穿(0.02→0.26),此时底还是暖米纸,
   //   一条边缘柔和的暖带扫过是干净的(与 S6/S9 同机制)。
@@ -150,10 +152,10 @@ export const S2PainPoint: React.FC = () => {
    * 上面第 ③ 条的修正就是下面这段:光带在画面内**往返**(不驶出),因此全程有位移。
    */
 
-  // 全局推近:整段 1.00→1.12,即每 30 帧 +0.02 —— 正好压在 lib/camera.ts 给的
-  // 「推近每 30 帧至少 0.02」下限上。幅度落在**整块文字**上,边缘像素位移比同幅度的
-  // 设备推近更明显;它同时也是本段唯一的连续运动,保证落位间隙不是死帧。
-  const push = interpolate(frame, t.span(0, 1), [1.0, 1.12], {
+  // 全局推近:整段 1.00→1.08,单向、减速落定。
+  //   ★ 2026-10-07:从 1.12 收到 1.08 —— 本段的运动主角改为**六次按压落位**,
+  //     推近只做「把观众带进画面」的底噪,不必再承担「填满帧差」的职责。
+  const push = interpolate(frame, t.span(0, 1), [1.0, 1.08], {
     extrapolateLeft: 'clamp', extrapolateRight: 'clamp', easing: Easing.linear,
   });
 
@@ -162,11 +164,15 @@ export const S2PainPoint: React.FC = () => {
   });
 
   // 参数名用 p(progress)而不是 t —— 外层的 t 已经是 shotTiming,避免遮蔽。
+  //
+  // ★ 2026-10-07:落位方式从「下方浮入」改**按压落定**(镜头卡 list-stack-press 的语法):
+  //   文字从略上方落下、带一点点缩小,像被按进纸面 —— 六次落位 = 六次「信息压过来」,
+  //   与「痛苦在累积」的叙事一致;而浮入读起来是「轻轻飘上来」,与痛点段的力量相反。
   const lineStyle = (
     p: number, color: string, size: number, display = false,
   ): React.CSSProperties => ({
     opacity: p,
-    transform: `translateY(${(1 - p) * 16}px)`,
+    transform: `translateY(${(1 - p) * -12}px) scale(${String(1 + (1 - p) * 0.035)})`,
     color,
     fontSize: size,
     lineHeight: 1.75,
@@ -187,18 +193,6 @@ export const S2PainPoint: React.FC = () => {
           position: 'absolute', inset: 0,
           backgroundColor: '#17110c',
           opacity: dim,
-          pointerEvents: 'none',
-        }}
-      />
-
-      {/* 暗场的大面积运动:宽 900px 的低饱和暖白光带缓慢横穿。
-          画在压暗层之上、文字之下 —— 提供可测的大面积位移,又不盖住字。 */}
-      <div
-        style={{
-          position: 'absolute', top: 0, bottom: 0, width: 900, left: beamX,
-          background:
-            'linear-gradient(90deg, transparent, rgba(245,234,217,0.05), rgba(245,234,217,0.085), rgba(245,234,217,0.05), transparent)',
-          opacity: glowOpacity,
           pointerEvents: 'none',
         }}
       />
@@ -243,7 +237,7 @@ export const S2PainPoint: React.FC = () => {
         <p
           style={{
             ...lineStyle(t4, C.accent, 68, true),
-            transform: `translateY(${(1 - t4) * 16}px) scale(${0.96 + t4 * 0.04})`,
+            transform: `translateY(${(1 - t4) * -14}px) scale(${String(1.05 - t4 * 0.05)})`,
             letterSpacing: '0.04em',
             textShadow: `0 0 60px rgba(194, 65, 12, ${0.4 * t4})`,
           }}

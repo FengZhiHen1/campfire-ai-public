@@ -16,7 +16,8 @@
 //   ② 0.07-0.53   眉标落位 → 三个卖点逐条落位(每条占 0.12,含落位动作本身)
 //   ③ 0.29-0.54   ★ 首页内部两条真实入口被逐个强调(应急 → 日常),说明区同步换词
 //   ④ 0.61-0.92   定位主句落位 → 两条入口的收束句落位 → 0.92 起淡出
-//   贯穿:相机 1.00→1.20 + 周期位移,任意 20 帧内都有可见位移。
+//   贯穿:相机 1.00→1.20 **单向推近**(无周期漂移 —— 2026-10-07 按用户裁决删除,
+//         见 lib/camera.ts 顶部说明);两条入口的强调各是**一次离散事件**。
 import {Easing, interpolate, useCurrentFrame} from 'remotion';
 import {MemoryRouter} from 'react-router';
 
@@ -50,17 +51,19 @@ const FEATURES = [
  *
  * @param sel 契约类名
  * @param turnOn 强调淡入(0..1)
- * @param pulse 呼吸相位 0..1(两条入口错相,避免同频)
+ * @param pop 落位瞬间的**一次性**回弹(0..1)。它是离散事件:强调亮起时描边先张开
+ *            再收到稳态,之后**保持静止**。不再用 sin 做持续呼吸 —— 那种无语义的
+ *            连续运动已被用户否决(见 lib/camera.ts 顶部)。
  */
-function emphasisCss(sel: string, turnOn: number, pulse: number): string {
+function emphasisCss(sel: string, turnOn: number, pop: number): string {
   // 描边透明度跟随 turnOn:0 时 outline 全透明(等于没有),不做 display 切换,
   // 避免布局抖动。
   const strokeAlpha = Math.round((1 - turnOn) * 100);
-  // 光圈范围 3→8px、光晕 14→32px:幅度取到「一帧就能看出边界在动」的量级,
-  // 而不是 0.05px/帧那种测不出的微动。
-  const offset = 3 + pulse * 5;
-  const glow = 14 + pulse * 18;
-  const glowAlpha = Math.round((1 - turnOn * (0.4 + pulse * 0.35)) * 100);
+  // 稳态 4px/18px;落位瞬间张开到 10px/36px 再收回 —— 一帧就能看出边界在动,
+  // 且**动完就停**。
+  const offset = 4 + pop * 6;
+  const glow = 18 + pop * 18;
+  const glowAlpha = Math.round((1 - turnOn * (0.4 + pop * 0.35)) * 100);
   return `
     .film-root ${sel} {
       outline: 3px solid color-mix(in srgb, var(--accent), transparent ${String(strokeAlpha)}%);
@@ -89,10 +92,11 @@ export const S3Positioning: React.FC = () => {
   });
   const enterY = (1 - frameIn) * 40;
 
-  // 相机:★ 带节拍的推近(lib/camera.ts)。旧版 1.00→1.06 铺满 6s,每帧位移不可见。
-  //   时长传 t.duration(而不是写 180/240):段长再变时推近速率自动跟随,
-  //   不会退化成「推近被摊薄到看不见」——那正是本片踩过两次的坑。
-  const cam = pushCamera(frame, 1.0, 1.2, t.duration, {beat: 11, beatPeriod: 22});
+  // 相机:★ 单向推近(lib/camera.ts)。旧版 1.00→1.06 铺满 6s,每帧位移不可见;
+  //   现在推到 1.20,时长传 t.duration(而不是写 180/240):段长再变时推近速率
+  //   自动跟随,不会退化成「推近被摊薄到看不见」——那正是本片踩过两次的坑。
+  //   ★ 2026-10-07:周期漂移分量已删除(用户裁决);推近仍在,它是单向且有理由的。
+  const camScale = pushCamera(frame, 1.0, 1.2, t.duration).scale;
 
   // 三个卖点:每条占 0.12 段长(8s 段里约 29f),间隔 0.09 → 落位动作之间有 0.03 的呼吸。
   // 为什么把起点放在 0.22:0.22 之前是「首页浮入 + 眉标」两拍,卖点从第 3 拍开始,
@@ -125,9 +129,14 @@ export const S3Positioning: React.FC = () => {
     extrapolateLeft: 'clamp', extrapolateRight: 'clamp',
     easing: Easing.bezier(0.2, 0.75, 0.3, 1),
   });
-  // 呼吸周期 20f(0.67s):每帧位移约 1px 量级、每 10 帧一个完整来回,帧差测得出。
-  const emPulse = 0.5 + 0.5 * Math.sin((frame / 20) * Math.PI * 2);
-  const dailyPulse = 0.5 + 0.5 * Math.sin((frame / 20) * Math.PI * 2 + Math.PI);
+  // 两条入口各一次**离散**落位事件:强调亮起时描边张开再收回,之后保持静止。
+  //   ★ 2026-10-07:替换原先的 sin 持续呼吸(20f 周期)—— 那是同一类无语义连续运动。
+  const emPop = 1 - interpolate(frame, t.span(0.375, 0.42), [0, 1], {
+    extrapolateLeft: 'clamp', extrapolateRight: 'clamp',
+  });
+  const dailyPop = 1 - interpolate(frame, t.span(0.535, 0.58), [0, 1], {
+    extrapolateLeft: 'clamp', extrapolateRight: 'clamp',
+  });
 
   // 说明区跟随换词:强调应急时讲应急,强调日常时讲日常。
   //
@@ -148,11 +157,11 @@ export const S3Positioning: React.FC = () => {
   return (
     <FilmRoot>
       {/* 强调样式:按帧生成,值全部是 frame 的纯函数(无墙钟、无随机) */}
-      <style>{emphasisCss('.emergency-entry', emOn, emPulse)}</style>
-      <style>{emphasisCss('.daily-entry', dailyOn, dailyPulse)}</style>
+      <style>{emphasisCss('.emergency-entry', emOn, emPop)}</style>
+      <style>{emphasisCss('.daily-entry', dailyOn, dailyPop)}</style>
 
       <div style={{position: 'absolute', inset: 0, opacity: fadeOut}}>
-        <DeviceStage cx={640 + cam.tx} cy={540 + cam.ty} scale={cam.scale} ty={enterY} opacity={frameIn}>
+        <DeviceStage cx={640} cy={540} scale={camScale} ty={enterY} opacity={frameIn}>
           <MemoryRouter initialEntries={['/']}>
             <HomePage />
           </MemoryRouter>

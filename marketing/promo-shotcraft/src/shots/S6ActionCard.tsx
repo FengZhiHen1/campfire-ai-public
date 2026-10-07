@@ -72,27 +72,77 @@ export const S6ActionCard: React.FC = () => {
   const SEG1_END = timing.at(SEG1_END_R);
   const seg = frame < SEG0_END ? 0 : frame < SEG1_END ? 1 : 2;
 
-  // 相机:★ 带节拍的推近(lib/camera.ts)。旧版 1.00→1.10 铺满 30s,每帧位移不可见,
-  // 该段静止率实测 97%。现在推到 1.20 并叠加周期位移。
-  const cam = pushCamera(frame, 1.0, 1.2, timing.duration, {beat: 13, beatPeriod: 28});
+  // 相机:★ 单向推近 + 分段推近(lib/camera.ts)。
+  //   ★ 2026-10-07:周期漂移分量已删除(用户裁决);分段推近保留(每阶对应叙事上的
+  //     下一件事:三档特写 → 卡片 → 来源标注)。
+  const camScale = pushCamera(frame, 1.0, 1.2, timing.duration).scale;
   const stageScale = stagedPush(
     frame,
     [1.0, 1.06, 1.13, 1.2],
     [0, SEG0_END, SEG1_END, timing.at(0.78)],
   );
-  const scale = Math.max(cam.scale, stageScale);
+  const scale = Math.max(camScale, stageScale);
 
   // ★ 屏内滚动:行动卡有 7 个分区、很长。滚动量交给 DeviceStage 按真实 scrollHeight
   //   夹紧(写死像素在卡片长度变化时会滚出底部露空白 —— 旧版 1760 就是猜的)。
-  //   节奏:seg 0 是三档特写(无设备);seg 1 开始出现卡片,从**卡片顶部**平缓滚到
-  //   底部,让 01→07 七个分区依次经过;seg 2 停在底部看来源标注。
-  //   刻意不从 SEG0_END 就猛滚 —— 那样卡片顶部会被瞬间切掉(实测)。
+  //
+  // ★★ 2026-10-07 改**两次刹车**(镜头卡 scroll-brake-moves 的语法):
+  //   旧版是一条贝塞尔一路滚到底 —— 25 秒连续平移,读起来像「资料在飘」。
+  //   现在:滚到「01 当前状态」停一下、再滚到「02 立即怎么沟通」停一下、然后到底。
+  //   停车点用像素给,理由与旧版一致(DeviceStage 按真实 scrollHeight 夹紧);
+  //   ⚠ 3200 / 6400 是**初值**,由逐帧 still 自检校准到两个分区真正停在读数位置。
+  const BRAKE1 = 3200;
+  const BRAKE2 = 6400;
   const scrollY = interpolate(
     frame,
-    [0, SEG0_END, SEG0_END + timing.at(0.05), timing.duration],
-    [0, 0, 900, 9999],
-    {extrapolateLeft: 'clamp', extrapolateRight: 'clamp', easing: Easing.bezier(0.4, 0, 0.35, 1)},
+    [
+      0,
+      SEG0_END,
+      timing.at(0.1),
+      timing.at(0.18),
+      timing.at(0.3),
+      timing.at(0.4),
+      timing.at(0.52),
+      timing.at(0.86),
+      timing.duration,
+    ],
+    [0, 0, 900, BRAKE1, BRAKE1, BRAKE2, BRAKE2, 9999, 9999],
+    {extrapolateLeft: 'clamp', extrapolateRight: 'clamp', easing: Easing.bezier(0.3, 0, 0.25, 1)},
   );
+
+  /**
+   * 两处**事后标注**:两次刹车各给该节标题画一条 accent 下划线(draw-on)。
+   *
+   * 选择器用 `:nth-of-type(N)` 而不是「第几个 .ac-section」——CSS 无法按类名计数,
+   * 而 N 由**数据**算出(卡片有优先块时分区整体后移一位),不是猜的。
+   * 画法是元素自身的 ::after 横向 scaleX 展开:位置由布局决定,缩放/滚动自动跟随
+   * (本项目两次「另画一层 → 框没匡准」的教训见 S3 与 S4 的注释)。
+   */
+  const cardHasPriority = (CARD as unknown as {priority?: unknown}).priority !== undefined;
+  const sectionIdx = (n: number) => n + (cardHasPriority ? 1 : 0);
+  const draw1 = interpolate(frame, timing.span(0.19, 0.25), [0, 1], {
+    extrapolateLeft: 'clamp', extrapolateRight: 'clamp',
+    easing: Easing.bezier(0.25, 0, 0.2, 1),
+  });
+  const draw2 = interpolate(frame, timing.span(0.41, 0.47), [0, 1], {
+    extrapolateLeft: 'clamp', extrapolateRight: 'clamp',
+    easing: Easing.bezier(0.25, 0, 0.2, 1),
+  });
+  const underlineCss = (idx: number, draw: number) => `
+    .film-root .action-card > .ac-section:nth-of-type(${String(idx)}) .ac-head {
+      position: relative;
+    }
+    .film-root .action-card > .ac-section:nth-of-type(${String(idx)}) .ac-head::after {
+      content: '';
+      position: absolute;
+      left: 0; right: 0; bottom: -5px; height: 2px;
+      background: var(--accent);
+      border-radius: 2px;
+      transform: scaleX(${draw.toFixed(3)});
+      transform-origin: left center;
+      opacity: ${(draw * 0.85).toFixed(3)};
+    }
+  `;
 
   // ★ 出场淡出留 6% 下限,不降到 0。
   //   降到 0 会让本段**最后一帧**内容全无(f1499/f2699/3779/4559/4949 实测:
@@ -103,7 +153,9 @@ export const S6ActionCard: React.FC = () => {
     extrapolateLeft: 'clamp', extrapolateRight: 'clamp',
   });
 
-  // 三档徽章逐个点亮:在 seg 0 内均分
+  // 三档徽章逐个点亮:在 seg 0 内均分。
+  //   ★ 2026-10-07:落位瞬间一次**回弹**(badgePop),随后保持静止 ——
+  //     替换原先的 sin 持续脉动(16f 周期),那是与相机漂移同类的无语义连续运动。
   const badgeOn = (i: number) =>
     interpolate(
       frame,
@@ -114,7 +166,13 @@ export const S6ActionCard: React.FC = () => {
         easing: Easing.bezier(0.2, 0.75, 0.3, 1),
       },
     );
-  const badgePulse = 0.5 + 0.5 * Math.sin((frame / 16) * Math.PI * 2);
+  const badgePop = (i: number) =>
+    1 - interpolate(
+      frame,
+      timing.span(SEG0_END_R * (0.55 + i * 0.2), SEG0_END_R * (0.72 + i * 0.2)),
+      [0, 1],
+      {extrapolateLeft: 'clamp', extrapolateRight: 'clamp'},
+    );
 
   /** 右侧说明条目的落位(cue 用比例给)。 */
   const noteIn = (ratio: number) =>
@@ -211,7 +269,7 @@ export const S6ActionCard: React.FC = () => {
                         borderRadius: 9999, padding: '6px 22px',
                         flexShrink: 0, minWidth: 108, textAlign: 'center',
                         backgroundColor: isActive
-                          ? `color-mix(in oklab, ${tone.color}, transparent ${String(100 - (14 + badgePulse * 12))}%)`
+                          ? `color-mix(in oklab, ${tone.color}, transparent ${String(100 - (14 + badgePop(i) * 16))}%)`
                           : 'transparent',
                       }}
                     >
@@ -251,9 +309,13 @@ export const S6ActionCard: React.FC = () => {
 
         {/* ② ③ 真实行动卡在设备里滚动 */}
         {seg > 0 ? (
-          <DeviceStage cx={640 + cam.tx} cy={540 + cam.ty} scale={scale} scrollY={scrollY}>
-            <ActionCardScreen data={CARD} />
-          </DeviceStage>
+          <>
+            <style>{underlineCss(sectionIdx(1), draw1)}</style>
+            <style>{underlineCss(sectionIdx(2), draw2)}</style>
+            <DeviceStage cx={640} cy={540} scale={scale} scrollY={scrollY}>
+              <ActionCardScreen data={CARD} />
+            </DeviceStage>
+          </>
         ) : null}
 
         {/* 右侧说明区 */}
