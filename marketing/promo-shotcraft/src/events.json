@@ -1,0 +1,1073 @@
+{
+  "note": "语义事件声明(门禁度量侧 = verify/motion-gate.py)。由三份分段提取合并而来,每条的 frame 与 source 可逐条审计。★ 已知局限:(a) 流式输出的逐字 tick 未逐条枚举(只记段落里程碑),故声明层面的相邻间隔会**高估**死段——判死段请以 motion-gate.py 的② 实测冻结(freezedetect)为准;(b) S7 记忆幕 4396-4461 是 2.2s 实测静止,源未声明为设计 hold,超「呼吸 ≤1.5s」上限,登记为疑似拖沓。 分段备注: [A] 绝对帧 = timeline.ts 的 shot.from + shotTiming.at/span 结果(round 后夹在 [0,duration]);S1 品牌 hold 按代码为 f52–102(文件头注释写 0.58 起,与代码 kickDone=51.6 不符,以代码为准);未计入的项:S1 准星渐隐(f24–34,与字标第 4 字落位同帧且属渐隐)、S3 段末淡出(起帧与收束句落定同为 f521,只留落定)、S2 推近 1.00→1.08 与暖光漂移、S3 相机 1.00→1.20 单向推近(均为连续缓动,按项目规则不算事件);holds 的 from/to 为闭区间且区间内逐帧静止,实测 S2/S3 无刻意静止段(推近贯穿全段)故未列;S1 打字机 9 次字符 tick 未逐帧展开,只记首字与完成(其余可由 perChar=2.4 自 f33 起每 2–3 帧推出)。 | [B] S4/S5/S6 共 61 事件 / 8 保持;S5 判断句 1590-2100 是逐字流(每字约 3.7 帧),按要求只记里程碑,故该窗口相邻事件间隔(最大 270 帧)超过 maxGapFrames=60;S4 1327-1414 与 S6 3406-3744 同样存在 >60 帧「仅相机推近」的空档;holds 记的是元素/滚动级静止(文字流与相机推近仍在动),S6 两次刹车窗口内仍有下划线描线事件;S4 打字里程碑由 typedChars 公式推算(frame>=595+9.625n);各镜视图内部动画(EmergencyFormView / AssistantMessage / ActionCardScreen / DeviceStage 像素夹紧)与 camera 分阶是否产生离散热事件未读源码,未纳入,故未列入者不代表不存在。 | [C] 绝对帧 = timeline.ts 的 shot.from + shotTiming.at/span 的 round 结果(=事件起始帧,落位类取动画起帧;a()/b() 为 S7 两幕各自的幕内比例,ACT_B_R=15/26);S7 档案幕全程有连续滚动爬行(段内 198→780 仍在动),按「滚动级静止」口径故未声明档案幕 hold;S7 记忆幕 4396-4461 是 2.2s 逐帧静止(源未声明为 hold,已超 1.5s 呼吸上限,按静止区间登记);S8 无 hold(屏内一直滚到段内 363 才停,4 帧后就渐隐);S7/S8 的 stagedPush 中间阶被 pushCamera 慢推(0.0069/30f、0.0154/30f,低于 0.02 可见下限)遮蔽,只登记末阶单帧跳变;S9 呼吸点 48 帧周期脉动、边界幕往返光扫、S7 描边外的慢滚均属连续运动,未逐次登记;未被 hold 覆盖的 >60 帧空档:S7 3870→3978(108f)、4059→4131(72f)、4163→4230(67f),S8 4646→4710(64f)、4770→4841(71f),S9 5079→5140(61f),期间只有连续滚动/光扫;未读 fixtures 与 page-metrics.json,故文案里的具体条数与 pendingGroupPx 未核对。",
+  "fps": 30,
+  "maxGapFrames": 60,
+  "events": [
+    {
+      "shot": "S1",
+      "frame": 9,
+      "kind": "pop",
+      "label": "准星竖线描画到位(60→0)",
+      "source": "src/shots/S1BrandOpen.tsx:28"
+    },
+    {
+      "shot": "S1",
+      "frame": 18,
+      "kind": "pop",
+      "label": "准星横线画完,十字合拢",
+      "source": "src/shots/S1BrandOpen.tsx:32"
+    },
+    {
+      "shot": "S1",
+      "frame": 23,
+      "kind": "text",
+      "label": "品牌字标「篝」压印落定(带高光)",
+      "source": "src/shots/S1BrandOpen.tsx:111"
+    },
+    {
+      "shot": "S1",
+      "frame": 27,
+      "kind": "text",
+      "label": "品牌字标「火」压印落定(带高光)",
+      "source": "src/shots/S1BrandOpen.tsx:111"
+    },
+    {
+      "shot": "S1",
+      "frame": 30,
+      "kind": "text",
+      "label": "品牌字标「智」压印落定(带高光)",
+      "source": "src/shots/S1BrandOpen.tsx:111"
+    },
+    {
+      "shot": "S1",
+      "frame": 33,
+      "kind": "stream",
+      "label": "副标打字机首字出现(1/9)",
+      "source": "src/shots/S1BrandOpen.tsx:44"
+    },
+    {
+      "shot": "S1",
+      "frame": 34,
+      "kind": "text",
+      "label": "品牌字标「答」压印落定(字标完整)",
+      "source": "src/shots/S1BrandOpen.tsx:111"
+    },
+    {
+      "shot": "S1",
+      "frame": 52,
+      "kind": "state",
+      "label": "副标打字完成、光标消失(此后画面完全静止)",
+      "source": "src/shots/S1BrandOpen.tsx:63"
+    },
+    {
+      "shot": "S1",
+      "frame": 102,
+      "kind": "state",
+      "label": "品牌字标开始淡出上移(opacity→0.55)",
+      "source": "src/shots/S1BrandOpen.tsx:73"
+    },
+    {
+      "shot": "S2",
+      "frame": 120,
+      "kind": "cut",
+      "label": "硬切入痛点段:首行第 0 帧已在场(不淡入)",
+      "source": "src/shots/S2PainPoint.tsx:64"
+    },
+    {
+      "shot": "S2",
+      "frame": 163,
+      "kind": "text",
+      "label": "「周围全是目光。」落定",
+      "source": "src/shots/S2PainPoint.tsx:65"
+    },
+    {
+      "shot": "S2",
+      "frame": 167,
+      "kind": "state",
+      "label": "底色压暗完成(暖米纸→深暖黑)",
+      "source": "src/shots/S2PainPoint.tsx:96"
+    },
+    {
+      "shot": "S2",
+      "frame": 174,
+      "kind": "state",
+      "label": "开场暖光带淡出干净(出画)",
+      "source": "src/shots/S2PainPoint.tsx:138"
+    },
+    {
+      "shot": "S2",
+      "frame": 187,
+      "kind": "text",
+      "label": "「你不知道这是感官过载,还是哪里疼——」落定",
+      "source": "src/shots/S2PainPoint.tsx:66"
+    },
+    {
+      "shot": "S2",
+      "frame": 206,
+      "kind": "text",
+      "label": "「而能回答你的人,都不在现场。」落定",
+      "source": "src/shots/S2PainPoint.tsx:67"
+    },
+    {
+      "shot": "S2",
+      "frame": 230,
+      "kind": "text",
+      "label": "「照护一个孤独症孩子,最难的不是辛苦,」落定",
+      "source": "src/shots/S2PainPoint.tsx:68"
+    },
+    {
+      "shot": "S2",
+      "frame": 246,
+      "kind": "pop",
+      "label": "转折线由中心展开到位(240px)",
+      "source": "src/shots/S2PainPoint.tsx:75"
+    },
+    {
+      "shot": "S2",
+      "frame": 273,
+      "kind": "text",
+      "label": "「是没人商量。」落定(68px 橙色强调)",
+      "source": "src/shots/S2PainPoint.tsx:69"
+    },
+    {
+      "shot": "S2",
+      "frame": 278,
+      "kind": "state",
+      "label": "底色开始回升到亮米纸(交棒前)",
+      "source": "src/shots/S2PainPoint.tsx:96"
+    },
+    {
+      "shot": "S2",
+      "frame": 289,
+      "kind": "state",
+      "label": "整段开始淡出(opacity→0.06)",
+      "source": "src/shots/S2PainPoint.tsx:162"
+    },
+    {
+      "shot": "S3",
+      "frame": 300,
+      "kind": "cut",
+      "label": "接缝:痛点段已淡走,定位段首页 35% 已在场",
+      "source": "src/shots/S3Positioning.tsx:89"
+    },
+    {
+      "shot": "S3",
+      "frame": 326,
+      "kind": "state",
+      "label": "首页浮入完成(opacity 0.35→1,上移落定)",
+      "source": "src/shots/S3Positioning.tsx:89"
+    },
+    {
+      "shot": "S3",
+      "frame": 340,
+      "kind": "text",
+      "label": "眉标落定「篝火智答 · 一个装在口袋里的照护伙伴」",
+      "source": "src/shots/S3Positioning.tsx:110"
+    },
+    {
+      "shot": "S3",
+      "frame": 382,
+      "kind": "text",
+      "label": "卖点①「记得住」落定",
+      "source": "src/shots/S3Positioning.tsx:104"
+    },
+    {
+      "shot": "S3",
+      "frame": 390,
+      "kind": "pop",
+      "label": "首页应急入口强调亮起(描边张开回弹)",
+      "source": "src/shots/S3Positioning.tsx:124"
+    },
+    {
+      "shot": "S3",
+      "frame": 403,
+      "kind": "text",
+      "label": "卖点②「查得到」落定",
+      "source": "src/shots/S3Positioning.tsx:104"
+    },
+    {
+      "shot": "S3",
+      "frame": 420,
+      "kind": "text",
+      "label": "说明句①「现在需要帮助…」淡出收干净",
+      "source": "src/shots/S3Positioning.tsx:146"
+    },
+    {
+      "shot": "S3",
+      "frame": 425,
+      "kind": "text",
+      "label": "卖点③「改得动」落定",
+      "source": "src/shots/S3Positioning.tsx:104"
+    },
+    {
+      "shot": "S3",
+      "frame": 428,
+      "kind": "pop",
+      "label": "首页日常入口强调亮起",
+      "source": "src/shots/S3Positioning.tsx:128"
+    },
+    {
+      "shot": "S3",
+      "frame": 432,
+      "kind": "text",
+      "label": "说明句②「日常咨询…」入位(整句替换完成)",
+      "source": "src/shots/S3Positioning.tsx:149"
+    },
+    {
+      "shot": "S3",
+      "frame": 485,
+      "kind": "text",
+      "label": "定位主句落定「现场遇到正在发生的情况,回答几个问题,拿到可行动的建议。」",
+      "source": "src/shots/S3Positioning.tsx:113"
+    },
+    {
+      "shot": "S3",
+      "frame": 521,
+      "kind": "text",
+      "label": "收束句落定「两条入口:现在需要帮助走应急,想聊聊正在准备的事走日常。」",
+      "source": "src/shots/S3Positioning.tsx:221"
+    },
+    {
+      "shot": "S4",
+      "frame": 574,
+      "kind": "pop",
+      "label": "首页应急入口高亮圈张开",
+      "source": "src/shots/S4Intake.tsx:206"
+    },
+    {
+      "shot": "S4",
+      "frame": 650,
+      "kind": "pop",
+      "label": "高亮圈收回落定,此后保持静止",
+      "source": "src/shots/S4Intake.tsx:210"
+    },
+    {
+      "shot": "S4",
+      "frame": 665,
+      "kind": "cut",
+      "label": "首页硬切到第 1 题",
+      "source": "src/shots/S4Intake.tsx:112"
+    },
+    {
+      "shot": "S4",
+      "frame": 731,
+      "kind": "state",
+      "label": "开始勾选「明显疼痛」,✓ 在真实复选框上放大落位",
+      "source": "src/shots/S4Intake.tsx:215"
+    },
+    {
+      "shot": "S4",
+      "frame": 765,
+      "kind": "scroll",
+      "label": "第 1 题由题首瞬移滚到底(一次跳变,勾选项与按钮同屏)",
+      "source": "src/shots/S4Intake.tsx:195"
+    },
+    {
+      "shot": "S4",
+      "frame": 775,
+      "kind": "state",
+      "label": "「明显疼痛」勾选落定",
+      "source": "src/shots/S4Intake.tsx:215"
+    },
+    {
+      "shot": "S4",
+      "frame": 806,
+      "kind": "state",
+      "label": "其余七项压暗到稳态 + 选中项回弹落定",
+      "source": "src/shots/S4Intake.tsx:231"
+    },
+    {
+      "shot": "S4",
+      "frame": 886,
+      "kind": "cut",
+      "label": "快掠第 2 题(带切题白闪)",
+      "source": "src/shots/S4Intake.tsx:113"
+    },
+    {
+      "shot": "S4",
+      "frame": 948,
+      "kind": "cut",
+      "label": "快掠第 3 题(带切题白闪)",
+      "source": "src/shots/S4Intake.tsx:241"
+    },
+    {
+      "shot": "S4",
+      "frame": 1010,
+      "kind": "cut",
+      "label": "快掠第 4 题(带切题白闪)",
+      "source": "src/shots/S4Intake.tsx:241"
+    },
+    {
+      "shot": "S4",
+      "frame": 1072,
+      "kind": "cut",
+      "label": "快掠第 5 题(带切题白闪)",
+      "source": "src/shots/S4Intake.tsx:241"
+    },
+    {
+      "shot": "S4",
+      "frame": 1135,
+      "kind": "cut",
+      "label": "切到第 6 题 what_happened(自由文本)",
+      "source": "src/shots/S4Intake.tsx:114"
+    },
+    {
+      "shot": "S4",
+      "frame": 1145,
+      "kind": "text",
+      "label": "自由文本第 1 字落位",
+      "source": "src/shots/S4Intake.tsx:148"
+    },
+    {
+      "shot": "S4",
+      "frame": 1174,
+      "kind": "text",
+      "label": "自由文本前 4 字落位",
+      "source": "src/shots/S4Intake.tsx:148"
+    },
+    {
+      "shot": "S4",
+      "frame": 1212,
+      "kind": "text",
+      "label": "自由文本前 8 字落位",
+      "source": "src/shots/S4Intake.tsx:148"
+    },
+    {
+      "shot": "S4",
+      "frame": 1251,
+      "kind": "text",
+      "label": "自由文本前 12 字落位(含「周围人多」)",
+      "source": "src/shots/S4Intake.tsx:148"
+    },
+    {
+      "shot": "S4",
+      "frame": 1289,
+      "kind": "text",
+      "label": "16 字全部落位(打字窗口结束)",
+      "source": "src/shots/S4Intake.tsx:147"
+    },
+    {
+      "shot": "S4",
+      "frame": 1327,
+      "kind": "cut",
+      "label": "切到第 7 题(收尾快掠)",
+      "source": "src/shots/S4Intake.tsx:128"
+    },
+    {
+      "shot": "S4",
+      "frame": 1414,
+      "kind": "cut",
+      "label": "切到第 8 题",
+      "source": "src/shots/S4Intake.tsx:129"
+    },
+    {
+      "shot": "S4",
+      "frame": 1438,
+      "kind": "pop",
+      "label": "「提交,开始分析」按下",
+      "source": "src/shots/S4Intake.tsx:251"
+    },
+    {
+      "shot": "S4",
+      "frame": 1447,
+      "kind": "state",
+      "label": "进入提交流程状态",
+      "source": "src/shots/S4Intake.tsx:250"
+    },
+    {
+      "shot": "S4",
+      "frame": 1466,
+      "kind": "cut",
+      "label": "出画淡出开始(到段尾降到 0.06)",
+      "source": "src/shots/S4Intake.tsx:199"
+    },
+    {
+      "shot": "S5",
+      "frame": 1506,
+      "kind": "text",
+      "label": "用户气泡「八项现场采集已提交」落位",
+      "source": "src/shots/S5Analysis.tsx:174"
+    },
+    {
+      "shot": "S5",
+      "frame": 1536,
+      "kind": "stream",
+      "label": "开场过渡句开始逐字输出",
+      "source": "src/shots/S5Analysis.tsx:181"
+    },
+    {
+      "shot": "S5",
+      "frame": 1566,
+      "kind": "text",
+      "label": "右侧说明 kicker 与标题落位完成",
+      "source": "src/shots/S5Analysis.tsx:144"
+    },
+    {
+      "shot": "S5",
+      "frame": 1590,
+      "kind": "stream",
+      "label": "思考行由「正在分析…」翻转为已结束 + 判断句开始逐字涌出",
+      "source": "src/shots/S5Analysis.tsx:184"
+    },
+    {
+      "shot": "S5",
+      "frame": 1860,
+      "kind": "scroll",
+      "label": "屏内开始下滚(此前一直停在顶部)",
+      "source": "src/shots/S5Analysis.tsx:104"
+    },
+    {
+      "shot": "S5",
+      "frame": 2100,
+      "kind": "stream",
+      "label": "判断句(138 字)打完,流式输出结束",
+      "source": "src/shots/S5Analysis.tsx:142"
+    },
+    {
+      "shot": "S5",
+      "frame": 2165,
+      "kind": "text",
+      "label": "说明条目①「先排除医疗危险」落位",
+      "source": "src/shots/S5Analysis.tsx:208"
+    },
+    {
+      "shot": "S5",
+      "frame": 2237,
+      "kind": "text",
+      "label": "说明条目②「不能只按“环境太吵”解释」落位",
+      "source": "src/shots/S5Analysis.tsx:209"
+    },
+    {
+      "shot": "S5",
+      "frame": 2309,
+      "kind": "text",
+      "label": "说明条目③「档案里的四组已预取」落位",
+      "source": "src/shots/S5Analysis.tsx:210"
+    },
+    {
+      "shot": "S5",
+      "frame": 2381,
+      "kind": "text",
+      "label": "说明条目④「两组未预存,按未排除处理」落位",
+      "source": "src/shots/S5Analysis.tsx:211"
+    },
+    {
+      "shot": "S5",
+      "frame": 2465,
+      "kind": "text",
+      "label": "「本次会话真实产生 N 条来源标注」落位",
+      "source": "src/shots/S5Analysis.tsx:250"
+    },
+    {
+      "shot": "S5",
+      "frame": 2508,
+      "kind": "pop",
+      "label": "结论行左缘 accent 标注线起笔",
+      "source": "src/shots/S5Analysis.tsx:122"
+    },
+    {
+      "shot": "S5",
+      "frame": 2520,
+      "kind": "scroll",
+      "label": "屏内滚动到 9999 停稳(刹车曲线终点,与描线是同一动作的两半)",
+      "source": "src/shots/S5Analysis.tsx:104"
+    },
+    {
+      "shot": "S5",
+      "frame": 2580,
+      "kind": "pop",
+      "label": "标注线画完(一次事件,画完即停)",
+      "source": "src/shots/S5Analysis.tsx:122"
+    },
+    {
+      "shot": "S5",
+      "frame": 2666,
+      "kind": "cut",
+      "label": "出画淡出开始",
+      "source": "src/shots/S5Analysis.tsx:127"
+    },
+    {
+      "shot": "S6",
+      "frame": 2720,
+      "kind": "text",
+      "label": "三档特写标题与说明落位",
+      "source": "src/shots/S6ActionCard.tsx:222"
+    },
+    {
+      "shot": "S6",
+      "frame": 2749,
+      "kind": "state",
+      "label": "第一档「稳定」徽章点亮",
+      "source": "src/shots/S6ActionCard.tsx:159"
+    },
+    {
+      "shot": "S6",
+      "frame": 2767,
+      "kind": "state",
+      "label": "第二档「未排除」徽章点亮(本次真实取值)",
+      "source": "src/shots/S6ActionCard.tsx:159"
+    },
+    {
+      "shot": "S6",
+      "frame": 2785,
+      "kind": "state",
+      "label": "第三档「高风险」徽章点亮",
+      "source": "src/shots/S6ActionCard.tsx:159"
+    },
+    {
+      "shot": "S6",
+      "frame": 2790,
+      "kind": "cut",
+      "label": "硬切到设备里的真实行动卡,卡片同时开始下滚",
+      "source": "src/shots/S6ActionCard.tsx:73"
+    },
+    {
+      "shot": "S6",
+      "frame": 2816,
+      "kind": "text",
+      "label": "右侧 kicker「本次结果 · 现场行动卡」落位",
+      "source": "src/shots/S6ActionCard.tsx:324"
+    },
+    {
+      "shot": "S6",
+      "frame": 2826,
+      "kind": "text",
+      "label": "右侧标题「七节分区,先看哪一节由闸门决定」落位",
+      "source": "src/shots/S6ActionCard.tsx:325"
+    },
+    {
+      "shot": "S6",
+      "frame": 2894,
+      "kind": "scroll",
+      "label": "刹车 1:滚动量停在 3200(「01 当前状态」停在读数位)",
+      "source": "src/shots/S6ActionCard.tsx:96"
+    },
+    {
+      "shot": "S6",
+      "frame": 2905,
+      "kind": "pop",
+      "label": "01 节标题 accent 下划线起笔",
+      "source": "src/shots/S6ActionCard.tsx:123"
+    },
+    {
+      "shot": "S6",
+      "frame": 2970,
+      "kind": "pop",
+      "label": "01 节下划线画完",
+      "source": "src/shots/S6ActionCard.tsx:123"
+    },
+    {
+      "shot": "S6",
+      "frame": 3025,
+      "kind": "scroll",
+      "label": "刹车 1 释放,继续下滚",
+      "source": "src/shots/S6ActionCard.tsx:96"
+    },
+    {
+      "shot": "S6",
+      "frame": 3132,
+      "kind": "scroll",
+      "label": "刹车 2:滚动量停在 6400(「02 立即怎么沟通」停在读数位)",
+      "source": "src/shots/S6ActionCard.tsx:96"
+    },
+    {
+      "shot": "S6",
+      "frame": 3143,
+      "kind": "pop",
+      "label": "02 节标题下划线起笔",
+      "source": "src/shots/S6ActionCard.tsx:127"
+    },
+    {
+      "shot": "S6",
+      "frame": 3197,
+      "kind": "cut",
+      "label": "右侧说明换页:七节分区 → 每条建议都带着它的出处",
+      "source": "src/shots/S6ActionCard.tsx:73"
+    },
+    {
+      "shot": "S6",
+      "frame": 3208,
+      "kind": "pop",
+      "label": "02 节下划线画完",
+      "source": "src/shots/S6ActionCard.tsx:127"
+    },
+    {
+      "shot": "S6",
+      "frame": 3263,
+      "kind": "text",
+      "label": "来源分布第 1 行「历史记录」落位(同帧刹车 2 释放续滚)",
+      "source": "src/shots/S6ActionCard.tsx:364"
+    },
+    {
+      "shot": "S6",
+      "frame": 3293,
+      "kind": "text",
+      "label": "第 2 行「AI 推断」落位",
+      "source": "src/shots/S6ActionCard.tsx:364"
+    },
+    {
+      "shot": "S6",
+      "frame": 3323,
+      "kind": "text",
+      "label": "第 3 行「家属报告」落位",
+      "source": "src/shots/S6ActionCard.tsx:364"
+    },
+    {
+      "shot": "S6",
+      "frame": 3353,
+      "kind": "text",
+      "label": "第 4 行「现场观察」落位",
+      "source": "src/shots/S6ActionCard.tsx:364"
+    },
+    {
+      "shot": "S6",
+      "frame": 3374,
+      "kind": "text",
+      "label": "合计行「以上合计 N 条标注」落位",
+      "source": "src/shots/S6ActionCard.tsx:392"
+    },
+    {
+      "shot": "S6",
+      "frame": 3406,
+      "kind": "text",
+      "label": "双会话对照标题「同一个产品,两个真实会话」落位",
+      "source": "src/shots/S6ActionCard.tsx:409"
+    },
+    {
+      "shot": "S6",
+      "frame": 3504,
+      "kind": "text",
+      "label": "双会话两列标注数落位",
+      "source": "src/shots/S6ActionCard.tsx:417"
+    },
+    {
+      "shot": "S6",
+      "frame": 3629,
+      "kind": "scroll",
+      "label": "滚动量到 9999 并停住(由 DeviceStage 夹紧到卡底)",
+      "source": "src/shots/S6ActionCard.tsx:96"
+    },
+    {
+      "shot": "S6",
+      "frame": 3744,
+      "kind": "cut",
+      "label": "出画淡出开始",
+      "source": "src/shots/S6ActionCard.tsx:152"
+    },
+    {
+      "shot": "S7",
+      "frame": 3780,
+      "kind": "cut",
+      "label": "接缝:硬切入档案幕,真实 ProfilePage 第 0 帧已在场(不淡入)",
+      "source": "src/timeline.ts:37"
+    },
+    {
+      "shot": "S7",
+      "frame": 3790,
+      "kind": "text",
+      "label": "右栏眉标「记忆与档案 · 档案」落定",
+      "source": "src/shots/S7Memory.tsx:262"
+    },
+    {
+      "shot": "S7",
+      "frame": 3800,
+      "kind": "text",
+      "label": "标题「档案只收你直接说过或确认过的内容。」落定",
+      "source": "src/shots/S7Memory.tsx:263"
+    },
+    {
+      "shot": "S7",
+      "frame": 3820,
+      "kind": "text",
+      "label": "说明句「使用者的直接陈述零确认入档…」落定",
+      "source": "src/shots/S7Memory.tsx:275"
+    },
+    {
+      "shot": "S7",
+      "frame": 3870,
+      "kind": "scroll",
+      "label": "屏内滚动换挡:段内 0.20 关键帧(约 5% 处)收速后再加速",
+      "source": "src/shots/S7Memory.tsx:78"
+    },
+    {
+      "shot": "S7",
+      "frame": 3978,
+      "kind": "scroll",
+      "label": "滚到待确认分组停住(段内 0.44;同帧候选条目描边 draw-on 起笔)",
+      "source": "src/shots/S7Memory.tsx:78"
+    },
+    {
+      "shot": "S7",
+      "frame": 3991,
+      "kind": "text",
+      "label": "计数句「当前 N 条已确认,1 条是 AI 归纳、等你裁决。」落定",
+      "source": "src/shots/S7Memory.tsx:282"
+    },
+    {
+      "shot": "S7",
+      "frame": 4032,
+      "kind": "pop",
+      "label": "候选条目描边画完(段内 0.56;同帧确认按钮按下起弹)",
+      "source": "src/shots/S7Memory.tsx:89"
+    },
+    {
+      "shot": "S7",
+      "frame": 4037,
+      "kind": "text",
+      "label": "待确认条目卡(标签「待确认 · AI 归纳」+ 描述)落定",
+      "source": "src/shots/S7Memory.tsx:295"
+    },
+    {
+      "shot": "S7",
+      "frame": 4059,
+      "kind": "pop",
+      "label": "确认按钮回弹开始(press-pop 释放)",
+      "source": "src/shots/S7Memory.tsx:93"
+    },
+    {
+      "shot": "S7",
+      "frame": 4131,
+      "kind": "text",
+      "label": "结论句「确认之后,这条才进入…」开始落定",
+      "source": "src/shots/S7Memory.tsx:97"
+    },
+    {
+      "shot": "S7",
+      "frame": 4163,
+      "kind": "state",
+      "label": "状态标签「待确认 · AI 归纳」→「已确认 · 由你确认」翻转",
+      "source": "src/shots/S7Memory.tsx:101"
+    },
+    {
+      "shot": "S7",
+      "frame": 4230,
+      "kind": "cut",
+      "label": "两幕分界:档案幕淡出(442 起)→记忆幕挂载并自 0.35 淡入",
+      "source": "src/shots/S7Memory.tsx:50"
+    },
+    {
+      "shot": "S7",
+      "frame": 4237,
+      "kind": "text",
+      "label": "记忆幕眉标「记忆与档案 · 记忆」落定",
+      "source": "src/shots/S7Memory.tsx:332"
+    },
+    {
+      "shot": "S7",
+      "frame": 4247,
+      "kind": "text",
+      "label": "标题「你说过的事,只有你能改。」落定",
+      "source": "src/shots/S7Memory.tsx:333"
+    },
+    {
+      "shot": "S7",
+      "frame": 4296,
+      "kind": "text",
+      "label": "记忆时间线第 1 行落位(opacity + 14px 位移)",
+      "source": "src/shots/S7Memory.tsx:147"
+    },
+    {
+      "shot": "S7",
+      "frame": 4336,
+      "kind": "text",
+      "label": "记忆时间线第 2 行落位",
+      "source": "src/shots/S7Memory.tsx:148"
+    },
+    {
+      "shot": "S7",
+      "frame": 4342,
+      "kind": "text",
+      "label": "说明句「记忆归账号、档案归孩子——分开保存」落定",
+      "source": "src/shots/S7Memory.tsx:345"
+    },
+    {
+      "shot": "S7",
+      "frame": 4396,
+      "kind": "pop",
+      "label": "相机可见跳变:stagedPush 末阶在一帧内 1.12→1.18(中间阶低于可见下限)",
+      "source": "src/shots/S7Memory.tsx:57"
+    },
+    {
+      "shot": "S7",
+      "frame": 4461,
+      "kind": "pop",
+      "label": "删除按钮单次高亮起(此后不再脉动)",
+      "source": "src/shots/S7Memory.tsx:122"
+    },
+    {
+      "shot": "S7",
+      "frame": 4468,
+      "kind": "text",
+      "label": "说明句「每条都能纠正或删除…」落定",
+      "source": "src/shots/S7Memory.tsx:350"
+    },
+    {
+      "shot": "S7",
+      "frame": 4538,
+      "kind": "cut",
+      "label": "出画渐隐开始(到段末降到 0.06)",
+      "source": "src/shots/S7Memory.tsx:70"
+    },
+    {
+      "shot": "S8",
+      "frame": 4560,
+      "kind": "cut",
+      "label": "接缝:硬切入案例库,真实 LibraryPage 第 0 帧已在场",
+      "source": "src/timeline.ts:38"
+    },
+    {
+      "shot": "S8",
+      "frame": 4566,
+      "kind": "text",
+      "label": "眉标「知识与案例 · 分两库,各自标来源」落定",
+      "source": "src/shots/S8Cases.tsx:108"
+    },
+    {
+      "shot": "S8",
+      "frame": 4576,
+      "kind": "text",
+      "label": "标题「遇到没经历过的事,看看别人是怎么走过来的。」落定",
+      "source": "src/shots/S8Cases.tsx:109"
+    },
+    {
+      "shot": "S8",
+      "frame": 4620,
+      "kind": "text",
+      "label": "摘要行「案例与资料分两库,每条都标着来源、适用范围与证据等级。」落定",
+      "source": "src/shots/S8Cases.tsx:118"
+    },
+    {
+      "shot": "S8",
+      "frame": 4646,
+      "kind": "scroll",
+      "label": "屏内滚动换挡:段内 0.22 关键帧(约 15% 处)收速后再加速",
+      "source": "src/shots/S8Cases.tsx:51"
+    },
+    {
+      "shot": "S8",
+      "frame": 4710,
+      "kind": "text",
+      "label": "两库图例块落位(内部 3 条 / 虚构样例)",
+      "source": "src/shots/S8Cases.tsx:127"
+    },
+    {
+      "shot": "S8",
+      "frame": 4770,
+      "kind": "text",
+      "label": "结论句「虚构与真实在列表里一眼可辨…」落定",
+      "source": "src/shots/S8Cases.tsx:163"
+    },
+    {
+      "shot": "S8",
+      "frame": 4841,
+      "kind": "scroll",
+      "label": "屏内滚动换挡:段内 0.72 关键帧(约 82% 处)收速,转入贴身慢滚",
+      "source": "src/shots/S8Cases.tsx:51"
+    },
+    {
+      "shot": "S8",
+      "frame": 4873,
+      "kind": "pop",
+      "label": "相机可见跳变:stagedPush 末阶在一帧内 1.08→1.20(中间阶低于可见下限)",
+      "source": "src/shots/S8Cases.tsx:38"
+    },
+    {
+      "shot": "S8",
+      "frame": 4895,
+      "kind": "pop",
+      "label": "「虚构样例」状态标签高亮回弹起(status.off)",
+      "source": "src/shots/S8Cases.tsx:69"
+    },
+    {
+      "shot": "S8",
+      "frame": 4923,
+      "kind": "scroll",
+      "label": "滚动到位:停在「虚构样例」条目(段内 0.93,屏内不再移动)",
+      "source": "src/shots/S8Cases.tsx:52"
+    },
+    {
+      "shot": "S8",
+      "frame": 4927,
+      "kind": "cut",
+      "label": "出画渐隐开始(到段末降到 0.06)",
+      "source": "src/shots/S8Cases.tsx:56"
+    },
+    {
+      "shot": "S9",
+      "frame": 4950,
+      "kind": "cut",
+      "label": "硬切入边界声明段:第一句第 0 帧已在场(不淡入)",
+      "source": "src/shots/S9Closing.tsx:40"
+    },
+    {
+      "shot": "S9",
+      "frame": 4980,
+      "kind": "text",
+      "label": "第二句「它做的,是把散落的专业知识,和你们的经验,聚成一堆篝火。」落定",
+      "source": "src/shots/S9Closing.tsx:41"
+    },
+    {
+      "shot": "S9",
+      "frame": 5008,
+      "kind": "text",
+      "label": "第三句「不是替你判断,是陪你看见。」落定(44px accent)",
+      "source": "src/shots/S9Closing.tsx:45"
+    },
+    {
+      "shot": "S9",
+      "frame": 5042,
+      "kind": "state",
+      "label": "边界声明整块开始淡出(段内 0.307,至 0.37 归零)",
+      "source": "src/shots/S9Closing.tsx:49"
+    },
+    {
+      "shot": "S9",
+      "frame": 5055,
+      "kind": "text",
+      "label": "品牌字标「篝」压印落定(blur 5px→0)",
+      "source": "src/shots/S9Closing.tsx:63"
+    },
+    {
+      "shot": "S9",
+      "frame": 5060,
+      "kind": "text",
+      "label": "品牌字标「火」压印落定",
+      "source": "src/shots/S9Closing.tsx:63"
+    },
+    {
+      "shot": "S9",
+      "frame": 5065,
+      "kind": "text",
+      "label": "品牌字标「智」压印落定",
+      "source": "src/shots/S9Closing.tsx:63"
+    },
+    {
+      "shot": "S9",
+      "frame": 5066,
+      "kind": "pop",
+      "label": "呼吸点出现(frame>=116 硬编码,与段长无关)",
+      "source": "src/shots/S9Closing.tsx:216"
+    },
+    {
+      "shot": "S9",
+      "frame": 5070,
+      "kind": "text",
+      "label": "品牌字标「答」压印落定(字标完整)",
+      "source": "src/shots/S9Closing.tsx:63"
+    },
+    {
+      "shot": "S9",
+      "frame": 5079,
+      "kind": "pop",
+      "label": "品牌段暖光扫入场(sweepOn 于段内 0.43 打开)",
+      "source": "src/shots/S9Closing.tsx:115"
+    },
+    {
+      "shot": "S9",
+      "frame": 5140,
+      "kind": "pop",
+      "label": "accent 短横线生长开始(段内 0.633,180px 宽)",
+      "source": "src/shots/S9Closing.tsx:68"
+    },
+    {
+      "shot": "S9",
+      "frame": 5166,
+      "kind": "text",
+      "label": "副标落定「不替代医生、不替代专业服务」+「Campfire-AI」(段内 0.72)",
+      "source": "src/shots/S9Closing.tsx:72"
+    },
+    {
+      "shot": "S9",
+      "frame": 5220,
+      "kind": "cut",
+      "label": "品牌整体渐隐开始(段内 0.90,到片尾降到 0.06)",
+      "source": "src/shots/S9Closing.tsx:118"
+    }
+  ],
+  "holds": [
+    {
+      "shot": "S1",
+      "from": 52,
+      "to": 102,
+      "label": "品牌落定 hold(字标+副标逐帧完全静止,无光标闪动)",
+      "source": "src/shots/S1BrandOpen.tsx:63"
+    },
+    {
+      "shot": "S4",
+      "from": 650,
+      "to": 664,
+      "label": "高亮圈收回后保持静止(不再脉冲)",
+      "source": "src/shots/S4Intake.tsx:210"
+    },
+    {
+      "shot": "S4",
+      "from": 665,
+      "to": 730,
+      "label": "第 1 题停在题目顶部(屏内不滚动),留时间读题",
+      "source": "src/shots/S4Intake.tsx:189"
+    },
+    {
+      "shot": "S4",
+      "from": 806,
+      "to": 885,
+      "label": "勾选落定后的呼吸:其余七项已压暗、选中项静止",
+      "source": "src/shots/S4Intake.tsx:228"
+    },
+    {
+      "shot": "S5",
+      "from": 1500,
+      "to": 1859,
+      "label": "屏内停在顶部:等待「正在分析…」与首句涌出期间不滚动",
+      "source": "src/shots/S5Analysis.tsx:99"
+    },
+    {
+      "shot": "S5",
+      "from": 2580,
+      "to": 2665,
+      "label": "结论行标注线画完后静止(只剩相机推近)",
+      "source": "src/shots/S5Analysis.tsx:119"
+    },
+    {
+      "shot": "S6",
+      "from": 2894,
+      "to": 3024,
+      "label": "刹车 1:卡片停在「01 当前状态」,屏内滚动静止",
+      "source": "src/shots/S6ActionCard.tsx:96"
+    },
+    {
+      "shot": "S6",
+      "from": 3132,
+      "to": 3262,
+      "label": "刹车 2:卡片停在「02 立即怎么沟通」,屏内滚动静止",
+      "source": "src/shots/S6ActionCard.tsx:96"
+    },
+    {
+      "shot": "S6",
+      "from": 3629,
+      "to": 3743,
+      "label": "滚到卡底后停稳,读来源分布与双会话对照",
+      "source": "src/shots/S6ActionCard.tsx:96"
+    },
+    {
+      "shot": "S7",
+      "from": 4396,
+      "to": 4461,
+      "label": "记忆幕逐帧静止:行与说明落定后至删除高亮前无任何元素运动(2.2s,超 1.5s 呼吸上限,源未声明为 hold)",
+      "source": "src/shots/S7Memory.tsx:122"
+    },
+    {
+      "shot": "S7",
+      "from": 4495,
+      "to": 4538,
+      "label": "删除说明落定后的呼吸(至段末渐隐前静止,约 1.4s)",
+      "source": "src/shots/S7Memory.tsx:350"
+    },
+    {
+      "shot": "S9",
+      "from": 5187,
+      "to": 5220,
+      "label": "品牌 hold:字标与副标落定后逐帧静止 ≥1s(仅叠加 0.04 缓推)",
+      "source": "src/shots/S9Closing.tsx:102"
+    }
+  ]
+}

@@ -1,4 +1,4 @@
-"""判断「重渲是否只改了该改的地方」—— 基于**源码差异**,不是像素差异。
+"""判断「重渲是否只改了该改的地方」—— 基于**源码内容哈希**,不是像素差异。
 
 ★ 为什么推翻上一版 `ab-diff.py`:
   它拿两版 mp4 逐帧比,把任何 >0.05 的差都当成「改动」。但实测噪声底:
@@ -12,162 +12,223 @@
   再确认每个改动都是预期的。
 
   这与本项目前三次错误的成因一致:**拿一个分辨率不够的度量去支撑一个它支撑不了的结论。**
+
+★★ P2 重写(2026-10-07)。旧版三处缺陷(均由独立复核指出):
+
+  (a) **文件宇宙对 apps/web 失明**。旧版自己 glob `src/**/*.ts|tsx|json` ⇒
+      `apps/web` **0 个**、音频 0 个。而 `src/` 通过 import 依赖 38 个产品文件,
+      改产品 `labels.ts` 的可见文案就会改画面 —— P0 那次消融在本脚本里同样抓不到,
+      而 DELIVERY.md 却声称它「必须覆盖 apps/web 传递依赖」= **文档承诺 > 实现**。
+  → 文件宇宙改为**直接取 `render-manifest.json` 的键**(仓库相对,含
+    apps/web 38 / audio 17 / css 8 / config),不再自己 glob。
+
+  (b) **基线靠文件名前缀启发式**。旧版 `startswith("promo-v1")` 会同时匹配
+      `promo-v10…promo-v16`,再按 mtime 取最近 ⇒ 名字与时间都不是
+      「哪份源码产生了哪版成片」的证据。
+  → 改为**比较两份 manifest 的内容哈希**(基线 manifest vs 当前 manifest):
+      谁变了、谁新增、谁删除,一目了然,与时钟和命名都无关。
+
+  (c) **找不到基线时 `raise SystemExit(0)`**。交付态下它永远给不出结论,
+      却被 DELIVERY.md 当作回答「是不是只改了该改的」的退路。
+      一个**在无法作答时判通过**的检查不是检查(AGENTS.md 明令禁止)。
+  → 找不到基线 manifest 即 **exit 1**,并打印如何建立基线。
+
+★ 独立复核补的**能力边界**(2026-10-07,已复验,必须连边界一起引用):
+  `INTENDED` 是**按路径**登记的,不是按内容。所以在**已登记的路径**里再塞进一处
+  未登记改动,只要按本脚本自己的提示重跑 `render-manifest.py`,那个文件就会被记成
+  「✓ 预期」而通过。
+  ⇒ 本脚本回答的是「**哪些路径变了、这些路径在不在预期清单里**」,
+    **不是**「改动内容就是预期的那一句」。要回答后者,必须逐条登记期望的**内容哈希**。
+  把这条写进文件头,是因为**夸大一个度量能回答的问题**正是本项目反复出错的模式。
+
+★ 为什么不能只做「基线 manifest vs 当前 manifest 的差异」:
+  当前 manifest 是**某次渲染时刻**的快照。若渲染之后源码又被改过,
+  两份 manifest 之间的差异**看不到这些新改动**(它们不在任何一份清单里)。
+  于是本脚本做**两道**检查,缺一不可:
+    ① 漂移:当前 manifest 的每个哈希是否仍等于磁盘上的文件 —— 保证
+       「清单描述的源码 = 现在的源码」;
+    ② 增量:基线 manifest 与当前 manifest 的差异集,每个都必须在 INTENDED 登记。
 """
 import hashlib
 import json
-import re
-import subprocess
+import sys
 from pathlib import Path
 
 ROOT = Path("marketing/promo-shotcraft")
+REPO = ROOT.parents[1]
 
-# ★★ 基线不能写死。独立复核指出:
-#    旧版把 cut 硬编成 `2026-10-07 08:02`(某个已被删除的 superseded 文件的 mtime),
-#    而 BGM/noBGM 两版的 cut 其实不同(06:25 / 08:02),用哪个决定结论不同。
-#    更糟的是文件删掉后这个常量仍留着 —— 脚本照跑、exit 0,却已与事实脱节。
-#
-#    改为**自动取基线**:找 `out/` 下现存的最新一代「上一版」成片(按 mtime 排序取
-#    比当前成片早、且最接近的那一个),用它作为「渲染时点」。找不到就明确报告
-#    「无基线可比」,而不是拿一个陈旧常量硬算。
-def _baseline_mtime() -> tuple[float | None, str]:
-    """找「上一个**全片**渲染」的时刻。
-
-    ★ 必须限定为全片:out/ 下还留着大量中间产物(s5seg.mp4 / racerange.mp4 / 各版
-      对比片)。第一版自动取「mtime 最接近的更早 mp4」,结果抓到了 `s1seg.mp4`(06:07,
-      一个单段探针)—— 于是把 06:17/06:21 两个**早于 06:25 全片渲染**的文件
-      误报成「本次重渲引入的改动」。
-      判据:时长 ≈ 175s(全片),或文件名匹配 promo-v16*。
-    """
-    film = ROOT / "out" / "promo-v16.mp4"
-    if not film.exists():
-        return None, "当前成片不存在"
-    cur = film.stat().st_mtime
-
-    def is_full(p: Path) -> bool:
-        if p.name == "promo-v16.mp4":
-            return False
-        # 先按文件名(便宜);不匹配再用时长判断(贵)
-        if p.name.startswith("promo-v16") or p.name.startswith("promo-v1"):
-            try:
-                out = subprocess.run(
-                    ["ffprobe", "-v", "error", "-show_entries", "format=duration",
-                     "-of", "csv=p=0", str(p)],
-                    capture_output=True, text=True, timeout=30,
-                ).stdout.strip()
-                return bool(out) and abs(float(out) - 175.019) < 1.0
-            except (ValueError, subprocess.SubprocessError):
-                return False
-        return False
-
-    prev = [p for p in (ROOT / "out").glob("*.mp4")
-            if p.stat().st_mtime < cur and is_full(p)]
-    if not prev:
-        return None, "out/ 下没有更早的**全片**成片(基线已清理)"
-    b = max(prev, key=lambda p: p.stat().st_mtime)
-    return b.stat().st_mtime, f"{b.name} (mtime {_fmt(b.stat().st_mtime)})"
-
-
-def _fmt(ts: float) -> str:
-    import datetime
-    return datetime.datetime.fromtimestamp(ts).strftime("%Y-%m-%d %H:%M")
-
-
-BASELINE_TS, BASELINE_DESC = _baseline_mtime()
-
-# 本轮的预期源码改动(两个真缺陷的修复 + 已证明无影响的动作)
-INTENDED = {
-    "src/fixtures/data.generated.ts": "S8 来源行:补 review_status / interview_at 两列",
-    "src/fixtures/ports.ts": "S8 来源行:透传上面两个字段",
-    "src/shots/S4Intake.tsx": "S4 逐字落位:打字窗口提前 4% 结束",
-    "src/shots/S5Analysis.tsx": "S5 注释更正(经消融证明不影响画面)",
-    "src/lib/DeviceStage.tsx": "注释更正为「不许用原生 scrollTop」(不影响画面)",
-    # 这只是「重新量了一遍」,内容与旧版**逐字节相同**
-    # (216A931F7FAD7179FECEB990…),已用 Get-FileHash 与备份比对确认。
-    # 之所以重量:我担心「来源行变长 ⇒ 卡片下移 ⇒ offsetTop 失效」,
-    # 但那份 metrics 量的是**真实产品页**(localhost:5174),它一直是 6 段;
-    # 错的是影片复刻(只有 4 段)。修好后两者才对齐,故重量结果不变。
-    "src/element-metrics.json": "重量校验(内容逐字节相同,证明 metrics 一直是对的)",
-    # 出场地板(本轮新增):段末淡出终点 0 → 0.06,消除接缝处的单帧闪空。
-    # 证据:out/dip/strip.jpg(f1499 全空、f1500 硬切满屏);
-    # 修后实测 f1499 的最大偏离 8 → 23、内容像素 0 → 1014。
-    "src/shots/S1BrandOpen.tsx": "出场地板:crossFade 终点保持 0(中途换场,刻意不改)",
-    "src/shots/S2PainPoint.tsx": "出场地板:fadeOut 终点 0 → 0.06;sweepFade 保持 0(中途消失)",
-    "src/shots/S3Positioning.tsx": "出场地板:fadeOut 终点 0 → 0.06",
-    "src/shots/S6ActionCard.tsx": "出场地板:fadeOut 终点 0 → 0.06",
-    "src/shots/S7Memory.tsx": "出场地板:fadeOut 终点 0 → 0.06",
-    "src/shots/S8Cases.tsx": "出场地板:fadeOut 终点 0 → 0.06",
-    "src/shots/S9Closing.tsx": "出场地板:fadeOut 终点 0 → 0.06",
-}
-
+CURRENT = ROOT / "render-manifest.json"
+BASELINE_DIR = ROOT / "out" / "baseline"
 OUT = Path(".tmp/source-delta.txt")
 
+# ── 本轮的预期源码改动(登记「为什么这个文件该变」) ──────────────
+# ★ 只有登记过的差异才算「预期」。没登记的一律计为非预期 ⇒ exit 1。
+#   键是**仓库相对**路径(与 render-manifest.json 的键同一坐标系)。
+INTENDED: dict[str, str] = {
+    "marketing/promo-shotcraft/src/lib/camera.ts":
+        "删除 pushCamera 的 sin/cos 周期漂移(方案 A:改语义事件驱动),并清掉死代码 beatPulse",
+    "marketing/promo-shotcraft/src/lib/EmergencyFormView.tsx":
+        "S4 新增 unselectedDim(勾选后其余 7 项压暗)与 checkedPop(勾选按压回弹)",
+    "marketing/promo-shotcraft/src/shots/S2PainPoint.tsx":
+        "删往返光带;落位由 sin 描边改单次按压 pop",
+    "marketing/promo-shotcraft/src/shots/S3Positioning.tsx":
+        "删漂移;两入口由 sin 描边改单次 pop",
+    "marketing/promo-shotcraft/src/shots/S4Intake.tsx":
+        "删漂移;圈由瞬间出现改 draw-on;接入 unselectedDim/checkedPop",
+    "marketing/promo-shotcraft/src/shots/S5Analysis.tsx":
+        "删漂移;滚动改刹车;结论行改贴身 accent draw-on",
+    "marketing/promo-shotcraft/src/shots/S6ActionCard.tsx":
+        "删漂移;徽章 pop;滚动改两次刹车;两节标题下划线 draw-on(序号由数据算)",
+    "marketing/promo-shotcraft/src/shots/S7Memory.tsx":
+        "删漂移;改三阶推近;拆两幕(档案 15s + 记忆 11s),记忆幕接入 makeMemoryPort",
+    "marketing/promo-shotcraft/src/shots/S8Cases.tsx":
+        "删漂移;改三阶推近;标签 pop",
+    "marketing/promo-shotcraft/src/sfx.ts":
+        "S7 拆两幕后重钉 SFX:12 条(含记忆幕 5 条)",
+    "marketing/promo-shotcraft/src/fixtures/ports.ts":
+        "新增 makeMemoryPort(),读取 memory.generated.ts 的演示种子",
+    "marketing/promo-shotcraft/src/fixtures/memory.generated.ts":
+        "新增:记忆幕演示种子数据(由 verify/memory-episodes.py export 走产品读路径导出)",
+    # ── 以下 9 个是「**闭包新增**,内容未改」,不是源码改动 ──────────
+    # S7 拆出记忆幕后,影片首次 import 了产品的记忆功能模块,它们因此
+    # 第一次进入清单(基线清单里没有)。证据:这 9 个文件在 git 里**干净**
+    # (`git status` 无输出),最后一次改动是 72cff24(2026-10-04),
+    # 早于本轮到 v16 的渲染 —— 所以它们不是被这轮改的。
+    # 仍然逐条登记,是因为「影片开始依赖它」本身就是画面输入集合的变化,
+    # 不该由脚本静默略过。
+    "apps/web/src/features/memory/application/ports.ts":
+        "闭包新增(内容未改):S7 记忆幕引入的产品记忆功能模块",
+    "apps/web/src/features/memory/application/usecases.ts":
+        "闭包新增(内容未改):S7 记忆幕引入的产品记忆功能模块",
+    "apps/web/src/features/memory/domain/episodes.ts":
+        "闭包新增(内容未改):S7 记忆幕引入的产品记忆功能模块",
+    "apps/web/src/features/memory/domain/failures.ts":
+        "闭包新增(内容未改):S7 记忆幕引入的产品记忆功能模块",
+    "apps/web/src/features/memory/domain/formValidation.ts":
+        "闭包新增(内容未改):S7 记忆幕引入的产品记忆功能模块",
+    "apps/web/src/features/memory/view/MemoryPage.tsx":
+        "闭包新增(内容未改):S7 记忆幕的页面本体",
+    "apps/web/src/features/memory/view/memoryPage.module.css":
+        "闭包新增(内容未改):S7 记忆幕的页面样式(CSS Modules)",
+    "apps/web/src/features/memory/viewModel/useMemoryPage.ts":
+        "闭包新增(内容未改):S7 记忆幕的 viewModel",
+    "apps/web/src/shared/types/memory.ts":
+        "闭包新增(内容未改):记忆领域共享类型",
+}
 
-def mtimes():
-    out = {}
-    for g in ("src/**/*.ts", "src/**/*.tsx", "src/**/*.json"):
-        for p in ROOT.glob(g):
-            if "probe" in p.parts:
-                continue
-            out[str(p.relative_to(ROOT)).replace("\\", "/")] = p.stat().st_mtime
-    return out
+
+def sha(p: Path) -> str:
+    return hashlib.sha256(p.read_bytes()).hexdigest()
 
 
-mt = mtimes()
-intended_files = set(INTENDED)
+def resolve(rel: str) -> Path | None:
+    """清单键是仓库相对;兼容旧清单的 ROOT 相对写法。"""
+    for base in (REPO, ROOT):
+        p = base / rel
+        if p.exists():
+            return p
+    return None
 
-if BASELINE_TS is None:
-    # 没有基线就不要硬算 —— 明确说明,而不是拿陈旧常量给出一个看起来合理的数。
-    lines = [
-        "=" * 78,
-        "重渲是否只改了该改的地方(源码层判据)",
-        "=" * 78,
-        "",
-        f"  ⚠ 无基线可比:{BASELINE_DESC}",
-        "",
-        "  说明:本判据要求存在「上一版成片」,用它作为渲染时点。",
-        "        基线被清理后无法回答「这次重渲改了什么」——",
-        "        **此时不应给出任何结论**(旧版拿一个已删除文件的 mtime 硬算,是错的)。",
-        "        要恢复本检查:保留上一版成片在 out/ 下即可。",
-    ]
-    OUT.write_text("\n".join(lines), encoding="utf-8")
-    print("written", OUT)
-    raise SystemExit(0)
 
-changed_after_cut = sorted(f for f, t in mt.items() if t > BASELINE_TS)
-unexpected = [f for f in changed_after_cut if f not in intended_files]
+# ── 读清单 ─────────────────────────────────────────────────────
+if not CURRENT.exists():
+    raise SystemExit(f"★ 缺 {CURRENT};先跑 verify/render-manifest.py 重建")
+
+cur = json.loads(CURRENT.read_text(encoding="utf-8"))
+
+base_path: Path | None = None
+args = [a for a in sys.argv[1:] if not a.startswith("--baseline-manifest=")]
+explicit = [a for a in sys.argv[1:] if a.startswith("--baseline-manifest=")]
+if explicit:
+    base_path = Path(explicit[0].split("=", 1)[1])
+elif BASELINE_DIR.exists():
+    cands = sorted(BASELINE_DIR.glob("manifest-*.json"))
+    if cands:
+        base_path = cands[-1]
+
+if base_path is None or not base_path.exists():
+    raise SystemExit(
+        "★ 无基线可比 —— 本检查**无法作答**,故判失败(不是通过)。\n"
+        f"  期望在 {BASELINE_DIR}/ 下找到 manifest-*.json。\n"
+        "  建立基线:重渲前把上一版成片与其清单另存进去,例如\n"
+        "    mkdir -p out/baseline\n"
+        "    cp out/promo-vNN.mp4 out/baseline/\n"
+        "    cp render-manifest.json out/baseline/manifest-vNN.json\n"
+        "  也可用 --baseline-manifest=<路径> 显式指定。"
+    )
+
+base = json.loads(base_path.read_text(encoding="utf-8"))
+
+# ── ① 漂移:当前清单描述的源码是否仍是磁盘上的源码 ──────────────
+drift, gone = [], []
+for rel, recorded in cur["files"].items():
+    p = resolve(rel)
+    if p is None:
+        gone.append(rel)
+    elif sha(p) != recorded:
+        drift.append(rel)
+
+# ── ② 增量:基线 ↔ 当前 ────────────────────────────────────────
+bf, cf = base["files"], cur["files"]
+added = sorted(k for k in cf if k not in bf)
+removed = sorted(k for k in bf if k not in cf)
+changed = sorted(k for k in cf if k in bf and cf[k] != bf[k])
+delta_all = added + removed + changed
+unexpected = [k for k in delta_all if k not in INTENDED]
 
 lines = [
     "=" * 78,
     "重渲是否只改了该改的地方(源码层判据)",
     "=" * 78,
     "",
-    f"  基线(自动取 out/ 下最接近的上一版): {BASELINE_DESC}",
-    "  晚于该时刻的源码改动 = 本次重渲引入的差异",
+    f"  基线清单: {base_path}",
+    f"     baseline film_sha256 = {base.get('film_sha256', '?')[:24]}…",
+    f"  当前清单: {CURRENT}",
+    f"     current  film_sha256 = {cur.get('film_sha256', '?')[:24]}…",
+    f"  文件宇宙: {len(cf)} 个(取自清单,含 apps/web "
+    f"{sum(1 for k in cf if k.startswith('apps/web'))} / audio "
+    f"{sum(1 for k in cf if k.endswith('.mp3'))} / css "
+    f"{sum(1 for k in cf if k.endswith('.css'))})",
     "",
-    f"  ① 晚于基线改动的源码文件({len(changed_after_cut)} 个):",
+    "  ① 源码漂移(当前清单的哈希 vs 磁盘现状)",
 ]
-for f in changed_after_cut:
-    mark = "✓ 预期" if f in intended_files else "★ 非预期"
-    why = INTENDED.get(f, "(未登记理由)")
-    lines.append(f"     {mark}  {f}")
-    lines.append(f"              {why}")
+if not drift and not gone:
+    lines.append(f"     ✓ 0 处漂移 —— 清单描述的源码就是现在的源码({len(cf)} 个文件)")
+else:
+    lines.append(f"     ✗ {len(drift)} 个已改动、{len(gone)} 个缺失")
+    lines.append("        ⇒ 清单已过期,它不再描述当前源码,也就不能用来论证成片。")
+    lines.append("           先重渲并跑 verify/render-manifest.py 重建清单,再谈「只改了该改的」。")
+    for f in drift[:20]:
+        lines.append(f"        ★ 已改动: {f}")
+    for f in gone[:20]:
+        lines.append(f"        ★ 缺失  : {f}")
 
 lines += [
     "",
-    f"  ② 非预期改动: {len(unexpected)} 个",
+    f"  ② 相对基线的源码差异({len(delta_all)} 个:新增 {len(added)} / "
+    f"删除 {len(removed)} / 改动 {len(changed)})",
 ]
+if not delta_all:
+    lines.append("     (无差异 —— 两份清单逐哈希相同)")
+for f in delta_all:
+    mark = "✓ 预期" if f in INTENDED else "★ 非预期"
+    lines.append(f"     {mark}  [{('新增' if f in added else '删除' if f in removed else '改动')}] {f}")
+    lines.append(f"              {INTENDED.get(f, '(未登记理由)')}")
+
+lines += ["", f"  ③ 非预期改动: {len(unexpected)} 个"]
 for f in unexpected:
     lines.append(f"     ★ {f}")
 
-lines += [
-    "",
-    "  ── 结论 ────────────────────────────────────────────────",
-]
-if not unexpected:
-    lines.append("  ✓ 重渲只涉及已登记的 4 处修复(其中 2 处是纯注释,已用无损 PNG 消融证明")
-    lines.append("     不影响画面)。**没有非预期改动。**")
+lines += ["", "  ── 结论 ────────────────────────────────────────────────"]
+ok = (not drift and not gone and not unexpected)
+if ok:
+    lines.append("  ✓ 源码层无漂移,且相对基线的每一处差异都已登记理由。")
+    lines.append("    **没有非预期改动。**")
 else:
-    lines.append(f"  ✗ 有 {len(unexpected)} 个非预期改动,需逐个人工确认")
+    if drift or gone:
+        lines.append(f"  ✗ 清单已过期({len(drift) + len(gone)} 个文件与磁盘不符)—— 先重建清单。")
+    if unexpected:
+        lines.append(f"  ✗ 有 {len(unexpected)} 个非预期改动,需逐个人工确认。")
 
 lines += [
     "",
@@ -180,5 +241,10 @@ lines += [
     "  这个判断必须回到源码层(本脚本),或对**无损 PNG** 逐帧比。",
 ]
 
+OUT.parent.mkdir(parents=True, exist_ok=True)
 OUT.write_text("\n".join(lines), encoding="utf-8")
 print("written", OUT)
+
+# ★ 非零退出:无法作答(drift/缺基线)与非预期改动都必须卡住流程。
+if not ok:
+    sys.exit(1)

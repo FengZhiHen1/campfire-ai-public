@@ -28,7 +28,15 @@ REPO = ROOT.parents[1]                              # 仓库根
 ENTRY = ROOT / "src" / "index.ts"
 MANIFEST = ROOT / "render-manifest.json"
 
-IMPORT_RE = re.compile(r"""(?:^|\n)\s*import\s+(?:type\s+)?[^'"]*?from\s*['"]([^'"]+)['"]""")
+# ★★ P0 修复(2026-10-07,见 CHECKPOINT.md §3):旧正则要求 `from`,
+#   于是 DeviceStage.tsx 引入 4 个产品 CSS 的**副作用 import**(无 from):
+#     import '../../../../apps/web/src/shared/styles/tokens.css';
+#   一条都匹配不到 ⇒ 清单对「样式」这一整类输入失明 —— 改 tokens.css
+#   能改变画面,而门禁仍报「82 个文件一致 / 0 处不一致 / exit 0」。
+#   现已消融证实并修复:`from` 子句改为可选,副作用 import 同样纳入闭包。
+IMPORT_RE = re.compile(
+    r"""(?:^|\n)\s*import\s+(?:type\s+)?(?:[^'"]*?\sfrom\s*)?['"]([^'"]+)['"]"""
+)
 CSS_IMPORT_RE = re.compile(r"""@import\s+['"]([^'"]+)['"]""")
 EXTS = ["", ".ts", ".tsx", ".css", ".json", "/index.ts", "/index.tsx"]
 
@@ -70,6 +78,38 @@ def closure() -> set[Path]:
     return seen
 
 
+def build_config() -> set[Path]:
+    """构建期配置 —— 会改渲染行为,必须纳入。
+
+    ★★ 又一类被我漏掉的输入(第 6 轮收尾自查):
+      `remotion.config.ts` 决定编码器、并发、图片格式、`--gl` 等;
+      `package.json` 决定 remotion 版本。改它们会改变成片,而 import 闭包看不见。
+
+    ★ P0 补充(2026-10-07):纳入**视觉契约真源** `docs/design/tokens.css`。
+      `apps/web/scripts/sync-tokens.mjs` 声明它是「视觉契约唯一权威」,
+      apps/web 侧的 tokens.css 只是它的复制产物 —— 改真源并重新同步
+      就能改变画面,而它此前不在清单里(正是 P0 消融所用的文件)。
+      少收录的代价是「多比一个文件」,漏收录的代价是「门禁失明」,不对称。
+
+    ★ 反过来,`public/textures/**` **不**纳入 —— 我做过**真消融**验证:
+      把整个 `public/textures` 移走后渲染同一帧,SHA256 不变
+      (`909394CBA3B6111ED741`)。它只是**旧截图路线的遗留素材**,
+      现在只在一条注释里被提到(见 DeviceStage.tsx 的说明)。
+      ⚠ 第一次做这个消融时我用 `Rename-Item` 但**它失败了**,
+      于是两次渲染比对的是同一个文件系统状态 —— 「相同」是假的。
+      改用 `Move-Item` 并**校验目录确实不在原位**后,结论才成立。
+    """
+    out: set[Path] = set()
+    for name in ("remotion.config.ts", "remotion.config.js", "package.json"):
+        p = ROOT / name
+        if p.is_file():
+            out.add(p)
+    tokens = REPO / "docs" / "design" / "tokens.css"
+    if tokens.is_file():
+        out.add(tokens)
+    return out
+
+
 def audio_assets() -> set[Path]:
     """成片用到的**音频资源**。
 
@@ -96,8 +136,9 @@ def sha(p: Path) -> str:
 
 def main() -> None:
     files = closure()
-    # ★ 把音频资源也纳入(见 audio_assets 的说明:漏收录 = 门禁失明)
+    # ★ 把音频资源与构建期配置也纳入(见各自函数的说明:漏收录 = 门禁失明)
     files |= audio_assets()
+    files |= build_config()
     if "--list-outsiders" in sys.argv:
         # 列出「在 src/ 下但不在闭包内」的文件 —— 它们改了确实不影响画面
         all_src = {p for p in (ROOT / "src").rglob("*")
@@ -124,21 +165,49 @@ def main() -> None:
 
     n_web = sum(1 for k in entries if k.startswith("apps/web"))
     n_audio = sum(1 for k in entries if "/public/audio/" in k or k.startswith("public/audio/"))
-    film = ROOT / "out" / "promo-v16.mp4"
+    n_css = sum(1 for k in entries if k.endswith(".css"))
+    # ★★ P0 自检(2026-10-07,与「apps/web 条目为 0 就报错」同型):
+    #   影片显式 import 了 4 个产品 CSS,又纳入 1 个视觉契约真源 ⇒ CSS 条目至少 5 个。
+    #   若为 0,说明样式解析又坏了(最可能:副作用 import 没被匹配)——
+    #   一个对样式失明的清单正是 P0 的失败模式,宁可报错也不假通过。
+    if n_css < 5:
+        sys.stderr.write(
+            f"[render-manifest] CSS entries = {n_css} (< 5) — style layer blind, "
+            "side-effect imports not parsed? refusing to write manifest\n"
+        )
+        sys.exit(1)
+    # ★ 2026-10-07:成片名不再写死。旧版硬编 `out/promo-v16.mp4`;重渲出 v17 之后
+    #   它仍指 v16,于是清单会同时记录「v17 的源码哈希」与「v16 的成片哈希」——
+    #   一份**自相矛盾**的记录(本次实测踩到)。判据改为:取 out/ 下最新的
+    #   `promo-v<数字>.mp4`(显式排除 -nobgm 与 out/baseline/,后者是基线存档)。
+    films = [p for p in (ROOT / "out").glob("promo-v*.mp4")
+             if re.fullmatch(r"promo-v\d+\.mp4", p.name)]
+    if not films:
+        sys.stderr.write(
+            "[render-manifest] no out/promo-v<N>.mp4 found — refusing to guess which film "
+            "this manifest describes\n"
+        )
+        sys.exit(1)
+    film = max(films, key=lambda p: p.stat().st_mtime)
     m = {
-        "film": "out/promo-v16.mp4",
-        "film_sha256": sha(film).upper() if film.exists() else None,
+        "film": f"out/{film.name}",
+        "film_sha256": sha(film).upper(),
         "note": ("本清单由 verify/render-manifest.py 从入口的 **import 闭包**推导"
-                 "(含 apps/web 传递依赖),并纳入 **public/audio 全部音频资源**;"
-                 "不是手写白名单。凡在此列表内,改动都必须重渲(或先用无损 PNG 消融证明)。"),
+                 "(含 apps/web 传递依赖与副作用 CSS import);另**手工补入两组**"
+                 "非 import 输入:① public/audio 下全部音频资源;② 视觉契约真源 "
+                 "docs/design/tokens.css(该路径**硬编在脚本里**)。"
+                 "★ 独立复核指出:原先写的「不是手写白名单」**只对 import 闭包那部分成立** ——"
+                 "这两组是手写的,漏加一个文件,门禁就会对它失明(P0 的失败模式)。"
+                 "凡在此列表内,改动都必须重渲(或先用无损 PNG 消融证明)。"),
         "derived_from": "src/index.ts",
-        "counts": {"total": len(entries), "apps_web": n_web, "audio": n_audio},
+        "counts": {"total": len(entries), "apps_web": n_web, "audio": n_audio,
+                   "css": n_css},
         "files": entries,
     }
     MANIFEST.write_text(json.dumps(m, ensure_ascii=False, indent=2), encoding="utf-8")
-    print(f"清单已推导:{len(entries)} 个文件"
-          f"(apps/web {n_web} 个,音频 {n_audio} 个)")
-    print(f"成片: {m['film_sha256']}")
+    print(f"manifest derived: {len(entries)} files "
+          f"(apps/web {n_web}, audio {n_audio}, css {n_css})")
+    print(f"film: {m['film']} {m['film_sha256']}")
 
 
 main()

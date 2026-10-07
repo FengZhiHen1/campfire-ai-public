@@ -20,9 +20,18 @@ import numpy as np
 #    「扫描帧数 0 / 全片最小边距 **9999px**」并 **exit 0**。
 #    那是**永远不会失败的门禁**(AGENTS.md 明令禁止),比没有门禁更危险。
 _DEFAULT = "marketing/promo-shotcraft/out/promo-v16.mp4"
-MP4 = sys.argv[1] if len(sys.argv) > 1 else _DEFAULT
+# ★★ P1 修复(2026-10-07):默认要求 S3–S8 六段**全部**测到;只分析片段时
+#    必须显式写 --partial,且**落在片段范围内的段仍必须全部测到**。
+#    旧版没有这道闸:传 S1 段(120 帧、画面里没有设备框)时六段全部保留哨兵,
+#    输出「全片最小边距 9999px」并 exit 0。
+PARTIAL = "--partial" in sys.argv[1:]
+_ARGS = [a for a in sys.argv[1:] if a != "--partial"]
+MP4 = _ARGS[0] if _ARGS else _DEFAULT
 if not Path(MP4).exists():
-    raise SystemExit(f"★ 找不到成片: {MP4}\n  用法: uv run python {sys.argv[0]} <成片路径>")
+    raise SystemExit(
+        f"★ 找不到成片: {MP4}\n"
+        f"  用法: uv run python {sys.argv[0]} [--partial] <成片路径>"
+    )
 OUT = Path(".tmp/bezel-scan.txt")
 
 W, H = 1920, 1080
@@ -85,9 +94,56 @@ if not per_frame:
         "  检查 crop 参数与 DARK 阈值是否匹配当前成片。"
     )
 
+# ★★ P1 修复(2026-10-07):**哨兵检查**。
+#    `mins` 的初值是 (9999, None) 哨兵,而旧版**没有任何一行读它** ——
+#    于是「一帧都没测到」与「边距很大」在输出上不可区分。
+#    独立复核实测:`bezel-scan.py out/s1seg.mp4`(S1 段 120 帧,画面里没有设备框)
+#    → 「扫描帧数 120 / 全片最小边距 9999px / exit 0」。
+#    一段都没测到却判通过,正是 AGENTS.md 禁止的「永远不会失败的检查」。
+missing = [sid for sid, _, _ in SHOTS if mins[sid][1] is None]
+in_scope = [sid for sid, s0, _ in SHOTS if s0 < fidx]
+
+if PARTIAL:
+    # 显式声明「只分析片段」时才允许有段落在范围外,
+    # 但**落在范围内的段必须全部测到**,否则仍是静默失明。
+    if not in_scope:
+        raise SystemExit(
+            f"★ 该片段({fidx} 帧)不覆盖任何设备框段"
+            f"(最早的设备段 {SHOTS[0][0]} 起于 f{SHOTS[0][1]})——\n"
+            f"  没有可度量的对象。这不是「通过」,是「没测」。"
+        )
+    bad = [s for s in in_scope if mins[s][1] is None]
+    if bad:
+        raise SystemExit(
+            f"★ 片段覆盖了 {'/'.join(bad)},但这些段一帧深色 bezel 都没检出 ——\n"
+            f"  不要把它当成『无贴边』。检查 crop 参数与 DARK 阈值是否匹配当前素材。"
+        )
+elif missing:
+    raise SystemExit(
+        f"★ 以下段一帧深色 bezel 都没检出: {'/'.join(missing)}\n"
+        f"  它们不在被扫描的素材里(本次共扫到 {fidx} 帧)。\n"
+        f"  全片扫描请传完整成片;只分析片段请显式加 --partial。\n"
+        f"  ★ 绝不把「没测到」当成「边距达标」。"
+    )
+
+# ★★ 独立复核的证伪(2026-10-07,已复验):
+#    一段**纯黑**的 5250 帧成片里没有任何设备框,但深色像素铺满全屏 ⇒ 每段的
+#    「边距」都被算成 **0px**,脚本仍然 **exit 0**。哨兵只能区分「没有深色行」与
+#    「有深色行」,区分不了「有设备框」与「整屏都是深色」。
+#    判据:**边距 0 说明深色区域贴到了画布边缘** —— 居中的设备框不可能这样。
+#    0px 要读作「没检出设备框」,不能读作「贴边」。
+zero_margin = [sid for sid, _, _ in SHOTS
+               if mins[sid][1] is not None and mins[sid][0] <= 0]
+if zero_margin:
+    raise SystemExit(
+        f"★ 以下段的边距测得 0px: {'/'.join(zero_margin)}\n"
+        f"  深色像素贴到了画布边缘,即没有检出居中的设备框(整屏深色也会得到 0px)。\n"
+        f"  ★ 不要把它读成「边距为 0 / 贴边」。"
+    )
+
 lines = [
     "=" * 76,
-    "设备框边距:全片逐帧扫描",
+    "设备框边距:" + ("片段逐帧扫描(--partial)" if PARTIAL else "全片逐帧扫描"),
     "=" * 76,
     f"  成片: {MP4}",
     f"  扫描帧数: {fidx}",
@@ -97,9 +153,12 @@ lines = [
 PREV = {"S3": "33/23", "S4": "23/25", "S5": "39/33", "S6": "17/21", "S7": "42/30", "S8": "29/26"}
 for sid, _, _ in SHOTS:
     m, f = mins[sid]
-    lines.append(f"  {sid}     {m:4}px    f{f}      {PREV[sid]}(那 6 帧的实测值)")
+    if f is None:
+        lines.append(f"  {sid}        —     (范围外)    {PREV[sid]}(那 6 帧的实测值)")
+    else:
+        lines.append(f"  {sid}     {m:4}px    f{f}      {PREV[sid]}(那 6 帧的实测值)")
 
-allmin = min(m for m, _ in mins.values())
+allmin = min(m for m, f in mins.values() if f is not None)
 lines.append("")
 lines.append(f"  全片最小边距: {allmin}px")
 lines.append("")
