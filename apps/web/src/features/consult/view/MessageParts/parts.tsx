@@ -7,32 +7,42 @@
  *   - docs/技术设计/technical-details/咨询对话界面.md: MUST — 第 4.2 节（组件清单）、第 5、6 节
  *   - docs/design/pages/对话页.md: MUST — 契约修订 1～8（各渲染器的规格）
  * 边界:
- *   - 依赖: 各 part 组件、viewModel 的 runStore 与 useQuestionBatch、domain/parts
+ *   - 依赖: 各 part 组件、viewModel 的 useQuestionBatch、domain/parts
  *   - 被依赖: view 的对话工作面
  * 禁止行为:
  *   - 禁止在注册表里写业务判定（判定归 domain；这里只做「part → 组件」的接线）
  *   - 禁止把 reasoning 文本接进正文渲染器（只挂在 ReasoningDisclosure 上）
+ *   - 禁止 part 渲染器直接订阅 runStore：运行态由对话工作面经上下文下发（否则渲染器
+ *     无法用 fixture 驱动，也与「接线点唯一」冲突）
  */
 
 import { createContext, useContext, type ReactNode } from 'react';
 
 import type { ActionCardEvent, CitationRecord, QuestionItem } from '../../../../shared/types/sse';
 import { PART_NAME, type ToolCallView } from '../../domain/parts';
-import { EMERGENCY_SKILL_ID } from '../../domain/skills';
 import { useQuestionBatch } from '../../viewModel/useQuestionBatch';
-import { useRunStore } from '../../viewModel/runStore';
 import { ActionCard } from './ActionCard';
 import { CitationPart } from './CitationPart';
 import { QuestionCard } from './QuestionCard';
 import { ReasoningDisclosure } from './ReasoningDisclosure';
 import { ToolIndicator } from './ToolIndicator';
 
-/** 对话消息流里跨 part 需要的信息（由对话工作面提供）。 */
+/**
+ * 对话消息流里跨 part 需要的信息（由对话工作面提供）。
+ *
+ * 为什么经上下文而不是字面 props：part 渲染器由库的 `MessagePrimitive.Parts` 在库自己
+ * 管理的树里实例化，没有可传 props 的挂载点；上下文是在该树里下发数据的唯一通道。
+ * 取值仍然是「工作面持有、渲染器只读」，渲染器不订阅任何全局 store。
+ */
 export interface ConsultThreadContextValue {
   /** 提问卡整组提交后追加使用者消息。 */
   submitAnswers(displayText: string): void;
   /** 当前最新的行动卡 id；用于把旧卡标为失效（同会话内更晚的卡为准）。 */
   newestActionCardId: string | null;
+  /** 对话是否仍在流式输出（思考行的行内文案据此切换）。 */
+  reasoningStreaming: boolean;
+  /** 本轮是否启用了应急技能（思考行据此收为一行）。 */
+  reasoningEmergency: boolean;
 }
 
 const ConsultThreadContext = createContext<ConsultThreadContextValue | null>(null);
@@ -77,11 +87,10 @@ function TextPart({ text }: { text: string }) {
   );
 }
 
-/** 思考段渲染：文案与呈现纪律取自 store 的运行态（应急收为一行）。 */
+/** 思考段渲染：文案与呈现纪律取自由对话工作面下发的运行态（应急收为一行）。 */
 function ReasoningPart({ text }: { text: string }) {
-  const streaming = useRunStore((state) => state.connection === 'streaming' || state.connection === 'subscribing');
-  const isEmergency = useRunStore((state) => state.activeSkills.includes(EMERGENCY_SKILL_ID));
-  return <ReasoningDisclosure text={text} streaming={streaming} emergency={isEmergency} />;
+  const { reasoningStreaming, reasoningEmergency } = useConsultThread();
+  return <ReasoningDisclosure text={text} streaming={reasoningStreaming} emergency={reasoningEmergency} />;
 }
 
 /** 依据区渲染（聚合后的多条引用）。 */
