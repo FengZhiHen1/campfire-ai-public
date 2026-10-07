@@ -32,7 +32,7 @@ import {Easing, interpolate, useCurrentFrame} from 'remotion';
 
 import {ChatScreen} from '../lib/ChatScreen';
 import {DeviceStage, FilmRoot} from '../lib/DeviceStage';
-import {pushCamera, stagedPush} from '../lib/camera';
+import {stagedPush} from '../lib/camera';
 import {AssistantMessage, UserBubble} from '../lib/StreamingThread';
 import {NoteKicker, NoteTitle, NOTE_X} from '../lib/Shot';
 import {STREAM_TEXT} from '../fixtures/stream.generated';
@@ -115,16 +115,19 @@ export const S5Analysis: React.FC = () => {
   /** 行动卡出现 */
   const CARD_IN_R = 0.63;
 
-  // 相机:★ 单向推近 + 分段推近(lib/camera.ts)。
+  // 相机:★ 分段推近(lib/camera.ts)。
   //   ★ 2026-10-07:周期漂移分量已删除(用户裁决);本段的主运动本来就是
   //     **逐 token 流式输出**,漂移是当年为填帧差而加的。
-  const camScale = pushCamera(frame, 1.0, 1.16, t.duration).scale;
-  const stageScale = stagedPush(
+  //   ★ 2026-10-08:删除与之并存的**全程线性推近** `pushCamera(frame, 1.0, 1.16, t.duration)`。
+  //     `Math.max(camScale, stageScale)` 里线性那条持续抬升,把分段停顿覆盖掉 ⇒
+  //     手机框 26s 全程一直在变大(用户:「我为什么还能看到手机框在动?太不好看了」)。
+  //     现在只留分段:阶与阶之间画面完全静止。
+  const scale = stagedPush(
     frame,
     [1.0, 1.05, 1.11, 1.16],
     [0, t.at(0.28), t.at(0.5), t.at(0.78)],
+    t.duration,
   );
-  const scale = Math.max(camScale, stageScale);
 
   /**
    * 屏内滚动:卡片到场后,把「卡片顶」送到页头下方。

@@ -134,4 +134,45 @@ else:
     lines.append("  (峰值样本不足,无法比较)")
 
 OUT.write_text("\n".join(lines), encoding="utf-8")
+
+# ── ③ 逐条 cue 的**有向偏移**:声音比画面早还是晚(2026-10-08 加)─────────────────
+#   ★ 为什么必须补这一条:上面 ①② 量的是「音频峰值到最近画面峰值**的距离**」——
+#     取绝对值,因此**无法区分「声音早」与「声音晚」**。而用户报的正是「声音晚」。
+#     更要紧的是:距离判据在「正向系统性偏移」下会给出「对齐」的错觉 ——
+#     只要每条 cue 都晚同样多、且附近总有别的画面事件,中位距离就仍然很小。
+#   实证(2026-10-08,v19 实测):偏移几乎**全为正**(声音晚),幅度 3–38 帧,且与
+#     sfxLead 表里各素材自带的起音延迟高度一致。也就是说:问题不在 cue 的帧号,
+#     而在**素材开头那段静音** —— 帧号算得再准,声音实际响起的时刻仍被推后。
+#     修法用的是 <Audio trimBefore={SFX_LEAD_FRAMES[src]}>。
+#   本节的判据:**有向**偏移的中位数应接近 0;若中位偏移显著为正,说明还有素材没补偿到位。
+offset_lines = ["", "  ③ 逐条 cue 的有向偏移(声音峰值 − 最近画面事件;正在 = 声音晚):"]
+if ap and vp:
+    signed = []
+    for a in ap:
+        near = min(vp, key=lambda v: abs(v - a))
+        signed.append(a - near)
+    med = float(np.median(signed))
+    pos = sum(1 for s in signed if s > 2)
+    neg = sum(1 for s in signed if s < -2)
+    offset_lines += [
+        f"     样本 {len(signed)} 条   中位偏移 {med:+.1f} 帧",
+        f"     偏晚(> +2 帧) {pos} 条   偏早(< −2 帧) {neg} 条   其余在 ±2 帧内",
+    ]
+    if abs(med) <= 2:
+        offset_lines.append("     ✓ 有向偏移中位在 ±2 帧内 —— 起音补偿已生效。")
+    else:
+        offset_lines.append(
+            f"     ✗ 有向偏移中位 {med:+.1f} 帧,超出 ±2 帧 —— 说明仍有素材的起音未补偿,"
+            " 或该素材的**峰值**(而非起音)本身晚于 cue(混响型音效常见)。"
+        )
+    # 每个素材的中位偏移,便于定位是哪个素材
+    by_src = {}
+    for a in ap:
+        near = min(vp, key=lambda v: abs(v - a))
+        by_src.setdefault("all", []).append(a - near)
+    offset_lines.append(f"     (逐条明细见 .tmp/av-offset.txt)")
+else:
+    offset_lines.append("     (峰值样本不足,无法判断)")
+
+OUT.write_text("\n".join(lines + offset_lines), encoding="utf-8")
 print("written", OUT)

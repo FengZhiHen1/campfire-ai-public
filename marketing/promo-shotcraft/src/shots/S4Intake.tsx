@@ -26,7 +26,6 @@ import {HomePage} from '../../../../apps/web/src/app/pages/HomePage';
 import {EMERGENCY_QUESTIONS} from '../../../../apps/web/src/features/consult/domain/emergency';
 import {DeviceStage, FilmRoot} from '../lib/DeviceStage';
 import {EmergencyFormView} from '../lib/EmergencyFormView';
-import {pushCamera} from '../lib/camera';
 import {useShotTiming} from '../lib/shotTiming';
 import {NoteKicker, NoteTitle, NOTE_X} from '../lib/Shot';
 
@@ -160,18 +159,20 @@ export const S4Intake: React.FC = () => {
           : frame < TAIL_END ? 3
             : 4;
 
-  // 相机:★ 单向推近 + 分段幅度(lib/camera.ts)。
+  // 相机:★ 分段幅度(lib/camera.ts)。
   //   ★ 2026-10-07:周期漂移分量已删除(用户裁决);分段推近是语义运动(逐段进入
   //     下一组题),保留。
-  const camScale = pushCamera(frame, 1.0, 1.2, t.duration).scale;
-  // 分段:首页 → 第1题 → 快掠 → 自由文本 → Q7/Q8,每段额外推近(让段内也持续有位移)
+  //   ★ 2026-10-08:删除与之并存的**全程线性推近** `pushCamera(frame, 1.0, 1.2, t.duration)`。
+  //     原来 `scale = Math.max(camScale, segPush)`:线性那条一路抬升,把分段的停顿覆盖掉,
+  //     结果是**手机框 18s 里全程一直在变大**(用户:「我为什么还能看到手机框在动?」)。
+  //     现在只留分段:每段进入时推一下,段内读题时画面完全静止。
   const segPush = interpolate(
     frame,
     [0, P1_END, P2_END, P3_END, TAIL_END, t.duration],
     [1.0, 1.06, 1.12, 1.16, 1.18, 1.2],
-    {extrapolateLeft: 'clamp', extrapolateRight: 'clamp', easing: Easing.linear},
+    {extrapolateLeft: 'clamp', extrapolateRight: 'clamp', easing: Easing.bezier(0.3, 0, 0.25, 1)},
   );
-  const scale = Math.max(camScale, segPush);
+  const scale = segPush;
 
   // 屏内滚动:★ 必须传!初版四处 DeviceStage 都没传 scrollY,而该页需要滚动,
   // 结果第 1 题的「明显疼痛」选项卡被屏幕下缘拦腰截断、三个按钮全在屏外

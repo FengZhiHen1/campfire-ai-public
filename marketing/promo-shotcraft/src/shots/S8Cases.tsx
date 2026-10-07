@@ -20,7 +20,7 @@ import {LibraryPage} from '../../../../apps/web/src/features/library/view/Librar
 import {DeviceStage, FilmRoot} from '../lib/DeviceStage';
 import {NoteKicker, NoteTitle, NOTE_X} from '../lib/Shot';
 import {scrollTo, markScrollPx} from '../lib/pageScroll';
-import {pushCamera, stagedPush} from '../lib/camera';
+import {stagedPush} from '../lib/camera';
 import {useShotTiming} from '../lib/shotTiming';
 import {makeLibraryPort} from '../fixtures/ports';
 
@@ -34,9 +34,11 @@ export const S8Cases: React.FC = () => {
   //   ★ 2026-10-07:原为 1.00→1.20 线性铺满整段 —— 13s 里每 30 帧只有 0.0154,
   //     低于 lib/camera.ts 的可见下限(0.02),读起来就是用户说的那种「微动」。
   //     改为三阶后每阶位移可见,且与原周期漂移分量一并删除。
-  const camScale = pushCamera(frame, 1.0, 1.2, t.duration).scale;
-  const stageScale = stagedPush(frame, [1.0, 1.08, 1.2], [0, t.at(0.45), t.at(0.8)]);
-  const scale = Math.max(camScale, stageScale);
+  //   ★ 2026-10-08:再删掉与三阶并存的**全程线性推近**(用户:「我为什么还能看到手机框在动?」)。
+  //     原来这里是 `Math.max(camScale, stageScale)` —— 两条曲线取大,线性那条持续抬升,
+  //     结果是**框全程一直在变大**,三阶的「停顿」被覆盖掉。现在只留三阶:
+  //     阶与阶之间画面完全静止,运镜被限制在三个短窗口里。
+  const scale = stagedPush(frame, [1.0, 1.08, 1.2], [0, t.at(0.45), t.at(0.8)], t.duration);
 
   // 屏内滚动:★ 目标由**实测元素位置**给出,不是猜的像素。
   // 实测(capture/measure-element-positions.mjs):

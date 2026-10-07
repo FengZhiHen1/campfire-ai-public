@@ -24,7 +24,6 @@ import {MemoryRouter} from 'react-router';
 import {HomePage} from '../../../../apps/web/src/app/pages/HomePage';
 import {DeviceStage, FilmRoot} from '../lib/DeviceStage';
 import {NoteBody, NoteKicker, NoteTitle, NOTE_X} from '../lib/Shot';
-import {pushCamera} from '../lib/camera';
 import {useShotTiming} from '../lib/shotTiming';
 
 /** 三个卖点(文案取自产品设计契约,不编造)。 */
@@ -92,11 +91,13 @@ export const S3Positioning: React.FC = () => {
   });
   const enterY = (1 - frameIn) * 40;
 
-  // 相机:★ 单向推近(lib/camera.ts)。旧版 1.00→1.06 铺满 6s,每帧位移不可见;
-  //   现在推到 1.20,时长传 t.duration(而不是写 180/240):段长再变时推近速率
-  //   自动跟随,不会退化成「推近被摊薄到看不见」——那正是本片踩过两次的坑。
-  //   ★ 2026-10-07:周期漂移分量已删除(用户裁决);推近仍在,它是单向且有理由的。
-  const camScale = pushCamera(frame, 1.0, 1.2, t.duration).scale;
+  // 相机:★ 2026-10-08 删除「全程线性推近」(用户原话:「我为什么还能看到手机框在动?
+  //   太不好看了」)。原来是 `pushCamera(frame, 1.0, 1.2, t.duration)` —— 曲线铺满整段,
+  //   而 scale 加在「外壳 + 屏幕」整层上 ⇒ **黑色边框与机身跟着一起放大**,8s 不停。
+  //   本段没有需要「凑近看」的新对象(三个卖点是原地落位),因此运镜整体去掉:
+  //   设备框恒定 1.0,画面只靠卖点落位与页内内容动。
+  //   (旧注释里「推到 1.20 是为了帧差可见」的说法正是被否决的那类理由 —— 为度量而造运动。)
+  const scale = 1.0;
 
   // 三个卖点:每条占 0.12 段长(8s 段里约 29f),间隔 0.09 → 落位动作之间有 0.03 的呼吸。
   // 为什么把起点放在 0.22:0.22 之前是「首页浮入 + 眉标」两拍,卖点从第 3 拍开始,
@@ -161,7 +162,7 @@ export const S3Positioning: React.FC = () => {
       <style>{emphasisCss('.daily-entry', dailyOn, dailyPop)}</style>
 
       <div style={{position: 'absolute', inset: 0, opacity: fadeOut}}>
-        <DeviceStage cx={640} cy={540} scale={camScale} ty={enterY} opacity={frameIn}>
+        <DeviceStage cx={640} cy={540} scale={scale} ty={enterY} opacity={frameIn}>
           <MemoryRouter initialEntries={['/']}>
             <HomePage />
           </MemoryRouter>

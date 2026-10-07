@@ -28,7 +28,7 @@ import {MemoryPage} from '../../../../apps/web/src/features/memory/view/MemoryPa
 import {DeviceStage, FilmRoot} from '../lib/DeviceStage';
 import {NoteBody, NoteKicker, NoteTitle, NOTE_X} from '../lib/Shot';
 import {scrollTo, markScrollPx} from '../lib/pageScroll';
-import {pushCamera, stagedPush} from '../lib/camera';
+import {stagedPush} from '../lib/camera';
 import {useShotTiming} from '../lib/shotTiming';
 import {makeProfilePort, CANDIDATE_ITEMS, CONFIRMED_ITEMS, makeMemoryPort} from '../fixtures/ports';
 
@@ -49,14 +49,17 @@ export const S7Memory: React.FC = () => {
 
   const inActB = frame >= actBFrame;
 
-  // ── 相机:单向推近 + 四阶分阶(语义:档案首屏 → 待确认 → 确认翻转 → 记忆时间线)──
-  const camScale = pushCamera(frame, 1.0, 1.18, t.duration).scale;
-  const stageScale = stagedPush(
+  // ── 相机:四阶分阶(语义:档案首屏 → 待确认 → 确认翻转 → 记忆时间线)──
+  //   ★ 2026-10-08:删除与之并存的**全程线性推近** `pushCamera(frame, 1.0, 1.18, t.duration)`。
+  //     原来 `Math.max(camScale, stageScale)`:线性那条覆盖掉分段的停顿 ⇒ 手机框 22s 全程在变大
+  //     (用户:「我为什么还能看到手机框在动?太不好看了」)。
+  //     另外这处也是「末阶单帧跳变」的来源之一(event f4396,见 lib/camera.ts 的说明)。
+  const scale = stagedPush(
     frame,
     [1.0, 1.06, 1.12, 1.18],
     [0, a(0.2), a(0.78), b(0.5)],
+    t.duration,
   );
-  const scale = Math.max(camScale, stageScale);
 
   // ── 换场:档案幕在自己的末段淡到 **0**(中途消失的元素必须降到 0),
   //    记忆幕从 0.35 起(保证交界帧就有内容,不会出现整屏纯色)。──

@@ -16,7 +16,7 @@
 import {Easing, interpolate, useCurrentFrame} from 'remotion';
 
 import {DeviceStage, FilmRoot} from '../lib/DeviceStage';
-import {pushCamera, stagedPush} from '../lib/camera';
+import {stagedPush} from '../lib/camera';
 import {ActionCardScreen} from '../lib/ActionCardScreen';
 import {NoteKicker, NoteTitle, NOTE_X} from '../lib/Shot';
 import {FIXTURE_DATA} from '../fixtures/data.generated';
@@ -98,16 +98,17 @@ export const S6ActionCard: React.FC = () => {
    */
   const SCENE_FADE = 12;
 
-  // 相机:★ 单向推近 + 分段推近(lib/camera.ts)。
+  // 相机:★ 分段推近(lib/camera.ts)。
   //   ★ 2026-10-07:周期漂移分量已删除(用户裁决);分段推近保留(每阶对应叙事上的
   //     下一件事:三档特写 → 卡片 → 来源标注)。
-  const camScale = pushCamera(frame, 1.0, 1.2, timing.duration).scale;
-  const stageScale = stagedPush(
+  //   ★ 2026-10-08:删除与之并存的**全程线性推近** `pushCamera(frame, 1.0, 1.2, duration)` ——
+  //     `Math.max` 里线性那条一路抬升,分段的停顿被覆盖,手机框全程一直在变大。
+  const scale = stagedPush(
     frame,
     [1.0, 1.06, 1.13, 1.2],
     [0, SEG0_END, SEG1_END, timing.at(0.78)],
+    timing.duration,
   );
-  const scale = Math.max(camScale, stageScale);
 
   // ★ 屏内滚动:行动卡有 7 个分区、很长。滚动量交给 DeviceStage 按真实 scrollHeight
   //   夹紧(写死像素在卡片长度变化时会滚出底部露空白 —— 旧版 1760 就是猜的)。
