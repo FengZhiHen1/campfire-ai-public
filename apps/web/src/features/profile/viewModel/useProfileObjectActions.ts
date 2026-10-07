@@ -10,9 +10,10 @@
  * 禁止行为:
  *   - 禁止提供「删除对象」入口（支持对象第 4 节：生命周期无删除）
  *   - 禁止归档后弹成功提示（状态即可见——chip 上加「已归档」标）
+ *   - 禁止用 `disabled` 当并发闸门（闸门收进动作函数体，FE-12）
  */
 
-import { useCallback, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 
 import type { SupportObject } from '../../../shared/types/profile';
 import type { ProfilePort } from '../application/ports';
@@ -62,6 +63,9 @@ export function useProfileObjectActions(
   onChanged: () => Promise<void>,
 ): ProfileObjectActions {
   const [sheet, setSheet] = useState<ObjectSheetState | null>(null);
+  // 并发闸门收进动作函数体（FE-12）：单内的提交按钮带 disabled，但它管不住回车与
+  // 重复点按（同一 sheet 的提交入口不止一个：新建、改名、归档、恢复共用本函数）。
+  const inFlight = useRef(false);
 
   const openCreate = useCallback((): void => {
     setSheet({ kind: 'create', name: '', errors: {}, submitting: false, failure: null });
@@ -94,13 +98,18 @@ export function useProfileObjectActions(
   /**
    * 提交当前 sheet。
    *
+   * 前置: sheet 非空且 kind 不是 menu
    * 后置: 新建时返回新对象标识（调用方据此切换 chip）；其余情形返回 null
+   * 并发: 已有提交在途时立即返回 null（闸门在函数体内，不看按钮 disabled）
    * 异常: 不抛出——失败分类后留在 sheet 内呈现（归档须在 sheet 内二次确认）
    */
   const submit = useCallback(async (): Promise<string | null> => {
     const current = sheet;
     if (current === null) return null;
     if (current.kind === 'menu') return null;
+    // 闸门在函数体内：重复点按 / 回车在这里被拒绝，不依赖按钮是否 disabled。
+    if (inFlight.current) return null;
+    inFlight.current = true;
     setSheet({ ...current, submitting: true, failure: null, errors: {} });
     try {
       if (current.kind === 'create') {
@@ -127,6 +136,8 @@ export function useProfileObjectActions(
       }
       setSheet({ ...current, submitting: false, failure: failureFromError(error) });
       return null;
+    } finally {
+      inFlight.current = false;
     }
   }, [onChanged, port, selected, sheet]);
 
