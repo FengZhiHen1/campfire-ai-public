@@ -158,13 +158,29 @@ isolation-method §3.2 点名的高危项，任何新泳道都必须知道：
 |---|---|---|
 | PostgreSQL | 库 `campfire`、schema `public`，全部泳道共用 | 测试必须按账号/id 前缀清理 |
 | FalkorDB | 图 `campfire`（6380），共用 | 记忆侧的图数据跨泳道可见 |
-| Redis | `127.0.0.1:6379/0`，共用；键空间含本业务外的残留键 | 按前缀定位，禁止 `FLUSHDB` |
-| `campfire-redis` 容器 | **`Created`，未运行** | 见下 |
+| Redis | `127.0.0.1:6379/0`，由 **compose 的 `campfire-redis`** 提供（`Up (healthy)`） | 按前缀定位，禁止 `FLUSHDB`；键空间**非空**（见下） |
+| `campfire-redis` 容器 | **`Up (healthy)`**（2026-10-07 起） | 见下 |
 
-**关于 `campfire-redis`（必须如实说明，不要为了好看而美化）**：
-`docker compose ps` 实测该容器为 `Created` 状态、**未运行**；而应用配置的
-`REDIS_URL` 指向 `127.0.0.1:6379`，该端口实际由**宿主机原生 Redis 服务**提供。
-即：**应用连到的不是 compose 里那份 Redis**。这既是「配置字符串正确」掩盖
-「连接目标另有其人」的现成例子，也是本节要求「核验连接目标」的原因。
-本指南不推断其成因，也不建议在核验任务里顺手 `docker compose up` 起容器——
-那是环境变更，需要单独授权。
+**关于 `campfire-redis` 与宿主机 Memurai（环境已变更，两段都记）**：
+
+**旧状态（2026-10-06 实测，已不再成立）**：该容器长期停在 `Created`、从未运行；应用配置的
+`REDIS_URL` 指向 `127.0.0.1:6379`，而该端口实际由**宿主机原生 Redis 服务 Memurai**
+（Windows 服务 `Memurai`，启动类型 `Automatic`）占用 ⇒ **应用连到的不是 compose 里那份 Redis**。
+这正是「配置字符串正确」掩盖「连接目标另有其人」的现成例子，也是 §4 要求核验连接目标的原因。
+
+**根因（2026-10-07 实证，此前只能推断）**：compose 把 redis 绑定到 `127.0.0.1:6379`，与 Memurai
+争同一地址端口 ⇒ 容器创建成功但**启动失败**，compose 把它留在 `Created`（无日志、`ExitCode 0`）。
+**停用 Memurai 后该容器立刻 `Started` 且 `Up (healthy)`** ⇒ 端口冲突这一因果由此坐实。
+
+**现状态（2026-10-07 用户裁决：本项目采用 compose 里的 redis）**：
+
+- `Memurai` 服务已 **`Stopped` + `StartupType Disabled`**（重启后不再占用 6379）；
+- `campfire-redis`：`Up (healthy)`、`127.0.0.1:6379->6379/tcp`、`redis_version 7.4.8`、`restart: unless-stopped`；
+- **可回退**：Memurai 的数据仍在 `C:\Program Files\Memurai\dump.rdb`（含停用前 db0 的 7 个键，
+  其中有本仓 **70 条未消费的 Taskiq 任务**与 Smart-Academy-Pivot 的 Celery/Kombu 绑定）。
+  回退须**先停 compose redis** 再启用 Memurai，否则端口再次冲突。
+- **⚠ 键空间不是空的**：卷 `campfire-ai_redis_data_dev` 创建于 2026-08-04，容器首次启动即从其旧
+  `dump.rdb` 载入 2 个键（日志 `keys loaded: 2`），现存 1 个业务外残留键 `ratelimit:counter`。
+  ⇒ 实测「容器起来了」**不等于**「键空间干净」；清理残留键属环境变更，需单独授权。
+
+本指南不推断成因、也不建议在核验任务里顺手 `docker compose up` 起容器——那是环境变更，需要单独授权。
