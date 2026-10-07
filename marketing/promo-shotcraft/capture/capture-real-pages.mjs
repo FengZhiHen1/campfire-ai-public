@@ -41,6 +41,7 @@ async function login(page) {
     await inputs[0].type(ACCOUNT.name);
     await inputs[1].type(ACCOUNT.password);
     await page.keyboard.press('Enter');
+    // quality-floor: ignore silent-catch 登录后的导航等待是尽力而为：下一行的固定等待兜底，失败不中断整批
     await page.waitForNavigation({waitUntil: 'networkidle2', timeout: 60000}).catch(() => {});
     await settle(page, 1000);
     return true;

@@ -71,6 +71,7 @@ async function login(page, account) {
       break;
     }
   }
+  // quality-floor: ignore silent-catch 导航等待是尽力而为：下一行的固定等待兜底，失败不中断整批
   await page.waitForNavigation({ waitUntil: 'networkidle0', timeout: 15000 }).catch(() => {});
   await settle(page, 2000);
 }
