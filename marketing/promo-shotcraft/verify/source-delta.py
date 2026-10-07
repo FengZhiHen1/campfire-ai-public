@@ -143,6 +143,13 @@ INTENDED: dict[str, str] = {
         "产品改动(用户提交),在 import 闭包内",
     "apps/web/src/features/profile/viewModel/useProfileObjectActions.ts":
         "产品改动(用户提交),在 import 闭包内",
+    # ── v21(音画同步查到素材层 + 手机框不再全程动)──
+    "marketing/promo-shotcraft/src/Promo.tsx":
+        "v21 给每条 SFX 传 <Audio trimBefore={SFX_LEAD_FRAMES[src]}> —— 裁掉素材开头的"
+        "静音,让瞬态落在 cue 帧上(素材不是从样本 0 就开始响)",
+    "marketing/promo-shotcraft/src/sfxLead.generated.ts":
+        "新增(自动生成):两张实测表 SFX_LEAD_FRAMES(裁静音)/ SFX_CUE_LEAD(cue 提前量),"
+        "由 verify/sfx-lead.py 从 public/audio/sfx/*.mp3 实测生成并校验",
 }
 
 
