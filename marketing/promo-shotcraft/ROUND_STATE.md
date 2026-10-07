@@ -87,7 +87,7 @@ f1900 静帧目视可见）。⇒ **「23.7s 死段」是缩放造成的假象�
 **操作结论**：引用任何静止率/运动量数字时，必须同时给出**度量分辨率**与**口径**；
 跨 v16↔v17 比较「全片静止率」是**无效比较**（8.9% → 77.1% 不代表画面更死）。
 
-## 3. 新门禁的四道检查（v17 当前结果）
+## 3. 新门禁的四道检查（**v17 当时的结果,供沿革对照**;v18 的结果见 `ACCEPTANCE.md` §四之二）
 
 `uv run python verify/motion-gate.py` → **exit 1**（`.tmp/motion-gate.txt`）
 
@@ -199,40 +199,48 @@ f1900 静帧目视可见）。⇒ **「23.7s 死段」是缩放造成的假象�
 14. **S6 两次刹车的像素停车点与代码注释不符**：注释写「停在两个分区真正停在读数位置
     （§01 / §02）」,但 v18 静帧实测 `BRAKE1=3200` 停在 **§05–06** 一带。
     不影响判据（刹车本身制造了两次停顿），但注释是错的，属既有标定偏差。
+15. **`out/` 已清理（2026-10-07，用户要求）**：`2609.7 MB / 6756 文件 → 317.2 MB / 15 文件`
+    （删 6741 个文件 / 2292.5 MB，清掉 129 个空目录，无异常）。**完整清单、保留项理由与
+    代价登记在 `DELIVERY.md` 的「证据清理记录」一节**,此处只留三条要记住的:
+    · 被删证据在文档里的指针已**就地标注**「已于 2026-10-07 清理」;
+    · `verify/analyze-v16.py` / `s5tail.py` / `encoder-noise.py` 读的输入已被删
+      ⇒ 运行会报 `FileNotFoundError`（**会响,不静默**,但确实不再能直接复跑）;
+    · `out/s1seg.mp4`（bezel-scan 的负对照夹具）与 `out/parity/`（metrics-source 的
+      程序化输入）是**特意保留**的 —— 删它们等于删能力,不是清无用数据。
 
 ## 5. 复跑命令（仓库根）
 
 ```bash
 cd marketing/promo-shotcraft
-pnpm exec tsc --noEmit -p tsconfig.json          # → exit 0（v17 源码）
-npx tsx scripts/check-sfx.ts                     # → S7 已重钉 12 条
+pnpm exec tsc --noEmit -p tsconfig.json          # → exit 0（v18 源码;已跟随产品的库类型改名）
+npx tsx scripts/check-sfx.ts                     # → 73 条,0 错 0 警
 
 cd ../..
 V=marketing/promo-shotcraft/verify
 uv run python $V/render-manifest.py              # 97 个文件；film 取 out/ 下最新 promo-v<N>.mp4
-uv run python $V/doc-consistency.py              # ⚠ 当前 exit 1：v17 指纹与静止率数字尚未写入文档
-uv run python $V/source-delta.py                 # → exit 0（0 漂移 + 21 处已登记差异）
-uv run python $V/motion-gate.py                  # → **exit 1**（5 段实测冻结）
-uv run python $V/bezel-scan.py marketing/promo-shotcraft/out/promo-v17.mp4   # → exit 0，最小 19px
+uv run python $V/doc-consistency.py              # → exit 0
+uv run python $V/source-delta.py                 # → exit 0（0 漂移 + 31 处已登记差异,0 非预期）
+uv run python $V/motion-gate.py                  # → exit 0（**已退休为诊断**;会打「声明失锚」警告）
+uv run python $V/bezel-scan.py marketing/promo-shotcraft/out/promo-v18.mp4   # → exit 0，最小 19px
 uv run python $V/bezel-scan.py marketing/promo-shotcraft/out/s1seg.mp4       # → exit 1（哨兵修复的回归）
 uv run python $V/blank-verdict.py                # → exit 0
 uv run python $V/audit-fixtures.py               # → exit 0
 uv run python $V/s5-recheck.py                   # → exit 0
-uv run python $V/uniform-check.py                # → exit 0（v17 均匀帧 0；零帧或 >0 都 exit 1）
+uv run python $V/uniform-check.py                # → exit 0（v18 均匀帧 0；零帧或 >0 都 exit 1）
 ```
 
 **本轮收尾时的实际退出码**（每一条都是实跑,不是推断）:
 
 | 门禁 | exit | 说明 |
 |---|---|---|
-| `tsc --noEmit` | 0 | v17 源码 |
-| `check-sfx.ts` | 0 | **73 条**,0 错 0 警（S7 重钉后由 67 升到 73） |
-| `render-manifest.py` | 0 | 97 个条目,`film` 指向 v17 |
-| `doc-consistency.py` | 0 | 0 处不一致;判据已换成**实测冻结段数** |
-| `source-delta.py` | 0 | 0 漂移 + 21 处差异全部已登记 |
-| **`motion-gate.py`** | **1** | **正确失败**:5 段冻结 + 1 个测不到的事件 + 6 个 hold 在动 |
-| `bezel-scan.py`(v17) | 0 | 5250 帧,最小 **19px** |
-| `bezel-scan.py`(s1seg) | 1 | **正确失败**（哨兵修复的回归） |
+| `tsc --noEmit` | 0 | v18 源码（已跟随产品的库类型改名与可空化） |
+| `check-sfx.ts` | 0 | **73 条**,0 错 0 警（各段帧数已是新时间轴） |
+| `render-manifest.py` | 0 | 97 个条目,`film` 指向 v18 |
+| `doc-consistency.py` | 0 | 0 处不一致;判据是**实测冻结段数**,不是运动量 |
+| `source-delta.py` | 0 | 0 漂移 + 31 处差异全部已登记,0 非预期 |
+| `motion-gate.py` | 0 | **已退休为诊断**;对 v18 打「声明失锚 ⇒ ①③④ 不可用」,② 仍有效 |
+| `bezel-scan.py`(v18) | 0 | 3780 帧,最小 **19px**（逐段 24/21/37/19/28/19） |
+| `bezel-scan.py`(s1seg) | 1 | **正确失败**（哨兵修复的回归;夹具特意保留） |
 | `bezel-scan.py`(纯黑片) | 1 | **正确失败**（新加 0px 守卫;修前是 0） |
 | `uniform-check.py` | 0 | 均匀帧 0 |
 | `blank-verdict.py` / `audit-fixtures.py` / `s5-recheck.py` | 0 | — |
@@ -241,10 +249,11 @@ uv run python $V/uniform-check.py                # → exit 0（v17 均匀帧 0�
 逐个试 `encode("gbk")`。本轮修完后,`verify/*.py` 的**输出路径**上非 GBK 字符 = **0**
 (报告文件里的 `✓`/`✗`/`⇒` 不算 —— 它们写进 UTF-8 文件,永不到 stdout)。
 
-基线（为了让 P2 能作答，本轮保留）：`out/baseline/promo-v16.mp4`、
-`out/baseline/promo-v16-nobgm.mp4`、`out/baseline/manifest-v16.json`。
+基线:`out/baseline/manifest-v16.json`（**特意保留** —— `source-delta.py` 无基线即 exit 1）。
+`out/baseline/promo-v16*.mp4` 曾是与 `out/promo-v16*.mp4` **同哈希的重复副本**,
+已于 2026-10-07 清理;v16 成片本身保留在 `out/promo-v16*.mp4`。
 
-## 6. v17 的其他实测指标（与 v16 对照）
+## 6. v17 的其他实测指标（**v17 时代的记录**，与 v16 对照；v18 见 `ACCEPTANCE.md`）
 
 | 项 | v16 | v17 |
 |---|---|---|

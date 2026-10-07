@@ -148,7 +148,7 @@ export const S6ActionCard: React.FC = () => {
   //   降到 0 会让本段**最后一帧**内容全无(f1499/f2699/3779/4559/4949 实测:
   //   画面 92% 是纯 --bg #fbf6ee,只剩极轻暗角),而下一段首帧是满的 →
   //   形成「满→渐淡→全空一帧→满」的单帧闪空(33ms,抽帧条上可见的白闪,
-  //   见 out/dip/strip.jpg)。留 6% 后末帧与倒数第二帧连续。
+  //   见 out/dip/strip.jpg)。留 6% 后末帧与倒数第二帧连续。　←　该证据已于 2026-10-07 清理(回收空间),见 DELIVERY.md 的「证据清理记录」
   const fadeOut = interpolate(frame, timing.span(0.967, 1), [1, 0.06], {
     extrapolateLeft: 'clamp', extrapolateRight: 'clamp',
   });

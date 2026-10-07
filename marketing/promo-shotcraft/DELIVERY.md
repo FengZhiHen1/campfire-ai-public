@@ -42,6 +42,54 @@ promo-v18-nobgm.mp4  sha256 97810EEBEC7A3D5CEE407B320A118D748E6F627D1A6E2FBB2ACE
 > 当前 `render-manifest.json` 的 `film` 字段指向 **v18**（97 个文件，apps/web 47 /
 > audio 17 / css 9）。
 
+## 证据清理记录（2026-10-07，用户要求）
+
+用户要求「清理掉 `out` 目录下很早期的版本和无用的数据」。执行结果：
+
+```
+out/  2609.7 MB / 6756 个文件   →   317.2 MB / 15 个文件
+删除  6741 个文件 / 2292.5 MB，另清掉 129 个空目录，无异常
+```
+
+**为什么必须先核对再删**：`out/` 被 `.gitignore` 忽略，删除**不可逆**，且 `out/` 长期被
+当作证据存放处（本文档多处 `out/…` 指针指向它）。因此删之前做了三件事：
+① 从全部文档/脚本里抽出 `out/…` 引用，区分「硬性保留 / 被引用 / 未被引用」；
+② 逐条判断被引用的目录是**输入**还是**产物**（产物可重建，输入删了就没了）；
+③ 生成**精确删除清单**并自检保留项不在清单里，删除脚本再独立复核一遍清单
+（行数 ≥6000、必须保留的 9 个路径不得出现、每行必须落在 `out/` 内，任一不满足即拒绝执行）。
+
+**删掉的**：全部早期成片（v1–v15、`promo-comp*`、`promo-draft*`、`promo-final*`、
+各 `*seg.mp4`）、约 130 个 QA/审查目录（`review` / `chk` / `final-review` / `qa*` /
+`sweep*` / `uniform` / `bounds` / `qa4` / `s5det` / `parity` 之外的 QA 目录等）、
+以及 `out/baseline/` 里与 `out/promo-v16*.mp4` **逐字节相同**的两个重复副本
+（sha256 `E94B7C16…` / `EEAD12D5…`，已核实同哈希）。
+
+**特意保留的**（每条都有具体理由，不是手软）：
+
+| 保留项 | 体积 | 理由 |
+|---|---|---|
+| `out/promo-v16*.mp4` | 141.6 MB | 用户裁决保留；文档登记的对照版，指纹在本文档 |
+| `out/promo-v17*.mp4` | 95.0 MB | 用户裁决保留；上一版，指纹在本文档 |
+| `out/promo-v18*.mp4` | 78.8 MB | **当前交付版** |
+| `out/baseline/manifest-v16.json` | 4 KB | `verify/source-delta.py` 的基线；**无基线即 exit 1** |
+| `out/s1seg.mp4` | 0.1 MB | `bezel-scan.py` 哨兵守卫的**负对照夹具**（无设备框的 120 帧片段）。删了那条消融就不能复现；实测保留后它仍正确 exit 1 |
+| `out/parity/*` | 1.7 MB | `verify/metrics-source.py` 的**程序化输入**（真机对照截图），不是产物 |
+
+**代价（如实登记，别当成没发生）**：
+
+1. 本文档、`ACCEPTANCE.md`、`DESIGN_SPEC.md`、`ROUND_STATE.md` 里指向被删文件的
+   指针，已就地标注「该证据已于 2026-10-07 清理」。
+2. 三个脚本的**代码行**读的是被删文件，现在会在运行时报 `FileNotFoundError`（**会响，
+   不会静默**，符合项目「不留永远失败的检查」的要求，但确实不再能直接复跑）：
+   `verify/analyze-v16.py`、`verify/s5tail.py`（均读 `out/qa4/motion-v16.txt`）、
+   `verify/encoder-noise.py`（读 `out/s5det/run{1,2}.mp4`）。
+   要恢复：重渲对应的片段，或改指向 `out/promo-v18.mp4` 重新测。
+3. 另有若干指针**在本次清理之前就已失效**（不是本次造成的），一并记在这里以免下次误判：
+   `out/promo-v16-superseded.mp4`、`out/promo-v16-superseded2.mp4`、
+   `out/promo-v16-nobgm-superseded.mp4`、`out/promo-v16-new.mp4`、`out/s9b/`、
+   `out/stderr`（见 `verify/ab-diff.py`、`verify/seam-*.py`、`verify/s5-recheck.py`、
+   `verify/bezel-scan.py` 与本文档 L46 一带）。
+
 > **第 4 轮独立终检之后重渲过一次**(修 S8 来源行缺字段 + S4 逐字落位)。
 > 被替换的两版留在 `out/promo-v16-superseded.mp4` 与 `out/promo-v16-nobgm-superseded.mp4`
 > (指纹 `91FA5C19…` / `EB93DB3A…`),便于对照审查报告里的帧级证据。
@@ -188,7 +236,7 @@ ffmpeg -i out/promo-v16.mp4 -i out/promo-v16-nobgm.mp4 -lavfi "[0:v][1:v]psnr=st
 
 | # | 问题 | 证据 | 处理 |
 |---|---|---|---|
-| 27 | **8 处段边界的「前一段末帧」是纯纸面**,下一段首帧是满的 ⇒ 「满→渐淡→全空一帧→满」的**单帧闪空**(33ms) | 抽帧条 `out/dip/strip.jpg`:f1495(5339)→f1498(793)→**f1499(0)**→f1500(1885,硬切)。f1499 的模式色正是 `--bg #fbf6ee` 且占 92.1% | 9 处段末淡出加 6% 下限(0→0.06);**3 处刻意保持 0**(S1 `crossFade`、S2 `sweepFade` 是「中途换场」,留下限会让准星/扫光常驻)。修后 f1499 最大偏离 **8→23**、内容像素 **0→1014** |
+| 27 | **8 处段边界的「前一段末帧」是纯纸面**,下一段首帧是满的 ⇒ 「满→渐淡→全空一帧→满」的**单帧闪空**(33ms) | 抽帧条 `out/dip/strip.jpg`:f1495(5339)→f1498(793)→**f1499(0)**→f1500(1885,硬切)。f1499 的模式色正是 `--bg #fbf6ee` 且占 92.1% | 9 处段末淡出加 6% 下限(0→0.06);**3 处刻意保持 0**(S1 `crossFade`、S2 `sweepFade` 是「中途换场」,留下限会让准星/扫光常驻)。修后 f1499 最大偏离 **8→23**、内容像素 **0→1014** |　←　该证据已于 2026-10-07 清理(回收空间),见 DELIVERY.md 的「证据清理记录」
 
 > **修后实测(8 处逐帧量化,`verify/seam-before-after.py`)**:
 >
@@ -495,7 +543,7 @@ ffmpeg -i out/promo-v16.mp4 -i out/promo-v16-nobgm.mp4 -lavfi "[0:v][1:v]psnr=st
 
 ## 时间线（九段，5250f @30fps）
 
-**运动量口径**：`ffmpeg tblend=all_mode=difference,signalstats` 逐帧 YAVG，阈值 <0.35 且持续 ≥30 帧判为一次静止。原始数据 `out/qa4/motion-v16.txt`，复算脚本 `marketing/promo-shotcraft/verify/motion-fresh.py`。
+**运动量口径**：`ffmpeg tblend=all_mode=difference,signalstats` 逐帧 YAVG，阈值 <0.35 且持续 ≥30 帧判为一次静止。原始数据 `out/qa4/motion-v16.txt`，复算脚本 `marketing/promo-shotcraft/verify/motion-fresh.py`。　←　该证据已于 2026-10-07 清理(回收空间),见 DELIVERY.md 的「证据清理记录」
 
 | 段 | 帧区间 | 时长 | 内容 | 静止率 |
 |---|---|---|---|---|
@@ -598,8 +646,8 @@ ffmpeg -i out/promo-v16.mp4 -i out/promo-v16-nobgm.mp4 -lavfi "[0:v][1:v]psnr=st
 
 | 版本 | 文件 | 时长 | 规格 | 音频均值 |
 |---|---|---|---|---|
-| 带 BGM | [out/promo-final.mp4](out/promo-final.mp4) | **145.0s (2:25)** | 1920×1080 @30fps H.264 | -21.9 dB |
-| 无 BGM（保留 SFX） | [out/promo-final-nobgm.mp4](out/promo-final-nobgm.mp4) | 145.0s (2:25) | 同上 | -31.8 dB |
+| 带 BGM | [out/promo-final.mp4](out/promo-final.mp4) | **145.0s (2:25)** | 1920×1080 @30fps H.264 | -21.9 dB |　←　该证据已于 2026-10-07 清理(回收空间),见 DELIVERY.md 的「证据清理记录」
+| 无 BGM（保留 SFX） | [out/promo-final-nobgm.mp4](out/promo-final-nobgm.mp4) | 145.0s (2:25) | 同上 | -31.8 dB |　←　该证据已于 2026-10-07 清理(回收空间),见 DELIVERY.md 的「证据清理记录」
 
 两版出自同一时间线（`src/timeline.ts` 的 SHOTS 是唯一真源）。**画面一致性已用像素级证据实测**：
 
@@ -684,7 +732,7 @@ v14 交付前经**两轮独立子代理审查**，两轮都抓出了真实缺陷
 
 ## 时间线（九段，4350f @30fps）
 
-**运动量口径**：`ffmpeg tblend=all_mode=difference,signalstats` 的逐帧 YAVG，阈值 < 0.35 且持续 ≥30 帧判为一次静止。原始数据在 `out/qa4/motion-final.txt`，复算脚本 `marketing/promo-shotcraft/verify/final-audit.py`。
+**运动量口径**：`ffmpeg tblend=all_mode=difference,signalstats` 的逐帧 YAVG，阈值 < 0.35 且持续 ≥30 帧判为一次静止。原始数据在 `out/qa4/motion-final.txt`，复算脚本 `marketing/promo-shotcraft/verify/final-audit.py`。　←　该证据已于 2026-10-07 清理(回收空间),见 DELIVERY.md 的「证据清理记录」
 
 | 段 | 帧区间 | 时长 | 内容 | 静止率 |
 |---|---|---|---|---|
