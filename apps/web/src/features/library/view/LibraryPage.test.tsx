@@ -16,18 +16,19 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router';
 
-import type { ExpandedLibraryItem } from '../../../shared/types/library';
+import type { LibraryListItem } from '../../../shared/types/library';
 import type { LibraryPort } from '../application/ports';
 import { LibraryPage } from './LibraryPage';
 
 /**
- * 造一条带展开内容的条目。
+ * 造一条列表条目。
  *
- * 默认给空的展开内容：`ExpandedLibraryItem` 的 narrative 与 cards 是必填字段
- * （写进类型的就是「带展开内容的条目」这件事本身），而页面只在展开态渲染它们——
- * 因此空展开内容既满足类型，也不影响未展开用例的真实性。
+ * 展开内容默认为 null——这是真实线格式：普通列表请求里 narrative 与 cards 恒为
+ * null，只有请求带 `expand=<item_id>` 且命中该条时才带上内容（契约第 4 节）。
+ * 需要展开内容的用例自行传 overrides；默认值过去写成空内容与空数组，
+ * 「展开态读到 null」这条路因此在用例里不可达（2026-10-07 生产正崩在这条缝上）。
  */
-function item(overrides: Partial<ExpandedLibraryItem> = {}): ExpandedLibraryItem {
+function item(overrides: Partial<LibraryListItem> = {}): LibraryListItem {
   return {
     item_id: 'c1',
     library: 'case',
@@ -38,8 +39,8 @@ function item(overrides: Partial<ExpandedLibraryItem> = {}): ExpandedLibraryItem
     status: 'published',
     locator: 'section-3',
     ranking: { rank: 1, channels: ['vector'] },
-    narrative: { sections: [] },
-    cards: [],
+    narrative: null,
+    cards: null,
     ...overrides,
   };
 }
@@ -240,6 +241,51 @@ describe('案例库浏览页 · 就地展开', () => {
     fireEvent.click(screen.getByRole('button', { name: /超市哭闹时的分流做法/ }));
     expect(await screen.findByText('收起')).toBeDefined();
     expect(screen.queryByText('展开内容')).toBeNull();
+  });
+});
+
+describe('案例库浏览页 · 展开内容可空（真实线格式）', () => {
+  it('P0 列表不带展开内容（narrative 为 null）时点开一条：不得崩，且展开内容最终出现', async () => {
+    // 真实情形：点击时 expandedId 已置位、而列表还是「不含展开内容」的旧载荷，
+    // 那一帧就会走到展开渲染分支。守卫若判 undefined（旧写法），null 会通过，
+    // 读 null.sections 抛 TypeError，错误边界把整页换掉——2026-10-07 生产实测。
+    const p = port({
+      listItems: vi.fn(async (params: { library: 'case' | 'knowledge'; expand?: string }) => ({
+        library: params.library,
+        items:
+          params.expand === 'c1'
+            ? [item({ narrative: { sections: [{ key: 's1', heading: '情境', text: '超市人多时' }] } })]
+            : [item()],
+        next_cursor: null,
+      })),
+    });
+    renderPage(p);
+    await screen.findByText('超市哭闹时的分流做法');
+
+    fireEvent.click(screen.getByRole('button', { name: /超市哭闹时的分流做法/ }));
+
+    expect(await screen.findByText('情境')).toBeDefined();
+    expect(screen.getByText('超市人多时')).toBeDefined();
+  });
+
+  it('P1 expand 命中但没有卡片（cards 为 null）时只渲染叙事，不出「案例卡片」标题', async () => {
+    const p = port({
+      listItems: vi.fn(async (params: { library: 'case' | 'knowledge'; expand?: string }) => ({
+        library: params.library,
+        items:
+          params.expand === 'c1'
+            ? [item({ narrative: { sections: [{ key: 's1', heading: '情境', text: '超市人多时' }] } })]
+            : [item()],
+        next_cursor: null,
+      })),
+    });
+    renderPage(p);
+    await screen.findByText('超市哭闹时的分流做法');
+
+    fireEvent.click(screen.getByRole('button', { name: /超市哭闹时的分流做法/ }));
+
+    expect(await screen.findByText('情境')).toBeDefined();
+    expect(screen.queryByText('案例卡片')).toBeNull();
   });
 });
 

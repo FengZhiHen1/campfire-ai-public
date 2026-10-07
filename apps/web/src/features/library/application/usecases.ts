@@ -12,14 +12,14 @@
  *   - 禁止在此持有 UI 状态
  */
 
-import type { ExpandedLibraryItem, LibraryKind } from '../../../shared/types/library';
+import type { LibraryListItem, LibraryKind } from '../../../shared/types/library';
 import { type DeepLinkOutcome, deepLinkOutcome } from '../domain/deepLink';
 import type { LibraryPort } from './ports';
 
 /** 一页结果。 */
 export interface LibraryPage {
   library: LibraryKind;
-  items: ExpandedLibraryItem[];
+  items: LibraryListItem[];
   nextCursor: string | null;
 }
 
