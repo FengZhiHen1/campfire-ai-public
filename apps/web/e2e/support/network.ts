@@ -2,9 +2,9 @@
  * 模块: e2e/support/network
  * 职责: 免后端的网络夹具装配——精确 pathname 匹配、兜底 fail-closed、字体放行与请求账本
  * 数据来源:
- *   - .tmp/dev-orchestrator/20261002-001/tasks/T01.md: MUST — 裁决 D（page.route + 兜底 handler 必须让测试失败）
+ *   - docs/证据/orchestrator-20261002-001/T01.md: MUST — 裁决 D（page.route + 兜底 handler 必须让测试失败）
  *     与验收标准「任何 /api/** 请求若未被夹具命中，脚本以非 0 退出并点名该 URL」
- *   - .tmp/dev-orchestrator/20261002-001/feedback/T01-rulings.md: MUST — 裁决 2
+ *   - docs/证据/orchestrator-20261002-001/T01-rulings.md: MUST — 裁决 2
  *     （字体 host 放行真实出网；其余外部 host 仍阻断且让用例失败）
  *   - .dsh/skills/code-craft/SKILL.md: MUST — CORE-07（边界显式，无静默兜底）
  * 边界:

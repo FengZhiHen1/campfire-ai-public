@@ -1,0 +1,277 @@
+[2026-10-05 21:48:08,993][taskiq.worker][INFO   ][MainProcess] Pid of a main process: 36104
+[2026-10-05 21:48:08,995][taskiq.worker][INFO   ][MainProcess] Starting 1 worker processes.
+[2026-10-05 21:48:09,014][taskiq.process-manager][INFO   ][MainProcess] Started process worker-0 with pid 28660 
+[2026-10-05 21:48:10,179][taskiq.receiver.receiver][INFO   ][worker-0] Listening started.
+[2026-10-05 21:48:27,256][taskiq.receiver.receiver][INFO   ][worker-0] Stopping prefetching messages...
+[2026-10-05 21:48:27,259][taskiq.receiver.receiver][INFO   ][worker-0] The runner is stopped.
+[2026-10-05 21:48:27,262][taskiq.worker][INFO   ][worker-0] Shutting down the broker.
+Process worker-0:
+  + Exception Group Traceback (most recent call last):
+  |   File "C:\Users\FengZhiHen\AppData\Roaming\uv\python\cpython-3.12.12-windows-x86_64-none\Lib\multiprocessing\process.py", line 314, in _bootstrap
+  |     self.run()
+  |   File "C:\Users\FengZhiHen\AppData\Roaming\uv\python\cpython-3.12.12-windows-x86_64-none\Lib\multiprocessing\process.py", line 108, in run
+  |     self._target(*self._args, **self._kwargs)
+  |   File "E:\Project\Web_Development\Campfire-AI\.venv\Lib\site-packages\taskiq\cli\worker\run.py", line 176, in start_listen
+  |     loop.run_until_complete(receiver.listen(shutdown_event))
+  |   File "C:\Users\FengZhiHen\AppData\Roaming\uv\python\cpython-3.12.12-windows-x86_64-none\Lib\asyncio\base_events.py", line 691, in run_until_complete
+  |     return future.result()
+  |            ^^^^^^^^^^^^^^^
+  |   File "E:\Project\Web_Development\Campfire-AI\.venv\Lib\site-packages\taskiq\receiver\receiver.py", line 430, in listen
+  |     async with anyio.create_task_group() as gr:
+  |                ^^^^^^^^^^^^^^^^^^^^^^^^^
+  |   File "E:\Project\Web_Development\Campfire-AI\.venv\Lib\site-packages\anyio\_backends\_asyncio.py", line 815, in __aexit__
+  |     raise BaseExceptionGroup(
+  | ExceptionGroup: unhandled errors in a TaskGroup (1 sub-exception)
+  +-+---------------- 1 ----------------
+    | Traceback (most recent call last):
+    |   File "E:\Project\Web_Development\Campfire-AI\.venv\Lib\site-packages\redis\asyncio\connection.py", line 1286, in read_response
+    |     response = await self._read_response_from_parser(
+    |                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |   File "E:\Project\Web_Development\Campfire-AI\.venv\Lib\site-packages\redis\asyncio\connection.py", line 1335, in _read_response_from_parser
+    |     return await self._parser.read_response(
+    |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |   File "E:\Project\Web_Development\Campfire-AI\.venv\Lib\site-packages\redis\_parsers\resp3.py", line 185, in read_response
+    |     response = await self._read_response(
+    |                ^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |   File "E:\Project\Web_Development\Campfire-AI\.venv\Lib\site-packages\redis\_parsers\resp3.py", line 197, in _read_response
+    |     raw = await self._readline()
+    |           ^^^^^^^^^^^^^^^^^^^^^^
+    |   File "E:\Project\Web_Development\Campfire-AI\.venv\Lib\site-packages\redis\_parsers\base.py", line 587, in _readline
+    |     data = await self._stream.readline()
+    |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |   File "C:\Users\FengZhiHen\AppData\Roaming\uv\python\cpython-3.12.12-windows-x86_64-none\Lib\asyncio\streams.py", line 568, in readline
+    |     line = await self.readuntil(sep)
+    |            ^^^^^^^^^^^^^^^^^^^^^^^^^
+    |   File "C:\Users\FengZhiHen\AppData\Roaming\uv\python\cpython-3.12.12-windows-x86_64-none\Lib\asyncio\streams.py", line 660, in readuntil
+    |     await self._wait_for_data('readuntil')
+    |   File "C:\Users\FengZhiHen\AppData\Roaming\uv\python\cpython-3.12.12-windows-x86_64-none\Lib\asyncio\streams.py", line 545, in _wait_for_data
+    |     await self._waiter
+    | asyncio.exceptions.CancelledError
+    | 
+    | The above exception was the direct cause of the following exception:
+    | 
+    | Traceback (most recent call last):
+    |   File "E:\Project\Web_Development\Campfire-AI\.venv\Lib\site-packages\redis\asyncio\connection.py", line 1283, in read_response
+    |     async with timeout_context as active_timeout:
+    |                ^^^^^^^^^^^^^^^
+    |   File "C:\Users\FengZhiHen\AppData\Roaming\uv\python\cpython-3.12.12-windows-x86_64-none\Lib\asyncio\timeouts.py", line 115, in __aexit__
+    |     raise TimeoutError from exc_val
+    | TimeoutError
+    | 
+    | During handling of the above exception, another exception occurred:
+    | 
+    | Traceback (most recent call last):
+    |   File "E:\Project\Web_Development\Campfire-AI\.venv\Lib\site-packages\anyio\_core\_tasks.py", line 275, in _run_coro
+    |     retval = await self._coro
+    |              ^^^^^^^^^^^^^^^^
+    |   File "E:\Project\Web_Development\Campfire-AI\.venv\Lib\site-packages\taskiq\receiver\receiver.py", line 470, in prefetcher
+    |     message = await self._get_prefetched_message(
+    |               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |   File "E:\Project\Web_Development\Campfire-AI\.venv\Lib\site-packages\taskiq\receiver\receiver.py", line 536, in _get_prefetched_message
+    |     return current_message.result()
+    |            ^^^^^^^^^^^^^^^^^^^^^^^^
+    |   File "E:\Project\Web_Development\Campfire-AI\.venv\Lib\site-packages\taskiq_redis\redis_broker.py", line 132, in listen
+    |     brpop_result = await redis_conn.brpop(self.queue_name)
+    |                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |   File "E:\Project\Web_Development\Campfire-AI\.venv\Lib\site-packages\redis\asyncio\client.py", line 946, in execute_command
+    |     result = await conn.retry.call_with_retry(
+    |              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |   File "E:\Project\Web_Development\Campfire-AI\.venv\Lib\site-packages\redis\asyncio\retry.py", line 81, in call_with_retry
+    |     raise error
+    |   File "E:\Project\Web_Development\Campfire-AI\.venv\Lib\site-packages\redis\asyncio\retry.py", line 69, in call_with_retry
+    |     return await do()
+    |            ^^^^^^^^^^
+    |   File "E:\Project\Web_Development\Campfire-AI\.venv\Lib\site-packages\redis\asyncio\client.py", line 871, in _send_command_parse_response
+    |     return await self.parse_response(conn, command_name, **options)
+    |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |   File "E:\Project\Web_Development\Campfire-AI\.venv\Lib\site-packages\redis\asyncio\client.py", line 993, in parse_response
+    |     response = await connection.read_response()
+    |                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |   File "E:\Project\Web_Development\Campfire-AI\.venv\Lib\site-packages\redis\asyncio\connection.py", line 1310, in read_response
+    |     raise TimeoutError(f"Timeout reading from {host_error}")
+    | redis.exceptions.TimeoutError: Timeout reading from localhost:6379
+    +------------------------------------
+[2026-10-05 21:48:28,128][taskiq.process-manager][INFO   ][MainProcess] worker-0 is dead. Scheduling reload.
+[2026-10-05 21:48:29,137][taskiq.process-manager][INFO   ][MainProcess] Process worker-0 restarted with pid 37764
+[2026-10-05 21:48:30,290][taskiq.receiver.receiver][INFO   ][worker-0] Listening started.
+[2026-10-05 21:48:47,366][taskiq.receiver.receiver][INFO   ][worker-0] Stopping prefetching messages...
+[2026-10-05 21:48:47,366][taskiq.receiver.receiver][INFO   ][worker-0] The runner is stopped.
+[2026-10-05 21:48:47,366][taskiq.worker][INFO   ][worker-0] Shutting down the broker.
+Process worker-0:
+  + Exception Group Traceback (most recent call last):
+  |   File "C:\Users\FengZhiHen\AppData\Roaming\uv\python\cpython-3.12.12-windows-x86_64-none\Lib\multiprocessing\process.py", line 314, in _bootstrap
+  |     self.run()
+  |   File "C:\Users\FengZhiHen\AppData\Roaming\uv\python\cpython-3.12.12-windows-x86_64-none\Lib\multiprocessing\process.py", line 108, in run
+  |     self._target(*self._args, **self._kwargs)
+  |   File "E:\Project\Web_Development\Campfire-AI\.venv\Lib\site-packages\taskiq\cli\worker\run.py", line 176, in start_listen
+  |     loop.run_until_complete(receiver.listen(shutdown_event))
+  |   File "C:\Users\FengZhiHen\AppData\Roaming\uv\python\cpython-3.12.12-windows-x86_64-none\Lib\asyncio\base_events.py", line 691, in run_until_complete
+  |     return future.result()
+  |            ^^^^^^^^^^^^^^^
+  |   File "E:\Project\Web_Development\Campfire-AI\.venv\Lib\site-packages\taskiq\receiver\receiver.py", line 430, in listen
+  |     async with anyio.create_task_group() as gr:
+  |                ^^^^^^^^^^^^^^^^^^^^^^^^^
+  |   File "E:\Project\Web_Development\Campfire-AI\.venv\Lib\site-packages\anyio\_backends\_asyncio.py", line 815, in __aexit__
+  |     raise BaseExceptionGroup(
+  | ExceptionGroup: unhandled errors in a TaskGroup (1 sub-exception)
+  +-+---------------- 1 ----------------
+    | Traceback (most recent call last):
+    |   File "E:\Project\Web_Development\Campfire-AI\.venv\Lib\site-packages\redis\asyncio\connection.py", line 1286, in read_response
+    |     response = await self._read_response_from_parser(
+    |                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |   File "E:\Project\Web_Development\Campfire-AI\.venv\Lib\site-packages\redis\asyncio\connection.py", line 1335, in _read_response_from_parser
+    |     return await self._parser.read_response(
+    |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |   File "E:\Project\Web_Development\Campfire-AI\.venv\Lib\site-packages\redis\_parsers\resp3.py", line 185, in read_response
+    |     response = await self._read_response(
+    |                ^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |   File "E:\Project\Web_Development\Campfire-AI\.venv\Lib\site-packages\redis\_parsers\resp3.py", line 197, in _read_response
+    |     raw = await self._readline()
+    |           ^^^^^^^^^^^^^^^^^^^^^^
+    |   File "E:\Project\Web_Development\Campfire-AI\.venv\Lib\site-packages\redis\_parsers\base.py", line 587, in _readline
+    |     data = await self._stream.readline()
+    |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |   File "C:\Users\FengZhiHen\AppData\Roaming\uv\python\cpython-3.12.12-windows-x86_64-none\Lib\asyncio\streams.py", line 568, in readline
+    |     line = await self.readuntil(sep)
+    |            ^^^^^^^^^^^^^^^^^^^^^^^^^
+    |   File "C:\Users\FengZhiHen\AppData\Roaming\uv\python\cpython-3.12.12-windows-x86_64-none\Lib\asyncio\streams.py", line 660, in readuntil
+    |     await self._wait_for_data('readuntil')
+    |   File "C:\Users\FengZhiHen\AppData\Roaming\uv\python\cpython-3.12.12-windows-x86_64-none\Lib\asyncio\streams.py", line 545, in _wait_for_data
+    |     await self._waiter
+    | asyncio.exceptions.CancelledError
+    | 
+    | The above exception was the direct cause of the following exception:
+    | 
+    | Traceback (most recent call last):
+    |   File "E:\Project\Web_Development\Campfire-AI\.venv\Lib\site-packages\redis\asyncio\connection.py", line 1283, in read_response
+    |     async with timeout_context as active_timeout:
+    |                ^^^^^^^^^^^^^^^
+    |   File "C:\Users\FengZhiHen\AppData\Roaming\uv\python\cpython-3.12.12-windows-x86_64-none\Lib\asyncio\timeouts.py", line 115, in __aexit__
+    |     raise TimeoutError from exc_val
+    | TimeoutError
+    | 
+    | During handling of the above exception, another exception occurred:
+    | 
+    | Traceback (most recent call last):
+    |   File "E:\Project\Web_Development\Campfire-AI\.venv\Lib\site-packages\anyio\_core\_tasks.py", line 275, in _run_coro
+    |     retval = await self._coro
+    |              ^^^^^^^^^^^^^^^^
+    |   File "E:\Project\Web_Development\Campfire-AI\.venv\Lib\site-packages\taskiq\receiver\receiver.py", line 470, in prefetcher
+    |     message = await self._get_prefetched_message(
+    |               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |   File "E:\Project\Web_Development\Campfire-AI\.venv\Lib\site-packages\taskiq\receiver\receiver.py", line 536, in _get_prefetched_message
+    |     return current_message.result()
+    |            ^^^^^^^^^^^^^^^^^^^^^^^^
+    |   File "E:\Project\Web_Development\Campfire-AI\.venv\Lib\site-packages\taskiq_redis\redis_broker.py", line 132, in listen
+    |     brpop_result = await redis_conn.brpop(self.queue_name)
+    |                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |   File "E:\Project\Web_Development\Campfire-AI\.venv\Lib\site-packages\redis\asyncio\client.py", line 946, in execute_command
+    |     result = await conn.retry.call_with_retry(
+    |              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |   File "E:\Project\Web_Development\Campfire-AI\.venv\Lib\site-packages\redis\asyncio\retry.py", line 81, in call_with_retry
+    |     raise error
+    |   File "E:\Project\Web_Development\Campfire-AI\.venv\Lib\site-packages\redis\asyncio\retry.py", line 69, in call_with_retry
+    |     return await do()
+    |            ^^^^^^^^^^
+    |   File "E:\Project\Web_Development\Campfire-AI\.venv\Lib\site-packages\redis\asyncio\client.py", line 871, in _send_command_parse_response
+    |     return await self.parse_response(conn, command_name, **options)
+    |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |   File "E:\Project\Web_Development\Campfire-AI\.venv\Lib\site-packages\redis\asyncio\client.py", line 993, in parse_response
+    |     response = await connection.read_response()
+    |                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |   File "E:\Project\Web_Development\Campfire-AI\.venv\Lib\site-packages\redis\asyncio\connection.py", line 1310, in read_response
+    |     raise TimeoutError(f"Timeout reading from {host_error}")
+    | redis.exceptions.TimeoutError: Timeout reading from localhost:6379
+    +------------------------------------
+[2026-10-05 21:48:48,261][taskiq.process-manager][INFO   ][MainProcess] worker-0 is dead. Scheduling reload.
+[2026-10-05 21:48:49,267][taskiq.process-manager][INFO   ][MainProcess] Process worker-0 restarted with pid 27616
+[2026-10-05 21:48:50,407][taskiq.receiver.receiver][INFO   ][worker-0] Listening started.
+[2026-10-05 21:49:07,476][taskiq.receiver.receiver][INFO   ][worker-0] Stopping prefetching messages...
+[2026-10-05 21:49:07,477][taskiq.receiver.receiver][INFO   ][worker-0] The runner is stopped.
+[2026-10-05 21:49:07,477][taskiq.worker][INFO   ][worker-0] Shutting down the broker.
+Process worker-0:
+  + Exception Group Traceback (most recent call last):
+  |   File "C:\Users\FengZhiHen\AppData\Roaming\uv\python\cpython-3.12.12-windows-x86_64-none\Lib\multiprocessing\process.py", line 314, in _bootstrap
+  |     self.run()
+  |   File "C:\Users\FengZhiHen\AppData\Roaming\uv\python\cpython-3.12.12-windows-x86_64-none\Lib\multiprocessing\process.py", line 108, in run
+  |     self._target(*self._args, **self._kwargs)
+  |   File "E:\Project\Web_Development\Campfire-AI\.venv\Lib\site-packages\taskiq\cli\worker\run.py", line 176, in start_listen
+  |     loop.run_until_complete(receiver.listen(shutdown_event))
+  |   File "C:\Users\FengZhiHen\AppData\Roaming\uv\python\cpython-3.12.12-windows-x86_64-none\Lib\asyncio\base_events.py", line 691, in run_until_complete
+  |     return future.result()
+  |            ^^^^^^^^^^^^^^^
+  |   File "E:\Project\Web_Development\Campfire-AI\.venv\Lib\site-packages\taskiq\receiver\receiver.py", line 430, in listen
+  |     async with anyio.create_task_group() as gr:
+  |                ^^^^^^^^^^^^^^^^^^^^^^^^^
+  |   File "E:\Project\Web_Development\Campfire-AI\.venv\Lib\site-packages\anyio\_backends\_asyncio.py", line 815, in __aexit__
+  |     raise BaseExceptionGroup(
+  | ExceptionGroup: unhandled errors in a TaskGroup (1 sub-exception)
+  +-+---------------- 1 ----------------
+    | Traceback (most recent call last):
+    |   File "E:\Project\Web_Development\Campfire-AI\.venv\Lib\site-packages\redis\asyncio\connection.py", line 1286, in read_response
+    |     response = await self._read_response_from_parser(
+    |                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |   File "E:\Project\Web_Development\Campfire-AI\.venv\Lib\site-packages\redis\asyncio\connection.py", line 1335, in _read_response_from_parser
+    |     return await self._parser.read_response(
+    |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |   File "E:\Project\Web_Development\Campfire-AI\.venv\Lib\site-packages\redis\_parsers\resp3.py", line 185, in read_response
+    |     response = await self._read_response(
+    |                ^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |   File "E:\Project\Web_Development\Campfire-AI\.venv\Lib\site-packages\redis\_parsers\resp3.py", line 197, in _read_response
+    |     raw = await self._readline()
+    |           ^^^^^^^^^^^^^^^^^^^^^^
+    |   File "E:\Project\Web_Development\Campfire-AI\.venv\Lib\site-packages\redis\_parsers\base.py", line 587, in _readline
+    |     data = await self._stream.readline()
+    |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |   File "C:\Users\FengZhiHen\AppData\Roaming\uv\python\cpython-3.12.12-windows-x86_64-none\Lib\asyncio\streams.py", line 568, in readline
+    |     line = await self.readuntil(sep)
+    |            ^^^^^^^^^^^^^^^^^^^^^^^^^
+    |   File "C:\Users\FengZhiHen\AppData\Roaming\uv\python\cpython-3.12.12-windows-x86_64-none\Lib\asyncio\streams.py", line 660, in readuntil
+    |     await self._wait_for_data('readuntil')
+    |   File "C:\Users\FengZhiHen\AppData\Roaming\uv\python\cpython-3.12.12-windows-x86_64-none\Lib\asyncio\streams.py", line 545, in _wait_for_data
+    |     await self._waiter
+    | asyncio.exceptions.CancelledError
+    | 
+    | The above exception was the direct cause of the following exception:
+    | 
+    | Traceback (most recent call last):
+    |   File "E:\Project\Web_Development\Campfire-AI\.venv\Lib\site-packages\redis\asyncio\connection.py", line 1283, in read_response
+    |     async with timeout_context as active_timeout:
+    |                ^^^^^^^^^^^^^^^
+    |   File "C:\Users\FengZhiHen\AppData\Roaming\uv\python\cpython-3.12.12-windows-x86_64-none\Lib\asyncio\timeouts.py", line 115, in __aexit__
+    |     raise TimeoutError from exc_val
+    | TimeoutError
+    | 
+    | During handling of the above exception, another exception occurred:
+    | 
+    | Traceback (most recent call last):
+    |   File "E:\Project\Web_Development\Campfire-AI\.venv\Lib\site-packages\anyio\_core\_tasks.py", line 275, in _run_coro
+    |     retval = await self._coro
+    |              ^^^^^^^^^^^^^^^^
+    |   File "E:\Project\Web_Development\Campfire-AI\.venv\Lib\site-packages\taskiq\receiver\receiver.py", line 470, in prefetcher
+    |     message = await self._get_prefetched_message(
+    |               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |   File "E:\Project\Web_Development\Campfire-AI\.venv\Lib\site-packages\taskiq\receiver\receiver.py", line 536, in _get_prefetched_message
+    |     return current_message.result()
+    |            ^^^^^^^^^^^^^^^^^^^^^^^^
+    |   File "E:\Project\Web_Development\Campfire-AI\.venv\Lib\site-packages\taskiq_redis\redis_broker.py", line 132, in listen
+    |     brpop_result = await redis_conn.brpop(self.queue_name)
+    |                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |   File "E:\Project\Web_Development\Campfire-AI\.venv\Lib\site-packages\redis\asyncio\client.py", line 946, in execute_command
+    |     result = await conn.retry.call_with_retry(
+    |              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |   File "E:\Project\Web_Development\Campfire-AI\.venv\Lib\site-packages\redis\asyncio\retry.py", line 81, in call_with_retry
+    |     raise error
+    |   File "E:\Project\Web_Development\Campfire-AI\.venv\Lib\site-packages\redis\asyncio\retry.py", line 69, in call_with_retry
+    |     return await do()
+    |            ^^^^^^^^^^
+    |   File "E:\Project\Web_Development\Campfire-AI\.venv\Lib\site-packages\redis\asyncio\client.py", line 871, in _send_command_parse_response
+    |     return await self.parse_response(conn, command_name, **options)
+    |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |   File "E:\Project\Web_Development\Campfire-AI\.venv\Lib\site-packages\redis\asyncio\client.py", line 993, in parse_response
+    |     response = await connection.read_response()
+    |                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |   File "E:\Project\Web_Development\Campfire-AI\.venv\Lib\site-packages\redis\asyncio\connection.py", line 1310, in read_response
+    |     raise TimeoutError(f"Timeout reading from {host_error}")
+    | redis.exceptions.TimeoutError: Timeout reading from localhost:6379
+    +------------------------------------

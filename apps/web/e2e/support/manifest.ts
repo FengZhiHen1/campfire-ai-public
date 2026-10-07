@@ -2,9 +2,9 @@
  * 模块: e2e/support/manifest
  * 职责: 逐图 sidecar 与 manifest.json 的形状、读写与复算
  * 数据来源:
- *   - .tmp/dev-orchestrator/20261002-001/tasks/T01.md: MUST — 目标 4（每张图的路径、sha256、字节数、
+ *   - docs/证据/orchestrator-20261002-001/T01.md: MUST — 目标 4（每张图的路径、sha256、字节数、
  *     像素尺寸与断言命中的内容特征串）与验收标准「manifest 记录值须与文件实际值一致」
- *   - .tmp/dev-orchestrator/20261002-001/feedback/T01-rulings.md: MUST — 裁决 1（加 kind 字段、
+ *   - docs/证据/orchestrator-20261002-001/T01-rulings.md: MUST — 裁决 1（加 kind 字段、
  *     清点变 40 张）与其追加裁决（记 contentHeightPx 与 expandedScrollContainer）、
  *     裁决 2（记 fontLoaded；stubbedExternalHosts 语义改为「被阻断的清单外 host」）
  * 边界:

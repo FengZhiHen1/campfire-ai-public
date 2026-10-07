@@ -3,8 +3,8 @@
  * 职责: 全页基线截图——十页 × 两视口 × 两图种（视口图 + fullPage 图），逐页注入登录态、
  *       装夹具、等字体、断内容、落盘并写 sidecar
  * 数据来源:
- *   - .tmp/dev-orchestrator/20261002-001/tasks/T01.md: MUST — 目标 1～4、裁决 B/C/D/E/F
- *   - .tmp/dev-orchestrator/20261002-001/feedback/T01-rulings.md: MUST — 裁决 1（两图种都要、
+ *   - docs/证据/orchestrator-20261002-001/T01.md: MUST — 目标 1～4、裁决 B/C/D/E/F
+ *   - docs/证据/orchestrator-20261002-001/T01-rulings.md: MUST — 裁决 1（两图种都要、
  *     尺寸断言拆两条、fixed 中和）与其追加裁决（fullPage 必须真的展开滚动容器 + fail-loud
  *     高度守卫）与裁决 2（字体真实加载 + document.fonts.check fail-loud）
  *   - apps/web/src/app/routes.tsx: MUST — 十条路由的权威清单

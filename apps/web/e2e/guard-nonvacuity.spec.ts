@@ -3,11 +3,11 @@
  * 职责: 证明 fullPage 高度守卫不是恒真的检查——在目标外壳结构下，用生产同一个取量函数与
  *       判据函数，跑出「不展开则抛错」与「展开则通过」两种结果
  * 数据来源:
- *   - .tmp/dev-orchestrator/20261002-001/feedback/T01-rulings.md: MUST — 追加裁决第 2 条
+ *   - docs/证据/orchestrator-20261002-001/T01-rulings.md: MUST — 追加裁决第 2 条
  *     「守卫的作用不是通过，而是在外壳落地后第一时间变红……请确保它真的会红」
- *   - .tmp/dev-orchestrator/20261002-001/feedback/T01-review-rulings.md: MUST — P1-1 的修法
+ *   - docs/证据/orchestrator-20261002-001/T01-review-rulings.md: MUST — P1-1 的修法
  *     （判据改用隐藏溢出；本文件必须喂与生产调用点相同的量，且必须覆盖 stage padding = 24 与 0）
- *   - .tmp/dev-orchestrator/20261002-001/facts.md §3: MUST — 目标外壳结构的几何（含 padding）
+ *   - docs/证据/orchestrator-20261002-001/facts.md §3: MUST — 目标外壳结构的几何（含 padding）
  * 边界:
  *   - 依赖: e2e/support/*、@playwright/test
  *   - 被依赖: 无（由 `pnpm --filter @campfire/web shots` 一并驱动）
@@ -75,7 +75,7 @@ import { expectSessionInjected, installSession } from './support/session';
 /** 目标外壳的 stage padding（facts.md §3 的目标结构）。 */
 const SHELL_STAGE_PADDING_PX = 24;
 
-/** 证明产物的落点（在 sidecar 目录下，随 tmp/ 被 gitignore）。 */
+/** 证明产物的落点（在 sidecar 目录下，随 `.tmp/` 被 gitignore）。 */
 const EVIDENCE_DIR = `${SIDECAR_DIR}/guard-nonvacuity`;
 
 /**
