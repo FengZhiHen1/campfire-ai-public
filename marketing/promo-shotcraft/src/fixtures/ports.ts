@@ -11,9 +11,9 @@
 import type {ProfileItem, ProfileSummaryResponse, SupportObject} from '../../../../apps/web/src/shared/types/profile';
 import type {
   EvidenceLevel,
-  ExpandedLibraryItem,
   LibraryItemStatus,
   LibraryKind,
+  LibraryListItem,
   ReviewStatus,
 } from '../../../../apps/web/src/shared/types/library';
 // ★ 领域标签必须取产品真源,不得自造。
@@ -130,8 +130,14 @@ export function makeMemoryPort() {
  * 案例库端口的内存实现。
  *
  * 两个库分开返回。条目形状按产品真源 shared/types/library.ts 的
- * ExpandedLibraryItem 构造:除 LibraryItem 的必填字段外,还带 narrative 与 cards
+ * LibraryListItem 构造:除 LibraryItem 的必填字段外,还带 narrative 与 cards
  * (列表页展开某一条时会渲染它们)。
+ *
+ * ★ 2026-10-07 跟随产品改动:该类型原名 ExpandedLibraryItem,产品的 3e33346 把它
+ *   改名为 LibraryListItem 并把 narrative/cards 改为**可空** —— 普通列表请求里两者
+ *   恒为 null,旧名与必填写法让守卫判 undefined,生产上点开任一条即被错误边界接管。
+ *   影片这里仍然填非空值(它是「展开后」的静态画面),但类型必须跟随产品,否则 tsc
+ *   直接报 no exported member(实测踩到:用户提交后影片源码一度编译不过)。
  *
  * narrative / cards 的内容也来自数据库导出的真实字段(narrative 用 title+snippet,
  * cards 为空数组 —— 影片不展开正文,只展示列表与状态标签)。
@@ -162,7 +168,7 @@ export function makeLibraryPort() {
       snippet?: string | null;
     },
     library: 'case' | 'knowledge',
-  ): ExpandedLibraryItem =>
+  ): LibraryListItem =>
     ({
       item_id: raw.id,
       library,
@@ -184,7 +190,7 @@ export function makeLibraryPort() {
       // 展开字段:影片不展开正文,但类型要求存在
       narrative: {sections: []},
       cards: [],
-    }) as unknown as ExpandedLibraryItem;
+    }) as unknown as LibraryListItem;
 
   return {
     listItems: async ({library}: {library: LibraryKind}) => ({
