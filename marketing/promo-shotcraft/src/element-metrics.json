@@ -1,0 +1,27 @@
+{
+  "cases": {
+    "maxScroll": 1204,
+    "marks": {
+      "内部": {
+        "offsetTop": 387,
+        "ratio": 0.1461794019933555,
+        "scrollPx": 176
+      },
+      "虚构样例": {
+        "offsetTop": 1719,
+        "ratio": 1,
+        "scrollPx": 1204
+      }
+    }
+  },
+  "profile": {
+    "maxScroll": 4194,
+    "marks": {
+      "pendingGroup": {
+        "offsetTop": 1880,
+        "scrollPx": 1728,
+        "ratio": 0.41206977229375297
+      }
+    }
+  }
+}

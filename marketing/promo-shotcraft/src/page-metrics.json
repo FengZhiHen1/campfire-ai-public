@@ -1,0 +1,26 @@
+{
+  "home": {
+    "selector": ".device-screen(fallback)",
+    "scrollHeight": 844,
+    "clientHeight": 844,
+    "maxScroll": 0
+  },
+  "emergencyQ1": {
+    "selector": ".device-screen",
+    "scrollHeight": 1188,
+    "clientHeight": 844,
+    "maxScroll": 344
+  },
+  "profile": {
+    "selector": ".device-screen",
+    "scrollHeight": 5038,
+    "clientHeight": 844,
+    "maxScroll": 4194
+  },
+  "cases": {
+    "selector": ".device-screen",
+    "scrollHeight": 2048,
+    "clientHeight": 844,
+    "maxScroll": 1204
+  }
+}

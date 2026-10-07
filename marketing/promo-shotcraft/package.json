@@ -1,0 +1,26 @@
+{
+  "name": "@campfire/promo-shotcraft",
+  "version": "0.1.0",
+  "private": true,
+  "description": "篝火智答宣传片(video-shotcraft 自主自由创作)",
+  "scripts": {
+    "dev": "remotion studio",
+    "render": "remotion render src/index.ts Promo out/promo.mp4",
+    "render:nobgm": "remotion render src/index.ts Promo out/promo-nobgm.mp4 --props=props-nobgm.json",
+    "still": "remotion still src/index.ts Promo"
+  },
+  "dependencies": {
+    "@remotion/cli": "^4.0.533",
+    "react": "19.3.0",
+    "react-dom": "19.3.0",
+    "react-router": "7.18.4",
+    "remotion": "^4.0.533"
+  },
+  "devDependencies": {
+    "@types/react": "19.3.0",
+    "@types/web": "^0.0.357",
+    "pngjs": "^7.0.0",
+    "puppeteer": "^25.12.0",
+    "typescript": "5.9.3"
+  }
+}

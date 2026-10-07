@@ -1,0 +1,96 @@
+{
+  "home": {
+    "pageH": 844,
+    "boxes": {
+      "tab-bar": {
+        "x": 0,
+        "y": 787,
+        "w": 390,
+        "h": 57
+      }
+    },
+    "cutouts": {
+      "emergency-card": {
+        "name": "emergency-card",
+        "x": 16,
+        "y": 116.390625,
+        "w": 358,
+        "h": 203.0625
+      },
+      "daily-card": {
+        "name": "daily-card",
+        "x": 16,
+        "y": 335.453125,
+        "w": 358,
+        "h": 176.203125
+      }
+    }
+  },
+  "emergency-form": {
+    "pageH": 1188,
+    "boxes": {},
+    "cutouts": {
+      "question-tile": {
+        "name": "question-tile",
+        "x": 16,
+        "y": 1.671875,
+        "w": 358,
+        "h": 842.375
+      },
+      "progress": {
+        "name": "progress",
+        "x": 37,
+        "y": 78.671875,
+        "w": 316,
+        "h": 2
+      }
+    }
+  },
+  "profile": {
+    "pageH": 5038,
+    "boxes": {},
+    "cutouts": {
+      "pending-item": {
+        "name": "pending-item",
+        "x": 37,
+        "y": 262.140625,
+        "w": 316,
+        "h": 319.65625
+      },
+      "confirmed-item": {
+        "name": "confirmed-item",
+        "x": 37,
+        "y": 586.796875,
+        "w": 316,
+        "h": 257.3125
+      }
+    }
+  },
+  "case-library": {
+    "pageH": 844,
+    "boxes": {},
+    "cutouts": {
+      "case-row": []
+    }
+  },
+  "action-card": {
+    "pageH": 844,
+    "boxes": {},
+    "cutouts": {
+      "source-line": {
+        "name": "source-line",
+        "x": 48,
+        "y": 341.96875,
+        "w": 312,
+        "h": 19.4375
+      },
+      "action-block": {
+        "name": "action-block",
+        "x": 35,
+        "y": -35.5625,
+        "w": 338,
+        "h": 775.890625
+      }
+    }
+  }
+}

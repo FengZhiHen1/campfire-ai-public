@@ -86,3 +86,5 @@ _tmp_test/
 *.pem
 *.key
 *.crt
+# 视频渲染产物（2.5GB：54 个 mp4 + 7808 张 png 帧），只留工程不入库
+marketing/promo-shotcraft/out/
