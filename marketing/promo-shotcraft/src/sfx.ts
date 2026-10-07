@@ -77,33 +77,44 @@ export const SFX: SfxEntry[] = [
   {from: at('S4', 0.66), src: 'text-type', volume: 0.36, durationInFrames: 60, comment: 'S4 写下现场的样子'},
   {from: at('S4', 0.93), src: 'ui-pop', volume: 0.5, comment: 'S4 按下「提交，开始分析」'},
 
-  // ── S5 AI 流式分析(40s)—— 全片核心 ──
+  // ── S5 AI 流式分析(26s)—— 全片核心 ──
+  //
+  // ★★ 2026-10-08 重钉(用户报告「59s 开始音画不同步」)。
+  //   原因:S5 被重写为「展开思考区 → 真实推理流出 → 收起 → 判断句 → 依据线 → 行动卡到场」,
+  //   但这 19 条音效**仍钉在旧 S5 的节拍上**(注释写的是「资料1/2 命中」「档案组带入 1-2/3-4」
+  //   「六层闸门逐层 + 闸门 2…6」「未预存组标注」「收束到结论」)—— 那些离散视觉事件在新 S5 里
+  //   **已经不存在**。最刺眼的一条是 `at('S5', 0.9)` 注释写「交棒行动卡」,而卡片实际在
+  //   `CARD_IN_R = 0.63` 就出现了 ⇒ 那声 whoosh 晚了 (0.9-0.63)×26s = **7.0 秒**,
+  //   正落在用户听到不同步的 59s 一带(S5 从 36s 起,0.9 ⇒ 59.4s)。
+  //   现在每一条都对齐 S5Analysis.tsx 里真实存在的时刻(比例同源,段长再变会自动跟随)。
   {from: at('S5', 0.004), src: 'transition-soft', volume: 0.32, durationInFrames: 40, comment: 'S5 分析段切入'},
-  {from: at('S5', 0.025), src: 'data-stream', volume: 0.28, durationInFrames: 60, comment: 'S5「正在分析」底噪'},
-  {from: at('S5', 0.077), src: 'text-type', volume: 0.34, durationInFrames: 50, comment: 'S5 首句结论流出'},
-  {from: at('S5', 0.178), src: 'click-camera', volume: 0.35, comment: 'S5 资料1 命中'},
-  {from: at('S5', 0.21), src: 'click-camera', volume: 0.33, comment: 'S5 资料2 命中'},
-  {from: at('S5', 0.245), src: 'transition-soft', volume: 0.28, durationInFrames: 40, comment: 'S5 判据读完'},
-  {from: at('S5', 0.3), src: 'sparkle-touch', volume: 0.34, comment: 'S5 档案组带入 1-2'},
-  {from: at('S5', 0.36), src: 'sparkle-touch', volume: 0.32, comment: 'S5 档案组带入 3-4'},
-  {from: at('S5', 0.42), src: 'impact-deep-whoosh', volume: 0.36, durationInFrames: 40, comment: 'S5 医疗红灯优先于孤独症解释'},
-  {from: at('S5', 0.47), src: 'transition-soft', volume: 0.3, durationInFrames: 40, comment: 'S5 六层闸门逐层'},
-  {from: at('S5', 0.52), src: 'click-camera', volume: 0.34, comment: 'S5 闸门 2'},
-  {from: at('S5', 0.57), src: 'click-camera', volume: 0.34, comment: 'S5 闸门 3'},
-  {from: at('S5', 0.62), src: 'click-camera', volume: 0.33, comment: 'S5 闸门 4'},
-  {from: at('S5', 0.67), src: 'click-camera', volume: 0.33, comment: 'S5 闸门 5'},
-  {from: at('S5', 0.72), src: 'click-camera', volume: 0.32, comment: 'S5 闸门 6'},
-  {from: at('S5', 0.77), src: 'sparkle-touch', volume: 0.36, comment: 'S5 未预存组标注'},
-  {from: at('S5', 0.82), src: 'camera-autofocus', volume: 0.36, durationInFrames: 90, comment: 'S5 收束到结论'},
-  {from: at('S5', 0.9), src: 'transition-soft', volume: 0.3, durationInFrames: 46, comment: 'S5 交棒行动卡'},
-  {from: at('S5', 0.96), src: 'whoosh-fast', volume: 0.5, durationInFrames: 22, comment: 'S5 段落收尾'},
+  {from: at('S5', 0.02), src: 'data-stream', volume: 0.28, durationInFrames: 60, comment: 'S5「正在分析…」底噪'},
+  {from: at('S5', 0.05), src: 'ui-pop', volume: 0.34, comment: 'S5 展开思考区(使用者的一次动作)'},
+  {from: at('S5', 0.075), src: 'text-type', volume: 0.32, durationInFrames: 50, comment: 'S5 思考文本开始逐字流出'},
+  {from: at('S5', 0.19), src: 'text-type', volume: 0.26, durationInFrames: 50, comment: 'S5 思考文本流出中段'},
+  {from: at('S5', 0.315), src: 'transition-soft', volume: 0.28, durationInFrames: 40, comment: 'S5 收起思考区'},
+  {from: at('S5', 0.33), src: 'text-type', volume: 0.34, durationInFrames: 50, comment: 'S5 判断句开始流出'},
+  {from: at('S5', 0.44), src: 'data-stream', volume: 0.24, durationInFrames: 50, comment: 'S5 判断句流出中'},
+  {from: at('S5', 0.56), src: 'sparkle-touch', volume: 0.36, comment: 'S5 判断句打完,结论落定'},
+  {from: at('S5', 0.575), src: 'click-camera', volume: 0.34, comment: 'S5 结论行画出依据线'},
+  {from: at('S5', 0.605), src: 'camera-autofocus', volume: 0.36, durationInFrames: 90, comment: 'S5 开始滚向行动卡'},
+  {from: at('S5', 0.63), src: 'impact-deep-whoosh', volume: 0.42, durationInFrames: 40, comment: 'S5 行动卡在对话里出现'},
+  {from: at('S5', 0.68), src: 'ui-pop', volume: 0.34, comment: 'S5 卡片落定'},
+  {from: at('S5', 0.72), src: 'transition-soft', volume: 0.3, durationInFrames: 40, comment: 'S5 右栏来源条数落位'},
+  {from: at('S5', 0.78), src: 'click-camera', volume: 0.33, comment: 'S5 来源分布逐条'},
+  {from: at('S5', 0.84), src: 'click-camera', volume: 0.32, comment: 'S5 来源分布逐条 2'},
+  {from: at('S5', 0.9), src: 'sparkle-touch', volume: 0.3, comment: 'S5 收束'},
+  {from: at('S5', 0.94), src: 'transition-soft', volume: 0.3, durationInFrames: 46, comment: 'S5 交棒行动卡段'},
+  {from: at('S5', 0.97), src: 'whoosh-fast', volume: 0.5, durationInFrames: 22, comment: 'S5 段落收尾'},
 
-  // ── S6 行动卡(36s)──
+  // ── S6 行动卡(20s)──
+  //   ★ 2026-10-08:三档点亮的时刻随说明幕加长(SEG0_MIN_FRAMES=72 ⇒ seg0R=0.12)重钉,
+  //     否则「未排除/高风险」的落位声会比徽章早到;交棒声也对齐到 SEG0_END=0.12。
   {from: at('S6', 0.02), src: 'transition-soft', volume: 0.3, durationInFrames: 40, comment: 'S6 三档特写切入'},
-  {from: at('S6', 0.055), src: 'sparkle-touch', volume: 0.38, comment: 'S6「稳定」点亮'},
-  {from: at('S6', 0.095), src: 'sparkle-touch', volume: 0.4, comment: 'S6「未排除」点亮'},
-  {from: at('S6', 0.135), src: 'sparkle-touch', volume: 0.44, comment: 'S6「高风险」点亮'},
-  {from: at('S6', 0.24), src: 'whoosh-fast', volume: 0.55, durationInFrames: 24, comment: 'S6 交棒设备框'},
+  {from: at('S6', 0.033), src: 'sparkle-touch', volume: 0.38, comment: 'S6「稳定」点亮'},
+  {from: at('S6', 0.058), src: 'sparkle-touch', volume: 0.4, comment: 'S6「未排除」点亮'},
+  {from: at('S6', 0.082), src: 'sparkle-touch', volume: 0.44, comment: 'S6「高风险」点亮'},
+  {from: at('S6', 0.12), src: 'whoosh-fast', volume: 0.55, durationInFrames: 24, comment: 'S6 交棒设备框'},
   {from: at('S6', 0.3), src: 'impact-deep-whoosh', volume: 0.4, durationInFrames: 34, comment: 'S6 行动卡落定'},
   {from: at('S6', 0.37), src: 'text-type', volume: 0.3, durationInFrames: 50, comment: 'S6 建议逐条'},
   {from: at('S6', 0.44), src: 'camera-autofocus', volume: 0.4, durationInFrames: 90, comment: 'S6 来源标注高亮'},

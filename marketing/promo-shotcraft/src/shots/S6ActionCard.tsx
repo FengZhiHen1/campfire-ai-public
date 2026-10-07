@@ -65,12 +65,38 @@ export const S6ActionCard: React.FC = () => {
    *
    * seg 1 让 01→07 七个分区依次经过;seg 2 停在底部看来源标注与双会话对照。
    */
-  const SEG0_END_R = 0.083;
-  const SEG1_END_R = 0.46;
-
-  const SEG0_END = timing.at(SEG0_END_R);
-  const SEG1_END = timing.at(SEG1_END_R);
+  /**
+   * 说明幕(seg 0)的时长:**绝对下限,不是纯比例**。
+   *
+   * ★ 为什么这里破一次「内部时间点全部比例派生」的约定(2026-10-08,用户报告):
+   *   原来是 `SEG0_END_R = 0.083`(比例)。比例对**运动 / 滚动**是对的 —— 段长变了它
+   *   跟着缩放,观感不变。但对**需要最短可读时间的固定文案页**是错的:
+   *   这一幕有 1 个标题 + 1 行副标 + 3 行徽章 = 4 个落位事件。
+   *   v17(36s 段)按比例算出 3.0s,够读;v18 把段压到 20s 后,同一比例只剩 **1.66s**
+   *   (实测:第三档徽章在段内 f47 才亮完,场景在 f50 就被整体换掉 —— **只留 3 帧**;
+   *    扫光窗口是 `[20, SEG0_END+20]`,到卸载时只走了 58%,那道光是**被切掉的**)。
+   *   用户看到的就是「刚亮完就被抽走 + 光扫到一半没了」。
+   *   ⇒ 给这一幕一个有下限的长度:不足 60 帧(2s)时按 60 帧算。
+   *     不再是 0.083 的等比结果,但这正是「可读时间不能被等比压缩」的意思。
+   */
+  const SEG0_MIN_FRAMES = 72;
+  const SEG0_END = Math.max(timing.at(0.083), SEG0_MIN_FRAMES);
+  const SEG1_END = timing.at(0.46);
   const seg = frame < SEG0_END ? 0 : frame < SEG1_END ? 1 : 2;
+  /** 说明幕实际的段内比例 —— 供 noteIn / 徽章时刻表使用(不再假设它是 0.083)。 */
+  const seg0R = SEG0_END / timing.duration;
+
+  /**
+   * 幕间**交叉淡入淡出**的帧数(2026-10-08 修「硬切」)。
+   *
+   * 现象:此前 seg0 与 seg1/2 之间是**条件替换**(`seg === 0 ? 文字页 : null` /
+   *   `seg > 0 ? 设备 : null`)—— 说明幕没有任何退场、手机整机也没有入场,
+   *   在**同一张米色底**上直接「传送」进来,看起来像丢帧而不是切镜。
+   *   实测 f1909 → f1910:前一帧是全屏文字页,后一帧手机已成型。
+   * 修法:说明幕在结束前 SCENE_FADE 帧内淡出,整机同时淡入并轻微放大;
+   *   两条曲线在 SEG0_END 处交汇,替换发生在两者都接近不可见的时刻。
+   */
+  const SCENE_FADE = 12;
 
   // 相机:★ 单向推近 + 分段推近(lib/camera.ts)。
   //   ★ 2026-10-07:周期漂移分量已删除(用户裁决);分段推近保留(每阶对应叙事上的
@@ -91,6 +117,15 @@ export const S6ActionCard: React.FC = () => {
   //   现在:滚到「01 当前状态」停一下、再滚到「02 立即怎么沟通」停一下、然后到底。
   //   停车点用像素给,理由与旧版一致(DeviceStage 按真实 scrollHeight 夹紧);
   //   ⚠ 3200 / 6400 是**初值**,由逐帧 still 自检校准到两个分区真正停在读数位置。
+  //
+  // ★★ 2026-10-08:关键帧表的后续时刻**从 seg0R 派生**,不再直接用 timing.at(0.1)…
+  //   原因:seg0 有了绝对下限(SEG0_MIN_FRAMES)后,SEG0_END = 72 可能**大于**
+  //   timing.at(0.1) = 60 —— 而 interpolate 要求 inputRange 严格单调递增,
+  //   实测渲染直接抛 `inputRange must be strictly monotonically increasing but got
+  //   [0,72,60,108,180,240,312,516,600]`。这不是「画面难看」级别的错,是**渲不出来**。
+  //   ⇒ 换场后的每个时刻都改为「seg0 结束 + 剩余区间的一个比例」,结构上不可能再越界:
+  //     后续比例按旧表在剩下 0.917 里所占位置折算(0.1→(0.1-0.083)/0.917 等)。
+  const afterSeg0 = (frac: number) => SEG0_END + Math.round(frac * (timing.duration - SEG0_END));
   const BRAKE1 = 3200;
   const BRAKE2 = 6400;
   const scrollY = interpolate(
@@ -98,12 +133,12 @@ export const S6ActionCard: React.FC = () => {
     [
       0,
       SEG0_END,
-      timing.at(0.1),
-      timing.at(0.18),
-      timing.at(0.3),
-      timing.at(0.4),
-      timing.at(0.52),
-      timing.at(0.86),
+      afterSeg0(0.019),
+      afterSeg0(0.106),
+      afterSeg0(0.237),
+      afterSeg0(0.346),
+      afterSeg0(0.477),
+      afterSeg0(0.847),
       timing.duration,
     ],
     [0, 0, 900, BRAKE1, BRAKE1, BRAKE2, BRAKE2, 9999, 9999],
@@ -156,10 +191,18 @@ export const S6ActionCard: React.FC = () => {
   // 三档徽章逐个点亮:在 seg 0 内均分。
   //   ★ 2026-10-07:落位瞬间一次**回弹**(badgePop),随后保持静止 ——
   //     替换原先的 sin 持续脉动(16f 周期),那是与相机漂移同类的无语义连续运动。
+  //   ★ 2026-10-08:时刻表原本写死 `SEG0_END_R * (…)`,而 SEG0_END_R 是**比例**;
+  //     现在 seg0 有了绝对下限(见 SEG0_MIN_FRAMES),比例与实际帧数可能不等 ——
+  //     若仍用比例,末档会在场景被换掉之后才亮(实测旧版正是「末档 f47 亮完、f50 换场」)。
+  //     改成直接用 **seg0R = SEG0_END / duration**,保证三档一定在幕内亮完。
+  //     校验(v18 段长 600,seg0R = 72/600 = 0.12):三档分别在
+  //     (0.28→0.55)·72 = f20→40 / (0.48→0.75)·72 = f35→54 / (0.68→0.95)·72 = f49→68
+  //     ⇒ 末档 f68 亮完,距 SEG0_END=f72 仍有 4 帧静止,且整段退场从 f60 才开始,
+  //       所以「亮完 → 停一下 → 退场 → 交接」是一条完整的读得完的弧线。
   const badgeOn = (i: number) =>
     interpolate(
       frame,
-      timing.span(SEG0_END_R * (0.28 + i * 0.2), SEG0_END_R * (0.55 + i * 0.2)),
+      timing.span(seg0R * (0.28 + i * 0.2), seg0R * (0.55 + i * 0.2)),
       [0, 1],
       {
         extrapolateLeft: 'clamp', extrapolateRight: 'clamp',
@@ -169,10 +212,25 @@ export const S6ActionCard: React.FC = () => {
   const badgePop = (i: number) =>
     1 - interpolate(
       frame,
-      timing.span(SEG0_END_R * (0.55 + i * 0.2), SEG0_END_R * (0.72 + i * 0.2)),
+      timing.span(seg0R * (0.55 + i * 0.2), seg0R * (0.72 + i * 0.2)),
       [0, 1],
       {extrapolateLeft: 'clamp', extrapolateRight: 'clamp'},
     );
+
+  /** 说明幕的**退场**淡出(结束前 SCENE_FADE 帧内线性到 0)。 */
+  const scene0Out = interpolate(
+    frame,
+    [SEG0_END - SCENE_FADE, SEG0_END],
+    [1, 0],
+    {extrapolateLeft: 'clamp', extrapolateRight: 'clamp'},
+  );
+  /** 整机的**入场**淡入,与上面同窗口(两条曲线在 SEG0_END 交汇)。 */
+  const stageIn = interpolate(
+    frame,
+    [SEG0_END - SCENE_FADE, SEG0_END],
+    [0, 1],
+    {extrapolateLeft: 'clamp', extrapolateRight: 'clamp', easing: Easing.bezier(0.3, 0, 0.4, 1)},
+  );
 
   /** 右侧说明条目的落位(cue 用比例给)。 */
   const noteIn = (ratio: number) =>
@@ -186,7 +244,7 @@ export const S6ActionCard: React.FC = () => {
       <div style={{position: 'absolute', inset: 0, opacity: fadeOut}}>
         {/* ① 三档语义特写 */}
         {seg === 0 ? (
-          <>
+          <div style={{position: 'absolute', inset: 0, opacity: scene0Out}}>
             {/* ★ 该段原本 10s 几乎全静止(实测 f2250-2549 帧差全程 <0.35)。
                 根因:三档徽章在 110f 就点亮完毕,之后没有任何新事件;而徽章变的是
                 **细笔画文字的透明度**,帧差天然很小,连光扫(alpha 0.07–0.13)也不够。
@@ -207,7 +265,7 @@ export const S6ActionCard: React.FC = () => {
             <div
               style={{
                 position: 'absolute', top: 0, bottom: 0, width: 460,
-                left: interpolate(frame, [20, SEG0_END + 20], [-540, 2480], {
+                left: interpolate(frame, [20, SEG0_END - 8], [-540, 2480], {
                   extrapolateLeft: 'clamp', extrapolateRight: 'clamp',
                   easing: Easing.bezier(0.35, 0, 0.65, 1),
                 }),
@@ -304,7 +362,7 @@ export const S6ActionCard: React.FC = () => {
                 三档语义行自己的落位（见上方 badgeOn，末档在 f78 完成）已经填满这一段；
                 再塞三栏文案只会让 3 秒里挤五个事件。**这一段的问题从来不是事件不够。** */}
             </div>
-          </>
+          </div>
         ) : null}
 
         {/* ② ③ 真实行动卡在设备里滚动 */}
@@ -312,17 +370,31 @@ export const S6ActionCard: React.FC = () => {
           <>
             <style>{underlineCss(sectionIdx(1), draw1)}</style>
             <style>{underlineCss(sectionIdx(2), draw2)}</style>
-            <DeviceStage cx={640} cy={540} scale={scale} scrollY={scrollY}>
-              <ActionCardScreen data={CARD} />
-            </DeviceStage>
+            {/* 入场包装层:整机淡入 + 轻微放大(与说明幕退场同窗口,见 SCENE_FADE)。
+                包装层只加 opacity/transform,不参与布局 —— DeviceStage 自己仍是
+                position:absolute 的定位层,尺寸不受影响(与 S3/S7/S8 的舞台调用一致)。 */}
+            <div
+              style={{
+                position: 'absolute', inset: 0,
+                opacity: stageIn,
+                transform: `scale(${String(1 + (1 - stageIn) * 0.02)})`,
+              }}
+            >
+              <DeviceStage cx={640} cy={540} scale={scale} scrollY={scrollY}>
+                <ActionCardScreen data={CARD} />
+              </DeviceStage>
+            </div>
           </>
         ) : null}
 
         {/* 右侧说明区 */}
         {seg > 0 ? (
           <div style={{position: 'absolute', left: NOTE_X, top: 230, width: 790}}>
-            <NoteKicker opacity={noteIn(SEG0_END_R)}>本次结果 · 现场行动卡</NoteKicker>
-            <NoteTitle opacity={noteIn(SEG0_END_R + 0.01)} size={42}>
+            <NoteKicker opacity={noteIn(seg0R)}>本次结果 · 现场行动卡</NoteKicker>
+            {/* ★ 2026-10-08:标题排在 Kicker 之后(+0.04),正文再排在标题之后(+0.07)。
+                原来的问题是正文**完全没有入场**(见下方),于是切场那一帧标题还没淡入、
+                正文已全亮 —— 右栏看起来「有内容、没标题」。 */}
+            <NoteTitle opacity={noteIn(seg0R + 0.04)} size={42}>
               {seg === 1 ? '七节分区,先看哪一节由闸门决定' : '每条建议都带着它的出处'}
             </NoteTitle>
 
@@ -331,6 +403,10 @@ export const S6ActionCard: React.FC = () => {
                 style={{
                   marginTop: 36, fontFamily: 'var(--font-body)', fontSize: 21,
                   color: 'var(--muted)', lineHeight: 1.8,
+                  // ★ 补上入场(原先这一段只有 marginTop/fontFamily/color,没有 opacity
+                  //   也没有 transform ⇒ 场景一出现它就已经是全不透明的满亮度)。
+                  opacity: noteIn(seg0R + 0.07),
+                  transform: `translateY(${(1 - noteIn(seg0R + 0.07)) * 12}px)`,
                 }}
               >
                 卡顶的「现在先看」块是优先级最高的一节;
@@ -345,6 +421,9 @@ export const S6ActionCard: React.FC = () => {
                   style={{
                     marginTop: 36, fontFamily: 'var(--font-body)', fontSize: 21,
                     color: 'var(--muted)', lineHeight: 1.8,
+                    // ★ 同上:seg 2 的这一段也补入场。
+                    opacity: noteIn(seg0R + 0.07),
+                    transform: `translateY(${(1 - noteIn(seg0R + 0.07)) * 12}px)`,
                   }}
                 >
                   来源与置信不是我们写的旁白,
@@ -361,7 +440,7 @@ export const S6ActionCard: React.FC = () => {
                     {k: '家属报告', v: sourceCount('family_report')},
                     {k: '现场观察', v: sourceCount('onsite_observation')},
                   ].map((row, i) => {
-                    const t = noteIn(SEG1_END_R + 0.037 + i * 0.028);
+                    const t = noteIn(SEG1_END / timing.duration + 0.037 + i * 0.028);
                     return (
                       <div
                         key={row.k}
