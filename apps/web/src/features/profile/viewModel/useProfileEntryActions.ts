@@ -10,9 +10,10 @@
  * 禁止行为:
  *   - 禁止在失败时清空已填内容（档案页状态覆盖表：保留已填内容，不清空）
  *   - 禁止把纠正写成「修改」（纠正 = 新增更正，原记录不再作为依据）
+ *   - 禁止用 `disabled` 当并发闸门（闸门收进动作函数体，FE-12）
  */
 
-import { useCallback, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 
 import type { ProfileItem } from '../../../shared/types/profile';
 import type { ProfilePort } from '../application/ports';
@@ -39,7 +40,10 @@ export interface AddFlowState {
 
 /** 条目级交互状态与操作。 */
 export interface ProfileEntryActions {
-  /** 正在处理的行（确认/否定/删除共用一处，避免同一行并发两个写操作）。 */
+  /**
+   * 正在处理的行（确认/否定/删除共用一处，避免同一行并发两个写操作）。
+   * 它只作展示提示：真正的闸门在动作函数体内（见 `inFlight`）。
+   */
   busyItemId: string | null;
   /** 行内错误：哪一行、什么原因。 */
   rowFailure: { itemId: string; failure: ProfileFailure } | null;
@@ -94,10 +98,20 @@ export function useProfileEntryActions(
   const [correct, setCorrect] = useState<CorrectFlowState | null>(null);
   const [add, setAdd] = useState<AddFlowState | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  /*
+    并发闸门收进动作函数体（FE-12）：`disabled` 管不住重复点按、回车与程序化调用，
+    而同一个动作函数有多个入口（行内按钮、确认单、表单提交）。
+    闸门覆盖全部条目写操作：同一时刻只允许一个在途（同一行的并发写、跨行的并发写都会
+    互相覆盖 busyItemId 或与随后的重载竞争，因此不按行分闸门）。
+  */
+  const inFlight = useRef(false);
 
   /** 行内单条目操作的共用骨架：置忙 → 执行 → 失败分类 → 成功重载。 */
   const runRowAction = useCallback(
     async (itemId: string, action: () => Promise<void>): Promise<void> => {
+      // 闸门在函数体内：所有入口（行内按钮 / 确认单）都过同一道，不看按钮是否 disabled。
+      if (inFlight.current) return;
+      inFlight.current = true;
       setBusyItemId(itemId);
       setRowFailure(null);
       try {
@@ -106,6 +120,7 @@ export function useProfileEntryActions(
       } catch (error) {
         setRowFailure({ itemId, failure: failureFromError(error) });
       } finally {
+        inFlight.current = false;
         setBusyItemId(null);
       }
     },
@@ -156,6 +171,9 @@ export function useProfileEntryActions(
   const submitCorrect = useCallback(async (): Promise<void> => {
     const current = correct;
     if (current === null) return;
+    // 闸门（FE-12）：提交按钮的 disabled 之外还有回车键与重复点按。
+    if (inFlight.current) return;
+    inFlight.current = true;
     setCorrect({ ...current, submitting: true, failure: null, errors: {} });
     try {
       await new CorrectItemUseCase(port).execute(current.target.item_id, current.draft, current.target.description);
@@ -171,6 +189,8 @@ export function useProfileEntryActions(
       }
       // 提交失败保留已填内容（档案页状态覆盖表）：只加失败原因，草稿不动。
       setCorrect({ ...current, submitting: false, failure: failureFromError(error) });
+    } finally {
+      inFlight.current = false;
     }
   }, [correct, onChanged, port]);
 
@@ -189,6 +209,9 @@ export function useProfileEntryActions(
   const submitAdd = useCallback(async (): Promise<void> => {
     const current = add;
     if (current === null || objectId === null) return;
+    // 闸门（FE-12）：与纠正共用同一道——两个表单不会同时在途。
+    if (inFlight.current) return;
+    inFlight.current = true;
     setAdd({ ...current, submitting: true, failure: null, errors: {} });
     try {
       await new AddItemUseCase(port).execute(objectId, current.draft);
@@ -201,6 +224,8 @@ export function useProfileEntryActions(
         return;
       }
       setAdd({ ...current, submitting: false, failure: failureFromError(error) });
+    } finally {
+      inFlight.current = false;
     }
   }, [add, objectId, onChanged, port]);
 
