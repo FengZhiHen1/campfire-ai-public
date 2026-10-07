@@ -25,7 +25,7 @@ import {
 
 import { DeviceFrame } from '../../../shared/ui/DeviceFrame';
 import type { ConsultPort } from '../application/ports';
-import { skillLabel } from '../domain/skills';
+import { skillLabel, EMERGENCY_SKILL_ID } from '../domain/skills';
 import { PROGRESS_TEXT } from '../domain/types';
 import { SkillPicker } from './SkillPicker';
 import { ConsultThreadProvider, CONSULT_MESSAGE_COMPONENTS } from './MessageParts/parts';
@@ -137,9 +137,15 @@ export function ChatWorkspace({ sessionId, initialMessages, consult }: ChatWorks
   const sending = useRef(false);
 
   const newestCardId = useMemo(() => newestActionCardId(thread.messages), [thread.messages]);
+  /*
+    思考行的两个呈现开关在这里取值后经上下文下发（原来由每个思考 part 各自订阅 store）。
+    取值语义与原实现逐字一致：subscribing 也算流式（首个 token 到达前已在运行）。
+  */
+  const reasoningStreaming = store.connection === 'streaming' || store.connection === 'subscribing';
+  const reasoningEmergency = store.activeSkills.includes(EMERGENCY_SKILL_ID);
   const threadContext = useMemo(
-    () => ({ submitAnswers: sendAnswers, newestActionCardId: newestCardId }),
-    [sendAnswers, newestCardId],
+    () => ({ submitAnswers: sendAnswers, newestActionCardId: newestCardId, reasoningStreaming, reasoningEmergency }),
+    [sendAnswers, newestCardId, reasoningStreaming, reasoningEmergency],
   );
 
   const activeSkillLabels = useMemo(
