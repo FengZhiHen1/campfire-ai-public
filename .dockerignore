@@ -48,12 +48,24 @@ reports
 .claude
 .vscode
 .idea
-data
 logs
 tmp
 coverage.xml
 .coverage
 htmlcov
+
+# --- 冷启动语料：只放行语料层 ---
+# `data/` 必须进镜像：生产编排没有挂载语料目录，容器内 `cli ingest` 只能读镜像里的
+# `/app/data`。原件层与运行时子目录继续排除——`data/originals/` 是许可受限件且不在
+# 版本库，进镜像等于把受限原件随产物流通；其余子目录是运行时残留。
+data/originals
+data/cache
+data/tmp
+data/redis
+data/falkordb
+data/minio
+data/*.dump
+data/*.sql
 
 # --- 本地基础设施的持久化目录（若存在 bind mount 残留）---
 **/pgdata
