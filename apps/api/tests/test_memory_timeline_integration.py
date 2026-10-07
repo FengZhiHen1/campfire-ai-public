@@ -151,8 +151,13 @@ async def memory_graph() -> AsyncIterator[MemoryGraph]:
         ),
         driver=driver,
     )
-    # 清一次账本再开始：本文件自己会清理，但同账号的行可能来自别的测试文件的历史
-    # 运行（账本是全局表），残留会让本文件的读断言莫名少条。
+    # setup 必须同时清图与账本，不能只靠 teardown：上一次运行若在 teardown 之前中断
+    # （进程被杀、超时、断电），本账号的图会带着旧 episode 留下来；而本文件的断言是
+    # 「区间内恰好这几条」，一条落在当前窗口里的旧 episode 就足以让它假红，且失败
+    # 指向产品而不是残留。账本是不分图的全局表，同理。
+    from .conftest import drop_falkordb_graph
+
+    await drop_falkordb_graph(driver, _ACCOUNT_A, _ACCOUNT_B)
     await _clear_ledger()
     try:
         yield graph
@@ -161,8 +166,6 @@ async def memory_graph() -> AsyncIterator[MemoryGraph]:
         # 「清空后重写」形状下会让字符串范围查询返回过期结果（2026-10-01 实测，
         # 见 conftest.drop_falkordb_graph 的说明）。驱动对象随图键删除一并作废——
         # 缓存里的 scoped 驱动指向已删除的图，但本 fixture 到此结束，无人再用。
-        from .conftest import drop_falkordb_graph
-
         await drop_falkordb_graph(graph.driver, _ACCOUNT_A, _ACCOUNT_B)
         # 删除账本也要清（2026-09-30）：读入口现在自己取账本，而账本是全局唯一
         # 约束（`episode_key`）且与图库无关——不清就会跨用例残留，让「刚写的两条」
