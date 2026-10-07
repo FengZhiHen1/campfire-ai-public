@@ -68,6 +68,9 @@ COPY apps/api/src apps/api/src
 COPY apps/api/migrations apps/api/migrations
 # skills 单独复制（见文件头第 2 条）
 COPY apps/api/skills apps/api/skills
+# 冷启动语料（`cli ingest` 的入参）：生产编排没有挂载，语料只能随镜像走，容器内路径
+# 是 /app/data。只含语料层——`.dockerignore` 已排除原件层（data/originals）与运行时子目录。
+COPY data data
 COPY infrastructure/docker/entrypoint-api.sh /usr/local/bin/entrypoint-api.sh
 
 RUN chmod +x /usr/local/bin/entrypoint-api.sh \

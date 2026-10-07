@@ -134,6 +134,17 @@ uv run python -m campfire.cli ingest data/cases/2026-05-25_1448_respecting-pace-
 按 `RAG策略` 第 7 节纪律：摄取应在**部署目标机器、同一镜像与同一 lockfile 的容器内**执行
 （分块与嵌入结果需可复现，换环境会漂移），凭据复用应用既有配置，不新增第二套。
 
+**语料随镜像发布（2026-10-07 起）**：`Dockerfile.api` 把语料层复制进镜像的 `/app/data`；
+生产编排没有挂载语料目录，因此摄取一律用容器内路径：
+
+```bash
+docker exec campfire-api python -m campfire.cli ingest /app/data/knowledge/autism-corpus/nhc-0-6-autism-screening-intervention.md
+docker exec campfire-api python -m campfire.cli ingest /app/data/cases/2026-05-25_1448_respecting-pace-asd --library case
+```
+
+镜像只含**语料层**（`README.md`、`knowledge/`、`cases/`）。`data/originals/`、`data/cache/`、
+`data/tmp/` 等原件与运行时目录由 `.dockerignore` 排除——原件不在版本库，也不得进生产产物。
+
 ### ⚠ 已入库 2 份的 `source_path` 变更（重要）
 
 摄取链的幂等键是 **`source_path` 全路径 + `doc_hash`**（`ingestion.py:361-369`）。
