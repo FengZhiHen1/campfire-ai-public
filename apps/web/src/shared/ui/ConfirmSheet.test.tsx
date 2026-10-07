@@ -3,8 +3,8 @@
  * 职责: 确认单的模态可达性回归——初始焦点、焦点陷阱、Esc 关闭、背景 inert、遮罩与 aria-modal
  * 数据来源:
  *   - docs/design/components.html: MUST — `.confirm-sheet` 的契约结构与 ::backdrop
- *   - .tmp/dev-orchestrator/20261002-001/tasks/T07.md: MUST — ② 的五条验收判据
- *   - .tmp/dev-orchestrator/20261002-001/feedback/T07-review-rulings.md: MUST — r2 的 inert 要求
+ *   - docs/证据/orchestrator-20261002-001/T07.md: MUST — ② 的五条验收判据
+ *   - docs/证据/orchestrator-20261002-001/T07-review-rulings.md: MUST — r2 的 inert 要求
  * 边界:
  *   - 依赖: shared/ui/ConfirmSheet、@testing-library/react
  *   - 被依赖: 无（回归守卫）

@@ -26,7 +26,7 @@
  *      这条同时是「为什么文档级不足」的实证：同一次注入下文档级 `scrollWidth` 读数**不变**。
  *   3. `tally.serverErrors` 为空：给同一个 `tallyResponses()` 喂一条**合成**的 500 记录，
  *      它必须落进 `serverErrors`。合成记录是刻意的——本机实测**找不到**任何由产品
- *      自然产生的 5xx（`tmp/T11/fuzz-5xx.cjs` 侦查 35 条畸形载荷，`HITS_5XX = []`），
+ *      自然产生的 5xx（`docs/证据/probes/fuzz-5xx.cjs` 侦查 35 条畸形载荷，`HITS_5XX = []`），
  *      而 5xx 判据又必须能红。合成记录证明的是**分类器**能把它认出来。
  *      **边界（必须随报告读）**：它不证明「真后端真能返回 5xx 并被 Playwright 采集到」，
  *      那一环由链路 7 的真实运行环境承担（`watchConsole` 的 `response` 监听器对

@@ -2,7 +2,7 @@
  * 模块: e2e/support/fixtures
  * 职责: 逐页数据夹具与内容断言清单——免后端截图的唯一数据来源
  * 数据来源:
- *   - .tmp/dev-orchestrator/20261002-001/tasks/T01.md: MUST — 裁决 D（page.route 固定 JSON、fail-closed、真实感中文文案）
+ *   - docs/证据/orchestrator-20261002-001/T01.md: MUST — 裁决 D（page.route 固定 JSON、fail-closed、真实感中文文案）
  *     与裁决 F（逐页内容断言的观察特征）
  *   - apps/web/src/shared/types/{consult,profile,library,memory}.ts: MUST — 夹具的线格式形状
  *   - apps/web/src/infrastructure/{http,consult}/*.ts: MUST — 各页实际发出的路径与方法

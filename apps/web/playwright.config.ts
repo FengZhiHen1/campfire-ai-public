@@ -2,7 +2,7 @@
  * 模块: playwright.config
  * 职责: 截图基建的 Playwright 配置——构建产物服务器、两视口 project 与产物落点
  * 数据来源:
- *   - .tmp/dev-orchestrator/20261002-001/tasks/T01.md: MUST — 裁决 A/B/E（配置位置、preview 端口与生命周期、
+ *   - docs/证据/orchestrator-20261002-001/T01.md: MUST — 裁决 A/B/E（配置位置、preview 端口与生命周期、
  *     两视口均 deviceScaleFactor 2、落点支持 --out 等价通道）
  *   - apps/web/vite.config.ts: MUST — 既有 dev/preview 与 vitest 配置（本文件与它不冲突）
  * 边界:

@@ -49,6 +49,9 @@ exclude = [
     "build",
     "dist",
     "node_modules",
+    # 历史证据快照（2026-10-06 由 tmp/ 迁入）：证物不是产品代码，
+    # 不参与 lint——改写它们以满足 import 排序等于篡改证据。
+    "docs/证据",
 ]
 line-length = 120
 

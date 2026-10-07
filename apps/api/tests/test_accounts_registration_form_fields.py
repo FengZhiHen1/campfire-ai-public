@@ -8,7 +8,7 @@
 `default_email_validator`（要求含 `@` 的正则）。因此「账号名字段有没有自己的校验器」
 就是「账号名是否被强制邮箱格式」的唯一分界点。
 
-判别性（已实测，见 .tmp/dev-orchestrator/20261002-001/results/T16.md 第 5 节）：
+判别性（已实测，见 docs/证据/orchestrator-20261002-001/T16.md 第 5 节）：
 把 `sign_up_form_fields()` 里新增的 email 字段删掉 ⇒ 本文件 11 个用例变红
 （默认邮箱校验器重新生效，`小安`/`xiaoshi`/`a@b` 全被拒）。
 """

@@ -23,7 +23,7 @@
 换一种合规的等法（例如改成服务端 block + 更长的客户端上界）就会假红。
 唯一保留的数值断言是**两者的大小关系**（客户端上界必须大于服务端 block），
 它不是实现细节而是机理本身——实测 `socket_timeout=1` + block=2 时客户端先超时、
-崩溃原样复现（`tmp/T17/probe_redis_semantics.py` 的 P3）。
+崩溃原样复现（`docs/证据/probes/probe_redis_semantics.py` 的 P3）。
 """
 
 from __future__ import annotations
@@ -181,7 +181,7 @@ def test_client_read_timeout_outlives_server_side_block() -> None:
     """客户端读超时必须**大于**服务端阻塞时长，否则空闲照崩。
 
     这不是实现细节的复述，而是机理本身：`read_response` 的超时分支抛异常，
-    而它只在「客户端上界先到」时触发。实测（`tmp/T17/probe_redis_semantics.py`）：
+    而它只在「客户端上界先到」时触发。实测（`docs/证据/probes/probe_redis_semantics.py`）：
     `socket_timeout=1` + 服务端 block=2 ⇒ 1.00 秒抛 `TimeoutError`（=修前的崩溃）；
     `socket_timeout=10` + 服务端 block=2 ⇒ 2.05 秒正常返回 `None`。
 

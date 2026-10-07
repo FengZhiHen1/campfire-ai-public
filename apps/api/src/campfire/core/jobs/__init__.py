@@ -169,7 +169,7 @@ class ResilientListQueueBroker(ListQueueBroker):
     T1/T2 的实测）。参数层面**没有**任何一个 `socket_timeout` 取值能同时满足
     「空闲不崩」与「卡死可发现」：`None` 会让黑洞变成无限等（实测 P5），有限值则
     空闲必崩——实测 `socket_timeout=15` 只是把崩溃周期从约 10 秒拉长到约 20 秒
-    （`tmp/T17/ablation_st15.err.log`：55 秒内仍崩 2 次 / 重启 2 次）。
+    （`docs/证据/probes/ablation_st15.err.log`：55 秒内仍崩 2 次 / 重启 2 次）。
     因此缺口只能在读取循环这一层补：把「等」改成有界的服务端阻塞，
     并把「客户端上界」只用作卡死检测。
 

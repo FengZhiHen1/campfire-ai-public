@@ -2,8 +2,8 @@
  * 模块: e2e/support/session
  * 职责: 免后端的登录态注入——用两个 cookie 让 supertokens 前端 SDK 判出「已登录」且零网络
  * 数据来源:
- *   - .tmp/dev-orchestrator/20261002-001/facts.md: MUST — §5（端到端已证 doesSessionExist=true 且 fetchCount=0）
- *   - .tmp/dev-orchestrator/20261002-001/tasks/T01.md: MUST — 裁决 C（两个 cookie、载荷形状与编码）
+ *   - docs/证据/orchestrator-20261002-001/facts.md: MUST — §5（端到端已证 doesSessionExist=true 且 fetchCount=0）
+ *   - docs/证据/orchestrator-20261002-001/T01.md: MUST — 裁决 C（两个 cookie、载荷形状与编码）
  * 边界:
  *   - 依赖: @playwright/test 的 Page/expect
  *   - 被依赖: e2e/shots.spec.ts

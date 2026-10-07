@@ -114,7 +114,7 @@ export interface TextDeltaEvent {
  * 形状见通用基座第 7.1 节。
  *
  * **2026-10-06 订正**：本行原写「该事件在 SDK 事件流里的键名未实测」——**已实测解除**：
- * T27 抓取的原始 SSE 帧里 `reasoning_delta` 出现 **2134 次**（`tmp/t27/step0-sse-frames.txt`），键名确证。
+ * T27 抓取的原始 SSE 帧里 `reasoning_delta` 出现 **2134 次**（`docs/证据/probes/step0-sse-frames.txt`），键名确证。
  * **⚠ 但「取不到时不产出」这条纪律仍然有效** —— 它是对**未来实现**的要求（不得用文本增量冒充），
  * 不是对现状的描述。
  */

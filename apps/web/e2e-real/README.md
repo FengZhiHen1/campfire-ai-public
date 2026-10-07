@@ -4,7 +4,7 @@
 > 后端、真 SuperTokens 登录、真模型（部分链路）。与 `apps/web/e2e/`（`pnpm shots`，mock 基建）
 > 是**两套互不影响的装置**。
 >
-> 本文件是**入库的**运行说明。此前「真栈怎么跑」只存在于 `tmp/T11/serve.py`（**`tmp/` 被
+> 本文件是**入库的**运行说明。此前「真栈怎么跑」只存在于 `docs/证据/probes/serve.py`（**`tmp/` 被
 > `.gitignore` 忽略**）⇒ 该知识不入库、下次会丢。本文取代它。
 
 ---
@@ -99,8 +99,9 @@ if __name__ == "__main__":
     uvicorn.run("campfire.main:app", host="127.0.0.1", port=8000, log_level="info")
 ```
 
-把这段存成 `tmp/serve.py`（`tmp/` 被忽略，属**本地临时装置**，不要指望它入库）再
-`uv run python tmp/serve.py` 即可。
+把这段存成 `.tmp/serve.py`（`.tmp/` 被忽略，属**本地临时装置**，不要指望它入库）再
+`uv run python .tmp/serve.py` 即可。
+（2026-10-06：落点由 `tmp/` 改为 `.tmp/`——两个临时目录已合并为 `.tmp/` 一个。）
 
 **⚠ 该规范化只对【本进程】有效，不会传给子进程**（实测：子进程继承的是原始环境块，仍会抛
 `InvalidURL`）——所以 uvicorn 必须由**这个**进程启动；不要用它去 `subprocess` 拉起别的服务
@@ -234,10 +235,10 @@ uv run python -m campfire.cli invite issue
 ⇒ **跑全部三组共需 5 枚**（下标 0～4）。
 
 > **⚠ 一处按代码推断的夹具陷阱（证据强度：中——由代码与 T11 记录推出，本包未单独执行验证）**：
-> `tmp/T11/run-real.ps1` 的 `CodeCount` **默认是 4**，而 `inviteCodeFor` 对池取模
+> `docs/证据/probes/run-real.ps1` 的 `CodeCount` **默认是 4**，而 `inviteCodeFor` 对池取模
 > （`pool[index % pool.length]`）⇒ 池只有 4 枚时，下标 **4 会回绕到下标 0**，而码 0 已被链路1
 > 用掉。⇒ 要跑 `@control` 请显式给足 5 枚（T11 报告记录其全量运行即「现签 5 枚」，与该推断一致），
-> 例如 `pwsh -File tmp/T11/run-real.ps1 -CodeCount 5`。
+> 例如 `pwsh -File docs/证据/probes/run-real.ps1 -CodeCount 5`。
 > **为什么值得写下来**：T11 的 R3 记录过一个真实踩坑——复用失效码时 supertokens 返回
 > **HTTP 200 + `{"status":"GENERAL_ERROR"}`**，于是「只看 HTTP 200」的断言**恒真**、注册静默
 > 失败，最终以别的现象（超时 180s）暴露。夹具已改为断言响应体 `status === 'OK'`（见
@@ -262,7 +263,7 @@ pnpm --filter @campfire/web exec playwright test \
 | 变量 | 含义 | 默认 |
 | --- | --- | --- |
 | `T10_BASE_URL` | 被测站点根（**5173**） | `http://localhost:5173` |
-| `T10_OUT` | 产物目录（JSON 证据 / trace / 截图 / `.playwright-real/`） | `<repo>/tmp/T10` |
+| `T10_OUT` | 产物目录（JSON 证据 / trace / 截图 / `.playwright-real/`） | `<repo>/.tmp/T10` |
 | `T10_INVITE_CODES` | **邀请码池**（逗号分隔，按下标分配） | 空 |
 | `T10_INVITE_CODE` | 单枚邀请码（池为空时的回退） | 空 |
 | `T10_ACCOUNT` | 指定账号 | 省略则按时间戳生成 `e2e-<stamp>@example.test` |
@@ -270,9 +271,9 @@ pnpm --filter @campfire/web exec playwright test \
 
 账号名**必须是邮箱格式**（见 `docs/TODO.md` 的 `PROD-01`）；口令 ≥8 字符、含小写字母与数字。
 
-**为什么要重定向 `T10_OUT`**：产物默认写 `tmp/T10`，而多轮运行写**同一个文件名**会
+**为什么要重定向 `T10_OUT`**：产物默认写 `.tmp/T10`，而多轮运行写**同一个文件名**会
 **同名覆盖**，后一轮盖掉前一轮 ⇒ 「两遍读数逐字相同」这类主张**不可独立复核**。要对比就分目录，
-例如 `T10_OUT=tmp/T11`（T11 就是这么做的）。
+例如 `T10_OUT=.tmp/T11`（T11 就是这么做的）。
 
 ### 可发现的标记
 

@@ -2,8 +2,8 @@
  * 模块: e2e/support/paths
  * 职责: 截图基建的固定常量——落点解析、页面 × 视口 × 图种矩阵与两处时间上界
  * 数据来源:
- *   - .tmp/dev-orchestrator/20261002-001/tasks/T01.md: MUST — 裁决 E（两视口、命名、--out 支持、落点 tmp/screenshots）
- *   - .tmp/dev-orchestrator/20261002-001/feedback/T01-rulings.md: MUST — 裁决 1 与其追加裁决
+ *   - docs/证据/orchestrator-20261002-001/T01.md: MUST — 裁决 E（两视口、命名、--out 支持、落点 tmp/screenshots）
+ *   - docs/证据/orchestrator-20261002-001/T01-rulings.md: MUST — 裁决 1 与其追加裁决
  *     （每条页面 × 视口 出两张图：视口图与 fullPage 图，命名 `<page>-<viewport>-full.png`）
  *   - docs/项目结构设计.md: MUST — 第 9 节（e2e 属工程设施，不被 src 引用）
  * 边界:
@@ -29,15 +29,20 @@ export const REPO_ROOT = resolve(WEB_ROOT, '..', '..');
 /**
  * 落点根目录。
  *
- * 默认 `tmp/screenshots`（相对仓库根，与任务包裁决 E 的字面一致，且随根 .gitignore 的 `tmp/` 被忽略）。
+ * 默认 `.tmp/screenshots`（相对仓库根；`.tmp/` 随根 `.gitignore` 被忽略，
+ * 且已被 `pyproject.toml` 的 ruff exclude 与 `.dockerignore` 排除）。
  * 可用环境变量 `SHOTS_OUT` 改写；相对路径按仓库根解析，绝对路径原样使用。
  * 为什么不提供 `--out` 命令行开关：`playwright test` 会拒绝未知选项，而它自己的同名选项
  * （`--output`）指的是测试产物目录、语义不同；环境变量是任务包允许的等价通道，且不会被
  * 与 Playwright 自带选项混用。
+ *
+ * 2026-10-06：原落点 `tmp/screenshots`（与 `.tmp/` 并列的**第二个**临时目录）。
+ * 该目录已按「只保留一个临时目录」的裁决整体清空，落点统一到 `.tmp/`——
+ * 不改这里会在下次跑 e2e 时**把 `tmp/` 重新建出来**，两目录的问题就回来了。
  */
 export const SHOTS_OUT_DIR: string = ((): string => {
   const configured = process.env.SHOTS_OUT;
-  if (configured === undefined || configured.trim() === '') return resolve(REPO_ROOT, 'tmp', 'screenshots');
+  if (configured === undefined || configured.trim() === '') return resolve(REPO_ROOT, '.tmp', 'screenshots');
   return resolve(REPO_ROOT, configured.trim());
 })();
 
@@ -186,7 +191,7 @@ export const SESSION_READY_TIMEOUT_MS = 5_000;
  * 三处若各写一个容差，就会出现「用例通过但汇总失败」这类错位——实测 20 张 full 图里
  * 12 张余量恰好为 0，任何口径差异都会立刻变成假红或漏报。
  *
- * 取值 2 的依据：沿用 `tmp/design-render/README.md` 第 19、40–44 行登记的同一现象与同一处置
+ * 取值 2 的依据：沿用 `docs/证据/design-render/README.md` 第 19、40–44 行登记的同一现象与同一处置
  * ——该仓渲染器实测「宽度 30/30 精确，高度 26/30 短 1–2px，成因未确定」，用 2px 容差吸收，
  * 并把「谁查清成因就把容差收紧到 1px」写进了 README。此处取同一值，不另立标准。
  */
