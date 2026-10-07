@@ -2,7 +2,7 @@
  * 模块: e2e/support/runid
  * 职责: 本次运行的批号（run id）——让「同一落点里混了两次运行的产物」变成可检测的
  * 数据来源:
- *   - .tmp/dev-orchestrator/20261002-001/feedback/T01-review-rulings.md: MUST — P2-3
+ *   - docs/证据/orchestrator-20261002-001/T01-review-rulings.md: MUST — P2-3
  *     「部分成功运行会在复用的落点留下旧 manifest + 新旧混合 PNG……要能发现混批」
  * 边界:
  *   - 依赖: node:fs、node:crypto（Node 内置）

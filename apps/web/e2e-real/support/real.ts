@@ -79,9 +79,13 @@ import { expect, type BrowserContext, type ConsoleMessage, type Page } from '@pl
  */
 const REPO_ROOT = resolve(fileURLToPath(new URL('.', import.meta.url)), '..', '..', '..', '..');
 
-/** 产物目录：只写仓库根的 tmp/T10（不碰 apps/web/dist）。 */
+/** 产物目录：只写仓库根的 `.tmp/T10`（不碰 apps/web/dist）。
+ *
+ * 2026-10-06：原落点 `tmp/T10`，该目录已按「只保留一个临时目录」的裁决整体清空，
+ * 落点统一到 `.tmp/`——不改这里会在下次跑真栈 e2e 时把 `tmp/` 重新建出来。
+ */
 export const OUT_DIR = process.env.T10_OUT?.trim() === undefined || process.env.T10_OUT?.trim() === ''
-  ? resolve(REPO_ROOT, 'tmp', 'T10')
+  ? resolve(REPO_ROOT, '.tmp', 'T10')
   : resolve(process.env.T10_OUT.trim());
 
 /** 被测站点根地址（Vite dev server，/api 被代理到真后端）。 */

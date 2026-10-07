@@ -7,7 +7,7 @@
 **没有** location，于是落到 SPA 的 `location /`、被 `try_files` 回成 `index.html`
 ⇒ **HTTP 200 + HTML**。**这比 404 更难辨认**：404 说明「没有这个端点」，而 200 看起来像
 「端点通了」，调用方会把一页 HTML 读成「深探针可用」。实测原文（修前/修后 `curl -i` 对照）
-见 `.tmp/dev-orchestrator/20261002-001/results/T25.md` 第 3 节。
+见 `docs/证据/orchestrator-20261002-001/T25.md` 第 3 节。
 
 ## ★ 数据源为什么不是「永不失败的检查」
 

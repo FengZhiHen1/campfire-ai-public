@@ -37,7 +37,7 @@ export default defineConfig({
     baseURL: BASE_URL,
     locale: 'zh-CN',
     timezoneId: 'Asia/Shanghai',
-    // 真实栈的调试价值高于产物整洁：失败时留 trace 与截图到 tmp/T10。
+    // 真实栈的调试价值高于产物整洁：失败时留 trace 与截图到 .tmp/T10。
     trace: 'retain-on-failure',
     screenshot: 'only-on-failure',
     video: 'off',

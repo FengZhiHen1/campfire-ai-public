@@ -2,7 +2,7 @@
  * 模块: e2e/support/fonts
  * 职责: 真实思源宋体的加载等待与 fail-loud 守卫（判据经可失败性实测选定）
  * 数据来源:
- *   - .tmp/dev-orchestrator/20261002-001/feedback/T01-rulings.md: MUST — 裁决 2
+ *   - docs/证据/orchestrator-20261002-001/T01-rulings.md: MUST — 裁决 2
  *     （放行字体两个 host 真实出网；截图前等字体就绪；字体未加载即让用例失败）
  *   - docs/design/tokens.css: MUST — `--font-display` 的第一顺位就是 "Noto Serif SC"
  *   - docs/design/DESIGN.md: MUST — 调性节「宋体标题承载读物的温度」
@@ -22,7 +22,7 @@ export const DISPLAY_FONT_FAMILY = 'Noto Serif SC';
 /**
  * 判据用的字号与字重。
  *
- * 与 `tmp/design-render/render.mjs` 采用同一组值（`500 28px`）：字重 500 与字号 28px
+ * 与 `docs/证据/design-render/render.mjs` 采用同一组值（`500 28px`）：字重 500 与字号 28px
  * 都取自契约的标题阶梯，因此这条判据问的是「标题字体在这个实际用法下可用吗」。
  */
 export const DISPLAY_FONT_WEIGHT = 500;
