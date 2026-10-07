@@ -101,7 +101,26 @@ export const FilmShellStyles: React.FC = () => (
      *
      * 为什么不用 overflow:hidden:保留 auto 提供裁剪框(裁掉移出屏幕区的内容),
      *   且不改变布局。本构造下 scrollTop 恒为 0,不会出现双重滚动。 */
-    .film-root .device-screen > * {
+    .film-root .device-screen > *:not(.film-chat) {
+      transform: translateY(calc(-1 * var(--film-scroll, 0px)));
+      will-change: transform;
+    }
+
+    /* ★★ 2026-10-07:对话页(ChatScreen)的滚动改挂在 **thread 的子元素** 上。
+     *
+     * 为什么:.film-chat 是 height:100% 的外壳,溢出发生在它内部的 .film-chat-thread
+     *   (那个节点自己 overflow-y:auto,且在 .film-chat 里是 flex:1、有确定高度)。
+     *   于是:
+     *     · 夹紧算的是 .device-screen 的 scrollHeight−clientHeight ⇒ 恒为 0;
+     *     · 位移又把整个 .film-chat(含页头与输入区)一起推走。
+     *   实测后果:S5 让行动卡在对话里出现后,卡片只露顶部约 170px、被输入区裁断,
+     *   且无论给多大的 scrollY 都不动(用户气泡始终停在原位)。
+     *   ⇒ 现在夹紧改用 .film-chat-thread(见 useFilmScroll),位移落在它的子元素上,
+     *     页头与输入区因此自然保持不动,**不再需要反向补偿**(故下面的补偿用
+     *     :has(.film-chat) 把对话页排除掉)。
+     *   范围:只有 S5 用 ChatScreen,故不影响 S6(S6 的 .film-chat-thread 高度是 auto,
+     *     夹紧会恒为 0 —— 所以那里必须继续走 .device-screen,不能一概而论)。 */
+    .film-root .film-chat .film-chat-thread > * {
       transform: translateY(calc(-1 * var(--film-scroll, 0px)));
       will-change: transform;
     }
@@ -117,9 +136,12 @@ export const FilmShellStyles: React.FC = () => (
      *
      * 修法:给它们加上与滚动量**等量反向**的位移,净位移归零 → 视觉上常驻原位。
      * --film-scroll 定义在外层盒上,CSS 变量会继承,因此这里读得到。
-     * 只补偿这两类元素;正文继续跟着滚动。 */
-    .film-root .device-screen .subpage-head,
-    .film-root .device-screen .tab-bar {
+     * 只补偿这两类元素;正文继续跟着滚动。
+     *
+     * ★ 对话页例外:那里位移不在 .device-screen 层(见上方说明),页头本来就不动;
+     *   若仍补偿,反而会把页头按 --film-scroll 推下去。用 :has() 排除。 */
+    .film-root .device-screen:not(:has(.film-chat)) .subpage-head,
+    .film-root .device-screen:not(:has(.film-chat)) .tab-bar {
       transform: translateY(var(--film-scroll, 0px));
     }
     .film-root .device-screen .subpage-head { z-index: 20; }
@@ -224,9 +246,20 @@ function useFilmScroll(scrollY: number): React.RefObject<HTMLDivElement | null> 
     const box = boxRef.current;
     if (box === null) return;
     let want = scrollY;
+    // ★★ 夹紧要量**真正的滚动容器**(2026-10-07):
+    //   对话页(ChatScreen)里溢出发生在 `.film-chat-thread`(它自己 overflow-y:auto,
+    //   且在 .film-chat 里是 flex:1、有确定高度),而 `.device-screen` 因为
+    //   `.film-chat{height:100%}` 根本不溢出 ⇒ 量它得到的 max 恒为 0,位移永远是 0。
+    //   实测后果:S5 的行动卡出现后只露顶部、无论给多大 scrollY 都不动。
+    //   注意只在 `.film-chat` 内换用 thread —— S6(ActionCardScreen)也有
+    //   `.film-chat-thread`,但那里它的高度是 auto(没有 flex 父级),夹紧会恒为 0,
+    //   必须继续走 `.device-screen`。一概而论会把 S6 的滚动改坏。
+    const thread = box.querySelector('.film-chat .film-chat-thread');
     const screen = box.querySelector('.device-screen');
-    if (screen instanceof HTMLElement) {
-      const max = Math.max(0, screen.scrollHeight - screen.clientHeight);
+    const scroller =
+      thread instanceof HTMLElement ? thread : screen instanceof HTMLElement ? screen : null;
+    if (scroller !== null) {
+      const max = Math.max(0, scroller.scrollHeight - scroller.clientHeight);
       want = Math.min(Math.max(0, scrollY), max);
     }
     box.style.setProperty('--film-scroll', `${String(want)}px`);

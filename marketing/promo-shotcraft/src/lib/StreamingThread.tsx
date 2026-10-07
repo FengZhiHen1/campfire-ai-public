@@ -108,7 +108,36 @@ export const AssistantMessage: React.FC<{
   reasoningLabel?: string;
   /** 标题(「篝火智答」) */
   caption?: string;
-}> = ({paragraphs, showReasoning = true, reasoningLabel, caption = '篝火智答'}) => {
+  /**
+   * 思考段的**真实文本**(产品里由 ReasoningDisclosure 渲染在折叠区内)。
+   *
+   * ★ 为什么开这个口子:影片此前把思考正文写死成「分析说明是中间状态,不作为结论或
+   *   依据。」—— 一个占位句,真实思考一个字都没演。而真实会话的思考段是**逐条过六层
+   *   闸门的推理**(数据库导出、3 段共 2 万余字),它正是 S5 右侧那句
+   *   「它不是先给结论,是按固定顺序过六层闸门」的实证。有数据却不演,
+   *   等于把全片最强的一句主张留在口头上。
+   *   不传时退回原占位句,保持向后兼容。
+   */
+  reasoningText?: string;
+  /** 思考文本开始输出的帧(相对本组件) */
+  reasoningStart?: number;
+  /** 思考文本每字帧数 */
+  reasoningFramesPerToken?: number;
+  /** 折叠区展开状态(帧驱动)。产品默认收起,展开是**使用者的一次动作** */
+  reasoningOpen?: boolean;
+  /** 折叠区尾注(默认是产品原句;节选时用来标注这是节选) */
+  reasoningHint?: string;
+}> = ({
+  paragraphs,
+  showReasoning = true,
+  reasoningLabel,
+  caption = '篝火智答',
+  reasoningText,
+  reasoningStart = 0,
+  reasoningFramesPerToken = 1.4,
+  reasoningOpen = false,
+  reasoningHint,
+}) => {
   const frame = useCurrentFrame();
   const firstStart = paragraphs[0]?.start ?? 0;
   const reasoningDone = frame > firstStart + 20;
@@ -118,7 +147,7 @@ export const AssistantMessage: React.FC<{
       <p className="meta message-caption">{caption}</p>
       <div className="msg-doc">
         {showReasoning ? (
-          <details className="reasoning-row" open={false}>
+          <details className="reasoning-row" open={reasoningOpen}>
             <summary>
               <span>
                 {reasoningLabel ?? (reasoningDone ? '分析说明 · 已结束' : '正在分析…')}
@@ -129,7 +158,22 @@ export const AssistantMessage: React.FC<{
               </span>
             </summary>
             <div className="process-body">
-              分析说明是中间状态，不作为结论或依据。
+              {reasoningText === undefined || reasoningText === '' ? (
+                '分析说明是中间状态，不作为结论或依据。'
+              ) : (
+                <>
+                  <StreamingLine
+                    text={reasoningText}
+                    start={reasoningStart}
+                    framesPerToken={reasoningFramesPerToken}
+                    size={15}
+                    cursor
+                  />
+                  <p className="hint">
+                    {reasoningHint ?? '分析说明是中间状态，不作为结论或依据。'}
+                  </p>
+                </>
+              )}
             </div>
           </details>
         ) : null}
