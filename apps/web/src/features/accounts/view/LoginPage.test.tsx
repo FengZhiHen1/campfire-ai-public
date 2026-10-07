@@ -30,17 +30,7 @@ import { LoginPage } from './LoginPage';
 import type { AuthPort } from '../application/ports';
 import { AuthError } from '../domain/authFailure';
 import { useSessionStore } from '../viewModel/sessionStore';
-
-/** 一个可外部决定何时完成/失败的挂起 Promise。 */
-function deferred<T>() {
-  let resolve!: (value: T) => void;
-  let reject!: (reason: unknown) => void;
-  const promise = new Promise<T>((res, rej) => {
-    resolve = res;
-    reject = rej;
-  });
-  return { promise, resolve, reject };
-}
+import { deferred } from '../../../test/deferred';
 
 /** 构造一个可控的认证端口替身。 */
 function port(overrides: Partial<AuthPort> = {}): AuthPort {
