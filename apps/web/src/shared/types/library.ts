@@ -95,19 +95,27 @@ export interface CaseCard {
   parent_category?: string;
 }
 
-/** 展开内容；随列表一并返回，不另发请求。形状见资料库面契约第 4 节。 */
+/**
+ * 条目展开内容。两项只在请求带 `expand=<item_id>` 且命中该条目时非空——
+ * 普通列表请求里恒为 `null`（契约第 4 节：展开内容随列表一并返回，页面无详情页）。
+ */
 export interface LibraryItemExpansion {
-  narrative: Narrative;
-  cards: CaseCard[];
+  narrative: Narrative | null;
+  cards: CaseCard[] | null;
 }
 
-/** 带展开内容的条目（expand 参数命中时）。形状见资料库面契约第 4 节。 */
-export type ExpandedLibraryItem = LibraryItem & LibraryItemExpansion;
+/**
+ * 列表里的条目：基础字段恒在场，展开内容按 `expand` 是否命中可空。
+ *
+ * 不叫 Expanded…：列表里绝大多数条目并未展开，用「已展开」命名会让读类型的人
+ * 以为 narrative/cards 必填，于是把守卫写成判 undefined——2026-10-07 生产因此崩过。
+ */
+export type LibraryListItem = LibraryItem & LibraryItemExpansion;
 
 /** 浏览与检索响应。形状见资料库面契约第 3 节；空 query 即全量浏览流。 */
 export interface ListLibraryItemsResponse {
   library: LibraryKind;
-  items: ExpandedLibraryItem[];
+  items: LibraryListItem[];
   next_cursor: string | null;
 }
 

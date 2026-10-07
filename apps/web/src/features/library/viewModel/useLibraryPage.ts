@@ -14,7 +14,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-import type { ExpandedLibraryItem, LibraryKind } from '../../../shared/types/library';
+import type { LibraryListItem, LibraryKind } from '../../../shared/types/library';
 import type { LibraryPort } from '../application/ports';
 import { ResolveDeepLinkUseCase, SearchLibraryUseCase } from '../application/usecases';
 import { type DeepLinkOutcome, parseDeepLink } from '../domain/deepLink';
@@ -31,7 +31,7 @@ export interface LibraryPageState {
   library: LibraryKind;
   /** 输入框里的词（立即回显）。 */
   query: string;
-  items: ExpandedLibraryItem[];
+  items: LibraryListItem[];
   status: LibraryStatus;
   failure: LibraryFailure | null;
   loadingMore: boolean;
@@ -68,7 +68,7 @@ export function useLibraryPage(port: LibraryPort, search: string): LibraryPageSt
   const [initialRequest] = useState(() => parseDeepLink(search));
   const [library, setLibraryState] = useState<LibraryKind>(initialRequest.section ?? 'case');
   const [query, setQueryState] = useState('');
-  const [items, setItems] = useState<ExpandedLibraryItem[]>([]);
+  const [items, setItems] = useState<LibraryListItem[]>([]);
   const [cursor, setCursor] = useState<string | null>(null);
   const [status, setStatus] = useState<LibraryStatus>('loading');
   const [failure, setFailure] = useState<LibraryFailure | null>(null);

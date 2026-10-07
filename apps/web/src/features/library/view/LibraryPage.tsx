@@ -15,7 +15,7 @@
 
 import { Link, useLocation } from 'react-router';
 
-import type { ExpandedLibraryItem, LibraryItem } from '../../../shared/types/library';
+import type { LibraryListItem, LibraryItem } from '../../../shared/types/library';
 import { AppShell } from '../../../shared/ui/AppShell';
 import { ListTail } from '../../../shared/ui/ListTail';
 import { EmptyState, ErrorCard, Skeleton } from '../../../shared/ui/StatePrimitives';
@@ -214,7 +214,7 @@ export function LibraryPage({ port, searchOverride }: LibraryPageProps) {
 
 /** 结果行 props。 */
 interface ItemRowProps {
-  item: ExpandedLibraryItem;
+  item: LibraryListItem;
   expanded: boolean;
   focused: boolean;
   onToggle(): void;
@@ -234,7 +234,7 @@ function ItemRow({ item, expanded, focused, onToggle }: ItemRowProps) {
       <button className={styles.cardButton} onClick={onToggle} type="button">
         <ItemRowBody expanded={expanded} item={item} onToggle={onToggle} />
       </button>
-      {expanded && item.narrative !== undefined && (
+      {expanded && item.narrative !== null && (
         <div className="gc-body">
           {item.narrative.sections.map((section) => (
             <section key={section.key}>
@@ -244,7 +244,7 @@ function ItemRow({ item, expanded, focused, onToggle }: ItemRowProps) {
           ))}
         </div>
       )}
-      {expanded && item.cards !== undefined && item.cards.length > 0 && (
+      {expanded && item.cards !== null && item.cards.length > 0 && (
         <div className="gc-body">
           <h3 className={styles.sectionHeading}>{COPY.cardsHeading}</h3>
           {item.cards.map((card) => (
