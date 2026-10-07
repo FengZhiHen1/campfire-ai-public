@@ -52,6 +52,10 @@ exclude = [
     # 历史证据快照（2026-10-06 由 tmp/ 迁入）：证物不是产品代码，
     # 不参与 lint——改写它们以满足 import 排序等于篡改证据。
     "docs/证据",
+    # 宣传片与视频制作工具（marketing/）：不是产品代码——apps/、scripts/、
+    # infrastructure/ 对它零引用（已核）。其中的帧分析脚本属一次性探针，
+    # 纳入 lint 会让每新增一个分析脚本都把后端 CI 判红（2026-10-07 实测 42 处）。
+    "marketing",
 ]
 line-length = 120
 
