@@ -42,6 +42,10 @@ export interface SearchRanking {
  * 共有字段见资料库面契约第 3.1 节；案例侧的六项必带字段同样见该节
  * （authorization、source_type、evidence_level、review_status、interview_at、
  * makes_claims_high_risk）——它们与 inferred_fields 只在 library 为 case 时出现。
+ *
+ * 案例侧这七项写成可空而不是仅可选：后端逐字段透传，资料条目的响应里键是在的、
+ * 值是 null（不是缺键）。只判 undefined 的守卫会被 null 全部放行——
+ * 2026-10-07 资料行的元信息行因此拼出「访谈 null」（见 domain/labels）。
  */
 export interface LibraryItem {
   item_id: string;
@@ -53,13 +57,13 @@ export interface LibraryItem {
   status: LibraryItemStatus;
   locator: string;
   ranking: SearchRanking;
-  authorization?: string;
-  source_type?: string;
-  evidence_level?: EvidenceLevel;
-  review_status?: ReviewStatus;
-  interview_at?: string;
-  makes_claims_high_risk?: boolean;
-  inferred_fields?: string[];
+  authorization?: string | null;
+  source_type?: string | null;
+  evidence_level?: EvidenceLevel | null;
+  review_status?: ReviewStatus | null;
+  interview_at?: string | null;
+  makes_claims_high_risk?: boolean | null;
+  inferred_fields?: string[] | null;
 }
 
 /** 叙事小节（条目展开时随列表一并返回）。形状见资料库面契约第 4 节。 */
