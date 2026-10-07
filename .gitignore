@@ -88,3 +88,7 @@ _tmp_test/
 *.crt
 # 视频渲染产物（2.5GB：54 个 mp4 + 7808 张 png 帧），只留工程不入库
 marketing/promo-shotcraft/out/
+# 渲染校验的临时转储（`.tmp` 前缀的文件，如 ffmpeg 逐帧信号统计，单个 4MB 量级）。
+# 上面那条 `.tmp/` 只命中同名目录，命中不了 `.tmp` 前缀的文件——它们会以未跟踪文件的
+# 形式留在工作区，被 `git add .` 收进提交。生成方在 marketing/promo-shotcraft/ 下。
+marketing/promo-shotcraft/.tmp*
