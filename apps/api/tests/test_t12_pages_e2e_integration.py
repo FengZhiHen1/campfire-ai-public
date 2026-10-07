@@ -292,16 +292,26 @@ async def test_pages_flow_from_empty_profile_to_library(client: httpx.AsyncClien
     # ── 案例库浏览页：两库分开取数 ──────────────────────────────────────────
     response = await client.get("/library/items", params={"library": "case", "query": ""})
     assert response.status_code == 200, response.text
-    assert response.json()["library"] == "case"
-    # 本泳道库是干净库：案例分区没有条目，因此这里断言的是「空集也必须是 200 空数组」
-    # （空不是失败，契约第 6 节）——不是断言案例链路未实现（`campfire_case_item`
-    # 与 case 摄取在 T03 已落地）。
-    assert response.json()["items"] == [], response.text
+    body = response.json()
+    assert body["library"] == "case"
+    assert isinstance(body["items"], list)
+    # 两库分开取数：案例分区不得混入知识库条目（契约第 2 节）。
+    assert {item["library"] for item in body["items"]} <= {"case"}
+    if not body["items"]:
+        # 空库环境（CI 的全新库、尚未执行 EVID-F 摄取）：空结果是 200 空数组且无游标。
+        assert body["next_cursor"] is None
+    else:
+        # 已有语料的机器（本机 data/cases/ 已入库 4 条）：锁载荷形状，不断言「空」。
+        # 案例分区的内容取决于本机是否摄取过语料，把它当不变式会让用例随环境状态假红。
+        assert all({"item_id", "title", "library"} <= set(item) for item in body["items"])
+        assert body["next_cursor"] is None or isinstance(body["next_cursor"], str)
 
     response = await client.get("/library/items", params={"library": "knowledge", "query": ""})
     assert response.status_code == 200, response.text
-    assert response.json()["library"] == "knowledge"
-    assert isinstance(response.json()["items"], list)
+    body = response.json()
+    assert body["library"] == "knowledge"
+    assert isinstance(body["items"], list)
+    assert {item["library"] for item in body["items"]} <= {"knowledge"}
 
     # 未知库别 → 422（页面的 chip 只发两个合法取值，服务端亦兜底）。
     assert (await client.get("/library/items", params={"library": "bogus"})).status_code == 422
