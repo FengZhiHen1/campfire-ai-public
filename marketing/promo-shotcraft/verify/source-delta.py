@@ -86,7 +86,16 @@ INTENDED: dict[str, str] = {
     "marketing/promo-shotcraft/src/sfx.ts":
         "S7 拆两幕后重钉 SFX:12 条(含记忆幕 5 条)",
     "marketing/promo-shotcraft/src/fixtures/ports.ts":
-        "新增 makeMemoryPort(),读取 memory.generated.ts 的演示种子",
+        "新增 makeMemoryPort(),读取 memory.generated.ts 的演示种子;并跟随产品的库类型"
+        "改名与可空化(LibraryListItem)",
+    # ── v18(节奏压缩 + S5 补真实内容)──
+    "marketing/promo-shotcraft/src/timeline.ts":
+        "v18 压缩段长:175s → 126s(S4 32→18、S5 40→26、S6 36→20、S7 26→22、S8 13→12)",
+    "marketing/promo-shotcraft/src/lib/StreamingThread.tsx":
+        "v18 给思考区开出口子(reasoningText/Start/FramesPerToken/Open/Hint),默认行为不变",
+    "marketing/promo-shotcraft/src/lib/DeviceStage.tsx":
+        "v18 修对话页滚不动:夹紧与位移从 .device-screen 改挂 .film-chat-thread"
+        "(仅对话页),反向补偿用 :has() 排除",
     "marketing/promo-shotcraft/src/fixtures/memory.generated.ts":
         "新增:记忆幕演示种子数据(由 verify/memory-episodes.py export 走产品读路径导出)",
     # ── 以下 9 个是「**闭包新增**,内容未改」,不是源码改动 ──────────
@@ -114,6 +123,26 @@ INTENDED: dict[str, str] = {
         "闭包新增(内容未改):S7 记忆幕的 viewModel",
     "apps/web/src/shared/types/memory.ts":
         "闭包新增(内容未改):记忆领域共享类型",
+    # ── 产品侧改动(用户提交),v18 重渲后已并入影片的 import 闭包 ──────
+    #    ★ 这些**不是我这轮改的**:它们是用户在同一时间段提交的产品修复
+    #      (库列表展开内容可空、元信息行按线格式处理 null、档案动作项等)。
+    #      之所以要登记:它们都在影片的 import 闭包内,影片的画面**已经**反映它们;
+    #      不登记的话,source-delta 会把「产品正常前进」误报成「重渲引入了非预期改动」。
+    #      反过来这也说明:基线是 v16,而产品已经往前走了两版 —— 见文件头的能力边界。
+    "apps/web/src/features/library/application/usecases.ts":
+        "产品改动(用户提交),在 import 闭包内",
+    "apps/web/src/features/library/domain/labels.ts":
+        "产品改动(用户提交),在 import 闭包内",
+    "apps/web/src/features/library/view/LibraryPage.tsx":
+        "产品改动(用户提交),在 import 闭包内",
+    "apps/web/src/features/library/viewModel/useLibraryPage.ts":
+        "产品改动(用户提交),在 import 闭包内",
+    "apps/web/src/shared/types/library.ts":
+        "产品改动(用户提交):narrative/cards 改可空 + ExpandedLibraryItem 改名 LibraryListItem",
+    "apps/web/src/features/profile/viewModel/useProfileEntryActions.ts":
+        "产品改动(用户提交),在 import 闭包内",
+    "apps/web/src/features/profile/viewModel/useProfileObjectActions.ts":
+        "产品改动(用户提交),在 import 闭包内",
 }
 
 

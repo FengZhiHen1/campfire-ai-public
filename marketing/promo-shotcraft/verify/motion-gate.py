@@ -109,6 +109,31 @@ if not shots:
     raise SystemExit("could not parse SHOTS from timeline.ts -- refusing to guess")
 total = max(a + d for a, d in shots.values())
 
+# ★★ 声明与成片是否同一个版本(2026-10-07 加)——
+#   events.json 里的 frame 是**时间轴上的绝对帧**。段长一变(v18 把 175s 压到 126s,
+#   S5 从 f1500–2699 挪到 f1080–1859),这份声明就整体失锚:①③④ 会拿**描述旧版本**的
+#   声明去量**新版本**的画面,于是报出「最大间隔 270 帧」这类结论 —— 那是版本错配,
+#   不是画面的性质。本项目的纪律是「不留静默失效的检查」,所以这里做成机械守卫:
+#   声明必须自报它锚定的时间轴总帧数,对不上就把 ①③④ 标成不可用。
+decl_frames = decl.get("timelineFrames")
+if decl_frames is None:
+    DECL_STALE = False
+    DECL_STALE_MSG = (
+        "  ⚠ 声明未标注 timelineFrames ⇒ **无法判断它是否与成片同版本**。"
+        "①③④ 的结论请自行确认声明来源后再读。"
+    )
+elif int(decl_frames) != total:
+    DECL_STALE = True
+    DECL_STALE_MSG = (
+        f"  ✗✗ 声明失锚:events.json 自报锚定 {int(decl_frames)} 帧的时间轴,"
+        f"而当前时间轴是 {total} 帧 ⇒ **①③④ 不可用**(拿旧声明量新画面)。\n"
+        "      ②(实测冻结)独立于声明,不受影响,仍有效。\n"
+        "      修法:按当前时间轴重新生成 events.json,或先声明它作废。"
+    )
+else:
+    DECL_STALE = False
+    DECL_STALE_MSG = None
+
 
 def shot_of(f: int) -> str:
     for s, (a, d) in shots.items():
@@ -205,11 +230,15 @@ lines = [
     "              为什么要全分辨率:320x180 会把「逐字落位」的单帧事件平均掉,",
     "              实测会把 v17 的 S5 误报成连续静止 23.70s(全片静止率 77.1%)。",
     f"  声明侧    : {EVENTS}  ({len(events)} 事件 / {len(holds)} hold)",
+    *([] if DECL_STALE_MSG is None else ["", DECL_STALE_MSG]),
     "",
-    f"  ① 声明的覆盖(相邻事件间隔上限 {max_gap} 帧 = {max_gap / FPS:.1f}s)",
+    f"  ① 声明的覆盖(相邻事件间隔上限 {max_gap} 帧 = {max_gap / FPS:.1f}s)"
+    + ("  ← 本版不可用(声明失锚)" if DECL_STALE else ""),
     f"     最大间隔 {worst_gap} 帧  f{gap_a} -> f{gap_b}  ({shot_of(gap_a)})",
 ]
-if worst_gap <= max_gap:
+if DECL_STALE:
+    lines.append("     -- 结论作废:声明锚在别的时间轴上,这个间隔不是本版的死段")
+elif worst_gap <= max_gap:
     lines.append("     ✓ 声明本身无死段")
 else:
     lines.append(f"     ✗ 超过上限 —— 声明里就有「什么都没发生」的区间")
