@@ -17,6 +17,7 @@ import subprocess
 from pathlib import Path
 
 import numpy as np
+from _timeline import RANGES
 
 A = "marketing/promo-shotcraft/out/promo-v16.mp4"
 B = "marketing/promo-shotcraft/out/promo-v16-superseded.mp4"
@@ -36,9 +37,8 @@ N = W * H
 #   0.05 那个旧门槛比噪声底还低,必然大量误报。
 THRESH = 0.15
 
-SEGS = [("S1", 0, 120), ("S2", 120, 300), ("S3", 300, 540), ("S4", 540, 1500),
-        ("S5", 1500, 2700), ("S6", 2700, 3780), ("S7", 3780, 4560),
-        ("S8", 4560, 4950), ("S9", 4950, 5250)]
+# 镜头区间真源(见 _timeline.py)
+SEGS = RANGES
 EXPECT = {"S4": "预期(逐字落位)", "S8": "预期(来源行补字段)"}
 
 

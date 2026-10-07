@@ -9,6 +9,7 @@
 import io
 import re
 from pathlib import Path
+from _timeline import RANGES
 
 ROOT = Path("marketing/promo-shotcraft")
 MOTION = ROOT / "out" / "qa4" / "motion-v16.txt"
@@ -24,11 +25,8 @@ for i, line in enumerate(io.open(MOTION, encoding="utf-8", errors="ignore")):
         vals[i] = float(m.group(1))
 
 frames = sorted(vals)
-SHOTS = [("S1", 0, 120), ("S2", 120, 300), ("S3", 300, 540), ("S4", 540, 1500),
-         ("S5", 1500, 2700), ("S6", 2700, 3780), ("S7", 3780, 4560),
-         ("S8", 4560, 4950), ("S9", 4950, 5250)]
-
-
+# 镜头区间真源(见 _timeline.py)
+SHOTS = RANGES
 def shot_of(f: int) -> str:
     for n, a, b in SHOTS:
         if a <= f < b:

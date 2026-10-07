@@ -10,6 +10,8 @@ import re
 import sys
 from pathlib import Path
 
+from _timeline import TOTAL as TL_TOTAL  # 时间轴唯一真源;不再写死 5250
+
 ROOT = Path("marketing/promo-shotcraft")
 DOC = ROOT / "DELIVERY.md"
 OUT = Path(".tmp/doc-consistency.txt")
@@ -73,7 +75,7 @@ for fname in _film_names:
 tl = (ROOT / "src" / "timeline.ts").read_text(encoding="utf-8")
 durs = [int(m.group(1)) for m in re.finditer(r"duration: (\d+)", tl)]
 total = sum(durs)
-check("九段合计 = 5250 帧", total == 5250, f"实际 {total}")
+check(f"九段合计 = 时间轴 TOTAL({TL_TOTAL} 帧,自洽)", total == TL_TOTAL, f"实际 {total}")
 
 # ── 文档里各段时长是否与 timeline 一致 ──────────────────────────
 shots = {m.group(1): int(m.group(3)) // 30

@@ -14,6 +14,13 @@ from pathlib import Path
 
 import numpy as np
 
+from _timeline import RANGES
+
+# ★★ 镜头区间不再写死(2026-10-07):此前这里硬编 `("S4", 540, 1500)` 等 6 段,
+#    timeline.ts 的段长一变,它们会**静默量错段**。现在从真源派生,只挑设备镜头:
+#    S1/S2 画面里没有设备,S9 是纯品牌收尾。
+_DEVICE = ("S3", "S4", "S5", "S6", "S7", "S8")
+
 # ★★ 默认路径必须是**真实存在**的文件。独立复核 P1 指出:
 #    此前默认 `out/promo-v16-new.mp4`(某个临时渲染名,早已不存在),
 #    而 ACCEPTANCE.md 把它列为「可复跑门禁」且不带参数 ⇒ 逐字照跑会得到
@@ -39,8 +46,7 @@ W, H = 1920, 1080
 X0, X1 = 560, 720
 CW = X1 - X0
 
-SHOTS = [("S3", 300, 540), ("S4", 540, 1500), ("S5", 1500, 2700),
-         ("S6", 2700, 3780), ("S7", 3780, 4560), ("S8", 4560, 4950)]
+SHOTS = [(sid, a, b) for sid, a, b in RANGES if sid in _DEVICE]
 
 # 逐帧输出灰度窄条
 proc = subprocess.Popen(

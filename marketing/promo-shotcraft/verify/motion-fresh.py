@@ -16,14 +16,13 @@ import subprocess
 import sys
 from pathlib import Path
 
-MP4 = sys.argv[1] if len(sys.argv) > 1 else "marketing/promo-shotcraft/out/promo-v16.mp4"
+from _timeline import FPS, RANGES as SHOTS  # 镜头区间与 FPS 的唯一真源(不再各写一份)
+
+_DEFAULT = "marketing/promo-shotcraft/out/promo-v17.mp4"
+MP4 = sys.argv[1] if len(sys.argv) > 1 else _DEFAULT
 OUT = Path(sys.argv[2]) if len(sys.argv) > 2 else Path(".tmp/motion-fresh.txt")
 
-SHOTS = [("S1", 0, 120), ("S2", 120, 300), ("S3", 300, 540), ("S4", 540, 1500),
-         ("S5", 1500, 2700), ("S6", 2700, 3780), ("S7", 3780, 4560),
-         ("S8", 4560, 4950), ("S9", 4950, 5250)]
 THRESH, MIN_RUN = 0.35, 30
-FPS = 30
 
 
 def measure(mp4: str) -> list[float]:

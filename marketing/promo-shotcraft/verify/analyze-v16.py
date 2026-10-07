@@ -1,8 +1,9 @@
 import io, re
 from pathlib import Path
+from _timeline import RANGES
 TXT = Path("marketing/promo-shotcraft/out/qa4/motion-v16.txt")
-SHOTS = [("S1",0,120),("S2",120,300),("S3",300,540),("S4",540,1500),("S5",1500,2700),
-         ("S6",2700,3780),("S7",3780,4560),("S8",4560,4950),("S9",4950,5250)]
+# 镜头区间真源(见 _timeline.py)
+SHOTS = RANGES
 THRESH, MIN_RUN = 0.35, 30
 vals = {}
 for i, line in enumerate(io.open(TXT, encoding="utf-8", errors="ignore")):

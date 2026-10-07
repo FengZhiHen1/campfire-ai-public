@@ -25,16 +25,14 @@ import subprocess
 from pathlib import Path
 
 import numpy as np
+from _timeline import RANGES
 
 ROOT = Path("marketing/promo-shotcraft")
 OUT = Path(".tmp/encoder-noise.txt")
 W, H = 320, 180
 N = W * H
-SEGS = [("S1", 0, 120), ("S2", 120, 300), ("S3", 300, 540), ("S4", 540, 1500),
-        ("S5", 1500, 2700), ("S6", 2700, 3780), ("S7", 3780, 4560),
-        ("S8", 4560, 4950), ("S9", 4950, 5250)]
-
-
+# 镜头区间真源(见 _timeline.py)
+SEGS = RANGES
 def frames(path: Path):
     p = subprocess.Popen(
         ["ffmpeg", "-v", "error", "-i", str(path),

@@ -18,15 +18,14 @@ import subprocess
 from pathlib import Path
 
 import numpy as np
+from _timeline import TOTAL
 
 FILM = "marketing/promo-shotcraft/out/promo-v16-nobgm.mp4"
 OUT = Path(".tmp/av-sync.txt")
 FPS = 30
 W, H = 320, 180
 N = W * H
-TOTAL = 5250
-
-
+# 时间轴真源(见 _timeline.py)
 def audio_rms() -> np.ndarray:
     """逐帧 RMS(单声道,16-bit)。"""
     r = subprocess.run(

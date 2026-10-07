@@ -5,16 +5,15 @@
 """
 import subprocess
 from pathlib import Path
+from _timeline import RANGES
 
 MP4 = "marketing/promo-shotcraft/out/promo-v16.mp4"
 OUT = Path(".tmp/tonal.txt")
 W = Path("marketing/promo-shotcraft/out/tonal")
 W.mkdir(parents=True, exist_ok=True)
 
-SHOTS = [("S1", 0, 120), ("S2", 120, 300), ("S3", 300, 540), ("S4", 540, 1500),
-         ("S5", 1500, 2700), ("S6", 2700, 3780), ("S7", 3780, 4560),
-         ("S8", 4560, 4950), ("S9", 4950, 5250)]
-
+# 镜头区间真源(见 _timeline.py)
+SHOTS = RANGES
 lines = [
     "=" * 74,
     "全片明暗分布（逐段，10 帧采样）",

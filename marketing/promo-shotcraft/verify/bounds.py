@@ -9,13 +9,15 @@ import subprocess
 from pathlib import Path
 
 from PIL import Image, ImageStat
+from _timeline import RANGES
 
 MP4 = "marketing/promo-shotcraft/out/promo-v16.mp4"
 W = Path("marketing/promo-shotcraft/out/bounds")
 W.mkdir(parents=True, exist_ok=True)
 OUT = Path(".tmp/bounds.txt")
 
-BOUNDS = [120, 300, 540, 1500, 2700, 3780, 4560, 4950]
+# 段边界真源(见 _timeline.py):各段起点(不含片尾)
+BOUNDS = [frm for _, frm, _ in RANGES][1:]
 SHOTS = ["S1", "S2", "S3", "S4", "S5", "S6", "S7", "S8", "S9"]
 
 

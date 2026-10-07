@@ -18,13 +18,14 @@ import subprocess
 from pathlib import Path
 
 import numpy as np
+from _timeline import FPS, TOTAL
 
 ROOT = Path("marketing/promo-shotcraft")
 SFX = (ROOT / "src" / "sfx.ts").read_text(encoding="utf-8")
 TL = (ROOT / "src" / "timeline.ts").read_text(encoding="utf-8")
 FILM = str(ROOT / "out" / "promo-v16-nobgm.mp4")
 OUT = Path(".tmp/cue-audio.txt")
-FPS, TOTAL = 30, 5250
+# 时间轴真源(见 _timeline.py)
 
 shots = {}
 for m in re.finditer(r"\{id: '(S\d)', from: (\d+), duration: (\d+)", TL):

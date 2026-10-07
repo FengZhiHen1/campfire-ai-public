@@ -12,6 +12,7 @@ import subprocess
 from pathlib import Path
 
 from PIL import Image, ImageDraw
+from _timeline import TOTAL, RANGES
 
 FILM = "marketing/promo-shotcraft/out/promo-v16.mp4"
 W = Path("marketing/promo-shotcraft/out/contact")
@@ -19,7 +20,7 @@ W.mkdir(parents=True, exist_ok=True)
 OUT = Path(".tmp/contact-sheet.txt")
 
 STEP = 60          # 每 2 秒一帧
-TOTAL = 5250
+# 时间轴真源(见 _timeline.py)
 COLS, ROWS = 8, 11  # 88 帧
 TW, TH = 240, 135   # 每格缩略图尺寸
 
@@ -39,10 +40,8 @@ for f in frames:
 LABEL = 16
 sheet = Image.new("RGB", (COLS * TW, ROWS * (TH + LABEL)), (250, 246, 240))
 d = ImageDraw.Draw(sheet)
-SHOTS = [("S1", 0), ("S2", 120), ("S3", 300), ("S4", 540), ("S5", 1500),
-         ("S6", 2700), ("S7", 3780), ("S8", 4560), ("S9", 4950)]
-
-
+# 镜头区间真源(见 _timeline.py)
+SHOTS = RANGES
 def shot_of(f: int) -> str:
     cur = "?"
     for n, a in SHOTS:

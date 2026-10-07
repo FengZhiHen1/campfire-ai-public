@@ -11,6 +11,7 @@ import subprocess
 from pathlib import Path
 
 import numpy as np
+from _timeline import RANGES
 
 FILM = "marketing/promo-shotcraft/out/promo-v16.mp4"
 OUT = Path(".tmp/invisible-tail.txt")
@@ -18,10 +19,8 @@ W, H = 320, 180
 N = W * H
 FPS = 30
 
-SHOTS = [("S1", 0, 120), ("S2", 120, 300), ("S3", 300, 540), ("S4", 540, 1500),
-         ("S5", 1500, 2700), ("S6", 2700, 3780), ("S7", 3780, 4560),
-         ("S8", 4560, 4950), ("S9", 4950, 5250)]
-
+# 镜头区间真源(见 _timeline.py)
+SHOTS = RANGES
 p = subprocess.Popen(
     ["ffmpeg", "-v", "error", "-i", FILM, "-vf", f"scale={W}:{H},format=gray",
      "-f", "rawvideo", "-"],
