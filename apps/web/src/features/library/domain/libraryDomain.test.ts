@@ -55,6 +55,21 @@ describe('资料库措辞', () => {
     expect(parts).toEqual(['来源：某机构公开材料']);
   });
 
+  it('资料条目拿到的是 null（不是缺键）时，元信息行不出现空段，也不出现「访谈 null」', () => {
+    // 后端逐字段透传：资料侧这六项在响应里是 null。只判 undefined 的守卫被 null
+    // 全部放行，元信息行会拼成「来源：某机构公开材料 ·  ·  ·  ·  · 访谈 null」。
+    const parts = itemMetaParts({
+      source: '某机构公开材料',
+      source_type: null,
+      evidence_level: null,
+      review_status: null,
+      authorization: null,
+      interview_at: null,
+    });
+    expect(parts).toEqual(['来源：某机构公开材料']);
+    expect(parts.join(' · ')).toBe('来源：某机构公开材料');
+  });
+
   it('元信息行含六项必带字段与授权', () => {
     const parts = itemMetaParts({
       source: '某机构公开材料',
