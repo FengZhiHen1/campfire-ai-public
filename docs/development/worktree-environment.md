@@ -1,7 +1,8 @@
-# 隔离 worktree 环境指南（草案）
+# 隔离 worktree 环境指南
 
-> **状态**：**草案**，由 dev-orchestrator run `20261006-001` 的 env-ready 执行者在
-> integration worktree 内产出。是否合回项目由用户决定。
+> **状态**：**已合回**（2026-10-07）。由 dev-orchestrator run `20261006-001` 的 env-ready
+> 执行者在 integration worktree 内产出，经独立审查 PASS 后合回主分支；
+> 合回时按该审查的 P2#4 订正了 §4 一处机制表述。
 > **权威范围**：本仓「隔离泳道里怎么把环境准备好、怎么核验它真的就绪」的可复用配方。
 > **它不拥有**：命令集真源在 [AGENTS.md](../../AGENTS.md)；隔离与调度的语义与判据在
 > dev-orchestrator skill（`references/isolation-method.md`、`references/stage-contract.md`）；
@@ -104,8 +105,9 @@ Copy-Item <原始项目根>\.env <泳道根>\.env
 `{"command": 命令原文, "output": 输出原文关键行}`。写「ok」「已通过」「正常」不算证据。
 
 **关于「0 命中 / 不存在」类结论**：必须配**阳性对照**（canary）——证明探测通道确实能检出
-该形态。本仓已实测一个静默失败源：pwsh 的 `Select-String -Path '**'` **不支持递归且不报错**，
-会把「有匹配」变成「0 匹配」。全仓内容检索用 `grep` 工具。
+该形态。本仓已实测一个静默失败源：pwsh 的 `Select-String -Path '**'` **不是递归通配**
+（只按**单层**匹配，等价于 `*`）——**同层**文件会命中，**跨层**才静默变成 0 匹配且**不报错**；
+所以「0 命中」可能只是「没递归到」，不能当作「不存在」。全仓内容检索用 `grep` 工具。
 
 ## 5. 退出与恢复
 
