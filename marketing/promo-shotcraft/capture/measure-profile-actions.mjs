@@ -46,9 +46,9 @@ async function main() {
         const r = el.getBoundingClientRect();
         out.texts.push({text: direct, x: Math.round(r.left), y: Math.round(r.top), w: Math.round(r.width), h: Math.round(r.height)});
       }
-      if (direct === '待确认' \|\| direct.startsWith('待确认')) {
+      if (direct === '待确认' || direct.startsWith('待确认')) {
         const r = el.getBoundingClientRect();
-        out.tags = out.tags \|\| []; out.tags.push({t: direct, y: Math.round(r.top), x: Math.round(r.left), w: Math.round(r.width), h: Math.round(r.height)});
+        out.tags = out.tags || []; out.tags.push({t: direct, y: Math.round(r.top), x: Math.round(r.left), w: Math.round(r.width), h: Math.round(r.height)});
       }
     }
     return out;
