@@ -5,13 +5,14 @@
 //   给常数比例是猜;量出元素 offsetTop 再除以 maxScroll 才是可复核的。
 //   内容变长时比例自动跟随,不会失效。
 import puppeteer from 'puppeteer';
+import { captureAccount } from './account.mjs';
 import fs from 'fs';
 import path from 'path';
 import {fileURLToPath} from 'url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const BASE = 'http://localhost:5174';
-const ACCOUNT = {name: 'demo-parent', password: 'Demo#2026campfire'};
+const ACCOUNT = captureAccount();
 const OUT = path.resolve(__dirname, '../src/element-metrics.json');
 
 async function settle(page, ms = 900) {

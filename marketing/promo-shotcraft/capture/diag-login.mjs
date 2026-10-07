@@ -1,12 +1,13 @@
 // 诊断登录流程:逐步截图 + 打印每步状态,找出失败点。
 import puppeteer from 'puppeteer';
+import { captureAccount } from './account.mjs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const OUT = path.resolve(__dirname, '../out/diag');
 const BASE = 'http://localhost:5174';
-const ACCOUNT = { name: 'demo-parent', password: 'Demo#2026campfire' };
+const ACCOUNT = captureAccount();
 
 async function main() {
   const browser = await puppeteer.launch({ headless: true, protocolTimeout: 120000 });

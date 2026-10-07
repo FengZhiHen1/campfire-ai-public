@@ -1,11 +1,12 @@
 // 探测案例库页面:是否有折叠态(收起/展开),以及折叠态下「虚构样例」标签的位置。
 import puppeteer from 'puppeteer';
+import { captureAccount } from './account.mjs';
 import { fileURLToPath } from 'url';
 import path from 'path';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const BASE = 'http://localhost:5174';
-const ACCOUNT = { name: 'demo-parent', password: 'Demo#2026campfire' };
+const ACCOUNT = captureAccount();
 const OUT = path.resolve(__dirname, '../out/probe');
 
 async function settle(page, ms = 900) {

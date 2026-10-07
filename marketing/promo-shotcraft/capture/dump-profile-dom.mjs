@@ -1,13 +1,14 @@
 // 从真实渲染的档案页里 dump 出「待确认」分组的 DOM 结构,
 // 目的是找到**稳定的 CSS 选择器**用于影片高亮(不能靠猜坐标,也不能改产品源码)。
 import puppeteer from 'puppeteer';
+import { captureAccount } from './account.mjs';
 import fs from 'fs';
 import path from 'path';
 import {fileURLToPath} from 'url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const BASE = 'http://localhost:5174';
-const ACCOUNT = {name: 'demo-parent', password: 'Demo#2026campfire'};
+const ACCOUNT = captureAccount();
 
 async function settle(page, ms = 900) {
   await page.evaluate(() => document.fonts.ready);

@@ -1,6 +1,7 @@
 // 补采:案例库全页长图(供 S8 滚动)。
 // 案例库是 body 滚动页面,可直接 fullPage 截。
 import puppeteer from 'puppeteer';
+import { captureAccount } from './account.mjs';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -8,7 +9,7 @@ import { fileURLToPath } from 'url';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const OUT = path.resolve(__dirname, '../public/textures/full');
 const BASE = 'http://localhost:5174';
-const ACCOUNT = { name: 'demo-parent', password: 'Demo#2026campfire' };
+const ACCOUNT = captureAccount();
 
 async function settle(page, ms = 900) {
   await page.evaluate(() => document.fonts.ready);

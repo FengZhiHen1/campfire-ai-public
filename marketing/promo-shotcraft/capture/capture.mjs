@@ -2,6 +2,7 @@
 // 产出:全页 2x 截图 / per-element cutout / layout.json
 // 硬前提:demo-parent 可登录,种子数据(小满档案+4案例)已在库——已确认
 import puppeteer from 'puppeteer';
+import { captureAccount } from './account.mjs';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -14,7 +15,7 @@ const CONFIG = {
   LAYOUT_JSON: path.resolve(__dirname, '../src/live-layout.json'),
   VIEWPORT: { width: 390, height: 844, deviceScaleFactor: 2 },
   SETTLE_MS: 600,
-  ACCOUNT: { name: 'demo-parent', password: 'Demo#2026campfire' },
+  ACCOUNT: captureAccount(),
   PAGES: [
     {
       name: 'home',

@@ -6,13 +6,14 @@
 //   猜大了就滚过头(S8 实测滚到授权台账与空白处)。
 //   正确做法:量出 maxScroll,滚动量 = 比例 × maxScroll,比例 1 恰好到内容底部。
 import puppeteer from 'puppeteer';
+import { captureAccount } from './account.mjs';
 import fs from 'fs';
 import path from 'path';
 import {fileURLToPath} from 'url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const BASE = 'http://localhost:5174';
-const ACCOUNT = {name: 'demo-parent', password: 'Demo#2026campfire'};
+const ACCOUNT = captureAccount();
 const OUT = path.resolve(__dirname, '../src/page-metrics.json');
 
 async function settle(page, ms = 900) {

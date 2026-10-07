@@ -1,5 +1,6 @@
 // 行动卡区域截图:滚动到底部展开全部内容,截关键区域
 import puppeteer from 'puppeteer';
+import { captureAccount } from './account.mjs';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -7,7 +8,7 @@ import { fileURLToPath } from 'url';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const OUT = path.resolve(__dirname, '../public/textures/live');
 const BASE = 'http://localhost:5174';
-const ACCOUNT = { name: 'demo-parent', password: 'Demo#2026campfire' };
+const ACCOUNT = captureAccount();
 const SESSION_ID = 'b897534e95b74aa99fdf23fe535248d7';
 
 async function settle(page, ms) {

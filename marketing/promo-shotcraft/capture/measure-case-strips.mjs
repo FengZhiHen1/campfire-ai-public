@@ -2,13 +2,14 @@
 //   ① 虚构样例卡 ② 内部(真实)卡
 // 用途:S8 用元素级特写只截「标题+标签」条,排除卡片下方的授权元数据。
 import puppeteer from 'puppeteer';
+import { captureAccount } from './account.mjs';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const BASE = 'http://localhost:5174';
-const ACCOUNT = { name: 'demo-parent', password: 'Demo#2026campfire' };
+const ACCOUNT = captureAccount();
 const OUT = path.resolve(__dirname, '../src/layout-case-strips.json');
 
 async function settle(page, ms = 900) {

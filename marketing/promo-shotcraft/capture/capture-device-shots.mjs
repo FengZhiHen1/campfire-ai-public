@@ -15,6 +15,7 @@
 // 前置:后端 127.0.0.1:8000 + 前端 127.0.0.1:5173 均已就绪;
 //       demo-parent 为虚构演示账号(数据安全已核对,可外发)。
 import puppeteer from 'puppeteer';
+import { captureAccount } from './account.mjs';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -22,7 +23,7 @@ import { fileURLToPath } from 'url';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const OUT = path.resolve(__dirname, '../out/device-shots');
 const BASE = 'http://localhost:5173';  // vite 只绑 localhost(::1),用 127.0.0.1 会被拒
-const ACCOUNT = { name: 'demo-parent', password: 'Demo#2026campfire' };
+const ACCOUNT = captureAccount();
 
 // 统一规格:宽视口 + 足够高(zoom 阶梯不命中),@2x 出图
 const VIEWPORT = { width: 1280, height: 1000, deviceScaleFactor: 2 };

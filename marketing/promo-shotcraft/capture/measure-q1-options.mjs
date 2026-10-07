@@ -1,13 +1,14 @@
 // 实测应急第 1 题各选项行的真实坐标(供 S4 勾选 overlay 对齐)。
 // 输出写到 src/layout-emergency-q1.json,组件按它定位,不再手猜。
 import puppeteer from 'puppeteer';
+import { captureAccount } from './account.mjs';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const BASE = 'http://localhost:5174';
-const ACCOUNT = { name: 'demo-parent', password: 'Demo#2026campfire' };
+const ACCOUNT = captureAccount();
 const OUT = path.resolve(__dirname, '../src/layout-emergency-q1.json');
 
 async function settle(page, ms = 900) {

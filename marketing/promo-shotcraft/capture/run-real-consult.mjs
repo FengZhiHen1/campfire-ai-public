@@ -5,6 +5,7 @@
 //   - 案例库有「虚构样例:超市感官过载情境的现场支持」→ 命中概率高
 // 情境选择:超市 + 噪音/人群 + 疼痛可能 + 走失风险(与档案、案例库都对齐)
 import puppeteer from 'puppeteer';
+import { captureAccount } from './account.mjs';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -12,7 +13,7 @@ import { fileURLToPath } from 'url';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const OUT = path.resolve(__dirname, '../out/real-run');
 const BASE = 'http://localhost:5174';
-const ACCOUNT = { name: 'demo-parent', password: 'Demo#2026campfire' };
+const ACCOUNT = captureAccount();
 
 async function settle(page, ms = 900) {
   await page.evaluate(() => document.fonts.ready);

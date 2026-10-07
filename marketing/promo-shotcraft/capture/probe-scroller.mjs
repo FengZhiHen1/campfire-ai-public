@@ -1,11 +1,12 @@
 // 探测会话页/档案页的滚动容器结构(内部 scroll 容器 vs body 滚动)。
 import puppeteer from 'puppeteer';
+import { captureAccount } from './account.mjs';
 import { fileURLToPath } from 'url';
 import path from 'path';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const BASE = 'http://localhost:5174';
-const ACCOUNT = { name: 'demo-parent', password: 'Demo#2026campfire' };
+const ACCOUNT = captureAccount();
 const SESSION_ID = 'b897534e95b74aa99fdf23fe535248d7';
 
 async function settle(page, ms = 900) {

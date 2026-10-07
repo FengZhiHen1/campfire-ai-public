@@ -1,12 +1,13 @@
 // 案例库页面采集(修正路由:/cases 不是 /library/cases)
 import puppeteer from 'puppeteer';
+import { captureAccount } from './account.mjs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const OUT = path.resolve(__dirname, '../public/textures/live');
 const BASE = 'http://localhost:5174';
-const ACCOUNT = { name: 'demo-parent', password: 'Demo#2026campfire' };
+const ACCOUNT = captureAccount();
 
 async function settle(page, ms) {
   await page.evaluate(() => document.fonts.ready);

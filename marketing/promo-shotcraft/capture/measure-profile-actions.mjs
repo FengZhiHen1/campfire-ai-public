@@ -1,13 +1,14 @@
 // 实测档案页「待确认」卡片内「纠正」按钮的真实坐标。
 // 之前手猜 top = 卡片顶 + 108,结果压在正文上(S7 flip 帧可见)。
 import puppeteer from 'puppeteer';
+import { captureAccount } from './account.mjs';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const BASE = 'http://localhost:5174';
-const ACCOUNT = { name: 'demo-parent', password: 'Demo#2026campfire' };
+const ACCOUNT = captureAccount();
 
 async function settle(page, ms = 900) {
   await page.evaluate(() => document.fonts.ready);

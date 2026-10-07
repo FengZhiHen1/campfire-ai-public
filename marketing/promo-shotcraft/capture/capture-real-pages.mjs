@@ -18,10 +18,11 @@ import fs from 'fs';
 import path from 'path';
 import {fileURLToPath} from 'url';
 import puppeteer from 'puppeteer';
+import { captureAccount } from './account.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const BASE = 'http://localhost:5174';
-const ACCOUNT = {name: 'demo-parent', password: 'Demo#2026campfire'};
+const ACCOUNT = captureAccount();
 const OUT = path.resolve(__dirname, '../out/parity');
 fs.mkdirSync(OUT, {recursive: true});
 

@@ -1,11 +1,12 @@
 // 精确实测:待确认卡片内「待确认」徽标的位置(供 S7 的状态翻转覆盖层定位)。
 import puppeteer from 'puppeteer';
+import { captureAccount } from './account.mjs';
 import { fileURLToPath } from 'url';
 import path from 'path';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const BASE = 'http://localhost:5174';
-const ACCOUNT = { name: 'demo-parent', password: 'Demo#2026campfire' };
+const ACCOUNT = captureAccount();
 
 async function settle(page, ms = 900) {
   await page.evaluate(() => document.fonts.ready);

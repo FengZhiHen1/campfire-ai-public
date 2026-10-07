@@ -2,6 +2,7 @@
 // 产出:每个镜头需要的真实页面状态截图(viewport 390×844 @2x) + 元素切片
 // 要点:viewport 截图是分级方案的基础——190 逻辑宽屏在设备框内 1.0-1.3 倍显示,纹理不被放大
 import puppeteer from 'puppeteer';
+import { captureAccount } from './account.mjs';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath} from 'url';
@@ -9,7 +10,7 @@ import { fileURLToPath} from 'url';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const OUT = path.resolve(__dirname, '../public/textures/states');
 const BASE = 'http://localhost:5174';
-const ACCOUNT = { name: 'demo-parent', password: 'Demo#2026campfire' };
+const ACCOUNT = captureAccount();
 const SESSION_ID = 'b897534e95b74aa99fdf23fe535248d7';
 
 async function settle(page, ms = 600) {

@@ -1,5 +1,6 @@
 // DOM 结构导出:登录后 dump 各页面真实 DOM 树(标签+类名+文本+bbox),作为坐标实测依据。
 import puppeteer from 'puppeteer';
+import { captureAccount } from './account.mjs';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -7,7 +8,7 @@ import { fileURLToPath } from 'url';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const OUT = path.resolve(__dirname, '../public/textures/states');
 const BASE = 'http://localhost:5174';
-const ACCOUNT = { name: 'demo-parent', password: 'Demo#2026campfire' };
+const ACCOUNT = captureAccount();
 const SESSION_ID = 'b897534e95b74aa99fdf23fe535248d7';
 
 async function settle(page, ms = 900) {

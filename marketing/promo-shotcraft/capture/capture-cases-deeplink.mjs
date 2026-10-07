@@ -1,12 +1,13 @@
 // capture-cases-fictional.mjs — 案例库精准搜索虚构样例(折叠态,不触发展开 bug)
 import puppeteer from 'puppeteer';
+import { captureAccount } from './account.mjs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const OUT = path.resolve(__dirname, '../out/device-shots');
 const BASE = 'http://localhost:5173';
-const ACCOUNT = { name: 'demo-parent', password: 'Demo#2026campfire' };
+const ACCOUNT = captureAccount();
 
 const log = (...a) => console.log(new Date().toISOString().slice(11, 19), ...a);
 

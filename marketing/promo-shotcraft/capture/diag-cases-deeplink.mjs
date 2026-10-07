@@ -1,11 +1,12 @@
 // diag-cases-deeplink.mjs — 诊断 deep-link 页面实际渲染状态
 import puppeteer from 'puppeteer';
+import { captureAccount } from './account.mjs';
 import { fileURLToPath } from 'url';
 import path from 'path';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const BASE = 'http://localhost:5173';
-const ACCOUNT = { name: 'demo-parent', password: 'Demo#2026campfire' };
+const ACCOUNT = captureAccount();
 const ITEM_ID = 'c06b0969-daed-4831-a5ce-d1468c37cf46';
 
 async function settle(page, ms = 800) {

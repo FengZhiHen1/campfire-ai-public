@@ -1,12 +1,13 @@
 // 点开「生成行动卡」折叠区,截行动卡完整内容
 import puppeteer from 'puppeteer';
+import { captureAccount } from './account.mjs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const OUT = path.resolve(__dirname, '../public/textures/live');
 const BASE = 'http://localhost:5174';
-const ACCOUNT = { name: 'demo-parent', password: 'Demo#2026campfire' };
+const ACCOUNT = captureAccount();
 const SESSION_ID = 'b897534e95b74aa99fdf23fe535248d7';
 
 async function settle(page, ms) {

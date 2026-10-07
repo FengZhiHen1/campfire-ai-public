@@ -3,6 +3,7 @@
 // 无法用 fullPage 一次截出。做法:按步长滚动容器,逐屏截取,再纵向拼接成一张长图。
 // 拼接后坐标 = 容器内容坐标系,组件按此坐标定位/滚动,不会再露空白。
 import puppeteer from 'puppeteer';
+import { captureAccount } from './account.mjs';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -12,7 +13,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const OUT = path.resolve(__dirname, '../public/textures/full');
 const TMP = path.resolve(__dirname, '../out/stitch');
 const BASE = 'http://localhost:5174';
-const ACCOUNT = { name: 'demo-parent', password: 'Demo#2026campfire' };
+const ACCOUNT = captureAccount();
 const SESSION_ID = '177f965b83ee4a13bb81186899b5df17';
 
 async function settle(page, ms = 900) {
