@@ -17,6 +17,7 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import { MemoryRouter } from 'react-router';
 
 import type { ProfileItem, SupportObject } from '../../../shared/types/profile';
+import { deferred } from '../../../test/deferred';
 import type { ProfilePort } from '../application/ports';
 import { ProfilePage } from './ProfilePage';
 
@@ -395,6 +396,34 @@ describe('档案页 · 候选条目操作', () => {
     await waitFor(() => {
       expect(p.deleteItem).toHaveBeenCalledWith('c1');
     });
+  });
+
+  it('P1 跨行并发：一行确认在途时点另一行的确认 → 第二条写请求被拒（FE-12）', async () => {
+    // 这是页面上唯一可达的重入路径：忙标记是按行给的（busyItemId === item.item_id），
+    // 因此 c1 在途时 c2 的按钮并不 disabled，另一个入口仍能进同一个动作函数。
+    // 实测（消融，闸门收进函数体之前）：两次点击发出两条确认请求，各自再触发一次重载。
+    // 同行的重复点按则被 disabled 挡住，看不见这个缺口——所以判据必须在跨行这条路上。
+    const gate = deferred<Awaited<ReturnType<ProfilePort['confirmItem']>>>();
+    const p = port({
+      listItems: vi.fn(async () => ({
+        items: [item()],
+        candidates: [
+          item({ item_id: 'c1', topic: '候选一', origin: 'ai_inference', confirmation: 'unconfirmed' }),
+          item({ item_id: 'c2', topic: '候选二', origin: 'ai_inference', confirmation: 'unconfirmed' }),
+        ],
+        next_cursor: null,
+      })),
+      confirmItem: vi.fn(() => gate.promise),
+    });
+    renderPage(p);
+
+    const first = (await screen.findByText('候选一')).closest('article') as HTMLElement;
+    const second = screen.getByText('候选二').closest('article') as HTMLElement;
+    fireEvent.click(within(first).getByRole('button', { name: '确认' }));
+    fireEvent.click(within(second).getByRole('button', { name: '确认' }));
+
+    expect(p.confirmItem).toHaveBeenCalledTimes(1);
+    expect(p.confirmItem).toHaveBeenCalledWith('c1');
   });
 });
 
