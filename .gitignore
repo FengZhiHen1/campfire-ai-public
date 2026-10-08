@@ -95,8 +95,22 @@ _tmp_test/
 *.pem
 *.key
 *.crt
-# 视频渲染产物（2.5GB：54 个 mp4 + 7808 张 png 帧），只留工程不入库
-marketing/promo-shotcraft/out/
+# 视频渲染产物（2.5GB：54 个 mp4 + 7808 张 png 帧），只留工程不入库。
+#
+# ★ 例外：交付版成片入库（2026-10-08，用户裁决）。此前 `out/` 整体忽略，
+#   于是成片是**唯一没有版本控制兜底**的交付物。渲染输入（public/audio 17、
+#   public/textures 50、src 43）虽已全部入库，但 remotion 依赖写的是 `^` 范围
+#   且该子工程**没有 lockfile** ⇒ 重渲**不保证**得到与交付一致的字节。
+#   故把用户确认的交付版那一对钉进版本库（其余 v16~v22 仍不入库）。
+#
+#   ⚠ 写法有讲究：**不能**写成 `out/` 再配 `!out/promo-v23.mp4`。
+#   git 的规则是「父目录被排除时，其下文件无法用否定规则重新包含」——
+#   即排除的是**目录本身**时，否定规则永远不生效（已用 `git check-ignore -v` 实证）。
+#   故这里排除 `out/*`（只排除目录**内容**）而**不排除 out/ 目录本身**，
+#   这样否定规则才生效。改动这一条前请先跑 `git check-ignore -v <路径>` 复验。
+marketing/promo-shotcraft/out/*
+!marketing/promo-shotcraft/out/promo-v23.mp4
+!marketing/promo-shotcraft/out/promo-v23-nobgm.mp4
 # 渲染校验的临时转储（`.tmp` 前缀的文件，如 ffmpeg 逐帧信号统计，单个 4MB 量级）。
 # 上面那条 `.tmp/` 只命中同名目录，命中不了 `.tmp` 前缀的文件——它们会以未跟踪文件的
 # 形式留在工作区，被 `git add .` 收进提交。生成方在 marketing/promo-shotcraft/ 下。
