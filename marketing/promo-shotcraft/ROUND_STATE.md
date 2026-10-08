@@ -132,7 +132,9 @@ f1900 静帧目视可见）。⇒ **「23.7s 死段」是缩放造成的假象�
   列为**需用户决定的安全项**,见 §4。
 - 非代码的清理项:`marketing/promo-shotcraft/.tmprev2tblend_{320,full}.txt`
   (各 4.41MB)是 ffmpeg 的 `metadata=print` 转储,**没有**被 gitignore,也**不在** `.tmp/` 下
-  ⇒ 会被误提交。`marketing/light-demo/out-test.png`(361B)同类。
+  ⇒ 会被误提交。~~`marketing/light-demo/out-test.png`(361B)同类。~~
+  > **2026-10-07 已处理**:这两个转储与 `marketing/light-demo/`(整目录,含该 PNG)
+  > 均已删除。`.gitignore` 早有 `marketing/promo-shotcraft/.tmp*` 覆盖这类前缀文件。
 
 > **复核结论摘录(它是这么说的)**:A 成立;B **在一般形式上被否证**(纯黑片 0px 且 exit 0);
 >C 成立,但登记表是路径级;D「四项都能失败」成立,**但 ② 永远不能通过 ⇒ 门禁永远无法 exit 0**,

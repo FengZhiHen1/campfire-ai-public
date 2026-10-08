@@ -29,7 +29,8 @@ import {C, FONT_BODY, FONT_DISPLAY} from '../tokens';
 const L1A = '超市里,孩子突然蹲下捂住耳朵,';
 const L1B = '周围全是目光。';
 // ★ 第二句情境不是为凑时长编的:它逐字取自项目自己的旁白脚本
-//   (marketing/light-demo/screenplay/narration.md 第 14-15 行)。
+//   (docs/证据/materials/light-demo-screenplay/narration.md 第 14-15 行;
+//    该脚本原在 marketing/light-demo/screenplay/,2026-10-07 随该工程删除前留档)。
 //   加它的理由:原版从「周围全是目光」直接跳到「最难的不是辛苦」,
 //   中间缺了「没人商量」这句话的**来处** —— 正是这两行把来处讲清楚了。
 const L2A = '你不知道这是感官过载,还是哪里疼——';

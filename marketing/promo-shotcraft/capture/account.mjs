@@ -1,7 +1,7 @@
 // account.mjs — 采集脚本共用的演示账号。
 //
 // 为什么单独一个模块：口令不入库。此前 29 个采集脚本各自硬编码同一个口令字面量，
-// 而 marketing/light-demo/screenplay/shot-list.md 明文写着「密码不入库」——那句话
+// 而 docs/证据/materials/light-demo-screenplay/shot-list.md 明文写着「密码不入库」——那句话
 // 与实现不符。现在口令只来自环境变量，缺了就显式报错，不静默降级成一个默认口令。
 //
 // 账号名不带默认之外的语义：demo-parent 是文档化的虚构演示账号（见
