@@ -30,7 +30,7 @@
  *
  * 为什么选这个做法（而不是「直接针对真实 `.device-screen`」）
  *
- * 我在两视口都实测了真实外壳（探针输出 `T01-assets/probe-shell-desktop.txt`）：
+ * 我在两视口都实测了真实外壳（探针输出 `docs/证据/orchestrator-20261002-001/T01-assets/probe-shell-desktop.txt`）：
  *   - desktop：真实外壳确实形成陷阱（`.device-screen` `overflow-y:auto`，profile 裁 1184px、
  *     memory 裁 82px，陷阱图高 2000px），所以「直接针对真实 `.device-screen`」在 desktop 可行；
  *   - mobile：三层都是 `display: contents`、`clientHeight/scrollHeight` 均为 0，

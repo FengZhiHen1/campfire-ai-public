@@ -207,7 +207,7 @@ export const PNG_HEIGHT_TOLERANCE_PX = 2;
  *
  * 取值依据（实测，不凭感觉）
  *
- * 用真实页面的探针实测（`T01-assets/probe-clip-mobile.txt`，10 页，mobile 视口）：
+ * 用真实页面的探针实测（`docs/证据/orchestrator-20261002-001/T01-assets/probe-clip-mobile.txt`，10 页，mobile 视口）：
  * 扫描 `overflow-y ∈ {auto,scroll,hidden,clip}` 且 `scrollHeight > clientHeight` 的元素，
  * 排除三类设计内的刻意截断后（ellipsis / line-clamp / clip-path），
  * 非刻意截断的条目数为 0 —— 真实页面在 1px 阈值下也没有「该展开而没展开」的元素。
