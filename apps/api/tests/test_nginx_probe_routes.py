@@ -69,9 +69,9 @@ _LOCATION_RE = re.compile(
 def _find_repo_root() -> Path:
     """向上找仓库根：同时含 `pyproject.toml` 与 `infrastructure/` 的那一层。
 
-    与 `test_check_task_pack.py` 同一处置、同一理由：**按特征定位而不是按层数**
-    （`parents[N]` 在目录调整时会静默指向错误位置，那种失败看起来像「文件丢了」）。
-    找不到立刻抛错，不返回一个猜测的路径。
+    与本目录 `test_periodic_probe_cost_discipline.py` 同一处置、同一理由：
+    **按特征定位而不是按层数**（`parents[N]` 在目录调整时会静默指向错误位置，
+    那种失败看起来像「文件丢了」）。找不到立刻抛错，不返回一个猜测的路径。
     """
     required = ("pyproject.toml", "infrastructure")
     for path in Path(__file__).resolve().parents:
