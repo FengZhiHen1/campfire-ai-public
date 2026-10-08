@@ -5,9 +5,7 @@
 检查内容：
 
 1. 有效设计文档中的相对链接必须存在（``docs/**/*.md`` 加 ``AGENTS.md`` 与
-   ``archive/README.md``）。**例外**：``docs/证据/`` 下的**历史快照**子树
-   （``materials/``、``orchestrator-20261002-001/``）不参与——它们是证物，
-   链接按原始书写位置相对，在原位置本就不解析；改写它们等于篡改证物。
+   ``archive/README.md``），**无例外**——``docs/证据/`` 证物树已于 2026-10-08 整体删除。
 2. 需求 ID 与验收行必须相互可解析。文档的实际格式是——
    需求：``**RQ-ACC-01 全应用登录**``（加粗行，不是标题）；
    验收：``| AC-01 | `RQ-ACC-01` | … |``（AC ID 是 ``AC-NN``，不带中段）。
@@ -66,19 +64,11 @@ RQ_ID_PATTERN = re.compile(r"RQ-[A-Z]+-\d{2}")
 
 def check_links(problems: list[str]) -> tuple[int, int]:
     """校验所有相对链接可解析；返回（文档数，链接数）。"""
-    # 历史证据快照不参与链接校验（2026-10-06 迁入 docs/证据/ 时定）：
-    # 这些文件是**证物**，其链接按**原始书写位置**相对（`tmp/` 根或 `docs/` 根），
-    # 在原位置本来就不解析（如 `tmp/技术设计/...` 从不存在），只是当时不在扫描范围内。
-    # 改写它们以「修好链接」等于篡改证物，故排除这些子树；**设计文档仍逐条校验**。
-    evidence_snapshots = (
-        DOCS / "证据" / "materials",
-        DOCS / "证据" / "orchestrator-20261002-001",
-    )
-    pages = [
-        p
-        for p in sorted(DOCS.rglob("*.md"))
-        if not any(snapshot == p or snapshot in p.parents for snapshot in evidence_snapshots)
-    ]
+    # 2026-10-08：`docs/证据/` 证物树已整体删除（用户裁决：只有 git 库中的内容算数，
+    # 过程物证不再留档），原先对 `证据/materials` 与 `证据/orchestrator-*` 两个子树的
+    # 链接豁免随之失效——那两个路径已不存在，保留豁免会成为指向空处的死配置。
+    # 现在设计文档逐条校验，无例外。
+    pages = sorted(DOCS.rglob("*.md"))
     pages += [ROOT / "AGENTS.md", ROOT / "archive" / "README.md"]
 
     link_count = 0

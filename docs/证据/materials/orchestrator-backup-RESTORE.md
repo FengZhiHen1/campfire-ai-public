@@ -1,1 +1,0 @@
-# 编排者侧备份（2026-10-06 11:46:10）  T32 已提交（ab7af10）⇒ 只剩 T33 的 conftest.py 未提交。  - apps/api/tests/conftest.py   → tmp/_orchestrator-backup/conftest.py   SHA256=A1686DECCCDC85A91BECBE45651FFE6EEC5D8189F1AE0CF1D9E482F3EA92F870  用途：T33 的隔离实现【尚未提交】。若工作区被 git checkout/restore/stash 覆盖， 未提交改动不进 reflog、不可恢复 ⇒ 用本目录副本覆盖回去后核 SHA256。
