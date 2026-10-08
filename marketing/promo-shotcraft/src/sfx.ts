@@ -4,14 +4,15 @@
 //   旧写法 `shot('S4').from + 120` 是绝对偏移。段长从 780f 扩到 960f 后,
 //   这个偏移不再落在「勾选第 1 项」那一帧上 —— 音效与画面事件脱钩,
 //   听感变成「声音乱响、和动作对不上」。而这类失配是**静默的**:
-//   check-sfx.ts 只能验证「cue 在镜头区间内」,验证不了「cue 落在正确的动作上」。
+//   scripts/check-sfx.ts（已删）只能验证「cue 在镜头区间内」,验证不了「cue 落在正确的动作上」。
 //
 //   改成比例后,cue 跟着画面走:镜头内部的时间点本身也是比例派生的
 //   (见 lib/shotTiming.ts),两边用同一套比例即自动对齐。
 //
 // 词汇:whoosh(运镜)/impact(落地)/riser(铺垫)/sparkle(光效)/transition(转场)。
 //
-// SFX 规则(由 scripts/check-sfx.ts 机械校验):
+// SFX 规则(原由 scripts/check-sfx.ts 机械校验;该脚本已于 2026-10-08 删除,
+//   规则本身仍有效,现靠 code review 与 tsc 守住):
 //   ① 每条 from 必须落在其所属镜头区间内;
 //   ② 长样本(带 durationInFrames)不得超出镜头或全片末尾;
 //   ③ 每段至少 2 条,避免出现哑段;

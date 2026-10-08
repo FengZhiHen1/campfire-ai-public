@@ -6,7 +6,7 @@
   `HomePage`、`domainLabel`、`EMERGENCY_QUESTIONS`、类型定义…)。
   复核者做了决定性消融:把产品 `labels.ts` 的 `owner: '项目所有者核准'` 改成
   `'XX-ABLATION-XX'`(画面上可见的文案)→ **画面 SHA 变了**,
-  而 `doc-consistency.py` 仍报「0 处不一致 / 37 个文件一致」。
+  而 `doc-consistency.py`（已删）仍报「0 处不一致 / 37 个文件一致」。
   **⇒ 一个能改画面的文件被改,两道门禁全绿。**
 
   这正是 S8 那条修复本身所走的链路 —— 我用一个对 `apps/web` 失明的清单,

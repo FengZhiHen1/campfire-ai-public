@@ -146,7 +146,9 @@ def init_supertokens(
     #
     # 时序：本语句在 SDK `init(...)` 之前执行，而 querier 的 `AsyncClient` 在**请求期**
     # 才构造 ⇒ 规范化必然早于任何 querier 客户端构造。机械证据（含「撤掉本语句 ⇒ 用例红」）
-    # 见 `apps/api/tests/test_proxy_env_normalization.py`。
+    # 原见 `apps/api/tests/test_proxy_env_normalization.py`；**该用例已于 2026-10-08
+    # 按用户裁决删除**（闸门只保留产品行为断言），故此处不再有机械证据——保留本注释仅为
+    # 记录当时的判据来源。
     apply_no_proxy_normalization()
 
     api_key = _require_api_key(settings)
