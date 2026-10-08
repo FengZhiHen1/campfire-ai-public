@@ -104,7 +104,7 @@ v18 的 4 段与定位：
 | P3 | 两处过时断言称成片显示 `+00:00` | 按项目既有惯例**标注为「修正前的观测」**，不篡改历史；并补 f4935 实测证据 | 现片实测：数据侧 4 个 `interview_at` **全为 `Z`**；f4935 逐字可见 `…05-25T06:48:00Z`、`…11-06T02:00:00Z` |
 | P4 | 「确定性」一节引用**未复现**的第三方数字（0.012%）当实测 | 标注证据来源与复现状态，降级为「未能复现，存疑」；只保留「H.264 非位确定」 | 见 `ACCEPTANCE.md`「确定性」节 |
 | 附加 | `render-manifest.py` 与 `doc-consistency.py` **写死 `promo-v16.mp4`** | 成片名改由清单的 `film` 字段 / `out/` 下最新 `promo-v<N>.mp4` 决定 | 修前：清单会同时记录「v17 源码哈希 + v16 成片哈希」=自相矛盾；修后 `film: out/promo-v17.mp4 599776BE…` |
-| 新增 | 门禁缺**度量侧**（口径已改事件制，只有拍摄侧跟着改） | 新增 `src/events.json`（140 事件 / 12 hold，每条带 `source`）+ `verify/motion-gate.py`（4 道可失败检查） | 见下 §3 |
+| 新增 | 门禁缺**度量侧**（口径已改事件制，只有拍摄侧跟着改） | 新增 `src/events.json`（140 事件 / 12 hold，每条带 `source`）+ `verify/motion-gate.py（已删）`（4 道可失败检查） | 见下 §3 |
 
 ## 2. ★ 本轮最重要的发现：**旧指标在事件制下已经失效**
 
@@ -139,7 +139,7 @@ f1900 静帧目视可见）。⇒ **「23.7s 死段」是缩放造成的假象�
 
 ## 3. 新门禁的四道检查（**v17 当时的结果,供沿革对照**;v18 的结果见 `ACCEPTANCE.md` §四之二）
 
-`uv run python verify/motion-gate.py` → **exit 1**（`.tmp/motion-gate.txt`）
+`uv run python verify/motion-gate.py（已删）` → **exit 1**（`.tmp/motion-gate.txt`）
 
 | 检查 | 结果 |
 |---|---|
@@ -255,7 +255,7 @@ f1900 静帧目视可见）。⇒ **「23.7s 死段」是缩放造成的假象�
     （删 6741 个文件 / 2292.5 MB，清掉 129 个空目录，无异常）。**完整清单、保留项理由与
     代价登记在 `DELIVERY.md` 的「证据清理记录」一节**,此处只留三条要记住的:
     · 被删证据在文档里的指针已**就地标注**「已于 2026-10-07 清理」;
-    · `verify/analyze-v16.py` / `s5tail.py` / `encoder-noise.py` 读的输入已被删
+    · `verify/analyze-v16.py（已删）` / `s5tail.py` / `encoder-noise.py` 读的输入已被删
       ⇒ 运行会报 `FileNotFoundError`（**会响,不静默**,但确实不再能直接复跑）;
     · `out/s1seg.mp4`（bezel-scan 的负对照夹具）与 `out/parity/`（metrics-source 的
       程序化输入）是**特意保留**的 —— 删它们等于删能力,不是清无用数据。

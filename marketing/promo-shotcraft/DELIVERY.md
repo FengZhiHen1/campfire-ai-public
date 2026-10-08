@@ -61,7 +61,7 @@ promo-v23-nobgm.mp4  sha256 6FEC84AFDE2250A34CD13E9ACF60B02E9D59361CB5D319721D5D
 > promo-v16-nobgm.mp4  sha256 EEAD12D588E2A7DDC31ED967E53390C3E75FF3E3539D7D3E3A299D65B9BF4507
 > ```
 >
-> v16 的清单快照保留在 `out/baseline/manifest-v16.json`，供 `verify/source-delta.py`
+> v16 的清单快照保留在 `out/baseline/manifest-v16.json`，供 `verify/source-delta.py（已删）`
 > 做**两份清单的内容哈希比对**（无基线时该脚本 exit 1，不再假通过）。
 > `render-manifest.json` 的 `film` 字段已指向 **v23**（98 个文件，apps/web 47 /
 > audio 17 / css 9）。
@@ -103,9 +103,9 @@ out/  2609.7 MB / 6756 个文件   →   317.2 MB / 15 个文件
 | `out/promo-v16*.mp4` | 141.6 MB | 用户裁决保留；文档登记的对照版，指纹在本文档 |
 | `out/promo-v17*.mp4` | 95.0 MB | 用户裁决保留；上一版，指纹在本文档 |
 | `out/promo-v18*.mp4` | 78.8 MB | **当前交付版** |
-| `out/baseline/manifest-v16.json` | 4 KB | `verify/source-delta.py` 的基线；**无基线即 exit 1** |
+| `out/baseline/manifest-v16.json` | 4 KB | `verify/source-delta.py（已删）` 的基线；**无基线即 exit 1** |
 | `out/s1seg.mp4` | 0.1 MB | `bezel-scan.py` 哨兵守卫的**负对照夹具**（无设备框的 120 帧片段）。删了那条消融就不能复现；实测保留后它仍正确 exit 1 |
-| `out/parity/*` | 1.7 MB | `verify/metrics-source.py` 的**程序化输入**（真机对照截图），不是产物 |
+| `out/parity/*` | 1.7 MB | `verify/metrics-source.py（已删）` 的**程序化输入**（真机对照截图），不是产物 |
 
 **代价（如实登记，别当成没发生）**：
 
@@ -113,14 +113,14 @@ out/  2609.7 MB / 6756 个文件   →   317.2 MB / 15 个文件
    指针，已就地标注「该证据已于 2026-10-07 清理」。
 2. 三个脚本的**代码行**读的是被删文件，现在会在运行时报 `FileNotFoundError`（**会响，
    不会静默**，符合项目「不留永远失败的检查」的要求，但确实不再能直接复跑）：
-   `verify/analyze-v16.py`、`verify/s5tail.py`（均读 `out/qa4/motion-v16.txt`）、
-   `verify/encoder-noise.py`（读 `out/s5det/run{1,2}.mp4`）。
+   `verify/analyze-v16.py（已删）`、`verify/s5tail.py（已删）`（均读 `out/qa4/motion-v16.txt`）、
+   `verify/encoder-noise.py（已删）`（读 `out/s5det/run{1,2}.mp4`）。
    要恢复：重渲对应的片段，或改指向 `out/promo-v18.mp4` 重新测。
 3. 另有若干指针**在本次清理之前就已失效**（不是本次造成的），一并记在这里以免下次误判：
    `out/promo-v16-superseded.mp4`、`out/promo-v16-superseded2.mp4`、
    `out/promo-v16-nobgm-superseded.mp4`、`out/promo-v16-new.mp4`、`out/s9b/`、
-   `out/stderr`（见 `verify/ab-diff.py`、`verify/seam-*.py`、`verify/s5-recheck.py`、
-   `verify/bezel-scan.py` 与本文档 L46 一带）。
+   `out/stderr`（见 `verify/ab-diff.py（已删）`、`verify/seam-*.py（已删）`、`verify/s5-recheck.py（已删）`、
+   `verify/bezel-scan.py（已删）` 与本文档 L46 一带）。
 
 > **第 4 轮独立终检之后重渲过一次**(修 S8 来源行缺字段 + S4 逐字落位)。
 > 被替换的两版留在 `out/promo-v16-superseded.mp4` 与 `out/promo-v16-nobgm-superseded.mp4`
@@ -219,7 +219,7 @@ ffmpeg -i out/promo-v16.mp4 -i out/promo-v16-nobgm.mp4 -lavfi "[0:v][1:v]psnr=st
 
 | # | 问题 | 证据 | 修法 |
 |---|---|---|---|
-| 1 | **S4 的采集演示与它的输出不同源**：Q8 显示勾了「是」，但「是」属于会话 `b897534e`，而 S5/S6 的行动卡与流式文本属于 `177f965b` | 直读数据库（`marketing/promo-shotcraft/verify/extract-answers.py` 按八项键名提取两会话载荷） | 改用同一会话 `177f965b` 的真实作答，末段改为展示它唯一的自由文本「在超市突然蹲下捂住耳朵」 |
+| 1 | **S4 的采集演示与它的输出不同源**：Q8 显示勾了「是」，但「是」属于会话 `b897534e`，而 S5/S6 的行动卡与流式文本属于 `177f965b` | 直读数据库（`marketing/promo-shotcraft/verify/extract-answers.py（已删）` 按八项键名提取两会话载荷） | 改用同一会话 `177f965b` 的真实作答，末段改为展示它唯一的自由文本「在超市突然蹲下捂住耳朵」 |
 | 2 | **S5 尾部静止**：真实助手正文只有 2 段（13+138 字），40s 里正文约在半程写完，后半段无事发生 | 帧差实测 | 把右侧四条说明落位安排到 0.53 起，接住尾部 |
 | 3 | **S5/S6 的打字速率写死** | — | `framesPerToken` 由「判断句在第 0.5 处打完」反推，段长变化自动适配 |
 | 4 | **S3 说明区两句文字重叠**：两句 `position:absolute` 叠在同一位置，用单个 swap 值交叉淡入 ⇒ swap≈0.5 时两行都半可见 | 抽帧 f190 可见 | 改成**先出后进**（`outFade` 0.46–0.50、`inFade` 0.51–0.55），时间上不重叠 |
@@ -263,14 +263,14 @@ ffmpeg -i out/promo-v16.mp4 -i out/promo-v16-nobgm.mp4 -lavfi "[0:v][1:v]psnr=st
 ### ★★ 第 5 轮:**我自己**用接触印相表通看全片时发现的真缺陷
 
 前四轮都是「派 subagent 审查」。这一轮我改用另一种方法:**生成全片接触印相表**
-(每 2s 一帧、88 格,`verify/contact-sheet.py`),一次看完 175s。
+(每 2s 一帧、88 格,`verify/contact-sheet.py（已删）`),一次看完 175s。
 这补上了我一直声明「没有真的从头到尾看过」的缺口 —— **而它立刻抓到一个 4 轮审查都没发现的问题。**
 
 | # | 问题 | 证据 | 处理 |
 |---|---|---|---|
 | 27 | **8 处段边界的「前一段末帧」是纯纸面**,下一段首帧是满的 ⇒ 「满→渐淡→全空一帧→满」的**单帧闪空**(33ms) | 抽帧条 `out/dip/strip.jpg`:f1495(5339)→f1498(793)→**f1499(0)**→f1500(1885,硬切)。f1499 的模式色正是 `--bg #fbf6ee` 且占 92.1% | 9 处段末淡出加 6% 下限(0→0.06);**3 处刻意保持 0**(S1 `crossFade`、S2 `sweepFade` 是「中途换场」,留下限会让准星/扫光常驻)。修后 f1499 最大偏离 **8→23**、内容像素 **0→1014** |　←　该证据已于 2026-10-07 清理(回收空间),见 DELIVERY.md 的「证据清理记录」
 
-> **修后实测(8 处逐帧量化,`verify/seam-before-after.py`)**:
+> **修后实测(8 处逐帧量化,`verify/seam-before-after.py（已删）`)**:
 >
 > | 边界 | 修前 内容像素/最大偏离 | 修后 | 判定 |
 > |---|---|---|---|
@@ -486,7 +486,7 @@ ffmpeg -i out/promo-v16.mp4 -i out/promo-v16-nobgm.mp4 -lavfi "[0:v][1:v]psnr=st
 > ② 抽样**撞上光标闪烁周期** ⇒ 写成「三帧逐字节相同」;
 > ③ 抽样**避开 `ty` 摆动极值** ⇒ 写成「全部 ≥17px」。
 > 三次都是**口径正确 + 取样有偏 = 看起来完全合理的错结论**。
-> 因此关键量的量法已改为全扫描(`verify/bezel-scan.py`),不再抽样。
+> 因此关键量的量法已改为全扫描(`verify/bezel-scan.py（已删）`),不再抽样。
 
 ### ★ 第五轮：类名保真检查（新增机械门禁）
 
@@ -575,7 +575,7 @@ ffmpeg -i out/promo-v16.mp4 -i out/promo-v16-nobgm.mp4 -lavfi "[0:v][1:v]psnr=st
 
 ## 时间线（九段，5250f @30fps）
 
-**运动量口径**：`ffmpeg tblend=all_mode=difference,signalstats` 逐帧 YAVG，阈值 <0.35 且持续 ≥30 帧判为一次静止。原始数据 `out/qa4/motion-v16.txt`，复算脚本 `marketing/promo-shotcraft/verify/motion-fresh.py`。　←　该证据已于 2026-10-07 清理(回收空间),见 DELIVERY.md 的「证据清理记录」
+**运动量口径**：`ffmpeg tblend=all_mode=difference,signalstats` 逐帧 YAVG，阈值 <0.35 且持续 ≥30 帧判为一次静止。原始数据 `out/qa4/motion-v16.txt`，复算脚本 `marketing/promo-shotcraft/verify/motion-fresh.py（已删）`。　←　该证据已于 2026-10-07 清理(回收空间),见 DELIVERY.md 的「证据清理记录」
 
 | 段 | 帧区间 | 时长 | 内容 | 静止率 |
 |---|---|---|---|---|
@@ -752,12 +752,12 @@ v14 交付前经**两轮独立子代理审查**，两轮都抓出了真实缺陷
 
 片中每一处产品输出都来自本地 demo 种子数据，**由脚本机器导出，不手抄**：
 
-- `marketing/promo-shotcraft/verify/export-fixtures.py` → `src/fixtures/data.generated.ts`：8 条档案、2 条知识、4 条案例、两个真实会话的行动卡（含 33 条标注）
-- `marketing/promo-shotcraft/verify/export-stream.py` → `src/fixtures/stream.generated.ts`：真实助手正文（S5 逐 token 用）
+- `marketing/promo-shotcraft/scripts/export-fixtures.py` → `src/fixtures/data.generated.ts`：8 条档案、2 条知识、4 条案例、两个真实会话的行动卡（含 33 条标注）
+- `marketing/promo-shotcraft/scripts/export-stream.py` → `src/fixtures/stream.generated.ts`：真实助手正文（S5 逐 token 用）
 
 **为什么必须机器导出**：v12 时我手抄「真实档案分组」，编造了 4 组内容（全库 0 命中）、并把「自行跑向出口」加重成「因走失紧急处置」。手抄真实数据不可靠。
 
-**自检脚本**：`marketing/promo-shotcraft/verify/audit-fixtures.py` 把 fixture 每一条文本与数据库逐字比对，并检查镜头是否**现算**派生数字（不手写）。当前 **0 个问题**。
+**自检脚本**：`marketing/promo-shotcraft/verify/audit-fixtures.py（已删）` 把 fixture 每一条文本与数据库逐字比对，并检查镜头是否**现算**派生数字（不手写）。当前 **0 个问题**。
 
 > 该脚本曾抓出我自己的一个真实错误：S6 右侧写「历史记录 8」而实际是 9（8 条 confirmed + 1 条 likely）。已改为 `sourceCount()` 现算，从此不可能漂移。
 >
@@ -765,7 +765,7 @@ v14 交付前经**两轮独立子代理审查**，两轮都抓出了真实缺陷
 
 ## 时间线（九段，4350f @30fps）
 
-**运动量口径**：`ffmpeg tblend=all_mode=difference,signalstats` 的逐帧 YAVG，阈值 < 0.35 且持续 ≥30 帧判为一次静止。原始数据在 `out/qa4/motion-final.txt`，复算脚本 `marketing/promo-shotcraft/verify/final-audit.py`。　←　该证据已于 2026-10-07 清理(回收空间),见 DELIVERY.md 的「证据清理记录」
+**运动量口径**：`ffmpeg tblend=all_mode=difference,signalstats` 的逐帧 YAVG，阈值 < 0.35 且持续 ≥30 帧判为一次静止。原始数据在 `out/qa4/motion-final.txt`，复算脚本 `marketing/promo-shotcraft/verify/final-audit.py（已删）`。　←　该证据已于 2026-10-07 清理(回收空间),见 DELIVERY.md 的「证据清理记录」
 
 | 段 | 帧区间 | 时长 | 内容 | 静止率 |
 |---|---|---|---|---|
@@ -860,7 +860,7 @@ v14 交付前经**两轮独立子代理审查**，两轮都抓出了真实缺陷
 | 虚构样例标注 | S8 明示「『虚构样例』是产品演示用素材,不是真实案例」+ 列表标签可辨 |
 | 确定性渲染 | 无随机数、无 `Date.now()`、无浏览器时间依赖 |
 
-## 运动量验收（脚本 `marketing/promo-shotcraft/verify/motion-fresh.py`）
+## 运动量验收（脚本 `marketing/promo-shotcraft/verify/motion-fresh.py（已删）`）
 
 方法：`ffmpeg tblend=all_mode=difference + signalstats` 取逐帧 YAVG，阈值 `<0.35` 且持续 ≥30 帧记为「静止」。
 

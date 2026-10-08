@@ -192,7 +192,7 @@ def main() -> None:
     m = {
         "film": f"out/{film.name}",
         "film_sha256": sha(film).upper(),
-        "note": ("本清单由 verify/render-manifest.py 从入口的 **import 闭包**推导"
+        "note": ("本清单由 scripts/render-manifest.py 从入口的 **import 闭包**推导"
                  "(含 apps/web 传递依赖与副作用 CSS import);另**手工补入两组**"
                  "非 import 输入:① public/audio 下全部音频资源;② 视觉契约真源 "
                  "docs/design/tokens.css(该路径**硬编在脚本里**)。"

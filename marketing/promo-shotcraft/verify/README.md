@@ -1,96 +1,19 @@
-# verification 脚本索引
+# 方法论陷阱（合并自原 verification 脚本索引）
 
-> 这些脚本产出 `DELIVERY.md` / `ACCEPTANCE.md` 里引用的每一个数字。
-> **放在这里(而不是 `.tmp/`)** 是因为文档把它们列为「可复跑门禁」——
-> 放在临时目录会让人以为它们不存在(独立终检就因此判定 4 个脚本缺失,见下)。
+> **2026-10-08 重组**：本目录原为 `verify/`——混装了 **62 个自我发明的检验脚本**、
+> 4 个生成器与 1 个一次性 codemod。按用户裁决「闸门理应只有 pytest 和 vitest」，
+> 62 个检验脚本已删除；4 个生成器（`export-fixtures.py` / `export-stream.py` /
+> `memory-episodes.py` / `render-manifest.py`）**移入 `../scripts/`**——
+> 它们是构建链的一部分（写已跟踪的 `src/fixtures/*.generated.ts` 与
+> `render-manifest.json`），不是闸门。照搬 `apps/web` 的既有范式
+> （`apps/web/scripts/sync-tokens.mjs` → `apps/web/src/shared/styles/tokens.css`）。
 >
-> 运行目录:**仓库根** `E:\Project\Web_Development\Campfire-AI`
-> ```bash
-> uv run python marketing/promo-shotcraft/verify/<name>.py
-> ```
-> 大多数脚本把结果写到 `.tmp/<name>.txt`(终端是 GBK,中文直印会乱码)。
+> 本文件保留的是**陷阱知识**：这些教训与具体脚本无关，换了实现仍然适用，
+> 且 `DELIVERY.md` 有两处引用它（L306 / L365）。
 
-## 门禁类(应当全绿)
+## 已知的方法论陷阱
 
-| 脚本 | 验证什么 | 通过判据 |
-|---|---|---|
-| `doc-consistency.py` | 交付文档里的指纹/时长/**实测冻结段数**与工作区实际值一致;并逐文件 sha256 比对「成片对应当前源码」。成片名取自清单的 `film` 字段,不再写死 | 0 处不一致 |
-| `audit-fixtures.py` | fixture 每条字符串 vs 数据库逐字比对 | 0 问题 |
-| `classname-parity.py` | 影片复刻组件用的类名在产品 CSS 里都存在 | 无「无处定义」类名 |
-| `goal-checklist.py` | 目标规格逐条(几何契约/九段/八题/两版) | 全部 ✓ |
-| `render-manifest.py` | 生成/刷新 `render-manifest.json`(成片 ↔ 源码内容哈希)。成片名不再写死,取 `out/` 下最新 `promo-v<N>.mp4` | — |
-| `source-delta.py` | **重渲是否只改了该改的**:文件宇宙取自清单(含 apps/web/audio/css),基线 = 两份清单的**内容哈希**比对 | 漂移 0 且非预期改动 0;**无基线即 exit 1**(不再假通过) |
-
-> ★ **2026-10-07 用户裁决:运动量不设门。** `motion-gate.py` 已**退休为诊断工具**
-> (声明侧 = `src/events.json`),**不再以非零退出码表示「不合格」**。
-> 它现在的用途是:需要知道「**哪一段没有事件**」时,给出可定位的帧号。
->
-> `doc-consistency.py` 里那条「实测冻结段数与文档一致」**保留** —— 它查的是
-> 「**文档写的数字与实测是否一致**」,属于文档准确性,与「拿运动量判画面好坏」是两件事。
-
-## 判据校准类(回答「这个度量能支撑什么结论」)
-
-| 脚本 | 验证什么 |
-|---|---|
-| `encoder-noise.py` | **H.264 编码噪声底**:同源双渲的像素差有多大。用来判断某个 A/B 差异是改动还是噪声 |
-| `ab-diff.py` | 两版像素差(**⚠ 只发现大改**;误报/漏报边界见其文档与 README 陷阱 5) |
-
-## 画面质量类
-
-| 脚本 | 验证什么 | 口径 |
-|---|---|---|
-| `uniform-check.py` | 空帧(逐帧灰度标准差) | ⚠ **判据太弱**,见陷阱 8。2026-10-07 修:零帧 ⇒ exit 1;**均匀帧 >0 ⇒ exit 1**;成片名不写死;抽帧缓存记成片 sha256 |
-| `blank-verdict.py` | **空帧的四个口径对照 + 最终判定** | 主判据:`最大偏离主色 ≤ 1` |
-| `content-check.py` | 内容量:偏离本帧主色的像素数 | 「实际看不见」的辅助判据 |
-| `invisible-tail.py` | 每段末尾「实际看不见」**持续多久** | <0.3s 视为低于感知阈值 |
-| `fade-audit.py` | 盘点所有出场淡出的**终点值** | 找「降到 0」的 |
-| `collapse-neighbors.py` | 空帧**两侧**的内容量(判断单帧凹陷是否可见) | — |
-| `uniform-precision.py` | 可疑帧是「完全均匀」还是「极淡但存在」 | 看最大偏离,不用阈值 |
-| `contact-sheet.py` | **全片接触印相表**(每 2s 一帧,一次看完 175s) | 通看用 |
-| `uniform-runs.py` | 把空帧归并成连续区间 | — |
-| `bezel-scan.py` | **设备框边距**:全片逐帧扫深色 bezel | 最小边距;判贴边阈值 12px |
-| `bounds.py` | 八处段边界的亮度/标准差 | 两侧不得同时接近空白 |
-| `edge-margin.py` | 早期版:抽样量边距(**已被 bezel-scan 取代**) | ⚠ 抽样会漏掉 ty 摆动极值 |
-| `glyph2.py` | 最小字号的**实测**墨迹高度 | 与 12px 可读阈值比 |
-| `tonal.py` | 各段明暗分布 | 有无过暗/过亮段 |
-| `sticky8.py` | S8 吸顶页头是否钉住 | — |
-| `qscan.py` | S4 换题次数(几何特征,非 OCR) | — |
-
-## 运动量 / 节奏类
-
-| 脚本 | 验证什么 |
-|---|---|
-| `analyze-v16.py` | 全片静止率 + 每段静止率 + 最长静止区间 top5 |
-| `window2s.py` | 「任意 2s 窗口内无可见变化」的违规区间 |
-| `s1-type.py` | S1 打字期是否真在动(**用另两个口径证伪帧差口径**) |
-| `s5tail.py` | S5 尾部 8.8s 是否有内容 |
-| `s6-count.py` | 行动卡分区数(「七节」是否与数据相符) |
-
-## 音频类
-
-| 脚本 | 验证什么 |
-|---|---|
-| `a5-check.py` | 被使用的长样本(>5s)是否都显式给了 `durationInFrames` |
-| `sfx-diff.py` | **A6 决定性口径**:带/无 BGM 两版音频差 ⇒ SFX 确实进产物 |
-| `sfx-lead.py` | **`src/sfxLead.generated.ts` 两张表是否与音频素材实测一致**(起音延迟 + cue 提前量)。不一致即 exit 1 —— 素材换了或有人手改了表都必须报出来 |
-| `av-sync.py` | 声音事件是否落在画面事件上;**并给出有向偏移**(声音早/晚) |
-
-## 数据真实性类
-
-| 脚本 | 验证什么 |
-|---|---|
-| `ann-counts2.py` | fixture 的标注来源分布(33=20+9+3+1 / 36=31+5) |
-| `case-diff3.py` | 案例条目逐字段 vs DB;并检查 fixture **缺哪些字段** |
-| `gates-check.py` | 「六层闸门」与产品 `gates.md` / `SKILL.md` 是否一致 |
-
-## 景别 / 结构类
-
-| 脚本 | 验证什么 |
-|---|---|
-| `framing-levels.py` | 各段用了哪几级景别(机械统计) |
-| `final-audit.py` | 首末帧是否有内容、红线词、合规文案 |
-
-## ⚠ 已知的方法论陷阱(写在脚本注释里,也在此汇总)
+> 原写在各脚本的文件头注释里，在此汇总——脚本已删，教训保留。
 
 1. **口径对、取样错** —— `edge-margin.py` 只抽 6 帧,漏掉了 `pushCamera` 的 `ty`
    摆动极值(真实最小 11px vs 抽样得到的 17px)。**结论偏乐观且看起来完全合理。**

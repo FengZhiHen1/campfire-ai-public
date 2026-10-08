@@ -18,13 +18,13 @@
   本脚本只跳过「模型决定记什么」这一步 —— 不会跳过任何写入/抽取/落库代码。
 
 ── 用法 ──
-  uv run python marketing/promo-shotcraft/verify/memory-episodes.py report
-  uv run python marketing/promo-shotcraft/verify/memory-episodes.py write \
+  uv run python marketing/promo-shotcraft/scripts/memory-episodes.py report
+  uv run python marketing/promo-shotcraft/scripts/memory-episodes.py write \
       --key probe-1 --text-file .tmp/memory-text.txt \
       --occurred-at 2026-10-06T12:00:00+08:00 \
       --session-id 177f965b83ee4a13bb81186899b5df17
   # 探针:写入 → 回读 → 删除 → 再回读(验证三条路径后不留残留)
-  uv run python marketing/promo-shotcraft/verify/memory-episodes.py probe \
+  uv run python marketing/promo-shotcraft/scripts/memory-episodes.py probe \
       --key probe-1 --text-file .tmp/memory-text.txt \
       --occurred-at 2026-10-06T12:00:00+08:00 \
       --session-id 177f965b83ee4a13bb81186899b5df17
@@ -74,7 +74,7 @@ from campfire.modules.memory.identity import (  # noqa: E402
 )
 from campfire.modules.memory.store import read_timeline  # noqa: E402
 
-#: 影片固定使用的账号(与 verify/export-fixtures.py 同源)。
+#: 影片固定使用的账号(与 scripts/export-fixtures.py 同源)。
 ACCOUNT = "1e3b84e4-176c-4d67-8782-b532f158c078"
 #: 影片固定使用的两个真实会话(同 export-fixtures.py)。
 SESSION_IDS = (
@@ -278,10 +278,10 @@ async def _export(args: argparse.Namespace, lines: list[str]) -> int:
         )
 
     header = (
-        "// ⚠️ 自动生成,请勿手改 —— 由 verify/memory-episodes.py export 导出。\n"
-        "// 重新生成: uv run python marketing/promo-shotcraft/verify/memory-episodes.py export\n"
+        "// ⚠️ 自动生成,请勿手改 —— 由 scripts/memory-episodes.py export 导出。\n"
+        "// 重新生成: uv run python marketing/promo-shotcraft/scripts/memory-episodes.py export\n"
         "//\n"
-        "// 数据来源:**本地 demo 种子数据**。这些条目由 verify/memory-episodes.py write\n"
+        "// 数据来源:**本地 demo 种子数据**。这些条目由 scripts/memory-episodes.py write\n"
         "// 经**产品的真实写入路径**(core.pending_write.enqueue →\n"
         "// modules.memory.consumer.consume_memory_episode → Graphiti add_episode)落库,\n"
         "// 其 source 自描述为 `session=fixture-memory-seed` —— 即它们是**演示用种子数据,\n"

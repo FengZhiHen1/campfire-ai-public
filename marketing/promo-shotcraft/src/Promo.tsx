@@ -66,7 +66,8 @@ export const Promo: React.FC<{bgm?: boolean}> = ({bgm = true}) => {
             素材开头不是从 0 就开始响的 —— 实测 16 个里 11 个有静音,最长 488ms
             (`data-stream`)。若不裁,声音实际响起的时刻 = cue 帧 + 素材自带延迟,
             而且每条延迟不同 ⇒ 听起来不是「整体偏晚」而是「每条偏得不一样」。
-            数值由 verify/sfx-lead.py 从素材实测生成,并由它校验(不一致即 exit 1)。 */}
+            数值由素材实测得出；原先校验它的 `verify/sfx-lead.py` 已于 2026-10-08
+            删除（用户裁决：闸门只保留 pytest/vitest），现为手工维护的实测值。 */}
       {SFX.map((s, i) => (
         <Sequence key={i} from={s.from} durationInFrames={s.durationInFrames}>
           <Audio

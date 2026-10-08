@@ -15,7 +15,7 @@
 >   P4 把「确定性」一节标注了证据来源并降级为「未复现,存疑」。
 > - §7 的推荐顺序**已执行完毕**,只差第 8 步「派新 subagent 复核」。
 > - **v17 已渲出两版,但未被接受**:实测冻结 5 段、最长 **6.73s**(S6),
->   未过新的语义事件门禁 `verify/motion-gate.py`。**v16 仍是交付版。**
+>   未过新的语义事件门禁 `verify/motion-gate.py（已删）`。**v16 仍是交付版。**
 > - 除 P0–P4 外,本轮还有三个发现,详见 ROUND_STATE:
 >   ① 旧的「全片静止率」(320×180)在事件制下**已失效**(把逐字落位报成 23.70s 静止);
 >   ② `render-manifest.py` / `doc-consistency.py` 曾**写死 v16 成片名**(自相矛盾);
@@ -32,11 +32,11 @@
 
 **已完成(本轮实测)**:
 - **P0 修复实施**,改了 2 个文件:
-  - `verify/render-manifest.py`:`IMPORT_RE` 的 `from` 子句改为可选
+  - `scripts/render-manifest.py`:`IMPORT_RE` 的 `from` 子句改为可选
     (副作用 import 可匹配);`build_config()` 纳入 `docs/design/tokens.css`
     (视觉契约真源);`main()` 加自检 **css 条目 <5 即 exit 1 且不写清单**;
     counts 增加 `css` 字段;stdout 改英文(终端是 GBK)。
-  - `verify/doc-consistency.py`:新增检查「清单覆盖样式层(css 条目 ≥5,
+  - `verify/doc-consistency.py（已删）`:新增检查「清单覆盖样式层(css 条目 ≥5,
     含副作用 import 与 tokens 真源)」。
 - **清单重推**:82 → **87 条**(apps/web 34→38,audio 17,css 3→8)。
   **回归已验证**:旧 82 条全部保留、0 条移除,新增恰好 5 条
@@ -123,7 +123,7 @@
   S6 删漂移 + 徽章 pop + 滚动改**两次刹车** + 两节标题下划线 draw-on(序号由数据算);
   S8 删漂移 + 三阶推近 + 标签 pop。
 - `src/sfx.ts`:S7 重钉为 12 条(含记忆幕 5 条)。**`scripts/check-sfx.ts`:0 错误 0 警告**。
-- **记忆素材链路(实证)**:`verify/memory-episodes.py`(report/write/probe/export)。
+- **记忆素材链路(实证)**:`scripts/memory-episodes.py`(report/write/probe/export)。
   探针:写入→回读→删除→回读 0 条全绿,中文无损、UTC 归一 ⇒ 记忆写入链路可用
   (旧记录的 TokenHub 400001 缺陷已修复)。已写入 3 条**演示种子**记忆
   (source 自描述 `session=fixture-memory-seed`),导出为
@@ -135,7 +135,7 @@
 1. **全片渲染(v17 两版)未做** —— 只出了 4 张静帧。
    ⚠ 其中 **S4 f800 与 S6 f2916 的静帧我出了但未逐张看过** ⇒ 这两镜的视觉
    (压暗程度、刹车点是否落在「当前状态/立即怎么沟通」、下划线是否命中分区) **尚未验证**。
-2. **`src/events.json` + `verify/motion-gate.py` 未写** —— 门禁改「语义事件制」只改了
+2. **`src/events.json` + `verify/motion-gate.py（已删）` 未写** —— 门禁改「语义事件制」只改了
    拍摄侧,度量侧尚未落地(这是本轮口径改造的另一半)。
 3. **既有缺陷(本轮实测发现,非本轮引入)**:影片里**设备屏幕区既不滚动也不裁切** ——
    内容比屏高时会压到机身边框之外。证据:静帧 f4310/f4440;v16 成片同段
@@ -166,7 +166,7 @@
    import '../../../../apps/web/src/shared/styles/components.css';
    import '../../../../apps/web/src/features/consult/view/consultComponents.css';
    ```
-2. `marketing/promo-shotcraft/verify/render-manifest.py:31` 的正则
+2. `marketing/promo-shotcraft/scripts/render-manifest.py:31` 的正则
    ```python
    IMPORT_RE = re.compile(r"""(?:^|\n)\s*import\s+(?:type\s+)?[^'"]*?from\s*['"]([^'"]+)['"]""")
    ```
@@ -204,7 +204,7 @@ bezel-scan.py marketing/promo-shotcraft/out/s1seg.mp4   # S1 段,120 帧
 → 扫描帧数: 120 / 全片最小边距: 9999px / [exit 0]
 ```
 
-**根因(读 `verify/bezel-scan.py` 确认)**:
+**根因(读 `verify/bezel-scan.py（已删）` 确认)**:
 - L69 `fidx += 1` **无条件自增** ⇒ L77 的 `if fidx == 0` 守卫**永不触发**
   (只有零帧视频才触发)
 - L47 `mins = {s: (9999, None) …}` 是哨兵;S1 片段只覆盖 S1,其余 6 段**永远保留 9999**,
@@ -293,7 +293,7 @@ H.264 帧间预测按 GOP 放大」,依据是**上一位复核者的实验**(同
 ## 5. 未验证 / 无法验证(如实登记)
 
 1. **连续播放的主观观感** —— 所有指标达标,但**没有人真的从头看到尾**。
-   接触印相表(`verify/contact-sheet.py`)不是播放。
+   接触印相表(`verify/contact-sheet.py（已删）`)不是播放。
 2. **rev4 的 P2/P3/P4 我未独立复跑** —— 均为采信其报告(已标注「我未跑」)。
 3. **前一位复核者的渲染条件** —— rev4 复现不出其渲染非确定性,**但没穷尽**
    别的条件(不同 `--concurrency` / `--gl` / GPU / 缓存冷启动 / 机器负载)。

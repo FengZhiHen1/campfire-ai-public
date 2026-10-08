@@ -1,7 +1,7 @@
-// ⚠️ 自动生成,请勿手改 —— 由 verify/memory-episodes.py export 导出。
-// 重新生成: uv run python marketing/promo-shotcraft/verify/memory-episodes.py export
+// ⚠️ 自动生成,请勿手改 —— 由 scripts/memory-episodes.py export 导出。
+// 重新生成: uv run python marketing/promo-shotcraft/scripts/memory-episodes.py export
 //
-// 数据来源:**本地 demo 种子数据**。这些条目由 verify/memory-episodes.py write
+// 数据来源:**本地 demo 种子数据**。这些条目由 scripts/memory-episodes.py write
 // 经**产品的真实写入路径**(core.pending_write.enqueue →
 // modules.memory.consumer.consume_memory_episode → Graphiti add_episode)落库,
 // 其 source 自描述为 `session=fixture-memory-seed` —— 即它们是**演示用种子数据,

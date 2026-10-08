@@ -10,7 +10,7 @@
 //
 // ── 素材纪律(重要)──
 //   记忆幕的数据来自 src/fixtures/memory.generated.ts,由
-//   verify/memory-episodes.py export 走**产品读路径**(read_timeline)导出;
+//   scripts/memory-episodes.py export 走**产品读路径**(read_timeline)导出;
 //   其条目是**演示种子数据**(source 自描述为 fixture-memory-seed),
 //   **不是真实使用者的记录**。交付文档按同一口径登记,不得声称来自真实使用者。
 //   档案幕的数据仍是数据库导出的真实 demo 种子(与其余各段同源)。

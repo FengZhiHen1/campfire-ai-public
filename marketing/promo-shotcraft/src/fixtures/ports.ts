@@ -100,7 +100,7 @@ export const CASE_ITEMS = FIXTURE_DATA.cases;
 /**
  * 记忆端口的内存实现(账号级时间线)。
  *
- * 数据来自 `memory.generated.ts` —— 由 `verify/memory-episodes.py export` 走
+ * 数据来自 `memory.generated.ts` —— 由 `scripts/memory-episodes.py export` 走
  * **产品读路径**(`modules.memory.store.read_timeline`,内部做删除账本过滤)导出,
  * 与 `data.generated.ts` 的区别只是数据源(记忆在图库、档案在关系库)。
  *
