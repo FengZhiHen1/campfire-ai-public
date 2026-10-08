@@ -46,7 +46,8 @@
  *   （或从仓库根以 `--dir apps/web` 等价方式明确 cwd），**不要**写相对的 `marketing/...`。
  *
  *   不消耗邀请码：本文件只登录、不注册 ⇒ 它与 `README.md` §4 的码池下标表**无耦合**，不会挤占
- *   `t10-real.spec.ts` / `ablation.spec.ts` / `control.spec.ts` 的下标 0～4。
+ *   `t10-real.spec.ts` 的下标 0（`ablation.spec.ts` / `control.spec.ts` 原本占 1～4，
+ *   两者已于 2026-10-08 按用户裁决删除）。
  *
  * 真实性纪律：本文件**不调用任何 `page.route`**（本目录的定义性约束，见 README §7）。
  *

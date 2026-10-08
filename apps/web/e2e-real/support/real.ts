@@ -344,8 +344,8 @@ export function sheetFocusFacts(): SheetFocusFacts {
  * T10 两次实测该数组均为 `[]`，而文档级读数同样是 0：两者在「真有内部溢出」时
  * 才会分道扬镳。因此元素级信号才是那道能红的判据。
  *
- * 抽成导出函数是为了让负面控制臂用**同一个**取量函数（见 `e2e-real/control.spec.ts`），
- * 否则控制臂证明的只是「另一个量会红」。
+ * 抽成导出函数是为了让负面控制臂用**同一个**取量函数（原见 `e2e-real/control.spec.ts`；
+ * 该控制臂已于 2026-10-08 按用户裁决删除），否则控制臂证明的只是「另一个量会红」。
  */
 export function elementsPastViewportRight(): string[] {
   return Array.from(document.querySelectorAll('*'))

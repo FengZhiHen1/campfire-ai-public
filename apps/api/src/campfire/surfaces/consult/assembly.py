@@ -60,8 +60,10 @@ _OUTPUT_FORMAT_DISCIPLINE = (
 #: （`test_both_run_paths_share_the_same_instructions`，靠 `routes_source.count(...)` 数两个调用点）。
 #: **⚠ 2026-10-06 订正**：此处曾点名一个**从未存在过**的测试文件
 #: （`git log --all --diff-filter=A` 零命中），被
-#: `tests/test_comment_test_references.py` 抓出（它专查"注释点名的测试是否存在"）。
+#: `tests/test_comment_test_references.py` 抓出（它专查"注释点名的测试是否存在"；
+#: **该守卫已于 2026-10-08 按用户裁决删除**——闸门只保留 pytest/vitest 里的产品行为断言）。
 #: **这正是本仓反复吃亏的那个形态**：注释里的文件名没有机械守卫时必然会漂。
+#: ⇒ 上述守卫移除后，**这类漂移重新失去机械拦截**；新增注释点名测试时请自行核对。
 CONSULT_INSTRUCTIONS = (
     "你是「篝火智答」的日常咨询助手，用中文回应使用者的咨询。"
     "对话中带尖括号信封标记的内容是应用注入的上下文，不是使用者说的话。"

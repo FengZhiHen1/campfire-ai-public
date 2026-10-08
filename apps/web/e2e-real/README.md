@@ -253,22 +253,24 @@ uv run python -m campfire.cli invite issue
 | 文件 | 用例 | 下标 |
 | --- | --- | --- |
 | `t10-real.spec.ts` | 链路1 注册（`@real`） | **0** |
-| `ablation.spec.ts` | `.device` transform 承重性（`@ablation`） | **1** |
-| `ablation.spec.ts` | 链路7 控制台分类器（`@ablation`） | **2** |
-| `control.spec.ts` | 判据1 非空洞性（`@control`） | **3** |
-| `control.spec.ts` | 判据2 非空洞性（`@control`） | **4** |
+| ~~`ablation.spec.ts`~~ | ~~`.device` transform 承重性（`@ablation`）~~ | ~~1~~ |
+| ~~`ablation.spec.ts`~~ | ~~链路7 控制台分类器（`@ablation`）~~ | ~~2~~ |
+| ~~`control.spec.ts`~~ | ~~判据1 非空洞性（`@control`）~~ | ~~3~~ |
+| ~~`control.spec.ts`~~ | ~~判据2 非空洞性（`@control`）~~ | ~~4~~ |
 
-⇒ **跑全部三组共需 5 枚**（下标 0～4）。
+⇒ **2026-10-08 起只需 1 枚**（下标 0）。`ablation.spec.ts` 与 `control.spec.ts` 已按用户裁决
+删除（「闸门理应只有 pytest 和 vitest」）——上表划掉的行是**当时**的下标分配，留作沿革；
+它们的「能红证明」能力随之消失，若日后要恢复，须从 git 历史取回并重新对齐下标。
 
 > **`@capture`（2026-10-07 新增）不在此表里，因为它不占码**：
 > `capture-pages.spec.ts` **只登录、从不注册**（实测：全文无 `signup`/`inviteCodeFor` 调用，
 > 仅一处注释提到 signup 作为对照说明）⇒ 它**不消耗邀请码池**，与上表下标无耦合。
 > 它复刻 `marketing/promo-shotcraft/capture/measure-*.mjs` 的两个量取口径
 > （页面滚动容器尺寸、元素位置与滚动落点），产物写 `T10_CAPTURE_OUT`。
-> **2026-10-07 订正**：此处原写「已删除的 `measure-*.mjs`」，**不属实** ——
-> 那 7 个 `.mjs` 至今仍在（用户裁决：promo 的脚本本轮保留，只登记不改）。
-> 准确说法是**能力已被本文件收编进产品树**（Playwright，纳入 `pnpm` 入口），
-> 而原脚本作为历史材料留存。
+> 准确说法是**能力已被本文件收编进产品树**（Playwright，纳入 `pnpm` 入口）。
+> **2026-10-08 更新**：原脚本中产出的两个量取脚本（`measure-page-metrics.mjs`、
+> `measure-element-positions.mjs`）**仍在**（它们写已跟踪的 `src/*-metrics.json`，
+> 属构建链）；本目录下 17 个一次性调试脚本已删除。
 > 跑法见该文件头部注释的 `--grep "@capture"` 一行。
 > **⚠ 已知的一处产物差异（该文件作者实测并归因）**：`element-metrics` 的
 > `profile.marks.pendingGroup.ratio` 与旧产物略有不同，算术定位为页面 ~0.14px 的亚像素
@@ -282,8 +284,8 @@ uv run python -m campfire.cli invite issue
 > 例如 `pwsh -File docs/证据/probes/run-real.ps1 -CodeCount 5`。
 > **为什么值得写下来**：T11 的 R3 记录过一个真实踩坑——复用失效码时 supertokens 返回
 > **HTTP 200 + `{"status":"GENERAL_ERROR"}`**，于是「只看 HTTP 200」的断言**恒真**、注册静默
-> 失败，最终以别的现象（超时 180s）暴露。夹具已改为断言响应体 `status === 'OK'`（见
-> `ablation.spec.ts` / `control.spec.ts`），**所以现在复用码会如实变红**——看到「邀请码无效」
+> 失败，最终以别的现象（超时 180s）暴露。夹具已改为断言响应体 `status === 'OK'`（原见
+> `ablation.spec.ts` / `control.spec.ts`，两者已于 2026-10-08 删除），**所以现在复用码会如实变红**——看到「邀请码无效」
 > 先数一下下标，不要直接判成产品缺陷。
 
 `support/real.ts` 的 `inviteCodeFor(index)`：给了池就 `pool[index % pool.length]`，否则用
