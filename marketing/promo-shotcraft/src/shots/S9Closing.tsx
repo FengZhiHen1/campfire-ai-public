@@ -69,11 +69,17 @@ export const S9Closing: React.FC = () => {
     extrapolateLeft: 'clamp', extrapolateRight: 'clamp',
     easing: Easing.bezier(0.3, 0, 0.2, 1),
   });
-  const subIn = interpolate(frame, t.span(0.72, 0.79), [0, 1], {
+  // ★ v22:副标(「不替代医生、不替代专业服务」)与字标落定**同时**全亮。
+  //   原 0.72→0.79 意味着品牌 hold 的大部分时间里这行合规声明几乎看不见 ——
+  //   它是全片最不该淡的一行字。提前到与 rule 生长同窗(0.63→0.72)。
+  const subIn = interpolate(frame, t.span(0.63, 0.72), [0, 1], {
     extrapolateLeft: 'clamp', extrapolateRight: 'clamp',
   });
 
-  // 呼吸点(周期不随段长变,它是「心跳」而不是段落节拍)
+  // 呼吸(周期不随段长变,它是「心跳」而不是段落节拍)。
+  // ★ v22:这条曲线现在同时驱动**两个**东西 —— 字标下方的小火点,
+  //   与它周围大半径的纸面暖光晕(见渲染层)。火点与光晕同相呼吸,
+  //   读起来是「纸面下有一堆篝火在缓慢起伏」,而不是一个孤立的圆点在闪。 */
   const breath = 0.4 + 0.6 * Math.sin((frame / 48) * Math.PI * 2 - Math.PI / 2);
 
   // ★ 边界声明段的运动(修补历史上这里出现过的 4.2s 静止):
@@ -105,14 +111,6 @@ export const S9Closing: React.FC = () => {
     extrapolateLeft: 'clamp', extrapolateRight: 'clamp',
     easing: Easing.linear,
   });
-
-  // 可见的光扫:一道宽 520px 的暖光横穿画面(全帧级运动,不是微小抖动)。
-  // 微小连续缓动帧差测不出、观众也看不出——那是拖沓;光扫是真正可见的事件。
-  const sweepX = interpolate(frame, t.span(0.43, 0.87), [-560, 2480], {
-    extrapolateLeft: 'clamp', extrapolateRight: 'clamp',
-    easing: Easing.bezier(0.35, 0, 0.65, 1),
-  });
-  const sweepOn = frame >= t.at(0.43) ? 1 : 0;
 
   // 整体渐隐(最后约 10%)
   const fadeOut = interpolate(frame, t.span(0.9, 1), [1, 0.06], {
@@ -177,25 +175,24 @@ export const S9Closing: React.FC = () => {
         </div>
       </AbsoluteFill>
 
-      {/* ② 品牌落定:推近 + 可见光扫(全帧级运动,治拖沓) */}
+      {/* ② 品牌落定:推近 + 纸面下透出的篝火呼吸(v22 换掉斜向横扫光带) */}
       <AbsoluteFill
         style={{
           justifyContent: 'center', alignItems: 'center',
           opacity: fadeOut,
         }}
       >
-        {/* 暖光横扫:宽 520px 的斜向渐变带,横向穿过整幅画面 */}
-        {sweepOn ? (
+        {/* ★ v22 删除斜向横扫光带(mixBlendMode: multiply 在浅纸底上只让光带
+            变暗偏粉,读作「奶油渐变」而不是「火」;且它单次横穿,走完就没了)。
+            换成纸面下透出的一堆篝火:大半径 radial 暖光晕 + 小火点,同相呼吸。
+            光晕落在字标**下方** —— 它是「火」,字标是被火光照亮的东西。 */}
+        {frame >= t.at(0.5) ? (
           <div
             style={{
-              position: 'absolute',
-              left: sweepX,
-              top: -120,
-              width: 520,
-              height: 1320,
-              transform: 'rotate(14deg)',
-              background: `linear-gradient(90deg, rgba(194,65,12,0) 0%, rgba(194,65,12,0.30) 42%, rgba(255,250,240,0.55) 52%, rgba(194,65,12,0.18) 62%, rgba(194,65,12,0) 100%)`,
-              mixBlendMode: 'multiply',
+              position: 'absolute', left: '50%', top: '58%',
+              width: 760, height: 460,
+              transform: 'translate(-50%, -50%)',
+              background: `radial-gradient(ellipse 50% 50% at 50% 50%, rgba(194,65,12,${(0.10 + breath * 0.09).toFixed(3)}) 0%, rgba(194,65,12,${(0.05 + breath * 0.05).toFixed(3)}) 38%, rgba(194,65,12,0) 72%)`,
               pointerEvents: 'none',
             }}
           />
@@ -208,16 +205,6 @@ export const S9Closing: React.FC = () => {
             transformOrigin: 'center center',
           }}
         >
-          {/* 呼吸点 */}
-          <div
-            style={{
-              width: 14, height: 14, borderRadius: 9999,
-              backgroundColor: C.accent, margin: '0 auto 44px',
-              opacity: frame >= 116 ? breath : 0,
-              boxShadow: `0 0 ${22 * breath}px ${C.accent}`,
-            }}
-          />
-
           <div
             style={{
               fontFamily: FONT_DISPLAY, fontSize: 108, fontWeight: 500, color: C.fg,
@@ -258,10 +245,21 @@ export const S9Closing: React.FC = () => {
             不替代医生、不替代专业服务
           </div>
 
+          {/* ★ 火点:从字标上方移到副标下方(它是「火」,不是装饰圆点),
+              缩小到 10px,光晕与 radial 层同相呼吸。 */}
+          <div
+            style={{
+              width: 10, height: 10, borderRadius: 9999,
+              backgroundColor: C.accent, margin: '40px auto 0',
+              opacity: frame >= 116 ? breath : 0,
+              boxShadow: `0 0 ${26 * breath}px ${C.accent}, 0 0 ${60 * breath}px rgba(194,65,12,${(0.5 * breath).toFixed(2)})`,
+            }}
+          />
+
           <div
             style={{
               fontFamily: FONT_BODY, fontSize: 16, color: C.muted,
-              letterSpacing: '0.24em', marginTop: 22, opacity: subIn,
+              letterSpacing: '0.24em', marginTop: 26, opacity: subIn,
             }}
           >
             Campfire-AI

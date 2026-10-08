@@ -280,6 +280,15 @@ export interface DeviceStageProps {
   tx?: number;
   ty?: number;
   /**
+   * 侧向机位(度)。★ 默认 0 = 现状(正视);非 0 时外层盒建立透视空间。
+   * 参数真相来自镜头卡 spotlight-hero-card:rotY 34° 主导 + rotX 仅 8°、persp 1200 —
+   * 「侧向水平机位读感优于俯拍」(Q6)。只给确实需要特写的镜头用,不全局套用。
+   */
+  rotY?: number;
+  rotX?: number;
+  /** 透视距离(px),只在 rotY/rotX 非 0 时生效。 */
+  perspective?: number;
+  /**
    * 屏内滚动量(逻辑 px)。
    *
    * ★ 不要凭空写像素:滚动上限应由实测内容高度决定
@@ -311,13 +320,26 @@ export const DeviceStage: React.FC<DeviceStageProps> = ({
   cy = 540,
   tx = 0,
   ty = 0,
+  rotY = 0,
+  rotX = 0,
+  perspective = 1200,
   scrollY = 0,
   opacity = 1,
 }) => {
   const boxRef = useFilmScroll(scrollY);
+  const tilted = rotY !== 0 || rotX !== 0;
 
   return (
-    <AbsoluteFill style={{opacity}}>
+    <AbsoluteFill
+      style={{
+        opacity,
+        // ★ 透视建立在外层全幅容器上(不是内层设备盒),于是内层的
+        //   translate+scale 仍是 2D 运算、bezel-scan 的边距判据不受影响;
+        //   只有 tilted 时才开启 —— 现状七个镜头默认值下渲染逐像素不变。
+        perspective: tilted ? perspective : undefined,
+        perspectiveOrigin: tilted ? `${String(cx)}px ${String(cy)}px` : undefined,
+      }}
+    >
       <div
         ref={boxRef}
         style={{
@@ -326,8 +348,11 @@ export const DeviceStage: React.FC<DeviceStageProps> = ({
           top: cy - OUTER_H / 2,
           width: OUTER_W,
           height: OUTER_H,
-          transform: `translate(${tx}px, ${ty}px) scale(${scale})`,
+          transform: tilted
+            ? `translate(${tx}px, ${ty}px) scale(${scale}) rotateY(${rotY}deg) rotateX(${rotX}deg)`
+            : `translate(${tx}px, ${ty}px) scale(${scale})`,
           transformOrigin: 'center center',
+          transformStyle: tilted ? 'preserve-3d' : undefined,
           // 位移量以 CSS 变量传给内部的 .film-scroll 包装层
           // @ts-expect-error CSS 自定义属性不在 CSSProperties 类型里
           '--film-scroll': `${String(scrollY)}px`,

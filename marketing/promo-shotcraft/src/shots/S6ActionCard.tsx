@@ -19,6 +19,7 @@ import {DeviceStage, FilmRoot} from '../lib/DeviceStage';
 import {stagedPush} from '../lib/camera';
 import {ActionCardScreen} from '../lib/ActionCardScreen';
 import {NoteKicker, NoteTitle, NOTE_X} from '../lib/Shot';
+import {ActionCard} from '../../../../apps/web/src/features/consult/view/MessageParts/ActionCard';
 import {FIXTURE_DATA} from '../fixtures/data.generated';
 import {useShotTiming} from '../lib/shotTiming';
 import type {ActionCardEvent} from '../../../../apps/web/src/shared/types/sse';
@@ -44,47 +45,37 @@ const TOTAL_ANNOTATIONS = (CARD.annotations as readonly unknown[]).length;
 /** 无档案会话的真实标注总数(用于双会话对照)。 */
 const NOARCH_TOTAL = (NOARCH_CARD.annotations as readonly unknown[]).length;
 
-/** 三档语义(产品契约 RQ-EMG-04:稳定 / 未排除 / 高风险)。 */
-const TONES = [
-  {label: '稳定', color: 'var(--status-stable)', desc: '现场无急症表现,按孤独症相关支持处理'},
-  {label: '未排除', color: 'var(--status-unruled)', desc: '该项未采集或无法核对,不当作正常'},
-  {label: '高风险', color: 'var(--status-high)', desc: '需要立即寻求专业医疗帮助'},
-] as const;
+/**
+ * 三档语义(产品契约 RQ-EMG-04:稳定 / 未排除 / 高风险)。
+ * ★ v22:独立的「三档语义特写文案页」已由立传弧取代 —— 三档信息由卡片
+ *   自身的「未排除」徽章承载(轮廓光束检视的正是它),不再另列一张文案页。
+ */
 
 export const S6ActionCard: React.FC = () => {
   const frame = useCurrentFrame();
   const timing = useShotTiming();
 
   /**
-   * 段划分(比例)。
+   * 段划分(比例,2026-10-08 v22 立传版)。
    *
-   * ★ seg 0 是「三档语义特写」——一段**没有设备的纯文案页**。
-   *   它曾经占 10s 并出现两段各约 3.7s 的静止(只有细笔画文字的透明度变化,
-   *   帧差天然很小)。给纯文案页 10s 是拖沓;用户要的是「核心功能演示」。
-   *   因此压到 ~8%(36s 段里约 3s),把其余时间全给**真实行动卡的滚动演示**。
+   *   seg 0  0→HERO_END   **行动卡立传**(spotlight-hero-card 语法,见下)
+   *   seg 1  HERO_END→0.52  设备内滚动到「01 当前状态」,刹车
+   *   seg 2  0.52→1         滚到「02 立即怎么沟通」+ 右侧真实来源分布
    *
-   * seg 1 让 01→07 七个分区依次经过;seg 2 停在底部看来源标注与双会话对照。
+   * ★★ v22 为什么换掉「三档语义特写文案页」:
+   *   原 seg0 是一段**没有设备的纯文案页**(标题 + 副标 + 三档徽章逐个点亮)。
+   *   它的内容没有错,但它让全片 S3→S4→S5→S6→S7→S8 连续六段共享同一种
+   *   「左侧小手机 + 右侧大字、正面平视」构图 —— 观众对 S6 的第一印象与
+   *   前五段无法区分。而行动卡恰恰是产品最有说服力的资产。
+   *   立传弧用**同一张真实 <ActionCard> 组件**当主角:推近 → 弹起悬浮 →
+   *   轮廓光束检视 → 落进设备框(Q9:飞入的终点是它在页面里的真实槽位,
+   *   不悬浮)。三档信息没有丢 —— 「未排除」徽章就在卡里,光束扫的正是它。
    */
-  /**
-   * 说明幕(seg 0)的时长:**绝对下限,不是纯比例**。
-   *
-   * ★ 为什么这里破一次「内部时间点全部比例派生」的约定(2026-10-08,用户报告):
-   *   原来是 `SEG0_END_R = 0.083`(比例)。比例对**运动 / 滚动**是对的 —— 段长变了它
-   *   跟着缩放,观感不变。但对**需要最短可读时间的固定文案页**是错的:
-   *   这一幕有 1 个标题 + 1 行副标 + 3 行徽章 = 4 个落位事件。
-   *   v17(36s 段)按比例算出 3.0s,够读;v18 把段压到 20s 后,同一比例只剩 **1.66s**
-   *   (实测:第三档徽章在段内 f47 才亮完,场景在 f50 就被整体换掉 —— **只留 3 帧**;
-   *    扫光窗口是 `[20, SEG0_END+20]`,到卸载时只走了 58%,那道光是**被切掉的**)。
-   *   用户看到的就是「刚亮完就被抽走 + 光扫到一半没了」。
-   *   ⇒ 给这一幕一个有下限的长度:不足 60 帧(2s)时按 60 帧算。
-   *     不再是 0.083 的等比结果,但这正是「可读时间不能被等比压缩」的意思。
-   */
-  const SEG0_MIN_FRAMES = 72;
-  const SEG0_END = Math.max(timing.at(0.083), SEG0_MIN_FRAMES);
-  const SEG1_END = timing.at(0.46);
-  const seg = frame < SEG0_END ? 0 : frame < SEG1_END ? 1 : 2;
-  /** 说明幕实际的段内比例 —— 供 noteIn / 徽章时刻表使用(不再假设它是 0.083)。 */
-  const seg0R = SEG0_END / timing.duration;
+  const HERO_END = Math.max(timing.at(0.18), 108);
+  const SEG1_END = timing.at(0.52);
+  const seg = frame < HERO_END ? 0 : frame < SEG1_END ? 1 : 2;
+  /** 立传段实际的段内比例 —— 供 noteIn 时刻表使用。 */
+  const seg0R = HERO_END / timing.duration;
 
   /**
    * 幕间**交叉淡入淡出**的帧数(2026-10-08 修「硬切」)。
@@ -98,15 +89,116 @@ export const S6ActionCard: React.FC = () => {
    */
   const SCENE_FADE = 12;
 
-  // 相机:★ 分段推近(lib/camera.ts)。
+  // ════════════════════════════════════════════════════════════════════
+  // 立传弧(spotlight-hero-card,references/shots/opening/spotlight-hero-card.md)
+  // 参数全部取自该卡的调校表,不凭感觉新写:
+  //   相机  正视 → rotY 30°/rotX 6°(卡 34°/8°;本卡文字密,留可读性余量),persp 1200
+  //   rise  10f,bezier(0.2,1.25,0.3,1) 过冲(卡原值)
+  //   悬停  sin bob 振幅 4px 周期 40f,lift 0→1(卡:z=110px·lift)
+  //   光束  lap1 strokeWidth 5+2.5 双层 → lap2 3.5+1.75、opacity 0.62,
+  //         strokeDasharray "0.14 1" 走 dashoffset(卡原值;色 = 本片 accent)
+  //   落地  reseat 18f,press 0.997(卡原值);终点 = 设备框内的卡片槽位
+  //   阴影  0 8·lift / 0 46·lift 90·lift(卡原公式,随高度生长)
+  // 与卡的唯一偏离:落点不是「贴回原位」而是「落进设备框」——
+  //   本段后面还有 16s 设备内滚动演示,卡片必须回到它的叙事现场。
+  // ════════════════════════════════════════════════════════════════════
+  const RISE_END = 10;
+  const BOB_END = 64;
+  const LAP1_END = 80;
+  const LAP2_END = 100;
+  const RESEAT_END = HERO_END;
+
+  /** 卡片自身的推近(CSS zoom = 布局级放大,按放大后尺寸栅格化,Q2 不走 transform scale)。
+   *  ★ 峰值 1.15:裁切窗口 560px × 1.15 ≈ 644px,加 bezel 与阴影仍远小于 1080,
+   *    主角完整入画;0.72 那版太小,立传的「推近感」被吃掉(f1920 实测卡片缩成小竖条)。 */
+  const heroZoom = interpolate(
+    frame,
+    [0, RISE_END, BOB_END, RESEAT_END],
+    [0.72, 1.12, 1.15, 1.15],
+    {extrapolateLeft: 'clamp', extrapolateRight: 'clamp', easing: Easing.bezier(0.3, 0, 0.25, 1)},
+  );
+  /** 侧向机位:推近期摇到 30°/6°,落地前回正 —— 回正后正好交接给设备内的正视镜头。 */
+  const heroRotY = interpolate(
+    frame,
+    [0, RISE_END, LAP2_END, RESEAT_END],
+    [2, 30, 30, 0],
+    {extrapolateLeft: 'clamp', extrapolateRight: 'clamp', easing: Easing.bezier(0.35, 0, 0.3, 1)},
+  );
+  const heroRotX = interpolate(
+    frame,
+    [0, RISE_END, LAP2_END, RESEAT_END],
+    [0, 6, 6, 0],
+    {extrapolateLeft: 'clamp', extrapolateRight: 'clamp', easing: Easing.bezier(0.35, 0, 0.3, 1)},
+  );
+  /** rise → reseat 的垂直主轨迹(px,负=向上)。 */
+  const riseY = interpolate(frame, [0, RISE_END], [0, -96], {
+    extrapolateLeft: 'clamp', extrapolateRight: 'clamp',
+    easing: Easing.bezier(0.2, 1.25, 0.3, 1),
+  });
+  const reseatY = interpolate(frame, [LAP2_END, RESEAT_END], [0, 96], {
+    extrapolateLeft: 'clamp', extrapolateRight: 'clamp',
+    easing: Easing.bezier(0.4, 0, 0.25, 1),
+  });
+  /** 悬停 bob(振幅 4px 周期 40f,卡原值;reseat 起淡出,避免与落地轨迹打架)。 */
+  const bobFade = interpolate(frame, [LAP2_END - 8, LAP2_END + 4], [1, 0], {
+    extrapolateLeft: 'clamp', extrapolateRight: 'clamp',
+  });
+  const bobY = frame >= RISE_END ? Math.sin(((frame - RISE_END) / 40) * Math.PI * 2) * 4 * bobFade : 0;
+  const liftY = riseY + reseatY + bobY;
+  /** 离地量(0→1),驱动阴影生长。 */
+  const lift = interpolate(frame, [0, RISE_END, LAP2_END, RESEAT_END], [0, 1, 1, 0], {
+    extrapolateLeft: 'clamp', extrapolateRight: 'clamp',
+  });
+  /** 落地微压(press 0.997,卡原值):reseat 最后 6f 轻压再弹回。 */
+  const press = interpolate(
+    frame,
+    [RESEAT_END - 6, RESEAT_END - 2, RESEAT_END],
+    [1, 0.997, 1],
+    {extrapolateLeft: 'clamp', extrapolateRight: 'clamp'},
+  );
+  /** 落地后整卡交棒给设备内镜头。
+   *  ★ 不做「原地淡出 + 设备淡入」—— 那会在 12f 交叉里留下
+   *    「卡片没落地、设备也没来」的半透明叠影(f1965 实测)。
+   *    让 hero 卡**向设备位置物理移动并缩小**(Q9:飞入的终点是页面真实槽位),
+   *    整机在同一窗口从同一位置长出接住它 —— 两条轨迹交汇于设备框。 */
+  const heroOut = interpolate(frame, [HERO_END - 12, HERO_END], [1, 0], {
+    extrapolateLeft: 'clamp', extrapolateRight: 'clamp',
+  });
+  /** reseat 后段:hero 卡向设备框中心(cx=640,cy=540)移动的轨迹与缩放。 */
+  const flyX = interpolate(frame, [LAP2_END, HERO_END], [0, 640 - 380 - 179], {
+    extrapolateLeft: 'clamp', extrapolateRight: 'clamp', easing: Easing.bezier(0.4, 0, 0.3, 1),
+  });
+  const flyY = interpolate(frame, [LAP2_END, HERO_END], [0, 540 - (540 - 470) - 395], {
+    extrapolateLeft: 'clamp', extrapolateRight: 'clamp', easing: Easing.bezier(0.4, 0, 0.3, 1),
+  });
+  const flyZoom = interpolate(frame, [LAP2_END, HERO_END], [1, 0.62], {
+    extrapolateLeft: 'clamp', extrapolateRight: 'clamp', easing: Easing.bezier(0.4, 0, 0.3, 1),
+  });
+  /** 轮廓光束两圈:dashoffset 走一圈 = 周长(lap1 快而亮,lap2 慢而弱)。 */
+  const BEAM_PERIMETER = 2 * (358 + 640);
+  const beamLap1 = interpolate(frame, [RISE_END + 4, LAP1_END], [BEAM_PERIMETER, 0], {
+    extrapolateLeft: 'clamp', extrapolateRight: 'clamp', easing: Easing.bezier(0.3, 0, 0.3, 1),
+  });
+  const beamLap2 = interpolate(frame, [BOB_END + 10, LAP2_END], [BEAM_PERIMETER, 0], {
+    extrapolateLeft: 'clamp', extrapolateRight: 'clamp', easing: Easing.bezier(0.45, 0, 0.55, 1),
+  });
+  /** 悬停期 3D 注记(C3:与主角同一透视空间;卡的 hover-3d-annotation 手法)。 */
+  const noteIn3d = interpolate(frame, [RISE_END + 8, RISE_END + 22], [0, 1], {
+    extrapolateLeft: 'clamp', extrapolateRight: 'clamp', easing: Easing.bezier(0.2, 0.7, 0.25, 1),
+  });
+  const noteOut3d = interpolate(frame, [LAP2_END - 6, LAP2_END + 6], [1, 0], {
+    extrapolateLeft: 'clamp', extrapolateRight: 'clamp',
+  });
+
+  // 相机:★ 分段推近(lib/camera.ts)。首阶从 HERO_END 起(立传段不接整机)。
   //   ★ 2026-10-07:周期漂移分量已删除(用户裁决);分段推近保留(每阶对应叙事上的
-  //     下一件事:三档特写 → 卡片 → 来源标注)。
-  //   ★ 2026-10-08:删除与之并存的**全程线性推近** `pushCamera(frame, 1.0, 1.2, duration)` ——
-  //     `Math.max` 里线性那条一路抬升,分段的停顿被覆盖,手机框全程一直在变大。
+  //     下一件事:卡片 → 01 节 → 来源标注)。
+  //   ★ 2026-10-08:删除与之并存的**全程线性推近** —— `Math.max` 里线性那条一路抬升,
+  //     分段的停顿被覆盖,手机框全程一直在变大。
   const scale = stagedPush(
     frame,
     [1.0, 1.06, 1.13, 1.2],
-    [0, SEG0_END, SEG1_END, timing.at(0.78)],
+    [HERO_END, HERO_END + 6, SEG1_END, timing.at(0.8)],
     timing.duration,
   );
 
@@ -119,27 +211,24 @@ export const S6ActionCard: React.FC = () => {
   //   停车点用像素给,理由与旧版一致(DeviceStage 按真实 scrollHeight 夹紧);
   //   ⚠ 3200 / 6400 是**初值**,由逐帧 still 自检校准到两个分区真正停在读数位置。
   //
-  // ★★ 2026-10-08:关键帧表的后续时刻**从 seg0R 派生**,不再直接用 timing.at(0.1)…
-  //   原因:seg0 有了绝对下限(SEG0_MIN_FRAMES)后,SEG0_END = 72 可能**大于**
-  //   timing.at(0.1) = 60 —— 而 interpolate 要求 inputRange 严格单调递增,
-  //   实测渲染直接抛 `inputRange must be strictly monotonically increasing but got
-  //   [0,72,60,108,180,240,312,516,600]`。这不是「画面难看」级别的错,是**渲不出来**。
-  //   ⇒ 换场后的每个时刻都改为「seg0 结束 + 剩余区间的一个比例」,结构上不可能再越界:
-  //     后续比例按旧表在剩下 0.917 里所占位置折算(0.1→(0.1-0.083)/0.917 等)。
-  const afterSeg0 = (frac: number) => SEG0_END + Math.round(frac * (timing.duration - SEG0_END));
+  // ★★ 2026-10-08:关键帧表的后续时刻**从 HERO_END 派生**,不再直接用 timing.at(0.1)…
+  //   原因:立传段有绝对下限(HERO_END ≥ 108),它可能**大于**某些比例点 ——
+  //   而 interpolate 要求 inputRange 严格单调递增,越界不是「画面难看」,
+  //   是**渲不出来**。⇒ 换场后的每个时刻都改为「立传结束 + 剩余区间的一个比例」。
+  const afterHero = (frac: number) => HERO_END + Math.round(frac * (timing.duration - HERO_END));
   const BRAKE1 = 3200;
   const BRAKE2 = 6400;
   const scrollY = interpolate(
     frame,
     [
       0,
-      SEG0_END,
-      afterSeg0(0.019),
-      afterSeg0(0.106),
-      afterSeg0(0.237),
-      afterSeg0(0.346),
-      afterSeg0(0.477),
-      afterSeg0(0.847),
+      HERO_END,
+      afterHero(0.02),
+      afterHero(0.12),
+      afterHero(0.26),
+      afterHero(0.38),
+      afterHero(0.52),
+      afterHero(0.86),
       timing.duration,
     ],
     [0, 0, 900, BRAKE1, BRAKE1, BRAKE2, BRAKE2, 9999, 9999],
@@ -189,46 +278,10 @@ export const S6ActionCard: React.FC = () => {
     extrapolateLeft: 'clamp', extrapolateRight: 'clamp',
   });
 
-  // 三档徽章逐个点亮:在 seg 0 内均分。
-  //   ★ 2026-10-07:落位瞬间一次**回弹**(badgePop),随后保持静止 ——
-  //     替换原先的 sin 持续脉动(16f 周期),那是与相机漂移同类的无语义连续运动。
-  //   ★ 2026-10-08:时刻表原本写死 `SEG0_END_R * (…)`,而 SEG0_END_R 是**比例**;
-  //     现在 seg0 有了绝对下限(见 SEG0_MIN_FRAMES),比例与实际帧数可能不等 ——
-  //     若仍用比例,末档会在场景被换掉之后才亮(实测旧版正是「末档 f47 亮完、f50 换场」)。
-  //     改成直接用 **seg0R = SEG0_END / duration**,保证三档一定在幕内亮完。
-  //     校验(v18 段长 600,seg0R = 72/600 = 0.12):三档分别在
-  //     (0.28→0.55)·72 = f20→40 / (0.48→0.75)·72 = f35→54 / (0.68→0.95)·72 = f49→68
-  //     ⇒ 末档 f68 亮完,距 SEG0_END=f72 仍有 4 帧静止,且整段退场从 f60 才开始,
-  //       所以「亮完 → 停一下 → 退场 → 交接」是一条完整的读得完的弧线。
-  const badgeOn = (i: number) =>
-    interpolate(
-      frame,
-      timing.span(seg0R * (0.28 + i * 0.2), seg0R * (0.55 + i * 0.2)),
-      [0, 1],
-      {
-        extrapolateLeft: 'clamp', extrapolateRight: 'clamp',
-        easing: Easing.bezier(0.2, 0.75, 0.3, 1),
-      },
-    );
-  const badgePop = (i: number) =>
-    1 - interpolate(
-      frame,
-      timing.span(seg0R * (0.55 + i * 0.2), seg0R * (0.72 + i * 0.2)),
-      [0, 1],
-      {extrapolateLeft: 'clamp', extrapolateRight: 'clamp'},
-    );
-
-  /** 说明幕的**退场**淡出(结束前 SCENE_FADE 帧内线性到 0)。 */
-  const scene0Out = interpolate(
-    frame,
-    [SEG0_END - SCENE_FADE, SEG0_END],
-    [1, 0],
-    {extrapolateLeft: 'clamp', extrapolateRight: 'clamp'},
-  );
-  /** 整机的**入场**淡入,与上面同窗口(两条曲线在 SEG0_END 交汇)。 */
+  /** 立传层的**退场**淡出(结束前 SCENE_FADE 帧内,与设备入场交汇)。 */
   const stageIn = interpolate(
     frame,
-    [SEG0_END - SCENE_FADE, SEG0_END],
+    [HERO_END - SCENE_FADE, HERO_END],
     [0, 1],
     {extrapolateLeft: 'clamp', extrapolateRight: 'clamp', easing: Easing.bezier(0.3, 0, 0.4, 1)},
   );
@@ -243,126 +296,117 @@ export const S6ActionCard: React.FC = () => {
   return (
     <FilmRoot>
       <div style={{position: 'absolute', inset: 0, opacity: fadeOut}}>
-        {/* ① 三档语义特写 */}
+        {/* ① 行动卡立传(spotlight-hero-card):同一张真实 <ActionCard>,
+             推近 → 弹起悬浮 → 轮廓光束检视 → 落进设备框。 */}
         {seg === 0 ? (
-          <div style={{position: 'absolute', inset: 0, opacity: scene0Out}}>
-            {/* ★ 该段原本 10s 几乎全静止(实测 f2250-2549 帧差全程 <0.35)。
-                根因:三档徽章在 110f 就点亮完毕,之后没有任何新事件;而徽章变的是
-                **细笔画文字的透明度**,帧差天然很小,连光扫(alpha 0.07–0.13)也不够。
-                修法(补**大面积**运动,而不是「缓慢微动」):
-                  ① 整块内容做 scale 推近 —— 大字缩放带来大量像素位移,帧差明显
-                  ② 增强光扫的对比(0.07→0.16)
-                  ③ 段落缩短到 90f(3s):纯文案页给 10s 本身就是拖沓,
-                     用户要的是核心功能演示,时间该给真实卡片(见下方 SEG0_END) */}
+          <div
+            style={{
+              position: 'absolute', inset: 0,
+              opacity: heroOut,
+              perspective: 1200,
+              perspectiveOrigin: '960px 540px',
+            }}
+          >
+            {/* 卡片主角:CSS zoom 做布局级放大(Q2 栅格化按放大后尺寸),
+                transform 只做机位旋转与垂直轨迹。构图:卡片偏左(x≈380),
+                注记在右侧 —— 左右配重,不让左侧空场。 */}
             <div
               style={{
-                position: 'absolute', inset: 0,
-                transform: `scale(${String(1 + interpolate(frame, [0, SEG0_END], [0, 0.06], {
-                  extrapolateLeft: 'clamp', extrapolateRight: 'clamp',
-                }))})`,
-                transformOrigin: '40% 45%',
+                position: 'absolute', left: 380, top: 540 - 470,
+                transform: `translate(${flyX.toFixed(1)}px, ${(liftY + flyY).toFixed(2)}px) rotateY(${heroRotY.toFixed(2)}deg) rotateX(${heroRotX.toFixed(2)}deg) scale(${(press * flyZoom).toFixed(4)})`,
+                transformStyle: 'preserve-3d',
+                transformOrigin: 'center center',
               }}
             >
-            <div
-              style={{
-                position: 'absolute', top: 0, bottom: 0, width: 460,
-                left: interpolate(frame, [20, SEG0_END - 8], [-540, 2480], {
-                  extrapolateLeft: 'clamp', extrapolateRight: 'clamp',
-                  easing: Easing.bezier(0.35, 0, 0.65, 1),
-                }),
-                background: 'linear-gradient(90deg, transparent, rgba(194,65,12,0.10), rgba(194,65,12,0.16), rgba(194,65,12,0.10), transparent)',
-                pointerEvents: 'none',
-              }}
-            />
-            
-            <div
-              style={{
-                position: 'absolute', left: 400, top: 290, width: 1120,
-                opacity: interpolate(frame, [0, 20], [0, 1], {
-                  extrapolateLeft: 'clamp', extrapolateRight: 'clamp',
-                }),
-              }}
-            >
+              {/* ★ 立传的主角是卡片的**优先块 + 01 标题 + 医疗徽章行** ——
+                  不是整张七节长卡(全卡高 3000+px,任何 zoom 都没法「完整入画」
+                  又保持字可读),也不是 860px(那会把「01 当前状态」切在半截)。
+                  裁到徽章行结束为止:信息自足(先看什么 + 三档取值),不半句。
+                  裁切用 overflow:hidden + 固定高,底下的分区被藏而不是删 ——
+                  同一个 <ActionCard> 组件,没有第二份 DOM。 */}
               <div
                 style={{
-                  fontFamily: 'var(--font-display)', fontSize: 44, fontWeight: 500,
-                  color: 'var(--fg)', lineHeight: 1.4,
+                  position: 'relative',
+                  width: 358,
+                  height: 790,
+                  overflow: 'hidden',
+                  zoom: heroZoom,
+                  boxShadow: `0 ${String(8 * lift)}px ${String(18 * lift + 6)}px rgba(32,25,20,${(0.10 + lift * 0.10).toFixed(3)}), 0 ${String(46 * lift)}px ${String(90 * lift + 20)}px rgba(32,25,20,${(0.06 + lift * 0.10).toFixed(3)})`,
+                  borderRadius: 24,
                 }}
               >
-                第一步永远是:先排除医疗危险
-              </div>
-              <div
-                style={{
-                  fontFamily: 'var(--font-body)', fontSize: 22, color: 'var(--muted)',
-                  marginTop: 18, lineHeight: 1.7,
-                }}
-              >
-                存在急性医疗危险表现时,不优先解释为孤独症相关行为。不做诊断、不给用药建议。
-              </div>
-            </div>
+                <ActionCard data={CARD} expired={false} />
 
-            {/* 三档徽章:用产品真实的三值语义色,「未排除」为本次真实取值 */}
-            <div
-              style={{
-                position: 'absolute', left: 400, top: 556, width: 1120,
-                display: 'flex', flexDirection: 'column', gap: 22,
-              }}
-            >
-              {TONES.map((tone, i) => {
-                const t = badgeOn(i);
-                const isActive = i === 1;
-                return (
-                  <div
-                    key={tone.label}
-                    style={{
-                      display: 'flex', alignItems: 'center', gap: 22,
-                      opacity: 0.25 + t * 0.75,
-                      transform: `translateX(${(1 - t) * -18}px)`,
-                    }}
+                {/* 轮廓光束两圈(只给主角一次,Q4;色 = 本片 accent 火焰橙)。
+                    SVG 坐标用未缩放逻辑尺寸(358×560),缩放交给外层 CSS zoom,
+                    于是 dashoffset 周长与视觉周长一致。 */}
+                {frame >= RISE_END + 4 && frame < LAP2_END + 4 ? (
+                  <svg
+                    width={358 + 40}
+                    height={790 + 40}
+                    viewBox={`0 0 ${String(358 + 40)} ${String(790 + 40)}`}
+                    style={{position: 'absolute', left: -20, top: -20, pointerEvents: 'none'}}
                   >
-                    <span
-                      style={{
-                        fontFamily: 'var(--font-body)', fontSize: 20, fontWeight: 600,
-                        color: tone.color,
-                        border: `2px solid ${tone.color}`,
-                        borderRadius: 9999, padding: '6px 22px',
-                        flexShrink: 0, minWidth: 108, textAlign: 'center',
-                        backgroundColor: isActive
-                          ? `color-mix(in oklab, ${tone.color}, transparent ${String(100 - (14 + badgePop(i) * 16))}%)`
-                          : 'transparent',
-                      }}
-                    >
-                      {tone.label}
-                    </span>
-                    <span style={{fontFamily: 'var(--font-body)', fontSize: 21, color: 'var(--fg-2)'}}>
-                      {tone.desc}
-                    </span>
-                    {isActive ? (
-                      <span
-                        style={{
-                          fontFamily: 'var(--font-body)', fontSize: 15,
-                          color: tone.color, marginLeft: 'auto',
-                        }}
-                      >
-                        本次结果
-                      </span>
-                    ) : null}
-                  </div>
-                );
-              })}
+                    <rect
+                      x={20} y={20}
+                      width={358} height={790}
+                      rx={24}
+                      fill="none"
+                      stroke="var(--accent)"
+                      strokeWidth={5}
+                      strokeDasharray={`${String(0.14 * 2 * (358 + 790))} ${String(2 * (358 + 790))}`}
+                      strokeDashoffset={(beamLap1 / BEAM_PERIMETER) * 2 * (358 + 790)}
+                      opacity={frame <= LAP1_END ? 0.9 : 0}
+                      strokeLinecap="round"
+                    />
+                    <rect
+                      x={20} y={20}
+                      width={358} height={790}
+                      rx={24}
+                      fill="none"
+                      stroke="var(--accent)"
+                      strokeWidth={4.5}
+                      strokeDasharray={`${String(0.14 * 2 * (358 + 790))} ${String(2 * (358 + 790))}`}
+                      strokeDashoffset={(beamLap2 / BEAM_PERIMETER) * 2 * (358 + 790)}
+                      opacity={frame > BOB_END + 10 ? 0.78 : 0}
+                      strokeLinecap="round"
+                    />
+                  </svg>
+                ) : null}
+              </div>
             </div>
 
-            {/* ★ 这里曾有一块「后半段的离散文案落位」三栏文案（未采集/已采集且正常/存在高风险表现），
-                注释写的是「让 3s-10s 之间也有信息推进」。**它是死代码，全片一帧都不可见**：
-                它在 `seg === 0` 分支里，而 seg 0 只在 frame < SEG0_END = at(0.083) = 90 时渲染；
-                该块的 opacity 是 `interpolate(frame, [100, 126])`，最早也要 frame 100 才显现 ——
-                那时 seg 已经是 1，整个分支早被卸载了。
-                独立终检实测 f2700–2789 该位置墨量恒为 0.00%，确认从不出现。
-
-                删除而不是「把时间改到 90 以内」的理由：seg 0 只有 90 帧（3s），
-                三档语义行自己的落位（见上方 badgeOn，末档在 f78 完成）已经填满这一段；
-                再塞三栏文案只会让 3 秒里挤五个事件。**这一段的问题从来不是事件不够。** */}
-            </div>
+            {/* 悬停期 3D 注记(C3:与主角同一透视 —— 它在旋转层**之外**,
+                但跟随同一个 perspectiveOrigin,读起来像浮在卡片左侧的空间里)。 */}
+            {frame >= RISE_END + 8 ? (
+              <div
+                style={{
+                  position: 'absolute', left: 1080, top: 420, width: 460,
+                  opacity: Math.min(noteIn3d, noteOut3d),
+                  transform: `translateZ(0) translateY(${((1 - noteIn3d) * 18).toFixed(1)}px)`,
+                }}
+              >
+                <div
+                  style={{
+                    fontFamily: 'var(--font-display)', fontSize: 44, fontWeight: 500,
+                    color: 'var(--fg)', lineHeight: 1.42,
+                  }}
+                >
+                  行动卡,
+                  <br />
+                  它先看医疗危险。
+                </div>
+                <div
+                  style={{
+                    fontFamily: 'var(--font-body)', fontSize: 21, color: 'var(--muted)',
+                    marginTop: 20, lineHeight: 1.75,
+                  }}
+                >
+                  存在急性医疗危险表现时,不优先解释为孤独症相关行为。
+                  不做诊断、不给用药建议。
+                </div>
+              </div>
+            ) : null}
           </div>
         ) : null}
 

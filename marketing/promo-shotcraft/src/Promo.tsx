@@ -37,15 +37,26 @@ export const Promo: React.FC<{bgm?: boolean}> = ({bgm = true}) => {
         );
       })}
 
-      {/* BGM:音量包络 1s 淡入→0.30→2s 淡出,bgm prop 控制有无 */}
+      {/* BGM:音量包络 1s 淡入→0.30→2s 淡出,bgm prop 控制有无。
+          ★ v22:S5 流式分析段退避到 0.08 —— 让观众「听见 AI 在写字」。
+          ★ v23 修正:退避窗口**覆盖 S5 + S6 立传与滚动段**(到 f2300 ≈ 76.7s)。
+            实测:退避只到 66.3s 时,66-67s 的 tech-house 底鼓回涨叠在
+            「S6 滚动段音效已砍空」的窗口上 = 一种新的不同步(鼓点回来了,
+            画面动作没有对应的声音)。让 BGM 等 S6 主体演完(「01 当前状态」
+            刹车停稳后)再回涨 —— 观众先把卡片读完,音乐再回来。 */}
       {bgm ? (
         <Audio
           src={staticFile('audio/bgm-tech-house.mp3')}
           volume={(f) =>
-            interpolate(f, [0, 30, TOTAL - 60, TOTAL], [0, 0.3, 0.3, 0], {
-              extrapolateLeft: 'clamp',
-              extrapolateRight: 'clamp',
-            })
+            interpolate(
+              f,
+              [0, 30, 1080 - 30, 1080 + 30, 2300 - 30, 2300 + 60, TOTAL - 60, TOTAL],
+              [0, 0.3, 0.3, 0.08, 0.08, 0.3, 0.3, 0],
+              {
+                extrapolateLeft: 'clamp',
+                extrapolateRight: 'clamp',
+              },
+            )
           }
         />
       ) : null}

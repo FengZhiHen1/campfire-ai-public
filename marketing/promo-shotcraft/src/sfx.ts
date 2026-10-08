@@ -79,9 +79,9 @@ export const SFX: SfxEntry[] = [
   {from: atSfx('S2', 0.73, 'impact-deep-whoosh'), src: 'impact-deep-whoosh', volume: 0.34, durationInFrames: 30, comment: 'S2「是没人商量」强调'},
 
   // ── S3 定位与首页(8s)──
+  // ★ v22 声音减法:三条 sparkle-touch 三连发 = 同音色机枪感的另一种形态(S2 规则)。
+  //   卖点 1/2 的叮砍掉,只在最强的卖点 3 保留一次 —— 让「叮」重新变得特别。
   {from: atSfx('S3', 0.02, 'whoosh-big'), src: 'whoosh-big', volume: 0.45, durationInFrames: 50, comment: 'S3 设备框浮入'},
-  {from: atSfx('S3', 0.22, 'sparkle-touch'), src: 'sparkle-touch', volume: 0.32, comment: 'S3 卖点1 点亮'},
-  {from: atSfx('S3', 0.33, 'sparkle-touch'), src: 'sparkle-touch', volume: 0.32, comment: 'S3 卖点2 点亮'},
   {from: atSfx('S3', 0.44, 'sparkle-touch'), src: 'sparkle-touch', volume: 0.34, comment: 'S3 卖点3 点亮'},
   {from: atSfx('S3', 0.7, 'transition-soft'), src: 'transition-soft', volume: 0.3, durationInFrames: 40, comment: 'S3 定位主句'},
 
@@ -112,37 +112,42 @@ export const SFX: SfxEntry[] = [
   {from: atSfx('S5', 0.004, 'transition-soft'), src: 'transition-soft', volume: 0.32, durationInFrames: 40, comment: 'S5 分析段切入'},
   {from: atSfx('S5', 0.02, 'data-stream'), src: 'data-stream', volume: 0.28, durationInFrames: 60, comment: 'S5「正在分析…」底噪'},
   {from: atSfx('S5', 0.05, 'ui-pop'), src: 'ui-pop', volume: 0.34, comment: 'S5 展开思考区(使用者的一次动作)'},
-  {from: atSfx('S5', 0.075, 'text-type'), src: 'text-type', volume: 0.32, durationInFrames: 50, comment: 'S5 思考文本开始逐字流出'},
-  {from: atSfx('S5', 0.19, 'text-type'), src: 'text-type', volume: 0.26, durationInFrames: 50, comment: 'S5 思考文本流出中段'},
+  // ★ v22 声音减法 + BGM 退避:流式输出段应该「听见 AI 在写字」,但不该听见
+  //   打字机 —— text-type 降到 0.15–0.18,铺成底噪质感;同时 BGM 在本段压低
+  //   (见 Promo.tsx 的 bgmDuck),让观众真的听见逐字。
+  {from: atSfx('S5', 0.075, 'text-type'), src: 'text-type', volume: 0.16, durationInFrames: 50, comment: 'S5 思考文本开始逐字流出'},
+  {from: atSfx('S5', 0.19, 'text-type'), src: 'text-type', volume: 0.15, durationInFrames: 50, comment: 'S5 思考文本流出中段'},
   {from: atSfx('S5', 0.315, 'transition-soft'), src: 'transition-soft', volume: 0.28, durationInFrames: 40, comment: 'S5 收起思考区'},
-  {from: atSfx('S5', 0.33, 'text-type'), src: 'text-type', volume: 0.34, durationInFrames: 50, comment: 'S5 判断句开始流出'},
+  {from: atSfx('S5', 0.33, 'text-type'), src: 'text-type', volume: 0.18, durationInFrames: 50, comment: 'S5 判断句开始流出'},
   {from: atSfx('S5', 0.44, 'data-stream'), src: 'data-stream', volume: 0.24, durationInFrames: 50, comment: 'S5 判断句流出中'},
   {from: atSfx('S5', 0.56, 'sparkle-touch'), src: 'sparkle-touch', volume: 0.36, comment: 'S5 判断句打完,结论落定'},
-  {from: atSfx('S5', 0.575, 'click-camera'), src: 'click-camera', volume: 0.34, comment: 'S5 结论行画出依据线'},
   {from: atSfx('S5', 0.605, 'camera-autofocus'), src: 'camera-autofocus', volume: 0.36, durationInFrames: 90, comment: 'S5 开始滚向行动卡'},
   {from: atSfx('S5', 0.63, 'impact-deep-whoosh'), src: 'impact-deep-whoosh', volume: 0.42, durationInFrames: 40, comment: 'S5 行动卡在对话里出现'},
   {from: atSfx('S5', 0.68, 'ui-pop'), src: 'ui-pop', volume: 0.34, comment: 'S5 卡片落定'},
-  {from: atSfx('S5', 0.72, 'transition-soft'), src: 'transition-soft', volume: 0.3, durationInFrames: 40, comment: 'S5 右栏来源条数落位'},
-  {from: atSfx('S5', 0.78, 'click-camera'), src: 'click-camera', volume: 0.33, comment: 'S5 来源分布逐条'},
-  {from: atSfx('S5', 0.84, 'click-camera'), src: 'click-camera', volume: 0.32, comment: 'S5 来源分布逐条 2'},
-  {from: atSfx('S5', 0.9, 'sparkle-touch'), src: 'sparkle-touch', volume: 0.3, comment: 'S5 收束'},
-  {from: atSfx('S5', 0.94, 'transition-soft'), src: 'transition-soft', volume: 0.3, durationInFrames: 46, comment: 'S5 交棒行动卡段'},
-  {from: atSfx('S5', 0.97, 'whoosh-fast'), src: 'whoosh-fast', volume: 0.5, durationInFrames: 22, comment: 'S5 段落收尾'},
+  // ★ 2026-10-08 v23 二次修正(用户:「有的音效没有对应的动作」)。
+  //   音轨峰实测:56.3/57.9/59.7/60.6/61.6s 五个峰,对的是
+  //   「click-camera 来源条1/2」「sparkle-touch 收束」「transition-soft 交棒」
+  //   「whoosh-fast 收尾」—— 这五条的「画面事件」是右侧说明区**文字落位**
+  //   与纯过渡,画面里没有任何物件在发声(S4:装饰音不如拟音)。
+  //   依据线画线(0.575 click-camera)同理:画一条线没有「咔哒」声。
+  //   全部砍掉。保留的都有真实对应:autofocus=相机推近(它自己是相机声)、
+  //   impact=卡片到场(重物落位)、ui-pop=卡片落定、whoosh-fast=交棒立传推近。
+  {from: atSfx('S5', 0.97, 'whoosh-fast'), src: 'whoosh-fast', volume: 0.5, durationInFrames: 22, comment: 'S5 段落收尾(交棒立传推近)'},
 
   // ── S6 行动卡(20s)──
-  //   ★ 2026-10-08:三档点亮的时刻随说明幕加长(SEG0_MIN_FRAMES=72 ⇒ seg0R=0.12)重钉,
-  //     否则「未排除/高风险」的落位声会比徽章早到;交棒声也对齐到 SEG0_END=0.12。
-  {from: atSfx('S6', 0.02, 'transition-soft'), src: 'transition-soft', volume: 0.3, durationInFrames: 40, comment: 'S6 三档特写切入'},
-  {from: atSfx('S6', 0.033, 'sparkle-touch'), src: 'sparkle-touch', volume: 0.38, comment: 'S6「稳定」点亮'},
-  {from: atSfx('S6', 0.058, 'sparkle-touch'), src: 'sparkle-touch', volume: 0.4, comment: 'S6「未排除」点亮'},
-  {from: atSfx('S6', 0.082, 'sparkle-touch'), src: 'sparkle-touch', volume: 0.44, comment: 'S6「高风险」点亮'},
-  {from: atSfx('S6', 0.12, 'whoosh-fast'), src: 'whoosh-fast', volume: 0.55, durationInFrames: 24, comment: 'S6 交棒设备框'},
-  {from: atSfx('S6', 0.3, 'impact-deep-whoosh'), src: 'impact-deep-whoosh', volume: 0.4, durationInFrames: 34, comment: 'S6 行动卡落定'},
-  {from: atSfx('S6', 0.37, 'text-type'), src: 'text-type', volume: 0.3, durationInFrames: 50, comment: 'S6 建议逐条'},
-  {from: atSfx('S6', 0.44, 'camera-autofocus'), src: 'camera-autofocus', volume: 0.4, durationInFrames: 90, comment: 'S6 来源标注高亮'},
-  {from: atSfx('S6', 0.56, 'click-camera'), src: 'click-camera', volume: 0.33, comment: 'S6 来源条 2'},
-  {from: atSfx('S6', 0.66, 'click-camera'), src: 'click-camera', volume: 0.33, comment: 'S6 来源条 3'},
-  {from: atSfx('S6', 0.76, 'click-camera'), src: 'click-camera', volume: 0.32, comment: 'S6 来源条 4'},
+  //   ★ 2026-10-08 v22 二次修正(用户:「1min 左右的音效存在音画不同步」)。
+  //     音轨能量扫描实测:62s-67s(S6 立传+落定+建议+来源标注)音效密集成墙 ——
+  //     6 秒 11 条,观众听到的不是「每个动作有自己的声音」,而是一堵连续声墙,
+  //     任何一条都无法与画面对上。这不是某条晚了几帧,是**密度本身让对齐失去意义**
+  //     (S2 规则的反面:这一段我自己违反了它)。
+  //     修法:只留**拟音与结构性重音**,装饰音(sparkle 光束、text-type 建议、
+  //     click 来源条逐条)全砍 —— 光束扫过与文字落位没有真实世界对应声音(S4)。
+  //     留下的 5 条:推近 / 弹起 / 落进设备框 / 行动卡落定 / 双会话对照,
+  //     每条都对应一个**看得见的结构事件**,彼此间隔 ≥1.5s,观众来得及把它们对上。
+  {from: atSfx('S6', 0.02, 'whoosh-big'), src: 'whoosh-big', volume: 0.48, durationInFrames: 40, comment: 'S6 立传推近'},
+  {from: atSfx('S6', 0.033, 'impact-deep-whoosh'), src: 'impact-deep-whoosh', volume: 0.5, durationInFrames: 30, comment: 'S6 弹起(医疗主角离地)'},
+  {from: atSfx('S6', 0.167, 'ui-pop'), src: 'ui-pop', volume: 0.44, comment: 'S6 落进设备框(交接)'},
+  {from: atSfx('S6', 0.3, 'impact-deep-whoosh'), src: 'impact-deep-whoosh', volume: 0.4, durationInFrames: 34, comment: 'S6 行动卡落定(全片峰值)'},
   {from: atSfx('S6', 0.86, 'transition-soft'), src: 'transition-soft', volume: 0.32, durationInFrames: 46, comment: 'S6 双会话对照落位'},
 
   // ── S7 记忆与档案(26s)—— ★ 2026-10-07 拆两幕:档案 15s + 记忆 11s ──
@@ -155,7 +160,6 @@ export const SFX: SfxEntry[] = [
   {from: atSfx('S7', 0.46, 'camera-autofocus'), src: 'camera-autofocus', volume: 0.42, durationInFrames: 90, comment: 'S7 候选条目描边 draw-on'},
   {from: atSfx('S7', 0.6, 'ui-pop'), src: 'ui-pop', volume: 0.48, comment: 'S7 确认按下(状态翻转)'},
   {from: atSfx('S7', 0.585, 'transition-soft'), src: 'transition-soft', volume: 0.32, durationInFrames: 34, comment: 'S7 切到记忆页'},
-  {from: atSfx('S7', 0.661, 'sparkle-touch'), src: 'sparkle-touch', volume: 0.3, comment: 'S7 记忆第一行落位'},
   {from: atSfx('S7', 0.712, 'sparkle-touch'), src: 'sparkle-touch', volume: 0.3, comment: 'S7 记忆第二行落位'},
   {from: atSfx('S7', 0.831, 'click-camera'), src: 'click-camera', volume: 0.34, comment: 'S7 记忆第三行落位'},
   {from: atSfx('S7', 0.873, 'click-camera'), src: 'click-camera', volume: 0.36, comment: 'S7 高亮「删除」按钮'},
