@@ -373,7 +373,11 @@ H.264 帧间预测按 GOP 放大」,依据是**上一位复核者的实验**(同
 
 ## 10. 参考:复核报告位置
 
-- `marketing/promo-shotcraft/.tmp/rev4/REPORT.md`(23.9 KB,rev4 完整报告)
-- `marketing/promo-shotcraft/.tmp/rev4/`(脚本与证据:`closure-audit.py`、
-  `ablate.py`、`base-f400.png` / `ablA-f400.png` 等)
-- 更早轮次:`.tmp/rev/`、`.tmp/rev3/`
+- `docs/证据/materials/promo-shotcraft-rev4-REPORT.md`(23.9 KB,rev4 完整报告；
+  **2026-10-07 从 `marketing/promo-shotcraft/.tmp/rev4/REPORT.md` 迁出**，原 `.tmp/`
+  已随「只保留一个临时目录」的清理删除)
+- 更早轮次:`.tmp/rev/`、`.tmp/rev3/` —— **这些目录已于 2026-10-07 删除**，
+  连同 `rev4/` 下的脚本与逐帧证据（`closure-audit.py`、`ablate.py`、
+  `base-f400.png` / `ablA-f400.png` 等）。它们是可重新生成的过程产物；
+  只把**结论性的报告**留档，逐帧 PNG 与 mp4 不再保留。
+  若需复跑，脚本逻辑已固化在 `verify/` 的对应门禁里。

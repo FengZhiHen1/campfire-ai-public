@@ -92,8 +92,12 @@ for name in ("check-sfx.ts", "check-classnames.ts"):
 
 # ── ⑦ 独立终检 ──────────────────────────────────────────────────
 h("⑦ 派独立 subagent 终检")
-for p in [Path(".tmp/rev/FINAL-REVIEW-v16.md"), Path(".tmp/review-verify.txt"),
-          Path(".tmp/review-fixed.txt")]:
+# 2026-10-07：终检报告迁到证据树（原 `.tmp/rev/`，该目录不入版本控制）。
+# `.tmp/review-verify.txt` / `.tmp/review-fixed.txt` 仍留在 `.tmp/`——
+# 它们是过程日志，可重跑生成，故不迁。
+for p in [Path("docs/证据/materials/promo-FINAL-REVIEW-v16.md"),
+          Path("docs/证据/materials/promo-FINAL-REVIEW-v16-r2.md"),
+          Path(".tmp/review-verify.txt"), Path(".tmp/review-fixed.txt")]:
     lines.append(f"  {'✓' if p.exists() else '—'} {p}")
 
 out = Path(".tmp/goal-checklist.txt")
