@@ -16,6 +16,7 @@
  *   - 禁止给未命中的请求一个「看起来正常」的空响应（那会把空态渲染成假绿）
  */
 
+import { toolDisplayName } from '../../src/features/consult/view/MessageParts/toolLabels';
 import type { ContentAssertion } from './assertions';
 
 /**
@@ -510,8 +511,14 @@ export const PAGE_SHOTS: readonly PageShot[] = [
         // 候选串刻意只取默认可见的部分：引用条目在 `.citation-block` 这个 `<details>` 里
         // 默认收起（对话页设计契约修订 5），它的正文不在 innerText 中。用「依据 1 条」这个
         // 折叠头来断言依据区存在——它才是首屏真实呈现的形态。
+        //
+        // 工具行那一条**派生自词表**，不写字面量：2026-10-07 实测本项曾长期失败，原因是
+        // 这里写的是线上标识符 `search_cases · 已结束`，而产品按设计真源（对话页设计契约
+        // 修订 7）渲染的是中文友好名「查阅案例 · 已结束」——本断言只命中 2/3 条。
+        // 映射是否正确不归本夹具证明（它由 src 侧的 toolLabels.test.ts 与后端的
+        // test_tool_labels_coverage.py 各自把关）；这里要的只是「这一行确实渲染出来了」。
         minHits: 3,
-        candidates: ['先不劝。他坐下不走', '依据 1 条', 'search_cases · 已结束'],
+        candidates: ['先不劝。他坐下不走', '依据 1 条', `${toolDisplayName('search_cases')} · 已结束`],
       },
     ],
   },
