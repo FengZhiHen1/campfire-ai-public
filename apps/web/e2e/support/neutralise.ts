@@ -154,7 +154,7 @@ export interface ClippedElement {
  *      （`components.css:75`：1×1px + `clip-path: inset(50%)`）差 27px，
  *      是无障碍用途的视觉隐藏（内容对屏幕阅读器仍可见），更不是「被裁的内容」。
  *
- * 前两条由裁决明确要求；第三条是我用真实页面探针发现的（`T01-assets/probe-clip-mobile.txt`：
+ * 前两条由裁决明确要求；第三条是我用真实页面探针发现的（`docs/证据/orchestrator-20261002-001/T01-assets/probe-clip-mobile.txt`：
  * 若不排除，`chat` 与 `cases` 各有一个 27px 的假红源）。三者的共同点是
  * 该 CSS 属性的用途就是截断，所以按属性判定比按像素差判定更本质。
  *
@@ -331,7 +331,7 @@ export interface OverflowMeasurement {
    * 两者不等（外壳场景：`.device-screen` 视口高 844，而文档视口高在 desktop 下是 1000）。
    * 实现时我一度写成 `documentElement.clientHeight + innerOverflowPx`，在 desktop 下
    * 得到 1000 + 1241 = 2241，而真实展开后的内容高只有 2133，于是误报展开失败
-   * （被 `guard-nonvacuity` 的 `assertExpanded` 抓到，见 `T01-assets/r3-run2.txt`）。
+   * （被 `guard-nonvacuity` 的 `assertExpanded` 抓到，见 `docs/证据/orchestrator-20261002-001/T01-assets/r3-run2.txt`）。
    * 这不是裁决的问题，是「把两个不同来源的量相加」这个动作本身错。
    *
    * 本字段的算法（逐来源取，不跨来源相加）

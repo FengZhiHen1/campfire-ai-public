@@ -396,7 +396,7 @@ async def _tenant_exists(tenant_id: object) -> bool | None:
     「查不动」与「不存在」必须分开。若把查询失败当成「不存在」，调用方会据此把它当
     业务拒绝返回——而真实原因可能是 core 抖动，此时**账号可能已经建出来了**，
     谎报「邀请码无效」会把用户引向重试（重试再因账号已存在失败，死循环）。
-    实测（真 core，`tmp/t40/probe_tenant_api.py`）：`public` → `TenantConfig`；
+    实测（真 core，`docs/证据/probes/t40/probe_tenant_api.py`）：`public` → `TenantConfig`；
     `t40-unknown-tenant` → `None`。
 
     Args:
@@ -538,7 +538,7 @@ def make_sign_up_override(
             # 它之后原样 `raise`，于是异常冒泡成**匿名可达的裸 500**——而触发它的
             # 条件（把租户名换成 URL 路径的一段）完全由调用方控制，因此 500 本身
             # 就是「该租户不存在」的信号：
-            #     实测（真 uvicorn + 真 core，`tmp/t40/probe-before.json`）
+            #     实测（真 uvicorn + 真 core，`docs/证据/probes/t40/probe-before.json`）
             #     POST /api/auth/t40-unknown-tenant/signup + 有效码 → HTTP 500
             #     `Internal Server Error`；同一张码改打 /api/auth/（public）→ 200 OK。
             # SDK 抛的是**裸 `Exception`**（`auth_utils.py:869`），所以这里只能用
@@ -615,11 +615,11 @@ def make_sign_up_override(
             # 因此本分支只在**码有效**时可达 ⇒ 它的出现本身证明了「候选码有效」，
             # 而这正是预言机：拿一张候选码打一次即可判定真伪，且不消耗任何资源。
             #
-            # 实测（真 uvicorn + 真 core，`tmp/t40/probe-before.json`）：
+            # 实测（真 uvicorn + 真 core，`docs/证据/probes/t40/probe-before.json`）：
             #     POST /api/auth/signup  {email: c4-before@stfakeemail.supertokens.com,
             #                             inviteCode: <有效码>}
             #     → 200 {"status":"FIELD_ERROR","formFields":[{"id":"email",…}]}
-            #   改动后同一请求（`tmp/t40/probe-after.json`）：
+            #   改动后同一请求（`docs/证据/probes/t40/probe-after.json`）：
             #     → 200 {"status":"GENERAL_ERROR","message":"邀请码无效或已不可用"}
             #
             # 与四类同形的代价（**如实记下，这是本裁决的用户可见影响**）：
