@@ -19,10 +19,10 @@ import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { MANIFEST_PATH, RUN_ID_PATH, SIDECAR_DIR } from './paths';
 
 /**
- * 开始一次运行：生成本轮批号、清掉上一轮的残留。
+ * 开始一次运行：生成本轮批号；按 `reset` 决定是否清掉上一轮的残留。
  *
  * 前置: 无（由 Playwright 的 globalSetup 调用，早于任何用例）
- * 后置: 批号已落盘；`manifest.json` 与 `.run/` 里的上一轮残留已删除
+ * 后置: 批号已落盘；`reset` 为真时 `manifest.json` 与 `.run/` 里的上一轮残留已删除
  * 异常: 清理或写盘失败时向上抛（不吞：那会让「混批」在下一轮才暴露）
  *
  * 为什么要清残留（P2-3）
@@ -31,11 +31,26 @@ import { MANIFEST_PATH, RUN_ID_PATH, SIDECAR_DIR } from './paths';
  * 全绿时才重写。于是「部分成功」的一轮会留下旧 manifest + 新旧混合 PNG：
  * 清单里的 sha256 与它声称的那些 PNG 不再对应，而外观上目录是"满"的。
  * 清掉旧清单与旧 sidecar 后，「清单存在」就等价于「本轮跑完了」。
+ *
+ * @param reset 是否清掉上一轮产物；由 `SHOTS_RESET` 决定，见下方说明
+ *
+ * 为什么清理要可关（2026-10-07 拆分 `shots`/`e2e` 两条入口之后新加）
+ *
+ * `e2e`（内容断言）与 `shots`（截图）共用同一份 `playwright.config.ts`，因此也共用这个
+ * globalSetup。若不分条件地清，跑一次 `e2e` 就会**删掉上一次 `shots` 的 manifest.json**——
+ * 那是评审要看的产物，删它属于「静默销毁证据」，方向完全错。
+ * 故清理只在 `SHOTS_RESET=1`（由 `pnpm shots` 脚本设置）时发生。
+ *
+ * 默认不清是一条**安全的失败方向**：万一有人绕过 `pnpm shots` 直接跑截图，旧 sidecar
+ * 会因批号不一致在汇总时被 `manifest.spec.ts` 点名失败，而不是拼出一份混批清单。
  */
-export async function beginRun(): Promise<string> {
-  await rm(SIDECAR_DIR, { recursive: true, force: true });
-  await rm(MANIFEST_PATH, { force: true });
-  // 目录要重建：上面刚把 .run/ 整个删掉，批号文件就写在它里面。
+export async function beginRun(reset: boolean): Promise<string> {
+  if (reset) {
+    await rm(SIDECAR_DIR, { recursive: true, force: true });
+    await rm(MANIFEST_PATH, { force: true });
+  }
+  // 目录要重建：上面可能刚把 `.run/` 整个删掉，批号文件就写在它里面。
+  // `mkdir` 带 recursive 时对已存在目录是空操作，故两条路径都安全。
   await mkdir(SIDECAR_DIR, { recursive: true });
 
   // 批号 = 时间戳 + 随机段：前者便于人工按时间排序，后者保证同一毫秒内两次运行也不撞。

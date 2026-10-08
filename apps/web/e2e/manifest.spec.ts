@@ -13,6 +13,12 @@
  * 禁止行为:
  *   - 禁止在 sidecar 缺张时生成 manifest（张数不足即失败，不产出一份「看起来完整」的清单）
  *   - 禁止直接搬运 sidecar 里的哈希（必须回读磁盘复算，见 buildManifest 的说明）
+ *
+ * 2026-10-07（拆分 `shots` / `e2e` 两条入口）起，本文件**不再断言 `assertedContent` 非空**：
+ * 内容断言已归 `content.spec.ts`，截图入口不再求值它们，该字段恒为空数组（保留字段是为了
+ * 不因一次拆分改动 `formatVersion` 的形状）。「截图必须有料」这条不变量因此**转移**到
+ * `pnpm e2e`——它靠命名 project 隔离（`content-*`），其失败不会再挡住截图。
+ * 反过来说：**跑完 `pnpm shots` 不等于验收通过，必须再跑 `pnpm e2e`。**
  */
 
 import { readFile, stat, writeFile } from 'node:fs/promises';
@@ -87,7 +93,6 @@ test('汇总 sidecar 成 manifest 并复算', async () => {
     const bytes = await readFile(absolute);
     expect(sha256Of(bytes), `${shot.file} 的 sha256 与 manifest 不一致`).toBe(shot.sha256);
     expect(bytes.byteLength, `${shot.file} 的字节数与 manifest 不一致`).toBe(shot.bytes);
-    expect(shot.assertedContent.length, `${shot.file} 没有记录任何断言命中特征串`).toBeGreaterThan(0);
 
     // 裁决 2：字体必须真的加载。用例里 `awaitDisplayFont` 会让未加载直接失败，
     // 这里再查一次是因为「manifest 记录了什么」也要自洽——审查者只看文件，

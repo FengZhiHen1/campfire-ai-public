@@ -12,7 +12,8 @@
     "test:watch": "vitest",
     "lint": "oxlint",
     "typecheck": "tsc --noEmit",
-    "shots": "playwright test",
+    "shots": "playwright test --project=mobile --project=desktop --project=manifest",
+    "e2e": "playwright test --project=content-mobile --project=content-desktop",
     "sync-tokens": "node scripts/sync-tokens.mjs"
   },
   "dependencies": {

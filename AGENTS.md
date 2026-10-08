@@ -59,6 +59,22 @@ pnpm --filter @campfire/web test && pnpm --filter @campfire/web build
 uv run python -m campfire.cli convert <x.html> # HTML → 可摄取 Markdown（不连库）
 uv run python -m campfire.cli ingest <x.md>    # 摄取到资料库（条目与节点同事务）
 ```
+### 页面截图（评测与验收用；落点不入 git）
+
+```bash
+pnpm --filter @campfire/web shots   # 截图：10 页 × 2 视口 × 2 图种 = 40 张 PNG + manifest.json
+pnpm --filter @campfire/web e2e     # 内容断言：证明每张图「有料」而不是空态
+```
+
+**两条入口都必须跑**：`shots` 只出图，`e2e` 才验内容；**跑完 `shots` 不等于验收通过**。
+落点默认 `.tmp/screenshots/`（`SHOTS_OUT` 可改），已在 `.gitignore` 的 `.tmp/` 之下。
+
+- 删掉内容断言不影响出图（两者按 project 隔离），反之亦然——这是刻意的：
+  让「图有没有截到」与「图里有没有内容」两种失败各自可见，不互相掩盖。
+- **加了新路由就要加新截图配置**，否则那条路由永远不会有 PNG，
+  而 `manifest` 仍会宣布「40 张」（它只验矩阵内部自洽）。
+  这条对应关系由 `apps/web/tests/routes-coverage.test.ts` 机械守着，`pnpm test` 会红。
+
 
 `mypy` 只传 `apps/api/tests` 会因 `conftest` 被当成两个模块而中止（
 `Source file found twice under different module names`）——**始终同时传 src 与 tests 两个路径**。
