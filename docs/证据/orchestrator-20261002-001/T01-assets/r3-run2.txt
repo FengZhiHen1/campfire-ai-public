@@ -1,0 +1,132 @@
+
+> @campfire/web@0.1.0 shots E:\Project\Web_Development\Campfire-AI\apps\web
+> playwright test
+
+[WebServer] (node:49580) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] 
+[WebServer] > @campfire/web@0.1.0 build E:\Project\Web_Development\Campfire-AI\apps\web
+[WebServer] > node scripts/sync-tokens.mjs && tsc --noEmit && vite build && node scripts/check-contract-css.mjs
+[WebServer] 
+[WebServer] (node:42576) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] token 已同步，跳过写盘：apps\web\src\shared\styles\tokens.css
+[WebServer] 真源 sha256：REDACTED-SET-VIA-ENV
+[WebServer] (node:51936) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] vite v7.3.6 building client environment for production...
+[WebServer] transforming...
+[WebServer] ✓ 981 modules transformed.
+[WebServer] rendering chunks...
+[WebServer] computing gzip size...
+[WebServer] dist/index.html                   1.55 kB │ gzip:   0.98 kB
+[WebServer] 
+[WebServer] (!) Some chunks are larger than 500 kB after minification. Consider:
+[WebServer] - Using dynamic import() to code-split the application
+[WebServer] - Use build.rollupOptions.output.manualChunks to improve chunking: https://rollupjs.org/configuration-options/#output-manualchunks
+[WebServer] - Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.
+[WebServer] dist/assets/index-DNx0HBuG.css   28.84 kB │ gzip:   6.02 kB
+[WebServer] dist/assets/index-BPyrVRon.js   969.76 kB │ gzip: 287.05 kB
+[WebServer] ✓ built in 2.62s
+[WebServer] (node:6284) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] 契约样式断言通过：16 个对话面契约类名全部在产物 CSS 中（dist\assets\index-DNx0HBuG.css）
+[WebServer] (node:55532) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] 
+[WebServer] > @campfire/web@0.1.0 preview E:\Project\Web_Development\Campfire-AI\apps\web
+[WebServer] > vite preview "--port" "4173" "--strictPort" "--host" "127.0.0.1"
+[WebServer] 
+[WebServer] (node:45868) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer]   ➜  Local:   http://127.0.0.1:4173/
+[globalSetup] 本轮截图批号：2026-10-02T06:23:26.908Z-0656ff6f
+
+Running 23 tests using 10 workers
+
+(node:54696) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:56172) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:56204) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:53220) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:49304) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:48132) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:44748) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:55964) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:54892) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:53688) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ok  6 [mobile] › e2e\shots.spec.ts:127:3 › emergency 双图种截图与内容断言 (3.0s)
+  ok  8 [mobile] › e2e\shots.spec.ts:127:3 › memory 双图种截图与内容断言 (2.9s)
+  ok  7 [mobile] › e2e\shots.spec.ts:127:3 › profile 双图种截图与内容断言 (3.4s)
+  ok  3 [mobile] › e2e\shots.spec.ts:127:3 › chat 双图种截图与内容断言 (3.9s)
+(node:1288) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ok 10 [mobile] › e2e\shots.spec.ts:127:3 › cases 双图种截图与内容断言 (3.4s)
+  ok  9 [mobile] › e2e\guard-nonvacuity.spec.ts:101:1 › 守卫非空洞性：目标外壳下 fullPage 守卫会红，展开后转绿 (3.5s)
+(node:52424) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:52180) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ok  5 [mobile] › e2e\shots.spec.ts:127:3 › settings 双图种截图与内容断言 (4.2s)
+(node:54496) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:38152) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ok  4 [mobile] › e2e\shots.spec.ts:127:3 › home 双图种截图与内容断言 (4.7s)
+(node:49324) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ok  1 [mobile] › e2e\shots.spec.ts:127:3 › consult-list 双图种截图与内容断言 (5.0s)
+  ok  2 [mobile] › e2e\shots.spec.ts:127:3 › login 双图种截图与内容断言 (5.2s)
+(node:50648) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:48796) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ok 11 [mobile] › e2e\shots.spec.ts:127:3 › guide 双图种截图与内容断言 (2.3s)
+(node:40088) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:49300) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ok 13 [desktop] › e2e\shots.spec.ts:127:3 › login 双图种截图与内容断言 (2.4s)
+  ok 15 [desktop] › e2e\shots.spec.ts:127:3 › consult-list 双图种截图与内容断言 (2.6s)
+  x  12 [desktop] › e2e\guard-nonvacuity.spec.ts:101:1 › 守卫非空洞性：目标外壳下 fullPage 守卫会红，展开后转绿 (3.2s)
+  ok 16 [desktop] › e2e\shots.spec.ts:127:3 › chat 双图种截图与内容断言 (2.6s)
+  ok 14 [desktop] › e2e\shots.spec.ts:127:3 › home 双图种截图与内容断言 (3.6s)
+  ok 17 [desktop] › e2e\shots.spec.ts:127:3 › emergency 双图种截图与内容断言 (3.5s)
+  ok 18 [desktop] › e2e\shots.spec.ts:127:3 › profile 双图种截图与内容断言 (3.3s)
+  ok 21 [desktop] › e2e\shots.spec.ts:127:3 › memory 双图种截图与内容断言 (2.7s)
+  ok 20 [desktop] › e2e\shots.spec.ts:127:3 › settings 双图种截图与内容断言 (3.2s)
+  ok 19 [desktop] › e2e\shots.spec.ts:127:3 › cases 双图种截图与内容断言 (3.7s)
+  ok 22 [desktop] › e2e\shots.spec.ts:127:3 › guide 双图种截图与内容断言 (6.0s)
+
+
+  1) [desktop] › e2e\guard-nonvacuity.spec.ts:101:1 › 守卫非空洞性：目标外壳下 fullPage 守卫会红，展开后转绿 ─────────────
+
+    Error: ENOENT: no such file or directory, open 'E:\Project\Web_Development\Campfire-AI\tmp\screenshots\.run\guard-nonvacuity\shell-pad24-EXPANDED-desktop.png'
+
+      166 |     await assertRestored();
+      167 |
+    > 168 |     const expandedPng = readPngSize(await readFile(expandedPath));
+          |                                     ^
+      169 |
+      170 |     let guardPasses = true;
+      171 |     try {
+        at E:\Project\Web_Development\Campfire-AI\apps\web\e2e\guard-nonvacuity.spec.ts:168:37
+
+    Error Context: ..\..\tmp\screenshots\.playwright\guard-nonvacuity-守卫非空洞性：目标外壳下-fullPage-守卫会红，展开后转绿-desktop\error-context.md
+
+  1 failed
+    [desktop] › e2e\guard-nonvacuity.spec.ts:101:1 › 守卫非空洞性：目标外壳下 fullPage 守卫会红，展开后转绿 ──────────────
+  1 did not run
+  21 passed (21.5s)
+E:\Project\Web_Development\Campfire-AI\apps\web:
+ ERR_PNPM_RECURSIVE_RUN_FIRST_FAIL  @campfire/web@0.1.0 shots: `playwright test`
+Exit status 1

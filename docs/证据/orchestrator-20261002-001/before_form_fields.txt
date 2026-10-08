@@ -1,0 +1,105 @@
+=== 1) sign_up_form_fields() 原始声明 ===
+[
+  {
+    "id": "inviteCode",
+    "optional": true,
+    "validate": "accept_any_string",
+    "validate_results": {
+      "tester01@example.test": null,
+      "xiaoshi": null,
+      "小安": null,
+      "a@b": null,
+      "": null,
+      "  ": null,
+      "\t\n": null,
+      "  小安  ": null
+    }
+  }
+]
+=== 2) normalise_sign_up_form_fields() 之后的 signup 字段 ===
+[
+  {
+    "id": "inviteCode",
+    "optional": true,
+    "validate": "accept_any_string",
+    "validate_results": {
+      "tester01@example.test": null,
+      "xiaoshi": null,
+      "小安": null,
+      "a@b": null,
+      "": null,
+      "  ": null,
+      "\t\n": null,
+      "  小安  ": null
+    }
+  },
+  {
+    "id": "password",
+    "optional": false,
+    "validate": "default_password_validator",
+    "validate_results": {
+      "tester01@example.test": null,
+      "xiaoshi": "Password must contain at least 8 characters, including a number",
+      "小安": "Password must contain at least 8 characters, including a number",
+      "a@b": "Password must contain at least 8 characters, including a number",
+      "": "Password must contain at least 8 characters, including a number",
+      "  ": "Password must contain at least 8 characters, including a number",
+      "\t\n": "Password must contain at least 8 characters, including a number",
+      "  小安  ": "Password must contain at least 8 characters, including a number"
+    }
+  },
+  {
+    "id": "email",
+    "optional": false,
+    "validate": "default_email_validator",
+    "validate_results": {
+      "tester01@example.test": null,
+      "xiaoshi": "Email is not valid",
+      "小安": "Email is not valid",
+      "a@b": "Email is not valid",
+      "": "Email is not valid",
+      "  ": "Email is not valid",
+      "\t\n": "Email is not valid",
+      "  小安  ": "Email is not valid"
+    }
+  }
+]
+=== 3) normalise_sign_in_form_fields() 之后的 signin 字段（★ 复用证据）===
+[
+  {
+    "id": "password",
+    "optional": false,
+    "validate": "default_validator",
+    "validate_results": {
+      "tester01@example.test": null,
+      "xiaoshi": null,
+      "小安": null,
+      "a@b": null,
+      "": null,
+      "  ": null,
+      "\t\n": null,
+      "  小安  ": null
+    }
+  },
+  {
+    "id": "email",
+    "optional": false,
+    "validate": "default_email_validator",
+    "validate_results": {
+      "tester01@example.test": null,
+      "xiaoshi": "Email is not valid",
+      "小安": "Email is not valid",
+      "a@b": "Email is not valid",
+      "": "Email is not valid",
+      "  ": "Email is not valid",
+      "\t\n": "Email is not valid",
+      "  小安  ": "Email is not valid"
+    }
+  }
+]
+=== 4) 结论 ===
+{
+  "signup_email_validator": "default_email_validator",
+  "signin_email_validator": "default_email_validator",
+  "signin_reuses_signup_validator": true
+}

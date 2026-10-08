@@ -50,7 +50,7 @@
 ## 目录内容
 
 ```
-tmp/design-render/
+docs/证据/design-render/
 ├── README.md                  ← 本文件
 ├── render.mjs                 ← 渲染器（唯一可执行入口）
 ├── inventory.json             ← 清单：真源哈希 + 每张图的尺寸/字节/sha256/说明
@@ -92,10 +92,14 @@ tmp/design-render/
 ## 重新生成
 
 ```powershell
-node tmp/design-render/render.mjs                 # 全量，约 30 秒
-node tmp/design-render/render.mjs --only=states   # 只重渲染文件名含该子串的产物
-node tmp/design-render/render.mjs --scale=1       # 改 dpr（默认 2）
+node docs/证据/design-render/render.mjs                 # 全量，约 30 秒
+node docs/证据/design-render/render.mjs --only=states   # 只重渲染文件名含该子串的产物
+node docs/证据/design-render/render.mjs --scale=1       # 改 dpr（默认 2）
 ```
+
+> **⚠ 2026-10-07 订正**：上面三条命令原写作 `node tmp/design-render/render.mjs`——
+> 那是 2026-10-06 迁入 `docs/证据/design-render/` **之前**的路径，照抄会
+> `Cannot find module`。脚本本体已随迁入改到新位置，此处同步。
 
 渲染器在以下情况**失败退出**（而不是静默产出坏图）：
 

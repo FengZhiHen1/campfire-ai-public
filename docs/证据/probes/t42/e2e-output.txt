@@ -1,0 +1,65 @@
+[基线] campfire_onboarding 总行数 = 29
+[建号] target=f50e2927-df8f-4bc4-8195-9db53cd58ee2
+[建号] bystander=fa964fbc-ecea-4162-b4fc-533b9ebc3573
+[注销前] 总行数=31 该账号行数=1 旁证账号行数=1
+[注销前] 其它账号行数=29
+[CLI] E:\Project\Web_Development\Campfire-AI\.venv\Scripts\python.exe -m campfire.cli account delete f50e2927-df8f-4bc4-8195-9db53cd58ee2 <account> --confirm <account>
+[CLI] 退出码 = 1
+---- CLI stdout ----
+
+---- CLI stderr ----
+Error executing FalkorDB query: Connection closed by server.
+CREATE INDEX FOR (n:Entity) ON (n.uuid, n.group_id, n.name, n.created_at)
+{}
+注销失败：账号注销在「清除 memory」失败：ResponseError: Invalid graph operation on empty key；此前已完成：写墓碑、删除待处理记录、撤销全部会话
+  已完成：写墓碑、删除待处理记录、撤销全部会话
+  重试是安全的（墓碑写入幂等）；若反复失败请人工核对后处理。
+[PostHog] analytics lane flush ran out of budget (1.0s granted) with 1 items pending.
+Task exception was never retrieved
+future: <Task finished name='Task-4' coro=<FalkorDriver.build_indices_and_constraints() done, defined at E:\Project\Web_Development\Campfire-AI\.venv\Lib\site-packages\graphiti_core\driver\falkordb_driver.py:324> exception=network:ConnectionError>
+Traceback (most recent call last):
+  File "E:\Project\Web_Development\Campfire-AI\.venv\Lib\site-packages\graphiti_core\driver\falkordb_driver.py", line 329, in build_indices_and_constraints
+    await self.execute_query(query)
+  File "E:\Project\Web_Development\Campfire-AI\.venv\Lib\site-packages\graphiti_core\driver\falkordb_driver.py", line 246, in execute_query
+    result = await graph.query(cypher_query_, params)  # type: ignore[reportUnknownArgumentType]
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "E:\Project\Web_Development\Campfire-AI\.venv\Lib\site-packages\falkordb\asyncio\graph.py", line 114, in query
+    return await self._query(q, params=params, timeout=timeout, read_only=False)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "E:\Project\Web_Development\Campfire-AI\.venv\Lib\site-packages\falkordb\asyncio\graph.py", line 84, in _query
+    response = await self.execute_command(*command)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "E:\Project\Web_Development\Campfire-AI\.venv\Lib\site-packages\redis\asyncio\client.py", line 946, in execute_command
+    result = await conn.retry.call_with_retry(
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "E:\Project\Web_Development\Campfire-AI\.venv\Lib\site-packages\redis\asyncio\retry.py", line 81, in call_with_retry
+    raise error
+  File "E:\Project\Web_Development\Campfire-AI\.venv\Lib\site-packages\redis\asyncio\retry.py", line 69, in call_with_retry
+    return await do()
+           ^^^^^^^^^^
+  File "E:\Project\Web_Development\Campfire-AI\.venv\Lib\site-packages\redis\asyncio\client.py", line 871, in _send_command_parse_response
+    return await self.parse_response(conn, command_name, **options)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "E:\Project\Web_Development\Campfire-AI\.venv\Lib\site-packages\redis\asyncio\client.py", line 993, in parse_response
+    response = await connection.read_response()
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "E:\Project\Web_Development\Campfire-AI\.venv\Lib\site-packages\redis\asyncio\connection.py", line 1286, in read_response
+    response = await self._read_response_from_parser(
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "E:\Project\Web_Development\Campfire-AI\.venv\Lib\site-packages\redis\asyncio\connection.py", line 1338, in _read_response_from_parser
+    return await self._parser.read_response(disable_decoding=disable_decoding)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "E:\Project\Web_Development\Campfire-AI\.venv\Lib\site-packages\redis\_parsers\resp2.py", line 89, in read_response
+    response = await self._read_response(disable_decoding=disable_decoding)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "E:\Project\Web_Development\Campfire-AI\.venv\Lib\site-packages\redis\_parsers\resp2.py", line 97, in _read_response
+    raw = await self._readline()
+          ^^^^^^^^^^^^^^^^^^^^^^
+  File "E:\Project\Web_Development\Campfire-AI\.venv\Lib\site-packages\redis\_parsers\base.py", line 589, in _readline
+    raise ConnectionError(SERVER_CLOSED_CONNECTION_ERROR)
+redis.exceptions.ConnectionError: Connection closed by server.
+[注销后] 总行数=31 该账号行数=1 旁证账号行数=1
+[注销后] 其它账号行数=29
+[判定] {"cli_exit_code": 1, "target_rows_before": 1, "target_rows_after": 1, "bystander_rows_before": 1, "bystander_rows_after": 1, "others_unchanged": true, "others_count_before": 29, "others_count_after": 29}
+[清理后] 总行数=29；与基线一致=True
+[结论] FAIL

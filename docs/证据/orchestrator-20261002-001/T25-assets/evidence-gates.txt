@@ -1,0 +1,26 @@
+=== T25 门禁原文 2026-10-06T01:03:03.2154827+08:00 ===
+
+########## 1. check_design_docs.py ##########
+$ uv run python scripts/check_design_docs.py
+设计文档 71 份，相对链接 953 条，需求 38 项，验收行 32 条
+全部检查通过
+
+--> exit=0
+
+########## 2. ruff check . ##########
+$ uv run ruff check .
+All checks passed!
+
+--> exit=0
+
+########## 3. ruff format --check . ##########
+$ uv run ruff format --check .
+Would reformat: apps\api\tests\test_tool_labels_coverage.py
+1 file would be reformatted, 235 files already formatted
+
+--> exit=1
+
+########## 4. mypy apps/api/src/campfire apps/api/tests ##########
+Success: no issues found in 218 source files
+
+--> exit=0

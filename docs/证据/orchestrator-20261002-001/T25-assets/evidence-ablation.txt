@@ -1,0 +1,95 @@
+============================= test session starts =============================
+collected 5 items
+
+apps\api\tests\test_nginx_probe_routes.py .....                          [100%]
+
+============================== warnings summary ===============================
+.venv\Lib\site-packages\graphiti_core\driver\search_interface\search_interface.py:22
+  E:\Project\Web_Development\Campfire-AI\.venv\Lib\site-packages\graphiti_core\driver\search_interface\search_interface.py:22: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.13/migration/
+    class SearchInterface(BaseModel):
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+======================== 5 passed, 1 warning in 3.05s =========================
+============================= test session starts =============================
+collected 5 items
+
+apps\api\tests\test_nginx_probe_routes.py ....F                          [100%]
+
+================================== FAILURES ===================================
+_ TestEveryRegisteredProbeIsRoutable.test_every_registered_probe_path_has_a_location _
+
+self = <tests.test_nginx_probe_routes.TestEveryRegisteredProbeIsRoutable object at 0x00000183AC2C7230>
+
+    def test_every_registered_probe_path_has_a_location(self) -> None:
+        """应用注册的每个根级探针路径，都必须有一条 `location = <路径>`。
+    
+        判据**不读**任何硬编码的探针名字：参考集合来自 `campfire.main.app.routes`。
+        因此「新增一个探针端点但忘了加 location」会让本条红。
+        """
+        probes = sorted(_registered_probe_paths())
+        # 先自证数据源非空：空集合会让下面的断言恒真（与 TestDiscoverySource 同一理由，
+        # 但这里再断言一次是因为本用例是判据本体，失败信息必须指向真因）。
+        assert probes, "参考集合为空 ⇒ 本断言恒真，不能作为判据（数据源规则坏了）"
+    
+        missing = _undeclared_probe_paths(probes, _nginx_locations(_conf_text()))
+>       assert missing == [], (
+            f"这些探针路径在 {_LOCATIONS_CONF.name} 里没有精确匹配的 location：{missing}\n"
+            "缺 location 的后果不是 404，而是落进 SPA 的 `location /`、被 `try_files` 回成\n"
+            "`index.html` ⇒ HTTP 200 + text/html（看起来像端点通了）。\n"
+            "修法：照 `/readyz` 那条抄一份 `location = <路径>` 反代到 `http://$campfire_api`。"
+        )
+E       AssertionError: 这些探针路径在 app-locations.conf 里没有精确匹配的 location：['/readyz/deep']
+E         缺 location 的后果不是 404，而是落进 SPA 的 `location /`、被 `try_files` 回成
+E         `index.html` ⇒ HTTP 200 + text/html（看起来像端点通了）。
+E         修法：照 `/readyz` 那条抄一份 `location = <路径>` 反代到 `http://$campfire_api`。
+E       assert ['/readyz/deep'] == []
+E         
+E         Left contains one more item: '/readyz/deep'
+E         Use -v to get more diff
+
+apps\api\tests\test_nginx_probe_routes.py:198: AssertionError
+============================== warnings summary ===============================
+.venv\Lib\site-packages\graphiti_core\driver\search_interface\search_interface.py:22
+  E:\Project\Web_Development\Campfire-AI\.venv\Lib\site-packages\graphiti_core\driver\search_interface\search_interface.py:22: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.13/migration/
+    class SearchInterface(BaseModel):
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ===========================
+FAILED apps/api/tests/test_nginx_probe_routes.py::TestEveryRegisteredProbeIsRoutable::test_every_registered_probe_path_has_a_location
+=================== 1 failed, 4 passed, 1 warning in 3.48s ====================
+============================= test session starts =============================
+collected 5 items
+
+apps\api\tests\test_nginx_probe_routes.py .....                          [100%]
+
+============================== warnings summary ===============================
+.venv\Lib\site-packages\graphiti_core\driver\search_interface\search_interface.py:22
+  E:\Project\Web_Development\Campfire-AI\.venv\Lib\site-packages\graphiti_core\driver\search_interface\search_interface.py:22: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.13/migration/
+    class SearchInterface(BaseModel):
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+======================== 5 passed, 1 warning in 2.95s =========================
+
+==============================================================================
+### 变体 after：app-locations.conf SHA256=1a82bed85b37e9da1785784d98068fd5df9d19eb4e627de15c25fb87b70b42cf
+==============================================================================
+### after 的 pytest 退出码 = 0
+
+==============================================================================
+### 变体 before：app-locations.conf SHA256=b95adabb5336677524e384d4619b50c0c50bd376b171886865a474bbf4f33781
+==============================================================================
+### before 的 pytest 退出码 = 1
+
+==============================================================================
+### 变体 after：app-locations.conf SHA256=1a82bed85b37e9da1785784d98068fd5df9d19eb4e627de15c25fb87b70b42cf
+==============================================================================
+### after 的 pytest 退出码 = 0
+
+==============================================================================
+### 已恢复交付版：SHA256=1a82bed85b37e9da1785784d98068fd5df9d19eb4e627de15c25fb87b70b42cf
+==============================================================================
+
+汇总：
+  after      -> 绿（退出码 0）
+  before     -> 红（退出码 1）
+  after      -> 绿（退出码 0）

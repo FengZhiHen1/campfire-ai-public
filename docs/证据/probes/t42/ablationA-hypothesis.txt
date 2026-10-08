@@ -1,0 +1,15 @@
+=== A. 实际那次消融（整块 6→5 行）===
+  sha256 = 3a220c5a2ea2a1cbb2fec2d2788d2d4c3e6651bf7e7ae43233157bf884677efa
+  命中报告记录的 3A220C5A… ? True
+  字节数 = 6445
+
+=== B. 按报告那句话【字面】重建（只换一行）===
+  sha256 = 222959dacb18ea1dee38145cc04cce4193ca1e8cccb58fd1db2c6e1af1a1614f
+  命中报告记录的 3A220C5A… ? False
+  字节数 = 6519
+
+=== 对照 ===
+  A 与 B 相同 ? False
+  A 命中记录 = True；B 命中记录 = False
+
+[结论] 假设 H 成立（描述有损、hash 无误）? True

@@ -1,0 +1,22 @@
+F
+================================== FAILURES ===================================
+___________ test_deletion_removes_the_account_onboarding_state_row ____________
+
+    @pytest.mark.asyncio
+    async def test_deletion_removes_the_account_onboarding_state_row() -> None:
+        """ע������˺ŵ�����״̬�б���Ϊ 0������˺ŵ��б���ԭ��������
+    
+        ��Ӧ��Ƶ� 8 ���� 8 �`RQ-ACC-09`����**�б���**��������ߵ�ɾ�����ȥ��
+        �����ڣ����������졪���������� 1����Ϊ�ڴ�֮ǰ��ʵ����**û���κ�һ��**
+        ɾ�����ű���`delete(CampfireOnboarding` �� `apps/api/src` �����У���
+    
+        ���أ�`bystander`����Ŀ���˺�ͬ����һ��©�� `WHERE account_id` �� `DELETE`
+        �����ȫ������ֻ����Ŀ���˺�Ϊ 0 ʱ����д��������ͨ������
+        """
+>       from campfire.modules.accounts.onboarding_purge import OnboardingAccountPurger
+E       ModuleNotFoundError: No module named 'campfire.modules.accounts.onboarding_purge'
+
+apps\api\tests\test_auth_deletion_integration.py:759: ModuleNotFoundError
+=========================== short test summary info ===========================
+FAILED apps/api/tests/test_auth_deletion_integration.py::test_deletion_removes_the_account_onboarding_state_row
+!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!

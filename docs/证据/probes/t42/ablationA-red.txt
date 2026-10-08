@@ -1,0 +1,76 @@
+FF..                                                                     [100%]
+================================== FAILURES ===================================
+___________ test_deletion_removes_the_account_onboarding_state_row ____________
+
+    @pytest.mark.asyncio
+    async def test_deletion_removes_the_account_onboarding_state_row() -> None:
+        """ע������˺ŵ�����״̬�б���Ϊ 0������˺ŵ��б���ԭ��������
+    
+        ��Ӧ��Ƶ� 8 ���� 8 �`RQ-ACC-09`����**�б���**��������ߵ�ɾ�����ȥ��
+        �����ڣ����������졪���������� 1����Ϊ�ڴ�֮ǰ��ʵ����**û���κ�һ��**
+        ɾ�����ű���`delete(CampfireOnboarding` �� `apps/api/src` �����У���
+    
+        ���أ�`bystander`����Ŀ���˺�ͬ����һ��©�� `WHERE account_id` �� `DELETE`
+        �����ȫ������ֻ����Ŀ���˺�Ϊ 0 ʱ����д��������ͨ������
+        """
+        from campfire.modules.accounts.onboarding_purge import OnboardingAccountPurger
+    
+        await _clear()
+        target = _account("onboarding")
+        bystander = _account("onboardingother")
+        recorder = _Recorder()
+        try:
+            await _seed_onboarding(target)
+            await _seed_onboarding(bystander, state=ONBOARDING_COMPLETED)
+            assert await _onboarding_rows(target) == 1, "ǰ��ʧ�ܣ�Ŀ���˺ŵ�������û���ϣ�������ʧȥ�б���"
+    
+            async with session_scope(get_settings()) as session:
+                report = await delete_account(
+                    session,
+                    account_id=target,
+                    revoke_all_sessions=recorder.revoke_all_sessions,
+                    delete_identity_user=recorder.delete_identity_user,
+                    purgers=[OnboardingAccountPurger(get_settings())],
+                    confirmed=True,
+                )
+    
+>           assert await _onboarding_rows(target) == 0, (
+                "ע������˺ŵ�����״̬�����ڡ�����Ƶ� 8 ���� 8 �`RQ-ACC-09`��Ҫ����������һ����ɾ"
+            )
+E           AssertionError: ע������˺ŵ�����״̬�����ڡ�����Ƶ� 8 ���� 8 �`RQ-ACC-09`��Ҫ����������һ����ɾ
+E           assert 1 == 0
+
+apps\api\tests\test_auth_deletion_integration.py:780: AssertionError
+____________________ test_onboarding_purger_is_idempotent _____________________
+
+    @pytest.mark.asyncio
+    async def test_onboarding_purger_is_idempotent() -> None:
+        """�ظ�����ɹ��ұ� 0 �У������쳣����������ע���������ȷ֧�ֵ�·����
+    
+        �б��ԣ���ʵ�ֶԡ�û���С��״����ڶ��� `purge_account` ��ʧ�ܣ���
+        `delete_account` �����ԣ�Ĺ���Ѵ��ڣ����һ�����������ܱ��ʧ�ܡ�
+        """
+        from campfire.modules.accounts.onboarding_purge import OnboardingAccountPurger
+    
+        await _clear()
+        account = _account("onboardretry")
+        try:
+            await _seed_onboarding(account)
+            purger = OnboardingAccountPurger(get_settings())
+    
+            first = await purger.purge_account(account)
+            second = await purger.purge_account(account)
+    
+>           assert first.detail == "ɾ������״̬�� 1 ��", f"�״�Ӧɾ 1 ����ʵ�� {first.detail!r}"
+E           AssertionError: �״�Ӧɾ 1 ����ʵ�� 'ɾ������״̬�� 0 ��'
+E           assert 'ɾ������״̬�� 0 ��' == 'ɾ������״̬�� 1 ��'
+E             
+E             - ɾ������״̬�� 1 ��
+E             ?         ^
+E             + ɾ������״̬�� 0 ��
+E             ?         ^
+
+apps\api\tests\test_auth_deletion_integration.py:812: AssertionError
+=========================== short test summary info ===========================
+FAILED apps/api/tests/test_auth_deletion_integration.py::test_deletion_removes_the_account_onboarding_state_row
+FAILED apps/api/tests/test_auth_deletion_integration.py::test_onboarding_purger_is_idempotent

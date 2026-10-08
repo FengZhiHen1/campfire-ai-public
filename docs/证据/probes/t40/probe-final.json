@@ -1,0 +1,244 @@
+{
+  "label": "final",
+  "probes": {
+    "readyz": {
+      "http_status": 200,
+      "body": {
+        "ready": true,
+        "components": {
+          "auth": {
+            "status": "ok",
+            "detail": "core 可达"
+          },
+          "database": {
+            "status": "ok",
+            "detail": "连接正常"
+          },
+          "queue": {
+            "status": "ok",
+            "detail": "待消费 70 条"
+          },
+          "model": {
+            "status": "ok",
+            "detail": "deepseek-v4.1-flash 端点可达（额度与并发未核实，见 TECH-02）"
+          },
+          "falkordb": {
+            "status": "ok",
+            "detail": "连接正常"
+          },
+          "agent_assembly": {
+            "status": "ok",
+            "detail": "运行器已装配"
+          },
+          "skills": {
+            "status": "ok",
+            "detail": "已发现 4 个 skill"
+          }
+        }
+      },
+      "body_raw": "{\"ready\":true,\"components\":{\"auth\":{\"status\":\"ok\",\"detail\":\"core 可达\"},\"database\":{\"status\":\"ok\",\"detail\":\"连接正常\"},\"queue\":{\"status\":\"ok\",\"detail\":\"待消费 70 条\"},\"model\":{\"status\":\"ok\",\"detail\":\"deepseek-v4.1-flash 端点可达（额度与并发未核实，见 TECH-02）\"},\"falkordb\":{\"status\":\"ok\",\"detail\":\"连接正常\"},\"agent_assembly\":{\"status\":\"ok\",\"detail\":\"运行器已装配\"},\"skills\":{\"status\":\"ok\",\"detail\":\"已发现 4 个 skill\"}}}",
+      "content_type": "application/json"
+    },
+    "c3_unknown_tenant": {
+      "url": "http://127.0.0.1:8099/api/auth/t40-unknown-tenant/signup",
+      "request": {
+        "formFields": [
+          {
+            "id": "email",
+            "value": "c3-final-1829b2ae@t40-probe.test"
+          },
+          {
+            "id": "password",
+            "value": "probePass123"
+          },
+          {
+            "id": "inviteCode",
+            "value": "VEHZ7GFJ"
+          }
+        ]
+      },
+      "response": {
+        "http_status": 200,
+        "body": {
+          "status": "GENERAL_ERROR",
+          "message": "邀请码无效或已不可用"
+        },
+        "body_raw": "{\"status\":\"GENERAL_ERROR\",\"message\":\"邀请码无效或已不可用\"}",
+        "content_type": "application/json; charset=utf-8"
+      }
+    },
+    "c3_known_tenant_ok": {
+      "url": "http://127.0.0.1:8099/api/auth/signup",
+      "request": {
+        "formFields": [
+          {
+            "id": "email",
+            "value": "c3ok-final-7dfa4f82@t40-probe.test"
+          },
+          {
+            "id": "password",
+            "value": "probePass123"
+          },
+          {
+            "id": "inviteCode",
+            "value": "7LWDMLHB"
+          }
+        ]
+      },
+      "response": {
+        "http_status": 200,
+        "body": {
+          "status": "OK",
+          "user": {
+            "id": "54642121-18f5-4375-9e48-7c670a558dc6",
+            "isPrimaryUser": false,
+            "tenantIds": [
+              "public"
+            ],
+            "emails": [
+              "c3ok-final-7dfa4f82@t40-probe.test"
+            ],
+            "phoneNumbers": [],
+            "thirdParty": [],
+            "webauthn": {
+              "credentialIds": []
+            },
+            "loginMethods": [
+              {
+                "recipeId": "emailpassword",
+                "recipeUserId": "54642121-18f5-4375-9e48-7c670a558dc6",
+                "tenantIds": [
+                  "public"
+                ],
+                "timeJoined": 1791274376826,
+                "verified": false,
+                "email": "c3ok-final-7dfa4f82@t40-probe.test"
+              }
+            ],
+            "timeJoined": 1791274376826
+          }
+        },
+        "body_raw": "{\"status\":\"OK\",\"user\":{\"id\":\"54642121-18f5-4375-9e48-7c670a558dc6\",\"isPrimaryUser\":false,\"tenantIds\":[\"public\"],\"emails\":[\"c3ok-final-7dfa4f82@t40-probe.test\"],\"phoneNumbers\":[],\"thirdParty\":[],\"webauthn\":{\"credentialIds\":[]},\"loginMethods\":[{\"recipeId\":\"emailpassword\",\"recipeUserId\":\"54642121-18f5-4375-9e48-7c670a558dc6\",\"tenantIds\":[\"public\"],\"timeJoined\":1791274376826,\"verified\":false,\"email\":\"c3ok-final-7dfa4f82@t40-probe.test\"}],\"timeJoined\":1791274376826}}",
+        "content_type": "application/json; charset=utf-8"
+      }
+    },
+    "c3_unknown_tenant_bad_code": {
+      "url": "http://127.0.0.1:8099/api/auth/t40-unknown-tenant/signup",
+      "response": {
+        "http_status": 200,
+        "body": {
+          "status": "GENERAL_ERROR",
+          "message": "邀请码无效或已不可用"
+        },
+        "body_raw": "{\"status\":\"GENERAL_ERROR\",\"message\":\"邀请码无效或已不可用\"}",
+        "content_type": "application/json; charset=utf-8"
+      }
+    },
+    "c3_known_tenant_bad_code": {
+      "url": "http://127.0.0.1:8099/api/auth/signup",
+      "response": {
+        "http_status": 200,
+        "body": {
+          "status": "GENERAL_ERROR",
+          "message": "邀请码无效或已不可用"
+        },
+        "body_raw": "{\"status\":\"GENERAL_ERROR\",\"message\":\"邀请码无效或已不可用\"}",
+        "content_type": "application/json; charset=utf-8"
+      }
+    },
+    "c4_duplicate_name": {
+      "url": "http://127.0.0.1:8099/api/auth/signup",
+      "request": {
+        "formFields": [
+          {
+            "id": "email",
+            "value": "c4-final-094a4c94@stfakeemail.supertokens.com"
+          },
+          {
+            "id": "password",
+            "value": "probePass123"
+          },
+          {
+            "id": "inviteCode",
+            "value": "SZ6LUA6E"
+          }
+        ]
+      },
+      "response": {
+        "http_status": 200,
+        "body": {
+          "status": "GENERAL_ERROR",
+          "message": "邀请码无效或已不可用"
+        },
+        "body_raw": "{\"status\":\"GENERAL_ERROR\",\"message\":\"邀请码无效或已不可用\"}",
+        "content_type": "application/json; charset=utf-8"
+      },
+      "note": "用 SDK 测试邮箱域触发 EmailAlreadyExistsError（不消耗邀请码）"
+    },
+    "c4_baseline_rejection": {
+      "url": "http://127.0.0.1:8099/api/auth/signup",
+      "response": {
+        "http_status": 200,
+        "body": {
+          "status": "GENERAL_ERROR",
+          "message": "邀请码无效或已不可用"
+        },
+        "body_raw": "{\"status\":\"GENERAL_ERROR\",\"message\":\"邀请码无效或已不可用\"}",
+        "content_type": "application/json; charset=utf-8"
+      }
+    }
+  },
+  "shapes": {
+    "readyz": {
+      "skipped": true
+    },
+    "c3_unknown_tenant": {
+      "http_status": 200,
+      "status": "GENERAL_ERROR",
+      "keys": [
+        "message",
+        "status"
+      ]
+    },
+    "c3_known_tenant_ok": {
+      "http_status": 200,
+      "status": "OK",
+      "keys": [
+        "status",
+        "user"
+      ]
+    },
+    "c3_unknown_tenant_bad_code": {
+      "http_status": 200,
+      "status": "GENERAL_ERROR",
+      "keys": [
+        "message",
+        "status"
+      ]
+    },
+    "c3_known_tenant_bad_code": {
+      "http_status": 200,
+      "status": "GENERAL_ERROR",
+      "keys": [
+        "message",
+        "status"
+      ]
+    },
+    "c4_duplicate_name": {
+      "http_status": 200,
+      "status": "GENERAL_ERROR",
+      "keys": [
+        "message",
+        "status"
+      ]
+    },
+    "c4_baseline_rejection": {
+      "http_status": 200,
+      "status": "GENERAL_ERROR",
+      "keys": [
+        "message",
+        "status"
+      ]
+    }
+  }
+}

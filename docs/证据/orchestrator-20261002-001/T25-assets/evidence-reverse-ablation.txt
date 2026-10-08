@@ -1,0 +1,10 @@
+真实参考集合（来自 campfire.main.app.routes）：['/health', '/livez', '/readyz', '/readyz/deep']
+配置里已声明的路径：['/', '/api', '/api/', '/assets/', '/health', '/index.html', '/livez', '/nginx-health', '/readyz', '/readyz/deep', '^/api/consult/runs/[^/]+/stream$']
+
+  参考集合 = 真实集合（含 /readyz/deep）
+    -> 绿（无缺失）；missing=[]
+  参考集合 去掉 /readyz/deep（模拟应用侧删端点）
+    -> 绿（无缺失）；missing=[]
+
+说明：本脚本只喂参考集合，不经过 pytest 断言层，因此上表的「红/绿」是
+**判据函数的返回值**，不是用例的通过/失败。端到端消融见 evidence-ablation.txt。

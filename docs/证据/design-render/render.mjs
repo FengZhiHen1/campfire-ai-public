@@ -1,5 +1,5 @@
 /**
- * 模块: tmp/design-render/render.mjs
+ * 模块: docs/证据/design-render/render.mjs
  * 职责: 把当前视觉契约（docs/design/components.html + tokens.css）渲染成 PNG 参照图
  * 数据来源:
  *   - docs/design/components.html: MUST — 组件契约与交互预览（唯一渲染输入，本脚本只读）
@@ -12,8 +12,8 @@
  *   - 禁止自造样式或伪造状态：状态图必须由契约页自身的控件触发
  *   - 禁止把本目录产物当作设计权威（权威是 docs/design/）
  *
- * 产物落点: tmp/design-render/{sections,states}/*.png、page-annotated.png、inventory.json
- * 用法: node tmp/design-render/render.mjs [--scale=1|2] [--only=<子串>]
+ * 产物落点: docs/证据/design-render/{sections,states}/*.png、page-annotated.png、inventory.json
+ * 用法: node docs/证据/design-render/render.mjs [--scale=1|2] [--only=<子串>]
  */
 
 import { spawn } from 'node:child_process';
@@ -528,7 +528,7 @@ try {
   const hash = (p) => createHash('sha256').update(readFileSync(resolve(REPO, p))).digest('hex');
   const inventory = {
     generatedAt: new Date().toISOString(),
-    renderer: 'tmp/design-render/render.mjs',
+    renderer: 'docs/证据/design-render/render.mjs',
     chrome: info.Browser,
     viewport: { ...VIEWPORT, deviceScaleFactor: SCALE },
     sources: [

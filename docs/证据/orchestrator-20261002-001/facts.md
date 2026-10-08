@@ -1686,7 +1686,7 @@ HEAD:280    outline: none;  border-color: var(--accent);  box-shadow: var(--focu
   ⇒ **后端全量测试可在「Memurai + 容器 Postgres/FalkorDB/SuperTokens」组合下跑通**。
 - **端口**：`5432`(容器 PG)、`6379`(原生 Memurai)、`6380`(容器 FalkorDB)、`3567`(容器 SuperTokens)、
   `9000-9001`(容器 MinIO)。
-- **预览端口锁**：`.tmp/dev-orchestrator/20261002-001/tools/preview-lock.ps1 acquire|release|status`。
+- **预览端口锁**：`docs/证据/orchestrator-20261002-001/tools/preview-lock.ps1 acquire|release|status`。
   注意它打印的 `[告警] 锁的持有者是 pid=…，当前进程是 …` 是**正常的**（每次 `pwsh` 调用都是新进程）。
 
 ### (z32) **「diff 删除行 = 0」不能证明「某行未被改动」——若该行不在基线里**（编排器第十三次失误，由 T09 复查者纠正）

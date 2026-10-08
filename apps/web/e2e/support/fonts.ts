@@ -113,7 +113,7 @@ export interface FontEvidence {
  * 关于裁决指定的判据（实测与裁决不一致，已按意图实现并单列报告）
  *
  * 裁决 2 要求断言 `document.fonts.check('500 28px "Noto Serif SC"') === true`。实测该判据
- * 恒为 true，因此它不可能失败（原始记录 `T01-assets/probe-fontguard.txt`）：
+ * 恒为 true，因此它不可能失败（原始记录 `docs/证据/orchestrator-20261002-001/T01-assets/probe-fontguard.txt`）：
  *
  * ```
  * checkReal:   true    ← 真族名

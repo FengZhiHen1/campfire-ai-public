@@ -1,0 +1,5 @@
+P1 read back items: 2
+P1 annotations 逐字保真: True
+   raw: [{"type": "citation", "citation_id": "c0ffee", "run_id": "r-1", "source": "knowledge", "reference": "knowledge:item-1", "recorded_at": "2026-10-07T12:00:00+00:00", "summary": "规范"}]
+P2 转换结果与基线逐字节相同: True
+P2 转换结果里是否出现 citation_id / reference: False False
