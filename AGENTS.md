@@ -59,6 +59,7 @@ pnpm --filter @campfire/web test && pnpm --filter @campfire/web build
 uv run python -m campfire.cli convert <x.html> # HTML → 可摄取 Markdown（不连库）
 uv run python -m campfire.cli ingest <x.md>    # 摄取到资料库（条目与节点同事务）
 ```
+
 ### 页面截图（评测与验收用；落点不入 git）
 
 ```bash
@@ -74,6 +75,24 @@ pnpm --filter @campfire/web e2e     # 内容断言：证明每张图「有料」
 - **加了新路由就要加新截图配置**，否则那条路由永远不会有 PNG，
   而 `manifest` 仍会宣布「40 张」（它只验矩阵内部自洽）。
   这条对应关系由 `apps/web/tests/routes-coverage.test.ts` 机械守着，`pnpm test` 会红。
+
+### 临时文件：只有 `.tmp/` 一个落点
+
+**临时文件一律写 `.tmp/`**，不要新建 `tmp/`、`_tmp_test/`、`reports/` 这类并列目录，
+也不要写到被 git 跟踪的目录里。理由与沿革见 `.gitignore` 开头的「单一临时目录规则」。
+`.tmp/` 整个被忽略，所以**里面没有版本控制兜底**：要删先确认它不是唯一副本。
+
+- 过程产物（截图、trace、逐次 CI 报告、ffmpeg 分析转储）用完即弃，属**可再生**，
+  清理时不需留档。清理前先按下面三条判据筛，**不要整目录 `Remove-Item`**。
+- 清理判据（三条同时满足才可删）：① 无任何已跟踪文件引用它
+  （`git grep -oh -E '\.tmp/[A-Za-z0-9_.@/-]*' -- .`）；② `git ls-files .tmp` 为空；
+  ③ 内容是**某个工具的输出**，而非手写源码或`git` 里查不到的旧修订。
+- **含手写源码（`.py/.ts/.tsx/.ps1/.mjs/.md/.json`）的条目一律不删** ——
+  同名文件可能只存在于 `.tmp` 里，删掉即永久丢失。
+  实测反例：`.tmp/baseline_tree/` 抽检 6/6 文件在 `git log --all` 全历史里都查不到，
+  `.tmp/noignore-tests/` 的 158 个文件里 140 个与当前测试**不同**（是更早的修订）。
+- 已清理的两轮记录与可复跑的执行器：`docs/证据/tmp-删除清单-20261007.md`、
+  `docs/证据/tmp-无用文件清理清单-20261008.md`、`docs/证据/tmp-清理执行器-20261008.py`。
 
 
 `mypy` 只传 `apps/api/tests` 会因 `conftest` 被当成两个模块而中止（
