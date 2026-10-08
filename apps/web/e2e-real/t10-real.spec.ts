@@ -592,7 +592,7 @@ test.describe('@real T10 真实依赖端到端', () => {
        *
        * **不再内联实现**（T11 第 1 条的修法之一）：读数逻辑收进
        * `support/real.sheetFocusFacts`，于是
-       *   - 链路 4 的判据读的量，与 `e2e-real/control.spec.ts` 证明能红的量，
+       *   - 链路 4 的判据读的量，与负面控制臂（`e2e-real/control.spec.ts`，已于 2026-10-08 删除）证明能红的量，
        *     是**同一段代码**产出的；
        *   - 「恒真路径」的存在位置（候选为空 ⇒ focusEscaped 恒 false）在实现处
        *     一眼可见，而不是埋在用例的匿名 evaluate 里。
@@ -633,7 +633,8 @@ test.describe('@real T10 真实依赖端到端', () => {
         // 但 `focus()` 对它们静默失败 ⇒ `backgroundFocusEscaped` 仍为 false
         // ⇒ 「inert 挡住了背景聚焦」这条结论在该处**从未被检验**——与「无候选」是同一个
         // 空洞，只是入口更隐蔽（计数 > 0 让上一条前置放行）。本断言把那个入口也堵死。
-        // 能红证明见 `e2e-real/control.spec.ts` 判据1 的臂 D（注入 display:none）。
+        // 能红证明原见 `e2e-real/control.spec.ts` 判据1 的臂 D（注入 display:none）；
+      // ⚠ 该控制臂已于 2026-10-08 按用户裁决删除 ⇒ 此处的『能红』不再有机械证明。
         expect(
           facts.candidateVisible,
           `${label}：候选元素存在但**未被渲染**（candidateVisible=false，candidateTag=${String(facts.candidateTag)}）` +
@@ -888,7 +889,7 @@ test.describe('@real T10 真实依赖端到端', () => {
        *
        * `elementsPastViewportRight` 不在这里内联，而是**单列一次** `page.evaluate(共用函数)`
        * （见下方 `readOverflow`）。理由（T11 第 2 条）：元素级信号是「无横向溢出」的**判据**，
-       * 而负面控制臂（`e2e-real/control.spec.ts`）必须证明**同一个量**能红。两处各写一份
+       * 而负面控制臂（`e2e-real/control.spec.ts`，已于 2026-10-08 删除）必须证明**同一个量**能红。两处各写一份
        * 选择器时，控制臂证明的只是「另一个量会红」——那正是 T06 的 P1-1 踩过的坑
        * （生产喂文档级、证明喂内层级）。
        */
@@ -1106,7 +1107,8 @@ test.describe('@real T10 真实依赖端到端', () => {
     // ——那时 `serverErrors` 是空数组，5xx 判据**以空数组静默通过**。本轮之前这条一直是
     // 靠链路 1 那条真实 401 兜着的，**代码里没钉**。这里主动发一个**必然 404** 的请求：
     // 它必须落进 `tally.clientErrors` ⇒ 给采集器一条「真的在记录非 2xx 响应」的证据。
-    // 能红证明见 `e2e-real/control.spec.ts` 判据4（同一 404、采集器未挂时计数不增长）。
+    // 能红证明原见 `e2e-real/control.spec.ts` 判据4（同一 404、采集器未挂时计数不增长）；
+    // ⚠ 该控制臂已于 2026-10-08 删除 ⇒ 该证明不再存在。
     const livenessPage = await openPage();
     let livenessProbe: { status: number; url: string; collectorGrew: boolean } = {
       status: 0,
