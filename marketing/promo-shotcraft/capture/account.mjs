@@ -9,7 +9,7 @@
 // 因此允许用 CAPTURE_ACCOUNT 覆盖，缺省即 demo-parent。
 //
 // 用法（在 marketing/promo-shotcraft/ 下）：
-//   node --env-file=../../.env capture/capture-device-shots.mjs
+//   node --env-file=../../.env capture/capture.mjs
 // 或先在 shell 里设置 CAPTURE_PASSWORD 再直接跑脚本。
 
 /** 演示账号名；非敏感，可被 CAPTURE_ACCOUNT 覆盖。 */
