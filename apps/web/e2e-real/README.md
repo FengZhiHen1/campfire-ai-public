@@ -11,6 +11,19 @@
 
 ## 0. 为什么这份说明必须存在（一个实测缺陷）
 
+> **⚠ 2026-10-07 订正：本节描述的缺陷【已修】，下面「必须用启动器」不再是硬要求。**
+> 修复是 `apps/api/src/campfire/main.py:42` 的 `apply_no_proxy_normalization()`——
+> 它在**模块导入期**执行，且**排在本文件所有 httpx/openai/supertokens import 之前**
+> （实测：该调用在第 42 行，`falkordb`/`openai`/`supertokens_python` 的 import 在第 44–48 行）。
+> 引入提交为 `75bb866a`（2026-10-06）。**本节的实测结论仍然可复算、且是那条设计决策的
+> 判据来源**，故全文保留；但**不要再照它绕路**：直接
+> `uv run uvicorn campfire.main:app` 起后端即已受保护（同一次实测：`/readyz` → `ready:true`，
+> `POST /api/auth/signup` → 200 而非 500）。
+> **为什么当时会写下过期结论**：本节最后修改（`989d6013`，2026-10-07 09:57）只挪了目录，
+> 没有同步这个已修好的前提——这正是「文档比代码晚一天」的典型形态。
+> **保留本节的理由**：`/readyz` 绿而业务全断这个**形态**仍会以别的根因复发（见下第 ② 例），
+> 该判据本身不过期。
+
 **按 `support/real.ts` 旧文件头写的那样直接起后端**：
 
 ```bash
@@ -121,15 +134,23 @@ docker compose up -d      # postgres / redis / falkordb / supertokens / minio
 
 `docker-compose.yml` 声明了**五个**数据服务（一期全量），本机实测端口映射（数据服务都绑 `127.0.0.1`）：
 
-| 服务 | 容器 | 宿主端口 | 本机实测状态 |
+| 服务 | 容器 | 宿主端口 | 本机实测状态（2026-10-07 复核） |
 | --- | --- | --- | --- |
-| PostgreSQL | `campfire-postgres` | 5432 | Up (healthy) |
-| Redis 7 | `campfire-redis` | 6379 | **`Created` —— 起不来，见下** |
-| FalkorDB | `campfire-falkordb` | **6380**（容器内 6379） | Up (healthy) |
-| SuperTokens core | `campfire-supertokens` | 3567 | Up |
-| MinIO | `campfire-minio` | 9000 / 9001 | Up (healthy) |
+| PostgreSQL | `campfire-postgres` | 5432 | Up 11h (healthy) |
+| Redis 7 | `campfire-redis` | 6379 | **Up 10h (healthy)** —— 见下方订正 |
+| FalkorDB | `campfire-falkordb` | **6380**（容器内 6379） | Up 11h (healthy) |
+| SuperTokens core | `campfire-supertokens` | 3567 | Up 11h |
+| MinIO | `campfire-minio` | 9000 / 9001 | Up 11h (healthy) |
 
-> **⚠ Redis 是唯一一个在本机起不来的服务（实测，2026-10-04）**：compose 把
+> **⚠ 2026-10-07 订正：Redis「本机起不来」的结论已不成立。** 实测
+> `docker ps` → `campfire-redis  Up 10 hours (healthy)  127.0.0.1:6379->6379/tcp`；
+> `docker exec campfire-redis redis-cli PING` → `PONG`；且本机**已无 `memurai` 进程**
+> （`Get-Process memurai` 计数 0）⇒ 6379 空闲，容器正常占用。
+> 下面那段「只跑 Memurai、不跑 campfire-redis」的原文**保留为 2026-10-04 的现场记录**，
+> 换机器时仍可作为「6379 被占用时是什么样」的参照；**但当前本机不需要它**。
+> `docker compose up -d` 的退出码判据（不要拿它当「数据服务都没起来」）**仍然成立**。
+
+> **⚠ Redis 曾是唯一一个在本机起不来的服务（实测，2026-10-04）**：compose 把
 > redis 映射到 `127.0.0.1:6379:6379`，而本机 **6379 已被原生 Memurai 占着**
 > （`memurai.exe`，`PING → True`，`redis_version 7.2.12`）⇒ 容器停在 `Created` 状态，
 > 手工 `docker start campfire-redis` 报：
@@ -160,11 +181,16 @@ docker compose up -d      # postgres / redis / falkordb / supertokens / minio
 
 ## 2. 起后端（8000）
 
-**必须**用第 0 节那个「进程内先规范化」的启动器。**不要**直接：
-
-```bash
-uv run uvicorn campfire.main:app --host 127.0.0.1 --port 8000   # ❌ 注册/登录会 500
-```
+> **⚠ 2026-10-07 订正：不再是「必须」。** 产品侧已在入口导入期规范化 `no_proxy`
+> （`main.py:42`，见第 0 节订正），因此下面这条命令**现在可以直接用**：
+>
+> ```bash
+> uv run uvicorn campfire.main:app --host 127.0.0.1 --port 8000   # ✅ 2026-10-07 起可行
+> ```
+>
+> 第 0 节那个「进程内先规范化」的启动器（`.tmp/serve.py`）**仍可使用**，它现在是
+> 等价通道而非必要条件。留着它的理由：当**别的** httpx 消费者在**本进程之外**
+> （例如某个自己起客户端的小工具）出同类问题时，它是本仓已有的对照装置。
 
 起好后先自检**两处都要绿**（只看 `/readyz` 不够）：
 
@@ -233,6 +259,21 @@ uv run python -m campfire.cli invite issue
 | `control.spec.ts` | 判据2 非空洞性（`@control`） | **4** |
 
 ⇒ **跑全部三组共需 5 枚**（下标 0～4）。
+
+> **`@capture`（2026-10-07 新增）不在此表里，因为它不占码**：
+> `capture-pages.spec.ts` **只登录、从不注册**（实测：全文无 `signup`/`inviteCodeFor` 调用，
+> 仅一处注释提到 signup 作为对照说明）⇒ 它**不消耗邀请码池**，与上表下标无耦合。
+> 它复刻 `marketing/promo-shotcraft/capture/measure-*.mjs` 的两个量取口径
+> （页面滚动容器尺寸、元素位置与滚动落点），产物写 `T10_CAPTURE_OUT`。
+> **2026-10-07 订正**：此处原写「已删除的 `measure-*.mjs`」，**不属实** ——
+> 那 7 个 `.mjs` 至今仍在（用户裁决：promo 的脚本本轮保留，只登记不改）。
+> 准确说法是**能力已被本文件收编进产品树**（Playwright，纳入 `pnpm` 入口），
+> 而原脚本作为历史材料留存。
+> 跑法见该文件头部注释的 `--grep "@capture"` 一行。
+> **⚠ 已知的一处产物差异（该文件作者实测并归因）**：`element-metrics` 的
+> `profile.marks.pendingGroup.ratio` 与旧产物略有不同，算术定位为页面 ~0.14px 的亚像素
+> 布局漂移（两者的 `Math.round` 后 `offsetTop` 均为 1880、`scrollPx` 均为 1728）。
+> 该字段**在影片源码里零消费者**，故不影响影片；但要知道它**不是逐字节一致**的那一个数。
 
 > **⚠ 一处按代码推断的夹具陷阱（证据强度：中——由代码与 T11 记录推出，本包未单独执行验证）**：
 > `docs/证据/probes/run-real.ps1` 的 `CodeCount` **默认是 4**，而 `inviteCodeFor` 对池取模
