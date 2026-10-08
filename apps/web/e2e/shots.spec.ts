@@ -1,9 +1,8 @@
 /**
  * 模块: e2e/shots
- * 职责: 全页基线截图——十页 × 两视口 × 两图种（视口图 + fullPage 图），逐页注入登录态、
- *       装夹具、等字体、断内容、落盘并写 sidecar
+ * 职责: 全页基线截图——十页 × 两视口 × 两图种（视口图 + fullPage 图）：落盘并写 sidecar
  * 数据来源:
- *   - docs/证据/orchestrator-20261002-001/T01.md: MUST — 目标 1～4、裁决 B/C/D/E/F
+ *   - docs/证据/orchestrator-20261002-001/T01.md: MUST — 目标 1～4、裁决 B/C/D/E
  *   - docs/证据/orchestrator-20261002-001/T01-rulings.md: MUST — 裁决 1（两图种都要、
  *     尺寸断言拆两条、fixed 中和）与其追加裁决（fullPage 必须真的展开滚动容器 + fail-loud
  *     高度守卫）与裁决 2（字体真实加载 + document.fonts.check fail-loud）
@@ -15,19 +14,22 @@
  *   - 禁止用 dev server 代替 preview（裁决 B：截图对象是构建产物）
  *   - 禁止在字体未加载时出图（裁决 2：静默产出回退字形的图比失败更糟）
  *   - 禁止在中和样式未恢复时继续写 sidecar（残留会污染后续断言与记录）
+ *   - 禁止在此处求值内容断言（归 content.spec.ts）——否则断言一红就一张图都没有，
+ *     而那正是最需要看图的时候（2026-10-07 用户裁决「拆成两条入口」）
  *
  * 落盘结构：每张图一条独立 sidecar（`<out>/.run/<file>.json`），由 manifest.spec.ts 在依赖
  * 项目里汇总。为什么不在本文件里汇总：截图用例并发执行，谁先跑完不确定；让汇总发生在全部
  * 截图之后的独立 project 里，时序才不会漂。
+ *
+ * **本文件不再记录 `assertedContent`**（原先由内容断言填充）。取舍见 content.spec.ts 的文件头：
+ * 内容断言改由 `pnpm e2e` 单独把关，跑完本文件不等于验收通过。
  */
 
 import { mkdir, readFile } from 'node:fs/promises';
 
 import { expect, test } from '@playwright/test';
 
-import { evaluateAssertions } from './support/assertions';
-import { effectiveFixtures, PAGE_SHOTS } from './support/fixtures';
-import { awaitDisplayFont, type FontEvidence } from './support/fonts';
+import { PAGE_SHOTS } from './support/fixtures';
 import { readPngSize, sha256Of, writeSidecar, type ShotSidecar } from './support/manifest';
 import {
   assertFullPageExpanded,
@@ -37,13 +39,7 @@ import {
   measureOverflow,
   type NeutraliseResult,
 } from './support/neutralise';
-import {
-  expectNeverRequested,
-  expectNoExternalRequests,
-  expectNoUnmatchedApi,
-  installNetwork,
-  waitForLedgerQuiet,
-} from './support/network';
+import { attachPageProblems, openPage } from './support/page-open';
 import {
   DEVICE_SCALE_FACTOR,
   PNG_HEIGHT_TOLERANCE_PX,
@@ -59,17 +55,7 @@ import {
   type ShotKind,
   type ViewportName,
 } from './support/paths';
-import { expectSessionInjected, installSession } from './support/session';
 import { readRunId } from './support/runid';
-
-/**
- * 登录态注入开关（只给消融实验用，默认注入）。
- *
- * 任务包要求三次消融各自证明「机制能失败」：兜底 handler、登录态注入、内容断言。
- * 后两者的「关掉」分别由本开关与 fixtures 里的 SHOTS_ABLATION_EMPTY_LIST 承担。
- * 开关读环境变量而不是命令行选项：`playwright test` 会拒绝未知选项（同一理由见 paths.ts）。
- */
-const SESSION_INJECTION_ENABLED = process.env.SHOTS_ABLATION_NO_SESSION !== '1';
 
 /**
  * fullPage 图高的容差（CSS px；比对时再乘倍率）。
@@ -116,57 +102,12 @@ let runIdForThisWorker = '';
 for (const shot of PAGE_SHOTS) {
   const pageName = pageNameOf(shot.name);
 
-  test(`${shot.name} 双图种截图与内容断言`, async ({ page }, testInfo) => {
+  test(`${shot.name} 双图种截图`, async ({ page }, testInfo) => {
     const viewport = viewportOf(testInfo.project.name);
 
-    // 顺序不可调换：注入必须在 goto 之前（SDK 在冷启动查一次会话），
-    // 夹具也必须在 goto 之前（首个接口请求可能早于 load 事件）。
-    await installSession(page, { enabled: SESSION_INJECTION_ENABLED });
-    const ledger = await installNetwork(page, effectiveFixtures(shot));
-
-    const pageProblems: string[] = [];
-    page.on('console', (message) => {
-      if (message.type() === 'error') pageProblems.push(`console.error: ${message.text()}`);
-    });
-    page.on('pageerror', (error) => {
-      pageProblems.push(`pageerror: ${error.message}`);
-    });
-
-    await page.goto(shot.path, { waitUntil: 'load' });
-
-    if (shot.guarded) {
-      await expectSessionInjected(page);
-    }
-
-    // 字体必须真的就绪才截图：字体 CDN 不可达时这里明确失败（裁决 2 的 fail-loud）。
-    const fontEvidence: FontEvidence = await awaitDisplayFont(page);
-
-    // fail-closed 判定必须早于内容断言：它是内容断言的前提。夹具没覆盖全时，
-    // 「内容断言失败」会把原因指向页面形态，而真实原因是夹具没写。
-    // 先等账本静默（页面请求发完），再点名未覆盖的 URL。
-    const quiet = await waitForLedgerQuiet(ledger);
-    if (!quiet.settled) {
-      // 账本未在上界内静默：fail-closed 仍照常判定，但这件事必须留痕——
-      // 静默丢弃它会让「请求还没发完就判通过」这种情况无声无息（P2-6）。
-      await testInfo.attach(`${pageName}-${viewport}-ledger-not-quiet.json`, {
-        body: JSON.stringify(
-          {
-            settled: quiet.settled,
-            elapsedMs: quiet.elapsedMs,
-            recordCount: ledger.records.length,
-            note: '账本未在上界内静默；fail-closed 判定仍然执行，但存在「判定时请求尚未发完」的可能',
-          },
-          null,
-          2,
-        ),
-        contentType: 'application/json',
-      });
-    }
-    expectNoUnmatchedApi(ledger);
-    expectNoExternalRequests(ledger);
-    expectNeverRequested(ledger, shot.mustNotRequest ?? []);
-
-    const evidence = await evaluateAssertions(page, shot.assertions);
+    // 前置（注入登录态 → 装夹具 → 导航 → 等字体 → fail-closed 判定）与 content.spec.ts
+    // 完全同源：两者共用 openPage，避免「截图验的是一个形态、断言验的是另一个形态」。
+    const { fontEvidence, ledger, pageProblems } = await openPage(page, shot, testInfo);
 
     // 截图前量一次真实的纵向溢出：它既是「视口图裁掉了多少」的记录，
     // 也是 fullPage 高度守卫的唯一输入（必须在中和/展开之前量，展开会把溢出消掉）。
@@ -238,7 +179,10 @@ for (const shot of PAGE_SHOTS) {
         bytes: bytes.byteLength,
         width: size.width,
         height: size.height,
-        assertedContent: evidence,
+        // 内容断言不再在本文件求值（归 content.spec.ts），因此这里恒为空。
+        // 为什么仍保留这个字段：manifest 的格式版本不因一次拆分而改动——消费方按
+        // `formatVersion` 分支，删字段会让旧消费方读到 undefined 而非「明确为空」。
+        assertedContent: [],
         fixtureNote: shot.note,
         scroll: {
           ...scroll,
@@ -317,11 +261,6 @@ for (const shot of PAGE_SHOTS) {
     }
 
     // 控制台错误不阻断截图，但要落进运行日志供审查者判断（不静默）。
-    if (pageProblems.length > 0) {
-      await testInfo.attach(`${pageName}-${viewport}-page-problems.log`, {
-        body: pageProblems.join('\n'),
-        contentType: 'text/plain',
-      });
-    }
+    await attachPageProblems(testInfo, `${pageName}-${viewport}`, pageProblems);
   });
 }

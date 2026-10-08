@@ -73,14 +73,33 @@ export default defineConfig({
 
   projects: [
     {
+      // 截图入口的两条 project（外加汇总用的 manifest）。
+      //
+      // 为什么用 testMatch 而不是靠命令行传文件名（2026-10-07 实测的坑）：manifest
+      // project 声明了 `dependencies: ['mobile', 'desktop']`，因此**只要它的用例被选中，
+      // 两个视口 project 就会连带把各自目录下的全部 spec 都跑一遍**——实测
+      // `playwright test shots.spec.ts manifest.spec.ts` 收集到的是 43 条（含 content.spec.ts
+      // 的 20 条），而不是预期的 21 条。那样内容断言一红又会挡住截图，拆分就白做了。
+      // 把「哪个 project 跑哪些 spec」写进配置，才能让 `pnpm shots` 与 `pnpm e2e` 真的互不牵连。
       name: 'mobile',
-      // 汇总与复算只在 dependent project 里跑一次：它不属于任何视口矩阵。
-      testIgnore: /manifest\.spec\.ts/,
+      testMatch: /(shots|guard-nonvacuity)\.spec\.ts/,
       use: { ...devices['Desktop Chrome'], viewport: VIEWPORTS.mobile, deviceScaleFactor: DEVICE_SCALE_FACTOR },
     },
     {
       name: 'desktop',
-      testIgnore: /manifest\.spec\.ts/,
+      testMatch: /(shots|guard-nonvacuity)\.spec\.ts/,
+      use: { ...devices['Desktop Chrome'], viewport: VIEWPORTS.desktop, deviceScaleFactor: DEVICE_SCALE_FACTOR },
+    },
+    {
+      // 内容断言入口（`pnpm e2e`）：两条 project 各自对应一个视口，与截图保持同一组视口，
+      // 避免「截图看的视口」与「断言验的视口」不一致。
+      name: 'content-mobile',
+      testMatch: /content\.spec\.ts/,
+      use: { ...devices['Desktop Chrome'], viewport: VIEWPORTS.mobile, deviceScaleFactor: DEVICE_SCALE_FACTOR },
+    },
+    {
+      name: 'content-desktop',
+      testMatch: /content\.spec\.ts/,
       use: { ...devices['Desktop Chrome'], viewport: VIEWPORTS.desktop, deviceScaleFactor: DEVICE_SCALE_FACTOR },
     },
     {
