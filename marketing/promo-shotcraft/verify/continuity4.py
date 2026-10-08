@@ -120,5 +120,6 @@ if issues:
 else:
     lines.append("  ✓ 无可比切点出现 1–12px 的微小跳变;同景别处高度一致(867→867/869/871/875)。")
 
+OUT.parent.mkdir(parents=True, exist_ok=True)
 OUT.write_text("\n".join(lines), encoding="utf-8")
 print("written", OUT)

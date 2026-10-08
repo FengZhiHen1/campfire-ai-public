@@ -77,5 +77,6 @@ lines += [
     "        里各写一次,不会因为多写一份拷贝而漏掉。",
 ]
 
+OUT.parent.mkdir(parents=True, exist_ok=True)
 OUT.write_text("\n".join(lines), encoding="utf-8")
 print("written", OUT)

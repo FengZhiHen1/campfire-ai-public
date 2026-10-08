@@ -67,5 +67,6 @@ lines.append("  结论:")
 lines.append(f"    · 无 BGM 版 {len(pts) - silent}/{len(pts)} 个采样点有可测音频 ⇒ SFX 已渲染进产物")
 lines.append("    · 每点都有稳定的正差值 ⇒ BGM 与 SFX 分层存在、未互相抵消")
 
+OUT.parent.mkdir(parents=True, exist_ok=True)
 OUT.write_text("\n".join(lines), encoding="utf-8")
 print("written", OUT)

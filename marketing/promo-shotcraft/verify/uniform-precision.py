@@ -75,5 +75,6 @@ lines += [
     "    · 「最大偏离 2–8」= 内容还在,但淡到不可见(淡出尾声)",
 ]
 
+OUT.parent.mkdir(parents=True, exist_ok=True)
 OUT.write_text("\n".join(lines), encoding="utf-8")
 print("written", OUT)

@@ -58,5 +58,6 @@ lines.append("    那会同时丢掉它的上下文(周边留白、与相邻元�
 lines.append("    而这恰恰是用户前三轮反馈里反复要求的(「不要平铺」「别框错位置」)。")
 lines.append("    **因此这是有意取舍,不是遗漏。**")
 
+OUT.parent.mkdir(parents=True, exist_ok=True)
 OUT.write_text("\n".join(lines), encoding="utf-8")
 print("written", OUT)

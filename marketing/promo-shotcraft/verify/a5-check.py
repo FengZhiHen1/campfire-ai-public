@@ -72,5 +72,6 @@ lines.append(f"   {len(unused_long)} 个: {', '.join(unused_long[:12])}"
 lines.append("")
 lines.append(f"结论: {'✓ 所有被使用的长样本都显式截断了' if not bad else '✗ 缺失: ' + ', '.join(bad)}")
 
+OUT.parent.mkdir(parents=True, exist_ok=True)
 OUT.write_text("\n".join(lines), encoding="utf-8")
 print("written", OUT)

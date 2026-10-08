@@ -106,5 +106,6 @@ if large:
     for t, d in large:
         lines.append(f"        {t}: {d:+}px")
 
+OUT.parent.mkdir(parents=True, exist_ok=True)
 OUT.write_text("\n".join(lines), encoding="utf-8")
 print("written", OUT)

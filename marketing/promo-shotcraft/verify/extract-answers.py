@@ -54,6 +54,7 @@ async def main() -> None:
 
     await conn.close()
     txt = "\n".join(out)
+    Path(".tmp").mkdir(parents=True, exist_ok=True)
     Path(".tmp/s4-answers.txt").write_text(txt, encoding="utf-8")
     print(f"写入 .tmp/s4-answers.txt ({len(txt)} 字符)")
 

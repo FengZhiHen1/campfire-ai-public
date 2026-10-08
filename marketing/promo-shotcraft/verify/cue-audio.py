@@ -90,5 +90,6 @@ lines += [
     f"({100 * near / max(1, len(loud)):.1f}%)",
 ]
 
+OUT.parent.mkdir(parents=True, exist_ok=True)
 OUT.write_text("\n".join(lines), encoding="utf-8")
 print("written", OUT)

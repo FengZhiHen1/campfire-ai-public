@@ -122,5 +122,6 @@ lines += [
     "      (复核者在我的 151 与自己的 108 之间对不上,正是因为②不稳定 —— 不是谁算错了。)",
 ]
 
+OUT.parent.mkdir(parents=True, exist_ok=True)
 OUT.write_text("\n".join(lines), encoding="utf-8")
 print("written", OUT)

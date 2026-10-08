@@ -37,5 +37,6 @@ for src_name, t in (("S5Analysis.tsx", s5), ("stream.generated.ts", stream)):
     for m in re.finditer(r".{25}六层闸门.{25}", t):
         lines.append(f"    [{src_name}] …{m.group(0)}…")
 
+OUT.parent.mkdir(parents=True, exist_ok=True)
 OUT.write_text("\n".join(lines), encoding="utf-8")
 print("written", OUT)

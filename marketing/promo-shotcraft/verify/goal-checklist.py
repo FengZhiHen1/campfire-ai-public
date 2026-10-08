@@ -101,5 +101,6 @@ for p in [Path("docs/证据/materials/promo-FINAL-REVIEW-v16.md"),
     lines.append(f"  {'✓' if p.exists() else '—'} {p}")
 
 out = Path(".tmp/goal-checklist.txt")
+out.parent.mkdir(parents=True, exist_ok=True)
 out.write_text("\n".join(lines), encoding="utf-8")
 print("written", out)

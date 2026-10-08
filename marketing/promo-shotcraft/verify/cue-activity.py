@@ -105,5 +105,6 @@ else:
         lines.append(f"    {sid} 比例 {ratio:<6} 绝对帧 {f:<5} ({f/FPS:6.2f}s)  "
                      f"帧差 {cue_d[int(i)]:.3f}")
 
+OUT.parent.mkdir(parents=True, exist_ok=True)
 OUT.write_text("\n".join(lines), encoding="utf-8")
 print("written", OUT)

@@ -220,6 +220,7 @@ if film.exists():
 
 lines.append("")
 lines.append(f"  共 {len(problems)} 处不一致")
+OUT.parent.mkdir(parents=True, exist_ok=True)
 OUT.write_text("\n".join(lines), encoding="utf-8")
 print("written", OUT)
 

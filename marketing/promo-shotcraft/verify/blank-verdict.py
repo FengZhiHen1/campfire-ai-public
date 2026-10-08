@@ -103,5 +103,6 @@ lines += [
     "    而是**判据变了**。这一点必须写在文档里,否则后人会以为数据在漂。",
 ]
 
+OUT.parent.mkdir(parents=True, exist_ok=True)
 OUT.write_text("\n".join(lines), encoding="utf-8")
 print("written", OUT)

@@ -36,5 +36,6 @@ for a, b in runs:
     rel_b = (b - starts[sid]) / lens[sid]
     where = "镜头开头" if rel_a < 0.05 else "镜头结尾" if rel_b > 0.95 else "镜头中间"
     out.append(f"        段内 {rel_a:.3f}-{rel_b:.3f} → {where}")
+Path(".tmp").mkdir(parents=True, exist_ok=True)
 Path(".tmp/uniform-runs.txt").write_text("\n".join(out), encoding="utf-8")
 print("\n".join(out))

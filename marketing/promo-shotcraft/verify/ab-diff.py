@@ -111,5 +111,6 @@ lines += [
     "  本脚本看不见它 —— 也就是说**用像素 A/B 既会误报、又会漏报**。",
 ]
 
+OUT.parent.mkdir(parents=True, exist_ok=True)
 OUT.write_text("\n".join(lines), encoding="utf-8")
 print("written", OUT)

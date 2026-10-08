@@ -35,5 +35,6 @@ for name, n in report:
     out.append(f"  {name}: 改了 {n} 处 → 终点 {FLOOR}")
 if not report:
     out.append("  (没有匹配到 —— 检查正则或命名是否变了)")
+Path(".tmp").mkdir(parents=True, exist_ok=True)
 Path(".tmp/fade-floor.txt").write_text("\n".join(out), encoding="utf-8")
 print("\n".join(out))

@@ -81,5 +81,6 @@ lines += [
     "  参照:本片全片中位内容量 = " + str(int(np.median(content))),
 ]
 
+OUT.parent.mkdir(parents=True, exist_ok=True)
 OUT.write_text("\n".join(lines), encoding="utf-8")
 print("written", OUT)

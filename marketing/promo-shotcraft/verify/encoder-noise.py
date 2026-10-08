@@ -129,5 +129,6 @@ lines += [
     "    而 final 对的 S8 ≈ 0.05 ⇒ **superseded 那一对不是干净对照**,不可用于 A/B。",
 ]
 
+OUT.parent.mkdir(parents=True, exist_ok=True)
 OUT.write_text("\n".join(lines), encoding="utf-8")
 print("written", OUT)

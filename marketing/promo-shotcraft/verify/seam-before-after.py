@@ -88,5 +88,6 @@ lines += [
     "        修复前这些帧是全空纸面(偏离像素为 0 或极小)。",
 ]
 
+OUT.parent.mkdir(parents=True, exist_ok=True)
 OUT.write_text("\n".join(lines), encoding="utf-8")
 print("written", OUT)

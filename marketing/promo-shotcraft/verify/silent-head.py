@@ -95,5 +95,6 @@ if not risky:
 else:
     lines.append(f"    ★ 有 {len(risky)} 条点事件用了带静音头的素材 ⇒ 声音会比画面晚约 0.4s,建议修。")
 
+OUT.parent.mkdir(parents=True, exist_ok=True)
 OUT.write_text("\n".join(lines), encoding="utf-8")
 print("written", OUT)

@@ -89,6 +89,7 @@ async def main() -> None:
     lines.append(f"   fixture 是否含 interview_at: {'是' if 'interview_at' in fk else '否'}")
     lines.append(f"   真实页面的 review_status 值: {by_title[list(by_title)[0]]['review_status'] if by_title else '?'}")
 
+    OUT.parent.mkdir(parents=True, exist_ok=True)
     OUT.write_text("\n".join(lines), encoding="utf-8")
     print("written", OUT)
 

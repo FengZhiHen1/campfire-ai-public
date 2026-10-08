@@ -78,5 +78,6 @@ lines.append("")
 lines.append("  说明:S1/S9 的品牌 hold 是 final-review B3 **要求**的静止（≥1s），")
 lines.append("        品牌字标落定后画面本就不动；若违规区间完全落在 hold 内，属合规。")
 
+OUT.parent.mkdir(parents=True, exist_ok=True)
 OUT.write_text("\n".join(lines), encoding="utf-8")
 print("written", OUT)

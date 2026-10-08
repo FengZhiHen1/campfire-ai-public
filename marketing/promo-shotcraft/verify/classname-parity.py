@@ -71,5 +71,6 @@ lines.append("")
 lines.append("判据:③ 里若出现「看起来像产品类名但不存在的」条目,即为自造类名 ——")
 lines.append("      那种类名不会命中任何产品 CSS,元素会退回浏览器默认外观(静默错版)。")
 
+OUT.parent.mkdir(parents=True, exist_ok=True)
 OUT.write_text("\n".join(lines), encoding="utf-8")
 print("\n".join(lines))

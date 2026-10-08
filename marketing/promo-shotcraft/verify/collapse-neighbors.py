@@ -94,5 +94,6 @@ if problems:
 else:
     lines.append("    没有边界的空帧两侧同时很满 ⇒ 这些 0 属于淡出尾声,不可见。")
 
+OUT.parent.mkdir(parents=True, exist_ok=True)
 OUT.write_text("\n".join(lines), encoding="utf-8")
 print("written", OUT)

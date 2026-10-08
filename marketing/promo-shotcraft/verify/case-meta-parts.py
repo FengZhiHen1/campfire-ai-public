@@ -23,6 +23,7 @@ async def main():
         out.append(f"   段数 {len(parts)}  总长 {len(line)} 字")
         out.append(f"   含「项目所有者核准」: {'项目所有者核准' in line}")
         out.append(f"   含「访谈」: {'访谈' in line}")
+    Path(".tmp").mkdir(parents=True, exist_ok=True)
     Path(".tmp/six-parts.txt").write_text(chr(10).join(out),encoding="utf-8")
     print("ok")
 asyncio.run(main())

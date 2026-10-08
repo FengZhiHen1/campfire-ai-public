@@ -100,5 +100,6 @@ lines += [
     "  ⚠ 仪器误差记录:上一版用整数步长分帧,累积漂移 3650 样本 ≈ 13.7 帧 ≈ 0.46s,",
     "    导致它误报「47/67 cue 静音」。**那个数字是错的**,本版才可采信。",
 ]
+OUT.parent.mkdir(parents=True, exist_ok=True)
 OUT.write_text("\n".join(lines), encoding="utf-8")
 print("written", OUT)

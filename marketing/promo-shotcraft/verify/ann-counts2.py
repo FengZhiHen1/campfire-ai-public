@@ -111,6 +111,7 @@ async def main() -> None:
     lines.append("   S6「有档案 33 条标注(含历史记录 9 条)」")
     lines.append("   S6「无档案 36 条标注(无历史记录 · 全是推断与观察)」")
 
+    OUT.parent.mkdir(parents=True, exist_ok=True)
     OUT.write_text("\n".join(lines), encoding="utf-8")
     print("written", OUT)
 

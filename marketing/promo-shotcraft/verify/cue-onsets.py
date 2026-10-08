@@ -88,5 +88,6 @@ if silent:
 else:
     lines += ["", "  ✓ 没有哑 cue:每条 cue 附近都确实有音频。"]
 
+OUT.parent.mkdir(parents=True, exist_ok=True)
 OUT.write_text("\n".join(lines), encoding="utf-8")
 print("written", OUT)

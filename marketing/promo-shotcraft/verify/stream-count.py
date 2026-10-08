@@ -34,5 +34,6 @@ lines.append("")
 lines.append("  判读:这是组件的**计算式**给出的确定值(text.slice(0, ⌊elapsed/framesPerToken⌋))，")
 lines.append("        与相机、滚动无关 ⇒ 逐字揭示在实现层面成立。")
 
+OUT.parent.mkdir(parents=True, exist_ok=True)
 OUT.write_text("\n".join(lines), encoding="utf-8")
 print("written", OUT)

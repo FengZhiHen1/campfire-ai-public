@@ -36,5 +36,6 @@ out.append("")
 out.append(f"最长静止区间({len(runs)} 个 ≥1s):")
 for a,b in runs[:8]:
     out.append(f"  f{a:5}-{b:5}  {(b-a)/30:5.2f}s  {shot_of(a)}")
+Path(".tmp").mkdir(parents=True, exist_ok=True)
 Path(".tmp/motion-v16.txt").write_text("\n".join(out), encoding="utf-8")
 print("\n".join(out))

@@ -102,5 +102,6 @@ lines += [
     "        若显著更大,则是一次「设备瞬移」。",
 ]
 
+OUT.parent.mkdir(parents=True, exist_ok=True)
 OUT.write_text("\n".join(lines), encoding="utf-8")
 print("written", OUT)

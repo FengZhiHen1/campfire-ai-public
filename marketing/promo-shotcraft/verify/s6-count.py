@@ -50,5 +50,6 @@ else:
     verdict = "✓ 与画面声称一致" if len(keys) == 7 else f"✗ 画面说 7 节，实际 {len(keys)} 节"
     lines.append(f"  画面声称「七节分区」→ {verdict}")
 
+OUT.parent.mkdir(parents=True, exist_ok=True)
 OUT.write_text("\n".join(lines), encoding="utf-8")
 print("written", OUT)

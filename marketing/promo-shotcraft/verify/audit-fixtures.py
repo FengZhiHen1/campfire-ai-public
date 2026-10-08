@@ -165,6 +165,7 @@ async def main() -> None:
         report.append("✓ 全部核对通过:fixture 中每一处文本都能在数据库中找到")
 
     out = "\n".join(report)
+    Path(".tmp").mkdir(parents=True, exist_ok=True)
     Path(".tmp/audit-fixtures.txt").write_text(out, encoding="utf-8")
     print(f"写入 .tmp/audit-fixtures.txt | 问题数: {len(problems)}")
 

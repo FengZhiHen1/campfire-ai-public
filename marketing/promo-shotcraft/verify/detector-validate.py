@@ -97,5 +97,6 @@ lines += [
     "",
     f"  校验结果: {'✓ 检测器可信,可以拿它量切点' if ok else '★ 检测器仍不可信,不应据它下结论'}",
 ]
+OUT.parent.mkdir(parents=True, exist_ok=True)
 OUT.write_text("\n".join(lines), encoding="utf-8")
 print("written", OUT)

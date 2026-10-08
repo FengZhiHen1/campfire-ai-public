@@ -126,5 +126,6 @@ if small:
 else:
     lines.append("  ✓ 没有「微小到像故障」的跳变(切点处要么无设备,要么变化明显)")
 
+OUT.parent.mkdir(parents=True, exist_ok=True)
 OUT.write_text("\n".join(lines), encoding="utf-8")
 print("written", OUT)

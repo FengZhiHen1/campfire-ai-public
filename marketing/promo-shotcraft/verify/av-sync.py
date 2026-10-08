@@ -133,6 +133,7 @@ if ap and vp:
 else:
     lines.append("  (峰值样本不足,无法比较)")
 
+OUT.parent.mkdir(parents=True, exist_ok=True)
 OUT.write_text("\n".join(lines), encoding="utf-8")
 
 # ── ③ 逐条 cue 的**有向偏移**:声音比画面早还是晚(2026-10-08 加)─────────────────

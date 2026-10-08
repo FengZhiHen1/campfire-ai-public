@@ -91,5 +91,6 @@ lines += [
     f"中位 {int(np.median(inks))}   99% 分位 {int(np.percentile(inks, 99))}",
 ]
 
+OUT.parent.mkdir(parents=True, exist_ok=True)
 OUT.write_text("\n".join(lines), encoding="utf-8")
 print("written", OUT)

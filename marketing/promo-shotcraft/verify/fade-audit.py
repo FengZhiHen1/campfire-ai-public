@@ -43,5 +43,6 @@ lines += [
 for f, n, a, b in issues:
     lines.append(f"    {f} :: {n}  span({a},{b})")
 
+OUT.parent.mkdir(parents=True, exist_ok=True)
 OUT.write_text("\n".join(lines), encoding="utf-8")
 print("written", OUT)

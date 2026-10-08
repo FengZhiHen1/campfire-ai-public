@@ -172,5 +172,6 @@ lines.append("  判据回顾:")
 lines.append("    · 硬约束「背景页面永不超过 1.3 倍」—— 与边距无关,另行验证")
 lines.append("    · 「不贴边」我采用 ≥12px。若最小边距 < 12px,则该表述需要修正")
 
+OUT.parent.mkdir(parents=True, exist_ok=True)
 OUT.write_text("\n".join(lines), encoding="utf-8")
 print("\n".join(lines))

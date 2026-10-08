@@ -101,5 +101,6 @@ lines += [
     "        观众能感知到「这半秒是空的」的阈值约 0.3–0.5s。",
 ]
 
+OUT.parent.mkdir(parents=True, exist_ok=True)
 OUT.write_text("\n".join(lines), encoding="utf-8")
 print("written", OUT)

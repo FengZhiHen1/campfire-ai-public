@@ -93,5 +93,8 @@ out.append(f"  ≥1s 的静止区间({len(runs)} 个,按长度):")
 for a, b in runs[:8]:
     out.append(f"    f{a:5}-{b:5}  {(b - a) / FPS:5.2f}s  {shot_of(a)}")
 
+# 落点目录按需创建：`.tmp/` 不入版本控制，全新检出里**不存在**
+# （此前直接写会抛 FileNotFoundError，脚本以 Traceback 收场而不是给出判据）。
+OUT.parent.mkdir(parents=True, exist_ok=True)
 OUT.write_text("\n".join(out), encoding="utf-8")
 print("written", OUT)
