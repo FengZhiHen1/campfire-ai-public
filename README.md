@@ -20,12 +20,14 @@
 ### 1. 克隆
 
 ```bash
-git clone --branch dev https://github.com/FengZhiHen1/Campfire-AI.git
+git clone https://github.com/FengZhiHen1/Campfire-AI.git
 cd Campfire-AI
+git switch dev          # 日常开发在 dev 上
 ```
 
-⚠ **必须带 `--branch dev`**：仓库默认分支是 `master`，它落后 `dev` 较多，不含当前开发状态。
-（默认分支该指向哪里是**待决事项**，尚未处理；在那之前请显式指定 `dev`。）
+分支策略（见 [AGENTS.md](AGENTS.md)）：**`dev` 日常开发，`master` 仅保留稳定版本** ——
+发布时把 `dev` 快进到 `master`。因此 `master` 在两次发布之间会落后 `dev`。
+默认分支是 `master`，直接 `clone` 不会报错；**要继续开发就切到 `dev`**。
 
 ### 2. 建本地配置（**必须**，否则测试不会全绿）
 
