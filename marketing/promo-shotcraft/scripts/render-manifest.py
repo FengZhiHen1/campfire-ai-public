@@ -129,9 +129,30 @@ def audio_assets() -> set[Path]:
     return {p for p in base.rglob("*") if p.is_file()}
 
 
+def _looks_binary(raw: bytes) -> bool:
+    """按 git 的启发式判断二进制：开头 8000 字节里出现 NUL 即视为二进制。"""
+    return b"\0" in raw[:8000]
+
+
 def sha(p: Path) -> str:
+    """文件内容 sha256 —— **跨检出可复现**（文本先做行尾归一化）。
+
+    ★★ 2026-10-08 修复（实测证据）：
+    旧版直接哈希 `p.read_bytes()`，也就是**工作区字节**。而 `.gitattributes` 的
+    `* text=auto` 配合 `core.autocrlf` 会让**同一个提交在不同机器上检出成不同行尾**
+    ⇒ 实测：在 Windows 的全新克隆里，98 条清单有 **22 条哈希不同**；这 22 条
+    **全是文本文件、0 个二进制**（mp4/mp3/png 全部一致），且把 CRLF 归一化为 LF 后
+    **22/22 精确匹配提交值** —— 根因就是行尾，与内容无关。
+    后果是这份清单**只在生成它的那台机器上成立**，换个环境重算必报差异。
+
+    现在：文本文件先 CRLF→LF 归一化再哈希（于是行尾不再影响结果）；二进制按 git 的
+    启发式原样哈希 —— 它们的字节本就不该随平台变化，若变了那就是真的内容变化。
+    """
     import hashlib
-    return hashlib.sha256(p.read_bytes()).hexdigest()
+    raw = p.read_bytes()
+    if not _looks_binary(raw):
+        raw = raw.replace(b"\r\n", b"\n")
+    return hashlib.sha256(raw).hexdigest()
 
 
 def main() -> None:
@@ -198,7 +219,10 @@ def main() -> None:
                  "docs/design/tokens.css(该路径**硬编在脚本里**)。"
                  "★ 独立复核指出:原先写的「不是手写白名单」**只对 import 闭包那部分成立** ——"
                  "这两组是手写的,漏加一个文件,门禁就会对它失明(P0 的失败模式)。"
-                 "凡在此列表内,改动都必须重渲(或先用无损 PNG 消融证明)。"),
+                 "凡在此列表内,改动都必须重渲(或先用无损 PNG 消融证明)。"
+                 "★ 2026-10-08:哈希**跨检出可复现** —— 文本文件按 LF 归一化后取 sha256"
+                 "(此前直接哈希工作区字节,行尾随平台变化,导致同一提交在 Windows 新克隆里"
+                 "22/98 条对不上);二进制仍按原始字节。"),
         "derived_from": "src/index.ts",
         "counts": {"total": len(entries), "apps_web": n_web, "audio": n_audio,
                    "css": n_css},
