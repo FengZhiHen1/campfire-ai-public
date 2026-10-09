@@ -4,8 +4,8 @@
 
 检查内容：
 
-1. 有效设计文档中的相对链接必须存在（``docs/**/*.md`` 加 ``AGENTS.md`` 与
-   ``archive/README.md``），**无例外**——``docs/证据/`` 证物树已于 2026-10-08 整体删除。
+1. 有效设计文档中的相对链接必须存在（``docs/**/*.md`` 加 ``README.md``、``AGENTS.md``
+   与 ``archive/README.md``），**无例外**——``docs/证据/`` 证物树已于 2026-10-08 整体删除。
 2. 需求 ID 与验收行必须相互可解析。文档的实际格式是——
    需求：``**RQ-ACC-01 全应用登录**``（加粗行，不是标题）；
    验收：``| AC-01 | `RQ-ACC-01` | … |``（AC ID 是 ``AC-NN``，不带中段）。
@@ -69,7 +69,9 @@ def check_links(problems: list[str]) -> tuple[int, int]:
     # 链接豁免随之失效——那两个路径已不存在，保留豁免会成为指向空处的死配置。
     # 现在设计文档逐条校验，无例外。
     pages = sorted(DOCS.rglob("*.md"))
-    pages += [ROOT / "AGENTS.md", ROOT / "archive" / "README.md"]
+    # 2026-10-08：根 README.md 是「新环境起步」的唯一入口，它的链接同样不该烂掉，
+    # 故纳入同一套校验（新增根文档必须同时登记在这里，否则它不受任何检查）。
+    pages += [ROOT / "README.md", ROOT / "AGENTS.md", ROOT / "archive" / "README.md"]
 
     link_count = 0
     for page in pages:
