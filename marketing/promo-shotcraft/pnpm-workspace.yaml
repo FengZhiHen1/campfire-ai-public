@@ -1,0 +1,14 @@
+# promo-shotcraft 是**独立的** npm 工作空间根（刻意不并入仓库根那个只含 apps/web 的工作空间）。
+#
+# 为什么必须显式声明（2026-10-08 实测定因）：
+# 本目录位于仓库根 pnpm workspace 之内，却**不在**其 `packages` 列表里。pnpm 于是接管后
+# 什么都不做 —— `pnpm install` **exit 0 却连 node_modules 都不建**（实测：`Done in 557ms`、
+# `node_modules` 不存在），是个**静默失败**：照着最自然的命令敲，会以为装好了。
+# 有了这个文件，pnpm 把本目录当作独立工作空间根，`pnpm install` 才真的安装本目录依赖
+# （实测：node_modules 约 249 MB，含 remotion 与 @remotion/cli）。
+#
+# 为什么不直接加进仓库根的 packages：
+# 影片工具链（Remotion + puppeteer）与产品前端（apps/web）是两件事，且体积大。
+# 并进去会让 CI 的 frontend job 每次 `pnpm install --frozen-lockfile` 都拉整套影片依赖。
+# 保持隔离后，CI 不受影响；本目录用自己的 `pnpm-lock.yaml` 锁定可复现。
+packages: []
