@@ -36,10 +36,12 @@
 
 ## Commands
 
-全部在仓库根执行。
+全部在仓库根执行。**全新环境（刚 clone）先看 [README.md](README.md) 的「首次起步」**——
+那里有 `.env`、`playwright install` 等一次性步骤；本文件只列日常命令。
 
 ```bash
 # --- 本地开发闭环（默认就在这里做完，不要碰云端）---
+cp .env.example .env          # 新环境一次性：缺它 pytest 会多挂一条（见 README）
 uv sync                       # 或 uv sync --frozen（lock 必须同步）
 docker compose up -d          # 本地数据服务：PostgreSQL、Redis、FalkorDB、SuperTokens
 
@@ -63,6 +65,9 @@ uv run python -m campfire.cli ingest <x.md>    # 摄取到资料库（条目与�
 ### 页面截图（评测与验收用；落点不入 git）
 
 ```bash
+# 全新环境先装浏览器（一次性；不装则下面两条都会失败，报错会提示这条命令）
+pnpm --filter @campfire/web exec playwright install
+
 pnpm --filter @campfire/web shots   # 截图：10 页 × 2 视口 × 2 图种 = 40 张 PNG + manifest.json
 pnpm --filter @campfire/web e2e     # 内容断言：证明每张图「有料」而不是空态
 ```

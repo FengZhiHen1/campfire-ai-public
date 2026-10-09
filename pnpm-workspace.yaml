@@ -3,7 +3,15 @@
 # 只有一个前端：apps/web（React H5）。上一轮的 apps/react-web 与
 # packages/ts-shared 属已归档结构，不在此列。
 #
-# apps/web 目前只有目录占位、尚无 package.json：一期前端样式契约
-# （docs/design/tokens.css）尚未重建，故先不引入构建链。
+# 本工作空间**只含产品前端** apps/web（React H5）：它有完整构建链
+# （`dev`/`build`/`test`/`lint`/`typecheck`/`shots`/`e2e`，见 apps/web/package.json）。
+#
+# 2026-10-08 订正：此处原写「apps/web 目前只有目录占位、尚无 package.json：一期前端样式
+# 契约尚未重建，故先不引入构建链」——**已不属实**，样式契约（docs/design/tokens.css）
+# 与构建链早已落地（`build` 内含 sync-tokens + tsc + vite build + 契约类名断言）。
+#
+# 影片工具链 marketing/promo-shotcraft **刻意不并入**本工作空间：它是另一件事、体积大
+# （Remotion + puppeteer），并进来会让 CI 的 frontend job 每次都拉整套影片依赖。
+# 它有自己的 `marketing/promo-shotcraft/pnpm-workspace.yaml` 与 lockfile，独立可复现。
 packages:
   - "apps/web"
