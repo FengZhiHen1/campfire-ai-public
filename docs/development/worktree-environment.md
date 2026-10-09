@@ -3,6 +3,8 @@
 > **状态**：**已合回**（2026-10-07）。由 dev-orchestrator run `20261006-001` 的 env-ready
 > 执行者在 integration worktree 内产出，经独立审查 PASS 后合回主分支；
 > 合回时按该审查的 P2#4 订正了 §4 一处机制表述。
+> **2026-10-09 追加**：§1 补记泳道落点的 `.gitignore` 忽略规则（用户要求把该忽略纳入
+> **仓库规范**，而不是依赖各人的 `.git/info/exclude`）。该次追加**未走**上述独立审查流程。
 > **权威范围**：本仓「隔离泳道里怎么把环境准备好、怎么核验它真的就绪」的可复用配方。
 > **它不拥有**：命令集真源在 [AGENTS.md](../../AGENTS.md)；隔离与调度的语义与判据在
 > dev-orchestrator skill（`references/isolation-method.md`、`references/stage-contract.md`）；
@@ -26,6 +28,15 @@
 **路径约束（最高优先级）**：所有泳道必须位于**原始项目根**的 `.worktrees/<run-id>/` 下。
 无法满足时**停止并报告**，不放宽到其他目录，也不要把泳道自身再解释成「项目根」
 （那会形成嵌套 `.worktrees`）。
+
+**落点已被忽略**：该路径由仓库根 `.gitignore` 的 `/.worktrees/` 排除。写法**锚定仓库根**
+而非 `.worktrees/`——这样嵌套 `.worktrees` 仍会以未跟踪形式暴露，不被这条规则藏起来。
+
+这条忽略规则**属于仓库，不属于本机**：`.git/info/exclude` 不随克隆传播，CI、协作者与
+服务器上的新克隆都没有它。缺它的后果是**静默**的——泳道内有个指向 gitdir 的 `.git`
+**文件**，git 因此视其为嵌入仓库：`git status` 只把它折叠成一条 `?? .worktrees/<run-id>/`，
+看不出严重性，但 `git add .` 会以 **mode 160000（gitlink）** 收进索引并警告
+`adding embedded git repository`（2026-10-09 实测）。
 
 ## 2. 初始化
 

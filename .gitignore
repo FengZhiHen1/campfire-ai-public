@@ -9,6 +9,22 @@
 .claude/
 .tmp/
 
+# 隔离泳道（worktree）落点。规范见 docs/development/worktree-environment.md §1：
+#   所有泳道必须在**原始项目根**的 `.worktrees/<run-id>/` 下。
+#
+# 用 `/` 锚定到仓库根，而**不是**写 `.worktrees/`：锚定后，违反规范出现的**嵌套**
+# `.worktrees` 仍会以未跟踪形式暴露，而不是被这条规则顺手藏起来。
+#
+# ⚠ 必须写在**受版本控制**的 .gitignore 里，不能只靠各人的 .git/info/exclude——
+#   泳道路径是仓库级规范，新克隆（CI、协作者、服务器）不继承任何人本机的排除项。
+#
+#   实测（2026-10-09，非推断）：泳道内有个 `.git` 指向 gitdir 的**文件**，git 因此
+#   视其为嵌入仓库。`git status` 只把它折叠成一条 `?? .worktrees/<run-id>/`，
+#   看不出严重性；但 `git add .` 会以 **mode 160000（gitlink）** 收进索引并警告
+#   "adding embedded git repository"——提交出去即悬空 gitlink：别人克隆拿不到内容，
+#   也没有 .gitmodules 声明它。**别被「只有一条 status」骗过去。**
+/.worktrees/
+
 # 本地参考资料与研究材料（不作为设计权威）
 /references/
 __pycache__/
