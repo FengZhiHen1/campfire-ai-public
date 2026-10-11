@@ -13,7 +13,7 @@
  *   - 禁止为不支持对象建立第二层导航（单页内切换，页面设计布局第 2 条）
  */
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import type { ProfileItem } from '../../../shared/types/profile';
 import { AppShell } from '../../../shared/ui/AppShell';
@@ -103,6 +103,29 @@ export function ProfilePage({ port }: ProfilePageProps) {
   // 描述展开状态：已降权（stale）条目默认收起（档案页第 25 行）。存的是被展开的行，
   // 不是被收起的行——这样默认值（不收）不必随条目增删同步。
   const [expanded, setExpanded] = useState<readonly string[]>([]);
+  const [switchTarget, setSwitchTarget] = useState<string | null>(null);
+  const [editorTarget, setEditorTarget] = useState<{ kind: 'add' } | { kind: 'correct'; item: ProfileItem } | null>(null);
+  const editingBusy = entry.busyItemId !== null || entry.correct?.submitting === true || entry.add?.submitting === true;
+  const hasDraft = (entry.add !== null && (entry.add.draft.topic.trim() !== '' || entry.add.draft.description.trim() !== ''))
+    || (entry.correct !== null && (entry.correct.draft.topic !== entry.correct.target.topic || entry.correct.draft.description !== entry.correct.target.description));
+  const switchObject = (objectId: string): void => {
+    entry.closeAdd();
+    entry.closeCorrect();
+    page.selectObject(objectId);
+    setSwitchTarget(null);
+  };
+  const openCorrect = (item: ProfileItem): void => {
+    if (entry.correct?.target.item_id === item.item_id) return;
+    if (hasDraft) { setEditorTarget({ kind: 'correct', item }); return; }
+    entry.closeAdd();
+    entry.openCorrect(item);
+  };
+  const openAdd = (): void => {
+    if (entry.add !== null) return;
+    if (hasDraft) { setEditorTarget({ kind: 'add' }); return; }
+    entry.closeCorrect();
+    entry.openAdd();
+  };
 
   const selected = page.objects.find((object) => object.id === page.selectedObjectId) ?? null;
   const groups = groupByDomain(page.items);
@@ -116,7 +139,7 @@ export function ProfilePage({ port }: ProfilePageProps) {
   return (
     <AppShell tab="profile">
       <header className="page-head">
-        <h1 className={styles.heading}>{COPY.heading}</h1>
+        <div><h1 className={styles.heading}>{COPY.heading}</h1><p className="hint">了解 TA，也让每一次咨询更有上下文。</p></div>
       </header>
 
       {/* 对象切换器：横向滚动（切换是平级单选，滚动语义比换行堆叠更准）。 */}
@@ -124,15 +147,18 @@ export function ProfilePage({ port }: ProfilePageProps) {
         {page.objects.map((object) => (
           <button
             aria-pressed={object.id === page.selectedObjectId}
+            disabled={editingBusy}
             className={object.id === page.selectedObjectId ? 'tag selected' : 'tag'}
             key={object.id}
             onClick={() => {
-              page.selectObject(object.id);
+              if (object.id === page.selectedObjectId) return;
+              if (hasDraft) setSwitchTarget(object.id);
+              else switchObject(object.id);
             }}
             type="button"
           >
             {object.display_name}
-            {object.archived_at !== null && <span className="tag meta">{COPY.archivedTag}</span>}
+            {object.archived_at !== null && <span className={styles.archived}>{COPY.archivedTag}</span>}
           </button>
         ))}
         {selected !== null && (
@@ -149,6 +175,14 @@ export function ProfilePage({ port }: ProfilePageProps) {
           {COPY.addObject}
         </button>
       </div>
+
+      {page.status === 'ready' && selected !== null && (
+        <nav className={styles.sectionNav} aria-label="档案分区">
+          <a href="#profile-summary">当前认识</a>
+          {page.candidates.length > 0 && <a href="#profile-candidates">待确认 {page.candidates.length}</a>}
+          {groups.length > 0 && <a href="#profile-records">全部记录</a>}
+        </nav>
+      )}
 
       {entry.notice !== null && (
         <p className="hint" role="status">
@@ -200,7 +234,7 @@ export function ProfilePage({ port }: ProfilePageProps) {
       {page.status === 'ready' && page.objects.length > 0 && (
         <>
           {/* 一页摘要区：本页唯一抬升面板，靠海拔而非颜色获得重量。 */}
-          <section className="panel" aria-labelledby="profile-summary">
+          <section className={"panel " + styles.summary} aria-labelledby="profile-summary">
             <div className="record-head">
               <h2 id="profile-summary">{COPY.summaryTitle}</h2>
               <p className="hint">{COPY.summaryHint}</p>
@@ -219,7 +253,7 @@ export function ProfilePage({ port }: ProfilePageProps) {
                     // 入口，也不给一个会写错条目的入口。
                     const fullItem = itemsById.get(entryItem.item_id);
                     return (
-                      <p className={styles.summaryItem} key={entryItem.item_id}>
+                      <div className={styles.summaryItem} key={entryItem.item_id}>
                         <span>{entryItem.text}</span>
                         <span className="meta">
                           {originLabel(entryItem.origin)}
@@ -232,16 +266,16 @@ export function ProfilePage({ port }: ProfilePageProps) {
                           // （可见文字仍是设计里的「纠正」）。
                           <button
                             aria-label={`${COPY.correct}：${entryItem.text}`}
-                            className="btn btn-quiet"
+                            className={"text-button " + styles.summaryCorrect}
                             onClick={() => {
-                              entry.openCorrect(fullItem);
+                              openCorrect(fullItem);
                             }}
                             type="button"
                           >
                             {COPY.correct}
                           </button>
                         )}
-                      </p>
+                      </div>
                     );
                   })}
                 </div>
@@ -252,7 +286,7 @@ export function ProfilePage({ port }: ProfilePageProps) {
           {!hasEntries && (
             <EmptyState
               action={
-                <button className="btn btn-primary" onClick={entry.openAdd} type="button">
+                <button className="btn btn-primary" onClick={openAdd} type="button">
                   {COPY.addEntry}
                 </button>
               }
@@ -263,7 +297,7 @@ export function ProfilePage({ port }: ProfilePageProps) {
 
           {/* 待确认分组固定在完整条目区最顶部（候选层视觉不变量）。 */}
           {page.candidates.length > 0 && (
-            <details className="tile group-collapse" open>
+            <details id="profile-candidates" className="tile group-collapse" open>
               <summary>
                 <span className="status unruled">
                   {COPY.candidateGroup}（{page.candidates.length}）
@@ -296,7 +330,7 @@ export function ProfilePage({ port }: ProfilePageProps) {
             </details>
           )}
 
-          {groups.map((group) => (
+          <div id="profile-records" className="stack">{groups.map((group) => (
             <details className="tile group-collapse" key={group.domain} open>
               <summary>
                 {DOMAIN_LABELS[group.domain]}（{group.items.length}）
@@ -309,7 +343,7 @@ export function ProfilePage({ port }: ProfilePageProps) {
                     item={item}
                     key={item.item_id}
                     onCorrect={() => {
-                      entry.openCorrect(item);
+                      openCorrect(item);
                     }}
                     onDelete={() => {
                       entry.askDelete(item);
@@ -318,11 +352,22 @@ export function ProfilePage({ port }: ProfilePageProps) {
                 ))}
               </div>
             </details>
-          ))}
+          ))}</div>
+
+          {page.loadMoreFailure !== null ? (
+            <ErrorCard title="后续记录没有加载成功" description={profileFailureDescription(page.loadMoreFailure)}
+              actions={<button className="btn btn-secondary" type="button" onClick={() => void page.loadMore()}>重试加载记录</button>} />
+          ) : page.hasMore && (
+            <button className="btn btn-secondary block" type="button" disabled={page.loadingMore} onClick={() => void page.loadMore()}>
+              {page.loadingMore ? '正在加载记录…' : '加载更多记录'}
+            </button>
+          )}
 
           {/* 纠正表单展开在被纠正的那一条下方（不是弹层）。 */}
           {entry.correct !== null && (
             <EntryForm
+              key={entry.correct.target.item_id}
+              readonlyDomain
               draft={entry.correct.draft}
               errors={entry.correct.errors}
               failure={entry.correct.failure === null ? null : profileFailureInline(entry.correct.failure)}
@@ -339,7 +384,7 @@ export function ProfilePage({ port }: ProfilePageProps) {
           )}
 
           {entry.add === null ? (
-            <button className="btn btn-secondary block" onClick={entry.openAdd} type="button">
+            <button className="btn btn-secondary block" disabled={editingBusy} onClick={openAdd} type="button">
               {COPY.addEntry}
             </button>
           ) : (
@@ -360,6 +405,33 @@ export function ProfilePage({ port }: ProfilePageProps) {
         </>
       )}
 
+      {editorTarget !== null && (
+        <ConfirmSheet labelledBy="profile-editor-title" onDismiss={() => setEditorTarget(null)}>
+          <h2 id="profile-editor-title">放弃当前编辑？</h2>
+          <p>新的编辑操作会替换尚未保存的草稿。</p>
+          <div className="button-row">
+            <button className="btn btn-secondary" type="button" onClick={() => setEditorTarget(null)}>继续编辑</button>
+            <button className="btn btn-danger" type="button" onClick={() => {
+              entry.closeAdd();
+              entry.closeCorrect();
+              if (editorTarget.kind === 'add') entry.openAdd();
+              else entry.openCorrect(editorTarget.item);
+              setEditorTarget(null);
+            }}>放弃并继续</button>
+          </div>
+        </ConfirmSheet>
+      )}
+
+      {switchTarget !== null && (
+        <ConfirmSheet labelledBy="profile-switch-title" onDismiss={() => setSwitchTarget(null)}>
+          <h2 id="profile-switch-title">切换支持对象？</h2>
+          <p>当前编辑尚未保存，切换后将丢弃这份草稿。</p>
+          <div className="button-row">
+            <button className="btn btn-secondary" type="button" onClick={() => setSwitchTarget(null)}>继续编辑</button>
+            <button className="btn btn-danger" type="button" onClick={() => switchObject(switchTarget)}>切换并丢弃</button>
+          </div>
+        </ConfirmSheet>
+      )}
       {entry.deleteTarget !== null && (
         <ConfirmSheet labelledBy="profile-delete-title" onDismiss={entry.cancelDelete}>
           <h2 id="profile-delete-title">{COPY.deleteSheetTitle}</h2>
@@ -540,6 +612,7 @@ function CandidateRow({ item, busy, expanded, failure, onConfirm, onDelete, onTo
 
 /** 补充/纠正表单 props。 */
 interface EntryFormProps {
+  readonlyDomain?: boolean;
   title: string;
   hint?: string;
   submitting: boolean;
@@ -559,14 +632,20 @@ interface EntryFormProps {
  * 后置: 输出领域下拉、主题与描述输入、提交与取消；错误内联呈现且不清空输入
  * 异常: 无
  */
-function EntryForm({ title, hint, submitting, failure, errors, draft, submitLabel, onSubmit, onCancel, onChange }: EntryFormProps) {
+function EntryForm({ title, hint, submitting, failure, errors, draft, submitLabel, onSubmit, onCancel, onChange, readonlyDomain = false }: EntryFormProps) {
+  const heading = useRef<HTMLHeadingElement>(null);
+  useEffect(() => {
+    heading.current?.scrollIntoView?.({ block: 'start' });
+    heading.current?.focus({ preventScroll: true });
+  }, []);
   return (
-    <section className="tile" aria-labelledby="profile-entry-form">
-      <h2 id="profile-entry-form">{title}</h2>
+    <section className="tile stack" aria-labelledby="profile-entry-form">
+      <h2 id="profile-entry-form" ref={heading} tabIndex={-1}>{title}</h2>
       {hint !== undefined && <p className="hint">{hint}</p>}
       <label className="field">
         <span>{COPY.domainLabel}</span>
         <select
+          disabled={submitting || readonlyDomain}
           aria-invalid={errors.domain !== undefined}
           onChange={(event) => {
             onChange({ domain: event.target.value });

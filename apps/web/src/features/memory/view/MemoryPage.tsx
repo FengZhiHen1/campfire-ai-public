@@ -13,7 +13,7 @@
  *   - 禁止使用 accent（本页是工具页，纠正走 secondary；页面设计 token 使用节）
  */
 
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router';
 
 import { AppShell } from '../../../shared/ui/AppShell';
@@ -30,7 +30,7 @@ import styles from './memoryPage.module.css';
 const COPY = {
   back: '← 返回',
   title: '我提过的事',
-  ownership: '这些是你自己在咨询中说过或经历过的事，关于你本人；与孩子档案分开保存，不随切换对象变化。',
+  ownership: '这些是你自己在咨询中说过或经历过的事，关于你本人；与支持对象的档案分开保存，不随切换对象变化。',
   emptyTitle: '还没有记录',
   emptyDescription: '你在咨询中说过的事，会记在这里',
   retry: '重试',
@@ -68,6 +68,13 @@ export interface MemoryPageProps {
  */
 export function MemoryPage({ port }: MemoryPageProps) {
   const page = useMemoryPage(port);
+  const correctionHeading = useRef<HTMLHeadingElement>(null);
+  const correcting = page.correction !== null;
+  useEffect(() => {
+    if (!correcting) return;
+    correctionHeading.current?.scrollIntoView?.({ block: 'start' });
+    correctionHeading.current?.focus({ preventScroll: true });
+  }, [correcting]);
   // 展开的行（默认两行截断；核对场景不得因截断丢信息，展开可见完整原文）。
   const [expanded, toggleExpanded] = useExpanded();
 
@@ -81,7 +88,7 @@ export function MemoryPage({ port }: MemoryPageProps) {
       </header>
 
       {/* 归属说明行：回答本页最容易被误解的一件事（记忆与档案的归属不同）。 */}
-      <p className="hint">{COPY.ownership}</p>
+      <p className={styles.ownership}>{COPY.ownership}</p>
 
       {/* 纠正结果提示是页面级状态而不是列表级：中间态下旧记录已从列表移除，
        * 若把它放进「有条目」分支里，唯一那条被移除后提示会跟着消失——
@@ -125,7 +132,7 @@ export function MemoryPage({ port }: MemoryPageProps) {
       {page.status === 'ready' && page.items.length > 0 && (
         <>
           {groupByDate(page.items).map((group) => (
-            <details className="tile group-collapse" key={group.key} open>
+            <details className={"tile group-collapse " + styles.dateGroup} key={group.key} open>
               <summary>
                 {dateHeading(group.key)}（{group.items.length}）
               </summary>
@@ -134,12 +141,13 @@ export function MemoryPage({ port }: MemoryPageProps) {
                   const isExpanded = expanded.includes(episode.episode_key);
                   return (
                     <article className="list-row" key={episode.episode_key}>
-                      <strong className={`lr-title ${styles.title}`}>{episode.content}</strong>
+                      <strong className={`lr-title ${isExpanded ? styles.fullContent : styles.title}`}>{episode.content}</strong>
                       <p className="lr-meta">
                         {occurredAtLabel(episode.occurred_at)} · {sourceLabel()}
                       </p>
                       <button
                         className="text-button"
+                        aria-expanded={isExpanded}
                         onClick={() => {
                           toggleExpanded(episode.episode_key);
                         }}
@@ -147,7 +155,6 @@ export function MemoryPage({ port }: MemoryPageProps) {
                       >
                         {isExpanded ? COPY.collapse : COPY.expand}
                       </button>
-                      {isExpanded && <p className={styles.fullContent}>{episode.content}</p>}
                       <div className="lr-actions">
                         <button
                           className="btn btn-secondary"
@@ -186,8 +193,8 @@ export function MemoryPage({ port }: MemoryPageProps) {
           ))}
 
           {page.correction !== null && (
-            <section className="tile" aria-labelledby="memory-correction-title">
-              <h2 id="memory-correction-title">{COPY.correctionTitle}</h2>
+            <section className="tile stack" aria-labelledby="memory-correction-title">
+              <h2 id="memory-correction-title" ref={correctionHeading} tabIndex={-1}>{COPY.correctionTitle}</h2>
               <p className="hint">{COPY.correctionBody}</p>
               <label className="field">
                 <span>{COPY.occurredAtLabel}</span>

@@ -24,6 +24,10 @@ export type ProfileStatus = 'loading' | 'ready' | 'error';
 
 /** 档案页内容状态与操作。 */
 export interface ProfilePageState {
+  hasMore: boolean;
+  loadingMore: boolean;
+  loadMoreFailure: ProfileFailure | null;
+  loadMore(): Promise<void>;
   objects: SupportObject[];
   selectedObjectId: string | null;
   /** 当前对象是否已归档（归档对象可读、不可新增，契约第 1 节）。 */
@@ -58,6 +62,10 @@ export function useProfilePage(port: ProfilePort): ProfilePageState {
   const [candidates, setCandidates] = useState<ProfileItem[]>([]);
   const [status, setStatus] = useState<ProfileStatus>('loading');
   const [failure, setFailure] = useState<ProfileFailure | null>(null);
+  const [cursor, setCursor] = useState<string | null>(null);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [loadMoreFailure, setLoadMoreFailure] = useState<ProfileFailure | null>(null);
+  const moreToken = useRef<number | null>(null);
 
   // 迟到的响应不得覆盖新的选择（CORE-03 身份守卫）：切换对象会并发发起请求，
   // 只认最后一次发起的那一个。用 ref 记住「当前最新的一次加载」的序号。
@@ -72,6 +80,9 @@ export function useProfilePage(port: ProfilePort): ProfilePageState {
       setHasProfile(content.hasProfile);
       setItems(content.items);
       setCandidates(content.candidates);
+      setCursor(content.nextCursor);
+      setLoadingMore(false);
+      setLoadMoreFailure(null);
       setStatus('ready');
       setFailure(null);
     },
@@ -99,6 +110,9 @@ export function useProfilePage(port: ProfilePort): ProfilePageState {
         setHasProfile(snapshot.hasProfile);
         setItems(snapshot.items);
         setCandidates(snapshot.candidates);
+        setCursor(snapshot.nextCursor);
+        setLoadingMore(false);
+        setLoadMoreFailure(null);
         setStatus('ready');
       } catch (error) {
         if (loadToken.current !== token) return;
@@ -131,6 +145,9 @@ export function useProfilePage(port: ProfilePort): ProfilePageState {
       setSummary([]);
       setItems([]);
       setCandidates([]);
+      setCursor(null);
+      setLoadingMore(false);
+      setLoadMoreFailure(null);
       const token = loadToken.current + 1;
       loadToken.current = token;
       void applyObjectContent(objectId, token).catch((error: unknown) => {
@@ -163,7 +180,31 @@ export function useProfilePage(port: ProfilePort): ProfilePageState {
   // 因此这里先判存在再判时间，而不是靠 `?.` 的 undefined 穿透。
   const selectedObject = objects.find((object) => object.id === selectedObjectId);
 
+  const loadMore = async (): Promise<void> => {
+    const token = loadToken.current;
+    if (selectedObjectId === null || cursor === null || status !== 'ready' || moreToken.current === token) return;
+    moreToken.current = token;
+    setLoadingMore(true);
+    setLoadMoreFailure(null);
+    try {
+      const next = await new LoadProfileUseCase(port).loadNextPage(selectedObjectId, cursor);
+      if (loadToken.current !== token) return;
+      setItems((current) => [...new Map([...current, ...next.items].map((item) => [item.item_id, item])).values()]);
+      setCandidates((current) => [...new Map([...current, ...next.candidates].map((item) => [item.item_id, item])).values()]);
+      setCursor(next.next_cursor);
+    } catch (error) {
+      if (loadToken.current === token) setLoadMoreFailure(failureFromError(error));
+    } finally {
+      if (moreToken.current === token) moreToken.current = null;
+      if (loadToken.current === token) setLoadingMore(false);
+    }
+  };
+
   return {
+    hasMore: cursor !== null,
+    loadingMore,
+    loadMoreFailure,
+    loadMore,
     objects,
     selectedObjectId,
     selectedArchived: selectedObject !== undefined && selectedObject.archived_at !== null,

@@ -13,12 +13,13 @@
  *   - 禁止按角色名或界面隐藏做授权判断（越权由服务端 404 表达）
  */
 
-import type { ProfileItem, ProfileSummaryField, SupportObject } from '../../../shared/types/profile';
+import type { ListProfileItemsResponse, ProfileItem, ProfileSummaryField, SupportObject } from '../../../shared/types/profile';
 import { hasFieldErrors, type ItemDraft, ProfileValidationError, validateItemDraft, validateObjectName } from '../domain/formValidation';
 import type { ProfilePort } from './ports';
 
 /** 一页档案的完整快照。 */
 export interface ProfileSnapshot {
+  nextCursor: string | null;
   objects: SupportObject[];
   selectedObjectId: string | null;
   summary: ProfileSummaryField[];
@@ -58,7 +59,7 @@ export class LoadProfileUseCase {
     const { items: objects } = await this.port.listObjects();
     const selectedObjectId = pickObjectId(objects, preferredObjectId);
     if (selectedObjectId === null) {
-      return { objects, selectedObjectId: null, summary: [], hasProfile: false, items: [], candidates: [] };
+      return { objects, selectedObjectId: null, summary: [], hasProfile: false, items: [], candidates: [], nextCursor: null };
     }
     return { ...(await this.loadObject(selectedObjectId)), objects, selectedObjectId };
   }
@@ -66,7 +67,7 @@ export class LoadProfileUseCase {
   /**
    * 只加载一个对象的内容区（切换对象与刷新内容共用这一条）。
    *
-   * 后置: 返回摘要与两组条目；候选层只取第一页（它是「待确认」小分组，不是可分页的流）
+   * 后置: 返回摘要、两组条目与下一页游标；后续条目经 loadNextPage 读取。
    * 请求形状: 两个开关都打开——候选层是页面的一等分组，历史（已被取代）条目按档案页第 62 行
    *      必须在列表里可见（行首「已更正」标）；只开前者会让纠正后的旧条目凭空消失。
    * @throws 端口异常原样抛出
@@ -81,7 +82,12 @@ export class LoadProfileUseCase {
       hasProfile: summary.has_profile ?? summary.fields.length > 0,
       items: listed.items,
       candidates: listed.candidates,
+      nextCursor: listed.next_cursor ?? null,
     };
+  }
+
+  loadNextPage(objectId: string, cursor: string): Promise<ListProfileItemsResponse> {
+    return this.port.listItems(objectId, { includeCandidates: true, includeSuperseded: true, cursor });
   }
 }
 
