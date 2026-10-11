@@ -17,6 +17,7 @@ import { useState } from 'react';
 import { useLocation, useNavigate } from 'react-router';
 
 import { ConfirmSheet } from '../../../shared/ui/ConfirmSheet';
+import { safeReturnTo } from '../../../shared/ui/returnTo';
 import { AppShell } from '../../../shared/ui/AppShell';
 import type { ConsultPort } from '../application/ports';
 import { SKIP_SEMANTICS_COPY } from '../domain/emergency';
@@ -49,10 +50,8 @@ export function EmergencyFormPage({ consult }: EmergencyFormPageProps) {
 
   const { current } = form;
   const exit = (): void => {
-    const state: unknown = location.state;
-    const returnTo = typeof state === 'object' && state !== null && 'returnTo' in state && typeof state.returnTo === 'string'
-      && state.returnTo.startsWith('/') && !state.returnTo.startsWith('//') ? state.returnTo : '/';
-    void navigate(returnTo);
+    // 返回地址只经这一处判断（与返回链接同一份）：退出应急回到实际来源，判不出来时回首页。
+    void navigate(safeReturnTo(location.state) ?? '/');
   };
 
   return (
