@@ -24,8 +24,10 @@
 - apps/api/src/campfire/surfaces/consult/registry.py: MUST — 产品侧工具清单（十个）
 - apps/api/src/campfire/agent/tools/pool.py: MUST — 基座保留名工具（三个）
 - apps/web/src/features/consult/view/MessageParts/toolLabels.ts: MUST — 前端词表（被核对对象）
-- apps/web/src/features/consult/view/MessageParts/parts.tsx: MUST — 前端不渲染 markdown
-  （正文纪律落地的依据：只按空行切段）
+- apps/web/src/features/consult/view/MessageParts/parts.tsx: MUST — 正文 part 的接线点
+  （模型回复与资料共用同一个安全排版渲染器，不是各页自造排版）
+- apps/web/src/shared/ui/ReadableText.tsx: MUST — 安全排版渲染器（自己切结构、不用第三方
+  markdown 库、内容全部经 React 转义）
 """
 
 from __future__ import annotations
@@ -45,8 +47,12 @@ _TOOL_LABELS_TS = (
     _REPO_ROOT / "apps" / "web" / "src" / "features" / "consult" / "view" / "MessageParts" / "toolLabels.ts"
 )
 
-#: 前端正文渲染器（B 的判据依据：它不做行内解析）。
+#: 正文 part 的接线点（判据：它确实走共享渲染器，而不是各页自造排版）。
 _PARTS_TSX = _REPO_ROOT / "apps" / "web" / "src" / "features" / "consult" / "view" / "MessageParts" / "parts.tsx"
+
+#: 安全排版渲染器（判据：结构由它自己切分，不引第三方 markdown 库，转义走 React）。
+#: 前端侧的行为断言在 `apps/web/src/shared/ui/ReadableText.test.tsx`（含 `<script>` 转义）。
+_READABLE_TSX = _REPO_ROOT / "apps" / "web" / "src" / "shared" / "ui" / "ReadableText.tsx"
 
 #: 咨询面路由（两个 `RunRequest` 构造点都在这里）。
 _ROUTES_PY = _REPO_ROOT / "apps" / "api" / "src" / "campfire" / "surfaces" / "consult" / "routes.py"
@@ -200,9 +206,13 @@ def test_label_key_parser_actually_parses() -> None:
 def test_consult_instructions_forbid_markdown_emphasis_markers() -> None:
     """面提示必须明确禁止 markdown 标记，且点名界面无法渲染的那些记号。
 
-    判据基于「哪些记号是界面渲染不出来、会原样显示给使用者的」——前端
-    `parts.tsx` 的 `TextPart` 只按空行切段（不做行内解析），因此下列记号都会原样露出。
     只断言「提到了格式」会漏掉真正要防的东西，所以逐个点名。
+
+    立论变化（2026-10-11，登记在 docs/TODO.md 的 OBS-01 与本节：「③ 的立论变化」）：本用例
+    原先的依据是「前端不解析行内记号，因此这些记号会原样露出」。同轮起正文改由
+    `ReadableText` 按结构排版，`**强调**` 与行内代码会被渲染成元素——这条纪律**不再由
+    「渲染不出来」支撑**，它保留为产品对回复语气的要求：正文以朴素纯文本呈现，不让模型
+    自行决定标题层级与强调位置。点名记号因此仍然有效（渲染层能兜住，不等于放开让模型写）。
     """
     for marker in ("**", "*", "#", "`"):
         assert marker in CONSULT_INSTRUCTIONS, (
@@ -214,25 +224,45 @@ def test_consult_instructions_forbid_markdown_emphasis_markers() -> None:
     assert "markdown" in CONSULT_INSTRUCTIONS
 
 
-def test_frontend_really_does_not_render_markdown() -> None:
-    """B 选 b1（提示词侧禁止）的前提是前端确实不渲染 markdown。
+def test_frontend_typesets_body_instead_of_leaking_markers() -> None:
+    """正文排版与「禁止标记」两条纪律的实现前提，在这里机械核对。
 
-    这里核对两件事，任一不成立则「禁止标记」这条纪律的前提已经变了（应改走渲染路线）：
-    1. `parts.tsx` 的正文渲染还是「只按空行切段」的形状；
-    2. `apps/web/package.json` 里没有引入 markdown 渲染库。
+    2026-10-11 起正文按结构排版——DESIGN.md「回答与资料按标题、段落、列表、引用、强调和
+    行内代码排版，**所有内容经 React 转义**；流式未完成标记不阻塞渲染」。因此本用例核对
+    新前提的四件事，任一不成立都说明安全排版换了一种实现方式，需要人来复核：
 
-    为什么核对依赖：若将来前端加了 markdown 库，这条纪律就从「必要」变成「多余」，
-    而那时本用例失败会把这个前提变化摆到明面上，而不是让它悄悄过期。
+    1. 渲染器自己按行切分结构（标题/列表/引用/段落），不是引第三方解析器；
+    2. 渲染器里**没有** `dangerouslySetInnerHTML`（转义走 React；行为断言见前端
+       `apps/web/src/shared/ui/ReadableText.test.tsx`，它拿 `<script>alert(1)</script>` 渲染）；
+    3. 模型正文 part（`parts.tsx` 的 `TextPart`）确实走这个共享渲染器；
+    4. `apps/web/package.json` 里没有引入 markdown 渲染库。
+
+    **为什么重写而不是删掉**：本用例的前身是 `test_frontend_really_does_not_render_markdown`，
+    它在 2026-10-06 为 OBS-01 的位置裁决提供「前端不渲染 markdown」这个前提。2026-10-11
+    视觉轮把正文改为结构化排版，前提随之改变——于是它按新前提重写。删掉它会让「正文纯文本」
+    与「安全排版」两条纪律的立论在无人察觉时过期，这正是本项目禁止的「永远不会失败的检查」
+    的反面用法：本用例必须能因为渲染方式变化而红。
     """
+    readable_source = _READABLE_TSX.read_text(encoding="utf-8")
+    assert "dangerouslySetInnerHTML" not in readable_source, (
+        "安全排版渲染器里出现了 dangerouslySetInnerHTML——内容不再经 React 转义，"
+        "「所有内容经 React 转义」这条设计条款已被破坏。"
+    )
+    for class_name in ("readable-heading", "readable-list", "readable-quote", "readable-paragraph"):
+        assert class_name in readable_source, (
+            f"安全排版渲染器不再产出 .{class_name}——结构与契约 docs/design/components.html 的 readable-* 约定脱节。"
+        )
+
     parts_source = _PARTS_TSX.read_text(encoding="utf-8")
-    assert "text.split(/\\n{2,}/)" in parts_source, (
-        "前端正文渲染器不再是「只按空行切段」的形状——B 的位置裁决前提已变，请复核。"
+    assert "ReadableText" in parts_source, (
+        "模型正文 part 不再走共享渲染器——正文排版会退回「各页自造」，"
+        "「回答与资料按标题、段落、列表、引用、强调和行内代码排版」这条条款随之失效。"
     )
 
     package_json = (_REPO_ROOT / "apps" / "web" / "package.json").read_text(encoding="utf-8")
     for library in ("markdown", "remark", "marked", "markdown-it", "rehype"):
         assert library not in package_json, (
-            f"前端已引入 {library}——若确实改为渲染 markdown，正文纪律的位置裁决需要重新评估。"
+            f"前端已引入 {library}——安全排版若改为第三方解析器，本用例的四条判据都需要重新评估。"
         )
 
 
