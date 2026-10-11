@@ -1,59 +1,148 @@
-/* 案例库浏览页私有布局。视觉契约唯一权威是 tokens 层与 components.css；
- * 本文件只放页面级排布（吸顶检索行、整卡可点、展开态边框），不定义色值与间距数值。 */
+/* 条目头负责扫描，展开区是连续读物，来源与适用范围保持可见。 */
 
-/* 检索行吸顶（页面设计第 58 行：吸顶高度 56px）。 */
 .searchRow {
   position: sticky;
-  top: var(--space-2);
-  z-index: 10;
+  top: calc(48px + env(safe-area-inset-top, 0px));
+  z-index: 15;
   display: grid;
-  gap: var(--space-2);
-  padding-block: var(--space-2);
+  gap: var(--space-3);
+  padding-block: var(--space-3);
   background: var(--bg);
 }
 
-/* 圆角胶囊搜索输入（页面设计第 16 行「.field 变体、圆角胶囊」）。 */
 .searchInput {
   width: 100%;
-  min-height: 44px;
-  padding-inline: var(--space-4);
-  border-radius: var(--radius-pill);
+  min-height: 48px;
 }
 
 .tabs {
   display: flex;
-  gap: var(--space-2);
+  gap: var(--space-1);
+  padding: var(--space-1);
+  border-radius: var(--radius-sm);
+  background: var(--surface-warm);
+}
+
+.tabs button {
+  flex: 1;
+  border: 0;
+  border-radius: var(--radius-sm);
+  font-size: var(--text-sm);
+}
+
+.tabs button[aria-pressed='true'] {
+  background: var(--surface);
+  color: var(--fg);
+  box-shadow: var(--elev-raised);
 }
 
 .results {
   display: grid;
+  gap: var(--space-3);
 }
 
-/* 整卡可点：按钮承担点击与键盘可达，视觉上不可见（内容自己排布）。 */
+.card {
+  padding: var(--space-4);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+}
+
 .cardButton {
   display: grid;
   gap: var(--space-2);
   width: 100%;
   padding: 0;
-  border: none;
+  border: 0;
   background: none;
   color: inherit;
   text-align: start;
 }
 
-.card {
-  padding: var(--space-4) 0;
+.cardButton :global(.lr-title) {
+  font-family: var(--font-display);
+  font-size: var(--text-lg);
+  font-weight: 500;
+  line-height: 1.5;
 }
 
-/* 展开态：边框转 --fg-2 色以示「进入阅读」，高度过渡 240ms。 */
+.cardButton :global(.lr-sub) {
+  font-size: var(--text-sm);
+}
+
+.cardButton :global(.lr-meta) {
+  font-size: var(--text-xs);
+}
+
+.provenance {
+  color: var(--meta);
+  font-size: var(--text-xs);
+  line-height: 1.6;
+}
+
+.sourceFacts { margin: 0; display: grid; gap: var(--space-3); }
+.sourceFacts > div { display: grid; grid-template-columns: var(--space-12) 1fr; gap: var(--space-3); }
+.sourceFacts dt { color: var(--meta); }
+.sourceFacts dd { margin: 0; color: var(--fg-2); overflow-wrap: anywhere; }
+
+.sourceDetails {
+  margin-top: var(--space-1);
+}
+
+.sourceDetails > summary {
+  min-height: 44px;
+  justify-content: flex-start;
+  font-size: var(--text-xs);
+  font-weight: 400;
+}
+
+.sourceDetails > summary::after {
+  content: '＋';
+  margin-left: var(--space-2);
+}
+
+.sourceDetails[open] > summary::after {
+  content: '−';
+}
+
+.sourceDetails p {
+  margin: 0 0 var(--space-2);
+  font-size: var(--text-xs);
+}
+
+.expandLabel {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  min-height: 44px;
+  margin-bottom: calc(-1 * var(--space-2));
+  font-size: var(--text-xs);
+  color: var(--fg-2);
+}
+
+.expandLabel > span {
+  font-size: var(--text-lg);
+}
+
 .reading {
-  border: 1px solid var(--fg-2);
-  border-radius: var(--radius-md);
-  padding: var(--space-4);
-  transition: border-color var(--motion-base) var(--ease-standard);
+  border-color: var(--border);
 }
 
-/* deep-link 定位到的一次性高亮。 */
+.readingBody {
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--border-soft);
+}
+
+.readingBody section + section {
+  margin-top: var(--space-5);
+}
+
+.readingBody p {
+  white-space: pre-wrap;
+  color: var(--fg-2);
+  line-height: 1.8;
+}
+
 .focused {
   box-shadow: var(--focus-ring);
 }
@@ -66,16 +155,35 @@
 }
 
 .sectionHeading {
-  margin-top: var(--space-3);
-  font-size: var(--text-base);
+  margin: 0 0 var(--space-2);
+  font-family: var(--font-body);
+  font-size: var(--text-sm);
   font-weight: 600;
+  color: var(--fg);
 }
 
 .cardBody {
   margin-top: var(--space-3);
   padding: var(--space-3);
-  border: 1px solid var(--border-soft);
-  border-radius: var(--radius-md);
+  border-left: 2px solid var(--border);
+  background: var(--bg);
+}
+
+.cardBody .cardLabel {
+  margin: var(--space-3) 0 var(--space-1);
+  color: var(--meta);
+  font-size: var(--text-xs);
+}
+
+.cardBody .cardLabel:first-child {
+  margin-top: 0;
+}
+
+.cardBody blockquote {
+  margin: var(--space-3) 0;
+  padding-left: var(--space-3);
+  border-left: 2px solid var(--border);
+  color: var(--fg);
 }
 
 .withdrawnTitle {

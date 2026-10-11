@@ -13,7 +13,9 @@
  *   - 禁止在已撤下的来源上显示正文
  */
 
-import { Link, useLocation } from 'react-router';
+import { useLocation } from 'react-router';
+import { BackLink } from '../../../shared/ui/BackLink';
+import { ReadableText } from '../../../shared/ui/ReadableText';
 
 import type { LibraryListItem, LibraryItem } from '../../../shared/types/library';
 import { AppShell } from '../../../shared/ui/AppShell';
@@ -21,22 +23,18 @@ import { ListTail } from '../../../shared/ui/ListTail';
 import { EmptyState, ErrorCard, Skeleton } from '../../../shared/ui/StatePrimitives';
 import type { LibraryPort } from '../application/ports';
 import { emptyStateKind, libraryFailureDescription, libraryFailureTitle } from '../domain/failures';
-import { isFictional, itemMetaParts, riskClassLabel, statusLabel } from '../domain/labels';
+import { evidenceLevelLabel, isFictional, reviewStatusLabel, riskClassLabel, statusLabel } from '../domain/labels';
+import { readingSection, readingSnippet } from '../domain/reading';
 import { useLibraryPage } from '../viewModel/useLibraryPage';
 import styles from './libraryPage.module.css';
 
 /** 页面文案（页面设计成稿，逐字呈现）。 */
 const COPY = {
   back: '← 返回',
-  title: '案例与资料',
-  searchPlaceholder: '搜案例、搜资料',
-  searchLabel: '检索',
   caseTab: '案例',
   knowledgeTab: '资料',
   noResultsTitle: '没有找到相关内容',
   noResultsDescription: '试试更日常的措辞，比如「超市哭闹」而不是「情绪失调节」。',
-  notReadyTitle: '案例库还在准备中',
-  notReadyDescription: '一期的案例与资料还在录入中，这里暂时没有可浏览的内容。',
   retry: '重试',
   withdrawn: '该来源已撤下',
   withdrawnBody: '这条资料已不再作为依据使用',
@@ -76,22 +74,20 @@ export function LibraryPage({ port, searchOverride }: LibraryPageProps) {
   return (
     <AppShell>
       <header className="subpage-head">
-        <Link className="sp-back" to="/">
-          {COPY.back}
-        </Link>
-        <span className="sp-title">{COPY.title}</span>
+        <BackLink fallback="/">{COPY.back}</BackLink>
+        <span className="sp-title">{page.library === 'case' ? '案例库' : '资料库'}</span>
       </header>
 
       {/* 检索行：滚动时吸顶，因此它必须在内容之前、且不随结果区重建。 */}
       <div className={styles.searchRow}>
         <label className="field">
-          <span className="sr-only">{COPY.searchLabel}</span>
+          <span className="sr-only">{page.library === 'case' ? '搜索案例' : '搜索资料'}</span>
           <input
             className={styles.searchInput}
             onChange={(event) => {
               page.setQuery(event.target.value);
             }}
-            placeholder={COPY.searchPlaceholder}
+            placeholder={page.library === 'case' ? '搜索案例' : '搜索资料'}
             type="search"
             value={page.query}
           />
@@ -130,6 +126,7 @@ export function LibraryPage({ port, searchOverride }: LibraryPageProps) {
         <article className={`panel ${styles.focused}`}>
           <span className="tag meta">{COPY.locatorLabel}</span>
           <ItemRowBody item={focused} expanded={false} onToggle={undefined} />
+          <ItemProvenance item={focused} />
         </article>
       )}
 
@@ -156,9 +153,9 @@ export function LibraryPage({ port, searchOverride }: LibraryPageProps) {
       {page.status === 'ready' && page.items.length === 0 && (
         <EmptyState
           description={
-            emptyStateKind(page.query) === 'no-results' ? COPY.noResultsDescription : COPY.notReadyDescription
+            emptyStateKind(page.query) === 'no-results' ? COPY.noResultsDescription : `目前还没有可浏览的${page.library === 'case' ? '案例' : '资料'}。`
           }
-          title={emptyStateKind(page.query) === 'no-results' ? COPY.noResultsTitle : COPY.notReadyTitle}
+          title={emptyStateKind(page.query) === 'no-results' ? COPY.noResultsTitle : `${page.library === 'case' ? '案例库' : '资料库'}还在准备中`}
         />
       )}
 
@@ -231,15 +228,17 @@ function ItemRow({ item, expanded, focused, onToggle }: ItemRowProps) {
     <article
       className={`list-row ${styles.card} ${expanded ? styles.reading : ''} ${focused ? styles.focused : ''}`}
     >
-      <button className={styles.cardButton} onClick={onToggle} type="button">
+      <button className={styles.cardButton} onClick={onToggle} type="button" aria-expanded={expanded} aria-controls={"library-body-" + item.item_id}>
         <ItemRowBody expanded={expanded} item={item} onToggle={onToggle} />
       </button>
+      <ItemProvenance item={item} />
+      <div id={"library-body-" + item.item_id} hidden={!expanded} className={styles.readingBody}>
       {expanded && item.narrative !== null && (
         <div className="gc-body">
           {item.narrative.sections.map((section) => (
             <section key={section.key}>
               <h3 className={styles.sectionHeading}>{section.heading}</h3>
-              <p>{section.text}</p>
+              <ReadableText text={readingSection(section.heading, section.text)} />
             </section>
           ))}
         </div>
@@ -249,7 +248,12 @@ function ItemRow({ item, expanded, focused, onToggle }: ItemRowProps) {
           <h3 className={styles.sectionHeading}>{COPY.cardsHeading}</h3>
           {item.cards.map((card) => (
             <div className={styles.cardBody} key={card.card_id}>
+              <p className={styles.cardLabel}>案例中的情境</p>
               <p>{card.scenario}</p>
+              <p className={styles.cardLabel}>记录中的做法</p>
+              <p>{card.immediate_action}</p>
+              {card.comforting_phrase !== undefined && <blockquote>{card.comforting_phrase}</blockquote>}
+              {card.observation_metrics !== undefined && <p className="meta">观察：{card.observation_metrics}</p>}
               {/* 高风险字段照旧返回，呈现纪律在技能与页面层：这里只如实标出风险档，
                * 不把处置建议改写成转述语之外的形态（契约第 4 节）。 */}
               <p className="meta">
@@ -260,6 +264,7 @@ function ItemRow({ item, expanded, focused, onToggle }: ItemRowProps) {
           ))}
         </div>
       )}
+      </div>
     </article>
   );
 }
@@ -284,14 +289,32 @@ function ItemRowBody({
   return (
     <>
       <strong className="lr-title">{item.title}</strong>
-      <p className={`lr-sub ${styles.clamp}`}>{item.snippet}</p>
+      <p className={`lr-sub ${styles.clamp}`}>{readingSnippet(item.snippet)}</p>
       {/* 状态徽章直出三态之一：虚构样例用灰调（.status.off）+ 文字，与真实案例混列但可辨。 */}
       <span className={isFictional(item.status) ? 'status off' : 'tag meta'}>{statusLabel(item.status)}</span>
-      <p className="lr-meta">{itemMetaParts(item).join(' · ')}</p>
-      {item.applicable_scope !== '' && <p className="lr-meta">适用：{item.applicable_scope}</p>}
       {onToggle !== undefined && (
-        <span className="meta">{expanded ? COPY.collapseHint : COPY.expandNarrative}</span>
+        <span className={styles.expandLabel}>{expanded ? COPY.collapseHint : COPY.expandNarrative}<span aria-hidden="true">{expanded ? '−' : '+'}</span></span>
       )}
     </>
+  );
+}
+
+/** 扫描时显示来源；完整审阅信息与适用范围独立展开，不挤占条目标题。 */
+function ItemProvenance({ item }: { item: LibraryItem }) {
+  return (
+    <div className={styles.provenance}>
+      <span>{item.source_type ? `来源类型：${item.source_type}` : `来源：${item.source}`}</span>
+      <details className={styles.sourceDetails}>
+        <summary>来源与适用范围</summary>
+        <dl className={styles.sourceFacts}>
+          <div><dt>{item.source === item.authorization ? '授权记录' : '来源'}</dt><dd>{item.source}</dd></div>
+          {item.evidence_level !== null && item.evidence_level !== undefined && <div><dt>证据</dt><dd>{evidenceLevelLabel(item.evidence_level)}</dd></div>}
+          {item.review_status !== null && item.review_status !== undefined && <div><dt>审阅</dt><dd>{reviewStatusLabel(item.review_status)}</dd></div>}
+          {item.authorization && item.authorization !== item.source && <div><dt>授权</dt><dd>{item.authorization}</dd></div>}
+          {item.interview_at && <div><dt>访谈时间</dt><dd>{item.interview_at}</dd></div>}
+          {item.applicable_scope !== '' && <div><dt>适用</dt><dd>{item.applicable_scope}</dd></div>}
+        </dl>
+      </details>
+    </div>
   );
 }
