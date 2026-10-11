@@ -19,8 +19,7 @@ import type { ProfileItem } from '../../../shared/types/profile';
 import type { ProfilePort } from '../application/ports';
 import { AddItemUseCase, ConfirmItemUseCase, CorrectItemUseCase, DeleteItemUseCase } from '../application/usecases';
 import { type ProfileFailure, failureFromError, profileFailureInline } from '../domain/failures';
-import { DOMAIN_FALLBACK } from '../domain/domains';
-import { type ItemDraft, type ProfileFieldErrors, ProfileValidationError } from '../domain/formValidation';
+import { type ItemDraft, type ProfileFieldErrors, ProfileValidationError, emptyItemDraft } from '../domain/formValidation';
 /** 纠正流的状态：草稿在提交失败后必须原样保留。 */
 export interface CorrectFlowState {
   target: ProfileItem;
@@ -71,11 +70,6 @@ export interface ProfileEntryActions {
   submitAdd(): Promise<void>;
 
   dismissNotice(): void;
-}
-
-/** 空草稿：领域默认落在兜底项，使用者可以改。 */
-function emptyDraft(): ItemDraft {
-  return { domain: DOMAIN_FALLBACK, topic: '', description: '' };
 }
 
 /**
@@ -195,7 +189,7 @@ export function useProfileEntryActions(
   }, [correct, onChanged, port]);
 
   const openAdd = useCallback((): void => {
-    setAdd({ draft: emptyDraft(), errors: {}, submitting: false, failure: null });
+    setAdd({ draft: emptyItemDraft(), errors: {}, submitting: false, failure: null });
   }, []);
 
   const closeAdd = useCallback((): void => {
