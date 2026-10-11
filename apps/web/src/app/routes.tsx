@@ -81,7 +81,7 @@ export const APP_ROUTES: readonly AppRoute[] = [
     title: '篝火智答',
     description: '首页：应急入口与日常咨询的起点。',
     requiresSession: true,
-    element: () => <HomePage />,
+    element: () => <HomePage consult={consultPort} />,
   },
   {
     path: '/consult',
