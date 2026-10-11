@@ -171,6 +171,18 @@ test('应急长题滚动后提交仍可触达，勾选和回退保留答案', as
     return element.contains(document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2));
   });
   expect(hit).toBe(true);
+  // 屏底控制区里「跳过这题 / 下一题」必须同处一行：换行会让两个按钮各占一行，
+  // 拇指区的单手可达性随之变差（本页的目标是「10 秒内能提交」）。
+  // 判据取两个按钮的 y 相等，而不是按钮高度——换行时 y 会明显错开，单行内的行高差异不会。
+  // 容差 2px 与 CSS_LAYOUT_TOLERANCE_PX 同量级（吸收子像素布局的取整差）。
+  const skipBox = await page.getByRole('button', { name: '跳过这题', exact: true }).boundingBox();
+  const nextBox = await page.getByRole('button', { name: '下一题', exact: true }).boundingBox();
+  expect(skipBox, '跳过按钮没有布局盒').not.toBeNull();
+  expect(nextBox, '下一题按钮没有布局盒').not.toBeNull();
+  expect(
+    Math.abs((skipBox?.y ?? 0) - (nextBox?.y ?? 0)),
+    '跳过与下一题不在同一行：屏底控制区换行了，拇指区单手可达性变差',
+  ).toBeLessThanOrEqual(2);
   await capture(page, info, 'emergency-selected');
   await page.getByRole('button', { name: '← 退出应急' }).click();
   const dialog = page.getByRole('dialog', { name: '退出现场采集？' });
