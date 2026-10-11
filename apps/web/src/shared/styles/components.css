@@ -43,10 +43,10 @@ h3,
   letter-spacing: var(--tracking-display);
 }
 
-h1,
-h2 {
-  font-size: var(--text-xl);
-}
+h1 { font-size: var(--text-xl); }
+h2 { font-size: var(--text-lg); }
+h2, h3 { margin-block: 0 var(--space-3); }
+p { margin-block: 0; }
 
 h3 {
   font-size: var(--text-lg);
@@ -88,6 +88,13 @@ strong {
   display: grid;
   gap: var(--space-4);
 }
+
+.readable-paragraph { white-space: pre-wrap; }
+.readable-heading { margin: var(--space-5) 0 var(--space-2); font-family: var(--font-body); font-size: var(--text-base); font-weight: 600; }
+.readable-list { margin: var(--space-3) 0; padding-left: var(--space-5); }
+.readable-list li + li { margin-top: var(--space-2); }
+.readable-quote { margin: var(--space-3) 0; padding-left: var(--space-3); border-left: 2px solid var(--border); color: var(--fg-2); }
+.readable-paragraph code { font-family: var(--font-mono); font-size: 0.9em; background: var(--surface-warm); border-radius: var(--space-1); padding-inline: var(--space-1); }
 
 /* 列表尾部的触底分页容器（记忆页与案例库浏览页共用，见 shared/ui/ListTail）。
  * 它不是契约组件：契约只给了呼吸点与按钮，容器是两页共用的排布，
@@ -145,6 +152,7 @@ strong {
 }
 
 .tag {
+  background: transparent;
   display: inline-flex;
   align-items: center;
   width: fit-content;
@@ -208,10 +216,10 @@ button.tag {
   min-width: 44px;
   padding: var(--space-3) var(--space-4);
   border: 1px solid var(--border);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-sm);
   background: var(--surface);
   color: var(--fg);
-  font: 700 var(--text-sm) / 1.5 var(--font-body);
+  font: 600 var(--text-sm) / 1.5 var(--font-body);
   letter-spacing: 0.02em;
   text-decoration: none;
   transition:
@@ -302,7 +310,8 @@ button.tag {
   gap: var(--space-2);
 }
 
-.field label {
+.field label,
+.field > span:not(.field-error, .hint) {
   color: var(--fg-2);
   font-size: var(--text-sm);
   font-weight: 600;
@@ -463,14 +472,16 @@ input[aria-invalid='true'] {
 /* ── 页头与导航 ─────────────────────────────────────────────── */
 
 .page-head {
+  min-height: 56px;
   display: flex;
   align-items: baseline;
   justify-content: space-between;
   gap: var(--space-3);
-  padding: var(--space-4) 0;
+  padding: var(--space-2) 0 var(--space-3);
 }
 
 .page-head :is(h1, h2, h3) {
+  margin: 0;
   font-size: var(--text-xl);
 }
 
@@ -484,6 +495,7 @@ input[aria-invalid='true'] {
  * 故纵向 padding 归零，由 min-height 撑满：48 = 内容盒 47 + 边框 1，44px 返回键在 47px 内居中。
  * safe-area 由 padding-top 承担，min-height 同步加上同一份 inset，保证「48px + inset」成立。 */
 .subpage-head {
+  z-index: 20;
   position: sticky;
   top: 0;
   display: flex;
@@ -517,6 +529,7 @@ input[aria-invalid='true'] {
 }
 
 .sp-back {
+  text-decoration: none;
   display: inline-flex;
   align-items: center;
   min-height: 44px;
@@ -539,7 +552,7 @@ input[aria-invalid='true'] {
   text-overflow: ellipsis;
   white-space: nowrap;
   font-family: var(--font-display);
-  font-size: var(--text-xl);
+  font-size: var(--text-lg);
   font-weight: 500;
   line-height: 1.3;
 }
@@ -622,11 +635,13 @@ input[aria-invalid='true'] {
 }
 
 .list-row .lr-sub {
-  color: var(--muted);
-  font-size: var(--text-sm);
+  margin: 0;
+  color: var(--fg-2);
+  font-size: var(--text-base);
 }
 
 .list-row .lr-meta {
+  margin: 0;
   color: var(--meta);
   font-size: var(--text-xs);
 }
@@ -640,15 +655,20 @@ input[aria-invalid='true'] {
 }
 
 .list-row .lr-actions .btn {
-  flex: 1;
-  min-width: 0;
+  flex: none;
+  min-height: 44px;
+  min-width: 64px;
+  padding: var(--space-2) var(--space-3);
+  font-weight: 500;
 }
+.list-row .lr-actions .btn-quiet { background: transparent; border-color: transparent; color: var(--meta); }
 
 /* 待确认候选行：与稳定条目同一行结构，但用独立边框把「还没被确认」这件事框出来。 */
 .candidate-record {
-  padding: var(--space-4);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
+  padding: var(--space-4) 0;
+  border: 0;
+  border-top: 1px solid var(--border-soft);
+  border-radius: 0;
 }
 
 .candidate-record > .status {
@@ -658,8 +678,14 @@ input[aria-invalid='true'] {
 /* 折叠分组（领域分组、日期分组、待确认分组）。折叠体自身不画边框——
  * 外层由 .tile / .group-collapse 承载。 */
 .group-collapse .gc-body {
-  padding-top: var(--space-3);
+  padding-top: var(--space-2);
 }
+.group-collapse { box-shadow: none; }
+.group-collapse > summary { display: flex; align-items: center; justify-content: space-between; min-height: 44px; gap: var(--space-3); list-style: none; font-size: var(--text-sm); font-weight: 600; }
+.group-collapse > summary::-webkit-details-marker { display: none; }
+.group-collapse > summary::after { content: ""; width: var(--space-2); height: var(--space-2); flex: none; border-right: 1.5px solid var(--meta); border-bottom: 1.5px solid var(--meta); transform: rotate(45deg); }
+.group-collapse[open] > summary::after { transform: rotate(225deg); }
+.eyebrow { margin: 0; color: var(--meta); font-size: var(--text-xs); letter-spacing: 0.06em; }
 
 /* 面板内的一行说明 + 标题（一页摘要区的头部）。 */
 .record-head {
