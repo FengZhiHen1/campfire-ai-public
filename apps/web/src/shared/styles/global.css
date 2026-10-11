@@ -284,8 +284,7 @@ body {
 .phone-shell > * { min-width: 0; }
 .phone-shell > .subpage-head:first-child { margin-top: calc(-1 * var(--space-4)); }
 select { width: 100%; min-height: 48px; padding: var(--space-3); border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface); color: var(--fg); }
-.tab-item { position: relative; }
-.tab-item[aria-current="page"] { font-weight: 600; text-decoration: none; }
-.tab-item[aria-current="page"]::before { content: ""; position: absolute; top: var(--space-1); width: var(--space-5); height: 2px; border-radius: var(--radius-pill); background: var(--accent); }
+/* `.tab-item` 与它的当前态、强调短横线自 2026-10-11 起归 components.css 一处定义
+ * （此前本文件与 components.css 各写一次，靠导入顺序决胜）。 */
 * { scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; scroll-behavior: auto !important; transition: none !important; } }
