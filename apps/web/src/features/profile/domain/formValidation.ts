@@ -12,7 +12,7 @@
  *   - 禁止在此做呈现决策（什么时候展示错误归 viewModel）
  */
 
-import { type ProfileDomain, toProfileDomain } from './domains';
+import { DOMAIN_FALLBACK, type ProfileDomain, toProfileDomain } from './domains';
 
 /** 字段级错误集合；没有错误的字段不出现。 */
 export interface ProfileFieldErrors {
@@ -45,6 +45,28 @@ export interface ItemDraft {
   domain: string;
   topic: string;
   description: string;
+}
+
+/**
+ * 空草稿：领域默认落在兜底项，使用者可以改。
+ *
+ * 「什么算空」与「什么算已编辑」必须是同一份判据（`emptyItemDraft` 与 `itemDraftChanged`），
+ * 否则两处会各自漂移：只比较主题与描述时，「先选好领域、还没写内容」的草稿会被判成没编辑
+ * 过，切换对象或转入另一个表单时就静默丢掉了这次选择。
+ */
+export function emptyItemDraft(): ItemDraft {
+  return { domain: DOMAIN_FALLBACK, topic: '', description: '' };
+}
+
+/**
+ * 草稿相对空草稿是否有改动——领域从默认值改开也算改动。
+ *
+ * 为什么领域也要算：它是使用者的一次显式选择，丢掉它和丢掉已输入的正文是同一类问题
+ * （档案页第 98 行「保护未保存草稿」不区分字段）。
+ */
+export function itemDraftChanged(draft: ItemDraft): boolean {
+  const blank = emptyItemDraft();
+  return draft.domain !== blank.domain || draft.topic.trim() !== '' || draft.description.trim() !== '';
 }
 
 /**

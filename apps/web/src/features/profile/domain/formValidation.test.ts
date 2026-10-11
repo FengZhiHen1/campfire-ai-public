@@ -14,7 +14,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { classifyProfileFailure, failureFromError, isRetryable, profileFailureInline, profileFailureTitle } from './failures';
-import { isKnownDomain, validateItemDraft, validateObjectName } from './formValidation';
+import { emptyItemDraft, isKnownDomain, itemDraftChanged, validateItemDraft, validateObjectName } from './formValidation';
 
 describe('对象名字校验', () => {
   it('去空白后为空即拒', () => {
@@ -45,6 +45,14 @@ describe('条目草稿校验', () => {
     // unchanged 由调用方比对原条目后传入：为真即「没有变更」。
     expect(validateItemDraft(draft, true)).toHaveProperty('description');
     expect(validateItemDraft({ ...draft, description: '改了' }, false)).toEqual({});
+  });
+
+  it('空草稿与「已编辑」同源：只改领域也算已编辑（否则这次选择会被静默丢弃）', () => {
+    expect(itemDraftChanged(emptyItemDraft())).toBe(false);
+    expect(itemDraftChanged({ ...emptyItemDraft(), domain: 'communication' })).toBe(true);
+    expect(itemDraftChanged({ ...emptyItemDraft(), topic: '睡前' })).toBe(true);
+    // 清空回空白内容就是没改过：切换对象时不该为「什么都没留下」弹确认。
+    expect(itemDraftChanged({ ...emptyItemDraft(), topic: '  ', description: '' })).toBe(false);
   });
 });
 

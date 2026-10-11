@@ -504,6 +504,20 @@ describe('档案页 · 纠正流', () => {
     expect(screen.queryByRole('textbox', { name: '主题' })).toBeNull();
     expect(p.addItem).not.toHaveBeenCalled();
   });
+  it('补充表单只改了领域也算已编辑：切换对象须确认，取消后领域选择仍在', async () => {
+    // 「已编辑」的判据必须与「空草稿」的判据同源：只比较主题与描述时，用户先选好领域
+    // （默认落在「其他」）再切换对象，会被判成没编辑过而静默丢掉这次选择。
+    const p = port({ listObjects: vi.fn(async () => ({ items: [object('o1', '小宝'), object('o2', '小禾')] })) });
+    renderPage(p);
+    await screen.findByText('关于 TA 的当前认识');
+    fireEvent.click(screen.getByRole('button', { name: '补充一条' }));
+    fireEvent.change(screen.getByRole('combobox', { name: '领域' }), { target: { value: 'communication' } });
+    fireEvent.click(screen.getByRole('button', { name: '小禾' }));
+    expect(screen.getByRole('dialog', { name: '切换支持对象？' })).toBeDefined();
+    fireEvent.click(screen.getByRole('button', { name: '继续编辑' }));
+    expect((screen.getByRole('combobox', { name: '领域' }) as HTMLSelectElement).value).toBe('communication');
+    expect(p.getSummary).not.toHaveBeenLastCalledWith('o2');
+  });
   it('P0 摘要区每条尾部带「纠正」按钮，点击进入该条的纠正流并走到同一条端点', async () => {
     // 设计第 20 行：摘要每条尾部「纠正」文字按钮（.btn-quiet 小号），点击进入该条的纠正流。
     // 判别性：把摘要条目里的按钮去掉，本用例第一行查询就失败——条目行上那个「纠正」
