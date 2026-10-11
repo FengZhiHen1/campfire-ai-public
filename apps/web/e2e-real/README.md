@@ -312,7 +312,8 @@ pnpm --filter @campfire/web exec playwright test \
 | `T10_ACCOUNT` | 指定账号 | 省略则按时间戳生成 `e2e-<stamp>@example.test` |
 | `T10_PASSWORD` | 指定口令 | 省略则按时间戳生成 |
 
-账号名**必须是邮箱格式**（见 `docs/TODO.md` 的 `PROD-01`）；口令 ≥8 字符、含小写字母与数字。
+账号名**不要求邮箱格式**：`PROD-01` 已于 2026-10-05 修复，当前允许任意非空账号名。
+旧 T10 默认生成邮箱样式名称只是测试数据的选择，不是注册要求；口令 ≥8 字符、含小写字母与数字。
 
 **为什么要重定向 `T10_OUT`**：产物默认写 `.tmp/T10`，而多轮运行写**同一个文件名**会
 **同名覆盖**，后一轮盖掉前一轮 ⇒ 「两遍读数逐字相同」这类主张**不可独立复核**。要对比就分目录，
@@ -391,3 +392,31 @@ pnpm --filter @campfire/web test         # vitest run
 `pnpm --filter @campfire/web exec playwright test --config e2e-real/playwright.real.config.ts …`；
 它**不在** `pnpm --filter @campfire/web shots`（`shots` = `playwright test`，收的是 `apps/web/e2e`）
 的范围内。
+
+## 10. UI 重构的真栈回归（2026-10-11）
+
+`ui-redesign.spec.ts` 使用 `@ui-live` 标记，独立于旧 `@real` 七链路。
+它不拦截或替换响应；注册经真邀请码和 SuperTokens，档案经 UI 写入 PostgreSQL，
+案例经正式摄取链入库，首页草稿经真实建会话、TokenHub 与 SSE 完成回答，并验证刷新恢复。
+
+前置：本地四服务与 API/Vite 已运行、迁移已就绪、案例库已含仓库内的
+`data/cases/2026-05-25_1448_respecting-pace-asd`（按 `data/README.md` 通过 CLI 摄取）。
+MinIO 不参与本轮验证。不要对未知数据执行重建或清库。
+
+设置进程环境 `UI_REAL_INVITE_CODE`（一次性）、`UI_REAL_ACCOUNT`（不含 `@` 的独立测试账号）、
+`UI_REAL_PASSWORD`（满足策略的临时口令），再运行：
+
+```bash
+pnpm --filter @campfire/web exec playwright test --config e2e-real/playwright.real.config.ts --grep "@ui-live" --reporter=list
+```
+
+凭据只经进程环境传递，不写入文件或报告；每轮使用独立账号和新邀请码。
+产物继续由 `T10_OUT` 控制，建议 `<repo>/.tmp/ui-real`；测试截图在其 `shots/` 内。
+测试只删除自己新建的临时条目，保留已更正的验证记录。
+
+覆盖：真实注册与 httpOnly 会话、档案补充/更正/删除与刷新读取、案例正文/来源/关键词检索/深链、
+应急跳过与常驻提交可达、首页草稿交接与真实 SSE/历史恢复、记忆读取、登出/再次登录与 401 边界。
+应急检查不提交虚构医疗事实；记忆只验证真实读取的空时间线，不证明 Worker 写入或非空记忆纠正链。
+
+真实摄取内容的阅读约束：结构化卡片摘录优先显示 `scenario`，同名的前导小节标记不重复渲染；
+来源、证据、审阅、授权、时间与适用范围分别呈现。源记录保持原样，重复的来源/授权不重复打印。
