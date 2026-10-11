@@ -13,13 +13,15 @@
  *   - 禁止弱化跳过语义文案（RQ-EMG-01 原文，不得写成「暂时跳过」）
  */
 
-import { useNavigate } from 'react-router';
+import { useState } from 'react';
+import { useLocation, useNavigate } from 'react-router';
 
+import { ConfirmSheet } from '../../../shared/ui/ConfirmSheet';
 import { AppShell } from '../../../shared/ui/AppShell';
 import type { ConsultPort } from '../application/ports';
 import { SKIP_SEMANTICS_COPY } from '../domain/emergency';
 import { useEmergencyForm } from '../viewModel/useEmergencyForm';
-import { consultChatPath, CONSULT_LIST_PATH } from './consultRoutes';
+import { consultChatPath } from './consultRoutes';
 import styles from './emergencyFormPage.module.css';
 // 选择卡（.selection/.check-box）与进度条（.progress-track）的契约规则在本表里，
 // 不 import 就只剩浏览器默认外观（原生 radio 可见、进度条 0px）。
@@ -39,16 +41,24 @@ export interface EmergencyFormPageProps {
  */
 export function EmergencyFormPage({ consult }: EmergencyFormPageProps) {
   const navigate = useNavigate();
+  const location = useLocation();
+  const [confirmExit, setConfirmExit] = useState(false);
   const form = useEmergencyForm(consult, (sessionId) => {
     navigate(consultChatPath(sessionId));
   });
 
   const { current } = form;
+  const exit = (): void => {
+    const state: unknown = location.state;
+    const returnTo = typeof state === 'object' && state !== null && 'returnTo' in state && typeof state.returnTo === 'string'
+      && state.returnTo.startsWith('/') && !state.returnTo.startsWith('//') ? state.returnTo : '/';
+    void navigate(returnTo);
+  };
 
   return (
-    <AppShell>
+    <AppShell className={styles.shell}>
       <header className="subpage-head">
-        <button type="button" className="sp-back text-button" onClick={() => navigate(CONSULT_LIST_PATH)}>
+        <button type="button" className="sp-back text-button" disabled={form.submitting} onClick={() => form.handled > 0 ? setConfirmExit(true) : exit()}>
           ← 退出应急
         </button>
         <span className="sp-title">现在的情况</span>
@@ -56,12 +66,12 @@ export function EmergencyFormPage({ consult }: EmergencyFormPageProps) {
 
       <p className={styles.skipNote}>{SKIP_SEMANTICS_COPY}</p>
 
-      <section className="tile" aria-labelledby="emergency-step-title">
+      <section className="tile" aria-labelledby="emergency-step-title" inert={form.submitting}>
         <div className="step-meta">
           <span className="meta">
             第 {form.index + 1} / {form.total} 题
           </span>
-          <button type="button" className="text-button" disabled={form.isFirst} onClick={form.previous}>
+          <button type="button" className="text-button" disabled={form.isFirst || form.submitting} onClick={form.previous}>
             上一题
           </button>
         </div>
@@ -143,12 +153,12 @@ export function EmergencyFormPage({ consult }: EmergencyFormPageProps) {
         </div>
       )}
 
-      <div className={styles.controls}>
+      <div className={"emergency-controls " + styles.controls}>
         <div className="button-row">
-          <button type="button" className="btn btn-quiet" onClick={form.skip}>
+          <button type="button" className="btn btn-quiet" disabled={form.submitting} onClick={() => { form.skip(); if (!form.isLast) form.next(); }}>
             跳过这题
           </button>
-          <button type="button" className="btn" disabled={form.isLast} onClick={form.next}>
+          <button type="button" className="btn" disabled={form.isLast || form.submitting} onClick={form.next}>
             下一题
           </button>
         </div>
@@ -157,6 +167,16 @@ export function EmergencyFormPage({ consult }: EmergencyFormPageProps) {
         </button>
         <p className="meta">随时提交，无需答完八题。</p>
       </div>
+      {confirmExit && (
+        <ConfirmSheet labelledBy="emergency-exit-title" onDismiss={() => setConfirmExit(false)}>
+          <h2 id="emergency-exit-title">退出现场采集？</h2>
+          <p>已填写的内容还没有提交，退出后将丢弃。</p>
+          <div className="button-row">
+            <button className="btn btn-secondary" type="button" onClick={() => setConfirmExit(false)}>继续填写</button>
+            <button className="btn btn-danger" type="button" onClick={exit}>退出并丢弃</button>
+          </div>
+        </ConfirmSheet>
+      )}
     </AppShell>
   );
 }
