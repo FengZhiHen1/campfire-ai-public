@@ -501,15 +501,16 @@ details[open] > summary .when-open {
   background: var(--surface);
 }
 
-/* 候选提示在对话页的实际形态（契约源 docs/design/components.html:241-242）。
+/* 候选提示在对话页的实际形态（契约源 docs/design/components.html:373）。
  *
  * 为什么「`.candidate-toast` 已经移植了」不等于本组无需补：
- * `ChatWorkspace.tsx:188` 渲染的是 `<details className="candidate-toast chat-candidate">`
+ * `ChatWorkspace.tsx:227` 渲染的是 `<details className="candidate-toast chat-candidate">`
  * ——**同一个元素带两个类**。两条规则特异性相同（都是单类）、都设
  * `border` / `border-radius` / `padding` / `background`，因此**后写者胜**。
- * 契约里 `.candidate-toast`@20297 在前、`.chat-candidate`@24738 在后 ⇒ 契约的呈现是
+ * 契约里 `.candidate-toast`（:372）在前、`.chat-candidate`（:373）在后 ⇒ 契约的呈现是
  * **方角（`border-radius: 0`）、只留下边框（`border: 0` + `border-bottom`）、内距更窄
  * （`space-2` 而非 `space-3`）**；只移植 `.candidate-toast` 时元素拿到的是圆角 + 四边框那套。
+ * 这一先后由 `scripts/check-contract-css.mjs` 的源序守卫机械检查，不靠注释维持。
  *
  * 本文件的收集顺序由 main.tsx 决定：`.candidate-toast` 在前、本段在后（同一文件内），
  * 与契约的先后一致 ⇒ 补上才生效。 */
