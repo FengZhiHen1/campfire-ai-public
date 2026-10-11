@@ -596,6 +596,10 @@ input[aria-invalid='true'] {
   color: var(--fg-2);
   font-size: var(--text-xs);
   text-decoration: none;
+  /* 当前项的短横线是绝对定位的，因此这里要建立定位上下文。
+   * 该声明原在 global.css（2026-10-11 收拢回本表）：两个文件各写一次当前项状态时，
+   * 胜负由 main.tsx 的导入顺序决定，改一次导入就会静默翻转呈现。 */
+  position: relative;
 }
 
 .tab-item svg {
@@ -603,10 +607,22 @@ input[aria-invalid='true'] {
   height: var(--space-5);
 }
 
+/* 当前项：accent 只承担「当前状态」这一点，不再同时压一条下划线
+ * （下划线与强调短横线并存会被读成两个不同的状态）。 */
 .tab-item[aria-current='page'] {
   color: var(--accent);
-  text-decoration: underline;
-  text-underline-offset: var(--space-1);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.tab-item[aria-current='page']::before {
+  content: '';
+  position: absolute;
+  top: var(--space-1);
+  width: var(--space-5);
+  height: 2px;
+  border-radius: var(--radius-pill);
+  background: var(--accent);
 }
 
 /* 一级页底部为固定 tab 栏预留高度（页设计首页的底部预留条）。

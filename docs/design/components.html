@@ -73,6 +73,11 @@
     .step-review ul { padding-left: var(--space-5); margin-top: var(--space-3); }
     textarea[aria-invalid="true"] { border-color: var(--danger); }
     .question-card:has(.question-body[hidden]) > .q-title { margin-bottom: var(--space-5); }
+    /* ⚠ 下面这组 `:has(input:checked)` **不是**重复规则，别删也别与后面那组合并：
+     * 它只服务本页演示里 `label + <input type=radio>` 的形态（demo 脚本按老写法生成 radio，
+     * 见脚本里 `input.type = 'radio'` 那段）。**产品实现用的是 `button[aria-pressed]`**，
+     * 对应后面应用块里的 `.question-option[aria-pressed='true']`（见 QuestionCard.tsx）。
+     * 抄实现请抄 aria-pressed 那一组；这两套选择器各自对应一种真实存在的 DOM，故不合并。 */
     .question-option input { position: absolute; width: 1px; height: 1px; opacity: 0; }
     .question-recommended { display: inline-flex; vertical-align: middle; margin-left: var(--space-2); padding: 0 var(--space-2); border: 1px solid var(--border); border-radius: var(--radius-pill); color: var(--meta); font-size: var(--text-xs); font-weight: 400; }
     .question-option:has(input:checked) { border-color: var(--border); background: var(--surface-warm); }
@@ -120,7 +125,8 @@
     input:read-only { background: var(--bg); }
     input[aria-invalid="true"] { border-color: var(--danger); }
     /* 导航（@source: project）：单列页头与四项底栏；图录内只演示局部布局。 */
-    .tab-item[aria-current="page"] { color: var(--accent); text-decoration: underline; text-underline-offset: var(--space-1); }
+    .tab-item[aria-current="page"] { color: var(--accent); font-weight: 600; text-decoration: none; }
+    .tab-item[aria-current="page"]::before { content: ""; position: absolute; top: var(--space-1); width: var(--space-5); height: 2px; border-radius: var(--radius-pill); background: var(--accent); }
     #foundation .subpage-head, #foundation .tab-bar { position: static; }
     #foundation .field { margin-top: var(--space-4); }
     #foundation .mini-card p { margin-top: var(--space-2); color: var(--fg-2); }
@@ -222,9 +228,10 @@ summary { overflow-wrap: anywhere; }
     .sp-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--font-display); font-size: var(--text-lg); font-weight: 500; line-height: 1.3; }
     .sp-tag { flex: none; }
     .tab-bar { position: fixed; inset-inline: 0; bottom: 0; z-index: 40; display: flex; justify-content: space-around; max-width: var(--phone-shell-max); margin-inline: auto; padding-bottom: env(safe-area-inset-bottom, 0px); border-top: 1px solid var(--border); background: var(--surface); }
-    .tab-item { display: flex; flex: 1; flex-direction: column; align-items: center; justify-content: center; gap: var(--space-1); min-width: 56px; min-height: 56px; color: var(--fg-2); font-size: var(--text-xs); text-decoration: none; }
+    .tab-item { display: flex; flex: 1; flex-direction: column; align-items: center; justify-content: center; gap: var(--space-1); min-width: 56px; min-height: 56px; color: var(--fg-2); font-size: var(--text-xs); text-decoration: none; position: relative; }
     .tab-item svg { width: var(--space-5); height: var(--space-5); }
-    .tab-item[aria-current='page'] { color: var(--accent); text-decoration: underline; text-underline-offset: var(--space-1); }
+    .tab-item[aria-current='page'] { color: var(--accent); font-weight: 600; text-decoration: none; }
+    .tab-item[aria-current='page']::before { content: ""; position: absolute; top: var(--space-1); width: var(--space-5); height: 2px; border-radius: var(--radius-pill); background: var(--accent); }
     .phone-shell.has-tab-bar { padding-bottom: calc(56px + var(--space-6) + env(safe-area-inset-bottom, 0px)); }
     .list-row { display: grid; gap: var(--space-2); padding: var(--space-4) 0; border-top: 1px solid var(--border-soft); }
     .list-row .lr-title { font-size: var(--text-base); font-weight: 600; }
@@ -305,11 +312,6 @@ details[open] > summary .when-closed { display: none; }
     .chat-progress .flame-dot { margin-top: var(--space-2); }
     .flame-dot.sm { width: var(--space-3); height: var(--space-3); }
     .skill-picker { display: flex; gap: var(--space-2); overflow-x: auto; padding-bottom: 0; }
-    .skill-chip { flex: none; min-height: 44px; padding: var(--space-2) var(--space-3); border: 1px solid var(--border); border-radius: var(--radius-pill); background: var(--surface); color: var(--meta); font-size: var(--text-sm); }
-    .skill-chip[aria-pressed='true'] { color: var(--accent); border-color: var(--accent); }
-    .chat-compose { display: flex; align-items: flex-end; gap: var(--space-2); }
-    .chat-compose textarea { flex: 1; min-width: 0; min-height: 48px; max-height: 136px; padding: var(--space-3); resize: none; overflow-y: auto; line-height: 1.5; }
-    .chat-compose .btn { flex: none; padding-inline: var(--space-3); }
     .chat-footer .meta { margin-top: var(--space-2); }
     .question-card { padding: 0; overflow: hidden; }
     .question-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); padding: var(--space-3) var(--space-5) 0; }
@@ -386,12 +388,14 @@ details[open] > summary .when-closed { display: none; }
     .selection:has(input:checked) .check-box { background: var(--accent); border-color: var(--accent); }
     .selection:has(input:checked) .check-box::after { content: ''; width: 10px; height: 6px; border-left: 2px solid var(--accent-on); border-bottom: 2px solid var(--accent-on); transform: rotate(-45deg) translateY(-1px); }
     .selection:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: var(--space-1); }
-    .skill-chip { border-color: transparent; background: transparent; padding-inline: var(--space-3); font-size: var(--text-xs); }
+    /* 输入器与运行过程保持轻量（与 consultComponents.css 同一份声明；该表 2026-10-11 已合并重复块）。 */
+    .skill-chip { flex: none; min-height: 44px; padding: var(--space-2) var(--space-3); border: 1px solid transparent; border-radius: var(--radius-pill); background: transparent; color: var(--meta); font-size: var(--text-xs); }
     .skill-chip[aria-pressed="true"] { border-color: var(--border); background: var(--bg); color: var(--fg); }
-    .chat-compose { padding: var(--space-2); border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--bg); }
+    .chat-compose { display: flex; align-items: flex-end; gap: var(--space-2); padding: var(--space-2); border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--bg); }
     .chat-compose:focus-within { border-color: var(--accent); box-shadow: var(--focus-ring); }
-    .chat-compose textarea { min-height: 44px; padding: var(--space-2); border: 0; background: transparent; }
+    .chat-compose textarea { flex: 1; min-width: 0; min-height: 44px; max-height: 136px; padding: var(--space-2); border: 0; background: transparent; resize: none; overflow-y: auto; line-height: 1.5; }
     .chat-compose textarea:focus { box-shadow: none; }
+    .chat-compose .btn { flex: none; padding-inline: var(--space-3); }
     .chat-compose .compose-send { width: 44px; min-height: 44px; padding: 0; border-radius: var(--radius-pill); }
     .compose-help > summary { min-height: 24px; justify-content: center; font-size: var(--text-xs); color: var(--meta); }
     .compose-help > p { padding: var(--space-2) 0; }
