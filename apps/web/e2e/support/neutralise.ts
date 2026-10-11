@@ -34,7 +34,7 @@ import { CSS_LAYOUT_TOLERANCE_PX, PNG_HEIGHT_TOLERANCE_PX } from './paths';
  * 第 33 行登记的取舍一致（「固定定位元素在分区图里按文档流呈现，不代表运行时的覆盖层级」）。
  */
 const NEUTRALISE_CSS = `
-.tab-bar, .confirm-sheet {
+.tab-bar, .confirm-sheet, .emergency-controls {
   position: static !important;
 }
 `;
@@ -42,8 +42,8 @@ const NEUTRALISE_CSS = `
 /** 注入样式节点的 id；恢复时按它精确移除。 */
 const STYLE_ELEMENT_ID = '__shots_neutralise__';
 
-/** 产物里唯二的 fixed 选择器（由编译产物的 CSS 实测枚举）。 */
-const FIXED_SELECTORS = ['.tab-bar', '.confirm-sheet'] as const;
+/** 产品固定栏：导航、确认单与本轮新增的应急控制区。 */
+const FIXED_SELECTORS = ['.tab-bar', '.confirm-sheet', '.emergency-controls'] as const;
 
 /**
  * 是否展开主滚动容器（只给消融实验用，默认展开）。

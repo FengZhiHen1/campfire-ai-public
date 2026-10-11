@@ -141,6 +141,15 @@ function shellScript(paddingPx: number): string {
   screen.style.cssText = 'width:100%;height:100%;overflow-y:auto;';
 
   while (root.firstChild !== null) screen.append(root.firstChild);
+  // 测试明确制造溢出，不依赖产品页碰巧足够长；密度调整后短页也必须保留负对照。
+  const content = screen.querySelector('.phone-shell');
+  if (content instanceof HTMLElement) {
+    content.style.minHeight = '${String(VIEWPORTS.mobile.height + 128)}px';
+    const marker = document.createElement('p');
+    marker.textContent = '截图守卫测试：展开后必须能看见这一行。';
+    marker.style.marginTop = 'auto';
+    content.append(marker);
+  }
   device.append(screen);
   stage.append(device);
   root.append(stage);
