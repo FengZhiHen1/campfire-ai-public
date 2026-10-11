@@ -20,7 +20,7 @@ import { createRoot } from 'react-dom/client';
  *
  * 为什么这是缺陷而不是风格问题：契约页（`docs/design/components.html`）的顺序是
  * 「基线表在前、特性表在后」，而契约里靠源序决胜的同特异性规则对会因此翻转胜负。
- * 实测的一例：`QuestionCard.tsx:42`/`:53` 渲染的元素同时带 `tile` 与 `question-card`
+ * 实测的一例：`QuestionCard.tsx:45`/`:56` 渲染的元素同时带 `tile` 与 `question-card`
  * 两个类，两条规则特异性相同（都是单类）且都设 `padding`——
  *   契约：`.tile`（20px）在前、`.question-card`（0）在后 ⇒ 0 胜；
  *   改前产物：`.question-card`@7120 在前、`.tile`@19836 在后 ⇒ 20px 胜 ⇒ 卡片四周多 20px 内缩。

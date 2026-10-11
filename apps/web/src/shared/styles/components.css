@@ -288,13 +288,13 @@ button.tag {
   text-underline-offset: var(--space-1);
 }
 
-/* 禁用态（契约源 docs/design/components.html:98，与 `.btn:disabled` 合并为一条声明）。
+/* 禁用态（契约源 docs/design/components.html:190，与 `.btn:disabled` 合并为一条声明）。
  *
  * 为什么必须单独写 `.text-button:disabled`：`.btn` 与 `.text-button` 是**两个并列的基类**
  * （前者是 48px 带底按钮，后者是 44px 文字按钮），没有共同的祖先类——契约那条 `,` 合并声明
  * 在本文件里只能各写一份。`.btn:disabled` 已存在（本文件上方），这里补另一份。
  *
- * **实测依据**：改前 `EmergencyFormPage.tsx:64` 第 1 题的「上一题」按钮 `disabled=true` 时，
+ * **实测依据**：改前 `EmergencyFormPage.tsx:75` 第 1 题的「上一题」按钮 `disabled=true` 时，
  * 计算样式仍是 `opacity: 1` / `cursor: pointer`（浏览器实测，见
  * `T05-assets/probe-{before,after}/a1-candidates-mobile.json`）⇒ 禁用态在视觉上完全看不出来；
  * 改后为 `opacity: 0.5` / `cursor: not-allowed`。 */
@@ -317,18 +317,19 @@ button.tag {
   font-weight: 600;
 }
 
-/* 多行输入的**元素级**基础样式（契约源 docs/design/components.html:133-137）。
+/* 多行输入的**元素级**基础样式（契约源 docs/design/components.html:193-197）。
  *
  * 为什么必须补这一段：本仓有 4 处 `<textarea>` 连 `className` 都没有
- * （EmergencyFormPage.tsx:91/:123、MemoryPage.tsx:207、ProfilePage.tsx:588），
- * 对应的三个 *.module.css 里 `textarea` 规则数为 0 ⇒ 它们此前渲染的是 **Chrome 的 UA 默认
+ * （EmergencyFormPage.tsx:101/:133、MemoryPage.tsx:215、ProfilePage.tsx:680），
+ * 对应的 *.module.css 里 `textarea` 规则数为 0 ⇒ 它们此前渲染的是 **Chrome 的 UA 默认
  * textarea**（灰底、原生边框、非本设计 fonts），落在暖米纸 + 宋体设计里。
- * 另外两处（QuestionCard.tsx:128、ChatWorkspace.tsx:272）有 scoped 规则，本段不覆盖它们的
+ * 另外三处有 scoped 规则（ChatWorkspace.tsx:322、QuestionCard.tsx:151，
+ * 以及 HomePage.tsx:40 的 `.conversation textarea`），本段不覆盖它们的
  * 专属声明：`.chat-compose textarea` / `.question-card textarea` 特异性更高（0,1,1 > 0,0,1），
  * 因此 `resize`/`min-height`/`padding` 的页面级取值仍归它们——这是契约里就有的分层
- * （契约 164 与 268 行同样给这两处 scoped 覆盖）。
+ * （契约 311/393 与 333 行同样给这两处 scoped 覆盖）。
  *
- * 顺序与契约一致（133 → 137）：`textarea[aria-invalid="true"]` 与 `textarea:focus` 特异性相同
+ * 顺序与契约一致（193 → 197）：`textarea[aria-invalid="true"]` 与 `textarea:focus` 特异性相同
  * （0,1,1），靠源序决胜——契约里无效态在后，故「聚焦时仍是危险色边框」是有意行为。 */
 textarea {
   width: 100%;
