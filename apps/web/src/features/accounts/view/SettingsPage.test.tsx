@@ -84,7 +84,8 @@ describe('设置页 · 账号与说明卡', () => {
     // 文案说「怎么才能看到」而不是「不可用」：后者读起来像账号出了问题（QA-02 的形态），
     // 而真实处境只是账号名只在登录/注册当次响应里带得回来，整页加载后没跟着回来。
     // 用精确可访问名断言：把文案改回「账号名暂不可用」这类措辞，本用例立刻变红。
-    expect(screen.getByRole('heading', { name: '账号名需重新登录后显示' })).toBeDefined();
+    expect(screen.getByRole('heading', { name: '个人账号' })).toBeDefined();
+    expect(screen.getByText('当前登录会话')).toBeDefined();
     // 账号卡仍在（会话有效，不是登出），下方说明行照常呈现。
     expect(screen.getByText('个人账号 · 邀请码注册')).toBeDefined();
   });
@@ -129,14 +130,13 @@ describe('设置页 · 账号与说明卡', () => {
 });
 
 describe('设置页 · 记忆页入口', () => {
-  it('P0 入口行在「关于你的数据」卡内，指向 /settings/memory', () => {
+  it('P0 记忆入口在记录与帮助分组，指向 /settings/memory', () => {
     const { container } = renderSettings(port());
 
     const entry = screen.getByRole('link', { name: /我提过的事/ });
     expect(entry.getAttribute('href')).toBe('/settings/memory');
-    expect(entry.className).toContain('list-row');
-    // 入口必须在数据卡内部（记忆属账号，与「关于你的数据」同源）。
-    expect(entry.closest('.tile')).toBe(container.querySelector('#settings-data')?.closest('.tile'));
+    expect(entry.closest('section')?.getAttribute('aria-label')).toBe('记录与帮助');
+    expect(container.querySelector('#settings-data')).not.toBeNull();
   });
 
   it('P0 入口说明逐字', () => {
@@ -305,7 +305,7 @@ describe('设置页 · tab 栏与动效', () => {
   it('P0 页面级零动效：内容区没有动画类（本页是全产品最安静的页面）', () => {
     const { container } = renderSettings(port());
 
-    const tiles = container.querySelectorAll('.tile');
+    const tiles = container.querySelectorAll('section');
     expect(tiles.length).toBeGreaterThan(0);
     for (const tile of tiles) {
       expect(tile.className).not.toMatch(/anim|fade|stagger/i);

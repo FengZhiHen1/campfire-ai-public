@@ -25,9 +25,8 @@ export interface SessionStoreState {
   /**
    * 已登录账号的展示身份。
    *
-   * null 表示「本次没有拿到账号名」，而不是「账号没有名字」：冷启动刷新页面时
-   * 前端读不到账号名（凭据在 httpOnly cookie，一期无账号信息查询端点），
-   * 只有登录与注册的当次响应带得回来。设置页据此降级呈现。
+   * 登录/注册响应提供展示名，允许仅将此非凭据字段缓存在本地以供刷新恢复。
+   * null 表示本地尚无展示名，不影响会话查证；该字段不参与授权。
    */
   account: AuthenticatedAccount | null;
   /** 用给定端口重新查证会话；查证失败保持 unknown（不得降级为匿名）。 */
@@ -38,6 +37,21 @@ export interface SessionStoreState {
   markAnonymous(): void;
 }
 
+// 只保存展示名；会话存在性仍由 SessionPort 查证，不缓存 token 或授权结果。
+const ACCOUNT_NAME_KEY = 'campfire.account-name';
+function cachedAccount(): AuthenticatedAccount | null {
+  try {
+    const name = globalThis.localStorage?.getItem(ACCOUNT_NAME_KEY);
+    return typeof name === 'string' && name.trim() !== '' ? { accountName: name } : null;
+  } catch { return null; }
+}
+function cacheName(name: string | null): void {
+  try {
+    if (name === null) globalThis.localStorage?.removeItem(ACCOUNT_NAME_KEY);
+    else globalThis.localStorage?.setItem(ACCOUNT_NAME_KEY, name);
+  } catch { /* 浏览器禁用存储时，展示名仍保留在内存。 */ }
+}
+
 /**
  * 为什么状态初始为 unknown 而不是 anonymous：应用冷启动时尚未查证，直接判匿名会把
  * 已登录用户在刷新页面时弹到登录页（一次误判换取一次闪烁），而判已登录会让守卫失效。
@@ -45,16 +59,19 @@ export interface SessionStoreState {
  */
 export const useSessionStore = create<SessionStoreState>((set) => ({
   session: unknownSession(),
-  account: null,
+  account: cachedAccount(),
   async refresh(session: SessionPort) {
     const snapshot = await new ResolveSessionUseCase(session).execute();
+    if (snapshot.status === 'anonymous') cacheName(null);
     // 查证为匿名时同时清掉账号名：留着它会让设置页在登出后仍显示上一个账号的名字。
     set(snapshot.status === 'anonymous' ? { session: snapshot, account: null } : { session: snapshot });
   },
   markAuthenticated(account: AuthenticatedAccount) {
+    cacheName(account.accountName);
     set({ session: { status: 'authenticated' }, account });
   },
   markAnonymous() {
+    cacheName(null);
     set({ session: { status: 'anonymous' }, account: null });
   },
 }));

@@ -1,59 +1,116 @@
-/* 设置页就近样式（CSS Modules）：只消费 token 变量，刻意零 accent
- * （八页里只有设置页无橙色，页面设计 token 使用节）。 */
+/* 操作入口先行，告知以轻量分组呈现；没有不存在的账号功能。 */
 
 .heading {
   margin: 0;
-  font-family: var(--font-display);
-  font-weight: 500;
   font-size: var(--text-xl);
-  line-height: 1.3;
-  letter-spacing: var(--tracking-display);
 }
 
-/* 账号名：--fg、--text-lg、500，无头像。 */
+.account {
+  padding: var(--space-4) 0 var(--space-5);
+  border-bottom: 1px solid var(--border);
+}
+
 .accountName {
   margin: 0;
-  color: var(--fg);
   font-size: var(--text-lg);
-  font-weight: 500;
+  font-family: var(--font-body);
+  font-weight: 600;
 }
 
 .accountSub {
-  margin: var(--space-2) 0 0;
-  color: var(--muted);
+  margin: var(--space-1) 0;
+  color: var(--meta);
   font-size: var(--text-sm);
 }
 
-.groupTitle {
-  margin: 0 0 var(--space-4);
-  font-size: var(--text-base);
+.links {
+  padding: 0 var(--space-4);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-md);
+  background: var(--surface);
 }
 
-/* 说明卡的三行要点：每行标题 + 一句说明；行间距 --space-4（长文案可读性优先）。 */
-.facts {
+.linkRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: 72px;
+  padding-block: var(--space-3);
+  text-decoration: none;
+}
+
+.linkRow + .linkRow {
+  border-top: 1px solid var(--border-soft);
+}
+
+.linkRow > svg {
+  flex: none;
+  color: var(--meta);
+}
+
+.linkRow > span {
+  flex: 1;
   display: grid;
   gap: var(--space-1);
-  margin: 0;
 }
 
-.facts dt {
-  margin-top: var(--space-4);
-  color: var(--fg-2);
+.linkRow strong {
   font-size: var(--text-sm);
   font-weight: 600;
 }
 
-.facts dt:first-child {
-  margin-top: 0;
+.linkRow small {
+  color: var(--meta);
+  font-size: var(--text-xs);
+}
+
+.information {
+  padding-block: var(--space-3);
+}
+
+.groupTitle {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0 0 var(--space-3);
+  font-family: var(--font-body);
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+
+.groupTitle svg {
+  color: var(--meta);
+}
+
+.facts {
+  display: grid;
+  margin: 0;
+}
+
+.facts > div {
+  padding-block: var(--space-3);
+  border-top: 1px solid var(--border-soft);
+}
+
+.facts dt {
+  margin: 0 0 var(--space-1);
+  color: var(--fg);
+  font-size: var(--text-sm);
+  font-weight: 500;
 }
 
 .facts dd {
   margin: 0;
-  color: var(--fg-2);
+  color: var(--meta);
   font-size: var(--text-sm);
 }
 
-/* 一期边界硬文案：与其它说明同字号，不靠颜色弱化（不得弱化的硬文案）。 */
+.notice {
+  padding: var(--space-4);
+  border-radius: var(--radius-sm);
+  background: color-mix(in oklab, var(--surface-warm), transparent 50%);
+}
+
 .boundary {
   margin: 0;
   color: var(--fg-2);
@@ -63,10 +120,12 @@
 .actions {
   display: grid;
   gap: var(--space-3);
+  padding-top: var(--space-3);
 }
 
 .resetNote {
   margin: 0;
-  color: var(--muted);
-  font-size: var(--text-sm);
+  color: var(--meta);
+  text-align: center;
+  font-size: var(--text-xs);
 }

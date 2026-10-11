@@ -1,50 +1,31 @@
-/* 登录/注册页的就近样式（CSS Modules）：只消费 token 变量，不定义色值与间距。
- * 契约组件类名（.panel/.field/.btn-primary/.field-error）刻意不在此重写——它们来自
- * shared/styles/components.css，本文件只承载本页独有的布局与动效。 */
-
 .shell {
   display: flex;
   flex-direction: column;
   justify-content: flex-start;
 }
 
-/* 区块间距 --space-6（品牌区 → 表单区 → 切换行）。
- * 选择器带 :global(.phone-shell) 是为了压过 global.css 的 `.phone-shell { gap: var(--space-4) }`：
- * 两者同为单类选择器时后者（global.css 在 main.tsx 里最后导入）胜出，本页声明的 24px 会静默失效
- * （实测 16px）。复合选择器把特异性提到 (0,2,0)，与导入顺序无关。同 components.css 的
- * `.phone-shell.has-tab-bar` 是同一手法。 */
 :global(.phone-shell).shell {
   gap: var(--space-6);
 }
 
-/* 品牌区顶部另留安全区：全局 .phone-shell 已预留一次，本页品牌区是首屏第一块内容，
- * 因此不再叠加，避免小屏上标题被推得过低。 */
 .brand {
   display: grid;
-  gap: var(--space-2);
-  padding-top: var(--space-4);
+  gap: var(--space-3);
+  padding: var(--space-12) var(--space-2) var(--space-3);
 }
 
 .brandRow {
   display: flex;
   align-items: center;
-  gap: var(--space-4);
+  gap: var(--space-3);
 }
 
-/* 显示标题行高取契约的 1.3（components.html 的 h1/h2/h3/.brand-name 规则，components.css 同形）。
- * 不借用 --leading-tight：它是 1，会把本页 42px 标题的行盒压在 42px，而同仓首页、说明页、
- * 设置页的 28px 标题都是 36.4px（=1.3）——同一设计系统里不该有两种显示标题行高。 */
 .title {
   margin: 0;
-  font-family: var(--font-display);
-  font-weight: 500;
-  font-size: var(--text-2xl);
+  font-size: var(--text-xl);
   line-height: 1.3;
-  letter-spacing: var(--tracking-display);
 }
 
-/* 品牌图标用 accent 着色：图标源是 #C2410C 的单色标记（DESIGN.md 品牌图标节），本站取 --accent 的当前值。
- * accent 计数只写到「首页页头图标」这一处（DESIGN.md）；本页设计未把品牌图标计入配额。 */
 .brandMark {
   display: inline-flex;
   color: var(--accent);
@@ -52,23 +33,22 @@
 
 .tagline {
   margin: 0;
-  color: var(--muted);
+  color: var(--fg);
+  font-size: var(--text-base);
 }
 
-/* 表单容器：panel 内边距与「宽屏再收窄至 420px」。
- * 选择器带 :global(.panel) 的理由同上面的 .shell——契约 .panel 的 --space-5 与全局表同为首位，
- * 依赖导入顺序会让设计明文要求的 --space-6（登录与注册.md:16）静默失效。
- *
- * width: 100% 不能省：面板在 flex 纵向容器里，单给 max-width + margin-inline:auto 会触发
- * shrink-to-fit——实测面板塌到内容宽 265px（表单区不再是满宽，与设计的分区结构不符）。
- * 显式 width:100% 让窄屏取满容器宽，max-width 只在宽屏（容器 >420px）生效。 */
+.intro {
+  margin: 0;
+  color: var(--meta);
+  font-size: var(--text-sm);
+}
+
 :global(.panel).panel {
   width: 100%;
-  max-width: 420px;
-  margin-inline: auto;
-  padding: var(--space-6);
+  padding: var(--space-5);
   display: grid;
   gap: var(--space-5);
+  box-shadow: none;
 }
 
 .formTitle {
@@ -81,9 +61,23 @@
   gap: var(--space-5);
 }
 
-/* 登录/注册切换：同屏已有主 CTA，链接降级为 --fg 色 + accent 下划线
- * （页面设计「组件选用」节的 craft color 纪律：链接计数入 accent 配额，
- * 因此不整条染成 accent，只给下划线）。44px 热区守移动端底线。 */
+.passwordField {
+  position: relative;
+}
+
+.passwordField input {
+  padding-right: calc(var(--space-12) * 2);
+}
+
+.passwordToggle {
+  position: absolute;
+  right: var(--space-3);
+  top: var(--space-8);
+  padding: 0;
+  text-decoration: none;
+  font-size: var(--text-xs);
+}
+
 .switchLink {
   display: inline-flex;
   align-items: center;
@@ -92,21 +86,10 @@
   padding: var(--space-2) 0;
   border: 0;
   background: none;
-  color: var(--fg);
-  font-size: var(--text-sm);
-  text-decoration: underline;
-  text-decoration-color: var(--accent);
-  text-underline-offset: var(--space-1);
-}
-
-/* 显示密码按钮：设计给定「.btn-quiet 小号、min-height 44px，不做眼睛 emoji」。
- * 用小号文字按钮形态而不是 .btn.btn-quiet：后者是 48px 的带底按钮，与密码框并列时
- * 会变成第二颗按钮、抢主 CTA 的重量；文字按钮保留 quiet 语义与 44px 热区。 */
-.passwordToggle {
-  justify-self: end;
-  margin-top: calc(-1 * var(--space-1));
   color: var(--fg-2);
   font-size: var(--text-sm);
+  text-decoration: underline;
+  text-underline-offset: var(--space-1);
 }
 
 .switchRow {
@@ -115,26 +98,4 @@
   margin: 0;
 }
 
-/* 极简两级 stagger 渐入：品牌区 → 表单区（页面设计「动效意图」节，--motion-base 240ms）。
- * 错误出现不带任何动画；循环动效为零。prefers-reduced-motion 下由 components.css 的
- * 全局规则统一关停。 */
-@media (prefers-reduced-motion: no-preference) {
-  .brand {
-    animation: auth-fade-in var(--motion-base) var(--ease-standard) both;
-  }
-
-  .panel {
-    animation: auth-fade-in var(--motion-base) var(--ease-standard) var(--motion-base) both;
-  }
-}
-
-@keyframes auth-fade-in {
-  from {
-    opacity: 0;
-    transform: translateY(4px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
+.help { margin: 0; text-align: center; color: var(--meta); font-size: var(--text-xs); }
