@@ -76,6 +76,7 @@ export interface AppShellProps {
    * 当前一级页面；提供时渲染 tab 栏并预留其高度，省略时视为次级页面（不渲染 tab 栏）。
    */
   tab?: TabKey;
+  className?: string;
 }
 
 /**
@@ -93,10 +94,10 @@ export interface AppShellProps {
  * 退化为 display: contents，包含块回到视口，行为与设备外壳落地前一致。
  * 反过来，把它留在 DeviceFrame 之外就等于绕过外壳——外壳落地前后它都贴在视口上。
  */
-export function AppShell({ children, tab }: AppShellProps) {
+export function AppShell({ children, tab, className = '' }: AppShellProps) {
   return (
     <DeviceFrame>
-      <div className={tab === undefined ? 'phone-shell' : 'phone-shell has-tab-bar'}>{children}</div>
+      <div className={(tab === undefined ? 'phone-shell' : 'phone-shell has-tab-bar') + ' ' + className}>{children}</div>
       {tab !== undefined && (
         <nav className="tab-bar" aria-label="一级导航">
           {TABS.map((item) => (

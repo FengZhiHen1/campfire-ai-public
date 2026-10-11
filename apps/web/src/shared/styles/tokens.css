@@ -47,7 +47,7 @@
   /* ─── 字号阶梯（px，继承 base） ─────────────────────────────────── */
   --text-xs: 12px;          /* 辅助文字底线（移动端正文 ≥16px 另守平台约束） */
   --text-sm: 14px;
-  --text-base: 17px;        /* 移动端正文主字号 */
+  --text-base: 16px;        /* 移动端正文主字号 */
   --text-lg: 20px;
   --text-xl: 28px;
   --text-2xl: 42px;
@@ -71,14 +71,14 @@
 
   /* ─── 圆角（小圆角语言，继承 base） ───────────────────────────── */
   --radius-sm: 10px;        /* 输入框、swatch */
-  --radius-md: 16px;        /* 按钮、卡片 */
-  --radius-lg: 24px;        /* 面板 */
+  --radius-md: 14px;        /* 按钮、卡片 */
+  --radius-lg: 20px;        /* 面板 */
   --radius-pill: 9999px;    /* 头像、状态点 */
 
   /* ─── 海拔与聚焦（继承 base） ─────────────────────────────────── */
   --elev-flat: none;
   --elev-ring: 0 0 0 1px var(--border);
-  --elev-raised: 0 20px 52px rgba(32, 25, 20, 0.12);
+  --elev-raised: 0 4px 16px rgba(32, 25, 20, 0.06);
   --focus-ring: 0 0 0 4px rgba(194, 65, 12, 0.24);
 
   /* ─── 动效（继承 base；移动端时值另守平台约束） ──────────────── */

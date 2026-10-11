@@ -36,7 +36,7 @@ body {
   width: 100%;
   min-height: 100svh;
   margin-inline: auto;
-  padding: calc(var(--space-6) + env(safe-area-inset-top, 0px)) var(--container-gutter-phone)
+  padding: calc(var(--space-4) + env(safe-area-inset-top, 0px)) var(--container-gutter-phone)
     calc(var(--space-6) + env(safe-area-inset-bottom, 0px));
   background: var(--bg);
   box-shadow: var(--elev-ring);
@@ -278,3 +278,14 @@ body {
   @media (max-height: 491px) { .device { zoom: 0.5023; } }
   @media (max-height: 483px) { .device { zoom: 0.4976; } }
 }
+
+/* 页面与控件共用纸面滚动与安全留白。 */
+.phone-shell { min-width: 0; }
+.phone-shell > * { min-width: 0; }
+.phone-shell > .subpage-head:first-child { margin-top: calc(-1 * var(--space-4)); }
+select { width: 100%; min-height: 48px; padding: var(--space-3); border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface); color: var(--fg); }
+.tab-item { position: relative; }
+.tab-item[aria-current="page"] { font-weight: 600; text-decoration: none; }
+.tab-item[aria-current="page"]::before { content: ""; position: absolute; top: var(--space-1); width: var(--space-5); height: 2px; border-radius: var(--radius-pill); background: var(--accent); }
+* { scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; scroll-behavior: auto !important; transition: none !important; } }
