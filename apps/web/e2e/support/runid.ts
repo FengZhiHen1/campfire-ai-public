@@ -7,7 +7,7 @@
  * 边界:
  *   - 依赖: node:fs、node:crypto（Node 内置）
  *   - 被依赖: e2e/global.setup.ts（写入者）、e2e/shots.spec.ts（写进 sidecar）、
- *     e2e/manifest.spec.ts（汇总时校验一致）
+ *     e2e/manifest.spec.ts 与 e2e/states.spec.ts（汇总时校验一致与「是否本轮」）
  * 禁止行为:
  *   - 禁止用「时间戳碰巧不同」来代替显式批号（时间戳无法回答「这两张图是不是同一轮」）
  *   - 禁止在批号缺失时静默放过（缺失即失败：那份 sidecar 不该被混进 manifest）
@@ -32,14 +32,16 @@ import { MANIFEST_PATH, RUN_ID_PATH, SIDECAR_DIR } from './paths';
  * 清单里的 sha256 与它声称的那些 PNG 不再对应，而外观上目录是"满"的。
  * 清掉旧清单与旧 sidecar 后，「清单存在」就等价于「本轮跑完了」。
  *
- * @param reset 是否清掉上一轮产物；由 `SHOTS_RESET` 决定，见下方说明
+ * @param reset 是否清掉上一轮产物；由 `global.setup.ts` 按本次选中的 project 判定（见该文件）
  *
  * 为什么清理要可关（2026-10-07 拆分 `shots`/`e2e` 两条入口之后新加）
  *
  * `e2e`（内容断言）与 `shots`（截图）共用同一份 `playwright.config.ts`，因此也共用这个
  * globalSetup。若不分条件地清，跑一次 `e2e` 就会**删掉上一次 `shots` 的 manifest.json**——
  * 那是评审要看的产物，删它属于「静默销毁证据」，方向完全错。
- * 故清理只在 `SHOTS_RESET=1`（由 `pnpm shots` 脚本设置）时发生。
+ * 故清理只在**跑截图入口**（选中 mobile / desktop / manifest 三个 project 之一）时发生；
+ * 判据在 `global.setup.ts` 里按精确的 `--project=` 参数取——不用环境变量，因为
+ * `SHOTS_RESET=1` 这种写法在 Windows 的 cmd 下不生效（同文件有说明）。
  *
  * 默认不清是一条**安全的失败方向**：万一有人绕过 `pnpm shots` 直接跑截图，旧 sidecar
  * 会因批号不一致在汇总时被 `manifest.spec.ts` 点名失败，而不是拼出一份混批清单。
