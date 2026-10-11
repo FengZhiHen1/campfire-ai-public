@@ -62,9 +62,10 @@ details[open] > summary .when-open {
 }
 
 .msg-doc {
-  padding-left: var(--space-4);
+  padding-left: var(--space-3);
   border-left: 2px solid var(--border-soft);
 }
+.msg-doc p + p { margin-top: var(--space-4); }
 
 .msg-doc .status {
   margin-bottom: var(--space-3);
@@ -121,7 +122,7 @@ details[open] > summary .when-open {
   display: flex;
   gap: var(--space-2);
   overflow-x: auto;
-  padding-bottom: var(--space-2);
+  padding-bottom: 0;
 }
 
 .skill-chip {
@@ -625,3 +626,27 @@ details[open] > summary .when-open {
   outline: 2px solid var(--accent);
   outline-offset: var(--space-1);
 }
+
+/* 输入器与运行过程保持轻量，回答与行动卡占据主要阅读面积。 */
+.skill-chip { border-color: transparent; background: transparent; padding-inline: var(--space-3); font-size: var(--text-xs); }
+.skill-chip[aria-pressed="true"] { border-color: var(--border); background: var(--bg); color: var(--fg); }
+.chat-compose { padding: var(--space-2); border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--bg); }
+.chat-compose:focus-within { border-color: var(--accent); box-shadow: var(--focus-ring); }
+.chat-compose textarea { min-height: 44px; padding: var(--space-2); border: 0; background: transparent; }
+.chat-compose textarea:focus { box-shadow: none; }
+.chat-compose .compose-send { width: 44px; min-height: 44px; padding: 0; border-radius: var(--radius-pill); }
+.compose-help > summary { min-height: 24px; justify-content: center; font-size: var(--text-xs); color: var(--meta); }
+.compose-help > p { padding: var(--space-2) 0; }
+.reasoning-row > summary, .tool-row > summary { font-size: var(--text-xs); min-height: 36px; }
+.reasoning-row, .tool-row { border-radius: var(--radius-sm); background: color-mix(in oklab, var(--surface-warm), transparent 65%); padding-inline: var(--space-2); }
+.citation-block > summary { font-size: var(--text-sm); }
+.ac-head { font-family: var(--font-body); font-weight: 600; }
+.ac-section.now { margin-inline: 0; }
+.selection { border-color: var(--border-soft); }
+.selection .check-box { border-radius: var(--space-1); }
+.selection:has(input[type="radio"]) .check-box { border-radius: var(--radius-pill); }
+.chat-welcome { margin-block: auto; padding: var(--space-6) var(--space-3); }
+.chat-welcome-mark { display: block; margin-bottom: var(--space-4); color: var(--accent); }
+.chat-welcome h1 { margin: 0 0 var(--space-3); font-size: var(--text-xl); }
+.chat-welcome > p { margin: 0 0 var(--space-6); color: var(--meta); font-size: var(--text-sm); }
+.chat-welcome .btn { justify-content: flex-start; font-weight: 400; }

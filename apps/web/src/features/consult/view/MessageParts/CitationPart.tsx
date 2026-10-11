@@ -12,7 +12,7 @@
  *   - 禁止在载荷缺少条目标识时编造 deep-link 目标（指不到就不跳转）
  */
 
-import { Link } from 'react-router';
+import { Link, useLocation } from 'react-router';
 
 import type { CitationRecord } from '../../../../shared/types/sse';
 import { caseItemPath } from '../consultRoutes';
@@ -44,6 +44,7 @@ export function citationDeepLink(citation: CitationRecord): string | null {
  * 异常: 无
  */
 export function CitationPart({ items }: CitationPartProps) {
+  const location = useLocation();
   if (items.length === 0) return null;
 
   return (
@@ -63,7 +64,7 @@ export function CitationPart({ items }: CitationPartProps) {
               {link === null ? (
                 <strong className="citation-title">{citation.reference}</strong>
               ) : (
-                <Link className="citation-title" to={link}>
+                <Link className="citation-title" to={link} state={{ returnTo: location.pathname + location.search }}>
                   {citation.reference}
                 </Link>
               )}

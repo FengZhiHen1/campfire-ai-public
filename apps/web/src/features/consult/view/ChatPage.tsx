@@ -12,9 +12,10 @@
  *   - 禁止在此直接调 HTTP（端口由路由注入）
  */
 
-import { useParams } from 'react-router';
+import { useLocation, useParams } from 'react-router';
 
 import { AppShell } from '../../../shared/ui/AppShell';
+import { BackLink } from '../../../shared/ui/BackLink';
 import { ErrorCard } from '../../../shared/ui/StatePrimitives';
 import type { ConsultPort } from '../application/ports';
 import { useConsultSession } from '../viewModel/useConsultSession';
@@ -37,6 +38,12 @@ export interface ChatPageProps {
  * 异常: 无
  */
 export function ChatPage({ consult }: ChatPageProps) {
+  const location = useLocation();
+  const state: unknown = location.state;
+  const initialDraft =
+    typeof state === 'object' && state !== null && 'draft' in state && typeof state.draft === 'string'
+      ? state.draft
+      : '';
   const params = useParams<{ sessionId: string }>();
   const sessionId = params.sessionId ?? '';
   const { hydration, retry } = useConsultSession(sessionId, consult);
@@ -46,6 +53,7 @@ export function ChatPage({ consult }: ChatPageProps) {
       <AppShell>
         <div className={styles.workspace}>
           <header className="subpage-head">
+            <BackLink fallback="/consult" />
             <span className="sp-title">咨询</span>
           </header>
           <div className={styles.thread}>
@@ -70,6 +78,7 @@ export function ChatPage({ consult }: ChatPageProps) {
       <AppShell>
         <div className={styles.workspace}>
           <header className="subpage-head">
+            <BackLink fallback="/consult" />
             <span className="sp-title">咨询</span>
           </header>
           <div className={styles.thread}>
@@ -92,6 +101,6 @@ export function ChatPage({ consult }: ChatPageProps) {
 
   return (
     // key 绑定会话 id：切换会话时重建 runtime，避免上一条对话的消息留在新会话里。
-    <ChatWorkspace key={sessionId} sessionId={sessionId} initialMessages={hydration.messages} consult={consult} />
+    <ChatWorkspace key={sessionId} sessionId={sessionId} initialMessages={hydration.messages} initialDraft={initialDraft} consult={consult} />
   );
 }

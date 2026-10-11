@@ -57,6 +57,7 @@ export function useSessionList(
   const [settledError, setSettledError] = useState<{ key: string; failure: ConsultFailureView } | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
   const [creating, setCreating] = useState(false);
+  const creatingRef = useRef(false);
   const [createFailure, setCreateFailure] = useState<ConsultFailureView | null>(null);
   // 序号守卫（VM-06）：只有最新一轮加载允许写状态。
   const generation = useRef(0);
@@ -139,7 +140,8 @@ export function useSessionList(
   };
 
   const startNewConversation = async (): Promise<void> => {
-    if (creating) return;
+    if (creatingRef.current) return;
+    creatingRef.current = true;
     setCreating(true);
     setCreateFailure(null);
     try {
@@ -148,6 +150,7 @@ export function useSessionList(
     } catch (caught) {
       setCreateFailure(failureViewFor(caught));
     } finally {
+      creatingRef.current = false;
       setCreating(false);
     }
   };

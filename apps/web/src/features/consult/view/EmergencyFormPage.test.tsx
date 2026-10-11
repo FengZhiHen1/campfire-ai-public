@@ -26,6 +26,7 @@ function renderForm(port: ConsultPortStub) {
       <Routes>
         <Route path="/consult/emergency" element={<EmergencyFormPage consult={port} />} />
         <Route path="/consult/sessions/:sessionId" element={<p>对话页已到达</p>} />
+        <Route path="/" element={<p>首页已到达</p>} />
       </Routes>
     </MemoryRouter>,
   );
@@ -42,6 +43,17 @@ afterEach(() => {
 });
 
 describe('应急表单页 — 分步流', () => {
+  it('退出已填写的采集须确认，取消保留答案，确认后回到首页', () => {
+    renderForm(createConsultPortStub());
+    fireEvent.click(screen.getByLabelText('意识改变'));
+    fireEvent.click(screen.getByRole('button', { name: '← 退出应急' }));
+    expect(screen.getByRole('dialog', { name: '退出现场采集？' })).toBeDefined();
+    fireEvent.click(screen.getByRole('button', { name: '继续填写' }));
+    expect((screen.getByLabelText('意识改变') as HTMLInputElement).checked).toBe(true);
+    fireEvent.click(screen.getByRole('button', { name: '← 退出应急' }));
+    fireEvent.click(screen.getByRole('button', { name: '退出并丢弃' }));
+    expect(screen.getByText('首页已到达')).toBeDefined();
+  });
   it('一屏一题：显示首题、题号与进度条（不用百分比数字）', () => {
     const port = createConsultPortStub();
     renderForm(port);
@@ -70,6 +82,8 @@ describe('应急表单页 — 分步流', () => {
     expect(screen.getByText(EMERGENCY_QUESTIONS[1]?.prompt ?? '')).toBeDefined();
 
     fireEvent.click(screen.getByRole('button', { name: '跳过这题' }));
+    expect(screen.getByText('第 3 / 8 题')).toBeDefined();
+    fireEvent.click(screen.getByRole('button', { name: '上一题' }));
     expect(screen.getByText(/本题已跳过（按未排除处理）/)).toBeDefined();
 
     fireEvent.click(screen.getByRole('button', { name: '上一题' }));
