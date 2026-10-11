@@ -72,12 +72,19 @@ beforeEach(() => {
 });
 
 describe('案例库浏览页 · 结构与库别', () => {
+  it('资料分区的标题、搜索和空态均描述资料，不能伪装成案例库', async () => {
+    renderPage(port({ listItems: vi.fn(async () => ({ library: 'knowledge' as const, items: [], next_cursor: null })) }), '?section=knowledge');
+    expect(await screen.findByText('资料库还在准备中')).toBeDefined();
+    expect(screen.getByText('资料库')).toBeDefined();
+    expect(screen.getByRole('searchbox', { name: '搜索资料' })).toBeDefined();
+    expect(screen.queryByText('案例库还在准备中')).toBeNull();
+  });
   it('P0 是次级页：有返回与标题，不渲染 tab 栏', async () => {
     renderPage(port());
     await screen.findByText('超市哭闹时的分流做法');
 
     expect(screen.getByRole('link', { name: '← 返回' })).toBeDefined();
-    expect(screen.getByText('案例与资料')).toBeDefined();
+    expect(screen.getByText('案例库')).toBeDefined();
     expect(screen.queryByRole('navigation', { name: '一级导航' })).toBeNull();
   });
 
@@ -87,7 +94,7 @@ describe('案例库浏览页 · 结构与库别', () => {
     await screen.findByText('超市哭闹时的分流做法');
 
     expect(p.listItems).toHaveBeenCalledWith(expect.objectContaining({ library: 'case', query: '' }));
-    expect(screen.getByPlaceholderText('搜案例、搜资料')).toBeDefined();
+    expect(screen.getByPlaceholderText('搜索案例')).toBeDefined();
     const tabs = screen.getByRole('group', { name: '检索范围' });
     expect(within(tabs).getByRole('button', { name: '案例' }).getAttribute('aria-pressed')).toBe('true');
   });
@@ -127,7 +134,7 @@ describe('案例库浏览页 · 结构与库别', () => {
     renderPage(p);
     await screen.findByText('超市哭闹时的分流做法');
 
-    fireEvent.change(screen.getByPlaceholderText('搜案例、搜资料'), { target: { value: '超市哭闹' } });
+    fireEvent.change(screen.getByPlaceholderText('搜索案例'), { target: { value: '超市哭闹' } });
 
     await waitFor(
       () => {
@@ -135,7 +142,7 @@ describe('案例库浏览页 · 结构与库别', () => {
       },
       { timeout: 2000 },
     );
-    expect((screen.getByPlaceholderText('搜案例、搜资料') as HTMLInputElement).value).toBe('超市哭闹');
+    expect((screen.getByPlaceholderText('搜索案例') as HTMLInputElement).value).toBe('超市哭闹');
   });
 });
 
@@ -146,7 +153,7 @@ describe('案例库浏览页 · 空与失败', () => {
 
     // 空态两句由「有没有检索词」决定，因此这里必须真的输入一次——
     // 页面不从 URL 读 query（契约的进入参数只有 item 与库别）。
-    fireEvent.change(await screen.findByPlaceholderText('搜案例、搜资料'), { target: { value: '超市哭闹' } });
+    fireEvent.change(await screen.findByPlaceholderText('搜索案例'), { target: { value: '超市哭闹' } });
 
     expect(await screen.findByText('没有找到相关内容')).toBeDefined();
     expect(screen.getByText(/试试更日常的措辞/)).toBeDefined();
