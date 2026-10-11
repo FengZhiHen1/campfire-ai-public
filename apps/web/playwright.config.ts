@@ -110,6 +110,17 @@ export default defineConfig({
       testMatch: /manifest\.spec\.ts/,
       dependencies: ['mobile', 'desktop'],
     },
+    {
+      // 关键状态图的核对（`pnpm e2e` 的最后一步）：交互态由两条内容断言 project 各自截，
+      // 核对必须等它们都写完，故同样用 dependencies。
+      //
+      // 文件名刻意不叫 `states-manifest.spec.ts`：manifest project 的 testMatch 是
+      // `/manifest\.spec\.ts/`，那个名字会被它一并收走，于是 `pnpm shots` 会去核对
+      // 一份只属于 `pnpm e2e` 的产物（实测过的连带行为，与上面 testMatch 注释同源）。
+      name: 'states-manifest',
+      testMatch: /states\.spec\.ts/,
+      dependencies: ['content-mobile', 'content-desktop'],
+    },
   ],
 
   webServer: {

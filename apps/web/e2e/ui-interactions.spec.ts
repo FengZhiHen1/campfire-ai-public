@@ -1,13 +1,22 @@
 /** 全页面重构的关键状态：真实浏览器交互与截图，使用现有隔离夹具。 */
-import { mkdir } from 'node:fs/promises';
-import { resolve } from 'node:path';
+import { mkdir, readFile } from 'node:fs/promises';
 import { expect, test, type Page, type TestInfo } from '@playwright/test';
 
 import { PAGE_SHOTS, type PageShot } from './support/fixtures';
+import { readPngSize, sha256Of } from './support/manifest';
 import { expectNoUnmatchedApi } from './support/network';
 import { expandForFullPage, measureOverflow } from './support/neutralise';
 import { openPage } from './support/page-open';
-import { SHOTS_OUT_DIR } from './support/paths';
+import {
+  STATE_SHOTS_DIR,
+  isStateShotName,
+  isViewportName,
+  stateShotPath,
+  toRepoRelative,
+  type StateShotName,
+} from './support/paths';
+import { readRunId } from './support/runid';
+import { writeStateSidecar } from './support/state-shots';
 
 function shotFor(name: string): PageShot {
   const shot = PAGE_SHOTS.find((candidate) => candidate.name === name);
@@ -34,22 +43,55 @@ test('资料库入口、分区和返回来源一致，说明页可直接进入�
   expectNoUnmatchedApi(ledger);
 });
 
-async function capture(page: Page, info: TestInfo, name: string, full = false): Promise<void> {
-  const dir = resolve(SHOTS_OUT_DIR, 'states');
-  await mkdir(dir, { recursive: true });
-  const path = resolve(dir, `${name}-${info.project.name}.png`);
-  if (!full) {
-    await page.screenshot({ path, animations: 'disabled' });
-    return;
+/**
+ * 截一张关键状态图，并写下它的 sidecar。
+ *
+ * 状态名只接受 `STATE_SHOTS` 里声明过的值：写错名字、或顺手加一张没声明的图会**当场失败**，
+ * 而不是留下一张没有清单、也没人核对的 PNG。另一半判据（每个声明的状态都真的产出了、
+ * 且都是本轮产物）由 `states.spec.ts` 在两条视口 project 都跑完后统一核对——
+ * 两份合起来才是「声明 ⇔ 产物」。
+ *
+ * 落盘即复算：sidecar 里的 sha256/字节数来自对刚落盘 PNG 的实读，不留「我以为写成了」的值。
+ */
+async function capture(page: Page, info: TestInfo, name: StateShotName, full = false): Promise<void> {
+  if (!isStateShotName(name)) throw new Error(`未声明的关键状态图：${String(name)}`);
+  // project 名形如 content-mobile / content-desktop；用 isViewportName 收窄而不裸用 as。
+  const viewport = info.project.name.replace(/^content-/, '');
+  if (!isViewportName(viewport)) throw new Error(`没有视口夹具：${info.project.name}`);
+  const filePath = stateShotPath(name, viewport);
+  await mkdir(STATE_SHOTS_DIR, { recursive: true });
+
+  let contentHeightPx: number | null = null;
+  if (full) {
+    const expanded = await expandForFullPage(page, await measureOverflow(page));
+    try {
+      await expanded.assertExpanded();
+      await page.screenshot({ path: filePath, animations: 'disabled', fullPage: true });
+      // 用与截图基建同一口径的内容高（`expandForFullPage` 的实测值），不另算一个数。
+      contentHeightPx = expanded.result.contentHeightPx;
+    } finally {
+      await expanded.restore();
+      await expanded.assertRestored();
+    }
+  } else {
+    await page.screenshot({ path: filePath, animations: 'disabled' });
   }
-  const expanded = await expandForFullPage(page, await measureOverflow(page));
-  try {
-    await expanded.assertExpanded();
-    await page.screenshot({ path, fullPage: true, animations: 'disabled' });
-  } finally {
-    await expanded.restore();
-    await expanded.assertRestored();
-  }
+
+  const bytes = await readFile(filePath);
+  const size = readPngSize(bytes);
+  await writeStateSidecar({
+    state: name,
+    viewport,
+    file: toRepoRelative(filePath),
+    absolutePath: filePath,
+    runId: await readRunId(),
+    sha256: sha256Of(bytes),
+    bytes: bytes.byteLength,
+    width: size.width,
+    height: size.height,
+    fullPage: full,
+    contentHeightPx,
+  });
 }
 
 test('案例正文与完整来源各自展开，保留真实阅读内容和虚构标识', async ({ page }, info) => {

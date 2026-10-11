@@ -158,6 +158,78 @@ export function toRepoRelative(absolutePath: string): string {
   return resolve(absolutePath).slice(REPO_ROOT.length + 1).split('\\').join('/');
 }
 
+/**
+ * 关键状态图的落点目录。
+ *
+ * 与 `manifest.json` 那批「页 × 视口 × 图种」矩阵不同：状态图由 `ui-interactions.spec.ts`
+ * 在真实交互之后按需截，数量与名字随交互用例走，因此单独一个子目录。
+ */
+export const STATE_SHOTS_DIR: string = resolve(SHOTS_OUT_DIR, 'states');
+
+/** 状态图的清单落点；由 `states.spec.ts` 在核对通过后写盘。 */
+export const STATE_MANIFEST_PATH: string = resolve(STATE_SHOTS_DIR, 'manifest.json');
+
+/**
+ * 状态图 sidecar 的落点：放在 `.run/` 之下而不是 `states/` 之下。
+ *
+ * 理由是复用 `pnpm shots` 的清理语义：截图入口会整目录清掉 `.run/`，因此「上一轮的状态
+ * sidecar」不会留到下一轮；而 `states/` 里的 PNG 刻意不被清（那是评审要看的证据）。
+ * 两者合起来的效果是：**PNG 还在、但它的 sidecar 没了 ⇒ 核对时如实失败**（「这批状态图
+ * 不是本轮的」），而不是让旧图静静冒充本轮产物。
+ */
+export const STATE_SIDECAR_DIR: string = resolve(SIDECAR_DIR, 'states');
+
+/**
+ * 关键状态图的**声明**清单（顺序即清单内的呈现顺序）。
+ *
+ * 这张表是「产物 ⊆ 声明」与「声明 ⊆ 产物」两条判据的共同真源：
+ *   - `ui-interactions.spec.ts` 的 `capture()` 只接受这里的状态名（写错名字当场失败，
+ *     不会悄悄多出一张没人声明的图）；
+ *   - `states.spec.ts` 要求每个名字 × 两个视口都在场、且都是**本轮**产物。
+ *
+ * 加一条状态就在 `ui-interactions.spec.ts` 里补一次 `capture()` 调用——漏了会红，
+ * 而不是让「关键状态图」变成一个只写在 DESIGN.md 里、没人校验的承诺。
+ */
+export const STATE_SHOTS = [
+  'case-expanded',
+  'profile-correction',
+  'profile-confirm',
+  'settings-confirm',
+  'emergency-selected',
+  'chat-sources',
+  'registration-validation',
+  'memory-expanded',
+  'memory-correction',
+] as const;
+
+/** 关键状态名联合类型。 */
+export type StateShotName = (typeof STATE_SHOTS)[number];
+
+/** 判断一个字符串是否是已声明的状态名；供 spec 收窄类型，不裸用 as。 */
+export function isStateShotName(value: string): value is StateShotName {
+  return (STATE_SHOTS as readonly string[]).includes(value);
+}
+
+/** 一张状态图的文件名：`<状态>-<视口>.png`。 */
+export function stateShotFileName(state: StateShotName, viewport: ViewportName): string {
+  return `${state}-${viewport}.png`;
+}
+
+/** 一张状态图的绝对路径。 */
+export function stateShotPath(state: StateShotName, viewport: ViewportName): string {
+  return resolve(STATE_SHOTS_DIR, stateShotFileName(state, viewport));
+}
+
+/** 一条状态图 sidecar 的文件名：`<状态>-<视口>.json`。 */
+export function stateSidecarFileName(state: StateShotName, viewport: ViewportName): string {
+  return `${state}-${viewport}.json`;
+}
+
+/** 一条状态图 sidecar 的绝对路径。 */
+export function stateSidecarPath(state: StateShotName, viewport: ViewportName): string {
+  return resolve(STATE_SIDECAR_DIR, stateSidecarFileName(state, viewport));
+}
+
 /** 判断一个字符串是否是已知视口名；供 spec 从 project 名收窄类型，不裸用 as。 */
 export function isViewportName(value: string): value is ViewportName {
   return (VIEWPORT_NAMES as readonly string[]).includes(value);
