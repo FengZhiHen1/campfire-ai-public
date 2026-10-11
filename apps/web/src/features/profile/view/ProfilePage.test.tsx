@@ -13,7 +13,7 @@
  */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router';
 
 import type { ProfileItem, SupportObject } from '../../../shared/types/profile';
@@ -428,6 +428,82 @@ describe('档案页 · 候选条目操作', () => {
 });
 
 describe('档案页 · 纠正流', () => {
+  it('后续档案记录可以分页读取，失败可重试，已加载内容保留', async () => {
+    let attempt = 0;
+    const p = port({ listItems: vi.fn(async (_objectId, options) => {
+      if (options?.cursor === 'page-2') {
+        attempt += 1;
+        if (attempt === 1) throw new Error('暂时不可用');
+        return { items: [item({ item_id: 'i2', topic: '下一页的记录' })], candidates: [], next_cursor: null };
+      }
+      return { items: [item()], candidates: [], next_cursor: 'page-2' };
+    }) });
+    renderPage(p);
+    fireEvent.click(await screen.findByRole('button', { name: '加载更多记录' }));
+    expect(await screen.findByText('后续记录没有加载成功')).toBeDefined();
+    expect(screen.getByText('表达方式')).toBeDefined();
+    fireEvent.click(screen.getByRole('button', { name: '重试加载记录' }));
+    expect(await screen.findByText('下一页的记录')).toBeDefined();
+    expect(p.listItems).toHaveBeenLastCalledWith('o1', { includeCandidates: true, includeSuperseded: true, cursor: 'page-2' });
+    expect(screen.queryByRole('button', { name: '加载更多记录' })).toBeNull();
+  });
+  it('切换对象后忽略上一对象迟到的分页响应', async () => {
+    const gate = deferred<{ items: ProfileItem[]; candidates: ProfileItem[]; next_cursor: string | null }>();
+    const p = port({
+      listObjects: vi.fn(async () => ({ items: [object('o1', '小宝'), object('o2', '小禾')] })),
+      listItems: vi.fn(async (id, options) => {
+        if (options?.cursor) return gate.promise;
+        return { items: [item({ item_id: id, topic: id === 'o1' ? '第一对象记录' : '第二对象记录' })], candidates: [], next_cursor: id === 'o1' ? 'page-2' : null };
+      }),
+    });
+    renderPage(p);
+    fireEvent.click(await screen.findByRole('button', { name: '加载更多记录' }));
+    fireEvent.click(screen.getByRole('button', { name: '小禾' }));
+    await screen.findByText('第二对象记录');
+    await act(async () => { gate.resolve({ items: [item({ item_id: 'late', topic: '迟到的旧对象记录' })], candidates: [], next_cursor: null }); });
+    await waitFor(() => expect(screen.queryByText('迟到的旧对象记录')).toBeNull());
+    expect(screen.getByText('第二对象记录')).toBeDefined();
+  });
+  it('纠正领域是只读，补充与纠正不会同时显示两个冲突表单', async () => {
+    renderPage(port());
+    await screen.findByText('关于 TA 的当前认识');
+    fireEvent.click(screen.getByRole('button', { name: /^纠正：/ }));
+    expect(screen.getByRole('combobox', { name: '领域' }).hasAttribute('disabled')).toBe(true);
+    fireEvent.click(screen.getByRole('button', { name: '补充一条' }));
+    expect(screen.queryByRole('heading', { name: '新增一条更正' })).toBeNull();
+    expect(screen.getByRole('combobox', { name: '领域' }).hasAttribute('disabled')).toBe(false);
+    expect(screen.getAllByRole('textbox', { name: '描述' })).toHaveLength(1);
+  });
+  it('从已编辑的纠正转入补充时须确认，继续编辑保留原草稿', async () => {
+    renderPage(port());
+    await screen.findByText('关于 TA 的当前认识');
+    fireEvent.click(screen.getByRole('button', { name: /^纠正：/ }));
+    fireEvent.change(screen.getByRole('textbox', { name: '描述' }), { target: { value: '不该丢失的修改' } });
+    fireEvent.click(screen.getByRole('button', { name: '补充一条' }));
+    expect(screen.getByRole('dialog', { name: '放弃当前编辑？' })).toBeDefined();
+    fireEvent.click(screen.getByRole('button', { name: '继续编辑' }));
+    expect((screen.getByRole('textbox', { name: '描述' }) as HTMLTextAreaElement).value).toBe('不该丢失的修改');
+    fireEvent.click(screen.getByRole('button', { name: '补充一条' }));
+    fireEvent.click(screen.getByRole('button', { name: '放弃并继续' }));
+    expect(screen.getByRole('heading', { name: '补充一条记录' })).toBeDefined();
+    expect(screen.queryByRole('heading', { name: '新增一条更正' })).toBeNull();
+  });
+  it('切换对象前确认丢弃，取消保留草稿，确认后不把旧对象草稿带过去', async () => {
+    const p = port({ listObjects: vi.fn(async () => ({ items: [object('o1', '小宝'), object('o2', '小禾')] })) });
+    renderPage(p);
+    await screen.findByText('关于 TA 的当前认识');
+    fireEvent.click(screen.getByRole('button', { name: '补充一条' }));
+    fireEvent.change(screen.getByRole('textbox', { name: '主题' }), { target: { value: '未保存的主题' } });
+    fireEvent.click(screen.getByRole('button', { name: '小禾' }));
+    expect(screen.getByRole('dialog', { name: '切换支持对象？' })).toBeDefined();
+    fireEvent.click(screen.getByRole('button', { name: '继续编辑' }));
+    expect((screen.getByRole('textbox', { name: '主题' }) as HTMLInputElement).value).toBe('未保存的主题');
+    fireEvent.click(screen.getByRole('button', { name: '小禾' }));
+    fireEvent.click(screen.getByRole('button', { name: '切换并丢弃' }));
+    await waitFor(() => expect(p.getSummary).toHaveBeenLastCalledWith('o2'));
+    expect(screen.queryByRole('textbox', { name: '主题' })).toBeNull();
+    expect(p.addItem).not.toHaveBeenCalled();
+  });
   it('P0 摘要区每条尾部带「纠正」按钮，点击进入该条的纠正流并走到同一条端点', async () => {
     // 设计第 20 行：摘要每条尾部「纠正」文字按钮（.btn-quiet 小号），点击进入该条的纠正流。
     // 判别性：把摘要条目里的按钮去掉，本用例第一行查询就失败——条目行上那个「纠正」
@@ -439,7 +515,7 @@ describe('档案页 · 纠正流', () => {
     const summary = screen.getByRole('region', { name: '关于 TA 的当前认识' });
     const summaryCorrect = within(summary).getByRole('button', { name: '纠正：用图片卡表达需求' });
     expect(summaryCorrect.textContent).toBe('纠正');
-    expect(summaryCorrect.className).toContain('btn-quiet');
+    expect(summaryCorrect.className).toContain('text-button');
 
     fireEvent.click(summaryCorrect);
 
