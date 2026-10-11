@@ -18,6 +18,7 @@
 
 import type { ReactElement } from 'react';
 import { Link } from 'react-router';
+import { BackLink } from '../../shared/ui/BackLink';
 
 import { AppShell } from '../../shared/ui/AppShell';
 import styles from './guidePage.module.css';
@@ -104,20 +105,21 @@ export function GuidePage() {
        * 应急表单页）设计也均写 .subpage-head——按编排器裁决视为设计原文笔误，
        * 保留 .subpage-head，标题字号/字重补齐在契约层（components.css 的 .sp-title）。 */}
       <header className="subpage-head">
-        <Link className="sp-back" to="/settings">
-          ← 返回
-        </Link>
+        <BackLink fallback="/settings" />
         <span className="sp-title">使用说明</span>
       </header>
 
       {SECTIONS.map((section) => (
-        <article className="tile" key={section.key}>
+        <article className={"tile " + styles.section} key={section.key}>
           <div className={styles.sectionHead}>
             <span className={styles.sectionIcon}>{SECTION_ICONS[section.key]}</span>
             <h2 className={styles.sectionTitle}>{section.title}</h2>
           </div>
           <p className={styles.sectionBody}>{section.body}</p>
           {'note' in section && <p className={styles.sectionNote}>{section.note}</p>}
+          {section.key === 'emergency' && <Link className="text-button" to="/consult/emergency" state={{ returnTo: '/guide' }}>开始应急咨询 →</Link>}
+          {section.key === 'daily' && <Link className="text-button" to="/consult">开始日常咨询 →</Link>}
+          {section.key === 'records' && <div className="button-row"><Link className="text-button" to="/profile">查看档案 →</Link><Link className="text-button" to="/settings/memory">查看记忆 →</Link></div>}
           {section.key === 'privacy' && (
             // 分工：本页一句话，详单在设置页（RQ-LIM-03 的告知落点）。
             // 这一行做成 flex 行，让内联链接拿到 44px 真实热区（裸 a 无 min-height，

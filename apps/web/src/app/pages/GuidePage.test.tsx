@@ -156,11 +156,12 @@ describe('使用说明 · 小节图标', () => {
 });
 
 describe('使用说明 · 响应式与懒性', () => {
-  it('P0 小节卡不可点跳转（说明卡不是入口卡；入口在首页与对话页）', () => {
-    const { container } = renderGuide();
-
-    // 全页只有两个链接：返回与设置页内联链接。
-    expect(container.querySelectorAll('a')).toHaveLength(2);
+  it('说明能直接进入对应功能，文字和跳转目标一致', () => {
+    renderGuide();
+    expect(screen.getByRole('link', { name: '开始应急咨询 →' }).getAttribute('href')).toBe('/consult/emergency');
+    expect(screen.getByRole('link', { name: '开始日常咨询 →' }).getAttribute('href')).toBe('/consult');
+    expect(screen.getByRole('link', { name: '查看档案 →' }).getAttribute('href')).toBe('/profile');
+    expect(screen.getByRole('link', { name: '查看记忆 →' }).getAttribute('href')).toBe('/settings/memory');
   });
 
   it('P0 数据与隐私的链接行是 44px 热区（裸 a 无 min-height，实现侧就地补）', () => {
