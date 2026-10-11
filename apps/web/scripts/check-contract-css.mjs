@@ -78,17 +78,13 @@ const CANARY_CLASSES = ['btn-primary', 'tile', 'subpage-head', 'list-row', 'stat
 /**
  * 闸门 A：元素级规则的契约声明清单。
  *
- * `contractLines` 是 `docs/design/components.html` 的行号，**只作可追溯性记录**；
- * 断言比的是 `declarations` 与服务产物里该选择器规则的声明（逐条比对，不看行号）。
- * 取值来源：契约 193–197 行（`textarea` 与四条状态规则）。
- *
- * 行号在 2026-10-11 的契约重排后订正过一次（原记录指向 133–137）；它不影响判定，
- * 但指错位置会让后来者按行号找不到规则，因此与契约同批维护。
+ * 断言比的是 `declarations` 与产物里该选择器规则的声明（逐条比对）。
+ * 契约侧的位置不写死行号：报错时由 `contractCite(selector)` 按选择器在契约里现算
+ * （这些行号曾两次因契约重排而指错位置）。
  */
 const ELEMENT_RULE_CONTRACTS = [
   {
     selector: 'textarea',
-    contractLines: [193],
     declarations: [
       ['width', '100%'],
       ['min-height', '120px'],
@@ -101,34 +97,45 @@ const ELEMENT_RULE_CONTRACTS = [
       ['resize', 'vertical'],
     ],
   },
-  { selector: 'textarea::placeholder', contractLines: [194], declarations: [['color', 'var(--muted)'], ['opacity', '1']] },
+  { selector: 'textarea::placeholder', declarations: [['color', 'var(--muted)'], ['opacity', '1']] },
   {
     selector: 'textarea:focus',
-    contractLines: [195],
     declarations: [['outline', 'none'], ['border-color', 'var(--accent)'], ['box-shadow', 'var(--focus-ring)']],
   },
-  { selector: 'textarea[aria-invalid="true"]', contractLines: [196], declarations: [['border-color', 'var(--danger)']] },
-  { selector: 'textarea:read-only', contractLines: [197], declarations: [['background', 'var(--bg)']] },
+  { selector: 'textarea[aria-invalid="true"]', declarations: [['border-color', 'var(--danger)']] },
+  { selector: 'textarea:read-only', declarations: [['background', 'var(--bg)']] },
 ];
 
 /**
  * 闸门 B：复合选择器 / 伪类态规则的契约声明清单。
  *
  * `button.tag` 的类名 `tag` 在产物里存在（有基础规则），缺的是**尺寸规则**——
- * 这正是「只 grep `.tag` 会漏掉」的情形（契约 177 行）。
+ * 这正是「只 grep `.tag` 会漏掉」的情形。
  * `.text-button:disabled` 同理：`.text-button` 在产物里存在，缺的是**禁用态**那一条；
  * 它此前整条不在产物里（实测改前 `disabled` 按钮的计算样式仍是 `opacity: 1`）。
+ * `.tab-item[aria-current='page']` 与它的短横线是 2026-10-11 新增的当前态语言：
+ * 此前该状态在产品与契约里各写一份、靠导入顺序决胜，收拢成一处后由本闸门钉住。
  */
 const COMPOUND_RULE_CONTRACTS = [
   {
     selector: 'button.tag',
-    contractLines: [177],
     declarations: [['min-height', '44px'], ['min-width', '44px']],
   },
-  { selector: '.sp-tag', contractLines: [223], declarations: [['flex', 'none']] },
+  { selector: '.sp-tag', declarations: [['flex', 'none']] },
+  {
+    selector: '.tab-item[aria-current="page"]',
+    declarations: [['color', 'var(--accent)'], ['font-weight', '600'], ['text-decoration', 'none']],
+  },
+  {
+    selector: '.tab-item[aria-current="page"]::before',
+    declarations: [
+      ['width', 'var(--space-5)'],
+      ['height', '2px'],
+      ['background', 'var(--accent)'],
+    ],
+  },
   {
     selector: '.text-button:disabled',
-    contractLines: [190],
     declarations: [['opacity', '0.5'], ['cursor', 'not-allowed']],
   },
 ];
@@ -153,25 +160,24 @@ const COMPOUND_RULE_CONTRACTS = [
  *   1. **退化对局**：两条规则对 `color` 与 `font-size` 声明的值**逐字相同**
  *      （都是 `var(--meta)` / `var(--text-xs)`）⇒ 谁胜出都不改变计算样式，**不可观测**；
  *   2. **同文件内序**：两者都在 `components.css` 里（`.meta` 在 `.tag` 之前，与契约里
- *      `.meta`(173) / `.tag`(174) 的先后一致），导入顺序改不动它——按 `main.tsx` 的
- *      import 调整去修它是错误归因。
+ *      两者的先后一致），导入顺序改不动它——按 `main.tsx` 的 import 调整去修它是错误归因。
  *   两点都由 `assertOrderContractsAreLoadBearing()` 机械校验：若将来有人把某条登记对上
  *   两条规则的值改成相同，或把 `property` 写成本就不冲突的属性，构建会失败而不是静默空转。
+ *
+ * 契约侧行号不写死：报错时由 `contractCite()` 按选择器现算。
  */
 const ORDER_CONTRACTS = [
-  { before: '.tile', after: '.question-card', property: 'padding', contractLines: [170, 314], note: '提问卡四周多出 20px 内缩' },
+  { before: '.tile', after: '.question-card', property: 'padding', note: '提问卡四周多出 20px 内缩' },
   {
     before: '.candidate-toast',
     after: '.chat-candidate',
     property: 'border-radius',
-    contractLines: [372, 373],
     note: '候选提示的圆角/边框/内距与契约不同',
   },
   {
     before: '.text-button',
     after: '.question-free-toggle',
     property: 'padding',
-    contractLines: [189, 330],
     note: '「用自己的话回答」的内距与边框被文字按钮的 0 值压掉',
   },
   {
@@ -179,7 +185,7 @@ const ORDER_CONTRACTS = [
      * 元素级伪类/属性态的一对，形态与上面三对（两个类同时挂在同一元素上）不同：
      * 两端都在同一个 `<textarea>` 元素上，特异性都是 (0,1,1)，都设 `border-color`，
      * 值不同（`--accent` vs `--danger`）⇒ 源序决定「聚焦且校验失败」时显示哪一个。
-     * 契约里 `:focus`（components.html:195）在 `[aria-invalid]`（:196）之前，
+     * 契约里 `:focus` 在 `[aria-invalid]` 之前（行号见报错时的现算引用），
      * 故危险色胜出——这是有意的：校验失败比聚焦更该被看见。
      * 消费点在 `ProfilePage.tsx:681` 与 `MemoryPage.tsx:216`（两处 `aria-invalid` 真渲染）。
      *
@@ -190,7 +196,6 @@ const ORDER_CONTRACTS = [
     before: 'textarea:focus',
     after: 'textarea[aria-invalid="true"]',
     property: 'border-color',
-    contractLines: [195, 196],
     note: '聚焦且校验失败时，危险边框色被聚焦色压掉（校验失败不再可见）',
   },
 ];
@@ -284,8 +289,24 @@ function splitSelectors(selector) {
   return parts.filter((p) => p !== '');
 }
 
-/** 归一闪缩与引号，便于把两端的选择器文本对齐（产物被压缩器去过引号与空白）。 */
-const normSelector = (s) => s.replace(/\s+/g, ' ').replace(/["']/g, '').trim();
+/**
+ * 归一闪缩、引号与四个「单冒号同义」的伪元素，便于把两端的选择器文本对齐
+ * （产物被压缩器去过引号与空白）。
+ *
+ * 2026-10-11 追加两项归一：
+ *   - **组合子两侧空白**：压缩器把 `.compose-help > summary` 写成 `.compose-help>summary`，
+ *     而 CSS 里两者是同一个选择器；不归一时闸门 D 会因一个空格判成「产物里没有这条规则」。
+ *   - **`::before` / `:before` 这类同义写法**：压缩器会把 `::before` 压成 `:before`
+ *     （只对 before / after / first-line / first-letter 这四个 CSS2 就存在的伪元素这么做，
+ *     `::placeholder` 保持双冒号，实测如此）。
+ */
+const normSelector = (s) =>
+  s
+    .replace(/\s+/g, ' ')
+    .replace(/["']/g, '')
+    .replace(/\s*([>+~])\s*/g, '$1')
+    .replace(/::(before|after|first-line|first-letter)\b/g, ':$1')
+    .trim();
 
 /**
  * 归一**声明值**，用于与契约逐条比对。
@@ -326,6 +347,43 @@ const rulesFor = (rules, selector) =>
   rules.filter((rule) => rule.at === null && splitSelectors(rule.selector).some((s) => normSelector(s) === normSelector(selector)));
 
 /**
+ * 契约真源的引用：正文、`<style>` 内容的起始偏移、以及已扫描出的规则。
+ *
+ * 为什么行号要现算而不是写进常量：这些行号只是给人看的可追溯性指针、不参与任何判定，
+ * 因此每次契约重排都会让它们悄悄指错位置——2026-10-11 一天之内烂了两次（第一次是契约
+ * 重排，第二次是同日合并重复块）。改成按选择器在契约里现找、由字符偏移折算行号，
+ * 指针就永远指向当前那一行。
+ *
+ * 由 `main()` 与 `--self-test` 各自填充；契约读不到时保持为空，`contractCite` 会如实说
+ * 「找不到」而不是编一个行号。
+ */
+let contractRef = { text: '', styleOffset: 0, rules: [] };
+
+/**
+ * 某选择器在契约里的行号引用。
+ *
+ * 取**最后一次**出现的规则：源序守卫比较的就是两端各自最后一条顶层规则（见 `checkOrder`），
+ * 引用的行号与它实际据以判定的那条保持一致。
+ */
+function contractCite(selector) {
+  const hits = rulesFor(contractRef.rules, selector);
+  if (hits.length === 0) return `契约 components.html 里没有 ${selector}`;
+  const offset = hits[hits.length - 1].offset + contractRef.styleOffset;
+  const line = contractRef.text.slice(0, offset).split('\n').length;
+  return `契约 components.html:${String(line)}`;
+}
+
+/** 由 `contractHtml` 与它匹配到的 `<style>` 块填充 `contractRef`。 */
+function bindContractRef(contractHtml, styleMatch, rules) {
+  if (contractHtml === null || styleMatch === null) {
+    contractRef = { text: '', styleOffset: 0, rules: [] };
+    return;
+  }
+  // `<style>` 可能有属性，故按第一个 `>` 之后算内容起点，不假设标签字面量。
+  contractRef = { text: contractHtml, styleOffset: contractHtml.indexOf('>', styleMatch.index) + 1, rules };
+}
+
+/**
  * 闸门 A/B：断言选择器的规则存在，且契约声明的每条属性都在（值逐条相等）。
  *
  * 返回 `{ code, selector, detail }[]`。
@@ -338,7 +396,7 @@ function checkRuleContracts(rules, contracts, code) {
       violations.push({
         code,
         selector: contract.selector,
-        detail: `产物里找不到该选择器的顶层规则（契约 components.html:${contract.contractLines.join(',')}）`,
+        detail: `产物里找不到该选择器的顶层规则（${contractCite(contract.selector)}）`,
       });
       continue;
     }
@@ -356,7 +414,7 @@ function checkRuleContracts(rules, contracts, code) {
       violations.push({
         code,
         selector: contract.selector,
-        detail: `声明与契约不一致（契约 components.html:${contract.contractLines.join(',')}）——${missing.join('；')}`,
+        detail: `声明与契约不一致（${contractCite(contract.selector)}）——${missing.join('；')}`,
       });
     }
   }
@@ -384,8 +442,8 @@ function checkOrder(rules, contracts, code) {
         code,
         selector: `${contract.before} / ${contract.after}`,
         detail:
-          `源序与契约相反：契约里 ${contract.before}（components.html:${String(contract.contractLines[0])}）在前、` +
-          `${contract.after}（:${String(contract.contractLines[1])}）在后；产物里偏移 ${String(beforeOffset)} → ${String(afterOffset)}。` +
+          `源序与契约相反：契约里 ${contract.before}（${contractCite(contract.before)}）在前、` +
+          `${contract.after}（${contractCite(contract.after)}）在后；产物里偏移 ${String(beforeOffset)} → ${String(afterOffset)}。` +
           `两者特异性相同且都设 ${contract.property}，源序决定胜负 ⇒ ${contract.note}`,
       });
     }
@@ -475,7 +533,29 @@ function runGates(css) {
     ...checkRuleContracts(rules, ELEMENT_RULE_CONTRACTS, 'element-rule'),
     ...checkRuleContracts(rules, COMPOUND_RULE_CONTRACTS, 'compound-rule'),
     ...checkOrder(rules, ORDER_CONTRACTS, 'source-order'),
-    ...checkRenderedSelectors(rules, ['textarea', 'button.tag', '.sp-tag', '.text-button:disabled', '.chat-candidate', '.chat-candidate .ct-panel'], 'rendered-selector'),
+    // 闸门 D：这些选择器在契约里都有规则、产品也确实渲染它们，因此产物里必须各有一条顶层规则。
+    // 2026-10-11 补入本轮新增的契约选择器（读物排版、空会话起点、输入器帮助、列表尾、确认单遮罩）：
+    // 此前这道闸门只列了 16 个类名那批，新契约选择器没有任何机械守卫。
+    ...checkRenderedSelectors(
+      rules,
+      [
+        'textarea',
+        'button.tag',
+        '.sp-tag',
+        '.text-button:disabled',
+        '.chat-candidate',
+        '.chat-candidate .ct-panel',
+        '.readable-heading',
+        '.readable-list',
+        '.readable-quote',
+        '.readable-paragraph',
+        '.chat-welcome',
+        '.compose-help > summary',
+        '.list-tail',
+        '.confirm-sheet-scrim',
+      ],
+      'rendered-selector',
+    ),
   ];
   return { rules, violations };
 }
@@ -564,6 +644,22 @@ const MUTATIONS = [
     legacyMustPass: true,
   },
   {
+    // 2026-10-11 新增的契约选择器同样要有负对照，否则「补进清单」只是加了一行走过场的名单。
+    name: 'D-真渲染选择器缺失（.readable-heading 的规则删除）',
+    mutate: (css) => css.replace(/\.readable-heading\{[^{}]*\}/, ''),
+    expectGate: 'rendered-selector',
+    legacyMustPass: true,
+  },
+  {
+    // 当前 tab 的强调短横线是本轮新增语言：删掉它的规则必须被闸门抓到，同时证明旧逻辑会放过。
+    // 变异体按产物里的实际写法（压缩器把 `::before` 压成 `:before`），故正则两种都收。
+    // 判它的是**闸门 B**（该选择器有逐条声明契约），不是闸门 D 的存在性清单。
+    name: 'B-复合选择器缺失（.tab-item[aria-current=page]::before 删除）',
+    mutate: (css) => css.replace(/\.tab-item\[aria-current=page\]::?before\{[^{}]*\}/, ''),
+    expectGate: 'compound-rule',
+    legacyMustPass: true,
+  },
+  {
     // 这一对的负对照：交换两条规则的位置。两端都是「元素 + 状态」、零类名，
     // 因此旧逻辑（只查 16 个类名出现过）在交换后必然仍然通过。
     name: 'C-源序颠倒（textarea:focus 与 textarea[aria-invalid=true] 调换）',
@@ -644,17 +740,19 @@ async function selfTest(baselineCss) {
       record(false, '契约真源里没有 <style> 块');
     } else {
       const contractRulesForSelfTest = scanRules(styleBlock[1]);
+      // 自检期间的报错也要能引用契约行号，故这里一并填上契约引用。
+      bindContractRef(contractHtmlForSelfTest, styleBlock, contractRulesForSelfTest);
       // 正向：现清单必须全部承重。
       const problems = assertOrderContractsAreLoadBearing(contractRulesForSelfTest);
       record(problems.length === 0, `现清单 ${String(ORDER_CONTRACTS.length)} 条全部承重（问题 ${String(problems.length)} 条）`);
       for (const p of problems) lines.push(`      ${p}`);
       // 负对照：把 `.tag` / `.meta` 这类退化对局塞回去，承重性校验必须变红。
       //
-      // 前后顺序按契约实际先后写（`.meta` 173 在 `.tag` 174 前）：写反了会让这条对照
+      // 前后顺序按契约实际先后写（`.meta` 在 `.tag` 之前）：写反了会让这条对照
       // 因「判据写反」变红，于是「值相同 ⇒ 不可观测」那一条分支就再也没被验证过——
       // 负对照必须只在它要证明的那条理由上变红。
       const degenerate = ORDER_CONTRACTS.concat([
-        { before: '.meta', after: '.tag', property: 'color', contractLines: [173, 174], note: '负对照：值相同，不可观测' },
+        { before: '.meta', after: '.tag', property: 'color', note: '负对照：值相同，不可观测' },
       ]);
       const original = ORDER_CONTRACTS.splice(0, ORDER_CONTRACTS.length, ...degenerate);
       const degenerateProblems = assertOrderContractsAreLoadBearing(contractRulesForSelfTest);
@@ -688,6 +786,17 @@ if (selfTestMode) {
     process.exit(1);
   }
   const css = (await Promise.all(files.map((file) => readFile(file, 'utf8')))).join('\n');
+  // 自检的变异环节也会打印违规详情，其中的契约行号靠 contractRef 现算，故这里先填好。
+  // （第 3 节会再填一次，用的是同一份契约；契约读不到时两处都如实说「找不到」。）
+  const contractPathForSelfTestEarly = resolve(repoRoot, 'docs', 'design', 'components.html');
+  const contractHtmlForSelfTestEarly = await readFile(contractPathForSelfTestEarly, 'utf8').catch(() => null);
+  const styleBlockForSelfTestEarly =
+    contractHtmlForSelfTestEarly === null ? null : /<style>([\s\S]*?)<\/style>/.exec(contractHtmlForSelfTestEarly);
+  bindContractRef(
+    contractHtmlForSelfTestEarly,
+    styleBlockForSelfTestEarly,
+    styleBlockForSelfTestEarly === null ? [] : scanRules(styleBlockForSelfTestEarly[1]),
+  );
   const ok = await selfTest(css);
   process.exit(ok ? 0 : 1);
 }
@@ -724,6 +833,8 @@ if (contractStyle === null) {
   process.exit(1);
 }
 const contractRules = scanRules(contractStyle[1]);
+// 契约引用要在任何断言之前填好：报错信息里的契约行号由它现算。
+bindContractRef(contractHtml, contractStyle, contractRules);
 
 // 契约自身的源序必须先成立：否则断言会拿一个「契约自己就不满足」的判据去卡实现。
 const contractOrderViolations = checkOrder(contractRules, ORDER_CONTRACTS, 'contract-source-order');
