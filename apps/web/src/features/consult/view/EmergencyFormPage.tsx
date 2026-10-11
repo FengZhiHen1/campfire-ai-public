@@ -153,6 +153,12 @@ export function EmergencyFormPage({ consult }: EmergencyFormPageProps) {
         </div>
       )}
 
+      {/*
+        emergency-controls 是给 e2e 中和与截图用的稳定钩子（见 e2e/support/neutralise.ts），
+        产品侧的实际定位由 styles.controls 提供——它是 fixed，长图截图前必须被中和成 static，
+        因此这个类名不能删，也不要指望在 src 下找到它的规则：契约 components.html 里同名规则
+        只作用于那张目录页自己的 .emergency-preview 试样。
+      */}
       <div className={"emergency-controls " + styles.controls}>
         <div className="button-row">
           <button type="button" className="btn btn-quiet" disabled={form.submitting} onClick={() => { form.skip(); if (!form.isLast) form.next(); }}>

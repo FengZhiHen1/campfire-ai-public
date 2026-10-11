@@ -28,6 +28,10 @@ import { CSS_LAYOUT_TOLERANCE_PX, PNG_HEIGHT_TOLERANCE_PX } from './paths';
  * `FLOW_CSS` 同语义（那边中和的是 `.emergency-controls` 的 sticky）。用 `!important`
  * 是必要的：要覆盖的规则本身在产物里带同等或更高特异性，且这段样式必须赢。
  *
+ * `.emergency-controls` 现在由实现挂在应急控制区上、position 来自该页的 CSS Modules
+ * （fixed），这里靠 `!important` 压过它；契约 components.html 里的同名规则只作用于
+ * 目录页自己的试样，与这条中和无关。
+ *
  * 为什么必须中和：`.tab-bar` 与 `.confirm-sheet` 是 `position: fixed`。Chromium 的 fullPage
  * 截图会让 fixed 元素只出现在其视口位置，于是长图里底部导航会卡在中间——视觉审查会误读成
  * 「页面中段浮着一条栏」。中和后它们按文档流出现在页面末尾，与 `docs/证据/design-render/README.md`
