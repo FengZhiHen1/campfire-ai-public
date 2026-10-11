@@ -125,44 +125,6 @@ details[open] > summary .when-open {
   padding-bottom: 0;
 }
 
-.skill-chip {
-  flex: none;
-  min-height: 44px;
-  padding: var(--space-2) var(--space-3);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-pill);
-  background: var(--surface);
-  color: var(--meta);
-  font-size: var(--text-sm);
-}
-
-.skill-chip[aria-pressed='true'] {
-  color: var(--accent);
-  border-color: var(--accent);
-}
-
-.chat-compose {
-  display: flex;
-  align-items: flex-end;
-  gap: var(--space-2);
-}
-
-.chat-compose textarea {
-  flex: 1;
-  min-width: 0;
-  min-height: 48px;
-  max-height: 136px;
-  padding: var(--space-3);
-  resize: none;
-  overflow-y: auto;
-  line-height: 1.5;
-}
-
-.chat-compose .btn {
-  flex: none;
-  padding-inline: var(--space-3);
-}
-
 .chat-footer .meta {
   margin-top: var(--space-2);
 }
@@ -628,13 +590,53 @@ details[open] > summary .when-open {
   outline-offset: var(--space-1);
 }
 
-/* 输入器与运行过程保持轻量，回答与行动卡占据主要阅读面积。 */
-.skill-chip { border-color: transparent; background: transparent; padding-inline: var(--space-3); font-size: var(--text-xs); }
-.skill-chip[aria-pressed="true"] { border-color: var(--border); background: var(--bg); color: var(--fg); }
-.chat-compose { padding: var(--space-2); border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--bg); }
+/* 输入器与运行过程保持轻量，回答与行动卡占据主要阅读面积。
+ *
+ * 这几个选择器原先在文件里各写了两份——旧表在前、本块在后，靠源序覆盖出最终形态。
+ * 2026-10-11 合并成一份：合并后的声明值就是原来两份按源序决胜后的结果（逐条核对），
+ * 因此不该也不允许改变呈现——十页 × 两视口的截图 sha256 与合并前逐张相同。
+ *
+ * `.chat-compose .btn` 必须先于 `.chat-compose .compose-send`：发送键同时带这两个类，
+ * 两者特异性相同（0,2,0），后写者胜。 */
+.skill-chip {
+  flex: none;
+  min-height: 44px;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid transparent;
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--meta);
+  font-size: var(--text-xs);
+}
+.skill-chip[aria-pressed='true'] {
+  border-color: var(--border);
+  background: var(--bg);
+  color: var(--fg);
+}
+.chat-compose {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--space-2);
+  padding: var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg);
+}
 .chat-compose:focus-within { border-color: var(--accent); box-shadow: var(--focus-ring); }
-.chat-compose textarea { min-height: 44px; padding: var(--space-2); border: 0; background: transparent; }
+.chat-compose textarea {
+  flex: 1;
+  min-width: 0;
+  min-height: 44px;
+  max-height: 136px;
+  padding: var(--space-2);
+  border: 0;
+  background: transparent;
+  resize: none;
+  overflow-y: auto;
+  line-height: 1.5;
+}
 .chat-compose textarea:focus { box-shadow: none; }
+.chat-compose .btn { flex: none; padding-inline: var(--space-3); }
 .chat-compose .compose-send { width: 44px; min-height: 44px; padding: 0; border-radius: var(--radius-pill); }
 .compose-help > summary { min-height: 24px; justify-content: center; font-size: var(--text-xs); color: var(--meta); }
 .compose-help > p { padding: var(--space-2) 0; }
