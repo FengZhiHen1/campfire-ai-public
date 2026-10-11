@@ -19,6 +19,7 @@
  * 即本页纸面就是 --bg。不改 .bubble-user 的底色（契约值）；也不给本页套 .phone-shell——
  * 它自带外边距、内边距、gap 与 box-shadow，且 .phone-shell .subpage-head 会取消页头内边距，
  * 四条都会改窄视口既有版式。 */
+
 .workspace {
   display: flex;
   flex: 1 1 auto;
@@ -59,6 +60,7 @@
  * 壳内不需要这条高度：`.workspace` 的 flex: 1 1 auto 在列向 flex 容器里已被拉伸填满
  * （实测两态高度 796，与内容盒相等）。归零成 auto 即回到壳的拉伸行为。
  * 特异性 (0,2,0) 高于媒体查询里的 `.workspace`（(0,1,0)），外壳内两条路径都取本条。 */
+
 :global(.phone-shell) .workspace {
   height: auto;
 }
@@ -68,6 +70,7 @@
  * 外壳落地后仍由本元素承担滚动（而不是让 .device-screen 滚）：吸顶页头与输入区是它的
  * 兄弟节点，本元素滚动时两者都不动，因此页头常驻顶部、输入区常驻底部——这正是
  * 对话页设计要的「输入区常驻、拇指可达」。 */
+
 .thread {
   display: flex;
   flex: 1 1 auto;
@@ -80,6 +83,7 @@
 }
 
 /* 输入区常驻底部（含状态条、候选提示与错误卡）。 */
+
 .footer {
   display: flex;
   flex: none;
@@ -113,13 +117,23 @@
  *      登记的 P2 作用域隐患，故一并移除。
  *    - 通栏元素不受影响：`.tab-bar` 是 `position: fixed`，其包含块是 `.device`
  *      （`transform: translateZ(0)`）而非本页任何被打内边距的盒子；本页是次级页，不渲染它。 */
+
 @media (min-width: 560px) {
   .workspace {
     height: 100%;
   }
-
   .thread,
   .footer {
     padding-inline: var(--container-gutter-phone);
   }
+}
+
+/* 手机与设备外壳使用同一阅读留白，正文不会贴边。 */
+
+.thread {
+  padding: var(--space-5) var(--container-gutter-phone);
+}
+
+.footer {
+  padding-inline: var(--container-gutter-phone);
 }

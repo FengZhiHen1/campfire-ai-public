@@ -15,6 +15,7 @@
 import { useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router';
 
+import { Icon } from '../../../shared/ui/Icon';
 import { AppShell } from '../../../shared/ui/AppShell';
 import { EmptyState, ErrorCard, Skeleton } from '../../../shared/ui/StatePrimitives';
 import type { ConsultPort } from '../application/ports';
@@ -56,11 +57,12 @@ export function ConsultListPage({ consult }: ConsultListPageProps) {
   return (
     <AppShell tab="consult">
       <header className="page-head">
-        <h1>咨询</h1>
+        <div><h1>咨询</h1><p className="hint">开始新的对话，或接着上次的思路。</p></div>
       </header>
 
-      <button type="button" className={`tile ${styles.newEntry}`} onClick={() => void list.startNewConversation()}>
-        <strong className={styles.newTitle}>开始新的日常咨询</strong>
+      <button type="button" className={`tile ${styles.newEntry}`} disabled={list.creating} onClick={() => void list.startNewConversation()}>
+        <span className={styles.newIcon}><Icon name="plus" /></span>
+        <strong className={styles.newTitle}>{list.creating ? '正在创建…' : '开始新的日常咨询'}</strong>
         <span className={styles.newBody}>说说正在准备、正在经历或刚发生的事</span>
       </button>
       {list.createFailure === null ? null : (
@@ -91,7 +93,7 @@ export function ConsultListPage({ consult }: ConsultListPageProps) {
       ) : null}
 
       {list.state.status === 'ready' && list.state.rows.length > 0 ? (
-        <div className={styles.rows}>
+        <section aria-label="咨询记录"><p className="eyebrow">之前的咨询</p><div className={styles.rows}>
           {list.state.rows.map((row) => (
             <button
               type="button"
@@ -107,7 +109,7 @@ export function ConsultListPage({ consult }: ConsultListPageProps) {
               {row.preview === null ? null : <span className="lr-meta">{row.preview}</span>}
             </button>
           ))}
-        </div>
+        </div></section>
       ) : null}
 
       <div ref={sentinel} className={styles.sentinel} aria-hidden="true" />

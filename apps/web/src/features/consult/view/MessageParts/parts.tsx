@@ -17,6 +17,7 @@
  */
 
 import { createContext, useContext, type ReactNode } from 'react';
+import { ReadableText } from '../../../../shared/ui/ReadableText';
 
 import type { ActionCardEvent, CitationRecord, QuestionItem } from '../../../../shared/types/sse';
 import { PART_NAME, type ToolCallView } from '../../domain/parts';
@@ -76,15 +77,7 @@ export function useConsultThread(): ConsultThreadContextValue {
 
 /** 正文渲染：空行分段，与 .msg-doc 的段间距约定一致。 */
 function TextPart({ text }: { text: string }) {
-  const paragraphs = text.split(/\n{2,}/).filter((paragraph) => paragraph.trim() !== '');
-  if (paragraphs.length === 0) return null;
-  return (
-    <>
-      {paragraphs.map((paragraph) => (
-        <p key={paragraph}>{paragraph}</p>
-      ))}
-    </>
-  );
+  return <ReadableText text={text} />;
 }
 
 /** 思考段渲染：文案与呈现纪律取自由对话工作面下发的运行态（应急收为一行）。 */

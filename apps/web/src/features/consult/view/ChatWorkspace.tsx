@@ -14,8 +14,8 @@
  *   - 禁止用「未找到相关内容」这类文案（不变量 2）
  */
 
-import { useMemo, useRef, useState } from 'react';
-import { Link } from 'react-router';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Link, useLocation, useNavigate } from 'react-router';
 import {
   AssistantRuntimeProvider,
   MessagePrimitive,
@@ -23,6 +23,8 @@ import {
   type ThreadMessage,
 } from '@assistant-ui/react';
 
+import { Icon } from '../../../shared/ui/Icon';
+import { BrandMark } from '../../../shared/ui/BrandMark';
 import { DeviceFrame } from '../../../shared/ui/DeviceFrame';
 import type { ConsultPort } from '../application/ports';
 import { skillLabel, EMERGENCY_SKILL_ID } from '../domain/skills';
@@ -99,6 +101,7 @@ function MessageRow() {
 
 /** 对话工作面 props。 */
 export interface ChatWorkspaceProps {
+  initialDraft?: string;
   sessionId: string;
   /** 水合得到的初始消息。 */
   initialMessages: Parameters<typeof useConsultRuntime>[0]['initialMessages'];
@@ -129,10 +132,15 @@ export interface ChatWorkspaceProps {
  * 页头的基础规则本就自带一份（components.css），消息流与输入区由 chatPage.module.css 的
  * ≥560px 媒体查询补一份；窄视口两处都不生效，版式逐像素不变。
  */
-export function ChatWorkspace({ sessionId, initialMessages, consult }: ChatWorkspaceProps) {
+export function ChatWorkspace({ sessionId, initialMessages, initialDraft = '', consult }: ChatWorkspaceProps) {
   const { runtime, thread, send, stop, sendAnswers } = useConsultRuntime({ sessionId, initialMessages, consult });
   const store = useRunStore();
-  const [draft, setDraft] = useState('');
+  const [draft, setDraft] = useState(initialDraft);
+  const location = useLocation();
+  const navigate = useNavigate();
+  useEffect(() => {
+    if (initialDraft !== '') void navigate(location.pathname + location.search, { replace: true, state: null });
+  }, [initialDraft, location.pathname, location.search, navigate]);
   // 并发闸门（FE-12）：发送按钮的 disabled 之外还有 Enter 键与程序化路径。
   const sending = useRef(false);
 
@@ -239,6 +247,17 @@ export function ChatWorkspace({ sessionId, initialMessages, consult }: ChatWorks
             )}
 
             <div className={styles.thread} role="log" aria-label="咨询消息" aria-live="off">
+              {thread.messages.length === 0 && (
+                <section className="chat-welcome" aria-label="开始咨询">
+                  <span className="chat-welcome-mark"><BrandMark size="32px" /></span>
+                  <h1>从你在意的事开始</h1>
+                  <p>说说具体的情况，也可以先写下你的困惑。我们一起梳理下一步。</p>
+                  <div className="stack">
+                    <button className="btn btn-secondary" type="button" onClick={() => setDraft('我想聊聊最近发生的一件事。')}>聊聊最近发生的事</button>
+                    <button className="btn btn-secondary" type="button" onClick={() => setDraft('我想一起准备下一次外出。')}>一起准备下一次外出</button>
+                  </div>
+                </section>
+              )}
               <ThreadPrimitive.Root>
                 <ThreadPrimitive.Viewport>
                   <ThreadPrimitive.Messages>{() => <MessageRow />}</ThreadPrimitive.Messages>
@@ -307,11 +326,11 @@ export function ChatWorkspace({ sessionId, initialMessages, consult }: ChatWorks
                       placeholder="写下你想补充的情况……"
                       onChange={(event) => setDraft(event.target.value)}
                     />
-                    <button className="btn btn-primary" type="submit" disabled={thread.isRunning || draft.trim() === ''}>
-                      发送
+                    <button className="btn btn-primary compose-send" aria-label="发送" type="submit" disabled={thread.isRunning || draft.trim() === ''}>
+                      <Icon name="send" />
                     </button>
                   </form>
-                  <p className="meta">技能只作用于下一条消息；应急求助请返回首页走应急入口。</p>
+                  <details className="compose-help"><summary>关于技能与应急求助</summary><p className="meta">技能只作用于下一条消息；应急求助请返回首页走应急入口。</p></details>
                 </>
               )}
             </div>

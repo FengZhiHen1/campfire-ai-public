@@ -2,6 +2,7 @@
  * 组件视觉（勾选行、三选一选择卡、进度条）在 consultComponents.css——那些类名属设计契约。 */
 
 /* 跳过语义写在界面上（RQ-EMG-01 最容易被无声违反的地方，页面设计第 15 行）。 */
+
 .skipNote {
   margin: 0;
   color: var(--muted);
@@ -11,6 +12,7 @@
 
 /* 题间方向性滑动：前进向左、回退向右，240ms（页面设计动效意图）。
  * prefers-reduced-motion 下由 components.css 的全局规则统一关闭。 */
+
 .stepForward,
 .stepBack {
   display: block;
@@ -20,7 +22,6 @@
   .stepForward {
     animation: step-in-forward var(--motion-base) var(--ease-standard);
   }
-
   .stepBack {
     animation: step-in-back var(--motion-base) var(--ease-standard);
   }
@@ -31,7 +32,6 @@
     opacity: 0.4;
     transform: translateX(12px);
   }
-
   to {
     opacity: 1;
     transform: translateX(0);
@@ -43,7 +43,6 @@
     opacity: 0.4;
     transform: translateX(-12px);
   }
-
   to {
     opacity: 1;
     transform: translateX(0);
@@ -57,9 +56,49 @@
 }
 
 /* 提交区常驻屏底拇指区（页面设计响应式节）。 */
+
 .controls {
   display: grid;
   gap: var(--space-3);
   margin-top: auto;
   padding-top: var(--space-4);
+}
+
+/* 现场提交常驻，最长选项列表也能直接提交。 */
+
+.shell {
+  padding-bottom: calc(var(--space-12) * 4 + var(--space-6) + env(safe-area-inset-bottom, 0px));
+}
+
+.controls {
+  position: fixed;
+  inset-inline: 0;
+  bottom: 0;
+  z-index: 30;
+  max-width: var(--phone-shell-max);
+  margin-inline: auto;
+  padding: var(--space-3) var(--container-gutter-phone) calc(var(--space-3) + env(safe-area-inset-bottom, 0px));
+  border-top: 1px solid var(--border-soft);
+  background: var(--surface);
+  gap: var(--space-2);
+}
+
+.controls > p {
+  text-align: center;
+}
+
+.skipNote {
+  padding: var(--space-3);
+  border-radius: var(--radius-sm);
+  background: var(--surface-warm);
+  color: var(--fg-2);
+}
+
+.shell :global(.step-title) {
+  font-size: var(--text-lg);
+}
+
+.shell :global(.tile) {
+  padding: var(--space-4);
+  border-color: var(--border-soft);
 }
