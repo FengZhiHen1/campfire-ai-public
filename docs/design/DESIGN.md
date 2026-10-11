@@ -21,7 +21,7 @@
 - **手机操作可达**：10 个页面保留手机单列与宽屏外壳；对话阅读和输入区在手机上同样有 16px gutter，应急提交常驻底部，内容预留空间；所有可操作元素至少 44px。
 - **同一套状态**：骨架、错误、空态、确认单继续复用既有基元。新增空会话起点只填写草稿，不预选事实，不自动发送。
 
-验收入口：前端 lint/typecheck/test/build、设计文档检查、shots（10 页×2 视口×2 图种）与 e2e（内容与关键交互）。关键状态截图统一在 .tmp/screenshots/states；过程截图不入库。
+验收入口：前端 lint/typecheck/test/build、设计文档检查、shots（10 页×2 视口×2 图种）与 e2e（内容与关键交互）。关键状态截图统一在 .tmp/screenshots/states：`pnpm e2e` 的 `states-manifest` project 机械核对「声明的 9 个状态 × 2 视口都在场、sidecar 批号属于本轮、逐张回读复算哈希一致」，核对通过后写出可复算的 `states/manifest.json`；过程截图不入库。
 
 ## 2026-10-11 功能语义与交互审查
 
