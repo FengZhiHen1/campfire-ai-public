@@ -22,6 +22,7 @@ import { EmptyState, ErrorCard, Skeleton } from '../../../shared/ui/StatePrimiti
 import type { ProfilePort } from '../application/ports';
 import { DOMAIN_LABELS, DOMAIN_ORDER } from '../domain/domains';
 import { isRetryable, profileFailureDescription, profileFailureInline, profileFailureTitle } from '../domain/failures';
+import { itemDraftChanged } from '../domain/formValidation';
 import { formatMonthDay, groupByDomain, isHistorical, isStale, itemMetaLine, originLabel } from '../domain/items';
 import { useProfileEntryActions, inlineFailureFor } from '../viewModel/useProfileEntryActions';
 import { useProfileObjectActions } from '../viewModel/useProfileObjectActions';
@@ -106,7 +107,10 @@ export function ProfilePage({ port }: ProfilePageProps) {
   const [switchTarget, setSwitchTarget] = useState<string | null>(null);
   const [editorTarget, setEditorTarget] = useState<{ kind: 'add' } | { kind: 'correct'; item: ProfileItem } | null>(null);
   const editingBusy = entry.busyItemId !== null || entry.correct?.submitting === true || entry.add?.submitting === true;
-  const hasDraft = (entry.add !== null && (entry.add.draft.topic.trim() !== '' || entry.add.draft.description.trim() !== ''))
+  // 「已编辑」用 domain 的空草稿判据，不在这里另写一份比较：补充分支的领域默认落在兜底项
+  // 且可以改，只比主题与描述会漏掉「先选好领域」这一次显式选择（档案页第 98 行要求保护
+  // 未保存草稿）。纠正流的领域是只读的，因此那一边只需比可改的两个字段。
+  const hasDraft = (entry.add !== null && itemDraftChanged(entry.add.draft))
     || (entry.correct !== null && (entry.correct.draft.topic !== entry.correct.target.topic || entry.correct.draft.description !== entry.correct.target.description));
   const switchObject = (objectId: string): void => {
     entry.closeAdd();
