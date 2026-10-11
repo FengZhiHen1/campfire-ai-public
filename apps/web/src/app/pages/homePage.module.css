@@ -1,92 +1,183 @@
-/* 首页就近样式（CSS Modules）：只消费 token 变量。
- * 契约组件类名（.page-head/.panel/.tile/.mini-card/.flame-dot）来自
- * shared/styles/components.css，本文件只承载本页独有的布局与加载动效。 */
+/* 日常咨询是主工作入口，现场求助以局部火光强调。 */
 
-/* 本页的纵向节奏容器（--space-6）。
- *
- * 为什么把节奏放在页内容器上，而不是改 .phone-shell 的 gap：global.css 的
- * `.phone-shell { gap: var(--space-4) }` 与页面级单类选择器特异性相同，谁生效取决于
- * 样式表导入顺序（main.tsx 最后导入 global.css，页面声明必输，实测被压成 16px）。
- * 页内再包一层 grid 后，.phone-shell 只剩一个子元素，它的 gap 不再参与版面——
- * 本页节奏由这里唯一决定，与导入顺序无关，也不需要 :global() 去打特异性。
- *
- * 间距口径（首页.md:21）：应急与日常入口之间 --space-4，其余区块 --space-6。 */
 .page {
   display: grid;
-  gap: var(--space-6);
+  gap: var(--space-5);
 }
 
-/* 两条咨询入口合成一组，组内用更紧的 --space-4：
- * 它们同属「开始一次咨询」这一层，与下面低权重的次级入口行拉开距离。 */
-.entryGroup {
-  display: grid;
-  gap: var(--space-4);
+.masthead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  min-height: 44px;
 }
 
 .brandRow {
   display: flex;
   align-items: center;
-  gap: var(--space-3);
+  gap: var(--space-2);
   color: var(--accent);
 }
 
 .title {
   margin: 0;
-  color: var(--fg);
-  font-family: var(--font-display);
-  font-weight: 500;
-  font-size: var(--text-xl);
-  line-height: 1.3;
-  letter-spacing: var(--tracking-display);
-}
-
-.entryHeading {
-  margin: 0;
   font-size: var(--text-lg);
+  color: var(--fg);
 }
 
-/* 次级入口行：两张并列卡片。窄屏也保持两列——它们是低权重入口，
- * 纵向堆叠会让首页在拇指区堆出第三块大卡，与页面设计的层级意图相反。 */
-.secondaryRow {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: var(--space-3);
-}
-
-.secondaryRow a {
-  display: grid;
-  gap: var(--space-2);
+.guideLink {
+  display: inline-flex;
+  align-items: center;
   min-height: 44px;
-  color: var(--fg-2);
+  gap: var(--space-1);
+  font-size: var(--text-xs);
+  color: var(--meta);
   text-decoration: none;
 }
 
-.secondaryTitle {
-  margin: 0;
-  font-size: var(--text-base);
+.guideLink svg {
+  width: var(--space-3);
 }
 
-.secondaryBody {
+.welcome {
+  padding-top: var(--space-5);
+}
+
+.welcome h2 {
+  margin: var(--space-2) 0 var(--space-3);
+  font-size: var(--text-xl);
+}
+
+.welcome > p:last-child {
   margin: 0;
   color: var(--fg-2);
   font-size: var(--text-sm);
 }
 
-/* 页面加载动效：应急入口卡先出现（240ms 渐入 + 4px 上移）。
- * 其余区块不做 stagger——这是导航页，不是叙事页（首页页设计动效意图节）。 */
-@media (prefers-reduced-motion: no-preference) {
-  .emergency {
-    animation: home-emergency-in var(--motion-base) var(--ease-standard) both;
-  }
+.conversation form {
+  overflow: hidden;
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface);
 }
 
-@keyframes home-emergency-in {
-  from {
-    opacity: 0;
-    transform: translateY(4px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
+.conversation form:focus-within {
+  border-color: var(--accent);
+  box-shadow: var(--focus-ring);
+}
+
+.conversation textarea {
+  min-height: calc(var(--space-12) * 2);
+  padding: var(--space-2);
+  border: 0;
+  background: transparent;
+  resize: none;
+}
+
+.conversation textarea:focus {
+  box-shadow: none;
+}
+
+.composeBottom {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.composeBottom .btn {
+  gap: var(--space-2);
+}
+
+.draftNote {
+  margin: var(--space-2) 0 0;
+  color: var(--meta);
+  font-size: var(--text-xs);
+}
+
+.emergency {
+  padding: var(--space-4);
+  border-color: var(--border);
+  border-left: var(--space-1) solid var(--accent);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  box-shadow: none;
+}
+
+.emergency h2 {
+  margin: 0;
+  font-family: var(--font-body);
+  font-size: var(--text-base);
+  font-weight: 600;
+}
+
+.emergency p {
+  margin: var(--space-2) 0;
+  font-size: var(--text-sm);
+}
+
+.emergencyLink {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 44px;
+  color: var(--fg);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.historyLink {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: 44px;
+  color: var(--fg-2);
+  font-size: var(--text-sm);
+  text-decoration: none;
+}
+
+.historyLink span {
+  flex: 1;
+}
+
+.resources {
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--border);
+}
+
+.secondaryRow {
+  display: grid;
+  margin-top: var(--space-2);
+}
+
+.resourceLink {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: 64px;
+  padding-block: var(--space-3);
+  color: var(--fg-2);
+  text-decoration: none;
+}
+
+.resourceLink + .resourceLink {
+  border-top: 1px solid var(--border-soft);
+}
+
+.resourceLink > span {
+  display: grid;
+  flex: 1;
+  gap: var(--space-1);
+}
+
+.resourceLink strong {
+  font-size: var(--text-sm);
+}
+
+.resourceLink small {
+  font-size: var(--text-xs);
+  color: var(--meta);
 }
