@@ -26,7 +26,8 @@ function port(overrides: Partial<SessionPort> = {}): SessionPort {
 }
 
 beforeEach(() => {
-  useSessionStore.setState({ session: { status: 'unknown' } });
+  localStorage.clear();
+  useSessionStore.setState({ session: { status: 'unknown' }, account: null });
 });
 
 describe('ResolveSessionUseCase', () => {
@@ -51,6 +52,20 @@ describe('ResolveSessionUseCase', () => {
 });
 
 describe('sessionStore', () => {
+  it('刷新保留展示名，缓存不让会话绕过真实查证；登出清掉展示名', async () => {
+    useSessionStore.getState().markAuthenticated({ accountName: '普通账号' });
+    expect(localStorage.getItem('campfire.account-name')).toBe('普通账号');
+    vi.resetModules();
+    const { useSessionStore: reloaded } = await import('./viewModel/sessionStore');
+    expect(reloaded.getState().account?.accountName).toBe('普通账号');
+    expect(reloaded.getState().session.status).toBe('unknown');
+    const session = port();
+    await reloaded.getState().refresh(session);
+    expect(session.doesSessionExist).toHaveBeenCalledTimes(1);
+    reloaded.getState().markAnonymous();
+    expect(localStorage.getItem('campfire.account-name')).toBeNull();
+    expect(reloaded.getState().account).toBeNull();
+  });
   it('refresh 用端口结果更新状态', async () => {
     await useSessionStore.getState().refresh(port({ doesSessionExist: vi.fn(async () => false) }));
 

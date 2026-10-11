@@ -15,6 +15,7 @@
 
 import { Link, useNavigate } from 'react-router';
 
+import { Icon } from '../../../shared/ui/Icon';
 import { AppShell } from '../../../shared/ui/AppShell';
 import { ConfirmSheet } from '../../../shared/ui/ConfirmSheet';
 import { useSessionStore } from '../viewModel/sessionStore';
@@ -32,7 +33,7 @@ export interface SettingsPageProps {
 const COPY = {
   heading: '我的',
   accountSub: '个人账号 · 邀请码注册',
-  accountFallback: '账号名需重新登录后显示',
+  accountFallback: '当前登录会话',
   dataGroup: '关于你的数据',
   usageTitle: '咨询记录怎么用',
   usageBody: '本次输入的内容用于生成回答，并按你的确认累积到档案与记忆',
@@ -62,12 +63,7 @@ const COPY = {
  * 后置: 输出账号卡、两张说明卡与操作区；登出成功后清会话状态并转登录页
  * 异常: 无（登出异常在确认单内呈现，见 useLogout）
  *
- * 账号名什么时候会显示降级文案：整页加载（含冷启动刷新）之后。
- * 账号名只在登录与注册的当次响应里带得回来，而凭据在 httpOnly cookie、
- * 一期没有账号信息查询端点，因此整页加载后 store 里是 null。
- *
- * 降级文案说的是这个状态本身，不说账号出了问题：裸「暂不可用」读起来像故障，
- * 而真实处境只是「名字这次没跟着回来」——说出恢复动作，使用者据此能自救。
+ * 展示名从登录/注册响应取得，缓存用于刷新恢复，不构成授权依据。
  */
 export function SettingsPage({ auth }: SettingsPageProps) {
   const navigate = useNavigate();
@@ -82,53 +78,37 @@ export function SettingsPage({ auth }: SettingsPageProps) {
 
   return (
     <AppShell tab="settings">
-      <header className="page-head">
-        <h1 className={styles.heading}>{COPY.heading}</h1>
-      </header>
 
-      {/* 账号卡：无头像（无真实头像来源，不做装饰性默认头像——首字圆形头像是模板味来源）。 */}
-      <section className="tile" aria-labelledby="settings-account">
-        <h2 className={styles.accountName} id="settings-account">
-          {account?.accountName ?? COPY.accountFallback}
-        </h2>
+      <header className="page-head"><div><h1 className={styles.heading}>{COPY.heading}</h1><p className="hint">账号、记录，以及你需要了解的事。</p></div></header>
+      <section className={styles.account} aria-labelledby="settings-account">
+        <h2 className={styles.accountName} id="settings-account">{account?.accountName ?? '个人账号'}</h2>
         <p className={styles.accountSub}>{COPY.accountSub}</p>
+        {(account === null || account.accountName === null) && <p className="meta">{COPY.accountFallback}</p>}
       </section>
-
-      <section className="tile" aria-labelledby="settings-data">
-        <h2 className={styles.groupTitle} id="settings-data">
-          {COPY.dataGroup}
-        </h2>
-        <dl className={styles.facts}>
-          <dt>{COPY.usageTitle}</dt>
-          <dd>{COPY.usageBody}</dd>
-          <dt>{COPY.visibilityTitle}</dt>
-          <dd>{COPY.visibilityBody}</dd>
-          <dt>{COPY.modelTitle}</dt>
-          <dd>{COPY.modelBody}</dd>
-        </dl>
-        {/* 记忆页入口行：记忆归属账号、语义是「关于我自己」，与本卡同源。
-         * 不放档案页是因为档案按支持对象组织、记忆不随对象变化（记忆面契约第 1 节）。 */}
-        <Link className="list-row" to="/settings/memory">
-          <strong className="lr-title">{COPY.memoryEntryTitle}</strong>
-          <span className="lr-sub">{COPY.memoryEntryBody}</span>
+      <section className={styles.links} aria-label="记录与帮助">
+        <Link className={styles.linkRow} to="/settings/memory">
+          <Icon name="person" /><span><strong>{COPY.memoryEntryTitle}</strong><small>{COPY.memoryEntryBody}</small></span><Icon name="chevron" />
+        </Link>
+        <Link className={styles.linkRow} to="/guide" state={{ returnTo: '/settings' }}>
+          <Icon name="book" /><span><strong>使用说明</strong><small>咨询、档案与记忆怎么用</small></span><Icon name="chevron" />
         </Link>
       </section>
-
-      <section className="tile" aria-labelledby="settings-notice">
-        <h2 className={styles.groupTitle} id="settings-notice">
-          {COPY.noticeGroup}
-        </h2>
+      <section className={styles.information} aria-labelledby="settings-data">
+        <h2 className={styles.groupTitle} id="settings-data"><Icon name="shield" />{COPY.dataGroup}</h2>
+        <dl className={styles.facts}>
+          <div><dt>{COPY.usageTitle}</dt><dd>{COPY.usageBody}</dd></div>
+          <div><dt>{COPY.visibilityTitle}</dt><dd>{COPY.visibilityBody}</dd></div>
+          <div><dt>{COPY.modelTitle}</dt><dd>{COPY.modelBody}</dd></div>
+        </dl>
+      </section>
+      <section className={styles.notice} aria-labelledby="settings-notice">
+        <h2 className={styles.groupTitle} id="settings-notice">{COPY.noticeGroup}</h2>
         <p className={styles.boundary}>{COPY.boundary}</p>
       </section>
-
       <section className={styles.actions} aria-label="账号操作">
-        <button className="btn btn-secondary block" type="button" onClick={logout.open}>
-          {COPY.logout}
-        </button>
-        {/* 无自助找回：如实呈现，不放假的修改密码入口（RQ-ACC-06 的界面侧）。 */}
+        <button className="btn btn-secondary block" type="button" onClick={logout.open}>{COPY.logout}</button>
         <p className={styles.resetNote}>{COPY.resetNote}</p>
       </section>
-
       {logout.confirming && (
         <LogoutConfirmSheet
           submitting={logout.submitting}

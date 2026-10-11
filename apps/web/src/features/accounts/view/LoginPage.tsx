@@ -101,7 +101,7 @@ export function LoginPage({ auth, initialMode = 'login' }: LoginPageProps) {
               {COPY.title}
             </h1>
           </div>
-          <p className={styles.tagline}>{COPY.tagline}</p>
+          <p className={styles.tagline}>{COPY.tagline}</p><p className={styles.intro}>陪你梳理照护中的困惑，找到可以迈出的下一步。</p>
         </section>
 
         <section className={`panel ${styles.panel}`} aria-labelledby="auth-form-title">
@@ -129,6 +129,7 @@ export function LoginPage({ auth, initialMode = 'login' }: LoginPageProps) {
           >
             <div className="field">
               <label htmlFor="auth-account">账号名</label>
+              <span className="hint">账号名不需要是邮箱</span>
               <input
                 id="auth-account"
                 name="account"
@@ -146,7 +147,7 @@ export function LoginPage({ auth, initialMode = 'login' }: LoginPageProps) {
               </span>
             </div>
 
-            <div className="field">
+            <div className={"field " + styles.passwordField}>
               <label htmlFor="auth-password">密码</label>
               <input
                 id="auth-password"
@@ -219,9 +220,7 @@ export function LoginPage({ auth, initialMode = 'login' }: LoginPageProps) {
           )}
         </p>
 
-        {/* 「忘记密码？请联系运营者人工重置」的归属是设置页（设置页设计第 25 行），本页设计只列三个区块。
-            这里不再重复呈现：同一句话两页各说一遍会各自漂移（此前本页那份多一个句末句号）。
-            本页只守「不放假的找回入口」——一期无邮箱即无自助通道。 */}
+        <p className={styles.help}>忘记密码？请联系运营者人工重置</p>
       </div>
     </DeviceFrame>
   );
