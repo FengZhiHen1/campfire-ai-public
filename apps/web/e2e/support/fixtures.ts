@@ -461,13 +461,13 @@ export const PAGE_SHOTS: readonly PageShot[] = [
     path: '/',
     guarded: true,
     fixtures: [],
-    note: '首页是静态导航页、零取数（首页页设计的状态覆盖表：最近会话预览不渲染）。',
+    note: '首页初始渲染零取数；输入草稿后显式进入对话才创建会话。',
     assertions: [
       {
         kind: 'text',
         intent: '应急入口与日常入口同屏可见',
         minHits: 5,
-        candidates: ['现在需要帮助', '日常咨询', '开始应急咨询', '想聊聊正在准备或刚发生的事，随时开始', '案例库'],
+        candidates: ['现在需要帮助', '日常咨询', '开始应急咨询', '今天，想聊些什么？', '案例库'],
       },
       { kind: 'count', intent: '底部 tab 栏四项导航可见', selector: 'nav.tab-bar a.tab-item', minCount: 4 },
       { kind: 'count', intent: '应急入口的呼吸点已渲染（它是首页唯一循环动效）', selector: '.flame-dot.breathing', minCount: 1 },

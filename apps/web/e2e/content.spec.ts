@@ -36,6 +36,13 @@ for (const shot of PAGE_SHOTS) {
     // 两者共用 openPage，避免「截图验的是一个形态、断言验的是另一个形态」。
     const { pageProblems } = await openPage(page, shot, testInfo);
 
+    // 完整来源改为渐进展开，继续用原四条判据检查字段，不能靠减少命中数放过缺失。
+    if (shot.name === 'cases') {
+      for (const disclosure of await page.getByText('来源与适用范围', { exact: true }).all()) {
+        await disclosure.click();
+      }
+    }
+
     // 断言数组为空时 evaluateAssertions 自己会抛（空数组等于没有断言，属配置错误）。
     // 断言失败即用例失败——不求值后续断言，由 evaluateAssertions 抛出。
     const evidence = await evaluateAssertions(page, shot.assertions);

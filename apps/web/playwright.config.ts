@@ -94,12 +94,12 @@ export default defineConfig({
       // 内容断言入口（`pnpm e2e`）：两条 project 各自对应一个视口，与截图保持同一组视口，
       // 避免「截图看的视口」与「断言验的视口」不一致。
       name: 'content-mobile',
-      testMatch: /content\.spec\.ts/,
+      testMatch: /(content|ui-interactions)\.spec\.ts/,
       use: { ...devices['Desktop Chrome'], viewport: VIEWPORTS.mobile, deviceScaleFactor: DEVICE_SCALE_FACTOR },
     },
     {
       name: 'content-desktop',
-      testMatch: /content\.spec\.ts/,
+      testMatch: /(content|ui-interactions)\.spec\.ts/,
       use: { ...devices['Desktop Chrome'], viewport: VIEWPORTS.desktop, deviceScaleFactor: DEVICE_SCALE_FACTOR },
     },
     {
