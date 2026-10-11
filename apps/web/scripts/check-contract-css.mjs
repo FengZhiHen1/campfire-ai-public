@@ -80,12 +80,15 @@ const CANARY_CLASSES = ['btn-primary', 'tile', 'subpage-head', 'list-row', 'stat
  *
  * `contractLines` 是 `docs/design/components.html` 的行号，**只作可追溯性记录**；
  * 断言比的是 `declarations` 与服务产物里该选择器规则的声明（逐条比对，不看行号）。
- * 取值来源：契约 133–137 行（`textarea` 与四条状态规则）。
+ * 取值来源：契约 193–197 行（`textarea` 与四条状态规则）。
+ *
+ * 行号在 2026-10-11 的契约重排后订正过一次（原记录指向 133–137）；它不影响判定，
+ * 但指错位置会让后来者按行号找不到规则，因此与契约同批维护。
  */
 const ELEMENT_RULE_CONTRACTS = [
   {
     selector: 'textarea',
-    contractLines: [133],
+    contractLines: [193],
     declarations: [
       ['width', '100%'],
       ['min-height', '120px'],
@@ -98,34 +101,34 @@ const ELEMENT_RULE_CONTRACTS = [
       ['resize', 'vertical'],
     ],
   },
-  { selector: 'textarea::placeholder', contractLines: [134], declarations: [['color', 'var(--muted)'], ['opacity', '1']] },
+  { selector: 'textarea::placeholder', contractLines: [194], declarations: [['color', 'var(--muted)'], ['opacity', '1']] },
   {
     selector: 'textarea:focus',
-    contractLines: [135],
+    contractLines: [195],
     declarations: [['outline', 'none'], ['border-color', 'var(--accent)'], ['box-shadow', 'var(--focus-ring)']],
   },
-  { selector: 'textarea[aria-invalid="true"]', contractLines: [136], declarations: [['border-color', 'var(--danger)']] },
-  { selector: 'textarea:read-only', contractLines: [137], declarations: [['background', 'var(--bg)']] },
+  { selector: 'textarea[aria-invalid="true"]', contractLines: [196], declarations: [['border-color', 'var(--danger)']] },
+  { selector: 'textarea:read-only', contractLines: [197], declarations: [['background', 'var(--bg)']] },
 ];
 
 /**
  * 闸门 B：复合选择器 / 伪类态规则的契约声明清单。
  *
  * `button.tag` 的类名 `tag` 在产物里存在（有基础规则），缺的是**尺寸规则**——
- * 这正是「只 grep `.tag` 会漏掉」的情形（契约 290 行）。
+ * 这正是「只 grep `.tag` 会漏掉」的情形（契约 177 行）。
  * `.text-button:disabled` 同理：`.text-button` 在产物里存在，缺的是**禁用态**那一条；
  * 它此前整条不在产物里（实测改前 `disabled` 按钮的计算样式仍是 `opacity: 1`）。
  */
 const COMPOUND_RULE_CONTRACTS = [
   {
     selector: 'button.tag',
-    contractLines: [290],
+    contractLines: [177],
     declarations: [['min-height', '44px'], ['min-width', '44px']],
   },
-  { selector: '.sp-tag', contractLines: [302], declarations: [['flex', 'none']] },
+  { selector: '.sp-tag', contractLines: [223], declarations: [['flex', 'none']] },
   {
     selector: '.text-button:disabled',
-    contractLines: [98],
+    contractLines: [190],
     declarations: [['opacity', '0.5'], ['cursor', 'not-allowed']],
   },
 ];
@@ -138,36 +141,37 @@ const COMPOUND_RULE_CONTRACTS = [
  * 产物的先后必须与契约一致，否则可见呈现会翻转。
  *
  * 已登记的对局（每一条都是在同一元素上真共存的两个类，见 T05.md 第三节）：
- *   - `tile` vs `question-card`：`QuestionCard.tsx:42`/`:53` 的 `className="tile question-card"`，
+ *   - `tile` vs `question-card`：`QuestionCard.tsx:45`/`:56` 的 `className="tile question-card"`，
  *     `padding`（`--space-5` = 20px vs `0`）——本包修复的那一例；
- *   - `candidate-toast` vs `chat-candidate`：`ChatWorkspace.tsx:188` 的
+ *   - `candidate-toast` vs `chat-candidate`：`ChatWorkspace.tsx:227` 的
  *     `className="candidate-toast chat-candidate"`，`border` / `border-radius` / `padding` / `background`；
- *   - `text-button` vs `question-free-toggle`：`QuestionCard.tsx:116` 的
+ *   - `text-button` vs `question-free-toggle`：`QuestionCard.tsx:131` 的
  *     `className="text-button question-free-toggle"`，`padding` / `border` / `min-height` / `font-size`。
  *
- * **为什么不登记 `tag` vs `meta`**（虽然 `LibraryPage.tsx:131` 等确有 `className="tag meta"`，
- * 且两端源序与契约相反：契约 `.tag`(55) 在 `.meta`(86) 前，产物里 `.meta` 在 `.tag` 前）：
+ * **为什么不登记 `tag` vs `meta`**（虽然 `LibraryPage.tsx:127`、`ProfilePage.tsx:525` 等确有
+ * `className="tag meta"`）：
  *   1. **退化对局**：两条规则对 `color` 与 `font-size` 声明的值**逐字相同**
  *      （都是 `var(--meta)` / `var(--text-xs)`）⇒ 谁胜出都不改变计算样式，**不可观测**；
- *   2. **同文件内序**：两者都在 `components.css` 里（`.meta` 在 `.tag` 之前），
- *      导入顺序改不动它——按 `main.tsx` 的 import 调整去修它是错误归因。
+ *   2. **同文件内序**：两者都在 `components.css` 里（`.meta` 在 `.tag` 之前，与契约里
+ *      `.meta`(173) / `.tag`(174) 的先后一致），导入顺序改不动它——按 `main.tsx` 的
+ *      import 调整去修它是错误归因。
  *   两点都由 `assertOrderContractsAreLoadBearing()` 机械校验：若将来有人把某条登记对上
  *   两条规则的值改成相同，或把 `property` 写成本就不冲突的属性，构建会失败而不是静默空转。
  */
 const ORDER_CONTRACTS = [
-  { before: '.tile', after: '.question-card', property: 'padding', contractLines: [61, 141], note: '提问卡四周多出 20px 内缩' },
+  { before: '.tile', after: '.question-card', property: 'padding', contractLines: [170, 314], note: '提问卡四周多出 20px 内缩' },
   {
     before: '.candidate-toast',
     after: '.chat-candidate',
     property: 'border-radius',
-    contractLines: [203, 241],
+    contractLines: [372, 373],
     note: '候选提示的圆角/边框/内距与契约不同',
   },
   {
     before: '.text-button',
     after: '.question-free-toggle',
     property: 'padding',
-    contractLines: [101, 161],
+    contractLines: [189, 330],
     note: '「用自己的话回答」的内距与边框被文字按钮的 0 值压掉',
   },
   {
@@ -175,9 +179,9 @@ const ORDER_CONTRACTS = [
      * 元素级伪类/属性态的一对，形态与上面三对（两个类同时挂在同一元素上）不同：
      * 两端都在同一个 `<textarea>` 元素上，特异性都是 (0,1,1)，都设 `border-color`，
      * 值不同（`--accent` vs `--danger`）⇒ 源序决定「聚焦且校验失败」时显示哪一个。
-     * 契约里 `:focus`（components.html:135）在 `[aria-invalid]`（:136）之前，
+     * 契约里 `:focus`（components.html:195）在 `[aria-invalid]`（:196）之前，
      * 故危险色胜出——这是有意的：校验失败比聚焦更该被看见。
-     * 消费点在 `ProfilePage.tsx:589` 与 `MemoryPage.tsx:208`（两处 `aria-invalid` 真渲染）。
+     * 消费点在 `ProfilePage.tsx:681` 与 `MemoryPage.tsx:216`（两处 `aria-invalid` 真渲染）。
      *
      * 为什么它此前未被守卫：加固时只枚举了「两个类同挂一元素」的形态，而这一对一个类名都没有
      * ⇒ 交换它们对任何类名级断言都不可见。它是顺序外溢面上最后一个未守卫的缺口
@@ -186,7 +190,7 @@ const ORDER_CONTRACTS = [
     before: 'textarea:focus',
     after: 'textarea[aria-invalid="true"]',
     property: 'border-color',
-    contractLines: [135, 136],
+    contractLines: [195, 196],
     note: '聚焦且校验失败时，危险边框色被聚焦色压掉（校验失败不再可见）',
   },
 ];
@@ -645,15 +649,19 @@ async function selfTest(baselineCss) {
       record(problems.length === 0, `现清单 ${String(ORDER_CONTRACTS.length)} 条全部承重（问题 ${String(problems.length)} 条）`);
       for (const p of problems) lines.push(`      ${p}`);
       // 负对照：把 `.tag` / `.meta` 这类退化对局塞回去，承重性校验必须变红。
+      //
+      // 前后顺序按契约实际先后写（`.meta` 173 在 `.tag` 174 前）：写反了会让这条对照
+      // 因「判据写反」变红，于是「值相同 ⇒ 不可观测」那一条分支就再也没被验证过——
+      // 负对照必须只在它要证明的那条理由上变红。
       const degenerate = ORDER_CONTRACTS.concat([
-        { before: '.tag', after: '.meta', property: 'color', contractLines: [55, 86], note: '负对照：值相同，不可观测' },
+        { before: '.meta', after: '.tag', property: 'color', contractLines: [173, 174], note: '负对照：值相同，不可观测' },
       ]);
       const original = ORDER_CONTRACTS.splice(0, ORDER_CONTRACTS.length, ...degenerate);
       const degenerateProblems = assertOrderContractsAreLoadBearing(contractRulesForSelfTest);
       ORDER_CONTRACTS.splice(0, ORDER_CONTRACTS.length, ...original);
       record(
-        degenerateProblems.some((p) => p.includes('.tag / .meta')),
-        `负对照：把退化对局 .tag / .meta 塞进清单 → 承重性校验报出 ${String(degenerateProblems.length)} 条`,
+        degenerateProblems.some((p) => p.includes('.meta / .tag')),
+        `负对照：把退化对局 .meta / .tag 塞进清单 → 承重性校验报出 ${String(degenerateProblems.length)} 条`,
       );
       for (const p of degenerateProblems) lines.push(`      ${p}`);
     }
