@@ -22,6 +22,7 @@ import { AppShell } from '../../../shared/ui/AppShell';
 import type { ConsultPort } from '../application/ports';
 import { SKIP_SEMANTICS_COPY } from '../domain/emergency';
 import { useEmergencyForm } from '../viewModel/useEmergencyForm';
+import { useRunStore } from '../viewModel/runStore';
 import { consultChatPath } from './consultRoutes';
 import styles from './emergencyFormPage.module.css';
 // 选择卡（.selection/.check-box）与进度条（.progress-track）的契约规则在本表里，
@@ -44,7 +45,11 @@ export function EmergencyFormPage({ consult }: EmergencyFormPageProps) {
   const navigate = useNavigate();
   const location = useLocation();
   const [confirmExit, setConfirmExit] = useState(false);
-  const form = useEmergencyForm(consult, (sessionId) => {
+  const form = useEmergencyForm(consult, (sessionId, runId) => {
+    // 运行已在应急入口启动：把 run_id 交到对话页，由它订阅（HTTP/SSE 契约第 5 节
+    //「前端拿 run_id 直接跳对话页订阅」）。此前只传 sessionId，页面于是从不订阅本次运行，
+    // 运行期间的输出与行动卡一律不显示——必须手动刷新才看得到。
+    useRunStore.getState().setPendingAttachedRun(sessionId, runId);
     navigate(consultChatPath(sessionId));
   });
 

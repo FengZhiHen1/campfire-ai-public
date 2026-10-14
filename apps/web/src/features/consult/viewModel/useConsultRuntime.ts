@@ -81,6 +81,9 @@ export function useConsultRuntime(options: {
         onEvent: (event) => useRunStore.getState().applyRunEvent(event),
         onConnection: (connection) => useRunStore.getState().setConnection(connection),
         onFailure: (error) => useRunStore.getState().setFailure(failureViewFor(error)),
+        peekAttachedRunId: () => useRunStore.getState().peekAttachedRun(sessionId),
+        consumeAttachIntent: () => useRunStore.getState().consumeAttachIntent(),
+        clearAttachedRun: () => useRunStore.getState().clearPendingAttachedRun(),
         onDiagnostic: (message) => logDiagnostic('chatAdapter', message),
       }),
     [consult, sessionId],
@@ -88,6 +91,28 @@ export function useConsultRuntime(options: {
 
   const runtime = useLocalRuntime(adapter, { initialMessages });
   const [thread, setThread] = useState<ThreadRuntimeState>(() => runtime.thread.getState());
+
+  // 应急入口交接：运行已在服务端启动，本页**没有新的使用者消息可 append**，因此用 startRun
+  // 对既有运行直接起一轮，让 adapter 认领 run_id 并订阅（HTTP/SSE 契约第 5 节）。
+  //
+  // 必须在 effect 内**同步**调用（不能排到定时器/微任务）：assistant-ui 的 runtime.thread 只在
+  // React 的工作循环内解析成真实线程，出了这个上下文会拿到「空线程占位符」并对任何操作抛错
+  // （`empty-thread-core`）。幂等闸门收在 store 的 beginAttachRun。
+  useEffect(() => {
+    if (!useRunStore.getState().beginAttachRun(sessionId)) {
+      if (useRunStore.getState().peekAttachedRun(sessionId) !== null) {
+        logDiagnostic('attachRun', '本次装配未取得起运行资格（交接仍在，说明已由另一次装配认领）');
+      }
+      return;
+    }
+    // 认领的运行发生在已有历史之后：父消息取当前最后一条，新回答接在它后面。
+    const messages = runtime.thread.getState().messages;
+    const last = messages.length === 0 ? undefined : messages[messages.length - 1];
+    logDiagnostic('attachRun', `认领既有运行，父消息 ${last === undefined ? '（无，接到会话开头）' : last.id}`);
+    runtime.thread.startRun({ parentId: last === undefined ? null : last.id });
+    // 卸载时归还资格：StrictMode 的模拟卸载会取消刚起的运行，资格不还就会把下一次装配挡住。
+    return () => useRunStore.getState().releaseAttachRun();
+  }, [runtime, sessionId]);
 
   // 订阅 runtime 的状态：只有外部系统（runtime）的回调才写 React 状态。
   // 初值由 useState 的惰性初始化给出，因此这里不需要（也不应该）同步 setState 一次。
