@@ -37,7 +37,7 @@ echo "=== 写入 systemd unit ==="
 sudo tee "$UNIT_DIR/campfire-tls-renew.service" >/dev/null <<EOF
 [Unit]
 Description=Campfire-AI 证书续期（Let's Encrypt）
-Documentation=https://github.com/FengZhiHen1/Campfire-AI
+Documentation=https://github.com/FengZhiHen1/campfire-ai-public
 After=docker.service network-online.target
 Wants=network-online.target
 

@@ -3,7 +3,8 @@ name: CI
 # 仓库结构见 docs/项目结构设计.md：唯一的 Python 应用在 apps/api（HTTP 与 Worker
 # 两个入口），唯一前端在 apps/web。
 #
-# 分支策略见 AGENTS.md：dev 日常开发（本文件在此把关），master 仅保留稳定版本。
+# 分支策略见 AGENTS.md：本公开仓只维护 main（下表的 dev/master 是触发器兼容项，
+# 本仓远端不存在这两条分支）。
 on:
   push:
     branches: [dev, main, master]

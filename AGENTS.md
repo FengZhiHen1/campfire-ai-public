@@ -1,8 +1,9 @@
 # Campfire-AI — 篝火智答
 
 > **设计基线已确认，业务实现与生产装配均已落地。** 需求、技术栈与项目结构真源在
-> `docs/`（2026-09-29 经用户确认）；`archive/` 是已废弃的旧实现与旧设计，仅供参考，
-> 不构成任何当前依据。
+> `docs/`（2026-09-29 经用户确认）；历史归档树（`archive/**`，旧实现与旧设计）
+> **不随本公开仓分发**（原因见 `NOTICE` 第三节），本文件中出现的 `archive/` 一律只是
+> 历史指称，仓内无对应文件，也不构成任何当前依据。
 >
 > **已实现**（按模块，细节见 `docs/`，此处不复制）：`agent/` 通用 Agent 基座（运行编排、
 > skill 机制、工具池与权限门、注入项与引用索引、模型网关、上下文压缩、运行记录）；
@@ -103,7 +104,7 @@ pnpm --filter @campfire/web e2e     # 内容断言：证明每张图「有料」
 `mypy` 只传 `apps/api/tests` 会因 `conftest` 被当成两个模块而中止（
 `Source file found twice under different module names`）——**始终同时传 src 与 tests 两个路径**。
 
-测试集中在 `apps/api/tests`；`archive/` 不参与收集。
+测试集中在 `apps/api/tests`；历史归档树不参与收集。
 
 **生产镜像的构建参数**（仅部署链路需要，本地不需要）：`VITE_API_DOMAIN` 是**构建期内联**
 的，不是运行期环境变量。它在生产由 `PUBLIC_BASE_URL` 提供；前端会把它与当前页面
@@ -125,11 +126,11 @@ host 比较后改用 `location.origin`，因此协议跟随页面、切 HTTPS �
 部署是**真实的生产变更**，且**必须两步**：
 
 ```bash
-# 1. 推送并等 CI 绿（push master 只触发 CI，不会部署）
-git push origin HEAD:master && gh run list --limit 3
+# 1. 推送并等 CI 绿（push main 只触发 CI，不会部署）
+git push origin HEAD:main && gh run list --limit 3
 
 # 2. 显式触发发布——`deploy=true` 才会真的上线（默认 false 只构建推送镜像）
-gh workflow run deploy.yml --ref master -f deploy=true
+gh workflow run deploy.yml --ref main -f deploy=true
 gh run watch <run-id>          # 全程约 5 分钟（构建 ~3.5，发布 ~1.5）
 ```
 
@@ -173,7 +174,6 @@ apps/api/              — 唯一的 Python 应用
 apps/web/              — React H5（React 19 + Vite + React Router + Zustand）
 infrastructure/        — 生产 docker/nginx 产物（见 infrastructure/README.md）
 scripts/               — 仓库级运维脚本（部署、备份、回滚）；资料摄取不在此处
-archive/               — 已归档实现与设计，废弃物，仅供参考
 docker-compose.yml     — 本地基础设施编排
 docker-compose.prod.yml — 生产编排（数据服务不暴露宿主端口，仅 web 对外）
 ```
@@ -233,25 +233,25 @@ amend、不 rebase，即使它们的写法与本规范不符。
 ## Security
 
 - ❌ 禁止：硬编码 API Key、密码、密钥——统一用环境变量（模板 `.env.example`，按消费者分三段标注）
-- ❌ 禁止：将 `.env`、`.tmp/`、SSL 证书与私钥提交到版本控制（`archive/` 下遗留 TLS 私钥必须保持忽略）
+- ❌ 禁止：将 `.env`、`.tmp/`、SSL 证书与私钥提交到版本控制
 - ❌ 禁止：在回复中完整复述密码或服务器凭证
 - ❌ 禁止：把服务器凭证上传给第三方服务
 - ❌ 禁止：健康检查、日志或错误消息复述连接串与凭据（探针只回报异常类型）
 - 服务器操作：**默认不做**（见上方「开发与部署的边界」）。确需运维时，脚本与判据见
-  [docs/运维/发布与回滚.md](docs/运维/发布与回滚.md) 与 `archive/docs-运营/远程服务器操作指引.md`
-  （后者是历史资料，**执行前须重新核实**，不要照抄）。
+  [docs/运维/发布与回滚.md](docs/运维/发布与回滚.md)（历史服务器操作指引不随本公开仓分发，
+  需另取内仓，**执行前须重新核实**，不要照抄）。
 
 ## Git Workflow
 
-- 分支策略：`dev` 日常开发，`master` 仅保留稳定版本
+- 分支策略：本公开仓只维护 `main`（唯一远端分支）；内仓的 `dev`/`master` 流程不随本仓分发
 - CI（`.github/workflows/ci.yml`）在 push 与 PR 到 `dev`、`main`、`master` 时跑三个 job：
   设计文档一致性、后端（ruff + mypy + 迁移门禁 + pytest，**带 PostgreSQL/Redis/FalkorDB
   三个 service**）、前端（oxlint + tsc + vitest + build）
 - **部署见上方「开发与部署的边界」**——默认本地闭环，云端只在用户明确要求时发布
 - 备份/恢复/回滚：`scripts/{backup,restore,rollback}.sh`，操作说明见
   [docs/运维/发布与回滚.md](docs/运维/发布与回滚.md)
-- 仓库：`https://github.com/FengZhiHen1/Campfire-AI.git`
-- ❌ 禁止：直接在 `master` 上开发或提交
+- 仓库：`https://github.com/FengZhiHen1/campfire-ai-public.git`
+- ❌ 禁止：把未复核的改动直接推上 `main`（本公开仓远端只有 `main`，没有 `dev` 供先行集成）
 - ❌ 禁止：一个 commit 塞多个无关主题的改动
 - ❌ 禁止：未经用户明确要求就执行 `deploy.yml` 的发布（`deploy=true`）——那是生产变更
 
@@ -263,7 +263,7 @@ amend、不 rebase，即使它们的写法与本规范不符。
 - **技术细节初稿，待确认**：`docs/技术设计/technical-details/` 与 `docs/技术设计/面/`
 - **待办唯一登记处**：[docs/TODO.md](docs/TODO.md)（可扩展方向、发布前置、待验证事实、待确认事项）
 - 未确认内容不得写入权威文档，也不得据此开始实现；发现设计不一致时先提出，不得静默沿用旧行为。
-- ❌ 禁止：把 `archive/` 中的「有效」「目标态」等字样当作新目标实现要求。
+- ❌ 禁止：把历史 v3.0 设计稿（`archive/**`，不随本公开仓分发）中的「有效」「目标态」等字样当作新目标实现要求。
 - ✅ 视觉契约已重建：`docs/design/` 三件套（`tokens.css` / `components.html` / `DESIGN.md`）
   与页面设计文档齐备，前端样式层以此为准（不要绕过 token 直接写死颜色与间距——`apps/web`
   的 `build` 里有契约类名断言会把关）。

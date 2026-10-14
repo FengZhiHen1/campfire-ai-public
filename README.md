@@ -20,14 +20,11 @@
 ### 1. 克隆
 
 ```bash
-git clone https://github.com/FengZhiHen1/Campfire-AI.git
-cd Campfire-AI
-git switch dev          # 日常开发在 dev 上
+git clone https://github.com/FengZhiHen1/campfire-ai-public.git
+cd campfire-ai-public
 ```
 
-分支策略（见 [AGENTS.md](AGENTS.md)）：**`dev` 日常开发，`master` 仅保留稳定版本** ——
-发布时把 `dev` 快进到 `master`。因此 `master` 在两次发布之间会落后 `dev`。
-默认分支是 `master`，直接 `clone` 不会报错；**要继续开发就切到 `dev`**。
+本公开仓只维护 `main` 一条分支：默认分支即 `main`，直接 `clone` 即可，无需切换分支。
 
 ### 2. 建本地配置（**必须**，否则测试不会全绿）
 
@@ -123,7 +120,6 @@ apps/web/             React H5（唯一的 pnpm 工作空间包）
 marketing/            影片制作（独立工具链，不参与产品构建）
 infrastructure/       生产 docker/nginx 产物
 scripts/              仓库级运维脚本
-archive/              已归档的旧实现与旧设计，仅供参考
 ```
 
 模块边界与依赖方向的真源是 [`docs/项目结构设计.md`](docs/项目结构设计.md)，
