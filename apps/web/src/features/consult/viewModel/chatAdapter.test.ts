@@ -51,6 +51,10 @@ async function runAdapter(options: {
   pendingSubmission?: { batchId: string; answers: { id: string; value?: string; skipped?: boolean }[] } | null;
   failStream?: unknown;
   sendError?: unknown;
+  /** 已存在的待认领运行（应急入口交接）；null = 没有交接。 */
+  attachedRunId?: string | null;
+  /** 触发点声明的认领意图（startRun 路径置位）。 */
+  attachIntent?: boolean;
 }) {
   const port = createConsultPortStub();
   if (options.failStream !== undefined) port.failNextStream(options.failStream);
@@ -67,6 +71,8 @@ async function runAdapter(options: {
   const failures: unknown[] = [];
   let skill: string | null = options.pendingSkill ?? null;
   let submission = options.pendingSubmission ?? null;
+  let attached = options.attachedRunId ?? null;
+  let attachIntent = options.attachIntent ?? false;
 
   const adapter = createConsultChatAdapter({
     consult: port,
@@ -82,6 +88,15 @@ async function runAdapter(options: {
     onEvent: (event) => events.push(event),
     onConnection: (connection) => connections.push(connection),
     onFailure: (error) => failures.push(error),
+    peekAttachedRunId: () => attached,
+    consumeAttachIntent: () => {
+      const intent = attachIntent;
+      attachIntent = false;
+      return intent;
+    },
+    clearAttachedRun: () => {
+      attached = null;
+    },
     onDiagnostic: (message) => diagnostics.push(message),
     newId: () => 'fixed-id',
   });
@@ -114,6 +129,7 @@ async function runAdapter(options: {
     thrown,
     remainingSkill: skill,
     remainingSubmission: submission,
+    remainingAttached: attached,
   };
 }
 
@@ -353,5 +369,99 @@ describe('chatAdapter — 两段式载荷与取消', () => {
     expect(result.thrown).toBeNull();
     expect(result.statuses.at(-1)).toMatchObject({ type: 'incomplete', reason: 'error' });
     expect(result.connections).toContain('failed');
+  });
+});
+
+/**
+ * 应急入口交接（回归守卫）。
+ *
+ * 缺陷本体（EMG-01）：应急入口的运行业已由 `POST /api/consult/emergency` 启动，而对话页
+ * 拿到了 `run_id` 却只用它跳转、从不订阅——运行期间的输出与行动卡一律不显示，必须手动刷新。
+ * 因此这里守住的判据是：**认领路径不得再发一条消息，且必须订阅交接过来的那个 run_id**。
+ * 下面第二条断言就是「不再发消息」——它在修复前必然失败（旧实现无条件先 sendMessage）。
+ */
+describe('createConsultChatAdapter — 应急入口认领既有运行', () => {
+  it('认领既有运行：不发消息，直接订阅交接过来的 run_id', async () => {
+    const result = await runAdapter({
+      events: [textDelta('先坐下'), runFinished()],
+      attachedRunId: 'run-emg',
+      attachIntent: true,
+    });
+
+    expect(result.port.sendCalls).toHaveLength(0);
+    expect(result.port.streamCalls.map((call) => call.runId)).toEqual(['run-emg']);
+    expect(result.thrown).toBeNull();
+  });
+
+  it('认领时不消费技能选择与整组回答（本轮没有发送，发送即消费不成立）', async () => {
+    const result = await runAdapter({
+      events: [runFinished()],
+      attachedRunId: 'run-emg',
+      attachIntent: true,
+      pendingSkill: 'emergency-consulting',
+    });
+
+    // 没有发送发生（sendCalls 为空），因此技能选择必须原样留着，下一次发送仍能用。
+    expect(result.port.sendCalls).toHaveLength(0);
+    expect(result.remainingSkill).toBe('emergency-consulting');
+  });
+
+  it('认领的运行到终态后清掉交接（否则后续装配会重复订阅同一次运行）', async () => {
+    const result = await runAdapter({
+      events: [textDelta('先坐下'), runFinished()],
+      attachedRunId: 'run-emg',
+      attachIntent: true,
+    });
+
+    expect(result.remainingAttached).toBeNull();
+  });
+
+  it('流结束但未到终态时不清交接（离开页面或 StrictMode 的模拟卸载后还要能重新认领）', async () => {
+    const result = await runAdapter({
+      events: [textDelta('只到了一半')],
+      attachedRunId: 'run-emg',
+      attachIntent: true,
+    });
+
+    expect(result.port.sendCalls).toHaveLength(0);
+    expect(result.remainingAttached).toBe('run-emg');
+  });
+
+  it('没有认领意图时走正常两段式，并清掉过期的交接', async () => {
+    const result = await runAdapter({ events: [runFinished()], attachedRunId: 'run-emg' });
+
+    expect(result.port.sendCalls).toHaveLength(1);
+    expect(result.port.streamCalls.map((call) => call.runId)).toEqual(['run-1']);
+    expect(result.remainingAttached).toBeNull();
+  });
+
+  it('有认领意图却没有交接：不发消息也不订阅，留一条诊断（不得静默吞）', async () => {
+    const result = await runAdapter({ events: [runFinished()], attachIntent: true });
+
+    expect(result.port.sendCalls).toHaveLength(0);
+    expect(result.port.streamCalls).toHaveLength(0);
+    expect(result.diagnostics.join('')).toContain('没有对应的运行交接');
+  });
+
+  it('认领路径的本地中断**不**取消服务端运行（那次运行由应急入口启动，取消它等于毁掉应急回答）', async () => {
+    const controller = new AbortController();
+    controller.abort();
+    const result = await runAdapter({
+      events: [textDelta('先坐下')],
+      attachedRunId: 'run-emg',
+      attachIntent: true,
+      abortSignal: controller.signal,
+    });
+
+    expect(result.port.cancelCalls).toHaveLength(0);
+    expect(result.diagnostics.join('')).toContain('不取消服务端运行');
+  });
+
+  it('对照：普通发送路径的本地中断**要**取消服务端运行（停止按钮语义不能一起丢掉）', async () => {
+    const controller = new AbortController();
+    controller.abort();
+    const result = await runAdapter({ events: [textDelta('写了一半')], abortSignal: controller.signal });
+
+    expect(result.port.cancelCalls).toEqual(['run-1']);
   });
 });

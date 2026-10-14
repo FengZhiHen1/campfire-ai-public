@@ -150,3 +150,111 @@ describe('runStore — 技能消费、取消与重置', () => {
     expect(store.getState().questionDrafts).toEqual({});
   });
 });
+
+/**
+ * 应急入口的运行交接（回归守卫）。
+ *
+ * 缺陷本体（EMG-01）：应急入口的运行业已启动，对话页却拿不到 run_id、从不订阅。
+ * 交接必须跨越 navigate 且带会话范围，否则会把 A 会话的运行接到 B 会话页上。
+ */
+describe('runStore — 待认领运行（应急入口交接）', () => {
+  it('写入后按会话取值：本会话取得到，别的会话取不到', () => {
+    const store = newStore();
+    store.getState().setPendingAttachedRun('s1', 'run-1');
+
+    expect(store.getState().peekAttachedRun('s1')).toBe('run-1');
+    expect(store.getState().peekAttachedRun('s2')).toBeNull();
+  });
+
+  it('peek 不消费：连续两次取到同一个值（StrictMode 下 effect 跑两遍也不会丢交接）', () => {
+    const store = newStore();
+    store.getState().setPendingAttachedRun('s1', 'run-1');
+
+    expect(store.getState().peekAttachedRun('s1')).toBe('run-1');
+    expect(store.getState().peekAttachedRun('s1')).toBe('run-1');
+  });
+
+  it('终态清理后取不到（避免后续装配重复订阅同一次运行）', () => {
+    const store = newStore();
+    store.getState().setPendingAttachedRun('s1', 'run-1');
+    store.getState().clearPendingAttachedRun();
+
+    expect(store.getState().peekAttachedRun('s1')).toBeNull();
+  });
+
+  it('beginAttachRun 只发一次资格：StrictMode 下 effect 跑两遍也只 startRun 一次', () => {
+    const store = newStore();
+    store.getState().setPendingAttachedRun('s1', 'run-1');
+
+    expect(store.getState().beginAttachRun('s1')).toBe(true);
+    expect(store.getState().beginAttachRun('s1')).toBe(false);
+  });
+
+  it('别的会话拿不到资格，也不会置认领意图', () => {
+    const store = newStore();
+    store.getState().setPendingAttachedRun('s1', 'run-1');
+
+    expect(store.getState().beginAttachRun('s2')).toBe(false);
+    expect(store.getState().consumeAttachIntent()).toBe(false);
+  });
+
+  it('认领意图取走即消费：adapter 只能认领一次', () => {
+    const store = newStore();
+    store.getState().setPendingAttachedRun('s1', 'run-1');
+    store.getState().beginAttachRun('s1');
+
+    expect(store.getState().consumeAttachIntent()).toBe(true);
+    expect(store.getState().consumeAttachIntent()).toBe(false);
+  });
+
+  it('终态清理同时复位资格与意图（下一次交接不会被上一次的资格挡住）', () => {
+    const store = newStore();
+    store.getState().setPendingAttachedRun('s1', 'run-1');
+    store.getState().beginAttachRun('s1');
+    store.getState().clearPendingAttachedRun();
+    store.getState().setPendingAttachedRun('s1', 'run-2');
+
+    expect(store.getState().beginAttachRun('s1')).toBe(true);
+  });
+
+  it('reset 同一会话时**保留**交接（对话页水合会先 reset 一次，清掉就等于把跳转订阅抹了）', () => {
+    const store = newStore();
+    store.getState().setPendingAttachedRun('s1', 'run-1');
+    store.getState().reset('s1');
+
+    expect(store.getState().peekAttachedRun('s1')).toBe('run-1');
+  });
+
+  it('reset 换会话时清掉交接（否则会把 A 会话的运行接到 B 会话页上）', () => {
+    const store = newStore();
+    store.getState().setPendingAttachedRun('s1', 'run-1');
+    store.getState().reset('s2');
+
+    expect(store.getState().peekAttachedRun('s1')).toBeNull();
+    expect(store.getState().peekAttachedRun('s2')).toBeNull();
+  });
+
+  it('reset 复位起运行资格（换会话或重新水合后应能重新认领）', () => {
+    const store = newStore();
+    store.getState().setPendingAttachedRun('s1', 'run-1');
+    store.getState().beginAttachRun('s1');
+    store.getState().reset('s1');
+
+    expect(store.getState().beginAttachRun('s1')).toBe(true);
+  });
+
+  it('StrictMode 的 setup→cleanup→setup：归还资格后第二次装配能重新认领（交接不丢）', () => {
+    const store = newStore();
+    store.getState().setPendingAttachedRun('s1', 'run-1');
+
+    // 第一次装配：拿到资格、置认领意图，随即被模拟卸载（cleanup 归还资格）。
+    expect(store.getState().beginAttachRun('s1')).toBe(true);
+    expect(store.getState().consumeAttachIntent()).toBe(true);
+    store.getState().releaseAttachRun();
+
+    // 第二次装配：必须能再拿到资格并再置意图——否则页面从此不再订阅那次运行。
+    expect(store.getState().beginAttachRun('s1')).toBe(true);
+    expect(store.getState().consumeAttachIntent()).toBe(true);
+    expect(store.getState().peekAttachedRun('s1')).toBe('run-1');
+  });
+});
