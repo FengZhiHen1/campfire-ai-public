@@ -18,6 +18,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { EmergencyFormPage } from './EmergencyFormPage';
 import { EMERGENCY_QUESTIONS } from '../domain/emergency';
 import { createConsultPortStub, type ConsultPortStub } from '../test/consultPortStub';
+import { resetConsultRunStore, useRunStore } from '../viewModel/runStore';
 
 /** 渲染应急表单页（提交成功后跳到对话页占位）。 */
 function renderForm(port: ConsultPortStub) {
@@ -40,6 +41,8 @@ function submitButton(): HTMLElement {
 afterEach(() => {
   // navigator.onLine 的替身在用例里改过，恢复默认。
   Object.defineProperty(window.navigator, 'onLine', { value: true, configurable: true });
+  // 交接写在 store 单例里（跨 navigate 的落点），逐用例清掉以免串场。
+  resetConsultRunStore();
 });
 
 describe('应急表单页 — 分步流', () => {
@@ -144,6 +147,20 @@ describe('应急表单页 — 提交', () => {
     });
 
     expect(await screen.findByText('对话页已到达')).toBeDefined();
+  });
+
+  it('提交成功后把 run_id 交给对话页（回归：此前只传 sessionId，页面于是从不订阅本次运行）', async () => {
+    const port = createConsultPortStub({ emergency: { session_id: 's-emg', run_id: 'run-emg' } });
+    renderForm(port);
+
+    await act(async () => {
+      fireEvent.click(submitButton());
+    });
+
+    await screen.findByText('对话页已到达');
+    // 交接的形状：会话与运行成对出现，peek 按会话取值（别的会话取不到）。
+    expect(useRunStore.getState().peekAttachedRun('s-emg')).toBe('run-emg');
+    expect(useRunStore.getState().peekAttachedRun('s-other')).toBeNull();
   });
 
   it('提交失败：显示错误卡且已填内容不清空', async () => {
