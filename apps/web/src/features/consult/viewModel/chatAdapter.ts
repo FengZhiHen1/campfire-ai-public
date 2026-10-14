@@ -44,6 +44,21 @@ export interface ConsultChatAdapterDeps {
   onConnection(connection: ConnectionStatus): void;
   /** 失败回流：错误卡与重试入口需要标题/说明/可否重试（呈现文案由 domain 决定）。 */
   onFailure(error: unknown): void;
+  /**
+   * 探查「已在服务端启动、等待订阅」的运行 id（应急入口：HTTP/SSE 契约第 5 节
+   * 「一次调用完成建会话 → 落第一条消息 → 启动运行，前端拿 run_id 直接跳对话页订阅」）。
+   * 只读，不消费：存在与否决定「要不要清过期交接」，认领与否由 consumeAttachIntent 决定。
+   */
+  peekAttachedRunId?(): string | null;
+  /**
+   * 认领本次运行的意图（由触发 startRun 的装配点声明，取走即消费）。
+   *
+   * 为什么不能用「本次有没有新输入」推断：应急会话的历史里，最后一条使用者消息**就是**那份
+   * 八项采集，按输入推断会把它当成新消息再发一遍（把采集内容重复落进对话真源）。
+   */
+  consumeAttachIntent?(): boolean;
+  /** 认领的这次运行已到终态（成功或失败）：清掉交接，避免后续装配重复订阅同一运行。 */
+  clearAttachedRun?(): void;
   /** 诊断（丢弃的事件、取消失败等，不静默吞）。 */
   onDiagnostic?(message: string): void;
   /** 幂等键生成器；测试注入固定值。 */
@@ -83,34 +98,57 @@ export function createConsultChatAdapter(deps: ConsultChatAdapterDeps): ChatMode
       const content = answers === null || answers.length === 0 ? lastUserText(messages) : '';
 
       let accepted: PostMessageResponse;
-      try {
-        accepted = await sendUseCase.execute({
-          sessionId: deps.sessionId,
-          content,
-          // ★ 提交件整个透传（answers 与 batchId 同在 `submission` 里），不在这一层拆开再拼——
-          // 拆开就又多一个「A 组 answers + B 组 batchId」可被组成的点，而那样传错的 batch_id
-          // 会触发服务端排他层，比不传更坏（本包关键决策清单第 2 条）。
-          ...(submission === null ? {} : { submission }),
-          skill,
-          ...(deps.newId === undefined ? {} : { newId: deps.newId }),
-        });
-      } catch (error) {
-        // 发送没被受理：不消费技能选择与整组回答，重试仍能用（发送即消费只在受理后成立）。
-        deps.onFailure(error);
-        deps.onConnection('failed');
-        // 为什么不抛：本版 assistant-ui 的 thread.append 是同步 API，运行时在
-        // performRoundtrip 里把消息标成 incomplete(error) 之后仍会把异常再抛给调用方
-        // （core/dist/runtimes/local/local-thread-runtime-core.js 的 catch 分支），
-        // 而 append 不返回 promise，于是抛出的异常变成未捕获拒绝（浏览器控制台报错 +
-        // 测试进程报错）。改为「产出未完成状态」：消息同样不会伪装成完整回答，
-        // 原因与重试入口由状态层的错误卡承担（不变量 1）。
-        yield { content: [], status: { type: 'incomplete', reason: 'error' } };
+
+      // 应急入口交接：运行已在服务端启动，这里只订阅、**不再发一条消息**——再发一次会把八项
+      // 采集重复落进对话真源并把运行跑第二遍（契约第 1 节「为什么分两段」的同一条理由）。
+      // 认领与否看触发点声明的意图（startRun 装配点置位），不看「有没有新输入」：
+      // 应急会话的最后一条使用者消息就是采集本身，按输入推断必然误判。
+      const pendingAttachedRunId = deps.peekAttachedRunId?.() ?? null;
+      const attachIntent = deps.consumeAttachIntent?.() ?? false;
+      // 有意图却没有交接 = 装配错位（例如交接被别处清掉）：不发消息也不订阅，留一条诊断。
+      if (attachIntent && pendingAttachedRunId === null) {
+        deps.onDiagnostic?.('认领意图没有对应的运行交接：本次不发送也不订阅');
         return;
       }
+      const attaching = attachIntent && pendingAttachedRunId !== null;
+      // 过期的交接（上一次认领中途离开页面留下、这次是普通发送）：发送取代它，顺手清掉。
+      if (!attaching && pendingAttachedRunId !== null) deps.clearAttachedRun?.();
+      deps.onDiagnostic?.(
+        `本次运行来源：${attaching ? '认领既有运行' : '新发送'}（交接${pendingAttachedRunId === null ? '无' : '有'}，意图=${String(attachIntent)}）`,
+      );
 
-      // 受理后才消费：发送即消费的语义点是「这条消息已经发出去了」。
-      deps.clearPendingSkill();
-      deps.clearPendingSubmission();
+      if (attaching && pendingAttachedRunId !== null) {
+        accepted = { run_id: pendingAttachedRunId, session_id: deps.sessionId };
+      } else {
+        try {
+          accepted = await sendUseCase.execute({
+            sessionId: deps.sessionId,
+            content,
+            // ★ 提交件整个透传（answers 与 batchId 同在 `submission` 里），不在这一层拆开再拼——
+            // 拆开就又多一个「A 组 answers + B 组 batchId」可被组成的点，而那样传错的 batch_id
+            // 会触发服务端排他层，比不传更坏（本包关键决策清单第 2 条）。
+            ...(submission === null ? {} : { submission }),
+            skill,
+            ...(deps.newId === undefined ? {} : { newId: deps.newId }),
+          });
+        } catch (error) {
+          // 发送没被受理：不消费技能选择与整组回答，重试仍能用（发送即消费只在受理后成立）。
+          deps.onFailure(error);
+          deps.onConnection('failed');
+          // 为什么不抛：本版 assistant-ui 的 thread.append 是同步 API，运行时在
+          // performRoundtrip 里把消息标成 incomplete(error) 之后仍会把异常再抛给调用方
+          // （core/dist/runtimes/local/local-thread-runtime-core.js 的 catch 分支），
+          // 而 append 不返回 promise，于是抛出的异常变成未捕获拒绝（浏览器控制台报错 +
+          // 测试进程报错）。改为「产出未完成状态」：消息同样不会伪装成完整回答，
+          // 原因与重试入口由状态层的错误卡承担（不变量 1）。
+          yield { content: [], status: { type: 'incomplete', reason: 'error' } };
+          return;
+        }
+
+        // 受理后才消费：发送即消费的语义点是「这条消息已经发出去了」。
+        deps.clearPendingSkill();
+        deps.clearPendingSubmission();
+      }
 
       const accumulator = createPartAccumulator();
       let terminal = false;
@@ -119,8 +157,20 @@ export function createConsultChatAdapter(deps: ConsultChatAdapterDeps): ChatMode
       /** 事件流本身失败（传输/续传耗尽）：同样以未完成状态收尾。 */
       let transportFailure: unknown = null;
 
-      /** 取消：POST cancel，并把已渲染的 partial text 标为中断（契约第 4.3 节）。 */
+      /**
+       * 取消：POST cancel，并把已渲染的 partial text 标为中断（契约第 4.3 节）。
+       *
+       * 认领路径**不取消**：那次运行是应急入口启动的，结果会落进会话历史；本地中断
+       * （离开页面、以及 StrictMode 的模拟卸载）去取消它，等于把使用者的应急回答毁掉——
+       * 这不是推断：修复的第一版正是在这里把服务端运行取消了，随后第二次订阅只能拿到
+       * 一个已经死掉的流（页面显示「连接中断」，刷新后历史里也没有回答）。
+       * 代价：认领路径上的停止按钮只停本地渲染，服务端运行继续跑到终态。
+       */
       const requestCancel = (): void => {
+        if (attaching) {
+          deps.onDiagnostic?.(`本地中断，不取消服务端运行（认领路径）`);
+          return;
+        }
         deps.onDiagnostic?.(`用户取消运行 ${accepted.run_id}`);
         void cancelUseCase.execute(accepted.run_id).catch((error: unknown) => {
           // 已终结的运行返回 409，这是「已经停了」而不是失败；其余异常记一条诊断。
@@ -198,6 +248,10 @@ export function createConsultChatAdapter(deps: ConsultChatAdapterDeps): ChatMode
       } finally {
         abortSignal.removeEventListener('abort', requestCancel);
       }
+
+      // 只在**终态**清交接：中途 abort（离开页面，以及 StrictMode 的模拟卸载）不算认领完毕——
+      // 在这里清掉会让重新装配后的页面看不到交接，运行期间的输出又变成不刷新就不显示。
+      if (attaching && (terminal || transportFailure !== null)) deps.clearAttachedRun?.();
 
       if (runFailure !== null) deps.onFailure(runFailure);
       if (transportFailure !== null) {
