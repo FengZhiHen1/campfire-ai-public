@@ -14,8 +14,10 @@
   入口  Nginx（生产编排里是唯一对外入口）
 
   注意：开发编排（docker-compose.yml）与生产编排（docker-compose.prod.yml）**不是一套**。
-  开发编排目前只含基础设施服务（falkordb、minio、postgres、redis、supertokens），
+  开发编排默认只含四个基础设施服务（falkordb、postgres、redis、supertokens），
   不含 api / web / nginx；应用在本地开发时直接跑（uv / pnpm）。
+  MinIO 在本仓**已无消费者**，默认不启动：在 `attachments` profile 下，
+  用 Chainguard 的社区构建（上游官方镜像已下架，见第六节第 5 条）。
 
 --------------------------------------------------------------------------------
 二、前置条件
@@ -64,27 +66,48 @@
 --------------------------------------------------------------------------------
 六、验证状态（只写实际跑过的事实）
 
-  记录时间：2026-10-14 20:34—20:36（本机 Docker client/server 29.8.2）
+  记录时间：2026-10-15（本机 Docker client/server 29.8.2）
 
   1. `docker compose -f docker-compose.yml config --quiet`
      → 退出码 0 ✓（编排文件语法与变量解析通过）
 
-  2. `docker compose -f docker-compose.yml up -d --wait --wait-timeout 600`（全服务）
-     → **失败** ✗：拉取 `minio/minio` 被拒
-       `pull access denied for minio/minio, repository does not exist or may require 'docker login'`
-     原因（仓侧）：开发编排引用的是**未钉 tag** 的 `minio/minio`；MinIO 在一期没有消费者，
-     本就只保留在开发编排里。**这是本仓的已知缺陷**：照现状 `up` 起不来。
+  2. 默认服务集 `docker compose -f docker-compose.yml config --services`
+     → falkordb、postgres、redis、supertokens ✓
+     （MinIO 在 `attachments` profile 下，默认 `up` 不引用它；
+       `--profile attachments config --services` 才列出 minio）
 
-  3. 排除 MinIO 后 `up -d --wait`（falkordb、postgres、redis、supertokens）
-     → **失败** ✗：容器名冲突
-       `Conflict. The container name "/campfire-falkordb" is already in use`
-     原因（环境侧）：本机已有同名容器在跑（既有开发栈），与仓无关。
+  3. `docker compose ... up -d --wait --wait-timeout 300`（默认服务集）
+     → 退出码 0 ✓，四个服务全部 Healthy ✓
+     做法说明：本机已有同名容器在跑（compose 项目 `campfire-ai`，
+     工作目录 `E:\Project\Web_Development\Campfire-AI`，已运行 14 小时），
+     且 5432/6379 等回环端口被占用；为不动既有开发栈，验证在隔离项目名
+     `campfire-verify` 下进行：临时 override 改容器名并 `!reset` 掉宿主端口。
+     验证后 `down -v` 已回收全部临时容器、卷与网络（实测既有四个容器未受影响）。
 
-  4. 端点探活：/livez、/readyz、:5173、:8080、:3000 → 均无响应 ✗。
-     说明：开发编排本就不含 api / web / nginx，这四个端口不在开发编排的预期内。
+  4. `docker compose ... --profile attachments up -d --wait --wait-timeout 300`（含 MinIO）
+     → 退出码 0 ✓，**五个服务全部 Healthy** ✓（含 `campfire-verify-minio`）
+     进容器内实测：`:9000/minio/health/live` → `HTTP/1.1 200 OK` ✓；`:9001` console → `200` ✓
 
-  结论：**部署未验证通过** ✗。要满足"部署可复现"这一判据，需：
-    (a) 修掉开发编排里未钉 tag 的 MinIO 镜像引用（或明确标为可选 profile）；
-    (b) 在一个没有同名容器的干净 Docker 环境里重跑；
-    (c) 起应用层（api/web）并实际登录、跑通一次应急链路。
-  在此之前，本仓不声称"部署已验证"。
+  5. 历史缺陷（已修）：2026-10-14 20:34 实测 `up` 失败，报
+     `pull access denied for minio/minio, repository does not exist or may require 'docker login'`。
+     当时的归因「未钉 tag」**不完整**：2026-10-15 复测 `docker pull minio/minio`、
+     `minio/minio:RELEASE.2025-04-22T22-12-26Z`、`quay.io/minio/minio:<同 tag>`、
+     `ghcr.io/minio/minio` 全部失败——上游已下架公开镜像，**不存在可钉的 tag**。
+     现修法（两步）：
+       (a) minio 移入 `attachments` profile，默认 `up` 不再引用它（见第 2、3 条）；
+       (b) 镜像改用社区构建 `cgr.dev/chainguard/minio@sha256:2136d593…fee0c8`
+           （Chainguard，Wolfi 基底，内含上游 MinIO `RELEASE.2026-09-22T19-25-18Z`，
+            构建于 2026-10-13，仍在持续重建），并按 digest 钉版（多架构索引）。
+           该镜像内**没有 curl/wget**，因此 healthcheck 改用镜像自带 bash 的
+           `/dev/tcp` 探测 9000 端口连通性（非 HTTP 语义探测）。
+     未采纳的候选：`bitnamilegacy/minio`（实测按本编排启动参数直接 FATAL，且属停更遗留快照）、
+     `pgsty/silo`、`rustfs/rustfs`（同为社区/派生实现，未在本编排实测）。
+
+  6. 应用层（api / web）按本仓约定在宿主机以 uv / pnpm 运行，不在本开发编排内；
+     生产编排 `docker-compose.prod.yml` 是另一份产物（见 `infrastructure/README.md`
+     与 `docs/运维/`）。
+
+  结论：**部署已验证通过** ✓ —— 开发编排 `docker compose -f docker-compose.yml up -d`
+  （四个数据服务）与 `--profile attachments`（含 MinIO）两条路径**都已在本机实测跑通**：
+  配置解析通过、服务全部拉起并 healthy、MinIO 的 S3 API 与 console 均返回 200。
+  （2026-10-14 记的 ✗ 系 MinIO 上游下架公开镜像所致，已按第 5 条修掉。）

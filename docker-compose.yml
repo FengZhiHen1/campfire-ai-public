@@ -4,8 +4,9 @@
 # 停止：docker compose down
 #
 # dev 环境只编排数据服务；api、worker、web 直接在宿主机上运行。
-# 一期需要的五个数据服务：PostgreSQL、Redis、FalkorDB、SuperTokens core、MinIO。
-# MinIO 一期不依赖（一期需求无附件），保留编排以便开放附件时直接启用。
+# 默认 `up` 拉起四个数据服务：PostgreSQL、Redis、FalkorDB、SuperTokens core。
+# MinIO 一期不依赖（一期需求无附件），且上游已下架公开镜像 ⇒ 放在
+# `attachments` profile 下，默认不启动（原因见下方 minio 服务处的注释）。
 #
 # 部署目标（api、web、worker、nginx 入编排）见 docs/技术栈设计.md 第 6 节；
 # 那是另一份产物，本文件只覆盖本地开发。
@@ -123,12 +124,25 @@ services:
         max-size: "10m"
         max-file: "3"
 
-  # --- MinIO 对象存储（一期不依赖）---
+  # --- MinIO 对象存储（一期不依赖，且**默认不启动**）---
   # 一期需求无附件，因此本服务**当前无消费者**：它只有风险、没有收益
   # （9001 是管理 console，默认凭据 minioadmin/minioadmin）。
   # 保留在编排里是为了开放附件时可直接启用；**部署编排不应包含它**。
+  #
+  # ⚠️ 2026-10-15 起本服务放在 `attachments` profile 下，默认 `up` **不拉起它**。
+  #
+  # 镜像来源（2026-10-15 实测）：上游 MinIO 已下架全部公开镜像——
+  # `docker pull minio/minio`（:latest 与任意 RELEASE.* tag）、`quay.io/minio/minio`、
+  # `ghcr.io/minio/minio` 全部失败，**没有可钉的 tag**。故改用 Chainguard 的社区构建
+  # （Wolfi 基底，含上游 MinIO RELEASE.2026-09-22T19-25-18Z，非上游官方产物）：
+  # 按 digest 钉版，可复现且与多架构索引一致；它仍在持续重建（本固定版构建于 2026-10-13）。
+  # 未选 `bitnamilegacy/minio`：实测按本编排的启动参数直接 FATAL（Unable to initialize
+  # backend），且该仓库是停更的遗留快照。
+  # 换镜像时注意健康检查：Chainguard 镜像内**没有 curl/wget**，故 healthcheck 改为
+  # 用镜像自带的 bash `/dev/tcp` 做 9000 端口连通性探测（不是 HTTP 语义探测）。
   minio:
-    image: minio/minio
+    profiles: ["attachments"]
+    image: cgr.dev/chainguard/minio@sha256:2136d593beacf4461187035eca949fe49abd589d5079735025c711ca58fee0c8
     container_name: campfire-minio
     restart: unless-stopped
     command: server /data --console-address ":9001"
@@ -144,7 +158,7 @@ services:
     volumes:
       - minio_data_dev:/data
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      test: ["CMD", "/usr/bin/bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/9000"]
       interval: 30s
       timeout: 10s
       retries: 3
