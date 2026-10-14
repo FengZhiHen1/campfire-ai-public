@@ -1,33 +1,5 @@
-.gitattributes text eol=lf
-
-# 自动处理行尾换行符
-* text=auto
-
-# Shell 脚本与 GitHub Actions 工作流必须在 Linux 服务器上使用 LF
-*.sh text eol=lf
-*.yml text eol=lf
-*.yaml text eol=lf
-
-# token 守卫逐字比对真源与副本（tokens.test.ts）：写死 LF，
-# 使任意检出（含本机 core.autocrlf=true）下两份都不出现 CR，
-# 否则守卫会随「本次是否跑过 build」在红绿之间漂移。
-docs/design/tokens.css text eol=lf
-apps/web/src/shared/styles/tokens.css text eol=lf
-
-# 成片等二进制媒体：显式声明 binary，禁止任何行尾归一化。
-# 上面 `* text=auto` 的自动判定对 mp4 恰好判成了「非文本」，但这依赖启发式
-# （前 8KB 里没有 NUL 就会被当文本）。成片一旦被当文本做 CRLF→LF，
-# 入库的就是**被静默破坏**的文件：`git status` 看不出来，哈希却全变。
-# 这里写死，使行为不依赖探测结果。已实测 v23 两个文件入库前后 sha256 相同。
-*.mp4 binary
-*.mp3 binary
-*.wav binary
+* text=auto eol=lf
 *.png binary
 *.jpg binary
-*.jpeg binary
-*.webp binary
-*.gif binary
-*.woff binary
-*.woff2 binary
-*.ttf binary
-*.pdf binary
+*.mp3 binary
+*.mp4 binary
