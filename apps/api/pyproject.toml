@@ -19,6 +19,8 @@
 
 [project]
 name = "campfire-api"
+license = { text = "Apache-2.0" }
+authors = [{ name = "Campfire-AI contributors" }]
 version = "0.1.0"
 description = "篝火智答 API 与 Worker（单应用、两个运行入口）"
 requires-python = ">=3.12"

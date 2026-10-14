@@ -5,7 +5,7 @@
   "description": "篝火智答 - 面向孤独症人士及其支持网络的情境支持平台",
   "scripts": {},
   "keywords": [],
-  "author": "",
-  "license": "ISC",
+  "author": "Campfire-AI contributors",
+  "license": "Apache-2.0",
   "packageManager": "pnpm@10.33.0"
 }
