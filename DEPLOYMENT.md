@@ -13,6 +13,10 @@
   认证  SuperTokens core（+ postgres 存储）
   入口  Nginx（生产编排里是唯一对外入口）
 
+  注意：开发编排（docker-compose.yml）与生产编排（docker-compose.prod.yml）**不是一套**。
+  开发编排目前只含基础设施服务（falkordb、minio、postgres、redis、supertokens），
+  不含 api / web / nginx；应用在本地开发时直接跑（uv / pnpm）。
+
 --------------------------------------------------------------------------------
 二、前置条件
 
@@ -36,8 +40,8 @@
   4) 数据库迁移
        迁移脚本在 apps/api/migrations/；容器/本地两种执行方式与运维细节见 docs/运维/。
 
-  5) 访问
-       前端与反向代理地址见 compose 的端口映射；后端存活与就绪探针为 /livez 与 /readyz。
+  5) 应用
+       后端与前端在本地以 uv / pnpm 启动；后端存活与就绪探针为 /livez 与 /readyz。
 
 --------------------------------------------------------------------------------
 四、使用
@@ -58,9 +62,29 @@
   * 真实访谈案例语料与部分第三方语料不随本仓分发（原因见 NOTICE 第三节）。
 
 --------------------------------------------------------------------------------
-六、验证状态
+六、验证状态（只写实际跑过的事实）
 
-  （本节的写法有意保守：只写实际跑过的事实。）
+  记录时间：2026-10-14 20:34—20:36（本机 Docker client/server 29.8.2）
 
-  * `docker compose config` 校验与本地栈起服务：见下方记录；
-  * 记录格式：命令 → 观察到的结果 → 时间。
+  1. `docker compose -f docker-compose.yml config --quiet`
+     → 退出码 0 ✓（编排文件语法与变量解析通过）
+
+  2. `docker compose -f docker-compose.yml up -d --wait --wait-timeout 600`（全服务）
+     → **失败** ✗：拉取 `minio/minio` 被拒
+       `pull access denied for minio/minio, repository does not exist or may require 'docker login'`
+     原因（仓侧）：开发编排引用的是**未钉 tag** 的 `minio/minio`；MinIO 在一期没有消费者，
+     本就只保留在开发编排里。**这是本仓的已知缺陷**：照现状 `up` 起不来。
+
+  3. 排除 MinIO 后 `up -d --wait`（falkordb、postgres、redis、supertokens）
+     → **失败** ✗：容器名冲突
+       `Conflict. The container name "/campfire-falkordb" is already in use`
+     原因（环境侧）：本机已有同名容器在跑（既有开发栈），与仓无关。
+
+  4. 端点探活：/livez、/readyz、:5173、:8080、:3000 → 均无响应 ✗。
+     说明：开发编排本就不含 api / web / nginx，这四个端口不在开发编排的预期内。
+
+  结论：**部署未验证通过** ✗。要满足"部署可复现"这一判据，需：
+    (a) 修掉开发编排里未钉 tag 的 MinIO 镜像引用（或明确标为可选 profile）；
+    (b) 在一个没有同名容器的干净 Docker 环境里重跑；
+    (c) 起应用层（api/web）并实际登录、跑通一次应急链路。
+  在此之前，本仓不声称"部署已验证"。
