@@ -96,6 +96,19 @@ pnpm --filter @campfire/web e2e     # 内容断言：证明每张图「有料」
 **加了新路由就要加新截图配置**，否则那条路由永远没有 PNG —— 这层对应关系由
 `apps/web/tests/routes-coverage.test.ts` 守着，`pnpm test` 会红。
 
+## 演示材料（对外展示用，`demo/`）
+
+```bash
+# 本机全真栈（后端、Vite、Worker）要先起；邀请码每轮现签
+uv run python -m campfire.cli invite issue
+DEMO_INVITE_CODES=<码> pnpm --filter @campfire/web demo
+```
+
+在真浏览器 + 真模型 + 真库上把典型场景走一遍并逐屏截图，产物落 `demo/`（位置固定、
+整目录被 `.gitignore` 与 `.dockerignore` 排除、**每轮覆盖**）。它是**展示材料**，
+不是门禁，也不在 CI 里跑。前提、产物结构与已知边界见
+[docs/运维/演示材料生成.md](docs/运维/演示材料生成.md)。
+
 ## 影片（`marketing/promo-shotcraft/`，独立工具链）
 
 ```bash

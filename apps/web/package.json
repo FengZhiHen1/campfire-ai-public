@@ -14,6 +14,7 @@
     "typecheck": "tsc --noEmit",
     "shots": "playwright test --project=mobile --project=desktop --project=manifest",
     "e2e": "playwright test --project=content-mobile --project=content-desktop --project=states-manifest",
+    "demo": "playwright test --config demo/playwright.demo.config.ts",
     "sync-tokens": "node scripts/sync-tokens.mjs"
   },
   "dependencies": {
