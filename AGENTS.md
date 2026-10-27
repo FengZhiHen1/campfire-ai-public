@@ -81,6 +81,26 @@ pnpm --filter @campfire/web e2e     # 内容断言：证明每张图「有料」
   而 `manifest` 仍会宣布「40 张」（它只验矩阵内部自洽）。
   这条对应关系由 `apps/web/tests/routes-coverage.test.ts` 机械守着，`pnpm test` 会红。
 
+### 演示材料（对外展示用；落点 `demo/`，同样不入 git）
+
+```bash
+# 本机全真栈（后端 8000、Vite 5173、Worker）要先起，邀请码每轮现签
+uv run python -m campfire.cli invite issue
+DEMO_INVITE_CODES=<码1>,<码2> pnpm --filter @campfire/web demo
+```
+
+- **用途**：把典型场景（注册建档、咨询引用、应急、案例库、档案、记忆）在真浏览器 + 真模型 +
+  真库上走一遍，逐屏截成**可拿去讲**的材料；按需跑（展示前一次），**不进 CI、不算门禁**。
+- **落点 `demo/`**：位置固定、**整目录被 `.gitignore` 与 `.dockerignore` 排除**、
+  **每轮覆盖**（`global.setup.ts` 开新批时清空）。它与 `.tmp/` 的**唯一**区别是位置固定、
+  不被临时目录清理带走；**留存口径不变**——材料可再生、不入库，判据是 `git ls-files demo` 为空。
+- **改道被刻意禁止**：不提供 `SHOTS_OUT` 那类环境变量（那条通道历史上让产物分裂到两个临时目录）。
+- **判据**：`demo/manifest.json` 只有在「声明⇔产物、同批、哈希复算、无孤儿图」四条全过时才写出；
+  另有 `apps/web/tests/demo-coverage.test.ts` 守「登记⇔声明⇔脚本」一一对应。
+- **清理前先确认**：`demo/` 不在 git 里，`git clean -xdf` 一类整仓清理会把它一起删掉；
+  展示前若已有材料，先确认它是不是还要用（或先跑一次留档）。
+- 运行前提、产物怎么用、失败恢复与已知边界见 [docs/运维/演示材料生成.md](docs/运维/演示材料生成.md)。
+
 ### 临时文件：只有 `.tmp/` 一个落点
 
 **临时文件一律写 `.tmp/`**，不要新建 `tmp/`、`_tmp_test/`、`reports/` 这类并列目录，

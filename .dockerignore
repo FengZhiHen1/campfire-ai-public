@@ -42,6 +42,10 @@ node_modules
 
 # --- 本仓的非产物目录（都不参与镜像）---
 .tmp
+# 演示材料落点：位置固定但不入库（见 .gitignore 同名条目与 docs/运维/演示材料生成.md）。
+# 不排除的后果是每轮 PNG 与 manifest 进入构建上下文，白白撑大上下文与缓存。
+# 用 `/` 锚定仓库根：写成 `demo` 会连带排除 `apps/web/demo/`（那是源码，必须进上下文）。
+/demo
 archive
 reports
 .agent
