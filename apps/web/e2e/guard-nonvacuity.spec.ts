@@ -3,11 +3,11 @@
  * 职责: 证明 fullPage 高度守卫不是恒真的检查——在目标外壳结构下，用生产同一个取量函数与
  *       判据函数，跑出「不展开则抛错」与「展开则通过」两种结果
  * 数据来源:
- *   - docs/证据/orchestrator-20261002-001/T01-rulings.md: MUST — 追加裁决第 2 条
+ *   - 原证物 orchestrator-20261002-001/T01-rulings.md: MUST — 追加裁决第 2 条
  *     「守卫的作用不是通过，而是在外壳落地后第一时间变红……请确保它真的会红」
- *   - docs/证据/orchestrator-20261002-001/T01-review-rulings.md: MUST — P1-1 的修法
+ *   - 原证物 orchestrator-20261002-001/T01-review-rulings.md: MUST — P1-1 的修法
  *     （判据改用隐藏溢出；本文件必须喂与生产调用点相同的量，且必须覆盖 stage padding = 24 与 0）
- *   - docs/证据/orchestrator-20261002-001/facts.md §3: MUST — 目标外壳结构的几何（含 padding）
+ *   - 原证物 orchestrator-20261002-001/facts.md §3: MUST — 目标外壳结构的几何（含 padding）
  * 边界:
  *   - 依赖: e2e/support/*、@playwright/test
  *   - 被依赖: 无（由 `pnpm --filter @campfire/web shots` 一并驱动）
@@ -30,7 +30,7 @@
  *
  * 为什么选这个做法（而不是「直接针对真实 `.device-screen`」）
  *
- * 我在两视口都实测了真实外壳（探针输出 `docs/证据/orchestrator-20261002-001/T01-assets/probe-shell-desktop.txt`）：
+ * 我在两视口都实测了真实外壳（探针输出 原证物 `orchestrator-20261002-001/T01-assets/probe-shell-desktop.txt`）：
  *   - desktop：真实外壳确实形成陷阱（`.device-screen` `overflow-y:auto`，profile 裁 1184px、
  *     memory 裁 82px，陷阱图高 2000px），所以「直接针对真实 `.device-screen`」在 desktop 可行；
  *   - mobile：三层都是 `display: contents`、`clientHeight/scrollHeight` 均为 0，

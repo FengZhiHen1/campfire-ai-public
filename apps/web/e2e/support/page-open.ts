@@ -2,7 +2,7 @@
  * 模块: e2e/support/page-open
  * 职责: 「打开一页」的唯一实现——注入登录态、装网络夹具、导航、等字体、判 fail-closed
  * 数据来源:
- *   - docs/证据/orchestrator-20261002-001/T01.md: MUST — 裁决 C（登录态注入）、
+ *   - 原证物 orchestrator-20261002-001/T01.md: MUST — 裁决 C（登录态注入）、
  *     裁决 D（夹具 fail-closed）、裁决 F（内容断言的观察前提）
  *   - apps/web/e2e/support/session.ts: MUST — 注入必须在 goto 之前（SDK 冷启动查一次会话）
  * 边界:

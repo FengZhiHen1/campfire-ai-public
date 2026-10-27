@@ -2,7 +2,7 @@
  * 模块: e2e/global.setup
  * 职责: 在本次运行的任何用例之前开一轮新批——生成本轮批号，并在截图入口上清上一轮残留
  * 数据来源:
- *   - docs/证据/orchestrator-20261002-001/T01-review-rulings.md: MUST — P2-3
+ *   - 原证物 orchestrator-20261002-001/T01-review-rulings.md: MUST — P2-3
  *     （部分成功运行会留下旧 manifest + 新旧混合 PNG；要求能发现混批）
  * 边界:
  *   - 依赖: e2e/support/runid

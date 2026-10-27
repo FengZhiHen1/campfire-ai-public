@@ -2,7 +2,7 @@
  * 模块: e2e/content
  * 职责: 逐页内容断言——证明「每页真的渲染出了有料的目标形态」，而不是空态或错误态
  * 数据来源:
- *   - docs/证据/orchestrator-20261002-001/T01.md: MUST — 裁决 F（逐页内容断言，
+ *   - 原证物 orchestrator-20261002-001/T01.md: MUST — 裁决 F（逐页内容断言，
  *     且必须能在内容缺失时失败，不许写成恒真）
  *   - apps/web/e2e/support/fixtures.ts: MUST — 每页的断言清单（本文件只负责求值与呈现）
  * 边界:

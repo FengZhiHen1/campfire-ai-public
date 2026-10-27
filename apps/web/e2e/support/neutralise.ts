@@ -2,9 +2,9 @@
  * 模块: e2e/support/neutralise
  * 职责: fullPage 截图前的两处布局中和——fixed 元素入流、主滚动容器及其祖先链展开（以及截后恢复）
  * 数据来源:
- *   - docs/证据/orchestrator-20261002-001/T01-rulings.md: MUST — 裁决 1「fullPage 的已知陷阱」
+ *   - 原证物 orchestrator-20261002-001/T01-rulings.md: MUST — 裁决 1「fullPage 的已知陷阱」
  *     与其追加裁决第 1、2、3 条（必须展开实际滚动容器、必须恢复并断言回到原状、加高度守卫）
- *   - docs/证据/design-render/render.mjs:59 与 docs/证据/design-render/README.md:29-33: MUST —
+ *   - 原证物 design-render/render.mjs:59 与 原证物 design-render/README.md:29-33: MUST —
  *     本仓既有的同语义解法：用 `position: static !important` 把吸附/固定中和为文档流
  *   - apps/web/src/shared/styles/components.css:446,642: MUST — 产物里唯二的 position:fixed 规则
  *     是 `.tab-bar` 与 `.confirm-sheet`（由编译产物的 CSS 实测枚举，非猜测）
@@ -24,7 +24,7 @@ import { CSS_LAYOUT_TOLERANCE_PX, PNG_HEIGHT_TOLERANCE_PX } from './paths';
 /**
  * 中和 fixed 的注入样式。
  *
- * 只把 `position` 改为 `static`，不改任何视觉参数——与 `docs/证据/design-render/render.mjs` 的
+ * 只把 `position` 改为 `static`，不改任何视觉参数——与 原证物 `design-render/render.mjs` 的
  * `FLOW_CSS` 同语义（那边中和的是 `.emergency-controls` 的 sticky）。用 `!important`
  * 是必要的：要覆盖的规则本身在产物里带同等或更高特异性，且这段样式必须赢。
  *
@@ -34,7 +34,7 @@ import { CSS_LAYOUT_TOLERANCE_PX, PNG_HEIGHT_TOLERANCE_PX } from './paths';
  *
  * 为什么必须中和：`.tab-bar` 与 `.confirm-sheet` 是 `position: fixed`。Chromium 的 fullPage
  * 截图会让 fixed 元素只出现在其视口位置，于是长图里底部导航会卡在中间——视觉审查会误读成
- * 「页面中段浮着一条栏」。中和后它们按文档流出现在页面末尾，与 `docs/证据/design-render/README.md`
+ * 「页面中段浮着一条栏」。中和后它们按文档流出现在页面末尾，与 原证物 `design-render/README.md`
  * 第 33 行登记的取舍一致（「固定定位元素在分区图里按文档流呈现，不代表运行时的覆盖层级」）。
  */
 const NEUTRALISE_CSS = `
@@ -158,7 +158,7 @@ export interface ClippedElement {
  *      （`components.css:75`：1×1px + `clip-path: inset(50%)`）差 27px，
  *      是无障碍用途的视觉隐藏（内容对屏幕阅读器仍可见），更不是「被裁的内容」。
  *
- * 前两条由裁决明确要求；第三条是我用真实页面探针发现的（`docs/证据/orchestrator-20261002-001/T01-assets/probe-clip-mobile.txt`：
+ * 前两条由裁决明确要求；第三条是我用真实页面探针发现的（原证物 `orchestrator-20261002-001/T01-assets/probe-clip-mobile.txt`：
  * 若不排除，`chat` 与 `cases` 各有一个 27px 的假红源）。三者的共同点是
  * 该 CSS 属性的用途就是截断，所以按属性判定比按像素差判定更本质。
  *
@@ -335,7 +335,7 @@ export interface OverflowMeasurement {
    * 两者不等（外壳场景：`.device-screen` 视口高 844，而文档视口高在 desktop 下是 1000）。
    * 实现时我一度写成 `documentElement.clientHeight + innerOverflowPx`，在 desktop 下
    * 得到 1000 + 1241 = 2241，而真实展开后的内容高只有 2133，于是误报展开失败
-   * （被 `guard-nonvacuity` 的 `assertExpanded` 抓到，见 `docs/证据/orchestrator-20261002-001/T01-assets/r3-run2.txt`）。
+   * （被 `guard-nonvacuity` 的 `assertExpanded` 抓到，见 原证物 `orchestrator-20261002-001/T01-assets/r3-run2.txt`）。
    * 这不是裁决的问题，是「把两个不同来源的量相加」这个动作本身错。
    *
    * 本字段的算法（逐来源取，不跨来源相加）

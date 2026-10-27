@@ -2,8 +2,8 @@
  * 模块: e2e/support/paths
  * 职责: 截图基建的固定常量——落点解析、页面 × 视口 × 图种矩阵与两处时间上界
  * 数据来源:
- *   - docs/证据/orchestrator-20261002-001/T01.md: MUST — 裁决 E（两视口、命名、--out 支持、落点 tmp/screenshots）
- *   - docs/证据/orchestrator-20261002-001/T01-rulings.md: MUST — 裁决 1 与其追加裁决
+ *   - 原证物 orchestrator-20261002-001/T01.md: MUST — 裁决 E（两视口、命名、--out 支持、落点 tmp/screenshots）
+ *   - 原证物 orchestrator-20261002-001/T01-rulings.md: MUST — 裁决 1 与其追加裁决
  *     （每条页面 × 视口 出两张图：视口图与 fullPage 图，命名 `<page>-<viewport>-full.png`）
  *   - docs/项目结构设计.md: MUST — 第 9 节（e2e 属工程设施，不被 src 引用）
  * 边界:
@@ -263,7 +263,7 @@ export const SESSION_READY_TIMEOUT_MS = 5_000;
  * 三处若各写一个容差，就会出现「用例通过但汇总失败」这类错位——实测 20 张 full 图里
  * 12 张余量恰好为 0，任何口径差异都会立刻变成假红或漏报。
  *
- * 取值 2 的依据：沿用 `docs/证据/design-render/README.md` 第 19、40–44 行登记的同一现象与同一处置
+ * 取值 2 的依据：沿用 原证物 `design-render/README.md` 第 19、40–44 行登记的同一现象与同一处置
  * ——该仓渲染器实测「宽度 30/30 精确，高度 26/30 短 1–2px，成因未确定」，用 2px 容差吸收，
  * 并把「谁查清成因就把容差收紧到 1px」写进了 README。此处取同一值，不另立标准。
  */
@@ -279,7 +279,7 @@ export const PNG_HEIGHT_TOLERANCE_PX = 2;
  *
  * 取值依据（实测，不凭感觉）
  *
- * 用真实页面的探针实测（`docs/证据/orchestrator-20261002-001/T01-assets/probe-clip-mobile.txt`，10 页，mobile 视口）：
+ * 用真实页面的探针实测（原证物 `orchestrator-20261002-001/T01-assets/probe-clip-mobile.txt`，10 页，mobile 视口）：
  * 扫描 `overflow-y ∈ {auto,scroll,hidden,clip}` 且 `scrollHeight > clientHeight` 的元素，
  * 排除三类设计内的刻意截断后（ellipsis / line-clamp / clip-path），
  * 非刻意截断的条目数为 0 —— 真实页面在 1px 阈值下也没有「该展开而没展开」的元素。

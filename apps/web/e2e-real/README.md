@@ -4,7 +4,7 @@
 > 后端、真 SuperTokens 登录、真模型（部分链路）。与 `apps/web/e2e/`（`pnpm shots`，mock 基建）
 > 是**两套互不影响的装置**。
 >
-> 本文件是**入库的**运行说明。此前「真栈怎么跑」只存在于 `docs/证据/probes/serve.py`（**`tmp/` 被
+> 本文件是**入库的**运行说明。此前「真栈怎么跑」只存在于原证物 `probes/serve.py`（该证物树已删除；**`tmp/` 被
 > `.gitignore` 忽略**）⇒ 该知识不入库、下次会丢。本文取代它。
 
 ---
@@ -278,10 +278,10 @@ uv run python -m campfire.cli invite issue
 > 该字段**在影片源码里零消费者**，故不影响影片；但要知道它**不是逐字节一致**的那一个数。
 
 > **⚠ 一处按代码推断的夹具陷阱（证据强度：中——由代码与 T11 记录推出，本包未单独执行验证）**：
-> `docs/证据/probes/run-real.ps1` 的 `CodeCount` **默认是 4**，而 `inviteCodeFor` 对池取模
+> 原证物 `probes/run-real.ps1`（**已随证物树删除**，见本文件顶部的说明）的 `CodeCount` **默认是 4**，而 `inviteCodeFor` 对池取模
 > （`pool[index % pool.length]`）⇒ 池只有 4 枚时，下标 **4 会回绕到下标 0**，而码 0 已被链路1
 > 用掉。⇒ 要跑 `@control` 请显式给足 5 枚（T11 报告记录其全量运行即「现签 5 枚」，与该推断一致），
-> 例如 `pwsh -File docs/证据/probes/run-real.ps1 -CodeCount 5`。
+> 例如 `pwsh -File <原证物目录>/probes/run-real.ps1 -CodeCount 5`（该脚本不在仓库里，需自行按本节约束重写）。
 > **为什么值得写下来**：T11 的 R3 记录过一个真实踩坑——复用失效码时 supertokens 返回
 > **HTTP 200 + `{"status":"GENERAL_ERROR"}`**，于是「只看 HTTP 200」的断言**恒真**、注册静默
 > 失败，最终以别的现象（超时 180s）暴露。夹具已改为断言响应体 `status === 'OK'`（原见
