@@ -865,7 +865,7 @@ async def test_unknown_tenant_with_valid_code_is_a_shaped_rejection_not_a_500(
     然后原样 `raise` ⇒ 冒泡成 **HTTP 500**。500 本身就是「该租户不存在」的信号，
     且匿名可达（不需要已存在的账号）。
 
-    实测（真 uvicorn + 真 core，改动前，`docs/证据/probes/t40/probe-before.json`）：
+    实测（真 uvicorn + 真 core，改动前，原证物 `probes/t40/probe-before.json`）：
         POST /api/auth/t40-unknown-tenant/signup + 有效码 → HTTP 500 `Internal Server Error`
 
     本用例断言的是**两件事**，缺一不可：
@@ -938,10 +938,10 @@ async def test_duplicate_account_name_is_rejected_in_the_same_shape(client: http
     ——不查库、不建号。而第 1 步（占用邀请码）先于它 ⇒ 本分支只在**码有效**时可达
     ⇒ 「拿到 FIELD_ERROR」本身就证明了候选码有效，且全过程不建号、不消耗码。
 
-    实测（真 uvicorn + 真 core，改动前，`docs/证据/probes/t40/probe-before.json`）：
+    实测（真 uvicorn + 真 core，改动前，原证物 `probes/t40/probe-before.json`）：
         POST /api/auth/signup {email: c4-before@stfakeemail.supertokens.com, inviteCode: <有效码>}
         → 200 {"status":"FIELD_ERROR","formFields":[{"id":"email",…}]}
-    改动后（`docs/证据/probes/t40/probe-after.json`）→ 200 `GENERAL_ERROR` + 统一消息。
+    改动后（原证物 `probes/t40/probe-after.json`）→ 200 `GENERAL_ERROR` + 统一消息。
 
     ⚠️ 用户可见代价（如实记下）：重名注册**这条正常路径**的文案随之改变——
     前端按 `FIELD_ERROR` + `email` 字段分派到 `account-unusable`

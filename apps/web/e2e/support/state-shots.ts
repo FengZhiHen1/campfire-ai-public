@@ -3,7 +3,7 @@
  * 职责: 关键状态图的逐图 sidecar 形状与读写（`states.spec.ts` 据此核对与汇总）
  * 数据来源:
  *   - docs/design/DESIGN.md: MUST — 「关键状态截图统一在 .tmp/screenshots/states」
- *   - docs/证据/orchestrator-20261002-001/T01-review-rulings.md: MUST — P2-3
+ *   - 原证物 orchestrator-20261002-001/T01-review-rulings.md: MUST — P2-3
  *     「部分成功运行会留下旧产物……要能发现混批」
  *   - apps/web/e2e/support/manifest.ts: MUST — 同一套做法（落盘即复算、批号随 sidecar 走）
  * 边界:

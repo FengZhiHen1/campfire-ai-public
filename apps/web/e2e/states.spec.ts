@@ -3,7 +3,7 @@
  * 职责: 把「关键状态图」从写在 DESIGN.md 里的承诺变成机器判据——声明 ⇔ 产物，且都是本轮产物
  * 数据来源:
  *   - docs/design/DESIGN.md: MUST — 「关键状态截图统一在 .tmp/screenshots/states」
- *   - docs/证据/orchestrator-20261002-001/T01-review-rulings.md: MUST — P2-3（混批必须可发现）
+ *   - 原证物 orchestrator-20261002-001/T01-review-rulings.md: MUST — P2-3（混批必须可发现）
  *   - apps/web/e2e/support/paths.ts: MUST — `STATE_SHOTS` 是声明真源，本文件不另立一份名单
  *   - apps/web/e2e/manifest.spec.ts: MUST — 同一套做法（sidecar 汇总、回读磁盘复算哈希）
  * 边界:

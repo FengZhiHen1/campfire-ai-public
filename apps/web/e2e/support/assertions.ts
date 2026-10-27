@@ -2,7 +2,7 @@
  * 模块: e2e/support/assertions
  * 职责: 逐页内容断言的求值与证据采集——证明「截图必须有料」而不是只截了一张空态
  * 数据来源:
- *   - docs/证据/orchestrator-20261002-001/T01.md: MUST — 裁决 F（逐页内容断言，且命中特征串进 manifest）
+ *   - 原证物 orchestrator-20261002-001/T01.md: MUST — 裁决 F（逐页内容断言，且命中特征串进 manifest）
  *   - .dsh/skills/code-craft/references/slices/typescript.md: MUST — TS-09（判别联合用穷尽检查，不留隐式 default）
  * 边界:
  *   - 依赖: @playwright/test 的 Page/expect

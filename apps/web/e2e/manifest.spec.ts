@@ -2,9 +2,9 @@
  * 模块: e2e/manifest.spec
  * 职责: 汇总逐图 sidecar 成 manifest.json，并把「manifest 与磁盘一致」变成机器断言
  * 数据来源:
- *   - docs/证据/orchestrator-20261002-001/T01.md: MUST — 目标 4 与验收标准
+ *   - 原证物 orchestrator-20261002-001/T01.md: MUST — 目标 4 与验收标准
  *     「manifest 记录 sha256 与字节数，与文件实际值一致——审查者会抽查复算」
- *   - docs/证据/orchestrator-20261002-001/T01-rulings.md: MUST — 裁决 1（清点变 40 张、
+ *   - 原证物 orchestrator-20261002-001/T01-rulings.md: MUST — 裁决 1（清点变 40 张、
  *     kind 字段）与追加裁决（fullPage 图记 contentHeightPx / expandedScrollContainer）
  *     与裁决 2（fontLoaded 必为 true）
  * 边界:
