@@ -199,5 +199,8 @@ test(LIBRARY.title, async ({ page }, testInfo) => {
       message: '深链展开后的正文应有实质文本（容器可见 ≠ 内容已到）',
     })
     .toBeGreaterThan(MIN_BODY_CHARS);
+  // 必须滚到展开的正文再截：深链落地时页面在顶部，不滚就会和第 1 帧（列表首屏）逐字节相同——
+  // 那是「清单的帧唯一性判据」当场抓出来的（2026-10-28 实测），不是猜的。
+  await locatedBody.scrollIntoViewIfNeeded();
   await shot(5);
 });
