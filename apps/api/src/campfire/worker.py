@@ -199,9 +199,16 @@ async def dispatch_pending_write_to_queue(pending_id: str, kind: str) -> None:
     await dispatcher(pending_id)
 
 
-# 装配点：产品侧工具（`tools/`）与 API 入口只依赖 `core/jobs`，
-# 不 import 本入口模块（层白名单）。
-set_dispatch_hook(dispatch_pending_write_to_queue)
+# 装配点（2026-10-28 改动）：投递钩子在 **Worker 启动事件**里装，不再在模块顶层装。
+#
+# 为什么必须挪走（QA-04，2026-10-06 实测、2026-10-28 修）：`main.py` 为了拿投递函数会
+# `from campfire.worker import dispatch_pending_write_to_queue`，于是「import 本模块」在
+# **任何**进程里都会顺手把真钩子装上——包括测试进程。后果是集成测试真的把任务投进 Redis，
+# 另一端若有 Worker 在消费（尤其孤儿 Worker），记录被它置 `done`，测试自己的模拟消费就领不到，
+# 表现为「同一组合跑出不同失败项、单跑各文件全绿」的间歇性假失败。
+# 模块导入不该改变全局装配状态：钩子是**入口负责装的东西**，不是 import 的副作用。
+# 现在 API 侧仍由 `main.py` 的 lifespan 装（它本来就这么做），Worker 侧由下面的
+# `_install_dispatch_hook` 在 WORKER_STARTUP 时装，两边各装各的、都要装。
 
 
 @broker.task
@@ -494,6 +501,17 @@ async def _sweep_forever() -> None:
         except Exception:  # noqa: BLE001 —— 单轮失败继续下一轮，绝不静默停止扫描
             logger.exception("兜底扫描本轮失败，%d 秒后重试", SWEEP_INTERVAL_SECONDS)
         await asyncio.sleep(SWEEP_INTERVAL_SECONDS)
+
+
+@broker.on_event(TaskiqEvents.WORKER_STARTUP)
+async def _install_dispatch_hook(_state: object) -> None:
+    """Worker 启动时装上投递钩子（兜底扫描经它重投）。
+
+    与 `main.py` 的 lifespan 同一处置：两个入口各自装自己进程里的钩子。此前这里是
+    模块级的 `set_dispatch_hook(...)`，import 即生效——副作用泄漏到了所有 import 本模块的
+    进程（测试进程受害最深，见文件里该处注释的实测）。
+    """
+    set_dispatch_hook(dispatch_pending_write_to_queue)
 
 
 @broker.on_event(TaskiqEvents.WORKER_STARTUP)
