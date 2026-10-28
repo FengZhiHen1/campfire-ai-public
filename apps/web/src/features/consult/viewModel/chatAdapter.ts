@@ -20,7 +20,7 @@ import type { PostMessageResponse } from '../../../shared/types/consult';
 import type { RunEvent } from '../../../shared/types/sse';
 import type { ConsultPort, StreamNotice } from '../application/ports';
 import { CancelRunUseCase, SendMessageUseCase } from '../application/usecases';
-import { ConsultRunFailure } from '../domain/errors';
+import { ConsultError, ConsultRunFailure } from '../domain/errors';
 import type { AnswerSubmission } from '../domain/questionBatch';
 import { createPartAccumulator } from './partAccumulator';
 import type { ConnectionStatus } from '../domain/types';
@@ -59,6 +59,14 @@ export interface ConsultChatAdapterDeps {
   consumeAttachIntent?(): boolean;
   /** 认领的这次运行已到终态（成功或失败）：清掉交接，避免后续装配重复订阅同一运行。 */
   clearAttachedRun?(): void;
+  /**
+   * 请求上层「改走历史水合」（契约第 4.2 节续传行、第 8 节重连耗尽）。
+   *
+   * 为什么由适配器发这个请求、而不是让错误卡自己带一个重试按钮：传输已经不可续，
+   * 但**答案已经在会话真源里**（服务端把运行结果落了库）。这时唯一有意义的动作是重新读
+   * 历史，而不是让使用者面对「找不到这条内容」却没有出口——2026-10-28 实测到的正是这一张卡。
+   */
+  onNeedsResync?(): void;
   /** 诊断（丢弃的事件、取消失败等，不静默吞）。 */
   onDiagnostic?(message: string): void;
   /** 幂等键生成器；测试注入固定值。 */
@@ -257,6 +265,13 @@ export function createConsultChatAdapter(deps: ConsultChatAdapterDeps): ChatMode
       if (transportFailure !== null) {
         deps.onFailure(transportFailure);
         deps.onConnection('failed');
+        // 不可续传（409 / 404）：本地这份 partial 已经不可能再长完整，重新读一次历史
+        // 才能把服务端已保存的回答显示出来。其他失败（401/网络/服务不可用）不触发重读：
+        // 那些情形历史里本来就没有新东西，重读只会闪一下屏。
+        if (transportFailure instanceof ConsultError && transportFailure.kind === 'not-resumable') {
+          deps.onDiagnostic?.('本次订阅不可续传：改走历史水合');
+          deps.onNeedsResync?.();
+        }
       }
 
       if (runFailure !== null || transportFailure !== null) {

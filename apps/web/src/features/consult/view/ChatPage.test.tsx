@@ -704,3 +704,26 @@ describe('对话页 — 设备外壳（宽视口）', () => {
     expect(failedView.container.querySelector('.device-screen')).not.toBeNull();
   });
 });
+
+describe('对话页 — 订阅不可续传后自动重读历史（2026-10-28 修复）', () => {
+  it('流订阅不可续传（409/404）时重新读历史，把服务端已保存的回答显示出来', async () => {
+    const port = createConsultPortStub({ history: historyResponse([]) });
+    // 第一次水合是空会话；重新水合时服务端已经有了这一轮的回答（这正是真实情形：
+    // 运行在服务端跑完了，只是客户端的订阅通道失效了）。
+    vi.mocked(port.loadHistory)
+      .mockResolvedValueOnce(historyResponse([]))
+      .mockResolvedValue(
+        historyResponse([
+          hydratedAssistant('m1', [{ type: 'text', text: '这是服务端保存下来的回答' }]),
+        ]),
+      );
+    port.failNextStream(new ConsultError('not-resumable', '运行元数据已不在（404）'));
+
+    renderChat(port);
+    await send('现场很吵，他捂住了耳朵');
+
+    expect(await screen.findByText('这是服务端保存下来的回答')).toBeDefined();
+    // 重读过一次：历史不再只有空会话那一次请求。
+    expect(port.loadHistory).toHaveBeenCalledTimes(2);
+  });
+});

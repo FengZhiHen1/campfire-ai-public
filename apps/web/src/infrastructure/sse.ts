@@ -78,10 +78,25 @@ export interface SseParserOptions {
   onDiagnostic?: SseDiagnosticSink;
 }
 
-/** 409 `run_not_resumable`：缓冲已失效，调用方须改走历史水合（契约第 4.2 节续传行）。 */
+/**
+ * 运行事件流已不可续传：缓冲失效或运行元数据不在了，调用方须改走历史水合
+ * （契约第 4.2 节续传行）。
+ *
+ * 两种状态码归到同一个异常是刻意的：
+ * - **409 `run_not_resumable`**：服务端自己判定缓冲失效、且没有可续内容；
+ * - **404**：`run:<id>:meta` 不在了（到期，或这条运行从来不属于当前账号）。服务端此时
+ *   无法回放，客户端继续重连也不会成功——**但它的答案已经在会话真源里**，所以正确的
+ *   处置与 409 相同：改成读历史，而不是给使用者一张「找不到这条内容」的死胡同卡片。
+ *   2026-10-28 实测：真实走查中流订阅偶发 404，前端当时把它翻成不可重试的致命错误卡，
+ *   使用者既看不到回答也没有重试入口（`apps/web/src/features/consult/domain/errors.ts`）。
+ */
 export class RunNotResumableError extends Error {
-  constructor() {
-    super('运行事件流已不可续传（409 run_not_resumable）');
+  constructor(readonly reason: 'not-resumable-409' | 'run-meta-gone-404' = 'not-resumable-409') {
+    super(
+      reason === 'run-meta-gone-404'
+        ? '运行元数据已不在（404），本次订阅无法续传'
+        : '运行事件流已不可续传（409 run_not_resumable）',
+    );
     this.name = 'RunNotResumableError';
   }
 }
@@ -366,7 +381,12 @@ async function* requestRunFrames(
 
   if (response.status === 409) {
     // 契约第 4.2 节：缓冲失效或已无可续内容。重连不会成功，调用方改走历史水合。
-    throw new RunNotResumableError();
+    throw new RunNotResumableError('not-resumable-409');
+  }
+  if (response.status === 404) {
+    // 见 `RunNotResumableError` 的说明：元数据不在了，重连不会成功；答案已在会话真源里，
+    // 因此与 409 同样处置（改走历史水合），而不是让上层翻成不可重试的致命错误。
+    throw new RunNotResumableError('run-meta-gone-404');
   }
   if (response.status === 401) {
     throw new HttpError(401, '会话已失效');
@@ -387,8 +407,8 @@ async function* requestRunFrames(
  * 前置: runId 非空；signal 未中止
  * 后置: 逐条 yield 该运行的事件；收到终态事件后正常结束（服务端随后关闭流）
  * 异常:
- *   - RunNotResumableError：409，调用方改走历史水合
- *   - HttpError：401/404/422/503 等确定性失败，不重连
+ *   - RunNotResumableError：409 / 404，调用方改走历史水合
+ *   - HttpError：401/422/503 等确定性失败，不重连（404 已归入不可续传，见上）
  *   - RunStreamExhaustedError：网络类中断且重连次数耗尽（契约第 8 节）
  *
  * 取消（signal 中止）不是异常：直接结束生成器，不发终态（契约第 4.3 节）。

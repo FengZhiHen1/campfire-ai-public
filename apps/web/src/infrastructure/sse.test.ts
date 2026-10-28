@@ -237,6 +237,33 @@ describe('subscribeRunEvents — 订阅、续传与重连', () => {
     expect(calls).toHaveLength(1);
   });
 
+  it('404（运行元数据不在了）归入不可续传：不重连，交给上层改走历史水合', async () => {
+    // 判据来源：2026-10-28 真栈走查实测——流订阅偶发 404，前端当时把它翻成不可重试的
+    // 致命错误卡（「找不到这条内容」），使用者既看不到回答也没有重试入口。
+    const { fetchImpl, calls } = fetchSequence([() => new Response('', { status: 404 })]);
+
+    const error = await (async () => {
+      try {
+        for await (const event of subscribeRunEvents({
+          runId: 'r404',
+          signal: new AbortController().signal,
+          fetchImpl,
+          wait: () => Promise.resolve(),
+        })) {
+          void event;
+        }
+        return null;
+      } catch (thrown: unknown) {
+        return thrown;
+      }
+    })();
+
+    expect(error).toBeInstanceOf(RunNotResumableError);
+    expect((error as RunNotResumableError).reason).toBe('run-meta-gone-404');
+    // 不重连：重连也拿不到元数据，只会多打几次 404。
+    expect(calls).toHaveLength(1);
+  });
+
   it('取消（abort）结束订阅且不抛错、不重连', async () => {
     const first = 'id: 1\nevent: text_delta\ndata: {"type":"text_delta","delta":"甲"}\n\n';
     const { fetchImpl, calls } = fetchSequence([() => sseResponse([first])]);

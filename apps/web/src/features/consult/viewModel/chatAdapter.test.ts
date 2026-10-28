@@ -15,7 +15,7 @@ import { describe, expect, it } from 'vitest';
 import type { ChatModelRunOptions, ChatModelRunResult, ThreadMessage } from '@assistant-ui/react';
 
 import { createConsultChatAdapter } from './chatAdapter';
-import { ConsultRunFailure } from '../domain/errors';
+import { ConsultError, ConsultRunFailure } from '../domain/errors';
 import type { ConnectionStatus } from '../domain/types';
 import { createConsultPortStub } from '../test/consultPortStub';
 import {
@@ -69,6 +69,7 @@ async function runAdapter(options: {
   const connections: ConnectionStatus[] = [];
   const diagnostics: string[] = [];
   const failures: unknown[] = [];
+  const resyncs: string[] = [];
   let skill: string | null = options.pendingSkill ?? null;
   let submission = options.pendingSubmission ?? null;
   let attached = options.attachedRunId ?? null;
@@ -88,6 +89,7 @@ async function runAdapter(options: {
     onEvent: (event) => events.push(event),
     onConnection: (connection) => connections.push(connection),
     onFailure: (error) => failures.push(error),
+    onNeedsResync: () => resyncs.push('requested'),
     peekAttachedRunId: () => attached,
     consumeAttachIntent: () => {
       const intent = attachIntent;
@@ -126,6 +128,7 @@ async function runAdapter(options: {
     connections,
     diagnostics,
     failures,
+    resyncs,
     thrown,
     remainingSkill: skill,
     remainingSubmission: submission,
@@ -463,5 +466,32 @@ describe('createConsultChatAdapter — 应急入口认领既有运行', () => {
     const result = await runAdapter({ events: [textDelta('写了一半')], abortSignal: controller.signal });
 
     expect(result.port.cancelCalls).toEqual(['run-1']);
+  });
+});
+
+describe('chatAdapter — 订阅不可续传后请求历史水合', () => {
+  it('not-resumable（409 / 404 归一类）：请求一次重读，并如实收尾为未完成', async () => {
+    const result = await runAdapter({
+      events: [],
+      failStream: new ConsultError('not-resumable', '运行元数据已不在（404）'),
+    });
+
+    // 这是本次修复的判据：从前这条路径既不重读、也没有任何出口。
+    expect(result.resyncs).toEqual(['requested']);
+    expect(result.connections).toContain('failed');
+    expect(result.statuses.at(-1)?.type).toBe('incomplete');
+    // 已 yield 的 partial 保留（不变量 1）：这里没有正文，但仍是「未完成 + 错误」而不是成功。
+    expect(result.thrown).toBeNull();
+  });
+
+  it('其他失败不请求重读（401/网络这些情形历史里没有新东西，重读只会闪屏）', async () => {
+    const result = await runAdapter({
+      events: [],
+      failStream: new ConsultError('network', '网络请求失败'),
+    });
+
+    expect(result.resyncs).toEqual([]);
+    expect(result.connections).toContain('failed');
+    expect(result.statuses.at(-1)?.type).toBe('incomplete');
   });
 });
