@@ -251,9 +251,22 @@ async def _require_run_meta(cache: RedisCache, *, run_id: str, account_id: str) 
             当前账号（三者都是同一个 404 与同一条文案）。
     """
     if len(run_id) > MAX_RUN_ID_CHARS:
+        # 服务端留痕，响应仍是统一的 404：客户端不该能区分这三种情形（不泄露存在性），
+        # 但**运维必须能**——2026-10-28 排查偶发 404 时，日志里只有 `GET … 404` 一行，
+        # 分不清是「元数据到期」「不属于本账号」还是「形状就不对」，只能靠反推。
+        logger.warning(
+            "运行元数据不可访问：标识超长 run=%s len=%d（响应仍为统一 404）",
+            run_id[:32],
+            len(run_id),
+        )
         raise _run_not_found()
     meta = await runbus.read_run_meta(cache, run_id=run_id)
     if meta is None or meta.account_id != account_id:
+        logger.warning(
+            "运行元数据不可访问：%s run=%s（响应仍为统一 404）",
+            "不存在或已过期" if meta is None else "归属不符",
+            run_id,
+        )
         raise _run_not_found()
     return meta
 
