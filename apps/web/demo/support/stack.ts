@@ -246,9 +246,16 @@ export type RoundOutcome = 'question' | 'done';
  * 新一轮结束后要么出现新的待作答卡，要么出现 `完成引导` 工具行——两者都不会回退。
  */
 export async function waitRoundOutcome(page: Page): Promise<RoundOutcome> {
+  // 静定判据用来「提前判定这一轮已经结束，但没给我们任何一个可继续的终态」。
+  // 为什么需要它：引导的题序与形态由模型决定，2026-10-28 实测出现过模型**在正文里**
+  // 追问（而不是用结构化提问事件）——此时既没有待作答卡、也没有 `完成引导` 工具行，
+  // 旧实现只能白等到 320 秒超时，报出来的却是「等待终态超时」，指错了地方。
+  const settle = new SettleTracker(2);
+  let baselineDocs = -1;
   await expect
     .poll(
       async () => {
+        if (baselineDocs < 0) baselineDocs = await page.locator('.msg-doc').count();
         // 失败态优先：模型超时/不可用时页面会挂出 `.error-card`（`本次回答没有完成。稍后可以重试。`）。
         // 不认它就会一直等到超时，然后把「模型超时」误报成「夹具卡住」——2026-10-27 实测过一次。
         const error = page.locator('.error-card');
@@ -260,6 +267,23 @@ export async function waitRoundOutcome(page: Page): Promise<RoundOutcome> {
         // 精确到「已结束」：`hasText: '完成引导'` 会连「完成引导 · 未完成」一起命中，
         // 那等于把工具失败当成流程成功（独立复查 FAIL-2）。
         if ((await page.locator('.tool-row', { hasText: '完成引导 · 已结束' }).count()) > 0) return 'done';
+        // 第三种情形：本轮已经静定（没有停止键、没有工具在跑、正文不再增长），却既不提问也没完成。
+        // 这不是「还没好」，是「这一轮没按设计给终态」——立刻带着现场信息失败，别拖成超时。
+        const verdict = settle.next({
+          errorText: null,
+          docCount: await page.locator('.msg-doc').count(),
+          baselineDocs: Math.max(0, baselineDocs),
+          runningTools: await page.locator('.tool-row[data-state="running"]').count(),
+          pendingQuestion: false,
+          stopVisible: (await page.getByRole('button', { name: '停止' }).count()) > 0,
+          lastDocLength: (await page.locator('.msg-doc').last().innerText().catch(() => '')).trim().length,
+        });
+        if (verdict.kind === 'done') {
+          throw new Error(
+            '这一轮静定了，但既没有待作答的提问卡、也没有「完成引导 · 已结束」：' +
+              '引导没有按 skill 的「一次一问（结构化提问事件）」给出可继续的终态（模型在正文里追问时就是这样）',
+          );
+        }
         return 'waiting';
       },
       { timeout: ANSWER_TIMEOUT_MS, message: '等待这一轮跑出终态（新提问卡 或 完成引导）' },
