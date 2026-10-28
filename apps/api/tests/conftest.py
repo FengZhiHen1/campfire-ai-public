@@ -167,10 +167,15 @@ def _isolate_queue_dispatch() -> Iterator[None]:
 
     为什么必须有这一层（QA-04；2026-10-06 本机实测）
 
-    `import campfire.main` 会经 `main.py:75` 拉进 `campfire.worker`，而
-    `worker.py:204` 是**模块级**的 `set_dispatch_hook(...)` —— **import 即注入真钩子**。
-    于是测试进程里 `propose_profile_item` 真的把任务投进 Redis，另一端有 Worker
-    （尤其孤儿 Worker）竞速消费并把记录置 `done`，测试自己的模拟消费就领不到。
+    **2026-10-28 起这条竞速的根因已修**：`worker.py` 的模块级 `set_dispatch_hook(...)` 挪到
+    `WORKER_STARTUP` 事件里，import 不再有副作用（回归守卫：
+    `test_worker_import_is_side_effect_free.py`）。下面的隔离仍保留——`TestClient(app)` 的
+    lifespan 会**主动**装真钩子（`main.py` 的装配点），所以测试进程依然需要每例重设。
+
+    以下是被修掉的那条因果链，保留作沿革：`import campfire.main` 会经 `main.py:75` 拉进
+    `campfire.worker`，而当时 `worker.py` 的**模块级** `set_dispatch_hook(...)` —— **import
+    即注入真钩子**。于是测试进程里 `propose_profile_item` 真的把任务投进 Redis，另一端有
+    Worker（尤其孤儿 Worker）竞速消费并把记录置 `done`，测试自己的模拟消费就领不到。
 
     实测读数（同一组合 `test_consult_endpoints_integration.py` +
     `test_profile_tools_integration.py`，同进程先 import `campfire.main` 才点亮钩子）：
