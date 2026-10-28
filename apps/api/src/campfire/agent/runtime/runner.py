@@ -780,6 +780,18 @@ class AgentRunner:
         """
         yield from tracker.flush(buffer)
         yield from tracker.interrupted_finishes(reason=interrupted)
+        # 收尾时打一条可查的运行摘要：排查「这一轮为什么慢/为什么被杀」时，
+        # 日志里原本只有失败那一句，看不到耗时与调用轮次——2026-10-28 定位「上限是否太紧」
+        # 时只能靠 `httpx2` 的行间间隔反推，绕了很久。这里一次给全：耗时、模型调用轮数、用量。
+        logger.info(
+            "运行收尾 run=%s reason=%s 耗时=%.1fs 模型轮数=%d tokens(in/out)=%s/%s",
+            recorder.run_id,
+            reason,
+            time.monotonic() - started,
+            usage.requests,
+            usage.input_tokens,
+            usage.output_tokens,
+        )
         yield RunFinishedEvent(
             reason=reason,
             citations=recorder.issued,

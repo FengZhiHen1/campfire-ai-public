@@ -14,6 +14,7 @@ import pytest
 from pydantic import ValidationError
 
 from campfire.agent.context import CitationRecord
+from campfire.agent.limits import AGENT_RUN_TIMEOUT_SECONDS
 from campfire.agent.runtime import (
     RunFailedEvent,
     RunFinishedEvent,
@@ -33,6 +34,7 @@ from campfire.surfaces.consult.answers import (
 from campfire.surfaces.consult.routes import parse_last_event_id
 from campfire.surfaces.consult.runbus import (
     MAX_FRAME_CHARS,
+    RUN_MUTEX_TTL_SECONDS,
     RUN_NOT_RESUMABLE,
     SESSION_BUSY,
     RunMeta,
@@ -306,3 +308,15 @@ def test_run_meta_round_trip_and_rejection() -> None:
     assert RunMeta.parse("{}") is None
     assert RunMeta.parse("not json") is None
     assert RunMeta.parse('{"run_id":"r","session_id":"s","account_id":"a","status":"weird"}') is None
+
+
+def test_mutex_ttl_outlives_the_run_cap() -> None:
+    """会话互斥键的 TTL 必须比通用运行上限大：否则跑到上限的运行还在跑，锁先过期。
+
+    锁先过期之后会发生什么（这正是互斥要防的事）：同一会话上第二个请求拿到锁、
+    起第二次运行，两轮输出交织在同一条对话里。2026-10-28 把运行上限从 180 提到 300 秒时，
+    字面量 `185` 差点没跟着改——现在它从上限派生，这条用例把关系钉死。
+    """
+    assert RUN_MUTEX_TTL_SECONDS > AGENT_RUN_TIMEOUT_SECONDS
+    # 余量要够「终结路径删键失败」时兜底，但也不必大到让一个卡死的会话长时间发不出消息。
+    assert RUN_MUTEX_TTL_SECONDS - AGENT_RUN_TIMEOUT_SECONDS <= 30

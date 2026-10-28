@@ -98,9 +98,10 @@ def test_request_timeout_is_bounded_by_configuration() -> None:
 
 
 def test_gateway_injects_retry_settings() -> None:
-    # 超时取 30 秒，使 4 次重试的最坏值（30×5 + 退避）仍落在 180 秒上限内。
+    # 超时取 20 秒：4 次重试的最坏值（20×5 + 退避 ≈ 105.6 秒）乘 2 次调用仍在上限之内
+    # （闸门是「两次最坏调用装得下」，见 gateway 类说明第 2 条；30 秒那组会越线）。
     gateway = ModelGateway(
-        _settings(model_max_retries=4, model_request_timeout_seconds=30.0, model_retry_initial_delay_seconds=0.5)
+        _settings(model_max_retries=4, model_request_timeout_seconds=20.0, model_retry_initial_delay_seconds=0.5)
     )
 
     retry = gateway.model_settings.retry
@@ -231,44 +232,71 @@ def test_proxy_normalisation_preserves_the_exemption_semantics() -> None:
 
 
 def test_default_retry_budget_fits_inside_the_run_cap() -> None:
-    """重试预算必须落在 180 秒通用响应上限内，否则重试会被运行上限砍断。
+    """重试预算必须落在通用响应上限内，否则重试会被运行上限砍断。
 
     退避按 SDK 的抖动上界算（每次延迟最多 1.125 倍，见
     `agents/run_internal/model_retry.py:204`）：只按名义值算会低估，第一版就是这么错的。
     """
     worst_case = worst_case_model_seconds(_settings())
 
-    assert worst_case == pytest.approx(45.0 * 3 + 1.125 + 2.25)
+    assert worst_case == pytest.approx(120.0 * 2 + 1.125)
     assert worst_case <= AGENT_RUN_TIMEOUT_SECONDS
 
 
-def test_retry_budget_counts_the_jitter_upper_bound() -> None:
-    """一组合法配置：按名义退避算是 177.8 秒（会放行），按抖动上界是 200.0 秒（必须拒绝）。
+def test_run_cap_covers_more_than_one_model_call() -> None:
+    """运行上限必须装得下两次**典型**调用（这条判据原先不存在，180 秒才活了下来）。
 
-    这是审查者用探针测出来的反例，锁住它才能防止「算术退回名义值」。
+    为什么需要它：`test_default_retry_budget_fits_inside_the_run_cap` 只证明「一次最坏调用
+    装得下」。但一轮真实运行至少两次模型调用（思考 → 调工具 → 读结果 → 再思考 → 成文），
+    常见三到四次。2026-10-28 实测：45 秒超时 + 2 次重试的预算下，一次调用就吃掉 138 秒，
+    两次就是 276 秒——180 秒的上限让这类轮次**必然**被杀，使用者等满三分钟什么也拿不到。
+
+    判据分两层，两层都要成立：
+      - 「两次典型调用」：`2 × 单次超时 <= 上限`（正常节奏下两次调用装得下）；
+      - 「一次最坏调用」：`最坏预算 < 上限`（由上一个用例守）。
+    只守后者会重演 180 秒那次：最坏预算装得下，但正常一轮都跑不完。
     """
+    settings = _settings()
+
+    typical_pair = settings.model_request_timeout_seconds * 2
+    assert typical_pair <= AGENT_RUN_TIMEOUT_SECONDS, (
+        f"单次超时 {settings.model_request_timeout_seconds:.1f} 秒 × 2 次调用 = {typical_pair:.1f} 秒，"
+        f"超过运行上限 {AGENT_RUN_TIMEOUT_SECONDS:.0f} 秒：一轮用到两次模型调用的运行会被上限砍断"
+    )
+    assert worst_case_model_seconds(settings) < AGENT_RUN_TIMEOUT_SECONDS
+
+
+def test_retry_budget_counts_the_jitter_upper_bound() -> None:
+    """按名义退避算会放行、按抖动上界必须拒绝——锁住它才能防止「算术退回名义值」。
+
+    这是审查者用探针测出来的反例；数字随通用响应上限走（上限一半的判据见
+    `test_run_cap_covers_more_than_one_model_call`），不在这里写死秒数。
+    """
+    # 13 秒 × 8 次尝试 + 名义退避 177.8 = 281.8 秒（按名义值算会放行），
+    # 加上抖动上界（每次最多 1.125 倍）就是 304.0 秒（必须拒绝）。上限 300 秒。
     sneaky = _settings(
-        model_request_timeout_seconds=0.001,
+        model_request_timeout_seconds=13.0,
         model_max_retries=7,
         model_retry_initial_delay_seconds=1.4,
         model_retry_max_delay_seconds=1000.0,
     )
 
+    # 这组配置的单次最坏预算已越过上限（名义值算会放行，抖动上界算必须拒绝）。
     assert worst_case_model_seconds(sneaky) >= AGENT_RUN_TIMEOUT_SECONDS
     with pytest.raises(ModelConfigurationError, match="达到或超过通用响应上限"):
         build_retry_settings(sneaky)
 
 
-def test_retry_budget_is_allowed_to_reach_the_cap_exactly_is_rejected() -> None:
-    """恰好等于上限也要拒绝：那时最后一次重试与运行上限同时到期，失败原因会摇摆。
+def test_retry_budget_equal_to_the_cap_exactly_is_rejected() -> None:
+    """最坏预算恰好等于上限也要拒绝：那时最后一次重试与运行上限同时到期，失败原因会摇摆。
 
-    用 `timeout=58.875` 让最坏耗时确实恰好等于 180.0（实测：2 次重试 + 抖动上界后
-    的退避和正好是 3.375，与 3×58.875 相加为 180.0）。第一版写 `59.0`，实际得到 180.375
-    ——那测的是「超过上限」，与用例名宣称的精确边界不是一回事。
+    秒数由常量推出而不是写死：1 次重试下最坏是 `2 × 超时 + 1.125`（抖动上界），
+    于是令它等于上限即可。边界用例一旦写死数字就会退化成同义反复。
     """
-    exact = _settings(model_request_timeout_seconds=58.875, model_max_retries=2)
+    cap = AGENT_RUN_TIMEOUT_SECONDS
+    exact = _settings(model_request_timeout_seconds=(cap - 1.125) / 2, model_max_retries=1)
 
-    assert worst_case_model_seconds(exact) == AGENT_RUN_TIMEOUT_SECONDS
+    assert worst_case_model_seconds(exact) == pytest.approx(cap)
     with pytest.raises(ModelConfigurationError):
         build_retry_settings(exact)
 

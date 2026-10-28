@@ -147,24 +147,39 @@ def build_retry_settings(settings: Settings) -> ModelRetrySettings:
     「客户端 2 + SDK 3」= 6 个，而不是 9。结论不变（客户端必须是 0），但理由要说准：
     首次尝试会额外带上客户端的请求，而那一部分不在我们的预算算术里。
 
-    2. 重试预算必须落在 180 秒通用响应上限之内。 否则模型重试会被运行上限从中间砍断，
+    2. 重试预算必须落在通用响应上限的**一半**之内。 否则模型重试会被运行上限从中间砍断，
     失败原因从「模型不可用」变成「运行超时」——那是最难排查的一类误报。构造时即校验
     （:func:`worst_case_model_seconds`），不合法就抛 :class:`ModelConfigurationError`。
+
+    为什么还要单独校验「装得下两次典型调用」：一轮运行至少两次模型调用（思考 → 调工具 →
+    读结果 → 再思考 → 成文），常见三到四次。只校验「一次最坏调用装得下」时，一次超时重试
+    就能吃光整轮预算——2026-10-28 实测正是如此：45 秒超时 + 2 次重试的 138 秒预算，
+    一次调用就吃掉 276 秒的两倍关系，180 秒上限下这种轮次必然被杀。两条闸门合起来表达的是
+    「上限既装得下一次最坏调用，也装得下两次典型调用」。
 
     失败语义：超时、限流与供应商错误按策略重试；重试耗尽则本次运行失败并给出原因。
     不得用缓存或旧结果冒充当前结果。
 
     Raises:
-        ModelConfigurationError: 重试相关配置非法，或其预算达到/超过 180 秒通用响应上限。
+        ModelConfigurationError: 重试相关配置非法、单次最坏预算达到上限，或上限装不下两次典型调用。
     """
     worst_case = worst_case_model_seconds(settings)
-    # 用 >= 而不是 >：最坏耗时恰好等于上限时，最后一次重试与运行上限同时到期，
-    # 失败原因会在「模型不可用」与「运行超时」之间摇摆——那正是这条闸门要避免的误报。
+    # 闸门一：一次最坏调用必须装得下。用 >= 而不是 >：最坏耗时恰好等于上限时，
+    # 最后一次重试与运行上限同时到期，失败原因会在「模型不可用」与「运行超时」之间摇摆
+    # ——那正是这条闸门要避免的误报。
     if worst_case >= AGENT_RUN_TIMEOUT_SECONDS:
         raise ModelConfigurationError(
             f"模型重试预算最坏 {worst_case:.1f} 秒，达到或超过通用响应上限 {AGENT_RUN_TIMEOUT_SECONDS:.0f} 秒："
             "重试会被运行上限从中间砍断，失败原因会变成「运行超时」。"
             "请下调 model_request_timeout_seconds 或 model_max_retries"
+        )
+    # 闸门二：上限还要装得下两次**典型**调用（否则一次超时重试就吃光整轮，见类说明第 2 条）。
+    typical_pair = settings.model_request_timeout_seconds * 2
+    if typical_pair > AGENT_RUN_TIMEOUT_SECONDS:
+        raise ModelConfigurationError(
+            f"单次超时 {settings.model_request_timeout_seconds:.1f} 秒 × 2 次调用 = {typical_pair:.1f} 秒，"
+            f"超过通用响应上限 {AGENT_RUN_TIMEOUT_SECONDS:.0f} 秒：一轮运行至少两次模型调用，"
+            "一次超时就会把整轮预算吃光。请下调 model_request_timeout_seconds"
         )
 
     return ModelRetrySettings(
