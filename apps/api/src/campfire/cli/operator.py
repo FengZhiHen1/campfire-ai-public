@@ -333,7 +333,9 @@ async def _run_account_delete(args: argparse.Namespace) -> int:
     for purge in report.purges:
         print(f"  {purge.name}：{purge.detail}")
     print("  ⚠️ 保留了一条不含内容的注销记录（账号标识、时间、原因）——")
-    print("     因此**不得**对外声称「已删除全部数据」，准确表述是「已删除全部内容」。")
+    print("     因此**不得**对外声称「已删除全部数据」，也不要说「已删净全部内容」：")
+    print("     准确表述是「该账号的内容已不再可读」——记忆、档案、待处理写入已物理删除，")
+    print("     对话内容随会话撤销而不可达（那两张表由 SDK 拥有，本系统不越界删除）。")
     return 0
 
 
