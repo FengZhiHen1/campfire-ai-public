@@ -25,7 +25,6 @@ function signals(overrides: Partial<RoundSignals> = {}): RoundSignals {
     runningTools: 0,
     pendingQuestion: false,
     stopVisible: false,
-    sendDisabled: false,
     lastDocLength: 120,
     ...overrides,
   };
@@ -47,19 +46,22 @@ describe('classifyRound — 单次采样的判定', () => {
   });
 
   it('待作答的提问卡是终态，不是「还在跑」', () => {
-    // 待作答时输入区整体收起（发送键必然禁用）；若先判 sendDisabled 就会一路等到超时。
-    expect(classifyRound(signals({ pendingQuestion: true, sendDisabled: true }))).toBe('question');
+    // 待作答时输入区整体收起、停止键也不在；判据顺序必须先认这个终态。
+    expect(classifyRound(signals({ pendingQuestion: true }))).toBe('question');
   });
 
   it('停止键可见 ⇒ waiting（它只在 thread.isRunning 时渲染）', () => {
     expect(classifyRound(signals({ stopVisible: true }))).toBe('waiting');
   });
 
-  it('发送键禁用 ⇒ waiting（草稿为空也会禁用，所以它只是必要条件）', () => {
-    expect(classifyRound(signals({ sendDisabled: true }))).toBe('waiting');
+  it('「发送键可用」不能当判据：它不在采样信号里（草稿为空时也禁用，与是否在跑无关）', () => {
+    // 这条用例守的是一个真实踩过的坑：2026-10-28 装置用「发送键可用」判定本轮结束，
+    // 而发送后草稿被清空、发送键此后一直禁用 ⇒ 「已结束」永远判不出来（实测卡满 320 秒）。
+    const keys = Object.keys(signals()) as (keyof ReturnType<typeof signals>)[];
+    expect(keys).not.toContain('sendDisabled' as never);
   });
 
-  it('四条清道夫都干净 ⇒ stable（待稳定闸门确认）', () => {
+  it('其余清道夫都干净 ⇒ stable（待稳定闸门确认）', () => {
     expect(classifyRound(signals())).toBe('stable');
   });
 });
