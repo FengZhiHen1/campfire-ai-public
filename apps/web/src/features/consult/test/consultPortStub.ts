@@ -51,6 +51,14 @@ export interface ConsultPortStub extends ConsultPort {
   script(events: readonly RunEvent[]): void;
   /** 让下一次 streamRun 抛错（模拟传输/契约失败）。 */
   failNextStream(error: unknown): void;
+  /**
+   * 下一次 streamRun 先吐这几条事件，然后**挂着不结束**（直到 signal 中止）。
+   *
+   * 为什么需要它：其他脚本都是有限的，运行会立刻结束，于是「运行中输入区该是什么状态」
+   * 这条判据根本没有可观察的中间态。演示装置把「发送键可用」当成「本轮真的结束了」的
+   * 判据（`apps/web/demo/support/stack.ts` 的 `waitRunSettled`），那条判据必须有产品侧测试。
+   */
+  holdStream(events: readonly RunEvent[]): void;
 }
 
 /** 替身装配选项。 */
@@ -65,7 +73,10 @@ export interface ConsultPortStubOptions {
 }
 
 /** 一段脚本：一批事件，或一次失败。 */
-type ScriptEntry = { kind: 'events'; events: readonly RunEvent[] } | { kind: 'error'; error: unknown };
+type ScriptEntry =
+  | { kind: 'events'; events: readonly RunEvent[] }
+  | { kind: 'error'; error: unknown }
+  | { kind: 'hold'; events: readonly RunEvent[] };
 
 /**
  * 建一个端口替身。
@@ -90,6 +101,10 @@ export function createConsultPortStub(options: ConsultPortStubOptions = {}): Con
 
     failNextStream: (error) => {
       scripts.push({ kind: 'error', error });
+    },
+
+    holdStream: (events) => {
+      scripts.push({ kind: 'hold', events });
     },
 
     createSession: vi.fn(async (input?: CreateSessionInput): Promise<CreateSessionResponse> => {
@@ -124,6 +139,12 @@ export function createConsultPortStub(options: ConsultPortStubOptions = {}): Con
         for (const event of next.events) {
           if (input.signal.aborted) return;
           yield event;
+        }
+        // 「挂着」的脚本：模拟一条仍在进行、还没有终态的运行。中止信号到了就正常收尾。
+        if (next.kind === 'hold' && !input.signal.aborted) {
+          await new Promise<void>((resolve) => {
+            input.signal.addEventListener('abort', () => resolve(), { once: true });
+          });
         }
       })();
     },

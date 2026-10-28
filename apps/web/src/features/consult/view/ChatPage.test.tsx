@@ -727,3 +727,38 @@ describe('对话页 — 订阅不可续传后自动重读历史（2026-10-28 修
     expect(port.loadHistory).toHaveBeenCalledTimes(2);
   });
 });
+
+describe('对话页 — 运行中的输入区状态（演示装置依赖这条判据）', () => {
+  /** 发送键；找不到时返回 null（待作答时输入区整体收起）。 */
+  function sendButton(): HTMLButtonElement | null {
+    return document.querySelector<HTMLButtonElement>('button[aria-label="发送"]');
+  }
+
+  it('运行中：有停止键、发送键禁用；停止后发送键恢复可用', async () => {
+    const port = createConsultPortStub({ history: historyResponse([]) });
+    // 「这一轮还没结束」是这条用例要观察的中间态：脚本吐完 run_started 与一段正文后挂着。
+    port.holdStream([runStarted(['daily-consulting']), textDelta('他现在的状态比平时明显不同')]);
+
+    renderChat(port);
+    await send('现场很吵，他捂住了耳朵');
+
+    // 运行中：正文已经出现，但本轮尚未结束。草稿里再写一句，让「禁用」只能是运行造成的
+    // （发送键的另一条禁用理由是草稿为空，那条与运行无关）。
+    expect(await screen.findByText('他现在的状态比平时明显不同')).toBeDefined();
+    fireEvent.change(screen.getByLabelText('发送消息'), { target: { value: '补充一句' } });
+    await waitFor(() => {
+      expect(sendButton()?.disabled).toBe(true);
+    });
+    expect(screen.getByRole('button', { name: '停止' })).toBeDefined();
+
+    // 停止 = 本地中断（契约 4.3：不发终态）。中断之后必须能继续输入，
+    // 否则使用者会被卡在一个「永远正在生成」的界面里——演示装置正是拿这一点当结束判据。
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: '停止' }));
+    });
+    await waitFor(() => {
+      expect(sendButton()?.disabled).toBe(false);
+    });
+    expect(screen.queryByRole('button', { name: '停止' })).toBeNull();
+  });
+});
