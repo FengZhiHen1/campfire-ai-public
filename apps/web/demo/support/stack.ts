@@ -351,10 +351,17 @@ export async function waitRunSettled(page: Page, baselineDocs = 0): Promise<Roun
           return 'waiting';
         }
         if (await hasPendingQuestionBatch(page)) return 'question';
-        // 光看正文静定不够：模型在「两次工具调用之间」也会静默十几秒，而这一轮仍在跑时
-        // 输入区是收起的（发送按钮 disabled）。发送键可用才是「本轮真的结束了」的稳定判据
-        // （它在本轮结束后一直可用，直到下一轮开始，不会像「停止按钮消失」那样一瞬即逝）。
-        // 2026-10-27 实测：少了这一条，`sendFollowUp` 会在 disabled 的发送键上等到 60 秒超时。
+        // 光看正文静定不够：模型在「两次工具调用之间」也会静默十几秒。两条并列判据：
+        // ① 停止键不在（它只在 `thread.isRunning` 为真时渲染，是本轮仍在跑的直接信号）；
+        // ② 发送键可用（2026-10-27 实测：少了它，`sendFollowUp` 会在 disabled 的发送键上
+        //    等到 60 秒超时）。②单独用要小心——发送键**也**会因草稿为空而禁用（
+        //    `ChatWorkspace.tsx` 的 `disabled={thread.isRunning || draft.trim() === ''}`），
+        //    所以它不是「运行结束」的充分判据，必须与①合看（GAP-02 的用例把这条钉住了）。
+        if ((await page.getByRole('button', { name: '停止' }).count()) > 0) {
+          stableSamples = 0;
+          lastLength = -1;
+          return 'waiting';
+        }
         if (await page.getByRole('button', { name: '发送' }).isDisabled()) {
           stableSamples = 0;
           lastLength = -1;
