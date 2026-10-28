@@ -89,8 +89,8 @@ class Settings(BaseSettings):
     #
     # 数值边界写进类型约束（而不是只靠构造期校验）：负数重试会让「最坏耗时」算成 0 秒、
     # 使那条闸门对任何超时值都放行——实测 model_max_retries=-1 配 timeout=1000 可构造成功。
-    model_request_timeout_seconds: float = Field(default=45.0, gt=0)
-    model_max_retries: int = Field(default=2, ge=0)
+    model_request_timeout_seconds: float = Field(default=120.0, gt=0)
+    model_max_retries: int = Field(default=1, ge=0)
     model_retry_initial_delay_seconds: float = Field(default=1.0, ge=0)
     model_retry_max_delay_seconds: float = Field(default=8.0, ge=0)
     # --- 压缩阈值算术的两个输入（见压缩策略第 2、10 节）---

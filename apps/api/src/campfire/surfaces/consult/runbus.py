@@ -24,6 +24,7 @@ import uuid
 from dataclasses import dataclass
 from typing import Literal
 
+from campfire.agent.limits import AGENT_RUN_TIMEOUT_SECONDS
 from campfire.agent.runtime import AgentRunner, RunEvent, RunRequest
 from campfire.core.cache import RedisCache
 from campfire.surfaces.consult.sse import (
@@ -44,12 +45,17 @@ logger = logging.getLogger(__name__)
 #: 使用者落到「改走历史水合」的降级路径上，而他本可以无缝续上。
 RUN_BUFFER_TTL_SECONDS = 600
 
-#: 会话互斥键的 TTL（秒）。编排器裁决 2：运行上限 180 秒 + 5 秒余量。
+#: 会话互斥键的 TTL（秒）。编排器裁决 2：运行上限 + 5 秒余量。
 #:
-#: 为什么必须比运行上限大一点点：TTL 短于运行上限时，一个跑到 179 秒的运行会在
+#: 为什么必须比运行上限大一点点：TTL 短于运行上限时，一个跑到 299 秒的运行会在
 #: 自己还没结束时把锁放掉，第二个请求就能在同一会话上并行起第二次运行——正是这条
 #: 互斥要防的事。5 秒余量给的是「终结路径删键」失败时的兜底窗口。
-RUN_MUTEX_TTL_SECONDS = 185
+#:
+#: **从 `AGENT_RUN_TIMEOUT_SECONDS` 派生而不是写字面量**：2026-10-28 把运行上限从
+#: 180 提到 300 秒时，这个字面量（当时的 185）差点被漏掉——漏掉的后果是「运行超过
+#: 185 秒后互斥失效」，也就是这条注释正文描述的那个后果。派生之后改上限不会再漏。
+#: 依赖方向合法：`surfaces` 允许依赖 `campfire.agent`（docs/项目结构设计.md 第 7 节）。
+RUN_MUTEX_TTL_SECONDS = int(AGENT_RUN_TIMEOUT_SECONDS) + 5
 
 #: 客户端幂等键的 TTL（秒）：24 小时。编排器裁决 3。
 #:
