@@ -192,7 +192,7 @@ describe('对话页 — 历史水合三态', () => {
 });
 
 describe('对话页 — 依据区（citation）', () => {
-  it('默认收起；展开后含标题与来源（当前线格式没有可跳转的条目标识）', async () => {
+  it('默认收起；展开后含标题与来源（reference 无库别前缀 ⇒ 如实不给跳转）', async () => {
     const port = createConsultPortStub({
       history: historyResponse([
         hydratedAssistant('m1', [{ type: 'text', text: '历史回答' }, { type: 'citation', citation: citation() }]),
@@ -203,9 +203,15 @@ describe('对话页 — 依据区（citation）', () => {
     const summary = await screen.findByText('依据 1 条');
     const details = summary.closest('details');
     expect(details?.hasAttribute('open')).toBe(false);
-    expect(screen.getByText('沟通方式记录（虚构样例）')).toBeDefined();
-    expect(document.querySelector('.citation-item .meta')?.textContent).toContain('来源：项目内虚构资料');
-    expect(document.querySelector('.citation-item .meta')?.textContent).toContain('暂不能跳转');
+    // 标题取 `summary`（后端写入摘要时取的就是条目标题——它是使用者一眼认出那条来源的最短信息）；
+    // `reference` 不再是标题，因此这里断言的是摘要文本，而不是旧的「把 reference 当标题显示」。
+    expect(screen.getByText('样例记录提到，等候区里人多且声音较大。')).toBeDefined();
+    const meta = document.querySelector('.citation-item .meta')?.textContent ?? '';
+    expect(meta).toContain('来源：项目内虚构资料');
+    // 这条 fixture 的 `reference` 是纯标题、没有 `<库别>:` 前缀 ⇒ **不该**给出跳转，
+    // 并且要如实说明（猜错库比不跳转更糟）。
+    expect(meta).toContain('暂不能跳转');
+    expect(document.querySelector('.citation-item a.citation-title')).toBeNull();
 
     fireEvent.click(summary);
     expect(summary.closest('details')?.hasAttribute('open')).toBe(true);
