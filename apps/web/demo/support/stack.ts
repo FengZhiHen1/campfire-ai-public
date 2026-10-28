@@ -18,6 +18,7 @@
 import { expect, type Page } from '@playwright/test';
 
 import { BASE_URL, SCENARIO_SLUGS, type ScenarioSlug } from './paths';
+import { SettleTracker, type RoundSignals } from './roundState';
 
 /** 整段回答完成的上界。 */
 const ANSWER_TIMEOUT_MS = 180_000;
@@ -330,50 +331,14 @@ const SETTLE_STABLE_SAMPLES = 4;
  * 后置: 不改动页面
  */
 export async function waitRunSettled(page: Page, baselineDocs = 0): Promise<RoundOutcome> {
-  let lastLength = -1;
-  let stableSamples = 0;
+  // 判据本体在 `./roundState`（纯函数 + 稳定闸门，另有单测）；这里只负责把 DOM 读成信号。
+  const tracker = new SettleTracker(SETTLE_STABLE_SAMPLES);
   await expect
     .poll(
       async () => {
-        const error = page.locator('.error-card');
-        if ((await error.count()) > 0) {
-          const text = (await error.first().innerText().catch(() => '')).replace(/\s+/g, ' ').trim();
-          throw new Error(`这一轮运行失败，页面报错：${text === '' ? '（读不到错误卡片文案）' : text}`);
-        }
-        if ((await page.locator('.msg-doc').count()) <= baselineDocs) {
-          stableSamples = 0;
-          lastLength = -1;
-          return 'waiting';
-        }
-        if ((await page.locator('.tool-row[data-state="running"]').count()) > 0) {
-          stableSamples = 0;
-          lastLength = -1;
-          return 'waiting';
-        }
-        if (await hasPendingQuestionBatch(page)) return 'question';
-        // 光看正文静定不够：模型在「两次工具调用之间」也会静默十几秒。两条并列判据：
-        // ① 停止键不在（它只在 `thread.isRunning` 为真时渲染，是本轮仍在跑的直接信号）；
-        // ② 发送键可用（2026-10-27 实测：少了它，`sendFollowUp` 会在 disabled 的发送键上
-        //    等到 60 秒超时）。②单独用要小心——发送键**也**会因草稿为空而禁用（
-        //    `ChatWorkspace.tsx` 的 `disabled={thread.isRunning || draft.trim() === ''}`），
-        //    所以它不是「运行结束」的充分判据，必须与①合看（GAP-02 的用例把这条钉住了）。
-        if ((await page.getByRole('button', { name: '停止' }).count()) > 0) {
-          stableSamples = 0;
-          lastLength = -1;
-          return 'waiting';
-        }
-        if (await page.getByRole('button', { name: '发送' }).isDisabled()) {
-          stableSamples = 0;
-          lastLength = -1;
-          return 'waiting';
-        }
-        const length = (await page.locator('.msg-doc').last().innerText().catch(() => '')).trim().length;
-        if (length > 0 && length === lastLength) stableSamples += 1;
-        else {
-          stableSamples = 0;
-          lastLength = length;
-        }
-        return stableSamples >= SETTLE_STABLE_SAMPLES ? 'done' : 'waiting';
+        const verdict = tracker.next(await readRoundSignals(page, baselineDocs));
+        if (verdict.kind === 'error') throw new Error(`这一轮运行失败，页面报错：${verdict.message}`);
+        return verdict.kind;
       },
       {
         intervals: [SETTLE_POLL_MS],
@@ -383,6 +348,28 @@ export async function waitRunSettled(page: Page, baselineDocs = 0): Promise<Roun
     )
     .not.toBe('waiting');
   return (await hasPendingQuestionBatch(page)) ? 'question' : 'done';
+}
+
+/** 把页面读成一次采样信号（各条的含义见 `RoundSignals` 的注释）。 */
+async function readRoundSignals(page: Page, baselineDocs: number): Promise<RoundSignals> {
+  const error = page.locator('.error-card');
+  const errorText =
+    (await error.count()) === 0
+      ? null
+      : (await error.first().innerText().catch(() => '')).replace(/\s+/g, ' ').trim() || '（读不到错误卡片文案）';
+  const stopButton = page.getByRole('button', { name: '停止' });
+  const sendButton = page.getByRole('button', { name: '发送' });
+  return {
+    errorText,
+    docCount: await page.locator('.msg-doc').count(),
+    baselineDocs,
+    runningTools: await page.locator('.tool-row[data-state="running"]').count(),
+    pendingQuestion: await hasPendingQuestionBatch(page),
+    stopVisible: (await stopButton.count()) > 0,
+    // 输入区收起时（待作答）根本没有发送键——那不等于「运行中」，按可用处理。
+    sendDisabled: (await sendButton.count()) === 0 ? false : await sendButton.isDisabled(),
+    lastDocLength: (await page.locator('.msg-doc').last().innerText().catch(() => '')).trim().length,
+  };
 }
 
 /**
