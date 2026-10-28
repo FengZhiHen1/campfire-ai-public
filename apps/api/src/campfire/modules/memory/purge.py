@@ -115,7 +115,8 @@ class MemoryAccountPurger:
         """删除该账号的删除账本行，返回删除条数。
 
         为什么删账本行（第 8 节「内容真删」）：账本记录「某条 episode 被删」，
-        属于该账号的数据。留着它会让「已删除全部内容」不成立。
+        属于该账号的数据。留着它会让「该账号的通用记忆已不再可读」这句话不成立——
+        账本本身就是关于该账号的内容残迹。
         """
         async with session_scope(self._settings) as session:
             return await delete_ledger_rows(session, account_id=account_id)
