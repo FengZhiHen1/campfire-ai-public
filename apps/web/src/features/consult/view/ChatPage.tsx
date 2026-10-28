@@ -46,7 +46,7 @@ export function ChatPage({ consult }: ChatPageProps) {
       : '';
   const params = useParams<{ sessionId: string }>();
   const sessionId = params.sessionId ?? '';
-  const { hydration, retry } = useConsultSession(sessionId, consult);
+  const { hydration, retry, revision } = useConsultSession(sessionId, consult);
 
   if (hydration.status === 'loading') {
     return (
@@ -100,7 +100,15 @@ export function ChatPage({ consult }: ChatPageProps) {
   }
 
   return (
-    // key 绑定会话 id：切换会话时重建 runtime，避免上一条对话的消息留在新会话里。
-    <ChatWorkspace key={sessionId} sessionId={sessionId} initialMessages={hydration.messages} initialDraft={initialDraft} consult={consult} />
+    // key 绑定「会话 id + 第几次水合」：切换会话、以及订阅不可续传后重新读历史时都重建 runtime，
+    // 避免上一条对话（或本次已废弃的 partial）留在界面上。
+    <ChatWorkspace
+      key={`${sessionId}#${String(revision)}`}
+      sessionId={sessionId}
+      initialMessages={hydration.messages}
+      initialDraft={initialDraft}
+      consult={consult}
+      onNeedsResync={retry}
+    />
   );
 }

@@ -59,11 +59,13 @@ export function hasAssistantText(messages: readonly ThreadMessage[]): boolean {
  * @param options.sessionId 当前对话 id
  * @param options.initialMessages 水合得到的初始消息（组件按 sessionId 重新挂载，水合完成后才建运行时）
  * @param options.consult 咨询端口
+ * @param options.onNeedsResync 订阅不可续传时请求上层重新水合（由对话页交给会话装配的 retry）
  */
 export function useConsultRuntime(options: {
   sessionId: string;
   initialMessages: readonly ThreadMessageLike[];
   consult: ConsultPort;
+  onNeedsResync?: () => void;
 }): ConsultWorkspaceController {
   const { sessionId, initialMessages, consult } = options;
 
@@ -81,12 +83,13 @@ export function useConsultRuntime(options: {
         onEvent: (event) => useRunStore.getState().applyRunEvent(event),
         onConnection: (connection) => useRunStore.getState().setConnection(connection),
         onFailure: (error) => useRunStore.getState().setFailure(failureViewFor(error)),
+        ...(options.onNeedsResync === undefined ? {} : { onNeedsResync: options.onNeedsResync }),
         peekAttachedRunId: () => useRunStore.getState().peekAttachedRun(sessionId),
         consumeAttachIntent: () => useRunStore.getState().consumeAttachIntent(),
         clearAttachedRun: () => useRunStore.getState().clearPendingAttachedRun(),
         onDiagnostic: (message) => logDiagnostic('chatAdapter', message),
       }),
-    [consult, sessionId],
+    [consult, sessionId, options.onNeedsResync],
   );
 
   const runtime = useLocalRuntime(adapter, { initialMessages });

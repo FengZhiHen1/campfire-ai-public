@@ -105,6 +105,8 @@ export interface ChatWorkspaceProps {
   sessionId: string;
   /** 水合得到的初始消息。 */
   initialMessages: Parameters<typeof useConsultRuntime>[0]['initialMessages'];
+  /** 订阅不可续传时请求重新水合（由对话页交给会话装配的 retry）。 */
+  onNeedsResync?: () => void;
   consult: ConsultPort;
 }
 
@@ -132,8 +134,13 @@ export interface ChatWorkspaceProps {
  * 页头的基础规则本就自带一份（components.css），消息流与输入区由 chatPage.module.css 的
  * ≥560px 媒体查询补一份；窄视口两处都不生效，版式逐像素不变。
  */
-export function ChatWorkspace({ sessionId, initialMessages, initialDraft = '', consult }: ChatWorkspaceProps) {
-  const { runtime, thread, send, stop, sendAnswers } = useConsultRuntime({ sessionId, initialMessages, consult });
+export function ChatWorkspace({ sessionId, initialMessages, initialDraft = '', consult, onNeedsResync }: ChatWorkspaceProps) {
+  const { runtime, thread, send, stop, sendAnswers } = useConsultRuntime({
+    sessionId,
+    initialMessages,
+    consult,
+    ...(onNeedsResync === undefined ? {} : { onNeedsResync }),
+  });
   const store = useRunStore();
   const [draft, setDraft] = useState(initialDraft);
   const location = useLocation();

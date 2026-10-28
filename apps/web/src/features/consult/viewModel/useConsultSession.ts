@@ -31,8 +31,15 @@ export type HydrationState =
 /** 会话装配控制器。 */
 export interface ConsultSessionController {
   hydration: HydrationState;
-  /** 重新水合（错误态的手动重试）。 */
+  /** 重新水合（错误态的手动重试、以及订阅不可续传后的自动重读）。 */
   retry(): void;
+  /**
+   * 第几次水合（从 0 开始）。
+   *
+   * 页面把它拼进对话工作面的 key：`useLocalRuntime` 一旦建好就不会因为
+   * `initialMessages` 变化而重建线程，所以「重新读历史」必须靠重新挂载才真的生效。
+   */
+  revision: number;
 }
 
 /**
@@ -96,5 +103,5 @@ export function useConsultSession(sessionId: string, consult: ConsultPort): Cons
     setAttempt((value) => value + 1);
   }, []);
 
-  return { hydration, retry };
+  return { hydration, retry, revision: attempt };
 }
