@@ -1004,8 +1004,16 @@ async def test_stream_with_out_of_range_last_event_id_closes_quietly(client: htt
     assert response.content == b""
 
 
-async def test_stream_rejects_unknown_and_foreign_run_with_same_404(client: httpx.AsyncClient) -> None:
-    """运行不存在与不属于当前账号：同一个 404（越权与不存在不可分辨）。"""
+async def test_stream_rejects_unknown_and_foreign_run_with_same_404(
+    client: httpx.AsyncClient, caplog: pytest.LogCaptureFixture
+) -> None:
+    """运行不存在与不属于当前账号：同一个 404（越权与不存在不可分辨）。
+
+    **但服务端日志必须分得清**：响应不可分辨是为了不泄露存在性，运维侧则相反——
+    2026-10-28 排查偶发 404 时，日志里只有 `GET … 404` 一行，三种成因（标识超长 /
+    元数据过期 / 归属不符）看起来一模一样，只能靠反推时序。因此这里同时断言：
+    响应相同、**日志不同**。
+    """
     runner = ScriptedRunner(get_settings())
     _install_runner(runner)
     main_module.app.dependency_overrides[consult_routes._session_dependency] = _auth_as(_OTHER_ACCOUNT)
@@ -1018,6 +1026,12 @@ async def test_stream_rejects_unknown_and_foreign_run_with_same_404(client: http
     foreign = await client.get(f"/consult/runs/{foreign_run}/stream")
     assert missing.status_code == foreign.status_code == 404
     assert missing.json() == foreign.json()
+
+    # 日志侧：两种成因各留一条 warning，且能相互区分（判定依据是「哪一种」而不是「有没有」）。
+    warnings = [record.getMessage() for record in caplog.records if record.levelname == "WARNING"]
+    run_warnings = [message for message in warnings if "运行元数据不可访问" in message]
+    assert any("不存在或已过期" in message for message in run_warnings), run_warnings
+    assert any("归属不符" in message for message in run_warnings), run_warnings
 
 
 async def test_overlong_run_id_is_404_on_both_endpoints_without_any_overlong_key_query(
