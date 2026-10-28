@@ -6,7 +6,7 @@
  *   - ../support/stack.ts: MUST — 开户四层判据、咨询入口 `startDailyConsult`、正文首字、提问卡判据
  *   - apps/web/src/features/consult/view/MessageParts/CitationPart.tsx: 依据区形态——
  *     `details.citation-block`、summary「依据 N 条」、`article.citation-item`、`.citation-title`、
- *     来源行「来源：…」、缺口文案「本条暂不能跳转到来源条目」
+ *     来源行「来源：…」、标题是可点的 deep-link
  *   - apps/web/src/features/consult/view/MessageParts/ToolIndicator.tsx: 工具行 `details.tool-row`
  *     的 `data-state` 取 `running` / `finished`，行内文案形如「查阅资料 · 已结束」
  *   - apps/web/src/shared/types/sse.ts:79-86: `CitationRecord` 无 `item_id` ⇒ deep-link 恒为 null
@@ -19,7 +19,7 @@
  *   - 禁止用 page.route / route.fulfill 伪造 SSE、工具行或依据（真栈材料一旦伪造就不再证明链路可用）
  *   - 禁止把「依据区一定出现」写成硬断言：检索是否发生由模型决定，缺依据要记一条明确的不足，
  *     既不静默通过、也不让它吞掉后面的帧
- *   - 禁止把「依据能跳转到来源条目」演成事实（界面逐条写着「本条暂不能跳转到来源条目」）
+ *   - 禁止只把依据区截下来就完事：回指已经可用（2026-10-28），最后一帧必须真的点进去
  *   - 禁止用「停止按钮消失」这类瞬时状态当本轮终态判据（实测会造成假红，理由见下方 waitRoundSettled）
  *
  * ## 为什么这条链要先让引导终结
@@ -66,6 +66,9 @@ import {
 // 检索能命中；② 它足够具体，模型不会一上来连查七八次——换「国家规范怎么要求」那种问题试过，
 // 模型连着查了 7 次仍未成文，直接撞上 180 秒单轮上限（2026-10-28 实测）。
 const QUESTION = '孩子出门容易走丢，我们平时可以怎么防？';
+
+/** 案例库/资料库那一侧的加载上界（与 `library.spec.ts` 同一口径，不另立标准）。 */
+const LOAD_TIMEOUT_MS = 20_000;
 
 /** 静定判据的取样间隔：3 秒一次，够密到不错过收尾，也够疏到不把流式抖动当成新内容。 */
 
@@ -215,16 +218,46 @@ test(CONSULT_CITATION.title, async ({ page }, testInfo) => {
     expect(await items.count(), '依据区至少要有一条依据（空折叠头不该渲染）').toBeGreaterThan(0);
     await block.locator('summary').click();
     await expect(block).toHaveJSProperty('open', true);
-    // 产品缺口的机械判据：缺 `item_id` ⇒ `citationDeepLink()` 返回 null ⇒ 每条都写明不能跳转。
+    // 回指可用的机械判据（2026-10-28 起）：标题是链接，目标形如 /cases?item=<标识>，
+    // 来源行不再出现「本条暂不能跳转到来源条目」。
     await expect(items.first()).toContainText('来源：');
-    await expect(items.first(), '依据条目应如实注明当前不能跳转').toContainText('本条暂不能跳转到来源条目');
-    // 标题是内部标识而不是人类标题（`knowledge:<uuid>` 这类）。这是数据形态而非代码契约，
-    // 故用 soft：它漂移了要看得见，但不该把这一帧判成「产品坏了」。
-    expect
-      .soft(await items.first().locator('.citation-title').innerText(), '依据标题应是内部标识，形如 knowledge:<uuid>')
-      .toMatch(/^[a-z_]+:/);
+    const firstTitle = items.first().locator('.citation-title');
+    await expect(firstTitle, '依据标题应是可点链接（回指断在这里就是链路断了）').toHaveAttribute(
+      'href',
+      /^\/cases\?item=[^&#]+$/u,
+    );
+    await expect(items.first()).not.toContainText('本条暂不能跳转到来源条目');
     await block.scrollIntoViewIfNeeded();
     await shot(5);
+
+    // ⑦ 真的点进去：落到案例库浏览页的那一条，正文展开且有实质内容。
+    const href = await firstTitle.getAttribute('href');
+    const citationTitleText = (await firstTitle.innerText()).trim();
+    expect(citationTitleText.length, '依据标题应有可读文本').toBeGreaterThan(0);
+    await firstTitle.scrollIntoViewIfNeeded();
+    await firstTitle.click();
+    await expect(page, '点依据标题应跳到案例库浏览页的条目深链').toHaveURL(
+      new RegExp(`${String(href ?? '').replace(/[.*+?^${}()|[\]\\]/gu, '\\$&')}$`, 'u'),
+      { timeout: 20_000 },
+    );
+    // 正文容器的 id 是 `library-body-<item_id>`（见 `LibraryPage.tsx`）：**按 id 精确定位**，
+    // 不要用 `[id^="library-body-"]` 取第一个——列表里每条都有正文容器，取到的是别人的（空的）。
+    const itemId = new URL(`http://placeholder${String(href)}`).searchParams.get('item') ?? '';
+    expect(itemId, '依据链接里应带 item 参数').not.toBe('');
+    // 取**整篇文章**而不是里面的按钮：标题与出处分属两个兄弟节点（`LibraryPage` 的
+    // `<button>…</button><ItemProvenance/></article>`），只选按钮会读不到「来源：」。
+    const deepLinkedRow = page.locator('article.list-row:has(button[aria-expanded="true"])');
+    await expect(deepLinkedRow.first(), '深链定位后该条应自动展开').toBeVisible({ timeout: LOAD_TIMEOUT_MS });
+    // 落到的是哪一条？用它自己的标题核对——「页面有内容」不等于「到了依据指的那一条」。
+    await expect(deepLinkedRow.first(), '展开的那条应当就是依据指向的条目').toContainText(citationTitleText);
+    // 条目出处必须已渲染（`来源：…`）；正文长度不作为判据：资料库条目未必有正文分节
+    // （`campfire_knowledge_item` 没有 narrative 列，案例条目才有 cards），拿长度当判据会
+    // 把「这条资料本来就没有正文」误判成「跳转失败」。2026-10-28 实测过这个错判。
+    await expect(deepLinkedRow.first()).toContainText('来源：');
+    const deepBody = page.locator(`#library-body-${itemId}`);
+    await expect(deepBody, '依据指向的条目正文容器应可见').toBeVisible({ timeout: LOAD_TIMEOUT_MS });
+    await deepLinkedRow.first().scrollIntoViewIfNeeded();
+    await shot(6);
   } else {
     // 不静默通过：明确记一条不足（它在用例结束时把这条用例判红）；
     // 也不假红：截图照拍，6 帧仍然齐备，manifest 的「声明 ⇔ 产物」不会因为一个概率分支而缺页。
@@ -236,5 +269,8 @@ test(CONSULT_CITATION.title, async ({ page }, testInfo) => {
       .toBeGreaterThan(0);
     await lastDoc.locator('.readable-paragraph').last().scrollIntoViewIfNeeded();
     await shot(5);
+    // 没有依据区就没有第 7 帧可拍：这里**如实缺页**，让清单判据（声明 ⇔ 产物）当场报红，
+    // 而不是拿第 6 帧凑数糊上一层「看起来齐了」。
+    return;
   }
 });
