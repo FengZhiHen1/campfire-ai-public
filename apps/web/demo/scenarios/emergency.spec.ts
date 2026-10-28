@@ -41,7 +41,8 @@ const INVITE_INDEX = 1;
  * 应急 skill 的时延目标是「出卡 ≤150 秒」（emergency-consulting.md 第 3 节实测修订后的上限），
  * 这里留余量；整条用例的上界另见 `test.setTimeout`。
  */
-const ACTION_CARD_TIMEOUT_MS = 180_000;
+// 必须不小于产品的单轮上限（300 秒）+ 渲染余量：装置等短了会把「产品还在正常跑」判成「行动卡没出现」。
+const ACTION_CARD_TIMEOUT_MS = 320_000;
 
 /**
  * 第六题「刚刚发生了什么」填的那句话。
@@ -114,7 +115,7 @@ async function waitActionCardSections(page: Page): Promise<Locator> {
 
 test(EMERGENCY.title, async ({ page }, testInfo) => {
   // 一次真实运行 + 一张卡：实测出卡 p50 约 82 秒、上限 150 秒，故给到 6 分钟。
-  test.setTimeout(360_000);
+  test.setTimeout(720_000);
   const shot = (index: number) => captureStep(page, EMERGENCY, index);
 
   // 应急入口要求已登录。池里必须至少两枚码：本场景占下标 1，onboarding 占下标 0。

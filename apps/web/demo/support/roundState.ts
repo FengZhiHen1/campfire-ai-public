@@ -3,13 +3,16 @@
  * 职责: 「这一轮跑完了没有」的判定本身——把判据从「读 DOM」里拆出来，好让它能被测试
  * 数据来源:
  *   - apps/web/demo/support/stack.ts: 原本内联在 `waitRunSettled` 里（本模块是它的判据部分）
- *   - apps/web/src/features/consult/view/ChatWorkspace.tsx: 停止键只在 `thread.isRunning` 时渲染；
- *     发送键在**两种**情形下禁用（运行中、草稿为空）——2026-10-28 实测，见 `GAP-02`
+ *   - apps/web/src/features/consult/view/ChatWorkspace.tsx: 停止键只在 `thread.isRunning` 时渲染
+ *     （「是否还在跑」的唯一直接信号）；发送键会在**两种**情形下禁用（运行中、草稿为空），
+ *     因此它不能当判据——2026-10-28 实测：发送后草稿被清空，发送键此后一直禁用，
+ *     用它当判据会让「本轮已结束」永远判不出来。见 `roundState.test` 的相应用例
  * 边界:
  *   - 依赖: 无（纯函数 + 一个带计数的小状态机）
  *   - 被依赖: demo/support/stack 的 `waitRunSettled`；测试 `apps/web/tests/demo-round-state.test.ts`
  * 禁止行为:
  *   - 禁止在这里读页面（Playwright 的 Page 不进纯逻辑；DOM 采样留在 stack.ts）
+ *   - 禁止用「发送键可用」当结束判据：草稿为空时它也禁用（发送后草稿就是空的）
  *   - 禁止把「正文长度没变」单独当成结束：模型在两次工具调用之间会静默十几秒
  *   - 禁止把「有错误卡片」降级成 waiting：模型超时与「还在跑」是两件事，混在一起就只能等到超时
  */
@@ -26,10 +29,8 @@ export interface RoundSignals {
   runningTools: number;
   /** 是否有「待作答」的提问卡。 */
   pendingQuestion: boolean;
-  /** 停止键是否可见（= 产品认为本轮仍在跑）。 */
+  /** 停止键是否可见（= 产品认为本轮仍在跑）。这是「是否还在跑」的唯一直接信号。 */
   stopVisible: boolean;
-  /** 发送键是否禁用（另一种「不能发」，草稿为空时也成立）。 */
-  sendDisabled: boolean;
   /** 最后一条正文的字符数（去掉首尾空白）。 */
   lastDocLength: number;
 }
@@ -59,7 +60,6 @@ export function classifyRound(signals: RoundSignals): RoundVerdict {
   // 待作答的提问卡是终态：此时输入区整体收起，发送键必然禁用，不能据此判成「还在跑」。
   if (signals.pendingQuestion) return 'question';
   if (signals.stopVisible) return 'waiting';
-  if (signals.sendDisabled) return 'waiting';
   return 'stable';
 }
 

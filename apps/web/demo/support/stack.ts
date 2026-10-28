@@ -20,8 +20,14 @@ import { expect, type Page } from '@playwright/test';
 import { BASE_URL, SCENARIO_SLUGS, type ScenarioSlug } from './paths';
 import { SettleTracker, type RoundSignals } from './roundState';
 
-/** 整段回答完成的上界。 */
-const ANSWER_TIMEOUT_MS = 180_000;
+/**
+ * 等正文/收尾的上界：**必须不小于产品的单轮上限**，否则装置会在产品还在正常跑的时候
+ * 判「正文始终没出现」（2026-10-28 就是这么红的：产品上限已上调到 300 秒，装置还按 200 秒等）。
+ *
+ * 取值 = 产品上限（`AGENT_RUN_TIMEOUT_SECONDS`，300 秒）+ 20 秒落库与渲染余量。
+ * ⚠ 产品上限变了这里要跟着变：这条注释就是提醒，别让它再次落后于产品。
+ */
+const ANSWER_TIMEOUT_MS = 320_000;
 
 /** 邀请码池（逗号分隔）；空池返回空数组，由调用方显式判失败。 */
 export function invitePool(): string[] {
@@ -216,7 +222,7 @@ export async function sendFollowUp(page: Page, message: string): Promise<number>
 export async function waitFirstToken(page: Page): Promise<void> {
   await expect
     .poll(async () => (await page.locator('.msg-doc').first().innerText().catch(() => '')).trim().length, {
-      timeout: 200_000,
+      timeout: ANSWER_TIMEOUT_MS,
       message: '等待模型正文首字（200 秒内没有出字：看页面是否挂出错误卡片，或后端日志有无 APITimeoutError）',
     })
     .toBeGreaterThan(0);
@@ -342,7 +348,7 @@ export async function waitRunSettled(page: Page, baselineDocs = 0): Promise<Roun
       },
       {
         intervals: [SETTLE_POLL_MS],
-        timeout: 240_000,
+        timeout: ANSWER_TIMEOUT_MS,
         message: '等待这一轮静定（工具行全部结束且正文不再增长）超时：模型可能仍在长时间思考',
       },
     )
@@ -358,7 +364,6 @@ async function readRoundSignals(page: Page, baselineDocs: number): Promise<Round
       ? null
       : (await error.first().innerText().catch(() => '')).replace(/\s+/g, ' ').trim() || '（读不到错误卡片文案）';
   const stopButton = page.getByRole('button', { name: '停止' });
-  const sendButton = page.getByRole('button', { name: '发送' });
   return {
     errorText,
     docCount: await page.locator('.msg-doc').count(),
@@ -366,8 +371,6 @@ async function readRoundSignals(page: Page, baselineDocs: number): Promise<Round
     runningTools: await page.locator('.tool-row[data-state="running"]').count(),
     pendingQuestion: await hasPendingQuestionBatch(page),
     stopVisible: (await stopButton.count()) > 0,
-    // 输入区收起时（待作答）根本没有发送键——那不等于「运行中」，按可用处理。
-    sendDisabled: (await sendButton.count()) === 0 ? false : await sendButton.isDisabled(),
     lastDocLength: (await page.locator('.msg-doc').last().innerText().catch(() => '')).trim().length,
   };
 }
