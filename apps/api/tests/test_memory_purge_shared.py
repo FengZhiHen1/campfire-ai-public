@@ -2,7 +2,8 @@
 
 对应 2026-10-29 终审的缺口：`MemoryAccountPurger` 用一次性句柄删图，够不到进程共享
 句柄里该账号缓存/临时 clone 的驱动，那些驱动的建索引任务会在 `GRAPH.DELETE` 之后继续跑。
-修复后删图前借道**已存在**的同源共享句柄收口，且不新建、不碰其它连接来源。
+修复后删图前借道**已存在**的同源共享句柄收口；收口失败即中止本次删图（fail-closed：
+在途 `CREATE INDEX` 与删除并发会放大竞态，而注销本就可重试，不得虚报「已清理」）。
 
 不连图库与数据库、不调模型：共享句柄与一次性句柄都是替身，账本删除单独打桩（真账本
 由 `test_memory_purge_integration.py` 在真实库上覆盖）。跨进程协调与「已在途的写」不在
@@ -11,6 +12,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from typing import cast
 
 import pytest
@@ -25,12 +27,14 @@ from campfire.modules.memory.purge import MemoryAccountPurger
 
 #: 测试用账号（合法字符集，且不命中任何真实账号命名空间的前缀）。
 _ACCOUNT = "it_mem_purge_shared_target"
+#: 假连接串：只用于构造配置，不发起任何连接。
+_FAKE_DATABASE_URL = "postgresql+asyncpg://tester:secret@127.0.0.1:5432/campfire_purge_unit"
 
 
 def _settings(**overrides: object) -> Settings:
     """不读 `.env` 的配置：连接字段显式钉住，避免宿主机配置影响同源判定。"""
     base: dict[str, object] = {
-        "database_url": "postgresql+asyncpg://tester:secret@127.0.0.1:5432/campfire_purge_unit",
+        "database_url": _FAKE_DATABASE_URL,
         "falkordb_host": "127.0.0.1",
         "falkordb_port": 6381,
         "falkordb_database": "campfire_purge_unit",
@@ -78,27 +82,47 @@ class _FakeDriver:
 class _TemporaryGraph:
     """注销自建的一次性句柄替身（`build_memory_graph` 的返回值）。"""
 
-    def __init__(self, events: list[str]) -> None:
+    def __init__(self, events: list[str], error: Exception | None = None) -> None:
         self.events = events
         self.driver = _FakeDriver(_FakeClient(events))
-        self.closed = False
+        self.driver.client.error = error
 
     async def aclose(self) -> None:
         """记录收尾（一次性句柄必须被关）。"""
-        self.closed = True
         self.events.append("close-temporary")
+
+
+class _TemporaryFactory:
+    """一次性句柄的构造函数替身：记录「有没有被构造」（收口失败时不得构造）。"""
+
+    def __init__(self, events: list[str]) -> None:
+        self.events = events
+        self.graph: _TemporaryGraph | None = None
+        self.error: Exception | None = None
+
+    def __call__(self, *_args: object, **_kwargs: object) -> _TemporaryGraph:
+        """构造并记录。"""
+        self.events.append("build-temporary")
+        self.graph = _TemporaryGraph(self.events, self.error)
+        return self.graph
 
 
 class _SharedHandle:
     """进程共享句柄替身：只实现 `release_account_driver` 与 `aclose`（后者不应被调用）。"""
 
-    def __init__(self, events: list[str], *, result: bool = True, error: Exception | None = None) -> None:
+    def __init__(
+        self,
+        events: list[str],
+        *,
+        result: bool = True,
+        error: BaseException | None = None,
+    ) -> None:
         self.events = events
         self.result = result
         self.error = error
 
     async def release_account_driver(self, account_id: str) -> bool:
-        """记录收口调用；可按用例抛错。"""
+        """记录收口调用；可按用例抛错（含取消）。"""
         self.events.append(f"release:{account_id}")
         if self.error is not None:
             raise self.error
@@ -121,25 +145,25 @@ def _install(
     settings: Settings,
     shared: _SharedHandle | None,
     shared_origin: graph_module.SharedGraphOrigin | None = None,
-) -> _TemporaryGraph:
-    """装配替身：共享句柄（可缺）+ 一次性句柄 + 账本打桩。"""
-    temporary = _TemporaryGraph(events)
+) -> _TemporaryFactory:
+    """装配替身：共享句柄（可缺）+ 一次性句柄工厂 + 账本打桩。"""
+    factory = _TemporaryFactory(events)
     monkeypatch.setattr(graph_module, "_shared_graph", cast(MemoryGraph, shared) if shared is not None else None)
     monkeypatch.setattr(
         graph_module,
         "_shared_graph_origin",
         shared_origin if shared_origin is not None else graph_module._origin_of(settings),
     )
-    monkeypatch.setattr(purge_module, "build_memory_graph", lambda *_args, **_kwargs: temporary)
+    monkeypatch.setattr(purge_module, "build_memory_graph", factory)
     monkeypatch.setattr(MemoryAccountPurger, "_delete_ledger_rows", _no_ledger)
-    return temporary
+    return factory
 
 
 @pytest.mark.asyncio
 async def test_purge_releases_the_shared_handle_before_deleting_the_graph(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """顺序必须是「先收口共享句柄的派生驱动、再删图」，且只关自己那个一次性句柄。"""
+    """顺序必须是「先收口共享句柄的派生驱动、再建句柄删图」，且不关共享句柄。"""
     settings = _settings()
     events: list[str] = []
     shared = _SharedHandle(events)
@@ -147,7 +171,7 @@ async def test_purge_releases_the_shared_handle_before_deleting_the_graph(
 
     outcome = await MemoryAccountPurger(settings).purge_account(_ACCOUNT)
 
-    assert events == [f"release:{_ACCOUNT}", f"delete:{_ACCOUNT}", "close-temporary"], (
+    assert events == [f"release:{_ACCOUNT}", "build-temporary", f"delete:{_ACCOUNT}", "close-temporary"], (
         f"删图前没有先收口共享句柄（或收尾顺序不对）：{events}"
     )
     assert "已收口该账号的派生驱动" in outcome.detail, outcome.detail
@@ -169,7 +193,7 @@ async def test_purge_does_not_build_a_shared_handle_when_absent(monkeypatch: pyt
 
     outcome = await MemoryAccountPurger(settings).purge_account(_ACCOUNT)
 
-    assert events == [f"delete:{_ACCOUNT}", "close-temporary"], events
+    assert events == ["build-temporary", f"delete:{_ACCOUNT}", "close-temporary"], events
     assert graph_module._shared_graph is None
     assert "本进程无同源共享句柄（未新建）" in outcome.detail, outcome.detail
 
@@ -196,18 +220,41 @@ async def test_purge_skips_a_shared_handle_from_another_connection(monkeypatch: 
 
 
 @pytest.mark.asyncio
-async def test_purge_still_deletes_the_graph_when_release_fails(monkeypatch: pytest.MonkeyPatch) -> None:
-    """收口失败不得阻断删图（删图是「内容真删」的承诺），但必须在回执里留痕。"""
+async def test_release_failure_blocks_the_delete_before_any_graph_is_built(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """收口失败即中止本次删图：不建句柄、不发 `GRAPH.DELETE`，异常原样上抛。
+
+    fail-closed 的理由：索引任务仍在跑时删图会与在途 `CREATE INDEX` 并发（本轮 signal 11
+    事故的形态），而注销可重试——报错好过虚报「已清理」。异常必须是**同一个对象**：
+    重新包装或拼进 detail 都会把驱动层的端点细节带进回执。
+    """
     settings = _settings()
     events: list[str] = []
-    shared = _SharedHandle(events, error=RuntimeError("收口失败（合成）"))
+    failure = RuntimeError("收口失败（合成）：127.0.0.1:6381 不可达")
+    shared = _SharedHandle(events, error=failure)
     _install(monkeypatch, events=events, settings=settings, shared=shared)
 
-    outcome = await MemoryAccountPurger(settings).purge_account(_ACCOUNT)
+    with pytest.raises(RuntimeError) as caught:
+        await MemoryAccountPurger(settings).purge_account(_ACCOUNT)
 
-    assert events == [f"release:{_ACCOUNT}", f"delete:{_ACCOUNT}", "close-temporary"], events
-    assert "已丢弃图" in outcome.detail, outcome.detail
-    assert "收口失败（RuntimeError）" in outcome.detail, outcome.detail
+    assert caught.value is failure, f"异常被重新包装了：{caught.value!r}"
+    assert str(caught.value) == str(failure), "异常消息被改写过（可能夹带了底层端点细节）"
+    assert events == [f"release:{_ACCOUNT}"], f"收口失败后仍继续建句柄/删图：{events}"
+
+
+@pytest.mark.asyncio
+async def test_release_cancellation_propagates_without_deleting(monkeypatch: pytest.MonkeyPatch) -> None:
+    """取消同样必须向上传播：收口被取消时不得继续删图（也不得吞成普通异常）。"""
+    settings = _settings()
+    events: list[str] = []
+    shared = _SharedHandle(events, error=asyncio.CancelledError())
+    _install(monkeypatch, events=events, settings=settings, shared=shared)
+
+    with pytest.raises(asyncio.CancelledError):
+        await MemoryAccountPurger(settings).purge_account(_ACCOUNT)
+
+    assert events == [f"release:{_ACCOUNT}"], f"取消之后仍继续建句柄/删图：{events}"
 
 
 @pytest.mark.asyncio
@@ -218,9 +265,8 @@ async def test_purge_keeps_the_release_clause_when_the_graph_is_already_gone(
     settings = _settings()
     events: list[str] = []
     shared = _SharedHandle(events, result=False)
-    temporary = _install(monkeypatch, events=events, settings=settings, shared=shared)
-
-    temporary.driver.client.error = ResponseError("Invalid graph operation on empty key")
+    factory = _install(monkeypatch, events=events, settings=settings, shared=shared)
+    factory.error = ResponseError("Invalid graph operation on empty key")
 
     outcome = await MemoryAccountPurger(settings).purge_account(_ACCOUNT)
 
