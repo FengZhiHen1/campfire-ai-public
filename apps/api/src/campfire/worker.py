@@ -30,7 +30,7 @@ import os
 import socket
 import uuid
 from collections.abc import Awaitable, Callable
-from contextlib import suppress
+from contextlib import AsyncExitStack, suppress
 from datetime import datetime, timezone
 
 from campfire.core.config import apply_no_proxy_normalization, get_settings
@@ -50,7 +50,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from taskiq import TaskiqEvents
 
 from campfire.core.authz import AuthorizationError, set_authorizer
-from campfire.core.db import session_scope
+from campfire.core.cache import close_cache
+from campfire.core.db import dispose_engine, session_scope
 from campfire.core.jobs import build_broker, dispatch_pending_write, set_dispatch_hook
 from campfire.core.pending_write import (
     KIND_MEMORY_EPISODE,
@@ -64,7 +65,7 @@ from campfire.core.pending_write import (
 )
 from campfire.modules.memory.consumer import consume_memory_episode
 from campfire.modules.memory.errors import MemoryDataError
-from campfire.modules.memory.graph import MemoryGraph, get_shared_memory_graph
+from campfire.modules.memory.graph import MemoryGraph, aclose_shared_memory_graph, get_shared_memory_graph
 from campfire.modules.profile.authz import OwnerAuthorizer
 from campfire.modules.profile.consumer import write_from_pending
 from campfire.modules.profile.errors import ProfileDataError
@@ -377,7 +378,7 @@ async def _mark_dead_and_alert(pending_id: str, exc: BaseException, *, subject: 
 
     与 `_register_retryable_failure` 同一做法：登记失败不能掩盖原始错误，只记日志；
     告警带 `[alert]` 前缀，供日志告警规则单独匹配（第 8 节：`dead` 数量必须告警）。
-    错误摘要只写类型名与消息，不复述连接串或凭据（AGENTS.md 安全条款）。
+    错误摘要只写类型名：驱动异常消息可能含连接串或凭据。
 
     为什么告警不能只靠「可重试失败耗尽」那一条：授权在领取时不成立属于
     不可重试的终结，它一次就进 `dead`，不经过 attempts 曲线——若只在那里告警，
@@ -391,9 +392,9 @@ async def _mark_dead_and_alert(pending_id: str, exc: BaseException, *, subject: 
     )
     async with session_scope(get_settings()) as session:
         try:
-            await mark_dead(session, pending_id=pending_id, error=f"{type(exc).__name__}: {exc}")
-        except Exception:  # noqa: BLE001 —— 登记失败不能掩盖原始错误
-            logger.exception("登记 dead 失败：pending_id=%s", pending_id)
+            await mark_dead(session, pending_id=pending_id, error=type(exc).__name__)
+        except Exception as registration_error:  # noqa: BLE001 —— 登记失败不能掩盖原始错误
+            logger.error("登记 dead 失败：pending_id=%s cause=%s", pending_id, type(registration_error).__name__)
 
 
 async def _register_retryable_failure(pending_id: str, exc: BaseException, *, subject: str) -> None:
@@ -403,7 +404,7 @@ async def _register_retryable_failure(pending_id: str, exc: BaseException, *, su
     只有归属不同，因此收在一个函数里、由调用方给出主语，而不是复制两份。
 
     登记本身失败不能掩盖原始错误：调用方紧接着会重新抛出 `exc`，这里只记日志。
-    错误摘要只写类型名与消息，不复述连接串或凭据（AGENTS.md 安全条款）。
+    错误摘要只写类型名：驱动异常消息可能含连接串或凭据。
 
     `dead` 必须发专属告警（第 6 节「转 `dead` 并告警」、第 8 节「`dead` 数量
     必须告警」）。2026-09-29 评审 C-5 实测发现：此前这里只打可重试失败的 warning，
@@ -414,19 +415,18 @@ async def _register_retryable_failure(pending_id: str, exc: BaseException, *, su
     logger.warning("%s写入失败（可重试）：pending_id=%s cause=%s", subject, pending_id, type(exc).__name__)
     async with session_scope(get_settings()) as session:
         try:
-            record = await mark_retryable_failure(session, pending_id=pending_id, error=f"{type(exc).__name__}: {exc}")
-        except Exception:  # noqa: BLE001 —— 登记失败不能掩盖原始错误
-            logger.exception("登记可重试失败失败：pending_id=%s", pending_id)
+            record = await mark_retryable_failure(session, pending_id=pending_id, error=type(exc).__name__)
+        except Exception as registration_error:  # noqa: BLE001 —— 登记失败不能掩盖原始错误
+            logger.error("登记可重试失败失败：pending_id=%s cause=%s", pending_id, type(registration_error).__name__)
             return
         if record.state == STATE_DEAD:
             # 专属告警：可被日志告警规则单独匹配，与普通重试 warning 区分开。
             logger.error(
-                "[alert] %s写入重试耗尽，已转 dead：pending_id=%s attempts=%d last_error=%s"
-                "（需人工排查，dead 保留 30 天）",
+                "[alert] %s写入重试耗尽，已转 dead：pending_id=%s attempts=%d cause=%s（需人工排查，dead 保留 30 天）",
                 subject,
                 pending_id,
                 record.attempts,
-                record.last_error,
+                type(exc).__name__,
             )
 
 
@@ -498,8 +498,8 @@ async def _sweep_forever() -> None:
             await sweep_once()
         except asyncio.CancelledError:
             raise
-        except Exception:  # noqa: BLE001 —— 单轮失败继续下一轮，绝不静默停止扫描
-            logger.exception("兜底扫描本轮失败，%d 秒后重试", SWEEP_INTERVAL_SECONDS)
+        except Exception as exc:  # noqa: BLE001 —— 单轮失败继续下一轮，绝不静默停止扫描
+            logger.error("兜底扫描本轮失败，%d 秒后重试：cause=%s", SWEEP_INTERVAL_SECONDS, type(exc).__name__)
         await asyncio.sleep(SWEEP_INTERVAL_SECONDS)
 
 
@@ -529,10 +529,14 @@ async def _start_sweep(_state: object) -> None:
 
 @broker.on_event(TaskiqEvents.WORKER_SHUTDOWN)
 async def _stop_sweep(_state: object) -> None:
-    """Worker 停止时收口扫描任务（取消并等它真正结束）。"""
+    """Worker 停止时先收口扫描任务，再关闭本进程的共享连接。"""
     global _sweep_task
-    if _sweep_task is not None:
-        _sweep_task.cancel()
-        with suppress(asyncio.CancelledError):
-            await _sweep_task
-        _sweep_task = None
+    async with AsyncExitStack() as cleanup:
+        cleanup.push_async_callback(dispose_engine)
+        cleanup.push_async_callback(close_cache)
+        cleanup.push_async_callback(aclose_shared_memory_graph)
+        if _sweep_task is not None:
+            task, _sweep_task = _sweep_task, None
+            task.cancel()
+            with suppress(asyncio.CancelledError):
+                await task
