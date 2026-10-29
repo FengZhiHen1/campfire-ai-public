@@ -17,6 +17,20 @@
 [长程交付记录](../../docs/development/checkpoints/2026-10-29-final-delivery.md)，
 未完成项仍以 [TODO](../../docs/TODO.md) 为准。
 
+## 0.0 历史局限与 v0.2 多轮评测（2026-10-29 增补，不改上文任何结果）
+
+- **旧批次能支持什么、不能支持什么**：[`interactive/HISTORY-LIMITATIONS.md`](interactive/HISTORY-LIMITATIONS.md)。
+  要点：旧 C 组 138 个生成回合里没有一次进入应急入口（0 次 `emergency-consulting`、0 次应急注入，
+  29 次 `skill` 全部是 `daily-consulting`）；结构化输出只有 26 个提问卡、0 张行动卡；盲评包不带
+  工具与引用证据，因此 `CFB-T-019` 那条“虚构依据”判据**缺充分依据、应复核**（原分保留不改）。
+- **新一轮协议正文**：[`interactive/PROTOCOL.md`](interactive/PROTOCOL.md)（N 最小提示 / P 旧强提示 /
+  C 真实产品，含真实 `emergency` 入口；每组 3 次独立重复；模拟家长每 episode 最多披露 2 个事实；
+  有限 schema 重试，不用重试换分）。
+- **新一轮案例**：[`interactive/cases/`](interactive/cases/README.md)（8 校准 + 24 正式，全部新写、
+  与旧 48 例不重叠）。
+- 旧协议快照 `protocol/01-05`、旧批次原件与已记录分数**一律不动**；v0.2 结果不与旧 120 分母合并，
+  也不作为旧批次的“改进后”数字。
+
 ## 0. 当前事实（不要当成别的样子）
 
 - 正式 40 例已入库：`evaluation/carebench/cases/cases-test-v0.1.jsonl`，
