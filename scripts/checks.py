@@ -51,6 +51,13 @@ API_TESTS = Path("apps/api/tests")
 #: 仓库级工具测试目录（`scripts/worktree.py`、`scripts/checks.py` 的针对性测试）。
 SCRIPT_TESTS = Path("scripts/tests")
 
+#: CareBench 评测工具根目录（仓库相对，带结尾斜杠便于前缀判断）。
+EVAL_ROOT = "evaluation/carebench/"
+
+#: CareBench 工具自己的测试目录（`pyproject.toml` 的 `testpaths` 之一：全部是
+#: 确定性替身，不联网、不连库、不调模型）。
+EVAL_TESTS = Path("evaluation/carebench/tests")
+
 #: 排除真实模型用例的表达式（与 conftest 的开关配套，见模块 docstring）。
 LIVE_MODEL_EXPR = "not live_model"
 
@@ -60,6 +67,9 @@ CAT_PY_TESTS = "python-tests"
 CAT_PY_CONFIG = "python-config"
 CAT_SCRIPTS = "scripts"
 CAT_SCRIPT_TESTS = "script-tests"
+CAT_EVAL_SRC = "eval-src"
+CAT_EVAL_TESTS = "eval-tests"
+CAT_EVAL_DATA = "eval-data"
 CAT_WEB = "web"
 CAT_WEB_CONFIG = "web-config"
 CAT_DOCS = "docs"
@@ -67,6 +77,13 @@ CAT_MIGRATIONS = "migrations"
 CAT_CI = "ci"
 CAT_OPS = "ops"
 CAT_UNKNOWN = "unknown"
+
+#: `apps/api` 的 Python 改动面：ruff + mypy + 定向 pytest（mypy 只配这两个路径）。
+PYTHON_CATEGORIES = frozenset({CAT_PY_SRC, CAT_PY_TESTS, CAT_SCRIPTS, CAT_SCRIPT_TESTS})
+
+#: CareBench 工具的改动面：ruff（只对 `.py`）+ 工具自身的确定性 pytest 树。
+#: mypy 只配 `apps/api/{src,tests}`，对 `evaluation/` 不做类型断言，因此这里不排它。
+EVAL_CATEGORIES = frozenset({CAT_EVAL_SRC, CAT_EVAL_TESTS, CAT_EVAL_DATA})
 
 #: 没有任何确定性检查覆盖的类别（`quick` 遇到即阻塞）。
 UNCOVERED_CATEGORIES = frozenset({CAT_UNKNOWN, CAT_CI, CAT_OPS})
@@ -204,6 +221,20 @@ def classify(path: str) -> str:
         return CAT_SCRIPT_TESTS
     if normalized.startswith("scripts/"):
         return CAT_SCRIPTS
+    if normalized.startswith(EVAL_ROOT):
+        # CareBench 评测工具（2026-10-29 补）：此前整棵树落到 `unknown`，改一行评测
+        # 脚本就让 `quick` 阻塞。这里按「能跑的检查」拆三类——源码与测试走 ruff，
+        # 案例/快照/样例配置这类非 Python 数据没有独立 linter，但它们正是工具自身
+        # 用例的输入（`test_cases` / `test_knowledge_content` / 冻结与核验用例），
+        # 所以同样由该工具的确定性 pytest 校验。文档（README、protocol/）仍归文档，
+        # 由设计文档一致性检查把关，不在评测工具这条线上吞掉。
+        if name.endswith(".md"):
+            return CAT_DOCS
+        if normalized.startswith(f"{EVAL_ROOT}tests/"):
+            return CAT_EVAL_TESTS
+        if name.endswith(".py"):
+            return CAT_EVAL_SRC
+        return CAT_EVAL_DATA
     if name in {"pyproject.toml", "uv.lock"}:
         # 按文件名判定：`apps/api/pyproject.toml` 也是依赖清单，落到 unknown 会假阻塞。
         return CAT_PY_CONFIG
@@ -270,10 +301,14 @@ def pytest_files_for(paths: list[str], existing_tests: list[Path]) -> list[str] 
 
     规则（刻意保守——宁可让调用方显式 `--pytest`，也不假装「跑过了相关测试」）：
 
-    1. 改到测试文件本身（应用测试或工具测试）→ 直接跑它；已被删除的不跑（只计入影响面），
-       测试基础设施（`conftest.py`、tests 包标记）也不跑，由调用方升级为全量。
+    1. 改到测试文件本身（应用测试、工具测试或 CareBench 测试）→ 直接跑它；已被删除的不跑
+       （只计入影响面），测试基础设施（`conftest.py`、tests 包标记）也不跑，
+       由调用方升级为全量。
     2. 改到 `scripts/*.py` → 跑 `scripts/tests/test_<stem>*.py`（若存在）。
-    3. 改到源码 → 用路径里的**第一个**非容器层词去匹配 `test_<词>_*.py`；
+    3. 改到 CareBench 的源码或数据（案例、快照、样例配置）→ 跑 `EVAL_TESTS` 整棵树：
+       该工具的用例跨文件互相校验（案例 ↔ 冻结 ↔ 核验），按文件名猜单个目标容易漏判，
+       而整棵测试树是确定性的、几十条、秒级。
+    4. 改到 `apps/api` 源码 → 用路径里的**第一个**非容器层词去匹配 `test_<词>_*.py`；
        匹配不到再退到文件名（如 `pending_write` → `test_pending_write_*.py`）；
        仍匹配不到 → `None`。
 
@@ -290,14 +325,23 @@ def pytest_files_for(paths: list[str], existing_tests: list[Path]) -> list[str] 
     src_changed: list[str] = []
     unresolved = False
     alive = set(existing_paths(paths))
+    eval_tests_path = EVAL_TESTS.as_posix()
 
     for path in paths:
         category = classify(path)
-        if category in {CAT_PY_TESTS, CAT_SCRIPT_TESTS}:
+        if category in {CAT_PY_TESTS, CAT_SCRIPT_TESTS, CAT_EVAL_TESTS}:
             # 改到测试自己 → 跑它（删除的测试没有可跑的目标，跳过即可）。
             # 测试基础设施不在此列：它自己零用例（退出码 5），由 `quick_plan` 升级为全量。
             if path in alive and not is_test_infrastructure(path):
                 selected.add(path)
+        elif category in {CAT_EVAL_SRC, CAT_EVAL_DATA}:
+            # 目标是一个目录：删除/新增单个文件都不会把它变成不存在的路径（pytest 对
+            # 不存在的路径退出码 4）。目录缺失是仓库缺陷，返回 `None` 让调用方阻塞，
+            # 而不是报「没有测试要跑」。
+            if (ROOT / EVAL_TESTS).is_dir():
+                selected.add(eval_tests_path)
+            else:
+                unresolved = True
         elif category == CAT_SCRIPTS and path.endswith(".py"):
             stem = path.rsplit("/", 1)[-1].removesuffix(".py")
             matches = sorted(name for name in by_name if name.startswith(f"test_{stem}"))
@@ -326,7 +370,11 @@ def pytest_files_for(paths: list[str], existing_tests: list[Path]) -> list[str] 
 
 
 def existing_test_files() -> list[Path]:
-    """收集现有测试文件（应用测试树 + 仓库级工具测试树）。"""
+    """收集现有测试文件（应用测试树 + 仓库级工具测试树）。
+
+    CareBench 测试树刻意不在这里：它不按文件名映射（见 `pytest_files_for` 规则 3），
+    混进来只会让 `apps/api` 源码的按名匹配多出无关命中。
+    """
     files: list[Path] = []
     for tree in (API_TESTS, SCRIPT_TESTS):
         directory = ROOT / tree
@@ -382,7 +430,9 @@ def quick_plan(base: str, pytest_override: list[str] | None) -> tuple[list[Step]
         )
 
     live_paths = existing_paths(paths)
-    python_categories = {CAT_PY_SRC, CAT_PY_TESTS, CAT_SCRIPTS, CAT_SCRIPT_TESTS}
+    python_touched = bool(covered & PYTHON_CATEGORIES)
+    eval_touched = bool(covered & EVAL_CATEGORIES)
+    py_config_touched = CAT_PY_CONFIG in covered
     mypy_step = Step(
         key="mypy",
         title="mypy（src + tests 必须一起传）",
@@ -394,22 +444,30 @@ def quick_plan(base: str, pytest_override: list[str] | None) -> tuple[list[Step]
         argv=("uv", "run", "pytest", "-m", LIVE_MODEL_EXPR),
     )
 
-    if covered & python_categories:
+    if python_touched or py_config_touched:
         ruff_targets = [path for path in live_paths if path.endswith(".py")]
         steps.extend(_ruff_step(ruff_targets or ["."]))
         # mypy 不能按文件跑：分开跑时 `apps.api.tests.*` 的绝对导入会让它报
         # 「Source file found twice under different module names」并整体中止（伪装成全绿）。
         steps.append(mypy_step)
-    elif CAT_PY_CONFIG in covered:
-        # 只动了 pyproject.toml / uv.lock（2026-10-29 修）：依赖与 pytest/ruff/mypy 的
-        # 配置都在这个文件里，改错会立刻影响**全部**检查，因此不能只跑改动文件——
-        # 必须过 lint、mypy 与完整 pytest。此前这里只跑了 ruff，等于把「锁文件升级后
-        # 全套测试还绿吗」这件事交给发布前那一刻。
+        if py_config_touched and not python_touched:
+            # 只动了 pyproject.toml / uv.lock（2026-10-29 修）：依赖与 pytest/ruff/mypy 的
+            # 配置都在这个文件里，改错会立刻影响**全部**检查，因此不能只跑改动文件——
+            # 必须过 lint、mypy 与完整 pytest。此前这里只跑了 ruff，等于把「锁文件升级
+            # 后全套测试还绿吗」这件事交给发布前那一刻。
+            #
+            # 全量 pytest 在下方按 `needs_full_pytest` 统一排一次（不重复排）。
+            report.append("配置改动（pyproject.toml / uv.lock）：跑 lint + mypy + 全量 pytest")
+    elif eval_touched:
+        # CareBench 工具（2026-10-29 补）：ruff 覆盖 `evaluation/`（它不在 ruff 的 exclude
+        # 里），评测源码与测试拿同一份 lint 判据。纯数据改动（案例/快照/样例配置）没有
+        # 可 lint 的对象，只排该工具的确定性 pytest；mypy 只配 `apps/api`，对这里不做断言。
         #
-        # 全量 pytest 在下方按 `needs_full_pytest` 统一排一次（不重复排）。
-        steps.extend(_ruff_step(["."]))
-        steps.append(mypy_step)
-        report.append("配置改动（pyproject.toml / uv.lock）：跑 lint + mypy + 全量 pytest")
+        # 与 `apps/api` 的 Python 改动同时出现时走上面那条分支：ruff 目标里已包含评测的
+        # `.py`，一条 ruff 步骤覆盖两处，不重复排。
+        eval_py = [path for path in live_paths if path.endswith(".py")]
+        if eval_py:
+            steps.extend(_ruff_step(eval_py))
 
     if CAT_DOCS in covered:
         steps.append(
@@ -440,10 +498,8 @@ def quick_plan(base: str, pytest_override: list[str] | None) -> tuple[list[Step]
     if test_infra_touched:
         report.append("测试基础设施改动：升级为全量 pytest")
 
-    needs_full_pytest = CAT_PY_CONFIG in covered or test_infra_touched
-    tests_wanted = needs_full_pytest or bool(
-        covered & ({CAT_PY_SRC, CAT_PY_TESTS, CAT_SCRIPTS, CAT_SCRIPT_TESTS} | {CAT_MIGRATIONS})
-    )
+    needs_full_pytest = py_config_touched or test_infra_touched
+    tests_wanted = needs_full_pytest or bool(covered & (PYTHON_CATEGORIES | EVAL_CATEGORIES | {CAT_MIGRATIONS}))
     if tests_wanted:
         if pytest_override:
             selected = list(pytest_override)
