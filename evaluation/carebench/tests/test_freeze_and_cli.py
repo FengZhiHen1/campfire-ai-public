@@ -7,12 +7,61 @@ from pathlib import Path
 
 import pytest
 
-from evaluation.carebench.cli import build_parser
+from evaluation.carebench.cli import build_parser, main
 from evaluation.carebench.config import ROTATION, RunConfig, load_config
 from evaluation.carebench.freeze import FreezeError, freeze_cases, load_frozen
 from evaluation.carebench.hashing import batch_fingerprint
+from evaluation.carebench.manifest import identity_fingerprint, runtime_identity
 
-from .conftest import make_cases_file
+from .conftest import make_cases_file, make_snapshot
+
+
+def test_freeze_cli_records_locked_identity(tmp_path: Path, settings_for_tests: object) -> None:
+    """`freeze --identity` 把运行身份写进冻结记录（正式冻结的锁定入口）。"""
+    identity = runtime_identity(settings_for_tests, make_snapshot(), RunConfig())
+    identity_file = tmp_path / "identity.json"
+    identity_file.write_text(
+        json.dumps({"run_identity": identity, "run_identity_sha256": identity_fingerprint(identity)}),
+        encoding="utf-8",
+    )
+    out = tmp_path / "frozen"
+    code = main(
+        [
+            "freeze",
+            "--cases",
+            str(make_cases_file(tmp_path / "cases.jsonl", count=1)),
+            "--label",
+            "calibration",
+            "--out",
+            str(out),
+            "--identity",
+            str(identity_file),
+        ]
+    )
+    assert code == 0
+    record = json.loads((out / "freeze.json").read_text(encoding="utf-8"))
+    assert record["run_identity_sha256"] == identity_fingerprint(identity)
+    assert record["run_identity"]["model_id"] == identity["model_id"]
+
+
+def test_freeze_cli_rejects_malformed_identity_file(tmp_path: Path) -> None:
+    """身份文件形状不对必须拒绝（不能静默当成「没有锁定」跑下去）。"""
+    identity_file = tmp_path / "identity.json"
+    identity_file.write_text(json.dumps({"run_identity": {}}), encoding="utf-8")
+    code = main(
+        [
+            "freeze",
+            "--cases",
+            str(make_cases_file(tmp_path / "cases.jsonl", count=1)),
+            "--label",
+            "calibration",
+            "--out",
+            str(tmp_path / "frozen"),
+            "--identity",
+            str(identity_file),
+        ]
+    )
+    assert code == 2
 
 
 def test_freeze_records_hashes_and_is_idempotent(tmp_path: Path) -> None:
@@ -135,13 +184,14 @@ def test_batch_fingerprint_changes_with_any_input() -> None:
     assert base != batch_fingerprint(dataset_sha256="a" * 64, config_sha256="b" * 64, code_commit="d" * 40)
 
 
-def test_cli_exposes_the_eight_commands() -> None:
-    """命令行只保留必要功能：八个命令，别的不加。"""
+def test_cli_exposes_the_nine_commands() -> None:
+    """命令行只保留必要功能：九个命令，别的不加。"""
     parser = build_parser()
     actions = [action for action in parser._actions if action.dest == "command"]  # noqa: SLF001 —— argparse 无公开取法
     choices = set(actions[0].choices)  # type: ignore[index]
     assert choices == {
         "preflight",
+        "identity",
         "freeze",
         "run",
         "resume",

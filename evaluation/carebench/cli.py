@@ -4,9 +4,10 @@
 
 边界：不实现任何评测逻辑（各命令都在自己的模块里）。
 
-八个命令（只保留必要功能，见 README「接口」一节）：
+九个命令（只保留必要功能，见 README「接口」一节）：
 
 - `preflight`：开工前核对工作区/案例/知识快照与库/端点/装配（可显式探测模型与嵌入）；
+- `identity`：打印当前运行身份（模型/端点/嵌入/知识快照，无凭据、无生成调用），供冻结前锁定；
 - `freeze`：把案例集与配置冻结成不可再改的身份；
 - `run`：新建批次并跑 A/B/C；
 - `resume`：补跑中断批次（只补没有最终结论的轮次）；
@@ -29,7 +30,7 @@ from pathlib import Path
 from typing import Any
 
 from .cases import CaseValidationError, parse_cases
-from .config import RunConfig, load_config
+from .config import FORMAL_LABEL, RunConfig, load_config
 from .faults import load_plan, merge, plan_from_cases
 from .freeze import FreezeError, freeze_cases, load_frozen
 from .knowledge import (
@@ -40,6 +41,7 @@ from .knowledge import (
     read_database_state,
     require_isolated_database,
 )
+from .manifest import identity_fingerprint, runtime_identity, utc_now
 from .preflight import run_preflight
 from .review import ReviewError, export_packet, import_ratings
 from .runner import ResumeRejected, launch_run, resume_run
@@ -87,6 +89,17 @@ def build_parser() -> argparse.ArgumentParser:
     freeze.add_argument("--label", choices=("calibration", "pilot", "test"), required=True)
     freeze.add_argument("--out", type=Path, default=None, help="冻结目录（缺省 frozen/<label>）")
     freeze.add_argument("--operator", default=None, help="冻结人（缺省取环境变量）")
+    freeze.add_argument(
+        "--identity",
+        type=Path,
+        default=None,
+        help="运行身份文件（`carebench identity` 的输出）：冻结时锁定模型/端点/嵌入/知识快照；label=test 必须提供",
+    )
+
+    identity = sub.add_parser("identity", help="打印当前运行身份（无凭据、不发起生成调用）")
+    add_common(identity)
+    identity.add_argument("--knowledge-snapshot", type=Path, default=None, help="知识许可裁定表（缺省用包内清单）")
+    identity.add_argument("--out", type=Path, default=None, help="写到文件而不是标准输出（供 freeze --identity）")
 
     run = sub.add_parser("run", help="新建批次并运行 A/B/C")
     add_common(run)
@@ -127,6 +140,11 @@ def _split_ids(raw: str | None) -> list[str] | None:
     if not raw:
         return None
     return [part.strip() for part in raw.split(",") if part.strip()]
+
+
+def label_is_formal(config: RunConfig) -> bool:
+    """该配置是否代表「正式成绩」批次。"""
+    return config.label == FORMAL_LABEL
 
 
 def _settings() -> Any:
@@ -197,12 +215,15 @@ def _cmd_freeze(args: argparse.Namespace) -> int:
     """执行 freeze。"""
     config = load_config(args.config)
     out = args.out or (DEFAULT_FROZEN_ROOT / args.label)
+    identity_payload = _load_identity_file(args.identity) if args.identity else None
     frozen = freeze_cases(
         cases_path=args.cases,
         label=args.label,
         out_dir=out,
         config=config,
         operator=args.operator,
+        identity=(identity_payload or {}).get("run_identity"),
+        identity_sha256=(identity_payload or {}).get("run_identity_sha256"),
     )
     record = frozen.record
     print(f"已冻结：{out}")
@@ -211,9 +232,52 @@ def _cmd_freeze(args: argparse.Namespace) -> int:
     )
     print(f"  dataset_sha256={record['dataset_sha256']}")
     print(f"  config_sha256={record['config_sha256']}")
+    locked = frozen.run_identity_sha256
+    print(f"  run_identity_sha256={locked or '未锁定（仅非正式批次）'}")
     print(f"  review_status={record['review_status_counts']} · formal_ready={record['formal_ready']}")
     if not record["formal_ready"]:
         print("  注意：存在未 approved 案例，结果只能作为原始观察（不得写成已审核）")
+    return 0
+
+
+def _load_identity_file(path: Path) -> dict[str, Any]:
+    """读 `carebench identity` 写出的身份文件，并核对形状。
+
+    Raises:
+        ValueError: 文件不是合法 JSON 对象，或缺 `run_identity` / `run_identity_sha256`。
+    """
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(raw, dict):
+        raise ValueError(f"身份文件必须是 JSON 对象：{path}")
+    if not isinstance(raw.get("run_identity"), dict) or not str(raw.get("run_identity_sha256") or "").strip():
+        raise ValueError(f"身份文件缺 run_identity / run_identity_sha256：{path}（请用 `identity` 命令生成）")
+    return raw
+
+
+def _cmd_identity(args: argparse.Namespace) -> int:
+    """打印当前运行身份（读库核对知识快照；不发起任何生成调用）。"""
+    settings = _settings()
+    config = load_config(args.config)
+    snapshot = asyncio.run(_resolve_snapshot(settings, args.knowledge_snapshot))
+    if not snapshot.ok:
+        print("拒绝输出身份：知识快照核对未通过：", file=sys.stderr)
+        for item in snapshot.violations:
+            print(f"  - {item}", file=sys.stderr)
+        return 1
+    identity = runtime_identity(settings, snapshot, config)
+    payload = {
+        "run_identity": identity,
+        "run_identity_sha256": identity_fingerprint(identity),
+        "checked_at": utc_now(),
+        "note": "无凭据：只含端点主机/端口/路径、模型 id、知识快照 hash/条目/节点数与库名",
+    }
+    text = json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
+    if args.out is not None:
+        args.out.parent.mkdir(parents=True, exist_ok=True)
+        args.out.write_text(text, encoding="utf-8")
+        print(f"运行身份已写出：{args.out}（sha256={payload['run_identity_sha256']}）")
+    else:
+        sys.stdout.write(text)
     return 0
 
 
@@ -235,6 +299,20 @@ async def _cmd_run_async(args: argparse.Namespace) -> int:
         config = replace(config, label=str(frozen.record["label"]))
 
     declared = frozen.record.get("config_sha256")
+    if label_is_formal(config) and args.allow_config_drift:
+        print(
+            "拒绝运行：正式批次（label=test）不得用 --allow-config-drift 掩盖配置漂移。\n"
+            "配置属于冻结条件：要改配置就换一个冻结目录重新冻结，正式成绩必须能指回那一份声明。",
+            file=sys.stderr,
+        )
+        return 2
+    if label_is_formal(config) and frozen.run_identity is None:
+        print(
+            "拒绝运行：正式批次的冻结记录没有锁定运行身份（模型/端点/嵌入/知识快照）。\n"
+            "请先用 `carebench identity --out <file>` 取得身份，再用 `freeze --identity <file>` 重新冻结。",
+            file=sys.stderr,
+        )
+        return 2
     if declared and declared != config.sha256 and not args.allow_config_drift:
         print(
             "拒绝运行：运行配置与冻结时声明的配置不同"
@@ -261,6 +339,9 @@ async def _cmd_run_async(args: argparse.Namespace) -> int:
         run_id=args.run_id,
         case_ids=_split_ids(args.case_ids),
         dry_run=args.dry_run,
+        expected_identity=frozen.run_identity,
+        frozen_config_sha256=str(declared) if declared else None,
+        config_drift_allowed=bool(args.allow_config_drift),
     )
     print()
     print(f"批次 {result.run_id}（{result.status}）· batch_id={result.batch_id}")
@@ -362,6 +443,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     handlers = {
         "preflight": _cmd_preflight,
+        "identity": _cmd_identity,
         "freeze": _cmd_freeze,
         "review-export": _cmd_review_export,
         "review-import": _cmd_review_import,
