@@ -248,7 +248,7 @@ uv run python -m campfire.cli invite issue
   「邀请码无效或已不可用」失败，**看起来像产品缺陷，实为夹具不够**；
 - 因此运行时用**码池** `T10_INVITE_CODES`（逗号分隔，按下标分配）；`T10_INVITE_CODE` 是单枚回退。
 
-**本目录引用的码池下标（实测 `grep`，2026-10-04）**——按**要跑哪些 tag** 决定需要几枚：
+**旧 `T10_INVITE_CODES` 码池下标**——保留为 `@real` 旧链路的历史分配，按**要跑哪些 tag** 决定需要几枚：
 
 | 文件 | 用例 | 下标 |
 | --- | --- | --- |
@@ -258,9 +258,17 @@ uv run python -m campfire.cli invite issue
 | ~~`control.spec.ts`~~ | ~~判据1 非空洞性（`@control`）~~ | ~~3~~ |
 | ~~`control.spec.ts`~~ | ~~判据2 非空洞性（`@control`）~~ | ~~4~~ |
 
-⇒ **2026-10-08 起只需 1 枚**（下标 0）。`ablation.spec.ts` 与 `control.spec.ts` 已按用户裁决
+⇒ **2026-10-08 起旧链路当时只需 1 枚**（下标 0）。`ablation.spec.ts` 与 `control.spec.ts` 已按用户裁决
 删除（「闸门理应只有 pytest 和 vitest」）——上表划掉的行是**当时**的下标分配，留作沿革；
 它们的「能红证明」能力随之消失，若日后要恢复，须从 git 历史取回并重新对齐下标。
+
+当前 `T10_INVITE_CODES` 的注册用例分配为：`t10-real.spec.ts` 下标 0、
+`multiround-real.spec.ts` 下标 1、`guide-skip-real.spec.ts` 下标 2；三者同跑需三枚一次性码。
+`@session-isolation` 不共用此池，另用下述三枚 `SIA_INVITE_CODES`。
+
+**当前新增的 `@session-isolation` 使用独立码池 `SIA_INVITE_CODES`，需三枚一次性邀请码**：
+下标 0/1 分别用于账号 A/B，下标 2 用于 SSE 停止与恢复用例的账号 C。该池不走
+`support/real.ts` 的 `T10_INVITE_CODES`，运行时必须按本变量单独提供三枚码。
 
 > **`@capture`（2026-10-07 新增）不在此表里，因为它不占码**：
 > `capture-pages.spec.ts` **只登录、从不注册**（实测：全文无 `signup`/`inviteCodeFor` 调用，
@@ -324,14 +332,14 @@ pnpm --filter @campfire/web exec playwright test \
 `--grep "@real"` 收验收链路；`--grep "@ablation"` 收消融/控制臂（能红证明）。本目录里
 **没有 `test.skip` 之类的静默降级**——缺环境时它**失败**，不假装通过。
 
-### `guide-skip-real.spec.ts`（2026-10-28 新增）
+### `guide-skip-real.spec.ts`
 
 「跳过引导」入口的真栈回归（`BUG-03` 的修复点）：注册 → 建首次日常会话 → 断言页头有入口 →
 点击 → 入口消失 → 浏览器确实 `POST …/onboarding/skip` 拿到 200（经代理）→ 刷新后入口不再出现。
 **全程不调模型**（4 秒），因此它不会被模型抖动带红，也不会把「入口好不好用」和「模型可不可用」
-混成一件事。用 `--grep "@real 跳过引导入口"` 单跑；同样需要一枚邀请码（池下标 2）。
+混成一件事。用 `--grep "@real 跳过引导入口"` 单跑；需要 `T10_INVITE_CODES` 下标 2。
 
-### `multiround-real.spec.ts`（2026-10-28 新增）
+### `multiround-real.spec.ts`
 
 覆盖 `docs/TODO.md` 的 `GAP-04`（追问 → 补答）与 `GAP-05`（刷新后续传）：一次注册、
 **两轮真实问答**（第二个 `run_id` 必须不同于第一个）、然后**刷新**核对历史水合后的条数与
@@ -364,19 +372,28 @@ pnpm --filter @campfire/web exec playwright test \
 
 ---
 
-## 7. ⚠ 硬约束：本目录下**不得**出现 `page.route` / `route.fulfill`
+## 7. 响应观察与唯一故障注入
 
-**无 mock 是本目录的定义性约束。** 本目录下**不得**用 `page.route` / `route.fulfill` 替换任何
-响应——一旦替换，探针证明的就不再是「真栈可用」，而是「我伪造的响应被页面正确处理了」。
+本目录不以替换响应构造 mock。`page.route` / `route.fulfill` 的 blanket 禁止已由
+`@session-isolation` 的真实失败场景收窄：该测试**唯一**注册的 route 调用 `route.abort('failed')`，
+仅注入一次「下一页会话请求」网络失败，不合成或替换响应。
 
-当前实测**零处** `page.route` / `route.fulfill`（只有 `page.on('response')` 这类**只读观察**）。
-`real.ts` 里的 `page.on('response')` 采集器**只观察**：原请求照发、原响应原样返回给应用，
-一个字节都不改。
+该故障注入前，同一分页请求已真实返回 200；注入时记录 `requestfailed`，验证错误提示且保留已加载
+记录；解除 route 后点击重试，再真实取得 200 并加载下一页。因此它验证真实依赖上的错误恢复路径，
+并未伪造应用收到的 HTTP 响应。`support/real.ts` 的 response 采集器仍只观察：请求照发、原响应
+原样交给应用。
 
 **已知的一处需要小心解读的夹具**：`seedMemoryEpisode()` 直连 FalkorDB 写一条 episode。
-它是**夹具**（把被测页面置于「已有一条记忆」的前置条件下），**不是响应伪造**——整条链路里
-没有任何 `page.route`，页面经 `GET /api/memory/episodes` 真读到它、经 `DELETE` 真删掉。但它
+它是**夹具**（把被测页面置于「已有一条记忆」的前置条件下），**不是响应伪造**——页面经
+`GET /api/memory/episodes` 真读到它、经 `DELETE` 真删掉。但它
 **不能**作为「记忆写入路径可用」的证据：种进去的 episode 来源不是产品写路径。
+
+### `session-isolation-real.spec.ts`（`@session-isolation`）
+
+这是**工程验收**，不属于 `shots`/演示/效果评测等材料层。它使用真实浏览器、Vite、FastAPI、
+SuperTokens 与专用测试数据，覆盖两个账号间的会话列表/设置隔离、登出后的 401，以及 SSE 运行停止后
+恢复。前置与运行方式见本文件头部注释；需要 `SIA_INVITE_CODES` 三枚一次性码。它不替换响应；
+唯一注入是上一页所述的分页请求 `abort`，解除后真实重试成功。
 
 ---
 
