@@ -267,7 +267,7 @@ async def consume_memory_episode_task(pending_id: str, lease_owner: str | None =
         # 「预期内的坏输入」无关。降级成 warning 会让它在按级别过滤的告警规则下漏掉，
         # 而 `dead` 的保留期（30 天）与人工处置成本并不因成因不同而改变。
         # 机械守门见 apps/api/tests/test_pending_write_dead_alert_integration.py。
-        await _mark_dead_and_alert(pending_id, exc, subject="记忆写入的载荷不合法")
+        await _mark_dead_and_alert(pending_id, exc, subject="记忆写入的载荷不合法", lease_owner=owner)
         raise
     except Exception as exc:
         # 其它一切按可重试处理——宁可多重试几次，也不要把可能瞬时的失败判成永久 dead。
@@ -281,7 +281,7 @@ async def consume_memory_episode_task(pending_id: str, lease_owner: str | None =
         # 其余（含 `MemoryUnavailableError`）→ 落到本分支当可重试。
         # 不需要显式的 `except MemoryUnavailableError` 分支：它是冗余的
         # （删掉后 3 条分档用例仍全绿；CORE-09）。
-        await _register_retryable_failure(pending_id, exc, subject="记忆")
+        await _register_retryable_failure(pending_id, exc, subject="记忆", lease_owner=owner)
         raise
 
     if not result.written:
@@ -348,18 +348,18 @@ async def consume_profile_item_task(pending_id: str, lease_owner: str | None = N
     except ProfileDataError as exc:
         # 不可重试：载荷/形状不合法，重试不会变好（第 6 节：不得静默丢弃）。
         # `session_scope` 已回滚，故另开会话登记终结状态。
-        await _mark_dead_and_alert(pending_id, exc, subject="档案写入的载荷不合法")
+        await _mark_dead_and_alert(pending_id, exc, subject="档案写入的载荷不合法", lease_owner=owner)
         raise
     except AuthorizationError as exc:
         # 授权在领取时被重新判定为不成立（第 6 节末段）：不写入、转 dead、记原因。
         # 这里只有真正的授权失败会进来：`require_writable` 不把数据库异常包成
         # `AuthorizationError`（见 `modules/profile/authz.OwnerAuthorizer` 的说明），
         # 因此瞬时基础设施故障走下面的可重试分支，不会被永久判死。
-        await _mark_dead_and_alert(pending_id, exc, subject="档案写入的授权在领取时已不成立")
+        await _mark_dead_and_alert(pending_id, exc, subject="档案写入的授权在领取时已不成立", lease_owner=owner)
         raise
     except Exception as exc:
         # 其它一切按可重试处理——宁可多重试几次，也不要把可能瞬时的失败判成永久 dead。
-        await _register_retryable_failure(pending_id, exc, subject="档案")
+        await _register_retryable_failure(pending_id, exc, subject="档案", lease_owner=owner)
         raise
 
     if result.discarded:
@@ -373,7 +373,9 @@ async def consume_profile_item_task(pending_id: str, lease_owner: str | None = N
     return "written"
 
 
-async def _mark_dead_and_alert(pending_id: str, exc: BaseException, *, subject: str) -> None:
+async def _mark_dead_and_alert(
+    pending_id: str, exc: BaseException, *, subject: str, lease_owner: str | None = None
+) -> None:
     """把记录判 `dead` 并发一条专属告警（第 6 节「转 `dead` 并告警」）。
 
     与 `_register_retryable_failure` 同一做法：登记失败不能掩盖原始错误，只记日志；
@@ -384,20 +386,23 @@ async def _mark_dead_and_alert(pending_id: str, exc: BaseException, *, subject: 
     不可重试的终结，它一次就进 `dead`，不经过 attempts 曲线——若只在那里告警，
     这一类 `dead` 会完全没有告警。
     """
+    try:
+        async with session_scope(get_settings()) as session:
+            await mark_dead(session, pending_id=pending_id, error=type(exc).__name__, lease_owner=lease_owner)
+    except Exception as registration_error:  # noqa: BLE001 —— 包括建连与提交，不能掩盖原始错误
+        logger.error("登记 dead 失败：pending_id=%s cause=%s", pending_id, type(registration_error).__name__)
+        return
     logger.error(
         "[alert] %s，已转 dead：pending_id=%s cause=%s（需人工排查，dead 保留 30 天）",
         subject,
         pending_id,
         type(exc).__name__,
     )
-    async with session_scope(get_settings()) as session:
-        try:
-            await mark_dead(session, pending_id=pending_id, error=type(exc).__name__)
-        except Exception as registration_error:  # noqa: BLE001 —— 登记失败不能掩盖原始错误
-            logger.error("登记 dead 失败：pending_id=%s cause=%s", pending_id, type(registration_error).__name__)
 
 
-async def _register_retryable_failure(pending_id: str, exc: BaseException, *, subject: str) -> None:
+async def _register_retryable_failure(
+    pending_id: str, exc: BaseException, *, subject: str, lease_owner: str | None = None
+) -> None:
     """记一次可重试失败（`attempts+1` 与退避；到上限自动转 `dead`）。
 
     `subject` 是日志里的主语（「记忆」/「档案」）：两个消费者的状态机完全相同，
@@ -413,21 +418,23 @@ async def _register_retryable_failure(pending_id: str, exc: BaseException, *, su
     不再单独查库（避免多一次往返与竞态）。
     """
     logger.warning("%s写入失败（可重试）：pending_id=%s cause=%s", subject, pending_id, type(exc).__name__)
-    async with session_scope(get_settings()) as session:
-        try:
-            record = await mark_retryable_failure(session, pending_id=pending_id, error=type(exc).__name__)
-        except Exception as registration_error:  # noqa: BLE001 —— 登记失败不能掩盖原始错误
-            logger.error("登记可重试失败失败：pending_id=%s cause=%s", pending_id, type(registration_error).__name__)
-            return
-        if record.state == STATE_DEAD:
-            # 专属告警：可被日志告警规则单独匹配，与普通重试 warning 区分开。
-            logger.error(
-                "[alert] %s写入重试耗尽，已转 dead：pending_id=%s attempts=%d cause=%s（需人工排查，dead 保留 30 天）",
-                subject,
-                pending_id,
-                record.attempts,
-                type(exc).__name__,
+    try:
+        async with session_scope(get_settings()) as session:
+            record = await mark_retryable_failure(
+                session, pending_id=pending_id, error=type(exc).__name__, lease_owner=lease_owner
             )
+    except Exception as registration_error:  # noqa: BLE001 —— 包括建连与提交，不能掩盖原始错误
+        logger.error("登记可重试失败失败：pending_id=%s cause=%s", pending_id, type(registration_error).__name__)
+        return
+    if record.state == STATE_DEAD:
+        # 提交成功后才告警，避免把回滚的状态当成已落盘。
+        logger.error(
+            "[alert] %s写入重试耗尽，已转 dead：pending_id=%s attempts=%d cause=%s（需人工排查，dead 保留 30 天）",
+            subject,
+            pending_id,
+            record.attempts,
+            type(exc).__name__,
+        )
 
 
 # ---------------------------------------------------------------------------
