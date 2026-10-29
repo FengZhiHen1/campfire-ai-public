@@ -23,17 +23,24 @@
 3. **锚是天然存在的**：助手正文分片本来就是 `output_text`，`annotations` 是它自己的字段，
    不需要另造对应关系。
 
-**载荷长什么样**：一条引用一个注解对象，除六个业务字段外多一个判别键 `type`：
+**载荷长什么样**：一条引用一个注解对象，除九个业务字段外多一个判别键 `type`：
 
 ```json
 {"type": "citation", "citation_id": "…", "run_id": "…", "source": "knowledge",
- "reference": "knowledge:…", "recorded_at": "…", "summary": null}
+ "reference": "knowledge:…", "recorded_at": "…", "summary": null,
+ "status": "published", "applicable_scope": "学龄前·家庭场景", "withdrawn": false}
 ```
 
 `type` 是**判别键**：真实的辅助注解（例如 `url_citation`）也住在同一个数组里，
-按判别键取值才不会把别家的注解当成本项目的引用。六个业务字段与
+按判别键取值才不会把别家的注解当成本项目的引用。九个业务字段与
 `agent/context/citations.py` 的 `CitationRecord` 逐字相同，也与面侧
 `CitationEvent.citation` 同形——这是「水合出来的载荷与事件流一致」的依据。
+
+后三项（`status` / `applicable_scope` / `withdrawn`）**是 2026-10-29 补的**（缺陷 DEMO-03）：
+依据区要显示状态徽章与适用范围，而这两项只有产出凭据的那一侧才知道；`withdrawn` 是
+「还能不能作为依据」的判定，读回时由面层按当前真源重判。三者都允许为 `None`，`None`
+一律表示**未提供／未核对**，读侧必须原样保留成未知——**不得**在写入侧或读侧补默认值
+（补成「已发表」等于替查不到状态的来源背书）。
 
 **为什么包装会话是可行的**（三条已实测的事实，缺任一条这条路都不成立）：
 
@@ -119,12 +126,22 @@ ANNOTATION_REFERENCE_KEY: str = "reference"
 #: `citation_id` 是回指键、`source` 说不清出处就不该呈现为依据、`reference` 指向业务条目。
 REQUIRED_ANNOTATION_KEYS: tuple[str, ...] = ("citation_id", "source", ANNOTATION_REFERENCE_KEY)
 
+#: 可核对性三项的键名（`status` / `applicable_scope` / `withdrawn`）。它们**不是必填**：
+#: 旧历史里没有这三个键，读侧一律按「未知」读取（`None`），不得补默认值。
+#: 与读侧（`modules/accounts/session_items.py` 的 `CitationRecordPart`）逐字相同，
+#: 相等由用例直接比对常量守住。
+PROVENANCE_ANNOTATION_KEYS: tuple[str, ...] = ("status", "applicable_scope", "withdrawn")
+
 
 def citation_annotation(record: CitationRecord) -> dict[str, object]:
     """把一条引用凭据编成注解对象。
 
     `recorded_at` 转 ISO 8601 字符串：注解要成为 JSON 的一部分（会话条目是 JSON 文本），
     而前端 `CitationRecord.recorded_at` 本来就是字符串 ⇒ 转字符串才是与既有线格式一致的做法。
+
+    可核对性三项**总是写出键**（值为 `None` 时也写）：形状固定让读侧与前端只需一套分支，
+    而「键在、值为空」与「键不在」在读侧表示同一件事（未知）——旧历史缺的不是值而是键，
+    两者必须同样被读成未知，不允许其中一种被默认成「已发表」。
     """
     return {
         "type": CITATION_ANNOTATION_TYPE,
@@ -134,6 +151,9 @@ def citation_annotation(record: CitationRecord) -> dict[str, object]:
         "reference": record.reference,
         "recorded_at": record.recorded_at.isoformat(),
         "summary": record.summary,
+        "status": record.status,
+        "applicable_scope": record.applicable_scope,
+        "withdrawn": record.withdrawn,
     }
 
 
@@ -318,6 +338,7 @@ __all__ = [
     "CITATION_ANNOTATION_MAX",
     "CITATION_ANNOTATION_TYPE",
     "OUTPUT_TEXT_PART_TYPE",
+    "PROVENANCE_ANNOTATION_KEYS",
     "REQUIRED_ANNOTATION_KEYS",
     "CitationAnnotatingSession",
     "citation_annotation",
