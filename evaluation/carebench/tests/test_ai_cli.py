@@ -12,6 +12,7 @@ from evaluation.carebench.ai_review import AiReviewError, identity_path, load_id
 from evaluation.carebench.ai_runner import ScoreRunResult
 from evaluation.carebench.config import RunConfig
 from evaluation.carebench.faults import FaultPlan
+from evaluation.carebench.hashing import sha256_value
 from evaluation.carebench.review import export_packet
 from evaluation.carebench.runner import execute
 from evaluation.carebench.store import RunStore, create_run_dir, write_json
@@ -102,7 +103,7 @@ def test_formal_cli_refuses_posthoc_review_identity(dry_run: RunStore, settings_
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("identity_state", ["missing", "tampered", "unanchored", "valid"])
+@pytest.mark.parametrize("identity_state", ["missing", "tampered", "unanchored", "no_adjudicator", "valid"])
 async def test_formal_generation_requires_frozen_review_identity_before_any_call(
     tmp_path: Path, settings_for_tests: Any, monkeypatch: pytest.MonkeyPatch, identity_state: str
 ) -> None:
@@ -130,6 +131,14 @@ async def test_formal_generation_requires_frozen_review_identity_before_any_call
     elif identity_state == "unanchored":
         manifest = store.read_manifest()
         manifest["review"].pop("ai")
+        store.write_manifest(manifest)
+    elif identity_state == "no_adjudicator":
+        identity = load_identity(store)
+        identity["adjudicator"] = None
+        identity["identity_sha256"] = sha256_value({key: identity[key] for key in ("stage", "judges", "adjudicator")})
+        write_json(identity_path(store), identity)
+        manifest = store.read_manifest()
+        manifest["review"]["ai"]["identity_sha256"] = identity["identity_sha256"]
         store.write_manifest(manifest)
     if identity_state == "valid":
         assert (await execute(**kwargs, resume=True)).status == "completed"

@@ -386,6 +386,8 @@ def _validate_identity_set(
     """身份集合自洽：两 pass、提示不同、评分者不同、裁定者独立。"""
     if stage not in {"calibration", "formal"}:
         raise AiReviewError(f"未知阶段 {stage!r}：只允许 calibration/formal")
+    if stage == "formal" and adjudicator is None:
+        raise AiReviewError("正式评分必须同时冻结第三位独立裁定者身份")
     if sorted(judge.pass_no for judge in judges) != [1, 2]:
         raise AiReviewError("必须正好两位评分者，pass 分别为 1 与 2")
     if len({judge.rater_id for judge in judges}) != 2:
