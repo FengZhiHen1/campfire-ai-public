@@ -169,7 +169,8 @@ uv run python -m evaluation.carebench verify --run <run_id> [--require-complete]
 
 `summarize` 永远给出：分母（案例数 × 组别数）、有末轮结论的组数、每组的完成/无输出/超时/失败
 计数、末轮时延 p50/p95/max、token（并给出「有 usage 的组数」这个分母）、工具调用/失败次数、
-引用数、按类别的计数、故障注入实施统计。**没有人评审时 `human_scores = null`**，
+引用数、按类别的计数、故障注入实施统计、**装配变体**（凡出现 `override` 就是注入改过装配，
+报告必须交代，不能让注入过的批次看起来和纯生产批次一样）。**没有人评审时 `human_scores = null`**，
 `summary.md` 里写「不产生任何质量分或安全结论」。
 导入评分后追加：硬失败 `yes/needs_review/no` 分列、五维均值、C2 均值、关键约束 `passed/applicable`、
 配对胜负、评分者一致性（逐维完全一致率与 ≤1 分一致率；κ 因需 2×2 表而返回 `null`，
@@ -283,7 +284,7 @@ export DATABASE_URL="postgresql+asyncpg://<user>:<pw>@<host>:5432/campfire_careb
 ### 9.1 确定性测试
 
 ```bash
-uv run pytest evaluation/carebench/tests -q     # 45 passed
+uv run pytest evaluation/carebench/tests -q     # 46 passed
 uv run ruff check evaluation/ && uv run ruff format --check evaluation/
 ```
 
@@ -291,7 +292,7 @@ uv run ruff check evaluation/ && uv run ruff format --check evaluation/
 固定二轮、输入对称、外层重试与首错保留、空回复不重试、超时进分母、续跑不重跑已完成轮次、
 跨批次续跑被拒、非评测库被拒、dry-run 零调用、盲化评审包（无组别字段）、`pending`/空分拒收、
 关键约束计数校验、重复评分拒收、无评审不出分、有评审的硬失败分列与配对、证据包篡改检测
-（记录内容 hash、输入不对称）、`--require-complete`、冻结幂等与冲突、`preflight --frozen` 的配置 hash 与冻结记录一致、命令行命令集合。
+（记录内容 hash、输入不对称）、`--require-complete`、冻结幂等与冲突、`preflight --frozen` 的配置 hash 与冻结记录一致、装配变体可见、命令行命令集合。
 
 ### 9.2 真实校准调用（少量，仅合成校准案例）
 

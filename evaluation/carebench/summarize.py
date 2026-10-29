@@ -79,6 +79,7 @@ class SystemStats:
     refusal_suspected: int
     empty_output: int
     usage_note: str
+    assembly_variants: dict[str, int]
 
     def to_dict(self) -> dict[str, Any]:
         """落盘形状。"""
@@ -103,6 +104,7 @@ class SystemStats:
             "citations": self.citations,
             "refusal_suspected_heuristic": self.refusal_suspected,
             "empty_output": self.empty_output,
+            "assembly_variants": dict(self.assembly_variants),
         }
 
 
@@ -124,6 +126,7 @@ def _system_stats(
     citations = 0
     refusal = 0
     empty = 0
+    variants: dict[str, int] = {}
 
     for record in mine.values():
         status = str(record.get("completion_status"))
@@ -146,6 +149,11 @@ def _system_stats(
             refusal += 1
         if flags.get("empty_output"):
             empty += 1
+        # 装配变体计数：「C 组有几个 case-group 不是纯生产装配」必须一眼可见，
+        # 否则故障注入过的批次会在报告里看起来和纯生产批次一样。
+        meta = record.get("system_meta") or {}
+        variant = str(meta.get("runner") or "n/a")
+        variants[variant] = variants.get(variant, 0) + 1
 
     usage_note = (
         "token 来自提供方 usage（A/B 为单次调用返回，C 为基座 RunUsage 累加）；"
@@ -167,6 +175,7 @@ def _system_stats(
         refusal_suspected=refusal,
         empty_output=empty,
         usage_note=usage_note,
+        assembly_variants=variants,
     )
 
 
@@ -472,6 +481,17 @@ def render_markdown(summary: dict[str, Any]) -> str:
     lines.append("")
     lines.append("时延口径：末轮端到端墙钟；token 分母为「有 usage 的组数」，见表尾说明。")
     lines.append("")
+    overridden = {
+        system_id: stats["assembly_variants"]
+        for system_id, stats in summary["systems"].items()
+        if len(stats.get("assembly_variants") or {}) > 1
+        or any("override" in name for name in (stats.get("assembly_variants") or {}))
+    }
+    if overridden:
+        lines.append("装配变体（凡出现 `override` 都是故障注入改了装配，报告须说明）：")
+        for system_id, variants in overridden.items():
+            lines.append(f"- {system_id}：{variants}")
+        lines.append("")
 
     human = summary.get("human_scores")
     if human is None:

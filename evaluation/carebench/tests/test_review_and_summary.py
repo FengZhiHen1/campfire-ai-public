@@ -235,3 +235,35 @@ def _write_csv(path: Path, rows: list[dict[str, str]]) -> None:
     for row in rows:
         writer.writerow(row)
     path.write_text(buffer.getvalue(), encoding="utf-8")
+
+
+async def test_summary_reports_assembly_variants(
+    tmp_path: Path, settings_for_tests: Any, faults_for_tests: FaultPlan
+) -> None:
+    """装配变体必须可见：注入过工具池的批次不能看起来和纯生产批次一样。"""
+    from evaluation.carebench.systems.base import TurnOutcome
+
+    case_set = load_cases(make_cases_file(tmp_path / "cases.jsonl", count=1))
+    adapters = {}
+    for system_id in ("A", "B", "C"):
+        meta = {"runner": "production+tool_pool_override:search_knowledge"} if system_id == "C" else {"model_id": "m"}
+        adapters[system_id] = FakeAdapter(
+            system_id,
+            outcome=lambda _request, meta=meta: TurnOutcome(
+                status="completed", raw_output="回复", latency_ms=10, meta=meta
+            ),
+        )
+    store = create_run_dir(tmp_path / "runs", "carebench-variants")
+    await execute(
+        store=store,
+        config=RunConfig(label="calibration"),
+        case_set=case_set,
+        snapshot=make_snapshot(),
+        faults=faults_for_tests,
+        settings=settings_for_tests,
+        adapters=adapters,
+        log=lambda _message: None,
+    )
+    summary = summarize_run(store, log=lambda _message: None)
+    assert summary["systems"]["C"]["assembly_variants"] == {"production+tool_pool_override:search_knowledge": 1}
+    assert "override" in (store.root / "summary.md").read_text(encoding="utf-8")
