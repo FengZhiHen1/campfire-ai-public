@@ -230,6 +230,19 @@ def test_pg_restore_non_zero_exit_is_a_failure(tmp_path: Path) -> None:
     assert "pg_restore 失败" in proc.stderr
 
 
+def test_restore_postgres_only_touches_postgres(tmp_path: Path) -> None:
+    """`--only postgres` 执行时也只碰 PostgreSQL（计划与执行不能两套口径）。"""
+    env = _env_with_stub(tmp_path)
+    backup = _backup_dir(tmp_path, falkordb=True, redis=True)
+
+    proc = _run_script("restore.sh", "--from", str(backup), "--yes", "--only", "postgres", env=env)
+
+    assert proc.returncode == 0, proc.stderr
+    calls = (tmp_path / "docker-calls.log").read_text(encoding="utf-8")
+    assert calls.count("pg_restore") == 1
+    assert "falkordb" not in calls and "redis" not in calls
+
+
 @pytest.mark.parametrize("service", ["falkordb", "redis"])
 def test_restore_writes_snapshot_when_auth_is_configured(service: str, tmp_path: Path) -> None:
     """正向对照：环境正常时同一段代码必须真的写回 RDB，并且密码经 `REDISCLI_AUTH` 传入。
