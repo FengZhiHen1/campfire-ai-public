@@ -74,3 +74,7 @@
   的 `id` 不重叠、opening 与旧题目的最长公共片段 ≤ 10 字（见 `cases/README.md` 的校验口径）。
 - v0.2 换了三件事：口语/碎片表达、家长不知道的事（`known=false`，无隐藏真相）、真实 `emergency`
   入口。细节与预算见 [PROTOCOL.md](PROTOCOL.md) §2、§3、§7。
+
+## 新校准发现的额外解释限制（2026-10-30）
+
+当前本地 `cn:deepseek-v4.1-flash` 路由的 system-only JSON 角色探针返回自我介绍，用户消息重述后才返回规定 JSON。原始探针位于原始根 `deliverables/2026-ai-opensource/20261030-interactive-role-probe-01/`；这证明该路由在该探针下未遵从 system 指令，不能据一次探针断言全部历史请求都忽略了全部指令。历史 A/B 的强提示只放在 system，因此其“配置了强提示”与“逐次实际遵从”需区分，原结果保持不变。新 v0.2 对全部三组统一增加可追踪的消息传输兼容层，并另开校准，不将此补偿后的结果合并到旧分母。

@@ -95,7 +95,7 @@ async def run_episode(
         "started_at": utc_now(),
         "terminal_status": "completed",
         "stop_reason": "turn_budget",
-        "entry_input_items": 1 if scenario.entry == "emergency" else 0,
+        "entry_input_items": 1 if scenario.entry == "emergency" and system_id == "C" else 0,
     }
     append(root / "journal.jsonl", {"kind": "episode_started", **{k: v for k, v in episode.items() if k != "turns"}})
     disclosed = {fact["id"] for fact in scenario.facts if fact["initial"]}
