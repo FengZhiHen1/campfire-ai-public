@@ -637,10 +637,11 @@ describe('对话页 — 技能选择器', () => {
     expect(screen.getByRole('button', { name: '自动' }).getAttribute('aria-pressed')).toBe('true');
   });
 
-  it('应急不在选择器里（值域裁决：应急只走表单入口，skill 参数传它回 422）', () => {
+  it('应急不在选择器里（值域裁决：应急只走表单入口，skill 参数传它回 422）', async () => {
     const port = createConsultPortStub({ history: historyResponse([]) });
     renderChat(port);
 
+    await screen.findByLabelText('发送消息');
     expect(screen.queryByRole('button', { name: '应急咨询' })).toBeNull();
   });
 
