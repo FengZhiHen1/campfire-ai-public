@@ -4,8 +4,9 @@
 
 > **设计真源在 `docs/`**（入口 [docs/README.md](docs/README.md)，含文档地图与事实所有权）；
 > `archive/` 是已废弃的旧实现与旧设计，**不构成任何当前依据**。
-> **状态**：业务实现与生产装配已落地并上线 <https://campfire.wenran.me>；未闭合项
-> （压缩记账无持久化实现、发布闸门 `EVID-A`～`EVID-D`）唯一登记在 [docs/TODO.md](docs/TODO.md)。
+> **状态**：业务实现与生产装配已落地，**部署方式已上线、当前运行状态以 `/readyz` 探测为准**
+> （不在本文断言）。未闭合项（压缩记账无持久化实现、发布闸门 `EVID-A`～`EVID-D`）唯一登记在
+> [docs/TODO.md](docs/TODO.md)。
 
 ## Stack
 
@@ -37,17 +38,18 @@ pnpm install && pnpm --filter @campfire/web dev # 前端（含 token 同步）
 
 # --- 检查（分层与判读口径见 docs/development/testing.md）---
 uv run python scripts/checks.py quick --base dev   # 每次提交前：按改动面定向
-uv run python scripts/checks.py full               # 集成点与 CI：全套确定性检查
+uv run python scripts/checks.py full               # 集成完成后与 CI：全套确定性检查
 
 # --- 本地摄取（不连生产库；CLI 不暴露成服务端点）---
 uv run python -m campfire.cli convert <x.html>  # HTML → 可摄取 Markdown（不连库）
 uv run python -m campfire.cli ingest <x.md>     # 摄取到资料库（条目与节点同事务）
 ```
 
-- **全量检查不在每个子任务、每个 commit 上跑**；由集成点（合入 `dev` 前）与 CI 承担。清单、
+- **全量检查不在每个子任务、每个 commit 上跑**；由集成完成后（`dev` 上的结果）与 CI 承担。清单、
   `--dry-run`、失败判读见 **[docs/development/testing.md](docs/development/testing.md)**。
-- 材料层（`shots`/`e2e`、`demo`、`e2e-real`、评测运行）**按需运行，不进 quick/full、不进 CI**；
-  它们回答「材料是否真实」，口径见 **[docs/development/materials.md](docs/development/materials.md)**。
+- 材料层（`shots`/`e2e`、`demo`、评测运行）**按需运行，不进 quick/full、不进 CI**，口径见
+  **[docs/development/materials.md](docs/development/materials.md)**。**`e2e-real` 等真实依赖探针
+  不属材料层**：它是工程验收，按影响面触发（改认证/SSE/静态资源/部署形态时必跑）。
 - ❌ 禁止：把「改完就跑一遍 demo/评测」当回归；外部抖动后的重试成功不算模型可靠性证据。
 
 `scripts/checks.py` 与 `scripts/worktree.py` 由工具任务实现；落地前按 testing.md §4 逐条手工执行，
@@ -56,7 +58,7 @@ uv run python -m campfire.cli ingest <x.md>     # 摄取到资料库（条目与
 ## 开发与部署的边界
 
 **默认在本地完成开发闭环；部署只在用户明确要求时进行。** 展开前自检：检查全绿（quick 日常、
-full 集成点）＋关键路径已在真实依赖上跑通＋已想清回滚。**「真实依赖上跑通」不是形式要求**：
+集成完成后 full）＋关键路径已在真实依赖上跑通＋已想清回滚。**「真实依赖上跑通」不是形式要求**：
 三个 P0（缺 `EmailPassword.init()`、明文 HTTP 下 `crypto.randomUUID` 不存在、产物写死协议
 导致 mixed content）都只在真实运行时暴露，而那时单测全绿。
 
@@ -157,7 +159,10 @@ archive/               已归档实现与设计，废弃物，仅供参考
   文档一致性、后端（ruff + mypy + 迁移门禁 + pytest，带三个数据服务）、前端（oxlint + tsc +
   vitest + build）。**初期保留完整的确定性检查**，不裁成子集
 - 备份/恢复/回滚：`scripts/{backup,restore,rollback}.sh`；仓库 <https://github.com/FengZhiHen1/Campfire-AI.git>
-- ❌ 禁止：未经用户明确要求执行 `deploy.yml` 的发布（`deploy=true`）、push、发 PR——那是生产变更
+- ❌ 禁止：**无授权发布生产**——未经用户明确要求不执行 `deploy.yml`（`deploy=true`）、不改生产
+  配置与数据、不 ssh 上去替换文件。**发布是生产变更，合并与推送不是**：别把两者混成一条禁令。
+- 远程写（push / PR / 改远端分支 / 建 tag）按**当前会话的授权**办：本轮任务未授权远程写，
+  做完只报本地提交 hash；这是本次边界，**不是仓库级永恒规则**。
 
 ## Design Docs
 
