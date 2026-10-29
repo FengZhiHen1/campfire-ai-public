@@ -95,6 +95,24 @@ if [ ! -f "$COMPOSE_FILE" ]; then
     exit 1
 fi
 
+# 把 env 文件里的密码读进**本脚本自己的环境**（与 `backup.sh` 同一处置）。
+#
+# ⚠️ `--env-file` 只喂给 `docker compose`，**不会**导出到脚本进程。生产编排里
+# FalkorDB 与 Redis 都要求密码（`--requirepass`），不把密码传给 `redis-cli` 时的
+# 表现极其隐蔽（`backup.sh` 头部记的是同一条实测）：
+#
+#   `CONFIG GET dir` 打印 `NOAUTH Authentication required.`，而 **退出码仍是 0**。
+#
+# 于是那行错误文本会被当成「目录」写进 `cat > 'NOAUTH …/dump.rdb'`，脚本继续
+# 「完成并已重启」并返回 0 —— 数据根本没有恢复，而验收看到的是一次成功。
+# 这里先把密码准备好，再用下面 `read_config_value` 校验**输出**（而不是退出码）。
+if [ -n "$ENV_FILE" ] && [ -f "$ENV_FILE" ]; then
+    set -a
+    # shellcheck disable=SC1090
+    . "$ENV_FILE" 2>/dev/null || true
+    set +a
+fi
+
 # --- 校验和（在动任何数据之前）------------------------------------------
 
 echo "备份目录：$FROM_DIR"
@@ -138,6 +156,58 @@ fi
 echo
 echo "=== 执行恢复（--yes 已给）==="
 
+# --- 带密码的 redis-cli 与「按输出判据」的取值工具 ------------------------
+
+# FalkorDB 是 Redis 分支：生产用 `FALKORDB_PASSWORD`，dev（无密码）走裸调用。
+falkor_cli() {
+    if [ -n "${FALKORDB_PASSWORD:-}" ]; then
+        compose exec -T falkordb redis-cli -a "$FALKORDB_PASSWORD" --no-auth-warning "$@"
+    elif [ -n "${REDIS_PASSWORD:-}" ]; then
+        compose exec -T falkordb redis-cli -a "$REDIS_PASSWORD" --no-auth-warning "$@"
+    else
+        compose exec -T falkordb redis-cli "$@"
+    fi
+}
+
+redis_cli() {
+    if [ -n "${REDIS_PASSWORD:-}" ]; then
+        compose exec -T redis redis-cli -a "$REDIS_PASSWORD" --no-auth-warning "$@"
+    else
+        compose exec -T redis redis-cli "$@"
+    fi
+}
+
+# 取一个「可以安全拼进容器内路径」的配置值。
+#
+# 判的是**输出内容**而不是退出码（理由见脚本上方读 env 文件的说明）：认证失败时
+# `redis-cli` 退出码为 0，`NOAUTH …` 那段文本会一路被当成目录名使用。
+#
+# Args: $1 标签（用于报错），$2 原始输出
+read_config_value() {
+    _label="$1"
+    _raw="$2"
+    _value="$(printf '%s' "$_raw" | tr -d '\r' | awk 'NF{print; exit}')"
+    case "$_value" in
+        ""|*[[:space:]]*|NOAUTH*|ERR*|AUTH*|Warning*)
+            echo "错误：取不到 $_label（实际输出：${_value:-（空）}）。" >&2
+            echo "      常见原因：密码没有传给 redis-cli，或容器未运行。" >&2
+            echo "      注意 redis-cli 未认证时退出码为 0，所以这里判的是**输出**。" >&2
+            return 1 ;;
+    esac
+    printf '%s' "$_value"
+}
+
+# 探一次 PING：**在停容器之前**确认认证可用，避免把服务停下来却写不回去。
+preflight_ping() {
+    _label="$1"
+    _out="$2"
+    if [ "$_out" != "PONG" ]; then
+        echo "错误：$_label PING 未返回 PONG（实际：${_out:-（空）}）。" >&2
+        echo "      未做任何修改——先修好凭据再恢复，不要在半认证状态下动数据。" >&2
+        exit 2
+    fi
+}
+
 # --- PostgreSQL ---------------------------------------------------------
 
 if [ "$ONLY" = "" ] || [ "$ONLY" = "postgres" ]; then
@@ -177,14 +247,11 @@ if [ "$ONLY" = "" ] || [ "$ONLY" = "falkordb" ]; then
         echo "警告：缺少 $FROM_DIR/falkordb-dump.rdb，跳过 FalkorDB" >&2
     else
         echo "[2/3] FalkorDB：写入 RDB 并重启"
+        preflight_ping FalkorDB "$(falkor_cli PING 2>&1 | tr -d '\r' | tail -n 1)"
         # 路径问 Redis 自己（与 backup.sh 同一理由：FalkorDB 镜像用
         # /var/lib/falkordb/data 而不是 Redis 惯用的 /data）。
-        fdir="$(compose exec -T falkordb redis-cli CONFIG GET dir | tail -n 1 | tr -d '\r')"
-        ffile="$(compose exec -T falkordb redis-cli CONFIG GET dbfilename | tail -n 1 | tr -d '\r')"
-        if [ -z "$fdir" ] || [ -z "$ffile" ]; then
-            echo "错误：无法取得 FalkorDB 持久化路径" >&2
-            exit 2
-        fi
+        fdir="$(read_config_value "FalkorDB 的 CONFIG GET dir" "$(falkor_cli CONFIG GET dir)")" || exit 2
+        ffile="$(read_config_value "FalkorDB 的 CONFIG GET dbfilename" "$(falkor_cli CONFIG GET dbfilename)")" || exit 2
         # RDB 只在进程启动时读入，因此必须先停容器再放文件——运行中放进去不会生效，
         # 而且容器退出时可能用自己的内存状态覆盖它。
         compose stop falkordb > /dev/null
@@ -208,8 +275,9 @@ if [ "$ONLY" = "" ] || [ "$ONLY" = "redis" ]; then
         echo "警告：缺少 $FROM_DIR/redis-dump.rdb，跳过 Redis" >&2
     else
         echo "[3/3] Redis：写入 RDB 并重启"
-        rdir="$(compose exec -T redis redis-cli CONFIG GET dir | tail -n 1 | tr -d '\r')"
-        rfile="$(compose exec -T redis redis-cli CONFIG GET dbfilename | tail -n 1 | tr -d '\r')"
+        preflight_ping Redis "$(redis_cli PING 2>&1 | tr -d '\r' | tail -n 1)"
+        rdir="$(read_config_value "Redis 的 CONFIG GET dir" "$(redis_cli CONFIG GET dir)")" || exit 2
+        rfile="$(read_config_value "Redis 的 CONFIG GET dbfilename" "$(redis_cli CONFIG GET dbfilename)")" || exit 2
         compose stop redis > /dev/null
         compose run --rm --no-deps --entrypoint sh redis -c "cat > '$rdir/$rfile'" < "$FROM_DIR/redis-dump.rdb"
         compose start redis > /dev/null
