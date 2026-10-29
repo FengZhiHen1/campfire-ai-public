@@ -48,6 +48,7 @@ REQUIRED_RECORD_FIELDS = (
     "input_text",
     "input_sha256",
     "fixtures",
+    "retry",
     "record_sha256",
 )
 
@@ -83,16 +84,25 @@ def attempts_for(records: Iterable[dict[str, Any]], key: tuple[str, str, int]) -
 
 
 def group_session(records: Sequence[dict[str, Any]], *, case_id: str, system_id: str) -> tuple[str, str] | None:
-    """取该 case-group 已用的（会话 id, 账号 id）；没有记录时返回 None。
+    """取该 case-group **当前在用**的（会话 id, 账号 id）；没有记录时返回 None。
 
     会话必须复用：第二轮要么落在同一段对话里，要么就不是「第二轮」。
+    取**尝试序号最大**的那条记录：失败尝试若已落库，续跑会换新会话重开（见
+    `runner._run_case_group`），此时最新的会话才是该继续的那一段；取最早的那条会把
+    已经作废的会话当成真源。
     """
+    latest: dict[str, Any] | None = None
     for record in records:
-        if record.get("case_id") == case_id and record.get("system_id") == system_id:
-            session_id = record.get("session_id")
-            account_id = record.get("account_id")
-            if isinstance(session_id, str) and isinstance(account_id, str):
-                return session_id, account_id
+        if record.get("case_id") != case_id or record.get("system_id") != system_id:
+            continue
+        if latest is None or attempt_of(record) >= attempt_of(latest):
+            latest = record
+    if latest is None:
+        return None
+    session_id = latest.get("session_id")
+    account_id = latest.get("account_id")
+    if isinstance(session_id, str) and isinstance(account_id, str):
+        return session_id, account_id
     return None
 
 
@@ -117,12 +127,33 @@ def prior_turns(
     return result
 
 
-def is_final(record: dict[str, Any], config: RunConfig) -> bool:
-    """这条记录是否已经是最终结论（不需要再按策略重试）。"""
+def group_attempts_used(records: Iterable[dict[str, Any]], *, case_id: str, system_id: str) -> int:
+    """该 case-group 已用掉的「轮次尝试」次数（整组最大尝试序号）。
+
+    重试预算按整组计：否则「第 1 轮失败重开、第 2 轮又失败」会变成两次重试，
+    而协议只允许一次。
+    """
+    return max(
+        (
+            attempt_of(record)
+            for record in records
+            if record.get("case_id") == case_id and record.get("system_id") == system_id
+        ),
+        default=0,
+    )
+
+
+def is_final(record: dict[str, Any], config: RunConfig, *, group_attempts: int | None = None) -> bool:
+    """这条记录是否已经是最终结论（不需要再按策略重试）。
+
+    `group_attempts` 为该组已用的尝试次数（不给就按本条记录的序号判断）：
+    预算按整组计时，重试换会话重开也不会额外获得额度。
+    """
     status = record.get("completion_status")
     if status not in config.retry_on:
         return True
-    return attempt_of(record) > config.max_outer_retries
+    used = attempt_of(record) if group_attempts is None else max(group_attempts, attempt_of(record))
+    return used >= 1 + config.max_outer_retries
 
 
 def needs_attempt(
@@ -134,10 +165,15 @@ def needs_attempt(
 ) -> list[int]:
     """还差哪几轮没跑或需要再试一次（按轮次升序）。"""
     effective = effective_records(records)
+    used = group_attempts_used(records, case_id=case.id, system_id=system_id)
     pending: list[int] = []
     for turn in range(1, case.turns + 1):
         record = effective.get((case.id, system_id, turn))
-        if record is None or not is_final(record, config):
+        if record is None:
+            pending.append(turn)
+            continue
+        # 预算已用尽的失败是最终结论，不再补跑（`is_final` 已按整组预算判断）
+        if not is_final(record, config, group_attempts=used):
             pending.append(turn)
     return pending
 
@@ -210,6 +246,7 @@ __all__ = [
     "attempt_of",
     "attempts_for",
     "effective_records",
+    "group_attempts_used",
     "group_progress",
     "group_session",
     "is_final",

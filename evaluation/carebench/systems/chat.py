@@ -80,13 +80,21 @@ class ChatSystem:
         self._history[session_id] = history
 
     async def run_turn(self, request: TurnInput) -> TurnOutcome:
-        """跑一轮：渲染文本 → （B 组先检索）→ 调用 → 返回原始产出。"""
+        """跑一轮：渲染文本 → （B 组先检索）→ 调用 → 返回原始产出。
+
+        计时口径（协议 03 第 3 节：完整用户感知端到端时延）：`started` 必须取在
+        **任何工作之前**。此前它取在 `build_evidence` 之后，于是 B 组的检索耗时被
+        排除在 `latency_ms` 之外——B 组看起来比 A 组还快，而差别恰恰来自检索。
+        现在检索耗时单独记进 `retrieval_ms`，`latency_ms` 含它。
+        """
+        started = time.monotonic()
         user_text = prompts.render_user_turn(
             shared_context=request.case.shared_context,
             message=request.case.message_for_turn(request.turn),
             is_followup=request.turn > 1,
         )
         evidence_block, retrieval_trace = await self.build_evidence(request)
+        retrieval_ms = int((time.monotonic() - started) * 1000)
         system_prompt = self.system_prompt(evidence=evidence_block)
 
         history = self._history.setdefault(request.session_id, [])
@@ -94,7 +102,6 @@ class ChatSystem:
         messages.extend(history)
         messages.append({"role": "user", "content": user_text})
 
-        started = time.monotonic()
         try:
             text, usage = await self.complete(messages)
         except Exception as exc:  # noqa: BLE001 —— 只留类型，原始消息可能含端点细节
@@ -111,7 +118,7 @@ class ChatSystem:
                     "error_type": type(exc).__name__,
                     "retrieval": retrieval_trace,
                 },
-                meta={"model_id": self._gateway.model_name},
+                meta={"model_id": self._gateway.model_name, "retrieval_ms": retrieval_ms},
             )
         latency_ms = int((time.monotonic() - started) * 1000)
 
@@ -121,6 +128,7 @@ class ChatSystem:
         return TurnOutcome(
             status=STATUS_COMPLETED if text.strip() else STATUS_NO_OUTPUT,
             raw_output=text,
+            output_text=text,
             latency_ms=latency_ms,
             usage=usage,
             citations=list(retrieval_trace.get("citations", [])),
@@ -132,7 +140,7 @@ class ChatSystem:
                 "usage": usage,
                 "retrieval": retrieval_trace,
             },
-            meta={"model_id": self._gateway.model_name},
+            meta={"model_id": self._gateway.model_name, "retrieval_ms": retrieval_ms},
         )
 
     async def aclose(self) -> None:

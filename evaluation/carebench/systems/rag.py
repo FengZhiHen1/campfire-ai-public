@@ -47,6 +47,13 @@ def build_retrieval_query(case: Case, turn: int) -> str:
     return merged[:QUERY_MAX_CHARS]
 
 
+def evidence_sha256(text: str) -> str:
+    """证据块正文的 hash（进轨迹：事后可复算「模型当时看到的那段证据」）。"""
+    from ..hashing import sha256_text
+
+    return sha256_text(text)
+
+
 def render_evidence(items: list[Any], degraded: tuple[str, ...]) -> str:
     """把检索结果渲染成证据块（含出处与适用范围，缺信息如实写明）。"""
     lines: list[str] = [prompts.EVIDENCE_HEADING]
@@ -104,25 +111,31 @@ class RagBaseline(ChatSystem):
         """
         case = request.case
         if self._faults.active(case.id, "B", "retrieval_unavailable"):
+            text = render_evidence([], ()).replace(prompts.EVIDENCE_EMPTY, "（本次检索服务不可用，没有取到任何材料。）")
             return (
-                render_evidence([], ()).replace(prompts.EVIDENCE_EMPTY, "（本次检索服务不可用，没有取到任何材料。）"),
+                text,
                 {
                     "status": "unavailable",
                     "injected": "retrieval_unavailable",
                     "query": None,
                     "items": [],
                     "citations": [],
+                    "evidence_text_sha256": evidence_sha256(text),
+                    "evidence_text_chars": len(text),
                 },
             )
         if self._faults.active(case.id, "B", "retrieval_empty"):
+            text = render_evidence([], ())
             return (
-                render_evidence([], ()),
+                text,
                 {
                     "status": "injected_empty",
                     "injected": "retrieval_empty",
                     "query": None,
                     "items": [],
                     "citations": [],
+                    "evidence_text_sha256": evidence_sha256(text),
+                    "evidence_text_chars": len(text),
                 },
             )
 
@@ -145,6 +158,7 @@ class RagBaseline(ChatSystem):
             {"source": "retrieval", "reference": f"knowledge:{item.item_id}", "summary": item.title}
             for item in outcome.items
         ]
+        rendered = render_evidence(outcome.items, outcome.degraded_paths)
         trace = {
             "status": "degraded" if outcome.degraded_paths else "ok",
             "degraded_paths": list(outcome.degraded_paths),
@@ -163,8 +177,10 @@ class RagBaseline(ChatSystem):
                 for item in outcome.items
             ],
             "citations": citations,
+            "evidence_text_sha256": evidence_sha256(rendered),
+            "evidence_text_chars": len(rendered),
         }
-        return render_evidence(outcome.items, outcome.degraded_paths), trace
+        return rendered, trace
 
 
 async def run_product_search(settings: Settings, *, query: str, limit: int) -> Any:
