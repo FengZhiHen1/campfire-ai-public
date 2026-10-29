@@ -405,3 +405,110 @@ def test_deleted_test_file_is_not_handed_to_pytest(monkeypatch: pytest.MonkeyPat
     assert not [step for step in steps if step.key == "pytest"], "不得把不存在的文件交给 pytest"
     assert all("test_已删除的用例.py" not in step.argv for step in steps)
     assert "不影响现有测试文件" in report[-1]
+
+
+# --- 影响面的三处缺口（2026-10-29 修）---------------------------------------
+
+
+def test_style_contract_change_runs_frontend_build(monkeypatch: pytest.MonkeyPatch) -> None:
+    """改 `docs/design/tokens.css` 必须跑前端 build。
+
+    缺陷形状（修复前实测）：它的归类是 `docs`，于是 `quick` 只排了设计文档检查——
+    而 `apps/web` 的 `build` 第一步 `sync-tokens` 逐字节读这个文件，契约类名断言也在
+    `build` 里。`checks.py` 里那条 `docs/design/tokens.css` 的判断写在了
+    「前端分支内部」，而该分支根本不会被这个路径进入，等于一行**永不生效**的判据。
+    """
+    monkeypatch.setattr(checks, "changed_paths", lambda base: ["docs/design/tokens.css"])
+
+    steps, report, problems = checks.quick_plan("dev", None)
+
+    assert problems == []
+    keys = [step.key for step in steps]
+    assert keys == ["design-docs", "web-lint", "web-test", "web-build"], keys
+    assert any("样式契约" in line for line in report), "报告里要说明「为什么连构建也跑了」"
+
+
+def test_app_pyproject_is_a_python_config_change(monkeypatch: pytest.MonkeyPatch) -> None:
+    """`apps/api/pyproject.toml` 是应用的依赖清单，不能落到 `unknown` 去阻塞 `quick`。
+
+    修复前实测：`quick` 对这条路径直接退出码 2（unknown）。那会诱使人加
+    `--accept-unchecked`，把一次真实的依赖改动「接受」成无需检查。
+    """
+    assert checks.classify("apps/api/pyproject.toml") == checks.CAT_PY_CONFIG
+    monkeypatch.setattr(checks, "changed_paths", lambda base: ["apps/api/pyproject.toml"])
+
+    steps, _report, problems = checks.quick_plan("dev", None)
+
+    assert problems == []
+    keys = [step.key for step in steps]
+    assert "mypy" in keys
+    assert "pytest-full" in keys, "依赖清单改动必须跑全量 pytest"
+    assert "pytest" not in keys, "不要同时又排一条按路径推断的 pytest"
+
+
+def test_conftest_change_escalates_to_full_pytest(monkeypatch: pytest.MonkeyPatch) -> None:
+    """改 `conftest.py` 要跑全量 pytest，而不是把它本身交给 pytest。
+
+    修复前实测：`pytest apps/api/tests/conftest.py` 退出码 **5**（没有收集到用例），
+    而 `quick` 把非零退出码一律判成「检查失败」——一条必然假红的命令，同时它对
+    「改了测试基础设施」这件事一点验证都没有。
+    """
+    monkeypatch.setattr(checks, "changed_paths", lambda base: ["apps/api/tests/conftest.py"])
+
+    steps, report, problems = checks.quick_plan("dev", None)
+
+    assert problems == []
+    keys = [step.key for step in steps]
+    assert "pytest-full" in keys, keys
+    assert "pytest" not in keys, "不得把 conftest.py 当普通用例目标"
+    # ruff 仍然要检查这个文件（它是 .py）；这里只约束 **pytest** 步骤不得把它当目标。
+    pytest_steps = [step for step in steps if step.key.startswith("pytest")]
+    assert all("conftest.py" not in argument for step in pytest_steps for argument in step.argv)
+    assert any("测试基础设施" in line for line in report)
+
+
+def test_conftest_is_never_selected_as_a_pytest_target() -> None:
+    """`pytest_files_for` 不得把 `conftest.py` / tests 包标记当成可跑的目标。"""
+    tests = checks.existing_test_files()
+
+    assert checks.pytest_files_for(["apps/api/tests/conftest.py"], tests) == []
+    assert checks.pytest_files_for(["apps/api/tests/__init__.py"], tests) == []
+
+
+def test_full_plan_and_ci_workflow_stay_in_sync() -> None:
+    """`full` 与 `.github/workflows/ci.yml` 必须是同一组判据（改一处要检查另一处）。
+
+    为什么写成用例：`docs/development/testing.md` §4.1 要求两者同源，但那是一句话；
+    一句话不会在有人删掉 CI 里的 `alembic check` 时变红。这里按**步骤键**逐条对应，
+    每步接受若干等价写法（前端 `--filter @campfire/web` 与 CI 的 `--dir apps/web`
+    是同一条命令的两种表达）。
+    """
+    workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+    ci = " ".join(workflow.replace('"', "").replace("'", "").split())
+
+    #: full 步骤键 → CI 里可接受的写法（任一命中即可）。
+    expected = {
+        "ruff": ["uv run ruff check ."],
+        "ruff-format": ["uv run ruff format --check ."],
+        "mypy": ["uv run mypy apps/api/src/campfire apps/api/tests"],
+        "design-docs": ["uv run python scripts/check_design_docs.py", "python scripts/check_design_docs.py"],
+        "alembic-upgrade": ["uv run alembic upgrade head"],
+        "alembic-check": ["uv run alembic check"],
+        "pytest": ["uv run pytest -m not live_model"],
+        "web-lint": ["pnpm --filter @campfire/web lint", "pnpm --dir apps/web lint"],
+        "web-test": ["pnpm --filter @campfire/web test", "pnpm --dir apps/web test"],
+        "web-build": ["pnpm --filter @campfire/web build", "pnpm --dir apps/web build"],
+    }
+
+    full_steps = checks.full_plan()
+    assert {step.key for step in full_steps} == set(expected), "full 的步骤集合变了——先确认 CI 是否同步"
+
+    missing = [key for key in expected if not any(candidate in ci for candidate in expected[key])]
+    assert not missing, f"CI 缺少 full 计划的步骤：{missing}"
+
+    for step in full_steps:
+        argv = " ".join(step.argv).replace("'", "")
+        # 前端用 `--filter`（工作空间包名），CI 用 `--dir`（目录）：两种写法都算等价。
+        if step.key.startswith("web-"):
+            continue
+        assert argv in expected[step.key], f"full 的 {step.key} 出现了未被审阅的写法：{argv}"
