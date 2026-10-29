@@ -27,7 +27,7 @@ import { SettleTracker, type RoundSignals } from './roundState';
  * 取值 = 产品上限（`AGENT_RUN_TIMEOUT_SECONDS`，300 秒）+ 20 秒落库与渲染余量。
  * ⚠ 产品上限变了这里要跟着变：这条注释就是提醒，别让它再次落后于产品。
  */
-const ANSWER_TIMEOUT_MS = 320_000;
+export const ANSWER_TIMEOUT_MS = 320_000;
 
 /** 邀请码池（逗号分隔）；空池返回空数组，由调用方显式判失败。 */
 export function invitePool(): string[] {
@@ -221,10 +221,24 @@ export async function sendFollowUp(page: Page, message: string): Promise<number>
  */
 export async function waitFirstToken(page: Page): Promise<void> {
   await expect
-    .poll(async () => (await page.locator('.msg-doc').first().innerText().catch(() => '')).trim().length, {
-      timeout: ANSWER_TIMEOUT_MS,
-      message: '等待模型正文首字（200 秒内没有出字：看页面是否挂出错误卡片，或后端日志有无 APITimeoutError）',
-    })
+    .poll(
+      async () => {
+        // 失败态优先：本轮挂出 `.error-card` 时立刻带现场文案失败。
+        // 不认它就会一直等到上界，然后把「模型不可用」误报成「一个字都没出」——
+        // 2026-10-28 实测：`APIConnectionError` 的那一轮正是这样，报错指错了方向。
+        const error = page.locator('.error-card');
+        if ((await error.count()) > 0) {
+          const text = (await error.first().innerText().catch(() => '')).replace(/\s+/g, ' ').trim();
+          throw new Error(`这一轮运行失败，页面报错：${text === '' ? '（读不到错误卡片文案）' : text}`);
+        }
+        return (await page.locator('.msg-doc').first().innerText().catch(() => '')).trim().length;
+      },
+      {
+        timeout: ANSWER_TIMEOUT_MS,
+        // 文案里的秒数跟着常量走，不写死：写死过一次，「200 秒」在改了上界之后就成了假信息。
+        message: `等待模型正文首字（${String(ANSWER_TIMEOUT_MS / 1000)} 秒内没有出字：看页面是否挂出错误卡片，或后端日志有无 APITimeoutError）`,
+      },
+    )
     .toBeGreaterThan(0);
 }
 

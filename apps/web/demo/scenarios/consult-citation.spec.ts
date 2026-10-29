@@ -49,6 +49,7 @@ import {
   waitFirstToken,
   waitMounted,
   waitRunSettled,
+  ANSWER_TIMEOUT_MS,
 } from '../support/stack';
 
 /**
@@ -160,7 +161,7 @@ test(CONSULT_CITATION.title, async ({ page }, testInfo) => {
         }
         return (await answerParagraphs.count()) === 0 ? 0 : (await answerParagraphs.first().innerText()).trim().length;
       },
-      { timeout: 200_000, message: '正文段落始终没有出现（模型仍在思考，或本轮失败——看页面错误卡片/后端日志）' },
+      { timeout: ANSWER_TIMEOUT_MS, message: '正文段落始终没有出现（模型仍在思考，或本轮失败——看页面错误卡片/后端日志）' },
     )
     .toBeGreaterThan(0);
   await page.locator('.msg-doc').last().scrollIntoViewIfNeeded();
@@ -197,7 +198,7 @@ test(CONSULT_CITATION.title, async ({ page }, testInfo) => {
         (await lastDoc.locator('.readable-paragraph').count()) === 0
           ? 0
           : (await lastDoc.locator('.readable-paragraph').last().innerText()).trim().length,
-      { timeout: 200_000, message: '最后一条正文始终没有段落（模型可能仍在跑，或本轮失败）' },
+      { timeout: ANSWER_TIMEOUT_MS, message: '最后一条正文始终没有段落（模型可能仍在跑，或本轮失败）' },
     )
     .toBeGreaterThan(0);
   await lastDoc.locator('.readable-paragraph').last().scrollIntoViewIfNeeded();
