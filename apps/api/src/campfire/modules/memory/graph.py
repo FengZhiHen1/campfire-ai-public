@@ -418,6 +418,10 @@ def _track_cloned_drivers(base: GraphDriver, registry: WeakSet[GraphDriver]) -> 
     上游 `_resolve_request_scope` 会自己 clone 并丢弃引用，其驱动的建索引任务因此没有
     所有者；包一层公开方法 `clone` 是不改上游就能拿到它们的最小手段。
 
+    边界：只登记 **base 实例** 上的 clone；「从传进来的驱动再 clone」不登记（上游
+    `get_by_group_ids` 系列），当前产品不经过那条路径。重访条件：接入多组查询或
+    `search()` 时改成递归登记（只装一次，避免无限包装）。
+
     Args:
         base: 本句柄的 base 驱动。
         registry: 登记表（弱引用；不阻止驱动被回收）。
@@ -690,6 +694,33 @@ def build_memory_graph(settings: Settings) -> MemoryGraph:
 _shared_graph: MemoryGraph | None = None
 
 
+@dataclass(frozen=True, slots=True)
+class SharedGraphOrigin:
+    """共享句柄的连接来源（**无凭据**）：判定「能否在这个句柄上动某账号的驱动」。
+
+    只取决定「指向同一份图库」的事实；口令值不进来（换口令不改变被删的是哪张图）。
+    """
+
+    host: str
+    port: int
+    database: str
+    password_configured: bool
+
+
+def _origin_of(settings: Settings) -> SharedGraphOrigin:
+    """从配置取连接来源（与 :func:`build_memory_graph` 取连接参数的字段同源）。"""
+    return SharedGraphOrigin(
+        host=settings.falkordb_host,
+        port=settings.falkordb_port,
+        database=settings.falkordb_database,
+        password_configured=settings.falkordb_password is not None,
+    )
+
+
+#: 共享句柄的连接来源；与 `_shared_graph` 同生同灭（见 `get/aclose_shared_memory_graph`）。
+_shared_graph_origin: SharedGraphOrigin | None = None
+
+
 def get_shared_memory_graph(settings: Settings | None = None) -> MemoryGraph:
     """取（或首次构造）进程内共享的记忆图库句柄。
 
@@ -700,9 +731,11 @@ def get_shared_memory_graph(settings: Settings | None = None) -> MemoryGraph:
         MemoryConfigurationError: 配置不完整（未配凭据）时——记忆的抽取与嵌入都要调模型，
             缺凭据显式失败，不静默降级。
     """
-    global _shared_graph
+    global _shared_graph, _shared_graph_origin
     if _shared_graph is None:
-        _shared_graph = build_memory_graph(settings if settings is not None else get_settings())
+        resolved = settings if settings is not None else get_settings()
+        _shared_graph = build_memory_graph(resolved)
+        _shared_graph_origin = _origin_of(resolved)
     return _shared_graph
 
 
@@ -713,10 +746,40 @@ async def aclose_shared_memory_graph() -> None:
     句柄被下一次 `get_shared_memory_graph()` 当可用实例取回。后台索引任务的失败由
     `aclose()` 取回并记 warning，不阻断这条收尾链。
     """
-    global _shared_graph
+    global _shared_graph, _shared_graph_origin
     graph, _shared_graph = _shared_graph, None
+    _shared_graph_origin = None
     if graph is not None:
         await graph.aclose()
+
+
+async def release_shared_account_driver(settings: Settings, account_id: str) -> bool | None:
+    """在**已存在**的进程共享句柄上收口某账号的派生驱动（删该账号的图之前调用）。
+
+    注销自建的一次性句柄够不到共享句柄里该账号的建索引任务，这里只**借道**已存在的
+    句柄、**不新建**（为一次注销常驻一套连接池正是 :func:`get_shared_memory_graph`
+    要避免的）。仅当连接来源（:class:`SharedGraphOrigin`）与 `settings` 一致时才动手；
+    副作用范围由 :meth:`MemoryGraph.release_account_driver` 保证：不关共享客户端、
+    不碰其它账号。
+
+    Args:
+        settings: 调用方（注销流程）的配置；用于判定是否与共享句柄同源。
+        account_id: 账号标识（FalkorDB 后端即图名）。
+
+    Returns:
+        True：收口了至少一个该账号的派生驱动；False：共享句柄在、但该账号没有派生驱动；
+        None：本进程没有共享句柄，或它的连接来源与 `settings` 不同源（**未触碰**）。
+
+    Raises:
+        AccountIdError: 账号标识不合法（由 `release_account_driver` 的入口校验抛出）。
+    """
+    graph = _shared_graph
+    if graph is None:
+        return None
+    if _shared_graph_origin != _origin_of(settings):
+        logger.info("共享记忆图库句柄的连接来源与本次配置不同源：跳过该账号的派生驱动收口")
+        return None
+    return await graph.release_account_driver(account_id)
 
 
 __all__ = [
@@ -728,5 +791,6 @@ __all__ = [
     "aclose_shared_memory_graph",
     "build_memory_embedder",
     "build_memory_graph",
+    "release_shared_account_driver",
     "get_shared_memory_graph",
 ]
