@@ -331,7 +331,11 @@ uv run ruff check evaluation/ && uv run ruff format --check evaluation/
 
 截至 full-04（`dev`，`59aac1f0`），CareBench 全套确定性测试 **183 项通过**；仓库 full 已通过，
 详细读数见[质量审查记录](../../docs/development/checkpoints/2026-10-29-quality-audit.md)。
-真实浏览器验收尚待通过。本节列出测试覆盖范围。
+真实浏览器验收以[最终交付记录](../../docs/development/checkpoints/2026-10-29-final-delivery.md)为准：
+browser-03 四项（见上述质量审查记录）覆盖的**已验收产品基线**，与正式冻结批次
+`20261029-carebench-formal-01` 的源码身份相同——API、Skills、Web 源码与依赖锁文件对象 hash 一致，
+后续补修只落在评测器侧，因此不构成、也不声称另做了一次浏览器验收。正式批次的评分与裁定状态
+以该记录为准，本节不预填任何评分完成结论。以下是测试覆盖范围。
 覆盖：案例结构校验（含坏数据负例）、配置/批次 hash 稳定性、轮换顺序、每 case-group 新会话、
 固定二轮、输入对称、外层重试与首错保留、空回复不重试、超时进分母、续跑不重跑已完成轮次、
 跨批次续跑被拒、非评测库被拒、dry-run 零调用、盲化评审包（无组别字段）、空评分表只引用盲包行
