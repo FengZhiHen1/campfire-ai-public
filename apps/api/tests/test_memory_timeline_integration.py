@@ -92,6 +92,53 @@ _ACCOUNT_A = "it_mem_acct_a"
 _ACCOUNT_B = "it_mem_acct_b"
 
 
+#: 本文件（及同族记忆用例）在共享 FalkorDB 上的**图名命名空间**。
+#:
+#: 清理只按它收窄（worktree-environment §6：共享库下禁止无过滤删除）。用它而不是
+#: 逐个列举账号：本文件里的 `test_driver_cache_evicts_when_full` /
+#: `test_aclose_closes_the_shared_client_exactly_once` 等用例会临时造出
+#: `it_mem_evict_*` / `it_mem_close_*` 等图，逐个列举一改就漂移。
+_GRAPH_PREFIX = "it_mem_"
+
+
+async def _graph_names(graph: MemoryGraph) -> list[str]:
+    """列出共享 FalkorDB 里现有的图名（清理判据用）。"""
+    client = graph.driver.client
+    return list(await client.list_graphs())
+
+
+async def _quiesce_and_drop_graphs(graph: MemoryGraph, *graph_names: str) -> list[str]:
+    """先收口本句柄派生的全部驱动，再删指定的图，并清掉本命名空间残留。
+
+    顺序是本函数的全部理由：克隆驱动会调度建索引的后台任务，在它跑完之前删图会让
+    在途 `CREATE INDEX` 失败（`Encountered an empty key`）。因此先
+    `release_account_driver`（取消并等待在途任务），再删图。
+
+    Args:
+        graph: 本用例的图库句柄。
+        graph_names: 额外要删的图名（`_ACCOUNT_A` / `_ACCOUNT_B` 等）。
+
+    Returns:
+        实际删掉的图名（按命名空间收窄后的并集），供调用方断言。
+    """
+    # 1. 收口本句柄派生出的全部驱动（缓存 + 上游 `add_episode` 临时 clone 的），
+    #    按账号逐个取消并等待其后台索引任务；否则删图时在途 `CREATE INDEX` 会失败。
+    accounts: set[str] = set(graph.account_drivers)
+    for scoped in list(graph.spawned_drivers):
+        database = getattr(scoped, "_database", None)
+        if isinstance(database, str):
+            accounts.add(database)
+    for account_id in accounts:
+        await graph.release_account_driver(account_id)
+    # 2. 删图：显式给的图 + 本命名空间的残留（上一次运行中断留下的）。
+    from .conftest import drop_falkordb_graph
+
+    leftover = [name for name in await _graph_names(graph) if name.startswith(_GRAPH_PREFIX)]
+    targets = sorted(set(graph_names) | set(leftover))
+    await drop_falkordb_graph(graph.driver, *targets)
+    return targets
+
+
 # ---------------------------------------------------------------------------
 # 假模型客户端（不调真实供应商）
 # ---------------------------------------------------------------------------
@@ -137,8 +184,9 @@ async def memory_graph() -> AsyncIterator[MemoryGraph]:
 
     # 连容器：构造 `FalkorDB(...)` 本身发网络 I/O，因此它必须在 try 内——
     # 细节与实测依据见 `conftest.connect_falkordb_or_skip`。
-    # 客户端由驱动持有（`driver.client`），收尾走 `drop_falkordb_graph(graph.driver, ...)`
-    # 发 GRAPH.DELETE，因此这里不需要单独留一个 client 引用。
+    # 客户端由驱动持有（`driver.client`），收尾经 `_quiesce_and_drop_graphs` →
+    # `drop_falkordb_graph(graph.driver, ...)` 发 GRAPH.DELETE，因此这里不需要单独留一个
+    # client 引用。
     driver, _client = connect_falkordb_or_skip()
 
     graph = MemoryGraph(
@@ -155,18 +203,17 @@ async def memory_graph() -> AsyncIterator[MemoryGraph]:
     # （进程被杀、超时、断电），本账号的图会带着旧 episode 留下来；而本文件的断言是
     # 「区间内恰好这几条」，一条落在当前窗口里的旧 episode 就足以让它假红，且失败
     # 指向产品而不是残留。账本是不分图的全局表，同理。
-    from .conftest import drop_falkordb_graph
-
-    await drop_falkordb_graph(driver, _ACCOUNT_A, _ACCOUNT_B)
+    await _quiesce_and_drop_graphs(graph)
     await _clear_ledger()
     try:
         yield graph
     finally:
         # 清图用 GRAPH.DELETE（删图键）而不是 DETACH DELETE（清节点）：后者在
         # 「清空后重写」形状下会让字符串范围查询返回过期结果（2026-10-01 实测，
-        # 见 conftest.drop_falkordb_graph 的说明）。驱动对象随图键删除一并作废——
-        # 缓存里的 scoped 驱动指向已删除的图，但本 fixture 到此结束，无人再用。
-        await drop_falkordb_graph(graph.driver, _ACCOUNT_A, _ACCOUNT_B)
+        # 见 conftest.drop_falkordb_graph 的说明）。
+        # `_quiesce_and_drop_graphs` 先收口缓存驱动的后台索引任务再删图——顺序反了就是
+        # QA-10 的 `Encountered an empty key` 竞态（理由见该函数的说明）。
+        await _quiesce_and_drop_graphs(graph, _ACCOUNT_A, _ACCOUNT_B)
         # 删除账本也要清（2026-09-30）：读入口现在自己取账本，而账本是全局唯一
         # 约束（`episode_key`）且与图库无关——不清就会跨用例残留，让「刚写的两条」
         # 被上个用例记的删除挡掉（实测：`assert len(before) == 2` 变成 1）。
@@ -1011,3 +1058,40 @@ async def test_driver_for_validates_the_account_key(memory_graph: MemoryGraph) -
 
     # 合法键仍然可用（防止把校验做成「一律拒绝」）。
     assert memory_graph.driver_for("it_mem_valid_account") is not None
+
+
+@pytest.mark.asyncio
+async def test_release_account_driver_quiesces_the_init_task_before_the_graph_is_dropped(
+    memory_graph: MemoryGraph,
+) -> None:
+    """删该账号的图之前必须先 `release_account_driver`：否则删图与建索引竞态。
+
+    克隆驱动会持续发几百毫秒的 `CREATE INDEX`；此刻删图会让在途语句失败
+    （`Encountered an empty key`），异常若无人取回就成了退出时的
+    `Task exception was never retrieved`，而退出码仍是 0。
+
+    本用例锁「顺序」这条可判定的契约：`release` 之后驱动不在缓存、索引任务已结束且
+    异常已取回、图能被删掉且不会被在途任务重新建出来。
+    """
+    account = "it_mem_release_probe"
+    scoped = memory_graph.driver_for(account)
+    # `_init_task` 只声明在 `FalkorDriver` 上（基类 `GraphDriver` 没有），用 getattr 取，
+    # 同时把「上游改名」暴露成一条明确的前置失败，而不是静默跳过收口检查。
+    task = getattr(scoped, "_init_task", None)
+    assert task is not None, "前置条件：克隆驱动必须调度了后台索引任务"
+
+    released = await memory_graph.release_account_driver(account)
+
+    assert released is True, "缓存里有的驱动必须被收口"
+    assert account not in memory_graph.account_drivers, "收口后必须从缓存移除"
+    assert task.done(), "release 必须等索引任务真正结束（取消是请求，不是完成）"
+    assert not getattr(task, "_log_traceback", False), (
+        "索引任务的异常未被取回——退出时会打印 Task exception was never retrieved"
+    )
+
+    # 收口之后删图是安全的，且不会再被在途索引任务重建（真实索引任务建图键）。
+    from .conftest import drop_falkordb_graph
+
+    await drop_falkordb_graph(memory_graph.driver, account)
+    await asyncio.sleep(0.2)  # 给「本不该存在」的重建留出窗口，否则本断言可能假绿
+    assert account not in await _graph_names(memory_graph), "删图后不得被后台索引任务重建"
