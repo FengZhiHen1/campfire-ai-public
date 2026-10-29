@@ -195,6 +195,57 @@ def _live_model_environment_problem(settings: Settings | None = None) -> str | N
     return None
 
 
+def _mark_expression_excludes_live_model(config: pytest.Config) -> bool:
+    """本轮 `-m` 表达式是否**显式排除**了 `live_model`（形如 `not live_model`）。
+
+    为什么需要这条判据（2026-10-29 修）：`scripts/checks.py` 的 `quick`/`full` 与 CI 都会
+    带上 `-m "not live_model"`。而门禁此前只看「开关是否被显式打开」，不看「这一轮到底选
+    了什么」——于是一个 shell 里恰好导出过 `CAMPFIRE_LIVE_MODEL=1` 的开发机，跑确定性门禁
+    会在**收集期**因缺凭据直接失败。那不是代码缺陷，是门禁把「要求跑真模型」误读成
+    「这一轮要跑真模型」，而命令行已经明确说了不跑。
+
+    只认这一种写法（本仓 `checks.py`、`ci.yml` 用的就是它）。其它表达式（如
+    `-m "not (live_model or slow)"`）保持「照常校验环境」——宁可多拦一次，也不猜语义。
+
+    Args:
+        config: pytest 配置对象（读 `-m`/`--markexpr`）。
+
+    Returns:
+        表达式里显式排除了 `live_model` 时为真。
+    """
+    option = getattr(config, "option", None)
+    markexpr = str(getattr(option, "markexpr", "") or "")
+    return bool(re.search(r"\bnot\s+live_model\b", markexpr))
+
+
+def enforce_live_model_environment(config: pytest.Config) -> None:
+    """显式开启真模型用例时，在收集之前确认环境真的具备；缺什么就直说什么。
+
+    三条不成立的组合都**不**失败（它们是刻意的选择，不是漏配）：
+
+    1. 未开启 `--live-model` / `CAMPFIRE_LIVE_MODEL=1`：默认门禁本来就逐条 skip；
+    2. 开启了但 `-m` 显式排除 `live_model`：本轮不会跑任何真模型用例（见
+       :func:`_mark_expression_excludes_live_model`）；
+    3. 环境齐全：由用例自己去证明端点可用。
+
+    其余情况（开启、没排除、缺凭据或占位符）抛 :class:`pytest.UsageError`——退出码非 0、
+    消息点名缺什么。这是「显式选择真模型却什么都没跑」与「静默跳过冒充通过」之间唯一的分界。
+
+    Args:
+        config: pytest 配置对象。
+
+    Raises:
+        pytest.UsageError: 环境不具备且本轮确实会跑真模型用例。
+    """
+    if not live_model_enabled(config):
+        return
+    if _mark_expression_excludes_live_model(config):
+        return
+    problem = _live_model_environment_problem()
+    if problem is not None:
+        raise pytest.UsageError(problem)
+
+
 def settings_with_placeholder_model_key(settings: Settings) -> Settings:
     """缺模型凭据时补一个**非秘密占位**，供「只用装配结构、不调模型」的用例使用。
 
@@ -278,7 +329,9 @@ def pytest_configure(config: pytest.Config) -> None:
     真的具备（见 :func:`_live_model_environment_problem`）。缺凭据就在收集之前失败——
     退出码非 0、消息直说缺什么。这是「显式选择真模型却什么都没跑」与「静默跳过冒充
     通过」之间唯一的分界：没有这道检查，缺 key 的机器上 `--live-model` 会安静地跑完
-    一轮零用例。
+    一轮零用例。`-m "not live_model"` 显式排除时**不**校验——那一轮本来就不跑真模型
+    用例（`checks.py quick/full` 与 CI 都用这个表达式），见
+    :func:`enforce_live_model_environment`。
 
     Args:
         config: pytest 配置对象（读 `--live-model`）。
@@ -303,10 +356,7 @@ def pytest_configure(config: pytest.Config) -> None:
     # 清缓存：让后续 get_settings() 用写回后的环境变量重新解析。
     get_settings.cache_clear()
 
-    if live_model_enabled(config):
-        problem = _live_model_environment_problem()
-        if problem is not None:
-            raise pytest.UsageError(problem)
+    enforce_live_model_environment(config)
 
 
 #: 「连不上 FalkorDB 容器」这一类异常。
@@ -323,10 +373,39 @@ FALKOR_UNAVAILABLE_ERRORS: tuple[type[BaseException], ...] = (
     OSError,
 )
 
+#: 测试进程内一律清掉的代理变量（`no_proxy` 例外：它由下面的夹具归一成合法值）。
+#:
+#: 为什么连「看起来无害」的 `http_proxy` 也要清（2026-10-29 实测）：宿主机若把
+#: `all_proxy`/`ALL_PROXY` 指向 SOCKS，`httpx.AsyncClient()` 在**构造期**就要为
+#: `all://` 建代理挂载，而 httpx 的 SOCKS 支持需要可选的 `socksio` 包；本仓库不装它
+#: （也不该为测试引入新依赖），于是构造直接抛
+#: `ImportError: Using SOCKS proxy, but the 'socksio' package is not installed`。
+#: 实测后果：`test_probes.py` 的两条「配置非法」用例从「不是合法 URL」变成
+#: 「探针自身异常（ImportError）」——**宿主机环境被报成被测代码的缺陷**。
+#:
+#: 这违反了本文件存在的第一条理由（测试结果不依赖宿主机代理配置）。产品侧保留
+#: `trust_env`（企业网络可能需要代理），测试侧只需要一个**确定**的网络视图：
+#: 全部直连。需要验证代理行为的用例自己 `monkeypatch.setenv`。
+PROXY_ENV_KEYS: tuple[str, ...] = (
+    "all_proxy",
+    "ALL_PROXY",
+    "http_proxy",
+    "HTTP_PROXY",
+    "https_proxy",
+    "HTTPS_PROXY",
+)
+
 
 @pytest.fixture(autouse=True)
 def _normalise_proxy_env(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
-    """把代理相关的环境变量归一到合法值，隔离宿主机配置对测试的影响。"""
+    """把代理相关的环境变量归一到合法值，隔离宿主机配置对测试的影响。
+
+    两件事：清掉所有代理变量（见 :data:`PROXY_ENV_KEYS` 的说明——SOCKS 代理会让
+    httpx 构造期抛 ImportError），再把 `no_proxy` 钉成合法值（宿主机常写成含方括号的
+    IPv6 字面量，那会让 URL 解析把 `[::1]` 当成 `host:port`）。
+    """
+    for key in PROXY_ENV_KEYS:
+        monkeypatch.delenv(key, raising=False)
     monkeypatch.setenv("no_proxy", "localhost,127.0.0.1")
     monkeypatch.setenv("NO_PROXY", "localhost,127.0.0.1")
     yield
