@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
 from typing import Any
 
@@ -185,6 +186,47 @@ async def test_retry_on_dirty_session_restarts_with_new_session(
     assert records[0]["session_id"] != records[1]["session_id"], "已落库的失败被原地重试了"
     assert records[1]["raw_output"] == "第二次成功"
     assert records[1]["retry"]["retry_safety"] == RETRY_SAME_SESSION
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("failure", ["exception", "timeout"])
+async def test_outer_adapter_failure_never_reuses_a_possibly_written_session(
+    tmp_path: Path, settings_for_tests: Any, faults_for_tests: FaultPlan, failure: str
+) -> None:
+    """适配器在写入后崩溃或被墙钟取消，外层没有无写入证据，必须重开会话。"""
+    case_set = load_cases(make_cases_file(tmp_path / "cases.jsonl", count=1))
+    written_sessions: list[str] = []
+
+    class FailingAdapter(FakeAdapter):
+        async def run_turn(self, request):
+            self.calls.append(request)
+            if request.attempt == 1:
+                written_sessions.append(request.session_id)
+                if failure == "timeout":
+                    await asyncio.sleep(1)
+                raise AttributeError("后处理失败")
+            assert request.session_id not in written_sessions, "重试复用了已写入的会话"
+            return TurnOutcome(status="completed", raw_output="独立会话的成功输出")
+
+    adapters = {name: FailingAdapter(name) for name in ("A", "B", "C")}
+    store = create_run_dir(tmp_path / "runs", "carebench-outer-failure")
+    await execute(
+        store=store,
+        config=RunConfig(label="calibration", turn_timeout_seconds=0.01),
+        case_set=case_set,
+        snapshot=make_snapshot(),
+        faults=faults_for_tests,
+        settings=settings_for_tests,
+        adapters=adapters,
+        log=lambda _message: None,
+    )
+    for name in ("A", "B", "C"):
+        records = [record for record in store.read_outputs() if record["system_id"] == name]
+        assert len(records) == 2
+        assert records[0]["completion_status"] == ("timeout" if failure == "timeout" else "error")
+        assert records[0]["retry"]["retry_safety"] == RETRY_NEW_SESSION
+        assert records[0]["session_id"] != records[1]["session_id"]
+        assert records[1]["completion_status"] == "completed"
 
 
 @pytest.mark.asyncio
