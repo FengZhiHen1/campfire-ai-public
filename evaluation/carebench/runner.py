@@ -55,6 +55,7 @@ from .records import (
 )
 from .store import RunStore, create_run_dir, read_jsonl, trailing_partial_line, write_jsonl
 from .systems import STATUS_ERROR, STATUS_TIMEOUT, SystemAdapter, TurnInput, TurnOutcome
+from .systems.base import RETRY_NEW_SESSION
 
 #: 日志回调类型（CLI 传 print；测试传空实现）。
 Logger = Callable[[str], None]
@@ -406,6 +407,7 @@ async def _run_with_timeout(*, adapter: SystemAdapter, request: TurnInput, confi
             latency_ms=elapsed_ms,
             error_type="TimeoutError",
             error_detail=f"超过单轮上限 {config.turn_timeout_seconds:.0f} 秒",
+            retry_safety=RETRY_NEW_SESSION,
             trace={
                 "system_id": request.system_id,
                 "turn": request.turn,
@@ -419,6 +421,8 @@ async def _run_with_timeout(*, adapter: SystemAdapter, request: TurnInput, confi
             latency_ms=elapsed_ms,
             error_type=type(exc).__name__,
             error_detail=f"适配器抛出异常（{type(exc).__name__}）",
+            # 外层无法证明适配器尚未落库；重开会话，避免重复写入本轮输入。
+            retry_safety=RETRY_NEW_SESSION,
             trace={"system_id": request.system_id, "turn": request.turn, "exception": type(exc).__name__},
         )
 
