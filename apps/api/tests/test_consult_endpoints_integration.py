@@ -1789,7 +1789,7 @@ async def test_emergency_uses_the_default_object_when_omitted(
         return None
 
     monkeypatch.setattr(consult_routes, "emergency_context", _capture)
-    monkeypatch.setattr(consult_routes, "read_emergency_facts", _fake_memory_reader(EmergencyMemory(facts=[])))
+    _stub_memory(monkeypatch, EmergencyMemory(facts=[]))
 
     response = await client.post("/consult/emergency", json={"items": _intake_items()})
     assert response.status_code == 202, response.text
