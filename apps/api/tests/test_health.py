@@ -131,6 +131,15 @@ def _provide_startup_configuration(monkeypatch: pytest.MonkeyPatch) -> Iterator[
 
     `get_settings` 是 `lru_cache` 的，故设完环境变量后必须清缓存。
     """
+    from campfire.core import cache, db
+    from campfire.modules.memory import graph
+
+    # TestClient 的 lifespan 在独立循环运行，不能接管异步集成用例的会话级连接。
+    monkeypatch.setattr(db, "_engine", None)
+    monkeypatch.setattr(db, "_session_factory", None)
+    monkeypatch.setattr(cache, "_cache", None)
+    monkeypatch.setattr(graph, "_shared_graph", None)
+    monkeypatch.setattr(graph, "_shared_graph_origin", None)
     monkeypatch.setenv("SUPERTOKENS_API_KEY", "health-test-key-not-a-secret")
     monkeypatch.setenv("TOKENHUB_API_KEY", "health-test-key-not-a-secret")
     monkeypatch.setenv("DATABASE_URL", "postgresql+asyncpg://health:health@127.0.0.1:5432/health_test")
