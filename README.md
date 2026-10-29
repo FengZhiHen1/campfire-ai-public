@@ -28,6 +28,8 @@ git switch dev          # 日常开发在 dev 上
 分支策略（见 [AGENTS.md](AGENTS.md)）：**`dev` 日常开发，`master` 仅保留稳定版本** ——
 发布时把 `dev` 快进到 `master`。因此 `master` 在两次发布之间会落后 `dev`。
 默认分支是 `master`，直接 `clone` 不会报错；**要继续开发就切到 `dev`**。
+并行任务不直接改这里，而是用 `.worktrees/<任务名>/` 的 `task/*` 分支（见本文
+「开发泳道」一节），由主 agent 合入 `dev`。
 
 ### 2. 建本地配置（**必须**，否则测试不会全绿）
 
@@ -68,23 +70,37 @@ pnpm --filter @campfire/web exec playwright install
 
 ⚠ 不装的话 `shots` / `e2e` 会失败。报错本身会提示这条命令，但**仓库其它地方没写**，先装上省事。
 
-## 质量门禁（提交前必跑；与 CI 同一组）
+## 检查（提交前 quick；合入前 full）
+
+**流程真源：[docs/development/testing.md](docs/development/testing.md)**（分层、清单、失败判读）。
+
+```bash
+uv run python scripts/checks.py quick --base dev   # 每次提交前：按改动面定向
+uv run python scripts/checks.py full               # 合入 dev 前与 CI：全套确定性检查
+```
+
+**全量检查不在每个 commit 上跑**——日常提交用 quick，集成点与 CI 用 full。
+
+`scripts/checks.py` 由工具任务实现；**落地前**用下面的等价手工命令（`--dry-run` 也只是打印这些）：
 
 ```bash
 uv run ruff check . && uv run ruff format --check .
 uv run mypy apps/api/src/campfire apps/api/tests   # 两个路径必须同时给
+uv run alembic upgrade head && uv run alembic check  # 迁移门禁：需要数据服务在跑
 uv run pytest
-uv run python scripts/check_design_docs.py
-pnpm --filter @campfire/web lint && pnpm --filter @campfire/web typecheck
-pnpm --filter @campfire/web test && pnpm --filter @campfire/web build
+uv run --no-project python scripts/check_design_docs.py   # 纯标准库，不依赖项目环境
+pnpm --filter @campfire/web lint
+pnpm --filter @campfire/web test
+pnpm --filter @campfire/web build                  # 已内含 tsc --noEmit 与契约 CSS 断言
 ```
 
 - `mypy` 只传 `apps/api/tests` 会因 `conftest` 被当成两个模块而**中止**
   （`Source file found twice under different module names`）——两个路径始终一起给。
+- 不再单独跑 `pnpm typecheck`：`build` 的第一步就是 `tsc --noEmit`，重复跑不增加证据。
 - 需求与验收行的一一对应由 `scripts/check_design_docs.py` 机械检查（未覆盖需求是**失败**）。
   具体条数以脚本当前输出为准，不要在这里写死数字。
 
-## 页面截图（评测与验收用）
+## 页面截图（评测与验收用，不是门禁）
 
 ```bash
 pnpm --filter @campfire/web shots   # 出图：多页 × 视口 × 图种
@@ -106,8 +122,24 @@ DEMO_INVITE_CODES=<码> pnpm --filter @campfire/web demo
 
 在真浏览器 + 真模型 + 真库上把典型场景走一遍并逐屏截图，产物落 `demo/`（位置固定、
 整目录被 `.gitignore` 与 `.dockerignore` 排除、**每轮覆盖**）。它是**展示材料**，
-不是门禁，也不在 CI 里跑。前提、产物结构与已知边界见
+按需运行、不是门禁、不在 CI 里跑。前提、产物结构与已知边界见
 [docs/运维/演示材料生成.md](docs/运维/演示材料生成.md)。
+
+⚠ `demo/` **每轮覆盖**，因此**不能承担正式运行证据**：要留存的原始输出、截图、评分表放
+**原始仓库根**的 `deliverables/2026-ai-opensource/<run-id>/`（整目录忽略、不随泳道清理）。
+
+## 材料与证据（`materials/`、`deliverables/`）
+
+| 落点 | 版本控制 | 放什么 |
+|---|---|---|
+| `materials/2026-ai-opensource/` | **入库** | 文本、配置、许可与归属说明、**脱敏**证据索引、报告草稿 |
+| `deliverables/2026-ai-opensource/<run-id>/` | 忽略（在**原始仓库根**） | 正式运行的原始件：输出、截图、录屏、评分表、日志 |
+| `.tmp/` | 忽略 | 可丢弃的过程产物 |
+| `demo/` | 忽略 | 可再生预览，每轮覆盖 |
+
+事实状态（verified / partial / unverified / contradicted）、正式评分必须人工独立盲评与风险
+专业审核、未完成写 pending、工程单测不等于效果或安全证明——全部口径见
+**[docs/development/materials.md](docs/development/materials.md)**。
 
 ## 影片（`marketing/promo-shotcraft/`，独立工具链）
 
@@ -125,12 +157,15 @@ pnpm dev            # remotion studio
 
 **只有 `.tmp/` 一个落点**（整个被 gitignore），不要新建 `tmp/`、`reports/` 这类并列目录。
 判据只有一条：`git ls-files .tmp` 必须为空。细节见
-[`AGENTS.md`](AGENTS.md) 的「临时文件」一节。
+[`AGENTS.md`](AGENTS.md) 的「工作区与留档」一节。
 
 ## 目录速览
 
 ```text
 docs/                 设计根，真源
+docs/development/     开发流程真源：检查分层、泳道环境、材料与证据口径
+materials/            可入库的正式材料（文本、配置、许可、脱敏证据索引）
+deliverables/         正式运行的本地大文件（原始仓库根，整目录忽略）
 apps/api/             唯一的 Python 应用（HTTP 与 Worker 两个入口）
 apps/web/             React H5（唯一的 pnpm 工作空间包）
 marketing/            影片制作（独立工具链，不参与产品构建）
@@ -141,6 +176,14 @@ archive/              已归档的旧实现与旧设计，仅供参考
 
 模块边界与依赖方向的真源是 [`docs/项目结构设计.md`](docs/项目结构设计.md)，
 由 `apps/api/tests/test_layer_boundaries.py` 机械检查。
+
+## 开发泳道（worktree）
+
+日常开发在**主工作区**的 `dev` 上进行；并行任务各自在**原始仓库根**的 `.worktrees/<任务名>/`
+里、从 `dev` 切出的 `task/<主题>` 分支上做，**由主 agent 合入 `dev`**。
+❌ 不在 `main` / `master` 上开发。泳道的创建、隔离（`.venv`/`node_modules` 各自一份、包缓存
+可共享）、就绪核验、数据测试串行规则与清理判据见
+[docs/development/worktree-environment.md](docs/development/worktree-environment.md)。
 
 ## 部署
 
