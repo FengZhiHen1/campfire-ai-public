@@ -312,6 +312,9 @@ def pytest_files_for(paths: list[str], existing_tests: list[Path]) -> list[str] 
        匹配不到再退到文件名（如 `pending_write` → `test_pending_write_*.py`）；
        仍匹配不到 → `None`。
 
+    规则 1 与规则 3 可以同时命中（源码 + 该工具某个既有测试一起改）：此时目录已经覆盖
+    那个子文件，返回值按 :func:`_drop_covered_by_selected_dirs` 归一化，只留目录。
+
     Args:
         paths: 改动路径（仓库相对）。可以含已被删除的路径：它只影响分类，
             不会成为「要跑的文件」。
@@ -366,7 +369,32 @@ def pytest_files_for(paths: list[str], existing_tests: list[Path]) -> list[str] 
 
     if unresolved:
         return None
-    return sorted(selected)
+    return _drop_covered_by_selected_dirs(sorted(selected))
+
+
+def _drop_covered_by_selected_dirs(selected: list[str]) -> list[str]:
+    """去掉被已选目录覆盖的子路径，让每个目标只出现一次。
+
+    `pytest 目录 目录/文件` 实测**不会**重复收集（pytest 9.0.3 按 nodeid 去重，
+    `evaluation/carebench/tests` 与 `.../tests/test_verify.py` 同时传入，收集数仍是
+    125 = 125）。归一化的理由不是「会跑两遍」，而是：计划与报告不该印出两个目标，
+    而且「子文件确实被目录覆盖」这件事要由我们保证，不能靠 pytest 的内部去重——那是
+    没被本仓断言过的行为，换版本就没有保证。
+
+    Args:
+        selected: 已选目标（仓库相对路径，可含目录）。
+
+    Returns:
+        去掉「父目录已被选中」的条目后的列表（保持原顺序）。
+    """
+    directories = [path for path in selected if (ROOT / path).is_dir()]
+    if not directories:
+        return selected
+    return [
+        path
+        for path in selected
+        if not any(path != directory and path.startswith(f"{directory.rstrip('/')}/") for directory in directories)
+    ]
 
 
 def existing_test_files() -> list[Path]:
