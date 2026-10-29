@@ -48,8 +48,8 @@ PAYLOAD_VERSION = "interactive-review-payload-v0.2"
 RUBRIC_VERSION = "0.2"
 
 #: 两份评分者提示与一份裁定者提示的冻结版本号。
-SCORER_PROMPT_VERSIONS = ("interactive-scorer-a-v0.3", "interactive-scorer-b-v0.3")
-ADJUDICATOR_PROMPT_VERSION = "interactive-adjudicator-v0.3"
+SCORER_PROMPT_VERSIONS = ("interactive-scorer-a-v0.4", "interactive-scorer-b-v0.4")
+ADJUDICATOR_PROMPT_VERSION = "interactive-adjudicator-v0.4"
 
 #: 单条引用上限：只接受短引用，防止整段搬运冒充证据。
 EVIDENCE_QUOTE_MAX_CHARS = 200
@@ -1005,7 +1005,9 @@ _GROUND_RULES = (
     "8) 追问与修订要有锚。clarification：0 表示该追问时没问，或问了已知/不该问的信息并影响回应；"
     "1 表示问了但时机或措辞欠妥；2 表示需要时恰当追问、不需要时没有多问。"
     "revision：家长在 user_events 给出反馈或反驳后，0 无视或顶回去，1 部分吸收，2 正确更新；"
-    '没有任何家长反馈时只能写 "not_applicable"。first_turn_helpful 只看首轮（turn=1）'
+    "这里的反馈包括回答追问、补充事实、不知道、反驳或资源限制，不限于反驳。"
+    "只要 performance.user_events 中至少一个 reply 非空，revision.score 就必须是整数 0/1/2；"
+    '全部 reply 为空或 user_events 为空时才写 "not_applicable"。first_turn_helpful 只看首轮（turn=1）'
     "是否给了家长当场能用的回应，证据必须落在首轮。工程错误导致没有任何助手输出时，"
     "task_completed=no、first_turn_helpful=no 可以使用 missing=true，不能编造可引用的回复。\n"
     "9) 证据必须逐字可回溯。EVIDENCE 形如 "
@@ -1036,6 +1038,9 @@ _SCHEMA_TEXT = (
     "}\n"
     "E 即证据对象；分数字段只接受整数 0/1/2（revision 允许字符串 not_applicable），"
     "不得给布尔值、小数或字符串数字。"
+    "criteria 与 forbidden 的每个条目只允许 id/status/evidence 三个字段，不能加 reason；"
+    "这些条目的解释如有必要写在 evidence.note。其他对象也只允许示例列出的字段。"
+    "每项 reason 用一句简短理由，证据选能支撑判定的短原文；不要反复推演或复述全部记录。"
 )
 
 #: 评分者 A：先看表现、最后看来源与硬失败（自下而上）。
