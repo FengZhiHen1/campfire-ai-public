@@ -176,4 +176,43 @@ describe('会话列表页 — 列表与入口', () => {
     await waitFor(() => expect(vi.mocked(port.listSessions).mock.calls.length).toBeGreaterThanOrEqual(2));
     expect(vi.mocked(port.listSessions).mock.calls[1]?.[0]).toEqual({ cursor: 'cursor-2', limit: 20 });
   });
+
+  /**
+   * 2026-10-29 审查：分页失败只影响「更多」。
+   * 旧实现与首页失败共用一份错误状态，已加载的行整体消失、换成整页错误卡。
+   */
+  it('分页失败：已加载的行仍在，给一句原因与手动重试，不整页换成错误态', async () => {
+    const port = createConsultPortStub({
+      sessions: { items: [sessionSummary({ session_id: 's1', title: '第一条' })], next_cursor: 'cursor-2' },
+    });
+    // 第一次取第二页失败，手动重试时成功——同时钉住「失败后停住、重试才继续」这条闸门。
+    let pageTwoAttempts = 0;
+    vi.mocked(port.listSessions).mockImplementation(async (input) => {
+      if (input.cursor === 'cursor-2') {
+        pageTwoAttempts += 1;
+        if (pageTwoAttempts === 1) throw new ConsultError('network', '网络请求失败');
+        return { items: [sessionSummary({ session_id: 's2', title: '第二条' })], next_cursor: null };
+      }
+      return { items: [sessionSummary({ session_id: 's1', title: '第一条' })], next_cursor: 'cursor-2' };
+    });
+    renderList(port);
+
+    expect(await screen.findByText('第一条')).toBeDefined();
+    await waitFor(() => expect(vi.mocked(port.listSessions).mock.calls.length).toBeGreaterThanOrEqual(2));
+
+    // 已加载的行不能消失。
+    expect(screen.getByText('第一条')).toBeDefined();
+    // 分页失败有自己的说明与重试入口，而不是首页那份「网络不可用」整页错误卡。
+    expect(await screen.findByText('更早的会话没有加载出来')).toBeDefined();
+    expect(screen.queryByText('网络不可用')).toBeNull();
+    // 失败后不得自己连环重试（触底观察者会被重建）：到这里只试过一次。
+    expect(pageTwoAttempts).toBe(1);
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: '重试加载' }));
+    });
+    expect(await screen.findByText('第二条')).toBeDefined();
+    expect(screen.getByText('第一条')).toBeDefined();
+    expect(screen.queryByText('更早的会话没有加载出来')).toBeNull();
+  });
 });

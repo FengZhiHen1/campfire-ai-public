@@ -46,6 +46,9 @@ export function ConsultListPage({ consult }: ConsultListPageProps) {
   useEffect(() => {
     const node = sentinel.current;
     if (node === null || list.state.status !== 'ready' || list.state.nextCursor === null) return;
+    // 分页失败后先停住：观察者会在每次渲染后重建，继续 observe 会连环重试同一个坏游标
+    // （错误卡在下方给出手动重试）。
+    if (list.state.loadMoreFailure !== null) return;
     if (typeof IntersectionObserver === 'undefined') return;
     const observer = new IntersectionObserver((entries) => {
       if (entries.some((entry) => entry.isIntersecting)) list.loadMore();
@@ -117,6 +120,19 @@ export function ConsultListPage({ consult }: ConsultListPageProps) {
         <p className="meta" role="status">
           正在加载更早的会话…
         </p>
+      ) : null}
+      {/* 分页失败只影响「更多」：已加载的记录仍在上方，这里给一句原因与手动重试，
+          不把整页换成错误卡（那会让使用者以为记录都没了）。 */}
+      {list.state.status === 'ready' && list.state.loadMoreFailure !== null ? (
+        <ErrorCard
+          title="更早的会话没有加载出来"
+          description={list.state.loadMoreFailure.message}
+          actions={
+            <button type="button" className="btn btn-secondary" onClick={list.retryLoadMore}>
+              重试加载
+            </button>
+          }
+        />
       ) : null}
     </AppShell>
   );
