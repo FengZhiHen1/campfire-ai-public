@@ -206,15 +206,15 @@ def test_cli_exposes_execution_and_separate_review_commands() -> None:
 
 
 @pytest.mark.asyncio
-async def test_preflight_uses_frozen_config_hash(tmp_path: Path) -> None:
+async def test_preflight_uses_frozen_config_hash(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """`preflight --frozen` 打印的配置 hash 必须与冻结记录一致（否则读报告的人会误判漂移）。
 
-    本用例用不可达的评测库连接串：预检会把这些如实报成阻断项（不假装通过），
-    但配置/案例那一段仍然必须来自冻结记录。
+    数据库可达性由替身固定为失败；不连接宿主数据库，也不复用前序测试的共享引擎。
+    配置/案例那一段仍然必须来自冻结记录。
     """
     from campfire.core.config import Settings
+    from evaluation.carebench import preflight
     from evaluation.carebench.config import RunConfig as _RunConfig
-    from evaluation.carebench.preflight import run_preflight
 
     out = tmp_path / "frozen"
     frozen = freeze_cases(
@@ -224,13 +224,25 @@ async def test_preflight_uses_frozen_config_hash(tmp_path: Path) -> None:
         config=_RunConfig(),
     )
     settings = Settings(database_url="postgresql+asyncpg://u:p@127.0.0.1:5432/campfire_carebench_absent")
-    report = await run_preflight(
+    probed: list[str | None] = []
+
+    def unavailable(url: str | None) -> tuple[bool, str]:
+        probed.append(url)
+        return False, "测试固定不可达"
+
+    def unexpected_database_access(*_args: object, **_kwargs: object) -> None:
+        pytest.fail("不可达时不得创建数据库会话")
+
+    monkeypatch.setattr(preflight, "_is_database_reachable", unavailable)
+    monkeypatch.setattr(preflight, "session_scope", unexpected_database_access)
+    report = await preflight.run_preflight(
         settings=settings,
         config=_RunConfig.from_dict(frozen.record["config"]),
         cases_path=frozen.case_set.path,
         log=lambda _message: None,
     )
+    assert probed == [settings.database_url]
     assert report["facts"]["config_sha256"] == frozen.record["config_sha256"]
     assert report["ready"] is False
-    assert any("不可达" in item or "知识快照核对失败" in item for item in report["blocking"])
+    assert "数据库不可达：测试固定不可达" in report["blocking"]
     assert report["facts"]["cases"]["case_groups"] == 3
