@@ -108,11 +108,11 @@ class MemoryAccountPurger:
         （:func:`campfire.modules.memory.graph.release_shared_account_driver`）：注销走的是
         本方法自己建的一次性句柄，够不到共享句柄里那些建索引任务，而它们会在
         `GRAPH.DELETE` 之后继续跑。共享句柄不存在（或连接来源不同源）时不动手、也不新建。
+        **收口失败即中止本次删图**（见 :meth:`_release_shared_drivers` 的 fail-closed 说明）。
 
-        边界（不承诺的部分）：跨进程的共享句柄仍协调不了（另一个进程里的在途任务不在
-        本方法视野内）；已在途的写（`add_episode` 正在进行）同样不在收口范围内——本方法
-        只取消「已登记」的建索引任务。Worker 领取后复查墓碑；墓碑前已在途的操作仍有残余
-        竞态，不能据此承诺完全不重建图（见 docs/TODO.md 的注销竞态登记）。
+        边界（不承诺的部分）：跨进程的共享句柄仍协调不了；已在途的写同样不在收口范围内
+        ——本方法只取消「已登记」的建索引任务。墓碑前已在途的操作仍有残余竞态，不能据此
+        承诺完全不重建图（见 docs/TODO.md 的注销竞态登记）。
 
         Raises:
             AccountIdError: 账号标识不合法。
@@ -153,17 +153,17 @@ class MemoryAccountPurger:
         return f"{graph_detail}；{release_detail}"
 
     async def _release_shared_drivers(self, graph_name: str) -> str:
-        """删图之前收口本进程共享句柄为该账号派生的索引任务（best-effort，返回说明）。
+        """删图之前收口本进程共享句柄为该账号派生的索引任务；失败即中止本次删图。
 
-        失败只留痕、不阻断删图：删图才是「内容真删」的承诺，收口只是让它别与在途
-        `CREATE INDEX` 竞态；为收口失败而让注销整体失败，会把一个索引竞态升级成
-        「账号删不掉」（而删除本身是可重试的正常路径）。
+        fail-closed：索引任务还在跑时删图会与在途 `CREATE INDEX` 竞态（本轮已见
+        signal 11 事故），而注销本身可重试——先报错让人重试，好过虚报「已清理」。
+        异常**原样上抛**（含 `CancelledError`），只补一条不含消息内容的类型名日志。
         """
         try:
             released = await release_shared_account_driver(self._settings, graph_name)
-        except Exception as exc:  # noqa: BLE001 —— 前置清理失败不得阻断删图
-            logger.warning("记忆清除：共享句柄的派生驱动收口失败（异常=%s），继续删图", type(exc).__name__)
-            return f"共享句柄派生驱动收口失败（{type(exc).__name__}）"
+        except BaseException as exc:  # noqa: BLE001 —— 记录后原样上抛（含取消），不包装
+            logger.warning("记忆清除中止：共享句柄的派生驱动收口失败（异常=%s）", type(exc).__name__)
+            raise
         if released is None:
             return "本进程无同源共享句柄（未新建）"
         return "共享句柄已收口该账号的派生驱动" if released else "共享句柄无该账号的派生驱动"

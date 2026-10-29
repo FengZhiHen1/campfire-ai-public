@@ -418,21 +418,9 @@ def _track_cloned_drivers(base: GraphDriver, registry: WeakSet[GraphDriver]) -> 
     上游 `_resolve_request_scope` 会自己 clone 并丢弃引用，其驱动的建索引任务因此没有
     所有者；包一层公开方法 `clone` 是不改上游就能拿到它们的最小手段。
 
-    边界（clone 的 clone 不登记，2026-10-29 核）：本函数只替换 **base 实例**上的
-    `clone`。上游还有「从传进来的驱动再 clone 一次」的路径——`driver/falkordb/
-    operations/*.py` 的 `get_by_group_ids`（`executor.clone(database=group_ids[0])`、
-    多 group 时逐组 `executor.clone`）。若那次调用传进来的 `executor` 已经是克隆，
-    新驱动的建索引任务就没有登记人。当前产品不可触发：唯一的写入口
-    `store.write_episode` → `graphiti.add_episode` 只在 `_resolve_request_scope`
-    里从 `self.driver`（base）clone 一次；此后的 `retrieve_episodes` 走
-    `driver.execute_query`（Falkor 未设 `graph_operations_interface`，不进 ops 分支），
-    且 `group_ids` 恒为单个账号、与该驱动的 `_database` 相同（`clone` 返回 `self`）。
-    `search()` / `add_episode_bulk()` 等多组入口产品未使用；「从传进来的驱动再
-    clone」只出现在 `get_by_group_ids` 系列（`namespaces/*` → `driver/falkordb/
-    operations/*`），产品的写入链路不经过它。
-    将来若接入多组查询，应在这里改成递归登记（给克隆也装上同一个 tracker，且只装
-    一次以免无限包装）；在触发之前，多出来的驱动其任务失败仍会以
-    `Task exception was never retrieved` 暴露，不会静默。
+    边界：只登记 **base 实例** 上的 clone；「从传进来的驱动再 clone」不登记（上游
+    `get_by_group_ids` 系列），当前产品不经过那条路径。重访条件：接入多组查询或
+    `search()` 时改成递归登记（只装一次，避免无限包装）。
 
     Args:
         base: 本句柄的 base 驱动。
@@ -708,10 +696,9 @@ _shared_graph: MemoryGraph | None = None
 
 @dataclass(frozen=True, slots=True)
 class SharedGraphOrigin:
-    """共享句柄的连接来源（无凭据）：判定「能否在这个句柄上动某账号的驱动」。
+    """共享句柄的连接来源（**无凭据**）：判定「能否在这个句柄上动某账号的驱动」。
 
-    只取决定「指向同一份图库」的事实：主机、端口、基库名与「是否配了口令」。口令值
-    本身不进来——同一主机同一实例就是同一份数据，换口令不改变被删的是哪张图。
+    只取决定「指向同一份图库」的事实；口令值不进来（换口令不改变被删的是哪张图）。
     """
 
     host: str
@@ -769,16 +756,11 @@ async def aclose_shared_memory_graph() -> None:
 async def release_shared_account_driver(settings: Settings, account_id: str) -> bool | None:
     """在**已存在**的进程共享句柄上收口某账号的派生驱动（删该账号的图之前调用）。
 
-    为什么需要这个入口：:class:`campfire.modules.memory.purge.MemoryAccountPurger` 用
-    自建的一次性句柄删图（不 clone、不常驻），它够不到进程共享句柄里为该账号缓存或
-    临时 clone 的驱动——那些驱动的建索引任务会在 `GRAPH.DELETE` 之后继续跑。这里
-    只**借道**已经存在的共享句柄，**不新建**：为一次注销常驻一整套连接池，正是
-    :func:`get_shared_memory_graph` 要避免的事。
-
-    只在共享句柄的连接来源（:class:`SharedGraphOrigin`）与 `settings` 一致时才动手，
-    否则可能收口到另一台实例上同名账号的驱动。范围与副作用由
-    :meth:`MemoryGraph.release_account_driver` 保证：只取消该账号派生驱动自己的后台
-    任务，不关共享客户端、不碰其它账号的驱动。
+    注销自建的一次性句柄够不到共享句柄里该账号的建索引任务，这里只**借道**已存在的
+    句柄、**不新建**（为一次注销常驻一套连接池正是 :func:`get_shared_memory_graph`
+    要避免的）。仅当连接来源（:class:`SharedGraphOrigin`）与 `settings` 一致时才动手；
+    副作用范围由 :meth:`MemoryGraph.release_account_driver` 保证：不关共享客户端、
+    不碰其它账号。
 
     Args:
         settings: 调用方（注销流程）的配置；用于判定是否与共享句柄同源。
