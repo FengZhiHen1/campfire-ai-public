@@ -1,19 +1,4 @@
-"""独立终审（2026-10-29）发现的证据核对缺口：**当前预期为红**。
-
-三个缺口都属同一形态——`verify` 的注释/文档宣称核对了某项，实现里却没有与
-「别处的独立事实」对照，于是「改完再补 hash」的篡改一路通过：
-
-1. `summary.json` 的 `completion_status_counts` / `refusal_suspected_heuristic` /
-   `tool_calls` 从不与记录复算对照（`verify._check_summary` 的文档写明核「状态计数」）；
-2. run 目录里 `freeze.json` 的 `config_sha256`（以及 `code`）从不与 `manifest` 对照，
-   于是把配置（例如 `max_outer_retries` 1→5）改大并补齐派生 hash 后仍判通过，
-   而重试预算检查正是读这份被改过的配置；
-3. `verify._check_status_consistency` 只在 `status_flags` **缺键时静默跳过**
-   （`if name in flags`），把 `status_flags` 清空即绕过「四处口径同一」的核对。
-
-这些用例断言的是「篡改必须被拒」，因此**修复前必红**；它们不是永远失败的检查：
-每条都先断言干净批次通过（正控），失败只可能来自篡改未被识别。
-"""
+"""证据核对负例：摘要、冻结配置与状态标记的篡改须被拒绝；每条先验证干净批次。"""
 
 from __future__ import annotations
 
@@ -72,13 +57,7 @@ def _rewrite_records(store: RunStore, mutate: Callable[[list[dict[str, Any]]], N
 
 
 async def test_tampered_summary_status_counts_must_be_rejected(tmp_path: Path, settings_for_tests: Any) -> None:
-    """summary 的完成/失败计数被改，verify 必须判违反（它是报告里的头条数字）。
-
-    缺口：`verify._check_summary` 只核对分母、`case_groups` 与故障观察统计，
-    `completion_status_counts` / `refusal_suspected_heuristic` / `tool_calls` 一律不看，
-    尽管函数文档写明核「状态计数」。影响：把全成功改写成全失败（或反之）不需要动任何
-    记录就能让证据包判「通过」。
-    """
+    """摘要中的状态、拒答和工具调用数必须与原始记录复算一致。"""
     store = await _complete_run(tmp_path, run_id="carebench-unchecked-summary", settings=settings_for_tests)
     assert verify_run(store, require_complete=True).ok, "正控：干净批次必须通过"
 
@@ -99,17 +78,7 @@ async def test_tampered_summary_status_counts_must_be_rejected(tmp_path: Path, s
 async def test_config_tamper_with_recomputed_hashes_must_be_caught_by_the_frozen_copy(
     tmp_path: Path, settings_for_tests: Any
 ) -> None:
-    """配置被改大（重试预算 1→5）并补齐派生 hash 后，必须由 run 目录的 freeze.json 认出。
-
-    缺口：`verify._check_cases` 只把 run 目录 `freeze.json` 的 `dataset_sha256` /
-    `cases_sha256` 与案例文件对照，从不把 `freeze.json.config_sha256`（以及 `code`）
-    与 `manifest.config_sha256` 对照。而 `manifest.config` 的 hash 是**自证**的
-    （`config_sha256 = sha256(config)`），`batch_id` 又由它派生，记录里的 `batch_id`
-    同样可以重算——于是「预算 1→5」这一步不留痕迹。
-
-    影响：`verify._check_retry_and_sessions` 的预算取自这份配置，
-    `budget = 1 + config.max_outer_retries`；抬高它之后，超出真实预算的尝试记录全部合法。
-    """
+    """重算派生 hash 仍不能掩盖配置与冻结副本的漂移。"""
     store = await _complete_run(tmp_path, run_id="carebench-unchecked-freeze-binding", settings=settings_for_tests)
     assert verify_run(store, require_complete=True).ok, "正控：干净批次必须通过"
     frozen_before = json.loads((store.freeze_path).read_text(encoding="utf-8"))
@@ -142,13 +111,7 @@ async def test_config_tamper_with_recomputed_hashes_must_be_caught_by_the_frozen
 
 
 async def test_emptied_status_flags_must_be_rejected(tmp_path: Path, settings_for_tests: Any) -> None:
-    """把 `status_flags` 清空（重算记录 hash）必须判违反，而不是静默跳过。
-
-    缺口：`verify._check_status_consistency` 的判据写成
-    `if name in flags and bool(flags[name]) is not bool(expected)`——**缺键不报**。
-    于是「raw / structured / output_text / flags 四处口径同一」这条承诺可以用删键绕过；
-    而 `summarize._system_stats` 的拒答数与空输出数正是从这份 flags 读的。
-    """
+    """删除状态标记也必须失败，不能因缺键绕过一致性核验。"""
     store = await _complete_run(tmp_path, run_id="carebench-unchecked-flags", settings=settings_for_tests)
     assert verify_run(store, require_complete=True).ok, "正控：干净批次必须通过"
 

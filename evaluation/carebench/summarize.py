@@ -355,12 +355,8 @@ def _is_double(by_group: dict[tuple[str, str], list[dict[str, Any]]], config: Ru
     return all(len(rows) >= 2 for rows in by_group.values()) if by_group else False
 
 
-def summarize_run(store: RunStore, *, log: Any = print) -> dict[str, Any]:
-    """生成 summary.json 与 summary.md，返回 summary 字典。
-
-    Raises:
-        FileNotFoundError: run 目录缺 manifest。
-    """
+def compute_summary(store: RunStore) -> dict[str, Any]:
+    """只读复算摘要，供写报告和独立核对落盘数字共用。"""
     manifest = store.read_manifest()
     config = RunConfig.from_dict(manifest["config"])
     records = store.read_outputs()
@@ -407,6 +403,12 @@ def summarize_run(store: RunStore, *, log: Any = print) -> dict[str, Any]:
         "caveats": manifest.get("limitations", []),
     }
 
+    return summary
+
+
+def summarize_run(store: RunStore, *, log: Any = print) -> dict[str, Any]:
+    """生成 summary.json 与 summary.md，返回同源摘要。"""
+    summary = compute_summary(store)
     write_json(store.root / "summary.json", summary)
     (store.root / "summary.md").write_text(render_markdown(summary), encoding="utf-8")
     log(f"summary 已写出：{store.root / 'summary.md'}")
