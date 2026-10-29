@@ -84,7 +84,7 @@
 
 ## 2. 后续实现状态
 
-本节记录上一轮交接中列出的阻断项及其后续状态；原始修复过程与测试背景保留在第 1 节。
+本节记录上一轮交接中列出的阻断项及其后续状态；原始修复过程与测试背景保留在第 1 节。最新校准补修与工程记录见第4节。
 
 1. **EVAL-01 已实现**：知识快照规范摘要覆盖节点正文、节点标识、metadata、向量、条目 `doc_hash`
    和嵌入身份；节点数相同而内容漂移会改变运行身份并使续跑拒绝。确定性用例在
@@ -95,7 +95,7 @@
 3. **EVAL-03 已实现**：CLI 已有 `ai-prepare`、`ai-score`、`ai-adjudicate`。两套独立评分与独立裁定
    写入 `ai_scores` 证据通道，不写入 `human_scores`；评分身份、提示词、原始响应、证据与分歧均留痕。
    对应确定性用例在 `tests/test_ai_review.py`、`tests/test_ai_cli.py`、`tests/test_ai_acceptance.py`。
-4. 上述条目实现已落地，`evaluation/carebench/tests` **全套 183 项通过**。这不代表最终仓库 full 已通过。
+4. 上述条目实现已落地；后续真实校准补修后，`evaluation/carebench/tests` **202项**已在full-07通过。
 5. **正式集仍未冻结、未运行**。产品当前模型配置为 `cn:deepseek-v4.1-flash`；正式身份必须在
    实际冻结前由 `identity` 命令重新读取，不能沿用历史校准记录。正式评分也尚未开始。
 6. **专业审核仍未满足**。AI 评分不能替代专业审核，不能支撑专业认可、临床安全或真实家庭有效性主张。
@@ -135,16 +135,21 @@ uv run python -m evaluation.carebench resume --run <run目录> \
 正式顺序为 `identity → freeze（含身份）→ run --dry-run → ai-prepare → resume`；`resume` 必须继续传入
 与 dry-run 相同的 `--fixtures evaluation/carebench/fixtures-formal.example.json`。
 
-## 4. 测试与质量门禁现状
+## 4. 最新测试、校准与质量门禁（2026-10-29）
 
-full-04 在 `dev`（`59aac1f0`）十步全部通过：JUnit **2267 passed / 3 deselected / 0 failed / 0 errors / 0 skipped**；
-前端 **601 项 / 57 个文件通过**。执行记录与主审质量审查见[质量审查记录](../../docs/development/checkpoints/2026-10-29-quality-audit.md)。
+full-07在 `fde5f8de34d35d058a2eac1d1b6cb4bf6b9eca56` 十步通过：
+Python **2286 passed / 3 deselected**，包含CareBench **202项**；前端 **604项 / 58文件**；
+JUnit0失败/错误/跳过。产品API/web树与browser-03固定产品基线一致，浏览器四条全部通过；
+browser-01/02曾用到旧Vite泳道，不能作最终版本通过证据。
 
-CareBench 全套确定性测试 **183 passed**。正式非 dry-run 的 `run` / `resume` 会在 adapter 准备及模型调用前拒绝
-缺少有效 formal AI 身份或 manifest 身份锚的批次；失败用例覆盖缺失、篡改、未锚定及缺少第三位独立裁定者，
-有效身份正控覆盖生成成功。图库健康测试跨循环遗留资源问题已修，**93 项组合验证通过**。
+校准01暴露真实嵌套事件未递归转换与未知失败原地重试污染；`6aaf5a5f`补修。
+校准02暴露真实工具注入装配调用不存在方法（`58666b6c`补修），以及盲化核验全文
+扫描误拒提问选项label（`4146832c`补修）。相关红绿回归、原始批次及失效通知均留存，
+两批都不作有效效果证据。校准03在上述固定评测器提交重新生成，尚待评分链路校验。
 
-full-04 未观察到 `Task exception`、cross-loop 或 traceback；共享图库容器累计 restart **4** 次，隔离图库
-restart **0** 次。前端 `lint` / `build` 通过；此前 ChatPage 与 MemoryPage 的两处 `act` 警告已清理，
-但本轮仍有 **10 条 ProfilePage 路由测试 `act` 警告**，另一 agent 正在窄修 `routes.test.tsx`。
-真实浏览器验收仍待完成。正式测评尚未开始；这些工程检查不构成模型效果或专业审核证据。
+正式非dry-run的run/resume仍在调用模型前核验两评分者及独立裁定者身份锚；
+身份缺失、篡改、未锚定和缺少裁定者的负控均保留。故障替身只在handler接缝改变行为，
+工具说明与参数模型复用产品定义；替身装配不等于实际触发，必须报告observed。
+
+正式40例尚未冻结、未运行。专业审阅未满足，工程检查不构成模型效果或临床安全证据。
+完整记录见[质量审查记录](../../docs/development/checkpoints/2026-10-29-quality-audit.md)。
