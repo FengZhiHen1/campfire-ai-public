@@ -129,3 +129,34 @@ def test_cli_exposes_the_eight_commands() -> None:
         "summarize",
         "verify",
     }
+
+
+@pytest.mark.asyncio
+async def test_preflight_uses_frozen_config_hash(tmp_path: Path) -> None:
+    """`preflight --frozen` 打印的配置 hash 必须与冻结记录一致（否则读报告的人会误判漂移）。
+
+    本用例用不可达的评测库连接串：预检会把这些如实报成阻断项（不假装通过），
+    但配置/案例那一段仍然必须来自冻结记录。
+    """
+    from campfire.core.config import Settings
+    from evaluation.carebench.config import RunConfig as _RunConfig
+    from evaluation.carebench.preflight import run_preflight
+
+    out = tmp_path / "frozen"
+    frozen = freeze_cases(
+        cases_path=make_cases_file(tmp_path / "cases.jsonl", count=1),
+        label="calibration",
+        out_dir=out,
+        config=_RunConfig(),
+    )
+    settings = Settings(database_url="postgresql+asyncpg://u:p@127.0.0.1:5432/campfire_carebench_absent")
+    report = await run_preflight(
+        settings=settings,
+        config=_RunConfig.from_dict(frozen.record["config"]),
+        cases_path=frozen.case_set.path,
+        log=lambda _message: None,
+    )
+    assert report["facts"]["config_sha256"] == frozen.record["config_sha256"]
+    assert report["ready"] is False
+    assert any("不可达" in item or "知识快照核对失败" in item for item in report["blocking"])
+    assert report["facts"]["cases"]["case_groups"] == 3
