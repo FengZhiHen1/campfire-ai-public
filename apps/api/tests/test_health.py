@@ -294,8 +294,20 @@ def test_readiness_endpoint_is_503_not_500_when_a_probe_explodes(
 
 
 def get_settings_for_probe() -> Settings:
-    """探针只读 `Settings` 的少数字段；给一份默认配置，不依赖宿主机 .env 的取值。"""
-    return Settings(_env_file=None)  # type: ignore[call-arg]  # `_env_file` 是 BaseSettings 的公开参数，合成签名里没有它
+    """探针只读 `Settings` 的少数字段；给一份默认配置，不依赖宿主机 .env 的取值。
+
+    三个可拆分的端点/凭据显式钉成未配置（2026-10-29 全量基线实测）：只关 `.env` 文件
+    挡不住**环境变量**——`.env` 被 `set -a; source .env` 导出（或用空值导出）之后，
+    `EMBEDDING_*` / `MEMORY_LLM_*` 仍在进程里，而 pydantic-settings 的环境变量优先级
+    高于 `_env_file`，于是「默认值」这条判据会读到别人的配置。
+    """
+    return Settings(  # type: ignore[call-arg]  # `_env_file` 是 BaseSettings 的公开参数，合成签名里没有它
+        _env_file=None,
+        embedding_base_url="",
+        embedding_api_key=None,
+        memory_llm_base_url="",
+        memory_llm_api_key=None,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -547,12 +559,22 @@ def _install_embedder_with_recording_transport(
 
 
 def _probe_settings() -> Settings:
-    """探针用的配置：显式给假凭据与固定 base_url，不依赖宿主机 .env。"""
+    """探针用的配置：显式给假凭据与固定 base_url，不依赖宿主机 .env。
+
+    嵌入侧的两个字段必须一起钉住：`EMBEDDING_API_KEY` / `EMBEDDING_BASE_URL` 一旦
+    被导出成环境变量（哪怕是空串），就会压过 `_env_file=None` 与字段默认值，
+    探针于是去建一个连凭据都不合法的客户端——那是「环境串线」，不是探针缺陷
+    （2026-10-29 全量基线实测：本文件 6 条嵌入探针用例就是这么红的）。
+    """
     return Settings(  # type: ignore[call-arg]  # `_env_file` 不在合成签名里
         _env_file=None,
         tokenhub_api_key=SecretStr("health-test-key-not-a-secret"),
         tokenhub_base_url="https://tokenhub.example/v1",
         embedding_model_name="kinfra-text-embedding-4b",
+        embedding_base_url="",
+        embedding_api_key=None,
+        memory_llm_base_url="",
+        memory_llm_api_key=None,
     )
 
 
