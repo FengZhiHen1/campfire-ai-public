@@ -1645,6 +1645,18 @@ def _batch_label(manifest: dict[str, Any]) -> str:
     return str(manifest.get("label") or (manifest.get("config") or {}).get("label") or "")
 
 
+def require_formal_review_identity(store: RunStore) -> None:
+    """正式生成前核对评分身份，避免产生无法事后补冻身份的正式输出。"""
+    manifest = store.read_manifest() if store.manifest_path.exists() else {}
+    report = AiVerifyReport(run_id=store.root.name, violations=[], warnings=[], facts={})
+    _verify_identity(store, {**manifest, "label": "test"}, report)
+    if report.violations:
+        raise AiReviewError(
+            "正式生成前必须冻结有效 AI 评分身份：先 run --dry-run，再 ai-prepare，最后 resume；"
+            + "；".join(report.violations)
+        )
+
+
 def verify_ai_review_report(store: RunStore, *, require_complete: bool = False) -> AiVerifyReport:
     """独立复算并交叉核对 AI 评审证据包（只读）。
 
@@ -2186,6 +2198,7 @@ __all__ = [
     "parse_judge_output",
     "prepare_ai_review",
     "record_adjudication",
+    "require_formal_review_identity",
     "summary_ai",
     "summarize_ai_review",
     "verify_ai_review",

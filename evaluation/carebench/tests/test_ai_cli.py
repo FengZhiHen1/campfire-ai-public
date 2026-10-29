@@ -7,14 +7,14 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from evaluation.carebench import ai_runner, cli
-from evaluation.carebench.ai_review import load_identity
+from evaluation.carebench import ai_runner, cli, runner
+from evaluation.carebench.ai_review import AiReviewError, identity_path, load_identity, prepare_ai_review
 from evaluation.carebench.ai_runner import ScoreRunResult
 from evaluation.carebench.config import RunConfig
 from evaluation.carebench.faults import FaultPlan
 from evaluation.carebench.review import export_packet
 from evaluation.carebench.runner import execute
-from evaluation.carebench.store import RunStore, create_run_dir
+from evaluation.carebench.store import RunStore, create_run_dir, write_json
 from evaluation.carebench.summarize import summarize_run
 from evaluation.carebench.verify import verify_run
 
@@ -99,3 +99,45 @@ def test_formal_cli_refuses_posthoc_review_identity(dry_run: RunStore, settings_
     assert cli.main(["ai-prepare", "--run", str(dry_run.root), "--model", "stub-model"]) == 2
     report = verify_run(dry_run, require_complete=True)
     assert any("缺独立 AI 评审" in issue for issue in report.violations)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("identity_state", ["missing", "tampered", "unanchored", "valid"])
+async def test_formal_generation_requires_frozen_review_identity_before_any_call(
+    tmp_path: Path, settings_for_tests: Any, monkeypatch: pytest.MonkeyPatch, identity_state: str
+) -> None:
+    monkeypatch.setattr(runner, "_require_clean_code_for_formal", lambda **kwargs: None)
+    store = create_run_dir(tmp_path / "runs", "formal-generation")
+    adapters = {name: FakeAdapter(name) for name in ("A", "B", "C")}
+    kwargs = {
+        "store": store,
+        "config": RunConfig(label="test"),
+        "case_set": load_cases(make_cases_file(tmp_path / "cases.jsonl", count=1)),
+        "snapshot": make_snapshot(),
+        "faults": FaultPlan(requested={}),
+        "settings": settings_for_tests,
+        "adapters": adapters,
+        "log": lambda message: None,
+    }
+    assert (await execute(**kwargs, dry_run=True)).status == "dry_run"
+    assert not store.read_outputs()
+    if identity_state != "missing":
+        prepare_ai_review(store, model_id="stub-model", stage="formal", log=lambda message: None)
+    if identity_state == "tampered":
+        identity = load_identity(store)
+        identity["judges"]["1"]["prompt_text"] += "changed"
+        write_json(identity_path(store), identity)
+    elif identity_state == "unanchored":
+        manifest = store.read_manifest()
+        manifest["review"].pop("ai")
+        store.write_manifest(manifest)
+    if identity_state == "valid":
+        assert (await execute(**kwargs, resume=True)).status == "completed"
+        assert len(store.read_outputs()) == 3
+        assert all(adapter.calls for adapter in adapters.values())
+    else:
+        for resume in (False, True):
+            with pytest.raises(AiReviewError, match="正式生成前必须冻结有效 AI 评分身份"):
+                await execute(**kwargs, resume=resume)
+        assert not store.read_outputs()
+        assert all(not adapter.calls and not adapter.opened for adapter in adapters.values())
