@@ -81,7 +81,14 @@ async def test_packet_is_blinded_and_template_is_empty(
     assert '"system_id"' not in packet
     for line in packet.splitlines():
         payload = json.loads(line)
-        assert set(payload) == {"blind_id", "case_id", "completion_status", "turns", "final_output"}
+        assert set(payload) == {
+            "blind_id",
+            "case_id",
+            "completion_status",
+            "turns",
+            "final_output",
+            "structured_output",
+        }
 
     mapping = json.loads((store.review_dir / MAP_FILE).read_text(encoding="utf-8"))
     assert "不得交给评审者" in mapping["warning"]

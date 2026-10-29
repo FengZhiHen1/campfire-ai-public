@@ -105,6 +105,7 @@ class BlindEntry:
     system_id: str
     turns: list[dict[str, Any]]
     final_output: str
+    structured: list[dict[str, Any]]
     completion_status: str
     latency_ms: int
     trace_file: str
@@ -117,6 +118,7 @@ class BlindEntry:
             "completion_status": self.completion_status,
             "turns": self.turns,
             "final_output": self.final_output,
+            "structured_output": self.structured,
         }
 
 
@@ -192,13 +194,15 @@ def export_packet(store: RunStore, *, log: Any = print) -> dict[str, Any]:
                         {
                             "turn": turn,
                             "user_text": turns[turn].get("input_text", ""),
-                            "output": turns[turn].get("raw_output", ""),
+                            "output": turns[turn].get("output_text") or turns[turn].get("raw_output", ""),
+                            "structured_output": turns[turn].get("structured_output") or [],
                             "completion_status": turns[turn].get("completion_status"),
                             "latency_ms": turns[turn].get("latency_ms"),
                         }
                         for turn in sorted(turns)
                     ],
-                    final_output=str(last.get("raw_output") or ""),
+                    final_output=str(last.get("output_text") or last.get("raw_output") or ""),
+                    structured=last.get("structured_output") or [],
                     completion_status=str(last.get("completion_status") or ""),
                     latency_ms=int(last.get("latency_ms") or 0),
                     trace_file=str(last.get("trace_file") or ""),

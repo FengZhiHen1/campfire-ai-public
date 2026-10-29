@@ -27,7 +27,11 @@ from typing import Any
 
 from campfire.agent.model import ModelGateway
 from campfire.agent.runtime import (
+    ActionCardEvent,
     AgentRunner,
+    CandidateEvent,
+    ProgressEvent,
+    QuestionEvent,
     RunFailedEvent,
     RunFinishedEvent,
     RunRequest,
@@ -45,10 +49,14 @@ from ..cases import Case
 from ..config import RunConfig
 from ..faults import FaultPlan
 from ..hashing import sha256_text
+from ..render import project as project_text
 from .base import (
+    RETRY_NEW_SESSION,
+    RETRY_SAME_SESSION,
     STATUS_COMPLETED,
     STATUS_ERROR,
     STATUS_NO_OUTPUT,
+    STATUS_TIMEOUT,
     SystemMeta,
     TurnInput,
     TurnOutcome,
@@ -165,16 +173,26 @@ class AgentSystem:
             await register_session(db, session_id=session_id, account_id=account_id)
 
     async def run_turn(self, request: TurnInput) -> TurnOutcome:
-        """驱动一次运行，翻译事件并返回原始产出。"""
+        """驱动一次运行，翻译事件并返回原始产出。
+
+        三样输出分开保存（见 :class:`..systems.base.TurnOutcome`）：正文增量逐字拼接、
+        结构化产出（行动卡 / 提问）保留原始载荷、再给一份**规范文本投影**。
+        纯卡片作答的回合因此是「有产出」而不是 `no_output`——这与产品侧 live（SSE 帧）
+        和 history（`question-record` / `action_card` part）的口径一致。
+        """
 
         runner = self._runner_for(request)
         run_request = self._build_request(request)
+        items_before = await self._session_item_count(request.session_id)
         started = time.monotonic()
         events: list[Any] = []
         text_parts: list[str] = []
         reasoning_parts: list[str] = []
+        structured: list[dict[str, Any]] = []
         tool_calls: list[dict[str, Any]] = []
         citations: list[dict[str, Any]] = []
+        progress_messages: list[str] = []
+        candidate_count = 0
         terminal: Any = None
         activated_skills: list[str] = []
 
@@ -185,6 +203,14 @@ class AgentSystem:
                     activated_skills = list(event.activated_skills)
                 if isinstance(event, TextDeltaEvent):
                     text_parts.append(event.delta)
+                elif isinstance(event, ActionCardEvent):
+                    structured.append(self._structured_payload("action_card", event))
+                elif isinstance(event, QuestionEvent):
+                    structured.append(self._structured_payload("question", event))
+                elif isinstance(event, ProgressEvent):
+                    progress_messages.append(str(event.message))
+                elif isinstance(event, CandidateEvent):
+                    candidate_count += 1
                 elif isinstance(event, ToolCallStartedEvent):
                     tool_calls.append({"name": event.tool_name, "call_id": event.call_id, "ok": None})
                 elif isinstance(event, ToolCallFinishedEvent):
@@ -209,27 +235,35 @@ class AgentSystem:
                     terminal = event
         except Exception as exc:  # noqa: BLE001 —— 只留类型名，原始消息可能含端点细节
             elapsed_ms = int((time.monotonic() - started) * 1000)
+            items_after = await self._session_item_count(request.session_id)
             return TurnOutcome(
                 status=STATUS_ERROR,
                 latency_ms=elapsed_ms,
                 error_type=type(exc).__name__,
                 error_detail=f"AgentRunner 运行抛出异常（{type(exc).__name__}）",
                 tool_calls=tool_calls,
+                structured=structured,
+                output_text=project_text("".join(text_parts), structured),
+                retry_safety=self._retry_safety(items_before, items_after),
                 trace=self._trace(
                     request,
                     events,
                     tool_calls,
                     {"exception": type(exc).__name__, "phase": "run"},
                 ),
-                meta={"model_id": self._gateway.model_name, "runner": self._runner_label(request)},
+                meta=self._meta(request, items_before, items_after, structured, activated_skills),
             )
 
         latency_ms = int((time.monotonic() - started) * 1000)
+        items_after = await self._session_item_count(request.session_id)
         text = "".join(text_parts)
+        output_text = project_text(text, structured)
         usage = None
         error_type = None
         error_code = None
         error_detail = None
+        finish_reason: str | None = None
+
         if isinstance(terminal, RunFailedEvent):
             status = STATUS_ERROR
             error_code = terminal.code
@@ -238,9 +272,23 @@ class AgentSystem:
             citations = [self._citation(record) for record in terminal.citations] or citations
             usage = self._usage(terminal.usage)
         elif isinstance(terminal, RunFinishedEvent):
-            status = STATUS_COMPLETED if text.strip() else STATUS_NO_OUTPUT
+            finish_reason = str(getattr(terminal, "reason", "completed"))
             citations = [self._citation(record) for record in terminal.citations] or citations
             usage = self._usage(terminal.usage)
+            if finish_reason == "timeout":
+                # 产品自己的运行预算耗尽：这是一次真实超时，不能记成 completed。
+                status = STATUS_TIMEOUT
+                error_type = "RunBudgetExhausted"
+                error_code = "run_budget_timeout"
+                error_detail = "产品运行预算耗尽（run_finished.reason=timeout）"
+            elif finish_reason == "cancelled":
+                status = STATUS_ERROR
+                error_type = "RunCancelled"
+                error_code = "run_cancelled"
+                error_detail = "运行以 run_finished.reason=cancelled 结束（被取消，不是正常完成）"
+            else:
+                # 有正文或有结构化产出都算「有产出」（与产品 live/history 同一口径）。
+                status = STATUS_COMPLETED if (text.strip() or structured) else STATUS_NO_OUTPUT
         else:
             status = STATUS_ERROR
             error_type = "MissingTerminalEvent"
@@ -249,6 +297,8 @@ class AgentSystem:
         return TurnOutcome(
             status=status,
             raw_output=text,
+            structured=structured,
+            output_text=output_text,
             latency_ms=latency_ms,
             usage=usage,
             citations=citations,
@@ -256,12 +306,15 @@ class AgentSystem:
             error_type=error_type,
             error_code=error_code,
             error_detail=error_detail,
+            retry_safety=self._retry_safety(items_before, items_after),
             trace=self._trace(
                 request,
                 events,
                 tool_calls,
                 {
                     "reasoning_chars": len("".join(reasoning_parts)),
+                    "progress_messages": progress_messages,
+                    "candidate_events": candidate_count,
                     "run_request": {
                         "surface": run_request.surface,
                         "instructions_sha256": sha256_text(run_request.instructions),
@@ -271,13 +324,12 @@ class AgentSystem:
                         "injections": 0,
                     },
                     "terminal": terminal.type if terminal is not None else None,
+                    "finish_reason": finish_reason,
+                    "session_items_before": items_before,
+                    "session_items_after": items_after,
                 },
             ),
-            meta={
-                "model_id": self._gateway.model_name,
-                "runner": self._runner_label(request),
-                "activated_skills": activated_skills,
-            },
+            meta=self._meta(request, items_before, items_after, structured, activated_skills, finish_reason),
         )
 
     async def aclose(self) -> None:
@@ -285,6 +337,90 @@ class AgentSystem:
         return None
 
     # --- 内部 ---
+    @staticmethod
+    def _structured_payload(kind: str, event: Any) -> dict[str, Any]:
+        """把结构化事件的原载荷转成字典（字段名与产品事件逐字一致，不改写）。"""
+        payload: dict[str, Any] = {"kind": kind}
+        for field_name in getattr(event, "__dataclass_fields__", {}):
+            payload[field_name] = getattr(event, field_name)
+        payload.pop("type", None)
+        return payload
+
+    async def _session_item_count(self, session_id: str) -> int | None:
+        """读一次会话条目数（用于判断这次尝试有没有在会话里留下痕迹）。
+
+        判「失败后能不能原地重试」只靠这个读数：SDK 在运行结束时才把条目写进会话，
+        但超时/取消路径可能只写了一半——**猜**会重复历史，**读**不会。
+        读不到（会话不可用）就返回 None，由 :meth:`_retry_safety` 按保守方向处理。
+        """
+        try:
+            session = build_sqlalchemy_session(session_id, engine=get_engine(self._settings))
+            items = await session.get_items()
+            return len(items)
+        except Exception:  # noqa: BLE001 —— 读不到不等于没写，交给 _retry_safety 保守处理
+            return None
+
+    @staticmethod
+    def _retry_safety(items_before: int | None, items_after: int | None) -> str:
+        """这次尝试之后能否在同一会话里重试。
+
+        只有「明确读到没有增长」才算安全：读不到（None）按不安全处理，因为重复历史会
+        直接污染下一次尝试，而多开一个会话的代价只是多一次登记。
+        """
+        if items_before is None or items_after is None:
+            return RETRY_NEW_SESSION
+        if items_after > items_before:
+            return RETRY_NEW_SESSION
+        return RETRY_SAME_SESSION
+
+    def _meta(
+        self,
+        request: TurnInput,
+        items_before: int | None,
+        items_after: int | None,
+        structured: list[dict[str, Any]],
+        activated_skills: list[str],
+        finish_reason: str | None = None,
+    ) -> dict[str, Any]:
+        """记录的工程事实（进 outputs 的 `system_meta`）。"""
+        return {
+            "model_id": self._gateway.model_name,
+            "runner": self._runner_label(request),
+            "activated_skills": activated_skills,
+            "structured_blocks": len(structured),
+            "session_items_before": items_before,
+            "session_items_after": items_after,
+            "finish_reason": finish_reason,
+            "tool_overrides": self._override_facts(request),
+        }
+
+    def _override_facts(self, request: TurnInput) -> list[dict[str, Any]]:
+        """被替换的工具的装配事实（证明「说明与参数模型与产品逐字相同」）。"""
+        facts: list[dict[str, Any]] = []
+        for name in self._tool_replacements(request):
+            product = self._product_tool(name)
+            facts.append(
+                {
+                    "tool": name,
+                    "description_sha256": sha256_text(str(getattr(product, "description", ""))),
+                    "args_model": type(getattr(product, "args_model", None)).__name__,
+                    "description_reused_from_product": True,
+                }
+            )
+        return facts
+
+    def _product_tool(self, name: str) -> Any:
+        """取产品工具池里的原工具（说明与参数模型的唯一真源）。"""
+        from campfire.surfaces.consult import assembly as consult_assembly
+        from campfire.surfaces.consult import composition
+
+        skills = consult_assembly.get_skill_registry(self._settings)
+        pool = composition.build_tool_pool(skills)
+        tool = pool.tools.get(name)
+        if tool is None:
+            raise RuntimeError(f"产品工具池里没有 {name}：注入替身必须复用产品定义，不能自造")
+        return tool
+
     def _build_request(self, request: TurnInput) -> RunRequest:
         """按 `send_message` 端点的形状构造运行请求（同一字段集合、同一来源常量）。"""
         from campfire.agent.context import InjectionBatch
@@ -325,12 +461,28 @@ class AgentSystem:
         return "production+tool_pool_override:" + ",".join(sorted(replacements))
 
     def _tool_replacements(self, request: TurnInput) -> dict[str, Any]:
-        """按 fixture 计划决定要替换哪些工具。"""
+        """按 fixture 计划决定要替换哪些工具。
+
+        替身**只换 handler**：`name` / `description` / `args_model` 一律取自产品工具池里的
+        原工具。此前替身的 description 里写了「本次由评测注入空结果」——那句话会被模型看见，
+        等于提前把故障说破，测到的就不再是「系统在故障下如何表现」。故障只能在**实际
+        handler 边界**上显现（工具真的返回了空结果/失败/超时），说明文本不得泄漏。
+        """
         replacements: dict[str, Any] = {}
+        modes: dict[str, str] = {}
         if self._faults.active(request.case.id, "C", "tool_search_empty"):
-            replacements["search_knowledge"] = _empty_search_tool()
+            modes["search_knowledge"] = "empty"
         if self._faults.active(request.case.id, "C", "tool_search_unavailable"):
-            replacements["search_knowledge"] = _failing_search_tool()
+            modes["search_knowledge"] = "unavailable"
+        if self._faults.active(request.case.id, "C", "tool_search_timeout"):
+            modes["search_knowledge"] = "timeout"
+        for name, mode in modes.items():
+            product = self._product_tool(name)
+            replacements[name] = _injected_search_tool(
+                product,
+                mode=mode,
+                hang_seconds=self._faults.hang_seconds("tool_search_timeout"),
+            )
         return replacements
 
     def _build_runner_with_tools(self, replacements: dict[str, Any]) -> AgentRunner:
@@ -406,47 +558,53 @@ class AgentSystem:
         }
 
 
-def _empty_search_tool() -> Any:
-    """返回「检索为空」的工具替身（参数模型与说明沿用产品定义）。"""
-    from campfire.agent.tools import ToolResult, ToolSpec
-    from campfire.tools.library import SearchKnowledgeArgs
+def _injected_search_tool(product_tool: Any, *, mode: str, hang_seconds: float = 420.0) -> Any:
+    """按产品原工具造一个「故障替身」：只换 handler，其余逐项复用。
+
+    为什么必须复用 `description` 与 `args_model`：工具说明会进模型上下文。替身若自带
+    「本次由评测注入」之类的话，模型在调用前就知道检索是坏的——那测的是「模型会不会被
+    一句话说服」，不是「系统在故障下是否如实披露」。而且说明漂移也会让模型的调用行为
+    （什么时候调、传什么参数）与真产品不同，A/B/C 就不再是同题对比。
+
+    故障只在 **handler 边界**显现，三种形态都走产品既有的产出形状：
+
+    - ``empty``：返回产品「未找到相关资料」的同一句提示（`ToolResult`）；
+    - ``unavailable``：返回产品真实故障时的同一句 `ToolFailure(tool_failed)`；
+    - ``timeout``：挂住到产品自己的单轮预算耗尽（`run_finished.reason=timeout`）——
+      必须比 `AGENT_RUN_TIMEOUT_SECONDS`（300 s）长，否则触发的是评测回合超时。
+    """
+    from campfire.agent.tools import ToolFailure, ToolResult, ToolSpec
 
     async def handler(_context: Any, _args: Any) -> Any:
-        return ToolResult(
-            text=(
-                "本次检索没有返回任何条目（检索链正常，是库内没有匹配内容）。"
-                "这**不等于**该做法不存在或没有风险——只能说当前知识库没有可引用的依据。"
+        if mode == "empty":
+            return ToolResult(
+                text=("未找到相关资料。这**不等于**该做法不存在或没有风险——只能说本资料库当前没有可引用的依据。")
             )
-        )
+        if mode == "unavailable":
+            return ToolFailure(
+                code="tool_failed",
+                message=(
+                    "检索服务暂时不可用，**没有**完成检索。"
+                    "不得据此声称「没有相关资料」——请向使用者说明检索能力受限，或稍后重试。"
+                ),
+            )
+        if mode == "timeout":
+            # 只用可取消的 sleep：被评测回合取消时要能立刻退出，不留悬挂任务。
+            import asyncio
+
+            waited = 0.0
+            while waited < hang_seconds:
+                await asyncio.sleep(1.0)
+                waited += 1.0
+            raise TimeoutError(f"检索工具在 {hang_seconds:.0f}s 内没有返回")
+        raise RuntimeError(f"未知的注入形态：{mode}")
 
     return ToolSpec(
-        name="search_knowledge",
-        description="在本项目的专业资料库里检索，为你的建议找依据（本次由评测注入空结果）。",
-        args_model=SearchKnowledgeArgs,
+        name=product_tool.name,
+        description=product_tool.description,
+        args_model=product_tool.args_model,
         handler=handler,
     )
 
 
-def _failing_search_tool() -> Any:
-    """返回「检索不可用」的工具替身（走产品既有的 `tool_failed` 失败路径）。"""
-    from campfire.agent.tools import ToolFailure, ToolSpec
-    from campfire.tools.library import SearchKnowledgeArgs
-
-    async def handler(_context: Any, _args: Any) -> Any:
-        return ToolFailure(
-            code="tool_failed",
-            message=(
-                "检索服务暂时不可用，**没有**完成检索。"
-                "不得据此声称「没有相关资料」——请向使用者说明检索能力受限，或稍后重试。"
-            ),
-        )
-
-    return ToolSpec(
-        name="search_knowledge",
-        description="在本项目的专业资料库里检索，为你的建议找依据（本次由评测注入失败）。",
-        args_model=SearchKnowledgeArgs,
-        handler=handler,
-    )
-
-
-__all__ = ["AgentSystem", "_empty_search_tool", "_failing_search_tool"]
+__all__ = ["AgentSystem", "_injected_search_tool"]

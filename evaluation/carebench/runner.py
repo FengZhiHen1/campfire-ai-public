@@ -30,14 +30,21 @@ from campfire.core.config import Settings
 
 from . import prompts
 from .cases import Case, CaseSet
-from .config import RunConfig
+from .config import FORMAL_LABEL, RunConfig
 from .faults import FaultPlan
 from .hashing import batch_fingerprint, sha256_file, sha256_text, sha256_value
 from .knowledge import REPO_ROOT, KnowledgeSnapshot, require_isolated_database
-from .manifest import build_manifest, utc_now
+from .manifest import (
+    build_manifest,
+    identity_drift,
+    identity_fingerprint,
+    runtime_identity,
+    utc_now,
+)
 from .records import (
     GroupProgress,
     effective_records,
+    group_attempts_used,
     group_progress,
     group_session,
     is_final,
@@ -126,9 +133,15 @@ async def execute(
         code_commit=code_commit,
     )
 
+    _require_clean_code_for_formal(config=config, repo_root=REPO_ROOT)
+
+    identity = runtime_identity(settings, snapshot, config)
+    identity_sha = identity_fingerprint(identity)
+
     if resume:
         _require_same_batch(existing, fingerprint=fingerprint, store=store)
         frozen = store.read_manifest() if store.manifest_path.exists() else None
+        _require_same_identity(frozen or {}, identity=identity, identity_sha=identity_sha)
         created_at = str((frozen or {}).get("created_at") or created_at)
         if trailing_partial_line(store.outputs_path):
             log("注意：outputs.jsonl 末尾有一行不完整记录（上次中断留下），已忽略该行并继续。")
@@ -157,6 +170,8 @@ async def execute(
         case_set=case_set,
         snapshot=snapshot,
         system_metas=metas,
+        run_identity=identity,
+        run_identity_sha256=identity_sha,
         faults=faults,
         settings=settings,
         repo_root=REPO_ROOT,
@@ -208,6 +223,8 @@ async def execute(
                     case_set=case_set,
                     snapshot=snapshot,
                     system_metas=metas,
+                    run_identity=identity,
+                    run_identity_sha256=identity_sha,
                     faults=faults,
                     settings=settings,
                     repo_root=REPO_ROOT,
@@ -231,6 +248,8 @@ async def execute(
             case_set=case_set,
             snapshot=snapshot,
             system_metas=metas,
+            run_identity=identity,
+            run_identity_sha256=identity_sha,
             faults=faults,
             settings=settings,
             repo_root=REPO_ROOT,
@@ -266,9 +285,13 @@ async def _run_case_group(
 ) -> tuple[list[dict[str, Any]], int]:
     """跑（或补）一个 case-group 的全部轮次，返回（追加后的记录, 本次写入条数）。
 
-    每个轮次按「预锁策略」最多跑 1 + `max_outer_retries` 次：只要有效记录还不是最终结论，
-    就再跑一次（这既是首次运行的重试，也是中断续跑补跑的同一条路径——两件事共用一个判据，
-    因此不会出现「首跑重试、续跑不重试」这种只在中断后才暴露的不一致）。
+    重试预算按**整个 case-group** 计（`1 + max_outer_retries` 次「轮次尝试」），不按单轮累加：
+    否则「第 1 轮失败重开、第 2 轮又失败」会悄悄变成两次重试。
+
+    重试的隔离由适配器声明：`outcome.retry_safety == "new_session"` 表示这次失败已在会话里
+    留下条目（SDK 在运行结束时才落库，超时/取消路径可能只写了一半），此时**必须换新会话
+    从第 1 轮重开**——原地重试会让模型看到重复的使用者消息，而那段重复历史会一直留在
+    该会话里，污染后面每一轮。A/B 的历史只在成功后才追加，因此它们可以原地重试。
     """
     existing = group_session(records, case_id=case.id, system_id=system_id)
     if existing is None:
@@ -281,58 +304,76 @@ async def _run_case_group(
     if not pending:
         return records, 0
 
+    start_turn = min(pending)
     await adapter.open_case(
         case=case,
         session_id=session_id,
         account_id=account_id,
-        prior_turns=tuple(prior_turns(records, case_id=case.id, system_id=system_id, before_turn=min(pending))),
+        prior_turns=tuple(prior_turns(records, case_id=case.id, system_id=system_id, before_turn=start_turn)),
     )
 
     written = 0
-    for turn in range(1, case.turns + 1):
-        while True:
-            effective = effective_records(records)
-            settled = effective.get((case.id, system_id, turn))
-            if settled is not None and is_final(settled, config):
-                break
-            attempt = next_attempt(records, case_id=case.id, system_id=system_id, turn=turn)
-            request = TurnInput(
-                case=case,
-                system_id=system_id,
-                turn=turn,
-                session_id=session_id,
-                account_id=account_id,
-                attempt=attempt,
-            )
-            input_text = prompts.render_user_turn(
-                shared_context=case.shared_context,
-                message=case.message_for_turn(turn),
-                is_followup=turn > 1,
-            )
-            started_at = utc_now()
-            outcome = await _run_with_timeout(adapter=adapter, request=request, config=config)
-            record = _make_record(
-                run_id=run_id,
-                batch_id=batch_id,
-                request=request,
-                outcome=outcome,
-                store=store,
-                input_text=input_text,
-                started_at=started_at,
-                faults=faults,
-                attempt=attempt,
-            )
-            store.append_output(record)
-            records = [*records, record]
-            written += 1
-            log(
-                f"  {case.id} / {system_id} / turn{turn} / attempt{attempt} → "
-                f"{record['completion_status']}（{record['latency_ms']} ms）"
-            )
-            if record["completion_status"] not in config.retry_on:
-                break
-            if attempt > config.max_outer_retries:
-                break
+    turn = start_turn
+    while turn <= case.turns:
+        effective = effective_records(records)
+        settled = effective.get((case.id, system_id, turn))
+        if settled is not None and is_final(settled, config):
+            turn += 1
+            continue
+
+        attempt = next_attempt(records, case_id=case.id, system_id=system_id, turn=turn)
+        request = TurnInput(
+            case=case,
+            system_id=system_id,
+            turn=turn,
+            session_id=session_id,
+            account_id=account_id,
+            attempt=attempt,
+        )
+        input_text = prompts.render_user_turn(
+            shared_context=case.shared_context,
+            message=case.message_for_turn(turn),
+            is_followup=turn > 1,
+        )
+        started_at = utc_now()
+        outcome = await _run_with_timeout(adapter=adapter, request=request, config=config)
+        record = _make_record(
+            run_id=run_id,
+            batch_id=batch_id,
+            request=request,
+            outcome=outcome,
+            store=store,
+            input_text=input_text,
+            started_at=started_at,
+            faults=faults,
+            attempt=attempt,
+        )
+        store.append_output(record)
+        records = [*records, record]
+        written += 1
+        log(
+            f"  {case.id} / {system_id} / turn{turn} / attempt{attempt} → "
+            f"{record['completion_status']}（{record['latency_ms']} ms）"
+        )
+
+        retryable = record["completion_status"] in config.retry_on and (
+            group_attempts_used(records, case_id=case.id, system_id=system_id) < 1 + config.max_outer_retries
+        )
+        if not retryable:
+            if record["completion_status"] in config.retry_on:
+                turn += 1  # 预算用尽：这条失败的结论就是最终结论
+            else:
+                turn += 1
+            continue
+
+        if outcome.retry_safety == "new_session":
+            # 已落库的失败尝试不能原地重试：换会话、从第 1 轮重开，全部记录保留。
+            session_id = uuid.uuid4().hex
+            account_id = uuid.uuid4().hex
+            log(f"  {case.id} / {system_id}：放弃本次会话（失败已落库），换新会话从第 1 轮重开")
+            await adapter.open_case(case=case, session_id=session_id, account_id=account_id, prior_turns=())
+            turn = 1
+        # 原地重试：同一会话、同一轮次，attempt +1
     return records, written
 
 
@@ -398,11 +439,14 @@ def _make_record(
         "latency_ms": outcome.latency_ms,
         "completion_status": outcome.status,
         "status_flags": {
-            "empty_output": not outcome.raw_output.strip(),
-            "refusal_suspected": prompts.refusal_suspected(outcome.raw_output),
+            "empty_output": not outcome.output_text.strip(),
+            "refusal_suspected": prompts.refusal_suspected(outcome.output_text),
             "refusal_is_heuristic": True,
+            "structured_only": bool(outcome.structured) and not outcome.raw_output.strip(),
         },
         "raw_output": outcome.raw_output,
+        "structured_output": outcome.structured,
+        "output_text": outcome.output_text,
         "error": (
             None
             if outcome.status not in {STATUS_ERROR, STATUS_TIMEOUT}
@@ -418,13 +462,43 @@ def _make_record(
         "trace_file": trace_file,
         "input_text": input_text,
         "input_sha256": sha256_text(input_text),
-        "fixtures": [application.to_dict() for application in faults.plan_for(request.case.id, request.system_id)],
+        "fixtures": _fixture_records(faults, request=request, outcome=outcome),
+        "retry": {"attempt": attempt, "retry_safety": outcome.retry_safety},
         "system_meta": outcome.meta,
     }
     # 记录自身的内容 hash：证明「原始输出事后没被改过」的唯一机械判据。
     # 不含本字段（自指）——这与冻结案例的字节 hash 是两个层次：一个防案例被改，一个防记录被改。
     record["record_sha256"] = sha256_value({key: value for key, value in record.items() if key != "record_sha256"})
     return record
+
+
+def _fixture_records(faults: FaultPlan, *, request: TurnInput, outcome: TurnOutcome) -> list[dict[str, Any]]:
+    """本轮的 fixture 结论 + **是否真的被观察到**。
+
+    「请求了注入」与「注入真的发生了」是两件事：替身工具装上了但模型没调用，观察到的
+    只是「模型没用检索」，不能算「系统在检索故障下的表现」。因此逐条补 `observed`
+    与 `observed_calls`，让「未调用」在证据里可见（summary 会单独统计）。
+    """
+    payload: list[dict[str, Any]] = []
+    for application in faults.plan_for(request.case.id, request.system_id):
+        item = application.to_dict()
+        name = application.name
+        if name.startswith("tool_"):
+            tool_name = "search_knowledge"
+            calls = [call for call in outcome.tool_calls if call.get("name") == tool_name]
+            item["observed_calls"] = len(calls)
+            item["observed"] = bool(calls) if application.applied else False
+        elif name.startswith("retrieval_"):
+            retrieval = (outcome.trace or {}).get("retrieval") or {}
+            item["observed_calls"] = 1 if retrieval else 0
+            item["observed"] = bool(application.applied and retrieval)
+        else:
+            item["observed_calls"] = 0
+            item["observed"] = False
+        if application.applied and not item["observed"]:
+            item["note"] = item["note"] + "；但本次回合没有观察到该故障被触发（模型可能没调用该工具）"
+        payload.append(item)
+    return payload
 
 
 def _write_state(
@@ -481,6 +555,50 @@ def _code_commit(repo_root: Path) -> str:
     from .manifest import code_facts
 
     return str(code_facts(repo_root)["commit"])
+
+
+def _require_clean_code_for_formal(*, config: RunConfig, repo_root: Path) -> None:
+    """正式批次（`label=test`）必须在干净代码上跑。
+
+    Raises:
+        ValueError: 工作区有未提交改动（含未跟踪的代码文件）而标签是 `test`。
+
+    校准批次允许带改动（正在改工具时也要能跑），但 manifest 会如实记下 dirty 与文件清单；
+    正式批次拒绝，因为「按这个 commit 能复现」在那时是不成立的。
+    """
+    if config.label != FORMAL_LABEL:
+        return
+    from .manifest import code_facts
+
+    facts = code_facts(repo_root)
+    if not facts["dirty"]:
+        return
+    raise ValueError(
+        f"正式批次（label={FORMAL_LABEL}）必须在干净工作区运行：当前有未提交改动"
+        f"（tracked {facts.get('dirty_tracked_count')} / untracked {facts.get('dirty_untracked_count')}），"
+        f"例如 {facts['dirty_files'][:5]}。先提交，或改用 label=calibration 跑非正式批次。"
+    )
+
+
+def _require_same_identity(manifest: dict[str, Any], *, identity: dict[str, Any], identity_sha: str) -> None:
+    """续跑前逐项核对运行身份（模型、端点、嵌入、知识快照、会话策略）。
+
+    批次指纹只绑案例/配置/代码——换掉 `MODEL_NAME` 或 `TOKENHUB_BASE_URL` 后指纹不变，
+    续跑会把两个模型的输出混进同一批，而这种混批在数据上几乎看不出来。
+
+    Raises:
+        ResumeRejected: 身份指纹或任一字段与 manifest 不一致。
+    """
+    recorded = manifest.get("run_identity")
+    if not isinstance(recorded, dict):
+        return  # 老批次没有身份段：由 verify 报「缺身份证据」，不在续跑时凭空发明一份
+    if manifest.get("run_identity_sha256") != identity_sha:
+        diffs = identity_drift(recorded, identity)
+        raise ResumeRejected(
+            "运行身份与已落盘批次不一致："
+            + ("；".join(diffs) if diffs else "字段一致但指纹不同（manifest 被改过或版本不同）")
+            + "。换模型/端点/嵌入/知识快照后不得在同一批次续跑，请新建 run。"
+        )
 
 
 def _require_same_batch(existing: list[dict[str, Any]], *, fingerprint: str, store: RunStore) -> None:

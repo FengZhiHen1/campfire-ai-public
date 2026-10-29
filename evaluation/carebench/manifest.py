@@ -25,7 +25,7 @@ from .cases import CaseSet
 from .config import RunConfig
 from .faults import FaultPlan
 from .hashing import batch_fingerprint, sha256_file, sha256_value
-from .knowledge import PACKAGE_ROOT, KnowledgeSnapshot, database_name, endpoint_host, is_loopback
+from .knowledge import EMBEDDING_DIM, PACKAGE_ROOT, KnowledgeSnapshot, database_name, endpoint_host, is_loopback
 from .records import GroupProgress, progress_summary
 
 #: 协议快照目录（评测目录内的只读副本）。
@@ -41,9 +41,15 @@ def utc_now() -> str:
 
 
 def code_facts(repo_root: Path) -> dict[str, Any]:
-    """代码提交事实：commit、分支、是否有未提交改动。
+    """代码提交事实：commit、分支、是否有未提交改动（**含未跟踪的代码文件**）。
 
-    没有 git（例如导出的 tarball）时返回 `unknown`，而不是假装有一份可复现的提交。
+    为什么必须含未跟踪文件：实测踩过——`evaluation/` 整个目录还没 `git add` 时，
+    `git status --porcelain --untracked-files=no` 什么都不显示，于是批次被标成
+    `dirty=false` 并绑定了一个根本不含这些代码的 commit。那种「可复现」是假的：
+    按那个 commit 检出来跑，跑的不是当时跑的东西。
+
+    产物目录（`runs/`、`frozen/`、`.tmp/` 等）由 `.gitignore` 排除，因此这里的
+    「未跟踪」只包含真正的代码/文本改动，不会因为跑了一批就把仓库算脏。
     """
 
     def _run(*args: str) -> str:
@@ -61,12 +67,17 @@ def code_facts(repo_root: Path) -> dict[str, Any]:
 
     commit = _run("rev-parse", "HEAD") or "unknown"
     branch = _run("rev-parse", "--abbrev-ref", "HEAD") or "unknown"
-    status = _run("status", "--porcelain", "--untracked-files=no")
+    status = _run("status", "--porcelain", "--untracked-files=normal")
+    tracked_dirty = [line[3:] for line in status.splitlines() if line.strip() and not line.startswith("??")]
+    untracked = [line[3:] for line in status.splitlines() if line.startswith("??")]
     return {
         "commit": commit,
         "branch": branch,
         "dirty": bool(status),
-        "dirty_files": sorted({line[3:] for line in status.splitlines() if line.strip()})[:50],
+        "dirty_tracked_count": len(tracked_dirty),
+        "dirty_untracked_count": len(untracked),
+        "dirty_files": sorted({*tracked_dirty, *untracked})[:50],
+        "dirty_scope": "tracked + untracked（未跟踪同样算脏：没有提交就没有可复现的提交；产物目录由 .gitignore 排除）",
     }
 
 
@@ -98,6 +109,91 @@ def protocol_snapshot_facts() -> dict[str, Any]:
         "files": files,
         "sha256": sha256_value([{"name": name, "sha256": digest} for name, digest in digest_input]),
     }
+
+
+def runtime_identity(settings: Any, snapshot: KnowledgeSnapshot, config: RunConfig) -> dict[str, Any]:
+    """运行身份：决定「跑的是哪个模型、哪个端点、哪份知识」的全部事实（**无凭据**）。
+
+    为什么必须进 manifest 并在 resume 时逐项核对：批次指纹原本只绑案例/配置/代码，
+    换掉 `TOKENHUB_BASE_URL` 或 `MODEL_NAME` 再 resume，工具会照常接受，于是一批里混进
+    两个模型——这种混批从数据上几乎看不出来，只能靠身份核对拦住。
+
+    凭据一个字节都不进来：只记「是否已配置」与端点主机/端口/路径，不记 key、不记 query。
+    """
+    chat_host = endpoint_host(settings.tokenhub_base_url)
+    embedding_host = endpoint_host(settings.resolved_embedding_base_url)
+    return {
+        "model_id": str(settings.model_name),
+        "chat": {
+            "host": chat_host,
+            "port": _port_of(settings.tokenhub_base_url),
+            "base_path": _base_path_of(settings.tokenhub_base_url),
+            "model_max_retries": int(settings.model_max_retries),
+            "request_timeout_seconds": float(settings.model_request_timeout_seconds),
+            "api_key_configured": settings.tokenhub_api_key is not None,
+        },
+        "embedding": {
+            "host": embedding_host,
+            "port": _port_of(settings.resolved_embedding_base_url),
+            "base_path": _base_path_of(settings.resolved_embedding_base_url),
+            "model": str(settings.embedding_model_name),
+            "dimension": int(EMBEDDING_DIM),
+            "api_key_configured": settings.resolved_embedding_api_key is not None,
+        },
+        "knowledge": {
+            "database": database_name(getattr(settings, "database_url", "")),
+            "snapshot_sha256": snapshot.sha256,
+            "items": len(snapshot.items),
+            "nodes": int(sum(item.nodes for item in snapshot.items)),
+        },
+        "conversation": {
+            "reset_each_case": bool(config.conversation_reset_each_case),
+            "turn_policy": str(config.turn_policy),
+        },
+    }
+
+
+def _port_of(url: str) -> int | None:
+    """端点的端口（没有显式端口时按协议给默认值）。"""
+    from urllib.parse import urlparse
+
+    parsed = urlparse((url or "").strip())
+    if parsed.port is not None:
+        return int(parsed.port)
+    if parsed.scheme == "https":
+        return 443
+    if parsed.scheme == "http":
+        return 80
+    return None
+
+
+def _base_path_of(url: str) -> str:
+    """端点的路径前缀（去掉末尾斜杠；不含 query）。"""
+    from urllib.parse import urlparse
+
+    return urlparse((url or "").strip()).path.rstrip("/")
+
+
+def identity_fingerprint(identity: dict[str, Any]) -> str:
+    """运行身份的指纹（进 batch id 与 resume 核对）。"""
+    return sha256_value(identity)
+
+
+def identity_drift(expected: dict[str, Any], actual: dict[str, Any]) -> list[str]:
+    """逐项比较两份运行身份，返回不一致的项（空列表 = 一致）。"""
+    diffs: list[str] = []
+    for section, value in expected.items():
+        other = actual.get(section)
+        if isinstance(value, dict):
+            if not isinstance(other, dict):
+                diffs.append(f"{section}：manifest 有记录、当前环境没有")
+                continue
+            for key, sub_value in value.items():
+                if other.get(key) != sub_value:
+                    diffs.append(f"{section}.{key}：manifest={sub_value!r} 当前={other.get(key)!r}")
+        elif other != value:
+            diffs.append(f"{section}：manifest={value!r} 当前={other!r}")
+    return diffs
 
 
 def inference_facts(settings: Any, config: RunConfig, system_metas: dict[str, Any]) -> dict[str, Any]:
@@ -159,8 +255,15 @@ def build_manifest(
     created_at: str,
     status: str,
     progress: list[GroupProgress],
+    run_identity: dict[str, Any],
+    run_identity_sha256: str,
 ) -> dict[str, Any]:
-    """组装 manifest（首次运行与续跑都会重写它：进度与状态会变，身份不变）。"""
+    """组装 manifest（首次运行与续跑都会重写它：进度与状态会变，身份不变）。
+
+    `run_identity` 是「跑的是哪个模型、哪个端点、哪份知识」的**无凭据**快照；
+    它与 `run_identity_sha256` 一起写进 manifest，`resume` 逐项核对（见
+    `runner._require_same_identity`）——批次指纹只绑案例/配置/代码，绑不住模型与端点。
+    """
     code = code_facts(repo_root)
     fingerprint = batch_fingerprint(
         dataset_sha256=case_set.sha256,
@@ -169,6 +272,8 @@ def build_manifest(
     )
     return {
         "manifest_version": MANIFEST_VERSION,
+        "run_identity": run_identity,
+        "run_identity_sha256": run_identity_sha256,
         "run_id": run_id,
         "status": status,
         "created_at": created_at,
