@@ -10,11 +10,18 @@ members = ["apps/api"]
 
 [tool.pytest.ini_options]
 addopts = "-q --import-mode=importlib"
-testpaths = ["apps/api/tests"]
+# 两处测试树：应用测试（apps/api/tests）与仓库级工具测试（scripts/tests，
+# 覆盖 scripts/worktree.py、scripts/checks.py 这类纯标准库工具）。
+# 工具测试不连数据库、不调模型，秒级完成，因此默认收集也纳入 CI 与本地门禁。
+testpaths = ["apps/api/tests", "scripts/tests"]
 # 归档代码不参与收集：archive/ 下为已废弃的旧实现与旧测试。
 norecursedirs = ["archive", "node_modules", ".venv", "dist", "build", ".dsh", ".claude", ".agent"]
+# `live_model` 的判定与开关在 `apps/api/tests/conftest.py`（默认跳过；显式开启时
+# 缺环境直接失败）。这里登记 marker 只是让 `--strict-markers` 一类用法不至于把它
+# 当成未注册的拼写错误。
 markers = [
     "integration: 依赖真实 PostgreSQL/Redis 的集成测试（docker compose up -d）",
+    "live_model: 真正调用外部模型供应商的用例（默认跳过；--live-model 或 CAMPFIRE_LIVE_MODEL=1 显式开启）",
 ]
 # 事件循环作用域设为 session（2026-10-01）：pytest-asyncio 默认每个用例新建循环，
 # 而 `core/db` 的共享引擎把连接池绑在首次使用时的循环上——跨循环复用会抛
