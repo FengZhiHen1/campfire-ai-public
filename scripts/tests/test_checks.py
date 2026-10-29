@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import importlib.util
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -68,6 +69,17 @@ checks = _load_checks()
         ("docker-compose.yml", checks.CAT_OPS),
         ("marketing/whatever.py", checks.CAT_UNKNOWN),
         ("data/cases/manifest.json", checks.CAT_UNKNOWN),
+        # CareBench 评测工具：源码/测试/数据各有归属，文档按文档走。
+        ("evaluation/carebench/freeze.py", checks.CAT_EVAL_SRC),
+        ("evaluation/carebench/systems/agent.py", checks.CAT_EVAL_SRC),
+        ("evaluation/carebench/tests/test_cases.py", checks.CAT_EVAL_TESTS),
+        ("evaluation/carebench/cases/cases-calibration-v0.1.jsonl", checks.CAT_EVAL_DATA),
+        ("evaluation/carebench/knowledge/snapshot.json", checks.CAT_EVAL_DATA),
+        ("evaluation/carebench/fixtures-formal.example.json", checks.CAT_EVAL_DATA),
+        ("evaluation/carebench/README.md", checks.CAT_DOCS),
+        ("evaluation/carebench/protocol/02-场景与标注规范.md", checks.CAT_DOCS),
+        # 只放宽 carebench 这一棵：evaluation/ 下其他路径仍是未知（继续阻塞）。
+        ("evaluation/other-tool/tool.py", checks.CAT_UNKNOWN),
     ],
 )
 def test_classify_maps_paths_to_categories(path: str, expected: str) -> None:
@@ -458,6 +470,155 @@ def test_conftest_is_never_selected_as_a_pytest_target() -> None:
 
     assert checks.pytest_files_for(["apps/api/tests/conftest.py"], tests) == []
     assert checks.pytest_files_for(["apps/api/tests/__init__.py"], tests) == []
+
+
+# --- CareBench 工具（evaluation/carebench）：此前整棵树落 `unknown` -------------
+#
+# 背景：CareBench 的纯测试已登记进 `pyproject.toml` 的 `testpaths`，但 `quick` 的路径
+# 归类不认识 `evaluation/carebench/`，于是改一行评测脚本就阻塞（退出码 2），改一个案例
+# 文件也一样。这里钉住补上的判据：源码/测试走 ruff + 该工具的确定性 pytest；数据
+# （案例、快照、样例配置）走该工具 pytest；文档仍走文档检查；三处都不重复执行。
+
+
+CAREBENCH_TESTS = "evaluation/carebench/tests"
+
+
+def test_carebench_tests_target_is_registered_in_pytest_testpaths() -> None:
+    """`quick` 排的 CareBench 目标必须在 `testpaths` 里：没登记的目录等于不存在。
+
+    这是「工具没有测试」与「测试没登记」在结果上长得一模一样的那个坑
+    （`docs/development/testing.md` §5.2.1）：只排一条收集范围为空的 pytest，报告仍绿。
+    """
+    pyproject = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
+    match = re.search(r"^testpaths\s*=\s*\[(.*?)\]", pyproject, re.M | re.S)
+
+    assert match is not None, "pyproject.toml 缺少 testpaths"
+    declared = {part.strip().strip('"').strip("'") for part in match.group(1).split(",") if part.strip()}
+    assert checks.EVAL_TESTS.as_posix() in declared, f"testpaths 未登记 CareBench 测试树：{sorted(declared)}"
+
+
+@pytest.mark.parametrize("path", ["evaluation/carebench/freeze.py", "evaluation/carebench/records.py"])
+def test_carebench_source_change_runs_ruff_and_tool_tests(path: str, monkeypatch: pytest.MonkeyPatch) -> None:
+    """CareBench 源码改动（此前是 `unknown` 阻塞）：ruff + 该工具的确定性 pytest。"""
+    assert checks.classify(path) != checks.CAT_UNKNOWN, "评测源码不能回到阻塞类别"
+    monkeypatch.setattr(checks, "changed_paths", lambda base: [path])
+
+    steps, report, problems = checks.quick_plan("dev", None)
+
+    assert problems == [], problems
+    keys = [step.key for step in steps]
+    assert keys == ["ruff", "ruff-format", "pytest"], keys
+    pytest_steps = [step for step in steps if step.key == "pytest"]
+    assert pytest_steps[0].argv[-1] == CAREBENCH_TESTS, "评测源码改动要跑该工具的测试树"
+    assert any(CAREBENCH_TESTS in line for line in report), report
+
+
+def test_carebench_test_change_runs_that_file_directly(monkeypatch: pytest.MonkeyPatch) -> None:
+    """改到 CareBench 的某个测试文件 → 直接跑它（与 apps/api、scripts 的测试同一口径）。"""
+    changed = "evaluation/carebench/tests/test_verify.py"
+    monkeypatch.setattr(checks, "changed_paths", lambda base: [changed])
+
+    steps, _report, problems = checks.quick_plan("dev", None)
+
+    assert problems == []
+    pytest_steps = [step for step in steps if step.key == "pytest"]
+    assert len(pytest_steps) == 1
+    assert pytest_steps[0].argv[-1] == changed
+
+
+def test_carebench_data_change_runs_tool_tests_without_ruff(monkeypatch: pytest.MonkeyPatch) -> None:
+    """案例/快照这类数据没有 linter 可跑，但它们是工具用例的输入 → 仍跑该工具 pytest。"""
+    monkeypatch.setattr(
+        checks,
+        "changed_paths",
+        lambda base: ["evaluation/carebench/cases/cases-calibration-v0.1.jsonl"],
+    )
+
+    steps, _report, problems = checks.quick_plan("dev", None)
+
+    assert problems == []
+    assert [step.key for step in steps] == ["pytest"], "纯数据改动不该给 ruff/mypy 排空步骤"
+    assert steps[0].argv[-1] == CAREBENCH_TESTS
+
+
+def test_carebench_docs_change_still_uses_the_docs_check(monkeypatch: pytest.MonkeyPatch) -> None:
+    """CareBench 的文档改动仍按文档检查（不因为它在 evaluation/ 下就另开一套）。"""
+    monkeypatch.setattr(
+        checks,
+        "changed_paths",
+        lambda base: ["evaluation/carebench/protocol/01-评测目标与实验协议.md"],
+    )
+
+    steps, _report, problems = checks.quick_plan("dev", None)
+
+    assert problems == []
+    assert [step.key for step in steps] == ["design-docs"]
+
+
+def test_mixed_app_and_carebench_python_change_runs_each_check_once(monkeypatch: pytest.MonkeyPatch) -> None:
+    """`apps/api` 与 CareBench 同时改：ruff/mypy/pytest 各一条，不重复执行。
+
+    混合改动是「两处各排一套检查」最容易漏掉的情形——重复跑不仅慢，还会让报告里
+    「跑了什么」变成两条同样的命令。
+    """
+    monkeypatch.setattr(
+        checks,
+        "changed_paths",
+        lambda base: [
+            "apps/api/src/campfire/modules/library/routes.py",
+            "evaluation/carebench/freeze.py",
+        ],
+    )
+
+    steps, _report, problems = checks.quick_plan("dev", None)
+
+    assert problems == []
+    keys = [step.key for step in steps]
+    assert keys == ["ruff", "ruff-format", "mypy", "pytest"], keys
+    assert "evaluation/carebench/freeze.py" in steps[0].argv, "一条 ruff 要同时覆盖两处改动"
+    pytest_steps = [step for step in steps if step.key == "pytest"]
+    assert len(pytest_steps) == 1, "混合改动只能有一条定向 pytest"
+    targets = pytest_steps[0].argv
+    assert CAREBENCH_TESTS in targets
+    assert any(Path(arg).name.startswith("test_library") for arg in targets), targets
+
+
+def test_explicit_pytest_override_replaces_carebench_suite(monkeypatch: pytest.MonkeyPatch) -> None:
+    """显式 `--pytest` 优先：给了目标就不再追加整棵 CareBench 测试树（不重复执行）。"""
+    monkeypatch.setattr(checks, "changed_paths", lambda base: ["evaluation/carebench/freeze.py"])
+
+    steps, _report, problems = checks.quick_plan(
+        "dev",
+        ["evaluation/carebench/tests/test_freeze_and_cli.py::test_x"],
+    )
+
+    assert problems == []
+    pytest_steps = [step for step in steps if step.key == "pytest"]
+    assert len(pytest_steps) == 1
+    assert pytest_steps[0].argv[-1] == "evaluation/carebench/tests/test_freeze_and_cli.py::test_x"
+    assert CAREBENCH_TESTS not in pytest_steps[0].argv, "显式目标之外不得再追加目录"
+
+
+def test_deleted_carebench_data_file_does_not_become_a_pytest_target(monkeypatch: pytest.MonkeyPatch) -> None:
+    """删掉一个案例文件：仍跑该工具的测试树，但不把已删除的路径交给 pytest（退出码 4）。"""
+    deleted = "evaluation/carebench/cases/cases-已删除.jsonl"
+    monkeypatch.setattr(checks, "changed_paths", lambda base: [deleted])
+
+    steps, _report, problems = checks.quick_plan("dev", None)
+
+    assert problems == []
+    assert [step.key for step in steps] == ["pytest"]
+    assert steps[0].argv[-1] == CAREBENCH_TESTS
+    assert all(deleted not in step.argv for step in steps)
+
+
+def test_full_plan_does_not_add_a_second_carebench_pytest() -> None:
+    """`full` 不重复排：CareBench 测试已由 `testpaths` 收进那一条全量 pytest。"""
+    full_steps = checks.full_plan()
+    pytest_steps = [step for step in full_steps if step.key.startswith("pytest")]
+
+    assert len(pytest_steps) == 1, "full 只应有一条 pytest（全量收集已在 testpaths 里）"
+    assert not any("evaluation/carebench" in argument for step in full_steps for argument in step.argv)
 
 
 def test_full_plan_and_ci_workflow_stay_in_sync() -> None:
