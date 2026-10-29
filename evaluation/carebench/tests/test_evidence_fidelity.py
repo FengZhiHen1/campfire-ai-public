@@ -12,7 +12,6 @@ from typing import Any
 import pytest
 from pydantic import BaseModel
 
-pytestmark = pytest.mark.asyncio
 
 from evaluation.carebench.config import RunConfig
 from evaluation.carebench.faults import FaultPlan, load_plan
@@ -115,6 +114,7 @@ def test_injected_tool_reuses_product_description_and_args() -> None:
     assert "评测" not in empty.description and "注入" not in empty.description
 
 
+@pytest.mark.asyncio
 async def test_structured_only_turn_is_recorded_as_completed_output(
     tmp_path: Path, settings_for_tests: Any, faults_for_tests: FaultPlan
 ) -> None:
@@ -151,6 +151,7 @@ async def test_structured_only_turn_is_recorded_as_completed_output(
     assert record["status_flags"]["empty_output"] is False
 
 
+@pytest.mark.asyncio
 async def test_retry_on_dirty_session_restarts_with_new_session(
     tmp_path: Path, settings_for_tests: Any, faults_for_tests: FaultPlan
 ) -> None:
@@ -187,6 +188,7 @@ async def test_retry_on_dirty_session_restarts_with_new_session(
     assert records[1]["retry"]["retry_safety"] == RETRY_SAME_SESSION
 
 
+@pytest.mark.asyncio
 async def test_retry_budget_is_per_group_not_per_turn(
     tmp_path: Path, settings_for_tests: Any, faults_for_tests: FaultPlan
 ) -> None:
@@ -216,6 +218,7 @@ async def test_retry_budget_is_per_group_not_per_turn(
     assert a_records[-1]["completion_status"] == "timeout"
 
 
+@pytest.mark.asyncio
 async def test_fixture_observation_marks_uncalled_tool(tmp_path: Path, settings_for_tests: Any) -> None:
     """替身装上了但模型没调用 → `observed=false`，不能算「系统在故障下的表现」。"""
     fixtures = tmp_path / "fixtures.json"

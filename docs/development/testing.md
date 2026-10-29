@@ -78,7 +78,7 @@ uv run python scripts/checks.py full --dry-run        # 只打印，供集成前
 uv run ruff check . && uv run ruff format --check .
 uv run mypy apps/api/src/campfire apps/api/tests
 uv run alembic upgrade head && uv run alembic check   # 迁移门禁：模型与迁移不一致即失败
-uv run pytest                                  # 需要 docker compose up -d 的数据服务在跑；收集 testpaths 两处（§5.2.1）
+uv run pytest                                  # 需要数据服务；收集 testpaths 三处（§5.2.1）
 uv run --no-project python scripts/check_design_docs.py
 pnpm --filter @campfire/web lint
 pnpm --filter @campfire/web test
@@ -121,13 +121,14 @@ XML 真的收集到了用例**（按名字检索一条本轮新增的用例为�
 ### 5.2.1 收集范围由 `testpaths` 决定
 
 `testpaths` 决定 pytest 收集哪些目录，**没登记的测试等于不存在**（它会安静地不跑，而报告仍
-显示「全部通过」）。当前应覆盖两处：
+显示「全部通过」）。当前覆盖三处：
 
 - `apps/api/tests` —— 应用测试；
 - `scripts/tests` —— 仓库级脚本（`checks.py`、`worktree.py` 等工具）自己的测试。
+- `evaluation/carebench/tests` —— 评测运行器的确定性测试，不连接模型或外部数据服务。
 
 **新增测试目录必须同步登记进 `testpaths`**，否则「工具没有测试」和「测试没登记」在结果上
-长得一模一样。若 `testpaths` 里缺 `scripts/tests`，按缺陷处理，不得按「0 条用例通过」计数。
+长得一模一样。上述任一目录未被收集都按缺陷处理，不得按「0 条用例通过」计数。
 
 ### 5.3 失败判读
 
