@@ -143,6 +143,15 @@ export function createConsultChatAdapter(deps: ConsultChatAdapterDeps): ChatMode
           // 发送没被受理：不消费技能选择与整组回答，重试仍能用（发送即消费只在受理后成立）。
           deps.onFailure(error);
           deps.onConnection('failed');
+          // 发送阶段的 `run_not_resumable`（契约第 4.1 节）：这次提问**已经**在更早的一次
+          // 请求里被受理过，而那条运行的传输态已过期（幂等键 24 小时 ≫ 运行元数据 600 秒）。
+          // 处置与订阅路径完全相同——改走历史水合，因为回答若真的跑完过就在会话真源里。
+          // **不得自动重发**：同一个幂等键重发会再落一条使用者消息，而那正是给这条
+          // 409 存在的原因（服务端拒绝交出失效的 run_id 而不是让调用方重新起一轮）。
+          if (error instanceof ConsultError && error.kind === 'not-resumable') {
+            deps.onDiagnostic?.('发送阶段不可续传：改走历史水合，不重发');
+            deps.onNeedsResync?.();
+          }
           // 为什么不抛：本版 assistant-ui 的 thread.append 是同步 API，运行时在
           // performRoundtrip 里把消息标成 incomplete(error) 之后仍会把异常再抛给调用方
           // （core/dist/runtimes/local/local-thread-runtime-core.js 的 catch 分支），
