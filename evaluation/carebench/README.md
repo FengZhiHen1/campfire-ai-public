@@ -1,12 +1,12 @@
 # CareBench 运行工具（`evaluation/carebench`）
 
-> 状态：**工具已实现并用少量真实校准调用验证过；正式 40 例未运行**。
-> 正式案例的冻结与正式批次运行由主 agent 在集成修复后执行（见文末「主 agent 待办」）。
+> 状态：**工具与独立 AI 评审通道已实现，并用少量真实校准调用验证过；正式 40 例尚未冻结、未运行**。
+> 产品当前模型配置仍为 `cn:deepseek-v4.1-flash`；正式运行身份须在冻结前从当前配置重新生成并核对。
 > 本目录不含任何正式成绩，也不含任何专家背书。
 
 把 CareBench 协议（[`protocol/`](protocol/)，01–05 号原文快照）落成可执行工具的目录。
-一句话：**用产品自己的运行时跑 A/B/C 三组真实运行，把原始输出与轨迹原样留下，人工评分
-导入后才出分，任何对不上都会被 `verify` 抓住**。
+一句话：**用产品自己的运行时跑 A/B/C 三组真实运行，把原始输出与轨迹原样留下；正式评分由两套
+独立 AI 评审执行、分歧由独立裁定者复核，工程校验由 `verify` 把关**。
 
 ---
 
@@ -16,11 +16,13 @@
 
 - `preflight`：开工前核对工作区、案例、知识快照与**独立评测库**、模型/嵌入端点、技能与工具池、
   C 组生产装配能否装出来（默认**不发起生成调用**）。
+- `identity` / `freeze --identity`：记录并冻结实际运行模型、端点、嵌入身份与知识快照。
 - `freeze`：把案例集与配置冻结成不可再改的身份（字节复制 + 三层 hash）。
 - `run` / `resume`：按案例 × 组别跑满 A/B/C，逐轮逐尝试落盘；中断后只补缺的轮次。
+- `ai-prepare` / `ai-score` / `ai-adjudicate`：冻结两套独立评分身份与提示词、评分、保留分歧并独立裁定。
 - `review-export`：导出**盲化**评审包（组别被替换成 `X1/X2/X3`）与**空**评分表。
 - `review-import`：严格校验并导入人工评分（空值 / `pending` 一律拒收）。
-- `summarize`：只按实测数据出计数、时延、token；导入人工评分后才出硬失败计数与五维分。
+- `summarize`：按实测数据出计数、时延、token；有评分时分别汇总 AI 与人工结果。
 - `verify`：复算全部 hash、分母、输入对称性、盲化与 summary 一致性。
 
 不做（每一条都有对应的实现约束）：
@@ -29,8 +31,8 @@
 |---|---|
 | 不造简化假 C、不用 FakeModel、不合成回答 | C 组走 `surfaces.consult.composition.install` + `assembly.get_runner`（生产装配），`systems/agent.py` |
 | 不新造评测平台/服务 | 复用产品模型网关、检索链、工具池、技能注册表、AgentRunner、SQLAlchemy 会话 |
-| 不让 LLM 代评 | 硬失败与五维分只能来自 `review-import` 的 CSV；`review.py` 拒收空值与 `pending` |
-| 不填分 | 无人评审时 `summary.json` 的 `human_scores` 是 `null`；`verify` 会拦住「无评分却有分」 |
+| 评分不冒充人工或专业审核 | AI 评分独立写入 `ai_scores`，不写入 `human_scores`；专业审核仍是单独的证据要求 |
+| 不填分 | 没有对应评分记录时不产生分数；`verify` 会校验评分记录、身份与证据锚 |
 | 不把故障注入写成一句提示 | 注入点在真实接缝上（B 的检索、C 的工具池），未实现的 fixture 标 `applied=false`，`faults.py` |
 | 不混批 | 批次指纹 = 案例 hash + 配置 hash + 代码提交；`resume` 不一致直接拒绝 |
 | 不碰开发/生产库 | 库名必须以 `campfire_carebench` 开头，否则拒绝运行；知识快照逐条核对许可清单 |
@@ -100,7 +102,7 @@ uv run python -m evaluation.carebench preflight \
 | 协议快照 | `protocol/*.md` 逐文件 hash 与汇总 hash |
 | 案例 | 结构校验、split、`review_status` 直方图、双轮数量、case-group 分母、案例自带 fixtures |
 | 库隔离 | `DATABASE_URL` 的库名必须以 `--db-prefix`（默认 `campfire_carebench`）开头 |
-| 知识快照 | `included` 文件 hash 与磁盘一致；**库内每个条目**的 `source_path` 基名必须在 `included` 内；不得有已撤下条目、不得有 0 节点的条目、不得有案例条目 |
+| 知识快照 | `included` 文件 hash 与磁盘一致；库内条目与来源 `doc_hash` 对照；节点正文、标识、metadata、向量及嵌入身份进入规范快照 hash；拒绝撤下/无节点/无向量/案例条目 |
 | 端点 | 对话/嵌入端点主机；`chat_key`/`embedding_key` 是否已配；**嵌入端点与本机对话端点相同时阻断**（本机网关只有 chat，嵌入 404 会被误读成「没有资料」） |
 | 装配 | `composition.install` + `get_runner` + 技能注册表 + 工具池（报工具数/skill 数） |
 | 可选探测 | `--probe-model` 走 `GET /models`（不烧额度）；`--probe-embedding` 真调一次查询嵌入并检查全零向量 |
@@ -109,13 +111,18 @@ uv run python -m evaluation.carebench preflight \
 
 ```bash
 uv run python -m evaluation.carebench freeze --cases <案例 JSONL> --label {calibration|pilot|test} \
-  [--config cfg.json] [--out evaluation/carebench/frozen/<label>] [--operator <名字>]
+  [--config cfg.json] [--out evaluation/carebench/frozen/<label>] [--operator <名字>] [--identity identity.json]
+
+uv run python -m evaluation.carebench identity \
+  --out .tmp/carebench-run-identity.json
 ```
 
 写出 `cases.frozen.jsonl`（与源文件**逐字节**相同）与 `freeze.json`：`dataset_sha256`、
 `per_case_sha256`、`config_sha256`、`code`、`protocol_snapshot_sha256`、`turns_histogram`、
 `review_status_counts`、`formal_ready`、`case_fixtures`、`operator`。
-同一目录若已冻结**不同内容**会拒绝（`FreezeError`）；内容相同则只刷新元数据。
+同一目录若已有冻结记录，案例字节或实验身份字段不同都会拒绝（`FreezeError`）；完全相同时只更新
+`refrozen_at` 时间戳，不改写已冻结的身份字段。
+正式 `label=test` 必须带 `--identity`，把 `identity` 命令生成的运行身份一并锁进冻结记录。
 
 ### 3.3 `run` / `resume`
 
@@ -127,6 +134,33 @@ uv run python -m evaluation.carebench run --frozen evaluation/carebench/frozen/c
 uv run python -m evaluation.carebench resume --run evaluation/carebench/runs/<id> \
   [--case-ids ...] [--fixtures fixtures.json] [--config cfg.json]
 ```
+
+正式批次严格按以下顺序操作，避免先产生被测输出、再挑评分身份：
+
+```bash
+# 1. 读取当前配置下的真实运行身份（无凭据、无生成调用）
+uv run python -m evaluation.carebench identity --out .tmp/carebench-run-identity.json
+# 2. 冻结正式案例、运行配置和上一步的身份
+uv run python -m evaluation.carebench freeze --cases <正式集.jsonl> --label test \
+  --identity .tmp/carebench-run-identity.json
+# 3. 创建批次并核对计划；零模型调用
+uv run python -m evaluation.carebench run --frozen evaluation/carebench/frozen/test --dry-run
+# 4. 在任何被测系统生成前冻结 AI 评分者与裁定者身份
+uv run python -m evaluation.carebench ai-prepare --run <run目录>
+# 5. 正式生成；中断后用 resume 补齐
+uv run python -m evaluation.carebench resume --run <run目录>
+```
+
+正式 `run` 或 `resume` 的非 dry-run 路径会在 adapter 准备和生成调用前校验评分身份：身份必须存在、
+`stage=formal`、hash 有效，且与 manifest 中的身份锚一致；缺失、篡改或未锚定都会拒绝。
+`run --dry-run` 是允许的准备步骤。失败覆盖 missing/tampered/unanchored/no_adjudicator，valid formal identity
+有生成正控（`evaluation/carebench/tests/test_ai_cli.py::test_formal_generation_requires_frozen_review_identity_before_any_call`）。
+
+生成完成后，先用 `review-export --run <run目录>` 导出盲化评审包，再用
+`ai-score --run <run目录>` 执行两套独立盲评、`ai-adjudicate --run <run目录>` 处理分歧，
+最后运行 `summarize`、`verify --require-complete`。
+正式批次是否完成以实际运行证据为准；**专业审核仍未满足**，因此不得据此声称专业认可、
+临床安全或真实家庭有效。
 
 执行规则（每条都能在 `outputs.jsonl` 里核对）：
 
@@ -209,11 +243,11 @@ uv run python -m evaluation.carebench verify --run <run_id> [--require-complete]
 ## 5. 知识快照与许可
 
 - 裁定表：[`knowledge/snapshot.json`](knowledge/snapshot.json)。
-  `included`（6 份）/ `blocked`（12 项，含 WHO-CST、NICE、NAS 等非商业或保留权利件）/
-  `excluded_corpora`（3 个 internal 真实访谈案例包 + 1 个虚构演示包）。
+  `included` / `blocked` / `excluded_corpora` 的当前项目以该文件为准，不在本说明重复固定数量。
 - 每份 `included` 都带 `sha256` 与 `license_basis`（指回 `data/README.md` 的具体结论）。
-  `preflight` 与 `run` 在启动时复算文件 hash；`read_database_state` 再核对**库内实际条目**：
-  每个条目的 `source_path` 基名必须在 `included` 内，且不得有案例条目。
+  `preflight` 与 `run` 在启动时复算文件 hash，并读取数据库实际条目与节点内容；
+  节点正文、节点 id、metadata、向量、条目 `doc_hash` 和嵌入身份共同决定知识快照 hash。
+  相同节点数但内容或嵌入身份改变时，快照身份也会改变，续跑会因运行身份漂移而拒绝。
 - B 与 C 用**同一个库、同一份快照**（快照 hash 进 manifest 的 `knowledge_snapshot.sha256`）。
 - 库名与库内容都由外部（主 agent）准备，工具**不管生命周期**：只接受现有 `Settings` 配置，
   并在库名不像评测库时拒绝运行。
@@ -277,22 +311,26 @@ export DATABASE_URL="postgresql+asyncpg://<user>:<pw>@<host>:5432/campfire_careb
 
 ## 9. 验证记录（本工具实际跑过什么）
 
-日期：2026-10-29（Asia/Shanghai）。环境：本机 worktree、独立 `.venv`、评测库
+历史校准记录，日期：2026-10-29（Asia/Shanghai）。环境：本机 worktree、独立 `.venv`、评测库
 `campfire_carebench_20261029`（6 条 knowledge / 117 节点 / 0 案例）、对话端点本机网关
-`127.0.0.1:7863`（`cn:deepseek-v4.1-flash`）、嵌入端点独立（TokenHub）。
+`127.0.0.1:7863`（当时为 `cn:deepseek-v4.1-flash`）、嵌入端点独立（TokenHub）。
+此处为历史校准记录，不代表当前正式运行身份。
 
 ### 9.1 确定性测试
 
 ```bash
-uv run pytest evaluation/carebench/tests -q     # 46 passed
+uv run pytest evaluation/carebench/tests -q
 uv run ruff check evaluation/ && uv run ruff format --check evaluation/
 ```
 
+截至 full-04（`dev`，`59aac1f0`），CareBench 全套确定性测试 **183 项通过**；仓库 full 已通过，
+详细读数见[质量审查记录](../../docs/development/checkpoints/2026-10-29-quality-audit.md)。
+真实浏览器验收尚待通过。本节列出测试覆盖范围。
 覆盖：案例结构校验（含坏数据负例）、配置/批次 hash 稳定性、轮换顺序、每 case-group 新会话、
 固定二轮、输入对称、外层重试与首错保留、空回复不重试、超时进分母、续跑不重跑已完成轮次、
 跨批次续跑被拒、非评测库被拒、dry-run 零调用、盲化评审包（无组别字段）、`pending`/空分拒收、
 关键约束计数校验、重复评分拒收、无评审不出分、有评审的硬失败分列与配对、证据包篡改检测
-（记录内容 hash、输入不对称）、`--require-complete`、冻结幂等与冲突、`preflight --frozen` 的配置 hash 与冻结记录一致、装配变体可见、命令行命令集合。
+（记录内容 hash、输入不对称）、`--require-complete`、冻结幂等与冲突、`preflight --frozen` 的配置 hash 与冻结记录一致、装配变体可见、命令行命令集合。EVAL-01/02/03 及生成前身份守卫的覆盖见 [HANDOFF.md](HANDOFF.md)。
 
 ### 9.2 真实校准调用（少量，仅合成校准案例）
 
@@ -330,11 +368,9 @@ uv run ruff check evaluation/ && uv run ruff format --check evaluation/
 
 ## 10. 未知项与待确认
 
-1. **正式 40 例未冻结、未运行**：本工具没有接触正式集（避免污染）。正式集的
-   `review_status` 全部是 `draft_unreviewed`，因此任何结果都只能作为原始观察，专业结论必须
-   `needs_review`。
-2. **专业评审缺失**：`critical_failure` 与五维分需要具备相关资质的人；本工具只保证「不是模型打的」
-   与「`pending` 不算通过」。
+1. **正式 40 例尚未冻结、未运行**：正式集仍为 `draft_unreviewed`；正式运行和评分尚未开始。
+2. **专业审核仍未满足**：AI 评分不构成专业证据；安全、专业正确性与真实家庭有效性主张仍为
+   `unverified`，不得写成已审或已认可。
 3. **κ 未实现**：需要 2×2 列联表，当前只给原始一致率（字段里写明为什么返回 `null`）。
 4. **B 组检索词口径**是「共享背景 + 本轮问题」截断到 500 字符；这是设计选择，未经校准。
 5. **推理参数**（temperature/top_p/seed）一律未显式传参（记 `null`），因为产品也没有显式设置；
@@ -346,12 +382,9 @@ uv run ruff check evaluation/ && uv run ruff format --check evaluation/
 
 ---
 
-## 11. 主 agent 待办（本工具已就绪的部分不重复）
+## 11. 正式评测接续
 
-1. 集成修复后，把正式 40 例冻结：
-   `uv run python -m evaluation.carebench freeze --cases <正式集> --label test`，
-   并把 `freeze.json` 的 `dataset_sha256` 记进报告。
-2. 用正式集跑 `run`（建议先 `--dry-run` 看分母，再 `--case-ids` 跑 1–2 例确认端点稳定，最后全量）。
-3. 导出评审包 → 交给**两位独立**评审者（高风险案例需相关资质）→ `review-import` → `summarize` → `verify --require-complete`。
-4. 决定批次证据的留存落点（`runs/` 默认不入库），并在报告中引用 `run_id` + `batch_id`。
-5. 裁决 §9.4 的两条产品观察（markdown 输出、C 的 token/请求量级）。
+正式运行仍待执行。依次完成**identity → freeze（含身份）→ run `--dry-run` → ai-prepare → resume**
+；生成后先 `review-export`，再运行 `ai-score`、`ai-adjudicate`、`summarize` 与
+`verify --require-complete`，再按材料口径
+登记真实 `run_id`、`batch_id` 和证据。不得把校准批次或本地确定性测试写成正式成绩。
