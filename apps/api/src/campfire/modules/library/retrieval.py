@@ -52,6 +52,11 @@ MIN_CJK_FOR_TRIGRAM = 3
 #: 非中文查询走字面路所需的最长连续字母/数字段长度（同一实测依据）。
 MIN_CHARS_FOR_TRIGRAM = 3
 
+#: 参与字面路相关度排序的词元上界（见 `_literal_ranking_sql`）：只影响名次，
+#: 不影响匹配范围。取 16 是对「模型给的 500 字上限查询」的成本上界，
+#: 真实查询（实测 1–3 个词元）远低于它。
+MAX_RANKING_TERMS = 16
+
 _CJK_PATTERN = re.compile(r"[\u4e00-\u9fff]")
 
 
@@ -291,6 +296,41 @@ def _item_filters_sql(*, scope: str | None, authorization: str | None) -> tuple[
     return clauses, params
 
 
+def _literal_ranking_sql(terms: list[str]) -> tuple[str, dict[str, str]]:
+    """字面路的相关度排序片段：各词元在各列上的最大三元组相似度。
+
+    为什么字面路必须排序（2026-10-29 审查修正）：此前是 `ORDER BY id`——id 是
+    `uuid4`，随机的。命中条目多于候选数 `LITERAL_TOP_K` 时，**哪 30 条被留下由随机
+    UUID 决定**；而在候选内，喂给 RRF 的「名次」也变成 UUID 序，与相关度无关。
+    两个后果都是真的：
+
+    1. RRF 只用名次（RAG 策略第 4 节），字面路的名次既不可比也不可解释，
+       「字面路取 top-30 按条目计」在实现上不成立；
+    2. 同一份语料在新库重建（UUID 全新）后，同一查询的字面路候选会变——
+       「同一快照同一检索行为」这条评测前提被破坏。
+
+    用 `GREATEST(similarity(col, :s0), similarity(col, :s1), ...)`（词元 × 列取最大）
+    与匹配语义对齐：`WHERE` 是「任一词元命中任一列」，排序就按「命中的最好那一格有多像」。
+    `similarity` 来自 `pg_trgm`（字面路本来就依赖它建索引），不需要额外扩展。
+
+    词元是模型可控值，因此**只**经绑定参数进入 SQL（与 `_item_filters_sql` 同一纪律）。
+
+    词元数设上界（`MAX_RANKING_TERMS`）：`WHERE` 的 OR 链随词元数线性增长（既有行为），
+    但排序表达式是「词元 × 3 列」个 `similarity` 调用——不设界时一个 500 字的模型查询
+    会生成上千个调用。这里只取前若干个词元参与名次；**匹配**仍覆盖全部词元，
+    因此不会漏召回，只是长查询的名次由前几个词决定。缺省数量足够覆盖真实查询
+    （实测语料查询是 1–3 个词元）。
+
+    Returns:
+        `(排序表达式, 绑定参数)`；`terms` 非空由调用方保证。
+    """
+    selected = terms[:MAX_RANKING_TERMS]
+    params = {f"s{index}": term for index, term in enumerate(selected)}
+    columns = ("title", "keywords", "aliases")
+    cells = ", ".join(f"similarity({column}, :s{index})" for index in range(len(selected)) for column in columns)
+    return f"GREATEST({cells})", params
+
+
 async def literal_search(
     session: AsyncSession,
     query: str,
@@ -307,6 +347,8 @@ async def literal_search(
 
     不用 `~`/`~*`：中文正则不走 GIN 索引（实测 EXPLAIN 为 Seq Scan）。
     用 `ILIKE '%词%'` 才走 trigram GIN。查询词被拆成词元后逐个匹配，任一命中即算。
+    名次按三元组相似度（:func:`_literal_ranking_sql`），不按主键——按主键会把
+    「top-30」和喂给 RRF 的名次都变成随机 UUID 序。
 
     表名按库别取自 `ITEM_TABLES`（由模型声明派生，不是外部输入），
     因此本函数不再写死资料库表——此前写死的后果是案例检索永远查不到案例，
@@ -340,6 +382,9 @@ async def literal_search(
     filter_clauses, filter_params = _item_filters_sql(scope=scope, authorization=authorization)
     params.update(filter_params)
     extra_conditions = "".join(f"\n          AND {clause}" for clause in filter_clauses)
+    # 相关度排序同样只用绑定参数（词元是模型可控值）；`id` 只作同名次的稳定次序。
+    ranking_sql, ranking_params = _literal_ranking_sql(terms)
+    params.update(ranking_params)
 
     sql = text(
         f"""
@@ -348,7 +393,7 @@ async def literal_search(
         WHERE withdrawn IS FALSE
           AND {status_sql}
           AND ({conditions}){extra_conditions}
-        ORDER BY id
+        ORDER BY {ranking_sql} DESC, id
         LIMIT :limit
         """  # noqa: S608 —— table/status_sql 是模块级常量；conditions 是固定片段，值全部走绑定参数
     )
@@ -995,6 +1040,7 @@ async def search(
 __all__ = [
     "FUSED_TOP_K",
     "LITERAL_TOP_K",
+    "MAX_RANKING_TERMS",
     "MIN_CJK_FOR_TRIGRAM",
     "MIN_CHARS_FOR_TRIGRAM",
     "VECTOR_TOP_K",
