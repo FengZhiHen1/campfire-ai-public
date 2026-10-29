@@ -237,8 +237,8 @@ export function ChatWorkspace({
     if (content === '') return;
     sending.current = true;
     try {
-      send(content);
-      setDraft('');
+      // 没被受理（运行中 / 闸门）时保留草稿：清空等于把使用者刚写的内容丢掉。
+      if (send(content)) setDraft('');
     } finally {
       sending.current = false;
     }
@@ -249,6 +249,8 @@ export function ChatWorkspace({
    * 发送失败与运行失败都走这条路）。
    */
   const retryLastRun = (): void => {
+    // 重试 = 对同一个父消息再起一轮；运行中再点会把正在跑的那一轮中止（库会先 abort 上一条）。
+    if (thread.isRunning) return;
     const lastUser = lastUserIdOf(thread.messages);
     if (lastUser === null) return;
     useRunStore.getState().setFailure(null);

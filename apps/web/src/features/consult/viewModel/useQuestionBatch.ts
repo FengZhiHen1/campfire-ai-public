@@ -94,7 +94,11 @@ export function useQuestionBatch(options: {
   items: readonly QuestionItem[];
   mode: 'live' | 'record';
   answered?: boolean | null;
-  onSubmit?: (displayText: string) => void;
+  /**
+   * 整组提交后追加使用者消息（由工作面注入）。
+   * @returns false = 没有被受理（如另一轮运行还在跑）；卡片须保持可作答并撤回提交件
+   */
+  onSubmit?: (displayText: string) => boolean | void;
 }): QuestionBatchController {
   // 选项名与「当前题的草稿」都叫 answered，这里把服务端判定改名为 serverVerdict，
   // 免去两处同名（同名会让下面的 `const answered = draft.answers[...]` 直接编译失败，
@@ -104,6 +108,7 @@ export function useQuestionBatch(options: {
   const setQuestionDraft = useRunStore((state) => state.setQuestionDraft);
   const setActiveBatch = useRunStore((state) => state.setActiveBatch);
   const setPendingSubmission = useRunStore((state) => state.setPendingSubmission);
+  const clearPendingSubmission = useRunStore((state) => state.clearPendingSubmission);
   const submitting = useRef(false);
 
   /**
@@ -156,9 +161,14 @@ export function useQuestionBatch(options: {
       // 让它不可能与 answers 来自不同的组。
       const submission = toSubmission(draft);
       setPendingSubmission(submission);
+      // 先发后记：没被受理就回滚。先标已提交会把答案留成「已提交 + 从未发出」。
+      const accepted = onSubmit?.(answersDisplayText(draft));
+      if (accepted === false) {
+        clearPendingSubmission();
+        return;
+      }
       write(markSubmitted(draft));
       setActiveBatch(null);
-      onSubmit?.(answersDisplayText(draft));
     } finally {
       submitting.current = false;
     }

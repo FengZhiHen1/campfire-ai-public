@@ -87,9 +87,14 @@ export const RUN_FAILURE_VIEWS: Readonly<Record<RunFailureCode, RunFailureView>>
   },
 };
 
-/** 由 run_failed 事件取呈现文案。 */
+/**
+ * 由 run_failed 事件取呈现文案。
+ *
+ * 表外错误码（服务端新增或改名）一律落到 `internal`，**不得返回 undefined**：
+ * 对话页的错误卡直接读 `failure.title`（undefined 不等于 null），会白屏。
+ */
 export function runFailureView(event: RunFailedEvent): RunFailureView {
-  return RUN_FAILURE_VIEWS[event.code];
+  return RUN_FAILURE_VIEWS[event.code] ?? RUN_FAILURE_VIEWS.internal;
 }
 
 /** 候选预览用的短摘要：一条候选一句话 + 来源。 */

@@ -55,10 +55,21 @@ async function runAdapter(options: {
   attachedRunId?: string | null;
   /** 触发点声明的认领意图（startRun 路径置位）。 */
   attachIntent?: boolean;
+  /**
+   * 收到第一段更新后就把 abortSignal 置为已中止（模拟点「停止」）。
+   *
+   * 为什么要它：取消的判据是「流还在跑的时候中止」，而普通脚本是一次性消费完的——
+   * 在生成器跑完之后再 abort 观察不到任何东西（旧用例因此只能断言 `<= 1`，恒真）。
+   */
+  abortAfterFirstChunk?: boolean;
+  /** 注入已准备好的端口替身（例如要先 `holdStream`）；提供时不再脚本化 `events`。 */
+  port?: ReturnType<typeof createConsultPortStub>;
 }) {
-  const port = createConsultPortStub();
-  if (options.failStream !== undefined) port.failNextStream(options.failStream);
-  else port.script(options.events);
+  const port = options.port ?? createConsultPortStub();
+  if (options.port === undefined) {
+    if (options.failStream !== undefined) port.failNextStream(options.failStream);
+    else port.script(options.events);
+  }
   if (options.sendError !== undefined) {
     (port.sendMessage as unknown as { mockRejectedValue: (error: unknown) => void }).mockRejectedValue(
       options.sendError,
@@ -103,18 +114,24 @@ async function runAdapter(options: {
     newId: () => 'fixed-id',
   });
 
+  const abortController = new AbortController();
   const runOptions = {
     messages: options.messages ?? [userMessage('现场很吵，他捂住了耳朵')],
-    abortSignal: options.abortSignal ?? new AbortController().signal,
+    abortSignal: options.abortSignal ?? abortController.signal,
   } as unknown as ChatModelRunOptions;
 
   const contents: (ChatModelRunResult['content'] | undefined)[] = [];
   const statuses: (ChatModelRunResult['status'] | undefined)[] = [];
   let thrown: unknown = null;
+  let aborted = false;
   try {
     for await (const update of adapter.run(runOptions) as AsyncGenerator<ChatModelRunResult, void>) {
       contents.push(update.content);
       statuses.push(update.status);
+      if (options.abortAfterFirstChunk === true && !aborted) {
+        aborted = true;
+        abortController.abort();
+      }
     }
   } catch (error) {
     thrown = error;
@@ -381,18 +398,22 @@ describe('chatAdapter — 两段式载荷与取消', () => {
     expect(vi.mocked(result.port.sendMessage)).toHaveBeenCalledTimes(1);
   });
 
-  it('取消（abortSignal）触发 POST cancel，不再往下读事件', async () => {
-    const controller = new AbortController();
-    const result = await runAdapter({
-      events: [textDelta('写了一半')],
-      abortSignal: controller.signal,
-    });
-    controller.abort();
+  it('运行中途取消（abortSignal）触发 POST cancel，并停在已收到的 partial 上', async () => {
+    // 这条用例此前是 `cancelCalls.length <= 1`，而它在「一次都没取消」时同样成立——
+    // 一个永远不会失败的检查（2026-10-29 审查）。现在改成在流**还没结束**时中止：
+    // 判据是 cancel 恰好打了一次，且已渲染的正文没有被丢掉。
+    const port = createConsultPortStub();
+    // holdStream：先吐一段正文，随后一直挂着，直到 signal 中止——取消只能发生在这一窗口里。
+    port.holdStream([textDelta('写了一半')]);
 
-    await Promise.resolve();
-    expect(result.port.cancelCalls.length).toBeLessThanOrEqual(1);
-    // 取消发生在运行结束后：不产生第二个 run_id，也不重放运行。
+    const result = await runAdapter({ events: [], abortAfterFirstChunk: true, port });
+
+    expect(result.thrown).toBeNull();
+    expect(result.port.cancelCalls).toEqual(['run-1']);
+    // 只发过一条消息、只订阅过一条运行：取消不会重放运行，也不会再落一条使用者消息。
     expect(result.port.sendCalls).toHaveLength(1);
+    expect(result.port.streamCalls).toHaveLength(1);
+    expect(lastContent(result.contents).some((part) => part.type === 'text')).toBe(true);
   });
 
   it('传输失败回流给状态层并以未完成收尾（不静默吞、也不抛未捕获拒绝）', async () => {
