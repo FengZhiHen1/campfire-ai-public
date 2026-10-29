@@ -13,6 +13,10 @@
 盲化口径：每个案例内的三组顺序由 `review_seed` 与 case_id 派生（可复现），
 评审者只看到 `X1/X2/X3`；映射表 `review/blind-map.json` 明确标注「不得交给评审者」，
 且不写进评审包本身（verify 会核对评审包里没有组别标识）。
+
+空评分表里的 `response_ref` 只指向评审包自身的行（`blind-packet.jsonl#<blind_id>`）：
+轨迹文件名形如 `<case>__<组别>__t<n>__a<n>.json`，把它写进交给评审者的表就等于反盲化。
+轨迹仍原样留在 `traces/` 与 `outputs.jsonl` 里（内部证据不因盲化而减少）。
 """
 
 from __future__ import annotations
@@ -108,7 +112,6 @@ class BlindEntry:
     structured: list[dict[str, Any]]
     completion_status: str
     latency_ms: int
-    trace_file: str
 
     def to_packet(self) -> dict[str, Any]:
         """给评审者看的形状（不含组别）。"""
@@ -205,7 +208,6 @@ def export_packet(store: RunStore, *, log: Any = print) -> dict[str, Any]:
                     structured=last.get("structured_output") or [],
                     completion_status=str(last.get("completion_status") or ""),
                     latency_ms=int(last.get("latency_ms") or 0),
-                    trace_file=str(last.get("trace_file") or ""),
                 )
             )
         mapping[case_id] = per_case
@@ -238,7 +240,12 @@ def export_packet(store: RunStore, *, log: Any = print) -> dict[str, Any]:
         "raters_per_case": raters,
         "review_seed": seed,
         "blind_ids_are_case_scoped": True,
-        "note": "评分表只有客观事实被预填（时延、工程状态、轨迹引用）；分数与硬失败一律留空",
+        "response_ref_format": "blind-packet.jsonl#<blind_id>",
+        "note": (
+            "评分表只有客观事实被预填（时延、工程状态、指向评审包行的 response_ref）；"
+            "分数与硬失败一律留空。response_ref 不写轨迹路径：轨迹文件名含组别字母，"
+            "写进评分表等于反盲化；原始轨迹仍在 run 目录的 traces/ 下"
+        ),
     }
 
     manifest.setdefault("review", {})
@@ -296,7 +303,9 @@ def _write_empty_ratings(
                     "required_checks_passed": "",
                     "completion_status": entry.completion_status,
                     "latency_ms": entry.latency_ms,
-                    "response_ref": entry.trace_file,
+                    # 只引用评审包里的那一行，不写轨迹路径：`traces/<case>__<组别>__t1__a1.json`
+                    # 的文件名带组别字母，写进交给评审者的表就等于反盲化。
+                    "response_ref": f"{PACKET_FILE}#{entry.blind_id}",
                     "comment": "",
                     "adjudication_status": "pending",
                 }
@@ -423,6 +432,8 @@ def import_ratings(
                 "required_checks_passed": passed,
                 "completion_status": status,
                 "latency_ms": _int_field(row, "latency_ms", line_no, allow_empty=True),
+                # 原样带入、不解析路径：它引用的是评审包内的盲 id 行（`blind-packet.jsonl#<blind_id>`），
+                # 不是文件；导入只校验结构与取值，所以换运行目录或删轨迹都不影响导入。
                 "response_ref": row.get("response_ref", "").strip(),
                 "comment": row.get("comment", "").strip(),
                 "adjudication_status": row.get("adjudication_status", "").strip() or "pending",

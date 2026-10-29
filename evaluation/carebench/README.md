@@ -185,8 +185,14 @@ uv run python -m evaluation.carebench review-import --run <run_id> --ratings <�
   且不写进评审包；`verify` 会检查评审包里没有 `system_id` 一类字段。
 - 空评分表：`run_id, case_id, blind_id, rater_id, critical_failure, failure_type, c1…c5,
   required_checks_applicable, required_checks_passed, completion_status, latency_ms,
-  response_ref, comment, adjudication_status`。只有**客观事实**被预填（时延、工程状态、轨迹引用）；
-  分数、硬失败、关键约束计数全部留空。
+  response_ref, comment, adjudication_status`。只有**客观事实**被预填（时延、工程状态、
+  `response_ref`）；分数、硬失败、关键约束计数全部留空。
+- `response_ref` 只写 `blind-packet.jsonl#<blind_id>`——指向评审包里的那一行，
+  **不写轨迹路径**：轨迹文件名形如 `<case>__<组别>__t<n>__a<n>.json`，把它放进交给评审者的
+  评分表等于当场反盲化。原始轨迹照旧留在 run 目录的 `traces/` 里、`outputs.jsonl` 照旧带
+  `trace_file`，内部证据不因盲化而减少；要定位某条盲 id 的真实轨迹，走
+  `blind-map.json`（内部文件）→ `outputs.jsonl`。导入只校验结构与取值、**不解析
+  `response_ref` 指向的路径**，因此「盲包行引用」与「换运行目录」都不影响 `review-import`。
 - 导入校验（整份文件全对才导入，任何一行不合法就整份拒绝）：
   `blind_id` 必须在映射里；`rater_id` 必填；`critical_failure ∈ {yes, no, needs_review}`
   （**空值与 `pending` 拒收**）；五维必须是 0–2 整数；`required_checks_passed ≤ applicable`；
@@ -325,10 +331,16 @@ uv run ruff check evaluation/ && uv run ruff format --check evaluation/
 
 截至 full-04（`dev`，`59aac1f0`），CareBench 全套确定性测试 **183 项通过**；仓库 full 已通过，
 详细读数见[质量审查记录](../../docs/development/checkpoints/2026-10-29-quality-audit.md)。
-真实浏览器验收尚待通过。本节列出测试覆盖范围。
+真实浏览器验收以[最终交付记录](../../docs/development/checkpoints/2026-10-29-final-delivery.md)为准：
+browser-03 四项（见上述质量审查记录）覆盖的**已验收产品基线**，与正式冻结批次
+`20261029-carebench-formal-01` 的源码身份相同——API、Skills、Web 源码与依赖锁文件对象 hash 一致，
+后续补修只落在评测器侧，因此不构成、也不声称另做了一次浏览器验收。正式批次的评分与裁定状态
+以该记录为准，本节不预填任何评分完成结论。以下是测试覆盖范围。
 覆盖：案例结构校验（含坏数据负例）、配置/批次 hash 稳定性、轮换顺序、每 case-group 新会话、
 固定二轮、输入对称、外层重试与首错保留、空回复不重试、超时进分母、续跑不重跑已完成轮次、
-跨批次续跑被拒、非评测库被拒、dry-run 零调用、盲化评审包（无组别字段）、`pending`/空分拒收、
+跨批次续跑被拒、非评测库被拒、dry-run 零调用、盲化评审包（无组别字段）、空评分表只引用盲包行
+（真实三组导出里不含 `__A__`/`__B__`/`__C__`/`traces`，内部轨迹仍在且导入不依赖路径）、
+`pending`/空分拒收、
 关键约束计数校验、重复评分拒收、无评审不出分、有评审的硬失败分列与配对、证据包篡改检测
 （记录内容 hash、输入不对称）、`--require-complete`、冻结幂等与冲突、`preflight --frozen` 的配置 hash 与冻结记录一致、装配变体可见、命令行命令集合。EVAL-01/02/03 及生成前身份守卫的覆盖见 [HANDOFF.md](HANDOFF.md)。
 
