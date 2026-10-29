@@ -47,6 +47,12 @@ def test_datasets_are_separate_and_cross_two_independent_factors() -> None:
         plan = episode_plan(cases, Budget(repetitions=1 if split == "calibration" else 3))
         assert len(plan) == (24 if split == "calibration" else 216)
         assert len({item["episode_id"] for item in plan}) == len(plan)
+        for case in cases:
+            assert 3 <= len(case.facts) <= 8
+            by_id = {fact["id"]: fact for fact in case.facts}
+            assert by_id["subject"]["known"] is True
+            assert by_id["communication"]["known"] is True
+            assert any("年龄" in fact["description"] or "多大" in fact["description"] for fact in case.facts)
 
 
 def test_case_roundtrip_and_hidden_fact_boundary(scenario: Scenario) -> None:
