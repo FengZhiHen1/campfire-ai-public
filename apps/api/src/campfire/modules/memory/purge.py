@@ -19,7 +19,7 @@ from campfire.core.auth.deletion import PurgeOutcome
 from campfire.core.config import Settings
 from campfire.core.db import session_scope
 from campfire.modules.memory.errors import MemoryDataError, MemoryUnavailableError
-from campfire.modules.memory.graph import MemoryGraph, build_memory_graph
+from campfire.modules.memory.graph import MemoryGraph, build_memory_graph, release_shared_account_driver
 from campfire.modules.memory.identity import to_account_id
 from campfire.modules.memory.models import MemoryDeletionLedger
 
@@ -58,7 +58,9 @@ class MemoryAccountPurger:
 
     账号没有图、账本没有行时都正常返回（「无数据可清」），不报错——重试注销是正常
     路径。注意 `GRAPH.DELETE` 对不存在的图**会抛错**（v4.20.7 实测），因此「无图可
-    丢弃」由先查 `GRAPH.LIST` 判定，而不是靠吞掉那次报错。
+    丢弃」只认那一条确证的错误原文（`_MISSING_GRAPH_ERROR_MARKER`），不靠吞掉整类
+    报错。也不先查 `GRAPH.LIST`：那多一次往返，且查完到删之间图仍可能被建出来
+    （两步之间无锁），挡不住它要挡的情形。
 
     `name` 属性（`"memory"`）：注销编排的步骤名从它取（如
     `领域清除（memory）`），与 :class:`PurgeOutcome` 的 `name` 同源——
@@ -102,9 +104,15 @@ class MemoryAccountPurger:
         紧接着删同一张图会让在途 `CREATE INDEX` 失败。图名就是账号标识（通用记忆
         第 1 节），直接用 base 驱动持有的共享客户端删即可。
 
-        边界（跨进程不可协调）：本方法只收口**自己**建的句柄，取消不了另一个进程里
-        共享句柄对该账号的后台任务。Worker 领取后复查墓碑；墓碑前已在途的操作仍有残余
-        竞态，不能据此承诺完全不重建图（见 docs/TODO.md 的注销竞态登记）。
+        删之前先收口**本进程内已存在的共享句柄**为该账号派生的驱动
+        （:func:`campfire.modules.memory.graph.release_shared_account_driver`）：注销走的是
+        本方法自己建的一次性句柄，够不到共享句柄里那些建索引任务，而它们会在
+        `GRAPH.DELETE` 之后继续跑。共享句柄不存在（或连接来源不同源）时不动手、也不新建。
+        **收口失败即中止本次删图**（见 :meth:`_release_shared_drivers` 的 fail-closed 说明）。
+
+        边界（不承诺的部分）：跨进程的共享句柄仍协调不了；已在途的写同样不在收口范围内
+        ——本方法只取消「已登记」的建索引任务。墓碑前已在途的操作仍有残余竞态，不能据此
+        承诺完全不重建图（见 docs/TODO.md 的注销竞态登记）。
 
         Raises:
             AccountIdError: 账号标识不合法。
@@ -119,6 +127,7 @@ class MemoryAccountPurger:
                 operation="purge_memory_graph",
                 detail=f"graph={graph_name!r}",
             )
+        release_detail = await self._release_shared_drivers(graph_name)
         graph: MemoryGraph = build_memory_graph(self._settings)
         try:
             falkor_db = getattr(graph.driver, "client", None)
@@ -134,12 +143,30 @@ class MemoryAccountPurger:
                 # 只把「确证的缺图」当成功；连接、鉴权、语法等一律上抛。
                 if _MISSING_GRAPH_ERROR_MARKER not in str(exc):
                     raise
-                return f"无图可丢弃（{graph_name!r} 不存在）"
-            return f"已丢弃图 {graph_name!r}"
+                graph_detail = f"无图可丢弃（{graph_name!r} 不存在）"
+            else:
+                graph_detail = f"已丢弃图 {graph_name!r}"
         finally:
             # 释放本次为清理新建的驱动与客户端（不使用进程级共享实例：
             # 注销是低频运维操作，不值得为它常驻一个共享图对象）。
             await graph.aclose()
+        return f"{graph_detail}；{release_detail}"
+
+    async def _release_shared_drivers(self, graph_name: str) -> str:
+        """删图之前收口本进程共享句柄为该账号派生的索引任务；失败即中止本次删图。
+
+        fail-closed：索引任务还在跑时删图会与在途 `CREATE INDEX` 竞态（本轮已见
+        signal 11 事故），而注销本身可重试——先报错让人重试，好过虚报「已清理」。
+        异常**原样上抛**（含 `CancelledError`），只补一条不含消息内容的类型名日志。
+        """
+        try:
+            released = await release_shared_account_driver(self._settings, graph_name)
+        except BaseException as exc:  # noqa: BLE001 —— 记录后原样上抛（含取消），不包装
+            logger.warning("记忆清除中止：共享句柄的派生驱动收口失败（异常=%s）", type(exc).__name__)
+            raise
+        if released is None:
+            return "本进程无同源共享句柄（未新建）"
+        return "共享句柄已收口该账号的派生驱动" if released else "共享句柄无该账号的派生驱动"
 
     async def _delete_ledger_rows(self, account_id: str) -> int:
         """删除该账号的删除账本行，返回删除条数。
