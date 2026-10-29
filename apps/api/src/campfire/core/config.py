@@ -12,7 +12,7 @@ from contextlib import contextmanager
 from functools import lru_cache
 from pathlib import Path
 
-from pydantic import Field, SecretStr
+from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # 本文件位于 <仓库根>/apps/api/src/campfire/core/config.py，
@@ -34,6 +34,17 @@ _ENV_FILE = _REPO_ROOT / ".env"
 #: `embedding_model_name` 放在同一处：模型名的唯一配置处，也是维度的唯一常量处。
 EMBEDDING_DIM = 2560
 
+#: 全部「可能含密钥」的字段名。空白归一（见 :meth:`Settings._blank_secret_is_unset`）
+#: 按这份清单统一生效——**新增密钥字段必须登记在这里**，否则空值会重新变成
+#: `SecretStr("")`（构造期看起来「已配置」，实际把空串当凭据发出去）。
+SECRET_FIELD_NAMES: tuple[str, ...] = (
+    "tokenhub_api_key",
+    "embedding_api_key",
+    "memory_llm_api_key",
+    "supertokens_api_key",
+    "falkordb_password",
+)
+
 
 class Settings(BaseSettings):
     """应用配置。字段名对应同名的大写环境变量（大小写不敏感）。
@@ -43,6 +54,8 @@ class Settings(BaseSettings):
     - 其它模块不得各自读取环境变量，避免形成第二真相。
     - 密钥只经环境注入，不入版本库；本文件不得出现任何真实凭据字面量，
       因此可含密钥的字段一律无默认值（未配置即 `None`，由健康检查如实报告）。
+      **空白即未配置**：空串/纯空白一律归一成 `None`（见 :meth:`_blank_secret_is_unset`），
+      否则「`.env` 里写了一行空键」会被下游当成有效凭据。
     - 模型名由 `campfire.agent.model` 从这里取值，业务代码不得硬编码模型名。
     """
 
@@ -51,6 +64,44 @@ class Settings(BaseSettings):
         env_file_encoding="utf-8",
         extra="ignore",
     )
+
+    @field_validator(*SECRET_FIELD_NAMES, mode="before")
+    @classmethod
+    def _blank_secret_is_unset(cls, value: object) -> object:
+        """把**空白**密钥归一为 `None`；显式非空值逐字保留。
+
+        为什么必须有这条（2026-10-29，实测）：
+
+        `.env` 或环境里写 `TOKENHUB_API_KEY=`（空值）时，`pydantic-settings` 给出的是
+        `SecretStr("")`——它**不是** `None`。于是各处 `if key is None` 的分支全部判成
+        「已配置」，空串被当成凭据送进 `AsyncOpenAI(api_key="")`，构造期抛
+        `OpenAIError: Missing credentials`。后果是「未配置」被报成**运行期崩溃**：
+        `/readyz` 本该如实说 not_configured，实际却是应用起不来或请求 500；
+        测试侧同样把这类失败误读成代码缺陷（实测见过 23 条同时红）。
+
+        为什么放在**字段级**而不是各消费点：`resolved_embedding_*` /
+        `resolved_memory_llm_*` 是「显式优先、否则回落」的实现，它们判的正是
+        `is not None`。归一放在读入侧，回落语义就自动正确，无需给每个消费点加一次
+        `.strip()`。这与 `embedding_base_url` 一侧已有的 `.strip() or` 是同一口径：
+        **空白等于没写这一行**。
+
+        为什么不做 `strip()` 后回写：显式给了非空凭据就应当逐字使用（凭据里的空白是
+        配置错误，不是我们要替使用者修的东西）；这里只回答「它是不是空的」。
+
+        Args:
+            value: 原始输入（来自构造参数、环境变量或 `.env`）。
+
+        Returns:
+            `None`（空白或原本就是 `None`），或原样返回非空值。
+        """
+        if value is None:
+            return None
+        if isinstance(value, SecretStr):
+            return None if not value.get_secret_value().strip() else value
+        if isinstance(value, str):
+            return None if not value.strip() else value
+        # 其它类型交给 pydantic 自己报错：这里不做类型收敛，避免把错误形状静默吞掉。
+        return value
 
     # --- 应用 ---
     app_env: str = "development"

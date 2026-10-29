@@ -2108,3 +2108,33 @@ async def test_compaction_facts_reach_the_run_record() -> None:
     assert record.compactions
     assert record.compactions[0].performed is True
     assert record.released_tokens_by_compaction > 0
+
+
+@pytest.mark.asyncio
+async def test_sdk_construction_failure_still_ends_with_a_coded_run_failed(monkeypatch: pytest.MonkeyPatch) -> None:
+    """SDK 在交出数据流之前就抛错时，运行也必须以带码的 `run_failed` 结束。
+
+    这是「消费方只收到 run_started，然后什么都没有」的回归用例（2026-10-29 实测形状）：
+    `Runner.run_streamed(...)` 在**返回之前**就会装配 SDK 侧的一切（含 trace 导出器的
+    `httpx2.Client`）。它原先在 `try` 之外，构造期异常整条冒出去——既没有 `run_failed`，
+    也没有错误码，运维无法区分「运行没开始」与「连接断了」。
+
+    这里把 `run_streamed` 换成「构造即抛」的替身来模拟那一类失败；真实成因
+    （宿主机 `no_proxy` 含 `[::1]` 让导出器构造抛 `InvalidURL`）由
+    `test_agent_tracing_no_proxy.py` 在独立进程里走真实 tracing 路径覆盖。
+    """
+    from campfire.agent.runtime import runner as runner_module
+
+    def _boom(*args: object, **kwargs: object) -> object:
+        raise RuntimeError("SDK 装配失败（本用例模拟构造期崩溃）")
+
+    monkeypatch.setattr(runner_module.Runner, "run_streamed", _boom)
+
+    runner = _runner(binding=_binding(ScriptedChat([text_reply("不会被用到")])), session=FakeSession("s-1"))
+    events = await _collect(runner, _request())
+
+    assert [type(event).__name__ for event in events] == ["RunStartedEvent", "RunFailedEvent"]
+    failed = events[-1]
+    assert isinstance(failed, RunFailedEvent)
+    assert failed.code == "internal", "未归类的构造期失败必须归 internal，而不是裸冒异常"
+    assert "RuntimeError" in failed.detail, "detail 至少要说清异常类型（不带凭据与使用者内容）"
