@@ -126,27 +126,25 @@ uv run python -m evaluation.carebench run --frozen evaluation/carebench/frozen/t
 
 # 5) 冻结正式评分身份后，才开始被测系统的正式生成
 uv run python -m evaluation.carebench ai-prepare --run <run目录>
-uv run python -m evaluation.carebench resume --run <run目录>
+uv run python -m evaluation.carebench resume --run <run目录> \
+  --fixtures evaluation/carebench/fixtures-formal.example.json
 ```
 
 正式生成完成后，先执行 `review-export` 导出盲化评审包，再执行 `ai-score`、`ai-adjudicate`、`summarize` 与
 `verify --require-complete`，并按 [材料与证据口径](../../docs/development/materials.md) 留存原始证据。
-正式顺序为 `identity → freeze（含身份）→ run --dry-run → ai-prepare → resume`。
+正式顺序为 `identity → freeze（含身份）→ run --dry-run → ai-prepare → resume`；`resume` 必须继续传入
+与 dry-run 相同的 `--fixtures evaluation/carebench/fixtures-formal.example.json`。
 
 ## 4. 测试与质量门禁现状
 
-当前集成验收记录：
+full-04 在 `dev`（`59aac1f0`）十步全部通过：JUnit **2267 passed / 3 deselected / 0 failed / 0 errors / 0 skipped**；
+前端 **601 项 / 57 个文件通过**。执行记录与主审质量审查见[质量审查记录](../../docs/development/checkpoints/2026-10-29-quality-audit.md)。
 
-- `dev` 首轮 full：**2 failed / 2260 passed**；第二轮中原来的两个隔离失败已消失。
-- 第二轮剩余两项是旧 AI formal 夹具没有先冻结评分身份，被新守卫正确拒绝；主审已将 formal 夹具改为
-  `run --dry-run → ai-prepare → resume` 顺序。
-- CareBench 全套确定性测试：**183 passed**。正式非 dry-run 的 `run` / `resume` 现在会在 adapter
-  准备及模型调用前拒绝缺少有效 formal AI 身份或 manifest 身份锚的批次。失败用例覆盖缺失、篡改、
-  未锚定身份及缺少第三位独立裁定者；有效 formal 身份的正控覆盖生成成功。
-- 图库健康测试的跨循环遗留资源问题已修，相关 **93 项组合验证通过**。
-- 前端 full **601 项 / 57 个文件通过**，`act` 警告已消失，lint 与 build 通过。
-- 正式测评尚未开始；上述工程测试结果均不是模型效果或专业审核证据。
-- 最后一轮仓库 full 正准备执行，最终读数待验证；由主审追加到质量审查报告。本交接不提前记为 full 通过。
+CareBench 全套确定性测试 **183 passed**。正式非 dry-run 的 `run` / `resume` 会在 adapter 准备及模型调用前拒绝
+缺少有效 formal AI 身份或 manifest 身份锚的批次；失败用例覆盖缺失、篡改、未锚定及缺少第三位独立裁定者，
+有效身份正控覆盖生成成功。图库健康测试跨循环遗留资源问题已修，**93 项组合验证通过**。
 
-上一轮交接曾记录 `65 passed` 的 CareBench 确定性测试；现以之后的 183 项全套结果为准。
-本手册的实现说明不替代主审对最后一轮 full 的质量审查报告。
+full-04 未观察到 `Task exception`、cross-loop 或 traceback；共享图库容器累计 restart **4** 次，隔离图库
+restart **0** 次。前端 `lint` / `build` 通过；此前 ChatPage 与 MemoryPage 的两处 `act` 警告已清理，
+但本轮仍有 **10 条 ProfilePage 路由测试 `act` 警告**，另一 agent 正在窄修 `routes.test.tsx`。
+真实浏览器验收仍待完成。正式测评尚未开始；这些工程检查不构成模型效果或专业审核证据。
