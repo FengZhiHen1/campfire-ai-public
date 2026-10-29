@@ -27,6 +27,7 @@ from evaluation.carebench.ai_review import (
     default_adjudicator,
     default_judges,
     freeze_judges,
+    identity_path,
     load_adjudication_attempts,
     load_adjudications,
     load_attempts,
@@ -81,17 +82,21 @@ async def _exported_run(
         for system_id in ("A", "B", "C")
     }
     store = create_run_dir(tmp_path / "runs", "carebench-ai")
-    await execute(
-        store=store,
-        config=RunConfig(label=label),
-        case_set=case_set,
-        snapshot=make_snapshot(),
-        faults=faults,
-        settings=settings,
-        adapters=adapters,
-        case_ids=case_ids,
-        log=lambda _message: None,
-    )
+    run_args: dict[str, Any] = {
+        "store": store,
+        "config": RunConfig(label=label),
+        "case_set": case_set,
+        "snapshot": make_snapshot(),
+        "faults": faults,
+        "settings": settings,
+        "adapters": adapters,
+        "case_ids": case_ids,
+        "log": lambda _message: None,
+    }
+    await execute(**run_args, dry_run=label == "test")
+    if label == "test":
+        prepare_ai_review(store, model_id="stub-model", stage="formal", log=lambda _message: None)
+        await execute(**run_args, resume=True)
     export_packet(store, log=lambda _message: None)
     return store
 
@@ -987,7 +992,6 @@ async def test_formal_batch_requires_identity_and_packet_anchors(
 
     monkeypatch.setattr(runner, "_require_clean_code_for_formal", lambda **_kwargs: None)
     store = await _exported_run(tmp_path, settings=settings_for_tests, faults=faults_for_tests, label="test")
-    _set_first_output_start(store, "2999-01-01T00:00:00+00:00")
     freeze_judges(
         store,
         judges=default_judges("stub-model"),
@@ -1004,6 +1008,7 @@ async def test_formal_batch_requires_identity_and_packet_anchors(
     assert any("未记录 packet_sha256" in item for item in report.violations), report.violations
 
     blank = await _exported_run(tmp_path / "blank", settings=settings_for_tests, faults=faults_for_tests, label="test")
+    identity_path(blank).unlink()
     assert verify_ai_review(blank)
 
 
