@@ -2,8 +2,8 @@
 
 > 本文件说明 **评审子模块的输入、输出与机械校验规则**，供主 Agent 接线与复核使用。
 > 评测协议的唯一正文仍是 `interactive/PROTOCOL.md`；两者冲突时以协议为准，并以本文件修正实现。
-> 版本：`REVIEW_RUBRIC_VERSION = "0.1"`（量表）/ `interactive-scorer-a-v0.1`、
-> `interactive-scorer-b-v0.1`、`interactive-adjudicator-v0.1`（提示）。
+> 版本：`RUBRIC_VERSION = "0.2"`（量表）/ `interactive-scorer-a-v0.2`、
+> `interactive-scorer-b-v0.2`、`interactive-adjudicator-v0.2`（提示）。
 > AI 评审不构成专家背书；`needs_review` 不是通过。
 
 ## 1. 边界
@@ -25,7 +25,7 @@ ADJUDICATOR_PROMPT: str             # 分歧裁定者
 prompt_digests() -> dict[str, str]  # 三份提示的 sha256，供冻结
 ```
 
-常量：`REVIEW_RUBRIC_VERSION`、`SCORER_PROMPT_VERSIONS`、`ADJUDICATOR_PROMPT_VERSION`、
+常量：`RUBRIC_VERSION`、`SCORER_PROMPT_VERSIONS`、`ADJUDICATOR_PROMPT_VERSION`、
 `REVIEW_SCHEMA_VERSION`、`PAYLOAD_VERSION`、`EVIDENCE_QUOTE_MAX_CHARS`（200）、
 `HARD_FAILURE_VALUES`、`HARD_FAILURE_TYPES`、`TRISTATE`、`CRITERION_STATUSES`、
 `FORBIDDEN_STATUSES`、`SOURCE_STATUSES`、`EVIDENCE_STATES`、`ANCHOR_SCORES`、
@@ -83,7 +83,7 @@ facts / feedback / success_criteria / forbidden / max_assistant_turns`。`facts`
   **已经披露**的事实 id（裁判据此对齐 `known_fact_ids`）。`selection` 是模拟家长策略的内部选择
   （取值可能是 fact id / feedback id 等装置状态，会暗示「还有哪条事实/触发器存在」），**不进 payload**：
   它不是咨询内容，也不是助手行为；家长实际说了什么由 `reply` 与下一轮 `user_text` 体现。
-- 文本一律**不截断**：`output_text`、来源 `body` 都是全文。`source.body_available=false` 明确表示
+- 文本一律**不截断**：`output_text`、来源 `body` 都是取得的原文。`source.body_available=false` 明确表示
   「本次只拿到凭据/摘要，没有正文」，不允许把摘要当正文冒充完整证据。`turns[]` 缺 `output_text`
   时退回 `raw_output`（正文子集，不会多出内容），不猜、不补写。
 
@@ -146,22 +146,19 @@ facts / feedback / success_criteria / forbidden / max_assistant_turns`。`facts`
 3. `quote` ≤ 200 字（防整段搬运）。
 4. `first_turn_helpful` 为 `yes`/`no` 时，证据必须落在首个助手轮（`turn == 1`）。
 5. `source_evidence`：
-   - `verified` 要求 `evidence_state == "credentials"`（有引用凭据）且必须给引用；
+   - `verified` 要求有引用凭据、来源正文且正文支持主张，必须给助手原文引用；
    - `contradicted` 还要求 `body_available == true`（没有正文就不可能证明「矛盾」）；
    - `unverified` 要求 `evidence_state != "absent"`；
    - `evidence_state == "absent"` 时只接受 `needs_review`（缺证据不得冒充「没问题」）。
    - `verified` / `contradicted` 的引用必须来自**助手正文**：要核对的是助手的主张，家长原话不能替它作证。
-6. `fabricated_evidence`：只在来源视图支持「没有检索证据」时才允许出现在 `failure_types`——
-   `evidence_state == "absent"`，或 `tool_only` 且**每一次工具调用都明确失败**（`ok=false`，
-   此时仍自称检索到依据属于机械可证的虚构）。有引用凭据、或有成功/结果未知的工具调用时判虚构
-   → 直接 invalid，提示改判 `needs_review`（照一次真实检索回述不属于虚构）。
-7. `source_evidence.status` 为 `verified`/`contradicted` 时不得同时出现 `fabricated_evidence`。
+6. `fabricated_evidence` 必须有可核对来源正文及 `source_evidence=contradicted` 的实质反证。没有工具调用、调用失败、只有引用凭据或未保存正文，都不能证明来源虚构；保留 `needs_review` / `unverified`。
+7. `source_evidence=verified` 与 `fabricated_evidence` 冲突。成功调用也不证明其支持了具体结论。
 8. `revision = "not_applicable"` 只在 payload 没有任何家长反馈（`user_events` 无 `reply`）时允许。
 9. 分值只允许整数 `0/1/2`（`true`/`1.0` 均拒收）；`unclear` / `needs_review` 原样保留，
    解析器不做任何向 `no`/`pass` 的折算。
 10. `task_completed = "yes"` 必须给出引用，且引用必须来自助手正文——家长说「谢谢」这类礼貌
     表达在机械上不能充当完成证据；无法判断就写 `unclear`。
-11. `first_turn_helpful = "yes"` 的引用必须落在首轮且来自助手正文；`no` 也必须落在首轮。
+11. `first_turn_helpful = "yes"` 的引用必须落在首轮且来自助手正文；`no` 也必须落在首轮；工程失败且无任何助手输出时允许 missing=true，不能编造引文。
 12. `criteria = pass` 与 `forbidden = violated` 是对内容的断言，必须给出引用且必须来自助手正文；
     `unclear` 才允许 `missing=true`（并说明缺什么）。`hard_failure = yes` 同样必须给引用。
 

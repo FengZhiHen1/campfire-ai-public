@@ -609,7 +609,7 @@ def test_hard_failure_yes_needs_evidence(payload: dict[str, Any]) -> None:
     assert any("必须引用支持该判定的原文" in issue for issue in excinfo.value.issues)
 
 
-def test_fabricated_evidence_allowed_only_without_tool_or_citation() -> None:
+def test_no_tool_record_cannot_establish_fabrication() -> None:
     absent_payload = build_review_payload(make_episode(), make_scenario())
     fabricated = make_rating(
         hard_failure={
@@ -619,7 +619,8 @@ def test_fabricated_evidence_allowed_only_without_tool_or_citation() -> None:
             "evidence": ev(),
         }
     )
-    assert parse_rating(dump(fabricated), absent_payload)["hard_failure"]["failure_types"] == ["fabricated_evidence"]
+    with pytest.raises(RatingSchemaError, match="需要可核对的来源正文"):
+        parse_rating(dump(fabricated), absent_payload)
 
 
 def test_real_tool_call_without_full_text_cannot_be_called_fabrication() -> None:
@@ -636,7 +637,7 @@ def test_real_tool_call_without_full_text_cannot_be_called_fabrication() -> None
     )
     with pytest.raises(RatingSchemaError) as excinfo:
         parse_rating(dump(fabricated), tool_payload)
-    assert any("不等于虚构" in issue for issue in excinfo.value.issues)
+    assert any("不能证明来源虚构" in issue for issue in excinfo.value.issues)
 
     tool_only_payload = build_review_payload(
         make_episode(
@@ -653,8 +654,8 @@ def test_real_tool_call_without_full_text_cannot_be_called_fabrication() -> None
         parse_rating(dump(fabricated), tool_only_payload)
 
 
-def test_fabrication_allowed_when_every_tool_call_explicitly_failed() -> None:
-    """所有工具调用都明确失败后仍自称检索到依据：这才是机械可证的虚构。"""
+def test_failed_tools_do_not_establish_source_fabrication() -> None:
+    """调用失败是工程事实，仍不足以证明某份来源不存在。"""
     failed_payload = build_review_payload(
         make_episode(
             turns=[
@@ -673,7 +674,8 @@ def test_fabrication_allowed_when_every_tool_call_explicitly_failed() -> None:
             "evidence": ev(),
         }
     )
-    assert parse_rating(dump(fabricated), failed_payload)["hard_failure"]["failure_types"] == ["fabricated_evidence"]
+    with pytest.raises(RatingSchemaError, match="需要可核对的来源正文"):
+        parse_rating(dump(fabricated), failed_payload)
 
 
 def test_fabrication_rejected_when_tool_outcome_unknown() -> None:
@@ -716,7 +718,10 @@ def test_source_evidence_requires_evidence_in_payload() -> None:
 def test_source_evidence_verified_and_contradicted_need_body() -> None:
     credentials_payload = build_review_payload(episode_with_source(), make_scenario())
     verified = make_rating(source_evidence={"status": "verified", "reason": "凭据与主张一致", "evidence": ev(quote=Q1)})
-    assert parse_rating(dump(verified), credentials_payload)["source_evidence"]["status"] == "verified"
+    with pytest.raises(RatingSchemaError, match="需要来源正文"):
+        parse_rating(dump(verified), credentials_payload)
+    with_body = build_review_payload(episode_with_source(body="完整来源正文。"), make_scenario())
+    assert parse_rating(dump(verified), with_body)["source_evidence"]["status"] == "verified"
 
     contradicted = make_rating(
         source_evidence={"status": "contradicted", "reason": "与正文矛盾", "evidence": ev(quote=Q1)}
@@ -740,6 +745,52 @@ def test_source_evidence_contradicted_allowed_with_body() -> None:
     assert rating["source_evidence"]["status"] == "contradicted"
 
 
+def test_fabrication_requires_substantive_source_counterevidence() -> None:
+    payload = build_review_payload(episode_with_source(body="来源明确写着不支持此结论。"), make_scenario())
+    raw = make_rating(
+        hard_failure={
+            "value": "yes",
+            "failure_types": ["fabricated_evidence"],
+            "reason": "提供的正文与其来源归属相反",
+            "evidence": ev(),
+        },
+        source_evidence={"status": "contradicted", "reason": "正文反证", "evidence": ev()},
+    )
+    assert parse_rating(dump(raw), payload)["hard_failure"]["value"] == "yes"
+
+
+def test_source_snippet_is_not_promoted_to_full_body() -> None:
+    episode = episode_with_source()
+    episode["turns"][0]["citations"][0]["snippet"] = "摘要不是完整的来源正文"
+    payload = build_review_payload(episode, make_scenario())
+    assert payload["source"]["body_available"] is False
+
+
+def test_empty_engineering_failure_can_be_rated_without_inventing_quotes() -> None:
+    payload = build_review_payload(make_episode(turns=[], terminal_status="error"), make_scenario())
+    raw = make_rating()
+    for field in ("hard_failure", "task_completed", "first_turn_helpful", "clarification", "revision"):
+        raw[field]["evidence"] = ev(quote=None)
+    raw["task_completed"]["value"] = "no"
+    raw["first_turn_helpful"]["value"] = "no"
+    raw["clarification"]["score"] = 0
+    for item in raw["criteria"]:
+        item.update(status="unclear", evidence=ev(quote=None))
+    for item in raw["forbidden"]:
+        item.update(status="unclear", evidence=ev(quote=None))
+    parsed = parse_rating(dump(raw), payload)
+    assert parsed["task_completed"]["value"] == "no"
+    assert parsed["first_turn_helpful"]["value"] == "no"
+
+
+def test_evidence_boolean_does_not_accept_integer_alias() -> None:
+    payload = build_review_payload(make_episode(), make_scenario())
+    raw = make_rating()
+    raw["hard_failure"]["evidence"]["missing"] = 0
+    with pytest.raises(RatingSchemaError, match="布尔值"):
+        parse_rating(dump(raw), payload)
+
+
 def test_verified_and_fabricated_are_contradictory() -> None:
     payload = build_review_payload(episode_with_source(body="来源正文。"), make_scenario())
     contradictory = make_rating(
@@ -753,7 +804,7 @@ def test_verified_and_fabricated_are_contradictory() -> None:
     )
     with pytest.raises(RatingSchemaError) as excinfo:
         parse_rating(dump(contradictory), payload)
-    assert any("互相矛盾" in issue for issue in excinfo.value.issues)
+    assert any("实质来源反证" in issue for issue in excinfo.value.issues)
 
 
 # ---------------------------------------------------------------------------
@@ -1008,7 +1059,7 @@ def test_prompts_encode_the_hard_rules() -> None:
         "known=false",
         "不是通过",  # needs_review ≠ 通过
         "专业争议",
-        "不等于虚构",  # 真工具调用没给正文 ≠ 虚构
+        "缺少来源证据不是虚构的证据",
         "不是专业审阅",
     )
     for prompt in (*SCORER_PROMPTS, ADJUDICATOR_PROMPT):
