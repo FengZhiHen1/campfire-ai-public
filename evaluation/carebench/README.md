@@ -120,7 +120,8 @@ uv run python -m evaluation.carebench identity \
 写出 `cases.frozen.jsonl`（与源文件**逐字节**相同）与 `freeze.json`：`dataset_sha256`、
 `per_case_sha256`、`config_sha256`、`code`、`protocol_snapshot_sha256`、`turns_histogram`、
 `review_status_counts`、`formal_ready`、`case_fixtures`、`operator`。
-同一目录若已冻结**不同内容**会拒绝（`FreezeError`）；内容相同则只刷新元数据。
+同一目录若已有冻结记录，案例字节或实验身份字段不同都会拒绝（`FreezeError`）；完全相同时只更新
+`refrozen_at` 时间戳，不改写已冻结的身份字段。
 正式 `label=test` 必须带 `--identity`，把 `identity` 命令生成的运行身份一并锁进冻结记录。
 
 ### 3.3 `run` / `resume`
@@ -322,8 +323,9 @@ uv run pytest evaluation/carebench/tests -q
 uv run ruff check evaluation/ && uv run ruff format --check evaluation/
 ```
 
-截至当前集成，CareBench 全套确定性测试 **183 项通过**；最终仓库 full 仍待验证，主审会把最终读数
-追加到质量审查报告。本节列出测试覆盖范围。
+截至 full-04（`dev`，`59aac1f0`），CareBench 全套确定性测试 **183 项通过**；仓库 full 已通过，
+详细读数见[质量审查记录](../../docs/development/checkpoints/2026-10-29-quality-audit.md)。
+真实浏览器验收仍待执行。本节列出测试覆盖范围。
 覆盖：案例结构校验（含坏数据负例）、配置/批次 hash 稳定性、轮换顺序、每 case-group 新会话、
 固定二轮、输入对称、外层重试与首错保留、空回复不重试、超时进分母、续跑不重跑已完成轮次、
 跨批次续跑被拒、非评测库被拒、dry-run 零调用、盲化评审包（无组别字段）、`pending`/空分拒收、
