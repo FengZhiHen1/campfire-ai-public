@@ -25,6 +25,7 @@ from pathlib import Path
 from typing import Any
 
 from . import prompts
+from .ai_review import ai_review_present, verify_ai_review_report
 from .cases import Case, CaseSet, parse_cases
 from .config import FORMAL_LABEL, RunConfig
 from .hashing import batch_fingerprint, sha256_file, sha256_text, sha256_value
@@ -111,6 +112,13 @@ def verify_run(store: RunStore, *, require_complete: bool = False) -> VerifyRepo
     )
     _check_review(store, manifest, case_set, records, config, report)
     _check_summary(store, manifest, records, config, report)
+    if ai_review_present(store):
+        ai = verify_ai_review_report(store, require_complete=require_complete)
+        report.violations.extend(f"AI 评审：{item}" for item in ai.violations)
+        report.warnings.extend(f"AI 评审：{item}" for item in ai.warnings)
+        report.facts["ai_review"] = ai.facts
+    elif require_complete and manifest.get("label") == FORMAL_LABEL:
+        report.violations.append("正式批次缺独立 AI 评审：运行完成不能替代评分完成")
     return report
 
 
