@@ -1,7 +1,8 @@
 """缓存与限流（Redis 7）：本包承载 Redis 的最小装配。
 
 职责：连接池装配与面层需要的那几个键值原语的封装（取值、置值、占用、列表尾追加、
-列表区间读、续期、删除）。不做业务语义判断，不认知任何 key 的命名含义。
+列表区间读、续期、删除、比对后删除与比对后换值）。不做业务语义判断，不认知任何
+key 的命名含义。
 边界：只有这几个原语——限流、缓存装饰器、序列化协议都不在此处；
 Redis 不承载长期业务状态，丢失不恢复已撤销状态（技术栈设计第 2、4 节）。
 参考：`docs/技术栈设计.md` 第 2、4、6 节；队列装配见 `core/jobs`。
@@ -42,9 +43,32 @@ __all__ = [
     "set_cache",
 ]
 
+#: 「值仍是 `expected` 时才删」的 Lua 脚本：返回 1 表示删掉了，0 表示值已不是 `expected`。
+#:
+#: 为什么要脚本体而不是 `GET` + `DEL` 两条命令：比较与删除之间隔着一次网络往返，
+#: 那段时间里键可能因 TTL 到期消失并被另一个持有者占走，随后的 `DEL` 删除的就是
+#: 别人的键。Lua 脚本在 Redis 内单线程执行，比较与删除之间不存在任何可插入的窗口。
+_COMPARE_AND_DELETE_LUA = """
+if redis.call('get', KEYS[1]) == ARGV[1] then
+  return redis.call('del', KEYS[1])
+end
+return 0
+"""
+
+#: 「值仍是 `expected` 时才置新值并续期」的 Lua 脚本：返回 1 表示换手成功，0 表示值已不是 `expected`。
+#:
+#: 与上面的删除同理：`GET` 比对通过后再 `SET` 会覆盖别人的键，丢的是对方的互斥。
+_COMPARE_AND_SET_LUA = """
+if redis.call('get', KEYS[1]) == ARGV[1] then
+  redis.call('set', KEYS[1], ARGV[2], 'EX', ARGV[3])
+  return 1
+end
+return 0
+"""
+
 
 class RedisCache:
-    """一个 Redis 连接池与六个键值原语。
+    """一个 Redis 连接池与一组键值原语。
 
     连接池在构造时建立（`ConnectionPool.from_url` 本身不发起连接，第一条命令才连），
     因此构造不会因为 Redis 不可用而失败——这与「启动不连数据库」同一种取向
@@ -101,6 +125,29 @@ class RedisCache:
         """
         client = aioredis.Redis(connection_pool=self._pool)
         return bool(await client.set(key, value, nx=True, ex=ttl_seconds))
+
+    async def compare_and_delete(self, key: str, expected: str) -> bool:
+        """值仍是 `expected` 时删除该键；返回「本次是否真的删掉了」。
+
+        这是**一条命令**（Lua 脚本，见 :data:`_COMPARE_AND_DELETE_LUA`），不是
+        「`GET` 比对 + `DEL`」两条：两条之间隔着一次往返，键可能因 TTL 到期消失并被
+        另一个持有者用 `setnx` 占走，随后的 `DEL` 删掉的就是别人的位子。互斥的释放
+        必须用这个原语——无条件的 `delete` 与「先取再删」都在那个窗口里破坏别人的互斥。
+
+        删除返回 1、值已不是 `expected` 返回 0，两者对调用方都是「这个位子已经不在我手上」。
+        """
+        client = aioredis.Redis(connection_pool=self._pool)
+        return bool(await client.eval(_COMPARE_AND_DELETE_LUA, 1, key, expected))
+
+    async def compare_and_set(self, key: str, expected: str, value: str, *, ttl_seconds: int) -> bool:
+        """值仍是 `expected` 时换成 `value` 并按 `ttl_seconds` 续期；返回「本次是否换手成功」。
+
+        与 :meth:`compare_and_delete` 同一条理由：比对与写入必须在一次命令里完成，
+        否则「比对通过」与「写入」之间的过期-易手会让本方法覆盖掉新持有者的键。
+        `ttl_seconds` 必填的原因与 :meth:`set` 相同（这里没有「只改值不续期」的用法）。
+        """
+        client = aioredis.Redis(connection_pool=self._pool)
+        return bool(await client.eval(_COMPARE_AND_SET_LUA, 1, key, expected, value, ttl_seconds))
 
     async def rpush(self, key: str, *values: str, ttl_seconds: int) -> None:
         """把值依次追加到列表尾部，并刷新该键的过期时间。
