@@ -141,6 +141,10 @@ async def execute(
     )
 
     _require_clean_code_for_formal(config=config, repo_root=REPO_ROOT)
+    if config.label == FORMAL_LABEL and not dry_run:
+        from .ai_review import require_formal_review_identity
+
+        require_formal_review_identity(store)
 
     identity = runtime_identity(settings, snapshot, config)
     identity_sha = identity_fingerprint(identity)
