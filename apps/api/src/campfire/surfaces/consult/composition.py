@@ -145,12 +145,25 @@ def gateway_is_wired() -> bool:
 async def aclose() -> None:
     """释放模型网关的 HTTP 连接池（进程收尾时调用）。
 
-    幂等：未装配时是空操作，重复调用不会二次关闭（`aclose` 后置 `None`）。
+    先撤注入、再关连接池，且 `_gateway` 在 `await` 之前置空：工厂还在而网关已关的窗口里，
+    `/readyz` 会把每一次发消息打到一个已关闭的客户端上；关闭失败也不留半关的网关供复用。
+
+    幂等：未装配或已关过时是空操作。
+
+    关闭失败只记脱敏日志后原样抛出：调用方（`lifespan` 的 `AsyncExitStack`）已保证后续释放
+    照常执行，而「关不掉」这个信号必须留给入口，不能在这里被吞成一次干净退出。
+    异常只报类型名——底层驱动异常可能含代理 URL。
     """
     global _gateway
-    if _gateway is not None:
-        await _gateway.aclose()
-        _gateway = None
+    set_runner_factory(None)
+    gateway, _gateway = _gateway, None
+    if gateway is None:
+        return
+    try:
+        await gateway.aclose()
+    except Exception as exc:
+        logger.warning("模型网关收尾失败：异常=%s", type(exc).__name__)
+        raise
 
 
 def reset() -> None:
