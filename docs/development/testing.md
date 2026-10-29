@@ -26,23 +26,32 @@
 | 层级 | 何时跑 | 跑什么 | 谁跑 |
 |---|---|---|---|
 | **quick** | 任务内每次提交前 | 与改动面相称的确定性检查（见 §3） | 子任务执行者自己 |
-| **full** | 合成到 `dev` 之前、CI、以及改动公共契约/跨模块时 | 全套确定性检查（见 §4） | 集成者（主 agent）与 CI |
-| **material** | 只在明确需要材料时（演示、交付、评测运行） | 真模型 + 真栈 + 真库的运行与取证 | 材料/评测任务，**不是门禁** |
+| **full** | **集成完成后**（`dev` 上的合并结果）、CI、以及改动公共契约/跨模块时 | 全套确定性检查（见 §4） | 集成者（主 agent）与 CI |
+| **material** | 只在明确需要材料时（演示、交付、评测运行） | 真模型 + 真栈 + 真库的**对外取证**（`demo`、评测批次） | 材料/评测任务，**不是门禁** |
 
 三层的关系：**quick 绿不等于可以合入**，full 才是合入判据；**material 红不阻塞合入**，
 它回答的是「对外材料是否真实」，由 [materials.md](materials.md) 管。任何一层都不能替代另一层。
 
+**`e2e-real` 这类真实依赖探针不属 material 层**：它验的是「代码在真实依赖上能不能跑通」，
+是**工程验收**，按影响面触发（§3 最后一行）。把它和 demo/评测归成一类，会让「产品没跑通」
+和「材料没生成」混在同一条红线上，也让改动认证或 SSE 的人以为那是材料任务的事。
+
 ## 3. quick：按改动面定向
 
-接口契约（`scripts/checks.py` 由工具任务实现；本文规定语义）：
+接口契约（`scripts/checks.py` 由工具任务实现；本文规定语义与这些开关）：
 
 ```bash
-uv run python scripts/checks.py quick --base dev      # 相对 dev 的改动面
-uv run python scripts/checks.py quick --base dev --dry-run   # 只打印将执行的命令，不执行
+uv run python scripts/checks.py quick --base dev                       # 相对 dev 的改动面
+uv run python scripts/checks.py quick --base dev --dry-run             # 只打印将执行的命令
+uv run python scripts/checks.py quick --base dev --pytest <TARGET>     # 收窄 pytest 收集目标
 ```
 
-`--dry-run` 是给集成者复核用的：**先看它打算跑什么，再决定跑不跑**，避免用一条黑箱命令
-冒充验证。`--base <ref>` 缺省为 `dev`；工作区已提交与未提交的改动都计入改动面。
+- `--base <ref>` 缺省为 `dev`；已提交与未提交的改动都计入改动面。
+- `--dry-run` 对 `quick` 与 `full` 都有效，且**只打印不执行**。
+- `--pytest <TARGET>` 指定 pytest 收集目标（文件/目录/`node id`，实现按工具任务），用于把
+  定向用例写进报告：**报告里的「跑了什么」要能落到具体目标**，不能只写「跑了快速检查」。
+- `--dry-run` 是给集成者复核用的：**先看它打算跑什么，再决定跑不跑**，避免用一条黑箱命令
+  冒充验证。
 
 | 改动面 | quick 必跑 |
 |---|---|
@@ -51,6 +60,7 @@ uv run python scripts/checks.py quick --base dev --dry-run   # 只打印将执�
 | 文档（`docs/`、`*.md`、`materials/`） | `uv run --no-project python scripts/check_design_docs.py`（相对链接、需求与验收对应） |
 | 忽略/容器清单（`.gitignore`、`.dockerignore`） | `git check-ignore -v -- <新增的落点示例路径>`；`.dockerignore` 的新增项逐个核对锚定范围 |
 | 路由或页面新增（`apps/web` 路由表） | 额外跑 `apps/web/tests/routes-coverage.test.ts`，**新路由必须同步加截图配置**，否则永远没有 PNG 而 manifest 仍宣布齐了 |
+| **真实依赖探针**（`e2e-real` 等，需全真栈） | **按影响面触发**：改认证/会话、SSE 与事件流、静态资源与协议、部署形态、httpOnly cookie 相关面时必须跑，并把目标写进报告；纯文档、纯内部重构不必跑。它属工程验收，不属 material 层（§2） |
 
 - **定向 pytest** 指按路径或 `-k` 收窄到受影响面，不是全量；不确定影响面时**升级为 full**，
   不要用「看着不像相关」当理由跳过。
@@ -60,14 +70,15 @@ uv run python scripts/checks.py quick --base dev --dry-run   # 只打印将执�
 ## 4. full：全套确定性检查
 
 ```bash
-uv run python scripts/checks.py full          # 等价于下表全部命令
+uv run python scripts/checks.py full                  # 等价于下表全部命令
+uv run python scripts/checks.py full --dry-run        # 只打印，供集成前复核
 ```
 
 ```bash
 uv run ruff check . && uv run ruff format --check .
 uv run mypy apps/api/src/campfire apps/api/tests
 uv run alembic upgrade head && uv run alembic check   # 迁移门禁：模型与迁移不一致即失败
-uv run pytest                                  # 需要 docker compose up -d 的数据服务在跑
+uv run pytest                                  # 需要 docker compose up -d 的数据服务在跑；收集 testpaths 两处（§5.2.1）
 uv run --no-project python scripts/check_design_docs.py
 pnpm --filter @campfire/web lint
 pnpm --filter @campfire/web test
@@ -80,8 +91,8 @@ pnpm --filter @campfire/web build              # 已内含 tsc --noEmit 与契�
 - 迁移门禁（`alembic upgrade head` + `alembic check`）需要数据服务在跑，因此不进 quick。
 - `full` 与 CI 的 job 划分一致（设计文档一致性 / 后端 / 前端），差别只在 CI 自带三个数据
   service、并在其内部 `uv sync --frozen`——**命令语义必须同源，改一处要检查另一处**。
-- `full` 不跑 `shots`、`e2e`、`demo`、`e2e-real`、真实模型调用，也不跑评测运行：
-  它们是 material 层，见 §6。
+- `full` 不跑 `shots`、`e2e`、`demo`、评测运行（material 层，见 §6），也不跑需要全真栈的
+  `e2e-real` 探针（工程验收，按影响面触发，见 §3）。
 
 ### 4.1 CI 策略
 
@@ -102,11 +113,21 @@ uv run mypy apps/api/src/campfire apps/api/tests
 
 ### 5.2 计数取机器读数，不数控制台
 
-`pyproject.toml` 已设 `addopts = "-q --import-mode=importlib"` 与 `testpaths = ["apps/api/tests"]`，
-控制台行数会随警告与摘要漂移。要计数就加 `--junitxml=<path>` 并从 XML 读
-`tests/failures/errors/skipped`；**跑完还要确认这份 XML 真的收集到了用例**（按名字检索一条
-本轮新增的用例为阳性对照，再用编造的名字确认检索为 0）。只有「命中真名 + 不命中假名」
-同时成立，这次计数才算数。
+`pyproject.toml` 已设 `addopts = "-q --import-mode=importlib"`，控制台行数会随警告与摘要漂移。
+要计数就加 `--junitxml=<path>` 并从 XML 读 `tests/failures/errors/skipped`；**跑完还要确认这份
+XML 真的收集到了用例**（按名字检索一条本轮新增的用例为阳性对照，再用编造的名字确认检索为 0）。
+只有「命中真名 + 不命中假名」同时成立，这次计数才算数。
+
+### 5.2.1 收集范围由 `testpaths` 决定
+
+`testpaths` 决定 pytest 收集哪些目录，**没登记的测试等于不存在**（它会安静地不跑，而报告仍
+显示「全部通过」）。当前应覆盖两处：
+
+- `apps/api/tests` —— 应用测试；
+- `scripts/tests` —— 仓库级脚本（`checks.py`、`worktree.py` 等工具）自己的测试。
+
+**新增测试目录必须同步登记进 `testpaths`**，否则「工具没有测试」和「测试没登记」在结果上
+长得一模一样。若 `testpaths` 里缺 `scripts/tests`，按缺陷处理，不得按「0 条用例通过」计数。
 
 ### 5.3 失败判读
 
@@ -120,7 +141,7 @@ uv run mypy apps/api/src/campfire apps/api/tests
 
 **如实报告**：跑了哪些、结果如何、哪些没跑。**未跑 ≠ 通过**；不得把未验证写成已验证。
 
-## 6. material 层：真模型、真栈与材料
+## 6. material 层：对外材料的取证
 
 按需运行，**不进 quick/full、不进 CI、不是门禁**：
 
@@ -128,8 +149,11 @@ uv run mypy apps/api/src/campfire apps/api/tests
 |---|---|---|---|
 | `pnpm --filter @campfire/web shots` + `e2e` | 页面截图与内容断言（内容断言才证明「图里有料」） | 全新环境先 `playwright install` | 本文（属前端改动检查） |
 | `DEMO_INVITE_CODES=... pnpm --filter @campfire/web demo` | 对外展示材料，逐屏截图 | 全真栈稳定、`/readyz` 全 ok | [演示材料生成.md](../运维/演示材料生成.md) |
-| 真实模型/真实栈探针（`e2e-real` 等） | 证明关键路径在真实依赖上能跑通 | 同上 | 本文 §6.1 |
-| 评测运行（A/B/C 对照） | 效果证据 | 冻结案例集 + 人工评分 | [materials.md](materials.md) |
+| 评测运行（A/B/C 对照 + 两套独立 agent 盲评） | 效果证据 | 冻结案例集 + 评分记录 | [materials.md](materials.md) |
+
+**不在这张表里的两类**：
+- **`e2e-real` 等真实依赖探针**：属**工程验收**、按影响面触发（§3 最后一行），不是材料。
+- **单轮的「真模型手试」**：既不是 checks，也不是材料；做了就如实记，别写成门禁或证据。
 
 ### 6.1 「改完就跑一遍」被明确禁止
 
@@ -149,7 +173,9 @@ uv run mypy apps/api/src/campfire apps/api/tests
 - 改动跨模块：`agent/`、`core/`、`surfaces/`、多个 `modules/`。
 - 改动构建链或依赖：`pyproject.toml`、`uv.lock`、`package.json`、`pnpm-lock.yaml`、CI workflow。
 - 改动测试基础设施：`conftest.py`、marker、`addopts`。
-- **合成到 `dev` 之前**：不论谁、不论改了什么，一次 full；这是合入判据而非形式。
+- **每组集成完成后一次**：不论谁、不论改了什么，`dev` 上合并后的结果跑一次 full；这是合入
+  判据而非形式。**不是「合并前后各跑一次」**——合并前的分支状态不是发布事实，跑两遍只是把同一
+  风险付两次代价（2026-10-29 用户统一口径）。
 
 ## 8. 工具落地状态
 
