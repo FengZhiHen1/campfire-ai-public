@@ -8,7 +8,7 @@
 import asyncio
 import logging
 from collections.abc import AsyncIterator, Awaitable, Callable
-from contextlib import asynccontextmanager, suppress
+from contextlib import AsyncExitStack, asynccontextmanager, suppress
 
 from campfire.core.config import Settings, apply_no_proxy_normalization, get_settings
 
@@ -59,14 +59,14 @@ from campfire.core.jobs import check_queue, set_dispatch_hook
 from campfire.modules.accounts.registration import api_overrides, sign_up_form_fields
 from campfire.modules.library.routes import router as library_router
 from campfire.modules.memory.errors import MemoryConfigurationError
-from campfire.modules.memory.graph import build_memory_embedder
+from campfire.modules.memory.graph import aclose_shared_memory_graph, build_memory_embedder
 from campfire.modules.memory.routes import router as memory_router
 from campfire.modules.profile.authz import OwnerAuthorizer
 from campfire.modules.profile.routes import router as profile_router
 from campfire.surfaces.consult import composition as consult_composition
 from campfire.surfaces.consult import router as consult_router
 from campfire.surfaces.consult.assembly import ConsultAssemblyError, get_skill_registry, runner_is_wired
-from campfire.surfaces.consult.runbus import cancel_pumps
+from campfire.surfaces.consult.runbus import cancel_pumps, drain_pumps
 
 # 投递钩子的实现属于 Worker 入口（任务对象 `consume_memory_episode_task` 定义在那里），
 # 而投递的发生点在请求路径上（写入路径第 4 节第 1 条：请求事务提交后再投递）。
@@ -137,16 +137,16 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
             type(exc).__name__,
         )
     logger.info("campfire api 启动：环境=%s", settings.app_env)
-    yield
-    # 收尾顺序（有依赖方向，不可随意交换）：
-    # 1. 先停后台推进任务——它们会继续写 Redis，且在途的运行还要用模型网关；
-    # 2. 再关模型网关的 HTTP 连接池（此时已无运行在用）;
-    # 3. 再关 Redis 连接池；
-    # 4. 最后释放数据库引擎（会话工厂由它派生，先放它会留下悬空引擎引用）。
-    cancel_pumps()
-    await consult_composition.aclose()
-    await close_cache()
-    await dispose_engine()
+    async with AsyncExitStack() as cleanup:
+        # 回调逆序执行；取消请求之后必须等待推进任务退出，才可关闭它们依赖的连接。
+        # 某项关闭失败时仍释放后续资源，异常照常向调用方传播。
+        cleanup.push_async_callback(dispose_engine)
+        cleanup.push_async_callback(close_cache)
+        cleanup.push_async_callback(aclose_shared_memory_graph)
+        cleanup.push_async_callback(consult_composition.aclose)
+        cleanup.push_async_callback(drain_pumps)
+        cleanup.callback(cancel_pumps)
+        yield
     logger.info("campfire api 停止")
 
 

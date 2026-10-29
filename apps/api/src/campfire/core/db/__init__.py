@@ -7,7 +7,7 @@
 
 import uuid
 from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 
 from pgvector.sqlalchemy import Vector
 from sqlalchemy import MetaData, text
@@ -168,13 +168,16 @@ async def check_database(settings: Settings) -> ComponentHealth:
     if not settings.database_url:
         return ComponentHealth("database", Status.NOT_CONFIGURED, "未配置 DATABASE_URL")
 
-    engine = create_async_engine(settings.database_url)
+    engine: AsyncEngine | None = None
     try:
+        engine = create_async_engine(settings.database_url)
         async with engine.connect() as connection:
             await connection.execute(text("SELECT 1"))
     except Exception as exc:  # noqa: BLE001 —— 探针吞掉一切驱动异常并如实上报
         return ComponentHealth("database", Status.UNAVAILABLE, f"连接失败（{type(exc).__name__}）")
     finally:
-        await engine.dispose()
+        if engine is not None:
+            with suppress(Exception):
+                await engine.dispose()
 
     return ComponentHealth("database", Status.OK, "连接正常")
