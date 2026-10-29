@@ -810,6 +810,32 @@ describe('对话页 — 订阅不可续传后自动重读历史（2026-10-28 修
   });
 });
 
+describe('对话页 — 发送阶段不可续传后自动重读历史（2026-10-29 修复）', () => {
+  it('发送阶段 409 run_not_resumable：重读历史显示服务端保存的回答，且不自动重发', async () => {
+    const port = createConsultPortStub({ history: historyResponse([]) });
+    // 真实情形：十分钟前同一条消息已被受理并跑完（幂等键还在），只是那条运行的传输态过期了。
+    // 于是这一次 POST 拿到 409 `run_not_resumable`，正确的出口是重读历史。
+    vi.mocked(port.loadHistory)
+      .mockResolvedValueOnce(historyResponse([]))
+      .mockResolvedValue(
+        historyResponse([hydratedAssistant('m1', [{ type: 'text', text: '这是十分钟前那次运行的回答' }])]),
+      );
+    vi.mocked(port.sendMessage).mockRejectedValueOnce(
+      new ConsultError('not-resumable', '这条回答的运行已不可续传'),
+    );
+
+    renderChat(port);
+    await send('现场很吵，他捂住了耳朵');
+
+    expect(await screen.findByText('这是十分钟前那次运行的回答')).toBeDefined();
+    // 重读过一次：历史不再只有空会话那一次请求。
+    expect(port.loadHistory).toHaveBeenCalledTimes(2);
+    // 关键判据：**没有**自动重发（重发会再落一条使用者消息），也没有走进订阅。
+    expect(vi.mocked(port.sendMessage)).toHaveBeenCalledTimes(1);
+    expect(port.streamCalls).toHaveLength(0);
+  });
+});
+
 describe('对话页 — 运行中的输入区状态（演示装置依赖这条判据）', () => {
   /** 发送键；找不到时返回 null（待作答时输入区整体收起）。 */
   function sendButton(): HTMLButtonElement | null {
