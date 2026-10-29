@@ -59,6 +59,7 @@ CAT_PY_SRC = "python-src"
 CAT_PY_TESTS = "python-tests"
 CAT_PY_CONFIG = "python-config"
 CAT_SCRIPTS = "scripts"
+CAT_SCRIPT_TESTS = "script-tests"
 CAT_WEB = "web"
 CAT_WEB_CONFIG = "web-config"
 CAT_DOCS = "docs"
@@ -100,11 +101,30 @@ def _run(argv: list[str]) -> str:
     return proc.stdout
 
 
+def _null_separated(*args: str) -> list[str]:
+    """跑一条 git 命令并按 NUL 切分输出（`-z` 模式）。
+
+    为什么必须用 `-z`（2026-10-29 实测）：默认输出会给**非 ASCII 路径加引号并转义**
+    （`"docs/\346\226\207\346\241\243/..."`），也会把含空格的路径加引号。于是
+    `docs/需求/…` 这类中文文档会被归成 `unknown`，`quick` 直接阻塞——那是本工具自己
+    造的假失败。`-z` 输出的路径不做任何转义，切分是唯一可靠的解析方式。
+    """
+    return [part for part in _run(list(args)).split("\0") if part]
+
+
 def changed_paths(base: str) -> list[str]:
     """本分支相对 `base` 的改动路径 + 未提交改动（含未跟踪文件）。
 
     用三点比较 `base...HEAD`：只算「本分支引入的」改动，不把基线分支自己的新提交
     当成自己的改动（那会让每个人都在跑别人的活）。
+
+    重命名按**两边都算**处理：
+
+    - 已提交部分用 `--no-renames`，git 会把重命名拆成「删一个 + 加一个」；
+    - 未提交部分 `git status -z` 对 `R`/`C` 条目会额外输出一行原路径（`-z` 下顺序是
+      「新路径后跟原路径」），两者都收进来。
+
+    只收新路径会让「删掉的那个文件」从影响面里消失——删掉的源码/测试同样是改动。
 
     Args:
         base: 基线分支名（如 `dev`）。
@@ -112,18 +132,22 @@ def changed_paths(base: str) -> list[str]:
     Returns:
         去重后的仓库相对路径列表（顺序稳定：已提交在前，未提交在后）。
     """
-    committed = [line.strip() for line in _run(["diff", "--name-only", f"{base}...HEAD"]).splitlines() if line.strip()]
+    committed = _null_separated("diff", "--name-only", "--no-renames", "-z", f"{base}...HEAD")
+
     uncommitted: list[str] = []
-    for line in _run(["status", "--porcelain=v1", "--untracked-files=all"]).splitlines():
-        if not line.strip():
-            continue
-        path = line[3:].strip()
-        # 重命名/复制显示为 `old -> new`：两边都算改动。
-        if " -> " in path:
-            old, _, new = path.partition(" -> ")
-            uncommitted.extend([old.strip(), new.strip()])
-        else:
-            uncommitted.append(path)
+    tokens = _null_separated("status", "--porcelain=v1", "-z", "--untracked-files=all")
+    index = 0
+    while index < len(tokens):
+        entry = tokens[index]
+        status = entry[:2]
+        uncommitted.append(entry[3:])
+        if "R" in status or "C" in status:
+            # 重命名/复制：`-z` 下紧随其后的那一条是原路径。
+            index += 1
+            if index < len(tokens):
+                uncommitted.append(tokens[index])
+        index += 1
+
     seen: set[str] = set()
     ordered: list[str] = []
     for path in [*committed, *uncommitted]:
@@ -164,6 +188,10 @@ def classify(path: str) -> str:
     if normalized.startswith("apps/web/"):
         # 前端工程配置（vite/tsconfig/构建脚本）：改动面比 src 更大。
         return CAT_WEB_CONFIG
+    if normalized.startswith("scripts/tests/"):
+        # 工具自己的测试与「工具实现」分开：改测试就要跑测试（见 `pytest_files_for`），
+        # 归成 `scripts` 会让「只改了测试」的改动选不出任何 pytest 目标而报绿。
+        return CAT_SCRIPT_TESTS
     if normalized.startswith("scripts/"):
         return CAT_SCRIPTS
     if normalized in {"pyproject.toml", "uv.lock"}:
@@ -203,19 +231,30 @@ def _area_tokens(src_path: str) -> list[str]:
     return tokens
 
 
+def existing_paths(paths: list[str]) -> list[str]:
+    """只留下**当前仍存在**的路径（删除的文件不能交给 ruff/pytest 当参数）。
+
+    删除也是改动：它参与归类与影响面判断（删掉源码照样要跑相关检查），
+    但不能出现在「跑这些文件」的参数里——pytest 对不存在的路径直接报错退出 4，
+    ruff 报 E902，两者都会把「删了个文件」变成一条看起来像工具坏了的红。
+    """
+    return [path for path in paths if (ROOT / path).is_file()]
+
+
 def pytest_files_for(paths: list[str], existing_tests: list[Path]) -> list[str] | None:
     """从改动路径推出要跑的 pytest 文件；推不出时返回 `None`（调用方必须阻塞）。
 
     规则（刻意保守——宁可让调用方显式 `--pytest`，也不假装「跑过了相关测试」）：
 
-    1. 改到测试文件本身 → 直接跑它。
+    1. 改到测试文件本身（应用测试或工具测试）→ 直接跑它；已被删除的不跑（只计入影响面）。
     2. 改到 `scripts/*.py` → 跑 `scripts/tests/test_<stem>*.py`（若存在）。
     3. 改到源码 → 用路径里的**第一个**非容器层词去匹配 `test_<词>_*.py`；
        匹配不到再退到文件名（如 `pending_write` → `test_pending_write_*.py`）；
        仍匹配不到 → `None`。
 
     Args:
-        paths: 改动路径（仓库相对）。
+        paths: 改动路径（仓库相对）。可以含已被删除的路径：它只影响分类，
+            不会成为「要跑的文件」。
         existing_tests: 现有的测试文件路径列表（用于匹配）。
 
     Returns:
@@ -225,12 +264,15 @@ def pytest_files_for(paths: list[str], existing_tests: list[Path]) -> list[str] 
     selected: set[str] = set()
     src_changed: list[str] = []
     unresolved = False
+    alive = set(existing_paths(paths))
 
     for path in paths:
         category = classify(path)
-        if category == CAT_PY_TESTS:
-            selected.add(path)
-        elif category == CAT_SCRIPTS and path.endswith(".py") and "/tests/" not in path:
+        if category in {CAT_PY_TESTS, CAT_SCRIPT_TESTS}:
+            # 改到测试自己 → 跑它（删除的测试没有可跑的目标，跳过即可）。
+            if path in alive:
+                selected.add(path)
+        elif category == CAT_SCRIPTS and path.endswith(".py"):
             stem = path.rsplit("/", 1)[-1].removesuffix(".py")
             matches = sorted(name for name in by_name if name.startswith(f"test_{stem}"))
             selected.update(str(by_name[name]) for name in matches)
@@ -313,27 +355,34 @@ def quick_plan(base: str, pytest_override: list[str] | None) -> tuple[list[Step]
             "本脚本不把它当成「无需检查」；请人工确认后加 --accept-unchecked，或跑 full"
         )
 
-    python_changed = bool(covered & {CAT_PY_SRC, CAT_PY_TESTS, CAT_PY_CONFIG, CAT_SCRIPTS})
-    if CAT_PY_SRC in covered or CAT_PY_TESTS in covered or CAT_SCRIPTS in covered:
-        ruff_targets = [
-            path
-            for cat in (CAT_PY_SRC, CAT_PY_TESTS, CAT_SCRIPTS, CAT_PY_CONFIG)
-            for path in categories.get(cat, [])
-            if path.endswith(".py")
-        ]
+    live_paths = existing_paths(paths)
+    python_categories = {CAT_PY_SRC, CAT_PY_TESTS, CAT_SCRIPTS, CAT_SCRIPT_TESTS}
+    mypy_step = Step(
+        key="mypy",
+        title="mypy（src + tests 必须一起传）",
+        argv=("uv", "run", "mypy", "apps/api/src/campfire", "apps/api/tests"),
+    )
+    full_pytest_step = Step(
+        key="pytest-full",
+        title=f"pytest（全量，排除 {LIVE_MODEL_EXPR.split()[-1]}）",
+        argv=("uv", "run", "pytest", "-m", LIVE_MODEL_EXPR),
+    )
+
+    if covered & python_categories:
+        ruff_targets = [path for path in live_paths if path.endswith(".py")]
         steps.extend(_ruff_step(ruff_targets or ["."]))
         # mypy 不能按文件跑：分开跑时 `apps.api.tests.*` 的绝对导入会让它报
         # 「Source file found twice under different module names」并整体中止（伪装成全绿）。
-        steps.append(
-            Step(
-                key="mypy",
-                title="mypy（src + tests 必须一起传）",
-                argv=("uv", "run", "mypy", "apps/api/src/campfire", "apps/api/tests"),
-            )
-        )
-    elif python_changed:
-        # 只动了 pyproject/uv.lock：仍然要过 lint 与格式（配置改错会立刻暴露）。
+        steps.append(mypy_step)
+    elif CAT_PY_CONFIG in covered:
+        # 只动了 pyproject.toml / uv.lock（2026-10-29 修）：依赖与 pytest/ruff/mypy 的
+        # 配置都在这个文件里，改错会立刻影响**全部**检查，因此不能只跑改动文件——
+        # 必须过 lint、mypy 与完整 pytest。此前这里只跑了 ruff，等于把「锁文件升级后
+        # 全套测试还绿吗」这件事交给发布前那一刻。
         steps.extend(_ruff_step(["."]))
+        steps.append(mypy_step)
+        steps.append(full_pytest_step)
+        report.append("只动了 Pyproject/lock：跑 lint + mypy + 全量 pytest（配置改动影响所有检查）")
 
     if CAT_DOCS in covered:
         steps.append(
@@ -344,7 +393,11 @@ def quick_plan(base: str, pytest_override: list[str] | None) -> tuple[list[Step]
             )
         )
 
-    if CAT_MIGRATIONS in covered:
+    # 迁移门禁的触发面比「改了 alembic/」更宽：ORM 模型与数据库引擎定义改了同样会漂移。
+    model_or_db_touched = any(
+        path.endswith("models.py") or path.startswith("apps/api/src/campfire/core/db") for path in paths
+    )
+    if CAT_MIGRATIONS in covered or model_or_db_touched:
         steps.append(
             Step(
                 key="alembic",
@@ -352,12 +405,17 @@ def quick_plan(base: str, pytest_override: list[str] | None) -> tuple[list[Step]
                 argv=("uv", "run", "alembic", "check"),
             )
         )
+        if model_or_db_touched and CAT_MIGRATIONS not in covered:
+            report.append("改了 ORM 模型/引擎定义：一并跑迁移漂移检查（alembic check）")
 
-    tests_wanted = bool(covered & {CAT_PY_SRC, CAT_PY_TESTS, CAT_SCRIPTS, CAT_MIGRATIONS})
+    tests_wanted = bool(covered & ({CAT_PY_SRC, CAT_PY_TESTS, CAT_SCRIPTS, CAT_SCRIPT_TESTS} | {CAT_MIGRATIONS}))
     if tests_wanted:
         if pytest_override:
             selected = list(pytest_override)
             report.append(f"pytest 目标由 --pytest 显式给定：{len(selected)} 项")
+        elif CAT_PY_CONFIG in covered and not covered & python_categories:
+            # 配置类改动已在上面排了全量 pytest：这里不再重复推断。
+            selected = []
         else:
             selection = pytest_files_for(paths, existing_test_files())
             if selection is None:

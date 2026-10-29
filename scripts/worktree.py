@@ -10,14 +10,19 @@
    本脚本用 `git rev-parse --git-common-dir` 反推原始根：工作树与主树共用一个
    common dir，因此无论从哪个泳道调用，落点都回到同一个 `.worktrees/`。
 2. **清理**：删工作树是**破坏性**动作（里面有别人未提交的改动时尤其如此）。本脚本
-   只删「已注册 + 干净 + 分支已并入基线」的工作树，且只用 `git worktree remove`
-   （不带 `--force`）——不用 `rm -rf`，也不碰任何未注册的目录。
+   只删「已注册 + 干净 + 分支已并入基线 + 没有需要留档的本地状态」的工作树，且只用
+   `git worktree remove`（不带 `--force`）——不用 `rm -rf`，也不碰任何未注册的目录。
+3. **被忽略的本地状态**：`git status` 看不见 `.gitignore` 里的东西，但
+   `git worktree remove` 会连它们一起删掉——`.env`（真实凭据）、`demo/`（18～40 分钟
+   真模型跑出来的展示材料）、`deliverables/` 都在这一类。本脚本默认**拒绝**删除带这类
+   状态的工作树，并列路径（**从不打印内容**）；确认可丢弃后加 `--discard-local`。
+   `.venv` / `node_modules` / 各类缓存与 `dist/` / `.tmp/` 等**可重建**产物不在此列。
 
 用法：
 
     uv run python scripts/worktree.py create <slug> [--base dev]
     uv run python scripts/worktree.py list
-    uv run python scripts/worktree.py remove <slug> [--base dev]
+    uv run python scripts/worktree.py remove <slug> [--base dev] [--discard-local]
 
 `create` 只建树、不装依赖：每个工作树要有**自己**的 `.venv`
 （`cd .worktrees/<slug> && uv sync --frozen`），不共享主树的虚拟环境。
@@ -43,6 +48,29 @@ BRANCH_PREFIX = "task/"
 
 #: 工作树落点目录名（原始项目根之下；`/.worktrees/` 已在 `.gitignore` 里忽略）。
 WORKTREES_DIRNAME = ".worktrees"
+
+#: 被忽略但**可重建**的目录名：它们不构成「删除前必须留档」的理由。
+#:
+#: 判据是「丢了能不能用一条命令重建」：虚拟环境、依赖、字节码、各类缓存、构建产物、
+#: 临时目录都能；而 `.env`（凭据）、`demo/`（真模型跑出来的展示材料）、`deliverables/`
+#: （要交的东西）都不能——那些必须由人显式授权才可丢。
+REBUILDABLE_IGNORED = frozenset(
+    {
+        ".venv",
+        "venv",
+        "node_modules",
+        "__pycache__",
+        ".pytest_cache",
+        ".ruff_cache",
+        ".mypy_cache",
+        ".cache",
+        "dist",
+        "build",
+        "coverage",
+        ".tmp",
+        ".turbo",
+    }
+)
 
 
 class WorktreeError(RuntimeError):
@@ -255,6 +283,35 @@ def _assert_clean(path: Path) -> None:
         )
 
 
+def ignored_local_state(path: Path) -> list[str]:
+    """列出工作树里**不进版本库、却会被 `git worktree remove` 一并删掉**的本地状态。
+
+    `git status` 对 `.gitignore` 覆盖的文件什么都不说，于是「工作树是干净的」这句话
+    并不等于「删了不会丢东西」——实测过的形态：`.env`（真实凭据）、`demo/`
+    （一批真模型跑 18～40 分钟的展示材料）、`deliverables/` 都是被忽略的，删除它们
+    在 git 看来毫无痕迹。
+
+    只返回**路径**，绝不读取或打印任何内容：`.env` 里是凭据，候选材料里是别人的东西。
+
+    Args:
+        path: 工作树目录。
+
+    Returns:
+        「需要人确认才可丢」的被忽略路径（目录以 `/` 结尾的条目会去掉尾斜杠）。
+        可重建的产物（见 :data:`REBUILDABLE_IGNORED`）不在其中。
+    """
+    out = _git("ls-files", "-z", "--others", "--ignored", "--exclude-standard", "--directory", cwd=path).stdout
+    entries = [item.rstrip("/") for item in out.split("\0") if item]
+    return [entry for entry in entries if entry.rsplit("/", 1)[-1] not in REBUILDABLE_IGNORED]
+
+
+def _describe_local_state(entries: list[str], limit: int = 20) -> str:
+    """把本地状态列表排成给人看的几行（只列路径）。"""
+    preview = "\n  ".join(entries[:limit])
+    more = f"\n  …（共 {len(entries)} 项）" if len(entries) > limit else ""
+    return f"{preview}{more}"
+
+
 def _assert_merged(root: Path, branch: str, base: str) -> None:
     """分支的提交必须都已并入基线，否则拒绝删除。
 
@@ -269,19 +326,22 @@ def _assert_merged(root: Path, branch: str, base: str) -> None:
         )
 
 
-def remove(slug: str, base: str) -> int:
-    """删除任务工作树与分支（只删「已注册 + 干净 + 已并入基线」的）。
+def remove(slug: str, base: str, *, discard_local: bool = False) -> int:
+    """删除任务工作树与分支（只删「已注册 + 干净 + 已并入基线 + 本地状态已授权」的）。
 
     Args:
         slug: 任务短名。
         base: 整合基线（默认 `dev`）：分支提交必须都已进入它。
+        discard_local: 是否授权丢弃被忽略的本地状态（`.env`、`demo/`、`deliverables/`
+            等）。默认不授权——`git status` 看不见它们，但删除会一并带走。
 
     Returns:
-        进程退出码：0 成功。
+        进程退出码：0 全部完成；1 有步骤没做成（例如分支没删掉）。
 
     Raises:
         WorktreeError: 目录不是注册工作树、工作树不干净、分支未并入基线、
-            或它是主树（一律拒绝，不做 `--force`）。
+            存在需要留档的本地状态而没给 `--discard-local`、或它是主树
+            （一律拒绝，不做 `--force`）。
     """
     validate_slug(slug)
     root = repo_root()
@@ -309,17 +369,32 @@ def remove(slug: str, base: str) -> int:
         )
     _assert_merged(root, branch, base)
 
+    # 被忽略的本地状态：`git status` 不报，但 `worktree remove` 会删。
+    local_state = ignored_local_state(path)
+    if local_state and not discard_local:
+        raise WorktreeError(
+            f"{path} 里有不进版本库的本地状态，`git worktree remove` 会把它们一并删掉"
+            f"（这里只列路径，不打印内容）：\n  {_describe_local_state(local_state)}\n"
+            "这些内容不受版本控制、没有副本可恢复。确认可以丢弃后加 --discard-local；"
+            "在此之前本脚本不替你删。"
+        )
+    if local_state:
+        print("--discard-local：以下被忽略的路径会随工作树一起删除（只列路径）：")
+        print(f"  {_describe_local_state(local_state)}")
+
     # 只用 git 自己的删除动作（不带 --force）：它会再做一次安全检查，
     # 也把注册表一并更新，不留悬挂条目。
     _git("worktree", "remove", str(path), cwd=root)
     deleted = _try_git("branch", "-d", branch, cwd=root)
     if deleted.returncode != 0:
+        # 退出码必须非 0（2026-10-29 修）：工作树删了、分支还在是**半完成**，
+        # 报 0 会让脚本调用方以为清理干净了，而未删的分支下次会让 create 撞名。
         print(
             f"工作树已删除，但分支 {branch} 未删除（git branch -d 拒绝）：{(deleted.stderr or deleted.stdout).strip()}",
             file=sys.stderr,
         )
         print("分支保留无副作用；确认后可自行 git branch -D 清理。", file=sys.stderr)
-        return 0
+        return 1
     print(f"已删除工作树 {path} 与分支 {branch}")
     return 0
 
@@ -338,9 +413,14 @@ def build_parser() -> argparse.ArgumentParser:
 
     sub.add_parser("list", help="列出全部工作树（标注原始根与本仓任务工作树）")
 
-    remove_cmd = sub.add_parser("remove", help="删除任务工作树与分支（要求干净且已并入基线）")
+    remove_cmd = sub.add_parser("remove", help="删除任务工作树与分支（要求干净、已并入基线、本地状态已授权）")
     remove_cmd.add_argument("slug", help="任务短名")
     remove_cmd.add_argument("--base", default="dev", help="整合基线（默认 dev）：提交必须都已进入它")
+    remove_cmd.add_argument(
+        "--discard-local",
+        action="store_true",
+        help="授权丢弃被忽略的本地状态（.env、demo/、deliverables/ 等；会列出路径，不打印内容）",
+    )
     return parser
 
 
@@ -352,7 +432,7 @@ def main(argv: list[str] | None = None) -> int:
             return create(args.slug, args.base)
         if args.command == "list":
             return list_worktrees()
-        return remove(args.slug, args.base)
+        return remove(args.slug, args.base, discard_local=args.discard_local)
     except WorktreeError as exc:
         print(f"错误：{exc}", file=sys.stderr)
         return 1
