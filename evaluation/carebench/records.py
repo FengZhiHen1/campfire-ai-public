@@ -28,6 +28,9 @@ from .config import RunConfig
 REQUIRED_RECORD_FIELDS = (
     "batch_id",
     "run_id",
+    # 运行身份指纹：每条记录都绑定「跑的是哪个模型/端点/知识」。只写 batch_id 时，
+    # 事后改 manifest 身份段不会与任何记录冲突；绑进记录才能被机械核对。
+    "run_identity_sha256",
     "case_id",
     "system_id",
     "turn",
@@ -51,6 +54,9 @@ REQUIRED_RECORD_FIELDS = (
     "retry",
     "record_sha256",
 )
+
+#: fixture 实施状态词表（与 :class:`evaluation.carebench.faults.FixtureApplication` 一致）。
+FIXTURE_STATUSES = ("applied", "not_applicable", "unsupported", "out_of_harness", "unknown")
 
 
 def key_of(record: dict[str, Any]) -> tuple[str, str, int]:
@@ -240,12 +246,73 @@ def progress_summary(progress: Sequence[GroupProgress]) -> dict[str, int]:
     }
 
 
+def _empty_fixture_bucket() -> dict[str, int]:
+    """一个 fixture 的计数桶（键固定，便于 verify 逐键比对）。"""
+    return {
+        "records": 0,
+        "applied": 0,
+        "observed": 0,
+        "installed_but_uncalled": 0,
+        "not_applicable": 0,
+        "unsupported": 0,
+        "out_of_harness": 0,
+        "unknown": 0,
+    }
+
+
+def fixture_observation(records: Iterable[dict[str, Any]]) -> dict[str, Any]:
+    """按 fixture 统计「装上了 / 真的观察到 / 装上但没被调用 / 没支持 / 越界」。
+
+    为什么必须分开：`applied` 只说明替身工具装进了工具池，模型可以不调用它——那时观察到
+    的是「模型没用检索」，不是「系统在检索故障下的表现」。把两者合成一个「已注入」计数，
+    报告就会把一个没测成的场景写成已测。
+
+    口径：按**每个 (案例, 组别, 轮次) 的有效记录**计数（重试的首错不重复计），
+    因此 `records` 等于「有末轮结论的回合数」。
+    """
+    effective = effective_records(records)
+    by_fixture: dict[str, dict[str, int]] = {}
+    for record in effective.values():
+        entries = record.get("fixtures")
+        if not isinstance(entries, list):
+            continue
+        for item in entries:
+            if not isinstance(item, dict) or not item.get("name"):
+                continue
+            name = str(item["name"])
+            bucket = by_fixture.setdefault(name, _empty_fixture_bucket())
+            bucket["records"] += 1
+            status = str(item.get("status") or ("applied" if item.get("applied") else "unknown"))
+            if status == "applied":
+                bucket["applied"] += 1
+                if item.get("observed"):
+                    bucket["observed"] += 1
+                else:
+                    bucket["installed_but_uncalled"] += 1
+            elif status in bucket and status != "records":
+                bucket[status] += 1
+            else:
+                bucket["unknown"] += 1
+    return {
+        "records_examined": len(effective),
+        "by_fixture": by_fixture,
+        "observed_total": sum(bucket["observed"] for bucket in by_fixture.values()),
+        "installed_but_uncalled_total": sum(bucket["installed_but_uncalled"] for bucket in by_fixture.values()),
+        "note": (
+            "applied 只说明替身装进了工具池/检索接缝；observed 才说明本轮真的触发了故障。"
+            "installed_but_uncalled 不得写成「系统在故障下的表现」"
+        ),
+    }
+
+
 __all__ = [
+    "FIXTURE_STATUSES",
     "REQUIRED_RECORD_FIELDS",
     "GroupProgress",
     "attempt_of",
     "attempts_for",
     "effective_records",
+    "fixture_observation",
     "group_attempts_used",
     "group_progress",
     "group_session",
