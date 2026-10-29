@@ -104,6 +104,9 @@ async def execute(
     case_ids: list[str] | None = None,
     resume: bool = False,
     dry_run: bool = False,
+    expected_identity: dict[str, Any] | None = None,
+    frozen_config_sha256: str | None = None,
+    config_drift_allowed: bool = False,
     log: Logger = print,
 ) -> ExecutionResult:
     """执行（或续跑）一次批次。
@@ -113,11 +116,15 @@ async def execute(
         case_ids: 只跑这些案例（调试用；分母仍按 manifest 里的案例集声明）。
         resume: 续跑模式（读取已有记录，只补缺失）。
         dry_run: 只装配并写 manifest，不发起任何模型调用。
+        expected_identity: 冻结时锁定的运行身份（`freeze --identity`）。给了就逐项核对，
+            不一致直接拒绝——否则「按计划冻结、按别的模型跑」在证据上几乎看不出来。
+        frozen_config_sha256: 冻结声明的配置 hash（用于在 manifest 里留痕配置漂移）。
+        config_drift_allowed: 命令行是否显式允许了配置漂移（formal 批次在 CLI 层已拒绝）。
 
     Raises:
         ResumeRejected: 续跑时批次身份与已落盘记录不一致。
         KnowledgeSnapshotError: 数据库不是评测库（隔离守卫）。
-        ValueError: 案例筛选非法。
+        ValueError: 案例筛选非法，或运行身份与冻结时锁定的身份不符。
     """
     run_id = store.root.name
     require_isolated_database(settings.database_url)
@@ -137,12 +144,28 @@ async def execute(
 
     identity = runtime_identity(settings, snapshot, config)
     identity_sha = identity_fingerprint(identity)
+    identity_locked = expected_identity is not None
+    if expected_identity is not None:
+        diffs = identity_drift(expected_identity, identity)
+        if diffs or identity_fingerprint(expected_identity) != identity_sha:
+            raise ValueError(
+                "运行身份与冻结时锁定的身份不一致："
+                + ("；".join(diffs) if diffs else "字段一致但指纹不同（冻结记录被改过或版本不同）")
+                + "。冻结批次只能在同一模型/端点/嵌入/知识快照上运行；换条件请重新冻结。"
+            )
 
     if resume:
         _require_same_batch(existing, fingerprint=fingerprint, store=store)
         frozen = store.read_manifest() if store.manifest_path.exists() else None
         _require_same_identity(frozen or {}, identity=identity, identity_sha=identity_sha)
         created_at = str((frozen or {}).get("created_at") or created_at)
+        # 续跑必须继承冻结绑定：否则一次 resume 就会把 identity_locked 洗成 false，
+        # 正式批次的「跑在锁定身份上」这条证据会在补齐轮次时消失。
+        previous_binding = (frozen or {}).get("freeze_binding")
+        if isinstance(previous_binding, dict):
+            identity_locked = identity_locked or bool(previous_binding.get("identity_locked"))
+            frozen_config_sha256 = previous_binding.get("frozen_config_sha256") or frozen_config_sha256
+            config_drift_allowed = config_drift_allowed or bool(previous_binding.get("config_drift_allowed"))
         if trailing_partial_line(store.outputs_path):
             log("注意：outputs.jsonl 末尾有一行不完整记录（上次中断留下），已忽略该行并继续。")
 
@@ -164,21 +187,30 @@ async def execute(
         log(f"装配完成：{system_id} = {metas[system_id].assembly}")
 
     state_progress = group_progress(existing, cases=case_set.cases, system_ids=list(config.systems), config=config)
-    manifest = build_manifest(
-        run_id=run_id,
-        config=config,
-        case_set=case_set,
-        snapshot=snapshot,
-        system_metas=metas,
-        run_identity=identity,
-        run_identity_sha256=identity_sha,
-        faults=faults,
-        settings=settings,
-        repo_root=REPO_ROOT,
-        created_at=created_at,
-        status="dry_run" if dry_run else ("running" if not resume else "running"),
-        progress=state_progress,
-    )
+
+    def _manifest(*, status: str, progress: list[GroupProgress]) -> dict[str, Any]:
+        """同一份身份与冻结绑定的 manifest（三处重写共用，避免漏字段各写一遍）。"""
+        return build_manifest(
+            run_id=run_id,
+            config=config,
+            case_set=case_set,
+            snapshot=snapshot,
+            system_metas=metas,
+            run_identity=identity,
+            run_identity_sha256=identity_sha,
+            frozen_identity_sha256=identity_sha if identity_locked else None,
+            identity_locked=identity_locked,
+            frozen_config_sha256=frozen_config_sha256,
+            config_drift_allowed=config_drift_allowed,
+            faults=faults,
+            settings=settings,
+            repo_root=REPO_ROOT,
+            created_at=created_at,
+            status=status,
+            progress=progress,
+        )
+
+    manifest = _manifest(status="dry_run" if dry_run else "running", progress=state_progress)
     store.write_manifest(manifest)
     if dry_run:
         _write_state(store, run_id=run_id, batch_id=fingerprint, status="dry_run", progress=state_progress)
@@ -211,28 +243,13 @@ async def execute(
                     records=records,
                     run_id=run_id,
                     batch_id=fingerprint,
+                    run_identity_sha256=identity_sha,
                     log=log,
                 )
                 attempts_written += written
             progress = group_progress(records, cases=case_set.cases, system_ids=list(config.systems), config=config)
             _write_state(store, run_id=run_id, batch_id=fingerprint, status="running", progress=progress)
-            store.write_manifest(
-                build_manifest(
-                    run_id=run_id,
-                    config=config,
-                    case_set=case_set,
-                    snapshot=snapshot,
-                    system_metas=metas,
-                    run_identity=identity,
-                    run_identity_sha256=identity_sha,
-                    faults=faults,
-                    settings=settings,
-                    repo_root=REPO_ROOT,
-                    created_at=created_at,
-                    status="running",
-                    progress=progress,
-                )
-            )
+            store.write_manifest(_manifest(status="running", progress=progress))
             log(f"{case.id} 完成（本轮写入 {attempts_written} 条尝试记录）")
     finally:
         if bundle_owned:
@@ -241,23 +258,7 @@ async def execute(
     final_progress = group_progress(records, cases=case_set.cases, system_ids=list(config.systems), config=config)
     summary = progress_summary(final_progress)
     status = "completed" if summary["case_groups_complete"] == summary["case_groups_expected"] else "partial"
-    store.write_manifest(
-        build_manifest(
-            run_id=run_id,
-            config=config,
-            case_set=case_set,
-            snapshot=snapshot,
-            system_metas=metas,
-            run_identity=identity,
-            run_identity_sha256=identity_sha,
-            faults=faults,
-            settings=settings,
-            repo_root=REPO_ROOT,
-            created_at=created_at,
-            status=status,
-            progress=final_progress,
-        )
-    )
+    store.write_manifest(_manifest(status=status, progress=final_progress))
     _write_state(store, run_id=run_id, batch_id=fingerprint, status=status, progress=final_progress)
     _write_errors(store, records)
     log(f"批次 {status}：{summary['case_groups_complete']}/{summary['case_groups_expected']} 个 case-group 完成")
@@ -281,6 +282,7 @@ async def _run_case_group(
     records: list[dict[str, Any]],
     run_id: str,
     batch_id: str,
+    run_identity_sha256: str,
     log: Logger,
 ) -> tuple[list[dict[str, Any]], int]:
     """跑（或补）一个 case-group 的全部轮次，返回（追加后的记录, 本次写入条数）。
@@ -340,6 +342,7 @@ async def _run_case_group(
         record = _make_record(
             run_id=run_id,
             batch_id=batch_id,
+            run_identity_sha256=run_identity_sha256,
             request=request,
             outcome=outcome,
             store=store,
@@ -414,6 +417,7 @@ def _make_record(
     *,
     run_id: str,
     batch_id: str,
+    run_identity_sha256: str,
     request: TurnInput,
     outcome: TurnOutcome,
     store: RunStore,
@@ -428,6 +432,9 @@ def _make_record(
     record: dict[str, Any] = {
         "run_id": run_id,
         "batch_id": batch_id,
+        # 运行身份指纹：与 manifest.run_identity_sha256 相同。绑进记录后，事后改 manifest
+        # 的身份段（模型/端点/知识）会与记录冲突，verify 能直接指认。
+        "run_identity_sha256": run_identity_sha256,
         "case_id": request.case.id,
         "system_id": request.system_id,
         "turn": request.turn,
@@ -639,12 +646,16 @@ async def launch_run(
     case_ids: list[str] | None = None,
     adapters: dict[str, SystemAdapter] | None = None,
     dry_run: bool = False,
+    expected_identity: dict[str, Any] | None = None,
+    frozen_config_sha256: str | None = None,
+    config_drift_allowed: bool = False,
     log: Logger = print,
 ) -> ExecutionResult:
     """新建一个批次目录并执行。
 
     Raises:
         FileExistsError: run_id 已存在（不允许覆盖已有证据）。
+        ValueError: 运行身份与冻结时锁定的身份不一致。
     """
     resolved_id = run_id or new_run_id(config)
     store = create_run_dir(runs_dir, resolved_id)
@@ -659,6 +670,9 @@ async def launch_run(
         case_ids=case_ids,
         resume=False,
         dry_run=dry_run,
+        expected_identity=expected_identity,
+        frozen_config_sha256=frozen_config_sha256,
+        config_drift_allowed=config_drift_allowed,
         log=log,
     )
 
