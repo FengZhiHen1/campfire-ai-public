@@ -244,27 +244,33 @@ async def claim_session_run(cache: RedisCache, *, session_id: str) -> SessionRun
 async def bind_lease_run_id(cache: RedisCache, lease: SessionRunLease, run_id: str) -> None:
     """把互斥键的值从租约令牌升级成 `run_id`。
 
-    只在值仍是自己的令牌时升级：键可能已经过期并被另一个运行占走，此时改写它
-    会破坏那个运行的互斥。升级后 `expected_value` 随之变化，释放路径据此比对。
+    只在值仍是自己的令牌时升级（`compare_and_set`，一条 Lua 命令）：键可能已经过期
+    并被另一个运行占走，此时改写它会破坏那个运行的互斥。升级后 `expected_value` 随之变化，
+    释放路径据此比对。
+
+    **为什么比对与写入必须原子**（2026-10-29）：此前是 `GET` 比对通过后再 `SET`，两者
+    之间隔着一次网络往返。若键在那一刻 TTL 到期并被另一个运行用 `setnx` 占走，本方法就会
+    把对方的令牌覆盖成本次的 `run_id`；对方随后释放时比对不上，于是它的位子再也删不掉，
+    而本运行又以为自己握着那个位子。结果是会话互斥凭空消失：同一会话上两个运行并行
+    往里追加——正是这条互斥要防的事。
     """
     key = mutex_key(lease.session_id)
-    if await cache.get(key) != lease.token:
+    if not await cache.compare_and_set(key, lease.token, run_id, ttl_seconds=RUN_MUTEX_TTL_SECONDS):
         logger.warning("会话互斥键易主，跳过 run_id 升级：会话=%s", lease.session_id)
         return
     lease.run_id = run_id
-    await cache.set(key, run_id, ttl_seconds=RUN_MUTEX_TTL_SECONDS)
 
 
 async def release_session_run(cache: RedisCache, lease: SessionRunLease) -> None:
-    """释放会话位（compare-and-delete）。
+    """释放会话位（比对再删，一条原子命令）。
 
-    比对再删：键可能因 TTL 到期已被另一个运行占住，无条件 `DEL` 会把别人的位子
+    比对再删的理由：键可能因 TTL 到期已被另一个运行占住，无条件 `DEL` 会把别人的位子
     放掉，于是那个会话上会出现两个并行运行——互斥失效的方式恰好是它要防的事。
+    「比对」与「删除」是同一条命令（`compare_and_delete`）而不是 `GET` + `DEL`：
+    后者在两者之间留了一次往返（2026-10-29 修正），键在那段时间里到期并易手时，
+    删掉的就是新持有者的键，与无条件 `DEL` 的后果完全相同。
     """
-    key = mutex_key(lease.session_id)
-    if await cache.get(key) != lease.expected_value:
-        return
-    await cache.delete(key)
+    await cache.compare_and_delete(mutex_key(lease.session_id), lease.expected_value)
 
 
 # ---------------------------------------------------------------------------
@@ -439,11 +445,21 @@ class RunPump:
         self._lease = lease
         self._stream = runner.run(request)
         self._seq = 0
+        self._settling = False
 
     @property
     def run_id(self) -> str | None:
         """已拿到的运行标识；尚未推进到 `run_started` 时为 `None`。"""
         return self._lease.run_id
+
+    @property
+    def settling(self) -> bool:
+        """是否已进入收尾（落终结状态与释放会话位）。
+
+        取消端点据此拒绝再注入取消：收尾由两笔 Redis 写组成，被取消打断的后果是
+        元数据停在 `running`、会话位不释放——「终结时删键」的承诺在那一刻不成立。
+        """
+        return self._settling
 
     async def begin(self) -> str:
         """推进到首个事件并写入缓冲，返回 `run_id`。
@@ -488,8 +504,9 @@ class RunPump:
         """后台推进：把余下事件写进缓冲，终结时落状态并释放会话位。
 
         无论正常结束、异常还是被取消，收尾都要做（`finally`）：一次没释放的会话位
-        会让这个会话在 TTL 到期之前再也发不出消息，而 TTL 是 185 秒——使用者会
-        看到「刚中断的对话再也发不出去」，这正是「终结时删键」要避免的。
+        会让这个会话在 TTL 到期之前再也发不出消息，而 TTL 是 `RUN_MUTEX_TTL_SECONDS`
+        （运行上限 + 5 秒）——使用者会看到「刚中断的对话再也发不出去」，这正是
+        「终结时删键」要避免的事。
 
         Raises:
             asyncio.CancelledError: 任务被取消（进程收尾）。原样抛出——收尾在
@@ -512,7 +529,13 @@ class RunPump:
             await self._finalize(run_id)
 
     async def _finalize(self, run_id: str) -> None:
-        """落「已终结」状态并释放会话位；失败只记日志（TTL 是兜底）。"""
+        """落「已终结」状态并释放会话位；失败只记日志（TTL 是兜底）。
+
+        第一句是同步的置位（`_settling = True`），必须发生在任何 `await` 之前：
+        取消端点靠它判断「这条运行已经在收尾」，见 :func:`request_cancel`。
+        置位放在第一个 await 之后就等于没有——取消仍会打进下面的两笔 Redis 写。
+        """
+        self._settling = True
         try:
             await write_run_meta(
                 self._cache,
@@ -532,12 +555,15 @@ class RunPump:
 #: 并在收尾时能等到它们结束——测试夹具靠它避免「上一个用例的推进写在下一个用例的库上」。
 _pump_tasks: set[asyncio.Task[None]] = set()
 
-#: 按 `run_id` 索引的在跑任务：取消端点（契约 4.3）要据此找到这条运行在本进程里的消费方。
+#: 按 `run_id` 索引的在跑运行：取消端点（契约 4.3）要据此找到这条运行在本进程里的消费方。
+#:
+#: 值带上推进器本身（不只是任务）：「这条运行是不是已经在收尾」只有推进器知道，而
+#: 收尾期间的取消会打断收尾（见 :func:`request_cancel`）。
 #:
 #: 为什么取消是「取消消费方任务」而不是另设一个停止标志：基座第 9 节的取消语义就是
 #: 消费者取消自己（停止调用、不发终态事件），而推进任务正是那个消费者。多一个标志位
 #: 等于同一件事有两个真相，且推进任务还得记得检查它。
-_pump_tasks_by_run: dict[str, asyncio.Task[None]] = {}
+_pump_tasks_by_run: dict[str, tuple[RunPump, asyncio.Task[None]]] = {}
 
 
 def start_pump(pump: RunPump) -> asyncio.Task[None]:
@@ -552,12 +578,15 @@ def start_pump(pump: RunPump) -> asyncio.Task[None]:
     run_id = pump.run_id
     _pump_tasks.add(task)
     if run_id is not None:
-        _pump_tasks_by_run[run_id] = task
+        _pump_tasks_by_run[run_id] = (pump, task)
 
     def _forget(finished: asyncio.Task[None]) -> None:
         """任务结束后把自己从两张表里摘掉（比对身份，避免摘掉同名的后来者）。"""
         _pump_tasks.discard(finished)
-        if run_id is not None and _pump_tasks_by_run.get(run_id) is finished:
+        if run_id is None:
+            return
+        entry = _pump_tasks_by_run.get(run_id)
+        if entry is not None and entry[1] is finished:
             del _pump_tasks_by_run[run_id]
 
     task.add_done_callback(_forget)
@@ -574,13 +603,40 @@ def request_cancel(run_id: str) -> bool:
     的 `finally` 里完成。因此调用方不能假定取消返回后状态已经落定——契约 4.3 的
     「取消不发终态事件」正是这个形状的后果，前端据此自行把已渲染的部分标为中断。
 
-    取消的边界（如实写明）：索引是本进程内的。同一进程收到取消、而运行在另一个进程里
-    跑时，本函数返回 `False`，端点回 409——一期是单进程 uvicorn，这个边界不成立；
-    多进程部署时它会变成一条真实的错误答复，需要把取消改成走共享信道。
+    **收尾期间的取消不得真的注入**（2026-10-29）：`Task.cancel()` 投递的
+    `CancelledError` 会打断当时正在等待的那个 `await`。收尾正是两次 `await`
+    （写终结状态、释放会话位），被它打断的后果是可观测的——元数据停在 `running`、
+    会话位不释放，使用者最长 `RUN_MUTEX_TTL_SECONDS` 秒内每次发消息都吃 409
+    `session_busy`。触发它不需要什么巧合：运行自己跑到终态、收尾刚落下第一笔写时，
+    使用者按下停止键就是一次（`cancel_run` 读到的是收尾前那个 `running`）；连点停止键
+    或多标签页同时停同样落在同一个窗口里。
+
+    因此判据是 `pump.settling`：推进已结束、收尾已开始时不注入取消，而是如实回答
+    「已经要求停了」（返回 `True` → 202）。这里不需要再判「是否已有一次取消在飞」——
+    `_finalize` 的置位是它的第一句、且在任何 `await` 之前，而 `CancelledError` 被投递后
+    到那句置位之间没有任何会让出的点，所以「已投递、尚未进入收尾」这个中间态不存在。
+
+    判据检查与 `task.cancel()` 之间同样没有 `await`：单线程事件循环内没有可插入的窗口。
+
+    取消的边界（如实写明两条）：
+
+    - 索引是本进程内的。同一进程收到取消、而运行在另一个进程里跑时，本函数返回 `False`，
+      端点回 409——一期是单进程 uvicorn，这个边界不成立；多进程部署时它会变成一条
+      真实的错误答复，需要把取消改成走共享信道；
+    - 推进任务若在**第一次被调度之前**就被取消，`drive()` 的函数体不会执行，收尾也就
+      不会发生（事件循环把 `CancelledError` 投在协程入口）。这个窗口是 `start_pump`
+      的 `create_task` 与下一次调度之间，而取消只可能发生在 202 之后——那时推进已经
+      开始（订阅取消要有 `run_id`，而 `run_id` 是在推进的第一段里产生的）。因此它是
+      一条理论路径而不是本期要修的对象；写在这里是为了它有一天真的发生时不必重新推理。
     """
-    task = _pump_tasks_by_run.get(run_id)
-    if task is None or task.done():
+    entry = _pump_tasks_by_run.get(run_id)
+    if entry is None:
         return False
+    pump, task = entry
+    if task.done():
+        return False
+    if pump.settling:
+        return True
     task.cancel()
     return True
 

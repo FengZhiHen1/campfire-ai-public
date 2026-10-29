@@ -1597,7 +1597,8 @@ async def test_runner_annotates_the_persisted_assistant_text_with_citations() ->
     annotations = [entry for chunk in text_chunks for entry in (chunk.get("annotations") or [])]
     assert [entry["type"] for entry in annotations] == ["citation"], "正文分片上必须挂着引用注解"
     assert annotations[0]["reference"] == "kb-1"
-    # 六个业务字段齐全（水合侧要能只凭会话条目重建出与事件流一致的载荷）。
+    # 九个业务字段齐全（水合侧要能只凭会话条目重建出与事件流一致的载荷；
+    # 可核对性三项 2026-10-29 随 DEMO-03 补上：缺了它们依据区就没有状态徽章与适用范围）。
     assert set(annotations[0]) == {
         "type",
         "citation_id",
@@ -1606,8 +1607,16 @@ async def test_runner_annotates_the_persisted_assistant_text_with_citations() ->
         "reference",
         "recorded_at",
         "summary",
+        "status",
+        "applicable_scope",
+        "withdrawn",
     }
     assert isinstance(annotations[0]["recorded_at"], str)
+    # 这条用例的工具发出的凭据没带来源状态 ⇒ 写进注解的是 `None`（未知），
+    # **不是**被写入侧补成 `published`。
+    assert annotations[0]["status"] is None
+    assert annotations[0]["applicable_scope"] is None
+    assert annotations[0]["withdrawn"] is None
 
 
 @pytest.mark.asyncio

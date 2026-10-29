@@ -2244,7 +2244,10 @@ def test_action_card_and_question_can_coexist_in_one_message() -> None:
 # 且载荷**对模型不可见**（Chat Completions 转换器读 content 时只取 `text`）。
 # ---------------------------------------------------------------------------
 
-#: 一条实测形状的引用载荷（六个字段与 `CitationRecord` / 前端 `CitationRecord` 逐字一致）。
+#: 一条实测形状的引用载荷（九个字段与 `CitationRecord` / 前端 `CitationRecord` 逐字一致）。
+#: 后三项（`status` / `applicable_scope` / `withdrawn`）是 2026-10-29 随 DEMO-03 补的：
+#: 依据区要显示状态徽章与适用范围，而「现在还能不能引用」由读回时现查（种子值 `False`
+#: 表示写入那一刻检索核对过、未撤下）。
 _CITATION = {
     "citation_id": "3f2a1b0c9d8e7f605142332415061728",
     "run_id": "aabbccddeeff00112233445566778899",
@@ -2252,11 +2255,19 @@ _CITATION = {
     "reference": "knowledge:11111111-1111-4111-8111-111111111111",
     "recorded_at": "2026-10-07T12:00:00+00:00",
     "summary": "视觉支持策略",
+    "status": "published",
+    "applicable_scope": "学龄前儿童",
+    "withdrawn": False,
+}
+
+#: 旧载荷形状（2026-10-29 之前写入的注解）：只有六个业务字段，没有可核对性三项。
+_LEGACY_CITATION = {
+    key: _CITATION[key] for key in ("citation_id", "run_id", "source", "reference", "recorded_at", "summary")
 }
 
 
 def _citation_annotation(**overrides: object) -> dict:
-    """一条注解形状的引用载荷：六个业务字段 + 判别键 `type`。"""
+    """一条注解形状的引用载荷：九个业务字段 + 判别键 `type`。"""
     return {"type": "citation", **_CITATION, **overrides}
 
 
@@ -2338,14 +2349,25 @@ def test_hydration_citation_part_shape_matches_the_wire_contract() -> None:
 
     ★ 与**事件侧**同一形状的相等关系：本包刻意不另立「水合侧专有」的 part 类型
     （与提问那一对相反，与行动卡相同），理由是回看侧要说的事实与流出侧完全一样。
-    因此这里断言字段集合**恰好**是 `CitationRecord` 那六个 + `type`——多一个字段就说明
+    因此这里断言字段集合**恰好**是 `CitationRecord` 那九个 + `type`——多一个字段就说明
     有人把回看侧的东西塞进了流出侧载荷（判别键 `type` 只在**注解**里，不进 part）。
     """
     parts = build_messages(_citation_turn_items())[1]["parts"]
     part = next(entry for entry in parts if entry["type"] == "citation")
 
     assert set(part) == {"type", "citation"}
-    assert set(part["citation"]) == {"citation_id", "run_id", "source", "reference", "recorded_at", "summary"}
+    assert set(part["citation"]) == {
+        "citation_id",
+        "run_id",
+        "source",
+        "reference",
+        "recorded_at",
+        "summary",
+        # 可核对性三项（DEMO-03）：缺任一项，依据区就没有状态徽章/适用范围/撤下标注。
+        "status",
+        "applicable_scope",
+        "withdrawn",
+    }
     # 逐字段与前端 `shared/types/sse.ts` 的 `CitationRecord` 对得上（这里是值级断言）。
     assert part["citation"]["citation_id"] == _CITATION["citation_id"]
     assert part["citation"]["source"] == "knowledge"
@@ -2353,6 +2375,66 @@ def test_hydration_citation_part_shape_matches_the_wire_contract() -> None:
     assert part["citation"]["summary"] == "视觉支持策略"
     # `recorded_at` 是字符串（JSON 里没有日期类型）——前端类型要求的正是 string。
     assert isinstance(part["citation"]["recorded_at"], str)
+
+
+def test_citation_provenance_is_rebuilt_from_the_annotation() -> None:
+    """★ DEMO-03：状态与适用范围必须随水合一起回来，且**照写入值**（不加工、不补值）。
+
+    判别性：把 `_citation_part` 里 `status` / `applicable_scope` 的读取删掉（回到
+    只读六个字段的旧实现）⇒ 本用例红——那正是缺陷现场：依据区没有状态徽章，
+    也没有适用范围。
+    """
+    parts = build_messages(_citation_turn_items())[1]["parts"]
+    payload = next(entry for entry in parts if entry["type"] == "citation")["citation"]
+
+    assert payload["status"] == "published"
+    assert payload["applicable_scope"] == "学龄前儿童"
+    assert payload["withdrawn"] is False
+
+
+def test_legacy_annotation_without_provenance_reads_as_unknown_not_published() -> None:
+    """★ 旧历史兼容：没有可核对性三项的注解 ⇒ 三项读成 `None`（未知），**不是**默认值。
+
+    判据为什么是这条：补值的默认值只能是「已发表」，而那是**编造来源状态**——
+    旧注解从没说过这条来源是否已发表。缺失与未知在界面上必须显示成「状态未知」，
+    因此读侧只能给 `None`（前端据此显示未知），不能给 `"published"`。
+
+    判别性：把 `_citation_part` 里任一可核对性字段改成 `entry.get("status", "published")`
+    这类默认值写法 ⇒ 本用例红。
+    """
+    legacy = {"type": "citation", **_LEGACY_CITATION}
+    items = [
+        _stored(1, _user("有什么资料可以参考？")),
+        _stored(2, _annotated_assistant("建议尽早评估。", annotations=[legacy])),
+    ]
+
+    payload = next(part for part in build_messages(items)[1]["parts"] if part["type"] == "citation")["citation"]
+
+    assert payload["status"] is None, "缺状态必须读成未知——不得默认成 published"
+    assert payload["applicable_scope"] is None
+    assert payload["withdrawn"] is None, "缺撤下标记必须读成「无法核对」，不得默认成 False"
+    # 旧字段照旧可用：兼容读取不等于整条丢弃。
+    assert payload["citation_id"] == _LEGACY_CITATION["citation_id"]
+    assert payload["summary"] == "视觉支持策略"
+
+
+def test_provenance_fields_reject_wrong_types_instead_of_coercing() -> None:
+    """形状不合法的可核对性字段一律读成未知，不做真值转换。
+
+    `withdrawn: "false"` 是字符串——按真值转换会得到 `True`（非空字符串），
+    也就是把一条**在库**的来源显示成「已撤下」。宁可未知，不可反着说。
+    """
+    broken = _citation_annotation(status="", applicable_scope="   ", withdrawn="false")
+    items = [
+        _stored(1, _user("有什么资料可以参考？")),
+        _stored(2, _annotated_assistant(annotations=[broken])),
+    ]
+
+    payload = next(part for part in build_messages(items)[1]["parts"] if part["type"] == "citation")["citation"]
+
+    assert payload["status"] is None
+    assert payload["applicable_scope"] is None
+    assert payload["withdrawn"] is None, '字符串 "false" 不得被读成 True（那会把在库说成撤下）'
 
 
 def test_citation_is_rebuilt_regardless_of_which_tool_ran() -> None:
@@ -2672,11 +2754,17 @@ def test_citation_annotation_constants_agree_across_the_two_parsers() -> None:
     - 改写侧的 `CITATION_ANNOTATION_TYPE`（例如 `cite`）而不改读侧 ⇒ 红；
     - 改**任一侧**的上界常量 ⇒ 红（这正是上一版守不住的那条）；
     - 上界**失去写侧执行** ⇒ `test_write_side_enforces_the_bound_...` 红。
+    - 写侧注解多出一个读侧不认的键（或反过来）⇒ 红（见下方键集合比对，DEMO-03）。
     """
+    from datetime import UTC, datetime
+
+    from campfire.agent.context import CitationRecord
     from campfire.agent.runtime.session_annotations import (
         ANNOTATION_REFERENCE_KEY,
         CITATION_ANNOTATION_MAX,
         CITATION_ANNOTATION_TYPE,
+        PROVENANCE_ANNOTATION_KEYS,
+        citation_annotation,
     )
 
     assert session_items._CITATION_ANNOTATION_TYPE == CITATION_ANNOTATION_TYPE
@@ -2687,6 +2775,28 @@ def test_citation_annotation_constants_agree_across_the_two_parsers() -> None:
     )
     # 注解里的 `type` 与线格式的 part 类型同名（三处指同一批数据）。
     assert CITATION_ANNOTATION_TYPE == PART_TYPE_CITATION
+
+    # ★ 键集合也必须逐字一致（DEMO-03）：写侧真的写出九个键，读侧真的读九个键。
+    # 少一边 ⇒ 「写进去的读不回来」；多一边 ⇒ 读侧悄悄丢掉那个字段。
+    written = citation_annotation(
+        CitationRecord(
+            citation_id="c1",
+            run_id="r1",
+            source="knowledge",
+            reference="knowledge:x",
+            recorded_at=datetime(2026, 10, 29, tzinfo=UTC),
+            summary=None,
+            status="published",
+            applicable_scope="学龄前",
+            withdrawn=False,
+        )
+    )
+    assert set(written) - {"type"} == set(get_type_hints(session_items.CitationRecordPart)), (
+        "写侧注解的键与读侧 `CitationRecordPart` 的字段必须逐字一致"
+    )
+    # 这三个键名本身也是常量：`PROVENANCE_ANNOTATION_KEYS` 与实际写出的键一致。
+    assert set(PROVENANCE_ANNOTATION_KEYS) == {"status", "applicable_scope", "withdrawn"}
+    assert set(PROVENANCE_ANNOTATION_KEYS) <= set(written)
 
 
 def test_write_side_enforces_the_bound_so_the_reader_never_truncates() -> None:
@@ -2906,12 +3016,14 @@ def test_citation_annotation_matches_what_the_session_wrapper_actually_writes() 
 def test_citation_part_shape_stays_wire_exact() -> None:
     """`CitationPart` 的**静态**形状与前端 `CitationRecord` 的字段集合逐字一致。
 
-    前端 `shared/types/sse.ts` 的 `CitationRecord` 是六字段的接口；`apps/web` 的
-    `tsc` 会按它收窄。若后端多产出一个字段，前端不会报错（结构化类型是宽进的），
-    但**契约第 7 节的「同形」就被悄悄破坏了**——因此这里用 `TypedDict` 的注解把
-    水合侧的形状本身断死（与 `test_question_event_part_shape_stays_wire_exact` 同法）。
+    前端 `shared/types/sse.ts` 的 `CitationRecord` 是九字段的接口（2026-10-29 起多了
+    可核对性三项）；`apps/web` 的 `tsc` 会按它收窄。若后端多产出一个字段，前端不会
+    报错（结构化类型是宽进的），但**契约第 7 节的「同形」就被悄悄破坏了**——因此这里用
+    `TypedDict` 的注解把水合侧的形状本身断死（与 `test_question_event_part_shape_stays_wire_exact`
+    同法）。
 
-    判别性：给 `CitationRecordPart` 加一个字段（例如 `item_id`）⇒ 本用例红。
+    判别性：给 `CitationRecordPart` 加一个字段（例如 `item_id`）⇒ 本用例红；
+    把可核对性三项删掉 ⇒ 同样红（那正是 DEMO-03 之前的形状）。
     """
     # 两份注解都必须经 `get_type_hints` 求值：本文件与 `session_items.py` 都开了
     # `from __future__ import annotations`，直接读 `__annotations__` 拿到的是
@@ -2920,7 +3032,17 @@ def test_citation_part_shape_stays_wire_exact() -> None:
     record_hints = get_type_hints(session_items.CitationRecordPart)
     part_hints = get_type_hints(session_items.CitationPart)
 
-    assert set(record_hints) == {"citation_id", "run_id", "source", "reference", "recorded_at", "summary"}
+    assert set(record_hints) == {
+        "citation_id",
+        "run_id",
+        "source",
+        "reference",
+        "recorded_at",
+        "summary",
+        "status",
+        "applicable_scope",
+        "withdrawn",
+    }
     assert set(part_hints) == {"type", "citation"}
     # `type` 是判别字段：取值必须恰好是线格式那个字符串。
     assert get_args(part_hints["type"]) == ("citation",)
