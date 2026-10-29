@@ -340,9 +340,9 @@ class AgentSystem:
     @staticmethod
     def _structured_payload(kind: str, event: Any) -> dict[str, Any]:
         """把结构化事件的原载荷转成字典（字段名与产品事件逐字一致，不改写）。"""
-        payload: dict[str, Any] = {"kind": kind}
-        for field_name in getattr(event, "__dataclass_fields__", {}):
-            payload[field_name] = getattr(event, field_name)
+        # 事件的分节、题目和选项也是数据类，必须递归转换后才能投影和写 JSON。
+        payload: dict[str, Any] = asdict(event)
+        payload["kind"] = kind
         payload.pop("type", None)
         return payload
 
