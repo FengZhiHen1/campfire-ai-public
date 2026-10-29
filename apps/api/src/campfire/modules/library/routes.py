@@ -552,7 +552,7 @@ def _retrieval_window(*, offset: int, limit: int, pageable: bool) -> int:
 async def list_items(
     _account_id: Annotated[str, Depends(current_account)],
     library: Annotated[str, Query(description="库别：case | knowledge")] = LIBRARY_CASE,
-    query: Annotated[str, Query(description="检索词；空即全量浏览流")] = "",
+    query: Annotated[str, Query(max_length=500, description="检索词；空即全量浏览流")] = "",
     cursor: Annotated[str | None, Query()] = None,
     limit: Annotated[int, Query(ge=1, le=ITEMS_MAX_LIMIT)] = ITEMS_DEFAULT_LIMIT,
     expand: Annotated[str | None, Query(description="就地展开的条目标识，一次一条")] = None,
