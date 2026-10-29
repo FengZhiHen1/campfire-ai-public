@@ -178,6 +178,20 @@ def test_unparseable_vectors_are_domain_errors(broken: object, reason: str) -> N
         canonical_vector(broken)
 
 
+def test_embedding_endpoint_identity_keeps_scheme_and_drops_credentials() -> None:
+    """端点身份保留协议（http↔https 是实质变化），剔除凭据与 query。"""
+
+    def _from(url: str) -> EmbeddingIdentity:
+        return EmbeddingIdentity.from_settings(
+            SimpleNamespace(embedding_model_name="m", resolved_embedding_base_url=url)
+        )
+
+    identity = _from("https://user:pw@gw.example:443/v1?token=secret")
+    assert identity.endpoint == "https://gw.example:443/v1"
+    assert "secret" not in json.dumps(identity.canonical())
+    assert _from("http://gw.example/v1").sha256 != _from("https://gw.example/v1").sha256
+
+
 def test_node_digest_matches_the_committed_checkpoint_algorithm() -> None:
     """摘要算法 = 旧检查点 `nodes_sha256` 的算法（规范形在用例里独立重写一遍）。"""
     nodes = [_node(1, embedding="[0.25,0.5]"), _node(0, embedding=[0.125, 0.75])]
