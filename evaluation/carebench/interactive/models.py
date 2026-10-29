@@ -92,6 +92,8 @@ class Scenario:
         payload["facts"] = _objects(
             payload["facts"], "facts", {"id", "description", "answer", "known", "initial"}, nonempty=True
         )
+        if not 3 <= len(payload["facts"]) <= 8:
+            raise ValueError("事实档案必须含 3–8 条冻结事实")
         payload["feedback"] = _objects(payload["feedback"], "feedback", {"id", "when", "reply"})
         payload["success_criteria"] = _objects(
             payload["success_criteria"], "success_criteria", {"id", "text"}, nonempty=True

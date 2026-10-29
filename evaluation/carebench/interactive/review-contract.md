@@ -2,8 +2,8 @@
 
 > 本文件说明 **评审子模块的输入、输出与机械校验规则**，供主 Agent 接线与复核使用。
 > 评测协议的唯一正文仍是 `interactive/PROTOCOL.md`；两者冲突时以协议为准，并以本文件修正实现。
-> 版本：`RUBRIC_VERSION = "0.2"`（量表）/ `interactive-scorer-a-v0.2`、
-> `interactive-scorer-b-v0.2`、`interactive-adjudicator-v0.2`（提示）。
+> 版本：`RUBRIC_VERSION = "0.2"`（量表）/ `interactive-scorer-a-v0.3`、
+> `interactive-scorer-b-v0.3`、`interactive-adjudicator-v0.3`（提示）。
 > AI 评审不构成专家背书；`needs_review` 不是通过。
 
 ## 1. 边界
@@ -142,7 +142,7 @@ facts / feedback / success_criteria / forbidden / max_assistant_turns`。`facts`
 
 1. `quote` 必须**逐字、连续**出现在所写 `turn` 的 `output_text` **或** `user_text` 里；
    改写、拼接、跨轮拼接、错轮一律拒绝。解析结果会机械标注 `anchor`（`assistant` / `user`）。
-2. 给 `quote` 时必须写 `turn`；`quote` 与 `missing=true` 互斥；`missing=true` 时 `note` 必填。
+2. 给 `quote` 时必须写 `turn`；`quote` 与 `missing=true` 互斥；`missing=true` 时 `quote=null`、`turn=null` 且 `note` 必填，不接受空字符串代替 null。
 3. `quote` ≤ 200 字（防整段搬运）。
 4. `first_turn_helpful` 为 `yes`/`no` 时，证据必须落在首个助手轮（`turn == 1`）。
 5. `source_evidence`：
