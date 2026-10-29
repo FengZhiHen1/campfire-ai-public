@@ -1,7 +1,8 @@
 """嵌入适配：TokenHub 的 OpenAI 兼容嵌入端点。
 
 职责：按配置构造框架嵌入器，并在送入前校验单条文本长度。
-边界：只做适配与校验；维度与模型名的真源在 `core/config`，凭据复用 tokenhub_base_url/tokenhub_api_key。
+边界：只做适配与校验；维度与模型名的真源在 `core/config`，端点与凭据取 `resolved_embedding_*`
+（默认回落 tokenhub 那一套；显式配置 `EMBEDDING_BASE_URL` 时才分家）。
 参考：docs/技术设计/technical-details/RAG策略.md 第 2、7、11 节；docs/技术设计/decisions/检索链归入library模块.md；细节见 `build_embedding` 与 `EmbeddingConfigurationError` 的 docstring。
 """
 
@@ -92,7 +93,8 @@ def build_embedding(settings: Settings) -> BaseEmbedding:
         EmbeddingConfigurationError: 未配置 `TOKENHUB_API_KEY` 时——显式失败，
             不静默降级（见模块说明）。
     """
-    if settings.tokenhub_api_key is None:
+    embedding_key = settings.resolved_embedding_api_key
+    if embedding_key is None:
         raise EmbeddingConfigurationError("未配置 TOKENHUB_API_KEY，无法调用嵌入服务")
 
     # trust_env=False：宿主机 no_proxy 含带方括号的 IPv6 字面量时，默认客户端
@@ -103,8 +105,8 @@ def build_embedding(settings: Settings) -> BaseEmbedding:
     return OpenAIEmbedding(
         # 必须用 model_name=（见模块说明：model= 会走枚举校验）。
         model_name=settings.embedding_model_name,
-        api_key=settings.tokenhub_api_key.get_secret_value(),
-        api_base=settings.tokenhub_base_url,
+        api_key=embedding_key.get_secret_value(),
+        api_base=settings.resolved_embedding_base_url,
         embed_batch_size=RECOMMENDED_BATCH_SIZE,
         timeout=EMBEDDING_TIMEOUT_SECONDS,
         max_retries=EMBEDDING_MAX_RETRIES,

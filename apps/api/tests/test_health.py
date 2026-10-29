@@ -558,7 +558,14 @@ def _probe_settings() -> Settings:
 
 def _settings_without_credentials() -> Settings:
     """一份**没有**凭据的配置（显式 `None` 覆盖环境变量，见对应用例的说明）。"""
-    return Settings(_env_file=None, tokenhub_api_key=None)  # type: ignore[call-arg]  # `_env_file` 不在合成签名里
+    return Settings(  # type: ignore[call-arg]  # `_env_file` 不在合成签名里
+        _env_file=None,
+        tokenhub_api_key=None,
+        # 嵌入与记忆都可以单独配凭据（见 core/config）；「没有凭据」这条判据
+        # 必须把三个入口一起清空，否则本机 .env 一配就再也测不出这个分支。
+        embedding_api_key=None,
+        memory_llm_api_key=None,
+    )
 
 
 def test_embedding_probe_sends_exactly_one_short_request(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -31,6 +31,10 @@ def _settings(**overrides: object) -> Settings:
         "tokenhub_api_key": "test-key",  # noqa: S106 —— 测试占位符，非真实凭据
         "tokenhub_base_url": "https://tokenhub.example/v1",
         "embedding_model_name": "kinfra-text-embedding-4b",
+        # 显式清掉「分家」的两个键：凭据缺省的判据不能依赖宿主机 .env 有没有配
+        # `EMBEDDING_API_KEY`（本机 .env 配了，CI 没有——不写死就两边必有一边红）。
+        "embedding_base_url": "",
+        "embedding_api_key": None,
     }
     base.update(overrides)
     return Settings(**base)  # type: ignore[arg-type]  # 夹具以 object 组合再交给 pydantic 收敛校验，静态类型看不出这层收敛

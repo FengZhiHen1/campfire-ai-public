@@ -26,7 +26,12 @@
 
 - Language: Python ≥3.12；Backend: FastAPI + Pydantic 2；包管理 uv（单应用、两个运行入口）
 - Agent 运行时: OpenAI Agents SDK；skill 注册表与工具范围控制由本项目实现
-- 模型: 腾讯云 TokenHub，**全应用单一模型** DeepSeek-V4.1-Flash；向量 `Kinfra-Text-Embedding-4b`（2560 维）
+- 模型: **全应用单一对话模型** DeepSeek-V4.1-Flash（默认走腾讯云 TokenHub；本机也可指向自建的
+  OpenAI 兼容网关，见 `.env.example` 的 `TOKENHUB_BASE_URL`）；向量 `Kinfra-Text-Embedding-4b`
+  （2560 维，仍走 TokenHub，见下）
+- **对话端点与嵌入端点可以不是同一个**：`EMBEDDING_BASE_URL` / `EMBEDDING_API_KEY` 留空时回落
+  对话那一套；换了对话网关就必须显式分家——嵌入模型与维度绑死，换家要整库重建，
+  而检索失败在产品里只表现为「没有资料」
 - RAG: LlamaIndex 全量引入（摄取、分块、嵌入适配、向量存储、融合检索）
 - Data: PostgreSQL 17 + pgvector + pg_trgm、Redis 7、FalkorDB（Graphiti 通用记忆）、MinIO（一期不用）
 - 认证: SuperTokens（Java core 容器 + Python SDK）；队列: Taskiq + Redis，独立 Worker
@@ -90,7 +95,14 @@ DEMO_INVITE_CODES=<码1>,<码2> pnpm --filter @campfire/web demo
 ```
 
 - **用途**：把典型场景（注册建档、咨询引用、应急、案例库、档案、记忆）在真浏览器 + 真模型 +
-  真库上走一遍，逐屏截成**可拿去讲**的材料；按需跑（展示前一次），**不进 CI、不算门禁**。
+  真库上走一遍，逐屏截成**可拿去讲**的材料。
+- **❌ 不要「改完就跑一遍」**（2026-10-28 用户裁决）：材料只在**明确需要**时才生成——即将演示、
+  交付、或用户点名要。它是**展示物，不是回归测试**；把它挂到每次改动之后，代价是一批 18～40 分钟
+  的真模型运行，而它红的原因多数是外部抖动（模型端点、网络），不是本次改动。
+  改动是否可靠由门禁回答（ruff/mypy/pytest、lint/typecheck/vitest/build、`e2e-real` 真栈探针），
+  材料不参与这个回答。**不进 CI、不算门禁。**
+- **生成前提**：系统**明确稳定**时才跑——`/readyz` 七项全 ok，且模型端点连续几次探测都在秒级
+  返回。端点抖动时开工只会得到一批红帧（实测：一晚三次跑批全红，白烧一小时）。
 - **落点 `demo/`**：位置固定、**整目录被 `.gitignore` 与 `.dockerignore` 排除**、
   **每轮覆盖**（`global.setup.ts` 开新批时清空）。它与 `.tmp/` 的**唯一**区别是位置固定、
   不被临时目录清理带走；**留存口径不变**——材料可再生、不入库，判据是 `git ls-files demo` 为空。

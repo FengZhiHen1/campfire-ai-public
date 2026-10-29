@@ -165,11 +165,14 @@ def build_memory_embedder(
         由 :meth:`MemoryEmbedder.aclose` 经级联关闭（实测 `AsyncOpenAI.close()` 会关闭
         注入的 http 客户端）。
     """
-    if settings.tokenhub_api_key is None:
+    # 记忆侧有两个模型客户端，端点可能不是同一个：嵌入必须用嵌入端点
+    # （嵌入模型与维度绑死、换家要整库重建），而这里只建嵌入用的那个。
+    embedding_key = settings.resolved_embedding_api_key
+    if embedding_key is None:
         raise MemoryConfigurationError("未配置 TOKENHUB_API_KEY，无法调用记忆侧的模型")
 
-    api_key = settings.tokenhub_api_key.get_secret_value()
-    base_url = settings.tokenhub_base_url
+    api_key = embedding_key.get_secret_value()
+    base_url = settings.resolved_embedding_base_url
     resolved_timeout = settings.model_request_timeout_seconds if timeout_seconds is None else timeout_seconds
     if http_client is None:
         # trust_env=False：与 `build_memory_graph` 注入的那个同一纪律（宿主机 no_proxy
@@ -452,11 +455,14 @@ def build_memory_graph(settings: Settings) -> MemoryGraph:
             嵌入都要调模型，缺凭据时显式失败，不静默降级（同
             `EmbeddingConfigurationError` 的处理纪律）。
     """
-    if settings.tokenhub_api_key is None:
+    # 记忆侧的 LLM 端点可以独立于对话端点（见 `core/config` 的 `memory_llm_base_url`）：
+    # Graphiti 取结构化输出走 Responses API，chat-only 的网关不支持。
+    memory_key = settings.resolved_memory_llm_api_key
+    if memory_key is None:
         raise MemoryConfigurationError("未配置 TOKENHUB_API_KEY，无法调用记忆侧的模型")
 
-    api_key = settings.tokenhub_api_key.get_secret_value()
-    base_url = settings.tokenhub_base_url
+    api_key = memory_key.get_secret_value()
+    base_url = settings.resolved_memory_llm_base_url
 
     client = FalkorDB(
         host=settings.falkordb_host,
