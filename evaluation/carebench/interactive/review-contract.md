@@ -2,8 +2,8 @@
 
 > 本文件说明 **评审子模块的输入、输出与机械校验规则**，供主 Agent 接线与复核使用。
 > 评测协议的唯一正文仍是 `interactive/PROTOCOL.md`；两者冲突时以协议为准，并以本文件修正实现。
-> 版本：`RUBRIC_VERSION = "0.2"`（量表）/ `interactive-scorer-a-v0.3`、
-> `interactive-scorer-b-v0.3`、`interactive-adjudicator-v0.3`（提示）。
+> 版本：`RUBRIC_VERSION = "0.2"`（量表）/ `interactive-scorer-a-v0.4`、
+> `interactive-scorer-b-v0.4`、`interactive-adjudicator-v0.4`（提示）。
 > AI 评审不构成专家背书；`needs_review` 不是通过。
 
 ## 1. 边界
@@ -153,7 +153,8 @@ facts / feedback / success_criteria / forbidden / max_assistant_turns`。`facts`
    - `verified` / `contradicted` 的引用必须来自**助手正文**：要核对的是助手的主张，家长原话不能替它作证。
 6. `fabricated_evidence` 必须有可核对来源正文及 `source_evidence=contradicted` 的实质反证。没有工具调用、调用失败、只有引用凭据或未保存正文，都不能证明来源虚构；保留 `needs_review` / `unverified`。
 7. `source_evidence=verified` 与 `fabricated_evidence` 冲突。成功调用也不证明其支持了具体结论。
-8. `revision = "not_applicable"` 只在 payload 没有任何家长反馈（`user_events` 无 `reply`）时允许。
+8. `revision = "not_applicable"` 只在 payload 没有任何家长反馈（`user_events` 无非空 `reply`）时允许；
+   回答追问、补充事实或说不知道也属于这里的反馈，不限于反驳。
 9. 分值只允许整数 `0/1/2`（`true`/`1.0` 均拒收）；`unclear` / `needs_review` 原样保留，
    解析器不做任何向 `no`/`pass` 的折算。
 10. `task_completed = "yes"` 必须给出引用，且引用必须来自助手正文——家长说「谢谢」这类礼貌
