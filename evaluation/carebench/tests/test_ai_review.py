@@ -474,8 +474,15 @@ async def test_two_passes_are_stateless_and_independent(
     users: dict[str, set[str]] = {}
     for call in client.calls:
         assert [message["role"] for message in call["messages"]] == ["system", "user"]
-        systems.setdefault(call["messages"][1]["content"], set()).add(call["messages"][0]["content"])
-        users.setdefault(call["messages"][0]["content"], set()).add(call["messages"][1]["content"])
+        protocol = call["messages"][0]["content"]
+        user = call["messages"][1]["content"]
+        assert user.startswith(protocol)
+        data = user.removeprefix(protocol)
+        for peer in identity["judges"].values():
+            if peer["prompt_text"] != protocol:
+                assert peer["prompt_text"] not in user
+        systems.setdefault(data, set()).add(protocol)
+        users.setdefault(protocol, set()).add(data)
     assert identity["judges"]["1"]["prompt_text"] in users
     assert identity["judges"]["2"]["prompt_text"] in users
     for value in systems.values():

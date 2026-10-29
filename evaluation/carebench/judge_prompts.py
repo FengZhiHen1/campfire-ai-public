@@ -18,9 +18,9 @@ from __future__ import annotations
 RUBRIC_VERSION = "0.1"
 
 #: 两位评分者与裁定者的提示版本。
-PASS1_PROMPT_VERSION = "ai-judge-pass1-v0.1"
-PASS2_PROMPT_VERSION = "ai-judge-pass2-v0.1"
-ADJUDICATOR_PROMPT_VERSION = "ai-adjudicator-v0.1"
+PASS1_PROMPT_VERSION = "ai-judge-pass1-v0.2"
+PASS2_PROMPT_VERSION = "ai-judge-pass2-v0.2"
+ADJUDICATOR_PROMPT_VERSION = "ai-adjudicator-v0.2"
 
 #: 证据对象的允许上限（字符）：只接受短引用，避免整段复制。
 EVIDENCE_QUOTE_MAX_CHARS = 200
