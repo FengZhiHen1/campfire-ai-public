@@ -82,8 +82,22 @@ describe('记忆页 · 放置与归属', () => {
     expect(screen.queryByRole('group', { name: '支持对象' })).toBeNull();
   });
 
-  it('P0 归属说明行常驻，且不依赖是否加载完成', () => {
-    renderPage(port());
+  it('P0 归属说明行常驻，且不依赖是否加载完成', async () => {
+    let finishLoading!: () => void;
+    const listEpisodes = vi.fn(async () => {
+      await new Promise<void>((resolve) => {
+        finishLoading = resolve;
+      });
+      return { items: [episode()], next_cursor: null };
+    });
+    renderPage(port({ listEpisodes }));
+
+    expect(
+      screen.getByText('这些是你自己在咨询中说过或经历过的事，关于你本人；与支持对象的档案分开保存，不随切换对象变化。'),
+    ).toBeDefined();
+
+    finishLoading();
+    await screen.findByText('今天在超市里人很多，我有点撑不住');
     expect(
       screen.getByText('这些是你自己在咨询中说过或经历过的事，关于你本人；与支持对象的档案分开保存，不随切换对象变化。'),
     ).toBeDefined();
