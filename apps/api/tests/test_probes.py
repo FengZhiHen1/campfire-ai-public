@@ -73,6 +73,73 @@ async def test_model_probe_reports_not_configured_without_key() -> None:
     assert "TOKENHUB_API_KEY" in report.detail
 
 
+# --- URL 词法判断先于客户端构造（2026-10-29 实测的宿主环境遮蔽） -----------------
+#
+# 实测触发：宿主机 `ALL_PROXY=socks5://…` 而 `socksio` 未安装时，`httpx.AsyncClient`
+# **在构造期**就抛 `ImportError`（`_init_proxy_transport`，因为 trust_env 为真）。于是
+# 一个写错的 `TOKENHUB_BASE_URL` 被报成「探针自身异常（ImportError）」——同一个提交
+# 在有代理与无代理的两台机器上给出两种结论，而「配置是否合法」本来与代理无关。
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "configured",
+    [
+        pytest.param("", id="缺协议头"),
+        pytest.param("not-a-url", id="完全不是 URL"),
+        pytest.param("http://localhost:notaport", id="端口非法"),
+        pytest.param("ftp://tokenhub.test/v1", id="协议不支持"),
+    ],
+)
+async def test_model_probe_judges_url_legality_without_building_a_client(
+    monkeypatch: pytest.MonkeyPatch,
+    configured: str,
+) -> None:
+    """地址非法时，结论不依赖「能不能建出客户端」——构造一律不发生。
+
+    判别性：把 URL 词法判断挪到客户端构造之后（即修复前的形状），本用例在宿主机
+    带 socks 代理的机器上会拿到 ImportError 那条 detail，断言变红；把判断删掉同理。
+    替身被调用即失败，因此这条用例同时钉住「顺序」而不只是「结论」。
+    """
+
+    def _client_must_not_be_built(**_kwargs: object) -> object:
+        raise AssertionError("地址非法时不该构造 HTTP 客户端")
+
+    import campfire.agent.model.probe as probe
+
+    monkeypatch.setattr(probe.httpx, "AsyncClient", _client_must_not_be_built)
+
+    report = await check_model_endpoint(Settings(tokenhub_base_url=configured, tokenhub_api_key=_TEST_API_KEY))
+
+    assert report.configured is True
+    assert report.reachable is False
+    assert "不是合法 URL" in report.detail
+
+
+@pytest.mark.asyncio
+async def test_model_probe_reports_a_client_build_failure_as_its_own_class(monkeypatch: pytest.MonkeyPatch) -> None:
+    """地址合法、但客户端因宿主机代理缺可选依赖建不出来时：单列一类，不说「不可达」。
+
+    判别性：去掉 `except ImportError` 分支，本用例会落到通用分支，`"无法建立 HTTP 客户端"`
+    不再出现（且会让运营者按「探针有 bug」去查，方向错误）。
+    """
+
+    def _socks_proxy_without_optional_dependency(**_kwargs: object) -> object:
+        raise ImportError("Using SOCKS proxy, but the 'socksio' package is not installed.")
+
+    import campfire.agent.model.probe as probe
+
+    monkeypatch.setattr(probe.httpx, "AsyncClient", _socks_proxy_without_optional_dependency)
+
+    report = await check_model_endpoint(_settings_with_key())
+
+    assert report.configured is True
+    assert report.reachable is False
+    assert "无法建立 HTTP 客户端" in report.detail
+    assert "ImportError" in report.detail
+    assert "不可达" not in report.detail
+
+
 # --- 模型探针的「200 不等于可达」（此前的成功路径零覆盖） ------------------
 #
 # 假客户端只替掉 HTTP 出口：被验证的仍是探针自己的判定逻辑。

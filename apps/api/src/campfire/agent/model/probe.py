@@ -61,6 +61,24 @@ def _lists_models(payload: object, model_name: str) -> tuple[bool, bool]:
     return True, model_name in ids
 
 
+_INVALID_CONFIG_DETAIL = "TOKENHUB_BASE_URL 或宿主机代理配置不是合法 URL"
+"""配置类失败的对外说明：base_url 写错，或宿主机代理让 httpx 无法解析 URL。"""
+
+
+def _invalid_url(url: str) -> bool:
+    """该地址是否不是可用的 `http(s)` URL（纯词法判断，不建客户端）。
+
+    必须在构造客户端之前判断：`AsyncClient` 构造期就读宿主机代理环境，socks 代理缺可选
+    依赖时抛 `ImportError`，会让写错的 base_url 被报成探针自身异常，且结论随宿主机变化。
+    `httpx.URL` 对缺协议头 / 坏端口抛 `InvalidURL`，对空串给出空 `scheme`。
+    """
+    try:
+        parsed = httpx.URL(url)
+    except httpx.InvalidURL:
+        return True
+    return parsed.scheme not in ("http", "https") or not parsed.host
+
+
 async def check_model_endpoint(settings: Settings) -> ModelEndpointReport:
     """探测模型端点。
 
@@ -80,6 +98,8 @@ async def check_model_endpoint(settings: Settings) -> ModelEndpointReport:
 
     url = f"{settings.tokenhub_base_url.rstrip('/')}/models"
     headers = _authorization_header(settings.tokenhub_api_key)
+    if _invalid_url(url):
+        return ModelEndpointReport(True, False, _INVALID_CONFIG_DETAIL)
     try:
         # 与内网探针不同，这里保留 trust_env：TokenHub 是外部服务，
         # 企业网络下可能需要经代理访问。代价是宿主机代理配置异常时探针也会失败，
@@ -95,10 +115,16 @@ async def check_model_endpoint(settings: Settings) -> ModelEndpointReport:
     except (httpx.InvalidURL, httpx.UnsupportedProtocol):
         # 配置问题，不是可达性问题。实测两类都要覆盖：坏端口抛 InvalidURL，
         # 缺协议头/错协议抛 UnsupportedProtocol。已知实例：no_proxy 含 [::1]。
+        return ModelEndpointReport(True, False, _INVALID_CONFIG_DETAIL)
+    except ImportError as exc:
+        # 客户端构造不出来（实测：`ALL_PROXY=socks5://…` 缺 `socksio`）。本模块的 import
+        # 都在模块加载期，走到这里还缺的只能是 httpx 的可选依赖；既不是可达性结论，
+        # 也不是探针的编程错误，故单列一类。
         return ModelEndpointReport(
             True,
             False,
-            "TOKENHUB_BASE_URL 或宿主机代理配置不是合法 URL",
+            f"探针无法建立 HTTP 客户端（{type(exc).__name__}）：宿主机代理配置引用了未安装的 httpx 可选依赖；"
+            "这不是端点可达性结论",
         )
     except (httpx.HTTPError, OSError, TimeoutError) as exc:
         # 只把传输类异常说成不可达：其余异常（探针自身的编程错误）不得被描述成网络问题，
