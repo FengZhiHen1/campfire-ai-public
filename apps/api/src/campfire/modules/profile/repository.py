@@ -13,9 +13,10 @@ import uuid
 from collections.abc import Sequence
 from datetime import datetime, timezone
 
-from sqlalchemy import delete, func, or_, select, update
+from sqlalchemy import and_, delete, func, or_, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.sql.elements import ColumnElement
 
 from campfire.core.pending_write import ORIGINS, UNFINISHED_STATES, PendingWrite
 from campfire.modules.profile.errors import ProfileDataError
@@ -689,7 +690,52 @@ async def list_items(
     Raises:
         ProfileDataError: 标识不合法，或 `domains` 含词表外的取值。
     """
-    parsed = to_object_uuid(support_object_id)
+    conditions = _visible_item_conditions(
+        parsed_object=to_object_uuid(support_object_id),
+        include_candidates=include_candidates,
+        include_superseded=include_superseded,
+        domains=domains,
+    )
+    return await _select_items(session, conditions=conditions, limit=limit)
+
+
+async def list_candidate_items(
+    session: AsyncSession,
+    *,
+    support_object_id: object,
+    include_superseded: bool = False,
+    domains: list[str] | None = None,
+    limit: int = ITEMS_DEFAULT_LIMIT,
+) -> list[ProfileItem]:
+    """只取候选层条目：与 `list_items` 的稳定层流各受各自上限约束，互不挤占。
+
+    两条流不可合并成一条带窗口的查询——较新的候选会占满窗口、把稳定条目挤出
+    `items`（回归 `test_items_pagination_is_not_starved_by_candidates`）。
+    """
+    conditions = _visible_item_conditions(
+        parsed_object=to_object_uuid(support_object_id),
+        include_candidates=True,
+        include_superseded=include_superseded,
+        domains=domains,
+    )
+    # 稳定层判据的补集（`ORIGINS` 只有六个取值、四个是稳定来源）。
+    conditions.append(
+        and_(
+            ProfileItem.origin.notin_(sorted(STABLE_ORIGINS)),
+            ProfileItem.confirmation != CONFIRMATION_CONFIRMED,
+        )
+    )
+    return await _select_items(session, conditions=conditions, limit=limit)
+
+
+def _visible_item_conditions(
+    *,
+    parsed_object: uuid.UUID,
+    include_candidates: bool,
+    include_superseded: bool,
+    domains: list[str] | None,
+) -> list[ColumnElement[bool]]:
+    """条目可见性条件（`list_items` 与 `list_candidate_items` 共用）。"""
     if domains is not None:
         unknown = sorted({value for value in domains if value not in DOMAINS})
         if unknown:
@@ -698,23 +744,27 @@ async def list_items(
                 operation="list_items",
                 detail=f"合法取值={sorted(DOMAINS)}",
             )
-
-    effective_limit = max(1, min(limit, ITEMS_MAX_LIMIT))
-    conditions = [
-        ProfileItem.support_object_id == parsed,
+    conditions: list[ColumnElement[bool]] = [
+        ProfileItem.support_object_id == parsed_object,
         # 被否定的条目一律不返回（第 2 节的 rejected 语义）；这一条没有开关。
         ProfileItem.confirmation != "rejected",
     ]
     if not include_superseded:
-        # 已取代的条目不返回（第 3 节不变量 3）。
+        # 已取代 / 历史的条目不返回（第 3 节不变量 3）；两道成对。
         conditions.append(ProfileItem.superseded_by.is_(None))
-        # 历史条目不返回（纠正后的旧条目可回看，但不参与默认读取）。
-        # 与上一条成对：纠正同时置这两个字段，只放开一道仍取不到历史条目。
         conditions.append(ProfileItem.freshness != FRESHNESS_HISTORICAL)
     if not include_candidates:
-        # 只看稳定层：非推断来源，或已被确认。
         conditions.append(_stable_layer_clause())
+    if domains is not None:
+        conditions.append(ProfileItem.domain.in_(sorted(domains)))
+    return conditions
 
+
+async def _select_items(
+    session: AsyncSession, *, conditions: list[ColumnElement[bool]], limit: int
+) -> list[ProfileItem]:
+    """按给定条件取条目（首次记录时间倒序，条数收敛到 `ITEMS_MAX_LIMIT`）。"""
+    effective_limit = max(1, min(limit, ITEMS_MAX_LIMIT))
     statement = (
         select(ProfileItem).where(*conditions).order_by(ProfileItem.first_recorded_at.desc(), ProfileItem.item_id)
     )
@@ -1118,6 +1168,7 @@ __all__ = [
     "insert_session_binding",
     "insert_support_object",
     "latest_bound_object_id",
+    "list_candidate_items",
     "list_items",
     "list_session_bindings",
     "list_support_objects",
