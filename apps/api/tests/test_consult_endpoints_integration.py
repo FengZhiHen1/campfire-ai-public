@@ -103,6 +103,7 @@ from campfire.surfaces.consult.runbus import (
     events_key,
     meta_key,
     mutex_key,
+    read_run_meta,
     write_run_meta,
 )
 from campfire.surfaces.consult.sse import encode_frame
@@ -671,6 +672,50 @@ async def test_send_message_returns_202_and_the_run_is_subscribable(client: http
 
     await drain_pumps()
     streamed = await _read_stream(client, body["run_id"])
+    assert streamed.status_code == 200
+    assert b"event: run_started" in streamed.content
+
+
+async def test_a_freshly_accepted_run_has_its_metadata_before_the_202(client: httpx.AsyncClient) -> None:
+    """拿到 202 的那个时刻，运行元数据已经在缓冲里（否则订阅必然 404）。
+
+    这条是 BUG-01（`GET /runs/{id}/stream` 偶发 404）在**写路径**上的一半判据：
+    `RunPump.begin()` 把元数据写完之后端点才回 202，因此「自己刚拿到的 `run_id`
+    订阅 404」在写路径上没有可乘之机。把它变成机械检查，是为了让「那个 404 只能是
+    读侧拿到了别的 `run_id`，或元数据早已过期」这个结论有可复跑的凭据，而不是一段
+    读代码得出的推理。
+
+    订阅与运行**真并发**（运行被自己的闸门按住）：这条断言测的是「元数据在不在」，
+    不是「运行先跑完了」。
+    """
+    runner = ScriptedRunner(get_settings())
+    runner.gate = asyncio.Event()
+    _install_runner(runner)
+    session_id = await _create_session(client)
+
+    started = await _send(client, session_id, content="立刻订阅")
+    assert started.status_code == 202, started.text
+    run_id = started.json()["run_id"]
+
+    # 判据直接读缓冲，而不是「再发一次 GET 看状态码」：后者要等这一次订阅真的被应用
+    # 处理到才能观察，而那时运行可能已经跑完——`_finalize` 会把元数据补写回去，
+    # 于是「元数据缺失」这个被测事实被下一条写掩盖掉（实测：删掉 `begin` 里的元数据
+    # 写入，走 HTTP 的版本仍然绿）。运行此刻停在闸门上，因此下面三行读到的是
+    # 「202 那一刻的缓冲状态」。
+    cache = RedisCache(get_settings().redis_url)
+    try:
+        meta = await read_run_meta(cache, run_id=run_id)
+        assert meta is not None, "202 已经回了，元数据却不在：订阅方必然 404"
+        assert (meta.account_id, meta.status) == (_ACCOUNT, RUN_STATUS_RUNNING)
+        assert await cache.exists(events_key(run_id)), "元数据在、缓冲不在，订阅会拿到 409"
+    finally:
+        # 闸门必须在断言失败时也放行：否则推进任务永远停在运行中，夹具的
+        # `drain_pumps()` 会把一次失败变成一个挂住的用例（判据失灵的典型形状）。
+        await cache.aclose()
+        runner.gate.set()
+
+    await drain_pumps()
+    streamed = await _read_stream(client, run_id)
     assert streamed.status_code == 200
     assert b"event: run_started" in streamed.content
 
