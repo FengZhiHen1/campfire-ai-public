@@ -85,6 +85,17 @@ def make_snapshot() -> KnowledgeSnapshot:
 class FakeAdapter:
     """脚本化适配器：按 (case_id, turn, attempt) 给出预设结局，并记录调用。"""
 
+    @staticmethod
+    def default_model_id() -> str:
+        """测试替身声明的模型 id：与测试配置的默认模型一致（verify 会核对三组同模型）。
+
+        不让替身随便报一个名字：manifest 里「三组跑同一个模型」是证据的一部分，
+        替身报 `fake-model` 会让这类核对在测试里永远失败，进而被顺手删掉。
+        """
+        from campfire.core.config import Settings
+
+        return str(Settings(database_url=TEST_DATABASE_URL).model_name)
+
     def __init__(
         self,
         system_id: str,
@@ -92,11 +103,13 @@ class FakeAdapter:
         outcome: Callable[[TurnInput], TurnOutcome] | None = None,
         delay_seconds: float = 0.0,
         fail_prepare: bool = False,
+        model_id: str | None = None,
     ) -> None:
         self.system_id = system_id
         self._outcome = outcome or (lambda request: TurnOutcome(status="completed", raw_output="脚本回复"))
         self._delay = delay_seconds
         self._fail_prepare = fail_prepare
+        self._model_id = model_id or self.default_model_id()
         self.opened: list[tuple[str, str, tuple[tuple[str, str], ...]]] = []
         self.calls: list[TurnInput] = []
 
@@ -107,7 +120,7 @@ class FakeAdapter:
             system_id=self.system_id,
             label=f"fake_{self.system_id}",
             assembly="测试替身",
-            model_id="fake-model",
+            model_id=self._model_id,
             prompt_sha256="0" * 64,
             notes={},
         )
