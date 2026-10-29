@@ -10,15 +10,9 @@ members = ["apps/api"]
 
 [tool.pytest.ini_options]
 addopts = "-q --import-mode=importlib"
-# 三处测试树：应用测试（apps/api/tests）、仓库级工具测试（scripts/tests，
-# 覆盖 scripts/worktree.py、scripts/checks.py 这类纯标准库工具）与评测工具测试
-# （evaluation/carebench/tests）。
-#
-# 评测工具测试此前**不在 testpaths 里**（2026-10-29 实测：`uv run pytest` 收集 0 条
-# 来自该目录的用例，必须手工单跑 `pytest evaluation/carebench/tests` 才会执行）。
-# 未登记的测试等于不存在——它安静地不跑，而报告仍显示「全部通过」。它们全部是
-# 确定性替身（不联网、不连库，本机实测 65 条约 11 秒），因此纳入默认收集：
-# full、CI 与本地门禁都会覆盖「评测运行器本身的续跑/落盘/汇总/校验」。
+# 三处测试树：应用测试（apps/api/tests）、仓库级工具测试（scripts/tests）、
+# 评测工具测试（evaluation/carebench/tests）。评测工具测试全部是确定性替身，
+# 不联网、不连库、不调模型，因此纳入默认收集，随 full/CI 一起跑。
 testpaths = ["apps/api/tests", "scripts/tests", "evaluation/carebench/tests"]
 # 归档代码不参与收集：archive/ 下为已废弃的旧实现与旧测试。
 norecursedirs = ["archive", "node_modules", ".venv", "dist", "build", ".dsh", ".claude", ".agent"]

@@ -71,20 +71,14 @@ CAT_UNKNOWN = "unknown"
 #: 没有任何确定性检查覆盖的类别（`quick` 遇到即阻塞）。
 UNCOVERED_CATEGORIES = frozenset({CAT_UNKNOWN, CAT_CI, CAT_OPS})
 
-#: 前端样式契约文件：`apps/web` 的 `build` 第一步 `sync-tokens` 逐字节读它。
-#:
-#: 改动它们的判据只有 `build` 会把关（`docs/development/testing.md` §3 最后一条），
-#: 因此即便归类是「文档」也必须把前端 lint / vitest / build 一起跑起来。
+#: 前端样式契约：`apps/web` 的 `build` 第一步 `sync-tokens` 逐字节读它，判据只有 build 把得住。
 WEB_CONTRACT_PATHS = frozenset({"docs/design/tokens.css"})
 
-#: 测试基础设施文件名：改它们等于改「所有用例怎么跑」，**不能**当成一个可跑的 pytest 目标。
-#:
-#: 两个理由：`conftest.py` 自身零用例（pytest 退出码 5 = 没有收集到用例，会被误读成
-#: 「检查失败」）；而它的影响面覆盖整个测试树，只跑它等于什么都没验。
+#: 测试基础设施：改它等于改「所有用例怎么跑」，不能当成可跑的 pytest 目标
+#: （`conftest.py` 零用例，单独跑是退出码 5）。
 TEST_INFRA_NAMES = frozenset({"conftest.py"})
 
-#: 测试包标记文件（`apps/api/tests/__init__.py` 决定 `from .conftest import` 可解析）：
-#: 同 :data:`TEST_INFRA_NAMES`，改它不能只跑它自己。
+#: 测试包标记（`from .conftest import` 依赖它），同 :data:`TEST_INFRA_NAMES`。
 TEST_INFRA_PATHS = frozenset({"apps/api/tests/__init__.py"})
 
 #: 源码路径里的「容器层」词：它们只是目录，不携带「哪个模块」的信息。
@@ -211,10 +205,7 @@ def classify(path: str) -> str:
     if normalized.startswith("scripts/"):
         return CAT_SCRIPTS
     if name in {"pyproject.toml", "uv.lock"}:
-        # 按**文件名**而不是仓库根全路径判定（2026-10-29 修）：`apps/api/pyproject.toml`
-        # 是应用的依赖清单，改它同样会让全部检查换一套依赖。此前它落到 `unknown`，
-        # 于是 `quick` 直接阻塞（退出码 2）——那是工具自己造的假失败，而且会诱使人加
-        # `--accept-unchecked` 把一条真实的依赖改动「接受」成无需检查。
+        # 按文件名判定：`apps/api/pyproject.toml` 也是依赖清单，落到 unknown 会假阻塞。
         return CAT_PY_CONFIG
     if normalized.startswith(".github/"):
         return CAT_CI
@@ -262,14 +253,7 @@ def existing_paths(paths: list[str]) -> list[str]:
 
 
 def is_test_infrastructure(path: str) -> bool:
-    """该路径是否属于「测试基础设施」——改它会改变**所有**用例的运行方式。
-
-    判据只认两类：`conftest.py`（任意目录）与 `apps/api/tests/__init__.py`
-    （包标记，决定 `from .conftest import …` 能否解析）。
-
-    为什么它们不能被当成一个普通的 pytest 目标：`conftest.py` 里没有任何用例，
-    单独交给 pytest 会得到**退出码 5（没有收集到用例）**——`quick` 会把它报成
-    「检查失败」，而真实情况是「这条命令从一开始就不可能跑出结果」。
+    """该路径是否属于「测试基础设施」（改它会影响全部用例的运行方式）。
 
     Args:
         path: 仓库相对路径。
@@ -287,7 +271,7 @@ def pytest_files_for(paths: list[str], existing_tests: list[Path]) -> list[str] 
     规则（刻意保守——宁可让调用方显式 `--pytest`，也不假装「跑过了相关测试」）：
 
     1. 改到测试文件本身（应用测试或工具测试）→ 直接跑它；已被删除的不跑（只计入影响面），
-       测试基础设施（`conftest.py`、tests 包标记）也不跑——它自己零用例，由调用方升级为全量。
+       测试基础设施（`conftest.py`、tests 包标记）也不跑，由调用方升级为全量。
     2. 改到 `scripts/*.py` → 跑 `scripts/tests/test_<stem>*.py`（若存在）。
     3. 改到源码 → 用路径里的**第一个**非容器层词去匹配 `test_<词>_*.py`；
        匹配不到再退到文件名（如 `pending_write` → `test_pending_write_*.py`）；
@@ -311,8 +295,7 @@ def pytest_files_for(paths: list[str], existing_tests: list[Path]) -> list[str] 
         category = classify(path)
         if category in {CAT_PY_TESTS, CAT_SCRIPT_TESTS}:
             # 改到测试自己 → 跑它（删除的测试没有可跑的目标，跳过即可）。
-            # 测试基础设施（`conftest.py`、tests 包标记）不在此列：它自己零用例，
-            # 单独跑只会得到退出码 5；它的影响面由 `quick_plan` 升级为全量 pytest。
+            # 测试基础设施不在此列：它自己零用例（退出码 5），由 `quick_plan` 升级为全量。
             if path in alive and not is_test_infrastructure(path):
                 selected.add(path)
         elif category == CAT_SCRIPTS and path.endswith(".py"):
@@ -423,11 +406,10 @@ def quick_plan(base: str, pytest_override: list[str] | None) -> tuple[list[Step]
         # 必须过 lint、mypy 与完整 pytest。此前这里只跑了 ruff，等于把「锁文件升级后
         # 全套测试还绿吗」这件事交给发布前那一刻。
         #
-        # 全量 pytest 不在这里排：下方统一按 `needs_full_pytest` 排一次，避免与
-        # 「测试基础设施改动」同时命中时排两条同样的命令（2026-10-29）。
+        # 全量 pytest 在下方按 `needs_full_pytest` 统一排一次（不重复排）。
         steps.extend(_ruff_step(["."]))
         steps.append(mypy_step)
-        report.append("只动了 Pyproject/lock：跑 lint + mypy + 全量 pytest（配置改动影响所有检查）")
+        report.append("配置改动（pyproject.toml / uv.lock）：跑 lint + mypy + 全量 pytest")
 
     if CAT_DOCS in covered:
         steps.append(
@@ -453,11 +435,10 @@ def quick_plan(base: str, pytest_override: list[str] | None) -> tuple[list[Step]
         if model_or_db_touched and CAT_MIGRATIONS not in covered:
             report.append("改了 ORM 模型/引擎定义：一并跑迁移漂移检查（alembic check）")
 
-    # 测试基础设施：`conftest.py` / tests 包标记决定「所有用例怎么跑」，影响面覆盖整棵测试树。
-    # 单独跑它没有意义（零用例，pytest 退出码 5），因此按 `testing.md` §7 升级为全量 pytest。
+    # 测试基础设施（conftest/包标记）影响整棵测试树，按 `testing.md` §7 升级为全量 pytest。
     test_infra_touched = any(is_test_infrastructure(path) for path in paths)
     if test_infra_touched:
-        report.append("改了测试基础设施（conftest.py / tests 包标记）：升级为全量 pytest（影响全部用例）")
+        report.append("测试基础设施改动：升级为全量 pytest")
 
     needs_full_pytest = CAT_PY_CONFIG in covered or test_infra_touched
     tests_wanted = needs_full_pytest or bool(
@@ -475,8 +456,7 @@ def quick_plan(base: str, pytest_override: list[str] | None) -> tuple[list[Step]
                 )
             )
         elif needs_full_pytest:
-            # 依赖清单 / 测试基础设施改动影响**每一轮**检查，因此跑全量而不是按路径推断。
-            # 两者同时命中时也只跑一次全量（不重复跑）。
+            # 依赖清单 / 测试基础设施改动影响每一轮检查，跑全量而不是按路径推断。
             steps.append(full_pytest_step)
         else:
             selection = pytest_files_for(paths, existing_test_files())
@@ -503,13 +483,10 @@ def quick_plan(base: str, pytest_override: list[str] | None) -> tuple[list[Step]
                     )
                 )
 
-    # 样式契约（`docs/design/tokens.css`）的归类是「文档」，但它的消费者是前端构建：
-    # `apps/web` 的 `build` 第一步 `sync-tokens` 逐字节读它，契约类名断言也在 `build` 里。
-    # 因此即便没有 `apps/web` 的改动，也必须把 lint / vitest / build 一起跑起来
-    # （`docs/development/testing.md` §3：「改动到 … tokens.css 时例外」）。
+    # 样式契约归「文档」，但消费者是前端构建（sync-tokens + 契约类名断言），必须一起跑。
     web_contract_touched = any(path in WEB_CONTRACT_PATHS for path in paths)
     if web_contract_touched:
-        report.append(f"改了前端样式契约（{'、'.join(sorted(WEB_CONTRACT_PATHS))}）：必须跑前端构建")
+        report.append(f"前端样式契约改动（{'、'.join(sorted(WEB_CONTRACT_PATHS))}）：跑前端 lint/test/build")
 
     if CAT_WEB in covered or CAT_WEB_CONFIG in covered or web_contract_touched:
         steps.append(Step(key="web-lint", title="前端 oxlint", argv=("pnpm", "--filter", "@campfire/web", "lint")))

@@ -242,12 +242,7 @@ def create(slug: str, base: str) -> int:
 
 
 def _dirty_count(path: Path) -> int | None:
-    """工作树里已修改/未跟踪/未提交的条目数；目录不可读时返回 `None`（不猜成 0）。
-
-    为什么必须列出来（`docs/development/worktree-environment.md` §2）：`list` 的这两个
-    字段是**清理判据**，不是装饰。只列路径与分支时，「这个泳道能不能删」要靠人再敲一次
-    `git status` / `git log` —— 而那正是删除前最容易漏掉的两步（漏掉的后果是未提交的
-    工作随工作树一起消失）。
+    """工作树里未提交的条目数；目录不可读时返回 `None`（不猜成 0）。
 
     Args:
         path: 工作树目录。
@@ -265,7 +260,7 @@ def _unmerged_count(root: Path, branch: str | None, base: str) -> int | None:
     """该分支相对基线还有几个未并入的提交；无法判定时返回 `None`。
 
     Args:
-        root: 原始项目根（git 命令在这里跑，因为它同时看得见主树与全部工作树的分支）。
+        root: 原始项目根（这里看得见全部工作树的分支）。
         branch: 工作树当前分支（detached 时为 `None`）。
         base: 基线分支名。
 
@@ -282,7 +277,7 @@ def _unmerged_count(root: Path, branch: str | None, base: str) -> int | None:
 
 
 def list_worktrees(base: str = "dev") -> int:
-    """列出全部工作树，标注原始根、脏/未合状态与本仓任务工作树。
+    """列出全部工作树：原始根、脏/未合状态与本仓任务工作树（两者是清理判据）。
 
     Args:
         base: 判定「未并入」所用的基线分支（默认 `dev`，与仓库习惯一致）。
