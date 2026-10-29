@@ -31,7 +31,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 import pytest_asyncio
-from sqlalchemy import delete, func, select, text
+from sqlalchemy import delete, func, select, text, update
 
 from campfire.core.config import get_settings
 from campfire.core.db import session_scope
@@ -682,6 +682,139 @@ async def test_lease_fence_rejects_a_late_writer() -> None:
         async with session_scope(get_settings()) as session:
             with pytest.raises(PendingWriteNotFoundError):
                 await mark_done(session, pending_id=pending_id)
+    finally:
+        await _clear()
+
+
+async def _claim_by_two_workers(pending_id: uuid.UUID) -> datetime:
+    """A 领取（已提交）→ 租约过期 → B 重领（已提交），返回 B 的参照时间。"""
+    base = datetime.now(timezone.utc)
+    async with session_scope(get_settings()) as session:
+        assert await take_for_processing(session, pending_id=pending_id, lease_owner="A", now=base) is not None
+    later = base + timedelta(seconds=LEASE_SECONDS_FOR_TEST + 1)
+    async with session_scope(get_settings()) as session:
+        assert await take_for_processing(session, pending_id=pending_id, lease_owner="B", now=later) is not None
+    return later
+
+
+@pytest.mark.asyncio
+async def test_late_failure_cannot_steal_another_workers_lease() -> None:
+    """A 的迟到失败登记不得把 B 正在处理的记录改回 `pending`。
+
+    判别性：旧的（无栅栏）实现会把状态改回 `pending`、清掉 B 的租约、`attempts + 1`
+    ——本用例的「状态/租约/attempts/退避全部不变」断言随之失败。
+    """
+    await _clear()
+    try:
+        pending_id = await _enqueue_memory()
+        later = await _claim_by_two_workers(pending_id)
+
+        async with session_scope(get_settings()) as session:
+            with pytest.raises(PendingWriteNotFoundError):
+                await mark_retryable_failure(
+                    session, pending_id=pending_id, error="A 的迟到失败", lease_owner="A", now=later
+                )
+
+        async with session_scope(get_settings()) as session:
+            row = (await session.execute(select(PendingWrite).where(PendingWrite.id == pending_id))).scalar_one()
+        assert row.state == STATE_PROCESSING
+        assert row.lease_owner == "B", "迟到失败不得清掉别人的租约"
+        assert row.attempts == 0, "迟到失败不得消耗别人的重试预算"
+        assert row.next_attempt_at is None
+        assert row.last_error is None
+
+        # 真写入者 B 的终结仍然成立。
+        async with session_scope(get_settings()) as session:
+            assert (await mark_done(session, pending_id=pending_id, lease_owner="B")).state == STATE_DONE
+    finally:
+        await _clear()
+
+
+@pytest.mark.asyncio
+async def test_retry_exhaustion_keeps_the_lease_fence() -> None:
+    """重试耗尽的分支也必须守同一栅栏：迟到失败不得把 B 的记录直接置 `dead`。
+
+    判别性：若耗尽分支调 `mark_dead` 时不带 `lease_owner`，A 会终结 B 的记录
+    （B 的写入从此没有记录可对账），`state == processing` 的断言失败。
+    """
+    await _clear()
+    try:
+        pending_id = await _enqueue_memory()
+        later = await _claim_by_two_workers(pending_id)
+        # 让「下一次失败」正好触顶（B 的租约仍在，归属 B）。
+        async with session_scope(get_settings()) as session:
+            await session.execute(
+                update(PendingWrite).where(PendingWrite.id == pending_id).values(attempts=MAX_ATTEMPTS - 1)
+            )
+
+        async with session_scope(get_settings()) as session:
+            with pytest.raises(PendingWriteNotFoundError):
+                await mark_retryable_failure(
+                    session, pending_id=pending_id, error="A 的迟到失败", lease_owner="A", now=later
+                )
+        async with session_scope(get_settings()) as session:
+            row = (await session.execute(select(PendingWrite).where(PendingWrite.id == pending_id))).scalar_one()
+        assert row.state == STATE_PROCESSING, "迟到失败不得把别人的记录转 dead"
+        assert row.lease_owner == "B"
+        assert row.attempts == MAX_ATTEMPTS - 1
+
+        # 真正的持有者 B 的第 MAX 次失败 → 转 dead。
+        async with session_scope(get_settings()) as session:
+            dead = await mark_retryable_failure(
+                session, pending_id=pending_id, error="真失败", lease_owner="B", now=later
+            )
+        assert dead.state == STATE_DEAD
+    finally:
+        await _clear()
+
+
+@pytest.mark.asyncio
+async def test_late_dead_cannot_terminate_another_workers_record() -> None:
+    """迟到的不可重试判定（`mark_dead`）同样不得终结别人持有的记录。"""
+    await _clear()
+    try:
+        pending_id = await _enqueue_memory()
+        later = await _claim_by_two_workers(pending_id)
+
+        async with session_scope(get_settings()) as session:
+            with pytest.raises(PendingWriteNotFoundError):
+                await mark_dead(session, pending_id=pending_id, error="A 的迟到终结", lease_owner="A", now=later)
+
+        async with session_scope(get_settings()) as session:
+            row = (await session.execute(select(PendingWrite).where(PendingWrite.id == pending_id))).scalar_one()
+        assert row.state == STATE_PROCESSING
+        assert row.lease_owner == "B"
+    finally:
+        await _clear()
+
+
+@pytest.mark.asyncio
+async def test_failure_registration_survives_a_rolled_back_consume_transaction() -> None:
+    """消费事务回滚后的失败登记必须照常生效（真实 worker 的调用形状）。
+
+    领取与写入同在一个事务里，失败即整笔回滚 ⇒ 库里是回滚前的 `pending`、
+    `lease_owner IS NULL`；失败登记随后在**新事务**里带自己的 `lease_owner` 调用。
+    判别性：若栅栏写成「必须 `processing` 且属主相符」，本用例抛
+    `PendingWriteNotFoundError`——真实重试链路会永久卡在 `pending`：不增
+    `attempts`、永不进 `dead`、也不告警。
+    """
+    await _clear()
+    try:
+        pending_id = await _enqueue_memory()
+        with pytest.raises(RuntimeError):
+            async with session_scope(get_settings()) as session:
+                assert await take_for_processing(session, pending_id=pending_id, lease_owner="A") is not None
+                raise RuntimeError("模拟写入阶段失败（整笔回滚）")
+
+        async with session_scope(get_settings()) as session:
+            row = (await session.execute(select(PendingWrite).where(PendingWrite.id == pending_id))).scalar_one()
+        assert row.state == STATE_PENDING and row.lease_owner is None, "回滚后应回到回滚前的 pending"
+
+        async with session_scope(get_settings()) as session:
+            failed = await mark_retryable_failure(session, pending_id=pending_id, error="模型超时", lease_owner="A")
+        assert failed.state == STATE_PENDING
+        assert failed.attempts == 1
+        assert failed.next_attempt_at is not None
     finally:
         await _clear()
 
