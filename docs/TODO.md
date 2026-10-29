@@ -232,11 +232,11 @@
 
 ## 十、正式评测接续（2026-10-29 环境迁移时暂停）
 
-正式 40 例已入库，尚未冻结、尚未运行。用户已决定采用两套独立 agent 盲评，不依赖人工；AI 评审不等于专业审核。产品当前模型配置为 `cn:deepseek-v4.1-flash`。正式接续顺序为 **identity → freeze（含身份）→ run --dry-run → ai-prepare → resume**；生成后先 `review-export`，再 `ai-score` / `ai-adjudicate`。专业审核仍未满足。细节见[评测交接](../evaluation/carebench/HANDOFF.md)。
+正式 40 例已入库，并在恢复后的 `20261029-carebench-formal-01` 中冻结并开始生成。用户已决定采用两套独立 agent 盲评，不依赖人工；AI 评审不等于专业审核。产品模型为 `cn:deepseek-v4.1-flash`。本次已执行 **identity → freeze（含身份）→ run --dry-run → ai-prepare → resume**；生成后先 `review-export`，再 `ai-score` / `ai-adjudicate`。专业审核仍未满足。细节见[评测交接](../evaluation/carebench/HANDOFF.md)。
 
 | ID | 未完成项 | 完成判据 |
 |---|---|---|
 | ~~EVAL-01~~ | **实现与 CareBench 全套验证已完成** | 知识快照规范 hash 覆盖节点正文、标识、metadata、向量、条目 `doc_hash` 与嵌入身份；同节点数内容漂移会改变快照身份，续跑会拒绝。`evaluation/carebench/tests` 全套 183 项通过；full-04（`dev` `59aac1f0`）十步全部通过，JUnit 2267 passed / 3 deselected / 0 failed / 0 errors / 0 skipped；后续 full-05 与固定版本真实浏览器四项验收均通过，详见[质量审查记录](development/checkpoints/2026-10-29-quality-audit.md)。 |
 | ~~EVAL-02~~ | **实现与 CareBench 全套验证已完成** | verify 已校验运行身份、结构化输出、重试与故障观察状态等证据；正式非 dry-run 的 `run`/`resume` 会在适配器装配和模型调用前拒绝缺失、无效、未锚定或缺第三位独立裁定者的 formal AI 评分身份。失败例覆盖 missing/tampered/unanchored/no_adjudicator，valid 状态正控会真实通过替身生成，见 `test_formal_generation_requires_frozen_review_identity_before_any_call`；CareBench 全套 183 项通过；full-04 JUnit 2267 passed / 3 deselected / 0 failed / 0 errors / 0 skipped，后续 full-05 与固定版本真实浏览器四项验收均通过，详见[质量审查记录](development/checkpoints/2026-10-29-quality-audit.md)。 |
 | ~~EVAL-03~~ | **实现与 CareBench 全套验证已完成** | 两套独立 AI 评分、第三位独立裁定者与独立 `ai_scores` 通道已实现；评分身份、提示词、原始响应、证据位置和裁定尝试留痕，不写入 `human_scores`。CareBench 全套 183 项通过；full-04 JUnit 2267 passed / 3 deselected / 0 failed / 0 errors / 0 skipped，后续 full-05 与固定版本真实浏览器四项验收均通过，详见[质量审查记录](development/checkpoints/2026-10-29-quality-audit.md)。 |
-| EVAL-04 | 正式运行、评分与材料数字回填尚未开始 | 正式集仍未冻结、未运行。按身份冻结与执行顺序完成 40 例 A/B/C、两套 AI 盲评及分歧裁定，校验并按真实 `run_id` 回填报告和主张索引。专业审核仍未满足；AI 评分不构成专业认可、安全或临床有效性证据。 |
+| EVAL-04 | **正式 40 例已冻结并开始运行，评分与材料数字回填待完成** | `20261029-carebench-formal-01` 固定提交 `5ca790dc`，120 个案例/系统组合、138 个预定回合；生成前已冻结两评分者及独立裁定者身份，全部案例仍为 `draft_unreviewed`。full-09 Python 2293 项、前端 604 项通过；详情及完整 hash 见[长程交付记录](development/checkpoints/2026-10-29-final-delivery.md)。完成生成、两套 AI 盲评、分歧裁定与 `verify --require-complete` 后才按真实 `run_id` 回填。专业审核仍未满足；AI 评分不构成专业认可、安全或临床有效性证据。 |
