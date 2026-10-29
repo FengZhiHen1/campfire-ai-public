@@ -52,6 +52,7 @@ GROUP = "it_memory_probe"
 #: 因此 `except` 匹配不到——容器不可用时该文件 4 个用例全部 FAILED，
 #: 而 docstring 却宣称「容器不可用则跳过」。共用一份实现避免再次踩同一个坑。
 from .conftest import FALKOR_UNAVAILABLE_ERRORS as _UNAVAILABLE_ERRORS
+from .conftest import settings_with_placeholder_model_key
 
 
 async def _graph():  # noqa: ANN202 —— 返回 MemoryGraph，此处避免 import 循环
@@ -61,12 +62,15 @@ async def _graph():  # noqa: ANN202 —— 返回 MemoryGraph，此处避免 imp
     `FalkorDB(...)` 构造函数本身发网络 I/O——它内部会探测集群模式，指向死端口时
     构造期即抛 `redis.exceptions.ConnectionError`。此前把构造写在 try 之外，
     容器不可用时整个文件 4 个用例全部 FAILED（而非按 docstring 宣称的 skip）。
-    """
-    from campfire.modules.memory.errors import MemoryConfigurationError
 
-    settings = get_settings()
-    if settings.tokenhub_api_key is None:
-        pytest.skip("未配置 TOKENHUB_API_KEY——装配需要它（不实际调用模型）")
+    凭据（2026-10-29 修订）：本文件一次模型请求都不发——只跑驱动查询与
+    `EntityEdge.get_by_nodes` 这类图元操作。`TOKENHUB_API_KEY` 在这里只是
+    `build_memory_graph` 的**构造期**前置条件，因此缺凭据时补一个非秘密占位
+    （`conftest.settings_with_placeholder_model_key`），而不是整批 skip：
+    按凭据跳过会让这 4 条真正依赖 FalkorDB 的确定性用例在没有 key 的机器/CI 上
+    静默消失。真调模型是另一件事，见 `live_model` marker。
+    """
+    settings = settings_with_placeholder_model_key(get_settings())
 
     try:
         graph = build_memory_graph(settings)
@@ -75,9 +79,6 @@ async def _graph():  # noqa: ANN202 —— 返回 MemoryGraph，此处避免 imp
     except _UNAVAILABLE_ERRORS as exc:
         # 只把「连不上」当环境问题；其余异常直接冒泡成失败。
         pytest.skip(f"FalkorDB 不可用（{type(exc).__name__}）——先 docker compose up -d falkordb")
-    except MemoryConfigurationError:
-        # 配置缺失属环境问题（且已在上面按凭据判过一次，这里是兜底）。
-        pytest.skip("记忆装配缺少配置——检查 .env 的 TOKENHUB_* 与 FALKORDB_*")
     except Exception:
         # 非连接类异常说明装配或查询真的坏了，必须先关资源再让用例失败。
         raise

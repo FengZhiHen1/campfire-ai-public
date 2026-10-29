@@ -68,20 +68,35 @@ async def _require_database() -> AsyncIterator[None]:
     yield
 
 
-def _require_tokenhub_or_skip() -> None:
-    """未配置 `TOKENHUB_API_KEY` 时跳过。
+# 历史留痕：此处原有一个「没 `TOKENHUB_API_KEY` 就整条 skip」的守卫（2026-10-29 删除）。
+#
+# 它守的是记忆页那一段：`/memory/episodes` 读的是真实记忆图库
+# （`get_shared_memory_graph`，构造期要求凭据）。问题有二：
+#
+# 1. **位置错**：守卫写在流程**中段**，skip 会连带吞掉它后面的案例库浏览页断言，
+#    也让前面档案段落的判定意义打折——一条用例同时被当成「跑过」和「没跑」。
+# 2. **依赖判错**：读端点**不发任何模型请求**，凭据只是装配的前置条件。
+#
+# 现在的处理：`placeholder_model_env` 在缺凭据时注入非秘密占位（专为「只读、不调模型」
+# 的用例准备），于是这条 E2E 在没有模型凭据的机器/CI 上照样跑完。真调模型的用例走
+# `live_model` marker（显式开启、缺环境即失败），那是另一条通道。
 
-    只有「记忆页」那一段需要它：`/memory/episodes` 读的是真实记忆图库
-    （`get_shared_memory_graph`，构造期要求该凭据）。
 
-    实测（2026-10-01，CI 环境无此凭据）：不加守卫时该端点在记忆图库不可用时回
-    503 `memory_unavailable`，而本用例断言 200——于是 failed。
-    那个 503 是正确的产品行为（图库不可用要如实报，不是假装空集），
-    所以这里该按环境 skip，而不是把断言放宽成「200 或 503」——后者会把
-    「图库挂了」和「真的没有记忆」混为一谈，而本文件存在的意义之一正是区分这两者。
+@pytest_asyncio.fixture(autouse=True)
+async def _read_only_model_credentials(placeholder_model_env: None) -> AsyncIterator[None]:
+    """记忆页只读：缺模型凭据时注入非秘密占位，并在收尾关掉本用例建起来的共享句柄。
+
+    为什么不留下句柄：`get_shared_memory_graph` 是进程级单例，本文件让它按占位凭据
+    建过一次之后，后续用例会**复用**这个句柄——那会让「图库不可用 → 503」这类用例
+    读到一条本来能连的图库。收尾只关「本用例建的那一个」：进来时已有句柄（别的用例
+    装的替身）就原样不动。
     """
-    if get_settings().tokenhub_api_key is None:
-        pytest.skip("未配置 TOKENHUB_API_KEY——记忆页读端点需要真实记忆图库")
+    from campfire.modules.memory import graph as graph_module
+
+    built_here = graph_module._shared_graph is None
+    yield
+    if built_here and graph_module._shared_graph is not None:
+        await graph_module.aclose_shared_memory_graph()
 
 
 @pytest_asyncio.fixture(autouse=True)
@@ -282,7 +297,8 @@ async def test_pages_flow_from_empty_profile_to_library(client: httpx.AsyncClien
     assert other.status_code == 404
 
     # ── 记忆页：查看端点的契约形状（空即 200 空数组，不是失败） ────────────
-    _require_tokenhub_or_skip()
+    # 凭据由 autouse 的 `_read_only_model_credentials` 备好（缺则注入非秘密占位）；
+    # 这里不再按环境 skip——读端点不发模型请求，skip 只会白白吞掉本用例后半段。
     response = await client.get("/memory/episodes")
     assert response.status_code == 200, response.text
     body = response.json()

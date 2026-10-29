@@ -22,15 +22,29 @@ from campfire.core.config import Settings
 
 
 def _settings(**overrides: object) -> Settings:
-    """构造一份**不受仓库根 `.env` 影响**的配置。
+    """构造一份**不受仓库根 `.env` 与进程环境变量影响**的配置。
 
     `_env_file=None` 是 pydantic-settings 的官方开关，但它不在合成的 `__init__` 签名里，
     所以只能加 `type: ignore`（同 `test_health.py` 的既有做法）。不隔离的话，
     「默认值回落」这条判据会随宿主机 `.env` 变化：本机绿、CI 红，或者反过来。
+
+    只关掉 `.env` 文件还不够（2026-10-29 全量 pytest 基线实测）：pydantic-settings 的
+    优先级里**环境变量高于 `_env_file`**，而 `bash` 里 `set -a; source .env` 的写法
+    （以及把 `.env` 的变量导出后再跑测试的任何脚本）会把 `EMBEDDING_BASE_URL` /
+    `MEMORY_LLM_*` 一起带进进程。于是「留空 ⇒ 回落」的用例读到的是宿主机的独立端点，
+    断言逐字对比时直接假红。因此这里把三个可拆分的端点/凭据**显式钉成未配置**，
+    用例要拆家时再经 `overrides` 覆盖。
     """
+    base: dict[str, object] = {
+        "embedding_base_url": "",
+        "embedding_api_key": None,
+        "memory_llm_base_url": "",
+        "memory_llm_api_key": None,
+    }
+    base.update(overrides)
     # 两个 ignore 各管一件事：`call-arg` 是 `_env_file` 不在合成签名里，
     # `arg-type` 是 `**dict[str, object]` 交给 pydantic 在运行期收敛（同 `test_library_embedding._settings`）。
-    return Settings(_env_file=None, **overrides)  # type: ignore[call-arg, arg-type]
+    return Settings(_env_file=None, **base)  # type: ignore[call-arg, arg-type]
 
 
 def test_embedding_endpoint_falls_back_to_the_chat_endpoint() -> None:
@@ -40,9 +54,7 @@ def test_embedding_endpoint_falls_back_to_the_chat_endpoint() -> None:
     「默认值」这条判据在本机看着绿、在 CI（无 `.env`）或换了 `.env` 之后变红——
     而它要验的恰恰是**默认值**本身。
     """
-    settings = Settings(
-        _env_file=None, tokenhub_base_url="https://example.test/v1", tokenhub_api_key=SecretStr("chat-key")
-    )
+    settings = _settings(tokenhub_base_url="https://example.test/v1", tokenhub_api_key=SecretStr("chat-key"))
 
     assert settings.resolved_embedding_base_url == "https://example.test/v1"
     assert settings.resolved_embedding_api_key is not None
@@ -51,8 +63,7 @@ def test_embedding_endpoint_falls_back_to_the_chat_endpoint() -> None:
 
 def test_embedding_endpoint_can_be_split_from_the_chat_endpoint() -> None:
     """显式配置 ⇒ 分家：对话走本地网关、嵌入仍走原厂。"""
-    settings = Settings(
-        _env_file=None,
+    settings = _settings(
         tokenhub_base_url="http://127.0.0.1:7863/v1",
         tokenhub_api_key=SecretStr("gateway-key"),
         embedding_base_url="https://tokenhub.example.test/v1",
@@ -78,8 +89,7 @@ def test_both_embedding_consumers_use_the_resolved_endpoint(consumer: str) -> No
     只测配置属性是不够的：漏改其中一个消费者，就会出现「一半走原厂、一半走本地网关」，
     而那种不一致比全错更难查（检索命中率时高时低，看不出规律）。
     """
-    settings = Settings(
-        _env_file=None,
+    settings = _settings(
         tokenhub_base_url="http://127.0.0.1:7863/v1",
         tokenhub_api_key=SecretStr("gateway-key"),
         embedding_base_url="https://tokenhub.example.test/v1",
