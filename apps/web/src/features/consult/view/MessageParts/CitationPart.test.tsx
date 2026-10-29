@@ -1,23 +1,35 @@
 /**
  * 模块: view/MessageParts/CitationPart.test
- * 职责: 依据区的回归守卫——深链目标从哪来、什么时候不给链接、标题用哪一段
+ * 职责: 依据区的回归守卫——深链目标从哪来、什么时候不给链接、标题用哪一段、
+ *       状态徽章/适用范围/撤下标注怎么显示（DEMO-03）
  * 数据来源:
- *   - docs/design/pages/对话页.md: MUST — 契约修订 5（依据区收起、标题整体可点、跳 /cases?item=）
+ *   - docs/design/pages/对话页.md: MUST — 契约修订 5（依据区收起、标题整体可点、跳 /cases?item=、状态徽章、撤下标注）
+ *   - docs/技术设计/technical-details/资料与案例检索.md: MUST — 第 3 节（status/applicable_scope 随结果传递）、
+ *     第 4 节（历史引用保留，但不得再作为当前依据，标注「该来源已撤下」）
  *   - apps/api/src/campfire/tools/library.py: MUST — `reference` 的线格式是 `<库别>:<条目 id>`
  *   - apps/web/src/features/library/view/LibraryPage.test.tsx: 判据依据（`?item=` 可定位资料分区条目）
  * 边界:
  *   - 依赖: testing-library、MemoryRouter（Link 需要路由上下文）
  *   - 被依赖: 无（`pnpm test` 收集）
  * 禁止行为:
- *   - 禁止只断言「渲染出了东西」：这里的判据是**链接目标**与**标题文本**，不是元素存在
+ *   - 禁止只断言「渲染出了东西」：这里的判据是**链接目标**、**标题文本**与**徽章文案**
  *   - 禁止在用例里写死 uuid 之外的 id 形状（id 是什么由后端决定，前端只认前缀）
+ *   - 禁止放过「缺状态时显示成已发表」这类回归：那正是本包要修的缺陷
  */
 
 import { render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router';
 import { describe, expect, it } from 'vitest';
 
-import { CitationPart, citationDeepLink, citationTitle } from './CitationPart';
+import {
+  CITATION_STATUS_LABELS,
+  CitationPart,
+  citationDeepLink,
+  citationIsWithdrawn,
+  citationScopeText,
+  citationStatusLabel,
+  citationTitle,
+} from './CitationPart';
 import type { CitationRecord } from '../../../../shared/types/sse';
 
 /** 一条线格式的引用记录（形状与 `shared/types/sse.ts` 的 citation 记录一致）。 */
@@ -111,5 +123,100 @@ describe('CitationPart — 渲染', () => {
   it('空数组不渲染折叠头（不留一个「依据 0 条」的空壳）', () => {
     const { container } = renderPart([]);
     expect(container.querySelector('.citation-block')).toBeNull();
+  });
+});
+
+/**
+ * DEMO-03 的判据：状态、适用范围与撤下标注必须**照载荷显示**，缺就显示未知。
+ *
+ * 这些用例都建立在同一条纪律上：**界面不补值**。补值的方向恰好是「让界面好看、让
+ * 依据显得权威」——那正是本缺陷要修的形态（缺失被当成已知，等于替查不到的来源背书）。
+ */
+describe('citationStatusLabel — 状态徽章照载荷显示，缺就未知', () => {
+  it('三个已知取值各有中文文案（真实与虚构样例必须可辨）', () => {
+    expect(citationStatusLabel(citation({ status: 'published' }))).toBe('已发表');
+    expect(citationStatusLabel(citation({ status: 'internal' }))).toBe('内部');
+    expect(citationStatusLabel(citation({ status: 'fictional' }))).toBe('虚构样例');
+    // 词表本身就是契约：改了文案就等于改了界面上的词。
+    expect(CITATION_STATUS_LABELS).toEqual({ published: '已发表', internal: '内部', fictional: '虚构样例' });
+  });
+
+  it('★ 状态缺失/空白/null ⇒ 「状态未知」，绝不默认成「已发表」', () => {
+    // 旧历史（2026-10-29 之前的注解）没有这个键——这正是缺省路径，必须显示未知。
+    expect(citationStatusLabel(citation())).toBe('状态未知');
+    expect(citationStatusLabel(citation({ status: null }))).toBe('状态未知');
+    expect(citationStatusLabel(citation({ status: '   ' }))).toBe('状态未知');
+    expect(citationStatusLabel(citation())).not.toBe('已发表');
+  });
+
+  it('词表外的取值原样显示（不认识 ≠ 已发表，也不吞掉后端给的词）', () => {
+    expect(citationStatusLabel(citation({ status: 'deprecated' }))).toBe('deprecated');
+  });
+});
+
+describe('citationScopeText — 适用范围照载荷显示，缺就写未知', () => {
+  it('有值就原样显示（首尾空白去掉）', () => {
+    expect(citationScopeText(citation({ applicable_scope: '学龄前·家庭场景' }))).toBe('学龄前·家庭场景');
+    expect(citationScopeText(citation({ applicable_scope: '  学龄前  ' }))).toBe('学龄前');
+  });
+
+  it('★ 缺失/空白 ⇒ 「适用范围未知」（留白会让人以为这条依据没有适用条件）', () => {
+    expect(citationScopeText(citation())).toBe('适用范围未知');
+    expect(citationScopeText(citation({ applicable_scope: null }))).toBe('适用范围未知');
+    expect(citationScopeText(citation({ applicable_scope: '  ' }))).toBe('适用范围未知');
+  });
+});
+
+describe('citationIsWithdrawn — 只认严格的 true', () => {
+  it('true 是已撤下；false 是在库；null/缺省是无法核对（两者都不是撤下）', () => {
+    expect(citationIsWithdrawn(citation({ withdrawn: true }))).toBe(true);
+    expect(citationIsWithdrawn(citation({ withdrawn: false }))).toBe(false);
+    expect(citationIsWithdrawn(citation({ withdrawn: null }))).toBe(false);
+    expect(citationIsWithdrawn(citation())).toBe(false);
+  });
+});
+
+describe('CitationPart — 徽章与撤下标注的渲染', () => {
+  it('状态徽章用契约类名 .tag.meta 渲染文案（不是自己发明的字）', () => {
+    const { container } = renderPart([citation({ status: 'fictional' })]);
+    const badge = container.querySelector('.citation-badges .tag.meta');
+    expect(badge?.textContent).toBe('虚构样例');
+  });
+
+  it('★ 状态缺失时界面上出现「状态未知」而不是「已发表」', () => {
+    const { container } = renderPart([citation()]);
+    expect(container.textContent).toContain('状态未知');
+    expect(container.textContent).not.toContain('已发表');
+  });
+
+  it('来源行同时给出适用范围（RQ-CON-03 的界面落点）', () => {
+    renderPart([citation({ applicable_scope: '学龄前·家庭场景' })]);
+    expect(screen.getByText(/适用范围：学龄前·家庭场景/)).toBeDefined();
+  });
+
+  it('★ 已撤下：标题不跳转、灰调标注「该来源已撤下」、并说明不再作为依据', () => {
+    const { container } = renderPart([citation({ withdrawn: true, status: 'published' })]);
+    expect(screen.queryByRole('link')).toBeNull();
+    expect(screen.getByText('该来源已撤下')).toBeDefined();
+    expect(screen.getByText(/不再作为当前依据/)).toBeDefined();
+    expect(container.querySelector('.citation-item.is-withdrawn')).not.toBeNull();
+    // 快照状态仍然显示：它与「现在还能不能引用」是两个事实，不互相顶替。
+    expect(screen.getByText('已发表')).toBeDefined();
+  });
+
+  it('★ 无法核对（withdrawn=null）仍给链接，但**不**打撤下标注', () => {
+    const { container } = renderPart([citation({ withdrawn: null })]);
+    expect(screen.getByRole('link', { name: '0～6 岁儿童孤独症筛查干预服务规范（试行）' })).toBeDefined();
+    expect(screen.queryByText('该来源已撤下')).toBeNull();
+    expect(container.querySelector('.citation-item.is-withdrawn')).toBeNull();
+  });
+
+  it('在库（withdrawn=false）与旧载荷（无该键）行为相同：给链接、无撤下标注', () => {
+    for (const withdrawn of [false, undefined]) {
+      const { container, unmount } = renderPart([citation({ withdrawn })]);
+      expect(container.querySelector('.citation-item.is-withdrawn')).toBeNull();
+      expect(container.textContent).not.toContain('该来源已撤下');
+      unmount();
+    }
   });
 });

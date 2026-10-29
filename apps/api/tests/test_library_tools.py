@@ -658,6 +658,76 @@ async def test_hits_without_item_id_do_not_get_a_reference(monkeypatch: pytest.M
 
 
 @pytest.mark.asyncio
+async def test_citation_carries_status_and_applicable_scope_from_the_item(monkeypatch: pytest.MonkeyPatch) -> None:
+    """★ DEMO-03：凭据必须带上来源状态与适用范围（依据区的状态徽章与适用条件靠它）。
+
+    缺陷现场：`_mint_citations` 只发 `source` / `reference` / `summary`，于是
+    **无论检索结果里有什么**，界面上都只有一行「来源：knowledge」——状态徽章与
+    适用范围整项缺席（`docs/TODO.md` 的 DEMO-03 残余）。
+
+    判别性：把 `_mint_citations` 里 `status=` / `applicable_scope=` 两个实参删掉
+    ⇒ 本用例红。
+    """
+
+    async def _hit(*_args: object, **_kwargs: object) -> SearchOutcome:
+        return SearchOutcome(items=[_item(status="published", applicable_scope="学龄前儿童")], degraded_paths=())
+
+    monkeypatch.setattr("campfire.tools.library._run_search", _hit)
+    context, _index = _recording_context()
+
+    outcome = await search_knowledge(context, SearchKnowledgeArgs(query="孤独症"))
+
+    assert isinstance(outcome, ToolResult)
+    record = outcome.citations[0]
+    assert record.status == "published"
+    assert record.applicable_scope == "学龄前儿童"
+    # 能引用它 = 检索那一刻核对过未撤下（不是默认值，见 `_mint_citations` 的说明）。
+    assert record.withdrawn is False
+
+
+@pytest.mark.asyncio
+async def test_case_citation_keeps_its_own_status(monkeypatch: pytest.MonkeyPatch) -> None:
+    """案例侧的状态照原值透传：`fictional` 必须到得了界面（`AC-06` 真实与虚构可辨）。
+
+    判别性：把状态写成常量 `"published"`（例如「案例一律当已发表」）⇒ 本用例红。
+    """
+
+    async def _hit(*_args: object, **_kwargs: object) -> SearchOutcome:
+        return SearchOutcome(items=[_case_item(status="fictional")], degraded_paths=())
+
+    monkeypatch.setattr("campfire.tools.library._run_search", _hit)
+    context, _index = _recording_context()
+
+    outcome = await search_cases(context, SearchCasesArgs(query="日程表"))
+
+    assert isinstance(outcome, ToolResult)
+    assert outcome.citations[0].status == "fictional", "虚构样例不得被写成本已发表"
+
+
+@pytest.mark.asyncio
+async def test_missing_status_stays_unknown_instead_of_being_filled(monkeypatch: pytest.MonkeyPatch) -> None:
+    """★ 条目没带状态/适用范围 ⇒ 凭据留空（`None`），**不补默认值**。
+
+    这里是「不为展示编造来源状态」的写侧判据：检索链的不变量说缺来源或状态的条目
+    不进结果，但写侧不该假设它一定成立——真出现空值时，留空让界面显示「未知」，
+    比补成 `published` 诚实得多（补值等于替一条查不到状态的来源背书）。
+    """
+
+    async def _hit(*_args: object, **_kwargs: object) -> SearchOutcome:
+        return SearchOutcome(items=[_item(status="", applicable_scope="   ")], degraded_paths=())
+
+    monkeypatch.setattr("campfire.tools.library._run_search", _hit)
+    context, _index = _recording_context()
+
+    outcome = await search_knowledge(context, SearchKnowledgeArgs(query="孤独症"))
+
+    assert isinstance(outcome, ToolResult)
+    record = outcome.citations[0]
+    assert record.status is None, "空状态必须留空（未知），不得补成 published"
+    assert record.applicable_scope is None
+
+
+@pytest.mark.asyncio
 async def test_search_cases_issues_references_scoped_to_the_case_library(monkeypatch: pytest.MonkeyPatch) -> None:
     """案例侧凭据的 `source` / 回指前缀都是案例库别（两库不混）。
 

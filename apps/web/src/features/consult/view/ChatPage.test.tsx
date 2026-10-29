@@ -282,7 +282,7 @@ describe('对话页 — 依据区（citation）', () => {
     // 标题取 `summary`（后端写入摘要时取的就是条目标题——它是使用者一眼认出那条来源的最短信息）；
     // `reference` 不再是标题，因此这里断言的是摘要文本，而不是旧的「把 reference 当标题显示」。
     expect(screen.getByText('样例记录提到，等候区里人多且声音较大。')).toBeDefined();
-    const meta = document.querySelector('.citation-item .meta')?.textContent ?? '';
+    const meta = document.querySelector('.citation-item .citation-source')?.textContent ?? '';
     expect(meta).toContain('来源：项目内虚构资料');
     // 这条 fixture 的 `reference` 是纯标题、没有 `<库别>:` 前缀 ⇒ **不该**给出跳转，
     // 并且要如实说明（猜错库比不跳转更糟）。

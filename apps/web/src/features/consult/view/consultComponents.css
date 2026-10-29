@@ -429,6 +429,21 @@ details[open] > summary .when-open {
   margin-top: var(--space-2);
 }
 
+/* 状态徽章与撤下标注排在同一行：前者是写入时的快照，后者是当前事实，视觉上并置但语义分开
+   （`display` 的 `gap` 用 token，不写死像素——本文件只引用变量）。 */
+.citation-badges {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+/* 已撤下的依据：灰调呈现（设计契约修订 5「条目呈现『该来源已撤下』」。title 不给链接，
+   因此这里只用 meta 色把它压下去，不隐藏——历史引用必须还在，只是不再作为依据）。 */
+.citation-item.is-withdrawn .citation-title {
+  color: var(--meta);
+}
+
 .source-body {
   padding-top: var(--space-3);
 }

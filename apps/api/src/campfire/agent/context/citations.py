@@ -62,6 +62,27 @@ class CitationRecord:
     summary: str | None = None
     """一句话摘要，供面展示；不影响回指。"""
 
+    # --- 可核对性：呈现时必须说得清「这条依据现在还能不能引用」---
+    #
+    # 三项全部允许 `None`，而 `None` 的含义是「**未提供／无法核对**」，不是默认值。
+    # 缺什么就说什么：`status` 缺失时呈现方必须显示「状态未知」，
+    # **不得**默认成「已发表」——那等于给一条查不到出处的结论背书。
+
+    status: str | None = None
+    """产生凭据时来源的发布状态（取值域归业务侧拥有，本层只透传）。`None` = 未提供。"""
+
+    applicable_scope: str | None = None
+    """产生凭据时来源的适用范围（`None` = 未提供；呈现方据此说明适用条件与局限）。"""
+
+    withdrawn: bool | None = None
+    """该来源是否已停止分发（`None` = 未核对）。
+
+    与上面两项不同，这一项**允许在读回时被刷新**：它回答的是「现在还能不能作为依据」，
+    而不是「当时说它是什么」。产生凭据时来源必然未停止分发（查得到才会被引用），
+    但事后可能被下架，因此面层读回时可以按当前真源重写它；核对不出来的情形一律回落成
+    `None`（未知），不得猜成 `True`——「找不到」与「已下架」是两件事。
+    """
+
 
 @runtime_checkable
 class CitationIndex(Protocol):
@@ -130,8 +151,22 @@ class CitationRecorder:
         """本轮已写入索引的引用，按写入顺序。"""
         return tuple(self._issued)
 
-    async def record(self, *, source: str, reference: str, summary: str | None = None) -> CitationRecord:
+    async def record(
+        self,
+        *,
+        source: str,
+        reference: str,
+        summary: str | None = None,
+        status: str | None = None,
+        applicable_scope: str | None = None,
+        withdrawn: bool | None = None,
+    ) -> CitationRecord:
         """写索引并返回这条可引用凭据。
+
+        三个可核对性参数（`status` / `applicable_scope` / `withdrawn`）都是**可选且可为空**：
+        调用方查得到就带上，查不到就留空。留空不是「用默认值代替」，而是「如实说明未提供」
+        ——呈现方必须把空值显示成未知，不得补成「已发表」或「仍可引用」。
+        这里不做补值，也不从 `summary` / `reference` 里猜：猜出来的状态与编造没有区别。
 
         Raises:
             CitationError: 来源或业务回指为空。
@@ -150,6 +185,9 @@ class CitationRecorder:
             reference=reference,
             recorded_at=self._clock(),
             summary=summary,
+            status=status,
+            applicable_scope=applicable_scope,
+            withdrawn=withdrawn,
         )
         await self._index.add(record)
         self._issued.append(record)

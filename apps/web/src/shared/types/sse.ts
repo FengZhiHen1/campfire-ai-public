@@ -75,6 +75,11 @@ export interface CompactionFacts {
 /**
  * 引用索引里的一条记录。
  * 形状见 HTTP与SSE契约第 7 节 citation 行与资料与案例检索第 3 节返回契约。
+ *
+ * 后三项（2026-10-29 补，DEMO-03）是「这条来源现在还能不能引用、适用于谁」：
+ * 它们**全部可空**，而空值表示**未知**，不是默认值——界面必须把空值显示成
+ * 「状态未知」「适用范围未知」，**不得**默认成「已发表」，也不得在空值上给出
+ * 「仍可作为依据」的印象（那是替查不到的来源背书）。
  */
 export interface CitationRecord {
   citation_id: string;
@@ -83,6 +88,21 @@ export interface CitationRecord {
   reference: string;
   recorded_at: string;
   summary: string | null;
+  /**
+   * 产生凭据时来源的发布状态。已知取值 `published` / `internal` / `fictional`
+   * （契约第 3 节），取值域归后端；`null`/缺省 = 未提供（显示「状态未知」）。
+   */
+  status?: string | null;
+  /** 产生凭据时的适用范围（「适用人群与情境」）；`null`/缺省 = 未提供。 */
+  applicable_scope?: string | null;
+  /**
+   * 该来源**现在**还能不能作为依据：`true` 已撤下 / `false` 在库 / `null` 无法核对。
+   *
+   * 与上面两项不同，这一项由服务端在**读回时**按当前真源重判（历史里可能是写入后
+   * 才被撤下的），因此它不是快照。`null` 只表示「核不出来」（回指解析不了、条目已
+   * 不存在、取数失败），**不得**当成「在库」或「已撤下」渲染。
+   */
+  withdrawn?: boolean | null;
 }
 
 /** 一条未确认的候选产出，供面呈现为待确认。形状见 HTTP与SSE契约第 4.2 节 candidate。 */
