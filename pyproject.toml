@@ -10,10 +10,10 @@ members = ["apps/api"]
 
 [tool.pytest.ini_options]
 addopts = "-q --import-mode=importlib"
-# 两处测试树：应用测试（apps/api/tests）与仓库级工具测试（scripts/tests，
-# 覆盖 scripts/worktree.py、scripts/checks.py 这类纯标准库工具）。
-# 工具测试不连数据库、不调模型，秒级完成，因此默认收集也纳入 CI 与本地门禁。
-testpaths = ["apps/api/tests", "scripts/tests"]
+# 三处测试树：应用测试（apps/api/tests）、仓库级工具测试（scripts/tests）、
+# 评测工具测试（evaluation/carebench/tests）。评测工具测试全部是确定性替身，
+# 不联网、不连库、不调模型，因此纳入默认收集，随 full/CI 一起跑。
+testpaths = ["apps/api/tests", "scripts/tests", "evaluation/carebench/tests"]
 # 归档代码不参与收集：archive/ 下为已废弃的旧实现与旧测试。
 norecursedirs = ["archive", "node_modules", ".venv", "dist", "build", ".dsh", ".claude", ".agent"]
 # `live_model` 的判定与开关在 `apps/api/tests/conftest.py`（默认跳过；显式开启时

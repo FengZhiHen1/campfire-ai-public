@@ -68,15 +68,31 @@ POST /api/consult/... → 503        # 运行器没装配
 `docker-compose.prod.yml` 对关键凭据用了 `${VAR:?}` 语法，**缺值即启动失败**。这是刻意的：
 默认值会静默生效，而缺值会立刻报错。
 
+> 2026-10-01 起域名、服务器与五个 `DEPLOY_*` Secrets 已配置并完成首次真实发布
+> （事实与踩坑记录见 `.github/workflows/deploy.yml` 文件头）。仓库里**仍然没有**证书、
+> `infrastructure/nginx/ssl/` 内容与 `.env.prod`——那三项只在目标机上由运维提供。
+
 ### TLS 启用步骤
 
-`nginx.conf` 里 HTTPS 的 `server` 块是注释状态，因为仓库里没有证书，默认启用会让镜像在
-无证书环境启动即崩。证书就位后：
+**`nginx.conf` 里没有 443 的 `server` 块，也没有「取消注释即可」的开关。** 早期版本
+曾把 443 块写在 `nginx.conf` 里并注释掉，那样做有两个死结：仓库里没有证书时启用即崩溃，
+而「先启 nginx 才能签证书、先有证书才能启 nginx」会互锁。现在 TLS 由 `ssl.d/` 片段提供
+（`include /etc/nginx/ssl.d/*.conf`）：目录为空时通配 include 匹配零个文件，nginx 照常
+以 HTTP 启动。
 
-1. 把 `fullchain.pem` 与 `privkey.pem` 放到 `infrastructure/nginx/ssl/`；
-2. 取消 `nginx.conf` 中 `listen 443 ssl` 那个 `server` 块的注释，填 `server_name`；
-3. 复制 80 端口 server 里的四个 `location`（不要在那里重新设计路由表）；
-4. `docker compose -f docker-compose.prod.yml restart web`。
+实际步骤各有脚本承载，本文件不复制命令（复制必然与脚本漂移）：
+
+1. `scripts/tls-issue-cert.sh`（在目标机 `/opt/campfire` 执行）：HTTP-01/webroot 签发，
+   证书落 `infrastructure/nginx/ssl/`，并生成 `ssl.d/campfire.conf`（443 的 server 块，
+   里面 `include` 同一份 `app-locations.conf`）。
+2. `scripts/tls-enable-redirect.sh`：先做 443 可达性三连检（TCP 可连 / TLS 链校验通过 /
+   HTTPS 上 `/readyz` 返回 200），三条全过才写 `redirect.d/redirect.conf` 开启 80→443。
+   只通端口不校验证书就把用户送进警告页，比留在 HTTP 更糟。
+3. `scripts/tls-install-renew-timer.sh`：装每日续期 timer；`tls-renew.sh` 只在证书指纹
+   真的变化后才 reload nginx（**续了不 reload 等于没续**）。
+
+❌ 不要手工往 `nginx.conf` 里加 443 块：路由表在 `app-locations.conf`，两处各写一份必然
+漂移，症状是「HTTPS 下某端点 404 而 HTTP 正常」。
 
 ## 几条关键取舍（改动前请先读）
 

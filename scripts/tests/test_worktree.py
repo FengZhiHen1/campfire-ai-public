@@ -286,3 +286,46 @@ def test_remove_reports_non_zero_when_branch_deletion_fails(tmp_path: Path) -> N
     assert not worktree.exists(), "工作树本身已经删掉了（这一步是成功的）"
     assert "未删除" in result.stderr
     assert "task/half" in _git(repo, "branch", "--list", "task/half")
+
+
+# --- `list` 的清理判据 ------------------------------------------------------
+
+
+def _line_for(output: str, worktree: Path) -> str:
+    """从 `list` 输出里取该工作树那一行。"""
+    for line in output.splitlines():
+        if str(worktree) in line:
+            return line
+    raise AssertionError(f"list 输出里没有 {worktree}：\n{output}")
+
+
+def test_list_shows_dirty_and_unmerged_state(tmp_path: Path) -> None:
+    """`list` 必须直接给出「脏」与「未合」两个清理判据，且不能恒为 0。"""
+    repo = _init_repo(tmp_path)
+    assert _run(repo, "create", "state").returncode == 0
+    worktree = repo / ".worktrees" / "state"
+
+    line = _line_for(_run(repo, "list").stdout, worktree)
+    assert "dirty=0" in line and "unmerged=0" in line, line
+
+    (worktree / "scratch.txt").write_text("未提交\n", encoding="utf-8")
+    line = _line_for(_run(repo, "list").stdout, worktree)
+    assert "dirty=1" in line, line
+
+    _git(worktree, "add", ".")
+    _git(worktree, "commit", "-q", "-m", "只在任务分支上的提交")
+    line = _line_for(_run(repo, "list").stdout, worktree)
+    assert "dirty=0" in line and "unmerged=1" in line, line
+
+
+def test_list_reports_unknown_base_as_unmerged_unknown(tmp_path: Path) -> None:
+    """基线不存在时字段是 `unmerged=?`，不得猜成 0（假 0 会让人以为已合入）。"""
+    repo = _init_repo(tmp_path)
+    assert _run(repo, "create", "state2").returncode == 0
+    worktree = repo / ".worktrees" / "state2"
+
+    result = _run(repo, "list", "--base", "no-such-base")
+
+    assert result.returncode == 0, result.stderr
+    line = _line_for(result.stdout, worktree)
+    assert "unmerged=?" in line, line
