@@ -11,8 +11,9 @@ import styles from './homePage.module.css';
 
 export function HomePage({ consult }: { consult: ConsultPort }) {
   const navigate = useNavigate();
-  const entry = useConversationEntry(consult, (sessionId, draft) => {
-    void navigate(consultChatPath(sessionId), { state: { draft } });
+  const entry = useConversationEntry(consult, (sessionId, draft, onboardingPending) => {
+    // `guidePending` 交给对话页：引导待注入时那里要给「跳过引导」入口（契约第 6 节、RQ-ACC-02）。
+    void navigate(consultChatPath(sessionId), { state: { draft, guidePending: onboardingPending } });
   });
   return (
     <AppShell tab="home">

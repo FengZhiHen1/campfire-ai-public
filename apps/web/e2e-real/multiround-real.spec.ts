@@ -248,15 +248,24 @@ test('@real 追问补答与刷新续传：两轮真实运行 + 刷新后水合',
      * 题轮里绕圈，最后以总超时失败——2026-10-28 实测过一次，看起来像产品卡死，其实是
      * 装置跑错了场景。
      *
-     * 走的是**契约第 6 节的真端点**（浏览器内 fetch、带真 cookie、经 Vite 代理）：
-     * 不是绕过产品，而是使用产品文档里写明的跳过通道。
+     * 走的是**页头那个真入口**（`BUG-03` 的修复点）：点按钮 → `POST …/onboarding/skip` →
+     * 入口消失。这条既让用例能进多轮，也顺带端到端验证了那个入口本身。
      */
-    const skip = await page.evaluate(async (id: string) => {
-      const response = await fetch(`/api/consult/sessions/${id}/onboarding/skip`, { method: 'POST' });
-      return { status: response.status, body: await response.text() };
-    }, sessionId);
-    expect(skip.status, `跳过引导的状态码：${skip.body}`).toBe(200);
-    expect(skip.body, '跳过引导应返回 skipped 状态').toContain('skipped');
+    const skipButton = page.getByRole('button', { name: '跳过引导' });
+    await expect(skipButton, '引导待注入时页头应给「跳过引导」入口').toBeVisible({ timeout: 20_000 });
+    await skipButton.click();
+    // 入口消失 = 端口调用成功（失败时入口会留着并给原因，这条因此不是恒真）
+    await expect(skipButton).toHaveCount(0, { timeout: 20_000 });
+    // 采样器在 `page.on('response')` 的回调里异步读正文，因此这里要**等**它落表，
+    // 不能点完立刻取（2026-10-28 实测：立刻取拿到 undefined，看着像「端点没被调用」）。
+    await expect
+      .poll(() => apiTrace.filter((entry) => entry.url.endsWith('/onboarding/skip')).length, {
+        timeout: 15_000,
+        message: '跳过引导的请求没有出现在浏览器侧记录里',
+      })
+      .toBeGreaterThan(0);
+    const skipTrace = apiTrace.filter((entry) => entry.url.endsWith('/onboarding/skip'));
+    expect(skipTrace[0]?.status, `跳过引导的状态码：${JSON.stringify(skipTrace[0])}`).toBe(200);
 
     /* ── 第 1 轮：提问 ─────────────────────────────────────────────── */
     const firstRun = await sendRound(page, '孩子出门总爱乱跑，我该怎么提前防着点？');

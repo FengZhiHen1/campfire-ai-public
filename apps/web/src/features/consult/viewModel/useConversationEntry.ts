@@ -5,7 +5,11 @@ import type { ConsultPort } from '../application/ports';
 import { CreateSessionUseCase } from '../application/usecases';
 import { failureViewFor, type ConsultFailureView } from '../domain/errors';
 
-export function useConversationEntry(consult: ConsultPort, onCreated: (sessionId: string, draft: string) => void) {
+export function useConversationEntry(
+  consult: ConsultPort,
+  /** 建会话成功的回调；`onboardingPending` 来自服务端响应（`onboarding_pending`），决定是否显示跳过入口。 */
+  onCreated: (sessionId: string, draft: string, onboardingPending: boolean) => void,
+) {
   const [draft, setDraft] = useState('');
   const [creating, setCreating] = useState(false);
   const [failure, setFailure] = useState<ConsultFailureView | null>(null);
@@ -18,7 +22,7 @@ export function useConversationEntry(consult: ConsultPort, onCreated: (sessionId
     setFailure(null);
     try {
       const response = await new CreateSessionUseCase(consult).execute();
-      onCreated(response.session_id, draft.trim());
+      onCreated(response.session_id, draft.trim(), response.onboarding_pending);
     } catch (caught) {
       setFailure(failureViewFor(caught));
     } finally {

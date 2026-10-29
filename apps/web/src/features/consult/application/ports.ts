@@ -72,6 +72,14 @@ export interface ConsultPort {
   streamRun(input: StreamRunInput): AsyncIterable<RunEvent>;
   /** 取消一条运行（对应停止按钮与 abortSignal）。 */
   cancelRun(runId: string): Promise<void>;
+  /**
+   * 跳过一次性引导（契约第 6 节）：写 `campfire_onboarding.state = skipped`，此后该账号不再注入引导。
+   *
+   * 为什么端口要有它：`RQ-ACC-02`（无档案不阻断咨询）要求引导**必须可跳过**，而 skip 状态唯一
+   * 的写入方就是 UI 入口——后端端点与用例层早就有了，前端却从不调用它（`BUG-03`）。
+   * 幂等：已是 `skipped` / `completed` 时服务端仍返回 200，因此重复点击不会报错。
+   */
+  skipOnboarding(sessionId: string): Promise<void>;
   /** 应急入口：建会话 → 落第一条消息 → 启动运行，一次调用完成。 */
   emergencyStart(payload: EmergencyRequest): Promise<EmergencyResponse>;
 }

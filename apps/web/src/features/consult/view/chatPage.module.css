@@ -137,3 +137,29 @@
 .footer {
   padding-inline: var(--container-gutter-phone);
 }
+
+/*
+ * 页头的「跳过引导」。
+ *
+ * 层级刻意压到与页头技能标签同层（`meta` 字号 + `--muted`）：跳过是「这次引导我不想继续」的
+ * 选择，不该比「← 返回」更显眼，也不该做成主按钮去勾人点。
+ * `margin-left: auto` 把它推到页头右端；引导待注入时页头通常还没有技能标签（技能要等第一条消息
+ * 才激活），因此不会与标签抢位置。
+ * 为什么是文字按钮而不是图标：动作需要被读懂（「跳过」是两个字的语义），图标在 390 宽页头里
+ * 既占位又猜不出来。
+ */
+.guideSkip {
+  margin-left: auto;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+  padding: 2px 0;
+}
+
+.guideSkip:disabled {
+  cursor: default;
+  opacity: 0.6;
+}

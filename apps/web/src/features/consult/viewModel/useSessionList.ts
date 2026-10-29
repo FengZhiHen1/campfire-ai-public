@@ -42,11 +42,11 @@ export interface SessionListController {
  * 会话列表控制器。
  *
  * @param consult 咨询端口
- * @param onCreated 建会话成功后的跳转回调（对话页路由）
+ * @param onCreated 建会话成功后的跳转回调（对话页路由）；`onboardingPending` 取自响应
  */
 export function useSessionList(
   consult: ConsultPort,
-  onCreated: (sessionId: string) => void,
+  onCreated: (sessionId: string, onboardingPending: boolean) => void,
 ): SessionListController {
   const [attempt, setAttempt] = useState(0);
   /** 已落定的首页结果 + 它属于哪一轮任务（key 不匹配即仍在 loading）。 */
@@ -146,7 +146,7 @@ export function useSessionList(
     setCreateFailure(null);
     try {
       const response = await new CreateSessionUseCase(consult).execute();
-      onCreated(response.session_id);
+      onCreated(response.session_id, response.onboarding_pending);
     } catch (caught) {
       setCreateFailure(failureViewFor(caught));
     } finally {
