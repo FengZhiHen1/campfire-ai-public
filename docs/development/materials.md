@@ -4,10 +4,10 @@
 > **它拥有**：材料的落点与目录结构、正式运行证据的不覆写规则、事实状态机（verified / partial /
 > unverified / contradicted）、**评分者类型与两套独立 agent 盲评的机制**、可入库内容的边界、评测执行
 > 协议的**入口**与污染控制、材料交接的字段。
-> **它不拥有**：评测方法本身（协议原文的可执行入口是仓内快照 `evaluation/carebench/protocol/`
+> **它不拥有**：评测方法本身（v0.2 的唯一正文是 [`evaluation/carebench/interactive/PROTOCOL.md`](../../evaluation/carebench/interactive/PROTOCOL.md)；历史 v0.1 的可执行入口是仓内快照 `evaluation/carebench/protocol/`
 > ——01–05 的逐字节副本 + 来源 SHA256，随评测工具包一起入库；inbox 只是这些快照的原始来源，
 > **只读**、不入版本控制。新环境没有 inbox 也能跑：按仓内快照执行，**不以 inbox 缺失为由卡住**）。
-> 本文件只补一条用户裁决——**评分由两套独立 agent 盲评完成**，不新增第二份协议正文，也不建并列
+> 本文件记录用户裁决——**评分由两套独立 agent 盲评完成**，并在 §6 登记新旧版本的适用范围，不新增第二份协议正文，也不建并列
 > 真源；
 > 演示材料的生成方式（[../运维/演示材料生成.md](../运维/演示材料生成.md)）；
 > 检查与门禁（[testing.md](testing.md)）；泳道与清理（[worktree-environment.md](worktree-environment.md)）。
@@ -109,7 +109,22 @@ deliverables/2026-ai-opensource/<run-id>/   # 忽略：单次运行的原始件
 | 单轮「看起来很好」的个案 | 个案可作示例，不能支撑比例、通过率或「普遍适用」；分母与样本必须写明 |
 | 理想化截图、单页动画 | 不能替代固定版本上的连续录屏与实际工具轨迹 |
 
-## 6. 评测执行协议：入口在仓内快照，不在本仓复写
+## 6. 评测执行协议：按版本选择唯一入口
+
+**2026-10-29 用户确认并授权实施 v0.2**：以家长自然、碎片化或不完整表达进行多轮情境评测，
+保留旧批次作为历史，说明其局限。v0.2 的唯一正文是
+[CareBench Interactive 协议](../../evaluation/carebench/interactive/PROTOCOL.md)，实现与命令见
+[执行说明](../../evaluation/carebench/interactive/README.md)。这不是改写旧批次：原 01–05 快照、
+旧案例和原始结果保持原样，其 hash 与成绩不因新协议变化而失效；局限见
+[历史结果说明](../../evaluation/carebench/interactive/HISTORY-LIMITATIONS.md)。
+
+新协议在生成前冻结案例、N/P/C 装配、模型/知识身份、模拟家长策略、两套评分与裁定提示。
+采用 8 条校准、24 条正式案例；正式三组各 3 次独立重复，216 个任务终局。表达是否清晰与
+信息是否充分分别标注；家长只按冻结事实和反馈回答。三组都可追问，后续输入允许发散并记录，
+未知或未来才披露的事实不能倒扣前轮。真实应急入口的包装和表单负担单列。系统错误与评分未决
+保留在完整分母，咨询表现与来源核验分开。评分仍遵守 §7 的两套独立 AI 评审机制和 §4 的表述边界。
+
+**以下固定第二轮、A/B/C 与同步快照的约束只对应历史 v0.1**；不将它们误套到已批准的 v0.2：
 
 **可执行入口**：评测工具包里的协议快照 `evaluation/carebench/protocol/`——01–05 的逐字节副本
 外加来源 SHA256（`manifest.protocol_snapshot.sha256` 汇总，`verify` 会重算）。赛事合同
