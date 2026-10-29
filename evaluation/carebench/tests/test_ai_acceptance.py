@@ -9,6 +9,8 @@
    不能只留 warning（`summarize_ai_review` 对同一情形已判 pending、拒出结论）。
 3. `resume` 重写 manifest 不得抹掉 `review.ai`（身份锚）与 `review.packet_sha256`
    （评审包锚）；锚一丢，身份与评审包就退回「只靠自证」。
+4. 正式批次（`label=test`）的 AI 身份必须是 `stage=formal`：`calibration` 允许在看到
+   尝试之后再冻结，用它给正式批次背书就绕过了「正式身份必须在评分开始前冻结」。
 """
 
 from __future__ import annotations
@@ -22,6 +24,7 @@ import pytest
 
 pytestmark = pytest.mark.asyncio
 
+from evaluation.carebench import runner
 from evaluation.carebench.ai_review import (
     DIMENSION_KEYS,
     build_scoring_inputs,
@@ -83,7 +86,12 @@ class _Client:
 
 
 async def _exported_run(
-    tmp_path: Path, *, settings: Any, count: int = 1, case_ids: list[str] | None = None
+    tmp_path: Path,
+    *,
+    settings: Any,
+    count: int = 1,
+    case_ids: list[str] | None = None,
+    label: str = "calibration",
 ) -> RunStore:
     """跑一个批次并导出盲化评审包（可选只跑部分案例，模拟评审包少于期望组数）。"""
     tmp_path.mkdir(parents=True, exist_ok=True)
@@ -98,7 +106,7 @@ async def _exported_run(
     store = create_run_dir(tmp_path / "runs", "carebench-ai-acceptance")
     await execute(
         store=store,
-        config=RunConfig(label="calibration"),
+        config=RunConfig(label=label),
         case_set=case_set,
         snapshot=make_snapshot(),
         faults=FaultPlan(requested={}),
@@ -246,3 +254,26 @@ async def test_resume_must_not_drop_the_ai_identity_and_packet_anchors(tmp_path:
         "resume 之后 manifest 不再锚定 AI 身份 hash：身份退回「只靠文件自证」"
     )
     assert after.get("packet_sha256") == before["packet_sha256"], "resume 之后评审包锚丢失：评审包不再绑到本批次"
+
+
+async def test_formal_batch_must_reject_a_calibration_stage_identity(
+    tmp_path: Path, settings_for_tests: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`label=test` 的批次不得用 `stage=calibration` 的身份出 AI 结论。
+
+    缺口：`_verify_identity` 只校验 stage 取值合法与 hash 自洽，从不把 stage 与批次
+    label 对照；而 `calibration` 分支允许在已有评分尝试之后再冻结身份，
+    即「正式成绩」可由事后选定的量表/模型产出。
+    """
+    # 正式批次另有「工作区必须干净」的独立守卫；本例只关心 AI 通道对 label 的处理。
+    monkeypatch.setattr(runner, "_require_clean_code_for_formal", lambda **_kwargs: None)
+    store = await _exported_run(tmp_path, settings=settings_for_tests, label="test")
+    await _frozen_and_scored(store)
+    assert store.read_manifest()["label"] == "test", "前置条件：批次标为正式"
+    assert load_identity(store)["stage"] == "calibration", "前置条件：身份是校准阶段冻结的"
+
+    report = verify_ai_review_report(store, require_complete=True)
+    assert not report.ok, (
+        "正式批次（label=test）带着 stage=calibration 的 AI 身份仍判通过："
+        "「正式身份必须在评分开始前冻结」这条约束在证据里不可见"
+    )
