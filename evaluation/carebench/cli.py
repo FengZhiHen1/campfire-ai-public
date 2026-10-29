@@ -4,7 +4,7 @@
 
 边界：不实现任何评测逻辑（各命令都在自己的模块里）。
 
-九个命令（只保留必要功能，见 README「接口」一节）：
+命令职责（见 README「接口」一节）：
 
 - `preflight`：开工前核对工作区/案例/知识快照与库/端点/装配（可显式探测模型与嵌入）；
 - `identity`：打印当前运行身份（模型/端点/嵌入/知识快照，无凭据、无生成调用），供冻结前锁定；
@@ -13,7 +13,8 @@
 - `resume`：补跑中断批次（只补没有最终结论的轮次）；
 - `review-export`：导出盲化评审包 + 空评分表；
 - `review-import`：校验并导入人工评分（空值/pending 一律拒收）；
-- `summarize`：只按实测数据出计数/时延/token；有人工评分才出分；
+- `ai-prepare` / `ai-score` / `ai-adjudicate`：冻结独立 AI 评分身份、执行与分歧复核；
+- `summarize`：按实测数据出计数/时延/token，人工与 AI 分数独立列出；
 - `verify`：复算证据包（哈希、分母、公平性、盲化、summary 一致性）。
 
 退出码：0 = 通过；1 = 存在阻断项/违反项（或运行状态不完整）；2 = 用法或输入错误。
@@ -29,6 +30,7 @@ from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
+from .ai_review import identity_path, prepare_ai_review
 from .cases import CaseValidationError, parse_cases
 from .config import FORMAL_LABEL, RunConfig, load_config
 from .faults import load_plan, merge, plan_from_cases
@@ -124,6 +126,24 @@ def build_parser() -> argparse.ArgumentParser:
     import_cmd.add_argument("--run", type=Path, required=True, help="批次目录")
     import_cmd.add_argument("--ratings", type=Path, required=True, help="填好的评分 CSV")
     import_cmd.add_argument("--adjudication", type=Path, default=None, help="分歧裁定 CSV（可选）")
+
+    ai_prepare = sub.add_parser("ai-prepare", help="冻结两套 AI 评分提示与裁定者身份（正式生成前执行）")
+    ai_prepare.add_argument("--run", type=Path, required=True, help="先以 run --dry-run 创建的批次目录")
+    ai_prepare.add_argument("--model", default=None, help="评分模型 ID（缺省应用配置模型）")
+    ai_prepare.add_argument("--pass2-model", default=None, help="第二评分者模型 ID（缺省同模型，独立提示和上下文）")
+    ai_prepare.add_argument("--adjudicator-model", default=None, help="裁定者模型 ID（缺省同评分模型）")
+    ai_prepare.add_argument("--temperature", type=float, default=0.0)
+
+    for command, help_text in (
+        ("ai-score", "执行两套独立 AI 评分（失败追加、不覆盖成功分）"),
+        ("ai-adjudicate", "独立复核分歧（保留原分与全部裁定尝试）"),
+    ):
+        target = sub.add_parser(command, help=help_text)
+        target.add_argument("--run", type=Path, required=True)
+        target.add_argument("--blind-ids", default=None, help="仅处理这些盲化编号（逗号分隔）")
+        target.add_argument("--max-concurrency", type=int, default=4)
+        if command == "ai-score":
+            target.add_argument("--pass", dest="passes", type=int, choices=(1, 2), nargs="+", default=[1, 2])
 
     summarize = sub.add_parser("summarize", help="按实测数据汇总（无评审不出分）")
     summarize.add_argument("--run", type=Path, required=True, help="批次目录")
@@ -408,6 +428,48 @@ def _cmd_review_import(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_ai_prepare(args: argparse.Namespace) -> int:
+    """正式身份在系统生成前冻结；校准身份允许用已生成的校准输出试跑。"""
+    store = RunStore(root=args.run)
+    manifest = store.read_manifest()
+    formal = manifest.get("label") == FORMAL_LABEL
+    if formal and store.read_outputs() and not identity_path(store).exists():
+        raise ValueError("正式评分身份必须在被测系统生成前冻结：请新建批次，先 run --dry-run，再 ai-prepare 和 resume")
+    model_id = args.model or _settings().model_name
+    identity = prepare_ai_review(
+        store,
+        model_id=model_id,
+        pass2_model_id=args.pass2_model,
+        adjudicator_model_id=args.adjudicator_model,
+        temperature=args.temperature,
+        stage="formal" if formal else "calibration",
+    )
+    print(f"AI 评分身份：{identity['identity_sha256']}（同模型 ID：{identity['same_model_id']}）")
+    return 0
+
+
+async def _cmd_ai_execute(args: argparse.Namespace) -> int:
+    """显式发起评分网络请求前，先复核已有证据的完整性。"""
+    from . import ai_runner
+
+    store = RunStore(root=args.run)
+    report = verify_run(store)
+    if not report.ok:
+        for item in report.violations:
+            print(f"× {item}", file=sys.stderr)
+        return 1
+    kwargs: dict[str, Any] = {
+        "blind_ids": _split_ids(args.blind_ids),
+        "max_concurrency": args.max_concurrency,
+    }
+    if args.command == "ai-score":
+        result = await ai_runner.score_run(store, _settings(), passes=tuple(args.passes), **kwargs)
+    else:
+        result = await ai_runner.adjudicate_run(store, _settings(), **kwargs)
+    print(json.dumps(result.to_dict(), ensure_ascii=False, sort_keys=True))
+    return 1 if result.invalid or result.error else 0
+
+
 def _cmd_summarize(args: argparse.Namespace) -> int:
     """执行 summarize。"""
     store = RunStore(root=args.run)
@@ -418,9 +480,10 @@ def _cmd_summarize(args: argparse.Namespace) -> int:
         f"有末轮结论 {denominators['case_groups_with_final_turn']} 个"
     )
     if summary["human_scores"] is None:
-        print("未导入人工评分：只输出运行计数/时延/token，未产生任何质量分")
+        print("未导入人工评分：human_scores 为空")
     else:
         print(f"已按人工评分汇总（模式 {summary['human_scores']['mode']}）")
+    print(f"独立 AI 评审：{summary['ai_review_status']}（不写入 human_scores）")
     print(f"报告：{store.root / 'summary.md'}")
     return 0
 
@@ -447,6 +510,7 @@ def main(argv: list[str] | None = None) -> int:
         "freeze": _cmd_freeze,
         "review-export": _cmd_review_export,
         "review-import": _cmd_review_import,
+        "ai-prepare": _cmd_ai_prepare,
         "summarize": _cmd_summarize,
         "verify": _cmd_verify,
     }
@@ -455,6 +519,8 @@ def main(argv: list[str] | None = None) -> int:
             return asyncio.run(_cmd_run_async(args))
         if args.command == "resume":
             return asyncio.run(_cmd_resume_async(args))
+        if args.command in {"ai-score", "ai-adjudicate"}:
+            return asyncio.run(_cmd_ai_execute(args))
         return handlers[args.command](args)
     except (CaseValidationError, FreezeError, ReviewError, KnowledgeSnapshotError, ResumeRejected, ValueError) as exc:
         print(f"× {type(exc).__name__}: {exc}", file=sys.stderr)

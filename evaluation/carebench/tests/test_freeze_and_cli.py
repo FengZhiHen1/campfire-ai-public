@@ -184,8 +184,8 @@ def test_batch_fingerprint_changes_with_any_input() -> None:
     assert base != batch_fingerprint(dataset_sha256="a" * 64, config_sha256="b" * 64, code_commit="d" * 40)
 
 
-def test_cli_exposes_the_nine_commands() -> None:
-    """命令行只保留必要功能：九个命令，别的不加。"""
+def test_cli_exposes_execution_and_separate_review_commands() -> None:
+    """执行、人工评审与独立 AI 评审均有明确入口。"""
     parser = build_parser()
     actions = [action for action in parser._actions if action.dest == "command"]  # noqa: SLF001 —— argparse 无公开取法
     choices = set(actions[0].choices)  # type: ignore[index]
@@ -197,6 +197,9 @@ def test_cli_exposes_the_nine_commands() -> None:
         "resume",
         "review-export",
         "review-import",
+        "ai-prepare",
+        "ai-score",
+        "ai-adjudicate",
         "summarize",
         "verify",
     }
