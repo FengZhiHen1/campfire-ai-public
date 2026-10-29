@@ -1200,6 +1200,19 @@ async def test_score_run_does_not_call_network_without_client(
         await score_run(store, None, log=lambda _message: None)
 
 
+async def test_score_run_rejects_duplicate_or_empty_passes_before_any_call(
+    tmp_path: Path, settings_for_tests: Any, faults_for_tests: FaultPlan
+) -> None:
+    """CLI 给 1 1 或空 pass 必须在任何模型调用前失败。"""
+    store = await _exported_run(tmp_path, settings=settings_for_tests, faults=faults_for_tests)
+    client = _Client(store, lambda _pass, _blind: "不应调用模型")
+    with pytest.raises(AiReviewError, match="重复"):
+        await score_run(store, client=client, passes=(1, 1), log=lambda _message: None)
+    with pytest.raises(AiReviewError, match="不能为空"):
+        await score_run(store, client=client, passes=(), log=lambda _message: None)
+    assert client.calls == []
+
+
 async def test_public_wiring_contract(tmp_path: Path, settings_for_tests: Any, faults_for_tests: FaultPlan) -> None:
     """主 agent 接线契约：None / pending 计数 / complete / list[str]。"""
     store = await _exported_run(tmp_path, settings=settings_for_tests, faults=faults_for_tests)
