@@ -27,10 +27,14 @@
 |---|---|---|---|
 | **quick** | 任务内每次提交前 | 与改动面相称的确定性检查（见 §3） | 子任务执行者自己 |
 | **full** | **集成完成后**（`dev` 上的合并结果）、CI、以及改动公共契约/跨模块时 | 全套确定性检查（见 §4） | 集成者（主 agent）与 CI |
-| **material** | 只在明确需要材料时（演示、交付、评测运行） | 真模型 + 真栈 + 真库的运行与取证 | 材料/评测任务，**不是门禁** |
+| **material** | 只在明确需要材料时（演示、交付、评测运行） | 真模型 + 真栈 + 真库的**对外取证**（`demo`、评测批次） | 材料/评测任务，**不是门禁** |
 
 三层的关系：**quick 绿不等于可以合入**，full 才是合入判据；**material 红不阻塞合入**，
 它回答的是「对外材料是否真实」，由 [materials.md](materials.md) 管。任何一层都不能替代另一层。
+
+**`e2e-real` 这类真实依赖探针不属 material 层**：它验的是「代码在真实依赖上能不能跑通」，
+是**工程验收**，按影响面触发（§3 最后一行）。把它和 demo/评测归成一类，会让「产品没跑通」
+和「材料没生成」混在同一条红线上，也让改动认证或 SSE 的人以为那是材料任务的事。
 
 ## 3. quick：按改动面定向
 
@@ -56,6 +60,7 @@ uv run python scripts/checks.py quick --base dev --pytest <TARGET>     # 收窄 
 | 文档（`docs/`、`*.md`、`materials/`） | `uv run --no-project python scripts/check_design_docs.py`（相对链接、需求与验收对应） |
 | 忽略/容器清单（`.gitignore`、`.dockerignore`） | `git check-ignore -v -- <新增的落点示例路径>`；`.dockerignore` 的新增项逐个核对锚定范围 |
 | 路由或页面新增（`apps/web` 路由表） | 额外跑 `apps/web/tests/routes-coverage.test.ts`，**新路由必须同步加截图配置**，否则永远没有 PNG 而 manifest 仍宣布齐了 |
+| **真实依赖探针**（`e2e-real` 等，需全真栈） | **按影响面触发**：改认证/会话、SSE 与事件流、静态资源与协议、部署形态、httpOnly cookie 相关面时必须跑，并把目标写进报告；纯文档、纯内部重构不必跑。它属工程验收，不属 material 层（§2） |
 
 - **定向 pytest** 指按路径或 `-k` 收窄到受影响面，不是全量；不确定影响面时**升级为 full**，
   不要用「看着不像相关」当理由跳过。
@@ -86,8 +91,8 @@ pnpm --filter @campfire/web build              # 已内含 tsc --noEmit 与契�
 - 迁移门禁（`alembic upgrade head` + `alembic check`）需要数据服务在跑，因此不进 quick。
 - `full` 与 CI 的 job 划分一致（设计文档一致性 / 后端 / 前端），差别只在 CI 自带三个数据
   service、并在其内部 `uv sync --frozen`——**命令语义必须同源，改一处要检查另一处**。
-- `full` 不跑 `shots`、`e2e`、`demo`、`e2e-real`、真实模型调用，也不跑评测运行：
-  它们是 material 层，见 §6。
+- `full` 不跑 `shots`、`e2e`、`demo`、评测运行（material 层，见 §6），也不跑需要全真栈的
+  `e2e-real` 探针（工程验收，按影响面触发，见 §3）。
 
 ### 4.1 CI 策略
 
@@ -136,7 +141,7 @@ XML 真的收集到了用例**（按名字检索一条本轮新增的用例为�
 
 **如实报告**：跑了哪些、结果如何、哪些没跑。**未跑 ≠ 通过**；不得把未验证写成已验证。
 
-## 6. material 层：真模型、真栈与材料
+## 6. material 层：对外材料的取证
 
 按需运行，**不进 quick/full、不进 CI、不是门禁**：
 
@@ -144,8 +149,11 @@ XML 真的收集到了用例**（按名字检索一条本轮新增的用例为�
 |---|---|---|---|
 | `pnpm --filter @campfire/web shots` + `e2e` | 页面截图与内容断言（内容断言才证明「图里有料」） | 全新环境先 `playwright install` | 本文（属前端改动检查） |
 | `DEMO_INVITE_CODES=... pnpm --filter @campfire/web demo` | 对外展示材料，逐屏截图 | 全真栈稳定、`/readyz` 全 ok | [演示材料生成.md](../运维/演示材料生成.md) |
-| 真实模型/真实栈探针（`e2e-real` 等） | 证明关键路径在真实依赖上能跑通 | 同上 | 本文 §6.1 |
-| 评测运行（A/B/C 对照） | 效果证据 | 冻结案例集 + 人工评分 | [materials.md](materials.md) |
+| 评测运行（A/B/C 对照 + 两套独立 agent 盲评） | 效果证据 | 冻结案例集 + 评分记录 | [materials.md](materials.md) |
+
+**不在这张表里的两类**：
+- **`e2e-real` 等真实依赖探针**：属**工程验收**、按影响面触发（§3 最后一行），不是材料。
+- **单轮的「真模型手试」**：既不是 checks，也不是材料；做了就如实记，别写成门禁或证据。
 
 ### 6.1 「改完就跑一遍」被明确禁止
 
