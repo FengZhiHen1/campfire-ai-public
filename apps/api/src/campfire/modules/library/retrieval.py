@@ -297,29 +297,11 @@ def _item_filters_sql(*, scope: str | None, authorization: str | None) -> tuple[
 
 
 def _literal_ranking_sql(terms: list[str]) -> tuple[str, dict[str, str]]:
-    """字面路的相关度排序片段：各词元在各列上的最大三元组相似度。
+    """字面路的名次表达式：各词元 × `title`/`keywords`/`aliases` 的 trigram 相似度取最大。
 
-    为什么字面路必须排序（2026-10-29 审查修正）：此前是 `ORDER BY id`——id 是
-    `uuid4`，随机的。命中条目多于候选数 `LITERAL_TOP_K` 时，**哪 30 条被留下由随机
-    UUID 决定**；而在候选内，喂给 RRF 的「名次」也变成 UUID 序，与相关度无关。
-    两个后果都是真的：
-
-    1. RRF 只用名次（RAG 策略第 4 节），字面路的名次既不可比也不可解释，
-       「字面路取 top-30 按条目计」在实现上不成立；
-    2. 同一份语料在新库重建（UUID 全新）后，同一查询的字面路候选会变——
-       「同一快照同一检索行为」这条评测前提被破坏。
-
-    用 `GREATEST(similarity(col, :s0), similarity(col, :s1), ...)`（词元 × 列取最大）
-    与匹配语义对齐：`WHERE` 是「任一词元命中任一列」，排序就按「命中的最好那一格有多像」。
-    `similarity` 来自 `pg_trgm`（字面路本来就依赖它建索引），不需要额外扩展。
-
-    词元是模型可控值，因此**只**经绑定参数进入 SQL（与 `_item_filters_sql` 同一纪律）。
-
-    词元数设上界（`MAX_RANKING_TERMS`）：`WHERE` 的 OR 链随词元数线性增长（既有行为），
-    但排序表达式是「词元 × 3 列」个 `similarity` 调用——不设界时一个 500 字的模型查询
-    会生成上千个调用。这里只取前若干个词元参与名次；**匹配**仍覆盖全部词元，
-    因此不会漏召回，只是长查询的名次由前几个词决定。缺省数量足够覆盖真实查询
-    （实测语料查询是 1–3 个词元）。
+    按主键排序（`uuid4`）会让 top-K 与喂给 RRF 的名次都变成随机 UUID 序；
+    `GREATEST` 与「任一词元命中任一列」的匹配语义对齐。词元只经绑定参数进 SQL，
+    参与名次的词元数受 `MAX_RANKING_TERMS` 限制（匹配仍覆盖全部词元）。
 
     Returns:
         `(排序表达式, 绑定参数)`；`terms` 非空由调用方保证。
