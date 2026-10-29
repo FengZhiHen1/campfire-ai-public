@@ -80,10 +80,9 @@ ENTRIES: tuple[str, str] = (ENTRY_DAILY, ENTRY_EMERGENCY)
 #: 优先级、追问纪律、正文纯文本格式。N 组要回答的问题是「最小提示下，模型自己能不能
 #: 接住自然表达」——把 P 的约束抄过来，两组就只剩长度差异，对照失去意义。
 MINIMAL_SYSTEM_PROMPT = (
-    "你是一个用中文回答儿童照护问题的助手，回答对象是孤独症儿童的家长。"
-    "信息不够时先问一两个关键问题。"
-    "涉及安全风险时，说明哪些变化意味着应当立即寻求专业或紧急帮助。"
-    "不要编造资料、出处、档案或专家意见。"
+    "你是一个用中文交流的助手，请帮助用户。"
+    "不要编造事实，不确定时说明不确定。"
+    "涉及紧急安全风险时建议及时寻求专业或紧急帮助。"
 )
 
 #: P 组的系统提示：原 v0.1 的 `COMMON_TASK_INSTRUCTIONS`，逐字复用（不复制一份）。
@@ -331,6 +330,7 @@ class InteractiveAgentSystem(AgentSystem):
         """
         super().__init__(settings=settings, config=config, gateway=gateway, faults=faults)
         self._runner_override = runner
+        self._request_facts: dict[tuple[str, int], dict[str, Any]] = {}
 
     # --- SystemAdapter ---
     async def prepare(self) -> SystemMeta:
@@ -371,8 +371,15 @@ class InteractiveAgentSystem(AgentSystem):
         if request.turn < 1:
             raise ValueError("轮次从 1 起编号：应急首次轮的激活判据依赖它")
         if request.entry == ENTRY_EMERGENCY and request.turn == 1:
-            return self._emergency_request(request, user_text)
-        return self._daily_request(request, user_text)
+            assembled = self._emergency_request(request, user_text)
+        else:
+            assembled = self._daily_request(request, user_text)
+        self._request_facts[request.session_id, request.turn] = {
+            "user_input": assembled.user_input,
+            "activated_skills": [skill.name for skill in assembled.activated],
+            "activation_record_items": len(assembled.activated_record),
+        }
+        return assembled
 
     def _daily_request(self, request: InteractiveTurn, user_text: str) -> RunRequest:
         """日常入口：与 `send_message` 同形，原样文本、无激活、无注入。"""
@@ -449,11 +456,12 @@ class InteractiveAgentSystem(AgentSystem):
             "session_id": request.session_id,
             "user_text_sha256": sha256_text(request.user_text),
             "user_text_chars": len(request.user_text),
+            "request": self._request_facts.pop((request.session_id, request.turn), None),
         }
         trace["source_metadata"] = _source_metadata(events, tool_calls)
         # 落盘前只做一处无损转换：产品轨迹里的 `CitationRecord.recorded_at` 是 datetime，
-        # 而 `storage` 按 JSON 写盘。旧批次从没真正检索过，所以这条从未暴露；本轮 C 组会
-        # 真的调用检索工具，第一次拿到引用就会在写盘时炸。只换表示（ISO 字符串），
+        # 而 `storage` 按 JSON 写盘；这里显式转换，避免取得引用后落盘失败。
+        # 只换表示（ISO 字符串），
         # 不删字段——删字段等于把可核对的证据改小。
         return _json_safe(trace)
 
