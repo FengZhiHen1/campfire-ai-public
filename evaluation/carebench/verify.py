@@ -249,6 +249,16 @@ def _check_fingerprint(
     )
     if expected != manifest.get("batch_id"):
         report.violations.append(f"batch_id 复算不一致（{expected[:12]}… ≠ {str(manifest.get('batch_id'))[:12]}…）")
+    if not store.freeze_path.exists():
+        report.violations.append("缺 freeze.json：无法核对案例、配置与代码的冻结副本")
+    else:
+        frozen = read_json(store.freeze_path)
+        for name, actual, declared in (
+            ("config_sha256", manifest.get("config_sha256"), frozen.get("config_sha256")),
+            ("code.commit", code.get("commit"), (frozen.get("code") or {}).get("commit")),
+        ):
+            if not declared or actual != declared:
+                report.violations.append(f"manifest 的 {name} 与 freeze.json 冻结副本不一致")
     if code.get("dirty"):
         report.warnings.append("manifest 记录代码工作区有未提交改动：本批次的复现性依赖 commit 之外的本地状态")
     if case_set is not None and case_set.sha256 != (manifest.get("dataset", {}) or {}).get("sha256"):
@@ -384,7 +394,9 @@ def _check_status_consistency(index: int, record: dict[str, Any], flags: dict[st
         "refusal_suspected": prompts.refusal_suspected(output_text),
     }
     for name, expected in expected_flags.items():
-        if name in flags and bool(flags[name]) is not bool(expected):
+        if name not in flags:
+            report.violations.append(f"第 {index} 条记录缺 status_flags.{name}")
+        elif not isinstance(flags[name], bool) or flags[name] != expected:
             report.violations.append(
                 f"第 {index} 条记录的 status_flags.{name}={flags[name]!r} 与重算结果 {expected} 不一致"
             )
@@ -901,6 +913,13 @@ def _check_summary(
         report.violations.append(
             f"summary 的故障观察统计与记录复算不一致（summary 被改过或过期）：summary={observed} 复算={recomputed}"
         )
+
+    from .summarize import compute_summary
+
+    expected = compute_summary(store)
+    for name, value in expected.items():
+        if summary.get(name) != value:
+            report.violations.append(f"summary.{name} 与原始证据复算不一致：摘要被改过或过期")
 
 
 def verify_paths(run_dir: Path, *, require_complete: bool = False) -> VerifyReport:
