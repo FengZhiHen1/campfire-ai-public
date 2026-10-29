@@ -19,7 +19,6 @@
 from __future__ import annotations
 
 import json
-import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -723,9 +722,23 @@ def _check_review(
             report.violations.append("有评分导入但没有评审包：评分的来源无法核对")
         return
     packet_text = packet_path.read_text(encoding="utf-8")
-    for key in FORBIDDEN_PACKET_KEYS:
-        if re.search(rf'"{key}"\s*:', packet_text):
-            report.violations.append(f"评审包含有组别标识字段 `{key}`：盲化失效")
+    for line_no, line in enumerate(packet_text.splitlines(), start=1):
+        if not line.strip():
+            continue
+        try:
+            packet = json.loads(line)
+        except json.JSONDecodeError:
+            continue  # JSON 形状由 _check_packet_contents 报告。
+        if not isinstance(packet, dict):
+            continue
+        for key in FORBIDDEN_PACKET_KEYS:
+            if key in packet:
+                report.violations.append(f"评审包第 {line_no} 行包装层含组别标识字段 `{key}`：盲化失效")
+            for turn_no, turn in enumerate(packet.get("turns") or [], start=1):
+                if isinstance(turn, dict) and key in turn:
+                    report.violations.append(
+                        f"评审包第 {line_no} 行第 {turn_no} 轮包装层含组别标识字段 `{key}`：盲化失效"
+                    )
     if not map_path.exists():
         report.violations.append("缺 blind-map.json：无法核对盲化映射")
         return
