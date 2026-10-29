@@ -286,3 +286,54 @@ def test_remove_reports_non_zero_when_branch_deletion_fails(tmp_path: Path) -> N
     assert not worktree.exists(), "工作树本身已经删掉了（这一步是成功的）"
     assert "未删除" in result.stderr
     assert "task/half" in _git(repo, "branch", "--list", "task/half")
+
+
+# --- `list` 的清理判据 ------------------------------------------------------
+
+
+def _line_for(output: str, worktree: Path) -> str:
+    """从 `list` 输出里取该工作树那一行。"""
+    for line in output.splitlines():
+        if str(worktree) in line:
+            return line
+    raise AssertionError(f"list 输出里没有 {worktree}：\n{output}")
+
+
+def test_list_shows_dirty_and_unmerged_state(tmp_path: Path) -> None:
+    """`list` 必须直接给出「脏」与「未合」两个字段——它们是清理判据，不是装饰。
+
+    为什么值得钉住（`docs/development/worktree-environment.md` §2）：清理前要核的三件事
+    里有两件（工作区是否干净、提交是否都已进基线）此前只能靠人再敲 `git status` /
+    `git log`。少敲一次就可能把未提交的工作随工作树一起删掉——而这正是 `remove`
+    拒绝执行的条件，`list` 不显示就等于让人**先走到删除那一步才发现**。
+
+    本用例同时验证它不会「永远显示 0」：先干净、再变脏、再变成有未合提交。
+    """
+    repo = _init_repo(tmp_path)
+    assert _run(repo, "create", "state").returncode == 0
+    worktree = repo / ".worktrees" / "state"
+
+    line = _line_for(_run(repo, "list").stdout, worktree)
+    assert "dirty=0" in line and "unmerged=0" in line, line
+
+    (worktree / "scratch.txt").write_text("未提交\n", encoding="utf-8")
+    line = _line_for(_run(repo, "list").stdout, worktree)
+    assert "dirty=1" in line, line
+
+    _git(worktree, "add", ".")
+    _git(worktree, "commit", "-q", "-m", "只在任务分支上的提交")
+    line = _line_for(_run(repo, "list").stdout, worktree)
+    assert "dirty=0" in line and "unmerged=1" in line, line
+
+
+def test_list_reports_unknown_base_as_unmerged_unknown(tmp_path: Path) -> None:
+    """基线不存在时字段是 `unmerged=?`，不得猜成 0（假 0 会让人以为已合入）。"""
+    repo = _init_repo(tmp_path)
+    assert _run(repo, "create", "state2").returncode == 0
+    worktree = repo / ".worktrees" / "state2"
+
+    result = _run(repo, "list", "--base", "no-such-base")
+
+    assert result.returncode == 0, result.stderr
+    line = _line_for(result.stdout, worktree)
+    assert "unmerged=?" in line, line
