@@ -75,11 +75,15 @@ pnpm --filter @campfire/web exec playwright install
 **流程真源：[docs/development/testing.md](docs/development/testing.md)**（分层、清单、失败判读）。
 
 ```bash
-uv run python scripts/checks.py quick --base dev   # 每次提交前：按改动面定向
-uv run python scripts/checks.py full               # 合入 dev 前与 CI：全套确定性检查
+uv run python scripts/checks.py quick --base dev                      # 每次提交前：按改动面定向
+uv run python scripts/checks.py quick --base dev --pytest <目标>      # 收窄 pytest 收集目标
+uv run python scripts/checks.py quick --base dev --dry-run --pytest <目标>   # 只打印，不执行
+uv run python scripts/checks.py full                                  # 合入 dev 前与 CI
+uv run python scripts/checks.py full --dry-run                        # 只打印，集成前复核
 ```
 
-**全量检查不在每个 commit 上跑**——日常提交用 quick，集成点与 CI 用 full。
+**全量检查不在每个 commit 上跑**——日常提交用 quick，**集成完成后跑一次 full**（不是合并前后
+各跑一次；`dev` 上的合并结果才是判据）。
 
 `scripts/checks.py` 由工具任务实现；**落地前**用下面的等价手工命令（`--dry-run` 也只是打印这些）：
 

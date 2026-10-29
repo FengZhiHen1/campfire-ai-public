@@ -22,7 +22,7 @@
 | 任务分支 | `task/<主题>`（如 `task/dev-standards`），一个任务一条，不共用 |
 | ❌ 禁止 | 在 `main` / `master` 上直接开发或提交；把 `master` 当开发分支；不经 review 直接改主工作区 `dev` |
 | 本地提交 | 任务分支上**局部提交**（可以多个小 commit）；提交前只跑 quick（[testing.md](testing.md) §3） |
-| 集成 | 由**主 agent**在集成泳道把任务分支合入 `dev`；合并前后在集成状态跑 **full** |
+| 集成 | 由**主 agent**把任务分支合入 `dev`；**集成完成后在 `dev` 上跑一次 full**（不跑两遍） |
 | 推送 | 未经用户明确要求，不 push、不发 PR、不触发部署（见 [AGENTS.md](../../AGENTS.md)） |
 
 **为什么主工作区不直写**：主工作区的 `dev` 是所有泳道的基线。被就地改动后，任何泳道的
@@ -154,17 +154,20 @@ FalkorDB 图 `campfire`，所有泳道共用同一份。
 flock <原始仓库根>/.tmp/integration-test.lock uv run --frozen pytest <定向子集> --junitxml=<path>
 ```
 
-- 集成点（合入 `dev` 前的 full）由**主 agent 串行安排**，不与其他泳道的数据测试重叠。
+- 集成的那一次 full（在 `dev` 上、集成完成后）由**主 agent 串行安排**，不与其他泳道的数据
+  测试重叠。
 
 ## 7. 集成与清理
 
 ### 7.1 集成（主 agent 执行）
 
-1. 任务分支在泳道内已 commit（局部提交即可，允许拆细）。
-2. 在集成状态跑 `scripts/checks.py full`（或 [testing.md](testing.md) §4 的命令），失败不合并。
-3. 合入主工作区 `dev`（如 `git -C <原始仓库根> merge --no-ff task/<主题>`）。
-4. 合并后在 `dev` 上再跑一次 full——**合并本身可能引入语义冲突**，分支上绿过不等于合并后绿。
-5. 方向单向：`task/*` → `dev`；`dev` → `master` 只在发布时。
+1. 任务分支在泳道内已 commit（局部提交即可，允许拆细），提交前只跑 quick。
+2. 主 agent 把任务分支合入主工作区 `dev`（如 `git -C <原始仓库根> merge --no-ff task/<主题>`），
+   同一组集成**串行**做。
+3. **集成完成后在 `dev` 上跑一次 full**（`scripts/checks.py full`，可先 `--dry-run` 复核将跑的
+   命令）。这就是合入判据：**不为合并前的分支再单独跑一遍**——分支状态不是发布事实，跑两遍是
+   把同一风险付两次代价（2026-10-29 用户统一口径）。失败就修或回退，并记录失败原因。
+4. 方向单向：`task/*` → `dev`；`dev` → `master` 只在发布时。
 
 ### 7.2 清理前必须核的三件事
 
