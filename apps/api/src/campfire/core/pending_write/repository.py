@@ -119,6 +119,25 @@ def _backoff_for(attempts: int) -> timedelta:
     return timedelta(seconds=_BACKOFF_SECONDS[index])
 
 
+def _lease_fence(lease_owner: str, reference: datetime):  # noqa: ANN202 —— 返回 SQLAlchemy 布尔表达式
+    """失败/终结的迟到守卫：只在「没有别人持有未过期租约」时允许推进。
+
+    判据是 `lease_owner IS NULL`、或属主是自己、或租约已过期——**不是**「必须
+    `processing` 且属主相符」。后者会把正常失败登记全部挡掉：失败登记发生在消费
+    事务回滚之后的独立事务里，回滚后库里是 `pending` 且 `lease_owner IS NULL`
+    （领取从未提交）。看不见的未提交领取由行锁串行化，不需要本栅栏判断；
+    本栅栏只负责一件能看见的事：别人**已提交**的活跃租约不得被迟到失败踩掉。
+
+    `lease_expires_at IS NULL` 时比较为 NULL ⇒ 不满足 ⇒ 拒绝（fail-closed）。
+    租约字段为空的非 `processing` 行为本仓不变量，正常路径不会走到这一支。
+    """
+    return or_(
+        PendingWrite.lease_owner.is_(None),
+        PendingWrite.lease_owner == lease_owner,
+        PendingWrite.lease_expires_at <= reference,
+    )
+
+
 async def enqueue(
     session: AsyncSession,
     *,
@@ -332,6 +351,7 @@ async def mark_retryable_failure(
     *,
     pending_id: uuid.UUID | str,
     error: str,
+    lease_owner: str | None = None,
     now: datetime | None = None,
 ) -> PendingWrite:
     """可重试失败（第 6 节）：`attempts + 1`、按退避后移 `next_attempt_at`、回 `pending`。
@@ -343,39 +363,55 @@ async def mark_retryable_failure(
         pending_id: 待处理记录标识。
         error: 失败摘要。只记摘要，不复述连接串或凭据（AGENTS.md 安全条款）；
             超长时截断（见 `MAX_LAST_ERROR_LENGTH`）。
+        lease_owner: 租约栅栏（可选）。给了就要求「不存在别人持有的未过期租约」，
+            否则显式失败——迟到的失败登记不得把别人正在处理的记录改回 `pending`、
+            清掉它的租约或消耗它的重试预算。**不给则不校验**（兼容既有调用方）；
+            消费任务应显式传入自己的 `lease_owner`。
+            为什么不要求「必须是 `processing` 且属主相符」：失败登记跑在消费事务
+            **回滚之后**的独立事务里，而领取与写入同在一个事务内、回滚后不可见
+            ——那时库里是回滚前的 `pending`、`lease_owner IS NULL`。要求属主相符
+            会把正常失败登记全部挡掉（记录永远停在 `pending`、不增 `attempts`、
+            永不进 `dead`）。未提交的领取由行锁串行化，不靠本栅栏判断。
         now: 参照时间。
 
     Returns:
         更新后的记录（`state` 为 `pending` 或 `dead`）。
 
     Raises:
-        PendingWriteNotFoundError: 记录不存在或已终结。
+        PendingWriteNotFoundError: 记录不存在、已终结，或存在别人持有的未过期租约。
     """
     reference = now if now is not None else _utc_now()
+    conditions = [
+        PendingWrite.id == pending_id,
+        PendingWrite.state.notin_((STATE_DONE, STATE_DEAD)),
+    ]
+    if lease_owner is not None:
+        conditions.append(_lease_fence(lease_owner, reference))
     # 先原子地自增并取回新值：并发两次失败各 +1，不会互相覆盖（用 SQL 表达式而不是
     # 读-改-写）。
     bumped = (
         await session.execute(
             update(PendingWrite)
-            .where(
-                PendingWrite.id == pending_id,
-                PendingWrite.state.notin_((STATE_DONE, STATE_DEAD)),
-            )
+            .where(*conditions)
             .values(attempts=PendingWrite.attempts + 1, updated_at=reference)
             .returning(PendingWrite.attempts)
         )
     ).scalar_one_or_none()
 
     if bumped is None:
-        raise PendingWriteNotFoundError(pending_id, "不存在，或已终结（不可再记失败）")
+        detail = "不存在，或已终结（不可再记失败）"
+        if lease_owner is not None:
+            detail = f"{detail}，或租约已属于别的 Worker（迟到失败不得改变状态）"
+        raise PendingWriteNotFoundError(pending_id, detail)
 
     summary = error[:MAX_LAST_ERROR_LENGTH]
     if bumped >= MAX_ATTEMPTS:
-        return await mark_dead(session, pending_id=pending_id, error=summary, now=reference)
+        # 同一栅栏必须延续到 dead：耗尽重试的终结同样不得踩别人的活跃租约。
+        return await mark_dead(session, pending_id=pending_id, error=summary, now=reference, lease_owner=lease_owner)
 
     statement = (
         update(PendingWrite)
-        .where(PendingWrite.id == pending_id)
+        .where(*conditions)
         .values(
             state=STATE_PENDING,
             next_attempt_at=reference + _backoff_for(bumped - 1),
@@ -397,12 +433,17 @@ async def mark_dead(
     *,
     pending_id: uuid.UUID | str,
     error: str,
+    lease_owner: str | None = None,
     now: datetime | None = None,
 ) -> PendingWrite:
     """转 `dead`（第 6 节：超过重试上限并告警，不得静默丢弃）。
 
     本函数只负责状态；告警由调用方发出——本模块不引入日志/告警依赖，
     避免 `core/pending_write` 依赖可观测设施（它是状态机，不是运维组件）。
+
+    `lease_owner` 是租约栅栏（可选，语义与 :func:`mark_retryable_failure` 相同）：
+    给了就拒绝「存在别人持有的未过期租约」时的终结，否则一次迟到的不可重试判定
+    会把别人正在处理的记录直接置成 `dead`（它的那次写入就再没有记录可对账）。
 
     调用方契约：每个调用方都必须保证这条记录进 `dead` 时有专属告警，
     不能只打可重试失败的 warning。实测的调用点共三处（2026-09-30 核实）：
@@ -414,12 +455,18 @@ async def mark_dead(
       经它收口，唯一的 `mark_dead` 调用点因此都带告警。
 
     Raises:
-        PendingWriteNotFoundError: 记录不存在，或已处于终结状态。
+        PendingWriteNotFoundError: 记录不存在、已处于终结状态，或存在别人持有的未过期租约。
     """
     reference = now if now is not None else _utc_now()
+    conditions = [
+        PendingWrite.id == pending_id,
+        PendingWrite.state.notin_((STATE_DONE, STATE_DEAD)),
+    ]
+    if lease_owner is not None:
+        conditions.append(_lease_fence(lease_owner, reference))
     statement = (
         update(PendingWrite)
-        .where(PendingWrite.id == pending_id, PendingWrite.state.notin_((STATE_DONE, STATE_DEAD)))
+        .where(*conditions)
         .values(
             state=STATE_DEAD,
             finished_at=reference,
@@ -435,7 +482,10 @@ async def mark_dead(
     )
     record = (await session.execute(statement)).scalar_one_or_none()
     if record is None:
-        raise PendingWriteNotFoundError(pending_id, "不存在，或已是 done/dead（不可重复终结）")
+        detail = "不存在，或已是 done/dead（不可重复终结）"
+        if lease_owner is not None:
+            detail = f"{detail}，或租约已属于别的 Worker（迟到终结不得改变状态）"
+        raise PendingWriteNotFoundError(pending_id, detail)
     return record
 
 
