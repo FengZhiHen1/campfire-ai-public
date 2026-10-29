@@ -26,7 +26,7 @@
 | 层级 | 何时跑 | 跑什么 | 谁跑 |
 |---|---|---|---|
 | **quick** | 任务内每次提交前 | 与改动面相称的确定性检查（见 §3） | 子任务执行者自己 |
-| **full** | 合成到 `dev` 之前、CI、以及改动公共契约/跨模块时 | 全套确定性检查（见 §4） | 集成者（主 agent）与 CI |
+| **full** | **集成完成后**（`dev` 上的合并结果）、CI、以及改动公共契约/跨模块时 | 全套确定性检查（见 §4） | 集成者（主 agent）与 CI |
 | **material** | 只在明确需要材料时（演示、交付、评测运行） | 真模型 + 真栈 + 真库的运行与取证 | 材料/评测任务，**不是门禁** |
 
 三层的关系：**quick 绿不等于可以合入**，full 才是合入判据；**material 红不阻塞合入**，
@@ -34,15 +34,20 @@
 
 ## 3. quick：按改动面定向
 
-接口契约（`scripts/checks.py` 由工具任务实现；本文规定语义）：
+接口契约（`scripts/checks.py` 由工具任务实现；本文规定语义与这些开关）：
 
 ```bash
-uv run python scripts/checks.py quick --base dev      # 相对 dev 的改动面
-uv run python scripts/checks.py quick --base dev --dry-run   # 只打印将执行的命令，不执行
+uv run python scripts/checks.py quick --base dev                       # 相对 dev 的改动面
+uv run python scripts/checks.py quick --base dev --dry-run             # 只打印将执行的命令
+uv run python scripts/checks.py quick --base dev --pytest <TARGET>     # 收窄 pytest 收集目标
 ```
 
-`--dry-run` 是给集成者复核用的：**先看它打算跑什么，再决定跑不跑**，避免用一条黑箱命令
-冒充验证。`--base <ref>` 缺省为 `dev`；工作区已提交与未提交的改动都计入改动面。
+- `--base <ref>` 缺省为 `dev`；已提交与未提交的改动都计入改动面。
+- `--dry-run` 对 `quick` 与 `full` 都有效，且**只打印不执行**。
+- `--pytest <TARGET>` 指定 pytest 收集目标（文件/目录/`node id`，实现按工具任务），用于把
+  定向用例写进报告：**报告里的「跑了什么」要能落到具体目标**，不能只写「跑了快速检查」。
+- `--dry-run` 是给集成者复核用的：**先看它打算跑什么，再决定跑不跑**，避免用一条黑箱命令
+  冒充验证。
 
 | 改动面 | quick 必跑 |
 |---|---|
@@ -60,14 +65,15 @@ uv run python scripts/checks.py quick --base dev --dry-run   # 只打印将执�
 ## 4. full：全套确定性检查
 
 ```bash
-uv run python scripts/checks.py full          # 等价于下表全部命令
+uv run python scripts/checks.py full                  # 等价于下表全部命令
+uv run python scripts/checks.py full --dry-run        # 只打印，供集成前复核
 ```
 
 ```bash
 uv run ruff check . && uv run ruff format --check .
 uv run mypy apps/api/src/campfire apps/api/tests
 uv run alembic upgrade head && uv run alembic check   # 迁移门禁：模型与迁移不一致即失败
-uv run pytest                                  # 需要 docker compose up -d 的数据服务在跑
+uv run pytest                                  # 需要 docker compose up -d 的数据服务在跑；收集 testpaths 两处（§5.2.1）
 uv run --no-project python scripts/check_design_docs.py
 pnpm --filter @campfire/web lint
 pnpm --filter @campfire/web test
@@ -102,11 +108,21 @@ uv run mypy apps/api/src/campfire apps/api/tests
 
 ### 5.2 计数取机器读数，不数控制台
 
-`pyproject.toml` 已设 `addopts = "-q --import-mode=importlib"` 与 `testpaths = ["apps/api/tests"]`，
-控制台行数会随警告与摘要漂移。要计数就加 `--junitxml=<path>` 并从 XML 读
-`tests/failures/errors/skipped`；**跑完还要确认这份 XML 真的收集到了用例**（按名字检索一条
-本轮新增的用例为阳性对照，再用编造的名字确认检索为 0）。只有「命中真名 + 不命中假名」
-同时成立，这次计数才算数。
+`pyproject.toml` 已设 `addopts = "-q --import-mode=importlib"`，控制台行数会随警告与摘要漂移。
+要计数就加 `--junitxml=<path>` 并从 XML 读 `tests/failures/errors/skipped`；**跑完还要确认这份
+XML 真的收集到了用例**（按名字检索一条本轮新增的用例为阳性对照，再用编造的名字确认检索为 0）。
+只有「命中真名 + 不命中假名」同时成立，这次计数才算数。
+
+### 5.2.1 收集范围由 `testpaths` 决定
+
+`testpaths` 决定 pytest 收集哪些目录，**没登记的测试等于不存在**（它会安静地不跑，而报告仍
+显示「全部通过」）。当前应覆盖两处：
+
+- `apps/api/tests` —— 应用测试；
+- `scripts/tests` —— 仓库级脚本（`checks.py`、`worktree.py` 等工具）自己的测试。
+
+**新增测试目录必须同步登记进 `testpaths`**，否则「工具没有测试」和「测试没登记」在结果上
+长得一模一样。若 `testpaths` 里缺 `scripts/tests`，按缺陷处理，不得按「0 条用例通过」计数。
 
 ### 5.3 失败判读
 
@@ -149,7 +165,9 @@ uv run mypy apps/api/src/campfire apps/api/tests
 - 改动跨模块：`agent/`、`core/`、`surfaces/`、多个 `modules/`。
 - 改动构建链或依赖：`pyproject.toml`、`uv.lock`、`package.json`、`pnpm-lock.yaml`、CI workflow。
 - 改动测试基础设施：`conftest.py`、marker、`addopts`。
-- **合成到 `dev` 之前**：不论谁、不论改了什么，一次 full；这是合入判据而非形式。
+- **每组集成完成后一次**：不论谁、不论改了什么，`dev` 上合并后的结果跑一次 full；这是合入
+  判据而非形式。**不是「合并前后各跑一次」**——合并前的分支状态不是发布事实，跑两遍只是把同一
+  风险付两次代价（2026-10-29 用户统一口径）。
 
 ## 8. 工具落地状态
 
