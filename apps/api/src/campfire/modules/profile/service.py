@@ -53,6 +53,10 @@ from campfire.modules.profile.models import (
     lands_in_stable_layer,
 )
 
+#: 候选层的单次读取上界（CORE-11）。候选层在档案面上不可翻页，因此用一个与页大小
+#: 无关的固定上界：让它随 `items` 的 `limit` 收缩会把候选条目变成无法确认的孤岛。
+CANDIDATES_MAX_LIMIT = 100
+
 # ============================================================================
 # 一页摘要（个性化档案第 4 节）
 # ============================================================================
@@ -590,22 +594,37 @@ async def read_items(
     前者只管「已被取代的旧条目可回看」，后者只管「未确认的候选是否返回」。
     两者都真时，「已被取代的候选」也会返回——它不是互斥组合。
 
+    `limit` 只约束 `items`；候选层以 `CANDIDATES_MAX_LIMIT` 为界，不随页大小收缩。
+
     Raises:
         AuthorizationError: 对象不存在或不属于该账号。不得用空结果冒充
             「没有档案」——越权必须显式失败（第 5 节失败语义）。
         ProfileDataError: 领域过滤含词表外取值，或标识不合法。
     """
     await require_owned(account_id, support_object_id)
+    reference = now if now is not None else _now()
+    # 候选层与 items 分两条取数流：共用窗口时较新的候选会把稳定条目挤出分页窗口
+    # （回归 `test_items_pagination_is_not_starved_by_candidates`）。
     rows = await repo.list_items(
         session,
         support_object_id=support_object_id,
-        include_candidates=include_candidates,
+        include_candidates=False,
         include_superseded=include_superseded,
         domains=domains,
         limit=limit,
     )
-    reference = now if now is not None else _now()
-    return _group(rows, now=reference)
+    grouped = _group(rows, now=reference)
+    if not include_candidates:
+        return grouped
+
+    candidate_rows = await repo.list_candidate_items(
+        session,
+        support_object_id=support_object_id,
+        include_superseded=include_superseded,
+        domains=domains,
+        limit=CANDIDATES_MAX_LIMIT,
+    )
+    return GroupedItems(items=grouped.items, candidates=[_to_view(row, now=reference) for row in candidate_rows])
 
 
 def _group(rows: list[ProfileItem], *, now: datetime) -> GroupedItems:
