@@ -56,6 +56,7 @@ uv run python scripts/checks.py quick --base dev --pytest <TARGET>     # 收窄 
 | 改动面 | quick 必跑 |
 |---|---|
 | 后端 Python（`apps/api/src`、`apps/api/tests`） | `uv run ruff check .`；改动模块对应的定向 pytest（至少覆盖被改文件与直接调用方）；改动源码时补 mypy 两路径（§5.1） |
+| 评测工具（`evaluation/carebench`） | Python 源码走 ruff check/format 与该工具确定性 pytest；案例/配置走该工具 pytest；Markdown 走文档检查。不运行模型测评；显式 `--pytest` 可收窄目标 |
 | 前端（`apps/web/src`、`apps/web/tests`） | `pnpm --filter @campfire/web lint`；`pnpm --filter @campfire/web test` 定向到相关文件 |
 | 文档（`docs/`、`*.md`、`materials/`） | `uv run --no-project python scripts/check_design_docs.py`（相对链接、需求与验收对应） |
 | 忽略/容器清单（`.gitignore`、`.dockerignore`） | `git check-ignore -v -- <新增的落点示例路径>`；`.dockerignore` 的新增项逐个核对锚定范围 |
