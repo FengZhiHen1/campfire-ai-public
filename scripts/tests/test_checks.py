@@ -411,13 +411,7 @@ def test_deleted_test_file_is_not_handed_to_pytest(monkeypatch: pytest.MonkeyPat
 
 
 def test_style_contract_change_runs_frontend_build(monkeypatch: pytest.MonkeyPatch) -> None:
-    """改 `docs/design/tokens.css` 必须跑前端 build。
-
-    缺陷形状（修复前实测）：它的归类是 `docs`，于是 `quick` 只排了设计文档检查——
-    而 `apps/web` 的 `build` 第一步 `sync-tokens` 逐字节读这个文件，契约类名断言也在
-    `build` 里。`checks.py` 里那条 `docs/design/tokens.css` 的判断写在了
-    「前端分支内部」，而该分支根本不会被这个路径进入，等于一行**永不生效**的判据。
-    """
+    """改 `docs/design/tokens.css` 必须跑前端 build（`build` 的 `sync-tokens` 读它）。"""
     monkeypatch.setattr(checks, "changed_paths", lambda base: ["docs/design/tokens.css"])
 
     steps, report, problems = checks.quick_plan("dev", None)
@@ -429,11 +423,7 @@ def test_style_contract_change_runs_frontend_build(monkeypatch: pytest.MonkeyPat
 
 
 def test_app_pyproject_is_a_python_config_change(monkeypatch: pytest.MonkeyPatch) -> None:
-    """`apps/api/pyproject.toml` 是应用的依赖清单，不能落到 `unknown` 去阻塞 `quick`。
-
-    修复前实测：`quick` 对这条路径直接退出码 2（unknown）。那会诱使人加
-    `--accept-unchecked`，把一次真实的依赖改动「接受」成无需检查。
-    """
+    """`apps/api/pyproject.toml` 是依赖清单，不能落到 `unknown` 去阻塞 `quick`。"""
     assert checks.classify("apps/api/pyproject.toml") == checks.CAT_PY_CONFIG
     monkeypatch.setattr(checks, "changed_paths", lambda base: ["apps/api/pyproject.toml"])
 
@@ -447,12 +437,7 @@ def test_app_pyproject_is_a_python_config_change(monkeypatch: pytest.MonkeyPatch
 
 
 def test_conftest_change_escalates_to_full_pytest(monkeypatch: pytest.MonkeyPatch) -> None:
-    """改 `conftest.py` 要跑全量 pytest，而不是把它本身交给 pytest。
-
-    修复前实测：`pytest apps/api/tests/conftest.py` 退出码 **5**（没有收集到用例），
-    而 `quick` 把非零退出码一律判成「检查失败」——一条必然假红的命令，同时它对
-    「改了测试基础设施」这件事一点验证都没有。
-    """
+    """改 `conftest.py` 要跑全量 pytest，而不是把它本身交给 pytest（它零用例、退出码 5）。"""
     monkeypatch.setattr(checks, "changed_paths", lambda base: ["apps/api/tests/conftest.py"])
 
     steps, report, problems = checks.quick_plan("dev", None)
@@ -476,13 +461,7 @@ def test_conftest_is_never_selected_as_a_pytest_target() -> None:
 
 
 def test_full_plan_and_ci_workflow_stay_in_sync() -> None:
-    """`full` 与 `.github/workflows/ci.yml` 必须是同一组判据（改一处要检查另一处）。
-
-    为什么写成用例：`docs/development/testing.md` §4.1 要求两者同源，但那是一句话；
-    一句话不会在有人删掉 CI 里的 `alembic check` 时变红。这里按**步骤键**逐条对应，
-    每步接受若干等价写法（前端 `--filter @campfire/web` 与 CI 的 `--dir apps/web`
-    是同一条命令的两种表达）。
-    """
+    """`full` 与 CI 必须是同一组判据（按步骤键对应；前端两种写法视为等价）。"""
     workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
     ci = " ".join(workflow.replace('"', "").replace("'", "").split())
 
