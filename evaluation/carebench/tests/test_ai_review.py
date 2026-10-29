@@ -15,6 +15,7 @@ import pytest
 
 pytestmark = pytest.mark.asyncio
 
+from evaluation.carebench import ai_review
 from evaluation.carebench.ai_review import (
     ADJUDICATION_ATTEMPTS_FILE,
     ATTEMPTS_FILES,
@@ -373,16 +374,18 @@ async def test_freeze_requires_distinct_prompts_and_precedes_scoring(
 
 
 async def test_formal_identity_must_precede_first_system_output(
-    tmp_path: Path, settings_for_tests: Any, faults_for_tests: FaultPlan
+    tmp_path: Path, settings_for_tests: Any, faults_for_tests: FaultPlan, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """正式身份晚于首次系统输出即违规；校准不套这条门禁；同秒不算晚。"""
+    """正式身份早/晚于首条输出各差一秒时边界确定；校准不套门禁。"""
+    frozen_at = "2026-01-01T00:00:00+00:00"
+    monkeypatch.setattr(ai_review, "utc_now", lambda: frozen_at)
     calibration = await _exported_run(tmp_path / "calibration", settings=settings_for_tests, faults=faults_for_tests)
-    _set_first_output_start(calibration, "2000-01-01T00:00:00+00:00")
+    _set_first_output_start(calibration, "2025-12-31T23:59:59+00:00")
     _freeze(calibration)
     assert not any("晚于首次系统输出" in item for item in verify_ai_review_report(calibration).violations)
 
     late = await _exported_run(tmp_path / "late", settings=settings_for_tests, faults=faults_for_tests)
-    _set_first_output_start(late, "2000-01-01T00:00:00+00:00")
+    _set_first_output_start(late, "2025-12-31T23:59:59+00:00")
     freeze_judges(
         late,
         judges=default_judges("stub-model"),
@@ -392,8 +395,19 @@ async def test_formal_identity_must_precede_first_system_output(
     )
     assert any("晚于首次系统输出" in item for item in verify_ai_review_report(late).violations)
 
+    same_second = await _exported_run(tmp_path / "same-second", settings=settings_for_tests, faults=faults_for_tests)
+    _set_first_output_start(same_second, frozen_at)
+    freeze_judges(
+        same_second,
+        judges=default_judges("stub-model"),
+        adjudicator=default_adjudicator("stub-model"),
+        stage="formal",
+        log=lambda _message: None,
+    )
+    assert not any("晚于首次系统输出" in item for item in verify_ai_review_report(same_second).violations)
+
     early = await _exported_run(tmp_path / "early", settings=settings_for_tests, faults=faults_for_tests)
-    _set_first_output_start(early, "2999-01-01T00:00:00+00:00")
+    _set_first_output_start(early, "2026-01-01T00:00:01+00:00")
     freeze_judges(
         early,
         judges=default_judges("stub-model"),
@@ -1275,9 +1289,14 @@ async def test_score_run_rejects_duplicate_or_empty_passes_before_any_call(
     assert client.calls == []
 
 
-async def test_public_wiring_contract(tmp_path: Path, settings_for_tests: Any, faults_for_tests: FaultPlan) -> None:
-    """主 agent 接线契约：None / pending 计数 / complete / list[str]。"""
+async def test_public_wiring_contract(
+    tmp_path: Path, settings_for_tests: Any, faults_for_tests: FaultPlan, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """主 agent 接线契约固定在身份与首输出同秒，避免依赖墙钟进位。"""
     store = await _exported_run(tmp_path, settings=settings_for_tests, faults=faults_for_tests)
+    frozen_at = "2026-01-01T00:00:00+00:00"
+    _set_first_output_start(store, frozen_at)
+    monkeypatch.setattr(ai_review, "utc_now", lambda: frozen_at)
     assert summarize_ai_review(store) is None
     assert verify_ai_review(store) == []
 
