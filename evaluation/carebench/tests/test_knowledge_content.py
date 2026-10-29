@@ -12,13 +12,15 @@ from __future__ import annotations
 
 import json
 import struct
+from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
 import pytest
 
+from evaluation.carebench import knowledge as knowledge_module
 from evaluation.carebench.config import RunConfig
-from evaluation.carebench.hashing import canonical_json, sha256_text
+from evaluation.carebench.hashing import canonical_json, sha256_bytes, sha256_text
 from evaluation.carebench.knowledge import (
     EMBEDDING_DIM,
     SNAPSHOT_FORMAT_VERSION,
@@ -56,7 +58,14 @@ def _manifest(*paths: str) -> KnowledgeSnapshot:
         snapshot_version="test",
         corpus_root="data/knowledge",
         files=tuple(
-            SnapshotFile(path=p, sha256="0" * 64, license="测试许可", source_kind="institutional") for p in paths
+            SnapshotFile(
+                path=p,
+                sha256="0" * 64,
+                license="测试许可",
+                source_kind="institutional",
+                doc_hash=DOC_HASH_B if p == FILE_B else DOC_HASH_A,
+            )
+            for p in paths
         ),
     )
 
@@ -276,6 +285,44 @@ def test_doc_hash_is_carried_verbatim_not_recomputed() -> None:
 
     assert payload["items"][0]["doc_hash"] == "0123456789abcdef" * 4
     assert payload["items"][0]["doc_hash"] != payload["files"][0]["sha256"]
+    assert any("doc_hash 与许可源文件不符" in issue for issue in payload["violations"])
+
+
+def test_source_mismatch_is_rejected_even_when_nodes_are_unchanged() -> None:
+    baseline = _build()
+    changed = _build(items=[_item(doc_hash="c" * 64), _items_default()[1]])
+    assert baseline.ok
+    assert not changed.ok
+    assert baseline.nodes_sha256 == changed.nodes_sha256
+    assert any("doc_hash 与许可源文件不符" in issue for issue in changed.violations)
+
+
+def test_source_hash_uses_ingestion_text_decoding_without_confusing_byte_hash(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source = b"---\r\ntitle: sample\r\n---\r\nbody\r\n"
+    (tmp_path / "corpus").mkdir()
+    (tmp_path / "corpus/a.md").write_bytes(source)
+    manifest = tmp_path / "snapshot.json"
+    manifest.write_text(
+        json.dumps(
+            {
+                "corpus_root": "corpus",
+                "included": [{"path": "a.md", "sha256": sha256_bytes(source), "license": "test"}],
+            }
+        )
+    )
+    monkeypatch.setattr(knowledge_module, "REPO_ROOT", tmp_path)
+    snapshot, _ = knowledge_module.load_snapshot_manifest(manifest)
+    assert snapshot.files[0].sha256 == sha256_bytes(source)
+    assert snapshot.files[0].doc_hash == sha256_text(source.decode().replace("\r\n", "\n"))
+    assert snapshot.files[0].sha256 != snapshot.files[0].doc_hash
+
+
+def test_duplicate_source_basenames_do_not_silently_bind_to_one_file() -> None:
+    snapshot = _build(paths=("one/a.md", "two/a.md"))
+    assert not snapshot.ok
+    assert any("重复文件基名" in issue for issue in snapshot.violations)
 
 
 def test_resume_identity_names_the_knowledge_drift_when_node_count_is_unchanged() -> None:
