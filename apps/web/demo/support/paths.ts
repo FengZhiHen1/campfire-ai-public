@@ -14,7 +14,7 @@
  *   - 禁止从 apps/web/src 下 import 本文件（工程设施不进产品代码）
  */
 
-import { resolve } from 'node:path';
+import { relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 /** 本文件所在目录（apps/web/demo/support）。 */
@@ -106,5 +106,5 @@ export function sidecarPath(slug: ScenarioSlug, index: number, stepId: string): 
 
 /** 把绝对路径转成相对仓库根的 POSIX 路径（manifest 里一律用它，便于跨机器阅读）。 */
 export function toRepoRelative(absolutePath: string): string {
-  return absolutePath.slice(REPO_ROOT.length + 1).split('\\').join('/');
+  return relative(REPO_ROOT, resolve(absolutePath)).split('\\').join('/');
 }

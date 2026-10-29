@@ -14,7 +14,7 @@
  *   - 禁止从 src 下任何模块 import 本文件（分层纪律：工程设施不进产品代码）
  */
 
-import { resolve } from 'node:path';
+import { relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 /** 本文件所在目录（apps/web/e2e/support）。 */
@@ -155,7 +155,7 @@ export function sidecarPath(page: PageName, viewport: ViewportName, kind: ShotKi
 
 /** 把绝对路径转成相对仓库根的 POSIX 形式，供落盘记录跨机可读。 */
 export function toRepoRelative(absolutePath: string): string {
-  return resolve(absolutePath).slice(REPO_ROOT.length + 1).split('\\').join('/');
+  return relative(REPO_ROOT, resolve(absolutePath)).split('\\').join('/');
 }
 
 /**
