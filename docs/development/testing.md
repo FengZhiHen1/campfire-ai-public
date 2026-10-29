@@ -66,6 +66,7 @@ uv run python scripts/checks.py full          # 等价于下表全部命令
 ```bash
 uv run ruff check . && uv run ruff format --check .
 uv run mypy apps/api/src/campfire apps/api/tests
+uv run alembic upgrade head && uv run alembic check   # 迁移门禁：模型与迁移不一致即失败
 uv run pytest                                  # 需要 docker compose up -d 的数据服务在跑
 uv run --no-project python scripts/check_design_docs.py
 pnpm --filter @campfire/web lint
@@ -76,7 +77,9 @@ pnpm --filter @campfire/web build              # 已内含 tsc --noEmit 与契�
 - **不单独跑 `pnpm typecheck`**：`build` 的第一步就是 `tsc --noEmit`，`typecheck` 只是同一份
   检查的第二次执行，不增加证据、只增加时间。**要保住这条**：任何人往 `build` 里加前置步骤
   顺手把 `tsc` 去掉，typecheck 就会静默消失。
-- `full` 与 CI 的 job 划分一致（设计文档一致性 / 后端 / 前端），差别只在 CI 自带三个数据服务。
+- 迁移门禁（`alembic upgrade head` + `alembic check`）需要数据服务在跑，因此不进 quick。
+- `full` 与 CI 的 job 划分一致（设计文档一致性 / 后端 / 前端），差别只在 CI 自带三个数据
+  service、并在其内部 `uv sync --frozen`——**命令语义必须同源，改一处要检查另一处**。
 - `full` 不跑 `shots`、`e2e`、`demo`、`e2e-real`、真实模型调用，也不跑评测运行：
   它们是 material 层，见 §6。
 
