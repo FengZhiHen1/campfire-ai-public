@@ -36,12 +36,12 @@ export interface ConsultWorkspaceController {
   runtime: AssistantRuntime;
   /** 运行态的只读快照（isRunning / messages，供输入区与卡片失效态使用）。 */
   thread: ThreadRuntimeState;
-  /** 发送一段文本；运行中或空文本不发送。 */
-  send(text: string): void;
+  /** 发送一段文本；运行中或空文本不发送。@returns 是否真的起了一轮（false 时草稿要留着） */
+  send(text: string): boolean;
   /** 停止当前运行（保留已渲染内容并标注中断）。 */
   stop(): void;
-  /** 发送整组回答（回答载荷已由提问卡写入 store）。 */
-  sendAnswers(displayText: string): void;
+  /** 发送整组回答（载荷已由提问卡写入 store）。@returns 是否真的起了一轮；false 时卡片须保持可作答 */
+  sendAnswers(displayText: string): boolean;
 }
 
 /** 消息流里是否已有助手正文（首字降级提示与「正在分析」文案的收尾判定）。 */
@@ -127,30 +127,55 @@ export function useConsultRuntime(options: {
   useEffect(() => {
     runningRef.current = thread.isRunning;
   }, [thread.isRunning]);
-  const inFlight = useRef(false);
+  /**
+   * 同步发送闸门。`runningRef` 要等 runtime 状态回调 → effect 才更新，同一帧的第二次点击
+   * 会漏过去（第二次 append 会 abort 第一条运行并再落一条使用者消息）；此 ref 在动作里同步置位，
+   * 运行结束（isRunning 回到 false）才放开。
+   */
+  const pendingSend = useRef(false);
+  useEffect(() => {
+    if (!thread.isRunning) pendingSend.current = false;
+  }, [thread.isRunning]);
 
-  const send = (text: string): void => {
-    if (inFlight.current || runningRef.current) return;
+  /**
+   * 发送没起成时收回乐观写入的连接态：`append` 可同步抛错（如 runtime 仍是空线程占位符）。
+   * 只回 idle、不弹错误卡——这一轮没有消息可重试；抛错留一条诊断，不静默。
+   */
+  const rollbackSend = (error: unknown): false => {
+    pendingSend.current = false;
+    useRunStore.getState().setConnection('idle');
+    logDiagnostic('chatSend', error instanceof Error ? error.message : String(error));
+    return false;
+  };
+
+  const send = (text: string): boolean => {
+    if (pendingSend.current || runningRef.current) return false;
     const content = text.trim();
-    if (content === '') return;
-    inFlight.current = true;
+    if (content === '') return false;
+    pendingSend.current = true;
+    // 普通输入不继承整组回答的提交件：它只在受理后才被适配器清掉，失败时会留到下一次发送，
+    // 届时新输入会被旧答案顶掉。两条通道各自只带自己的载荷。
+    useRunStore.getState().clearPendingSubmission();
     useRunStore.getState().setConnection('subscribing');
     try {
       runtime.thread.append(content);
-    } finally {
-      inFlight.current = false;
+      return true;
+    } catch (error) {
+      return rollbackSend(error);
     }
   };
 
-  const sendAnswers = (displayText: string): void => {
-    if (inFlight.current || runningRef.current) return;
-    if (displayText.trim() === '') return;
-    inFlight.current = true;
+  const sendAnswers = (displayText: string): boolean => {
+    if (pendingSend.current || runningRef.current) return false;
+    if (displayText.trim() === '') return false;
+    pendingSend.current = true;
     useRunStore.getState().setConnection('subscribing');
     try {
       runtime.thread.append(displayText);
-    } finally {
-      inFlight.current = false;
+      return true;
+    } catch (error) {
+      // 提交件由提问卡的调用方撤回（它才知道这次提交属于哪一组），这里不猜。
+      return rollbackSend(error);
     }
   };
 

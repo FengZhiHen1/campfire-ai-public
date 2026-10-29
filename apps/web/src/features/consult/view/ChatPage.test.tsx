@@ -870,3 +870,100 @@ describe('对话页 — 运行中的输入区状态（演示装置依赖这条�
     expect(screen.queryByRole('button', { name: '停止' })).toBeNull();
   });
 });
+
+/**
+ * 2026-10-29 审查：同一帧里的两次点击都必须被闸门挡住。
+ * 旧实现只读 effect 里的 `runningRef`（append 起运行是异步的），第二次 append
+ * 会 abort 第一条运行并再落一条使用者消息。
+ */
+describe('对话页 — 发送闸门（同一帧双击）', () => {
+  it('同一帧内连点两次发送只起一轮（一条消息、一次订阅）', async () => {
+    const port = createConsultPortStub({ history: historyResponse([]) });
+    // 挂住这一轮：模拟「运行还没有结束」，第二次点击必须被闸门拒绝。
+    port.holdStream([runStarted()]);
+    renderChat(port);
+
+    const box = await screen.findByLabelText('发送消息');
+    fireEvent.change(box, { target: { value: '他很紧张，一直捂着耳朵' } });
+    const button = screen.getByRole('button', { name: '发送' });
+
+    await act(async () => {
+      fireEvent.click(button);
+      fireEvent.click(button);
+    });
+
+    await waitFor(() => expect(port.sendCalls).toHaveLength(1));
+    expect(port.streamCalls).toHaveLength(1);
+    expect(port.cancelCalls).toEqual([]);
+  });
+});
+
+/**
+ * 2026-10-29 审查：运行中在历史未作答卡上点提交，答案不得丢。
+ * 历史卡不占 `activeBatchId`（输入区因此可用），使用者可以先发消息再回头提交那组题；
+ * 旧实现先标已提交再发送，被闸门拒绝时不回滚：卡片说已提交、服务端从未收到答案。
+ */
+describe('对话页 — 历史未作答卡的补答不被静默丢弃', () => {
+  it('运行中点提交：不发 answers、不标已提交、不留残余提交件', async () => {
+    const port = createConsultPortStub({
+      history: historyResponse([
+        hydratedAssistant('m1', [
+          { type: 'question-record', batch_id: 'b1', items: [...QUESTION_ITEMS], answered: false },
+        ]),
+      ]),
+    });
+    port.holdStream([runStarted()]);
+    renderChat(port);
+
+    // 先把历史卡的两题答完（此时「提交」按钮出现在末题上）。
+    fireEvent.click(await screen.findByRole('button', { name: /可以/ }));
+    fireEvent.click(screen.getByRole('button', { name: '下一题' }));
+    fireEvent.click(screen.getByRole('button', { name: /不确定/ }));
+
+    // 再发一条普通消息并让它一直跑（模拟「另一轮还没结束」）。
+    const box = await screen.findByLabelText('发送消息');
+    fireEvent.change(box, { target: { value: '补充一句' } });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: '发送' }));
+    });
+    await waitFor(() => expect(port.sendCalls).toHaveLength(1));
+
+    // 运行中点提交：必须被拒绝，而且**什么都不要改**。
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: '提交' }));
+    });
+
+    expect(port.sendCalls, '运行中不得发出整组回答').toHaveLength(1);
+    expect(useRunStore.getState().pendingSubmission, '被拒的提交件不得留在 store 里').toBeNull();
+    // 卡片仍可作答：提交按钮还在，没有变成静态记录。
+    expect(screen.getByRole('button', { name: '提交' })).toBeDefined();
+    expect(screen.queryByText('整组已提交，不能再修改。')).toBeNull();
+    expect(screen.queryByText('已提交')).toBeNull();
+  });
+
+  /**
+   * 提交件是「下一次发送带 answers」的一次性意图，只在发出被受理后才被清掉。
+   * 于是「上一次提交没发出去、使用者改为写一句新话」时，普通输入不得继承那份旧答案
+   * ——否则本次请求会变成「把旧答案再发一次」，刚打的字被静默丢掉。
+   */
+  it('普通输入不继承遗留的整组回答提交件（两条通道各自只带自己的载荷）', async () => {
+    const port = createConsultPortStub({ history: historyResponse([]) });
+    port.script([textDelta('好的'), runFinished()]);
+    renderChat(port);
+    await screen.findByLabelText('发送消息');
+
+    act(() => {
+      useRunStore
+        .getState()
+        .setPendingSubmission({ batchId: 'b-old', answers: [{ id: 'q1', value: '可以' }] });
+    });
+
+    await send('我想补充一句');
+
+    await waitFor(() => expect(port.sendCalls).toHaveLength(1));
+    const payload = port.sendCalls[0]?.payload ?? {};
+    expect(payload).toMatchObject({ content: '我想补充一句' });
+    expect(payload).not.toHaveProperty('answers');
+    expect(payload).not.toHaveProperty('batch_id');
+  });
+});

@@ -18,6 +18,13 @@ import { buildRouteObjects } from './routes';
 import { initSession, supertokensSessionPort } from '../infrastructure/auth/session';
 import { setUnauthorizedHandler } from '../infrastructure/http/client';
 import { useSessionStore } from '../features/accounts/viewModel/sessionStore';
+import { installSessionCacheReset } from './sessionCacheReset';
+
+/**
+ * 路由实例只建一次（模块级）。写在 render 体里时，App 的任何一次重渲染都会
+ * 换掉 history 与全部路由订阅（路由状态丢失、监听器泄漏）。
+ */
+const router = createBrowserRouter(buildRouteObjects());
 
 /**
  * 装配全局副作用：SDK 初始化、启动时查证会话、401 处置。
@@ -40,8 +47,11 @@ function useAppBootstrap(): void {
 
   useEffect(() => {
     initSession();
+    // 先订阅再查证：查证落定（unknown → authenticated / anonymous）也是一次身份变化。
+    const uninstall = installSessionCacheReset();
     void refresh(supertokensSessionPort);
     setUnauthorizedHandler(markAnonymous);
+    return uninstall;
   }, [refresh, markAnonymous]);
 }
 
@@ -54,5 +64,5 @@ function useAppBootstrap(): void {
  */
 export function App() {
   useAppBootstrap();
-  return <RouterProvider router={createBrowserRouter(buildRouteObjects())} />;
+  return <RouterProvider router={router} />;
 }

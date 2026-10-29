@@ -23,7 +23,8 @@ import { CONSULT_MESSAGE_COMPONENTS, ConsultThreadProvider, type ConsultThreadCo
 /** 造一份对话消息流上下文；缺省非流式、非应急。 */
 function contextValue(overrides: Partial<ConsultThreadContextValue> = {}): ConsultThreadContextValue {
   return {
-    submitAnswers: () => undefined,
+    // 这份上下文只为渲染思考行：提交回答的回调不被调用，恒真返回「已受理」即可。
+    submitAnswers: () => true,
     newestActionCardId: null,
     reasoningStreaming: false,
     reasoningEmergency: false,
