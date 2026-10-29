@@ -1,7 +1,8 @@
 # HANDOFF — CareBench 评测工具交接（2026-10-29）
 
 > 这一批是**真实性修复 + 正式集入库**，**没有开任何正式模型运行**，也没有冻结正式集。
-> 下面按「已做（含定向测试）」/「未做（明确原因）」/「新环境怎么接」三块写清。
+> 随后 EVAL-01/02/03 的实现与确定性测试已落地；正式 40 例仍未冻结、未运行。
+> 专业审核仍未满足。正式接续顺序见第 3 节。
 
 ## 0. 当前事实（不要当成别的样子）
 
@@ -81,22 +82,23 @@
 - 正式计划草案：`evaluation/carebench/fixtures-formal.example.json`
   （T033 空结果、T035 不可用、T040 `client_render_fault`）。实测统计：applied 3 / out_of_harness 3 / unknown 0。
 
-## 2. 未做（明确列出，不要默认已完成）
+## 2. 后续实现状态
 
-1. **AI 评审能力（agent 独立评分）整体未实现**。用户后来要求「两套独立 agent 盲评 + 独立 `ai_scores` +
-   `reviewer_kind/model_id/prompt_sha256/rater_id` 字段 + 逐 must_check 判定 + 证据位置」——
-   本批按「先正确性、后评分；暂停不新增功能」的口径**没有开始**。
-   现有 `review.py` 仍是人工 CSV 单通道（盲化包 + 空表 + 严格导入 + `pending` 拒收），
-   **没有** `ai_scores`、没有 AI 简报/批次包、没有分歧裁定 JSONL。
-2. **知识快照的节点级锁定未做**。`knowledge.read_database_state` 现在核对：条目 `source_path`
-   基名在许可表内、无案例条目、节点数 > 0；**没有**核对每个节点的正文/向量 hash 与 `source doc_hash`
-   ——“节点数相同、内容变了”目前查不出来。主 agent 已将旧快照留存为
-   `docs/development/checkpoints/2026-10-29-knowledge-snapshot.json`
-   （逐条 doc_hash + nodes 内容/向量 hash），尚未接入运行时核验。**这是冻结正式集之前必须补的一条**。
-3. **`verify` 未覆盖的新字段**：`run_identity`、`review.structured_output`、`retry`、
-   fixture 的 `observed`/`status` 还没有对应的 verify 断言（现在只保证写入，未保证事后被校验）。
-4. **`summarize` 未消费 `observed`**：统计里还没单列「注入了但没被观察到」的组数。
-5. 正式集**未冻结、未运行**，`frozen/test/` 与 `label=test` 批次都不存在；`preflight` 未跑正式集。
+本节记录上一轮交接中列出的阻断项及其后续状态；原始修复过程与测试背景保留在第 1 节。
+
+1. **EVAL-01 已实现**：知识快照规范摘要覆盖节点正文、节点标识、metadata、向量、条目 `doc_hash`
+   和嵌入身份；节点数相同而内容漂移会改变运行身份并使续跑拒绝。确定性用例在
+   `tests/test_knowledge_content.py` 与 `tests/test_identity.py`。
+2. **EVAL-02 已实现**：verify 对新增运行、结构化输出、重试与故障观察证据增加一致性检查；
+   AI 评审证据还校验两套评分者与第三位独立裁定者身份、原始响应、完整覆盖、续跑锚点与裁定记录。对应用例在
+   `tests/test_evidence_fidelity.py`、`tests/test_ai_review.py`、`tests/test_ai_acceptance.py`。
+3. **EVAL-03 已实现**：CLI 已有 `ai-prepare`、`ai-score`、`ai-adjudicate`。两套独立评分与独立裁定
+   写入 `ai_scores` 证据通道，不写入 `human_scores`；评分身份、提示词、原始响应、证据与分歧均留痕。
+   对应确定性用例在 `tests/test_ai_review.py`、`tests/test_ai_cli.py`、`tests/test_ai_acceptance.py`。
+4. 上述条目实现已落地，`evaluation/carebench/tests` **全套 183 项通过**。这不代表最终仓库 full 已通过。
+5. **正式集仍未冻结、未运行**。产品当前模型配置为 `cn:deepseek-v4.1-flash`；正式身份必须在
+   实际冻结前由 `identity` 命令重新读取，不能沿用历史校准记录。正式评分也尚未开始。
+6. **专业审核仍未满足**。AI 评分不能替代专业审核，不能支撑专业认可、临床安全或真实家庭有效性主张。
 
 ## 3. 新环境怎么接（只读 eval worktree + 独立库）
 
@@ -110,24 +112,39 @@ uv sync --frozen
 uv run python -m evaluation.carebench preflight \
   --cases evaluation/carebench/cases/cases-test-v0.1.jsonl --probe-model --probe-embedding
 
-# 2) 冻结（要求工作区干净，label=test）
-uv run python -m evaluation.carebench freeze \
-  --cases evaluation/carebench/cases/cases-test-v0.1.jsonl --label test
+# 2) 正式运行身份（无凭据、无生成调用；反映当前实际路由）
+uv run python -m evaluation.carebench identity --out .tmp/carebench-run-identity.json
 
-# 3) 计划内故障注入（先 dry-run 看覆盖统计）
+# 3) 冻结（要求工作区干净，label=test；把运行身份一并锁入）
+uv run python -m evaluation.carebench freeze \
+  --cases evaluation/carebench/cases/cases-test-v0.1.jsonl --label test \
+  --identity .tmp/carebench-run-identity.json
+
+# 4) 建批次并检查分母与计划（不发模型调用）
 uv run python -m evaluation.carebench run --frozen evaluation/carebench/frozen/test \
   --fixtures evaluation/carebench/fixtures-formal.example.json --dry-run
+
+# 5) 冻结正式评分身份后，才开始被测系统的正式生成
+uv run python -m evaluation.carebench ai-prepare --run <run目录>
+uv run python -m evaluation.carebench resume --run <run目录> \
+  --fixtures evaluation/carebench/fixtures-formal.example.json
 ```
 
-**接续实现顺序建议**（按「挡正式成绩」的优先级）：
-① 知识快照节点级 hash（§2.2）→ ② verify 覆盖新字段（§2.3）→ ③ AI 评审通道（§2.1）→
-④ summarize 消费 `observed`（§2.4）。
+正式生成完成后，先执行 `review-export` 导出盲化评审包，再执行 `ai-score`、`ai-adjudicate`、`summarize` 与
+`verify --require-complete`，并按 [材料与证据口径](../../docs/development/materials.md) 留存原始证据。
+正式顺序为 `identity → freeze（含身份）→ run --dry-run → ai-prepare → resume`；`resume` 必须继续传入
+与 dry-run 相同的 `--fixtures evaluation/carebench/fixtures-formal.example.json`。
 
 ## 4. 测试与质量门禁现状
 
-```bash
-uv run pytest evaluation/carebench/tests -q   # 65 passed
-uv run ruff check . && uv run ruff format --check evaluation/
-```
+full-04 在 `dev`（`59aac1f0`）十步全部通过：JUnit **2267 passed / 3 deselected / 0 failed / 0 errors / 0 skipped**；
+前端 **601 项 / 57 个文件通过**。执行记录与主审质量审查见[质量审查记录](../../docs/development/checkpoints/2026-10-29-quality-audit.md)。
 
-全部为确定性测试：不联网、不连库、不发模型调用。
+CareBench 全套确定性测试 **183 passed**。正式非 dry-run 的 `run` / `resume` 会在 adapter 准备及模型调用前拒绝
+缺少有效 formal AI 身份或 manifest 身份锚的批次；失败用例覆盖缺失、篡改、未锚定及缺少第三位独立裁定者，
+有效身份正控覆盖生成成功。图库健康测试跨循环遗留资源问题已修，**93 项组合验证通过**。
+
+full-04 未观察到 `Task exception`、cross-loop 或 traceback；共享图库容器累计 restart **4** 次，隔离图库
+restart **0** 次。前端 `lint` / `build` 通过；此前 ChatPage 与 MemoryPage 的两处 `act` 警告已清理，
+但本轮仍有 **10 条 ProfilePage 路由测试 `act` 警告**，另一 agent 正在窄修 `routes.test.tsx`。
+真实浏览器验收仍待完成。正式测评尚未开始；这些工程检查不构成模型效果或专业审核证据。
