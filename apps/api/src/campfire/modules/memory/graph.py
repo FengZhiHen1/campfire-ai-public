@@ -10,9 +10,11 @@ docs/技术设计/decisions/通用记忆归属为账号.md）：连接与客户�
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Iterable
+import logging
+from collections.abc import Awaitable, Iterable
 from contextlib import suppress
 from dataclasses import dataclass, field
+from weakref import WeakSet
 
 import httpx2
 from falkordb.asyncio import FalkorDB  # type: ignore[import-untyped]  # 上游无 py.typed；运行时行为已由集成测试锁定
@@ -28,6 +30,8 @@ from openai import AsyncOpenAI
 from campfire.core.config import EMBEDDING_DIM, Settings, get_settings
 from campfire.modules.memory.errors import MemoryConfigurationError
 from campfire.modules.memory.identity import to_account_id
+
+logger = logging.getLogger(__name__)
 
 #: 实体抽取与消解的模型调用上限（token）。Graphiti 的默认是 16384；
 #: 我们显式传入而不是沿用默认，理由：抽取是需要结构化输出的短任务，
@@ -254,6 +258,14 @@ class MemoryGraph:
     #: 队尾之外——真正需要 LRU 时再换，一期账号量远小于上界）。
     #: 字段用 `field(default_factory=...)`：`frozen=True` 不影响可变字段的内容。
     account_drivers: dict[str, GraphDriver] = field(default_factory=dict)
+    #: 本句柄派生出的全部克隆驱动（弱引用），含 `driver_for` 缓存的与上游
+    #: `add_episode` 内部临时 clone 且随即丢弃引用的那些——它们各有一个无人收口的
+    #: 建索引后台任务，必须在关共享客户端之前逐个收口。弱引用避免因此持有驱动不放。
+    spawned_drivers: WeakSet[GraphDriver] = field(default_factory=WeakSet)
+
+    def __post_init__(self) -> None:
+        """把 base 驱动的 `clone` 接上登记：谁 clone，谁在 `aclose()` 被收口。"""
+        _track_cloned_drivers(self.driver, self.spawned_drivers)
 
     # quality-floor: ignore docstring-promise 异常由 to_account_id 抛出并原样传播，函数体只做校验委托
     def driver_for(self, account_id: str) -> GraphDriver:
@@ -280,10 +292,8 @@ class MemoryGraph:
             淘汰只从字典里移除引用，不关闭被淘汰的驱动：它共享同一个
             `falkordb` 客户端（实测 `clone.client is base.client`），关它会连带
             关掉其它账号在用连接。连接由 :meth:`aclose` 统一收口。
-            淘汰留下无人取消的后台任务（每个 clone 各调度一个，实测）——这是
-            封装成本：有界缓存换来「淘汰时留下一个已取消不了的任务」，
-            由 :meth:`aclose` 对现存条目收口，已淘汰条目的任务在下次
-            事件循环检查时自然结束（其索引语句对已存在的索引是幂等的）。
+            淘汰留下一个不再被 `aclose` 看到的后台任务（每个 clone 各调度一个）：
+            它自然结束，但失败必须留痕——淘汰时已挂观察者（`_watch_driver_init_task`）。
 
         Note:
             本函数只覆盖读路径（2026-09-29 实测说明）：`add_episode`（写路径）
@@ -310,9 +320,37 @@ class MemoryGraph:
         if len(self.account_drivers) >= MAX_CACHED_ACCOUNT_DRIVERS:
             # 淘汰最早插入的一条（FIFO）。见字段说明：这里只丢引用，不关连接。
             oldest = next(iter(self.account_drivers))
-            del self.account_drivers[oldest]
+            evicted = self.account_drivers.pop(oldest)
+            # 淘汰后 aclose 再也看不到它：挂观察者取回其后台任务异常（见 `_watch_driver_init_task`）。
+            _watch_driver_init_task(evicted, account_id=oldest)
         self.account_drivers[validated] = scoped
         return scoped
+
+    async def release_account_driver(self, account_id: str) -> bool:
+        """收口该账号的全部派生驱动：**删除该账号的图之前必须先调用**。
+
+        范围按图名匹配 `spawned_drivers`（缓存 + 被淘汰的 + 上游临时 clone 的），
+        因为只要有一条该图的建索引任务还在跑，紧随其后的 `GRAPH.DELETE` 就会让在途
+        `CREATE INDEX` 失败。顺序：取消并等待任务 → 移出缓存；不关共享客户端。
+
+        Returns:
+            收口了至少一个驱动为 True；该账号没有任何派生驱动时为 False（无副作用）。
+        """
+        validated = to_account_id(account_id)
+        targets = [
+            scoped
+            for scoped in list(self.spawned_drivers)
+            if scoped is not self.driver and getattr(scoped, "_database", None) == validated
+        ]
+        for scoped in targets:
+            self.spawned_drivers.discard(scoped)
+        # 缓存里若有未被登记的驱动（例如测试直接注入），一并收口。
+        cached = self.account_drivers.pop(validated, None)
+        if cached is not None and cached is not self.driver and all(cached is not seen for seen in targets):
+            targets.append(cached)
+        for scoped in targets:
+            await _cancel_driver_init_task(scoped, account_id=validated)
+        return bool(targets)
 
     async def aclose(self) -> None:
         """关闭全部资源：驱动（含后台任务）、模型客户端、http 客户端。
@@ -337,23 +375,107 @@ class MemoryGraph:
         实测：3 个缓存账号时 `client.aclose()` 被调用 4 次（应为 1 次），且会
         打断在途查询（`ConnectionError`）。因此这里只取消各克隆驱动自己的后台
         索引任务（那是每个克隆独有的资源），客户端只由 `graphiti.close()` 关一次。
+
+        收尾顺序：先收口全部派生驱动，再 `graphiti.close()`——反过来会先关共享客户端，
+        让在途索引查询以 `ConnectionError` 失败。任何一步失败都继续释放其余资源，
+        最后抛出第一个异常（收尾是退出路径，短路会把连接池留给解释器回收）。
         """
-        # Graphiti.close() 即 driver.close()：取消并取回 base 驱动的后台索引任务，
-        # 并关闭共享的 falkordb 客户端（唯一一次）。
-        await self.graphiti.close()
-        # 克隆出来的驱动各有自己的后台索引任务（每个 clone 各调度一个，实测），
-        # 但客户端是共享的：只取消任务，不关客户端。
-        for scoped in self.account_drivers.values():
+        failures: list[Exception] = []
+
+        async def attempt(step: str, action: Awaitable[None]) -> None:
+            try:
+                await action
+            except Exception as exc:  # noqa: BLE001 —— 收尾要继续跑完，异常最后统一抛出
+                logger.warning("记忆图库收尾的一步失败（%s，异常=%s），继续释放其余资源", step, type(exc).__name__)
+                failures.append(exc)
+
+        # 1. 克隆驱动各有自己的后台索引任务，但客户端共享：只取消任务，不关客户端。
+        #    取登记表与缓存的并集（登记表可能漏，例如测试直接注入缓存）。
+        clones = list(self.spawned_drivers)
+        clones.extend(scoped for scoped in self.account_drivers.values() if all(scoped is not seen for seen in clones))
+        for scoped in clones:
             if scoped is not self.driver:
-                await _cancel_driver_init_task(scoped)
+                await attempt(
+                    "cancel_clone_init_task",
+                    _cancel_driver_init_task(scoped, account_id=getattr(scoped, "_database", None)),
+                )
+        self.spawned_drivers.clear()
         self.account_drivers.clear()
+        # 2. Graphiti.close() 即 driver.close()：取消并取回 base 驱动的后台索引任务，
+        #    并关闭共享的 falkordb 客户端（唯一一次）。
+        await attempt("close_base_driver", self.graphiti.close())
         for client in self.model_clients:
-            await client.close()
+            await attempt("close_model_client", client.close())
         if self.http_client is not None:
-            await self.http_client.aclose()
+            await attempt("close_http_client", self.http_client.aclose())
+        if failures:
+            raise failures[0]
 
 
-async def _cancel_driver_init_task(driver: GraphDriver) -> None:
+def _track_cloned_drivers(base: GraphDriver, registry: WeakSet[GraphDriver]) -> None:
+    """把 base 驱动的 `clone` 接到登记表上，供 `aclose()` 收口（含上游内部 clone）。
+
+    上游 `_resolve_request_scope` 会自己 clone 并丢弃引用，其驱动的建索引任务因此没有
+    所有者；包一层公开方法 `clone` 是不改上游就能拿到它们的最小手段。
+
+    Args:
+        base: 本句柄的 base 驱动。
+        registry: 登记表（弱引用；不阻止驱动被回收）。
+    """
+    original = getattr(base, "clone", None)
+    if not callable(original):
+        return
+
+    def clone(database: str) -> GraphDriver:
+        cloned = original(database)
+        if cloned is not base:
+            registry.add(cloned)
+        return cloned
+
+    base.clone = clone  # type: ignore[method-assign]  # 有意替换 base 驱动实例上的 clone（见本函数说明）
+
+
+def _report_driver_init_failure(task: asyncio.Task[None], *, account_id: str | None) -> None:
+    """取回后台初始化任务的异常并记一条 warning（带图名归属）。
+
+    不取回会在任务回收时打印 `Task exception was never retrieved`；只 `pass` 则失败彻底
+    静默。异常消息可能带连接串，故只记类型名。主动取消不算失败，不记日志。
+
+    Args:
+        task: 驱动的 `_init_task`。
+        account_id: 该驱动指向的图名；base 驱动为 `None`。
+    """
+    if task.cancelled():
+        return
+    exc = task.exception()
+    if exc is None:
+        return
+    # 只记异常类型与图名：异常消息可能带主机端口（`Error 111 connecting to h:p`）
+    # 甚至连接串，按安全纪律不复述。
+    logger.warning(
+        "记忆图库的后台建索引任务以异常结束（图=%s，异常=%s）：索引可能未建成，读写仍按查询本身的结果判定",
+        account_id or "<base>",
+        type(exc).__name__,
+    )
+
+
+def _watch_driver_init_task(driver: GraphDriver, *, account_id: str) -> None:
+    """给已从缓存淘汰、再无人收口的驱动挂一个只观察的下钩子。
+
+    淘汰路径是同步函数、无法 await，因此用 `add_done_callback` 取回异常；不取消任务
+    （淘汰时可能有在途查询正在用该驱动）。
+
+    Args:
+        driver: 刚被淘汰的驱动。
+        account_id: 它指向的图名（日志归属）。
+    """
+    task = getattr(driver, "_init_task", None)
+    if task is None:
+        return
+    task.add_done_callback(lambda finished: _report_driver_init_failure(finished, account_id=account_id))
+
+
+async def _cancel_driver_init_task(driver: GraphDriver, *, account_id: str | None = None) -> None:
     """取消某个驱动自己的后台初始化任务，不触碰共享客户端，并等它真正结束。
 
     为什么需要这个函数（而不是直接用 `driver.close()`）：`FalkorDriver.close()`
@@ -371,16 +493,27 @@ async def _cancel_driver_init_task(driver: GraphDriver) -> None:
     兜住上游改名——改名后不会静默漏收口，而是退化为「不取消」，
     由实测（`Task exception was never retrieved`）暴露出来。
 
+    已完成的任务同样要处理：任务可能在 `cancel()` 之前就已失败，此时异常必须取回
+    （对齐上游 `FalkorDriver.close()` 的 `elif not task.cancelled(): ...exception()`），
+    并记进日志（见 :func:`_report_driver_init_failure`）——只 `pass` 等于消音。
+
+    Args:
+        driver: 驱动；只依赖它的 `_init_task`。
+        account_id: 该驱动指向的图名，用于日志归属；省略时不带归属。
+
     Note:
         `driver` 参数用基类 `GraphDriver`：调用方只依赖「有个可取消的初始化任务」
         这一点，不绑定 FalkorDB 的具体类型。
     """
     task = getattr(driver, "_init_task", None)
-    if task is None or task.done():
+    if task is None:
         return
-    task.cancel()
-    with suppress(asyncio.CancelledError):
-        await task
+    if not task.done():
+        task.cancel()
+        with suppress(asyncio.CancelledError):
+            await task
+    # 无论「刚被取消」还是「早已结束」都取回异常：后者可能是真实的索引初始化失败。
+    _report_driver_init_failure(task, account_id=account_id)
 
 
 def build_memory_graph(settings: Settings) -> MemoryGraph:
@@ -574,11 +707,16 @@ def get_shared_memory_graph(settings: Settings | None = None) -> MemoryGraph:
 
 
 async def aclose_shared_memory_graph() -> None:
-    """关闭并清空共享句柄（进程退出或测试收尾时调用）。幂等。"""
+    """关闭并清空共享句柄（进程退出或测试收尾时调用）。幂等。
+
+    先摘全局引用、再关闭：关闭任一条腿失败时异常照常上抛，但不会留下一个半关闭的
+    句柄被下一次 `get_shared_memory_graph()` 当可用实例取回。后台索引任务的失败由
+    `aclose()` 取回并记 warning，不阻断这条收尾链。
+    """
     global _shared_graph
-    if _shared_graph is not None:
-        await _shared_graph.aclose()
-        _shared_graph = None
+    graph, _shared_graph = _shared_graph, None
+    if graph is not None:
+        await graph.aclose()
 
 
 __all__ = [

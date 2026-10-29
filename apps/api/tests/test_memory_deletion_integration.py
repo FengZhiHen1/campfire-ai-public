@@ -123,8 +123,14 @@ async def memory_graph() -> AsyncIterator[MemoryGraph]:
     finally:
         # 清图用 GRAPH.DELETE（FalkorDB v4.20.7 对「清空后重写 + 字符串范围查询」
         # 返回过期结果，见 conftest.drop_falkordb_graph 的说明）。
+        # 删图之前先收口缓存驱动的后台索引任务（`release_account_driver`）：
+        # 顺序反了会让在途的 `CREATE INDEX` 撞上「图键已删」——实测报
+        # `Encountered an empty key when opened key <图名>`，异常无人取回时在退出时
+        # 打印 `Task exception was never retrieved`（QA-10），最坏把 FalkorDB 打崩。
         from .conftest import drop_falkordb_graph
 
+        for account_id in list(graph.account_drivers):
+            await graph.release_account_driver(account_id)
         await drop_falkordb_graph(graph.driver, _ACCOUNT)
         await graph.aclose()
 
@@ -356,6 +362,9 @@ async def test_deletion_is_isolated_between_accounts(memory_graph: MemoryGraph) 
         # conftest.drop_falkordb_graph（「清空后重写」会让范围查询返回过期结果）。
         from .conftest import drop_falkordb_graph
 
+        # 删图前先收口该账号的克隆驱动：它的后台建索引任务还在跑时删图会撞上
+        # 「图键已删」（`Encountered an empty key`，QA-10 的竞态）。
+        await memory_graph.release_account_driver(other)
         await drop_falkordb_graph(memory_graph.driver, other)
 
         # 两个账号各写一条记忆（各自图里）。
@@ -395,6 +404,9 @@ async def test_deletion_is_isolated_between_accounts(memory_graph: MemoryGraph) 
         # 清理另一账号的图与账本
         from .conftest import drop_falkordb_graph
 
+        # 删图前先收口该账号的克隆驱动：它的后台建索引任务还在跑时删图会撞上
+        # 「图键已删」（`Encountered an empty key`，QA-10 的竞态）。
+        await memory_graph.release_account_driver(other)
         await drop_falkordb_graph(memory_graph.driver, other)
         async with session_scope(get_settings()) as session:
             await session.execute(delete(MemoryDeletionLedger).where(MemoryDeletionLedger.account_id == other))

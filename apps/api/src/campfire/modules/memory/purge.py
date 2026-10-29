@@ -11,16 +11,23 @@ from __future__ import annotations
 
 import logging
 
+from redis.exceptions import ResponseError
 from sqlalchemy import delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from campfire.core.auth.deletion import PurgeOutcome
 from campfire.core.config import Settings
 from campfire.core.db import session_scope
+from campfire.modules.memory.errors import MemoryDataError, MemoryUnavailableError
 from campfire.modules.memory.graph import MemoryGraph, build_memory_graph
+from campfire.modules.memory.identity import to_account_id
 from campfire.modules.memory.models import MemoryDeletionLedger
 
 logger = logging.getLogger(__name__)
+
+#: FalkorDB v4.20.7 对「图不存在」的 `GRAPH.DELETE` 报错原文（实测；从模块二进制里核过
+#: 这条字符串只对应缺图/空键这一种情形）。只认它，不按前缀或异常类整体吞掉。
+_MISSING_GRAPH_ERROR_MARKER = "Invalid graph operation on empty key"
 
 
 class MemoryAccountPurger:
@@ -49,10 +56,9 @@ class MemoryAccountPurger:
 
     幂等：
 
-    账号没有图、账本没有行时都正常返回（「无数据可清」），不报错——
-    重试注销是正常路径（第一次可能在后续步骤失败）。
-    实测依据：`GRAPH.DELETE` 对不存在的图不报错；`DELETE ... WHERE` 命中 0 行
-    也不报错。
+    账号没有图、账本没有行时都正常返回（「无数据可清」），不报错——重试注销是正常
+    路径。注意 `GRAPH.DELETE` 对不存在的图**会抛错**（v4.20.7 实测），因此「无图可
+    丢弃」由先查 `GRAPH.LIST` 判定，而不是靠吞掉那次报错。
 
     `name` 属性（`"memory"`）：注销编排的步骤名从它取（如
     `领域清除（memory）`），与 :class:`PurgeOutcome` 的 `name` 同源——
@@ -90,21 +96,45 @@ class MemoryAccountPurger:
         return PurgeOutcome(name=self.name, detail=detail)
 
     async def _drop_graph(self, account_id: str) -> str:
-        """丢弃该账号的图；不存在则如实说明「无图可丢弃」。"""
+        """丢弃该账号的图；图不存在时如实说明「无图可丢弃」（幂等）。
+
+        不走 `driver_for(account_id)`：那会为该账号 clone 驱动并调度建索引的后台任务，
+        紧接着删同一张图会让在途 `CREATE INDEX` 失败。图名就是账号标识（通用记忆
+        第 1 节），直接用 base 驱动持有的共享客户端删即可。
+
+        边界（跨进程不可协调）：本方法只收口**自己**建的句柄，取消不了另一个进程里
+        共享句柄对该账号的后台任务。那一侧的「删后复活」由账号墓碑拦（Worker 领取后
+        复查墓碑，见 `consumer.consume_memory_episode`），读侧则在图键消失后读到空。
+
+        Raises:
+            AccountIdError: 账号标识不合法。
+            MemoryDataError: 目标图就是配置库（拒绝误删）。
+            MemoryUnavailableError: 拿不到图库客户端——不静默宣称已清除。
+            redis.ResponseError: 图库拒绝该操作且原因不是「图不存在」（不吞）。
+        """
+        graph_name = str(to_account_id(account_id))
+        if graph_name == self._settings.falkordb_database:
+            raise MemoryDataError(
+                "账号标识命中配置库名，拒绝按账号删除该图",
+                operation="purge_memory_graph",
+                detail=f"graph={graph_name!r}",
+            )
         graph: MemoryGraph = build_memory_graph(self._settings)
         try:
-            driver = graph.driver_for(account_id)
-            # `driver._database` 是实际图名（Graphiti 的私有属性，实测存在且就是
-            # 传入的 group_id）。用它而不是 account_id：当 account_id 恰好等于
-            # 配置库名时 `clone` 返回 base 驱动，图名仍是同一个值，因此两者一致；
-            # 但显式取 `_database` 能保证我们删的是驱动真正指向的那张图。
-            graph_name = getattr(driver, "_database", account_id)
-            falkor_db = getattr(driver, "client", None)
+            falkor_db = getattr(graph.driver, "client", None)
             if falkor_db is None:
-                return "未取到图库客户端，未丢弃图"
-            # `select_graph(name).delete()` 即 `GRAPH.DELETE`
-            # （实测：对不存在的图不报错）。
-            await falkor_db.select_graph(graph_name).delete()
+                raise MemoryUnavailableError(
+                    "未取到图库客户端，无法丢弃账号图",
+                    operation="purge_memory_graph",
+                    cause="missing_client",
+                )
+            try:
+                await falkor_db.select_graph(graph_name).delete()
+            except ResponseError as exc:
+                # 只把「确证的缺图」当成功；连接、鉴权、语法等一律上抛。
+                if _MISSING_GRAPH_ERROR_MARKER not in str(exc):
+                    raise
+                return f"无图可丢弃（{graph_name!r} 不存在）"
             return f"已丢弃图 {graph_name!r}"
         finally:
             # 释放本次为清理新建的驱动与客户端（不使用进程级共享实例：

@@ -20,14 +20,18 @@
 from __future__ import annotations
 
 import ast
+import asyncio
 import inspect
 import json
+import logging
 import textwrap
 from collections.abc import Callable
+from typing import cast
 
 import httpx2
 import pytest
 from graphiti_core.cross_encoder.openai_reranker_client import OpenAIRerankerClient
+from graphiti_core.driver.driver import GraphDriver
 from graphiti_core.embedder.openai import OpenAIEmbedder, OpenAIEmbedderConfig
 from graphiti_core.llm_client.client import ModelSize
 from graphiti_core.llm_client.openai_client import OpenAIClient
@@ -42,8 +46,11 @@ from campfire.modules.memory.errors import (
 )
 from campfire.modules.memory.graph import (
     LLM_MAX_TOKENS,
+    MemoryGraph,
     OrderedCrossEncoder,
     TokenHubEmbedder,
+    _cancel_driver_init_task,
+    aclose_shared_memory_graph,
     build_memory_graph,
 )
 
@@ -657,3 +664,279 @@ def test_tokenhub_embedder_overrides_every_upstream_request_method() -> None:
         "encoding_format='base64' ⇒ TokenHub 400001 ⇒ 记忆写入路径整体不可用。"
         "请在 TokenHubEmbedder 里按上游签名补上覆盖（显式传 encoding_format='float'）。"
     )
+
+
+# ---------------------------------------------------------------------------
+# 后台初始化任务的收口（QA-10）：已完成且带异常的任务也必须取回
+# ---------------------------------------------------------------------------
+
+
+def _exception_is_unretrieved(task: asyncio.Task[None]) -> bool:
+    """CPython 的 Task 是否仍把异常标成「还没人取回」。
+
+    判据取自 CPython 的 `Task._log_traceback`（`await` 或 `.exception()` 之后变 False，
+    任务被回收时只有在它为 True 才打印 `Task exception was never retrieved`）。
+    属性不存在时显式失败：那意味着判据失效，必须人工复查，而不是让本条静默通过。
+    """
+    flag = getattr(task, "_log_traceback", None)
+    assert flag is not None, "本 Python 的 Task 没有 _log_traceback 属性——判据已失效，须人工复查"
+    return bool(flag)
+
+
+async def _failed_init_task() -> asyncio.Task[None]:
+    """造一个「已结束且异常未被取回」的后台任务（模拟建索引真的失败了）。"""
+
+    async def build_indices() -> None:
+        raise RuntimeError("索引初始化失败（合成）")
+
+    task = asyncio.create_task(build_indices())
+    await asyncio.sleep(0)
+    await asyncio.sleep(0)
+    assert task.done() and not task.cancelled(), "前置条件：任务必须已以异常结束"
+    assert _exception_is_unretrieved(task), "前置条件：异常此时应尚未被取回"
+    return task
+
+
+class _DriverWithInitTask:
+    """只带 `_init_task` 的最小驱动替身（`_cancel_driver_init_task` 只依赖这一点）。"""
+
+    def __init__(self, init_task: asyncio.Task[None] | None) -> None:
+        self._init_task = init_task
+
+
+@pytest.mark.asyncio
+async def test_cancel_driver_init_task_retrieves_a_done_task_exception(caplog: pytest.LogCaptureFixture) -> None:
+    """`cancel()` 之前就已失败的任务，异常也必须取回，并且失败要留日志。
+
+    此前对 `task.done()` 直接返回：任务先失败、收口后到的路径上异常无人取回，退出时
+    打印 `Task exception was never retrieved` 而退出码是 0。上游 `FalkorDriver.close()`
+    对同一情形显式 `self._init_task.exception()`。第二条断言钉住「不许只 `pass` 消音」。
+    判别性：删掉 `_report_driver_init_failure(...)` 调用 ⇒ 第一条断言红。
+    """
+    task = await _failed_init_task()
+    caplog.set_level(logging.WARNING, logger="campfire.modules.memory.graph")
+
+    await _cancel_driver_init_task(cast(GraphDriver, _DriverWithInitTask(task)), account_id="it_mem_example")
+
+    assert not _exception_is_unretrieved(task), (
+        "已完成且带异常的任务在收口时仍未被取回——退出时会打印 Task exception was never retrieved"
+    )
+    assert task.exception() is not None, "前置条件失败：异常本身不该消失，只是必须被取回"
+    warnings = [record for record in caplog.records if record.levelno == logging.WARNING]
+    assert warnings, "索引初始化失败必须留一条 warning，不能只把异常取回后静默丢掉"
+    assert "it_mem_example" in warnings[0].getMessage(), "warning 必须带图名，否则无法定位是哪张图的索引没建成"
+
+
+@pytest.mark.asyncio
+async def test_cancel_driver_init_task_cancels_a_pending_task_without_warning(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """仍在跑的任务被取消，且取消不算失败（不产生 warning）。
+
+    与上一条互补：只测「失败要留痕」会让「把所有任务都记成失败」的实现通过。
+    """
+    started = asyncio.Event()
+
+    async def never_finishes() -> None:
+        started.set()
+        await asyncio.sleep(3600)  # 不会被真实等待
+
+    task = asyncio.create_task(never_finishes())
+    await asyncio.wait_for(started.wait(), timeout=5)
+    caplog.set_level(logging.WARNING, logger="campfire.modules.memory.graph")
+
+    await _cancel_driver_init_task(cast(GraphDriver, _DriverWithInitTask(task)), account_id="it_mem_cancel")
+
+    assert task.cancelled(), "未在跑的任务必须被真正取消"
+    assert [r for r in caplog.records if r.levelno == logging.WARNING] == [], "主动取消不是失败，不该记 warning"
+
+
+@pytest.mark.asyncio
+async def test_aclose_cancels_clone_init_tasks_before_closing_the_shared_client() -> None:
+    """`aclose()` 必须先收口克隆驱动的索引任务，再关共享客户端。
+
+    顺序反了会先关共享 falkordb 客户端，让在途索引查询以 `ConnectionError` 失败。
+    替身里的假 `close()` 置位事件，克隆任务随后抛 `ConnectionError`——真实失败形态。
+    """
+    client_closed = asyncio.Event()
+
+    async def index_task() -> None:
+        await client_closed.wait()
+        raise ConnectionError("客户端已关闭（合成）")
+
+    class _FakeGraphiti:
+        async def close(self) -> None:
+            # 真实 `Graphiti.close()` 会 await 上游驱动关闭（含网络 I/O），这里也让出
+            # 一次控制权，否则「先关客户端」的旧顺序无法让克隆任务失败（用例会假绿）。
+            client_closed.set()
+            await asyncio.sleep(0)
+
+    task = asyncio.create_task(index_task())
+    await asyncio.sleep(0)  # 让任务进入等待
+    assert not task.done(), "前置条件：克隆任务的索引还没结束"
+
+    graph = MemoryGraph(
+        graphiti=cast(object, _FakeGraphiti()),  # type: ignore[arg-type]  # 只用到 close()
+        driver=cast(GraphDriver, _DriverWithInitTask(None)),  # type: ignore[arg-type]  # 只用到 aclose 的收口路径
+        account_drivers={"it_mem_aclose_order": cast(GraphDriver, _DriverWithInitTask(task))},
+    )
+    await graph.aclose()
+
+    assert task.cancelled(), (
+        "克隆驱动在共享客户端关闭之后才被取消——在途索引查询会以 ConnectionError 失败，而那个异常此前没人取回"
+    )
+    assert graph.account_drivers == {}, "aclose() 必须清空驱动缓存"
+
+
+@pytest.mark.asyncio
+async def test_shared_handle_is_dropped_even_when_close_fails() -> None:
+    """共享句柄关闭失败时不得留下「看起来还能用」的实例引用。
+
+    关闭是多条腿的，任一条抛出都不该让全局引用停在半关闭的句柄上（否则后续每个请求
+    都拿它失败）。入口收尾依赖这里的「无论成败都摘掉引用」。
+    """
+    import campfire.modules.memory.graph as memory_graph_module
+
+    class _BrokenGraph:
+        async def aclose(self) -> None:
+            raise RuntimeError("收尾失败（合成）")
+
+    original = memory_graph_module._shared_graph
+    memory_graph_module._shared_graph = cast(MemoryGraph, _BrokenGraph())
+    try:
+        with pytest.raises(RuntimeError, match="收尾失败"):
+            await aclose_shared_memory_graph()
+        assert memory_graph_module._shared_graph is None, (
+            "关闭失败后仍留着共享实例引用——下一次 get_shared_memory_graph() 会把它当可用句柄返回"
+        )
+    finally:
+        memory_graph_module._shared_graph = original
+
+
+@pytest.mark.asyncio
+async def test_aclose_keeps_releasing_resources_after_one_step_fails() -> None:
+    """`aclose()` 的一步失败不得让其余连接池留在原地；失败本身仍要抛出。
+
+    收尾是退出路径：短路会把连接池留给解释器回收，而入口收尾又要靠这条异常报告失败。
+    """
+    closed: list[str] = []
+
+    class _BrokenGraphiti:
+        async def close(self) -> None:
+            raise RuntimeError("base 驱动关闭失败（合成）")
+
+    class _NamedCloser:
+        def __init__(self, name: str) -> None:
+            self.name = name
+
+        async def close(self) -> None:
+            closed.append(self.name)
+
+    class _NamedHttpClient:
+        def __init__(self) -> None:
+            self.is_closed = False
+
+        async def aclose(self) -> None:
+            closed.append("http")
+            self.is_closed = True
+
+    graph = MemoryGraph(
+        graphiti=cast(object, _BrokenGraphiti()),  # type: ignore[arg-type]  # 只用到 close()
+        driver=cast(GraphDriver, _DriverWithInitTask(None)),  # type: ignore[arg-type]  # 只用到收口路径
+        model_clients=(cast(AsyncOpenAI, _NamedCloser("client-a")), cast(AsyncOpenAI, _NamedCloser("client-b"))),
+        http_client=cast(httpx2.AsyncClient, _NamedHttpClient()),
+    )
+
+    with pytest.raises(RuntimeError, match="base 驱动关闭失败"):
+        await graph.aclose()
+
+    assert closed == ["client-a", "client-b", "http"], f"一步失败后其余资源未释放：{closed}"
+
+
+class _FakeClonableDriver:
+    """可 clone 的驱动替身：每次 clone 造一个带「永不结束」后台任务的新驱动。
+
+    形状对齐 `FalkorDriver`：`clone(database)` 同一个库返回自身，否则返回新驱动，
+    且新驱动在构造时调度 `_init_task`（真实驱动在 `__init__` 里就是这么做的）。
+    """
+
+    def __init__(self, database: str, init_task: asyncio.Task[None] | None = None) -> None:
+        self._database = database
+        self._init_task = init_task
+
+    def clone(self, database: str) -> _FakeClonableDriver:
+        if database == self._database:
+            return self
+        return _FakeClonableDriver(database, _never_ending_task())
+
+
+def _never_ending_task() -> asyncio.Task[None]:
+    """模拟建索引任务：不会自行结束，只能被取消（必须在事件循环里调用）。"""
+
+    async def build_indices() -> None:
+        await asyncio.sleep(3600)
+
+    return asyncio.create_task(build_indices())
+
+
+class _NoopGraphiti:
+    """只提供 `close()` 的 Graphiti 替身（`aclose` 只依赖这一点）。"""
+
+    async def close(self) -> None:
+        return None
+
+
+@pytest.mark.asyncio
+async def test_aclose_also_cancels_drivers_cloned_internally_by_add_episode() -> None:
+    """上游 `add_episode` 内部 clone 的临时驱动也必须被收口（不只缓存里的）。
+
+    `Graphiti._resolve_request_scope` 每次调用都 clone 并丢弃引用，那个驱动的建索引
+    任务没有所有者；关共享客户端时若仍在跑就无人取回。本用例用替身钉住「内部 clone
+    被登记并被取消」。
+    """
+    base = _FakeClonableDriver("campfire")
+    graph = MemoryGraph(graphiti=cast(object, _NoopGraphiti()), driver=cast(GraphDriver, base))  # type: ignore[arg-type]
+
+    internal = base.clone("it_mem_internal_probe")  # 模拟上游 add_episode 的 clone
+    assert internal is not base
+    assert internal in graph.spawned_drivers, "内部 clone 未被登记，关客户端时它的任务会无人收口"
+    task = internal._init_task
+    assert task is not None and not task.done()
+
+    await graph.aclose()
+
+    assert task.cancelled(), "内部 clone 的建索引任务未被取消"
+    assert not graph.spawned_drivers, "收口后登记表必须清空"
+
+
+@pytest.mark.asyncio
+async def test_release_account_driver_covers_evicted_and_internal_clones() -> None:
+    """`release_account_driver` 按图名收口该账号的全部派生驱动，而不只是缓存命中项。
+
+    同一账号还可能有被 FIFO 淘汰的、以及上游临时 clone 的驱动；只要有一个的建索引
+    任务还在跑，紧随其后的 `GRAPH.DELETE` 就会让在途 `CREATE INDEX` 失败。
+    """
+    account = "it_mem_release_scope"
+    base = _FakeClonableDriver("campfire")
+    graph = MemoryGraph(graphiti=cast(object, _NoopGraphiti()), driver=cast(GraphDriver, base))  # type: ignore[arg-type]
+
+    internal_a = base.clone(account)
+    internal_b = base.clone(account)
+    cached = base.clone(account)
+    graph.account_drivers[account] = cast(GraphDriver, cached)
+    other = base.clone("it_mem_release_other")
+
+    released = await graph.release_account_driver(account)
+
+    assert released is True
+    for driver in (internal_a, internal_b, cached):
+        task = driver._init_task
+        assert task is not None and task.cancelled(), "该账号仍有驱动的建索引任务未被取消"
+    assert account not in graph.account_drivers, "缓存条目必须移除"
+    other_task = other._init_task
+    assert other_task is not None and not other_task.done(), "别的账号的任务不该被误取消"
+
+    # 收口未知账号是无副作用的 False（清理路径会无脑调用它）。
+    assert await graph.release_account_driver("it_mem_release_absent") is False
+
+    await graph.aclose()
