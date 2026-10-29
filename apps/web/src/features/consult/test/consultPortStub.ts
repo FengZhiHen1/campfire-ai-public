@@ -47,6 +47,8 @@ export interface ConsultPortStub extends ConsultPort {
   streamCalls: StreamCall[];
   /** 每次 cancelRun 的 runId。 */
   cancelCalls: string[];
+  /** 每次 skipOnboarding 的 sessionId（BUG-03 的入口是否真的调到了端口）。 */
+  skipCalls: string[];
   /** 追加一段脚本事件（每次 streamRun 消费一段；用尽后返回空流）。 */
   script(events: readonly RunEvent[]): void;
   /** 让下一次 streamRun 抛错（模拟传输/契约失败）。 */
@@ -68,6 +70,8 @@ export interface ConsultPortStubOptions {
   /** 首页列表请求抛错（错误态用）。 */
   sessionsError?: unknown;
   createSession?: CreateSessionResponse | Error;
+  /** skipOnboarding 抛错（验证失败不外泄成「已跳过」）。 */
+  skipError?: unknown;
   emergency?: EmergencyResponse | Error;
   cancelError?: unknown;
 }
@@ -89,11 +93,13 @@ export function createConsultPortStub(options: ConsultPortStubOptions = {}): Con
   const sendCalls: { sessionId: string; payload: PostMessageRequest }[] = [];
   const streamCalls: StreamCall[] = [];
   const cancelCalls: string[] = [];
+  const skipCalls: string[] = [];
 
   const stub: ConsultPortStub = {
     sendCalls,
     streamCalls,
     cancelCalls,
+    skipCalls,
 
     script: (events) => {
       scripts.push({ kind: 'events', events });
@@ -148,6 +154,11 @@ export function createConsultPortStub(options: ConsultPortStubOptions = {}): Con
         }
       })();
     },
+
+    skipOnboarding: vi.fn(async (sessionId: string): Promise<void> => {
+      skipCalls.push(sessionId);
+      if (options.skipError !== undefined) throw options.skipError;
+    }),
 
     cancelRun: vi.fn(async (runId: string): Promise<void> => {
       cancelCalls.push(runId);

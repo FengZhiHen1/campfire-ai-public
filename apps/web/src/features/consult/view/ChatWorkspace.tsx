@@ -26,7 +26,9 @@ import {
 import { Icon } from '../../../shared/ui/Icon';
 import { BrandMark } from '../../../shared/ui/BrandMark';
 import { DeviceFrame } from '../../../shared/ui/DeviceFrame';
+import { SkipOnboardingUseCase } from '../application/usecases';
 import type { ConsultPort } from '../application/ports';
+import { failureViewFor } from '../domain/errors';
 import { skillLabel, EMERGENCY_SKILL_ID } from '../domain/skills';
 import { PROGRESS_TEXT } from '../domain/types';
 import { SkillPicker } from './SkillPicker';
@@ -71,6 +73,24 @@ export function newestActionCardId(messages: readonly ThreadMessage[]): string |
   return newest;
 }
 
+/**
+ * 消息流里是否已经出现过「完成引导」的工具调用。
+ *
+ * 判定用 tool part 的 `toolName`（契约第 7 节落库的字段），不看界面文案：
+ * 界面文案会随设计稿改，工具名是协议事实。**只看 `finished` 且 `ok !== false`**——
+ * 未结束或失败的那次不算收束（失败仍应让使用者能跳过）。
+ */
+function guideFinished(messages: readonly ThreadMessage[]): boolean {
+  for (const message of messages) {
+    for (const part of message.content) {
+      if (part.type !== 'data' || part.name !== 'tool-call') continue;
+      const view = part.data as { toolName?: unknown; state?: unknown; ok?: unknown };
+      if (view.toolName === 'finish_onboarding' && view.state === 'finished' && view.ok !== false) return true;
+    }
+  }
+  return false;
+}
+
 /** 取最后一条使用者消息的 id（重试的起点）。 */
 function lastUserIdOf(messages: readonly ThreadMessage[]): string | null {
   for (let index = messages.length - 1; index >= 0; index -= 1) {
@@ -107,6 +127,10 @@ export interface ChatWorkspaceProps {
   initialMessages: Parameters<typeof useConsultRuntime>[0]['initialMessages'];
   /** 订阅不可续传时请求重新水合（由对话页交给会话装配的 retry）。 */
   onNeedsResync?: () => void;
+  /** 一次性引导是否仍待处理（决定页头是否给「跳过引导」）。 */
+  guidePending?: boolean;
+  /** 引导已收束（跳过成功 / 已出现「完成引导」）：调用方据此撤掉入口与记忆标记。 */
+  onGuideSettled?: () => void;
   consult: ConsultPort;
 }
 
@@ -134,7 +158,15 @@ export interface ChatWorkspaceProps {
  * 页头的基础规则本就自带一份（components.css），消息流与输入区由 chatPage.module.css 的
  * ≥560px 媒体查询补一份；窄视口两处都不生效，版式逐像素不变。
  */
-export function ChatWorkspace({ sessionId, initialMessages, initialDraft = '', consult, onNeedsResync }: ChatWorkspaceProps) {
+export function ChatWorkspace({
+  sessionId,
+  initialMessages,
+  initialDraft = '',
+  consult,
+  onNeedsResync,
+  guidePending = false,
+  onGuideSettled,
+}: ChatWorkspaceProps) {
   const { runtime, thread, send, stop, sendAnswers } = useConsultRuntime({
     sessionId,
     initialMessages,
@@ -167,6 +199,37 @@ export function ChatWorkspace({ sessionId, initialMessages, initialDraft = '', c
     () => store.activeSkills.map((id) => skillLabel(store.skills, id)).filter((label): label is string => label !== null),
     [store.activeSkills, store.skills],
   );
+
+  /**
+   * 「跳过引导」入口的状态。
+   *
+   * 入口只在**引导待注入且尚未收束**时出现：`guidePending` 由对话页给出（建会话响应 / 本次
+   * 会话的会话级记忆），`finished` 由消息流里的 `finish_onboarding` 工具行推出。两者任一不成立
+   * 就不显示——跳过按钮在引导已完成后还挂着，会让使用者以为有东西没做完。
+   */
+  const finished = useMemo(() => guideFinished(thread.messages), [thread.messages]);
+  const [skipping, setSkipping] = useState(false);
+  const [skipFailed, setSkipFailed] = useState<string | null>(null);
+  useEffect(() => {
+    if (finished) onGuideSettled?.();
+  }, [finished, onGuideSettled]);
+
+  const skipGuide = (): void => {
+    if (skipping) return;
+    setSkipping(true);
+    setSkipFailed(null);
+    void (async (): Promise<void> => {
+      try {
+        await new SkipOnboardingUseCase(consult).execute(sessionId);
+        onGuideSettled?.();
+      } catch (error) {
+        // 失败**不得**表现成已跳过：保留入口并说明，让使用者能再试一次。
+        setSkipFailed(failureViewFor(error).message);
+      } finally {
+        setSkipping(false);
+      }
+    })();
+  };
 
   const submitDraft = (): void => {
     if (sending.current) return;
@@ -217,6 +280,16 @@ export function ChatWorkspace({ sessionId, initialMessages, initialDraft = '', c
                 授权语义明确否定了徽标形态（对话页设计文档的布局结构第 1 条）。
                 判据与阈值见 SKILL_TAG_COLLAPSE_THRESHOLD 的说明。
               */}
+              {guidePending && !finished ? (
+                <button
+                  type="button"
+                  className={`${styles.guideSkip} meta`}
+                  onClick={skipGuide}
+                  disabled={skipping || thread.isRunning}
+                >
+                  {skipping ? '正在跳过…' : '跳过引导'}
+                </button>
+              ) : null}
               {activeSkillLabels.length === 0
                 ? null
                 : activeSkillLabels.length >= SKILL_TAG_COLLAPSE_THRESHOLD
@@ -229,6 +302,12 @@ export function ChatWorkspace({ sessionId, initialMessages, initialDraft = '', c
                       </span>
                     ))}
             </header>
+
+            {skipFailed === null ? null : (
+              <p className="status off" role="alert">
+                跳过引导没有成功：{skipFailed}
+              </p>
+            )}
 
             {store.candidates.length === 0 ? null : (
               <details className="candidate-toast chat-candidate">

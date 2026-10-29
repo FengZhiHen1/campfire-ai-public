@@ -37,8 +37,8 @@ export interface ConsultListPageProps {
  */
 export function ConsultListPage({ consult }: ConsultListPageProps) {
   const navigate = useNavigate();
-  const list = useSessionList(consult, (sessionId) => {
-    navigate(consultChatPath(sessionId));
+  const list = useSessionList(consult, (sessionId, onboardingPending) => {
+    navigate(consultChatPath(sessionId), { state: { guidePending: onboardingPending } });
   });
   const sentinel = useRef<HTMLDivElement | null>(null);
 

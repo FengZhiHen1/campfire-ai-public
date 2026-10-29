@@ -110,6 +110,22 @@ export class CreateSessionUseCase {
 }
 
 /**
+ * 跳过一次性引导（契约第 6 节）。
+ *
+ * 前置: sessionId 非空
+ * 后置: 服务端把该账号的引导状态写成 `skipped`，此后不再注入引导
+ * 异常: ConsultRequestError（空 id）、ConsultError（端口失败——失败**不得**被当成已跳过）
+ */
+export class SkipOnboardingUseCase {
+  constructor(private readonly consult: ConsultPort) {}
+
+  async execute(sessionId: string): Promise<void> {
+    if (sessionId.trim() === '') throw new ConsultRequestError('会话 id 不能为空串');
+    await this.consult.skipOnboarding(sessionId);
+  }
+}
+
+/**
  * 会话列表（分页）。
  *
  * @throws ConsultRequestError 每页条数越界或游标为空串

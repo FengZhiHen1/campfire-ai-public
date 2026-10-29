@@ -12,6 +12,7 @@
  *   - 禁止在此直接调 HTTP（端口由路由注入）
  */
 
+import { useEffect, useState } from 'react';
 import { useLocation, useParams } from 'react-router';
 
 import { AppShell } from '../../../shared/ui/AppShell';
@@ -47,6 +48,51 @@ export function ChatPage({ consult }: ChatPageProps) {
   const params = useParams<{ sessionId: string }>();
   const sessionId = params.sessionId ?? '';
   const { hydration, retry, revision } = useConsultSession(sessionId, consult);
+
+  /**
+   * 引导是否仍待处理 —— 决定页头是否给「跳过引导」。
+   *
+   * 为什么还要 `sessionStorage`：`onboarding_pending` 只在**建会话的响应**里出现，刷新之后就没了。
+   * 只靠路由 state 的话，使用者刷新一次就再也找不到跳过入口，而引导此时仍会继续注入
+   * （`campfire_onboarding` 状态还是 in_progress）——那正是「引导不可跳过」（`RQ-ACC-02`）的形态。
+   * 记住的只是「这个会话创建时引导待注入」这一个布尔事实，不含任何内容；跳过或引导完成后即清除
+   * （`onGuideSettled`）。它按会话 id 分键，不会串到别的会话上。
+   */
+  const guideKey = `consult.guidePending.${sessionId}`;
+  const guideFlagFromState =
+    typeof state === 'object' && state !== null && 'guidePending' in state && state.guidePending === true;
+  /**
+   * 初值在 `useState` 的惰性初始化里取，**不在 effect 里 setState**：
+   * effect 里同步 setState 会多一轮渲染，而且这条判据没有「异步才知道」的成分——
+   * 路由 state 与 sessionStorage 都是同步可读的。
+   */
+  const [guidePending, setGuidePending] = useState(() => {
+    if (guideFlagFromState) return true;
+    try {
+      return window.sessionStorage.getItem(guideKey) === '1';
+    } catch {
+      // 隐私模式/禁用存储：退化为「只信路由 state」，不阻断页面（跳过是便利功能，不是安全边界）。
+      return false;
+    }
+  });
+  // 只做**副作用**（把这次的事实记下来），不在这里改 React 状态。
+  useEffect(() => {
+    if (!guideFlagFromState) return;
+    try {
+      window.sessionStorage.setItem(guideKey, '1');
+    } catch {
+      // 同上：存储不可用时无副作用可做。
+    }
+  }, [guideKey, guideFlagFromState]);
+
+  const settleGuide = (): void => {
+    try {
+      window.sessionStorage.removeItem(guideKey);
+    } catch {
+      // 同上：存储不可用时无副作用可清。
+    }
+    setGuidePending(false);
+  };
 
   if (hydration.status === 'loading') {
     return (
@@ -109,6 +155,8 @@ export function ChatPage({ consult }: ChatPageProps) {
       initialDraft={initialDraft}
       consult={consult}
       onNeedsResync={retry}
+      guidePending={guidePending}
+      onGuideSettled={settleGuide}
     />
   );
 }

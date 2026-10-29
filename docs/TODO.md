@@ -189,7 +189,7 @@
 | GAP-02 | ~~「运行中发送键 disabled / 结束后 enabled」没有产品侧测试~~ **⇒ 已闭合（2026-10-28）** | 演示装置用它当「本轮真的结束」的判据（`support/stack.ts` 的 `waitRunSettled`），但前端没有一条测试断言这个状态机；一旦它变了，只会以「真跑红」的形式暴露。建议在 `viewModel` 层加一条状态断言。**补的测试**：替身新增 `holdStream(events)` 造出「运行中」这个中间态，`ChatPage.test.tsx` 断言运行中发送键禁用 + 停止键在、停止后恢复可用；消融（去掉 `thread.isRunning`）即红。**顺带查明**：发送键在**两种**情形下禁用（运行中、草稿为空），所以它单独不足以判定「运行结束」——演示装置的 `waitRunSettled` 因此补了「停止键不在」这条直接信号。 |
 | GAP-03 | ~~演示装置自己的等待原语没有测试~~ **⇒ 部分闭合（2026-10-28）**：最吃重的「本轮跑完没有」已拆成纯函数并单测；其余原语仍无 | `waitRoundOutcome` / `waitRunSettled` / `answerQuestionBatch` / `waitProfileLoaded` 全靠真栈验证。选择器漂移会以「材料跑不出来」的形式暴露，排查成本高。可考虑用 `apps/web/e2e/` 的 mock device 给「DOM 形态驱动」的判据补几条契约测试。**已做**：`waitRunSettled` 的判据拆到 `demo/support/roundState.ts`（纯函数 `classifyRound` + `SettleTracker`），`apps/web/tests/demo-round-state.test.ts` 13 例覆盖各分支与稳定闸门。**仍缺**：`waitRoundOutcome`（引导轮的两个终态）、`answerQuestionBatch`（卡片逐题作答）、`waitProfileLoaded` 仍是「只有真跑才知道」。 |
 | GAP-04 | ~~多轮问答的「追问 → 补答」路径无自动化覆盖~~ **⇒ 已覆盖（2026-10-28）**：`apps/web/e2e-real/multiround-real.spec.ts` | `apps/web/e2e-real/` 走的是单轮；提问卡的续答（刷新后补答）只在演示脚本里出现过（且该场景未实现，见 `DEMO-01`）。建议把「第 2 轮作答后刷新仍能续上」做成真栈用例。 |
-| BUG-03 | **前端没有「跳过引导」入口 ⇒ 引导不可整体跳过**（2026-10-28 写真栈用例时发现，**未修**） | 后端有契约第 6 节的 `POST /api/consult/sessions/{id}/onboarding/skip`（用例层 `skip_onboarding`，写 `campfire_onboarding.state = 'skipped'`），决策记录《一次性引导对话》也写明 **`skipped` 由 UI 跳过入口写入**，且 `RQ-ACC-02`（无档案不阻断咨询）要求「引导必须可跳过」。**但前端从不调用它**：`grep -rn onboarding apps/web/src` 只有类型声明里的 `onboarding_pending: boolean`（**声明了却没人用**）与工具标签表里的 `finish_onboarding: '完成引导'`，`consultPort.ts` 里没有该方法。**后果**：新账号只能逐题点「跳过」把 6–8 组问答走完，无法一次退出；`skipped` 这个状态在真实数据里无从产生。**装置侧的临时对策**：真栈用例在浏览器里直接打这个端点（带真 cookie、经 Vite 代理），并注明这是「使用产品文档写明的通道」而不是绕过产品 |
+| BUG-03 | ~~前端没有「跳过引导」入口 ⇒ 引导不可整体跳过~~ **⇒ 已修（2026-10-28，用户选定「会话头部」）** | 后端有契约第 6 节的 `POST /api/consult/sessions/{id}/onboarding/skip`（用例层 `skip_onboarding`，写 `campfire_onboarding.state = 'skipped'`），决策记录《一次性引导对话》也写明 **`skipped` 由 UI 跳过入口写入**，且 `RQ-ACC-02`（无档案不阻断咨询）要求「引导必须可跳过」。**但前端从不调用它**：`grep -rn onboarding apps/web/src` 只有类型声明里的 `onboarding_pending: boolean`（**声明了却没人用**）与工具标签表里的 `finish_onboarding: '完成引导'`，`consultPort.ts` 里没有该方法。**后果**：新账号只能逐题点「跳过」把 6–8 组问答走完，无法一次退出；`skipped` 这个状态在真实数据里无从产生。**装置侧的临时对策**：真栈用例在浏览器里直接打这个端点（带真 cookie、经 Vite 代理），并注明这是「使用产品文档写明的通道」而不是绕过产品 |
 | BUG-02 | **引导轮次偶发不用「结构化提问事件」，改在正文里追问**（2026-10-28 演示走查发现，**未修**） | 现象：`onboarding` 场景某轮里，模型先正常用提问卡问了两次，第三次改成在正文里写「接下来八道题……第一道关于他……」，整轮跑完既没有待作答卡、也没有 `完成引导 · 已结束` 工具行。而 `apps/api/skills/onboarding/SKILL.md` 第 3 条明确要求「一次一问（**结构化提问事件**带选项与跳过）」。**影响**：真实使用者在引导里会看到一段没有作答入口的追问——只能用输入框回，跳过/选项这些能力全部消失（`RQ-CON-02` 的引导形态不成立）。**不是装置问题**：装置现在会带着这句现场文案快速失败（`waitRoundOutcome` 的静定判定），而不是白等 320 秒。**下一步**：确认是 skill 提示词的遵守度问题还是工具暴露时机问题（第三轮是否已把 `ask_question` 移出工具范围——那会解释得通）；若是前者，把「追问必须走工具」写成硬约束并在 skill 里给出反例 |
 | GAP-05 | ~~会话续传（刷新/断线重连）无自动化覆盖~~ **⇒ 已覆盖（2026-10-28）**：同一文件的后半段（刷新后水合 + 刷新后再发一轮） | 与 `DEMO-01` 的「会话列表与续传」场景同源：产品有 `not-resumable` / `stream-exhausted` 两条路径，但只在前端单测里出现过（`runStore.test.ts`），没有真栈上的验证。 |
 
@@ -215,3 +215,15 @@
 `decisions/账号注销与墓碑.md`（后者以带日期的补正追加，不改原文）同步。至此
 `grep -r 已删除全部内容` 在 `apps/**` 与 `docs/**` 中为 0（除沿革引用）。
 **仍不做**（原第 ② 条）：不物理删 SDK 两表——那需要同时处理会话撤销语义与队列排空，属另一批。
+
+**BUG-03 的处置（2026-10-28）**：入口放在**对话页页头右侧**（用户选定），文字按钮、meta 字号、
+弱化色——跳过不该比「返回」更显眼。判据三条：① 只在「建会话响应说引导待注入」**且**「消息流里
+还没有成功结束的 `finish_onboarding`」时出现；② 点击调契约第 6 节的 `…/onboarding/skip`，
+成功后入口消失、失败则留着并给原因（**不得**表现成已跳过）；③ 运行中禁用（该端点只写状态，
+不是运行中途退出）。刷新后入口仍在——`onboarding_pending` 只在建会话响应里出现，因此按会话 id
+在 `sessionStorage` 记住这一个布尔事实（不含任何内容，跳过或引导完成即清除）。
+落点：`application/ports.skipOnboarding`、`SkipOnboardingUseCase`、`ChatPage`（读路由 state /
+会话级记忆）、`ChatWorkspace`（页头入口 + 失败提示 + `finish_onboarding` 收束判定）、
+两个入口页把 `onboarding_pending` 传进路由 state。单测 5 例（出现/点击调到端口/无来源不显示/
+已完成不显示/失败不伪装成成功/刷新后仍在）。设计文档同步：`docs/design/pages/对话页.md` 与
+`咨询对话界面.md` 的组件表。

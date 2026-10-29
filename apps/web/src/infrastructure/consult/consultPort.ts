@@ -172,6 +172,14 @@ export function createConsultApi(options: ConsultApiOptions = {}): ConsultPort {
       }
     },
 
+    async skipOnboarding(sessionId: string): Promise<void> {
+      try {
+        await requestAccepted(`/consult/sessions/${encodeURIComponent(sessionId)}/onboarding/skip`);
+      } catch (error) {
+        throw translateConsultError(error);
+      }
+    },
+
     async emergencyStart(payload: EmergencyRequest): Promise<EmergencyResponse> {
       try {
         return await request<EmergencyResponse>('/consult/emergency', {

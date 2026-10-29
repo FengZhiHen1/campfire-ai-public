@@ -40,9 +40,11 @@ import {
 import type { ListMessagesResponse } from '../../../shared/types/consult';
 
 /** 渲染对话页（路由参数走真实的 useParams）。 */
-function renderChat(port: ConsultPortStub) {
+function renderChat(port: ConsultPortStub, entry: { path?: string; state?: unknown } = {}) {
+  const path = entry.path ?? '/consult/sessions/s1';
+  const initialEntry = entry.state === undefined ? path : { pathname: path, state: entry.state };
   return render(
-    <MemoryRouter initialEntries={['/consult/sessions/s1']}>
+    <MemoryRouter initialEntries={[initialEntry]}>
       <Routes>
         <Route path="/consult/sessions/:sessionId" element={<ChatPage consult={port} />} />
       </Routes>
@@ -188,6 +190,80 @@ describe('对话页 — 历史水合三态', () => {
       const label = card?.querySelector('label');
       expect(label?.htmlFor).toBe(box.id);
     }
+  });
+});
+
+describe('对话页 — 跳过一次性引导（BUG-03 的入口）', () => {
+  beforeEach(() => {
+    // 入口的「刷新后仍可见」依赖会话级记忆；用例之间必须清干净，否则先跑的用例会把标记带给下一个。
+    window.sessionStorage.clear();
+  });
+
+  it('建会话时说引导待注入 ⇒ 页头出现「跳过引导」，点它调到端口并撤掉入口', async () => {
+    const port = createConsultPortStub({ history: historyResponse([hydratedAssistant('m1', [])]) });
+    renderChat(port, { state: { guidePending: true } });
+
+    const skip = await screen.findByRole('button', { name: '跳过引导' });
+    expect(port.skipCalls).toEqual([]);
+
+    await act(async () => {
+      fireEvent.click(skip);
+    });
+
+    expect(port.skipCalls, '跳过必须真的打到端口（契约第 6 节）').toEqual(['s1']);
+    await waitFor(() => {
+      expect(screen.queryByRole('button', { name: '跳过引导' })).toBeNull();
+    });
+  });
+
+  it('没有「引导待注入」这回事时不显示入口（不许无来源地挂着）', async () => {
+    const port = createConsultPortStub({ history: historyResponse([hydratedAssistant('m1', [])]) });
+    renderChat(port);
+
+    await screen.findByLabelText('发送消息');
+    expect(screen.queryByRole('button', { name: '跳过引导' })).toBeNull();
+  });
+
+  it('引导已完成（流里有 finish_onboarding 工具行）⇒ 不再显示入口', async () => {
+    const port = createConsultPortStub({
+      history: historyResponse([
+        // 线格式的 tool_call part（契约第 7 节）：`tool_name` 是协议字段，水合时被转成
+        // 视图层的 `{type:'data', name:'tool-call'}`。断言入口隐藏要基于**这条**真实形状。
+        hydratedAssistant('m1', [{ type: 'tool_call', tool_name: 'finish_onboarding', ok: true, summary: '' }]),
+      ]),
+    });
+    renderChat(port, { state: { guidePending: true } });
+
+    await screen.findByLabelText('发送消息');
+    await waitFor(() => {
+      expect(screen.queryByRole('button', { name: '跳过引导' })).toBeNull();
+    });
+  });
+
+  it('跳过失败 ⇒ 入口留着并说明原因（不得表现成已跳过）', async () => {
+    const port = createConsultPortStub({
+      history: historyResponse([hydratedAssistant('m1', [])]),
+      skipError: new ConsultError('network', '网络中断'),
+    });
+    renderChat(port, { state: { guidePending: true } });
+
+    const skip = await screen.findByRole('button', { name: '跳过引导' });
+    await act(async () => {
+      fireEvent.click(skip);
+    });
+
+    await waitFor(() => {
+      expect(screen.getByRole('alert').textContent).toContain('跳过引导没有成功');
+    });
+    expect(screen.getByRole('button', { name: '跳过引导' })).toBeDefined();
+  });
+
+  it('刷新后入口仍在（会话级记忆）：路由 state 丢了也不该让引导变成不可跳过', async () => {
+    window.sessionStorage.setItem('consult.guidePending.s1', '1');
+    const port = createConsultPortStub({ history: historyResponse([hydratedAssistant('m1', [])]) });
+    renderChat(port);
+
+    expect(await screen.findByRole('button', { name: '跳过引导' })).toBeDefined();
   });
 });
 
