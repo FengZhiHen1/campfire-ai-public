@@ -185,28 +185,44 @@ class FaultPlan:
 
         `requested` 记「有多少个 case-group 请求了这一故障」，
         `applied` 记「其中真的实施了几个」，`not_applicable` 记「因为该组没有注入点而没做」。
+
+        未实施的原因**按状态分开计数**：`unsupported`（还没做）、`out_of_harness`
+        （工具做不到）、`unknown`（注册表里没有）。此前把 unsupported 也算进
+        `not_applicable`，读起来像「该组没有注入点」，而真实原因是「这一类没测成」。
         """
         requested: dict[str, int] = {}
         applied: dict[str, int] = {}
         not_applicable: dict[str, int] = {}
+        unsupported_counts: dict[str, int] = {}
         out_of_harness: dict[str, int] = {}
+        unknown_counts: dict[str, int] = {}
+
+        def _bump(bucket: dict[str, int], name: str) -> None:
+            bucket[name] = bucket.get(name, 0) + 1
+
         for case_id in self.requested:
             for system_id in system_ids:
                 for application in self.plan_for(case_id, system_id):
-                    requested[application.name] = requested.get(application.name, 0) + 1
+                    _bump(requested, application.name)
                     if application.applied:
-                        applied[application.name] = applied.get(application.name, 0) + 1
+                        _bump(applied, application.name)
                     elif application.status == "out_of_harness":
-                        out_of_harness[application.name] = out_of_harness.get(application.name, 0) + 1
-                    elif not application.systems:
-                        not_applicable[application.name] = not_applicable.get(application.name, 0) + 1
+                        _bump(out_of_harness, application.name)
+                    elif application.status == "unsupported":
+                        _bump(unsupported_counts, application.name)
+                    elif application.status == "not_applicable":
+                        _bump(not_applicable, application.name)
+                    else:
+                        _bump(unknown_counts, application.name)
         return {
             "registry_version": REGISTRY_VERSION,
             "registry_sha256": self.registry_sha256,
             "requested_counts": requested,
             "applied_counts": applied,
             "not_applicable_counts": not_applicable,
+            "unsupported_counts": unsupported_counts,
             "out_of_harness_counts": out_of_harness,
+            "unknown_counts": unknown_counts,
             "unsupported": {name: UNSUPPORTED[name] for name in requested if name in UNSUPPORTED},
             "out_of_harness": {name: OUT_OF_HARNESS[name] for name in requested if name in OUT_OF_HARNESS},
             "unknown": sorted(

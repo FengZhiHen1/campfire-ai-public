@@ -8,10 +8,17 @@
 
 判据口径：所有 hash 都按 :mod:`evaluation.carebench.hashing` 重算；所有分母都按
 「案例集 × 组别」重算。任何「用 manifest 里写的数字证明 manifest 正确」的写法都不算校验。
+
+防的是哪种篡改：**重算记录 hash 之后的篡改**。记录自带的 `record_sha256` 只能证明
+「这一行没被随手改过」；把所有内容改完再重算 hash，它就不再有任何证明力。因此每条
+检查都必须与**别处的独立事实**对照：运行身份对照 manifest 的其它事实与冻结绑定、
+规范文本投影对照原始载荷重算、评审包对照原始记录、故障观察对照轨迹与 tool_calls、
+重试/会话对照配置预算与轮次顺序。任何一条对不上都是硬违反。
 """
 
 from __future__ import annotations
 
+import json
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -19,11 +26,24 @@ from typing import Any
 
 from . import prompts
 from .cases import Case, CaseSet, parse_cases
-from .config import RunConfig
+from .config import FORMAL_LABEL, RunConfig
 from .hashing import batch_fingerprint, sha256_file, sha256_text, sha256_value
-from .records import REQUIRED_RECORD_FIELDS, effective_records, group_progress, is_final, key_of, progress_summary
+from .knowledge import EMBEDDING_DIM
+from .manifest import identity_fingerprint
+from .records import (
+    FIXTURE_STATUSES,
+    REQUIRED_RECORD_FIELDS,
+    effective_records,
+    fixture_observation,
+    group_progress,
+    is_final,
+    key_of,
+    progress_summary,
+)
+from .render import project
 from .review import CRITICAL_FAILURE_VALUES, MAP_FILE, PACKET_FILE, RATINGS_COLUMNS, load_imported_ratings
 from .store import RunStore, read_json, trailing_partial_line
+from .systems.base import RETRY_NEW_SESSION, RETRY_SAFETY
 
 #: 评审包里禁止出现的键/值模式（盲化的机械判据）。
 FORBIDDEN_PACKET_KEYS = ("system_id", "system", "label", "model_id", "assembly")
@@ -69,10 +89,20 @@ def verify_run(store: RunStore, *, require_complete: bool = False) -> VerifyRepo
 
     case_set = _check_cases(store, manifest, report)
     config = _check_config(manifest, report)
+    _check_identity(manifest, report)
     _check_fingerprint(store, manifest, case_set, report)
     records = _check_outputs(store, manifest, case_set, config, report)
-    _check_progress(store, manifest, case_set, config, records, report, require_complete=require_complete)
-    _check_review(store, manifest, records, config, report)
+    _check_retry_and_sessions(records, config, report)
+    progress = _check_progress(store, manifest, case_set, config, records, report, require_complete=require_complete)
+    _check_fixtures(
+        store,
+        manifest,
+        records,
+        config,
+        report,
+        complete=bool(progress) and progress.get("case_groups_complete") == progress.get("case_groups_expected"),
+    )
+    _check_review(store, manifest, case_set, records, config, report)
     _check_summary(store, manifest, records, config, report)
     return report
 
@@ -116,6 +146,87 @@ def _check_config(manifest: dict[str, Any], report: VerifyReport) -> RunConfig:
     return RunConfig.from_dict(config_payload)
 
 
+def _check_identity(manifest: dict[str, Any], report: VerifyReport) -> None:
+    """运行身份：指纹可复算、与 manifest 其它事实互相对得上、与冻结时锁定的一致。
+
+    为什么不能只核对 `run_identity_sha256`：把身份段和指纹一起改掉，自洽性检查就全过。
+    因此这里同时把身份段与**同一份 manifest 里由别处派生的字段**（`inference`、
+    `knowledge_snapshot`、`systems[].model_id`）逐项对齐——只改一处必然露馅；三处一起
+    改则与记录里逐条绑定的身份指纹冲突。
+    """
+    identity = manifest.get("run_identity")
+    if not isinstance(identity, dict):
+        report.violations.append("manifest 缺 run_identity：无法证明本批次跑的是哪个模型/端点/知识快照")
+        return
+    declared = str(manifest.get("run_identity_sha256") or "")
+    actual = identity_fingerprint(identity)
+    report.facts["run_identity_sha256"] = actual
+    if not declared:
+        report.violations.append("manifest 缺 run_identity_sha256：身份段没有可复算的指纹")
+    elif declared != actual:
+        report.violations.append(f"运行身份指纹与身份段复算不符（{actual[:12]}… ≠ {declared[:12]}…）：身份段被事后改过")
+
+    chat = identity.get("chat") or {}
+    embedding = identity.get("embedding") or {}
+    knowledge = identity.get("knowledge") or {}
+    inference = manifest.get("inference") or {}
+    sdk_retry = (inference.get("retry") or {}).get("sdk_runner") or {}
+    for label, left, right in (
+        ("inference.model_id", identity.get("model_id"), inference.get("model_id")),
+        ("inference.chat_endpoint_host", chat.get("host"), inference.get("chat_endpoint_host")),
+        ("inference.embedding_endpoint_host", embedding.get("host"), inference.get("embedding_endpoint_host")),
+        (
+            "inference.retry.sdk_runner.model_max_retries",
+            chat.get("model_max_retries"),
+            sdk_retry.get("model_max_retries"),
+        ),
+        ("embedding.dimension", EMBEDDING_DIM, embedding.get("dimension")),
+    ):
+        if left != right:
+            report.violations.append(f"运行身份与 {label} 不一致：run_identity={left!r} / {label}={right!r}")
+
+    snapshot = manifest.get("knowledge_snapshot") or {}
+    items = snapshot.get("items") or []
+    node_total = sum(int(item.get("nodes") or 0) for item in items if isinstance(item, dict))
+    for label, left, right in (
+        ("knowledge_snapshot.sha256", knowledge.get("snapshot_sha256"), snapshot.get("sha256")),
+        ("knowledge_snapshot.database", knowledge.get("database"), snapshot.get("database")),
+        ("knowledge_snapshot.items", knowledge.get("items"), len(items)),
+        ("knowledge_snapshot.nodes", knowledge.get("nodes"), node_total),
+    ):
+        if left != right:
+            report.violations.append(f"运行身份的知识绑定与 {label} 不一致：run_identity={left!r} / {label}={right!r}")
+
+    for meta in manifest.get("systems") or []:
+        if not isinstance(meta, dict):
+            continue
+        if meta.get("model_id") != identity.get("model_id"):
+            report.violations.append(
+                f"{meta.get('system_id')} 组的装配模型 {meta.get('model_id')!r} 与运行身份模型 "
+                f"{identity.get('model_id')!r} 不一致：三组必须跑同一个模型"
+            )
+
+    binding = manifest.get("freeze_binding") or {}
+    frozen_sha = str(binding.get("frozen_identity_sha256") or "")
+    if frozen_sha and frozen_sha != actual:
+        report.violations.append(
+            "本批次实际运行的运行身份与冻结时锁定的身份不同："
+            f"冻结 {frozen_sha[:12]}… ≠ 实际 {actual[:12]}…（执行计划与执行结果不是一回事）"
+        )
+    if binding.get("config_drift") and not binding.get("config_drift_allowed"):
+        report.violations.append("配置与冻结声明不同且没有显式允许（freeze_binding.config_drift=true）")
+    if binding.get("config_drift") and binding.get("config_drift_allowed"):
+        report.warnings.append(
+            "本批次允许了配置漂移（--allow-config-drift）：实际配置与冻结声明不同，报告不得当作同一条件"
+        )
+    if not binding:
+        report.warnings.append("manifest 缺 freeze_binding：无法核对「冻结时锁定了什么」（旧版批次）")
+    elif str(manifest.get("label")) == FORMAL_LABEL and not binding.get("identity_locked"):
+        report.violations.append(
+            f"正式批次（label={FORMAL_LABEL}）没有冻结身份锁定：无法证明跑的是计划里的模型与知识快照"
+        )
+
+
 def _check_fingerprint(
     store: RunStore,
     manifest: dict[str, Any],
@@ -155,6 +266,7 @@ def _check_outputs(
 
     case_by_id: dict[str, Case] = {case.id: case for case in case_set.cases}
     batch_id = str(manifest.get("batch_id") or "")
+    identity_sha = str(manifest.get("run_identity_sha256") or "")
     input_hashes: dict[tuple[str, int], set[str]] = {}
 
     for index, record in enumerate(records, start=1):
@@ -164,6 +276,10 @@ def _check_outputs(
             continue
         if str(record.get("batch_id")) != batch_id:
             report.violations.append(f"第 {index} 条记录的 batch_id 不属于本批次")
+        if identity_sha and str(record.get("run_identity_sha256")) != identity_sha:
+            report.violations.append(
+                f"第 {index} 条记录的运行身份指纹与 manifest 不符：记录不是在本批次的模型/端点/知识上产生的"
+            )
         case_id = str(record.get("case_id"))
         system_id = str(record.get("system_id"))
         turn = int(record.get("turn") or 0)
@@ -192,12 +308,16 @@ def _check_outputs(
         status_flags = record.get("status_flags")
         if not isinstance(status_flags, dict):
             report.violations.append(f"第 {index} 条记录缺 status_flags")
+        else:
+            _check_status_consistency(index, record, status_flags, report)
         expected_record_hash = sha256_value({key: value for key, value in record.items() if key != "record_sha256"})
         if record.get("record_sha256") != expected_record_hash:
             report.violations.append(
                 f"第 {index} 条记录（{case_id}/{system_id}/t{turn}）的内容 hash 不符："
                 "记录被事后修改过（原始输出不可改，协议 01 第 5 节）"
             )
+        _check_projection(index, record, case_id=case_id, system_id=system_id, turn=turn, report=report)
+        _check_retry_shape(index, record, report)
 
     for (case_id, turn), hashes in input_hashes.items():
         if len(hashes) > 1:
@@ -206,6 +326,299 @@ def _check_outputs(
     final = effective_records(records)
     report.facts["effective_records"] = len(final)
     return records
+
+
+def _check_projection(
+    index: int,
+    record: dict[str, Any],
+    *,
+    case_id: str,
+    system_id: str,
+    turn: int,
+    report: VerifyReport,
+) -> None:
+    """规范文本投影必须能由「原始正文 + 结构化载荷」原样重算出来。
+
+    评审包给评审者看的是投影；如果投影与原始载荷不一致，评审打的分就不再对应系统真实
+    产出——而这条差异在记录自带的 hash 里是看不出来的（改完重算即可）。
+    """
+    raw = str(record.get("raw_output") or "")
+    structured = record.get("structured_output") or []
+    if not isinstance(structured, list):
+        report.violations.append(f"第 {index} 条记录的 structured_output 不是数组")
+        return
+    if "output_text" not in record:
+        report.violations.append(f"第 {index} 条记录缺 output_text（规范文本投影）")
+        return
+    expected = project(raw, structured)
+    if str(record.get("output_text")) != expected:
+        report.violations.append(
+            f"第 {index} 条记录（{case_id}/{system_id}/t{turn}）的规范文本投影与原始载荷重算结果不一致："
+            "评审看到的内容不是系统真实产出"
+        )
+
+
+def _check_status_consistency(index: int, record: dict[str, Any], flags: dict[str, Any], report: VerifyReport) -> None:
+    """状态词表与可见产出必须自洽（四处口径同一：raw / structured / output_text / flags）。"""
+    status = str(record.get("completion_status"))
+    raw = str(record.get("raw_output") or "")
+    structured = record.get("structured_output") or []
+    output_text = str(record.get("output_text") or "") or raw
+    has_output = bool(raw.strip() or structured)
+    if status == "completed" and not has_output:
+        report.violations.append(f"第 {index} 条记录标为 completed 但正文与结构化产出都为空")
+    if status == "no_output" and has_output:
+        report.violations.append(f"第 {index} 条记录标为 no_output 但存在可见产出")
+    if status in {"error", "timeout"} and not isinstance(record.get("error"), dict):
+        report.violations.append(f"第 {index} 条记录标为 {status} 但缺 error 说明")
+    expected_flags = {
+        "empty_output": not output_text.strip(),
+        "structured_only": bool(structured) and not raw.strip(),
+        "refusal_suspected": prompts.refusal_suspected(output_text),
+    }
+    for name, expected in expected_flags.items():
+        if name in flags and bool(flags[name]) is not bool(expected):
+            report.violations.append(
+                f"第 {index} 条记录的 status_flags.{name}={flags[name]!r} 与重算结果 {expected} 不一致"
+            )
+
+
+def _check_retry_shape(index: int, record: dict[str, Any], report: VerifyReport) -> None:
+    """`retry` 段必须与记录自身的尝试序号一致（两处口径不能各写一份）。"""
+    retry = record.get("retry")
+    if not isinstance(retry, dict):
+        report.violations.append(f"第 {index} 条记录缺 retry 段")
+        return
+    if retry.get("attempt") != record.get("attempt"):
+        report.violations.append(
+            f"第 {index} 条记录的 retry.attempt={retry.get('attempt')} 与 attempt={record.get('attempt')} 不一致"
+        )
+    if str(retry.get("retry_safety")) not in RETRY_SAFETY:
+        report.violations.append(f"第 {index} 条记录的 retry.retry_safety 非法：{retry.get('retry_safety')!r}")
+
+
+def _check_retry_and_sessions(records: list[dict[str, Any]], config: RunConfig, report: VerifyReport) -> None:
+    """重试预算与会话隔离：尝试序号连续、预算不超、换会话只在失败落库时发生、同轮输入不重复。
+
+    「用户输入无重复」是这里的核心：C 组失败尝试若已写入会话，原地重试会让模型在自己
+    的历史里看到同一条使用者消息两次，后续每一轮都带着这段重复历史——那种污染在记录
+    的 hash 里完全看不出来，只能靠会话序列核对。
+    """
+    groups: dict[tuple[str, str], list[dict[str, Any]]] = {}
+    for record in records:
+        if not {"case_id", "system_id", "turn", "attempt"} <= set(record):
+            continue
+        groups.setdefault((str(record["case_id"]), str(record["system_id"])), []).append(record)
+    budget = 1 + config.max_outer_retries
+    for (case_id, system_id), items in groups.items():
+        per_turn: dict[int, list[dict[str, Any]]] = {}
+        for record in items:
+            per_turn.setdefault(int(record["turn"]), []).append(record)
+        for turn, attempts in per_turn.items():
+            numbering = sorted(int(record["attempt"]) for record in attempts)
+            if numbering != list(range(1, len(numbering) + 1)):
+                report.violations.append(
+                    f"{case_id}/{system_id}/t{turn} 的尝试序号不是从 1 连续递增：{numbering}"
+                    "（记录被改过，或续跑重写了已落盘的尝试）"
+                )
+            ordered = sorted(attempts, key=lambda record: int(record["attempt"]))
+            for earlier in ordered[:-1]:
+                if str(earlier.get("completion_status")) not in config.retry_on:
+                    report.violations.append(
+                        f"{case_id}/{system_id}/t{turn} 对不可重试状态（{earlier.get('completion_status')}）"
+                        "发起了重试：这不是策略允许的重试"
+                    )
+        used = max((int(record["attempt"]) for record in items), default=0)
+        if used > budget:
+            report.violations.append(
+                f"{case_id}/{system_id} 共用了 {used} 次尝试，超过预算 {budget}"
+                f"（max_outer_retries={config.max_outer_retries}）"
+            )
+        _check_session_sequence(case_id, system_id, items, config, report)
+
+
+def _check_session_sequence(
+    case_id: str,
+    system_id: str,
+    items: list[dict[str, Any]],
+    config: RunConfig,
+    report: VerifyReport,
+) -> None:
+    """会话序列：账号与会话一一对应、放弃的会话不得复用、换会话必须从第 1 轮重开。"""
+    account_of: dict[str, str] = {}
+    closed: set[str] = set()
+    turn_history: dict[str, dict[int, dict[str, Any]]] = {}
+    for index, record in enumerate(items):
+        session_id = str(record.get("session_id") or "")
+        account_id = str(record.get("account_id") or "")
+        turn = int(record.get("turn") or 0)
+        if not session_id or not account_id:
+            report.violations.append(f"{case_id}/{system_id} 有记录缺 session_id/account_id：无法核对会话隔离")
+            continue
+        known = account_of.get(session_id)
+        if known is not None and known != account_id:
+            report.violations.append(f"{case_id}/{system_id} 的会话 {session_id[:8]}… 对应了两个不同账号")
+        account_of.setdefault(session_id, account_id)
+        if session_id in closed:
+            report.violations.append(
+                f"{case_id}/{system_id} 复用了已放弃的会话 {session_id[:8]}…：该会话里已有一次失败留下的历史"
+            )
+        if index > 0:
+            previous = items[index - 1]
+            previous_session = str(previous.get("session_id") or "")
+            if session_id != previous_session:
+                previous_retry = previous.get("retry") or {}
+                previous_safety = str(previous_retry.get("retry_safety") or "")
+                previous_status = str(previous.get("completion_status"))
+                if previous_safety != RETRY_NEW_SESSION or previous_status not in config.retry_on:
+                    report.violations.append(
+                        f"{case_id}/{system_id}：上一条记录（{previous_status}/{previous_safety or 'n/a'}）"
+                        "之后换了会话——只有「失败已落库」才允许换会话重开"
+                    )
+                if turn != 1:
+                    report.violations.append(
+                        f"{case_id}/{system_id}：换新会话后从第 {turn} 轮开始，没有从第 1 轮重开（会漏跑轮次）"
+                    )
+                closed.add(previous_session)
+        session_turns = turn_history.setdefault(session_id, {})
+        earlier = session_turns.get(turn)
+        if earlier is not None:
+            earlier_retry = earlier.get("retry") or {}
+            if (
+                str(earlier_retry.get("retry_safety")) != "same_session"
+                or str(earlier.get("completion_status")) not in config.retry_on
+            ):
+                report.violations.append(
+                    f"{case_id}/{system_id}/t{turn} 在同一会话里重复发送了同一轮使用者输入"
+                    "（前一条不是「未落库的可重试失败」）：会话历史会出现重复消息，污染后续轮次"
+                )
+        session_turns[turn] = record
+
+
+def _read_trace(store: RunStore, record: dict[str, Any], index: int, report: VerifyReport) -> dict[str, Any] | None:
+    """读记录引用的轨迹文件（读不到已在别处报过，这里返回 None 让调用方降级判断）。"""
+    trace_file = record.get("trace_file")
+    if not trace_file:
+        return None
+    try:
+        payload = store.read_trace(str(trace_file))
+    except (OSError, ValueError, json.JSONDecodeError):
+        report.violations.append(f"第 {index} 条记录的轨迹文件无法读取：{trace_file}")
+        return None
+    return payload if isinstance(payload, dict) else None
+
+
+def _check_fixtures(
+    store: RunStore,
+    manifest: dict[str, Any],
+    records: list[dict[str, Any]],
+    config: RunConfig,
+    report: VerifyReport,
+    *,
+    complete: bool,
+) -> None:
+    """故障注入的「请求 / 实施 / 观察到」三件事必须与轨迹对得上，且汇总不注水。"""
+    for index, record in enumerate(records, start=1):
+        entries = record.get("fixtures")
+        if not isinstance(entries, list):
+            report.violations.append(f"第 {index} 条记录缺 fixtures 清单（无法判断本轮请求了什么故障）")
+            continue
+        if not entries:
+            continue
+        trace = _read_trace(store, record, index, report)
+        calls = record.get("tool_calls") or []
+        if not isinstance(calls, list):
+            report.violations.append(f"第 {index} 条记录的 tool_calls 不是数组")
+            calls = []
+        tool_calls = sum(1 for call in calls if isinstance(call, dict) and call.get("name") == "search_knowledge")
+        retrieval = ((trace or {}).get("retrieval") or {}) if trace else {}
+        for item in entries:
+            if not isinstance(item, dict):
+                report.violations.append(f"第 {index} 条记录的 fixtures 项不是对象")
+                continue
+            name = str(item.get("name") or "")
+            status = str(item.get("status") or "")
+            applied = bool(item.get("applied"))
+            if status not in FIXTURE_STATUSES:
+                report.violations.append(f"第 {index} 条记录的 fixture {name!r} 状态非法：{status!r}")
+            if applied is not (status == "applied"):
+                report.violations.append(
+                    f"第 {index} 条记录的 fixture {name!r}：applied={applied} 与 status={status!r} 矛盾"
+                )
+            observed_calls = item.get("observed_calls")
+            if not isinstance(observed_calls, int) or observed_calls < 0:
+                report.violations.append(f"第 {index} 条记录的 fixture {name!r} 缺 observed_calls")
+                continue
+            if name.startswith("tool_"):
+                expected_calls = tool_calls
+            elif name.startswith("retrieval_"):
+                expected_calls = 1 if retrieval else 0
+            else:
+                expected_calls = 0
+            if observed_calls != expected_calls:
+                report.violations.append(
+                    f"第 {index} 条记录的 fixture {name!r}：observed_calls={observed_calls} 与"
+                    f"轨迹/tool_calls 复算 {expected_calls} 不一致"
+                )
+            expected_observed = bool(applied and expected_calls > 0)
+            if bool(item.get("observed")) is not expected_observed:
+                report.violations.append(
+                    f"第 {index} 条记录的 fixture {name!r}：observed={item.get('observed')} 与复算"
+                    f"{expected_observed} 不一致（「装上」不等于「观察到」）"
+                )
+
+    injection = manifest.get("fault_injection") or {}
+    recomputed = _recompute_fault_counts(records, config)
+    report.facts["fault_injection_counts"] = recomputed
+    mismatches: list[str] = []
+    for key, counts in recomputed.items():
+        declared = {str(name): int(value) for name, value in (injection.get(key) or {}).items()}
+        if declared != counts:
+            mismatches.append(f"{key}: manifest={declared} 复算={counts}")
+    if mismatches and complete:
+        report.violations.append("manifest.fault_injection 与记录复算不一致：" + "；".join(mismatches))
+    elif mismatches:
+        report.warnings.append(
+            "manifest.fault_injection 与已跑记录复算不一致（批次未跑满，可能只是还没跑到）：" + "；".join(mismatches)
+        )
+
+
+def _recompute_fault_counts(records: list[dict[str, Any]], config: RunConfig) -> dict[str, dict[str, int]]:
+    """按每个 case-group 的**首条记录**复算注入统计（同一组的后续轮次/重试不重复计）。"""
+    first: dict[tuple[str, str], dict[str, Any]] = {}
+    for record in records:
+        key = (str(record.get("case_id")), str(record.get("system_id")))
+        if key[1] not in config.systems:
+            continue
+        first.setdefault(key, record)
+    buckets: dict[str, dict[str, int]] = {
+        "requested_counts": {},
+        "applied_counts": {},
+        "not_applicable_counts": {},
+        "unsupported_counts": {},
+        "out_of_harness_counts": {},
+        "unknown_counts": {},
+    }
+    bucket_names = {
+        "applied": "applied_counts",
+        "not_applicable": "not_applicable_counts",
+        "unsupported": "unsupported_counts",
+        "out_of_harness": "out_of_harness_counts",
+    }
+    for record in first.values():
+        for item in record.get("fixtures") or []:
+            if not isinstance(item, dict):
+                continue
+            name = str(item.get("name") or "")
+            status = str(item.get("status") or ("applied" if item.get("applied") else "unknown"))
+            _bump(buckets["requested_counts"], name)
+            _bump(buckets[bucket_names.get(status, "unknown_counts")], name)
+    return buckets
+
+
+def _bump(bucket: dict[str, int], name: str) -> None:
+    """计数 +1（空名字也计：让「缺名字的条目」在复算里暴露成差异）。"""
+    bucket[name] = bucket.get(name, 0) + 1
 
 
 def _check_progress(
@@ -217,10 +630,10 @@ def _check_progress(
     report: VerifyReport,
     *,
     require_complete: bool,
-) -> None:
+) -> dict[str, int] | None:
     """进度与分母：期望组数必须等于案例数 × 组别数；state.json 必须与记录一致。"""
     if case_set is None:
-        return
+        return None
     progress = group_progress(records, cases=case_set.cases, system_ids=list(config.systems), config=config)
     summary = progress_summary(progress)
     report.facts["progress"] = summary
@@ -253,16 +666,18 @@ def _check_progress(
                         f"{case.id}/{system_id}/t{turn} 只剩可重试状态（{record.get('completion_status')}）"
                         "且未用完重试额度：属未完成运行"
                     )
+    return summary
 
 
 def _check_review(
     store: RunStore,
     manifest: dict[str, Any],
+    case_set: CaseSet | None,
     records: list[dict[str, Any]],
     config: RunConfig,
     report: VerifyReport,
 ) -> None:
-    """评审包盲化、映射完整、评分导入与映射一致。"""
+    """评审包盲化、映射完整、评分导入与映射一致、**包内容与原始记录逐字对照**。"""
     packet_path = store.review_dir / PACKET_FILE
     map_path = store.review_dir / MAP_FILE
     ratings = load_imported_ratings(store)
@@ -313,6 +728,119 @@ def _check_review(
                 report.violations.append(f"评分行缺列：{column}")
                 break
 
+    declared_sha = str(review_meta.get("packet_sha256") or "")
+    actual_sha = sha256_text(packet_text)
+    if declared_sha and declared_sha != actual_sha:
+        report.violations.append(
+            f"评审包 hash 与 manifest 记录不符（{actual_sha[:12]}… ≠ {declared_sha[:12]}…）：导出后被改过"
+        )
+    _check_packet_contents(
+        packet_text=packet_text,
+        mapping=per_case,
+        case_set=case_set,
+        records=records,
+        config=config,
+        report=report,
+    )
+
+
+def _check_packet_contents(
+    *,
+    packet_text: str,
+    mapping: dict[str, dict[str, str]],
+    case_set: CaseSet | None,
+    records: list[dict[str, Any]],
+    config: RunConfig,
+    report: VerifyReport,
+) -> None:
+    """评审包的每一行都必须等于原始记录的规范投影（否则评审看到的不是系统产出）。"""
+    if case_set is None:
+        return
+    effective = effective_records(records)
+    expected: dict[tuple[str, str], list[dict[str, Any]]] = {}
+    for case in case_set.cases:
+        for system_id in config.systems:
+            group: list[dict[str, Any]] = []
+            for turn in range(1, case.turns + 1):
+                record = effective.get((case.id, system_id, turn))
+                if record is None or not is_final(record, config):
+                    group = []
+                    break
+                group.append(record)
+            if group:
+                expected[(case.id, system_id)] = group
+
+    case_of_blind = {blind_id: case_id for case_id, per_case in mapping.items() for blind_id in per_case}
+    seen: set[tuple[str, str]] = set()
+    for line_no, line in enumerate(packet_text.splitlines(), start=1):
+        if not line.strip():
+            continue
+        try:
+            payload = json.loads(line)
+        except json.JSONDecodeError:
+            report.violations.append(f"评审包第 {line_no} 行不是合法 JSON")
+            continue
+        if not isinstance(payload, dict):
+            report.violations.append(f"评审包第 {line_no} 行不是对象")
+            continue
+        blind_id = str(payload.get("blind_id") or "")
+        system_id = None
+        for case_id, per_case in mapping.items():
+            if blind_id in per_case:
+                system_id = per_case[blind_id]
+                break
+        if system_id is None:
+            report.violations.append(f"评审包第 {line_no} 行的 blind_id 不在映射里：{blind_id!r}")
+            continue
+        case_id = str(payload.get("case_id") or "")
+        mapped_case = case_of_blind.get(blind_id)
+        if mapped_case is not None and case_id != mapped_case:
+            report.violations.append(f"评审包第 {line_no} 行的 case_id={case_id!r} 与盲化映射 {mapped_case!r} 不一致")
+        key = (case_id, system_id)
+        if key in seen:
+            report.violations.append(f"评审包里 {case_id}/{blind_id} 出现了不止一次")
+        seen.add(key)
+        group = expected.get(key)
+        if group is None:
+            report.violations.append(f"评审包导出了没有最终结论的 case-group：{case_id}（{blind_id}）")
+            continue
+        turns_payload = payload.get("turns") or []
+        if len(turns_payload) != len(group):
+            report.violations.append(f"评审包 {blind_id} 的轮次数 {len(turns_payload)} ≠ 记录的轮次数 {len(group)}")
+            continue
+        for record, turn_payload in zip(group, turns_payload, strict=True):
+            if not isinstance(turn_payload, dict):
+                report.violations.append(f"评审包 {blind_id} 的轮次项不是对象")
+                continue
+            turn = int(record.get("turn") or 0)
+            expected_output = str(record.get("output_text") or record.get("raw_output") or "")
+            pairs = (
+                ("user_text", turn_payload.get("user_text"), record.get("input_text")),
+                ("output", turn_payload.get("output"), expected_output),
+                (
+                    "structured_output",
+                    turn_payload.get("structured_output") or [],
+                    record.get("structured_output") or [],
+                ),
+                ("completion_status", turn_payload.get("completion_status"), record.get("completion_status")),
+                ("latency_ms", turn_payload.get("latency_ms"), record.get("latency_ms")),
+            )
+            for label, actual, want in pairs:
+                if actual != want:
+                    report.violations.append(
+                        f"评审包 {blind_id}/t{turn} 的 {label} 与原始记录不一致：盲评看到的不是系统真实产出"
+                    )
+        last = group[-1]
+        last_output = str(last.get("output_text") or last.get("raw_output") or "")
+        if str(payload.get("final_output") or "") != last_output:
+            report.violations.append(f"评审包 {blind_id} 的 final_output 与原始记录末轮投影不一致")
+        if (payload.get("structured_output") or []) != (last.get("structured_output") or []):
+            report.violations.append(f"评审包 {blind_id} 的 structured_output 与原始记录末轮载荷不一致")
+
+    missing = set(expected) - seen
+    for case_id, system_id in sorted(missing):
+        report.violations.append(f"评审包漏掉了已完成的 case-group：{case_id}/{system_id}")
+
 
 def _check_summary(
     store: RunStore,
@@ -350,6 +878,16 @@ def _check_summary(
             report.violations.append(
                 f"summary 里 {system_id} 的 case-group 数 {stats.get('case_groups')} ≠ 记录数 {actual}"
             )
+
+    # 故障观察统计必须与记录复算一致：把「装上但没被调用」写成「观察到」是最容易混过去的一处。
+    observed = summary.get("fault_injection_observation")
+    recomputed = fixture_observation(records)
+    if observed is None:
+        report.warnings.append("summary 缺 fault_injection_observation：summary 过期或旧版，请重跑 summarize")
+    elif observed != recomputed:
+        report.violations.append(
+            f"summary 的故障观察统计与记录复算不一致（summary 被改过或过期）：summary={observed} 复算={recomputed}"
+        )
 
 
 def verify_paths(run_dir: Path, *, require_complete: bool = False) -> VerifyReport:

@@ -22,7 +22,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from .config import RunConfig
-from .records import effective_records, is_final
+from .records import effective_records, fixture_observation, is_final
 from .review import SCORE_COLUMNS, load_imported_ratings
 from .store import RunStore, write_json
 
@@ -395,6 +395,8 @@ def summarize_run(store: RunStore, *, log: Any = print) -> dict[str, Any]:
         "systems": per_system,
         "by_category": _by_category(groups, category_by_case, config),
         "fault_injection": manifest.get("fault_injection"),
+        # 「请求了注入」「装上替身」「真的观察到」是三件事，分开报（见 records.fixture_observation）。
+        "fault_injection_observation": fixture_observation(records),
         "review_state": manifest.get("review", {}).get("state", "pending"),
         "human_scores": human,
         "human_scores_note": (
@@ -554,9 +556,39 @@ def render_markdown(summary: dict[str, Any]) -> str:
         lines.append(f"- 已实施：{injection.get('applied_counts')}")
         if injection.get("not_applicable_counts"):
             lines.append(f"- 因该组没有注入点而未实施：{injection.get('not_applicable_counts')}")
+        if injection.get("unsupported_counts"):
+            lines.append(f"- **未支持**（这一类没测成）：{injection.get('unsupported_counts')}")
+        if injection.get("unknown_counts"):
+            lines.append(f"- **未知 fixture**（注册表里没有）：{injection.get('unknown_counts')}")
         for name, note in (injection.get("unsupported") or {}).items():
             lines.append(f"- **未支持** `{name}`：{note}")
     lines.append("")
+    observation = summary.get("fault_injection_observation") or {}
+    by_fixture = observation.get("by_fixture") or {}
+    if by_fixture:
+        lines.append("### 实施 vs 观察到（按有效记录）")
+        lines.append("")
+        lines.append("| fixture | 记录数 | 已装上 | 观察到 | 装上但没被调用 | 无对等注入点 | 未支持 | 越界 |")
+        lines.append("| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |")
+        for name, bucket in sorted(by_fixture.items()):
+            lines.append(
+                "| {name} | {records} | {applied} | {observed} | {uncalled} | {na} | {unsupported} | {outside} |".format(
+                    name=name,
+                    records=bucket.get("records", 0),
+                    applied=bucket.get("applied", 0),
+                    observed=bucket.get("observed", 0),
+                    uncalled=bucket.get("installed_but_uncalled", 0),
+                    na=bucket.get("not_applicable", 0),
+                    unsupported=bucket.get("unsupported", 0),
+                    outside=bucket.get("out_of_harness", 0) + bucket.get("unknown", 0),
+                )
+            )
+        lines.append("")
+        lines.append(
+            f"「装上但没被调用」合计 {observation.get('installed_but_uncalled_total', 0)} 个回合："
+            f"{observation.get('note', '')}"
+        )
+        lines.append("")
     lines.append("## 结论边界")
     lines.append("")
     for caveat in summary.get("caveats", []):
