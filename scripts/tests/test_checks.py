@@ -541,6 +541,52 @@ def test_carebench_data_change_runs_tool_tests_without_ruff(monkeypatch: pytest.
     assert steps[0].argv[-1] == CAREBENCH_TESTS
 
 
+def test_carebench_source_and_tool_test_change_lists_the_target_once() -> None:
+    """源码 + 该工具某个既有测试同时改：只留目录，不再单列被它覆盖的子文件。
+
+    负例在前：这里必须先证明「子文件确实在目录里」，否则测的是「两个无关目标」而不是
+    「子文件被目录覆盖」。实测 pytest 9.0.3 同时传入两者不会重复收集（按 nodeid 去重，
+    125 = 125），但计划与报告不该印出两个目标——那层覆盖关系由本仓保证，不是 pytest 的承诺。
+    """
+    subtest = "evaluation/carebench/tests/test_verify.py"
+    assert (ROOT / subtest).is_file(), "负例要落在真实存在的测试文件上"
+    assert (ROOT / CAREBENCH_TESTS).is_dir()
+
+    selection = checks.pytest_files_for(
+        ["evaluation/carebench/freeze.py", subtest],
+        checks.existing_test_files(),
+    )
+
+    assert selection == [CAREBENCH_TESTS], selection
+    assert subtest not in selection, "被目录覆盖的子文件不得单列（同一目标会报两次）"
+
+
+def test_plan_hands_each_carebench_target_to_pytest_once(monkeypatch: pytest.MonkeyPatch) -> None:
+    """计划层的直接负例：pytest 目标里不得同时出现目录与目录内的文件。
+
+    混合改动一起验：被目录覆盖的那一个子文件去掉，`apps/api` 侧的目标照旧保留。
+    """
+    monkeypatch.setattr(
+        checks,
+        "changed_paths",
+        lambda base: [
+            "evaluation/carebench/freeze.py",
+            "evaluation/carebench/tests/test_verify.py",
+            "apps/api/src/campfire/modules/library/routes.py",
+        ],
+    )
+
+    steps, _report, problems = checks.quick_plan("dev", None)
+
+    assert problems == []
+    pytest_steps = [step for step in steps if step.key == "pytest"]
+    assert len(pytest_steps) == 1
+    targets = list(pytest_steps[0].argv)
+    assert targets.count(CAREBENCH_TESTS) == 1, targets
+    assert "evaluation/carebench/tests/test_verify.py" not in targets, "目录内的文件不得再单列"
+    assert any(Path(arg).name.startswith("test_library") for arg in targets), targets
+
+
 def test_carebench_docs_change_still_uses_the_docs_check(monkeypatch: pytest.MonkeyPatch) -> None:
     """CareBench 的文档改动仍按文档检查（不因为它在 evaluation/ 下就另开一套）。"""
     monkeypatch.setattr(
