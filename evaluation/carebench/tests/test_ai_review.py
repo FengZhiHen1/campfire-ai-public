@@ -362,7 +362,13 @@ async def test_freeze_requires_distinct_prompts_and_precedes_scoring(
     other = await _exported_run(tmp_path / "second", settings=settings_for_tests, faults=faults_for_tests)
     append_attempt(other, 1, {"blind_id": "x", "status": "ok", "case_id": "CFB-C-001"})
     with pytest.raises(AiReviewError, match="评分开始前"):
-        freeze_judges(other, judges=default_judges("stub-model"), stage="formal", log=lambda _message: None)
+        freeze_judges(
+            other,
+            judges=default_judges("stub-model"),
+            adjudicator=default_adjudicator("stub-model"),
+            stage="formal",
+            log=lambda _message: None,
+        )
 
 
 async def test_formal_identity_must_precede_first_system_output(
