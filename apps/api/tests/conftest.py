@@ -195,6 +195,47 @@ def _live_model_environment_problem(settings: Settings | None = None) -> str | N
     return None
 
 
+def _mark_expression_excludes_live_model(config: pytest.Config) -> bool:
+    """本轮 `-m` 是否**就是** `not live_model`（允许外层括号）。
+
+    严格等值比较，不做表达式求值：`not live_model or live_model` 之类的写法实际会选中
+    全部用例，用正则「含 `not live_model`」会被误判成已排除。只认本仓 `checks.py` /
+    `ci.yml` 使用的这一种写法，其余一律照常校验环境。
+
+    Args:
+        config: pytest 配置对象（读 `-m`/`--markexpr`）。
+
+    Returns:
+        表达式严格等于「排除 live_model」时为真。
+    """
+    option = getattr(config, "option", None)
+    markexpr = str(getattr(option, "markexpr", "") or "").strip()
+    while markexpr.startswith("(") and markexpr.endswith(")"):
+        markexpr = markexpr[1:-1].strip()
+    return markexpr == f"not {LIVE_MODEL_MARKER}"
+
+
+def enforce_live_model_environment(config: pytest.Config) -> None:
+    """显式开启真模型用例时，在收集之前确认环境具备；缺什么就说什么。
+
+    未开启、或本轮 `-m` 严格等于 `not live_model`（`quick`/`full`/CI 的写法）时不校验；
+    其余情况缺凭据或只配了占位符就抛 :class:`pytest.UsageError`。
+
+    Args:
+        config: pytest 配置对象。
+
+    Raises:
+        pytest.UsageError: 环境不具备且本轮确实会跑真模型用例。
+    """
+    if not live_model_enabled(config):
+        return
+    if _mark_expression_excludes_live_model(config):
+        return
+    problem = _live_model_environment_problem()
+    if problem is not None:
+        raise pytest.UsageError(problem)
+
+
 def settings_with_placeholder_model_key(settings: Settings) -> Settings:
     """缺模型凭据时补一个**非秘密占位**，供「只用装配结构、不调模型」的用例使用。
 
@@ -278,7 +319,9 @@ def pytest_configure(config: pytest.Config) -> None:
     真的具备（见 :func:`_live_model_environment_problem`）。缺凭据就在收集之前失败——
     退出码非 0、消息直说缺什么。这是「显式选择真模型却什么都没跑」与「静默跳过冒充
     通过」之间唯一的分界：没有这道检查，缺 key 的机器上 `--live-model` 会安静地跑完
-    一轮零用例。
+    一轮零用例。`-m "not live_model"` 显式排除时**不**校验——那一轮本来就不跑真模型
+    用例（`checks.py quick/full` 与 CI 都用这个表达式），见
+    :func:`enforce_live_model_environment`。
 
     Args:
         config: pytest 配置对象（读 `--live-model`）。
@@ -303,10 +346,7 @@ def pytest_configure(config: pytest.Config) -> None:
     # 清缓存：让后续 get_settings() 用写回后的环境变量重新解析。
     get_settings.cache_clear()
 
-    if live_model_enabled(config):
-        problem = _live_model_environment_problem()
-        if problem is not None:
-            raise pytest.UsageError(problem)
+    enforce_live_model_environment(config)
 
 
 #: 「连不上 FalkorDB 容器」这一类异常。
@@ -323,10 +363,26 @@ FALKOR_UNAVAILABLE_ERRORS: tuple[type[BaseException], ...] = (
     OSError,
 )
 
+#: 测试进程内一律清掉的代理变量（`no_proxy` 例外，见下面的夹具）。
+#:
+#: 宿主机 `all_proxy` 指向 SOCKS 时，`httpx.AsyncClient()` 在构造期就抛
+#: `ImportError: ... 'socksio' package is not installed`（本仓不装该可选依赖），
+#: 实测把 `test_probes` 的「配置非法」用例变成「探针自身异常」。测试里一律直连。
+PROXY_ENV_KEYS: tuple[str, ...] = (
+    "all_proxy",
+    "ALL_PROXY",
+    "http_proxy",
+    "HTTP_PROXY",
+    "https_proxy",
+    "HTTPS_PROXY",
+)
+
 
 @pytest.fixture(autouse=True)
 def _normalise_proxy_env(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
-    """把代理相关的环境变量归一到合法值，隔离宿主机配置对测试的影响。"""
+    """清掉代理变量并把 `no_proxy` 钉成合法值，隔离宿主机配置对测试的影响。"""
+    for key in PROXY_ENV_KEYS:
+        monkeypatch.delenv(key, raising=False)
     monkeypatch.setenv("no_proxy", "localhost,127.0.0.1")
     monkeypatch.setenv("NO_PROXY", "localhost,127.0.0.1")
     yield
@@ -403,17 +459,37 @@ def _isolate_queue_dispatch() -> Iterator[None]:
         jobs_module.set_dispatch_hook(previous)
 
 
-def connect_falkordb_or_skip():  # noqa: ANN202 —— 返回 FalkorDriver；避免在 conftest 顶部导入上游
-    """连上本地 FalkorDB 并返回驱动；容器不可用时跳过。
+def falkordb_client_kwargs(settings: Settings) -> dict[str, object]:
+    """FalkorDB 客户端参数，与 `modules/memory/graph.py` 的生产构造保持一致。
 
-    这个辅助函数存在的原因是一次实测踩坑：`FalkorDB(...)` 的构造函数本身就发网络 I/O
-    （指向死端口时构造期即抛 `ConnectionError`），所以构造必须在 `try`
-    内。此前三个测试文件都把构造写在 `try` 之外，容器不可用时它们全部变成
-    ERROR（实测某个文件 22 个用例全 ERROR、耗时约 99 秒），而 docstring 却宣称
-    「容器不可用则跳过」——宣称与行为不符。
+    Args:
+        settings: 已解析的配置。
 
-    异常类型同样踩过坑：`redis.exceptions.ConnectionError` 不是内建
-    `ConnectionError` 的子类，故用 :data:`FALKOR_UNAVAILABLE_ERRORS` 同时覆盖两者。
+    Returns:
+        传给 `FalkorDB(...)` 的关键字参数。
+    """
+    password = settings.falkordb_password
+    return {
+        "host": settings.falkordb_host,
+        "port": settings.falkordb_port,
+        "password": password.get_secret_value() if password is not None else None,
+        "socket_timeout": settings.falkordb_timeout_seconds,
+        "socket_connect_timeout": settings.falkordb_timeout_seconds,
+    }
+
+
+def connect_falkordb_or_skip(settings: Settings | None = None):  # noqa: ANN202 —— 避免在顶部导入上游
+    """按 `Settings` 连 FalkorDB 并返回驱动；连不上就跳过。
+
+    地址、认证与库名**一律取自配置**（`FALKORDB_HOST/PORT/PASSWORD/DATABASE`）。硬编码
+    `localhost:6380` / `campfire` 会让 `FALKORDB_PORT=<独立实例>` 完全落空，测试实际连到
+    共享实例——既做不到隔离，也会在共享库上跑图操作。
+
+    `FalkorDB(...)` 的构造函数本身就发网络 I/O，所以构造必须在 `try` 内（否则容器不可用
+    时用例变成 ERROR 而不是跳过）。异常类型见 :data:`FALKOR_UNAVAILABLE_ERRORS`。
+
+    Args:
+        settings: 待连接的配置；省略时读进程配置（`get_settings()`）。
 
     Returns:
         `(driver, client)`：已连上的驱动与底层客户端（调用方负责关闭客户端）。
@@ -426,16 +502,22 @@ def connect_falkordb_or_skip():  # noqa: ANN202 —— 返回 FalkorDriver；避
     from falkordb.asyncio import FalkorDB  # type: ignore[import-untyped]  # 上游无 py.typed 标记，非本仓类型缺陷
     from graphiti_core.driver.falkordb_driver import FalkorDriver
 
+    from campfire.core.config import get_settings
+
+    resolved = settings if settings is not None else get_settings()
     client = None
     try:
-        client = FalkorDB(host="localhost", port=6380)
-        driver = FalkorDriver(falkor_db=client, database="campfire")
+        client = FalkorDB(**falkordb_client_kwargs(resolved))
+        driver = FalkorDriver(falkor_db=client, database=resolved.falkordb_database)
         return driver, client
     except FALKOR_UNAVAILABLE_ERRORS as exc:
         if client is not None:
             with suppress(Exception):
                 client.aclose()
-        pytest.skip(f"FalkorDB 不可用（{type(exc).__name__}）——先 docker compose up -d falkordb")
+        pytest.skip(
+            f"FalkorDB 不可用（{type(exc).__name__}）——"
+            f"检查 FALKORDB_HOST/FALKORDB_PORT（当前 {resolved.falkordb_host}:{resolved.falkordb_port}）"
+        )
     except Exception:
         if client is not None:
             with suppress(Exception):

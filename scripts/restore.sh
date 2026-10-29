@@ -95,6 +95,19 @@ if [ ! -f "$COMPOSE_FILE" ]; then
     exit 1
 fi
 
+# 把 env 文件读进本脚本的环境（`--env-file` 只喂 `docker compose`，不会导出到这里）。
+# 读不到就中止：后面要靠这些密码通过认证，缺了会在恢复中途失败。
+if [ -n "$ENV_FILE" ]; then
+    if [ ! -f "$ENV_FILE" ]; then
+        echo "错误：找不到 env 文件 $ENV_FILE" >&2
+        exit 1
+    fi
+    set -a
+    # shellcheck disable=SC1090
+    . "$ENV_FILE"
+    set +a
+fi
+
 # --- 校验和（在动任何数据之前）------------------------------------------
 
 echo "备份目录：$FROM_DIR"
@@ -138,13 +151,145 @@ fi
 echo
 echo "=== 执行恢复（--yes 已给）==="
 
-# --- PostgreSQL ---------------------------------------------------------
+# --- 带认证的 redis-cli ---------------------------------------------------
+#
+# 密码经 `REDISCLI_AUTH` 传给 redis-cli（它自己读该变量），不走 `-a`：`-a` 的密码会进
+# 容器进程列表。子 shell 里 export + `compose exec -e VAR` 把本地值透传进容器。
 
-if [ "$ONLY" = "" ] || [ "$ONLY" = "postgres" ]; then
+# FalkorDB 是 Redis 分支：生产用 `FALKORDB_PASSWORD`，dev（无密码）走裸调用。
+falkor_cli() {
+    if [ -n "${FALKORDB_PASSWORD:-}" ]; then
+        ( export REDISCLI_AUTH="$FALKORDB_PASSWORD"; compose exec -T -e REDISCLI_AUTH falkordb redis-cli "$@" )
+    elif [ -n "${REDIS_PASSWORD:-}" ]; then
+        ( export REDISCLI_AUTH="$REDIS_PASSWORD"; compose exec -T -e REDISCLI_AUTH falkordb redis-cli "$@" )
+    else
+        compose exec -T falkordb redis-cli "$@"
+    fi
+}
+
+redis_cli() {
+    if [ -n "${REDIS_PASSWORD:-}" ]; then
+        ( export REDISCLI_AUTH="$REDIS_PASSWORD"; compose exec -T -e REDISCLI_AUTH redis redis-cli "$@" )
+    else
+        compose exec -T redis redis-cli "$@"
+    fi
+}
+
+# `redis-cli CONFIG GET <key>` 的原始输出是**两行**：键名 + 取值（如 `dir` / `/data`）。
+# 只取第一行会把键名当取值。这里要求恰好两行、首行等于键名，再按 `abs`（绝对目录）
+# 或 `name`（裸文件名）校验取值；错误信息不回显原始输出（可能含非预期内容）。
+#
+# Args: $1 标签（报错用），$2 期望键名，$3 取值类型（abs|name），$4 redis-cli 原始输出
+read_config_value() {
+    _label="$1"
+    _key="$2"
+    _kind="$3"
+    _raw="$(printf '%s' "$4" | tr -d '\r')"
+    _count="$(printf '%s\n' "$_raw" | awk 'NF {n++} END {print n+0}')"
+    _first="$(printf '%s\n' "$_raw" | awk 'NF {print; exit}')"
+    _second="$(printf '%s\n' "$_raw" | awk 'NF {n++; if (n == 2) {print; exit}}')"
+    if [ "$_count" != "2" ] || [ "$_first" != "$_key" ]; then
+        echo "错误：取不到 $_label（期望两行「键名 $_key + 取值」，实际 $_count 行）。" >&2
+        echo "      未做任何修改。常见原因：未认证（redis-cli 此时退出码仍为 0）或容器未运行。" >&2
+        return 1
+    fi
+    case "$_kind" in
+        abs)
+            case "$_second" in
+                /*) ;;
+                *)
+                    echo "错误：$_label 的取值不是绝对路径，拒绝拼进容器内路径。未做任何修改。" >&2
+                    return 1
+                    ;;
+            esac
+            ;;
+        name)
+            case "$_second" in
+                ""|.|..|*/*)
+                    echo "错误：$_label 的取值不是裸文件名，拒绝使用。未做任何修改。" >&2
+                    return 1
+                    ;;
+            esac
+            ;;
+    esac
+    case "$_second" in
+        *[!A-Za-z0-9._/-]*|*..*)
+            echo "错误：$_label 的取值含空白、引号或 ..，拒绝使用。未做任何修改。" >&2
+            return 1
+            ;;
+    esac
+    printf '%s' "$_second"
+}
+
+# 探一次 PING：确认认证可用，避免把服务停下来却写不回去。
+preflight_ping() {
+    _label="$1"
+    _out="$2"
+    if [ "$_out" != "PONG" ]; then
+        echo "错误：$_label PING 未返回 PONG。未做任何修改——先修好凭据再恢复。" >&2
+        exit 2
+    fi
+}
+
+# --- 0. 选择与预检：任何写入之前把前置条件核完 ---------------------------
+#
+# 旧实现把取路径放在各分支里，FalkorDB/Redis 的认证问题要等 PostgreSQL 已经 --clean
+# 重写之后才暴露，那时再说「未做任何修改」就是假的。因此先决定要恢复谁、再预检、最后写。
+
+want_pg=0
+want_falkor=0
+want_redis=0
+case "$ONLY" in
+    "") want_pg=1; want_falkor=1; want_redis=1 ;;
+    postgres) want_pg=1 ;;
+    falkordb) want_falkor=1 ;;
+    redis) want_redis=1 ;;
+esac
+
+if [ "$want_pg" = "1" ]; then
     if [ ! -f "$FROM_DIR/postgres.dump" ]; then
         echo "错误：缺少 $FROM_DIR/postgres.dump" >&2
         exit 1
     fi
+    pg_ready="$(compose exec -T postgres sh -c \
+        'pg_isready -U "${POSTGRES_USER:-campfire}" -d "${POSTGRES_DB:-campfire}"' 2>&1 | tail -n 1)"
+    case "$pg_ready" in
+        *accepting\ connections*) ;;
+        *)
+            echo "错误：PostgreSQL 未就绪（pg_isready 未报告 accepting connections）。未做任何修改。" >&2
+            exit 2
+            ;;
+    esac
+fi
+
+if [ "$want_falkor" = "1" ] && [ ! -f "$FROM_DIR/falkordb-dump.rdb" ]; then
+    echo "警告：缺少 $FROM_DIR/falkordb-dump.rdb，跳过 FalkorDB" >&2
+    want_falkor=0
+fi
+if [ "$want_redis" = "1" ] && [ ! -f "$FROM_DIR/redis-dump.rdb" ]; then
+    echo "警告：缺少 $FROM_DIR/redis-dump.rdb，跳过 Redis" >&2
+    want_redis=0
+fi
+
+if [ "$want_falkor" = "1" ]; then
+    preflight_ping FalkorDB "$(falkor_cli PING 2>&1 | tr -d '\r' | tail -n 1)"
+    fdir="$(read_config_value "FalkorDB 的 CONFIG GET dir" dir abs "$(falkor_cli CONFIG GET dir)")" || exit 2
+    ffile="$(read_config_value "FalkorDB 的 CONFIG GET dbfilename" dbfilename name \
+        "$(falkor_cli CONFIG GET dbfilename)")" || exit 2
+fi
+
+if [ "$want_redis" = "1" ]; then
+    preflight_ping Redis "$(redis_cli PING 2>&1 | tr -d '\r' | tail -n 1)"
+    rdir="$(read_config_value "Redis 的 CONFIG GET dir" dir abs "$(redis_cli CONFIG GET dir)")" || exit 2
+    rfile="$(read_config_value "Redis 的 CONFIG GET dbfilename" dbfilename name \
+        "$(redis_cli CONFIG GET dbfilename)")" || exit 2
+fi
+
+echo "预检通过：产物、认证与持久化路径均已确认（尚未写入任何数据）"
+
+# --- PostgreSQL ---------------------------------------------------------
+
+if [ "$want_pg" = "1" ]; then
     echo "[1/3] PostgreSQL：pg_restore"
 
     # `--clean --if-exists`：先删同名对象再建，得到与备份一致的状态（而不是叠加）。
@@ -154,8 +299,8 @@ if [ "$ONLY" = "" ] || [ "$ONLY" = "postgres" ]; then
     # `--single-transaction`：让整次恢复要么全成要么全不成。对 PostgreSQL 有效，
     # 且避免留下「恢复了一半」的库——那比失败更难收拾。
     #
-    # `pg_restore` 对 `--clean` 时「对象不存在」的情况会返回非零。加 `--if-exists`
-    # 已处理大部分；仍可能有告警级输出，故容忍退出码 0 与 1（1 是「有警告」）。
+    # 退出码必须为 0：`--single-transaction` 下任何报错都会回滚，非 0 就是失败
+    # （此前容忍 1「仅告警」，但该组合下 1 同样意味着事务已回滚——把失败当成功）。
     set +e
     compose exec -T postgres sh -c \
         'pg_restore -U "${POSTGRES_USER:-campfire}" -d "${POSTGRES_DB:-campfire}" \
@@ -163,58 +308,39 @@ if [ "$ONLY" = "" ] || [ "$ONLY" = "postgres" ]; then
         < "$FROM_DIR/postgres.dump"
     rc=$?
     set -e
-    if [ "$rc" -ne 0 ] && [ "$rc" -ne 1 ]; then
-        echo "错误：pg_restore 失败（退出码 $rc）" >&2
+    if [ "$rc" -ne 0 ]; then
+        echo "错误：pg_restore 失败（退出码 $rc）——--single-transaction 下事务已回滚。" >&2
         exit 2
     fi
-    echo "      完成（pg_restore 退出码 $rc，1 表示仅告警）"
+    echo "      完成"
 fi
 
 # --- FalkorDB -----------------------------------------------------------
 
-if [ "$ONLY" = "" ] || [ "$ONLY" = "falkordb" ]; then
-    if [ ! -f "$FROM_DIR/falkordb-dump.rdb" ]; then
-        echo "警告：缺少 $FROM_DIR/falkordb-dump.rdb，跳过 FalkorDB" >&2
-    else
-        echo "[2/3] FalkorDB：写入 RDB 并重启"
-        # 路径问 Redis 自己（与 backup.sh 同一理由：FalkorDB 镜像用
-        # /var/lib/falkordb/data 而不是 Redis 惯用的 /data）。
-        fdir="$(compose exec -T falkordb redis-cli CONFIG GET dir | tail -n 1 | tr -d '\r')"
-        ffile="$(compose exec -T falkordb redis-cli CONFIG GET dbfilename | tail -n 1 | tr -d '\r')"
-        if [ -z "$fdir" ] || [ -z "$ffile" ]; then
-            echo "错误：无法取得 FalkorDB 持久化路径" >&2
-            exit 2
-        fi
-        # RDB 只在进程启动时读入，因此必须先停容器再放文件——运行中放进去不会生效，
-        # 而且容器退出时可能用自己的内存状态覆盖它。
-        compose stop falkordb > /dev/null
-        compose exec -T falkordb sh -c "cat > '$fdir/$ffile'" < "$FROM_DIR/falkordb-dump.rdb" 2>/dev/null \
-            || {
-                # 容器已停，`compose exec` 不可用；改用 `compose cp` 把文件放进容器文件系统。
-                # 但容器停了 `cp` 也不行，因此改为：起一个临时容器挂同一个卷写入。
-                echo "      容器已停，改用临时容器写入卷"
-                compose run --rm --no-deps --entrypoint sh falkordb -c \
-                    "cat > '$fdir/$ffile'" < "$FROM_DIR/falkordb-dump.rdb"
-            }
-        compose start falkordb > /dev/null
-        echo "      完成并已重启"
-    fi
+if [ "$want_falkor" = "1" ]; then
+    echo "[2/3] FalkorDB：写入 RDB 并重启"
+    # RDB 只在进程启动时读入，因此必须先停容器再放文件——运行中放进去不会生效，
+    # 而且容器退出时可能用自己的内存状态覆盖它。
+    compose stop falkordb > /dev/null
+    compose exec -T falkordb sh -c "cat > '$fdir/$ffile'" < "$FROM_DIR/falkordb-dump.rdb" 2>/dev/null \
+        || {
+            # 容器已停，`compose exec` 不可用；用临时容器挂同一个卷写入。
+            echo "      容器已停，改用临时容器写入卷"
+            compose run --rm --no-deps --entrypoint sh falkordb -c \
+                "cat > '$fdir/$ffile'" < "$FROM_DIR/falkordb-dump.rdb"
+        }
+    compose start falkordb > /dev/null
+    echo "      完成并已重启"
 fi
 
 # --- Redis --------------------------------------------------------------
 
-if [ "$ONLY" = "" ] || [ "$ONLY" = "redis" ]; then
-    if [ ! -f "$FROM_DIR/redis-dump.rdb" ]; then
-        echo "警告：缺少 $FROM_DIR/redis-dump.rdb，跳过 Redis" >&2
-    else
-        echo "[3/3] Redis：写入 RDB 并重启"
-        rdir="$(compose exec -T redis redis-cli CONFIG GET dir | tail -n 1 | tr -d '\r')"
-        rfile="$(compose exec -T redis redis-cli CONFIG GET dbfilename | tail -n 1 | tr -d '\r')"
-        compose stop redis > /dev/null
-        compose run --rm --no-deps --entrypoint sh redis -c "cat > '$rdir/$rfile'" < "$FROM_DIR/redis-dump.rdb"
-        compose start redis > /dev/null
-        echo "      完成并已重启"
-    fi
+if [ "$want_redis" = "1" ]; then
+    echo "[3/3] Redis：写入 RDB 并重启"
+    compose stop redis > /dev/null
+    compose run --rm --no-deps --entrypoint sh redis -c "cat > '$rdir/$rfile'" < "$FROM_DIR/redis-dump.rdb"
+    compose start redis > /dev/null
+    echo "      完成并已重启"
 fi
 
 # --- 收尾提示 -----------------------------------------------------------

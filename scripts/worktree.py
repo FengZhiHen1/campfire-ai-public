@@ -241,8 +241,50 @@ def create(slug: str, base: str) -> int:
     return 0
 
 
-def list_worktrees() -> int:
-    """列出全部工作树，标注原始根与本仓任务工作树。"""
+def _dirty_count(path: Path) -> int | None:
+    """工作树里未提交的条目数；目录不可读时返回 `None`（不猜成 0）。
+
+    Args:
+        path: 工作树目录。
+
+    Returns:
+        条目数；目录已不在（prunable）或 git 失败时返回 `None`。
+    """
+    proc = _try_git("status", "--porcelain=v1", "--untracked-files=all", cwd=path)
+    if proc.returncode != 0:
+        return None
+    return sum(1 for line in proc.stdout.splitlines() if line.strip())
+
+
+def _unmerged_count(root: Path, branch: str | None, base: str) -> int | None:
+    """该分支相对基线还有几个未并入的提交；无法判定时返回 `None`。
+
+    Args:
+        root: 原始项目根（这里看得见全部工作树的分支）。
+        branch: 工作树当前分支（detached 时为 `None`）。
+        base: 基线分支名。
+
+    Returns:
+        未并入提交数；分支为 detached、基线不存在或 git 失败时返回 `None`。
+    """
+    if not branch or not _ref_exists(root, f"refs/heads/{base}"):
+        return None
+    proc = _try_git("rev-list", "--count", f"refs/heads/{base}..refs/heads/{branch}", cwd=root)
+    if proc.returncode != 0:
+        return None
+    text = proc.stdout.strip()
+    return int(text) if text.isdigit() else None
+
+
+def list_worktrees(base: str = "dev") -> int:
+    """列出全部工作树：原始根、脏/未合状态与本仓任务工作树（两者是清理判据）。
+
+    Args:
+        base: 判定「未并入」所用的基线分支（默认 `dev`，与仓库习惯一致）。
+
+    Returns:
+        进程退出码：0。
+    """
     root = repo_root()
     base_dir = worktrees_dir(root)
     items = registered_worktrees(root)
@@ -250,11 +292,16 @@ def list_worktrees() -> int:
         print("没有任何已注册的工作树")
         return 0
     print(f"原始项目根：{root}")
+    print(f"未并入判定基线：{base}")
     for index, item in enumerate(items):
         role = "主树" if index == 0 else ("任务工作树" if _is_under(item.path, base_dir) else "外部工作树")
         branch = item.branch or "（detached）"
         suffix = "  [prunable：目录已不在，可 git worktree prune]" if item.prunable else ""
-        print(f"  {item.path}  {branch}  {item.head[:12]}  [{role}]{suffix}")
+        dirty = None if item.prunable else _dirty_count(item.path)
+        unmerged = _unmerged_count(root, item.branch, base)
+        dirty_text = "dirty=?" if dirty is None else f"dirty={dirty}"
+        unmerged_text = "unmerged=?" if unmerged is None else f"unmerged={unmerged}"
+        print(f"  {item.path}  {branch}  {item.head[:12]}  [{role}]  {dirty_text} {unmerged_text}{suffix}")
     return 0
 
 
@@ -411,7 +458,8 @@ def build_parser() -> argparse.ArgumentParser:
     create_cmd.add_argument("slug", help="任务短名（小写字母、数字、连字符；用作目录名与分支名后缀）")
     create_cmd.add_argument("--base", default="dev", help="基线分支（默认 dev）")
 
-    sub.add_parser("list", help="列出全部工作树（标注原始根与本仓任务工作树）")
+    list_cmd = sub.add_parser("list", help="列出全部工作树（原始根、脏/未合状态、本仓任务工作树）")
+    list_cmd.add_argument("--base", default="dev", help="判定「未并入」的基线分支（默认 dev）")
 
     remove_cmd = sub.add_parser("remove", help="删除任务工作树与分支（要求干净、已并入基线、本地状态已授权）")
     remove_cmd.add_argument("slug", help="任务短名")
@@ -431,7 +479,7 @@ def main(argv: list[str] | None = None) -> int:
         if args.command == "create":
             return create(args.slug, args.base)
         if args.command == "list":
-            return list_worktrees()
+            return list_worktrees(args.base)
         return remove(args.slug, args.base, discard_local=args.discard_local)
     except WorktreeError as exc:
         print(f"错误：{exc}", file=sys.stderr)
