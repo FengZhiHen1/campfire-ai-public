@@ -154,17 +154,23 @@ jobs:
       - name: 检查迁移无漂移（模型与迁移不一致即失败）
         run: uv run alembic check
 
-      # 为什么不能给假 TOKENHUB_API_KEY（实测）：给了之后，那些「按环境 skip」的用例
-      # 会变成「真去调模型拿 401 而 fail」——`test_memory_*_integration` 的守卫判的是
-      # `tokenhub_api_key is None`，假值让它以为配置齐全。实测注入假 key 时
-      # `2 failed, 583 passed`，而不注入时 `0 failed`。
+      # 为什么不能给假 TOKENHUB_API_KEY（实测）：给了之后，真正调模型的用例会变成
+      # 「真去调模型拿 401 而 fail」。
       #
-      # 代价（如实写明）：依赖记忆侧模型的用例（`test_memory_resurrect_integration` 3 条
-      # 等）在 CI 里按环境 skip，实测约 20 条。关闭它们的条件是**提供真实 TokenHub 凭据**
-      # 作为 CI secret——但那样会消耗额度、且受供应商限流影响（实测本机连续跑会触发
-      # `RateLimitError`），是否值得由发布策略决定，不在这里预设。
+      # 2026-10-29 起「哪些用例真调模型」由 marker 决定，而不是由「有没有 key」决定：
+      # `test_memory_resurrect_integration`（3 条，`consume_memory_episode` →
+      # `graph.graphiti.add_episode` 真抽取真嵌入）带 `live_model`，默认跳过；
+      # 显式开启（`--live-model` 或 `CAMPFIRE_LIVE_MODEL=1`）时缺凭据会在**收集期**
+      # 失败，不会「跑 0 条却绿」。这里再显式写一次 `-m "not live_model"`，是为了让
+      # 「CI 跑了什么」在 workflow 里可读，而不是靠 conftest 的默认值。
+      #
+      # 只管「装配期需要凭据、但不发模型请求」的用例（图库驱动查询、只读端点、
+      # 或模型客户端整体被替换成替身）：它们注入非秘密占位（`conftest` 里
+      # `settings_with_placeholder_model_key` / `placeholder_model_env`），因此
+      # **不再因为 CI 没有 key 而整批 skip**——那会静默削掉真正依赖 PostgreSQL/
+      # FalkorDB 的确定性覆盖。
       - name: pytest
-        run: uv run pytest
+        run: uv run pytest -m "not live_model"
 
   frontend:
     name: 前端 lint、类型、测试与构建
@@ -192,8 +198,12 @@ jobs:
       - name: oxlint
         run: pnpm --dir apps/web lint
 
-      - name: tsc --noEmit
-        run: pnpm --dir apps/web typecheck
+      # 类型检查**不单独跑一步**（2026-10-29）：下面的 `build` 脚本本身就是
+      # `sync-tokens → tsc --noEmit → vite build → 契约类名检查`，单独再跑一次
+      # `pnpm --dir apps/web typecheck` 只是把同一件事做两遍（实测 tsc 是前端
+      # 最慢的一步）。判据一点没少：tsc 失败时 build 直接失败。
+      # 回归守卫：`scripts/checks.py full` 的计划里也必须没有 typecheck 步骤
+      # （`scripts/tests/test_checks.py` 断言）。
 
       # 397 个用例（实测），覆盖表单校验、页面渲染与 SSE 解析。
       - name: vitest

@@ -81,22 +81,20 @@ async def _require_database() -> AsyncIterator[None]:
     yield
 
 
-def _require_tokenhub_or_skip() -> None:
-    """未配置 `TOKENHUB_API_KEY` 时跳过。
-
-    只有经 Worker 入口消费的用例需要它：Worker 用的是
-    `modules/memory/graph.get_shared_memory_graph()`（真实装配，抽取与嵌入都要调模型），
-    而不是本文件 `memory_graph` 夹具里那个用假模型客户端的句柄。因此这条依赖是真实的，
-    不是测试写法问题。
-
-    实测（2026-10-01，CI 环境无此凭据）：不加这道守卫时
-    `test_worker_classifies_bad_payload_as_dead` 会 failed，报文是
-    `MemoryConfigurationError: 未配置 TOKENHUB_API_KEY`——那看起来像代码缺陷，
-    实际是环境未就绪。该用例要验的是「载荷不合法转 dead」这条分档逻辑，
-    与凭据无关，故按环境 skip 更贴近事实。
-    """
-    if get_settings().tokenhub_api_key is None:
-        pytest.skip("未配置 TOKENHUB_API_KEY——该用例经 Worker 入口构造真实记忆图库")
+# 历史留痕：此处曾有一个「没凭据就 skip」的守卫 `_require_tokenhub_or_skip`（2026-10-29 删除）。
+#
+# 删的理由（逐调用核实）：它把两条**确定性**用例变成了「按环境消失」。
+#
+# - `test_worker_classifies_bad_payload_as_dead` 要验的是「载荷不合法 → dead」，而 Worker
+#   的任务函数在载荷校验**之前**先取图库句柄（`worker._get_memory_graph`）。真实依赖是
+#   「需要一个图库对象」，不是「需要真凭据」；现在该用例把 `_get_memory_graph` 指向本文件
+#   的假客户端图库，既不调模型也不需要凭据。
+# - `test_worker_classifies_graph_failure_as_retryable_not_dead` 本来就把 `_get_memory_graph`
+#   换成了坏图库替身——凭据一次都没被读过，那条守卫是**恒真**的：它防的事在任何机器上都
+#   不会发生，却真的会让用例在无 key 时 skip。
+#
+# 「按凭据跳过」的代价是覆盖被静默削掉：无 key 的机器与 CI 只报 skipped，看起来绿色。
+# 真调模型的用例另有 `live_model` marker（见 conftest）：显式开启、缺环境即失败。
 
 
 @pytest_asyncio.fixture
@@ -660,9 +658,7 @@ def test_error_classes_are_disjoint_for_the_worker_classification() -> None:
 
 
 @pytest.mark.asyncio
-async def test_worker_classifies_graph_failure_as_retryable_not_dead(
-    memory_graph: MemoryGraph, monkeypatch: pytest.MonkeyPatch
-) -> None:
+async def test_worker_classifies_graph_failure_as_retryable_not_dead(monkeypatch: pytest.MonkeyPatch) -> None:
     """图库故障必须被记成可重试失败（`attempts+1`、回 `pending`），不能转 `dead`。
 
     这是上一条的端到端版本：直接调 `worker` 里那个任务函数，让图库调用抛
@@ -673,11 +669,14 @@ async def test_worker_classifies_graph_failure_as_retryable_not_dead(
     同做法）：直接赋值会让静态检查判两次「形状不匹配」（`assignment` 与
     `return-value`），而本用例要的是「取图函数返回一个坏图库」这一行为，
     不是要复刻 `MemoryGraph` 的完整形状；monkeypatch 还免掉了手工还原。
+
+    不请求 `memory_graph` 夹具、也不判模型凭据（2026-10-29 修）：取图函数已被换成
+    替身，凭据与假模型图库都用不到——照旧请求它们只会让用例在无 key 的机器上
+    无谓地 skip。
     """
     from campfire import worker as worker_module
     from campfire.modules.memory.errors import MemoryUnavailableError
 
-    _require_tokenhub_or_skip()
     await _clear()
     occurred = datetime.now(timezone.utc)
     try:
@@ -705,19 +704,26 @@ async def test_worker_classifies_graph_failure_as_retryable_not_dead(
 
 
 @pytest.mark.asyncio
-async def test_worker_classifies_bad_payload_as_dead(memory_graph: MemoryGraph) -> None:
+async def test_worker_classifies_bad_payload_as_dead(
+    memory_graph: MemoryGraph, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """载荷不合法（`MemoryDataError`）→ 转 `dead`：重试不会变好，不得无声重试。
 
     与上一条配对：两条一起把 Worker 的分档钉死（一类可重试、一类终结）。
+
+    图库句柄经 `_get_memory_graph` 换成本文件的假客户端图库（2026-10-29 修）：
+    原先这里请求了 `memory_graph` 夹具却**从未使用**，而是让 Worker 走真实装配
+    （`get_shared_memory_graph()`），于是「载荷不合法」这条与凭据、与模型都无关的判据
+    被迫加了一道「没 key 就 skip」的守卫。换上假图库后：不调模型、不需要凭据，
+    而被测的分档逻辑（Worker 捕获 `MemoryDataError` → `dead` + 告警）一字未改。
     """
+    from campfire import worker as worker_module
+
+    monkeypatch.setattr(worker_module, "_get_memory_graph", lambda: memory_graph)
     await _clear()
     try:
         # 缺 occurred_at ⇒ consume 会抛 MemoryDataError。
-        # 经 Worker 入口消费要构造真实记忆图库（需凭据），故先判环境。
-        _require_tokenhub_or_skip()
         pending_id = await _enqueue(occurred_at=None)
-
-        from campfire import worker as worker_module
 
         with pytest.raises(MemoryDataError):
             await worker_module.consume_memory_episode_task(pending_id, lease_owner="w")

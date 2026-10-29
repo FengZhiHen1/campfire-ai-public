@@ -64,6 +64,15 @@ def _settings(**overrides: object) -> Settings:
         "model_name": "deepseek-v4.1-flash",
         "embedding_model_name": "kinfra-text-embedding-4b",
         "falkordb_database": "campfire_test",
+        # 嵌入与记忆侧都可以单独配端点/凭据（core/config 的可选缝）。本文件断言的是
+        # 「三者都接管到同一个 TokenHub」的**默认**形态，因此必须把这两条缝显式关掉：
+        # 否则宿主机 `.env`（本机就有独立的 EMBEDDING_* / MEMORY_LLM_*）经环境变量压过
+        # `_env_file=None` 生效，`resolved_*` 读到别人的值，断言逐字比较时假红
+        # （2026-10-29 全量基线实测：本文件 9 条红全是这个原因）。
+        "embedding_base_url": "",
+        "embedding_api_key": None,
+        "memory_llm_base_url": "",
+        "memory_llm_api_key": None,
     }
     base.update(overrides)
     # _env_file=None：不读仓库根的 .env；配合上面钉住 base_url，结果与宿主机配置无关。
