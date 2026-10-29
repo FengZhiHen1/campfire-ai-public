@@ -1,18 +1,7 @@
 """运维脚本（`scripts/*.sh`）的可执行判据：语法、`--help` 契约、演练不动手、失败要能失败。
 
-为什么需要这组用例：这些脚本是**在压力下使用的破坏性工具**（恢复、回滚），而它们此前
-只有注释里的「实测过」。注释不会在下次改动时变红，下面几条会：
-
-1. **演练模式不得碰 docker**：`restore.sh` 不加 `--yes` 时只打印计划。这一条用一个
-   假 `docker`（被调用就写日志）来判定——「输出里没出现 docker 命令」不等于「没执行」。
-2. **取不到路径时必须失败**：`redis-cli` 未认证时退出码仍是 0、输出是
-   `NOAUTH Authentication required.`。此前 `restore.sh` 只判「输出非空」，于是那行
-   错误文本被当成目录名，RDB 被写到不存在的路径，脚本仍打印「完成并已重启」并返回 0
-   ——**数据没恢复，而验收看到的是成功**。这里用假 docker 把它钉成红灯。
-3. **正常路径不能永远失败**：同一条判据在健康输出下必须放行（正向对照）。没有它，
-   「永远失败」和「永远通过」在结果上长得一样。
-
-全部用例只跑 shell 与假 `docker`：不连库、不碰容器、不改真实数据。
+用假 `docker`（被调用就写日志）判定「到底执行了什么」，因此不连库、不碰容器、不改数据。
+每个负例都配正向对照，避免判据退化成「永远失败」或「永远通过」。
 """
 
 from __future__ import annotations
@@ -27,14 +16,30 @@ import pytest
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPTS = ROOT / "scripts"
 
-#: 假 `docker`：把每次调用写进 `$STUB_LOG`，并按 `$STUB_*` 返回预设输出。
+#: 假 `docker`：把每次调用写进 `$STUB_LOG`（只记 `REDISCLI_AUTH` 是否传入，不记取值），
+#: 按 `$STUB_*` 返回**真实形状**的输出。
 #:
-#: 刻意实现「容器已停时 `compose exec` 失败」——`restore.sh` 的回落分支
-#: （`compose run` 写卷）只有在 exec 真的失败时才走得到，不模拟它就等于没测那条分支。
+#: 形状必须照抄真实 `redis-cli`：`CONFIG GET dir` 输出两行（`dir` / `/data`），
+#: 未认证时只输出一行 `NOAUTH …`。刻意实现「容器已停时 `compose exec` 失败」——
+#: 回落分支（`compose run` 写卷）只有 exec 真的失败时才走得到。
 STUB_DOCKER = """#!/usr/bin/env bash
-printf '%s\\n' "$*" >> "$STUB_LOG"
+if [ -n "${REDISCLI_AUTH:-}" ]; then auth=yes; else auth=no; fi
+printf '%s [auth:%s]\\n' "$*" "$auth" >> "$STUB_LOG"
+
+config_value() {
+  case "$3" in
+    noauth) printf '%s\\n' "NOAUTH Authentication required." ;;
+    keyonly) printf '%s\\n' "$1" ;;
+    extra) printf '%s\\n%s\\nstray\\n' "$1" "$2" ;;
+    *) printf '%s\\n%s\\n' "$1" "$2" ;;
+  esac
+}
+
 case "$*" in
-  *"PING"*) printf '%s\\n' "${STUB_PING:-PONG}"; exit 0 ;;
+  *pg_isready*) printf '%s\\n' "${STUB_PG_READY:-127.0.0.1:5432 - accepting connections}"; exit 0 ;;
+  *pg_restore*) command cat > /dev/null; exit "${STUB_PG_RESTORE_RC:-0}" ;;
+  *"-c cat >"*) command cat > /dev/null; exit 0 ;;
+  *PING*) printf '%s\\n' "${STUB_PING:-PONG}"; exit 0 ;;
 esac
 case "$*" in
   *exec*)
@@ -42,13 +47,12 @@ case "$*" in
     ;;
 esac
 case "$*" in
-  *"CONFIG GET dir"*) printf '%s\\n' "${STUB_DIR:-/data}"; exit 0 ;;
-  *"CONFIG GET dbfilename"*) printf '%s\\n' "${STUB_FILE:-dump.rdb}"; exit 0 ;;
+  *"CONFIG GET dir"*) config_value dir "${STUB_DIR:-/data}" "${STUB_DIR_MODE:-ok}"; exit 0 ;;
+  *"CONFIG GET dbfilename"*) config_value dbfilename "${STUB_FILE:-dump.rdb}" "${STUB_FILE_MODE:-ok}"; exit 0 ;;
 esac
 case "$*" in
   *" stop "*) : > "$STUB_STATE/stopped"; exit 0 ;;
   *" start "*) command rm -f "$STUB_STATE/stopped"; exit 0 ;;
-  *" run "*) command cat > /dev/null; exit 0 ;;
 esac
 exit 0
 """
@@ -167,24 +171,21 @@ def test_restore_rehearsal_honours_only(
     ("overrides", "expected"),
     [
         ({"STUB_PING": "NOAUTH Authentication required."}, "PING"),
-        ({"STUB_DIR": "NOAUTH Authentication required."}, "CONFIG GET dir"),
+        ({"STUB_DIR_MODE": "noauth"}, "期望两行"),
+        # 只有键名、没有取值：正是「取第一行非空」这个写法会踩的形状（`dir` 被当目录）。
+        ({"STUB_DIR_MODE": "keyonly"}, "期望两行"),
+        ({"STUB_DIR_MODE": "extra"}, "期望两行"),
     ],
-    ids=["ping-unauthenticated", "config-get-unauthenticated"],
+    ids=["ping-unauthenticated", "config-get-noauth", "config-get-key-only", "config-get-extra-line"],
 )
 def test_restore_fails_loudly_when_redis_cli_is_unauthenticated(
     service: str, overrides: dict[str, str], expected: str, tmp_path: Path
 ) -> None:
     """未认证时 `redis-cli` 打印 NOAUTH 但退出码为 0 —— `restore.sh` 必须因此失败。
 
-    修复前的形状（写在这里是为了让回归有名字）：只判「输出非空」，于是
-    `NOAUTH Authentication required.` 被当成目录名拼进
-    `cat > 'NOAUTH Authentication required./dump.rdb'`，脚本随后打印「完成并已重启」
-    并返回 0——**数据没有恢复，而退出码说成功**（已用假 docker 复现过这条输出）。
-
-    两道闸各自都要有用例：`PING` 的那道在**停容器之前**拦住，`CONFIG GET` 的那道
-    拦住「PING 通了但取路径时认证已失效」这一种（例如密码在两次调用之间变了）。
-
-    还要求 `stop` 没被调用过：认证都过不去，就不该先把服务停下来。
+    两道闸各有用例：`PING` 那道在停容器之前拦住；`CONFIG GET` 那道拦住「PING 通了但
+    取路径时认证已失效」。`CONFIG GET` 的真实输出是两行（键名 + 取值），三种坏形状都要
+    拦住：单行 NOAUTH、只有键名、多出一行。
     """
     env = _env_with_stub(tmp_path)
     env.update(overrides)
@@ -199,9 +200,39 @@ def test_restore_fails_loudly_when_redis_cli_is_unauthenticated(
     assert "cat >" not in calls, "认证失败时不得尝试写文件"
 
 
+def test_auth_preflight_runs_before_any_write(tmp_path: Path) -> None:
+    """全量恢复时，FalkorDB/Redis 的认证失败必须在**任何写入之前**拦住。
+
+    否则 PostgreSQL 已经被 `--clean` 重写过，脚本再说「未做任何修改」就是假的。
+    """
+    env = _env_with_stub(tmp_path)
+    env["STUB_PING"] = "NOAUTH Authentication required."
+    backup = _backup_dir(tmp_path, falkordb=True, redis=True)
+
+    proc = _run_script("restore.sh", "--from", str(backup), "--yes", env=env)
+
+    assert proc.returncode != 0
+    calls = (tmp_path / "docker-calls.log").read_text(encoding="utf-8")
+    assert "pg_isready" in calls, "预检本身应该跑过"
+    assert "pg_restore" not in calls, "认证未过时不得开始 PostgreSQL 恢复"
+    assert " stop " not in calls and "cat >" not in calls
+
+
+def test_pg_restore_non_zero_exit_is_a_failure(tmp_path: Path) -> None:
+    """`pg_restore` 非 0 一律失败：`--single-transaction` 下它意味着事务已回滚。"""
+    env = _env_with_stub(tmp_path)
+    env["STUB_PG_RESTORE_RC"] = "1"
+    backup = _backup_dir(tmp_path, falkordb=False)
+
+    proc = _run_script("restore.sh", "--from", str(backup), "--yes", "--only", "postgres", env=env)
+
+    assert proc.returncode != 0
+    assert "pg_restore 失败" in proc.stderr
+
+
 @pytest.mark.parametrize("service", ["falkordb", "redis"])
 def test_restore_writes_snapshot_when_auth_is_configured(service: str, tmp_path: Path) -> None:
-    """正向对照：环境正常时同一段代码必须真的写回 RDB，并且**带上了密码**。
+    """正向对照：环境正常时同一段代码必须真的写回 RDB，并且密码经 `REDISCLI_AUTH` 传入。
 
     没有这条用例，「永远失败」也会让上一条保持绿色。
     """
@@ -225,7 +256,9 @@ def test_restore_writes_snapshot_when_auth_is_configured(service: str, tmp_path:
 
     assert proc.returncode == 0, proc.stderr
     calls = (tmp_path / "docker-calls.log").read_text(encoding="utf-8")
-    assert "-a stub-secret" in calls, "必须把 env 文件里的密码传给 redis-cli"
+    assert "[auth:yes]" in calls, "必须把 env 文件里的凭据传进容器"
+    assert " -a " not in calls, "不得用 `-a` 传密码（会进容器进程列表）"
+    assert "stub-secret" not in calls, "密码不得出现在任何命令行里"
     assert "cat > '/data/dump.rdb'" in calls
     assert " start " in calls, "写完必须把服务重新拉起来"
 
