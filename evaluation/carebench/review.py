@@ -125,15 +125,6 @@ class BlindEntry:
         }
 
 
-def packet_response_ref(blind_id: str) -> str:
-    """评分行 `response_ref` 的写法：`blind-packet.jsonl#<blind_id>`。
-
-    只引用评审包内的行，不带轨迹路径（轨迹名里有组别字母）也不带组别本身。
-    这是评审者核对「我评的是哪一条材料」的唯一入口；原始轨迹留在 run 目录内部。
-    """
-    return f"{PACKET_FILE}#{blind_id}"
-
-
 def blind_order(system_ids: list[str], *, seed: int, case_id: str) -> list[str]:
     """案例内的盲化顺序：由（种子, case_id）派生，可复现且与组别字母无关。"""
     shuffled = list(system_ids)
@@ -312,8 +303,9 @@ def _write_empty_ratings(
                     "required_checks_passed": "",
                     "completion_status": entry.completion_status,
                     "latency_ms": entry.latency_ms,
-                    # 不写 entry 侧的轨迹路径：`traces/<case>__<组别>__t1__a1.json` 会泄露组别。
-                    "response_ref": packet_response_ref(entry.blind_id),
+                    # 只引用评审包里的那一行，不写轨迹路径：`traces/<case>__<组别>__t1__a1.json`
+                    # 的文件名带组别字母，写进交给评审者的表就等于反盲化。
+                    "response_ref": f"{PACKET_FILE}#{entry.blind_id}",
                     "comment": "",
                     "adjudication_status": "pending",
                 }
@@ -621,5 +613,4 @@ __all__ = [
     "export_packet",
     "import_ratings",
     "load_imported_ratings",
-    "packet_response_ref",
 ]
