@@ -288,11 +288,25 @@ POST /api/consult/sessions/{session_id}/onboarding/skip
 `_encode_annotation_kind` 同一个转换（`str(line_ref)` + `f"{source}:{confidence}"`）——
 `target` 是「按七节顺序摊平后的 1 起序号」，因此 `sections` 也按七节规范顺序排列。
 
-**`citation` 为什么也不需要第二个 part 类型**（2026-10-07 随 T36 明确）：判据与
-`action_card` 完全相同——回看侧要说的事实与流出侧一样（同一批引用、同一组字段：
-`citation_id` / `run_id` / `source` / `reference` / `recorded_at` / `summary`，与
+**`citation` 为什么也不需要第二个 part 类型**（2026-10-07 随 T36 明确；2026-10-29 随
+DEMO-03 扩为九字段）：判据与 `action_card` 完全相同——回看侧要说的事实与流出侧一样
+（同一批引用、同一组字段：`citation_id` / `run_id` / `source` / `reference` /
+`recorded_at` / `summary` / `status` / `applicable_scope` / `withdrawn`，与
 `CitationEvent.citation` 逐字同形，也与前端 `shared/types/sse.ts` 的 `CitationRecord` 一致）。
 因此 `citation` 在**事件流与水合响应里字段逐字同形**，只有一个线格式 part 类型。
+
+**九字段里后三项的语义**（2026-10-29，DEMO-03）：
+
+| 字段 | 含义 | 何时产出 | 缺值（`null`）时 |
+|---|---|---|---|
+| `status` | 产生凭据时来源的发布状态（`published` / `internal` / `fictional`） | 写侧快照，**不刷新** | 界面显示「状态未知」，**不得**默认成已发表 |
+| `applicable_scope` | 产生凭据时的适用范围 | 写侧快照，**不刷新** | 界面显示「适用范围未知」 |
+| `withdrawn` | 该来源**现在**还能不能作为依据 | **读回时**按当前真源重判（历史水合） | `null` = 无法核对（回指解析不了／条目已不存在／取数失败），**不**等于已撤下 |
+
+判据：前两项回答「当时依据的是什么」，是历史事实，改写即篡改；第三项回答「现在还能不能引用」，
+不刷新就会把一条已撤下的来源继续呈成可用（[资料与案例检索](../../technical-details/资料与案例检索.md)第 4 节）。
+三态的服务端判定点只有一处：`surfaces/consult/citations.py` 的 `refresh_citation_freshness`
+（水合路径现查条目表）；前端只读，不猜。
 
 ⚠ **该 part 此前没有生产者，水合也不重建它**（`citation` 曾登记在「不重建」一侧）。
 T36 补上了两半：**生产侧**由检索工具（`search_knowledge` / `search_cases`）在返回命中
@@ -305,8 +319,13 @@ T36 补上了两半：**生产侧**由检索工具（`search_knowledge` / `searc
 
 ```json
 {"type": "citation", "citation_id": "…", "run_id": "…", "source": "knowledge",
- "reference": "knowledge:…", "recorded_at": "…", "summary": null}
+ "reference": "knowledge:…", "recorded_at": "…", "summary": null,
+ "status": "published", "applicable_scope": "学龄前·家庭场景", "withdrawn": false}
 ```
+
+后三个键是 2026-10-29 加的；旧注解没有它们，读侧一律读成 `null`（未知），
+「键不在」与「值为空」表示同一件事。可核对性三项随注解持久化，**不**在
+`campfire_citation` 表里加列（零 schema 变更）：那张表只做 run → 回指索引。
 
 **为什么是这里**（判据两条，都要成立）：
 

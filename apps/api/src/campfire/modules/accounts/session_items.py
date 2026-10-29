@@ -541,7 +541,7 @@ class ActionCardPart(TypedDict):
 class CitationRecordPart(TypedDict):
     """引用载荷（**与事件侧 `CitationEvent.citation` 逐字同形**）。
 
-    六个字段与基座 `agent/context/citations.py` 的 `CitationRecord`、与前端
+    九个字段与基座 `agent/context/citations.py` 的 `CitationRecord`、与前端
     `apps/web/src/shared/types/sse.ts` 的 `CitationRecord` 都一致。
     `recorded_at` 是 ISO 8601 字符串（它在会话里就是字符串——
     见 `agent/runtime/session_annotations.py` 的 `citation_annotation`）。
@@ -549,6 +549,21 @@ class CitationRecordPart(TypedDict):
     `summary` 可为 `None`（`TypedDict` 的 `total=True` 只要求键存在，不要求值非空）：
     发凭据时若条目没有标题，摘要就是 `None`，前端按
     `CitationPart.tsx:74` 的 `citation.summary === null ? null : …` 处置。
+
+    可核对性三项（2026-10-29 补，DEMO-03）：
+
+    - `status`：产生凭据时来源的发布状态（`published` / `internal` / `fictional`），
+      `None` = **未提供**；前端必须显示「状态未知」，不得默认成「已发表」；
+    - `applicable_scope`：产生凭据时的适用范围，`None` = 未提供；
+    - `withdrawn`：该来源现在还能不能作为依据（`True` 已撤下 / `False` 在库 /
+      `None` **无法核对**）。三项里只有这一项会**在读回时被刷新**——写入时它是
+      「检索那一刻核对过、未撤下」，历史水合时由面层按当前真源重判
+      （`surfaces/consult/citations.py` 的 `refresh_citation_freshness`）。
+      核对不出来（回指解析不了、条目已不存在、取数失败）一律是 `None`：
+      **找不到 ≠ 已撤下**，不得把前者说成后者。
+
+    旧载荷（2026-10-29 之前写入的注解）没有这三个键，读侧一律读成 `None`——
+    「键不在」与「值为空」表示同一件事（未知），由用例守着。
     """
 
     citation_id: str
@@ -557,6 +572,9 @@ class CitationRecordPart(TypedDict):
     reference: str
     recorded_at: str
     summary: str | None
+    status: str | None
+    applicable_scope: str | None
+    withdrawn: bool | None
 
 
 class CitationPart(TypedDict):
@@ -564,8 +582,9 @@ class CitationPart(TypedDict):
 
     ★ 与**事件侧**的 `CitationEvent.citation` 载荷**逐字同形**——与 `action_card`
     同一种做法（`question`/`question-record` 那一对是相反的例子，理由见
-    `ActionCardPart` 的说明）。载荷就是 `CitationRecord` 的六个字段：
-    `citation_id` / `run_id` / `source` / `reference` / `recorded_at` / `summary`，
+    `ActionCardPart` 的说明）。载荷就是 `CitationRecord` 的九个字段：
+    `citation_id` / `run_id` / `source` / `reference` / `recorded_at` / `summary` +
+    `status` / `applicable_scope` / `withdrawn`，
     与前端 `apps/web/src/shared/types/sse.ts` 的 `CitationRecord` 逐字段一致——
     因此刷新前后同一批引用是同一个形状，前端不需要两条分支。
 
@@ -581,19 +600,17 @@ class CitationPart(TypedDict):
     ——表里有 `recorded_at` 与 `source`（审计需要），注解里有重建界面所需的同一批字段。
     **判据是消融**：删掉表里该 run 的行，刷新后 part 必须仍在（那时读的是注解）。
 
-    **为什么载荷不再多带 `item_id` / `library` / `status` 等字段**：前端
-    `CitationPart.tsx` 的 `citationDeepLink` 对 `item_id` 做**前向兼容读取**
-    （存在才给 deep-link，缺失返回 `null` 且**不猜目标**）。契约 `HTTP与SSE契约.md:204`
-    把 citation 的 data 指向《资料与案例检索》第 3 节的八个字段，而实现（含事件侧
-    `CitationEvent`）用的是这六个——**这处契约与实现的不一致，本包【未处理】**
-    （改事件侧载荷要同时改前端类型与 `CitationPart.tsx`，会扩大范围）。
+    ⚠ **表里没有可核对性三项**（2026-10-29）：`status` / `applicable_scope` /
+    `withdrawn` 随注解持久化，**不**在 `campfire_citation` 表里加列（零 schema 变更）。
+    理由是第 5 节那句「它是消息 content 的一部分，不是外部索引」：呈现所需的字段归消息
+    content，索引表只做 run → 回指。该表当前唯一的读回函数（`list_for_run`）在产线没有
+    消费者，因此这个取舍不会让谁读到一半的载荷。
 
-    ⚠ **如实说明**：上一版这里写着「**已在交付报告登记**」，而那句话是**悬空的**——
-    交付报告里并没有这一条（复查者 grep `八个`/`item_id`/`未处理` **全部 0 命中**）。
-    本包**没有**把它登记进任何权威清单（`docs/TODO.md` 不在本包的授权改动范围内）。
-    ⇒ 因此这里改成**如实的当场陈述**：它是一处**已知未决项**，位置就在本注释；
-    谁要处理它，依据是这句话本身，而不是一个指向"某处登记"的悬空指针。
-    这里取与事件侧、与前端类型**都一致**的六个字段，好处是刷新前后的载荷同一个形状。
+    **`item_id` / `status` 等字段的旧缺口已闭合**（DEMO-03，2026-10-29）：此前这里写着
+    「载荷只带六个字段、契约指的八项未处理」——**那处不一致已修**：载荷现在带
+    `status` / `applicable_scope`（写入侧快照）与 `withdrawn`（读回时按当前真源重判）。
+    `item_id` / `library` 仍**不**单列：`reference` 的 `<库别>:<标识>` 前缀已能解析出目标
+    （前端 `citationDeepLink` 优先读显式 `item_id`、缺失则读前缀），再带一份是同义重复。
     """
 
     type: CitationType
@@ -1029,8 +1046,13 @@ def _citation_part(entry: Mapping[str, object]) -> CitationRecordPart | None:
 
     其余字段缺失时**补成空值而不是丢弃**：`run_id`/`recorded_at` 缺失只影响展示，
     `summary` 缺失本来就是合法的（`None`）。前端类型要求这些键存在
-    （`sse.ts` 的 `CitationRecord` 六个字段都非可选），因此补 `""` 而不是省略键——
+    （`sse.ts` 的 `CitationRecord` 六个非空字段都非可选），因此补 `""` 而不是省略键——
     省略会让前端拿到 `undefined`，而类型说的是 `string`。
+
+    可核对性三项（`status` / `applicable_scope` / `withdrawn`）缺失时**读成 `None`
+    （未知），不补默认值**——这是 DEMO-03 的判据之一：旧注解没有这三个键，
+    补成 `published` 会让一条查不到状态的来源在界面上显示成「已发表」，
+    那正是「为展示编造来源状态」。
     """
     # 三个必填键逐个取出并收窄：写成 `str(value)` 会把 `None` 变成 `"None"`，
     # 那是一条能显示却指不到东西的依据——比丢弃它更糟。
@@ -1045,6 +1067,9 @@ def _citation_part(entry: Mapping[str, object]) -> CitationRecordPart | None:
     run_id = entry.get("run_id")
     recorded_at = entry.get("recorded_at")
     summary = entry.get("summary")
+    # `withdrawn` 只认真正的布尔：字符串 `"false"` / `"true"` 一律当作**未知**而不是
+    # 按真值转换——按真值转换会把 `"false"` 读成「已撤下」，那是把在库来源说成撤下。
+    withdrawn = entry.get("withdrawn")
     return CitationRecordPart(
         citation_id=required["citation_id"],
         run_id=run_id if isinstance(run_id, str) else "",
@@ -1052,7 +1077,20 @@ def _citation_part(entry: Mapping[str, object]) -> CitationRecordPart | None:
         reference=required[CITATION_REFERENCE_KEY],
         recorded_at=recorded_at if isinstance(recorded_at, str) else "",
         summary=summary if isinstance(summary, str) else None,
+        # 空串与纯空白都与缺键同义（「没这一项」）：它们当不成一个真状态透传出去，
+        # 而透传 `"   "` 会让界面显示一片空白而不是「未知」。前端同样是 trim 后为空即未知。
+        status=_text_field(entry.get("status")),
+        applicable_scope=_text_field(entry.get("applicable_scope")),
+        withdrawn=withdrawn if isinstance(withdrawn, bool) else None,
     )
+
+
+def _text_field(value: object) -> str | None:
+    """取一个可展示的文本字段：非字符串、或 trim 后为空 ⇒ `None`（= 未提供）。"""
+    if not isinstance(value, str):
+        return None
+    stripped = value.strip()
+    return stripped or None
 
 
 def is_injected_message(item: Mapping[str, object]) -> bool:

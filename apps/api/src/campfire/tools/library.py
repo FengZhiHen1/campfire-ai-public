@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import json
 import logging
+from typing import cast
 
 from pydantic import BaseModel, Field
 
@@ -187,6 +188,20 @@ async def _mint_citations(
     （两张表各有自己的 uuid），因此必须带库别才是**可解析的**回指——
     只给裸 uuid 时，拿到它的人无法知道该去资料库还是案例库查。
 
+    **凭据还要带得出「这条来源是什么状态、适用于谁」**（2026-10-29 补，DEMO-03）：
+
+    依据区要能显示状态徽章（已发表／内部／虚构样例，`RQ-KB-02`）与适用范围
+    （`RQ-CON-03`：输出要能说明适用条件与局限），而这两项**只有检索结果里才有**——
+    凭据一旦只带 `source`/`reference`/`summary`，界面就永远拿不到它们（缺陷现场：
+    载荷六字段、依据区只有一行「来源：knowledge」，状态与适用范围整项缺席）。
+    因此这里把条目原值转给凭据：`status` 与 `applicable_scope` **原样透传，缺失即 `None`**
+    （呈现方显示「未知」；补默认值等于给查不到状态的来源背书）。
+
+    `withdrawn=False` 与上面两项**性质不同**：它不是快照，而是此刻的核对结论——
+    检索链在查询时过滤撤下（第 4 节），所以「能引用」本身就意味着「查到的那一刻未撤下」。
+    事后被撤下的情形由读回侧按当前真源重判（面层 `surfaces/consult/citations.py`
+    的批量核对），**不是**由这里预判。
+
     **发往索引失败必须让整次调用失败**（不吞异常）：第 4 节的不变量是
     「没有索引记录的注入消息不得成为可引用依据」。若在这里降级成「无引用」继续返回，
     模型就会看到可以引用的条目、而索引里没有对应行——正是那条不变量要禁止的状态。
@@ -212,7 +227,7 @@ async def _mint_citations(
     # 先算出「可回指的条目」，再统一发凭据：`record` 是异步的，推导式里 await 要求
     # 列表推导（3.12 起支持）——但那样会把「缺 id ⇒ 跳过」的警告埋进表达式里，
     # 因此先过滤成 `targets` 再做映射，判据与告警都在一眼可见的地方。
-    targets: list[tuple[str, str | None]] = []
+    targets: list[dict[str, object]] = []
     for item in items:
         item_id = item.get("item_id")
         if not isinstance(item_id, str) or not item_id:
@@ -220,9 +235,18 @@ async def _mint_citations(
             # 不猜、不编造回指：跳过这一条，而不是产出一条指不到东西的依据。
             logger.warning("检索结果缺少条目标识，跳过它的引用：%s", sorted(item))
             continue
-        title = item.get("title")
-        # 摘要取标题：它是使用者能在「依据」区一眼认出那条来源的最短信息。
-        targets.append((item_id, title if isinstance(title, str) and title else None))
+        targets.append(
+            {
+                "item_id": item_id,
+                # 摘要取标题：它是使用者能在「依据」区一眼认出那条来源的最短信息。
+                "summary": _text_or_none(item.get("title")),
+                # 状态与适用范围**照条目原值透传**（`RQ-KB-02`、`RQ-CON-03`）：
+                # 缺就留 `None`，由呈现方显示「未知」，不补默认值——补成 published
+                # 等于替一条查不到状态的来源背书。
+                "status": _text_or_none(item.get("status")),
+                "applicable_scope": _text_or_none(item.get("applicable_scope")),
+            }
+        )
 
     records = [
         await context.citations.record(
@@ -230,12 +254,30 @@ async def _mint_citations(
             # 回指带库别前缀（形如 `knowledge:<uuid>`）：条目 id 在两库之间不保证全局
             # 唯一（两张表各有自己的 uuid），只给裸 uuid 时拿到它的人无法知道该去哪个
             # 库查——那就不再是「可解析的回指」。
-            reference=f"{source}:{item_id}",
-            summary=summary,
+            reference=f"{source}:{target['item_id']}",
+            summary=cast(str | None, target["summary"]),
+            status=cast(str | None, target["status"]),
+            applicable_scope=cast(str | None, target["applicable_scope"]),
+            # 这一次能引用它，说明检索链刚刚按「未撤下」查到了它（第 4 节：检索在查询时
+            # 过滤撤下）。因此 `False` 是**当下核对过的事实**，不是默认值；
+            # 事后是否被撤下由读回侧（面层）按当前真源重判，见 `surfaces/consult/citations.py`。
+            withdrawn=False,
         )
-        for item_id, summary in targets
+        for target in targets
     ]
     return tuple(records)
+
+
+def _text_or_none(value: object) -> str | None:
+    """取一个可展示的文本值：非字符串或全空白时返回 `None`。
+
+    为什么不用 `str(value)`：`None` 会被转成字符串 `"None"` 并当成真状态呈现出去，
+    那是编造。空白同理——「空字符串」在界面上与「没有这项」无法区分。
+    """
+    if not isinstance(value, str):
+        return None
+    stripped = value.strip()
+    return stripped or None
 
 
 def _render_item(item: RetrievedItem) -> dict[str, object]:
