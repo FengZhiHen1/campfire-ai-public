@@ -41,7 +41,14 @@ from .records import (
     progress_summary,
 )
 from .render import project
-from .review import CRITICAL_FAILURE_VALUES, MAP_FILE, PACKET_FILE, RATINGS_COLUMNS, load_imported_ratings
+from .review import (
+    CRITICAL_FAILURE_VALUES,
+    MAP_FILE,
+    PACKET_FILE,
+    RATINGS_COLUMNS,
+    blind_order,
+    load_imported_ratings,
+)
 from .store import RunStore, read_json, trailing_partial_line
 from .systems.base import RETRY_NEW_SESSION, RETRY_SAFETY
 
@@ -713,6 +720,12 @@ def _check_review(
             report.violations.append(f"{case_id} 的盲化映射没有覆盖全部组别")
         if len(set(blind_map.values())) != len(blind_map):
             report.violations.append(f"{case_id} 的盲化映射有重复组别（同一系统出现两次）")
+        # 映射必须是由（review_seed, case_id）派生的那一份：手工改过的映射会让评分
+        # 记到别的组别上，而「覆盖了全部组别」这条检查看不出来。
+        derived = blind_order(system_ids, seed=config.review_seed, case_id=case_id)
+        expected_map = {f"{case_id}-X{position}": system for position, system in enumerate(derived, start=1)}
+        if blind_map != expected_map:
+            report.violations.append(f"{case_id} 的盲化映射不是由 review_seed 派生出来的（可能被手工改过）")
 
     blind_to_system = {blind_id: system for blind_map in per_case.values() for blind_id, system in blind_map.items()}
     for row in ratings:
