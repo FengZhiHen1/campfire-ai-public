@@ -39,7 +39,7 @@ from campfire.agent.context import (
     is_context_overflow,
     message_text,
 )
-from campfire.agent.limits import AGENT_RUN_TIMEOUT_SECONDS
+from campfire.agent.limits import AGENT_MODEL_STALL_SECONDS, AGENT_RUN_TIMEOUT_SECONDS
 from campfire.agent.model import ModelBinding, ModelFailureReason, classify_model_failure
 from campfire.agent.skill_runtime import (
     Skill,
@@ -880,6 +880,14 @@ class _TimedOut:
     """到达时间上限。"""
 
 
+class _ModelStalled(TimeoutError):
+    """一次模型/工具调用静默超过上界（连接挂住：没有数据、也没有结束）。
+
+    与 `_TimedOut` 分开：那个是「整轮预算用完了」，这个是「预算还有，但对端不吐字」。
+    两者对使用者的含义不同——前者要重试，后者要查提供方或预算。
+    """
+
+
 @dataclass(slots=True)
 class _Budget:
     """运行预算：模型与工具侧耗时的上限。
@@ -914,13 +922,19 @@ async def _drain(result: RunResultStreaming, budget: _Budget) -> AsyncIterator[_
         if remaining <= 0:
             yield _TimedOut()
             return
+        # 每次拉取等 min(剩余预算, 静默上界)：前者防「整轮超时」，后者防「连接挂住把整轮
+        # 预算吃光」。少了后者，实测会出现「300 秒、1 次调用、输出 81 个 token」的运行。
+        pull_timeout = min(remaining, AGENT_MODEL_STALL_SECONDS)
         try:
-            event = await asyncio.wait_for(anext(stream), timeout=remaining)
+            event = await asyncio.wait_for(anext(stream), timeout=pull_timeout)
         except StopAsyncIteration:
             return
         except TimeoutError:
-            yield _TimedOut()
-            return
+            # 剩余预算本身不足静默上界 ⇒ 是整轮到期，不是对端挂住。
+            if remaining <= AGENT_MODEL_STALL_SECONDS:
+                yield _TimedOut()
+                return
+            raise _ModelStalled(f"模型调用静默超过 {AGENT_MODEL_STALL_SECONDS:.0f} 秒") from None
         yield _SdkEvent(event)
 
 
@@ -1168,6 +1182,18 @@ def _failed_from_exception(
     compactions: tuple[CompactionFacts, ...] = (),
 ) -> RunFailedEvent:
     """把一次未捕获的异常变成 `run_failed`：模型侧问题与内部问题分开报码。"""
+    # 静默超限单独说清楚：它也归 `model_unavailable`（对使用者就是「模型暂时不可用，可以重试」），
+    # 但 `_ModelStalled` 这个类名对排查的人没有信息量，得把「挂了多久、什么形态」写进 detail。
+    if isinstance(error, _ModelStalled):
+        return _failure(
+            "model_unavailable",
+            f"模型调用静默超过 {AGENT_MODEL_STALL_SECONDS:.0f} 秒（连接还在，但没有数据、也没有结束）：这次回答没有完成",
+            recorder,
+            usage,
+            started,
+            error,
+            compactions=compactions,
+        )
     reason = classify_model_failure(error)
     if reason == "unknown":
         return _failure(
