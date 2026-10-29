@@ -232,11 +232,11 @@
 
 ## 十、正式评测接续（2026-10-29 环境迁移时暂停）
 
-正式 40 例已入库，并在恢复后的 `20261029-carebench-formal-01` 中冻结并开始生成。用户已决定采用两套独立 agent 盲评，不依赖人工；AI 评审不等于专业审核。产品模型为 `cn:deepseek-v4.1-flash`。本次已执行 **identity → freeze（含身份）→ run --dry-run → ai-prepare → resume**；生成后先 `review-export`，再 `ai-score` / `ai-adjudicate`。专业审核仍未满足。细节见[评测交接](../evaluation/carebench/HANDOFF.md)。
+正式 40 例已在恢复后的 `20261029-carebench-formal-01` 中冻结并生成完成，双 AI 评分执行后保留一项未决。用户已决定采用两套独立 agent 盲评，不依赖人工；AI 评审不等于专业审核。产品模型为 `cn:deepseek-v4.1-flash`。本次已执行 **identity → freeze（含身份）→ run --dry-run → ai-prepare → resume**；生成后执行 `review-export`、`ai-score` / `ai-adjudicate`、汇总与核验。专业审核仍未满足。细节见[评测交接](../evaluation/carebench/HANDOFF.md)。
 
 | ID | 未完成项 | 完成判据 |
 |---|---|---|
 | ~~EVAL-01~~ | **实现与 CareBench 全套验证已完成** | 知识快照规范 hash 覆盖节点正文、标识、metadata、向量、条目 `doc_hash` 与嵌入身份；同节点数内容漂移会改变快照身份，续跑会拒绝。`evaluation/carebench/tests` 全套 183 项通过；full-04（`dev` `59aac1f0`）十步全部通过，JUnit 2267 passed / 3 deselected / 0 failed / 0 errors / 0 skipped；后续 full-05 与固定版本真实浏览器四项验收均通过，详见[质量审查记录](development/checkpoints/2026-10-29-quality-audit.md)。 |
 | ~~EVAL-02~~ | **实现与 CareBench 全套验证已完成** | verify 已校验运行身份、结构化输出、重试与故障观察状态等证据；正式非 dry-run 的 `run`/`resume` 会在适配器装配和模型调用前拒绝缺失、无效、未锚定或缺第三位独立裁定者的 formal AI 评分身份。失败例覆盖 missing/tampered/unanchored/no_adjudicator，valid 状态正控会真实通过替身生成，见 `test_formal_generation_requires_frozen_review_identity_before_any_call`；CareBench 全套 183 项通过；full-04 JUnit 2267 passed / 3 deselected / 0 failed / 0 errors / 0 skipped，后续 full-05 与固定版本真实浏览器四项验收均通过，详见[质量审查记录](development/checkpoints/2026-10-29-quality-audit.md)。 |
 | ~~EVAL-03~~ | **实现与 CareBench 全套验证已完成** | 两套独立 AI 评分、第三位独立裁定者与独立 `ai_scores` 通道已实现；评分身份、提示词、原始响应、证据位置和裁定尝试留痕，不写入 `human_scores`。CareBench 全套 183 项通过；full-04 JUnit 2267 passed / 3 deselected / 0 failed / 0 errors / 0 skipped，后续 full-05 与固定版本真实浏览器四项验收均通过，详见[质量审查记录](development/checkpoints/2026-10-29-quality-audit.md)。 |
-| EVAL-04 | **正式 40 例已生成完成，两套评分与材料回填进行中** | `20261029-carebench-formal-01` 固定提交 `5ca790dc`，120/120 个案例/系统组合、138/138 个预定回合；139 次原始尝试含 1 次模型静默失败及新会话重试，首尝试整组完成 119/120。生成前已冻结两评分者及独立裁定者身份，全部案例仍为 `draft_unreviewed`。full-10 Python 2303 项、前端 604 项通过；详情及完整 hash 见[长程交付记录](development/checkpoints/2026-10-29-final-delivery.md)。完成两套 AI 盲评、分歧裁定与 `verify --require-complete` 后按真实 `run_id` 回填。专业审核仍未满足；AI 评分不构成专业认可、安全或临床有效性证据。 |
+| EVAL-04 | **生成完整、评分一项未决；不报告效果分数** | `20261029-carebench-formal-01` 固定提交 `5ca790dc`，120/120 组、138/138 预定回合，139 次外层尝试保留一次失败，首尝试整组完成 119/120。双 AI 共 311 次尝试（239 有效 / 55 无效 / 17 请求错误），有效成对 119/120；T026-X2/pass1 七次均未过严格校验。17/17 既有分歧已独立裁定。原五轮与登记的两次补充请求均已收口，原件与执行偏离保留；`verify --require-complete` 仍失败，结构一致性核验通过不替代它。报告只回填覆盖与失败，不从部分评分计算五维、硬失败率或胜负。完整评分判据尚未满足，专业审核亦未满足；见[长程交付记录](development/checkpoints/2026-10-29-final-delivery.md)。 |
