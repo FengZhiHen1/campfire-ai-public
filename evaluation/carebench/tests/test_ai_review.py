@@ -47,6 +47,7 @@ from evaluation.carebench.faults import FaultPlan
 from evaluation.carebench.review import PACKET_FILE, export_packet
 from evaluation.carebench.runner import execute
 from evaluation.carebench.store import RunStore, create_run_dir, read_json, write_json, write_jsonl
+from evaluation.carebench.summarize import summarize_run
 from evaluation.carebench.systems.base import TurnOutcome
 
 from .conftest import FakeAdapter, load_cases, make_cases_file, make_snapshot
@@ -548,6 +549,49 @@ async def test_summary_ai_never_counts_invalid_or_needs_review_as_pass(
     assert not (store.review_dir / "ratings.imported.csv").exists()
     assert store.read_manifest()["review"]["human_scores_available"] is False
     assert "human_scores" not in summary
+
+
+async def test_summary_preserves_failed_attempt_counts_after_successful_retries(
+    tmp_path: Path, settings_for_tests: Any, faults_for_tests: FaultPlan
+) -> None:
+    """失败后补评成功时，兼容最终状态与首轮/全部尝试计数分别可见。"""
+    store = await _exported_run(tmp_path, settings=settings_for_tests, faults=faults_for_tests)
+    _freeze(store)
+    blind_ids = [item.blind_id for item in build_scoring_inputs(store)]
+    first_invalid, first_error, first_ok = blind_ids
+
+    def first_round(pass_no: int, blind: str) -> Any:
+        if pass_no == 1 and blind == first_invalid:
+            return "不是 JSON"
+        if pass_no == 1 and blind == first_error:
+            return RuntimeError("endpoint down")
+        return json.dumps(_judge_payload(quote=_quote_of(store, blind)))
+
+    await _score_all(store, first_round)
+    initial = summary_ai(store)["ai_scores"]["counts"]["pass1"]
+    assert initial["invalid"] == 1
+    assert initial["error"] == 1
+    assert initial["attempt_status_counts"] == {"ok": 1, "invalid": 1, "error": 1, "pending": 0}
+    assert initial["first_attempt_status_counts"] == {"ok": 1, "invalid": 1, "error": 1, "pending": 0}
+
+    await _score_all(store, lambda _pass, blind: json.dumps(_judge_payload(quote=_quote_of(store, blind))))
+    counts = summary_ai(store)["ai_scores"]["counts"]["pass1"]
+    assert counts["ok"] == 3
+    assert counts["invalid"] == 0
+    assert counts["error"] == 0
+    assert counts["attempts"] == 5
+    assert counts["attempt_status_counts"] == {"ok": 3, "invalid": 1, "error": 1, "pending": 0}
+    assert counts["first_attempt_status_counts"] == {"ok": 1, "invalid": 1, "error": 1, "pending": 0}
+    raw_attempts = load_attempts(store, 1)
+    assert [record["status"] for record in raw_attempts if record["blind_id"] == first_invalid] == ["invalid", "ok"]
+    assert [record["status"] for record in raw_attempts if record["blind_id"] == first_error] == ["error", "ok"]
+    assert first_ok in {record["blind_id"] for record in raw_attempts}
+
+    summarize_run(store, log=lambda _message: None)
+    markdown = (store.root / "summary.md").read_text(encoding="utf-8")
+    assert "评分最终覆盖与未完成状态" in markdown
+    assert "评分全部尝试状态" in markdown
+    assert "评分首尝试状态" in markdown
 
 
 async def test_summary_ai_agreement_and_paired_safety_prior(

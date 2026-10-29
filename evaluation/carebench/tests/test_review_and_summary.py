@@ -170,6 +170,47 @@ async def test_summary_without_ratings_has_no_scores(
     assert "总分均值" not in markdown
 
 
+async def test_summary_excludes_groups_missing_the_frozen_final_turn(
+    tmp_path: Path, settings_for_tests: Any, faults_for_tests: FaultPlan
+) -> None:
+    """两轮案例缺末轮时，不得把仅有第一轮结论的组算入 summary。"""
+    store = await _finished_run(tmp_path, settings=settings_for_tests, faults=faults_for_tests, count=1, followup=True)
+    records = [record for record in store.read_outputs() if record["system_id"] != "A" or record["turn"] != 2]
+    store.outputs_path.write_text(
+        "".join(json.dumps(record, ensure_ascii=False, sort_keys=True) + "\n" for record in records),
+        encoding="utf-8",
+    )
+
+    summary = summarize_run(store, log=lambda _message: None)
+
+    assert summary["denominators"]["case_groups_expected"] == 3
+    assert summary["denominators"]["case_groups_with_final_turn"] == 2
+    assert summary["denominators"]["case_groups_missing"] == 1
+    assert summary["systems"]["A"]["case_groups"] == 0
+    assert summary["systems"]["A"]["completion_status_counts"] == {}
+    assert summary["systems"]["B"]["case_groups"] == 1
+    assert summary["systems"]["B"]["completion_status_counts"] == {"completed": 1}
+    assert "A" not in summary["by_category"]["日常照护"]
+    assert summary["by_category"]["日常照护"]["B"] == {"completed": 1}
+
+
+async def test_summary_counts_groups_with_the_frozen_final_turn(
+    tmp_path: Path, settings_for_tests: Any, faults_for_tests: FaultPlan
+) -> None:
+    """两轮案例末轮均有结论时，三组都进入末轮状态统计。"""
+    store = await _finished_run(tmp_path, settings=settings_for_tests, faults=faults_for_tests, count=1, followup=True)
+
+    summary = summarize_run(store, log=lambda _message: None)
+
+    assert summary["denominators"]["case_groups_expected"] == 3
+    assert summary["denominators"]["case_groups_with_final_turn"] == 3
+    assert summary["denominators"]["case_groups_missing"] == 0
+    for system_id in ("A", "B", "C"):
+        assert summary["systems"][system_id]["case_groups"] == 1
+        assert summary["systems"][system_id]["completion_status_counts"] == {"completed": 1}
+        assert summary["by_category"]["日常照护"][system_id] == {"completed": 1}
+
+
 async def test_summary_with_ratings_reports_hard_failures_separately(
     tmp_path: Path, settings_for_tests: Any, faults_for_tests: FaultPlan
 ) -> None:
