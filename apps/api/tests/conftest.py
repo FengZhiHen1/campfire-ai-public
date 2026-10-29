@@ -33,9 +33,60 @@ import os
 import re
 from collections.abc import Iterator
 from contextlib import suppress
+from typing import TYPE_CHECKING
 
 import pytest
 from redis.exceptions import ConnectionError as RedisConnectionError
+
+if TYPE_CHECKING:
+    from campfire.core.config import Settings
+
+#: 真实模型用例的显式开关：环境变量名与 marker 名。
+#:
+#: 为什么必须有显式开关（而不是「有凭据就跑」）：本机 `.env` 里是否有有效
+#: `TOKENHUB_API_KEY` 是**环境**属性，不是**代码**属性。按凭据决定跑不跑的写法会让
+#: 同一份提交在两台机器上跑出两种范围：谁的 `.env` 恰好有真 key，`uv run pytest` 就
+#: 突然开始真调供应商——花额度、受外部限流影响，还把「机制对不对」的判据混进
+#: 「端点通不通」。默认跳过、显式开启，才让「这一轮跑的是什么」由命令行决定。
+LIVE_MODEL_ENV = "CAMPFIRE_LIVE_MODEL"
+LIVE_MODEL_MARKER = "live_model"
+
+#: 仅用于「装配期需要凭据、但用例不调用任何模型」的**非秘密占位**。
+#:
+#: 为什么需要它：`build_memory_graph` / `ModelGateway` 的构造期要求凭据存在
+#: （缺则显式抛配置错误），而一部分集成测试只用它们持有的**结构**，一次模型请求
+#: 都不发（只跑驱动查询、只读端点，或把模型客户端整体替换成替身）。这类用例的真实
+#: 依赖是 PostgreSQL/FalkorDB；按凭据把它们整批 skip，等于在没有 key 的环境里静默
+#: 削掉确定性覆盖。用占位装配既保住覆盖，也不会产生任何外部请求。
+PLACEHOLDER_MODEL_KEY = "test-placeholder-not-a-secret"
+
+#: 「看起来像占位符」的凭据形状：`.env.example` 里的 `sk-xxxx…` 一类。
+#:
+#: 显式开启真实模型用例时用它提前失败：占位符不是「没配置」，它会把请求真发出去再
+#: 拿 401，表现为一堆像代码缺陷的红——那是**环境未就绪**被伪装成代码问题。
+_PLACEHOLDER_KEY_PATTERN = re.compile(r"^(?:sk-)?x{4,}", re.IGNORECASE)
+
+#: 模型端点相关的环境变量：**值为空白时在测试进程内视为「没配」**。
+#:
+#: 为什么（2026-10-29 实测，全量 pytest 基线）：`TOKENHUB_API_KEY=""` 这类空值在
+#: `pydantic-settings` 里会变成 `SecretStr("")`——它不是 `None`，于是
+#: `Settings.resolved_*_api_key` 的「显式配置优先」把它当成了有效凭据，
+#: `AsyncOpenAI(api_key="")` 随即抛 `OpenAIError: Missing credentials`。后果是
+#: 一个**环境未就绪**被报成 500/失败：`test_memory_*`、`test_health` 的嵌入探针、
+#: `test_consult_endpoints_integration` 的应急用例同时红，看起来像代码坏了。
+#:
+#: 空串在语义上就是「没写这一行」（`resolved_*_base_url` 已经用 `.strip() or` 这么
+#: 处理了，凭据一侧尚无同样的归一——那条产品侧缺口已另行上报，不在这里改产品代码）。
+#: 测试进程先归一，才能让「有凭据 / 没凭据」这两条分支由**用例自己写的配置**决定，
+#: 而不是由某台机器 shell 里恰好导出的空变量决定。
+_BLANK_MEANS_UNSET_ENV_KEYS: tuple[str, ...] = (
+    "TOKENHUB_BASE_URL",
+    "TOKENHUB_API_KEY",
+    "EMBEDDING_BASE_URL",
+    "EMBEDDING_API_KEY",
+    "MEMORY_LLM_BASE_URL",
+    "MEMORY_LLM_API_KEY",
+)
 
 #: 「本地数据服务」设置项：环境变量名 → Settings 字段名。
 #:
@@ -81,6 +132,127 @@ def _rewrite_loopback_host(value: str) -> str:
     return re.sub(r"(://|@)localhost(?=[:\"/]|$)", r"\g<1>127.0.0.1", value, flags=re.IGNORECASE)
 
 
+def pytest_addoption(parser: pytest.Parser) -> None:
+    """注册真实模型用例的显式开关（与 marker `live_model` 配套）。
+
+    等价环境变量：`CAMPFIRE_LIVE_MODEL=1`（CI 与不方便加参数的地方用）。
+    """
+    parser.addoption(
+        "--live-model",
+        action="store_true",
+        default=False,
+        help=(
+            "运行真正调用外部模型供应商的用例（marker `live_model`）；默认跳过。"
+            f"也可用环境变量 {LIVE_MODEL_ENV}=1 开启。缺凭据时直接失败，不静默跳过。"
+        ),
+    )
+
+
+def live_model_enabled(config: pytest.Config) -> bool:
+    """本轮是否显式开启了真实模型用例。
+
+    Args:
+        config: pytest 配置对象（读 `--live-model`）。
+
+    Returns:
+        `--live-model` 或 `CAMPFIRE_LIVE_MODEL=1` 任一成立时为真。
+    """
+    if config.getoption("--live-model"):
+        return True
+    return os.environ.get(LIVE_MODEL_ENV, "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _live_model_environment_problem(settings: Settings | None = None) -> str | None:
+    """检查显式开启真实模型用例所需的环境；返回问题描述，缺什么就说什么。
+
+    `None` 表示环境看起来可用（**不验证凭据是否有效**：那要花一次真实请求，
+    属于用例本身的事）。
+
+    Args:
+        settings: 待检查的配置；省略时读进程配置。可注入是为了让「缺凭据必须失败」
+            这条判据本身能被测到（`test_live_model_gate.py`）——不能注入的闸门
+            只能靠人肉观察，而那种闸门正是「永远不会失败」的那一类。
+
+    Returns:
+        问题描述；环境齐全时返回 `None`。
+    """
+    from campfire.core.config import Settings as SettingsType
+
+    resolved = settings if settings is not None else SettingsType()
+
+    key = resolved.tokenhub_api_key
+    if key is None or not key.get_secret_value().strip():
+        return (
+            "未配置 TOKENHUB_API_KEY——显式开启了 --live-model，但本进程没有任何模型凭据；"
+            "请在环境或 .env 里提供真实凭据后重跑（本用例必须真连供应商，不能跳过冒充通过）"
+        )
+    if _PLACEHOLDER_KEY_PATTERN.match(key.get_secret_value().strip()) or "…" in key.get_secret_value():
+        return (
+            "TOKENHUB_API_KEY 看起来是 .env.example 里的占位符（形如 sk-xxxx…）——"
+            "占位符会让请求真的发出去再拿 401，那不是「用例通过/失败」而应归为环境未就绪；"
+            "请换成有效凭据，或不加 --live-model 只跑确定性门禁"
+        )
+    return None
+
+
+def settings_with_placeholder_model_key(settings: Settings) -> Settings:
+    """缺模型凭据时补一个**非秘密占位**，供「只用装配结构、不调模型」的用例使用。
+
+    用法边界（别把它当万金油）：只允许用在**一次模型请求都不会发出**的用例上
+    ——只跑图库驱动查询、只读端点、或模型客户端已被替身整体替换。真调模型的用例
+    必须打 `live_model` marker 并由 `--live-model` 显式开启。
+
+    Args:
+        settings: 已解析的配置。
+
+    Returns:
+        原对象（已有凭据时原样返回）或补了占位凭据的副本。
+    """
+    if settings.tokenhub_api_key is not None:
+        return settings
+    from campfire.core.config import Settings
+
+    payload = settings.model_dump()
+    payload["tokenhub_api_key"] = PLACEHOLDER_MODEL_KEY
+    return Settings(**payload)  # type: ignore[arg-type]  # model_dump 往返，键值形状与字段一致
+
+
+@pytest.fixture
+def placeholder_model_env(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
+    """本机没有模型凭据时，给**读路径**用例注入非秘密占位（不产生任何模型请求）。
+
+    用于穿过完整应用装配、由生产代码自己调 `get_settings()` 取凭据的用例：
+    那里没有「传一个 settings」的缝，只能经环境变量注入。
+
+    收尾把 `get_settings` 的缓存清一次，让后续用例重新按真实环境解析。
+    """
+    from campfire.core.config import Settings, get_settings
+
+    if Settings().tokenhub_api_key is None:
+        monkeypatch.setenv("TOKENHUB_API_KEY", PLACEHOLDER_MODEL_KEY)
+        get_settings.cache_clear()
+    try:
+        yield
+    finally:
+        get_settings.cache_clear()
+
+
+def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
+    """未显式开启时，真实模型用例逐条跳过并写明原因（不静默）。
+
+    跳过而不是失败：默认门禁不该因为「本机没有供应商凭据」变红——那不是代码问题。
+    但**显式开启**时反过来：缺环境即失败（见 :func:`_live_model_environment_problem`），
+    不允许「开启了却什么都没跑」这种假绿。
+    """
+    if live_model_enabled(config):
+        return
+    reason = f"真实模型用例默认不运行（marker `{LIVE_MODEL_MARKER}`）：需要显式 `--live-model` 或 {LIVE_MODEL_ENV}=1"
+    skip = pytest.mark.skip(reason=reason)
+    for item in items:
+        if LIVE_MODEL_MARKER in item.keywords:
+            item.add_marker(skip)
+
+
 def pytest_configure(config: pytest.Config) -> None:
     """在任何测试模块导入之前把本地服务地址归一到 IPv4 回环。
 
@@ -102,11 +274,15 @@ def pytest_configure(config: pytest.Config) -> None:
     `SUPERTOKENS_API_DOMAIN` / `SUPERTOKENS_WEBSITE_DOMAIN` 刻意不改：
     它们是 cookie 域与 same-site 判定的输入，不承担建连职责，改写会改变 SDK 行为。
 
-    Args:
-        config: pytest 配置对象（本钩子不使用它，仅需签名匹配）。
-    """
-    del config  # 显式声明未使用：本钩子只借时点，不读配置
+    本钩子还承担第二件事：显式开启真实模型用例（`--live-model`）时，先检查环境是否
+    真的具备（见 :func:`_live_model_environment_problem`）。缺凭据就在收集之前失败——
+    退出码非 0、消息直说缺什么。这是「显式选择真模型却什么都没跑」与「静默跳过冒充
+    通过」之间唯一的分界：没有这道检查，缺 key 的机器上 `--live-model` 会安静地跑完
+    一轮零用例。
 
+    Args:
+        config: pytest 配置对象（读 `--live-model`）。
+    """
     from campfire.core.config import Settings, get_settings
 
     resolved = Settings()
@@ -118,8 +294,19 @@ def pytest_configure(config: pytest.Config) -> None:
         if rewritten != current:
             os.environ[env_key] = rewritten
 
+    # 空白即未配置：见 `_BLANK_MEANS_UNSET_ENV_KEYS` 的说明。
+    for env_key in _BLANK_MEANS_UNSET_ENV_KEYS:
+        value = os.environ.get(env_key)
+        if value is not None and not value.strip():
+            del os.environ[env_key]
+
     # 清缓存：让后续 get_settings() 用写回后的环境变量重新解析。
     get_settings.cache_clear()
+
+    if live_model_enabled(config):
+        problem = _live_model_environment_problem()
+        if problem is not None:
+            raise pytest.UsageError(problem)
 
 
 #: 「连不上 FalkorDB 容器」这一类异常。

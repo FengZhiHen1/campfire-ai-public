@@ -7,6 +7,10 @@
 
     docker compose up -d postgres          # 最小要求
     docker compose up -d falkordb          # 图库那部分需要它（缺则跳过）
+    uv run pytest --live-model apps/api/tests/test_memory_resurrect_integration.py
+
+**本文件真调模型**（`live_model`）：实体抽取与嵌入都走真实供应商，因此默认不跑。
+缺凭据时开启会直接失败（收集期），不会安静跳过——见 `conftest` 的开关说明。
 
 这个文件守的是什么：
 
@@ -40,7 +44,7 @@ from campfire.core.pending_write import PendingWrite, enqueue
 from campfire.modules.memory.consumer import consume_memory_episode
 from campfire.modules.memory.graph import MemoryGraph
 
-pytestmark = pytest.mark.integration
+pytestmark = [pytest.mark.integration, pytest.mark.live_model]
 
 #: 本文件的账号前缀（与其它测试文件隔离）。
 _ACCOUNT = "it_resurrect_account"
@@ -71,7 +75,17 @@ async def graph_or_skip() -> AsyncIterator[MemoryGraph]:
     为什么还要自己判一次 `TOKENHUB_API_KEY`（2026-10-01 实测补上）：`build_memory_graph`
     要求它（`MemoryConfigurationError`），而 CI 环境没有该凭据。缺失时原先会在夹具
     里抛错——3 条用例变成 ERROR，看起来像代码坏了，实际是环境未就绪。
-    本文件的假模型客户端只在「写入」那一侧替换，图库句柄仍需真实凭据才能构造。
+
+    ⚠️ **本文件真的调模型**（2026-10-29 逐调用核实）：夹具构造的是
+    `build_memory_graph(get_settings())` 的原装句柄，全文件**没有**任何假 LLM /
+    假嵌入器注入（`grep -n 'fake|monkeypatch|llm_client' 本文件` 为 0 命中）——
+    `consume_memory_episode` → `write_episode` → `graph.graphiti.add_episode(...)`
+    （`modules/memory/store.py:499`），那一步的实体抽取与向量化都走真实供应商。
+    因此本文件带 `live_model` marker、默认跳过；显式开启时缺凭据在收集期直接失败
+    （见 `conftest._live_model_environment_problem`），不会「跑 0 条却绿」。
+    此前这里写着「本文件的假模型客户端只在写入那一侧替换」——那句话是**错的**：
+    本文件从未注入过假客户端。同类的「真库 + 假客户端」文件是
+    `test_memory_deletion_integration.py` / `test_memory_write_path_integration.py`。
     """
     from campfire.modules.memory.graph import build_memory_graph
 
@@ -81,11 +95,9 @@ async def graph_or_skip() -> AsyncIterator[MemoryGraph]:
     del driver  # 只作可用性探针
     await client.aclose()
 
-    if get_settings().tokenhub_api_key is None:
-        pytest.skip("未配置 TOKENHUB_API_KEY——本文件要构造真实记忆图库（抽取与嵌入都调模型）")
-
-    # 构造也在 try 之外是安全的，因为上面已判过凭据；但仍写成先构造后 yield，
-    # 以便 `aclose` 只在构造成功后才执行（否则 finally 会操作未绑定的名字）。
+    # 不再按凭据 skip：真实模型用例的环境已在 `pytest_configure` 里把过关
+    # （缺凭据或占位凭据都会在收集前失败）。在这里 skip 会把「显式开启」退化成
+    # 「安静跳过」——那正是「没跑」被当成「跑过了」的那类假绿。
     graph = build_memory_graph(get_settings())
     try:
         yield graph
