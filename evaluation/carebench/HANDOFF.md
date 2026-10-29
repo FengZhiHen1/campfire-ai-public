@@ -4,12 +4,23 @@
 > 随后 EVAL-01/02/03 的实现与确定性测试已落地；正式 40 例仍未冻结、未运行。
 > 专业审核仍未满足。正式接续顺序见第 3 节。
 
+**2026-10-29 恢复后的最新状态**：上述引用是原始交接时状态。现已完成校准 04
+生成、双评分与独立裁定，完整核验通过；正式 `20261029-carebench-formal-01`
+已在 `5ca790dca1948e925c27905edadc9ce90c3fa381` 冻结并开始生成。
+40 例、120 个案例/系统组合、138 个预定回合；全部案例仍为 `draft_unreviewed`。
+full-09 Python 2293 项、前端 604 项通过。正式完整评分尚未产生，
+不得预填成绩。最新冻结身份、汇总补修和边界见
+[长程交付记录](../../docs/development/checkpoints/2026-10-29-final-delivery.md)，
+未完成项仍以 [TODO](../../docs/TODO.md) 为准。
+
 ## 0. 当前事实（不要当成别的样子）
 
 - 正式 40 例已入库：`evaluation/carebench/cases/cases-test-v0.1.jsonl`，
   sha256 `f7d4462e344db2d0a6553aad3d13703d2ce13f9f668eee8fe3845371f1dd50d3`，
   40 条、`split=test`、6 条固定二轮、`review_status` 全为 `draft_unreviewed`（**未改 approved**）。
-- **未冻结、未运行**：`frozen/test/` 不存在；`runs/` 里没有 `label=test` 批次。
+- **已在恢复后冻结并开始正式生成**：冻结位于原始仓库根
+  `deliverables/2026-ai-opensource/20261029-carebench-formal-setup-01/frozen/`，
+  正式批次位于相邻的 `20261029-carebench-formal-01/`；不通过包内默认目录是否存在推断运行状态。
 - 语料定位：公开挑战集 / 非独立未见样本。`CFB-T-009` 是设计阶段用过的黄金场景，
   该题分数**不得**当作「模型未见过」的证据。
 - 校准批次 `runs/calib-smoke-3/4` 是**适配期冒烟**，其 `code.commit` 是在 `evaluation/`
@@ -96,8 +107,8 @@
    写入 `ai_scores` 证据通道，不写入 `human_scores`；评分身份、提示词、原始响应、证据与分歧均留痕。
    对应确定性用例在 `tests/test_ai_review.py`、`tests/test_ai_cli.py`、`tests/test_ai_acceptance.py`。
 4. 上述条目实现已落地；后续真实校准补修后，`evaluation/carebench/tests` **202项**已在full-07通过。
-5. **正式集仍未冻结、未运行**。产品当前模型配置为 `cn:deepseek-v4.1-flash`；正式身份必须在
-   实际冻结前由 `identity` 命令重新读取，不能沿用历史校准记录。正式评分也尚未开始。
+5. **正式集已在恢复后冻结并开始生成，完整评分待完成**。产品模型为
+   `cn:deepseek-v4.1-flash`；本次实际重新读取身份并冻结，没有沿用旧校准的身份文件。
 6. **专业审核仍未满足**。AI 评分不能替代专业审核，不能支撑专业认可、临床安全或真实家庭有效性主张。
 
 ## 3. 新环境怎么接（只读 eval worktree + 独立库）
@@ -151,5 +162,6 @@ browser-01/02曾用到旧Vite泳道，不能作最终版本通过证据。
 身份缺失、篡改、未锚定和缺少裁定者的负控均保留。故障替身只在handler接缝改变行为，
 工具说明与参数模型复用产品定义；替身装配不等于实际触发，必须报告observed。
 
-正式40例尚未冻结、未运行。专业审阅未满足，工程检查不构成模型效果或临床安全证据。
+上述 full-07 与校准03为过程记录；随后 full-09、校准04已完成，正式40例已冻结并开始生成。
+专业审阅未满足，工程检查不构成模型效果或临床安全证据。
 完整记录见[质量审查记录](../../docs/development/checkpoints/2026-10-29-quality-audit.md)。
