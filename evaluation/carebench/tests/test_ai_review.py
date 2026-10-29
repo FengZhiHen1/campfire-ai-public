@@ -473,6 +473,82 @@ async def test_score_run_records_raw_attempts_and_never_overwrites(
         append_attempt(store, 1, {"blind_id": pass1[0]["blind_id"], "status": "ok"})
 
 
+async def test_invalid_protocol_attempt_then_negative_score_preserves_first_valid_result(
+    tmp_path: Path, settings_for_tests: Any, faults_for_tests: FaultPlan
+) -> None:
+    """字段矛盾与改写引用原样记为无效，后续首份负面有效分也不可覆盖。"""
+    store = await _exported_run(tmp_path, settings=settings_for_tests, faults=faults_for_tests)
+    _freeze(store)
+    scoring = build_scoring_inputs(store)[0]
+    invalid = _judge_payload(quote="改写后无法在原文找到的证据", hard="needs_review")
+    invalid["hard_failure"]["failure_types"] = ["fabricated_evidence"]
+    raw_text = json.dumps(invalid, ensure_ascii=False)
+    client = _Client(store, lambda _pass, _blind: raw_text)
+    result = await score_run(store, client=client, passes=(1,), blind_ids=[scoring.blind_id], log=lambda _message: None)
+    assert result.invalid == 1 and result.ok == 0
+    first = load_attempts(store, 1)[0]
+    assert first["parsed"] is None
+    assert first["response_text"] == raw_text
+    assert "只有 hard_failure=yes 才能给 failure_types" in first["errors"]
+    assert any("不在指定轮次的输出原文里" in issue for issue in first["errors"])
+    path = store.review_dir / ATTEMPTS_FILES[1]
+    prefix = path.read_bytes()
+
+    negative = _judge_payload(quote=_quote_of(store, scoring.blind_id), hard="yes", scores=(0, 0, 0, 0, 0))
+    client = _Client(store, lambda _pass, _blind: json.dumps(negative, ensure_ascii=False))
+    result = await score_run(store, client=client, passes=(1,), blind_ids=[scoring.blind_id], log=lambda _message: None)
+    assert result.ok == 1
+    assert path.read_bytes().startswith(prefix)
+    records = load_attempts(store, 1)
+    assert [record["attempt"] for record in records] == [1, 2]
+    assert records[0] == first
+    assert records[1]["parsed"]["hard_failure"]["value"] == "yes"
+    after_success = path.read_bytes()
+
+    client = _Client(store, lambda _pass, _blind: AssertionError("已有有效负面评分，禁止再次请求"))
+    result = await score_run(store, client=client, passes=(1,), blind_ids=[scoring.blind_id], log=lambda _message: None)
+    assert result.skipped == 1 and result.total == 0
+    assert not client.calls
+    assert path.read_bytes() == after_success
+    assert not verify_ai_review_report(store).violations
+
+
+async def test_default_prompt_upgrade_does_not_change_frozen_requests(
+    tmp_path: Path,
+    settings_for_tests: Any,
+    faults_for_tests: FaultPlan,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """默认提示升级只影响新身份，旧身份的请求与文件保持原样。"""
+    from evaluation.carebench import judge_prompts
+
+    store = await _exported_run(tmp_path, settings=settings_for_tests, faults=faults_for_tests)
+    _freeze(store)
+    frozen = load_identity(store)
+    original_bytes = identity_path(store).read_bytes()
+    monkeypatch.setattr(judge_prompts, "PASS1_PROMPT_VERSION", "future-pass1")
+    monkeypatch.setattr(judge_prompts, "PASS2_PROMPT_VERSION", "future-pass2")
+    monkeypatch.setattr(judge_prompts, "PASS1_PROMPT", "未来版本的第一套提示")
+    monkeypatch.setattr(judge_prompts, "PASS2_PROMPT", "未来版本的第二套提示")
+    with pytest.raises(AiReviewError, match="已冻结且内容不同"):
+        freeze_judges(
+            store,
+            judges=default_judges("stub-model"),
+            stage="calibration",
+            log=lambda _message: None,
+        )
+    client = _Client(store, lambda _pass, blind: json.dumps(_judge_payload(quote=_quote_of(store, blind))))
+    result = await score_run(store, client=client, log=lambda _message: None)
+    assert result.ok == 6
+    assert identity_path(store).read_bytes() == original_bytes
+    for pass_no in (1, 2):
+        judge = frozen["judges"][str(pass_no)]
+        for record in load_attempts(store, pass_no):
+            assert record["identity"]["prompt_version"] == judge["prompt_version"]
+            assert record["request"]["messages"][0]["content"] == judge["prompt_text"]
+    assert not verify_ai_review_report(store).violations
+
+
 async def test_two_passes_are_stateless_and_independent(
     tmp_path: Path, settings_for_tests: Any, faults_for_tests: FaultPlan
 ) -> None:
