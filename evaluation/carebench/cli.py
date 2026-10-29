@@ -71,6 +71,9 @@ def build_parser() -> argparse.ArgumentParser:
     preflight = sub.add_parser("preflight", help="开工前预检（不发起生成调用）")
     add_common(preflight)
     preflight.add_argument("--cases", type=Path, default=None, help="待冻结/待运行的案例 JSONL")
+    preflight.add_argument(
+        "--frozen", type=Path, default=None, help="冻结目录：用它声明的案例与配置（与 run 的 hash 完全一致）"
+    )
     preflight.add_argument("--knowledge-snapshot", type=Path, default=None, help="知识许可裁定表（缺省用包内清单）")
     preflight.add_argument("--fixtures", type=Path, default=None, help="故障注入计划文件")
     preflight.add_argument("--db-prefix", default=DEFAULT_DB_PREFIX, help="评测库名前缀（隔离守卫）")
@@ -152,14 +155,24 @@ async def _resolve_snapshot(settings: Any, path: Path | None) -> KnowledgeSnapsh
 
 
 def _cmd_preflight(args: argparse.Namespace) -> int:
-    """执行 preflight。"""
+    """执行 preflight。
+
+    给了 `--frozen` 时，案例与配置都取自冻结记录：这样预检打印的 `config hash` 与随后
+    `run` 用的是同一份（否则默认配置的 label 与冻结标签不同，两个 hash 会并列出现，
+    读报告的人会以为是配置漂移）。
+    """
     settings = _settings()
     config = load_config(args.config)
+    cases_path = args.cases
+    if args.frozen is not None:
+        frozen = load_frozen(args.frozen)
+        config = config if args.config else RunConfig.from_dict(frozen.record["config"])
+        cases_path = frozen.case_set.path if cases_path is None else cases_path
     report = asyncio.run(
         run_preflight(
             settings=settings,
             config=config,
-            cases_path=args.cases,
+            cases_path=cases_path,
             knowledge_snapshot=args.knowledge_snapshot,
             db_prefix=args.db_prefix,
             probe_model=args.probe_model,

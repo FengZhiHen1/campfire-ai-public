@@ -84,9 +84,13 @@ evaluation/carebench/
 ```bash
 uv run python -m evaluation.carebench preflight \
   --cases evaluation/carebench/cases/cases-calibration-v0.1.jsonl \
-  [--config cfg.json] [--knowledge-snapshot snapshot.json] [--fixtures fixtures.json] \
+  [--frozen evaluation/carebench/frozen/<label>] [--config cfg.json] \
+  [--knowledge-snapshot snapshot.json] [--fixtures fixtures.json] \
   [--db-prefix campfire_carebench] [--probe-model] [--probe-embedding] [--json]
 ```
+
+给了 `--frozen` 时案例与配置都取自冻结记录，因此打印的 `config hash` 与随后 `run` 用的
+是同一份（否则默认配置的 `label` 与冻结标签不同，两个 hash 并列出现会被误读成配置漂移）。
 
 检查项与判定（`ready=false` 即阻断）：
 
@@ -279,7 +283,7 @@ export DATABASE_URL="postgresql+asyncpg://<user>:<pw>@<host>:5432/campfire_careb
 ### 9.1 确定性测试
 
 ```bash
-uv run pytest evaluation/carebench/tests -q     # 44 passed
+uv run pytest evaluation/carebench/tests -q     # 45 passed
 uv run ruff check evaluation/ && uv run ruff format --check evaluation/
 ```
 
@@ -287,7 +291,7 @@ uv run ruff check evaluation/ && uv run ruff format --check evaluation/
 固定二轮、输入对称、外层重试与首错保留、空回复不重试、超时进分母、续跑不重跑已完成轮次、
 跨批次续跑被拒、非评测库被拒、dry-run 零调用、盲化评审包（无组别字段）、`pending`/空分拒收、
 关键约束计数校验、重复评分拒收、无评审不出分、有评审的硬失败分列与配对、证据包篡改检测
-（记录内容 hash、输入不对称）、`--require-complete`、冻结幂等与冲突、命令行命令集合。
+（记录内容 hash、输入不对称）、`--require-complete`、冻结幂等与冲突、`preflight --frozen` 的配置 hash 与冻结记录一致、命令行命令集合。
 
 ### 9.2 真实校准调用（少量，仅合成校准案例）
 
