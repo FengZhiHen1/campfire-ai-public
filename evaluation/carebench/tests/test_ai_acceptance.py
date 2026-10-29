@@ -24,9 +24,9 @@ import pytest
 
 pytestmark = pytest.mark.asyncio
 
-from evaluation.carebench import runner
 from evaluation.carebench.ai_review import (
     DIMENSION_KEYS,
+    AiReviewError,
     build_scoring_inputs,
     default_judges,
     freeze_judges,
@@ -256,21 +256,26 @@ async def test_resume_must_not_drop_the_ai_identity_and_packet_anchors(tmp_path:
     assert after.get("packet_sha256") == before["packet_sha256"], "resume 之后评审包锚丢失：评审包不再绑到本批次"
 
 
-async def test_formal_batch_must_reject_a_calibration_stage_identity(
-    tmp_path: Path, settings_for_tests: Any, monkeypatch: pytest.MonkeyPatch
-) -> None:
+async def test_formal_batch_must_reject_a_calibration_stage_identity(tmp_path: Path, settings_for_tests: Any) -> None:
     """`label=test` 的批次不得用 `stage=calibration` 的身份出 AI 结论。
 
     缺口：`_verify_identity` 只校验 stage 取值合法与 hash 自洽，从不把 stage 与批次
     label 对照；而 `calibration` 分支允许在已有评分尝试之后再冻结身份，
     即「正式成绩」可由事后选定的量表/模型产出。
     """
-    # 正式批次另有「工作区必须干净」的独立守卫；本例只关心 AI 通道对 label 的处理。
-    monkeypatch.setattr(runner, "_require_clean_code_for_formal", lambda **_kwargs: None)
-    store = await _exported_run(tmp_path, settings=settings_for_tests, label="test")
+    store = await _exported_run(tmp_path, settings=settings_for_tests)
     await _frozen_and_scored(store)
+    assert verify_ai_review_report(store, require_complete=True).ok
+
+    # 模拟旧版留下的正式批次：读回也必须拒绝，不能只守住新身份入口。
+    manifest = store.read_manifest()
+    manifest["label"] = "test"
+    store.write_manifest(manifest)
     assert store.read_manifest()["label"] == "test", "前置条件：批次标为正式"
     assert load_identity(store)["stage"] == "calibration", "前置条件：身份是校准阶段冻结的"
+
+    with pytest.raises(AiReviewError, match="stage=formal"):
+        freeze_judges(store, judges=default_judges("stub-model"), stage="calibration", log=lambda _message: None)
 
     report = verify_ai_review_report(store, require_complete=True)
     assert not report.ok, (
