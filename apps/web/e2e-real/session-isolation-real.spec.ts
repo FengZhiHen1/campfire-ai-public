@@ -165,9 +165,13 @@ test.describe('@session-isolation 账号隔离与停止后恢复（真实依赖�
 
       await registerWithInvite(page, ACCOUNT_A, PASSWORD_A, inviteA);
       const cookiesA = await readSessionCookieFacts(context, page);
-      expect(cookiesA.tokenCookies.some((cookie) => cookie.name === 'sAccessToken')).toBe(true);
+      const credentialCookieNames = cookiesA.tokenCookies.map((cookie) => cookie.name);
+      expect(credentialCookieNames).toEqual(expect.arrayContaining(['sAccessToken', 'sRefreshToken']));
+      expect(credentialCookieNames).toHaveLength(2);
       expect(cookiesA.tokenCookies.every((cookie) => cookie.httpOnly), '会话凭据必须 httpOnly').toBe(true);
       expect(cookiesA.jsVisibleCookieNames).not.toContain('sAccessToken');
+      expect(cookiesA.jsVisibleCookieNames).not.toContain('sRefreshToken');
+      expect(cookiesA.jsVisibleCookieNames).toContain('sFrontToken');
 
       // A 建档案对象（真 201）
       await page.goto(`${BASE_URL}/profile`);
@@ -282,10 +286,14 @@ test.describe('@session-isolation 账号隔离与停止后恢复（真实依赖�
 
       await registerWithInvite(page, ACCOUNT_B, PASSWORD_B, inviteB);
       expect(await page.evaluate(() => localStorage.getItem('campfire.account-name'))).toBe(ACCOUNT_B);
-      expect(
-        (await readSessionCookieFacts(context, page)).tokenCookies.every((cookie) => cookie.httpOnly),
-        'B 的凭据同样必须 httpOnly',
-      ).toBe(true);
+      const cookiesB = await readSessionCookieFacts(context, page);
+      const credentialCookieNamesB = cookiesB.tokenCookies.map((cookie) => cookie.name);
+      expect(credentialCookieNamesB).toEqual(expect.arrayContaining(['sAccessToken', 'sRefreshToken']));
+      expect(credentialCookieNamesB).toHaveLength(2);
+      expect(cookiesB.tokenCookies.every((cookie) => cookie.httpOnly), 'B 的凭据同样必须 httpOnly').toBe(true);
+      expect(cookiesB.jsVisibleCookieNames).not.toContain('sAccessToken');
+      expect(cookiesB.jsVisibleCookieNames).not.toContain('sRefreshToken');
+      expect(cookiesB.jsVisibleCookieNames).toContain('sFrontToken');
 
       // B：三处界面都不该有 A 的东西（界面 + 接口两层）
       await page.goto(`${BASE_URL}/consult`);
