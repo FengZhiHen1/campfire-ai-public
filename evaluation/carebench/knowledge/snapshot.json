@@ -1,0 +1,117 @@
+{
+  "snapshot_version": "2026-10-29",
+  "corpus_root": "data/knowledge",
+  "note": "CareBench 评测知识快照的许可裁定表。只列 included 的文件允许出现在评测库里；src_path 的 basename 用来核对库内条目来源。裁定依据见 data/README.md 与 data/knowledge/autism-corpus/采集出处与许可清单.md；带非商业/保留权利条款的一律 blocked。 2026-10-29 主 agent 实测快照：6 条 knowledge / 117 节点 / 0 案例，已排除 3 个真实访谈案例与 NHC 的重复加工版（autism-md/03），本清单据此对齐。",
+  "included": [
+    {
+      "path": "autism-corpus/nhc-0-6-autism-screening-intervention.md",
+      "sha256": "86da147e964748783962612ef7dfb248415364c095b0f77b9c1dcde919ca228e",
+      "license": "中国政府公开发布，可引用",
+      "license_basis": "data/README.md 一.1.1",
+      "source_kind": "institutional"
+    },
+    {
+      "path": "autism-corpus/pmc-hume-third-generation-review.md",
+      "sha256": "14418f51d04bbf7e0a5ed5f675764eec8c09126415fbce9cd35d4e1ee503a64a",
+      "license": "CC BY 4.0（需署名）",
+      "license_basis": "data/README.md 一.1.1；DOI 10.1007/s10803-020-04844-2",
+      "source_kind": "review"
+    },
+    {
+      "path": "autism-md/01_孤独症谱系障碍儿童干预康复指南_2026.md",
+      "sha256": "8b3488fe851cd22394d69f37192e8c838a52ad5c85c3e932042cbfb373a61f6b",
+      "license": "中国政府公开发布，可引用",
+      "license_basis": "data/README.md 一.1.2 表首行（NHC 指南）",
+      "source_kind": "institutional"
+    },
+    {
+      "path": "autism-md/02_孤独症谱系障碍儿童干预康复指南_2026_文件解读.md",
+      "sha256": "d616b851a3fbe4ffc445df8849d6768f8dd95eaf11c678390bedc43936d41b6d",
+      "license": "中国政府公开发布，可引用",
+      "license_basis": "data/README.md 一.1.2 表首行（NHC 指南解读）",
+      "source_kind": "institutional"
+    },
+    {
+      "path": "autism-md/04_0-6岁儿童孤独症筛查干预服务规范_文件解读.md",
+      "sha256": "2aa8a1c3611a3a4a65ae861ce8a729c9b327ca58b7b491227009492ba72c968a",
+      "license": "中国政府公开发布，可引用",
+      "license_basis": "data/README.md 一.1.2 表首行（NHC 规范解读）",
+      "source_kind": "institutional"
+    },
+    {
+      "path": "autism-md/11_CDC_Autism_Wandering_Is_an_Emergency.md",
+      "sha256": "64b07caaca33ee2db66517fbe7ab1301a9b2ada46ff76ce74dc152718de3116d",
+      "license": "美国政府作品（CDC），符合 CDC 规则与第三方素材限制即可再利用",
+      "license_basis": "data/README.md 一.1.2 表（CDC 走失应急）",
+      "source_kind": "institutional"
+    }
+  ],
+  "blocked": [
+    {
+      "path": "autism-md/03_0-6岁儿童孤独症筛查干预服务规范_试行.md",
+      "reason": "与 autism-corpus/nhc-0-6-autism-screening-intervention.md 是同一份 NHC 文件的两种加工产物（条目标题相同、内容重叠）；快照只保留一份，避免检索出现同名重复结果并让「同快照」口径含糊"
+    },
+    {
+      "path": "autism-md/05_WHO_自闭症事实清单.md",
+      "reason": "© WHO，再利用须遵 WHO 条款，未取得明文授权（EVID-B 未裁决）"
+    },
+    {
+      "path": "autism-md/06_WHO_CST_Participants_Guide_Sessions_1-9.md",
+      "reason": "CC BY-NC-SA 3.0 IGO（非商业）"
+    },
+    {
+      "path": "autism-md/07_WHO_CST_Facilitators_Guide_Sessions_1-9.md",
+      "reason": "CC BY-NC-SA 3.0 IGO（非商业）"
+    },
+    {
+      "path": "autism-md/08_WHO_CST_Home_Visit_Guide.md",
+      "reason": "CC BY-NC-SA 3.0 IGO（非商业）"
+    },
+    {
+      "path": "autism-md/09_WHO_CST_Caregiver_Wellbeing.md",
+      "reason": "CC BY-NC-SA 3.0 IGO（非商业）"
+    },
+    {
+      "path": "autism-md/10_NICE_CG170_Autism_Under_19s.md",
+      "reason": "© NICE，限私人研究/学习/内部使用，不得分发"
+    },
+    {
+      "path": "autism-md/12_NAS_Distressed_Behaviour.md",
+      "reason": "© National Autistic Society，再利用须另行确认"
+    },
+    {
+      "path": "autism-md/13_NAS_Meltdowns.md",
+      "reason": "© National Autistic Society，再利用须另行确认"
+    },
+    {
+      "path": "autism-md/14_NAS_Self_Injurious_Behaviour.md",
+      "reason": "© National Autistic Society，再利用须另行确认"
+    },
+    {
+      "path": "autism-md/15_NAS_Autism_and_Sensory_Processing.md",
+      "reason": "© National Autistic Society，再利用须另行确认"
+    },
+    {
+      "path": "autism-md/16_Autism_Speaks_Visual_Supports_and_Autism.md",
+      "reason": "允许原样传播，部分图像另有版权；未逐项核清"
+    }
+  ],
+  "excluded_corpora": [
+    {
+      "path": "data/cases/2026-05-25_1448_respecting-pace-asd",
+      "reason": "真实访谈转写（status=internal）；同意文本未持有，评测库不得出现（主 agent 明确要求排除）"
+    },
+    {
+      "path": "data/cases/2026-05-30_2243_emotion-growth-asd",
+      "reason": "真实访谈转写（status=internal）；同上"
+    },
+    {
+      "path": "data/cases/2026-05-31_0850_adult-pdd-social",
+      "reason": "真实访谈转写（status=internal）；同上"
+    },
+    {
+      "path": "data/cases/2026-11-06_1000_fictional-supermarket-meltdown",
+      "reason": "虚构演示包；是否用于内测未裁决，默认排除"
+    }
+  ]
+}
