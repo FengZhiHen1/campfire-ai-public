@@ -257,12 +257,21 @@ def build_manifest(
     progress: list[GroupProgress],
     run_identity: dict[str, Any],
     run_identity_sha256: str,
+    frozen_identity_sha256: str | None = None,
+    identity_locked: bool = False,
+    frozen_config_sha256: str | None = None,
+    config_drift_allowed: bool = False,
 ) -> dict[str, Any]:
     """组装 manifest（首次运行与续跑都会重写它：进度与状态会变，身份不变）。
 
     `run_identity` 是「跑的是哪个模型、哪个端点、哪份知识」的**无凭据**快照；
     它与 `run_identity_sha256` 一起写进 manifest，`resume` 逐项核对（见
     `runner._require_same_identity`）——批次指纹只绑案例/配置/代码，绑不住模型与端点。
+
+    `freeze_binding` 回答另一个问题：**运行身份是不是冻结时就锁定过的那一版**。
+    批次开始前锁定的身份（`freeze --identity`）与当前身份必须相等，否则 formal 批次
+    就会变成「按计划冻结、按别的模型跑」。配置漂移（`--allow-config-drift`）同样记在
+    这里，不被静默吞掉。
     """
     code = code_facts(repo_root)
     fingerprint = batch_fingerprint(
@@ -274,6 +283,17 @@ def build_manifest(
         "manifest_version": MANIFEST_VERSION,
         "run_identity": run_identity,
         "run_identity_sha256": run_identity_sha256,
+        "freeze_binding": {
+            "identity_locked": identity_locked,
+            "frozen_identity_sha256": frozen_identity_sha256,
+            "frozen_config_sha256": frozen_config_sha256,
+            "config_drift": bool(frozen_config_sha256) and frozen_config_sha256 != config.sha256,
+            "config_drift_allowed": config_drift_allowed,
+            "note": (
+                "identity_locked=true 表示冻结时已锁定模型/端点/嵌入/知识快照；"
+                "config_drift=true 表示实际配置与冻结声明不同，报告不得把它当作同一条件"
+            ),
+        },
         "run_id": run_id,
         "status": status,
         "created_at": created_at,

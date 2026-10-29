@@ -22,7 +22,7 @@ from .config import FORMAL_LABEL, RunConfig
 from .faults import plan_from_cases
 from .hashing import sha256_file
 from .knowledge import REPO_ROOT
-from .manifest import code_facts, protocol_snapshot_facts, utc_now
+from .manifest import code_facts, identity_fingerprint, protocol_snapshot_facts, utc_now
 from .store import read_json, write_json
 
 #: 冻结目录内的案例文件名。
@@ -49,6 +49,18 @@ class FrozenSet:
         """冻结记录的案例 hash。"""
         return str(self.record["dataset_sha256"])
 
+    @property
+    def run_identity(self) -> dict[str, Any] | None:
+        """冻结时锁定的运行身份（未锁定为 None）。"""
+        value = self.record.get("run_identity")
+        return value if isinstance(value, dict) else None
+
+    @property
+    def run_identity_sha256(self) -> str | None:
+        """冻结时锁定的身份指纹（未锁定为 None）。"""
+        value = self.record.get("run_identity_sha256")
+        return str(value) if value else None
+
 
 def freeze_cases(
     *,
@@ -57,6 +69,8 @@ def freeze_cases(
     out_dir: Path,
     config: RunConfig,
     operator: str | None = None,
+    identity: dict[str, Any] | None = None,
+    identity_sha256: str | None = None,
 ) -> FrozenSet:
     """冻结一份案例集到 `out_dir`。
 
@@ -66,9 +80,13 @@ def freeze_cases(
         out_dir: 冻结目录（已存在且内容不同则拒绝）。
         config: 冻结时声明的配置（其 hash 进记录；运行时若配置不同会被 run 拦下）。
         operator: 冻结人（缺省取环境变量，见 `manifest.environment_facts`）。
+        identity: 运行身份（`identity` 命令输出），冻结时锁定模型/端点/嵌入/知识快照。
+            正式冻结（`label=test`）**必须**提供：否则「按计划冻结、按别的模型跑」在
+            证据里看不出来——冻结只绑案例与配置，绑不住运行时身份。
+        identity_sha256: 身份指纹（给了 identity 就必须给，且必须与其复算结果一致）。
 
     Raises:
-        FreezeError: 目标目录已存在且案例 hash 不同。
+        FreezeError: 目标目录已存在且案例 hash 不同，或身份段缺失/不自洽。
         CaseValidationError: 案例结构不合法。
     """
     case_set = load_case_file(cases_path)
@@ -76,6 +94,20 @@ def freeze_cases(
     # 否则 `freeze --label calibration` 记下的是「label=pilot」的 hash，而 `run` 用
     # label=calibration 的配置，两者必然不等，配置漂移守卫会误报（实测踩过）。
     config = replace(config, label=label)
+    if (identity is None) != (identity_sha256 is None):
+        raise FreezeError("identity 与 identity_sha256 必须同时给出（缺一个就无法证明锁定的是哪一版身份）")
+    if identity is not None:
+        actual = identity_fingerprint(identity)
+        if actual != identity_sha256:
+            raise FreezeError(
+                f"身份指纹与身份段复算结果不一致（{str(identity_sha256)[:12]}… ≠ {actual[:12]}…）："
+                "锁定的身份不是自称的那一份"
+            )
+    if label == FORMAL_LABEL and identity is None:
+        raise FreezeError(
+            "正式冻结（label=test）必须先用 `carebench identity` 锁定运行身份（模型/端点/嵌入/知识快照），"
+            "并随 freeze 一起记录。只绑定案例与配置时，正式成绩无法证明跑的是计划里的那个模型与知识库。"
+        )
     if label == FORMAL_LABEL:
         from .manifest import code_facts
 
@@ -110,7 +142,14 @@ def freeze_cases(
                 "不要在没有身份记录的情况下继续"
             )
         existing = read_json(target_record)
-        fresh = _record_payload(case_set=case_set, config=config, label=label, operator=operator)
+        fresh = _record_payload(
+            case_set=case_set,
+            config=config,
+            label=label,
+            operator=operator,
+            identity=identity,
+            identity_sha256=identity_sha256,
+        )
         _require_same_frozen_identity(existing, fresh, out_dir=out_dir)
         # 完全相同才算幂等：只刷新时间戳，不改任何身份字段。
         existing["refrozen_at"] = utc_now()
@@ -122,7 +161,14 @@ def freeze_cases(
     if sha256_file(target_cases) != dataset_sha:
         raise FreezeError(f"写出的案例文件 hash 与源文件不一致：{target_cases}")
 
-    record = _record_payload(case_set=case_set, config=config, label=label, operator=operator)
+    record = _record_payload(
+        case_set=case_set,
+        config=config,
+        label=label,
+        operator=operator,
+        identity=identity,
+        identity_sha256=identity_sha256,
+    )
     record["frozen_at"] = utc_now()
     write_json(target_record, record)
     return FrozenSet(directory=out_dir, case_set=case_set, record=record)
@@ -138,6 +184,8 @@ IDENTITY_FIELDS = (
     "case_fixtures",
     "turns_histogram",
     "review_status_counts",
+    "run_identity",
+    "run_identity_sha256",
 )
 
 
@@ -165,6 +213,8 @@ def _record_payload(
     config: RunConfig,
     label: str,
     operator: str | None,
+    identity: dict[str, Any] | None = None,
+    identity_sha256: str | None = None,
 ) -> dict[str, Any]:
     """冻结记录的正文字段（覆盖写入时只更新这些，保留原 frozen_at）。"""
     from .manifest import environment_facts
@@ -190,12 +240,15 @@ def _record_payload(
         "case_fixtures": fixtures,
         "config": config.to_dict(),
         "config_sha256": config.sha256,
+        "run_identity": identity,
+        "run_identity_sha256": identity_sha256,
         "code": code_facts(REPO_ROOT),
         "protocol_snapshot_sha256": protocol_snapshot_facts()["sha256"],
         "operator": operator or environment_facts(REPO_ROOT)["operator"],
         "note": (
             "本记录只声明「这一批案例与配置是什么」，不声明它们被专业审核过："
-            "review_status 与 formal_ready 如实反映上游状态"
+            "review_status 与 formal_ready 如实反映上游状态。run_identity 非 null 时，"
+            "它同时锁定运行时的模型/端点/嵌入/知识快照（run 会逐项核对）"
         ),
     }
 
