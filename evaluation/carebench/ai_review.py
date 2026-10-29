@@ -1053,15 +1053,30 @@ def _blind_map(store: RunStore) -> dict[str, str]:
 
 
 def _pass_counts(store: RunStore, pass_no: int, blind_ids: list[str]) -> dict[str, Any]:
-    """某 pass 的尝试计数（只数原始尝试，不推断通过）。"""
+    """汇总某 pass 的最终覆盖、全部原始尝试与每组首尝试。"""
     attempts = load_attempts(store, pass_no)
     ok_blinds = set(_effective_ok(store, pass_no))
     latest: dict[str, str] = {}
+    first_attempts: dict[str, dict[str, Any]] = {}
+    attempt_status_counts = {status: 0 for status in ATTEMPT_STATUSES}
     for record in attempts:
-        latest[str(record.get("blind_id") or "")] = str(record.get("status") or "")
+        blind_id = str(record.get("blind_id") or "")
+        status = str(record.get("status") or "")
+        latest[blind_id] = status
+        attempt_status_counts[status] = attempt_status_counts.get(status, 0) + 1
+        if blind_id not in first_attempts or int(record.get("attempt", 1)) < int(
+            first_attempts[blind_id].get("attempt", 1)
+        ):
+            first_attempts[blind_id] = record
+    first_attempt_status_counts = {status: 0 for status in ATTEMPT_STATUSES}
+    for record in first_attempts.values():
+        status = str(record.get("status") or "")
+        first_attempt_status_counts[status] = first_attempt_status_counts.get(status, 0) + 1
     return {
         "labels": len(blind_ids),
         "attempts": len(attempts),
+        "attempt_status_counts": attempt_status_counts,
+        "first_attempt_status_counts": first_attempt_status_counts,
         "ok": sum(1 for blind in blind_ids if blind in ok_blinds),
         "invalid": sum(1 for blind in blind_ids if blind not in ok_blinds and latest.get(blind) == "invalid"),
         "error": sum(1 for blind in blind_ids if blind not in ok_blinds and latest.get(blind) == "error"),

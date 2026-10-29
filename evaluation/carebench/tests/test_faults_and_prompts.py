@@ -75,6 +75,22 @@ def test_registry_hash_changes_with_content() -> None:
     assert REGISTRY_VERSION in RunConfig().to_dict()["fault_registry_version"]
 
 
+def test_formal_fixture_example_contains_only_consumed_case_plan() -> None:
+    """正式草案保留空/不可用/浏览器外计划，不携带无人消费的 options 或超时执行暗示。"""
+    path = Path(__file__).parents[1] / "fixtures-formal.example.json"
+    raw = path.read_text(encoding="utf-8")
+    fixture = json.loads(raw)
+    assert fixture["cases"] == {
+        "CFB-T-033": ["retrieval_empty", "tool_search_empty"],
+        "CFB-T-035": ["tool_search_unavailable"],
+        "CFB-T-040": ["client_render_fault"],
+    }
+    assert "options" not in fixture
+    assert "timeout" not in raw.lower()
+    assert "out_of_harness" in raw
+    assert "未覆盖" in raw
+
+
 def test_plan_merge_keeps_both_sources(tmp_path: Path) -> None:
     """案例自带 fixtures 与命令行 fixtures 合并去重。"""
     case_path = make_cases_file(tmp_path / "cases.jsonl", count=1, fixtures=["tool_search_empty"])

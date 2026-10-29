@@ -47,12 +47,14 @@ def _ratio(passed: int, applicable: int) -> str:
     return f"{passed}/{applicable}"
 
 
-def _per_group_final(records: list[dict[str, Any]], config: RunConfig) -> dict[tuple[str, str], dict[str, Any]]:
+def _per_group_final(
+    records: list[dict[str, Any]], config: RunConfig, final_turn_by_case: dict[str, int]
+) -> dict[tuple[str, str], dict[str, Any]]:
     """每个 case-group 的**末轮有效记录**（时延与状态按末轮计）。"""
     effective = effective_records(records)
     grouped: dict[tuple[str, str], dict[str, Any]] = {}
     for (case_id, system_id, turn), record in effective.items():
-        if not is_final(record, config):
+        if turn != final_turn_by_case.get(case_id) or not is_final(record, config):
             continue
         key = (case_id, system_id)
         current = grouped.get(key)
@@ -361,10 +363,13 @@ def compute_summary(store: RunStore) -> dict[str, Any]:
     manifest = store.read_manifest()
     config = RunConfig.from_dict(manifest["config"])
     records = store.read_outputs()
-    groups = _per_group_final(records, config)
+    case_metadata = _case_metadata(store)
+    groups = _per_group_final(
+        records, config, {case_id: turns for case_id, (_category, turns) in case_metadata.items()}
+    )
 
     expected_groups = len(manifest["dataset"]["case_ids"]) * len(config.systems)
-    category_by_case = _categories(store)
+    category_by_case = {case_id: category for case_id, (category, _turns) in case_metadata.items()}
     per_system = {
         system_id: _system_stats(system_id, groups=groups, config=config).to_dict() for system_id in config.systems
     }
@@ -419,14 +424,14 @@ def summarize_run(store: RunStore, *, log: Any = print) -> dict[str, Any]:
     return summary
 
 
-def _categories(store: RunStore) -> dict[str, str]:
-    """从 run 目录内的冻结案例文件取 category（不依赖外部文件）。"""
+def _case_metadata(store: RunStore) -> dict[str, tuple[str, int]]:
+    """从 run 目录内的冻结案例文件取 category 与预定轮数。"""
     from .cases import parse_cases
 
     if not store.cases_path.exists():
         return {}
     case_set = parse_cases(store.cases_path.read_bytes(), source=str(store.cases_path), path=store.cases_path)
-    return {case.id: case.category for case in case_set.cases}
+    return {case.id: (case.category, case.turns) for case in case_set.cases}
 
 
 def _by_category(
@@ -506,7 +511,18 @@ def render_markdown(summary: dict[str, Any]) -> str:
         ["## 独立 AI 评审", "", f"状态：{summary.get('ai_review_status', 'not_started')}。不是人工评审或专业背书。", ""]
     )
     if ai is not None:
-        lines.append(f"评分尝试计数：`{ai.get('counts')}`")
+        counts = ai.get("counts") or {}
+        lines.append("评分最终覆盖与未完成状态（兼容计数；按盲组计）：")
+        for pass_name in ("pass1", "pass2"):
+            lines.append(f"- {pass_name}：`{counts.get(pass_name)}`")
+        lines.append("评分全部尝试状态（按原始尝试行计数）：")
+        for pass_name in ("pass1", "pass2"):
+            pass_counts = counts.get(pass_name) or {}
+            lines.append(f"- {pass_name}：`{pass_counts.get('attempt_status_counts')}`")
+        lines.append("评分首尝试状态（每个盲组的第一次尝试）：")
+        for pass_name in ("pass1", "pass2"):
+            pass_counts = counts.get(pass_name) or {}
+            lines.append(f"- {pass_name}：`{pass_counts.get('first_attempt_status_counts')}`")
         lines.append(f"预定分母：`{ai.get('denominators')}`")
         lines.append(f"分歧裁定：`{ai.get('adjudication')}`")
         for reason in ai.get("pending_reasons") or []:
