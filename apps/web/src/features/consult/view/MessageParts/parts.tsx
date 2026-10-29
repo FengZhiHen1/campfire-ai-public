@@ -36,8 +36,8 @@ import { ToolIndicator } from './ToolIndicator';
  * 取值仍然是「工作面持有、渲染器只读」，渲染器不订阅任何全局 store。
  */
 export interface ConsultThreadContextValue {
-  /** 提问卡整组提交后追加使用者消息。 */
-  submitAnswers(displayText: string): void;
+  /** 提问卡整组提交后追加使用者消息；返回 false = 没被受理（卡片须保持可作答）。 */
+  submitAnswers(displayText: string): boolean;
   /** 当前最新的行动卡 id；用于把旧卡标为失效（同会话内更晚的卡为准）。 */
   newestActionCardId: string | null;
   /** 对话是否仍在流式输出（思考行的行内文案据此切换）。 */

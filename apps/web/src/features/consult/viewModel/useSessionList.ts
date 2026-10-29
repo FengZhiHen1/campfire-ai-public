@@ -22,7 +22,14 @@ import { failureViewFor, type ConsultFailureView } from '../domain/errors';
 /** 列表状态：三态显式 + 触底加载中的附加标记。 */
 export type SessionListState =
   | { status: 'loading' }
-  | { status: 'ready'; rows: ConversationRow[]; nextCursor: string | null; loadingMore: boolean }
+  | {
+      status: 'ready';
+      rows: ConversationRow[];
+      nextCursor: string | null;
+      loadingMore: boolean;
+      /** 分页失败（只影响「更多」）：已加载的行与入口保持可用，见 retryLoadMore。 */
+      loadMoreFailure: ConsultFailureView | null;
+    }
   | { status: 'error'; failure: ConsultFailureView };
 
 /** 会话列表控制器。 */
@@ -30,6 +37,8 @@ export interface SessionListController {
   state: SessionListState;
   /** 触底加载下一页（无下一页或已在加载时不动作）。 */
   loadMore(): void;
+  /** 分页失败后的手动重试（失败后先停住，否则触底观察者会对同一个坏游标连环重试）。 */
+  retryLoadMore(): void;
   /** 重新加载首页（错误态的重试）。 */
   reload(): void;
   /** 新对话入口：建会话后跳转。 */
@@ -59,10 +68,19 @@ export function useSessionList(
   const [creating, setCreating] = useState(false);
   const creatingRef = useRef(false);
   const [createFailure, setCreateFailure] = useState<ConsultFailureView | null>(null);
+  // 分页失败单独存放（不并进 settledError）：并进去会让 state 变成 error，
+  // 已加载的行整体消失，一次网络抖动看起来像「记录没了」。
+  const [loadMoreFault, setLoadMoreFault] = useState<{ key: string; failure: ConsultFailureView } | null>(null);
+  const loadMoreFaultRef = useRef<{ key: string; failure: ConsultFailureView } | null>(null);
   // 序号守卫（VM-06）：只有最新一轮加载允许写状态。
   const generation = useRef(0);
   const loadingMoreRef = useRef(false);
   const taskKey = `${String(attempt)}`;
+
+  const writeLoadMoreFault = (fault: { key: string; failure: ConsultFailureView } | null): void => {
+    loadMoreFaultRef.current = fault;
+    setLoadMoreFault(fault);
+  };
 
   useEffect(() => {
     const current = generation.current + 1;
@@ -91,16 +109,21 @@ export function useSessionList(
 
   const ready = settled !== null && settled.key === taskKey;
   const failure = settledError !== null && settledError.key === taskKey ? settledError.failure : null;
+  const loadMoreFailure = loadMoreFault !== null && loadMoreFault.key === taskKey ? loadMoreFault.failure : null;
   const state: SessionListState =
     failure !== null
       ? { status: 'error', failure }
       : ready
-        ? { status: 'ready', rows: settled.rows, nextCursor: settled.nextCursor, loadingMore }
+        ? { status: 'ready', rows: settled.rows, nextCursor: settled.nextCursor, loadingMore, loadMoreFailure }
         : { status: 'loading' };
 
   const loadMore = (): void => {
     if (!ready || settled.nextCursor === null) return;
     if (loadingMoreRef.current) return;
+    // 失败后停住：触底观察者会在每次渲染后重新 observe，不拦住会连环重试同一个坏游标。
+    // 只认本轮任务的失败（上一轮重新加载留下的失败按 key 自然失效，不必在 effect 里清状态）。
+    const fault = loadMoreFaultRef.current;
+    if (fault !== null && fault.key === taskKey) return;
     loadingMoreRef.current = true;
     setLoadingMore(true);
     const current = generation.current;
@@ -123,8 +146,8 @@ export function useSessionList(
       } catch (caught) {
         if (generation.current !== current) return;
         // 分页失败不清空已加载内容：错误只影响「更多」，入口与已有列表保持可用。
-        // 分页错误按当前任务 key 归属（成功加载首页后它会被清掉）。
-        setSettledError({ key: taskKey, failure: failureViewFor(caught) });
+        // 按当前任务 key 归属（重新加载首页时会被清掉）。
+        writeLoadMoreFault({ key: taskKey, failure: failureViewFor(caught) });
       } finally {
         loadingMoreRef.current = false;
         setLoadingMore(false);
@@ -132,9 +155,16 @@ export function useSessionList(
     })();
   };
 
+  const retryLoadMore = (): void => {
+    if (loadMoreFaultRef.current === null || loadMoreFaultRef.current.key !== taskKey) return;
+    writeLoadMoreFault(null);
+    loadMore();
+  };
+
   const reload = (): void => {
     setSettled(null);
     setSettledError(null);
+    writeLoadMoreFault(null);
     setLoadingMore(false);
     setAttempt((value) => value + 1);
   };
@@ -155,5 +185,5 @@ export function useSessionList(
     }
   };
 
-  return { state, loadMore, reload, startNewConversation, creating, createFailure };
+  return { state, loadMore, retryLoadMore, reload, startNewConversation, creating, createFailure };
 }

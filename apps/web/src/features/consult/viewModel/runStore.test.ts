@@ -23,6 +23,7 @@ import {
   runStarted,
   textDelta,
 } from '../test/fixtures';
+import type { RunFailedEvent } from '../../../shared/types/sse';
 
 /** 每个用例一个干净 store（工厂形式，避免单例跨用例污染）。 */
 function newStore() {
@@ -105,6 +106,18 @@ describe('runStore — 事件映射（技术设计第 3 节全表）', () => {
     expect(failure?.title).toBe('检索暂时不可用');
     expect(failure?.message).not.toContain('未找到');
     expect(failure?.message).not.toContain('没有资料');
+  });
+
+  /** 2026-10-29 审查：表外失败码不得落 `undefined`——对话页错误卡读 `.title` 会白屏。 */
+  it('run_failed 的错误码在词表外：落到确定的「未预期」呈现，不产生 undefined', () => {
+    store
+      .getState()
+      .applyRunEvent({ ...runFailed('internal'), code: 'brand_new_code' } as unknown as RunFailedEvent);
+
+    const failure = store.getState().failure as ConsultRunState['failure'];
+    expect(failure).not.toBeNull();
+    expect(failure?.title).toBe('回答没有生成成功');
+    expect(failure?.retryable).toBe(true);
   });
 });
 
