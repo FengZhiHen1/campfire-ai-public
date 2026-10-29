@@ -222,12 +222,7 @@ def classify(path: str) -> str:
     if normalized.startswith("scripts/"):
         return CAT_SCRIPTS
     if normalized.startswith(EVAL_ROOT):
-        # CareBench 评测工具（2026-10-29 补）：此前整棵树落到 `unknown`，改一行评测
-        # 脚本就让 `quick` 阻塞。这里按「能跑的检查」拆三类——源码与测试走 ruff，
-        # 案例/快照/样例配置这类非 Python 数据没有独立 linter，但它们正是工具自身
-        # 用例的输入（`test_cases` / `test_knowledge_content` / 冻结与核验用例），
-        # 所以同样由该工具的确定性 pytest 校验。文档（README、protocol/）仍归文档，
-        # 由设计文档一致性检查把关，不在评测工具这条线上吞掉。
+        # 源码、测试和数据由工具的确定性检查覆盖；Markdown 保留文档检查。
         if name.endswith(".md"):
             return CAT_DOCS
         if normalized.startswith(f"{EVAL_ROOT}tests/"):
@@ -307,10 +302,13 @@ def pytest_files_for(paths: list[str], existing_tests: list[Path]) -> list[str] 
     2. 改到 `scripts/*.py` → 跑 `scripts/tests/test_<stem>*.py`（若存在）。
     3. 改到 CareBench 的源码或数据（案例、快照、样例配置）→ 跑 `EVAL_TESTS` 整棵树：
        该工具的用例跨文件互相校验（案例 ↔ 冻结 ↔ 核验），按文件名猜单个目标容易漏判，
-       而整棵测试树是确定性的、几十条、秒级。
+       而整棵测试树是确定性的、秒级。
     4. 改到 `apps/api` 源码 → 用路径里的**第一个**非容器层词去匹配 `test_<词>_*.py`；
        匹配不到再退到文件名（如 `pending_write` → `test_pending_write_*.py`）；
        仍匹配不到 → `None`。
+
+    规则 1 与规则 3 可以同时命中（源码 + 该工具某个既有测试一起改）：此时目录已经覆盖
+    那个子文件，返回值按 :func:`_drop_covered_by_selected_dirs` 归一化，只留目录。
 
     Args:
         paths: 改动路径（仓库相对）。可以含已被删除的路径：它只影响分类，
@@ -366,7 +364,19 @@ def pytest_files_for(paths: list[str], existing_tests: list[Path]) -> list[str] 
 
     if unresolved:
         return None
-    return sorted(selected)
+    return _drop_covered_by_selected_dirs(sorted(selected))
+
+
+def _drop_covered_by_selected_dirs(selected: list[str]) -> list[str]:
+    """去掉已被选中目录覆盖的子目标，保持原顺序。"""
+    directories = [path for path in selected if (ROOT / path).is_dir()]
+    if not directories:
+        return selected
+    return [
+        path
+        for path in selected
+        if not any(path != directory and path.startswith(f"{directory.rstrip('/')}/") for directory in directories)
+    ]
 
 
 def existing_test_files() -> list[Path]:

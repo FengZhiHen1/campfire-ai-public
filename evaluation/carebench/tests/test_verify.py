@@ -54,8 +54,8 @@ def TurnOutcome_factory():  # noqa: N802 —— 测试内构造器，命名沿�
 async def test_verify_passes_on_clean_run(tmp_path: Path, settings_for_tests: Any, faults_for_tests: FaultPlan) -> None:
     """干净批次（含 summary 与评审包）应通过校验。"""
     store = await _run(tmp_path, settings=settings_for_tests, faults=faults_for_tests)
-    summarize_run(store, log=lambda _message: None)
     export_packet(store, log=lambda _message: None)
+    summarize_run(store, log=lambda _message: None)
     report = verify_run(store, require_complete=True)
     assert report.ok, report.violations
     assert report.facts["progress"]["case_groups_complete"] == 3

@@ -14,7 +14,6 @@ from typing import Any, Callable
 
 import pytest
 
-
 from evaluation.carebench.config import RunConfig
 from evaluation.carebench.faults import FaultPlan, load_plan
 from evaluation.carebench.freeze import FreezeError, freeze_cases
@@ -91,8 +90,8 @@ async def test_clean_run_with_fixtures_passes_all_guards(tmp_path: Path, setting
     """有故障注入的干净批次也必须能通过：护栏不能是「永远失败」的检查。"""
     plan = load_plan(_fixtures_file(tmp_path))
     store = await _run(tmp_path, settings=settings_for_tests, faults=plan, run_id="carebench-clean-fixtures")
-    summarize_run(store, log=lambda _message: None)
     export_packet(store, log=lambda _message: None)
+    summarize_run(store, log=lambda _message: None)
     report = verify_run(store, require_complete=True)
     assert report.ok, report.violations
 
