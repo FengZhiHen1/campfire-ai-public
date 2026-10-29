@@ -79,6 +79,7 @@ from campfire.modules.profile import (
 )
 from campfire.surfaces.consult import assembly, runbus
 from campfire.surfaces.consult.answers import SendMessageRequest, render_answers
+from campfire.surfaces.consult.citations import refresh_citation_freshness
 from campfire.surfaces.consult.emergency import EmergencyConsultRequest
 from campfire.surfaces.consult.injections import (
     EMERGENCY_MEMORY_SOURCE,
@@ -410,6 +411,11 @@ async def hydrate_history(session_id: str, session: SessionDep, settings: Settin
     `messages: []`——契约第 3.3 节明令「不显示空对话冒充成功」，而两者在数据层
     就是不同的结果（用例层的 `load_history` 只在前者抛错）。
 
+    读出的历史在返回前过一遍引用新鲜度刷新（:func:`refresh_citation_freshness`）：
+    引用载荷里的 `status`/`applicable_scope` 是写入时的快照，而「这个来源现在还能不能
+    作为依据」只能按当前真源现查。核对不出来的回指呈「未知」，既不说成「已撤下」，
+    也不说成「仍在库」——这条边界由 `citations` 拥有，本端点的职责只是别漏掉这一步。
+
     Raises:
         HTTPException: 会话不存在或不属于当前账号（404），或会话标识形状不合法（422）。
     """
@@ -422,9 +428,19 @@ async def hydrate_history(session_id: str, session: SessionDep, settings: Settin
         except SessionQueryError as exc:
             raise _unprocessable(str(exc)) from exc
 
+    # 引用新鲜度现查：载荷里的 `withdrawn` 是写入时的快照，而呈现方要回答的是
+    # 「**现在**还能不能作为依据」，因此历史水合必须按当前真源重新核对一遍。
+    # 三条形状约束（都来自 `citations` 的契约，不是这里的猜测）：
+    # 1. 必须在事务块**之外**调用——它自己开 `session_scope`（只读、按库别分批取条目）；
+    # 2. 它返回**新的**消息列表，输入不被修改，因此取返回值而不改 `history`；
+    # 3. 它**不抛异常**：取数失败整批按「未知」呈现（`None`），由 `citations` 内部收口，
+    #    核对不出来的回指不得说成「已撤下」，也不得说成「仍在库」。这里因此不加兜底——
+    #    加了只会把「接线错位」这类真故障掩盖成一次安静的成功。
+    messages = await refresh_citation_freshness(settings, history.messages)
+
     return JSONResponse(
         status_code=status.HTTP_200_OK,
-        content={"session_id": history.session_id, "messages": list(history.messages)},
+        content={"session_id": history.session_id, "messages": list(messages)},
     )
 
 
