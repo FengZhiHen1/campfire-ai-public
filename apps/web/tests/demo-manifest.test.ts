@@ -20,7 +20,7 @@
 import { createHash } from 'node:crypto';
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -49,7 +49,8 @@ vi.mock('../demo/support/paths', async (importOriginal) => {
 });
 
 const { buildDemoManifest } = await import('../demo/support/manifest');
-const { VIEWPORT, DEVICE_SCALE_FACTOR } = await import('../demo/support/paths');
+const { VIEWPORT, DEVICE_SCALE_FACTOR, REPO_ROOT, toRepoRelative } = await import('../demo/support/paths');
+const { REPO_ROOT: SHOTS_REPO_ROOT, toRepoRelative: shotsToRepoRelative } = await import('../e2e/support/paths');
 type DemoScenario = import('../demo/support/scenario').DemoScenario;
 
 const RUN_ID = '2026-10-27T00:00:00.000Z-abcdef12';
@@ -132,6 +133,20 @@ beforeEach(async () => {
 
 afterEach(async () => {
   await rm(sandbox.dir, { recursive: true, force: true });
+});
+
+describe('材料路径在 worktree 与临时落点中的身份', () => {
+  it.each([
+    ['demo', REPO_ROOT, toRepoRelative],
+    ['shots', SHOTS_REPO_ROOT, shotsToRepoRelative],
+  ] as const)('%s：仓库外的两张图仍有不同且可还原的路径', (_name, root, convert) => {
+    const first = join(sandbox.dir, '01-declared.png');
+    const second = join(sandbox.dir, '99-orphan.png');
+    expect(convert(first)).not.toBe(convert(second));
+    expect(resolve(root, convert(first))).toBe(first);
+    expect(resolve(root, convert(second))).toBe(second);
+    expect(convert(join(root, 'demo', 'shot.png'))).toBe('demo/shot.png');
+  });
 });
 
 describe('演示材料清单的五条判据', () => {
