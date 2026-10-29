@@ -1,0 +1,13 @@
+{
+  "_note": [
+    "正式 40 例的故障注入计划草案（主 agent 冻结前裁定用）。",
+    "T033 空结果 / T035 检索不可用：在真实接缝上实施（B 的检索、C 的工具池）。",
+    "T040 客户端渲染故障：发生在浏览器层，不经过程序内 runner —— 记 out_of_harness（未覆盖），",
+    "不得写成「已注入」。要测它只能走 apps/web 的 playwright e2e。"
+  ],
+  "cases": {
+    "CFB-T-033": ["retrieval_empty", "tool_search_empty"],
+    "CFB-T-035": ["tool_search_unavailable"],
+    "CFB-T-040": ["client_render_fault"]
+  }
+}
