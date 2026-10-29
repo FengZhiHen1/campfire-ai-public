@@ -49,6 +49,7 @@ from campfire.agent.skill_runtime import (
     render_activation,
 )
 from campfire.agent.tools import ActivationState, ToolContext, ToolDispatcher, ToolPool, ToolScope, resolve_scope
+from campfire.core.config import apply_no_proxy_normalization
 
 from .ask_user_tool import ASK_USER_TOOL_NAME
 from .assembly import QuestionGate, ToolBridge, WindowCallback, build_agent, build_run_config, stop_after_question
@@ -353,7 +354,23 @@ class AgentRunner:
 
         生成器结束即运行结束；正常情况下最后一个事件是 `run_finished` 或 `run_failed`。
         消费者取消自己的任务时不会收到结束事件（取消以 `CancelledError` 表达）。
+
+        入口第一件事是**进程级 `no_proxy` 规范化**（幂等，见
+        :func:`campfire.core.config.apply_no_proxy_normalization`）。理由是一个实测过的
+        崩溃形状：OpenAI Agents SDK 的迹导出器（`agents/tracing/processors.py` 的
+        `BackendSpanExporter`）在**第一次产生 trace 时**惰性构造
+        `httpx2.Client(timeout=...)`，该客户端 `trust_env` 默认开启，于是宿主机
+        `no_proxy` 含方括号 IPv6 字面量（如 `[::1]`）时构造期直接抛
+        `InvalidURL: Invalid port: ':1]'`——**在第一次模型请求之前**，表现为「只发出
+        run_started，然后就没了」。
+
+        `main.py` / `worker.py` 已有模块导入期的同一调用，但那覆盖不了
+        **非 main 的程序内装配**（评测、脚本、批处理）：它们不经那两个入口模块，
+        于是那次构造落在未规范化的环境里。入口级再调一次是唯一不依赖「调用方
+        记得先做什么」的位置；它幂等，重复调用没有副作用。
         """
+        apply_no_proxy_normalization()
+
         started = time.monotonic()
         run_id = uuid.uuid4().hex
         # ★ 顺序：**先造引用写入端，再包会话**（2026-10-07 T38）。
@@ -524,16 +541,23 @@ class AgentRunner:
         # 基座第 8 节要记 token。
         carried = RunUsage()
         while True:
-            # max_turns=None：基座第 2 节不设步数上限。
-            # SDK 默认的 10 轮就是一条步数上限。
-            result = Runner.run_streamed(
-                agent,
-                input=new_items,
-                session=session,
-                max_turns=None,
-                run_config=run_config,
-            )
             try:
+                # max_turns=None：基座第 2 节不设步数上限。
+                # SDK 默认的 10 轮就是一条步数上限。
+                #
+                # 构造放在 try 内（2026-10-29 修）：`Runner.run_streamed(...)` 在**返回之前**
+                # 就会装配 SDK 侧的一切（含 trace 导出器的 `httpx2.Client`）。它在 try 之外时，
+                # 构造期异常会整条冒出去——消费方只收到 `run_started` 就再无下文，
+                # 既没有 `run_failed` 也没有错误码，运维无法区分「运行没开始」与「连接断了」
+                # （实测形状：宿主机 `no_proxy` 含 `[::1]` 时抛 `InvalidURL: Invalid port: ':1]'`）。
+                # 放到 try 内后，这类异常走下面的通用分支，转成带码的 `internal` 失败。
+                result = Runner.run_streamed(
+                    agent,
+                    input=new_items,
+                    session=session,
+                    max_turns=None,
+                    run_config=run_config,
+                )
                 async for event in self._stream(
                     result=result,
                     recorder=recorder,
@@ -583,6 +607,22 @@ class AgentRunner:
                     )
                     return
                 yield ProgressEvent(message="提供方报了上下文溢出，已做最大头部缩减，重试本次运行。")
+            except Exception as exc:  # noqa: BLE001 —— 构造/装配阶段的未归类异常也要变成带码的失败
+                # 走到这里说明**运行还没真正开始**（`_stream` 已把流式阶段的异常转成
+                # `run_failed`）：典型成因是 SDK 侧装配失败（trace 导出器的 HTTP 客户端、
+                # 会话/配置形状不合法）。不吞掉，也不让异常裸冒出去——基座第 9 节的失败
+                # 语义要求消费方总能拿到一个带码的结束事件。
+                logger.warning("运行未能开始 run=%s error=%s", recorder.run_id, type(exc).__name__)
+                yield _failure(
+                    "internal",
+                    f"运行未能开始（{type(exc).__name__}）",
+                    recorder,
+                    carried,
+                    started,
+                    exc,
+                    compactions=tuple(compactions),
+                )
+                return
 
     async def _compact_before_run(
         self,
