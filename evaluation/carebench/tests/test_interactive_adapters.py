@@ -438,6 +438,10 @@ async def test_emergency_first_turn_activates_skill_and_injects_empty_profile_me
     assert outcome.trace["interactive"]["entry"] == ENTRY_EMERGENCY
     assert outcome.trace["interactive"]["first_emergency_turn"] is True
     assert outcome.trace["run_request"]["activated"] == ["emergency-consulting"]
+    assert outcome.trace["run_request"]["injections"] == 2
+    assert outcome.trace["interactive"]["request"]["injection_items"] == [
+        {"source": item.source, "role": item.role, "content": item.content} for item in request.injections.items
+    ]
     assert outcome.meta["activated_skills"] == []
 
 
@@ -458,6 +462,8 @@ async def test_emergency_followup_continues_without_reinjection(tmp_path: Any, s
     assert request.injections.unavailable == ()
     assert request.user_input == user_text
     assert request.default_active_tools == DAILY_TOOLS
+    assert outcome.trace["run_request"]["injections"] == 0
+    assert outcome.trace["interactive"]["request"]["injection_items"] == []
     assert outcome.trace["interactive"]["first_emergency_turn"] is False
     assert outcome.meta["activated_skills"] == []
 
