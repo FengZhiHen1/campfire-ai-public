@@ -189,6 +189,7 @@ export async function logoutViaSettings(page: Page): Promise<void> {
 
 /** 会话 cookie 读数（只有名称与 httpOnly 标志，**不含值**）。 */
 export interface SessionCookieFacts {
+  /** SDK 认证凭据；sFrontToken 是 JS 可见的会话元数据，不属于此集合。 */
   readonly tokenCookies: { name: string; httpOnly: boolean; path: string }[];
   /** `document.cookie` 能读到的 cookie 名——凭据不得出现在这里。 */
   readonly jsVisibleCookieNames: string[];
@@ -198,7 +199,7 @@ export interface SessionCookieFacts {
 export async function readSessionCookieFacts(context: BrowserContext, page: Page): Promise<SessionCookieFacts> {
   const cookies = await context.cookies();
   const tokenCookies = cookies
-    .filter((cookie) => /^s[A-Za-z]*Token$/.test(cookie.name))
+    .filter((cookie) => cookie.name === 'sAccessToken' || cookie.name === 'sRefreshToken')
     .map((cookie) => ({ name: cookie.name, httpOnly: cookie.httpOnly, path: cookie.path }));
   const jsVisibleCookieNames = await page.evaluate(() =>
     document.cookie
