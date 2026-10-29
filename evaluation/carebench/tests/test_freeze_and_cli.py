@@ -36,6 +36,27 @@ def test_freeze_records_hashes_and_is_idempotent(tmp_path: Path) -> None:
     assert "refrozen_at" in again.record
 
 
+def test_refreeze_with_different_config_is_refused(tmp_path: Path) -> None:
+    """同一批案例、不同实验条件：必须拒绝，且**不得**改写已冻结的记录。
+
+    此前 `record.update(payload)` 会把旧记录洗成新 config/commit，于是冻结记录再也
+    证明不了当时跑的是什么。
+    """
+    cases = make_cases_file(tmp_path / "cases.jsonl", count=1)
+    out = tmp_path / "frozen"
+    freeze_cases(cases_path=cases, label="calibration", out_dir=out, config=RunConfig())
+    before = (out / "freeze.json").read_text(encoding="utf-8")
+
+    with pytest.raises(FreezeError, match="另一组实验条件"):
+        freeze_cases(
+            cases_path=cases,
+            label="calibration",
+            out_dir=out,
+            config=RunConfig(turn_timeout_seconds=120.0),
+        )
+    assert (out / "freeze.json").read_text(encoding="utf-8") == before, "冻结记录被改写了"
+
+
 def test_freeze_refuses_to_replace_different_cases(tmp_path: Path) -> None:
     """同一冻结目录换了案例就必须拒绝（看过输出后不得重冻同一批）。"""
     out = tmp_path / "frozen"

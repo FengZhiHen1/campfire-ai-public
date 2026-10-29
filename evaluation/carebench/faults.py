@@ -27,7 +27,7 @@ from .hashing import sha256_value
 
 #: 注册表版本。任何实现的增删改都必须让它变化，从而改变 `config_sha256`——
 #: 否则「同一配置」可能对应两套注入能力。
-REGISTRY_VERSION = "0.1"
+REGISTRY_VERSION = "0.2"
 
 #: 已实现的 fixture：名字 → (适用组别, 实现说明)。
 #:
@@ -39,6 +39,24 @@ SUPPORTED: dict[str, tuple[tuple[str, ...], str]] = {
     "retrieval_unavailable": (("B",), "rag_evidence_override:unavailable —— 检索抛错，证据块写「检索不可用」"),
     "tool_search_empty": (("C",), "tool_pool_override:search_knowledge -> ToolResult(空结果说明)"),
     "tool_search_unavailable": (("C",), "tool_pool_override:search_knowledge -> ToolFailure(tool_failed)"),
+    "tool_search_timeout": (
+        ("C",),
+        "tool_pool_override:search_knowledge -> handler 挂住 420s（> 产品单轮预算 300s），"
+        "由产品自己的运行预算结束（run_finished.reason=timeout），记为 timeout",
+    ),
+    "retrieval_timeout": (
+        ("B",),
+        "rag_evidence_override:hang —— 检索调用挂住到评测回合上限（B 没有产品运行预算，"
+        "所以这里触发的是评测回合超时，记录里写明来源）",
+    ),
+}
+
+#: 明确**未覆盖**的故障：这类场景根本不经过程序内 runner，永远测不到。
+#: 与 `UNSUPPORTED` 的区别：`UNSUPPORTED` 是「我们还没做」，这里是「这个工具做不到」。
+OUT_OF_HARNESS: dict[str, str] = {
+    "client_render_fault": "客户端渲染故障发生在浏览器层（前端错误边界的兜底文案、SSE 断流后的"
+    "渲染状态）。程序内 runner 不进入渲染层：本工具既无法注入也无法观察，按「未覆盖」记录。"
+    "要测它只能走 apps/web 的 playwright e2e（`pnpm --filter @campfire/web e2e`），不在本工具边界内。",
 }
 
 #: 声明了但**未实现**的 fixture（写进注册表是为了让「这一类没测成」可被机械统计）。
@@ -64,6 +82,8 @@ class FixtureApplication:
     applied: bool
     impl: str | None
     note: str
+    status: str = "applied"
+    """`applied` / `not_applicable` / `unsupported` / `out_of_harness` / `unknown`。"""
 
     def to_dict(self) -> dict[str, Any]:
         """落盘形状（进 outputs 记录与 summary 的 fixture 统计）。"""
@@ -72,6 +92,7 @@ class FixtureApplication:
             "requested_by": self.requested_by,
             "systems": list(self.systems),
             "applied": self.applied,
+            "status": self.status,
             "impl": self.impl,
             "note": self.note,
         }
@@ -103,6 +124,19 @@ class FaultPlan:
         """
         applications: list[FixtureApplication] = []
         for name, requested_by in self.requested.get(case_id, ()):
+            if name in OUT_OF_HARNESS:
+                applications.append(
+                    FixtureApplication(
+                        name=name,
+                        requested_by=requested_by,
+                        systems=(),
+                        applied=False,
+                        impl=None,
+                        note=OUT_OF_HARNESS[name],
+                        status="out_of_harness",
+                    )
+                )
+                continue
             supported_systems, impl = SUPPORTED.get(name, ((), ""))
             if not supported_systems:
                 applications.append(
@@ -113,6 +147,7 @@ class FaultPlan:
                         applied=False,
                         impl=None,
                         note=UNSUPPORTED.get(name, "未知 fixture：注册表里没有这一项，按未实施处理"),
+                        status="unsupported" if name in UNSUPPORTED else "unknown",
                     )
                 )
                 continue
@@ -125,6 +160,7 @@ class FaultPlan:
                         applied=False,
                         impl=impl,
                         note=f"该 fixture 只在 {supported_systems} 上实施，本组 {system_id} 无对等注入点",
+                        status="not_applicable",
                     )
                 )
                 continue
@@ -153,12 +189,15 @@ class FaultPlan:
         requested: dict[str, int] = {}
         applied: dict[str, int] = {}
         not_applicable: dict[str, int] = {}
+        out_of_harness: dict[str, int] = {}
         for case_id in self.requested:
             for system_id in system_ids:
                 for application in self.plan_for(case_id, system_id):
                     requested[application.name] = requested.get(application.name, 0) + 1
                     if application.applied:
                         applied[application.name] = applied.get(application.name, 0) + 1
+                    elif application.status == "out_of_harness":
+                        out_of_harness[application.name] = out_of_harness.get(application.name, 0) + 1
                     elif not application.systems:
                         not_applicable[application.name] = not_applicable.get(application.name, 0) + 1
         return {
@@ -167,8 +206,16 @@ class FaultPlan:
             "requested_counts": requested,
             "applied_counts": applied,
             "not_applicable_counts": not_applicable,
+            "out_of_harness_counts": out_of_harness,
             "unsupported": {name: UNSUPPORTED[name] for name in requested if name in UNSUPPORTED},
-            "unknown": sorted(name for name in requested if name not in SUPPORTED and name not in UNSUPPORTED),
+            "out_of_harness": {name: OUT_OF_HARNESS[name] for name in requested if name in OUT_OF_HARNESS},
+            "unknown": sorted(
+                name
+                for name in requested
+                if name not in SUPPORTED and name not in UNSUPPORTED and name not in OUT_OF_HARNESS
+            ),
+            "note": "applied 之外的每一条都写了原因；`out_of_harness` 表示该场景不经过程序内 "
+            "runner，本工具未覆盖，不得写成「已注入」",
         }
 
 
@@ -256,6 +303,7 @@ def merge(*plans: FaultPlan) -> FaultPlan:
 
 __all__ = [
     "REGISTRY_VERSION",
+    "OUT_OF_HARNESS",
     "SUPPORTED",
     "UNSUPPORTED",
     "FaultPlan",

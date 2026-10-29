@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Any
 
 from .cases import CaseSet, load_case_file
-from .config import RunConfig
+from .config import FORMAL_LABEL, RunConfig
 from .faults import plan_from_cases
 from .hashing import sha256_file
 from .knowledge import REPO_ROOT
@@ -76,6 +76,16 @@ def freeze_cases(
     # 否则 `freeze --label calibration` 记下的是「label=pilot」的 hash，而 `run` 用
     # label=calibration 的配置，两者必然不等，配置漂移守卫会误报（实测踩过）。
     config = replace(config, label=label)
+    if label == FORMAL_LABEL:
+        from .manifest import code_facts
+
+        facts = code_facts(REPO_ROOT)
+        if facts["dirty"]:
+            raise FreezeError(
+                f"正式冻结（label={FORMAL_LABEL}）必须在干净工作区进行：当前有未提交改动"
+                f"（tracked {facts.get('dirty_tracked_count')} / untracked {facts.get('dirty_untracked_count')}）。"
+                "否则冻结记录绑定的 commit 并不包含实际用来冻结的代码。"
+            )
     raw = case_set.raw_bytes
     dataset_sha = case_set.sha256
 
@@ -90,12 +100,22 @@ def freeze_cases(
                 f"{out_dir} 已冻结过另一版案例（{existing_sha[:12]}… ≠ {dataset_sha[:12]}…）："
                 "看过输出后不得重冻同一批——请换一个冻结目录/标签，共同构成回归集"
             )
-        # 内容一致：只刷新元数据（幂等，便于重跑 preflight/freeze 而不制造分叉）。
-        record = read_json(target_record) if target_record.exists() else {}
-        record.update(_record_payload(case_set=case_set, config=config, label=label, operator=operator))
-        record["refrozen_at"] = utc_now()
-        write_json(target_record, record)
-        return FrozenSet(directory=out_dir, case_set=case_set, record=record)
+        # 案例字节一致**不等于**冻结身份一致：config / code / protocol 变了，同一批案例
+        # 就是另一组实验条件。此前这里 `record.update(payload)` 会把旧记录就地洗成新条件
+        # （旧 commit、旧配置 hash 被覆盖），于是「冻结记录」再也证明不了当时跑的是什么。
+        # 现在逐项核对，不一致就拒绝，要求换一个冻结目录/标签。
+        if not target_record.exists():
+            raise FreezeError(
+                f"{out_dir} 有案例副本但没有 freeze.json：冻结物不完整，请换一个冻结目录重做，"
+                "不要在没有身份记录的情况下继续"
+            )
+        existing = read_json(target_record)
+        fresh = _record_payload(case_set=case_set, config=config, label=label, operator=operator)
+        _require_same_frozen_identity(existing, fresh, out_dir=out_dir)
+        # 完全相同才算幂等：只刷新时间戳，不改任何身份字段。
+        existing["refrozen_at"] = utc_now()
+        write_json(target_record, existing)
+        return FrozenSet(directory=out_dir, case_set=case_set, record=existing)
 
     target_cases.write_bytes(raw)
     # 复制后立刻复算：磁盘写坏了要在这里发现，而不是等到 verify。
@@ -106,6 +126,37 @@ def freeze_cases(
     record["frozen_at"] = utc_now()
     write_json(target_record, record)
     return FrozenSet(directory=out_dir, case_set=case_set, record=record)
+
+
+#: 冻结身份字段：这些一旦不同，同一目录就不是同一组实验条件。
+IDENTITY_FIELDS = (
+    "dataset_sha256",
+    "config_sha256",
+    "label",
+    "code",
+    "protocol_snapshot_sha256",
+    "case_fixtures",
+    "turns_histogram",
+    "review_status_counts",
+)
+
+
+def _require_same_frozen_identity(existing: dict[str, Any], fresh: dict[str, Any], *, out_dir: Path) -> None:
+    """冻结记录必须**完全幂等**：身份字段不一致就拒绝，绝不改写已冻结的记录。
+
+    Raises:
+        FreezeError: 任一身份字段不同（点名列出），或案例字节不同。
+    """
+    diffs: list[str] = []
+    for field in IDENTITY_FIELDS:
+        if existing.get(field) != fresh.get(field):
+            diffs.append(f"{field}: 已冻结={existing.get(field)!r} 当前={fresh.get(field)!r}")
+    if diffs:
+        raise FreezeError(
+            f"{out_dir} 已用**另一组实验条件**冻结过同一批案例："
+            + "；".join(diffs)
+            + "。冻结记录不可改写（否则它就不再能证明当时跑的是什么），请换一个冻结目录/标签。"
+        )
 
 
 def _record_payload(
