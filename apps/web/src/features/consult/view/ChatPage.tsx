@@ -12,8 +12,8 @@
  *   - 禁止在此直接调 HTTP（端口由路由注入）
  */
 
-import { useEffect, useState } from 'react';
-import { useLocation, useParams } from 'react-router';
+import { useCallback, useEffect, useState } from 'react';
+import { useLocation, useNavigate, useParams } from 'react-router';
 
 import { AppShell } from '../../../shared/ui/AppShell';
 import { BackLink } from '../../../shared/ui/BackLink';
@@ -40,6 +40,7 @@ export interface ChatPageProps {
  */
 export function ChatPage({ consult }: ChatPageProps) {
   const location = useLocation();
+  const navigate = useNavigate();
   const state: unknown = location.state;
   const initialDraft =
     typeof state === 'object' && state !== null && 'draft' in state && typeof state.draft === 'string'
@@ -60,14 +61,16 @@ export function ChatPage({ consult }: ChatPageProps) {
    */
   const guideKey = `consult.guidePending.${sessionId}`;
   const guideFlagFromState =
-    typeof state === 'object' && state !== null && 'guidePending' in state && state.guidePending === true;
+    typeof state === 'object' && state !== null && 'guidePending' in state && typeof state.guidePending === 'boolean'
+      ? state.guidePending
+      : undefined;
   /**
    * 初值在 `useState` 的惰性初始化里取，**不在 effect 里 setState**：
    * effect 里同步 setState 会多一轮渲染，而且这条判据没有「异步才知道」的成分——
    * 路由 state 与 sessionStorage 都是同步可读的。
    */
   const [guidePending, setGuidePending] = useState(() => {
-    if (guideFlagFromState) return true;
+    if (guideFlagFromState !== undefined) return guideFlagFromState;
     try {
       return window.sessionStorage.getItem(guideKey) === '1';
     } catch {
@@ -85,14 +88,21 @@ export function ChatPage({ consult }: ChatPageProps) {
     }
   }, [guideKey, guideFlagFromState]);
 
-  const settleGuide = (): void => {
+  const settleGuide = useCallback((): void => {
     try {
       window.sessionStorage.removeItem(guideKey);
     } catch {
       // 同上：存储不可用时无副作用可清。
     }
     setGuidePending(false);
-  };
+    // 浏览器刷新会保留 history.state；收束时也撤掉建会话留下的旧标记。
+    if (guideFlagFromState) {
+      void navigate(location.pathname + location.search + location.hash, {
+        replace: true,
+        state: { ...(typeof state === 'object' && state !== null ? state : {}), guidePending: false },
+      });
+    }
+  }, [guideKey, guideFlagFromState, location.pathname, location.search, location.hash, navigate, state]);
 
   if (hydration.status === 'loading') {
     return (

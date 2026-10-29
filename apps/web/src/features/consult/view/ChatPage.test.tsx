@@ -18,7 +18,7 @@
  */
 
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { MemoryRouter, Route, Routes } from 'react-router';
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ChatPage } from './ChatPage';
@@ -222,6 +222,43 @@ describe('对话页 — 跳过一次性引导（BUG-03 的入口）', () => {
 
     await screen.findByLabelText('发送消息');
     expect(screen.queryByRole('button', { name: '跳过引导' })).toBeNull();
+  });
+
+  it.each([false, true])('跳过成功后保留的路由状态不得在刷新时复活入口（存储清理失败=%s）', async (storageDisabled) => {
+    const port = createConsultPortStub({ history: historyResponse([]) });
+    function RouteState() {
+      const location = useLocation();
+      return <output data-testid="route-state">{JSON.stringify(location.state)}</output>;
+    }
+    const view = render(
+      <MemoryRouter initialEntries={[{ pathname: '/consult/sessions/s1', state: { guidePending: true, marker: 'keep' } }]}>
+        <Routes>
+          <Route path="/consult/sessions/:sessionId" element={<><ChatPage consult={port} /><RouteState /></>} />
+        </Routes>
+      </MemoryRouter>,
+    );
+    const skip = await screen.findByRole('button', { name: '跳过引导' });
+    const remove = storageDisabled
+      ? vi.spyOn(Storage.prototype, 'removeItem').mockImplementation(() => { throw new Error('storage disabled'); })
+      : null;
+    try {
+      await act(async () => { fireEvent.click(skip); });
+      await waitFor(() => {
+        expect(JSON.parse(screen.getByTestId('route-state').textContent ?? 'null')).toEqual({
+          guidePending: false,
+          marker: 'keep',
+        });
+      });
+      const retainedState: unknown = JSON.parse(screen.getByTestId('route-state').textContent ?? 'null');
+      view.unmount();
+      // 模拟刷新：路由实例重建，但浏览器历史里的同一条 state 会被保留。
+      renderChat(port, { state: retainedState });
+      await screen.findByLabelText('发送消息');
+      expect(screen.queryByRole('button', { name: '跳过引导' })).toBeNull();
+      expect(port.skipCalls).toEqual(['s1']);
+    } finally {
+      remove?.mockRestore();
+    }
   });
 
   it('引导已完成（流里有 finish_onboarding 工具行）⇒ 不再显示入口', async () => {
