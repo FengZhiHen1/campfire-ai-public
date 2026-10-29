@@ -515,20 +515,30 @@ def _result_text(
     改一处忘另一处就会让其中一个工具悄悄丢掉降级提示——而「不得把检索不完整
     说成没有资料」正是靠那句话成立的。
 
+    **降级说明与空结果提示必须并存**（2026-10-29 审查修正）：此前是
+    `if note: payload["notice"] = note` 之后再 `if not items: payload["notice"] = empty_notice`
+    ——后一句把前一句**覆盖**掉。于是「单路失败 + 没有命中」这最危险的一格，
+    模型收到的 notice 只剩「未找到相关资料……只能说本资料库当前没有可引用的依据」，
+    而契约第 5 节要求它在此不得声称「没有相关资料」（可能是语义检索坏了）。
+    现在两条都在：降级说明在前（说明结果不完整），空结果提示在后（说明不得过度解读）。
+
     **引用载荷不在这里**（T38 起）：这段文本是**模型读得到**的输入，而依据区是给使用者
     看的。凭据经 `ToolResult.citations` 出去（事件流 + 会话写入），不混进给模型的 JSON。
     这也让工具结果回到「纯粹是检索结果的结构化文档」这一个职责上。
     """
     payload: dict[str, object] = {"results": items, "count": len(items)}
+    notices: list[str] = []
     note = _degradation_note(degraded_paths)
     if note is not None:
         payload["degraded"] = True
         payload["degraded_paths"] = list(degraded_paths)
-        payload["notice"] = note
+        notices.append(note)
     if not items:
         # 契约第 5 节第 4 行：检索为空要明确「未找到」，且不得解释为
         # 「该做法不存在或没有风险」。这句必须进返回文本，否则模型只能自己猜。
-        payload["notice"] = empty_notice
+        notices.append(empty_notice)
+    if notices:
+        payload["notice"] = "\n".join(notices)
     return json.dumps(payload, ensure_ascii=False)
 
 
