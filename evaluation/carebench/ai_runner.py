@@ -88,6 +88,10 @@ async def score_run(
     """
     if max_concurrency < 1:
         raise AiReviewError("max_concurrency 必须为正")
+    if not passes:
+        raise AiReviewError("passes 不能为空：至少选择一位评分者")
+    if len(set(passes)) != len(passes):
+        raise AiReviewError(f"passes 含重复评分者：{list(passes)}（同一 pass/blind 只能评一次）")
     bad_passes = [pass_no for pass_no in passes if pass_no not in (1, 2)]
     if bad_passes:
         raise AiReviewError(f"未知 pass：{bad_passes}")
