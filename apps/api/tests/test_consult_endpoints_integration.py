@@ -94,12 +94,14 @@ from campfire.surfaces.consult.injections import (
 from campfire.surfaces.consult.object_names import read_object_names
 from campfire.surfaces.consult.runbus import (
     MAX_FRAME_CHARS,
+    RUN_NOT_RESUMABLE,
     RUN_NOT_RUNNING,
     RUN_STATUS_RUNNING,
     RunMeta,
     cancel_pumps,
     drain_pumps,
     events_key,
+    meta_key,
     mutex_key,
     write_run_meta,
 )
@@ -689,6 +691,58 @@ async def test_send_message_is_idempotent(client: httpx.AsyncClient) -> None:
     assert first.json()["run_id"] == second.json()["run_id"]
     assert len(runner.started) == 1, "重发不得再起一次运行"
     assert await _item_count(session_id) == 1, "重发不得重复追加使用者消息"
+
+
+async def test_idempotent_replay_after_the_run_metadata_expired_is_409_not_a_dead_run_id(
+    client: httpx.AsyncClient,
+) -> None:
+    """幂等结论比它指向的运行活得久时，重发必须回 409 `run_not_resumable`，不是 202。
+
+    两个 TTL 的长度差是常态而不是异常：幂等键活 24 小时（`IDEMPOTENCY_TTL_SECONDS`），
+    运行元数据只活 600 秒（`RUN_BUFFER_TTL_SECONDS`）。因此按契约第 2 节的幂等承诺
+    在十分钟后重发同一个 `client_message_id`，就会走到这条路径。
+
+    三条断言各钉一种错误处置：
+
+    1. **不能回 202 + 旧 `run_id`**（本用例加进来之前的行为）——那个身份订阅必然 404、
+       也永远不会重跑，使用者拿到的是死胡同；
+    2. **不能重跑**——同一键重发不得再起一次运行、也不得重复追加使用者消息（幂等语义）；
+    3. 错误码必须是 `run_not_resumable`（契约第 2 节已有的码，语义正是「改走历史水合」），
+       前端据此去读会话历史而不是给一张「找不到这条内容」的卡片。
+
+    元数据消失用**真的删掉那个键**模拟：到期与删除对读侧是同一件事，而 Redis 的 TTL
+    没法在一次用例里走完 600 秒。
+    """
+    runner = ScriptedRunner(get_settings())
+    _install_runner(runner)
+    session_id = await _create_session(client)
+    key = uuid.uuid4().hex
+
+    first = await _send(client, session_id, content="十分钟后再试", client_message_id=key)
+    assert first.status_code == 202, first.text
+    run_id = first.json()["run_id"]
+    await drain_pumps()
+    assert await _item_count(session_id) == 1
+
+    # 正控：元数据还在时，重放照旧回 202 + 原 run_id、不起第二次运行。
+    alive = await _send(client, session_id, content="十分钟后再试", client_message_id=key)
+    await drain_pumps()
+    assert alive.status_code == 202, alive.text
+    assert alive.json()["run_id"] == run_id
+
+    cache = RedisCache(get_settings().redis_url)
+    try:
+        assert await cache.delete(meta_key(run_id)) == 1, "前置：这条运行的元数据本来存在"
+    finally:
+        await cache.aclose()
+
+    replay = await _send(client, session_id, content="十分钟后再试", client_message_id=key)
+    await drain_pumps()
+
+    assert replay.status_code == 409, replay.text
+    assert replay.json()["detail"] == RUN_NOT_RESUMABLE, "错误码要与「会话忙」区分得开"
+    assert len(runner.started) == 1, "重放不得再起一次运行（幂等语义）"
+    assert await _item_count(session_id) == 1, "重放不得重复追加使用者消息"
 
 
 async def test_send_message_while_running_is_409_without_appending(client: httpx.AsyncClient) -> None:
