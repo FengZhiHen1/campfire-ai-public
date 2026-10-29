@@ -285,13 +285,33 @@ test('@real 追问补答与刷新续传：两轮真实运行 + 刷新后水合',
 
     /* ── 刷新：历史水合（GAP-05 的核心）────────────────────────────── */
     const bubblesBeforeReload = await userBubbles.count();
-    const docsBeforeReload = await page.locator('.msg-doc').count();
+    // **不拿 `.msg-doc` 的元素个数当判据**（2026-10-29 实测）：跑完一轮后、刷新之前，
+    // 页面上可能还挂着一个正在收尾的正文节点，个数会比服务端真源多一个；刷新后它自然消失。
+    // 于是「刷新前 3 / 刷新后 2」会被读成「丢了历史」，而实际丢失的是那个瞬时节点。
+    // 真正要守的是**内容**：刷新前每一段助手正文的开头，刷新后仍然在。
+    const docTextsBeforeReload = (await page.locator('.msg-doc').allInnerTexts())
+      .map((text) => text.replace(/\s+/g, ' ').trim())
+      .filter((text) => text.length >= 20);
+    expect(docTextsBeforeReload.length, '刷新前应已有可读的助手正文').toBeGreaterThanOrEqual(2);
+
     await page.reload();
     await waitMounted(page);
     await expect(page).toHaveURL(new RegExp(sessionId), { timeout: 30_000 });
-    // 水合后条数与刷新前一致：多出来是重复渲染，少了是丢历史。
+    // 使用者消息条数与刷新前一致：多出来是重复渲染，少了是丢历史。
     await expect(page.locator('.bubble-user')).toHaveCount(bubblesBeforeReload, { timeout: 40_000 });
-    expect(await page.locator('.msg-doc').count(), '水合后助手正文不应变少').toBeGreaterThanOrEqual(docsBeforeReload);
+
+    const docTextsAfterReload = (await page.locator('.msg-doc').allInnerTexts()).map((text) =>
+      text.replace(/\s+/g, ' ').trim(),
+    );
+    for (const [index, before] of docTextsBeforeReload.entries()) {
+      // 取开头 30 字比对而不是全等：水合走的是服务端保存的文本，与流式拼出来的
+      // 段间空白可能有一两处差异——那是渲染差异，不是丢内容。
+      const head = before.slice(0, 30);
+      expect(
+        docTextsAfterReload.some((after) => after.includes(head)),
+        `刷新后第 ${String(index + 1)} 段助手正文的开头（${head}）不见了：这是丢历史`,
+      ).toBe(true);
+    }
     await expect(page.locator('body')).not.toContainText('本次回答没有完成');
     // 刷新**不能**是「不可续传」死路：拿不到运行元数据时产品应改走历史水合并给出说明，
     // 而不是把页面留在一张错误卡上。
@@ -313,7 +333,7 @@ test('@real 追问补答与刷新续传：两轮真实运行 + 刷新后水合',
       sessionId,
       runs: { firstRun, secondRun, thirdRun },
       bubblesBeforeReload,
-      docsBeforeReload,
+      docTextsBeforeReload: docTextsBeforeReload.length,
       historyStatuses: historyTrace.map((entry) => entry.status),
       console: records,
     });

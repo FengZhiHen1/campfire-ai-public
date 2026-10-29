@@ -82,6 +82,25 @@ class Settings(BaseSettings):
     # 维度（2560）与模型绑定，不做成可配置项——可配置的维度会诱发配错维度
     # 混库，使检索静默失准（RAG 策略第 7 节纪律 4）；常量见本模块的 EMBEDDING_DIM。
     embedding_model_name: str = "kinfra-text-embedding-4b"
+    # 嵌入服务的端点与凭据**可选独立配置**（2026-10-28）：留空则回落到上面的
+    # `tokenhub_base_url` / `tokenhub_api_key`，也就是「一套端点走天下」的默认形态。
+    #
+    # 为什么需要这个缝：对话模型可以换成本机/自建的 OpenAI 兼容网关（本机实测的那个
+    # 网关只提供 chat completions、不提供 `/embeddings`），而嵌入必须仍走原来那家——
+    # 嵌入模型与维度是绑死的（`EMBEDDING_DIM` 是常量，换模型要整库重建）。
+    # 强行共用一个 base_url 的后果是：换了对话端点，检索会在每次查询时 404，
+    # 而检索失败在产品里表现为「没有资料」——最坏的一种故障形态。
+    embedding_base_url: str = ""
+    embedding_api_key: SecretStr | None = None
+    # 记忆侧（Graphiti 的实体抽取）的端点，同样是**可选**独立配置，留空回落 `tokenhub_*`。
+    #
+    # 为什么它不能跟着对话端点一起换（2026-10-29 实测）：Graphiti 的 `OpenAIClient` 取结构化
+    # 输出走的是 **Responses API**（`POST /v1/responses`），而本机那个 chat-only 网关只有
+    # `/chat/completions`，于是每次写记忆都是 `404 page not found`——表现是「记忆写不进去」，
+    # 而不是「模型不可用」，很容易被当成图库问题去查。腾讯云 TokenHub 提供 Responses API，
+    # 所以默认形态（三者共用一个端点）不受影响。
+    memory_llm_base_url: str = ""
+    memory_llm_api_key: SecretStr | None = None
     # 单次请求超时与重试上界。三者的最坏组合必须落在基座第 2 节的 180 秒通用响应
     # 上限之内（默认值最坏 45×3 + 退避(1.125+2.25)，gateway 的算术按 SDK 的抖动上界算），
     # 否则重试会被运行上限从中间砍断；越界配置在 agent.model 构造期即抛错，
@@ -155,6 +174,30 @@ class Settings(BaseSettings):
     # --- skill 内容根目录 ---
     # 由配置指定（见 docs/项目结构设计.md 第 10 节）；默认指向应用内的 skills/。
     skill_root: Path = _APP_ROOT / "skills"
+
+    @property
+    def resolved_embedding_base_url(self) -> str:
+        """嵌入服务的实际端点：显式配置优先，否则与对话模型共用 `tokenhub_base_url`。
+
+        单独一个属性而不是在每处写 `or`：嵌入有三处消费者（资料库摄取、检索查询、
+        记忆图），漏一处就会「一半走 TokenHub、一半走本地网关」——那种不一致比全错更难查。
+        """
+        return self.embedding_base_url.strip() or self.tokenhub_base_url
+
+    @property
+    def resolved_embedding_api_key(self) -> SecretStr | None:
+        """嵌入服务的实际凭据：显式配置优先，否则与对话模型共用 `tokenhub_api_key`。"""
+        return self.embedding_api_key if self.embedding_api_key is not None else self.tokenhub_api_key
+
+    @property
+    def resolved_memory_llm_base_url(self) -> str:
+        """记忆侧 LLM 的实际端点：显式配置优先，否则与对话模型共用 `tokenhub_base_url`。"""
+        return self.memory_llm_base_url.strip() or self.tokenhub_base_url
+
+    @property
+    def resolved_memory_llm_api_key(self) -> SecretStr | None:
+        """记忆侧 LLM 的实际凭据：显式配置优先，否则与对话模型共用 `tokenhub_api_key`。"""
+        return self.memory_llm_api_key if self.memory_llm_api_key is not None else self.tokenhub_api_key
 
 
 @lru_cache
