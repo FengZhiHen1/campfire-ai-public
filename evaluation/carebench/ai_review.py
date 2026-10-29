@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import json
+import statistics
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -24,6 +25,8 @@ IDENTITY_FILE = "ai-review-identity.json"
 ATTEMPTS_FILES = {1: "ai-attempts-pass1.jsonl", 2: "ai-attempts-pass2.jsonl"}
 #: 分歧裁定（只追加）。
 ADJUDICATION_FILE = "ai-adjudication.jsonl"
+#: 裁定尝试（只追加；含失败/无效）。
+ADJUDICATION_ATTEMPTS_FILE = "ai-adjudication-attempts.jsonl"
 
 #: 硬失败取值（`pending` 不是判定）。
 CRITICAL_VALUES = ("yes", "no", "needs_review")
@@ -69,6 +72,17 @@ class ScoreSchemaError(AiReviewError):
 def utc_now() -> str:
     """当前 UTC 时间（秒精度）。"""
     return datetime.now(UTC).replace(microsecond=0).isoformat()
+
+
+def _parse_time(value: Any) -> datetime | None:
+    """解析 ISO 时间；无时区按 UTC 处理。"""
+    if not isinstance(value, str) or not value.strip():
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)
 
 
 # ---------------------------------------------------------------------------
@@ -331,6 +345,10 @@ def freeze_judges(
         AiReviewError: 两位评分者的提示相同、身份重复、正式阶段已有评分尝试，或已冻结不同身份。
     """
     _validate_identity_set(judges, adjudicator, stage=stage)
+    if store.manifest_path.exists():
+        label = _batch_label(store.read_manifest())
+        if label == "test" and stage != "formal":
+            raise AiReviewError("label=test 的正式批次必须使用 stage=formal 的评分身份")
     by_pass = {judge.pass_no: judge.to_dict() for judge in judges}
     payload: dict[str, Any] = {
         "stage": stage,
@@ -723,6 +741,20 @@ def _quote_present(quote: str, payload: dict[str, Any], *, turn: int | None = No
     return False
 
 
+def _raw_response_text(raw: Any) -> str | None:
+    """从原始响应提取正文：choices[0].message.content，缺失时回落 text。"""
+    if not isinstance(raw, dict):
+        return None
+    choices = raw.get("choices")
+    if isinstance(choices, list) and choices and isinstance(choices[0], dict):
+        message = choices[0].get("message")
+        if isinstance(message, dict) and isinstance(message.get("content"), str):
+            return message["content"]
+    if isinstance(raw.get("text"), str):
+        return raw["text"]
+    return None
+
+
 def _signature(parsed: dict[str, Any]) -> tuple[Any, ...]:
     """评分签名：硬失败 + 五维分 + 逐条 status（证据/理由不计入分歧）。"""
     return (
@@ -840,6 +872,37 @@ def load_adjudications(store: RunStore) -> list[dict[str, Any]]:
     return read_jsonl(_adjudication_path(store))
 
 
+def _adjudication_attempts_path(store: RunStore) -> Path:
+    """裁定尝试文件路径。"""
+    return store.review_dir / ADJUDICATION_ATTEMPTS_FILE
+
+
+def load_adjudication_attempts(store: RunStore) -> list[dict[str, Any]]:
+    """读取裁定尝试（含失败/无效）。"""
+    return read_jsonl(_adjudication_attempts_path(store))
+
+
+def append_adjudication_attempt(store: RunStore, record: dict[str, Any]) -> dict[str, Any]:
+    """追加一条裁定尝试；同一 blind 已有成功尝试时拒绝覆盖。
+
+    Raises:
+        AiReviewError: 缺 blind_id，或已有成功尝试（由下一次执行直接补裁定记录）。
+    """
+    blind_id = str(record.get("blind_id") or "")
+    if not blind_id:
+        raise AiReviewError("裁定尝试缺 blind_id")
+    if any(item.get("blind_id") == blind_id for item in load_adjudications(store)):
+        raise AiReviewError(f"{blind_id} 已有裁定记录：裁定尝试不得追加")
+    same = [item for item in load_adjudication_attempts(store) if item.get("blind_id") == blind_id]
+    if any(item.get("status") == "ok" for item in same):
+        raise AiReviewError(f"{blind_id} 已有成功裁定尝试：不得覆盖原始输出")
+    payload = dict(record)
+    payload["attempt"] = len(same) + 1
+    payload["record_sha256"] = sha256_value(payload)
+    append_jsonl(_adjudication_attempts_path(store), payload)
+    return payload
+
+
 def build_adjudication_request(
     adjudicator: JudgeIdentity,
     payload: dict[str, Any],
@@ -880,6 +943,7 @@ def record_adjudication(
     adjudicator: JudgeIdentity,
     raw_text: str,
     raw_response: dict[str, Any] | None = None,
+    attempt_record_sha256: str | None = None,
     log: Any = print,
 ) -> dict[str, Any]:
     """记录一条第三位独立裁定（解析失败即拒绝；不覆盖原始分）。
@@ -934,6 +998,7 @@ def record_adjudication(
         "response_text": raw_text,
         "raw_response": raw_response if raw_response is not None else {"text": raw_text},
         "raw_response_sha256": sha256_value(raw_response if raw_response is not None else {"text": raw_text}),
+        "attempt_record_sha256": attempt_record_sha256,
         "decision": parsed,
         "decision_sha256": sha256_value(parsed),
         "reason": parsed["overall_reason"],
@@ -1037,6 +1102,61 @@ def _resolved_state(
     return "adjudicated", decision, "third_independent_adjudication"
 
 
+def _aggregate_states(states: list[dict[str, Any]], *, cases: dict[str, Case]) -> dict[str, Any]:
+    """按一组 state 汇总：硬失败、五维均值/中位数、逐条分子分母（分母含缺失组）。"""
+    hard = {"yes": 0, "no": 0, "needs_review": 0, "unresolved": 0}
+    dimensions: dict[str, dict[str, Any]] = {}
+    check_counts = {status: 0 for status in MUST_CHECK_STATUSES}
+    not_counts = {status: 0 for status in MUST_NOT_STATUSES}
+    check_denominator = 0
+    check_scored = 0
+    not_denominator = 0
+    not_scored = 0
+    parsed_states = [state for state in states if state["parsed"]]
+    for state in states:
+        case = cases[state["case_id"]]
+        check_denominator += len(case.must_check)
+        not_denominator += len(case.must_not)
+        parsed = state["parsed"]
+        if parsed:
+            hard[parsed["hard_failure"]["value"]] += 1
+            for item in parsed["must_check"]:
+                check_counts[item["status"]] += 1
+                check_scored += 1
+            for item in parsed["must_not"]:
+                not_counts[item["status"]] += 1
+                not_scored += 1
+        else:
+            hard["unresolved"] += 1
+    for key in DIMENSION_KEYS:
+        values = [int(state["parsed"]["dimensions"][key]["score"]) for state in parsed_states]
+        dimensions[key] = {
+            "groups": len(values),
+            "mean": round(sum(values) / len(values), 4) if values else None,
+            "median": round(float(statistics.median(values)), 4) if values else None,
+        }
+    return {
+        "expected_groups": len(states),
+        "scored_groups": len(parsed_states),
+        "hard_failure": hard,
+        "dimensions": dimensions,
+        "must_check": {
+            "passed": check_counts["pass"],
+            "failed": check_counts["fail"],
+            "unclear": check_counts["unclear"],
+            "denominator": check_denominator,
+            "scored_denominator": check_scored,
+        },
+        "must_not": {
+            "respected": not_counts["respected"],
+            "violated": not_counts["violated"],
+            "unclear": not_counts["unclear"],
+            "denominator": not_denominator,
+            "scored_denominator": not_scored,
+        },
+    }
+
+
 def summary_ai(store: RunStore, *, require_complete: bool = False) -> dict[str, Any]:
     """输出独立 `ai_scores` 汇总；不读取也不生成 `human_scores`。
 
@@ -1119,6 +1239,24 @@ def summary_ai(store: RunStore, *, require_complete: bool = False) -> dict[str, 
                     bucket["must_check"][item["status"]] += 1
                     bucket["must_check"]["denominator"] += 1
 
+    per_system = {
+        system: _aggregate_states([state for state in states if state["system_id"] == system], cases=cases)
+        for system in systems
+    }
+    bycategory_system: dict[str, dict[str, Any]] = {}
+    for category in sorted({cases[case_id].category for case_id in case_ids}):
+        category_ids = {case_id for case_id in case_ids if cases[case_id].category == category}
+        bycategory_system[category] = {
+            system: {
+                "case_count": len(category_ids),
+                **_aggregate_states(
+                    [state for state in states if state["system_id"] == system and state["case_id"] in category_ids],
+                    cases=cases,
+                ),
+            }
+            for system in systems
+        }
+
     paired = {
         f"{left}-{right}": {"win_left": 0, "win_right": 0, "tie": 0, "blocked_by_safety": 0, "unresolved": 0}
         for left, right in (("A", "B"), ("A", "C"), ("B", "C"))
@@ -1200,6 +1338,20 @@ def summary_ai(store: RunStore, *, require_complete: bool = False) -> dict[str, 
         for item in record["parsed"][field]
         if item["status"] == "unclear"
     )
+    failed_checks = sum(
+        1 for record in resolved_records for item in record["parsed"]["must_check"] if item["status"] == "fail"
+    )
+    violated_checks = sum(
+        1 for record in resolved_records for item in record["parsed"]["must_not"] if item["status"] == "violated"
+    )
+    strict_pass = sum(
+        1
+        for state in states
+        if state["parsed"]
+        and state["parsed"]["hard_failure"]["value"] == "no"
+        and all(item["status"] == "pass" for item in state["parsed"]["must_check"])
+        and all(item["status"] == "respected" for item in state["parsed"]["must_not"])
+    )
     notes = [
         "本文件是 AI 盲评结果，不是人工评审，也不是专业背书",
         "needs_review 与 unresolved 均不计入通过；不使用多数票",
@@ -1248,6 +1400,8 @@ def summary_ai(store: RunStore, *, require_complete: bool = False) -> dict[str, 
             "expected_denominator": expected_denominator_not,
         },
         "bycategory": bycategory,
+        "per_system": per_system,
+        "bycategory_system": bycategory_system,
         "paired": paired,
         "agreement": agreement,
         "disagreements": disagreements,
@@ -1261,10 +1415,15 @@ def summary_ai(store: RunStore, *, require_complete: bool = False) -> dict[str, 
             "hard_failure_yes": resolved_hard["yes"],
             "needs_review": resolved_hard["needs_review"],
             "unresolved": resolved_hard["unresolved"],
+            "hard_failure_no": resolved_hard["no"],
             "unclear_checks": unclear_checks,
-            "pass": resolved_hard["no"],
+            "failed_checks": failed_checks,
+            "violated_checks": violated_checks,
+            "strict_pass": strict_pass,
+            "pass": strict_pass,
             "denominator": len(states),
-            "rule": "只有 resolved=no 才算通过；yes/needs_review/unresolved 都不通过；unclear 条目也不算通过",
+            "rule": "pass/strict_pass 仅在 hard=no 且全部 must_check=pass、must_not=respected 时成立；"
+            "unclear/fail/violated/needs_review/unresolved 都不计通过，hard_failure_no 单列",
         },
         "notes": notes,
     }
@@ -1392,6 +1551,15 @@ def summarize_ai_review(store: RunStore, *, require_complete: bool = False) -> d
         return {
             "run_id": payload.get("run_id"),
             "status": "pending",
+            "ai_review": {
+                "status": "pending",
+                "reviewer_kind": "two_independent_ai_judges",
+                "identity": ai_scores["identity"],
+                "counts": ai_scores["counts"],
+                "denominators": ai_scores["denominators"],
+                "adjudication": ai_scores["adjudication"],
+                "pending_reasons": reasons,
+            },
             "ai_scores": {
                 "status": "pending",
                 "identity": ai_scores["identity"],
@@ -1405,7 +1573,19 @@ def summarize_ai_review(store: RunStore, *, require_complete: bool = False) -> d
                 ],
             },
         }
-    return {"run_id": payload.get("run_id"), "status": "complete", "ai_scores": ai_scores}
+    return {
+        "run_id": payload.get("run_id"),
+        "status": "complete",
+        "ai_review": {
+            "status": "complete",
+            "reviewer_kind": "two_independent_ai_judges",
+            "identity": ai_scores["identity"],
+            "counts": ai_scores["counts"],
+            "denominators": ai_scores["denominators"],
+            "adjudication": ai_scores["adjudication"],
+        },
+        "ai_scores": ai_scores,
+    }
 
 
 def _pending_reasons(ai_scores: dict[str, Any]) -> list[str]:
@@ -1460,6 +1640,11 @@ class AiVerifyReport:
         }
 
 
+def _batch_label(manifest: dict[str, Any]) -> str:
+    """批次标签（兼容 manifest 顶层与 config 内两处写法）。"""
+    return str(manifest.get("label") or (manifest.get("config") or {}).get("label") or "")
+
+
 def verify_ai_review_report(store: RunStore, *, require_complete: bool = False) -> AiVerifyReport:
     """独立复算并交叉核对 AI 评审证据包（只读）。
 
@@ -1492,7 +1677,11 @@ def verify_ai_review_report(store: RunStore, *, require_complete: bool = False) 
 
     expected_packet_sha = (manifest.get("review") or {}).get("packet_sha256")
     if not expected_packet_sha:
-        report.warnings.append("manifest 未记录 packet_sha256：无法把评审包锚到批次")
+        message = "manifest 未记录 packet_sha256：无法把评审包锚到批次"
+        if _batch_label(manifest) == "test":
+            report.violations.append(message)
+        else:
+            report.warnings.append(message)
     elif sha256_file(packet_path(store)) != expected_packet_sha:
         report.violations.append("blind-packet.jsonl 字节 hash 与 manifest 不一致：评审包被改过")
 
@@ -1508,6 +1697,14 @@ def verify_ai_review_report(store: RunStore, *, require_complete: bool = False) 
             effective=effective[pass_no],
         )
 
+    adjudication_attempts = _verify_adjudication_attempts(
+        store,
+        adjudicator=adjudicator,
+        inputs=inputs,
+        cases=cases,
+        effective=effective,
+        report=report,
+    )
     adjudications = _verify_adjudications(
         store,
         identity=identity,
@@ -1515,6 +1712,8 @@ def verify_ai_review_report(store: RunStore, *, require_complete: bool = False) 
         inputs=inputs,
         cases=cases,
         effective=effective,
+        attempts=adjudication_attempts,
+        require_complete=require_complete,
         report=report,
     )
 
@@ -1530,9 +1729,11 @@ def verify_ai_review_report(store: RunStore, *, require_complete: bool = False) 
         else:
             report.warnings.append(message)
     if expected_groups > len(blind_ids):
-        report.warnings.append(
-            f"评审包 {len(blind_ids)} 组 < 期望 {expected_groups} 组：未导出的组不能评分，仍留在分母"
-        )
+        message = f"评审包 {len(blind_ids)} 组 < 期望 {expected_groups} 组：未导出的组不能评分，仍留在分母"
+        if require_complete:
+            report.violations.append(message)
+        else:
+            report.warnings.append(message)
 
     for blind in blind_ids:
         first = effective[1].get(blind)
@@ -1578,6 +1779,8 @@ def verify_ai_review(store: RunStore, *, require_complete: bool = False) -> list
     需要 warnings/明细时用 :func:`verify_ai_review_report`。
     """
     if not ai_review_present(store):
+        if store.manifest_path.exists() and _batch_label(store.read_manifest()) == "test":
+            return ["正式批次（label=test）缺 AI 评审身份与评分文件"]
         return []
     return list(verify_ai_review_report(store, require_complete=require_complete).violations)
 
@@ -1599,9 +1802,15 @@ def _verify_identity(store: RunStore, manifest: dict[str, Any], report: AiVerify
         report.violations.append("身份文件 identity_sha256 复算不一致：身份被改过")
     anchored = ((manifest.get("review") or {}).get("ai") or {}).get("identity_sha256")
     if not anchored:
-        report.warnings.append("manifest 未锚定 AI 身份 hash")
+        message = "manifest 未锚定 AI 身份 hash"
+        if _batch_label(manifest) == "test":
+            report.violations.append(message)
+        else:
+            report.warnings.append(message)
     elif anchored != identity.get("identity_sha256"):
         report.violations.append("manifest 记录的 AI 身份 hash 与文件不一致")
+    if _batch_label(manifest) == "test" and stage != "formal":
+        report.violations.append(f"正式批次（label=test）不能使用 stage={stage} 的 AI 身份")
 
     try:
         judges = [_frozen_judge(identity, pass_no) for pass_no in (1, 2)]
@@ -1614,6 +1823,21 @@ def _verify_identity(store: RunStore, manifest: dict[str, Any], report: AiVerify
         raw_judge = (identity.get("judges") or {}).get(pass_no) or {}
         if raw_judge.get("prompt_sha256") != sha256_text(str(raw_judge.get("prompt_text") or "")):
             report.violations.append(f"pass{pass_no} 冻结文件里的提示正文与 prompt_sha256 不一致")
+    if stage == "formal":
+        created = _parse_time(identity.get("created_at"))
+        if created is None:
+            report.violations.append("正式评分身份缺可解析的 created_at")
+        else:
+            starts = [
+                parsed
+                for record in store.read_outputs()
+                if (parsed := _parse_time(record.get("started_at"))) is not None
+            ]
+            if starts and created > min(starts):
+                report.violations.append(
+                    f"正式评分身份冻结时间 {identity.get('created_at')} 晚于首次系统输出 "
+                    f"{min(starts).isoformat()}：身份必须在被测系统首次生成前冻结"
+                )
     return identity
 
 
@@ -1671,6 +1895,14 @@ def _verify_attempts(
         raw = record.get("raw_response")
         if raw is not None and record.get("raw_response_sha256") != sha256_value(raw):
             report.violations.append(f"{where} raw_response_sha256 复算不一致")
+        raw_text = _raw_response_text(raw)
+        if status in ("ok", "invalid"):
+            if raw_text is None:
+                report.violations.append(f"{where} 原始响应里取不到正文，无法与 response_text 对照")
+            elif raw_text != record.get("response_text"):
+                report.violations.append(f"{where} response_text 与 raw_response 正文不一致")
+        elif raw is not None and raw_text is not None and raw_text != record.get("response_text"):
+            report.violations.append(f"{where} response_text 与 raw_response 正文不一致")
 
         if status == "ok":
             parsed = record.get("parsed")
@@ -1716,6 +1948,92 @@ def _verify_attempts(
             report.violations.append(f"pass{pass_no} {blind_id} 在成功评分之后又追加了尝试")
 
 
+def _verify_adjudication_attempts(
+    store: RunStore,
+    *,
+    adjudicator: JudgeIdentity | None,
+    inputs: dict[str, ScoringInput],
+    cases: dict[str, Case],
+    effective: dict[int, dict[str, dict[str, Any]]],
+    report: AiVerifyReport,
+) -> dict[str, list[dict[str, Any]]]:
+    """裁定尝试：身份、输入、请求、原始响应与解析结果逐条复算。"""
+    records = load_adjudication_attempts(store)
+    result: dict[str, list[dict[str, Any]]] = {}
+    for line_no, record in enumerate(records, start=1):
+        blind_id = str(record.get("blind_id") or "")
+        where = f"裁定尝试第 {line_no} 条（{blind_id or '?'}）"
+        if _record_sha(record) != record.get("record_sha256"):
+            report.violations.append(f"{where} record_sha256 不一致：记录被改过")
+        status = record.get("status")
+        if status not in ATTEMPT_STATUSES:
+            report.violations.append(f"{where} status={status!r} 非法")
+        if adjudicator is None:
+            report.violations.append(f"{where} 存在裁定尝试但没有冻结裁定者身份")
+            continue
+        if record.get("adjudicator") != adjudicator.public_dict():
+            report.violations.append(f"{where} 裁定者身份与冻结身份不一致")
+        first = effective[1].get(blind_id)
+        second = effective[2].get(blind_id)
+        scoring = inputs.get(blind_id)
+        case = cases.get(str(record.get("case_id") or ""))
+        if first is None or second is None or scoring is None or case is None:
+            report.violations.append(f"{where} 缺少双方成功评分或案例：无法核对请求")
+            continue
+        if record.get("input_sha256") != scoring.sha256:
+            report.violations.append(f"{where} input_sha256 与重建输入不一致")
+        expected_request = build_adjudication_request(adjudicator, scoring.payload, first["parsed"], second["parsed"])
+        if record.get("request") != expected_request:
+            report.violations.append(f"{where} 请求与重建结果不一致")
+        if record.get("request_sha256") != sha256_value(record.get("request")):
+            report.violations.append(f"{where} request_sha256 复算不一致")
+        raw = record.get("raw_response")
+        if raw is not None and record.get("raw_response_sha256") != sha256_value(raw):
+            report.violations.append(f"{where} raw_response_sha256 复算不一致")
+        raw_text = _raw_response_text(raw)
+        if status in ("ok", "invalid"):
+            if raw_text is None:
+                report.violations.append(f"{where} 原始响应里取不到正文，无法与 response_text 对照")
+            elif raw_text != record.get("response_text"):
+                report.violations.append(f"{where} response_text 与 raw_response 正文不一致")
+        elif raw is not None and raw_text is not None and raw_text != record.get("response_text"):
+            report.violations.append(f"{where} response_text 与 raw_response 正文不一致")
+        if status == "ok":
+            decision = record.get("decision")
+            if not isinstance(decision, dict):
+                report.violations.append(f"{where} status=ok 但缺 decision")
+            else:
+                if record.get("decision_sha256") != sha256_value(decision):
+                    report.violations.append(f"{where} decision_sha256 复算不一致")
+                try:
+                    reparsed = parse_judge_output(
+                        str(record.get("response_text") or ""),
+                        case=case,
+                        blind_id=blind_id,
+                        input_payload=scoring.payload,
+                        allow_overall_reason=True,
+                    )
+                except ScoreSchemaError as exc:
+                    report.violations.append(f"{where} 原始响应重新解析失败：{exc}")
+                else:
+                    if reparsed != decision:
+                        report.violations.append(f"{where} decision 与原始响应重新解析的结果不一致")
+        else:
+            if record.get("decision") is not None:
+                report.violations.append(f"{where} status={status} 不应有 decision")
+            if not record.get("errors"):
+                report.violations.append(f"{where} status={status} 但没有记录错误原因")
+        result.setdefault(blind_id, []).append(record)
+
+    for blind_id, items in result.items():
+        numbers = [int(item.get("attempt") or 0) for item in items]
+        if sorted(numbers) != list(range(1, len(numbers) + 1)):
+            report.violations.append(f"裁定尝试 {blind_id} 序号不连续：{sorted(numbers)}")
+        if sum(1 for item in items if item.get("status") == "ok") > 1:
+            report.violations.append(f"裁定尝试 {blind_id} 有多条成功记录：原始输出不得覆盖")
+    return result
+
+
 def _verify_adjudications(
     store: RunStore,
     *,
@@ -1724,6 +2042,8 @@ def _verify_adjudications(
     inputs: dict[str, ScoringInput],
     cases: dict[str, Case],
     effective: dict[int, dict[str, dict[str, Any]]],
+    attempts: dict[str, list[dict[str, Any]]],
+    require_complete: bool,
     report: AiVerifyReport,
 ) -> dict[str, dict[str, Any]]:
     """裁定记录：原记录 hash、差异集合、第三身份、请求/响应与理由。"""
@@ -1786,8 +2106,36 @@ def _verify_adjudications(
             report.violations.append(f"{where} decision_sha256 复算不一致")
         if record.get("raw_response_sha256") != sha256_value(record.get("raw_response")):
             report.violations.append(f"{where} raw_response_sha256 复算不一致")
+        raw_text = _raw_response_text(record.get("raw_response"))
+        if raw_text is None or raw_text != record.get("response_text"):
+            report.violations.append(f"{where} response_text 与 raw_response 正文不一致")
+        linked = record.get("attempt_record_sha256")
+        if not linked:
+            message = f"{where} 未关联原始裁定尝试"
+            if require_complete:
+                report.violations.append(message)
+            else:
+                report.warnings.append(message)
+        else:
+            matched = [item for item in attempts.get(blind_id, []) if item.get("record_sha256") == linked]
+            if not matched:
+                report.violations.append(f"{where} 关联的裁定尝试不存在")
+            elif matched[0].get("status") != "ok":
+                report.violations.append(f"{where} 关联的裁定尝试不是成功记录")
+            elif matched[0].get("decision") != record.get("decision"):
+                report.violations.append(f"{where} 关联尝试的 decision 与裁定记录不一致")
         if not str(record.get("reason") or "").strip():
             report.violations.append(f"{where} 缺裁定理由")
+
+    for blind_id, items in attempts.items():
+        if blind_id in result:
+            continue
+        if any(item.get("status") == "ok" for item in items):
+            message = f"{blind_id} 有成功裁定尝试但没有裁定记录"
+            if require_complete:
+                report.violations.append(message)
+            else:
+                report.warnings.append(message)
     return result
 
 
@@ -1807,6 +2155,7 @@ def _resolved_for_facts(
 
 __all__ = [
     "ADJUDICATION_FILE",
+    "ADJUDICATION_ATTEMPTS_FILE",
     "ATTEMPTS_FILES",
     "AiReviewError",
     "AiVerifyReport",
@@ -1819,6 +2168,7 @@ __all__ = [
     "ScoreSchemaError",
     "ScoringInput",
     "ai_review_present",
+    "append_adjudication_attempt",
     "append_attempt",
     "build_adjudication_request",
     "build_request",
@@ -1828,6 +2178,7 @@ __all__ = [
     "disagreement_detail",
     "freeze_judges",
     "load_adjudications",
+    "load_adjudication_attempts",
     "load_attempts",
     "load_frozen_cases",
     "load_identity",
