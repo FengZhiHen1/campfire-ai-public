@@ -32,6 +32,8 @@ uv run python -m evaluation.carebench.interactive summarize --root <批次绝对
 uv run python -m evaluation.carebench.interactive verify --root <批次绝对路径> --require-complete
 ```
 
+本地端点的 system-only 指令探针未被遵从，三组统一使用 `SystemMessageTransport`，在首个用户消息重述已有系统指令；原始输入与实际 HTTP 消息分别保存。模拟家长与评分也采用冻结的协议重述包装。详见协议的兼容条件，不能把本轮直接解释为线上端点表现。
+
 生成与评分必须继续使用冻结的干净提交及同一运行身份。每批只有一个写进程；进程内并发在冻结时
 确定，默认 3。重复执行 `run` 只跳过已封存终局；已发起但被中断的任务封存为失败，不重采。
 评分每角色最多 3 次结构尝试，调用前占用尝试编号；中断不增加预算，已保存的有效原始评分可恢复。

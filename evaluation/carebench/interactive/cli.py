@@ -25,7 +25,7 @@ from .models import Budget
 from .runner import run_episode, seal_interrupted
 from .scoring import score_episode
 from .storage import records, write_json
-from .transport import attach_http_journal, completion
+from .transport import SystemMessageTransport, attach_http_journal, completion
 
 REPO = PACKAGE.parents[2]
 
@@ -69,7 +69,7 @@ async def identity(settings: Settings) -> tuple[dict[str, Any], dict[str, Any]]:
 
 @asynccontextmanager
 async def runtime(settings: Settings):
-    gateway = ModelGateway(settings)
+    gateway = ModelGateway(settings, http_transport=SystemMessageTransport())
     bundle = build_interactive_adapters(settings=settings, config=adapter_config(), gateway=gateway)
     try:
         metas = {sid: (await adapter.prepare()).to_dict() for sid, adapter in bundle.adapters.items()}
