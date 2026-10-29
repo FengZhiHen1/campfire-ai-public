@@ -103,8 +103,8 @@ class MemoryAccountPurger:
         第 1 节），直接用 base 驱动持有的共享客户端删即可。
 
         边界（跨进程不可协调）：本方法只收口**自己**建的句柄，取消不了另一个进程里
-        共享句柄对该账号的后台任务。那一侧的「删后复活」由账号墓碑拦（Worker 领取后
-        复查墓碑，见 `consumer.consume_memory_episode`），读侧则在图键消失后读到空。
+        共享句柄对该账号的后台任务。Worker 领取后复查墓碑；墓碑前已在途的操作仍有残余
+        竞态，不能据此承诺完全不重建图（见 docs/TODO.md 的注销竞态登记）。
 
         Raises:
             AccountIdError: 账号标识不合法。

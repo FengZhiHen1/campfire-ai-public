@@ -37,12 +37,74 @@ async def test_worker_error_summary_never_persists_or_logs_exception_payload(
     monkeypatch.setattr(worker, "mark_dead" if permanent else "mark_retryable_failure", registration)
     handler = worker._mark_dead_and_alert if permanent else worker._register_retryable_failure
     with caplog.at_level(logging.WARNING, logger=worker.__name__):
-        await handler("synthetic-pending", RuntimeError(_SENSITIVE), subject="测试")
+        await handler("synthetic-pending", RuntimeError(_SENSITIVE), subject="测试", lease_owner="synthetic-owner")
     assert registration.await_args is not None
     assert registration.await_args.kwargs["error"] == "RuntimeError"
+    assert registration.await_args.kwargs["lease_owner"] == "synthetic-owner"
     assert _SENSITIVE not in caplog.text
     assert "private-sentinel" not in caplog.text
     assert "cause=" in caplog.text
+    assert ("[alert]" in caplog.text) == (not registration_fails)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("permanent", [False, True])
+@pytest.mark.parametrize("phase", ["enter", "commit"])
+async def test_failure_registration_session_errors_do_not_replace_the_original_error_or_alert(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+    permanent: bool,
+    phase: str,
+) -> None:
+    @asynccontextmanager
+    async def session_scope(*args: object) -> AsyncIterator[object]:
+        if phase == "enter":
+            raise RuntimeError(_SENSITIVE)
+        yield object()
+        raise RuntimeError(_SENSITIVE)
+
+    registration = AsyncMock(return_value=SimpleNamespace(state=worker.STATE_DEAD, attempts=5))
+    monkeypatch.setattr(worker, "session_scope", session_scope)
+    monkeypatch.setattr(worker, "mark_dead" if permanent else "mark_retryable_failure", registration)
+    handler = worker._mark_dead_and_alert if permanent else worker._register_retryable_failure
+    with caplog.at_level(logging.WARNING, logger=worker.__name__):
+        await handler("synthetic-pending", ValueError("original"), subject="测试", lease_owner="synthetic-owner")
+    assert registration.await_count == (0 if phase == "enter" else 1)
+    assert "cause=RuntimeError" in caplog.text
+    assert "[alert]" not in caplog.text
+    assert "private-sentinel" not in caplog.text
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("profile", [False, True])
+@pytest.mark.parametrize("permanent", [False, True])
+async def test_consumers_pass_their_claim_identity_to_failure_registration(
+    monkeypatch: pytest.MonkeyPatch, profile: bool, permanent: bool
+) -> None:
+    @asynccontextmanager
+    async def session_scope(*args: object) -> AsyncIterator[object]:
+        yield object()
+
+    error: Exception = (
+        worker.ProfileDataError("synthetic", operation="test", detail="synthetic")
+        if profile
+        else worker.MemoryDataError("synthetic", operation="test", detail="synthetic")
+    )
+    if not permanent:
+        error = RuntimeError("synthetic")
+    consumer = AsyncMock(side_effect=error)
+    register = AsyncMock()
+    monkeypatch.setattr(worker, "session_scope", session_scope)
+    monkeypatch.setattr(worker, "_get_memory_graph", lambda: object())
+    monkeypatch.setattr(worker, "write_from_pending" if profile else "consume_memory_episode", consumer)
+    monkeypatch.setattr(worker, "_mark_dead_and_alert" if permanent else "_register_retryable_failure", register)
+    task = worker.consume_profile_item_task if profile else worker.consume_memory_episode_task
+    pending = task("synthetic-pending", lease_owner="unique-claim")
+    assert pending is not None
+    with pytest.raises(type(error)):
+        await pending
+    assert register.await_args is not None
+    assert register.await_args.kwargs["lease_owner"] == "unique-claim"
 
 
 @pytest.mark.asyncio

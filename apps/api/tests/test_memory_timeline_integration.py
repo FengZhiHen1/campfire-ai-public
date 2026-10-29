@@ -872,7 +872,7 @@ async def test_driver_for_reuses_one_driver_per_account(memory_graph: MemoryGrap
     )
 
     # 同库名时 clone 本就返回自身（实测），不应占用缓存名额。
-    same_db = memory_graph.driver_for("campfire")
+    same_db = memory_graph.driver_for(_get_settings().falkordb_database)
     assert same_db is memory_graph.driver, "配置库名应返回 base 驱动本身"
     assert account in memory_graph.account_drivers
 
