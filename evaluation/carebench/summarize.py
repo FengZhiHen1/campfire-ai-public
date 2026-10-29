@@ -1,4 +1,4 @@
-"""汇总：只按实测数据出数字；没有人评审就一个质量分都不出。
+"""汇总：只按实测数据出数字，人工与 AI 评审各自独立列出。
 
 职责：从 `outputs.jsonl`（+ 可选的已导入人工评分）生成 `summary.json` 与 `summary.md`：
 运行计数、分母、完成/拒答/超时/失败分布、真实时延与 token、工具调用与引用计数、
@@ -21,6 +21,7 @@ import statistics
 from dataclasses import dataclass
 from typing import Any
 
+from .ai_review import summarize_ai_review
 from .config import RunConfig
 from .records import effective_records, fixture_observation, is_final
 from .review import SCORE_COLUMNS, load_imported_ratings
@@ -355,12 +356,8 @@ def _is_double(by_group: dict[tuple[str, str], list[dict[str, Any]]], config: Ru
     return all(len(rows) >= 2 for rows in by_group.values()) if by_group else False
 
 
-def summarize_run(store: RunStore, *, log: Any = print) -> dict[str, Any]:
-    """生成 summary.json 与 summary.md，返回 summary 字典。
-
-    Raises:
-        FileNotFoundError: run 目录缺 manifest。
-    """
+def compute_summary(store: RunStore) -> dict[str, Any]:
+    """只读复算摘要，供写报告和独立核对落盘数字共用。"""
     manifest = store.read_manifest()
     config = RunConfig.from_dict(manifest["config"])
     records = store.read_outputs()
@@ -374,6 +371,7 @@ def summarize_run(store: RunStore, *, log: Any = print) -> dict[str, Any]:
     missing_groups = expected_groups - len(groups)
     ratings = load_imported_ratings(store)
     human = _human_scores(ratings, config=config)
+    ai = summarize_ai_review(store)
 
     summary: dict[str, Any] = {
         "run_id": manifest["run_id"],
@@ -400,13 +398,21 @@ def summarize_run(store: RunStore, *, log: Any = print) -> dict[str, Any]:
         "review_state": manifest.get("review", {}).get("state", "pending"),
         "human_scores": human,
         "human_scores_note": (
-            "未导入人工评分：本文件只报告运行计数、时延与 token，**不产生任何质量分或安全结论**"
+            "未导入人工评分：human_scores 为空；AI 评审另列，不构成人工或专业认可"
             if human is None
             else "分数来自人工评分 CSV；needs_review 不计入通过，硬失败单独列出"
         ),
+        "ai_review_status": ai["status"] if ai else "not_started",
+        "ai_scores": ai["ai_scores"] if ai else None,
         "caveats": manifest.get("limitations", []),
     }
 
+    return summary
+
+
+def summarize_run(store: RunStore, *, log: Any = print) -> dict[str, Any]:
+    """生成 summary.json 与 summary.md，返回同源摘要。"""
+    summary = compute_summary(store)
     write_json(store.root / "summary.json", summary)
     (store.root / "summary.md").write_text(render_markdown(summary), encoding="utf-8")
     log(f"summary 已写出：{store.root / 'summary.md'}")
@@ -493,6 +499,21 @@ def render_markdown(summary: dict[str, Any]) -> str:
         lines.append("装配变体（凡出现 `override` 都是故障注入改了装配，报告须说明）：")
         for system_id, variants in overridden.items():
             lines.append(f"- {system_id}：{variants}")
+        lines.append("")
+
+    ai = summary.get("ai_scores")
+    lines.extend(
+        ["## 独立 AI 评审", "", f"状态：{summary.get('ai_review_status', 'not_started')}。不是人工评审或专业背书。", ""]
+    )
+    if ai is not None:
+        lines.append(f"评分尝试计数：`{ai.get('counts')}`")
+        lines.append(f"预定分母：`{ai.get('denominators')}`")
+        lines.append(f"分歧裁定：`{ai.get('adjudication')}`")
+        for reason in ai.get("pending_reasons") or []:
+            lines.append(f"- {reason}")
+        if summary.get("ai_review_status") == "complete":
+            lines.append(f"硬失败与未决：`{ai.get('hard_failure')}`")
+            lines.append("逐组五维、约束覆盖、配对与一致率详见同目录 summary.json 的 ai_scores。")
         lines.append("")
 
     human = summary.get("human_scores")

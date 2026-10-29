@@ -173,6 +173,8 @@ async def execute(
     cases = _resolve_cases(case_set, case_ids)
     case_index = {case.id: index for index, case in enumerate(case_set.cases)}
 
+    review_metadata = (store.read_manifest().get("review") or {}) if resume and store.manifest_path.exists() else {}
+
     # --- 装配 ---
     bundle_owned = False
     if adapters is None:
@@ -181,53 +183,56 @@ async def execute(
         bundle = build_adapters(settings=settings, config=config, faults=faults)
         adapters = bundle.adapters
         bundle_owned = True
-    metas = {}
-    for system_id in config.systems:
-        metas[system_id] = await adapters[system_id].prepare()
-        log(f"装配完成：{system_id} = {metas[system_id].assembly}")
-
-    state_progress = group_progress(existing, cases=case_set.cases, system_ids=list(config.systems), config=config)
-
-    def _manifest(*, status: str, progress: list[GroupProgress]) -> dict[str, Any]:
-        """同一份身份与冻结绑定的 manifest（三处重写共用，避免漏字段各写一遍）。"""
-        return build_manifest(
-            run_id=run_id,
-            config=config,
-            case_set=case_set,
-            snapshot=snapshot,
-            system_metas=metas,
-            run_identity=identity,
-            run_identity_sha256=identity_sha,
-            frozen_identity_sha256=identity_sha if identity_locked else None,
-            identity_locked=identity_locked,
-            frozen_config_sha256=frozen_config_sha256,
-            config_drift_allowed=config_drift_allowed,
-            faults=faults,
-            settings=settings,
-            repo_root=REPO_ROOT,
-            created_at=created_at,
-            status=status,
-            progress=progress,
-        )
-
-    manifest = _manifest(status="dry_run" if dry_run else "running", progress=state_progress)
-    store.write_manifest(manifest)
-    if dry_run:
-        _write_state(store, run_id=run_id, batch_id=fingerprint, status="dry_run", progress=state_progress)
-        log(
-            f"dry-run：计划 {len(cases)} 个案例 × {len(config.systems)} 组 = {len(cases) * len(config.systems)} 个 case-group"
-        )
-        return ExecutionResult(
-            run_id=run_id,
-            batch_id=fingerprint,
-            status="dry_run",
-            progress=progress_summary(state_progress),
-            attempts_written=0,
-        )
-
-    attempts_written = 0
-    records = existing
     try:
+        metas = {}
+        for system_id in config.systems:
+            metas[system_id] = await adapters[system_id].prepare()
+            log(f"装配完成：{system_id} = {metas[system_id].assembly}")
+
+        state_progress = group_progress(existing, cases=case_set.cases, system_ids=list(config.systems), config=config)
+
+        def _manifest(*, status: str, progress: list[GroupProgress]) -> dict[str, Any]:
+            """同一份身份与冻结绑定的 manifest（三处重写共用，避免漏字段各写一遍）。"""
+            payload = build_manifest(
+                run_id=run_id,
+                config=config,
+                case_set=case_set,
+                snapshot=snapshot,
+                system_metas=metas,
+                run_identity=identity,
+                run_identity_sha256=identity_sha,
+                frozen_identity_sha256=identity_sha if identity_locked else None,
+                identity_locked=identity_locked,
+                frozen_config_sha256=frozen_config_sha256,
+                config_drift_allowed=config_drift_allowed,
+                faults=faults,
+                settings=settings,
+                repo_root=REPO_ROOT,
+                created_at=created_at,
+                status=status,
+                progress=progress,
+            )
+            if review_metadata:
+                payload["review"] = review_metadata
+            return payload
+
+        manifest = _manifest(status="dry_run" if dry_run else "running", progress=state_progress)
+        store.write_manifest(manifest)
+        if dry_run:
+            _write_state(store, run_id=run_id, batch_id=fingerprint, status="dry_run", progress=state_progress)
+            log(
+                f"dry-run：计划 {len(cases)} 个案例 × {len(config.systems)} 组 = {len(cases) * len(config.systems)} 个 case-group"
+            )
+            return ExecutionResult(
+                run_id=run_id,
+                batch_id=fingerprint,
+                status="dry_run",
+                progress=progress_summary(state_progress),
+                attempts_written=0,
+            )
+
+        attempts_written = 0
+        records = existing
         for case in cases:
             index = case_index[case.id]
             order = config.order_for(index)
@@ -251,24 +256,25 @@ async def execute(
             _write_state(store, run_id=run_id, batch_id=fingerprint, status="running", progress=progress)
             store.write_manifest(_manifest(status="running", progress=progress))
             log(f"{case.id} 完成（本轮写入 {attempts_written} 条尝试记录）")
+
+        final_progress = group_progress(records, cases=case_set.cases, system_ids=list(config.systems), config=config)
+        summary = progress_summary(final_progress)
+        status = "completed" if summary["case_groups_complete"] == summary["case_groups_expected"] else "partial"
+        store.write_manifest(_manifest(status=status, progress=final_progress))
+        _write_state(store, run_id=run_id, batch_id=fingerprint, status=status, progress=final_progress)
+        _write_errors(store, records)
+        log(f"批次 {status}：{summary['case_groups_complete']}/{summary['case_groups_expected']} 个 case-group 完成")
+        return ExecutionResult(
+            run_id=run_id,
+            batch_id=fingerprint,
+            status=status,
+            progress=summary,
+            attempts_written=attempts_written,
+        )
+
     finally:
         if bundle_owned:
             await bundle.aclose()
-
-    final_progress = group_progress(records, cases=case_set.cases, system_ids=list(config.systems), config=config)
-    summary = progress_summary(final_progress)
-    status = "completed" if summary["case_groups_complete"] == summary["case_groups_expected"] else "partial"
-    store.write_manifest(_manifest(status=status, progress=final_progress))
-    _write_state(store, run_id=run_id, batch_id=fingerprint, status=status, progress=final_progress)
-    _write_errors(store, records)
-    log(f"批次 {status}：{summary['case_groups_complete']}/{summary['case_groups_expected']} 个 case-group 完成")
-    return ExecutionResult(
-        run_id=run_id,
-        batch_id=fingerprint,
-        status=status,
-        progress=summary,
-        attempts_written=attempts_written,
-    )
 
 
 async def _run_case_group(

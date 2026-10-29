@@ -12,7 +12,6 @@ from typing import Any
 import pytest
 from pydantic import BaseModel
 
-
 from evaluation.carebench.config import RunConfig
 from evaluation.carebench.faults import FaultPlan, load_plan
 from evaluation.carebench.render import NO_TEXT_MARK, project
