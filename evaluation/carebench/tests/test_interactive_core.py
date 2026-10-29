@@ -47,6 +47,12 @@ def test_datasets_are_separate_and_cross_two_independent_factors() -> None:
         plan = episode_plan(cases, Budget(repetitions=1 if split == "calibration" else 3))
         assert len(plan) == (24 if split == "calibration" else 216)
         assert len({item["episode_id"] for item in plan}) == len(plan)
+        for case in cases:
+            assert 3 <= len(case.facts) <= 8
+            by_id = {fact["id"]: fact for fact in case.facts}
+            assert by_id["subject"]["known"] is True
+            assert by_id["communication"]["known"] is True
+            assert any("年龄" in fact["description"] or "多大" in fact["description"] for fact in case.facts)
 
 
 def test_case_roundtrip_and_hidden_fact_boundary(scenario: Scenario) -> None:
@@ -124,6 +130,30 @@ def test_tampered_and_truncated_records_are_never_silently_resumed(tmp_path: Pat
     path.write_text(original.rstrip("\n"))
     with pytest.raises(ValueError, match="未完成"):
         records(path)
+
+
+def test_repeated_question_quotes_use_distinct_ordered_occurrences(scenario: Scenario) -> None:
+    output = "他多大？抓之前发生了什么？还需要知道：他多大？"
+    quotes = ["他多大？", "抓之前发生了什么？", "他多大？"]
+    selection = {"questions": [{"quote": quote, "fact_ids": []} for quote in quotes], "feedback": []}
+    parsed = parse_selection(json.dumps(selection), policy_payload(scenario, output, set()))
+    assert compose_reply(scenario, parsed, disclosed=set(), used_feedback=set())["question_units"] == 3
+
+
+@pytest.mark.parametrize(
+    ("output", "quotes"),
+    [
+        ("他多大？抓之前发生了什么？", ["抓之前发生了什么？", "他多大？"]),
+        ("他多大？", ["他多大？", "他多大？"]),
+        ("他多大？", ["他多大？", "多大？"]),
+    ],
+)
+def test_question_quotes_cannot_reuse_reorder_or_overlap_occurrences(
+    scenario: Scenario, output: str, quotes: list[str]
+) -> None:
+    selection = {"questions": [{"quote": quote, "fact_ids": []} for quote in quotes], "feedback": []}
+    with pytest.raises(ValueError, match="顺序"):
+        parse_selection(json.dumps(selection), policy_payload(scenario, output, set()))
 
 
 class FakeAdapter:
