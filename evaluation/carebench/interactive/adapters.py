@@ -378,6 +378,10 @@ class InteractiveAgentSystem(AgentSystem):
             "user_input": assembled.user_input,
             "activated_skills": [skill.name for skill in assembled.activated],
             "activation_record_items": len(assembled.activated_record),
+            "injection_items": [
+                {"source": item.source, "role": item.role, "content": item.content}
+                for item in assembled.injections.items
+            ],
         }
         return assembled
 
@@ -450,13 +454,17 @@ class InteractiveAgentSystem(AgentSystem):
     ) -> dict[str, Any]:
         """在产品的原始轨迹上追加 interactive 事实与来源元数据。"""
         trace = super()._trace(request, events, tool_calls, extra)
+        actual_request = self._request_facts.pop((request.session_id, request.turn), None)
+        # 历史适配器仅走日常，曾把注入数写死为零；新版按实际装配记录。
+        if actual_request is not None and "run_request" in trace:
+            trace["run_request"]["injections"] = len(actual_request["injection_items"])
         trace["interactive"] = {
             "entry": request.entry,
             "first_emergency_turn": request.entry == ENTRY_EMERGENCY and request.turn == 1,
             "session_id": request.session_id,
             "user_text_sha256": sha256_text(request.user_text),
             "user_text_chars": len(request.user_text),
-            "request": self._request_facts.pop((request.session_id, request.turn), None),
+            "request": actual_request,
         }
         trace["source_metadata"] = _source_metadata(events, tool_calls)
         # 落盘前只做一处无损转换：产品轨迹里的 `CitationRecord.recorded_at` 是 datetime，
