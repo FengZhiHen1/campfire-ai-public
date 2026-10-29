@@ -40,6 +40,7 @@ from campfire.surfaces.consult.runbus import (
     RUN_STATUS_FINISHED,
     RunPump,
     bind_lease_run_id,
+    cancel_pumps,
     claim_session_run,
     drain_pumps,
     events_key,
@@ -445,3 +446,155 @@ async def test_finalize_writes_the_status_before_releasing_the_slot() -> None:
         index for index, (op, key) in enumerate(settle_ops) if key == mutex_key(_SESSION) and op in _MUTATIONS
     )
     assert status_index < release_index, "释放位子早于终态落定"
+
+
+# ---------------------------------------------------------------------------
+# 5 进程收尾：批量取消同样不得打断收尾
+# ---------------------------------------------------------------------------
+
+
+async def test_shutdown_cancel_does_not_interrupt_finalize() -> None:
+    """`cancel_pumps()`（进程收尾）不得向已经在收尾的推进注入取消。
+
+    时序：运行跑到终态 → 收尾的第一笔写（元数据 → `finished`）停在闸门上 →
+    此时进程收到停止信号、`cancel_pumps()` 批量取消 → 放行。
+
+    判别性：去掉 `cancel_pumps` 里的 `settling` 判据（改回对每个任务无条件
+    `task.cancel()`），收尾的第二笔写（释放会话位）永远不会执行——两条断言变红，
+    重启之后使用者最长 `RUN_MUTEX_TTL_SECONDS` 秒内每次发消息都吃 409 `session_busy`。
+
+    为什么它不是取消端点那条用例的重复：那条走 `request_cancel`（有 `settling` 判据），
+    这条走的是**另一条取消入口**。同一个不变量有两个入口时只守住一个，等于没守住。
+    """
+    cache = GatedCache()
+    pump, task, gate = await _start_gated_run(cache)
+    run_id = str(pump.run_id)
+
+    finalize_gate = cache.pause_before_mutation(meta_key(run_id))
+    gate.set()  # 让运行自己跑到终态、进入收尾
+    await finalize_gate.arrived.wait()
+
+    cancel_pumps()
+    finalize_gate.release.set()
+    await drain_pumps()
+
+    assert not task.cancelled(), "进程收尾打断了一条正在收尾的推进"
+    assert await cache.get(mutex_key(_SESSION)) is None, "收尾被打断：会话位没有释放"
+    meta = await read_run_meta(cache, run_id=run_id)
+    assert meta is not None and meta.status == RUN_STATUS_FINISHED, "收尾被打断：元数据停在运行中"
+
+
+async def test_shutdown_cancel_still_stops_a_running_run() -> None:
+    """正控：进程收尾对**未收尾**的推进照旧注入取消，且收尾照常落定。
+
+    没有这一条，上一条可以被「`cancel_pumps` 什么都不做」这种实现骗过——那会让容器停止
+    时后台推进继续调模型、继续写 Redis，而调用方以为已经停了。
+    """
+    cache = GatedCache()
+    pump, task, _gate = await _start_gated_run(cache)
+    run_id = str(pump.run_id)
+
+    cancel_pumps()
+    await drain_pumps()
+
+    assert task.cancelled(), "进程收尾必须真的停掉未收尾的推进"
+    assert await cache.get(mutex_key(_SESSION)) is None
+    meta = await read_run_meta(cache, run_id=run_id)
+    assert meta is not None and meta.status == RUN_STATUS_FINISHED
+
+
+async def test_finalize_survives_a_cancel_injected_during_its_own_writes() -> None:
+    """绕过两处闸门的取消（事件循环关闭、直接 `task.cancel()`）也必须让收尾落定。
+
+    时序：收尾的第一笔写停在闸门上 → 直接对任务 `task.cancel()` → 放行。
+
+    判别性：把 `_finalize` 里的「被取消后补做一遍」去掉（改回单个 `except Exception`），
+    `CancelledError` 会穿透 `finally`、第二笔写永不执行——两条断言变红。
+
+    这个来路真实存在：`asyncio` 在关闭事件循环时取消剩余任务，不经过本模块的任何闸门；
+    而 `main.py` 的收尾序列恰好与「使用者按下停止」在同一时刻发生（滚动发布、容器重启）。
+    """
+    cache = GatedCache()
+    pump, task, gate = await _start_gated_run(cache)
+    run_id = str(pump.run_id)
+
+    finalize_gate = cache.pause_before_mutation(meta_key(run_id))
+    gate.set()  # 运行跑到终态，进入收尾
+    await finalize_gate.arrived.wait()
+
+    task.cancel()  # 不经 request_cancel / cancel_pumps 的直接取消
+    finalize_gate.release.set()
+    await drain_pumps()
+
+    assert task.cancelled()
+    assert await cache.get(mutex_key(_SESSION)) is None, "收尾被取消打断：会话位没有释放"
+    meta = await read_run_meta(cache, run_id=run_id)
+    assert meta is not None and meta.status == RUN_STATUS_FINISHED, "收尾被取消打断：元数据停在运行中"
+
+
+class _RetryFailingCache(GatedCache):
+    """第 n 次 `set` 抛错：模拟「补做那一遍自己失败」。"""
+
+    def __init__(self, *, fail_on_call: int) -> None:
+        """按序号失效（1 = 首次收尾，2 = 补做，具体序号由用例按 ops 顺序算）。"""
+        super().__init__()
+        self._set_calls = 0
+        self._fail_on_call = fail_on_call
+
+    async def set(self, key: str, value: str, *, ttl_seconds: int) -> None:
+        """到号即抛，其余照常。"""
+        self._set_calls += 1
+        if self._set_calls == self._fail_on_call:
+            raise RuntimeError("Redis 写失败（替身）")
+        await super().set(key, value, ttl_seconds=ttl_seconds)
+
+
+async def test_finalize_retry_failure_keeps_the_original_cancel_visible() -> None:
+    """补做那一遍自己失败时：原 `CancelledError` 照旧抛出，失败不被吞成正常结束。
+
+    判别性：把补做分支的 `except Exception` 换成「吞掉并 return」，任务会以正常结束收场、
+    会话位仍被占着而没有任何信号——最后两条断言同时变红。
+    """
+    cache = _RetryFailingCache(fail_on_call=3)  # 1 = begin 写 meta，2 = 首次收尾，3 = 补做
+    pump, task, gate = await _start_gated_run(cache)
+    run_id = str(pump.run_id)
+
+    release_gate = cache.pause_before_mutation(mutex_key(_SESSION))
+    gate.set()  # 运行跑到终态：首笔写（meta）落定，第二笔（释放位子）停在闸门上
+    await release_gate.arrived.wait()
+
+    task.cancel()
+    release_gate.release.set()
+    await drain_pumps()
+
+    assert task.cancelled(), "补做失败不得把取消吞成正常结束"
+    assert cache._set_calls == 3, "没有发生补做（=两次写 + begin），判别性失效"
+    assert await cache.get(mutex_key(_SESSION)) is not None, "位子仍该被占着（失败可见，不是静默成功）"
+    meta = await read_run_meta(cache, run_id=run_id)
+    assert meta is not None and meta.status == RUN_STATUS_FINISHED
+
+
+async def test_finalize_retry_reruns_both_writes_idempotently() -> None:
+    """在「释放位子」那一笔被取消时补做：两笔写都重跑一遍，终态与位子都正确。
+
+    判据是「重跑」本身：meta 的写入次数在收尾阶段是 2 次（首笔 + 补做），而位子只被删一次
+    ——`compare_and_delete` 在值已不是自己时不做任何写入，重复执行不破坏别人的互斥键。
+    """
+    cache = GatedCache()
+    pump, task, gate = await _start_gated_run(cache)
+    run_id = str(pump.run_id)
+
+    meta_writes_before = cache.ops.count(("set", meta_key(run_id)))
+    release_gate = cache.pause_before_mutation(mutex_key(_SESSION))
+    gate.set()
+    await release_gate.arrived.wait()
+
+    task.cancel()
+    release_gate.release.set()
+    await drain_pumps()
+
+    assert task.cancelled()
+    assert cache.ops.count(("set", meta_key(run_id))) - meta_writes_before == 2, "补做没有重跑首笔写"
+    assert await cache.get(mutex_key(_SESSION)) is None, "补做没有补上释放"
+    meta = await read_run_meta(cache, run_id=run_id)
+    assert meta is not None and meta.status == RUN_STATUS_FINISHED
