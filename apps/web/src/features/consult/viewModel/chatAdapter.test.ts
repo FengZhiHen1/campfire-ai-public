@@ -11,7 +11,7 @@
  *   - 禁止只断言「没有抛错」：必须断言 yield 出来的 content 形状（映射是本层的交付物）
  */
 
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { ChatModelRunOptions, ChatModelRunResult, ThreadMessage } from '@assistant-ui/react';
 
 import { createConsultChatAdapter } from './chatAdapter';
@@ -349,6 +349,36 @@ describe('chatAdapter — 两段式载荷与取消', () => {
     expect(result.failures[0]).toBeInstanceOf(Error);
     expect(result.statuses.at(-1)).toMatchObject({ type: 'incomplete', reason: 'error' });
     expect(result.connections).toContain('failed');
+  });
+
+  it('发送阶段的 409 run_not_resumable：请求历史水合，且**不重发**第二条消息', async () => {
+    // 场景（契约第 4.1 节）：同一个 client_message_id 在十分钟后重放，首次那次的运行
+    // 传输态已过期。服务端回 409 `run_not_resumable`，此时唯一正确的动作是重读历史
+    // ——自动重发会再落一条使用者消息，正是服务端拒绝交出失效 run_id 要防的事。
+    const result = await runAdapter({
+      events: [],
+      sendError: new ConsultError('not-resumable', '这条回答的运行已不可续传'),
+    });
+
+    expect(result.resyncs).toEqual(['requested']);
+    // 只发过一次：没有任何自动重试（`sendCalls` 记录由替身实现写入，本用例把
+    // `sendMessage` 换成了直接拒绝的 mock，因此这里数 mock 的调用次数）。
+    expect(vi.mocked(result.port.sendMessage)).toHaveBeenCalledTimes(1);
+    // 也没有走进订阅：没有 run_id 可订。
+    expect(result.port.streamCalls).toHaveLength(0);
+    expect(result.diagnostics).toContain('发送阶段不可续传：改走历史水合，不重发');
+    expect(result.failures[0]).toBeInstanceOf(ConsultError);
+    expect(result.statuses.at(-1)).toMatchObject({ type: 'incomplete', reason: 'error' });
+  });
+
+  it('发送阶段的其他失败不请求重读（历史里没有新东西，重读只会闪屏）', async () => {
+    const result = await runAdapter({
+      events: [],
+      sendError: new ConsultError('busy', '会话上已有正在进行的运行'),
+    });
+
+    expect(result.resyncs).toEqual([]);
+    expect(vi.mocked(result.port.sendMessage)).toHaveBeenCalledTimes(1);
   });
 
   it('取消（abortSignal）触发 POST cancel，不再往下读事件', async () => {
