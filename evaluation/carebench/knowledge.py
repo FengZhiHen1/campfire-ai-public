@@ -6,10 +6,9 @@ metadata、向量），做成可 hash 的快照。**不改库、不摄取**（�
 三条硬约束：① 评测知识必须落在独立库（`require_isolated_database` 的库名前缀守卫）；
 ② 只用语许可较清晰的子集；③ B 与 C 用**同一快照**，manifest 记来源与快照 hash。
 
-为什么到节点级（`EVAL-01`）：只核对条目与「节点数 > 0」时，「节点数相同、正文或向量被换掉」
-看不出来。现在 `nodes_sha256` 覆盖节点正文/标识/metadata/向量，`doc_hash` 绑定源文件版本，
-嵌入身份单独记——三者都进 `to_dict()` / `sha256`，`.sha256` 又进 manifest 运行身份，
-所以**续跑时内容漂移会被 `manifest.identity_drift` 点名拒绝**。
+`nodes_sha256` 覆盖节点正文/标识/metadata/向量，`doc_hash` 记录条目与源文件版本的绑定，
+嵌入身份单独记；三者都进 `to_dict()` / `sha256`，`.sha256` 又进 manifest 运行身份，
+因此**续跑时内容漂移会被 `manifest.identity_drift` 点名拒绝**。
 """
 
 from __future__ import annotations
@@ -70,9 +69,7 @@ class SnapshotFile:
 class EmbeddingIdentity:
     """本次运行声明的嵌入身份（模型名 / 维度 / 端点结构），**不含凭据**。
 
-    证据边界：它只证明「这次检索用的嵌入器是哪一套」（查询嵌入选自当前 `Settings`），
-    **不证明**库里既有节点当初由它算出——节点是历史摄取产物，快照无法回溯产出进程。
-    续跑核对因此能发现「这次环境换了模型/维度」，不能证明「旧向量与新模型同源」。
+    证据边界：只证明「这次检索用的嵌入器是哪一套」，**不证明**库内既有节点当初由它算出。
     """
 
     model: str
@@ -113,12 +110,16 @@ def current_embedding_identity() -> EmbeddingIdentity:
 
 
 def _endpoint_identity(url: str) -> str:
-    """端点身份：`host[:port][/path]`（去 query 与末尾斜杠；取不到主机时为空）。"""
+    """端点身份：`scheme://host[:port][/path]`（剔凭据、query 与末尾斜杠；取不到主机时为空）。
+
+    保留 scheme：http↔https 是端点身份的实质变化，抹掉它会让两类端点算作同一身份。
+    """
     parsed = urlparse((url or "").strip())
     if not parsed.hostname:
         return ""
     host = f"{parsed.hostname}:{parsed.port}" if parsed.port else parsed.hostname
-    return f"{host}{(parsed.path or '').rstrip('/')}"
+    origin = f"{parsed.scheme}://{host}" if parsed.scheme else host
+    return f"{origin}{(parsed.path or '').rstrip('/')}"
 
 
 @dataclass(frozen=True)
@@ -138,13 +139,8 @@ class NodeRecord:
 def canonical_vector(value: object) -> list[float]:
     """把**数据库文本形**的向量规范成 `list[float]`。
 
-    口径只有一个：`embedding::text`（pgvector 对 `float4` 的最短往返表示，如 `"[0.1,0.2]"`）
-    → 逗号切分 → `float()`。`read_database_state` 固定用 `::text` 读，因此同一行的文本形
-    唯一确定，float64 可精确表示 float4，转规范 JSON 无精度损失。
-
-    边界：**不要**推广成「任意驱动表示无关」。调用方直接给内存向量、而元素是由 `float32`
-    拓宽的 `float64`（`float(numpy.float32(0.1))` = `0.10000000149011612`）时得到的是
-    另一个摘要（它比文本形精度更高）；两种口径不得混用，生产路径只有 `::text`。
+    规范口径为 `embedding::text`：固定解析该文本形后参与规范 JSON 哈希，不与其他读出表示
+    混用（同一向量若以内存 float32 拓宽来的 float64 传入，会得到另一个摘要）。
 
     `None` / 空列表返回 `[]`（由调用方记为违规），不在这里抛错。
     """
@@ -178,13 +174,9 @@ def _vector_element(value: object) -> float:
 def node_content_digest(nodes: Sequence[NodeRecord]) -> str:
     """一组节点的内容摘要：正文 + 节点标识 + metadata + 向量（按 `node_id` 升序）。
 
-    规范形（唯一实现，别处不得自己拼 JSON）：`[{node_id, text, metadata, embedding}, ...]`
-    的 `canonical_json` 的 SHA-256。排序让返回顺序不影响 hash；用规范 JSON 而非拼接字符串，
-    避免 `("a","bc")` 与 `("ab","c")` 撞成同一摘要。
-
-    与旧检查点 `2026-10-29-knowledge-snapshot.json` 的 `nodes_sha256` 同算法（已用旧环境
-    6 条 / 117 节点逐条复算对上），逐条可比；整体 `KnowledgeSnapshot.sha256` 是格式 2，
-    与任何更早的整体 hash 不可比。
+    规范形（唯一实现）：`[{node_id, text, metadata, embedding}, ...]` 的 `canonical_json`
+    的 SHA-256。排序让返回顺序不影响 hash；规范 JSON 避免拼接字符串造成跨字段撞车。
+    与旧检查点 `nodes_sha256` 同算法（已只读复算旧库 6 条对上）；整体 hash 是格式 2。
     """
     payload = [
         {
@@ -209,8 +201,9 @@ class KnowledgeItemRow:
     nodes: int
     #: 出处（`campfire_knowledge_item.source`）：缺来源的条目不进检索。
     source: str = ""
-    #: 摄取侧对**解码后文本**做 SHA-256（`ingestion.compute_doc_hash`）得到的内容 hash。
+    #: 摄取侧对**解码后文本**做 SHA-256（`ingestion.compute_doc_hash`）得到的内容 hash；
     #: 与 `SnapshotFile.sha256`（清单对**磁盘文件字节**的 hash）是两套口径，不可互换。
+    #: 快照只记录并进 hash，不与源文件重算比对（证据边界见 `build_snapshot`）。
     doc_hash: str | None = None
     #: 该条目全部节点的内容摘要（见 :func:`node_content_digest`）。
     nodes_sha256: str = ""
@@ -258,17 +251,15 @@ class KnowledgeSnapshot:
     def sha256(self) -> str:
         """快照 hash：格式版本 + 语料清单 + 条目与节点摘要 + 嵌入身份 + 库名。
 
-        含库名是有意的：两份「看起来一样」的条目来自不同库时快照必须不同，
-        否则 manifest 声称的快照与真正跑的那一份可能不是同一份。
+        含库名是有意的：来自不同库的同形条目不得互相冒充。
         """
         return sha256_value(self.to_dict())
 
     def to_dict(self) -> dict[str, Any]:
         """规范字典（进 manifest 的 `knowledge_snapshot` 段）。
 
-        排序是规范的一部分（条目按 `item_id`、语料按 `path`）：数据库返回顺序不得影响
-        这份字典。`nodes` 只放摘要——逐节点展开向量会让 5 万节点时的证据包失去可用性，
-        而摘要对「内容是否漂移」的判别力与展开相同。
+        排序是规范的一部分（条目按 `item_id`、语料按 `path`）；`nodes` 只放摘要，
+        它与逐节点展开对「内容是否漂移」的判别力相同。
         """
         return {
             "format_version": SNAPSHOT_FORMAT_VERSION,
@@ -367,14 +358,15 @@ def build_snapshot(
     case_item_count: int = 0,
     embedding: EmbeddingIdentity | None = None,
 ) -> KnowledgeSnapshot:
-    """把读出的条目与节点做成带摘要与违规清单的快照（**纯函数**，不触库）。
-
-    纯函数是刻意的：`EVAL-01` 的判据（节点数相同、内容不同 → hash 必不同）只有能构造
-    两份输入时才算被测到。
+    """把读出的条目与节点做成带摘要与违规清单的快照（**纯函数**，不触库，便于测负例）。
 
     核对项（缺一条就不允许正式运行）：① 条目基名在清单内，且**清单里每份语料都在库内**；
     ② 无案例条目、无已撤下条目、条目有 `doc_hash`、条目至少一个节点；③ 节点有非空
     `item_id`、属于库内条目、标识非空且不重复、有向量且维度与身份一致、有限值且非零向量。
+
+    证据边界：`doc_hash`/`source` 只被记录并进 hash，不与源文件重算比对——能发现两次运行
+    之间的来源漂移（→ 续跑拒绝），但**不证明**库内 `doc_hash` 就是许可清单里那份文件；
+    那一步要在读 `paths` 的阶段用 `ingestion.compute_doc_hash` 与库内值逐条比对（未接入）。
     """
     allowed = {entry.basename for entry in manifest.files}
     by_item: dict[str, list[NodeRecord]] = {}
@@ -487,17 +479,11 @@ async def read_database_state(
     database: str,
     embedding: EmbeddingIdentity | None = None,
 ) -> KnowledgeSnapshot:
-    """读库内条目与**节点**后交给 :func:`build_snapshot`（判据全在那里，便于不起库验证）。
+    """读库内条目与**整表**节点后交给 :func:`build_snapshot`（判据全在那里）。
 
-    取数口径：条目取 `doc_hash`；节点取**整表**（只取条目名下的会让游离节点与案例节点
-    从快照里消失）；向量固定按 `embedding::text` 读（口径边界见 :func:`canonical_vector`）。
-    代价是 5 万节点时几十 MB 与一次全表扫描——快照只在 preflight / 批次启动时做。
-
-    Args:
-        session: 只读事务会话。
-        snapshot: `load_snapshot_manifest` 读出的许可裁定表。
-        database: 库名。
-        embedding: 本次运行的嵌入身份；缺省取当前应用配置（与真实嵌入调用同一来源）。
+    节点取整表：只取条目名下的会让游离节点与案例节点从快照里消失。向量固定按
+    `embedding::text` 读（口径见 :func:`canonical_vector`）。`embedding` 缺省取当前配置
+    （与真实嵌入调用同一来源）。
     """
     from campfire.modules.library.models import CaseItem, KnowledgeItem
 
