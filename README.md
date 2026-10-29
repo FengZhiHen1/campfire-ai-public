@@ -86,6 +86,7 @@ uv run python scripts/checks.py full               # 合入 dev 前与 CI：全�
 ```bash
 uv run ruff check . && uv run ruff format --check .
 uv run mypy apps/api/src/campfire apps/api/tests   # 两个路径必须同时给
+uv run alembic upgrade head && uv run alembic check  # 迁移门禁：需要数据服务在跑
 uv run pytest
 uv run --no-project python scripts/check_design_docs.py   # 纯标准库，不依赖项目环境
 pnpm --filter @campfire/web lint
