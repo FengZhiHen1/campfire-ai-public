@@ -124,6 +124,10 @@ describe('错误翻译', () => {
     expect(translateConsultError(new HttpError(401, 'x')).kind).toBe('unauthorized');
     expect(translateConsultError(new HttpError(404, 'x')).kind).toBe('not-found');
     expect(translateConsultError(new HttpError(409, 'session_busy')).kind).toBe('busy');
+    // 409 必须按 `detail` 分开（契约第 2 节码表 + 第 4.1 节）：两个码的处置相反。
+    expect(translateConsultError(new HttpError(409, 'run_not_resumable')).kind).toBe('not-resumable');
+    // 未知 409 不回落成 busy——那会让使用者白等一个不存在的运行，并掩盖新增错误码。
+    expect(translateConsultError(new HttpError(409, 'something_new')).kind).toBe('unexpected');
     expect(translateConsultError(new HttpError(422, 'x')).kind).toBe('invalid');
     expect(translateConsultError(new HttpError(503, 'x')).kind).toBe('unavailable');
     expect(translateConsultError(new HttpError(500, 'x')).kind).toBe('unexpected');
@@ -132,6 +136,46 @@ describe('错误翻译', () => {
     // 已经是领域失败时原样返回（不重复包装）。
     const known = new ConsultError('busy', '忙');
     expect(translateConsultError(known)).toBe(known);
+  });
+
+  it('发消息端点的 409 run_not_resumable 不被说成「会话忙」（契约第 4.1 节）', async () => {
+    // 端到端走一遍真实翻译链：`request()` 从响应体里取 `detail`，`HttpError` 带着它进来。
+    const fetchImpl = (async () =>
+      new Response(JSON.stringify({ detail: 'run_not_resumable' }), {
+        status: 409,
+        headers: { 'Content-Type': 'application/json' },
+      })) as unknown as typeof fetch;
+    vi.stubGlobal('fetch', fetchImpl);
+
+    await expect(
+      createConsultApi({ fetchImpl }).sendMessage('s1', { content: 'x', client_message_id: 'c1' }),
+    ).rejects.toMatchObject({ kind: 'not-resumable' });
+  });
+
+  it('发消息端点的 409 session_busy 仍是 busy（既有行为不变）', async () => {
+    const fetchImpl = (async () =>
+      new Response(JSON.stringify({ detail: 'session_busy' }), {
+        status: 409,
+        headers: { 'Content-Type': 'application/json' },
+      })) as unknown as typeof fetch;
+    vi.stubGlobal('fetch', fetchImpl);
+
+    await expect(
+      createConsultApi({ fetchImpl }).sendMessage('s1', { content: 'x', client_message_id: 'c1' }),
+    ).rejects.toMatchObject({ kind: 'busy' });
+  });
+
+  it('发消息端点的未知 409 不假设成 busy', async () => {
+    const fetchImpl = (async () =>
+      new Response(JSON.stringify({ detail: 'rate_limited_later' }), {
+        status: 409,
+        headers: { 'Content-Type': 'application/json' },
+      })) as unknown as typeof fetch;
+    vi.stubGlobal('fetch', fetchImpl);
+
+    await expect(
+      createConsultApi({ fetchImpl }).sendMessage('s1', { content: 'x', client_message_id: 'c1' }),
+    ).rejects.toMatchObject({ kind: 'unexpected' });
   });
 
   it('JSON 端点的 401 触发 app 层处置回调并抛领域失败', async () => {

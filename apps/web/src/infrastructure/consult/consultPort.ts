@@ -47,6 +47,10 @@ export interface ConsultApiOptions {
   onDiagnostic?: SseDiagnosticSink;
 }
 
+/** 契约第 2 节的 409 错误码，逐字取自 `detail`（后端 `runbus.SESSION_BUSY` / `RUN_NOT_RESUMABLE`）。 */
+export const SESSION_BUSY_CODE = 'session_busy';
+export const RUN_NOT_RESUMABLE_CODE = 'run_not_resumable';
+
 /** HTTP 状态码 → 领域失败种类（契约第 2 节错误码表）。 */
 function fromHttpStatus(error: HttpError): ConsultError {
   switch (error.status) {
@@ -55,8 +59,19 @@ function fromHttpStatus(error: HttpError): ConsultError {
     case 404:
       return new ConsultError('not-found', '资源不存在或不属于当前账号', { cause: error });
     case 409:
-      // 发消息路径上的 409 只有 session_busy；run_not_resumable 走 StreamRun 的专用异常。
-      return new ConsultError('busy', '会话上已有正在进行的运行', { cause: error });
+      // 409 有两个语义**相反**的码，必须按 `detail` 分开（契约第 2 节码表 + 第 4.1 节）：
+      // - `session_busy`：另一个运行正在这个会话上跑 → 等它结束再发（可重试）；
+      // - `run_not_resumable`：这条运行的传输态已经不在了（幂等重放指向一条过期运行）
+      //   → 改走历史水合，**不得**重发（重发会再落一条使用者消息）。
+      // 未知的 409 **不回落到 busy**：把一条我们没实现的拒绝说成「正在处理上一条消息」，
+      // 会让使用者白等一个不会结束的运行，还会掩盖服务端新增的错误码。未知就如实说未知。
+      if (error.detail === RUN_NOT_RESUMABLE_CODE) {
+        return new ConsultError('not-resumable', '这条回答的运行已不可续传', { cause: error });
+      }
+      if (error.detail === SESSION_BUSY_CODE) {
+        return new ConsultError('busy', '会话上已有正在进行的运行', { cause: error });
+      }
+      return new ConsultError('unexpected', `HTTP 409: ${error.detail}`, { cause: error });
     case 422:
       return new ConsultError('invalid', '载荷不合法', { cause: error });
     case 503:
