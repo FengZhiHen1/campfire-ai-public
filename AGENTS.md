@@ -52,8 +52,8 @@ uv run python -m campfire.cli ingest <x.md>     # 摄取到资料库（条目与
   不属材料层**：它是工程验收，按影响面触发（改认证/SSE/静态资源/部署形态时必跑）。
 - ❌ 禁止：把「改完就跑一遍 demo/评测」当回归；外部抖动后的重试成功不算模型可靠性证据。
 
-`scripts/checks.py` 与 `scripts/worktree.py` 由工具任务实现；落地前按 testing.md §4 逐条手工执行，
-不得以「工具没做好」为由跳过检查。
+`scripts/checks.py` 与 `scripts/worktree.py` 是仓内执行入口；用 `--help` 查看选项，
+用 `checks.py <层级> --dry-run` 核对检查计划。工具配置归代码，执行与判读口径归 testing.md。
 
 ## 开发与部署的边界
 
@@ -161,8 +161,7 @@ archive/               已归档实现与设计，废弃物，仅供参考
 - 备份/恢复/回滚：`scripts/{backup,restore,rollback}.sh`；仓库 <https://github.com/FengZhiHen1/Campfire-AI.git>
 - ❌ 禁止：**无授权发布生产**——未经用户明确要求不执行 `deploy.yml`（`deploy=true`）、不改生产
   配置与数据、不 ssh 上去替换文件。**发布是生产变更，合并与推送不是**：别把两者混成一条禁令。
-- 远程写（push / PR / 改远端分支 / 建 tag）按**当前会话的授权**办：本轮任务未授权远程写，
-  做完只报本地提交 hash；这是本次边界，**不是仓库级永恒规则**。
+- 远程写（push / PR / 改远端分支 / 建 tag）按当前会话的授权执行；权限与生产发布边界分别判断。
 
 ## Design Docs
 

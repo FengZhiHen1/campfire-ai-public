@@ -90,8 +90,9 @@
    **没有** `ai_scores`、没有 AI 简报/批次包、没有分歧裁定 JSONL。
 2. **知识快照的节点级锁定未做**。`knowledge.read_database_state` 现在核对：条目 `source_path`
    基名在许可表内、无案例条目、节点数 > 0；**没有**核对每个节点的正文/向量 hash 与 `source doc_hash`
-   ——「节点数相同、内容变了」目前查不出来。主 agent 那份 `.tmp/carebench-environment/knowledge-snapshot.json`
-   （逐条 doc_hash + nodes 内容/向量 hash）尚未接入。**这是冻结正式集之前必须补的一条**。
+   ——“节点数相同、内容变了”目前查不出来。主 agent 已将旧快照留存为
+   `docs/development/checkpoints/2026-10-29-knowledge-snapshot.json`
+   （逐条 doc_hash + nodes 内容/向量 hash），尚未接入运行时核验。**这是冻结正式集之前必须补的一条**。
 3. **`verify` 未覆盖的新字段**：`run_identity`、`review.structured_output`、`retry`、
    fixture 的 `observed`/`status` 还没有对应的 verify 断言（现在只保证写入，未保证事后被校验）。
 4. **`summarize` 未消费 `observed`**：统计里还没单列「注入了但没被观察到」的组数。
@@ -102,8 +103,8 @@
 ```bash
 cd <eval-worktree>            # 主 agent 已计划：集成 commit 后另建只读 worktree
 uv sync --frozen
-cp /srv/workspaces/repos/Campfire-AI/.env .env && chmod 600 .env   # 不打印、不入库
-export DATABASE_URL="postgresql+asyncpg://<u>:<p>@<host>:5432/campfire_carebench_<date>"
+# 按新环境的凭据链配置本泳道 .env（不打印、不入库）；不要照搬旧机回环网关。
+# DATABASE_URL 指向本次新建的 campfire_carebench* 专用评测库。
 
 # 1) 预检（不会发生成调用）
 uv run python -m evaluation.carebench preflight \
