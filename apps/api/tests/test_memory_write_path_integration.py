@@ -151,8 +151,13 @@ async def memory_graph() -> AsyncIterator[MemoryGraph]:
     finally:
         # 清图用 GRAPH.DELETE（FalkorDB v4.20.7 对「清空后重写 + 字符串范围查询」
         # 返回过期结果，见 conftest.drop_falkordb_graph 的说明）。
+        # 删图前先收口缓存驱动的后台索引任务：在途 `CREATE INDEX` 撞上「图键已删」
+        # 会失败成 `Encountered an empty key`（QA-10 的竞态），异常无人取回时在退出时
+        # 打印 `Task exception was never retrieved`。
         from .conftest import drop_falkordb_graph
 
+        for account_id in list(graph.account_drivers):
+            await graph.release_account_driver(account_id)
         await drop_falkordb_graph(graph.driver, _ACCOUNT)
         await graph.aclose()
 
