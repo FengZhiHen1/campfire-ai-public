@@ -75,7 +75,7 @@ from campfire.modules.accounts.models import (
 from campfire.modules.accounts.onboarding import read_onboarding_state
 from campfire.modules.accounts.onboarding_completion import complete_onboarding
 from campfire.modules.accounts.registration import api_overrides, sign_up_form_fields
-from campfire.modules.accounts.session_items import StoredItem, message_text
+from campfire.modules.accounts.session_items import HydratedMessage, StoredItem, message_text
 from campfire.modules.accounts.session_repository import get_session_owner
 from campfire.modules.memory.derived import EmergencyMemory
 from campfire.modules.memory.errors import MemoryUnavailableError
@@ -651,6 +651,50 @@ async def test_hydrate_missing_and_foreign_session_share_the_same_404(client: ht
     foreign_response = await client.get(f"/consult/sessions/{foreign.session_id}/messages")
     assert missing.status_code == foreign_response.status_code == 404
     assert missing.json() == foreign_response.json()
+
+
+async def test_hydrate_history_adopts_the_freshness_refresh_result(
+    client: httpx.AsyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """水合端点必须经过引用新鲜度刷新，**并且采用它返回的那份消息**。
+
+    为什么需要这条：`refresh_citation_freshness` 自己的行为（三态、只换 `withdrawn`、
+    核对不出来保持未知）由 `test_consult_citation_freshness.py` 逐条钉住，但**「端点
+    到底调没调它」在那边测不到**。漏掉这一步的表现不是报错，而是界面上「已撤下的来源
+    照旧可以点进去」——一次安静的错误，正是 BUG-01 那一类「现象看得到、根因在别处」的
+    形状，所以接线本身也要有一条判据。
+
+    用替身替换刷新函数而不是造真撤下条目：这里要判的是接线（调用 + 采用返回值），
+    真值核对已由函数自身的用例覆盖；两者分开，任一处退化成空跑都会立刻显形。
+    """
+
+    seen: list[list[HydratedMessage]] = []
+    replaced: list[HydratedMessage] = [
+        {"id": "replaced", "role": "assistant", "parts": [{"type": "text", "text": "刷新后的历史"}]},
+    ]
+
+    async def _fake(settings: Settings, messages: Sequence[HydratedMessage]) -> list[HydratedMessage]:
+        assert settings is not None
+        seen.append(list(messages))
+        return list(replaced)
+
+    runner = ScriptedRunner(get_settings())
+    _install_runner(runner)
+    session_id = await _create_session(client)
+    assert (await _send(client, session_id, content="留下一条历史")).status_code == 202
+    await drain_pumps()
+
+    monkeypatch.setattr(consult_routes, "refresh_citation_freshness", _fake)
+
+    response = await client.get(f"/consult/sessions/{session_id}/messages")
+
+    assert response.status_code == 200, response.text
+    assert response.json()["messages"] == replaced, "端点没有采用刷新后的消息列表"
+    assert len(seen) == 1, "刷新函数没有在水合路径上被调用"
+    assert any(part.get("text") == "留下一条历史" for message in seen[0] for part in message.get("parts", [])), (
+        "刷新函数必须收到水合出的真实消息"
+    )
 
 
 # ---------------------------------------------------------------------------
