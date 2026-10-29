@@ -52,6 +52,7 @@ from campfire.modules.memory.graph import (
     _cancel_driver_init_task,
     aclose_shared_memory_graph,
     build_memory_graph,
+    release_shared_account_driver,
 )
 
 #: 装配测试用的假凭据：不调用任何真实服务，只需要「已配置」这一事实。
@@ -940,3 +941,93 @@ async def test_release_account_driver_covers_evicted_and_internal_clones() -> No
     assert await graph.release_account_driver("it_mem_release_absent") is False
 
     await graph.aclose()
+
+
+# ---------------------------------------------------------------------------
+# 共享句柄的账号驱动收口（注销删图前的入口）
+# ---------------------------------------------------------------------------
+
+
+class _SharedHandleSpy:
+    """共享句柄替身：只记录「有没有被问到某个账号」。"""
+
+    def __init__(self, *, result: bool = True) -> None:
+        self.seen: list[str] = []
+        self.result = result
+        self.closed = False
+
+    async def release_account_driver(self, account_id: str) -> bool:
+        """记录收口请求。"""
+        self.seen.append(account_id)
+        return self.result
+
+    async def aclose(self) -> None:
+        """共享句柄的收尾不归本入口管（被调用即置位，供断言）。"""
+        self.closed = True
+
+
+@pytest.mark.asyncio
+async def test_release_shared_account_driver_never_builds_a_shared_handle(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """本进程没有共享句柄时返回 None 且**不构造**——注销不值得为此常驻一套连接池。"""
+    import campfire.modules.memory.graph as memory_graph
+
+    monkeypatch.setattr(memory_graph, "_shared_graph", None)
+    monkeypatch.setattr(memory_graph, "_shared_graph_origin", None)
+
+    def _forbidden(*_args: object, **_kwargs: object) -> object:
+        raise AssertionError("为一次收口新建了共享实例")
+
+    monkeypatch.setattr(memory_graph, "build_memory_graph", _forbidden)
+
+    assert await release_shared_account_driver(_settings(), "it_mem_shared_absent") is None
+    assert memory_graph._shared_graph is None
+
+
+@pytest.mark.asyncio
+async def test_release_shared_account_driver_only_touches_a_same_origin_handle(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """连接来源一致才转交给共享句柄；主机/端口/库名不同时一律不碰（返回 None）。"""
+    import campfire.modules.memory.graph as memory_graph
+
+    settings = _settings()
+    spy = _SharedHandleSpy()
+    monkeypatch.setattr(memory_graph, "_shared_graph", cast(MemoryGraph, spy))
+    monkeypatch.setattr(memory_graph, "_shared_graph_origin", memory_graph._origin_of(settings))
+
+    assert await release_shared_account_driver(settings, "it_mem_shared_same") is True
+    assert spy.seen == ["it_mem_shared_same"], "同源时没有转交给共享句柄"
+
+    # 只改端口就要判为不同源：那是另一台实例，同名账号是另一个账号。
+    monkeypatch.setattr(
+        memory_graph,
+        "_shared_graph_origin",
+        memory_graph.SharedGraphOrigin(
+            host=settings.falkordb_host,
+            port=settings.falkordb_port + 1,
+            database=settings.falkordb_database,
+            password_configured=False,
+        ),
+    )
+    assert await release_shared_account_driver(settings, "it_mem_shared_other") is None
+    assert spy.seen == ["it_mem_shared_same"], "不同源的共享句柄被动了"
+    assert spy.closed is False, "本入口不得关闭共享句柄"
+
+
+@pytest.mark.asyncio
+async def test_aclose_shared_memory_graph_clears_the_origin(monkeypatch: pytest.MonkeyPatch) -> None:
+    """共享句柄关掉后来源标记必须一并清空：否则下一次收口会拿着旧来源去比对。"""
+    import campfire.modules.memory.graph as memory_graph
+
+    class _Closable:
+        async def aclose(self) -> None:
+            return None
+
+    monkeypatch.setattr(memory_graph, "_shared_graph", cast(MemoryGraph, _Closable()))
+    monkeypatch.setattr(memory_graph, "_shared_graph_origin", memory_graph._origin_of(_settings()))
+
+    await aclose_shared_memory_graph()
+
+    assert memory_graph._shared_graph_origin is None
