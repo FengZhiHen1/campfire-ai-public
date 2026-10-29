@@ -534,21 +534,40 @@ class RunPump:
         第一句是同步的置位（`_settling = True`），必须发生在任何 `await` 之前：
         取消端点靠它判断「这条运行已经在收尾」，见 :func:`request_cancel`。
         置位放在第一个 await 之后就等于没有——取消仍会打进下面的两笔 Redis 写。
+
+        被取消时补做一遍同样的两笔写：还有不经过那两处闸门的取消来路（事件循环关闭、
+        直接 `task.cancel()`），一次注入就会丢掉「释放会话位」那一笔。两笔写都幂等
+        （`set` / `compare_and_delete`），补做不会破坏别人的互斥键；补做自身再失败时
+        只记日志，原取消照旧抛出。
         """
         self._settling = True
         try:
-            await write_run_meta(
-                self._cache,
-                RunMeta(
-                    run_id=run_id,
-                    session_id=self._lease.session_id,
-                    account_id=self._account_id,
-                    status=RUN_STATUS_FINISHED,
-                ),
-            )
-            await release_session_run(self._cache, self._lease)
+            await self._settle(run_id)
+        except asyncio.CancelledError:
+            try:
+                await self._settle(run_id)
+            except Exception as exc:  # noqa: BLE001 —— 补做失败只记日志，原始取消照旧抛出
+                logger.warning("运行收尾在取消后补做失败：运行=%s 异常=%s", run_id, type(exc).__name__)
+            raise
         except Exception as exc:  # noqa: BLE001 —— 收尾失败不能让终态事件丢失；TTL 兜底
             logger.warning("运行收尾失败：运行=%s 异常=%s", run_id, type(exc).__name__)
+
+    async def _settle(self, run_id: str) -> None:
+        """落终结状态并释放会话位（幂等：重复执行不改变结果）。
+
+        顺序不可换：先落状态、再放位子（取消端点靠「元数据仍是 `running`」判断还在跑）。
+        单独成方法只为让补做与首次收尾共用同一段代码。
+        """
+        await write_run_meta(
+            self._cache,
+            RunMeta(
+                run_id=run_id,
+                session_id=self._lease.session_id,
+                account_id=self._account_id,
+                status=RUN_STATUS_FINISHED,
+            ),
+        )
+        await release_session_run(self._cache, self._lease)
 
 
 #: 在跑的后台推进任务。持引用是为了不被 GC 回收（弱引用会让任务在无人看时消失），
@@ -641,17 +660,34 @@ def request_cancel(run_id: str) -> bool:
     return True
 
 
+def _settling_tasks() -> set[asyncio.Task[None]]:
+    """已经进入收尾的推进任务（判据只在推进器上，故经索引反查）。"""
+    return {task for pump, task in _pump_tasks_by_run.values() if pump.settling}
+
+
 async def drain_pumps() -> None:
     """等待所有在跑的推进任务结束（测试夹具与进程收尾用）。
 
     先等到「集合为空」再返回：`add_done_callback` 在任务结束后才把它摘掉，
     因此只 `gather` 当前快照可能漏掉调用期间新起的任务。
+
+    本函数**不注入取消**，只等：调用方须先调 :func:`cancel_pumps`。仍在跑的推进会被等到
+    它自己结束（上界是运行上限），因为丢下它等于让它在收尾期间继续写 Redis。
     """
     while _pump_tasks:
         await asyncio.gather(*list(_pump_tasks), return_exceptions=True)
 
 
 def cancel_pumps() -> None:
-    """请求取消所有在跑的推进任务（进程收尾用）。不等待。"""
+    """请求取消所有在跑的推进任务（进程收尾用）。不等待。
+
+    已经在收尾的推进不注入取消（与 :func:`request_cancel` 同一条判据）：收尾的两笔 Redis
+    写被 `CancelledError` 打断时，元数据会停在 `running`、会话位不释放。跳过它们不会丢下
+    收尾——它们自己会跑完，而配对调用方 :func:`drain_pumps` 正好等它跑完。`cancelling()`
+    是第二道判据，挡住「取消已投递、任务还没被调度」的那一瞬。
+    """
+    settling = _settling_tasks()
     for task in list(_pump_tasks):
+        if task.done() or task in settling or task.cancelling():
+            continue
         task.cancel()
