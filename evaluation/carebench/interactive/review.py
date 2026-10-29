@@ -48,8 +48,8 @@ PAYLOAD_VERSION = "interactive-review-payload-v0.2"
 RUBRIC_VERSION = "0.2"
 
 #: 两份评分者提示与一份裁定者提示的冻结版本号。
-SCORER_PROMPT_VERSIONS = ("interactive-scorer-a-v0.2", "interactive-scorer-b-v0.2")
-ADJUDICATOR_PROMPT_VERSION = "interactive-adjudicator-v0.2"
+SCORER_PROMPT_VERSIONS = ("interactive-scorer-a-v0.3", "interactive-scorer-b-v0.3")
+ADJUDICATOR_PROMPT_VERSION = "interactive-adjudicator-v0.3"
 
 #: 单条引用上限：只接受短引用，防止整段搬运冒充证据。
 EVIDENCE_QUOTE_MAX_CHARS = 200
@@ -1012,7 +1012,9 @@ _GROUND_RULES = (
     '{"quote": "从该轮原文逐字复制的连续片段", "missing": false, "turn": 1, "note": ""}，'
     "quote 必须连续出现在所写轮次的 output_text 或 user_text 里，长度不超过 200 字；"
     "不得改写、跳字、拼接或跨轮拼接，quote 与 missing=true 互斥；"
-    "找不到可引用片段时写 missing=true 并在 note 说明原因。证据不足就判 unclear / needs_review，"
+    "找不到可引用片段时必须写 "
+    '{"quote":null,"missing":true,"turn":null,"note":"具体缺失原因"}；'
+    '绝不能写 quote=""、quote="null" 或省略 note。证据不足就判 unclear / needs_review，'
     "不要为凑明确结论去编证据；也不要用 missing 掩盖原文里本找得到的证据。"
 )
 
