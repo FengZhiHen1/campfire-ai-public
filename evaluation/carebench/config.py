@@ -28,6 +28,10 @@ from . import prompts
 from .faults import REGISTRY_VERSION
 from .hashing import sha256_value
 
+#: 正式批次的标签。`label=test` 意味着「这是正式成绩」：必须在干净代码（tracked 与未跟踪
+#: 代码都算）与冻结案例上跑，否则冻结/批次绑定的 commit 并不包含实际跑的代码。
+FORMAL_LABEL = "test"
+
 #: 三个组别标识。取值即全包的主键：案例 × 组别 = case-group，分母按它算。
 SYSTEM_IDS: tuple[str, str, str] = ("A", "B", "C")
 
@@ -64,6 +68,10 @@ class RunConfig:
     #: 第二轮策略：`fixed_followup` = 案例自带 followup 才跑第二轮，且文本固定。
     turn_policy: str = "fixed_followup"
     #: 每个 case-group 新建会话（协议 05 第 4 节「每题使用隔离新会话」）。
+    #:
+    #: 该字段进配置 hash，但本工具**没有**「共享会话」这条代码路径。因此 `False` 不是
+    #: 「暂不支持的功能」，而是一个会让人以为跑过共享会话的错误配置：`__post_init__`
+    #: 直接拒绝，不静默按 True 跑（否则报告里会写着 `false`、行为却是每题新会话）。
     conversation_reset_each_case: bool = True
 
     # --- 超时与重试 ---
@@ -124,6 +132,18 @@ class RunConfig:
         if missing:
             raise ValueError(f"轮换顺序缺组别：{missing}（每个 case 必须跑满 {self.systems}）")
         return tuple(order)
+
+    def __post_init__(self) -> None:
+        """校验「进 hash 就必须有消费者」的字段。
+
+        Raises:
+            ValueError: `conversation_reset_each_case` 为 False——本工具不实现共享会话。
+        """
+        if not self.conversation_reset_each_case:
+            raise ValueError(
+                "conversation_reset_each_case=False 不受支持：本工具没有共享会话的代码路径，"
+                "协议也要求每个 case-group 使用隔离新会话。请删掉这个覆盖项，而不是让配置与行为不一致。"
+            )
 
     def to_dict(self) -> dict[str, Any]:
         """规范字典：进 manifest、算 hash 的都是它（不允许两处各拼一次）。"""
@@ -294,6 +314,7 @@ def _validate(config: RunConfig) -> None:
 
 
 __all__ = [
+    "FORMAL_LABEL",
     "ROTATION",
     "SYSTEM_ASSEMBLY",
     "SYSTEM_IDS",

@@ -7,8 +7,8 @@
 
 状态词表只有四种，且**只描述工程事实**：
 
-- `completed`：运行正常结束且有可见正文；
-- `no_output`：运行正常结束但没有任何正文（模型空回复）；
+- `completed`：运行正常结束且有可见产出（正文，或结构化的行动卡/提问）；
+- `no_output`：运行正常结束但既不产出正文也不产出结构化内容；
 - `timeout`：超过评测工具的墙钟上限；
 - `error`：运行明确失败（模型不可用、会话写入失败、工具/检索装配失败等）。
 
@@ -36,6 +36,11 @@ STATUS_ERROR = "error"
 #: 合法的状态取值（落盘前校验，避免拼错的状态静默进入统计）。
 ALL_STATUSES = (STATUS_COMPLETED, STATUS_NO_OUTPUT, STATUS_TIMEOUT, STATUS_ERROR)
 
+#: 重试隔离语义：可以在同一会话重试 / 必须换新会话。
+RETRY_SAME_SESSION = "same_session"
+RETRY_NEW_SESSION = "new_session"
+RETRY_SAFETY = (RETRY_SAME_SESSION, RETRY_NEW_SESSION)
+
 
 @dataclass(frozen=True)
 class TurnInput:
@@ -56,14 +61,30 @@ class TurnInput:
 
 @dataclass
 class TurnOutcome:
-    """一次轮次的产出：原始正文、工程事实与轨迹。
+    """一次轮次的产出：原始正文、结构化输出、工程事实与轨迹。
 
-    `trace` 是给 `traces/<...>.json` 的整份证据（工具事件、检索材料、消息体等），
-    `raw_output` 不因任何原因改写：失败时它就是空串，原因写在 `error_*`。
+    三样输出**分开保存，互不覆盖**：
+
+    - ``raw_output``：模型文本增量逐字拼接（没有任何加工）；
+    - ``structured``：行动卡 / 提问等结构化产出的**原始载荷**（dataclass 转字典，字段名与
+      产品事件逐字一致），不改写、不摘要；
+    - ``output_text``：**规范文本投影**——把正文与结构化产出按固定格式摊平成一段可读文本，
+      只做「贴标签 + 原样搬运」，不加解释、不删内容。盲评看它（评审者看不到组别，
+      也不该被迫读 JSON）。
+
+    为什么必须分开：C 组可以只用行动卡作答（应急场景就是如此），正文可能为空。
+    只取文本增量会把「纯卡片输出」记成 `no_output`，而产品侧 live（SSE）与 history
+    （`modules/accounts/session_items` 的 `question-record` / `action_card` part）都把它
+    当作可见产出——评测侧另立一个更严的口径就是错的。
+
+    `retry_safety` 决定外层重试能否复用同一会话：`same_session` 表示这次失败没有在会话里
+    留下痕迹（可原地重试）；`new_session` 表示已写入（必须换会话重开，否则重复历史）。
     """
 
     status: str
     raw_output: str = ""
+    structured: list[dict[str, Any]] = field(default_factory=list)
+    output_text: str = ""
     latency_ms: int = 0
     usage: dict[str, int] | None = None
     citations: list[dict[str, Any]] = field(default_factory=list)
@@ -73,11 +94,22 @@ class TurnOutcome:
     error_detail: str | None = None
     trace: dict[str, Any] = field(default_factory=dict)
     meta: dict[str, Any] = field(default_factory=dict)
+    retry_safety: str = RETRY_SAME_SESSION
 
     def __post_init__(self) -> None:
-        """校验状态词表（拼错的状态会让统计静默偏离）。"""
+        """校验状态词表与重试语义（拼错会让统计静默偏离）。"""
         if self.status not in ALL_STATUSES:
             raise ValueError(f"未知状态 {self.status!r}：只允许 {ALL_STATUSES}")
+        if self.retry_safety not in RETRY_SAFETY:
+            raise ValueError(f"未知 retry_safety {self.retry_safety!r}：只允许 {RETRY_SAFETY}")
+        if not self.output_text:
+            # 投影为空时退回正文：让「有没有可见产出」只有一个判据，避免两处口径漂移。
+            self.output_text = self.raw_output
+
+    @property
+    def has_output(self) -> bool:
+        """是否有可见产出（正文或结构化内容任一非空）。"""
+        return bool(self.raw_output.strip() or self.structured)
 
 
 @dataclass(frozen=True)
@@ -134,7 +166,7 @@ class SystemAdapter(Protocol):
         ...
 
     async def run_turn(self, request: TurnInput) -> TurnOutcome:
-        """跑一轮并返回原始产出。"""
+        """跑一轮并返回原始产出（正文 + 结构化 + 规范文本投影）。"""
         ...
 
     async def aclose(self) -> None:
@@ -144,6 +176,9 @@ class SystemAdapter(Protocol):
 
 __all__ = [
     "ALL_STATUSES",
+    "RETRY_NEW_SESSION",
+    "RETRY_SAFETY",
+    "RETRY_SAME_SESSION",
     "STATUS_COMPLETED",
     "STATUS_ERROR",
     "STATUS_NO_OUTPUT",

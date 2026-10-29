@@ -28,9 +28,12 @@ from urllib.parse import urlparse
 from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+#: 包目录（`evaluation/carebench`）。
+#: 嵌入维度（真源在产品 `core/config.EMBEDDING_DIM`）：模型与维度绑死，换模型要整库重建。
+from campfire.core.config import EMBEDDING_DIM  # noqa: E402 —— 单一真源，不在评测侧另立常量
+
 from .hashing import sha256_file, sha256_value
 
-#: 包目录（`evaluation/carebench`）。
 PACKAGE_ROOT = Path(__file__).resolve().parent
 
 #: 仓库根（`evaluation/carebench` 往上两级）。
@@ -321,6 +324,7 @@ def is_loopback(host: str) -> bool:
 
 
 __all__ = [
+    "EMBEDDING_DIM",
     "DEFAULT_DB_PREFIX",
     "KnowledgeItemRow",
     "KnowledgeSnapshot",
