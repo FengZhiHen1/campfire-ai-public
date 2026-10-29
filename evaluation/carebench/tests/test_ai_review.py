@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import re
 from pathlib import Path
@@ -15,6 +16,7 @@ import pytest
 pytestmark = pytest.mark.asyncio
 
 from evaluation.carebench.ai_review import (
+    ADJUDICATION_ATTEMPTS_FILE,
     ATTEMPTS_FILES,
     DIMENSION_KEYS,
     AiReviewError,
@@ -25,6 +27,8 @@ from evaluation.carebench.ai_review import (
     default_adjudicator,
     default_judges,
     freeze_judges,
+    load_adjudication_attempts,
+    load_adjudications,
     load_attempts,
     load_frozen_cases,
     load_identity,
@@ -36,19 +40,26 @@ from evaluation.carebench.ai_review import (
     verify_ai_review,
     verify_ai_review_report,
 )
-from evaluation.carebench.ai_runner import score_run
+from evaluation.carebench.ai_runner import adjudicate_run, score_run
 from evaluation.carebench.config import RunConfig
 from evaluation.carebench.faults import FaultPlan
 from evaluation.carebench.review import PACKET_FILE, export_packet
 from evaluation.carebench.runner import execute
-from evaluation.carebench.store import RunStore, create_run_dir, read_json, write_json
+from evaluation.carebench.store import RunStore, create_run_dir, read_json, write_json, write_jsonl
 from evaluation.carebench.systems.base import TurnOutcome
 
 from .conftest import FakeAdapter, load_cases, make_cases_file, make_snapshot
 
 
 async def _exported_run(
-    tmp_path: Path, *, settings: Any, faults: FaultPlan, count: int = 1, structured: bool = False
+    tmp_path: Path,
+    *,
+    settings: Any,
+    faults: FaultPlan,
+    count: int = 1,
+    structured: bool = False,
+    case_ids: list[str] | None = None,
+    label: str = "calibration",
 ) -> RunStore:
     """跑满一个批次并导出盲化评审包（评分包不含组别）。"""
     tmp_path.mkdir(parents=True, exist_ok=True)
@@ -72,12 +83,13 @@ async def _exported_run(
     store = create_run_dir(tmp_path / "runs", "carebench-ai")
     await execute(
         store=store,
-        config=RunConfig(label="calibration"),
+        config=RunConfig(label=label),
         case_set=case_set,
         snapshot=make_snapshot(),
         faults=faults,
         settings=settings,
         adapters=adapters,
+        case_ids=case_ids,
         log=lambda _message: None,
     )
     export_packet(store, log=lambda _message: None)
@@ -164,7 +176,7 @@ class _Completions:
         match = re.search(r'"blind_id": "([^"]+)"', kwargs["messages"][1]["content"])
         assert match is not None
         outcome = self.handler(pass_no, match.group(1))
-        if isinstance(outcome, Exception):
+        if isinstance(outcome, BaseException):
             raise outcome
         return _Response(outcome)
 
@@ -206,6 +218,14 @@ async def _score_all(store: RunStore, handler: Any) -> tuple[Any, _Client]:
 def _cases(store: RunStore) -> dict[str, Any]:
     """测试辅助：冻结案例按 id 索引。"""
     return {case.id: case for case in load_frozen_cases(store).cases}
+
+
+def _set_first_output_start(store: RunStore, value: str) -> None:
+    """把全部系统输出的开始时间改成指定值（只用于测试时间门禁）。"""
+    records = store.read_outputs()
+    for record in records:
+        record["started_at"] = value
+    write_jsonl(store.outputs_path, records)
 
 
 # ---------------------------------------------------------------------------
@@ -340,6 +360,38 @@ async def test_freeze_requires_distinct_prompts_and_precedes_scoring(
         freeze_judges(other, judges=default_judges("stub-model"), stage="formal", log=lambda _message: None)
 
 
+async def test_formal_identity_must_precede_first_system_output(
+    tmp_path: Path, settings_for_tests: Any, faults_for_tests: FaultPlan
+) -> None:
+    """正式身份晚于首次系统输出即违规；校准不套这条门禁；同秒不算晚。"""
+    calibration = await _exported_run(tmp_path / "calibration", settings=settings_for_tests, faults=faults_for_tests)
+    _set_first_output_start(calibration, "2000-01-01T00:00:00+00:00")
+    _freeze(calibration)
+    assert not any("晚于首次系统输出" in item for item in verify_ai_review_report(calibration).violations)
+
+    late = await _exported_run(tmp_path / "late", settings=settings_for_tests, faults=faults_for_tests)
+    _set_first_output_start(late, "2000-01-01T00:00:00+00:00")
+    freeze_judges(
+        late,
+        judges=default_judges("stub-model"),
+        adjudicator=default_adjudicator("stub-model"),
+        stage="formal",
+        log=lambda _message: None,
+    )
+    assert any("晚于首次系统输出" in item for item in verify_ai_review_report(late).violations)
+
+    early = await _exported_run(tmp_path / "early", settings=settings_for_tests, faults=faults_for_tests)
+    _set_first_output_start(early, "2999-01-01T00:00:00+00:00")
+    freeze_judges(
+        early,
+        judges=default_judges("stub-model"),
+        adjudicator=default_adjudicator("stub-model"),
+        stage="formal",
+        log=lambda _message: None,
+    )
+    assert not any("晚于首次系统输出" in item for item in verify_ai_review_report(early).violations)
+
+
 # ---------------------------------------------------------------------------
 # 执行器：只追加、失败保留
 # ---------------------------------------------------------------------------
@@ -419,6 +471,18 @@ async def test_two_passes_are_stateless_and_independent(
         assert len(value) == 2
     for value in users.values():
         assert len(value) == 3
+
+
+async def test_runner_accepts_gateway_with_only_client(
+    tmp_path: Path, settings_for_tests: Any, faults_for_tests: FaultPlan
+) -> None:
+    """外部 gateway 只提供 .client 时也能用，且不被 runner 关闭。"""
+    store = await _exported_run(tmp_path, settings=settings_for_tests, faults=faults_for_tests)
+    _freeze(store)
+    client = _Client(store, lambda _pass, blind: json.dumps(_judge_payload(quote=_quote_of(store, blind))))
+    gateway = type("GatewayOnlyClient", (), {"client": client})()
+    result = await score_run(store, gateway=gateway, log=lambda _message: None)
+    assert result.ok == 6
 
 
 # ---------------------------------------------------------------------------
@@ -513,6 +577,215 @@ async def test_summary_ai_agreement_and_paired_safety_prior(
     assert summary["dimensions"]["resolved"]["c1_context"]["mean"] == 2.0
 
 
+async def test_summary_ai_per_system_and_category_breakdown(
+    tmp_path: Path, settings_for_tests: Any, faults_for_tests: FaultPlan
+) -> None:
+    """per_system / category×system 能区分 A/B/C 的五维、硬失败与约束覆盖。"""
+    store = await _exported_run(tmp_path, settings=settings_for_tests, faults=faults_for_tests)
+    _freeze_with_adjudicator(store)
+    levels = {"A": 2, "B": 1, "C": 0}
+    checks = {"A": "pass", "B": "fail", "C": "unclear"}
+    not_checks = {"A": "respected", "B": "violated", "C": "unclear"}
+
+    def handler(_pass: int, blind: str) -> Any:
+        system = _system_of(store, blind)
+        score = levels[system]
+        return json.dumps(
+            _judge_payload(
+                quote=_quote_of(store, blind),
+                scores=(score, score, score, score, score),
+                must_check=checks[system],
+                must_not=not_checks[system],
+            )
+        )
+
+    await _score_all(store, handler)
+    summary = summary_ai(store)["ai_scores"]
+    assert summary["per_system"]["A"]["dimensions"]["c1_context"] == {
+        "groups": 1,
+        "mean": 2.0,
+        "median": 2.0,
+    }
+    assert summary["per_system"]["B"]["dimensions"]["c1_context"]["mean"] == 1.0
+    assert summary["per_system"]["C"]["dimensions"]["c1_context"]["mean"] == 0.0
+    assert summary["per_system"]["A"]["hard_failure"] == {
+        "yes": 0,
+        "no": 1,
+        "needs_review": 0,
+        "unresolved": 0,
+    }
+    assert summary["per_system"]["A"]["must_check"]["passed"] == 1
+    assert summary["per_system"]["B"]["must_check"]["failed"] == 1
+    assert summary["per_system"]["C"]["must_check"]["unclear"] == 1
+    assert summary["per_system"]["B"]["must_not"]["violated"] == 1
+    assert summary["bycategory_system"]["日常照护"]["C"]["must_check"]["denominator"] == 1
+    assert summary["bycategory_system"]["日常照护"]["C"]["dimensions"]["c2_action"]["mean"] == 0.0
+    assert summary["safety_gate"]["hard_failure_no"] == 3
+    assert summary["safety_gate"]["strict_pass"] == 1
+    assert summary["safety_gate"]["pass"] == 1
+    assert summary["safety_gate"]["failed_checks"] == 1
+    assert summary["safety_gate"]["violated_checks"] == 1
+
+
+async def test_summary_ai_per_system_keeps_missing_denominator(
+    tmp_path: Path, settings_for_tests: Any, faults_for_tests: FaultPlan
+) -> None:
+    """缺组不缩分母：未评的 B/C 仍是 unresolved，条目分母保留，summary 保持 pending。"""
+    store = await _exported_run(tmp_path, settings=settings_for_tests, faults=faults_for_tests)
+    _freeze_with_adjudicator(store)
+    a_blind = next(item.blind_id for item in build_scoring_inputs(store) if _system_of(store, item.blind_id) == "A")
+    client = _Client(store, lambda _pass, blind: json.dumps(_judge_payload(quote=_quote_of(store, blind))))
+    await score_run(store, client=client, blind_ids=[a_blind], log=lambda _message: None)
+
+    pending = summarize_ai_review(store)
+    assert pending is not None and pending["status"] == "pending"
+    summary = summary_ai(store)["ai_scores"]
+    assert summary["per_system"]["A"]["scored_groups"] == 1
+    assert summary["per_system"]["B"]["expected_groups"] == 1
+    assert summary["per_system"]["B"]["scored_groups"] == 0
+    assert summary["per_system"]["B"]["hard_failure"]["unresolved"] == 1
+    assert summary["per_system"]["B"]["must_check"] == {
+        "passed": 0,
+        "failed": 0,
+        "unclear": 0,
+        "denominator": 1,
+        "scored_denominator": 0,
+    }
+    assert summary["per_system"]["B"]["dimensions"]["c1_context"] == {
+        "groups": 0,
+        "mean": None,
+        "median": None,
+    }
+
+
+# ---------------------------------------------------------------------------
+# 分歧裁定执行器（只追加尝试）
+# ---------------------------------------------------------------------------
+
+
+async def _disagree_store(tmp_path: Path, *, settings: Any, faults: FaultPlan) -> tuple[RunStore, JudgeIdentity]:
+    """构造一个两份评分都在五维上有分歧的批次。"""
+    store = await _exported_run(tmp_path, settings=settings, faults=faults)
+    adjudicator = _freeze_with_adjudicator(store)
+    await _score_all(
+        store,
+        lambda pass_no, blind: json.dumps(
+            _judge_payload(
+                quote=_quote_of(store, blind),
+                scores=(2, 2, 2, 2, 2) if pass_no == 1 else (1, 1, 1, 1, 1),
+            )
+        ),
+    )
+    return store, adjudicator
+
+
+def _adjudication_text(store: RunStore, blind: str, *, hard: str = "no") -> str:
+    """合法裁定输出（含总体理由）。"""
+    return json.dumps(
+        _judge_payload(quote=_quote_of(store, blind), hard=hard, scores=(2, 2, 2, 2, 2))
+        | {"reason": "逐条证据支持 2 分"}
+    )
+
+
+async def test_adjudicate_run_appends_attempts_and_skips_finalized(
+    tmp_path: Path, settings_for_tests: Any, faults_for_tests: FaultPlan
+) -> None:
+    """成功裁定写尝试+记录并互相链接；已裁定跳过、不重复打模型。"""
+    store, _adjudicator = await _disagree_store(tmp_path, settings=settings_for_tests, faults=faults_for_tests)
+    client = _Client(store, lambda _pass, blind: _adjudication_text(store, blind))
+    result = await adjudicate_run(store, client=client, log=lambda _message: None)
+    assert result.total == 3 and result.ok == 3
+    attempts = load_adjudication_attempts(store)
+    assert [record["status"] for record in attempts] == ["ok", "ok", "ok"]
+    finals = load_adjudications(store)
+    assert len(finals) == 3
+    for final in finals:
+        assert final["attempt_record_sha256"] in {record["record_sha256"] for record in attempts}
+    report = verify_ai_review_report(store, require_complete=True)
+    assert report.ok, report.violations
+
+    second_client = _Client(store, lambda _pass, _blind: "不应调用模型")
+    skipped = await adjudicate_run(store, client=second_client, log=lambda _message: None)
+    assert skipped.skipped == 3 and skipped.ok == 0
+    assert second_client.calls == []
+
+
+async def test_adjudicate_run_keeps_invalid_and_error_attempts(
+    tmp_path: Path, settings_for_tests: Any, faults_for_tests: FaultPlan
+) -> None:
+    """无效/异常裁定尝试原样保留；重跑追加 attempt，不覆盖。"""
+    store, _adjudicator = await _disagree_store(tmp_path, settings=settings_for_tests, faults=faults_for_tests)
+    invalid = await adjudicate_run(
+        store, client=_Client(store, lambda _pass, _blind: "不是 JSON"), log=lambda _message: None
+    )
+    assert invalid.invalid == 3
+    assert len(load_adjudications(store)) == 0
+
+    error = await adjudicate_run(
+        store, client=_Client(store, lambda _pass, _blind: RuntimeError("down")), log=lambda _message: None
+    )
+    assert error.error == 3
+    attempts = load_adjudication_attempts(store)
+    assert [record["status"] for record in attempts] == ["invalid"] * 3 + ["error"] * 3
+    assert [record["attempt"] for record in attempts] == [1, 1, 1, 2, 2, 2]
+
+    ok = await adjudicate_run(
+        store,
+        client=_Client(store, lambda _pass, blind: _adjudication_text(store, blind)),
+        log=lambda _message: None,
+    )
+    assert ok.ok == 3
+    attempts = load_adjudication_attempts(store)
+    assert len(attempts) == 9
+    assert [record["attempt"] for record in attempts[-3:]] == [3, 3, 3]
+    assert {record["status"] for record in attempts} == {"invalid", "error", "ok"}
+    assert verify_ai_review_report(store, require_complete=True).ok
+
+
+async def test_adjudicate_run_propagates_cancelled_error(
+    tmp_path: Path, settings_for_tests: Any, faults_for_tests: FaultPlan
+) -> None:
+    """CancelledError 不当作普通错误吞掉。"""
+    store, _adjudicator = await _disagree_store(tmp_path, settings=settings_for_tests, faults=faults_for_tests)
+    with pytest.raises(asyncio.CancelledError):
+        await adjudicate_run(
+            store,
+            client=_Client(store, lambda _pass, _blind: asyncio.CancelledError()),
+            log=lambda _message: None,
+        )
+    assert load_adjudication_attempts(store) == []
+
+
+async def test_adjudicate_run_recovers_orphan_ok_attempt(
+    tmp_path: Path, settings_for_tests: Any, faults_for_tests: FaultPlan, monkeypatch: Any
+) -> None:
+    """成功尝试已落盘但裁定记录中断时，下次直接用尝试补记录，不重打模型。"""
+    from evaluation.carebench import ai_runner as ai_runner_module
+
+    store, _adjudicator = await _disagree_store(tmp_path, settings=settings_for_tests, faults=faults_for_tests)
+    real = ai_runner_module.record_adjudication
+
+    def crash(*_args: Any, **_kwargs: Any) -> Any:
+        raise AiReviewError("模拟中断")
+
+    monkeypatch.setattr(ai_runner_module, "record_adjudication", crash)
+    with pytest.raises(AiReviewError, match="模拟中断"):
+        await adjudicate_run(
+            store,
+            client=_Client(store, lambda _pass, blind: _adjudication_text(store, blind)),
+            log=lambda _message: None,
+        )
+    assert len(load_adjudications(store)) == 0
+    assert [record["status"] for record in load_adjudication_attempts(store)] == ["ok", "ok", "ok"]
+
+    monkeypatch.setattr(ai_runner_module, "record_adjudication", real)
+    client = _Client(store, lambda _pass, _blind: "不应调用模型")
+    result = await adjudicate_run(store, client=client, log=lambda _message: None)
+    assert result.ok == 3
+    assert client.calls == []
+    assert len(load_adjudications(store)) == 3
+
+
 # ---------------------------------------------------------------------------
 # 校验：篡改必须被抓住
 # ---------------------------------------------------------------------------
@@ -577,6 +850,190 @@ async def test_verify_detects_parsed_and_input_tampering(
     _rewrite(store2.review_dir / ATTEMPTS_FILES[1], tamper_input)
     report = verify_ai_review_report(store2)
     assert any("输入与评审包+冻结案例重建的结果不一致" in item for item in report.violations), report.violations
+
+
+async def test_verify_rejects_response_text_disagreeing_with_raw_response(
+    tmp_path: Path, settings_for_tests: Any, faults_for_tests: FaultPlan
+) -> None:
+    """只改正文/parsed/hash、保留原始响应时，必须报出两者矛盾。"""
+    from evaluation.carebench.hashing import sha256_value
+
+    store = await _exported_run(tmp_path, settings=settings_for_tests, faults=faults_for_tests)
+    _freeze_with_adjudicator(store)
+    await _score_all(store, lambda _pass, blind: json.dumps(_judge_payload(quote=_quote_of(store, blind), hard="yes")))
+    assert verify_ai_review_report(store, require_complete=True).ok
+    inputs = {item.blind_id: item for item in build_scoring_inputs(store)}
+    cases = _cases(store)
+
+    def inflate(lines: list[dict[str, Any]]) -> None:
+        for record in lines:
+            scoring = inputs[str(record["blind_id"])]
+            text = json.dumps(_judge_payload(quote=_quote_of(store, str(record["blind_id"])), hard="no"))
+            record["response_text"] = text
+            record["parsed"] = parse_judge_output(
+                text,
+                case=cases[str(record["case_id"])],
+                blind_id=scoring.blind_id,
+                input_payload=scoring.payload,
+            )
+            record["parsed_sha256"] = sha256_value(record["parsed"])
+
+    for pass_no in (1, 2):
+        _rewrite(store.review_dir / ATTEMPTS_FILES[pass_no], inflate)
+    report = verify_ai_review_report(store, require_complete=True)
+    assert any("response_text 与 raw_response 正文不一致" in item for item in report.violations), report.violations
+
+
+async def test_verify_rejects_adjudication_body_disagreeing_with_raw_response(
+    tmp_path: Path, settings_for_tests: Any, faults_for_tests: FaultPlan
+) -> None:
+    """裁定尝试也核 raw_response 正文；只改正文/decision/hash 必须被拒。"""
+    from evaluation.carebench.hashing import sha256_value
+
+    store, _adjudicator = await _disagree_store(tmp_path, settings=settings_for_tests, faults=faults_for_tests)
+    await adjudicate_run(
+        store,
+        client=_Client(store, lambda _pass, blind: _adjudication_text(store, blind)),
+        log=lambda _message: None,
+    )
+    assert verify_ai_review_report(store, require_complete=True).ok
+    inputs = {item.blind_id: item for item in build_scoring_inputs(store)}
+    cases = _cases(store)
+
+    def tamper(lines: list[dict[str, Any]]) -> None:
+        record = lines[0]
+        scoring = inputs[str(record["blind_id"])]
+        text = json.dumps(
+            _judge_payload(quote=_quote_of(store, str(record["blind_id"])), hard="yes", scores=(1, 1, 1, 1, 1))
+            | {"reason": "改过的裁定"}
+        )
+        record["response_text"] = text
+        record["decision"] = parse_judge_output(
+            text,
+            case=cases[str(record["case_id"])],
+            blind_id=scoring.blind_id,
+            input_payload=scoring.payload,
+            allow_overall_reason=True,
+        )
+        record["decision_sha256"] = sha256_value(record["decision"])
+
+    _rewrite(store.review_dir / ADJUDICATION_ATTEMPTS_FILE, tamper)
+    report = verify_ai_review_report(store, require_complete=True)
+    assert any("response_text 与 raw_response 正文不一致" in item for item in report.violations), report.violations
+
+
+async def test_verify_rejects_final_adjudication_body_disagreeing_with_raw_response(
+    tmp_path: Path, settings_for_tests: Any, faults_for_tests: FaultPlan
+) -> None:
+    """裁定记录本身也必须让 response_text 等于 raw_response 正文（text fallback）。"""
+    from evaluation.carebench.hashing import sha256_value
+
+    store, _adjudicator = await _disagree_store(tmp_path, settings=settings_for_tests, faults=faults_for_tests)
+    await adjudicate_run(
+        store,
+        client=_Client(store, lambda _pass, blind: _adjudication_text(store, blind)),
+        log=lambda _message: None,
+    )
+    assert verify_ai_review_report(store, require_complete=True).ok
+    inputs = {item.blind_id: item for item in build_scoring_inputs(store)}
+    cases = _cases(store)
+
+    def tamper(lines: list[dict[str, Any]]) -> None:
+        record = lines[0]
+        scoring = inputs[str(record["blind_id"])]
+        text = json.dumps(
+            _judge_payload(quote=_quote_of(store, str(record["blind_id"])), hard="yes", scores=(1, 1, 1, 1, 1))
+            | {"reason": "改过的裁定"}
+        )
+        record["response_text"] = text
+        record["decision"] = parse_judge_output(
+            text,
+            case=cases[str(record["case_id"])],
+            blind_id=scoring.blind_id,
+            input_payload=scoring.payload,
+            allow_overall_reason=True,
+        )
+        record["decision_sha256"] = sha256_value(record["decision"])
+
+    _rewrite(store.review_dir / "ai-adjudication.jsonl", tamper)
+    report = verify_ai_review_report(store, require_complete=True)
+    assert any("response_text 与 raw_response 正文不一致" in item for item in report.violations), report.violations
+
+
+async def test_verify_require_complete_rejects_packet_smaller_than_expected(
+    tmp_path: Path, settings_for_tests: Any, faults_for_tests: FaultPlan
+) -> None:
+    """评审包组数 < 案例×组别时，require_complete 必须判违反。"""
+    store = await _exported_run(
+        tmp_path,
+        settings=settings_for_tests,
+        faults=faults_for_tests,
+        count=2,
+        case_ids=["CFB-C-001"],
+    )
+    await _scored_agreed(store)
+    assert len(build_scoring_inputs(store)) == 3
+    assert summarize_ai_review(store, require_complete=True)["status"] == "pending"
+    report = verify_ai_review_report(store, require_complete=True)
+    assert not report.ok
+    assert any("组 < 期望" in item for item in report.violations), report.violations
+
+
+async def test_formal_batch_requires_identity_and_packet_anchors(
+    tmp_path: Path, settings_for_tests: Any, faults_for_tests: FaultPlan, monkeypatch: Any
+) -> None:
+    """label=test 缺 review.ai 身份锚或 packet 锚必须判违反。"""
+    from evaluation.carebench import runner
+
+    monkeypatch.setattr(runner, "_require_clean_code_for_formal", lambda **_kwargs: None)
+    store = await _exported_run(tmp_path, settings=settings_for_tests, faults=faults_for_tests, label="test")
+    _set_first_output_start(store, "2999-01-01T00:00:00+00:00")
+    freeze_judges(
+        store,
+        judges=default_judges("stub-model"),
+        adjudicator=default_adjudicator("stub-model"),
+        stage="formal",
+        log=lambda _message: None,
+    )
+    manifest = store.read_manifest()
+    manifest["review"].pop("ai", None)
+    manifest["review"].pop("packet_sha256", None)
+    store.write_manifest(manifest)
+    report = verify_ai_review_report(store, require_complete=True)
+    assert any("未锚定 AI 身份 hash" in item for item in report.violations), report.violations
+    assert any("未记录 packet_sha256" in item for item in report.violations), report.violations
+
+    blank = await _exported_run(tmp_path / "blank", settings=settings_for_tests, faults=faults_for_tests, label="test")
+    assert verify_ai_review(blank)
+
+
+async def test_formal_label_rejects_calibration_stage_identity(
+    tmp_path: Path, settings_for_tests: Any, faults_for_tests: FaultPlan, monkeypatch: Any
+) -> None:
+    """label=test 不能用 stage=calibration 冻结或背书。"""
+    from evaluation.carebench import runner
+
+    monkeypatch.setattr(runner, "_require_clean_code_for_formal", lambda **_kwargs: None)
+    formal = await _exported_run(
+        tmp_path / "formal", settings=settings_for_tests, faults=faults_for_tests, label="test"
+    )
+    with pytest.raises(AiReviewError, match="stage=formal"):
+        freeze_judges(
+            formal,
+            judges=default_judges("stub-model"),
+            adjudicator=default_adjudicator("stub-model"),
+            stage="calibration",
+            log=lambda _message: None,
+        )
+
+    store = await _exported_run(tmp_path / "changed", settings=settings_for_tests, faults=faults_for_tests)
+    await _scored_agreed(store)
+    manifest = store.read_manifest()
+    manifest["config"]["label"] = "test"
+    manifest["label"] = "test"
+    store.write_manifest(manifest)
+    report = verify_ai_review_report(store, require_complete=True)
+    assert any("不能使用 stage=calibration" in item for item in report.violations), report.violations
 
 
 async def test_verify_detects_identity_and_attempt_tampering(
@@ -704,7 +1161,9 @@ async def test_verify_detects_adjudication_tampering(
         ),
         log=lambda _message: None,
     )
-    assert verify_ai_review_report(store).ok
+    manual = verify_ai_review_report(store)
+    assert manual.ok
+    assert any("未关联原始裁定尝试" in item for item in manual.warnings)
 
     def tamper(lines: list[dict[str, Any]]) -> None:
         lines[0]["decision"]["dimensions"]["c1_context"]["score"] = 0
@@ -737,7 +1196,7 @@ async def test_score_run_does_not_call_network_without_client(
     """没有 settings/client 时拒绝发起调用（网络必须显式）。"""
     store = await _exported_run(tmp_path, settings=settings_for_tests, faults=faults_for_tests)
     _freeze(store)
-    with pytest.raises(AiReviewError, match="settings 或注入 client"):
+    with pytest.raises(AiReviewError, match="settings、gateway 或注入 client"):
         await score_run(store, None, log=lambda _message: None)
 
 
@@ -754,6 +1213,7 @@ async def test_public_wiring_contract(tmp_path: Path, settings_for_tests: Any, f
 
     pending = summarize_ai_review(store)
     assert pending is not None and pending["status"] == "pending"
+    assert pending["ai_review"]["status"] == "pending"
     assert pending["ai_scores"]["counts"]["pass1"]["no_attempt"] == 3
     assert "hard_failure" not in pending["ai_scores"]
     assert verify_ai_review_report(store).ok
@@ -761,6 +1221,7 @@ async def test_public_wiring_contract(tmp_path: Path, settings_for_tests: Any, f
     await _score_all(store, lambda _pass, blind: json.dumps(_judge_payload(quote=_quote_of(store, blind))))
     complete = summarize_ai_review(store)
     assert complete is not None and complete["status"] == "complete"
+    assert complete["ai_review"]["status"] == "complete"
     assert complete["ai_scores"]["hard_failure"]["resolved"]["no"] == 3
     assert verify_ai_review(store) == []
 
@@ -804,3 +1265,6 @@ async def test_unclear_items_remain_unresolved(
     assert summary["must_check"]["resolved"]["unclear"] == 3
     assert summary["must_not"]["resolved"]["unclear"] == 3
     assert summary["safety_gate"]["unclear_checks"] == 6
+    assert summary["safety_gate"]["hard_failure_no"] == 3
+    assert summary["safety_gate"]["strict_pass"] == 0
+    assert summary["safety_gate"]["pass"] == 0
