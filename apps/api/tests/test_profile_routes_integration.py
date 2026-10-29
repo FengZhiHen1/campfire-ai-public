@@ -539,6 +539,22 @@ async def test_items_rejects_unknown_domain_filter(client: httpx.AsyncClient, as
     assert response.status_code == 422
 
 
+async def test_items_domain_filter_is_actually_applied(client: httpx.AsyncClient, as_account) -> None:  # noqa: ANN001
+    """`domain` 过滤必须真的缩小结果。
+
+    回归（2026-10-29）：此前只校验 `domains` 词表、不把它放进 `WHERE`，
+    `?domain=communication` 返回对象的全部条目（契约第 5 节禁止的「静默忽略条件」）。
+    """
+    object_id = await _new_object()
+    keep = await _propose(object_id, origin="user_statement", domain="communication", description="沟通某条")
+    await _propose(object_id, origin="user_statement", domain="sensory_processing", description="感觉某条")
+
+    response = await client.get(f"/profile/objects/{object_id}/items", params={"domain": "communication"})
+
+    assert response.status_code == 200
+    assert {item["item_id"] for item in response.json()["items"]} == {keep}
+
+
 async def test_items_pagination_walks_the_whole_list_without_repeats(client: httpx.AsyncClient, as_account) -> None:  # noqa: ANN001
     """cursor 分页能翻完整个列表且不重不漏；翻到尾部 `next_cursor` 为 null。
 
@@ -566,6 +582,45 @@ async def test_items_pagination_walks_the_whole_list_without_repeats(client: htt
     assert cursor is None
     assert len(seen) == len(set(seen)) == len(expected)
     assert set(seen) == expected
+
+
+async def test_items_pagination_is_not_starved_by_candidates(client: httpx.AsyncClient, as_account) -> None:  # noqa: ANN001
+    """候选条目不得吃光分页窗口：稳定条目仍必须可达。
+
+    回归（2026-10-29）：`items` 与 `candidates` 曾共用同一个 SQL 窗口，较新的候选
+    占满窗口即把稳定条目挤出 `items`，而 `next_cursor` 依 `len(items)` 判定 ⇒
+    稳定条目整批不可达且游标为 null（档案页固定带 `include_candidates=true`）。
+    """
+    object_id = await _new_object()
+    stable = {await _propose(object_id, origin="user_statement", description=f"稳定条目 {index}") for index in range(5)}
+    for index in range(25):
+        await _propose(object_id, origin="ai_inference", description=f"候选 {index}")
+
+    response = await client.get(
+        f"/profile/objects/{object_id}/items",
+        params={"include_candidates": "true", "limit": 10},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert {item["item_id"] for item in body["items"]} == stable, "稳定条目被候选条目挤出了分页窗口"
+    # 候选层不分页，也不随 `items` 的页大小收缩：25 条全在（上界是 `CANDIDATES_MAX_LIMIT`）。
+    assert len(body["candidates"]) == 25
+    # 5 条稳定条目不足一页：游标必须为 null（这是「已取完」的正确表达，
+    # 而不是「窗口被候选占满」造成的提前终止）。
+    assert body["next_cursor"] is None
+
+    # 页大小是 `items` 那一侧的旋钮：`limit=2` 不得把候选组一起砍到 2 条
+    # （旧实现里两者共用窗口，`limit=1` 的调用方只能看到 1 条候选，
+    # 而候选组在界面上不可翻页 ⇒ 其余候选再也无法被确认或否定）。
+    small_page = (
+        await client.get(
+            f"/profile/objects/{object_id}/items",
+            params={"include_candidates": "true", "limit": 2},
+        )
+    ).json()
+    assert len(small_page["items"]) == 2
+    assert len(small_page["candidates"]) == 25
 
 
 async def test_items_rejects_foreign_cursor(client: httpx.AsyncClient, as_account) -> None:  # noqa: ANN001
