@@ -20,8 +20,6 @@ from evaluation.carebench.store import create_run_dir
 
 from .conftest import FakeAdapter, load_cases, make_cases_file, make_snapshot
 
-pytestmark = pytest.mark.asyncio
-
 
 def _other_snapshot():
     """换一份内容不同的知识快照（文件 hash 不同 → 快照 hash 不同）。"""
@@ -64,6 +62,7 @@ def test_identity_drift_names_the_field() -> None:
     assert identity_fingerprint(before) != identity_fingerprint(after)
 
 
+@pytest.mark.asyncio
 async def test_resume_rejects_changed_model(tmp_path: Path, faults_for_tests: FaultPlan) -> None:
     """换模型后续跑同一批次必须被拒（否则一批里混两个模型）。"""
     case_set = load_cases(make_cases_file(tmp_path / "cases.jsonl", count=1))
@@ -96,6 +95,7 @@ async def test_resume_rejects_changed_model(tmp_path: Path, faults_for_tests: Fa
         )
 
 
+@pytest.mark.asyncio
 async def test_resume_rejects_changed_knowledge_snapshot(tmp_path: Path, faults_for_tests: FaultPlan) -> None:
     """换知识快照后续跑同样要拒（B/C 的「同一份知识」是公平性前提）。"""
     case_set = load_cases(make_cases_file(tmp_path / "cases.jsonl", count=1))

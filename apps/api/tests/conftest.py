@@ -290,7 +290,7 @@ def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item
     reason = f"真实模型用例默认不运行（marker `{LIVE_MODEL_MARKER}`）：需要显式 `--live-model` 或 {LIVE_MODEL_ENV}=1"
     skip = pytest.mark.skip(reason=reason)
     for item in items:
-        if LIVE_MODEL_MARKER in item.keywords:
+        if item.get_closest_marker(LIVE_MODEL_MARKER) is not None:
             item.add_marker(skip)
 
 
