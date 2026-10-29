@@ -47,7 +47,7 @@ def parse_selection(text: str, payload: dict[str, Any]) -> dict[str, Any]:
         if not isinstance(items, list) or len(items) > 30:
             raise ValueError("披露选择不是有界数组")
         seen = set()
-        previous_position = -1
+        next_position = 0
         for item in items:
             if not isinstance(item, dict) or set(item) != keys:
                 raise ValueError("披露选择条目字段错误")
@@ -55,23 +55,23 @@ def parse_selection(text: str, payload: dict[str, Any]) -> dict[str, Any]:
             if not isinstance(quote, str) or not quote.strip() or len(quote) > 300 or quote not in output:
                 raise ValueError("披露选择的引用不在本轮原文中")
             if field == "questions":
-                position = output.find(quote)
-                if position < previous_position:
+                # 重复问题必须各自对应原文中的一次出现，不能总定位到首次命中。
+                position = output.find(quote, next_position)
+                if position < 0:
                     raise ValueError("问题顺序必须与助手原文一致")
-                previous_position = position
+                next_position = position + len(quote)
                 ids = item["fact_ids"]
                 if not isinstance(ids, list) or not all(isinstance(x, str) for x in ids):
                     raise ValueError("fact_ids 必须是字符串数组")
                 if len(set(ids)) != len(ids) or set(ids) - fact_ids:
                     raise ValueError("fact_ids 重复或包含未冻结事实")
-                identifier = quote
             else:
                 identifier = item["id"]
                 if not isinstance(identifier, str) or identifier not in feedback_ids:
                     raise ValueError("反馈未冻结或已使用")
-            if identifier in seen:
-                raise ValueError("披露选择重复")
-            seen.add(identifier)
+                if identifier in seen:
+                    raise ValueError("披露选择重复")
+                seen.add(identifier)
     return value
 
 

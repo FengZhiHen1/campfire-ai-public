@@ -16,7 +16,12 @@ from ..manifest import utc_now
 from .storage import append
 
 CALL_CONTEXT: contextvars.ContextVar[dict[str, Any]] = contextvars.ContextVar("interactive_call", default={})
-JUDGE_PARAMETERS = {"temperature": 0, "max_tokens": 16384}
+JUDGE_PARAMETERS = {
+    "temperature": 0,
+    "max_tokens": 32768,
+    "timeout": 240,
+    "response_format": {"type": "json_object"},
+}
 REQUEST_WRAPPER_VERSION = "protocol-and-data-0.2"
 SYSTEM_TRANSPORT_VERSION = "mirror-system-to-first-user-0.2"
 

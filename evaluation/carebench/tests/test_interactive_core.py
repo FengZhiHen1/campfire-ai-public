@@ -132,6 +132,30 @@ def test_tampered_and_truncated_records_are_never_silently_resumed(tmp_path: Pat
         records(path)
 
 
+def test_repeated_question_quotes_use_distinct_ordered_occurrences(scenario: Scenario) -> None:
+    output = "他多大？抓之前发生了什么？还需要知道：他多大？"
+    quotes = ["他多大？", "抓之前发生了什么？", "他多大？"]
+    selection = {"questions": [{"quote": quote, "fact_ids": []} for quote in quotes], "feedback": []}
+    parsed = parse_selection(json.dumps(selection), policy_payload(scenario, output, set()))
+    assert compose_reply(scenario, parsed, disclosed=set(), used_feedback=set())["question_units"] == 3
+
+
+@pytest.mark.parametrize(
+    ("output", "quotes"),
+    [
+        ("他多大？抓之前发生了什么？", ["抓之前发生了什么？", "他多大？"]),
+        ("他多大？", ["他多大？", "他多大？"]),
+        ("他多大？", ["他多大？", "多大？"]),
+    ],
+)
+def test_question_quotes_cannot_reuse_reorder_or_overlap_occurrences(
+    scenario: Scenario, output: str, quotes: list[str]
+) -> None:
+    selection = {"questions": [{"quote": quote, "fact_ids": []} for quote in quotes], "feedback": []}
+    with pytest.raises(ValueError, match="顺序"):
+        parse_selection(json.dumps(selection), policy_payload(scenario, output, set()))
+
+
 class FakeAdapter:
     def __init__(self, outputs: list[TurnOutcome]):
         self.outputs = list(outputs)
