@@ -27,7 +27,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 #: 嵌入维度（真源在产品 `core/config.EMBEDDING_DIM`）：模型与维度绑死，换模型要整库重建。
 from campfire.core.config import EMBEDDING_DIM  # noqa: E402 —— 单一真源，不在评测侧另立常量
 
-from .hashing import canonical_json, sha256_file, sha256_text, sha256_value
+from .hashing import canonical_json, sha256_bytes, sha256_text, sha256_value
 
 PACKAGE_ROOT = Path(__file__).resolve().parent
 
@@ -40,7 +40,7 @@ DEFAULT_DB_PREFIX = "campfire_carebench"
 #: 快照 hash 的格式版本。节点级摘要、嵌入身份与条目 `doc_hash` 进 hash 后格式已变，
 #: 因此与「任何更早算出的整体快照 hash」不可比（旧环境只留了逐条目 `nodes_sha256`，
 #: 没有整体 hash，见 `docs/development/checkpoints/`）。改 `to_dict()` 形状必须递增它。
-SNAPSHOT_FORMAT_VERSION = "2"
+SNAPSHOT_FORMAT_VERSION = "3"
 
 #: 措辞：库内出现了不在许可清单里的条目时给出的结论。
 UNLICENSED_NOTE = "评测库含有许可清单之外的条目：必须先撤下或换到干净库，否则 B/C 的知识来源无法声明"
@@ -58,6 +58,7 @@ class SnapshotFile:
     sha256: str
     license: str
     source_kind: str
+    doc_hash: str = ""
 
     @property
     def basename(self) -> str:
@@ -176,7 +177,7 @@ def node_content_digest(nodes: Sequence[NodeRecord]) -> str:
 
     规范形（唯一实现）：`[{node_id, text, metadata, embedding}, ...]` 的 `canonical_json`
     的 SHA-256。排序让返回顺序不影响 hash；规范 JSON 避免拼接字符串造成跨字段撞车。
-    与旧检查点 `nodes_sha256` 同算法（已只读复算旧库 6 条对上）；整体 hash 是格式 2。
+    与旧检查点 `nodes_sha256` 同算法；整体 hash 的格式版本另行标记。
     """
     payload = [
         {
@@ -203,7 +204,7 @@ class KnowledgeItemRow:
     source: str = ""
     #: 摄取侧对**解码后文本**做 SHA-256（`ingestion.compute_doc_hash`）得到的内容 hash；
     #: 与 `SnapshotFile.sha256`（清单对**磁盘文件字节**的 hash）是两套口径，不可互换。
-    #: 快照只记录并进 hash，不与源文件重算比对（证据边界见 `build_snapshot`）。
+    #: 与许可文件按摄取时的解码文本口径复算后比对。
     doc_hash: str | None = None
     #: 该条目全部节点的内容摘要（见 :func:`node_content_digest`）。
     nodes_sha256: str = ""
@@ -275,6 +276,7 @@ class KnowledgeSnapshot:
                     "sha256": item.sha256,
                     "license": item.license,
                     "source_kind": item.source_kind,
+                    "doc_hash": item.doc_hash,
                 }
                 for item in sorted(self.files, key=lambda entry: entry.path)
             ],
@@ -299,6 +301,8 @@ def load_snapshot_manifest(path: Path | None = None) -> tuple[KnowledgeSnapshot,
     Raises:
         KnowledgeSnapshotError: 清单结构不合法、文件缺失，或 hash 与清单不符。
     """
+    from campfire.modules.library.ingestion import compute_doc_hash
+
     manifest_path = path or PACKAGE_ROOT / "knowledge" / "snapshot.json"
     try:
         raw = json.loads(manifest_path.read_text(encoding="utf-8"))
@@ -311,25 +315,36 @@ def load_snapshot_manifest(path: Path | None = None) -> tuple[KnowledgeSnapshot,
     files: list[SnapshotFile] = []
     paths: list[Path] = []
     problems: list[str] = []
+    basenames: set[str] = set()
     for entry in raw.get("included") or []:
         if not isinstance(entry, dict) or not entry.get("path"):
             raise KnowledgeSnapshotError("快照清单 included 项缺少 path")
         relative = Path(corpus_root) / str(entry["path"])
         absolute = REPO_ROOT / relative
+        if absolute.name in basenames:
+            raise KnowledgeSnapshotError(f"许可清单有重复文件基名，无法唯一匹配条目：{absolute.name}")
+        basenames.add(absolute.name)
         if not absolute.exists():
             problems.append(f"语料文件缺失：{relative}")
             continue
-        actual = sha256_file(absolute)
+        raw_bytes = absolute.read_bytes()
+        actual = sha256_bytes(raw_bytes)
         declared = str(entry.get("sha256") or "")
         if declared and declared != actual:
             problems.append(f"语料文件 hash 与清单不符：{relative}（清单 {declared[:12]}… 实际 {actual[:12]}…）")
             continue
+        try:
+            # 与 ingest_file 的 read_text 一致：UTF-8 解码并统一换行，保留 frontmatter。
+            decoded = raw_bytes.decode("utf-8").replace("\r\n", "\n").replace("\r", "\n")
+        except UnicodeError as exc:
+            raise KnowledgeSnapshotError(f"语料不是合法 UTF-8：{relative}") from exc
         files.append(
             SnapshotFile(
                 path=str(entry["path"]),
                 sha256=actual,
                 license=str(entry.get("license") or ""),
                 source_kind=str(entry.get("source_kind") or ""),
+                doc_hash=compute_doc_hash(decoded),
             )
         )
         paths.append(absolute)
@@ -364,13 +379,16 @@ def build_snapshot(
     ② 无案例条目、无已撤下条目、条目有 `doc_hash`、条目至少一个节点；③ 节点有非空
     `item_id`、属于库内条目、标识非空且不重复、有向量且维度与身份一致、有限值且非零向量。
 
-    证据边界：`doc_hash`/`source` 只被记录并进 hash，不与源文件重算比对——能发现两次运行
-    之间的来源漂移（→ 续跑拒绝），但**不证明**库内 `doc_hash` 就是许可清单里那份文件；
-    那一步要在读 `paths` 的阶段用 `ingestion.compute_doc_hash` 与库内值逐条比对（未接入）。
+    源文件按摄取时的解码文本口径复算 `doc_hash`；节点内容另外绑定，嵌入历史来源仍不可回溯。
     """
-    allowed = {entry.basename for entry in manifest.files}
+    allowed = {entry.basename: entry for entry in manifest.files}
     by_item: dict[str, list[NodeRecord]] = {}
     violations: list[str] = []
+    if len(allowed) != len(manifest.files):
+        violations.append("许可清单有重复文件基名，无法唯一匹配条目")
+    for entry in manifest.files:
+        if not entry.doc_hash:
+            violations.append(f"许可语料缺少解码文本 doc_hash：{entry.path}")
     unowned_nodes = 0
     unknown_owner_ids: set[str] = set()
 
@@ -430,6 +448,8 @@ def build_snapshot(
             violations.append(f"条目 {item.source_path} 不在许可清单内（{UNLICENSED_NOTE}）")
         else:
             covered.add(name)
+            if item.doc_hash and item.doc_hash != allowed[name].doc_hash:
+                violations.append(f"条目 {item.source_path} 的 doc_hash 与许可源文件不符")
         if not item.doc_hash:
             violations.append(f"条目 {item.source_path or item.item_id} 没有 doc_hash：无法核对它来自哪一版源文件")
         if item.withdrawn:
