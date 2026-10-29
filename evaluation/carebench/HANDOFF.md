@@ -2,7 +2,6 @@
 
 > 这一批是**真实性修复 + 正式集入库**，**没有开任何正式模型运行**，也没有冻结正式集。
 > 随后 EVAL-01/02/03 的实现与确定性测试已落地；正式 40 例仍未冻结、未运行。
-> DeepSeek 4.1 Flash 主路由返回所有账户冷却不可用后，按用户 Fallback 1 已改用实际注册的 `GPT6Luna`。
 > 专业审核仍未满足。正式接续顺序见第 3 节。
 
 ## 0. 当前事实（不要当成别的样子）
@@ -91,13 +90,13 @@
    和嵌入身份；节点数相同而内容漂移会改变运行身份并使续跑拒绝。确定性用例在
    `tests/test_knowledge_content.py` 与 `tests/test_identity.py`。
 2. **EVAL-02 已实现**：verify 对新增运行、结构化输出、重试与故障观察证据增加一致性检查；
-   AI 评审证据还校验身份、原始响应、完整覆盖、续跑锚点与裁定记录。对应用例在
+   AI 评审证据还校验两套评分者与第三位独立裁定者身份、原始响应、完整覆盖、续跑锚点与裁定记录。对应用例在
    `tests/test_evidence_fidelity.py`、`tests/test_ai_review.py`、`tests/test_ai_acceptance.py`。
 3. **EVAL-03 已实现**：CLI 已有 `ai-prepare`、`ai-score`、`ai-adjudicate`。两套独立评分与独立裁定
    写入 `ai_scores` 证据通道，不写入 `human_scores`；评分身份、提示词、原始响应、证据与分歧均留痕。
    对应确定性用例在 `tests/test_ai_review.py`、`tests/test_ai_cli.py`、`tests/test_ai_acceptance.py`。
-4. 上述条目实现已落地，`evaluation/carebench/tests` **全套 182 项通过**。这不代表最终仓库 full 已通过。
-5. **正式集仍未冻结、未运行**。主路由当前按用户决定使用已注册的 `GPT6Luna`；正式身份必须在
+4. 上述条目实现已落地，`evaluation/carebench/tests` **全套 183 项通过**。这不代表最终仓库 full 已通过。
+5. **正式集仍未冻结、未运行**。产品当前模型配置为 `cn:deepseek-v4.1-flash`；正式身份必须在
    实际冻结前由 `identity` 命令重新读取，不能沿用历史校准记录。正式评分也尚未开始。
 6. **专业审核仍未满足**。AI 评分不能替代专业审核，不能支撑专业认可、临床安全或真实家庭有效性主张。
 
@@ -114,24 +113,25 @@ uv run python -m evaluation.carebench preflight \
   --cases evaluation/carebench/cases/cases-test-v0.1.jsonl --probe-model --probe-embedding
 
 # 2) 正式运行身份（无凭据、无生成调用；反映当前实际路由）
-uv run python -m evaluation.carebench identity --out <identity.json>
+uv run python -m evaluation.carebench identity --out .tmp/carebench-run-identity.json
 
 # 3) 冻结（要求工作区干净，label=test；把运行身份一并锁入）
 uv run python -m evaluation.carebench freeze \
-  --cases evaluation/carebench/cases/cases-test-v0.1.jsonl --label test --identity <identity.json>
+  --cases evaluation/carebench/cases/cases-test-v0.1.jsonl --label test \
+  --identity .tmp/carebench-run-identity.json
 
 # 4) 建批次并检查分母与计划（不发模型调用）
 uv run python -m evaluation.carebench run --frozen evaluation/carebench/frozen/test \
   --fixtures evaluation/carebench/fixtures-formal.example.json --dry-run
 
 # 5) 冻结正式评分身份后，才开始被测系统的正式生成
-uv run python -m evaluation.carebench ai-prepare --run <run目录> --model GPT6Luna
+uv run python -m evaluation.carebench ai-prepare --run <run目录>
 uv run python -m evaluation.carebench resume --run <run目录>
 ```
 
-正式生成完成后，执行 `ai-score`、`ai-adjudicate`、`summarize` 与
+正式生成完成后，先执行 `review-export` 导出盲化评审包，再执行 `ai-score`、`ai-adjudicate`、`summarize` 与
 `verify --require-complete`，并按 [材料与证据口径](../../docs/development/materials.md) 留存原始证据。
-`identity → freeze（含身份）→ run --dry-run → ai-prepare → resume` 是正式顺序。
+正式顺序为 `identity → freeze（含身份）→ run --dry-run → ai-prepare → resume`。
 
 ## 4. 测试与质量门禁现状
 
@@ -140,13 +140,13 @@ uv run python -m evaluation.carebench resume --run <run目录>
 - `dev` 首轮 full：**2 failed / 2260 passed**；第二轮中原来的两个隔离失败已消失。
 - 第二轮剩余两项是旧 AI formal 夹具没有先冻结评分身份，被新守卫正确拒绝；主审已将 formal 夹具改为
   `run --dry-run → ai-prepare → resume` 顺序。
-- CareBench 全套确定性测试：**182 passed**。正式非 dry-run 的 `run` / `resume` 现在会在 adapter
+- CareBench 全套确定性测试：**183 passed**。正式非 dry-run 的 `run` / `resume` 现在会在 adapter
   准备及模型调用前拒绝缺少有效 formal AI 身份或 manifest 身份锚的批次。失败用例覆盖缺失、篡改、
-  未锚定身份；有效 formal 身份的正控覆盖生成成功。
+  未锚定身份及缺少第三位独立裁定者；有效 formal 身份的正控覆盖生成成功。
 - 图库健康测试的跨循环遗留资源问题已修，相关 **93 项组合验证通过**。
 - 前端 full **601 项 / 57 个文件通过**，`act` 警告已消失，lint 与 build 通过。
 - 正式测评尚未开始；上述工程测试结果均不是模型效果或专业审核证据。
 - 最后一轮仓库 full 正准备执行，最终读数待验证；由主审追加到质量审查报告。本交接不提前记为 full 通过。
 
-上一轮交接曾记录 `65 passed` 的 CareBench 确定性测试；现以之后的 182 项全套结果为准。
+上一轮交接曾记录 `65 passed` 的 CareBench 确定性测试；现以之后的 183 项全套结果为准。
 本手册的实现说明不替代主审对最后一轮 full 的质量审查报告。

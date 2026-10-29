@@ -1,8 +1,7 @@
 # CareBench 运行工具（`evaluation/carebench`）
 
 > 状态：**工具与独立 AI 评审通道已实现，并用少量真实校准调用验证过；正式 40 例尚未冻结、未运行**。
-> DeepSeek 4.1 Flash 主路由曾返回所有账户冷却不可用，按用户 Fallback 1 已切换到实际注册的 `GPT6Luna`；
-> 正式运行身份仍须在冻结前从当前配置重新生成并核对。
+> 产品当前模型配置仍为 `cn:deepseek-v4.1-flash`；正式运行身份须在冻结前从当前配置重新生成并核对。
 > 本目录不含任何正式成绩，也不含任何专家背书。
 
 把 CareBench 协议（[`protocol/`](protocol/)，01–05 号原文快照）落成可执行工具的目录。
@@ -115,7 +114,7 @@ uv run python -m evaluation.carebench freeze --cases <案例 JSONL> --label {cal
   [--config cfg.json] [--out evaluation/carebench/frozen/<label>] [--operator <名字>] [--identity identity.json]
 
 uv run python -m evaluation.carebench identity \
-  --out evaluation/carebench/.tmp/run-identity.json
+  --out .tmp/carebench-run-identity.json
 ```
 
 写出 `cases.frozen.jsonl`（与源文件**逐字节**相同）与 `freeze.json`：`dataset_sha256`、
@@ -139,24 +138,26 @@ uv run python -m evaluation.carebench resume --run evaluation/carebench/runs/<id
 
 ```bash
 # 1. 读取当前配置下的真实运行身份（无凭据、无生成调用）
-uv run python -m evaluation.carebench identity --out <identity.json>
+uv run python -m evaluation.carebench identity --out .tmp/carebench-run-identity.json
 # 2. 冻结正式案例、运行配置和上一步的身份
-uv run python -m evaluation.carebench freeze --cases <正式集.jsonl> --label test --identity <identity.json>
+uv run python -m evaluation.carebench freeze --cases <正式集.jsonl> --label test \
+  --identity .tmp/carebench-run-identity.json
 # 3. 创建批次并核对计划；零模型调用
 uv run python -m evaluation.carebench run --frozen evaluation/carebench/frozen/test --dry-run
 # 4. 在任何被测系统生成前冻结 AI 评分者与裁定者身份
-uv run python -m evaluation.carebench ai-prepare --run <run目录> --model GPT6Luna
+uv run python -m evaluation.carebench ai-prepare --run <run目录>
 # 5. 正式生成；中断后用 resume 补齐
 uv run python -m evaluation.carebench resume --run <run目录>
 ```
 
 正式 `run` 或 `resume` 的非 dry-run 路径会在 adapter 准备和生成调用前校验评分身份：身份必须存在、
 `stage=formal`、hash 有效，且与 manifest 中的身份锚一致；缺失、篡改或未锚定都会拒绝。
-`run --dry-run` 是允许的准备步骤。失败覆盖 missing/tampered/unanchored，valid formal identity
+`run --dry-run` 是允许的准备步骤。失败覆盖 missing/tampered/unanchored/no_adjudicator，valid formal identity
 有生成正控（`evaluation/carebench/tests/test_ai_cli.py::test_formal_generation_requires_frozen_review_identity_before_any_call`）。
 
-生成完成后，使用 `ai-score --run <run目录>` 执行两套独立盲评，再用
-`ai-adjudicate --run <run目录>` 处理分歧，最后 `summarize`、`verify --require-complete`。
+生成完成后，先用 `review-export --run <run目录>` 导出盲化评审包，再用
+`ai-score --run <run目录>` 执行两套独立盲评、`ai-adjudicate --run <run目录>` 处理分歧，
+最后运行 `summarize`、`verify --require-complete`。
 正式批次是否完成以实际运行证据为准；**专业审核仍未满足**，因此不得据此声称专业认可、
 临床安全或真实家庭有效。
 
@@ -312,8 +313,7 @@ export DATABASE_URL="postgresql+asyncpg://<user>:<pw>@<host>:5432/campfire_careb
 历史校准记录，日期：2026-10-29（Asia/Shanghai）。环境：本机 worktree、独立 `.venv`、评测库
 `campfire_carebench_20261029`（6 条 knowledge / 117 节点 / 0 案例）、对话端点本机网关
 `127.0.0.1:7863`（当时为 `cn:deepseek-v4.1-flash`）、嵌入端点独立（TokenHub）。
-此处为历史校准记录，不代表当前正式运行身份；主路由因所有账户冷却不可用已按用户 Fallback 1
-切换到实际注册的 `GPT6Luna`。
+此处为历史校准记录，不代表当前正式运行身份。
 
 ### 9.1 确定性测试
 
@@ -322,7 +322,7 @@ uv run pytest evaluation/carebench/tests -q
 uv run ruff check evaluation/ && uv run ruff format --check evaluation/
 ```
 
-截至当前集成，CareBench 全套确定性测试 **182 项通过**；最终仓库 full 仍待验证，主审会把最终读数
+截至当前集成，CareBench 全套确定性测试 **183 项通过**；最终仓库 full 仍待验证，主审会把最终读数
 追加到质量审查报告。本节列出测试覆盖范围。
 覆盖：案例结构校验（含坏数据负例）、配置/批次 hash 稳定性、轮换顺序、每 case-group 新会话、
 固定二轮、输入对称、外层重试与首错保留、空回复不重试、超时进分母、续跑不重跑已完成轮次、
@@ -383,5 +383,6 @@ uv run ruff check evaluation/ && uv run ruff format --check evaluation/
 ## 11. 正式评测接续
 
 正式运行仍待执行。依次完成**identity → freeze（含身份）→ run `--dry-run` → ai-prepare → resume**
-；后续运行 `ai-score`、`ai-adjudicate`、`summarize` 与 `verify --require-complete`，再按材料口径
+；生成后先 `review-export`，再运行 `ai-score`、`ai-adjudicate`、`summarize` 与
+`verify --require-complete`，再按材料口径
 登记真实 `run_id`、`batch_id` 和证据。不得把校准批次或本地确定性测试写成正式成绩。
