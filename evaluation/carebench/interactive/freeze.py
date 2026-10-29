@@ -16,7 +16,7 @@ from .review import (
     SCORER_PROMPTS,
 )
 from .storage import immutable_json, read_immutable
-from .transport import JUDGE_PARAMETERS
+from .transport import JUDGE_PARAMETERS, REQUEST_WRAPPER_VERSION, SYSTEM_TRANSPORT_VERSION
 from .user_policy import POLICY_PROMPT, POLICY_VERSION
 
 PACKAGE = Path(__file__).resolve().parent
@@ -54,6 +54,8 @@ def prompts() -> dict[str, Any]:
         "scorers": list(SCORER_PROMPTS),
         "adjudicator": ADJUDICATOR_PROMPT,
         "parameters": JUDGE_PARAMETERS,
+        "request_wrapper_version": REQUEST_WRAPPER_VERSION,
+        "system_transport_version": SYSTEM_TRANSPORT_VERSION,
     }
 
 
@@ -107,6 +109,11 @@ def prepare(
         "prompts_sha256": sha256_value(prompts()),
         "plan": episode_plan(scenarios, budget),
         "inference": {
+            "system_transport_version": SYSTEM_TRANSPORT_VERSION,
+            "system_transport_note": (
+                "本地路由不遵从 system-only 探针；统一在首个用户消息前重述已有系统指令。"
+                "三组同转换，原始家长文本与实际发送消息分别保留；不等同于未加兼容层的线上端点。"
+            ),
             "system_sampling": "provider_defaults",
             "outer_retries": 0,
             "judge_parameters": JUDGE_PARAMETERS,

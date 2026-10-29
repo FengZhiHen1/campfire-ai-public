@@ -114,6 +114,9 @@ def summarize(root: Path) -> dict[str, Any]:
             "waiting_ms_p95": percentile([row["waiting_ms"] for row in runs], 0.95),
             "tool_calls": sum(len(turn.get("tool_calls", [])) for turn in turns),
             "citations": sum(len(turn.get("citations", [])) for turn in turns),
+            "structured_events": dict(
+                Counter(item.get("kind", "unknown") for turn in turns for item in turn.get("structured_output", []))
+            ),
             "tokens_reported": dict(
                 Counter(
                     {
@@ -144,6 +147,8 @@ def summarize(root: Path) -> dict[str, Any]:
             "重复按案例聚类；不把 216 episodes 当 216 个独立家庭。",
             "提问数来自冻结语义识别器，不是人工标注；缺失识别不当作零提问。",
             "程序内产品入口；不覆盖浏览器操作时间、档案积累或真实家庭效果。",
+            "后续回复走自由文本消息路径，不评估提问卡逐项填表或点击流程。",
             "工具调用/引用凭据不等于具体结论获来源正文支持。",
+            "本地模型路由使用三组统一的系统指令传输兼容层；未加此层的线上端点不在本批覆盖范围。",
         ],
     }
