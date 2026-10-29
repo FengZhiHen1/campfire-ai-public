@@ -190,3 +190,99 @@ def test_remove_refuses_a_slug_whose_directory_branch_disagrees(tmp_path: Path) 
     assert result.returncode == 1
     assert "scratch-branch" in result.stderr
     assert worktree.is_dir()
+
+
+# --- 被忽略的本地状态：`git status` 看不见，`worktree remove` 会删 ----------
+
+
+def _prepare_removable_worktree(repo: Path, slug: str) -> Path:
+    """建一个「干净 + 已并入基线」的工作树，供本地状态的用例在其上叠加。"""
+    assert _run(repo, "create", slug).returncode == 0
+    worktree = repo / ".worktrees" / slug
+    (worktree / f"{slug}.txt").write_text("任务分支内容\n", encoding="utf-8")
+    _git(worktree, "add", ".")
+    _git(worktree, "commit", "-q", "-m", f"{slug} 的提交")
+    _git(repo, "merge", "-q", "--ff-only", f"task/{slug}")
+    return worktree
+
+
+def _add_gitignore(repo: Path, patterns: list[str]) -> None:
+    """在基线里加一份 `.gitignore`（提交掉，免得它自己让工作树变脏）。"""
+    (repo / ".gitignore").write_text("\n".join(patterns) + "\n", encoding="utf-8")
+    _git(repo, "add", ".gitignore")
+    _git(repo, "commit", "-q", "-m", "gitignore")
+
+
+def test_remove_refuses_ignored_local_state_by_default(tmp_path: Path) -> None:
+    """`.env` / `demo/` / `deliverables/` 被忽略，但删除工作树会把它们一起删掉。
+
+    这是实测过的破坏形状：`git status --porcelain` 对这些路径一句话都不说，
+    于是「干净」判定通过、`git worktree remove` 把真实凭据与一批展示材料全删了。
+    """
+    repo = _init_repo(tmp_path)
+    _add_gitignore(repo, [".env", "demo/", "deliverables/"])
+    worktree = _prepare_removable_worktree(repo, "state")
+    (worktree / ".env").write_text("TOKENHUB_API_KEY=真凭据不该被打印\n", encoding="utf-8")
+    (worktree / "demo").mkdir()
+    (worktree / "demo" / "manifest.json").write_text("{}\n", encoding="utf-8")
+
+    result = _run(repo, "remove", "state")
+
+    assert result.returncode == 1
+    assert ".env" in result.stderr and "demo" in result.stderr, "必须列出会被丢掉的路径"
+    assert "真凭据不该被打印" not in result.stderr, "只列路径，绝不打印文件内容"
+    assert worktree.is_dir() and (worktree / ".env").is_file(), "拒绝时不得删除任何东西"
+    assert "task/state" in _git(repo, "branch", "--list", "task/state")
+
+
+def test_remove_discards_ignored_local_state_only_when_explicitly_authorised(tmp_path: Path) -> None:
+    """加了 `--discard-local` 才删；同时仍然要求「已并入基线」。"""
+    repo = _init_repo(tmp_path)
+    _add_gitignore(repo, [".env", "demo/"])
+    worktree = _prepare_removable_worktree(repo, "state-never")
+    (worktree / ".env").write_text("TOKENHUB_API_KEY=x\n", encoding="utf-8")
+
+    result = _run(repo, "remove", "state-never", "--discard-local")
+
+    assert result.returncode == 0, result.stderr
+    assert not worktree.exists()
+    assert "task/state-never" not in _git(repo, "branch", "--list", "task/state-never")
+
+
+def test_remove_does_not_block_on_rebuildable_ignored_artifacts(tmp_path: Path) -> None:
+    """`.venv` / `node_modules` / `.tmp` / `__pycache__` 属可重建产物，不该拦住删除。"""
+    repo = _init_repo(tmp_path)
+    _add_gitignore(repo, [".venv/", "node_modules/", ".tmp/", "__pycache__/"])
+    worktree = _prepare_removable_worktree(repo, "artifacts")
+    for name in (".venv", "node_modules", ".tmp", "__pycache__"):
+        (worktree / name).mkdir(parents=True, exist_ok=True)
+        (worktree / name / "junk.bin").write_text("可重建\n", encoding="utf-8")
+
+    result = _run(repo, "remove", "artifacts")
+
+    assert result.returncode == 0, result.stderr
+    assert not worktree.exists()
+
+
+def test_remove_reports_non_zero_when_branch_deletion_fails(tmp_path: Path) -> None:
+    """工作树删了但分支没删 → 退出码必须非 0（半完成不能报成功）。
+
+    构造方式：整合基线是 `dev`（分支已并入 `dev`），但主树停在 `master` 上，
+    于是 `git branch -d` 以「未并入当前 HEAD」拒绝删除。
+    """
+    repo = _init_repo(tmp_path)
+    _git(repo, "branch", "master")
+    assert _run(repo, "create", "half").returncode == 0
+    worktree = repo / ".worktrees" / "half"
+    (worktree / "half.txt").write_text("任务分支内容\n", encoding="utf-8")
+    _git(worktree, "add", ".")
+    _git(worktree, "commit", "-q", "-m", "half 的提交")
+    _git(repo, "merge", "-q", "--ff-only", "task/half")
+    _git(repo, "checkout", "-q", "master")  # 主树切走：HEAD 上没有这条分支的提交
+
+    result = _run(repo, "remove", "half")
+
+    assert result.returncode == 1, "分支没删掉是半完成，不得报 0"
+    assert not worktree.exists(), "工作树本身已经删掉了（这一步是成功的）"
+    assert "未删除" in result.stderr
+    assert "task/half" in _git(repo, "branch", "--list", "task/half")

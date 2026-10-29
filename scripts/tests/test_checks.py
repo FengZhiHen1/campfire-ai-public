@@ -13,6 +13,8 @@
 from __future__ import annotations
 
 import importlib.util
+import os
+import subprocess
 import sys
 from pathlib import Path
 
@@ -54,6 +56,8 @@ checks = _load_checks()
         ("package.json", checks.CAT_WEB_CONFIG),
         ("pnpm-lock.yaml", checks.CAT_WEB_CONFIG),
         ("scripts/worktree.py", checks.CAT_SCRIPTS),
+        ("scripts/tests/test_checks.py", checks.CAT_SCRIPT_TESTS),
+        ("scripts/tests/test_worktree.py", checks.CAT_SCRIPT_TESTS),
         ("pyproject.toml", checks.CAT_PY_CONFIG),
         ("uv.lock", checks.CAT_PY_CONFIG),
         ("docs/需求/功能需求与验收.md", checks.CAT_DOCS),
@@ -235,3 +239,169 @@ def test_full_dry_run_prints_plan_without_running(capsys: pytest.CaptureFixture[
     assert "ruff check" in captured.out
     assert "uv run pytest" in captured.out
     assert "未执行任何命令" in captured.out
+
+
+# --- changed_paths：非 ASCII / 空格 / 重命名 ---------------------------------
+
+
+def _git(repo: Path, *args: str) -> None:
+    """在临时仓库里跑一条 git 命令（提交身份写死，免得依赖宿主机配置）。"""
+    identity = {
+        "GIT_AUTHOR_NAME": "checks-test",
+        "GIT_AUTHOR_EMAIL": "checks@example.com",
+        "GIT_COMMITTER_NAME": "checks-test",
+        "GIT_COMMITTER_EMAIL": "checks@example.com",
+    }
+    subprocess.run(
+        ["git", *args],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+        text=True,
+        env={**os.environ, **identity},
+    )
+
+
+def _temp_repo(tmp_path: Path, baseline_files: dict[str, str] | None = None) -> Path:
+    """一个 `dev` 为基线、当前在 `task/probe` 上的临时仓库。
+
+    Args:
+        tmp_path: pytest 的临时目录。
+        baseline_files: 要**先在 `dev` 上**存在的文件（路径 → 内容）。重命名用例必须先有
+            旧文件在基线里，否则「加了又删」在三点 diff 里净变化为零，测不到重命名。
+    """
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _git(repo, "init", "-q", "-b", "dev")
+    files = {"base.md": "base\n", **(baseline_files or {})}
+    for name, content in files.items():
+        target = repo / name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(content, encoding="utf-8")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-qm", "base")
+    _git(repo, "switch", "-q", "-c", "task/probe")
+    return repo
+
+
+def _commit_all(repo: Path, message: str) -> None:
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-qm", message)
+
+
+def test_changed_paths_keeps_non_ascii_and_space_paths_unquoted(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """中文与含空格的路径必须原样返回（默认输出会给它们加引号并转义成八进制）。
+
+    真的踩到过：`docs/需求/…` 被解析成 `"docs\\346\\226\\207…"`，于是归类落到 `unknown`，
+    `quick` 直接阻塞——本工具自己造的假失败。
+    """
+    repo = _temp_repo(tmp_path)
+    (repo / "docs" / "需求").mkdir(parents=True)
+    (repo / "docs" / "需求" / "功能需求与验收.md").write_text("需求\n", encoding="utf-8")
+    (repo / "docs" / "带 空格 的 文档.md").write_text("空格\n", encoding="utf-8")
+    _commit_all(repo, "docs")
+    monkeypatch.setattr(checks, "ROOT", repo)
+
+    paths = checks.changed_paths("dev")
+
+    assert "docs/需求/功能需求与验收.md" in paths
+    assert "docs/带 空格 的 文档.md" in paths
+    assert all('"' not in path for path in paths), "路径不得带 git 的引号/转义"
+    assert checks.classify("docs/需求/功能需求与验收.md") == checks.CAT_DOCS
+
+
+def test_changed_paths_includes_both_sides_of_a_committed_rename(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """已提交的重命名：原路径与被删的那一侧同样算改动（`--no-renames`）。
+
+    只看新路径会让「删掉的文件」从影响面里消失——比如把一个源码模块改名，
+    被删模块的测试就再也不会被选中。
+    """
+    repo = _temp_repo(tmp_path, {"docs/旧名.md": "旧\n"})
+    _git(repo, "mv", "docs/旧名.md", "docs/新名.md")
+    _commit_all(repo, "rename")
+    monkeypatch.setattr(checks, "ROOT", repo)
+
+    paths = checks.changed_paths("dev")
+
+    assert "docs/旧名.md" in paths, "重命名的原路径同样是改动"
+    assert "docs/新名.md" in paths
+
+
+def test_changed_paths_includes_both_sides_of_an_uncommitted_rename(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """未提交的重命名：`git status -z` 的 `R` 条目会带两条路径，两边都要收。"""
+    repo = _temp_repo(tmp_path, {"docs/旧名.md": "旧\n"})
+    _git(repo, "mv", "docs/旧名.md", "docs/新名.md")  # 不提交：只留在工作区
+    monkeypatch.setattr(checks, "ROOT", repo)
+
+    paths = checks.changed_paths("dev")
+
+    assert "docs/旧名.md" in paths
+    assert "docs/新名.md" in paths
+
+
+# --- 只在改动面里才出现的检查 ------------------------------------------------
+
+
+def test_quick_plan_runs_script_tests_when_only_they_changed(monkeypatch: pytest.MonkeyPatch) -> None:
+    """只改了工具自己的测试 → 必须真的跑它（此前的形状是「一条 pytest 都没跑却报绿」）。"""
+    monkeypatch.setattr(checks, "changed_paths", lambda base: ["scripts/tests/test_checks.py"])
+
+    steps, report, problems = checks.quick_plan("dev", None)
+
+    assert problems == []
+    pytest_steps = [step for step in steps if step.key == "pytest"]
+    assert len(pytest_steps) == 1, f"没有 pytest 步骤：{report}"
+    assert "scripts/tests/test_checks.py" in pytest_steps[0].argv
+
+
+def test_quick_plan_runs_mypy_and_full_pytest_for_lockfile_only_changes(monkeypatch: pytest.MonkeyPatch) -> None:
+    """只动 pyproject/uv.lock → mypy + 全量 pytest（配置改错会影响所有检查）。"""
+    monkeypatch.setattr(checks, "changed_paths", lambda base: ["uv.lock"])
+
+    steps, _report, problems = checks.quick_plan("dev", None)
+
+    assert problems == []
+    keys = [step.key for step in steps]
+    assert "mypy" in keys
+    full = [step for step in steps if step.key == "pytest-full"]
+    assert len(full) == 1, "锁文件改动必须跑全量 pytest"
+    assert full[0].argv == ("uv", "run", "pytest", "-m", checks.LIVE_MODEL_EXPR)
+    assert "pytest" not in keys, "全量与按改动推断的 pytest 不能同时排（会重复跑）"
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "apps/api/src/campfire/modules/library/models.py",
+        "apps/api/src/campfire/core/db/engine.py",
+    ],
+)
+def test_quick_plan_runs_alembic_check_for_model_or_engine_changes(path: str, monkeypatch: pytest.MonkeyPatch) -> None:
+    """ORM 模型/引擎定义改了就跑迁移漂移检查（此前只由 `alembic/` 目录触发）。"""
+    monkeypatch.setattr(checks, "changed_paths", lambda base: [path])
+
+    steps, _report, _problems = checks.quick_plan("dev", None)
+
+    assert "alembic" in [step.key for step in steps]
+
+
+def test_deleted_test_file_is_not_handed_to_pytest(monkeypatch: pytest.MonkeyPatch) -> None:
+    """删除的测试文件不能成为 pytest 目标（不存在的路径会让 pytest 退出 4）。
+
+    删除仍要计入影响面：它照样触发 ruff/mypy 与「改动过测试」的判断。
+    """
+    monkeypatch.setattr(checks, "changed_paths", lambda base: ["apps/api/tests/test_已删除的用例.py"])
+
+    steps, report, problems = checks.quick_plan("dev", None)
+
+    assert problems == []
+    assert "ruff" in [step.key for step in steps], "删除同样是改动，lint 仍要跑"
+    assert not [step for step in steps if step.key == "pytest"], "不得把不存在的文件交给 pytest"
+    assert all("test_已删除的用例.py" not in step.argv for step in steps)
+    assert "不影响现有测试文件" in report[-1]
