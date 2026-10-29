@@ -1,16 +1,8 @@
-"""真实模型门禁与「本轮到底选了什么」的一致性。
+"""真实模型门禁与「本轮到底选了什么」的一致性（纯函数，不连网、不调模型）。
 
-为什么单独立一个文件：`conftest.py` 里的 `_live_model_environment_problem` 已有用例
-（`test_live_model_gate.py`），但它只回答「环境是否具备」。缺的是另一半：
-**这一轮到底会不会跑真模型用例**。两者脱节时的形态很具体——
-
-`scripts/checks.py` 的 `quick`/`full` 与 CI 都带 `-m "not live_model"`，而门禁此前
-只看「开关是否被显式打开」（`--live-model` 或 `CAMPFIRE_LIVE_MODEL=1`）。于是 shell
-里恰好导出过 `CAMPFIRE_LIVE_MODEL=1` 的开发机，跑确定性门禁会在**收集期**因缺凭据
-直接失败：那不是代码缺陷，是门禁把「要求跑真模型」误读成「这一轮要跑真模型」，
-而命令行已经明确说了不跑。
-
-这里把三条分支钉死，且**不连网、不调模型**：只调 conftest 里的纯函数。
+`test_live_model_gate.py` 只回答「环境是否具备」；这里补另一半：本轮会不会真的跑
+真模型用例。两者脱节时，一个导出过 `CAMPFIRE_LIVE_MODEL=1` 的 shell 会让带
+`-m "not live_model"` 的确定性门禁在收集期失败。
 """
 
 from __future__ import annotations
@@ -76,15 +68,27 @@ def test_gate_defers_to_an_explicit_mark_exclusion(monkeypatch: pytest.MonkeyPat
     enforce_live_model_environment(_config(live_model=True, markexpr="not live_model"))  # type: ignore[arg-type]
 
 
+@pytest.mark.parametrize("markexpr", [" not live_model ", "(not live_model)"])
+def test_gate_accepts_only_the_exact_exclusion_with_optional_parens(
+    markexpr: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """允许首尾空白与外层括号，其余不改写。"""
+    monkeypatch.setattr(conftest_module, "_live_model_environment_problem", lambda: "缺凭据")
+
+    enforce_live_model_environment(_config(live_model=True, markexpr=markexpr))  # type: ignore[arg-type]
+
+
 @pytest.mark.parametrize(
     "markexpr",
     [
         pytest.param("integration", id="unrelated-expression"),
         pytest.param("not slow", id="not-with-another-marker"),
         # 只选真模型用例（正向选择，不是排除）：仍然需要环境。id 刻意不叫 `live_model`
-        # ——pytest 会把参数 id 也塞进 `item.keywords`，而 conftest 的跳过钩子按关键字
-        # 判断 marker，id 同名会让这条用例被静默 skip（本文件实测踩到）。
+        # ——pytest 把参数 id 也塞进 `item.keywords`，同名会让本例被跳过钩子静默 skip。
         pytest.param("live_model", id="only-live-model"),
+        pytest.param("not live_model or live_model", id="exclusion-then-selection"),
+        pytest.param("other and not live_model or live_model", id="mixed-precedence"),
+        pytest.param("not not live_model", id="double-negation"),
     ],
 )
 def test_gate_still_enforces_for_expressions_it_does_not_recognise(
