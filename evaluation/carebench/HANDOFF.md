@@ -37,7 +37,7 @@
   sha256 `f7d4462e344db2d0a6553aad3d13703d2ce13f9f668eee8fe3845371f1dd50d3`，
   40 条、`split=test`、6 条固定二轮、`review_status` 全为 `draft_unreviewed`（**未改 approved**）。
 - **已在恢复后冻结并完成正式生成、双评分与裁定，完整核验通过**：冻结位于原始仓库根
-  `deliverables/2026-ai-opensource/20261029-carebench-formal-setup-01/frozen/`，
+  内部冻结目录（不随本仓发布），
   正式批次位于相邻的 `20261029-carebench-formal-01/`；不通过包内默认目录是否存在推断运行状态。
 - 语料定位：公开挑战集 / 非独立未见样本。`CFB-T-009` 是设计阶段用过的黄金场景，
   该题分数**不得**当作「模型未见过」的证据。
@@ -160,7 +160,7 @@ uv run python -m evaluation.carebench resume --run <run目录> \
 ```
 
 正式生成完成后，先执行 `review-export` 导出盲化评审包，再执行 `ai-score`、`ai-adjudicate`、`summarize` 与
-`verify --require-complete`，并按 [材料与证据口径](../../docs/development/materials.md) 留存原始证据。
+`verify --require-complete`，并留存原始证据（原始证据不随本仓发布）。
 正式顺序为 `identity → freeze（含身份）→ run --dry-run → ai-prepare → resume`；`resume` 必须继续传入
 与 dry-run 相同的 `--fixtures evaluation/carebench/fixtures-formal.example.json`。
 

@@ -164,8 +164,7 @@ uv run python -m evaluation.carebench.interactive verify --root <原始批次目
   取不到就写“不可得”，不得用摘要冒充原文。
 - 评审载荷匿名化：去账号、会话、系统身份（`X1/X2/X3`）、provider、model、路径、run id；
   但**保留工具调用与引用证据**，否则会把“证据未送到”误判成“模型虚构”。
-- 落点与材料登记由主 agent 按 [materials.md](../../../docs/development/materials.md) 处理；
-  本目录不放原始输出。
+- 落点与材料登记由主 agent 在内部仓库处理；本目录不放原始输出。
 
 ## 9. 表述边界（报告必须遵守）
 
@@ -203,6 +202,5 @@ uv run python -m evaluation.carebench.interactive verify --root <原始批次目
 | C 只走日常面（`consult` 日常请求，无应急激活） | C 覆盖真实 `emergency` 入口 | 旧批次没有任何一条走过应急链路 |
 | 三组输入逐轮强制相同 | 首轮原文相同、真实入口包装不同；之后允许发散并报告 | 交互式模拟的代价，必须如实披露 |
 
-> 口径变更（“第二轮预先写死”→“冻结家长策略”）的用户裁决登记在
-> [docs/development/materials.md](../../../docs/development/materials.md)（由主 agent 落稿）；
+> 口径变更（“第二轮预先写死”→“冻结家长策略”）的用户裁决登记在内部仓（由主 agent 落稿）；
 > 本协议不自改 `docs/`，也不复制旧协议条文。冲突时以本协议对 v0.2 范围为准，并在报告中写明版本。

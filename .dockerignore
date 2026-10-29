@@ -46,7 +46,7 @@ node_modules
 # 不排除的后果是每轮 PNG 与 manifest 进入构建上下文，白白撑大上下文与缓存。
 # 用 `/` 锚定仓库根：写成 `demo` 会连带排除 `apps/web/demo/`（那是源码，必须进上下文）。
 /demo
-# 正式运行证据的本地大文件落点（见 .gitignore 同名条目与 docs/development/materials.md）。
+# 正式运行证据的本地大文件落点（见 .gitignore 同名条目）。
 # 它是 MB~GB 级的原始输出，不是任何运行期输入；进了构建上下文只会撑大缓存与镜像历史。
 # 锚定仓库根：`materials/` 是可入库的文本材料，二者不要混为一条规则。
 /deliverables

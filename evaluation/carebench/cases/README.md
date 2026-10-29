@@ -11,7 +11,7 @@
 
 ## 来源与许可
 
-本文件是 inbox 协议专题（`/srv/workspaces/repos/inbox/chatgpt/Campfire-AI/evaluation/scenario-benchmark/data/`）
+本文件是评测设计目录（内部仓库的 inbox，不在版本控制内）的
 的**逐字节副本**，合成样例、可公开：
 
 - `cases-calibration-v0.1.jsonl`：SHA-256 `e62bba11c73570ef0821160b80b5af32dc0738aebb6d2cafcc05c538242ed756`
@@ -33,7 +33,7 @@ uv run python -m evaluation.carebench freeze --cases <正式集路径> --label t
 | 项 | 值 |
 | --- | --- |
 | 文件 | `cases-test-v0.1.jsonl`（40 条，`split=test`，含 6 条固定第二轮） |
-| 来源 | `/srv/workspaces/repos/inbox/chatgpt/Campfire-AI/evaluation/scenario-benchmark/data/cases-test-v0.1.jsonl`（**逐字节副本**，`cp` 后复算 hash 一致） |
+| 来源 | 评测设计目录的 `cases-test-v0.1.jsonl`（**逐字节副本**，`cp` 后复算 hash 一致） |
 | SHA-256 | `f7d4462e344db2d0a6553aad3d13703d2ce13f9f668eee8fe3845371f1dd50d3`（21 128 B） |
 | `review_status` | 全部 `draft_unreviewed`（**没有改成 `approved`**：领域审核尚未发生） |
 | 冻结状态 | **未冻结、未运行**（2026-10-29 现状；`frozen/test/` 不存在，`runs/` 无 `label=test` 批次） |

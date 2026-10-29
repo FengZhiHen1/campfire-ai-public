@@ -55,6 +55,19 @@ REQUIRED_TOKENS = {
 }
 
 LINK_PATTERN = re.compile(r"(?<!!)\[[^\]]+\]\(([^)]+)\)")
+
+# 公开仓不发布的内部设计文档（2026-10-29 裁决）：需求/、运维/、项目结构设计.md、
+# 服务器选型事实基线.md、development/materials.md（材料落点说明随内部仓）、
+# development/checkpoints/（内部开发记录）。指向这些位置的链接在公开仓里
+# 「目标不在仓内」，不是断链；需求覆盖检查同样跳过。
+UNPUBLISHED = (
+    "需求/",
+    "运维/",
+    "项目结构设计.md",
+    "服务器选型事实基线.md",
+    "materials.md",
+    "development/checkpoints/",
+)
 # 需求声明：行首加粗的 RQ ID
 REQUIREMENT_PATTERN = re.compile(r"^\*\*(RQ-[A-Z]+-\d{2})\b", re.M)
 # 验收表数据行：| AC-01 | `RQ-…` | … |
@@ -83,6 +96,8 @@ def check_links(problems: list[str]) -> tuple[int, int]:
                     continue
                 link_count += 1
                 target = unquote(href.split("#")[0].split("?")[0])
+                if any(token in target for token in UNPUBLISHED):
+                    continue
                 if target and not (page.parent / target).exists():
                     problems.append(f"断链 {page.relative_to(ROOT)}:{lineno} -> {href}")
     return len(pages), link_count
@@ -91,7 +106,7 @@ def check_links(problems: list[str]) -> tuple[int, int]:
 def check_requirement_coverage(problems: list[str], warnings: list[str]) -> tuple[int, int, list[str]]:
     """校验需求与验收相互可解析；返回（需求数，验收行数，未覆盖需求）。"""
     if not SPEC.is_file():
-        problems.append(f"需求文档不存在：{SPEC.relative_to(ROOT)}")
+        warnings.append(f"公开仓不含需求文档，跳过需求覆盖检查：{SPEC.relative_to(ROOT)}")
         return 0, 0, []
 
     spec = SPEC.read_text(encoding="utf-8-sig")

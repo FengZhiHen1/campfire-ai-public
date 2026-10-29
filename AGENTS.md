@@ -1,204 +1,293 @@
 # Campfire-AI — 篝火智答
 
-面向孤独症家庭的情境支持平台：FastAPI 后端 + React H5 前端。
-
-> **设计真源在 `docs/`**（入口 [docs/README.md](docs/README.md)，含文档地图与事实所有权）；
-> `archive/` 是已废弃的旧实现与旧设计，**不构成任何当前依据**。
-> **状态**：业务实现与生产装配已落地，**部署方式已上线、当前运行状态以 `/readyz` 探测为准**
-> （不在本文断言）。未闭合项（压缩记账无持久化实现、发布闸门 `EVID-A`～`EVID-D`）唯一登记在
-> [docs/TODO.md](docs/TODO.md)。
+> **设计基线已确认，业务实现与生产装配均已落地。** 需求、技术栈与项目结构真源在
+> `docs/`（2026-09-29 经用户确认）；历史归档树（`archive/**`，旧实现与旧设计）
+> **不随本公开仓分发**（原因见 `NOTICE` 第三节），本文件中出现的 `archive/` 一律只是
+> 历史指称，仓内无对应文件，也不构成任何当前依据。
+>
+> **已实现**（按模块，细节见 `docs/`，此处不复制）：`agent/` 通用 Agent 基座（运行编排、
+> skill 机制、工具池与权限门、注入项与引用索引、模型网关、上下文压缩、运行记录）；
+> `modules/` 四个业务模块（`library` RAG 检索链与案例库、`memory` Graphiti 记忆、
+> `accounts` 邀请码与账号、`profile` 支持对象与档案分层）；`core/` 跨切能力；
+> `surfaces/consult` 咨询面（HTTP/SSE 契约与生产组合根）；`tools/` 10 个产品工具；
+> `cli/` 运营命令；`apps/web/` React H5；`infrastructure/` 生产 Docker/Compose/Nginx。
+>
+> **仍未闭合**：压缩记账端口 `CompactionJournal` 尚无持久化实现（不接线的后果是窗口
+> 退化为全量历史——安全方向，不丢内容）；发布闸门 `EVID-A`～`EVID-D` 未处理（面向真实
+> 使用者前必须逐项关闭），见 [docs/TODO.md](docs/TODO.md)。
+>
+> **已上线**：<https://campfire.wenran.me>（HTTP 会 301 跳转），七个容器 healthy，
+> Let's Encrypt 证书自动续期已配置（systemd timer）。**但默认不在云端开发**——见下方
+> 「开发与部署的边界」。
 
 ## Stack
 
-**真源：[docs/技术栈设计.md](docs/技术栈设计.md)**（选型理由、版本基线、重访条件）。要点：
+**真源：[docs/技术栈设计.md](docs/技术栈设计.md)**（选型理由、版本基线、重访条件与未核实项）。
+要点如下，不复制全文：
 
-- Python ≥3.12 + FastAPI + Pydantic 2，包管理 uv（单应用、两个运行入口）；前端 React 19 + Vite +
-  React Router + Zustand（一期只交付手机端 H5）
-- Agent 运行时 OpenAI Agents SDK；skill 注册表与工具范围控制由本项目实现
-- 模型：全应用单一对话模型；**对话端点与嵌入端点可以不是同一个**（`EMBEDDING_BASE_URL` 留空时回落
-  对话那一套，换对话网关必须显式分家）。向量模型与维度**绑死**，换家要整库重建——而检索失败在
-  产品里只表现为「没有资料」
-- RAG LlamaIndex；Data PostgreSQL 17 + pgvector + pg_trgm、Redis 7、FalkorDB、MinIO（一期不用）；
-  认证 SuperTokens（Java core + Python SDK）；队列 Taskiq + Redis
-- Infra Docker Compose v2 单机 + Nginx，Alembic 迁移；ruff（行宽 120）、oxlint、pytest、vitest
+- Language: Python ≥3.12；Backend: FastAPI + Pydantic 2；包管理 uv（单应用、两个运行入口）
+- Agent 运行时: OpenAI Agents SDK；skill 注册表与工具范围控制由本项目实现
+- 模型: 腾讯云 TokenHub，**全应用单一模型** DeepSeek-V4.1-Flash；向量 `Kinfra-Text-Embedding-4b`（2560 维）
+- RAG: LlamaIndex 全量引入（摄取、分块、嵌入适配、向量存储、融合检索）
+- Data: PostgreSQL 17 + pgvector + pg_trgm、Redis 7、FalkorDB（Graphiti 通用记忆）、MinIO（一期不用）
+- 认证: SuperTokens（Java core 容器 + Python SDK）；队列: Taskiq + Redis，独立 Worker
+- Frontend: React 19 + Vite + React Router + Zustand（一期只交付手机端 H5）
+- Infra: Docker Compose v2 单机 + Nginx；Alembic 迁移
+- Lint/Test: ruff（行宽 120）、oxlint；pytest + pytest-asyncio、vitest
 
 ## Commands
 
-全部在仓库根执行；**全新环境先看 [README.md](README.md) 的「首次起步」**（`.env`、
-`playwright install` 等一次性步骤在那里）。
+全部在仓库根执行。**全新环境（刚 clone）先看 [README.md](README.md) 的「首次起步」**——
+那里有 `.env`、`playwright install` 等一次性步骤；本文件只列日常命令。
 
 ```bash
-# --- 本地开发闭环（默认在这里做完，不要碰云端）---
-cp .env.example .env          # 新环境一次性；缺它 pytest 会多挂一条
+# --- 本地开发闭环（默认就在这里做完，不要碰云端）---
+cp .env.example .env          # 新环境一次性：缺它 pytest 会多挂一条（见 README）
 uv sync                       # 或 uv sync --frozen（lock 必须同步）
 docker compose up -d          # 本地数据服务：PostgreSQL、Redis、FalkorDB、SuperTokens
-uv run uvicorn campfire.main:app --reload       # HTTP
-uv run taskiq worker campfire.worker:broker     # Worker，需 Redis
+
+uv run uvicorn campfire.main:app --reload      # HTTP
+uv run taskiq worker campfire.worker:broker    # Worker，需 Redis
 pnpm install && pnpm --filter @campfire/web dev # 前端（含 token 同步）
 
-# --- 检查（分层与判读口径见 docs/development/testing.md）---
-uv run python scripts/checks.py quick --base dev   # 每次提交前：按改动面定向
-uv run python scripts/checks.py full               # 集成完成后与 CI：全套确定性检查
+# --- 质量门禁（提交前必跑；与 CI 同一组）---
+uv run ruff check . && uv run ruff format --check .
+uv run mypy apps/api/src/campfire apps/api/tests   # 两个路径必须同时给，见下方说明
+uv run pytest
+uv run python scripts/check_design_docs.py
+pnpm --filter @campfire/web lint && pnpm --filter @campfire/web typecheck
+pnpm --filter @campfire/web test && pnpm --filter @campfire/web build
 
 # --- 本地摄取（不连生产库；CLI 不暴露成服务端点）---
-uv run python -m campfire.cli convert <x.html>  # HTML → 可摄取 Markdown（不连库）
-uv run python -m campfire.cli ingest <x.md>     # 摄取到资料库（条目与节点同事务）
+uv run python -m campfire.cli convert <x.html> # HTML → 可摄取 Markdown（不连库）
+uv run python -m campfire.cli ingest <x.md>    # 摄取到资料库（条目与节点同事务）
 ```
 
-- **全量检查不在每个子任务、每个 commit 上跑**；由集成完成后（`dev` 上的结果）与 CI 承担。清单、
-  `--dry-run`、失败判读见 **[docs/development/testing.md](docs/development/testing.md)**。
-- 材料层（`shots`/`e2e`、`demo`、评测运行）**按需运行，不进 quick/full、不进 CI**，口径见
-  **[docs/development/materials.md](docs/development/materials.md)**。**`e2e-real` 等真实依赖探针
-  不属材料层**：它是工程验收，按影响面触发（改认证/SSE/静态资源/部署形态时必跑）。
-- ❌ 禁止：把「改完就跑一遍 demo/评测」当回归；外部抖动后的重试成功不算模型可靠性证据。
+### 页面截图（评测与验收用；落点不入 git）
 
-`scripts/checks.py` 与 `scripts/worktree.py` 是仓内执行入口；用 `--help` 查看选项，
-用 `checks.py <层级> --dry-run` 核对检查计划。工具配置归代码，执行与判读口径归 testing.md。
+```bash
+# 全新环境先装浏览器（一次性；不装则下面两条都会失败，报错会提示这条命令）
+pnpm --filter @campfire/web exec playwright install
+
+pnpm --filter @campfire/web shots   # 截图：10 页 × 2 视口 × 2 图种 = 40 张 PNG + manifest.json
+pnpm --filter @campfire/web e2e     # 内容断言：证明每张图「有料」而不是空态
+```
+
+**两条入口都必须跑**：`shots` 只出图，`e2e` 才验内容；**跑完 `shots` 不等于验收通过**。
+落点默认 `.tmp/screenshots/`（`SHOTS_OUT` 可改），已在 `.gitignore` 的 `.tmp/` 之下。
+
+- 删掉内容断言不影响出图（两者按 project 隔离），反之亦然——这是刻意的：
+  让「图有没有截到」与「图里有没有内容」两种失败各自可见，不互相掩盖。
+- **加了新路由就要加新截图配置**，否则那条路由永远不会有 PNG，
+  而 `manifest` 仍会宣布「40 张」（它只验矩阵内部自洽）。
+  这条对应关系由 `apps/web/tests/routes-coverage.test.ts` 机械守着，`pnpm test` 会红。
+
+### 临时文件：只有 `.tmp/` 一个落点
+
+**临时文件一律写 `.tmp/`**，不要新建 `tmp/`、`_tmp_test/`、`reports/` 这类并列目录，
+也不要写到被 git 跟踪的目录里。理由与沿革见 `.gitignore` 开头的「单一临时目录规则」。
+`.tmp/` 整个被忽略，所以**里面没有版本控制兜底**——这正是「该入库的当次入库」的压力来源。
+
+- 过程产物（截图、trace、逐次 CI 报告、ffmpeg 分析转储）用完即弃，属**可再生**，
+  清理时不需留档。
+- **判据只有一条：`git ls-files .tmp` 必须为空**（该目录整个被忽略，非空即异常）。
+  满足后可直接整目录清理——**`.tmp/` 里没有任何需要留档的东西**。
+- **2026-10-08 用户裁决（收紧，取代此前的三条判据）**：**只有 git 库中的内容算数**，
+  `.tmp/` 内的手写源码、旧修订快照、别处无副本的图片一律**不构成保留理由**。
+  此前那套「含手写源码一律不删」「唯一副本要留」的判断是在系统外另立标准，
+  与「唯 git 库为准」冲突，已废弃。**推论**：不要把成果留在 `.tmp/` 里等下次清理——
+  该入库的当次入库，否则视为过程产物。
+- 过程记录**不再单独留档**（此前的 `docs/证据/` 证物树已随同批清理删除）：
+  需要复现的判据一律写进测试、脚本或 `docs/` 正文，不靠过程物证承载。
+
+
+`mypy` 只传 `apps/api/tests` 会因 `conftest` 被当成两个模块而中止（
+`Source file found twice under different module names`）——**始终同时传 src 与 tests 两个路径**。
+
+测试集中在 `apps/api/tests`；历史归档树不参与收集。
+
+**生产镜像的构建参数**（仅部署链路需要，本地不需要）：`VITE_API_DOMAIN` 是**构建期内联**
+的，不是运行期环境变量。它在生产由 `PUBLIC_BASE_URL` 提供；前端会把它与当前页面
+host 比较后改用 `location.origin`，因此协议跟随页面、切 HTTPS 不需要重新构建。
 
 ## 开发与部署的边界
 
-**默认在本地完成开发闭环；部署只在用户明确要求时进行。** 展开前自检：检查全绿（quick 日常、
-集成完成后 full）＋关键路径已在真实依赖上跑通＋已想清回滚。**「真实依赖上跑通」不是形式要求**：
-三个 P0（缺 `EmailPassword.init()`、明文 HTTP 下 `crypto.randomUUID` 不存在、产物写死协议
-导致 mixed content）都只在真实运行时暴露，而那时单测全绿。
+**默认在本地完成开发闭环。部署到云端只在用户明确要求时进行。**
 
-部署是**真实生产变更**，必须两步：push 等 CI 绿（push `master` 只触发 CI，不部署）→
-`gh workflow run deploy.yml --ref master -f deploy=true`。**人工闸门是刻意保留的**：合并可回退，
-发布要动生产。❌ 禁止绕过它 ssh 上服务器改文件——那会让「生产在跑哪个版本」失去确定答案。
+展开前的自检（任一不过就先补，不要拿云当验证环境）：
 
-部署后验收：`curl -fsS https://campfire.wenran.me/readyz`（用 `/readyz`，不是 `/livez`）＋
-`uv run --no-project python scripts/acceptance_probe.py`（静态资源、9 条页面深链、未登录 401）；
-登录之后的链路必须用真实浏览器测。**看到「发布验证失败」先判断是不是误报再回滚**：曾发生部署
-成功而验证步骤因漏 `--env-file` 报失败，回滚正常版本会把小事变成事故。流程真源：
-[docs/运维/发布与回滚.md](docs/运维/发布与回滚.md)、[docs/运维/上线验收测试流程.md](docs/运维/上线验收测试流程.md)。
+- [ ] 门禁全绿（上面那一组）；新行为有能失败的回归测试
+- [ ] 关键路径**已用真实依赖端到端跑通**——本地起数据服务 + 真实浏览器/HTTP 走一遍，
+      而不是只跑 mock 单测。**这条不是形式要求**：本项目三个 P0 都只在真实运行时暴露
+      （缺 `EmailPassword.init()`、明文 HTTP 下 `crypto.randomUUID` 不存在、
+      产物写死协议导致 mixed content），而单测全绿。
+- [ ] 已想清回滚：改动是否可逆、是否需要迁移（迁移是唯一不可逆动作）
+
+部署是**真实的生产变更**，且**必须两步**：
+
+```bash
+# 1. 推送并等 CI 绿（push main 只触发 CI，不会部署）
+git push origin HEAD:main && gh run list --limit 3
+
+# 2. 显式触发发布——`deploy=true` 才会真的上线（默认 false 只构建推送镜像）
+gh workflow run deploy.yml --ref main -f deploy=true
+gh run watch <run-id>          # 全程约 5 分钟（构建 ~3.5，发布 ~1.5）
+```
+
+**为什么默认不自动部署**：合并代码与发布到生产风险等级不同——合并可回退，发布要动生产。
+人工闸门是刻意保留的，不是没接完。**也不要绕过它手工 ssh 到服务器改文件**：那会让
+「生产在跑哪个版本」失去确定答案（这条路我走过，代价是服务器源码与仓库产生漂移）。
+
+部署后必须验收（发布流程自身已轮询 `/readyz`，这里补业务面）：
+
+```bash
+curl -fsS https://campfire.wenran.me/readyz    # 判据用 /readyz，不要用 /livez
+uv run --no-project python scripts/acceptance_probe.py
+```
+
+`acceptance_probe.py` 覆盖静态资源、9 条页面**深链**、未登录 401 边界（退出码非 0 即失败）。
+它只覆盖第 1 节——**登录之后的链路必须用真实浏览器**（依赖 httpOnly cookie），
+完整清单见 [docs/运维/上线验收测试流程.md](docs/运维/上线验收测试流程.md)。
+
+**看到「发布验证失败」先判断是不是误报**，再决定回滚：曾发生「部署其实成功、
+验证步骤因漏 `--env-file` 而报失败」，回滚一个正常版本会把小事变成事故。
+
+服务端事实：`https://campfire.wenran.me`（腾讯云 HK），部署目录 `/opt/campfire`，
+凭据在服务器 `.env.prod`（**不入库**，也不由发布流程上传）。CORS、域名与 TLS 的
+运维脚本见 `scripts/tls-*.sh`，操作说明见 [docs/运维/发布与回滚.md](docs/运维/发布与回滚.md)。
 
 ## Architecture
 
 ```text
-docs/                  设计根，真源（入口 docs/README.md）
-docs/development/      开发流程真源：检查分层、泳道环境、材料口径
-apps/api/              唯一的 Python 应用（main.py / worker.py 两个入口）
-  skills/              开放标准 skill 的内容产物（不是 Python 代码）
+docs/                  — 设计根，真源（见下方 Design Docs）
+apps/api/              — 唯一的 Python 应用
+  skills/              — 开放标准 skill 的内容产物（不是 Python 代码）
   src/campfire/
-    agent/             通用 Agent 基座：产品无关，不含领域术语
-    surfaces/          面：产品入口与运行装配
-    tools/             产品侧工具，注册进基座工具池
-    modules/           业务数据与用例：accounts、library（含检索链）、profile、memory
-    core/              跨切能力：config、db、cache、auth、authz、jobs
-    cli/               本地摄取入口，不暴露成服务端点
+    main.py worker.py  — HTTP 与 Worker 入口
+    cli/               — 本地摄取入口，不暴露成服务端点
+    agent/             — 通用 Agent 基座：产品无关，不含任何领域术语
+    surfaces/          — 面：产品入口与运行装配
+    tools/             — 产品侧工具，注册进基座工具池
+    modules/           — 业务数据与用例：accounts、library（含检索链）、profile、memory
+    core/              — 跨切能力：config、db、cache、auth、authz、jobs
   tests/
-apps/web/              React H5（唯一的 pnpm 工作空间包）
-materials/             可入库的正式材料（文本、配置、许可、脱敏证据索引）
-deliverables/          正式运行的本地大文件（原始仓库根，整目录忽略）
-infrastructure/        生产 docker/nginx 产物
-scripts/               仓库级运维脚本（部署、备份、回滚、检查）
-marketing/             影片制作，独立工具链，不参与产品构建
-archive/               已归档实现与设计，废弃物，仅供参考
+apps/web/              — React H5（React 19 + Vite + React Router + Zustand）
+infrastructure/        — 生产 docker/nginx 产物（见 infrastructure/README.md）
+scripts/               — 仓库级运维脚本（部署、备份、回滚）；资料摄取不在此处
+docker-compose.yml     — 本地基础设施编排
+docker-compose.prod.yml — 生产编排（数据服务不暴露宿主端口，仅 web 对外）
 ```
 
-模块边界与依赖方向的真源是 [docs/项目结构设计.md](docs/项目结构设计.md)；白名单由
-`apps/api/tests/test_layer_boundaries.py` 机械检查——**新增层必须同步加入该测试**。
+模块边界与依赖方向的真源是 [docs/项目结构设计.md](docs/项目结构设计.md)。其白名单由
+`apps/api/tests/test_layer_boundaries.py` 机械检查——**新增层必须同步加入该测试**，
+否则检查会因「层未覆盖」而失败。
 
 ## Conventions
 
 ### 开发流程：Plan → Do → Verify
 
-1. **Plan** — 先读相关 `docs/`；写清可观察完成标准与未验证假设；识别影响范围。
-2. **Do** — 只改与任务直接相关的内容；遵循已有风格；不顺手重构；不为单一场景建抽象。
-3. **Verify** — 跑与改动相称的检查（[testing.md](docs/development/testing.md)）；报告通过、
-   失败与未测情形，不把未跑写成通过。
+1. **Plan** — 先读 `docs/` 相关设计文档；明确成功标准；列出假设；识别影响范围；制定步骤计划。
+2. **Do** — 每次只改与任务直接相关的内容；遵循已有风格；不顺手重构；不为单一场景建抽象。
+3. **Verify** — 运行可运行的检查；明确报告通过、失败与未测情况。
 
-### 工作区与留档
+### 目标重构与迁移
 
-- 主工作区的 `dev` 是集成基线；任务在 `.worktrees/<任务名>/` 的 `task/*` 分支上做，**由主 agent
-  合入 `dev`**。❌ 禁止直接在 `main`/`master` 上开发或提交。泳道规则见
-  [docs/development/worktree-environment.md](docs/development/worktree-environment.md)。
-- 临时文件只有一个落点 `.tmp/`，用完即删（判据 `git ls-files .tmp` 为空）；**不要把成果留在
-  `.tmp/` 等下次再搬**——该入库的当次入库，否则视为过程产物。
-- 可入库的正式材料在 `materials/`；原始大文件在**原始仓库根**的 `deliverables/<run-id>/`
-  （整目录忽略、不随泳道清理）。状态机与边界见 [docs/development/materials.md](docs/development/materials.md)。
-- 环境与踩坑经验记在已有的 [docs/运维/Agent执行环境构造经验.md](docs/运维/Agent执行环境构造经验.md)
-  （按需检索，不新增平行体系）；稳定且普适的约束才提升进本文件。
+- 设计已确认，新实现按 `docs/` 落地；`archive/` 只用于辨认遗留实现与历史决策。
+- 先盘点实际数据与引用、核实可恢复备份及影响范围，再分阶段建设；数据状态未知时不得以旧 ADR 的「无真实用户数据」推断可以清库。
+- ❌ 禁止：从 `archive/` 复制权限模型、四层档案、行为桶或 `/api/v1` SSE 契约到新实现。
+- ❌ 禁止：执行归档 `scripts/` 中的部署/重建脚本或 `docker compose down -v`；授权撤销与条目停用不得靠异步清理充当即时安全边界。
 
 ### 代码风格
 
-- 注释用中文，变量/函数/类/文件命名用英文；Python ruff format + check（行宽 120），TypeScript oxlint
-- ❌ 禁止：引入与本次任务无关的第三方依赖；为自己造成的未使用 import/变量/函数不清理
+- 注释用中文，变量/函数/类/文件命名用英文
+- Python: ruff format + ruff check，行宽 120；TypeScript: oxlint
+- ❌ 禁止：引入与本次任务无关的第三方依赖（没有消费者的依赖不预先声明）
+- ❌ 禁止：为自己造成的未使用 import/变量/函数不清理
 
 ### 提交规范
 
-**自 2026-10-01 起生效，只约束此后的提交**；历史提交保持原样，不重写、不 amend、不 rebase。
+**本规范自 2026-10-01 起生效，只约束此后的提交。** 历史提交保持原样——不重写、不
+amend、不 rebase，即使它们的写法与本规范不符。
 
-- 类型前缀用**英文** Conventional Commits（`feat`/`fix`/`refactor`/`perf`/`test`/`docs`/`chore`/
-  `build`/`ci`/`style`），可选英文作用域；标题与正文用**中文**，正文说明「为什么」。
-  例：`fix(library): 展开命中越界 limit 时改为拒绝`。
-- ❌ 禁止：`update`、`fix bug`、`changes` 这类无类型无信息的标题；一个 commit 塞多个无关主题。
+- commit message 的**类型前缀用英文**（Conventional Commits 标准），标题与正文仍用中文：
+  `feat` / `fix` / `refactor` / `perf` / `test` / `docs` / `chore` / `build` / `ci` /
+  `style`，可选**英文**作用域，如 `fix(library): 展开命中越界 limit 时改为拒绝`。
+  ❌ 禁止：`update`、`fix bug`、`changes` 这类无类型、无信息的标题。
+- 前缀之后的标题说明「做了什么」，正文说明「为什么」——两者都用中文。正文可写多行，
+  段落之间空一行；「为什么」是给人看的判据来源，不是复述 diff。
+- 每次 commit 只包含本次修改的文件
+- ❌ 禁止：把多个无关主题改动塞进同一个 commit
 
-### 数据库迁移与契约
+### 数据库迁移
 
-- 迁移用 `alembic revision --autogenerate` 生成，文件带中文注释说明业务意图；
-  ❌ 禁止手动改生产 schema 而不通过迁移；❌ 禁止让 `--autogenerate` 把 SuperTokens core
-  自建的表当成待删对象。
-- 契约真源在 `docs/技术设计/` 与各面文档（v3.0 的 `/api/v2` 契约已随基线归档，不得沿用）。
-  改 API、schema、公共函数签名前先确认影响范围；❌ 禁止未确认影响范围就破坏性修改接口。
+- 实现落地后用 `alembic revision --autogenerate` 生成迁移；迁移文件必须带中文注释说明业务意图
+- ❌ 禁止：手动修改生产数据库 schema 而不通过迁移文件
+- ❌ 禁止：让 `--autogenerate` 把 SuperTokens core 在自己库里建的表当成待删对象——接入迁移前必须先为其排除
+
+### 接口与契约
+
+- 契约真源在 `docs/技术设计/` 与各面文档；v3.0 的 `/api/v2` 契约已随基线归档，不得沿用
+- 修改 API 接口、数据库 schema、公共函数签名前，先确认影响范围
+- ❌ 禁止：在未确认影响范围的情况下破坏性修改已有接口
 
 ## Security
 
-- ❌ 禁止：硬编码 API Key、密码、密钥——统一用环境变量（模板 `.env.example`，按消费者分段标注）
-- ❌ 禁止：提交 `.env`、`.tmp/`、SSL 证书与私钥（`archive/` 下遗留 TLS 私钥必须保持忽略）
-- ❌ 禁止：在回复中完整复述密码或服务器凭证；把服务器凭证上传给第三方服务
+- ❌ 禁止：硬编码 API Key、密码、密钥——统一用环境变量（模板 `.env.example`，按消费者分三段标注）
+- ❌ 禁止：将 `.env`、`.tmp/`、SSL 证书与私钥提交到版本控制
+- ❌ 禁止：在回复中完整复述密码或服务器凭证
+- ❌ 禁止：把服务器凭证上传给第三方服务
 - ❌ 禁止：健康检查、日志或错误消息复述连接串与凭据（探针只回报异常类型）
-- 服务器操作默认不做；确需运维时见 [docs/运维/发布与回滚.md](docs/运维/发布与回滚.md)
-- 材料与证据：真实家庭/儿童资料、凭据、未授权第三方素材不得入 Git；截图须匿名（无学校/导师
-  信息）。见 [materials.md](docs/development/materials.md) §8
+- 服务器操作：**默认不做**（见上方「开发与部署的边界」）。确需运维时，脚本与判据见
+  [docs/运维/发布与回滚.md](docs/运维/发布与回滚.md)（历史服务器操作指引不随本公开仓分发，
+  需另取内仓，**执行前须重新核实**，不要照抄）。
 
 ## Git Workflow
 
-- `dev` 日常开发，`master` 仅保留稳定版本；任务分支 `task/<主题>` 从 `dev` 起
-- CI（`.github/workflows/ci.yml`）在 push 与 PR 到 `dev`、`main`、`master` 时跑三个 job：设计
-  文档一致性、后端（ruff + mypy + 迁移门禁 + pytest，带三个数据服务）、前端（oxlint + tsc +
-  vitest + build）。**初期保留完整的确定性检查**，不裁成子集
-- 备份/恢复/回滚：`scripts/{backup,restore,rollback}.sh`；仓库 <https://github.com/FengZhiHen1/Campfire-AI.git>
-- ❌ 禁止：**无授权发布生产**——未经用户明确要求不执行 `deploy.yml`（`deploy=true`）、不改生产
-  配置与数据、不 ssh 上去替换文件。**发布是生产变更，合并与推送不是**：别把两者混成一条禁令。
-- 远程写（push / PR / 改远端分支 / 建 tag）按当前会话的授权执行；权限与生产发布边界分别判断。
+- 分支策略：本公开仓只维护 `main`（唯一远端分支）；内仓的 `dev`/`master` 流程不随本仓分发
+- CI（`.github/workflows/ci.yml`）在 push 与 PR 到 `dev`、`main`、`master` 时跑三个 job：
+  设计文档一致性、后端（ruff + mypy + 迁移门禁 + pytest，**带 PostgreSQL/Redis/FalkorDB
+  三个 service**）、前端（oxlint + tsc + vitest + build）
+- **部署见上方「开发与部署的边界」**——默认本地闭环，云端只在用户明确要求时发布
+- 备份/恢复/回滚：`scripts/{backup,restore,rollback}.sh`，操作说明见
+  [docs/运维/发布与回滚.md](docs/运维/发布与回滚.md)
+- 仓库：`https://github.com/FengZhiHen1/campfire-ai-public.git`
+- ❌ 禁止：把未复核的改动直接推上 `main`（本公开仓远端只有 `main`，没有 `dev` 供先行集成）
+- ❌ 禁止：一个 commit 塞多个无关主题的改动
+- ❌ 禁止：未经用户明确要求就执行 `deploy.yml` 的发布（`deploy=true`）——那是生产变更
 
 ## Design Docs
 
-真源在 `docs/`，入口 [docs/README.md](docs/README.md)（文档地图与事实所有权）。
+真源在 `docs/`，入口是 [docs/README.md](docs/README.md)（文档地图与事实所有权）。
 
-- **已确认定调**：[功能需求与验收](docs/需求/功能需求与验收.md)、[技术栈设计](docs/技术栈设计.md)、
-  [项目结构设计](docs/项目结构设计.md)；技术细节初稿待确认在 `docs/技术设计/`
-- **待办唯一登记处**：[docs/TODO.md](docs/TODO.md)
-- **开发流程三件套**：[检查与测试](docs/development/testing.md)、[泳道环境](docs/development/worktree-environment.md)、
-  [材料与证据](docs/development/materials.md)
-- 未确认内容不得写入权威文档，也不得据此开始实现；发现设计不一致先提出，不得静默沿用旧行为
-- ❌ 禁止：把 `archive/` 中的「有效」「目标态」等字样当作新目标实现要求
-- 视觉契约以 `docs/design/` 三件套与页面设计文档为准；不要绕过 token 写死颜色与间距
-  （`apps/web` 的 `build` 有契约类名断言把关）
-- 需求与验收行的一一对应由 `scripts/check_design_docs.py` 机械检查，未覆盖需求是**失败**而非
-  告警；**具体条数以该脚本当前输出为准**，本文件不写死数字
+- **已确认的定调**：[功能需求与验收](docs/需求/功能需求与验收.md)、[技术栈设计](docs/技术栈设计.md)、[项目结构设计](docs/项目结构设计.md)
+- **技术细节初稿，待确认**：`docs/技术设计/technical-details/` 与 `docs/技术设计/面/`
+- **待办唯一登记处**：[docs/TODO.md](docs/TODO.md)（可扩展方向、发布前置、待验证事实、待确认事项）
+- 未确认内容不得写入权威文档，也不得据此开始实现；发现设计不一致时先提出，不得静默沿用旧行为。
+- ❌ 禁止：把历史 v3.0 设计稿（`archive/**`，不随本公开仓分发）中的「有效」「目标态」等字样当作新目标实现要求。
+- ✅ 视觉契约已重建：`docs/design/` 三件套（`tokens.css` / `components.html` / `DESIGN.md`）
+  与页面设计文档齐备，前端样式层以此为准（不要绕过 token 直接写死颜色与间距——`apps/web`
+  的 `build` 里有契约类名断言会把关）。
+- 需求与验收行的一一对应由 `scripts/check_design_docs.py` 机械检查（当前：需求 38 项、
+  验收行 32 条，全部通过；脚本对「未覆盖需求」是**失败**而非告警）。**具体数字以该脚本的
+  当前输出为准**，本文件不写死数字：需求基线仍在演进，写死必然漂移（本条初稿写「9 条」，
+  当天即因需求新增变为 7 条）。
 
 ## Behavioral Guidelines
 
-- 先列可观察完成标准与未验证假设；精准修改，不顺手重构、不为单一场景建抽象；跑与改动相称的
-  检查并报告实际结果
-- ❌ 禁止：未验证就声称安全、专业认可、线上可用，或把设计草案当作真实用户数据处理授权
-- ❌ 禁止：跨层穿透（Domain/Application/ViewModel/View/Infrastructure）；授权只靠角色名、
-  前端隐藏、Agent 扩展或缓存判断
-- ❌ 禁止：留下永远不会失败的检查、闸门或测试（提取到 0 条即应失败，而不是静默通过）
+- 先列可观察完成标准与未验证假设；精准修改，不顺手重构、不为单一场景建抽象；跑与改动相称的检查并报告实际结果。
+- ❌ 禁止：未验证就声称安全、专业认可、线上可用，或把设计草案当作真实用户数据处理授权。
+- ❌ 禁止：跨层穿透（Domain/Application/ViewModel/View/Infrastructure）；授权只靠角色名、前端隐藏、Agent 扩展或缓存判断。
+- ❌ 禁止：留下永远不会失败的检查、闸门或测试（提取到 0 条即应失败，而不是静默通过）。
 
 ## When to Stop and Ask
 
-任务未授权或证据不足时先确认范围：需要破坏真实数据、修改跨模块公共契约、引入外部供应商/依赖、
-进行远程高风险操作或无法恢复的迁移。明确授权的设计裁决可自主记下理由与证据边界；测试缺环境时
-如实报告，不编造通过。
+任务未授权或证据不足时先确认范围：需要破坏真实数据、修改跨模块公共契约、引入外部供应商/依赖、进行远程高风险操作或无法恢复的迁移。明确授权的设计裁决可以自主记下理由和证据边界；测试缺环境时如实报告，不编造通过。
 
 ## Checklist
 
-- [ ] 改动仅覆盖已授权范围，已读目标文档与实际存在的代码
-- [ ] 已运行可运行的检查并报告通过、失败和未测情形；未制造未使用代码
-- [ ] 若更改授权、数据或 API，已验证影响范围与回滚门槛；对应文档已同步
-- [ ] 如需 commit，只含本次任务文件，**英文** `type(scope):` 前缀 + **中文**标题与正文；确认未提交密钥
+- [ ] 改动仅覆盖已授权范围，已读目标文档与实际存在的代码。
+- [ ] 已运行可运行的检查并报告通过、失败和未测情形；未制造未使用代码。
+- [ ] 若更改授权、数据或 API，已验证影响范围与回滚门槛；对应文档已同步。
+- [ ] 如需 commit，只包含本次任务文件，**英文** `type(scope):` 前缀 + **中文**标题与正文说明原因；确认未提交密钥或私钥。
 
-<!-- Last updated: 2026-10-29 -->
+<!-- Last updated: 2026-10-01 -->

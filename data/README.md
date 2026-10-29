@@ -85,37 +85,11 @@ data/
 `01`–`04`、`11` 五份的许可结论相对清晰，可优先摄取。**这条需用户裁决**，
 本文不代替裁决，也不预先替你判断。
 
-## 二、案例库语料（3 包 / 10 张卡片）
+## 二、案例库语料（只放虚构样例）
 
-**来源在仓库之外**：`E:\Project\Tool\speech-to-text\exports\case-extraction\`
-（上游 FunASR 转写 + `case-extraction` skill 抽取；ASR 与抽取**留在链外**，
-故只搬导出物，不搬 1–2 GB 模型权重与 torch）。搬入理由是**上游那 2 个包当时未进版本控制**，
-随时可能丢；本项目仓库为 private，同意范围已覆盖 AI 检索与建议。
-
-### 2.1 已补 `manifest.json`
-
-上游把元数据写在 `L1_*.md` 页脚，**机器不可读**，而摄取链要求每包含 `manifest.json`
-（缺失即退出码 1，见 `apps/api/tests/test_cli_case_ingest.py`）。三个包的 manifest 已按
-`CaseManifest`（`apps/api/src/campfire/modules/library/case_schema.py`）补写，
-并**用项目自身的 `load_manifest` + `validate_card` 实测通过**（3 包 / 10 卡 / 0 错误）。
-
-| 包 | 标题 | 卡片 | 主体 |
-|---|---|---|---|
-| `2026-05-25_1448_respecting-pace-asd` | 从强迫到尊重：ASD儿童家庭干预中的节奏调整与规则建立 | 3 | 家长 |
-| `2026-05-30_2243_emotion-growth-asd` | 从不定期炸弹到自我调节：ASD儿童成长中的情绪管理与环境支持 | 4 | 家长 |
-| `2026-05-31_0850_adult-pdd-social` | 成年才被看见：PDD晚诊断人士的情绪管理与社交重建 | 3 | 家长 |
-
-**manifest 取值的依据与边界**（不编造）：
-
-- `review_status: owner` —— 2026-09-29 用户决定「当前 3 个案例导入时标为已核准」。
-  上游自称 `INSTITUTIONAL（待专家审核）`，故**不得**显示为专业审阅；
-- `reviewer: null` —— 与 `owner` 档一致（契约**对称校验**：非 `professional` 填具名审阅者会被拒，
-  因为那会把「所有者核准」冒充成专业审阅）；
-- `authorization` —— 如实写明"用户裁决同意范围覆盖 AI 检索与建议，
-  **但本项目未持有同意文本本身**"。上游 `data/audio` 与转写记录中**未见同意书**，
-  其设计文档只写了"采访前已获得知情同意"这一要求；
-- `status: internal` —— 真实访谈转写，**不是** `fictional`（`AC-06` 要求虚构样例可辨，不得误标）；
-- `transcript_ref` —— 指回上游路径，**转写原文不入库**（可能含未脱敏内容，且属上游）。
+真实访谈案例**不在本仓发布**：当事人同意范围只覆盖「AI 检索与建议」，不含公开再分发。
+本仓 `data/cases/` 只保留一份虚构演示样例（`fictional-supermarket-meltdown`），
+用于说明卡片结构与导入流程，不对应任何真实家庭。
 
 ## 三、重建方式
 

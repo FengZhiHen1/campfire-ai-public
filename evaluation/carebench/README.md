@@ -2,7 +2,7 @@
 
 > 状态：**正式 40 例已生成并完成双 AI 评分与分歧裁定，完整核验通过**。
 > 产品当前模型配置仍为 `cn:deepseek-v4.1-flash`；正式运行身份须在冻结前从当前配置重新生成并核对。
-> 本目录不包含原始评分正文；脱敏汇总见[素材入口](../../materials/2026-ai-opensource/source-materials.md)。
+> 本目录不包含原始评分正文；正式批次只保留脱敏汇总，原始材料不在本仓发布。
 > 评分缺项在原冻结 v0.2 身份下补齐；未来默认提示 v0.3 写明字段条件，未回改本批提示。
 > AI 评分不构成专家背书，完整核验通过不等于产品全部通过。
 
@@ -301,7 +301,7 @@ uv run python -m evaluation.carebench verify --run <run_id> [--require-complete]
 uv sync --frozen
 
 # 2) 配置：从原始根复制 .env（文件已 .gitignore，绝不会被打印或提交）
-cp /srv/workspaces/repos/Campfire-AI/.env .env && chmod 600 .env
+cp <部署环境>/.env .env && chmod 600 .env
 
 # 3) 评测库（由主 agent 准备并迁移；本工具不创建、不 drop、不改语料）
 #    库名必须形如 campfire_carebench_*

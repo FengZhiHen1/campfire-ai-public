@@ -15,8 +15,8 @@ from pathlib import Path
 #: 上游 L2 卡片的值域（公共案例库第 4 节「值域不重写」：全部沿用上游
 #: `references/ebp_reference.md` 的定义，导入校验器直接复用 `validate_l2.py` 的约束）。
 #:
-#: 为什么在这里再写一份而不是 import 上游脚本：上游是链外工具（`E:\Project\Tool\
-#: speech-to-text`，不进本仓库依赖，第 6 节），生产代码 import 它会让摄取依赖一个
+#: 为什么在这里再写一份而不是 import 上游脚本：上游是链外的本地转写工具
+#: （FunASR 转写 + 抽取，不进本仓库依赖，第 6 节），生产代码 import 它会让摄取依赖一个
 #: 版本不受控的外部目录。因此按上游脚本逐条转写约束，并在测试里用上游导出的真实
 #: 卡片与越界值双向锁定（见 `tests/test_library_case_schema.py`）。
 BEHAVIOR_TYPES: frozenset[str] = frozenset({"自伤", "攻击", "刻板", "逃跑", "情绪崩溃", "其他"})
