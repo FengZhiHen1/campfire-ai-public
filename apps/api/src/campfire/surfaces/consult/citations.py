@@ -18,14 +18,25 @@
 缺了它，发消息端点会稳定回 503。第 4 节的不变量「没有索引记录的注入消息不得成为
 可引用依据」要求写入必然落库：`CitationRecorder` 先调 `add` 再发凭据，所以 `add`
 失败必须抛异常（不得降级成「无引用」继续运行，否则使用者会看到一条无法回指的依据）。
+
+本模块的第二件事（2026-10-29，缺陷 DEMO-03 的另一半）：**读回时核对「这条依据现在
+还能不能引用」**。`SqlCitationIndex` 只负责 run → 回指的索引写入；呈现侧需要的
+可核对性（`status` / `applicable_scope` / `withdrawn`）随会话条目里的注解持久化，
+其中 `withdrawn` 必须是**当前**事实而不是写入时的快照——因此
+:func:`refresh_citation_freshness` 在这里现查条目表，把历史水合出的 citation part
+里的那一项换掉。判据与「点进去看那条来源」的三态端点（`modules/library` 的
+`GET /library/items/{id}`）同源——两边都查条目表自己的 `withdrawn` 列，
+因此同一时刻对同一条来源给出同一个答案（不共享代码：那条路走 `_find_item_any_library`）。
 """
 
 from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import Awaitable, Sequence
-from typing import TypeVar
+import re
+import uuid
+from collections.abc import Awaitable, Mapping, Sequence
+from typing import TypeGuard, TypeVar, cast
 
 from sqlalchemy import Executable, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
@@ -40,6 +51,14 @@ from campfire.core.db.citations import (
     MAX_SOURCE_LENGTH,
     Citation,
 )
+from campfire.modules.accounts.session_items import (
+    PART_TYPE_CITATION,
+    CitationPart,
+    CitationRecordPart,
+    HydratedMessage,
+    MessagePart,
+)
+from campfire.modules.library.retrieval import LIBRARY_CASE, LIBRARY_KNOWLEDGE, load_items
 
 logger = logging.getLogger(__name__)
 
@@ -166,7 +185,16 @@ class SqlCitationIndex:
                 raise CitationPersistenceError(f"引用索引字段超宽：{name} 超过 {limit} 字符（{CITATION_TABLE_NAME}）")
 
     def _to_record(self, row: Citation) -> CitationRecord:
-        """行 → 记录。列与字段的对应关系只此一处（读回路径唯一）。"""
+        """行 → 记录。列与字段的对应关系只此一处（读回路径唯一）。
+
+        ★ **可核对性三项在这里恒为 `None`（未知），这是刻意的**（2026-10-29）：
+        `status` / `applicable_scope` / `withdrawn` 不住在这张表里，它们随会话条目里
+        助手正文分片的 `annotations` 持久化（设计《咨询对话界面》第 5 节：引用载荷是
+        消息 content 的一部分，不是外部索引）。本表只做「run → 回指」的索引，
+        **不加列、不改 schema**。因此本函数读回的是**索引形状**的记录：谁要展示，
+        就该读会话条目（`modules/accounts/session_items.py` 的 `citation_parts`），
+        而不是把这里当成载荷真源——后者会把「表里没有」误读成「来源没有状态」。
+        """
         return CitationRecord(
             citation_id=row.citation_id,
             run_id=row.run_id,
@@ -177,4 +205,188 @@ class SqlCitationIndex:
         )
 
 
-__all__ = ["CitationPersistenceError", "SqlCitationIndex"]
+# ---------------------------------------------------------------------------
+# 可核对性：读回时按**当前**真源重判「这条依据现在还能不能引用」
+# ---------------------------------------------------------------------------
+#
+# 为什么必须有这一段（设计《资料与案例检索》第 4 节）：
+# 「已经产生的引用：历史对话中的引用保留，但呈现时标注『该来源已撤下』，
+# **不得再作为当前依据**分发」。而 citation 载荷是**写入时的快照**——写它的那一刻
+# 条目必然未撤下（检索在查询时过滤撤下，查得到才会被引用），因此「事后撤下」这件事
+# 只能由读回侧现查。设计《对话页》也把这条钉在服务端：「撤下判定来自 citation 载荷
+# 刷新，不由前端猜测」。
+#
+# 判定的失败方向（与第 8 节的失败语义同一取向）：
+# - 回指解析不了（形状不是 `<库别>:<标识>`）⇒ 未知（`None`），**不猜**；
+# - 条目已不存在（被删）⇒ 未知，**不是**「已撤下」——「找不到」与「已下架」是两件事，
+#   把它们混成一个会让界面为一条查不到的来源编造一段撤下说明；
+# - 取数失败（库连不上/超时）⇒ 整批未知并留 warning，**不是**「在库」——
+#   说「在库」等于给一条没核对过的来源背书。
+# 因此本模块**不抛异常**给水合路径：核对不出来的部分保持未知，历史照常呈现。
+
+#: 回指形状：`<库别>:<标识>`。库别是 `tools/library.py` 写入的既定取值域
+#: （`knowledge` / `case`），与前端 `CitationPart.tsx` 的 `REFERENCE_NAMESPACE` 同一份。
+#: 标识里不允许出现分隔符与空白：那说明这不是本仓写出来的形状，宁可不解析。
+REFERENCE_PATTERN = re.compile(r"^(?P<library>[a-z]+):(?P<item_id>[^:/?#\s]+)$")
+
+#: 一次查询里最多放多少个标识（CORE-11 有界性）。单个正文分片最多 200 条注解
+#: （`CITATION_ANNOTATION_MAX`），而一条消息可以有多个分片，因此这里按批切。
+MAX_REFERENCE_LOOKUP = 200
+
+#: 认识的库别（与 `tools/library.py` 写回指时用的取值域一致）。
+#: 不在这里的库别 ⇒ 直接当未知：不拿库名去拼表名。
+KNOWN_REFERENCE_LIBRARIES: frozenset[str] = frozenset({LIBRARY_KNOWLEDGE, LIBRARY_CASE})
+
+
+def parse_citation_reference(reference: str) -> tuple[str, uuid.UUID] | None:
+    """把 `<库别>:<标识>` 解析成 `(库别, 条目 UUID)`；解析不了返回 `None`。
+
+    解析不了**不抛异常**：回指是历史数据，可能来自更早的写侧、也可能是伪造条目，
+    一条解析不了的引用不该让整段历史失败（它照常呈现，只是「无法核对」）。
+    """
+    matched = REFERENCE_PATTERN.match(reference)
+    if matched is None:
+        return None
+    library = matched.group("library")
+    if library not in KNOWN_REFERENCE_LIBRARIES:
+        return None
+    try:
+        item_uuid = uuid.UUID(matched.group("item_id"))
+    except ValueError:
+        return None
+    return library, item_uuid
+
+
+async def resolve_citation_freshness(settings: Settings, references: Sequence[str]) -> dict[str, bool]:
+    """按当前真源核对一批回指：返回 `{reference: 是否已撤下}`。
+
+    **只返回核对得到的那部分**：字典里没有的键就是「未知」，调用方据此保持 `None`，
+    不得把缺键当成 `False`（那会把一条查不到的来源说成仍在库）。
+
+    查询形状：每个库按 :data:`MAX_REFERENCE_LOOKUP` 切批，调用例层的
+    `load_items`（按库别取对应条目表，**不过滤撤下**——撤下的条目正是要取回来的）；
+    库别由回指前缀决定，不跨库猜：同一个 uuid 在两表里可能同时存在，混查会张冠李戴。
+
+    失败方向：任何取数失败都**整批返回空**并记 warning（= 全部未知），
+    不把「库连不上」当成「都还在库」。
+
+    Args:
+        settings: 配置（提供连接与超时）。
+        references: 引用回指（`<库别>:<标识>`），可重复、可含解析不了的值。
+
+    Returns:
+        `{reference: withdrawn}`，仅含核对到的那些回指。
+    """
+    targets: dict[str, list[tuple[str, uuid.UUID]]] = {}
+    for reference in references:
+        parsed = parse_citation_reference(reference)
+        if parsed is None:
+            continue
+        library, item_uuid = parsed
+        targets.setdefault(library, []).append((reference, item_uuid))
+    if not targets:
+        return {}
+
+    resolved: dict[str, bool] = {}
+    try:
+        async with session_scope(settings) as session:
+            for library, entries in targets.items():
+                for start in range(0, len(entries), MAX_REFERENCE_LOOKUP):
+                    chunk = entries[start : start + MAX_REFERENCE_LOOKUP]
+                    # ★ 走用例层的 `load_items`（模块边界的白名单：面层不得直连存储层模块，
+                    # 见 `tests/test_layer_boundaries.py::test_surfaces_do_not_import_storage_modules`）。
+                    # 它按条目表取回整行**且不过滤撤下**——正是这里需要的语义：撤下的条目
+                    # 也必须取得到（取不到就会把「已撤下」误判成「不存在」）。
+                    # 代价是可能多取几列正文；单个会话的引用条数由注解上界（200/分片）兜住。
+                    rows = await load_items(session, [str(item_uuid) for _, item_uuid in chunk], library=library)
+                    for reference, item_uuid in chunk:
+                        row = rows.get(str(item_uuid))
+                        if row is not None:
+                            # `KnowledgeItem` 与 `CaseItem` 都有这一列（撤下标记是两库共有字段）。
+                            resolved[reference] = bool(row.withdrawn)
+    except Exception as exc:  # noqa: BLE001 —— 取数失败一律「未知」，不冒充「在库」
+        # 只记异常类型：不回显连接串/凭据（安全条款）。
+        logger.warning("引用可核对性核对失败（%s），本批按「未知」呈现", type(exc).__name__)
+        return {}
+    return resolved
+
+
+async def refresh_citation_freshness(
+    settings: Settings,
+    messages: Sequence[HydratedMessage],
+) -> list[HydratedMessage]:
+    """把水合消息里每条 `citation` part 的 `withdrawn` 换成**当前**真源的结果。
+
+    这是历史水合路径上唯一需要现查库的一步：载荷里的 `status` / `applicable_scope`
+    是写入时的快照（不刷新——那是「当时这么说过」的事实），而 `withdrawn` 回答的是
+    「现在还能不能作为依据」，因此必须现查。
+
+    只改这一项：返回值里每条消息的 `parts` 顺序、其它 part、以及 citation 的
+    其余八个字段逐字不变。没有 `citation` part 的历史**原样返回**（不做任何查询）。
+
+    核对不出来的情形写回 `None`（未知）而不是保留快照里的 `False`：
+    快照说「当时在库」，而呈现方要回答的是「现在还能不能引用」，后者核不出来就是未知。
+
+    Args:
+        settings: 配置。
+        messages: 水合出的消息序列（`modules/accounts/session_items.py` 的 `HydratedMessage`）。
+
+    Returns:
+        新的消息列表；输入不被修改（水合结果可能被上层持有）。
+    """
+    references = _citation_references(messages)
+    if not references:
+        return list(messages)
+    resolved = await resolve_citation_freshness(settings, references)
+    return [_refreshed_message(message, resolved) for message in messages]
+
+
+def _is_citation_part(part: MessagePart) -> TypeGuard[CitationPart]:
+    """`part` 是不是引用 part。
+
+    写成 `TypeGuard` 而不是在调用点加断言：判别联合靠 `type` 收窄，而
+    `part["type"] == …` 这个写法在静态上收窄不了——取 `part["citation"]` 时
+    mypy 会把它当成联合里另外五个成员（它们没有这个键）。收窄规则只此一份，
+    同 `modules/accounts/session_items._is_tool_call_part` 的做法。
+    """
+    return part["type"] == PART_TYPE_CITATION
+
+
+def _citation_references(messages: Sequence[HydratedMessage]) -> list[str]:
+    """收集全部 citation part 的回指（去重，保留出现顺序）。"""
+    seen: dict[str, None] = {}
+    for message in messages:
+        for part in message.get("parts", []):
+            if not _is_citation_part(part):
+                continue
+            reference = part["citation"].get("reference")
+            if isinstance(reference, str) and reference:
+                seen.setdefault(reference, None)
+    return list(seen)
+
+
+def _refreshed_message(message: HydratedMessage, resolved: Mapping[str, bool]) -> HydratedMessage:
+    """重写一条消息里的 citation part（只换 `withdrawn`，其余逐字保留）。"""
+    parts = message.get("parts", [])
+    new_parts: list[MessagePart] = []
+    for part in parts:
+        if not _is_citation_part(part):
+            new_parts.append(part)
+            continue
+        payload = dict(cast(CitationRecordPart, part["citation"]))
+        reference = payload.get("reference")
+        # 核对没覆盖到的回指（解析不了/条目不存在/取数失败）一律未知。
+        payload["withdrawn"] = resolved.get(reference) if isinstance(reference, str) else None
+        new_parts.append(cast(MessagePart, {"type": PART_TYPE_CITATION, "citation": payload}))
+    return HydratedMessage(id=message["id"], role=message["role"], parts=new_parts)
+
+
+__all__ = [
+    "CitationPersistenceError",
+    "MAX_REFERENCE_LOOKUP",
+    "REFERENCE_PATTERN",
+    "SqlCitationIndex",
+    "parse_citation_reference",
+    "refresh_citation_freshness",
+    "resolve_citation_freshness",
+]

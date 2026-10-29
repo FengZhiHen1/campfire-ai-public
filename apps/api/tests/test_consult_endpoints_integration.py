@@ -75,7 +75,7 @@ from campfire.modules.accounts.models import (
 from campfire.modules.accounts.onboarding import read_onboarding_state
 from campfire.modules.accounts.onboarding_completion import complete_onboarding
 from campfire.modules.accounts.registration import api_overrides, sign_up_form_fields
-from campfire.modules.accounts.session_items import StoredItem, message_text
+from campfire.modules.accounts.session_items import HydratedMessage, StoredItem, message_text
 from campfire.modules.accounts.session_repository import get_session_owner
 from campfire.modules.memory.derived import EmergencyMemory
 from campfire.modules.memory.errors import MemoryUnavailableError
@@ -94,13 +94,16 @@ from campfire.surfaces.consult.injections import (
 from campfire.surfaces.consult.object_names import read_object_names
 from campfire.surfaces.consult.runbus import (
     MAX_FRAME_CHARS,
+    RUN_NOT_RESUMABLE,
     RUN_NOT_RUNNING,
     RUN_STATUS_RUNNING,
     RunMeta,
     cancel_pumps,
     drain_pumps,
     events_key,
+    meta_key,
     mutex_key,
+    read_run_meta,
     write_run_meta,
 )
 from campfire.surfaces.consult.sse import encode_frame
@@ -650,6 +653,50 @@ async def test_hydrate_missing_and_foreign_session_share_the_same_404(client: ht
     assert missing.json() == foreign_response.json()
 
 
+async def test_hydrate_history_adopts_the_freshness_refresh_result(
+    client: httpx.AsyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """水合端点必须经过引用新鲜度刷新，**并且采用它返回的那份消息**。
+
+    为什么需要这条：`refresh_citation_freshness` 自己的行为（三态、只换 `withdrawn`、
+    核对不出来保持未知）由 `test_consult_citation_freshness.py` 逐条钉住，但**「端点
+    到底调没调它」在那边测不到**。漏掉这一步的表现不是报错，而是界面上「已撤下的来源
+    照旧可以点进去」——一次安静的错误，正是 BUG-01 那一类「现象看得到、根因在别处」的
+    形状，所以接线本身也要有一条判据。
+
+    用替身替换刷新函数而不是造真撤下条目：这里要判的是接线（调用 + 采用返回值），
+    真值核对已由函数自身的用例覆盖；两者分开，任一处退化成空跑都会立刻显形。
+    """
+
+    seen: list[list[HydratedMessage]] = []
+    replaced: list[HydratedMessage] = [
+        {"id": "replaced", "role": "assistant", "parts": [{"type": "text", "text": "刷新后的历史"}]},
+    ]
+
+    async def _fake(settings: Settings, messages: Sequence[HydratedMessage]) -> list[HydratedMessage]:
+        assert settings is not None
+        seen.append(list(messages))
+        return list(replaced)
+
+    runner = ScriptedRunner(get_settings())
+    _install_runner(runner)
+    session_id = await _create_session(client)
+    assert (await _send(client, session_id, content="留下一条历史")).status_code == 202
+    await drain_pumps()
+
+    monkeypatch.setattr(consult_routes, "refresh_citation_freshness", _fake)
+
+    response = await client.get(f"/consult/sessions/{session_id}/messages")
+
+    assert response.status_code == 200, response.text
+    assert response.json()["messages"] == replaced, "端点没有采用刷新后的消息列表"
+    assert len(seen) == 1, "刷新函数没有在水合路径上被调用"
+    assert any(part.get("text") == "留下一条历史" for message in seen[0] for part in message.get("parts", [])), (
+        "刷新函数必须收到水合出的真实消息"
+    )
+
+
 # ---------------------------------------------------------------------------
 # 4.1 发消息
 # ---------------------------------------------------------------------------
@@ -673,6 +720,50 @@ async def test_send_message_returns_202_and_the_run_is_subscribable(client: http
     assert b"event: run_started" in streamed.content
 
 
+async def test_a_freshly_accepted_run_has_its_metadata_before_the_202(client: httpx.AsyncClient) -> None:
+    """拿到 202 的那个时刻，运行元数据已经在缓冲里（否则订阅必然 404）。
+
+    这条是 BUG-01（`GET /runs/{id}/stream` 偶发 404）在**写路径**上的一半判据：
+    `RunPump.begin()` 把元数据写完之后端点才回 202，因此「自己刚拿到的 `run_id`
+    订阅 404」在写路径上没有可乘之机。把它变成机械检查，是为了让「那个 404 只能是
+    读侧拿到了别的 `run_id`，或元数据早已过期」这个结论有可复跑的凭据，而不是一段
+    读代码得出的推理。
+
+    订阅与运行**真并发**（运行被自己的闸门按住）：这条断言测的是「元数据在不在」，
+    不是「运行先跑完了」。
+    """
+    runner = ScriptedRunner(get_settings())
+    runner.gate = asyncio.Event()
+    _install_runner(runner)
+    session_id = await _create_session(client)
+
+    started = await _send(client, session_id, content="立刻订阅")
+    assert started.status_code == 202, started.text
+    run_id = started.json()["run_id"]
+
+    # 判据直接读缓冲，而不是「再发一次 GET 看状态码」：后者要等这一次订阅真的被应用
+    # 处理到才能观察，而那时运行可能已经跑完——`_finalize` 会把元数据补写回去，
+    # 于是「元数据缺失」这个被测事实被下一条写掩盖掉（实测：删掉 `begin` 里的元数据
+    # 写入，走 HTTP 的版本仍然绿）。运行此刻停在闸门上，因此下面三行读到的是
+    # 「202 那一刻的缓冲状态」。
+    cache = RedisCache(get_settings().redis_url)
+    try:
+        meta = await read_run_meta(cache, run_id=run_id)
+        assert meta is not None, "202 已经回了，元数据却不在：订阅方必然 404"
+        assert (meta.account_id, meta.status) == (_ACCOUNT, RUN_STATUS_RUNNING)
+        assert await cache.exists(events_key(run_id)), "元数据在、缓冲不在，订阅会拿到 409"
+    finally:
+        # 闸门必须在断言失败时也放行：否则推进任务永远停在运行中，夹具的
+        # `drain_pumps()` 会把一次失败变成一个挂住的用例（判据失灵的典型形状）。
+        await cache.aclose()
+        runner.gate.set()
+
+    await drain_pumps()
+    streamed = await _read_stream(client, run_id)
+    assert streamed.status_code == 200
+    assert b"event: run_started" in streamed.content
+
+
 async def test_send_message_is_idempotent(client: httpx.AsyncClient) -> None:
     """同 `client_message_id` 重发返回原 `run_id`，且消息只落一条。"""
     runner = ScriptedRunner(get_settings())
@@ -689,6 +780,58 @@ async def test_send_message_is_idempotent(client: httpx.AsyncClient) -> None:
     assert first.json()["run_id"] == second.json()["run_id"]
     assert len(runner.started) == 1, "重发不得再起一次运行"
     assert await _item_count(session_id) == 1, "重发不得重复追加使用者消息"
+
+
+async def test_idempotent_replay_after_the_run_metadata_expired_is_409_not_a_dead_run_id(
+    client: httpx.AsyncClient,
+) -> None:
+    """幂等结论比它指向的运行活得久时，重发必须回 409 `run_not_resumable`，不是 202。
+
+    两个 TTL 的长度差是常态而不是异常：幂等键活 24 小时（`IDEMPOTENCY_TTL_SECONDS`），
+    运行元数据只活 600 秒（`RUN_BUFFER_TTL_SECONDS`）。因此按契约第 2 节的幂等承诺
+    在十分钟后重发同一个 `client_message_id`，就会走到这条路径。
+
+    三条断言各钉一种错误处置：
+
+    1. **不能回 202 + 旧 `run_id`**（本用例加进来之前的行为）——那个身份订阅必然 404、
+       也永远不会重跑，使用者拿到的是死胡同；
+    2. **不能重跑**——同一键重发不得再起一次运行、也不得重复追加使用者消息（幂等语义）；
+    3. 错误码必须是 `run_not_resumable`（契约第 2 节已有的码，语义正是「改走历史水合」），
+       前端据此去读会话历史而不是给一张「找不到这条内容」的卡片。
+
+    元数据消失用**真的删掉那个键**模拟：到期与删除对读侧是同一件事，而 Redis 的 TTL
+    没法在一次用例里走完 600 秒。
+    """
+    runner = ScriptedRunner(get_settings())
+    _install_runner(runner)
+    session_id = await _create_session(client)
+    key = uuid.uuid4().hex
+
+    first = await _send(client, session_id, content="十分钟后再试", client_message_id=key)
+    assert first.status_code == 202, first.text
+    run_id = first.json()["run_id"]
+    await drain_pumps()
+    assert await _item_count(session_id) == 1
+
+    # 正控：元数据还在时，重放照旧回 202 + 原 run_id、不起第二次运行。
+    alive = await _send(client, session_id, content="十分钟后再试", client_message_id=key)
+    await drain_pumps()
+    assert alive.status_code == 202, alive.text
+    assert alive.json()["run_id"] == run_id
+
+    cache = RedisCache(get_settings().redis_url)
+    try:
+        assert await cache.delete(meta_key(run_id)) == 1, "前置：这条运行的元数据本来存在"
+    finally:
+        await cache.aclose()
+
+    replay = await _send(client, session_id, content="十分钟后再试", client_message_id=key)
+    await drain_pumps()
+
+    assert replay.status_code == 409, replay.text
+    assert replay.json()["detail"] == RUN_NOT_RESUMABLE, "错误码要与「会话忙」区分得开"
+    assert len(runner.started) == 1, "重放不得再起一次运行（幂等语义）"
+    assert await _item_count(session_id) == 1, "重放不得重复追加使用者消息"
 
 
 async def test_send_message_while_running_is_409_without_appending(client: httpx.AsyncClient) -> None:

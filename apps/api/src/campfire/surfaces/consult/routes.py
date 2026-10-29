@@ -79,6 +79,7 @@ from campfire.modules.profile import (
 )
 from campfire.surfaces.consult import assembly, runbus
 from campfire.surfaces.consult.answers import SendMessageRequest, render_answers
+from campfire.surfaces.consult.citations import refresh_citation_freshness
 from campfire.surfaces.consult.emergency import EmergencyConsultRequest
 from campfire.surfaces.consult.injections import (
     EMERGENCY_MEMORY_SOURCE,
@@ -410,6 +411,11 @@ async def hydrate_history(session_id: str, session: SessionDep, settings: Settin
     `messages: []`——契约第 3.3 节明令「不显示空对话冒充成功」，而两者在数据层
     就是不同的结果（用例层的 `load_history` 只在前者抛错）。
 
+    读出的历史在返回前过一遍引用新鲜度刷新（:func:`refresh_citation_freshness`）：
+    引用载荷里的 `status`/`applicable_scope` 是写入时的快照，而「这个来源现在还能不能
+    作为依据」只能按当前真源现查。核对不出来的回指呈「未知」，既不说成「已撤下」，
+    也不说成「仍在库」——这条边界由 `citations` 拥有，本端点的职责只是别漏掉这一步。
+
     Raises:
         HTTPException: 会话不存在或不属于当前账号（404），或会话标识形状不合法（422）。
     """
@@ -422,9 +428,19 @@ async def hydrate_history(session_id: str, session: SessionDep, settings: Settin
         except SessionQueryError as exc:
             raise _unprocessable(str(exc)) from exc
 
+    # 引用新鲜度现查：载荷里的 `withdrawn` 是写入时的快照，而呈现方要回答的是
+    # 「**现在**还能不能作为依据」，因此历史水合必须按当前真源重新核对一遍。
+    # 三条形状约束（都来自 `citations` 的契约，不是这里的猜测）：
+    # 1. 必须在事务块**之外**调用——它自己开 `session_scope`（只读、按库别分批取条目）；
+    # 2. 它返回**新的**消息列表，输入不被修改，因此取返回值而不改 `history`；
+    # 3. 它**不抛异常**：取数失败整批按「未知」呈现（`None`），由 `citations` 内部收口，
+    #    核对不出来的回指不得说成「已撤下」，也不得说成「仍在库」。这里因此不加兜底——
+    #    加了只会把「接线错位」这类真故障掩盖成一次安静的成功。
+    messages = await refresh_citation_freshness(settings, history.messages)
+
     return JSONResponse(
         status_code=status.HTTP_200_OK,
-        content={"session_id": history.session_id, "messages": list(history.messages)},
+        content={"session_id": history.session_id, "messages": list(messages)},
     )
 
 
@@ -599,6 +615,39 @@ async def _settle_first_run(settings: Settings, *, session_id: str, account_id: 
         )
 
 
+async def _reject_dead_replay(cache: RedisCache, *, session_id: str, run_id: str) -> None:
+    """幂等命中的结论若指向一条已经不可订阅的运行，回 409 `run_not_resumable`。
+
+    这条路径的成因是两个 TTL 的长度差：幂等键活 24 小时（`IDEMPOTENCY_TTL_SECONDS`），
+    而运行元数据只活 600 秒（`RUN_BUFFER_TTL_SECONDS`）。因此「已落定的幂等结论比它
+    指向的那条运行活得久」是常态而不是异常——调用方按契约第 2 节的幂等承诺（同一
+    `client_message_id` 重发不重复追加）在几分钟、几小时后重试时，就会走到这里。
+
+    三种处置里只有一种是对的：
+
+    - 回 202 + 那个 `run_id`（本函数加进来之前的实现）：交出一个订阅必然 404、
+      也**永远不会重跑**的身份。调用方拿到的是一个死胡同——既拿不到内容，也没有
+      任何入口能让这条消息执行一次；
+    - 自动重跑：违反幂等语义本身（同一键重发不得重复追加使用者消息），而且在
+      「上次其实已经跑完并写进了会话真源」的情形下会让同一条提问出现两次；
+    - 回 409 `run_not_resumable`（本函数的做法）：契约第 2 节已有的码，语义正是
+      「缓冲/传输态不在了，改走历史水合」——运行若真的跑完过，回答就在会话真源里，
+      `GET /sessions/{id}/messages` 拿得到；若没跑完，调用方看到的是「这次回答无法
+      继续接收」而不是一个死胡同。
+
+    为什么可以只看元数据存不存在：元数据只在两种情形下消失——它到期（运行早已终结，
+    最后一次写入之后 600 秒），或运行从未起步（起步失败时端点回 503，幂等键被撤销，
+    不会有结论）。因此「元数据不存在」等价于「这条运行不可能还在跑」，不需要再判状态。
+
+    Raises:
+        HTTPException: 元数据已不存在 → 409 `run_not_resumable`。
+    """
+    if await runbus.read_run_meta(cache, run_id=run_id) is not None:
+        return
+    logger.info("幂等结论指向的运行已过期，按不可续传处置：会话=%s 运行=%s", session_id, run_id[:32])
+    raise _not_resumable()
+
+
 @router.post("/sessions/{session_id}/messages", status_code=status.HTTP_202_ACCEPTED)
 async def send_message(
     session_id: str,
@@ -619,7 +668,9 @@ async def send_message(
     3. 技能校验先于任何状态写入——一个未知技能名的请求不该占住会话位再回滚。
        唯一的例外是首次运行：那一次 `skill` 参数被忽略（契约 4.1），因此先用不上的
        名字把整次运行拒掉（422）是错的——校验排在首轮判定之后就是为这一条；
-    4. 幂等命中直接返回原 `run_id`，不碰会话位、也不追加消息；
+    4. 幂等命中直接返回原 `run_id`，不碰会话位、也不追加消息；但那条运行的传输态
+       已经不在了（幂等键活 24 小时、运行元数据只活 600 秒，见 :func:`_expired_replay`）
+       时回 409 `run_not_resumable`——不重跑（幂等语义保持），也不交出一个订不上的 `run_id`；
     5. 互斥失败回 409 且不追加消息（契约第 2 节与质量地板 ③）；
     6. 命中首轮引导时，本次运行的程序注入集合被引导替换（技能与静态告知），
        使用者给的 `skill` 选择被忽略——那一次是引导，不是他选的那件事；
@@ -629,8 +680,9 @@ async def send_message(
 
     Raises:
         HTTPException: 会话不可访问（404）、载荷不合法或非首次运行的技能未知（422）、
-            会话已有在跑的运行（409），或运行器未装配、运行未能启动、
-            引导状态取值漂移（503）。
+            会话已有在跑的运行（409 `session_busy`）或幂等重放指向的运行已不可订阅
+            （409 `run_not_resumable`，见 :func:`_reject_dead_replay`），
+            或运行器未装配、运行未能启动、引导状态取值漂移（503）。
     """
     account_id = session.get_user_id()
 
@@ -661,6 +713,7 @@ async def send_message(
 
     settled = await runbus.read_idempotent_run_id(cache, session_id=session_id, client_message_id=client_message_id)
     if settled is not None:
+        await _reject_dead_replay(cache, session_id=session_id, run_id=settled)
         return JSONResponse(
             status_code=status.HTTP_202_ACCEPTED,
             content={"run_id": settled, "session_id": session_id},
