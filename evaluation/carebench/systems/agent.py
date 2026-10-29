@@ -478,11 +478,7 @@ class AgentSystem:
             modes["search_knowledge"] = "timeout"
         for name, mode in modes.items():
             product = self._product_tool(name)
-            replacements[name] = _injected_search_tool(
-                product,
-                mode=mode,
-                hang_seconds=self._faults.hang_seconds("tool_search_timeout"),
-            )
+            replacements[name] = _injected_search_tool(product, mode=mode)
         return replacements
 
     def _build_runner_with_tools(self, replacements: dict[str, Any]) -> AgentRunner:
