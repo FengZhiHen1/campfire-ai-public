@@ -221,6 +221,21 @@ async def test_recomputed_identity_cannot_hide_model_swap(tmp_path: Path, settin
     assert any("装配模型" in item for item in report.violations), report.violations
 
 
+async def test_hand_edited_blind_map_is_rejected(tmp_path: Path, settings_for_tests: Any) -> None:
+    """盲化映射必须由 review_seed 派生：手工交换两个组别会让评分记到别的系统上。"""
+    store = await _run(tmp_path, settings=settings_for_tests, run_id="carebench-blindmap")
+    export_packet(store, log=lambda _message: None)
+    map_path = store.review_dir / "blind-map.json"
+    mapping = json.loads(map_path.read_text(encoding="utf-8"))
+    per_case = next(iter(mapping["map"].values()))
+    blind_ids = sorted(per_case)
+    per_case[blind_ids[0]], per_case[blind_ids[1]] = per_case[blind_ids[1]], per_case[blind_ids[0]]
+    map_path.write_text(json.dumps(mapping, ensure_ascii=False), encoding="utf-8")
+    report = verify_run(store)
+    assert not report.ok
+    assert any("不是由 review_seed 派生" in item for item in report.violations), report.violations
+
+
 async def test_manifest_fault_counts_must_match_records(tmp_path: Path, settings_for_tests: Any) -> None:
     """跑满的批次里，manifest 的注入统计被改大就会被复算抓住。"""
     plan = load_plan(_fixtures_file(tmp_path))
