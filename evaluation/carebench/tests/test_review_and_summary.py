@@ -21,6 +21,7 @@ from evaluation.carebench.review import (
     ReviewError,
     export_packet,
     import_ratings,
+    load_imported_ratings,
 )
 from evaluation.carebench.runner import execute
 from evaluation.carebench.store import RunStore, create_run_dir
@@ -104,6 +105,61 @@ async def test_packet_is_blinded_and_template_is_empty(
         assert row["adjudication_status"] == "pending"
         assert row["latency_ms"] == "100"
         assert row["completion_status"] == "completed"
+        assert row["response_ref"] == f"blind-packet.jsonl#{row['blind_id']}"
+
+
+async def test_empty_ratings_reference_blind_packet_without_system_or_trace_paths(
+    tmp_path: Path, settings_for_tests: Any, faults_for_tests: FaultPlan
+) -> None:
+    """空评分表只能引用盲包行：真实三组导出里不得出现组别字母或轨迹路径。
+
+    判别性来自真实落盘的轨迹名：适配器按 A/B/C 三组跑，轨迹文件真叫
+    `CFB-C-001__A__t1__a1.json`。旧实现把这条相对路径直接写进 `response_ref`，
+    等于把组别交给评审者；本用例逐行核对评分表引用的是 `blind-packet.jsonl#<blind_id>`，
+    同时确认内部轨迹仍然留在 run 目录里（盲化的是交给评审者的那一份，不是证据本身）。
+    """
+    store = await _finished_run(tmp_path, settings=settings_for_tests, faults=faults_for_tests, count=2)
+    report = export_packet(store, log=lambda _message: None)
+    assert report["exported_at_groups"] == 6  # 2 个案例 × 3 组：三组都真的跑了
+    assert report["response_ref_format"] == "blind-packet.jsonl#<blind_id>"
+
+    ratings_text = (store.review_dir / EMPTY_RATINGS_FILE).read_text(encoding="utf-8")
+    rows = _blank_rows(store)
+    assert len(rows) == 6 * 2
+    packet_ids = {
+        json.loads(line)["blind_id"]
+        for line in (store.review_dir / PACKET_FILE).read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    }
+    assert len(packet_ids) == 6
+    for row in rows:
+        assert row["response_ref"] == f"blind-packet.jsonl#{row['blind_id']}"
+        assert row["blind_id"] in packet_ids
+        # 引用必须是「盲包 + 盲 id」，不能是任何轨迹路径写法。
+        assert not row["response_ref"].startswith("traces/")
+        assert row["response_ref"].count("#") == 1
+    # 整份表都不许出现组别字母或轨迹目录（含表头与未被核对到的其余列）。
+    for leak in ("traces", "__A__", "__B__", "__C__"):
+        assert leak not in ratings_text
+
+    # 内部轨迹仍保留：盲化只作用于评审者看到的那一份。
+    trace_names = sorted(path.name for path in store.iter_trace_files())
+    assert len(trace_names) == 6
+    assert "CFB-C-001__A__t1__a1.json" in trace_names
+    for record in store.read_outputs():
+        assert (store.root / str(record["trace_file"])).exists()
+
+    # 人工导入正常，且导入只看结构、不解析 response_ref 指向的路径。
+    filled = _filled_rows(store, raters=("r1", "r2"))
+    ratings_path = tmp_path / "ratings.csv"
+    _write_csv(ratings_path, filled)
+    result = import_ratings(store, ratings_path=ratings_path, log=lambda _message: None)
+    assert result.mode == "double_blind"
+    assert result.rows == 12
+    imported = load_imported_ratings(store)
+    assert [row["response_ref"] for row in imported] == [row["response_ref"] for row in filled]
+    # `blind-packet.jsonl#<blind_id>` 不是文件系统路径：若导入去解析它，这一步就会失败。
+    assert not (store.review_dir / str(imported[0]["response_ref"])).exists()
 
 
 async def test_import_rejects_pending_and_blank_scores(
