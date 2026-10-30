@@ -1,7 +1,7 @@
 {
   "snapshot_version": "2026-10-29",
   "corpus_root": "data/knowledge",
-  "note": "CareBench 评测知识快照的许可裁定表。只列 included 的文件允许出现在评测库里；src_path 的 basename 用来核对库内条目来源。裁定依据见 data/README.md 与 data/knowledge/autism-corpus/采集出处与许可清单.md；带非商业/保留权利条款的一律 blocked。 2026-10-29 主 agent 实测快照：6 条 knowledge / 117 节点 / 0 案例，已排除 3 个真实访谈案例与 NHC 的重复加工版（autism-md/03），本清单据此对齐。",
+  "note": "CareBench 评测知识快照的许可裁定表。只列 included 的文件允许出现在评测库里；src_path 的 basename 用来核对库内条目来源。裁定依据见 data/README.md 与 data/knowledge/autism-corpus/采集出处与许可清单.md；带非商业/保留权利条款的一律 blocked。 2026-10-29 主 agent 实测快照：6 条 knowledge / 117 节点 / 0 案例，已排除 3 个真实访谈案例与 NHC 的重复加工版（autism-md/03），本清单据此对齐。 2026-10-30：excluded_corpora 中 3 条真实访谈案例的目录名已替换为占位符（<excluded-real-interview-case-N>），排除事实与原因不变；该替换会改变本文件 hash，历史批次按冻结时的身份核对，不与本清单相符。",
   "included": [
     {
       "path": "autism-corpus/nhc-0-6-autism-screening-intervention.md",
@@ -98,15 +98,15 @@
   ],
   "excluded_corpora": [
     {
-      "path": "data/cases/2026-05-25_1448_respecting-pace-asd",
+      "path": "data/cases/<excluded-real-interview-case-1>",
       "reason": "真实访谈转写（status=internal）；同意文本未持有，评测库不得出现（主 agent 明确要求排除）"
     },
     {
-      "path": "data/cases/2026-05-30_2243_emotion-growth-asd",
+      "path": "data/cases/<excluded-real-interview-case-2>",
       "reason": "真实访谈转写（status=internal）；同上"
     },
     {
-      "path": "data/cases/2026-05-31_0850_adult-pdd-social",
+      "path": "data/cases/<excluded-real-interview-case-3>",
       "reason": "真实访谈转写（status=internal）；同上"
     },
     {
