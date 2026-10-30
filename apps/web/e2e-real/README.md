@@ -443,7 +443,7 @@ pnpm --filter @campfire/web test         # vitest run
 案例经正式摄取链入库，首页草稿经真实建会话、TokenHub 与 SSE 完成回答，并验证刷新恢复。
 
 前置：本地四服务与 API/Vite 已运行、迁移已就绪、案例库已含仓库内的
-`data/cases/2026-05-25_1448_respecting-pace-asd`（按 `data/README.md` 通过 CLI 摄取）。
+`data/cases/2026-11-06_1000_fictional-supermarket-meltdown`（按 `data/README.md` 通过 CLI 摄取；虚构演示包）。
 MinIO 不参与本轮验证。不要对未知数据执行重建或清库。
 
 设置进程环境 `UI_REAL_INVITE_CODE`（一次性）、`UI_REAL_ACCOUNT`（不含 `@` 的独立测试账号）、

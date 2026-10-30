@@ -13,8 +13,8 @@
 此前缺项第九次评分有效，原冻结裁定者第六次裁定有效，完整核验通过。
 两项最终硬失败保留，专业审核仍未满足；新增补采不代表首尝试可靠性。
 评分提示修复后的 full-12 Python 2331 项、前端 604 项通过。最新冻结身份、补充执行偏离和边界见
-[评分修复记录](../../docs/development/checkpoints/2026-10-29-scoring-repair.md)与
-[长程交付记录](../../docs/development/checkpoints/2026-10-29-final-delivery.md)，
+`docs/development/checkpoints/2026-10-29-scoring-repair.md`与
+`docs/development/checkpoints/2026-10-29-final-delivery.md`，
 未完成项仍以 [TODO](../../docs/TODO.md) 为准。
 
 ## 0.0 历史局限与 v0.2 多轮评测（2026-10-29 增补，不改上文任何结果）
@@ -160,7 +160,7 @@ uv run python -m evaluation.carebench resume --run <run目录> \
 ```
 
 正式生成完成后，先执行 `review-export` 导出盲化评审包，再执行 `ai-score`、`ai-adjudicate`、`summarize` 与
-`verify --require-complete`，并按 [材料与证据口径](../../docs/development/materials.md) 留存原始证据。
+`verify --require-complete`，并按 `docs/development/materials.md` 留存原始证据。
 正式顺序为 `identity → freeze（含身份）→ run --dry-run → ai-prepare → resume`；`resume` 必须继续传入
 与 dry-run 相同的 `--fixtures evaluation/carebench/fixtures-formal.example.json`。
 
@@ -181,10 +181,10 @@ browser-01/02曾用到旧Vite泳道，不能作最终版本通过证据。
 工具说明与参数模型复用产品定义；替身装配不等于实际触发，必须报告observed。
 
 以下为评分缺项修复前的历史状态；当前完整核验已通过，见本文开头和
-[评分修复记录](../../docs/development/checkpoints/2026-10-29-scoring-repair.md)。
+`docs/development/checkpoints/2026-10-29-scoring-repair.md`。
 上述 full-07 与校准03为过程记录；随后 full-10、校准04已完成，正式40例生成完整、
 评分保留一项未决。311 次评分尝试含 239 有效、55 无效、17 请求错误；
 23 次裁定含 17 有效、3 无效、3 请求错误。原五轮后与两次补充请求后的不完整状态均保留，
 补充采集不修改原五轮策略文件或首次有效评分。
 专业审阅未满足，工程检查不构成模型效果或临床安全证据。
-完整记录见[质量审查记录](../../docs/development/checkpoints/2026-10-29-quality-audit.md)。
+完整记录见`docs/development/checkpoints/2026-10-29-quality-audit.md`。

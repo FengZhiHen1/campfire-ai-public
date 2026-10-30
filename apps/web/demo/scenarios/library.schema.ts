@@ -7,7 +7,7 @@
  *   - apps/web/src/features/library/view/LibraryPage.tsx:76-114,226-318: MUST — 页头 `.sp-title`、
  *     检索范围 `role=group`、结果行 `article.list-row`、`aria-controls="library-body-<id>"`
  *   - apps/web/src/shared/ui/ReadableText.tsx:22-46: MUST — `.readable-paragraph/-heading/-list/-quote`
- *   - data/cases/2026-05-25_1448_respecting-pace-asd/manifest.json: 本场景选用的案例与检索词「节奏调整」
+ *   - data/cases/2026-11-06_1000_fictional-supermarket-meltdown/manifest.json: 本场景选用的虚构演示案例与检索词
  * 边界:
  *   - 依赖: ../support/scenario（类型）
  *   - 被依赖: ./registry、./library.spec、apps/web/tests/demo-coverage.test.ts

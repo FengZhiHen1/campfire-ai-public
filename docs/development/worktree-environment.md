@@ -8,8 +8,8 @@
 > `git log --follow -- docs/development/worktree-environment.md`。
 > **它拥有**：泳道的落点、创建/使用/集成/清理的规则，源码与依赖的隔离边界，数据与测试能否
 > 并行的判据，就绪与出场的机械核验。
-> **它不拥有**：检查分层的命令（[testing.md](testing.md)）、材料与证据落点（[materials.md](materials.md)）、
-> 数据服务编排（[docker-compose.yml](../../docker-compose.yml)）、生产发布（[../运维/发布与回滚.md](../运维/发布与回滚.md)）。
+> **它不拥有**：检查分层的命令（[testing.md](testing.md)）、材料与证据落点（`materials.md`）、
+> 数据服务编排（[docker-compose.yml](../../docker-compose.yml)）、生产发布（`运维/发布与回滚.md`）。
 > 冲突时以拥有者为准。
 
 ---
@@ -182,7 +182,7 @@ flock <原始仓库根>/.tmp/integration-test.lock uv run --frozen pytest <定�
 不跑 `docker compose down -v`、不清别人泳道。
 
 **泳道不是仓库**：`deliverables/`（正式运行的大文件）与 `materials/`（正式材料的文本部分）
-都固定在**原始仓库根**，理由与判据见 [materials.md](materials.md)。泳道被 `remove` 时它们
+都固定在**原始仓库根**，理由与判据见 `materials.md`。泳道被 `remove` 时它们
 不受影响——这正是「不要把成果留在泳道里等下次再搬」的原因。
 
 ## 8. 本指南何时失效（需重新实证）

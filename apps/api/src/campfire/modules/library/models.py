@@ -176,7 +176,7 @@ class CaseItem(Base):
     __tablename__ = "campfire_case_item"
 
     id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, default=new_uuid)
-    #: 上游目录名（如 `2026-05-25_1448_respecting-pace-asd`）。不重写，用于追溯
+    #: 上游目录名（如 `2026-11-06_1000_fictional-supermarket-meltdown`）。不重写，用于追溯
     #: （第 3、10 节「追溯」）。唯一：同一上游目录重复导入应被幂等拦下。
     external_key: Mapped[str] = mapped_column(String(200), nullable=False, unique=True)
     title: Mapped[str] = mapped_column(String(500), nullable=False)

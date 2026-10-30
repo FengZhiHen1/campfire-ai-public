@@ -2,7 +2,7 @@
 
 > 状态：**正式 40 例已生成并完成双 AI 评分与分歧裁定，完整核验通过**。
 > 产品当前模型配置仍为 `cn:deepseek-v4.1-flash`；正式运行身份须在冻结前从当前配置重新生成并核对。
-> 本目录不包含原始评分正文；脱敏汇总见[素材入口](../../materials/2026-ai-opensource/source-materials.md)。
+> 本目录不包含原始评分正文；脱敏汇总见`materials/2026-ai-opensource/source-materials.md`。
 > 评分缺项在原冻结 v0.2 身份下补齐；未来默认提示 v0.3 写明字段条件，未回改本批提示。
 > AI 评分不构成专家背书，完整核验通过不等于产品全部通过。
 
@@ -341,8 +341,8 @@ uv run ruff check evaluation/ && uv run ruff format --check evaluation/
 ```
 
 截至 full-04（`dev`，`59aac1f0`），CareBench 全套确定性测试 **183 项通过**；仓库 full 已通过，
-详细读数见[质量审查记录](../../docs/development/checkpoints/2026-10-29-quality-audit.md)。
-真实浏览器验收以[最终交付记录](../../docs/development/checkpoints/2026-10-29-final-delivery.md)为准：
+详细读数见`docs/development/checkpoints/2026-10-29-quality-audit.md`。
+真实浏览器验收以`docs/development/checkpoints/2026-10-29-final-delivery.md`为准：
 browser-03 四项（见上述质量审查记录）覆盖的**已验收产品基线**，与正式冻结批次
 `20261029-carebench-formal-01` 的源码身份相同——API、Skills、Web 源码与依赖锁文件对象 hash 一致，
 后续补修只落在评测器侧，因此不构成、也不声称另做了一次浏览器验收。正式批次的评分与裁定状态
