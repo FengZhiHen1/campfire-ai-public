@@ -2,7 +2,8 @@
 ==========================================
 
 本文件说明如何在本地把「篝火智答」跑起来，以及如何使用它的两条主链路。
-命令与端口以本仓的 compose 文件、Dockerfile 与运维文档为准。
+命令与端口以本仓的 compose 文件与 `infrastructure/docker/` 下的 Dockerfile、入口脚本为准
+（运维文档在内部开发仓，不随本仓分发）。
 
 --------------------------------------------------------------------------------
 一、组成
@@ -23,7 +24,7 @@
 二、前置条件
 
   * Docker 与 Docker Compose v2
-  * 若要本地开发（不经容器）：Python 3.12 + uv、Node 24 + pnpm
+  * 若要本地开发（不经容器）：Python ≥ 3.12 + uv、Node ≥ 20 + pnpm（CI 固定 22）
   * 一个可用的模型服务凭据（对话模型与嵌入模型，经 OpenAI 兼容接口调用）
 
 --------------------------------------------------------------------------------
@@ -40,7 +41,8 @@
        docker compose -f docker-compose.yml up -d
 
   4) 数据库迁移
-       迁移脚本在 apps/api/migrations/；容器/本地两种执行方式与运维细节见 docs/运维/。
+       迁移脚本在 apps/api/migrations/。本地执行 `uv run alembic upgrade head`；
+       CI 执行同一命令，并用 `uv run alembic check` 检查模型与迁移是否漂移。
 
   5) 应用
        后端与前端在本地以 uv / pnpm 启动；后端存活与就绪探针为 /livez 与 /readyz。

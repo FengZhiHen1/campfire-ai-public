@@ -52,7 +52,7 @@ _USAGE = """campfire.cli —— 本地运维入口（不暴露成服务端点）
 示例：
   python -m campfire.cli convert corpus/guide.html --out corpus/guide.md
   python -m campfire.cli ingest corpus/guide.md --source "WHO 2024" --scope "学龄前儿童"
-  python -m campfire.cli ingest exports/case-extraction/2026-05-25_1448_pace/ --library case
+  python -m campfire.cli ingest data/cases/2026-11-06_1000_fictional-supermarket-meltdown --library case
   python -m campfire.cli withdraw knowledge 8f3a... --reason "上游撤回该指南"
   python -m campfire.cli invite issue
   python -m campfire.cli account reset 8f3a... --password '新密码'

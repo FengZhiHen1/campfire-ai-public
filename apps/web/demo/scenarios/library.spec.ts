@@ -7,7 +7,7 @@
  *     检索范围 `role=group`、结果行 `article.list-row`、`aria-controls="library-body-<id>"` 正文容器
  *   - apps/web/src/shared/ui/ReadableText.tsx:22-46: MUST — `.readable-*` 四类读物排版
  *   - apps/web/src/features/library/domain/reading.ts: `readingSection` 去掉同名小节定位标记
- *   - data/cases/2026-05-25_1448_respecting-pace-asd/manifest.json: 案例标题与检索词「节奏调整」的词面依据
+ *   - data/cases/2026-11-06_1000_fictional-supermarket-meltdown/manifest.json: 案例标题与检索词的词面依据
  *   - apps/api/src/campfire/modules/library/routes.py:552-650: 展开内容随列表返回（`expand=<item_id>`）
  *   - apps/api/src/campfire/modules/library/retrieval.py:50,296-350: trigram 字面路需 ≥3 连续汉字
  * 边界:
@@ -28,7 +28,7 @@ import { captureStep } from '../support/shots';
 import { inviteCodeForScenario, invitePool, registerNewAccount } from '../support/stack';
 
 /**
- * 本场景选用的案例：标题见 `data/cases/2026-05-25_1448_respecting-pace-asd/manifest.json`。
+ * 本场景选用的虚构演示案例：标题见 `data/cases/2026-11-06_1000_fictional-supermarket-meltdown/manifest.json`。
  *
  * 只取标题前半句做过滤（全角冒号与长标题的逐字匹配比子串更脆），
  * 而 `article.list-row` 是全站共用的类，因此每处取行都必须带 `hasText`。

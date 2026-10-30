@@ -14,7 +14,7 @@
 ## 2. 逐条局限（每条带证据与状态）
 
 状态口径：`可复核` = 本仓库内文件当场可核；`需原始根` = 原件在原始仓库根
-内部运行目录（整目录忽略、不随代码入库、不在本仓发布）。
+`deliverables/2026-ai-opensource/20261029-carebench-formal-01/`（整目录忽略、不随代码入库）。
 
 | # | 局限 | 证据 | 状态 |
 |---|---|---|---|
@@ -24,13 +24,13 @@
 | H4 | **C 组从未进入应急入口**：整批 138 个生成回合里，`emergency-consulting` 加载 0 次、应急档案/记忆注入 0 次；29 次 `skill` 调用全部是 `daily-consulting`；轨迹文件里没有任何 `emergency-consulting` / `emergency-profile` 字样 | 原始根 `outputs.jsonl`（`tool_calls`）、`traces/`（139 个文件全文检索） | 需原始根 |
 | H5 | **结构化输出只走到“提问卡”**：C 组共 26 个提问卡事件、**0 张行动卡**；工具调用计数为 `search_knowledge 96 / read_skill_resource 40 / skill 29 / ask_user 26 / search_cases 5 / read_memory 4` | 原始根 `outputs.jsonl` 的 `structured_output` 与 `tool_calls` | 需原始根 |
 | H6 | **“情境化应急”类别 ≠ 应急入口**：旧 8 条“情境化应急”案例走的是日常咨询面，只测了“日常对话里描述突发情形” | 同 H4；案例类别见 `cases-test-v0.1.jsonl` | 需原始根 + 可复核 |
-| H7 | **知识快照只有 6 条许可条目**（117 节点、0 案例），检索表现不代表真实知识库 | [`../knowledge/snapshot.json`](../knowledge/snapshot.json)；正式批次 [`summary.json`](runs/20261029-carebench-formal-01/summary.json) 的 `caveats` | 可复核 |
-| H8 | **案例是公开合成集、且全部未审**：40 条 `review_status=draft_unreviewed`；`CFB-T-009` 是设计阶段用过的黄金场景 | [`../cases/README.md`](../cases/README.md)；[`summary.md`](runs/20261029-carebench-formal-01/summary.md) 的「案例：40 个（review_status={'draft_unreviewed': 40}）」 | 可复核 |
-| H9 | **两位评分者与裁定者是同一精确模型**：`ai-pass1` / `ai-pass2` / `ai-adjudicator` 均为 `cn:deepseek-v4.1-flash`，只有提示不同 | [`…/formal-01/ai-review-identity.redacted.json`](runs/20261029-carebench-formal-01/ai-review-identity.redacted.json) | 可复核 |
-| H10 | **C5 无区分度**：三组 120 个 case-group 的 C5（理解与呈现）均值都是 **2.0**，完全一致率 1.0 | [`…/formal-01/summary.json`](runs/20261029-carebench-formal-01/summary.json) 的 `ai_scores.per_system[*].dimensions.c5_clarity` 与 `agreement` | 可复核 |
+| H7 | **知识快照只有 6 条许可条目**（117 节点、0 案例），检索表现不代表真实知识库 | [`../knowledge/snapshot.json`](../knowledge/snapshot.json)；正式批次 `<批次目录>/summary.json`（运行产物，不入库） 的 `caveats` | 可复核 |
+| H8 | **案例是公开合成集、且全部未审**：40 条 `review_status=draft_unreviewed`；`CFB-T-009` 是设计阶段用过的黄金场景 | [`../cases/README.md`](../cases/README.md)；`<批次目录>/summary.md`（运行产物，不入库） 的「案例：40 个（review_status={'draft_unreviewed': 40}）」 | 可复核 |
+| H9 | **两位评分者与裁定者是同一精确模型**：`ai-pass1` / `ai-pass2` / `ai-adjudicator` 均为 `cn:deepseek-v4.1-flash`，只有提示不同 | `<批次目录>/ai-review-identity.redacted.json`（运行产物，不入库） | 可复核 |
+| H10 | **C5 无区分度**：三组 120 个 case-group 的 C5（理解与呈现）均值都是 **2.0**，完全一致率 1.0 | `<批次目录>/summary.json`（运行产物，不入库） 的 `ai_scores.per_system[*].dimensions.c5_clarity` 与 `agreement` | 可复核 |
 | H11 | **评分包没带工具与引用证据**：盲评包每条只有 `blind_id / case_id / completion_status / final_output / structured_output / turns`，没有 `tool_calls` 与 `citations` | 原始根 `review/blind-packet.jsonl` 的键集合 | 需原始根 |
 | H12 | **T019 的“虚构依据”判据缺充分依据**（见第 3 节） | 原始根 `outputs.jsonl` + `traces/CFB-T-019__C__t1__a1.json`；`review/ai-attempts-pass2.jsonl` | 需原始根 |
-| H13 | **是程序内运行链，不是浏览器体验**：C 组测的是 `AgentRunner.run()`，HTTP/SSE 与渲染由产品自身 e2e 覆盖 | [`…/formal-01/summary.json`](runs/20261029-carebench-formal-01/summary.json) 的 `caveats` | 可复核 |
+| H13 | **是程序内运行链，不是浏览器体验**：C 组测的是 `AgentRunner.run()`，HTTP/SSE 与渲染由产品自身 e2e 覆盖 | `<批次目录>/summary.json`（运行产物，不入库） 的 `caveats` | 可复核 |
 
 **不能由上述事实推出的结论**（写报告时的红线）：
 

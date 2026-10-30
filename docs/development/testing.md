@@ -5,8 +5,8 @@
 > **它拥有**：检查分层的定义、`scripts/checks.py` 的接口契约、quick/full 各跑哪些命令、全量的触发点、
 > 机器读数与失败判读口径、真模型/真栈/材料与门禁的关系。
 > **它不拥有**：命令背后的工具配置（`pyproject.toml`、`apps/web/package.json`、`.github/workflows/ci.yml`）、
-> 材料与评测证据口径（[materials.md](materials.md)）、泳道环境与清理（[worktree-environment.md](worktree-environment.md)）、
-> 生产验收（[../运维/上线验收测试流程.md](../运维/上线验收测试流程.md)）。
+> 材料与评测证据口径（`materials.md`）、泳道环境与清理（[worktree-environment.md](worktree-environment.md)）、
+> 生产验收（`运维/上线验收测试流程.md`）。
 > **事实依据**：各命令均取自 `pyproject.toml`（`addopts`/`testpaths`）、`apps/web/package.json`
 > （`build` 内含 `tsc --noEmit`）与 `.github/workflows/ci.yml`；本文只规定流程，不新增工具行为。
 
@@ -30,7 +30,7 @@
 | **material** | 只在明确需要材料时（演示、交付、评测运行） | 真模型 + 真栈 + 真库的**对外取证**（`demo`、评测批次） | 材料/评测任务，**不是门禁** |
 
 三层的关系：**quick 绿不等于可以合入**，full 才是合入判据；**material 红不阻塞合入**，
-它回答的是「对外材料是否真实」，由 [materials.md](materials.md) 管。任何一层都不能替代另一层。
+它回答的是「对外材料是否真实」，由 `materials.md` 管。任何一层都不能替代另一层。
 
 **`e2e-real` 这类真实依赖探针不属 material 层**：它验的是「代码在真实依赖上能不能跑通」，
 是**工程验收**，按影响面触发（§3 最后一行）。把它和 demo/评测归成一类，会让「产品没跑通」
@@ -150,8 +150,8 @@ XML 真的收集到了用例**（按名字检索一条本轮新增的用例为�
 | 入口 | 用途 | 前提 | 口径归属 |
 |---|---|---|---|
 | `pnpm --filter @campfire/web shots` + `e2e` | 页面截图与内容断言（内容断言才证明「图里有料」） | 全新环境先 `playwright install` | 本文（属前端改动检查） |
-| `DEMO_INVITE_CODES=... pnpm --filter @campfire/web demo` | 对外展示材料，逐屏截图 | 全真栈稳定、`/readyz` 全 ok | [演示材料生成.md](../运维/演示材料生成.md) |
-| 评测运行（A/B/C 对照 + 两套独立 agent 盲评） | 效果证据 | 冻结案例集 + 评分记录 | [materials.md](materials.md) |
+| `DEMO_INVITE_CODES=... pnpm --filter @campfire/web demo` | 对外展示材料，逐屏截图 | 全真栈稳定、`/readyz` 全 ok | `运维/演示材料生成.md` |
+| 评测运行（A/B/C 对照 + 两套独立 agent 盲评） | 效果证据 | 冻结案例集 + 评分记录 | `materials.md` |
 
 **不在这张表里的两类**：
 - **`e2e-real` 等真实依赖探针**：属**工程验收**、按影响面触发（§3 最后一行），不是材料。

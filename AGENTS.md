@@ -123,16 +123,9 @@ host 比较后改用 `location.origin`，因此协议跟随页面、切 HTTPS �
       产物写死协议导致 mixed content），而单测全绿。
 - [ ] 已想清回滚：改动是否可逆、是否需要迁移（迁移是唯一不可逆动作）
 
-部署是**真实的生产变更**，且**必须两步**：
-
-```bash
-# 1. 推送并等 CI 绿（push main 只触发 CI，不会部署）
-git push origin HEAD:main && gh run list --limit 3
-
-# 2. 显式触发发布——`deploy=true` 才会真的上线（默认 false 只构建推送镜像）
-gh workflow run deploy.yml --ref main -f deploy=true
-gh run watch <run-id>          # 全程约 5 分钟（构建 ~3.5，发布 ~1.5）
-```
+部署是**真实的生产变更**。发布编排（`.github/workflows/deploy.yml`）**不随本公开仓分发**：
+本仓只有 CI（`ci.yml`），推送 `main` 只跑 CI、不会部署。发布与回滚的判据、命令与人工闸门
+在内仓维护，需要时另取，**执行前重新核实**。
 
 **为什么默认不自动部署**：合并代码与发布到生产风险等级不同——合并可回退，发布要动生产。
 人工闸门是刻意保留的，不是没接完。**也不要绕过它手工 ssh 到服务器改文件**：那会让
@@ -147,14 +140,16 @@ uv run --no-project python scripts/acceptance_probe.py
 
 `acceptance_probe.py` 覆盖静态资源、9 条页面**深链**、未登录 401 边界（退出码非 0 即失败）。
 它只覆盖第 1 节——**登录之后的链路必须用真实浏览器**（依赖 httpOnly cookie），
-完整清单见 [docs/运维/上线验收测试流程.md](docs/运维/上线验收测试流程.md)。
+完整清单（登录之后的链路）见 `docs/运维/上线验收测试流程.md`——该文件仅内部开发仓提供，
+不随本公开仓分发；本仓只保留上面这条未登录可跑的探针。
 
 **看到「发布验证失败」先判断是不是误报**，再决定回滚：曾发生「部署其实成功、
 验证步骤因漏 `--env-file` 而报失败」，回滚一个正常版本会把小事变成事故。
 
 服务端事实：`https://campfire.wenran.me`（腾讯云 HK），部署目录 `/opt/campfire`，
 凭据在服务器 `.env.prod`（**不入库**，也不由发布流程上传）。CORS、域名与 TLS 的
-运维脚本见 `scripts/tls-*.sh`，操作说明见 [docs/运维/发布与回滚.md](docs/运维/发布与回滚.md)。
+运维脚本见 `scripts/tls-*.sh`；操作说明见 `docs/运维/发布与回滚.md`（仅内部开发仓提供，
+不随本公开仓分发）。
 
 ## Architecture
 
@@ -178,7 +173,8 @@ docker-compose.yml     — 本地基础设施编排
 docker-compose.prod.yml — 生产编排（数据服务不暴露宿主端口，仅 web 对外）
 ```
 
-模块边界与依赖方向的真源是 [docs/项目结构设计.md](docs/项目结构设计.md)。其白名单由
+模块边界与依赖方向的真源是项目结构设计（`docs/项目结构设计.md`，仅内部开发仓提供、
+不随本公开仓分发）。其白名单由
 `apps/api/tests/test_layer_boundaries.py` 机械检查——**新增层必须同步加入该测试**，
 否则检查会因「层未覆盖」而失败。
 
@@ -238,28 +234,28 @@ amend、不 rebase，即使它们的写法与本规范不符。
 - ❌ 禁止：把服务器凭证上传给第三方服务
 - ❌ 禁止：健康检查、日志或错误消息复述连接串与凭据（探针只回报异常类型）
 - 服务器操作：**默认不做**（见上方「开发与部署的边界」）。确需运维时，脚本与判据见
-  [docs/运维/发布与回滚.md](docs/运维/发布与回滚.md)（历史服务器操作指引不随本公开仓分发，
-  需另取内仓，**执行前须重新核实**，不要照抄）。
+  `docs/运维/发布与回滚.md`——历史服务器操作指引不随本公开仓分发，需另取内仓，
+  **执行前须重新核实**，不要照抄。
 
 ## Git Workflow
 
 - 分支策略：本公开仓只维护 `main`（唯一远端分支）；内仓的 `dev`/`master` 流程不随本仓分发
-- CI（`.github/workflows/ci.yml`）在 push 与 PR 到 `dev`、`main`、`master` 时跑三个 job：
+- CI（`.github/workflows/ci.yml`）在 push 与 PR 到 `main` 时跑三个 job：
   设计文档一致性、后端（ruff + mypy + 迁移门禁 + pytest，**带 PostgreSQL/Redis/FalkorDB
   三个 service**）、前端（oxlint + tsc + vitest + build）
 - **部署见上方「开发与部署的边界」**——默认本地闭环，云端只在用户明确要求时发布
-- 备份/恢复/回滚：`scripts/{backup,restore,rollback}.sh`，操作说明见
-  [docs/运维/发布与回滚.md](docs/运维/发布与回滚.md)
+- 备份/恢复/回滚：`scripts/{backup,restore,rollback}.sh`（脚本在本仓；操作说明见
+  `docs/运维/发布与回滚.md`，该文件仅内部开发仓提供）
 - 仓库：`https://github.com/FengZhiHen1/campfire-ai-public.git`
 - ❌ 禁止：把未复核的改动直接推上 `main`（本公开仓远端只有 `main`，没有 `dev` 供先行集成）
 - ❌ 禁止：一个 commit 塞多个无关主题的改动
-- ❌ 禁止：未经用户明确要求就执行 `deploy.yml` 的发布（`deploy=true`）——那是生产变更
+- ❌ 禁止：未经用户明确要求就触发发布（内仓的 `deploy.yml`）——那是生产变更
 
 ## Design Docs
 
 真源在 `docs/`，入口是 [docs/README.md](docs/README.md)（文档地图与事实所有权）。
 
-- **已确认的定调**：[功能需求与验收](docs/需求/功能需求与验收.md)、[技术栈设计](docs/技术栈设计.md)、[项目结构设计](docs/项目结构设计.md)
+- **已确认的定调**：[技术栈设计](docs/技术栈设计.md)。需求基线（`docs/需求/功能需求与验收.md`）与项目结构设计（`docs/项目结构设计.md`）仅在内部开发仓提供，不随本公开仓分发
 - **技术细节初稿，待确认**：`docs/技术设计/technical-details/` 与 `docs/技术设计/面/`
 - **待办唯一登记处**：[docs/TODO.md](docs/TODO.md)（可扩展方向、发布前置、待验证事实、待确认事项）
 - 未确认内容不得写入权威文档，也不得据此开始实现；发现设计不一致时先提出，不得静默沿用旧行为。
