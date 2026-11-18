@@ -1,4 +1,8 @@
-/* 登录/注册页就近样式（CSS Modules）：只消费 token 变量，主 CTA 是页面唯一的大面积 accent。 */
+/* 登录/注册页就近样式（CSS Modules）：只消费 token 变量，主 CTA 是页面唯一的大面积 accent。
+ *
+ * 2026-11-18 精修：去掉外面那层白色描边面板容器（它让页面像通用登录模板），改为品牌区之下
+ * 直接排布的安静表单；字段仍保留 --border-control 输入边界、校验与告知，切换/重置入口均在。
+ * 输入框的边界靠 base 的 input 样式（--border-control），不靠外层容器。 */
 
 .shell {
   display: flex;
@@ -6,15 +10,16 @@
   justify-content: flex-start;
 }
 
+/* 品牌区与表单区之间多留一档间距：去掉面板后，靠间距建立「标题 → 表单」的层次，而不是靠容器边框。 */
 :global(.phone-shell).shell {
-  gap: var(--space-4);
+  gap: var(--space-6);
 }
 
 /* 品牌区：标题行（火焰 + 标题垂直居中）+ 标语；顶部留白给安全区。 */
 .brand {
   display: grid;
   gap: var(--space-2);
-  padding: var(--space-12) var(--space-1) 0;
+  padding: var(--space-6) var(--space-1) 0;
 }
 
 /* 火焰与品牌标题同一行，align-items:center 让图标随标题文字垂直居中而非掉到中间。 */
@@ -44,18 +49,18 @@
   font-size: var(--text-sm);
 }
 
-:global(.panel).panel {
-  width: 100%;
-  padding: var(--space-5);
+/* 表单区：不再是 .panel 白卡，直接落在纸底上；靠底部分隔线跟下方告知区分开。 */
+.formSection {
   display: grid;
-  gap: var(--space-4);
-  box-shadow: none;
+  gap: var(--space-5);
+  padding-bottom: var(--space-5);
+  border-bottom: 1px solid var(--border-soft);
 }
 
-/* 面板头部：模式标题在左、互切按钮在右，同一行；切换明确且不产生同名按钮。 */
-.panelHead {
+/* 表单头：模式标题在左、互切按钮在右，同一行；切换明确且不产生同名按钮。 */
+.formHead {
   display: flex;
-  align-items: center;
+  align-items: baseline;
   justify-content: space-between;
   gap: var(--space-3);
 }
@@ -63,6 +68,7 @@
 .formTitle {
   margin: 0;
   font-size: var(--text-lg);
+  font-weight: 600;
 }
 
 .form {
@@ -108,9 +114,6 @@
 /* 用途与边界告知：一条可扫读的说明行，弱化但完整。 */
 .notice {
   margin: 0;
-  padding: var(--space-3) var(--space-4);
-  border-radius: var(--radius-sm);
-  background: color-mix(in oklab, var(--surface-warm), transparent 50%);
   color: var(--fg-2);
   font-size: var(--text-sm);
   line-height: var(--leading-body);
@@ -119,6 +122,6 @@
 .help {
   margin: 0;
   text-align: center;
-  color: var(--meta);
-  font-size: var(--text-xs);
+  color: var(--muted);
+  font-size: var(--text-sm);
 }

@@ -617,6 +617,21 @@ export const PAGE_SHOTS: readonly PageShot[] = [
     ],
   },
   {
+    name: 'about',
+    path: '/settings/about',
+    guarded: true,
+    fixtures: [],
+    note: '关于篝火智答页是全静态内容（数据用途、外部模型与边界硬文案为设计成稿），零取数。',
+    assertions: [
+      {
+        kind: 'text',
+        intent: '数据三项告知与边界硬文案可见',
+        minHits: 4,
+        candidates: ['关于你的数据', '咨询记录怎么用', '会送去外部模型吗', '本应用尚未经专业审阅，不能替代专业服务'],
+      },
+    ],
+  },
+  {
     name: 'guide',
     path: '/guide',
     guarded: true,

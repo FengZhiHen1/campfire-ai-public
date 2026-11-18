@@ -20,6 +20,7 @@ import { GuidePage } from './pages/GuidePage';
 import { HomePage } from './pages/HomePage';
 import { PlaceholderPage } from './PlaceholderPage';
 import { RequireSession } from './RequireSession';
+import { AboutPage } from '../features/accounts/view/AboutPage';
 import { LoginPage } from '../features/accounts/view/LoginPage';
 import { SettingsPage } from '../features/accounts/view/SettingsPage';
 import { useSessionStore } from '../features/accounts/viewModel/sessionStore';
@@ -121,7 +122,7 @@ export const APP_ROUTES: readonly AppRoute[] = [
   {
     path: '/settings',
     title: '我的',
-    description: '设置：账号、关于你的数据与使用说明入口。',
+    description: '设置：账号、记录与帮助入口与账号操作。',
     requiresSession: true,
     element: () => <SettingsPage auth={supertokensAuthPort} />,
   },
@@ -131,6 +132,13 @@ export const APP_ROUTES: readonly AppRoute[] = [
     description: '查看、纠正与删除属于本账号的记忆时间线。',
     requiresSession: true,
     element: () => <MemoryPage port={httpMemoryPort} />,
+  },
+  {
+    path: '/settings/about',
+    title: '关于篝火智答',
+    description: '数据用途、外部模型告知与一期使用边界。',
+    requiresSession: true,
+    element: () => <AboutPage />,
   },
   {
     path: '/guide',

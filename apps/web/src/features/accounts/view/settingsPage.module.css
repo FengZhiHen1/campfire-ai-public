@@ -1,4 +1,6 @@
-/* 操作入口先行，告知以轻量分组呈现；没有不存在的账号功能。 */
+/* 设置页（我的）：原生设置观感——账号块只用一条分隔线，入口是一组无外框的行（图标 + 标题 +
+ * 说明 + 右箭头），行间用内分隔线，不再给整组套一层大边框卡。数据用途与使用边界改由
+ * 「关于篝火智答」次级页承载，一级页只留可达入口。零 accent。 */
 
 .account {
   padding: var(--space-2) 0 var(--space-4);
@@ -19,100 +21,68 @@
   font-size: var(--text-sm);
 }
 
+/* 设置入口组：无外框，行间以内分隔线；像系统设置那样一条条列出可达项。 */
 .links {
-  padding: 0 var(--space-4);
-  border: 1px solid var(--border-soft);
-  border-radius: var(--radius-md);
-  background: var(--surface);
+  display: flex;
+  flex-direction: column;
+  border-bottom: 1px solid var(--border);
 }
 
 .linkRow {
   display: flex;
   align-items: center;
   gap: var(--space-3);
-  min-height: 72px;
+  min-height: 64px;
   padding-block: var(--space-3);
   text-decoration: none;
+  color: var(--fg);
 }
 
 .linkRow + .linkRow {
   border-top: 1px solid var(--border-soft);
 }
 
-.linkRow > svg {
+/* 行首图标：圆角底、中性色，给标题一条不靠颜色的识别通道。 */
+.entryIcon {
+  display: inline-flex;
   flex: none;
-  color: var(--meta);
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-sm);
+  background: color-mix(in oklab, var(--surface-warm), transparent 40%);
+  color: var(--fg-2);
 }
 
-.linkRow > span {
+.entryText {
   flex: 1;
+  min-width: 0;
   display: grid;
   gap: var(--space-1);
 }
 
 .linkRow strong {
-  font-size: var(--text-sm);
+  font-size: var(--text-base);
   font-weight: 600;
 }
 
 .linkRow small {
   color: var(--meta);
-  font-size: var(--text-xs);
-}
-
-.information {
-  padding-block: var(--space-3);
-}
-
-/* 分组小标题：轻量标签而不是大标题（页内不再堆叠多级大标题）。 */
-.groupTitle {
-  margin: 0 0 var(--space-2);
-  color: var(--meta);
-  font-family: var(--font-body);
-  font-size: var(--text-xs);
-  font-weight: 600;
-  letter-spacing: 0.04em;
-}
-
-.facts {
-  display: grid;
-  margin: 0;
-}
-
-.facts > div {
-  padding-block: var(--space-3);
-  border-top: 1px solid var(--border-soft);
-}
-
-.facts dt {
-  margin: 0 0 var(--space-1);
-  color: var(--fg);
   font-size: var(--text-sm);
-  font-weight: 500;
+  line-height: 1.4;
 }
 
-.facts dd {
-  margin: 0;
-  color: var(--meta);
-  font-size: var(--text-sm);
-}
-
-.notice {
-  padding: var(--space-4);
-  border-radius: var(--radius-sm);
-  background: color-mix(in oklab, var(--surface-warm), transparent 50%);
-}
-
-.boundary {
-  margin: 0;
-  color: var(--fg-2);
-  font-size: var(--text-sm);
+.entryChevron {
+  display: inline-flex;
+  flex: none;
+  color: var(--muted);
 }
 
 .actions {
   display: grid;
   gap: var(--space-3);
-  padding-top: var(--space-3);
+  padding-top: var(--space-2);
 }
 
 .resetNote {

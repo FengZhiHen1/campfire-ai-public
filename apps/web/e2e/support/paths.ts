@@ -78,6 +78,7 @@ export const PAGE_NAMES = [
   'profile',
   'cases',
   'settings',
+  'about',
   'memory',
   'guide',
 ] as const;

@@ -14,13 +14,15 @@
 .sectionHead {
   display: flex;
   align-items: center;
-  gap: var(--space-2);
+  gap: var(--space-3);
 }
 
 /* 图标着色为 --fg-2（页面设计「组件选用」节指定），本页即使零 accent 也仍有图标 + 标题两重标识。 */
 .sectionIcon {
   display: inline-flex;
   flex: none;
+  align-items: center;
+  justify-content: center;
   color: var(--fg-2);
 }
 
@@ -29,7 +31,8 @@
   height: var(--space-6);
 }
 
-/* 小节标题用正文级字号但加粗：靠图标与字重分层，而不是靠放大的大标题。 */
+/* 小节标题用正文主字号、600 字重：与「我的」入口标题同一字号层级，靠图标与字重分层，
+ * 不再放大成大标题（手册页连续阅读，标题齐整）。 */
 .sectionTitle {
   margin: 0;
   font-family: var(--font-body);
@@ -50,6 +53,7 @@
   margin: var(--space-2) 0 0;
   color: var(--muted);
   font-size: var(--text-sm);
+  line-height: 1.5;
 }
 
 /* 数据与隐私小节的链接行：让内联链接成为 44px 热区的可点行（裸 a 无 min-height）。 */

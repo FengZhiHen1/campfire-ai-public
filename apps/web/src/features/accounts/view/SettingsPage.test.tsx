@@ -88,21 +88,15 @@ describe('设置页 · 账号与说明卡', () => {
     expect(screen.queryByText('个人账号 · 邀请码注册')).toBeNull();
   });
 
-  it('P0 「关于你的数据」三行要点逐字', () => {
+  it('P0 数据告知与边界不再本页平铺，收进「关于篝火智答」入口（/settings/about）', () => {
     renderSettings(port());
 
-    expect(screen.getByText('咨询记录怎么用')).toBeDefined();
-    expect(screen.getByText('本次输入的内容用于生成回答，并按你的确认累积到档案与记忆')).toBeDefined();
-    expect(screen.getByText('谁可见')).toBeDefined();
-    expect(screen.getByText('只有你的账号可以看到；登录才能使用全部功能')).toBeDefined();
-    expect(screen.getByText('会送去外部模型吗')).toBeDefined();
-    expect(screen.getByText('咨询内容会发送给模型服务处理后返回')).toBeDefined();
-  });
-
-  it('P0 一期边界硬文案逐字呈现（AC-10 反向声明不得弱化）', () => {
-    renderSettings(port());
-
-    expect(screen.getByText(BOUNDARY_COPY)).toBeDefined();
+    // 一级页只留可达入口：正文（三行要点与硬文案）已移到关于页，本页不再出现。
+    expect(screen.queryByText('咨询记录怎么用')).toBeNull();
+    expect(screen.queryByText(BOUNDARY_COPY)).toBeNull();
+    const about = screen.getByRole('link', { name: /关于篝火智答/ });
+    expect(about.getAttribute('href')).toBe('/settings/about');
+    expect(screen.getByText('数据用途、外部模型与使用边界')).toBeDefined();
   });
 
   it('P0 不出现专业认可或临床效果类表述', () => {
@@ -129,12 +123,12 @@ describe('设置页 · 账号与说明卡', () => {
 
 describe('设置页 · 记忆页入口', () => {
   it('P0 记忆入口在记录与帮助分组，指向 /settings/memory', () => {
-    const { container } = renderSettings(port());
+    renderSettings(port());
 
     const entry = screen.getByRole('link', { name: /我提过的事/ });
     expect(entry.getAttribute('href')).toBe('/settings/memory');
-    expect(entry.closest('section')?.getAttribute('aria-label')).toBe('记录与帮助');
-    expect(container.querySelector('#settings-data')).not.toBeNull();
+    // 入口收在一组可达项里（原生设置观感），分组名仍是「记录与帮助」。
+    expect(screen.getByRole('navigation', { name: '记录与帮助' })).toBeDefined();
   });
 
   it('P0 入口说明逐字', () => {
