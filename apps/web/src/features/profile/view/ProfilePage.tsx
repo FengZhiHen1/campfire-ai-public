@@ -74,38 +74,50 @@ export function ProfilePage({ port }: ProfilePageProps) {
         <div><h1 className={styles.heading}>{COPY.heading}</h1><p className="hint">了解 TA，也让每一次咨询更有上下文。</p></div>
       </header>
 
-      {/* 对象切换器：横向滚动（切换是平级单选，滚动语义比换行堆叠更准）。 */}
-      <div className={styles.switcher} role="group" aria-label={COPY.switcherLabel}>
-        {page.objects.map((object) => (
-          <button
-            aria-pressed={object.id === page.selectedObjectId}
-            disabled={editors.busy}
-            className={object.id === page.selectedObjectId ? 'tag selected' : 'tag'}
-            key={object.id}
-            onClick={() => {
-              if (object.id === page.selectedObjectId) return;
-              editors.requestSwitchObject(object.id);
-            }}
-            type="button"
-          >
-            {object.display_name}
-            {object.archived_at !== null && <span className={styles.archived}>{COPY.archivedTag}</span>}
+      {/*
+        对象区：切换（谁）与管理（对当前对象做什么）分成两层。
+        切换是平级单选，用横向滚动的 chip；管理是低频动作，放在切换条下方、
+        用一条分隔线与 chip 分开——两者混在同一行时，「⋯」读起来像又一个对象。
+      */}
+      <section className={styles.objects}>
+        <div className={styles.objectsHead}>
+          <p className={styles.objectsLabel}>{COPY.switcherLabel}</p>
+          <span className="meta">{page.objects.length} 个对象</span>
+        </div>
+        <div className={styles.switcher} role="group" aria-label={COPY.switcherLabel}>
+          {page.objects.map((object) => (
+            <button
+              aria-pressed={object.id === page.selectedObjectId}
+              disabled={editors.busy}
+              className={object.id === page.selectedObjectId ? 'tag selected' : 'tag'}
+              key={object.id}
+              onClick={() => {
+                if (object.id === page.selectedObjectId) return;
+                editors.requestSwitchObject(object.id);
+              }}
+              type="button"
+            >
+              {object.display_name}
+              {object.archived_at !== null && <span className={styles.archived}>{COPY.archivedTag}</span>}
+            </button>
+          ))}
+        </div>
+        <div className={styles.objectTools}>
+          {selected !== null && (
+            <button
+              aria-label="对象操作"
+              className={styles.objectTool}
+              onClick={objectActions.openMenu}
+              type="button"
+            >
+              <span aria-hidden="true">{COPY.moreLabel}</span> 管理当前对象
+            </button>
+          )}
+          <button className={styles.objectTool} onClick={objectActions.openCreate} type="button">
+            {COPY.addObject}
           </button>
-        ))}
-        {selected !== null && (
-          <button
-            aria-label="对象操作"
-            className="btn btn-quiet"
-            onClick={objectActions.openMenu}
-            type="button"
-          >
-            {COPY.moreLabel}
-          </button>
-        )}
-        <button className="tag" onClick={objectActions.openCreate} type="button">
-          {COPY.addObject}
-        </button>
-      </div>
+        </div>
+      </section>
 
       {page.status === 'ready' && selected !== null && (
         <nav className={styles.sectionNav} aria-label="档案分区">
@@ -227,13 +239,16 @@ export function ProfilePage({ port }: ProfilePageProps) {
 
           {/* 待确认分组固定在完整条目区最顶部（候选层视觉不变量）。 */}
           {page.candidates.length > 0 && (
-            <details id="profile-candidates" className="tile group-collapse" open>
+            <details id="profile-candidates" className={`group-collapse ${styles.candidateGroup}`} open>
               <summary>
                 <span className="status unruled">
                   {COPY.candidateGroup}（{page.candidates.length}）
                 </span>
               </summary>
               <div className="gc-body">
+                {/* 候选与稳定记录的差别必须先说清楚再列条目：候选是系统推断，
+                    确认后才进入摘要；否则「待确认」只是一个小标签，容易被读成已生效。 */}
+                <p className={styles.candidateHint}>还没确认的内容。确认后才会进入「当前认识」，也可以直接删除。</p>
                 {page.candidates.map((candidate) => (
                   <CandidateRow
                     busy={entry.busyItemId === candidate.item_id}
@@ -261,7 +276,7 @@ export function ProfilePage({ port }: ProfilePageProps) {
           )}
 
           <div id="profile-records" className="stack">{groups.map((group) => (
-            <details className="tile group-collapse" key={group.domain} open>
+            <details className={`group-collapse ${styles.domainGroup}`} key={group.domain} open>
               <summary>
                 {DOMAIN_LABELS[group.domain]}（{group.items.length}）
               </summary>
