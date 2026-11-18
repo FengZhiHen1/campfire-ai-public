@@ -15,44 +15,42 @@
  */
 
 import type { ReactNode } from 'react';
-import { NavLink } from 'react-router';
+import { NavLink, useLocation, useNavigationType } from 'react-router';
 
 import { DeviceFrame } from './DeviceFrame';
 
 /** tab 项的标识；与页面设计的一级页面集合一一对应。 */
 export type TabKey = 'home' | 'consult' | 'profile' | 'settings';
 
-/**
- * tab 图标。
- *
- * 为什么内联而不是引用 assets：设计源 assets 只有品牌图标（首页页设计注明
- * 「正式页面的图标取自 assets」但 assets 里没有导航图标），因此按设计语言
- * 现画 1.6px 描边、currentColor 上色的单色图标；形状保持最简，不用 emoji。
- */
-const TAB_ICONS: Readonly<Record<TabKey, ReactNode>> = {
-  home: (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true">
-      <path d="M4 11l8-7 8 7v8a1 1 0 0 1-1 1h-4v-5h-6v5H5a1 1 0 0 1-1-1z" strokeLinejoin="round" />
-    </svg>
-  ),
-  consult: (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true">
-      <path d="M4 6h16v10H9l-5 4z" strokeLinejoin="round" />
-    </svg>
-  ),
-  profile: (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true">
-      <path d="M5 4h9l5 5v11H5z" strokeLinejoin="round" />
-      <path d="M14 4v5h5" />
-    </svg>
-  ),
-  settings: (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true">
-      <circle cx="12" cy="12" r="3.2" />
-      <path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M18.4 5.6l-2.1 2.1M7.7 16.3l-2.1 2.1" />
-    </svg>
-  ),
+// 描边与实形共用外轮廓。实形上的留白保留门、文字、书页与人像的识别特征。
+const TAB_GLYPHS: Readonly<Record<TabKey, { outline: string; solid: string }>> = {
+  home: {
+    outline: 'M4 10.5 12 4l8 6.5v7.75A1.75 1.75 0 0 1 18.25 20H5.75A1.75 1.75 0 0 1 4 18.25z M10 20v-6h4v6',
+    solid: 'M3.25 10.14 12 3l8.75 7.14v8.11a2.5 2.5 0 0 1-2.5 2.5h-4.5V14.5h-3.5v6.25h-4.5a2.5 2.5 0 0 1-2.5-2.5z',
+  },
+  consult: {
+    outline: 'M6.5 5h11a2.5 2.5 0 0 1 2.5 2.5v6a2.5 2.5 0 0 1-2.5 2.5h-5L7 20v-4h-.5A2.5 2.5 0 0 1 4 13.5v-6A2.5 2.5 0 0 1 6.5 5Z M8 9h8m-8 3h5',
+    solid: 'M6.5 4.25h11a3.25 3.25 0 0 1 3.25 3.25v6a3.25 3.25 0 0 1-3.25 3.25h-4.75L6.25 21v-4.26A3.25 3.25 0 0 1 3.25 13.5v-6A3.25 3.25 0 0 1 6.5 4.25Z M7.5 8.25h9v1.5h-9zm0 3.25h6V13h-6z',
+  },
+  profile: {
+    outline: 'M6 5.75A1.75 1.75 0 0 1 7.75 4H14l4 4v10.25A1.75 1.75 0 0 1 16.25 20h-8.5A1.75 1.75 0 0 1 6 18.25Z M14 4v4h4m-9 4h6m-6 3.5h6',
+    solid: 'M5.25 5.75a2.5 2.5 0 0 1 2.5-2.5h6.5l4.5 4.5v10.5a2.5 2.5 0 0 1-2.5 2.5h-8.5a2.5 2.5 0 0 1-2.5-2.5z M13.25 5v3.75H17zm-4.5 6.25h6.5v1.5h-6.5zm0 3.5h6.5v1.5h-6.5z',
+  },
+  settings: {
+    outline: 'M20 12a8 8 0 1 1-16 0 8 8 0 0 1 16 0Z M14.5 10a2.5 2.5 0 1 1-5 0 2.5 2.5 0 0 1 5 0Z M6.75 17.8a5.75 5.75 0 0 1 10.5 0',
+    solid: 'M20.75 12a8.75 8.75 0 1 1-17.5 0 8.75 8.75 0 0 1 17.5 0Z M14.65 9.6a2.65 2.65 0 1 1-5.3 0 2.65 2.65 0 0 1 5.3 0Z M7 16.9a5.3 5.3 0 0 1 10 0A7 7 0 0 1 7 16.9Z',
+  },
 };
+
+function TabIcon({ tab }: { tab: TabKey }) {
+  const glyph = TAB_GLYPHS[tab];
+  return (
+    <svg className="tab-glyph" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <path className="tab-glyph-outline" d={glyph.outline} fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+      <path className="tab-glyph-solid" d={glyph.solid} fill="currentColor" fillRule="evenodd" />
+    </svg>
+  );
+}
 
 /** tab 项定义；label 是图标之外的第二标识通道（不得只靠颜色区分当前项）。 */
 interface TabDefinition {
@@ -95,14 +93,19 @@ export interface AppShellProps {
  * 反过来，把它留在 DeviceFrame 之外就等于绕过外壳——外壳落地前后它都贴在视口上。
  */
 export function AppShell({ children, tab, className = '' }: AppShellProps) {
+  const { state } = useLocation();
+  const navigation = useNavigationType();
+  const previousTab = (state as { previousTab?: TabKey } | null)?.previousTab;
+  const animateSelection = navigation === 'PUSH' && previousTab !== undefined && previousTab !== tab;
+
   return (
     <DeviceFrame>
       <div className={(tab === undefined ? 'phone-shell' : 'phone-shell has-tab-bar') + ' ' + className}>{children}</div>
       {tab !== undefined && (
-        <nav className="tab-bar" aria-label="一级导航">
+        <nav className="tab-bar" aria-label="一级导航" data-tab-arrival={animateSelection || undefined}>
           {TABS.map((item) => (
-            <NavLink className="tab-item" key={item.key} to={item.to} end={item.to === '/'}>
-              {TAB_ICONS[item.key]}
+            <NavLink className="tab-item" key={item.key} to={item.to} state={{ previousTab: tab }} end={item.to === '/'}>
+              <TabIcon tab={item.key} />
               <span>{item.label}</span>
             </NavLink>
           ))}

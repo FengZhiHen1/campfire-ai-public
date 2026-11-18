@@ -534,13 +534,40 @@ input[aria-invalid='true'] {
 }
 
 .sp-back {
-  text-decoration: none;
   display: inline-flex;
+  flex: none;
   align-items: center;
+  justify-content: center;
+  gap: var(--space-1);
   min-height: 44px;
   min-width: 44px;
-  color: var(--fg-2);
+  margin-inline-start: calc(-1 * var(--space-3));
+  padding-inline: var(--space-2);
+  border-radius: var(--radius-sm);
+  color: var(--fg);
   font-size: var(--text-sm);
+  text-decoration: none;
+  transition: background-color var(--motion-fast) var(--ease-standard);
+}
+
+.sp-back-glyph {
+  flex: none;
+  width: var(--space-6);
+  height: var(--space-6);
+  transition: transform var(--motion-fast) var(--ease-standard);
+}
+
+.sp-back:focus-visible { outline-offset: calc(-1 * var(--space-1)); }
+
+@media (hover: hover) and (pointer: fine) {
+  .sp-back:not(:disabled):hover { background-color: var(--bg); }
+}
+
+.sp-back:not(:disabled):active { background-color: var(--surface-warm); }
+.sp-back:not(:disabled):active .sp-back-glyph { transform: translateX(-2px); }
+
+@media (prefers-reduced-motion: reduce) {
+  .sp-back:not(:disabled):active .sp-back-glyph { transform: none; }
 }
 
 /* 次级页标题：契约源 components.html:301 只给了字体族，字号/字重/行高在这里补齐，是本文件
@@ -599,38 +626,57 @@ input[aria-invalid='true'] {
   color: var(--fg-2);
   font-size: var(--text-xs);
   text-decoration: none;
-  /* 当前项的短横线是绝对定位的，因此这里要建立定位上下文。
-   * 该声明原在 global.css（2026-10-11 收拢回本表）：两个文件各写一次当前项状态时，
-   * 胜负由 main.tsx 的导入顺序决定，改一次导入就会静默翻转呈现。 */
-  position: relative;
+  transition: background-color var(--motion-fast) var(--ease-standard);
 }
 
 .tab-item:focus-visible {
   outline-offset: calc(-1 * var(--space-1));
+  border-radius: var(--radius-sm);
 }
 
-.tab-item svg {
-  width: var(--space-5);
-  height: var(--space-5);
+.tab-glyph {
+  width: var(--space-6);
+  height: var(--space-6);
 }
 
-/* 当前项：accent 只承担「当前状态」这一点，不再同时压一条下划线
- * （下划线与强调短横线并存会被读成两个不同的状态）。 */
+.tab-glyph-solid,
+.tab-item[aria-current='page'] .tab-glyph-outline { opacity: 0; }
+
 .tab-item[aria-current='page'] {
   color: var(--accent);
   font-weight: 600;
-  text-decoration: none;
 }
 
-.tab-item[aria-current='page']::before {
-  content: '';
-  position: absolute;
-  top: var(--space-1);
-  width: var(--space-5);
-  height: 2px;
-  border-radius: var(--radius-pill);
-  background: var(--accent);
+.tab-item[aria-current='page'] .tab-glyph-solid { opacity: 1; }
+
+@media (hover: hover) and (pointer: fine) {
+  .tab-item:hover { background-color: var(--bg); }
 }
+
+.tab-item:active { background-color: color-mix(in oklab, var(--surface-warm), var(--surface) 45%); }
+
+/* 标签在切换中保持位置。只有通过一级导航到达时，当前图标从原来的轮廓过渡到实形。 */
+@media (prefers-reduced-motion: no-preference) {
+  .tab-bar[data-tab-arrival] .tab-item[aria-current='page'] .tab-glyph {
+    animation: tab-glyph-settle var(--motion-fast) var(--ease-standard);
+  }
+
+  .tab-bar[data-tab-arrival] .tab-item[aria-current='page'] .tab-glyph-outline {
+    animation: tab-outline-out var(--motion-fast) var(--ease-standard);
+  }
+
+  .tab-bar[data-tab-arrival] .tab-item[aria-current='page'] .tab-glyph-solid {
+    animation: tab-solid-in var(--motion-fast) var(--ease-standard);
+  }
+}
+
+@keyframes tab-glyph-settle {
+  from { transform: translateY(2px); }
+  to { transform: translateY(0); }
+}
+
+@keyframes tab-outline-out { from { opacity: 1; } to { opacity: 0; } }
+@keyframes tab-solid-in { from { opacity: 0; } to { opacity: 1; } }
 
 /* 一级页底部为固定 tab 栏预留高度（页设计首页的底部预留条）。
  * 选择器带 .phone-shell 是为了压过 global.css 的 `padding` 简写：两者同为单类选择器时
