@@ -140,21 +140,23 @@ export function MemoryPage({ port }: MemoryPageProps) {
                 {group.items.map((episode) => {
                   const isExpanded = expanded.includes(episode.episode_key);
                   return (
-                    <article className="list-row" key={episode.episode_key}>
-                      <strong className={`lr-title ${isExpanded ? styles.fullContent : styles.title}`}>{episode.content}</strong>
-                      <p className="lr-meta">
-                        {occurredAtLabel(episode.occurred_at)} · {sourceLabel()}
-                      </p>
-                      <button
-                        className="text-button"
-                        aria-expanded={isExpanded}
-                        onClick={() => {
-                          toggleExpanded(episode.episode_key);
-                        }}
-                        type="button"
-                      >
-                        {isExpanded ? COPY.collapse : COPY.expand}
-                      </button>
+                    <article className={`list-row ${styles.episode}`} key={episode.episode_key}>
+                      <div className={styles.episodeHead}>
+                        <strong className={`lr-title ${isExpanded ? styles.fullContent : styles.title}`}>{episode.content}</strong>
+                        <p className={`lr-meta ${styles.episodeMeta}`}>
+                          {occurredAtLabel(episode.occurred_at)} · {sourceLabel()}
+                        </p>
+                        <button
+                          className={`text-button ${styles.toggle}`}
+                          aria-expanded={isExpanded}
+                          onClick={() => {
+                            toggleExpanded(episode.episode_key);
+                          }}
+                          type="button"
+                        >
+                          {isExpanded ? COPY.collapse : COPY.expand}
+                        </button>
+                      </div>
                       <div className="lr-actions">
                         <button
                           className="btn btn-secondary"

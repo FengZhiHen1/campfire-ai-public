@@ -25,6 +25,7 @@ import {
   type MemoryFailure,
   failureFromError,
 } from '../domain/failures';
+import { useMemoryPaging } from './useMemoryPaging';
 
 /** 页面加载状态。 */
 export type MemoryStatus = 'loading' | 'ready' | 'error';
@@ -82,16 +83,22 @@ export interface MemoryPageState {
  */
 export function useMemoryPage(port: MemoryPort): MemoryPageState {
   const [items, setItems] = useState<MemoryEpisode[]>([]);
-  const [cursor, setCursor] = useState<string | null>(null);
   const [status, setStatus] = useState<MemoryStatus>('loading');
   const [failure, setFailure] = useState<MemoryFailure | null>(null);
-  const [loadingMore, setLoadingMore] = useState(false);
-  const [loadMoreFailure, setLoadMoreFailure] = useState<MemoryFailure | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<MemoryEpisode | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [rowFailure, setRowFailure] = useState<{ episodeKey: string; failure: MemoryFailure } | null>(null);
   const [correction, setCorrection] = useState<MemoryCorrectionState | null>(null);
   const [notice, setNotice] = useState<MemoryPageState['notice']>(null);
+
+  // 触底分页（加载中 / 独立失败 / 追加）归独立 hook；它经由稳定的 append 回调追加条目。
+  const appendItems = useCallback((page: MemoryEpisode[]) => {
+    setItems((current) => [...current, ...page]);
+  }, []);
+  const paging = useMemoryPaging(port, appendItems);
+  // setCursor 引用稳定；放进 ref，避免 loadFirstPage 依赖整个 paging 对象而反复换身份。
+  const pagingSetCursor = paging.setCursor;
+  const pagingReset = paging.reset;
 
   // 迟到的响应不得覆盖新结果（CORE-03 身份守卫）：首屏与重试各算一次加载。
   const loadToken = useRef(0);
@@ -104,13 +111,14 @@ export function useMemoryPage(port: MemoryPort): MemoryPageState {
         setStatus('loading');
         setFailure(null);
         // 首页重取后上一轮的触底失败不再适用：新的一页会给出新的尾部形态。
-        setLoadMoreFailure(null);
+        pagingReset();
       }
       try {
         const page = await new LoadEpisodesUseCase(port).execute();
         if (loadToken.current !== token) return;
         setItems(page.items);
-        setCursor(page.nextCursor);
+        // 把新游标同步给触底分页：它既是「是否还有下一页」的真相，也是后续翻页的起点。
+        pagingSetCursor(page.nextCursor);
         setStatus('ready');
         setFailure(null);
       } catch (error) {
@@ -119,7 +127,7 @@ export function useMemoryPage(port: MemoryPort): MemoryPageState {
         setStatus('error');
       }
     },
-    [port],
+    [pagingReset, pagingSetCursor, port],
   );
 
   useEffect(() => {
@@ -129,25 +137,6 @@ export function useMemoryPage(port: MemoryPort): MemoryPageState {
     // oxlint-disable-next-line react/set-state-in-effect
     void loadFirstPage({ initial: true });
   }, [loadFirstPage]);
-
-  const loadMore = useCallback(async (): Promise<void> => {
-    if (cursor === null || loadingMore) return;
-    setLoadingMore(true);
-    // 重试即清除上一次的失败：尾部回到「正在加载」，失败再出现时又是新的一次。
-    setLoadMoreFailure(null);
-    try {
-      const page = await new LoadEpisodesUseCase(port).execute(cursor);
-      // 追加而不是替换：分页是同一份时间线的延续。
-      setItems((current) => [...current, ...page.items]);
-      setCursor(page.nextCursor);
-    } catch (error) {
-      // 触底失败不改整页状态：已加载的内容仍然有效，游标留在原处让使用者再试。
-      // 失败必须落在自己的状态上——它没有对应的行，写成行内错误（空键占位）永远渲染不出来。
-      setLoadMoreFailure(failureFromError(error));
-    } finally {
-      setLoadingMore(false);
-    }
-  }, [cursor, loadingMore, port]);
 
   const askDelete = useCallback((episode: MemoryEpisode): void => {
     setDeleteTarget(episode);
@@ -233,9 +222,9 @@ export function useMemoryPage(port: MemoryPort): MemoryPageState {
     items,
     status,
     failure,
-    loadingMore,
-    hasMore: cursor !== null,
-    loadMoreFailure,
+    loadingMore: paging.loadingMore,
+    hasMore: paging.hasMore,
+    loadMoreFailure: paging.loadMoreFailure,
     deleteTarget,
     deletingId,
     rowFailure,
@@ -244,7 +233,7 @@ export function useMemoryPage(port: MemoryPort): MemoryPageState {
     retry: async (): Promise<void> => {
       await loadFirstPage();
     },
-    loadMore,
+    loadMore: paging.loadMore,
     askDelete,
     cancelDelete,
     confirmDelete,

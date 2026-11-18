@@ -80,9 +80,14 @@ describe('应急表单页 — 分步流', () => {
   it('下一题/上一题可来回，作答与跳过标记保留', () => {
     renderForm(createConsultPortStub());
 
+    // 第一题没有上一题：不渲染它，把首屏留给题面与提交（页面设计：10 秒内可提交）。
+    expect(screen.queryByRole('button', { name: /上一题/ })).toBeNull();
+
     fireEvent.click(screen.getByRole('button', { name: '下一题' }));
     expect(screen.getByText('第 2 / 8 题')).toBeDefined();
     expect(screen.getByText(EMERGENCY_QUESTIONS[1]?.prompt ?? '')).toBeDefined();
+    // 从第二题起「上一题」可达。
+    expect(screen.getByRole('button', { name: '上一题' })).toBeDefined();
 
     fireEvent.click(screen.getByRole('button', { name: '跳过这题' }));
     expect(screen.getByText('第 3 / 8 题')).toBeDefined();
@@ -91,6 +96,8 @@ describe('应急表单页 — 分步流', () => {
 
     fireEvent.click(screen.getByRole('button', { name: '上一题' }));
     expect(screen.getByText('第 1 / 8 题')).toBeDefined();
+    // 回到第一题后「上一题」重新隐藏。
+    expect(screen.queryByRole('button', { name: /上一题/ })).toBeNull();
   });
 
   it('第八题时「下一题」禁用；勾选与自由补充都能记录', () => {
@@ -193,4 +200,54 @@ describe('应急表单页 — 提交', () => {
     expect(await screen.findByText('网络不可用')).toBeDefined();
     expect(port.emergencyStart).not.toHaveBeenCalled();
   });
+
+  it('提交失败给出「重试」；重试会再次发起提交（失败保留已填内容）', async () => {
+    const port = createConsultPortStub({ emergency: new Error('服务不可达') });
+    renderForm(port);
+    fireEvent.click(screen.getByLabelText('意识改变'));
+
+    await act(async () => {
+      fireEvent.click(submitButton());
+    });
+    expect(await screen.findByText('出现了未预期的错误')).toBeDefined();
+
+    const retry = screen.getByRole('button', { name: '重试' });
+    await act(async () => {
+      fireEvent.click(retry);
+    });
+    await waitFor(() => expect(port.emergencyStart).toHaveBeenCalledTimes(2));
+  });
+});
+
+describe('应急表单页 — 进度与三键区分', () => {
+  it('分段进度逐题标出已作答/已跳过/当前题，且不只靠颜色（有读屏摘要）', () => {
+    renderForm(createConsultPortStub());
+    // 首题：8 段，第一段是当前题。
+    const segments = document.querySelectorAll('[data-status]');
+    expect(segments).toHaveLength(8);
+    expect(document.querySelector('[data-current="true"]')).not.toBeNull();
+
+    // 作答首题 → 下一题 → 跳过第二题后，状态分别为 answered / skipped。
+    fireEvent.click(screen.getByLabelText('意识改变'));
+    fireEvent.click(screen.getByRole('button', { name: '下一题' }));
+    fireEvent.click(screen.getByRole('button', { name: '跳过这题' }));
+
+    const statuses = Array.from(document.querySelectorAll('[data-status]')).map((node) =>
+      node.getAttribute('data-status'),
+    );
+    expect(statuses[0]).toBe('answered');
+    expect(statuses[1]).toBe('skipped');
+    // 读屏摘要把每题的视觉状态都讲出来。
+    expect(screen.getByText(/第 1 题已作答/)).toBeDefined();
+  });
+
+  it('跳过、下一题、提交三个动作都在且互相区分（提交为主操作、整宽）', () => {
+    renderForm(createConsultPortStub());
+    expect(screen.getByRole('button', { name: '跳过这题' })).toBeDefined();
+    expect(screen.getByRole('button', { name: '下一题' })).toBeDefined();
+    expect(screen.getByRole('button', { name: '提交，开始分析' })).toBeDefined();
+    // 第一题不渲染「上一题」，不与底部三键混同（后续题才出现）。
+    expect(screen.queryByRole('button', { name: /上一题/ })).toBeNull();
+  });
+
 });

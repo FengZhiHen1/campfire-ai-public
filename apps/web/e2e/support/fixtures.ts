@@ -467,7 +467,7 @@ export const PAGE_SHOTS: readonly PageShot[] = [
         kind: 'text',
         intent: '应急入口与日常入口同屏可见',
         minHits: 5,
-        candidates: ['现在需要帮助', '日常咨询', '开始应急咨询', '今天，想聊些什么？', '案例库'],
+        candidates: ['现在需要帮助', '进入对话', '开始应急咨询', '今天，想聊些什么？', '案例库'],
       },
       { kind: 'count', intent: '底部 tab 栏四项导航可见', selector: 'nav.tab-bar a.tab-item', minCount: 4 },
       { kind: 'count', intent: '应急入口的呼吸点已渲染（它是首页唯一循环动效）', selector: '.flame-dot.breathing', minCount: 1 },
@@ -594,7 +594,7 @@ export const PAGE_SHOTS: readonly PageShot[] = [
         minHits: 6,
         candidates: [
           '我的',
-          '个人账号 · 邀请码注册',
+          '当前登录会话',
           '关于你的数据',
           '我提过的事',
           '本应用尚未经专业审阅，不能替代专业服务；遇到紧急医疗情况请直接就医或拨打急救电话',

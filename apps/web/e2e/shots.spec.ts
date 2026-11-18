@@ -12,7 +12,7 @@
  *   - 被依赖: 无（由 `pnpm --filter @campfire/web shots` 驱动）
  * 禁止行为:
  *   - 禁止用 dev server 代替 preview（裁决 B：截图对象是构建产物）
- *   - 禁止在字体未加载时出图（裁决 2：静默产出回退字形的图比失败更糟）
+ *   - 禁止以外部字体作为截图前置条件
  *   - 禁止在中和样式未恢复时继续写 sidecar（残留会污染后续断言与记录）
  *   - 禁止在此处求值内容断言（归 content.spec.ts）——否则断言一红就一张图都没有，
  *     而那正是最需要看图的时候（2026-10-07 用户裁决「拆成两条入口」）
@@ -107,7 +107,7 @@ for (const shot of PAGE_SHOTS) {
 
     // 前置（注入登录态 → 装夹具 → 导航 → 等字体 → fail-closed 判定）与 content.spec.ts
     // 完全同源：两者共用 openPage，避免「截图验的是一个形态、断言验的是另一个形态」。
-    const { fontEvidence, ledger, pageProblems } = await openPage(page, shot, testInfo);
+    const { fontStack, ledger, pageProblems } = await openPage(page, shot, testInfo);
 
     // 截图前量一次真实的纵向溢出：它既是「视口图裁掉了多少」的记录，
     // 也是 fullPage 高度守卫的唯一输入（必须在中和/展开之前量，展开会把溢出消掉）。
@@ -124,10 +124,6 @@ for (const shot of PAGE_SHOTS) {
       viewportWidth: overflow.viewportWidthPx,
     };
     const truncatedByPx = overflow.documentOverflowPx;
-
-    // 豁免 no-array-sort：排的是展开后的新数组副本；`toSorted` 不在本项目 TS lib 目标里。
-    // oxlint-disable-next-line unicorn/no-array-sort
-    const allowedExternalHosts = [...new Set(ledger.allowedExternal.map((record) => new URL(record.url).hostname))].sort();
 
     /**
      * 落一张图并写它的 sidecar。
@@ -193,15 +189,7 @@ for (const shot of PAGE_SHOTS) {
           requiredContentHeightPx: overflow.requiredContentHeightPx,
           hiddenOverflowContainers: overflow.scrollContainers,
         },
-        allowedExternalHosts,
-        fontLoaded: fontEvidence.loadedFaceCount > 0 && fontEvidence.loadedFacesForFamily > 0,
-        fontProbe: fontEvidence.probe,
-        fontCheckResult: fontEvidence.available,
-        fontLoadedFaceCount: fontEvidence.loadedFaceCount,
-        fontLoadedFacesForFamily: fontEvidence.loadedFacesForFamily,
-        fontNegativeControlFaceCount: fontEvidence.negativeControlFaceCount,
-        fontStatus: fontEvidence.status,
-        fontDeclaredFamilies: fontEvidence.declaredFamilies,
+        fontStack,
         fixedNeutralised: neutralised?.fixedNeutralised ?? false,
         neutralisedSelectors: neutralised?.neutralisedSelectors ?? [],
         expandedScrollContainer: neutralised?.expandedScrollContainer ?? null,

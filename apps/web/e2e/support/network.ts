@@ -4,15 +4,13 @@
  * 数据来源:
  *   - 原证物 orchestrator-20261002-001/T01.md: MUST — 裁决 D（page.route + 兜底 handler 必须让测试失败）
  *     与验收标准「任何 /api/** 请求若未被夹具命中，脚本以非 0 退出并点名该 URL」
- *   - 原证物 orchestrator-20261002-001/T01-rulings.md: MUST — 裁决 2
- *     （字体 host 放行真实出网；其余外部 host 仍阻断且让用例失败）
  *   - .dsh/skills/code-craft/SKILL.md: MUST — CORE-07（边界显式，无静默兜底）
  * 边界:
  *   - 依赖: @playwright/test 的 Page/Route
  *   - 被依赖: e2e/shots.spec.ts
  * 禁止行为:
  *   - 禁止让未命中的 /api/** 请求静默通过（静默 404 会渲染成空态，看起来「截图成功」实则没验证到目标形态）
- *   - 禁止把放行清单放宽成「外部一律放行」（只放行字体两个 host，其余外部 host 仍阻断并失败）
+ *   - 禁止放行外部请求
  */
 
 import { expect, type Page, type Route } from '@playwright/test';
@@ -22,23 +20,6 @@ import { BASE_URL } from './paths';
 
 /** 业务接口前缀（infrastructure/http/client 的 API_PREFIX）。 */
 export const API_PREFIX = '/api';
-
-/**
- * 允许真实出网的外部主机（白名单，只有字体 CDN 两个）。
- *
- * 为什么放行字体：本设计的调性是「暖米纸底、宋体标题承载读物的温度」
- * （`docs/design/DESIGN.md` 调性节），`--font-display` 的首顺位就是 `"Noto Serif SC"`。
- * 用系统回退字形截图，等于用错误的字形去审一套以字形为核心的设计语言——字号阶梯、
- * 字重、行宽的观感全部失真，逐页视觉审计会建立在错误前提上。这是证据质量问题。
- *
- * 这些请求真实出网，不是本地替身：编排器实测该端点 HTTP 200 / 236 字节本机可达。
- * 代价如实登记：截图现在依赖字体 CDN 可达；不可达时 `awaitDisplayFont` 会让用例
- * 明确失败（有意如此——静默产出回退字形的图比失败更糟）。
- *
- * 这是显式白名单，不是「外部请求一律放行」：未列在此处的外部主机仍然被阻断并让用例失败。
- * 命中的每一笔都记进请求账本的 `allowedExternal`，供审查者复核。
- */
-export const ALLOWED_EXTERNAL_HOSTS: readonly string[] = ['fonts.googleapis.com', 'fonts.gstatic.com'];
 
 /** 一次请求的记录。 */
 export interface RequestRecord {
@@ -66,18 +47,11 @@ export interface RequestLedger {
   unmatched: RequestRecord[];
   /** 被阻断的外部请求（非本机预览服务器、也不在放行白名单里；由 `expectNoExternalRequests` 读取）。 */
   blockedExternal: RequestRecord[];
-  /**
-   * 被放行真实出网的外部请求（白名单内的字体 host）。
-   *
-   * 它不是失败，但必须留痕：manifest 会记下实际出网的 host，审查者据此知道
-   * 「截图依赖了字体 CDN」这一事实，而不是以为全程离线。
-   */
-  allowedExternal: RequestRecord[];
 }
 
 /** 新建一本空账本。 */
 export function createLedger(): RequestLedger {
-  return { records: [], unmatched: [], blockedExternal: [], allowedExternal: [] };
+  return { records: [], unmatched: [], blockedExternal: [] };
 }
 
 /** 把一条记录格式化成「点名该 URL」所需的文本。 */
@@ -132,22 +106,7 @@ export async function installNetwork(page: Page, fixtures: readonly ApiFixture[]
       return;
     }
 
-    // 白名单内的字体 host：真实出网（见 ALLOWED_EXTERNAL_HOSTS 的说明）。
-    // 只登记不干预，让请求打到真实 CDN——截图需要真实思源宋体的字形。
-    if (ALLOWED_EXTERNAL_HOSTS.includes(url.hostname)) {
-      const allowed: RequestRecord = {
-        url: request.url(),
-        pathname: url.pathname,
-        method: request.method(),
-        matched: `allow:${url.hostname}`,
-      };
-      ledger.records.push(allowed);
-      ledger.allowedExternal.push(allowed);
-      await route.continue();
-      return;
-    }
-
-    // 其余外部请求一律阻断：截图不得依赖字体 CDN 之外的任何外部资源。
+    // 页面与截图均不加载第三方静态资源。
     const external: RequestRecord = { url: request.url(), pathname: url.pathname, method: request.method(), matched: null };
     ledger.records.push(external);
     ledger.blockedExternal.push(external);
@@ -260,8 +219,7 @@ export function expectNoUnmatchedApi(ledger: RequestLedger): void {
 export function expectNoExternalRequests(ledger: RequestLedger): void {
   expect(
     ledger.blockedExternal.map(describe),
-    '存在被阻断的清单外外部请求：截图只允许依赖字体 CDN（ALLOWED_EXTERNAL_HOSTS），' +
-      '其余外部资源一律阻断——若这里出现条目，说明页面引入了新的外部依赖，需裁决是否放行',
+    '存在被阻断的外部请求：页面或资源离开了本地预览服务器',
   ).toHaveLength(0);
 }
 

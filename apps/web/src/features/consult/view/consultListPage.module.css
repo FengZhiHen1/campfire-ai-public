@@ -1,3 +1,15 @@
+/* 会话列表：纸面目录。标题用系统无衬线（显示字体只留给品牌），
+ * 列表用分隔线与留白，不把每行包成卡片。 */
+.pageTitle {
+  margin: 0;
+  font-family: var(--font-body);
+  font-size: var(--text-xl);
+  font-weight: 600;
+  line-height: 1.3;
+  letter-spacing: 0;
+  color: var(--fg);
+}
+
 .newEntry {
   display: grid;
   grid-template-columns: auto 1fr;
@@ -7,6 +19,9 @@
   padding: var(--space-4);
   text-align: left;
   color: var(--fg);
+  border: 1px solid var(--border-soft);
+  background: var(--surface);
+  border-radius: var(--radius-md);
 }
 
 .newIcon {
@@ -17,6 +32,7 @@
   height: var(--space-12);
   border-radius: var(--radius-sm);
   background: var(--surface-warm);
+  color: var(--accent);
 }
 
 .newTitle {
@@ -37,16 +53,22 @@
   cursor: not-allowed;
 }
 
+/* 目录分隔标题：与列表行同左对齐，弱化为分组标签。 */
+.sectionLabel {
+  margin: 0;
+}
+
 .rows {
   display: grid;
-  margin-top: var(--space-3);
+  margin-top: var(--space-2);
 }
 
 .row {
   display: grid;
   gap: var(--space-1);
   width: 100%;
-  min-height: 80px;
+  min-height: 64px;
+  padding-block: var(--space-4);
   border-inline: 0;
   border-bottom: 0;
   background: none;
@@ -54,7 +76,15 @@
   color: var(--fg);
 }
 
-.row :global(.lr-title), .row :global(.lr-meta) {
+.row :global(.lr-title) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--text-base);
+  font-weight: 600;
+}
+
+.row :global(.lr-meta) {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -67,6 +97,12 @@
 
 .row:active {
   background: var(--surface);
+}
+
+/* 可点击提示减轻：行的可点性由整行热区与 hover/active 承担，不再加额外边框。 */
+.row:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: calc(-1 * var(--space-1));
 }
 
 .sentinel {

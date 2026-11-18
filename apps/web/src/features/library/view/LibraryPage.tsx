@@ -80,8 +80,14 @@ export function LibraryPage({ port, searchOverride }: LibraryPageProps) {
 
       {/* 检索行：滚动时吸顶，因此它必须在内容之前、且不随结果区重建。 */}
       <div className={styles.searchRow}>
-        <label className="field">
+        <label className={styles.searchField}>
           <span className="sr-only">{page.library === 'case' ? '搜索案例' : '搜索资料'}</span>
+          <span className={styles.searchIcon} aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+              <circle cx="11" cy="11" r="6.5" />
+              <path d="M16 16l4 4" strokeLinecap="round" />
+            </svg>
+          </span>
           <input
             className={styles.searchInput}
             onChange={(event) => {
@@ -91,12 +97,17 @@ export function LibraryPage({ port, searchOverride }: LibraryPageProps) {
             type="search"
             value={page.query}
           />
+          {/* 检索中的呼吸点：结果区保持旧结果，避免闪空。 */}
+          {page.status === 'loading' && page.items.length > 0 && (
+            <span className="flame-dot sm breathing" aria-hidden="true" data-testid="library-searching" />
+          )}
         </label>
-        <div className={styles.tabs} role="group" aria-label="检索范围">
+        {/* 库别分段选择条：案例与资料是两张独立的库，用分段控件表达「只有一个在生效」。 */}
+        <div className={styles.segmented} role="group" aria-label="检索范围">
           {(['case', 'knowledge'] as const).map((kind) => (
             <button
               aria-pressed={page.library === kind}
-              className={page.library === kind ? 'tag selected' : 'tag'}
+              className={styles.segment}
               key={kind}
               onClick={() => {
                 page.setLibrary(kind);
@@ -107,10 +118,6 @@ export function LibraryPage({ port, searchOverride }: LibraryPageProps) {
             </button>
           ))}
         </div>
-        {/* 检索中的呼吸点：结果区保持旧结果，避免闪空。 */}
-        {page.status === 'loading' && page.items.length > 0 && (
-          <span className="flame-dot sm breathing" aria-hidden="true" data-testid="library-searching" />
-        )}
       </div>
 
       {showWithdrawnCard && page.deepLink.kind === 'withdrawn' && (

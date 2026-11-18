@@ -1,48 +1,152 @@
-/* 对象、当前认识、候选、完整记录四层各自有明确视觉职责。 */
+/* 档案页的呈现纪律：对象切换与管理分两层；候选是被框住的「未确认区」，
+ * 稳定记录是连续的分隔列表；摘要只靠一条细线与留白获得重量。
+ * 只消费 design token，不在此定义色值。 */
 
 .heading {
   margin: 0;
   font-family: var(--font-display);
   font-size: var(--text-xl);
   font-weight: 500;
+  line-height: 1.3;
 }
 
+/* 对象区：切换（谁）与管理（做什么）分两层。组内留白收紧，让首屏多露出「当前认识」；
+ * 管理/新建的 44px 热区不变。 */
+.objects {
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+}
+
+.objectsHead {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.objectsLabel {
+  margin: 0;
+  color: var(--fg-2);
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+
+/* 横向滚动而不是换行堆叠：切换是平级单选，滚动语义更准。 */
 .switcher {
   display: flex;
   align-items: center;
   gap: var(--space-2);
+  margin-inline: calc(-1 * var(--space-1));
+  padding: var(--space-1);
   overflow-x: auto;
-  padding-block: var(--space-1);
   scrollbar-width: none;
+}
+
+.switcher::-webkit-scrollbar {
+  display: none;
 }
 
 .switcher > button {
   flex: none;
   gap: var(--space-2);
+  min-height: 44px;
+  padding-inline: var(--space-4);
   font-size: var(--text-sm);
 }
 
 .archived {
+  color: var(--muted);
   font-size: var(--text-xs);
-  color: var(--meta);
 }
 
+/* 管理行与切换条之间画一条分隔：混在同一行时，管理入口会被读成又一个对象。
+ * 热区仍 44px，只收紧上下留白。 */
+.objectTools {
+  display: flex;
+  gap: var(--space-2);
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--border-soft);
+}
+
+.objectTool {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  min-height: 44px;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: var(--surface-warm);
+  color: var(--fg-2);
+  font: 500 var(--text-sm) / 1.4 var(--font-body);
+}
+
+.objectTool:active {
+  background: color-mix(in oklab, var(--surface-warm), var(--fg) 6%);
+}
+
+.objectTool:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: var(--space-1);
+}
+
+/* ── 分区锚点 ─────────────────────────────────────────────── */
+
+.sectionNav {
+  display: flex;
+  gap: var(--space-5);
+  overflow-x: auto;
+  border-bottom: 1px solid var(--border-soft);
+  scrollbar-width: none;
+}
+
+.sectionNav::-webkit-scrollbar {
+  display: none;
+}
+
+.sectionNav a {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  min-height: 44px;
+  color: var(--fg-2);
+  font-size: var(--text-sm);
+  font-weight: 500;
+  text-decoration: none;
+}
+
+.sectionNav a:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+/* ── 当前认识：细线 + 连续排版，不嵌套抬升大卡 ──────────────── */
+
 .summary {
-  box-shadow: none;
+  margin: 0;
+  padding: var(--space-2) 0 var(--space-2) var(--space-4);
   border: 0;
   border-left: 2px solid var(--border);
   border-radius: 0;
   background: transparent;
-  padding: var(--space-2) 0 var(--space-2) var(--space-4);
+  box-shadow: none;
 }
 
 .summary h2 {
   margin: 0;
+  font-family: var(--font-display);
   font-size: var(--text-lg);
+  font-weight: 500;
+  line-height: 1.4;
 }
 
 .summaryField + .summaryField {
-  margin-top: var(--space-4);
+  margin-top: var(--space-5);
 }
 
 .summaryLabel {
@@ -51,8 +155,10 @@
   font-family: var(--font-body);
   font-size: var(--text-xs);
   font-weight: 500;
+  letter-spacing: 0.04em;
 }
 
+/* 摘要条目：正文独占一行，下一行是来源/时间与纠正（纠正为 44px 触控）。 */
 .summaryItem {
   display: grid;
   grid-template-columns: 1fr auto;
@@ -60,39 +166,80 @@
   row-gap: var(--space-1);
   margin: 0;
   color: var(--fg);
+  font-size: var(--text-base);
 }
 
 .summaryItem > span:first-child {
   grid-column: 1 / -1;
+  line-height: var(--leading-body);
 }
 
 .summaryItem > :global(.meta) {
   align-self: center;
+  color: var(--meta);
+  font-size: var(--text-sm);
 }
 
 .summaryCorrect {
+  align-self: center;
+  min-height: 44px;
   padding-block: 0;
+  color: var(--fg-2);
   text-decoration: none;
+}
+
+.summaryCorrect:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 .summaryItem + .summaryItem {
   padding-top: var(--space-3);
 }
 
-.sectionNav {
-  display: flex;
-  gap: var(--space-4);
-  border-bottom: 1px solid var(--border);
+/* ── 待确认：被框住的独立区域（与连续的稳定记录分组相区分）──── */
+
+.candidateGroup:global(.group-collapse) {
+  padding: var(--space-4);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--status-unruled);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  box-shadow: none;
 }
 
-.sectionNav a {
-  display: inline-flex;
-  align-items: center;
-  min-height: 44px;
-  color: var(--meta);
-  font-size: var(--text-xs);
-  text-decoration: none;
+.candidateGroup:global(.group-collapse) > summary {
+  color: var(--fg);
 }
+
+.candidateHint {
+  margin: 0 0 var(--space-3);
+  color: var(--meta);
+  font-size: var(--text-sm);
+  line-height: 1.5;
+}
+
+/* ── 全部记录：连续分隔列表，不再逐个分组套卡片 ─────────────── */
+
+.domainGroup:global(.group-collapse) {
+  padding: var(--space-1) 0;
+  border: 0;
+  border-top: 1px solid var(--border-soft);
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.domainGroup:global(.group-collapse) > summary {
+  color: var(--fg);
+  font-size: var(--text-sm);
+}
+
+.domainGroup:global(.group-collapse) > summary::after {
+  border-color: var(--meta);
+}
+
+/* ── 锚点定位：留出与页头的距离 ─────────────────────────────── */
 
 :global(#profile-summary), :global(#profile-candidates), :global(#profile-records) {
   scroll-margin-top: var(--space-6);

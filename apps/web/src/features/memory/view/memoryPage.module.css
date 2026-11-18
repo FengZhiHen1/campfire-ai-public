@@ -1,21 +1,45 @@
+/* 记忆页的呈现纪律：这是核对工具页，不是行动页——零 accent，纠正走 secondary。
+ * 时间线按日期分组，组头 sticky；每条记忆是一张轻量纸面，正文两行预览、可展开。
+ * 降低重复边框与小字：组与卡用留白和一条浅分隔区分，正文与元信息字号不低于可读下限。
+ * 只消费 design token。 */
+
+/* ── 归属说明：细左线 + 留白 ───────────────────────────────── */
+
 .ownership {
   margin: 0;
   padding: var(--space-3) var(--space-4);
   border-left: 2px solid var(--border);
   color: var(--meta);
   font-size: var(--text-sm);
+  line-height: 1.6;
 }
 
+/* ── 日期分组：不套大卡，组头 sticky 提供时间线的定位感 ─────── */
+
 .dateGroup {
-  padding: var(--space-2) 0;
+  padding: 0;
   border: 0;
   border-radius: 0;
   background: transparent;
+  box-shadow: none;
 }
 
-.dateGroup > summary {
-  color: var(--meta);
+.dateGroup:global(.group-collapse) > summary {
+  position: sticky;
+  top: calc(48px + env(safe-area-inset-top, 0px));
+  z-index: 5;
+  padding-block: var(--space-2);
+  background: var(--bg);
+  color: var(--fg-2);
+  font-size: var(--text-sm);
+  font-weight: 600;
 }
+
+.dateGroup:global(.group-collapse) > summary::after {
+  border-color: var(--meta);
+}
+
+/* ── 单条记忆：轻量纸面（细边 + 圆角），组间用留白分隔 ─────── */
 
 .dateGroup :global(.list-row) {
   padding: var(--space-4);
@@ -28,13 +52,27 @@
   margin-top: var(--space-3);
 }
 
+/* 组内首条与组头之间的间距；组与组之间由 .stack 的 gap 再分开。 */
+.dateGroup :global(.gc-body) {
+  padding-top: var(--space-3);
+}
+
+.episodeHead {
+  display: grid;
+  gap: var(--space-2);
+}
+
+/* 正文：两行预览；展开后显示完整原文（字号与行高按正文下限）。 */
 .title {
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
   white-space: pre-wrap;
+  color: var(--fg);
+  font-size: var(--text-base);
   font-weight: 500;
+  line-height: var(--leading-body);
 }
 
 .fullContent {
@@ -42,11 +80,28 @@
   color: var(--fg);
   font-size: var(--text-base);
   font-weight: 500;
+  line-height: var(--leading-body);
   white-space: pre-wrap;
 }
 
-.dateGroup :global(.text-button) {
+/* 元信息：发生时间 + 来源。用 --muted 而非 --meta 的小字，保证「发生时间」可读。 */
+.episodeMeta {
+  color: var(--meta);
+  font-size: var(--text-sm);
+  line-height: 1.5;
+}
+
+/* 展开/收起：独立 44px 文字按钮，单独一行，不用下划线（它是控件不是链接）。 */
+.toggle {
   justify-self: start;
+  min-height: 44px;
   padding: 0;
+  color: var(--fg-2);
+  font-size: var(--text-sm);
   text-decoration: none;
+}
+
+.toggle:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }

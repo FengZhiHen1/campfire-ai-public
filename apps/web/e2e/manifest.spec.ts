@@ -82,7 +82,7 @@ test('汇总 sidecar 成 manifest 并复算', async () => {
   // 后者验「落盘后的清单与文件仍然一致」（写盘本身可能失败或被截断）。
   const reread = JSON.parse(await readFile(MANIFEST_PATH, 'utf8')) as ShotsManifest;
   expect(reread.shots).toHaveLength(manifest.shots.length);
-  expect(reread.formatVersion, '格式版本应为 2（每页每视口两张图 + 字体/中和取证字段）').toBe(2);
+  expect(reread.formatVersion, '格式版本应为 3（系统字体栈与中和取证）').toBe(3);
 
   for (const shot of reread.shots) {
     const fileName = shot.file.split('/').pop();
@@ -94,18 +94,7 @@ test('汇总 sidecar 成 manifest 并复算', async () => {
     expect(sha256Of(bytes), `${shot.file} 的 sha256 与 manifest 不一致`).toBe(shot.sha256);
     expect(bytes.byteLength, `${shot.file} 的字节数与 manifest 不一致`).toBe(shot.bytes);
 
-    // 裁决 2：字体必须真的加载。用例里 `awaitDisplayFont` 会让未加载直接失败，
-    // 这里再查一次是因为「manifest 记录了什么」也要自洽——审查者只看文件，
-    // 不该出现「清单里写着 fontLoaded:false 而用例却绿了」这种矛盾记录。
-    // 承重判据是 load() 命中数（check() 实测恒真、不承重，见 fonts.ts 的说明）。
-    expect(shot.fontLoaded, `${shot.file} 记录 fontLoaded=false：截图用的是回退字形，证据不可用`).toBe(true);
-    expect(shot.fontLoadedFaceCount, `${shot.file} 的 fonts.load() 命中数为 0：字体未加载`).toBeGreaterThan(0);
-    expect(shot.fontLoadedFacesForFamily, `${shot.file} 的 Noto Serif SC loaded face 数为 0`).toBeGreaterThan(0);
-    expect(
-      shot.fontNegativeControlFaceCount,
-      `${shot.file} 的负对照命中数不为 0：字体判据恒真，守卫无效`,
-    ).toBe(0);
-    expect(shot.fontStatus, `${shot.file} 的字体状态应为 loaded`).toBe('loaded');
+    expect(shot.fontStack, `${shot.file} 记录的正文字体栈不符合系统字体契约`).toMatch(/^system-ui,/);
 
     // 图种必须真的是两个已知值之一。manifest 是磁盘上的 JSON（可能被手改、
     // 被半截写入、或来自旧版本），因此这里不裸信它的 `kind`：先收窄类型再据它分支，

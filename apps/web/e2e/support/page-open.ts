@@ -1,6 +1,6 @@
 /**
  * 模块: e2e/support/page-open
- * 职责: 「打开一页」的唯一实现——注入登录态、装网络夹具、导航、等字体、判 fail-closed
+ * 职责: 「打开一页」的唯一实现——注入登录态、装网络夹具、导航、核对系统字体栈、判 fail-closed
  * 数据来源:
  *   - 原证物 orchestrator-20261002-001/T01.md: MUST — 裁决 C（登录态注入）、
  *     裁决 D（夹具 fail-closed）、裁决 F（内容断言的观察前提）
@@ -22,7 +22,7 @@
 import type { Page, TestInfo } from '@playwright/test';
 
 import { effectiveFixtures, type PageShot } from './fixtures';
-import { awaitDisplayFont, type FontEvidence } from './fonts';
+import { readSystemFontStack } from './fonts';
 import {
   expectNeverRequested,
   expectNoExternalRequests,
@@ -46,7 +46,7 @@ export interface OpenedPage {
   /** 网络账本（含实际请求清单、放行/阻断的外部主机）。 */
   ledger: RequestLedger;
   /** 字体取证（fail-loud 判据的读数）。 */
-  fontEvidence: FontEvidence;
+  fontStack: string;
   /** 页面自身的 console.error 与 pageerror 文本；调用方决定落盘还是忽略。 */
   pageProblems: string[];
 }
@@ -82,8 +82,7 @@ export async function openPage(page: Page, shot: PageShot, testInfo: TestInfo): 
     await expectSessionInjected(page);
   }
 
-  // 字体必须真的就绪才继续：字体 CDN 不可达时这里明确失败（裁决 2 的 fail-loud）。
-  const fontEvidence: FontEvidence = await awaitDisplayFont(page);
+  const fontStack = await readSystemFontStack(page);
 
   // fail-closed 判定必须早于内容断言：它是内容断言的前提。夹具没覆盖全时，
   // 「内容断言失败」会把原因指向页面形态，而真实原因是夹具没写。
@@ -110,7 +109,7 @@ export async function openPage(page: Page, shot: PageShot, testInfo: TestInfo): 
   expectNoExternalRequests(ledger);
   expectNeverRequested(ledger, shot.mustNotRequest ?? []);
 
-  return { ledger, fontEvidence, pageProblems };
+  return { ledger, fontStack, pageProblems };
 }
 
 /**
