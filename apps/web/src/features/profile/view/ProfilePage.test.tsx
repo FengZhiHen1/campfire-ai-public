@@ -349,19 +349,97 @@ describe('档案页 · 加载与候选层不变量', () => {
 });
 
 describe('档案页 · 候选条目操作', () => {
-  it('P0 确认候选 → 调确认端点并重新加载', async () => {
-    const p = port();
+  it('P0 确认候选 → 调确认端点、就地给出成功回执并按范围措辞（不谎称已入摘要）', async () => {
+    // 首次加载：一条候选 c1。确认后重取：候选转稳定条目，但摘要夹具没变（不含 c1）。
+    let calls = 0;
+    const p = port({
+      listItems: vi.fn(async () => {
+        calls += 1;
+        if (calls === 1) {
+          return {
+            items: [item()],
+            candidates: [item({ item_id: 'c1', topic: '提前知道结束时间', origin: 'ai_inference', confirmation: 'unconfirmed', freshness: 'current' })],
+            next_cursor: null,
+          };
+        }
+        // 确认后：c1 已转稳定条目，候选为空；摘要仍不含 c1（模拟摘要未刷新/不被归纳）。
+        return {
+          items: [item(), item({ item_id: 'c1', topic: '提前知道结束时间', confirmation: 'confirmed', freshness: 'current' })],
+          candidates: [],
+          next_cursor: null,
+        };
+      }),
+    });
     renderPage(p);
     await screen.findByText('提前知道结束时间');
-
-    const candidateGroup = screen.getByText(/^待确认（1）$/).closest('details');
-    expect(candidateGroup).not.toBeNull();
-    fireEvent.click(within(candidateGroup as HTMLElement).getByRole('button', { name: '确认' }));
+    // 初始一条候选。
+    const candidateGroup = screen.getByText(/^待确认（1）$/).closest('details') as HTMLElement;
+    fireEvent.click(within(candidateGroup).getByRole('button', { name: '确认' }));
 
     await waitFor(() => {
       expect(p.confirmItem).toHaveBeenCalledWith('c1');
     });
     expect(p.listItems).toHaveBeenCalledTimes(2);
+    // 页面级就地成功回执（role=status）出现，措辞不越过接口语义。
+    const statusBlocks = screen.getAllByRole('status');
+    const confirmBlock = statusBlocks.find((el) =>
+      (el.textContent ?? '').includes('已确认，可在下面的档案记录中查看。'),
+    );
+    expect(confirmBlock).not.toBeUndefined();
+  });
+
+  it('P0 确认失败 → 不出现成功回执（失败不谎报成功）', async () => {
+    const p = port({
+      confirmItem: vi.fn(async () => {
+        throw { status: 503 };
+      }),
+    });
+    renderPage(p);
+    await screen.findByText('提前知道结束时间');
+
+    const candidateGroup = screen.getByText(/^待确认（1）$/).closest('details') as HTMLElement;
+    fireEvent.click(within(candidateGroup).getByRole('button', { name: '确认' }));
+
+    await waitFor(() => {
+      expect(p.confirmItem).toHaveBeenCalledWith('c1');
+    });
+    // 失败：候选仍在、没有成功回执。
+    expect(screen.queryByText(/已确认，可在下面的档案记录中查看。/)).toBeNull();
+    expect(screen.getByText(/^待确认（1）$/)).toBeDefined();
+  });
+
+  it('P0 确认成功后焦点交给下一条候选的「确认」按钮（连续确认不悬空）', async () => {
+    // 初始两条候选 c1/c2；确认 c1 后重取只剩 c2。焦点应从消失的 c1 行转到 c2 的「确认」。
+    let calls = 0;
+    const q = port({
+      listItems: vi.fn(async () => {
+        calls += 1;
+        if (calls === 1) {
+          return {
+            items: [item({ item_id: 'i1' })],
+            candidates: [
+              item({ item_id: 'c1', topic: '候选一', origin: 'ai_inference', confirmation: 'unconfirmed' }),
+              item({ item_id: 'c2', topic: '候选二', origin: 'ai_inference', confirmation: 'unconfirmed' }),
+            ],
+            next_cursor: null,
+          };
+        }
+        return {
+          items: [item({ item_id: 'i1' })],
+          candidates: [item({ item_id: 'c2', topic: '候选二', origin: 'ai_inference', confirmation: 'unconfirmed' })],
+          next_cursor: null,
+        };
+      }),
+    });
+    renderPage(q);
+    const first = (await screen.findByText('候选一')).closest('article') as HTMLElement;
+    fireEvent.click(within(first).getByRole('button', { name: '确认' }));
+
+    await waitFor(() => expect(q.confirmItem).toHaveBeenCalledWith('c1'));
+    await waitFor(() => {
+      const c2 = screen.getByText('候选二').closest('article') as HTMLElement;
+      expect(document.activeElement).toBe(within(c2).getByRole('button', { name: '确认' }));
+    });
   });
 
   it('P0 删除候选须二次确认；取消不调删除端点', async () => {

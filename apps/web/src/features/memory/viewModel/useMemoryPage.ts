@@ -63,6 +63,13 @@ export interface MemoryPageState {
   correction: MemoryCorrectionState | null;
   /** 一次性提示：纠正成功，或中间态（原记录已撤下、新记录没写成）。 */
   notice: { kind: 'written' | 'superseded-only'; text: string } | null;
+  /**
+   * 刚纠正成功后的定位信息：纠正会撤下原条目、新条目落到它自己的日期位置，
+   * 原行随列表刷新消失。这里记下新条目的键，供视图在刷新后把新行滚进视野并聚焦，
+   * 让「纠正结果落在哪」当场可读（而不是让使用者在一个变了的列表里重新找）。
+   * 只在 written 时写入；中间态（只撤下、没写成）没有新行可定位，保持 null。
+   */
+  correctedFocus: string | null;
 
   retry(): Promise<void>;
   loadMore(): Promise<void>;
@@ -90,6 +97,7 @@ export function useMemoryPage(port: MemoryPort): MemoryPageState {
   const [rowFailure, setRowFailure] = useState<{ episodeKey: string; failure: MemoryFailure } | null>(null);
   const [correction, setCorrection] = useState<MemoryCorrectionState | null>(null);
   const [notice, setNotice] = useState<MemoryPageState['notice']>(null);
+  const [correctedFocus, setCorrectedFocus] = useState<string | null>(null);
 
   // 触底分页（加载中 / 独立失败 / 追加）归独立 hook；它经由稳定的 append 回调追加条目。
   const appendItems = useCallback((page: MemoryEpisode[]) => {
@@ -197,6 +205,8 @@ export function useMemoryPage(port: MemoryPort): MemoryPageState {
       setCorrection(null);
       if (outcome.kind === 'written') {
         setNotice({ kind: 'written', text: CORRECTION_WRITTEN_COPY });
+        // 记录新条目键：刷新后由视图把这一行滚进视野并聚焦。
+        setCorrectedFocus(outcome.episodeKey);
         // 成功：重新取第一页，新条目出现在它自己的日期位置。
         await loadFirstPage();
         return;
@@ -216,6 +226,7 @@ export function useMemoryPage(port: MemoryPort): MemoryPageState {
 
   const dismissNotice = useCallback((): void => {
     setNotice(null);
+    setCorrectedFocus(null);
   }, []);
 
   return {
@@ -230,6 +241,7 @@ export function useMemoryPage(port: MemoryPort): MemoryPageState {
     rowFailure,
     correction,
     notice,
+    correctedFocus,
     retry: async (): Promise<void> => {
       await loadFirstPage();
     },

@@ -14,9 +14,9 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Link } from 'react-router';
 
 import { AppShell } from '../../../shared/ui/AppShell';
+import { BackLink } from '../../../shared/ui/BackLink';
 import { ConfirmSheet } from '../../../shared/ui/ConfirmSheet';
 import { ListTail } from '../../../shared/ui/ListTail';
 import { EmptyState, ErrorCard, Skeleton } from '../../../shared/ui/StatePrimitives';
@@ -28,7 +28,6 @@ import styles from './memoryPage.module.css';
 
 /** 页面文案（页面设计「数据与文案」与状态覆盖表的成稿，逐字呈现）。 */
 const COPY = {
-  back: '← 返回',
   title: '我提过的事',
   ownership: '这些是你自己在咨询中说过或经历过的事，关于你本人；与支持对象的档案分开保存，不随切换对象变化。',
   emptyTitle: '还没有记录',
@@ -75,15 +74,30 @@ export function MemoryPage({ port }: MemoryPageProps) {
     correctionHeading.current?.scrollIntoView?.({ block: 'start' });
     correctionHeading.current?.focus({ preventScroll: true });
   }, [correcting]);
+  // 纠正成功后的落点：新条目落到它自己的日期位置，原行已消失。刷新后把新行滚进视野并聚焦，
+  // 让「结果落在哪」当场可读；只在该条目确实出现在当前列表里时执行。
+  // 依赖 page.items：新行是在 loadFirstPage 更新 items 之后才出现的，因此必须随 items 变化再跑一次。
+  const correctedFocus = page.correctedFocus;
+  const itemCount = page.items.length;
+  useEffect(() => {
+    if (correctedFocus === null || itemCount === 0) return;
+    const row = document.querySelector<HTMLElement>(`[data-episode-key="${correctedFocus}"]`);
+    if (row === null) return;
+    row.scrollIntoView?.({ block: 'center' });
+    row.focus({ preventScroll: true });
+  }, [correctedFocus, itemCount]);
   // 展开的行（默认两行截断；核对场景不得因截断丢信息，展开可见完整原文）。
   const [expanded, toggleExpanded] = useExpanded();
 
   return (
     <AppShell>
       <header className="subpage-head">
-        <Link className="sp-back" to="/settings">
-          {COPY.back}
-        </Link>
+        {/*
+          固定回「我的」而不是浏览器历史上一页：记忆页是从设置页进入的次级页，
+          但同一路径也可能在别的上下文里打开（例如纠正后返回），用历史反回会落到
+          一个与「我提过的事」无关的页面。direct 让落点始终是入口本身。
+        */}
+        <BackLink direct fallback="/settings" />
         <span className="sp-title">{COPY.title}</span>
       </header>
 
@@ -92,9 +106,15 @@ export function MemoryPage({ port }: MemoryPageProps) {
 
       {/* 纠正结果提示是页面级状态而不是列表级：中间态下旧记录已从列表移除，
        * 若把它放进「有条目」分支里，唯一那条被移除后提示会跟着消失——
-       * 而「原记录已不再作为依据」正是使用者此刻最需要看到的信息。 */}
+       * 而「原记录已不再作为依据」正是使用者此刻最需要看到的信息。
+       * 中间态（只撤下、没写成）是「部分成功」，必须与成功、与读取失败三者可区分：
+       * 它不是成功（新记录没写成），也不是单纯的失败（旧记录确实已撤下），
+       * 因此用独立的重音块承担，不用 hint 的轻提示形态。 */}
       {page.notice !== null && (
-        <p className={page.notice.kind === 'written' ? 'hint' : 'field-error'} role="status">
+        <p
+          className={page.notice.kind === 'written' ? 'hint' : 'field-error'}
+          role={page.notice.kind === 'written' ? 'status' : 'alert'}
+        >
           {page.notice.text}{' '}
           <button className="text-button" onClick={page.dismissNotice} type="button">
             知道了
@@ -140,7 +160,7 @@ export function MemoryPage({ port }: MemoryPageProps) {
                 {group.items.map((episode) => {
                   const isExpanded = expanded.includes(episode.episode_key);
                   return (
-                    <article className={`list-row ${styles.episode}`} key={episode.episode_key}>
+                    <article className={`list-row ${styles.episode}`} key={episode.episode_key} data-episode-key={episode.episode_key} tabIndex={-1}>
                       <div className={styles.episodeHead}>
                         <strong className={`lr-title ${isExpanded ? styles.fullContent : styles.title}`}>{episode.content}</strong>
                         <p className={`lr-meta ${styles.episodeMeta}`}>

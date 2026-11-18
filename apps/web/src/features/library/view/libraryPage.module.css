@@ -279,13 +279,17 @@
   color: var(--fg);
 }
 
-/* 案例卡：局部内衬（左侧细线），与叙事正文区分但保持同一纸面。 */
+/* 案例卡：局部内衬，与叙事正文区分但保持同一纸面。
+ * 原先用一条 2px 左边线把案例卡内嵌出来——但左边线在本产品里已被对话引用与
+ * 警示/过程线占用语义，案例卡既不是引用也不是警示，竖线只是通用装饰，还会在
+ * 320px 下压缩真正的正文行长。改为：淡底 + 圆角「局部内衬」由底色与圆角承担，
+ * 与叙事正文区分，而不借字面意义上的左边线。 */
 .cardBody {
   display: grid;
   gap: var(--space-2);
   margin-top: var(--space-3);
   padding: var(--space-3) var(--space-4);
-  border-left: 2px solid var(--border);
+  border-radius: var(--radius-sm);
   background: var(--bg);
 }
 
@@ -301,6 +305,8 @@
   line-height: 1.7;
 }
 
+/* 安慰语引用：这里保留左边线是有语义的——它确实是一句被逐字引用的原话，
+ * 左边线与 .readable-quote（components.css）同义。其余卡片内衬不再用左边线。 */
 .cardBody blockquote {
   margin: var(--space-1) 0;
   padding-left: var(--space-3);

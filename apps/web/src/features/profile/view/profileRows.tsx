@@ -131,6 +131,8 @@ export function StableRow({ item, busy, failure, onCorrect, onDelete }: StableRo
 /** 候选（待确认）条目行。 */
 interface CandidateRowProps {
   item: ProfileItem;
+  /** 条目键，作为行与「确认」按钮的 data 锚点：确认后焦点由页面移到下一条候选。 */
+  candidateId: string;
   busy: boolean;
   expanded: boolean;
   failure: string | null;
@@ -160,12 +162,12 @@ interface CandidateRowProps {
  * 判据仍是 `isHistorical`，不在这里另写一条取代判断。
  * 「删除」不动：删除路径只判归属，对本行照常生效。
  */
-export function CandidateRow({ item, busy, expanded, failure, onConfirm, onDelete, onToggleExpand }: CandidateRowProps) {
+export function CandidateRow({ item, candidateId, busy, expanded, failure, onConfirm, onDelete, onToggleExpand }: CandidateRowProps) {
   const stale = isStale(item);
   const historical = isHistorical(item);
   const showDescription = !stale || expanded;
   return (
-    <article className="list-row candidate-record">
+    <article className="list-row candidate-record" data-candidate-id={candidateId}>
       <span className="status unruled">待确认 · {originLabel(item.origin)}</span>
       <strong className="lr-title">{item.topic}</strong>
       {historical && <span className="tag meta">{Copy.historicalTag}</span>}
@@ -181,7 +183,7 @@ export function CandidateRow({ item, busy, expanded, failure, onConfirm, onDelet
       <div className="lr-actions">
         {/* 确认是高频正向操作、删除是低频危险操作：并排但间距 ≥12px（.lr-actions 的 gap）。 */}
         {!historical && (
-          <button className="btn btn-secondary" disabled={busy} onClick={onConfirm} type="button">
+          <button className="btn btn-secondary" data-confirm disabled={busy} onClick={onConfirm} type="button">
             {Copy.confirm}
           </button>
         )}

@@ -14,7 +14,7 @@
  *   - 禁止为不支持对象建立第二层导航（单页内切换，页面设计布局第 2 条）
  */
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import { AppShell } from '../../../shared/ui/AppShell';
 import { ConfirmSheet } from '../../../shared/ui/ConfirmSheet';
@@ -40,6 +40,29 @@ export interface ProfilePageProps {
 }
 
 /**
+ * 逐条确认的落点：确认成功后该行的「确认」按钮会随候选行一起消失，焦点若停在那里
+ * 就落到 body。这里给 ViewModel 记录的 `confirmedNotice` 绑一个聚焦出口——
+ * 当下一条候选还在，把焦点交给它的「确认」按钮（连续确认不必重新找位）；
+ * 没有下一条时交给记录区容器（tabIndex=-1，可编程聚焦）。只在对象不变量成立时执行。
+ */
+function useConfirmFocus(
+  confirmed: { objectId: string; itemId: string } | null,
+  selectedObjectId: string | null,
+  recordsRef: React.RefObject<HTMLDivElement | null>,
+): void {
+  useEffect(() => {
+    if (confirmed === null || confirmed.objectId !== selectedObjectId) return;
+    const group = document.getElementById('profile-candidates');
+    const next = group?.querySelector<HTMLButtonElement>('article[data-candidate-id] button[data-confirm]');
+    if (next !== null && next !== undefined) {
+      next.focus({ preventScroll: false });
+    } else {
+      recordsRef.current?.focus({ preventScroll: false });
+    }
+  }, [confirmed, selectedObjectId, recordsRef]);
+}
+
+/**
  * 渲染档案页。
  *
  * 前置: port 已装配
@@ -58,6 +81,13 @@ export function ProfilePage({ port }: ProfilePageProps) {
   // 不是被收起的行——这样默认值（不收）不必随条目增删同步。
   const [expanded, setExpanded] = useState<readonly string[]>([]);
   const editors = useProfileEditors(entry, page.selectObject);
+  const recordsRef = useRef<HTMLDivElement>(null);
+  // confirmedNotice 由 ViewModel 在确认成功返回后写入（带对象 id）。
+  const confirmed =
+    entry.confirmedNotice !== null && entry.confirmedNotice.objectId === page.selectedObjectId
+      ? entry.confirmedNotice
+      : null;
+  useConfirmFocus(confirmed, page.selectedObjectId, recordsRef);
 
   const selected = page.objects.find((object) => object.id === page.selectedObjectId) ?? null;
   const groups = groupByDomain(page.items);
@@ -164,7 +194,7 @@ export function ProfilePage({ port }: ProfilePageProps) {
 
       {page.status === 'ready' && page.objects.length > 0 && (
         <>
-          {/* 一页摘要区：靠左侧细线与留白获得重量，不再嵌套抬升大卡。 */}
+          {/* 一页摘要区：靠排版层级与留白获得重量，不再嵌套抬升大卡或借左边线。 */}
           <section className={styles.summary} role="region" aria-labelledby="profile-summary">
             <div className="record-head">
               <h2 id="profile-summary">{COPY.summaryTitle}</h2>
@@ -225,6 +255,20 @@ export function ProfilePage({ port }: ProfilePageProps) {
             />
           )}
 
+          {/* 确认成功的就地回执：原来只有屏幕角落的通用提示，离开候选区就看不到了。
+              放在候选分组之外（页面级、紧贴候选区上方）：确认最后一条候选后候选分组会消失，
+              若把回执嵌在分组里，它随分组一起没了——而这正是最需要看到「刚才那条去哪了」的时刻。
+              只承诺接口能核实的范围（已确认、去档案记录看），不替服务端断言已刷新摘要。
+              role=status 让读屏播报；点「知道了」或下一次确认时清掉。 */}
+          {confirmed !== null && (
+            <p className={styles.confirmNotice} role="status">
+              已确认，可在下面的档案记录中查看。{' '}
+              <button className="text-button" onClick={entry.dismissNotice} type="button">
+                知道了
+              </button>
+            </p>
+          )}
+
           {/* 待确认分组固定在完整条目区最顶部（候选层视觉不变量）。 */}
           {page.candidates.length > 0 && (
             <details id="profile-candidates" className={`group-collapse ${styles.candidateGroup}`} open>
@@ -240,6 +284,7 @@ export function ProfilePage({ port }: ProfilePageProps) {
                 {page.candidates.map((candidate) => (
                   <CandidateRow
                     busy={entry.busyItemId === candidate.item_id}
+                    candidateId={candidate.item_id}
                     expanded={expanded.includes(candidate.item_id)}
                     failure={inlineFailureFor(entry.rowFailure, candidate.item_id)}
                     item={candidate}
@@ -263,7 +308,9 @@ export function ProfilePage({ port }: ProfilePageProps) {
             </details>
           )}
 
-          <div id="profile-records" className="stack">{groups.map((group) => (
+          {/* tabIndex=-1：确认后若已没有下一条候选，焦点落到记录区容器而不是 body，
+              读屏与键盘都能从「刚才确认的那条转正去向」继续。 */}
+          <div id="profile-records" className="stack" ref={recordsRef} tabIndex={-1}>{groups.map((group) => (
             <details className={`group-collapse ${styles.domainGroup}`} key={group.domain} open>
               <summary>
                 {DOMAIN_LABELS[group.domain]}（{group.items.length}）
