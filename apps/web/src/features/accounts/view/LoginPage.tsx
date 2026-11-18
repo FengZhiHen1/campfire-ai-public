@@ -1,28 +1,25 @@
 /**
  * 模块: features/accounts/view/LoginPage
- * 职责: 登录与注册页——品牌区、表单区（账号名/密码/邀请码）、底部互切行与状态呈现
+ * 职责: 登录与注册页——品牌区、模式切换、表单区（账号名/密码/邀请码）、用途与重置告知
  * 数据来源:
  *   - docs/design/pages/登录与注册.md: MUST — 全文（布局结构、组件选用、数据与文案、状态覆盖、动效意图）
- *   - docs/design/components.html: MUST — .panel/.field/.field-error 的类名与结构
+ *   - docs/design/components.html: MUST — .panel/.field/.field-error/.form-status 的类名与结构
  * 边界:
- *   - 依赖: features/accounts/viewModel/useAuthForm、shared/ui、react-router
+ *   - 依赖: features/accounts/viewModel/useLogin（视图流程控制）、shared/ui
  *   - 被依赖: app/routes
  * 禁止行为:
  *   - 禁止在本层调用 SDK 或任何 HTTP（端口由 app 装配注入）
  *   - 禁止渲染邮箱字段或找回密码入口（AC-16 的界面侧：一期无邮箱）
  *   - 禁止在提交失败时清空输入（状态保留由 viewModel 保证，View 不得另行重置）
+ *   - 禁止把模式切换、密码可见性与文案再写回本层（归 useLogin）
  */
-
-import { useState } from 'react';
-import { useNavigate } from 'react-router';
 
 import { BrandMark } from '../../../shared/ui/BrandMark';
 import { DeviceFrame } from '../../../shared/ui/DeviceFrame';
 import { ErrorCard } from '../../../shared/ui/StatePrimitives';
 import type { AuthPort } from '../application/ports';
 import type { AuthFieldName } from '../domain/formValidation';
-import { useSessionStore } from '../viewModel/sessionStore';
-import { useAuthForm, type AuthMode } from '../viewModel/useAuthForm';
+import { LOGIN_COPY, useLogin } from '../viewModel/useLogin';
 import styles from './loginPage.module.css';
 
 /** 登录页 props：认证端口经 props 注入（组合根在 app 层）。 */
@@ -30,34 +27,7 @@ export interface LoginPageProps {
   /** 认证端口（可能是 SDK 实现或测试替身）。 */
   auth: AuthPort;
   /** 初始模式；默认登录（页面设计：登录页是每个使用者的第一屏）。 */
-  initialMode?: AuthMode;
-}
-
-/** 页面文案（页面设计「布局结构」与「数据与文案」节的成稿）。 */
-const COPY = {
-  title: '篝火智答',
-  tagline: '每一次咨询，都有据可依',
-  loginSubmit: '登录',
-  registerSubmit: '注册',
-  submittingLogin: '正在登录…',
-  submittingRegister: '正在注册…',
-  toRegister: '已有邀请码？注册账号',
-  toLogin: '已有账号？返回登录',
-  passwordShow: '显示密码',
-  passwordHide: '隐藏密码',
-  inviteHint: '邀请码由运营者发放，8 位、一次性使用',
-} as const;
-
-/**
- * 自动填充语义（页面设计「响应式与平台」节：原生 autocomplete）。
- *
- * 账号名用 `username`：它是登录标识；密码在注册态用 `new-password`（浏览器据此
- * 提供强密码建议而不会回填旧密码），登录态用 `current-password`。
- */
-function autocompleteFor(field: AuthFieldName, mode: AuthMode): string {
-  if (field === 'account') return 'username';
-  if (field === 'password') return mode === 'register' ? 'new-password' : 'current-password';
-  return 'off';
+  initialMode?: 'login' | 'register';
 }
 
 /**
@@ -67,23 +37,11 @@ function autocompleteFor(field: AuthFieldName, mode: AuthMode): string {
  * 后置: 输出 DeviceFrame 包裹的登录/注册页；提交成功后写入会话 store 并转首页，
  *       失败时保留输入并呈现错误
  * 异常: 无（端口异常已由 viewModel 转成服务端错误态）
- *
- * 为什么提交成功后直接导航而不等会话查证：登录响应本身就证明会话已签发，
- * 再查一次只多一轮往返与一次闪烁；markAuthenticated 是同一事实的本地记录。
  */
 export function LoginPage({ auth, initialMode = 'login' }: LoginPageProps) {
-  const [mode, setMode] = useState<AuthMode>(initialMode);
-  const [showPassword, setShowPassword] = useState(false);
-  const navigate = useNavigate();
-  const markAuthenticated = useSessionStore((state) => state.markAuthenticated);
-
-  const form = useAuthForm(mode, auth, (account) => {
-    markAuthenticated(account);
-    void navigate('/', { replace: true });
-  });
-
-  const submitLabel = mode === 'login' ? COPY.loginSubmit : COPY.registerSubmit;
-  const pendingLabel = mode === 'login' ? COPY.submittingLogin : COPY.submittingRegister;
+  const login = useLogin(auth, initialMode);
+  const form = login.form;
+  const isRegister = login.mode === 'register';
 
   /** 字段错误只在已触碰时呈现（untouched 态无红色，craft form-validation）。 */
   const errorFor = (field: AuthFieldName): string | undefined =>
@@ -92,25 +50,30 @@ export function LoginPage({ auth, initialMode = 'login' }: LoginPageProps) {
   return (
     <DeviceFrame>
       <div className={`phone-shell ${styles.shell}`}>
-        <section className={styles.brand} aria-labelledby="auth-title">
-          <div className={styles.brandRow}>
-            <span className={styles.brandMark}>
-              <BrandMark size="1.2em" />
-            </span>
-            <h1 className={styles.title} id="auth-title">
-              {COPY.title}
-            </h1>
+        <header className={styles.brand}>
+          <span className={styles.brandMark}>
+            <BrandMark size="1.15em" />
+          </span>
+          <div className={styles.brandText}>
+            <h1 className={styles.title}>{LOGIN_COPY.title}</h1>
+            <p className={styles.tagline}>{LOGIN_COPY.tagline}</p>
           </div>
-          <p className={styles.tagline}>{COPY.tagline}</p><p className={styles.intro}>陪你梳理照护中的困惑，找到可以迈出的下一步。</p>
-        </section>
+        </header>
+        <p className={styles.intro}>{LOGIN_COPY.intro}</p>
 
-        <section className={`panel ${styles.panel}`} aria-labelledby="auth-form-title">
-          <h2 className={styles.formTitle} id="auth-form-title">
-            {mode === 'login' ? '登录' : '注册账号'}
-          </h2>
+        <section className={`panel ${styles.panel}`} aria-label={isRegister ? '注册账号' : '登录'}>
+          {/* 模式切换：标题行右侧一条显式互切按钮，当前态由标题文字承担，
+              避免在面板内再出现与主按钮同名的按钮（可访问名不重复）。 */}
+          <div className={styles.panelHead}>
+            <h2 className={styles.formTitle}>
+              {isRegister ? LOGIN_COPY.formTitleRegister : LOGIN_COPY.formTitleLogin}
+            </h2>
+            <button className={styles.switchLink} type="button" onClick={login.toggleMode}>
+              {isRegister ? LOGIN_COPY.toLogin : LOGIN_COPY.toRegister}
+            </button>
+          </div>
 
-          {/* server-error 与限流共用这一个横幅位置（页面设计状态覆盖表两行同形态）。
-              variant="form" 落实设计第 46 行的「`.error-card` 紧凑变体」——契约里的表单横幅是 .error-card.form-feedback。 */}
+          {/* server-error 与限流共用这一个横幅位置（页面设计状态覆盖表两行同形态）。 */}
           {form.serverError !== null && (
             <ErrorCard
               variant="form"
@@ -129,31 +92,33 @@ export function LoginPage({ auth, initialMode = 'login' }: LoginPageProps) {
           >
             <div className="field">
               <label htmlFor="auth-account">账号名</label>
-              <span className="hint">账号名不需要是邮箱</span>
               <input
                 id="auth-account"
                 name="account"
                 type="text"
-                autoComplete={autocompleteFor('account', mode)}
+                autoComplete={login.autocompleteFor('account')}
                 value={form.values.account}
                 disabled={form.submitting}
                 aria-invalid={errorFor('account') !== undefined}
-                aria-describedby={errorFor('account') === undefined ? undefined : 'auth-account-error'}
+                aria-describedby={errorFor('account') === undefined ? 'auth-account-hint' : 'auth-account-error'}
                 onChange={(event) => form.setField('account', event.target.value)}
                 onBlur={() => form.blurField('account')}
               />
+              <span className="hint" id="auth-account-hint">
+                {LOGIN_COPY.accountHint}
+              </span>
               <span className="field-error" id="auth-account-error" role="alert">
                 {errorFor('account')}
               </span>
             </div>
 
-            <div className={"field " + styles.passwordField}>
+            <div className={`field ${styles.passwordField}`}>
               <label htmlFor="auth-password">密码</label>
               <input
                 id="auth-password"
                 name="password"
-                type={showPassword ? 'text' : 'password'}
-                autoComplete={autocompleteFor('password', mode)}
+                type={login.showPassword ? 'text' : 'password'}
+                autoComplete={login.autocompleteFor('password')}
                 value={form.values.password}
                 disabled={form.submitting}
                 aria-invalid={errorFor('password') !== undefined}
@@ -164,16 +129,16 @@ export function LoginPage({ auth, initialMode = 'login' }: LoginPageProps) {
               <button
                 className={`text-button ${styles.passwordToggle}`}
                 type="button"
-                onClick={() => setShowPassword((current) => !current)}
+                onClick={login.togglePasswordVisibility}
               >
-                {showPassword ? COPY.passwordHide : COPY.passwordShow}
+                {login.showPassword ? LOGIN_COPY.passwordHide : LOGIN_COPY.passwordShow}
               </button>
               <span className="field-error" id="auth-password-error" role="alert">
                 {errorFor('password')}
               </span>
             </div>
 
-            {mode === 'register' && (
+            {isRegister && (
               <div className="field">
                 <label htmlFor="auth-invite">邀请码</label>
                 <input
@@ -189,7 +154,7 @@ export function LoginPage({ auth, initialMode = 'login' }: LoginPageProps) {
                   onBlur={() => form.blurField('inviteCode')}
                 />
                 <span className="hint" id="auth-invite-hint">
-                  {COPY.inviteHint}
+                  {LOGIN_COPY.inviteHint}
                 </span>
                 <span className="field-error" id="auth-invite-error" role="alert">
                   {errorFor('inviteCode')}
@@ -198,29 +163,19 @@ export function LoginPage({ auth, initialMode = 'login' }: LoginPageProps) {
             )}
 
             <button className="btn btn-primary block" type="submit" disabled={form.submitting}>
-              {form.submitting ? pendingLabel : submitLabel}
+              {form.submitting ? login.pendingLabel : login.submitLabel}
             </button>
 
             {/* 提交中的礼貌公告：按钮文字变化对屏幕阅读器不总是即时可闻（页面设计 submitting 行）。 */}
             <p className="form-status" role="status" aria-live="polite">
-              {form.submitting ? pendingLabel : ''}
+              {form.submitting ? login.pendingLabel : ''}
             </p>
           </form>
         </section>
 
-        <p className={styles.switchRow}>
-          {mode === 'login' ? (
-            <button className={styles.switchLink} type="button" onClick={() => setMode('register')}>
-              {COPY.toRegister}
-            </button>
-          ) : (
-            <button className={styles.switchLink} type="button" onClick={() => setMode('login')}>
-              {COPY.toLogin}
-            </button>
-          )}
-        </p>
+        <p className={styles.notice}>{LOGIN_COPY.notice}</p>
 
-        <p className={styles.help}>忘记密码？请联系运营者人工重置</p>
+        <p className={styles.help}>{LOGIN_COPY.resetNote}</p>
       </div>
     </DeviceFrame>
   );
