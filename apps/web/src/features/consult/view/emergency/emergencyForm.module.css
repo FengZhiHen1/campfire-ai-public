@@ -17,26 +17,30 @@
 
 /* ── 安全文案 / 进度 / 当前问题 ─────────────────────────────── */
 
-/* 跳过语义是硬文案（不得弱化），用轻量暖底条放在最上，读一次就记住。
- * 用强调色的左边线而不是整块强调色，避免与「当前正在推进」抢视线。 */
+/* 跳过语义是硬文案（不得弱化），放在最上读一次就记住。
+ *
+ * 2026-11-18 精修：原先「暖底 + 3px 橙左边线 + 橙色圆点 + 16px 正文」在暖米纸底上是一整块
+ * 强提示，与题干、进度、提交键四件事同时抢焦点，题干反而被压到第三眼。
+ * 改为「说明行」层级：常规说明字色、14px、细描边 + 极浅暖底标出边界，橙色圆点保留为品牌
+ * 记忆点但缩到 6px。这样它仍清楚在那里、仍完整可读，却让位给题干与当前操作。 */
 .skipBanner {
   display: flex;
   align-items: center;
   gap: var(--space-2);
   margin: 0;
-  padding: var(--space-3) var(--space-4);
-  border-left: 3px solid var(--accent);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border-soft);
   border-radius: var(--radius-sm);
-  background: var(--surface-warm);
+  background: color-mix(in oklab, var(--surface-warm), transparent 55%);
   color: var(--fg-2);
-  font-size: var(--text-base);
-  line-height: 1.4;
+  font-size: var(--text-sm);
+  line-height: 1.45;
 }
 
 .skipBannerMark {
   flex: none;
-  width: var(--space-2);
-  height: var(--space-2);
+  width: 6px;
+  height: 6px;
   border-radius: var(--radius-pill);
   background: var(--accent);
 }
@@ -50,8 +54,16 @@
 
 /* 分段进度容器：语义与可见分段合为一体。契约 .progress-track 是 2px 细条（height/overflow/
  * margin-bottom），这里用 `.progressTrack:global(.progress-track)` 的复合选择器（特异性 0,2,0）
- * 压过契约那条单类规则，把它改成本页要的 6px 分段容器——不需要另起隐藏的探测元素。
- * 每段一个等宽小块：实心=已作答、斜纹=已跳过、空心=未作答；当前题再加外描边。 */
+ * 压过契约那条单类规则，把它改成本页要的 5px 分段容器——不需要另起隐藏的探测元素。
+ * 每段一个等宽小块：实心=已作答、斜纹=已跳过、空心=未作答；当前题再加外描边。
+ *
+ * 2026-11-18 精修：进度是「位置」，不是「当前操作」。原先把已作答/当前段都填满火焰橙，
+ * 八段里点亮的橙块与下方提交键同色同权，视线在橙条与橙键之间被拉来拉去。改为：
+ *   - 已作答 = 暖墨实心（沉、完成了的事）而非品牌橙；
+ *   - 当前段 = 描边 + 半透明橙填充（标出「你在这儿」，不和提交键同强度）；
+ *   - 已跳过 = 赭黄斜纹（保留 RQ-EMG-01 的「未排除」信号，但弱于橙）；
+ *   - 未作答 = 空心描边。
+ * 三种状态仍靠「填充/斜纹/空心」形状区分，不只靠颜色（emergency-progress 组件注释的硬约束）。 */
 .progressTrack:global(.progress-track) {
   display: flex;
   gap: var(--space-1);
@@ -63,29 +75,32 @@
 
 .segment {
   flex: 1;
-  height: 6px;
+  height: 5px;
   border-radius: var(--radius-pill);
   border: 1px solid var(--border);
   background: var(--surface);
 }
 
 .segment[data-status='answered'] {
-  border-color: var(--accent);
-  background: var(--accent);
+  border-color: var(--fg-2);
+  background: var(--fg-2);
 }
 
 .segment[data-status='skipped'] {
   border-color: var(--status-unruled);
   background: repeating-linear-gradient(
     45deg,
-    color-mix(in oklab, var(--status-unruled), transparent 55%) 0 2px,
-    transparent 2px 5px
+    color-mix(in oklab, var(--status-unruled), transparent 45%) 0 1.5px,
+    transparent 1.5px 4px
   );
 }
 
+/* 当前段压在其它状态之上（同题既已作答又是当前题时也要能看出「你在这」）。 */
 .segment[data-current='true'] {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
+  border-color: var(--accent);
+  background: color-mix(in oklab, var(--accent), transparent 62%);
+  outline: 2px solid color-mix(in oklab, var(--accent), transparent 45%);
+  outline-offset: 1px;
 }
 
 .progressText {
@@ -100,7 +115,9 @@
 }
 
 .progressPosition {
-  font-weight: 600;
+  color: var(--meta);
+  font-weight: 500;
+  font-size: var(--text-sm);
 }
 
 .progressTally {
@@ -120,14 +137,15 @@
 
 /* ── 当前问题面板 ──────────────────────────────────────────── */
 
-/* 一屏一题的容器：单层卡片，不做「卡中卡」。 */
+/* 一屏一题的容器：单层卡片，不做「卡中卡」。
+ *
+ * 2026-11-18 精修：改为「无框面板」——去掉 1px 外框 + 阴影，只留暖白底与内边距。
+ * 这一段页面上已经有一条进度条、一列分隔线、底栏一条分界线；再给面板套一圈框，
+ * 眼睛要数四条横线才落到题干。去掉外框后题干直接浮在暖纸上，是首屏最先读到的东西。 */
 .panel {
   display: grid;
   gap: var(--space-3);
-  padding: var(--space-4);
-  border: 1px solid var(--border-soft);
-  border-radius: var(--radius-md);
-  background: var(--surface);
+  padding: var(--space-2) var(--space-1) var(--space-4);
 }
 
 .questionBlock {
@@ -135,13 +153,18 @@
 }
 
 /* 题干：系统无衬线、约 600 权重，与其它页面的分组/操作文字一致（读物标题才用宋体）。
- * 去掉了额外的组标题层级（进度已给题号）。 */
+ * 去掉了额外的组标题层级（进度已给题号）。
+ * 2026-11-18：字号提到 22px、行高收紧到 1.32、加一点字距，题干成为一屏里最重的一行；
+ * 32px 上方的留白把它和上一条进度推开，一眼先看到「问的是什么」。 */
 .questionTitle {
   margin: 0;
   font-family: var(--font-body);
-  font-size: var(--text-lg);
-  font-weight: 600;
-  line-height: 1.35;
+  font-size: 22px;
+  font-weight: 650;
+  line-height: 1.32;
+  letter-spacing: -0.01em;
+  color: var(--fg);
+  text-wrap: pretty;
   scroll-margin-top: calc(var(--space-12) + var(--space-8));
 }
 
@@ -149,7 +172,8 @@
   margin: var(--space-2) 0 0;
   color: var(--muted);
   font-size: var(--text-sm);
-  line-height: var(--leading-body);
+  line-height: 1.55;
+  text-wrap: pretty;
 }
 
 /* 题间方向性滑动：前进向左、回退向右，240ms。减弱动效偏好下由全局规则关闭。 */
@@ -193,10 +217,19 @@
 
 /* 分组卡已有外框（.panel），选项本身不再各自套一层完整边框——那会让每一行都和外框抢线。
  * 未选中行只画一条底分隔线，配合明确勾选框区分行；最后一行去掉分隔线，避免与分组底边叠线。
- * 每个选项仍是整行可点热区（宽 100%、高 ≥48px、正文 16px）。 */
+ * 每个选项仍是整行可点热区（宽 100%、高 ≥48px、正文 16px）。
+ *
+ * 2026-11-18 精修：面板已去框，分隔线改成更浅、更短的一截——只从文字起点画到行尾，
+ * 不在勾选框左侧留一截悬空的线；行距放宽到 52px 让「一行一个候选」更从容。 */
 .options {
   display: grid;
-  margin-top: var(--space-2);
+  margin-top: var(--space-3);
+}
+
+/* 题干下的说明与第一行候选项之间再留一档：说明读到、眼睛落到选项前有呼吸，
+ * 不靠加框分隔两个层次。 */
+.questionHint + .options {
+  margin-top: var(--space-4);
 }
 
 .option {
@@ -204,19 +237,30 @@
   display: flex;
   align-items: center;
   gap: var(--space-3);
-  min-height: 48px;
+  min-height: 52px;
   padding: var(--space-3) 0;
   border: 0;
-  border-bottom: 1px solid var(--border-soft);
   border-radius: 0;
   background: transparent;
   color: var(--fg);
   font-size: var(--text-base);
+  line-height: 1.45;
   cursor: pointer;
 }
 
-.option:last-child {
-  border-bottom: 0;
+/* 行间分隔线：用伪元素只画在文字侧（左侧让出勾选框宽度），比整行短一截、更轻。 */
+.option::after {
+  content: '';
+  position: absolute;
+  inset-inline-start: calc(22px + var(--space-3));
+  inset-inline-end: 0;
+  bottom: 0;
+  height: 1px;
+  background: var(--border-soft);
+}
+
+.option:last-child::after {
+  display: none;
 }
 
 /* 原生控件视觉隐藏但保留在无障碍树与键盘序列里（.sr-only 同法，但不移出点击热区）。 */
@@ -254,12 +298,20 @@
 
 /* 选中态：常驻 accent 色——左侧强调线 + 极浅 accent 底 + 标记填充出对勾。
  * 不用整圈边框（那会与分组外框、相邻分隔线打架），改用一条 accent 左线标出当前行。 */
+/* 选中态：极浅 accent 底 + 左侧一条强调线标出「这行选了」，标记填充出对勾。
+ * 2026-11-18 精修：把整行 pad/margin 补偿的写法换成 inset 竖线 + 柔和描边圆角块，
+ * 选中行自带一点圆角与浅底，像被「按下去」，但不与外框打架（面板已无框）。 */
 .option[data-checked='true'] {
+  background: color-mix(in oklab, var(--accent), transparent 93%);
   box-shadow: inset 3px 0 0 var(--accent);
-  background: color-mix(in oklab, var(--accent), transparent 94%);
-  padding-left: var(--space-3);
-  padding-right: var(--space-3);
+  border-radius: var(--radius-sm);
+  padding-inline: var(--space-3);
   margin-inline: calc(var(--space-3) * -1);
+}
+
+/* 选中行的分隔线跟随内缩，避免左侧竖线与分隔线错位。 */
+.option[data-checked='true']::after {
+  inset-inline-start: calc(22px + var(--space-3) - var(--space-3));
 }
 
 .option[data-checked='true'] .optionMark {
@@ -288,6 +340,7 @@
 .field {
   display: grid;
   gap: var(--space-2);
+  margin-top: var(--space-4);
 }
 
 .fieldLabel {
@@ -296,16 +349,19 @@
   font-weight: 600;
 }
 
+/* 补充文本：不加边框框住整块，改成暖白底 + 底部一条柔和的 underline 线，
+ * 与选项行同族（都是「往里写、往下走」的轻输入），不与题干抢结构感。 */
 .textarea {
   width: 100%;
-  min-height: 88px;
-  padding: var(--space-3) var(--space-4);
-  border: 1px solid var(--border);
+  min-height: 84px;
+  padding: var(--space-3) var(--space-3);
+  border: 1px solid var(--border-soft);
   border-radius: var(--radius-sm);
-  background: var(--surface);
+  background: color-mix(in oklab, var(--surface), transparent 0%);
   color: var(--fg);
   font: inherit;
   font-size: var(--text-base);
+  line-height: 1.55;
   resize: vertical;
 }
 
@@ -321,15 +377,21 @@
 
 /* ── 上一题（采集区回退）：只回退，前进/跳过在屏底常驻区 ───── */
 
+/* 上一题：采集区里的回退，只承担回退。2026-11-18 精修：改成轻量文字链，紧贴题干上方，
+ * 左对齐、留一个箭头；不再占一张卡片第一行的整行高度，把题面上移进一眼区。 */
 .pushBack {
   justify-self: start;
   min-height: 44px;
-  min-width: 44px;
-  padding: var(--space-2) var(--space-3) var(--space-2) 0;
+  padding: 0 var(--space-3) 0 0;
   border: 0;
   background: none;
-  color: var(--fg-2);
+  color: var(--muted);
   font-size: var(--text-sm);
+  font-weight: 500;
+}
+
+.pushBack:active {
+  color: var(--fg-2);
 }
 
 .pushBack:disabled {
@@ -339,7 +401,10 @@
 
 /* ── 常驻提交区（屏底拇指区） ──────────────────────────────── */
 
-/* 本类挂在带 emergency-controls 钩子的元素上；钩子负责截图中和，本类提供 fixed 定位。 */
+/* 本类挂在带 emergency-controls 钩子的元素上；钩子负责截图中和，本类提供 fixed 定位。
+ *
+ * 2026-11-18 精修：底栏原先的一条 1px 顶部线在暖纸上偏「硬」，改为极轻的暖色上浮阴影
+ * 把控制区托起，不再画线；背景保持暖白，与页面纸张同族。 */
 .controls {
   position: fixed;
   inset-inline: 0;
@@ -348,8 +413,9 @@
   max-width: var(--phone-shell-max);
   margin-inline: auto;
   padding: var(--space-3) var(--container-gutter-phone) calc(var(--space-3) + env(safe-area-inset-bottom, 0px));
-  border-top: 1px solid var(--border-soft);
   background: var(--surface);
+  box-shadow: 0 -1px 0 color-mix(in oklab, var(--border-soft), transparent 35%),
+    0 -12px 24px -16px color-mix(in oklab, var(--fg), transparent 82%);
 }
 
 .dockInner {
@@ -374,9 +440,12 @@
   font-weight: 600;
 }
 
+/* 跳过 = 「按未排除处理」，语义上仍是推进而非丢弃；与下一题同族、只是更淡。
+ * 2026-11-18 精修：两键统一成同一套次级键（无边框/细边框二选一），去掉暖底块
+ * 在暖纸上的色差，让它们看上去就是「两个继续键」，不与鲜橙提交抢眼。 */
 .dockSkip {
-  border: 1px solid var(--border-soft);
-  background: var(--surface-warm);
+  border: 1px solid transparent;
+  background: color-mix(in oklab, var(--surface-warm), transparent 40%);
   color: var(--fg-2);
 }
 
@@ -386,7 +455,9 @@
   color: var(--fg);
 }
 
-/* 提交是主操作：整宽、主色、独占一行——与上面两个次要键在形状与层级上分开。 */
+/* 提交是主操作：整宽、主色、独占一行——与上面两个次要键在形状与层级上分开。
+ * 2026-11-18：略微压低高度与字重差（仍是整宽主色实心），避免它和次要键叠成三块大色块时
+ * 只在颜色上分「主次」。主次还靠整宽独占一行、字号更大来拉开。 */
 .dockSubmit {
   width: 100%;
   min-height: 48px;
