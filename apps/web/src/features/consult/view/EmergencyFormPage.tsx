@@ -6,20 +6,22 @@
  *   - docs/技术设计/technical-details/咨询对话界面.md: MUST — 第 6 节（提交后 navigate，表单页即弃）
  *   - docs/需求/功能需求与验收.md: MUST — RQ-EMG-01（八项可跳过，跳过 = 未排除）
  * 边界:
- *   - 依赖: shared/ui（AppShell、ConfirmSheet）、viewModel/useEmergencyForm、domain/emergency、
- *           view/emergency（EmergencyProgress / EmergencyQuestionStep / EmergencyPushBar / EmergencySubmitDock）
+ *   - 依赖: shared/ui（AppShell、BackChevron、ConfirmSheet）、viewModel/useEmergencyForm、domain/emergency、
+ *           view/emergency（EmergencyProgress / EmergencyQuestionStep / EmergencyBackStep / EmergencySubmitDock）
  *   - 被依赖: app/routes
  * 禁止行为:
  *   - 禁止把八项做成一页长表单（页面设计布局结构第 2 节）
  *   - 禁止显示进度百分比数字（位置感足够）
  *   - 禁止弱化跳过语义文案（RQ-EMG-01 原文，不得写成「暂时跳过」）
  *   - 禁止删掉 emergency-controls 钩子（e2e 中和 fixed 用）
+ *   - 禁止把 `progress-track` 字面类名改掉（e2e 截图按它取位置量）
  */
 
 import { useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router';
 
 import { AppShell } from '../../../shared/ui/AppShell';
+import { BackChevron } from '../../../shared/ui/BackLink';
 import { ConfirmSheet } from '../../../shared/ui/ConfirmSheet';
 import { safeReturnTo } from '../../../shared/ui/returnTo';
 import type { ConsultPort } from '../application/ports';
@@ -32,9 +34,10 @@ import { EmergencyBackStep } from './emergency/EmergencyBackStep';
 import { EmergencyQuestionStep } from './emergency/EmergencyQuestionStep';
 import { EmergencySubmitDock } from './emergency/EmergencySubmitDock';
 import styles from './emergency/emergencyForm.module.css';
-// 选择卡（.selection/.check-box）与进度条（.progress-track）的契约规则在本表里，
-// 不 import 就只剩浏览器默认外观（原生 radio 可见、进度条 0px）。
-import './consultComponents.css';
+// 只在「退出确认单」里用到的契约基元（.btn/.button-row）由全局组件表提供，本页不再
+// import consultComponents.css：分步流自己把选中/按压/当前题等都画在 emergencyForm.module.css 里，
+// 进度条也不再消费契约 `.progress-track` 的 2px 细条规则（见该表顶部说明）。
+import '../../../shared/styles/components.css';
 
 /** 应急表单页 props。 */
 export interface EmergencyFormPageProps {
@@ -81,8 +84,20 @@ export function EmergencyFormPage({ consult }: EmergencyFormPageProps) {
   return (
     <AppShell className={styles.shell}>
       <header className="subpage-head">
-        <button type="button" className="sp-back text-button" disabled={form.submitting} onClick={handleExit}>
-          ← 退出应急
+        {/*
+          退出键与其它次级页共用同一个返回字形（shared/ui 的 BackChevron），文字保留「退出应急」：
+          这一页的退出不是「返回」，而是会丢弃现场采集的决定——文字语义不能改，只借字形。
+          它是 button 而不是 BackLink：退出要先经控制器判定（有已填内容要弹确认单），不能让一个
+          <a> 直接导航走。字形 + .sp-back 的形态由契约表提供，本页只保证它和返回键长得一致。
+        */}
+        <button
+          type="button"
+          className={`sp-back text-button ${styles.exitButton}`}
+          disabled={form.submitting}
+          onClick={handleExit}
+        >
+          <BackChevron />
+          退出应急
         </button>
         <span className="sp-title">现在的情况</span>
       </header>
@@ -102,9 +117,18 @@ export function EmergencyFormPage({ consult }: EmergencyFormPageProps) {
       >
         <EmergencyBackStep isFirst={form.isFirst} disabled={form.submitting} onPrevious={form.previous} />
 
+        {/*
+          key = current.key：换题时这一层整体重建，方向性滑动才会真的播一次。
+          提交中给这一层挂 inert（与 aria-busy 同时）：题面与选项不能改，视觉上用 .stepLocked
+          把它压成「按下去了、先等结果」的样子。
+        */}
         <div
-          className={form.direction === 'forward' ? styles.stepForward : styles.stepBack}
+          className={
+            (form.direction === 'forward' ? styles.stepForward : styles.stepBack) +
+            (form.submitting ? ` ${styles.stepLocked}` : '')
+          }
           key={current.key}
+          inert={form.submitting ? true : undefined}
         >
           <EmergencyQuestionStep
             question={current}

@@ -39,9 +39,20 @@ function importTargets(file: string): string[] {
 }
 
 describe('对话面契约样式表接线', () => {
-  // 这两页渲染该表的类名（ChatPage 的骨架气泡与 ChatWorkspace 的消息流、应急页的选择卡与进度条）；
+  // ChatPage 渲染该表的消息流类名（骨架气泡、Citatio/Question/ActionCard 等的共享外观）。
   // 会话列表页只用 shared/styles/components.css 的 .list-row/.tile 等，故不在名单内。
-  it.each(['ChatPage.tsx', 'EmergencyFormPage.tsx'])('%s 真实 import 了 consultComponents.css', (name) => {
-    expect(importTargets(resolve(VIEW_DIR, name))).toContain(SHEET);
+  //
+  // 应急表单页于 2026-11-18 角色化重做后**不再消费**该表：它的选中/按压/进度/当前题/
+  // 提交中都在自己的 emergencyForm.module.css 里，行动卡的局部排版在 actionCard.module.css。
+  // 因此它从本名单移出，改由下一条用例断言「消费了全局组件表 shared/styles/components.css
+  // （确认单的 .btn/.button-row 来自这里）但没有再悄悄 import 对话面特性表」。
+  it('ChatPage.tsx 真实 import 了 consultComponents.css', () => {
+    expect(importTargets(resolve(VIEW_DIR, 'ChatPage.tsx'))).toContain(SHEET);
+  });
+  it('EmergencyFormPage.tsx 依赖全局组件表，且不再用对话面特性表', () => {
+    const components = resolve(VIEW_DIR, '..', '..', '..', 'shared', 'styles', 'components.css');
+    const targets = importTargets(resolve(VIEW_DIR, 'EmergencyFormPage.tsx'));
+    expect(targets).toContain(components);
+    expect(targets).not.toContain(SHEET);
   });
 });
