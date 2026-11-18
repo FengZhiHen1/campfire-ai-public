@@ -2,6 +2,7 @@
 import { mkdir, readFile } from 'node:fs/promises';
 import { expect, test, type Page, type TestInfo } from '@playwright/test';
 
+import { actionCardEvent } from '../src/features/consult/test/fixtures';
 import { PAGE_SHOTS, type PageShot } from './support/fixtures';
 import { readPngSize, sha256Of } from './support/manifest';
 import { expectNoUnmatchedApi } from './support/network';
@@ -193,6 +194,28 @@ test('应急长题滚动后提交仍可触达，勾选和回退保留答案', as
   expect(pageProblems).toEqual([]);
 });
 
+test('首页草稿进入空会话，使用者主动发送前不启动咨询', async ({ page }, info) => {
+  const sessionId = 'sess-new-preview';
+  const { ledger } = await openPage(page, {
+    ...shotFor('home'),
+    fixtures: [{
+      method: 'POST', path: '/api/consult/sessions', status: 201,
+      body: { session_id: sessionId, support_object_id: null, onboarding_pending: false },
+    }, {
+      method: 'GET', path: `/api/consult/sessions/${sessionId}/messages`,
+      body: { session_id: sessionId, messages: [] },
+    }],
+  }, info);
+  const draft = '我想准备下一次外出。';
+  await page.getByRole('textbox', { name: '想聊的事情' }).fill(draft);
+  await page.getByRole('button', { name: '进入对话' }).click();
+  await expect(page.getByRole('textbox', { name: '发送消息' })).toHaveValue(draft);
+  await expect(page.getByRole('button', { name: '发送', exact: true })).toBeEnabled();
+  expect(ledger.records.filter((record) => record.method === 'POST').map((record) => record.pathname)).toEqual(['/api/consult/sessions']);
+  await capture(page, info, 'chat-empty');
+  expectNoUnmatchedApi(ledger);
+});
+
 test('对话过程与依据独立展开，正文和常驻输入器保留', async ({ page }, info) => {
   const { ledger, pageProblems } = await openPage(page, shotFor('chat'), info);
   await page.locator('.reasoning-row > summary').click();
@@ -202,6 +225,71 @@ test('对话过程与依据独立展开，正文和常驻输入器保留', async
   await capture(page, info, 'chat-sources', true);
   expectNoUnmatchedApi(ledger);
   expect(pageProblems).toEqual([]);
+});
+
+test('应急历史中最新行动卡可读，旧卡明确标记过期', async ({ page }, info) => {
+  const chat = shotFor('chat');
+  const sessionId = chat.path.split('/').at(-1);
+  const { ledger, pageProblems } = await openPage(page, {
+    ...chat,
+    fixtures: [{
+      method: 'GET',
+      path: `/api/consult/sessions/${sessionId}/messages`,
+      body: {
+        session_id: sessionId,
+        messages: [{ id: 'prior-plan', role: 'assistant', parts: [actionCardEvent()] }, {
+          id: 'current-plan',
+          role: 'assistant',
+          parts: [actionCardEvent({ card_id: 'card-2', title: '现场行动卡 · 最新评估' })],
+        }],
+      },
+    }],
+  }, info);
+  const cards = page.locator('.action-card');
+  await expect(cards).toHaveCount(2);
+  await expect(cards.first()).toContainText('已过期');
+  const current = cards.last();
+  const cardText = await current.innerText();
+  expect(cardText).toContain('未排除');
+  expect(cardText).toContain('立即做');
+  expect(cardText).toContain('来源');
+  expect(cardText.indexOf('医疗风险')).toBeGreaterThanOrEqual(0);
+  expect(cardText.indexOf('医疗风险')).toBeLessThan(cardText.indexOf('立即做'));
+  await capture(page, info, 'chat-action-card', true);
+  expectNoUnmatchedApi(ledger);
+  expect(pageProblems).toEqual([]);
+});
+
+for (const width of [320, 430]) {
+  test(`首页在 ${width}px 宽的首屏可开始应急，且不横向滚动`, async ({ page }, info) => {
+    test.skip(info.project.name !== 'content-mobile', '此场景检查窄视口');
+    await page.setViewportSize({ width, height: 640 });
+    await openPage(page, shotFor('home'), info);
+    const entry = page.getByRole('link', { name: /开始应急咨询/ });
+    await expect(entry).toHaveAttribute('href', '/consult/emergency');
+    await expect(entry).toBeInViewport({ ratio: 1 });
+    const reachable = await entry.evaluate((element) => {
+      const rect = element.getBoundingClientRect();
+      return element.contains(document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2));
+    });
+    expect(reachable).toBe(true);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(width);
+  });
+}
+
+test('咨询输入在缩短后的窄视口仍可编辑和触达发送', async ({ page }, info) => {
+  test.skip(info.project.name !== 'content-mobile', '此场景模拟键盘占用后的布局高度');
+  await page.setViewportSize({ width: 320, height: 680 });
+  await openPage(page, shotFor('chat'), info);
+  const composer = page.getByRole('textbox', { name: '发送消息' });
+  await composer.focus();
+  await page.setViewportSize({ width: 320, height: 365 });
+  await composer.fill('我想补充一个细节。');
+  const send = page.getByRole('button', { name: '发送', exact: true });
+  await expect(composer).toBeInViewport({ ratio: 1 });
+  await expect(send).toBeInViewport({ ratio: 1 });
+  await expect(send).toBeEnabled();
+  await send.click({ trial: true });
 });
 
 test('注册状态、密码显示与输入错误有明确反馈', async ({ page }, info) => {
