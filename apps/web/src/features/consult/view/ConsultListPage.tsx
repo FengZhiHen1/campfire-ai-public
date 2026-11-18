@@ -60,7 +60,7 @@ export function ConsultListPage({ consult }: ConsultListPageProps) {
   return (
     <AppShell tab="consult">
       <header className="page-head">
-        <div><h1>咨询</h1><p className="hint">开始新的对话，或接着上次的思路。</p></div>
+        <div><h1 className={styles.pageTitle}>咨询</h1><p className="hint">开始新的对话，或接着上次的思路。</p></div>
       </header>
 
       <button type="button" className={`tile ${styles.newEntry}`} disabled={list.creating} onClick={() => void list.startNewConversation()}>

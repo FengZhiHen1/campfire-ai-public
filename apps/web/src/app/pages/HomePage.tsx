@@ -55,7 +55,7 @@ export function HomePage({ consult }: { consult: ConsultPort }) {
               onChange={(event) => entry.setDraft(event.target.value)}
             />
             <div className={styles.composeBottom}>
-              <span className={styles.draftNote}>进入后可继续补充，发送时才开始分析</span>
+              <span className={styles.draftNote}>确认发送后开始分析</span>
               <button type="submit" className={`btn btn-primary ${styles.enterButton}`} disabled={entry.creating || entry.draft.trim() === ''}>
                 {entry.creating ? '正在进入…' : '进入对话'} <Icon name="arrow" />
               </button>
