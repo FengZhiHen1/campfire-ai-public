@@ -1,11 +1,15 @@
 /* 应急表单页专用样式（CSS Modules）：只消费 token 变量。
  *
  * 设计目标（docs/design/pages/应急表单页.md）：让慌乱中、可能单手操作的监护人在 10 秒内能提交。
- * 因此这一页的取舍是「进度与当前问题一眼可读、减少逐项双层框与多层标题、正文 16px、
- * 触控热区 ≥44px、提交常驻不挡选项与键盘」。
+ * 因此这一页的取舍是「题干与当前操作先读、进度与说明让位、正文 16px、触控热区 ≥44px、
+ * 提交常驻不挡选项与键盘」。
  *
- * 组件类名（.selection / .progress-track 等）仍属设计契约，由 consultComponents.css 提供；
- * 本表只放本页的布局与这几个应急专属类，避免把契约类名在 CSS Module 里哈希掉。 */
+ * 2026-11-18 本轮（角色化重做）：
+ *   - 不再借用契约 `.selection` / `.progress-track` 那组通用装饰样式（原模板轨道），
+ *     选中、按压、当前题、提交中、失败各自一套自己的样子，彼此不靠同一条「橙左边线」区分；
+ *   - 页头退出键与其它次级页共用返回字形（BackChevron），文字保留「退出应急」；
+ *   - 八项字段、跳过=未排除、提前提交、医疗风险与来源语义一律不动，只重做呈现。
+ */
 
 /* ── 页面骨架 ───────────────────────────────────────────────── */
 
@@ -15,14 +19,25 @@
   gap: var(--space-3);
 }
 
+/* 退出键：结构与 .sp-back 一致（同一字形、同一 44px 热区），但这里是 button，
+ * 需要把契约里给 <a> 的文字下划线清掉，并让禁用态可见（退出兜底不可点）。 */
+.exitButton {
+  text-decoration: none;
+  border: 0;
+  background: none;
+  cursor: pointer;
+}
+
+.exitButton:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 /* ── 安全文案 / 进度 / 当前问题 ─────────────────────────────── */
 
 /* 跳过语义是硬文案（不得弱化），放在最上读一次就记住。
- *
- * 2026-11-18 精修：原先「暖底 + 3px 橙左边线 + 橙色圆点 + 16px 正文」在暖米纸底上是一整块
- * 强提示，与题干、进度、提交键四件事同时抢焦点，题干反而被压到第三眼。
- * 改为「说明行」层级：常规说明字色、14px、细描边 + 极浅暖底标出边界，橙色圆点保留为品牌
- * 记忆点但缩到 6px。这样它仍清楚在那里、仍完整可读，却让位给题干与当前操作。 */
+ * 保持「说明行」层级：常规说明字色、14px、细描边 + 极浅暖底标出边界，橙色圆点保留为品牌
+ * 记忆点但只有 6px——它仍整句可读，却让位给题干与当前操作。 */
 .skipBanner {
   display: flex;
   align-items: center;
@@ -45,62 +60,77 @@
   background: var(--accent);
 }
 
-/* ── 进度 ──────────────────────────────────────────────────── */
+/* ── 进度：一条八段定位线 ──────────────────────────────────── */
 
 .progress {
   display: grid;
   gap: var(--space-2);
 }
 
-/* 分段进度容器：语义与可见分段合为一体。契约 .progress-track 是 2px 细条（height/overflow/
- * margin-bottom），这里用 `.progressTrack:global(.progress-track)` 的复合选择器（特异性 0,2,0）
- * 压过契约那条单类规则，把它改成本页要的 5px 分段容器——不需要另起隐藏的探测元素。
- * 每段一个等宽小块：实心=已作答、斜纹=已跳过、空心=未作答；当前题再加外描边。
- *
- * 2026-11-18 精修：进度是「位置」，不是「当前操作」。原先把已作答/当前段都填满火焰橙，
- * 八段里点亮的橙块与下方提交键同色同权，视线在橙条与橙键之间被拉来拉去。改为：
- *   - 已作答 = 暖墨实心（沉、完成了的事）而非品牌橙；
- *   - 当前段 = 描边 + 半透明橙填充（标出「你在这儿」，不和提交键同强度）；
- *   - 已跳过 = 赭黄斜纹（保留 RQ-EMG-01 的「未排除」信号，但弱于橙）；
- *   - 未作答 = 空心描边。
- * 三种状态仍靠「填充/斜纹/空心」形状区分，不只靠颜色（emergency-progress 组件注释的硬约束）。 */
-.progressTrack:global(.progress-track) {
+/* 位置线：八段等宽，每段一条 2px 的线。已作答=暖墨实线（沉、完成了），已跳过=赭黄虚线
+ * （保留「未排除」信号但弱于橙），未作答=极浅点线。三种状态靠线型 + 颜色双重区分。
+ * 当前题不靠「点亮更粗的橙线」（那会和提交键同权抢视线），而是把这一段的线换成
+ * 一枚「圆点 + 左右对勾式收口」的端点，标出「你在这儿」而不放大面积强调色。 */
+.progressTrack {
   display: flex;
+  align-items: center;
   gap: var(--space-1);
-  height: auto;
-  margin-bottom: 0;
-  overflow: visible;
-  background: none;
+  height: 12px;
 }
 
 .segment {
+  position: relative;
   flex: 1;
-  height: 5px;
+  height: 2px;
   border-radius: var(--radius-pill);
-  border: 1px solid var(--border);
-  background: var(--surface);
+  background: var(--border);
 }
 
+/* 已作答：暖墨实线，略高一点，读作「走过的路」。 */
 .segment[data-status='answered'] {
-  border-color: var(--fg-2);
+  height: 3px;
   background: var(--fg-2);
 }
 
+/* 已跳过：赭黄虚线。斜纹改成虚线是同一个「未排除」信号的更轻写法。 */
 .segment[data-status='skipped'] {
-  border-color: var(--status-unruled);
   background: repeating-linear-gradient(
-    45deg,
-    color-mix(in oklab, var(--status-unruled), transparent 45%) 0 1.5px,
-    transparent 1.5px 4px
+    to right,
+    var(--status-unruled) 0 3px,
+    transparent 3px 6px
   );
 }
 
-/* 当前段压在其它状态之上（同题既已作答又是当前题时也要能看出「你在这」）。 */
+/* 当前题：这一段的线退成透明，改由伪元素画一个圆点（实心橙、一枚浅橙外圈），
+ * 让「当前位置」是一个点，而不是半条更亮的橙线。 */
 .segment[data-current='true'] {
-  border-color: var(--accent);
-  background: color-mix(in oklab, var(--accent), transparent 62%);
-  outline: 2px solid color-mix(in oklab, var(--accent), transparent 45%);
-  outline-offset: 1px;
+  background: transparent;
+}
+
+.segment[data-current='true']::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 8px;
+  height: 8px;
+  border-radius: var(--radius-pill);
+  background: var(--accent);
+  box-shadow: 0 0 0 4px color-mix(in oklab, var(--accent), transparent 82%);
+  transform: translate(-50%, -50%);
+}
+
+/* 当前题已经作答/已跳过时，圆点仍要能读出「当前」，故线型在圆点两侧补一小截。 */
+.segment[data-current='true'][data-status='answered']::after,
+.segment[data-current='true'][data-status='skipped']::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  right: 0;
+  width: 40%;
+  height: 2px;
+  background: var(--border);
+  transform: translateY(-50%);
 }
 
 .progressText {
@@ -137,25 +167,14 @@
 
 /* ── 当前问题面板 ──────────────────────────────────────────── */
 
-/* 一屏一题的容器：单层卡片，不做「卡中卡」。
- *
- * 2026-11-18 精修：改为「无框面板」——去掉 1px 外框 + 阴影，只留暖白底与内边距。
- * 这一段页面上已经有一条进度条、一列分隔线、底栏一条分界线；再给面板套一圈框，
- * 眼睛要数四条横线才落到题干。去掉外框后题干直接浮在暖纸上，是首屏最先读到的东西。 */
+/* 一屏一题的容器：无框面板，只留内边距，题干直接浮在暖纸上。 */
 .panel {
   display: grid;
   gap: var(--space-3);
   padding: var(--space-2) var(--space-1) var(--space-4);
 }
 
-.questionBlock {
-  display: block;
-}
-
-/* 题干：系统无衬线、约 600 权重，与其它页面的分组/操作文字一致（读物标题才用宋体）。
- * 去掉了额外的组标题层级（进度已给题号）。
- * 2026-11-18：字号提到 22px、行高收紧到 1.32、加一点字距，题干成为一屏里最重的一行；
- * 32px 上方的留白把它和上一条进度推开，一眼先看到「问的是什么」。 */
+/* 题干：系统无衬线、600 权重，是首屏最先读到的一行（22px、行高 1.32）。 */
 .questionTitle {
   margin: 0;
   font-family: var(--font-body);
@@ -182,15 +201,6 @@
   display: block;
 }
 
-@media (prefers-reduced-motion: no-preference) {
-  .stepForward {
-    animation: step-in-forward var(--motion-base) var(--ease-standard);
-  }
-  .stepBack {
-    animation: step-in-back var(--motion-base) var(--ease-standard);
-  }
-}
-
 @keyframes step-in-forward {
   from {
     opacity: 0.5;
@@ -213,47 +223,73 @@
   }
 }
 
-/* ── 选项：单层整行热区 ─────────────────────────────────────── */
+@media (prefers-reduced-motion: no-preference) {
+  .stepForward {
+    animation: step-in-forward var(--motion-base) var(--ease-standard);
+  }
+  .stepBack {
+    animation: step-in-back var(--motion-base) var(--ease-standard);
+  }
+}
 
-/* 分组卡已有外框（.panel），选项本身不再各自套一层完整边框——那会让每一行都和外框抢线。
- * 未选中行只画一条底分隔线，配合明确勾选框区分行；最后一行去掉分隔线，避免与分组底边叠线。
- * 每个选项仍是整行可点热区（宽 100%、高 ≥48px、正文 16px）。
- *
- * 2026-11-18 精修：面板已去框，分隔线改成更浅、更短的一截——只从文字起点画到行尾，
- * 不在勾选框左侧留一截悬空的线；行距放宽到 52px 让「一行一个候选」更从容。 */
+/* 提交中锁定题面：不放大模糊，只微微压暗并禁用指针，读作「先别再改，等结果」。
+ * 与底部提交键的「正在提交…」是同一件事的两个面，不是两个独立的强调。
+ * 压暗值取 0.78：0.66 会让题目文字踩到可读性下限（提交那几秒仍应能看清自己在提交什么），
+ * 锁定感主要交给 inert（不可交互）与底栏的 pending 形态，不靠把字压到发灰。 */
+.stepLocked {
+  opacity: 0.78;
+  filter: saturate(0.85);
+  pointer-events: none;
+}
+
+/* ── 选项：整行热区 + 分明的选中/按压态 ─────────────────────── */
+
 .options {
   display: grid;
   margin-top: var(--space-3);
 }
 
-/* 题干下的说明与第一行候选项之间再留一档：说明读到、眼睛落到选项前有呼吸，
- * 不靠加框分隔两个层次。 */
+/* 题干下的说明与第一行候选项之间再留一档：说明读到、眼睛落到选项前有呼吸。 */
 .questionHint + .options {
   margin-top: var(--space-4);
 }
 
+/* 选项行：整行可点（宽 100%、高 ≥52px、正文 16px）。
+ *
+ * 三条状态互不重叠、各自有形状：
+ *   未选：无底色，只有一截行间分隔线；
+ *   按压（:active，未选时）：整行沉成暖沙底并轻微内缩，读作「手指按下去了」；
+ *   选中（data-checked）：白底卡片浮起 + 方形/圆形标记填成橙色对勾 + 淡橙底；
+ *   键盘聚焦（:focus-visible）：一圈细橙描边。
+ * 选中态不再用「橙左竖线」——那是全站模板里最常见的装饰，本页改成
+ * 「整块浮起的选中行」，与按压的「整行按下」在视觉上分开。 */
 .option {
   position: relative;
   display: flex;
   align-items: center;
   gap: var(--space-3);
   min-height: 52px;
-  padding: var(--space-3) 0;
+  margin-inline: calc(var(--space-2) * -1);
+  padding: var(--space-3) var(--space-2);
   border: 0;
-  border-radius: 0;
+  border-radius: var(--radius-sm);
   background: transparent;
   color: var(--fg);
   font-size: var(--text-base);
   line-height: 1.45;
   cursor: pointer;
+  transition:
+    background-color var(--motion-fast) var(--ease-standard),
+    box-shadow var(--motion-fast) var(--ease-standard),
+    transform var(--motion-fast) var(--ease-standard);
 }
 
-/* 行间分隔线：用伪元素只画在文字侧（左侧让出勾选框宽度），比整行短一截、更轻。 */
+/* 行间分隔线：只在文字侧，左侧让出勾选框宽度，比整行短一截、更轻。 */
 .option::after {
   content: '';
   position: absolute;
-  inset-inline-start: calc(22px + var(--space-3));
-  inset-inline-end: 0;
+  inset-inline-start: calc(22px + var(--space-3) + var(--space-2));
+  inset-inline-end: var(--space-2);
   bottom: 0;
   height: 1px;
   background: var(--border-soft);
@@ -263,7 +299,13 @@
   display: none;
 }
 
-/* 原生控件视觉隐藏但保留在无障碍树与键盘序列里（.sr-only 同法，但不移出点击热区）。 */
+/* 按压（未选中）：整行沉成暖沙底、微内缩。选中行有自己的 :active 处理。 */
+.option:active:not([data-checked='true']) {
+  background: color-mix(in oklab, var(--surface-warm), transparent 30%);
+  transform: scale(0.994);
+}
+
+/* 原生控件视觉隐藏但保留在无障碍树与键盘序列里。 */
 .option input {
   position: absolute;
   width: 1px;
@@ -272,8 +314,8 @@
   opacity: 0;
 }
 
-/* 指示标记：清晰的勾选框——多选方形（4px 小圆角，一眼是方）、单选圆形（靠 input 类型区分）。
- * 未选中有实描边，一眼知道「这里可以选」。 */
+/* 指示标记：多选方形（4px 小圆角）、单选圆形（靠 input 类型区分）。
+ * 未选中有实描边，一眼知道「这里可以选」；选中填充为橙色对勾。 */
 .optionMark {
   flex: none;
   display: inline-flex;
@@ -284,6 +326,9 @@
   border: 1.5px solid var(--meta);
   border-radius: 4px;
   background: var(--surface);
+  transition:
+    background-color var(--motion-fast) var(--ease-standard),
+    border-color var(--motion-fast) var(--ease-standard);
 }
 
 .option:has(input[type='radio']) .optionMark {
@@ -296,22 +341,18 @@
   line-height: 1.4;
 }
 
-/* 选中态：常驻 accent 色——左侧强调线 + 极浅 accent 底 + 标记填充出对勾。
- * 不用整圈边框（那会与分组外框、相邻分隔线打架），改用一条 accent 左线标出当前行。 */
-/* 选中态：极浅 accent 底 + 左侧一条强调线标出「这行选了」，标记填充出对勾。
- * 2026-11-18 精修：把整行 pad/margin 补偿的写法换成 inset 竖线 + 柔和描边圆角块，
- * 选中行自带一点圆角与浅底，像被「按下去」，但不与外框打架（面板已无框）。 */
+/* 选中态：整行变成一块浮起的暖白卡（浅橙底 + 细描边），标记填橙出对勾。
+ * 这里读作「这一项被挑中了」，与按压态（整行沉成暖沙、无标记变化）不同，
+ * 也与当前题（进度线上的圆点）不同——三种状态三个位置。 */
 .option[data-checked='true'] {
-  background: color-mix(in oklab, var(--accent), transparent 93%);
-  box-shadow: inset 3px 0 0 var(--accent);
-  border-radius: var(--radius-sm);
-  padding-inline: var(--space-3);
-  margin-inline: calc(var(--space-3) * -1);
+  background: color-mix(in oklab, var(--accent), transparent 92%);
+  box-shadow:
+    inset 0 0 0 1.5px color-mix(in oklab, var(--accent), transparent 55%),
+    var(--elev-raised);
 }
 
-/* 选中行的分隔线跟随内缩，避免左侧竖线与分隔线错位。 */
 .option[data-checked='true']::after {
-  inset-inline-start: calc(22px + var(--space-3) - var(--space-3));
+  display: none;
 }
 
 .option[data-checked='true'] .optionMark {
@@ -331,8 +372,7 @@
 /* 可见焦点：键盘聚焦时整行描一圈 accent（不只在隐藏的原生控件上）。 */
 .option:has(input:focus-visible) {
   outline: 2px solid var(--accent);
-  outline-offset: 2px;
-  border-radius: var(--radius-sm);
+  outline-offset: 1px;
 }
 
 /* ── 自由文本 ──────────────────────────────────────────────── */
@@ -349,15 +389,13 @@
   font-weight: 600;
 }
 
-/* 补充文本：不加边框框住整块，改成暖白底 + 底部一条柔和的 underline 线，
- * 与选项行同族（都是「往里写、往下走」的轻输入），不与题干抢结构感。 */
 .textarea {
   width: 100%;
   min-height: 84px;
-  padding: var(--space-3) var(--space-3);
+  padding: var(--space-3);
   border: 1px solid var(--border-soft);
   border-radius: var(--radius-sm);
-  background: color-mix(in oklab, var(--surface), transparent 0%);
+  background: var(--surface);
   color: var(--fg);
   font: inherit;
   font-size: var(--text-base);
@@ -377,8 +415,6 @@
 
 /* ── 上一题（采集区回退）：只回退，前进/跳过在屏底常驻区 ───── */
 
-/* 上一题：采集区里的回退，只承担回退。2026-11-18 精修：改成轻量文字链，紧贴题干上方，
- * 左对齐、留一个箭头；不再占一张卡片第一行的整行高度，把题面上移进一眼区。 */
 .pushBack {
   justify-self: start;
   min-height: 44px;
@@ -402,9 +438,7 @@
 /* ── 常驻提交区（屏底拇指区） ──────────────────────────────── */
 
 /* 本类挂在带 emergency-controls 钩子的元素上；钩子负责截图中和，本类提供 fixed 定位。
- *
- * 2026-11-18 精修：底栏原先的一条 1px 顶部线在暖纸上偏「硬」，改为极轻的暖色上浮阴影
- * 把控制区托起，不再画线；背景保持暖白，与页面纸张同族。 */
+ * 用极轻的暖色上浮阴影把控制区托起，不画硬顶线；背景保持暖白，与页面纸张同族。 */
 .controls {
   position: fixed;
   inset-inline: 0;
@@ -438,11 +472,10 @@
   border-radius: var(--radius-sm);
   font-size: var(--text-sm);
   font-weight: 600;
+  transition: background-color var(--motion-fast) var(--ease-standard);
 }
 
-/* 跳过 = 「按未排除处理」，语义上仍是推进而非丢弃；与下一题同族、只是更淡。
- * 2026-11-18 精修：两键统一成同一套次级键（无边框/细边框二选一），去掉暖底块
- * 在暖纸上的色差，让它们看上去就是「两个继续键」，不与鲜橙提交抢眼。 */
+/* 跳过 = 「按未排除处理」，语义上仍是推进而非丢弃；与下一题同族、只是更淡。 */
 .dockSkip {
   border: 1px solid transparent;
   background: color-mix(in oklab, var(--surface-warm), transparent 40%);
@@ -455,9 +488,7 @@
   color: var(--fg);
 }
 
-/* 提交是主操作：整宽、主色、独占一行——与上面两个次要键在形状与层级上分开。
- * 2026-11-18：略微压低高度与字重差（仍是整宽主色实心），避免它和次要键叠成三块大色块时
- * 只在颜色上分「主次」。主次还靠整宽独占一行、字号更大来拉开。 */
+/* 提交是主操作：整宽、主色、独占一行——与上面两个次要键在形状与层级上分开。 */
 .dockSubmit {
   width: 100%;
   min-height: 48px;
@@ -468,9 +499,34 @@
   font-size: var(--text-base);
   font-weight: 600;
   letter-spacing: 0.02em;
+  transition: background-color var(--motion-fast) var(--ease-standard);
 }
 
-.dockSubmit:active {
+/* 提交中：主键不再是「可按的橙键」，改成带一条走动的细线的「等待中」形态。
+ * 与禁用的灰化不同——它不是「不可用」，是「正在做」；文字由组件换成「正在提交…」。
+ * 无循环动效约束（DESIGN.md）只在原地保留一条静态内线，不做跑马灯。 */
+.dockSubmit[data-pending='true'] {
+  position: relative;
+  overflow: hidden;
+  border-color: color-mix(in oklab, var(--accent), transparent 40%);
+  background: color-mix(in oklab, var(--accent), var(--surface) 55%);
+  color: var(--accent-on);
+}
+
+.dockSubmit[data-pending='true']::after {
+  content: '';
+  position: absolute;
+  inset-inline: 0;
+  bottom: 0;
+  height: 3px;
+  background: repeating-linear-gradient(
+    to right,
+    color-mix(in oklab, var(--accent-on), transparent 45%) 0 8px,
+    transparent 8px 16px
+  );
+}
+
+.dockSubmit:active:not(:disabled) {
   background: var(--accent-active);
 }
 
@@ -481,21 +537,24 @@
   font-size: var(--text-xs);
 }
 
+/* 禁用键（跳过/下一题）只是「现在不能点」：压低对比、不可点。 */
 .dockSkip:disabled,
-.dockNext:disabled,
-.dockSubmit:disabled {
-  opacity: 0.5;
+.dockNext:disabled {
+  opacity: 0.45;
   cursor: not-allowed;
 }
 
 /* ── 提交失败 ──────────────────────────────────────────────── */
 
-/* 失败卡贴在提交区上方（在流内、位于面板之后），已填内容不清空。 */
+/* 失败卡贴在提交区上方（在流内、位于面板之后），已填内容不清空。
+ * 与「跳过说明」的浅暖底、「选中行」的浅橙底不同：失败是一张左侧带危险色记号的白卡，
+ * 标题行就是一句直接的「出现了未预期的错误」，重试键在卡内右下。 */
 .failure {
   display: grid;
   gap: var(--space-2);
-  padding: var(--space-4);
-  border: 1px solid color-mix(in oklab, var(--danger), transparent 55%);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid color-mix(in oklab, var(--danger), transparent 45%);
+  border-inline-start: 3px solid var(--danger);
   border-radius: var(--radius-md);
   background: var(--surface);
 }
@@ -503,13 +562,14 @@
 .failureTitle {
   color: var(--danger);
   font-size: var(--text-base);
-  font-weight: 600;
+  font-weight: 650;
 }
 
 .failureBody {
   margin: 0;
   color: var(--fg-2);
-  font-size: var(--text-base);
+  font-size: var(--text-sm);
+  line-height: 1.55;
 }
 
 .failureRetry {
@@ -522,4 +582,13 @@
   color: var(--danger);
   font-size: var(--text-sm);
   font-weight: 600;
+}
+
+.failureRetry:active {
+  background: color-mix(in oklab, var(--danger), transparent 92%);
+}
+
+.failureRetry:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }

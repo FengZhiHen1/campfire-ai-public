@@ -3,6 +3,7 @@
  * 职责: 应急行动卡渲染——七节分区、医疗风险三值徽章、来源/置信标注与失效态
  * 数据来源:
  *   - docs/design/pages/对话页.md: MUST — 契约修订 4（.action-card 全部规格）
+ *   - docs/design/pages/应急表单页.md: MUST — 「最新行动卡及其医疗风险和来源保持可辨」
  *   - docs/技术设计/technical-details/咨询对话界面.md: MUST — 第 6.2 节（分派、越界拒渲染、旧卡失效）
  *   - docs/技术设计/面/consult/tools/emit_emergency_action_card.md: MUST — 第 4 节（状态词表）
  * 边界:
@@ -12,10 +13,15 @@
  *   - 禁止解析模型 markdown 猜结构（只信事件载荷）
  *   - 禁止渲染取值越界的卡片（拒渲染并显式说明，不静默改写）
  *   - 禁止用裸色块表达医疗风险（必须走 .status 语义徽章，DESIGN.md 反模式）
+ *   - 禁止把医疗风险压到「立即做」之后（高风险优先是原业务语义，视觉重做不得调序）
  */
 
 import type { ActionCardEvent } from '../../../../shared/types/sse';
 import { buildActionCard, type ActionCardSectionView } from '../../domain/actionCard';
+import styles from './actionCard.module.css';
+// 医疗风险三值徽章的形态与颜色来自全局契约表 `.status.stable/.unruled/.high`
+// （DESIGN.md：不得用裸色块表达医疗风险）。本页自己的布局/排版/来源标注写在本地 module 里。
+import '../../../../shared/styles/components.css';
 
 /** 行动卡 props。 */
 export interface ActionCardProps {
@@ -28,10 +34,10 @@ export interface ActionCardProps {
 /** 一行动作 + 可选的来源标注。 */
 function ActionLine({ text, annotation }: ActionCardSectionView['lines'][number]) {
   return (
-    <p>
-      {text}
+    <p className={styles.line}>
+      <span className={styles.lineText}>{text}</span>
       {annotation === null ? null : (
-        <small className="ac-source">
+        <small className={`ac-source ${styles.source}`}>
           来源：{annotation.sourceLabel} · 置信：{annotation.confidenceLabel}
         </small>
       )}
@@ -45,6 +51,11 @@ function ActionLine({ text, annotation }: ActionCardSectionView['lines'][number]
  * 前置: data 是 action_card 事件的通用信封
  * 后置: 越界载荷输出 .error-card（拒渲染）；合法载荷按七节分区渲染，失效卡加虚线边框与过期条
  * 异常: 无
+ *
+ * 2026-11-18 本轮（角色化重做）：
+ *   - 医疗风险与「立即做」是这张卡的头两条读信息，风险徽章固定在标题行、永远在最前；
+ *   - 直接用 ember 色竖线 + 宋体节标题做「行动卡」自己的身份，不靠通用面板装饰；
+ *   - 失效态不再只是一条灰色虚边：标题降权、整卡压成「历史」的纸色，并保留全部内容。
  */
 export function ActionCard({ data, expired }: ActionCardProps) {
   const build = buildActionCard(data, { expired });
@@ -64,20 +75,27 @@ export function ActionCard({ data, expired }: ActionCardProps) {
   const view = build.view;
   const priority = view.sections.find((section) => section.isPriority) ?? null;
   // 医疗风险优先于行动建议：徽章放在卡标题行，保证「风险状态」早于「立即做」推荐块出现。
-  // 高风险优先级是原业务语义，视觉重做不得把风险压到推荐之后。
   const riskFirst = view.medicalRisk;
 
   return (
-    <article className={`panel action-card${view.expired ? ' expired' : ''}`} aria-label={`行动卡：${view.title}`}>
-      <div className="ac-top">
-        <span className="tag">{view.title}</span>
-        <span className={`status ${riskFirst.tone} ac-risk`}>{riskFirst.text}</span>
+    <article
+      className={`panel action-card ${styles.card}${view.expired ? ` expired ${styles.expired}` : ''}`}
+      aria-label={`行动卡：${view.title}`}
+      data-risk={riskFirst.tone}
+    >
+      {/* 标题行：卡身份（行动卡标签，宋体）在最前，医疗风险徽章紧随其后——风险早于一切动作。 */}
+      <div className={`ac-top ${styles.top}`}>
+        <span className={styles.eyebrow}>应急行动卡</span>
+        <span className={`status ${riskFirst.tone} ac-risk ${styles.risk}`}>{riskFirst.text}</span>
       </div>
-      {view.expired ? <p className="status off">已过期，见最新卡片</p> : null}
+      <h3 className={styles.title}>{view.title}</h3>
+      {view.expired ? (
+        <p className={`status off ${styles.expiredNote}`}>已过期，见最新卡片</p>
+      ) : null}
 
       {priority !== null && !view.expired ? (
-        <div className="chat-action-priority">
-          <span className="meta">现在先看 · {priority.heading}</span>
+        <div className={`chat-action-priority ${styles.priorityBlock}`}>
+          <span className={styles.priorityMeta}>现在先看 · {priority.heading}</span>
           {priority.lines.map((line, index) => (
             <ActionLine key={`priority-${String(index)}`} {...line} />
           ))}
@@ -85,17 +103,20 @@ export function ActionCard({ data, expired }: ActionCardProps) {
       ) : null}
 
       {view.sections.map((section) => (
-        <div className={`ac-section${section.isPriority ? ' now' : ''}`} key={section.key}>
-          <h3 className="ac-head">
-            <span>{section.ordinal}</span>
+        <div className={`ac-section ${styles.section}${section.isPriority ? ` now ${styles.now}` : ''}`} key={section.key}>
+          <h4 className={`ac-head ${styles.head}`}>
+            {section.isPriority ? <span className={styles.check} aria-hidden="true" /> : null}
+            <span className={styles.ordinal}>{section.ordinal}</span>
             {section.heading}
-          </h3>
+          </h4>
           {section.key === view.medicalRiskSectionKey ? (
             <>
               {/* 医疗风险徽章已在卡标题行提前呈现；此处不再重复一枚同样的徽章，
                   只在其所属「当前状态」节里补出其余状态读出行。 */}
               {view.stateLines.map((line) => (
-                <p key={line}>{line}</p>
+                <p className={styles.line} key={line}>
+                  <span className={styles.lineText}>{line}</span>
+                </p>
               ))}
             </>
           ) : null}

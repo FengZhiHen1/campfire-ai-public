@@ -29,7 +29,8 @@ export interface EmergencySubmitDockProps {
  *
  * 前置: 无
  * 后置: 恒定三键（跳过这题 / 下一题 / 提交，开始分析）；末题时下一题禁用；
- *       提交中三键禁用且提交键文案为「正在提交…」；附一句「随时提交」说明
+ *       提交中三键禁用、题面锁定，提交键文案为「正在提交…」且进入 data-pending 形态，
+ *       说明行换成「正在提交，先别改题。」；空闲时附一句「随时提交」说明
  * 异常: 无
  *
  * 三键意义
@@ -47,10 +48,20 @@ export function EmergencySubmitDock({ isLast, submitting, onSkip, onNext, onSubm
           下一题
         </button>
       </div>
-      <button type="button" className={styles.dockSubmit} disabled={submitting} onClick={onSubmit}>
+      <button
+        type="button"
+        className={styles.dockSubmit}
+        data-pending={submitting ? 'true' : undefined}
+        disabled={submitting}
+        onClick={onSubmit}
+      >
         {submitting ? '正在提交…' : '提交，开始分析'}
       </button>
-      <p className={styles.dockHint}>随时提交，无需答完八题。</p>
+      {/* 提交中是「正在做」而不是「不可用」：这句可见文案与按钮的 pending 形态一起
+          说明为什么此刻改不了题，避免只靠灰化让人以为页面卡住。 */}
+      <p className={styles.dockHint} role="status">
+        {submitting ? '正在提交，先别改题。' : '随时提交，无需答完八题。'}
+      </p>
     </div>
   );
 }

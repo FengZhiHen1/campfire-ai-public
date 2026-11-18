@@ -1,0 +1,215 @@
+/* 行动卡专用样式（CSS Modules）：只消费 token 变量。
+ *
+ * 这张卡是对话页里最重要的单组件（docs/design/pages/对话页.md 契约修订 4）：慌乱中一眼锁定，
+ * 先看到「医疗风险」，再看到「立即做」。因此它的身份不靠通用 .panel 的细边与阴影，
+ * 而是靠三样东西：
+ *   1. 顶部一条随医疗风险三值着色的 ember 竖条（stable 绿 / unruled 赭 / high 危险红），
+ *      这是全卡唯一的强色带，且颜色只表达风险，不参与装饰；
+ *   2. 宋体节标题 + 序号，是「一页行动清单」的读物气质；
+ *   3. 「立即做」用一块带对勾的暖底块单独拎出，其余节是分隔线列表。
+ * 失效卡（重复评估后的旧卡）：整卡降权成灰纸、虚线边、标题变轻，内容一字不删。
+ */
+
+/* ── 卡体 ───────────────────────────────────────────────────── */
+
+/* 覆盖契约 .panel 的通用外观：本卡左缘多一条 3px 风险色竖条（用 inset 阴影，不改盒模型），
+ * 圆角与底仍沿用契约，避免和消息流其它面板完全脱节。 */
+.card {
+  position: relative;
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-4) var(--space-4) var(--space-5);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  box-shadow: var(--elev-raised);
+}
+
+/* 风险色带：医疗风险三值。这里是「当前状态」语义色，不是装饰。 */
+.card::before {
+  content: '';
+  position: absolute;
+  inset-block: 0;
+  inset-inline-start: 0;
+  width: 3px;
+  border-start-start-radius: var(--radius-lg);
+  border-end-start-radius: var(--radius-lg);
+  background: var(--status-unruled);
+}
+
+.card[data-risk='stable']::before {
+  background: var(--status-stable);
+}
+
+.card[data-risk='high']::before {
+  background: var(--status-high);
+}
+
+/* ── 标题行与标题 ───────────────────────────────────────────── */
+
+.top {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+/* 卡身份眉题：小号、字距、meta 色。告诉读者「这是一张行动卡」，如信封上的类别。 */
+.eyebrow {
+  color: var(--meta);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  letter-spacing: 0.08em;
+}
+
+/* 医疗风险徽章：紧跟眉题，字重与字号稍抬，确保它是标题行里最先被注意到的词。 */
+.risk {
+  flex: none;
+  margin: 0;
+  font-size: var(--text-xs);
+  font-weight: 700;
+}
+
+/* 卡标题：宋体 500、20px，是一张行动清单的名字。 */
+.title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: var(--text-lg);
+  font-weight: 500;
+  line-height: 1.3;
+  color: var(--fg);
+}
+
+/* 失效提示条：命上契约 .status.off 的点，这里只把它排成卡内的一条说明。 */
+.expiredNote {
+  margin: var(--space-1) 0 0;
+  font-size: var(--text-sm);
+}
+
+/* ── 「立即做」优先块 ─────────────────────────────────────── */
+
+/* 唯一被拎出来的块：暖底 + 左侧 3px 强调线（比卡体的风险条更靠内、更短），
+ * 读作「这一段现在最重要」。它上面的「现在先看 · 立即做」是眉题，不抢动作本身。 */
+/* 双类（与契约 .chat-action-priority 同时挂在同一元素上）：特异性 0,2,0 稳压契约单类那条
+ * 通用「暖底细边块」，不必赌两份样式表在产物里的先后。契约外观本身不改，只在本卡里覆盖。 */
+.priorityBlock:global(.chat-action-priority) {
+  display: grid;
+  gap: var(--space-1);
+  margin: var(--space-1) 0 var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid color-mix(in oklab, var(--accent), transparent 78%);
+  border-inline-start: 3px solid var(--accent);
+  border-radius: var(--radius-md);
+  background: color-mix(in oklab, var(--surface-warm), transparent 35%);
+}
+
+.priorityMeta {
+  color: var(--accent);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+/* ── 各节 ─────────────────────────────────────────────────── */
+
+.section {
+  display: block;
+  margin-top: var(--space-4);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--border-soft);
+}
+
+/* 第一块（优先块下的第一节）已与优先块相邻，不再重复顶部分隔线。 */
+.priorityBlock + .section {
+  margin-top: var(--space-3);
+}
+
+/* 节标题：序号（meta 小字、宋体同族）+ 宋体 500 小标题，行下压一条极浅线。 */
+.head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  margin: 0 0 var(--space-2);
+  padding-bottom: var(--space-1);
+  border-bottom: 1px solid var(--border-soft);
+  font-family: var(--font-display);
+  font-size: var(--text-base);
+  font-weight: 500;
+  color: var(--fg);
+}
+
+.ordinal {
+  color: var(--meta);
+  font-family: var(--font-body);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+/* 「立即做」节标题前的对勾：可扫读的「这些是要做的」。 */
+.check {
+  flex: none;
+  align-self: center;
+  width: 14px;
+  height: 14px;
+  border-radius: var(--radius-pill);
+  background: var(--accent);
+  position: relative;
+}
+
+.check::after {
+  content: '';
+  position: absolute;
+  left: 4.5px;
+  top: 1.5px;
+  width: 4px;
+  height: 8px;
+  border-right: 2px solid var(--accent-on);
+  border-bottom: 2px solid var(--accent-on);
+  transform: rotate(42deg);
+}
+
+/* ── 动作行与来源标注 ─────────────────────────────────────── */
+
+.line {
+  margin: 0;
+  padding-block: var(--space-1);
+}
+
+.lineText {
+  display: block;
+  color: var(--fg);
+  font-size: var(--text-base);
+  line-height: 1.55;
+}
+
+/* 来源/置信：动作行下的第二行元信息，不参与正文字号。
+ * 用前缀细线把「这是标注不是正文」讲清楚，避免读成又一条动作。 */
+.source {
+  display: block;
+  margin-top: 2px;
+  padding-inline-start: var(--space-2);
+  border-inline-start: 2px solid var(--border-soft);
+  color: var(--meta);
+  font-size: var(--text-xs);
+  line-height: 1.5;
+}
+
+/* ── 失效卡（重复评估后的旧卡）：降权但一字不删 ───────────── */
+
+/* 整卡换成纸色背景、虚线边、去掉阴影，标题变轻——读作「这是历史，不是现在的建议」。
+ * 风险色带淡到几乎看不见（旧卡的风险不再当作当前状态），但纹样仍在，不静默抹掉。 */
+.expired {
+  border: 1px dashed var(--border);
+  background: var(--bg);
+  box-shadow: none;
+}
+
+.expired::before {
+  opacity: 0.35;
+}
+
+.expired .title {
+  font-size: var(--text-base);
+  color: var(--fg-2);
+  font-weight: 500;
+}

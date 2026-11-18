@@ -49,13 +49,20 @@ describe('应急表单页 — 分步流', () => {
   it('退出已填写的采集须确认，取消保留答案，确认后回到首页', () => {
     renderForm(createConsultPortStub());
     fireEvent.click(screen.getByLabelText('意识改变'));
-    fireEvent.click(screen.getByRole('button', { name: '← 退出应急' }));
+    fireEvent.click(screen.getByRole('button', { name: /退出应急/ }));
     expect(screen.getByRole('dialog', { name: '退出现场采集？' })).toBeDefined();
     fireEvent.click(screen.getByRole('button', { name: '继续填写' }));
     expect((screen.getByLabelText('意识改变') as HTMLInputElement).checked).toBe(true);
-    fireEvent.click(screen.getByRole('button', { name: '← 退出应急' }));
+    fireEvent.click(screen.getByRole('button', { name: /退出应急/ }));
     fireEvent.click(screen.getByRole('button', { name: '退出并丢弃' }));
     expect(screen.getByText('首页已到达')).toBeDefined();
+  });
+  it('退出键与其它次级页共用返回字形，但保留「退出应急」文字', () => {
+    renderForm(createConsultPortStub());
+    const exit = screen.getByRole('button', { name: /退出应急/ });
+    expect(exit.textContent).toContain('退出应急');
+    // 同一枚返回字形由 shared/ui 提供（sp-back-glyph），不是临时画一个箭头字符。
+    expect(exit.querySelector('svg.sp-back-glyph')).not.toBeNull();
   });
   it('一屏一题：显示首题、题号与进度条（不用百分比数字）', () => {
     const port = createConsultPortStub();
@@ -66,9 +73,10 @@ describe('应急表单页 — 分步流', () => {
     // 其余题面不在屏上（一屏一题，不是长表单）。
     expect(screen.queryByText(EMERGENCY_QUESTIONS[1]?.prompt ?? '')).toBeNull();
 
-    const track = document.querySelector('.progress-track');
-    expect(track?.getAttribute('aria-valuemax')).toBe('8');
-    expect(track?.getAttribute('aria-valuenow')).toBe('1');
+    // 进度语义挂在可见的位置条上（role=progressbar），不再依赖契约 .progress-track 字面类名。
+    const track = screen.getByRole('progressbar', { name: '采集题目位置' });
+    expect(track.getAttribute('aria-valuemax')).toBe('8');
+    expect(track.getAttribute('aria-valuenow')).toBe('1');
     expect(screen.queryByText(/%/)).toBeNull();
   });
 
@@ -248,6 +256,39 @@ describe('应急表单页 — 进度与三键区分', () => {
     expect(screen.getByRole('button', { name: '提交，开始分析' })).toBeDefined();
     // 第一题不渲染「上一题」，不与底部三键混同（后续题才出现）。
     expect(screen.queryByRole('button', { name: /上一题/ })).toBeNull();
+  });
+
+  it('提交中：三键禁用、题面锁定（inert）、提交键与说明行进入 pending 形态', async () => {
+    // 用可控的挂起替身：提交不发回，界面停在 submitting。
+    let release: (() => void) | null = null;
+    const pending = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const port = createConsultPortStub();
+    vi.mocked(port.emergencyStart).mockImplementation(async () => {
+      await pending;
+      return { session_id: 's-emg', run_id: 'run-emg' };
+    });
+    renderForm(port);
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: '提交，开始分析' }));
+    });
+
+    const submit = screen.getByRole('button', { name: '正在提交…' });
+    expect(submit.hasAttribute('disabled')).toBe(true);
+    expect(submit.getAttribute('data-pending')).toBe('true');
+    // 题面容器 inert：提交载荷已定，这段时间不能改题（页面设计「功能语义审查修订」）。
+    const section = document.querySelector('section[aria-busy="true"]');
+    expect(section).not.toBeNull();
+    expect(section?.querySelector('[inert]')).not.toBeNull();
+    // 说明行改成「正在提交，先别改题。」，不只是灰化按钮。
+    expect(screen.getByText('正在提交，先别改题。')).toBeDefined();
+
+    await act(async () => {
+      release?.();
+    });
+    await screen.findByText('对话页已到达');
   });
 
 });
