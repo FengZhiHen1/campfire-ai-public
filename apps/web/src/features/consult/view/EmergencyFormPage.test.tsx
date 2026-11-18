@@ -193,4 +193,54 @@ describe('应急表单页 — 提交', () => {
     expect(await screen.findByText('网络不可用')).toBeDefined();
     expect(port.emergencyStart).not.toHaveBeenCalled();
   });
+
+  it('提交失败给出「重试」；重试会再次发起提交（失败保留已填内容）', async () => {
+    const port = createConsultPortStub({ emergency: new Error('服务不可达') });
+    renderForm(port);
+    fireEvent.click(screen.getByLabelText('意识改变'));
+
+    await act(async () => {
+      fireEvent.click(submitButton());
+    });
+    expect(await screen.findByText('出现了未预期的错误')).toBeDefined();
+
+    const retry = screen.getByRole('button', { name: '重试' });
+    await act(async () => {
+      fireEvent.click(retry);
+    });
+    await waitFor(() => expect(port.emergencyStart).toHaveBeenCalledTimes(2));
+  });
+});
+
+describe('应急表单页 — 进度与三键区分', () => {
+  it('分段进度逐题标出已作答/已跳过/当前题，且不只靠颜色（有读屏摘要）', () => {
+    renderForm(createConsultPortStub());
+    // 首题：8 段，第一段是当前题。
+    const segments = document.querySelectorAll('[data-status]');
+    expect(segments).toHaveLength(8);
+    expect(document.querySelector('[data-current="true"]')).not.toBeNull();
+
+    // 作答首题 → 下一题 → 跳过第二题后，状态分别为 answered / skipped。
+    fireEvent.click(screen.getByLabelText('意识改变'));
+    fireEvent.click(screen.getByRole('button', { name: '下一题' }));
+    fireEvent.click(screen.getByRole('button', { name: '跳过这题' }));
+
+    const statuses = Array.from(document.querySelectorAll('[data-status]')).map((node) =>
+      node.getAttribute('data-status'),
+    );
+    expect(statuses[0]).toBe('answered');
+    expect(statuses[1]).toBe('skipped');
+    // 读屏摘要把每题的视觉状态都讲出来。
+    expect(screen.getByText(/第 1 题已作答/)).toBeDefined();
+  });
+
+  it('跳过、下一题、提交三个动作都在且互相区分（提交为主操作、整宽）', () => {
+    renderForm(createConsultPortStub());
+    expect(screen.getByRole('button', { name: '跳过这题' })).toBeDefined();
+    expect(screen.getByRole('button', { name: '下一题' })).toBeDefined();
+    expect(screen.getByRole('button', { name: '提交，开始分析' })).toBeDefined();
+    // 上一题在采集区回退（首题禁用），不与底部三键混同。
+    expect(screen.getByRole('button', { name: /上一题/ }).hasAttribute('disabled')).toBe(true);
+  });
+
 });
