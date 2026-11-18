@@ -1,16 +1,23 @@
-/* 使用说明页就近样式（CSS Modules）：只消费 token 变量，零 accent。 */
+/* 使用说明页就近样式（CSS Modules）：只消费 token 变量，零 accent。
+ * 手册式连续阅读：四段以分隔线组织，不给每段套大卡（去重后单处声明，避免同属性两处漂移）。 */
 
-/* 小节标题行：图标 + 标题，图标是「不靠颜色」的第一重层次（页面设计第 52 行的双通道）。 */
+/* 小节：连续手册段，用分隔线而不是卡片边框/阴影。 */
+.section {
+  padding: var(--space-4) 0 var(--space-5);
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  border-radius: 0;
+  background: transparent;
+}
 
+/* 小节标题行：图标 + 标题，图标是「不靠颜色」的第一重层次（页面设计双通道）。 */
 .sectionHead {
   display: flex;
   align-items: center;
-  gap: var(--space-3);
+  gap: var(--space-2);
 }
 
-/* 图标着色为 --fg-2（页面设计「组件选用」节指定），因此本页即使零 accent，
- * 四小节仍有图标 + 标题两重标识；svg 用 currentColor，颜色由这里给。 */
-
+/* 图标着色为 --fg-2（页面设计「组件选用」节指定），本页即使零 accent 也仍有图标 + 标题两重标识。 */
 .sectionIcon {
   display: inline-flex;
   flex: none;
@@ -22,37 +29,30 @@
   height: var(--space-6);
 }
 
+/* 小节标题用正文级字号但加粗：靠图标与字重分层，而不是靠放大的大标题。 */
 .sectionTitle {
   margin: 0;
-  font-family: var(--font-display);
-  font-weight: 500;
-  font-size: var(--text-lg);
+  font-family: var(--font-body);
+  font-weight: 600;
+  font-size: var(--text-base);
   line-height: 1.3;
-  letter-spacing: var(--tracking-display);
 }
 
 .sectionBody {
-  margin: var(--space-3) 0 0;
+  margin: var(--space-2) 0 0;
   color: var(--fg-2);
+  font-size: var(--text-base);
+  line-height: var(--leading-body);
 }
 
 /* 硬文案用 --muted 而非 accent：emergency 小节的边界提示是提醒，不是强调（本页零 accent）。 */
-
 .sectionNote {
-  margin: var(--space-3) 0 0;
+  margin: var(--space-2) 0 0;
   color: var(--muted);
   font-size: var(--text-sm);
 }
 
-/* 数据与隐私小节的链接行：让内联链接成为 44px 热区的可点行。
- *
- * 为什么在实现侧就地补：契约对正文里的裸 `a` 只给了颜色与下划线，没有 min-height
- * （desktop 上内联链接保持行内高度是常见做法），因此实测该链接高 21px——低于移动端
- * 44px 底线。给整个 <p> 一个 flex 行并让链接撑满行高，既保住「内联链接」的视觉形态
- * （文字大小、下划线、随文排版不变），又拿到真实热区；不改契约是因为收紧裸 a 会同时
- * 影响正文中所有内联链接的排版（本页只是一期里唯一的内联链接落点）。
- * 语义上仍是一个语义化 <a>，没有把它改成按钮或卡片。 */
-
+/* 数据与隐私小节的链接行：让内联链接成为 44px 热区的可点行（裸 a 无 min-height）。 */
 .privacyRow {
   display: flex;
   align-items: center;
@@ -66,29 +66,7 @@
 }
 
 .tailNote {
-  margin: 0;
+  margin: var(--space-4) 0 0;
   color: var(--muted);
   font-size: var(--text-sm);
-}
-
-/* 连续手册式阅读，不给每段说明套一张大卡。 */
-
-.section {
-  padding: var(--space-4) 0 var(--space-5);
-  border: 0;
-  border-bottom: 1px solid var(--border);
-  border-radius: 0;
-  background: transparent;
-}
-
-.sectionHead {
-  gap: var(--space-2);
-}
-
-.sectionBody {
-  font-size: var(--text-base);
-}
-
-.sectionTitle {
-  font-size: var(--text-lg);
 }
