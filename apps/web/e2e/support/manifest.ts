@@ -75,37 +75,8 @@ export interface ShotSidecar {
     /** 仍在纵向溢出的滚动容器清单（元素描述 + 各自溢出量）。 */
     hiddenOverflowContainers: { selector: string; overflowPx: number; scrollHeightPx: number; clientHeightPx: number }[];
   };
-  /**
-   * 本次真实出网的外部主机（字体 CDN 白名单内）。
-   *
-   * 语义（裁决 2）：从「被本地替身接管」改为「被放行真实出网」。清单外主机会被阻断并
-   * 让用例失败，那些记录在运行日志的 `blockedExternal` 里（不进 manifest，因为出现即失败）。
-   */
-  allowedExternalHosts: string[];
-  /**
-   * 标题字体是否真的加载（裁决 2 的判据）。
-   *
-   * 注意：这里的 `true` 不来自裁决字面指定的 `document.fonts.check()`——实测它对任意
-   * 族名（含必然不存在的那个）都返回 true，恒真即不可能失败，不构成守卫。
-   * 承重的是 `fontLoadedFaceCount`（`fonts.load()` 命中的 face 数）与
-   * `fontLoadedFacesForFamily`。`fontCheckResult` 仍记录 `check()` 的值以保持字面连续。
-   * 详见 `e2e/support/fonts.ts` 的说明与报告 §4.3 的证据对。
-   */
-  fontLoaded: boolean;
-  /** 裁决字面指定的判据字符串（`document.fonts.check` 的入参）。 */
-  fontProbe: string;
-  /** `document.fonts.check(probe)` 的返回值。不承重（对不存在的族也返回 true）。 */
-  fontCheckResult: boolean;
-  /** `document.fonts.load(probe)` 命中的 FontFace 数。承重判据，0 即字体缺失。 */
-  fontLoadedFaceCount: number;
-  /** 该族中 `status === 'loaded'` 的 face 数。承重判据之二。 */
-  fontLoadedFacesForFamily: number;
-  /** 负对照（必然不存在的族）在 `fonts.load()` 下的命中数，必须为 0（否则判据恒真）。 */
-  fontNegativeControlFaceCount: number;
-  /** `document.fonts.status`，应为 `loaded`。 */
-  fontStatus: string;
-  /** 页面上被 `@font-face` 声明过的族名（确认思源宋体确实被声明，而不只是 check 返回 true）。 */
-  fontDeclaredFamilies: string[];
+  /** 浏览器计算得到的正文系统字体栈。 */
+  fontStack: string;
   /** 是否注入了 fixed 中和样式（fullPage 图的取舍登记；视口图为 false）。 */
   fixedNeutralised: boolean;
   /** 被中和的 fixed 元素选择器（本次实际命中的；视口图为空数组）。 */
@@ -139,15 +110,7 @@ export interface ShotsManifestShot {
   assertedContent: { intent: string; evidence: string }[];
   fixtureNote: string;
   scroll: ShotSidecar['scroll'];
-  allowedExternalHosts: string[];
-  fontLoaded: boolean;
-  fontProbe: string;
-  fontCheckResult: boolean;
-  fontLoadedFaceCount: number;
-  fontLoadedFacesForFamily: number;
-  fontNegativeControlFaceCount: number;
-  fontStatus: string;
-  fontDeclaredFamilies: string[];
+  fontStack: string;
   fixedNeutralised: boolean;
   neutralisedSelectors: string[];
   expandedScrollContainer: string | null;
@@ -166,10 +129,10 @@ export interface ShotsManifest {
   /**
    * 产物格式版本。
    *
-   * v2（本版）：每页每视口两张图（`kind`），新增字体与中和取证字段。
+   * v3：用正文系统字体栈替换外部字体加载取证。
    * 形状变化时递增，供后续包判断能否直接消费——消费方应按版本分支，而不是猜字段缺失的含义。
    */
-  formatVersion: 2;
+  formatVersion: 3;
   /** 本轮运行的批号（与每条 sidecar 的 `runId` 一致；混批在汇总时即失败）。 */
   runId: string;
   /** 生成时刻（ISO）。 */
@@ -300,15 +263,7 @@ export async function buildManifest(
       assertedContent: sidecar.assertedContent,
       fixtureNote: sidecar.fixtureNote,
       scroll: sidecar.scroll,
-      allowedExternalHosts: sidecar.allowedExternalHosts,
-      fontLoaded: sidecar.fontLoaded,
-      fontProbe: sidecar.fontProbe,
-      fontCheckResult: sidecar.fontCheckResult,
-      fontLoadedFaceCount: sidecar.fontLoadedFaceCount,
-      fontLoadedFacesForFamily: sidecar.fontLoadedFacesForFamily,
-      fontNegativeControlFaceCount: sidecar.fontNegativeControlFaceCount,
-      fontStatus: sidecar.fontStatus,
-      fontDeclaredFamilies: sidecar.fontDeclaredFamilies,
+      fontStack: sidecar.fontStack,
       fixedNeutralised: sidecar.fixedNeutralised,
       neutralisedSelectors: sidecar.neutralisedSelectors,
       expandedScrollContainer: sidecar.expandedScrollContainer,
@@ -321,7 +276,7 @@ export async function buildManifest(
   shots.sort((left, right) => (left.file < right.file ? -1 : left.file > right.file ? 1 : 0));
 
   return {
-    formatVersion: 2,
+    formatVersion: 3,
     runId: meta.runId,
     generatedAt: new Date().toISOString(),
     outputDir: meta.outputDir,

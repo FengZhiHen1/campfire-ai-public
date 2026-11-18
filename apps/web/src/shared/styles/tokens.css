@@ -37,8 +37,8 @@
   --status-high: #b3372f;
 
   /* ─── 字体栈 ───────────────────────────────────────────────────── */
-  /* 品牌字标：思源宋体 500，优先使用页面已加载的字体。 */
-  --font-display: "Noto Serif SC", "Songti SC", "STSong", "SimSun", Georgia, serif;
+  /* 品牌字标使用设备上的宋体，无远程字体。 */
+  --font-display: "Songti SC", "STSong", "SimSun", Georgia, serif;
   /* 正文：系统无衬线栈，白话可读性优先，零加载成本 */
   --font-body: system-ui, -apple-system, "PingFang SC", "Hiragino Sans GB",
     "Microsoft YaHei", sans-serif;

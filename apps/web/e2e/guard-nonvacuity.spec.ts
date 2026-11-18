@@ -59,7 +59,7 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { expect, test } from '@playwright/test';
 
 import { PAGE_SHOTS } from './support/fixtures';
-import { awaitDisplayFont } from './support/fonts';
+import { readSystemFontStack } from './support/fonts';
 import { readPngSize } from './support/manifest';
 import {
   assertFullPageExpanded,
@@ -198,7 +198,7 @@ test('守卫非空洞性：目标外壳下 fullPage 守卫会红，展开后转�
       const label = `${pageName}-pad${String(paddingPx)}-${viewport}`;
       await page.goto(shot?.path ?? '/profile', { waitUntil: 'load' });
       await expectSessionInjected(page);
-      await awaitDisplayFont(page);
+      await readSystemFontStack(page);
       await page.waitForTimeout(300);
 
       // 先中和 T02 的真实外壳，恢复本用例「应用无外壳」的前提（见函数说明与文件头）。
