@@ -121,12 +121,14 @@ export function GuidePage() {
           {section.key === 'daily' && <Link className="text-button" to="/consult">开始日常咨询 →</Link>}
           {section.key === 'records' && <div className="button-row"><Link className="text-button" to="/profile">查看档案 →</Link><Link className="text-button" to="/settings/memory">查看记忆 →</Link></div>}
           {section.key === 'privacy' && (
-            // 分工：本页一句话，详单在设置页（RQ-LIM-03 的告知落点）。
+            // 分工：本页一句话，详单在「关于篝火智答」次级页（RQ-LIM-03 的告知落点）。
             // 这一行做成 flex 行，让内联链接拿到 44px 真实热区（裸 a 无 min-height，
             // 属契约层缺口，见 guidePage.module.css 的就地说明）。
             <p className={`${styles.sectionBody} ${styles.privacyRow}`}>
               详见
-              <Link to="/settings">设置页 · 关于你的数据</Link>
+              <Link to="/settings/about" state={{ returnTo: '/guide' }}>
+                关于篝火智答
+              </Link>
             </p>
           )}
         </article>

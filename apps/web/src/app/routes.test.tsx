@@ -89,6 +89,20 @@ describe('路由守卫', () => {
     expect(screen.queryByText('本页尚在建设中。')).toBeNull();
   });
 
+  it('P1 已登录访问 /settings/about 渲染「关于篝火智答」真实内容，且无 tab 栏（次级页）', () => {
+    setSession('authenticated');
+    renderAt('/settings/about');
+
+    // 次级页标题 + 数据告知与边界硬文案都在；它承载原先堆在设置页里的告知。
+    expect(screen.getByText('关于篝火智答')).toBeDefined();
+    expect(screen.getByText('咨询记录怎么用')).toBeDefined();
+    expect(
+      screen.getByText('本应用尚未经专业审阅，不能替代专业服务；遇到紧急医疗情况请直接就医或拨打急救电话'),
+    ).toBeDefined();
+    // 次级页不渲染 tab 栏。
+    expect(screen.queryByRole('navigation', { name: '一级导航' })).toBeNull();
+  });
+
   it('P1 已登录访问 /guide 渲染使用说明页真实内容，且无 tab 栏（次级页）', () => {
     setSession('authenticated');
     renderAt('/guide');
@@ -147,6 +161,7 @@ describe('路由守卫', () => {
       '/cases',
       '/settings',
       '/settings/memory',
+      '/settings/about',
       '/guide',
     ]) {
       expect(paths).toContain(expected);

@@ -63,10 +63,10 @@ export function LoginPage({ auth, initialMode = 'login' }: LoginPageProps) {
           <p className={styles.tagline}>{LOGIN_COPY.tagline}</p>
         </header>
 
-        <section className={`panel ${styles.panel}`} aria-label={isRegister ? '注册账号' : '登录'}>
+        <section className={styles.formSection} aria-label={isRegister ? '注册账号' : '登录'}>
           {/* 模式切换：标题行右侧一条显式互切按钮，当前态由标题文字承担，
               避免在面板内再出现与主按钮同名的按钮（可访问名不重复）。 */}
-          <div className={styles.panelHead}>
+          <div className={styles.formHead}>
             <h2 className={styles.formTitle}>
               {isRegister ? LOGIN_COPY.formTitleRegister : LOGIN_COPY.formTitleLogin}
             </h2>
@@ -177,8 +177,7 @@ export function LoginPage({ auth, initialMode = 'login' }: LoginPageProps) {
 
         <p className={styles.notice}>{LOGIN_COPY.notice}</p>
 
-        <p className={styles.help}>{LOGIN_COPY.resetNote}</p>
-      </div>
+        <p className={styles.help}>{LOGIN_COPY.resetNote}</p>      </div>
     </DeviceFrame>
   );
 }

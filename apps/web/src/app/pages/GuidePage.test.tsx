@@ -77,12 +77,12 @@ describe('使用说明 · 四条路', () => {
     expect(screen.getByText('你说的话会累积成档案；系统整理的推断要经你确认才算数')).toBeDefined();
   });
 
-  it('P0 数据与隐私小节有一句话摘要与指向设置页的内联链接', () => {
+  it('P0 数据与隐私小节有一句话摘要与指向「关于篝火智答」次级页的内联链接', () => {
     renderGuide();
 
     expect(screen.getByRole('heading', { name: '数据与隐私' })).toBeDefined();
     expect(screen.getByText('你的咨询内容会发送给模型服务处理后返回。')).toBeDefined();
-    expect(screen.getByRole('link', { name: '设置页 · 关于你的数据' }).getAttribute('href')).toBe('/settings');
+    expect(screen.getByRole('link', { name: '关于篝火智答' }).getAttribute('href')).toBe('/settings/about');
   });
 
   it('P0 尾部边界说明行与设置页同一口径', () => {

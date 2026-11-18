@@ -37,6 +37,7 @@ PAGES = [
     "/cases",
     "/settings",
     "/settings/memory",
+    "/settings/about",
     "/guide",
 ]
 
