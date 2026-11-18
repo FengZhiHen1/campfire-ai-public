@@ -25,19 +25,19 @@ describe('首页 · 咨询入口', () => {
   it('初始不请求数据，输入为空不能创建空会话', () => {
     const port = createConsultPortStub();
     renderHome(port);
-    expect(screen.getByRole('heading', { name: '篝火智答', level: 1 })).toBeDefined();
-    expect(screen.getByRole('button', { name: '进入对话' }).hasAttribute('disabled')).toBe(true);
+    expect(screen.getByRole('heading', { name: '今天，想聊些什么？', level: 1 })).toBeDefined();
+    expect(screen.getByRole('button', { name: '开始聊' }).hasAttribute('disabled')).toBe(true);
     expect(port.createSession).not.toHaveBeenCalled();
     expect(port.listSessions).not.toHaveBeenCalled();
     fireEvent.change(screen.getByLabelText('想聊的事情'), { target: { value: '   ' } });
-    fireEvent.submit(screen.getByRole('button', { name: '进入对话' }).closest('form') as HTMLFormElement);
+    fireEvent.submit(screen.getByRole('button', { name: '开始聊' }).closest('form') as HTMLFormElement);
     expect(port.createSession).not.toHaveBeenCalled();
   });
   it('首页草稿进入实际对话输入器；确认发送之前不启动模型，路由草稿消费后清除', async () => {
     const port = createConsultPortStub();
     renderHome(port);
     fireEvent.change(screen.getByLabelText('想聊的事情'), { target: { value: '  他不愿意出门，我想先准备一下。  ' } });
-    fireEvent.click(screen.getByRole('button', { name: '进入对话' }));
+    fireEvent.click(screen.getByRole('button', { name: '开始聊' }));
     const composer = await screen.findByLabelText('发送消息');
     expect((composer as HTMLTextAreaElement).value).toBe('他不愿意出门，我想先准备一下。');
     expect(port.createSession).toHaveBeenCalledTimes(1);
@@ -48,10 +48,10 @@ describe('首页 · 咨询入口', () => {
     const port = createConsultPortStub({ createSession: new ConsultError('unavailable', '服务暂时不可用') });
     renderHome(port);
     fireEvent.change(screen.getByLabelText('想聊的事情'), { target: { value: '需要保留的问题' } });
-    fireEvent.click(screen.getByRole('button', { name: '进入对话' }));
+    fireEvent.click(screen.getByRole('button', { name: '开始聊' }));
     await screen.findByRole('alert');
     expect((screen.getByLabelText('想聊的事情') as HTMLTextAreaElement).value).toBe('需要保留的问题');
-    expect(screen.getByRole('button', { name: '进入对话' }).hasAttribute('disabled')).toBe(false);
+    expect(screen.getByRole('button', { name: '开始聊' }).hasAttribute('disabled')).toBe(false);
     expect(port.sendCalls).toHaveLength(0);
   });
   it('请求未完成时重复提交只创建一个会话', async () => {
@@ -59,7 +59,7 @@ describe('首页 · 咨询入口', () => {
     vi.mocked(port.createSession).mockReturnValue(new Promise(() => undefined));
     renderHome(port);
     fireEvent.change(screen.getByLabelText('想聊的事情'), { target: { value: '同一个问题' } });
-    const form = screen.getByRole('button', { name: '进入对话' }).closest('form') as HTMLFormElement;
+    const form = screen.getByRole('button', { name: '开始聊' }).closest('form') as HTMLFormElement;
     await act(async () => { fireEvent.submit(form); fireEvent.submit(form); });
     expect(port.createSession).toHaveBeenCalledTimes(1);
     expect(screen.getByRole('button', { name: '正在进入…' }).hasAttribute('disabled')).toBe(true);

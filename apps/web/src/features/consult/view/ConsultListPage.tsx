@@ -65,8 +65,11 @@ export function ConsultListPage({ consult }: ConsultListPageProps) {
 
       <button type="button" className={`tile ${styles.newEntry}`} disabled={list.creating} onClick={() => void list.startNewConversation()}>
         <span className={styles.newIcon}><Icon name="plus" /></span>
-        <strong className={styles.newTitle}>{list.creating ? '正在创建…' : '开始新的日常咨询'}</strong>
-        <span className={styles.newBody}>说说正在准备、正在经历或刚发生的事</span>
+        <span className={styles.newText}>
+          <strong className={styles.newTitle}>{list.creating ? '正在创建…' : '开始新的日常咨询'}</strong>
+          <span className={styles.newBody}>说说正在准备、正在经历或刚发生的事</span>
+        </span>
+        <span className={styles.newArrow} aria-hidden="true"><Icon name="chevron" /></span>
       </button>
       {list.createFailure === null ? null : (
         <div className="error-card" role="alert">

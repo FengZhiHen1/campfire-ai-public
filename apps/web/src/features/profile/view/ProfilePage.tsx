@@ -75,15 +75,11 @@ export function ProfilePage({ port }: ProfilePageProps) {
       </header>
 
       {/*
-        对象区：切换（谁）与管理（对当前对象做什么）分成两层。
-        切换是平级单选，用横向滚动的 chip；管理是低频动作，放在切换条下方、
-        用一条分隔线与 chip 分开——两者混在同一行时，「⋯」读起来像又一个对象。
+        对象区压成单行：切换 chip 横向滚动占满剩余宽度，管理/新建收在行尾固定区，
+        两者各自是独立的 44px 热区且带可见文字标签，不随 chip 一起被横滚遮掉。
+        去掉「支持对象 / N 个对象」标题行——它只重复了下方面板已有的信息，占掉首屏一条高度。
       */}
       <section className={styles.objects}>
-        <div className={styles.objectsHead}>
-          <p className={styles.objectsLabel}>{COPY.switcherLabel}</p>
-          <span className="meta">{page.objects.length} 个对象</span>
-        </div>
         <div className={styles.switcher} role="group" aria-label={COPY.switcherLabel}>
           {page.objects.map((object) => (
             <button
@@ -110,7 +106,7 @@ export function ProfilePage({ port }: ProfilePageProps) {
               onClick={objectActions.openMenu}
               type="button"
             >
-              <span aria-hidden="true">{COPY.moreLabel}</span> 管理当前对象
+              <span aria-hidden="true">{COPY.moreLabel}</span> 管理
             </button>
           )}
           <button className={styles.objectTool} onClick={objectActions.openCreate} type="button">
@@ -118,14 +114,6 @@ export function ProfilePage({ port }: ProfilePageProps) {
           </button>
         </div>
       </section>
-
-      {page.status === 'ready' && selected !== null && (
-        <nav className={styles.sectionNav} aria-label="档案分区">
-          <a href="#profile-summary">当前认识</a>
-          {page.candidates.length > 0 && <a href="#profile-candidates">待确认 {page.candidates.length}</a>}
-          {groups.length > 0 && <a href="#profile-records">全部记录</a>}
-        </nav>
-      )}
 
       {entry.notice !== null && (
         <p className="hint" role="status">

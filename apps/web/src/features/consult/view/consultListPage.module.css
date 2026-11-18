@@ -1,51 +1,72 @@
 /* 会话列表：纸面目录。标题用系统无衬线（显示字体只留给品牌），
- * 列表用分隔线与留白，不把每行包成卡片。 */
+ * 列表用分隔线与留白，不把每行包成卡片。
+ *
+ * 本轮精修：新对话入口收成一条「像今天首页那样直接起笔」的轻入口——加号、标题、一句说明、
+ * 尾部箭头，一眼可扫；历史行保持纯分隔线目录，标题为主、时间与预览退居次级。 */
 .pageTitle {
   margin: 0;
   font-family: var(--font-body);
   font-size: var(--text-xl);
   font-weight: 600;
   line-height: 1.3;
-  letter-spacing: 0;
+  letter-spacing: var(--tracking-display);
   color: var(--fg);
 }
 
+/* 新对话入口：横向一条，与历史行同左对齐，读作「目录的第一项」，而不是浮起的卡片。 */
 .newEntry {
   display: grid;
-  grid-template-columns: auto 1fr;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
   column-gap: var(--space-3);
-  row-gap: var(--space-1);
   width: 100%;
   padding: var(--space-4);
   text-align: left;
   color: var(--fg);
-  border: 1px solid var(--border-soft);
+  border: 1px solid var(--border);
   background: var(--surface);
   border-radius: var(--radius-md);
 }
 
 .newIcon {
-  grid-row: 1 / 3;
   display: grid;
   place-items: center;
-  width: var(--space-12);
-  height: var(--space-12);
+  flex: none;
+  width: var(--space-8);
+  height: var(--space-8);
   border-radius: var(--radius-sm);
   background: var(--surface-warm);
   color: var(--accent);
 }
 
+.newText {
+  display: grid;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
 .newTitle {
-  align-self: end;
   font-family: var(--font-body);
   font-weight: 600;
   font-size: var(--text-base);
+  color: var(--fg);
 }
 
 .newBody {
-  grid-column: 2;
   color: var(--meta);
   font-size: var(--text-xs);
+  line-height: 1.5;
+}
+
+.newArrow {
+  display: grid;
+  place-items: center;
+  flex: none;
+  color: var(--meta);
+}
+
+.newArrow svg {
+  width: var(--space-3);
 }
 
 .newEntry:disabled {
@@ -63,6 +84,7 @@
   margin-top: var(--space-2);
 }
 
+/* 会话行：整行主答案为标题，时间/对象一行，预览一行。用分隔线，不叠卡。 */
 .row {
   display: grid;
   gap: var(--space-1);
@@ -71,6 +93,7 @@
   padding-block: var(--space-4);
   border-inline: 0;
   border-bottom: 0;
+  border-top: 1px solid var(--border-soft);
   background: none;
   text-align: left;
   color: var(--fg);
@@ -82,12 +105,14 @@
   white-space: nowrap;
   font-size: var(--text-base);
   font-weight: 600;
+  line-height: 1.4;
 }
 
 .row :global(.lr-meta) {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  margin-top: var(--space-1);
 }
 
 .row :global(.lr-sub) {
@@ -96,10 +121,10 @@
 }
 
 .row:active {
-  background: var(--surface);
+  background: var(--surface-warm);
 }
 
-/* 可点击提示减轻：行的可点性由整行热区与 hover/active 承担，不再加额外边框。 */
+/* 可点击提示减轻：行的可点性由整行热区与 active 反馈承担，不再加额外边框。 */
 .row:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: calc(-1 * var(--space-1));
