@@ -1,7 +1,7 @@
 {
   "version": "1.0.0",
   "openDesign": {
-    "projectPath": "E:/Project/Open_Source/open-design/.od/projects/bc2c38d0-d284-4132-a3c2-ba256dae2c38",
+    "projectPath": "<open-design-project>",
     "designSystemFile": "DESIGN.md",
     "tokensFile": "design-tokens.json",
     "manifestFile": "manifest.json"
@@ -30,7 +30,7 @@
           "functionDoc": "docs/功能设计/功能模块全拆解.md#02-智能应急咨询",
           "skeletonDoc": "docs/pages/应急咨询-主咨询页-页面骨架.md",
           "odArtifact": "consult.html",
-          "odArtifactPath": "E:/Project/Open_Source/open-design/.od/projects/bc2c38d0-d284-4132-a3c2-ba256dae2c38/consult.html",
+          "odArtifactPath": "<open-design-project>/consult.html",
           "status": "od-designed"
         },
         {
@@ -39,7 +39,7 @@
           "functionDoc": "docs/功能设计/功能模块全拆解.md#02-智能应急咨询",
           "skeletonDoc": "docs/pages/应急咨询-咨询详情-页面骨架.md",
           "odArtifact": "consult-detail.html",
-          "odArtifactPath": "E:/Project/Open_Source/open-design/.od/projects/bc2c38d0-d284-4132-a3c2-ba256dae2c38/consult-detail.html",
+          "odArtifactPath": "<open-design-project>/consult-detail.html",
           "status": "od-designed"
         },
         {
@@ -48,7 +48,7 @@
           "functionDoc": "docs/功能设计/功能模块全拆解.md#02-智能应急咨询",
           "skeletonDoc": "docs/pages/应急咨询-咨询历史-页面骨架.md",
           "odArtifact": "history.html",
-          "odArtifactPath": "E:/Project/Open_Source/open-design/.od/projects/bc2c38d0-d284-4132-a3c2-ba256dae2c38/history.html",
+          "odArtifactPath": "<open-design-project>/history.html",
           "status": "od-designed"
         },
         {
@@ -57,7 +57,7 @@
           "functionDoc": "docs/功能设计/功能模块全拆解.md#02-智能应急咨询",
           "skeletonDoc": null,
           "odArtifact": "select.html",
-          "odArtifactPath": "E:/Project/Open_Source/open-design/.od/projects/bc2c38d0-d284-4132-a3c2-ba256dae2c38/select.html",
+          "odArtifactPath": "<open-design-project>/select.html",
           "status": "od-designed"
         }
       ]
@@ -76,7 +76,7 @@
           "functionDoc": "docs/功能设计/功能模块全拆解.md#03-个性化档案",
           "skeletonDoc": "docs/pages/档案管理-档案列表-页面骨架.md",
           "odArtifact": "profiles.html",
-          "odArtifactPath": "E:/Project/Open_Source/open-design/.od/projects/bc2c38d0-d284-4132-a3c2-ba256dae2c38/profiles.html",
+          "odArtifactPath": "<open-design-project>/profiles.html",
           "status": "od-designed"
         },
         {
@@ -85,7 +85,7 @@
           "functionDoc": "docs/功能设计/功能模块全拆解.md#03-个性化档案",
           "skeletonDoc": "docs/pages/档案管理-档案编辑-页面骨架.md",
           "odArtifact": "profile-edit.html",
-          "odArtifactPath": "E:/Project/Open_Source/open-design/.od/projects/bc2c38d0-d284-4132-a3c2-ba256dae2c38/profile-edit.html",
+          "odArtifactPath": "<open-design-project>/profile-edit.html",
           "status": "od-designed"
         }
       ]
@@ -104,7 +104,7 @@
           "functionDoc": "docs/功能设计/功能模块全拆解.md#04-真实案例库管理",
           "skeletonDoc": "docs/pages/案例管理-案例列表-页面骨架.md",
           "odArtifact": "cases.html",
-          "odArtifactPath": "E:/Project/Open_Source/open-design/.od/projects/bc2c38d0-d284-4132-a3c2-ba256dae2c38/cases.html",
+          "odArtifactPath": "<open-design-project>/cases.html",
           "status": "od-designed"
         },
         {
@@ -113,7 +113,7 @@
           "functionDoc": "docs/功能设计/功能模块全拆解.md#04-真实案例库管理",
           "skeletonDoc": "docs/pages/案例管理-案例详情-页面骨架.md",
           "odArtifact": "case-detail.html",
-          "odArtifactPath": "E:/Project/Open_Source/open-design/.od/projects/bc2c38d0-d284-4132-a3c2-ba256dae2c38/case-detail.html",
+          "odArtifactPath": "<open-design-project>/case-detail.html",
           "status": "od-designed"
         },
         {
@@ -122,7 +122,7 @@
           "functionDoc": "docs/功能设计/功能模块全拆解.md#04-真实案例库管理",
           "skeletonDoc": "docs/pages/案例管理-案例审核-页面骨架.md",
           "odArtifact": "case-review.html",
-          "odArtifactPath": "E:/Project/Open_Source/open-design/.od/projects/bc2c38d0-d284-4132-a3c2-ba256dae2c38/case-review.html",
+          "odArtifactPath": "<open-design-project>/case-review.html",
           "status": "od-designed"
         },
         {
@@ -131,7 +131,7 @@
           "functionDoc": "docs/功能设计/功能模块全拆解.md#04-真实案例库管理",
           "skeletonDoc": "docs/pages/案例管理-案例卡片详情-页面骨架.md",
           "odArtifact": "case-card.html",
-          "odArtifactPath": "E:/Project/Open_Source/open-design/.od/projects/bc2c38d0-d284-4132-a3c2-ba256dae2c38/case-card.html",
+          "odArtifactPath": "<open-design-project>/case-card.html",
           "status": "od-designed"
         },
         {
@@ -140,7 +140,7 @@
           "functionDoc": "docs/功能设计/功能模块全拆解.md#04-真实案例库管理",
           "skeletonDoc": "docs/pages/案例管理-AI提取结果-页面骨架.md",
           "odArtifact": "case-extract.html",
-          "odArtifactPath": "E:/Project/Open_Source/open-design/.od/projects/bc2c38d0-d284-4132-a3c2-ba256dae2c38/case-extract.html",
+          "odArtifactPath": "<open-design-project>/case-extract.html",
           "status": "od-designed"
         },
         {
@@ -149,7 +149,7 @@
           "functionDoc": "docs/功能设计/功能模块全拆解.md#04-真实案例库管理",
           "skeletonDoc": "docs/pages/案例管理-叙事提交-页面骨架.md",
           "odArtifact": "case-narrative.html",
-          "odArtifactPath": "E:/Project/Open_Source/open-design/.od/projects/bc2c38d0-d284-4132-a3c2-ba256dae2c38/case-narrative.html",
+          "odArtifactPath": "<open-design-project>/case-narrative.html",
           "status": "od-designed"
         }
       ]
@@ -177,7 +177,7 @@
           "functionDoc": "docs/功能设计/功能模块全拆解.md#05-人工兜底通道",
           "skeletonDoc": "docs/pages/工单管理-工单详情-页面骨架.md",
           "odArtifact": "ticket.html",
-          "odArtifactPath": "E:/Project/Open_Source/open-design/.od/projects/bc2c38d0-d284-4132-a3c2-ba256dae2c38/ticket.html",
+          "odArtifactPath": "<open-design-project>/ticket.html",
           "status": "od-designed"
         },
         {
@@ -197,7 +197,7 @@
       "functionDoc": "docs/功能设计/功能模块全拆解.md",
       "skeletonDoc": "docs/pages/首页-页面骨架.md",
       "odArtifact": "home.html",
-      "odArtifactPath": "E:/Project/Open_Source/open-design/.od/projects/bc2c38d0-d284-4132-a3c2-ba256dae2c38/home.html",
+      "odArtifactPath": "<open-design-project>/home.html",
       "status": "od-designed"
     },
     {

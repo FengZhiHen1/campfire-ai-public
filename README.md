@@ -1,196 +1,225 @@
-# Campfire-AI（篝火智答）
+# 篝火智答 · Campfire-AI
 
-面向孤独症家庭的 AI 咨询助手：FastAPI 后端 + React H5 前端。
+**让专业知识走进真实照护情境，让每一步支持更加清晰、可执行。**
 
-> **设计真源在 [`docs/`](docs/README.md)** —— 需求、技术栈、项目结构、视觉契约都在那里。
-> 本文件**只讲怎么把它跑起来**，不复述任何设计结论；设计有冲突时以 `docs/` 为准。
-> 给 AI Agent 的编码规范与完整命令表见 [`AGENTS.md`](AGENTS.md)。
+篝火智答是一款面向孤独症人士及其家庭、教师和支持者的**开源领域智能体应用**。项目围绕真实照护中的情境差异和行动困难，将 AI 对话、专业资料、个体信息与任务化工具结合，提供日常咨询、应急情境支持和持续信息管理。
 
-## 环境要求
+**[在线体验](https://campfire.wenran.me)** · **[快速开始](#本地运行)** · **[核心技术](#核心技术与自主实现)** · **[开源许可](#开源与数据许可)**
 
-| 依赖 | 版本 | 说明 |
-| --- | --- | --- |
-| Python | ≥ 3.12 | 包管理用 [uv](https://docs.astral.sh/uv/) |
-| Node | ≥ 20 | CI 跑 22（LTS 线） |
-| pnpm | 见根 `package.json` 的 `packageManager` | 不要另写版本号，必然漂移 |
-| Docker | Compose v2 | 本地数据服务（PostgreSQL / Redis / FalkorDB / SuperTokens） |
+> 项目参加第八届全球校园人工智能算法精英大赛「AI+开源」主题赛。在线产品采用赛事体验邀请码注册和登录；体验时请只使用虚构信息，不要输入孩子的真实姓名、诊断、学校或联系方式。
 
-## 首次起步（全新环境）
+## 从真实需求出发
 
-### 1. 克隆
+孤独症照护中的很多问题都有鲜明的现场条件：孩子当时的沟通方式、环境中的刺激、照护者是否能够离开、周围能否获得其他支持。这些差异会影响建议能否真正执行。
+
+团队与一家孤独症障碍者综合服务中心（下称合作机构）持续开展需求研究和产品交流：
+
+- **2026 年 1 月**，依托「化身篝火，伴你观星」实践团开展课程支持、陪伴与现场观察，实践团累计服务 **168 小时**。
+- 通过 **P1—P7 七组深度访谈**，了解机构工作人员、专业教师、家庭照护者与公益参与者在信息获取、临场行动和持续记录方面的需求。
+- **2026 年 5 月**，项目团队与合作机构签署《公益合作意向确认函》，围绕专业场景输入、AI 工具试用反馈及公益应用探索建立书面合作基础。
+- **2026 年 5 月**，团队在合作机构开展 V2 产品线下体验，**7 位教师与家长参与**。关于首次使用引导、家庭描述中的主观判断等反馈，推动了 V3 的任务化入口与情境澄清机制。
+
+项目沿着 **V1 检索增强问答 → V2 情境应急支持 → V3 领域 Agent** 的路径迭代。真实场景的需求持续进入产品设计和工程实现。
+
+## 可以用篝火智答做什么
+
+| 场景 | 产品能力 |
+| --- | --- |
+| **日常咨询** | 用自然语言描述照护问题，进行连续对话，结合现场条件获得分步建议 |
+| **应急支持** | 通过任务化入口整理关键现场信息，生成包含行动、观察和求助条件的结构化行动卡 |
+| **专业资料与案例** | 检索专业知识与案例，记录来源和资料有效状态，为回答组织提供依据 |
+| **个体档案与长期记忆** | 区分已确认事实与候选信息，支持确认、纠正和持续会话中的背景使用 |
+| **移动端使用** | 通过 React H5 访问，支持流式响应、历史会话与状态恢复 |
+
+### 一段实际的连续咨询
+
+在 **2026 年 10 月 29 日**的历史浏览器验收中，团队使用虚构商场情境测试连续咨询：一位照护者独自陪伴孩子，现场嘈杂，孩子捂耳哭闹且不愿移动。
+
+首轮回答提出了现场减刺激、陪伴和观察建议。第二轮用户进一步补充：
+
+> 我没法离开孩子去找工作人员，他也不肯走到安静处。请把建议缩成我留在他身边就能做的两三步。
+
+系统的实际回答以 **「好，就三步，全部原地做」** 开头，将建议调整为原地减少刺激、简化沟通和持续观察，并保留求助说明。该次验收还完成了两轮流式交互和刷新后的历史恢复。
+
+这一例子体现了篝火智答对**新增现场约束的跨轮响应和行动组织**。应急入口另有独立的结构化行动卡流程。
+
+## 核心技术与自主实现
+
+篝火智答建立在成熟开源基础设施之上，团队围绕照护场景研发了四组相互衔接的业务机制。
+
+| 自主工程机制 | 实现重点 |
+| --- | --- |
+| **领域 Skill 与服务端工具授权** | 按任务激活领域 Skill，维护能力与工具范围；服务端根据实际激活状态决定工具能否执行 |
+| **知识／案例融合检索与来源治理** | 综合向量和字面检索，管理资料来源、适用范围、撤下状态及引用索引 |
+| **可信个体档案与长期记忆** | 将稳定事实与待确认信息分层管理，支持用户确认、纠错和跨轮背景使用 |
+| **六层情境检查与七节行动卡** | 围绕风险、个体基线、沟通、环境、既往策略和安全支持收集关键条件，由业务工具生成并校验结构化行动结果 |
+
+在运行链路中，**Agent 负责理解与规划，领域 Skill 组织专业能力，服务端执行工具权限和数据契约，移动端交付可阅读的任务结果**。
+
+### 技术组成
+
+| 层次 | 主要技术 |
+| --- | --- |
+| 前端 | React、TypeScript、Vite、React Router、Zustand |
+| 后端 | Python、FastAPI、Pydantic、Taskiq |
+| Agent 运行 | OpenAI Agents SDK 与团队开发的 Skill、工具派发和任务集成机制 |
+| 检索与记忆 | LlamaIndex、PostgreSQL / pgvector、Graphiti、FalkorDB |
+| 认证与缓存 | SuperTokens、Redis |
+| 部署 | Docker Compose、Nginx |
+| 模型服务 | 通过 OpenAI 兼容接口连接远程对话和嵌入模型服务 |
+
+项目的技术贡献集中在**领域能力激活、受控工具执行、可信数据使用与结构化交付**的协同实现。开发者可以从[领域 Skill 内容](apps/api/skills/README.md)、[设计文档索引](docs/README.md)与 [Agent 开发约定](AGENTS.md) 进一步了解接口和工程组织。
+
+## 工程实现与验证
+
+项目具备后端单元／集成测试、前端组件及交互测试、浏览器验收与生产链路记录。
+
+**2026 年 11 月 18 日完整确定性门禁的结果（同一次提交，10 步全部通过）：**
+
+| 项目 | 结果 |
+| --- | ---: |
+| Python 自动化测试 | **2,437 项通过**（另 3 项真实模型用例按设计排除） |
+| 前端自动化测试 | **625 项通过**，覆盖 **60 个测试文件** |
+| 确定性工程验收 | **10 项完成** |
+
+上述统计取自 2026 年 11 月 18 日在开发仓执行的完整确定性门禁（ruff、mypy、设计文档一致性、迁移检查、pytest、前端 lint／测试／构建），其中包含未授权工具拒绝、撤下资料过滤、行动卡参数校验、流式对话和历史恢复等具有明确业务含义的检查点。**本公开仓是同一次提交的重放快照，实际测试状态以本仓重新执行与 CI 结果为准。**
+
+项目同时提供 [CareBench 场景评测工具](evaluation/carebench/README.md)，用于组织合成案例、运行轨迹和评价记录，支持研发过程中的情境测试与问题复盘。评测由两套 AI 独立评分并做分歧裁定，**AI 评分不构成专业背书**。
+
+## 本地运行
+
+仓库包含完整的前后端应用、领域 Skill、数据库与部署配置。以下是开发环境的最短路径。
+
+### 运行环境
+
+- Python **3.12 或更新版本**，使用 [uv](https://docs.astral.sh/uv/) 管理依赖。
+- Node.js **≥ 20**（CI 固定 22）与 [pnpm](https://pnpm.io/)（仓库固定为 `pnpm@10.33.0`）。
+- Docker 与 Docker Compose v2。
+- 可用的对话及嵌入模型服务凭据，按[环境变量模板](.env.example)配置。
+
+### 1. 获取项目并准备配置
 
 ```bash
-git clone https://github.com/FengZhiHen1/Campfire-AI.git
-cd Campfire-AI
-git switch dev          # 日常开发在 dev 上
-```
-
-分支策略（见 [AGENTS.md](AGENTS.md)）：**`dev` 日常开发，`master` 仅保留稳定版本** ——
-发布时把 `dev` 快进到 `master`。因此 `master` 在两次发布之间会落后 `dev`。
-默认分支是 `master`，直接 `clone` 不会报错；**要继续开发就切到 `dev`**。
-并行任务不直接改这里，而是用 `.worktrees/<任务名>/` 的 `task/*` 分支（见本文
-「开发泳道」一节），由主 agent 合入 `dev`。
-
-### 2. 建本地配置（**必须**，否则测试不会全绿）
-
-```bash
+git clone https://github.com/FengZhiHen1/campfire-ai-public.git
+cd campfire-ai-public
 cp .env.example .env
 ```
 
-⚠ 缺 `.env` 时 `pytest` 会多挂一条并报
-`SuperTokensConfigurationError: 未配置 SUPERTOKENS_API_KEY`。
-CI 里这些变量由 [`.github/workflows/ci.yml`](.github/workflows/ci.yml) 显式提供，本地靠 `.env` 补。
-`.env` 不入库（见 `.gitignore`）；真实凭据只放在本地与服务器。
+编辑 `.env`，填写模型接口、数据库及认证所需配置。`.env` 已由 Git 忽略，真实凭据只保留在本地或部署环境。
 
-### 3. 后端
+### 2. 启动基础设施
 
 ```bash
-uv sync                     # 本地开发用这个（会按需更新 lock）
-                            # CI 用 uv sync --frozen：lock 与 pyproject 不一致即失败
-docker compose up -d        # 本地数据服务
-uv run uvicorn campfire.main:app --reload          # HTTP 入口
-uv run taskiq worker campfire.worker:broker        # 队列 Worker（需要时）
+docker compose config
+docker compose up -d postgres redis falkordb supertokens
+uv run alembic upgrade head
 ```
 
-**集成测试需要上面这些服务在跑**；Docker 没起时，带 `integration` marker 的用例会失败或 skip
-（本地表现为一批 `ConnectionRefusedError`），这是环境问题，不是代码问题。
+这四项是本地开发使用的数据及认证服务；迁移是注册与检索的前置。前后端应用在宿主机启动；附件对象存储是单独的扩展组件，一期默认不启动。
 
-### 4. 前端
+### 3. 启动后端
+
+```bash
+uv sync
+uv run uvicorn campfire.main:app --reload
+```
+
+需要运行异步任务时，可在另一终端启动：
+
+```bash
+uv run taskiq worker campfire.worker:broker
+```
+
+首次注册需要邀请码，由 CLI 签发：
+
+```bash
+uv run python -m campfire.cli invite issue
+```
+
+### 4. 启动前端
 
 ```bash
 pnpm install
-pnpm --filter @campfire/web dev      # 含 token 同步（docs/design/tokens.css → src）
+pnpm --filter @campfire/web dev
 ```
 
-### 5. 装浏览器（**只在第一次，或 Playwright 升级后**）
+随后按终端输出访问本地 H5 页面（默认 <http://localhost:5173>，后端在 <http://localhost:8000>，就绪判据是 `/readyz` 返回 200）。数据库迁移的更多方式、生产配置与运行环境要求详见[部署与使用说明](DEPLOYMENT.md)和[生产部署产物](infrastructure/README.md)。
+
+## 运行测试
+
+在仓库根目录执行：
+
+```bash
+# Python：静态检查、类型检查、测试
+uv run ruff check .
+uv run ruff format --check .
+uv run mypy apps/api/src/campfire apps/api/tests
+uv run pytest
+
+# 前端：代码质量、类型、测试与构建
+pnpm --filter @campfire/web lint
+pnpm --filter @campfire/web typecheck
+pnpm --filter @campfire/web test
+pnpm --filter @campfire/web build
+
+# 设计与验收文档的一致性检查
+uv run python scripts/check_design_docs.py
+```
+
+部分集成测试需要本地基础设施和有效环境变量；`mypy` 必须同时给出源码与测试两个路径，否则会因 `conftest` 模块重名而中止。浏览器验证使用 Playwright：
 
 ```bash
 pnpm --filter @campfire/web exec playwright install
+pnpm --filter @campfire/web shots
+pnpm --filter @campfire/web e2e
 ```
 
-⚠ 不装的话 `shots` / `e2e` 会失败。报错本身会提示这条命令，但**仓库其它地方没写**，先装上省事。
+`shots` 只出图，`e2e` 才验内容——两条都要跑。CI 的工作流见 [CI 配置](.github/workflows/ci.yml)。
 
-## 检查（提交前 quick；合入前 full）
+## 仓库导航
 
-**流程真源：[docs/development/testing.md](docs/development/testing.md)**（分层、清单、失败判读）。
+| 路径 | 内容 |
+| --- | --- |
+| [`apps/api/`](apps/api/) | FastAPI 服务、Agent 运行时、业务模块、Worker 与测试 |
+| [`apps/web/`](apps/web/) | React H5、界面组件和前端测试 |
+| [`apps/api/skills/`](apps/api/skills/) | 日常咨询、应急支持、个体资料整理与首次引导 Skill |
+| [`data/`](data/) | 可公开分发的资料、合成示例及其来源记录 |
+| [`evaluation/carebench/`](evaluation/carebench/) | 情境评测工具与相关工程资料 |
+| [`docs/`](docs/README.md) | 技术栈、领域机制与接口契约、视觉契约、设计决策（需求基线不在本仓） |
+| [`infrastructure/`](infrastructure/README.md) | 镜像、Nginx 与部署产物 |
+| [`scripts/`](scripts/) | 工程检查、辅助验证及维护脚本 |
 
-```bash
-uv run python scripts/checks.py quick --base dev                      # 每次提交前：按改动面定向
-uv run python scripts/checks.py quick --base dev --pytest <目标>      # 收窄 pytest 收集目标
-uv run python scripts/checks.py quick --base dev --dry-run --pytest <目标>   # 只打印，不执行
-uv run python scripts/checks.py full                                  # 合入 dev 前与 CI
-uv run python scripts/checks.py full --dry-run                        # 只打印，集成前复核
-```
+开发协作与约定请阅读 [AGENTS.md](AGENTS.md)；部署细节请阅读 [DEPLOYMENT.md](DEPLOYMENT.md)。
 
-**全量检查不在每个 commit 上跑**——日常提交用 quick，**集成完成后跑一次 full**（不是合并前后
-各跑一次；`dev` 上的合并结果才是判据）。
+## 已知限制
 
-`scripts/checks.py` 由工具任务实现；**落地前**用下面的等价手工命令（`--dry-run` 也只是打印这些）：
+- **邀请制**：没有开放注册与通用演示账号，自己部署时需要自备模型服务凭据；
+- **单机部署**：可用性取决于单台服务器，没有多副本、集群限流与异地容灾；
+- **上下文压缩未接线**：长会话的上下文窗口会退化为全量历史，成本更高（方向安全，不丢内容）；
+- **评测与语料有边界**：CareBench 的 40 例是整理过的单轮输入，评分由 AI 执行；真实访谈案例与部分第三方语料因授权范围不足不随仓分发（逐条原因见 [NOTICE](NOTICE)）。
 
-```bash
-uv run ruff check . && uv run ruff format --check .
-uv run mypy apps/api/src/campfire apps/api/tests   # 两个路径必须同时给
-uv run alembic upgrade head && uv run alembic check  # 迁移门禁：需要数据服务在跑
-uv run pytest
-uv run --no-project python scripts/check_design_docs.py   # 纯标准库，不依赖项目环境
-pnpm --filter @campfire/web lint
-pnpm --filter @campfire/web test
-pnpm --filter @campfire/web build                  # 已内含 tsc --noEmit 与契约 CSS 断言
-```
+完整清单与发布前置见[设计待办](docs/TODO.md)。
 
-- `mypy` 只传 `apps/api/tests` 会因 `conftest` 被当成两个模块而**中止**
-  （`Source file found twice under different module names`）——两个路径始终一起给。
-- 不再单独跑 `pnpm typecheck`：`build` 的第一步就是 `tsc --noEmit`，重复跑不增加证据。
-- 需求与验收行的一一对应由 `scripts/check_design_docs.py` 机械检查（未覆盖需求是**失败**）。
-  具体条数以脚本当前输出为准，不要在这里写死数字。
+## 开源与数据许可
 
-## 页面截图（评测与验收用，不是门禁）
+本项目的代码及相应授权内容以 **[Apache License 2.0](LICENSE)** 发布。语料、案例与第三方材料按其各自的来源及授权范围管理：
 
-```bash
-pnpm --filter @campfire/web shots   # 出图：多页 × 视口 × 图种
-pnpm --filter @campfire/web e2e     # 内容断言：证明每张图「有料」而不是空态
-```
+- [LICENSE](LICENSE)：项目代码许可；
+- [LICENSE-DATA](LICENSE-DATA)：语料层授权说明；
+- [ATTRIBUTION.md](ATTRIBUTION.md)：已分发第三方材料的来源与署名；
+- [NOTICE](NOTICE)：第三方组件声明与分发边界；
+- [MAINTENANCE.md](MAINTENANCE.md)：项目维护方式与已知边界。
 
-**两条都要跑**：`shots` 只出图，`e2e` 才验内容；跑完 `shots` 不等于验收通过。
-落点默认 `.tmp/screenshots/`（`SHOTS_OUT` 可改），在 `.gitignore` 的 `.tmp/` 之下，不入库。
-**加了新路由就要加新截图配置**，否则那条路由永远没有 PNG —— 这层对应关系由
-`apps/web/tests/routes-coverage.test.ts` 守着，`pnpm test` 会红。
+公开仓库包含可分发的源代码、工程文档及合成演示资料。真实家庭、访谈对象和儿童相关信息按实际授权范围管理，不随本仓分发。
 
-## 演示材料（对外展示用，`demo/`）
+**使用说明：** 篝火智答提供照护信息整理和情境支持，**不构成医疗建议、诊断或专业意见**。涉及医疗诊断、紧急安全风险或需要专业干预的情形，请联系相应专业人员及当地紧急服务。
 
-```bash
-# 本机全真栈（后端、Vite、Worker）要先起；邀请码每轮现签
-uv run python -m campfire.cli invite issue
-DEMO_INVITE_CODES=<码> pnpm --filter @campfire/web demo
-```
+## 参与交流
 
-在真浏览器 + 真模型 + 真库上把典型场景走一遍并逐屏截图，产物落 `demo/`（位置固定、
-整目录被 `.gitignore` 与 `.dockerignore` 排除、**每轮覆盖**）。它是**展示材料**，
-按需运行、不是门禁、不在 CI 里跑。前提、产物结构与已知边界见
-[docs/运维/演示材料生成.md](docs/运维/演示材料生成.md)。
+欢迎开发者围绕领域 Skill、受控工具、可信检索、个体信息管理和移动端体验进行交流，也欢迎通过 [GitHub Issues](https://github.com/FengZhiHen1/campfire-ai-public/issues) 反馈问题、提出改进建议。开始前请阅读[参与指南](CONTRIBUTING.md)；安全问题请按[安全策略](SECURITY.md)私下报告，不要开公开 Issue。
 
-⚠ `demo/` **每轮覆盖**，因此**不能承担正式运行证据**：要留存的原始输出、截图、评分表放
-**原始仓库根**的 `deliverables/2026-ai-opensource/<run-id>/`（整目录忽略、不随泳道清理）。
+**[体验篝火智答](https://campfire.wenran.me)** · **[查看源代码](https://github.com/FengZhiHen1/campfire-ai-public)**
 
-## 材料与证据（`materials/`、`deliverables/`）
+---
 
-| 落点 | 版本控制 | 放什么 |
-|---|---|---|
-| `materials/2026-ai-opensource/` | **入库** | 文本、配置、许可与归属说明、**脱敏**证据索引、报告草稿 |
-| `deliverables/2026-ai-opensource/<run-id>/` | 忽略（在**原始仓库根**） | 正式运行的原始件：输出、截图、录屏、评分表、日志 |
-| `.tmp/` | 忽略 | 可丢弃的过程产物 |
-| `demo/` | 忽略 | 可再生预览，每轮覆盖 |
-
-事实状态（verified / partial / unverified / contradicted）、正式评分必须人工独立盲评与风险
-专业审核、未完成写 pending、工程单测不等于效果或安全证明——全部口径见
-**[docs/development/materials.md](docs/development/materials.md)**。
-
-## 影片（`marketing/promo-shotcraft/`，独立工具链）
-
-```bash
-cd marketing/promo-shotcraft
-pnpm install        # 有独立的 pnpm-workspace.yaml 与 pnpm-lock.yaml
-pnpm dev            # remotion studio
-```
-
-该目录**刻意不并入**仓库根那个只含 `apps/web` 的 pnpm 工作空间（影片工具链体积大，
-并进去会让 CI 每次多拉整套 Remotion + puppeteer）。它有**自己的**工作空间根与 lockfile，
-所以**必须在本目录里安装**。
-
-## 临时文件
-
-**只有 `.tmp/` 一个落点**（整个被 gitignore），不要新建 `tmp/`、`reports/` 这类并列目录。
-判据只有一条：`git ls-files .tmp` 必须为空。细节见
-[`AGENTS.md`](AGENTS.md) 的「工作区与留档」一节。
-
-## 目录速览
-
-```text
-docs/                 设计根，真源
-docs/development/     开发流程真源：检查分层、泳道环境、材料与证据口径
-materials/            可入库的正式材料（文本、配置、许可、脱敏证据索引）
-deliverables/         正式运行的本地大文件（原始仓库根，整目录忽略）
-apps/api/             唯一的 Python 应用（HTTP 与 Worker 两个入口）
-apps/web/             React H5（唯一的 pnpm 工作空间包）
-marketing/            影片制作（独立工具链，不参与产品构建）
-infrastructure/       生产 docker/nginx 产物
-scripts/              仓库级运维脚本
-archive/              已归档的旧实现与旧设计，仅供参考
-```
-
-模块边界与依赖方向的真源是 [`docs/项目结构设计.md`](docs/项目结构设计.md)，
-由 `apps/api/tests/test_layer_boundaries.py` 机械检查。
-
-## 开发泳道（worktree）
-
-日常开发在**主工作区**的 `dev` 上进行；并行任务各自在**原始仓库根**的 `.worktrees/<任务名>/`
-里、从 `dev` 切出的 `task/<主题>` 分支上做，**由主 agent 合入 `dev`**。
-❌ 不在 `main` / `master` 上开发。泳道的创建、隔离（`.venv`/`node_modules` 各自一份、包缓存
-可共享）、就绪核验、数据测试串行规则与清理判据见
-[docs/development/worktree-environment.md](docs/development/worktree-environment.md)。
-
-## 部署
-
-**默认不在云端开发**；部署只在明确要求时进行，且必须两步（推送等 CI 绿 → 显式触发 `deploy.yml`）。
-判据、回滚与验收流程见 [`docs/运维/发布与回滚.md`](docs/运维/发布与回滚.md) 与
-[`docs/运维/上线验收测试流程.md`](docs/运维/上线验收测试流程.md)。
+*Campfire-AI / 篝火智答*

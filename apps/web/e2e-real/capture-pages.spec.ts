@@ -42,7 +42,7 @@
  *   `pnpm --filter/--dir @campfire/web exec playwright …` 跑时 cwd 是 **`apps/web`**——
  *   写 `.tmp/X` 会落到 `apps/web/.tmp/X`（那是仓库根的 `.tmp/` 之外，虽然同样被 gitignore）。
  *   要指到影片真源就用 `resolve` 出来的形式，例如
- *   `T10_CAPTURE_OUT=E:/Project/Web_Development/Campfire-AI/marketing/promo-shotcraft/src`
+ *   `T10_CAPTURE_OUT=<promo-shotcraft>/src`
  *   （或从仓库根以 `--dir apps/web` 等价方式明确 cwd），**不要**写相对的 `marketing/...`。
  *
  *   不消耗邀请码：本文件只登录、不注册 ⇒ 它与 `README.md` §4 的码池下标表**无耦合**，不会挤占
