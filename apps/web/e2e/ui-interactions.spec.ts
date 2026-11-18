@@ -230,6 +230,36 @@ test('设置帮助入口可达，退出确认遮住背景且支持 Escape 关闭
   expect(pageProblems).toEqual([]);
 });
 
+test('应急提交未返回时锁住答卷，失败后保留已选答案', async ({ page }, info) => {
+  const emergency = shotFor('emergency');
+  let release: () => void = () => undefined;
+  const pending = new Promise<void>((resolve) => { release = resolve; });
+  let attempts = 0;
+  const { ledger, pageProblems } = await openPage(page, emergency, info);
+  await page.route('**/api/consult/emergency', async (route) => {
+    attempts += 1;
+    await pending;
+    await route.fulfill({ status: 503, json: { detail: 'temporarily_unavailable' } });
+  });
+  const choice = page.getByRole('checkbox').first();
+  try {
+    await choice.check();
+    await page.getByRole('button', { name: '提交，开始分析' }).click();
+    await expect.poll(() => attempts).toBe(1);
+    await expect(choice).toBeDisabled();
+    await expect(page.getByRole('button', { name: '下一题', exact: true })).toBeDisabled();
+  } finally {
+    release();
+  }
+  const failure = page.getByRole('alert');
+  await expect(failure.getByRole('button', { name: '重试' })).toBeVisible();
+  await expect(choice).toBeEnabled();
+  await expect(choice).toBeChecked();
+  expect(attempts).toBe(1);
+  expectNoUnmatchedApi(ledger);
+  expect(pageProblems.filter((message) => message.startsWith('pageerror:'))).toEqual([]);
+});
+
 test('应急长题滚动后提交仍可触达，勾选和回退保留答案', async ({ page }, info) => {
   const { ledger, pageProblems } = await openPage(page, shotFor('emergency'), info);
   await page.getByRole('checkbox').first().check();
