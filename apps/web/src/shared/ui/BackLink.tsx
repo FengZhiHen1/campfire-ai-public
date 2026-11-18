@@ -11,10 +11,11 @@ export function BackChevron() {
   );
 }
 
-export function BackLink({ fallback, children }: { fallback: string; children?: string }) {
+/** direct 用于返回固定入口的流程，例如应急提交后返回咨询历史。 */
+export function BackLink({ fallback, direct = false, children }: { fallback: string; direct?: boolean; children?: string }) {
   const location = useLocation();
   const navigate = useNavigate();
-  const returnTo = safeReturnTo(location.state);
+  const returnTo = direct ? fallback : safeReturnTo(location.state);
   return (
     <Link className="sp-back" aria-label={children ?? '返回'} to={returnTo ?? fallback} onClick={(event) => {
       if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
