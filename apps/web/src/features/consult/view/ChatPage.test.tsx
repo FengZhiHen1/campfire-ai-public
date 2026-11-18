@@ -876,9 +876,11 @@ describe('对话页 — 发送阶段不可续传后自动重读历史（2026-10-
 });
 
 describe('对话页 — 运行中的输入区状态（演示装置依赖这条判据）', () => {
-  /** 发送键；找不到时返回 null（待作答时输入区整体收起）。 */
+  /** 发送键；找不到时返回 null（待作答时输入区整体收起）。按稳定的类名取，
+   *  因为它的 aria-label 随运行态在「发送」/「发送中，请稍候」之间切换（那是读屏语义，
+   *  不是本用例要断言的对象）。 */
   function sendButton(): HTMLButtonElement | null {
-    return document.querySelector<HTMLButtonElement>('button[aria-label="发送"]');
+    return document.querySelector<HTMLButtonElement>('.compose-send');
   }
 
   it('运行中：有停止键、发送键禁用；停止后发送键恢复可用', async () => {
@@ -896,6 +898,9 @@ describe('对话页 — 运行中的输入区状态（演示装置依赖这条�
     await waitFor(() => {
       expect(sendButton()?.disabled).toBe(true);
     });
+    // 运行中发送键的读屏文案切到「发送中，请稍候」，并在停止后恢复「发送」——
+    // 光一个图标不足以说明「为什么点不动」（aria-label 是这条语义的唯一承载点）。
+    expect(sendButton()?.getAttribute('aria-label')).toBe('发送中，请稍候');
     expect(screen.getByRole('button', { name: '停止' })).toBeDefined();
 
     // 停止 = 本地中断（契约 4.3：不发终态）。中断之后必须能继续输入，
@@ -906,6 +911,7 @@ describe('对话页 — 运行中的输入区状态（演示装置依赖这条�
     await waitFor(() => {
       expect(sendButton()?.disabled).toBe(false);
     });
+    expect(sendButton()?.getAttribute('aria-label')).toBe('发送');
     expect(screen.queryByRole('button', { name: '停止' })).toBeNull();
   });
 });
