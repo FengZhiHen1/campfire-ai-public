@@ -478,9 +478,27 @@ describe('对话页 — 行动卡', () => {
     const sources = Array.from(document.querySelectorAll('.ac-source')).map((node) => node.textContent ?? '');
     expect(sources).toContain('来源：家属报告 · 置信：较可能');
     expect(sources).toContain('来源：AI 推断 · 置信：可能');
-    // 「立即做」是唯一的优先级节，并渲染「现在先看」块。
-    expect(document.querySelectorAll('.ac-section.now')).toHaveLength(1);
+    // 「立即做」在卡顶的「现在先看」块里提前呈现一次；它自己的节不再重复一块暖底，
+    // 但节内仍必须有行内容（曾因去重写成「优先级节不渲染行」而导致旧卡只剩空标题）。
     expect(document.querySelector('.chat-action-priority')?.textContent).toContain('现在先看 · 立即做');
+    const prioritySection = Array.from(document.querySelectorAll('.ac-section')).find((node) =>
+      node.querySelector('.ac-head')?.textContent?.includes('立即做'),
+    );
+    expect(prioritySection?.textContent).toContain('换到安静的地方');
+  });
+
+  it('过期的旧卡：内容一字不删，「立即做」节仍有动作行（没有卡顶推荐块）', async () => {
+    await runWith([actionCardEvent({ card_id: 'card-1' }), actionCardEvent({ card_id: 'card-2' })]);
+    await screen.findByText('已过期，见最新卡片');
+
+    const expired = document.querySelector('.action-card.expired');
+    expect(expired).not.toBeNull();
+    // 旧卡没有「现在先看」推荐块，动作行必须落回它自己的节里，而不是剩下一个空标题。
+    expect(expired?.querySelector('.chat-action-priority')).toBeNull();
+    const doNow = Array.from(expired?.querySelectorAll('.ac-section') ?? []).find((node) =>
+      node.querySelector('.ac-head')?.textContent?.includes('立即做'),
+    );
+    expect(doNow?.textContent).toContain('换到安静的地方');
   });
 
   it('medical_risk 越界载荷被拒渲染（不显示成一张看起来合法的卡）', async () => {

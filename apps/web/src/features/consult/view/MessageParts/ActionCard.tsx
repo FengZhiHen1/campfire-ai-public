@@ -102,33 +102,30 @@ export function ActionCard({ data, expired }: ActionCardProps) {
         </div>
       ) : null}
 
-      {view.sections.map((section) => (
-        <div className={`ac-section ${styles.section}${section.isPriority ? ` now ${styles.now}` : ''}`} key={section.key}>
-          <h4 className={`ac-head ${styles.head}`}>
-            {section.isPriority ? <span className={styles.check} aria-hidden="true" /> : null}
-            <span className={styles.ordinal}>{section.ordinal}</span>
-            {section.heading}
-          </h4>
-          {section.key === view.medicalRiskSectionKey ? (
-            <>
-              {/* 医疗风险徽章已在卡标题行提前呈现；此处不再重复一枚同样的徽章，
-                  只在其所属「当前状态」节里补出其余状态读出行。 */}
-              {view.stateLines.map((line) => (
-                <p className={styles.line} key={line}>
-                  <span className={styles.lineText}>{line}</span>
-                </p>
-              ))}
-            </>
-          ) : null}
-          {/* 「立即做」节的行已在上方的推荐块完整呈现，这里不再重复同一批动作
-              （双份暖底大块 = 同一条建议上下各突出一次）。其余各节照常整节渲染。 */}
-          {section.isPriority
-            ? null
-            : section.lines.map((line, index) => (
-                <ActionLine key={`${section.key}-${String(index)}`} {...line} />
-              ))}
-        </div>
-      ))}
+      {view.sections.map((section) => {
+        // 「立即做」节的行挂在节标题下渲染（推荐块只在其「未失效」时于卡顶提前呈现一次）。
+        // 旧卡没有推荐块，所以这里必须是行内容的唯一来源——否则旧卡「立即做」会只剩一个空标题。
+        // 只把「当前状态」节的多余状态读出行替换成分节内容（徽章已在标题行，不重复）。
+        const useStateLines = section.key === view.medicalRiskSectionKey;
+        return (
+          <div className={`ac-section ${styles.section}`} key={section.key}>
+            <h4 className={`ac-head ${styles.head}`}>
+              {section.isPriority ? <span className={styles.check} aria-hidden="true" /> : null}
+              <span className={styles.ordinal}>{section.ordinal}</span>
+              {section.heading}
+            </h4>
+            {useStateLines
+              ? view.stateLines.map((line) => (
+                  <p className={styles.line} key={line}>
+                    <span className={styles.lineText}>{line}</span>
+                  </p>
+                ))
+              : section.lines.map((line, index) => (
+                  <ActionLine key={`${section.key}-${String(index)}`} {...line} />
+                ))}
+          </div>
+        );
+      })}
     </article>
   );
 }

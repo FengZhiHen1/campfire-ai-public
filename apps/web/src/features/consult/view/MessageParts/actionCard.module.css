@@ -12,36 +12,17 @@
 
 /* ── 卡体 ───────────────────────────────────────────────────── */
 
-/* 覆盖契约 .panel 的通用外观：本卡左缘多一条 3px 风险色竖条（用 inset 阴影，不改盒模型），
- * 圆角与底仍沿用契约，避免和消息流其它面板完全脱节。 */
+/* 覆盖契约 .panel 的通用外观：圆角与底沿用契约，只收紧本卡的分节节奏。
+ * 2026-11-18 复审：不再给整卡加左强调线——通用的「左边一条竖线」是模板装饰，
+ * 而且它和「立即做」局部操作块自己的强调线会叠成两条。风险只在标题行的
+ * .status.stable/.unruled/.high 徽章上表达（DESIGN.md：风险走语义徽章，不走裸色块）。 */
 .card {
-  position: relative;
   display: grid;
   gap: var(--space-2);
   padding: var(--space-4) var(--space-4) var(--space-5);
   border-radius: var(--radius-lg);
   background: var(--surface);
   box-shadow: var(--elev-raised);
-}
-
-/* 风险色带：医疗风险三值。这里是「当前状态」语义色，不是装饰。 */
-.card::before {
-  content: '';
-  position: absolute;
-  inset-block: 0;
-  inset-inline-start: 0;
-  width: 3px;
-  border-start-start-radius: var(--radius-lg);
-  border-end-start-radius: var(--radius-lg);
-  background: var(--status-unruled);
-}
-
-.card[data-risk='stable']::before {
-  background: var(--status-stable);
-}
-
-.card[data-risk='high']::before {
-  background: var(--status-high);
 }
 
 /* ── 标题行与标题 ───────────────────────────────────────────── */
@@ -87,17 +68,16 @@
 
 /* ── 「立即做」优先块 ─────────────────────────────────────── */
 
-/* 唯一被拎出来的块：暖底 + 左侧 3px 强调线（比卡体的风险条更靠内、更短），
- * 读作「这一段现在最重要」。它上面的「现在先看 · 立即做」是眉题，不抢动作本身。 */
-/* 双类（与契约 .chat-action-priority 同时挂在同一元素上）：特异性 0,2,0 稳压契约单类那条
+/* 唯一被拎出来的块：暖底 + 眉题，读作「这一段现在最重要」。整卡不再有左强调线，
+ * 这块也不需要再嵌入第二条左线——暖底与「现在先看 · 立即做」眉题已经把它分出层级。
+ * 双类（与契约 .chat-action-priority 同时挂在同一元素上）：特异性 0,2,0 稳压契约单类那条
  * 通用「暖底细边块」，不必赌两份样式表在产物里的先后。契约外观本身不改，只在本卡里覆盖。 */
 .priorityBlock:global(.chat-action-priority) {
   display: grid;
   gap: var(--space-1);
   margin: var(--space-1) 0 var(--space-2);
   padding: var(--space-3) var(--space-4);
-  border: 1px solid color-mix(in oklab, var(--accent), transparent 78%);
-  border-inline-start: 3px solid var(--accent);
+  border: 0;
   border-radius: var(--radius-md);
   background: color-mix(in oklab, var(--surface-warm), transparent 35%);
 }
@@ -202,10 +182,6 @@
   border: 1px dashed var(--border);
   background: var(--bg);
   box-shadow: none;
-}
-
-.expired::before {
-  opacity: 0.35;
 }
 
 .expired .title {
