@@ -26,6 +26,7 @@ describe('首页 · 咨询入口', () => {
     const port = createConsultPortStub();
     renderHome(port);
     expect(screen.getByRole('heading', { name: '今天，想聊些什么？', level: 1 })).toBeDefined();
+    // 空草稿时主按钮禁用：首屏只留应急入口作为立即可执行的橙色动作（禁用态另由 CSS 变中性灰）。
     expect(screen.getByRole('button', { name: '开始聊' }).hasAttribute('disabled')).toBe(true);
     expect(port.createSession).not.toHaveBeenCalled();
     expect(port.listSessions).not.toHaveBeenCalled();
