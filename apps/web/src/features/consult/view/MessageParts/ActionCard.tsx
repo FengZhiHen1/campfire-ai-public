@@ -54,7 +54,7 @@ function ActionLine({ text, annotation }: ActionCardSectionView['lines'][number]
  *
  * 2026-11-18 本轮（角色化重做）：
  *   - 医疗风险与「立即做」是这张卡的头两条读信息，风险徽章固定在标题行、永远在最前；
- *   - 直接用 ember 色竖线 + 宋体节标题做「行动卡」自己的身份，不靠通用面板装饰；
+ *   - 当前卡将「立即做」作为卡首的暖底分节，旧卡仍按原顺序展示全部内容；
  *   - 失效态不再只是一条灰色虚边：标题降权、整卡压成「历史」的纸色，并保留全部内容。
  */
 export function ActionCard({ data, expired }: ActionCardProps) {
@@ -73,7 +73,10 @@ export function ActionCard({ data, expired }: ActionCardProps) {
   }
 
   const view = build.view;
-  const priority = view.sections.find((section) => section.isPriority) ?? null;
+  const priority = view.expired ? undefined : view.sections.find((section) => section.isPriority);
+  const sections = priority === undefined
+    ? view.sections
+    : [priority, ...view.sections.filter((section) => section !== priority)];
   // 医疗风险优先于行动建议：徽章放在卡标题行，保证「风险状态」早于「立即做」推荐块出现。
   const riskFirst = view.medicalRisk;
 
@@ -93,25 +96,13 @@ export function ActionCard({ data, expired }: ActionCardProps) {
         <p className={`status off ${styles.expiredNote}`}>已过期，见最新卡片</p>
       ) : null}
 
-      {priority !== null && !view.expired ? (
-        <div className={`chat-action-priority ${styles.priorityBlock}`}>
-          <span className={styles.priorityMeta}>现在先看 · {priority.heading}</span>
-          {priority.lines.map((line, index) => (
-            <ActionLine key={`priority-${String(index)}`} {...line} />
-          ))}
-        </div>
-      ) : null}
-
-      {view.sections.map((section) => {
-        // 「立即做」节的行挂在节标题下渲染（推荐块只在其「未失效」时于卡顶提前呈现一次）。
-        // 旧卡没有推荐块，所以这里必须是行内容的唯一来源——否则旧卡「立即做」会只剩一个空标题。
-        // 只把「当前状态」节的多余状态读出行替换成分节内容（徽章已在标题行，不重复）。
+      {sections.map((section) => {
+        const pinned = section === priority;
         const useStateLines = section.key === view.medicalRiskSectionKey;
         return (
-          <div className={`ac-section ${styles.section}`} key={section.key}>
-            <h4 className={`ac-head ${styles.head}`}>
-              {section.isPriority ? <span className={styles.check} aria-hidden="true" /> : null}
-              <span className={styles.ordinal}>{section.ordinal}</span>
+          <div className={`ac-section ${pinned ? `chat-action-priority ${styles.priorityBlock}` : styles.section}`} key={section.key}>
+            <h4 className={`ac-head ${pinned ? styles.priorityMeta : styles.head}`}>
+              {pinned ? '现在先看 · ' : <span className={styles.ordinal}>{section.ordinal}</span>}
               {section.heading}
             </h4>
             {useStateLines

@@ -478,13 +478,11 @@ describe('对话页 — 行动卡', () => {
     const sources = Array.from(document.querySelectorAll('.ac-source')).map((node) => node.textContent ?? '');
     expect(sources).toContain('来源：家属报告 · 置信：较可能');
     expect(sources).toContain('来源：AI 推断 · 置信：可能');
-    // 「立即做」在卡顶的「现在先看」块里提前呈现一次；它自己的节不再重复一块暖底，
-    // 但节内仍必须有行内容（曾因去重写成「优先级节不渲染行」而导致旧卡只剩空标题）。
-    expect(document.querySelector('.chat-action-priority')?.textContent).toContain('现在先看 · 立即做');
-    const prioritySection = Array.from(document.querySelectorAll('.ac-section')).find((node) =>
-      node.querySelector('.ac-head')?.textContent?.includes('立即做'),
-    );
+    const prioritySection = document.querySelector('.ac-section');
+    expect(prioritySection?.matches('.chat-action-priority')).toBe(true);
+    expect(prioritySection?.textContent).toContain('现在先看 · 立即做');
     expect(prioritySection?.textContent).toContain('换到安静的地方');
+    expect(screen.getAllByText('换到安静的地方', { exact: true })).toHaveLength(1);
   });
 
   it('过期的旧卡：内容一字不删，「立即做」节仍有动作行（没有卡顶推荐块）', async () => {

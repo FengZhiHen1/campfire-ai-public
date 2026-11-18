@@ -525,7 +525,7 @@ export const PAGE_SHOTS: readonly PageShot[] = [
         minHits: 4,
         candidates: ['现在有没有以下医疗危险表现？', '意识改变', '呼吸异常', '跳过 = 未排除，不会当作正常'],
       },
-      { kind: 'count', intent: '进度条可见', selector: '.progress-track', minCount: 1 },
+      { kind: 'count', intent: '进度条可见', selector: '[role="progressbar"][aria-valuemax="8"]', minCount: 1 },
     ],
   },
   {

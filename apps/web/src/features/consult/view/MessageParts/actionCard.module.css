@@ -1,14 +1,5 @@
-/* 行动卡专用样式（CSS Modules）：只消费 token 变量。
- *
- * 这张卡是对话页里最重要的单组件（docs/design/pages/对话页.md 契约修订 4）：慌乱中一眼锁定，
- * 先看到「医疗风险」，再看到「立即做」。因此它的身份不靠通用 .panel 的细边与阴影，
- * 而是靠三样东西：
- *   1. 顶部一条随医疗风险三值着色的 ember 竖条（stable 绿 / unruled 赭 / high 危险红），
- *      这是全卡唯一的强色带，且颜色只表达风险，不参与装饰；
- *   2. 宋体节标题 + 序号，是「一页行动清单」的读物气质；
- *   3. 「立即做」用一块带对勾的暖底块单独拎出，其余节是分隔线列表。
- * 失效卡（重复评估后的旧卡）：整卡降权成灰纸、虚线边、标题变轻，内容一字不删。
- */
+/* 医疗风险紧随卡片眉题。「立即做」在当前卡中置顶，其余内容按分节呈现。
+ * 过期卡保留原顺序和全部内容，以灰纸、虚线边和过期标签辨认。 */
 
 /* ── 卡体 ───────────────────────────────────────────────────── */
 
@@ -83,6 +74,7 @@
 }
 
 .priorityMeta {
+  margin: 0;
   color: var(--accent);
   font-size: var(--text-xs);
   font-weight: 600;
@@ -125,29 +117,6 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* 「立即做」节标题前的对勾：可扫读的「这些是要做的」。 */
-.check {
-  flex: none;
-  align-self: center;
-  width: 14px;
-  height: 14px;
-  border-radius: var(--radius-pill);
-  background: var(--accent);
-  position: relative;
-}
-
-.check::after {
-  content: '';
-  position: absolute;
-  left: 4.5px;
-  top: 1.5px;
-  width: 4px;
-  height: 8px;
-  border-right: 2px solid var(--accent-on);
-  border-bottom: 2px solid var(--accent-on);
-  transform: rotate(42deg);
-}
-
 /* ── 动作行与来源标注 ─────────────────────────────────────── */
 
 .line {
@@ -176,8 +145,7 @@
 
 /* ── 失效卡（重复评估后的旧卡）：降权但一字不删 ───────────── */
 
-/* 整卡换成纸色背景、虚线边、去掉阴影，标题变轻——读作「这是历史，不是现在的建议」。
- * 风险色带淡到几乎看不见（旧卡的风险不再当作当前状态），但纹样仍在，不静默抹掉。 */
+/* 纸色、虚线边和较轻的标题标明这张卡是历史记录。 */
 .expired {
   border: 1px dashed var(--border);
   background: var(--bg);
