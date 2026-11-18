@@ -83,7 +83,7 @@ describe('案例库浏览页 · 结构与库别', () => {
     renderPage(port());
     await screen.findByText('超市哭闹时的分流做法');
 
-    expect(screen.getByRole('link', { name: '← 返回' })).toBeDefined();
+    expect(screen.getByRole('link', { name: '返回' })).toBeDefined();
     expect(screen.getByText('案例库')).toBeDefined();
     expect(screen.queryByRole('navigation', { name: '一级导航' })).toBeNull();
   });

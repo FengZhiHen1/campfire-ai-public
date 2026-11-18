@@ -75,7 +75,7 @@ describe('记忆页 · 放置与归属', () => {
     renderPage(port());
     await screen.findByText('今天在超市里人很多，我有点撑不住');
 
-    expect(screen.getByRole('link', { name: '← 返回' })).toBeDefined();
+    expect(screen.getByRole('link', { name: '返回' })).toBeDefined();
     expect(screen.getByText('我提过的事')).toBeDefined();
     // 切换器的缺席本身在传达「记忆属账号、不随对象分区」。
     expect(screen.queryByRole('navigation', { name: '一级导航' })).toBeNull();
@@ -233,6 +233,37 @@ describe('记忆页 · 纠正', () => {
     expect(await screen.findByText(/已新增一条更正，原记录不再作为依据/)).toBeDefined();
   });
 
+  it('P0 纠正成功后把新条目滚进视野并聚焦（结果落在哪当场可读）', async () => {
+    // 新条目写在 e1 之后重新取回；纠正后原行消失、新行在它自己的日期位置出现。
+    let calls = 0;
+    const p = port({
+      listEpisodes: vi.fn(async () => {
+        calls += 1;
+        if (calls === 1) return { items: [episode()], next_cursor: null };
+        return {
+          items: [
+            episode(),
+            episode({ episode_key: 'new1', content: '那天在超市里人很多', occurred_at: '2026-10-02T09:45:00+08:00' }),
+          ],
+          next_cursor: null,
+        };
+      }),
+    });
+    renderPage(p);
+    await screen.findByText('今天在超市里人很多，我有点撑不住');
+
+    fireEvent.click(firstButtonNamed('纠正'));
+    const form = (await screen.findByText('新增一条更正')).closest('section') as HTMLElement;
+    fireEvent.change(within(form).getByLabelText('内容'), { target: { value: '那天在超市里人很多' } });
+    fireEvent.click(within(form).getByRole('button', { name: '更正' }));
+
+    await waitFor(() => expect(p.correctEpisode).toHaveBeenCalled());
+    // 新行出现并被聚焦（data-episode-key 锚点 + tabIndex=-1）。
+    const newRow = await screen.findByText('那天在超市里人很多');
+    const article = newRow.closest('article') as HTMLElement;
+    await waitFor(() => expect(document.activeElement).toBe(article));
+  });
+
   it('P0 中间态（旧已撤下、新没写成）逐字呈现前端文案，不笼统报成功或失败', async () => {
     const p = port({
       correctEpisode: vi.fn(async (episodeKey: string) => ({
@@ -251,6 +282,9 @@ describe('记忆页 · 纠正', () => {
     fireEvent.click(within(form).getByRole('button', { name: '更正' }));
 
     expect(await screen.findByText(/原记录已不再作为依据，但新记录没写成，请重试/)).toBeDefined();
+    // 中间态是「部分成功」而非单纯失败/成功：以 role=alert 呈现，与成功的 role=status 区分。
+    const intermediate = screen.getByText(/原记录已不再作为依据，但新记录没写成，请重试/);
+    expect(intermediate.closest('[role="alert"]')).not.toBeNull();
     // 旧记录已撤下 → 立即从列表移除（不再作为依据）。
     await waitFor(() => {
       expect(screen.queryByText('今天在超市里人很多，我有点撑不住')).toBeNull();

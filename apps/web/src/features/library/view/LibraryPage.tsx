@@ -30,7 +30,6 @@ import styles from './libraryPage.module.css';
 
 /** 页面文案（页面设计成稿，逐字呈现）。 */
 const COPY = {
-  back: '← 返回',
   caseTab: '案例',
   knowledgeTab: '资料',
   noResultsTitle: '没有找到相关内容',
@@ -74,7 +73,7 @@ export function LibraryPage({ port, searchOverride }: LibraryPageProps) {
   return (
     <AppShell>
       <header className="subpage-head">
-        <BackLink fallback="/">{COPY.back}</BackLink>
+        <BackLink fallback="/" />
         <span className="sp-title">{page.library === 'case' ? '案例库' : '资料库'}</span>
       </header>
 

@@ -50,8 +50,16 @@ export interface ProfileEntryActions {
   deleteTarget: ProfileItem | null;
   correct: CorrectFlowState | null;
   add: AddFlowState | null;
-  /** 一次性提示（纠正成功等）；它不是错误，因此与 rowFailure 分开。 */
+  /** 一次性提示（纠正成功、补充成功、确认成功等）；它不是错误，因此与 rowFailure 分开。 */
   notice: string | null;
+  /**
+   * 刚确认成功的那一条：只用于把它在列表里就地标出、并把焦点交给相邻候选。
+   * 与 notice 分开是因为它还带条目键，且只在该对象的内容区里呈现。
+   * 由动作函数在确认成功时写入，切换对象或再次确认时自然被覆盖/清空——
+   * 不从候选数组 diff 反推操作类型（删除、拒绝、切换对象、重载都会造成同样的列表变化，
+   * 那种推断会把它们误报成「确认成功」）。
+   */
+  confirmedNotice: { objectId: string; itemId: string } | null;
 
   confirmCandidate(itemId: string): Promise<void>;
   /** 逐字对应档案页第 24 行的「删除」；否定（契约 4.1）没有界面入口，见端口说明。 */
@@ -92,6 +100,8 @@ export function useProfileEntryActions(
   const [correct, setCorrect] = useState<CorrectFlowState | null>(null);
   const [add, setAdd] = useState<AddFlowState | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  // 刚确认成功的那一条：带对象 id 限定呈现范围，避免切到别的对象时把回执带过去。
+  const [confirmedNotice, setConfirmedNotice] = useState<{ objectId: string; itemId: string } | null>(null);
   /*
     并发闸门收进动作函数体（FE-12）：`disabled` 管不住重复点按、回车与程序化调用，
     而同一个动作函数有多个入口（行内按钮、确认单、表单提交）。
@@ -102,17 +112,19 @@ export function useProfileEntryActions(
 
   /** 行内单条目操作的共用骨架：置忙 → 执行 → 失败分类 → 成功重载。 */
   const runRowAction = useCallback(
-    async (itemId: string, action: () => Promise<void>): Promise<void> => {
+    async (itemId: string, action: () => Promise<void>): Promise<boolean> => {
       // 闸门在函数体内：所有入口（行内按钮 / 确认单）都过同一道，不看按钮是否 disabled。
-      if (inFlight.current) return;
+      if (inFlight.current) return false;
       inFlight.current = true;
       setBusyItemId(itemId);
       setRowFailure(null);
       try {
         await action();
         await onChanged();
+        return true;
       } catch (error) {
         setRowFailure({ itemId, failure: failureFromError(error) });
+        return false;
       } finally {
         inFlight.current = false;
         setBusyItemId(null);
@@ -123,9 +135,21 @@ export function useProfileEntryActions(
 
   const confirmCandidate = useCallback(
     async (itemId: string): Promise<void> => {
-      await runRowAction(itemId, () => new ConfirmItemUseCase(port).execute(itemId));
+      // 只在确认这条路径成功返回后记录回执：删除/拒绝/切换对象/重载不会走到这里，
+      // 因此不会像「按列表变化推断」那样把它们误报成确认成功。
+      const objectIdAtCall = objectId;
+      const ok = await runRowAction(itemId, async () => {
+        await new ConfirmItemUseCase(port).execute(itemId);
+        // 确认不再写通用的 `notice`：它的就地回执由 `confirmedNotice` 在候选区上方呈现，
+        // 免得同一个「已确认」在页头和候选区各出现一次（重复反馈）。
+      });
+      // 回执（带对象 id / 条目 id）在重载成功后再写入：此时候选列表已是确认后的形态，
+      // 聚焦出口才不会把焦点交给即将消失的那一行（否则焦点落到 body）。失败时不写。
+      if (ok && objectIdAtCall !== null) {
+        setConfirmedNotice({ objectId: objectIdAtCall, itemId });
+      }
     },
-    [port, runRowAction],
+    [objectId, port, runRowAction],
   );
 
   const askDelete = useCallback((item: ProfileItem): void => {
@@ -225,6 +249,7 @@ export function useProfileEntryActions(
 
   const dismissNotice = useCallback((): void => {
     setNotice(null);
+    setConfirmedNotice(null);
   }, []);
 
   return {
@@ -234,6 +259,7 @@ export function useProfileEntryActions(
     correct,
     add,
     notice,
+    confirmedNotice,
     confirmCandidate,
     askDelete,
     cancelDelete,

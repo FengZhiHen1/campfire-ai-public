@@ -3,12 +3,18 @@
  * 降低重复边框与小字：组与卡用留白和一条浅分隔区分，正文与元信息字号不低于可读下限。
  * 只消费 design token。 */
 
-/* ── 归属说明：细左线 + 留白 ───────────────────────────────── */
+/* ── 归属说明：整宽说明段落，不借左边线 ───────────────────── */
 
+/* 原实现用 2px 左边线 + 内边距承载「归属说明」。但左边线在本产品里已被两处占用
+ * 语义：对话引用内衬（.msg-doc）与整页警示/过程线。这段说明既不是引用也不是警示，
+ * 再画一条竖线就是无语义的通用装饰——还把它读成与下方时间线平级的「分区」。
+ * 改为：淡暖底 + 圆角把它与时间线分开，正文整宽，归属语气由文案本身承担。 */
 .ownership {
   margin: 0;
   padding: var(--space-3) var(--space-4);
-  border-left: 2px solid var(--border);
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: var(--surface-warm);
   color: var(--meta);
   font-size: var(--text-sm);
   line-height: 1.6;

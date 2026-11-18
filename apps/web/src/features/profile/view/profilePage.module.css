@@ -1,5 +1,5 @@
 /* 档案页的呈现纪律：对象切换与管理分两层；候选是被框住的「未确认区」，
- * 稳定记录是连续的分隔列表；摘要只靠一条细线与留白获得重量。
+ * 稳定记录是连续的分隔列表；摘要靠留白与排版层级（不再借左边线）获得重量。
  * 只消费 design token，不在此定义色值。 */
 
 .heading {
@@ -84,14 +84,20 @@
   outline-offset: var(--space-1);
 }
 
-/* ── 当前认识：细线 + 连续排版，不嵌套抬升大卡 ──────────────── */
+/* ── 当前认识：靠排版层级与留白，不借左边线 ───────────────── */
 
+/* 原实现用一条左侧细线给出「这是一页摘要」的体量。但左边线在本产品里已被
+ * 两处占用语义：对话消息区的引用内衬（.msg-doc）与整页的警示/过程线。摘要既不是
+ * 引用也不是警示，再画一条左边线就只是通用装饰——既没有语义，又会在 320px 下
+ * 把正文整体右推、压缩行长。这里改为：以分隔线分出「摘要区」与下方记录区，
+ * 用摘要标签的小号大写字与标题宋体形成层级，正文回到整宽。 */
 .summary {
   margin: 0;
-  padding: var(--space-2) 0 var(--space-2) var(--space-4);
+  padding: 0;
   border: 0;
-  border-left: 2px solid var(--border);
+  border-bottom: 1px solid var(--border-soft);
   border-radius: 0;
+  padding-bottom: var(--space-5);
   background: transparent;
   box-shadow: none;
 }
@@ -158,10 +164,13 @@
 
 /* ── 待确认：被框住的独立区域（与连续的稳定记录分组相区分）──── */
 
+/* 候选区原先同时带外框与 3px 琥珀色左边线。左边线只是把「这里重要」重复了
+ * 外框一遍（外框已经把它从连续记录里分出来），而 3px 侧线本身在本产品里意味着
+ * 「警示 / 引用」，候选不是警示、也不是引用。改为：完整外框 + 圆角承载「独立区域」，
+ * 待确认语义由标题前的琥珀圆点（.status.unruled）承载，不再多画一条竖线。 */
 .candidateGroup:global(.group-collapse) {
   padding: var(--space-4);
   border: 1px solid var(--border);
-  border-left: 3px solid var(--status-unruled);
   border-radius: var(--radius-md);
   background: var(--surface);
   box-shadow: none;
@@ -174,6 +183,22 @@
 .candidateHint {
   margin: 0 0 var(--space-3);
   color: var(--meta);
+  font-size: var(--text-sm);
+  line-height: 1.5;
+}
+
+/* 确认成功的就地回执：落在候选区内部（被框住的区域内），而不是屏幕角落的通用提示。
+ * 用淡底 + 左侧一条状态色短线，既醒目又不抢候选行本身的层。 */
+.confirmNotice {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin: 0 0 var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+  background: var(--surface-warm);
+  color: var(--fg);
   font-size: var(--text-sm);
   line-height: 1.5;
 }
