@@ -5,7 +5,7 @@
  *   - docs/design/pages/应急表单页.md: MUST — 全文（布局结构、组件选用、数据与文案、状态覆盖、动效意图）
  *   - docs/技术设计/technical-details/咨询对话界面.md: MUST — 第 6 节（提交后 navigate，表单页即弃）
  * 边界:
- *   - 依赖: shared/ui（AppShell）、viewModel/useEmergencyForm、domain/emergency
+ *   - 依赖: shared/ui（AppShell、ConfirmSheet）、viewModel/useEmergencyForm、domain/emergency
  *   - 被依赖: app/routes
  * 禁止行为:
  *   - 禁止把八项做成一页长表单（页面设计布局结构第 2 节）
@@ -13,7 +13,6 @@
  *   - 禁止弱化跳过语义文案（RQ-EMG-01 原文，不得写成「暂时跳过」）
  */
 
-import { useState } from 'react';
 import { useLocation, useNavigate } from 'react-router';
 
 import { ConfirmSheet } from '../../../shared/ui/ConfirmSheet';
@@ -44,7 +43,6 @@ export interface EmergencyFormPageProps {
 export function EmergencyFormPage({ consult }: EmergencyFormPageProps) {
   const navigate = useNavigate();
   const location = useLocation();
-  const [confirmExit, setConfirmExit] = useState(false);
   const form = useEmergencyForm(consult, (sessionId, runId) => {
     // 运行已在应急入口启动：把 run_id 交到对话页，由它订阅（HTTP/SSE 契约第 5 节
     //「前端拿 run_id 直接跳对话页订阅」）。此前只传 sessionId，页面于是从不订阅本次运行，
@@ -59,10 +57,15 @@ export function EmergencyFormPage({ consult }: EmergencyFormPageProps) {
     void navigate(safeReturnTo(location.state) ?? '/');
   };
 
+  // 退出经控制器判定：有已处理内容时先弹确认单，没有则直接回到来源。
+  const handleExit = (): void => {
+    if (form.requestExit() === 'leave') exit();
+  };
+
   return (
     <AppShell className={styles.shell}>
       <header className="subpage-head">
-        <button type="button" className="sp-back text-button" disabled={form.submitting} onClick={() => form.handled > 0 ? setConfirmExit(true) : exit()}>
+        <button type="button" className="sp-back text-button" disabled={form.submitting} onClick={handleExit}>
           ← 退出应急
         </button>
         <span className="sp-title">现在的情况</span>
@@ -146,7 +149,7 @@ export function EmergencyFormPage({ consult }: EmergencyFormPageProps) {
 
         <p className={styles.handledNote}>
           已处理 {form.handled} / {form.total} 题
-          {form.answer.skipped ? ' · 本题已跳过（按未排除处理）' : ''}
+          {form.currentStatus === 'skipped' ? ' · 本题已跳过（按未排除处理）' : ''}
         </p>
       </section>
 
@@ -165,7 +168,7 @@ export function EmergencyFormPage({ consult }: EmergencyFormPageProps) {
       */}
       <div className={"emergency-controls " + styles.controls}>
         <div className="button-row">
-          <button type="button" className="btn btn-quiet" disabled={form.submitting} onClick={() => { form.skip(); if (!form.isLast) form.next(); }}>
+          <button type="button" className="btn btn-quiet" disabled={form.submitting} onClick={form.skip}>
             跳过这题
           </button>
           <button type="button" className="btn" disabled={form.isLast || form.submitting} onClick={form.next}>
@@ -177,13 +180,22 @@ export function EmergencyFormPage({ consult }: EmergencyFormPageProps) {
         </button>
         <p className="meta">随时提交，无需答完八题。</p>
       </div>
-      {confirmExit && (
-        <ConfirmSheet labelledBy="emergency-exit-title" onDismiss={() => setConfirmExit(false)}>
+      {form.exitConfirmOpen && (
+        <ConfirmSheet labelledBy="emergency-exit-title" onDismiss={form.cancelExit}>
           <h2 id="emergency-exit-title">退出现场采集？</h2>
           <p>已填写的内容还没有提交，退出后将丢弃。</p>
           <div className="button-row">
-            <button className="btn btn-secondary" type="button" onClick={() => setConfirmExit(false)}>继续填写</button>
-            <button className="btn btn-danger" type="button" onClick={exit}>退出并丢弃</button>
+            <button className="btn btn-secondary" type="button" onClick={form.cancelExit}>继续填写</button>
+            <button
+              className="btn btn-danger"
+              type="button"
+              onClick={() => {
+                form.confirmDiscard();
+                exit();
+              }}
+            >
+              退出并丢弃
+            </button>
           </div>
         </ConfirmSheet>
       )}
