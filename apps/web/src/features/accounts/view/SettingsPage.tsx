@@ -49,11 +49,12 @@ export function SettingsPage({ auth }: SettingsPageProps) {
     <AppShell tab="settings">
       <p className="eyebrow">{SETTINGS_COPY.heading}</p>
 
-      {/* 账号卡：账号名即本页主标题（不再另立一个大标题再重复一次账号名）。 */}
+      {/* 账号卡：一行主标题 + 一行身份说明，不重复「个人账号」。 */}
       <section className={styles.account} aria-label="账号">
         <h1 className={styles.accountName}>{displayName}</h1>
-        <p className={styles.accountSub}>{SETTINGS_COPY.accountSub}</p>
-        {settings.accountName === null && <p className={styles.accountFallback}>{SETTINGS_COPY.accountFallback}</p>}
+        <p className={styles.accountSub}>
+          {settings.accountName === null ? SETTINGS_COPY.accountFallback : SETTINGS_COPY.accountSub}
+        </p>
       </section>
 
       <section className={styles.links} aria-label={SETTINGS_COPY.linksGroup}>

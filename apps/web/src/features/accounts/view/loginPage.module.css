@@ -10,17 +10,18 @@
   gap: var(--space-4);
 }
 
-/* 品牌行：图标 + 标题/标语同一行，行高紧凑；不再堆叠三段大字。 */
+/* 品牌区：标题行（火焰 + 标题垂直居中）+ 标语；顶部留白给安全区。 */
 .brand {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
+  display: grid;
+  gap: var(--space-2);
   padding: var(--space-12) var(--space-1) 0;
 }
 
-.brandText {
-  display: grid;
-  gap: var(--space-1);
+/* 火焰与品牌标题同一行，align-items:center 让图标随标题文字垂直居中而非掉到中间。 */
+.brandRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
   min-width: 0;
 }
 
@@ -33,6 +34,7 @@
 .brandMark {
   display: inline-flex;
   flex: none;
+  align-items: center;
   color: var(--accent);
 }
 
@@ -40,14 +42,6 @@
   margin: 0;
   color: var(--fg-2);
   font-size: var(--text-sm);
-}
-
-.intro {
-  margin: 0;
-  padding: 0 var(--space-1);
-  color: var(--meta);
-  font-size: var(--text-sm);
-  line-height: var(--leading-body);
 }
 
 :global(.panel).panel {

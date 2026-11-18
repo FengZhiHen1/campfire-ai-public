@@ -19,12 +19,6 @@
   font-size: var(--text-sm);
 }
 
-.accountFallback {
-  margin: var(--space-2) 0 0;
-  color: var(--muted);
-  font-size: var(--text-xs);
-}
-
 .links {
   padding: 0 var(--space-4);
   border: 1px solid var(--border-soft);
