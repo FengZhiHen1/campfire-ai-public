@@ -100,9 +100,11 @@
 }
 
 .row :global(.lr-title) {
+  display: -webkit-box;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
   font-size: var(--text-base);
   font-weight: 600;
   line-height: 1.4;
@@ -118,6 +120,12 @@
 .row :global(.lr-sub) {
   font-size: var(--text-xs);
   color: var(--meta);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .row:hover {
+    background: color-mix(in oklab, var(--surface-warm), transparent 55%);
+  }
 }
 
 .row:active {
