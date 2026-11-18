@@ -93,24 +93,28 @@ export interface AppShellProps {
  * 反过来，把它留在 DeviceFrame 之外就等于绕过外壳——外壳落地前后它都贴在视口上。
  */
 export function AppShell({ children, tab, className = '' }: AppShellProps) {
+  return (
+    <DeviceFrame>
+      <div className={(tab === undefined ? 'phone-shell' : 'phone-shell has-tab-bar') + ' ' + className}>{children}</div>
+      {tab !== undefined && <PrimaryNav tab={tab} />}
+    </DeviceFrame>
+  );
+}
+
+function PrimaryNav({ tab }: { tab: TabKey }) {
   const { state } = useLocation();
   const navigation = useNavigationType();
   const previousTab = (state as { previousTab?: TabKey } | null)?.previousTab;
   const animateSelection = navigation === 'PUSH' && previousTab !== undefined && previousTab !== tab;
 
   return (
-    <DeviceFrame>
-      <div className={(tab === undefined ? 'phone-shell' : 'phone-shell has-tab-bar') + ' ' + className}>{children}</div>
-      {tab !== undefined && (
-        <nav className="tab-bar" aria-label="一级导航" data-tab-arrival={animateSelection || undefined}>
-          {TABS.map((item) => (
-            <NavLink className="tab-item" key={item.key} to={item.to} state={{ previousTab: tab }} end={item.to === '/'}>
-              <TabIcon tab={item.key} />
-              <span>{item.label}</span>
-            </NavLink>
-          ))}
-        </nav>
-      )}
-    </DeviceFrame>
+    <nav className="tab-bar" aria-label="一级导航" data-tab-arrival={animateSelection || undefined}>
+      {TABS.map((item) => (
+        <NavLink className="tab-item" key={item.key} to={item.to} state={{ previousTab: tab }} end={item.to === '/'}>
+          <TabIcon tab={item.key} />
+          <span>{item.label}</span>
+        </NavLink>
+      ))}
+    </nav>
   );
 }

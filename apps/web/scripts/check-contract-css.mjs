@@ -113,8 +113,7 @@ const ELEMENT_RULE_CONTRACTS = [
  * 这正是「只 grep `.tag` 会漏掉」的情形。
  * `.text-button:disabled` 同理：`.text-button` 在产物里存在，缺的是**禁用态**那一条；
  * 它此前整条不在产物里（实测改前 `disabled` 按钮的计算样式仍是 `opacity: 1`）。
- * `.tab-item[aria-current='page']` 与它的短横线是 2026-10-11 新增的当前态语言：
- * 此前该状态在产品与契约里各写一份、靠导入顺序决胜，收拢成一处后由本闸门钉住。
+ * 导航当前项的字重与实形图标分别检查。
  */
 const COMPOUND_RULE_CONTRACTS = [
   {
@@ -124,15 +123,11 @@ const COMPOUND_RULE_CONTRACTS = [
   { selector: '.sp-tag', declarations: [['flex', 'none']] },
   {
     selector: '.tab-item[aria-current="page"]',
-    declarations: [['color', 'var(--accent)'], ['font-weight', '600'], ['text-decoration', 'none']],
+    declarations: [['color', 'var(--accent)'], ['font-weight', '600']],
   },
   {
-    selector: '.tab-item[aria-current="page"]::before',
-    declarations: [
-      ['width', 'var(--space-5)'],
-      ['height', '2px'],
-      ['background', 'var(--accent)'],
-    ],
+    selector: '.tab-item[aria-current="page"] .tab-glyph-solid',
+    declarations: [['opacity', '1']],
   },
   {
     selector: '.text-button:disabled',
@@ -651,11 +646,8 @@ const MUTATIONS = [
     legacyMustPass: true,
   },
   {
-    // 当前 tab 的强调短横线是本轮新增语言：删掉它的规则必须被闸门抓到，同时证明旧逻辑会放过。
-    // 变异体按产物里的实际写法（压缩器把 `::before` 压成 `:before`），故正则两种都收。
-    // 判它的是**闸门 B**（该选择器有逐条声明契约），不是闸门 D 的存在性清单。
-    name: 'B-复合选择器缺失（.tab-item[aria-current=page]::before 删除）',
-    mutate: (css) => css.replace(/\.tab-item\[aria-current=page\]::?before\{[^{}]*\}/, ''),
+    name: 'B-复合选择器缺失（当前导航项的实形图标规则删除）',
+    mutate: (css) => css.replace(/\.tab-item\[aria-current=(?:page|"page"|'page')\]\s+\.tab-glyph-solid\{[^{}]*\}/, ''),
     expectGate: 'compound-rule',
     legacyMustPass: true,
   },

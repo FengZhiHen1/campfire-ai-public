@@ -125,8 +125,6 @@
     input:read-only { background: var(--bg); }
     input[aria-invalid="true"] { border-color: var(--danger); }
     /* 导航（@source: project）：单列页头与四项底栏；图录内只演示局部布局。 */
-    .tab-item[aria-current="page"] { color: var(--accent); font-weight: 600; text-decoration: none; }
-    .tab-item[aria-current="page"]::before { content: ""; position: absolute; top: var(--space-1); width: var(--space-5); height: 2px; border-radius: var(--radius-pill); background: var(--accent); }
     #foundation .subpage-head, #foundation .tab-bar { position: static; }
     #foundation .field { margin-top: var(--space-4); }
     #foundation .mini-card p { margin-top: var(--space-2); color: var(--fg-2); }
@@ -225,15 +223,108 @@ summary { overflow-wrap: anywhere; }
     .page-head :is(h1, h2, h3) { margin: 0; font-size: var(--text-xl); }
     .subpage-head { z-index: 20; position: sticky; top: 0; display: flex; align-items: center; gap: var(--space-3); min-height: calc(48px + env(safe-area-inset-top, 0px)); padding: 0 var(--container-gutter-phone); padding-top: env(safe-area-inset-top, 0px); border-bottom: 1px solid var(--border-soft); background: var(--surface); }
     .phone-shell .subpage-head { margin-inline: calc(var(--container-gutter-phone) * -1); padding-inline: var(--container-gutter-phone); }
-    .sp-back { text-decoration: none; display: inline-flex; align-items: center; min-height: 44px; min-width: 44px; color: var(--fg-2); font-size: var(--text-sm); }
+    .sp-back {
+      display: inline-flex;
+      flex: none;
+      align-items: center;
+      justify-content: center;
+      gap: var(--space-1);
+      min-height: 44px;
+      min-width: 44px;
+      margin-inline-start: calc(-1 * var(--space-3));
+      padding-inline: var(--space-2);
+      border-radius: var(--radius-sm);
+      color: var(--fg);
+      font-size: var(--text-sm);
+      text-decoration: none;
+      transition: background-color var(--motion-fast) var(--ease-standard);
+    }
+
+    .sp-back-glyph {
+      flex: none;
+      width: var(--space-6);
+      height: var(--space-6);
+      transition: transform var(--motion-fast) var(--ease-standard);
+    }
+
+    .sp-back:focus-visible { outline-offset: calc(-1 * var(--space-1)); }
+
+    @media (hover: hover) and (pointer: fine) {
+      .sp-back:not(:disabled):hover { background-color: var(--bg); }
+    }
+
+    .sp-back:not(:disabled):active { background-color: var(--surface-warm); }
+    .sp-back:not(:disabled):active .sp-back-glyph { transform: translateX(-2px); }
+
+    @media (prefers-reduced-motion: reduce) {
+      .sp-back:not(:disabled):active .sp-back-glyph { transform: none; }
+    }
     .sp-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--text-base); font-weight: 650; line-height: 1.3; }
     .sp-tag { flex: none; }
     .tab-bar { position: fixed; inset-inline: 0; bottom: 0; z-index: 40; display: flex; justify-content: space-around; max-width: var(--phone-shell-max); margin-inline: auto; padding-bottom: env(safe-area-inset-bottom, 0px); border-top: 1px solid var(--border-soft); background: var(--surface); }
-    .tab-item { display: flex; flex: 1; flex-direction: column; align-items: center; justify-content: center; gap: var(--space-1); min-width: 56px; min-height: 56px; color: var(--fg-2); font-size: var(--text-xs); text-decoration: none; position: relative; }
-    .tab-item:focus-visible { outline-offset: calc(-1 * var(--space-1)); }
-    .tab-item svg { width: var(--space-5); height: var(--space-5); }
-    .tab-item[aria-current='page'] { color: var(--accent); font-weight: 600; text-decoration: none; }
-    .tab-item[aria-current='page']::before { content: ""; position: absolute; top: var(--space-1); width: var(--space-5); height: 2px; border-radius: var(--radius-pill); background: var(--accent); }
+    .tab-item {
+      display: flex;
+      flex: 1;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: var(--space-1);
+      min-width: 56px;
+      min-height: 56px;
+      color: var(--fg-2);
+      font-size: var(--text-xs);
+      text-decoration: none;
+      transition: background-color var(--motion-fast) var(--ease-standard);
+    }
+
+    .tab-item:focus-visible {
+      outline-offset: calc(-1 * var(--space-1));
+      border-radius: var(--radius-sm);
+    }
+
+    .tab-glyph {
+      width: var(--space-6);
+      height: var(--space-6);
+    }
+
+    .tab-glyph-solid,
+    .tab-item[aria-current='page'] .tab-glyph-outline { opacity: 0; }
+
+    .tab-item[aria-current='page'] {
+      color: var(--accent);
+      font-weight: 600;
+    }
+
+    .tab-item[aria-current='page'] .tab-glyph-solid { opacity: 1; }
+
+    @media (hover: hover) and (pointer: fine) {
+      .tab-item:hover { background-color: var(--bg); }
+    }
+
+    .tab-item:active { background-color: color-mix(in oklab, var(--surface-warm), var(--surface) 45%); }
+
+    /* 标签在切换中保持位置。只有通过一级导航到达时，当前图标从原来的轮廓过渡到实形。 */
+    @media (prefers-reduced-motion: no-preference) {
+      .tab-bar[data-tab-arrival] .tab-item[aria-current='page'] .tab-glyph {
+        animation: tab-glyph-settle var(--motion-fast) var(--ease-standard);
+      }
+
+      .tab-bar[data-tab-arrival] .tab-item[aria-current='page'] .tab-glyph-outline {
+        animation: tab-outline-out var(--motion-fast) var(--ease-standard);
+      }
+
+      .tab-bar[data-tab-arrival] .tab-item[aria-current='page'] .tab-glyph-solid {
+        animation: tab-solid-in var(--motion-fast) var(--ease-standard);
+      }
+    }
+
+    @keyframes tab-glyph-settle {
+      from { transform: translateY(2px); }
+      to { transform: translateY(0); }
+    }
+
+    @keyframes tab-outline-out { from { opacity: 1; } to { opacity: 0; } }
+    @keyframes tab-solid-in { from { opacity: 0; } to { opacity: 1; } }
     .phone-shell.has-tab-bar { padding-bottom: calc(56px + var(--space-6) + env(safe-area-inset-bottom, 0px)); }
     .list-row { display: grid; gap: var(--space-2); padding: var(--space-4) 0; border-top: 1px solid var(--border-soft); }
     .list-row .lr-title { font-size: var(--text-base); font-weight: 600; }
@@ -554,7 +645,7 @@ details[open] > summary .when-closed { display: none; }
         <div class="stack">
           <article class="tile"><h3>基础输入与按钮</h3><div class="field"><label for="demo-account">账号名</label><input id="demo-account" autocomplete="off" placeholder="用于登录的账号名" aria-describedby="demo-account-hint" /><span class="hint" id="demo-account-hint">仅演示输入样式，不会提交或保存。</span></div><div class="field"><label for="demo-invite">邀请码 · 错误态示例</label><input id="demo-invite" value="A1B2" readonly aria-invalid="true" aria-describedby="demo-invite-error" /><span class="field-error" id="demo-invite-error">邀请码无效或已被使用</span></div><div class="button-samples"><a class="btn btn-secondary block" href="#source-example">次要操作 · 查看来源</a><button class="btn block" type="button" disabled>处理中…</button></div></article>
           <article class="panel"><div class="panel-head"><h3>卡片层级</h3><span class="tag meta">组件示例</span></div><div class="stack" style="margin-top: var(--space-4)"><div class="tile"><h3>平铺卡</h3><p class="hint">边框区隔内容，用于提问、列表与入口。</p></div><div class="mini-card"><h3>暖沙内衬</h3><p>次级信息用暖底承托，保持阅读层级。</p></div></div></article>
-          <article class="tile"><h3>页头与导航</h3><header class="page-head"><h3>档案</h3><span class="tag meta">仅当前账号</span></header><header class="subpage-head"><a class="sp-back" href="#overview">返回</a><span class="sp-title">等候时的沟通</span><span class="tag meta sp-tag">日常咨询</span></header><nav class="tab-bar" aria-label="一级导航布局示例"><a class="tab-item" href="#situation-entry" aria-current="page">首页</a><a class="tab-item" href="#conversation">咨询</a><a class="tab-item" href="#plan">档案</a><a class="tab-item" href="#foundation">我的</a></nav><p class="hint">图录内用文字导航定位组件，正式页面的图标取自 assets。</p></article>
+          <article class="tile"><h3>页头与导航</h3><header class="page-head"><h3>档案</h3><span class="tag meta">仅当前账号</span></header><header class="subpage-head"><a class="sp-back" href="#overview" aria-label="返回"><svg class="sp-back-glyph" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m14.7 5.7-6.3 5.6a1 1 0 0 0 0 1.4l6.3 5.6" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg></a><span class="sp-title">等候时的沟通</span><span class="tag meta sp-tag">日常咨询</span></header><nav class="tab-bar" aria-label="一级导航布局示例"><a class="tab-item" href="#situation-entry" aria-current="page"><svg class="tab-glyph" viewBox="0 0 24 24" aria-hidden="true"><path class="tab-glyph-outline" d="M4 10.5 12 4l8 6.5v7.75A1.75 1.75 0 0 1 18.25 20H5.75A1.75 1.75 0 0 1 4 18.25z M10 20v-6h4v6" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path class="tab-glyph-solid" d="M3.25 10.14 12 3l8.75 7.14v8.11a2.5 2.5 0 0 1-2.5 2.5h-4.5V14.5h-3.5v6.25h-4.5a2.5 2.5 0 0 1-2.5-2.5z" fill="currentColor" fill-rule="evenodd"/></svg><span>首页</span></a><a class="tab-item" href="#conversation"><svg class="tab-glyph" viewBox="0 0 24 24" aria-hidden="true"><path class="tab-glyph-outline" d="M6.5 5h11a2.5 2.5 0 0 1 2.5 2.5v6a2.5 2.5 0 0 1-2.5 2.5h-5L7 20v-4h-.5A2.5 2.5 0 0 1 4 13.5v-6A2.5 2.5 0 0 1 6.5 5Z M8 9h8m-8 3h5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path class="tab-glyph-solid" d="M6.5 4.25h11a3.25 3.25 0 0 1 3.25 3.25v6a3.25 3.25 0 0 1-3.25 3.25h-4.75L6.25 21v-4.26A3.25 3.25 0 0 1 3.25 13.5v-6A3.25 3.25 0 0 1 6.5 4.25Z M7.5 8.25h9v1.5h-9zm0 3.25h6V13h-6z" fill="currentColor" fill-rule="evenodd"/></svg><span>咨询</span></a><a class="tab-item" href="#plan"><svg class="tab-glyph" viewBox="0 0 24 24" aria-hidden="true"><path class="tab-glyph-outline" d="M6 5.75A1.75 1.75 0 0 1 7.75 4H14l4 4v10.25A1.75 1.75 0 0 1 16.25 20h-8.5A1.75 1.75 0 0 1 6 18.25Z M14 4v4h4m-9 4h6m-6 3.5h6" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path class="tab-glyph-solid" d="M5.25 5.75a2.5 2.5 0 0 1 2.5-2.5h6.5l4.5 4.5v10.5a2.5 2.5 0 0 1-2.5 2.5h-8.5a2.5 2.5 0 0 1-2.5-2.5z M13.25 5v3.75H17zm-4.5 6.25h6.5v1.5h-6.5zm0 3.5h6.5v1.5h-6.5z" fill="currentColor" fill-rule="evenodd"/></svg><span>档案</span></a><a class="tab-item" href="#foundation"><svg class="tab-glyph" viewBox="0 0 24 24" aria-hidden="true"><path class="tab-glyph-outline" d="M20 12a8 8 0 1 1-16 0 8 8 0 0 1 16 0Z M14.5 10a2.5 2.5 0 1 1-5 0 2.5 2.5 0 0 1 5 0Z M6.75 17.8a5.75 5.75 0 0 1 10.5 0" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path class="tab-glyph-solid" d="M20.75 12a8.75 8.75 0 1 1-17.5 0 8.75 8.75 0 0 1 17.5 0Z M14.65 9.6a2.65 2.65 0 1 1-5.3 0 2.65 2.65 0 0 1 5.3 0Z M7 16.9a5.3 5.3 0 0 1 10 0A7 7 0 0 1 7 16.9Z" fill="currentColor" fill-rule="evenodd"/></svg><span>我的</span></a></nav><p class="hint">描边与实形沿用同一轮廓，标签位置固定。</p></article>
           <article class="tile"><h3>消息骨架</h3><div class="stack" aria-hidden="true" style="margin-top: var(--space-4)"><div class="bubble-user skeleton bubble"></div><div class="msg-doc skeleton doc"></div></div><p class="hint">使用者气泡与助手正文分别保持加载前后的形状。</p></article>
         </div>
       </section>
