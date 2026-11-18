@@ -19,7 +19,9 @@
   padding: var(--space-4);
   text-align: left;
   color: var(--fg);
-  border-color: var(--border-control, var(--border));
+  border: 1px solid var(--border-soft);
+  background: var(--surface);
+  border-radius: var(--radius-md);
 }
 
 .newIcon {
@@ -95,6 +97,12 @@
 
 .row:active {
   background: var(--surface);
+}
+
+/* 可点击提示减轻：行的可点性由整行热区与 hover/active 承担，不再加额外边框。 */
+.row:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: calc(-1 * var(--space-1));
 }
 
 .sentinel {

@@ -230,13 +230,18 @@ export function ChatWorkspace({
 
               {/* 待作答时收起 Composer 与 SkillPicker（草稿与选择保留，不清空）。 */}
               {ws.answering ? null : (
-                <>
-                  <SkillPicker
-                    skills={ws.skills}
-                    selected={ws.pendingSkill}
-                    disabled={thread.isRunning}
-                    onSelect={ws.selectSkill}
-                  />
+                // 技能与输入收进同一张卡片（同一个收口），帮助收进卡片内的轻量一行，
+                // 不再单独占一条底部整宽横条——它仍可点开、名称与功能保留。
+                <div className="composer-card">
+                  <div className="composer-head">
+                    <SkillPicker
+                      skills={ws.skills}
+                      selected={ws.pendingSkill}
+                      disabled={thread.isRunning}
+                      onSelect={ws.selectSkill}
+                    />
+                    <details className="compose-help"><summary>技能与应急求助</summary><p className="meta">技能只作用于下一条消息；应急求助请返回首页走应急入口。</p></details>
+                  </div>
                   <form
                     className="chat-compose"
                     onSubmit={(event) => {
@@ -258,8 +263,7 @@ export function ChatWorkspace({
                       <Icon name="send" />
                     </button>
                   </form>
-                  <details className="compose-help"><summary>关于技能与应急求助</summary><p className="meta">技能只作用于下一条消息；应急求助请返回首页走应急入口。</p></details>
-                </>
+                </div>
               )}
             </div>
           </div>
