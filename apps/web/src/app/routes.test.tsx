@@ -83,8 +83,9 @@ describe('路由守卫', () => {
     setSession('authenticated');
     renderAt('/settings');
 
-    expect(screen.getByRole('heading', { name: '我的', level: 1 })).toBeDefined();
-    expect(screen.getByText('个人账号 · 邀请码注册')).toBeDefined();
+    expect(screen.getByRole('heading', { name: '个人账号', level: 1 })).toBeDefined();
+    expect(screen.getByText('当前登录会话')).toBeDefined();
+    expect(screen.getByRole('link', { name: '我的' }).getAttribute('aria-current')).toBe('page');
     expect(screen.queryByText('本页尚在建设中。')).toBeNull();
   });
 
