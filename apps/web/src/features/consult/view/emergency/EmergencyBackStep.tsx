@@ -9,6 +9,8 @@
  *   - 被依赖: view/EmergencyFormPage
  * 禁止行为:
  *   - 禁止在此再放「跳过」「下一题」：它们归底部常驻区，两处各放一份会把三键语义弄乱
+ *   - 禁止在首题渲染「上一题」：首题没有上一题，留一个 44px 的禁用按钮只会抢占第一题首屏
+ *     （页面设计第一题要 10 秒内可提交）。后续题才渲染它。
  */
 
 import styles from './emergencyForm.module.css';
@@ -24,12 +26,13 @@ export interface EmergencyBackStepProps {
  * 渲染采集区里的上一题按钮。
  *
  * 前置: 无
- * 后置: 首题或提交中禁用
+ * 后置: 首题不渲染（无上一题）；后续题渲染，提交中禁用
  * 异常: 无
  */
 export function EmergencyBackStep({ isFirst, disabled, onPrevious }: EmergencyBackStepProps) {
+  if (isFirst) return null;
   return (
-    <button type="button" className={styles.pushBack} disabled={isFirst || disabled} onClick={onPrevious}>
+    <button type="button" className={styles.pushBack} disabled={disabled} onClick={onPrevious}>
       <span aria-hidden="true">←</span> 上一题
     </button>
   );
