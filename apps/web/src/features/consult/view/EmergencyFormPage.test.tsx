@@ -80,9 +80,14 @@ describe('应急表单页 — 分步流', () => {
   it('下一题/上一题可来回，作答与跳过标记保留', () => {
     renderForm(createConsultPortStub());
 
+    // 第一题没有上一题：不渲染它，把首屏留给题面与提交（页面设计：10 秒内可提交）。
+    expect(screen.queryByRole('button', { name: /上一题/ })).toBeNull();
+
     fireEvent.click(screen.getByRole('button', { name: '下一题' }));
     expect(screen.getByText('第 2 / 8 题')).toBeDefined();
     expect(screen.getByText(EMERGENCY_QUESTIONS[1]?.prompt ?? '')).toBeDefined();
+    // 从第二题起「上一题」可达。
+    expect(screen.getByRole('button', { name: '上一题' })).toBeDefined();
 
     fireEvent.click(screen.getByRole('button', { name: '跳过这题' }));
     expect(screen.getByText('第 3 / 8 题')).toBeDefined();
@@ -91,6 +96,8 @@ describe('应急表单页 — 分步流', () => {
 
     fireEvent.click(screen.getByRole('button', { name: '上一题' }));
     expect(screen.getByText('第 1 / 8 题')).toBeDefined();
+    // 回到第一题后「上一题」重新隐藏。
+    expect(screen.queryByRole('button', { name: /上一题/ })).toBeNull();
   });
 
   it('第八题时「下一题」禁用；勾选与自由补充都能记录', () => {
@@ -239,8 +246,8 @@ describe('应急表单页 — 进度与三键区分', () => {
     expect(screen.getByRole('button', { name: '跳过这题' })).toBeDefined();
     expect(screen.getByRole('button', { name: '下一题' })).toBeDefined();
     expect(screen.getByRole('button', { name: '提交，开始分析' })).toBeDefined();
-    // 上一题在采集区回退（首题禁用），不与底部三键混同。
-    expect(screen.getByRole('button', { name: /上一题/ }).hasAttribute('disabled')).toBe(true);
+    // 第一题不渲染「上一题」，不与底部三键混同（后续题才出现）。
+    expect(screen.queryByRole('button', { name: /上一题/ })).toBeNull();
   });
 
 });

@@ -134,14 +134,14 @@
   display: block;
 }
 
-/* 题干：20px 宋体，是本页视觉重心；去掉额外的组标题层级（进度已给题号）。 */
+/* 题干：系统无衬线、约 600 权重，与其它页面的分组/操作文字一致（读物标题才用宋体）。
+ * 去掉了额外的组标题层级（进度已给题号）。 */
 .questionTitle {
   margin: 0;
-  font-family: var(--font-display);
+  font-family: var(--font-body);
   font-size: var(--text-lg);
-  font-weight: 500;
+  font-weight: 600;
   line-height: 1.35;
-  letter-spacing: var(--tracking-display);
   scroll-margin-top: calc(var(--space-12) + var(--space-8));
 }
 
@@ -191,12 +191,12 @@
 
 /* ── 选项：单层整行热区 ─────────────────────────────────────── */
 
-/* 每个选项是一个整行可点的热区（宽 100%、高 ≥48px），内部只有一个指示标记 + 文本，
- * 不再套第二层选择卡边框（减少逐项双层框）。 */
+/* 分组卡已有外框（.panel），选项本身不再各自套一层完整边框——那会让每一行都和外框抢线。
+ * 未选中行只画一条底分隔线，配合明确勾选框区分行；最后一行去掉分隔线，避免与分组底边叠线。
+ * 每个选项仍是整行可点热区（宽 100%、高 ≥48px、正文 16px）。 */
 .options {
   display: grid;
-  gap: var(--space-2);
-  margin-top: var(--space-3);
+  margin-top: var(--space-2);
 }
 
 .option {
@@ -205,13 +205,18 @@
   align-items: center;
   gap: var(--space-3);
   min-height: 48px;
-  padding: var(--space-3) var(--space-4);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  background: var(--surface);
+  padding: var(--space-3) 0;
+  border: 0;
+  border-bottom: 1px solid var(--border-soft);
+  border-radius: 0;
+  background: transparent;
   color: var(--fg);
   font-size: var(--text-base);
   cursor: pointer;
+}
+
+.option:last-child {
+  border-bottom: 0;
 }
 
 /* 原生控件视觉隐藏但保留在无障碍树与键盘序列里（.sr-only 同法，但不移出点击热区）。 */
@@ -223,7 +228,8 @@
   opacity: 0;
 }
 
-/* 指示标记：多选方形（4px 小圆角，一眼是方）、单选圆形（靠 input 类型区分）。 */
+/* 指示标记：清晰的勾选框——多选方形（4px 小圆角，一眼是方）、单选圆形（靠 input 类型区分）。
+ * 未选中有实描边，一眼知道「这里可以选」。 */
 .optionMark {
   flex: none;
   display: inline-flex;
@@ -246,10 +252,14 @@
   line-height: 1.4;
 }
 
-/* 选中态：accent 边框 + 极浅 accent 底 + 标记填充并出对勾。 */
+/* 选中态：常驻 accent 色——左侧强调线 + 极浅 accent 底 + 标记填充出对勾。
+ * 不用整圈边框（那会与分组外框、相邻分隔线打架），改用一条 accent 左线标出当前行。 */
 .option[data-checked='true'] {
-  border-color: var(--accent);
+  box-shadow: inset 3px 0 0 var(--accent);
   background: color-mix(in oklab, var(--accent), transparent 94%);
+  padding-left: var(--space-3);
+  padding-right: var(--space-3);
+  margin-inline: calc(var(--space-3) * -1);
 }
 
 .option[data-checked='true'] .optionMark {
@@ -266,9 +276,11 @@
   transform: rotate(-45deg) translateY(-1px);
 }
 
+/* 可见焦点：键盘聚焦时整行描一圈 accent（不只在隐藏的原生控件上）。 */
 .option:has(input:focus-visible) {
   outline: 2px solid var(--accent);
-  outline-offset: var(--space-1);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
 }
 
 /* ── 自由文本 ──────────────────────────────────────────────── */
