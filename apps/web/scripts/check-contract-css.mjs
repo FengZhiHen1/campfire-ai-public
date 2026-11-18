@@ -89,7 +89,7 @@ const ELEMENT_RULE_CONTRACTS = [
       ['width', '100%'],
       ['min-height', '120px'],
       ['padding', 'var(--space-3) var(--space-4)'],
-      ['border', '1px solid var(--border)'],
+      ['border', '1px solid var(--border-control)'],
       ['border-radius', 'var(--radius-sm)'],
       ['background', 'var(--surface)'],
       ['color', 'var(--fg)'],

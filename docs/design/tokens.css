@@ -1,27 +1,28 @@
 /* ─────────────────────────────────────────────────────────────────────────
  * 篝火智答（Campfire-AI）设计契约 — token 层
  * Base: warm-editorial（vendor/open-design/design-systems/warm-editorial）
- * 定型于 2026-10-06，经用户确认。色板与字体以本文件为唯一权威。
+ * 2026-11-18 移动界面修订。色板与字体以本文件为唯一权威。
  * 语义色使用规则见 docs/design/DESIGN.md。
  * ─────────────────────────────────────────────────────────────────── */
 
 :root {
   /* ─── 色彩角色（标准契约名） ─────────────────────────────────────── */
-  --bg: #fbf6ee;            /* 暖米纸 — 页面背景，安静读物的底色 */
-  --surface: #fffdf8;       /* 暖白 — 卡片与抬升容器 */
-  --surface-warm: #f1e3cf;  /* 奶油沙 — 次级面、warm 卡片内衬 */
+  --bg: #fcfbf9;            /* 主画布 */
+  --surface: #ffffff;       /* 表单、导航与抬升容器 */
+  --surface-warm: #f2ebe4;  /* 消息气泡和轻选中面 */
 
-  --fg: #201914;            /* 暖墨 — 正文 */
-  --fg-2: #4c4037;          /* 次级正文 */
-  --muted: #7a6d63;         /* 弱化文字 — 说明、时间戳 */
-  --meta: #57534e;          /* 元信息 — 覆写为石棕灰，避免与 accent 同色冲突 */
+  --fg: #25211e;            /* 正文 */
+  --fg-2: #514a45;          /* 次级正文 */
+  --muted: #6c645e;         /* 说明和占位文字 */
+  --meta: #5e5650;          /* 时间、状态和来源元信息 */
 
-  --border: #ded2c3;        /* 主边框 */
-  --border-soft: #eee4d7;   /* 内分隔线 */
+  --border: #ddd5ce;        /* 容器边框 */
+  --border-soft: #eae5df;   /* 内分隔线 */
+  --border-control: #968a81; /* 单独识别输入区域的边框 */
 
-  /* 强调：火焰橙（用户定型）。印刷级饱和度——鲜艳但落在纸面上沉着 */
+  /* 品牌与主操作 */
   --accent: #c2410c;
-  --accent-on: #fffdf8;     /* 暖白，配纸面而非纯白 */
+  --accent-on: var(--surface);
   --accent-hover: color-mix(in oklab, var(--accent), black 8%);
   --accent-active: color-mix(in oklab, var(--accent), black 14%);
 
@@ -36,8 +37,7 @@
   --status-high: #b3372f;
 
   /* ─── 字体栈 ───────────────────────────────────────────────────── */
-  /* 标题：思源宋体 weight 500 webfont（Google Fonts，国内加载待实现期验证，
-   * 可换镜像或自托管）；回退系统宋体，最终 Georgia 保底拉丁字形 */
+  /* 品牌字标：思源宋体 500，优先使用页面已加载的字体。 */
   --font-display: "Noto Serif SC", "Songti SC", "STSong", "SimSun", Georgia, serif;
   /* 正文：系统无衬线栈，白话可读性优先，零加载成本 */
   --font-body: system-ui, -apple-system, "PingFang SC", "Hiragino Sans GB",
@@ -49,7 +49,7 @@
   --text-sm: 14px;
   --text-base: 16px;        /* 移动端正文主字号 */
   --text-lg: 20px;
-  --text-xl: 28px;
+  --text-xl: 24px;
   --text-2xl: 42px;
   --text-3xl: 64px;
   --text-4xl: 88px;
