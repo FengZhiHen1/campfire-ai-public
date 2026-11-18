@@ -1,4 +1,4 @@
-# gitleaks 误报登记（人工逐条核实，2026-10-29）
+# gitleaks 误报登记（人工逐条核实，2026-10-29；2026-11-18 快照重放后指纹随提交号更新）
 #
 # 规则：只有在**读过原文、确认不是凭据**之后才能登记在这里，并写清为什么。
 # 不作批量豁免，不按规则名或路径通配放行——每条都要有可复核的理由。
@@ -10,4 +10,4 @@
 #    也不赋予任何外部访问能力；被 generic-api-key 规则命中属规则误报。
 #    同一值同时是 test_memory_identity.py 的黄金向量：改它会让生产已存数据的
 #    episode 派生结果漂移，所以不是「改掉即可」的字符串。
-af3609288e25a372672fcf321dc6af24ff4bf536:apps/api/tests/test_memory_purge_integration.py:generic-api-key:84
+b827c2b181d501ab143599d720148e38336bb920:apps/api/tests/test_memory_purge_integration.py:generic-api-key:84
