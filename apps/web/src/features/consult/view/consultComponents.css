@@ -629,6 +629,43 @@ details[open] > summary .when-open {
  *
  * `.chat-compose .btn` 必须先于 `.chat-compose .compose-send`：发送键同时带这两个类，
  * 两者特异性相同（0,2,0），后写者胜。 */
+/* 技能与输入合并成同一张卡片：整张卡一个边框，头部是技能条 + 轻量帮助，主体是输入行。 */
+.composer-card {
+  border: 1px solid var(--border-control, var(--border));
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  overflow: hidden;
+}
+.composer-card:focus-within { border-color: var(--accent); box-shadow: var(--focus-ring); }
+.composer-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-2) 0;
+}
+.composer-head .skill-picker {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+/* 帮助收成头部右端的一枚轻量入口，不占底部整宽横条，但仍可点开、名称保留。
+ * 与技能条同一行时右对齐；放不下（窄屏）时整条换到下一行，不挤压技能条。 */
+.composer-head .compose-help { flex: none; margin-left: auto; }
+/* 帮助入口的通用形态（契约要求 `.compose-help > summary` 存在）；实际位置由
+ * .composer-head 收进输入卡头部右端，不占底部整宽横条。 */
+.compose-help > summary { min-height: 32px; justify-content: flex-end; font-size: var(--text-xs); color: var(--meta); white-space: nowrap; }
+.composer-head .compose-help > summary {
+  min-height: 32px;
+  padding-inline: var(--space-2);
+  font-size: var(--text-xs);
+  color: var(--meta);
+  white-space: nowrap;
+}
+.composer-head .compose-help > p {
+  max-width: 220px;
+  padding: var(--space-2) 0;
+  font-size: var(--text-xs);
+}
 .skill-chip {
   flex: none;
   min-height: 44px;
@@ -650,11 +687,11 @@ details[open] > summary .when-open {
   align-items: flex-end;
   gap: var(--space-2);
   padding: var(--space-2);
-  border: 1px solid var(--border-control, var(--border));
-  border-radius: var(--radius-md);
-  background: var(--surface);
+  border: 0;
+  border-radius: 0;
+  background: transparent;
 }
-.chat-compose:focus-within { border-color: var(--accent); box-shadow: var(--focus-ring); }
+.chat-compose:focus-within { box-shadow: none; }
 .chat-compose textarea {
   flex: 1;
   min-width: 0;
@@ -678,13 +715,15 @@ details[open] > summary .when-open {
   border-color: var(--border);
   color: var(--muted);
 }
-.compose-help > summary { min-height: 24px; justify-content: center; font-size: var(--text-xs); color: var(--meta); }
-.compose-help > p { padding: var(--space-2) 0; }
 .reasoning-row > summary, .tool-row > summary { font-size: var(--text-xs); min-height: 36px; color: var(--meta); }
-/* 过程（思考/工具）低权重：不要暖底药丸，改用极细的左侧引线与低对比文字，
- * 让它退到阅读面之后，但折叠头仍可点开、依据仍找得到。 */
-.reasoning-row, .tool-row { border-radius: 0; background: none; padding-inline: 0; border-bottom: 1px solid var(--border-soft); }
-.reasoning-row > summary, .tool-row > summary { font-weight: 400; }
+/* 过程（思考/工具）低权重：折叠头不要整宽横线，也不加暖底药丸；只有「展开后的内容」
+ * 保留一条局部左引线，让它退到阅读面之后但仍可展开、依据仍找得到。 */
+.reasoning-row, .tool-row { border-radius: 0; background: none; padding-inline: 0; border: 0; }
+.reasoning-row > summary, .tool-row > summary { font-weight: 400; border-bottom: 0; }
+.reasoning-row .process-body, .tool-row .process-body {
+  padding-left: var(--space-3);
+  border-left: 2px solid var(--border-soft);
+}
 .citation-block > summary { font-size: var(--text-sm); }
 .ac-head { font-family: var(--font-body); font-weight: 600; }
 .ac-section.now { margin-inline: 0; }
@@ -697,12 +736,17 @@ details[open] > summary .when-open {
 .chat-welcome > p { margin: 0 0 var(--space-6); color: var(--meta); font-size: var(--text-sm); }
 .chat-welcome .btn { justify-content: flex-start; font-weight: 400; }
 
-/* 消息阅读面：近白暖底上，用户消息是一枚右侧浅泡（近白 + 细边，与纸面区分而不喧宾夺主）；
- * 助手正文平铺落纸，无底色。 */
+/* 消息阅读面：近白暖底上，用户消息是一枚右侧微暖浅泡（微暖底 + 细边，与纸面轻区分）；
+ * 助手正文直接落在阅读边距上，不套引用框（去掉整高的左竖线与左内缩）。 */
 .bubble-user {
-  background: var(--surface);
+  background: var(--surface-warm);
   border: 1px solid var(--border-soft);
   color: var(--fg);
+}
+.msg-doc,
+.chat-message.assistant .msg-doc {
+  padding-left: 0;
+  border-left: 0;
 }
 .chat-message .message-caption {
   color: var(--muted);
