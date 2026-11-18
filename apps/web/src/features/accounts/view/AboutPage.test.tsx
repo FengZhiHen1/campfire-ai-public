@@ -33,7 +33,7 @@ describe('关于篝火智答 · 页头', () => {
   it('P0 次级页头：返回 + 标题，返回指向设置页，且不渲染 tab 栏', () => {
     const { container } = renderAbout();
 
-    expect(screen.getByRole('link', { name: '← 返回' }).getAttribute('href')).toBe('/settings');
+    expect(screen.getByRole('link', { name: '返回' }).getAttribute('href')).toBe('/settings');
     const head = container.querySelector('header.subpage-head');
     expect(head).not.toBeNull();
     expect(head?.querySelector('.sp-title')?.textContent).toBe('关于篝火智答');
