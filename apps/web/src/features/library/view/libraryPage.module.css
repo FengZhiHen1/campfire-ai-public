@@ -45,18 +45,25 @@
   height: 100%;
 }
 
+/* 输入框去掉自身的边框/底色/聚焦环：外壳（.searchField 胶囊）承担全部视觉，
+ * 否则全局 `input:not(...)` 的边框会在胶囊内侧再画一圈（双层描边）。 */
 .searchInput {
   flex: 1;
   min-width: 0;
+  width: auto;
   min-height: 44px;
   padding: 0;
   border: 0;
+  border-radius: 0;
   background: transparent;
+  box-shadow: none;
   color: var(--fg);
   font: var(--text-base) / 1.4 var(--font-body);
 }
 
 .searchInput:focus {
+  border: 0;
+  box-shadow: none;
   outline: none;
 }
 
