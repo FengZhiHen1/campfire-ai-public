@@ -11,6 +11,12 @@ describe('次级页面返回来源', () => {
     fireEvent.click(screen.getByRole('link', { name: '返回' }));
     expect(screen.getByText('首页落点')).toBeDefined();
   });
+  it('固定返回入口不受导航来源影响', () => {
+    render(<MemoryRouter initialEntries={[{ pathname: '/consult/sessions/sample', state: { returnTo: '/consult/emergency' } }]}>
+      <BackLink fallback="/consult" direct />
+    </MemoryRouter>);
+    expect(screen.getByRole('link', { name: '返回' }).getAttribute('href')).toBe('/consult');
+  });
   it('直接打开和非法外部返回地址都使用默认入口', () => {
     render(<MemoryRouter initialEntries={[{ pathname: '/cases', state: { returnTo: '//outside.example' } }]}><BackLink fallback="/" /></MemoryRouter>);
     expect(screen.getByRole('link', { name: '返回' }).getAttribute('href')).toBe('/');

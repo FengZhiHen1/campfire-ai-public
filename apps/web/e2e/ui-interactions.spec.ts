@@ -46,7 +46,19 @@ test('一级导航图形能辨认当前位置，主动切换才播放过渡', as
   await expect(current.locator('.tab-glyph-solid')).toHaveCSS('opacity', '1');
   await expect(tabs).not.toHaveAttribute('data-tab-arrival');
   if (process.env.RECORD_NAVIGATION === '1') await page.waitForTimeout(500);
-  for (const [label, href] of [['咨询', '/consult'], ['档案', '/profile'], ['我的', '/settings']] as const) {
+  const consult = tabs.getByRole('link', { name: '咨询', exact: true });
+  const initialColor = await consult.evaluate((link) => getComputedStyle(link).backgroundColor);
+  await consult.hover();
+  await expect(consult).not.toHaveCSS('background-color', initialColor);
+  await expect(consult).toHaveCSS('background-color', /^rgb\(/);
+  await page.mouse.down();
+  await expect(consult).toHaveCSS('background-color', /^oklab\(/);
+  await expect(current).toHaveText('首页');
+  await page.mouse.up();
+  await expect(current).toHaveText('咨询');
+  await expect(documentRoot).toHaveAttribute('data-tab-animated', '/consult');
+  if (process.env.RECORD_NAVIGATION === '1') await page.waitForTimeout(550);
+  for (const [label, href] of [['档案', '/profile'], ['我的', '/settings']] as const) {
     await tabs.getByRole('link', { name: label, exact: true }).click();
     await expect(current).toHaveText(label);
     await expect(documentRoot).toHaveAttribute('data-tab-animated', href);
