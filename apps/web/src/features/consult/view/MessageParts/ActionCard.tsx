@@ -63,10 +63,16 @@ export function ActionCard({ data, expired }: ActionCardProps) {
 
   const view = build.view;
   const priority = view.sections.find((section) => section.isPriority) ?? null;
+  // 医疗风险优先于行动建议：徽章放在卡标题行，保证「风险状态」早于「立即做」推荐块出现。
+  // 高风险优先级是原业务语义，视觉重做不得把风险压到推荐之后。
+  const riskFirst = view.medicalRisk;
 
   return (
     <article className={`panel action-card${view.expired ? ' expired' : ''}`} aria-label={`行动卡：${view.title}`}>
-      <span className="tag">{view.title}</span>
+      <div className="ac-top">
+        <span className="tag">{view.title}</span>
+        <span className={`status ${riskFirst.tone} ac-risk`}>{riskFirst.text}</span>
+      </div>
       {view.expired ? <p className="status off">已过期，见最新卡片</p> : null}
 
       {priority !== null && !view.expired ? (
@@ -86,17 +92,20 @@ export function ActionCard({ data, expired }: ActionCardProps) {
           </h3>
           {section.key === view.medicalRiskSectionKey ? (
             <>
-              <p>
-                <span className={`status ${view.medicalRisk.tone}`}>{view.medicalRisk.text}</span>
-              </p>
+              {/* 医疗风险徽章已在卡标题行提前呈现；此处不再重复一枚同样的徽章，
+                  只在其所属「当前状态」节里补出其余状态读出行。 */}
               {view.stateLines.map((line) => (
                 <p key={line}>{line}</p>
               ))}
             </>
           ) : null}
-          {section.lines.map((line, index) => (
-            <ActionLine key={`${section.key}-${String(index)}`} {...line} />
-          ))}
+          {/* 「立即做」节的行已在上方的推荐块完整呈现，这里不再重复同一批动作
+              （双份暖底大块 = 同一条建议上下各突出一次）。其余各节照常整节渲染。 */}
+          {section.isPriority
+            ? null
+            : section.lines.map((line, index) => (
+                <ActionLine key={`${section.key}-${String(index)}`} {...line} />
+              ))}
         </div>
       ))}
     </article>

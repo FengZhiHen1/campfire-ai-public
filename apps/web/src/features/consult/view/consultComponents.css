@@ -346,6 +346,22 @@ details[open] > summary .when-open {
   font: var(--text-sm) / 1.6 var(--font-body);
 }
 
+/* 卡标题行：卡名与医疗风险徽章并排。风险徽章必须早于「立即做」推荐块出现——
+ * 高风险优先是原业务语义，视觉重做不得把风险状态压到推荐之后。 */
+.ac-top {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.ac-top .ac-risk {
+  flex: none;
+  margin: 0;
+  font-size: var(--text-xs);
+  font-weight: 600;
+}
+
 .ac-section p {
   margin-top: var(--space-2);
 }
