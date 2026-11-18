@@ -109,7 +109,7 @@ export function ChatPage({ consult }: ChatPageProps) {
       <AppShell>
         <div className={styles.workspace}>
           <header className="subpage-head">
-            <BackLink fallback="/consult" />
+            <BackLink fallback="/consult" direct />
             <span className="sp-title">咨询</span>
           </header>
           <div className={styles.thread}>
@@ -134,7 +134,7 @@ export function ChatPage({ consult }: ChatPageProps) {
       <AppShell>
         <div className={styles.workspace}>
           <header className="subpage-head">
-            <BackLink fallback="/consult" />
+            <BackLink fallback="/consult" direct />
             <span className="sp-title">咨询</span>
           </header>
           <div className={styles.thread}>

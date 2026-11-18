@@ -113,6 +113,13 @@ details[open] > summary .when-open {
   margin-top: var(--space-2);
 }
 
+/* 重连/降级等「非主动推进」的信息态与「正在跑」的主动态分开：前者不加呼吸点、色更沉，
+ * 让人一眼分清「还在替你想」与「连接出了状况」。主动推进态沿用上面 .chat-progress 的
+ * --fg-2。data-tone 由工作面按 showProgressDot 下发（见 ChatWorkspace）。 */
+.chat-progress[data-tone="info"] {
+  color: var(--meta);
+}
+
 .flame-dot.sm {
   width: var(--space-3);
   height: var(--space-3);
@@ -475,6 +482,15 @@ details[open] > summary .when-open {
   background: color-mix(in oklab, var(--surface-warm), transparent 35%);
 }
 
+/* 指针设备上的悬停反馈：折叠头有 44px 命中区，但此前只有按下态（:active）变色，鼠标
+ * 移上去没有任何提示，看不出这里能点。与 .question-option 的悬停同一取向（仅 hover 媒体
+ * 查询内生效，触屏不产生粘滞高亮）。 */
+@media (hover: hover) {
+  .conversation-disclosure > summary:hover {
+    background: color-mix(in oklab, var(--surface-warm), transparent 65%);
+  }
+}
+
 .disclosure-chevron {
   width: 7px;
   height: 7px;
@@ -727,6 +743,9 @@ details[open] > summary .when-open {
   flex: 1;
   min-width: 0;
   min-height: 44px;
+  /* 自适应高度：优先用原生 field-sizing（Chromium 123+），JS 没有多余行数计算；
+     旧引擎退化为 rows=1 + 滚动（max-height 截断），行为仍安全。 */
+  field-sizing: content;
   max-height: 136px;
   padding: var(--space-2);
   border: 0;

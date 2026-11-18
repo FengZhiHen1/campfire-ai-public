@@ -24,6 +24,7 @@ import {
   ThreadPrimitive,
 } from '@assistant-ui/react';
 
+import { BackLink } from '../../../shared/ui/BackLink';
 import { Icon } from '../../../shared/ui/Icon';
 import { BrandMark } from '../../../shared/ui/BrandMark';
 import { DeviceFrame } from '../../../shared/ui/DeviceFrame';
@@ -120,9 +121,12 @@ export function ChatWorkspace({
         <ConsultThreadProvider value={ws.threadContext}>
           <div className={styles.workspace}>
             <header className="subpage-head">
-              <Link className="sp-back" to="/consult">
-                ← 返回
-              </Link>
+              {/*
+                direct：应急提交经「固定跳转」进入本页（EmergencyFormPage 用 navigate(consultChatPath)），
+                此时 history.idx 指向上一个屏（刚提交的表单）；若不显式钉住目标，window.history.idx
+                的「往回一屏」会退回表单。返回目标固定为咨询历史（/consult），符合「提交后回列表」。
+              */}
+              <BackLink fallback="/consult" direct />
               <span className="sp-title">咨询</span>
               {/*
                 宽度不足时整体折叠为一个汇总标签，而不是「前 N 个 + +N 徽标」——
@@ -197,7 +201,7 @@ export function ChatWorkspace({
 
             <div className={styles.footer}>
               {ws.statusText === null ? null : (
-                <div className="chat-progress">
+                <div className="chat-progress" data-tone={ws.showProgressDot ? 'working' : 'info'}>
                   {ws.showProgressDot ? (
                     <span className="flame-dot breathing" aria-hidden="true" />
                   ) : null}
@@ -207,8 +211,13 @@ export function ChatWorkspace({
                 </div>
               )}
 
+              {/*
+                失败反馈：像「服务回话」而不是报错弹层。原因在上（标题 + 一句说明），动作在下
+                （重试）。关联到输入器的 aria-describedby，读屏聚焦输入时能听到「上一条没发出去」，
+                不必先看见红色块。Retry 保留（run 失败/发送失败都走同一路）。
+              */}
               {ws.failure === null ? null : (
-                <div className="error-card" role="alert">
+                <div className="error-card" role="alert" id="consult-run-failure">
                   <strong className="ec-title">{ws.failure.title}</strong>
                   <p>{ws.failure.message}</p>
                   {ws.failure.retryable ? (
@@ -248,8 +257,21 @@ export function ChatWorkspace({
                       value={ws.draft}
                       placeholder="写下你想补充的情况……"
                       onChange={(event) => ws.setDraft(event.target.value)}
+                      aria-describedby={ws.failure === null ? undefined : 'consult-run-failure'}
                     />
-                    <button className="btn btn-primary compose-send" aria-label="发送" type="submit" disabled={thread.isRunning || ws.draft.trim() === ''}>
+                    {/*
+                      发送键三态（以真实几何与禁用态区分，不靠半透明「仍可点」的错觉）：
+                        1. 空草稿 —— 禁用、中性弱化（既有契约）；
+                        2. 运行中 —— 禁用（本轮运行未结束，但输入框仍可先写下一句）；
+                        3. 可发送 —— 品牌色实心。
+                      aria-label 随状态切换，读屏听到的是「发送」/「发送中，请稍候」而非只一个图标。
+                    */}
+                    <button
+                      className="btn btn-primary compose-send"
+                      aria-label={thread.isRunning ? '发送中，请稍候' : '发送'}
+                      type="submit"
+                      disabled={thread.isRunning || ws.draft.trim() === ''}
+                    >
                       <Icon name="send" />
                     </button>
                   </form>
