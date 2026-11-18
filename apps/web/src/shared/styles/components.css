@@ -867,7 +867,8 @@ input[aria-invalid='true'] {
   max-height: 90%;
   margin: 0 auto;
   padding: var(--space-6) var(--space-5) calc(var(--space-6) + env(safe-area-inset-bottom, 0px));
-  border: 1px solid var(--border);
+  border: 0;
+  border-top: 1px solid var(--border);
   border-radius: var(--radius-lg) var(--radius-lg) 0 0;
   background: var(--surface);
   color: var(--fg);
@@ -875,7 +876,7 @@ input[aria-invalid='true'] {
 }
 
 .confirm-sheet::backdrop {
-  background: color-mix(in oklab, var(--bg), transparent 20%);
+  background: color-mix(in srgb, var(--fg), transparent 76%);
 }
 
 /* 遮罩层：契约 .confirm-sheet::backdrop 的等价实现。
@@ -888,8 +889,7 @@ input[aria-invalid='true'] {
  *
  * 与契约的第 7 处单侧差异：契约源 components.html:226 把这条背景写在 `.confirm-sheet::backdrop`
  * 上，本表新增 `.confirm-sheet-scrim` 这个类名。
- * 为什么偏离契约源：见上（top layer 与外壳几何不可兼得）；**取值未偏离**——
- * background 逐字取自契约 :226 的 color-mix，tap 关闭的交互归组件层。
+ * 遮罩与图录采用相同的暖墨色，点按关闭由组件处理。
  *
  * z-index 取 45：必须高于 .tab-bar（40，见上方第 3 处差异）否则遮罩盖不住 tab 栏，
  * 又必须低于 .confirm-sheet（50）否则遮罩会盖住确认单自身。
@@ -898,7 +898,7 @@ input[aria-invalid='true'] {
   position: fixed;
   inset: 0;
   z-index: 45;
-  background: color-mix(in oklab, var(--bg), transparent 20%);
+  background: color-mix(in srgb, var(--fg), transparent 76%);
 }
 
 .confirm-sheet p {
@@ -906,30 +906,20 @@ input[aria-invalid='true'] {
   color: var(--fg-2);
 }
 
-/* 进入类动效统一走 --motion-base；减弱动效偏好下由下方全局规则关闭。
- * 与契约的第 4 处单侧差异：契约源 components.html 既无这条规则，也无 sheet-slide-in 这个
- * keyframes（全文 @keyframes 零命中）。为什么偏离契约源：底部确认单需要滑入动效，视觉审查
- * 要求其进入时值走 token 层的 --motion-base，契约未定义该动效，故由实现侧补上。
- *
- * 为什么选择器是 .confirm-sheet 而不是 .confirm-sheet[open]：`[open]` 只在原生
- * `<dialog>` 由 showModal/setAttribute 打开时成立，而本期实现用「挂载即打开」的 div
- * （jsdom 未实现 showModal，见 SettingsPage 的 LogoutConfirmSheet 注释），从不设置 open 属性，
- * 于是 `[open]` 版本是一条永不命中的死规则（实测 animationName=none）。
- * 改挂 .confirm-sheet 对其余用法同样成立：未打开的 <dialog> 是 display:none，从 none 转为
- * 可见时动画照常触发；打开的 <dialog> 与本期的 div 都在 DOM 中可见，两者都会播放。 */
+/* 确认操作立即可见，只让确认单从下方 12px 落位。 */
 @media (prefers-reduced-motion: no-preference) {
-  .confirm-sheet {
-    animation: sheet-slide-in var(--motion-base) var(--ease-standard);
-  }
+  .confirm-sheet { animation: sheet-slide-in var(--motion-fast) var(--ease-standard); }
+  .confirm-sheet-scrim { animation: sheet-scrim-in var(--motion-fast) var(--ease-standard); }
 }
 
 @keyframes sheet-slide-in {
-  from {
-    transform: translateY(100%);
-  }
-  to {
-    transform: translateY(0);
-  }
+  from { transform: translateY(var(--space-3)); }
+  to { transform: translateY(0); }
+}
+
+@keyframes sheet-scrim-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 
 /* ── 状态徽章 ───────────────────────────────────────────────── */

@@ -92,10 +92,10 @@ test.describe('@ui-live UI 重构真实依赖', () => {
       await expect(page).toHaveURL(BASE_URL + '/cases?section=knowledge');
       await expect(page.locator('.sp-title')).toHaveText('资料库');
       await expect(page.getByRole('searchbox', { name: '搜索资料' })).toBeVisible();
-      await page.getByRole('link', { name: '← 返回' }).click();
+      await page.getByRole('link', { name: '返回', exact: true }).click();
       await expect(page).toHaveURL(BASE_URL + '/');
       await page.getByRole('link', { name: '使用说明' }).click();
-      await page.getByRole('link', { name: '← 返回' }).click();
+      await page.getByRole('link', { name: '返回', exact: true }).click();
       await expect(page).toHaveURL(BASE_URL + '/');
       await screenshot(page, 'home-mobile');
     } finally { await page.close(); }
@@ -207,7 +207,7 @@ test.describe('@ui-live UI 重构真实依赖', () => {
       await page.getByRole('button', { name: '跳过这题', exact: true }).click();
       await page.getByRole('button', { name: '上一题', exact: true }).click();
       await expect(page.getByText(/本题已跳过（按未排除处理）/)).toBeVisible();
-      await page.getByRole('button', { name: '← 退出应急' }).click();
+      await page.getByRole('button', { name: '退出应急', exact: true }).click();
       const dialog = page.getByRole('dialog', { name: '退出现场采集？' });
       await expect(dialog).toBeVisible();
       await dialog.getByRole('button', { name: '继续填写' }).click();
@@ -301,7 +301,7 @@ test.describe('@ui-live UI 重构真实依赖', () => {
       await expect(page).toHaveURL(BASE_URL + '/settings/about');
       await page.reload();
       await expect(page.getByText('会送去外部模型吗')).toBeVisible();
-      await page.getByRole('link', { name: '← 返回' }).click();
+      await page.getByRole('link', { name: '返回', exact: true }).click();
       await expect(page).toHaveURL(BASE_URL + '/settings');
       await screenshot(page, 'settings-mobile');
       await page.getByRole('button', { name: '退出登录' }).click();

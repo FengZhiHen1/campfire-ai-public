@@ -26,6 +26,59 @@ function shotFor(name: string): PageShot {
   return shot;
 }
 
+test('一级导航图形能辨认当前位置，主动切换才播放过渡', async ({ page }, info) => {
+  await page.addInitScript(() => {
+    document.addEventListener('animationstart', (event) => {
+      if (event.animationName !== 'tab-glyph-settle') return;
+      document.documentElement.dataset.tabAnimated = event.target instanceof Element
+        ? event.target.closest('a')?.getAttribute('href') ?? '' : '';
+    });
+  });
+  const home = shotFor('home');
+  const { ledger } = await openPage(page, {
+    ...home,
+    fixtures: [...home.fixtures, ...shotFor('consult-list').fixtures, ...shotFor('profile').fixtures],
+  }, info);
+  const tabs = page.getByRole('navigation', { name: '一级导航' });
+  const current = tabs.locator('[aria-current="page"]');
+  const documentRoot = page.locator('html');
+  await expect(current).toHaveText('首页');
+  await expect(current.locator('.tab-glyph-solid')).toHaveCSS('opacity', '1');
+  await expect(tabs).not.toHaveAttribute('data-tab-arrival');
+  if (process.env.RECORD_NAVIGATION === '1') await page.waitForTimeout(500);
+  for (const [label, href] of [['咨询', '/consult'], ['档案', '/profile'], ['我的', '/settings']] as const) {
+    await tabs.getByRole('link', { name: label, exact: true }).click();
+    await expect(current).toHaveText(label);
+    await expect(documentRoot).toHaveAttribute('data-tab-animated', href);
+    await expect(current.locator('.tab-glyph-solid')).toHaveCSS('opacity', '1');
+    if (process.env.RECORD_NAVIGATION === '1') await page.waitForTimeout(550);
+  }
+  await page.reload();
+  await expect(tabs).not.toHaveAttribute('data-tab-arrival');
+  await expect(documentRoot).not.toHaveAttribute('data-tab-animated');
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await tabs.getByRole('link', { name: '首页', exact: true }).press('Enter');
+  await expect(current).toHaveText('首页');
+  await expect(current.locator('.tab-glyph')).toHaveCSS('animation-name', 'none');
+  await expect(current.locator('.tab-glyph-solid')).toHaveCSS('opacity', '1');
+  expectNoUnmatchedApi(ledger);
+});
+
+test('关于页保留说明页的返回地址和键盘焦点', async ({ page }, info) => {
+  await openPage(page, shotFor('guide'), info);
+  await page.getByRole('link', { name: '关于篝火智答' }).click();
+  const back = page.getByRole('link', { name: '返回', exact: true });
+  const size = await back.boundingBox();
+  expect(size?.width).toBeGreaterThanOrEqual(44);
+  expect(size?.height).toBeGreaterThanOrEqual(44);
+  await expect(back).toHaveAttribute('href', '/guide');
+  await page.keyboard.press('Tab');
+  await expect(back).toBeFocused();
+  await expect(back).not.toHaveCSS('outline-style', 'none');
+  await page.keyboard.press('Enter');
+  await expect(page).toHaveURL(/\/guide$/);
+});
+
 test('资料库入口、分区和返回来源一致，说明页可直接进入功能', async ({ page }, info) => {
   const home = shotFor('home');
   const { ledger } = await openPage(page, { ...home, fixtures: [{ method: 'GET', path: '/api/library/items', body: { library: 'knowledge', items: [], next_cursor: null } }] }, info);
@@ -41,11 +94,11 @@ test('资料库入口、分区和返回来源一致，说明页可直接进入�
   await expect(search).toHaveCSS('box-shadow', 'none');
   await expect(search.locator('..')).not.toHaveCSS('box-shadow', 'none');
   await expect(page.getByText('资料库还在准备中')).toBeVisible();
-  await page.getByRole('link', { name: '← 返回' }).click();
+  await page.getByRole('link', { name: '返回', exact: true }).click();
   await expect(page.getByLabel('想聊的事情')).toBeVisible();
   await page.getByRole('link', { name: '使用说明' }).click();
   await expect(page.getByRole('link', { name: '开始应急咨询 →' })).toHaveAttribute('href', '/consult/emergency');
-  await page.getByRole('link', { name: '← 返回' }).click();
+  await page.getByRole('link', { name: '返回', exact: true }).click();
   await expect(page.getByLabel('想聊的事情')).toBeVisible();
   expectNoUnmatchedApi(ledger);
 });
@@ -191,7 +244,7 @@ test('应急长题滚动后提交仍可触达，勾选和回退保留答案', as
     '跳过与下一题不在同一行：屏底控制区换行了，拇指区单手可达性变差',
   ).toBeLessThanOrEqual(2);
   await capture(page, info, 'emergency-selected');
-  await page.getByRole('button', { name: '← 退出应急' }).click();
+  await page.getByRole('button', { name: '退出应急', exact: true }).click();
   const dialog = page.getByRole('dialog', { name: '退出现场采集？' });
   await expect(dialog).toBeVisible();
   await dialog.getByRole('button', { name: '继续填写' }).click();
@@ -237,7 +290,7 @@ test('对话过程与依据独立展开，正文和常驻输入器保留', async
   expect(pageProblems).toEqual([]);
 });
 
-if (process.env.RECORD_CONSULT_DISCLOSURE === '1') test.use({ video: 'on' });
+if (process.env.RECORD_CONSULT_DISCLOSURE === '1' || process.env.RECORD_NAVIGATION === '1') test.use({ video: 'on' });
 
 test.describe('对话过程交互', () => {
   test('过程从生成到完成，展开和收起维持阅读位置', async ({ page }, info) => {

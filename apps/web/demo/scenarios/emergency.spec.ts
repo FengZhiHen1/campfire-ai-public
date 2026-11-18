@@ -136,7 +136,7 @@ test(EMERGENCY.title, async ({ page }, testInfo) => {
 
   // ② 第 1 题：页头、退出、进度条、题干与选项组一次全部核对（选择器出处见文件头数据来源）。
   await expect(page.locator('.sp-title'), '表单页头').toHaveText('现在的情况');
-  await expect(page.getByRole('button', { name: '← 退出应急' })).toBeVisible();
+  await expect(page.getByRole('button', { name: '退出应急', exact: true })).toBeVisible();
   await expect(page.getByText('跳过 = 未排除，不会当作正常', { exact: true }), '跳过语义的固定文案').toBeVisible();
   await expect(progressBar(page)).toHaveAttribute('aria-valuemin', '1');
   await expect(progressBar(page)).toHaveAttribute('aria-valuemax', '8');

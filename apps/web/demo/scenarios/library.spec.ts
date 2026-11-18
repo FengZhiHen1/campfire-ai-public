@@ -98,7 +98,7 @@ test(LIBRARY.title, async ({ page }, testInfo) => {
   // ① 案例库列表：`/cases` 不带参数即默认落在案例分区（契约第 3 节）。
   await page.goto(`${BASE_URL}/cases`);
   await expect(page.locator('.sp-title')).toHaveText('案例库');
-  await expect(page.getByRole('link', { name: '← 返回' })).toBeVisible();
+  await expect(page.getByRole('link', { name: '返回', exact: true })).toBeVisible();
   await expect(page.getByRole('searchbox', { name: '搜索案例' })).toBeVisible();
   await expect(scopeGroup(page).getByRole('button', { name: '案例' })).toHaveAttribute('aria-pressed', 'true');
   // 非空洞性：列表必须真有条目，且那条被本场景当作主角的案例在列表里。
