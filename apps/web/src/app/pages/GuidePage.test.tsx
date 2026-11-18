@@ -29,7 +29,7 @@ describe('使用说明 · 页头', () => {
   it('P0 次级页面页头：返回 + 标题，且不渲染 tab 栏', () => {
     renderGuide();
 
-    expect(screen.getByRole('link', { name: '← 返回' })).toBeDefined();
+    expect(screen.getByRole('link', { name: '返回' })).toBeDefined();
     expect(screen.getByText('使用说明')).toBeDefined();
     expect(screen.queryByRole('navigation', { name: '一级导航' })).toBeNull();
   });
@@ -37,7 +37,7 @@ describe('使用说明 · 页头', () => {
   it('P0 返回指向设置页（本页从设置页常驻可达）', () => {
     renderGuide();
 
-    expect(screen.getByRole('link', { name: '← 返回' }).getAttribute('href')).toBe('/settings');
+    expect(screen.getByRole('link', { name: '返回' }).getAttribute('href')).toBe('/settings');
   });
 
   it('P0 标题走次级页头结构 .subpage-head + .sp-title（返回控件与吸顶头由契约提供）', () => {
