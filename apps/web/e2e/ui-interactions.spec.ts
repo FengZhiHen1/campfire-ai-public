@@ -33,7 +33,12 @@ test('资料库入口、分区和返回来源一致，说明页可直接进入�
   await expect(page.getByText('资料库说明', { exact: true })).toHaveCount(0);
   await link.click();
   await expect(page.locator('.sp-title')).toHaveText('资料库');
-  await expect(page.getByRole('searchbox', { name: '搜索资料' })).toBeVisible();
+  const search = page.getByRole('searchbox', { name: '搜索资料' });
+  await expect(search).toBeVisible();
+  await expect(search).toHaveCSS('border-top-width', '0px');
+  await search.focus();
+  await expect(search).toHaveCSS('box-shadow', 'none');
+  await expect(search.locator('..')).not.toHaveCSS('box-shadow', 'none');
   await expect(page.getByText('资料库还在准备中')).toBeVisible();
   await page.getByRole('link', { name: '← 返回' }).click();
   await expect(page.getByLabel('想聊的事情')).toBeVisible();
