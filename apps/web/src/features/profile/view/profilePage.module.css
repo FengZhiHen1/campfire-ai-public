@@ -10,38 +10,24 @@
   line-height: 1.3;
 }
 
-/* 对象区：切换（谁）与管理（做什么）分两层。组内留白收紧，让首屏多露出「当前认识」；
- * 管理/新建的 44px 热区不变。 */
+/* 对象区压成单行：切换 chip 在左、占满可滚动的剩余宽度；管理/新建固定在行尾。
+ * 去掉外层边框与大内边距（此前一块 bordered 容器把记录区往下顶），只留一行高度，
+ * 让「待确认」和「当前认识」尽量落进首屏。 */
 .objects {
-  display: grid;
-  gap: var(--space-2);
-  padding: var(--space-3);
-  border: 1px solid var(--border-soft);
-  border-radius: var(--radius-md);
-  background: var(--surface);
-}
-
-.objectsHead {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: var(--space-3);
-}
-
-.objectsLabel {
-  margin: 0;
-  color: var(--fg-2);
-  font-size: var(--text-sm);
-  font-weight: 600;
-}
-
-/* 横向滚动而不是换行堆叠：切换是平级单选，滚动语义更准。 */
-.switcher {
   display: flex;
   align-items: center;
   gap: var(--space-2);
-  margin-inline: calc(-1 * var(--space-1));
-  padding: var(--space-1);
+}
+
+/* 横向滚动而不是换行堆叠：切换是平级单选，滚动语义更准。
+ * min-width:0 让它在 flex 行里可以收缩、把溢出交给自身滚动，而不是把行尾的管理/新建挤出屏幕。 */
+.switcher {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  padding: var(--space-1) 0;
   overflow-x: auto;
   scrollbar-width: none;
 }
@@ -63,27 +49,30 @@
   font-size: var(--text-xs);
 }
 
-/* 管理行与切换条之间画一条分隔：混在同一行时，管理入口会被读成又一个对象。
- * 热区仍 44px，只收紧上下留白。 */
+/* 管理/新建固定在行尾：不随 chip 一起横滚，320px 窄屏也始终可见。
+ * 一条竖直分隔把「对当前对象做什么」与「选哪个对象」分开；两者各自保持 44px 热区。 */
 .objectTools {
   display: flex;
-  gap: var(--space-2);
-  padding-top: var(--space-2);
-  border-top: 1px solid var(--border-soft);
+  flex: none;
+  align-items: center;
+  gap: var(--space-1);
+  padding-left: var(--space-2);
+  border-left: 1px solid var(--border-soft);
 }
 
 .objectTool {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: var(--space-2);
+  gap: var(--space-1);
   min-height: 44px;
-  padding: var(--space-2) var(--space-3);
+  padding: var(--space-2) var(--space-2);
   border: 1px solid transparent;
   border-radius: var(--radius-sm);
   background: var(--surface-warm);
   color: var(--fg-2);
   font: 500 var(--text-sm) / 1.4 var(--font-body);
+  white-space: nowrap;
 }
 
 .objectTool:active {
@@ -93,36 +82,6 @@
 .objectTool:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: var(--space-1);
-}
-
-/* ── 分区锚点 ─────────────────────────────────────────────── */
-
-.sectionNav {
-  display: flex;
-  gap: var(--space-5);
-  overflow-x: auto;
-  border-bottom: 1px solid var(--border-soft);
-  scrollbar-width: none;
-}
-
-.sectionNav::-webkit-scrollbar {
-  display: none;
-}
-
-.sectionNav a {
-  display: inline-flex;
-  flex: none;
-  align-items: center;
-  min-height: 44px;
-  color: var(--fg-2);
-  font-size: var(--text-sm);
-  font-weight: 500;
-  text-decoration: none;
-}
-
-.sectionNav a:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: -2px;
 }
 
 /* ── 当前认识：细线 + 连续排版，不嵌套抬升大卡 ──────────────── */

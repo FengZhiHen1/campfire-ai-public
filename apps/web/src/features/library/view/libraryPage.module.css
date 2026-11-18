@@ -111,7 +111,9 @@
 }
 
 .card {
-  padding: var(--space-4);
+  display: grid;
+  gap: 0;
+  padding: var(--space-3) var(--space-4);
   border: 1px solid var(--border-soft);
   border-right: 0;
   border-left: 0;
@@ -169,12 +171,12 @@
   overflow: hidden;
 }
 
+/* 展开提示：并入卡片的网格节奏（不再自带上边距叠出空档）；44px 触控由外框按钮承担。 */
 .expandLabel {
   display: flex;
   align-items: center;
   justify-content: space-between;
   min-height: 44px;
-  margin-top: var(--space-1);
   color: var(--fg-2);
   font-size: var(--text-sm);
 }
@@ -187,12 +189,11 @@
 
 /* ── 来源与适用范围（扫描行 + 独立展开区）───────────────────── */
 
+/* 来源与适用范围：与卡片同处一网格，去掉 top 分隔线与重复的上内边距——
+ * 扫描行「来源类型」与下面的展开入口间距收紧，减少卡片内空白同时保留层次。 */
 .provenance {
   display: grid;
-  gap: var(--space-2);
-  margin-top: var(--space-3);
-  padding-top: var(--space-3);
-  border-top: 1px solid var(--border-soft);
+  gap: var(--space-1);
   color: var(--meta);
   font-size: var(--text-sm);
   line-height: 1.6;
