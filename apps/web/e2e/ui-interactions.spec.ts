@@ -391,6 +391,9 @@ test.describe('对话过程交互', () => {
     const toggle = processRow.locator('summary');
     await expect(toggle).toHaveText('正在查阅案例…');
     await expect(processRow).not.toHaveAttribute('open');
+    await expect(page.getByRole('button', { name: '停止', exact: true })).toBeVisible();
+    await expect(composer).toBeEnabled();
+    await expect(page.getByRole('button', { name: '发送中，请稍候' })).toBeDisabled();
     await previewPause();
     await emit([
       { type: 'tool_call_finished', tool_name: 'search_cases', call_id: 'case-lookup', ok: true, error_code: null, summary: '查到一条关于熟悉陌生环境的记录。' },
