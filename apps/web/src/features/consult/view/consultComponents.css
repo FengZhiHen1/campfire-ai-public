@@ -640,18 +640,19 @@ details[open] > summary .when-open {
   font-size: var(--text-xs);
 }
 .skill-chip[aria-pressed='true'] {
-  border-color: var(--border);
-  background: var(--bg);
-  color: var(--fg);
+  border-color: var(--accent);
+  background: color-mix(in oklab, var(--accent), transparent 92%);
+  color: var(--accent);
+  font-weight: 600;
 }
 .chat-compose {
   display: flex;
   align-items: flex-end;
   gap: var(--space-2);
   padding: var(--space-2);
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-control, var(--border));
   border-radius: var(--radius-md);
-  background: var(--bg);
+  background: var(--surface);
 }
 .chat-compose:focus-within { border-color: var(--accent); box-shadow: var(--focus-ring); }
 .chat-compose textarea {
@@ -662,6 +663,7 @@ details[open] > summary .when-open {
   padding: var(--space-2);
   border: 0;
   background: transparent;
+  font-size: var(--text-base);
   resize: none;
   overflow-y: auto;
   line-height: 1.5;
@@ -669,10 +671,20 @@ details[open] > summary .when-open {
 .chat-compose textarea:focus { box-shadow: none; }
 .chat-compose .btn { flex: none; padding-inline: var(--space-3); }
 .chat-compose .compose-send { width: 44px; min-height: 44px; padding: 0; border-radius: var(--radius-pill); }
+/* 空草稿/运行中时发送键是中性弱化态，而不是橙色半透明（那看起来仍可点）。 */
+.chat-compose .compose-send:disabled {
+  opacity: 1;
+  background: var(--surface-warm);
+  border-color: var(--border);
+  color: var(--muted);
+}
 .compose-help > summary { min-height: 24px; justify-content: center; font-size: var(--text-xs); color: var(--meta); }
 .compose-help > p { padding: var(--space-2) 0; }
-.reasoning-row > summary, .tool-row > summary { font-size: var(--text-xs); min-height: 36px; }
-.reasoning-row, .tool-row { border-radius: var(--radius-sm); background: color-mix(in oklab, var(--surface-warm), transparent 65%); padding-inline: var(--space-2); }
+.reasoning-row > summary, .tool-row > summary { font-size: var(--text-xs); min-height: 36px; color: var(--meta); }
+/* 过程（思考/工具）低权重：不要暖底药丸，改用极细的左侧引线与低对比文字，
+ * 让它退到阅读面之后，但折叠头仍可点开、依据仍找得到。 */
+.reasoning-row, .tool-row { border-radius: 0; background: none; padding-inline: 0; border-bottom: 1px solid var(--border-soft); }
+.reasoning-row > summary, .tool-row > summary { font-weight: 400; }
 .citation-block > summary { font-size: var(--text-sm); }
 .ac-head { font-family: var(--font-body); font-weight: 600; }
 .ac-section.now { margin-inline: 0; }
@@ -681,6 +693,18 @@ details[open] > summary .when-open {
 .selection:has(input[type="radio"]) .check-box { border-radius: var(--radius-pill); }
 .chat-welcome { margin-block: auto; padding: var(--space-6) var(--space-3); }
 .chat-welcome-mark { display: block; margin-bottom: var(--space-4); color: var(--accent); }
-.chat-welcome h1 { margin: 0 0 var(--space-3); font-size: var(--text-xl); }
+.chat-welcome h1 { margin: 0 0 var(--space-3); font-family: var(--font-body); font-size: var(--text-lg); font-weight: 600; }
 .chat-welcome > p { margin: 0 0 var(--space-6); color: var(--meta); font-size: var(--text-sm); }
 .chat-welcome .btn { justify-content: flex-start; font-weight: 400; }
+
+/* 消息阅读面：近白暖底上，用户消息是一枚右侧浅泡（近白 + 细边，与纸面区分而不喧宾夺主）；
+ * 助手正文平铺落纸，无底色。 */
+.bubble-user {
+  background: var(--surface);
+  border: 1px solid var(--border-soft);
+  color: var(--fg);
+}
+.chat-message .message-caption {
+  color: var(--muted);
+  font-size: var(--text-xs);
+}

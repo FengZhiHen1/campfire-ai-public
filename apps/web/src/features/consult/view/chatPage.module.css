@@ -95,6 +95,12 @@
   background: var(--surface);
 }
 
+/* 技能选择器位于输入框正上方，与输入器同属底部一体区：
+ * 横向 chip 条本身是透明的，因此视觉上它「贴着」输入框而不是独立一块。 */
+.footer :global(.skill-picker) {
+  gap: var(--space-1);
+}
+
 /* ── 设备外壳内（≥560px）────────────────────────────────────────
  *
  * 本页没有 `.phone-shell` 可继承 gutter（见文件头：加它会改窄视口版式），
@@ -138,8 +144,15 @@
   padding-inline: var(--container-gutter-phone);
 }
 
-/*
- * 页头的「跳过引导」。
+/* 页头标题用系统无衬线（显示字体只留给品牌）。页头是共享的 .subpage-head，
+ * 这里只在本页作用域内覆盖标题字体，不改共享样式表。 */
+.workspace :global(.sp-title) {
+  font-family: var(--font-body);
+  font-weight: 600;
+  font-size: var(--text-lg);
+}
+
+/* 页头的「跳过引导」。
  *
  * 层级刻意压到与页头技能标签同层（`meta` 字号 + `--muted`）：跳过是「这次引导我不想继续」的
  * 选择，不该比「← 返回」更显眼，也不该做成主按钮去勾人点。

@@ -64,7 +64,7 @@
   display: grid;
   gap: var(--space-2);
   padding: var(--space-3);
-  border: 1px solid var(--border-control);
+  border: 1px solid var(--border-control, var(--border));
   border-radius: var(--radius-md);
   background: var(--surface);
 }
@@ -101,6 +101,15 @@
   flex: none;
   gap: var(--space-2);
   white-space: nowrap;
+}
+
+/* 空输入时主按钮不得看起来可点：中性弱化态（暖灰底、弱化字），有输入才变橙。
+ * 共享 .btn:disabled 只给 opacity:0.5，橙色半透明仍像「可点」，故此处显式改成中性态。 */
+.enterButton:disabled {
+  opacity: 1;
+  background: var(--surface-warm);
+  border-color: var(--border);
+  color: var(--muted);
 }
 
 /* 输入器内的引导语：与主按钮同行，弱化。 */
