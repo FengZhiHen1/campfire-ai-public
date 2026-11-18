@@ -87,7 +87,7 @@ test.describe('@ui-live UI 重构真实依赖', () => {
       expect(cookies.some((cookie) => cookie.name === 'sAccessToken' && cookie.httpOnly)).toBe(true);
       authenticated = true;
       await expect(page.getByLabel('想聊的事情')).toBeVisible();
-      await expect(page.getByRole('button', { name: '进入对话' })).toBeDisabled();
+      await expect(page.getByRole('button', { name: '开始聊' })).toBeDisabled();
       await page.getByRole('link', { name: /^资料库/ }).click();
       await expect(page).toHaveURL(BASE_URL + '/cases?section=knowledge');
       await expect(page.locator('.sp-title')).toHaveText('资料库');
@@ -260,7 +260,7 @@ test.describe('@ui-live UI 重构真实依赖', () => {
       const message = '你好，请用一句话说明你能帮我做什么。';
       await page.getByLabel('想聊的事情').fill(message);
       const created = page.waitForResponse((response) => response.url().endsWith('/api/consult/sessions') && response.request().method() === 'POST');
-      await page.getByRole('button', { name: '进入对话' }).click();
+      await page.getByRole('button', { name: '开始聊' }).click();
       expect((await created).status()).toBe(201);
       await expect(page).toHaveURL(/\/consult\/sessions\/[0-9a-f-]+$/);
       const composer = page.getByLabel('发送消息');
@@ -296,6 +296,13 @@ test.describe('@ui-live UI 重构真实依赖', () => {
       await page.reload();
       await expect(page.getByRole('heading', { name: account, exact: true })).toBeVisible();
       await expect(page.getByRole('link', { name: /使用说明/ })).toBeVisible();
+      await expect(page.getByText('会送去外部模型吗')).toHaveCount(0);
+      await page.getByRole('link', { name: /^关于篝火智答/ }).click();
+      await expect(page).toHaveURL(BASE_URL + '/settings/about');
+      await page.reload();
+      await expect(page.getByText('会送去外部模型吗')).toBeVisible();
+      await page.getByRole('link', { name: '← 返回' }).click();
+      await expect(page).toHaveURL(BASE_URL + '/settings');
       await screenshot(page, 'settings-mobile');
       await page.getByRole('button', { name: '退出登录' }).click();
       const dialog = page.getByRole('dialog', { name: '退出登录？' });

@@ -580,14 +580,14 @@ export const PAGE_SHOTS: readonly PageShot[] = [
     assertions: [
       {
         kind: 'text',
-        intent: '账号卡、数据卡与操作区可见',
+        intent: '账号、次级页面入口与退出操作可见',
         minHits: 6,
         candidates: [
           '我的',
           '当前登录会话',
-          '关于你的数据',
+          '关于篝火智答',
           '我提过的事',
-          '本应用尚未经专业审阅，不能替代专业服务；遇到紧急医疗情况请直接就医或拨打急救电话',
+          '使用说明',
           '退出登录',
         ],
       },

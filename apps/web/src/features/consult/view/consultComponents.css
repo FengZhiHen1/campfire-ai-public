@@ -118,13 +118,6 @@ details[open] > summary .when-open {
   height: var(--space-3);
 }
 
-.skill-picker {
-  display: flex;
-  gap: var(--space-2);
-  overflow-x: auto;
-  padding-bottom: 0;
-}
-
 .chat-footer .meta {
   margin-top: var(--space-2);
 }
@@ -688,6 +681,7 @@ details[open] > summary .when-open {
   gap: var(--space-1);
   color: var(--meta);
   font-size: var(--text-xs);
+  white-space: nowrap;
 }
 .skill-picker select {
   min-width: 0;
