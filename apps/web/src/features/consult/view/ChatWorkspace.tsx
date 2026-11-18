@@ -223,15 +223,13 @@ export function ChatWorkspace({
                 不必先看见红色块。Retry 保留（run 失败/发送失败都走同一路）。
               */}
               {ws.failure === null ? null : (
-                <div className="error-card" role="alert" id="consult-run-failure">
+                <div className="error-card chat-run-failure" role="alert" id="consult-run-failure">
                   <strong className="ec-title">{ws.failure.title}</strong>
                   <p>{ws.failure.message}</p>
                   {ws.failure.retryable ? (
-                    <div className="button-row">
-                      <button type="button" className="btn" onClick={ws.retryLastRun}>
-                        重试
-                      </button>
-                    </div>
+                    <button type="button" className="text-button" onClick={ws.retryLastRun}>
+                      重试
+                    </button>
                   ) : null}
                 </div>
               )}

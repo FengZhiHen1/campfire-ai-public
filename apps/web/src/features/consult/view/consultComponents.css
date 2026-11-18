@@ -137,6 +137,15 @@ details[open] > summary .when-open {
 
 .chat-stop:active { background: var(--surface-warm); }
 
+.error-card.chat-run-failure {
+  margin-bottom: var(--space-2);
+  padding: var(--space-3) var(--space-3) 0;
+  border: 0;
+  background: color-mix(in oklab, var(--danger), var(--surface) 95%);
+}
+
+.chat-run-failure .text-button { color: var(--fg); }
+
 .chat-progress .flame-dot {
   margin-top: var(--space-2);
 }
