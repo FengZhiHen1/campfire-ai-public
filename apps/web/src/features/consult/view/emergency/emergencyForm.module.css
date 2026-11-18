@@ -1,0 +1,442 @@
+/* 应急表单页专用样式（CSS Modules）：只消费 token 变量。
+ *
+ * 设计目标（docs/design/pages/应急表单页.md）：让慌乱中、可能单手操作的监护人在 10 秒内能提交。
+ * 因此这一页的取舍是「进度与当前问题一眼可读、减少逐项双层框与多层标题、正文 16px、
+ * 触控热区 ≥44px、提交常驻不挡选项与键盘」。
+ *
+ * 组件类名（.selection / .progress-track 等）仍属设计契约，由 consultComponents.css 提供；
+ * 本表只放本页的布局与这几个应急专属类，避免把契约类名在 CSS Module 里哈希掉。 */
+
+/* ── 页面骨架 ───────────────────────────────────────────────── */
+
+/* 为底部常驻提交区预留高度：内容不会被 fixed 控制区压住（含安全区）。 */
+.shell {
+  padding-bottom: calc(var(--space-12) * 4 + env(safe-area-inset-bottom, 0px));
+  gap: var(--space-3);
+}
+
+/* ── 安全文案 / 进度 / 当前问题 ─────────────────────────────── */
+
+/* 跳过语义是硬文案（不得弱化），用轻量暖底条放在最上，读一次就记住。
+ * 用强调色的左边线而不是整块强调色，避免与「当前正在推进」抢视线。 */
+.skipBanner {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  padding: var(--space-3) var(--space-4);
+  border-left: 3px solid var(--accent);
+  border-radius: var(--radius-sm);
+  background: var(--surface-warm);
+  color: var(--fg-2);
+  font-size: var(--text-base);
+  line-height: 1.4;
+}
+
+.skipBannerMark {
+  flex: none;
+  width: var(--space-2);
+  height: var(--space-2);
+  border-radius: var(--radius-pill);
+  background: var(--accent);
+}
+
+/* ── 进度 ──────────────────────────────────────────────────── */
+
+.progress {
+  display: grid;
+  gap: var(--space-2);
+}
+
+/* 分段进度容器：语义与可见分段合为一体。契约 .progress-track 是 2px 细条（height/overflow/
+ * margin-bottom），这里用 `.progressTrack:global(.progress-track)` 的复合选择器（特异性 0,2,0）
+ * 压过契约那条单类规则，把它改成本页要的 6px 分段容器——不需要另起隐藏的探测元素。
+ * 每段一个等宽小块：实心=已作答、斜纹=已跳过、空心=未作答；当前题再加外描边。 */
+.progressTrack:global(.progress-track) {
+  display: flex;
+  gap: var(--space-1);
+  height: auto;
+  margin-bottom: 0;
+  overflow: visible;
+  background: none;
+}
+
+.segment {
+  flex: 1;
+  height: 6px;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.segment[data-status='answered'] {
+  border-color: var(--accent);
+  background: var(--accent);
+}
+
+.segment[data-status='skipped'] {
+  border-color: var(--status-unruled);
+  background: repeating-linear-gradient(
+    45deg,
+    color-mix(in oklab, var(--status-unruled), transparent 55%) 0 2px,
+    transparent 2px 5px
+  );
+}
+
+.segment[data-current='true'] {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.progressText {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-2);
+  margin: 0;
+  color: var(--fg-2);
+  font-size: var(--text-sm);
+  font-variant-numeric: tabular-nums;
+}
+
+.progressPosition {
+  font-weight: 600;
+}
+
+.progressTally {
+  color: var(--meta);
+  font-size: var(--text-xs);
+}
+
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* ── 当前问题面板 ──────────────────────────────────────────── */
+
+/* 一屏一题的容器：单层卡片，不做「卡中卡」。 */
+.panel {
+  display: grid;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+}
+
+.questionBlock {
+  display: block;
+}
+
+/* 题干：20px 宋体，是本页视觉重心；去掉额外的组标题层级（进度已给题号）。 */
+.questionTitle {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: var(--text-lg);
+  font-weight: 500;
+  line-height: 1.35;
+  letter-spacing: var(--tracking-display);
+  scroll-margin-top: calc(var(--space-12) + var(--space-8));
+}
+
+.questionHint {
+  margin: var(--space-2) 0 0;
+  color: var(--muted);
+  font-size: var(--text-sm);
+  line-height: var(--leading-body);
+}
+
+/* 题间方向性滑动：前进向左、回退向右，240ms。减弱动效偏好下由全局规则关闭。 */
+.stepForward,
+.stepBack {
+  display: block;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .stepForward {
+    animation: step-in-forward var(--motion-base) var(--ease-standard);
+  }
+  .stepBack {
+    animation: step-in-back var(--motion-base) var(--ease-standard);
+  }
+}
+
+@keyframes step-in-forward {
+  from {
+    opacity: 0.5;
+    transform: translateX(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes step-in-back {
+  from {
+    opacity: 0.5;
+    transform: translateX(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+/* ── 选项：单层整行热区 ─────────────────────────────────────── */
+
+/* 每个选项是一个整行可点的热区（宽 100%、高 ≥48px），内部只有一个指示标记 + 文本，
+ * 不再套第二层选择卡边框（减少逐项双层框）。 */
+.options {
+  display: grid;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+}
+
+.option {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: 48px;
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--fg);
+  font-size: var(--text-base);
+  cursor: pointer;
+}
+
+/* 原生控件视觉隐藏但保留在无障碍树与键盘序列里（.sr-only 同法，但不移出点击热区）。 */
+.option input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: 0;
+  opacity: 0;
+}
+
+/* 指示标记：多选方形（4px 小圆角，一眼是方）、单选圆形（靠 input 类型区分）。 */
+.optionMark {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border: 1.5px solid var(--meta);
+  border-radius: 4px;
+  background: var(--surface);
+}
+
+.option:has(input[type='radio']) .optionMark {
+  border-radius: var(--radius-pill);
+}
+
+.optionLabel {
+  flex: 1;
+  min-width: 0;
+  line-height: 1.4;
+}
+
+/* 选中态：accent 边框 + 极浅 accent 底 + 标记填充并出对勾。 */
+.option[data-checked='true'] {
+  border-color: var(--accent);
+  background: color-mix(in oklab, var(--accent), transparent 94%);
+}
+
+.option[data-checked='true'] .optionMark {
+  border-color: var(--accent);
+  background: var(--accent);
+}
+
+.option[data-checked='true'] .optionMark::after {
+  content: '';
+  width: 10px;
+  height: 6px;
+  border-left: 2px solid var(--accent-on);
+  border-bottom: 2px solid var(--accent-on);
+  transform: rotate(-45deg) translateY(-1px);
+}
+
+.option:has(input:focus-visible) {
+  outline: 2px solid var(--accent);
+  outline-offset: var(--space-1);
+}
+
+/* ── 自由文本 ──────────────────────────────────────────────── */
+
+.field {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.fieldLabel {
+  color: var(--fg-2);
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+
+.textarea {
+  width: 100%;
+  min-height: 88px;
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--fg);
+  font: inherit;
+  font-size: var(--text-base);
+  resize: vertical;
+}
+
+.textarea:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: var(--focus-ring);
+}
+
+.textarea:disabled {
+  opacity: 0.6;
+}
+
+/* ── 上一题（采集区回退）：只回退，前进/跳过在屏底常驻区 ───── */
+
+.pushBack {
+  justify-self: start;
+  min-height: 44px;
+  min-width: 44px;
+  padding: var(--space-2) var(--space-3) var(--space-2) 0;
+  border: 0;
+  background: none;
+  color: var(--fg-2);
+  font-size: var(--text-sm);
+}
+
+.pushBack:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ── 常驻提交区（屏底拇指区） ──────────────────────────────── */
+
+/* 本类挂在带 emergency-controls 钩子的元素上；钩子负责截图中和，本类提供 fixed 定位。 */
+.controls {
+  position: fixed;
+  inset-inline: 0;
+  bottom: 0;
+  z-index: 30;
+  max-width: var(--phone-shell-max);
+  margin-inline: auto;
+  padding: var(--space-3) var(--container-gutter-phone) calc(var(--space-3) + env(safe-area-inset-bottom, 0px));
+  border-top: 1px solid var(--border-soft);
+  background: var(--surface);
+}
+
+.dockInner {
+  display: grid;
+  gap: var(--space-2);
+  max-width: var(--phone-shell-max);
+  margin-inline: auto;
+}
+
+/* 跳过/下一题是「继续、不提交」的次要动作，并排、低对比。 */
+.dockPush {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.dockSkip,
+.dockNext {
+  flex: 1;
+  min-height: 44px;
+  border-radius: var(--radius-sm);
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+
+.dockSkip {
+  border: 1px solid var(--border-soft);
+  background: var(--surface-warm);
+  color: var(--fg-2);
+}
+
+.dockNext {
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--fg);
+}
+
+/* 提交是主操作：整宽、主色、独占一行——与上面两个次要键在形状与层级上分开。 */
+.dockSubmit {
+  width: 100%;
+  min-height: 48px;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-sm);
+  background: var(--accent);
+  color: var(--accent-on);
+  font-size: var(--text-base);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.dockSubmit:active {
+  background: var(--accent-active);
+}
+
+.dockHint {
+  margin: 0;
+  text-align: center;
+  color: var(--meta);
+  font-size: var(--text-xs);
+}
+
+.dockSkip:disabled,
+.dockNext:disabled,
+.dockSubmit:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ── 提交失败 ──────────────────────────────────────────────── */
+
+/* 失败卡贴在提交区上方（在流内、位于面板之后），已填内容不清空。 */
+.failure {
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-4);
+  border: 1px solid color-mix(in oklab, var(--danger), transparent 55%);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+}
+
+.failureTitle {
+  color: var(--danger);
+  font-size: var(--text-base);
+  font-weight: 600;
+}
+
+.failureBody {
+  margin: 0;
+  color: var(--fg-2);
+  font-size: var(--text-base);
+}
+
+.failureRetry {
+  justify-self: start;
+  min-height: 44px;
+  padding: var(--space-2) var(--space-4);
+  border: 1px solid var(--danger);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--danger);
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
