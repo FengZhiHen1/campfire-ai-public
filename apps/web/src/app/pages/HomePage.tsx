@@ -1,11 +1,14 @@
 /**
  * 首页：从描述问题开始，现场求助与阅读资料保持独立可达。
  *
- * 布局决策（本轮）：
- * - 轻页头只放品牌与「使用说明」，不放欢迎长文，把首屏让给日常输入器与应急入口；
+ * 布局决策（本轮精修）：
+ * - 品牌字标只作朴素眉题（不带页头底边），「今天，想聊些什么？」直接成为页面主标题，
+ *   让引导语、输入器、现场求助连成一段，而不是三个各自为政的卡片；
+ * - 措辞从「进入对话」改为「开始聊」，用户的痛点是不知道那一大块空白输入框要写多少、
+ *   写完要按哪里——改成直接开写、短框短说明，主按钮明确仍是「确认发送后才分析」；
  * - 日常输入与应急入口都在初始首屏可见：320×640 下也必须整块可见、中心可点，
- *   「开始应急咨询」链接（含说明文案）不允许被底部导航遮住；
- * - 日常输入保留「先写草稿、显式进入对话」的边界：进入对话只建会话并把草稿交给对话页，
+ *   「开始应急咨询」链接不允许被底部导航遮住；
+ * - 日常输入保留「先写草稿、显式发送」的边界：点主按钮只建会话并把草稿交给对话页，
  *   真正发送后才开始分析。
  */
 import { Link, useNavigate } from 'react-router';
@@ -28,17 +31,17 @@ export function HomePage({ consult }: { consult: ConsultPort }) {
     <AppShell tab="home">
       <div className={styles.page}>
         <header className={styles.masthead}>
-          <span className={styles.brandRow}>
-            <BrandMark size="24px" />
-            <h1 className={styles.title}>篝火智答</h1>
-          </span>
+          <Link className={styles.brandRow} to="/" state={{ returnTo: '/' }} aria-label="篝火智答首页">
+            <BrandMark size="22px" />
+            <span className={styles.title}>篝火智答</span>
+          </Link>
           <Link className={styles.guideLink} to="/guide" state={{ returnTo: '/' }}>
             使用说明 <Icon name="chevron" />
           </Link>
         </header>
 
         <section className={styles.conversation} aria-labelledby="home-start">
-          <h2 id="home-start" className={styles.startLead}>今天，想聊些什么？</h2>
+          <h1 id="home-start" className={styles.startLead}>今天，想聊些什么？</h1>
           <form
             onSubmit={(event) => {
               event.preventDefault();
@@ -48,16 +51,16 @@ export function HomePage({ consult }: { consult: ConsultPort }) {
             <label className="sr-only" htmlFor="home-draft">想聊的事情</label>
             <textarea
               id="home-draft"
-              rows={3}
+              rows={2}
               placeholder="写下正在准备或刚发生的事……"
               value={entry.draft}
               disabled={entry.creating}
               onChange={(event) => entry.setDraft(event.target.value)}
             />
             <div className={styles.composeBottom}>
-              <span className={styles.draftNote}>确认发送后开始分析</span>
+              <span className={styles.draftNote}>发送后开始分析</span>
               <button type="submit" className={`btn btn-primary ${styles.enterButton}`} disabled={entry.creating || entry.draft.trim() === ''}>
-                {entry.creating ? '正在进入…' : '进入对话'} <Icon name="arrow" />
+                {entry.creating ? '正在进入…' : '开始聊'} <Icon name="arrow" />
               </button>
             </div>
           </form>

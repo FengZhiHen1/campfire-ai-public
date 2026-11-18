@@ -2,14 +2,17 @@
  *
  * 首屏纪律：轻页头 + 日常输入 + 应急入口三者必须在初始首屏放下，且 320×640 下
  * 「开始应急咨询」链接（连同说明文案）整块可见、中心可点，不被底部固定 tab 栏遮住。
- * 因此垂直节奏在这里刻意收紧（gap 取 --space-4 / --space-3），欢迎长文从首屏移走。 */
+ * 因此垂直节奏在这里刻意收紧（gap 取 --space-3 / --space-4），欢迎长文从首屏移走。
+ *
+ * 本轮精修意图：让「今天，想聊些什么？」成为页面主标题，输入器与应急入口在它之下连成
+ * 自然的阅读顺序，而不是三块各自为政的卡片。输入框收短，不再是一块空旷的大白板。 */
 
 .page {
   display: grid;
-  gap: var(--space-4);
+  gap: var(--space-5);
 }
 
-/* 紧凑页头：品牌 + 使用说明，一行放下。 */
+/* 紧凑页头：品牌 + 使用说明，一行放下。品牌作为眉题弱化，不与主标题抢层级。 */
 .masthead {
   display: flex;
   align-items: center;
@@ -18,20 +21,24 @@
   min-height: 44px;
 }
 
+/* 品牌行本身也是回首页的链接（首页即首页，链接不改变落点，只为可点反馈）。
+ * 颜色取 accent，图标与字号克制，让它读作眉题而非第二个标题。 */
 .brandRow {
-  display: flex;
+  display: inline-flex;
   align-items: center;
   gap: var(--space-2);
   color: var(--accent);
+  text-decoration: none;
 }
 
 /* 品牌名是全站唯一保留显示字体的位置（其余标题与正文一律系统无衬线）。 */
 .title {
   margin: 0;
   font-family: var(--font-display);
-  font-size: var(--text-lg);
+  font-size: var(--text-base);
   font-weight: 500;
-  color: var(--fg);
+  color: var(--fg-2);
+  letter-spacing: 0.01em;
 }
 
 .guideLink {
@@ -50,20 +57,21 @@
 
 /* ── 日常咨询输入器（主工作区） ───────────────────────────── */
 
-/* 首句不是欢迎长文，而是一句直接的引导语：系统无衬线，不抢输入器的注意力。 */
+/* 引导语是页面主标题：系统无衬线、字号大、行距紧，把使用者的注意力直接引到下面的输入。 */
 .startLead {
   margin: 0 0 var(--space-3);
   font-family: var(--font-body);
-  font-size: var(--text-lg);
+  font-size: var(--text-xl);
   font-weight: 600;
-  line-height: 1.35;
+  line-height: 1.28;
+  letter-spacing: var(--tracking-display);
   color: var(--fg);
 }
 
 .conversation form {
   display: grid;
   gap: var(--space-2);
-  padding: var(--space-3);
+  padding: var(--space-3) var(--space-3) var(--space-2);
   border: 1px solid var(--border-control, var(--border));
   border-radius: var(--radius-md);
   background: var(--surface);
@@ -74,13 +82,19 @@
   box-shadow: var(--focus-ring);
 }
 
+/* 收短的空输入框：两行高即可起笔，用户不必面对一大块空白决定写多少。 */
 .conversation textarea {
-  min-height: calc(var(--space-12) + var(--space-2));
+  min-height: calc(var(--space-8) + var(--space-3));
   padding: var(--space-1) var(--space-2);
   border: 0;
   background: transparent;
   font-size: var(--text-base);
+  line-height: 1.5;
   resize: none;
+}
+
+.conversation textarea::placeholder {
+  color: var(--muted);
 }
 
 .conversation textarea:focus {
@@ -89,10 +103,10 @@
 
 /* 说明与主操作同一行右对齐：说明可换行、独占左侧，主按钮永远单行不折行。
  * 按钮 flex: none + white-space: nowrap 是关键：此前说明文案与按钮争宽，
- * 320px 窄屏上「进入对话」被挤成两行。 */
+ * 320px 窄屏上按钮文案被挤成两行。 */
 .composeBottom {
   display: flex;
-  align-items: flex-end;
+  align-items: center;
   justify-content: space-between;
   gap: var(--space-3);
 }
@@ -112,7 +126,7 @@
   color: var(--muted);
 }
 
-/* 输入器内的引导语：与主按钮同行，弱化。 */
+/* 输入器内的说明：与主按钮同行，弱化——一句话交代「发送后才分析」的边界。 */
 .draftNote {
   color: var(--meta);
   font-size: var(--text-xs);
@@ -121,10 +135,11 @@
 
 /* ── 现场求助（独立火光入口） ─────────────────────────────── */
 
-/* 细左强调线 + 单个呼吸点。说明文案与链接都必须整块位于首屏可视区内。 */
+/* 细左强调线 + 单个呼吸点。说明文案与链接都必须整块位于首屏可视区内。
+ * 不再用整圈 accent 边框（那会与输入器边界抢；共享 .emergency-entry 的 1.5px 整框在此覆盖）。 */
 .emergency {
   padding: var(--space-4);
-  border-color: var(--border);
+  border: 1px solid var(--border);
   border-left: var(--space-1) solid var(--accent);
   border-radius: var(--radius-sm);
   background: var(--surface);
@@ -142,6 +157,7 @@
   margin: var(--space-2) 0;
   font-size: var(--text-sm);
   line-height: 1.5;
+  color: var(--fg-2);
 }
 
 .emergencyLink {
@@ -149,6 +165,7 @@
   align-items: center;
   justify-content: space-between;
   min-height: 44px;
+  margin-top: var(--space-2);
   color: var(--fg);
   font-size: var(--text-sm);
   font-weight: 600;
@@ -175,7 +192,7 @@
 
 .resources {
   padding-top: var(--space-3);
-  border-top: 1px solid var(--border);
+  border-top: 1px solid var(--border-soft);
 }
 
 .secondaryRow {
@@ -205,6 +222,7 @@
 
 .resourceLink strong {
   font-size: var(--text-sm);
+  color: var(--fg);
 }
 
 .resourceLink small {
@@ -213,18 +231,27 @@
 }
 
 /* 极窄矮屏（320×640 一类）：进一步收紧垂直节奏，保证应急链接整块在首屏。
- * 640 高的手机在收起地址栏前后可见区并不宽裕，这里把页头与区块间距再压一档；
+ * 640 高的手机在收起地址栏前后可见区并不宽裕，这里把区块间距再压一档，并让引导语略收；
  * 底部 tab 栏的高度由 .phone-shell.has-tab-bar 的 padding-bottom 预留，本规则不负责它。 */
 @media (max-height: 700px) {
   .page {
     gap: var(--space-3);
   }
 
+  .startLead {
+    font-size: var(--text-lg);
+    margin-bottom: var(--space-2);
+  }
+
   .conversation textarea {
-    min-height: calc(var(--space-12) + var(--space-3));
+    min-height: var(--space-8);
   }
 
   .emergency {
     padding: var(--space-3) var(--space-4);
+  }
+
+  .emergency p {
+    margin-block: var(--space-1);
   }
 }

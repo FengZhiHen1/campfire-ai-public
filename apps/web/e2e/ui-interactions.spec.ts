@@ -213,7 +213,7 @@ test('首页草稿进入空会话，使用者主动发送前不启动咨询', as
   }, info);
   const draft = '我想准备下一次外出。';
   await page.getByRole('textbox', { name: '想聊的事情' }).fill(draft);
-  await page.getByRole('button', { name: '进入对话' }).click();
+  await page.getByRole('button', { name: '开始聊' }).click();
   await expect(page.getByRole('textbox', { name: '发送消息' })).toHaveValue(draft);
   await expect(page.getByRole('button', { name: '发送', exact: true })).toBeEnabled();
   expect(ledger.records.filter((record) => record.method === 'POST').map((record) => record.pathname)).toEqual(['/api/consult/sessions']);

@@ -467,7 +467,7 @@ export const PAGE_SHOTS: readonly PageShot[] = [
         kind: 'text',
         intent: '应急入口与日常入口同屏可见',
         minHits: 5,
-        candidates: ['现在需要帮助', '进入对话', '开始应急咨询', '今天，想聊些什么？', '案例库'],
+        candidates: ['现在需要帮助', '开始聊', '开始应急咨询', '今天，想聊些什么？', '案例库', '继续之前的咨询'],
       },
       { kind: 'count', intent: '底部 tab 栏四项导航可见', selector: 'nav.tab-bar a.tab-item', minCount: 4 },
       { kind: 'count', intent: '应急入口的呼吸点已渲染（它是首页唯一循环动效）', selector: '.flame-dot.breathing', minCount: 1 },
