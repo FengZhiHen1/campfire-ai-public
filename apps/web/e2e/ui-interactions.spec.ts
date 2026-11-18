@@ -2,7 +2,8 @@
 import { mkdir, readFile } from 'node:fs/promises';
 import { expect, test, type Page, type TestInfo } from '@playwright/test';
 
-import { actionCardEvent } from '../src/features/consult/test/fixtures';
+import { actionCardEvent, runFinished, runStarted, textDelta } from '../src/features/consult/test/fixtures';
+import type { RunEvent } from '../src/shared/types/sse';
 import { PAGE_SHOTS, type PageShot } from './support/fixtures';
 import { readPngSize, sha256Of } from './support/manifest';
 import { expectNoUnmatchedApi } from './support/network';
@@ -223,13 +224,103 @@ test('首页草稿进入空会话，使用者主动发送前不启动咨询', as
 
 test('对话过程与依据独立展开，正文和常驻输入器保留', async ({ page }, info) => {
   const { ledger, pageProblems } = await openPage(page, shotFor('chat'), info);
-  await page.locator('.reasoning-row > summary').click();
+  const process = page.locator('.reasoning-row');
+  await expect(process).toHaveCount(1);
+  await expect(process.getByText('查阅案例 · 已结束')).toBeHidden();
+  await process.locator('summary').press('Enter');
+  await expect(process.getByText('查阅案例 · 已结束')).toBeVisible();
   await page.locator('.citation-block > summary').click();
   await expect(page.getByLabel('发送消息')).toBeVisible();
   await expect(page.locator('.msg-doc')).toContainText('先不劝');
   await capture(page, info, 'chat-sources', true);
   expectNoUnmatchedApi(ledger);
   expect(pageProblems).toEqual([]);
+});
+
+if (process.env.RECORD_CONSULT_DISCLOSURE === '1') test.use({ video: 'on' });
+
+test.describe('对话过程交互', () => {
+  test('过程从生成到完成，展开和收起维持阅读位置', async ({ page }, info) => {
+    const chat = shotFor('chat');
+    const sessionId = 'process-preview';
+    const runId = 'process-run';
+    const messagesPath = `/api/consult/sessions/${sessionId}/messages`;
+    await page.addInitScript((streamPath) => {
+      const realFetch = window.fetch.bind(window);
+      window.fetch = (input, init) => {
+        const url = input instanceof Request ? input.url : String(input);
+        if (new URL(url, location.origin).pathname !== streamPath) return realFetch(input, init);
+        const body = new ReadableStream<Uint8Array>({
+          start(controller) {
+            const encoder = new TextEncoder();
+            let sequence = 0;
+            window.addEventListener('fixture-consult-frame', (event) => {
+              const frame = (event as CustomEvent<{ type: string }>).detail;
+              sequence += 1;
+              controller.enqueue(encoder.encode(`id: ${sequence}\nevent: ${frame.type}\ndata: ${JSON.stringify(frame)}\n\n`));
+              if (frame.type === 'run_finished') controller.close();
+            });
+            document.documentElement.dataset.fixtureStream = 'ready';
+          },
+        });
+        return Promise.resolve(new Response(body, { headers: { 'Content-Type': 'text/event-stream' } }));
+      };
+    }, `/api/consult/runs/${runId}/stream`);
+    const { ledger, pageProblems } = await openPage(page, {
+      ...chat,
+      path: `/consult/sessions/${sessionId}`,
+      fixtures: [
+        { method: 'GET', path: messagesPath, body: { session_id: sessionId, messages: [] } },
+      ],
+    }, info);
+    await page.route((url) => url.pathname === messagesPath, async (route) => {
+      if (route.request().method() !== 'POST') return route.fallback();
+      await route.fulfill({ status: 202, json: { session_id: sessionId, run_id: runId } });
+    });
+    const emit = (frames: RunEvent[]) => page.evaluate((values) => {
+      for (const detail of values) window.dispatchEvent(new CustomEvent('fixture-consult-frame', { detail }));
+    }, frames);
+    const previewPause = () => process.env.RECORD_CONSULT_DISCLOSURE === '1'
+      ? page.waitForTimeout(950) : Promise.resolve();
+    const composer = page.getByRole('textbox', { name: '发送消息' });
+    await composer.fill('带孩子去图书馆之前，可以做哪些准备？');
+    await previewPause();
+    await page.getByRole('button', { name: '发送', exact: true }).click();
+    await expect(page.locator('html')).toHaveAttribute('data-fixture-stream', 'ready');
+    await emit([
+      { ...runStarted([], runId), session_id: sessionId },
+      { type: 'reasoning_delta', delta: '先区分出门前能准备的事，以及到现场后可以调整的安排。' },
+      { type: 'tool_call_started', tool_name: 'search_cases', call_id: 'case-lookup' },
+    ]);
+    const processRow = page.locator('.reasoning-row');
+    const toggle = processRow.locator('summary');
+    await expect(toggle).toHaveText('正在查阅案例…');
+    await expect(processRow).not.toHaveAttribute('open');
+    await previewPause();
+    await emit([
+      { type: 'tool_call_finished', tool_name: 'search_cases', call_id: 'case-lookup', ok: true, error_code: null, summary: '查到一条关于熟悉陌生环境的记录。' },
+      textDelta('可以先一起看张图书馆的照片，从孩子熟悉的事物聊起。'),
+      textDelta('\n\n到馆后，先在入口停一下，再一起找安静的座位。'),
+      runFinished(),
+    ]);
+    await expect(toggle).toHaveText('思考过程');
+    const initialY = (await toggle.boundingBox())?.y ?? -1000;
+    await previewPause();
+    await toggle.click();
+    await expect(processRow.getByText('查到一条关于熟悉陌生环境的记录。')).toBeVisible();
+    await expect.poll(async () => Math.abs(((await toggle.boundingBox())?.y ?? 0) - initialY)).toBeLessThanOrEqual(2);
+    await previewPause();
+    await toggle.click();
+    await expect(processRow.getByText('查到一条关于熟悉陌生环境的记录。')).toBeHidden();
+    await expect(composer).toBeVisible();
+    await previewPause();
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    await toggle.press('Enter');
+    await expect(processRow).toHaveAttribute('open', '');
+    expect(await processRow.evaluate((node) => getComputedStyle(node, '::details-content').transitionDuration)).toBe('0s');
+    expectNoUnmatchedApi(ledger);
+    expect(pageProblems).toEqual([]);
+  });
 });
 
 test('应急历史中最新行动卡可读，旧卡明确标记过期', async ({ page }, info) => {

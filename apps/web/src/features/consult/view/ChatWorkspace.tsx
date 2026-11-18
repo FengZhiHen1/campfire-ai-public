@@ -30,7 +30,8 @@ import { DeviceFrame } from '../../../shared/ui/DeviceFrame';
 import type { ConsultPort } from '../application/ports';
 import { PROGRESS_TEXT } from '../domain/types';
 import { SkillPicker } from './SkillPicker';
-import { ConsultThreadProvider, CONSULT_MESSAGE_COMPONENTS } from './MessageParts/parts';
+import { CONSULT_EMERGENCY_PATH, consultChatPath } from './consultRoutes';
+import { ConsultMessageParts, ConsultThreadProvider } from './MessageParts/parts';
 import { useChatWorkspace } from '../viewModel/useChatWorkspace';
 import styles from './chatPage.module.css';
 
@@ -54,7 +55,7 @@ function MessageRow() {
       <MessagePrimitive.If assistant>
         <p className="meta message-caption">篝火智答</p>
         <div className="msg-doc">
-          <MessagePrimitive.Parts components={CONSULT_MESSAGE_COMPONENTS} />
+          <ConsultMessageParts />
         </div>
       </MessagePrimitive.If>
     </MessagePrimitive.Root>
@@ -230,18 +231,7 @@ export function ChatWorkspace({
 
               {/* 待作答时收起 Composer 与 SkillPicker（草稿与选择保留，不清空）。 */}
               {ws.answering ? null : (
-                // 技能与输入收进同一张卡片（同一个收口），帮助收进卡片内的轻量一行，
-                // 不再单独占一条底部整宽横条——它仍可点开、名称与功能保留。
                 <div className="composer-card">
-                  <div className="composer-head">
-                    <SkillPicker
-                      skills={ws.skills}
-                      selected={ws.pendingSkill}
-                      disabled={thread.isRunning}
-                      onSelect={ws.selectSkill}
-                    />
-                    <details className="compose-help"><summary>技能与应急求助</summary><p className="meta">技能只作用于下一条消息；应急求助请返回首页走应急入口。</p></details>
-                  </div>
                   <form
                     className="chat-compose"
                     onSubmit={(event) => {
@@ -263,6 +253,18 @@ export function ChatWorkspace({
                       <Icon name="send" />
                     </button>
                   </form>
+                  <div className="composer-controls">
+                    <SkillPicker
+                      skills={ws.skills}
+                      selected={ws.pendingSkill}
+                      disabled={thread.isRunning}
+                      onSelect={ws.selectSkill}
+                    />
+                    <details className="compose-help">
+                      <summary>技能与应急求助</summary>
+                      <p>技能只作用于下一条消息。<Link to={CONSULT_EMERGENCY_PATH} state={{ returnTo: consultChatPath(sessionId) }}>打开应急表单</Link></p>
+                    </details>
+                  </div>
                 </div>
               )}
             </div>

@@ -61,7 +61,7 @@ const CONSULT_CLASSES = [
   'bubble-user',
   'msg-doc',
   'citation-block',
-  'skill-chip',
+  'skill-picker',
   'candidate-toast',
   'chat-progress',
   'expired',

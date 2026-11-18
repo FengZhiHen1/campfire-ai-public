@@ -519,16 +519,16 @@ describe('对话页 — 思考区与工具行', () => {
     expect(bodyParagraphs.some((text) => text.includes('我在核对情境'))).toBe(false);
   });
 
-  it('应急场景的思考行收为一行「分析说明 · 已结束」', async () => {
+  it('应急场景的思考行收为一行「分析说明」', async () => {
     const port = createConsultPortStub({ history: historyResponse([]) });
     port.script([runStarted(['emergency-consulting']), { type: 'reasoning_delta', delta: '核对中' }, runFinished()]);
     renderChat(port);
     await send('应急');
 
-    expect(await screen.findByText('分析说明 · 已结束')).toBeDefined();
+    expect(await screen.findByText('分析说明')).toBeDefined();
   });
 
-  it('工具调用行默认收起并显示名称与摘要', async () => {
+  it('工具事件收进过程区并保留名称与摘要', async () => {
     const port = createConsultPortStub({ history: historyResponse([]) });
     port.script([
       runStarted(),
@@ -540,11 +540,11 @@ describe('对话页 — 思考区与工具行', () => {
     await send('查一下');
 
     const row = await waitFor(() => {
-      const node = document.querySelector('details.tool-row');
+      const node = document.querySelector('.reasoning-row .tool-row');
       if (node === null) throw new Error('工具行还没渲染');
       return node;
     });
-    expect(row.hasAttribute('open')).toBe(false);
+    expect(row.closest('details')?.open).toBe(false);
     // OBS-01：工具行显示面向使用者的中文名，不显示线上标识符（设计真源：对话页.md:60）。
     expect(row.textContent).toContain('查阅资料 · 已结束');
     expect(row.textContent).not.toContain('search_knowledge');
@@ -563,7 +563,7 @@ describe('对话页 — 思考区与工具行', () => {
     await send('试一下');
 
     const row = await waitFor(() => {
-      const node = document.querySelector('details.tool-row');
+      const node = document.querySelector('.reasoning-row .tool-row');
       if (node === null) throw new Error('工具行还没渲染');
       return node;
     });
@@ -592,7 +592,7 @@ describe('对话页 — 思考区与工具行', () => {
     await send('建档');
 
     const row = await waitFor(() => {
-      const node = document.querySelector('details.tool-row');
+      const node = document.querySelector('.reasoning-row .tool-row');
       if (node === null) throw new Error('工具行还没渲染');
       return node;
     });
@@ -663,15 +663,16 @@ describe('对话页 — 技能选择器', () => {
     renderChat(port);
     await screen.findByLabelText('发送消息');
 
-    fireEvent.click(screen.getByRole('button', { name: '日常咨询' }));
-    expect(screen.getByRole('button', { name: '日常咨询' }).getAttribute('aria-pressed')).toBe('true');
+    const picker = screen.getByRole<HTMLSelectElement>('combobox', { name: '下一条消息使用的技能' });
+    fireEvent.change(picker, { target: { value: 'daily-consulting' } });
+    expect(picker.value).toBe('daily-consulting');
 
     await send('他最近总是睡不好');
 
     await waitFor(() => expect(port.sendCalls).toHaveLength(1));
     expect(port.sendCalls[0]?.payload).toMatchObject({ skill: 'daily-consulting' });
     await waitFor(() => expect(useRunStore.getState().peekPendingSkill()).toBeNull());
-    expect(screen.getByRole('button', { name: '自动' }).getAttribute('aria-pressed')).toBe('true');
+    expect(picker.value).toBe('');
   });
 
   it('应急不在选择器里（值域裁决：应急只走表单入口，skill 参数传它回 422）', async () => {
@@ -679,7 +680,7 @@ describe('对话页 — 技能选择器', () => {
     renderChat(port);
 
     await screen.findByLabelText('发送消息');
-    expect(screen.queryByRole('button', { name: '应急咨询' })).toBeNull();
+    expect(screen.queryByRole('option', { name: '应急咨询' })).toBeNull();
   });
 
   it('多技能生效集合在页头串联展示（历史推导 ∪ 本轮新增）', async () => {
@@ -761,8 +762,8 @@ describe('对话页 — 页头技能标签折叠（授权语义：宽度不足�
     await screen.findByLabelText('发送消息');
 
     // 选择器只渲染「自动」+ 目录里的可手选项（SkillPicker 遍历 store.skills）。
-    const picker = screen.getByRole('group', { name: '下一条消息使用的技能' });
-    const chips = Array.from(picker.querySelectorAll('.skill-chip')).map((el) => el.textContent ?? '');
+    const picker = screen.getByRole('combobox', { name: '下一条消息使用的技能' });
+    const chips = Array.from(picker.querySelectorAll('option')).map((el) => el.textContent ?? '');
 
     expect(chips).toEqual(['自动', '日常咨询', '档案整理']);
     // 这两个传入服务端即 422，因此不能出现在可手选入口里。

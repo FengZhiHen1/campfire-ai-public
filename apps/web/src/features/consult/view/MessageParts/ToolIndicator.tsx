@@ -45,15 +45,9 @@ function summaryText(view: ToolCallView): string {
  */
 export function ToolIndicator({ view }: ToolIndicatorProps) {
   return (
-    <details className="tool-row" data-state={view.state}>
-      <summary>
-        <span>{summaryText(view)}</span>
-        <span className="toggle-label">
-          <span className="when-closed">展开</span>
-          <span className="when-open">收起</span>
-        </span>
-      </summary>
-      <div className="process-body">{view.summary === null || view.summary === '' ? '这次调用没有结果摘要。' : view.summary}</div>
-    </details>
+    <div className="tool-row" data-state={view.state}>
+      <p className="tool-row-label">{summaryText(view)}</p>
+      {view.summary ? <p>{view.summary}</p> : null}
+    </div>
   );
 }

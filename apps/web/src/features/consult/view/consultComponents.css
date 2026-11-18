@@ -466,23 +466,63 @@ details[open] > summary .when-open {
 
 /* ── 思考行与工具行 ─────────────────────────────────────────── */
 
-.reasoning-row,
-.tool-row {
-  margin-bottom: var(--space-2);
-}
-
-.reasoning-row > summary,
-.tool-row > summary {
+.conversation-disclosure > summary {
+  width: fit-content;
   min-height: 44px;
-  font-size: var(--text-sm);
-}
-
-.reasoning-row .process-body,
-.tool-row .process-body {
-  padding: 0 0 var(--space-3) var(--space-3);
-  border-left: 2px solid var(--border-soft);
+  justify-content: flex-start;
+  gap: var(--space-2);
+  margin-inline-start: calc(-1 * var(--space-2));
+  padding-inline: var(--space-2);
+  border-radius: var(--radius-sm);
   color: var(--meta);
   font-size: var(--text-sm);
+}
+
+.conversation-disclosure > summary:active {
+  background: color-mix(in oklab, var(--surface-warm), transparent 35%);
+}
+
+.disclosure-chevron {
+  width: 7px;
+  height: 7px;
+  border: solid currentColor;
+  border-width: 0 1px 1px 0;
+  transform: rotate(-45deg);
+}
+
+.conversation-disclosure[open] > summary .disclosure-chevron { transform: translateY(-2px) rotate(45deg); }
+.reasoning-row[data-running] > summary { color: var(--fg-2); }
+
+.reasoning-row .process-body {
+  margin-bottom: var(--space-4);
+  padding: var(--space-1) 0 var(--space-1) var(--space-3);
+  border-left: 1px solid var(--border);
+  color: var(--fg-2);
+  font-size: var(--text-sm);
+}
+
+.process-text { white-space: pre-wrap; }
+.reasoning-row .process-body > * + * { margin-top: var(--space-3); }
+.tool-row-label { font-weight: 600; }
+.tool-row p + p { margin-top: var(--space-1); }
+.process-note { color: var(--meta); font-size: var(--text-xs); }
+
+@media (prefers-reduced-motion: no-preference) {
+  .disclosure-chevron { transition: transform var(--motion-fast) var(--ease-standard); }
+
+  @supports (interpolate-size: allow-keywords) and selector(::details-content) {
+    .conversation-disclosure::details-content {
+      interpolate-size: allow-keywords;
+      overflow: clip;
+      opacity: 0;
+      block-size: 0;
+      transition: block-size var(--motion-base) var(--ease-standard),
+        opacity var(--motion-fast) var(--ease-standard),
+        content-visibility var(--motion-base) allow-discrete;
+    }
+
+    .conversation-disclosure[open]::details-content { opacity: 1; block-size: auto; }
+  }
 }
 
 /* ── 候选轻提示 ─────────────────────────────────────────────── */
@@ -629,58 +669,55 @@ details[open] > summary .when-open {
  *
  * `.chat-compose .btn` 必须先于 `.chat-compose .compose-send`：发送键同时带这两个类，
  * 两者特异性相同（0,2,0），后写者胜。 */
-/* 技能与输入合并成同一张卡片：整张卡一个边框，头部是技能条 + 轻量帮助，主体是输入行。 */
 .composer-card {
-  border: 1px solid var(--border-control, var(--border));
-  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
   background: var(--surface);
-  overflow: hidden;
 }
-.composer-card:focus-within { border-color: var(--accent); box-shadow: var(--focus-ring); }
-.composer-head {
+.composer-card:focus-within { border-color: var(--border-control); }
+.composer-controls {
   display: flex;
-  flex-wrap: wrap;
-  align-items: center;
+  align-items: flex-start;
+  justify-content: space-between;
   gap: var(--space-2);
-  padding: var(--space-2) var(--space-2) 0;
+  padding: 0 var(--space-3);
 }
-.composer-head .skill-picker {
-  flex: 1 1 auto;
+.skill-picker {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  color: var(--meta);
+  font-size: var(--text-xs);
+}
+.skill-picker select {
   min-width: 0;
-}
-/* 帮助收成头部右端的一枚轻量入口，不占底部整宽横条，但仍可点开、名称保留。
- * 与技能条同一行时右对齐；放不下（窄屏）时整条换到下一行，不挤压技能条。 */
-.composer-head .compose-help { flex: none; margin-left: auto; }
-/* 帮助入口的通用形态（契约要求 `.compose-help > summary` 存在）；实际位置由
- * .composer-head 收进输入卡头部右端，不占底部整宽横条。 */
-.compose-help > summary { min-height: 32px; justify-content: flex-end; font-size: var(--text-xs); color: var(--meta); white-space: nowrap; }
-.composer-head .compose-help > summary {
-  min-height: 32px;
-  padding-inline: var(--space-2);
-  font-size: var(--text-xs);
-  color: var(--meta);
-  white-space: nowrap;
-}
-.composer-head .compose-help > p {
-  max-width: 220px;
-  padding: var(--space-2) 0;
-  font-size: var(--text-xs);
-}
-.skill-chip {
-  flex: none;
+  max-width: min(38vw, 10rem);
   min-height: 44px;
-  padding: var(--space-2) var(--space-3);
-  border: 1px solid transparent;
-  border-radius: var(--radius-pill);
+  padding-inline: var(--space-1);
+  border: 0;
+  border-radius: var(--radius-sm);
   background: transparent;
+  color: var(--fg-2);
+  font-size: var(--text-sm);
+}
+.compose-help > summary {
+  justify-content: flex-end;
+  min-height: 44px;
+  padding-inline: var(--space-1);
   color: var(--meta);
   font-size: var(--text-xs);
+  text-align: right;
 }
-.skill-chip[aria-pressed='true'] {
-  border-color: var(--accent);
-  background: color-mix(in oklab, var(--accent), transparent 92%);
-  color: var(--accent);
-  font-weight: 600;
+.compose-help > p {
+  max-width: 13em;
+  padding-bottom: var(--space-3);
+  color: var(--fg-2);
+  font-size: var(--text-sm);
+}
+.compose-help a {
+  display: flex;
+  align-items: center;
+  min-height: 44px;
 }
 .chat-compose {
   display: flex;
@@ -715,16 +752,6 @@ details[open] > summary .when-open {
   border-color: var(--border);
   color: var(--muted);
 }
-.reasoning-row > summary, .tool-row > summary { font-size: var(--text-xs); min-height: 36px; color: var(--meta); }
-/* 过程（思考/工具）低权重：折叠头不要整宽横线，也不加暖底药丸；只有「展开后的内容」
- * 保留一条局部左引线，让它退到阅读面之后但仍可展开、依据仍找得到。 */
-.reasoning-row, .tool-row { border-radius: 0; background: none; padding-inline: 0; border: 0; }
-.reasoning-row > summary, .tool-row > summary { font-weight: 400; border-bottom: 0; }
-.reasoning-row .process-body, .tool-row .process-body {
-  padding-left: var(--space-3);
-  border-left: 2px solid var(--border-soft);
-}
-.citation-block > summary { font-size: var(--text-sm); }
 .ac-head { font-family: var(--font-body); font-weight: 600; }
 .ac-section.now { margin-inline: 0; }
 .selection { border-color: var(--border-soft); }

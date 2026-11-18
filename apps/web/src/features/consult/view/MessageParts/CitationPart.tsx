@@ -129,13 +129,10 @@ export function CitationPart({ items }: CitationPartProps) {
   if (items.length === 0) return null;
 
   return (
-    <details className="citation-block">
+    <details className="citation-block conversation-disclosure">
       <summary>
         <span>依据 {items.length} 条</span>
-        <span className="toggle-label">
-          <span className="when-closed">展开</span>
-          <span className="when-open">收起</span>
-        </span>
+        <span className="disclosure-chevron" aria-hidden="true" />
       </summary>
       <div className="citation-list">
         {items.map((citation) => {

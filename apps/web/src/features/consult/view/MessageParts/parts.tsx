@@ -27,6 +27,8 @@ import { CitationPart } from './CitationPart';
 import { QuestionCard } from './QuestionCard';
 import { ReasoningDisclosure } from './ReasoningDisclosure';
 import { ToolIndicator } from './ToolIndicator';
+import { toolDisplayName } from './toolLabels';
+import { MessagePrimitive, useAuiState } from '@assistant-ui/react';
 
 /**
  * 对话消息流里跨 part 需要的信息（由对话工作面提供）。
@@ -80,20 +82,24 @@ function TextPart({ text }: { text: string }) {
   return <ReadableText text={text} />;
 }
 
-/** 思考段渲染：文案与呈现纪律取自由对话工作面下发的运行态（应急收为一行）。 */
-function ReasoningPart({ text }: { text: string }) {
-  const { reasoningStreaming, reasoningEmergency } = useConsultThread();
-  return <ReasoningDisclosure text={text} streaming={reasoningStreaming} emergency={reasoningEmergency} />;
-}
+const PROCESS_GROUP = ['group-process'] as const;
 
-/** 依据区渲染（聚合后的多条引用）。 */
-function CitationsPart({ data }: { data: { items: CitationRecord[] } }) {
-  return <CitationPart items={data.items} />;
-}
-
-/** 工具调用行渲染。 */
-function ToolCallPart({ data }: { data: ToolCallView }) {
-  return <ToolIndicator view={data} />;
+/** 活动标签来自这一条消息的真实事件。历史消息不会随新一轮变成运行中。 */
+function ProcessGroup({ indices, children }: { indices: readonly number[]; children: ReactNode }) {
+  const { reasoningEmergency, reasoningStreaming } = useConsultThread();
+  const activity = useAuiState(({ message }) => {
+    if (message.status?.type !== 'running') return null;
+    for (const index of indices) {
+      const part = message.parts[index];
+      if (part?.type !== 'data' || part.name !== PART_NAME.toolCall) continue;
+      const tool = part.data as ToolCallView;
+      if (tool.state === 'running') return `正在${toolDisplayName(tool.toolName)}…`;
+    }
+    return indices.at(-1) === message.parts.length - 1 ? '正在分析…' : null;
+  });
+  const running = reasoningStreaming && activity !== null;
+  const label = running ? activity : reasoningEmergency ? '分析说明' : '思考过程';
+  return <ReasoningDisclosure label={label} running={running}>{children}</ReasoningDisclosure>;
 }
 
 /** 行动卡渲染：失效判定来自上下文里的最新卡 id。 */
@@ -145,31 +151,43 @@ function QuestionRecordPart({
   return <QuestionCard controller={controller} />;
 }
 
-/**
- * 消息 part 渲染配置。
- *
- * 为什么是模块级常量：每次渲染新建组件类型会让 React 卸载重建整棵子树，
- * 消息流里的折叠状态（依据区、思考行）会随之丢失。
- */
-export const CONSULT_MESSAGE_COMPONENTS = {
-  Text: TextPart,
-  Reasoning: ReasoningPart,
-  data: {
-    by_name: {
-      [PART_NAME.citations]: CitationsPart,
-      [PART_NAME.toolCall]: ToolCallPart,
-      [PART_NAME.question]: LiveQuestionPart,
-      [PART_NAME.questionRecord]: QuestionRecordPart,
-      [PART_NAME.actionCard]: ActionCardPart,
-    },
-  },
-} as const;
-
-/** 供测试与工作面断言注册表覆盖了契约的五个视图 part。 */
-export const CONSULT_PART_NAMES: readonly string[] = [
-  PART_NAME.citations,
-  PART_NAME.toolCall,
-  PART_NAME.question,
-  PART_NAME.questionRecord,
-  PART_NAME.actionCard,
-];
+/** 保留消息的 part 顺序，只把相邻的过程合成同一折叠区。 */
+export function ConsultMessageParts() {
+  return (
+    <MessagePrimitive.GroupedParts
+      indicator="never"
+      groupBy={(part) =>
+        (part.type === 'reasoning' && part.text.trim() !== '') ||
+        (part.type === 'data' && part.name === PART_NAME.toolCall) ? PROCESS_GROUP : null
+      }
+    >
+      {({ part, children }) => {
+        switch (part.type) {
+          case 'group-process':
+            return <ProcessGroup indices={part.indices}>{children}</ProcessGroup>;
+          case 'text':
+            return <TextPart text={part.text} />;
+          case 'reasoning':
+            return part.text.trim() === '' ? null : <p className="process-text">{part.text}</p>;
+          case 'data':
+            switch (part.name) {
+              case PART_NAME.citations:
+                return <CitationPart items={(part.data as { items: CitationRecord[] }).items} />;
+              case PART_NAME.toolCall:
+                return <ToolIndicator view={part.data as ToolCallView} />;
+              case PART_NAME.question:
+                return <LiveQuestionPart data={part.data as Parameters<typeof LiveQuestionPart>[0]['data']} />;
+              case PART_NAME.questionRecord:
+                return <QuestionRecordPart data={part.data as Parameters<typeof QuestionRecordPart>[0]['data']} />;
+              case PART_NAME.actionCard:
+                return <ActionCardPart data={part.data as ActionCardEvent} />;
+              default:
+                return null;
+            }
+          default:
+            return null;
+        }
+      }}
+    </MessagePrimitive.GroupedParts>
+  );
+}
