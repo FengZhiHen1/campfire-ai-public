@@ -22,7 +22,6 @@ import { useLogout, type LogoutController } from './useLogout';
 /** 设置页的成稿文案（页面设计「数据与文案」节，逐字呈现）。 */
 export const SETTINGS_COPY = {
   heading: '我的',
-  headingSub: '账号、记录，以及你需要了解的事。',
   accountHeadingFallback: '个人账号',
   accountSub: '个人账号 · 邀请码注册',
   accountFallback: '当前登录会话',

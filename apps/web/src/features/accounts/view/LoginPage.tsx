@@ -51,15 +51,17 @@ export function LoginPage({ auth, initialMode = 'login' }: LoginPageProps) {
     <DeviceFrame>
       <div className={`phone-shell ${styles.shell}`}>
         <header className={styles.brand}>
-          <span className={styles.brandMark}>
-            <BrandMark size="1.15em" />
-          </span>
-          <div className={styles.brandText}>
-            <h1 className={styles.title}>{LOGIN_COPY.title}</h1>
-            <p className={styles.tagline}>{LOGIN_COPY.tagline}</p>
+          {/* 火焰与品牌标题同一行垂直居中；标语另起一行，只保留有信息的一句。 */}
+          <div className={styles.brandRow}>
+            <span className={styles.brandMark}>
+              <BrandMark size="1.15em" />
+            </span>
+            <h1 className={styles.title} id="auth-title">
+              {LOGIN_COPY.title}
+            </h1>
           </div>
+          <p className={styles.tagline}>{LOGIN_COPY.tagline}</p>
         </header>
-        <p className={styles.intro}>{LOGIN_COPY.intro}</p>
 
         <section className={`panel ${styles.panel}`} aria-label={isRegister ? '注册账号' : '登录'}>
           {/* 模式切换：标题行右侧一条显式互切按钮，当前态由标题文字承担，

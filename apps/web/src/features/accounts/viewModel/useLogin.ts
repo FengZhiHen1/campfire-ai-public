@@ -27,7 +27,6 @@ import { useAuthForm, type AuthMode } from './useAuthForm';
 export const LOGIN_COPY = {
   title: '篝火智答',
   tagline: '每一次咨询，都有据可依',
-  intro: '陪你梳理照护中的困惑，找到可以迈出的下一步。',
   formTitleLogin: '登录',
   formTitleRegister: '注册账号',
   loginSubmit: '登录',
