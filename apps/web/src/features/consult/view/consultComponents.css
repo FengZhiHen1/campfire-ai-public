@@ -100,14 +100,42 @@ details[open] > summary .when-open {
   margin-bottom: var(--space-4);
 }
 
+.chat-run-controls {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin-bottom: var(--space-1);
+}
+
 .chat-progress {
   display: flex;
   align-items: flex-start;
   gap: var(--space-2);
-  margin-bottom: var(--space-2);
   color: var(--fg-2);
   font-size: var(--text-sm);
 }
+
+.chat-stop {
+  flex: none;
+  justify-content: center;
+  gap: var(--space-2);
+  margin-inline-start: auto;
+  padding-inline: var(--space-2);
+  border-radius: var(--radius-sm);
+  text-decoration: none;
+}
+
+.chat-stop span {
+  width: var(--space-2);
+  height: var(--space-2);
+  background: currentColor;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .chat-stop:hover { background: var(--bg); }
+}
+
+.chat-stop:active { background: var(--surface-warm); }
 
 .chat-progress .flame-dot {
   margin-top: var(--space-2);
@@ -478,17 +506,14 @@ details[open] > summary .when-open {
   font-size: var(--text-sm);
 }
 
-.conversation-disclosure > summary:active {
-  background: color-mix(in oklab, var(--surface-warm), transparent 35%);
-}
-
-/* 指针设备上的悬停反馈：折叠头有 44px 命中区，但此前只有按下态（:active）变色，鼠标
- * 移上去没有任何提示，看不出这里能点。与 .question-option 的悬停同一取向（仅 hover 媒体
- * 查询内生效，触屏不产生粘滞高亮）。 */
-@media (hover: hover) {
+@media (hover: hover) and (pointer: fine) {
   .conversation-disclosure > summary:hover {
     background: color-mix(in oklab, var(--surface-warm), transparent 65%);
   }
+}
+
+.conversation-disclosure > summary:active {
+  background: color-mix(in oklab, var(--surface-warm), transparent 35%);
 }
 
 .disclosure-chevron {

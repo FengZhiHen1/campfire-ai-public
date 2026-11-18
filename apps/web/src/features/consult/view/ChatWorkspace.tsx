@@ -200,16 +200,22 @@ export function ChatWorkspace({
             </div>
 
             <div className={styles.footer}>
-              {ws.statusText === null ? null : (
-                <div className="chat-progress" data-tone={ws.showProgressDot ? 'working' : 'info'}>
-                  {ws.showProgressDot ? (
-                    <span className="flame-dot breathing" aria-hidden="true" />
+              {ws.statusText !== null || thread.isRunning ? (
+                <div className="chat-run-controls">
+                  {ws.statusText !== null ? (
+                    <div className="chat-progress" data-tone={ws.showProgressDot ? 'working' : 'info'}>
+                      {ws.showProgressDot ? <span className="flame-dot breathing" aria-hidden="true" /> : null}
+                      <span role="status" aria-live="polite">{ws.statusText}</span>
+                    </div>
                   ) : null}
-                  <span role="status" aria-live="polite">
-                    {ws.statusText}
-                  </span>
+                  {thread.isRunning ? (
+                    <button type="button" className="text-button chat-stop" onClick={runtime.stop}>
+                      <span aria-hidden="true" />
+                      停止
+                    </button>
+                  ) : null}
                 </div>
-              )}
+              ) : null}
 
               {/*
                 失败反馈：像「服务回话」而不是报错弹层。原因在上（标题 + 一句说明），动作在下
@@ -229,14 +235,6 @@ export function ChatWorkspace({
                   ) : null}
                 </div>
               )}
-
-              {thread.isRunning ? (
-                <div className="button-row">
-                  <button type="button" className="btn btn-quiet" onClick={runtime.stop}>
-                    停止
-                  </button>
-                </div>
-              ) : null}
 
               {/* 待作答时收起 Composer 与 SkillPicker（草稿与选择保留，不清空）。 */}
               {ws.answering ? null : (
