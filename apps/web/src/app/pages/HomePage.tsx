@@ -1,4 +1,13 @@
-/** 首页：从描述问题开始，现场求助与阅读资料保持独立可达。 */
+/**
+ * 首页：从描述问题开始，现场求助与阅读资料保持独立可达。
+ *
+ * 布局决策（本轮）：
+ * - 轻页头只放品牌与「使用说明」，不放欢迎长文，把首屏让给日常输入器与应急入口；
+ * - 日常输入与应急入口都在初始首屏可见：320×640 下也必须整块可见、中心可点，
+ *   「开始应急咨询」链接（含说明文案）不允许被底部导航遮住；
+ * - 日常输入保留「先写草稿、显式进入对话」的边界：进入对话只建会话并把草稿交给对话页，
+ *   真正发送后才开始分析。
+ */
 import { Link, useNavigate } from 'react-router';
 import type { ConsultPort } from '../../features/consult/application/ports';
 import { consultChatPath } from '../../features/consult/view/consultRoutes';
@@ -27,16 +36,15 @@ export function HomePage({ consult }: { consult: ConsultPort }) {
             使用说明 <Icon name="chevron" />
           </Link>
         </header>
-        <section className={styles.welcome} aria-labelledby="home-welcome">
-          <p className="eyebrow">陪你梳理，一起往前</p>
-          <h2 id="home-welcome">今天，想聊些什么？</h2>
-          <p>从一件小事开始。说说你的困惑，我们一起找到下一步。</p>
-        </section>
-        <section className={styles.conversation} aria-label="日常咨询">
-          <form onSubmit={(event) => {
-            event.preventDefault();
-            void entry.start();
-          }}>
+
+        <section className={styles.conversation} aria-labelledby="home-start">
+          <h2 id="home-start" className={styles.startLead}>今天，想聊些什么？</h2>
+          <form
+            onSubmit={(event) => {
+              event.preventDefault();
+              void entry.start();
+            }}
+          >
             <label className="sr-only" htmlFor="home-draft">想聊的事情</label>
             <textarea
               id="home-draft"
@@ -47,15 +55,15 @@ export function HomePage({ consult }: { consult: ConsultPort }) {
               onChange={(event) => entry.setDraft(event.target.value)}
             />
             <div className={styles.composeBottom}>
-              <span className="meta">日常咨询</span>
-              <button type="submit" className="btn btn-primary" disabled={entry.creating || entry.draft.trim() === ''}>
+              <span className={styles.draftNote}>进入后可继续补充，发送时才开始分析</span>
+              <button type="submit" className={`btn btn-primary ${styles.enterButton}`} disabled={entry.creating || entry.draft.trim() === ''}>
                 {entry.creating ? '正在进入…' : '进入对话'} <Icon name="arrow" />
               </button>
             </div>
           </form>
-          <p className={styles.draftNote}>进入后可继续补充，发送时才开始分析。</p>
           {entry.failure !== null && <ErrorCard title={entry.failure.title} description={entry.failure.message} />}
         </section>
+
         <article className={'panel emergency-entry ' + styles.emergency}>
           <div className="entry-title">
             <span className="flame-dot breathing" aria-hidden="true" />
@@ -66,11 +74,13 @@ export function HomePage({ consult }: { consult: ConsultPort }) {
             开始应急咨询 <Icon name="arrow" />
           </Link>
         </article>
+
         <Link className={styles.historyLink} to="/consult">
           <Icon name="chat" />
           <span>继续之前的咨询</span>
           <Icon name="chevron" />
         </Link>
+
         <section className={styles.resources} aria-label="案例与资料">
           <p className="eyebrow">案例与资料</p>
           <div className={styles.secondaryRow}>
