@@ -5,7 +5,7 @@
  *   - docs/design/pages/案例库浏览页.md: MUST — 状态覆盖表（检索失败与空结果可区分、deep-link 三态）
  *   - docs/技术设计/面/profile/资料库面HTTP契约.md: MUST — 第 3、4、5 节
  * 边界:
- *   - 依赖: features/library/application、features/library/domain
+ *   - 依赖: features/library/application、features/library/domain、useLibraryFlow
  *   - 被依赖: features/library/view/LibraryPage
  * 禁止行为:
  *   - 禁止按前端缓存的旧载荷判断撤下（撤下判定来自服务端，契约第 5 节）
@@ -16,9 +16,10 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 
 import type { LibraryListItem, LibraryKind } from '../../../shared/types/library';
 import type { LibraryPort } from '../application/ports';
-import { ResolveDeepLinkUseCase, SearchLibraryUseCase } from '../application/usecases';
+import { SearchLibraryUseCase } from '../application/usecases';
 import { type DeepLinkOutcome, parseDeepLink } from '../domain/deepLink';
 import { type LibraryFailure, failureFromError } from '../domain/failures';
+import { useLibraryFlow } from './useLibraryFlow';
 
 /** 页面加载状态。 */
 export type LibraryStatus = 'loading' | 'ready' | 'error';
@@ -75,7 +76,6 @@ export function useLibraryPage(port: LibraryPort, search: string): LibraryPageSt
   const [loadingMore, setLoadingMore] = useState(false);
   const [loadMoreFailure, setLoadMoreFailure] = useState<LibraryFailure | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
-  const [deepLink, setDeepLink] = useState<DeepLinkOutcome>({ kind: 'none' });
 
   // 迟到的响应不得覆盖新结果（CORE-03 身份守卫）：检索、切库、展开、分页都可能并发。
   const loadToken = useRef(0);
@@ -138,33 +138,17 @@ export function useLibraryPage(port: LibraryPort, search: string): LibraryPageSt
     };
   }, [load]);
 
-  // deep-link 只解析一次：URL 变化由路由重挂页面承担。`load` 会随检索词/库别换身份，
-  // 因此不能靠依赖数组限制次数——没有这道闸，每次按键都会重新解析一次 deep-link，
-  // 并把使用者刚收起的展开态重新撑开。
-  const deepLinkResolved = useRef(false);
-
-  useEffect(() => {
-    if (deepLinkResolved.current) return;
-    const request = initialRequest;
-    if (request.itemId === null) return;
-    deepLinkResolved.current = true;
-    void new ResolveDeepLinkUseCase(port)
-      .execute(request.itemId)
-      .then((outcome) => {
-        setDeepLink(outcome);
-        if (outcome.kind !== 'in-library') return;
-        // 「定位并展开」两半都要做：按目标条目的库别切分区，并按 `expand=<item_id>`
-        // 重取本页。只置 expandedId 不动列表的话，展开内容永远不会出现——
-        // 展开内容随列表返回，而不是随单条查询返回（契约第 4 节）。
-        applyExpandedId(outcome.item.item_id);
-        setLibraryState(outcome.item.library);
-        void load({ library: outcome.item.library });
-      })
-      .catch(() => {
-        // 单条查询失败不改变整页：按普通进入处理（契约第 5 节：非法 id 不报错、不留在空页）。
-        setDeepLink({ kind: 'none' });
-      });
-  }, [applyExpandedId, initialRequest, load, port]);
+  // deep-link 的进入编排（定位并展开）由独立 hook 承担；这里只给出它需要的列表操作。
+  const loadForDeepLink = useCallback(
+    (itemId: string, targetLibrary: LibraryKind): void => {
+      applyExpandedId(itemId);
+      setLibraryState(targetLibrary);
+      void load({ library: targetLibrary, expand: itemId });
+    },
+    [applyExpandedId, load],
+  );
+  const flowControls = { loadForDeepLink };
+  const deepLink = useLibraryFlow(port, initialRequest, flowControls);
 
   const setLibrary = useCallback(
     (kind: LibraryKind): void => {
